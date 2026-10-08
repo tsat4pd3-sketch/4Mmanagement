@@ -1,6 +1,8 @@
 import { useState, useEffect, useContext, useCallback, useMemo } from 'react';
+import { lineNameCompare } from '../utils/lineHierarchy';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { isFgMat } from '../utils/matPrefix';
@@ -12,11 +14,16 @@ import InternalTimeBoard from '../components/InternalTimeBoard';
 import { frameMin, breaksToFrame } from '../utils/timeFrame';
 import { getRoundStatus } from '../utils/deliveryRounds';
 import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
+import FilterBar from '../components/FilterBar';
+import { ALL, allOf } from '../utils/filterLabels';
 import useTabParam from '../utils/useTabParam';
 import WipBetweenSteps from '../components/WipBetweenSteps';
+import StockCountSheet from '../components/StockCountSheet';
 import StorageZonePanel from '../components/StorageZonePanel';
 import StorageLocPanel from '../components/StorageLocPanel';
 import LineSelect from '../components/LineSelect';
+import MatLabel from '../components/MatLabel';
 import ProductSelect from '../components/ProductSelect';
 import useProducts from '../utils/useProducts';
 import useColumnHistory from '../utils/useColumnHistory'; // 📜 MAT ที่เคยบันทึกไว้ — ทะเบียนไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
@@ -28,6 +35,10 @@ import { fetchAllPages } from '../utils/fetchByIds';
 import { RATE } from '../utils/refreshRates';
 import { useLiveBoard } from '../utils/useLiveBoard';
 import SearchSelect from '../components/SearchSelect';
+import StockReceiptQueue from '../components/StockReceiptQueue';
+import Segmented from '../components/Segmented';
+import { INFLOW_MODES, inflowModeOf, inflowPatchFor } from '../utils/stockReceipts';
+import { IconButton, DeleteButton } from '../components/IconButton';
 
 /* ─── LINE STOCK — Stock พาร์ทย่อยคงเหลือในแต่ละไลน์ผลิต ─────────────────
    Store จ่ายพาร์ทเข้าไลน์ → บันทึก transaction type='issue'
@@ -92,7 +103,7 @@ function StockTab({ role, scope }) {
   const [lineFilter, setLineFilter] = useState('');
   // คลังปลายทางที่ไม่ใช่ไลน์ผลิต — derive จากของที่มีจริง + กฎรับเข้าอัตโนมัติ ไม่ hardcode ชื่อคลัง
   const warehouseNames = useMemo(
-    () => [...new Set(stock.map(s => s.line_name))].filter(n => n && !lines.some(l => l.name === n)).sort(),
+    () => [...new Set(stock.map(s => s.line_name))].filter(n => n && !lines.some(l => l.name === n)).sort(lineNameCompare),
     [stock, lines],
   );
   // ไลน์แม่ (มีไลน์ลูก) = ระดับแผนก — ใช้เตือนตอนจ่ายพาร์ท และตรวจสต๊อกที่ค้างผิดชั้น
@@ -141,7 +152,7 @@ function StockTab({ role, scope }) {
     const [{ data: ln, error: lnErr }, stkRes, bomRes, prodRes, ksRes, pmRes] = await Promise.all([
       // ⚠️ ต้อง select ให้ครบ — ขาด parent_line_name = dropdown ไม่มีลำดับชั้น
       //    ขาด section = กรอง scope ไม่ได้ · ขาด is_active = ไลน์ปลดระวางโผล่ปน (ดู LineSelect.jsx)
-      supabase.from('production_lines').select('id, name, parent_line_name, section, is_active, line_type').order('name'),
+      loadLinesRes(),
       // ⚠️ view นี้โตเกิน 1000 แถวได้ — select เฉยๆ โดนตัดเงียบแล้วยอดสต็อกหายจากจอเขียนหลักของ store (QC flow-audit #30)
       fetchAllPages(() => supabaseDR.from('line_stock_summary').select('*'),
         { orderBy: ['line_name', 'mat_no'] }),
@@ -324,37 +335,41 @@ function StockTab({ role, scope }) {
     <>
       <ReadOnlyNote show={!canIssue} role={role} what="จ่าย/รับของเข้าสโตร์"
         permKey="line_stock:issue" hint="ยังดูยอดคงเหลือ/ประวัติได้ตามปกติ" />
-      {/* Header */}
-      <div style={{ display:'flex', paddingRight: 52, justifyContent:'space-between', alignItems:'flex-end', gap:12, flexWrap:'wrap', marginBottom:18 }}>
-        <div>
-          <h1 style={{ margin:0, fontSize:'clamp(18px,2.5vw,24px)', fontWeight:900, fontFamily:'var(--font-display)', color:'var(--text)' }}>
-            📦 Line Stock — พาร์ทย่อยคงเหลือในไลน์
-          </h1>
-          <p style={{ margin:'4px 0 0', fontSize:13, color:'var(--muted)' }}>
-            Store จ่ายพาร์ทเข้าไลน์ · ระบบหักอัตโนมัติตอน close กะ (BOM × qty_ok)
-          </p>
-        </div>
-        <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-          {(pending.length > 0 || canApprove) && (
-            <button onClick={() => setShowPending(v => !v)}
-              style={{ ...btn(showPending ? '#f59e0b' : 'var(--bg2)', showPending ? '#1a1206' : 'var(--text)'),
-                position: 'relative',
-                border: pending.length > 0 ? '1px solid #f59e0b' : '1px solid var(--border)' }}>
-              ⏳ รออนุมัติ{pending.length > 0 ? ` (${pending.length})` : ''}
-              <ToggleDot on={showPending} />
-            </button>
-          )}
-          <button onClick={() => setShowTxn(v => !v)} style={btn(showTxn ? 'var(--accent)' : 'var(--bg2)', showTxn ? '#08130a' : 'var(--text)')}>
-            {showTxn ? '📊 ดู Stock' : '📋 ประวัติ Transaction'}
+      {/* UI-STANDARD 2026-09-24 — แถบกรองเดียว ใต้แท็บทันที: ไลน์/คลัง (ขอบเขต) → ฝั่งงาน → ปุ่มคำสั่งชิดขวา (UI-STANDARD §2.1) */}
+      <FilterBar>
+        {/* คลังปลายทางที่ไม่ใช่ไลน์ผลิต (FG WAREHOUSE / STORE) แยก optgroup ให้ชัด
+            ไม่กองปนกับไลน์ผลิต — ของ 2 ชนิดนี้คนละความหมายกันคนละเรื่อง */}
+        <LineSelect
+          lines={lines} value={lineFilter} onChange={setLineFilter} {...scope}
+          placeholder={allOf('ไลน์/คลัง')}
+          extraGroups={[{ label: '🏬 คลัง', options: warehouseNames.map(n => ({ value: n })) }]}
+        />
+        <SideFilterChips value={sideFilter} onChange={setSideFilter} counts={sideCounts} unit="รายการ" />
+        <span className="spacer" />
+        {(pending.length > 0 || canApprove) && (
+          <button onClick={() => setShowPending(v => !v)}
+            style={{ ...btn(showPending ? '#f59e0b' : 'var(--bg2)', showPending ? '#1a1206' : 'var(--text)'),
+              position: 'relative',
+              border: pending.length > 0 ? '1px solid #f59e0b' : '1px solid var(--border)' }}>
+            ⏳ รออนุมัติ{pending.length > 0 ? ` (${pending.length})` : ''}
+            <ToggleDot on={showPending} />
           </button>
-          {canIssue && (
-            <button onClick={() => { setForm({ ...EMPTY_FORM, type:'issue', work_date:getToday() }); setShowForm(true); }} style={btn('#16a34a')}>
-              + จ่ายพาร์ทเข้าไลน์
-            </button>
-          )}
+        )}
+        <button onClick={() => setShowTxn(v => !v)} style={btn(showTxn ? 'var(--accent)' : 'var(--bg2)', showTxn ? 'var(--accent-ink)' : 'var(--text)')}>
+          {showTxn ? '📊 ดู Stock' : '📋 ประวัติ Transaction'}
+        </button>
+        {canIssue && (
+          <button onClick={() => { setForm({ ...EMPTY_FORM, type:'issue', work_date:getToday() }); setShowForm(true); }} style={btn('#16a34a')}>
+            + จ่ายพาร์ทเข้าไลน์
+          </button>
+        )}
+        <div style={{ flexBasis:'100%', fontSize:11, color:'var(--muted)' }}>
+          🏬 สโตร์ = Store ป้อนของเข้าไลน์ (3xx ซื้อนอก · 5xx raw · 2xx ผลิตเอง) · 🚚 จัดส่ง = Warehouse + Delivery ส่งลูกค้า (FG 1xx)
         </div>
-      </div>
-
+      </FilterBar>
+      <p style={{ margin:'0 0 12px', fontSize:13, color:'var(--muted)' }}>
+        <b style={{ color:'var(--text2)' }}>📦 พาร์ทย่อยคงเหลือในไลน์</b> — Store จ่ายพาร์ทเข้าไลน์ · ระบบหักอัตโนมัติตอน close กะ (BOM × qty_ok)
+      </p>
       {/* ── คิวอนุมัติ (store review) ── */}
       {showPending && (
         <div style={{ ...card, padding:0, overflow:'hidden', marginBottom:16, borderColor:'rgba(245,158,11,0.4)' }}>
@@ -368,21 +383,22 @@ function StockTab({ role, scope }) {
             <table style={{ width:'100%', borderCollapse:'collapse' }}>
               <thead>
                 <tr style={{ background:'var(--bg2)' }}>
-                  {['วันที่','ไลน์','Mat SAP','Part Name','ประเภท','จำนวน','หมายเหตุ','โดย', canApprove ? 'จัดการ' : 'สถานะ'].map(h => (
+                  {['วันที่','ไลน์','ชิ้นงาน','ประเภท','จำนวน','หมายเหตุ','โดย', canApprove ? 'จัดการ' : 'สถานะ'].map(h => (
                     <th key={h} style={{ padding:'8px 12px', fontSize:11, fontWeight:800, color:'var(--muted)', textAlign:'left', whiteSpace:'nowrap', textTransform:'uppercase' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {pending.length === 0 && (
-                  <tr><td colSpan={9} style={{ padding:30, textAlign:'center', color:'var(--muted)', fontSize:13 }}>ไม่มีรายการรออนุมัติ</td></tr>
+                  <tr><td colSpan={8} style={{ padding:30, textAlign:'center', color:'var(--muted)', fontSize:13 }}>ไม่มีรายการรออนุมัติ</td></tr>
                 )}
                 {pending.map(t => (
                   <tr key={t.id}>
                     <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)', fontSize:12, color:'var(--muted)', whiteSpace:'nowrap' }}>{t.work_date}</td>
                     <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)', fontSize:13, fontWeight:600 }}>{t.line_name}</td>
-                    <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)', fontFamily:'monospace', fontSize:12, color:'#0ea5e9', fontWeight:700 }}>{t.mat_no}</td>
-                    <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)', fontSize:12, color:'var(--text2)' }}>{t.part_name || '—'}</td>
+                    <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)', maxWidth:320 }}>
+                      <MatLabel mat={t.mat_no} name={t.part_name} />
+                    </td>
                     <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)' }}>
                       <span style={{ fontSize:11, padding:'2px 8px', borderRadius:10, fontWeight:700, background:`${TYPE_COLOR[t.type]}18`, color:TYPE_COLOR[t.type] }}>{TYPE_LABEL[t.type]}</span>
                     </td>
@@ -417,35 +433,26 @@ function StockTab({ role, scope }) {
 
       {/* ฝั่งงาน — จอนี้เคยลิสต์ทุกเลข MAT ปนกันทั้งที่คนละแผนกดูแล (feedback หน้างาน 2026-09-03)
           ตัวนับนับหลังกรองไลน์แล้ว → เลขบนชิปตรงกับที่เห็นในตารางเสมอ */}
-      <div style={{ ...card, padding:'10px 14px', marginBottom:12 }}>
-        <SideFilterChips value={sideFilter} onChange={setSideFilter} counts={sideCounts} unit="รายการ" />
-        <div style={{ fontSize:11, color:'var(--muted)', marginTop:6 }}>
-          🏬 สโตร์ = Store ป้อนของเข้าไลน์ (3xx ซื้อนอก · 5xx raw · 2xx ผลิตเอง) · 🚚 จัดส่ง = Warehouse + Delivery ส่งลูกค้า (FG 1xx)
-        </div>
-      </div>
 
       {/* Summary chips */}
       <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))', gap:10, marginBottom:16 }}>
+        {/* 📏 ตัวเลขต้องมีหน่วย + ฐานเทียบ (UI §6.18 ข้อ 4) — "1" เฉยๆ ตอบไม่ได้ว่ามากหรือน้อย
+            "Stock หมด" เป็นส่วนหนึ่งของ "รายการพาร์ท" จึงบอกสัดส่วนของยอดรวมกำกับ */}
         {[
-          { label:'ไลน์ที่มี stock', value: Object.keys(stockByLine).length, icon:'🏭' },
-          { label:'รายการพาร์ท', value: filteredStock.length, icon:'🔩' },
-          { label:'Stock หมด / ติดลบ', value: totalLow, icon:'⚠️', warn: totalLow > 0 },
+          { label:'ไลน์ที่มี stock', value: Object.keys(stockByLine).length, unit:'ไลน์', icon:'🏭' },
+          { label:'รายการพาร์ท', value: filteredStock.length, unit:'รายการ', icon:'🔩',
+            sub: lineFilter ? `เฉพาะ ${lineFilter}` : 'ทุกไลน์/คลังในสิทธิ์ที่เห็น' },
+          { label:'Stock หมด / ติดลบ', value: totalLow, unit:'รายการ', icon:'⚠️', warn: totalLow > 0,
+            sub: filteredStock.length > 0 ? `${Math.round(totalLow / filteredStock.length * 100)}% ของ ${filteredStock.length} รายการ` : 'ยังไม่มีรายการ' },
         ].map(c => (
           <div key={c.label} style={{ ...card, padding:'12px 16px', borderColor: c.warn ? 'rgba(239,68,68,0.4)' : 'var(--border)' }}>
             <div style={{ fontSize:11, color:'var(--muted)', fontWeight:700 }}>{c.icon} {c.label}</div>
-            <div style={{ fontSize:26, fontWeight:900, fontFamily:'var(--font-display)', color: c.warn ? '#ef4444' : 'var(--text)', marginTop:2 }}>{c.value}</div>
+            <div style={{ fontSize:26, fontWeight:900, fontFamily:'var(--font-display)', color: c.warn ? '#ef4444' : 'var(--text)', marginTop:2 }}>
+              {c.value}<span style={{ fontSize:12, fontWeight:600, color:'var(--text2)', marginLeft:3 }}>{c.unit}</span>
+            </div>
+            {c.sub && <div style={{ fontSize:11, color:'var(--muted)', marginTop:2 }}>{c.sub}</div>}
           </div>
         ))}
-        <div style={{ ...card, padding:'10px 16px' }}>
-          <div style={{ fontSize:11, color:'var(--muted)', fontWeight:700, marginBottom:4 }}>🔍 กรองไลน์</div>
-          {/* คลังปลายทางที่ไม่ใช่ไลน์ผลิต (FG WAREHOUSE / STORE) แยก optgroup ให้ชัด
-              ไม่กองปนกับไลน์ผลิต — ของ 2 ชนิดนี้คนละความหมายกันคนละเรื่อง */}
-          <LineSelect
-            lines={lines} value={lineFilter} onChange={setLineFilter} {...scope}
-            placeholder="ทุกไลน์/คลัง" style={{ ...inputSt, padding:'5px 8px' }}
-            extraGroups={[{ label: '🏬 คลัง', options: warehouseNames.map(n => ({ value: n })) }]}
-          />
-        </div>
       </div>
 
       {/* แถบย่อ/กางทุกกลุ่ม — กลุ่มเยอะ+พาร์ทเยอะ ต้องพับเก็บได้ ไม่งั้นต้องเลื่อนยาวมากกว่าจะเจอไลน์ที่ต้องการ */}
@@ -496,7 +503,7 @@ function StockTab({ role, scope }) {
                     <table style={{ width:'100%', borderCollapse:'collapse' }}>
                       <thead>
                         <tr style={{ background:'var(--bg2)' }}>
-                          {['Mat SAP','Part Name','คงเหลือ (ชิ้น)','Min / Max','สถานะ'].map(h => (
+                          {['ชิ้นงาน','คงเหลือ (ชิ้น)','Min / Max','สถานะ'].map(h => (
                             <th key={h} style={{ padding:'8px 14px', fontSize:11, fontWeight:800, color:'var(--muted)', textAlign: (h==='คงเหลือ (ชิ้น)'||h==='Min / Max') ? 'right' : 'left', whiteSpace:'nowrap', textTransform:'uppercase' }}>{h}</th>
                           ))}
                           {canIssue && <th style={{ padding:'8px 14px', width:90 }}></th>}
@@ -509,8 +516,9 @@ function StockTab({ role, scope }) {
                           const ks = ksMap[p.mat_no];
                           return (
                             <tr key={p.mat_no} style={{ opacity: qty <= 0 ? 0.7 : 1 }}>
-                              <td style={{ padding:'10px 14px', borderTop:'1px solid var(--border)', fontFamily:'monospace', fontWeight:700, color:'#0ea5e9', fontSize:13 }}>{p.mat_no}</td>
-                              <td style={{ padding:'10px 14px', borderTop:'1px solid var(--border)', fontSize:13, color:'var(--text)' }}>{p.part_name || bomMap[p.mat_no] || '—'}</td>
+                              <td style={{ padding:'10px 14px', borderTop:'1px solid var(--border)', maxWidth:340 }}>
+                                <MatLabel mat={p.mat_no} name={p.part_name || bomMap[p.mat_no]} size={13} />
+                              </td>
                               <td style={{ padding:'10px 14px', borderTop:'1px solid var(--border)', textAlign:'right', fontSize:16, fontWeight:900, color: st.color }}>{qty.toLocaleString()}</td>
                               <td style={{ padding:'10px 14px', borderTop:'1px solid var(--border)', textAlign:'right', fontSize:12, color:'var(--muted)', whiteSpace:'nowrap' }}>
                                 {ks && (ks.min != null || ks.max != null) ? `${ks.min ?? '—'} / ${ks.max ?? '—'}` : '—'}
@@ -568,21 +576,22 @@ function StockTab({ role, scope }) {
             <table style={{ width:'100%', borderCollapse:'collapse' }}>
               <thead>
                 <tr style={{ background:'var(--bg2)' }}>
-                  {['วันที่','ไลน์','Mat SAP','Part Name','ประเภท','จำนวน','หมายเหตุ','โดย'].map(h => (
+                  {['วันที่','ไลน์','ชิ้นงาน','ประเภท','จำนวน','หมายเหตุ','โดย'].map(h => (
                     <th key={h} style={{ padding:'8px 12px', fontSize:11, fontWeight:800, color:'var(--muted)', textAlign:'left', whiteSpace:'nowrap', textTransform:'uppercase' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {txns.length === 0 && (
-                  <tr><td colSpan={8} style={{ padding:30, textAlign:'center', color:'var(--muted)', fontSize:13 }}>ยังไม่มีข้อมูล</td></tr>
+                  <tr><td colSpan={7} style={{ padding:30, textAlign:'center', color:'var(--muted)', fontSize:13 }}>ยังไม่มีข้อมูล</td></tr>
                 )}
                 {txns.map(t => (
                   <tr key={t.id}>
                     <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)', fontSize:12, color:'var(--muted)', whiteSpace:'nowrap' }}>{t.work_date}</td>
                     <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)', fontSize:13, fontWeight:600 }}>{t.line_name}</td>
-                    <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)', fontFamily:'monospace', fontSize:12, color:'#0ea5e9', fontWeight:700 }}>{t.mat_no}</td>
-                    <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)', fontSize:12, color:'var(--text2)' }}>{t.part_name || '—'}</td>
+                    <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)', maxWidth:320 }}>
+                      <MatLabel mat={t.mat_no} name={t.part_name} />
+                    </td>
                     <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)' }}>
                       <span style={{ fontSize:11, padding:'2px 8px', borderRadius:10, fontWeight:700, background:`${TYPE_COLOR[t.type]}18`, color:TYPE_COLOR[t.type] }}>{TYPE_LABEL[t.type]}</span>
                       {t.status && t.status !== 'approved' && (
@@ -664,7 +673,17 @@ function StockTab({ role, scope }) {
               <div>
                 <label style={{ fontSize:11, fontWeight:700, color:'#0ea5e9', display:'block', marginBottom:4 }}>📦 ดึง MAT จาก BOM ของ Product (ไม่บังคับ)</label>
                 <SearchSelect value={String(bomProduct || '')} placeholder="— ค้นหา Product (MAT/ชื่อ) เพื่อดูพาร์ทย่อยใน BOM —" inputStyle={inputSt}
-                  options={products.map(p => ({ id: String(p.id), label: `${p.mat_no ? `${p.mat_no} · ` : ''}${p.name}`, sub: p.line_name || '', keywords: p.mat_no || '' }))}
+                  /* 🔴 เลข MAT ต้องอยู่ช่อง `code` (nowrap ห้ามตัด) ไม่ใช่ต่อท้าย `label`
+                     — label ถูก ellipsis ตัดท้าย ⇒ MAT ที่อยู่ท้ายสุดหายทุกแถว (QC 06/10)
+                     รหัสที่ถูกตัดครึ่งไม่ได้แค่อ่านไม่ครบ แต่ **อ่านผิดตัวได้** */
+                  options={products.map(p => ({
+                    id: String(p.id),
+                    label: p.name || `MAT ${p.mat_no}`,           // ชื่อที่ช่องโชว์เมื่อเลือกแล้ว (ไม่มีชื่อ = ยก MAT ขึ้น ห้ามได้ช่องว่าง)
+                    title: p.name || `MAT ${p.mat_no}`,
+                    code: p.name && p.mat_no ? `MAT ${p.mat_no}` : null,
+                    sub: p.line_name || '',
+                    keywords: p.mat_no || '',
+                  }))}
                   onChange={({ id }) => setBomProduct(id)} />
                 {bomProduct && (productBom[bomProduct] || []).length > 0 && (
                   <div style={{ display:'flex', flexWrap:'wrap', gap:6, marginTop:8 }}>
@@ -796,7 +815,7 @@ function DeliveryRoundsTab({ canEdit, fullName, scope }) {
       supabaseDR.from('kanban_delivery_rounds').select('*').eq('is_active', true).order('line_name').order('shift').order('round_no'),
       // ⚠️ ต้อง select ให้ครบ — ขาด parent_line_name = dropdown ไม่มีลำดับชั้น
       //    ขาด section = กรอง scope ไม่ได้ · ขาด is_active = ไลน์ปลดระวางโผล่ปน (ดู LineSelect.jsx)
-      supabase.from('production_lines').select('id, name, parent_line_name, section, is_active, line_type').order('name'),
+      loadLinesRes(),
     ]);
     setRounds(rnd || []);
     setLines(ln || []);
@@ -909,21 +928,16 @@ function DeliveryRoundsTab({ canEdit, fullName, scope }) {
 
   return (
     <>
-      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, flexWrap:'wrap', marginBottom:16 }}>
-        <div>
-          <h2 style={{ margin:0, fontSize:'clamp(16px,2vw,20px)', fontWeight:900, fontFamily:'var(--font-display)', color:'var(--text)' }}>
-            ⏰ รอบจัดส่ง — Kanban Delivery Rounds
-          </h2>
-          <p style={{ margin:'4px 0 0', fontSize:13, color:'var(--muted)' }}>ตั้งค่าเวลาเตรียมและเวลาจัดส่งพาร์ทแต่ละรอบตามไลน์และกะ</p>
-        </div>
-        <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
-          <LineSelect lines={lines} value={lineFilter} onChange={setLineFilter} {...scope}
-            placeholder="ทุกไลน์" style={{ ...inputSt, width:180 }} />
-          {canEdit && (
-            <button onClick={openNew} style={btn('#0284c7')}>+ เพิ่มรอบจัดส่ง</button>
-          )}
-        </div>
-      </div>
+      {/* UI-STANDARD §2.1: แถบกรองใต้แท็บทันที (ชื่อแท็บบอกหัวเรื่องแล้ว ไม่วาด h3 ซ้ำ) → คำอธิบาย → เนื้อหา */}
+      <FilterBar>
+        <LineSelect lines={lines} value={lineFilter} onChange={setLineFilter} {...scope}
+          placeholder={ALL.line} />
+        <span className="spacer" />
+        {canEdit && (
+          <button onClick={openNew} style={btn('#0284c7')}>+ เพิ่มรอบจัดส่ง</button>
+        )}
+      </FilterBar>
+      <p style={{ margin:'0 0 12px', fontSize:13, color:'var(--muted)' }}>⏰ ตั้งค่าเวลาเตรียมและเวลาจัดส่งพาร์ทแต่ละรอบตามไลน์และกะ</p>
 
       {Object.keys(grouped).length === 0 ? (
         <div style={{ ...card, padding:'40px 20px', textAlign:'center', color:'var(--muted)', fontSize:14 }}>
@@ -981,14 +995,8 @@ function DeliveryRoundsTab({ canEdit, fullName, scope }) {
                         {canEdit && (
                           <td style={{ padding:'8px 14px', borderTop:'1px solid var(--border)' }}>
                             <div style={{ display:'flex', gap:6 }}>
-                              <button className="tbtn" onClick={() => openEdit(r)}
-                                style={{ ...btn('rgba(2,132,199,0.1)', '#0284c7'), padding:'4px 8px', fontSize:11, border:'1px solid rgba(2,132,199,0.3)' }}>
-                                ✏️
-                              </button>
-                              <button className="tbtn" onClick={() => handleDelete(r.id)}
-                                style={{ ...btn('rgba(239,68,68,0.1)', '#ef4444'), padding:'4px 8px', fontSize:11, border:'1px solid rgba(239,68,68,0.3)' }}>
-                                🗑️
-                              </button>
+                              <IconButton onClick={() => openEdit(r)} title="แก้ไข">✏️</IconButton>
+                              <DeleteButton onClick={() => handleDelete(r.id)} title="ลบรายการนี้" />
                             </div>
                           </td>
                         )}
@@ -1033,7 +1041,7 @@ function DeliveryRoundsTab({ canEdit, fullName, scope }) {
                     <option value="day">☀️ กะเช้า (day)</option>
                     <option value="night">🌙 กะดึก (night)</option>
                   </select>
-                  <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 3, lineHeight: 1.5 }}>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3, lineHeight: 1.5 }}>
                     กะดึกต้องตั้งรอบของตัวเองแยก — รอบกะเช้าไม่ครอบกะดึกให้
                   </div>
                 </div>
@@ -1196,7 +1204,7 @@ function DeliveryTimeBoardTab() {
   const groups = useMemo(() => {
     const byLine = {};
     rounds.forEach(r => { (byLine[r.line_name] = byLine[r.line_name] || []).push(r); });
-    return Object.keys(byLine).sort().map(lnName => ({
+    return Object.keys(byLine).sort(lineNameCompare).map(lnName => ({
       key: lnName, label: lnName,
       sub: `${byLine[lnName].length} รอบ · ✔️ ${byLine[lnName].filter(r => dlvMap[`${r.line_name}|${r.shift}|${r.round_no}`]).length} ยืนยันแล้ว`,
       items: byLine[lnName]
@@ -1231,7 +1239,7 @@ function DeliveryTimeBoardTab() {
         return (
           <>
             <div onClick={() => setPopup(null)} style={{ position: 'fixed', inset: 0, zIndex: 998 }} />
-            <div style={{ position: 'fixed', left, top, width: W, zIndex: 1300, background: 'var(--bg3)', border: `1px solid ${st.color}66`, borderRadius: 12, boxShadow: '0 8px 28px rgba(0,0,0,0.45)', overflow: 'hidden' }}>
+            <div style={{ position: 'fixed', left, top, width: W, zIndex: 1300, background: 'var(--bg3)', border: `1px solid ${st.color}66`, borderRadius: 12, boxShadow: 'var(--shadow-float)', overflow: 'hidden' }}>
               <div style={{ height: 4, background: st.color }} />
               <div style={{ padding: '10px 14px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
@@ -1280,14 +1288,14 @@ function InflowRulesTab({ canEdit }) {
       supabaseDR.from('stock_inflow_rules').select('*').order('match_type').order('match_value'),
       // ⚠️ ต้อง select ให้ครบ — ขาด parent_line_name = dropdown ไม่มีลำดับชั้น
       //    ขาด section = กรอง scope ไม่ได้ · ขาด is_active = ไลน์ปลดระวางโผล่ปน (ดู LineSelect.jsx)
-      supabase.from('production_lines').select('id, name, parent_line_name, section, is_active, line_type').order('name'),
+      loadLinesRes(),
       // แบ่งหน้า — view โตเกิน 1000 แถวเมื่อไหร่ ชื่อคลังท้ายลำดับหายจาก dropdown เงียบ (QC flow-audit #30)
       fetchAllPages(() => supabaseDR.from('line_stock_summary').select('line_name'),
         { orderBy: ['line_name', 'mat_no'] }),
     ]);
     setRules(r || []);
     setLines(ln || []);
-    setDests([...new Set((st || []).map(s => s.line_name).filter(Boolean))].sort());
+    setDests([...new Set((st || []).map(s => s.line_name).filter(Boolean))].sort(lineNameCompare));
   }, []);
   useEffect(() => { load(); }, [load]);
 
@@ -1309,10 +1317,19 @@ function InflowRulesTab({ canEdit }) {
     load();
   };
 
-  const toggleRule = async (r) => {
-    const { error } = await supabaseDR.from('stock_inflow_rules')
-      .update({ is_active: !r.is_active, updated_at: new Date().toISOString() }).eq('id', r.id);
+  /* 🔴 3 ทาง ไม่ใช่เปิด/ปิด (2026-10-02) — เดิม "ปิด" ถูกเข้าใจว่า "ให้คนยืนยันรับ" แต่จริงๆ คือ
+     **ของไม่เข้าคลังเลย** (เกิดจริง ~120 ใบหายเงียบทั้งกะ) · ปิดต้องถามยืนยันพร้อมบอกผลตรงๆ */
+  const setRuleMode = async (r, modeKey) => {
+    if (modeKey === inflowModeOf(r)) return;
+    if (modeKey === 'off' && !window.confirm(
+      `ปิดกฎ "${r.match_type === 'prefix' ? `MAT ขึ้นต้น ${r.match_value}` : r.match_value} → ${r.dest_line_name}"?\n\n`
+      + '⚠️ ปิดแล้ว ใบผลิตที่ปิดต่อจากนี้จะ "ไม่เข้าคลังนี้เลย" และไม่มีคิวให้ใครกดรับ\n'
+      + 'ถ้าต้องการให้คนนับของก่อนรับ ให้เลือก 🟡 ต้องยืนยันรับ แทน')) return;
+    const { data, error } = await supabaseDR.from('stock_inflow_rules')
+      .update({ ...inflowPatchFor(modeKey, r), updated_at: new Date().toISOString() }).eq('id', r.id).select('id');
     if (error) { toast.error(error.message); return; }
+    if (!data?.length) { toast.error('บันทึกไม่สำเร็จ (0 แถว) — สิทธิ์ไม่พอหรือกฎถูกลบไปแล้ว'); load(); return; }
+    toast.success(`${INFLOW_MODES[modeKey].label} · ${r.dest_line_name}`);
     load();
   };
 
@@ -1327,10 +1344,12 @@ function InflowRulesTab({ canEdit }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 720 }}>
       <div style={card}>
-        <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>⚙️ รับงานเข้า stock อัตโนมัติเมื่อปิดออเดอร์</div>
+        <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>⚙️ รับงานเข้า stock เมื่อปิดออเดอร์</div>
         <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4, lineHeight: 1.7 }}>
-          สแกนปิดออเดอร์ (confirm) ปุ๊บ ระบบ post ผลผลิตเข้า stock ปลายทางทันที ไม่ต้องรอปิดกะ —
-          FG (เบอร์ 1xxx) เข้า warehouse พร้อมส่งลูกค้า · พาร์ทลูก (เบอร์ 2xxx) เข้าสโตร์/ปลายทางที่กำหนด
+          สแกนปิดออเดอร์ (confirm) แล้วของไปเข้าคลังปลายทางตามกฎ — FG (เบอร์ 1xxx) เข้า warehouse · พาร์ทลูก (เบอร์ 2xxx) เข้าสโตร์
+          <br />แต่ละกฎเลือกได้ 3 แบบ: <b>{INFLOW_MODES.auto.label}</b> = {INFLOW_MODES.auto.hint} ·
+          {' '}<b>{INFLOW_MODES.confirm.label}</b> = {INFLOW_MODES.confirm.hint} (แท็บ 📥 รอรับเข้า) ·
+          {' '}<b style={{ color: '#ef4444' }}>{INFLOW_MODES.off.label}</b> = {INFLOW_MODES.off.hint}
           <br />กฎแบบ <strong>MAT ตรงตัว</strong> ชนะแบบ <strong>ขึ้นต้นด้วย</strong> · รายการที่เข้าแล้วดูได้ที่แท็บ 📦 Stock (ผู้บันทึก = auto)
         </div>
       </div>
@@ -1339,7 +1358,7 @@ function InflowRulesTab({ canEdit }) {
        <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
         <table style={{ width: '100%', minWidth: 560, borderCollapse: 'collapse' }}>
           <thead><tr style={{ background: 'var(--bg2)' }}>
-            {['เงื่อนไข MAT No.', 'ปลายทาง (line_name)', 'สถานะ', ''].map(h => (
+            {['เงื่อนไข MAT No.', 'ปลายทาง (line_name)', 'วิธีรับเข้า', ''].map(h => (
               <th key={h} style={{ padding: '9px 14px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left' }}>{h}</th>
             ))}
           </tr></thead>
@@ -1348,7 +1367,7 @@ function InflowRulesTab({ canEdit }) {
               <tr><td colSpan={4} style={{ padding: 24, textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>ยังไม่มีกฎ — งานที่ปิดออเดอร์จะไม่ถูก post เข้า stock อัตโนมัติ</td></tr>
             )}
             {rules.map(r => (
-              <tr key={r.id} style={{ borderTop: '1px solid var(--border)', opacity: r.is_active ? 1 : 0.45 }}>
+              <tr key={r.id} style={{ borderTop: '1px solid var(--border)' }}>
                 <td style={{ padding: '8px 14px', fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>
                   {r.match_type === 'prefix'
                     ? <>ขึ้นต้นด้วย <span style={{ fontFamily: 'monospace', color: '#0ea5e9', fontSize: 14 }}>{r.match_value}</span></>
@@ -1356,12 +1375,10 @@ function InflowRulesTab({ canEdit }) {
                 </td>
                 <td style={{ padding: '8px 14px', fontSize: 13, fontWeight: 700, color: '#f59e0b' }}>📍 {r.dest_line_name}</td>
                 <td style={{ padding: '8px 14px' }}>
-                  <button onClick={() => canEdit && toggleRule(r)} disabled={!canEdit}
-                    style={{ padding: '4px 12px', borderRadius: 8, fontSize: 11, fontWeight: 800, cursor: canEdit ? 'pointer' : 'default', fontFamily: 'var(--font-body)',
-                      background: r.is_active ? 'rgba(34,197,94,0.12)' : 'var(--bg2)', color: r.is_active ? '#22c55e' : 'var(--muted)',
-                      border: `1px solid ${r.is_active ? 'rgba(34,197,94,0.35)' : 'var(--border)'}` }}>
-                    {r.is_active ? '✓ ใช้งาน' : 'ปิดอยู่'}
-                  </button>
+                  {canEdit
+                    ? <Segmented value={inflowModeOf(r)} onChange={v => setRuleMode(r, v)} label="วิธีรับเข้า"
+                        options={Object.values(INFLOW_MODES).map(m => ({ value: m.key, label: m.label }))} />
+                    : <span style={{ fontSize: 12, fontWeight: 800, color: INFLOW_MODES[inflowModeOf(r)].color }}>{INFLOW_MODES[inflowModeOf(r)].label}</span>}
                 </td>
                 <td style={{ padding: '8px 14px', textAlign: 'right' }}>
                   {canEdit && (
@@ -1406,7 +1423,7 @@ function InflowRulesTab({ canEdit }) {
                 placeholder="— เลือกปลายทาง —" style={{ ...inputSt, width: 240 }}
                 extraGroups={[{ label: '🏬 คลัง', options: [...new Set([...WAREHOUSE_LOCATIONS, ...dests.filter(d => !lines.some(l => l.name === d))])].sort().map(n => ({ value: n })) }]} />
             </div>
-            <button onClick={addRule} disabled={saving} style={{ ...btn('var(--accent)', '#08130a'), opacity: saving ? 0.6 : 1 }}>
+            <button onClick={addRule} disabled={saving} style={{ ...btn('var(--accent)', 'var(--accent-ink)'), opacity: saving ? 0.6 : 1 }}>
               {saving ? '...' : '💾 บันทึก'}
             </button>
           </div>
@@ -1426,11 +1443,13 @@ function InflowRulesTab({ canEdit }) {
    ───────────────────────────────────────────────────────────────────────────── */
 const TABS = [
   { key:'stock',     label:'📦 Stock' },
+  { key:'receipts',  label:'📥 รอรับเข้า' },   // ปิดใบผลิตแล้ว รอคลังนับของจริงแล้วกดรับ (กฎโหมด 🟡 · 2026-10-02)
+  { key:'count',     label:'📋 ตรวจนับ/เฟิร์มยอด' },   // กระทบยอดขาออกที่หลุด + ตรวจนับทั้งคลัง (2026-09-23)
   { key:'wip',       label:'🔩 WIP ค้างระหว่างขั้น' },   // ยอดค้าง — คนละเรื่องกับ 'คิวเติม WIP' ในบอร์ดคัมบัง
   { key:'zones',     label:'🏬 โซนคลัง (ผัง)' },
   { key:'delivery',  label:'⏰ รอบจัดส่ง' },
   { key:'timeboard', label:'🕐 บอร์ดเวลา (ดูอย่างเดียว)' },   // กดยืนยันส่ง/รับที่บอร์ดคัมบัง
-  { key:'inflow',    label:'⚙️ รับเข้าอัตโนมัติ' },
+  { key:'inflow',    label:'⚙️ กฎรับเข้า' },
 ];
 
 export default function LineStock() {
@@ -1441,7 +1460,7 @@ export default function LineStock() {
   const scope = useMemo(() => ({ role, lineId, sections }), [role, lineId, sections]);
 
   return (
-    <div style={{ padding:'clamp(12px,2vw,24px)', maxWidth:'min(96vw, 2000px)', margin:'0 auto' }}>
+    <Page>
       <PageHeader
         title="Line Stock — สต๊อกหน้าไลน์" icon="📦"
         sub="ยอดคงเหลือ mini-store ของไลน์ · รอบจัดส่งภายใน · กฎรับเข้าอัตโนมัติเมื่อปิดใบผลิต"
@@ -1449,12 +1468,14 @@ export default function LineStock() {
       />
 
       {activeTab === 'stock'     && <StockTab role={role} scope={scope} />}
+      {activeTab === 'receipts'  && <StockReceiptQueue />}
+      {activeTab === 'count'     && <StockCountSheet role={role} scope={scope} />}
       {activeTab === 'wip'       && <WipBetweenSteps />}
       {/* 🏬 2 ทะเบียนคนละชั้น: รหัสคลัง (SAP SLoc — อ้างใน BOM) เหนือ โซนกองของบนผัง · ห้ามยุบรวม */}
       {activeTab === 'zones'     && <><StorageLocPanel /><StorageZonePanel /></>}
       {activeTab === 'delivery'  && <DeliveryRoundsTab canEdit={canEdit} fullName={fullName} scope={scope} />}
       {activeTab === 'timeboard' && <DeliveryTimeBoardTab />}
       {activeTab === 'inflow'    && <InflowRulesTab canEdit={canEdit} />}
-    </div>
+    </Page>
   );
 }

@@ -24,10 +24,14 @@ import { pickUnusedColor } from '../utils/colorPick';
 import { checkWrite } from '../utils/dbWrite';
 // picker กลาง (single-source audit 2026-09-07) — ชั้นวางจากผังคลัง (mtn_rack_cells) · เครื่องจากทะเบียน
 import SearchSelect from './SearchSelect';
+import FilterBar from './FilterBar';
+import SearchInput from './SearchInput';
+import { ALL } from '../utils/filterLabels';
 import MachineSelect from './MachineSelect';
 import SupplierSelect from './SupplierSelect'; // ผู้ขาย = ทะเบียน DR suppliers (ชิ้นส่วน/อะไหล่ขึ้นก่อน) — 2026-09-08
 import useSuppliers from '../utils/useSuppliers';
 import { uploadOpts } from '../utils/storageUpload';
+import { DeleteButton } from './IconButton';
 
 // ต่อท้ายลิสต์คั่นด้วย , โดยไม่ซ้ำ (used_with ยังเก็บเป็น text — คอลัมน์ id ยังไม่มี)
 const appendCsv = (cur, v) => {
@@ -39,13 +43,13 @@ const appendCsv = (cur, v) => {
 /* ── styles (ให้ตรงกับ MtnRepair) ── */
 const lbl = { display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 4 };
 const inp = { width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box' };
-const btnPri = { background: 'var(--accent)', color: '#071008', border: 'none', borderRadius: 8, padding: '9px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer' };
+const btnPri = { background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, padding: '9px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer' };
 const btnGhost = { background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 8, padding: '9px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' };
 const th = { textAlign: 'left', padding: '8px 8px', fontSize: 11.5, fontWeight: 800, color: 'var(--text2)', whiteSpace: 'nowrap', borderBottom: '1px solid var(--border)' };
 const td = { padding: '7px 8px', fontSize: 12.5, borderBottom: '1px solid var(--border)', verticalAlign: 'middle' };
 const Field = ({ label, required, hint, children }) => (
   <div><label style={lbl}>{label}{required && <span style={{ color: '#ef4444' }}> *</span>}</label>{children}
-    {hint && <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 3 }}>{hint}</div>}</div>
+    {hint && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>{hint}</div>}</div>
 );
 const num = (v) => (v === '' || v == null ? null : Number(v));
 const fmtNum = (v, d = 0) => (v == null || !Number.isFinite(Number(v)) ? '—' : Number(v).toLocaleString(undefined, { maximumFractionDigits: d }));
@@ -210,8 +214,8 @@ export default function SparePartMaster({ parts = [], reload, fullName, role, my
   const printList = () => {
     const df = docFormSync('spare_part_list', {});
     const code = fullCode(df);
-    const teamLabel = fTeam ? (teams.find(t => t.key === fTeam)?.dept_name || fTeam) : 'ทุกทีม';
-    const secText = fSection ? `${sectionLabel(fSection, orgSecs)} (รวมของกลาง)` : 'ทุกหน่วยงาน';
+    const teamLabel = fTeam ? (teams.find(t => t.key === fTeam)?.dept_name || fTeam) : ALL.team;
+    const secText = fSection ? `${sectionLabel(fSection, orgSecs)} (รวมของกลาง)` : ALL.unit;
     const head = ['ลำดับ', 'หน่วยงาน', 'รหัส', 'ชื่ออะไหล่', 'MAT SAP', 'Part no.', 'หมวด', 'ชั้นวาง', 'คงเหลือ', 'ขั้นต่ำ', 'สูงสุด', 'Rank', 'ใช้เฉลี่ย/เดือน', 'Leadtime (วัน)', 'ผู้ขาย', 'ใช้กับ'];
     const body = filtered.map((p, i) => [
       i + 1, p.section || 'ของกลาง', p.code || '', p.name || '', p.mat_no || '', p.part_no || '',
@@ -244,7 +248,7 @@ export default function SparePartMaster({ parts = [], reload, fullName, role, my
 
   const chip = (label, val, color) => (
     <div style={{ background: 'var(--bg3)', border: `1px solid ${color || 'var(--border)'}`, borderRadius: 8, padding: '6px 11px', minWidth: 78 }}>
-      <div style={{ fontSize: 10.5, color: 'var(--muted)', fontWeight: 700 }}>{label}</div>
+      <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{label}</div>
       <div style={{ fontSize: 16, fontWeight: 800, color: color || 'var(--text)' }}>{val}</div>
     </div>
   );
@@ -254,39 +258,40 @@ export default function SparePartMaster({ parts = [], reload, fullName, role, my
       <ReadOnlyNote show={!canEdit && !canMove} role={role} what="แก้ทะเบียนอะไหล่/รับเข้า-เบิก"
         permKey="mtn_repair:manage_master, mtn_repair:service"
         hint="ค้นหาอะไหล่/ดูตำแหน่งชั้นวางได้ตามปกติ (ตั้งใจให้ช่างทุกคนค้นของได้)" />
-      {/* ── แถบเครื่องมือ ── */}
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10 }}>
-        <input value={q} onChange={e => setQ(e.target.value)} placeholder="🔍 ค้นหา ชื่อ / รหัส / MAT / Part no. / ผู้ขาย / ชั้นวาง / ใช้กับ"
-          style={{ ...inp, width: 340, flex: '1 1 260px' }} />
-        <select value={fTeam} onChange={e => setFTeam(e.target.value)} style={{ ...inp, width: 160 }}>
-          <option value="">ทุกทีม</option>
-          {teams.map(t => <option key={t.key} value={t.key}>{t.icon || ''} {t.dept_name || t.label}</option>)}
+      {/* ── แถบเครื่องมือ ── มาตรฐาน FilterBar (UI-STANDARD 2026-09-24): ขอบเขต → ตัวกรอง → ค้นหา → ปุ่ม */}
+      <FilterBar>
+        <select value={fTeam} onChange={e => setFTeam(e.target.value)}>
+          <option value="">{ALL.team}</option>
+          {teams.map((t, i) => <option key={`${t.key}-${i}`} value={t.key}>{t.icon || ''} {t.dept_name || t.label}</option>)}
         </select>
-        <select value={fSection} onChange={e => setFSection(e.target.value)} style={{ ...inp, width: 175 }}
+        <select value={fSection} onChange={e => setFSection(e.target.value)}
           title="คลังของหน่วยงานไหน — เลือกแล้วยังเห็นของกลางของทีมด้วยเสมอ">
-          <option value="">ทุกหน่วยงาน</option>
-          {secOpts.map(o => <option key={o.code} value={o.code}>{o.label}</option>)}
+          <option value="">{ALL.unit}</option>
+          {/* key ผสม index — รหัสหน่วยงานหลัง normalize อาจซ้ำกัน (เคยขึ้นเตือน "unique key" ใน console) */}
+          {secOpts.map((o, i) => <option key={`${o.code}-${i}`} value={o.code}>{o.label}</option>)}
         </select>
-        <select value={fCat} onChange={e => setFCat(e.target.value)} style={{ ...inp, width: 170 }}>
-          <option value="">ทุกหมวด</option>
-          {teamCats.map(c => <option key={c.key} value={c.key}>{c.icon || ''} {c.label}</option>)}
+        <select value={fCat} onChange={e => setFCat(e.target.value)}>
+          <option value="">{ALL.category}</option>
+          {teamCats.map((c, i) => <option key={`${c.key}-${i}`} value={c.key}>{c.icon || ''} {c.label}</option>)}
         </select>
-        <select value={fRank} onChange={e => setFRank(e.target.value)} style={{ ...inp, width: 130 }}>
-          <option value="">ทุก Rank</option>
+        <select value={fRank} onChange={e => setFRank(e.target.value)}>
+          <option value="">{ALL.rank}</option>
           {['A', 'B', 'C'].map(r => <option key={r} value={r}>Rank {r}</option>)}
         </select>
-        <select value={fState} onChange={e => setFState(e.target.value)} style={{ ...inp, width: 150 }}>
-          <option value="">ทุกสถานะ</option>
+        <select value={fState} onChange={e => setFState(e.target.value)}>
+          <option value="">{ALL.status}</option>
           <option value="out">หมด</option>
           <option value="low">ต่ำกว่าขั้นต่ำ</option>
           <option value="over">เกินสูงสุด</option>
           <option value="ok">ปกติ</option>
         </select>
-        <button onClick={printList} style={{ ...btnGhost, padding: '8px 13px', fontSize: 12.5 }}>🖨️ พิมพ์</button>
-        {canEdit && <button onClick={() => setShowImport(true)} style={{ ...btnGhost, padding: '8px 13px', fontSize: 12.5 }}>📥 นำเข้า/อัพเดท</button>}
-        {canEdit && <button onClick={() => setShowCats(true)} style={{ ...btnGhost, padding: '8px 13px', fontSize: 12.5 }}>🏷️ หมวด</button>}
-        {canEdit && <button onClick={() => setEditPart('new')} style={{ ...btnPri, padding: '8px 15px', fontSize: 12.5 }}>➕ เพิ่มอะไหล่</button>}
-      </div>
+        <SearchInput value={q} onChange={setQ} fields="ชื่อ / รหัส / MAT / Part no. / ผู้ขาย / ชั้นวาง / ใช้กับ" />
+        <span className="spacer" />
+        <button onClick={printList} style={{ ...btnGhost, padding: '0 13px', fontSize: 12.5 }}>🖨️ พิมพ์</button>
+        {canEdit && <button onClick={() => setShowImport(true)} style={{ ...btnGhost, padding: '0 13px', fontSize: 12.5 }}>📥 นำเข้า/อัพเดท</button>}
+        {canEdit && <button onClick={() => setShowCats(true)} style={{ ...btnGhost, padding: '0 13px', fontSize: 12.5 }}>🏷️ หมวด</button>}
+        {canEdit && <button onClick={() => setEditPart('new')} style={{ ...btnPri, padding: '0 15px', fontSize: 12.5 }}>➕ เพิ่มอะไหล่</button>}
+      </FilterBar>
 
       {/* ── สรุป ── */}
       <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginBottom: 12 }}>
@@ -325,7 +330,7 @@ export default function SparePartMaster({ parts = [], reload, fullName, role, my
           <thead><tr>
             <th style={{ ...th, width: 44 }}></th>
             <th style={th}>อะไหล่</th>
-            <th style={th}>MAT / Part no.</th>
+            <th style={th}>Part no. / MAT</th>
             <th style={th}>หมวด</th>
             <th style={th}>ชั้นวาง</th>
             <th style={{ ...th, textAlign: 'right' }}>คงเหลือ</th>
@@ -344,7 +349,7 @@ export default function SparePartMaster({ parts = [], reload, fullName, role, my
                 <tr key={p.id}>
                   <td style={td}>
                     {p.image_url
-                      ? <img src={p.image_url} alt="" style={{ width: 34, height: 34, objectFit: 'cover', borderRadius: 5, border: '1px solid var(--border)', cursor: 'pointer' }} onClick={() => window.open(p.image_url, '_blank')} />
+                      ? <img loading="lazy" src={p.image_url} alt="" style={{ width: 34, height: 34, objectFit: 'cover', borderRadius: 5, border: '1px solid var(--border)', cursor: 'pointer' }} onClick={() => window.open(p.image_url, '_blank')} />
                       : <div style={{ width: 34, height: 34, borderRadius: 5, background: 'var(--bg3)', border: '1px dashed var(--border)', display: 'grid', placeItems: 'center', fontSize: 13, color: 'var(--muted)' }}>🔩</div>}
                   </td>
                   <td style={td}>
@@ -358,8 +363,9 @@ export default function SparePartMaster({ parts = [], reload, fullName, role, my
                     </div>
                   </td>
                   <td style={{ ...td, fontSize: 11.5 }}>
-                    <div>{p.mat_no || '—'}</div>
-                    <div style={{ color: 'var(--muted)' }}>{p.part_no || ''}</div>
+                    {/* ลำดับ Part No. → MAT (UI §6.21) */}
+                    <div>{p.part_no || '—'}</div>
+                    <div style={{ color: 'var(--muted)' }}>{p.mat_no ? `MAT ${p.mat_no}` : ''}</div>
                   </td>
                   <td style={td}>
                     {c ? <span style={{ fontSize: 11.5, padding: '1px 7px', borderRadius: 4, background: 'var(--bg3)', border: `1px solid ${c.color || 'var(--border)'}`, color: c.color || 'var(--text)', fontWeight: 700, whiteSpace: 'nowrap' }}>{c.icon || ''} {c.key}</span>
@@ -369,16 +375,16 @@ export default function SparePartMaster({ parts = [], reload, fullName, role, my
                   <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
                     <span style={{ fontSize: 14, fontWeight: 800, color: st.color }}>{fmtNum(p.stock_qty)}</span>
                     <span style={{ fontSize: 11, color: 'var(--muted)' }}> {p.unit || ''}</span>
-                    {st.key !== 'ok' && <div style={{ fontSize: 10.5, color: st.color, fontWeight: 700 }}>{st.label}</div>}
+                    {st.key !== 'ok' && <div style={{ fontSize: 11, color: st.color, fontWeight: 700 }}>{st.label}</div>}
                   </td>
                   <td style={{ ...td, textAlign: 'center', fontSize: 11.5, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
                     {fmtNum(p.min_qty)} / {Number(p.max_qty) > 0 ? fmtNum(p.max_qty) : '—'}
-                    {p._safety?.level === 'warn' && <div style={{ color: '#f59e0b', fontSize: 10 }}>⚠️ ไม่มี Safety</div>}
+                    {p._safety?.level === 'warn' && <div style={{ color: '#f59e0b', fontSize: 11 }}>⚠️ ไม่มี Safety</div>}
                   </td>
                   <td style={{ ...td, textAlign: 'center' }}><RankChip rank={rk.rank} overridden={rk.overridden} /></td>
                   <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
                     <span style={{ fontWeight: 700 }}>{fmtNum(rk.avgPerMonth, 1)}</span>
-                    <div style={{ fontSize: 10, color: 'var(--muted)' }}>ใช้ {fmtNum(rk.totalUsed)} / {rk.months} ด.</div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>ใช้ {fmtNum(rk.totalUsed)} / {rk.months} ด.</div>
                   </td>
                   <td style={{ ...td, textAlign: 'right' }}>{p.lead_time_days ?? <span style={{ color: '#f59e0b' }} title="ยังไม่ได้กรอก leadtime — คำนวณ Rank ไม่ได้">—</span>}</td>
                   <td style={{ ...td, fontSize: 11.5 }}>{p.supplier || '—'}</td>
@@ -391,7 +397,7 @@ export default function SparePartMaster({ parts = [], reload, fullName, role, my
                     </>}
                     <button className="tbtn" onClick={() => setHistPart(p)} title="ประวัติเคลื่อนไหว" style={{ ...btnGhost, padding: '5px 9px', fontSize: 12, marginLeft: 4 }}>📜</button>
                     {canEdit && <button className="tbtn" onClick={() => setEditPart(p)} title="แก้ไข" style={{ ...btnGhost, padding: '5px 9px', fontSize: 12, marginLeft: 4 }}>✏️</button>}
-                    {canDelete('mtn_repair', 'manage_master', role) && <button className="tbtn" onClick={() => doDelete(p)} title="ลบ" style={{ ...btnGhost, padding: '5px 9px', fontSize: 12, color: '#ef4444', marginLeft: 4 }}>🗑</button>}
+                    {canDelete('mtn_repair', 'manage_master', role) && <DeleteButton style={{ marginLeft: 4 }} onClick={() => doDelete(p)} title="ลบ" />}
                   </td>
                 </tr>
               );
@@ -620,8 +626,12 @@ function PartEditModal({ part, cats, teams, shelfOpts, rackCells = [], secOpts =
           const { error: e3 } = await supabaseDR.from('mtn_spare_usage_monthly').upsert(rows, { onConflict: 'part_id,month_key,source' });
           if (e3) toast.error('บันทึกยอดใช้ย้อนหลังไม่สำเร็จ: ' + e3.message);
         }
-        if (clear.length) await supabaseDR.from('mtn_spare_usage_monthly')
-          .delete().eq('part_id', part.id).eq('source', 'manual').in('month_key', clear);
+        if (clear.length) {
+          // เดิมไม่อ่าน error — ล้างยอดเดือนที่ลบออกไม่สำเร็จ = ยอดเก่ายังนับใน Rank A/B/C เงียบๆ (QC 05/10)
+          const { error: e4 } = await supabaseDR.from('mtn_spare_usage_monthly')
+            .delete().eq('part_id', part.id).eq('source', 'manual').in('month_key', clear);
+          if (e4) toast.error('ล้างยอดใช้ย้อนหลังที่ลบออกไม่สำเร็จ (ยอดเดิมยังถูกนับ): ' + e4.message);
+        }
       }
     }
     setSaving(false);
@@ -648,13 +658,13 @@ function PartEditModal({ part, cats, teams, shelfOpts, rackCells = [], secOpts =
               <Field label="Part no. (ผู้ผลิต)"><input value={f.part_no} onChange={e => set('part_no', e.target.value)} style={inp} /></Field>
               <Field label="ทีมที่ดูแลคลัง" required>
                 <select value={f.team} onChange={e => set('team', e.target.value)} style={inp}>
-                  {teams.map(t => <option key={t.key} value={t.key}>{t.icon || ''} {t.dept_name || t.label}</option>)}
+                  {teams.map((t, i) => <option key={`${t.key}-${i}`} value={t.key}>{t.icon || ''} {t.dept_name || t.label}</option>)}
                 </select>
               </Field>
               <Field label="หน่วยงานเจ้าของ" hint="ใครดูแล/เก็บที่ไหน — เว้นว่าง = ของกลางของทีม ทุกหน่วยงานใช้ร่วม">
                 <select value={sectionKeyOf(f.section)} onChange={e => set('section', e.target.value)} style={inp}>
                   <option value="">{COMMON_SECTION_LABEL}</option>
-                  {secOpts.map(o => <option key={o.code} value={o.code}>{o.label}</option>)}
+                  {secOpts.map((o, i) => <option key={`${o.code}-${i}`} value={o.code}>{o.label}</option>)}
                   {/* ค่าเดิมที่ไม่อยู่ในลิสต์ต้องยังเลือกได้ ไม่งั้นเปิดแก้ไขแล้วหน่วยงานหายเงียบ */}
                   {f.section && !secOpts.some(o => o.code === sectionKeyOf(f.section)) &&
                     <option value={f.section}>⚠ {f.section} (ไม่มีในผัง)</option>}
@@ -741,7 +751,7 @@ function PartEditModal({ part, cats, teams, shelfOpts, rackCells = [], secOpts =
                         .reduce((s, r) => s + (Number(r.qty_out) || 0), 0);
                       return (
                         <div key={k} style={{ width: 82 }}>
-                          <div style={{ fontSize: 10.5, color: 'var(--muted)', textAlign: 'center', marginBottom: 2 }}>{k.slice(2)}</div>
+                          <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', marginBottom: 2 }}>{k.slice(2)}</div>
                           <input type="number" min="0" value={manual[k] ?? ''} onChange={e => setManualQty(k, e.target.value)}
                             placeholder={sysOut ? String(sysOut) : '—'} title={sysOut ? `ระบบบันทึกไว้แล้ว ${sysOut} ชิ้น (ยอดที่คีย์จะบวกเพิ่ม)` : 'ยังไม่มียอดในระบบ'}
                             style={{ ...inp, textAlign: 'center', padding: '6px 4px' }} />
@@ -749,7 +759,7 @@ function PartEditModal({ part, cats, teams, shelfOpts, rackCells = [], secOpts =
                       );
                     })}
                   </div>
-                  <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 4 }}>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
                     ตัวเลขจางในช่อง = ยอดที่ระบบสะสมเองจากการเบิกจริง (ยอดที่คีย์จะ<b>บวกเพิ่ม</b> ไม่ทับกัน) · เว้นว่าง = ไม่มียอดที่คีย์เอง
                   </div>
                 </div>
@@ -830,6 +840,7 @@ function HistoryModal({ part, usageRows, onClose }) {
   const maxOut = Math.max(1, ...months.map(k => byMonth[k]?.out || 0));
 
   return (
+    /* ประวัติอะไหล่ = popup แสดงผลอย่างเดียว ไม่มีช่องกรอก → ปิดจาก backdrop ได้ตามกฎ (UI-CONVENTIONS §5) */
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'grid', placeItems: 'center', zIndex: 2000, padding: 16 }}>
       <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 18, width: 'min(660px, 96vw)', maxHeight: '90vh', overflow: 'auto' }}>
         <div style={{ fontSize: 15, fontWeight: 800 }}>📜 ประวัติ · {part.name}</div>
@@ -845,7 +856,7 @@ function HistoryModal({ part, usageRows, onClose }) {
               <div key={k} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, height: '100%', justifyContent: 'flex-end' }}>
                 <div style={{ fontSize: 11, fontWeight: 800, color: out ? 'var(--text)' : 'var(--muted)' }}>{out || ''}</div>
                 <div title={`${k}: เบิก ${out}`} style={{ width: '100%', height: `${Math.max(2, (out / maxOut) * 52)}px`, background: out ? '#f59e0b' : 'var(--border)', borderRadius: '3px 3px 0 0' }} />
-                <div style={{ fontSize: 10, color: 'var(--muted)' }}>{k.slice(5)}</div>
+                <div style={{ fontSize: 11, color: 'var(--muted)' }}>{k.slice(5)}</div>
               </div>
             );
           })}
@@ -1011,7 +1022,7 @@ function ImportModal({ parts, cats, teams, fullName, secOpts = [], orgSecs = [],
           <span style={{ fontWeight: 700, color: 'var(--text2)' }}>นำเข้าเป็นของหน่วยงาน:</span>
           <select value={impSection} onChange={e => setImpSection(e.target.value)} style={{ ...inp, width: 200 }}>
             <option value="">{COMMON_SECTION_LABEL}</option>
-            {secOpts.map(o => <option key={o.code} value={o.code}>{o.label}</option>)}
+            {secOpts.map((o, i) => <option key={`${o.code}-${i}`} value={o.code}>{o.label}</option>)}
           </select>
           <span style={{ color: 'var(--muted)', fontSize: 11.5 }}>
             1 ไฟล์ = 1 หน่วยงาน · จับคู่ของเดิม<b>เฉพาะในหน่วยงานนี้</b> (ไม่ทับคลังของหน่วยงานอื่นที่ใช้เลขเดียวกัน)
@@ -1036,13 +1047,13 @@ function ImportModal({ parts, cats, teams, fullName, secOpts = [], orgSecs = [],
             <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginBottom: 10 }}>
               {[['เพิ่มใหม่', stat.create, '#22c55e'], ['อัพเดท', stat.update, '#38bdf8'], ['ข้าม', stat.skip, stat.skip ? '#ef4444' : undefined], ['ต้องดู', stat.warn, stat.warn ? '#f59e0b' : undefined]].map(([t, v, c]) => (
                 <div key={t} style={{ background: 'var(--bg3)', border: `1px solid ${c || 'var(--border)'}`, borderRadius: 8, padding: '6px 12px' }}>
-                  <div style={{ fontSize: 10.5, color: 'var(--muted)', fontWeight: 700 }}>{t}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{t}</div>
                   <div style={{ fontSize: 16, fontWeight: 800, color: c || 'var(--text)' }}>{v}</div>
                 </div>
               ))}
               {!!Object.keys(parsed.monthCols).length && (
                 <div style={{ background: 'var(--bg3)', border: '1px solid var(--accent)', borderRadius: 8, padding: '6px 12px' }}>
-                  <div style={{ fontSize: 10.5, color: 'var(--muted)', fontWeight: 700 }}>ยอดใช้ย้อนหลัง</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>ยอดใช้ย้อนหลัง</div>
                   <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--accent)' }}>{Object.keys(parsed.monthCols).join(', ')}</div>
                 </div>
               )}
@@ -1145,9 +1156,9 @@ function CategoryModal({ cats, teams = [], onClose, onSaved }) {
               <select value={c.team || ''} onChange={e => upd(c.key, { team: e.target.value || null })}
                 title="ทีมที่ใช้หมวดนี้" style={{ ...inp, width: 165, flex: '0 0 auto' }}>
                 <option value="">🌐 ใช้ร่วมทุกทีม</option>
-                {teams.map(t => <option key={t.key} value={t.key}>{t.icon || ''} {t.dept_name || t.label}</option>)}
+                {teams.map((t, i) => <option key={`${t.key}-${i}`} value={t.key}>{t.icon || ''} {t.dept_name || t.label}</option>)}
               </select>
-              <button className="tbtn" onClick={() => confirm(`ซ่อนหมวด ${c.key}?`) && upd(c.key, { is_active: false })} style={{ ...btnGhost, padding: '5px 9px', color: '#ef4444' }}>🗑</button>
+              <DeleteButton onClick={() => confirm(`ซ่อนหมวด ${c.key}?`) && upd(c.key, { is_active: false })} title="ลบ" />
             </div>
           ))}
         </div>

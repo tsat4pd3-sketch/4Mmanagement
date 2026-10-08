@@ -24,7 +24,7 @@ import { toast } from '../components/Toast';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { getLineFamilyIds } from '../utils/lineHierarchy';
 import LineSelect from '../components/LineSelect';
-import { LINE_COLUMNS } from '../utils/useProductionLines';
+import { loadLinesRes } from '../utils/useProductionLines';
 import usePeople from '../utils/usePeople';
 import { inSectionScope } from '../utils/sectionScope';
 import { MARKS, MARK_BY_KEY, markGlyph, markColor, daysInMonth, ppeToMark } from '../utils/bbsMarks';
@@ -32,6 +32,11 @@ import { printBbsSheet } from '../lib/bbsPrint';
 import { checkWrite } from '../utils/dbWrite';
 import SearchSelect from '../components/SearchSelect';
 import useIsMobile from '../utils/useIsMobile';
+import Page from '../components/Page';
+import PageHeader from '../components/PageHeader';
+import FilterBar from '../components/FilterBar';
+import { DeleteButton } from '../components/IconButton';
+/* ⚠️ ห้าม import SHIFT_OPTIONS มาใช้ที่นี่ (เคยพลาดมาแล้ว — ดูหัวข้อ SHEET_SHIFT_OPTIONS ด้านล่าง) */
 
 const thisMonth = () => {
   const d = new Date();
@@ -45,6 +50,22 @@ const cellKey = (empId, day) => `${empId}|${day}`;
 // ป้ายสั้นบนชิปมือถือ (ป้ายเต็มของ MARKS ยาวเกินชิปกว้าง ~80px · ความหมายเดียวกับ bbsMarks)
 const MOBILE_LABEL = { ok: 'เหมาะสม', ng: 'ไม่เหมาะสม', fixed: 'ปรับแก้แล้ว', na: 'ไม่ได้ตรวจ' };
 
+
+/* ══ 🔴 BBS ไม่แยกกะ — หน้านี้ "ไม่มีปุ่มเลือกกะ" โดยตั้งใจ (2026-10-02 · คำสั่ง user) ══════════
+   1 ใบ = (เดือน × พื้นที่/ไลน์) เท่านั้น · `bbs_sheets` unique = (month_key, line_name)
+
+   ประวัติ (อย่าเผลอเติมปุ่มกะกลับมา):
+   · เดิม unique = (month_key, line_name, **shift**) ⇒ ปุ่มกะบนจอเป็น "คีย์ของใบ" ไม่ใช่ตัวกรอง
+     กดแล้วเปิดใบคนละใบ · `shift=''` คือ "ใบทั้งวัน" = ถังที่ 3 ไม่ใช่ผลรวมของ 2 กะ
+   · commit 78119fb6 (กวาด UI-STANDARD 24/09) เปลี่ยนป้ายของ `''` จาก "ทั้งวัน" → **"ทุกกะ"**
+     (คำของ*ตัวกรอง*) ⇒ ผู้ใช้อ่านว่าเป็นตัวกรอง กดแล้วใบว่าง → แจ้งว่า "ตัวกรองกะใช้งานไม่ได้"
+   · ข้อมูลจริงถูกกรอกกระจาย 3 ถังของเดือน+ไลน์เดียวกัน (Line 60 ส.ค. = 507/303/252 ช่อง)
+   · user ตัดสิน: **"ไม่แยกก็ไม่ต้องมีให้กรอง"** ⇒ ยุบใบ + ถอดปุ่มกะ
+     (migration `20261002_bbs_merge_shift_sheets_main.sql`)
+
+   · คอลัมน์ `shift` ยังอยู่ในตาราง (vestigial · ค่า `''` ทุกแถว) ห้ามเอามาใช้ตัดสินอะไรอีก
+   · **ห้าม import `SHIFT_OPTIONS` จาก `utils/filterLabels` มาใส่หน้านี้** — ตัวนั้นสำหรับจอที่
+     `''` = "แสดงทุกกะจริงๆ" (/report · /oee-analytics · /mtn-repair · /workforce-insight) */
 export default function BbsCheck() {
   const { role, lineId, sections = [], fullName } = useContext(UserContext);
   const { can } = usePerms();
@@ -66,7 +87,6 @@ export default function BbsCheck() {
 
   const [month, setMonth] = useState(thisMonth);
   const [selLine, setSelLine] = useState('');
-  const [shift, setShift] = useState('');
   const [brushState, setBrush] = useState('ok');        // สัญลักษณ์ที่จะทา (แปรง — desktop)
   const [brushSeqState, setBrushSeq] = useState(1);     // เลขข้อ (เมื่อ brush = ng)
   const brush = brushState, brushSeq = brushSeqState;   // ชื่อเดิมสำหรับส่วน render (แปรง/legend)
@@ -85,8 +105,7 @@ export default function BbsCheck() {
   /* ── ไลน์ (scope มาตรฐาน: leader = ทั้งครอบครัวไลน์ตัวเอง · อื่น = ตาม sections) ── */
   useEffect(() => {
     (async () => {
-      const { data } = await supabase.from('production_lines')
-        .select(LINE_COLUMNS).order('name');   // ครบ is_active ให้ <LineSelect> (2026-09-07)
+      const { data } = await loadLinesRes();   // ครบ is_active ให้ <LineSelect> (2026-09-07)
       setLines(data || []);
     })();
   }, []);
@@ -133,15 +152,15 @@ export default function BbsCheck() {
         ⇒ หัวหน้ากรอก BBS หลายไลน์/หลายเดือนติดกัน แล้วเปลี่ยนไลน์-เปลี่ยนเดือนแล้วทาช่องต่อทันที
           → `bbs_observations.sheet_id` ลงใบของ **เดือน/ไลน์ก่อนหน้า** โดยจอทาติดสีปกติ
           = กลับมาดูเดือนนั้นเจอรอยทาที่ไม่ได้ทำ · เดือนที่ทำจริงว่างเปล่า · ใบพิมพ์ FM ไม่ตรงของจริง */
-  const sheetKey = `${month}|${lineObj?.name || ''}|${shift}`;
+  const sheetKey = `${month}|${lineObj?.name || ''}`;
   const sheetKeyRef = useRef(sheetKey);
   sheetKeyRef.current = sheetKey;
-  const matchesKey = (s) => !!s && `${s.month_key}|${s.line_name}|${s.shift}` === sheetKeyRef.current;
+  const matchesKey = (s) => !!s && `${s.month_key}|${s.line_name}` === sheetKeyRef.current;
 
   /* ── พนักงาน + ใบของเดือน/ไลน์/กะที่เลือก ── */
   const load = useCallback(async () => {
     if (!lineObj) return;
-    const myKey = `${month}|${lineObj.name}|${shift}`;
+    const myKey = `${month}|${lineObj.name}`;
     setLoading(true); setLoadWarn('');
     try {
       const fam = getLineFamilyIds(lines, lineObj.id);
@@ -154,12 +173,16 @@ export default function BbsCheck() {
       if (sheetKeyRef.current !== myKey) return;   // เปลี่ยนไลน์/เดือน/กะ ระหว่างรอ → ทิ้งผลรอบนี้
       setEmps(empData || []);
 
-      const { data: sh, error: shErr } = await supabase.from('bbs_sheets').select('*')
-        .eq('month_key', month).eq('line_name', lineObj.name).eq('shift', shift)
-        .maybeSingle();
-      if (shErr && shErr.code !== 'PGRST116') setLoadWarn(`โหลดหัวใบไม่สำเร็จ: ${shErr.message}`);
+      /* ⚠️ ห้ามใช้ `.maybeSingle()` — คืน error PGRST116 เมื่อเจอ >1 แถว และ**ช่วงก่อนรัน migration
+         `20261002` ยังมีใบเก่าแยกกะค้างอยู่ได้จริง** ⇒ จอจะอ่านว่า "ไม่มีใบ" แล้วเปิดใบเปล่าทับ
+         (กฎเหล็กข้อ 1 · CLAUDE.md) · เอาใบเก่าสุดไว้ก่อน — รัน migration แล้วจะเหลือใบเดียวเอง */
+      const { data: shRows, error: shErr } = await supabase.from('bbs_sheets').select('*')
+        .eq('month_key', month).eq('line_name', lineObj.name)
+        .order('created_at', { ascending: true }).limit(1);
+      if (shErr) setLoadWarn(`โหลดหัวใบไม่สำเร็จ: ${shErr.message}`);
+      const sh = (shRows || [])[0] || null;
       if (sheetKeyRef.current !== myKey) return;
-      setSheet(sh || null);
+      setSheet(sh);
 
       if (sh) {
         const { data: obs, error: obErr } = await supabase.from('bbs_observations')
@@ -179,8 +202,9 @@ export default function BbsCheck() {
         setCells({});
         setRowNotes({});
       }
+
     } finally { setLoading(false); }
-  }, [lineObj, lines, month, shift]);
+  }, [lineObj, lines, month]);
   useEffect(() => { load(); }, [load]);
 
   /* ── หัวใบ: สร้างตอนบันทึกจริงเท่านั้น (ห้ามสร้างตอนเปิดดู) ── */
@@ -190,25 +214,38 @@ export default function BbsCheck() {
     if (!lineObj) return null;
     const me = signers.find(s => s.full_name === fullName);
     const payload = {
-      month_key: month, line_name: lineObj.name, shift,
+      month_key: month, line_name: lineObj.name,
       section: lineObj.section || null,
       dept: lineObj.parent_line_name || null,
       inspector_name: fullName || null,
       inspector_sig_url: me?.signature_url || null,
       updated_by_name: fullName || null,
     };
-    const { data, error } = await supabase.from('bbs_sheets')
-      .upsert(payload, { onConflict: 'month_key,line_name,shift' }).select().single();
+    let { data, error } = await supabase.from('bbs_sheets')
+      .upsert(payload, { onConflict: 'month_key,line_name' }).select().single();
+    /* ยังไม่รัน migration `20261002` ⇒ unique ยังเป็น (month_key, line_name, shift) เดิม →
+       PostgREST infer on_conflict ไม่ได้ (42P10) · ถอยไปใช้คีย์เดิมพร้อม shift='' ให้บันทึกได้ต่อ
+       (ENGINEERING-PRINCIPLES §6: โค้ดต้องทำงานได้ทั้งตอน apply แล้วและยังไม่ apply) */
+    if (error?.code === '42P10') {
+      ({ data, error } = await supabase.from('bbs_sheets')
+        .upsert({ ...payload, shift: '' }, { onConflict: 'month_key,line_name,shift' })
+        .select().single());
+    }
     if (error) {
-      // ยังไม่ apply migration / RLS ปฏิเสธ — ต้องบอกให้ชัด ห้ามเงียบ
+      /* ยังไม่ apply migration / RLS ปฏิเสธ — ต้องบอกให้ชัด ห้ามเงียบ
+         42P10 = ยังไม่ได้รัน `20261002_bbs_merge_shift_sheets_main.sql` ⇒ unique ยังเป็น
+         (month_key, line_name, shift) เดิม → PostgREST infer on_conflict ไม่ได้
+         (กับดักเดียวกับที่เขียนเตือนไว้ใน migration ตั้งต้นของ BBS) */
       toast.error(error.code === '42P01'
         ? 'ยังไม่ได้ apply migration ของ BBS — แจ้งผู้ดูแลระบบ'
-        : `สร้างใบไม่สำเร็จ: ${error.message}`);
+        : error.code === '42P10'
+          ? 'ยังไม่ได้รัน migration ยุบใบ BBS ตามกะ (20261002) — แจ้งผู้ดูแลระบบ ยังบันทึกไม่ได้'
+          : `สร้างใบไม่สำเร็จ: ${error.message}`);
       return null;
     }
     setSheet(data);
     return data;
-  }, [sheet, lineObj, month, shift, fullName, signers]);
+  }, [sheet, lineObj, month, fullName, signers]);
 
   /* ── ทาช่อง ── */
   // markOverride/seqOverride: โหมดมือถือกดชิปตรงๆ ไม่ผ่านแปรง (desktop ส่ง 2 ตัวแรกเหมือนเดิม)
@@ -282,10 +319,10 @@ export default function BbsCheck() {
       const from = `${month}-01`;
       const to = `${month}-${String(days).padStart(2, '0')}`;
       let q = supabase.from('daily_production_logs')
-        .select('employee_id, work_date, is_present, has_helmet, has_boots, has_gloves, shift')
+        .select('employee_id, work_date, is_present, has_helmet, has_boots, has_gloves')
         .gte('work_date', from).lte('work_date', to)
         .in('employee_id', emps.map(e => e.id));
-      if (shift) q = q.eq('shift', shift);
+      /* ไม่กรองกะ — BBS ไม่แยกกะแล้ว (ดูหัวบล็อกไฟล์) เอาผลตรวจ PPE ของทั้งวัน */
       const { data: logs, error } = await q;
       if (error) { toast.error(`อ่านผลตรวจ PPE ไม่สำเร็จ: ${error.message}`); return; }
 
@@ -371,11 +408,10 @@ export default function BbsCheck() {
     if (!ok) toast.error('เบราว์เซอร์บล็อกหน้าต่างพิมพ์ — อนุญาต popup ของเว็บนี้ก่อน');
   };
 
-  const wrap = { padding: 'clamp(10px,2.5vw,18px) clamp(12px,3vw,24px)', maxWidth: 'min(98vw,2400px)', margin: '0 auto' };
   const lbl = { fontSize: 11, color: 'var(--muted)', fontWeight: 700, display: 'block', marginBottom: 3 };
 
   return (
-    <div style={wrap}>
+    <Page width="full">
       <ReadOnlyNote show={!canRecord} role={role} what="บันทึกผลสังเกต BBS" permKey="bbs:record" />
 
       {loadWarn && (
@@ -384,37 +420,27 @@ export default function BbsCheck() {
         </div>
       )}
 
-      {/* ── แถบเลือกใบ ── */}
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 12 }}>
-        <div>
-          <label style={lbl}>เดือน</label>
-          <input type="month" value={month} onChange={e => setMonth(e.target.value)}
-            style={{ width: 150, padding: '7px 9px', fontSize: 13 }} />
-        </div>
-        <div>
-          <label style={lbl}>พื้นที่ / ไลน์</label>
-          {/* <LineSelect valueKey="id"> — เก็บ line id เหมือนเดิม · scopedLines กรอง scope ไว้แล้ว (2026-09-07) */}
-          <LineSelect lines={scopedLines} value={selLine} valueKey="id" placeholder={null} onChange={setSelLine}
-            style={{ width: 230, padding: '7px 9px', fontSize: 13 }} />
-        </div>
-        <div>
-          <label style={lbl}>กะ</label>
-          <select value={shift} onChange={e => setShift(e.target.value)}
-            style={{ width: 120, padding: '7px 9px', fontSize: 13 }}>
-            <option value="">ทั้งวัน</option>
-            <option value="day">กะเช้า</option>
-            <option value="night">กะดึก</option>
-          </select>
-        </div>
-        <div style={{ flex: 1 }} />
-        <button onClick={() => setShowAgree(true)} style={btn()}>📋 ข้อตกลง ({agreements.length})</button>
-        {canRecord && (
-          <button onClick={autoFill} disabled={busy || !emps.length} style={btn('var(--accent)')}>
-            {busy ? 'กำลังเติม…' : '⚡ เติมจากผลตรวจ PPE'}
-          </button>
-        )}
-        <button onClick={doPrint} disabled={!sheet} style={btn()}>🖨️ พิมพ์ / PDF</button>
-      </div>
+      {/* ── หัว + ปุ่มของใบ (UI-STANDARD 2026-09-24 — ใน /daily-checker หัวชื่อหน้าถูกซ่อนเอง เหลือปุ่ม) ── */}
+      <PageHeader title="สังเกตพฤติกรรมความปลอดภัย (BBS)" icon="🦺"
+        actions={<>
+          <button onClick={() => setShowAgree(true)} style={btn()}>📋 ข้อตกลง ({agreements.length})</button>
+          {canRecord && (
+            <button onClick={autoFill} disabled={busy || !emps.length} style={btn('var(--accent)')}>
+              {busy ? 'กำลังเติม…' : '⚡ เติมจากผลตรวจ PPE'}
+            </button>
+          )}
+          <button onClick={doPrint} disabled={!sheet} style={btn()}>🖨️ พิมพ์ / PDF</button>
+        </>} />
+
+      {/* ── แถบเลือกใบ ── ลำดับ: ไลน์ → เดือน → กะ */}
+      <FilterBar style={{ marginBottom: 12 }}>
+        <span className="filter-label">พื้นที่ / ไลน์</span>
+        {/* <LineSelect valueKey="id"> — เก็บ line id เหมือนเดิม · scopedLines กรอง scope ไว้แล้ว (2026-09-07) */}
+        <LineSelect lines={scopedLines} value={selLine} valueKey="id" placeholder={null} onChange={setSelLine} />
+        <span className="filter-label">เดือน</span>
+        <input type="month" value={month} onChange={e => setMonth(e.target.value)} />
+        {/* 🔴 ไม่มีปุ่มเลือกกะ — BBS ไม่แยกกะ (ดูหัวบล็อกไฟล์) ห้ามเติมกลับ */}
+      </FilterBar>
 
       {/* ── ผู้ตรวจสอบ + ขอบเขตที่ระบบเติมได้ ── */}
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-start', marginBottom: 12 }}>
@@ -551,7 +577,7 @@ export default function BbsCheck() {
                             <button key={m.key} disabled={!canRecord} style={chip(on, m.color)}
                               onClick={() => { if (m.key === 'ng') { setNgPick(picking ? null : e.id); return; } setNgPick(null); paint(e, day, m.key); }}>
                               <b style={{ fontSize: 16 }}>{m.key === 'ng' ? (on ? c.agreement_seq : '#') : m.glyph}</b>
-                              <span style={{ fontSize: 10.5, fontWeight: 600, lineHeight: 1.15, textAlign: 'center' }}>{MOBILE_LABEL[m.key]}</span>
+                              <span style={{ fontSize: 11, fontWeight: 600, lineHeight: 1.15, textAlign: 'center' }}>{MOBILE_LABEL[m.key]}</span>
                             </button>
                           );
                         })}
@@ -644,7 +670,7 @@ export default function BbsCheck() {
         <AgreementsModal agreements={agreements} canManage={canManage} role={role}
           onClose={() => { setShowAgree(false); loadStatic(); }} />
       )}
-    </div>
+    </Page>
   );
 }
 
@@ -755,9 +781,7 @@ function AgreementsModal({ agreements, canManage, role, onClose }) {
                 </td>
                 {canManage && (
                   <td style={td()}>
-                    <button onClick={() => setRows(rr => rr.filter((_, k) => k !== i))}
-                      title="เอาออก (ปิดใช้งาน — ใบเก่ายังอ่านออก)"
-                      style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 14 }}>🗑</button>
+                    <DeleteButton onClick={() => setRows(rr => rr.filter((_, k) => k !== i))} title="เอาออก (ปิดใช้งาน — ใบเก่ายังอ่านออก)" />
                   </td>
                 )}
               </tr>

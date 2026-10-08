@@ -21,10 +21,13 @@
       และหลายไลน์ใช้ cc เดียวกัน) จึงมี `depth: null` = เทียบความลึกกับสายไลน์ไม่ได้ ห้ามเอาไป sort ปน */
 export const KPI_SCOPE_LEVELS = [
   { key: 'plant',       label: 'ทั้งโรงงาน',       short: 'โรงงาน',  depth: 0, source: null },
-  { key: 'section',     label: 'ส่วนงาน',          short: 'ส่วนงาน', depth: 1, source: 'org_nodes:section' },
-  { key: 'department',  label: 'แผนก',            short: 'แผนก',    depth: 2, source: 'org_nodes:department' },
-  { key: 'line_group',  label: 'กลุ่มไลน์ (ไลน์แม่)', short: 'กลุ่ม',  depth: 3, source: 'production_lines:parent' },
-  { key: 'line',        label: 'ไลน์ลูก',          short: 'ไลน์',    depth: 4, source: 'production_lines:leaf' },
+  /* `division` = ป้ายฝ่ายบน node ชั้นบนสุด (org_nodes.division · ไม่ใช่ node) — เพิ่ม 23/09 เมื่อ picker
+     ขอบเขตกรองได้ทุกมิติของผัง (`src/utils/orgScope.js`) · check constraint ใน DB ขยายแล้ว (migration 20260923b) */
+  { key: 'division',    label: 'ฝ่าย',             short: 'ฝ่าย',    depth: 1, source: 'org_nodes:division' },
+  { key: 'section',     label: 'ส่วนงาน',          short: 'ส่วนงาน', depth: 2, source: 'org_nodes:section' },
+  { key: 'department',  label: 'แผนก',            short: 'แผนก',    depth: 3, source: 'org_nodes:department' },
+  { key: 'line_group',  label: 'กลุ่มไลน์ (ไลน์แม่)', short: 'กลุ่ม',  depth: 4, source: 'production_lines:parent' },
+  { key: 'line',        label: 'ไลน์ลูก',          short: 'ไลน์',    depth: 5, source: 'production_lines:leaf' },
   { key: 'cost_center', label: 'Cost Center',     short: 'CC',      depth: null, source: 'cost_centers' },
 ];
 
@@ -87,7 +90,8 @@ export const KPI_BASE_VARS = [
   { key: 'dl',             label: 'ค่าแรงทางตรง (Direct Labour)',         unit: 'บาท' },
   { key: 'oh',             label: 'ค่าโสหุ้ย (Overhead)',                 unit: 'บาท' },
   { key: 'raw_material',   label: 'ต้นทุนวัตถุดิบ (Raw Material)',        unit: 'บาท' },
-  { key: 'inventory_baht', label: 'มูลค่าสต็อกในพื้นที่ผลิต',              unit: 'บาท' },
+  { key: 'cogs',           label: 'ต้นทุนขาย COGS (ตัวหารของ DSI)',        unit: 'บาท' },
+  { key: 'inventory_baht', label: 'มูลค่าสต็อกสิ้นเดือน (ตาม storage location)', unit: 'บาท' },
   { key: 'manpower',       label: 'กำลังคน (หัว)',                        unit: 'คน' },
   { key: 'cost_100p',      label: '100P + CR (มูลค่าที่ลดได้)',           unit: 'บาท' },
   { key: 'days_in_month',  label: 'ตัวหารวัน (ใบจริงใช้ 30 คงที่)',        unit: 'วัน' },
@@ -96,15 +100,26 @@ export const KPI_BASE_VARS = [
 export const baseVarOf = (key) => KPI_BASE_VARS.find(v => v.key === key) || null;
 
 /* สูตรสำเร็จรูปที่ถอดมาจากเซลล์จริง (§12.2) — provider_config.formula เก็บแค่ `key`
-   ⚠️ `inventory_day` ใบ Excel หาร 30 คงที่ แต่แผ่นบนบอร์ดเขียนว่าใช้ "วันทำงานจริง" — ยังไม่ได้ข้อยุติ
-      จึงให้ตัวหารมาจากตัวแปรฐาน `days_in_month` (ตั้งเป็น 30 ก็ได้ ตั้งเป็นวันทำงานจริงก็ได้) */
+   ✅ verify กับ **ใบ Monitoring ในระบบ KPI Online ของจริง** แล้ว 17/09 (§13.1) — ตรงเป๊ะ 3 ตัว:
+      rm_pct = (Raw Material/Sales from product)×100 · dloh_pct = [(DL+OH)/Sale from product]×100
+      · p100_pct = (Actual 100P/Sale from product)×100
+   ✅ `inventory_day` (DSI) = `(มูลค่าสต็อกสิ้นเดือน ÷ COGS) × Days` — **ปิดข้อยุติแล้ว 17/09 (§14.2)**
+      ยืนยันตรงกัน 3 แหล่งอิสระ: ประกาศบริษัท QSM-R2 001/2569 · แม่แบบ Corporate KPI Guideline 2026
+      · ใบ Monitoring ในระบบ KPI Online  ⇒ **ตัวหารคือ COGS ไม่ใช่ยอดขาย** (เคยเขียนผิดเป็น sale_product)
+      · ตัวหารวัน (`days_in_month`) ยังไม่ชี้ขาดว่า 30 คงที่หรือวันทำงานจริง — จึงยังเป็นตัวแปรฐาน
+      · DSI มี **2 หน่วยทางการ**: `วัน` (สูตรนี้) หรือ `MB` (มูลค่าสต็อกดิบๆ) — แม่แบบ Corporate ให้เลือกได้
+        ⇒ แถว "Inventory Balance - …" ใต้ DSI ในใบแผนก = ตัวเดียวกันแต่รายงานเป็น MB
+      · **ตัวตั้งมาจาก storage location เฉพาะของแผนกนั้น** (PD1 P401/405/406/407/408 · PD2 P402/403/404/413
+        · PD3 P409+P411 · PD4 P410+412 · LOG ขาเข้า MAT 5xxxxx,3xxxxx + 2xxxxx · WH ขาออก FG 1xxxxx)
+        และ **ตัวหาร COGS เป็นของทั้งโรงงาน** ⇒ DSI รายแผนกบวกกันได้ = DSI ของโรงงาน (พิสูจน์แล้ว §14.3)
+   ℹ️ `sale_per_head` ใบทางการเขียน "Total Sales / **Average** manpower" — `manpower` ต้องเป็นค่าเฉลี่ยของช่วง */
 export const KPI_FORMULAS = [
   { key: 'dl_pct',        label: 'DL %',        expr: 'dl ÷ sale_product × 100',                  vars: ['dl', 'sale_product'],             unit: '%' },
   { key: 'oh_pct',        label: 'OH %',        expr: 'oh ÷ sale_product × 100',                  vars: ['oh', 'sale_product'],             unit: '%' },
   { key: 'dloh_pct',      label: 'DL&OH %',     expr: '(dl + oh) ÷ sale_product × 100',           vars: ['dl', 'oh', 'sale_product'],       unit: '%' },
   { key: 'rm_pct',        label: '%RM',         expr: 'raw_material ÷ sale_product × 100',        vars: ['raw_material', 'sale_product'],   unit: '%' },
   { key: 'p100_pct',      label: '100P %',      expr: 'cost_100p ÷ sale_product × 100',           vars: ['cost_100p', 'sale_product'],      unit: '%' },
-  { key: 'inventory_day', label: 'Inventory (วัน)', expr: 'inventory_baht ÷ (sale_product ÷ days_in_month)', vars: ['inventory_baht', 'sale_product', 'days_in_month'], unit: 'วัน' },
+  { key: 'inventory_day', label: 'DSI (วัน)',   expr: '(inventory_baht ÷ cogs) × days_in_month',      vars: ['inventory_baht', 'cogs', 'days_in_month'], unit: 'วัน' },
   { key: 'sale_per_head', label: 'ยอดขาย/หัว (MB)', expr: 'sale_total ÷ manpower ÷ 1,000,000',    vars: ['sale_total', 'manpower'],         unit: 'MB' },
 ];
 
@@ -127,7 +142,7 @@ export function evalFormula(formulaKey, vars = {}) {
     case 'dloh_pct':      value = div(v.dl + v.oh, v.sale_product); break;
     case 'rm_pct':        value = div(v.raw_material, v.sale_product); break;
     case 'p100_pct':      value = div(v.cost_100p, v.sale_product); break;
-    case 'inventory_day': { const per = div(v.sale_product, v.days_in_month); value = per == null ? null : div(v.inventory_baht, per); break; }
+    case 'inventory_day': { const r = div(v.inventory_baht, v.cogs); value = r == null ? null : r * Number(v.days_in_month); break; }
     case 'sale_per_head': { const per = div(v.sale_total, v.manpower); return { value: per == null ? null : per / 1e6, missing: [], error: null }; }
     default: return { value: null, missing: [], error: 'ยังไม่ได้ทำสูตรนี้' };
   }
@@ -183,27 +198,23 @@ export function scoreKpi(value, def = {}) {
     return { ...KPI_PENDING, point: null, reason: 'ยังไม่ได้ตั้งเป้า' };   // ไม่มีเป้า = เทา ไม่ใช่เขียว
   }
 
-  // บาร์ไหน "เข้มกว่า" — เทียบเมื่อมีทั้งคู่และทิศเดียวกัน
-  let strictIsTarget = true;
-  const tv = def.target_value == null ? null : Number(def.target_value);
-  const cv = def.commit_value == null ? null : Number(def.commit_value);
-  if (tv != null && cv != null && def.target_compare && def.commit_compare) {
-    const down = String(def.target_compare).startsWith('<');
-    strictIsTarget = down ? tv <= cv : tv >= cv;
-  }
-  const strictOk = strictIsTarget ? okT : okC;
-  const looseOk  = strictIsTarget ? okC : okT;
-
+  /* 🔴 เกณฑ์ตัดสินอ่านจาก "ป้ายของบาร์" ไม่ใช่ "บาร์ไหนเข้มกว่า"
+     หลักฐานชี้ขาด: ประกาศบริษัท QSM-R2 001/2569 Rev.0 (16/03/2026) หัวคอลัมน์เขียนตรงๆ ว่า
+     `Commitment Score = 0.5` · `Target Score = 1` (ดู docs/OBEYA-KPI-SOURCES.md §14.2)
+     ⇒ ถึง Target = 1 · ไม่ถึง Target แต่ถึง Commitment = 0.5 · ไม่ถึงทั้งคู่ = 0
+     เคยเขียนเป็น "บาร์ที่เข้มกว่า = 1" (เดาเอง) แล้วผิดกับแถวที่ commit เข้มกว่า target
+     — ซึ่งในใบจริงเป็น **คำผิดของคนกรอก** ไม่ใช่กติกาอีกแบบ (เช่น Total Sales ในประกาศพิมพ์
+     2,117.82 MB แต่ใบ GM เขียน 2,177.82 MB) ⇒ ห้ามเปลี่ยนกลับไปเดาจากความเข้ม */
   let level;
-  if (strictOk) level = 1;
-  else if (looseOk) level = 0.5;
+  if (okT) level = 1;
+  else if (okC) level = 0.5;
   else level = 0;
 
   const meta = KPI_LEVELS[level];
   return {
     ...meta,
     point: weight == null ? null : Math.round(weight * level * 100) / 100,
-    reason: level === 1 ? 'ถึงบาร์ที่เข้มกว่า' : level === 0.5 ? 'ถึงบาร์ที่หลวมกว่า' : 'ไม่ถึงทั้งสองบาร์',
+    reason: level === 1 ? 'ถึง Target' : level === 0.5 ? 'ถึง Commitment' : 'ไม่ถึงทั้ง Commitment และ Target',
   };
 }
 
@@ -236,6 +247,129 @@ export const KPI_SUMMARY_MODES = [
   { key: 'rate',    label: 'คำนวณจากยอดรวมทั้งปี (เช่น PPM)' },
 ];
 
+export const summaryModeLabel = (k) => KPI_SUMMARY_MODES.find(m => m.key === k)?.label || k;
+/** ป้ายสั้นไว้ติดคอลัมน์สรุป — **จอต้องเขียนให้ตรงวิธีรวมของแถวนั้น ห้ามพิมพ์ "เฉลี่ย" ตายตัว**
+ *  (บั๊กที่เจอ 23/09: Scrap ต้องรวมทั้งปี 1,628 แต่จอโชว์ 271.4 = เฉลี่ย โดยหัวคอลัมน์ยังเขียนว่า "เฉลี่ย") */
+export const summaryShort = (k) => (
+  { average: 'เฉลี่ย', sum: 'รวมปี', max: 'สูงสุด', as_of: 'ล่าสุด', rate: 'ทั้งปี' }[k] || 'เฉลี่ย');
+
+/* ── 5.1) ตั้งค่า 2 ชั้น: ทะเบียน `kpi_catalog` = ค่าตั้งต้น · นิยามรายแถว = override (24/09) ──
+   คำถาม user: "หน่วย/ทศนิยม/average-total ตั้งที่ไหน ตั้งต่อจากทะเบียนหรือควรแยก" → ตอบ **2 ชั้น**
+     🔒 **วิธีรวม 12 เดือน = ของตัวตน KPI → ทะเบียนอย่างเดียว ห้าม override รายแถว**
+        (PPM คิดจากยอดรวมทั้งปีเสมอ · Scrap รวมเสมอ ไม่ว่าแผนกไหน — ปล่อยให้ตั้งเองรายแผนก
+         = แผนกหนึ่งเฉลี่ย อีกแผนกรวม แล้วเอาเลขมาเทียบกันไม่ได้ · บั๊กคลาสเดียวกับ "30 วัน คนละเลข")
+     🔓 **หน่วย + ทศนิยม = ทะเบียนตั้ง default · แถว override ได้** (ว่าง/null = ตามทะเบียน)
+        หลักฐานว่าต้อง override ได้: MTBF ใบ JIG ใช้ "นาที" เด็คใช้ "ชม." · DSI มี 2 หน่วยทางการ (วัน / MB)
+   ⚠️ ทุกตัวรับ "แถว kpi_definitions ที่ embed `kpi_catalog` มาด้วย" — ไม่ได้ embed = ได้ค่าของแถวล้วน
+      (ไม่พัง แต่จะไม่เห็นค่าตั้งต้นจากทะเบียน) */
+export const unitOf = (d) => (d?.unit || d?.kpi_catalog?.unit || '');
+
+export function decimalsOf(d) {
+  for (const v of [d?.decimals, d?.kpi_catalog?.decimals]) {
+    if (v == null || v === '') continue;
+    const n = Number(v);
+    if (Number.isFinite(n)) return Math.min(6, Math.max(0, Math.round(n)));
+  }
+  return 2;
+}
+
+/** วิธีรวมของแถว — อ่านจากทะเบียนเท่านั้น · คีย์แปลก/ไม่มี = `average` (ไม่ใช่พัง) */
+export function summaryModeOf(d) {
+  const k = d?.kpi_catalog?.summary_mode || d?.summary_mode;
+  return KPI_SUMMARY_MODES.some(m => m.key === k) ? k : 'average';
+}
+
+/* ── 5.2) KPI ที่ "ค่าเป็นของโรงงาน" (30/09 · คำสั่ง user: %RM + Customer Satisfaction ทุกหน่วยใช้ตัวเลขเดียวกัน) ──
+   `kpi_catalog.value_scope` = 'own' (ค่าของหน่วยงานเอง) | 'plant' (ค่าโรงงาน) — data-driven ตั้งจากปุ่ม 📘 ทะเบียน
+   🔴 กติกา: KPI แบบ plant **ค่ารายเดือนอยู่ที่นิยามระดับโรงงานตัวเดียว** · นิยามของหน่วยงานยังมีได้
+      (เก็บเป้า/น้ำหนัก/ลำดับในใบของหน่วยนั้น) แต่ทุกจอต้องอ่านค่าจาก `sharedValueDef()` ห้ามอ่าน entries ของตัวเอง
+      · ไม่มีนิยามโรงงาน = "ยังไม่มีค่า" + จอต้องบอกว่าไปสร้างที่ขอบเขต ทั้งโรงงาน (ห้ามถอยไปใช้ค่าของหน่วยเงียบๆ) */
+export const KPI_VALUE_SCOPES = [
+  { key: 'own',   label: 'ของหน่วยงานเอง (แต่ละหน่วยกรอกของตัวเอง)' },
+  { key: 'plant', label: 'ค่าโรงงาน — ทุกหน่วยที่ถือ KPI นี้ใช้ตัวเลขเดียวกัน' },
+];
+export const valueScopeOf = (d) => ((d?.kpi_catalog?.value_scope || d?.value_scope) === 'plant' ? 'plant' : 'own');
+const normKpiName = (x) => String(x ?? '').toLowerCase().replace(/[\s\-_./()]+/g, '');
+const isPlantDef = (x) => x?.scope_kind === 'plant' || (!x?.scope_kind && !x?.section && !x?.line_group);
+/** นิยามระดับโรงงานที่ถือ "ค่า" ของ KPI แบบ plant — จับคู่ด้วย catalog_id ก่อน ไม่มีค่อยเทียบชื่อ · คืน null = ยังไม่มี
+ *  (ส่งนิยามโรงงานเข้ามาเอง = คืนตัวมันเอง) · KPI แบบ own = null เสมอ */
+export function sharedValueDef(defs, d) {
+  if (valueScopeOf(d) !== 'plant') return null;
+  const cid = d?.catalog_id || d?.kpi_catalog?.id || null;
+  const nm = normKpiName(d?.kpi_catalog?.name || d?.name);
+  return (defs || []).find(x => x && x.is_active !== false && isPlantDef(x)
+    && !String(x.source || '').startsWith('auto:')
+    && (d?.year == null || x.year == null || Number(x.year) === Number(d.year))
+    && ((cid && x.catalog_id === cid) || normKpiName(x.kpi_catalog?.name || x.name) === nm)) || null;   // แถวเก่าไม่มี catalog_id = เทียบชื่อ (ชื่อคือตัวตนของทะเบียนอยู่แล้ว · unique index)
+}
+
+/* ── 5.4) ช่องบนบอร์ด OBEYA (30/09 · user: "inventory balance กับ DSI คือเรื่องเดียวกัน · training กับ TS Academy คือสกอเดียวกัน") ──
+   บอร์ด 8 แผ่นหลักเคยจับคู่ด้วย "ชื่อตรงตัว" ⇒ ชื่อทางการในทะเบียน (Day Sales of Inventory (DSI) / TS Academy training)
+   ไม่ตรงชื่อบนบอร์ดกระดาษ (Inventory Balance / Training) ⇒ แผ่นขึ้น "ยังไม่ได้ตั้ง KPI" ทั้งที่กรอกครบ
+   ⇒ `kpi_catalog.board_slot` = ทะเบียนบอกเองว่าขึ้นแผ่นไหน (ตั้งจากปุ่ม 📘) · คีย์ต้องตรง `boardRowsFor()` ใน ObeyaKpiBoard
+   · ทะเบียนที่ตั้ง slot แล้ว **ห้ามจับคู่ด้วยชื่ออีก** (ไม่งั้น KPI ที่ตั้งใจย้ายช่องจะโผล่ 2 ที่) · null = เทียบชื่อแบบเดิม (ของเก่า) */
+export const KPI_BOARD_SLOTS = [
+  { key: 'rm',    label: '%RM (Raw Material)' },
+  { key: 'dloh',  label: 'DL+OH (Direct Labor + Overhead)' },
+  { key: 'dl',    label: 'Direct Labor (ปี ≤ 2025)' },
+  { key: 'oh',    label: 'Overhead (ปี ≤ 2025)' },
+  { key: 'inv',   label: 'Inventory Balance / DSI' },
+  { key: 'csat',  label: 'Customer Satisfaction' },
+  { key: 'oee',   label: 'OEE' },
+  { key: 'ppm',   label: 'PPM' },
+  { key: 'safe',  label: 'Safety' },
+  { key: 'train', label: 'Training / TS Academy' },
+];
+export const boardSlotOf = (d) => {
+  const k = d?.kpi_catalog?.board_slot || d?.board_slot || null;
+  return KPI_BOARD_SLOTS.some(s => s.key === k) ? k : null;
+};
+
+/* ── 5.3) คาดการณ์ปลายปี = "ผลจริงที่มีแล้ว + แผนของเดือนที่เหลือ" (30/09 · คำสั่ง user) ─────────────
+   *"มันจะมีบางค่า จะคิดแบบ Actual+Plan ที่เหลือ เพื่อสรุปว่าปีนี้จะรอดหรือร่วง"*
+   · เดือนที่มีผลจริง → ใช้ผลจริง · เดือนที่ยังไม่มีผล → ใช้แผน (`kpi_month_plans`) · รวมด้วยวิธีรวมของ KPI ตัวนั้น
+   · 🔴 เดือนที่ไม่มีทั้งผลและแผน = **คาดการณ์ไม่ได้** (`value:null` + `missing`) — ห้ามเดา ห้ามเติม 0 ห้ามลากค่าเฉลี่ยไปแทน
+   · `rate` ไม่มียอดดิบของแผนให้หาร ⇒ เฉลี่ย + `approx` (กฎเดียวกับ summaryOf/planProgress)
+   · ตัดสิน "รอด/ร่วง" ที่ผู้เรียกด้วย `scoreDef(value, def)` — ที่นี่ไม่ตัดสิน (สูตรสีมีที่เดียว) */
+export function yearForecast({ actual = [], plan = [], def = null } = {}) {
+  const num = (v) => (v == null || v === '' || Number.isNaN(Number(v)) ? null : Number(v));
+  const a = Array.from({ length: 12 }, (_, i) => num(actual[i]));
+  const p = Array.from({ length: 12 }, (_, i) => num(plan[i]));
+  const used = []; const missing = [];
+  let actualMonths = 0, planMonths = 0;
+  for (let m = 1; m <= 12; m++) {
+    if (a[m - 1] != null) { used.push(a[m - 1]); actualMonths += 1; }
+    else if (p[m - 1] != null) { used.push(p[m - 1]); planMonths += 1; }
+    else missing.push(m);
+  }
+  const mode0 = summaryModeOf(def);
+  const approx = mode0 === 'rate';
+  const mode = approx ? 'average' : mode0;
+  if (!actualMonths) return { value: null, reason: 'no_actual', mode, approx, actualMonths, planMonths, missing };
+  if (missing.length) return { value: null, reason: 'no_plan', mode, approx, actualMonths, planMonths, missing };
+  return { value: summarizeMonths(used, mode), reason: null, mode, approx, actualMonths, planMonths, missing: [] };
+}
+
+/** จัดรูปตัวเลขตามทศนิยมของแถว — `null`/ไม่ใช่ตัวเลข = สตริงว่าง **ห้ามคืน 0** */
+export function fmtKpi(v, d) {
+  if (v == null || v === '' || !Number.isFinite(Number(v))) return '';
+  return Number(v).toLocaleString(undefined, { maximumFractionDigits: decimalsOf(d) });
+}
+
+/**
+ * สรุป 12 เดือนของแถวหนึ่งตามวิธีรวมของมัน
+ * @returns { value, mode, effMode, approx } — `approx` = วิธีจริงคือ `rate` แต่ไม่มียอดดิบให้หาร
+ *   ⇒ ถอยมาเฉลี่ยรายเดือน **จอต้องติดป้าย ≈ ห้ามโชว์เหมือนเป็นตัวเลขทางการ**
+ *   (แถวกรอกมือมีแต่ค่า PPM รายเดือน ไม่มี Σของเสีย/Σยอดผลิต ⇒ คำนวณสูตรทางการไม่ได้)
+ */
+export function summaryOf(months = [], d = null, rate = null) {
+  const mode = summaryModeOf(d);
+  if (mode === 'rate' && !rate) {
+    return { value: summarizeMonths(months, 'average'), mode, effMode: 'average', approx: true };
+  }
+  return { value: summarizeMonths(months, mode, rate), mode, effMode: mode, approx: false };
+}
+
 /**
  * @param months  array ของค่ารายเดือน (null = ยังไม่กรอก — ถูกข้าม ไม่ใช่นับเป็น 0)
  * @param mode    ดู KPI_SUMMARY_MODES
@@ -260,16 +394,97 @@ export function summarizeMonths(months = [], mode = 'average', rate = null) {
   }
 }
 
+/* ── 5.2) แผนรายเดือน (`kpi_month_plans`) — "ถึงเดือนนี้ควรอยู่ตรงไหน" (2026-09-25) ────────
+   🔴 **ไม่ใช่คะแนน** — คะแนนทางการยังมาจาก `scoreDef()` ตัวเดียว (1 / 0.5 / 0)
+      **ห้ามเอาผลของตัวนี้ไปเปลี่ยนสี/ขั้นคะแนน หรือเพิ่มขั้นใหม่** (กฎ: เกณฑ์สีมีเอกสารแล้ว ห้ามคิดเอง)
+      เด็คทบทวนของจริงเขียน `◐ In progress` กับ KPI สะสม — ขั้นนั้น**ไม่มีในประกาศ QSM-R2 001/2569**
+   ปัญหาที่ตัวนี้แก้: KPI สะสม (100P · Annual Sales per Head · TS Academy) ถูกเทียบกับเป้า "ทั้งปี"
+      ตั้งแต่เดือนแรก ⇒ แดงทุกเดือนจนถึง ธ.ค. ทั้งที่เดินตามแผน — จอโกหกโดยโครงสร้าง ไม่ใช่ข้อมูลผิด
+   วิธี: เทียบ **ผลถึงเดือนนี้ vs แผนถึงเดือนนี้** โดยรวมทั้งสองชุดด้วย "วิธีรวม" ของ KPI ตัวนั้นเอง
+      (`sum` = Σ ถึงเดือนนี้ · `max` = ตัวสะสมล่าสุด · `average` = เฉลี่ยถึงเดือนนี้ · `as_of` = เดือนล่าสุด)
+   🔴 **เทียบเฉพาะเดือนที่มีทั้งแผนและผล** แล้วคืนจำนวนเดือนที่ใช้/ที่ข้ามเสมอ —
+      ถ้ารวมทั้งช่วงทั้งที่แผนขาดบางเดือน Σ แผนจะต่ำกว่าจริง ⇒ ขึ้นว่า "นำแผน" ทั้งที่แค่ยังไม่ได้ตั้งแผน
+   @param actual  ค่าจริง 12 ช่อง (index 0 = ม.ค.)
+   @param plan    แผน 12 ช่อง
+   @param def     แถว kpi_definitions (+ embed kpi_catalog) — ใช้หาวิธีรวม + ทิศทาง
+   @param upTo    เดือนสุดท้ายที่นับ (1-12) · ไม่ส่ง = เดือนล่าสุดที่มีผลจริง
+   @returns null = ยังไม่มีอะไรให้เทียบ · หรือ
+     { upTo, months, skipped, actual, plan, diff, diffPct, onTrack, dir, mode, approx }
+     `onTrack` null = ไม่รู้ทิศทางของเป้า (ห้ามเดา — จอต้องบอกว่าตัดสินไม่ได้) */
+export function planProgress({ actual = [], plan = [], def = null, upTo = null } = {}) {
+  const num = (v) => (v == null || v === '' || Number.isNaN(Number(v)) ? null : Number(v));
+  const a = Array.from({ length: 12 }, (_, i) => num(actual[i]));
+  const p = Array.from({ length: 12 }, (_, i) => num(plan[i]));
+
+  const lastActual = a.reduce((last, v, i) => (v != null ? i + 1 : last), 0);
+  const end = upTo == null ? lastActual
+    : Math.min(12, Math.max(0, Math.round(Number(upTo)) || 0));
+  if (!end) return null;
+
+  const months = [];
+  for (let m = 1; m <= end; m++) if (a[m - 1] != null && p[m - 1] != null) months.push(m);
+  if (!months.length) return null;
+  /* เดือนที่มีผลแต่ยังไม่ได้ตั้งแผน — จอต้องเขียนให้เห็น ไม่ใช่เงียบแล้วเทียบไปเลย */
+  let skipped = 0;
+  for (let m = 1; m <= end; m++) if (a[m - 1] != null && p[m - 1] == null) skipped += 1;
+
+  const mode0 = summaryModeOf(def);
+  /* `rate` คิดจากยอดดิบทั้งปี — แผนไม่มียอดดิบให้หาร ⇒ ถอยมาเฉลี่ย แล้วติดป้าย approx (กฎเดียวกับ summaryOf) */
+  const approx = mode0 === 'rate';
+  const mode = approx ? 'average' : mode0;
+  const pick = (arr) => months.map(m => arr[m - 1]);
+  const av = summarizeMonths(pick(a), mode);
+  const pv = summarizeMonths(pick(p), mode);
+  if (av == null || pv == null) return null;
+
+  const bars = defBars(def || {});
+  const cmp = bars.target_compare || bars.commit_compare || null;
+  const dir = cmp == null ? null : (String(cmp).startsWith('<') ? 'down' : String(cmp).startsWith('>') ? 'up' : null);
+
+  const diff = av - pv;
+  return {
+    upTo: end,
+    months: months.length,
+    skipped,
+    actual: av,
+    plan: pv,
+    diff,
+    diffPct: pv === 0 ? null : (diff / Math.abs(pv)) * 100,
+    onTrack: dir == null ? null : (dir === 'up' ? av >= pv : av <= pv),
+    dir, mode, approx,
+  };
+}
+
 /* ── ตัวช่วยเล็กๆ ─────────────────────────────────────────────────────────────────────── */
 export const COMPARES = ['<=', '>=', '<', '>', '='];
 
 /** แกะ "≤ 2.5364%" / "<=300PPM" → { compare, value } — ใช้ตอนนำเข้าจากใบเก่าที่เก็บเป็นข้อความ */
-export function parseBar(txt) {
-  if (txt == null) return { compare: null, value: null };
-  const s = String(txt);
-  const compare = /(≤|<=)/.test(s) ? '<=' : /(≥|>=)/.test(s) ? '>=' : /</.test(s) ? '<' : />/.test(s) ? '>' : null;
+/* ใบจริงเขียนเป้าแบบ "ไม่มีเครื่องหมาย" เป็นเรื่องปกติ — ต้องเดาทิศทางให้ถูก ไม่งั้นข้อนั้นเทาตลอดกาล
+   (Customer Satisfaction เป้า "100%" โผล่ครบทั้ง 12 ใบ น้ำหนัก 5 · MTN MTBF "730 Hr." · MTTR "0 Hr."
+    · Machine Break Down "0%" · Safety "0 Case" · Premium Freight "0" · WH TS Academy "100%")
+   ลำดับการเดา — คงที่ ห้ามสลับ:
+     1) มีเครื่องหมายในข้อความ → ใช้ตามนั้น
+     2) ไม่มี แต่บาร์อีกฝั่ง (Commitment) มีเครื่องหมาย → ใช้ทิศเดียวกัน   ← ครอบคลุมเคสส่วนใหญ่
+     3) ยังไม่รู้ → ค่า 0 = `<=` (นับเคส/ของเสีย ติดลบไม่ได้) · ค่า 100 = `>=` (เปอร์เซ็นต์เต็ม)
+     4) เดาไม่ได้ → คืน null แล้วให้จอบอกว่า "เป้าข้อนี้ยังไม่ระบุทิศทาง" ห้ามเดามั่ว */
+export function inferCompare(txt, otherCompare = null) {
+  const s = txt == null ? '' : String(txt);
+  if (/(≤|<=)/.test(s)) return '<=';
+  if (/(≥|>=)/.test(s)) return '>=';
+  if (/</.test(s)) return '<';
+  if (/>/.test(s)) return '>';
+  if (otherCompare) return String(otherCompare).startsWith('<') ? '<=' : '>=';
   const m = s.replace(/,/g, '').match(/(-?\d+(\.\d+)?)/);
-  return { compare, value: m ? Number(m[1]) : null };
+  const n = m ? Number(m[1]) : null;
+  if (n === 0) return '<=';
+  if (n === 100) return '>=';
+  return null;
+}
+
+export function parseBar(txt, otherCompare = null) {
+  if (txt == null) return { compare: null, value: null };
+  const m = String(txt).replace(/,/g, '').match(/(-?\d+(\.\d+)?)/);
+  return { compare: inferCompare(txt, otherCompare), value: m ? Number(m[1]) : null };
 }
 
 /** ประกอบกลับเป็นข้อความบนใบ เช่น `≤ 2.5364 %` */
@@ -277,4 +492,160 @@ export function fmtBar(compare, value, unit) {
   if (value == null) return '—';
   const sym = compare === '<=' ? '≤' : compare === '>=' ? '≥' : (compare || '');
   return `${sym ? sym + ' ' : ''}${value}${unit ? ' ' + unit : ''}`.trim();
+}
+
+/* ══ 🔗 ตัวเชื่อมกับแถว `kpi_definitions` จริง — จอทุกจอต้องตัดสินผ่านตัวนี้ตัวเดียว ════════
+   (2026-09-17 · คำสั่ง user "สองหน้าซ้ำซ้อนกัน" แล้วตรวจเจอว่า 3 จอตัดสินคนละสูตร:
+    KpiMonthly = Y/N ล้วน · ObeyaKpiBoard = แถบ ±5% ที่คิดเอง · kpiSetup = 1/0.5/0 แต่ไม่มีใครเรียก)
+
+   แถวในฐานมี 2 ยุคปนกัน — ตัวนี้อ่านได้ทั้งคู่ **ห้ามให้จอไหนแกะเอง**:
+     ยุคใหม่ (migration 20260916): `target_compare` + `target_value` · `commit_compare` + `commit_value`
+     ยุคเก่า:                      `direction` ('up'/'down') + `target_value` · `commitment`/`target` เป็น**ข้อความ**
+   ⚠️ ของเดิม `commitment` ถูกเก็บเป็นข้อความแล้ว**ไม่เคยถูกเอามาตัดสินเลย** ⇒ ขั้น 0.5 หายไปทั้งระบบ
+      ตัวนี้ parse ข้อความนั้นกลับมาเป็นบาร์ ⇒ ใบที่กรอก "≤ 1.452%" ไว้ ได้ขั้น 0.5 คืนทันทีโดยไม่ต้องกรอกใหม่ */
+export function defBars(def = {}) {
+  const dirCmp = def.direction === 'up' ? '>=' : def.direction === 'down' ? '<=' : null;
+  const tNum = def.target_value == null || def.target_value === '' ? null : Number(def.target_value);
+  const tText = parseBar(def.target, dirCmp);
+  const target_compare = def.target_compare || dirCmp || tText.compare;
+  const target_value = tNum != null ? tNum : tText.value;
+
+  const cNum = def.commit_value == null || def.commit_value === '' ? null : Number(def.commit_value);
+  const cText = parseBar(def.commitment, target_compare);
+  const commit_compare = def.commit_compare || (cNum != null ? target_compare : cText.compare);
+  const commit_value = cNum != null ? cNum : cText.value;
+
+  const w = Number(def.weight);
+  return {
+    target_compare, target_value, commit_compare, commit_value,
+    weight: Number.isFinite(w) ? w : null,
+  };
+}
+
+/** ให้คะแนนแถว KPI จาก "แถวในฐาน" โดยตรง — คืน `status` ('good'/'warn'/'bad'/'unknown') ให้จอใช้ทำไฟด้วย */
+export function scoreDef(value, def = {}) {
+  const bars = defBars(def);
+  const s = scoreKpi(value, bars);
+  return {
+    ...s, bars,
+    status: s.level === 1 ? 'good' : s.level === 0.5 ? 'warn' : s.level === 0 ? 'bad' : 'unknown',
+  };
+}
+
+/* ── 6) KPI Standard 2026 — ทะเบียนมาตรฐานของกลุ่ม (ที่มา: KPI Guideline 2026 as of 29.01.2026 หน้า 7-18)
+   🔴 **กติกาการเลือก KPI ของแต่ละส่วนงาน "มีอยู่แล้ว" ในเอกสารกลุ่ม — ห้ามคิดเกณฑ์เอง** (§15)
+      ทุกแถวในทะเบียนติดป้ายบังคับ 2 แบบ:
+        `fixed`  = **ต้องมีในใบ** ตัดทิ้งไม่ได้ (ในไฟล์ PDF นับได้ 239 คำ)
+        `choice` = เลือกได้ตามภาระงานจริงของหน่วยงานนั้น (108 คำ)
+      แถวที่ `requirement = null` = **แถวหัวข้อแม่** (เช่น `Activity`) ที่มีข้อย่อยอยู่ใต้มัน — ไม่ใช่ KPI เอง
+   ⚠️ หน่วยงานปรับ/เพิ่มข้อ + ถ่วงน้ำหนักเองได้ **แต่ผลรวม weight ต้องเป็น 50 เสมอ** (ประกาศ QSM-R2 001/2569)
+   ⚠️ ข้อมูลจริงอยู่ในตาราง `kpi_standard_items` (Main · migration 20260921) — ไฟล์นี้เก็บแค่
+      "รายชื่อหน่วยงาน + กติกา" ที่ pure เทสได้ **ห้าม hardcode ตัว KPI ซ้ำในนี้** */
+
+export const KPI_TOTAL_WEIGHT = 50;
+
+/* 4 มุมมอง Balanced Scorecard ที่ทั้งเอกสารกลุ่มและใบ KPI ของเราใช้ร่วมกัน
+   คีย์ต้องตรงกับ `kpi_standard_items.perspective` และ `kpi_definitions.category` เป๊ะ
+   ⚠️ เคยเขียนลิสต์นี้ซ้ำในหน้า — ย้ายมาที่เดียว 2026-09-23 (แก้ป้ายที่นี่ที่เดียวพอ) */
+export const KPI_PERSPECTIVES = [
+  { key: 'financial', label: '💰 Financial' },
+  { key: 'customer',  label: '🤝 Customer' },
+  { key: 'internal',  label: '🏭 Internal Process' },
+  { key: 'learning',  label: '📚 Learning & Growth' },
+];
+export const perspectiveLabel = (k) => KPI_PERSPECTIVES.find(c => c.key === k)?.label || k || '';
+
+export const KPI_REQUIREMENTS = [
+  { key: 'fixed',  label: 'บังคับ',  short: 'F', color: '#ef4444', hint: 'ต้องมีในใบ ตัดทิ้งไม่ได้' },
+  { key: 'choice', label: 'เลือกได้', short: 'C', color: '#3b82f6', hint: 'เลือกตามภาระงานจริงของหน่วยงาน' },
+];
+export const requirementOf = (key) => KPI_REQUIREMENTS.find(r => r.key === key) || null;
+
+/** แถวหัวข้อแม่ (มีข้อย่อย) ไม่ใช่ KPI ที่ให้คะแนนเอง — `requirement` ว่าง */
+export const isStdParent = (item) => !item?.requirement;
+export const isStdFixed  = (item) => item?.requirement === 'fixed';
+
+/* 24 หน่วยงานมาตรฐาน — `unit` ต้องตรงกับคอลัมน์ `std_unit` เป๊ะ (คีย์เชื่อมทะเบียน)
+   `seeded:false` = ตารางต้นฉบับหน้า 16-18 ถอดออกมาแล้วนับ Fixed/Choice ไม่ตรง PDF ⇒ **ตั้งใจยังไม่ใส่**
+   จอที่ให้เลือกหน่วยงานต้องบอกตรงๆ ว่ายังไม่มีในทะเบียน ห้ามโชว์เป็นช่องว่างเฉยๆ (กฎความซื่อสัตย์ของจอ) */
+export const KPI_STD_UNITS = [
+  { unit: 'Head of SPG',       th: null,                 seeded: true },
+  { unit: 'GM Plant',          th: 'ผู้จัดการโรงงาน',      seeded: true },
+  { unit: 'GM Plant (Tooling)', th: 'ผู้จัดการโรงงาน (Tooling)', seeded: true },
+  { unit: 'Production',        th: 'ฝ่ายผลิต',            seeded: true },
+  { unit: 'Engineering',       th: 'วิศวกรรม',            seeded: true },
+  { unit: 'QA',                th: 'ประกันคุณภาพ',         seeded: true },
+  { unit: 'QSM',               th: null,                 seeded: true },
+  { unit: 'Logistic & Sales',  th: 'โลจิสติกส์ & ขาย',     seeded: true },
+  { unit: 'Maintenance',       th: 'ซ่อมบำรุง',           seeded: true },
+  { unit: 'Die Maintenance',   th: 'ซ่อมบำรุงแม่พิมพ์',     seeded: true },
+  { unit: 'Tooling',           th: null,                 seeded: true },
+  { unit: 'Marketing',         th: 'การตลาด',             seeded: true },
+  { unit: 'RDPP',              th: null,                 seeded: true },
+  { unit: 'CSC',               th: null,                 seeded: true },
+  { unit: 'CIC',               th: null,                 seeded: true },
+  { unit: 'Accounting',        th: 'บัญชี',               seeded: true },
+  { unit: 'Purchase',          th: 'จัดซื้อ',             seeded: true },
+  { unit: 'HRM',               th: 'ทรัพยากรบุคคล',       seeded: true },
+  { unit: 'Purchase-TSA',      th: 'จัดซื้อ (TSA)',        seeded: true },
+  { unit: 'IT-TSA',            th: 'ไอที (TSA)',           seeded: true },
+  { unit: 'Accounting-TSA',    th: 'บัญชี (TSA)',          seeded: false },
+  { unit: 'HRM-TSA',           th: 'ทรัพยากรบุคคล (TSA)',  seeded: false },
+  { unit: 'Internal Audit-TSA', th: 'ตรวจสอบภายใน (TSA)',  seeded: false },
+  { unit: 'AOBM-TSA',          th: null,                 seeded: false },
+];
+export const stdUnitOf = (unit) => KPI_STD_UNITS.find(u => u.unit === unit) || null;
+/** ป้ายที่เอาไปขึ้นจอ — ไม่มีคำแปลไทยที่มั่นใจ ก็ใช้ชื่ออังกฤษตามเอกสาร ห้ามเดาคำแปล */
+export const stdUnitLabel = (unit) => {
+  const u = stdUnitOf(unit);
+  return u ? (u.th ? `${u.unit} — ${u.th}` : u.unit) : (unit || '');
+};
+
+/** normalize ชื่อหัวข้อก่อนจับคู่ — ใช้จุดเดียวทั้ง checkStdSelection และ matchStdItems
+ *  ⚠️ แถวในใบจริง (`kpi_definitions`) เก็บชื่อไว้ที่ `name` ไม่ใช่ `topic` ⇒ ต้องดูทั้งสองช่อง
+ *     (ตกหล่นข้อนี้ = ข้อ fixed ที่หยิบมาแล้วยังถูกฟ้องว่า "ยังไม่ได้หยิบ" ทุกข้อ) */
+export const normTopic = (s) => String(s == null ? '' : s).trim().toLowerCase();
+const rowTopic = (r) => normTopic(r?.topic ?? r?.name);
+
+/**
+ * จับคู่ "ทะเบียนมาตรฐาน" กับ "แถวที่อยู่ในใบจริงแล้ว"
+ * @param stdItems แถวจาก `kpi_standard_items` ของหน่วยงาน+ปีนั้น
+ * @param rows     แถวในใบ (`kpi_definitions`)
+ * คืน `[{ item, row }]` เรียงตามทะเบียน — `row = null` แปลว่ายังไม่ได้หยิบเข้าใบ
+ */
+export function matchStdItems(stdItems = [], rows = []) {
+  const byId = new Map();
+  const byTopic = new Map();
+  for (const r of Array.isArray(rows) ? rows : []) {
+    if (r?.std_item_id) byId.set(r.std_item_id, r);
+    const t = rowTopic(r);
+    if (t && !byTopic.has(t)) byTopic.set(t, r);
+  }
+  return (Array.isArray(stdItems) ? stdItems : [])
+    .map(item => ({ item, row: byId.get(item?.id) || byTopic.get(normTopic(item?.topic)) || null }));
+}
+
+/**
+ * ตรวจใบ KPI ของหน่วยงาน 1 ใบว่าถูกกติกากลุ่มไหม
+ * @param rows      แถวในใบ (ต้องมี `weight` · `std_item_id` หรือ `topic` ไว้จับคู่กับทะเบียน)
+ * @param stdItems  แถวทะเบียนของหน่วยงานนั้น (จาก `kpi_standard_items`) — ไม่ส่ง = ตรวจแค่น้ำหนัก
+ * คืน `{ weight, ok, diff, missingFixed }` — **ห้ามบล็อกการบันทึกด้วยผลนี้** (ใบจริงบางใบก็ไม่ตรง)
+ * ให้เตือนบนจอเท่านั้น (กฎความซื่อสัตย์: บอกว่าไม่ตรง ดีกว่าแอบแก้ให้หรือเงียบ)
+ */
+export function checkStdSelection(rows = [], stdItems = null) {
+  let weight = 0;
+  for (const r of rows) {
+    const w = Number(r?.weight);
+    if (Number.isFinite(w)) weight += w;
+  }
+  weight = Math.round(weight * 100) / 100;
+  const diff = Math.round((weight - KPI_TOTAL_WEIGHT) * 100) / 100;
+
+  let missingFixed = [];
+  if (Array.isArray(stdItems)) {
+    missingFixed = matchStdItems(stdItems.filter(isStdFixed), rows)
+      .filter(m => !m.row)
+      .map(m => m.item);
+  }
+  return { weight, diff, ok: diff === 0 && missingFixed.length === 0, missingFixed };
 }

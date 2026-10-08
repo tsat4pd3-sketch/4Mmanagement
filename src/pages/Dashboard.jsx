@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback, useMemo, useRef, useContext, Fragment } from 'react';
+import { orgValues, sortLike } from '../utils/listOrder';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { motion, AnimatePresence } from 'framer-motion';
 import { UserContext } from '../App';
 import { isAlarmingDT, isOpenDT, isPlannedDT, dtElapsedMin, fmtDtElapsed } from '../utils/downtimeAlarm';
-import { sumDefectQty, computeLiveOee, orderProducedQty, liveTimeSplit } from '../utils/oee';
+import { sumDefectQty, computeLiveOee, ngByMatFrom, orderProducedQty, orderPlanQty, liveTimeSplit, QBIN_EMBED, halfDayBreakIntervals } from '../utils/oee';
 import ShiftTimeSplit from '../components/ShiftTimeSplit';
 import { markerScale } from '../utils/markerScale';
 import DowntimeSiren from '../components/DowntimeSiren';
@@ -12,8 +14,9 @@ import { buildMan4mPendingMatcher, ppeMissingList } from '../utils/personAlarm';
 import { inSectionScope } from '../utils/sectionScope';
 import { canAccessPage } from '../utils/permissions';
 import { buildScheduleMaps, resolveAssignedShift, shiftFromTeam } from '../utils/shiftAssign';
-import { getLineFamilyNames } from '../utils/lineHierarchy';
+import { getLineFamilyNames, sortLineNames } from '../utils/lineHierarchy';
 import useIsMobile from '../utils/useIsMobile';
+import { toneOf, toneInk, statusColor } from '../utils/statusTone';
 import { pairAwareTotal, collapseOps } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
@@ -22,8 +25,16 @@ import { SKILL_LEVELS, getLevel } from '../utils/skillLevels';
 import { RATE, LIVE } from '../utils/refreshRates';
 import { coalesce } from '../utils/liveRefresh';
 import { visibleInterval } from '../utils/usePolling';
-import { positionAllCards, delayedCountOf, orderKeyOf } from '../utils/heijunkaQueue';
+import { positionAllCards, delayedCountOf, orderKeyOf, projectedFinishMs, planStatusOf, pushChainOf, dayDelaySummaryOf } from '../utils/heijunkaQueue';
+import PlanSlipBar from '../components/PlanSlipBar';   // 📋 แถบ "หลุดแผนไปแค่ไหน" (เวลา+ยอด · 2026-09-30)
+import DelayBlameBar from '../components/DelayBlameBar';   // 🔗 สรุปดีเลย์ของวัน + ต้นเหตุ/ผู้ถูกพาล (ทีมปั๊ม 2026-09-30)
 import { liveChannel } from '../utils/liveChannel';
+import { ALL } from '../utils/filterLabels';
+import { openOnly } from '../utils/shipStatus';
+import { useLatestRequest } from '../utils/useLatestRequest';
+import { loadBreakPolicies } from '../utils/oeeMasters';
+import { fetchAllRows } from '../utils/fetchAllRows';
+import SearchInput from '../components/SearchInput';
 
 const FADE_UP = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 } };
 const stagger = (i) => ({ ...FADE_UP, transition: { delay: i * 0.06, duration: 0.35 } });
@@ -122,22 +133,6 @@ function ThumbMap({ imageUrl, alt, markers }) {
         </div>
       )}
     </div>
-  );
-}
-
-function RadialProgress({ pct, size = 80, stroke = 7, color = 'var(--accent)' }) {
-  const r = (size - stroke) / 2;
-  const circ = 2 * Math.PI * r;
-  const offset = circ * (1 - pct / 100);
-  return (
-    <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" strokeWidth={stroke}
-        style={{ stroke: 'var(--border2)' }} />
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color}
-        strokeWidth={stroke} strokeLinecap="round"
-        strokeDasharray={circ} strokeDashoffset={offset}
-        style={{ transition: 'stroke-dashoffset 0.8s ease' }} />
-    </svg>
   );
 }
 
@@ -300,16 +295,28 @@ export default function Dashboard() {
   const [fgStockByMat,  setFgStockByMat]  = useState({});   // mat_no → stock FG พร้อมส่งรวมทุกคลัง
 
   // โหลดเฉพาะข้อมูลผลิต/OEE จาก DR — เบากว่า fetchAll มาก ใช้กับ realtime
+  const [prodErr, setProdErr] = useState('');   // โหลดข้อมูลผลิตไม่ครบ — ต้องบอกบนจอ ห้ามโชว์ 0/100% เงียบ
+  const beginProd = useLatestRequest();
+  const beginAll = useLatestRequest();
   const fetchProdStatus = useCallback(async () => {
-    const [{ data: sessions }, { data: breakPolicies }, { data: products }] = await Promise.all([
+    const live = beginProd();   // เปลี่ยนวันระหว่างโหลด = คำตอบของวันเก่าห้ามทับจอ (กฎ DB ข้อ 4)
+    /* 🔴 05/10 (QC audit): เดิมอ่านแค่ `data` ทุกคิวรี ⇒ downtime โหลดไม่ได้ = %A 100% บนจอ Andon ·
+       ของเสียโหลดไม่ได้ = %Q 100% · สินค้า `select()` เปล่าตัดที่ 1,000 แถว (ทะเบียน ~1,500) ⇒ พาร์ทท้ายๆ
+       ไม่มี CT/คู่ RH-LH เงียบๆ → แบ่งหน้าครบ + ทุก error ขึ้นแถบแดง + OEE สดของกะนั้นเป็น "—" แทนเลขสวย */
+    const [{ data: sessions, error: sErr }, breakPolicies, { data: products, error: pErr }] = await Promise.all([
       supabaseDR
         .from('production_sessions')
         .select('id, line_name, shift, status, work_date, start_time, created_at, dr_products(name, target_per_shift, cycle_time_sec, process_type)')
         .eq('work_date', boardDate),
-      supabaseDR.from('break_policies').select('*').eq('is_active', true),
-      supabaseDR.from('dr_products').select('mat_no, name, cycle_time_sec, image_url, line_name, pair_mat_no').not('mat_no', 'is', null),
+      loadBreakPolicies().catch((e) => { console.error('[Dashboard] นโยบายพัก:', e); return null; }),
+      fetchAllRows(supabaseDR, 'dr_products', 'mat_no, name, cycle_time_sec, image_url, line_name, pair_mat_no', q => q.not('mat_no', 'is', null).order('id')),
       loadOpInfo(), // map รายการขั้นตอน (OP งานขับนัท) — ยอด demand/actual ไม่นับซ้ำ (ตัวที่ 4 ไม่เข้า destructure)
     ]);
+    if (!live()) return;
+    if (sErr) { console.error('[Dashboard] โหลดกะไม่สำเร็จ:', sErr); setProdErr('โหลดข้อมูลกะไม่สำเร็จ — สถานะไลน์บนจอเป็นของรอบก่อนหน้า'); return; }
+    const miss = [];
+    if (breakPolicies == null) miss.push('นโยบายพัก');
+    if (pErr) miss.push('ทะเบียนสินค้า (CT/คู่ RH-LH)');
     // production_sessions.product_id ไม่ได้ตั้งค่าเสมอ (กะนึงมีได้หลาย mat_no) — ใช้ map นี้
     // เป็น fallback หา cycle_time_sec รายออเดอร์จาก mat_no ตรง ๆ แทนการพึ่ง session.dr_products
     const ctMap = {};
@@ -328,14 +335,16 @@ export default function Dashboard() {
     setLineByMat(lineMap);
     setPairMatByMat(pairMap);
     setBreakPolicies(breakPolicies || []);
+    // pErr = ไม่รู้คู่ ⇒ null (ไม่ยุบ) ห้าม {} ("รู้แล้วว่าไม่มีคู่" = นับงานคู่ 2 เท่า)
+    const pairMapLive = pErr ? null : pairMap;
     // 📡 รอบส่งลูกค้า (EDI 862) ของวันนี้→พรุ่งนี้ ที่ยังไม่ส่ง — ใช้พยากรณ์กะดึกล่วงหน้าแม้ยังไม่เปิดใบผลิต
     {
       const nd = new Date(`${boardDate}T12:00:00`);
       nd.setDate(nd.getDate() + 1);
       const nextDay = `${nd.getFullYear()}-${String(nd.getMonth() + 1).padStart(2, '0')}-${String(nd.getDate()).padStart(2, '0')}`;
-      const { data: shipOrders } = await supabaseDR.from('customer_shipping_orders')
+      const { data: shipOrders } = await openOnly(supabaseDR.from('customer_shipping_orders')
         .select('mat_no, qty, due_date, ship_time, customer, status')
-        .gte('due_date', boardDate).lte('due_date', nextDay).neq('status', 'shipped');
+        .gte('due_date', boardDate).lte('due_date', nextDay));
       setEdiOrders(shipOrders || []);
       // stock FG พร้อมส่งของ mat เหล่านั้น — planner จะหักออกก่อนคำนวณว่าต้องผลิตคืนนี้เท่าไหร่
       const shipMats = [...new Set((shipOrders || []).map(o => o.mat_no))];
@@ -348,19 +357,25 @@ export default function Dashboard() {
     }
     const sessionIds = (sessions || []).map(s => s.id);
     let ordersBySession = {}, dtBySession = {}, defectBySession = {};
+    let oeeBlind = !!pErr;   // ข้อมูลไม่ครบ ⇒ OEE สดคิดไม่ได้ (ห้ามโชว์ %A/%Q 100% จากลิสต์ว่าง)
     if (sessionIds.length > 0) {
       const ordCols = 'session_id, status, qty, qty_ok, qty_actual, qty_target, is_manual, prod_no, part_name, mat_no, machine_no, opened_at, confirmed_at';
-      const [ordRes, { data: dtLogs }, { data: defectLogs }] = await Promise.all([
+      const [ordRes, { data: dtLogs, error: dtErr }, { data: defectLogs, error: dfErr }] = await Promise.all([
         supabaseDR.from('prod_orders').select(ordCols).in('session_id', sessionIds),
         supabaseDR.from('downtime_logs').select('id, session_id, machine_no, description, duration_min, started_at, ended_at, created_at, dr_downtime_types(category, name_th)').in('session_id', sessionIds),
-        supabaseDR.from('defect_logs').select('session_id, qty_ng, qty_suspect, is_trial, description, dr_defect_types(name_th, excl_from_q)').in('session_id', sessionIds),
+        // prod_orders(mat_no) = ไว้ชี้ CT ของ NG ตอนบวกเข้าตัวเศษ %P (ngByMatFrom)
+        supabaseDR.from('defect_logs').select(`session_id, qty_ng, qty_suspect, is_trial, description, prod_orders(mat_no), dr_defect_types(name_th, excl_from_q), ${QBIN_EMBED}`).in('session_id', sessionIds),
       ]);
       // machine_no อาจยังไม่ apply migration (20260723) — retry โดยตัดคอลัมน์ออก ไม่ให้บอร์ดพัง
-      let orders = ordRes.data;
-      if (ordRes.error) {
-        ({ data: orders } = await supabaseDR.from('prod_orders')
+      let orders = ordRes.data, oErr = ordRes.error;
+      if (oErr) {
+        ({ data: orders, error: oErr } = await supabaseDR.from('prod_orders')
           .select(ordCols.replace(', machine_no', '')).in('session_id', sessionIds));
       }
+      if (oErr) miss.push('ใบผลิต');
+      if (dtErr) miss.push('เครื่องหยุด');
+      if (dfErr) miss.push('ของเสีย');
+      oeeBlind = !!(oErr || dtErr || dfErr || pErr);
       (orders     || []).forEach(o => { (ordersBySession[o.session_id]  ||= []).push(o); });
       (dtLogs     || []).forEach(d => { (dtBySession[d.session_id]      ||= []).push(d); });
       (defectLogs || []).forEach(d => { (defectBySession[d.session_id]  ||= []).push(d); });
@@ -382,9 +397,13 @@ export default function Dashboard() {
         downtimes: dtBySession[s.id] || [],
         ctMap,
         ngQty: sumDefectQty(defectBySession[s.id] || [], 'line'),
+        // ของเสีย/ทดลองกินรอบเครื่อง → เข้าตัวเศษ %P ด้วย (utils/oee.js `ngByMatFrom`)
+        ngForP: ngByMatFrom(defectBySession[s.id] || [], ordersBySession[s.id] || []),
         workDate: s.work_date,
         parallelN: parallelUnitsOf(line),
         parallelCap: flowModeOf(line?.flow_mode) === 'parallel_machine' ? parallelUnitsOf(line) : 1,
+        // งานคู่ gang die / RH-LH = 1 shot ได้ 2 ชิ้น — ยุบก่อนคิดเวลามาตรฐานของ %P (pairTotals.js)
+        pairMap: pairMapLive,   // 05/10: เดิม state `pairMatByMat` (deps [boardDate] = ค่ารอบก่อน/ว่างตอนเปิดจอครั้งแรก ⇒ คู่ RH/LH %P นับ 2 เท่า)
         /* ⚠️ นโยบายพัก + process ของกะ — ขาดไปแล้ว A สด ≠ A ที่ stamp ตอนปิดกะ (2026-09-14) */
         breakPolicies: breakPolicies || [],
         processType: s.dr_products?.process_type || null,
@@ -399,7 +418,8 @@ export default function Dashboard() {
       const orders  = ordersBySession[s.id] || [];
       const active  = orders.filter(o => !['cancelled','imported'].includes(o.status));
       /* ⭐ `imported` = ใบยกยอดที่กะถัดไป "กดรับ" ไปแล้ว — ต้องแยก 2 ฝั่ง (2026-09-09 · oee.js §6):
-         - **เป้า** ห้ามนับ (เป้าถูกย้ายไปอยู่ใบของกะถัดไปแล้ว → นับ 2 รอบ 35+30=65)
+         - **เป้า** นับเฉพาะส่วนที่ใช้ไปในกะนี้ = orderPlanQty (min(เป้า, qty_actual) · ที่เหลือย้ายไปใบของกะถัดไปแล้ว
+           → นับเต็มจะได้ 2 รอบ 35+30=65 · ตัดทิ้งทั้งใบ = ยอดผลิตเกินเป้า) — oee §6.1 · 05/10
          - **ผลิตได้** ต้องนับ (ยอดที่กะนี้ทำได้จริงอยู่ใน qty_actual ของมัน · ไม่นับ = หายเงียบตอนกะหน้ากดรับ) */
       const handed  = orders.filter(o => o.status === 'imported');
       // นับงานคู่ RH/LH เป็น 1 คู่/stroke (ไม่บวกชิ้น LH+RH ซ้ำในภาพใหญ่) · พาร์ทเดี่ยว/ไม่ระบุ mat = บวกปกติ
@@ -407,12 +427,13 @@ export default function Dashboard() {
       handed.forEach(o => {
         if (!o.mat_no) return;
         const e = perMatD[o.mat_no] || (perMatD[o.mat_no] = { mat_no: o.mat_no, target: 0, produced: 0 });
-        e.produced += o.qty_actual ?? 0;   // เป้าไม่บวก — ดูหมายเหตุด้านบน
+        e.produced += o.qty_actual ?? 0;
+        e.target += orderPlanQty(o);       // = ส่วนของเป้าที่ใช้ไปในกะนี้ (ที่เหลือย้ายไปใบกะถัดไป · oee §6.1)
       });
       active.forEach(o => {
         if (!o.mat_no) return;
         const e = perMatD[o.mat_no] || (perMatD[o.mat_no] = { mat_no: o.mat_no, target: 0, produced: 0 });
-        e.target += o.qty || 0;
+        e.target += orderPlanQty(o);
         /* 🔴 สูตรบังคับของโปรเจค: confirmed ? (qty_ok ?? qty) : (qty_actual ?? 0)  (audit 2026-09-02)
            เดิมใบที่ยังไม่ปิดให้ 0 ทั้งที่ `active` รวม open + carry_over ไว้แล้ว
            ⇒ ยอดที่หัวหน้ากรอกระหว่างกะ และยอดจริงของใบยกยอด **หายจากจอ TV ทั้งหมด**
@@ -422,13 +443,14 @@ export default function Dashboard() {
       });
       const nullD = active.filter(o => !o.mat_no);
       const ptotD = pairAwareTotal(collapseOps(Object.values(perMatD), opInfoSync()), m => pairMap[m] || null);
-      const demand  = ptotD.target + nullD.reduce((sum, o) => sum + (o.qty || 0), 0);
+      const demand  = ptotD.target + nullD.reduce((sum, o) => sum + orderPlanQty(o), 0)
+        + handed.filter(o => !o.mat_no).reduce((sum, o) => sum + orderPlanQty(o), 0);
       const actual  = ptotD.produced
         + nullD.reduce((sum, o) => sum + orderProducedQty(o), 0)
         // ใบยกยอดที่ถูกรับไปแล้วและไม่มี mat_no — ยอดที่ทำได้ก็ต้องไม่หายเหมือนกัน
         + handed.filter(o => !o.mat_no).reduce((sum, o) => sum + (o.qty_actual ?? 0), 0);
       const target  = s.dr_products?.target_per_shift || 0;
-      const oeeData = s.status === 'open' ? computeSessionOEE(s) : null;
+      const oeeData = s.status === 'open' && !oeeBlind ? computeSessionOEE(s) : null;
       // downtime ที่กำลัง alarm (ยังไม่ปิดรายการ = เครื่องยังหยุดอยู่) — เฉพาะกะที่ยังไม่ปิด
       const activeDT = ['open', 'pending_close'].includes(s.status)
         ? (dtBySession[s.id] || []).filter(isAlarmingDT)
@@ -438,10 +460,13 @@ export default function Dashboard() {
         dtLogs: dtBySession[s.id] || [], defectLogs: sessDefects,
         ngQty: sessDefects.reduce((a, d) => a + (d.qty_ng || 0) + (d.qty_suspect || 0), 0) };
     });
+    if (!live()) return;
+    setProdErr(miss.length ? `⚠️ โหลด${miss.join(' / ')}ไม่สำเร็จ — ${oeeBlind ? 'OEE สดซ่อนไว้ (คิดไม่ได้) · ' : ''}ตัวเลขบนจอยังไม่ครบ อย่าเพิ่งใช้ตัดสินใจ` : '');
     setProdStatus(ps);
-  }, [boardDate]);
+  }, [boardDate, beginProd]);
 
   const fetchAll = useCallback(async (date) => {
+    const live = beginAll();   // เปลี่ยนวันระหว่างโหลด = คำตอบของวันเก่าห้ามทับจอ
     setLoading(true);
     const [
       { data: logData },
@@ -461,8 +486,8 @@ export default function Dashboard() {
         .eq('work_date', date)
         .eq('employees.is_active', true),
       supabase.from('four_m_logs').select('*').eq('work_date', date).order('created_at', { ascending: false }),
-      supabase.from('production_lines').select('id, name, section, std_day_shift, std_night_shift, parent_line_name').order('name'),
-      supabase.from('org_nodes').select('code, name').eq('kind', 'section').eq('is_active', true).order('name'),
+      loadLinesRes(),
+      supabase.from('org_nodes').select('code, name, sort_order').eq('kind', 'section').eq('is_active', true),
       supabase.from('employees').select('id, line_id, team').eq('is_active', true),
       supabase.from('shift_schedules').select('line_id, day_team').eq('work_date', date),
       supabase.from('shift_overrides').select('employee_id, shift').eq('work_date', date),
@@ -472,6 +497,7 @@ export default function Dashboard() {
       supabase.from('machine_points').select('id, line_name, machine_no, pos_top, pos_left'),
     ]);
 
+    if (!live()) return;
     // ตารางกะ: ไลน์ผลิต + หน่วยงานสนับสนุน — สูตรเดียวกับ Checkin ผ่าน utils/shiftAssign.js
     // (เดิมหน้านี้เขียนซ้ำเองแล้ว **ตกเงื่อนไข Team C** → คนทีม C หายจากบอร์ดทั้งกะเช้าและกะดึก
     //  เพราะบอร์ดกรองด้วย assignedShift ซึ่งเป็น null)
@@ -495,7 +521,8 @@ export default function Dashboard() {
     setFourMLogs(fmData || []);
     // เติมโหมดการไหลงาน (flow_mode/parallel_stations) แบบ best-effort — ถ้ายังไม่ apply migration 20260723 ก็ข้ามไป
     let linesEnriched = lineData || [];
-    const { data: flowData } = await supabase.from('production_lines').select('name, flow_mode, parallel_stations');
+    const { data: flowData } = await loadLinesRes();
+    if (!live()) return;
     if (flowData) {
       const fm = {};
       flowData.forEach(l => { fm[l.name] = l; });
@@ -503,7 +530,7 @@ export default function Dashboard() {
     }
     linesRef.current = linesEnriched;
     setLines(linesEnriched);
-    setOrgSections((orgNodeData || []).map(n => n.code || n.name).sort());
+    setOrgSections(orgValues(orgNodeData));
 
     // Build line capacity using shift_schedules for correct day/night split
     const counts = {};
@@ -602,7 +629,7 @@ export default function Dashboard() {
 
     // ข้อมูลผลิต/OEE โหลดแยก (เบากว่า) — realtime จะอัปเดตเฉพาะส่วนนี้
     fetchProdStatus();
-  }, [fetchProdStatus]);
+  }, [fetchProdStatus, beginAll]);
 
   useEffect(() => { fetchAll(selectedDate); }, [selectedDate, fetchAll]);
 
@@ -648,7 +675,7 @@ export default function Dashboard() {
   }, [lines, role, userLineId, scopeSecs]);
 
   const sections = useMemo(
-    () => (!scopeActive && orgSections.length) ? orgSections : [...new Set(scopedLines.map(l => l.section).filter(Boolean))].sort(),
+    () => (!scopeActive && orgSections.length) ? orgSections : sortLike(scopedLines.map(l => l.section), orgSections),
     [scopedLines, orgSections, scopeActive],
   );
   const visibleLines = useMemo(
@@ -829,8 +856,12 @@ export default function Dashboard() {
   }), [visibleLines, shiftLogs, selectedShift, empCounts, shiftKey, fourMLogs]);
 
   const totalCapacity = useMemo(() => lineStats.reduce((s, l) => s + l.lineTotal, 0) || shiftLogs.length, [lineStats, shiftLogs]);
-  const attendRate    = useMemo(() => totalCapacity > 0 ? Math.round((present.length / totalCapacity) * 100) : 0, [totalCapacity, present]);
-  const ppeRate       = useMemo(() => present.length > 0 ? Math.round((ppeReady.length / present.length) * 100) : 0, [present, ppeReady]);
+  /* 🔴 ไม่มีตัวหาร = **null ไม่ใช่ 0** (กฎความซื่อสัตย์ของจอ · 23/09 ก้อน B)
+     เดิมคืน 0 ⇒ ตอนเช้าก่อนใครเช็คชื่อ (และทุกวันที่ยังไม่มีข้อมูล) การ์ด "อัตราการมาทำงาน"
+     ขึ้น **0% ตัวแดงเต็มจอ** ซึ่งแปลว่า "วันนี้ไม่มีใครมาทำงานเลย" — เป็นคำกล่าวอ้างเท็จ
+     ความจริงคือ "ยังไม่รู้" · เห็นชัดตอนทำใบนี้เป็นการ์ดพระเอก 62px (ตอนเป็นวงแหวน 19px ไม่มีใครทันสังเกต) */
+  const attendRate    = useMemo(() => totalCapacity > 0 ? Math.round((present.length / totalCapacity) * 100) : null, [totalCapacity, present]);
+  const ppeRate       = useMemo(() => present.length > 0 ? Math.round((ppeReady.length / present.length) * 100) : null, [present, ppeReady]);
 
   // ── การ์ดผังไลน์ (Line Floor Maps): นับ "ตามจุดงาน" (คนที่ถูกวางบนสถานีของผังนี้) = ตรงกับหมุดบนรูป ──
   // KPI ด้านบนสรุปกำลังคนทั้งไลน์ (roster ตาม employees.line_id = ไลน์แม่) ไปแล้ว การ์ดผังจึงไม่ซ้ำเรื่องนั้น
@@ -878,6 +909,11 @@ export default function Dashboard() {
   return (
     <div className="page-content" style={{ maxWidth: '100%' }}>
       <DowntimeSiren mode="open_15min" />
+      {prodErr && (
+        <div role="alert" style={{ margin: '0 0 12px', padding: '10px 14px', borderRadius: 10, border: '1px solid #ef444488', background: '#ef444414', color: '#ef4444', fontSize: 14, fontWeight: 700 }}>
+          {prodErr}
+        </div>
+      )}
 
       {/* ── Header ─────────────────────────────────────── */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 28, gap: 16, flexWrap: 'wrap' }}>
@@ -912,20 +948,22 @@ export default function Dashboard() {
               value={selectedSection}
               onChange={e => changeSection(e.target.value)}
               style={{
+                width: 'auto', maxWidth: 280,   // UI-STANDARD 2026-09-24 — กัน select{width:100%} ของธีมยืดเต็มแถว (เคยยืด 907px)
                 background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 10,
                 padding: '7px 12px', fontSize: 14, fontWeight: 700, color: 'var(--text)',
                 cursor: 'pointer', outline: 'none',
               }}>
-              <option value="all">🏭 ทุกส่วนงาน</option>
+              <option value="all">{ALL.section}</option>
               {sections.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           )}
           {/* Shift toggle */}
           <div style={{ display: 'flex', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 10, padding: 3, gap: 2 }}>
             {[
+              /* "ทุก…" ซ้ายสุดเสมอ + ป้ายจากทะเบียน (UI-STANDARD §3) — คงสีกะไว้เพราะเป็นบอร์ด TV */
+              { val: 'all',   label: ALL.shift,   active: 'rgba(255,255,255,0.1)', color: 'var(--text2)' },
               { val: 'day',   label: '☀️ กะเช้า', active: 'rgba(245,158,11,0.2)', color: '#f59e0b' },
               { val: 'night', label: '🌙 กะดึก',  active: 'rgba(77,159,255,0.2)', color: '#4d9fff' },
-              { val: 'all',   label: 'ทั้งหมด',    active: 'rgba(255,255,255,0.1)', color: 'var(--text2)' },
             ].map(s => (
               <button key={s.val} onClick={() => setSelectedShift(s.val)}
                 style={{
@@ -982,73 +1020,107 @@ export default function Dashboard() {
       )}
 
       {/* ── KPI Row ─────────────────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: isWide ? 'repeat(5, 1fr)' : 'repeat(auto-fit, minmax(175px, 1fr))', gap: isMobile ? 10 : 14, marginBottom: 24 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isWide ? 'repeat(6, 1fr)' : 'repeat(auto-fit, minmax(175px, 1fr))', gap: isMobile ? 10 : 14, marginBottom: 24 }}>
         {[
+          /* 🚦 สีบนการ์ด = **สถานะเทียบเป้าเท่านั้น** (`utils/statusTone.js`) — 23/09 จาก brief De-AI UI
+             เดิมแถวนี้ปนกัน 3 แบบในบรรทัดเดียวกัน: น้ำเงิน = สีประจำใบ · ส้ม = สีประจำใบ ·
+             เขียว/ส้ม/แดง = สถานะจริง ⇒ คนหน้างานอ่าน "ส้ม" ของ OT ว่าเป็นคำเตือนทั้งที่ไม่ใช่
+             กติกา: **ไม่มีเป้าให้เทียบ = เทา** และสีทุกเฉดมาจาก `statusColor()` ชุดเดียว
+
+             ── 23/09 ก้อน B (brief ข้อ 03 "One primary, the rest secondary") ──────────────
+             1. **มีใบเดียวเป็นพระเอก** (`primary`) — เดิม 5 ใบขนาดเท่ากันเป๊ะ ตาไม่รู้จะเริ่มตรงไหน
+                เลือก "อัตราการมาทำงาน" เพราะเป็นใบเดียวในแถวที่**มีเกณฑ์ให้ตัดสิน** และเป็นตัวที่
+                ชี้ว่าวันนี้เปิดไลน์ได้แค่ไหน (ใบที่เหลือเป็นข้อเท็จจริง/คิวงาน = ตัดสินไม่ได้ = เทา)
+             2. **ถอดวงแหวน (donut ค่าเดียว)** ออกจากใบมาทำงาน/PPE — วงแหวนที่มีค่าเดียวไม่ได้
+                เทียบกับอะไร (ตัวเลขคือกราฟอยู่แล้ว) ซ้ำร้ายมันบีบตัวเลขเหลือ 19-24px ทั้งที่ใบข้างๆ
+                44-54px ⇒ **ใบที่สำคัญกว่ากลับตัวเล็กกว่า** = ลำดับความสำคัญกลับหัว
+             3. **emoji อยู่ต่อ แต่ย้ายไปข้างหัวข้อ** (คำสั่ง user 23/09 *"emoji ช่วยสื่อได้ ถ้าตรงกับหัวข้อ"*)
+                เดิมเป็นลายน้ำ 56px มุมขวาบน = ของชิ้นใหญ่ที่สุดในการ์ดที่ไม่ใช่ตัวเลข
+             4. **เกณฑ์ที่ใช้ตัดสินสี ต้องเขียนบนจอ** (`basis`) — เดิมทา 90/75 เงียบๆ คนอ่านไม่มีทาง
+                รู้ว่าเขียวเพราะอะไร · คำว่า "เกณฑ์" ไม่ใช่ "เป้า" เพราะเป็นเกณฑ์ของจอนี้เอง
+                ยังไม่ใช่เป้าทางการจากทะเบียน KPI (ห้ามเขียน "เป้า" จนกว่าจะผูกของจริง) */
           {
             label: 'พนักงานทั้งหมด', value: totalCapacity, unit: 'คน',
             sub: `เช็คชื่อแล้ว ${present.length + absent.length} / ${totalCapacity} คน`,
-            accent: '#4d9fff', icon: '👥',
-            radial: null,
+            tone: 'none',            // ยอดพนักงานในทะเบียน = ข้อเท็จจริง ไม่มีดี/แย่
+            icon: '👥',
           },
           {
-            label: 'อัตราการมาทำงาน', value: attendRate, unit: '%',
-            sub: `มา ${present.length} · ขาด ${absent.length}`,
-            accent: attendRate >= 90 ? '#22c55e' : attendRate >= 75 ? '#f59e0b' : '#e74c3c',
-            icon: '✅', radial: attendRate,
+            label: 'อัตราการมาทำงาน', value: attendRate, unit: '%', primary: true,
+            sub: attendRate == null ? 'ยังไม่มีใครเช็คชื่อ — ตัวเลขยังตัดสินไม่ได้'
+              : `มา ${present.length} · ขาด ${absent.length} · จาก ${totalCapacity} คน`,
+            // เกณฑ์เดิมของหน้านี้ (90 / 75) — คงพฤติกรรมไว้ แต่ให้ "สี" มาจากชุดกลาง + เขียนบนจอ
+            tone: attendRate == null ? 'none'
+              : attendRate >= 90 ? 'good' : attendRate >= 75 ? 'warn' : 'bad',
+            basis: attendRate == null ? null : 'เกณฑ์จอนี้: เขียว ≥ 90% · เหลือง ≥ 75%',
+            icon: '✅',
           },
           {
             label: 'PPE ครบถ้วน', value: ppeRate, unit: '%',
-            sub: `${ppeReady.length} / ${present.length} คนที่มา`,
-            accent: ppeRate >= 90 ? '#22c55e' : ppeRate >= 70 ? '#f59e0b' : '#e74c3c',
-            icon: '🦺', radial: ppeRate,
+            sub: ppeRate == null ? 'ยังไม่มีคนมาให้ตรวจ' : `${ppeReady.length} / ${present.length} คนที่มา`,
+            tone: ppeRate == null ? 'none'
+              : ppeRate >= 90 ? 'good' : ppeRate >= 70 ? 'warn' : 'bad',
+            basis: ppeRate == null ? null : 'เกณฑ์จอนี้: เขียว ≥ 90% · เหลือง ≥ 70%',
+            icon: '🦺',
           },
           {
             label: 'OT วันนี้', value: otCount, unit: 'คน',
             sub: present.length > 0 ? `${Math.round(otCount/present.length*100)}% ของคนที่มา` : 'ไม่มีข้อมูล',
-            accent: '#f59e0b', icon: '⏰', radial: null,
+            tone: 'none',            // OT เยอะ/น้อยไม่ได้แปลว่าดีหรือแย่ในตัวมันเอง ⇒ ห้ามทาส้มทิ้งไว้
+            icon: '⏰',
           },
           {
             label: '4M Alerts', value: visibleFourMLogs.length, unit: 'รายการ',
             sub: visibleFourMLogs.length > 0 ? `${[...new Set(visibleFourMLogs.map(f => f.line_name))].length} ไลน์ได้รับผลกระทบ` : 'ไม่มีการแจ้งเตือน',
-            accent: visibleFourMLogs.length > 0 ? '#e74c3c' : '#22c55e', icon: '🚨', radial: null,
+            // เหลือง ไม่ใช่แดง — ให้ตรงกับการ์ด "4M รออนุมัติ" บนหน้าแรก (จอ 2 จอต้องพูดตรงกัน)
+            tone: toneOf({ value: visibleFourMLogs.length, zeroIsGood: true, over: 'warn' }),
+            icon: '🚨',
           },
-        ].map((kpi, i) => (
-          <motion.div key={kpi.label} {...stagger(i + 2)} style={{ height: '100%' }}>
+        ].map((kpi, i) => {
+          const numSize = kpi.primary ? (isWide ? 62 : isMobile ? 40 : 48) : (isWide ? 36 : isMobile ? 28 : 32);
+          return (
+          <motion.div key={kpi.label} {...stagger(i + 2)}
+            style={{ height: '100%', gridColumn: isWide && kpi.primary ? 'span 2' : 'auto' }}>
             <div className="kpi-lift" style={{
               background: 'var(--card)', border: '1px solid var(--border2)',
-              borderRadius: 14, padding: isMobile ? '14px 14px' : isWide ? '22px 24px' : '18px 20px',
+              borderRadius: 14, padding: isMobile ? '13px 14px' : isWide ? '20px 24px' : '16px 18px',
               boxShadow: 'var(--shadow-sm)',
-              borderTop: `3px solid ${kpi.accent}`,
+              borderTop: `3px solid ${statusColor(kpi.tone)}`,
               display: 'flex', flexDirection: 'column', gap: 4, justifyContent: 'space-between',
-              position: 'relative', overflow: 'hidden',
               height: '100%', boxSizing: 'border-box',
-              minHeight: isMobile ? 120 : isWide ? 160 : 140,
+              minHeight: isMobile ? 112 : isWide ? 152 : 132,
             }}>
-              <div style={{ position: 'absolute', top: 14, right: 16, opacity: 0.12, fontSize: isWide ? 56 : 42, lineHeight: 1, userSelect: 'none' }}>
-                {kpi.icon}
+              <div style={{
+                display: 'flex', alignItems: 'baseline', gap: 7,
+                fontSize: isWide ? 15 : 14, fontWeight: 700, color: 'var(--muted)',
+                textTransform: 'uppercase', letterSpacing: '0.06em',
+              }}>
+                <span aria-hidden="true" style={{ fontSize: isWide ? 17 : 15, flexShrink: 0 }}>{kpi.icon}</span>
+                <span style={{ minWidth: 0 }}>{kpi.label}</span>
               </div>
-              <div style={{ fontSize: isWide ? 16 : 15, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
-                {kpi.label}
+              <div style={{
+                fontSize: numSize, fontWeight: 800, fontFamily: 'var(--font-display)',
+                color: toneInk(kpi.tone), lineHeight: 1.05, marginTop: 2,
+              }}>
+                {loading || kpi.value == null ? '—' : kpi.value}
+                {!loading && kpi.value != null && (
+                  <span style={{ fontSize: Math.round(numSize * 0.4), fontWeight: 500, color: 'var(--text2)', marginLeft: 4 }}>
+                    {kpi.unit}
+                  </span>
+                )}
               </div>
-              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, marginTop: 4 }}>
-                {kpi.radial !== null ? (
-                  <div style={{ position: 'relative', width: isWide ? 92 : 72, height: isWide ? 92 : 72, flexShrink: 0 }}>
-                    <RadialProgress pct={kpi.radial} size={isWide ? 92 : 72} stroke={isWide ? 8 : 7} color={kpi.accent} />
-                    <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: isWide ? 24 : 19, fontWeight: 800, color: kpi.accent, fontFamily: 'var(--font-display)' }}>
-                      {kpi.value}
-                    </div>
-                  </div>
-                ) : (
-                  <div style={{ fontSize: isWide ? 54 : 44, fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text)', lineHeight: 1 }}>
-                    {loading ? '—' : kpi.value}
-                    <span style={{ fontSize: isWide ? 22 : 18, fontWeight: 500, color: 'var(--text2)', marginLeft: 4 }}>{kpi.unit}</span>
+              <div>
+                <div style={{ fontSize: isWide ? 14.5 : 13.5, color: 'var(--muted)' }}>{kpi.sub}</div>
+                {kpi.basis && (
+                  <div style={{ fontSize: isWide ? 13 : 12, color: 'var(--muted)', marginTop: 2, opacity: 0.85 }}>
+                    {kpi.basis}
                   </div>
                 )}
               </div>
-              <div style={{ fontSize: isWide ? 15 : 14, color: 'var(--muted)', marginTop: 2 }}>{kpi.sub}</div>
             </div>
           </motion.div>
-        ))}
+          );
+        })}
       </div>
 
       {/* ── Downtime Alarm Banner — เครื่องจักรหยุด กระพริบเตือนทั้งแถบ ── */}
@@ -1313,17 +1385,8 @@ export default function Dashboard() {
           { key: 'pm', hours: HOURS.slice(12), startMs: gridStartMs + 12 * 3600000 },
         ];
         // ช่วง break_policies ที่ตรงกับ half นี้ ([startMs, endMs]) — ใช้ทั้งวาดแถบและกันการ์ดวางทับเวลาพัก
-        const getBreakIntervals = (half) => breakPolicies
-          .filter(p => p.shift === 'both' || (p.shift === 'day' && half.key === 'am') || (p.shift === 'night' && half.key === 'pm'))
-          .map(p => {
-            const idx = half.hours.indexOf(Number(String(p.start_time).slice(0,2)));
-            if (idx < 0) return null;
-            const mins = Number(String(p.start_time).slice(3,5)) || 0;
-            const st = half.startMs + idx * 3600000 + mins * 60000;
-            return [st, st + (p.duration_min || 0) * 60000];
-          })
-          .filter(Boolean)
-          .sort((a, b) => a[0] - b[0]);
+        // 🔴 ผ่าน halfDayBreakIntervals (utils/oee.js) ที่เดียว — กรอง process/ot_scope เหมือนสูตร OEE (QC 05/10)
+        const getBreakIntervals = (half) => halfDayBreakIntervals({ policies: breakPolicies, half });
         // รวมเวลาพักทั้งวัน (เช้า+ดึก) — คิวต้องต่อเนื่องข้ามกะได้ถ้าดีเลย์ล้นจากกะเช้าไปกะดึก
         const allBreaksOnce = () => [...getBreakIntervals(HALVES[0]), ...getBreakIntervals(HALVES[1])].sort((a, b) => a[0] - b[0]);
         /* จัดการ์ดเป็น "รอบสแกน" ทุก 2 ชม. ตามเวลาเปิดจริง — จำกัดผลของดีเลย์ให้อยู่ในรอบตัวเอง
@@ -1372,7 +1435,7 @@ export default function Dashboard() {
                   style={{ width: 148, padding: '4px 8px', borderRadius: 7, fontSize: 13, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--font-body)' }} />
                 <button onClick={() => shiftDate(1)} disabled={boardDate >= todayStr} style={{ ...dateBtn, opacity: boardDate >= todayStr ? 0.4 : 1, cursor: boardDate >= todayStr ? 'default' : 'pointer' }}>▶</button>
                 {boardDate !== todayStr && (
-                  <button onClick={() => setBoardDate(todayStr)} style={{ ...dateBtn, background: 'var(--accent)', color: '#08130a', border: '1px solid var(--accent)' }}>วันนี้</button>
+                  <button onClick={() => setBoardDate(todayStr)} style={{ ...dateBtn, background: 'var(--accent)', color: 'var(--accent-ink)', border: '1px solid var(--accent)' }}>วันนี้</button>
                 )}
               </div>
             </div>
@@ -1397,7 +1460,7 @@ export default function Dashboard() {
                 ชิป = state ที่มองเห็น (ไลน์อื่นถูกซ่อนโดยผู้ใช้เลือกเอง ไม่ใช่หายเงียบ)
                 boardLineSel ที่ไม่มีในวันนั้น → ตกกลับ "ทุกไลน์" (กฎ cascade §5.3 ห้ามจอว่างเงียบ) */}
             {(() => {
-              const lineNames = Object.keys(byLine).sort();
+              const lineNames = sortLineNames(Object.keys(byLine), lines);   // ลำดับมาตรฐาน (ส่วนงาน→ชื่อ) 2026-10-01
               const effSel = lineNames.includes(boardLineSel) ? boardLineSel : '';
               if (lineNames.length <= 1 && !boardQuery) return null;
               const chip = (active) => ({
@@ -1412,9 +1475,8 @@ export default function Dashboard() {
                     <button key={c.k || '_all'} onClick={() => setBoardLineSel(c.k)} style={chip(effSel === c.k)}>{c.label}</button>
                   ))}
                   {/* width ต้องกำหนดเอง — index.css ตั้ง input width:100% ทั้งแอป */}
-                  <input value={boardQuery} onChange={e => setBoardQuery(e.target.value)} placeholder="🔎 ค้นพาร์ท / MAT / เลขใบ"
-                    style={{ width: 210, marginLeft: 'auto', padding: '4px 10px', borderRadius: 7, fontSize: 12.5,
-                      background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--font-body)' }} />
+                  <SearchInput value={boardQuery} onChange={setBoardQuery} fields="พาร์ท / MAT / เลขใบ" grow={false}
+                    style={{ width: 210, marginLeft: 'auto' }} inputStyle={{ fontSize: 12.5, background: 'var(--bg2)' }} />
                   {(effSel || boardQuery) && (
                     <button onClick={() => { setBoardLineSel(''); setBoardQuery(''); }}
                       style={{ ...chip(false), color: 'var(--muted)' }}>✕ ล้างตัวกรอง</button>
@@ -1423,7 +1485,7 @@ export default function Dashboard() {
               );
             })()}
 
-            {Object.entries(byLine)
+            {sortLineNames(Object.keys(byLine), lines).map(n => [n, byLine[n]])
               .filter(([n]) => !boardLineSel || !Object.keys(byLine).includes(boardLineSel) || n === boardLineSel)
               .map(([lineName, sessions]) => {
               const hasOpen = sessions.some(s => s.status === 'open');
@@ -1475,12 +1537,31 @@ export default function Dashboard() {
                     ⇒ **บอร์ดเดียวกัน /dashboard กับ /management ขึ้น "ดีเลย์ N ใบ" คนละเลข**
                     ตอนนี้ทั้ง 2 หน้าเรียก `positionAllCards` ตัวเดียวกัน — ห้ามเขียนสูตรนับเองอีก */
               const positionedByOrder = positionAllCards(allCards, {
-                breaks: allBreaksOnce(), ctByMat: ctByMatNo, nowMs, roundIndexOf, roundStartOf,
+                breaks: allBreaksOnce(), ctByMat: ctByMatNo, nowMs, frameEndMs: gridEndMs, roundIndexOf, roundStartOf,
                 flowByLine: linesByName, machineCountByLine: machineCountByLine, pairMatByMat,
               });
               const positionedForCards = (cs) => cs.map(c => positionedByOrder.get(orderKeyOf(c))).filter(Boolean)
                 .sort((a, b) => a.startMs - b.startMs);
               const totalDelayed = delayedCountOf(positionedByOrder);
+              /* ⏱️ ปลายกะที่กำลังเดินอยู่ — ใช้ตัดสิน "ไม่ทันกะ"/"เกินกะ"
+                 ดูวันย้อนหลัง/วันหน้า (ไม่มีกะกำลังเดิน) → ใช้ปลายวันงาน (08:00 วันถัดไป) ตามเดิม */
+              const curHalfNow  = HALVES.find(hf => nowMs >= hf.startMs && nowMs < hf.startMs + 12 * 3600000);
+              const shiftEndMs  = curHalfNow ? curHalfNow.startMs + 12 * 3600000 : gridEndMs;
+              /* 📋 "หลุดแผนไปแค่ไหน" ของทั้งกลุ่มไลน์ — สูตรเดียวกับที่ใช้ในแถว (planStatusOf)
+                 feedback หน้างาน 30/09: "ดีเลย์ N ใบ" ไม่บอกขนาด ⇒ ต้องมีนาที + ยอดคู่กัน */
+              /* 🔗 คำขอทีมปั๊ม 30/09: "สรุปวันนี้ดีเลย์ไปกี่งาน" + "หลุดมาจากตัวไหน พาลไปโดนตัวไหน"
+                 — สูตรกลางใน heijunkaQueue (ห้ามนับเองในหน้า) */
+              const dayDelay   = dayDelaySummaryOf(positionedByOrder, { frameEndMs: gridEndMs, nowMs });
+              const blameChain = pushChainOf(positionedByOrder);
+              /* ใบไหนถูกพาลจากใบไหน — ใช้เติม tooltip ของใบที่ถูกดัน (ตอบ "ทำไมใบฉันเลื่อน") */
+              const blamedBy = new Map();
+              blameChain.forEach(c => c.victims.forEach(v => {
+                if (!blamedBy.has(v.key)) blamedBy.set(v.key, { root: c.root, blameMin: v.blameMin, pushedMin: v.pushedMin });
+              }));
+              const boardPlan = planStatusOf({
+                positioned: positionedByOrder, cards: allCards, breaks: allBreaksOnce(),
+                ctByMat: ctByMatNo, nowMs, frameEndMs: gridEndMs, shiftEndMs,
+              });
 
               return (
                 <div key={lineName} style={{
@@ -1493,13 +1574,19 @@ export default function Dashboard() {
 
                   {/* ── Line header ── */}
                   <div style={{ padding: '9px 14px', borderBottom: '1px solid var(--border2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    {/* 📱 ต้องมี flexWrap — ชิปสถานะ (ดีเลย์/แถบหลุดแผน/⬜ ไม่รู้) เป็นข้อความ nowrap
+                        หดไม่ได้ ⇒ ที่ 390px หัวบอร์ดล้นกรอบ 11px (mobilesweep จับได้ 30/09) */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', minWidth: 0 }}>
                       <span style={{ fontSize: 17, fontWeight: 800, color: 'var(--text)' }}>{lineName}</span>
-                      {totalDelayed > 0 && (
-                        <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 20, fontWeight: 700, background: 'rgba(239,68,68,0.15)', color: '#ef4444' }}>
-                          ⚠️ ดีเลย์ {totalDelayed} ใบ
-                        </span>
-                      )}
+                      {/* ⚠️ ชิป "ดีเลย์ N ใบ" ถอดออก 30/09 — เลขเดียวกันอยู่ในสรุปวันแล้ว ("ยังค้าง N")
+                          หัวบอร์ดมี 4 บรรทัดที่พูดเรื่องเดียวกันคือต้นเหตุที่คนเลิกอ่าน
+                          · `totalDelayed` ยังใช้คุมสีขอบ/เงาการ์ดเหมือนเดิม */}
+                      {/* 📋 ขนาดของการหลุดแผน (นาที + ชิ้น + คาดจบ) — "กี่ใบ" อย่างเดียวตอบหน้างานไม่ได้ */}
+                      <PlanSlipBar st={boardPlan} fmtMs={fmtMs} size={12} />
+                      {/* 🔗 สรุปวัน + ต้นเหตุ/ผู้ถูกพาล (ทีมปั๊ม) — วางเต็มบรรทัดของตัวเอง */}
+                      <div style={{ flexBasis: '100%', minWidth: 0 }}>
+                        <DelayBlameBar day={dayDelay} chains={blameChain} />
+                      </div>
                       {/* ⬜ นาทีที่ยังไม่มีคำอธิบาย รวมทั้งกลุ่มไลน์ — "ต้อง recover กี่นาที" ตอบด้วยเลขนี้
                           ⚠️ ตั้งใจไม่ทำเป็นไฟแดง: ค่ากลางทั้งโรงงานอยู่ที่ ~20% ของกะ ถ้าตีแดงคือแดงทุกไลน์
                              ทุกกะ แล้วไม่มีใครเชื่อจออีก — ตั้งเกณฑ์เตือนหลังจากดูค่าจริงบนจอสักพักก่อน */}
@@ -1622,7 +1709,20 @@ export default function Dashboard() {
                         tailLeftPct = tLeft;
                         tailWidthPct = Math.max(0, tRight - tLeft);
                       }
-                      return { o: item.o, leftPct, widthPct, tailLeftPct, tailWidthPct, realEndMs: item.endMs, isDelayed: item.isDelayed, isLateDone: item.isLateDone, startMs: item.startMs, occupiedEndMs: item.occupiedEndMs };
+                      /* 🖼️ กรอบแผนของใบนี้ (ภาพร่างจาก user 30/09 · ทีมปั๊ม)
+                         = ช่วงที่ใบนี้ "ควร" อยู่ถ้าไม่มีใบไหนค้าง (`planStartMs`/`plannedEndMs` จาก cursor ที่ 2)
+                         🔴 **วาดทุกใบ** — กรอบคือเส้นอ้างอิงที่ต้องอยู่เสมอ คนถึงจะเทียบได้ว่าแท่งจริง
+                            "ล้นออกขวาเท่าไหร่ = หลุดเท่านั้น" (ใบที่ตรงแผน กรอบจะทับแท่งพอดี = เหมือนเส้นขอบ ไม่รก)
+                         · `slipped` ใช้เน้นเฉพาะใบที่หลุดจริง (กรอบเข้ม + เส้นปิดท้ายกรอบให้เห็นจุดที่แผนจบ) */
+                      let planLeftPct = 0, planWidthPct = 0, planSlipped = false;
+                      if (item.planStartMs != null && item.plannedEndMs != null) {
+                        const pl = Math.max(0, Math.min(100, (item.planStartMs - hs) * pctPerMs));
+                        const pr = Math.max(0, Math.min(100, (item.plannedEndMs - hs) * pctPerMs));
+                        if (pr > pl) { planLeftPct = pl; planWidthPct = pr - pl; }
+                        planSlipped = (item.startMs - item.planStartMs) > 2 * 60000
+                          || (Math.max(item.endMs, item.occupiedEndMs) - item.plannedEndMs) > 2 * 60000;
+                      }
+                      return { o: item.o, leftPct, widthPct, tailLeftPct, tailWidthPct, realEndMs: item.endMs, isDelayed: item.isDelayed, isLateDone: item.isLateDone, startMs: item.startMs, occupiedEndMs: item.occupiedEndMs, planLeftPct, planWidthPct, planStartMs: item.planStartMs, plannedEndMs: item.plannedEndMs, planSlipped };
                     };
 
                     // เรียงตามเวลาเริ่มจริง แล้วต่อคิวในแถวเดียวกัน (ไม่สร้างแถวใหม่) — แต่ละการ์ดเริ่มได้ไม่ก่อนการ์ดก่อนหน้าสิ้นสุด
@@ -1706,7 +1806,7 @@ export default function Dashboard() {
                             const room = (i + 1 < positioned.length ? positioned[i + 1].leftPct : 100) - positioned[i].leftPct;
                             positioned[i].widthPct = Math.max(0, Math.min(Math.max(positioned[i].widthPct, Math.min(minPct, room)), room));
                           }
-                          return positioned.map(({ o, leftPct, widthPct, tailLeftPct, tailWidthPct, realEndMs, isDelayed, isLateDone, startMs }, oi) => {
+                          return positioned.map(({ o, leftPct, widthPct, tailLeftPct, tailWidthPct, realEndMs, isDelayed, isLateDone, startMs, occupiedEndMs, planLeftPct, planWidthPct, planStartMs, plannedEndMs, planSlipped }, oi) => {
                           if (leftPct >= 100) return null;
                           const statusColor = isLateDone ? '#f97316' : o.isDone ? '#22c55e' : isDelayed ? '#ef4444' : o.isCarry ? '#f59e0b' : '#4d9fff';
                           const icon = o.isDone ? (isLateDone ? '✓!' : '✓') : isDelayed ? '!' : o.isCarry ? '↷' : o.is_manual ? '✍️' : '▶';
@@ -1727,9 +1827,14 @@ export default function Dashboard() {
                           // จำกัดเฉพาะ downtime ของ sub-line เดียวกับใบนี้ ไม่หยิบของอีกไลน์ที่แค่เวลาตรงกันมาปน
                           const causeText = isLateDone ? dtTooltip(startMs, new Date(o.confirmed_at).getTime(), o.line_name)
                             : isDelayed ? dtTooltip(startMs, Math.min(nowMs, gridEndMs), o.line_name) : '';
+                          /* 🔗 "ใบฉันเลื่อนเพราะใคร" (คำขอทีมปั๊ม) — ต่อท้าย tooltip ของใบที่ถูกพาล */
+                          const blame = blamedBy.get(orderKeyOf(o));
+                          const blameText = blame
+                            ? ` · ⏴ ถูกเลื่อนเพราะใบ #${blame.root?.prod_no || blame.root?.mat_no || '—'} ค้าง (โทษได้ ${blame.blameMin} น. จากที่เลื่อนไป ${blame.pushedMin} น. — ส่วนต่างคือการเข้าคิวปกติ)`
+                            : '';
                           return (
                             <Fragment key={o.prod_no || oi}>
-                            <div title={`${o.prod_no || ''} ${o.mat_no || ''} — ${o.qty}ชิ้น${isLateDone ? ` ✓เสร็จ (ช้ากว่ากำหนด${Math.round((new Date(o.confirmed_at).getTime()-realEndMs)/60000)}นาที)` : isDelayed ? ` ⚠️ช้า${Math.round((nowMs-realEndMs)/60000)}นาที ยังไม่ปิด — ใบถัดไปถูกดันไปต่อท้าย` : o.isDone ? ' ✓เสร็จ' : ` →${fmtMs(realEndMs)}`}${isOverCap ? ` 🔴 เป้าล้นกรอบวันงาน +${(overMs / 3600000).toFixed(1)} ชม. — ต้องยกยอดข้ามกะ/เพิ่มกำลังผลิต` : ''}${causeText}`}
+                            <div title={`${o.prod_no || ''} ${o.mat_no || ''} — ${o.qty}ชิ้น${isLateDone ? ` ✓เสร็จ (ช้ากว่ากำหนด${Math.round((new Date(o.confirmed_at).getTime()-realEndMs)/60000)}นาที)` : isDelayed ? ` ⚠️ช้า${Math.round((nowMs-realEndMs)/60000)}นาที ยังไม่ปิด — ใบถัดไปถูกดันไปต่อท้าย` : o.isDone ? ' ✓เสร็จ' : ` →${fmtMs(realEndMs)}`}${isOverCap ? ` 🔴 เป้าล้นกรอบวันงาน +${(overMs / 3600000).toFixed(1)} ชม. — ต้องยกยอดข้ามกะ/เพิ่มกำลังผลิต` : ''}${blameText}${causeText}`}
                               style={{
                                 position: 'absolute', top: 4, bottom: 4,
                                 left: `${leftPct}%`, width: `${widthPct}%`, minWidth: 2,
@@ -1764,6 +1869,20 @@ export default function Dashboard() {
                               </div>
                               )}
                             </div>
+                            {/* 🖼️ กรอบแผน — "ใบนี้ควรอยู่ตรงนี้" (เส้นประเทา ไม่ทึบ ไม่แย่งสายตากับสถานะ)
+                                วาดเฉพาะใบที่หลุดกรอบ ⇒ ระยะห่างระหว่างกรอบกับแถบจริง = ขนาดที่หลุด เห็นด้วยตาเปล่า */}
+                            {planWidthPct > 0 && (
+                              <div title={`กรอบแผนของใบนี้: ${fmtMs(planStartMs)}–${fmtMs(plannedEndMs)}${planSlipped ? ` · หลุดกรอบ (เริ่มช้า ${Math.max(0, Math.round((startMs - planStartMs) / 60000))} น. · จบช้า ${Math.max(0, Math.round((Math.max(realEndMs, occupiedEndMs || realEndMs) - plannedEndMs) / 60000))} น.)` : ' · อยู่ในกรอบ'}`}
+                                style={{
+                                  position: 'absolute', top: 1, bottom: 1,
+                                  left: `${planLeftPct}%`, width: `${planWidthPct}%`,
+                                  /* 🔴 ใบที่หลุดกรอบ วาดกรอบ **ทับแท่ง** (z=2) ให้เห็นเป็นกล่องชัดๆ ว่า "แผนจบตรงนี้"
+                                     แล้วส่วนที่ยื่นพ้นกล่อง = ที่หลุด (ตรงกับภาพร่าง user)
+                                     · ใบที่ตรงแผน วาดไว้ข้างหลัง (z=0) จางๆ ไม่งั้นทุกใบมีเส้นประล้อม = จอรก */
+                                  border: `${planSlipped ? 2 : 1}px dashed ${planSlipped ? '#e5e7eb' : 'var(--muted)'}`, borderRadius: 4,
+                                  opacity: planSlipped ? 0.95 : 0.35, zIndex: planSlipped ? 2 : 0, pointerEvents: 'none',
+                                }} />
+                            )}
                             {/* หางเงาแดง — ยังไม่ปิดงานแม้เลยกำหนดแล้ว ครองไลน์อยู่จนถึงตอนนี้ ดันใบถัดไปไปต่อท้าย */}
                             {tailWidthPct > 0 && (
                               <div title="ยังไม่ปิดงาน — ดีเลย์ยังดำเนินอยู่"
@@ -1849,7 +1968,7 @@ export default function Dashboard() {
                           });
                           const grossQty = Object.values(demandByMat).reduce((a, q) => a + q, 0);
                           if (ediQty <= 0 && stockUsed > 0) {
-                            chips.push({ color: '#22c55e', text: `🌙📡 EDI ส่งพรุ่งนี้ ${grossQty.toLocaleString()} ชิ้น — 📦 stock พร้อมส่งครอบทั้งหมด ไม่ต้องผลิตเพิ่มคืนนี้` });
+                            chips.push({ color: 'var(--green)', text: `🌙📡 EDI ส่งพรุ่งนี้ ${grossQty.toLocaleString()} ชิ้น — 📦 stock พร้อมส่งครอบทั้งหมด ไม่ต้องผลิตเพิ่มคืนนี้` });
                           }
                           if (ediQty > 0) {
                             const NIGHT_OT_IN2 = gridStartMs + 12 * 3600000, NIGHT_REG_IN2 = gridStartMs + 14.5 * 3600000;
@@ -1874,13 +1993,13 @@ export default function Dashboard() {
                               const nf = finishFrom2(Math.max(NIGHT_REG_IN2, nowMs), w);
                               const tail = noCtQty > 0 ? ` (+${noCtQty.toLocaleString()} ชิ้นไม่มี CT)` : '';
                               if (nf <= gridEndMs) {
-                                chips.push({ color: '#22c55e', text: `🌙📡 EDI ต้องผลิตคืนนี้ ${ediQty.toLocaleString()} ชิ้น${stockNote} — เข้าปกติ 22:30 ทัน คาดเสร็จ ~${fmtMs(nf)}${tail}` });
+                                chips.push({ color: 'var(--green)', text: `🌙📡 EDI ต้องผลิตคืนนี้ ${ediQty.toLocaleString()} ชิ้น${stockNote} — เข้าปกติ 22:30 ทัน คาดเสร็จ ~${fmtMs(nf)}${tail}` });
                               } else {
                                 const of2 = finishFrom2(Math.max(NIGHT_OT_IN2, nowMs), w);
                                 if (of2 <= gridEndMs) {
-                                  chips.push({ color: '#f59e0b', text: `🌙📡 EDI ต้องผลิตคืนนี้ ${ediQty.toLocaleString()} ชิ้น${stockNote} — ⏰ ควรเรียกเข้า 20:00 (คาดเสร็จ ~${fmtMs(of2)} · ถ้าเข้า 22:30 จบ ~${fmtMs(nf)})${tail}` });
+                                  chips.push({ color: 'var(--amber)', text: `🌙📡 EDI ต้องผลิตคืนนี้ ${ediQty.toLocaleString()} ชิ้น${stockNote} — ⏰ ควรเรียกเข้า 20:00 (คาดเสร็จ ~${fmtMs(of2)} · ถ้าเข้า 22:30 จบ ~${fmtMs(nf)})${tail}` });
                                 } else {
-                                  chips.push({ color: '#ef4444', text: `🌙📡 EDI ต้องผลิตคืนนี้ ${ediQty.toLocaleString()} ชิ้น${stockNote} — 🚨 เกินกำลังแม้เข้า 20:00 (คาดเสร็จ ~${fmtMs(of2)}) วางแผนล่วงหน้า${tail}` });
+                                  chips.push({ color: 'var(--red)', text: `🌙📡 EDI ต้องผลิตคืนนี้ ${ediQty.toLocaleString()} ชิ้น${stockNote} — 🚨 เกินกำลังแม้เข้า 20:00 (คาดเสร็จ ~${fmtMs(of2)}) วางแผนล่วงหน้า${tail}` });
                                 }
                               }
                             }
@@ -1890,7 +2009,7 @@ export default function Dashboard() {
                         if (!remainCards) return;
                         const sLabel = shift === 'day' ? '☀️' : '🌙';
                         if (isHistorical) {
-                          chips.push({ color: '#ef4444', text: `${sLabel} งานไม่จบในกะ ${remainCards} ใบ (~${remainQty.toLocaleString()} ชิ้น)` });
+                          chips.push({ color: 'var(--red)', text: `${sLabel} งานไม่จบในกะ ${remainCards} ใบ (~${remainQty.toLocaleString()} ชิ้น)` });
                           return;
                         }
                         if (isFutureDay || projEndMs == null) return;
@@ -1902,11 +2021,11 @@ export default function Dashboard() {
                           const projLabel = `~${fmtMs(projEndMs)}`;
                           const otMin = Math.ceil((projEndMs - DAY_REG_END) / 60000);
                           if (projEndMs <= DAY_REG_END) {
-                            chips.push({ color: '#22c55e', text: `${sLabel} คาดเสร็จ ${projLabel} — จบในเวลาปกติ (ก่อน 17:30) ไม่ต้องเปิด OT` });
+                            chips.push({ color: 'var(--green)', text: `${sLabel} คาดเสร็จ ${projLabel} — จบในเวลาปกติ (ก่อน 17:30) ไม่ต้องเปิด OT` });
                           } else if (projEndMs <= DAY_OT_END) {
-                            chips.push({ color: '#f59e0b', text: `${sLabel} คาดเสร็จ ${projLabel} — ⏰ ต้องเปิด OT ~${otMin} นาที (เลิก 17:30 → ผลิตถึง ${projLabel})` });
+                            chips.push({ color: 'var(--amber)', text: `${sLabel} คาดเสร็จ ${projLabel} — ⏰ ต้องเปิด OT ~${otMin} นาที (เลิก 17:30 → ผลิตถึง ${projLabel})` });
                           } else {
-                            chips.push({ color: '#ef4444', text: `${sLabel} คาดเสร็จ ${projLabel} — 🚨 เกินกรอบ OT (20:00) ควรวางแผนยกยอด/เพิ่มกำลังผลิต` });
+                            chips.push({ color: 'var(--red)', text: `${sLabel} คาดเสร็จ ${projLabel} — 🚨 เกินกรอบ OT (20:00) ควรวางแผนยกยอด/เพิ่มกำลังผลิต` });
                           }
                           return;
                         }
@@ -1915,13 +2034,13 @@ export default function Dashboard() {
                           // ยังไม่เริ่มกะดึก → โหมดตัดสินใจ: เข้า 22:30 ทันมั้ย หรือต้องเรียกเข้า 20:00 (เปิด OT หัวกะ)
                           const normalFinish = finishFrom(Math.max(NIGHT_REG_IN, nowMs), workMs);
                           if (normalFinish <= FRAME_END) {
-                            chips.push({ color: '#22c55e', text: `${sLabel} เข้างานปกติ 22:30 ทัน — คาดเสร็จ ~${fmtMs(normalFinish)} (ก่อน 08:00) ไม่ต้องเปิด OT` });
+                            chips.push({ color: 'var(--green)', text: `${sLabel} เข้างานปกติ 22:30 ทัน — คาดเสร็จ ~${fmtMs(normalFinish)} (ก่อน 08:00) ไม่ต้องเปิด OT` });
                           } else {
                             const otFinish = finishFrom(Math.max(NIGHT_OT_IN, nowMs), workMs);
                             if (otFinish <= FRAME_END) {
-                              chips.push({ color: '#f59e0b', text: `${sLabel} ⏰ ต้องเปิด OT เข้า 20:00 — คาดเสร็จ ~${fmtMs(otFinish)} (ถ้าเข้า 22:30 จะจบ ~${fmtMs(normalFinish)} เกิน 08:00)` });
+                              chips.push({ color: 'var(--amber)', text: `${sLabel} ⏰ ต้องเปิด OT เข้า 20:00 — คาดเสร็จ ~${fmtMs(otFinish)} (ถ้าเข้า 22:30 จะจบ ~${fmtMs(normalFinish)} เกิน 08:00)` });
                             } else {
-                              chips.push({ color: '#ef4444', text: `${sLabel} 🚨 เกินกำลังกะดึกแม้เข้า 20:00 (คาดเสร็จ ~${fmtMs(otFinish)}) — ควรวางแผนยกยอด/เพิ่มกำลัง` });
+                              chips.push({ color: 'var(--red)', text: `${sLabel} 🚨 เกินกำลังกะดึกแม้เข้า 20:00 (คาดเสร็จ ~${fmtMs(otFinish)}) — ควรวางแผนยกยอด/เพิ่มกำลัง` });
                             }
                           }
                           return;
@@ -1929,9 +2048,9 @@ export default function Dashboard() {
                         // กะดึกเริ่มผลิตแล้ว → ใช้คิวจริงเทียบขอบกะ 08:00
                         const projLabel = `~${fmtMs(projEndMs)}`;
                         if (projEndMs <= FRAME_END) {
-                          chips.push({ color: '#22c55e', text: `${sLabel} คาดเสร็จ ${projLabel} — จบภายในกะ (ก่อน 08:00)` });
+                          chips.push({ color: 'var(--green)', text: `${sLabel} คาดเสร็จ ${projLabel} — จบภายในกะ (ก่อน 08:00)` });
                         } else {
-                          chips.push({ color: '#ef4444', text: `${sLabel} คาดเสร็จ ${projLabel} — 🚨 เกิน 08:00 ควรวางแผนยกยอดไปกะถัดไป` });
+                          chips.push({ color: 'var(--red)', text: `${sLabel} คาดเสร็จ ${projLabel} — 🚨 เกิน 08:00 ควรวางแผนยกยอดไปกะถัดไป` });
                         }
                       });
                       return chips;
@@ -1941,7 +2060,7 @@ export default function Dashboard() {
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '6px 10px', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)' }}>
                         <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--muted)', alignSelf: 'center' }}>🧠 PLANNER</span>
                         {plannerChips.map((c, i) => (
-                          <span key={i} style={{ fontSize: 12, fontWeight: 700, padding: '3px 9px', borderRadius: 10, background: `${c.color === 'var(--muted)' ? 'rgba(148,163,184,0.12)' : c.color + '1f'}`, color: c.color, border: `1px solid ${c.color === 'var(--muted)' ? 'rgba(148,163,184,0.3)' : c.color + '55'}` }}>
+                          <span key={i} style={{ fontSize: 12, fontWeight: 700, padding: '3px 9px', borderRadius: 10, background: 'var(--card)', color: c.color, border: `1px solid ${c.color}` }}>{/* สีจาก token ธีม — เดิม hex สว่าง+พื้นโปร่ง ธีมสว่างมองไม่เห็น (02/10) */}
                             {c.text}
                           </span>
                         ))}
@@ -2015,7 +2134,20 @@ export default function Dashboard() {
                           const rowActual = row.cards.reduce((a, c) => a + (c.isDone ? (c.qty_ok ?? c.qty ?? 0) : (c.qty_actual ?? 0)), 0);
                           const rowDemand = row.cards.reduce((a, c) => a + (c.qty || 0), 0);
                           const doneCount = row.cards.filter(c => c.isDone).length;
-                          const delayed   = positionedForCards(row.cards).filter(p => p.isDelayed).length;
+                          const rowPos    = positionedForCards(row.cards);
+                          const delayed   = rowPos.filter(p => p.isDelayed).length;
+                          /* ⏱️ "งานที่เหลือของแถวนี้จะจบกี่โมง" — มาจากคิวที่ถูกดันแล้ว (heijunkaQueue)
+                             user 2026-09-22: "ไม่สามารถประเมินได้ว่าใบสุดท้ายจะจบกี่โมง ... พาร์ท LH
+                             มองว่าไม่มี KB ผลิตแล้ว เพราะแถบ timeline เลยหมดแล้ว"
+                             ⇒ ต้องเป็น **ตัวหนังสือ** ด้วย ไม่ใช่พึ่งแถบอย่างเดียว เพราะงานที่ถูกดัน
+                                เลยขอบกริด (08:00 วันถัดไป) จะวาดไม่ออก แล้วจอจะดูเหมือน "ไม่มีงานเหลือ" */
+                          const finMs     = projectedFinishMs(rowPos);
+                          const finOver   = finMs != null && finMs > gridEndMs;
+                          /* 📋 หลุดแผนของแถวนี้ — สูตรกลางตัวเดียวกับหัวบอร์ด (ห้ามคิดเองในหน้า) */
+                          const rowPlan   = planStatusOf({
+                            positioned: rowPos, cards: row.cards, breaks: allBreaksOnce(),
+                            ctByMat: ctByMatNo, nowMs, frameEndMs: gridEndMs, shiftEndMs,
+                          });
                           const isOpen    = row.cards.some(c => c.sessionOpen);
                           const pct       = rowDemand > 0 ? Math.min((rowActual / rowDemand) * 100, 100) : 0;
                           const barColor  = pct >= 100 ? '#22c55e' : pct >= 60 ? '#f59e0b' : '#ef4444';
@@ -2024,7 +2156,7 @@ export default function Dashboard() {
                             <div key={row.key} style={{ display: 'flex', borderTop: '1px solid var(--border2)', overflow: 'hidden' }}>
                               {/* Left summary — ป้ายเดียวครอบทั้ง 2 แถบเวลา */}
                               <div style={{ width: LEFT_W, flexShrink: 0, padding: '4px 8px', borderRight: '1px solid var(--border2)', display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 7, overflow: 'hidden', ...(isMobile ? { position: 'sticky', left: 0, zIndex: 6, background: 'var(--card)' } : null) }}>
-                                {row.img && <img src={row.img} alt="" style={{ width: 44, height: 44, objectFit: 'cover', borderRadius: 6, flexShrink: 0 }} />}
+                                {row.img && <img loading="lazy" src={row.img} alt="" style={{ width: 44, height: 44, objectFit: 'cover', borderRadius: 6, flexShrink: 0 }} />}
                                 <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 2, minWidth: 0 }}>
                                   <div style={{ fontSize: 11, color: 'var(--text2)', fontWeight: 700, lineHeight: 1.25, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', wordBreak: 'break-word' }}>
                                     {row.label}
@@ -2038,6 +2170,17 @@ export default function Dashboard() {
                                     <span style={{ fontSize: 11, color: 'var(--muted)' }}>/{rowDemand} ชิ้น · {doneCount}/{row.cards.length}ใบ</span>
                                     {delayed > 0 && <span style={{ fontSize: 11, color: '#ef4444', fontWeight: 700 }}>⚠️{delayed}ใบ</span>}
                                     {isOpen && delayed === 0 && <span style={{ fontSize: 11, color: '#22c55e', fontWeight: 700 }}>● Live</span>}
+                                  </div>
+                                  {/* 📋 แถบหลุดแผนของ "แถวนี้" (พาร์ท/ไลน์นี้) — เวลา + ยอด ในบรรทัดเดียว */}
+                                  <div style={{ display: 'flex', gap: 5, minWidth: 0, overflow: 'hidden' }}>
+                                    {/* 📱 มือถือ: คอลัมน์ซ้ายแคบ ~55px ⇒ ข้อความถูกตัดเหลือ "ช้า 23:0…" ซึ่ง**อ่านผิดได้**
+                                    (23:0 = 23 นาที?) ⇒ ไม่วาดเลย ให้อ่านจากแถบหัวบอร์ดที่เต็มประโยคแทน
+                                    — เศษตัวเลขที่อ่านผิดได้ แย่กว่าไม่มีตัวเลข */}
+                                {!isMobile && <PlanSlipBar st={rowPlan} fmtMs={fmtMs} oneLine compact />}
+                                    {finOver && (
+                                      <span title="งานที่เหลือล้นกรอบวันงาน (08:00 ของวันถัดไป) — ต้องยกยอดข้ามกะ/เพิ่มกำลังผลิต"
+                                        style={{ fontSize: 11, fontWeight: 800, color: '#ef4444' }}>🔴 ล้นวันงาน</span>
+                                    )}
                                   </div>
                                 </div>
                               </div>
@@ -2471,7 +2614,7 @@ export default function Dashboard() {
                 maxWidth: '97vw',
                 maxHeight: '97vh',
                 overflow: 'hidden',
-                boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+                boxShadow: 'var(--shadow-lg)',
               }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>

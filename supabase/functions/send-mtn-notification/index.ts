@@ -5,6 +5,10 @@
 // Events: mtn_reported/assigned/repaired/checked/qa/handover/closed (step 1..7)
 //   + mtn_approved = ขั้น 7 ของ "ใบทีม MTN" เท่านั้น (ผจก.แผนกที่แจ้งอนุมัติ ใบยังไม่ปิด)
 //     ⇒ ใบทีม MTN มี 8 ขั้น: ปิดจบที่ขั้น 8 โดย ผจก.ส่วนซ่อมบำรุง (mtn_closed)
+//
+// ⚠️ verify_jwt = false โดยตั้งใจ — ผู้เรียกฝั่งเว็บ (MtnRepair/DailyReport/PMCheckData) ยิง fetch
+//    โดย **ไม่ส่ง Authorization/apikey เลย** ⇒ เปิด verify_jwt เมื่อไหร่ = แจ้งเตือน MO เงียบทั้งระบบ 401
+//    (เคยหลุดจริงตอน deploy 23/09 — ค่า default ของเครื่องมือ deploy คือ true ต้องระบุ false ทุกครั้ง)
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
@@ -20,12 +24,12 @@ async function getBotToken(): Promise<string | undefined> {
   } catch { return TELEGRAM_BOT_TOKEN || undefined; }
 }
 
-type Route = { enabled: boolean; chats: string[]; template?: string | null; label?: string; inappRoles?: string[] };
+type Route = { enabled: boolean; chats: string[]; template?: string | null; label?: string; inappRoles?: string[]; cast?: string };
 // teamChats = ห้องที่แท็กทีมไว้ (JIG MTN/DIE MTN/MTN/PRODUCTION) → ส่งแจ้งเตือนเข้าห้องของทีมนั้นก่อน
 async function loadRoutes(): Promise<{ map: Record<string, Route>; teamChats: Record<string, string[]>; chatTeam: Map<string, string> }> {
   try {
     const [{ data: rules }, { data: channels }] = await Promise.all([
-      supabase.from('notification_rules').select('event_key, is_enabled, channel_ids, channel_id, template, label, inapp_roles'),
+      supabase.from('notification_rules').select('event_key, is_enabled, channel_ids, channel_id, template, label, inapp_roles, inapp_cast'),
       supabase.from('telegram_channels').select('id, chat_id, is_active, team'),
     ]);
     const chatById = new Map<string, string>();
@@ -46,7 +50,8 @@ async function loadRoutes(): Promise<{ map: Record<string, Route>; teamChats: Re
       const chats = [...new Set(ids.map((id) => chatById.get(String(id))).filter((v): v is string => !!v))];
       const inappRoles = Array.isArray((r as { inapp_roles?: string[] }).inapp_roles) ? (r as { inapp_roles: string[] }).inapp_roles : [];
       map[r.event_key as string] = { enabled: r.is_enabled as boolean, chats, template: (r as { template?: string | null }).template,
-        label: (r as { label?: string }).label, inappRoles };
+        label: (r as { label?: string }).label, inappRoles,
+        cast: (r as { inapp_cast?: string }).inapp_cast || 'always' };
     }
     return { map, teamChats, chatTeam };
   } catch { return { map: {}, teamChats: {}, chatTeam: new Map() }; }
@@ -156,18 +161,43 @@ async function sectionOfLine(lineName?: string | null): Promise<string | null> {
   } catch { /* หาไม่เจอ = ไม่กรอง ดีกว่าเงียบ */ }
   return null;
 }
-// ผู้รับตามทะเบียน (role × ส่วนงาน × แผนก) — RPC เดียวกับ edge อื่นทั้งระบบ
-async function usersByRule(event: string, roles: string[], lineName?: string | null): Promise<string[]> {
+// ผู้รับตามทะเบียน (role × ส่วนงาน × แผนก × **ทีมช่าง** × **ไลน์**) — RPC เดียวกับ edge อื่นทั้งระบบ
+//
+// 🔴 บั๊กที่เคยเงียบอยู่ 1 วัน (แก้ 2026-09-23): ไฟล์นี้ **ไม่เคยส่ง `p_team`** ให้ RPC เลย
+//    แกนทีมช่างถูกเพิ่มใน `notify_recipients` เมื่อ 21/09 (migration 20260921_notify_recipients_mtn_team)
+//    พร้อมเจตนาที่เขียนไว้ข้างบนว่า *"ทีม DIE MTN ไม่ควรโดนเด้งใบของ JIG MTN"* — แต่ไฟล์นี้ซึ่งเป็น
+//    ต้นทาง **61% ของแถว `notifications` ทั้งระบบ** เรียก RPC โดยไม่ส่งแกนนั้น ⇒ แกนไม่เคยมีผลจริง
+//    (`usersInTeam()` ด้านล่าง *เพิ่ม* ช่างทีมที่ใช่เข้ามา แต่ไม่เคย *ตัด* ช่างทีมอื่นออก)
+//    วัดจริง 23/09 (14 วันย้อนหลัง): ใบซ่อม 42,220 แถว · เฉลี่ย 30 คน/เหตุการณ์ · คนเปิดอ่าน 7.8%
+//    ส่ง p_team แล้วผู้รับต่อเหตุการณ์ลดลง 15–27% แล้วแต่ทีม (เช่น mtn_qa 76 → 57-61 คน)
+//
+// ⚠️ ห้ามให้ผลลัพธ์กลายเป็น "ไม่มีใครได้รับ" — `mtn_closed` ตั้ง role ไว้แค่ `mtn` และช่างทุกคนมีทีม
+//    ⇒ ใบของทีม production (89% ของใบทั้งหมด) จะกรองเหลือ 0 คน · ถ้า `usersInTeam` ก็ว่าง
+//    (ทีมนั้นยังไม่มีใครตั้ง `profiles.mtn_teams`) แปลว่าใบเดินไปเงียบๆ ไม่มีใครรู้
+//    ⇒ กันไว้ด้วยการถอยกลับไปชุดที่ไม่กรองทีม (กติกาโปรเจค: ห้ามล้มเหลวเงียบ)
+async function recipientsRpc(event: string, section: string | null, team: string | null,
+                             line: string | null): Promise<string[]> {
+  const args: Record<string, unknown> = { p_event: event, p_section: section };
+  if (team) args.p_team = team;
+  if (line) args.p_line = line;     // แกนไลน์ (migration 20260923_notify_recipients_line_axis_main)
+  const { data, error } = await supabase.rpc('notify_recipients', args);
+  if (error) throw error;
+  return (data ?? []).map((r: unknown) =>
+    typeof r === 'string' ? r : (r as { notify_recipients?: string })?.notify_recipients).filter(Boolean) as string[];
+}
+async function usersByRule(event: string, roles: string[], lineName?: string | null,
+                           dept?: string | null): Promise<string[]> {
   if (!roles.length) return [];
+  const team = teamKey(dept) || null;
+  const line = lineName && lineName !== '-' ? lineName : null;
   try {
-    const { data, error } = await supabase.rpc('notify_recipients',
-      { p_event: event, p_section: await sectionOfLine(lineName) });
-    if (error) throw error;
-    return (data ?? []).map((r: unknown) =>
-      typeof r === 'string' ? r : (r as { notify_recipients?: string })?.notify_recipients).filter(Boolean) as string[];
+    const section = await sectionOfLine(lineName);
+    const ids = await recipientsRpc(event, section, team, line);
+    if (ids.length || !team) return ids;
+    return await recipientsRpc(event, section, null, line);   // กรองด้วยทีมแล้วเหลือ 0 คน → ถอยไปชุดไม่กรองทีม
   } catch (e) {
     console.error('notify_recipients', e);
-    return usersByRole(roles);      // RPC ล่ม = ถอยไปตาม role ห้ามเงียบ
+    return await usersByRole(roles);   // RPC ล่ม = ถอยไปตาม role ห้ามเงียบ
   }
 }
 async function usersInTeam(dept?: string | null): Promise<string[]> {
@@ -179,6 +209,58 @@ async function usersInTeam(dept?: string | null): Promise<string[]> {
       .map((p) => p.id as string);
   } catch { return []; }   // ยังไม่ apply migration profiles.mtn_teams — ข้าม ไม่ทำให้พัง
 }
+/* ── 🎯 ใครต้อง "ลงมือ" ในแต่ละขั้น — ส่งถึงคนในใบ ไม่ใช่ยิงทั้ง role ──────────────
+   2026-09-23 · คำสั่ง user: *"เน้นงานแจ้งซ่อมกับจัดส่งก่อน อย่าแจ้งมั่ว เพราะมันถี่
+   ถ้ามั่วคนเยอะมันคูณเยอะ"*
+
+   ปัญหาเดิม (วัดจริง 23/09): ใบซ่อม 1 ใบเดินครบ 8 ขั้น = ~24-38 คน/ขั้น เพราะทุกขั้นยิงตาม
+   **role × ส่วนงาน** ⇒ หัวหน้าไลน์/หัวหน้ากลุ่มทั้งส่วนงาน PD3 (12 sv + 12 leader) ได้หมด
+   ทั้งที่ใบอยู่ไลน์เดียว · คนเปิดอ่านจริง 7.8%
+
+   ของที่มีอยู่แล้วแต่ไม่เคยใช้: **ตัวใบรู้อยู่แล้วว่าใครเกี่ยว** — `mtn_orders` มีคอลัมน์ uid
+   ครบทุกขั้น และกรอกจริงสูง (วัด 60 วัน · 497 ใบ): reported_by 89% · accepted_by 85% ·
+   tech_main 83% · checker 82% · ho_checker 55% · approver 56%
+   (ยังว่าง: mtn_head_uid 0% · dept_manager_uid/cost_mgr_uid ~0% ⇒ ขั้น 7-8 ยังต้องพึ่ง role)
+
+   `people` = คอลัมน์ uid ที่ต้องได้รับเสมอ (คนในใบ + คนที่ต้องลงมือขั้นถัดไป)
+   `team`   = ส่งให้ช่างทีมที่รับผิดชอบด้วยไหม
+   ⚠️ **"ยังยิงตาม role อีกไหม" ไม่ได้อยู่ในตารางนี้** — อยู่ที่ `notification_rules.inapp_cast`
+      (แก้ได้จาก /notification-config โดยไม่ต้อง deploy) · เคยมี 2 แหล่งแล้วเพี้ยนมาแล้ว 1 รอบ
+      (แกน p_team ที่ทะเบียนมีแต่โค้ดไม่ส่ง = แกนไม่เคยมีผลจริงอยู่ 1 วัน)
+
+   🔴 ห้ามล้มเหลวเงียบ: ถ้ารวมแล้วได้ 0 คน (ใบเก่าที่ไม่มี uid) ให้ถอยไปยิงตามทะเบียนเหมือนเดิม */
+const MO_AUDIENCE: Record<string, { people: string[]; team: boolean }> = {
+  // ขั้น 1 แจ้งใหม่ — ยังไม่รู้ว่าช่างคนไหนจะรับ ⇒ ต้องยิงหาทีมช่าง + ทะเบียน
+  mtn_reported:   { people: ['reported_by_uid', 'reporter_prod_uid', 'reporter_qa_uid'], team: true },
+  // ขั้น 2 รับงาน — รู้ตัวช่างแล้ว คนที่ต้องรู้คือผู้แจ้งกับช่างที่รับ
+  mtn_assigned:   { people: ['reported_by_uid', 'reporter_prod_uid', 'accepted_by_uid', 'tech_main_uid', 'tech_secondary_uid'], team: false },
+  // ขั้น 3 ซ่อมเสร็จ — ฝ่ายที่แจ้งต้องไปตรวจ (ยังไม่รู้ว่าใครจะเป็นคนตรวจ) ⇒ ยังต้องยิงหัวหน้าไลน์
+  mtn_repaired:   { people: ['reported_by_uid', 'reporter_prod_uid', 'accepted_by_uid', 'tech_main_uid', 'tech_secondary_uid'], team: false },
+  // ขั้น 4 ตรวจแล้ว — ต่อไปเป็นงานของ QA
+  mtn_checked:    { people: ['reported_by_uid', 'reporter_prod_uid', 'reporter_qa_uid', 'checker_uid', 'tech_main_uid'], team: false },
+  // ขั้น 5 QA ผ่าน / ข้าม QA — ฝ่ายที่แจ้งต้องมารับมอบ
+  mtn_qa:         { people: ['reported_by_uid', 'reporter_prod_uid', 'checker_uid', 'qa_checker_uid', 'tech_main_uid'], team: false },
+  mtn_qa_skipped: { people: ['reported_by_uid', 'reporter_prod_uid', 'checker_uid', 'qa_skipped_by_uid', 'tech_main_uid'], team: false },
+  // ขั้น 6 รับมอบ — ต่อไปเป็นงาน ผจก. (uid ของ ผจก. ยังไม่ถูกกรอก ⇒ ต้องพึ่งทะเบียน)
+  mtn_handover:   { people: ['reported_by_uid', 'ho_checker_uid', 'ho_reporter_uid', 'tech_main_uid'], team: false },
+  // ขั้น 7 ผจก.แผนกที่แจ้งอนุมัติ — ต่อไป ผจก.ซ่อมบำรุงปิดใบ
+  mtn_approved:   { people: ['reported_by_uid', 'ho_checker_uid', 'cost_mgr_uid', 'mtn_head_uid', 'tech_main_uid'], team: true },
+  // ขั้น 8 ปิดใบ — จบแล้ว แจ้งให้คนที่ลงแรงรู้ ไม่ต้องกวนคนอื่น
+  mtn_closed:     { people: ['reported_by_uid', 'reporter_prod_uid', 'accepted_by_uid', 'tech_main_uid', 'tech_secondary_uid', 'approver_uid', 'ho_checker_uid'], team: true },
+  // ตีกลับ — คนที่ต้องแก้คือผู้แจ้งเท่านั้น
+  mtn_returned:   { people: ['reported_by_uid', 'reporter_prod_uid'], team: false },
+};
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** อ่าน uid ของคนในใบตามรายการคอลัมน์ — ค่าที่ไม่ใช่ uuid ทิ้ง (บางคอลัมน์เก็บ "ชื่อที่พิมพ์เอง") */
+function peopleOf(mo: Record<string, unknown>, cols: string[]): string[] {
+  const out: string[] = [];
+  for (const c of cols) {
+    const v = mo?.[c];
+    if (typeof v === 'string' && UUID_RE.test(v.trim())) out.push(v.trim());
+  }
+  return [...new Set(out)];
+}
+
 const MO_INAPP: Record<string, { t: (v: Record<string, string>) => string; type: string }> = {
   mtn_reported:  { t: (v) => `🛠️ แจ้งซ่อมใหม่ — ${v.line_name} · ${v.item_type}`,        type: 'error'   },
   mtn_assigned:  { t: (v) => `📋 รับงานซ่อม ${v.mo_no} — ${v.assigned_to}`,               type: 'info'    },
@@ -197,16 +279,28 @@ async function notifyMoInApp(routes: Record<string, Route>, event: string, v: Re
   try {
     const meta = MO_INAPP[event];
     if (!meta) return;
-    // ⚠️ ตีกลับ (mtn_returned) ไม่ส่งให้ทีมช่าง — ทีมนั่นแหละเป็นคนตีกลับ
-    //    คนที่ต้องรู้คือ "ผู้แจ้ง" ที่ต้องไปแก้แผนกแล้วส่งใหม่
-    const wantTeam = event !== 'mtn_returned';
-    const [byRole, byTeam] = await Promise.all([
-      usersByRule(event, routes[event]?.inappRoles ?? [], v.line_name),
-      wantTeam ? usersInTeam(dept) : Promise.resolve([] as string[]),
-    ]);
-    // ผู้แจ้งได้รับทุกขั้นเสมอ — ใบของตัวเองเดินไปถึงไหนต้องรู้ (มาจาก mtn_orders.reported_by_uid)
-    const reporter = typeof mo?.reported_by_uid === 'string' ? [mo.reported_by_uid as string] : [];
-    const ids = [...new Set([...byRole, ...byTeam, ...reporter])].filter(Boolean);
+    /* ⚠️ ตีกลับ (mtn_returned) ไม่ส่งให้ทีมช่าง — ทีมนั่นแหละเป็นคนตีกลับ
+       คนที่ต้องรู้คือ "ผู้แจ้ง" ที่ต้องไปแก้แผนกแล้วส่งใหม่ */
+    const aud = MO_AUDIENCE[event] || { people: ['reported_by_uid'], team: true };
+    const roles = routes[event]?.inappRoles ?? [];
+    /* 🎯 โหมดยิงตามทะเบียนมาจาก `notification_rules.inapp_cast` **ที่เดียว** (แก้ได้จาก
+       /notification-config) — ห้ามเอากลับมาฮาร์ดโค้ดในไฟล์นี้ ไม่งั้นจอกับของจริงคนละเรื่อง
+         always   = ยิงตาม role เสมอ (ใช้กับขั้นที่ยังไม่รู้ตัวคนถัดไป)
+         fallback = ส่งถึงเจ้าของงานก่อน · ยิงตาม role ต่อเมื่อใบบอกตัวคนไม่ได้ */
+    const castAlways = (routes[event]?.cast || 'always') !== 'fallback';
+
+    // เจ้าของงานของใบนี้ = คนในใบ (ผู้แจ้ง/ช่างที่รับ/ผู้ตรวจ ฯลฯ) + ช่างทีมที่รับผิดชอบ
+    const byTeam = aud.team ? await usersInTeam(dept) : [];
+    const owners = [...new Set([...peopleOf(mo || {}, aud.people), ...byTeam])].filter(Boolean);
+
+    /* 🔴 ห้ามล้มเหลวเงียบ — โหมด fallback ที่เจอใบเก่าไม่มี uid เลยจะได้ 0 คน
+       ⇒ ใบเดินไปโดยไม่มีใครรู้ · ถอยไปยิงตามทะเบียนเหมือนพฤติกรรมเดิม */
+    let ids = owners;
+    if (castAlways || !owners.length) {
+      const byRole = await usersByRule(event, roles, v.line_name, aud.team ? dept : null);
+      ids = [...new Set([...owners, ...byRole])].filter(Boolean);
+      if (!castAlways) console.log(`[mo-audience] ${event} ใบไม่มี uid -> ถอยไปยิงตามทะเบียน ${ids.length} คน`);
+    }
     if (!ids.length) return;
     const body = String(message).replace(/<[^>]+>/g, '').replace(/\s*\n\s*/g, ' · ').replace(/\s+/g, ' ').trim().slice(0, 300);
     const { error } = await supabase.from('notifications').insert(ids.map((uid) => ({

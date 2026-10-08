@@ -207,15 +207,75 @@ export function buildProblemReport({ downtimes = [], defects = [], minMinutes = 
   };
 }
 
+/* ── snapshot ของใบที่ออกไปแล้ว (FM-PD1-019 เก็บ 1 ปี · 2026-09-25) ───────────
+ * ที่มา: user — "ใบบันทึกปัญหา ก็ไม่ได้เก็บข้อมูลหรอ เห็นหัวหน้าต้องปริ้นออกมาเก็บเป็นกระดาษทุกวัน"
+ *
+ * ⚠️ เก็บ "เนื้อใบ" ไม่ใช่ pointer ไปข้อมูลดิบ — เอกสารที่ยื่นไปแล้วต้องพิมพ์ซ้ำได้เหมือนเดิมเป๊ะ
+ *    แม้ downtime/ของเสียต้นทางถูกแก้หรือลบทีหลัง (หลักเดียวกับ snapshot ของ pe_fmea / npi_*)
+ * ⚠️ `checked` เป็น Set — JSON.stringify ได้ `{}` เงียบๆ ต้องแปลงเป็น array เสมอ
+ */
+const COLS = ['quality', 'machine', 'wait'];
+
+/** buildProblemReport() → อ็อบเจกต์ที่ JSON เก็บได้ (Set → array) */
+export function serializeReport(R) {
+  if (!R) return null;
+  const out = { v: 1, headline: R.headline ?? '', followup: R.followup, meta: R.meta };
+  COLS.forEach(k => {
+    const c = R[k] || {};
+    out[k] = { ...c, checked: [...(c.checked || [])] };
+  });
+  return out;
+}
+
+/** snapshot ที่อ่านจากฐาน → รูปแบบที่ใบพิมพ์ใช้ได้ (array → Set) · ของเสีย/ว่าง = null */
+export function reportFromSnapshot(snap) {
+  if (!snap || typeof snap !== 'object' || !snap.quality) return null;
+  const out = { headline: snap.headline ?? '', followup: snap.followup || { lines: [], by: '', pending: 0 }, meta: snap.meta || {} };
+  COLS.forEach(k => {
+    const c = snap[k] || {};
+    out[k] = { ...c, checked: new Set(Array.isArray(c.checked) ? c.checked : []) };
+  });
+  return out;
+}
+
+/**
+ * ลายเซ็นเนื้อใบ — ใช้เทียบว่า "ข้อมูลปัจจุบันยังตรงกับใบที่ออกไปแล้วไหม"
+ * ⚠️ เทียบเฉพาะสิ่งที่ **พิมพ์ลงใบจริง** (รายละเอียด/วิธีแก้/ผลตรวจ/ช่องติ๊ก/เวลา/ผู้รายงาน)
+ *    ไม่รวม meta.pendingFix ที่เป็นแค่ตัวนับ — ไม่งั้นจะขึ้น "ข้อมูลเปลี่ยน" ทุกครั้งที่มีคนลงวิธีแก้เพิ่ม
+ *    โดยที่เนื้อใบอาจเหมือนเดิม (แต่ถ้า fixes เปลี่ยนจริง signature ก็เปลี่ยนตามอยู่ดี)
+ */
+export function reportSignature(R) {
+  if (!R) return '';
+  const part = (c = {}) => [
+    [...(c.checked || [])].sort().join('|'),
+    (c.details || []).join('|'),
+    (c.fixes || []).join('|'),
+    c.fixBy || '', c.by || '', c.qty ?? '',
+    c.time?.from || '', c.time?.to || '',
+  ].join('~');
+  return [
+    R.headline ?? '',
+    ...COLS.map(k => part(R[k])),
+    (R.followup?.lines || []).join('|'), R.followup?.by || '',
+  ].join('##');
+}
+
 /* ── ใบพิมพ์ ─────────────────────────────────────────────────────────────── */
-export async function printProdProblemReport({ session, downtimes, defects, minMinutes = 30, section = null, extra = {} }) {
+/**
+ * พิมพ์ใบรายงานปัญหาการผลิต
+ * @param report  เนื้อใบสำเร็จรูป (จาก snapshot ของใบที่เคยออก) — ส่งมา = **ไม่ build ใหม่**
+ *                ⇒ พิมพ์ซ้ำได้เหมือนใบเดิมเป๊ะ แม้ข้อมูลต้นทางถูกแก้ทีหลัง
+ * @param docNo   เลขที่ใบที่ออกไว้ (prod_problem_reports.doc_no) — พิมพ์บนหัวใบ
+ * @param issued  { by, at } ผู้ออกใบ/เวลาออก — พิมพ์กำกับท้ายใบให้สอบกลับได้
+ */
+export async function printProdProblemReport({ session, downtimes, defects, minMinutes = 30, section = null, extra = {}, report = null, docNo = null, issued = null }) {
   const df = await getDocForm('prod_problem_report', {
     title: 'ใบรายงานปัญหาการผลิต',
     sig_blocks: ['ผู้รายงาน', 'ผู้ตรวจสอบ', 'ผู้อนุมัติ'],
   }, section ? { section } : {});
   const logo = await urlToDataUrl(df.logo_url || tsLogoUrl);
   const code = fullCode(df);
-  const R = buildProblemReport({ downtimes, defects, minMinutes });
+  const R = report || buildProblemReport({ downtimes, defects, minMinutes });
 
   const sigs = [sigAt(df, 0), sigAt(df, 1), sigAt(df, 2)];
   const box = (on, label) => `<div class="cb">${on ? '☑' : '☐'} ${esc(label)}</div>`;
@@ -229,7 +289,7 @@ export async function printProdProblemReport({ session, downtimes, defects, minM
   const thDate = d => (d ? new Date(d + 'T00:00:00').toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '');
 
   const html = `<!doctype html><html lang="th"><head><meta charset="utf-8">
-<title>ใบรายงานปัญหาการผลิต ${esc(session.line_name)} ${esc(session.work_date)}</title>
+<title>ใบรายงานปัญหาการผลิต ${docNo ? esc(docNo) + ' ' : ''}${esc(session.line_name)} ${esc(session.work_date)}</title>
 <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;800&display=swap" rel="stylesheet">
 <style>
   @page { size: A4 portrait; margin: 7mm; }
@@ -282,6 +342,7 @@ export async function printProdProblemReport({ session, downtimes, defects, minM
     <div class="rt">
       <div class="sg">${sigs.map(s => `<div>${esc(s.label)}</div>`).join('')}</div>
       <div class="dt">วันที่แจ้ง <span class="fill">${esc(thDate(session.work_date))}</span></div>
+      ${docNo ? `<div class="dt">เลขที่ใบ <b>${esc(docNo)}</b></div>` : ''}
       <div class="dt">${session.shift === 'day' ? '☑' : '☐'} กะ01 &nbsp;&nbsp; ${session.shift === 'night' ? '☑' : '☐'} กะ02</div>
     </div>
   </div>
@@ -351,7 +412,8 @@ export async function printProdProblemReport({ session, downtimes, defects, minM
   <div class="note">
     <span>ดึงจากระบบ ESM · กะ${session.shift === 'night' ? 'ดึก' : 'เช้า'} ${esc(thDate(session.work_date))} ·
       เกณฑ์ downtime ≥ ${R.meta.minMinutes} นาที${R.meta.skippedShort ? ` (ไม่รวมรายการสั้นกว่านั้น ${R.meta.skippedShort} รายการ)` : ''}
-      ${R.meta.pendingFix ? ` · ⚠ ยังไม่ได้ลงวิธีแก้ไขในระบบ ${R.meta.pendingFix} รายการ` : ''}</span>
+      ${R.meta.pendingFix ? ` · ⚠ ยังไม่ได้ลงวิธีแก้ไขในระบบ ${R.meta.pendingFix} รายการ` : ''}
+      ${issued?.by || issued?.at ? ` · ออกใบโดย ${esc(issued.by || '—')}${issued.at ? ` ${esc(new Date(issued.at).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' }))}` : ''}` : ''}</span>
     <span>${esc(code)}</span>
   </div>
 </div>

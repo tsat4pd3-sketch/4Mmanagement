@@ -1,0 +1,83 @@
+/* ══ <LineScopeSelect> — ตัวกรอง "ดูข้อมูลของไลน์ไหน" ช่องเดียว (2026-10-02 · คำสั่ง user) ══════════════
+   ที่มา: *"ระบบ dropdown ทำงานไม่เหมือนกันในบางหน้า"* แล้วตามด้วยภาพ OBEYA *"นี่ก็อีกแบบ"*
+   วัดก่อนแก้: ช่องขอบเขตมี 5 ทรง — ส่วนงาน+ไลน์ 2 ช่อง (Report) · ส่วนงาน+แผนก+ไลน์ที่โผล่ทีหลัง (OEE) ·
+   ปุ่มส่วนงาน 14 ปุ่ม (เช็คชื่อ) · ไลน์แบนเรียงตัวอักษร (แผนล็อต) · ต้นไม้ผังองค์กร (OBEYA `<OrgScopePicker>`)
+   ⇒ **ทุกช่องขอบเขตวาดด้วย `<OrgScopePicker>` ตัวเดียว** — ต้นไม้ / ไอคอน / ย่อหน้า / ลำดับ เหมือนกันทุกจอ:
+        🏭 ทั้งโรงงาน › 🏢 ฝ่าย › 📁 ส่วนงาน › 📂 แผนก › 🔗 กลุ่มไลน์ › ➖ ไลน์
+   · ไฟล์นี้เป็นแค่ "ตัวแปลง" สำหรับหน้าที่เก็บ state เป็น `section` + `line` (Report · OEE · เช็คชื่อ) —
+     คิวรีของหน้าไม่ต้องแก้ · ชนิดที่หน้ากรองไม่ได้ (ฝ่าย/แผนก) โชว์เป็นหัวต้นไม้สีเทา **ไม่ตัดทิ้ง**
+     (ตัดทิ้ง = ต้นไม้ไม่เหมือนจอ OBEYA อีก) · หน้าที่กรองได้ทุกมิติ (OBEYA/KPI) ใช้ `<OrgScopePicker>` ตรงๆ
+   · ช่องที่ต้องได้ "ไลน์เดียว" (ฟอร์ม/วางคิว) = `<LineSelect>` (ไอคอนส่วนงาน 📁 ชุดเดียวกัน)
+   ═══════════════════════════════════════════════════════════════════════════════════════════════ */
+import { useMemo, useContext } from 'react';
+import { UserContext } from '../App';
+import OrgScopePicker from './OrgScopePicker';
+import useOrgScope from '../utils/useOrgScope';
+import { PLANT } from '../utils/orgScope';
+
+const PICKABLE = ['section', 'line_group', 'line'];
+const PICKABLE_DEPT = ['section', 'department', 'line_group', 'line'];
+
+/**
+ * @param lines     ทะเบียนไลน์ที่หน้านี้ให้เห็น (scope แล้ว) — ต้องมี id, name, section, parent_line_name
+ * @param section/line  state เดิมของหน้า ('' = ไม่กรอง) · line เก็บตาม valueKey (name หรือ id)
+ * @param sections  (ไม่ใช้กรองแล้ว · คงไว้ให้หน้าเดิมส่งได้) — ขอบเขตส่วนงานอ่านจาก `UserContext.sections` เอง
+ *                  เหตุ: หน้าส่งลิสต์ส่วนงานทั้งผังมา ⇒ OrgScopePicker ถือว่า "จำกัด" แล้วตัดแผนกขึ้นตรงฝ่าย (MTN/QA) ทิ้ง
+ * @param onChange  (section, line, { kind, root, lines, unit }) — root = ไลน์แม่บนสุด · lines = ชื่อไลน์ทั้งหมดในขอบเขตที่เลือก
+ * @param unit      แผนก (org department) ที่เลือกอยู่ — ใช้คู่กับ `pickDept` (2026-10-02 · user: "ให้เลือกระดับแผนกได้ในหน้า OEE กับรายงาน")
+ *                  หน้าที่เปิด pickDept ต้องกรองด้วย **ชุดไลน์** `deptLines(index, unit)` ไม่ใช่ section/line เดี่ยว
+ * @param index     ดัชนีผัง (`useOrgScope(lines).index`) — หน้าที่ต้องคิดชุดไลน์ของแผนกเองส่งมาให้ใช้ตัวเดียวกัน
+ */
+export default function LineScopeSelect({
+  lines = [], section = '', line = '', unit = '', pickDept = false, index: givenIndex = null,
+  onChange, sections = [], valueKey = 'name', disabled, id, style, width = 260,
+}) {
+  const ctx = useContext(UserContext) || {};
+  const scopeSecs = ctx.sections || [];
+  const { index: ownIndex } = useOrgScope(givenIndex ? [] : lines);
+  const index = givenIndex || ownIndex;
+  const byKey = useMemo(() => new Map(lines.map(l => [String(l[valueKey]), l])), [lines, valueKey]);
+  const byName = useMemo(() => new Map(lines.map(l => [l.name, l])), [lines]);
+  const scopeSet = useMemo(() => new Set(lines.map(l => l.name)), [lines]);
+
+  const rootOf = (name) => {
+    let l = byName.get(name); const seen = new Set();
+    while (l?.parent_line_name && byName.has(l.parent_line_name) && !seen.has(l.name)) { seen.add(l.name); l = byName.get(l.parent_line_name); }
+    return l?.name || name;
+  };
+
+  const value = useMemo(() => {
+    if (line) {
+      const nm = byKey.get(String(line))?.name || String(line);
+      return { kind: index?.has?.('line_group', nm) ? 'line_group' : 'line', value: nm };
+    }
+    if (unit) return { kind: 'department', value: unit };
+    return section ? { kind: 'section', value: section } : PLANT;
+  }, [line, section, unit, byKey, index]);
+
+  const emit = (sc) => {
+    if (!sc || !sc.kind || sc.kind === 'plant') { onChange?.('', '', { kind: 'all', root: '', lines: [] }); return; }
+    const names = index ? index.lineNamesOf(sc.kind, sc.value) : [];
+    if (sc.kind === 'section') { onChange?.(sc.value, '', { kind: 'section', root: '', lines: names }); return; }
+    if (sc.kind === 'department') { onChange?.('', '', { kind: 'department', unit: sc.value, root: '', lines: names }); return; }
+    if (sc.kind === 'line_group' || sc.kind === 'line') {
+      const l = byName.get(sc.value);
+      const sec = l?.section || index?.sectionOf?.(sc.kind, sc.value) || '';
+      onChange?.(sec, l ? String(l[valueKey]) : sc.value, { kind: sc.kind, root: rootOf(sc.value), lines: names });
+    }
+  };
+
+  return (
+    <OrgScopePicker index={index} value={value} onChange={emit} scopeSet={scopeSet} sections={scopeSecs}
+      costCenter={false} pickable={pickDept ? PICKABLE_DEPT : PICKABLE} disabled={disabled} id={id} style={style} width={width}
+      title="ขอบเขต: ส่วนงาน / กลุ่มไลน์ / ไลน์ (หัวสีเทา = ฝ่าย/แผนก ดูได้ที่จอ OBEYA)" />
+  );
+}
+
+/** ชื่อไลน์ของแผนก (ตัดเฉพาะไลน์ที่หน้าเห็น) — คืน null เมื่อยังไม่ได้เลือกแผนก · [] = แผนกนี้ไม่มีไลน์ผลิต (จอต้องบอก ไม่ใช่โชว์ทั้งโรงงาน) */
+export function deptLines(index, unit, lines = []) {
+  if (!unit) return null;
+  const allowed = new Set((lines || []).map(l => l.name));
+  const names = index ? index.lineNamesOf('department', unit) : [];
+  return allowed.size ? names.filter(n => allowed.has(n)) : names;
+}

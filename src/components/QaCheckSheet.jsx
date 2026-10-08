@@ -17,6 +17,7 @@
  */
 import { useState, useEffect, useMemo, useCallback, useRef, useContext } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { loadProductionLines } from '../utils/useProductionLines';
 import { toast } from './Toast';
 import { UserContext } from '../App';
 import useIsMobile from '../utils/useIsMobile';
@@ -27,7 +28,7 @@ import CalloutPin from './CalloutPin';
 import QaFmeQueue from './QaFmeQueue';
 import { QA_STAGES, FME_SHEET_STAGE } from '../utils/qaStages';
 import { notifyEvent } from '../utils/notifyEvent';
-import { checkWrite } from '../utils/dbWrite';
+import { checkWrite, checkWriteRows } from '../utils/dbWrite';
 import { specLabel, judgeVariable } from '../utils/qaSpec';
 import { evalSequence } from '../utils/qaSequential';
 import { can } from '../utils/permissions';
@@ -128,8 +129,7 @@ export default function QaCheckSheet({ canRecord }) {
 
   /* ── scope ไลน์: leader = ครอบครัวไลน์ตัวเอง · role ที่ถูกจำกัด = ตาม sections ── */
   useEffect(() => {
-    supabase.from('production_lines').select('id, name, section, parent_line_name')
-      .then(({ data }) => setAllLines(data || []));
+    loadProductionLines().then(d => setAllLines(d || []));   // cache กลาง (25/09)
   }, []);
   const scopedLineNames = useMemo(() => {
     if (role === 'leader' && lineId) {
@@ -398,7 +398,7 @@ export default function QaCheckSheet({ canRecord }) {
     const next = evalSequence([...pieces, pc], actions);
     const patch = { seq_round: next.round, seq_state: next.state, alarm_count: next.alarmCount };
     if (next.state === 'accepted') Object.assign(patch, { status: 'done', result: 'pass', closed_by: fullName || null, closed_at: now });
-    if (!checkWrite(await supabase.from('qa_inspection_sheets').update(patch).eq('id', sh.id).select('id'), 'สถานะใบตรวจ')) { setBusy(false); loadSheet(); return; }
+    if (!checkWriteRows(await supabase.from('qa_inspection_sheets').update(patch).eq('id', sh.id).select('id'), 'สถานะใบตรวจ')) { setBusy(false); loadSheet(); return; }
     if (next.state === 'accepted') {
       await linkFme(sh.id, 'done_ok');
       toast.success(next.acceptedBy === 'first_pass' ? 'ชิ้นแรกผ่านทุกจุด — ยอมรับ ปิดใบแล้ว ✓' : 'ผ่านติดกัน 2 ชิ้น — ยอมรับ ปิดใบแล้ว ✓');
@@ -448,7 +448,7 @@ export default function QaCheckSheet({ canRecord }) {
       sheet_id: sheet.id, round_no: roundNo, action_text: a.text, action_by: a.by, four_m_log_id, recorded_by: fullName || null,
     });
     if (error) { setBusy(false); toast.error(`บันทึก action ไม่สำเร็จ: ${error.message}`); return; }
-    checkWrite(await supabase.from('qa_inspection_sheets').update({ seq_state: 'inspecting', seq_round: roundNo + 1 }).eq('id', sheet.id).select('id'), 'สถานะใบตรวจ');
+    checkWriteRows(await supabase.from('qa_inspection_sheets').update({ seq_state: 'inspecting', seq_round: roundNo + 1 }).eq('id', sheet.id).select('id'), 'สถานะใบตรวจ');
     notifyEvent({
       event: 'qa_seq_action', type: 'info', ref_table: 'qa_inspection_sheets', ref_id: sheet.id,
       line_name: part?.line_name || null, actor: a.by,
@@ -471,6 +471,7 @@ export default function QaCheckSheet({ canRecord }) {
     if (!window.confirm(`เปิดใบ NCR จากจุด #${item.balloon_no} ${item.characteristic}?`)) return;
     setBusy(true);
     const ncr_no = await nextDocNo('qa_ncr', 'ncr_no', 'NCR');
+    if (!ncr_no) { setBusy(false); toast.error('ออกเลขที่ NCR ไม่สำเร็จ — ลองใหม่อีกครั้ง'); return; }
     const { data, error } = await supabase.from('qa_ncr').insert({
       ncr_no, report_date: workDate,
       line_name: part?.line_name || null, part_no: part?.part_no || null, part_name: part?.part_name || null,
@@ -527,12 +528,19 @@ export default function QaCheckSheet({ canRecord }) {
     (i.drawing_id === activeDwgId || (!i.drawing_id && drawings[0]?.id === activeDwgId))
   ), [items, activeDwgId, drawings]);
 
+  /* 🔴 "ยังไม่ตรวจ" ต้องดูออกจาก "ตรวจแล้ว" ทันที (user 23/09 · audit ทั้งโปรเจค)
+     บั๊กเดิม: จุด rank **SC ที่ยังไม่ตรวจ** ใช้ `RANK.SC.color = '#ef4444'` ซึ่ง**เท่ากับ**
+     `JUDGE.ng.color = '#ef4444'` เป๊ะ ⇒ บนแบบแยกไม่ออกว่า "ยังไม่ได้ตรวจ" หรือ "ตรวจแล้วไม่ผ่าน"
+     (คนตรวจอ่านผิดได้ 2 ทาง: ข้ามจุดที่ยังไม่ตรวจ หรือตกใจว่ามี NG ทั้งที่ยังไม่ตรวจ)
+     ⇒ แยกที่ **รูปทรง**: ยังไม่ตรวจ = วงโปร่งเส้นประ (`hollow`) · ตรวจแล้ว = วงทึบ
+        **สีขอบยังเป็นสี rank เหมือนเดิม** — M/SC เป็นคุณลักษณะพิเศษ ต้องเห็นบนแบบตลอด ห้ามกลืนเป็นสีกลาง */
+  const pinJudged = (i) => !!resById.get(i.id)?.judgement;
   const pinColor = (i) => {
     const j = resById.get(i.id)?.judgement;
     if (j === 'ok') return JUDGE.ok.color;
     if (j === 'ng') return JUDGE.ng.color;
     if (j === 'na') return JUDGE.na.color;
-    return i.rank ? RANK[i.rank].color : '#4d9fff';   // ยังไม่ตรวจ = สีตาม rank (เหมือนหน้า setup)
+    return i.rank ? RANK[i.rank].color : '#4d9fff';   // ยังไม่ตรวจ = สีตาม rank (วงโปร่ง)
   };
 
   const focusItem = (id) => {
@@ -683,13 +691,20 @@ export default function QaCheckSheet({ canRecord }) {
                           {pinItems.map(i => (
                             <CalloutPin key={i.id} xPct={i.pos_x} yPct={i.pos_y} layerW={imgBox.w} layerH={imgBox.h}
                               size={BK} label={i.balloon_no} color={pinColor(i)} selected={selItemId === i.id}
-                              title={`#${i.balloon_no} ${i.characteristic}`}
+                              hollow={!pinJudged(i)}
+                              offX={i.label_dx} offY={i.label_dy}
+                              title={`#${i.balloon_no} ${i.characteristic}${i.rank ? ` · ${i.rank}` : ''} — ${pinJudged(i) ? (JUDGE[resById.get(i.id).judgement]?.label || '') : 'ยังไม่ตรวจ'}`}
                               onClick={() => focusItem(i.id)} />
                           ))}
                         </div>
                       </div>
                       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 6, fontSize: 11.5, color: 'var(--muted)' }}>
-                        <span>🟢 ผ่าน</span><span>🔴 ไม่ผ่าน</span><span>⚪ ข้าม</span><span>🔵/🟠 ยังไม่ตรวจ</span>
+                        {/* legend ต้องบอก "ทรง" ด้วย ไม่ใช่แค่สี — สี rank กับสีผลตรวจใช้สีเดียวกันได้ */}
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                          <span style={{ width: 12, height: 12, borderRadius: '50%', background: 'rgba(12,18,15,0.82)', border: '2px dashed #4d9fff' }} />
+                          วงโปร่ง = ยังไม่ตรวจ (สีขอบ = rank)
+                        </span>
+                        <span>🟢 ทึบเขียว = ผ่าน</span><span>🔴 ทึบแดง = ไม่ผ่าน</span><span>⚪ ทึบเทา = ข้าม</span>
                         <span>· แตะหมุดเพื่อไปที่จุดนั้น</span>
                       </div>
                     </div>

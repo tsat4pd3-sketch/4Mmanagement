@@ -1,34 +1,113 @@
-import { useMemo } from 'react';
+import { useContext, useEffect, useMemo, useState, lazy, Suspense } from 'react';
 import useTabParam from '../utils/useTabParam';
+import useIsMobile from '../utils/useIsMobile';
+import { supabase } from '../supabaseClient';
+import { loadLinesRes } from '../utils/useProductionLines';
+import { UserContext } from '../App';
+import { scopedLineNames } from '../utils/sectionScope';
+import { canAccessPage, hasPermission } from '../utils/permissions';
+import PageHeader from '../components/PageHeader';
+import { OBEYA_TITLE, OBEYA_ICON } from '../utils/obeyaPage';
+import Page from '../components/Page';
 import ObeyaKpiBoard from '../components/ObeyaKpiBoard';
 import ObeyaSqdcmBoard from '../components/ObeyaSqdcmBoard';
 
-/* ══ 🏛️ OBEYA — ห้องบัญชาการโรงงาน (หน้าเดียว 2 แท็บ) ═══════════════════════════════
+const KpiMonthly = lazy(() => import('../components/KpiMonthly'));
+const DeptDashboard = lazy(() => import('./DeptDashboard'));
+
+/* ══ 🏛️ OBEYA — ห้องบัญชาการโรงงาน (หน้าเดียว 4 แท็บ: kpi · sqdcm · todo · table) ═══════════════════════════════
    2026-09-15 — รวมงาน 2 session ที่ทำ `/obeya` คนละมุมโดยไม่รู้ว่าอีกฝั่งทำอยู่
-   (branch `claude/obeya-kpi-dashboard-85xbgm` กับ `claude/oee-report-ppt-export-tjojy0`)
-   ทั้งคู่มาจากคำสั่ง user คนละครั้ง และ **ไม่ทับกัน** — ต่างมิติกันชัดเจน:
+   2026-09-17 — ย้าย 📑 KPI รายเดือน เข้ามาเป็นแท็บที่ 3 (คำสั่ง user: "สองหน้าซ้ำซ้อนกัน")
 
      แท็บ 📋 บอร์ด KPI ส่วนงาน (default)  = ยุบ "กระดาษ OBEYA KPI monitoring" ที่แปะผนังเข้ามา
-        รายเดือน × กลุ่มไลน์ (คอลัมน์) × 8 หัวข้อ (แถว) ตามบอร์ดจริงที่ user ถ่ายรูปมา
+        รายเดือน × ขอบเขตผัง · แผ่น = KPI ที่หน่วยถือจริง (utils/kpiBoardRows.js · 05/10) — **จอสำหรับดู**
         → docs/modules/obeya-kpi-board.md
+     แท็บ 🖥️ จอ SQDCM                    = บอร์ดจอ TV "กระดาษ A4 สิบแผ่นปูเต็มจอ"
+        สัปดาห์/เดือน/ปี × 5 แกน SQDCM เป็นกราฟ + ACTION BOARD ปิดลูป → docs/modules/obeya.md
+     แท็บ ⚙️ ตั้งค่า KPI / กรอกผล (ท้ายสุด) = ตาราง 12 เดือน + ตั้งนิยาม KPI + ทะเบียนชื่อ + Excel/PDF
+        ตามฟอร์ม FM-HRM-6-022/024/025 — **โต๊ะสำหรับกรอกและตั้งค่า** (ข้อมูลชุดเดียวกับแท็บแรก)
+     ⭐ 23/09: แท็บ 📋 กับ 🖥️ วาดจาก `ObeyaSheet.jsx` ชิ้นเดียวกัน (คำสั่ง user "ควรจะรูปแบบเดียวกัน")
+     แท็บ 📌 งานค้างของส่วนงาน (23/09 · user: "งานค้างส่วนงาน ควรย้ายเป็น tab ใน หมวด OBEYA ไปเลย")
+        = หน้า `/dept-dashboard` เดิม embed ทั้งดุ้น (pattern เดียวกับ /equipment · ไม่แก้ของเดิม) — คิวงานวันนี้
+        ที่กดไปทำได้ (ผลิต/ซ่อมบำรุง/สโตร์/QA ด้วย `?dept=`) · route เดิม redirect มา `?tab=todo` พา ?dept= มาด้วย
+        · สิทธิ์ piggyback `page:/dept-dashboard` (แท็บโผล่ตามสิทธิ์เดิม · เข้า /obeya ได้ถ้ามีสิทธิ์แท็บใดแท็บหนึ่ง)
+     ⭐ 23/09: ทุกแท็บเลือกขอบเขตด้วย `<OrgScopePicker>` (ผังองค์กรทุกมิติ) — ห้ามกลับไปทำ select ส่วนงานเอง
 
-     แท็บ 🖥️ จอมอนิเตอร์ SQDCM           = บอร์ดจอ TV "กระดาษ A4 สิบแผ่นปูเต็มจอ"
-        รายวัน/สัปดาห์/เดือน × 5 แกน SQDCM เป็นกราฟ + ACTION BOARD ปิดลูป
-        → docs/modules/obeya.md
+   ═══ 🔴 ทำไม 📑 KPI รายเดือน ต้องอยู่ที่นี่ ไม่ใช่ `/dept-dashboard` (17/09) ══════════
+   เดิมมันเป็นแท็บใน `/dept-dashboard` → user ทักว่าซ้ำกับแท็บ 📋 ของหน้านี้ **และถูก**
+   `/dept-dashboard` ตัดด้วย `?dept=` = **หน้าที่/ฝ่าย** (ผลิต·ซ่อมบำรุง·สโตร์·QA)
+   แต่ตาราง KPI รายเดือนตัดด้วย **ส่วนงาน (PD1..PD4) × กลุ่มไลน์ × ปี** = แกนของ Obeya เป๊ะ
+   — คอมเมนต์ใน DeptDashboard เองก็เขียนว่า *"KPI รายเดือนมี section picker ของตัวเอง
+   จึงไม่ต้องมีแถวนี้"* คือยอมรับอยู่กลายๆ ว่าแท็บนั้นไม่ได้ใช้แกนของหน้าที่มันสิงอยู่
+   ⇒ **ตาราง (ตั้งค่า/กรอก) กับ บอร์ด (ดู) เป็นของคู่กัน ต้องอยู่หน้าเดียวกัน**
+   `/dept-dashboard?view=kpi` ยัง redirect มาที่นี่ให้อัตโนมัติ (ห้ามตัดทางเข้าเดิมของใคร)
 
-   **ห้ามยุบสองแท็บเข้าด้วยกัน** — คนละหน่วยเวลา (เดือน vs วัน) คนละแกนตัด (กลุ่มไลน์ vs แกน SQDCM)
-   คนละเจ้าของตัวเลข (บัญชี/ลูกค้ากรอกมือ vs ระบบคำนวณสด) · ยุบรวม = ได้จอที่ไม่ตรงกระดาษ
-   และไม่ตรงหน้างานพร้อมกันทั้งคู่
+   **ห้ามยุบ 📋 กับ 🖥️ เข้าด้วยกัน** — คนละหน่วยเวลา (เดือน vs วัน) คนละแกนตัด
+   คนละเจ้าของตัวเลข · แต่ 📋 กับ 📑 **คือข้อมูลชุดเดียวกัน** (`kpi_definitions` +
+   `kpi_manual_entries` + `kpi_catalog`) แค่คนละมุมมอง — ห้ามแยกคลังเด็ดขาด
    ════════════════════════════════════════════════════════════════════════════════ */
 
 export default function Obeya() {
-  const [tab, setTab] = useTabParam(['kpi', 'sqdcm'], 'kpi');
-  const tabs = useMemo(() => ([
-    { key: 'kpi', label: '📋 บอร์ด KPI ส่วนงาน' },
-    { key: 'sqdcm', label: '🖥️ จอมอนิเตอร์ SQDCM' },
-  ]), []);
+  /* ลำดับแท็บ (user 23/09): จอดู 2 ใบไว้หน้า · "ตั้งค่า/กรอก" ไว้ท้ายสุด — คนเปิดหน้านี้ส่วนใหญ่มาดู ไม่ได้มากรอก */
+  const isMobile = useIsMobile();
+  const { role, lineId, sections } = useContext(UserContext);
+  const [lines, setLines] = useState([]);
+  /* แท็บโผล่ตามสิทธิ์: บอร์ด/ตั้งค่า = `page:/obeya` · 📌 งานค้าง = `page:/dept-dashboard` (คีย์เดิม ไม่ seed ใหม่)
+     ⚠️ ถ้าอ่านสิทธิ์ไม่ได้ทั้งคู่ (cache ยังไม่มา / harness ที่ไม่โหลด role_permissions) = โชว์ครบ —
+     RoleRoute กั้นหน้าทั้งหน้าไว้แล้ว การซ่อนแท็บตรงนี้เป็นแค่ความสะดวก ห้ามทำให้จอเหลือแท็บว่าง (crashsweep จะเดินไม่ถึงแท็บอื่น) */
+  const boardsOk = hasPermission('page:/obeya', role);
+  const todoOk = canAccessPage('/dept-dashboard', role);
+  const canBoards = boardsOk || !todoOk;
+  const canTodo = todoOk || !boardsOk;
 
-  return tab === 'sqdcm'
-    ? <ObeyaSqdcmBoard tabs={tabs} tab={tab} onTab={setTab} />
-    : <ObeyaKpiBoard tabs={tabs} tab={tab} onTab={setTab} />;
+  const tabs = useMemo(() => ([
+    canBoards && { key: 'kpi', label: '📋 บอร์ด KPI ส่วนงาน (รายเดือน)' },
+    canBoards && { key: 'sqdcm', label: '🖥️ จอ SQDCM (สัปดาห์/เดือน/ปี)' },
+    canTodo && { key: 'todo', label: '📌 งานค้างของส่วนงาน (วันนี้)' },
+    canBoards && { key: 'table', label: '⚙️ ตั้งค่า KPI / กรอกผล' },
+  ].filter(Boolean)), [canBoards, canTodo]);
+  const [tab, setTab] = useTabParam(tabs.map(t => t.key), tabs[0]?.key || 'kpi');
+
+  /* โหลดไลน์เฉพาะตอนเปิดแท็บตาราง — แท็บอื่นโหลดของตัวเองอยู่แล้ว ไม่ยิงซ้ำ */
+  useEffect(() => {
+    if (tab !== 'table' || lines.length) return;
+    let alive = true;
+    loadLinesRes()
+      .then(({ data }) => { if (alive) setLines(data || []); });
+    return () => { alive = false; };
+  }, [tab, lines.length]);
+
+  const scopeSet = useMemo(() => {
+    const names = scopedLineNames({ role, lineId, sections, lines });
+    return names ? new Set(names) : null;
+  }, [lines, role, lineId, sections]);
+
+  /* UI-STANDARD 2026-09-24: ทุกแท็บอยู่ใน <Page> กรอบเดียวกัน — เดิมแต่ละแท็บมีรากของตัวเอง
+     (kpi/sqdcm ชิด sidebar x=0 · todo/table x=24) ⇒ หัวเพจกระโดดตอนสลับแท็บ
+     โหมดจอ TV ของบอร์ดเป็น position:fixed เต็มจอ — ไม่ถูกกรอบนี้บีบ */
+  const loadingNote = <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 14, padding: 24 }}>กำลังโหลด...</div>;
+  let body;
+  if (tab === 'sqdcm') body = <ObeyaSqdcmBoard tabs={tabs} tab={tab} onTab={setTab} />;
+  else if (tab === 'todo') {
+    body = (
+      <Suspense fallback={loadingNote}>
+        <DeptDashboard embedded tabs={tabs} tab={tab} onTab={setTab} />
+      </Suspense>
+    );
+  } else if (tab === 'table') {
+    /* ไม่มี gap ที่กล่องนี้ — ระยะ แท็บ→แถบกรอง ต้องเท่ากับแท็บอื่น (PageHeader marginBottom 12 ที่เดียว) */
+    body = (
+      <div style={{ display: 'flex', flexDirection: 'column' }}>
+        <PageHeader
+          tabs={tabs} tab={tab} onTab={setTab}
+          title={OBEYA_TITLE} icon={OBEYA_ICON}
+          sub="ตั้งนิยาม KPI · กรอกผลราย 12 เดือน · ออกฟอร์ม FM-HRM-6-022/024/025 — ข้อมูลชุดเดียวกับแท็บ 📋 บอร์ด"
+        />
+        <Suspense fallback={loadingNote}>
+          <KpiMonthly lines={lines} scopeSet={scopeSet} isMobile={isMobile} />
+        </Suspense>
+      </div>
+    );
+  } else body = <ObeyaKpiBoard tabs={tabs} tab={tab} onTab={setTab} />;
+  return <Page>{body}</Page>;
 }

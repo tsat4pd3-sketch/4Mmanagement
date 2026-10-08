@@ -5,6 +5,9 @@ import { RATE } from '../utils/refreshRates';
 import { useLiveBoard } from '../utils/useLiveBoard';
 import { buildPnIndex, pickStockMat, matIssueText } from '../utils/matResolve';
 import { fetchAllPages } from '../utils/fetchByIds';
+import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
+import { openOnly } from '../utils/shipStatus';
 
 /* ─── RUNDOWN STOCK — Balance FG รายวัน (แบบไฟล์ rundown stock ของหน้างาน) ────
    หน้าคู่กับ 📈 Planner & Sales: sale อัพโหลด order (EDI 862) → หน้านี้จำลองว่า
@@ -37,8 +40,8 @@ export default function RundownStock() {
     const [stkR, odsR, { data: st }, { data: rules }, { data: dp }, { data: ks }] = await Promise.all([
       fetchAllPages(() => supabaseDR.from('line_stock_summary').select('line_name, mat_no, part_name, qty_on_hand'),
         { orderBy: ['mat_no', 'line_name'] }),   // view ไม่มี id — order composite ให้คงที่ข้ามหน้า
-      fetchAllPages(() => supabaseDR.from('customer_shipping_orders').select('*')
-        .lt('due_date', dateStr(toD)).neq('status', 'shipped')),
+      fetchAllPages(() => openOnly(supabaseDR.from('customer_shipping_orders').select('*')
+        .lt('due_date', dateStr(toD)))),
       supabaseDR.from('ship_to_plants').select('*'),
       // คลังปลายทางของ FG มาจากกฎรับเข้าอัตโนมัติ — ไม่ hardcode 'FG WAREHOUSE'
       supabaseDR.from('stock_inflow_rules').select('match_type, match_value, dest_line_name').eq('is_active', true),
@@ -142,15 +145,9 @@ export default function RundownStock() {
   };
 
   return (
-    <div style={{ padding: 'clamp(12px, 2vw, 24px)', maxWidth: 'min(96vw, 1600px)', margin: '0 auto' }}>
-      <div style={{ marginBottom: 18 }}>
-        <h1 style={{ margin: 0, fontSize: 'clamp(18px, 2.5vw, 24px)', fontWeight: 900, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
-          📉 คาดการณ์ของจะขาด — Balance FG รายวัน
-        </h1>
-        <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--muted)' }}>
-          stock พร้อมส่ง{fgDest ? ` (คลัง ${fgDest})` : ''} − order ค้างส่งสะสม {HORIZON} วันข้างหน้า · เดินอัตโนมัติจากการปิดออเดอร์/การส่งจริง
-        </p>
-      </div>
+    <Page>
+      <PageHeader title="คาดการณ์ของจะขาด — Balance FG รายวัน" icon="📉"
+        sub={<>stock พร้อมส่ง{fgDest ? ` (คลัง ${fgDest})` : ''} − order ค้างส่งสะสม {HORIZON} วันข้างหน้า · เดินอัตโนมัติจากการปิดออเดอร์/การส่งจริง</>} />
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         {loadWarn && (
@@ -201,7 +198,7 @@ export default function RundownStock() {
                       <td style={{ padding: '7px 12px', position: 'sticky', left: 0, background: 'var(--card)', zIndex: 1 }}>
                         <div style={{ fontSize: 12, fontWeight: 700, fontFamily: 'monospace', color: '#0ea5e9' }}>
                           {r.mat_no}
-                          {r.aliases?.length > 0 && <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--muted)' }} title="order อ้างหลายเลขที่ชี้สต็อกก้อนเดียวกัน — รวม demand แล้วกันนับสต็อกซ้ำ"> (+{r.aliases.join(', ')})</span>}
+                          {r.aliases?.length > 0 && <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)' }} title="order อ้างหลายเลขที่ชี้สต็อกก้อนเดียวกัน — รวม demand แล้วกันนับสต็อกซ้ำ"> (+{r.aliases.join(', ')})</span>}
                         </div>
                         <div style={{ fontSize: 11, color: 'var(--muted)', maxWidth: 190, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {r.part_name || ''}{r.customers.size ? ` · ${[...r.customers].map(custLabel).join(', ')}` : ''}
@@ -235,6 +232,6 @@ export default function RundownStock() {
           </div>
         )}
       </div>
-    </div>
+    </Page>
   );
 }

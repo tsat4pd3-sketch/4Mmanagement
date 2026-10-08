@@ -3,14 +3,18 @@ import { useNavigate } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import PageHeader from '../components/PageHeader';
+import MatLabel from '../components/MatLabel';
+import Page from '../components/Page';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
-import { usePolling } from '../utils/usePolling';
-import { fetchAllPages } from '../utils/fetchByIds';
+import { visibleInterval } from '../utils/usePolling';
+import { fetchAllPages, fetchByIds } from '../utils/fetchByIds';
+import { orderDonePcs } from '../utils/planLots';
 import { RATE, LIVE } from '../utils/refreshRates';
-import { coalesce } from '../utils/liveRefresh';
+import { coalesce, makeIdleGate } from '../utils/liveRefresh';
 import { loadDivisions, divisionsSync, divisionMeta } from '../utils/orgDivisions';
 import { liveChannel } from '../utils/liveChannel';
+import { openOnly } from '../utils/shipStatus';
 
 /* ══ 🔗 Flow Control Tower — สายธารของ "ความต้องการ" ตั้งแต่ลูกค้าถึงวัตถุดิบ ═══════════
    ตอบคำถามเดียว: **ความต้องการของลูกค้าไหลย้อนกลับไปถึงต้นน้ำครบหรือยัง ตันตรงไหน**
@@ -74,22 +78,26 @@ export default function FlowTower() {
       //    select เฉยๆ โดน PostgREST ตัดที่ 1000 เงียบๆ แล้วยอด/ตัวนับต่ำเกินจริง (QC flow-audit #19/#36)
       //    ส่วน purchase_requests เคยพองเป็น 1,024 ใบ (96% เป็น cancelled จากบั๊ก lot_size) →
       //    ที่ต้องใช้คือ "จำนวน" อย่างเดียว ใช้ count query ไม่ดึงแถว = ไม่มีเพดาน 1000
-      const [stock, ordersOpen, prodToday, childLots, rawAllQ, rawPendQ, purchQ, purchMovedQ, blocks, wipPts, wipReq] = await Promise.all([
+      const [stock, ordersOpen, prodToday, childLots, rawAllQ, rawPendQ, purchQ, purchMovedQ, blocks, partLv, wipReq] = await Promise.all([
         fetchAllPages(() => supabaseDR.from('line_stock_summary')
           .select('line_name, mat_no, qty_on_hand'), { orderBy: ['line_name', 'mat_no'] }),
-        supabaseDR.from('customer_shipping_orders').select('qty, status').neq('status', 'shipped'),
+        openOnly(supabaseDR.from('customer_shipping_orders').select('qty, status')),
         supabaseDR.from('production_sessions').select('id, line_name, status').eq('work_date', workDate),
         fetchAllPages(() => supabaseDR.from('child_lot_requests')
           .select('id, status, lot_qty, source_line')),
-        supabaseDR.from('raw_withdrawal_requests').select('id', { count: 'exact', head: true }),
-        supabaseDR.from('raw_withdrawal_requests').select('id', { count: 'exact', head: true }).neq('status', 'done'),
+        /* 🔴 QC 05/10 — ตารางนี้มีแค่ pending / issued / cancelled (ไม่มี 'done')
+           เดิม `.neq('status','done')` = นับ cancelled เป็น "ค้าง" (1,472 แทน 482) · ยอดรวมก็ไม่นับใบยกเลิก */
+        supabaseDR.from('raw_withdrawal_requests').select('id', { count: 'exact', head: true }).neq('status', 'cancelled'),
+        supabaseDR.from('raw_withdrawal_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
         supabaseDR.from('purchase_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
         // มิติเวลาของสถานีสั่งซื้อ: มีใบขยับ (สั่งซื้อ/รับเข้า) ใน 7 วัน = ✅ ไหลจริง (QC flow-audit #22 —
         // เดิมสถานีนี้ไม่มีทางเป็น flow เลย ขัดนิยาม 4 สถานะของหน้าตัวเอง)
         supabaseDR.from('purchase_requests').select('id', { count: 'exact', head: true })
           .in('status', ['ordered', 'received']).gte('ordered_at', since),
         supabaseDR.from('v_demand_flow_blocks').select('*').order('pending_qty', { ascending: false }),
-        supabase.from('wip_buffer_points').select('id'),
+        /* 🔴 2026-10-01 — เลิกนับ "จุด WIP" (`wip_buffer_points`) แล้ว · ชั้นควบคุมของหน้าไลน์คือ
+           **ไลน์ + พาร์ท** (`line_part_levels`) ไม่ใช่จุดย่อยในไลน์ — ตัวเลขจุดจึงไม่ตอบอะไรอีก */
+        supabaseDR.from('line_part_levels').select('line_name').eq('is_active', true),
         supabase.from('wip_replenish_requests').select('id, status'),
         // (ตัด customer_forecasts ทิ้ง — fcastQty ไม่เคยถูกแสดงผลที่ไหน แต่จ่าย egress ทุกรอบ poll + realtime event
         //  แถมโดน cap 1000 แถวเงียบ · QC flow-audit #25 · จะใช้จริงให้ sum ฝั่ง server เป็น view/rpc)
@@ -112,15 +120,20 @@ export default function FlowTower() {
       const lotBy = (st) => lots.filter(l => l.status === st);
 
       // ยอดผลิตวันนี้ (ใบที่ปิดแล้ว + ยอดสะสมของใบที่ยังเปิด) — สูตรบังคับของระบบ
+      /* 🔴 QC 05/10 — เดิม `.in(sids)` ไม่แบ่งหน้า (ตัด 1000 ใบเงียบ) + error ถูกกลืน + ใบ confirmed ที่ไม่มี
+         qty_ok ถอยไปใช้ `qty` (= เป้า ไม่ใช่ของที่ทำได้) + นับใบ cancelled
+         → fetchByIds · ยอดต่อใบผ่าน `orderDonePcs()` (planLots.js → orderInQty ของ monitorSystem.js) ที่เดียว */
       const sids = (prodToday.data || []).map(s => s.id);
-      let po = [];
+      let po = [], poFail = false;
       if (sids.length) {
-        const r = await supabaseDR.from('prod_orders')
-          .select('status, qty, qty_ok, qty_actual').in('session_id', sids).order('id');
-        po = r.data || [];
+        const r = await fetchByIds(sids, part => supabaseDR.from('prod_orders')
+          .select('id, status, qty, qty_ok, qty_actual').in('session_id', part));
+        poFail = !!(r.error || r.truncated);
+        if (poFail) setErr(e => [e, `โหลดไม่ได้: ยอดผลิตวันนี้ (${r.error || 'เกินเพดาน'})`].filter(Boolean).join(' · '));
+        po = r.rows;
       }
-      const producedToday = po.reduce((a, o) =>
-        a + (o.status === 'confirmed' ? Number(o.qty_ok ?? o.qty ?? 0) : Number(o.qty_actual ?? 0)), 0);
+      // โหลดไม่ครบ = ไม่รู้ (null → "—") ห้ามโชว์ยอดที่ขาดเป็นตัวเลขจริง
+      const producedToday = poFail ? null : po.reduce((a, o) => a + orderDonePcs(o), 0);
 
       setD({
         fgStock: sum(byPrefix('1')), fgParts: byPrefix('1').length,
@@ -138,7 +151,8 @@ export default function FlowTower() {
         rawAll: rawAllQ.error ? null : (rawAllQ.count ?? 0),
         purchPending: purchQ.error ? null : (purchQ.count ?? 0),
         purchMoved7d: purchMovedQ.error ? null : (purchMovedQ.count ?? 0),
-        wipPts: (wipPts.data || []).length, wipReq: (wipReq.data || []).length,
+        lvParts: (partLv.data || []).length, lvLines: new Set((partLv.data || []).map(r => r.line_name)).size,
+        wipReq: (wipReq.data || []).length,
         blocks: blocks.data || [],
         blockQty: (blocks.data || []).reduce((a, b) => a + (Number(b.pending_qty) || 0), 0),
       });
@@ -146,19 +160,27 @@ export default function FlowTower() {
   }, [workDate]);
 
   useEffect(() => { loadDivisions().then(setDivs); }, []);
-  useEffect(() => { load(); }, [load]);
-  usePolling(load, RATE.ANALYTIC);
-  /* เปิดหลายจอพร้อมกัน → จอทุกใบขยับพร้อมกันตอนมีคนปิดใบผลิตอีกจอหนึ่ง
-     🔴 2026-09-15 — เดิมผูก `load` เข้า handler ตรงๆ **ไม่มี debounce/เพดานเลย**
-        ⇒ ทุกครั้งที่ใครแตะใบผลิตในโรงงาน จอนี้โหลดใหม่ทันที (วันทำงานยุ่ง = รัวไม่จำกัด)
-        ใส่ coalesce(LIVE.BOARD) ดู src/utils/liveRefresh.js */
+  /* 🔁 รีเฟรช = realtime เป็นช่องทางหลัก + poll ที่ "ข้ามรอบเมื่อไม่มีอะไรเปลี่ยน" (กฎเขียน DB ข้อ 8 · QC 05/10)
+     เดิม usePolling ยิงเต็ม 11 คิวรีทุก 20 นาทีตลอด 24 ชม. ทั้งที่ไม่มีใครแตะอะไร + โหลดซ้ำ 2 รอบตอนเปิดหน้า
+     · ใบผลิต/กะ → touch + โหลด (coalesce LIVE.BOARD — เดิม 2026-09-15 ผูก load ตรงไม่มีเพดาน)
+     · ledger สต็อก/ใบสั่งผลิตลูก → touch อย่างเดียว (ถี่มาก — ให้ tick ถัดไปโหลดทีเดียว)
+     ⚠️ hard floor = RATE.SLOW ไม่ใช่ LIVE.FLOOR: ออเดอร์ลูกค้า/ใบสั่งซื้อ/ใบเบิก/ใบขอเติม
+        **ไม่อยู่ใน publication realtime** (เช็ค pg_publication_tables 05/10) ⇒ ต้องมีรอบโหลดของมันเอง */
   useEffect(() => {
-    const bump = coalesce(load, LIVE.BOARD);
+    const g = makeIdleGate(RATE.SLOW);
+    const run = () => { g.loaded(); return load(); };
+    const bump = coalesce(run, LIVE.BOARD);
+    const onOrder = () => { g.touch(); bump(); };
+    const onTouch = () => g.touch();
+    run();
+    const stopPoll = visibleInterval(() => { if (g.shouldRun()) run(); }, RATE.ANALYTIC);
     const ch = liveChannel(supabaseDR, 'flow-tower')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'prod_orders' }, bump)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'production_sessions' }, bump)
-      .subscribe();
-    return () => { bump.cancel(); supabaseDR.removeChannel(ch); };
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'prod_orders' }, onOrder)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'production_sessions' }, onOrder)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'line_stock_transactions' }, onTouch)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'child_lot_requests' }, onTouch)
+      .subscribe((st) => { if (st === 'SUBSCRIBED') g.touch(); });
+    return () => { stopPoll(); bump.cancel(); supabaseDR.removeChannel(ch); };
   }, [load]);
 
   const setLot = async (row) => {
@@ -189,8 +211,8 @@ export default function FlowTower() {
       lines: [[fmt(S.producedToday), 'ชิ้นวันนี้'], [`${fmt(S.sessAll)} กะ`, `เปิดอยู่ ${fmt(S.sessOpen)}`]],
       to: '/daily-report', st: S.producedToday > 0 ? 'flow' : 'idle' },
     { key: 'wip', divCode: 'production', icon: '🔄', name: 'WIP หน้าไลน์',
-      lines: [[`${fmt(S.wipPts)} จุด`, 'buffer ที่ตั้งไว้'], [`${fmt(S.wipReq)} ใบ`, 'ใบเติมของ']],
-      to: '/linesetup', st: S.wipReq > 0 ? 'flow' : 'idle' },
+      lines: [[`${fmt(S.lvParts)} พาร์ท`, `ตั้งจุดเรียกเติมแล้ว ${fmt(S.lvLines)} ไลน์`], [`${fmt(S.wipReq)} ใบ`, 'ใบเติมของ']],
+      to: '/daily-report', st: S.wipReq > 0 ? 'flow' : 'idle' },
     { key: 'store', divCode: 'logistic', icon: '📦', name: 'สโตร์พาร์ทย่อย',
       lines: [[fmt(S.subStock), 'ชิ้นคงเหลือ'], [`${fmt(S.subParts)} พาร์ท`, 'ในสโตร์']],
       to: '/line-stock', st: S.subStock > 0 ? 'flow' : 'idle' },
@@ -229,7 +251,7 @@ export default function FlowTower() {
   const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12 };
 
   return (
-    <div style={{ padding: '0 4px 40px' }}>
+    <Page>
       <PageHeader
         title="สายธารความต้องการ (Flow Control Tower)" icon="🔗"
         sub={`ความต้องการของลูกค้าไหลย้อนไปถึงวัตถุดิบครบหรือยัง · ข้อมูลสด ${workDate}`}
@@ -287,22 +309,22 @@ export default function FlowTower() {
                   {s.lines.map(([a, b], j) => (
                     <div key={j}>
                       <div style={{ fontSize: j === 0 ? 17 : 12, fontWeight: j === 0 ? 900 : 700, color: j === 0 ? 'var(--text)' : 'var(--text2)', fontFamily: 'var(--font-display)' }}>{a}</div>
-                      <div style={{ fontSize: 10, color: 'var(--muted)' }}>{b}</div>
+                      <div style={{ fontSize: 11, color: 'var(--muted)' }}>{b}</div>
                     </div>
                   ))}
                   <div style={{ marginTop: 'auto', paddingTop: 6, display: 'flex', alignItems: 'center', gap: 5 }}>
                     <span style={{ width: 7, height: 7, borderRadius: '50%', background: st.dot }} />
-                    <span style={{ fontSize: 10, fontWeight: 700, color: st.dot }}>{st.label}</span>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: st.dot }}>{st.label}</span>
                   </div>
                 </div>
                 {lk && i < stations.length - 1 && (
                   <div style={{ flex: '1 1 96px', minWidth: 40, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '0 4px' }}>
-                    <div style={{ fontSize: 9, color: 'var(--muted)', textAlign: 'center', lineHeight: 1.2, marginBottom: 3 }}>{lk.label}</div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', lineHeight: 1.2, marginBottom: 3 }}>{lk.label}</div>
                     <div style={{ width: '100%', height: 2, background: ST[lk.st].dot, opacity: 0.75, position: 'relative' }}>
                       <span style={{ position: 'absolute', right: -1, top: -4, color: ST[lk.st].dot, fontSize: 11, lineHeight: 1 }}>▶</span>
                     </div>
-                    <div style={{ fontSize: 9, fontWeight: 800, color: ST[lk.st].dot, marginTop: 3 }}>{ST[lk.st].label}</div>
-                    {lk.hint && <div style={{ fontSize: 8, color: 'var(--muted)' }}>{lk.hint}</div>}
+                    <div style={{ fontSize: 11, fontWeight: 800, color: ST[lk.st].dot, marginTop: 3 }}>{ST[lk.st].label}</div>
+                    {lk.hint && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{lk.hint}</div>}
                   </div>
                 )}
               </div>
@@ -332,15 +354,15 @@ export default function FlowTower() {
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                   <thead><tr style={{ background: 'var(--bg2)' }}>
-                    {['MAT', 'ชื่อพาร์ท', 'ค้างสะสม', 'ปลายทาง', 'ค่าที่เสนอ', ''].map((h, i) => (
-                      <th key={h} style={{ padding: '7px 12px', fontSize: 10, fontWeight: 800, color: 'var(--muted)', textAlign: i === 2 || i === 4 ? 'right' : 'left', whiteSpace: 'nowrap', textTransform: 'uppercase' }}>{h}</th>
+                    {/* ยุบ "ชื่อพาร์ท + MAT" เป็นคอลัมน์เดียว — <MatLabel> ให้ครบ Part No./ชื่อ/MAT (30/09) */}
+                    {['ชิ้นงาน', 'ค้างสะสม', 'ปลายทาง', 'ค่าที่เสนอ', ''].map((h, i) => (
+                      <th key={h} style={{ padding: '7px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: i === 2 || i === 4 ? 'right' : 'left', whiteSpace: 'nowrap', textTransform: 'uppercase' }}>{h}</th>
                     ))}
                   </tr></thead>
                   <tbody>
                     {S.blocks.slice(0, 12).map(b => (
                       <tr key={b.mat_no} style={{ borderTop: '1px solid var(--border)' }}>
-                        <td style={{ padding: '7px 12px', fontWeight: 800, color: 'var(--accent)' }}>{b.mat_no}</td>
-                        <td style={{ padding: '7px 12px', color: 'var(--text2)' }}>{b.part_name || '—'}</td>
+                        <td style={{ padding: '7px 12px', maxWidth: 340 }}><MatLabel mat={b.mat_no} name={b.part_name} /></td>
                         <td style={{ padding: '7px 12px', textAlign: 'right', fontWeight: 800, color: '#ef4444' }}>{fmt(b.pending_qty)}</td>
                         <td style={{ padding: '7px 12px', fontSize: 11, color: 'var(--muted)' }}>
                           {b.demand_kind === 'purchase' ? '🚛 สั่งซื้อ' : `🔨 ผลิตเอง${b.maker_line ? ` · ${b.maker_line}` : ''}`}
@@ -375,7 +397,7 @@ export default function FlowTower() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead><tr style={{ background: 'var(--bg2)' }}>
               {['ช่วง', 'กลไก', 'สถานะ', 'หลักฐานจากข้อมูลจริง'].map(h => (
-                <th key={h} style={{ padding: '7px 12px', fontSize: 10, fontWeight: 800, color: 'var(--muted)', textAlign: 'left', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>
+                <th key={h} style={{ padding: '7px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>
               ))}
             </tr></thead>
             <tbody>
@@ -387,7 +409,7 @@ export default function FlowTower() {
                 ['สโตร์ย่อย → ไลน์ปั๊ม', 'ใบสั่งผลิตลูกตามขนาดล็อต', S.lotAll > 0 ? 'flow' : 'idle', `${fmt(S.lotAll)} ใบ · รู้ไลน์ปลายทางแล้ว ${fmt(S.lotRouted)} ใบ`],
                 ['ไลน์ปั๊ม → สโตร์วัตถุดิบ', 'ใบเบิกวัตถุดิบตามสูตรของพาร์ทลูก', S.rawAll > 0 ? 'flow' : 'idle', `ใบเบิก ${fmt(S.rawAll)} ใบ · ค้าง ${fmt(S.rawPending)}`],
                 ['→ สั่งซื้อวัตถุดิบ (Planning)', 'ระเบิด BOM → ออกใบสั่งซื้ออัตโนมัติ', S.purchMoved7d > 0 ? 'flow' : (S.purchPending > 0 ? 'block' : 'idle'), `ออกใบให้แล้ว ${fmt(S.purchPending)} ใบรอดำเนินการ · อีก ${fmt(S.blocks?.length)} พาร์ทออกใบไม่ได้เพราะยังไม่ตั้งขนาดล็อต`],
-                ['WIP หน้าไลน์', 'ใบเติมของจากจุด buffer', S.wipReq > 0 ? 'flow' : 'idle', `ตั้งจุดไว้ ${fmt(S.wipPts)} จุด · ใบเติม ${fmt(S.wipReq)} ใบ (ยังไม่เริ่มใช้)`],
+                ['WIP หน้าไลน์', 'ไลน์เบิกเองเมื่อต่ำกว่า min (ราย ไลน์+พาร์ท)', S.wipReq > 0 ? 'flow' : 'idle', `ตั้งจุดเรียกเติม ${fmt(S.lvParts)} พาร์ท ใน ${fmt(S.lvLines)} ไลน์ · ใบเติม ${fmt(S.wipReq)} ใบ`],
               ].map(([seg, mech, st, ev]) => (
                 <tr key={seg} style={{ borderTop: '1px solid var(--border)' }}>
                   <td style={{ padding: '8px 12px', fontWeight: 800, whiteSpace: 'nowrap' }}>{seg}</td>
@@ -407,6 +429,6 @@ export default function FlowTower() {
           <b style={{ color: '#f59e0b' }}> 🟠 ส่งต่อด้วยคน</b> = ยังไม่มีเส้นข้อมูลอัตโนมัติ ใช้คนตัดสินใจแทน
         </div>
       </div>
-    </div>
+    </Page>
   );
 }

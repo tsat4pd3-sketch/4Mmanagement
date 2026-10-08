@@ -1,9 +1,9 @@
 import { useState, useEffect, useLayoutEffect, useContext, useRef, useCallback, useMemo, Fragment } from 'react';
+import { halfDayBreakIntervals } from '../utils/oee';
 import { createPortal } from 'react-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
-import { wipPointCat } from '../utils/wipMatOptions';
 import DowntimeSiren from '../components/DowntimeSiren';
 import ToggleDot from '../components/ToggleDot';
 import { RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer } from 'recharts';
@@ -12,7 +12,7 @@ import { can, canAccessPage } from '../utils/permissions';
 import resizeImg from '../utils/resizeImage';
 import { getLineFamilyNames, getLineFamilyIds, getAncestorNames } from '../utils/lineHierarchy';
 import LineSelect from '../components/LineSelect';
-import { LINE_COLUMNS } from '../utils/useProductionLines';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { inSectionScope } from '../utils/sectionScope';
 import { fetchActiveDowntimes, dtElapsedMin } from '../utils/downtimeAlarm';
 import { buildMan4mPendingMatcher, ppeMissingList } from '../utils/personAlarm';
@@ -21,10 +21,13 @@ import useIsMobile from '../utils/useIsMobile';
 import { visibleInterval } from '../utils/usePolling';
 import { RATE, LIVE } from '../utils/refreshRates';
 import { coalesce, makeIdleGate } from '../utils/liveRefresh';
-import { positionAllCards, delayedCountOf, orderKeyOf } from '../utils/heijunkaQueue';
+import { positionAllCards, delayedCountOf, orderKeyOf, projectedFinishMs, planStatusOf, pushChainOf, dayDelaySummaryOf } from '../utils/heijunkaQueue';
+import PlanSlipBar from '../components/PlanSlipBar';   // 📋 แถบ "หลุดแผนไปแค่ไหน" (เวลา+ยอด · 2026-09-30)
+import DelayBlameBar from '../components/DelayBlameBar';   // 🔗 สรุปดีเลย์ของวัน + ต้นเหตุ/ผู้ถูกพาล (ทีมปั๊ม 2026-09-30)
 import { liveChannel } from '../utils/liveChannel';
 import { checkWrite } from '../utils/dbWrite';
 import { uploadOpts } from '../utils/storageUpload';
+import { acceptImageFile } from '../utils/acceptImageFile';
 
 // บีบรูปก่อนอัปโหลด — ตัวจริงอยู่ src/utils/resizeImage.js (ห้ามก๊อปโค้ดบีบรูปซ้ำอีก)
 // ⚠️ ก๊อปเดิมที่นี่ **ไม่มี img.onerror** → ไฟล์ที่เบราว์เซอร์ decode ไม่ได้ (.heic จากกล้องมือถือ /
@@ -157,7 +160,6 @@ export default function Management() {
   const [helperMap,      setHelperMap]      = useState({}); // 🤝 ยืมตัวข้ามไลน์วันนี้ { employee_id: to_line_id } (line_helpers — best-effort)
   const [fourMLogs,      setFourMLogs]      = useState([]);
   const [dynamicStations,setDynamicStations]= useState([]);
-  const [wipPoints,      setWipPoints]      = useState([]);
   const [machinePoints,  setMachinePoints]  = useState([]);
   const [drMachines,     setDrMachines]     = useState([]);
   const [lineLayout,     setLineLayout]     = useState(null);
@@ -199,9 +201,8 @@ export default function Management() {
   const [panelCollapsed,  setPanelCollapsed]  = useState(false);
   const [filterMan,       setFilterMan]       = useState(true);
   const [filterMachine,   setFilterMachine]   = useState(false);
-  const [filterWip,       setFilterWip]       = useState(false);
-  // ป้ายชื่อบนผัง: โชว์/ซ่อน อย่างเดียว คุมทุกชนิดจุด (คน/เครื่องจักร/WIP — UI-CONVENTIONS §1)
-  // ป้ายเตือน (เครื่อง Downtime / WIP ต่ำกว่า min / หมุดที่กำลังเลือก) โชว์เสมอแม้ซ่อนป้าย
+  // ป้ายชื่อบนผัง: โชว์/ซ่อน อย่างเดียว คุมทุกชนิดจุด (คน/เครื่องจักร — UI-CONVENTIONS §1)
+  // ป้ายเตือน (เครื่อง Downtime / หมุดที่กำลังเลือก) โชว์เสมอแม้ซ่อนป้าย
   const [showPills,       setShowPills]       = useState(true);
   const [docImagePreview, setDocImagePreview] = useState(null);
   const [isSavingDoc,     setIsSavingDoc]     = useState(false);
@@ -444,10 +445,10 @@ export default function Management() {
     const fetchLines = async () => {
       // ดึงทุกไลน์เสมอเพื่อ resolve ลำดับชั้น (parent/children) ได้ครบ — scope ไปตัดที่ "รายการให้เลือก" แทน
       // ไม่งั้น leader ที่ผูกกับไลน์หลักจะมองไม่เห็นจุดที่ set ไว้ที่ไลน์ย่อย (และกลับกัน)
-      const { data } = await supabase.from('production_lines').select(LINE_COLUMNS).order('name'); // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
+      const { data } = await loadLinesRes(); // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
       let all = data || [];
       // เติมโหมดการไหลงาน (flow_mode/parallel_stations) best-effort — ถ้ายังไม่ apply migration 20260723 ก็ข้าม
-      const { data: flowData } = await supabase.from('production_lines').select('name, flow_mode, parallel_stations');
+      const { data: flowData } = await loadLinesRes();
       if (flowData) {
         const fm = {}; flowData.forEach(l => { fm[l.name] = l; });
         all = all.map(l => ({ ...l, flow_mode: fm[l.name]?.flow_mode, parallel_stations: fm[l.name]?.parallel_stations }));
@@ -511,11 +512,9 @@ export default function Management() {
     setLayoutLineName(shownLayoutLine);
     setLineLayout(shownLayoutLine ? layoutByName[shownLayoutLine] : null);
 
-    // จุดงาน/WIP/เครื่องจักร: ดึงตามครอบครัวไลน์ (ตัวเอง + สายบน + สายล่าง)
+    // จุดงาน/เครื่องจักร: ดึงตามครอบครัวไลน์ (ตัวเอง + สายบน + สายล่าง)
     const { data: stationData } = await supabase.from('workstations').select('*, station_requirements(*)').in('line_name', viewLineNames);
     setDynamicStations(stationData || []);
-    const { data: wipData } = await supabase.from('wip_buffer_points').select('*').in('line_name', viewLineNames);
-    setWipPoints(wipData || []);
     const { data: mpData } = await supabase.from('machine_points').select('*').in('line_name', viewLineNames);
     setMachinePoints(mpData || []);
     const { data: drMc } = await supabaseDR.from('machines').select('id, machine_no, machine_name, process_type, machine_type_id, line_name').in('line_name', viewLineNames).eq('is_active', true);
@@ -596,16 +595,18 @@ export default function Management() {
       const periodStart = getPeriodStartDate(period, workDate);
 
       // ปิด record เดิมที่ยังเปิดอยู่ของพนักงานคนนี้
-      await supabase
+      // 🔴 ปิดไม่สำเร็จ = ห้าม insert ต่อ (QC 05/10 · กฎเขียน DB ข้อ 1) — ไม่งั้นมี record เปิดค้าง 2 จุดพร้อมกัน
+      //    ⇒ ประวัติประจำจุด/Workforce Insight นับคนคนเดียวอยู่ 2 ที่ · การย้ายจุดหลัก (daily_production_logs) สำเร็จไปแล้ว
+      const closedOk = checkWrite(await supabase
         .from('station_assignment_logs')
         .update({ ended_at: periodStart.toISOString() })
         .eq('employee_id', droppedWorker.employee_id)
         .eq('work_date', workDate)
         .eq('shift', shift)
-        .is('ended_at', null);
+        .is('ended_at', null), 'ย้ายจุดแล้ว แต่ปิดประวัติประจำจุดเดิม');
 
       // สร้าง record ใหม่เฉพาะเมื่อย้ายไปสถานี (ไม่สร้างตอนย้ายกลับ pool)
-      if (finalAssign) {
+      if (closedOk && finalAssign) {
         const station = dynamicStations.find(s => String(s.id) === String(finalAssign));
         checkWrite(await supabase.from('station_assignment_logs').insert({
           employee_id:      droppedWorker.employee_id,
@@ -671,6 +672,21 @@ export default function Management() {
           } else {
             const desc = `${droppedWorker.employees?.name} ${moveType === 'cross' ? 'ย้ายข้ามไลน์ไปจุด' : 'ย้ายไปจุด'} ${station.station_name}`;
             const mc = MAN_CASE_META[manCase];
+            /* 🔴 กันใบซ้ำ (CLAUDE.md §4M ที่ระบบสร้างเอง ห้ามเข้าคิวอนุมัติเงียบๆ · QC 05/10)
+               ลากคนเดิมเข้า-ออกจุดเดิมหลายรอบ = ใบรอเอกสารซ้อนในคิวทีละใบ — ใบที่ยังค้าง (คน+จุด+ไลน์เดียวกัน) มีอยู่แล้ว = ไม่ออกใหม่
+               ไม่จำกัดวัน (ต่างจาก case 1): ใบ pending ของเมื่อวานยังเป็นงานเดียวกันที่รอ OJT อยู่ */
+            const { data: dupPend, error: dupErr } = await supabase.from('four_m_logs')
+              .select('id').eq('category', 'Man').eq('line_name', station.line_name).eq('description', desc)
+              .in('status', ['pending_doc', 'pending', 'pending_qa']).limit(1);
+            if (dupErr) {
+              // เช็คซ้ำไม่ได้ = ไม่ออกใบ (เสี่ยงท่วมคิว) แต่ต้องบอกให้คนเปิดเอง — ห้ามเงียบ
+              toast.error('เข้าตำแหน่งแล้ว แต่ตรวจใบ 4M Man ซ้ำไม่สำเร็จ — ยังไม่ได้เปิดใบ ให้เปิดเองที่หน้า 4M: ' + dupErr.message);
+              return;
+            }
+            if (dupPend?.length) {
+              toast.info('เข้าตำแหน่งแล้ว — มีใบ 4M Man ของคน/จุดนี้รอเอกสารอยู่แล้ว (ไม่ออกใบซ้ำ)');
+              return;
+            }
             const { error: m4Err } = await supabase.from('four_m_logs').insert([{
               work_date: today,
               line_name: station.line_name,
@@ -722,7 +738,7 @@ export default function Management() {
     };
   }, [hoverCard]);
 
-  /* ── การ์ดรายละเอียดจุดเครื่องจักร/WIP (เปิดด้วยคลิก — ใช้ได้ทั้งเมาส์และจอ touch) ──
+  /* ── การ์ดรายละเอียดจุดเครื่องจักร (เปิดด้วยคลิก — ใช้ได้ทั้งเมาส์และจอ touch) ──
      เปิดการ์ดทันทีพร้อมข้อมูลที่มีในมือ แล้วค่อย fetch ส่วนเสริม (jig/parts_master) แบบ async
      ผล fetch เก็บใน pointDetailCache — เปิดจุดเดิมซ้ำไม่ยิง query ซ้ำ */
   const openMachineDetail = async (p) => {
@@ -751,26 +767,6 @@ export default function Management() {
       setPointDetail(prev => (prev?.kind === 'machine' && prev.point.id === p.id) ? { ...prev, loading: false } : prev);
     }
   };
-  const openWipDetail = async (p) => {
-    const isMaterial = p.point_type !== 'packaging';
-    setPointDetail({ kind: 'wip', point: p, loading: isMaterial && !!p.mat_no, part: null });
-    if (!isMaterial || !p.mat_no) return;
-    try {
-      const cacheKey = `part:${p.mat_no}`;
-      let part = pointDetailCache.current[cacheKey];
-      if (part === undefined) {
-        const { data: parts } = await supabaseDR.from('parts_master')
-          .select('mat_no, part_name, part_no, uom, qty_per_pkg, supplier, note, image_url')
-          .eq('mat_no', p.mat_no).limit(1);
-        part = parts?.[0] || null;
-        pointDetailCache.current[cacheKey] = part;
-      }
-      setPointDetail(prev => (prev?.kind === 'wip' && prev.point.id === p.id) ? { ...prev, loading: false, part } : prev);
-    } catch {
-      setPointDetail(prev => (prev?.kind === 'wip' && prev.point.id === p.id) ? { ...prev, loading: false } : prev);
-    }
-  };
-
   /* ── Touch tap on pool card ── */
   const handlePoolTap = (worker) => {
     if (!isMobile) {
@@ -968,14 +964,15 @@ export default function Management() {
           cursor: canDrag ? (isMobile ? 'pointer' : 'grab') : 'default',
           display: 'flex', flexDirection: isMobile ? 'row' : 'column', alignItems: 'center',
           gap: isMobile ? 10 : 5, userSelect: 'none', position: 'relative',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+          boxShadow: 'var(--shadow-sm)',   // การ์ดพนักงานใน pool = การ์ดแบน ไม่ได้ลอย (ธีมมืด = ไม่มีเงา)
         }}
       >
         {worker.employees?.image_url
           ? <img src={worker.employees.image_url} style={{ width: isMobile ? 44 : POOL_PHOTO_SZ, height: isMobile ? 44 : POOL_PHOTO_SZ, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: '2px solid rgba(245,158,11,0.7)', flexShrink: 0 }} />
           : <div style={{ width: isMobile ? 44 : POOL_PHOTO_SZ, height: isMobile ? 44 : POOL_PHOTO_SZ, borderRadius: '50%', background: 'rgba(245,158,11,0.15)', border: '2px solid rgba(245,158,11,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>👤</div>
         }
-        <div style={{ flex: isMobile ? 1 : undefined, minWidth: 0, width: isMobile ? undefined : '100%' }}>
+        {/* 📱 overflow hidden + เว้นขวาให้ปุ่ม ✕ — มือถือ 390px ชื่อยาวดันการ์ดล้น 366→369px (mobilesweep 24/09) */}
+        <div style={{ flex: isMobile ? 1 : undefined, minWidth: 0, overflow: 'hidden', paddingRight: isMobile ? 22 : undefined, width: isMobile ? undefined : '100%' }}>
           <div style={{ fontSize: isMobile ? 13 : 11, fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: isMobile ? 'left' : 'center' }}>
             {isMobile ? (worker.employees?.name ?? '?') : (worker.employees?.name?.split(' ')[0] ?? '?')}
           </div>
@@ -1113,15 +1110,13 @@ export default function Management() {
 
   // ตัวเลข badge บนปุ่ม toggle ต้องสื่อความหมาย "ผิดปกติ" ไม่ใช่แค่จำนวนจุดทั้งหมด
   const vacantStationCount = dynamicStations.filter(st => !workers.some(w => String(w.assigned_line) === String(st.id))).length;
-  const lowWipCount = wipPoints.filter(p => (p.current_qty ?? 0) < (p.min_qty ?? 0)).length;
 
   const STATUS_FILTERS = [
     { key: 'man',     on: filterMan,     toggle: () => setFilterMan(v => !v),     label: 'MAN',     icon: '👤', color: '#4d9fff', count: vacantStationCount, title: 'แสดง/ซ่อนจุดงาน (คน) บนผัง — ตัวเลข = จุดที่ยังไม่มีคนประจำ' },
     { key: 'machine', on: filterMachine, toggle: () => setFilterMachine(v => !v), label: 'MACHINE', icon: '⚙️', color: '#f59e0b', count: 0,                  title: 'แสดง/ซ่อนจุดเครื่องจักรบนผัง' },
-    { key: 'wip',     on: filterWip,     toggle: () => setFilterWip(v => !v),     label: 'WIP',     icon: '📦', color: '#22c55e', count: lowWipCount,        title: 'แสดง/ซ่อนจุด WIP บนผัง — ตัวเลข = จุดที่ของต่ำกว่า min' },
   ];
 
-  // ปุ่มกรอง MAN/MACHINE/WIP + โชว์/ซ่อนป้าย — ใช้ทั้ง rail แนวตั้ง (desktop) และแถบแนวนอน (มือถือ)
+  // ปุ่มกรอง MAN/MACHINE + โชว์/ซ่อนป้าย — ใช้ทั้ง rail แนวตั้ง (desktop) และแถบแนวนอน (มือถือ)
   // ปุ่ม 36×36 เท่ากันหมด + ToggleDot (เขียว=เปิด/เทา=ปิด) ให้เครื่องหมายเหมือนกัน
   const renderFilters = (dir) => (
     <div style={{ display: 'flex', flexDirection: dir, gap: 6, alignItems: 'center' }}>
@@ -1159,7 +1154,7 @@ export default function Management() {
       {/* โชว์/ซ่อนป้ายชื่อทุกจุด — icon 36×36 เท่าปุ่มอื่น (ป้ายเตือน alarm/ต่ำกว่า min โชว์เสมอ) */}
       <button
         onClick={() => setShowPills(v => !v)}
-        title={(showPills ? 'ซ่อน' : 'โชว์') + 'ป้ายชื่อทุกจุดบนผัง (คน/เครื่องจักร/WIP)\nป้ายเตือน (เครื่อง Downtime / WIP ต่ำกว่า min) แสดงเสมอ'}
+        title={(showPills ? 'ซ่อน' : 'โชว์') + 'ป้ายชื่อทุกจุดบนผัง (คน/เครื่องจักร)\nป้ายเตือน (เครื่อง Downtime) แสดงเสมอ'}
         style={{
           position: 'relative', flexShrink: 0,
           width: 36, height: 36, borderRadius: 8,
@@ -1298,7 +1293,7 @@ export default function Management() {
                             {h.workers.map(w => (
                               <div key={w.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}>
                                 {w.image_url
-                                  ? <img src={w.image_url} alt="" style={{ width: 20, height: 20, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', flexShrink: 0 }} />
+                                  ? <img loading="lazy" src={w.image_url} alt="" style={{ width: 20, height: 20, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', flexShrink: 0 }} />
                                   : <span style={{ width: 20, height: 20, borderRadius: '50%', background: 'var(--bg3)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 11 }}>👤</span>}
                                 <span style={{ minWidth: 0, color: 'var(--text)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{w.name || '—'}</span>
                                 {w.station && <span style={{ color: 'var(--muted)', marginLeft: 'auto', flexShrink: 0, whiteSpace: 'nowrap' }}>{w.station}</span>}
@@ -1383,7 +1378,7 @@ export default function Management() {
             {/* 4M เป็นการบันทึก "สิ่งที่เกิดตอนนี้" — ยังกดได้ในโหมดย้อนหลัง แต่ต้องบอกว่าจะลงวันไหน
                 ไม่งั้นบันทึกแล้วไม่โผล่ในลิสต์ที่กำลังดู แล้วเข้าใจว่าบันทึกไม่ติด (ห้ามเงียบ) */}
             {!isLiveView && (
-              <div style={{ fontSize: 10.5, color: '#a855f7', marginBottom: 6, lineHeight: 1.5 }}>
+              <div style={{ fontSize: 11, color: '#a855f7', marginBottom: 6, lineHeight: 1.5 }}>
                 ⚠️ กำลังดูย้อนหลัง — บันทึกใหม่จะลงวันที่ <b>วันนี้</b> ไม่โผล่ในรายการของ {boardDate}
               </div>
             )}
@@ -1429,7 +1424,7 @@ export default function Management() {
           </button>
         )}
         {autoManAlert && (
-          <div style={{ position: 'absolute', top: 14, left: '50%', transform: 'translateX(-50%)', background: 'rgba(77,159,255,0.95)', color: '#fff', padding: '8px 18px', borderRadius: 10, fontSize: 12, fontWeight: 600, zIndex: 200, boxShadow: '0 4px 16px rgba(0,0,0,0.4)', whiteSpace: 'nowrap' }}>
+          <div style={{ position: 'absolute', top: 14, left: '50%', transform: 'translateX(-50%)', background: 'rgba(77,159,255,0.95)', color: '#fff', padding: '8px 18px', borderRadius: 10, fontSize: 12, fontWeight: 600, zIndex: 200, boxShadow: 'var(--shadow-float)', whiteSpace: 'nowrap' }}>
             🆕 Man Change: {autoManAlert.name} — ประจำ {autoManAlert.station} เป็นครั้งแรก
           </div>
         )}
@@ -1449,7 +1444,7 @@ export default function Management() {
             const active = mainView === v.k;
             return (
               <button key={v.k} onClick={() => switchView(v.k)}
-                style={{ padding: '6px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 800, background: active ? 'var(--accent)' : 'var(--bg3)', color: active ? '#08130a' : 'var(--text2)', border: `1px solid ${active ? 'var(--accent)' : 'var(--border2)'}` }}>
+                style={{ padding: '6px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 800, background: active ? 'var(--accent)' : 'var(--bg3)', color: active ? 'var(--accent-ink)' : 'var(--text2)', border: `1px solid ${active ? 'var(--accent)' : 'var(--border2)'}` }}>
                 {v.icon} {v.label}
               </button>
             );
@@ -1491,18 +1486,8 @@ export default function Management() {
           const imgByMatNo = lineProdData.imgByMatNo || {};
           const pairMatByMat = lineProdData.pairMatByMat || {};
           const breakPolicies = lineProdData.breakPolicies || [];
-          const getBreakIntervals = (half) => breakPolicies
-            .filter(p => p.shift === 'both' || (p.shift === 'day' && half.key === 'am') || (p.shift === 'night' && half.key === 'pm'))
-            .map(p => {
-              const idx = half.hours.indexOf(Number(String(p.start_time).slice(0,2)));
-              if (idx < 0) return null;
-              const mins = Number(String(p.start_time).slice(3,5)) || 0;
-              const s = half.startMs + idx * 3600000 + mins * 60000;
-              const e = s + (p.duration_min || 0) * 60000;
-              return [s, e];
-            })
-            .filter(Boolean)
-            .sort((a, b) => a[0] - b[0]);
+          // 🔴 ผ่าน halfDayBreakIntervals (utils/oee.js) ที่เดียว — กรอง process/ot_scope เหมือนสูตร OEE (QC 05/10)
+          const getBreakIntervals = (half) => halfDayBreakIntervals({ policies: breakPolicies, half });
 
           // คำนวณคิวทั้งวัน (24 ชม.) ครั้งเดียวต่อแถว product แทนการตัดแยกทีละกะ
           // เพื่อให้การ์ดที่ดีเลย์ล้นข้ามกะ (เช่น ผลิตจากกะเช้าไปจบกะดึก) ต่อแถวเดิมได้ ไม่ถูกตัดทิ้งที่ขอบกะ
@@ -1529,7 +1514,16 @@ export default function Management() {
               tailLeftPct = tLeft;
               tailWidthPct = Math.max(0, tRight - tLeft);
             }
-            return { o: item.o, leftPct, widthPct, tailLeftPct, tailWidthPct, realEndMs: item.endMs, isDelayed: item.isDelayed, isLateDone: item.isLateDone, startMs: item.startMs };
+            /* 🖼️ กรอบแผน — **วาดทุกใบ** (ภาพร่าง user 30/09) · ดูเหตุผลเต็มใน Dashboard.jsx */
+            let planLeftPct = 0, planWidthPct = 0, planSlipped = false;
+            if (item.planStartMs != null && item.plannedEndMs != null) {
+              const pl = Math.max(0, Math.min(100, (item.planStartMs - hs) * pctPerMs));
+              const pr = Math.max(0, Math.min(100, (item.plannedEndMs - hs) * pctPerMs));
+              if (pr > pl) { planLeftPct = pl; planWidthPct = pr - pl; }
+              planSlipped = (item.startMs - item.planStartMs) > 2 * 60000
+                || (Math.max(item.endMs, item.occupiedEndMs) - item.plannedEndMs) > 2 * 60000;
+            }
+            return { o: item.o, leftPct, widthPct, tailLeftPct, tailWidthPct, realEndMs: item.endMs, isDelayed: item.isDelayed, isLateDone: item.isLateDone, startMs: item.startMs, occupiedEndMs: item.occupiedEndMs, planLeftPct, planWidthPct, planStartMs: item.planStartMs, plannedEndMs: item.plannedEndMs, planSlipped };
           };
 
           const buildCards = (sessList) => {
@@ -1601,7 +1595,7 @@ export default function Management() {
           const machineCountByLine = {};
           (machinePoints || []).forEach(pt => { (machineCountByLine[pt.line_name] ||= new Set()).add(pt.machine_no); });
           const positionedByOrder = positionAllCards(allCards, {
-            breaks: allBreaksOnce(), ctByMat: ctByMatNo, nowMs, roundIndexOf, roundStartOf,
+            breaks: allBreaksOnce(), ctByMat: ctByMatNo, nowMs, frameEndMs: gridEndMs, roundIndexOf, roundStartOf,
             flowByLine: linesByName, machineCountByLine, pairMatByMat,
           });
           const positionedForCards = (cs) => cs.map(c => positionedByOrder.get(orderKeyOf(c))).filter(Boolean)
@@ -1609,6 +1603,22 @@ export default function Management() {
 
           const totalDelayed = delayedCountOf(positionedByOrder);
           const hasOpen = sessions.some(s => s.status === 'open');
+          /* ⏱️ ปลายกะที่กำลังเดิน (ดูวันย้อนหลัง = ใช้ปลายวันงาน) — ตัดสิน "ไม่ทันกะ"/"เกินกะ"
+             📋 สถานะหลุดแผนทั้งบอร์ด: สูตรกลาง `planStatusOf` ตัวเดียวกับ /dashboard
+                (feedback หน้างาน 30/09: "ดีเลย์ N ใบ" ไม่บอกขนาด ⇒ ต้องมีนาที + ยอด) */
+          const curHalfNow = HALVES.find(hf => nowMs >= hf.startMs && nowMs < hf.startMs + 12 * 3600000);
+          const shiftEndMs = curHalfNow ? curHalfNow.startMs + 12 * 3600000 : gridEndMs;
+          /* 🔗 คำขอทีมปั๊ม 30/09 — สรุปวัน + "หลุดมาจากตัวไหน พาลไปโดนตัวไหน" (สูตรกลาง ห้ามนับในหน้า) */
+          const dayDelay   = dayDelaySummaryOf(positionedByOrder, { frameEndMs: gridEndMs, nowMs });
+          const blameChain = pushChainOf(positionedByOrder);
+          const blamedBy   = new Map();
+          blameChain.forEach(c => c.victims.forEach(v => {
+            if (!blamedBy.has(v.key)) blamedBy.set(v.key, { root: c.root, blameMin: v.blameMin, pushedMin: v.pushedMin });
+          }));
+          const boardPlan  = planStatusOf({
+            positioned: positionedByOrder, cards: allCards, breaks: allBreaksOnce(),
+            ctByMat: ctByMatNo, nowMs, frameEndMs: gridEndMs, shiftEndMs,
+          });
 
           const openByMatNo = {};
           sessions.forEach(s => s.orders.forEach(o => {
@@ -1659,7 +1669,7 @@ export default function Management() {
               if (!remainCards) return;
               const sLabel = shift === 'day' ? '☀️' : '🌙';
               if (isHistorical) {
-                chips.push({ color: '#ef4444', text: `${sLabel} งานไม่จบในกะ ${remainCards} ใบ (~${remainQty.toLocaleString()} ชิ้น)` });
+                chips.push({ color: 'var(--red)', text: `${sLabel} งานไม่จบในกะ ${remainCards} ใบ (~${remainQty.toLocaleString()} ชิ้น)` });
                 return;
               }
               if (isFutureDay || projEndMs == null) return;
@@ -1671,11 +1681,11 @@ export default function Management() {
                 const projLabel = `~${fmtMs(projEndMs)}`;
                 const otMin = Math.ceil((projEndMs - DAY_REG_END) / 60000);
                 if (projEndMs <= DAY_REG_END) {
-                  chips.push({ color: '#22c55e', text: `${sLabel} คาดเสร็จ ${projLabel} — จบในเวลาปกติ (ก่อน 17:30) ไม่ต้องเปิด OT` });
+                  chips.push({ color: 'var(--green)', text: `${sLabel} คาดเสร็จ ${projLabel} — จบในเวลาปกติ (ก่อน 17:30) ไม่ต้องเปิด OT` });
                 } else if (projEndMs <= DAY_OT_END) {
-                  chips.push({ color: '#f59e0b', text: `${sLabel} คาดเสร็จ ${projLabel} — ⏰ ต้องเปิด OT ~${otMin} นาที (เลิก 17:30 → ผลิตถึง ${projLabel})` });
+                  chips.push({ color: 'var(--amber)', text: `${sLabel} คาดเสร็จ ${projLabel} — ⏰ ต้องเปิด OT ~${otMin} นาที (เลิก 17:30 → ผลิตถึง ${projLabel})` });
                 } else {
-                  chips.push({ color: '#ef4444', text: `${sLabel} คาดเสร็จ ${projLabel} — 🚨 เกินกรอบ OT (20:00) ควรวางแผนยกยอด/เพิ่มกำลังผลิต` });
+                  chips.push({ color: 'var(--red)', text: `${sLabel} คาดเสร็จ ${projLabel} — 🚨 เกินกรอบ OT (20:00) ควรวางแผนยกยอด/เพิ่มกำลังผลิต` });
                 }
                 return;
               }
@@ -1683,22 +1693,22 @@ export default function Management() {
               if (nowMs < NIGHT_REG_IN && !started) {
                 const normalFinish = finishFrom(Math.max(NIGHT_REG_IN, nowMs), workMs);
                 if (normalFinish <= FRAME_END) {
-                  chips.push({ color: '#22c55e', text: `${sLabel} เข้างานปกติ 22:30 ทัน — คาดเสร็จ ~${fmtMs(normalFinish)} (ก่อน 08:00) ไม่ต้องเปิด OT` });
+                  chips.push({ color: 'var(--green)', text: `${sLabel} เข้างานปกติ 22:30 ทัน — คาดเสร็จ ~${fmtMs(normalFinish)} (ก่อน 08:00) ไม่ต้องเปิด OT` });
                 } else {
                   const otFinish = finishFrom(Math.max(NIGHT_OT_IN, nowMs), workMs);
                   if (otFinish <= FRAME_END) {
-                    chips.push({ color: '#f59e0b', text: `${sLabel} ⏰ ต้องเปิด OT เข้า 20:00 — คาดเสร็จ ~${fmtMs(otFinish)} (ถ้าเข้า 22:30 จะจบ ~${fmtMs(normalFinish)} เกิน 08:00)` });
+                    chips.push({ color: 'var(--amber)', text: `${sLabel} ⏰ ต้องเปิด OT เข้า 20:00 — คาดเสร็จ ~${fmtMs(otFinish)} (ถ้าเข้า 22:30 จะจบ ~${fmtMs(normalFinish)} เกิน 08:00)` });
                   } else {
-                    chips.push({ color: '#ef4444', text: `${sLabel} 🚨 เกินกำลังกะดึกแม้เข้า 20:00 (คาดเสร็จ ~${fmtMs(otFinish)}) — ควรวางแผนยกยอด/เพิ่มกำลัง` });
+                    chips.push({ color: 'var(--red)', text: `${sLabel} 🚨 เกินกำลังกะดึกแม้เข้า 20:00 (คาดเสร็จ ~${fmtMs(otFinish)}) — ควรวางแผนยกยอด/เพิ่มกำลัง` });
                   }
                 }
                 return;
               }
               const projLabel = `~${fmtMs(projEndMs)}`;
               if (projEndMs <= FRAME_END) {
-                chips.push({ color: '#22c55e', text: `${sLabel} คาดเสร็จ ${projLabel} — จบภายในกะ (ก่อน 08:00)` });
+                chips.push({ color: 'var(--green)', text: `${sLabel} คาดเสร็จ ${projLabel} — จบภายในกะ (ก่อน 08:00)` });
               } else {
-                chips.push({ color: '#ef4444', text: `${sLabel} คาดเสร็จ ${projLabel} — 🚨 เกิน 08:00 ควรวางแผนยกยอดไปกะถัดไป` });
+                chips.push({ color: 'var(--red)', text: `${sLabel} คาดเสร็จ ${projLabel} — 🚨 เกิน 08:00 ควรวางแผนยกยอดไปกะถัดไป` });
               }
             });
             return chips;
@@ -1730,9 +1740,15 @@ export default function Management() {
                     style={{ width: 140, padding: '3px 8px', borderRadius: 6, fontSize: 12, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--font-body)' }} />
                   <button onClick={() => shiftBoardDate(1)} disabled={boardDate >= todayWd} style={{ padding: '3px 10px', borderRadius: 6, cursor: boardDate >= todayWd ? 'default' : 'pointer', fontSize: 12, fontWeight: 700, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text2)', opacity: boardDate >= todayWd ? 0.4 : 1 }}>▶</button>
                   {boardDate !== todayWd && (
-                    <button onClick={() => setBoardDate(todayWd)} style={{ padding: '3px 12px', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 700, background: 'var(--accent)', border: '1px solid var(--accent)', color: '#08130a' }}>วันนี้</button>
+                    <button onClick={() => setBoardDate(todayWd)} style={{ padding: '3px 12px', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 700, background: 'var(--accent)', border: '1px solid var(--accent)', color: 'var(--accent-ink)' }}>วันนี้</button>
                   )}
-                  {totalDelayed > 0 && <span style={{ fontSize: 12, padding: '3px 10px', borderRadius: 20, fontWeight: 800, background: 'rgba(239,68,68,0.15)', color: '#ef4444' }}>⚠️ ดีเลย์ {totalDelayed} ใบ</span>}
+                  {/* ⚠️ ชิป "ดีเลย์ N ใบ" ถอดออก 30/09 — ซ้ำกับ "ยังค้าง N" ในสรุปวัน (`totalDelayed` ยังคุมสีขอบ) */}
+                  {/* 📋 ขนาดของการหลุดแผน (นาที + ชิ้น + คาดจบ) — "กี่ใบ" อย่างเดียวตอบหน้างานไม่ได้ */}
+                  <PlanSlipBar st={boardPlan} fmtMs={fmtMs} size={12} />
+                  {/* 🔗 สรุปวัน + ต้นเหตุ/ผู้ถูกพาล (ทีมปั๊ม) */}
+                  <div style={{ flexBasis: '100%', minWidth: 0 }}>
+                    <DelayBlameBar day={dayDelay} chains={blameChain} />
+                  </div>
                   {(() => {
                     // hierarchy: 1 ชิปต่อไลน์ย่อย แทนป้ายต่อ session
                     const byChild = {};
@@ -1796,7 +1812,7 @@ export default function Management() {
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, padding: '7px 14px', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)' }}>
                   <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--muted)', alignSelf: 'center' }}>🧠 PLANNER</span>
                   {plannerChips.map((c, i) => (
-                    <span key={i} style={{ fontSize: 12, fontWeight: 700, padding: '3px 11px', borderRadius: 10, background: `${c.color === 'var(--muted)' ? 'rgba(148,163,184,0.12)' : c.color + '1f'}`, color: c.color, border: `1px solid ${c.color === 'var(--muted)' ? 'rgba(148,163,184,0.3)' : c.color + '55'}` }}>
+                    <span key={i} style={{ fontSize: 12, fontWeight: 700, padding: '3px 11px', borderRadius: 10, background: 'var(--card)', color: c.color, border: `1px solid ${c.color}` }}>{/* สีจาก token ธีม (--green/--amber/--red) — เดิม hex สว่าง + พื้นโปร่ง 1f ⇒ ธีมสว่างมองไม่เห็น (02/10) */}
                       {c.text}
                     </span>
                   ))}
@@ -1868,7 +1884,7 @@ export default function Management() {
                               const room = (i + 1 < positioned.length ? positioned[i + 1].leftPct : 100) - positioned[i].leftPct;
                               positioned[i].widthPct = Math.max(0, Math.min(Math.max(positioned[i].widthPct, Math.min(minPct, room)), room));
                             }
-                            return positioned.map(({ o, leftPct, widthPct, tailLeftPct, tailWidthPct, realEndMs, isDelayed, isLateDone, startMs }, oi) => {
+                            return positioned.map(({ o, leftPct, widthPct, tailLeftPct, tailWidthPct, realEndMs, isDelayed, isLateDone, startMs, occupiedEndMs, planLeftPct, planWidthPct, planStartMs, plannedEndMs, planSlipped }, oi) => {
                             if (leftPct >= 100) return null;
                             const sc = isLateDone ? '#f97316' : o.isDone ? '#22c55e' : isDelayed ? '#ef4444' : o.isCarry ? '#f59e0b' : o.is_backfill ? '#6b7280' : '#4d9fff';
                             const icon = o.isDone ? (isLateDone ? '✓!' : '✓') : isDelayed ? '!' : o.isCarry ? '↷' : o.is_backfill ? '⏪' : o.is_manual ? '✍️' : '▶';
@@ -1886,10 +1902,15 @@ export default function Management() {
                             const isOverCap = overMs > 5 * 60000;
                             const causeText = isLateDone ? dtTooltip(startMs, new Date(o.confirmed_at).getTime(), o.line_name)
                               : isDelayed ? dtTooltip(startMs, Math.min(nowMs, gridEndMs), o.line_name) : '';
+                            /* 🔗 "ใบฉันเลื่อนเพราะใคร" — ดู Dashboard.jsx */
+                            const blame = blamedBy.get(orderKeyOf(o));
+                            const blameText = blame
+                              ? ` · ⏴ ถูกเลื่อนเพราะใบ #${blame.root?.prod_no || blame.root?.mat_no || '—'} ค้าง (โทษได้ ${blame.blameMin} น. จากที่เลื่อนไป ${blame.pushedMin} น.)`
+                              : '';
                             return (
                               <Fragment key={o.prod_no || oi}>
                               <div
-                                title={`${o.prod_no || ''} ${o.mat_no || ''} — ${o.qty}ชิ้น${o.is_backfill ? ' ⏪ยิงย้อนหลัง' : isLateDone ? ` ✓เสร็จ (ช้ากว่ากำหนด${Math.round((new Date(o.confirmed_at).getTime()-realEndMs)/60000)}นาที)` : isDelayed ? ` ⚠️ช้า${Math.round((nowMs - realEndMs) / 60000)}นาที ยังไม่ปิด — ใบถัดไปถูกดันไปต่อท้าย` : o.isDone ? ' ✓เสร็จ' : ` →${fmtMs(realEndMs)}`}${isOverCap ? ` 🔴 เป้าล้นกรอบวันงาน +${(overMs / 3600000).toFixed(1)} ชม. — ต้องยกยอดข้ามกะ/เพิ่มกำลังผลิต` : ''}${causeText}`}
+                                title={`${o.prod_no || ''} ${o.mat_no || ''} — ${o.qty}ชิ้น${o.is_backfill ? ' ⏪ยิงย้อนหลัง' : isLateDone ? ` ✓เสร็จ (ช้ากว่ากำหนด${Math.round((new Date(o.confirmed_at).getTime()-realEndMs)/60000)}นาที)` : isDelayed ? ` ⚠️ช้า${Math.round((nowMs - realEndMs) / 60000)}นาที ยังไม่ปิด — ใบถัดไปถูกดันไปต่อท้าย` : o.isDone ? ' ✓เสร็จ' : ` →${fmtMs(realEndMs)}`}${isOverCap ? ` 🔴 เป้าล้นกรอบวันงาน +${(overMs / 3600000).toFixed(1)} ชม. — ต้องยกยอดข้ามกะ/เพิ่มกำลังผลิต` : ''}${blameText}${causeText}`}
                                 style={{
                                   position: 'absolute', top: 3, bottom: 3, left: `${leftPct}%`, width: `${widthPct}%`, minWidth: 2,
                                   background: `${sc}28`, border: `1.5px solid ${sc}${o.isDone && !isLateDone ? 'cc' : (isDelayed || isLateDone) ? 'dd' : '88'}`,
@@ -1917,6 +1938,14 @@ export default function Management() {
                                 </div>
                                 )}
                               </div>
+                              {/* 🖼️ กรอบแผน — "ใบนี้ควรอยู่ตรงนี้" (ดู Dashboard.jsx · วาดเฉพาะใบที่หลุดกรอบ) */}
+                              {planWidthPct > 0 && (
+                                <div title={`กรอบแผนของใบนี้: ${fmtMs(planStartMs)}–${fmtMs(plannedEndMs)}${planSlipped ? ` · หลุดกรอบ (เริ่มช้า ${Math.max(0, Math.round((startMs - planStartMs) / 60000))} น. · จบช้า ${Math.max(0, Math.round((Math.max(realEndMs, occupiedEndMs || realEndMs) - plannedEndMs) / 60000))} น.)` : ' · อยู่ในกรอบ'}`}
+                                  style={{ position: 'absolute', top: 1, bottom: 1, left: `${planLeftPct}%`, width: `${planWidthPct}%`,
+                                    /* ใบที่หลุดกรอบ วาดทับแท่ง (z=2) ให้เห็นกล่อง "แผนจบตรงนี้" · ดู Dashboard.jsx */
+                                    border: `${planSlipped ? 2 : 1}px dashed ${planSlipped ? '#e5e7eb' : 'var(--muted)'}`, borderRadius: 4,
+                                    opacity: planSlipped ? 0.95 : 0.35, zIndex: planSlipped ? 2 : 0, pointerEvents: 'none' }} />
+                              )}
                               {/* หางเงาแดง — ยังไม่ปิดงานแม้เลยกำหนดแล้ว ครองไลน์อยู่จนถึงตอนนี้ ดันใบถัดไปไปต่อท้าย */}
                               {tailWidthPct > 0 && (
                                 <div title="ยังไม่ปิดงาน — ดีเลย์ยังดำเนินอยู่"
@@ -1984,14 +2013,23 @@ export default function Management() {
                       const rowActual = row.cards.reduce((a, c) => a + (c.isDone ? (c.qty_ok ?? c.qty ?? 0) : (c.qty_actual ?? 0)), 0);
                       const rowDemand = row.cards.reduce((a, c) => a + (c.qty || 0), 0);
                       const doneCount = row.cards.filter(c => c.isDone).length;
-                      const delayed   = positionedForCards(row.cards).filter(p => p.isDelayed).length;
+                      const rowPos    = positionedForCards(row.cards);
+                      const delayed   = rowPos.filter(p => p.isDelayed).length;
+                      // ⏱️ เวลาที่คาดว่าใบสุดท้ายของแถวนี้จะจบ (คิวถูกดันด้วยงานที่ค้างแล้ว) — ดู Dashboard.jsx
+                      const finMs     = projectedFinishMs(rowPos);
+                      const finOver   = finMs != null && finMs > gridEndMs;
+                      /* 📋 หลุดแผนของแถวนี้ — สูตรกลางตัวเดียวกับหัวบอร์ด (ห้ามคิดเองในหน้า) */
+                      const rowPlan   = planStatusOf({
+                        positioned: rowPos, cards: row.cards, breaks: allBreaksOnce(),
+                        ctByMat: ctByMatNo, nowMs, frameEndMs: gridEndMs, shiftEndMs,
+                      });
                       const isOpen    = row.cards.some(c => c.sessionOpen);
                       const pct       = rowDemand > 0 ? Math.min((rowActual / rowDemand) * 100, 100) : 0;
                       const barColor  = pct >= 100 ? '#22c55e' : pct >= 60 ? '#f59e0b' : '#ef4444';
                       return (
                         <div key={row.key} style={{ display: 'flex', borderTop: '1px solid var(--border2)', overflow: 'hidden' }}>
                           <div style={{ width: LEFT_W, flexShrink: 0, padding: '4px 8px', borderRight: '1px solid var(--border2)', display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 7, overflow: 'hidden', ...(isMobile ? { position: 'sticky', left: 0, zIndex: 3, background: 'var(--card)' } : null) }}>
-                            {row.img && <img src={row.img} alt="" style={{ width: 46, height: 46, objectFit: 'cover', borderRadius: 6, flexShrink: 0 }} />}
+                            {row.img && <img loading="lazy" src={row.img} alt="" style={{ width: 46, height: 46, objectFit: 'cover', borderRadius: 6, flexShrink: 0 }} />}
                             <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 2, minWidth: 0 }}>
                               <div style={{ fontSize: 11, color: 'var(--text2)', fontWeight: 700, lineHeight: 1.25, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', wordBreak: 'break-word' }}>
                                 {row.label}
@@ -2005,6 +2043,17 @@ export default function Management() {
                                 <span style={{ fontSize: 11, color: 'var(--muted)' }}>/{rowDemand} ชิ้น · {doneCount}/{row.cards.length}ใบ</span>
                                 {delayed > 0 && <span style={{ fontSize: 11, color: '#ef4444', fontWeight: 700 }}>⚠️{delayed}</span>}
                                 {isOpen && delayed === 0 && <span style={{ fontSize: 11, color: '#22c55e', fontWeight: 700 }}>● Live</span>}
+                              </div>
+                              {/* 📋 แถบหลุดแผนของแถวนี้ — เวลา + ยอด บรรทัดเดียว (ห้ามตัดบรรทัด ความสูงแถวถูกล็อก) */}
+                              <div style={{ display: 'flex', gap: 5, minWidth: 0, overflow: 'hidden' }}>
+                                {/* 📱 มือถือ: คอลัมน์ซ้ายแคบ ~55px ⇒ ข้อความถูกตัดเหลือ "ช้า 23:0…" ซึ่ง**อ่านผิดได้**
+                                    (23:0 = 23 นาที?) ⇒ ไม่วาดเลย ให้อ่านจากแถบหัวบอร์ดที่เต็มประโยคแทน
+                                    — เศษตัวเลขที่อ่านผิดได้ แย่กว่าไม่มีตัวเลข */}
+                                {!isMobile && <PlanSlipBar st={rowPlan} fmtMs={fmtMs} oneLine compact />}
+                                {finOver && (
+                                  <span title="งานที่เหลือล้นกรอบวันงาน (08:00 ของวันถัดไป) — ต้องยกยอดข้ามกะ/เพิ่มกำลังผลิต"
+                                    style={{ fontSize: 11, fontWeight: 800, color: '#ef4444' }}>🔴 ล้นวันงาน</span>
+                                )}
                               </div>
                             </div>
                           </div>
@@ -2036,7 +2085,7 @@ export default function Management() {
             {ppeAlertsInView.map(p => (
               <span key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 8px', borderRadius: 6, background: 'rgba(0,0,0,0.25)', border: '1px solid rgba(239,68,68,0.4)' }}>
                 {p.employees?.image_url
-                  ? <img src={p.employees.image_url} className="person-alarm-red" style={{ width: 22, height: 22, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: '2px solid #ef4444' }} />
+                  ? <img loading="lazy" src={p.employees.image_url} className="person-alarm-red" style={{ width: 22, height: 22, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: '2px solid #ef4444' }} />
                   : <span className="person-alarm-red" style={{ width: 22, height: 22, borderRadius: '50%', border: '2px solid #ef4444', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 11 }}>👤</span>}
                 <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text)' }}>{p.employees?.name?.split(' ')[0] || '?'}</span>
                 <span style={{ fontSize: 11, color: '#fca5a5' }}>ขาด: {ppeMissingList(p).join(', ')}</span>
@@ -2073,16 +2122,13 @@ export default function Management() {
               `}</style>
               {imgBox && (() => {
                 // ⚠️ หมุดที่เอาไปคิด "ความแน่น" ต้องเป็นชุดเดียวกับที่ **วาดบนผังใบนี้จริง**
-                //   machinePoints/wipPoints โหลดมาทั้งครอบครัวไลน์ แต่ไลน์ลูกที่มีผังเป็นของตัวเอง
+                //   machinePoints โหลดมาทั้งครอบครัวไลน์ แต่ไลน์ลูกที่มีผังเป็นของตัวเอง
                 //   ใช้พิกัด % ที่อ้างอิงรูปคนละใบ — เอามาคิดระยะเพื่อนบ้านจะเพี้ยน (วงเล็กเกินจริง)
-                //   และ WIP วาดด้วย SUB เหมือนกัน จึงต้องนับเข้าความแน่นด้วย ไม่งั้นผังที่มีเครื่อง 3 ตัว
-                //   แต่จุด WIP 20 จุดกระจุกกัน จะได้วงใหญ่สุดแล้วเบียดกัน (อาการเดียวกับที่เพิ่งแก้ไป)
                 const shownMcPts = machinePoints.filter(p => belongsToShownMap(p.line_name));
-                const shownWipPts = wipPoints.filter(p => belongsToShownMap(p.line_name));
                 const { MK, SUB, ring: RING, subRing: SUB_RING, pillFont: PILL_F, subPillFont: SUB_PILL_F, badgeFont: FIT_F, pillMaxW: PILL_MAXW, subPillMaxW: SUB_PILL_MAXW } =
                   markerScale(imgBox.rw, {
                     machineCount: shownMcPts.length,
-                    points: [...shownMcPts, ...shownWipPts],
+                    points: shownMcPts,
                     mapHeight: imgBox.rh,
                   });
                 // ป้ายชื่อทุกชนิดจุด: ปุ่ม 🏷️ โชว์/ซ่อน อย่างเดียว (ป้ายเตือน alarm/below-min โชว์เสมอ)
@@ -2299,7 +2345,7 @@ export default function Management() {
                   <div style={{
                     position: 'absolute', top: `calc(100% + ${Math.round(MK * 0.55)}px)`, left: '50%', transform: 'translateX(-50%)',
                     background: 'rgba(6,6,12,0.97)', border: `1px solid ${activeFc}`, borderRadius: 8, padding: '8px 10px',
-                    zIndex: 100, minWidth: 116, pointerEvents: 'none', boxShadow: `0 4px 24px rgba(0,0,0,0.7)`,
+                    zIndex: 100, minWidth: 116, pointerEvents: 'none', boxShadow: 'var(--shadow-float)',
                   }}>
                     <div style={{ textAlign: 'center', marginBottom: 4 }}>
                       <span style={{ display: 'inline-block', background: activeFc, color: '#fff', fontSize: 20, fontWeight: 900, padding: '2px 14px', borderRadius: 5 }}>{previewFit.score}</span>
@@ -2326,48 +2372,6 @@ export default function Management() {
               </div>
             );
           })}
-                    {filterWip && shownWipPts.map(p => {
-                      const isLow = (p.current_qty ?? 0) < (p.min_qty ?? 0);
-                      const wTop  = imgBox.offsetY + (parseFloat(p.pos_top) / 100) * imgBox.rh;
-                      const wLeft = imgBox.offsetX + (parseFloat(p.pos_left) / 100) * imgBox.rw;
-                      const WK = SUB; // WIP เป็นแค่ไอคอน ไม่ใช่รูปคน — ขนาดจาก markerScale (density-aware)
-                      const wcl = clampPos(wLeft, wTop, WK);
-                      const wc = isLow ? '#ef4444' : 'rgba(34,197,94,0.85)';
-                      return (
-                        <div key={`wip-${p.id}`} title={`${p.point_type === 'packaging' ? '📦' : '🧱'} ${p.point_name}${p.point_type === 'packaging' ? (p.packaging_no ? ` (${p.packaging_no})` : '') : (p.mat_no ? ` (${p.mat_no})` : '')} — ${p.current_qty ?? 0}/${p.min_qty ?? 0}–${p.max_qty ?? 0}`}
-                          onClick={(e) => { e.stopPropagation(); openWipDetail(p); }}
-                          style={{
-                            position: 'absolute', top: wcl.y, left: wcl.x, transform: 'translate(-50%, -50%)',
-                            zIndex: 4, display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'pointer',
-                          }}>
-                          <div style={{
-                            width: WK, height: WK, borderRadius: '50%',
-                            border: `${SUB_RING}px solid ${wc}`,
-                            backgroundColor: isLow ? 'rgba(239,68,68,0.22)' : 'rgba(0,0,0,0.78)',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            fontSize: Math.max(13, Math.round(WK * 0.44)), lineHeight: 1,
-                          }}>{p.point_type === 'packaging' ? '📦' : '🧱'}</div>
-                          {/* ป้าย: โชว์เมื่อเปิดป้าย (auto/บังคับ) หรือของต่ำกว่า min — warning ต้องเห็นเสมอ */}
-                          {(pillsOn || isLow) && (
-                          <div style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)', display: 'flex', flexDirection: 'column', alignItems: 'center', zIndex: 2 }}>
-                          <div style={{
-                            marginTop: 3, background: 'rgba(0,0,0,0.75)',
-                            borderRadius: 4, padding: '1px 6px',
-                            fontSize: SUB_PILL_F, fontWeight: 700,
-                            color: isLow ? '#fecaca' : '#fff',
-                            whiteSpace: 'nowrap', maxWidth: SUB_PILL_MAXW, overflow: 'hidden', textOverflow: 'ellipsis',
-                          }}>{p.point_name}</div>
-                          <div style={{
-                            marginTop: 2, fontSize: SUB_PILL_F, fontWeight: isLow ? 800 : 600,
-                            color: isLow ? '#fca5a5' : '#a3a3a3',
-                            background: isLow ? 'rgba(239,68,68,0.25)' : 'rgba(0,0,0,0.55)',
-                            padding: '0 5px', borderRadius: 3, lineHeight: 1.5, whiteSpace: 'nowrap',
-                          }}>{isLow ? '⚠ ' : ''}{p.current_qty ?? 0}/{p.min_qty ?? 0}–{p.max_qty ?? 0}</div>
-                          </div>
-                          )}
-                        </div>
-                      );
-                    })}
                     {shownMcPts.map(p => {
                       const alarms = dtAlarms.byMachine[p.machine_no];
                       // เครื่องที่กำลัง Downtime ต้องโชว์เสมอแม้ปิด filter MACHINE — เป็น alarm ไม่ใช่แค่ข้อมูลผัง
@@ -2438,15 +2442,26 @@ export default function Management() {
               </div>
               {workers.length > 0 && (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 12, width: '100%', maxWidth: 700 }}>
+                  {/* 3 ใบนี้คือ **การแบ่งส่วนของคนกลุ่มเดียวกัน** (workers) ไม่ใช่ KPI คนละตัว — 23/09 ก้อน B
+                      เดิม: 🔵/✅/🟡 ขนาด 24px นั่งอยู่เหนือตัวเลข + ทาสีน้ำเงิน/เขียว/ส้มเป็น "สีประจำใบ"
+                      ⇒ 3 ปัญหาพร้อมกัน (1) วงกลมสีไม่ได้สื่อหัวข้อ เป็นไฟสถานะปลอมที่ใหญ่กว่าป้ายชื่อ
+                      (2) ส้มของ "งานนอกไลน์" อ่านเป็นคำเตือนทั้งที่เป็นแค่ประเภทงาน (statusTone กฎ 1)
+                      (3) เลขลอยๆ ไม่มีหน่วยและไม่มีของรวมให้เทียบว่า "14 จากกี่คน"
+                      ⇒ ตัวเลขเป็นสีปกติ + บอกหน่วย + บอกสัดส่วนของยอดรวม · emoji ถอดเฉพาะวงกลมสี
+                      (emoji ที่ "ตรงกับหัวข้อ" ยังใช้ได้ตามปกติ — อันนี้ไม่ตรง มันคือสีที่วาดเป็นตัวอักษร) */}
                   {[
-                    { label: 'พร้อมทำงาน', count: poolWorkers.length, color: '#4d9fff', icon: '🔵' },
-                    { label: 'ประจำสถานี', count: workers.filter(w => w.assigned_line).length, color: 'var(--accent)', icon: '✅' },
-                    { label: 'งานนอกไลน์', count: specialWorkers.length, color: '#f59e0b', icon: '🟡' },
+                    { label: 'พร้อมทำงาน', count: poolWorkers.length },
+                    { label: 'ประจำสถานี', count: workers.filter(w => w.assigned_line).length },
+                    { label: 'งานนอกไลน์', count: specialWorkers.length },
                   ].map(s => (
-                    <div key={s.label} style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 12, padding: '16px 20px', textAlign: 'center' }}>
-                      <div style={{ fontSize: 24, marginBottom: 4 }}>{s.icon}</div>
-                      <div style={{ fontSize: 28, fontWeight: 800, fontFamily: 'var(--font-display)', color: s.color }}>{s.count}</div>
-                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{s.label}</div>
+                    <div key={s.label} style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 12, padding: '14px 18px', textAlign: 'center' }}>
+                      <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{s.label}</div>
+                      <div style={{ fontSize: 30, fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text)', lineHeight: 1.1, marginTop: 3 }}>
+                        {s.count}<span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text2)', marginLeft: 3 }}>คน</span>
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
+                        {Math.round(s.count / workers.length * 100)}% ของ {workers.length} คนวันนี้
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -2458,7 +2473,7 @@ export default function Management() {
                     {workers.map(w => (
                       <div key={w.id} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px' }}>
                         {w.employees?.image_url
-                          ? <img src={w.employees.image_url} style={{ width: 30, height: 30, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', flexShrink: 0 }} />
+                          ? <img loading="lazy" src={w.employees.image_url} style={{ width: 30, height: 30, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', flexShrink: 0 }} />
                           : <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'var(--bg3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, flexShrink: 0 }}>👤</div>
                         }
                         <div style={{ minWidth: 0 }}>
@@ -2483,7 +2498,7 @@ export default function Management() {
           style={{
             position: 'fixed', bottom: 20, right: 20, zIndex: 500,
             width: 54, height: 54, borderRadius: '50%',
-            background: 'var(--accent)', color: '#fff', border: 'none',
+            background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none',
             fontSize: 22, fontWeight: 900, cursor: 'pointer',
             boxShadow: '0 4px 20px rgba(61,214,92,0.4)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -2498,7 +2513,7 @@ export default function Management() {
           <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 16, padding: '20px 24px', width: 'min(90vw, 380px)', boxShadow: 'var(--shadow-lg)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
               {radarWorker.employees?.image_url
-                ? <img src={radarWorker.employees.image_url} style={{ width: 52, height: 52, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: '2px solid var(--border2)', flexShrink: 0 }} />
+                ? <img loading="lazy" src={radarWorker.employees.image_url} style={{ width: 52, height: 52, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: '2px solid var(--border2)', flexShrink: 0 }} />
                 : <div style={{ width: 52, height: 52, borderRadius: '50%', background: 'var(--bg3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>👤</div>}
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{radarWorker.employees?.name}</div>
@@ -2556,7 +2571,7 @@ export default function Management() {
       {isMobile && fitPopup && (
         <div style={{ position: 'fixed', top: 56, left: 16, right: 16, zIndex: 1150, background: 'var(--card)', border: `2px solid ${fitColor(fitPopup.fit.score)}`, borderRadius: 14, padding: '14px 16px', boxShadow: 'var(--shadow-lg)', animation: 'hoverIn 0.25s ease' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <img src={fitPopup.worker.employees?.image_url || ''} style={{ width: 44, height: 44, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: `2px solid ${fitColor(fitPopup.fit.score)}`, flexShrink: 0 }} />
+            <img loading="lazy" src={fitPopup.worker.employees?.image_url || ''} style={{ width: 44, height: 44, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: `2px solid ${fitColor(fitPopup.fit.score)}`, flexShrink: 0 }} />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text)' }}>{fitPopup.worker.employees?.name}</div>
               <div style={{ fontSize: 11, color: 'var(--muted)' }}>→ {fitPopup.station.station_name}</div>
@@ -2580,7 +2595,7 @@ export default function Management() {
             {/* Worker header */}
             <div style={{ display: 'flex', gap: 14, alignItems: 'center', marginBottom: 16 }}>
               {detailSheet.worker.employees?.image_url
-                ? <img src={detailSheet.worker.employees.image_url} style={{ width: 64, height: 64, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: `3px solid ${fitColor(detailSheet.fit.score)}`, flexShrink: 0 }} />
+                ? <img loading="lazy" src={detailSheet.worker.employees.image_url} style={{ width: 64, height: 64, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: `3px solid ${fitColor(detailSheet.fit.score)}`, flexShrink: 0 }} />
                 : <div style={{ width: 64, height: 64, borderRadius: '50%', background: 'var(--bg3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, flexShrink: 0 }}>👤</div>
               }
               <div style={{ flex: 1, minWidth: 0 }}>
@@ -2689,7 +2704,7 @@ export default function Management() {
                   <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>ประจำอยู่ตอนนี้</div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     {workerHere.employees?.image_url
-                      ? <img src={workerHere.employees.image_url} style={{ width: 44, height: 44, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: `2px solid ${fitColor(fitHere.score)}`, flexShrink: 0 }} />
+                      ? <img loading="lazy" src={workerHere.employees.image_url} style={{ width: 44, height: 44, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: `2px solid ${fitColor(fitHere.score)}`, flexShrink: 0 }} />
                       : <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'var(--bg3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>👤</div>
                     }
                     <div style={{ flex: 1, minWidth: 0 }}>
@@ -2737,7 +2752,7 @@ export default function Management() {
                       style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 10, background: `${fc}0d`, border: `1px solid ${fc}30`, cursor: 'pointer', transition: 'background 0.15s' }}
                     >
                       {w.employees?.image_url
-                        ? <img src={w.employees.image_url} style={{ width: 40, height: 40, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: `2px solid ${fc}`, flexShrink: 0 }} />
+                        ? <img loading="lazy" src={w.employees.image_url} style={{ width: 40, height: 40, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: `2px solid ${fc}`, flexShrink: 0 }} />
                         : <div style={{ width: 40, height: 40, borderRadius: '50%', background: `${fc}18`, border: `2px solid ${fc}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>👤</div>
                       }
                       <div style={{ flex: 1, minWidth: 0 }}>
@@ -2812,10 +2827,15 @@ export default function Management() {
                 }
               </div>
               <input id="doc-img-input" type="file" accept="image/*" style={{ display: 'none' }}
-                onChange={e => {
+                onChange={async e => {
                   const f = e.target.files?.[0];
                   e.target.value = '';   // เลือกไฟล์เดิมซ้ำต้องยิง change อีกครั้ง (หลังแนบล้มแล้วลองรูปเดิม)
-                  if (f) { setDocImageFile(f); const r = new FileReader(); r.onload = ev => setDocImagePreview(ev.target.result); r.readAsDataURL(f); }
+                  const img = await acceptImageFile(f);   // ด่านรับรูปจุดเดียว (HEIC → JPEG · ไม่ใช่รูป = toast)
+                  if (!img) return;
+                  setDocImageFile(img);
+                  const r = new FileReader();
+                  r.onload = ev => setDocImagePreview(ev.target.result);
+                  r.readAsDataURL(img);
                 }}
               />
             </div>
@@ -2853,7 +2873,7 @@ export default function Management() {
                 } finally {
                   setIsSavingDoc(false);
                 }
-              }} style={{ flex: 2, padding: 12, background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 14, opacity: isSavingDoc ? 0.6 : 1, cursor: isSavingDoc ? 'not-allowed' : 'pointer' }}>
+              }} style={{ flex: 2, padding: 12, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 14, opacity: isSavingDoc ? 0.6 : 1, cursor: isSavingDoc ? 'not-allowed' : 'pointer' }}>
                 {isSavingDoc ? 'กำลังบันทึก...' : 'ส่งอนุมัติ'}
               </button>
               <button onClick={() => { if (!isSavingDoc) { setPendingDocModal(null); setDocImageFile(null); setDocImagePreview(null); } }}
@@ -2961,14 +2981,15 @@ export default function Management() {
                     <div style={{ border: `2px dashed ${reqImageFile ? '#a855f7' : 'var(--border2)'}`, borderRadius: 8, padding: '10px 12px', background: reqImageFile ? 'rgba(168,85,247,0.06)' : 'var(--bg2)', cursor: 'pointer', textAlign: 'center', position: 'relative' }}
                       onClick={() => document.getElementById('req-img-input').click()}>
                       <input id="req-img-input" type="file" accept="image/*" style={{ display: 'none' }}
-                        onChange={e => {
+                        onChange={async e => {
                           const f = e.target.files?.[0];
                           e.target.value = '';   // เลือกไฟล์เดิมซ้ำต้องยิง change อีกครั้ง (หลังแนบล้มแล้วลองรูปเดิม)
-                          if (!f) return;
-                          setReqImageFile(f);
+                          const img = await acceptImageFile(f);   // ด่านรับรูปจุดเดียว (HEIC → JPEG)
+                          if (!img) return;
+                          setReqImageFile(img);
                           const reader = new FileReader();
                           reader.onload = ev => setReqImagePreview(ev.target.result);
-                          reader.readAsDataURL(f);
+                          reader.readAsDataURL(img);
                         }} />
                       {reqImagePreview
                         ? <img src={reqImagePreview} style={{ maxHeight: 140, maxWidth: '100%', borderRadius: 6, objectFit: 'contain' }} />
@@ -2984,7 +3005,7 @@ export default function Management() {
                 );
               })()}
               <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
-                <button onClick={handleSave4MLog} disabled={isSaving4M} style={{ flex: 2, padding: 12, background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontFamily: 'var(--font-display)', fontSize: 15, opacity: isSaving4M ? 0.6 : 1, cursor: isSaving4M ? 'not-allowed' : 'pointer' }}>
+                <button onClick={handleSave4MLog} disabled={isSaving4M} style={{ flex: 2, padding: 12, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, fontWeight: 700, fontFamily: 'var(--font-display)', fontSize: 15, opacity: isSaving4M ? 0.6 : 1, cursor: isSaving4M ? 'not-allowed' : 'pointer' }}>
                   {isSaving4M ? 'กำลังบันทึก...' : 'บันทึก 4M Log'}
                 </button>
                 <button onClick={() => { if (!isSaving4M) { setShow4MModal(null); setLog4MForm({ category: 'Man', description: '' }); setReqImageFile(null); setReqImagePreview(null); } }}
@@ -3059,7 +3080,7 @@ function WorkerHoverCard({ card, skillDefs }) {
               : <div style={{ width: photoW, height: photoW * 1.35, borderRadius: 10, background: 'var(--bg3)', border: `2px solid ${fc}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 44 }}>👤</div>
             }
             {fit && (
-              <div style={{ position: 'absolute', top: -16, left: 4, background: fc, color: '#fff', fontSize: 18, fontWeight: 900, fontFamily: 'var(--font-display)', lineHeight: 1, borderRadius: 7, padding: '3px 8px', boxShadow: '0 2px 8px rgba(0,0,0,0.6)' }}>
+              <div style={{ position: 'absolute', top: -16, left: 4, background: fc, color: '#fff', fontSize: 18, fontWeight: 900, fontFamily: 'var(--font-display)', lineHeight: 1, borderRadius: 7, padding: '3px 8px', boxShadow: 'var(--shadow-float)' }}>
                 {fit.score}
               </div>
             )}
@@ -3135,10 +3156,10 @@ function WorkerHoverCard({ card, skillDefs }) {
 function FitPopup({ fitPopup, onClose }) {
   const fc = fitColor(fitPopup.fit.score);
   return (
-    <div style={{ position: 'fixed', bottom: 24, right: 24, background: 'rgba(10,10,18,0.97)', border: `1px solid ${fc}66`, borderLeft: `4px solid ${fc}`, borderRadius: 12, padding: '14px 16px', boxShadow: `0 8px 36px rgba(0,0,0,0.6)`, zIndex: 1000, width: 264, animation: 'fmSlideIn 0.35s cubic-bezier(0.34,1.56,0.64,1)' }}>
+    <div style={{ position: 'fixed', bottom: 24, right: 24, background: 'rgba(10,10,18,0.97)', border: `1px solid ${fc}66`, borderLeft: `4px solid ${fc}`, borderRadius: 12, padding: '14px 16px', boxShadow: 'var(--shadow-lg)', zIndex: 1000, width: 264, animation: 'fmSlideIn 0.35s cubic-bezier(0.34,1.56,0.64,1)' }}>
       <style>{`@keyframes fmSlideIn { from { opacity:0; transform: translateX(28px) scale(0.94); } to { opacity:1; transform:translateX(0) scale(1); } }`}</style>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-        <img src={fitPopup.worker.employees?.image_url || ''} style={{ width: 42, height: 42, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: `2.5px solid ${fc}`, flexShrink: 0 }} />
+        <img loading="lazy" src={fitPopup.worker.employees?.image_url || ''} style={{ width: 42, height: 42, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: `2.5px solid ${fc}`, flexShrink: 0 }} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontWeight: 700, fontSize: 13, color: '#f0f0f4' }}>{fitPopup.worker.employees?.name}</div>
           <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', marginTop: 1 }}>→ {fitPopup.station.station_name}</div>
@@ -3167,21 +3188,15 @@ function FitPopup({ fitPopup, onClose }) {
   );
 }
 
-/* ── การ์ดรายละเอียดจุดเครื่องจักร/WIP บนผัง ──
+/* ── การ์ดรายละเอียดจุดเครื่องจักรบนผัง ──
    modal กลางจอ (portal ที่ตัว caller) — เปิดด้วยคลิก/แตะ ปิดด้วย ✕ หรือคลิก backdrop
    ตาม UI convention: จอ touch พึ่ง hover ไม่ได้ popup ต้องเปิด-ปิดด้วยคลิกเท่านั้น */
 function PointDetailCard({ detail, alarms, onClose }) {
-  const { kind, point, machine, loading, jig, mtype, part } = detail;
-  const isMachine = kind === 'machine';
-  const isPackaging = !isMachine && point.point_type === 'packaging';
-  const isLow = !isMachine && (point.current_qty ?? 0) < (point.min_qty ?? 0);
-  const accent = isMachine
-    ? (alarms ? '#ef4444' : '#f59e0b')
-    : (isLow ? '#ef4444' : '#22c55e');
-
-  const imgUrl = isMachine
-    ? (jig?.image_path ? supabaseDR.storage.from('jig-images').getPublicUrl(jig.image_path).data.publicUrl : null)
-    : (part?.image_url || null);
+  /* 🔴 2026-10-01 — การ์ดนี้เหลือชนิดเดียว: จุดเครื่องจักร
+     (หมุด "จุด WIP" ถูกถอดออกจากผังแล้ว — ของหน้าไลน์คุมที่ชั้น พื้นที่→ไลน์→พาร์ท ไม่ใช่จุดย่อย) */
+  const { point, machine, loading, jig, mtype } = detail;
+  const accent = alarms ? '#ef4444' : '#f59e0b';
+  const imgUrl = jig?.image_path ? supabaseDR.storage.from('jig-images').getPublicUrl(jig.image_path).data.publicUrl : null;
 
   const chipSt = (color) => ({
     fontSize: 11, fontWeight: 700, color, background: `${color}18`,
@@ -3194,34 +3209,17 @@ function PointDetailCard({ detail, alarms, onClose }) {
     </div>
   );
 
-  // สรุปแถวข้อมูลตามชนิดจุด — jig ของเครื่อง / parts_master ของ WIP material / field ตัวเองของ packaging
-  const infoRows = isMachine
-    ? (jig ? [
-        ['Jig',       jig.name ? `${jig.name}${jig.jig_no ? ` (${jig.jig_no})` : ''}` : jig.jig_no],
-        ['Process',   jig.process],
-        ['Model',     jig.model],
-        ['Part Name', jig.part_name],
-        ['Part No.',  jig.part_no],
-      ] : [])
-    : isPackaging
-      ? [
-          ['Packaging Type', point.packaging_type],
-          ['Packaging No.',  point.packaging_no],
-        ]
-      : (part ? [
-          ['Part Name', part.part_name],
-          ['Part No.',  part.part_no],
-          ['MAT No.',   part.mat_no],
-          ['UOM',       part.uom],
-          ['Qty/Pkg',   part.qty_per_pkg],
-          ['Supplier',  part.supplier],
-          ['หมายเหตุ',  part.note],
-        ] : []);
+  // สรุปแถวข้อมูลของจุด — jig ที่ผูกกับเครื่องตัวนี้
+  const infoRows = jig ? [
+    ['Jig',       jig.name ? `${jig.name}${jig.jig_no ? ` (${jig.jig_no})` : ''}` : jig.jig_no],
+    ['Process',   jig.process],
+    ['Model',     jig.model],
+    ['Part Name', jig.part_name],
+    ['Part No.',  jig.part_no],
+  ] : [];
 
-  // WIP material ที่หา parts_master ไม่เจอ (หรือไม่มี mat_no) / เครื่องที่ไม่อยู่ใน machines ฝั่ง DR
-  const notRegistered = !loading && (
-    isMachine ? !machine : (!isPackaging && !part)
-  );
+  // เครื่องที่ไม่อยู่ใน `machines` ฝั่ง DR
+  const notRegistered = !loading && !machine;
 
   return (
     <div onClick={onClose}
@@ -3232,46 +3230,25 @@ function PointDetailCard({ detail, alarms, onClose }) {
 
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 10 }}>
-          <div style={{ fontSize: 26, lineHeight: 1.2, flexShrink: 0 }}>{isMachine ? (alarms ? '🚨' : '⚙️') : (isPackaging ? '📦' : '🧱')}</div>
+          <div style={{ fontSize: 26, lineHeight: 1.2, flexShrink: 0 }}>{alarms ? '🚨' : '⚙️'}</div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)', lineHeight: 1.25, overflowWrap: 'anywhere' }}>
-              {isMachine ? point.machine_no : point.point_name}
+              {point.machine_no}
             </div>
-            {isMachine && machine?.machine_name && (
+            {machine?.machine_name && (
               <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 2 }}>{machine.machine_name}</div>
             )}
             <div style={{ display: 'flex', gap: 5, marginTop: 6, flexWrap: 'wrap' }}>
-              {isMachine ? (
-                <>
-                  {mtype && <span style={chipSt(mtype.color || '#4d9fff')}>{mtype.icon ? `${mtype.icon} ` : ''}{mtype.label}</span>}
-                  {machine?.line_name && <span style={chipSt('#a78bfa')}>📍 {machine.line_name}</span>}
-                  {machine?.process_type && <span style={chipSt('#4d9fff')}>{machine.process_type}</span>}
-                </>
-              ) : (
-                <>
-                  <span style={chipSt(isPackaging ? '#4d9fff' : '#f59e0b')}>{isPackaging ? '📦 Packaging' : '🧱 Material'}</span>
-                  {/* ⚠️ ห้ามโชว์เลขดิบ ('9'/'op' อ่านไม่รู้เรื่อง) — ผ่าน wipCatLabel เหมือนหน้าตั้งค่า */}
-                  {!isPackaging && wipPointCat(point.material_category, point.mat_no).text
-                    && <span style={chipSt('#a78bfa')}>{wipPointCat(point.material_category, point.mat_no).text}</span>}
-                  <span style={chipSt(isLow ? '#ef4444' : '#22c55e')}>
-                    {isLow ? '⚠ ' : ''}{point.current_qty ?? 0} / min {point.min_qty ?? 0} – max {point.max_qty ?? 0}
-                  </span>
-                </>
-              )}
+              {mtype && <span style={chipSt(mtype.color || '#4d9fff')}>{mtype.icon ? `${mtype.icon} ` : ''}{mtype.label}</span>}
+              {machine?.line_name && <span style={chipSt('#a78bfa')}>📍 {machine.line_name}</span>}
+              {machine?.process_type && <span style={chipSt('#4d9fff')}>{machine.process_type}</span>}
             </div>
           </div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer', padding: '0 4px', flexShrink: 0, lineHeight: 1 }}>✕</button>
         </div>
 
-        {/* สต๊อกต่ำกว่า min — เตือนแดงชัดๆ */}
-        {isLow && (
-          <div style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: 8, padding: '7px 10px', marginBottom: 10, fontSize: 12, fontWeight: 800, color: '#ef4444' }}>
-            ⚠ สต๊อกต่ำกว่าขั้นต่ำ — {point.current_qty ?? 0} จาก min {point.min_qty ?? 0}
-          </div>
-        )}
-
         {/* Downtime ที่ยังเปิดค้างของเครื่องนี้ */}
-        {isMachine && alarms && (
+        {alarms && (
           <div className="dt-alarm-blink" style={{ background: 'rgba(239,68,68,0.12)', border: '1.5px solid #ef4444', borderRadius: 8, padding: '8px 10px', marginBottom: 10 }}>
             <div style={{ fontSize: 12, fontWeight: 900, color: '#ef4444', marginBottom: 4 }}>🚨 DOWNTIME</div>
             {alarms.map((d, i) => {
@@ -3288,7 +3265,7 @@ function PointDetailCard({ detail, alarms, onClose }) {
           </div>
         )}
 
-        {/* รูปจาก jig (เครื่อง) / parts_master (WIP material) */}
+        {/* รูปจาก jig ที่ผูกกับเครื่อง */}
         {imgUrl && (
           <img src={imgUrl} alt=""
             style={{ width: '100%', maxHeight: 180, objectFit: 'cover', borderRadius: 10, border: '1px solid var(--border2)', marginBottom: 10, display: 'block' }}
@@ -3308,7 +3285,7 @@ function PointDetailCard({ detail, alarms, onClose }) {
             ยังไม่ลงทะเบียนในฐานข้อมูล
           </div>
         )}
-        {isMachine && machine && !loading && !jig && (
+        {machine && !loading && !jig && (
           <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', padding: '8px 0 2px' }}>
             ยังไม่มีข้อมูล Jig/PM ผูกกับเครื่องนี้
           </div>

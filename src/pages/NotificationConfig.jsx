@@ -1,10 +1,14 @@
 import { useState, useEffect, useMemo } from 'react'
+import { orgValues, orgNodeCompare } from '../utils/listOrder';
 import { supabase, supabaseDR } from '../supabaseClient'
 import { toast } from '../components/Toast'
 import { deptNameOf } from '../utils/mtnTeams'
 import { pmTeamsSync, loadPmTeams } from '../utils/pmTeams'   // ทีมช่างซ่อมจากตาราง mtn_teams — เลิกวน MTN_TEAMS hardcode (2026-09-07)
 import { ROLE_OPTIONS } from '../utils/roleMeta'
 import InfoMore from '../components/InfoMore'
+import { reachLabel, reachWarnings } from '../utils/notifReach'   // 🏷️ ป้ายราคาต่อเรื่อง — สูตรอยู่ util ที่เดียว (มีเทส)
+import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
 
 const inputStyle = {
   width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)',
@@ -15,7 +19,10 @@ const monoStyle = { ...inputStyle, fontFamily: 'monospace' }
 /** สรุปว่า "ตอนนี้เรื่องนี้เด้งหาใคร" เป็นข้อความสั้นๆ — คนตั้งค่าต้องเห็นผลโดยไม่ต้องกางแผง */
 const targetSummary = (rule) => {
   const parts = []
+  // 🎯 ตัวนี้ขึ้นก่อนเสมอ — มันเปลี่ยน "ใครได้รับ" มากกว่าตัวกรองอื่นทั้งหมดรวมกัน (2026-09-23)
+  if (rule.inapp_cast === 'fallback') parts.push('เจ้าของงานก่อน')
   if (rule.inapp_match_section) parts.push('เฉพาะส่วนงานที่เกิดเหตุ')
+  if (rule.inapp_scope_strict) parts.push('ผู้บริหารก็ถูกกรองตามส่วนงาน')
   if (rule.inapp_sections?.length) parts.push(`ส่วนงาน: ${rule.inapp_sections.join(', ')}`)
   if (rule.inapp_depts?.length) parts.push(`แผนก: ${rule.inapp_depts.join(', ')}`)
   return parts.length ? `● ${parts.join(' · ')}` : '○ ทุกส่วนงาน/ทุกแผนก'
@@ -118,6 +125,7 @@ const renderPreview = (t) => String(t ?? '').replace(/\{(\w+)\}/g, (_m, k) => (S
 export default function NotificationConfig() {
   const [rooms, setRooms] = useState([])
   const [rules, setRules] = useState([])
+  const [reach, setReach] = useState({})   // event_key → แถวดิบจาก RPC notif_rule_reach()
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(null)
   const [newRoom, setNewRoom] = useState({ name: '', chat_id: '' })
@@ -148,9 +156,16 @@ export default function NotificationConfig() {
     supabase.from('org_nodes').select('kind, code, name, sort_order').in('kind', ['section', 'department'])
       .then(({ data }) => {
         const nodes = data ?? []
-        const bySort = (a, b) => (a.sort_order ?? 999) - (b.sort_order ?? 999)
-        setSecOpts([...new Set(nodes.filter(n => n.kind === 'section').sort(bySort).map(n => n.code || n.name).filter(Boolean))])
-        setDeptOpts([...new Set(nodes.filter(n => n.kind === 'department').sort(bySort).map(n => n.name).filter(Boolean))])
+        setSecOpts(orgValues(nodes.filter(n => n.kind === 'section')))
+        setDeptOpts([...new Set(nodes.filter(n => n.kind === 'department').sort(orgNodeCompare).map(n => n.name).filter(Boolean))])
+      })
+    /* 🏷️ ป้ายราคา — สรุปฝั่ง server (RPC) เพราะต้องอ่าน notifications เป็นหมื่นแถว
+       ดึงมา client เอง = ชนเพดาน 1000 แถว/คิวรี + ลาก egress ฟรี (กฎเหล็กข้อ 5)
+       โหลดแยก ไม่บล็อกหน้าหลัก — ล้มก็แค่ไม่มีป้ายราคา หน้ายังตั้งค่าได้ปกติ */
+    supabase.rpc('notif_rule_reach', { p_days: 14 })
+      .then(({ data, error }) => {
+        if (error) { console.warn('notif_rule_reach:', error.message); return }
+        setReach(Object.fromEntries((data ?? []).map(r => [r.event_key, r])))
       })
     supabase.from('employees').select('section, department').eq('is_active', true)
       .then(({ data }) => {
@@ -297,13 +312,11 @@ export default function NotificationConfig() {
   }
   const insertPh = (ph) => setTplDraft(d => `${d}${d && !d.endsWith(' ') && !d.endsWith('\n') ? ' ' : ''}{${ph}}`)
 
-  if (loading) return <div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>กำลังโหลด...</div>
+  if (loading) return <Page width="form"><div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>กำลังโหลด...</div></Page>
 
   return (
-    <div style={{ padding: 'clamp(12px,3vw,28px)', maxWidth: 'min(96vw, 920px)', margin: '0 auto' }}>
-      <h1 style={{ fontSize: 'clamp(18px,3vw,26px)', fontWeight: 800, color: 'var(--text)', margin: 0 }}>
-        🔔 ตั้งค่าระบบแจ้งเตือน (Telegram)
-      </h1>
+    <Page width="form">
+      <PageHeader title="ตั้งค่าระบบแจ้งเตือน (Telegram)" icon="🔔" />
       <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4, marginBottom: 22 }}>
         1 บอทยิงได้หลายห้อง · สร้าง/ลบห้องได้เอง · เลือกได้ว่าเรื่องไหนเข้าห้องไหน · ห้องที่ยังไม่ใส่ chat_id จะไปเข้ากลุ่มเดิม (fallback)
       </div>
@@ -320,7 +333,7 @@ export default function NotificationConfig() {
           placeholder={tokenStatus.is_set ? 'วาง token ใหม่เพื่อเปลี่ยน' : 'วาง token จาก @BotFather'}
           style={{ ...monoStyle, flex: 1, minWidth: 220 }}
         />
-        <button onClick={saveToken} disabled={busy === 'token'} style={{ background: 'var(--accent)', color: '#071008', border: 'none', borderRadius: 8, padding: '9px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+        <button onClick={saveToken} disabled={busy === 'token'} style={{ background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, padding: '9px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
           {busy === 'token' ? 'บันทึก...' : 'บันทึก Token'}
         </button>
         <div style={{ flexBasis: '100%', fontSize: 11, color: 'var(--muted)' }}>
@@ -340,7 +353,7 @@ export default function NotificationConfig() {
           style={{ width: 90, textAlign: 'center', fontSize: 14, fontWeight: 700, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)' }}
         />
         <div style={{ fontSize: 12.5, color: 'var(--text)' }}>นาที</div>
-        <button onClick={saveOpenMin} disabled={busy === 'openmin'} style={{ background: 'var(--accent)', color: '#071008', border: 'none', borderRadius: 8, padding: '9px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+        <button onClick={saveOpenMin} disabled={busy === 'openmin'} style={{ background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, padding: '9px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
           {busy === 'openmin' ? 'บันทึก...' : 'บันทึก'}
         </button>
         <InfoMore size={11} style={{ flexBasis: '100%' }} id="nc_dtopen"
@@ -371,7 +384,7 @@ export default function NotificationConfig() {
               {/* 2026-09-07: วนทีมจาก mtn_teams (pmTeamsSync — data-driven) · ค่าที่เก็บ = key เสมอ */}
               {pmTeamsSync().map(t => <option key={t.key} value={t.key}>ทีม {t.icon ? `${t.icon} ` : ''}{deptNameOf(t.key)}</option>)}
             </select>
-            <button onClick={() => saveRoom(room)} disabled={busy === room.id} style={{ background: 'var(--accent)', color: '#071008', border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>บันทึก</button>
+            <button onClick={() => saveRoom(room)} disabled={busy === room.id} style={{ background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>บันทึก</button>
             <button onClick={() => testRoom(room)} disabled={busy === `test-${room.id}`} style={{ background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 12px', fontSize: 12, cursor: 'pointer' }}>📤 ทดสอบ</button>
             <button onClick={() => deleteRoom(room)} style={{ background: 'transparent', color: '#e05c4a', border: '1px solid rgba(224,92,74,0.4)', borderRadius: 8, padding: '8px 10px', fontSize: 12, cursor: 'pointer' }}>ลบ</button>
             {!(room.chat_id ?? '').trim() && (
@@ -456,6 +469,28 @@ export default function NotificationConfig() {
                       })}
                     </div>
 
+                    {/* 🏷️ ป้ายราคา — "ติ๊กแล้วแปลว่าอะไร" (2026-09-17 · คำสั่ง user "จะได้รู้")
+                        เดิมติ๊ก role แล้วไม่เห็นผล ⇒ ทุกคน "ติ๊กเผื่อไว้ก่อน" จนใบซ่อม 1 ใบ = 99 คน
+                        (3,052 แถว/วัน = 79% ของทั้งระบบ · คนอ่าน 8%)
+                        ⚠️ สูตรอยู่ `src/utils/notifReach.js` ที่เดียว ห้ามคำนวณซ้ำที่นี่ */}
+                    <div style={{ marginTop: 7, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      <div style={{
+                        fontSize: 11.5, lineHeight: 1.5,
+                        color: (rule.inapp_roles || []).length ? 'var(--text2)' : 'var(--muted)',
+                      }}>
+                        🏷️ {reachLabel(rule, reach[rule.event_key])}
+                      </div>
+                      {reachWarnings(rule, reach[rule.event_key]).map((w, i) => (
+                        <div key={i} style={{
+                          fontSize: 11, lineHeight: 1.5, display: 'flex', gap: 5, alignItems: 'flex-start',
+                          color: w.level === 'red' ? '#ef4444' : 'var(--accent2)',
+                        }}>
+                          <span style={{ flexShrink: 0 }}>{w.level === 'red' ? '🔴' : '⚠️'}</span>
+                          <span>{w.text}</span>
+                        </div>
+                      ))}
+                    </div>
+
                     {/* จำกัดผู้รับให้แคบลงอีก: ส่วนงาน / แผนก / เฉพาะคนที่ดูแลไลน์ที่เกิดเหตุ */}
                     {(rule.inapp_roles || []).length > 0 && (
                       <div style={{ marginTop: 8 }}>
@@ -471,6 +506,31 @@ export default function NotificationConfig() {
 
                         {openTarget === rule.event_key && (
                           <div style={{ marginTop: 8, padding: 10, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 8, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                            {/* 🎯 2026-09-23 — ตัวเลือกที่แก้ "ยิงมั่ว" ที่ต้นเหตุ (คำสั่ง user "หารูทคอสและแก้")
+                                รูทคอส: ทะเบียนตอบคำถามผิดข้อ — ถามว่า "คนประเภทไหนควรรู้เรื่องชนิดนี้"
+                                แทนที่จะถาม "ใครต้องลงมือกับรายการนี้" ⇒ ผู้รับ = |คนใน role| × |ทุกเหตุการณ์|
+                                วัด 30 วัน: 64% ของแถวทั้งระบบส่งให้คนที่ไม่เคยเปิดอ่านเลยสักใบ
+                                (และคนกลุ่มนั้นไม่ใช่บัญชีร้าง — login สัปดาห์นี้ แต่ไม่ใช้กระดิ่ง)
+                                ⚠️ วางไว้บนสุดโดยตั้งใจ: ตัวกรองข้างล่างแค่ "เล็ม" ตัวนี้แก้ที่ต้นเหตุ */}
+                            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 12, cursor: 'pointer',
+                              padding: 8, borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--card)' }}>
+                              <input type="checkbox" checked={rule.inapp_cast === 'fallback'}
+                                onChange={e => updateRule(rule.event_key, { inapp_cast: e.target.checked ? 'fallback' : 'always' })}
+                                style={{ marginTop: 2, flexShrink: 0 }} />
+                              <span>
+                                <b>🎯 ส่งถึงเจ้าของงานก่อน — ยิงตาม role เฉพาะตอนที่รายการบอกตัวคนไม่ได้</b>
+                                <div style={{ color: 'var(--muted)', fontSize: 11, marginTop: 2, lineHeight: 1.6 }}>
+                                  ไม่ติ๊ก = ยิงตาม role ที่เลือกไว้<b>ทุกครั้ง</b> แม้รายการนั้นจะรู้อยู่แล้วว่าใครเกี่ยว (พฤติกรรมเดิม) ·
+                                  ติ๊ก = ส่งให้<b>คนที่มีชื่ออยู่ในรายการนั้น</b> (ผู้แจ้ง / ผู้รับงาน / ผู้ตรวจ) ก่อน
+                                  แล้วจะยิงตาม role <b>ต่อเมื่อรายการไม่มีชื่อใครเลย</b> — ใบไม่มีทางเดินไปเงียบๆ
+                                  <div style={{ marginTop: 3 }}>
+                                    ⚠️ เรื่องที่ระบบยัง<b>ไม่ได้ส่งชื่อเจ้าของงานมา</b> ติ๊กแล้วจะเหมือนเดิมทุกอย่าง (ไม่เสียหาย)
+                                    — ดูว่าเรื่องไหนส่งมาแล้วบ้างที่ <code>docs/modules/notifications-flood.md</code> §6
+                                  </div>
+                                </div>
+                              </span>
+                            </label>
+
                             <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 12, cursor: 'pointer' }}>
                               <input type="checkbox" checked={!!rule.inapp_match_section}
                                 onChange={e => updateRule(rule.event_key, { inapp_match_section: e.target.checked })} style={{ marginTop: 2, flexShrink: 0 }} />
@@ -478,8 +538,26 @@ export default function NotificationConfig() {
                                 <b>แจ้งเฉพาะคนที่ดูแลส่วนงานของเหตุการณ์นั้น</b>
                                 <div style={{ color: 'var(--muted)', fontSize: 11, marginTop: 2 }}>
                                   เช่น ของเสียที่ Line 60 → เด้งหาหัวหน้า PD2 เท่านั้น ไม่กวนส่วนงานอื่น ·
-                                  ผู้บริหาร (ผู้ดูแลระบบ / สิทธิ์ทั้งฝ่าย) และคนที่ไม่ได้จำกัดขอบเขต ได้รับเสมอ ·
+                                  คนที่ไม่ได้จำกัดขอบเขต ได้รับเสมอ ·
                                   เหตุการณ์ที่ไม่รู้ส่วนงาน = แจ้งทุกคนตาม role (ไม่เงียบ)
+                                </div>
+                              </span>
+                            </label>
+
+                            {/* 🔑 2026-09-21 — เดิม admin/ผจก. ถูกยกเว้นจากตัวกรองส่วนงาน "เสมอ" (hardcode ใน SQL)
+                                วัดจริง: ผจก. 4 คนได้ 50 แถว/วัน อ่านรวมกัน 2 จาก 2,920 (0.07%)
+                                ธงนี้ปิดข้อยกเว้นเป็นรายเรื่อง — ให้เลือกได้ว่าเรื่องไหนผู้บริหารควรเห็นทั้งโรงงาน */}
+                            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 12,
+                              cursor: rule.inapp_match_section ? 'pointer' : 'not-allowed',
+                              opacity: rule.inapp_match_section ? 1 : 0.5, paddingLeft: 22 }}>
+                              <input type="checkbox" checked={!!rule.inapp_scope_strict} disabled={!rule.inapp_match_section}
+                                onChange={e => updateRule(rule.event_key, { inapp_scope_strict: e.target.checked })} style={{ marginTop: 2, flexShrink: 0 }} />
+                              <span>
+                                <b>ผู้บริหารก็ถูกกรองตามส่วนงานด้วย</b>
+                                <div style={{ color: 'var(--muted)', fontSize: 11, marginTop: 2 }}>
+                                  ไม่ติ๊ก = ผู้ดูแลระบบ / ผู้จัดการ ได้รับ<b>ทุกส่วนงาน</b>แม้เรื่องนี้กรองส่วนงานอยู่ (พฤติกรรมเดิม) ·
+                                  ติ๊ก = ผจก. PD1 ได้เฉพาะ PD1 เหมือนคนอื่น — เหมาะกับ<b>เรื่องที่ยิงถี่</b> ·
+                                  ⚠️ คนที่ยังไม่ได้ตั้งส่วนงานยังได้รับทุกส่วนงานอยู่ (ตั้งได้ที่หน้าจัดการผู้ใช้งาน)
                                 </div>
                               </span>
                             </label>
@@ -565,7 +643,7 @@ export default function NotificationConfig() {
                         </div>
                         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                           <button onClick={() => saveTpl(rule)}
-                            style={{ background: 'var(--accent)', color: '#071008', border: 'none', borderRadius: 8, padding: '7px 16px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>บันทึกข้อความ</button>
+                            style={{ background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, padding: '7px 16px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>บันทึกข้อความ</button>
                           <button onClick={() => setTplDraft(DEFAULT_TEMPLATES[rule.event_key] ?? '')}
                             style={{ background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 12px', fontSize: 12, cursor: 'pointer' }}>โหลดแบบเริ่มต้น</button>
                           <button onClick={() => resetTpl(rule)}
@@ -590,6 +668,6 @@ export default function NotificationConfig() {
         2. สร้างกลุ่มแต่ละเรื่อง แล้ว <b>add บอท</b> เข้ากลุ่ม (เป็นสมาชิกก็พอ)<br />
         3. add <b>@getidsbot</b> เข้ากลุ่มชั่วคราว → บอก <code>Group ID: -100…</code> → copy ใส่ช่อง chat_id → บันทึก → ทดสอบ
       </div>
-    </div>
+    </Page>
   )
 }

@@ -1,11 +1,17 @@
-import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
+import { useState, useEffect, useCallback, useMemo, useContext, useRef } from 'react';
+import { lineNameCompare } from '../utils/lineHierarchy';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
-import { cachedMaster } from '../utils/masterCache';
+import { cachedMaster, mrows } from '../utils/masterCache';
+import { colIdx, isEdiHeaderRow, detectEdiKind, HEADER_SCAN_ROWS, buildEdiDict, sigOf } from '../utils/ediDetect';
+import CustomerFileFormats from '../components/CustomerFileFormats';
+import { splitAlreadyDone, DONE_STATUSES, splitFirmVsForecast, splitCumCatchUp, FIRM_HORIZON_DAYS, scopedReplaceIds, buildPartMapIndex, mappedMatFor } from '../utils/ediMerge';
+import EdiMatchFixer from '../components/EdiMatchFixer';
 import LineSelect from '../components/LineSelect';
 import ProductSelect from '../components/ProductSelect';
 import useProductionLines from '../utils/useProductionLines';
 import { baseOfPart } from '../utils/matResolve';
+import { buildParentIndex, targetAncestorsOf } from '../utils/bomTree';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
 import { isFgMat } from '../utils/matPrefix';
@@ -14,10 +20,19 @@ import { wavg, wLoad } from '../utils/oee';
 import { loadCompanyCalendar, countWorkingDaysInMonth } from '../utils/companyCalendar';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid } from 'recharts';
 import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
+import FilterBar from '../components/FilterBar';
+import Segmented from '../components/Segmented';
+import { ALL } from '../utils/filterLabels';
 import useTabParam from '../utils/useTabParam';
+import MonitoringUpload from '../components/MonitoringUpload';
+import DemandMailInbox from '../components/DemandMailInbox';
 import { fetchAllPages } from '../utils/fetchByIds';
 import { dedupeForecastRows } from '../utils/demandSupply';
 import { checkWrite } from '../utils/dbWrite';
+import { fmtAxis } from '../utils/chartAxis';
+import { loadDocForms } from '../utils/docForms';
+import { downloadCsvDoc } from '../utils/csvDoc';
 
 /* ─── PLANNER & SALES — Forecast Planner + อัพโหลดไฟล์จากลูกค้า ──────────────
    Sales อัพโหลด Excel 2 แบบ: (1) Forecast ล่วงหน้าจากลูกค้า (2) Order + รอบเวลาส่งงาน
@@ -31,7 +46,7 @@ const card = {
 };
 const btn = (active) => ({
   padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)',
-  background: active ? 'var(--accent)' : 'var(--bg2)', color: active ? '#08130a' : 'var(--text2)',
+  background: active ? 'var(--accent)' : 'var(--bg2)', color: active ? 'var(--accent-ink)' : 'var(--text2)',
   border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
 });
 const inputSt = {
@@ -124,6 +139,40 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
   const [saving, setSaving] = useState(false);
   const [batches, setBatches] = useState([]);
   const [edi, setEdi] = useState(null); // ไฟล์ EDI (Ford 830/862) ที่ parse แล้ว รอยืนยันนำเข้า
+  /* 🧩 ทะเบียนฟอร์แมตไฟล์ลูกค้า (`customer_pull_formats` kind = order/forecast) — 2026-09-22
+     ลูกค้าเจ้าใหม่ที่ส่งไฟล์คนละหน้าตา = เพิ่มแถวในทะเบียน **ไม่ต้องแก้โค้ด/deploy**
+     โหลดไม่ได้/ทะเบียนว่าง = ใช้ค่าสำรองในโค้ด (อ่านไฟล์ Ford ได้เหมือนเดิม) แต่ต้องขึ้นจอบอก */
+  const [fmtRows, setFmtRows] = useState([]);
+  const [fmtErr, setFmtErr] = useState(false);
+  const [showFmt, setShowFmt] = useState(false);
+  /* 🔴 buildEdiDict คืน { dict, fromDb } — ต้องแกะ .dict (2026-10-01 · เคยพังจริง 9 วัน)
+     เดิมเอาทั้งก้อนไปเป็นพจนานุกรม ⇒ sigOf() ได้ [] ทุกช่อง ⇒ ไม่มีชีตไหนเป็น EDI
+     ⇒ ไฟล์ 830/862 ทุกไฟล์ตกไปโหมด map มือบนชีตแรก (Summary/Running) ตั้งแต่ 22/09 */
+  const { dict: ediDict } = useMemo(() => buildEdiDict(fmtRows), [fmtRows]);
+  /* 📬 ไฟล์ที่เปิดจากคิวเมล (2026-09-30) — นำเข้าสำเร็จแล้วต้องปิดแถวคิวพร้อม batch_id
+     เลือกไฟล์เองจากเครื่องเมื่อไหร่ = ล้างทิ้ง (ไม่งั้นไปปิดคิวผิดใบ) */
+  const mailRowsRef = useRef([]);
+  const [mailKey, setMailKey] = useState(0);
+  const markMailImported = async (batchId) => {
+    const ids = mailRowsRef.current.map(r => r.id);
+    mailRowsRef.current = [];
+    if (!ids.length) return;
+    const res = await supabaseDR.from('demand_mail_inbox')
+      .update({ status: 'imported', batch_id: batchId, handled_by: fullName || null, handled_at: new Date().toISOString() })
+      .in('id', ids).select('id');
+    if (checkWrite(res, 'ปิดคิวไฟล์จากเมล') && (res.data?.length || 0) < ids.length)
+      toast.error('นำเข้าแล้ว แต่ปิดแถวคิวเมลไม่ครบ — กด "ข้าม" ที่แผง 📬 เอง');
+    setMailKey(k => k + 1);
+  };
+
+  const loadFormats = useCallback(async () => {
+    const { data, error } = await supabaseDR.from('customer_pull_formats')
+      .select('code, name, customer_name, kind, col_map, is_active, note')
+      .in('kind', ['order', 'forecast']).eq('is_active', true).order('code');
+    setFmtErr(!!error);
+    setFmtRows(data || []);
+  }, []);
+  useEffect(() => { loadFormats(); }, [loadFormats]);
 
   const loadBatches = useCallback(async () => {
     const { data } = await supabaseDR.from('demand_upload_batches').select('*').order('uploaded_at', { ascending: false }).limit(30);
@@ -133,58 +182,113 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
 
   /* ── EDI (Ford/AAT · 830 = Planning Forecast · 862 = Shipping Schedule) ──
      ไฟล์จากระบบ EDI มี sheet ดิบที่หัวตารางคงที่ — ตรวจจับแล้ว parse อัตโนมัติ ไม่ต้อง map มือ */
-  const EDI_SIG = ['Part Num', 'Forecast Net Qty', 'Forecast Date'];
-  const findEdiSheet = (XLSX, wb) => {
+  /* ⚠️ เทียบหัวคอลัมน์แบบ normalize (ตัดช่องว่าง/ขีด/ตัวพิมพ์) + สแกนลึก 20 แถว
+     เดิมเทียบตรงตัว 5 แถวแรก ⇒ พอร์ทัลเพิ่มแถวหัวเรื่อง/เปลี่ยนชื่อคอลัมน์นิดเดียว =
+     **หาไม่เจอแล้วตกไปทางไฟล์ manual เงียบๆ** (ดู src/utils/ediDetect.js) */
+  /* 🔴 ต้องคืน **ทุกชีต** ที่เป็นตาราง EDI ไม่ใช่ชีตแรกชีตเดียว (2026-09-17)
+     ที่มา: ไฟล์ 862 ของจริง `862_15.09.26.xlsm` = **1 ไฟล์ 6 ชีต ชีตละ ship-to**
+       (GBL9A · GRBNA · GBJWA · GBJWE · GBJWC · HPUDA) รวม 1,155 แถว
+     เดิม `return` ทันทีที่เจอชีตแรก ⇒ อ่านแค่ GBL9A (179 รายการ) **ทิ้ง 945 แถวเงียบๆ
+     รวม AAT/GRBNA ทั้ง 278 รายการ** — บนจอขึ้นว่า "Ship-to: FTM (GBL9A)" เฉยๆ ไม่มีคำเตือน
+     ⇒ ตรงกับอาการ "ออเดอร์ AAT หายไปหมดเลย ทุกรายการ" (11/09 → 17/09)
+     ก่อนหน้านี้รอดเพราะทีมส่งมาเป็น **6 ไฟล์แยก** (ดู demand_upload_batches 28/08) */
+  const findEdiSheets = (XLSX, wb) => {
+    const found = [];
+    let near = null;                      // "เกือบใช่" — เอาไว้บอกคนว่าขาดคอลัมน์ไหน
     for (const name of wb.SheetNames) {
       const m = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, raw: true, defval: '' });
-      for (let i = 0; i < Math.min(m.length, 5); i++) {
+      for (let i = 0; i < Math.min(m.length, HEADER_SCAN_ROWS); i++) {
         const hd = m[i].map(c => String(c).trim());
-        if (EDI_SIG.every(k => hd.includes(k))) return { matrix: m, hIdx: i, headers: hd };
+        if (isEdiHeaderRow(hd, ediDict)) { found.push({ matrix: m, hIdx: i, headers: hd, sheet: name }); break; }
+        const sig = sigOf(ediDict);
+        const hit = sig.filter(g => colIdx(hd, g) >= 0).length;
+        if (hit >= 2 && (!near || hit > near.hit)) {
+          near = { hit, sheet: name, headers: hd, missing: sig.filter(g => colIdx(hd, g) < 0).map(g => g[0]) };
+        }
       }
     }
-    return null;
+    findEdiSheets.near = found.length ? null : near;
+    return found;
   };
   const parseEdiFile = (sheet, fName) => {
     const { matrix, hIdx, headers } = sheet;
-    const col = (n) => headers.indexOf(n);
-    const is862 = col('Forecast Time') >= 0;
+    const body = matrix.slice(hIdx + 1);
+    const col = (aliases) => colIdx(headers, aliases);
+    /* ⭐ ตัดสิน 830/862 จากหลายสัญญาณ + คืนเหตุผลให้ขึ้นจอ (ห้ามเดาเงียบ) */
+    const kind = detectEdiKind(headers, body, ediDict, matrix.slice(0, hIdx));
+    const is862 = kind.is862;
+    const [gPart, gQty, gDate] = sigOf(ediDict);
+    const iPart = col(gPart), iQty = col(gQty), iDate = col(gDate);
+    const iTime = col(ediDict.time), iDock = col(ediDict.dock);
+    const iShip = col(ediDict.ship_to);
+    const iPo = col(ediDict.po);
     const out = [];
-    matrix.slice(hIdx + 1).forEach(r => {
-      const part = String(r[col('Part Num')] ?? '').trim();
+    /* 🔴 แถวยอด 0 = ลูกค้าบอกว่า "วันนั้นไม่ต้องส่ง" — ไม่สร้างใบ แต่ต้องใช้เป็นขอบเขตแทนที่ (2026-10-05)
+       เดิมทิ้งทั้งแถว ⇒ ลูกค้าส่ง 0 ทั้งสัปดาห์ = ship-to/พาร์ทนั้นไม่อยู่ในไฟล์ ⇒ ใบ pending เก่าค้างเต็มบอร์ด
+       (เคสจริง AAT 05/10: "วีคนี้ไม่มีออเดอร์ AAT แต่ระบบขึ้น 28 รอบ") */
+    const zeros = [];
+    let skipped = 0;
+    body.forEach(r => {
+      const part = String(r[iPart] ?? '').trim();
       if (!part) return;
-      const qty = numCell(r[col('Forecast Net Qty')]);
-      const d = parseDateCell(r[col('Forecast Date')]);
-      if (qty <= 0 || !d) return;
+      const qty = numCell(r[iQty]);
+      const d = parseDateCell(r[iDate]);
+      if (d && qty <= 0) {
+        zeros.push({ part, date: dateStr(d), shipTo: String(r[iShip] ?? '').trim() || 'EDI',
+          dock: iDock >= 0 ? (String(r[iDock] ?? '').trim() || null) : null });
+      }
+      if (qty <= 0 || !d) { skipped++; return; }
       out.push({
         part, qty, date: dateStr(d),
-        shipTo: String(r[col('Ship To GSDB Code')] ?? '').trim() || 'EDI',
-        po: String(r[col('Purchase Order Num')] ?? '').trim(),
-        time: is862 ? parseTimeCell(r[col('Forecast Time')]) : null,
-        dock: is862 && col('Dock Code') >= 0 ? String(r[col('Dock Code')] ?? '').trim() : null,
+        shipTo: String(r[iShip] ?? '').trim() || 'EDI',
+        po: String(r[iPo] ?? '').trim(),
+        /* ⚠️ อ่านเวลา/ท่าไว้เสมอ ไม่ผูกกับผลการเดาชนิด — คนกดสลับ 830⇄862 บนจอได้
+           โดยไม่ต้องอ่านไฟล์ใหม่ (เดิมผูกไว้ ⇒ เดาผิดรอบแรก = เวลาหายถาวร) */
+        time: iTime >= 0 ? parseTimeCell(r[iTime]) : null,
+        dock: iDock >= 0 ? (String(r[iDock] ?? '').trim() || null) : null,
       });
     });
-    return { is862, rows: out, fName };
+    return { is862, kind, rows: out, zeros, fName, skipped, sheet: sheet.sheet || null,
+      shipTos: [...new Set(out.map(r => r.shipTo))] };
   };
 
+  /* ไฟล์ชุดล่าสุดที่อ่าน — ไว้ "อ่านใหม่" หลังคนตัดสินคู่พาร์ทบนจอ preview โดยไม่ต้องเลือกไฟล์ซ้ำ */
+  const lastFilesRef = useRef(null);
   const handleFiles = async (fileList, kindNow) => {
     const files = Array.from(fileList || []);
     if (!files.length) return;
+    lastFilesRef.current = { files, kind: kindNow };
     try {
       const XLSX = await import('xlsx');
       const ediFiles = [];
       let manual = null;
       for (const file of files) {
         const wb = XLSX.read(await file.arrayBuffer(), { cellDates: true });
-        const ediSheet = findEdiSheet(XLSX, wb);
-        if (ediSheet) { ediFiles.push(parseEdiFile(ediSheet, file.name)); continue; }
+        const sheets = findEdiSheets(XLSX, wb);
+        if (sheets.length) {
+          /* ไฟล์เดียวมีหลายชีต = หลาย ship-to → นับเป็นหลาย "ก้อน" ต้องรวมให้ครบทุกชีต */
+          sheets.forEach(sh => ediFiles.push(parseEdiFile(sh, sheets.length > 1 ? `${file.name} [${sh.sheet}]` : file.name)));
+          continue;
+        }
         if (!manual) manual = { wb, name: file.name };
       }
       if (ediFiles.length) {
-        if (ediFiles.some(f => f.is862) && ediFiles.some(f => !f.is862)) {
+        /* ⚠️ เทียบเฉพาะ "ชีตที่ตัดสินได้ชัด" — ชีตที่ไม่ชัดไม่ใช่หลักฐานว่าปนชนิด
+           (ไฟล์เล่มเดียวกันย่อมเป็นชนิดเดียวกัน · ชีตที่ไม่มีค่าเวลา = ship-to นั้นไม่ใช้เวลาเท่านั้น) */
+        const sureKinds = new Set(ediFiles.filter(f => f.kind?.sure).map(f => f.is862));
+        if (sureKinds.size > 1) {
           toast.error('อย่าเลือกไฟล์ 830 (Forecast) ปนกับ 862 (Shipping) ในครั้งเดียว — แยกนำเข้าทีละชนิด');
           return;
         }
-        const is862 = ediFiles[0].is862;
+        /* 🔴 รวมผลการเดาระดับ "ไฟล์" ห้ามใช้แค่ชีตแรก (2026-09-17)
+           ไฟล์จริงมี 6 ชีต · 3 ชีต (GBJWA/GBJWE/GBJWC) คอลัมน์ `Forecast Time` ว่างทุกแถว
+           ⇒ ชีตพวกนั้นให้ผล "ไม่ชัด" · ถ้าบังเอิญเรียงมาเป็นชีตแรก จะไปบล็อกการนำเข้าทั้งไฟล์
+           ทั้งที่ชีตอื่นในเล่มเดียวกันยืนยันชัดว่าเป็น 862 ⇒ **ชีตที่ชัดชนะ** */
+        const sureOne = ediFiles.find(f => f.kind?.sure);
+        const is862 = sureOne ? sureOne.is862 : ediFiles[0].is862;
+        const kindGuess = sureOne
+          ? { ...sureOne.kind, reason: `${sureOne.kind.reason}${ediFiles.length > 1 ? ` (ชีต ${sureOne.sheet})` : ''}` }
+          : (ediFiles[0].kind || { is862, reason: '', sure: true });
         // dedupe: EDI ออกบรรทัดซ้ำ key เดิมได้ — ใช้ตัวหลังสุด ไม่บวกทบ
         // ⚠️ key ต้องรวม PO — 2 release ต่าง Purchase Order ที่ part/วัน/เวลาเดียวกันเป็นคนละใบจริง
         //    (เดิมตัวหลังทับ = demand หายเงียบ · QC flow-audit D1) — บรรทัดซ้ำแท้ (ทุกช่องเท่ากัน) ยังถูก dedupe เหมือนเดิม
@@ -204,13 +308,22 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
               ห้ามเงียบ และห้ามหยุด import (ไม่งั้นงานส่งของหยุดทั้งวัน) */
         const norm = (x) => String(x || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
    // ⚠️ ตัวที่ผ่าน cachedMaster คืน **array ตรงๆ** (ไม่ใช่ { data }) — destructure ต้องไม่ห่อ { data: … }
-        const [{ data: stds }, prods, { data: shipTos }] = await Promise.all([
+        const [{ data: stds }, prods, { data: shipTos }, { data: partMapRows, error: partMapErr }, { data: retired }] = await Promise.all([
           // ⚠️ ต้องกรอง is_active — แถว kanban ที่ปิดไปแล้ว (EC superseded) ห้ามจ่ายคู่ p_no ได้อีก
           supabaseDR.from('kanban_standards').select('mat_no, p_no, part_name').eq('is_active', true).not('p_no', 'is', null),
           /* cache master (2026-09-16) — ทะเบียนเปลี่ยนเดือนละไม่กี่ครั้ง · ล้างด้วย invalidateTable() ที่หน้าแก้ทะเบียน */
-          cachedMaster('dr_products:pno', async () => (await supabaseDR.from('dr_products').select('mat_no, p_no, name, customer').eq('is_active', true).not('p_no', 'is', null)).data || []),
+          cachedMaster('dr_products:pno', async () => mrows(await supabaseDR.from('dr_products').select('mat_no, p_no, name, customer').eq('is_active', true).not('p_no', 'is', null))),
           supabaseDR.from('ship_to_plants').select('code, customer_name'),
+          // 🔗 คำตัดสินของคน (edi_part_map) — ชนะการเดาทุกชั้น · โหลดไม่ได้ = เดาแบบเดิม + เตือน
+          supabaseDR.from('edi_part_map').select('ship_to, part_key, customer_part_no, mat_no'),
+          // สินค้าที่ปิดใช้งาน (ECN ออกเลขใหม่แล้ว) — ห้ามเป็นตัวเลือก แม้ kanban_standards ยังเปิดอยู่
+          supabaseDR.from('dr_products').select('mat_no').eq('is_active', false),
         ]);
+        if (partMapErr) toast.error('อ่านทะเบียนจับคู่พาร์ท (edi_part_map) ไม่ได้ — ใช้การเดาจาก P/N อย่างเดียวรอบนี้');
+        const partMap = buildPartMapIndex(partMapRows || []);
+        const nameOfMat = {};
+        (prods || []).forEach(x => { if (x.mat_no && !nameOfMat[x.mat_no]) nameOfMat[x.mat_no] = x.name; });
+        (stds || []).forEach(x => { if (x.mat_no && !nameOfMat[x.mat_no]) nameOfMat[x.mat_no] = x.part_name; });
         // ship-to code → ชื่อลูกค้า (ยังไม่ตั้ง = customer_name เท่ากับ code เอง → ถือว่า "ไม่รู้")
         const custOfShipTo = {};
         (shipTos || []).forEach(t => {
@@ -230,13 +343,26 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
         // dr_products ก่อน — ตัวเดียวที่รู้ "ลูกค้า" ของ mat (list dedupe ต่อ mat_no: ใครใส่ก่อนชนะ
         // ถ้า kanban_standards ใส่ก่อน entry จะไม่มี customer แล้วการแยกด้วย ship-to ใช้ไม่ได้)
         (prods || []).forEach(x => put(x.p_no, x.mat_no, x.name, x.customer));
-        (stds || []).forEach(x => put(x.p_no, x.mat_no, x.part_name, null));
+        /* 🔴 สินค้าที่ปิดใช้งาน = ห้ามโผล่เป็นตัวเลือก (user 01/10: "ที่ปิดใช้งานแล้วอย่าโชว์ เดี๋ยวงง เพราะมี ECN ใหม่แล้ว
+           แค่อาจยังไม่ได้ไปตั้งใน product") — เคสจริง 10100333 ปิดแล้วแต่แถว kanban_standards ยังเปิด จึงหลุดมาเป็นตัวเลือก */
+        const retiredSet = new Set((retired || []).map(x => x.mat_no));
+        (stds || []).filter(x => !retiredSet.has(x.mat_no)).forEach(x => put(x.p_no, x.mat_no, x.part_name, null));
         // FG (ขึ้นต้น 1) ชนะ child เสมอ — เรียงให้ FG มาก่อนในทุกลิสต์
         Object.values(matMap).forEach(l => l.sort((a, b) => (isFgMat(b.mat_no) ? 1 : 0) - (isFgMat(a.mat_no) ? 1 : 0)));
         const unmatched = new Set();
         const guessed = new Map();     // part → { shipTos:Set, mats:[...] } = แยกลูกค้าไม่ออก ต้องตั้ง ship-to
         const baseHits = new Map();    // part → mat = จับคู่จาก base part (ตัด revision) — ต้องโชว์ให้คนเห็นก่อนยืนยัน
+        const unmatchedShipTos = new Map();   // part → Set(shipTo) — ไว้ให้คนเลือกขอบเขตตอนจับคู่
+        let mappedCount = 0;
+        const retiredMaps = new Map();        // คู่ที่ชี้ไปสินค้าปิดใช้งาน — ต้องผูกใหม่
+        const nonFgHits = new Map();          // part → { mat, name, shipTos } (จับคู่ได้แต่เป็น 2xx)
         const records = rows2.map(r => {
+          const fixed = mappedMatFor(partMap, r.shipTo, r.part);
+          /* 🔴 คู่ที่เคยยืนยันไว้ แต่สินค้าถูกปิดใช้งานทีหลัง (ECN ออกเลขใหม่) = ห้ามใช้ต่อเงียบๆ
+             เคสจริง 01/10: RB3B 8C306 BC → FVL ถูกผูกกับ 10100333 (ปิดแล้ว) ⇒ ใบส่ง 420 ชิ้นลงเบอร์ที่เลิกใช้
+             ⇒ ข้ามคู่นั้น ให้ไหลไปตัวเตือนปกติ + บอกบนจอว่าคู่เดิมใช้ไม่ได้แล้ว */
+          if (fixed && retiredSet.has(fixed)) retiredMaps.set(`${r.part}|${r.shipTo}`, { part: r.part, shipTo: r.shipTo, mat: fixed });
+          else if (fixed) { mappedCount++; return { ...r, mat_no: fixed, part_name: nameOfMat[fixed] || null }; }
           const cands = matMap[norm(r.part)] || [];
           let hit = null;
           if (cands.length === 1) hit = cands[0];
@@ -246,7 +372,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
             if (byCust.length === 1) hit = byCust[0];
             else {
               hit = cands[0];                                   // เดาตัวแรก (FG ก่อน) แบบเดิม — แต่แจ้ง
-              const g = guessed.get(r.part) || { shipTos: new Set(), mats: cands.map(c => c.mat_no) };
+              const g = guessed.get(r.part) || { shipTos: new Set(), mats: cands.map(c => c.mat_no), cands: cands.map(c => ({ mat_no: c.mat_no, name: c.name, customer: c.customer })) };
               g.shipTos.add(r.shipTo);
               guessed.set(r.part, g);
             }
@@ -255,24 +381,117 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
             const bc = baseMap[baseOfPart(r.part)];
             if (bc && bc.length === 1) { hit = bc[0]; baseHits.set(r.part, bc[0].mat_no); }
           }
-          if (!hit) unmatched.add(r.part);
+          // จับได้ตัวเดียวแต่ไม่ใช่ตัวขาย (2xx ก่อนแพ็ค) = ความต้องการลูกค้าไปลงงานระหว่างทาง ⇒ ให้คนดู
+          if (hit && !isFgMat(hit.mat_no) && !guessed.has(r.part)) {
+            const n = nonFgHits.get(r.part) || { mat: hit.mat_no, name: hit.name, shipTos: new Set() };
+            n.shipTos.add(r.shipTo); nonFgHits.set(r.part, n);
+          }
+          if (!hit) {
+            unmatched.add(r.part);
+            (unmatchedShipTos.get(r.part) || unmatchedShipTos.set(r.part, new Set()).get(r.part)).add(r.shipTo);
+          }
           return { ...r, mat_no: hit ? hit.mat_no : r.part, part_name: hit ? hit.name : null };
         });
+        /* 🏷️ ตัวขาย (1xx) ที่น่าจะใช่ — งานต่างประเทศ P/N ติดอยู่ที่ 2xx ก่อนแพ็ค ส่วนตัวขาย P/N ว่าง
+           ⇒ เดินขึ้น BOM จาก 2xx หา 1xx (+ ชื่อสินค้า 1xx ที่มีเลขพาร์ทนี้อยู่) เป็น "ข้อเสนอ" ให้คนเลือก
+           โหลดเฉพาะตอนมีคำเตือน · โหลดไม่ได้ = ไม่มีข้อเสนอ (คำเตือนเดิมยังอยู่ครบ) */
+        const issueParts = new Set([...guessed.keys(), ...unmatched, ...baseHits.keys(), ...nonFgHits.keys()]);
+        const sold = {};
+        if (issueParts.size) {
+          const [bomRes, allProds] = await Promise.all([
+            fetchAllPages(() => supabaseDR.from('bom_items').select('id, product_id, mat_no, parent_mat, is_active').eq('is_active', true)),
+            supabaseDR.from('dr_products').select('id, mat_no, name, customer, is_active, p_no'),
+          ]);
+          if (!bomRes.error && !allProds.error) {
+            const plist = allProds.data || [];
+            const matOfProduct = Object.fromEntries(plist.map(x => [x.id, x.mat_no]));
+            const info = Object.fromEntries(plist.map(x => [x.mat_no, x]));
+            const up = buildParentIndex(bomRes.rows, matOfProduct);
+            const fgActive = plist.filter(x => x.is_active !== false && isFgMat(x.mat_no));
+            /* 🔴 ตัดข้อเสนอที่ผิดแน่ๆ (เห็นจริง 01/10: ARG ได้ปุ่ม 10100817 FTM เพราะใช้ชิ้นส่วนร่วมกันใน BOM)
+               ① 1xx ที่มี P/N ของตัวเองเป็นเลขอื่น = ตัวขายของพาร์ทอื่น ไม่ใช่ของพาร์ทนี้
+               ② อยู่ในรายการตัวเลือกอยู่แล้ว (ปุ่มปกติ) ไม่ต้องซ้ำเป็นปุ่มเขียว */
+            const ownPnOk = (mat, part) => {
+              const pn = info[mat]?.p_no;
+              return !pn || norm(pn) === norm(part) || baseOfPart(pn) === baseOfPart(part);
+            };
+            issueParts.forEach(part => {
+              const inCands = new Set((guessed.get(part)?.mats || []));
+              const seeds = new Set([
+                ...(guessed.get(part)?.mats || []), baseHits.get(part), nonFgHits.get(part)?.mat,
+              ].filter(Boolean));
+              const out = new Map();
+              seeds.forEach(m => {
+                if (isFgMat(m)) return;
+                targetAncestorsOf(m, up, isFgMat).forEach(a => {
+                  if (info[a.mat]?.is_active === false || inCands.has(a.mat) || !ownPnOk(a.mat, part)) return;
+                  const prev = out.get(a.mat);
+                  if (prev && prev.depth <= a.via.length) return;
+                  out.set(a.mat, { mat_no: a.mat, name: info[a.mat]?.name, customer: info[a.mat]?.customer, why: `หาจาก BOM (ห่าง ${a.via.length} ชั้น)`, depth: a.via.length });
+                });
+              });
+              const k = norm(part);
+              if (k.length >= 8) fgActive.forEach(x => {
+                if (!inCands.has(x.mat_no) && ownPnOk(x.mat_no, part) && norm(x.name).includes(k)) {
+                  const prev = out.get(x.mat_no);
+                  out.set(x.mat_no, { mat_no: x.mat_no, name: x.name, customer: x.customer, depth: prev?.depth ?? 99, nameHit: true,
+                    why: prev ? `${prev.why} + ชื่อสินค้ามีเลขพาร์ทนี้` : 'ชื่อสินค้ามีเลขพาร์ทนี้' });
+                }
+              });
+              /* ชิ้นส่วนร่วม (เช่น ตัวก่อนชุบ) ขึ้นไปเจอตัวขายของหลายพาร์ท ⇒ เก็บเฉพาะ "ใกล้สุด" + ที่ชื่อมีเลขพาร์ท
+                 ตัวขายของจริงอยู่ห่างตัวก่อนแพ็คแค่ชั้น PACK (เคสจริง 10102017 → 20067541 → 20067543 = 2 ชั้น) */
+              const minDepth = Math.min(...[...out.values()].map(v => v.depth));
+              const keep = [...out.values()].filter(v => v.nameHit || v.depth === minDepth)
+                .sort((a, b) => (b.nameHit ? 1 : 0) - (a.nameHit ? 1 : 0) || a.depth - b.depth);
+              if (keep.length) sold[part] = keep;
+            });
+          }
+        }
+        /* 🔴 ship-to ที่ใช้ e-SMART (มีตารางรอบใน customer_pull_rounds) — แถว "ยอดค้างตาม Cum" ของ 862
+           ไม่ใช่เที่ยวรถ ห้ามเป็นใบส่ง (ชน e-SMART · เคสจริง AAT 01–02/10) ดู splitCumCatchUp ใน ediMerge.js
+           อ่านไม่ได้ = ไม่ตัดอะไร (พฤติกรรมเดิม) + บอกบนจอ ห้ามเดาเงียบ */
+        const { data: pullRows, error: pullErr } = await supabaseDR.from('customer_pull_rounds')
+          .select('ship_to').eq('is_active', true);
+        const pullShipTos = [...new Set((pullRows || []).map(x => String(x.ship_to || '').trim()).filter(Boolean))];
+        const catchUp = is862 ? splitCumCatchUp(records, pullShipTos).catchUp : [];
         setEdi({
+          pullShipTos, pullErr: pullErr ? pullErr.message : null, catchUp,
           kind: is862 ? 'orders' : 'forecast',
+          kindGuess, kindForced: null,          // kindForced = คนกดเลือกเอง (ชนะการเดาเสมอ)
+          skipped: ediFiles.reduce((a, f) => a + (f.skipped || 0), 0),
           files: ediFiles.map(f => f.fName),
           records, unmatched: [...unmatched],
-          ambiguous: [...guessed.entries()].map(([part, g]) => ({ part, shipTos: [...g.shipTos], mats: g.mats })),
-          baseMatched: [...baseHits.entries()].map(([part, mat]) => ({ part, mat })),
-          shipTos: [...new Set(records.map(r => r.shipTo))].sort(),
-          dateFrom: records.reduce((a, r) => (a < r.date ? a : r.date), records[0].date),
-          dateTo: records.reduce((a, r) => (a > r.date ? a : r.date), records[0].date),
+          ambiguous: [...guessed.entries()].map(([part, g]) => ({ part, shipTos: [...g.shipTos], mats: g.mats, cands: g.cands })),
+          baseMatched: [...baseHits.entries()].map(([part, mat]) => ({ part, mat, name: nameOfMat[mat] || null })),
+          unmatchedShipTos: Object.fromEntries([...unmatchedShipTos.entries()].map(([p, set]) => [p, [...set]])),
+          mappedCount,
+          retiredMaps: [...retiredMaps.values()],
+          nonFg: [...nonFgHits.entries()].filter(([part]) => !guessed.has(part)).map(([part, n]) => ({ part, mat: n.mat, name: n.name, shipTos: [...n.shipTos] })),
+          sold,
+          /* แถวยอด 0 (862 เท่านั้น) — ขยายขอบเขตแทนที่ให้ครอบวัน/ship-to ที่ลูกค้าบอกว่าไม่ต้องส่ง */
+          zeroRecs: is862 ? ediFiles.flatMap(f => f.zeros || []) : [],
+          ...(() => {
+            const all = is862 ? [...records, ...ediFiles.flatMap(f => f.zeros || [])] : records;
+            return {
+              shipTos: [...new Set(all.map(r => r.shipTo))].sort(),
+              dateFrom: all.reduce((a, r) => (a < r.date ? a : r.date), all[0].date),
+              dateTo: all.reduce((a, r) => (a > r.date ? a : r.date), all[0].date),
+            };
+          })(),
         });
         setHeaders([]); setRows([]); setFileName('');
-        toast.success(`📡 ตรวจพบ EDI ${is862 ? '862 (Shipping Schedule)' : '830 (Forecast)'} — ${records.length} รายการจาก ${ediFiles.length} ไฟล์`);
+        toast[kindGuess.sure ? 'success' : 'info'](
+          `📡 ตรวจพบ EDI ${is862 ? '862 (Shipping Schedule)' : '830 (Forecast)'} — ${records.length} รายการจาก ${ediFiles.length} ไฟล์`
+          + (kindGuess.sure ? '' : ' ⚠️ ไม่ชัด โปรดยืนยันชนิดก่อนนำเข้า'));
         return;
       }
       if (!manual) { toast.error('อ่านไฟล์ไม่สำเร็จ'); return; }
+      /* 🔴 ไฟล์ EDI ที่หัวตารางเพี้ยน เคย**ตกมาทางนี้เงียบๆ** (ขึ้นจอ map มือ ไม่มีคำว่า EDI)
+         = ต้นเหตุ "ออเดอร์ AAT หายทั้งลูกค้า" 2026-09-17 → ต้องบอกว่าขาดคอลัมน์ไหน */
+      if (findEdiSheets.near) {
+        const n = findEdiSheets.near;
+        toast.error(`ไฟล์นี้เหมือนเป็น EDI แต่หัวตารางไม่ครบ — ชีต "${n.sheet}" ขาดคอลัมน์: ${n.missing.join(', ')} · ถ้าลูกค้าเปลี่ยนชื่อคอลัมน์ ให้แจ้งทีมระบบ (ตอนนี้จะให้ map เองก่อน)`);
+      }
       setEdi(null);
       parseManual(XLSX, manual.wb, manual.name, kindNow);
     } catch (err) { toast.error('อ่านไฟล์ไม่สำเร็จ: ' + err.message); }
@@ -359,17 +578,20 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
       `มีไฟล์ ${kind === 'forecast' ? 'Forecast' : 'Orders'} นำเข้าไว้แล้ว ${sameKind.length} ไฟล์\n` +
       `การนำเข้านี้จะ "เพิ่มทับ" ยอดเดิม (ไม่ได้แทนที่) — ถ้าเป็นไฟล์แก้ไข ให้ลบไฟล์เดิมก่อน\nยืนยันนำเข้าเพิ่ม?`)) return;
     setSaving(true);
+    let newBatchId = null;
     try {
       const { data: batch, error: e1 } = await supabaseDR.from('demand_upload_batches')
         .insert({ kind, file_name: fileName, row_count: records.length, uploaded_by: fullName || 'Sales' })
         .select().single();
       if (e1) throw e1;
+      newBatchId = batch.id;
       const table = kind === 'forecast' ? 'customer_forecasts' : 'customer_shipping_orders';
       for (let i = 0; i < records.length; i += 500) {
         const { error: e2 } = await supabaseDR.from(table).insert(records.slice(i, i + 500).map(x => ({ source: 'manual', ...x, batch_id: batch.id })));
-        if (e2) throw e2;
+        if (e2) { await rollbackBatch(newBatchId); newBatchId = null; throw e2; }   // ลงครึ่งไฟล์ = ห้ามค้าง
       }
       toast.success(`✅ นำเข้า ${records.length} แถวสำเร็จ${skipped ? ` (ข้าม ${skipped} แถวที่ข้อมูลไม่ครบ)` : ''}`);
+      await markMailImported(batch.id);
       setHeaders([]); setRows([]); setFileName('');
       await loadBatches();
       onImported?.();
@@ -378,29 +600,74 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
   };
 
   // นำเข้า EDI: ฉบับล่าสุดแทนที่ฉบับเดิมของ ship-to เดียวกัน (sale อัพโหลดใหม่ทุกวัน ไม่ให้ยอดทบซ้ำ)
+  /** ชนิดที่จะใช้จริง — คนเลือกเองชนะการเดาเสมอ */
+  const ediKind = edi ? (edi.kindForced || edi.kind) : null;
+
+  /* 🔴 แทนที่เฉพาะชุดที่ไฟล์ส่งมา (ship-to · dock · พาร์ท) — ดู scopedReplaceIds ใน ediMerge.js
+     อ่านแถวเดิมที่ "ลบได้" มาก่อน (จด id ไว้) · อ่านไม่ได้ = หยุด (ห้ามเดาว่าไม่มีแล้วใส่ทับ)
+     🔴 **ใส่ฉบับใหม่ให้ครบก่อน แล้วค่อยลบฉบับเดิมตาม id ที่จดไว้** (QC 05/10) — เดิมลบก่อน insert:
+        insert ล้มกลางทาง = ฉบับเดิมหายไปแล้ว ฉบับใหม่ลงครึ่งเดียว (ยอดลูกค้าหายเงียบ)
+        ตอนนี้ insert ล้ม ⇒ ลบ batch ใหม่ทิ้ง (FK cascade เก็บแถวที่ลงไปแล้ว) ฉบับเดิมอยู่ครบ */
+  const planReplace = async (table, buildQuery, toCmp, fileRecs, opt) => {
+    const { rows, error, truncated } = await fetchAllPages(buildQuery);
+    if (error) throw new Error(`อ่านข้อมูลเดิม (${table}) ไม่ได้: ${error}`);
+    if (truncated) throw new Error(`ข้อมูลเดิม (${table}) เยอะเกินเพดาน — ไม่นำเข้าเพื่อกันลบไม่ครบ`);
+    const { ids, kept } = scopedReplaceIds(rows.map(toCmp), fileRecs, opt);
+    return { table, ids, kept };
+  };
+  /** ลบฉบับเดิมตาม id ที่จดไว้ (ทีละก้อน) — คืนจำนวนที่ลบไม่สำเร็จ (0 = ครบ) */
+  const deletePlanned = async (plans) => {
+    let left = 0, firstErr = null;
+    for (const { table, ids, onlyPending } of plans) {
+      for (let i = 0; i < ids.length; i += 200) {
+        let q = supabaseDR.from(table).delete().in('id', ids.slice(i, i + 200));
+        if (onlyPending) q = q.eq('status', 'pending');   // ใบที่ถูกหยิบไปทำระหว่างนำเข้า = ห้ามลบ
+        const { error: e } = await q;
+        if (e) { left += ids.length - i; firstErr = firstErr || e.message; break; }
+      }
+    }
+    return { left, firstErr };
+  };
+  /** ถอยการนำเข้า — ลบ batch ใหม่ (cascade ลบแถวที่ลงไปแล้ว) · ล้มก็ต้องบอก ห้ามเงียบ */
+  const rollbackBatch = async (batchId) => {
+    if (!batchId) return;
+    const { error } = await supabaseDR.from('demand_upload_batches').delete().eq('id', batchId);
+    if (error) toast.error(`ถอยการนำเข้าไม่สำเร็จ (batch ${batchId}) — ลบไฟล์นี้ที่ตาราง "ไฟล์ที่นำเข้า" เอง: ${error.message}`);
+  };
+
   const doImportEdi = async () => {
     if (!edi) return;
+    let coveredCount = 0, fcCount = 0, fcSkipped = 0, keptCount = 0, cumCount = 0, cumQty = 0;
+    if (!edi.kindGuess?.sure && !edi.kindForced) {
+      toast.error('ระบบแยกไม่ออกว่าเป็น 830 หรือ 862 — กดเลือกชนิดก่อนนำเข้า');
+      return;
+    }
     setSaving(true);
+    let newBatchId = null;      // ยังไม่ถึงขั้นลบฉบับเดิม = ถอยได้ด้วยการลบ batch ใหม่
     try {
       const { data: batch, error: e1 } = await supabaseDR.from('demand_upload_batches')
-        .insert({ kind: edi.kind, file_name: `EDI ${edi.kind === 'orders' ? '862' : '830'} × ${edi.files.length} ไฟล์ (${edi.shipTos.join(',')})`, row_count: edi.records.length, uploaded_by: fullName || 'Sales' })
+        .insert({ kind: ediKind, file_name: `EDI ${ediKind === 'orders' ? '862' : '830'} × ${edi.files.length} ไฟล์ (${edi.shipTos.join(',')})`, row_count: edi.records.length, uploaded_by: fullName || 'Sales' })
         .select().single();
       if (e1) throw e1;
+      newBatchId = batch.id;
+      const plans = [];         // ฉบับเดิมที่จะลบ — ลบหลัง insert ฉบับใหม่ครบแล้วเท่านั้น
       // code ปลายทางใหม่ที่ยังไม่อยู่ใน config → เพิ่มให้อัตโนมัติ (ชื่อตั้งต้น = code รอทีมตั้งชื่อลูกค้า)
-      await supabaseDR.from('ship_to_plants')
+      const { error: eShip } = await supabaseDR.from('ship_to_plants')
         .upsert(edi.shipTos.map(c => ({ code: c, customer_name: c })), { onConflict: 'code', ignoreDuplicates: true });
-      if (edi.kind === 'forecast') {
+      if (eShip) throw new Error(`เพิ่มปลายทางส่ง (ship-to) ไม่สำเร็จ: ${eShip.message}`);
+      if (ediKind === 'forecast') {
         // ลบ forecast เดิม "เฉพาะช่วงเดือนที่ไฟล์นี้ครอบคลุม" ไม่ใช่ลบทั้งหมด —
         // เดิมลบ edi_830 ทุกเดือน ถ้าไฟล์ใหม่ horizon สั้นกว่า เดือนที่เลยช่วงจะหายถาวร (bounded เหมือน path 862)
-        const months = edi.records.map(r => r.date).filter(Boolean);
-        let delQ = supabaseDR.from('customer_forecasts').delete().eq('source', 'edi_830').in('customer', edi.shipTos);
-        if (months.length) {
-          const minM = months.reduce((a, b) => (a < b ? a : b));
-          const maxM = months.reduce((a, b) => (a > b ? a : b));
-          delQ = delQ.gte('period_month', minM).lte('period_month', maxM);
+        /* แทนที่เฉพาะ ship-to·พาร์ทที่ไฟล์ส่งมา ในช่วงเดือนของพาร์ทนั้น (2026-10-01) — พาร์ทที่ไม่อยู่ในไฟล์ = ไม่มีอัพเดท ห้ามลบ */
+        if (edi.records.length) {
+          const r830 = await planReplace('customer_forecasts',
+            () => supabaseDR.from('customer_forecasts').select('id, customer, customer_part_no, mat_no, period_month')
+              .eq('source', 'edi_830').in('customer', edi.shipTos).gte('period_month', edi.dateFrom).lte('period_month', edi.dateTo),
+            x => ({ id: x.id, shipTo: x.customer, part: x.customer_part_no || x.mat_no, date: x.period_month }),
+            edi.records, { useDock: false });
+          keptCount = r830.kept;
+          plans.push(r830);
         }
-        const { error: eDel } = await delQ;
-        if (eDel) throw eDel;
         const recs = edi.records.map(r => ({
           batch_id: batch.id, customer: r.shipTo, mat_no: r.mat_no, part_name: r.part_name,
           customer_part_no: r.part, period_month: r.date, qty: r.qty, source: 'edi_830',
@@ -422,27 +689,58 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
            (ซึ่งถูกแล้ว: ของที่ยังไม่ส่งและลูกค้าไม่ได้ยกเลิก คือคำถามที่ยังค้างอยู่จริง) */
         const wd = workDateStr();
         const delFrom = edi.dateFrom > wd ? edi.dateFrom : wd;
-        const { data: keepRows } = await supabaseDR.from('customer_shipping_orders')
-          .select('customer, customer_part_no, mat_no, due_date, ship_time, status')
-          .in('customer', edi.shipTos).gte('due_date', delFrom).neq('status', 'pending');
-        const keepKeys = new Set((keepRows || []).map(k => `${k.customer}|${k.customer_part_no || k.mat_no}|${k.due_date}|${(k.ship_time || '').slice(0, 5)}`));
+        /* 🔴 862 ไม่ใช่ "ใบส่งของ" ทุกแถว (2026-09-21) — ชีตที่ช่อง Forecast Time ว่าง
+           ทอดยาวถึงปีหน้า = **แผนระยะยาว** ถ้าลงเป็นใบส่งของจะไม่มีวันมีใครกดส่ง
+           แล้วทยอยกลายเป็นสีแดงวันต่อวัน (เกิดจริง 1,361 ใบ / 2.0 ล้านชิ้น)
+           → ไม่มีเวลา + เกิน +14 วัน ⇒ ลง `customer_forecasts` แทน (ดู ediMerge.js)
+           หมายเหตุ: 830 ชนะเสมอใน `dedupeForecastRows` ⇒ ไม่นับซ้ำ · ที่ไม่มี 830 แผนไม่หาย */
+        /* ① ตัดแถว "ยอดค้างตาม Cum" ของ ship-to ที่ใช้ e-SMART ออกก่อน (ไม่ใช่เที่ยวรถ — e-SMART เป็นเจ้าของเที่ยววันนี้)
+           ⚠️ replaceScoped ด้านล่างยังรับ edi.records ทั้งก้อน ⇒ ใบค้างเก่าของวันเดียวกันถูกแทนที่ (ไม่ค้างซ้อน) */
+        const { keep: keepRecs, catchUp: cumRecs } = splitCumCatchUp(edi.records, edi.pullShipTos || []);
+        cumCount = cumRecs.length;
+        cumQty = cumRecs.reduce((a, r) => a + (Number(r.qty) || 0), 0);
+        const { firm: firmRecs, forecast: fcRecs } = splitFirmVsForecast(keepRecs, wd);
+        fcCount = fcRecs.length;
+        /* 🔴 ใบที่ "ทำไปแล้ว" = ความจริงของเที่ยวนั้น — 862 ห้ามสร้างซ้ำ (2026-09-18)
+           เดิมเทียบ `customer|part|date|time` **ตรงตัว** ⇒ ไม่เคย match กับใบ e-SMART เพราะ
+           เลขพาร์ทสะกดคนละแบบ (`RB3B-16E060-BA` vs `RB3B 16E060 BA`) และเวลาคนละกริด
+           (862 08:00 = เที่ยวเดียวกับ e-SMART 09:00) ⇒ สร้างใบซ้ำ + หักสต็อกซ้ำ
+           ดู `src/utils/ediMerge.js` (เทียบด้วย MAT + dock + เที่ยวที่ใกล้กัน) */
+        const { rows: keepRows, error: eKeep, truncated: tKeep } = await fetchAllPages(() => supabaseDR.from('customer_shipping_orders')
+          .select('id, customer, customer_part_no, mat_no, due_date, ship_time, status, dock_code, qty, source')
+          .in('customer', edi.shipTos).gte('due_date', delFrom).in('status', DONE_STATUSES));
+        if (eKeep) throw new Error(`อ่านใบที่ทำไปแล้วไม่ได้: ${eKeep}`);      // อ่านใบเดิมไม่ได้ = ห้ามเดาว่า "ไม่มี" แล้วสร้างทับ
+        if (tKeep) throw new Error('ใบที่ทำไปแล้วเยอะเกินเพดาน — ไม่นำเข้าเพื่อกันสร้างใบซ้ำ');
         /* ⚠️ ต้องมีขอบบน .lte(dateTo) ด้วย (semantics เดียวกับ path 830) — ไฟล์ horizon สั้น
            จะลบ pending อนาคตที่เกินช่วงไฟล์ทิ้งถาวรโดยไม่มีอะไร insert คืน (QC flow-audit D1) */
-        const { error: eDel } = await supabaseDR.from('customer_shipping_orders').delete()
-          .eq('source', 'edi_862').eq('status', 'pending').in('customer', edi.shipTos)
-          .gte('due_date', delFrom).lte('due_date', edi.dateTo);
-        if (eDel) throw eDel;
+        /* 🔴 แทนที่เฉพาะ ship-to·dock·พาร์ทที่ไฟล์ส่งมา ในช่วงวันที่ของชุดนั้น (2026-10-01 · ปิดกลไก A)
+           dock/พาร์ทที่ไม่อยู่ในไฟล์ = ไม่มีอัพเดท ⇒ ใบ pending เดิมอยู่ครบ · วันที่หายกลางช่วงของชุด = ยกเลิก */
+        const r862 = await planReplace('customer_shipping_orders',
+          () => supabaseDR.from('customer_shipping_orders').select('id, customer, customer_part_no, mat_no, dock_code, due_date')
+            .eq('source', 'edi_862').eq('status', 'pending').in('customer', edi.shipTos)
+            .gte('due_date', delFrom).lte('due_date', edi.dateTo),
+          x => ({ id: x.id, shipTo: x.customer, part: x.customer_part_no || x.mat_no, dock: x.dock_code, date: x.due_date }),
+          [...edi.records, ...(edi.zeroRecs || [])], { useDock: true, from: delFrom });
+        keptCount = r862.kept;
+        plans.push({ ...r862, onlyPending: true });
         /* รายการวันเก่าที่อยู่ในไฟล์ ไม่ต้อง insert ซ้ำ (ของเดิมยังอยู่) — ไม่งั้นยอดทบซ้อนกัน */
         const pastKeys = new Set();
         if (edi.dateFrom < delFrom) {
-          const { data: pastRows } = await supabaseDR.from('customer_shipping_orders')
-            .select('customer, customer_part_no, mat_no, due_date, ship_time')
-            .in('customer', edi.shipTos).gte('due_date', edi.dateFrom).lt('due_date', delFrom);
-          (pastRows || []).forEach(k => pastKeys.add(`${k.customer}|${k.customer_part_no || k.mat_no}|${k.due_date}|${(k.ship_time || '').slice(0, 5)}`));
+          /* 🔴 อ่านไม่ได้/ได้ไม่ครบ = ห้ามเดาว่า "ไม่มีของเก่า" (QC 05/10) — เดิมไม่เช็ค error + ติดเพดาน 1000 แถว
+             ⇒ รายการวันเก่าที่มีอยู่แล้วถูก insert ซ้ำ = ยอดลูกค้า 862 นับซ้ำเงียบๆ */
+          const { rows: pastRows, error: ePast, truncated: tPast } = await fetchAllPages(() => supabaseDR.from('customer_shipping_orders')
+            .select('id, customer, customer_part_no, mat_no, due_date, ship_time')
+            .in('customer', edi.shipTos).gte('due_date', edi.dateFrom).lt('due_date', delFrom));
+          if (ePast) throw new Error(`อ่านใบวันเก่าที่มีอยู่แล้วไม่ได้: ${ePast}`);
+          if (tPast) throw new Error('ใบวันเก่าเยอะเกินเพดาน — ไม่นำเข้าเพื่อกันยอดซ้ำ');
+          pastRows.forEach(k => pastKeys.add(`${k.customer}|${k.customer_part_no || k.mat_no}|${k.due_date}|${(k.ship_time || '').slice(0, 5)}`));
         }
-        const recs = edi.records
-          .filter(r => !keepKeys.has(`${r.shipTo}|${r.part}|${r.date}|${r.time || ''}`)
-            && !pastKeys.has(`${r.shipTo}|${r.part}|${r.date}|${r.time || ''}`))
+        /* กันซ้ำ 2 ชั้น: ① ใบที่ทำไปแล้ว (เทียบเที่ยว) ② รายการวันเก่าที่ยังอยู่ (เทียบตรงตัวตามเดิม) */
+        const { insert: fresh862, covered } = splitAlreadyDone(
+          firmRecs.filter(r => !pastKeys.has(`${r.shipTo}|${r.part}|${r.date}|${r.time || ''}`)),
+          keepRows || []);
+        coveredCount = covered.length;
+        const recs = fresh862
           .map(r => ({
             batch_id: batch.id, order_no: r.po || null, customer: r.shipTo, mat_no: r.mat_no, part_name: r.part_name,
             customer_part_no: r.part, qty: r.qty, due_date: r.date, ship_time: r.time, dock_code: r.dock || null, source: 'edi_862',
@@ -451,19 +749,59 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
           const { error } = await supabaseDR.from('customer_shipping_orders').insert(recs.slice(i, i + 500));
           if (error) throw error;
         }
+        /* แถวแผนระยะยาวของ 862 → customer_forecasts (source แยกจาก 830 เพื่อไม่ชนกัน)
+           ลบของเดิม **แบบมีขอบเขต** เหมือน path 830: เฉพาะ source เดียวกัน · ship-to เดียวกัน ·
+           ในช่วงวันที่ไฟล์นี้ครอบคลุม — ไม่งั้นไฟล์ horizon สั้นจะลบแผนที่เลยช่วงทิ้งถาวร
+           ⚠️ mat_no เป็น NOT NULL ในตารางนี้ ⇒ แถวที่จับคู่ MAT ไม่ได้ลงไม่ได้ (นับไว้บอกบนจอ) */
+        const fcOk = fcRecs.filter(r => r.mat_no);
+        fcSkipped = fcRecs.length - fcOk.length;
+        const fcDates = fcRecs.map(r => r.date).filter(Boolean);
+        if (fcDates.length) {
+          plans.push(await planReplace('customer_forecasts',
+            () => supabaseDR.from('customer_forecasts').select('id, customer, customer_part_no, mat_no, period_month')
+              .eq('source', 'edi_862').in('customer', edi.shipTos)
+              .gte('period_month', fcDates.reduce((a, b) => (a < b ? a : b)))
+              .lte('period_month', fcDates.reduce((a, b) => (a > b ? a : b))),
+            x => ({ id: x.id, shipTo: x.customer, part: x.customer_part_no || x.mat_no, date: x.period_month }),
+            fcRecs, { useDock: false }));
+        }
+        const fcIns = fcOk.map(r => ({
+          batch_id: batch.id, customer: r.shipTo, mat_no: r.mat_no, part_name: r.part_name,
+          customer_part_no: r.part, period_month: r.date, qty: r.qty, source: 'edi_862',
+          note: 'แผนระยะยาวจากไฟล์ 862 (ไม่มีเวลาส่ง)',
+        }));
+        for (let i = 0; i < fcIns.length; i += 500) {
+          const { error } = await supabaseDR.from('customer_forecasts').insert(fcIns.slice(i, i + 500));
+          if (error) throw error;
+        }
       }
-      toast.success(`✅ นำเข้า EDI ${edi.records.length} รายการ — แทนที่ฉบับเดิมของ ${edi.shipTos.join(', ')} แล้ว`);
+      /* ฉบับใหม่ลงครบแล้ว → ค่อยลบฉบับเดิม · จากนี้ห้ามถอย batch ใหม่ (ฉบับใหม่คือของที่ครบ)
+         ลบเดิมไม่ครบ = ยอดซ้อน ⇒ ต้องบอกตรงๆ · อัพไฟล์เดิมซ้ำจะเก็บกวาดให้ (ชุดเดิม+ใหม่อยู่ในขอบเขตเดียวกัน) */
+      newBatchId = null;
+      const { left: delLeft, firstErr: delErr } = await deletePlanned(plans);
+      if (delLeft) toast.error(`⚠️ ลงฉบับใหม่ครบแล้ว แต่ลบฉบับเดิมไม่ครบ ${delLeft} รายการ (${delErr}) — ยอดอาจซ้ำ ให้กดนำเข้าไฟล์นี้ซ้ำอีกครั้งเพื่อเคลียร์`);
+      toast.success(`✅ นำเข้า EDI ${edi.records.length} รายการ — แทนที่เฉพาะชุด ship-to·dock·พาร์ทที่ไฟล์ส่งมา`
+        + (keptCount ? ` · 🔒 เก็บของเดิม ${keptCount} รายการ (ชุดที่ไฟล์นี้ไม่ได้ส่งมา = ไม่มีอัพเดท)` : '')
+        + (coveredCount ? ` · ⏭ ข้าม ${coveredCount} รายการที่ e-SMART/หน้างานทำไปแล้ว (ไม่สร้างใบซ้ำ)` : '')
+        + (fcCount ? ` · 📅 ${fcCount} รายการไม่มีเวลาส่ง+เกิน ${FIRM_HORIZON_DAYS} วัน ลงเป็นแผนระยะยาว ไม่ใช่ใบส่งของ` : '')
+        + (cumCount ? ` · 📊 ${cumCount} รายการเป็นยอดค้างตาม Cum ของลูกค้า (${cumQty.toLocaleString()} ชิ้น) ไม่สร้างเป็นใบส่ง — e-SMART ดึงตามจริง` : ''));
+      // จับคู่ MAT ไม่ได้ = ลง customer_forecasts ไม่ได้ (mat_no NOT NULL) — ต้องบอก ห้ามหายเงียบ
+      if (fcSkipped) toast.error(`⚠️ แผนระยะยาว ${fcSkipped} รายการยังจับคู่ MAT ไม่ได้ จึงไม่ได้บันทึก — ผูก MAT ที่ตาราง "จับคู่พาร์ท" แล้วอัพไฟล์ซ้ำ`);
       // แจ้งห้อง Smart Logistic (best-effort — พังก็ไม่กระทบการนำเข้า)
       supabase.functions.invoke('send-notification', {
         body: { event: 'edi_import', edi: {
-          kind: edi.kind, ship_tos: edi.shipTos.join(', '), rows: edi.records.length, files: edi.files.length,
+          kind: ediKind, ship_tos: edi.shipTos.join(', '), rows: edi.records.length, files: edi.files.length,
           date_from: edi.dateFrom, date_to: edi.dateTo, unmatched: edi.unmatched.length, uploaded_by: fullName || 'Sales',
         } },
       }).catch(() => {});
+      await markMailImported(batch.id);
       setEdi(null);
       await loadBatches();
       onImported?.();
-    } catch (err) { toast.error(err.message); }
+    } catch (err) {
+      await rollbackBatch(newBatchId);   // ยังไม่ได้ลบฉบับเดิม ⇒ ถอย batch ใหม่ = ข้อมูลกลับไปเหมือนก่อนกด
+      toast.error(err.message);
+    }
     setSaving(false);
   };
 
@@ -474,19 +812,32 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
        → detach ใบประวัติออกจาก batch ก่อน (batch_id = null) แล้วค่อยลบ ให้ cascade โดนเฉพาะ pending อนาคต */
     if (!window.confirm(`ลบชุดข้อมูล "${b.file_name}" (${b.row_count} แถว)? ข้อมูลที่นำเข้าจากไฟล์นี้จะถูกลบทั้งหมด`)) return;
     if (b.kind === 'orders') {
+      /* 🔴 QC 05/10 — เดิม select ใบประวัติ (ติดเพดาน 1000 แถว) แล้ว detach ด้วย `.in('id', [ids ยาว])`
+         (URL ยาวเกิน = คืนว่างเงียบ) ⇒ ใบที่ detach ไม่ครบโดน cascade ลบ = ประวัติส่งหายถาวร
+         → นับด้วย head count แบบ exact · detach ด้วย "ตัวกรองเดียวกัน" (ไม่ใช้ลิสต์ id) · นับซ้ำหลัง detach ต้องเหลือ 0
+           ไม่เท่ากัน = **ยกเลิกการลบ** (ห้ามลบ batch ทั้งที่ยังมีประวัติผูกอยู่) */
       const wd = workDateStr();
-      const { data: hist, error: eH } = await supabaseDR.from('customer_shipping_orders')
-        .select('id, status, due_date').eq('batch_id', b.id)
-        .or(`status.neq.pending,due_date.lt.${wd}`);
-      if (eH) { toast.error(eH.message); return; }
-      if (hist?.length) {
-        const shipped = hist.filter(h => h.status !== 'pending').length;
+      const histFilter = `status.neq.pending,due_date.lt.${wd}`;
+      const countHist = (extra) => {
+        let q = supabaseDR.from('customer_shipping_orders').select('id', { count: 'exact', head: true }).eq('batch_id', b.id);
+        return extra ? extra(q) : q.or(histFilter);
+      };
+      const { count: histN, error: eH } = await countHist();
+      if (eH) { toast.error('นับใบประวัติของไฟล์นี้ไม่ได้ — ยกเลิกการลบ: ' + eH.message); return; }
+      if (histN) {
+        const { count: shipped, error: eS } = await countHist(q => q.neq('status', 'pending'));
+        if (eS) { toast.error('นับใบประวัติของไฟล์นี้ไม่ได้ — ยกเลิกการลบ: ' + eS.message); return; }
         if (!window.confirm(
-          `ไฟล์นี้มีใบที่เป็น "ประวัติ" ${hist.length} ใบ (เริ่ม workflow/ส่งแล้ว ${shipped} · วันส่งผ่านมาแล้ว ${hist.length - shipped})\n` +
+          `ไฟล์นี้มีใบที่เป็น "ประวัติ" ${histN} ใบ (เริ่ม workflow/ส่งแล้ว ${shipped} · วันส่งผ่านมาแล้ว ${histN - shipped})\n` +
           `ใบพวกนี้จะถูก "เก็บไว้" (ไม่ลบ) — ลบเฉพาะใบ pending ในอนาคตของไฟล์นี้\nยืนยัน?`)) return;
-        const { error: eDet } = await supabaseDR.from('customer_shipping_orders')
-          .update({ batch_id: null }).in('id', hist.map(h => h.id));
+        const { data: det, error: eDet } = await supabaseDR.from('customer_shipping_orders')
+          .update({ batch_id: null }).eq('batch_id', b.id).or(histFilter).select('id');
         if (eDet) { toast.error('แยกใบประวัติออกจากไฟล์ไม่สำเร็จ — ยกเลิกการลบ: ' + eDet.message); return; }
+        const { count: still, error: eL } = await countHist();
+        if (eL || still) {
+          toast.error(`แยกใบประวัติออกจากไฟล์ไม่ครบ (แยกได้ ${det?.length ?? 0}/${histN} · ยังผูกอยู่ ${eL ? 'ไม่ทราบ' : still}) — ยกเลิกการลบเพื่อกันประวัติหาย`);
+          return;
+        }
       }
     }
     const { error } = await supabaseDR.from('demand_upload_batches').delete().eq('id', b.id);
@@ -514,82 +865,117 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
             ))}
             <label style={{ ...btn(false), display: 'inline-flex', alignItems: 'center', gap: 6 }}>
               📂 เลือกไฟล์ Excel/CSV (เลือกหลายไฟล์ได้)
-              <input type="file" accept=".xlsx,.xls,.csv" multiple style={{ display: 'none' }}
-                onChange={e => { handleFiles(e.target.files, kind); e.target.value = ''; }} />
+              <input type="file" accept=".xlsx,.xlsm,.xlsb,.xls,.csv" multiple style={{ display: 'none' }}
+                onChange={e => { mailRowsRef.current = []; handleFiles(e.target.files, kind); e.target.value = ''; }} />
             </label>
             {fileName && <span style={{ alignSelf: 'center', fontSize: 12, color: 'var(--muted)' }}>📄 {fileName} · {rows.length} แถว</span>}
+            <button type="button" onClick={() => setShowFmt(v => !v)} style={{ ...btn(false), marginLeft: 'auto' }}>
+              🧩 ฟอร์แมตไฟล์ลูกค้า{fmtRows.length ? ` (${fmtRows.length})` : ''}
+            </button>
           </div>
+
+          {/* ⚠️ ทะเบียนโหลดไม่ได้ = ยังอ่านไฟล์ Ford ได้ด้วยค่าสำรองในโค้ด แต่ห้ามเงียบ
+              (ลูกค้าที่เพิ่มไว้ในทะเบียนจะอ่านไม่ออกจนกว่าจะโหลดได้) */}
+          {fmtErr && (
+            <div style={{ padding: '8px 10px', borderRadius: 8, fontSize: 12, marginBottom: 8,
+              background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.5)', color: 'var(--text)' }}>
+              ⚠ อ่านทะเบียนฟอร์แมตไฟล์ (<code>customer_pull_formats</code>) ไม่ได้ — ใช้ชื่อคอลัมน์ค่าสำรองในโค้ด (Ford 830/862) ·
+              ไฟล์ของลูกค้าที่เพิ่มไว้ในทะเบียนจะยังอ่านไม่ออก
+            </div>
+          )}
+          <DemandMailInbox refreshKey={mailKey} fullName={fullName}
+            onOpen={async (files, mailRows) => { mailRowsRef.current = mailRows; await handleFiles(files, kind); }} />
+
+          {showFmt && <div style={{ marginBottom: 10 }}><CustomerFileFormats canManage={canUpload} onChanged={loadFormats} /></div>}
 
           {edi && (
             <div style={{ border: '1px solid rgba(77,159,255,0.35)', background: 'rgba(77,159,255,0.05)', borderRadius: 10, padding: 14, marginBottom: 4 }}>
               <div style={{ fontSize: 13, fontWeight: 800, color: '#4d9fff', marginBottom: 8 }}>
-                📡 EDI {edi.kind === 'orders' ? '862 — Shipping Schedule (รอบส่งงาน)' : '830 — Planning Forecast'}
+                📡 EDI {ediKind === 'orders' ? '862 — Shipping Schedule (รอบส่งงาน)' : '830 — Planning Forecast'}
               </div>
+
+              {/* 🔴 ผลการเดาชนิดต้องขึ้นจอ + แก้ได้ (2026-09-17)
+                  ที่มา: ไฟล์ 862 ของ AAT ถูกตีเป็น 830 เงียบๆ ⇒ แถวลงตาราง forecast
+                  **ไม่เคยกลายเป็นใบส่ง** ⇒ หน้าจัดส่งว่างทั้งลูกค้าเป็นสัปดาห์
+                  กฎ: ตัวตัดสินที่เปลี่ยนปลายทางของข้อมูล ห้ามซ่อน — ต้องเห็นเหตุผล + กดแก้ได้ */}
+              <div style={{
+                display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10,
+                padding: '8px 10px', borderRadius: 8, fontSize: 12,
+                background: edi.kindGuess?.sure ? 'rgba(34,197,94,0.08)' : 'rgba(245,158,11,0.12)',
+                border: `1px solid ${edi.kindGuess?.sure ? 'rgba(34,197,94,0.35)' : 'rgba(245,158,11,0.5)'}`,
+              }}>
+                <span style={{ color: edi.kindGuess?.sure ? '#22c55e' : '#f59e0b', fontWeight: 700 }}>
+                  {edi.kindGuess?.sure ? '✓ ระบบอ่านชนิดได้' : '⚠️ ระบบแยกชนิดไม่ชัด'}
+                </span>
+                <span style={{ color: 'var(--text2)' }}>{edi.kindGuess?.reason}</span>
+                <span style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <span style={{ color: 'var(--muted)' }}>ไม่ใช่? เลือกเอง:</span>
+                  {[['orders', '862 ใบส่ง'], ['forecast', '830 forecast']].map(([k, label]) => (
+                    <button key={k} type="button"
+                      onClick={() => setEdi(e => ({ ...e, kindForced: k }))}
+                      style={{
+                        padding: '4px 10px', borderRadius: 6, fontSize: 12, cursor: 'pointer',
+                        border: `1px solid ${ediKind === k ? '#4d9fff' : 'var(--border)'}`,
+                        background: ediKind === k ? 'rgba(77,159,255,0.18)' : 'transparent',
+                        color: ediKind === k ? '#4d9fff' : 'var(--text2)',
+                        fontWeight: ediKind === k ? 800 : 500,
+                      }}>{label}</button>
+                  ))}
+                </span>
+              </div>
+              {edi.skipped > 0 && (
+                <div style={{ fontSize: 12, color: '#f59e0b', marginBottom: 8 }}>
+                  ℹ️ ข้าม {edi.skipped} แถว — ส่วนใหญ่คือบรรทัดที่ลูกค้าส่งยอด 0 (ปกติของ EDI) · จะผิดก็ต่อเมื่อ
+                  “จับคู่พาร์ทได้” ด้านบนต่ำผิดปกติด้วย
+                </div>
+              )}
               <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 12, color: 'var(--text2)', marginBottom: 8 }}>
                 <span>📄 {edi.files.length} ไฟล์</span>
                 <span>🏭 Ship-to: <strong>{edi.shipTos.map(c => custLabel ? custLabel(c) : c).join(', ')}</strong></span>
                 <span>📅 {edi.dateFrom} → {edi.dateTo}</span>
                 <span>🧾 {edi.records.length} รายการ</span>
+                {ediKind === 'orders' && edi.zeroRecs?.length > 0 && (
+                  <span title="ลูกค้าส่งยอด 0 = วันนั้นไม่ต้องส่ง · ใบ pending เดิมของพาร์ท/dock/วันนั้นจะถูกล้าง (ใบที่ยืนยัน/ส่งแล้วไม่ถูกแตะ)">
+                    🚫 ยอด 0 จากลูกค้า {edi.zeroRecs.length} แถว ({[...new Set(edi.zeroRecs.map(r => r.shipTo))].map(c => custLabel ? custLabel(c) : c).join(', ')}) → ล้างใบรอส่งเดิมของวันนั้น
+                  </span>
+                )}
+                {edi.mappedCount > 0 && <span title="จับคู่ตามที่คนยืนยันไว้ในทะเบียน edi_part_map">✅ ใช้คู่ที่ยืนยันไว้ {edi.mappedCount} รายการ</span>}
+                <span title="แทนที่เฉพาะชุดที่อยู่ในไฟล์ · dock/พาร์ทที่ไม่ได้ส่งมา = ไม่มีอัพเดท เก็บของเดิม · วันที่หายกลางช่วงของชุด = ยกเลิก">
+                  🔁 อัพเดท {new Set(edi.records.map(r => `${r.shipTo}|${ediKind === 'orders' ? (r.dock || '') : ''}|${r.part}`)).size} ชุด (ที่เหลือคงเดิม)
+                </span>
                 <span style={{ color: edi.unmatched.length ? '#f59e0b' : '#22c55e' }}>
                   🔗 จับคู่พาร์ทได้ {edi.records.length - edi.records.filter(r => edi.unmatched.includes(r.part)).length}/{edi.records.length}
                 </span>
               </div>
-              {edi.unmatched.length > 0 && (
-                <div style={{ marginBottom: 10 }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: '#f59e0b', marginBottom: 4 }}>
-                    ⚠️ Part No. ที่ยังจับคู่ mat_no ภายในไม่ได้ (จะบันทึกด้วยเลขพาร์ทลูกค้าไปก่อน — เพิ่ม P/N ที่ Product Master แล้วอัพใหม่ได้):
-                  </div>
-                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                    {edi.unmatched.map(pn => (
-                      <span key={pn} style={{ fontSize: 11, fontWeight: 700, fontFamily: 'monospace', padding: '2px 8px', borderRadius: 8, background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)' }}>{pn}</span>
+              {/* 📊 ยอดค้างตาม Cum (ship-to ที่ใช้ e-SMART) — ไม่สร้างใบ แต่ต้องเห็นตัวเลข (ห้ามทิ้งเงียบ) */}
+              {ediKind === 'orders' && edi.catchUp?.length > 0 && (
+                <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 8, padding: '8px 10px', borderRadius: 8,
+                  background: 'rgba(77,159,255,0.08)', border: '1px solid rgba(77,159,255,0.3)' }}>
+                  📊 <strong>ยอดค้างตาม Cum ของลูกค้า {edi.catchUp.length} รายการ</strong> (แถววันออกไฟล์ที่ไม่มีเวลา = Cum ที่ลูกค้าต้องการ − Cum ที่ลูกค้ารับแล้ว)
+                  — <strong>ไม่สร้างเป็นใบส่ง</strong> เพราะ {[...new Set(edi.catchUp.map(r => r.shipTo))].map(c => custLabel ? custLabel(c) : c).join(', ')} ใช้ e-SMART ดึงเป็นเที่ยวจริงอยู่แล้ว
+                  <div style={{ marginTop: 4, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                    {edi.catchUp.map((r, i) => (
+                      <span key={i} style={{ fontFamily: 'monospace' }}>{r.mat_no || r.part} · {r.dock || '—'} · <strong>{Number(r.qty).toLocaleString()}</strong></span>
                     ))}
                   </div>
                 </div>
               )}
-              {/* เลขพาร์ทลูกค้าเดียวมีหลายเลข SAP (ต่างที่ลูกค้าปลายทาง) แล้วยังแยกไม่ออก
-                  → ระบบยังเดาให้เพื่อไม่ให้งานส่งของหยุด แต่ต้องบอกให้ชัดว่าเดา ไม่งั้นออเดอร์ทุกเจ้าไปกองเลขเดียว */}
-              {edi.ambiguous?.length > 0 && (
-                <div style={{ marginBottom: 10, padding: '8px 10px', borderRadius: 8, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.35)' }}>
-                  <div style={{ fontSize: 11.5, fontWeight: 800, color: '#ef4444', marginBottom: 4 }}>
-                    🔴 {edi.ambiguous.length} พาร์ท แยกลูกค้าไม่ออก — ออเดอร์ทุกเจ้าจะไปกองที่เลข SAP เดียว
-                  </div>
-                  <div style={{ fontSize: 11, color: 'var(--text2)', lineHeight: 1.6, marginBottom: 5 }}>
-                    เลขพาร์ทลูกค้าตัวเดียวมีหลายเลข SAP (ต่างกันที่ลูกค้าปลายทาง) แต่ ship-to ยังไม่ได้ตั้งชื่อลูกค้า
-                    → ระบบเลือกตัวแรกให้ก่อน <b>เลขที่เหลือจะดูเหมือนไม่มีใครสั่ง</b> · แก้ที่
-                    <b> 🚚 Delivery → ⚙️ Ship-to Plant Config</b> (ตั้งชื่อลูกค้าให้ code เช่น GRBNA → AAT) แล้วอัพไฟล์ใหม่
-                  </div>
-                  {edi.ambiguous.slice(0, 6).map(a => (
-                    <div key={a.part} style={{ fontSize: 10.5, fontFamily: 'monospace', color: 'var(--muted)' }}>
-                      {a.part} · ship-to {a.shipTos.join(',')} → {a.mats.join(' | ')}
-                    </div>
-                  ))}
-                  {edi.ambiguous.length > 6 && <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>…และอีก {edi.ambiguous.length - 6} พาร์ท</div>}
+              {ediKind === 'orders' && edi.pullErr && (
+                <div style={{ fontSize: 12, color: '#f59e0b', marginBottom: 8 }}>
+                  ⚠️ อ่านตารางรอบ e-SMART ไม่ได้ ({edi.pullErr}) — รอบนี้จะสร้างแถวยอดค้างตาม Cum เป็นใบส่งเหมือนเดิม
                 </div>
               )}
-              {/* จับคู่จาก base part (ตัด revision) = การเดาข้าม rev — ถูกเกือบเสมอ แต่เคส EC ออกเลขใหม่
-                  จะพา demand เข้าเลขเก่าเงียบๆ → ต้องโชว์ให้คนกวาดตาก่อนกดยืนยัน (ระบบเสนอ คนตรวจ) */}
-              {edi.baseMatched?.length > 0 && (
-                <div style={{ marginBottom: 10, padding: '8px 10px', borderRadius: 8, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.35)' }}>
-                  <div style={{ fontSize: 11.5, fontWeight: 800, color: '#f59e0b', marginBottom: 4 }}>
-                    💡 {edi.baseMatched.length} พาร์ท จับคู่จาก base part (เลขตรง rev ไม่มีในระบบ) — ตรวจก่อนยืนยัน
-                  </div>
-                  <div style={{ fontSize: 11, color: 'var(--text2)', lineHeight: 1.6, marginBottom: 5 }}>
-                    ถ้าเป็นพาร์ทเดิมที่ EDI สะกด rev ต่าง = ถูกต้อง · แต่ถ้าเพิ่งออก EC เป็นเลขใหม่
-                    ควรไปตั้ง P/N ของ MAT ใหม่ที่ Product Master ก่อน ไม่งั้น demand จะเข้าเลข rev เก่า
-                  </div>
-                  {edi.baseMatched.slice(0, 6).map(b => (
-                    <div key={b.part} style={{ fontSize: 10.5, fontFamily: 'monospace', color: 'var(--muted)' }}>{b.part} → {b.mat}</div>
-                  ))}
-                  {edi.baseMatched.length > 6 && <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>…และอีก {edi.baseMatched.length - 6} พาร์ท</div>}
-                </div>
-              )}
+              {/* 🔗 3 คำเตือนจับคู่พาร์ท — แก้บนจอนี้ได้เลย คำตัดสินถูกจำใน edi_part_map (2026-10-01)
+                  บันทึกแล้วอ่านไฟล์ชุดเดิมใหม่ทันที ⇒ คำเตือนที่แก้แล้วหายไป · รอบหน้าไม่ถามซ้ำ */}
+              <EdiMatchFixer edi={edi} canEdit={canUpload} custLabel={custLabel}
+                onSaved={async () => { const l = lastFilesRef.current; if (l) await handleFiles(l.files, l.kind); }} />
               <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>
                 การนำเข้าจะ<strong>แทนที่</strong>ข้อมูล EDI ฉบับเดิมของ ship-to เดียวกัน (อัพใหม่ทุกวันได้ ยอดไม่ทบซ้ำ)
-                {edi.kind === 'orders' ? ' · รอบที่เตรียม/ส่งไปแล้วจะไม่ถูกแตะ' : ''}
+                {ediKind === 'orders' ? ' · รอบที่เตรียม/ส่งไปแล้วจะไม่ถูกแตะ' : ''}
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button onClick={doImportEdi} disabled={saving}
-                  style={{ padding: '9px 22px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#08130a', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)', opacity: saving ? 0.6 : 1 }}>
+                  style={{ padding: '9px 22px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)', opacity: saving ? 0.6 : 1 }}>
                   {saving ? 'กำลังนำเข้า...' : '⬆ ยืนยันนำเข้า EDI'}
                 </button>
                 <button onClick={() => setEdi(null)} style={{ ...btn(false) }}>ยกเลิก</button>
@@ -631,7 +1017,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
                 </table>
               </div>
               <button onClick={doImport} disabled={saving}
-                style={{ padding: '10px 24px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#08130a', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)', opacity: saving ? 0.6 : 1 }}>
+                style={{ padding: '10px 24px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)', opacity: saving ? 0.6 : 1 }}>
                 {saving ? 'กำลังนำเข้า...' : `⬆ นำเข้าข้อมูล ${kind === 'forecast' ? 'Forecast' : 'Orders'}`}
               </button>
             </>
@@ -731,10 +1117,12 @@ function PlannerTab({ refreshKey, custLabel }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>ช่วงพยากรณ์:</span>
-        {[3, 6, 12].map(h => <button key={h} onClick={() => setHorizon(h)} style={btn(horizon === h)}>{h} เดือน</button>)}
-      </div>
+      {/* UI-STANDARD 2026-09-24 — ตัวเลือก 3 ตัวเท่ากัน = Segmented ในแถบกรอง */}
+      <FilterBar style={{ marginBottom: 0 }}>
+        <span className="filter-label">ช่วงพยากรณ์:</span>
+        <Segmented value={horizon} onChange={setHorizon} label="ช่วงพยากรณ์"
+          options={[3, 6, 12].map(h => ({ value: h, label: `${h} เดือน` }))} />
+      </FilterBar>
 
       {/* กราฟ Forecast vs Orders รายเดือน */}
       <div style={card}>
@@ -747,7 +1135,7 @@ function PlannerTab({ refreshKey, custLabel }) {
               <BarChart data={chartData} margin={{ top: 6, right: 12, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 <XAxis dataKey="month" tick={{ fontSize: 11, fill: 'var(--muted)' }} />
-                <YAxis tick={{ fontSize: 11, fill: 'var(--muted)' }} />
+                <YAxis tickFormatter={fmtAxis} width="auto" tick={{ fontSize: 11, fill: 'var(--muted)' }} />
                 <Tooltip contentStyle={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, fontSize: 12 }} />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
                 <Bar dataKey="Forecast" fill="#4d9fff" radius={[4, 4, 0, 0]} />
@@ -762,9 +1150,11 @@ function PlannerTab({ refreshKey, custLabel }) {
       <div style={card}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
           <div style={{ fontWeight: 800, fontSize: 14, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>🧠 แผนภาระการผลิตรายพาร์ท</div>
-          <select value={focusMonth} onChange={e => setFocusMonth(e.target.value)} style={{ ...inputSt, width: 170 }}>
-            {months.map(m => <option key={m} value={m}>{monthLabel(m)}</option>)}
-          </select>
+          <FilterBar bare style={{ marginBottom: 0 }}>
+            <select value={focusMonth} onChange={e => setFocusMonth(e.target.value)}>
+              {months.map(m => <option key={m} value={m}>{monthLabel(m)}</option>)}
+            </select>
+          </FilterBar>
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
           {[
@@ -791,8 +1181,9 @@ function PlannerTab({ refreshKey, custLabel }) {
                 {matRows.map(r => (
                   <tr key={r.mat_no}>
                     <td style={{ padding: '7px 12px', borderTop: '1px solid var(--border)' }}>
-                      <div style={{ fontSize: 12, fontWeight: 700, fontFamily: 'monospace', color: '#0ea5e9' }}>{r.mat_no}</div>
-                      <div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.part_name || ''}</div>
+                      {/* ลำดับ ชื่องาน → MAT (UI §6.21) */}
+                      <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>{r.part_name || r.mat_no}</div>
+                      <div style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'monospace' }}>MAT {r.mat_no}</div>
                     </td>
                     <td style={{ padding: '7px 12px', borderTop: '1px solid var(--border)', fontSize: 12, color: 'var(--text2)' }}>{r.customer ? (custLabel ? custLabel(r.customer) : r.customer) : '—'}</td>
                     <td style={{ padding: '7px 12px', borderTop: '1px solid var(--border)', fontSize: 13, fontWeight: 700, textAlign: 'right', color: '#4d9fff' }}>{fmt(r.forecast)}</td>
@@ -995,7 +1386,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
   const otherProcCount = useMemo(() => Object.keys(forecast)
     .filter(m => forecast[m] > 0 && !procMatchesTab(drMap[m]?.process_type)).length, [forecast, drMap, procMatchesTab]);
 
-  const lines = useMemo(() => [...new Set(rows.map(r => r.line).filter(Boolean))].sort(), [rows]);
+  const lines = useMemo(() => [...new Set(rows.map(r => r.line).filter(Boolean))].sort(lineNameCompare), [rows]);
   const prodLines = useProductionLines();   // ทะเบียนไลน์ (ให้ dropdown มีลำดับชั้น)
   const changedRows = rows.filter(r => r.changed);
 
@@ -1073,12 +1464,9 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
       ? ['', 'สรุปภาระการผลิต (Capacity Load)', 'Line,Parts,WorkTime(hr/mo),Available(hr/mo),Load%',
          ...capacity.list.map(l => [esc(l.line), l.parts, (l.workSec / 3600).toFixed(1), (capacity.availSec / 3600).toFixed(1), l.loadPct.toFixed(1)].join(','))]
       : [];
-    const blob = new Blob(['﻿' + [head.join(','), ...dataLines, ...capBlock].join('\n')], { type: 'text/csv;charset=utf-8' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `kanban_${calcType}_${month}.csv`;
-    a.click();
-    URL.revokeObjectURL(a.href);
+    // CSV = เอกสาร ⇒ ชื่อไฟล์ผ่านทะเบียน /doc-forms (06/10) · ยังไม่ตั้งเลขฟอร์ม = ชื่อเดิมเป๊ะ
+    downloadCsvDoc('csv_kanban_calc', `kanban_${calcType}_${month}`,
+      [head.join(','), ...dataLines, ...capBlock].join('\n'));
   };
 
   const saveSettings = async () => {
@@ -1148,16 +1536,23 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
     if (skipped) toast.info(`ข้าม ${skipped} พาร์ทที่เลข SAP ไม่มีใน Product Master`);
     setMapping(true);
     try {
+      /* นับคู่ที่เขียนไม่ครบ — checkWrite โชว์ toast แดงแล้ว แต่ห้ามตามด้วย toast เขียว "จับคู่ N พาร์ทแล้ว" (QC 05/10) */
+      let failed = 0;
       for (const [cust, sap] of pairs) {
         const name = drMap[sap]?.name || null;
-        checkWrite(await supabaseDR.from('dr_products').update({ p_no: cust }).eq('mat_no', sap), 'ผูกเลขลูกค้าเข้าสินค้า');                       // future uploads
+        let ok = checkWrite(await supabaseDR.from('dr_products').update({ p_no: cust }).eq('mat_no', sap), 'ผูกเลขลูกค้าเข้าสินค้า');                       // future uploads
         // single source: p_no เก็บซ้ำใน kanban_standards ด้วย — เขียน write-through กันตาราง 2 ฝั่ง map เลข SAP ไม่ตรง (stale → map ผิด)
         // best-effort (บางพาร์ทไม่มีแถว kanban = 0 แถว ไม่ใช่ error) — แต่ error จริงต้องเห็น (supabase-js ไม่ throw · try/catch เดิมไม่มีวันจับ)
-        checkWrite(await supabaseDR.from('kanban_standards').update({ p_no: cust }).eq('mat_no', sap), 'เขียน p_no ลง kanban_standards');
-        checkWrite(await supabaseDR.from('customer_forecasts').update({ mat_no: sap, part_name: name }).eq('mat_no', cust), 'แก้ forecast เดิมให้ใช้ MAT ใหม่'); // existing forecast
+        ok = checkWrite(await supabaseDR.from('kanban_standards').update({ p_no: cust }).eq('mat_no', sap), 'เขียน p_no ลง kanban_standards') && ok;
+        ok = checkWrite(await supabaseDR.from('customer_forecasts').update({ mat_no: sap, part_name: name }).eq('mat_no', cust), 'แก้ forecast เดิมให้ใช้ MAT ใหม่') && ok; // existing forecast
+        if (!ok) failed++;
       }
-      toast.success(`🔗 จับคู่ ${pairs.length} พาร์ทเข้าเลข SAP แล้ว — Store/Planner จะ sync ตามเลขเดียวกัน`);
-      setMapModal(false); setMapSel({});
+      if (failed) {
+        toast.error(`จับคู่สำเร็จ ${pairs.length - failed}/${pairs.length} พาร์ท — ${failed} พาร์ทเขียนไม่ครบ กดจับคู่ซ้ำอีกครั้ง`);
+      } else {
+        toast.success(`🔗 จับคู่ ${pairs.length} พาร์ทเข้าเลข SAP แล้ว — Store/Planner จะ sync ตามเลขเดียวกัน`);
+        setMapModal(false); setMapSel({});
+      }
       await load();
     } catch (err) { toast.error(err.message); }
     setMapping(false);
@@ -1209,48 +1604,37 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
         {' '}· ตั้ง process_type ต่อพาร์ทที่ Product Master
       </div>
 
-      {/* controls */}
-      <div style={{ ...card, marginBottom: 14, display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-        <div>
-          <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>เดือน Forecast ที่ใช้คำนวณ</label>
-          <input type="month" value={month} onChange={e => setMonth(e.target.value)} style={{ ...inputSt, width: 160 }} />
-        </div>
-        <div>
-          <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>📅 วันทำงาน/เดือน <span style={{ color: '#0ea5e9' }}>(จากปฏิทิน)</span></label>
-          <input type="number" value={settings.working_days} onChange={e => setSettings(s => ({ ...s, working_days: e.target.value }))} style={{ ...inputSt, width: 90 }} />
-        </div>
-        {calcType === 'withdrawal' ? (
-          <div>
-            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Efficiency %</label>
-            <input type="number" value={settings.efficiency_pct} onChange={e => setSettings(s => ({ ...s, efficiency_pct: e.target.value }))} style={{ ...inputSt, width: 80 }} />
-          </div>
-        ) : (
-          <div>
-            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>⏱ ชม.ทำงาน/วัน <span style={{ color: '#0ea5e9' }}>(คิด capacity)</span></label>
-            <input type="number" value={settings.hours_per_day} onChange={e => setSettings(s => ({ ...s, hours_per_day: e.target.value }))} style={{ ...inputSt, width: 90 }} />
-          </div>
-        )}
-        {canApply && <button onClick={saveSettings} style={btn(false)}>💾 ค่ากลาง</button>}
+      {/* controls — UI-STANDARD 2026-09-24: แถบกรองเดียว ช่องสูงเท่ากัน (เดิม 3 ความสูง)
+          ไลน์ (ขอบเขต) → เดือน → ค่าคำนวณ → spacer → จำนวน/ปุ่ม */}
+      <FilterBar style={{ marginBottom: 14 }}>
         {lines.length > 0 && (
-          <div>
-            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>ไลน์</label>
-            {/* ไลน์ที่มีพาร์ทในตาราง — จัดลำดับชั้นตามผัง (แม่→ลูก) แทนลิสต์แบนเรียงตัวอักษร */}
-            <LineSelect lines={prodLines.filter(l => lines.includes(l.name))}
-              value={lineFilter} onChange={setLineFilter} placeholder="ทุกไลน์"
-              style={{ ...inputSt, width: 150 }}
-              extraGroups={[{ label: '⚠ ไม่มีในทะเบียนไลน์', options: lines.filter(n => !prodLines.some(l => l.name === n)).map(n => ({ value: n })) }]}
-            />
-          </div>
+          /* ไลน์ที่มีพาร์ทในตาราง — จัดลำดับชั้นตามผัง (แม่→ลูก) แทนลิสต์แบนเรียงตัวอักษร */
+          <LineSelect lines={prodLines.filter(l => lines.includes(l.name))}
+            value={lineFilter} onChange={setLineFilter} placeholder={ALL.line}
+            extraGroups={[{ label: '⚠ ไม่มีในทะเบียนไลน์', options: lines.filter(n => !prodLines.some(l => l.name === n)).map(n => ({ value: n })) }]}
+          />
         )}
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
-          <span style={{ fontSize: 12, color: 'var(--muted)' }}>{rows.length} พาร์ท · <b style={{ color: '#f59e0b' }}>{changedRows.length}</b> เปลี่ยน</span>
-          {canApply && (
-            <button onClick={() => setPreview(changedRows)} disabled={changedRows.length === 0}
-              style={{ ...btn(changedRows.length > 0), opacity: changedRows.length ? 1 : 0.5 }}>🎴 Preview &amp; Apply</button>
-          )}
-          <button onClick={exportCSV} disabled={rows.length === 0} style={{ ...btn(false), opacity: rows.length ? 1 : 0.5 }}>⬇ CSV</button>
-        </div>
-      </div>
+        <span className="filter-label">เดือน Forecast ที่ใช้คำนวณ</span>
+        <input type="month" value={month} onChange={e => setMonth(e.target.value)} />
+        <span className="filter-label">📅 วันทำงาน/เดือน <span style={{ color: '#0ea5e9' }}>(จากปฏิทิน)</span></span>
+        {/* ช่องตัวเลขสั้น — คงความกว้างไว้ (ค่าตั้งต้นของเบราว์เซอร์กว้างเกินตัวเลข 2-3 หลัก) */}
+        <input type="number" value={settings.working_days} onChange={e => setSettings(s => ({ ...s, working_days: e.target.value }))} style={{ width: 80 }} />
+        {calcType === 'withdrawal' ? (<>
+          <span className="filter-label">Efficiency %</span>
+          <input type="number" value={settings.efficiency_pct} onChange={e => setSettings(s => ({ ...s, efficiency_pct: e.target.value }))} style={{ width: 80 }} />
+        </>) : (<>
+          <span className="filter-label">⏱ ชม.ทำงาน/วัน <span style={{ color: '#0ea5e9' }}>(คิด capacity)</span></span>
+          <input type="number" value={settings.hours_per_day} onChange={e => setSettings(s => ({ ...s, hours_per_day: e.target.value }))} style={{ width: 80 }} />
+        </>)}
+        {canApply && <button onClick={saveSettings} style={btn(false)}>💾 ค่ากลาง</button>}
+        <span className="spacer" />
+        <span className="filter-count">{rows.length} พาร์ท · <b style={{ color: '#f59e0b' }}>{changedRows.length}</b> เปลี่ยน</span>
+        {canApply && (
+          <button onClick={() => setPreview(changedRows)} disabled={changedRows.length === 0}
+            style={{ ...btn(changedRows.length > 0), opacity: changedRows.length ? 1 : 0.5 }}>🎴 Preview &amp; Apply</button>
+        )}
+        <button onClick={exportCSV} disabled={rows.length === 0} style={{ ...btn(false), opacity: rows.length ? 1 : 0.5 }}>⬇ CSV</button>
+      </FilterBar>
 
       <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>
         {calcType === 'production'
@@ -1302,7 +1686,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
                     <th key={h.t} title={h.tip || ''} style={{ padding: '6px 8px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'center', whiteSpace: 'nowrap', textTransform: 'uppercase', cursor: h.tip ? 'help' : undefined }}>
                       <div>{h.t}{h.tip ? ' ⓘ' : ''}</div>
                       {/* หน่วยต้องเห็นตลอด ห้ามซ่อนใน tooltip — คนกรอกไม่มีทางรู้ว่าช่องนี้เป็นใบหรือชิ้น */}
-                      {h.u && <div style={{ fontSize: 9.5, fontWeight: 600, color: h.u === 'ใบ' ? '#f59e0b' : 'var(--muted)', textTransform: 'none', opacity: 0.9 }}>({h.u})</div>}
+                      {h.u && <div style={{ fontSize: 11, fontWeight: 600, color: h.u === 'ใบ' ? '#f59e0b' : 'var(--muted)', textTransform: 'none', opacity: 0.9 }}>({h.u})</div>}
                     </th>
                   ))}
                 </tr>
@@ -1313,7 +1697,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
                   return (
                     <tr key={row.mat} style={{ background: row.changed ? 'rgba(245,158,11,0.05)' : undefined }}>
                       <td style={{ ...tdc, fontFamily: 'monospace', fontWeight: 700, color: '#0ea5e9', textAlign: 'left' }}>{row.mat}</td>
-                      <td style={{ ...tdc, textAlign: 'left', maxWidth: 200 }}><div style={{ color: 'var(--text)' }}>{row.name || '—'}</div><div style={{ fontSize: 10.5, color: 'var(--muted)' }}>{row.line || '—'}{row.customer ? ` · ${row.customer}` : ''}</div></td>
+                      <td style={{ ...tdc, textAlign: 'left', maxWidth: 200 }}><div style={{ color: 'var(--text)' }}>{row.name || '—'}</div><div style={{ fontSize: 11, color: 'var(--muted)' }}>{row.line || '—'}{row.customer ? ` · ${row.customer}` : ''}</div></td>
                       <td style={{ ...tdc, textAlign: 'right', fontWeight: 800 }}>{fmt(row.order)}</td>
                       {NCOLS.map(c => (
                         <td key={c} style={{ ...tdc, textAlign: 'center' }}>
@@ -1323,7 +1707,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
                           {/* ช่อง Lot กรอกเป็น "ใบ" แต่ค่าที่บันทึกลง kanban_standards เป็น "ชิ้น"
                               → ต้องเห็นตัวเลขที่จะถูกบันทึกจริงตรงนี้ ห้ามให้ไปรู้ตอนของระเบิดแล้ว */}
                           {c === 'lot_size' && (
-                            <div style={{ fontSize: 9.5, marginTop: 2, whiteSpace: 'nowrap', color: lotPcsOf(calcType, row.pp) > 0 ? 'var(--muted)' : '#f59e0b' }}>
+                            <div style={{ fontSize: 11, marginTop: 2, whiteSpace: 'nowrap', color: lotPcsOf(calcType, row.pp) > 0 ? 'var(--muted)' : '#f59e0b' }}>
                               {lotPcsOf(calcType, row.pp) > 0 ? `= ${fmt(lotPcsOf(calcType, row.pp))} ชิ้น` : 'ต้องมี Pkg'}
                             </div>
                           )}
@@ -1336,13 +1720,13 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
                                   <div
                                     onClick={() => canApply && setEdit(row.mat, 'capacity_pc_hr', row.capReal)}
                                     title={`กำลังจริง = (3600 ÷ CT) × OEE ${row.oeePct.toFixed(1)}% ของไลน์ ${row.line}\nจากกะที่ปิดแล้ว ${row.oeeN} กะ ใน 90 วัน\nคลิกเพื่อใช้ค่านี้`}
-                                    style={{ fontSize: 9.5, marginTop: 2, whiteSpace: 'nowrap', cursor: canApply ? 'pointer' : 'default',
+                                    style={{ fontSize: 11, marginTop: 2, whiteSpace: 'nowrap', cursor: canApply ? 'pointer' : 'default',
                                              color: far ? '#f59e0b' : 'var(--muted)', fontWeight: far ? 800 : 500, textDecoration: canApply ? 'underline dotted' : 'none' }}>
                                     จริง ~{fmt(row.capReal)}
                                   </div>
                                 );
                               })()
-                            : <div style={{ fontSize: 9.5, color: 'var(--muted)', marginTop: 2, opacity: 0.6 }} title="ยังไม่มีกะที่ปิดแล้วของไลน์นี้ใน 90 วัน หรือยังไม่ได้ตั้ง CT ที่ Product Master">จริง —</div>
+                            : <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2, opacity: 0.6 }} title="ยังไม่มีกะที่ปิดแล้วของไลน์นี้ใน 90 วัน หรือยังไม่ได้ตั้ง CT ที่ Product Master">จริง —</div>
                           )}
                         </td>
                       ))}
@@ -1416,8 +1800,8 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
                           inputStyle={{ padding: '5px 30px 5px 8px', fontSize: 12,
                             borderColor: mapSel[u.mat] && drMap[mapSel[u.mat]] ? '#22c55e' : mapSel[u.mat] ? '#ef4444' : 'var(--border)' }} />
                         {mapSel[u.mat] && (drMap[mapSel[u.mat]]
-                          ? <div style={{ fontSize: 10.5, color: '#22c55e', marginTop: 2 }}>✓ {drMap[mapSel[u.mat]].name}{drMap[mapSel[u.mat]].line_name ? ` · ${drMap[mapSel[u.mat]].line_name}` : ''}</div>
-                          : <div style={{ fontSize: 10.5, color: '#ef4444', marginTop: 2 }}>✗ ไม่พบเลข SAP นี้ใน Product Master</div>)}
+                          ? <div style={{ fontSize: 11, color: '#22c55e', marginTop: 2 }}>✓ {drMap[mapSel[u.mat]].name}{drMap[mapSel[u.mat]].line_name ? ` · ${drMap[mapSel[u.mat]].line_name}` : ''}</div>
+                          : <div style={{ fontSize: 11, color: '#ef4444', marginTop: 2 }}>✗ ไม่พบเลข SAP นี้ใน Product Master</div>)}
                         {suggestByCust[u.mat] && (
                           <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 3 }}>
                             {suggestByCust[u.mat].map(c => (
@@ -1492,8 +1876,10 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
 }
 
 export default function PlannerSales() {
+  // ทะเบียนเอกสาร — ชื่อไฟล์ CSV อ่านเลขฟอร์มจาก cache นี้ (lazy chunk ต้องโหลดเอง)
+  useEffect(() => { loadDocForms(); }, []);
   const { role, fullName } = useContext(UserContext);
-  const [tab, setTab] = useTabParam(['planner', 'kanban', 'upload'], 'planner');
+  const [tab, setTab] = useTabParam(['planner', 'kanban', 'upload', 'monitoring'], 'planner');
   const [refreshKey, setRefreshKey] = useState(0);
   // สิทธิ์อัพโหลดจากตาราง role_permissions (ปรับได้ที่หน้า จัดการสิทธิ์ → สิทธิ์การทำงาน)
   const canUpload = can('demand', 'upload', role);
@@ -1514,7 +1900,7 @@ export default function PlannerSales() {
   }, [shipToMap]);
 
   return (
-    <div style={{ padding: 'clamp(12px, 2vw, 24px)', maxWidth: 'min(96vw, 1600px)', margin: '0 auto' }}>
+    <Page>
       <PageHeader
         title="Planner & Sales — Forecast จากลูกค้า" icon="📈"
         sub="Sales อัพโหลด Forecast/Order จากลูกค้า → ระบบวางแผนภาระการผลิตล่วงหน้า · ติดตามรอบส่งงานรายวันที่หน้า 🚚 Delivery"
@@ -1522,6 +1908,7 @@ export default function PlannerSales() {
           { key: 'planner', label: '📈 Forecast Planner' },
           { key: 'kanban', label: '🎴 คำนวณ Kanban' },
           { key: 'upload', label: '📤 อัพโหลด (Sales)' },
+          { key: 'monitoring', label: '📗 Monitoring (Planning)' },
         ]}
         tab={tab} onTab={setTab}
       />
@@ -1529,6 +1916,9 @@ export default function PlannerSales() {
       {tab === 'planner' && <PlannerTab refreshKey={refreshKey} custLabel={custLabel} />}
       {tab === 'kanban' && <KanbanCalcTab canApply={canUpload} fullName={fullName} custLabel={custLabel} />}
       {tab === 'upload' && <UploadTab canUpload={canUpload} fullName={fullName} onImported={() => { setRefreshKey(k => k + 1); loadShipTo(); }} custLabel={custLabel} />}
-    </div>
+      {/* 📗 ไฟล์ Monitoring ของแพลนนิ่ง = ช่องทางที่ 4 ต่อจาก EDI 830/862/e-SMART
+          (ลูกค้าที่ไม่ส่ง EDI — TSPK/TSESA/TSLA/TSRA/GWM/Argen) — แยกแท็บเพราะโครงไฟล์คนละแบบสิ้นเชิง */}
+      {tab === 'monitoring' && <MonitoringUpload canUpload={canUpload} fullName={fullName} onImported={() => setRefreshKey(k => k + 1)} />}
+    </Page>
   );
 }

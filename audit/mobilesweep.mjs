@@ -7,26 +7,61 @@
       เลื่อนทะลุขึ้นมาทับ (เคสจริง: DailyReport แผงเลือกกะ 350×651 บนจอ 390×844 = 77% ของจอ)
    2. 🔴 ของล้นแล้วปัดดูไม่ได้ — แถว flex แนวนอน `nowrap` ที่เนื้อหากว้างเกินตัวเอง และไม่มี `overflowX`
       (UI-CONVENTIONS §231: ของกว้างต้องมี scroller ของตัวเอง)
+      · **2ข (25/09): แถว `wrap` ที่ยังล้น** = มีลูกที่หดไม่ลงจริงๆ ไม่ใช่แค่ของเยอะ
+        เคสจริงที่หลุดด่านนี้ไป: `.trb-row` ของ <TimeRangeBar> ในกรอบ flex column + align-items:stretch
+        — `min-width:0` ไม่พอ ต้อง `max-width:100%` ด้วย ไม่งั้น <select> ตัวเลือกยาวดันแถวพ้นการ์ด
    3. 🔴 ข้อความถูกบีบจนกว้าง 0 — span ที่มีตัวอักษรแต่ `width < 1px` ในแถว flex
       ต้นเหตุประจำ: เพื่อนบ้านตั้ง `whiteSpace: nowrap` แล้วไม่ยอมหด ⇒ **ตัวที่ต้องอ่านที่สุดหายทั้งบรรทัด**
       (เคสจริง: MorningMeeting ชื่อไลน์ 198px จาก 328px ⇒ รายละเอียดปัญหา/4M เหลือ 0)
+
+   ── 📵 หน้าที่ "ตกลงกันแล้วว่าไม่ทำมือถือ" (ACCEPTED ด้านล่าง · คำสั่ง user 2026-09-23) ──
+   ไม่ใช่ทุกหน้าที่ต้องใช้ได้บนจอ 390px — บางหน้าเป็นงานที่**ทำบนคอมอยู่แล้วโดยธรรมชาติ**
+   หรือเป็นจอที่ตั้งใจฉายขึ้นจอใหญ่ · บังคับให้ผ่านทุกหน้า = ยัด UI มือถือให้งานที่ไม่มีใครทำบนมือถือ
+   ⇒ ขึ้นทะเบียนไว้พร้อม**เหตุผลของ user** แล้วรายงานแยกส่วน (ยังพิมพ์ให้เห็น ไม่ได้ซ่อน)
+   🔴 ใส่ชื่อหน้าลงทะเบียนนี้ได้เฉพาะเมื่อ **user ตัดสินใจเอง** — ห้าม AI session ใส่เพราะแก้ไม่ไหว
 
    ใช้: เปิด `npx vite --config audit/vite.audit.mjs` ค้างไว้ แล้ว `node audit/mobilesweep.mjs`
    ⚠️ รันคู่กับ `audit/crashsweep.mjs` (คนละเรื่อง: crashsweep = หน้าพัง · อันนี้ = หน้าไม่พังแต่ใช้ไม่ได้) */
 import { chromium } from 'playwright';
 
 const VIEW = { width: 390, height: 844 };   // iPhone 14/15 — เล็กที่สุดที่หน้างานใช้จริง
+// 🕐 timezone ไทยเหมือน crashsweep — ไม่งั้นโค้ดสายเวลาถูกข้ามทั้งคลาส (ดูคอมเมนต์ใน crashsweep.mjs)
+const TZ = { timezoneId: 'Asia/Bangkok' };
+/* 📵 หน้าที่ user ตัดสินใจแล้วว่าไม่ต้องรองรับมือถือ — ค่า = เหตุผลที่ user ให้มา (ห้ามแก้เป็นเหตุผลอื่น)
+   ⬅️ Management ถูกถอดออกแล้ว (คำสั่ง user 06/10) — ที่เคยติดทะเบียนไว้ 23/09 เป็น**ผี**จากพื้นที่กด
+   เผื่อนิ้ว ไม่ใช่หน้าใช้บนมือถือไม่ได้จริง (ดู addStyleTag ด้านล่าง) ⇒ ต้องผ่านด่านเหมือนหน้าอื่น */
+const ACCEPTED = {
+  LineSetup: 'ทำในคอม — วางจุดงาน/ลากผังบนจอ 390px ทำไม่ไหวด้วยข้อจำกัดขนาดจอ (user 23/09)',
+  MorningMeeting: 'ไว้เปิดจอประชุม ไม่ใช่จอมือถือ (user 23/09)',
+};
+
 const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
-const p0 = await b.newPage();
+const p0 = await b.newPage({ ...TZ });
 await p0.goto('http://localhost:5199/audit/index.html'); await p0.waitForTimeout(1200);
 const PAGES = await p0.evaluate(() => window.__PAGES); await p0.close();
 
 const bad = [];
 for (const name of PAGES) {
-  const p = await b.newPage({ viewport: VIEW, isMobile: true, hasTouch: true });
+  const p = await b.newPage({ viewport: VIEW, isMobile: true, hasTouch: true, ...TZ });
   try {
-    await p.goto(`http://localhost:5199/audit/index.html?p=${name}`, { waitUntil: 'domcontentloaded', timeout: 20000 });
+    /* 🔴 ต้องส่ง `role=admin` (23/09) — ไม่ส่ง = harness เรนเดอร์มุมมอง **อ่านอย่างเดียว**
+       ปุ่มของ admin (เพิ่ม/แก้ไข/⚙ ตั้งค่า/เปิดโมดัล) ไม่โผล่เลยสักปุ่ม
+       วัดจริงที่ /pm?tab=setup: ไม่ส่ง role เห็น 4 ปุ่ม · ส่ง role=admin เห็น 8 ปุ่ม
+       ⇒ ครึ่งหนึ่งของส่วนที่กดได้ทั้งแอป **ไม่เคยถูกสวีปเลย** — โมดัลที่พังทั้งใบจึงหลุดถึงหน้างาน */
+    await p.goto(`http://localhost:5199/audit/index.html?p=${name}&role=admin`, { waitUntil: 'domcontentloaded', timeout: 20000 });
     await p.waitForTimeout(1300);
+    /* 👻 ปิด "พื้นที่กดเผื่อนิ้ว" ก่อนวัด (2026-10-06) — ไม่ใช่การผ่อนด่าน แต่เป็นการวัดให้ตรงความจริง
+       `src/index.css` @media (pointer:coarse) ใส่ `button:not(:has(*))::before` ที่ absolute + min 40×40
+       ทับกลางปุ่มเล็ก เพื่อขยาย *พื้นที่รับสัมผัส* โดยไม่ขยับ layout (คนใส่ถุงมือกดพลาด)
+       แต่ pseudo-element ที่ absolute **นับเข้า `scrollWidth` ของปุ่ม แล้วลามขึ้นไปถึงแถวแม่**
+       ⇒ ปุ่ม 25px ได้ sw 33 · ปุ่ม 10px ได้ sw 25 ทั้งที่**ไม่มีอะไรโผล่ออกมาให้เห็นสักพิกเซล**
+       วัดจริง 06/10 (เทียบ touch vs desktop บนหน้าเดียวกัน): desktop `sw === cw` ทุกปุ่ม
+       · ปุ่มตัวอักษรล้วน "X" ก็ขึ้นอาการเดียวกัน ⇒ **ไม่เกี่ยวกับอีโมจิ/ฟอนต์สำรอง**
+       🔴 เคยทำให้เข้าใจผิดมาแล้ว (54da354a): ไล่แก้ที่อีโมจิ แล้ว "หาย" เพราะการห่อ `<span>`
+       ทำให้ `:not(:has(*))` ไม่แมตช์ = **ถอดพื้นที่กด 40px ทิ้งเงียบๆ** (แก้อาการ ไม่ใช่ต้นเหตุ)
+       ⇒ ตัดเฉพาะ `min-width/min-height` ของ pseudo นี้ (เหลือ 100% = เท่าปุ่มพอดี ไม่ล้น)
+       `::before` อื่นที่มี content จริงไม่ถูกแตะ ⇒ ของที่ล้นจริงยังถูกจับเหมือนเดิม */
+    await p.addStyleTag({ content: '@media (pointer: coarse){button:not(:has(*))::before{min-width:0!important;min-height:0!important}}' });
     const hits = await p.evaluate(() => {
       const out = [], VW = innerWidth, VH = innerHeight;
       for (const el of document.querySelectorAll('*')) {
@@ -47,6 +82,17 @@ for (const name of PAGES) {
             && r.width > VW * 0.5 && r.height > 20)
           out.push(`ล้นปัดไม่ได้ กล่อง ${Math.round(r.width)} เนื้อหา ${el.scrollWidth} | "${txt}"`);
 
+        /* 2ข. แถว flex ที่ **ขึ้นบรรทัดใหม่ได้แล้วยังล้น** — ลูกบางตัวหดไม่ลง (25/09)
+           เคสจริง: `.trb-row` ใน <TimeRangeBar> วางอยู่ใน flex column + align-items:stretch
+           ⇒ ขนาด "เส้น" มาจาก max-content ของแถว ไม่ใช่กรอบการ์ด · <select> ที่ตัวเลือกยาว
+           (ชื่อไลน์) ดันแถว 449px ในกรอบ 370px แล้วล้นพ้นขอบการ์ดออกไปนอกจอ
+           ข้อ 2 เดิมจับไม่ได้เพราะเช็คเฉพาะ `nowrap` — แถวนี้ `wrap` แต่ก็ยังล้น
+           (ล้นทั้งที่ wrap ได้ = มีลูกที่ shrink ไม่ลงจริงๆ ไม่ใช่แค่ของเยอะ) */
+        if (el.tagName === 'DIV' && cs.display === 'flex' && cs.flexDirection === 'row' && cs.flexWrap === 'wrap'
+            && el.scrollWidth > el.clientWidth + 4 && !/(auto|scroll)/.test(cs.overflowX)
+            && r.width > VW * 0.5 && r.height > 20)
+          out.push(`ล้นทั้งที่ขึ้นบรรทัดใหม่ได้ (ลูกหดไม่ลง) กล่อง ${Math.round(r.width)} เนื้อหา ${el.scrollWidth} | "${txt}"`);
+
         if (el.tagName === 'SPAN' && r.width < 1 && r.height > 0 && (el.textContent || '').trim().length > 8
             && getComputedStyle(el.parentElement || el).display === 'flex')
           out.push(`ข้อความถูกบีบหาย | "${(el.textContent || '').trim().slice(0, 40)}"`);
@@ -59,6 +105,14 @@ for (const name of PAGES) {
 }
 await b.close();
 
-console.log(`ตรวจ ${PAGES.length} หน้า @${VIEW.width}px — มีปัญหา ${bad.length} หน้า`);
-bad.forEach(x => { console.log(`🔴 ${x.name}`); x.hits.slice(0, 4).forEach(h => console.log(`     ${h}`)); });
-process.exit(bad.length ? 1 : 0);
+const open = bad.filter(x => !ACCEPTED[x.name]);
+const accepted = bad.filter(x => ACCEPTED[x.name]);
+
+console.log(`ตรวจ ${PAGES.length} หน้า @${VIEW.width}px — ต้องแก้ ${open.length} หน้า`
+  + (accepted.length ? ` (+ ${accepted.length} หน้าที่ user ตัดสินใจว่าไม่ทำมือถือ)` : ''));
+open.forEach(x => { console.log(`🔴 ${x.name}`); x.hits.slice(0, 4).forEach(h => console.log(`     ${h}`)); });
+if (accepted.length) {
+  console.log('\n📵 ไม่รองรับมือถือโดยตั้งใจ (ไม่นับเป็นปัญหา):');
+  accepted.forEach(x => console.log(`   ${x.name} — ${ACCEPTED[x.name]}`));
+}
+process.exit(open.length ? 1 : 0);

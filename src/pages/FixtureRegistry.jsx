@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
@@ -10,6 +11,9 @@ import { fetchByIds } from '../utils/fetchByIds';
 import { todayLocal } from '../utils/dateFormat';
 import cachedMaster from '../utils/masterCache';
 import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
+import FilterBar from '../components/FilterBar';
+import SearchInput from '../components/SearchInput';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import useTabParam from '../utils/useTabParam';
 import FixtureClassify from '../components/FixtureClassify';
@@ -78,7 +82,10 @@ export default function FixtureRegistry() {
   const canRecord = can('fixture_shim', 'record', role);
   const canApprove = can('fixture_shim', 'approve', role);
   const canClassify = can('machines', 'edit', role);
-  const [tab, setTab] = useTabParam(TABS.map(t => t.k), 'points');
+  /* ⚠️ param ชื่อ `fx` ไม่ใช่ `tab` — หน้านี้ถูก embed เป็นแท็บใน `/equipment` (2026-09-22)
+     ซึ่งกิน `?tab=` ไปแล้ว · แท็บซ้อนแท็บต้องคนละ param (UI-CONVENTIONS §6.8)
+     ลิงก์เก่า `/fixture?tab=shim` ยังใช้ได้ — App.jsx แปลงให้ตอน redirect */
+  const [tab, setTab] = useTabParam(TABS.map(t => t.k), 'points', 'fx');
 
   const [lines, setLines] = useState([]);
   const [machines, setMachines] = useState([]);   // ทุกชนิด (ใช้แท็บจัดชนิด)
@@ -111,8 +118,7 @@ export default function FixtureRegistry() {
     setLoading(true);
     const warn = [];
     const [ln, mc, jg, mp, pr, kd, fp, ji] = await Promise.all([
-      cachedMaster('fx_lines', () => supabase.from('production_lines')
-        .select('id, name, section, parent_line_name, is_active').order('name')),
+      loadLinesRes(),   // 25/09: เดิม cachedMaster('fx_lines') คีย์ของตัวเอง → ใช้ cache ไลน์กลางร่วมทั้งแอป
       supabaseDR.from('machines')
         .select('id, machine_no, machine_name, line_name, equipment_kind, equipment_category, is_active, pieces_per_cycle')
         .eq('is_active', true).order('machine_no'),
@@ -390,10 +396,13 @@ export default function FixtureRegistry() {
   const kindMeta = useCallback((c) => kinds.find(k => k.code === c) || { label: c || '—', icon: '•' }, [kinds]);
 
   return (
-    <div style={{ padding: '16px 20px 40px', maxWidth: 1500, margin: '0 auto' }}>
-      <PageHeader
+    <Page>
+      {/* 🧩 embedded — เป็นแท็บของ `/equipment` · อยู่ใน <Hub> ⇒ PageHeader ไม่วาดชื่อหน้าซ้ำ เหลือแถบแท็บย่อย `?fx=`
+          🔴 prop ชื่อ `tab` ไม่ใช่ `activeTab` — เดิมส่งผิดชื่อ ⇒ **แท็บไม่เคยไฮไลต์เลยสักอัน**
+             (PageHeader ไม่มี `activeTab` มันเลยอ่าน `tab` ได้ undefined เงียบๆ · แก้ 22/09) */}
+      <PageHeader title="JIG / Fixture" icon="📐"
         tabs={TABS.map(t => ({ key: t.k, label: `${t.icon} ${t.label}` }))}
-        activeTab={tab} onTab={setTab}
+        tab={tab} onTab={setTab}
       />
 
       {dataWarn && (
@@ -406,10 +415,9 @@ export default function FixtureRegistry() {
       {/* เลือกฟิกเจอร์ — ใช้ร่วม 2 แท็บแรก */}
       {(tab === 'points' || tab === 'shim') && (
         <div style={{ ...card, marginBottom: 12, display: 'grid', gap: 10 }}>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-            <input value={q} onChange={e => setQ(e.target.value)} placeholder="🔎 ค้นฟิกเจอร์"
-                   style={{ ...inp, width: 200 }} />
-            <select value={fxId} onChange={e => setFxId(e.target.value)} style={{ ...inp, width: 340 }}>
+          <FilterBar bare style={{ marginBottom: 0 }}>
+            <SearchInput value={q} onChange={setQ} fields="ฟิกเจอร์" grow={false} />
+            <select value={fxId} onChange={e => setFxId(e.target.value)}>
               <option value="">— เลือกจิ๊ก / ฟิกเจอร์ ({shownFixtures.length}) —</option>
               {shownFixtures.map(f => (
                 <option key={f.id} value={f.id}>
@@ -422,7 +430,7 @@ export default function FixtureRegistry() {
               📷 เฉพาะที่มีรูป ({withImgCount})
             </label>
             {scopeOn && <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>👥 เห็นเฉพาะส่วนงานของคุณ</span>}
-          </div>
+          </FilterBar>
 
           {fx && (
             <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 12, color: 'var(--muted)' }}>
@@ -546,7 +554,11 @@ export default function FixtureRegistry() {
           {/* 📍 ผังวางหมุด — รูปชุดเดียวกับใบตรวจ PM: ปักตรงไหน คนตรวจเห็นหมุดม่วงตรงนั้น */}
           {points.length > 0 && (
             frames.length ? (
-              <div style={{ ...card, display: 'grid', gap: 8 }}>
+              /* 📌 ตรึงรูปไว้ตอนเลื่อนดูตารางจุด (user 23/09 — จอที่ต้องใช้รูปอ้างอิงตอนตรวจ
+                 ทุกจอควรตรึงรูป) · พื้นหลังทึบบังคับ ไม่งั้นตารางเลื่อนทะลุใต้รูป
+                 ⚠️ sticky ในหน้า (ไม่ใช่ modal) เกาะ document ได้ก็เพราะ `<main>` ใน App.jsx
+                    เป็น overflowX:'clip' — ห้ามเปลี่ยนเป็น hidden/auto (กับดักใน CLAUDE.md) */
+              <div style={{ ...card, display: 'grid', gap: 8, position: 'sticky', top: 0, zIndex: 3 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   <b style={{ fontSize: 13 }}>📍 ตำแหน่งจุดชิมบนรูปเครื่อง</b>
                   <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
@@ -561,7 +573,10 @@ export default function FixtureRegistry() {
                   arming={!!armPoint}
                   pins={points.map(p => ({ p, pin: pointPin(p, cpById) }))
                     .filter(({ pin }) => pin && (pin.imageId ?? frames[0]?._key) === frames[frameIdx]?._key)
-                    .map(({ p, pin }) => ({ key: p.id, x: pin.x, y: pin.y, label: p.point_no, color: armPoint === p.id ? 'var(--accent)' : '#a78bfa' }))}
+                    .map(({ p, pin }) => ({ key: p.id, x: pin.x, y: pin.y, label: p.point_no,
+                      label_dx: p.label_dx, label_dy: p.label_dy,
+                      selected: armPoint === p.id,
+                      color: armPoint === p.id ? 'var(--accent)' : '#a78bfa' }))}
                   onPlace={canManage ? placePin : undefined}
                   onRemovePin={canManage ? (key) => { const p = points.find(x => x.id === key); if (p && pointPin(p, cpById)?.source === 'own') removePin(key); else toast.info('หมุดนี้ยืมจากจุดตรวจ PM — แก้ที่ PM Setup'); } : undefined} />
               </div>
@@ -606,7 +621,7 @@ export default function FixtureRegistry() {
                             : <span style={{ color: 'var(--muted)' }}>—</span>; })()}
                           {canManage && frames.length > 0 && (
                             <button onClick={() => setArmPoint(a => a === p.id ? '' : p.id)} title="วางตำแหน่งบนรูป"
-                              style={{ marginLeft: 6, background: armPoint === p.id ? 'var(--accent)' : 'var(--bg2)', color: armPoint === p.id ? '#071008' : 'var(--text)', border: '1px solid var(--border)', borderRadius: 6, padding: '2px 7px', fontSize: 11, cursor: 'pointer' }}>
+                              style={{ marginLeft: 6, background: armPoint === p.id ? 'var(--accent)' : 'var(--bg2)', color: armPoint === p.id ? 'var(--accent-ink)' : 'var(--text)', border: '1px solid var(--border)', borderRadius: 6, padding: '2px 7px', fontSize: 11, cursor: 'pointer' }}>
                               {armPoint === p.id ? 'คลิกรูป…' : (pointPin(p, cpById)?.source === 'own' ? 'ย้าย' : 'วาง')}
                             </button>
                           )}
@@ -775,6 +790,6 @@ export default function FixtureRegistry() {
           </div>
         </div>
       )}
-    </div>
+    </Page>
   );
 }

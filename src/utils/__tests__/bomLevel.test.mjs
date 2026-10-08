@@ -105,3 +105,59 @@ test('ลบแถวชั้น 1 แล้วยอดคอยล์ต่�
     .filter(r => r.mat_no === '50027085').reduce((s, r) => s + r.qtyPerRoot, 0)
   assert.equal(Math.round(after * 10000) / 10000, 0.641)
 })
+
+/* ── 🔴 บั๊กจริง 2026-09-21 — `parent_mat` ข้ามใบ ทำให้ต้นไม้ระเบิด ─────────────────────
+   user ส่งจอมาให้ดู: `10101158` (22 พาร์ท) กางออกมา **1,276 แถว ลึก 5 ชั้น**
+   + แถบ "นับซ้ำ" พ่นชื่อตัวแม่ซ้ำ 60 รอบต่อบรรทัด ⇒ จอใช้งานไม่ได้ และปุ่มลบแถวนับซ้ำ
+   กลายเป็นของอันตราย (ตัดสินจากต้นไม้ที่ผิด)
+   เหตุ: `parent_mat` เก็บเป็น **mat** ⇒ ค่าเดียวกันโผล่ในใบของ FG หลายตัวได้
+   (วัดจริง `20058693` ถูกตั้งเป็นตัวแม่ใน 6 ใบ) พอดึงลูกด้วย mat เฉยๆ = กางลูกของทุกใบมารวมกัน */
+const SH = { 'p-FG1': 'FG1', 'p-FG2': 'FG2', 'p-SUB': 'SUB' }
+const SHARED = [
+  // ใบของ FG1: SUB 1 ตัว
+  { id: 'a1', product_id: 'p-FG1', mat_no: 'SUB', qty_per_unit: 1 },
+  // ใบของ FG2: SUB 1 ตัว (พาร์ทเดียวกัน คนละใบ)
+  { id: 'b1', product_id: 'p-FG2', mat_no: 'SUB', qty_per_unit: 1 },
+  // ใบของ SUB เอง
+  { id: 's1', product_id: 'p-SUB', mat_no: 'NUT', qty_per_unit: 2 },
+  // คนจัดชั้นในใบ FG1: ย้าย BOLT ไปใต้ SUB (อยู่ในใบ FG1 เท่านั้น)
+  { id: 'a2', product_id: 'p-FG1', mat_no: 'BOLT', qty_per_unit: 3, parent_mat: 'SUB' },
+  // คนจัดชั้นในใบ FG2: ย้าย WASHER ไปใต้ SUB เหมือนกัน (คนละใบ)
+  { id: 'b2', product_id: 'p-FG2', mat_no: 'WASHER', qty_per_unit: 4, parent_mat: 'SUB' },
+]
+
+test('🔴 ใบ FG1 ต้องไม่ลากลูกที่คนจัดชั้นไว้ในใบ FG2 มาด้วย', () => {
+  const ix = buildBomIndex(SHARED, SH)
+  const t1 = explodeBom('FG1', ix.bomOf, { sheetFor: ix.sheetFor })
+  assert.deepEqual(t1.rows.map(r => r.mat_no), ['SUB', 'BOLT'])   // ไม่มี WASHER ของใบ FG2
+  const t2 = explodeBom('FG2', ix.bomOf, { sheetFor: ix.sheetFor })
+  assert.deepEqual(t2.rows.map(r => r.mat_no), ['SUB', 'WASHER']) // ไม่มี BOLT ของใบ FG1
+})
+
+test('🔴 ไม่มีใครจัดชั้นในใบนี้ → ใช้ใบ BOM ของพาร์ทนั้นเอง (ไม่ใช่ว่างเปล่า)', () => {
+  const rows = SHARED.filter(r => r.id !== 'a2')                  // ใบ FG1 ไม่ได้จัดชั้นอะไร
+  const ix = buildBomIndex(rows, SH)
+  const t = explodeBom('FG1', ix.bomOf, { sheetFor: ix.sheetFor })
+  assert.deepEqual(t.rows.map(r => r.mat_no), ['SUB', 'NUT'])     // ลงไปในใบของ SUB เอง
+  assert.equal(t.rows.find(r => r.mat_no === 'NUT').qtyPerRoot, 2)
+})
+
+test('🔴 เลือกชุดเดียวเสมอ ห้ามรวม 2 ชุด (รวม = นับซ้ำ)', () => {
+  const ix = buildBomIndex(SHARED, SH)
+  // ใบ FG1 จัดชั้น BOLT ไว้ใต้ SUB แล้ว ⇒ ใช้ชุดนั้น **ไม่เอา NUT จากใบของ SUB มาปนด้วย**
+  assert.deepEqual(ix.bomOf('SUB', 'p-FG1').map(r => r.mat_no), ['BOLT'])
+  assert.deepEqual(ix.bomOf('SUB', 'p-SUB').map(r => r.mat_no), ['NUT'])
+})
+
+test('via ในแถบ "นับซ้ำ" ต้องไม่ซ้ำชื่อตัวแม่ (จอเคยพ่นซ้ำ 60 รอบ)', () => {
+  const rows = [
+    { id: 1, product_id: 'p-FG1', mat_no: 'SUB', qty_per_unit: 1 },
+    { id: 2, product_id: 'p-FG1', mat_no: 'NUT', qty_per_unit: 1 },     // ชั้น 1
+    { id: 3, product_id: 'p-SUB', mat_no: 'NUT', qty_per_unit: 2 },     // ใต้ SUB ด้วย
+    { id: 4, product_id: 'p-SUB', mat_no: 'NUT2', qty_per_unit: 1 },
+  ]
+  const ix = buildBomIndex(rows, SH)
+  const t = explodeBom('FG1', ix.bomOf, { sheetFor: ix.sheetFor })
+  const d = t.flatDupes.find(x => x.mat_no === 'NUT')
+  assert.deepEqual(d.via, ['SUB'])
+})

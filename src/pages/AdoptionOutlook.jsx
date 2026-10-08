@@ -1,7 +1,10 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { loadProductionLines } from '../utils/useProductionLines';
 import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
+import { allOf } from '../utils/filterLabels';
 import useTabParam from '../utils/useTabParam';
 import useIsMobile from '../utils/useIsMobile';
 import { RATE_COMPONENTS, fmtBaht } from '../utils/costSaving';
@@ -76,7 +79,7 @@ async function inChunks(ids, run) {
    เพิ่มแผนกใหม่ = เพิ่ม entry ที่นี่ที่เดียว การ์ด/แถบสรุป/อันดับตามให้เอง */
 const DEPTS = [
   {
-    key: 'production', icon: '🏭', label: 'ฝ่ายผลิต', to: '/dept-dashboard?dept=production',
+    key: 'production', icon: '🏭', label: 'ฝ่ายผลิต', to: '/obeya?tab=todo&dept=production',
     signals: (c) => [
       { label: 'กะที่ปิดครบ', now: c.sessClosed, total: c.sess, unit: 'กะ' },
       { label: 'ใบผลิตที่ปิด', now: c.ordConfirmed, total: c.ord, unit: 'ใบ' },
@@ -93,7 +96,7 @@ const DEPTS = [
     ],
   },
   {
-    key: 'maintenance', icon: '🔧', label: 'ซ่อมบำรุง', to: '/dept-dashboard?dept=maintenance',
+    key: 'maintenance', icon: '🔧', label: 'ซ่อมบำรุง', to: '/obeya?tab=todo&dept=maintenance',
     signals: (c) => [
       {
         label: 'เหตุเครื่องหยุดที่เปิดใบซ่อม', now: c.mo, total: c.dtUnplannedRows, unit: 'ใบ',
@@ -102,7 +105,7 @@ const DEPTS = [
       { label: 'เครื่องจักรที่มีแผน PM', now: c.pmPlans, total: c.machinesProd, unit: 'เครื่อง', gapTo: '/pm?tab=setup' },
       { label: 'ประวัติการตรวจที่บันทึก', now: c.inspections, total: null, unit: 'ครั้ง', gapTo: '/pm?tab=check' },
       { label: 'อะไหล่ในคลัง', now: c.spare, total: null, unit: 'รายการ', gap: 'ยังไม่ได้ย้ายจากไฟล์ Excel เข้าระบบ', gapTo: '/mtn-repair?tab=spare' },
-      { label: 'แม่พิมพ์/จิ๊กที่ลงทะเบียนตรวจ', now: c.jigsReal, total: c.dies, unit: 'ตัว', gapTo: '/die-registry' },
+      { label: 'แม่พิมพ์/จิ๊กที่ลงทะเบียนตรวจ', now: c.jigsReal, total: c.dies, unit: 'ตัว', gapTo: '/equipment?tab=die' },
     ],
     unlocks: [
       'เครื่องที่หยุดซ้ำถูกชี้เป้าอัตโนมัติ → เปิดใบซ่อมก่อนพัง ไม่ใช่ตามซ่อมทีหลัง',
@@ -112,7 +115,7 @@ const DEPTS = [
     ],
   },
   {
-    key: 'store', icon: '📦', label: 'สโตร์ / จัดส่ง', to: '/dept-dashboard?dept=store',
+    key: 'store', icon: '📦', label: 'สโตร์ / จัดส่ง', to: '/obeya?tab=todo&dept=store',
     signals: (c) => [
       {
         label: 'รอบส่งที่กดยืนยัน "ส่งแล้ว"', now: c.shipped, total: c.shipOrders, unit: 'รอบ',
@@ -129,7 +132,7 @@ const DEPTS = [
     ],
   },
   {
-    key: 'qa', icon: '✅', label: 'QA / คุณภาพ', to: '/dept-dashboard?dept=qa',
+    key: 'qa', icon: '✅', label: 'QA / คุณภาพ', to: '/obeya?tab=todo&dept=qa',
     signals: (c) => [
       { label: 'ใบตรวจคุณภาพ (Check Sheet)', now: c.qaSheets, total: null, unit: 'ใบ', gapTo: '/qa' },
       { label: 'พาร์ทที่ตั้งมาตรฐานการตรวจ', now: c.qaParts, total: c.prodAll, unit: 'พาร์ท', gapTo: '/qa-setup' },
@@ -281,7 +284,7 @@ const DIMENSIONS = [
           { d: 'ซ่อมบำรุง', l: 'ใบซ่อมที่ผ่านมา', have: c => c.mo > 0 },
           { d: 'ซ่อมบำรุง', l: 'ประวัติการตรวจ', have: c => c.inspections > 0 },
         ],
-        now: 1, full: 3, to: '/dept-dashboard?dept=maintenance',
+        now: 1, full: 3, to: '/obeya?tab=todo&dept=maintenance',
         nowTxt: 'มีข้อมูลเครื่องหยุดครบแล้ว แต่ยังไม่มีใครเปิดใบซ่อมตาม จึงเห็นแค่ "หยุดไปแล้ว" ไม่รู้ว่ากำลังจะหยุดอีก',
         fullTxt: 'สัญญาณเตือน 3 ทางพร้อมกัน: หยุดสั้นถี่ขึ้น + ความเร็วค่อยๆ ตก + ของเสียเพิ่ม = เครื่องกำลังเสื่อม ทั้งที่ยังไม่พัง',
         need: ['เปิดใบซ่อมทุกครั้งที่เครื่องหยุดผิดปกติ', 'บันทึกผลตรวจ PM ตามรอบ'],
@@ -556,7 +559,7 @@ async function loadAll() {
      ⚠️ ล้มเหลวต้องไม่ทำหน้าพัง → .catch คืน [] แล้วตัวจำลองใช้ค่า fallback แทน */
   const arr = (p, f) => p.then(r => (r.data || []).map(f).filter(Boolean)).catch(() => []);
   const [eLines, eMachines, eProducts, eCustomers, eDt, eDef] = await Promise.all([
-    arr(supabase.from('production_lines').select('name').limit(40), x => x.name),
+    loadProductionLines().then(ls => (ls || []).slice(0, 40).map(l => l.name).filter(Boolean)).catch(() => []),
     arr(supabaseDR.from('machines').select('machine_no').eq('is_active', true).eq('equipment_kind', 'machine').limit(60), x => x.machine_no),
     supabaseDR.from('dr_products').select('mat_no, name, line_name').limit(40).then(r => r.data || []).catch(() => []),
     arr(supabaseDR.from('customer_shipping_orders').select('customer').not('customer', 'is', null).limit(300), x => x.customer)
@@ -783,7 +786,7 @@ const Badge = ({ tone, children }) => {
   const c = tone === 'real' ? '#22c55e' : tone === 'guess' ? '#f59e0b' : tone === 'sim' ? '#a78bfa' : 'var(--muted)';
   const dashed = tone === 'guess' || tone === 'sim';   // ของที่ "ยังไม่จริง" ใช้เส้นประเสมอ
   return <span style={{
-    fontSize: 10.5, fontWeight: 700, color: c, whiteSpace: 'nowrap',
+    fontSize: 11, fontWeight: 700, color: c, whiteSpace: 'nowrap',
     border: `1px ${dashed ? 'dashed' : 'solid'} ${c}`, borderRadius: 4, padding: '1px 6px',
   }}>{children}</span>;
 };
@@ -843,12 +846,12 @@ function DimensionTab({ c, ents, demoOn, day, navigate, isMobile }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
-        {[{ key: 'all', icon: '🔗', label: 'ทุกมิติ' }, ...DIMENSIONS].map(d => {
+        {[{ key: 'all', icon: '🔗', label: allOf('มิติ') }, ...DIMENSIONS].map(d => {
           const on = only === d.key;
           return (
             <button key={d.key} onClick={() => setOnly(d.key)} style={{
               fontSize: 13, fontWeight: 700, padding: '6px 13px', borderRadius: 999, cursor: 'pointer',
-              background: on ? 'var(--accent)' : 'var(--bg3)', color: on ? '#08120a' : 'var(--text)',
+              background: on ? 'var(--accent)' : 'var(--bg3)', color: on ? 'var(--accent-ink)' : 'var(--text)',
               border: `1px solid ${on ? 'var(--accent)' : 'var(--border2)'}`,
             }}>{d.icon} {d.label}</button>
           );
@@ -922,7 +925,7 @@ function DimensionTab({ c, ents, demoOn, day, navigate, isMobile }) {
                       <div style={{ display: 'flex', gap: 7, alignItems: 'center', flexWrap: 'wrap', marginBottom: 7 }}>
                         <span style={{ fontSize: 12, fontWeight: 800, color: '#a78bfa' }}>🧪 ตัวอย่างคำตอบเมื่อข้อมูลครบ</span>
                         <span style={{
-                          fontSize: 10.5, fontWeight: 700, color: '#a78bfa',
+                          fontSize: 11, fontWeight: 700, color: '#a78bfa',
                           border: '1px dashed #a78bfa', borderRadius: 4, padding: '1px 6px',
                         }}>ตัวเลขจำลอง · ชื่อไลน์/เครื่อง/ลูกค้าเป็นของจริง</span>
                       </div>
@@ -1268,7 +1271,7 @@ const StepHead = ({ n, icon, title, sub, tone }) => (
   <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', marginBottom: 10 }}>
     <div style={{
       width: 28, height: 28, borderRadius: 999, flexShrink: 0, display: 'grid', placeItems: 'center',
-      background: tone || 'var(--accent)', color: '#08120a', fontWeight: 800, fontSize: 13,
+      background: tone || 'var(--accent)', color: tone ? '#08120a' : 'var(--accent-ink)', fontWeight: 800, fontSize: 13,
     }}>{n}</div>
     <div style={{ minWidth: 0 }}>
       <div style={{ fontSize: 15, fontWeight: 800 }}>{icon} {title}</div>
@@ -1293,8 +1296,8 @@ const ApqBar = ({ label, val, hint, worst }) => {
       <div style={{ height: 5, background: 'var(--bg2)', borderRadius: 999, overflow: 'hidden', margin: '5px 0 4px' }}>
         <div style={{ width: `${v == null ? 0 : Math.max(0, Math.min(100, v))}%`, height: '100%', background: col }} />
       </div>
-      <div style={{ fontSize: 10.5, color: 'var(--muted)', lineHeight: 1.45 }}>{hint}</div>
-      {worst && <div style={{ fontSize: 10.5, fontWeight: 800, color: '#ef4444', marginTop: 3 }}>◀ ตัวฉุดหลักของกะนี้</div>}
+      <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.45 }}>{hint}</div>
+      {worst && <div style={{ fontSize: 11, fontWeight: 800, color: '#ef4444', marginTop: 3 }}>◀ ตัวฉุดหลักของกะนี้</div>}
     </div>
   );
 };
@@ -1448,7 +1451,7 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
             <div key={i} style={{ background: 'var(--bg3)', borderRadius: 8, padding: '9px 11px' }}>
               <div style={{ fontSize: 11, color: 'var(--muted)' }}>{x.l}</div>
               <div style={{ fontSize: 16, fontWeight: 800, color: x.c }}>{x.v}</div>
-              {x.s && <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 2 }}>{x.s}</div>}
+              {x.s && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{x.s}</div>}
             </div>
           ))}
         </div>
@@ -1484,10 +1487,10 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '3px 0 6px', flexWrap: 'wrap' }}>
                 <span style={{
-                  fontSize: 10.5, fontWeight: 800, color: '#08120a', background: g.meta.color,
+                  fontSize: 11, fontWeight: 800, color: '#08120a', background: g.meta.color,
                   borderRadius: 4, padding: '1px 7px',
                 }}>ทำให้ {g.meta.oee} ตก</span>
-                <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>
+                <span style={{ fontSize: 11, color: 'var(--muted)' }}>
                   {g.count} รายการ{dtMinAll && g.min ? ` · ${Math.round(g.min / dtMinAll * 100)}% ของเวลาหยุด` : ''}
                 </span>
               </div>
@@ -1620,7 +1623,7 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
             {peSet.part_name ? ` · ${peSet.part_name}` : ''} ({peSet.line_name || '—'})
             <button onClick={() => navigate(peLink)} style={{
               marginLeft: 8, fontSize: 11.5, fontWeight: 700, padding: '3px 10px', borderRadius: 999,
-              cursor: 'pointer', background: 'var(--accent)', color: '#08120a', border: 'none',
+              cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none',
             }}>เปิดดู →</button>
           </div>
         ) : !demoOn && (
@@ -1766,20 +1769,20 @@ export default function AdoptionOutlook() {
   }, [tab, dd, ddErr]);
 
   if (err) return (
-    <div style={{ padding: 16 }}>
+    <Page>
       <PageHeader title="ภาพเมื่อข้อมูลเชื่อมกันทั้งองค์กร" icon="🔮" />
       <div style={{ ...cardSt, borderLeft: '4px solid #ef4444', fontSize: 13 }}>โหลดข้อมูลไม่สำเร็จ: {err}</div>
-    </div>
+    </Page>
   );
   if (!d) return (
-    <div style={{ padding: 16 }}>
+    <Page>
       <PageHeader title="ภาพเมื่อข้อมูลเชื่อมกันทั้งองค์กร" icon="🔮" />
       <div style={{ fontSize: 13, color: 'var(--muted)' }}>กำลังนับข้อมูลจากฐานจริง…</div>
-    </div>
+    </Page>
   );
 
   return (
-    <div style={{ padding: isMobile ? 12 : 16, maxWidth: 1400, margin: '0 auto' }}>
+    <Page>
       <PageHeader
         title="ภาพเมื่อข้อมูลเชื่อมกันทั้งองค์กร" icon="🔮"
         sub={`ข้อมูล ณ ${d.loss.to} · ฝั่ง "วันนี้" นับสดจากฐานจริงทั้งหมด ไม่มีตัวเลขสมมติ`}
@@ -1839,6 +1842,6 @@ export default function AdoptionOutlook() {
       {tab === 'ladder' && <LadderTab c={d.c} navigate={navigate} isMobile={isMobile} />}
       {tab === 'dept' && <DeptTab c={d.c} navigate={navigate} isMobile={isMobile} />}
       {tab === 'roi' && <RoiTab c={d.c} loss={d.loss} rates={d.rates} demoOn={demoOn} day={d.loss.to} navigate={navigate} isMobile={isMobile} />}
-    </div>
+    </Page>
   );
 }

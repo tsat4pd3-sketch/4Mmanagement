@@ -6,9 +6,12 @@ import { toast } from '../components/Toast';
 import { loadDocForms, docFormSync, docFormScopes } from '../utils/docForms';
 import { buildDocFormPreviewHtml } from '../lib/docFormPreview';
 import tsLogoUrl from '../assets/TS logo.png';
-import { checkWrite } from '../utils/dbWrite';
+import { checkWriteRows } from '../utils/dbWrite';
 import SearchSelect from '../components/SearchSelect';
 import PersonSelect from '../components/PersonSelect';
+import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
+import { DeleteButton } from '../components/IconButton';
 
 /* ══════════════════════════════════════════════════════════════
    📄 ทะเบียนเอกสาร & ฟอร์ม (Document Master) — หน้า /doc-forms
@@ -133,7 +136,7 @@ export default function DocFormsRegistry() {
   };
   const removeScope = async (sc) => {
     if (!window.confirm(`ลบชุดของส่วนงาน "${sc.section}"? (กลับไปใช้ชุดกลาง)`)) return;
-    checkWrite(await supabase.from('doc_form_scopes').delete().eq('id', sc.id), 'ลบขอบเขต');
+    checkWriteRows(await supabase.from('doc_form_scopes').delete().eq('id', sc.id).select('id'), 'ลบขอบเขต');
     loadScopes(sc.doc_key); loadDocForms(true);
   };
   const addRevision = async () => {
@@ -150,7 +153,7 @@ export default function DocFormsRegistry() {
   };
   const removeRevision = async (r) => {
     if (!window.confirm(`ลบ Rev "${r.rev}"?`)) return;
-    checkWrite(await supabase.from('doc_form_revisions').delete().eq('id', r.id), 'ลบ revision');
+    checkWriteRows(await supabase.from('doc_form_revisions').delete().eq('id', r.id).select('id'), 'ลบ revision');
     loadRevisions(editing.doc_key);
   };
 
@@ -187,14 +190,12 @@ export default function DocFormsRegistry() {
   };
 
   return (
-    <div className="page-content">
-      <div style={{ marginBottom: 16 }}>
-        <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 'clamp(16px,3vw,22px)', color: 'var(--text)' }}>📄 ทะเบียนเอกสาร & ฟอร์ม</h2>
-        <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
+    <Page>
+      <PageHeader title="ทะเบียนเอกสาร & ฟอร์ม" icon="📄"
+        sub={<>
           Document Master — เลขฟอร์ม / Rev / Effective Date ของฟอร์มพิมพ์ทุกตัวในระบบ · แก้ที่นี่แล้วใบพิมพ์ใช้ค่าใหม่ทันที ไม่ต้องแก้โปรแกรม
           {!canManage && ' · คุณมีสิทธิ์ดูอย่างเดียว'}
-        </div>
-      </div>
+        </>} />
 
       {loading ? <div style={{ textAlign: 'center', padding: 40, color: 'var(--muted)' }}>กำลังโหลด...</div> : (
         <div className="card" style={{ overflowX: 'auto' }}>
@@ -221,7 +222,7 @@ export default function DocFormsRegistry() {
                   <td style={{ textAlign: 'center', fontSize: 12, whiteSpace: 'nowrap' }}>{r.effective_date || '—'}</td>
                   <td style={{ textAlign: 'center', fontSize: 12, whiteSpace: 'nowrap' }}>
                     {r.paper_size ? `${r.paper_size} ${r.orientation === 'landscape' ? 'แนวนอน' : 'แนวตั้ง'}` : (r.paper || '—')}
-                    {r.layout_locked === false && <div style={{ fontSize: 10, color: 'var(--accent)' }}>ปรับแนวได้</div>}
+                    {r.layout_locked === false && <div style={{ fontSize: 11, color: 'var(--accent)' }}>ปรับแนวได้</div>}
                   </td>
                   <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
                     {r.used_route
@@ -338,7 +339,7 @@ export default function DocFormsRegistry() {
                         </span>
                         <button onClick={() => preview(editing, sc.section)} style={sbtn}>🖨️ ตัวอย่าง</button>
                         {canManage && <button onClick={() => openScope(editing, sc)} style={sbtn}>✏️</button>}
-                        {canManage && <button onClick={() => removeScope(sc)} style={{ ...sbtn, color: '#e05252' }}>🗑</button>}
+                        {canManage && <DeleteButton onClick={() => removeScope(sc)} title="ลบ" />}
                       </div>
                     ))}
                   </div>
@@ -376,8 +377,7 @@ export default function DocFormsRegistry() {
                           <td style={{ textAlign: 'center' }}>{r.responsible || '—'}</td>
                           <td style={{ textAlign: 'center' }}>{r.approved_name || '—'}</td>
                           <td style={{ textAlign: 'center' }}>
-                            <button className="tbtn" onClick={() => removeRevision(r)} title="ลบ"
-                              style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 13 }}>🗑</button>
+                            <DeleteButton onClick={() => removeRevision(r)} title="ลบ" />
                           </td>
                         </tr>
                       ))}
@@ -394,12 +394,12 @@ export default function DocFormsRegistry() {
                   <input type="text" value={newRev.description} onChange={e => setNewRev(v => ({ ...v, description: e.target.value }))} placeholder="Description" style={{ width: '100%' }} />
                   <PersonSelect value={newRev.responsible} onChange={({ name }) => setNewRev(v => ({ ...v, responsible: name }))} placeholder="Responsible" />
                   <PersonSelect value={newRev.approved_name} onChange={({ name }) => setNewRev(v => ({ ...v, approved_name: name }))} placeholder="Approved" />
-                  <button onClick={addRevision} style={{ padding: '7px 14px', borderRadius: 7, border: 'none', background: 'var(--accent)', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: 12, whiteSpace: 'nowrap' }}>+ เพิ่ม</button>
+                  <button onClick={addRevision} style={{ padding: '7px 14px', borderRadius: 7, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: 'pointer', fontSize: 12, whiteSpace: 'nowrap' }}>+ เพิ่ม</button>
                 </div>
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
                 <button onClick={() => setEditing(null)} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
-                <button onClick={save} disabled={saving} style={{ padding: '8px 20px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: 13, opacity: saving ? 0.6 : 1 }}>
+                <button onClick={save} disabled={saving} style={{ padding: '8px 20px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: 'pointer', fontSize: 13, opacity: saving ? 0.6 : 1 }}>
                   {saving ? '⏳...' : '💾 บันทึก'}
                 </button>
               </div>
@@ -459,13 +459,13 @@ export default function DocFormsRegistry() {
                 <textarea rows={2} value={scopeEdit.legend} onChange={e => setScopeEdit(v => ({ ...v, legend: e.target.value }))} style={{ width: '100%', fontSize: 12.5 }} /></div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
                 <button onClick={() => setScopeEdit(null)} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
-                <button onClick={saveScope} style={{ padding: '8px 20px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: 13 }}>💾 บันทึก</button>
+                <button onClick={saveScope} style={{ padding: '8px 20px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: 'pointer', fontSize: 13 }}>💾 บันทึก</button>
               </div>
             </div>
           </div>
         </div>
       )}
-    </div>
+    </Page>
   );
 }
 

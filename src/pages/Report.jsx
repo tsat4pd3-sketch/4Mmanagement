@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef, useContext, useMemo, useCallback } from 'react';
+import { sortLike } from '../utils/listOrder';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { useLocation } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
+import { onlyShopfloorStaff } from '../utils/staffKind';   // 👥 นับคน = เฉพาะพนักงานหน้างาน (กฎ staffKind.js)
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
@@ -27,15 +29,23 @@ import { positionLabel, loadPositions } from '../utils/positions';   // ตำ�
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
 import LineSelect from '../components/LineSelect';
+import LineScopeSelect from '../components/LineScopeSelect';
 import { useOrgSections, useOrgDepts, useOrgTeams } from '../utils/useOrgSections';
-import { LINE_COLUMNS } from '../utils/useProductionLines';
+import { loadLinesRes, LINE_COLUMNS } from '../utils/useProductionLines';
 import PersonSelect from '../components/PersonSelect';
 import CostCenterSelect from '../components/CostCenterSelect';
 import useColumnHistory from '../utils/useColumnHistory';
 import { divisionsSync, loadDivisions } from '../utils/orgDivisions';
-import { checkWrite } from '../utils/dbWrite';
+import { checkWriteRows } from '../utils/dbWrite';
 import SearchSelect from '../components/SearchSelect';
 import { uploadOpts } from '../utils/storageUpload';
+import TimeRangeBar from '../components/TimeRangeBar';
+import Page from '../components/Page';
+import FilterBar from '../components/FilterBar';
+import Segmented from '../components/Segmented';
+import { ALL, SHIFT_OPTIONS } from '../utils/filterLabels';
+import useTimeRange from '../utils/useTimeRange';
+import { acceptImageFile } from '../utils/acceptImageFile';
 
 let tsLogoDataUrlPromise = null;
 function getTsLogoDataUrl() {
@@ -130,6 +140,9 @@ function CsvBtn({ onClick, style = {} }) {
   );
 }
 
+// UI-STANDARD 2026-09-24 — กะใน /report: state เดิมใช้ 'all' = ทุกกะ ⇒ map ค่าแรกของ SHIFT_OPTIONS ('' → 'all')
+const SHIFT_SEG_ALL = SHIFT_OPTIONS.map(o => (o.value === '' ? { ...o, value: 'all' } : o));
+
 const CAT_META = {
   Man:      { color: '#4d9fff', bg: 'rgba(77,159,255,0.12)',  label: 'Man',      icon: '👷' },
   Machine:  { color: '#f59e0b', bg: 'rgba(245,158,11,0.12)', label: 'Machine',  icon: '⚙️' },
@@ -178,7 +191,7 @@ export default function Report({ mode = 'report' }) {
   };
 
   return (
-    <div className="page-content">
+    <Page>
       <PageHeader
         title={mode === 'skills' ? 'Skill Matrix & ค่าฝีมือ' : 'รายงาน'}
         icon={mode === 'skills' ? '🏅' : '📋'}
@@ -196,7 +209,7 @@ export default function Report({ mode = 'report' }) {
       {activeTab === 7 && <AttendanceFormTab />}
       {activeTab === 8 && <MultiSkillFormTab />}
       {activeTab === 9 && <OtTransportBookingTab autoOpenMaster={autoOpenMaster} />}
-    </div>
+    </Page>
   );
 }
 
@@ -230,7 +243,7 @@ function OtTransportBookingTab({ autoOpenMaster }) {
   const [calReady, setCalReady] = useState(false);
 
   useEffect(() => {
-    supabase.from('production_lines').select('id, name, section').then(({ data }) => setLines(data || []));
+    loadLinesRes().then(({ data }) => setLines(data || []));
     loadCompanyCalendar().then(() => setCalReady(true));
   }, []);
 
@@ -276,7 +289,7 @@ function OtTransportBookingTab({ autoOpenMaster }) {
     .filter(r => !deptFilter || r.employees?.department === deptFilter)
     .filter(r => shiftFilter === 'all' || r.shift === shiftFilter);
 
-  const allSections = orgSectionList.length ? orgSectionList : [...new Set(lines.map(l => l.section).filter(Boolean))].sort();
+  const allSections = orgSectionList.length ? orgSectionList : sortLike(lines.map(l => l.section), orgSectionList);
   const sections = (role === 'leader' && userLineId)
     ? [...new Set(lines.filter(l => String(l.id) === String(userLineId)).map(l => l.section).filter(Boolean))]
     : scopeSecs.length ? allSections.filter(s => inSectionScope(scopeSecs, s)) : allSections;
@@ -336,9 +349,17 @@ table{border-collapse:collapse;width:100%}
 
   return (
     <div>
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 14, flexWrap: 'wrap' }}>
-        <label style={lbSt}>วันที่ทำ OT</label>
-        <input type="date" value={date} onChange={e => setDate(e.target.value)} style={{ width: 140, padding: '6px 10px', borderRadius: 7, fontSize: 13 }} />
+      <FilterBar style={{ marginBottom: 14 }}>
+        <select value={section} onChange={e => { setSection(e.target.value); setDeptFilter(''); }}>
+          <option value="">{ALL.section}</option>
+          {sections.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <select value={deptFilter} onChange={e => setDeptFilter(e.target.value)}>
+          <option value="">{ALL.dept}</option>
+          {deptsOf(section).map(d => <option key={d} value={d}>{d}</option>)}
+        </select>
+        <span className="filter-label">วันที่ทำ OT</span>
+        <input type="date" value={date} onChange={e => setDate(e.target.value)} />
         {calReady && (
           <span style={{
             fontSize: 12, fontWeight: 700, padding: '4px 10px', borderRadius: 999, whiteSpace: 'nowrap',
@@ -349,20 +370,9 @@ table{border-collapse:collapse;width:100%}
             {isHoliday ? '🔶 ' : ''}{DAY_TYPE_META[dayType].label}
           </span>
         )}
-        <select value={shiftFilter} onChange={e => setShiftFilter(e.target.value)} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
-          <option value="all">— ทุกกะ —</option>
-          <option value="day">☀️ กะเช้า</option>
-          <option value="night">🌙 กะดึก</option>
-        </select>
-        <select value={section} onChange={e => { setSection(e.target.value); setDeptFilter(''); }} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
-          <option value="">— ทุกส่วนงาน —</option>
-          {sections.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <select value={deptFilter} onChange={e => setDeptFilter(e.target.value)} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
-          <option value="">— ทุกแผนก —</option>
-          {deptsOf(section).map(d => <option key={d} value={d}>{d}</option>)}
-        </select>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+        <Segmented value={shiftFilter} onChange={setShiftFilter} options={SHIFT_SEG_ALL} label="กะ" />
+        <span className="spacer" />
+        <div style={{ display: 'flex', gap: 8 }}>
           {canManageMaster && (
             <button onClick={() => setShowMaster(v => !v)} style={{
               position: 'relative',
@@ -378,7 +388,7 @@ table{border-collapse:collapse;width:100%}
             }}>🖨️ พิมพ์</button>
           )}
         </div>
-      </div>
+      </FilterBar>
 
       {showMaster && canManageMaster && <OtMasterDataPanel />}
 
@@ -505,7 +515,7 @@ function OtMasterDataPanel() {
         <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
           <input placeholder="รหัส เช่น A17" value={newRouteCode} onChange={e => setNewRouteCode(e.target.value)} style={{ width: 70, padding: '6px 8px', borderRadius: 6, fontSize: 12 }} />
           <input placeholder="ชื่อสาย เช่น มาบยางพร-ปลวกแดง" value={newRouteName} onChange={e => setNewRouteName(e.target.value)} style={{ flex: 1, padding: '6px 8px', borderRadius: 6, fontSize: 12 }} />
-          <button onClick={addRoute} style={{ padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--accent)', color: '#fff', border: 'none' }}>+ เพิ่ม</button>
+          <button onClick={addRoute} style={{ padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>+ เพิ่ม</button>
         </div>
         <div style={{ maxHeight: 240, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
           {busRoutes.map(r => (
@@ -523,7 +533,7 @@ function OtMasterDataPanel() {
         <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>🛠️ งานที่ทำ OT</div>
         <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
           <input placeholder="ชื่องาน เช่น ผลิตตามแผน" value={newTaskName} onChange={e => setNewTaskName(e.target.value)} style={{ flex: 1, padding: '6px 8px', borderRadius: 6, fontSize: 12 }} />
-          <button onClick={addTask} style={{ padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--accent)', color: '#fff', border: 'none' }}>+ เพิ่ม</button>
+          <button onClick={addTask} style={{ padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>+ เพิ่ม</button>
         </div>
         <div style={{ maxHeight: 240, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
           {taskTypes.map(t => (
@@ -586,7 +596,7 @@ function SimpleNameMaster({ table, title, placeholder, offNote }) {
         <>
           <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
             <input placeholder={placeholder} value={newName} onChange={e => setNewName(e.target.value)} style={{ flex: 1, padding: '6px 8px', borderRadius: 6, fontSize: 12 }} />
-            <button onClick={add} style={{ padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--accent)', color: '#fff', border: 'none' }}>+ เพิ่ม</button>
+            <button onClick={add} style={{ padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>+ เพิ่ม</button>
           </div>
           <div style={{ maxHeight: 240, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
             {rows.map(r => (
@@ -630,7 +640,7 @@ function DailyTab() {
       (data || []).forEach(w => { m[String(w.id)] = w.station_name; });
       setStationMap(m);
     });
-    supabase.from('production_lines').select(LINE_COLUMNS).order('name').then(({ data }) => setLines(data || [])); // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
+    loadLinesRes().then(({ data }) => setLines(data || [])); // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
     loadCompanyCalendar().then(() => setCalLoaded(true));
   }, []);
 
@@ -674,11 +684,10 @@ function DailyTab() {
     return lines;
   }, [lines, role, userLineId, scopeSecs]);
   const dailySections = useMemo(() => {
-    if (role === 'leader' && userLineId) return [...new Set(linesInScope.map(l => l.section).filter(Boolean))].sort();
-    const all = orgSectionList.length ? orgSectionList : [...new Set(lines.map(l => l.section).filter(Boolean))].sort();
+    if (role === 'leader' && userLineId) return sortLike(linesInScope.map(l => l.section), orgSectionList);
+    const all = orgSectionList.length ? orgSectionList : sortLike(lines.map(l => l.section), orgSectionList);
     return scopeSecs.length ? all.filter(s => inSectionScope(scopeSecs, s)) : all;
   }, [lines, linesInScope, orgSectionList, role, userLineId, scopeSecs]);
-  const dailyVisibleLines = dailySection ? linesInScope.filter(l => l.section === dailySection) : linesInScope;
 
   const filteredLogs = useMemo(() => logs.filter(l => {
     if (dailySection && l.employees?.section !== dailySection) return false;
@@ -690,16 +699,6 @@ function DailyTab() {
     if (dailyTeam && l.employees?.team !== dailyTeam) return false;
     return true;
   }), [logs, dailySection, dailyDept, dailyLine, dailyTeam, lines]);
-
-  const shiftBtnStyle = (val) => ({
-    padding: '5px 12px', borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600,
-    background: shift === val
-      ? val === 'day' ? 'rgba(245,158,11,0.2)' : val === 'night' ? 'rgba(77,159,255,0.2)' : 'rgba(255,255,255,0.1)'
-      : 'transparent',
-    color: shift === val
-      ? val === 'day' ? '#f59e0b' : val === 'night' ? '#4d9fff' : 'var(--text2)'
-      : 'var(--muted)',
-  });
 
   const handlePrintDaily = () => {
     const todayStr = new Date().toLocaleDateString('th-TH', { dateStyle: 'long' });
@@ -745,34 +744,24 @@ table{border-collapse:collapse;width:100%}
 
   return (
     <div>
-      <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-        <input type="date" value={date} onChange={e => setDate(e.target.value)} style={{ width: 140, padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
-        {/* Shift toggle */}
-        <div style={{ display: 'flex', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 10, padding: 3, gap: 2 }}>
-          <button style={shiftBtnStyle('day')}   onClick={() => setShift('day')}>☀️ กะเช้า</button>
-          <button style={shiftBtnStyle('night')} onClick={() => setShift('night')}>🌙 กะดึก</button>
-          <button style={shiftBtnStyle('all')}   onClick={() => setShift('all')}>ทั้งหมด</button>
-        </div>
-        <select value={dailySection} onChange={e => { setDailySection(e.target.value); setDailyLine(''); setDailyDept(''); }} style={selSt}>
-          <option value="">ทุกส่วนงาน</option>
-          {dailySections.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <select value={dailyDept} onChange={e => setDailyDept(e.target.value)} style={selSt}>
-          <option value="">ทุกแผนก</option>
-          {deptsOf(dailySection).map(d => <option key={d} value={d}>{d}</option>)}
-        </select>
-        {/* 2026-09-07 อ่านทะเบียนไลน์ผ่าน <LineSelect> (ลำดับชั้น/ปลดระวาง) — คงตัวกรอง scope+section เดิม */}
-        <LineSelect lines={dailyVisibleLines} value={dailyLine} valueKey="id" placeholder="ทุกไลน์" style={selSt} onChange={setDailyLine} />
-        <select value={dailyTeam} onChange={e => setDailyTeam(e.target.value)} style={selSt}>
-          <option value="">ทุก Team</option>
+      <FilterBar style={{ marginBottom: 16 }}>
+        {/* ขอบเขต = ช่องเดียว ส่วนงาน → กลุ่มไลน์ → ไลน์ (<LineScopeSelect> · 2026-10-02) — เลือกไลน์ = กรองตามไลน์อย่างเดียวเหมือนเดิม (ส่วนงานว่าง) */}
+        {/* + แผนก (org department) อยู่ในต้นไม้เดียวกัน (02/10 · user: "ให้เลือกระดับแผนกได้") — เดิมเป็นช่องแยกถัดไป */}
+        <LineScopeSelect lines={linesInScope} sections={dailySections} section={dailySection} line={dailyLine} unit={dailyDept} pickDept valueKey="id"
+          onChange={(sec, ln, { unit }) => { setDailySection(ln || unit ? '' : sec); setDailyLine(ln); setDailyDept(unit || ''); }} />
+        <select value={dailyTeam} onChange={e => setDailyTeam(e.target.value)}>
+          <option value="">{ALL.team}</option>
           {teams.map(t => <option key={t} value={t}>Team {t}</option>)}{/* 2026-09-07 ทีมจากผังองค์กร (useOrgTeams) */}
         </select>
-        <span style={{ color: 'var(--muted)', fontSize: 13 }}>รวม {filteredLogs.length} คน</span>
+        <input type="date" value={date} onChange={e => setDate(e.target.value)} />
         {calLoaded && (
           <span style={{ fontSize: 12, fontWeight: 700, color: DAY_TYPE_META[getDayType(date)].color }}>
             {DAY_TYPE_META[getDayType(date)].label}
           </span>
         )}
+        <Segmented value={shift} onChange={setShift} options={SHIFT_SEG_ALL} label="กะ" />
+        <span className="spacer" />
+        <span className="filter-count">รวม {filteredLogs.length} คน</span>
         {canExport && (
           <button onClick={handlePrintDaily} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.35)', display: 'flex', alignItems: 'center', gap: 5 }}>
             🖨️ PDF
@@ -784,7 +773,7 @@ table{border-collapse:collapse;width:100%}
           // fallback กะจาก team: C = กะเช้าตลอด · A/B หมุนกะ ไม่รู้รอบจริง = เว้นว่าง (เดิมเดา A=เช้า B=ดึกตายตัว — ผิดครึ่งสัปดาห์)
           filteredLogs.map(l => [date, DAY_TYPE_META[getDayType(date)]?.label || '', l.shift || (l.employees?.team === 'C' ? 'day' : ''), l.employees?.employee_id_code, l.employees?.name, l.employees?.department || '', l.employees?.team || '', l.has_helmet ? '✓' : '✗', l.has_boots ? '✓' : '✗', l.has_gloves ? '✓' : '✗', l.has_ot ? '✓' : ''])
         )} />
-      </div>
+      </FilterBar>
       {loading ? <Loader /> : (
         <div className="card table-sticky" style={{ overflowX: 'auto' }}>
           <table style={{ minWidth: 500 }}>
@@ -838,9 +827,9 @@ function PerEmployeeTab() {
     // mandatory scope: leader → ทั้งครอบครัวไลน์ตัวเอง (ตัวเอง + แม่ + ลูก — ห้ามกรอง line_id
     // ตรงตัว ไม่งั้นคนที่ผูกไลน์ลูกหายจากสายตาหัวหน้าที่ผูกไลน์แม่) · sections → เฉพาะใน scope
     (async () => {
-      let empQ = supabase.from('employees').select('id, name, employee_id_code, section, department, team').eq('is_active', true);
+      let empQ = onlyShopfloorStaff(supabase.from('employees').select('id, name, employee_id_code, section, department, team').eq('is_active', true));
       if (role === 'leader' && userLineId) {
-        const { data: ls } = await supabase.from('production_lines').select('id, name, parent_line_name');
+        const { data: ls } = await loadLinesRes();
         const fam = getLineFamilyIds(ls || [], Number(userLineId));
         empQ = fam.size ? empQ.in('line_id', [...fam]) : empQ.eq('line_id', userLineId);
       } else if (scopeSecs.length) {
@@ -873,8 +862,8 @@ function PerEmployeeTab() {
 
   // dropdown ส่วนงาน เหลือเฉพาะใน scope (leader → เฉพาะส่วนงานของพนักงานในไลน์ตัวเองซึ่งถูก scope แล้ว)
   const empSections = useMemo(() => {
-    if (role === 'leader' && userLineId) return [...new Set(employees.map(e => e.section).filter(Boolean))].sort();
-    const all = orgSectionList.length ? orgSectionList : [...new Set(employees.map(e => e.section).filter(Boolean))].sort();
+    if (role === 'leader' && userLineId) return sortLike(employees.map(e => e.section), orgSectionList);
+    const all = orgSectionList.length ? orgSectionList : sortLike(employees.map(e => e.section), orgSectionList);
     return scopeSecs.length ? all.filter(s => inSectionScope(scopeSecs, s)) : all;
   }, [employees, orgSectionList, role, userLineId, scopeSecs]);
   const filteredEmployees = useMemo(() => employees.filter(e => {
@@ -932,25 +921,25 @@ table{border-collapse:collapse;width:100%}
 
   return (
     <div>
-      <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-        <select value={empSection} onChange={e => { setEmpSection(e.target.value); setEmpDept(''); }} style={selSt}>
-          <option value="">ทุกส่วนงาน</option>
+      <FilterBar style={{ marginBottom: 16 }}>
+        <select value={empSection} onChange={e => { setEmpSection(e.target.value); setEmpDept(''); }}>
+          <option value="">{ALL.section}</option>
           {empSections.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
-        <select value={empDept} onChange={e => setEmpDept(e.target.value)} style={selSt}>
-          <option value="">ทุกแผนก</option>
+        <select value={empDept} onChange={e => setEmpDept(e.target.value)}>
+          <option value="">{ALL.dept}</option>
           {deptsOf(empSection).map(d => <option key={d} value={d}>{d}</option>)}
         </select>
-        <select value={empTeam} onChange={e => setEmpTeam(e.target.value)} style={selSt}>
-          <option value="">ทุก Team</option>
+        <select value={empTeam} onChange={e => setEmpTeam(e.target.value)}>
+          <option value="">{ALL.team}</option>
           {teams.map(t => <option key={t} value={t}>Team {t}</option>)}{/* 2026-09-07 ทีมจากผังองค์กร (useOrgTeams) */}
         </select>
+        <input type="month" value={month} onChange={e => setMonth(e.target.value)} />
         <SearchSelect value={String(selected ?? '')} placeholder="ค้นหาพนักงาน (รหัส/ชื่อ)…" style={{ flex: '0 1 320px', minWidth: 240 }}
-          inputStyle={{ padding: '7px 30px 7px 10px', borderRadius: 7, fontSize: 13 }}
           options={filteredEmployees.map(e => ({ id: String(e.id), label: `${e.employee_id_code} — ${e.name}`, keywords: e.employee_id_code }))}
           onChange={({ id }) => setSelected(filteredEmployees.find(e => String(e.id) === id)?.id ?? id)} />
-        <input type="month" value={month} onChange={e => setMonth(e.target.value)} style={{ width: 150, padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
-        <span style={{ color: 'var(--muted)', fontSize: 13 }}>มา {logs.filter(l => l.is_present).length} วัน</span>
+        <span className="spacer" />
+        <span className="filter-count">มา {logs.filter(l => l.is_present).length} วัน</span>
         {canExport && (
           <button onClick={handlePrintPerEmp} disabled={logs.length === 0} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.35)', display: 'flex', alignItems: 'center', gap: 5, opacity: logs.length === 0 ? 0.5 : 1 }}>
             🖨️ PDF
@@ -965,7 +954,7 @@ table{border-collapse:collapse;width:100%}
             logs.map(l => [l.work_date, DAY_TYPE_META[getDayType(l.work_date)]?.label || '', l.is_present ? '✓' : '✗', l.has_helmet ? '✓' : '✗', l.has_boots ? '✓' : '✗', l.has_gloves ? '✓' : '✗', stationMap[String(l.assigned_line)] || l.assigned_line || ''])
           );
         }} />
-      </div>
+      </FilterBar>
       {loading ? <Loader /> : (
         <div className="card table-sticky" style={{ overflowX: 'auto' }}>
           <table style={{ minWidth: 400 }}>
@@ -999,8 +988,10 @@ function StationLogTab() {
   const [stations, setStations] = useState([]);
   const [lines, setLines] = useState([]);
   const [selectedStation, setSelectedStation] = useState('');
-  const [from, setFrom] = useState(() => { const d = new Date(); if (d.getHours() < 8) d.setDate(d.getDate() - 1); d.setDate(d.getDate() - 6); return toLocalDateStr(d); });
-  const [to, setTo] = useState(today);
+  /* ⏱️ ช่วงข้อมูล = แถบกลาง (UI §6.16) · เดิม default 7 วัน (นับหัวนับท้าย) ⇒ `defaultDays: 7`
+     แผงนี้เป็นรายงานรายวัน ไม่ได้แบ่งถังเวลา ⇒ `scales={null}` */
+  const tr = useTimeRange({ defaultDays: 7 });
+  const { from, to } = tr;
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [stationSection, setStationSection] = useState('');
@@ -1012,7 +1003,7 @@ function StationLogTab() {
     supabase.from('workstations').select('id, station_name, line_name').order('line_name').order('station_name').then(({ data }) => {
       setStations(data || []);
     });
-    supabase.from('production_lines').select('id, name, section').then(({ data }) => setLines(data || []));
+    loadLinesRes().then(({ data }) => setLines(data || []));
     loadCompanyCalendar().then(() => setCalLoaded(true));
   }, []);
 
@@ -1027,7 +1018,7 @@ function StationLogTab() {
       const myLine = lines.find(l => String(l.id) === String(userLineId));
       return myLine?.section ? [myLine.section] : [];
     }
-    const all = orgSectionList.length ? orgSectionList : [...new Set(lines.map(l => l.section).filter(Boolean))].sort();
+    const all = orgSectionList.length ? orgSectionList : sortLike(lines.map(l => l.section), orgSectionList);
     return scopeSecs.length ? all.filter(s => inSectionScope(scopeSecs, s)) : all;
   }, [lines, orgSectionList, role, userLineId, scopeSecs]);
 
@@ -1141,32 +1132,30 @@ table{border-collapse:collapse;width:100%}
 
   return (
     <div>
-      <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-        <select value={stationSection} onChange={e => setStationSection(e.target.value)} style={selSt}>
-          <option value="">ทุกส่วนงาน</option>
+      {/* ⏱️ UI-STANDARD 2026-09-24 — แถบเวลาเดียวกับแท็บอื่น + ตัวกรองของแท็บเป็น children (แถบเดียว)
+          (ช่องวันที่ของแท็บนี้หลุดหายไปตอนย้ายเข้า TimeRangeBar 23/09 — ใส่คืน) */}
+      <TimeRangeBar
+        scale={tr.scale} from={from} to={to} today={tr.today} scales={null}
+        onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset} style={{ marginBottom: 16 }}
+      >
+        <select value={stationSection} onChange={e => setStationSection(e.target.value)}>
+          <option value="">{ALL.section}</option>
           {stationSectionsList.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
-        <select value={selectedStation} onChange={e => setSelectedStation(e.target.value)}
-          style={{ width: 'auto', padding: '7px 10px', borderRadius: 7, fontSize: 13, minWidth: 200 }}>
+        <select value={selectedStation} onChange={e => setSelectedStation(e.target.value)} style={{ minWidth: 200 }}>
           {Object.entries(byLine).map(([line, sts]) => (
             <optgroup key={line} label={line}>
               {sts.map(s => <option key={s.id} value={String(s.id)}>{s.station_name}</option>)}
             </optgroup>
           ))}
         </select>
-        <input type="date" value={from} onChange={e => setFrom(e.target.value)} style={{ width: 140, padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
-        <span style={{ color: 'var(--muted)', fontSize: 13 }}>—</span>
-        <input type="date" value={to} onChange={e => setTo(e.target.value)} style={{ width: 140, padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
-        <select value={stationTeam} onChange={e => setStationTeam(e.target.value)} style={selSt}>
-          <option value="">ทุก Team</option>
+        <select value={stationTeam} onChange={e => setStationTeam(e.target.value)}>
+          <option value="">{ALL.team}</option>
           {teams.map(t => <option key={t} value={t}>Team {t}</option>)}{/* 2026-09-07 ทีมจากผังองค์กร (useOrgTeams) */}
         </select>
-        <select value={stationShift} onChange={e => setStationShift(e.target.value)} style={selSt}>
-          <option value="">ทุกกะ</option>
-          <option value="day">☀️ กะเช้า</option>
-          <option value="night">🌙 กะดึก</option>
-        </select>
-        <span style={{ color: 'var(--muted)', fontSize: 13 }}>{filteredRows.length} รายการ</span>
+        <Segmented value={stationShift} onChange={setStationShift} options={SHIFT_OPTIONS} label="กะ" />
+        <span className="spacer" />
+        <span className="filter-count">{filteredRows.length} รายการ</span>
         {canExport && (
           <button onClick={handlePrintStation} disabled={filteredRows.length === 0} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.35)', display: 'flex', alignItems: 'center', gap: 5, opacity: filteredRows.length === 0 ? 0.5 : 1 }}>
             🖨️ PDF
@@ -1177,7 +1166,7 @@ table{border-collapse:collapse;width:100%}
           ['วันที่', 'ประเภทวัน', 'รหัส', 'ชื่อ', 'ทีม', 'กะ', 'สังกัด', 'มาทำงาน', 'PPE ครบ'],
           filteredRows.map(r => [r.work_date, DAY_TYPE_META[getDayType(r.work_date)].label, r.employees?.employee_id_code, r.employees?.name, r.employees?.team || '', r.shift || '', r.employees?.section || '', r.is_present ? '✓' : '✗', (r.has_helmet && r.has_boots && r.has_gloves) ? '✓' : '✗'])
         )} />
-      </div>
+      </TimeRangeBar>
 
       {station && (
         <div style={{ marginBottom: 12, padding: '8px 14px', borderRadius: 8, background: 'var(--accent-dim)', border: '1px solid rgba(61,214,92,0.2)', display: 'inline-flex', gap: 10, alignItems: 'center' }}>
@@ -1232,20 +1221,24 @@ table{border-collapse:collapse;width:100%}
 
 function RangeTab() {
   const teams = useOrgTeams(); // 2026-09-07 ทีม A/B/C จาก org_nodes (fallback A/B/C)
+  const orgSectionList = useOrgSections();   // ลำดับส่วนงานตามผัง เหมือนแท็บอื่น (2026-10-01)
   const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
   const canExport = can('report', 'export', role);
   const today = getWorkDate();
-  const [from, setFrom] = useState(() => { const d = new Date(); if (d.getHours() < 8) d.setDate(d.getDate() - 1); d.setDate(d.getDate() - 6); return toLocalDateStr(d); });
-  const [to, setTo] = useState(today);
+  /* ⏱️ ช่วงข้อมูล = แถบกลาง (UI §6.16) · เดิม default 7 วัน (นับหัวนับท้าย) ⇒ `defaultDays: 7`
+     แผงนี้เป็นรายงานรายวัน ไม่ได้แบ่งถังเวลา ⇒ `scales={null}` */
+  const tr = useTimeRange({ defaultDays: 7 });
+  const { from, to } = tr;
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [lines, setLines] = useState([]);
   const [rangeSection, setRangeSection] = useState('');
+  const [rangeUnit, setRangeUnit] = useState({ name: '', lines: [] });   // แผนก (org) → ชุดไลน์ (02/10)
   const [rangeLine, setRangeLine] = useState('');
   const [rangeTeam, setRangeTeam] = useState('');
 
   useEffect(() => {
-    supabase.from('production_lines').select(LINE_COLUMNS).order('name').then(({ data }) => setLines(data || [])); // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
+    loadLinesRes().then(({ data }) => setLines(data || [])); // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
   }, []);
 
   useEffect(() => { load(); }, [from, to]);
@@ -1278,18 +1271,19 @@ function RangeTab() {
     if (scopeSecs.length) return lines.filter(l => inSectionScope(scopeSecs, l.section));
     return lines;
   }, [lines, role, userLineId, scopeSecs]);
-  const rangeSections = useMemo(() => [...new Set(rangeLinesInScope.map(l => l.section).filter(Boolean))].sort(), [rangeLinesInScope]);
-  const rangeVisibleLines = rangeSection ? rangeLinesInScope.filter(l => l.section === rangeSection) : rangeLinesInScope;
+  const rangeSections = useMemo(() => sortLike(rangeLinesInScope.map(l => l.section), orgSectionList), [rangeLinesInScope, orgSectionList]);
 
+  const rangeUnitIds = useMemo(() => new Set(lines.filter(l => rangeUnit.lines.includes(l.name)).map(l => String(l.id))), [lines, rangeUnit]);
   const filteredRows = useMemo(() => rows.filter(r => {
     if (rangeSection && r.section !== rangeSection) return false;
+    if (rangeUnit.name && !rangeUnitIds.has(String(r.lineId))) return false;
     if (rangeLine) {
       const lineObj = lines.find(ln => String(ln.id) === String(rangeLine));
       if (lineObj && String(r.lineId) !== String(lineObj.id)) return false;
     }
     if (rangeTeam && r.team !== rangeTeam) return false;
     return true;
-  }), [rows, rangeSection, rangeLine, rangeTeam, lines]);
+  }), [rows, rangeSection, rangeUnit, rangeUnitIds, rangeLine, rangeTeam, lines]);
 
   const handlePrintRange = () => {
     const todayStr = new Date().toLocaleDateString('th-TH', { dateStyle: 'long' });
@@ -1329,24 +1323,20 @@ table{border-collapse:collapse;width:100%}
 
   return (
     <div>
-      <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, flexWrap: 'wrap' }}>
-          <span style={{ color: 'var(--muted)' }}>จาก</span>
-          <input type="date" value={from} onChange={e => setFrom(e.target.value)} style={{ width: 140, padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
-          <span style={{ color: 'var(--muted)' }}>ถึง</span>
-          <input type="date" value={to} onChange={e => setTo(e.target.value)} style={{ width: 140, padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
-        </div>
-        <select value={rangeSection} onChange={e => { setRangeSection(e.target.value); setRangeLine(''); }} style={selSt}>
-          <option value="">ทุกส่วนงาน</option>
-          {rangeSections.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-        {/* 2026-09-07 อ่านทะเบียนไลน์ผ่าน <LineSelect> — คงตัวกรอง scope+section เดิม */}
-        <LineSelect lines={rangeVisibleLines} value={rangeLine} valueKey="id" placeholder="ทุกไลน์" style={selSt} onChange={setRangeLine} />
-        <select value={rangeTeam} onChange={e => setRangeTeam(e.target.value)} style={selSt}>
-          <option value="">ทุก Team</option>
+      <TimeRangeBar
+        scale={tr.scale} from={from} to={to} today={tr.today} scales={null}
+        onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset} style={{ marginBottom: 16 }}
+      >
+        {/* ขอบเขต = ช่องเดียว ส่วนงาน → กลุ่มไลน์ → ไลน์ (<LineScopeSelect> · 2026-10-02) — เลือกไลน์ = กรองตามไลน์อย่างเดียวเหมือนเดิม (ส่วนงานว่าง) */}
+        {/* + แผนก (org department) อยู่ในต้นไม้เดียวกัน (02/10 · user: "ให้เลือกระดับแผนกได้") — เดิมเป็นช่องแยกถัดไป */}
+        <LineScopeSelect lines={rangeLinesInScope} sections={rangeSections} section={rangeSection} line={rangeLine} unit={rangeUnit.name} pickDept valueKey="id"
+          onChange={(sec, ln, { unit, lines: ul }) => { setRangeSection(ln || unit ? '' : sec); setRangeLine(ln); setRangeUnit({ name: unit || '', lines: unit ? ul : [] }); }} />
+        <select value={rangeTeam} onChange={e => setRangeTeam(e.target.value)}>
+          <option value="">{ALL.team}</option>
           {teams.map(t => <option key={t} value={t}>Team {t}</option>)}{/* 2026-09-07 ทีมจากผังองค์กร (useOrgTeams) */}
         </select>
-        <span style={{ color: 'var(--muted)', fontSize: 13 }}>{filteredRows.length} คน</span>
+        <span className="spacer" />
+        <span className="filter-count">{filteredRows.length} คน</span>
         {canExport && (
           <button onClick={handlePrintRange} disabled={filteredRows.length === 0} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.35)', display: 'flex', alignItems: 'center', gap: 5, opacity: filteredRows.length === 0 ? 0.5 : 1 }}>
             🖨️ PDF
@@ -1357,7 +1347,7 @@ table{border-collapse:collapse;width:100%}
           ['รหัสพนักงาน', 'ชื่อ', 'วันที่มา', 'วันทั้งหมด', '%การมาทำงาน'],
           filteredRows.map(r => [r.code, r.name, r.present, r.total, r.total ? Math.round(r.present / r.total * 100) + '%' : '0%'])
         )} />
-      </div>
+      </TimeRangeBar>
       {loading ? <Loader /> : (
         <div className="card table-sticky" style={{ overflowX: 'auto' }}>
           <table style={{ minWidth: 420 }}>
@@ -1425,11 +1415,11 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
   };
 
   const today = getWorkDate();
-  const [from,        setFrom]        = useState(() => {
-    if (/^\d{4}-\d{2}-\d{2}$/.test(initFrom)) return initFrom;   // มาจาก deep-link — ครอบวันของใบที่เลือก
-    const d = new Date(); if (d.getHours() < 8) d.setDate(d.getDate() - 1); d.setDate(d.getDate() - 6); return toLocalDateStr(d);
-  });
-  const [to,          setTo]          = useState(today);
+  /* ⏱️ ช่วงข้อมูล = แถบกลาง (UI §6.16) · แผงนี้เป็นรายการใบ 4M ไม่ได้แบ่งถังเวลา ⇒ `scales={null}`
+     ℹ️ deep-link เดิมส่ง `initFrom` มาจาก `?from=` ของ URL ซึ่งเป็น**พารามิเตอร์เดียวกับที่ hook อ่าน**
+        ⇒ `useTimeRange` รับช่วงจาก deep-link ให้เองแล้ว ไม่ต้องเซ็ตซ้ำ (prop คงไว้เพื่อความเข้ากันได้) */
+  const tr = useTimeRange({ defaultDays: 7 });
+  const { from, to } = tr;
   const [line,        setLine]        = useState('');
   const [cat,         setCat]         = useState('');
   const [statusFilter,setStatusFilter]= useState(() => STATUS_META[initStatus] ? initStatus : ''); // validate ค่าจาก URL
@@ -1438,6 +1428,7 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
   const [lines,       setLines]       = useState([]);
   const [loading,     setLoading]     = useState(false);
   const [fourMSection, setFourMSection] = useState('');
+  const [fourMUnit, setFourMUnit] = useState({ name: '', lines: [] });   // แผนก (org) → ชุดไลน์ (02/10)
   const [rejectModal,  setRejectModal]  = useState(null);
   const [rejectReason, setRejectReason] = useState('');
   const [profileMap,   setProfileMap]   = useState({});
@@ -1472,7 +1463,7 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
   }, [role, scopeSecs, userLineId, lines]);
 
   useEffect(() => {
-    supabase.from('production_lines').select(LINE_COLUMNS).order('name').then(({ data }) => setLines(data || [])); // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
+    loadLinesRes().then(({ data }) => setLines(data || [])); // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
     loadCompanyCalendar();
   }, []);
 
@@ -1790,10 +1781,11 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
 
   // Filter logs by section: cross-reference line_name to lines array to get section
   const fourMFilteredLogs = useMemo(() => {
+    if (fourMUnit.name) { const u = new Set(fourMUnit.lines); return logs.filter(l => u.has(l.line_name)); }
     if (!fourMSection) return logs;
     const sectionLineNames = new Set(lines.filter(l => l.section === fourMSection).map(l => l.name));
     return logs.filter(l => sectionLineNames.has(l.line_name));
-  }, [logs, fourMSection, lines]);
+  }, [logs, fourMSection, fourMUnit, lines]);
 
   const kpi = Object.fromEntries(Object.keys(CAT_META).map(k => [k, fourMFilteredLogs.filter(l => l.category === k).length]));
   const actionableCount = fourMFilteredLogs.filter(l => ['pending','pending_qa'].includes(l.status)).length;
@@ -1852,14 +1844,15 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
             <div style={{ border: `2px dashed ${qaImageFile ? '#a855f7' : 'var(--border2)'}`, borderRadius: 8, padding: '10px 12px', background: qaImageFile ? 'rgba(168,85,247,0.06)' : 'var(--bg2)', cursor: 'pointer', textAlign: 'center' }}
               onClick={() => document.getElementById('qa-img-input').click()}>
               <input id="qa-img-input" type="file" accept="image/*" style={{ display: 'none' }}
-                onChange={e => {
+                onChange={async e => {
                   const f = e.target.files?.[0];
                   e.target.value = '';   // เลือกไฟล์เดิมซ้ำต้องยิง change อีกครั้ง (หลังแนบล้มแล้วลองรูปเดิม)
-                  if (!f) return;
-                  setQaImageFile(f);
+                  const img = await acceptImageFile(f);   // ด่านรับรูปจุดเดียว (HEIC → JPEG · ไม่ใช่รูป = toast)
+                  if (!img) return;
+                  setQaImageFile(img);
                   const reader = new FileReader();
                   reader.onload = ev => setQaImagePreview(ev.target.result);
-                  reader.readAsDataURL(f);
+                  reader.readAsDataURL(img);
                 }} />
               {qaImagePreview
                 ? <img src={qaImagePreview} style={{ maxHeight: 140, maxWidth: '100%', borderRadius: 6, objectFit: 'contain' }} />
@@ -1912,31 +1905,29 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
         ))}
       </div>
 
-      <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
-        <input type="date" value={from} onChange={e => setFrom(e.target.value)} style={{ width: 140, padding: '7px 10px', borderRadius: 7, fontSize: 12 }} />
-        <span style={{ color: 'var(--muted)', fontSize: 12 }}>—</span>
-        <input type="date" value={to} onChange={e => setTo(e.target.value)} style={{ width: 140, padding: '7px 10px', borderRadius: 7, fontSize: 12 }} />
+      <TimeRangeBar
+        scale={tr.scale} from={from} to={to} today={tr.today} scales={null}
+        onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset} style={{ marginBottom: 14 }}
+      >
+        {/* UI-STANDARD 2026-09-24 — ตัวกรองเป็น children ของแถบเวลา (แถบเดียว) · ช่องเดือน = พารามิเตอร์ของปุ่ม export อยู่หลัง spacer (§3.5) */}
         {(() => {
           const scopedLines = allowedLineNames ? lines.filter(l => allowedLineNames.includes(l.name)) : lines;
           const fourMSections = allowedLineNames
-            ? [...new Set(scopedLines.map(l => l.section).filter(Boolean))].sort()
-            : (orgSectionList.length ? orgSectionList : [...new Set(lines.map(l => l.section).filter(Boolean))].sort());
-          const fourMVisibleLines = fourMSection ? scopedLines.filter(l => l.section === fourMSection) : scopedLines;
+            ? sortLike(scopedLines.map(l => l.section), orgSectionList)
+            : (orgSectionList.length ? orgSectionList : sortLike(lines.map(l => l.section), orgSectionList));
           return (<>
-            <select value={fourMSection} onChange={e => { setFourMSection(e.target.value); setLine(''); }} style={{ padding: '7px 10px', borderRadius: 7, fontSize: 12 }}>
-              <option value="">ทุกส่วนงาน</option>
-              {fourMSections.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-            {/* 2026-09-07 อ่านทะเบียนไลน์ผ่าน <LineSelect> — คงตัวกรอง scope+section เดิม */}
-            <LineSelect lines={fourMVisibleLines} value={line} placeholder="ทุกไลน์" style={{ width: 'auto', padding: '7px 10px', borderRadius: 7, fontSize: 12 }} onChange={setLine} />
+            {/* ขอบเขต = ช่องเดียว ส่วนงาน → กลุ่มไลน์ → ไลน์ (<LineScopeSelect> · 2026-10-02) — เลือกไลน์ = กรองตามไลน์อย่างเดียวเหมือนเดิม (ส่วนงานว่าง) */}
+            {/* + แผนก (org department) อยู่ในต้นไม้เดียวกัน (02/10 · user: "ให้เลือกระดับแผนกได้") — เดิมเป็นช่องแยกถัดไป */}
+            <LineScopeSelect lines={scopedLines} sections={fourMSections} section={fourMSection} line={line} unit={fourMUnit.name} pickDept
+              onChange={(sec, ln, { unit, lines: ul }) => { setFourMSection(ln || unit ? '' : sec); setLine(ln); setFourMUnit({ name: unit || '', lines: unit ? ul : [] }); }} />
           </>);
         })()}
-        <select value={cat} onChange={e => setCat(e.target.value)} style={{ padding: '7px 10px', borderRadius: 7, fontSize: 12 }}>
-          <option value="">ทุกประเภท</option>
+        <select value={cat} onChange={e => setCat(e.target.value)}>
+          <option value="">{ALL.type}</option>
           {Object.keys(CAT_META).map(k => <option key={k} value={k}>{k}</option>)}
         </select>
-        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={{ padding: '7px 10px', borderRadius: 7, fontSize: 12 }}>
-          <option value="">ทุกสถานะ</option>
+        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+          <option value="">{ALL.status}</option>
           <option value="pending">⏳ รอ SV Approve</option>
           <option value="pending_qa">🔍 รอ QA Approve</option>
           <option value="approved">✅ Approved</option>
@@ -1947,6 +1938,7 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
             ⏳ รอดำเนินการ {actionableCount} รายการ
           </span>
         )}
+        <span className="spacer" />
         <CsvBtn onClick={() => downloadCSV(
           `4m_changes_${from}_${to}.csv`,
           ['วันที่', 'ประเภทวัน', 'ไลน์', 'ประเภท', 'ประเภทย่อย', 'รายละเอียด', 'สถานะ', 'เวลาสร้าง'],
@@ -1955,8 +1947,9 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
         )} />
         {canExport && (
           <>
-            <span style={{ width: 1, alignSelf: 'stretch', background: 'var(--border)', margin: '0 2px' }} />
-            <input type="month" value={cpcMonth} onChange={e => setCpcMonth(e.target.value)} style={{ width: 150, padding: '6px 8px', borderRadius: 7, fontSize: 12 }} />
+            <span className="sep" />
+            <span className="filter-label">เดือนของใบ Changing Point</span>
+            <input type="month" value={cpcMonth} onChange={e => setCpcMonth(e.target.value)} />
             <button onClick={handleExportChangePointPdf} disabled={cpcExporting || !line}
               title={!line ? 'เลือกไลน์ก่อน' : 'Export ใบบันทึกการเปลี่ยนแปลง (Changing Point Control Record)'}
               style={{ padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
@@ -1973,7 +1966,7 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
             background: showDocPanel ? 'rgba(245,158,11,0.18)' : 'rgba(245,158,11,0.1)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.35)',
           }}>⚙️ จัดการเอกสาร<ToggleDot on={showDocPanel} /></button>
         )}
-      </div>
+      </TimeRangeBar>
 
       {showDocPanel && canManageDoc && <DocumentControlPanel />}
 
@@ -2189,7 +2182,7 @@ function DocumentControlPanel() {
 
   const removeRevision = async (r) => {
     if (!window.confirm(`ลบ Rev "${r.rev}"?`)) return;
-    checkWrite(await supabase.from('doc_form_revisions').delete().eq('id', r.id), 'ลบ revision');
+    checkWriteRows(await supabase.from('doc_form_revisions').delete().eq('id', r.id).select('id'), 'ลบ revision');
     load();
   };
 
@@ -2226,7 +2219,7 @@ function DocumentControlPanel() {
 
       <button onClick={saveDoc} disabled={saving} style={{
         padding: '7px 16px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
-        background: 'var(--accent)', color: '#fff', border: 'none', opacity: saving ? 0.6 : 1, marginBottom: 18,
+        background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', opacity: saving ? 0.6 : 1, marginBottom: 18,
       }}>{saving ? 'กำลังบันทึก...' : '💾 บันทึกข้อมูลเอกสาร'}</button>
 
       <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>📜 ประวัติการแก้ไขเอกสาร (Revision History)</div>
@@ -2276,7 +2269,7 @@ function DocumentControlPanel() {
           onChange={({ name }) => setNewRev(v => ({ ...v, responsible: name }))} />
         <PersonSelect value={newRev.approved_name} history={apprHist} placeholder="Approved" inputStyle={{ fontSize: 12, padding: '6px 30px 6px 8px' }}
           onChange={({ name }) => setNewRev(v => ({ ...v, approved_name: name }))} />
-        <button onClick={addRevision} style={{ padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--accent)', color: '#fff', border: 'none' }}>+ เพิ่ม</button>
+        <button onClick={addRevision} style={{ padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>+ เพิ่ม</button>
       </div>
     </div>
   );
@@ -2285,10 +2278,11 @@ function DocumentControlPanel() {
 /* การ์ดสรุปทักษะรายบุคคล (radar + ปุ่มพิมพ์ใบประเมิน) ย้ายไปเป็น component กลาง
    src/components/SkillRadarPanel.jsx แล้ว (2026-08-06) — /operator ใช้ตัวเดียวกัน */
 
-/* ── Shared Filter Bar for employee tabs ── */
-const selSt = { width: 'auto', padding: '7px 10px', borderRadius: 7, fontSize: 13, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)', cursor: 'pointer', minWidth: 120 }; // width:auto กัน index.css select{width:100%} ยืดเต็ม toolbar
+/* ── Shared scope filters for employee tabs ──
+   UI-STANDARD 2026-09-24: คืนเป็นชุดช่อง (fragment) ให้ผู้เรียกวางใน <FilterBar> มาตรฐาน
+   (เดิมชื่อ FilterBar ซ้ำกับของกลาง + ใส่ขนาด inline เอง) */
 
-function FilterBar({ lines, filterSection, setFilterSection, filterLine, setFilterLine, filterTeam, setFilterTeam, filterDept, setFilterDept }) {
+function EmpScopeFilters({ lines, filterSection, setFilterSection, filterLine, setFilterLine, filterTeam, setFilterTeam, filterDept, setFilterDept }) {
   const teams = useOrgTeams(); // 2026-09-07 ทีม A/B/C จาก org_nodes (fallback A/B/C)
   const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
   const orgSectionList = useOrgSections();
@@ -2303,30 +2297,22 @@ function FilterBar({ lines, filterSection, setFilterSection, filterLine, setFilt
     return scopeSecs.length ? lines.filter(l => inSectionScope(scopeSecs, l.section)) : lines;
   }, [lines, role, userLineId, scopeSecs]);
   const sections = useMemo(() => {
-    const all = orgSectionList.length ? orgSectionList : [...new Set(lines.map(l => l.section).filter(Boolean))].sort();
-    if (role === 'leader' && userLineId) return [...new Set(scopedLines.map(l => l.section).filter(Boolean))].sort();
+    const all = orgSectionList.length ? orgSectionList : sortLike(lines.map(l => l.section), orgSectionList);
+    if (role === 'leader' && userLineId) return sortLike(scopedLines.map(l => l.section), orgSectionList);
     return scopeSecs.length ? all.filter(s => inSectionScope(scopeSecs, s)) : all;
   }, [lines, orgSectionList, role, userLineId, scopeSecs, scopedLines]);
-  const visibleLines = filterSection ? scopedLines.filter(l => l.section === filterSection) : scopedLines;
   return (
-    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-      <select value={filterSection} onChange={e => { setFilterSection(e.target.value); setFilterLine(''); setFilterDept && setFilterDept(''); }} style={selSt}>
-        <option value="">ทุกส่วนงาน</option>
-        {sections.map(s => <option key={s} value={s}>{s}</option>)}
-      </select>
-      {setFilterDept && (
-        <select value={filterDept || ''} onChange={e => setFilterDept(e.target.value)} style={selSt}>
-          <option value="">ทุกแผนก</option>
-          {deptsOf(filterSection).map(d => <option key={d} value={d}>{d}</option>)}
-        </select>
-      )}
-      <LineSelect lines={visibleLines} value={filterLine} valueKey="id"
-        placeholder="ทุกไลน์" style={selSt} onChange={setFilterLine} />
-      <select value={filterTeam} onChange={e => setFilterTeam(e.target.value)} style={selSt}>
-        <option value="">ทุก Team</option>
+    <>
+      {/* ขอบเขต = ช่องเดียว ส่วนงาน → กลุ่มไลน์ → ไลน์ (<LineScopeSelect> · 2026-10-02) — เลือกไลน์ = กรองตามไลน์อย่างเดียวเหมือนเดิม (ส่วนงานว่าง) */}
+      {/* + แผนก (org department) อยู่ในต้นไม้เดียวกัน (02/10 · user: "ให้เลือกระดับแผนกได้") — เดิมเป็นช่องแยกถัดไป */}
+      <LineScopeSelect lines={scopedLines} sections={sections} section={filterSection} line={filterLine} valueKey="id"
+        unit={setFilterDept ? (filterDept || '') : ''} pickDept={!!setFilterDept}
+        onChange={(sec, ln, { unit }) => { setFilterSection(ln || unit ? '' : sec); setFilterLine(ln); setFilterDept && setFilterDept(unit || ''); }} />
+      <select value={filterTeam} onChange={e => setFilterTeam(e.target.value)}>
+        <option value="">{ALL.team}</option>
         {teams.map(t => <option key={t} value={t}>Team {t}</option>)}{/* 2026-09-07 ทีมจากผังองค์กร (useOrgTeams) */}
       </select>
-    </div>
+    </>
   );
 }
 
@@ -2349,7 +2335,7 @@ function SkillMatrixTab() {
   const reqIdRef = useRef(0);
 
   useEffect(() => {
-    supabase.from('production_lines').select(LINE_COLUMNS).order('name').then(({ data }) => setLines(data || [])); // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
+    loadLinesRes().then(({ data }) => setLines(data || [])); // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
     supabase.from('skill_sub_items').select('skill_name, seq, label, wi_ref').order('seq')
       .then(({ data }) => {
         const map = {};
@@ -2372,7 +2358,7 @@ function SkillMatrixTab() {
     const myReq = ++reqIdRef.current;
     setLoading(true);
     const baseSelect = 'id, name, employee_id_code, image_url, group_name, line_id, section, department, team, employee_skills(skill_name, score)';
-    let q = supabase.from('employees').select(baseSelect).eq('is_active', true);
+    let q = onlyShopfloorStaff(supabase.from('employees').select(baseSelect).eq('is_active', true));
     // leader/supervisor เห็นเฉพาะไลน์/ส่วนงานตัวเองเสมอ ไม่ว่า filter ที่เลือกไว้จะเป็นอะไร —
     // บังคับ scope นี้เพิ่มเติมจาก filter อิสระ กันดูข้ามไลน์/ส่วนงานที่ตัวเองไม่ได้ดูแล
     if (role === 'leader' && userLineId) q = q.in('line_id', lineFamilyIdsOf(userLineId));
@@ -2420,10 +2406,11 @@ function SkillMatrixTab() {
         />
       )}
 
-      <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-        <FilterBar lines={lines} filterSection={filterSection} setFilterSection={setFilterSection} filterLine={filterLine} setFilterLine={setFilterLine} filterTeam={filterTeam} setFilterTeam={setFilterTeam} filterDept={filterDept} setFilterDept={setFilterDept} />
-        <span style={{ color: 'var(--muted)', fontSize: 13 }}>{employees.length} คน · {skillDefs.length} สกิล</span>
-        <span style={{ fontSize: 11, color: 'var(--muted)' }}>· คลิกที่พนักงานเพื่อดู Radar Chart</span>
+      <FilterBar style={{ marginBottom: 16 }}>
+        <EmpScopeFilters lines={lines} filterSection={filterSection} setFilterSection={setFilterSection} filterLine={filterLine} setFilterLine={setFilterLine} filterTeam={filterTeam} setFilterTeam={setFilterTeam} filterDept={filterDept} setFilterDept={setFilterDept} />
+        <span className="spacer" />
+        <span className="filter-count">{employees.length} คน · {skillDefs.length} สกิล</span>
+        <span className="filter-count">· คลิกที่พนักงานเพื่อดู Radar Chart</span>
         {canExport && (
         <button onClick={() => {
           const groups = groupSkillsByCategory(skillDefs);
@@ -2486,7 +2473,7 @@ ${catHeaderCells}
             })
           );
         }} />
-      </div>
+      </FilterBar>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
         {SKILL_LEVELS.filter(lv => lv.min > 0).map(lv => (
@@ -2526,7 +2513,7 @@ ${catHeaderCells}
                   <div key={emp.id} className="card" style={{ padding: '10px 12px', cursor: 'pointer' }} onClick={() => setSelectedEmp(emp)}>
                     <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 8 }}>
                       {emp.image_url
-                        ? <img src={emp.image_url} alt="" style={{ width: 40, height: 40, borderRadius: 10, objectFit: 'cover' }} />
+                        ? <img loading="lazy" src={emp.image_url} alt="" style={{ width: 40, height: 40, borderRadius: 10, objectFit: 'cover' }} />
                         : <div style={{ width: 40, height: 40, borderRadius: 10, background: 'var(--bg3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 16 }}>{(emp.name || '?')[0]}</div>
                       }
                       <div>
@@ -2608,7 +2595,7 @@ ${catHeaderCells}
                       onMouseLeave={e => e.currentTarget.style.background = ''}>
                       <td style={{ textAlign: 'center', padding: '8px 6px', position: 'sticky', left: 0, zIndex: 2, background: 'var(--bg)' }}>
                         {emp.image_url
-                          ? <img src={emp.image_url} alt="" style={{ width: 38, height: 38, borderRadius: 10, objectFit: 'cover', border: `2px solid ${avgLv.color}66`, display: 'block', margin: '0 auto' }} />
+                          ? <img loading="lazy" src={emp.image_url} alt="" style={{ width: 38, height: 38, borderRadius: 10, objectFit: 'cover', border: `2px solid ${avgLv.color}66`, display: 'block', margin: '0 auto' }} />
                           : <div style={{ width: 38, height: 38, borderRadius: 10, margin: '0 auto', background: `${avgLv.color}22`, border: `2px solid ${avgLv.color}55`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 800, color: avgLv.color }}>{(emp.name || '?')[0]}</div>
                         }
                       </td>
@@ -2884,7 +2871,7 @@ function MultiSkillFormTab() {
   }, [role, ctxFullName, ctxSigUrl]);
 
   useEffect(() => {
-    supabase.from('production_lines').select(LINE_COLUMNS).order('name')
+    loadLinesRes()
       .then(({ data }) => setLines(data || []));
     supabase.from('skill_definitions').select('*').order('sort_order')
       .then(({ data }) => setSkillDefs(data || []));
@@ -2921,7 +2908,7 @@ function MultiSkillFormTab() {
   const load = async () => {
     setLoading(true);
     const sel = 'id, name, employee_id_code, position, section, department, team, start_date, employee_skills(skill_name, score)';
-    let q = supabase.from('employees').select(sel).eq('is_active', true);
+    let q = onlyShopfloorStaff(supabase.from('employees').select(sel).eq('is_active', true));
     // leader/supervisor เห็นเฉพาะไลน์/ส่วนงานตัวเองเสมอ ไม่ว่า filter ที่เลือกไว้จะเป็นอะไร
     if (role === 'leader' && userLineId) q = q.in('line_id', lineFamilyIdsOf(userLineId));
     else if (scopeSecs.length) q = q.in('section', scopeSecs);
@@ -3002,14 +2989,12 @@ function MultiSkillFormTab() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {/* Filters + header inputs */}
-      <div className="card" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
-        <div>
-          <span style={lbSt}>ตัวกรอง</span>
-          <FilterBar lines={lines} filterSection={filterSection} setFilterSection={setFilterSection} filterLine={filterLine} setFilterLine={setFilterLine} filterTeam={filterTeam} setFilterTeam={setFilterTeam} filterDept={filterDept} setFilterDept={setFilterDept} />
-        </div>
+      {/* Filters (UI-STANDARD 2026-09-24 — แถบกรองมาตรฐาน · gap ของ column แทน marginBottom) */}
+      <FilterBar style={{ marginBottom: 0 }}>
+        <EmpScopeFilters lines={lines} filterSection={filterSection} setFilterSection={setFilterSection} filterLine={filterLine} setFilterLine={setFilterLine} filterTeam={filterTeam} setFilterTeam={setFilterTeam} filterDept={filterDept} setFilterDept={setFilterDept} />
+        <span className="spacer" />
         <button onClick={load} disabled={loading}
-          style={{ padding: '8px 20px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer', opacity: loading ? 0.6 : 1 }}>
+          style={{ padding: '0 20px', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer', opacity: loading ? 0.6 : 1 }}>
           {loading ? 'กำลังโหลด...' : '🔍 ดึงข้อมูล'}
         </button>
         {employees.length > 0 && (
@@ -3032,7 +3017,7 @@ function MultiSkillFormTab() {
             );
           }} />
         )}
-      </div>
+      </FilterBar>
 
       {employees.length > 0 && (
         <>
@@ -3089,9 +3074,10 @@ function MultiSkillFormTab() {
                       <div style={{ height: 48, border: '1px dashed var(--border2)', borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: 'var(--muted)' }}>
                         📎 อัปโหลดลายเซ็น
                       </div>
-                      <input type="file" accept="image/*" style={{ display: 'none' }} onChange={e => {
-                        const file = e.target.files[0];
+                      <input type="file" accept="image/*" style={{ display: 'none' }} onChange={async e => {
+                        const picked = e.target.files?.[0];
                         e.target.value = '';   // เลือกไฟล์เดิมซ้ำต้องยิง change อีกครั้ง
+                        const file = await acceptImageFile(picked);   // ด่านรับรูปจุดเดียว (HEIC → JPEG)
                         if (!file) return;
                         // revoke ของเดิมก่อนสร้างใหม่ — blob URL ที่ไม่ revoke ตรึงไฟล์ในหน่วยความจำจนรีเฟรช
                         if (sig?.startsWith('blob:')) URL.revokeObjectURL(sig);
@@ -3303,7 +3289,10 @@ const Thumb = ({ src }) => {
   if (!src || failed) {
     return <div style={{ ...box, background: 'var(--bg3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>👤</div>;
   }
-  return <img src={src} alt="" onError={() => setFailed(true)} style={{ ...box, objectFit: 'cover' }} />;
+  /* loading="lazy" — Thumb อยู่ในตารางยาว (รายการเช็คชื่อ/ทักษะ) · วัดจริง 02/10: bucket
+     employee-photos ถูกดึง 1,213 ครั้ง/วัน = 22.7 MB ทั้งที่มีรูปจริงแค่ 226 ใบ (เฉลี่ย 5.4 รอบ/ใบ)
+     เปิดหน้าทีเดียวโหลดทุกแถวทั้งที่คนเห็นบนจอ ~10 แถว — ดู docs/EGRESS-AUDIT-2026-09-17.md */
+  return <img src={src} alt="" loading="lazy" onError={() => setFailed(true)} style={{ ...box, objectFit: 'cover' }} />;
 };
 
 const StatusBadge = ({ ok, label }) => (
@@ -3359,7 +3348,9 @@ function SkillAllowanceTab() {
   const [signerHRM,      setSignerHRM]     = useState('');
 
   useEffect(() => {
-    supabase.from('production_lines').select(`${LINE_COLUMNS}, cost_center, head_name`).order('name') // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
+    // 🔸 จุดเดียวที่ยังยิงเอง — ต้องการ `head_name` ซึ่ง**ไม่ได้อยู่ใน LINE_COLUMNS** (ไม่มี dropdown ไหนใช้)
+    //    ถ้าวันหลังมีหน้าที่ 2 ต้องการ head_name → เติมเข้า LINE_COLUMNS + bump คีย์ แล้วสลับมาใช้ loadLinesRes()
+    supabase.from('production_lines').select(`${LINE_COLUMNS}, head_name`).order('name')
       .then(({ data }) => setLines(data || []));
     supabase.from('skill_definitions').select('category, allowance_type').eq('category', 'allowance_skill')
       .then(({ data }) => setSkillDefs(data || []));
@@ -3662,48 +3653,37 @@ function SkillAllowanceTab() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {/* Filters */}
-      <div className="card" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
-        <div>
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>ปี</div>
-          <select value={year} onChange={e => setYear(Number(e.target.value))} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
-            {[today.getFullYear()-1, today.getFullYear(), today.getFullYear()+1].map(y => (
-              <option key={y} value={y}>{y + 543}</option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>เดือน</div>
-          <select value={month} onChange={e => setMonth(Number(e.target.value))} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
-            {THAI_MONTHS.slice(1).map((m, i) => <option key={i+1} value={i+1}>{m}</option>)}
-          </select>
-        </div>
-        <div>
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>งวด</div>
-          <select value={period} onChange={e => setPeriod(Number(e.target.value))} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
-            <option value={1}>งวด 1 (วันที่ 1-15)</option>
-            <option value={2}>งวด 2 (วันที่ 16-สิ้นเดือน)</option>
-          </select>
-        </div>
-        <div>
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>ไลน์ผลิต</div>
-          {/* 2026-09-07 อ่านทะเบียนไลน์ผ่าน <LineSelect> — คง pre-filter scope (scopedLineNames) เดิม */}
-          <LineSelect lines={scopedLineNames ? lines.filter(l => scopedLineNames.includes(l.name)) : lines} value={line} placeholder="ทุกไลน์"
-            style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }} onChange={setLine} />
-        </div>
-        <div>
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>Team</div>
-          <select value={team} onChange={e => setTeam(e.target.value)} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
-            <option value="">ทุก Team</option>
-            {teams.map(t => <option key={t} value={t}>Team {t}</option>)}{/* 2026-09-07 ทีมจากผังองค์กร (useOrgTeams) */}
-          </select>
-        </div>
+      {/* Filters — UI-STANDARD 2026-09-24: ขอบเขต → ช่วงเวลา → spacer → ปุ่ม */}
+      <FilterBar style={{ marginBottom: 0 }}>
+        {/* 2026-09-07 อ่านทะเบียนไลน์ผ่าน <LineSelect> — คง pre-filter scope (scopedLineNames) เดิม */}
+        <LineSelect lines={scopedLineNames ? lines.filter(l => scopedLineNames.includes(l.name)) : lines} value={line} placeholder={ALL.line}
+          onChange={setLine} />
+        <select value={team} onChange={e => setTeam(e.target.value)}>
+          <option value="">{ALL.team}</option>
+          {teams.map(t => <option key={t} value={t}>Team {t}</option>)}{/* 2026-09-07 ทีมจากผังองค์กร (useOrgTeams) */}
+        </select>
+        <span className="filter-label">ปี</span>
+        <select value={year} onChange={e => setYear(Number(e.target.value))}>
+          {[today.getFullYear()-1, today.getFullYear(), today.getFullYear()+1].map(y => (
+            <option key={y} value={y}>{y + 543}</option>
+          ))}
+        </select>
+        <span className="filter-label">เดือน</span>
+        <select value={month} onChange={e => setMonth(Number(e.target.value))}>
+          {THAI_MONTHS.slice(1).map((m, i) => <option key={i+1} value={i+1}>{m}</option>)}
+        </select>
+        <span className="filter-label">งวด</span>
+        <select value={period} onChange={e => setPeriod(Number(e.target.value))}>
+          <option value={1}>งวด 1 (วันที่ 1-15)</option>
+          <option value={2}>งวด 2 (วันที่ 16-สิ้นเดือน)</option>
+        </select>
+        <span className="spacer" />
         <button onClick={load} disabled={loading}
-          style={{ padding: '8px 20px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer', opacity: loading ? 0.6 : 1 }}>
+          style={{ padding: '0 20px', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer', opacity: loading ? 0.6 : 1 }}>
           {loading ? 'กำลังโหลด...' : '🔍 ดึงข้อมูล'}
         </button>
         {rows.length > 0 && (
-          <span style={{ fontSize: 11, color: 'var(--muted)', fontStyle: 'italic', alignSelf: 'center' }}>🖨️ กด Export ด้านล่างเพื่อพิมพ์</span>
+          <span className="filter-count" style={{ fontStyle: 'italic' }}>🖨️ กด Export ด้านล่างเพื่อพิมพ์</span>
         )}
         {rows.length > 0 && (
           <CsvBtn onClick={() => {
@@ -3729,7 +3709,7 @@ function SkillAllowanceTab() {
             );
           }} />
         )}
-      </div>
+      </FilterBar>
 
       {/* รายละเอียดเอกสาร */}
       <div className="card" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
@@ -3881,7 +3861,7 @@ function AttendanceFormTab() {
   const [calLoaded, setCalLoaded] = useState(false);
 
   useEffect(() => {
-    supabase.from('production_lines').select(LINE_COLUMNS).order('name') // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
+    loadLinesRes() // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
       .then(({ data }) => setLines(data || []));
     loadCompanyCalendar().then(() => setCalLoaded(true));
   }, []);
@@ -3939,8 +3919,8 @@ function AttendanceFormTab() {
     // Step 1: get employees matching current filters from employees table (server-side)
     // เลือกไลน์ = ทั้งครอบครัวไลน์ (หลัก↔ย่อย) — พนักงานอาจผูกกับไลน์หลักแต่ทำงานไลน์ย่อย หรือกลับกัน
     const familyIds = line ? [...getLineFamilyIds(lines, line)] : [];
-    let empQ = supabase.from('employees')
-      .select('id, name, employee_id_code, section, department, team, line_id');
+    let empQ = onlyShopfloorStaff(supabase.from('employees')
+      .select('id, name, employee_id_code, section, department, team, line_id'));
     // mandatory scope ก่อน (leader → ครอบครัวไลน์ตัวเอง แบบเดียวกับแท็บอื่น, sections → เฉพาะส่วนงานใน scope) แล้วค่อย filter อิสระทับ
     if (role === 'leader' && userLineId) {
       const leaderFam = [...getLineFamilyIds(lines, Number(userLineId) || userLineId)];
@@ -4246,79 +4226,54 @@ function AttendanceFormTab() {
   const attLinesInScope = (role === 'leader' && userLineId)
     ? lines.filter(l => String(l.id) === String(userLineId))
     : scopeSecs.length ? lines.filter(l => inSectionScope(scopeSecs, l.section)) : lines;
-  const attAllSections = orgSectionList.length ? orgSectionList : [...new Set(lines.map(l => l.section).filter(Boolean))].sort();
+  const attAllSections = orgSectionList.length ? orgSectionList : sortLike(lines.map(l => l.section), orgSectionList);
   const attSections = (role === 'leader' && userLineId)
-    ? [...new Set(attLinesInScope.map(l => l.section).filter(Boolean))].sort()
+    ? sortLike(attLinesInScope.map(l => l.section), orgSectionList)
     : scopeSecs.length ? attAllSections.filter(s => inSectionScope(scopeSecs, s)) : attAllSections;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {/* Filters */}
-      <div className="card" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
-        <div>
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>ปี</div>
-          <select value={year} onChange={e => setYear(Number(e.target.value))} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
-            {[today.getFullYear()-1, today.getFullYear(), today.getFullYear()+1].map(y => (
-              <option key={y} value={y}>{y+543}</option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>เดือน</div>
-          <select value={month} onChange={e => setMonth(Number(e.target.value))} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
-            {THAI_MONTHS.slice(1).map((m, i) => <option key={i+1} value={i+1}>{m}</option>)}
-          </select>
-        </div>
-        <div>
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>งวด</div>
-          <select value={period} onChange={e => setPeriod(Number(e.target.value))} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
-            <option value={1}>งวด 1 (วันที่ 1-15)</option>
-            <option value={2}>งวด 2 (วันที่ 16-สิ้นเดือน)</option>
-          </select>
-        </div>
-        {/* minWidth:0 — ไม่งั้น div นี้กว้างตาม option ที่ยาวที่สุด (ชื่อไลน์ยาว) แล้วดันล้นจอ */}
-        <div style={{ minWidth: 0, flex: '1 1 150px' }}>
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>ไลน์</div>
-          {/* 2026-09-07 อ่านทะเบียนไลน์ผ่าน <LineSelect> — คง pre-filter scope (attLinesInScope) เดิม */}
-          <LineSelect lines={attLinesInScope} value={line} placeholder="ทุกไลน์" style={{ width: '100%', minWidth: 0, padding: '6px 10px', borderRadius: 7, fontSize: 13 }} onChange={setLine} />
-        </div>
-        <div>
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>ส่วนงาน</div>
-          <select value={dept} onChange={e => { setDept(e.target.value); setEmpDept(''); }} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
-            <option value="">ทุกส่วนงาน</option>
-            {attSections.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
-        </div>
-        <div>
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>แผนก</div>
-          <select value={empDept} onChange={e => setEmpDept(e.target.value)} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
-            <option value="">ทุกแผนก</option>
-            {deptsOf(dept).map(d => <option key={d} value={d}>{d}</option>)}
-          </select>
-        </div>
-        <div>
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>Team</div>
-          <select value={team} onChange={e => setTeam(e.target.value)} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
-            <option value="">ทุก Team</option>
-            {teams.map(t => <option key={t} value={t}>Team {t}</option>)}{/* 2026-09-07 ทีมจากผังองค์กร (useOrgTeams) */}
-          </select>
-        </div>
-        <div>
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>เลขที่เอกสาร</div>
-          <input
-            type="text"
-            value={formNo}
-            onChange={e => setFormNo(e.target.value)}
-            placeholder="เช่น F-HR-001"
-            style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13, width: 110 }}
-          />
-        </div>
+      {/* Filters — UI-STANDARD 2026-09-24: ขอบเขต → ช่วงเวลา → ช่องหัวเอกสาร → spacer → ปุ่ม */}
+      <FilterBar style={{ marginBottom: 0 }}>
+        {/* ขอบเขต = ช่องเดียว ส่วนงาน → กลุ่มไลน์ → ไลน์ (<LineScopeSelect> · 2026-10-02) — เลือกไลน์ = กรองตามไลน์อย่างเดียวเหมือนเดิม (ส่วนงานว่าง) */}
+        {/* + แผนก (org department) อยู่ในต้นไม้เดียวกัน (02/10 · user: "ให้เลือกระดับแผนกได้") — เดิมเป็นช่องแยกถัดไป */}
+        <LineScopeSelect lines={attLinesInScope} sections={attSections} section={dept} line={line} unit={empDept} pickDept
+          onChange={(sec, ln, { unit }) => { setDept(ln || unit ? '' : sec); setLine(ln); setEmpDept(unit || ''); }} />
+        <select value={team} onChange={e => setTeam(e.target.value)}>
+          <option value="">{ALL.team}</option>
+          {teams.map(t => <option key={t} value={t}>Team {t}</option>)}{/* 2026-09-07 ทีมจากผังองค์กร (useOrgTeams) */}
+        </select>
+        <span className="filter-label">ปี</span>
+        <select value={year} onChange={e => setYear(Number(e.target.value))}>
+          {[today.getFullYear()-1, today.getFullYear(), today.getFullYear()+1].map(y => (
+            <option key={y} value={y}>{y+543}</option>
+          ))}
+        </select>
+        <span className="filter-label">เดือน</span>
+        <select value={month} onChange={e => setMonth(Number(e.target.value))}>
+          {THAI_MONTHS.slice(1).map((m, i) => <option key={i+1} value={i+1}>{m}</option>)}
+        </select>
+        <span className="filter-label">งวด</span>
+        <select value={period} onChange={e => setPeriod(Number(e.target.value))}>
+          <option value={1}>งวด 1 (วันที่ 1-15)</option>
+          <option value={2}>งวด 2 (วันที่ 16-สิ้นเดือน)</option>
+        </select>
+        <span className="spacer" />
+        {/* เลขที่เอกสาร = ค่าหัวใบพิมพ์ (ไม่ใช่ตัวกรองมุมมอง) ⇒ อยู่หลัง spacer ชิดปุ่ม (UI-STANDARD §3.5) */}
+        <span className="filter-label">เลขที่เอกสาร</span>
+        <input
+          type="text"
+          value={formNo}
+          onChange={e => setFormNo(e.target.value)}
+          placeholder="เช่น F-HR-001"
+          style={{ width: 110 }}
+        />
         <button onClick={load} disabled={loading}
-          style={{ padding: '8px 20px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer', opacity: loading ? 0.6 : 1 }}>
+          style={{ padding: '0 20px', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer', opacity: loading ? 0.6 : 1 }}>
           {loading ? 'กำลังโหลด...' : '🔍 ดึงข้อมูล'}
         </button>
         {empRows.length > 0 && (
-          <span style={{ fontSize: 11, color: 'var(--muted)', fontStyle: 'italic', alignSelf: 'center' }}>🖨️ กด Export ด้านล่างเพื่อพิมพ์</span>
+          <span className="filter-count" style={{ fontStyle: 'italic' }}>🖨️ กด Export ด้านล่างเพื่อพิมพ์</span>
         )}
         {empRows.length > 0 && (
           <CsvBtn onClick={() => {
@@ -4347,7 +4302,7 @@ function AttendanceFormTab() {
             );
           }} />
         )}
-      </div>
+      </FilterBar>
 
       {/* Preview */}
       {empRows.length > 0 && (

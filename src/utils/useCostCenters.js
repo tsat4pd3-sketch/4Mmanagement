@@ -4,16 +4,15 @@
    ⚠️ ช่อง "Cost Center" ทุกหน้าใช้ <CostCenterSelect> ห้าม <input>/datalist เอง */
 import { useEffect, useState } from 'react';
 import { supabase } from '../supabaseClient';
-import { cachedMaster, invalidateMaster } from './masterCache';
+import { cachedMaster, invalidateMaster, mrows } from './masterCache';
 
 const KEY = 'cost_centers:master';
 
 export async function loadCostCenters() {
   return cachedMaster(KEY, async () => {
-    const { data, error } = await supabase.from('cost_centers')
-      .select('code, name, section, note, sort_order, is_active').order('sort_order').order('code');
-    if (error) return [];
-    return data || [];
+    // mrows: ตารางยังไม่มี → [] (เดิม) · error อื่น → โยน ห้าม cache ลิสต์ว่างทับของดี
+    return mrows(await supabase.from('cost_centers')
+      .select('code, name, section, note, sort_order, is_active').order('sort_order').order('code'));
   });
 }
 export const invalidateCostCenters = () => invalidateMaster(KEY);

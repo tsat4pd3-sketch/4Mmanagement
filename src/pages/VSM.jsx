@@ -11,6 +11,7 @@ import { useState, useEffect, useMemo, useCallback, useContext, useRef } from 'r
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { Link } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
@@ -19,7 +20,7 @@ import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { loadCompanyCalendar, countWorkingDaysInMonth } from '../utils/companyCalendar';
 import { groupRoutings } from '../utils/routing';
-import { buildCtMap, dtMinBySession } from '../utils/oee';
+import { buildCtMap, dtMinBySession, QBIN_EMBED } from '../utils/oee';
 import { fetchByIds } from '../utils/fetchByIds';
 import { buildVsmModel, fmtMct, fmtMinSec } from '../lib/vsmModel';
 import { buildVsmGaps } from '../lib/vsmGaps';
@@ -30,11 +31,15 @@ import { printVsmA3 } from '../lib/vsmA3Print';
 import VsmCanvas, { VsmLegend, PALETTE_DARK, PALETTE_LIGHT } from '../components/VsmCanvas';
 import PersonSelect from '../components/PersonSelect';
 import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
+import FilterBar from '../components/FilterBar';
+import ProductSelect from '../components/ProductSelect';
 import useTabParam from '../utils/useTabParam';
 import { usePolling } from '../utils/usePolling';
 import { RATE, LIVE } from '../utils/refreshRates';
 import { coalesce } from '../utils/liveRefresh';
 import { liveChannel } from '../utils/liveChannel';
+import { DeleteButton } from '../components/IconButton';
 
 const monthKeyNow = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; };
 // วันงานตามกฎระบบ: ก่อน 08:00 = วันก่อนหน้า (กะดึกข้ามวัน) — ห้าม toISOString (UTC เพี้ยน)
@@ -77,7 +82,6 @@ export default function VSM() {
   const [matNo, setMatNo] = useState('');
   const [monthKey, setMonthKey] = useState(monthKeyNow());
   const [state, setState] = useState('current');
-  const [search, setSearch] = useState('');
 
   const [model, setModel] = useState(null);
   const [mapMeta, setMapMeta] = useState(null);       // แถว vsm_maps ที่กำลังแก้ (null = ยังไม่บันทึก)
@@ -108,10 +112,9 @@ export default function VSM() {
   /* ── master ─────────────────────────────────────────────────────────────── */
   useEffect(() => {
     // flow_mode/parallel_stations ใช้ในแท็บสด (computeLiveOee หัก DT 1/N + parallelCap)
-    supabase.from('production_lines').select('id, name, section, parent_line_name, std_day_shift, std_night_shift, flow_mode, parallel_stations')
-      .order('name').then(({ data }) => setLines(data || []));
+    loadLinesRes().then(({ data }) => setLines(data || []));
     supabaseDR.from('dr_products')
-      .select('id, mat_no, name, p_no, customer, line_name, cycle_time_sec, process_type, is_active')
+      .select('id, mat_no, name, p_no, customer, line_name, cycle_time_sec, process_type, is_active, pair_mat_no')
       .not('mat_no', 'is', null).order('name').then(({ data }) => setProducts(data || []));
     supabase.from('pe_doc_sets').select('id, part_no, mat_no, line_name, status')
       .then(({ data }) => setPeSets((data || []).filter(s => s.status !== 'obsolete')));
@@ -128,23 +131,18 @@ export default function VSM() {
     return null;
   }, [role, lineId, lines, scopeSecs]);
 
-  // ตัวเลือก FG — เฉพาะเบอร์ 1 (สินค้าสำเร็จรูป) + กรองตาม scope (กฎ dropdown-scope)
-  const fgOptions = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return products.filter(p => {
-      if (p.is_active === false) return false;
-      if (!isFgMat(p.mat_no)) return false;
-      if (scopeLineNames && p.line_name && !scopeLineNames.has(String(p.line_name).toLowerCase())) return false;
-      if (!q) return true;
-      return [p.mat_no, p.name, p.p_no].some(v => String(v || '').toLowerCase().includes(q));
-    });
-  }, [products, search, scopeLineNames]);
-
-  const fgByLine = useMemo(() => {
-    const g = {};
-    fgOptions.forEach(p => { (g[p.line_name || '— ไม่ระบุไลน์'] ||= []).push(p); });
-    return Object.entries(g).sort((a, b) => a[0].localeCompare(b[0]));
-  }, [fgOptions]);
+  /* ตัวเลือก FG — เฉพาะเบอร์ 1 (สินค้าสำเร็จรูป) + กรองตาม scope (กฎ dropdown-scope)
+     🔴 ไม่กรองด้วยคำค้นที่นี่อีก (QC 06/10) — เดิมหน้านี้มี **2 ตัวควบคุมทำงานเดียวกัน**:
+        `<SearchInput>` สำหรับพิมพ์ค้น + `<select>` ยาวๆ สำหรับเลือก
+        ขัด UI §5.1.2 ("ช่องที่รับ MAT ต้องใช้ picker กลาง") และคนต้องทำ 2 ก้าวเพื่อเลือก 1 ค่า
+     ⇒ ใช้ <ProductSelect> ตัวเดียว (ค้น mat_no / ชื่อ / P/N / ลูกค้า / ไลน์ ในช่องเดียว
+        · รหัสไม่ถูก ellipsis ตัด · สินค้าของไลน์ที่เลือกขึ้นก่อน) */
+  const fgOptions = useMemo(() => products.filter(p => {
+    if (p.is_active === false) return false;
+    if (!isFgMat(p.mat_no)) return false;
+    if (scopeLineNames && p.line_name && !scopeLineNames.has(String(p.line_name).toLowerCase())) return false;
+    return true;
+  }), [products, scopeLineNames]);
 
   // ชุด PFC (/pe-docs) ที่ตรงกับ FG นี้ — worklist ใช้ชี้ปุ่ม "เสนอ routing จาก PFC" ให้ตรงชุด
   const peSetForFg = useMemo(() => {
@@ -316,6 +314,9 @@ export default function VSM() {
         setLiveRaw({
           fgMat: matNo, raw,
           ctMap: buildCtMap({ kanbanStds: raw.kanbanStds, products }),
+          // งานคู่ gang die / RH-LH = 1 shot ได้ 2 ชิ้น — ยุบก่อนคิดเวลามาตรฐานของ %P (pairTotals.js)
+          // เก็บไว้ใน liveRaw เพราะ loadLive ห้ามมี `products` (array) ใน deps — กฎเหล็กเขียน DB ข้อ 9
+          pairMap: Object.fromEntries((products || []).filter(p => p.pair_mat_no).map(p => [p.mat_no, p.pair_mat_no])),
           chainLines: [...new Set(boxes.map(b => b.line).filter(Boolean))],
           allMats: [fg.mat_no, ...raw.bomItems.map(b => b.mat_no)].filter(Boolean),
         });
@@ -355,7 +356,8 @@ export default function VSM() {
           .in('session_id', ids),
         // excl_from_q ต้อง join มาด้วย ไม่งั้นงานทดลองตกหล่นเงียบ (กฎ %Q)
         supabaseDR.from('defect_logs')
-          .select('session_id, qty_ng, qty_suspect, is_trial, dr_defect_types(excl_from_q)')
+          // prod_orders(mat_no) = ไว้ชี้ CT ของ NG ตอนบวกเข้าตัวเศษ %P (ngByMatFrom)
+          .select(`session_id, qty_ng, qty_suspect, is_trial, prod_orders(mat_no), dr_defect_types(excl_from_q), ${QBIN_EMBED}`)
           .in('session_id', ids),
       ]);
       if (o.error || d.error || f.error) partial = true;
@@ -373,6 +375,7 @@ export default function VSM() {
     const lv = buildVsmLive({
       boxes, sessions: sess || [], orders, downtimes: dts, defects: dfs,
       ctMap: liveRaw.ctMap, lines, nowMs: Date.now(),
+      pairMap: liveRaw.pairMap || {},
       // นโยบายพัก — ขาดไปแล้ว A/P สดในแท็บสดไม่ตรงกับค่าที่ stamp ตอนปิดกะ (2026-09-14)
       breakPolicies: liveRaw.raw?.breakPolicies || [],
     });
@@ -469,25 +472,17 @@ export default function VSM() {
   });
 
   // FG picker ใช้ร่วม 2 แท็บ (state `matNo` ตัวเดียวกัน — สลับแท็บแล้วยังโฟกัสสินค้าเดิม)
+  // UI-STANDARD 2026-09-24 — วางใน <FilterBar> (select ไม่ยืดเต็มแถวอีก · ขนาดจาก token)
   const fgPicker = (
-    <div style={{ flex: '1 1 320px', minWidth: 260 }}>
-      <label style={{ fontSize: 11, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>สินค้าสำเร็จรูป (FG · เบอร์ 1)</label>
-      <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหา MAT / ชื่อ / P/N…"
-        style={{ marginBottom: 6, fontSize: 13, padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)' }} />
-      <select value={matNo} onChange={e => setMatNo(e.target.value)}
-        style={{ fontSize: 13, padding: '7px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)' }}>
-        <option value="">— เลือกสินค้า —</option>
-        {fgByLine.map(([ln, ps]) => (
-          <optgroup key={ln} label={ln}>
-            {ps.map(p => <option key={p.id} value={p.mat_no}>{p.mat_no} · {p.name}</option>)}
-          </optgroup>
-        ))}
-      </select>
-    </div>
+    <>
+      <span className="filter-label">สินค้าสำเร็จรูป (FG · เบอร์ 1)</span>
+      <ProductSelect value={matNo} products={fgOptions} onChange={({ mat_no }) => setMatNo(mat_no || '')}
+        placeholder="— ค้น MAT / ชื่อ / P/N เพื่อเลือกสินค้า —" style={{ flex: 1, minWidth: 240 }} />
+    </>
   );
 
   return (
-    <div style={{ padding: 'clamp(12px, 2vw, 24px)', maxWidth: 'min(98vw, 2200px)', margin: '0 auto' }}>
+    <Page width="full">
       <PageHeader title="แผนผังสายธารคุณค่า (Value Stream Map)" icon="🗺️"
         sub={tab === 'live'
           ? 'มุมมองสด: สถานะไลน์ · OEE กะปัจจุบัน · คงคลัง ▲ ปัจจุบัน — ไม่ใช่เอกสารทางการ'
@@ -499,20 +494,15 @@ export default function VSM() {
 
       {tab === 'doc' && <>
       {/* ── แถบควบคุม ── */}
-      <div style={{ ...S.card, marginBottom: 14, display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+      <FilterBar style={{ marginBottom: 14 }}>
         {fgPicker}
-        <div>
-          <label style={{ fontSize: 11, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>เดือนข้อมูล</label>
-          <input type="month" value={monthKey} onChange={e => setMonthKey(e.target.value)}
-            style={{ width: 150, fontSize: 13, padding: '7px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)' }} />
-        </div>
-        <div>
-          <label style={{ fontSize: 11, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>สถานะผัง</label>
-          <select value={state} onChange={e => setState(e.target.value)}
-            style={{ width: 170, fontSize: 13, padding: '7px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)' }}>
-            {STATES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
-          </select>
-        </div>
+        <span className="filter-label">เดือนข้อมูล</span>
+        <input type="month" value={monthKey} onChange={e => setMonthKey(e.target.value)} />
+        <span className="filter-label">สถานะผัง</span>
+        <select value={state} onChange={e => setState(e.target.value)}>
+          {STATES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+        </select>
+        <span className="spacer" />
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button onClick={() => generate(false)} disabled={!matNo || busy} style={btn('var(--accent)', { opacity: (!matNo || busy) ? 0.5 : 1 })}>
             {busy ? '⏳ กำลังดึง…' : '⚡ สร้างร่างจากข้อมูลจริง'}
@@ -526,7 +516,7 @@ export default function VSM() {
           {model && <button onClick={() => setShowA3(v => !v)} style={btn('var(--bg3)', { color: 'var(--text)' })}>✍️ เนื้อหา A3</button>}
           <button onClick={() => setShowLoad(v => !v)} style={btn('var(--bg3)', { color: 'var(--text)' })}>📂 ใบที่บันทึกไว้ ({savedMaps.length})</button>
         </div>
-      </div>
+      </FilterBar>
 
       {showLoad && (
         <div style={{ ...S.card, marginBottom: 14, maxHeight: 260, overflowY: 'auto' }}>
@@ -600,8 +590,7 @@ export default function VSM() {
                         onChange={e => setA3(v => ({ ...v, plan: v.plan.map((x, j) => j === i ? { ...x, [f]: e.target.value } : x) }))}
                         style={{ fontSize: 12, padding: '5px 8px', borderRadius: 5, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)' }} />
                 ))}
-                <button onClick={() => setA3(v => ({ ...v, plan: v.plan.filter((_, j) => j !== i) }))}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 14 }}>🗑</button>
+                <DeleteButton onClick={() => setA3(v => ({ ...v, plan: v.plan.filter((_, j) => j !== i) }))} title="ลบ" />
               </div>
             ))}
             {!(a3.plan || []).length && <div style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่มีแถว — กด "+ เพิ่มแถว"</div>}
@@ -786,7 +775,7 @@ export default function VSM() {
           };
         };
         return <>
-          <div style={{ ...S.card, marginBottom: 14, display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+          <FilterBar style={{ marginBottom: 14 }}>
             {fgPicker}
             <div style={{ flex: '2 1 280px', fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.6 }}>
               ค่ามาตรฐานในกล่อง (C/T · C/O · %OEE · A/T) = ค่าเฉลี่ย<b style={{ color: 'var(--text)' }}>เดือนนี้</b> ·
@@ -794,7 +783,7 @@ export default function VSM() {
               มุมมองนี้<b>ไม่บันทึก/ไม่พิมพ์</b> — เอกสาร VSM ทางการ (snapshot) อยู่แท็บ 📋
             </div>
             {liveRaw && <button onClick={loadLive} style={btn('var(--bg3)', { color: 'var(--text)' })}>↻ รีเฟรชตอนนี้</button>}
-          </div>
+          </FilterBar>
 
           {!matNo && (
             <div style={{ ...S.card, textAlign: 'center', padding: 40, color: 'var(--muted)', fontSize: 14 }}>
@@ -958,6 +947,6 @@ export default function VSM() {
           <div data-legend><VsmLegend palette={PALETTE_LIGHT} /></div>
         </>}
       </div>
-    </div>
+    </Page>
   );
 }

@@ -15,7 +15,26 @@
     4) computeLiveOee               — OEE สดของกะที่ยังไม่ปิด
     5) strictOee                    — "OEE จริง" นับหยุดในแผนเป็นการสูญเสีย
     6) orderProducedQty             — "ใบผลิตใบนี้ผลิตได้กี่ชิ้น" (สูตรบังคับของโปรเจค)
+    7) ngByMatFrom                  — ชิ้นที่เครื่องทำออกมาแต่ไม่ดี แยกตาม MAT (ตัวเศษ %P)
+
+  🔴🔴 กฎเหล็ก — **%P นับ "ทุกชิ้นที่เครื่องทำออกมา" · %Q นับ "กี่ชิ้นในนั้นที่ดี"** (2026-10-04)
+     P = CT × **Total Count** ÷ Run Time   ·   Q = **Good** ÷ Total Count   (Nakajima / SEMI E79)
+     Total Count = งานดี **+ ของเสีย + งานทดลอง + ของสงสัย** — ทุกชิ้นกินรอบเครื่องเท่ากันหมด
+     ⇒ นับแต่งานดีในตัวเศษ %P = ของเสีย 1 ชิ้นถูกหัก **2 ครั้ง** (ที่ %P และที่ %Q) = OEE ต่ำกว่าจริง
+     (ที่มา: หัวหน้าทัก 04/10 *"P คิดที่งานผลิตได้ งานที่ผลิตเสียออกมาไม่คิด ทำให้ P ตก"* — จริง
+      · user ชี้ขาดว่า**งานทดลองก็ต้องเข้า** เพราะ "ใช้เครื่องลองผลิต" เครื่องเดินรอบจริง)
+     · ตัวเศษเติมผ่าน `ngByMatFrom` → พารามิเตอร์ `ngForP` (computeLiveOee) / จาก `defects` (computeSessionOee)
+     · 🔴 **%P ใช้ `defectQtyAll` (เห็นทุกชิ้น) · %Q ใช้ `defectQty`/`sumDefectQty` line-mode — ห้ามสลับ**
+       ผลพลอยได้ที่ถูกต้อง: QA ตัดสินของสงสัยแล้ว **%Q ขยับ · %P ไม่ขยับ** (ความเร็วไม่ได้เปลี่ยน)
+     · 🔴 ของเสียที่ชี้ MAT ไม่ได้ = ไม่รู้ CT ⇒ **ไม่เข้า %P แต่ต้องรายงาน `ngNoMatP` ออกจอ** ห้ามเดา
+     · มีด่าน `oee-live-needs-ngforp` ใน regressionGuards (ลืมส่ง = จอตอบ %P ต่ำกว่าจออื่นเงียบๆ)
 */
+
+// งานคู่ gang die / RH-LH — ยุบเป็น "1 shot" ก่อนคิดเวลามาตรฐานของ %P (ดูกติกา ชิ้น≠shot ในไฟล์นั้น)
+import { collapsePairShots } from './pairTotals.js';
+// §8 computeSessionOee ต้องรู้โหมดไลน์/จำนวนสถานีขนาน (source of truth = lineTypes.js · ไม่มี import วนกลับ)
+import { parallelUnitsOf, flowModeOf } from './lineTypes.js';
+import { WORK_DAY_START_HOUR } from './workDate.js';   // ขอบวันทำงาน (ก่อน 08:00 = วันก่อนหน้า) — เจ้าของกฎ
 
 /* ═══ 6) ยอดผลิตของใบผลิต 1 ใบ ═══════════════════════════════════════════════════════
    สูตรบังคับของโปรเจค: confirmed → `qty_ok ?? qty` · สถานะอื่นทั้งหมด → `qty_actual ?? 0`
@@ -33,13 +52,32 @@
    ✅ ไม่ double count: ตอนรับยอด กะถัดไปเปิดใบใหม่ด้วย **ยอดที่เหลือ** เท่านั้น
       (`remainQty = qty − qty_actual` ใน handleImportCarryOrders) → 5 (ต้นทาง) + 30 (ปลายทาง) = 35 ✅
 
-   ⛔ **ห้ามใช้ฟังก์ชันนี้คิด "เป้า"** — เป้าของใบ `imported` ถูกย้ายไปอยู่ที่ใบของกะถัดไปแล้ว
-      จุดที่รวมเป้าด้วย `o.qty` ดิบ ต้องกรอง `imported` ออกเหมือนเดิม ไม่งั้นเป้าถูกนับซ้ำ  */
+   ⛔ **ห้ามใช้ฟังก์ชันนี้คิด "เป้า"** — ใช้ `orderPlanQty()` (§6.1 ข้างล่าง) ที่เดียว
+      (เป้าของใบ `imported` ส่วนที่ยังไม่ทำถูกย้ายไปอยู่ที่ใบของกะถัดไปแล้ว)  */
 export function orderProducedQty(o) {
   if (!o) return 0;
   return o.status === 'confirmed'
     ? Number(o.qty_ok ?? o.qty ?? 0)
     : Number(o.qty_actual ?? 0);
+}
+
+/* ═══ 6.1) "เป้า/แผน" ของใบผลิต 1 ใบ — คู่กับ orderProducedQty (QC audit 05/10 · roadshow) ═══
+   เดิมแต่ละจอคิดเป้าเอง 3 แบบ: (ก) Σqty ทุกสถานะ (Obeya/FactoryMap/GroupOverview/DeptDashboard)
+   ⇒ ใบยกยอดถูกนับเป้า 2 รอบ: ต้นทาง 35 + ปลายทาง 30 = 65 ทั้งที่งานจริง 35 (จอเดโมขึ้น 71% แทน 100%)
+   (ข) ตัด imported/carry_over ทิ้งทั้งใบ (MorningMeeting) ⇒ ยอดผลิตของต้นทางยังนับ แต่เป้าหาย = เกิน 100%
+   กติกาเดียว (นับเป้าครั้งเดียวทั้งสาย ไม่ว่าจะยกกี่ทอด):
+     · `cancelled`  → 0 (ยกเลิกแล้ว ไม่ใช่แผน)
+     · `imported`   → min(เป้า, qty_actual) = ส่วนของเป้าที่ "ใช้ไปในกะนี้" — ที่เหลือถูกออกใบใหม่ที่กะถัดไป
+                      ด้วย `qty − qty_actual` แล้ว (handleImportCarryOrders) ⇒ 5 + 30 = 35 ✅
+     · `carry_over` → เป้าเต็ม (ยังไม่มีใครรับไป = ส่วนที่เหลือยังไม่ได้ออกใบที่ไหน — ตัดทิ้ง = แผนหายเงียบ)
+     · อื่นๆ        → `qty_target ?? qty` (ใบ manual/ปิดยอดเศษเก็บเป้าเดิมไว้ที่ qty_target)
+   ⚠️ trade-off ที่ยอมรับ: กะต้นทางที่ส่งงานต่อ จะเห็นเป้าของใบนั้น = ยอดที่ทำได้ (ส่วนที่เหลือย้ายไปกะถัดไป)
+   🔴 จุดที่รวม "เป้า" ของใบผลิตต้องเรียกตัวนี้ **ห้ามเขียน `o.qty_target ?? o.qty` / `Number(o.qty)` เองในหน้า** */
+export function orderPlanQty(o) {
+  if (!o || o.status === 'cancelled') return 0;
+  const t = Number(o.qty_target ?? o.qty ?? 0) || 0;
+  if (o.status === 'imported') return Math.max(0, Math.min(t, Number(o.qty_actual ?? 0) || 0));
+  return t;
 }
 
 
@@ -107,6 +145,17 @@ const mergeIv = (iv) => {
   return out;
 };
 
+/** union ช่วงเวลาหลายชุดที่ยังไม่เรียง → [[s, e], ...] เรียง + รวมช่วงที่ทับกัน
+ *  ⚠️ `mergeIv` ข้างบนต้องการ input ที่เรียงมาแล้ว — ตัวนี้เรียงให้ก่อน ใช้กับชุดที่ผสมมาจากหลายที่
+ *  (เช่น "ช่วงที่พาร์ทวิ่ง" ∪ "ช่วงพักตามนโยบาย" ตอนหา downtime ที่ตกนอกงานทั้งหมด — §7) */
+export function unionIv(intervals = []) {
+  const clean = intervals
+    .filter(iv => Array.isArray(iv) && iv[0] != null && iv[1] != null && iv[1] > iv[0])
+    .map(iv => [Number(iv[0]), Number(iv[1])])
+    .sort((a, b) => a[0] - b[0]);
+  return mergeIv(clean);
+}
+
 /** **ช่วงเวลา**พักตามนโยบายที่ทับกรอบ [startMs, endMs] → [[s, e], ...] (epoch ms) เรียง + รวมช่วงที่ทับกัน
  *  กติกาทั้งหมดของ "พักนโยบาย" อยู่ที่ฟังก์ชันนี้ที่เดียว: กรองกะ → กรองกระบวนการ → ot_scope → กะดึกข้ามวัน
  *  · `policyBreakOverlapMin` = ผลรวมนาทีของช่วงที่ได้จากตัวนี้
@@ -156,6 +205,23 @@ export function overlapMinutesWith(sMs, eMs, intervals = []) {
 export function policyBreakOverlapMin({ policies = [], startMs, endMs, workDate, shift, processType = null }) {
   return breakIntervalsIn({ policies, startMs, endMs, workDate, shift, processType })
     .reduce((s, [a, b]) => s + (b - a) / 60000, 0);
+}
+
+/** ช่วงพักบน "ครึ่งวัน" ของกริดเวลา 24 ชม. (บอร์ดไทม์ไลน์ Dashboard · /management · Heijunka)
+ *  half = { key: 'am' | 'pm', startMs } — am = กะเช้า 08:00→20:00 · pm = กะดึก 20:00→08:00 วันถัดไป
+ *  🔴 QC 05/10 — เดิม 4 จอก๊อปสูตรเอง (`half.hours.indexOf(ชั่วโมง)`) ไม่กรอง process_type/ot_scope
+ *     ⇒ พัก 5ส. ไม่ทำโอ (17:10) กับพักโอ (17:30/19:40) ขึ้นพร้อมกัน = คิวการ์ดถูกดันเกินจริง
+ *     ⇒ ผ่าน `breakIntervalsIn` ที่เดียว · กรอบ 12 ชม. ครอบช่วงโอ = ตีเป็นกะทำโอ (ทิ้ง `no_ot`)
+ *  processType = null → เฉพาะนโยบาย common (จอที่ไม่รู้กระบวนการของไลน์ ห้ามเดานโยบายเฉพาะ) */
+export function halfDayBreakIntervals({ policies = [], half, processType = null }) {
+  if (!half?.startMs) return [];
+  const d = new Date(half.startMs);
+  const p2 = (n) => String(n).padStart(2, '0');
+  const workDate = `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
+  return breakIntervalsIn({
+    policies, startMs: half.startMs, endMs: half.startMs + 12 * 3600000, workDate,
+    shift: half.key === 'pm' ? 'night' : 'day', processType,
+  });
 }
 
 /* ═══ 3.1) 🔴🔴 กฎเหล็ก — downtime ที่ทับ "เวลาพักตามนโยบาย" ห้ามหักซ้ำ (2026-09-15 · user ถาม) ═══
@@ -342,7 +408,7 @@ export function busyMinutes(orders = [], startMs, endMs) {
      ไม่ส่ง = ไม่หักพัก → กลับไปต่างจากค่าที่ stamp อีก (util คืน `noBreakPolicy: true` ให้จอรู้ตัว)
    ⚠️ netAvail ≤ 0 (เพิ่งเปิดกะแล้วยังอยู่ในประชุมแถว/พัก) = **ประเมินไม่ได้ → คืน null**
      ห้ามคืน A = 0 (กฎเดียวกับ noOutput/noCt — 0 แปลว่า "แย่มาก" ไม่ใช่ "ยังไม่รู้") */
-export function computeLiveOee({ session, orders = [], downtimes = [], ctMap = {}, ngQty = null, workDate, nowMs = Date.now(), parallelN = 1, parallelCap = 1, breakPolicies = [], processType = null }) {
+export function computeLiveOee({ session, orders = [], downtimes = [], ctMap = {}, ngQty = null, workDate, nowMs = Date.now(), parallelN = 1, parallelCap = 1, breakPolicies = [], processType = null, pairMap = null, ngForP = null }) {
   if (!session?.start_time) return null;
   const wd = workDate || session.work_date;
   if (!wd) return null;
@@ -363,10 +429,7 @@ export function computeLiveOee({ session, orders = [], downtimes = [], ctMap = {
   const startTimeOutOfFrame = isNight ? inDayWindow : (session.shift === 'day' && !inDayWindow);
   let openedDate = wd, openedHm = startHm;
   if (startTimeOutOfFrame) openedHm = isNight ? '20:00' : '08:00';
-  else if (isNight && startH < 8) {                        // กะดึกข้ามคืน — เวลาเริ่มอยู่เช้าวันถัดไป
-    const d = new Date(`${wd}T12:00:00`); d.setDate(d.getDate() + 1);
-    openedDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  }
+  else openedDate = shiftStartDate(wd, startHm, session.shift);   // กะดึกข้ามคืน — ของกลางเดียวกับ shiftFrameOf
   const opened = new Date(`${openedDate}T${openedHm}:00`).getTime();
   let elapsed = (nowMs - opened) / 60000;
   if (session.shift_min) elapsed = Math.min(elapsed, session.shift_min);
@@ -396,16 +459,44 @@ export function computeLiveOee({ session, orders = [], downtimes = [], ctMap = {
   if (!(netAvail > 0)) return null;                    // ยังอยู่ในพัก/หยุดตามแผนทั้งช่วง = ยังประเมินไม่ได้
   const runMin = Math.max(1, netAvail - unplannedDtMin);
 
-  let stdMin = 0, produced = 0, ngFromOrders = 0, qtyNoCt = 0;
+  /* ⚠️ **ชิ้น ≠ shot** — `produced`/`ng` นับ "ชิ้น" (ใช้กับ %Q) · เวลามาตรฐานนับ "shot" (ใช้กับ %P)
+     งานคู่ gang die / RH-LH: 1 จังหวะเครื่องได้ 2 ชิ้น แต่ CT ที่ตั้งไว้คือเวลาต่อ **1 จังหวะ**
+     ⇒ บวก qty×CT ทั้งสองข้าง = ตัวเศษ 2 เท่า → %P ทะลุ 100 แล้วโดน cap เงียบ
+     (วัดจริง 18/09: HDF1 159% · LASER-345 160% — ดู utils/pairTotals.js `collapsePairShots`)
+     `pairMap` ไม่ส่ง = ไม่ยุบอะไรเลย = พฤติกรรมเดิมเป๊ะ */
+  let produced = 0, ngFromOrders = 0, qtyNoCt = 0;
   const matsNoCt = new Set();
+  const stdRows = new Map();                       // mat_no → { mat_no, qty, ct } สำหรับคิดเวลามาตรฐาน
   orders.forEach(o => {
     const q = orderProducedQty(o);
     produced += q;
-    const ct = Number(ctMap[o.mat_no]) || 0;
-    if (ct > 0) stdMin += q * ct / 60;
-    else if (q > 0) { qtyNoCt += q; if (o.mat_no) matsNoCt.add(o.mat_no); }
     ngFromOrders += o.qty_ng || 0;
+    const ct = Number(ctMap[o.mat_no]) || 0;
+    if (!(ct > 0)) { if (q > 0) { qtyNoCt += q; if (o.mat_no) matsNoCt.add(o.mat_no); } return }
+    const key = o.mat_no ?? '__nomat__';
+    const row = stdRows.get(key) || { mat_no: o.mat_no ?? null, qty: 0, ct };
+    row.qty += q; row.ct = Math.max(row.ct, ct);
+    stdRows.set(key, row);
   });
+  /* 🔴 ของเสีย/งานทดลอง/ของสงสัย **ก็กินรอบเครื่อง** ⇒ เข้าตัวเศษของ %P ด้วย (ดู `ngByMatFrom`)
+     ไม่ส่ง `ngForP` = ไม่บวกอะไรเลย = พฤติกรรมเดิมเป๊ะ (back-compatible) */
+  let ngInP = 0, ngNoCtP = 0;
+  Object.entries(ngForP?.byMat || {}).forEach(([mat, v]) => {
+    const n = Number(v) || 0;
+    if (!(n > 0)) return;
+    const ct = Number(ctMap[mat]) || 0;
+    if (!(ct > 0)) { ngNoCtP += n; if (mat) matsNoCt.add(mat); return; }   // ไม่มี CT = คิดไม่ได้ ห้ามเดา
+    const row = stdRows.get(mat) || { mat_no: mat, qty: 0, ct };
+    row.qty += n; row.ct = Math.max(row.ct, ct);
+    stdRows.set(mat, row);
+    ngInP += n;
+  });
+  qtyNoCt += ngNoCtP;
+  const ngPInfo = { ngInP, ngNoMatP: Number(ngForP?.noMat) || 0, ngNoCtP };
+
+  const pairOf = pairMap ? (m => pairMap[m] ?? null) : undefined;
+  const stdMin = collapsePairShots([...stdRows.values()], pairOf)
+    .reduce((s, r) => s + r.qty * r.ct / 60, 0);
   const ng = ngQty != null ? ngQty : ngFromOrders;
 
   const A = Math.min(1, runMin / netAvail);
@@ -434,7 +525,7 @@ export function computeLiveOee({ session, orders = [], downtimes = [], ctMap = {
   if (stdMin <= 0) {
     return { A: pct(A), P: null, Q: pct(Q), oee: null, elapsedMin: Math.round(elapsed), runMin: Math.round(runMin),
       stdMin: 0, denomMin: Math.round(runMin),
-      produced, ngQty: ng, noOutput: false, noCt: true, qtyNoCt, matsNoCt: [...matsNoCt], ...baseInfo };
+      produced, ngQty: ng, noOutput: false, noCt: true, qtyNoCt, matsNoCt: [...matsNoCt], ...ngPInfo, ...baseInfo };
   }
 
   /* ไลน์เครื่องขนาน: ตัวหารต้องเป็น "เวลาเครื่อง" ไม่ใช่ "เวลาไลน์"
@@ -463,7 +554,7 @@ export function computeLiveOee({ session, orders = [], downtimes = [], ctMap = {
   // qtyNoCt > 0 = ตั้ง CT ไม่ครบทุกชิ้นงาน → stdMin ขาด → %P ต่ำกว่าจริง (จอควรติดป้ายเตือน)
   return { A: pct(A), P: pct(P), Q: pct(Q), oee: pct(oee), elapsedMin: Math.round(elapsed), runMin: Math.round(runMin),
     stdMin: Math.round(stdMin), denomMin: Math.round(denomMin),
-    produced, ngQty: ng, noOutput: false, noCt: false, qtyNoCt, matsNoCt: [...matsNoCt],
+    produced, ngQty: ng, noOutput: false, noCt: false, qtyNoCt, matsNoCt: [...matsNoCt], ...ngPInfo,
     pOver: pRaw > 1.001, pRawPct: Math.round(pRaw * 1000) / 10,
     machineMin: machineMin == null ? null : Math.round(machineMin), parallelCap: cap, ...baseInfo };
 }
@@ -613,7 +704,7 @@ export function groupLean({ axis = 'six_big_loss', downtimes = [], defects = [],
   });
   defects.forEach(d => {
     const ty = d.dr_defect_types || {};
-    const qty = (Number(d.qty_ng) || 0) + (Number(d.qty_suspect) || 0);
+    const qty = defectQtyAll(d);   // พาเรโต/6 Big Loss = "เห็นทุกอย่าง" รวมของสงสัยที่ยังไม่ตัดสิน (คนละตัวกับที่คิด %Q)
     if (!qty) return;
     const ct = ctSecFn ? ctSecFn(d.session_id) : 0;
     put(ty[axis] || 'defect', ty.name_th || 'ของเสีย', { qty, count: 1, min: ct > 0 ? (qty * ct) / 60 : 0 });
@@ -646,8 +737,135 @@ export function groupLean({ axis = 'six_big_loss', downtimes = [], defects = [],
 export const isTrialDefect = (d) =>
   d?.is_trial === true || d?.dr_defect_types?.excl_from_q === true;
 
-/** จำนวนของเสียของ 1 แถว — NG + สงสัย (กฎเดิม: ยึด defect_logs ไม่ใช่คอลัมน์ rollup ของ session) */
-export const defectQty = (d) => (Number(d?.qty_ng) || 0) + (Number(d?.qty_suspect) || 0);
+/* ═══ 7.1) 🔴🔴 กฎเหล็กข้าม session — "ของสงสัย" ยังไม่ใช่ของเสีย จนกว่า QA จะตัดสิน (2026-09-30 · คำสั่ง user) ═══
+
+   เดิม: `defectQty = qty_ng + qty_suspect` ⇒ ของสงสัยถูกนับเป็นของเสีย**ทันทีที่ลง**
+   และ**ไม่มีทางย้อน** — QA ตัดสินทีหลังว่า "งานดี" ก็ไม่มีอะไรวิ่งกลับไปแก้ %Q ของกะนั้น
+   เคสจริง: Line 60 กะ 21/07 ลงสงสัย 12 ชิ้น เขียนว่า "รอพิจารณา" → ถึง 30/09 ยังรออยู่ (71 วัน)
+   และกะนั้นถูกหัก 12 ชิ้นถาวร
+
+   🔴 ของสงสัย = **ยังไม่รู้ว่าดีหรือเสีย** ⇒ เอาไปหัก %Q ไม่ได้ และเอาไปบวกเป็นงานดีก็ไม่ได้
+      ต้อง **กันออกจากสูตร แล้วเขียนบนจอว่ายังมีของรอพิจารณาอยู่กี่ชิ้น** (%Q ยังไม่สรุป)
+      — หลักเดียวกับ "งานทดลอง" (§7) และกฎความซื่อสัตย์ของจอ Obeya: ข้อมูลไม่พอให้เขียนบนจอ
+        ห้ามโชว์เลขที่แน่ใจไม่ได้เหมือนเลขที่แน่ใจ
+
+   ผลพิจารณามาจากทะเบียนถังเหลือง/แดง (`quality_bin_records` ผูกด้วย `defect_log_id`)
+   ตัดสินตาม WI-PD3-069 §5.4 — ตัวตัดสินอยู่ `src/utils/qualityBin.js` (QA_DECISIONS 4 ทาง)
+     'scrap'                        → เสียจริง          ⇒ **นับเข้า %Q**
+     'good' | 'repair' | 'use_as_is' → ไม่ใช่ของเสีย      ⇒ ไม่นับ (ซ่อมแล้วกลับเข้ากระบวนการ)
+     `return_date` (กลับเข้ากระบวนการแล้ว)               ⇒ ไม่นับ
+     ย้ายลงถังแดงแล้ว (มีใบแดงที่ `from_yellow_id` ชี้มา) ⇒ **นับเข้า %Q** (ยืนยันเสียแล้ว)
+     ยังไม่มีใบถัง / มีใบแต่ยังไม่ตัดสิน                  ⇒ **รอพิจารณา — ไม่นับ + ต้องขึ้นบนจอ**
+
+   ⚠️⚠️ **"ยังไม่ตัดสิน" กับ "ไม่ได้ถามมา" ต้องแยกให้ออก — ห้ามยุบเป็นอันเดียว**
+      คิวรีที่เอาไปคิด %Q ต้อง embed ทะเบียนถังมาด้วย: `.select('..., ' + QBIN_EMBED)`
+      · มี key `quality_bin_records` (แม้เป็น `[]`) = ถามแล้ว ⇒ ตัดสินตามกฎด้านบน
+      · **ไม่มี key เลย = คิวรีนั้นไม่ได้ถาม** ⇒ คืนพฤติกรรมเดิม (นับสงสัยเป็นของเสีย)
+        พร้อมธง `unknown` — ตัวเลขจะ "เท่าเดิม" ไม่เงียบๆ เปลี่ยนหลังบ้าน
+        (บทเรียน `excl_from_q`: ลืม select แล้วตกหล่นเงียบ — คราวนี้ทำให้ *ตรวจจับได้* แทน)
+      มีด่าน `regressionGuards` (`oee-suspect-needs-qbin-embed`)                            */
+
+/** คอลัมน์ทะเบียนถังที่ต้อง embed มากับ defect_logs ทุกครั้งที่จะเอาไปคิด %Q */
+export const QBIN_EMBED =
+  'quality_bin_records(id, bin, qa_decision, return_date, special_use_doc_no, from_yellow_id, is_active)';
+
+/** ผลพิจารณาที่ถือว่า "เสียจริง" — ค่าอื่นที่ตัดสินแล้วคือไม่เสีย */
+const QA_SCRAP = 'scrap';
+/** ผลพิจารณาที่ถือว่า "เคลียร์แล้ว ไม่ใช่ของเสีย" */
+const QA_CLEARED = ['good', 'repair', 'use_as_is'];
+
+/**
+ * สถานะของ "ของสงสัย" ในแถวของเสีย 1 แถว
+ * @returns 'none'    ไม่มีของสงสัยในแถวนี้
+ *          'unknown' คิวรีไม่ได้ embed ทะเบียนถังมา — ตอบไม่ได้ (ใช้พฤติกรรมเดิม)
+ *          'pending' ยังไม่มีผลพิจารณา ⇒ กันออกจาก %Q + ต้องขึ้นบนจอ
+ *          'scrap'   QA ตัดสินว่าเสีย / ย้ายลงถังแดงแล้ว ⇒ นับเข้า %Q
+ *          'cleared' ตัดสินแล้วว่าไม่เสีย ⇒ ไม่นับ
+ */
+export function suspectState(d) {
+  if (!(Number(d?.qty_suspect) || 0)) return 'none';
+  const bins = d?.quality_bin_records;
+  if (bins === undefined || bins === null) return 'unknown';
+  /* ใบที่ถูกลบ (soft delete `is_active=false`) ห้ามมีสิทธิ์ตัดสิน — ไม่ select มา (undefined) = ถือว่ายังใช้อยู่ */
+  const rows = (Array.isArray(bins) ? bins : [bins]).filter(r => r && r.is_active !== false);
+  if (!rows.length) return 'pending';
+
+  /* ยืนยันเสียแล้ว = ใบเหลืองของแถวนี้ถูกย้ายลงแดง (`from_yellow_id` ชี้ใบเหลืองในชุด)
+     🔴 ใบแดงที่ลงตรงจาก NG (`from_yellow_id` ว่าง) **ไม่ใช่คำตัดสินของสงสัย** ถ้าแถวนี้มีใบเหลืองอยู่ด้วย
+        (QA 05/10: โมดัลลงถังติ๊ก 2 ถังพร้อมกัน — แดงจาก NG + เหลืองจากสงสัย ⇒ เดิมนับสงสัยเป็นเสียทันที)
+        ไม่มีใบเหลืองเลย = เอาของสงสัยลงแดงตรง ⇒ ยังถือว่าเสีย (พฤติกรรมเดิม) */
+  const yellowIds = new Set(rows.filter(r => r?.bin === 'yellow').map(r => r?.id).filter(Boolean));
+  const movedToRed = rows.some(r => r?.bin === 'red'
+    && (yellowIds.size ? yellowIds.has(r.from_yellow_id) : r?.from_yellow_id == null));
+  if (movedToRed) return QA_SCRAP;
+
+  const yellows = rows.filter(r => r?.bin === 'yellow');
+  const pool = yellows.length ? yellows : rows;
+  if (pool.some(r => r?.qa_decision === QA_SCRAP)) return QA_SCRAP;
+  if (pool.some(r => r?.return_date || QA_CLEARED.includes(r?.qa_decision))) return 'cleared';
+  return 'pending';
+}
+
+/** ของสงสัยแถวนี้ต้องรอ QA อยู่ไหม (จอต้องเอาไปเขียนว่า "%Q ยังไม่สรุป") */
+export const isSuspectPending = (d) => suspectState(d) === 'pending';
+
+/**
+ * จำนวนของเสียของ 1 แถว — ใช้คิด %Q
+ * NG นับเสมอ · ของสงสัยนับเฉพาะที่ QA ตัดสินว่าเสีย (ดู §7.1)
+ * ⚠️ ยึด `defect_logs` ไม่ใช่คอลัมน์ rollup ของ session (กฎเดิม)
+ */
+export const defectQty = (d) => {
+  const ng = Number(d?.qty_ng) || 0;
+  const sus = Number(d?.qty_suspect) || 0;
+  if (!sus) return ng;
+  const st = suspectState(d);
+  /* 'unknown' = คิวรีไม่ได้ถามทะเบียนถัง ⇒ คงพฤติกรรมเดิมไว้ ห้ามเปลี่ยนเลขเงียบๆ */
+  return (st === QA_SCRAP || st === 'unknown') ? ng + sus : ng;
+};
+
+/**
+ * จำนวนของเสีย "ทุกอย่าง" ของ 1 แถว — NG + สงสัยทั้งหมดไม่สนผลพิจารณา
+ * ⚠️ ใช้กับจอที่ **แสดงรายการ/พาเรโต/มูลค่า** เท่านั้น — ของสงสัยเป็นปัญหาจริงที่ต้องเห็น
+ *    🔴 ห้ามเอาไปคิด %Q (นั่นคือ `defectQty`) — สลับ 2 ตัวนี้ = จอเดียวกันตอบคนละเลข
+ */
+export const defectQtyAll = (d) => (Number(d?.qty_ng) || 0) + (Number(d?.qty_suspect) || 0);
+
+/**
+ * 🔴 **จำนวนชิ้นที่เครื่องทำออกมาจริง แยกตาม MAT — ไว้บวกเข้า "ตัวเศษ" ของ %P**
+ * (2026-10-04 · คำสั่ง user: *"ต้องเข้าหมดเพราะใช้เครื่องลองผลิต"*)
+ *
+ * %P วัด **ความเร็ว** ไม่ใช่ความดี ⇒ ชิ้นที่ออกมาเสีย/ทดลอง/รอ QA ก็ **กินรอบเครื่องเท่ากับชิ้นดี**
+ * ⇒ ต้องอยู่ในตัวเศษ ไม่งั้นของเสีย 1 ชิ้นถูกหัก 2 ครั้ง (ทั้ง %P และ %Q) = OEE ต่ำกว่าจริง
+ * — ตรงกับสูตรสากล (Nakajima/SEMI E79): `P = CT × Total Count ÷ Run Time` · `Q = Good ÷ Total Count`
+ *
+ * ใช้ `defectQtyAll` (NG + ของสงสัยทุกใบ **ไม่สน** `is_trial`/`excl_from_q`/ผล QA) เพราะคำถามของ %P คือ
+ * *"เครื่องเดินไปกี่รอบ"* ไม่ใช่ *"ใครผิด"* — ผลพลอยได้: **%P นิ่ง ไม่ขยับตอน QA ตัดสินของสงสัย**
+ * (ต่างจาก %Q ที่ต้องขยับ — นั่นคือ `defectQty` · 🔴 ห้ามสลับ 2 ตัวนี้)
+ *
+ * @param {Array} defects  แถว defect_logs (ต้องมี `prod_order_id` หรือ embed `prod_orders(mat_no)`)
+ * @param {Array} orders   ใบในกะ (ใช้ map `id → mat_no`)
+ * @returns {{ byMat: Object<string,number>, noMat: number }}
+ *          `noMat` = ของเสียที่**ชี้ MAT ไม่ได้** (ไม่ผูกใบ) ⇒ ไม่รู้ CT ⇒ บวกเข้า %P ไม่ได้
+ *          🔴 ห้ามเกลี่ยมั่วลง MAT อื่น — คืนตัวเลขออกไปให้จอเขียนบอกแทน
+ */
+export function ngByMatFrom(defects = [], orders = []) {
+  const matOf = new Map();
+  (orders || []).forEach(o => { if (o?.id != null) matOf.set(o.id, o.mat_no ?? null); });
+  const byMat = {};
+  let noMat = 0;
+  (defects || []).forEach(d => {
+    const q = defectQtyAll(d);
+    if (!(q > 0)) return;
+    const mat = d?.prod_orders?.mat_no ?? (d?.prod_order_id != null ? matOf.get(d.prod_order_id) : null);
+    if (mat == null) { noMat += q; return; }          // ชี้ MAT ไม่ได้ = ไม่รู้ CT (ห้ามเดา)
+    byMat[mat] = (byMat[mat] || 0) + q;
+  });
+  return { byMat, noMat };
+}
+
+/** จำนวนของสงสัยที่ยังรอ QA ในแถวนี้ (0 เมื่อไม่มี/ตัดสินแล้ว/ตอบไม่ได้) */
+export const suspectPendingQty = (d) =>
+  (suspectState(d) === 'pending' ? (Number(d?.qty_suspect) || 0) : 0);
 
 /** รวมจำนวนของเสีย
  *  mode 'line' (ดีฟอลต์) = ไม่รวมงานทดลอง → ใช้คิด %Q / OEE
@@ -655,12 +873,27 @@ export const defectQty = (d) => (Number(d?.qty_ng) || 0) + (Number(d?.qty_suspec
 export const sumDefectQty = (rows, mode = 'line') =>
   (rows || []).reduce((s, d) => s + ((mode === 'all' || !isTrialDefect(d)) ? defectQty(d) : 0), 0);
 
-/** แยก 2 ยอดในรอบเดียว — คืน { all, line, trial } */
+/**
+ * แยกยอดในรอบเดียว — คืน { all, line, trial, pending, unknown }
+ *   pending = ของสงสัยที่ยังรอ QA (ไม่อยู่ใน all/line/trial — ยังไม่รู้ว่าเป็นของเสียไหม)
+ *   unknown = true เมื่อมีแถวที่คิวรีไม่ได้ embed ทะเบียนถังมา ⇒ จอห้ามอ้างว่า "สรุปแล้ว"
+ * 🔴 จอที่โชว์ %Q ต้องอ่าน `pending`/`unknown` แล้วเขียนบนจอ ห้ามกลืน
+ */
 export function splitDefectQty(rows) {
-  let all = 0, trial = 0;
-  (rows || []).forEach(d => { const q = defectQty(d); all += q; if (isTrialDefect(d)) trial += q; });
-  return { all, line: all - trial, trial };
+  let all = 0, trial = 0, pending = 0, unknown = false;
+  (rows || []).forEach(d => {
+    const q = defectQty(d);
+    all += q;
+    if (isTrialDefect(d)) trial += q;
+    pending += suspectPendingQty(d);
+    if (suspectState(d) === 'unknown') unknown = true;
+  });
+  return { all, line: all - trial, trial, pending, unknown };
 }
+
+/** ของสงสัยที่ยังรอ QA รวมทั้งชุด — จอเอาไปเขียน "รอพิจารณา N ชิ้น · %Q ยังไม่สรุป" */
+export const sumSuspectPending = (rows) =>
+  (rows || []).reduce((s, d) => s + suspectPendingQty(d), 0);
 
 /* ═══ เป้า A/P/Q และค่าเฉลี่ยข้ามเดือน/ไตรมาส (2026-09-08 · เด็ค Monthly Review โหมด full data) ═══
    อยู่ในไฟล์นี้เพราะเป็น "สูตร OEE" — กฎโปรเจค: util OEE มีไฟล์เดียว ห้ามแตกเพิ่ม */
@@ -732,6 +965,21 @@ export function avgOeeTarget(rows = []) {
 }
 
 /**
+ * เป้า OEE ของ "ชุดไลน์" — กติกาเดียวกับห้อง OBEYA (QC audit 05/10 · เดิม FactoryMap/GroupOverview/DeptDashboard
+ * ตัดสีด้วยเลขตายตัว 80/65 ขณะที่ Obeya ใช้เป้ากลุ่ม ⇒ ไลน์เดียวกันเขียวจอหนึ่ง แดงอีกจอ)
+ *  · กลุ่มของไลน์ = `parent_line_name || name` (oee_targets ตั้งที่ระดับกลุ่ม/ไลน์แม่)
+ *  · `targetsByGroup` = { [group_name]: แถว oee_targets } · **null = ยังไม่รู้เป้า (โหลดไม่ได้/ยังไม่โหลด) ⇒ คืน null**
+ *    (ผู้เรียกต้องวาดเป็น "ตัดสินไม่ได้" — ห้ามถอยไปเลขตายตัว) · กลุ่มที่ไม่ตั้ง = ค่ามาตรฐาน 90×90×99 ตาม avgOeeTarget
+ * คืนผลของ avgOeeTarget ({ a, p, q, oee, configured, missing }) หรือ null
+ */
+export function oeeTargetForLines(names = [], lines = [], targetsByGroup = null) {
+  if (!targetsByGroup) return null;
+  const byName = new Map((lines || []).map(l => [l.name, l]));
+  const groups = [...new Set((names || []).filter(Boolean).map(n => byName.get(n)?.parent_line_name || n))];
+  return avgOeeTarget(groups.map(g => targetsByGroup[g] || null));
+}
+
+/**
  * เฉลี่ย OEE ข้ามหลายเดือน (ไตรมาส/ทั้งปี) — **ถ่วงน้ำหนักด้วยเวลารับภาระ ห้าม mean-of-percentages**
  * rows = [{ oee, loadHr, nSess }] · ข้ามเดือนที่ไม่มีกะปิด (nSess = 0) และเดือนที่ OEE เป็น null
  * ไม่มีน้ำหนักเลย (loadHr หายทุกแถว) → ถอยไปเฉลี่ยธรรมดา ดีกว่าคืน null ทั้งที่มีข้อมูล
@@ -764,56 +1012,354 @@ export const weekOfMonth = (workDate) => {
 };
 
 /* ═══ 7) จับกลุ่ม "ชิ้นงานเดียวกัน" — ใช้ตรวจ parallel ใน computeOEE ═══════════════════════
-   ปัญหาที่แก้ (2026-09-09 · ทวนสอบกับ Excel หน้างาน ดู docs/OEE-EXCEL-VERIFY-2026-09-09.md):
-   พาร์ทตัวเดียวกันที่แตก MAT ตาม **ลูกค้า/เรฟวิชั่น** ถูกตีเป็นคนละ product เพราะจับกลุ่มด้วย
-   "ชื่อ product" ซึ่งสะกดไม่ตรงกันในทะเบียน:
-     10105769 REINF ASY RAD SUPT LWR(306)(AAT)          RB3B-8C306-BC
-     10105770 REINF ASY RAD SUPT LWR(RB3B-8C306-BC)     RB3B-8C306-BC
-     10100381 REINF ASY RAD SUPT LWR (FVL)              RB3B-8C306-BB
-     20066630 REINF ASY RAD LWR(MB3B-8C306-BA)ก่อนแพ็ก  MB3B - 8C306 - BA
-   → 4 กลุ่ม → window ทับกัน → isParallel = true → ตัวหาร %P เปลี่ยน → P เพี้ยน
-   (Assy LWR 06/08 กะดึก P 71.8 ที่ควรเป็น ~92.5 · 31/08 กะดึก 71.0 ที่ควรเป็น ~96.6)
+   🔁 ตัวสูตรย้ายไป `src/utils/partGroup.js` แล้ว (05/10) เพราะชั้น OP ใน `pairTotals.js`
+   ต้องตัดสิน "สินค้าตัวเดียวกัน" ด้วยกฎเดียวกัน และ `oee.js` import `pairTotals.js` อยู่แล้ว
+   (ให้ pairTotals ดึง oee กลับ = import วงกลม)
+   ⚠️ ห้ามก๊อปสูตรกลับมาไว้ที่นี่ — re-export ไว้ให้ที่เรียกเดิมใช้ `from '../utils/oee'` ได้เหมือนเดิม
+   ⚠️ ห้ามใช้ `family_id` เป็นคีย์ (เหตุผล + ตัวเลขวัดจริง 09/09 เขียนไว้ในหัว partGroup.js) */
+export { partCoreOf, groupSameProductKeys } from './partGroup.js';
+/* `export … from` ไม่ได้ผูกชื่อเข้าสโคปไฟล์นี้ — `computeOEE` เรียก `groupSameProductKeys`
+   เองด้วย ⇒ ต้อง import คู่กันเสมอ (ลืม = `no-undef` ที่ด่าน lint:critical จับได้) */
+import { groupSameProductKeys } from './partGroup.js';
 
-   ⭐ กติกา: **ชื่อเดียวกัน "หรือ" เลขพาร์ทแกนกลางเดียวกัน = กลุ่มเดียวกัน (union)**
-   ใช้ union ไม่ใช่เปลี่ยนคีย์ เพื่อให้กลุ่ม "หยาบขึ้นได้อย่างเดียว ห้ามละเอียดขึ้น" —
-   ทุกคู่ที่เคยรวมกันด้วยชื่อยังรวมเหมือนเดิม (ไม่มีไลน์ไหนพฤติกรรมแย่ลงกว่าเดิม)
-   และการรวมกลุ่มกระทบเฉพาะ heuristic `isParallel` เท่านั้น — ตัวหารของไลน์ parallel_machine
-   (`Σ g.runMin`) ไม่เปลี่ยนค่า เพราะเป็นผลรวมข้ามทุกกลุ่มอยู่แล้ว
 
-   ⚠️ ห้ามใช้ `family_id` เป็นคีย์ — วัดจริง 09/09: 145 สินค้า / 142 family = family คือ
-   "MAT ตัวเดียวกันข้ามเรฟ" (คู่กับ effective_from/superseded_by) ไม่ใช่ "พาร์ทเดียวกันข้ามลูกค้า" */
+/* ═══ 7) 🔴 กรอบเวลาของกะ — ช่วงเวลาของพาร์ทต้องอยู่ในกะเสมอ (2026-09-17 · user จับได้) ═══
+   ใบผลิตถูก "ยืนยันย้อนหลัง" ได้ (หัวหน้ามาปิดการ์ดเช้าวันรุ่งขึ้น / SV อนุมัติทีหลัง)
+   ⇒ `confirmed_at` / `stopped_at` ของใบ ตกนอกเวลาเปิด-ปิดกะของตัวเองได้จริง
+   วัดจริง 17/09 (ฐาน DR · กะที่ปิดแล้ว): **251 ใบ ใน 64 กะ มีเวลาปิดหลังกะจบ เฉลี่ยเกิน 715 นาที
+   (~12 ชม.) สูงสุด 13,314 นาที (9.2 วัน)**
 
-/** แกนกลางของเลขพาร์ท: 'RB3B-8C306-BC' / 'MB3B - 8C306 - BA' → '8C306'
- *  ตัดตัวคั่นทุกแบบ แล้วเอา token กลาง (prefix รุ่นรถ + suffix เรฟ ต่างกันได้ในพาร์ทเดียวกัน)
- *  เข้าเงื่อนไขเฉพาะเมื่อ token กลางเป็นเลขพาร์ทจริง (≥3 ตัว + มีตัวเลข) ไม่งั้นคืนทั้งก้อน
- *  เพื่อไม่ให้ฟอร์แมตแปลกๆ ('SP-83', 'MB3BE102D04BC') ถูกรวมมั่ว */
-export function partCoreOf(pNo) {
-  const toks = String(pNo || '').toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean);
-  if (!toks.length) return '';
-  if (toks.length >= 3) {
-    const mid = toks.slice(1, -1).join('');
-    if (mid.length >= 3 && /\d/.test(mid)) return mid;
-  }
-  return toks.join('');
+   เอาเวลานั้นไปสร้าง "ช่วงที่พาร์ทวิ่ง" ตรงๆ ⇒ ฐานเวลาของพาร์ทยาวเกินจริงหลายเท่า:
+     เคสจริง Assy LWR 15/09 กะเช้า — MAT 10105769 มีใบหนึ่ง confirmed_at = 08:30 ของ *วันถัดไป*
+     ⇒ window 08:00→08:30+1d = 24.5 ชม. ⇒ "ควรได้" 1,278 ชิ้นในกะเดียว (จอโชว์ช่วงเป็น "08:00–08:30"
+     เพราะตัดเหลือ HH:MM เลยดูเหมือนครึ่งชั่วโมง) ⇒ %P รายชิ้นเหลือ 6% ทั้งที่งานตัวเดียวกัน
+     คนละลูกค้า (10105770) ได้ 70%
+
+   ⇒ **ทุกจุดที่ประกอบ "ช่วงเวลาที่ MAT.NO วิ่ง" ต้องรัดด้วย `clampWinToShift()` เสมอ**
+      (ทั้ง %A แยกตาม MAT · ตัวหาร %P · "ควรได้" บนจอ) — พาร์ทวิ่งนอกกะของตัวเองไม่ได้
+   ⚠️ ห้ามแก้ด้วยการทิ้งใบที่เวลาเกินไปเฉยๆ — ยอดผลิตของใบนั้นเป็นของกะนี้จริง หายไม่ได้ */
+
+/**
+ * วันปฏิทินของ "เวลาเริ่มกะ" — กะดึกที่บันทึกเวลาเริ่มเป็น 00:00–07:59 คือ **เช้าของวันถัดไป**
+ *
+ * 🔴 ของกลางของกฎนี้ (QC 06/10) — เดิม `computeLiveOee` บวก 1 วันให้ แต่ `shiftFrameOf` **ไม่บวก**
+ *    ⇒ กะดึกที่เริ่ม 02:00 ได้กรอบกะ **เร็วไป 20 ชั่วโมง** ⇒ `clampWinToShift()` รัดช่วงของพาร์ท/
+ *      downtime ทิ้งทั้งหมดเพราะ "อยู่นอกกรอบ" ⇒ **%A หาย downtime · "ควรได้" เพี้ยน** แบบเงียบ
+ *    วัดฐานจริง 06/10: มี **5 กะ** (23/09–05/10) ที่ `shift='night'` + `start_time` 00:00–07:59
+ *    ⇒ ไม่ใช่เคสทฤษฎี และยังเกิดเพิ่มเรื่อยๆ
+ *    ⚠️ กะดึกเข้างานปกติ 22:30 ไม่เข้าเงื่อนไขนี้ — ห้ามเลื่อนวัน
+ *
+ * 🧭 **ทำไมที่นี่ดูเลขชั่วโมงได้ ทั้งที่ด่าน `shift-midnight-hardcoded-hour` ห้าม**
+ *    ด่านนั้นห้าม "เดาวันของ **เวลาที่คนกรอก**" (เช่น เวลาปิด 5ส. ท้ายกะ) เพราะกะดึกที่จบ 08:00+
+ *    จะหลุดเงื่อนไข `< 8` แล้วถูกตรึงผิดวัน — ตัวนั้นต้องใช้ `resolveShiftTime()` ซึ่งเทียบกับ**กรอบกะ**
+ *    แต่ฟังก์ชันนี้คือ **ตัวสร้างกรอบกะเอง** จะไปเทียบกับกรอบกะไม่ได้ (วนลูป)
+ *    ⇒ ที่นี่เทียบกับ **ขอบวันทำงาน** `WORK_DAY_START_HOUR` (เจ้าของกฎ "ก่อน 08:00 = วันก่อนหน้า"
+ *       ใน `workDate.js`) ไม่ใช่เลข 8 ดิบ — ขยับขอบวันทำงานวันหลัง ที่นี่ตามไปเอง
+ * @returns `'YYYY-MM-DD'` ของวันที่เวลาเริ่มกะอยู่จริง
+ */
+export function shiftStartDate(workDate, startHm, shift) {
+  const h = Number(String(startHm || '').slice(0, 2));
+  if (shift !== 'night' || !(h >= 0 && h < WORK_DAY_START_HOUR)) return workDate;
+  const d = new Date(`${workDate}T12:00:00`);            // เที่ยงวัน = ไม่โดน DST/ขอบวัน
+  d.setDate(d.getDate() + 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-/** rows = [{ matNo, name, pNo }] → { [matNo]: groupKey }
- *  MAT ที่ไม่มีทั้งชื่อและเลขพาร์ท จะอยู่กลุ่มของตัวเอง (พฤติกรรมเดิม) */
-export function groupSameProductKeys(rows = []) {
-  const parent = {};
-  const find = (x) => { while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; };
-  const union = (a, b) => { const ra = find(a), rb = find(b); if (ra !== rb) parent[ra] = rb; };
-  const add = (x) => { if (parent[x] === undefined) parent[x] = x; return x; };
+/** กรอบเวลาของกะเป็น ms — คืน null ถ้าข้อมูลเวลาไม่พอ · กะดึกข้ามวันบวก 1 วันให้เอง
+ *  overrides: เวลาที่หัวหน้าแก้ในฟอร์มปิดกะ (มาก่อนค่าที่เก็บไว้ใน session) */
+export function shiftFrameOf(session, { startTime = null, endTime = null } = {}) {
+  const wd = session?.work_date;
+  const st = startTime || session?.start_time;
+  const et = endTime   || session?.end_time;
+  if (!wd || !st) return null;
+  // 🔴 วันของเวลาเริ่มกะต้องใช้กฎเดียวกับ computeLiveOee — ดู shiftStartDate() ข้างบน
+  const startDate = shiftStartDate(wd, String(st).slice(0, 5), session?.shift);
+  const startMs = new Date(`${startDate}T${String(st).slice(0, 5)}:00`).getTime();
+  if (!Number.isFinite(startMs)) return null;
+  if (!et) return { startMs, endMs: null };
+  let endMs = new Date(`${startDate}T${String(et).slice(0, 5)}:00`).getTime();
+  if (!Number.isFinite(endMs)) return { startMs, endMs: null };
+  if (endMs <= startMs) endMs += 86400000;   // กะดึกข้ามเที่ยงคืน
+  return { startMs, endMs };
+}
 
-  rows.forEach(r => {
-    const self = add(`MAT:${r.matNo}`);
-    const nm = String(r.name || '').trim().toUpperCase();
-    if (nm) union(self, add(`NM:${nm}`));
-    const core = partCoreOf(r.pNo);
-    if (core) union(self, add(`PN:${core}`));
+/** รัด [startMs, endMs] ให้อยู่ในกรอบกะ — คืน { startMs: null, endMs: null } เมื่อไม่เหลือช่วง
+ *  frame = null (ไม่รู้เวลากะ) → คืนค่าเดิม ไม่รัด */
+export function clampWinToShift(startMs, endMs, frame) {
+  if (!frame) return { startMs, endMs };
+  const lo = frame.startMs, hi = frame.endMs;
+  let s = startMs, e = endMs;
+  if (s != null && lo != null) s = Math.max(s, lo);
+  if (s != null && hi != null) s = Math.min(s, hi);
+  if (e != null && lo != null) e = Math.max(e, lo);
+  if (e != null && hi != null) e = Math.min(e, hi);
+  if (s != null && e != null && e <= s) return { startMs: null, endMs: null };
+  return { startMs: s, endMs: e };
+}
+
+/** นาที downtime ของ 1 แถวที่ **อยู่ในกรอบกะ แต่ตกนอกทุกช่วงใน `coveredIv`**
+ *  ใช้จับ "เครื่องเสียตอนที่ไม่มีพาร์ทไหนวิ่ง" ซึ่ง %A แบบแยกตาม MAT.NO มองไม่เห็น (บั๊ก 2026-09-17)
+ *    coveredIv = union ของ (ช่วงที่พาร์ทวิ่ง) ∪ (ช่วงพักตามนโยบาย) — ผ่าน `unionIv()`
+ *    ต้องรวมช่วงพักด้วยเสมอ ไม่งั้นนาทีที่ทับพักถูกหักซ้ำ (กฎเหล็ก §3.1)
+ *  แถวที่ไม่มี `started_at` คืน 0 — ตะกร้า untimed มีตัวรับแยกอยู่แล้ว (นับ 2 รอบไม่ได้) */
+export function dtMinOutsideWork(d, coveredIv = [], frame = null) {
+  if (!d?.started_at || !frame) return 0;
+  const raw = Number(d.duration_min) || 0;
+  if (!(raw > 0)) return 0;
+  const s0 = new Date(d.started_at).getTime();
+  const e0 = d.ended_at ? new Date(d.ended_at).getTime() : s0 + raw * 60000;
+  const a = Math.max(s0, frame.startMs), b = Math.min(e0, frame.endMs);
+  if (!(b > a)) return 0;                       // นอกกรอบกะ = ไม่ใช่เรื่องของกะนี้
+  return Math.max(0, (b - a) / 60000 - overlapMinutesWith(a, b, coveredIv));
+}
+
+/* ══ §8 computeSessionOee — A/P/Q/OEE ของ "กะหนึ่งกะ" (ตัวที่ stamp ลงฐานตอนปิดกะ) ══════
+   ย้ายออกมาจาก `DailyReport.computeOEE` (closure ในคอมโพเนนต์ 4,000 บรรทัด) เมื่อ 2026-09-24
+
+   **ทำไมต้องย้าย** — กฎโปรเจคเขียนไว้ตั้งแต่ต้นว่า `src/utils/oee.js` = single source of truth
+   ของสูตร OEE แต่ "ตัวประกอบร่าง" ของสายปิดกะกลับอยู่ในหน้า ⇒ เรียกจากที่อื่นไม่ได้เลย
+   ผลที่ตามมาจริง (24/09): ต้องแก้ `start_time` ของ 10 กะที่ปิดไปแล้วแล้วคำนวณ OEE ใหม่
+   — ทำไม่ได้เลยนอกจากให้คนเปิดหน้าจอกดเองทีละกะ หรือ **เขียนสูตรซ้ำใน SQL ซึ่งผิดกฎ**
+   (มี OEE 2 ชุด = เถียงกันว่าเชื่อจอไหน)
+
+   🔴 ฟังก์ชันนี้คือสูตรเดียวกับตอนปิดกะ — `DailyReport.computeOEE` เป็นเปลือกบางๆ ที่ส่ง state เข้ามา
+      **แก้สูตรที่นี่ที่เดียว ห้ามแก้ในหน้า** · สายสด (ยังไม่ปิดกะ) ยังเป็น `computeLiveOee` เหมือนเดิม
+      (คนละฐานเวลา: สด = "ถึงตอนนี้" · ปิดกะ = "เวลาเปิด→ปิดที่กรอก") ห้ามเอามารวมกัน
+
+   ⚠️ พารามิเตอร์กลุ่ม `carry*`/`matTimeOverride` = state ชั่วคราวบนฟอร์มปิดกะ
+      **กะที่ปิดไปแล้วส่งว่างเสมอ** (ใบกลายเป็น carry_over/imported แล้ว ค่าอยู่ที่ `qty_actual`)
+      — นี่คือเหตุผลที่คำนวณกะเก่าย้อนหลังได้จากข้อมูลในฐานล้วนๆ
+   ══════════════════════════════════════════════════════════════════════════════════════ */
+
+/** @returns {{A,P,Q,oee,shiftMin,...}} — ค่าเดียวกับที่ `handleCloseSession` เอาไป stamp */
+export function computeSessionOee({
+  session,
+  orders = [],
+  downtimes = [],
+  defects = [],
+  ngQty: ngQtyOverride = null,
+  products = [],
+  kanbanStds = [],
+  breakPolicies = [],
+  processType = null,
+  lineFlow = {},
+  machineCount = 0,
+  startTime = null,
+  endTime = null,
+  carryQtyActual = {},
+  carryOverDecisions = {},
+  carryStopTime = {},
+  matTimeOverride = {},
+}) {
+  const dtl = downtimes;
+  const workDate = session?.work_date;
+  const confirmedQty = orders.filter(o => o.status === 'confirmed').reduce((s, o) => s + o.qty, 0);
+  const carryActualQty = orders
+    .filter(o => ['open', 'carry_over', 'cancelled', 'imported'].includes(o.status))
+    .reduce((s, o) => s + (parseInt(carryQtyActual[o.id]) || Number(o.qty_actual) || 0), 0);
+  const totalProduced = confirmedQty + carryActualQty;
+  const ngQty = ngQtyOverride !== null && ngQtyOverride !== undefined
+    ? ngQtyOverride : sumDefectQty(defects, 'line');
+
+  const startTimeStr = startTime || session?.start_time;
+  const openedAt = (workDate && startTimeStr) ? new Date(`${workDate}T${startTimeStr.slice(0, 5)}:00`) : null;
+  let closedAt = new Date();
+  if (workDate && endTime) {
+    closedAt = new Date(`${workDate}T${endTime.slice(0, 5)}:00`);
+    if (openedAt && closedAt < openedAt) closedAt = new Date(closedAt.getTime() + 86400000);
+  }
+  const shiftMin = openedAt ? Math.round((closedAt - openedAt) / 60000) : 0;
+  const shiftFrame = openedAt ? { startMs: +openedAt, endMs: +closedAt } : null;
+
+  const parallelN = parallelUnitsOf(lineFlow, machineCount);
+  const dtW = d => (parallelN > 1 && d.machine_no) ? 1 / parallelN : 1;
+  const sessionShift = session?.shift || 'day';
+  const ctForMatNo = (matNo) => ctForMat(matNo, { kanbanStds, products });
+  const pairOf = (mat) => products.find(p => p.mat_no === mat)?.pair_mat_no || null;
+
+  const brkIvIn = (a, b) => breakIntervalsIn({
+    policies: breakPolicies, startMs: a ? a.getTime() : 0, endMs: b ? b.getTime() : 0,
+    workDate, shift: sessionShift, processType,
   });
+  const ivMin = (iv) => iv.reduce((sum, [a, b]) => sum + (b - a) / 60000, 0);
+  const dtOverlapMin = (startMs, endMs, pred, logs, weightFn, breakIv = []) => {
+    if (!startMs || !endMs || endMs <= startMs) return 0;
+    return logs.filter(pred).reduce((sum, d) => {
+      if (!d.started_at) return sum;
+      const s0 = new Date(d.started_at).getTime();
+      const e0 = d.ended_at ? new Date(d.ended_at).getTime() : s0 + (d.duration_min || 0) * 60000;
+      const s = Math.max(s0, startMs), e = Math.min(e0, endMs);
+      if (!(e > s)) return sum;
+      const min = (e - s) / 60000 - overlapMinutesWith(s, e, breakIv);
+      return min > 0 ? sum + min * weightFn(d) : sum;
+    }, 0);
+  };
+  const isPlanned = d => (d?.dr_downtime_types?.category ?? d?.dt_category) === 'planned';
 
-  const out = {};
-  rows.forEach(r => { out[r.matNo] = find(`MAT:${r.matNo}`); });
-  return out;
+  const breakIv = brkIvIn(openedAt, closedAt);
+  const policyBreakMin = ivMin(breakIv);
+  const dtEff = d => dtMinOutsideBreaks(d, breakIv) * dtW(d);
+  const loggedPlannedDT = dtl.filter(isPlanned).reduce((s, d) => s + dtEff(d), 0);
+  const loggedUnplannedDT = dtl.filter(d => !isPlanned(d)).reduce((s, d) => s + dtEff(d), 0);
+  const dtBreakOverlapMin = dtl.reduce((s, d) =>
+    s + Math.max(0, ((Number(d.duration_min) || 0) - dtMinOutsideBreaks(d, breakIv)) * dtW(d)), 0);
+  const plannedDT = loggedPlannedDT + policyBreakMin;
+  const netAvail = Math.max(0, shiftMin - plannedDT);
+  const runMin = Math.max(0, netAvail - loggedUnplannedDT);
+
+  /* ── %A แยกตามช่วงเวลาของแต่ละ MAT.NO (ดูเหตุผลเต็มใน §7) ── */
+  const applyMatTimeOverride = (matNo, hasOpenOrders, startMs, endMs) => {
+    if (hasOpenOrders) return { startMs, endMs };
+    const ov = matTimeOverride[matNo];
+    if (!ov || !workDate) return { startMs, endMs };
+    let s = startMs, e = endMs;
+    if (ov.start) s = new Date(`${workDate}T${ov.start.slice(0, 5)}:00`).getTime();
+    if (ov.end) {
+      e = new Date(`${workDate}T${ov.end.slice(0, 5)}:00`).getTime();
+      if (s != null && e < s) e += 86400000;
+    }
+    return { startMs: s, endMs: e };
+  };
+  let totalNetAvailByMat = 0, totalRunMinByMat = 0;
+  const matRunMinMap = {};
+  const matWins = [];
+  Array.from(new Set(orders.map(o => o.mat_no))).forEach(matNo => {
+    const ords = orders.filter(o => o.mat_no === matNo);
+    const hasOpenOrders = ords.some(o => o.status === 'open');
+    const openedTimes = ords.map(o => o.opened_at).filter(Boolean).map(t => new Date(t).getTime());
+    const closedTimes = ords.filter(o => o.status === 'confirmed' && o.confirmed_at).map(o => new Date(o.confirmed_at).getTime());
+    const openStopTimes = ords.filter(o => o.status === 'open' && carryOverDecisions[o.id]).map(o => {
+      const stopStr = carryStopTime[o.id] ?? endTime;
+      if (!stopStr || !workDate) return null;
+      let ms = new Date(`${workDate}T${stopStr.slice(0, 5)}:00`).getTime();
+      if (o.opened_at && ms < new Date(o.opened_at).getTime()) ms += 86400000;
+      return ms;
+    }).filter(Boolean);
+    let matStartMs = openedTimes.length ? Math.min(...openedTimes) : null;
+    let matEndMs = (closedTimes.length || openStopTimes.length) ? Math.max(...closedTimes, ...openStopTimes) : null;
+    ({ startMs: matStartMs, endMs: matEndMs } = applyMatTimeOverride(matNo, hasOpenOrders, matStartMs, matEndMs));
+    ({ startMs: matStartMs, endMs: matEndMs } = clampWinToShift(matStartMs, matEndMs, shiftFrame));
+    if (matStartMs == null || matEndMs == null || matEndMs <= matStartMs) return;
+    const windowMin = (matEndMs - matStartMs) / 60000;
+    const matBreakIv = brkIvIn(new Date(matStartMs), new Date(matEndMs));
+    const matPolicyBreakMin = ivMin(matBreakIv);
+    const matLoggedPlanned = dtOverlapMin(matStartMs, matEndMs, isPlanned, dtl, dtW, matBreakIv);
+    const matLoggedUnplanned = dtOverlapMin(matStartMs, matEndMs, d => !isPlanned(d), dtl, dtW, matBreakIv);
+    const matNetAvail = Math.max(0, windowMin - matPolicyBreakMin - matLoggedPlanned);
+    const matRunMin = Math.max(0, matNetAvail - matLoggedUnplanned);
+    totalNetAvailByMat += matNetAvail;
+    totalRunMinByMat += matRunMin;
+    matRunMinMap[matNo] = matRunMin;
+    matWins.push([matStartMs, matEndMs]);
+  });
+  const untimedPlanned = dtl.filter(d => !d.started_at && isPlanned(d)).reduce((s, d) => s + (d.duration_min || 0) * dtW(d), 0);
+  const untimedUnplanned = dtl.filter(d => !d.started_at && !isPlanned(d)).reduce((s, d) => s + (d.duration_min || 0) * dtW(d), 0);
+  const coveredIv = unionIv([...matWins, ...breakIv]);
+  const outsidePlanned = dtl.filter(isPlanned).reduce((s, d) => s + dtMinOutsideWork(d, coveredIv, shiftFrame) * dtW(d), 0);
+  const outsideUnplanned = dtl.filter(d => !isPlanned(d)).reduce((s, d) => s + dtMinOutsideWork(d, coveredIv, shiftFrame) * dtW(d), 0);
+  if (totalNetAvailByMat > 0 && (untimedPlanned || untimedUnplanned || outsidePlanned || outsideUnplanned)) {
+    totalNetAvailByMat = Math.max(0, totalNetAvailByMat - untimedPlanned - outsidePlanned);
+    totalRunMinByMat = Math.max(0, totalRunMinByMat - untimedPlanned - untimedUnplanned - outsidePlanned - outsideUnplanned);
+  }
+  const A = totalNetAvailByMat > 0 ? Math.min(1, totalRunMinByMat / totalNetAvailByMat)
+    : (netAvail > 0 ? Math.min(1, runMin / netAvail) : null);
+
+  /* ── %P ──
+     🔴 ตัวเศษ = **ชิ้นที่เครื่องทำออกมาทั้งหมด** = งานดี + ของเสีย/ทดลอง/ของสงสัย (ดู `ngByMatFrom`)
+        ไม่ใช่ "งานดีอย่างเดียว" — ของเสียกินรอบเครื่องไปแล้ว ถ้าไม่นับ = ถูกหักซ้ำทั้ง %P และ %Q */
+  const { byMat: ngPByMat, noMat: ngNoMatP } = ngByMatFrom(defects, orders);
+  const runSec = runMin * 60;
+  const matPDataRaw = [];
+  let unknownQty = 0, ngInP = 0;
+  Array.from(new Set(orders.map(o => o.mat_no))).forEach(matNo => {
+    const ords = orders.filter(o => o.mat_no === matNo);
+    const ngThis = Number(ngPByMat[matNo]) || 0;
+    const qty = ords.filter(o => o.status === 'confirmed').reduce((s, o) => s + o.qty, 0)
+      + ords.filter(o => ['open', 'carry_over', 'cancelled', 'imported'].includes(o.status))
+        .reduce((s, o) => s + (parseInt(carryQtyActual[o.id]) || Number(o.qty_actual) || 0), 0)
+      + ngThis;
+    if (!qty) return;
+    const ctSec = ctForMatNo(matNo);
+    if (ctSec <= 0) { unknownQty += qty; return; }
+    ngInP += ngThis;
+    const openedTimes = ords.map(o => o.opened_at).filter(Boolean).map(t => new Date(t).getTime());
+    const closedTimes = ords.filter(o => o.status === 'confirmed' && o.confirmed_at).map(o => new Date(o.confirmed_at).getTime());
+    const stopTimes = ords.filter(o => o.status === 'open' && carryOverDecisions[o.id]).map(o => {
+      const s = carryStopTime[o.id] ?? endTime;
+      if (!s || !workDate) return null;
+      let ms = new Date(`${workDate}T${s.slice(0, 5)}:00`).getTime();
+      if (o.opened_at && ms < new Date(o.opened_at).getTime()) ms += 86400000;
+      return ms;
+    }).filter(Boolean);
+    const { startMs: winStart, endMs: winEnd } = clampWinToShift(
+      openedTimes.length ? Math.min(...openedTimes) : null,
+      [...closedTimes, ...stopTimes].length ? Math.max(...closedTimes, ...stopTimes) : null,
+      shiftFrame);
+    matPDataRaw.push({ matNo, qty, ctSec, winStart, winEnd });
+  });
+  const knownQty = matPDataRaw.reduce((s, d) => s + d.qty, 0);
+  const matPData = collapsePairShots(
+    matPDataRaw.map(d => ({ mat_no: d.matNo, qty: d.qty, ct: d.ctSec, winStart: d.winStart, winEnd: d.winEnd })),
+    pairOf,
+  ).map(r => ({ matNo: r.mat_no, qty: r.qty, ctSec: r.ct, winStart: r.winStart, winEnd: r.winEnd }));
+
+  const prodInfoOf = (matNo) =>
+    kanbanStds.find(s => s.mat_no === matNo)?.dr_products
+    || products.find(p => p.mat_no === matNo)
+    || null;
+  const groupKeyByMat = groupSameProductKeys(matPData.map(d => {
+    const info = prodInfoOf(d.matNo);
+    return { matNo: d.matNo, name: info?.name, pNo: info?.p_no };
+  }));
+  const prodGroupMap = {};
+  matPData.forEach(d => {
+    const k = groupKeyByMat[d.matNo] || `MAT:${d.matNo}`;
+    const g = (prodGroupMap[k] ||= { stdSec: 0, runMin: 0, ws: null, we: null });
+    g.stdSec += d.qty * d.ctSec;
+    g.runMin += matRunMinMap[d.matNo] ?? 0;
+    if (d.winStart != null) g.ws = g.ws == null ? d.winStart : Math.min(g.ws, d.winStart);
+    if (d.winEnd != null) g.we = g.we == null ? d.winEnd : Math.max(g.we, d.winEnd);
+  });
+  const prodGroups = Object.values(prodGroupMap);
+  const overlapOf = (a, b) => Math.max(0, (Math.min(a.we, b.we) - Math.max(a.ws, b.ws)) / 60000);
+  const isParallel = prodGroups.length > 1 && prodGroups.some((a, i) =>
+    prodGroups.slice(i + 1).some(b => {
+      if (a.ws == null || a.we == null || b.ws == null || b.we == null) return false;
+      const ov = overlapOf(a, b);
+      const minDurMin = Math.min(a.we - a.ws, b.we - b.ws) / 60000;
+      return ov > 15 && ov > 0.2 * minDurMin;
+    })
+  );
+  const perMachineCt = flowModeOf(lineFlow.flow_mode) === 'parallel_machine';
+  let P = null, pRawRatio = null, dtOverstateMin = null, stdMin = 0;
+  if (runSec > 0 && matPData.length > 0) {
+    const totalStdSec = matPData.reduce((s, d) => s + d.qty * d.ctSec, 0);
+    stdMin = totalStdSec / 60;                 // "เวลามาตรฐานของกะ" — คู่กับ stdMin ของ computeLiveOee
+    if (isParallel || perMachineCt) {
+      const rawDenom = prodGroups.reduce((s, g) => s + g.runMin * 60, 0) || runSec;
+      const denomSec = perMachineCt
+        ? Math.min(Math.max(rawDenom, runSec), runSec * Math.max(1, parallelN))
+        : rawDenom;
+      pRawRatio = totalStdSec / denomSec;
+      P = Math.min(1, pRawRatio);
+    } else {
+      pRawRatio = totalStdSec / runSec;
+      P = Math.min(1, pRawRatio);
+      if (pRawRatio > 1.001) dtOverstateMin = Math.round(totalStdSec / 60 - runMin);
+    }
+  }
+
+  const Q = totalProduced > 0 ? totalProduced / (totalProduced + ngQty)
+    : (ngQty > 0 ? 0 : null);
+  const oee = (A != null && P != null && Q != null) ? A * P * Q : null;
+  const ctUsed = {};
+  matPData.forEach(d => { ctUsed[d.matNo] = d.ctSec; });
+  return {
+    A, P, Q, oee, shiftMin, netAvail, runMin, policyBreakMin, plannedDT,
+    totalProduced, ngQty, knownQty, unknownQty, ctUsed, ngInP, ngNoMatP, stdMin,
+    loggedPlannedDT, loggedUnplannedDT, dtBreakOverlapMin,
+    pOver: pRawRatio != null && pRawRatio > 1.001,
+    pRawPct: pRawRatio == null ? null : Math.round(pRawRatio * 1000) / 10,
+    dtOverstateMin, loggedDtMin: Math.round(loggedPlannedDT + loggedUnplannedDT),
+  };
 }

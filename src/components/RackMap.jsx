@@ -22,7 +22,7 @@ import { uploadOpts } from '../utils/storageUpload';
 
 const lbl = { display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 4 };
 const inp = { width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box' };
-const btnPri = { background: 'var(--accent)', color: '#071008', border: 'none', borderRadius: 8, padding: '9px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer' };
+const btnPri = { background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, padding: '9px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer' };
 const btnGhost = { background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 8, padding: '9px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' };
 const fmtNum = (v) => (v == null || !Number.isFinite(Number(v)) ? '—' : Number(v).toLocaleString());
 
@@ -402,7 +402,7 @@ export default function RackMap({ parts = [], canEdit, myTeams = [], mySection =
                       }}>
                       <div style={{ fontSize: 11, fontWeight: 800, color: '#fff', textShadow: '0 1px 3px rgba(0,0,0,0.9)', textAlign: 'center', lineHeight: 1.25, padding: 2, overflow: 'hidden' }}>
                         {c.label || c.shelf_code}
-                        {!!ps.length && <div style={{ fontSize: 10, fontWeight: 700, opacity: 0.95 }}>{ps.length} รายการ</div>}
+                        {!!ps.length && <div style={{ fontSize: 11, fontWeight: 700, opacity: 0.95 }}>{ps.length} รายการ</div>}
                       </div>
                       {/* มือจับปรับขนาด (มุมขวาล่าง) — โผล่เฉพาะโหมดแก้ผัง */}
                       {edit && (
@@ -410,7 +410,7 @@ export default function RackMap({ parts = [], canEdit, myTeams = [], mySection =
                           style={{
                             position: 'absolute', right: -5, bottom: -5, width: 12, height: 12,
                             background: 'var(--accent)', border: '2px solid #fff', borderRadius: 3,
-                            cursor: 'nwse-resize', boxShadow: '0 1px 3px rgba(0,0,0,0.5)',
+                            cursor: 'nwse-resize', boxShadow: 'var(--shadow-float)',
                           }} />
                       )}
                     </div>
@@ -459,7 +459,7 @@ export default function RackMap({ parts = [], canEdit, myTeams = [], mySection =
                         <div key={p.id} style={{ background: 'var(--bg3)', border: `1px solid ${st.color}`, borderRadius: 8, padding: '7px 9px' }}>
                           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                             <span style={{ fontSize: 12.5, fontWeight: 700, flex: 1 }}>{p.name}</span>
-                            {rk.rank && <span style={{ fontSize: 10.5, fontWeight: 800, color: RANK_META[rk.rank].color, border: `1px solid ${RANK_META[rk.rank].color}`, borderRadius: 4, padding: '0 5px' }}>{rk.rank}</span>}
+                            {rk.rank && <span style={{ fontSize: 11, fontWeight: 800, color: RANK_META[rk.rank].color, border: `1px solid ${RANK_META[rk.rank].color}`, borderRadius: 4, padding: '0 5px' }}>{rk.rank}</span>}
                           </div>
                           <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
                             {p.code ? `${p.code} · ` : ''}{p.mat_no || ''}

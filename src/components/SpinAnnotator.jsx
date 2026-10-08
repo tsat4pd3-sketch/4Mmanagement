@@ -1,6 +1,7 @@
 import { useRef, useEffect } from 'react'
 import useImgBox from '../utils/useImgBox'
 import CalloutPin from './CalloutPin'
+import { acceptImageFile } from '../utils/acceptImageFile';
 
 /* 360° spin annotator for PM equipment setup.
    Multiple photo frames of one piece of equipment; drag left/right to rotate
@@ -13,12 +14,17 @@ import CalloutPin from './CalloutPin'
      setFrameIdx(idx)
      pins     : [{ key, x, y, label, color }]  (0..1 coords, current frame only)
      arming   : boolean               a checkpoint is waiting for a position
-     onPlace(x, y) / onRemovePin(key)
+     onPlace(x, y) / onRemovePin(key) / onLabelMove(key, dx, dy)
      onAddFrames(FileList) / onRemoveFrame(frameKey) / busy
 */
 export default function SpinAnnotator({
+  /* pins: [{ key, x, y, label, label_dx, label_dy, color, selected?, hollow? }]
+       · selected = หมุดที่กำลังเลือก/กำลังวาง → วงไฮไลต์ (ห้ามสื่อด้วยสีอย่างเดียว)
+       · hollow   = สถานะ "ยังไม่ทำ" → วงโปร่งเส้นประ (UI-CONVENTIONS §จอรูปอ้างอิง) */
   frames = [], frameIdx = 0, setFrameIdx, pins = [], arming,
   onPlace, onRemovePin, onAddFrames, onRemoveFrame, busy,
+  // ลากป้ายเลขหมุดเพื่อหลบไม่ให้ลูกศรทับกัน (2026-09-21) — ไม่ส่งมา = อ่านอย่างเดียว
+  onLabelMove,
   // { pinKey: true } — จุดที่มี "รูปเจาะจุด" แล้ว (โชว์ 🔍 บนหมุด ให้คนตั้งค่าเห็นว่าจุดไหนยังไม่มี)
   pinHasDetail = {},
   // true = ใช้เป็น "ผังวางหมุด" อย่างเดียว (เช่น จุดชิมที่ /fixture) — รูปเป็นของ PM Setup ห้ามเพิ่ม/ลบจากที่นี่
@@ -87,8 +93,15 @@ export default function SpinAnnotator({
           <div ref={layerRef} style={{ position: 'absolute', left: imgBox.ox, top: imgBox.oy, width: imgBox.rw, height: imgBox.rh, pointerEvents: 'none' }}>
             {pins.map(p => (
               <CalloutPin key={p.key} xPct={p.x * 100} yPct={p.y * 100} layerW={imgBox.rw} layerH={imgBox.rh} size={PK}
+                offX={p.label_dx} offY={p.label_dy}
                 label={p.label} color={p.color || 'var(--accent)'} badge={pinHasDetail[p.key] ? '🔍' : null}
-                title={`${p.label} — คลิกเพื่อลบ${pinHasDetail[p.key] ? ' · จุดนี้มีรูปเจาะจุดแล้ว' : ' · ยังไม่มีรูปเจาะจุด (แนบได้ที่แถวจุดตรวจด้านล่าง)'}`}
+                /* 🔴 "หมุดที่กำลังเลือก" ต้องต่างที่ **วงไฮไลต์** ไม่ใช่แค่เปลี่ยนสี (23/09 · audit หมุดทั้งโปรเจค)
+                   เดิมหน้าเรียกแค่เปลี่ยน `color` เป็น accent (เขียว) — แต่สีประเภทจุดตรวจตั้งเองได้ในทะเบียน
+                   ประเภทที่ตั้งเป็นเขียว (#3dd65c มีจริง) = หมุดธรรมดาหน้าตาเหมือนหมุดที่กำลังวางเป๊ะ
+                   ⇒ ส่ง `selected` ต่อให้ CalloutPin เสมอ · `hollow` ส่งต่อไว้ให้จอที่มีสถานะ ยัง/แล้ว ใช้ */
+                selected={p.selected} hollow={p.hollow}
+                title={`${p.label} — คลิกเพื่อลบ${onLabelMove ? ' · ลากป้ายเลขเพื่อหลบไม่ให้ลูกศรทับกัน' : ''}${pinHasDetail[p.key] ? ' · จุดนี้มีรูปเจาะจุดแล้ว' : ' · ยังไม่มีรูปเจาะจุด (แนบได้ที่แถวจุดตรวจด้านล่าง)'}`}
+                onLabelMove={onLabelMove ? ((dx, dy) => onLabelMove(p.key, dx, dy)) : undefined}
                 onClick={e => { e.stopPropagation(); onRemovePin?.(p.key) }} />
             ))}
           </div>
@@ -101,7 +114,7 @@ export default function SpinAnnotator({
         )}
         {arming && (
           <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', paddingBottom: 8, pointerEvents: 'none' }}>
-            <span style={{ padding: '5px 12px', borderRadius: 20, background: 'var(--accent)', color: '#071008', fontSize: 11, fontWeight: 700 }}>📍 คลิกที่รูปเพื่อวางตำแหน่ง (เฟรม {frameIdx + 1})</span>
+            <span style={{ padding: '5px 12px', borderRadius: 20, background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 11, fontWeight: 700 }}>📍 คลิกที่รูปเพื่อวางตำแหน่ง (เฟรม {frameIdx + 1})</span>
           </div>
         )}
       </div>
@@ -119,7 +132,14 @@ export default function SpinAnnotator({
           </div>
         ))}
         {!readOnlyFrames && <label style={{ width: 46, height: 40, borderRadius: 6, border: '2px dashed var(--border2)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: busy ? 'default' : 'pointer', color: 'var(--muted)', fontSize: 18, flexShrink: 0 }}>
-          <input type="file" accept="image/*" multiple hidden disabled={busy} onChange={e => { if (e.target.files?.length) onAddFrames?.(e.target.files); e.target.value = '' }} />
+          <input type="file" accept="image/*" multiple hidden disabled={busy} onChange={async e => {
+        const picked = [...(e.target.files || [])];
+        e.target.value = '';
+        /* ด่านรับรูปจุดเดียว — HEIC จากมือถือแปลงเป็น JPEG · ตัวที่ไม่ผ่านถูก toast แล้วคัดออก
+           (ไฟล์ดีที่เลือกมาพร้อมกันยังเข้าได้ — ห้ามทิ้งทั้งชุดเพราะมีตัวเสีย 1 ตัว) */
+        const ok = (await Promise.all(picked.map(f => acceptImageFile(f)))).filter(Boolean);
+        if (ok.length) onAddFrames?.(ok);
+      }} />
           {busy ? '…' : '+'}
         </label>}
       </div>
@@ -132,6 +152,10 @@ export default function SpinAnnotator({
         💡 <b>รูปตรงนี้ = “แผนที่” ให้เห็นทั้งเครื่องแล้วปักหมุด</b> — ส่วนรูปโคลสอัพของแต่ละจุด
         ให้แนบที่ช่อง <b>📷 รูปจุด</b> ในแถวจุดตรวจด้านล่าง (หมุดจะขึ้น 🔍 · คนตรวจแตะหมุดแล้วซูมเข้าไปดูจุดนั้นได้)
         <div style={{ marginTop: 3, opacity: 0.85 }}>อัปรูปโคลสอัพเป็นเฟรมแยกตรงนี้ = คนตรวจไม่รู้ว่าอยู่ตรงไหนของเครื่อง</div>
+        {/* 📐 บอกตรงจุดอัป (user 23/09) — คนอัปคือคนเดียวที่แก้เรื่องนี้ได้ ตอนถ่ายเท่านั้น
+            ตัวจำกัดขนาดรูปบนมือถือคือ "ความสูง" (เพดาน 300px ที่จอ 390px · ตาราง UI-CONVENTIONS)
+            ⇒ แนวนอน 4:3/16:9 เต็มความกว้างพอดี · แนวตั้งไม่มีทางเต็ม เว้นแต่ครอป (ครอปแล้วหมุดเพี้ยน) */}
+        <div style={{ marginTop: 3, opacity: 0.85 }}>📐 ถ่าย/จัดกรอบเป็น <b>แนวนอน</b> รูปจะเต็มความกว้างจอมือถือตอนตรวจ — แนวตั้งจะเหลือขอบว่างข้างละครึ่งจอ</div>
       </div>}
     </div>
   )

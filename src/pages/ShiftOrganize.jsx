@@ -1,19 +1,24 @@
 import { useState, useEffect, useContext } from 'react';
+import { orgValues, sortLike } from '../utils/listOrder';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { supabase } from '../supabaseClient';
+import { onlyShopfloorStaff } from '../utils/staffKind';   // 👥 นับคน = เฉพาะพนักงานหน้างาน (กฎ staffKind.js)
 import { UserContext } from '../App';
 import { can, canDelete } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyIds } from '../utils/lineHierarchy';
 import LineSelect from '../components/LineSelect';
-import { LINE_COLUMNS } from '../utils/useProductionLines';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { roleLabel } from '../utils/roleMeta';
 import { toast } from '../components/Toast';
 
 import InfoMore from '../components/InfoMore';
 import ShiftAutoFillModal from '../components/ShiftAutoFillModal';
-import { checkWrite } from '../utils/dbWrite';
+import { checkWriteRows } from '../utils/dbWrite';
 import SearchSelect from '../components/SearchSelect';
+import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
+import { DeleteButton } from '../components/IconButton';
 function getWeekDates(refDate) {
   const d = new Date(refDate);
   const day = d.getDay();
@@ -93,26 +98,27 @@ export default function ShiftOrganize() {
 
   const fetchLines = async () => {
     const [{ data: lineData }, { data: orgData }] = await Promise.all([
-      supabase.from('production_lines').select(LINE_COLUMNS).order('id'), // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
-      supabase.from('org_nodes').select('id, code, name, kind, parent_id')
+      loadLinesRes(),   // cache กลาง (25/09) · loader เรียงตามชื่อ → เรียงตาม id เองด้านล่าง
+      supabase.from('org_nodes').select('id, code, name, kind, parent_id, sort_order')
         .in('kind', ['section', 'department']).eq('is_active', true).order('name'),
     ]);
-    setLines(lineData || []);
+    // คงลำดับเดิมของหน้านี้ (ตาม id) — loader กลางเรียงตามชื่อ
+    setLines([...(lineData || [])].sort((a, b) => Number(a.id) - Number(b.id)));
     const secs = (orgData || []).filter(n => n.kind === 'section');
     setSectionNodes(secs);
     setDeptNodes((orgData || []).filter(n => n.kind === 'department'));
-    setOrgSections(secs.map(n => n.code || n.name).sort());
+    setOrgSections(orgValues(secs));
   };
 
   const fetchEmployees = async () => {
-    let q = supabase.from('employees')
+    let q = onlyShopfloorStaff(supabase.from('employees')
       .select('id, name, employee_id_code, line_id, team, section, department, production_lines(section)')
-      .eq('is_active', true);
+      .eq('is_active', true));
     // mandatory scope: leader → ทั้งครอบครัวไลน์ตัวเอง (ตัวเอง + แม่ + ลูก — ห้ามกรอง line_id ตรงตัว
     // ไม่งั้นพนักงานที่ผูกกับไลน์ลูกจะหายจากสายตาหัวหน้าที่ผูกกับไลน์แม่) ·
     // role ที่ถูกจำกัด sections → กรองหลัง join ด้วย inSectionScope
     if (role === 'leader' && userLineId) {
-      const { data: ls } = await supabase.from('production_lines').select('id, name, parent_line_name');
+      const { data: ls } = await loadLinesRes();
       const fam = getLineFamilyIds(ls || [], Number(userLineId));
       q = fam.size ? q.in('line_id', [...fam]) : q.eq('line_id', userLineId);
     }
@@ -330,8 +336,13 @@ export default function ShiftOrganize() {
   };
 
   const handleDeleteOverride = async (id) => {
+    /* ด่านชั้นที่ 2 — "ปุ่มถูกซ่อนอยู่แล้ว" ไม่ใช่ด่าน (กฎเหล็กข้อ 10: สมมติฐานเรื่องสิทธิ์มีอายุ) */
+    if (!canDel) return toast.error('บัญชีนี้ไม่มีสิทธิ์ลบรายการเปลี่ยนกะ');
     if (!confirm('ยืนยันลบรายการเปลี่ยนกะรายบุคคลนี้?')) return;
-    checkWrite(await supabase.from('shift_overrides').delete().eq('id', id), 'ลบ override กะ');
+    /* 🔴 เดิมใช้ checkWrite = RLS ปฏิเสธ DELETE แล้วเงียบ (0 แถว ไม่มี error) ⇒ แถวยังอยู่
+       แต่ไม่มีใครรู้ · ตัวลบ "เหตุการณ์ยุบกะ" ข้างล่างนับแถวถูกอยู่แล้ว — 2 ตัวในไฟล์เดียวกัน
+       ทำไม่เหมือนกัน (QC 06/10) */
+    checkWriteRows(await supabase.from('shift_overrides').delete().eq('id', id).select('id'), 'ลบ override กะ');
     fetchOverrides();
   };
 
@@ -369,10 +380,10 @@ export default function ShiftOrganize() {
   };
 
   const handleDeleteMergeEvent = async (id) => {
+    if (!canDel) return toast.error('บัญชีนี้ไม่มีสิทธิ์ลบเหตุการณ์ยุบกะ');
     if (!confirm('ยืนยันลบเหตุการณ์ยุบกะนี้?')) return;
-    const { data: gone, error } = await supabase.from('shift_merge_events').delete().eq('id', id).select('id');
-    if (error) toast.error('ลบไม่สำเร็จ: ' + error.message);
-    else if (!gone?.length) toast.error('ลบไม่ติด (0 แถว) — ไม่มีสิทธิ์ลบเหตุการณ์ยุบกะ');
+    checkWriteRows(await supabase.from('shift_merge_events').delete().eq('id', id).select('id'),
+      'ลบเหตุการณ์ยุบกะ', { zeroMsg: 'ลบไม่ติด (0 แถว) — ไม่มีสิทธิ์ลบเหตุการณ์ยุบกะ หรือถูกลบไปแล้ว' });
     fetchMergeEvents();
   };
 
@@ -389,9 +400,9 @@ export default function ShiftOrganize() {
     ? lines.filter(l => String(l.id) === String(userLineId))
     : scopeSecs.length ? lines.filter(l => inSectionScope(scopeSecs, l.section)) : lines;
 
-  const allSections = orgSections.length ? orgSections : [...new Set(lines.map(l => l.section).filter(Boolean))].sort();
+  const allSections = orgSections.length ? orgSections : sortLike(lines.map(l => l.section), orgSections);
   const scopedSections = (role === 'leader' && userLineId)
-    ? [...new Set(scopedLines.map(l => l.section).filter(Boolean))].sort()
+    ? sortLike(scopedLines.map(l => l.section), orgSections)
     : scopeSecs.length ? allSections.filter(s => inSectionScope(scopeSecs, s)) : allSections;
 
   // merge event อยู่ใน scope เมื่อ: ระบุไลน์ → ไลน์นั้นอยู่ใน scope / ระบุ section → section นั้นอยู่ใน scope
@@ -417,13 +428,10 @@ export default function ShiftOrganize() {
   const fmtDate = (d) => d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short' });
 
   return (
-    <div className="page-content">
-      {/* Header — paddingRight: 52 = เว้นที่ให้ 🔔 (fixed top-right) ไม่ทับปุ่ม 💾 บันทึก */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 10, paddingRight: 52 }}>
-        <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 'clamp(16px,3vw,22px)', color: 'var(--text)' }}>
-          🗓 ตารางกะการทำงาน
-        </h2>
-        {(canEdit || canEditDept) && pendingCount > 0 && (
+    <Page>
+      {/* Header — PageHeader เว้นที่ให้ 🔔 (fixed top-right) เอง ไม่ทับปุ่ม 💾 บันทึก */}
+      <PageHeader title="ตารางกะการทำงาน" icon="🗓"
+        actions={(canEdit || canEditDept) && pendingCount > 0 ? (
           <button
             onClick={handleSave}
             disabled={isSaving}
@@ -431,8 +439,7 @@ export default function ShiftOrganize() {
           >
             {isSaving ? '⏳ กำลังบันทึก...' : `💾 บันทึก (${pendingCount} รายการ)`}
           </button>
-        )}
-      </div>
+        ) : null} />
 
       {/* ⚠️ ไม่มีสิทธิ์แก้ = ต้องบอกให้ชัด ห้ามโชว์ตารางเปล่าๆ แล้วปล่อยให้เดาเอง
           (feedback ทีมงาน 2026-08-20: "กำหนดกะในฐานข้อมูลแล้ว แต่ไม่มีปุ่มสลับกะ"
@@ -746,8 +753,7 @@ export default function ShiftOrganize() {
                 <td style={{ fontSize: 12, color: 'var(--muted)' }}>{o.reason || '—'}</td>
                 {canEdit && (
                   <td style={{ textAlign: 'center' }}>
-                    {canDel && <button className="tbtn" onClick={() => handleDeleteOverride(o.id)}
-                      style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 15, padding: '2px 6px' }}>🗑️</button>}
+                    {canDel && <DeleteButton onClick={() => handleDeleteOverride(o.id)} title="ลบการสลับกะรายคนนี้" />}
                   </td>
                 )}
               </tr>
@@ -817,8 +823,7 @@ export default function ShiftOrganize() {
                   <td style={{ fontSize: 12, color: 'var(--muted)' }}>{evt.reason || '—'}</td>
                   {canEdit && (
                     <td style={{ textAlign: 'center' }}>
-                      {canDel && <button className="tbtn" onClick={() => handleDeleteMergeEvent(evt.id)}
-                        style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 15, padding: '2px 6px' }}>🗑️</button>}
+                      {canDel && <DeleteButton onClick={() => handleDeleteMergeEvent(evt.id)} title="ลบการรวมกะนี้" />}
                     </td>
                   )}
                 </tr>
@@ -917,7 +922,7 @@ export default function ShiftOrganize() {
                 <button
                   onClick={handleAddMergeEvent}
                   disabled={!(mrgScope === 'section' ? mrgSection : mrgLineId) || !mrgStart || !mrgEnd}
-                  style={{ flex: 2, padding: 11, background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontFamily: 'var(--font-display)', opacity: !(mrgScope === 'section' ? mrgSection : mrgLineId) ? 0.5 : 1 }}>
+                  style={{ flex: 2, padding: 11, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, fontWeight: 700, fontFamily: 'var(--font-display)', opacity: !(mrgScope === 'section' ? mrgSection : mrgLineId) ? 0.5 : 1 }}>
                   ✅ ยืนยันยุบกะ
                 </button>
                 <button onClick={() => setShowMergeModal(false)}
@@ -961,7 +966,7 @@ export default function ShiftOrganize() {
               </div>
               <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
                 <button onClick={handleAddOverride} disabled={!ovrEmpId}
-                  style={{ flex: 2, padding: 11, background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontFamily: 'var(--font-display)' }}>
+                  style={{ flex: 2, padding: 11, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, fontWeight: 700, fontFamily: 'var(--font-display)' }}>
                   บันทึก
                 </button>
                 <button onClick={() => setShowOvrModal(false)}
@@ -973,7 +978,7 @@ export default function ShiftOrganize() {
           </div>
         </div>
       )}
-    </div>
+    </Page>
   );
 }
 

@@ -5,7 +5,7 @@
      สโตร์คือ **ป้อนของเข้าไลน์ผลิตภายในโรงงาน** (จ่ายเข้าไลน์ 5,908 แถว) ไม่ใช่รับของจาก supplier
      → ตั้งชื่อตาม **แผนกเจ้าของ + สิ่งที่ทำ**: `Logistic - Store (ป้อนของเข้าไลน์)` / `Logistic - Warehouse & Delivery (ส่งลูกค้า)`
      · key `inbound`/`outbound` ในโค้ด/DB **คงเดิม** (เป็นแค่ identifier ไม่โผล่บนจอ) เปลี่ยนแค่ป้ายที่คนอ่าน
-     · ชื่อหมวดต้องตรงกัน 3 ที่: NAV_GROUP_ORDER (App.jsx) · permission_catalog.group_name (Main) · DeptHub/Permissions
+     · ชื่อหมวดต้องตรงกัน 3 ที่: NAV_GROUP_ORDER (App.jsx) · nav_groups + permission_catalog.group_name (Main) · DeptHub/Permissions
        → ทุกที่อ้าง `LOGISTIC_GROUPS` จากไฟล์นี้ ห้ามพิมพ์ชื่อหมวดเป็น string ซ้ำ (เคยได้หมวดกำพร้ามาแล้ว 2 ครั้ง)
   ═══════════════════════════════════════════════════════════════════════════
   ฝ่าย Logistic & Sales มี 7 แผนกย่อย แบ่งความรับผิดชอบเป็น 3 ฝั่ง:
@@ -13,12 +13,18 @@
     🏬 Store (ป้อนของเข้าไลน์)  — Store
        ของจาก supplier + ชิ้นส่วนที่คุมภายใน: 3xx (ซื้อนอก) · 5xx (raw) · 2xx (ผลิตเอง)
 
-    🚚 Warehouse & Delivery (ส่งลูกค้า)  — Warehouse · Delivery · Rack Center
-       ทุกอย่างที่ "เกี่ยวพันกับลูกค้า": FG 1xx · รอบส่งลูกค้า · ภาชนะ/packaging
+    🚚 Warehouse & Delivery (ส่งลูกค้า)  — Warehouse · Delivery · Rack Center · Billing
+       ทุกอย่างที่ "เกี่ยวพันกับลูกค้า": FG 1xx · รอบส่งลูกค้า · ภาชนะ/packaging · ออกใบขาย
 
-    🧭 แผนงาน & ข้อมูล   — Sales · Planner · Billing
+    🧭 แผนงาน & ข้อมูล   — Sales · Planner
+       ⛔ **ยุบเข้าหมวด Store แล้ว (2026-09-30 · คำสั่ง user)** → เมนูเหลือ 2 หมวด:
+          `Planning & Store` (แผนงาน + ป้อนของเข้าไลน์) · `Warehouse & Delivery` (ส่งลูกค้า)
+          เหตุผล: role `planner_store` เป็น role เดียว · ส่วนงานจริง = `Planning&Store` · ไม่มีใครถือ role `sale`
+          (ความหมายเชิงงานด้านล่างยังจริง — แค่ไม่ได้เป็นหมวดเมนูแยกแล้ว)
        ไม่ได้ถือของ แต่คุม/ประสานข้อมูลระหว่าง สโตร์ ↔ ผลิต ↔ จัดส่ง
-       (Sales รับข้อมูลลูกค้า · Planner วางแผนผลิต + เรียกงานจาก supplier · Billing ออกบิลผ่าน SAP)
+       (Sales รับข้อมูลลูกค้า · Planner วางแผนผลิต + เรียกงานจาก supplier)
+       ⚠️ **Billing ไม่ได้อยู่ฝั่งนี้** (user แก้ให้ 2026-09-23) — billing = ออกใบขาย **นั่งรวมกับทีมจัดส่ง**
+          จึงอยู่ฝั่ง Warehouse & Delivery · ตัวออกบิลจริงอยู่ใน SAP ไม่ใช่ ESM
 
   ⚠️⚠️ ความต่าง Warehouse กับ Store (user ย้ำให้จำ 2026-09-03 — ห้ามสลับ)
        Warehouse = ที่เก็บ **ชิ้นส่วน FG 1xx** รอส่งลูกค้า  → หมวด Warehouse & Delivery
@@ -45,10 +51,14 @@ const DIGIT_SIDE = {
 };
 
 /** ชื่อหมวดเมนู/สิทธิ์ของ 3 ฝั่ง — **ที่เดียว** (App.jsx NAV_GROUP_ORDER · DeptHub · PermissionsManagement · migration ต้อง mirror ค่านี้) */
+/* 🔴 2026-09-30 (คำสั่ง user): ยุบหมวด "แผนงาน & ข้อมูล" เข้า Store → หมวดเดียว "Planning & Store"
+   วัดจริงก่อนยุบ: role `planner_store` เป็น role เดียวของทั้ง 2 งาน · คนใช้งานจริงตั้งส่วนงาน
+   `Planning&Store` ทุกคน · ไม่มีใครถือ role `sale` เลย ⇒ เดิมแยก 2 หมวดทั้งที่เป็นหน่วยเดียว
+   · key `inbound` คงเดิม (เป็น identifier ไม่โผล่บนจอ) · ⚠️ **Warehouse & Delivery ยังแยกเหมือนเดิม ห้ามรวม**
+   · เปลี่ยนชื่อหมวด = ต้องเขียน migration `*_nav_groups_*` ใหม่ (เทส navGroupsRegistry ล็อก) */
 export const LOGISTIC_GROUPS = {
-  inbound:  'Logistic - Store (ป้อนของเข้าไลน์)',
+  inbound:  'Logistic - Planning & Store (แผนงาน + ป้อนของเข้าไลน์)',
   outbound: 'Logistic - Warehouse & Delivery (ส่งลูกค้า)',
-  control:  'Logistic - แผนงาน & ข้อมูล',
 };
 
 export const SIDES = [
@@ -59,14 +69,11 @@ export const SIDES = [
   },
   {
     key: 'outbound', icon: '🚚', label: 'Warehouse & Delivery · ส่งลูกค้า', short: 'จัดส่ง', color: '#f59e0b',
-    owner: 'Warehouse · Delivery · Rack Center',
-    desc: 'ทุกอย่างที่เกี่ยวพันกับลูกค้า · FG 1xx · รอบส่ง · ภาชนะ/packaging',
+    owner: 'Warehouse · Delivery · Rack Center · Billing',
+    desc: 'ทุกอย่างที่เกี่ยวพันกับลูกค้า · FG 1xx · รอบส่ง · ภาชนะ/packaging · ออกใบขาย',
   },
-  {
-    key: 'control', icon: '🧭', label: 'แผนงาน & ข้อมูล', short: 'แผนงาน', color: '#a78bfa',
-    owner: 'Sales · Planner · Billing',
-    desc: 'คุม/ประสานข้อมูลระหว่าง สโตร์ ↔ ผลิต ↔ จัดส่ง (ไม่ได้ถือของ)',
-  },
+  /* 'control' (แผนงาน & ข้อมูล) ถูกยุบเข้าหมวด Planning & Store แล้ว (30/09) — ฝั่งงานนี้ไม่ได้ถือของ
+     จึงไม่เคยเป็นฝั่งของ MAT อยู่แล้ว (SideFilterChips กรองทิ้งมาตลอด) · SIDES เหลือแค่ฝั่งที่ถือของจริง */
 ];
 
 /** ฝั่งของรายการที่จัดฝั่งไม่ได้ — เป็นสถานะของตัวเอง ห้ามนับรวมเข้าฝั่งใดฝั่งหนึ่ง */

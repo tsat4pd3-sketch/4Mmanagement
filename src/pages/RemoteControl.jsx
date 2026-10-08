@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, useContext, useCallback } from 'react';
 import { supabase } from '../supabaseClient';
 import { UserContext, navItemsForGroups, NAV_GROUP_ORDER } from '../App';
 import { toast } from '../components/Toast';
+import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
 
 /* ═══ RemoteControl (🎮 รีโมทจอ) — มือถือคุมจอ TV/โปรเจคเตอร์ที่เปิด "รับรีโมท" ═══
    คู่กับ RemoteReceiver (ฝังระดับ App บนจอ) ผ่าน Supabase Realtime — ใช้ได้ทุกหน้า
@@ -102,10 +104,8 @@ export default function RemoteControl() {
   });
 
   return (
-    <div style={{ padding: 16, maxWidth: 560, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <h1 style={{ margin: 0, fontSize: 'clamp(17px, 2.2vw, 22px)', fontWeight: 900, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
-        🎮 รีโมทจอ (Remote)
-      </h1>
+    <Page width="narrow" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <PageHeader title="รีโมทจอ (Remote)" icon="🎮" />
 
       {!joined ? (
         <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -166,7 +166,7 @@ export default function RemoteControl() {
           </div>
         </>
       )}
-    </div>
+    </Page>
   );
 }
 

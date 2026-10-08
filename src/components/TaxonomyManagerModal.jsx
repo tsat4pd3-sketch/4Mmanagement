@@ -126,14 +126,14 @@ export default function TaxonomyManagerModal({ table, title, extraField = 'color
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{r.label}</span>
                     <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 6 }}>{r.code}</span>
-                    {withEquipTypes && <span style={{ fontSize: 10.5, color: 'var(--accent2)', marginLeft: 6, fontWeight: 700 }}>{r.equip_types?.length ? r.equip_types.join('/') : 'ทุกชนิด'}</span>}
-                    {withTeam && <span style={{ fontSize: 10.5, color: 'var(--muted)', marginLeft: 6, fontWeight: 700 }}>{r.team ? (teams.find(t => t.key === r.team)?.dept_name || r.team) : '🌐 ทุกทีม'}</span>}
+                    {withEquipTypes && <span style={{ fontSize: 11, color: 'var(--accent2)', marginLeft: 6, fontWeight: 700 }}>{r.equip_types?.length ? r.equip_types.join('/') : 'ทุกชนิด'}</span>}
+                    {withTeam && <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 6, fontWeight: 700 }}>{r.team ? (teams.find(t => t.key === r.team)?.dept_name || r.team) : '🌐 ทุกทีม'}</span>}
                     {!r.is_active && <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 6 }}>(ปิดใช้งาน)</span>}
                   </div>
                   {canEditRow(r) ? <>
                     <button onClick={() => openEdit(r)} style={{ padding: '3px 8px', borderRadius: 6, fontSize: 11, border: '1px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', cursor: 'pointer' }}>แก้ไข</button>
                     <button onClick={() => remove(r)} style={{ padding: '3px 8px', borderRadius: 6, fontSize: 11, border: '1px solid rgba(224,92,74,0.3)', background: 'rgba(224,92,74,0.1)', color: '#e05c4a', cursor: 'pointer' }}>ลบ</button>
-                  </> : <span title={lockNote(r)} style={{ fontSize: 10.5, color: 'var(--muted)', whiteSpace: 'nowrap' }}>🔒 ดูอย่างเดียว</span>}
+                  </> : <span title={lockNote(r)} style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>🔒 ดูอย่างเดียว</span>}
                 </div>
               ))}
               {rows.length === 0 && <p style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 13, padding: 20 }}>ยังไม่มีรายการ</p>}
@@ -196,7 +196,7 @@ export default function TaxonomyManagerModal({ table, title, extraField = 'color
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button onClick={() => setEditing(null)} style={{ flex: 1, padding: '8px 0', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--muted)', fontSize: 13, cursor: 'pointer' }}>ยกเลิก</button>
-                <button onClick={save} disabled={saving} style={{ flex: 1, padding: '8px 0', borderRadius: 6, border: 'none', background: 'var(--accent)', color: '#071008', fontSize: 13, fontWeight: 700, cursor: 'pointer', opacity: saving ? 0.6 : 1 }}>{saving ? 'บันทึก...' : 'บันทึก'}</button>
+                <button onClick={save} disabled={saving} style={{ flex: 1, padding: '8px 0', borderRadius: 6, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 13, fontWeight: 700, cursor: 'pointer', opacity: saving ? 0.6 : 1 }}>{saving ? 'บันทึก...' : 'บันทึก'}</button>
               </div>
             </div>
           )}
@@ -204,7 +204,7 @@ export default function TaxonomyManagerModal({ table, title, extraField = 'color
 
         {!editing && (
           <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border)' }}>
-            <button onClick={openNew} style={{ width: '100%', padding: '9px 0', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#071008', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>+ เพิ่มรายการ</button>
+            <button onClick={openNew} style={{ width: '100%', padding: '9px 0', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>+ เพิ่มรายการ</button>
           </div>
         )}
       </motion.div>

@@ -24,7 +24,7 @@ const ghost = { padding: '5px 11px', borderRadius: 7, border: '1px solid var(--b
 const inputSt = { width: '100%', padding: '6px 9px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 12 };
 
 function Pill({ label, color, title }) {
-  return <span title={title} style={{ display: 'inline-block', padding: '1px 7px', borderRadius: 999, fontSize: 10.5, fontWeight: 800, color, background: `${color}22`, border: `1px solid ${color}66`, whiteSpace: 'nowrap' }}>{label}</span>;
+  return <span title={title} style={{ display: 'inline-block', padding: '1px 7px', borderRadius: 999, fontSize: 11, fontWeight: 800, color, background: `${color}22`, border: `1px solid ${color}66`, whiteSpace: 'nowrap' }}>{label}</span>;
 }
 
 /** แถวคำขอ 1 รายการ */
@@ -40,11 +40,11 @@ function CrRow({ cr, canDecide, onDecide, onApply }) {
           {leg && <Pill label={leg.short} color={leg.color} title={leg.hint} />}
           <Pill label={st.label} color={st.color} />
           {isSug && (
-            <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>
+            <span style={{ fontSize: 11, color: 'var(--muted)' }}>
               🤖 ระบบเสนอ · ความมั่นใจ {cr.confidence != null ? `${Math.round(cr.confidence * 100)}%` : '—'}
             </span>
           )}
-          {cr.ref_label && <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>จาก {cr.ref_label}</span>}
+          {cr.ref_label && <span style={{ fontSize: 11, color: 'var(--muted)' }}>จาก {cr.ref_label}</span>}
         </div>
         {cr.match_note && <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 3 }}>{cr.match_note}</div>}
         <div style={{ fontSize: 12, color: 'var(--text2)', whiteSpace: 'pre-wrap', lineHeight: 1.55 }}>{cr.proposal}</div>
@@ -228,7 +228,10 @@ export default function PeChangeRequests({
     const { data: rev, error: e1 } = await supabase.from('pe_doc_revisions').insert({
       set_id: a.cr.set_id, doc_type: a.cr.doc_type === 'pfc' ? 'pfc' : a.cr.doc_type,
       rev_no: a.rev_no ? Number(a.rev_no) : null, rev_date: a.rev_date || null,
-      content: a.content.trim(), ref_kind: a.cr.ref_kind === 'capa' ? 'ncr' : a.cr.ref_kind,
+      content: a.content.trim(),
+      /* ส่ง ref_kind ตรงตัว — check ของ pe_doc_revisions รับ 'capa' แล้ว (20260819_pe_ref_kind_improvement_main)
+         เดิมแปลง capa→ncr ⇒ ref_id ของ CAPA ถูกอ่านเป็นเลข NCR = สืบย้อนผิดใบ (QC 05/10) */
+      ref_kind: a.cr.ref_kind,
       ref_id: a.cr.ref_id, issued_by: fullName || null,
     }).select('id').single();
     if (e1) { setBusy(false); toast.error(e1.message); return; }
@@ -298,11 +301,11 @@ export default function PeChangeRequests({
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 3 }}>
                         <Pill label={DOC_LABEL[x.doc_type]} color="#4d9fff" />
                         {LEG_META[x.leg] && <Pill label={LEG_META[x.leg].short} color={LEG_META[x.leg].color} title={LEG_META[x.leg].hint} />}
-                        <span style={{ fontSize: 10.5, color: x.confidence >= 0.6 ? '#22c55e' : x.confidence > 0 ? '#f59e0b' : '#ef4444' }}>
+                        <span style={{ fontSize: 11, color: x.confidence >= 0.6 ? '#22c55e' : x.confidence > 0 ? '#f59e0b' : '#ef4444' }}>
                           {x.confidence > 0 ? `ความมั่นใจ ${Math.round(x.confidence * 100)}%` : 'ไม่พบในเอกสาร'}
                         </span>
                       </div>
-                      <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>{x.match_note}</div>
+                      <div style={{ fontSize: 11, color: 'var(--muted)' }}>{x.match_note}</div>
                       <div style={{ fontSize: 12, color: 'var(--text2)', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{x.proposal}</div>
                     </div>
                   </label>

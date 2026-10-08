@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabaseDR } from '../supabaseClient';
 import { toast } from './Toast';
+import { buildReceiptRows, RECEIPT_LINE } from '../utils/stockReceipt';
 
 /* ═══ 🛒 สั่งซื้อ/รับเข้า "รวมยอดทั้งพาร์ท" — คิวจัดซื้อ ═══════════════════════════
    ที่มา: `fn_explode_child_demand` ออกใบ **1 ใบต่อ 1 ล็อต** (เพดาน 50 ใบ/การปิดออเดอร์)
@@ -21,9 +22,13 @@ import { toast } from './Toast';
       update ใช้ compare-and-swap (`.eq('status', prev)`) — ใบที่คนอื่นเลื่อนไปแล้ว/ยกเลิกแล้ว
       จะไม่ถูกแตะ · ถ้าเอายอดที่ "ตั้งใจจะเลื่อน" ไปโพสต์ = สต็อกเกินจริง
 
-   📦 ledger: รับเข้าหลายใบ → **1 แถวต่อ 1 ปลายทาง** ไม่ใช่ 1 แถวต่อ 1 ใบ
-      (384 ใบ = 384 แถว ทั้งที่ไม่มีคอลัมน์ผูกกลับใบเลย → แยกแถวไม่ได้ traceability เพิ่มเลย
-       ตัวใบเองมี received_by/received_at เป็นหลักฐานอยู่แล้ว · note เขียนกำกับว่ารวมกี่ใบ)
+   📦 ledger: รับเข้าหลายใบ → **1 แถว ลงที่คลัง** (384 ใบ = 384 แถว ทั้งที่ไม่มีคอลัมน์ผูกกลับใบเลย
+      → แยกแถวไม่ได้เพิ่ม traceability · ใบเองมี received_by/received_at เป็นหลักฐานอยู่แล้ว)
+
+   🔴 2026-10-01 — **ของที่รับเข้าลงที่คลัง (`RECEIPT_LINE`) ไม่ใช่ `dest_line` อีกต่อไป**
+      `dest_line` = "ไลน์ไหนจะ*ใช้*" ไม่ใช่ "ของ*อยู่*ที่ไหน" — เอามาใช้เป็น line_name ทำให้ของทั้ง PO
+      เด้งไปกองหน้าไลน์ทันที (วัดจริง: 10 แถว 1.34 ล้านชิ้น = 76% ของยอดค้างทั้งระบบ)
+      กฎ + ตัวเลข + ตัวสร้างแถว → `src/utils/stockReceipt.js` (มีเทส) **ห้ามประกอบแถวเองที่นี่**
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 const IN_CHUNK = 120;                       // กฎโปรเจค: .in() แบ่งก้อนละ 120 กัน URL ยาวเกิน
@@ -84,6 +89,20 @@ export default function PurchaseBulkModal({ group, next, nextLabel, fullName, wo
   const pickedQty = useMemo(() => picked.reduce((s, r) => s + (Number(r.qty) || 0), 0), [picked]);
   const noDest    = byDest.find(d => !d.dest);
 
+  /* คืนใบที่ claim ไปแล้วกลับสถานะเดิม (กฎข้อ 6) · คืน { reverted, backErr } — นับแถวจริง ไม่เชื่อ !error */
+  const revertClaimed = async (ids) => {
+    let reverted = 0;
+    for (let i = 0; i < ids.length; i += IN_CHUNK) {
+      const { data: back, error: eBack } = await supabaseDR.from('purchase_requests')
+        .update({ status: prev, ...(next === 'ordered' ? { ordered_by: null, ordered_at: null } : {}),
+          ...(next === 'received' ? { received_by: null, received_at: null } : {}) })
+        .in('id', ids.slice(i, i + IN_CHUNK)).eq('status', next).select('id');
+      if (eBack) return { reverted, backErr: eBack.message };
+      reverted += back?.length || 0;
+    }
+    return { reverted, backErr: '' };
+  };
+
   const run = async () => {
     if (!picked.length || busy) return;
     setBusy(true);
@@ -102,7 +121,13 @@ export default function PurchaseBulkModal({ group, next, nextLabel, fullName, wo
         const { data, error } = await supabaseDR.from('purchase_requests')
           .update(patch).in('id', part).eq('status', prev)
           .select('id, qty, dest_line, part_name, work_date');
-        if (error) throw error;
+        if (error) {
+          /* ก้อนก่อนหน้าถูก claim ไปแล้ว แต่ยังไม่มีแถวสต็อก ⇒ คืนก่อนโยน (ไม่งั้นค้าง "รับเข้าแล้ว" กดใหม่ไม่ได้) */
+          const { reverted, backErr } = await revertClaimed(done.map(r => r.id));
+          throw new Error(reverted === done.length
+            ? `เลื่อนสถานะไม่สำเร็จ — ไม่มีใบไหนเปลี่ยน ลองกดใหม่อีกครั้ง (${error.message})`
+            : `เลื่อนสถานะไม่สำเร็จ และคืนได้แค่ ${reverted} จาก ${done.length} ใบที่เลื่อนไปแล้ว — แจ้ง admin (${error.message}${backErr ? ` · ${backErr}` : ''})`);
+        }
         done.push(...(data || []));
       }
 
@@ -111,51 +136,43 @@ export default function PurchaseBulkModal({ group, next, nextLabel, fullName, wo
         await onDone?.(); onClose?.(); return;
       }
 
-      let stockErr = '';
-      let posted = 0, skipped = 0;
+      let posted = 0;
       if (next === 'received') {
-        /* 1 แถวต่อ 1 ปลายทาง — ยึด dest_line ของใบจริง ไม่ใช่ของการ์ด (กฎข้อ 2) */
-        const g = new Map();
-        done.forEach(r => {
-          const k = r.dest_line || '';
-          const cur = g.get(k) || { dest: k, qty: 0, slips: 0, name: r.part_name, wd: r.work_date };
-          cur.qty += Number(r.qty) || 0; cur.slips += 1;
-          g.set(k, cur);
+        /* ของเข้าคลังก้อนเดียว = แถวเดียว · ไลน์ที่รอของถูกเขียนไว้ในหมายเหตุ (ดูหัวไฟล์ + stockReceipt.js)
+           ⚠️ ใบที่ไม่ระบุปลายทางก็รับเข้าคลังได้ — "ไม่รู้ว่าใครจะใช้" ไม่ได้แปลว่า "ของไม่ได้มา" */
+        posted = done.length;
+        const rows = buildReceiptRows({
+          matNo: mat, partName: group.part_name, slips: done,
+          supplier: group.supplier, workDate, by: fullName,
         });
-        const rows = [];
-        g.forEach(v => {
-          if (!v.dest) { skipped += v.slips; return; }   // ไม่รู้ปลายทาง = เติมสต็อกไม่ได้
-          posted += v.slips;
-          rows.push({
-            line_name: v.dest, mat_no: mat, part_name: v.name || group.part_name, qty: v.qty,
-            type: 'issue', work_date: v.wd || workDate,
-            note: `รับของซื้อเข้าสโตร์ · รวม ${v.slips} ใบ${group.supplier ? ' · ' + group.supplier : ''}`,
-            created_by: fullName || 'สโตร์',
-          });
-        });
-        if (rows.length) {
-          const { error } = await supabaseDR.from('line_stock_transactions').insert(rows);
-          if (error) stockErr = error.message;
+        const { error: eLedger } = rows.length
+          ? await supabaseDR.from('line_stock_transactions').insert(rows)
+          : { error: null };
+        /* 🔴 06/10 — claim สถานะไปแล้ว (CAS ข้างบน) แต่ ledger ล้ม ⇒ **ต้องคืนใบที่ขยับทั้งหมด** (กฎข้อ 6)
+           เดิมแค่ toast "ไปบันทึกเองที่ Line Stock" ⇒ ใบค้าง "รับเข้าแล้ว" ทั้งที่สต็อกไม่ขึ้น และกดใหม่ไม่ได้อีก
+           (ปุ่มทีละใบ `advancePurchase` คืนสถานะอยู่แล้ว — ทางรวมยอดต้องเหมือนกัน) */
+        if (eLedger) {
+          const { reverted, backErr } = await revertClaimed(done.map(r => r.id));
+          throw new Error(reverted === done.length
+            ? `รับเข้าคลังไม่สำเร็จ — คืน ${done.length} ใบกลับเป็นสถานะเดิมแล้ว ลองกดใหม่อีกครั้ง (${eLedger.message})`
+            : `รับเข้าคลังไม่สำเร็จ และคืนสถานะได้แค่ ${reverted} จาก ${done.length} ใบ — ที่เหลือค้าง "รับเข้าแล้ว" ทั้งที่สต็อกยังไม่เข้า แจ้ง admin ทันที (${eLedger.message}${backErr ? ` · ${backErr}` : ''})`);
         }
       }
 
-      /* รายงานผลตามจริง — สำเร็จไม่ครบ/สต็อกไม่ถูกเติม ห้ามขึ้น toast เขียวเฉยๆ */
+      /* รายงานผลตามจริง — สำเร็จไม่ครบ ห้ามขึ้น toast เขียวเฉยๆ */
       const short = done.length < picked.length;
-      if (stockErr) {
-        toast.error(`เลื่อนสถานะ ${done.length} ใบแล้ว แต่บันทึกรับเข้าคลังไม่สำเร็จ — ${stockErr} · ไปบันทึกเองที่ Line Stock`);
-      } else if (next === 'received' && skipped > 0) {
-        toast.error(`รับเข้า ${done.length} ใบแล้ว · ${skipped} ใบไม่ได้ระบุปลายทางสโตร์ สต็อกส่วนนั้นยังไม่ถูกเติม (เติมแล้ว ${posted} ใบ)`);
-      } else if (short) {
+      if (short) {
         toast.error(`เลื่อนได้ ${done.length} จาก ${picked.length} ใบ — ที่เหลือถูกคนอื่นเลื่อน/ยกเลิกไปแล้ว`);
       } else {
         toast.success(next === 'ordered'
           ? `🛒 บันทึกสั่งซื้อ ${mat} · ${done.length} ใบ รวม ${fmt(done.reduce((s, r) => s + (Number(r.qty) || 0), 0))} ชิ้น`
-          : `✅ รับเข้าสโตร์ ${mat} · ${done.length} ใบ รวม ${fmt(done.reduce((s, r) => s + (Number(r.qty) || 0), 0))} ชิ้น`);
+          : `✅ รับเข้า ${RECEIPT_LINE} · ${mat} · ${posted} ใบ รวม ${fmt(done.reduce((s, r) => s + (Number(r.qty) || 0), 0))} ชิ้น — ไลน์เบิกจากคลังอีกที`);
       }
       await onDone?.();
       onClose?.();
     } catch (e) {
       toast.error(e.message || String(e));
+      await load(); await onDone?.();   // ใบอาจถูกคืน/ขยับบางส่วน — โหลดใหม่ให้จอตรงความจริง
     } finally { setBusy(false); }
   };
 
@@ -249,7 +266,7 @@ export default function PurchaseBulkModal({ group, next, nextLabel, fullName, wo
             <button onClick={run} disabled={busy || !n}
               style={{ fontSize: 12.5, fontWeight: 800, padding: '8px 16px', borderRadius: 8,
                 cursor: busy || !n ? 'not-allowed' : 'pointer', opacity: busy || !n ? 0.6 : 1,
-                background: 'var(--accent)', color: '#08130a', border: '1px solid var(--accent)', fontFamily: 'var(--font-body)' }}>
+                background: 'var(--accent)', color: 'var(--accent-ink)', border: '1px solid var(--accent)', fontFamily: 'var(--font-body)' }}>
               {busy ? 'กำลังบันทึก…' : `${nextLabel} ${fmt(n)} ใบ`}
             </button>
           </div>

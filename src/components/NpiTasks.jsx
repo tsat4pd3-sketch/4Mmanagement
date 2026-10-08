@@ -8,6 +8,7 @@ import { fmtDate } from '../utils/dateFormat';
 import { TASK_STATUS } from '../utils/npi';
 import SearchSelect from './SearchSelect';
 import { inp, card, btn, ghost, thSt, tdSt, Field, Pill, LightDot, MetaSelect, Modal } from './NpiUi';
+import { DeleteButton } from './IconButton';
 
 export default function NpiTasks({ project, parts, tplPhases, delivs, tasks, users, canEdit, fullName, today, onChanged }) {
   const [modal, setModal] = useState(null);
@@ -84,7 +85,7 @@ export default function NpiTasks({ project, parts, tplPhases, delivs, tasks, use
                     <td style={tdSt}><LightDot light={lt} /></td>
                     <td style={{ ...tdSt, minWidth: 220 }}><div style={{ fontWeight: 700, color: 'var(--text)' }}>{t.title}</div>{t.detail && <div style={{ fontSize: 11.5, color: 'var(--muted)', whiteSpace: 'pre-wrap' }}>{t.detail}</div>}{dv && <div style={{ fontSize: 11, color: '#4d9fff' }}>📄 {dv.label}</div>}</td>
                     <td style={tdSt}>{p?.part_no || <span style={{ color: 'var(--muted)' }}>ทั้งโปรเจค</span>}{t.phase_code && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{tplPhases.find(x => x.code === t.phase_code)?.label || t.phase_code}</div>}</td>
-                    <td style={tdSt}>{t.assignee_name || <span style={{ color: '#f59e0b' }}>ยังไม่มอบหมาย</span>}{t.assignee_name && !t.assignee_uid && <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>ไม่ใช่ user ระบบ — ไม่มีแจ้งเตือน</div>}</td>
+                    <td style={tdSt}>{t.assignee_name || <span style={{ color: '#f59e0b' }}>ยังไม่มอบหมาย</span>}{t.assignee_name && !t.assignee_uid && <div style={{ fontSize: 11, color: 'var(--muted)' }}>ไม่ใช่ user ระบบ — ไม่มีแจ้งเตือน</div>}</td>
                     <td style={{ ...tdSt, color: lt === 'red' ? '#ef4444' : undefined, fontWeight: lt === 'red' ? 800 : 400 }}>{t.due_date ? fmtDate(t.due_date) : '—'}</td>
                     <td style={tdSt}><Pill label={TASK_STATUS[t.status]?.label} color={TASK_STATUS[t.status]?.color} /></td>
                     <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>
@@ -92,7 +93,7 @@ export default function NpiTasks({ project, parts, tplPhases, delivs, tasks, use
                         {t.status === 'open' && <button style={{ ...ghost, padding: '2px 8px', fontSize: 11 }} onClick={() => quick(t, 'doing')}>▶ เริ่ม</button>}{' '}
                         <button style={{ ...btn('#22c55e'), padding: '2px 8px', fontSize: 11 }} onClick={() => quick(t, 'done')}>✓ เสร็จ</button>{' '}
                       </>}
-                      {canEdit && <><button className="tbtn" style={{ ...ghost, padding: '2px 7px' }} onClick={() => setModal({ ...t, _orig_uid: t.assignee_uid, part_id: t.part_id || '', phase_code: t.phase_code || '', deliverable_id: t.deliverable_id || '', assignee_name: t.assignee_name || '', assignee_uid: t.assignee_uid || '', due_date: t.due_date || '', detail: t.detail || '' })}>✏️</button> <button className="tbtn" style={{ ...ghost, padding: '2px 7px', color: '#ef4444' }} onClick={() => del(t)}>🗑</button></>}
+                      {canEdit && <><button className="tbtn" style={{ ...ghost, padding: '2px 7px' }} onClick={() => setModal({ ...t, _orig_uid: t.assignee_uid, part_id: t.part_id || '', phase_code: t.phase_code || '', deliverable_id: t.deliverable_id || '', assignee_name: t.assignee_name || '', assignee_uid: t.assignee_uid || '', due_date: t.due_date || '', detail: t.detail || '' })}>✏️</button> <DeleteButton onClick={() => del(t)} title="ลบ" /></>}
                     </td>
                   </tr>
                 );

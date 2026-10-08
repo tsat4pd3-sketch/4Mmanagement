@@ -19,7 +19,7 @@ const CHUNK = 400;
 const chunks = (a, n = CHUNK) => Array.from({ length: Math.ceil(a.length / n) }, (_, i) => a.slice(i * n, i * n + n));
 
 const btn = { padding: '7px 12px', fontSize: 12, fontWeight: 700, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer' };
-const btnPrim = { ...btn, background: 'var(--accent)', borderColor: 'var(--accent)', color: '#04140a' };
+const btnPrim = { ...btn, background: 'var(--accent)', borderColor: 'var(--accent)', color: 'var(--accent-ink)' };
 const lbl = { fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block' };
 const inp = { marginTop: 4, padding: '7px 9px', fontSize: 12, borderRadius: 7, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' };
 
@@ -201,7 +201,7 @@ export default function PeExcelImportModal({ sets = [], currentSetId = '', onClo
             <div key={f.key} style={{ display: 'flex', gap: 10, alignItems: 'center', padding: 10, background: 'var(--bg2)', borderRadius: 8, border: '1px solid var(--border)' }}>
               <div style={{ minWidth: 190 }}>
                 <div style={{ fontSize: 13, fontWeight: 700 }}>{f.label}</div>
-                <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>{f.hint}</div>
+                <div style={{ fontSize: 11, color: 'var(--muted)' }}>{f.hint}</div>
               </div>
               <input type="file" accept=".xlsx,.xlsm" style={{ width: 'auto', flex: 1, fontSize: 11.5 }}
                 onChange={(e) => setFiles({ ...files, [f.key]: e.target.files?.[0] || null })} />
@@ -227,7 +227,7 @@ export default function PeExcelImportModal({ sets = [], currentSetId = '', onClo
         {errs.map((w, i) => (
           <div key={i} style={{ padding: 10, marginBottom: 8, borderRadius: 8, background: 'rgba(220,60,60,.12)', border: '1px solid rgba(220,60,60,.5)', fontSize: 12 }}>
             <b style={{ color: '#ff8a8a' }}>⛔ {w.text}</b>
-            {w.rows && <div style={{ marginTop: 6, fontSize: 10.5, color: 'var(--muted)', fontFamily: 'monospace', maxHeight: 110, overflowY: 'auto' }}>
+            {w.rows && <div style={{ marginTop: 6, fontSize: 11, color: 'var(--muted)', fontFamily: 'monospace', maxHeight: 110, overflowY: 'auto' }}>
               {w.rows.map((r, j) => <div key={j}>ชีท {r.sheet}{r.op ? ` · OP ${r.op}` : ''}{r.text ? ` · ${r.text}` : ''}</div>)}
             </div>}
           </div>
@@ -235,7 +235,7 @@ export default function PeExcelImportModal({ sets = [], currentSetId = '', onClo
         {warns.map((w, i) => (
           <div key={i} style={{ padding: 10, marginBottom: 8, borderRadius: 8, background: 'rgba(240,170,60,.12)', border: '1px solid rgba(240,170,60,.45)', fontSize: 12, color: 'var(--text2)' }}>
             ⚠️ {w.text}
-            {w.rows && <div style={{ marginTop: 6, fontSize: 10.5, color: 'var(--muted)', fontFamily: 'monospace' }}>{w.rows.map((r, j) => <div key={j}>{r.sheet}</div>)}</div>}
+            {w.rows && <div style={{ marginTop: 6, fontSize: 11, color: 'var(--muted)', fontFamily: 'monospace' }}>{w.rows.map((r, j) => <div key={j}>{r.sheet}</div>)}</div>}
           </div>
         ))}
 
@@ -250,7 +250,7 @@ export default function PeExcelImportModal({ sets = [], currentSetId = '', onClo
             <table className="table-sticky" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5 }}>
               <thead><tr style={{ background: 'var(--bg3)' }}>
                 {['OP', 'ชื่อขั้นงาน', 'ชนิด', 'PFMEA', 'CP', 'child part / เครื่อง'].map((h) => (
-                  <th key={h} style={{ padding: '6px 8px', textAlign: 'left', fontSize: 10.5, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{h}</th>
+                  <th key={h} style={{ padding: '6px 8px', textAlign: 'left', fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
               </tr></thead>
               <tbody>
@@ -261,7 +261,7 @@ export default function PeExcelImportModal({ sets = [], currentSetId = '', onClo
                     <td style={{ padding: '5px 8px', color: 'var(--muted)' }}>{o.kind}</td>
                     <td style={{ padding: '5px 8px', textAlign: 'right' }}>{o.fmea || '—'}</td>
                     <td style={{ padding: '5px 8px', textAlign: 'right' }}>{o.cp || '—'}</td>
-                    <td style={{ padding: '5px 8px', fontSize: 10.5, color: 'var(--muted)', whiteSpace: 'pre-wrap' }}>{[o.child_parts, o.remark].filter(Boolean).join(' · ')}</td>
+                    <td style={{ padding: '5px 8px', fontSize: 11, color: 'var(--muted)', whiteSpace: 'pre-wrap' }}>{[o.child_parts, o.remark].filter(Boolean).join(' · ')}</td>
                   </tr>
                 ))}
               </tbody>

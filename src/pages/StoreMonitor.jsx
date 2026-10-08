@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
+import { lineNameCompare } from '../utils/lineHierarchy';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import LineSelect from '../components/LineSelect';
 import { scopedLineNames } from '../utils/sectionScope';
@@ -8,6 +10,13 @@ import { RATE } from '../utils/refreshRates';
 import { useLiveBoard } from '../utils/useLiveBoard';
 import { splitBySide, sideMatches } from '../utils/logisticSide';
 import SideFilterChips from '../components/SideFilterChips';
+import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
+import FilterBar from '../components/FilterBar';
+import Segmented from '../components/Segmented';
+import { ALL } from '../utils/filterLabels';
+import PartCard, { partCardGrid } from '../components/PartCard';
+import usePartImages from '../utils/usePartImages';
 
 /* ─── STORE MONITOR — เฝ้าระวังสต๊อก/รอบส่ง (Abnormality Monitor) ─────────────
    ถอดจากตาราง "Abnormality case of TEI-TEI system" (17 เคส) ของ Toyota TPS
@@ -29,6 +38,7 @@ const card = { background: 'var(--card)', border: '1px solid var(--border)', bor
 
 export default function StoreMonitor() {
   const { role, lineId, sections: scopeSecs } = useContext(UserContext);
+  const imgOf = usePartImages();   // 🖼️ รูปชิ้นงาน — การ์ดพาร์ททุกจอต้องมีเหมือนกัน (UI §6.23)
   const [prodLines, setProdLines] = useState([]); // production_lines (id/name/section/parent) — ใช้คิด scope
   const [findings, setFindings] = useState([]);
   const [loadErr, setLoadErr] = useState('');
@@ -58,7 +68,7 @@ export default function StoreMonitor() {
       if (!data || data.length < PAGE) break;
     }
     if (p >= MAX_PAGES) cut = true;
-    const { data: lines } = await supabase.from('production_lines').select('id, name, section, parent_line_name, is_active');
+    const { data: lines } = await loadLinesRes();
     const f = rows;
     setProdLines(lines || []);
     // โหลดไม่สำเร็จ ≠ ไม่มีเรื่องผิดปกติ — ต้องบอกให้รู้ ห้ามขึ้นจอเขียว "ปกติดี"
@@ -98,7 +108,7 @@ export default function StoreMonitor() {
       : findings),
     [findings, scopeLineNames, allProdNames]);
 
-  const lines = useMemo(() => [...new Set(scoped.map(f => f.line).filter(Boolean))].sort(), [scoped]);
+  const lines = useMemo(() => [...new Set(scoped.map(f => f.line).filter(Boolean))].sort(lineNameCompare), [scoped]);
   /* จอนี้คาบ 2 ฝั่งโดยธรรมชาติ (เคส A/B เทียบ min-max ของทุกเลข MAT · E ใบสั่งซื้อค้าง)
      → ให้กรองฝั่งได้ แต่ default = ทั้งหมด เพราะเป็นจอเฝ้าระวังภาพรวม (mat = ตัวจัดฝั่ง) */
   const sideCounts = useMemo(() => {
@@ -116,15 +126,9 @@ export default function StoreMonitor() {
   const nLate = scoped.filter(f => f.code === 'C').length;
 
   return (
-    <div style={{ padding: 'clamp(12px, 2vw, 24px)', maxWidth: 'min(96vw, 1600px)', margin: '0 auto' }}>
-      <div style={{ marginBottom: 18 }}>
-        <h1 style={{ margin: 0, fontSize: 'clamp(18px, 2.5vw, 24px)', fontWeight: 900, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
-          🚨 เฝ้าระวังสต๊อก & รอบส่ง (Abnormality Monitor)
-        </h1>
-        <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--muted)' }}>
-          จับความผิดปกติแล้วสรุปเป็นผล 🟥 จะขาด (Shortage) / 🟧 ล้น (Over stock) — แนวคิดจาก TEI-TEI ของ Toyota · เงื่อนไขตรวจอยู่ในวิว v_store_abnormal ที่เดียว (ตัวแจ้งเตือนใช้ตัวเดียวกัน)
-        </p>
-      </div>
+    <Page>
+      <PageHeader title="เฝ้าระวังสต๊อก & รอบส่ง (Abnormality Monitor)" icon="🚨"
+        sub="จับความผิดปกติแล้วสรุปเป็นผล 🟥 จะขาด (Shortage) / 🟧 ล้น (Over stock) — แนวคิดจาก TEI-TEI ของ Toyota · เงื่อนไขตรวจอยู่ในวิว v_store_abnormal ที่เดียว (ตัวแจ้งเตือนใช้ตัวเดียวกัน)" />
 
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
         {[
@@ -145,25 +149,20 @@ export default function StoreMonitor() {
         <SideFilterChips value={sideFilter} onChange={setSideFilter} counts={sideCounts} unit="เรื่อง" />
       </div>
 
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14, alignItems: 'center' }}>
-        {[['all', 'ทั้งหมด'], ['shortage', '🟥 จะขาด'], ['over', '🟧 ล้น']].map(([k, l]) => (
-          <button key={k} onClick={() => setKindFilter(k)} style={{
-            padding: '7px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 12.5, fontWeight: 700, fontFamily: 'var(--font-body)',
-            background: kindFilter === k ? 'var(--accent)' : 'var(--bg2)', color: kindFilter === k ? '#08130a' : 'var(--text2)',
-            border: `1px solid ${kindFilter === k ? 'var(--accent)' : 'var(--border)'}`,
-          }}>{l}</button>
-        ))}
+      {/* UI-STANDARD 2026-09-24 — ไลน์ (ขอบเขต) ก่อน → ชนิดเรื่อง (Segmented) */}
+      <FilterBar style={{ marginBottom: 14 }}>
         {lines.length > 0 && (
           /* ไลน์ที่มีเรื่องเตือน — จัดลำดับชั้นตามผัง (แม่→ลูก) ส่วนคลังที่ไม่ใช่ไลน์ผลิตแยก optgroup
              scope ถูกกรองที่ `scoped` แล้ว จึงไม่ต้องส่ง role/sections ซ้ำ */
           <LineSelect
             lines={prodLines.filter(l => lines.includes(l.name))}
-            value={lineFilter} onChange={setLineFilter} placeholder="ทุกไลน์"
-            style={{ padding: '7px 10px', borderRadius: 8, fontSize: 13, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)', width: 200, marginLeft: 'auto' }}
+            value={lineFilter} onChange={setLineFilter} placeholder={ALL.line}
             extraGroups={[{ label: '🏬 คลัง', options: lines.filter(n => !prodLines.some(l => l.name === n)).map(n => ({ value: n })) }]}
           />
         )}
-      </div>
+        <Segmented value={kindFilter} onChange={setKindFilter} label="ชนิดความผิดปกติ"
+          options={[{ value: 'all', label: ALL.type }, { value: 'shortage', label: '🟥 จะขาด' }, { value: 'over', label: '🟧 ล้น' }]} />
+      </FilterBar>
 
       {loadErr && (
         <div style={{ ...card, borderColor: 'rgba(239,68,68,0.5)', background: 'rgba(239,68,68,0.08)', padding: '10px 14px', marginBottom: 12, fontSize: 13, color: '#ef4444', fontWeight: 700 }}>
@@ -182,7 +181,7 @@ export default function StoreMonitor() {
           ✅ ไม่พบความผิดปกติ — สต๊อกอยู่ในเกณฑ์ min/max และรอบส่งปกติ
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(290px, 100%), 1fr))', gap: 11 }}>
+        <div style={partCardGrid()}>
           {shown.map((f, i) => {
             const red = f.kind === 'shortage';
             const tone = red ? '#ef4444' : '#f59e0b';
@@ -190,27 +189,17 @@ export default function StoreMonitor() {
             // กระพริบใช้ class กลาง .mo-card-alert (index.css) — มี [data-perf="lite"] override สำหรับจอ TV
             // ห้ามเขียน keyframes กระพริบเองต่อหน้า (UI-CONVENTIONS §2 · QC audit 2026-08-03)
             return (
-              <div key={i} className={blink ? 'mo-card-alert' : undefined} style={{
-                border: `1px solid ${tone}`, borderLeft: `3px solid ${tone}`, borderRadius: 11, padding: 12,
-                // พื้นการ์ด = สีการ์ด + เคลือบสีสถานะจางๆ
-                // ⚠️ ห้ามใช้ color-mix() — Chromium ต้อง 111+ แต่จอ TV ที่ใช้จริง (LG webOS 23) = Chromium 94
-                //    ค่าที่ parse ไม่ได้ = ทั้งบรรทัด background ถูกทิ้ง → การ์ดพื้นโปร่งบนจอ TV
-                //    ใช้ gradient 2 stop สีเดียวแทน = เคลือบทับสีการ์ดเหมือนกันเป๊ะ แต่รองรับทุกเบราว์เซอร์
-                background: 'var(--card)',
-                backgroundImage: `linear-gradient(${tone}14, ${tone}14)`,
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'flex-start' }}>
-                  <span style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--text)' }}>{f.title}</span>
-                  <span style={{ fontSize: 11, fontWeight: 800, color: tone, whiteSpace: 'nowrap' }}>{red ? '🟥 จะขาด' : '🟧 ล้น'}</span>
-                </div>
-                <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 4, fontWeight: 700 }}>
-                  {f.line || '—'}{f.mat ? ` · ${f.mat}` : ''}
-                </div>
-                {f.part && <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{f.part}</div>}
-                <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 6, borderTop: '1px dashed var(--border)', paddingTop: 6 }}>
-                  {f.detail} <span style={{ opacity: 0.7 }}>· เคส {f.code}</span>
-                </div>
-              </div>
+              <PartCard key={i} className={blink ? 'mo-card-alert' : undefined}
+                code={f.mat} name={f.part}
+                showImg={!!f.mat}
+                img={imgOf(f.mat)}
+                /* ป้ายสถานะบอกอาการเจาะจง (ต่ำกว่า Min / เกิน Max / เลยเวลา) — เดิมมี 2 ป้าย
+                   ("ต่ำกว่า Min" + "จะขาด") ซึ่งพูดเรื่องเดียวกัน · สีบอก shortage/over อยู่แล้ว */
+                status={{ label: f.title, color: tone, bg: `${tone}1f`, border: `${tone}59` }}
+                aside={{ label: red ? 'ไลน์ที่จะขาด' : 'ไลน์ที่ล้น', value: f.line || 'ทุกไลน์รวมกัน' }}
+                rows={[{ k: 'เคส', v: `${f.code} · ${red ? 'Shortage' : 'Over stock'}` }]}
+                note={f.detail}
+                alert={blink} />
             );
           })}
         </div>
@@ -220,6 +209,6 @@ export default function StoreMonitor() {
         แหล่งข้อมูล: on-hand (line_stock_summary) เทียบ Min/Max (kanban_standards จาก 🎴 คำนวณ Kanban) · รอบส่ง (kanban_delivery_rounds/kanban_deliveries) · สั่งซื้อ (purchase_requests) ·
         เคส "ผิดกล่อง/pattern/pallet" ในตาราง TPS 17 เคส ต้องมีการสแกนคัมบัง/leveling pattern ก่อน = เฟสถัดไป
       </div>
-    </div>
+    </Page>
   );
 }

@@ -20,6 +20,9 @@ const json = (b: unknown, status = 200) =>
 // Deno instance อยู่ข้าม request (warm) → cache ในตัวแปรโมดูลตัดคิวรีนี้ทิ้งได้เกือบหมด
 // ⚠️ TTL 10 นาที **ห้ามทำเป็น cache ถาวร** — เปลี่ยน VAPID key ที่หน้าตั้งค่าแล้วต้องมีผลเอง
 //    ภายในเวลาที่คนรอไหว (ไม่งั้นต้องรอ instance ตายเองซึ่งไม่มีใครรู้ว่าเมื่อไหร่)
+// ⚠️ วัดจริง 23/09/2026: cache นี้ได้ผลแค่ ~17% เพราะ Deno สร้าง isolate ใหม่แทบทุกครั้ง
+//    (notification_settings ยังโดน 5,402 ครั้ง/วัน) — **cache ในโมดูลแก้ปัญหานี้ไม่ได้**
+//    ตัวที่ลดได้จริงคือ "ลดจำนวนครั้งที่ถูกเรียก" ที่ trigger → migration 20260924_push_skip_*
 type Vapid = { pub: string; priv: string; subject: string } | null;
 let vapidCache: Vapid = null;
 let vapidAt = 0;
@@ -91,13 +94,23 @@ Deno.serve(async (req) => {
     }
     webpush.setVapidDetails(vapidCache.subject, vapidCache.pub, vapidCache.priv);
 
-    const { data: subs, error: subErr } = await supabase
-      .from('push_subscriptions')
-      .select('id, endpoint, p256dh, auth')
-      .eq('user_id', userId);
-    // ⚠️ อ่านรายชื่อ subscription ไม่ได้ ≠ "user ยังไม่เปิด Push" — เดิมตอบ ok:true sent:0 เหมือนกันเป๊ะ
-    //    เรียกจาก pg_net แบบ fire-and-forget ไม่มีใครอ่าน response → ต้องดังใน log ไว้ก่อน
-    if (subErr) { console.error('send-push read subscriptions failed', subErr.message); return json({ ok: false, error: 'read subscriptions failed: ' + subErr.message }, 500); }
+    /* รายชื่อเครื่องปลายทาง — ใช้ที่ trigger แนบมาก่อน (2026-09-24 · งานลด request)
+       `fn_notify_push` อ่าน push_subscriptions ในตัว DB เองอยู่แล้ว (เพื่อเช็คว่าต้องยิงไหม)
+       จึงแนบผลมาให้เลย ⇒ ที่นี่ไม่ต้องยิง PostgREST ซ้ำอีกรอบ
+       วัดจริง 23/09: push_subscriptions โดน **5,929 ครั้ง/วัน** โดย 5,627 มาจาก Edge Runtime ตัวนี้
+       ⚠️ ต้องคง fallback ไว้เสมอ — trigger เวอร์ชันเก่า (หรือการเรียกมือ/จากที่อื่น) ไม่มี `subs` มาด้วย */
+    type Sub = { id: string; endpoint: string; p256dh: string; auth: string };
+    let subs: Sub[] | null = Array.isArray(body.subs) && body.subs.length ? body.subs as Sub[] : null;
+    if (!subs) {
+      const { data, error: subErr } = await supabase
+        .from('push_subscriptions')
+        .select('id, endpoint, p256dh, auth')
+        .eq('user_id', userId);
+      // ⚠️ อ่านรายชื่อ subscription ไม่ได้ ≠ "user ยังไม่เปิด Push" — เดิมตอบ ok:true sent:0 เหมือนกันเป๊ะ
+      //    เรียกจาก pg_net แบบ fire-and-forget ไม่มีใครอ่าน response → ต้องดังใน log ไว้ก่อน
+      if (subErr) { console.error('send-push read subscriptions failed', subErr.message); return json({ ok: false, error: 'read subscriptions failed: ' + subErr.message }, 500); }
+      subs = data as Sub[] | null;
+    }
     if (!subs?.length) return json({ ok: true, sent: 0 });
 
     const payload = JSON.stringify({

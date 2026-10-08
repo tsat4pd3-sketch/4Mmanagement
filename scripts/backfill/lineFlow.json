@@ -1,0 +1,164 @@
+{
+  "_snapshot": "production_lines (MAIN ewhdfqwfwofivojtsizn) · regen 2026-10-05 ผ่าน MCP — flow_mode อยู่ฝั่ง MAIN แต่สคริปต์มีแต่ client ฝั่ง DR จึงต้อง snapshot",
+  "_legacy": "คีย์ท้ายไฟล์ = ชื่อไลน์ที่ถูกเปลี่ยนชื่อ/ถอดออกจากทะเบียนแล้ว แต่กะเก่ายังเก็บชื่อนั้นใน production_sessions.line_name — ห้ามลบ ไม่งั้นคำนวณกะเก่าย้อนหลังได้ cfg ว่าง (flow_mode หาย = ไลน์เครื่องขนานกลายเป็นสายเดียว)",
+  "ASSEMBLY 1": {
+    "flow_mode": "parallel_machine",
+    "parallel_stations": null
+  },
+  "Assy  LWR": {
+    "flow_mode": "one_piece_flow",
+    "parallel_stations": null
+  },
+  "Assy GOR": {
+    "flow_mode": "one_piece_flow",
+    "parallel_stations": null
+  },
+  "BENDING E50": {
+    "flow_mode": "one_piece_flow",
+    "parallel_stations": null
+  },
+  "BENDING EXPORT": {
+    "flow_mode": "one_piece_flow",
+    "parallel_stations": null
+  },
+  "GOR": {
+    "flow_mode": "one_piece_flow",
+    "parallel_stations": null
+  },
+  "GWM": {
+    "flow_mode": "parallel_machine",
+    "parallel_stations": null
+  },
+  "HDF1": {
+    "flow_mode": "one_piece_flow",
+    "parallel_stations": null
+  },
+  "HDF2": {
+    "flow_mode": "one_piece_flow",
+    "parallel_stations": null
+  },
+  "HYDROFORM": {
+    "flow_mode": "one_piece_flow",
+    "parallel_stations": null
+  },
+  "LASER E50": {
+    "flow_mode": "one_piece_flow",
+    "parallel_stations": null
+  },
+  "LASER EXPORT": {
+    "flow_mode": "one_piece_flow",
+    "parallel_stations": null
+  },
+  "Laser GOR": {
+    "flow_mode": "one_piece_flow",
+    "parallel_stations": null
+  },
+  "Laser LWR": {
+    "flow_mode": "one_piece_flow",
+    "parallel_stations": null
+  },
+  "LASER-345": {
+    "flow_mode": "one_piece_flow",
+    "parallel_stations": 3
+  },
+  "LASER-789": {
+    "flow_mode": "one_piece_flow",
+    "parallel_stations": 3
+  },
+  "Line 60": {
+    "flow_mode": "one_piece_flow",
+    "parallel_stations": null
+  },
+  "Line 61": {
+    "flow_mode": "one_piece_flow",
+    "parallel_stations": null
+  },
+  "LINE A ( 800 Ton )": {
+    "flow_mode": "one_piece_flow",
+    "parallel_stations": 5
+  },
+  "LINE APRON ASSY": {
+    "flow_mode": "one_piece_flow",
+    "parallel_stations": null
+  },
+  "LINE B ( 600 Ton )": {
+    "flow_mode": "one_piece_flow",
+    "parallel_stations": 4
+  },
+  "LINE C ( 200&250 Ton )": {
+    "flow_mode": "one_piece_flow",
+    "parallel_stations": null
+  },
+  "LINE D ( 110&300 Ton )": {
+    "flow_mode": "one_piece_flow",
+    "parallel_stations": null
+  },
+  "LWR BAR": {
+    "flow_mode": "one_piece_flow",
+    "parallel_stations": null
+  },
+  "Office PD4": {
+    "flow_mode": "one_piece_flow",
+    "parallel_stations": null
+  },
+  "Rework - PD1": {
+    "flow_mode": "one_piece_flow",
+    "parallel_stations": null
+  },
+  "SPARE PART": {
+    "flow_mode": "one_piece_flow",
+    "parallel_stations": null
+  },
+  "SUB APRON": {
+    "flow_mode": "parallel_machine",
+    "parallel_stations": 6
+  },
+  "SUB-STATIONARY": {
+    "flow_mode": "parallel_machine",
+    "parallel_stations": null
+  },
+  "test": {
+    "flow_mode": "one_piece_flow",
+    "parallel_stations": null
+  },
+  "test child": {
+    "flow_mode": "one_piece_flow",
+    "parallel_stations": null
+  },
+  "test child 2": {
+    "flow_mode": "one_piece_flow",
+    "parallel_stations": null
+  },
+  "TSRA-1": {
+    "flow_mode": "parallel_machine",
+    "parallel_stations": null
+  },
+  "TSRA-2": {
+    "flow_mode": "parallel_machine",
+    "parallel_stations": null
+  },
+  "LINE ASSY FORD UP375": {
+    "flow_mode": "one_piece_flow",
+    "parallel_stations": null
+  },
+  "LINE MAIN TSRA-1": {
+    "flow_mode": "parallel_machine",
+    "parallel_stations": null
+  },
+  "LINE ASSY TSRA": {
+    "flow_mode": "parallel_machine",
+    "parallel_stations": null
+  },
+  "LINE MAIN TSRA-2": {
+    "flow_mode": "parallel_machine",
+    "parallel_stations": null
+  },
+  "LINE SUB-STATIONARY": {
+    "flow_mode": "parallel_machine",
+    "parallel_stations": null
+  },
+  "LINE GWM": {
+    "flow_mode": "parallel_machine",
+    "parallel_stations": null
+  }
+}

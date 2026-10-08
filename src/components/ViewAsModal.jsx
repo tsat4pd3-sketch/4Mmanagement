@@ -9,10 +9,12 @@
  *     → ใช้เพื่อ "ตรวจการมองเห็น" ไม่ใช่สนามทดลองกดบันทึก
  *   - เก็บใน sessionStorage = ต่อแท็บ (เปิดแท็บใหม่ยังเป็น admin ปกติ · refresh คงโหมด)
  */
+import { orgValues } from '../utils/listOrder';
 import { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
+import { loadProductionLines } from '../utils/useProductionLines';
 import { ROLE_OPTIONS, roleLabel } from '../utils/roleMeta';
-import { toHierarchicalOptions } from '../utils/lineHierarchy';
+import LineSelect from './LineSelect';
 import { loadPmTeams, pmTeamsSync } from '../utils/pmTeams';
 
 export default function ViewAsModal({ current, onClose, onApply }) {
@@ -27,12 +29,13 @@ export default function ViewAsModal({ current, onClose, onApply }) {
   const [teamRows, setTeamRows] = useState(pmTeamsSync());
 
   useEffect(() => {
-    supabase.from('production_lines').select('id, name, section, parent_line_name')
-      .order('section').order('name')
-      .then(({ data }) => setLines(data || []));
-    supabase.from('org_nodes').select('code, name').eq('kind', 'section').eq('is_active', true)
-      .order('sort_order')
-      .then(({ data }) => setOrgSections((data || []).map(n => n.code || n.name)));
+    // ทะเบียนไลน์ผ่าน cache กลาง (25/09) — เรียงเองฝั่งจอ เพราะ loader เรียงตามชื่ออย่างเดียว
+    loadProductionLines().then(d => setLines(
+      [...(d || [])].sort((a, b) =>
+        String(a.section || '').localeCompare(String(b.section || ''))
+        || String(a.name || '').localeCompare(String(b.name || '')))));
+    supabase.from('org_nodes').select('code, name, sort_order').eq('kind', 'section').eq('is_active', true)
+      .then(({ data }) => setOrgSections(orgValues(data)));
     loadPmTeams().then(rows => setTeamRows(rows || []));
   }, []);
 
@@ -60,7 +63,7 @@ export default function ViewAsModal({ current, onClose, onApply }) {
 
   return (
     <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 10001, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-      <div style={{ background: 'var(--card)', border: '1.5px solid #a855f7', borderRadius: 14, padding: '20px 24px', maxWidth: 480, width: '100%', maxHeight: '88vh', overflowY: 'auto', boxShadow: '0 8px 40px rgba(0,0,0,0.5)' }}>
+      <div style={{ background: 'var(--card)', border: '1.5px solid #a855f7', borderRadius: 14, padding: '20px 24px', maxWidth: 480, width: '100%', maxHeight: '88vh', overflowY: 'auto', boxShadow: 'var(--shadow-lg)' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
           <div style={{ fontSize: 18, fontWeight: 900, color: 'var(--text)' }}>🎭 จำลองมุมมอง role</div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 18, cursor: 'pointer', padding: 4 }}>✕</button>
@@ -92,12 +95,10 @@ export default function ViewAsModal({ current, onClose, onApply }) {
           <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
             <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', flex: 2, minWidth: 200 }}>
               ไลน์ของหัวหน้ากลุ่ม (scope = ทั้งครอบครัวไลน์)
-              <select value={lineId} onChange={e => setLineId(e.target.value)} style={{ marginTop: 4 }}>
-                <option value="">— ยังไม่กำหนดไลน์ —</option>
-                {toHierarchicalOptions(lines).map(({ line: l, depth }) => (
-                  <option key={l.id} value={l.id}>{`${'  '.repeat(depth)}${depth ? '↳ ' : ''}${l.name}`}</option>
-                ))}
-              </select>
+              {/* picker กลาง (UI §5.1.2) — ไม่ส่ง role/sections เพราะจอนี้คือ "สวมบทบาท" ต้องเห็นทุกไลน์
+                  includeRetired: คงพฤติกรรมเดิม (เดิม map จาก lines ดิบ ไม่กรอง is_active) */}
+              <LineSelect lines={lines} value={lineId} onChange={setLineId} valueKey="id"
+                placeholder="— ยังไม่กำหนดไลน์ —" includeRetired style={{ marginTop: 4 }} />
             </label>
             <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', flex: 1, minWidth: 90 }}>
               ทีม

@@ -102,7 +102,8 @@ export { slocLabel } from './storageLoc.js';
  *   cycle,            // true = วนกลับหาตัวเอง หยุดกางต่อ
  * }
  */
-export function explodeBom(root, bomOf, { maxDepth = 10 } = {}) {
+export function explodeBom(root, bomOf, opt = {}) {
+  const { maxDepth = 10 } = opt;
   const bom = typeof bomOf === 'function' ? bomOf : () => [];
   const rootMat = norm(root);
   const rows = [];
@@ -110,17 +111,32 @@ export function explodeBom(root, bomOf, { maxDepth = 10 } = {}) {
   let truncated = false;
   let maxLevel = 0;
 
-  const walk = (mat, level, qtyPerParentUnit, path) => {
+  /* sheetFor = ตัวสลับ "ใบ" ตอนเดินลงชั้นถัดไป (ดู buildBomIndex — กันต้นไม้ระเบิด)
+     ตัวเรียกเก่าที่ส่ง bomOf ดิบมา (ไม่มี sheetFor) ⇒ อยู่ใบเดิมตลอด = พฤติกรรมเดิม */
+  const nextSheet = typeof opt.sheetFor === 'function' ? opt.sheetFor : (_m, cur) => cur;
+  /* 🔴 ownSheetOf = "ของชิ้นนี้มีใบ BOM ของตัวเองไหม" — **คนละคำถามกับ `sheetFor`**
+     `sheetFor` ตอบว่า "เดินลงชั้นต่อในใบไหน" ⇒ ใบนี้จัดลูกไว้เองก็อยู่ใบเดิม
+     ⇒ ของที่ **มีใบของตัวเอง แต่ใบนี้ก๊อปลูกมาใส่เองด้วย** จะมองไม่เห็นเลยถ้าดูแค่ `sheetFor`
+     (วัดจริง 06/10: เคสนั้นมี **94 บรรทัด / 47 MAT** · "ยืมใบ" จริงมีแค่ 9 บรรทัด / 5 ใบ)
+     ไม่ส่งมา = ไม่ตรวจ (พฤติกรรมเดิมเป๊ะ) */
+  const ownSheetOf = typeof opt.ownSheetOf === 'function' ? opt.ownSheetOf : () => null;
+
+  const walk = (mat, sheet, level, qtyPerParentUnit, path) => {
     if (level > maxDepth) { truncated = true; return; }
     // เรียงตามใบ BOM ของตัวแม่ (Item 0010/0020…) · ยังไม่ตั้งเลข = ตกท้ายเรียงตาม mat (ลำดับคงที่)
-    const kids = [...(bom(mat) || [])].sort(byItemNo);
+    const kids = [...(bom(mat, sheet) || [])].sort(byItemNo);
     kids.forEach(k => {
       const m = norm(k?.mat_no);
       if (!m) return;
       const per = Number(k.qty_per_unit) || 0;
       const cum = qtyPerParentUnit * per;
       const isCycle = path.includes(m);
-      const kidsOf = isCycle ? [] : (bom(m) || []);
+      const kidSheet = nextSheet(m, sheet);
+      const kidsOf = isCycle ? [] : (bom(m, kidSheet) || []);
+      /* ใบของตัวเอง — นับเฉพาะใบที่ **มีบรรทัดจริง** (ใบเปล่า = พากดไปหน้าว่าง ไม่ช่วยใคร)
+         และต้องไม่ใช่ใบที่กำลังเปิดอยู่ (ไม่งั้นปุ่มพากลับที่เดิม) */
+      const ownId = ownSheetOf(m) || null;
+      const ownHere = ownId && ownId !== sheet && (bom(m, ownId) || []).length > 0 ? ownId : null;
       const row = {
         level, tag: levelTag(level),
         // 🔑 id ของบรรทัด bom_items จริง — ต้องมี ไม่งั้นลบ "แถวนับซ้ำ" จากจอต้นไม้ไม่ได้
@@ -138,6 +154,20 @@ export function explodeBom(root, bomOf, { maxDepth = 10 } = {}) {
         parent: path[path.length - 1] || null,
         path: [...path, m],
         hasChildren: kidsOf.length > 0,
+        /* 📄 ใบที่ "บรรทัดนี้" ถูกอ่านมา vs ใบที่ "ลูกของมัน" จะไปอ่านต่อ
+           ต่างกัน = ของชิ้นนี้มีใบของตัวเอง แล้วต้นไม้ไปยืมมากางให้ (ไม่ได้กรอกซ้ำในใบนี้)
+           user 06/10: *"มันควรจะทำจากเบอร์ 1 ทีเดียว แต่กดดู component เบอร์ 200 แล้วแตกย่อยลงไป"*
+           → ระบบทำแบบนั้นอยู่แล้ว แต่**จอไม่เคยบอก** คนเลยคิดว่าต้องสร้าง 2 ใบแยกกัน */
+        sheet,
+        childSheet: kidsOf.length ? kidSheet : null,
+        fromOtherSheet: kidsOf.length > 0 && kidSheet !== sheet,
+        /* 🔑 กดเข้าใบของตัวเองได้ไหม — ตัดสินจาก "มีใบของตัวเองที่ไม่ว่าง" เท่านั้น
+           **ห้ามตัดสินจาก `fromOtherSheet`** (ใบที่ก๊อปลูกมาใส่เอง = ปุ่มหาย ทั้งที่เป็นเคสที่
+           ต้องกดเข้าไปเทียบที่สุด — บั๊กจริง ใบ 10105772 → 20070036 กดไม่ได้เลย 06/10) */
+        ownSheet: ownHere,
+        /* ⚠️ ใบนี้จัดลูกไว้เอง **ทั้งที่ของชิ้นนี้มีใบของตัวเองด้วย** = นิยาม 2 ที่ อาจขัดกัน
+           ชี้ให้เห็นอย่างเดียว — จะยุบใบไหนเป็นการตัดสินใจของ PE/Planning (ห้ามแก้ให้เอง) */
+        sheetConflict: !!ownHere && kidsOf.length > 0 && kidSheet === sheet,
         flatDupe: false,
         isDupeRow: false,
         cycle: isCycle,
@@ -145,11 +175,11 @@ export function explodeBom(root, bomOf, { maxDepth = 10 } = {}) {
       rows.push(row);
       if (level > maxLevel) maxLevel = level;
       if (isCycle) { cycles.push([...path, m]); return; }
-      walk(m, level + 1, cum, [...path, m]);
+      walk(m, kidSheet, level + 1, cum, [...path, m]);
     });
   };
 
-  walk(rootMat, 1, 1, [rootMat]);
+  walk(rootMat, nextSheet(rootMat, undefined), 1, 1, [rootMat]);
 
   /* ── ตรวจ "แบนมาจากหลายชั้น" ────────────────────────────────────────────────
      mat ที่โผล่ทั้งชั้น 1 และชั้นลึกกว่าในต้นเดียวกัน = ของก้อนเดียวถูกนับ 2 รอบ
@@ -173,11 +203,38 @@ export function explodeBom(root, bomOf, { maxDepth = 10 } = {}) {
       part_name: at1?.part_name || deeper[0]?.part_name || '',
       qtyAtLevel1: at1?.qty ?? 0,
       deepestLevel: Math.max(...deeper.map(d => d.level)),
-      via: deeper.map(d => d.parent).filter(Boolean),
+      // 🔁 ตัวแม่ตัวเดียวอาจโผล่หลายครั้งในต้นไม้ — โชว์ชื่อซ้ำ 60 รอบ = อ่านไม่ออก (21/09)
+      via: [...new Set(deeper.map(d => d.parent).filter(Boolean))],
     };
   });
 
   return { rows, flatDupes, cycles, truncated, maxLevel };
+}
+
+/* ═══ 🔎 "ของชิ้นเดียวกันถูกนิยามไว้ 2 ใบ — ตรงกันไหม" ═══════════════════════════
+   เคสจริง 06/10 (user ถาม "ลองดูใบ 10105772 ว่ากดเข้าใบ 20070036 ได้จริงมั้ย"):
+     ใบ FG 10105772 จัดลูกของ 20070036 ไว้เอง 12 บรรทัด · ใบของ 20070036 เองก็มี 11 บรรทัด
+     **ไม่ตรงกัน** — ใบ FG มี 30054973/30054974 ที่ใบ sub ไม่มี · ใบ sub มี 20066630 ที่ใบ FG ไม่มี
+   ⇒ ตัวเลขที่ออกจาก 2 ใบนี้ต่างกัน แล้วไม่มีใครรู้ เพราะจอไม่เคยเทียบให้
+
+   เทียบ **ชุดลูกตรงชั้นเดียว** (ไม่กางลึก) — ตอบว่า "ต่างกันกี่รายการ" พอให้คนรู้ว่าต้องไปดู
+   ⚠️ ชี้ให้เห็นอย่างเดียว **ห้ามสรุปว่าใบไหนถูก** (ของบางตัวใช้ต่างกันตามรุ่น/ลูกค้าได้จริง)   */
+
+/** @returns {{ onlyHere: string[], onlyOwn: string[], same: number, differs: number }} */
+export function sheetChildDiff(mat, bomOf, hereSheet, ownSheet) {
+  const bom = typeof bomOf === 'function' ? bomOf : () => [];
+  const setOf = (sheetId) => new Set(
+    (bom(mat, sheetId) || []).map(r => key(r?.mat_no)).filter(Boolean)
+  );
+  const here = setOf(hereSheet);
+  const own  = setOf(ownSheet);
+  const onlyHere = [...here].filter(m => !own.has(m));
+  const onlyOwn  = [...own].filter(m => !here.has(m));
+  return {
+    onlyHere, onlyOwn,
+    same: [...here].filter(m => own.has(m)).length,
+    differs: onlyHere.length + onlyOwn.length,
+  };
 }
 
 /**
@@ -350,14 +407,60 @@ export function flatRequirements(root, bomOf) {
  */
 export function buildBomIndex(rows = [], matOfProduct = {}) {
   const parentOf = (r) => norm(r?.parent_mat) || norm(matOfProduct[r?.product_id]);
-  const tree = {};
+
+  /* 🔴🔴 `parent_mat` ต้องมีขอบเขต "ใบเดียวกัน" เสมอ — ไม่งั้นต้นไม้ระเบิด (บั๊กจริง 2026-09-21)
+     `parent_mat` เก็บเป็น **mat** ไม่ใช่ id ⇒ ค่าเดียวกันไปโผล่ในใบ BOM ของ FG หลายตัวได้
+     (วัดจริง: `20058693` ถูกตั้งเป็นตัวแม่ใน **6 ใบ** · `20058626` ใน 7 ใบ)
+     ถ้าดึงลูกด้วย mat เฉยๆ = ทุกครั้งที่เจอ mat นั้น จะกางลูกของ *ทุกใบ* มารวมกัน
+     ⇒ **10101158 (22 พาร์ท) กางออกมา 1,276 แถว ลึก 5 ชั้น** + แถบ "นับซ้ำ" พ่นชื่อแม่ซ้ำ 60 รอบ
+     (user ส่งจอมาให้ดู 21/09 — จอใช้งานไม่ได้ และปุ่มลบแถวนับซ้ำกลายเป็นของอันตราย)
+
+     กติกาที่ถูก (เทียบ SAP: BOM 1 ใบ = ของตัวแม่ตัวเดียว):
+       ลูกของ `mat` ในใบ `sheetId` =
+         ① บรรทัดใน **ใบเดียวกัน** ที่ตั้ง `parent_mat = mat` (คนจัดชั้นเองในใบนี้) — ถ้ามี ใช้ชุดนี้
+         ② ไม่มี → ใบ BOM **ของ `mat` เอง** (บรรทัดชั้น 1 ของ product ตัวนั้น)
+     เลือกอย่างใดอย่างหนึ่งเสมอ **ห้ามรวม 2 ชุด** (รวม = นับซ้ำ) */
+  const byParentMat = {};   // mat → บรรทัดที่ตั้ง parent_mat = mat (ทุกใบ)
+  const bySheetMat  = {};   // mat ของ product → บรรทัดชั้น 1 ในใบของ product นั้น
+  const productIdOf = {};   // mat → product_id ของใบ BOM ที่เป็นของ mat นั้น
+  Object.entries(matOfProduct || {}).forEach(([pid, m]) => { if (norm(m)) productIdOf[norm(m)] = pid; });
+
   const orphans = [];
   (rows || []).forEach(r => {
-    const p = parentOf(r);
-    if (!p) { orphans.push(r); return; }
-    (tree[p] = tree[p] || []).push(r);
+    const pm = norm(r?.parent_mat);
+    if (pm) { (byParentMat[pm] = byParentMat[pm] || []).push(r); return; }
+    const own = norm(matOfProduct[r?.product_id]);
+    if (!own) { orphans.push(r); return; }
+    (bySheetMat[own] = bySheetMat[own] || []).push(r);
   });
-  return { bomOf: (mat) => tree[norm(mat)] || [], parentOf, orphans };
+
+  /** ลูกชั้นถัดไปของ mat · sheetId = ใบที่กำลังไล่อยู่ (ไม่ส่ง = ใบของ mat เอง) */
+  const bomOf = (mat, sheetId) => {
+    const m = norm(mat);
+    if (!m) return [];
+    const pm = byParentMat[m] || [];
+    const own = bySheetMat[m] || [];
+    /* ไม่ระบุใบ (ตัวเช็ควนลูป/เช็ค pattern การไหล) — ใบของ mat เองก่อน ไม่มีค่อยเอาทุกใบ
+       เผื่อไว้กว้างโดยตั้งใจ: ตัวเช็คพวกนี้ "มองกว้างเกิน" ปลอดภัยกว่า "มองไม่เห็น" */
+    if (sheetId === undefined) return own.length ? own : pm;
+    const same = pm.filter(r => r.product_id === sheetId);
+    return same.length ? same : own;
+  };
+  /** ใบที่ต้องใช้เมื่อเดินลงไปใน mat นี้ต่อ — **ต้องตัดสินแบบเดียวกับ `bomOf` เป๊ะ**
+   *  ① ใบปัจจุบันจัดชั้นลูกของ mat ไว้เอง → อยู่ใบเดิม (เคารพการจัดชั้นของคนในใบนี้)
+   *  ② ไม่ได้จัด → สลับไปใบ BOM ของ mat เอง (ถ้ามี) · ไม่มีก็อยู่ใบเดิม
+   *  ⚠️ ถ้า 2 ตัวนี้ตัดสินคนละแบบ จะได้ "ลูกจากใบหนึ่ง แต่เดินต่อในอีกใบ" = ต้นไม้เพี้ยนเงียบ */
+  const sheetFor = (mat, curSheet) => {
+    const m = norm(mat);
+    const staysHere = (byParentMat[m] || []).some(r => r.product_id === curSheet);
+    return staysHere ? curSheet : (productIdOf[m] ?? curSheet);
+  };
+
+  /** ใบ BOM "ของ mat เอง" (ไม่สนว่ากำลังเปิดใบไหน) — ใช้ตอบว่ากดเข้าไปดูได้ไหม
+   *  ⚠️ **ห้ามเอาไปใช้แทน `sheetFor`** (ตัวนั้นตอบว่าเดินลงชั้นต่อในใบไหน คนละคำถาม) */
+  const ownSheetOf = (mat) => productIdOf[norm(mat)] ?? null;
+
+  return { bomOf, parentOf, orphans, sheetFor, productIdOf, ownSheetOf };
 }
 
 /** ย้ายบรรทัดไปเป็นลูกของ mat อื่น — คืน patch ที่จะเขียนลง DB (null = ย้ายไม่ได้ + เหตุผล)
@@ -382,4 +485,48 @@ export function moveBomLine(row, toMat, bomOf) {
     }
   }
   return { ok: true, patch: { parent_mat: to } };
+}
+
+/* ═══ เดินขึ้น BOM หา "ตัวขาย" (2026-10-01 · user: งานต่างประเทศ ไลน์ผลิตเป็นเบอร์ 2xx
+   เบอร์ 1xx ที่ขายจริงมี packing เป็นกระบวนการสุดท้าย) ═══════════════════════════════
+   เคสจริง: EDI `RB3B E111E50 AB` เจอแต่ 2xx (P/N ติดอยู่ที่ตัวก่อนแพ็ค) ส่วนตัวขาย
+   `10102017 …-FMCSA` P/N ว่าง ⇒ ตัวนำเข้าไม่เห็น · แต่ BOM ผูกไว้แล้ว: 10102017 → 20067541 (PACK) → 20067543
+   ⇒ เดินขึ้นจากลูกไปหาบรรพบุรุษที่เป็นตัวขาย ใช้เป็น "ข้อเสนอ" ให้คนเลือก (ไม่ตัดสินแทน)
+   ตัวแม่ของแถวตัดสินด้วย `buildBomIndex().parentOf` เท่านั้น (กฎ: ห้ามอ่าน product_id เอง) */
+
+/** child mat → Set(parent mat) จากแถว bom_items ที่ active */
+export function buildParentIndex(rows = [], matOfProduct = {}) {
+  const { parentOf } = buildBomIndex(rows, matOfProduct);
+  const up = new Map();
+  (rows || []).forEach(r => {
+    if (r?.is_active === false) return;
+    const child = norm(r?.mat_no), parent = parentOf(r);
+    if (!child || !parent || child === parent) return;
+    (up.get(child) || up.set(child, new Set()).get(child)).add(parent);
+  });
+  return up;
+}
+
+/**
+ * บรรพบุรุษที่ผ่านเงื่อนไข `isTarget` (เช่น isFgMat) ที่ใกล้ที่สุดในแต่ละสาย
+ * @returns {Array<{ mat: string, via: string[] }>} via = ทางเดินจาก mat ขึ้นไป (ไม่รวมตัวมันเอง)
+ */
+export function targetAncestorsOf(mat, up, isTarget, maxDepth = 6) {
+  const out = new Map();
+  const seen = new Set([norm(mat)]);
+  let frontier = [{ m: norm(mat), via: [] }];
+  for (let d = 0; d < maxDepth && frontier.length; d++) {
+    const next = [];
+    frontier.forEach(({ m, via }) => {
+      (up?.get(m) || []).forEach(p => {
+        if (seen.has(p)) return;            // กันวนลูป
+        seen.add(p);
+        const path = [...via, p];
+        if (isTarget(p)) { if (!out.has(p)) out.set(p, path); }
+        else next.push({ m: p, via: path });
+      });
+    });
+    frontier = next;
+  }
+  return [...out.entries()].map(([m, via]) => ({ mat: m, via }));
 }

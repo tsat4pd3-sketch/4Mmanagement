@@ -1,6 +1,7 @@
 import { useState, useEffect, useContext, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase, supabaseDR } from '../supabaseClient'
+import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App'
 import { can } from '../utils/permissions'
 import { toast } from '../components/Toast'
@@ -10,6 +11,8 @@ import { computePlanForecast } from '../lib/pmPredictive'
 import { loadCompanyCalendar, countWorkingDaysInMonth } from '../utils/companyCalendar'
 import { sumUsage, dailyRate } from '../utils/pmUsage'
 import PageHeader from '../components/PageHeader'
+import Page from '../components/Page'
+import FilterBar from '../components/FilterBar'
 import useTabParam from '../utils/useTabParam'
 import PmUsageBoard from '../components/PmUsageBoard'
 
@@ -43,7 +46,12 @@ export default function PmForecast() {
   const [onlyWindow, setOnlyWindow] = useState(false)
   const [daily, setDaily] = useState([])      // ยอดผลิตรายไลน์รายวัน (RPC pm_usage_daily)
   const [lineObjs, setLineObjs] = useState([])
-  const [tab, setTab] = useTabParam(['due', 'usage'], 'due')
+  /* ยอดผลิตโหลดไม่ได้ = ยอดสะสม/อัตรา/buffer ทั้งหน้าเป็น 0 ⇒ ต้องเขียนบนจอ ห้ามแค่ console.warn (QC 05/10) */
+  const [prodErr, setProdErr] = useState('')
+  /* ⚠️ param `fc` ไม่ใช่ `tab` — หน้านี้ถูก embed ใน /pm (PmHub ใช้ `?tab=forecast` อยู่แล้ว)
+     เดิมใช้ `?tab=` ⇒ กดแท็บ "ยอดผลิตสะสม" แล้ว URL กลายเป็น ?tab=usage ที่ PmHub ไม่รู้จัก
+     ⇒ เด้งกลับแท็บแรกของ /pm (ตรวจอุปกรณ์) · UI-CONVENTIONS §6.8 ข้อ 2.4 (แก้ 2026-09-23) */
+  const [tab, setTab] = useTabParam(['due', 'usage'], 'due', 'fc')
   const todayStr = todayBangkok()
 
   const load = async () => {
@@ -52,7 +60,7 @@ export default function PmForecast() {
     setLoading(true)
     try {
       const [{ data: lines }, { data: plans }] = await Promise.all([
-        supabase.from('production_lines').select('id, name, parent_line_name, section'),
+        loadLinesRes(),
         supabaseDR.from('pm_plans').select('id, checklist_id, plan_type, usage_metric, usage_threshold, usage_source_line, interval_days, next_due_date, last_done_at, pm_duration_hours, lead_time_days, buffer_margin_pct, is_active').eq('is_active', true),
       ])
       const lineArr = lines || []
@@ -70,8 +78,8 @@ export default function PmForecast() {
          ได้ข้อมูลจริงแค่ ~7.6% ⇒ ยอดสะสม/อัตราต่อวัน/buffer ทั้งหน้าต่ำกว่าความจริงหลายเท่า
          (กฎเหล็กข้อ 5 ใน CLAUDE.md) · แก้ด้วยการรวมยอดฝั่ง server: (ไลน์ × วัน) = 575 แถว
          ⚠️ ห้ามกลับไปดึงใบดิบอีก — เพิ่ม limit ก็ยังชนอยู่ดีเมื่อข้อมูลโต */
-      const { data: prodDaily, error: prodErr } = await supabaseDR.rpc('pm_usage_daily', { p_days: 120 })
-      if (prodErr) console.warn('[pm-forecast] โหลดยอดผลิตไม่สำเร็จ:', prodErr.message)
+      const { data: prodDaily, error: eProd } = await supabaseDR.rpc('pm_usage_daily', { p_days: 120 })
+      setProdErr(eProd ? eProd.message : '')
       const prodArr = prodDaily || []
       setDaily(prodArr)
       setLineObjs(lineArr)
@@ -143,7 +151,7 @@ export default function PmForecast() {
   const inp = { width: 64, padding: '4px 6px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', fontSize: 12, textAlign: 'center' }
 
   return (
-    <div style={{ padding: 'clamp(12px,3vw,24px)', display: 'flex', flexDirection: 'column', gap: 14 }}>
+    <Page style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       {/* หัวเพจมาตรฐาน + แท็บผูก URL (UI-CONVENTIONS §6.8 — ห้ามวาดหัวเรื่อง/แถบแท็บเอง) */}
       <PageHeader
         title="PM ล่วงหน้า (Planner)" icon="🔧"
@@ -155,15 +163,21 @@ export default function PmForecast() {
         actions={<button onClick={load} style={{ background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 8, padding: '6px 12px', fontSize: 12, cursor: 'pointer' }}>🔄 รีเฟรช</button>}
       />
 
+      {prodErr && (
+        <div role="alert" style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #ef4444', color: '#ef4444', fontSize: 12.5, fontWeight: 700 }}>
+          ⚠️ โหลดยอดผลิตย้อนหลังไม่สำเร็จ ({prodErr}) — ยอดสะสม / อัตราต่อวัน / buffer ด้านล่างไม่ใช่ค่าจริง (ต่ำกว่าจริง) กด 🔄 รีเฟรช
+        </div>
+      )}
       {tab === 'usage' ? (
         <PmUsageBoard daily={daily} lines={lineObjs} plans={rows} todayStr={todayStr} loading={loading} />
       ) : (<>
-      <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center' }}>
+      <FilterBar>
         <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--text2)', cursor: 'pointer' }}>
           <input type="checkbox" checked={onlyWindow} onChange={e => setOnlyWindow(e.target.checked)} />เฉพาะที่เข้า window แล้ว ({windowCount})
         </label>
-        {totalBuffer > 0 && <span style={{ fontSize: 13, color: 'var(--accent2)', fontWeight: 700 }}>Σ buffer ที่ต้องเตรียม ≈ {totalBuffer.toLocaleString()} ชิ้น</span>}
-      </div>
+        <span className="spacer" />
+        {totalBuffer > 0 && <span className="filter-count" style={{ color: 'var(--accent2)', fontWeight: 700 }}>Σ buffer ที่ต้องเตรียม ≈ {totalBuffer.toLocaleString()} ชิ้น</span>}
+      </FilterBar>
 
       {loading ? <div style={{ color: 'var(--muted)', padding: 40, textAlign: 'center' }}>กำลังคำนวณ...</div>
         : !shown.length ? <div style={{ color: 'var(--muted)', padding: 40, textAlign: 'center' }}>ยังไม่มีแผน PM ที่คำนวณได้ (ต้องตั้ง usage_threshold หรือรอบเวลา + มียอดผลิต/forecast)</div>
@@ -185,7 +199,7 @@ export default function PmForecast() {
                       <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>{r.isUsage ? `📊 ${p.usage_metric || 'shot'}` : '🗓 เวลา'}</td>
                       <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
                         {r.isUsage
-                          ? <span style={{ fontFamily: 'monospace' }}>{Number(r.accumUsage).toLocaleString()}/{Number(p.usage_threshold).toLocaleString()}<div style={{ fontSize: 10.5, color: 'var(--muted)' }}>~{Math.round(r.dailyRate).toLocaleString()}/วัน ({r.rateSource === 'forecast' ? 'forecast' : 'จริง'})</div></span>
+                          ? <span style={{ fontFamily: 'monospace' }}>{Number(r.accumUsage).toLocaleString()}/{Number(p.usage_threshold).toLocaleString()}<div style={{ fontSize: 11, color: 'var(--muted)' }}>~{Math.round(r.dailyRate).toLocaleString()}/วัน ({r.rateSource === 'forecast' ? 'forecast' : 'จริง'})</div></span>
                           : <span style={{ color: 'var(--muted)' }}>รอบ {p.interval_days} วัน</span>}
                       </td>
                       <td style={{ padding: '8px 10px', fontWeight: 700, color: r.overdue ? '#ef4444' : r.inWindow ? '#f59a3f' : 'var(--text)', whiteSpace: 'nowrap' }}>{fmtThai(r.projected)}</td>
@@ -208,6 +222,6 @@ export default function PmForecast() {
         buffer = อัตรา/วัน × (ระยะ PM ÷ 16 ชม.) × (1 + เผื่อ%) · แถวส้ม = เข้า window (ใกล้ถึงภายใน lead time) · แถวแดง = เลยกำหนด
       </p>
       </>)}
-    </div>
+    </Page>
   )
 }

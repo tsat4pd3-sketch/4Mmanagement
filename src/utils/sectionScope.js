@@ -1,4 +1,5 @@
 import { getLineFamilyNames } from './lineHierarchy.js';
+import { orgNodeCompare } from './listOrder.js';
 // ─── Multi-section scoping ──────────────────────────────────────────────────
 // ขอบเขตส่วนงานของ user: profiles.sections (text[]) = จำกัดหลายส่วนงานได้
 // (เช่น manager แผนกหนึ่งเห็นเฉพาะ PD1+PD2+QA) — ว่าง/NULL = ไม่จำกัด
@@ -21,14 +22,54 @@ const norm = (s) => (s || '').toString().trim().toLowerCase();
 /** role คุณภาพทั้งโรงงานที่ไม่ผูกกับสายผลิตใด — ไม่ถูกจำกัดตาม section */
 const FACTORY_WIDE_ROLES = ['qa'];
 
-/** คืน array ส่วนงานที่ user ถูกจำกัด — [] = ไม่จำกัด เห็นทุกส่วนงาน */
-export function effectiveSections(role, sections, section) {
-  if (!role || role === 'admin') return [];
-  if (FACTORY_WIDE_ROLES.includes(role)) return [];
+/**
+ * คืน array ส่วนงานที่ user ถูกจำกัด — **`[]` = ไม่จำกัด เห็นทุกส่วนงาน**
+ *
+ * ── 🔭 ตั้งแต่ 25/09 `profiles.scope_depth` เป็นตัวตัดสิน ไม่ใช่การเดาจาก role/ช่องว่าง ──
+ * (docs/ORG-AXES-DECISION.md §5.2 · docs/ACCESS-CONTROL-STANDARDS.md §2 — role-centric RBAC-A)
+ *
+ * พิสูจน์ก่อนสลับแล้วว่า**ผลลัพธ์เท่าของเดิมเป๊ะทั้ง 97 บัญชี** (backfill ถูกเขียนให้ล้อ
+ * เงื่อนไขชุดเก่าทีละข้อ) — การสลับนี้จึงเปลี่ยน *กลไก* ไม่ใช่ *พฤติกรรม*
+ *
+ * 🔴 **`role === 'admin'` ยัง hardcode ไว้เป็นตาข่ายกันตาย** — หลักเดียวกับ `hasPermission()`:
+ *    admin ต้องไม่มีทางล็อกตัวเองออกจากระบบด้วยการตั้งค่าผิด
+ * 🔴 **role อื่น (qa/mtn/engineer) ไม่ hardcode อีกต่อไป** — แถวพวกนั้นถูก backfill เป็น `all`
+ *    ไว้แล้ว ⇒ พฤติกรรมเท่าเดิม แต่ตอนนี้ admin **แคบลงได้จริงจากจอ** (เดิมตั้งแล้วไม่มีผล = no-op เงียบ)
+ *
+ * ⚠️ `scopeDepth` เป็น `undefined` (ยังโหลดไม่เสร็จ / แถวเก่าก่อน migration) → **ถอยไปใช้ตรรกะเดิม**
+ *    ห้ามตีความว่า "แคบสุด" เพราะจะทำให้จอว่างทั้งระบบระหว่างโหลด
+ *
+ * ⚠️ **ขอบเขตแคบแต่ไม่มี anchor (ไม่ได้ตั้ง sections เลย) ยังคืน `[]` = ไม่จำกัด**
+ *    เพราะ "จำกัดให้อยู่ในหน่วยของตัวเอง" ทำไม่ได้ถ้าไม่เคยบอกว่าหน่วยไหน
+ *    — **ไม่ปิดเงียบ** แต่ให้จอทะเบียนผู้ใช้ฟ้องผ่าน `scopeIneffective()` ให้คนไปตั้ง
+ */
+export function effectiveSections(role, sections, section, scopeDepth) {
+  if (!role || role === 'admin') return [];            // ตาข่ายกันตาย — ห้ามแตะ
   const arr = Array.isArray(sections) ? sections.filter(Boolean) : [];
+  if (scopeDepth === undefined || scopeDepth === null) {
+    // ── ตรรกะเดิมก่อนมี scope_depth (ใช้ตอนยังโหลดไม่เสร็จเท่านั้น) ──
+    if (FACTORY_WIDE_ROLES.includes(role)) return [];
+    if (arr.length) return arr;
+    if (role === 'supervisor' && section) return [section];
+    return [];
+  }
+  if (scopeDepth === 'all') return [];                 // ตั้งไว้ชัดเจนว่าเห็นทั้งโรงงาน
   if (arr.length) return arr;
-  if (role === 'supervisor' && section) return [section];
-  return [];
+  if (section) return [section];
+  return [];                                           // ไม่มี anchor → ยังจำกัดไม่ได้ (ดู scopeIneffective)
+}
+
+/**
+ * 🚩 "ตั้งขอบเขตแคบไว้ แต่ไม่มีผลจริง" — แคบกว่า `all` แต่ไม่มีหน่วยให้ยึด
+ * ⇒ บัญชีนี้ยังเห็นทั้งโรงงานอยู่ ทั้งที่จอแสดงว่าถูกจำกัด
+ * **ต้องเอาไปโชว์ในคิวทบทวนสิทธิ์ ห้ามปล่อยเงียบ** (ISO 27001 A.5.18)
+ */
+export function scopeIneffective(p) {
+  if (!p || p.role === 'admin') return false;
+  const d = p.scope_depth;
+  if (!d || d === 'all') return false;
+  const hasSections = Array.isArray(p.sections) && p.sections.filter(Boolean).length > 0;
+  return !hasSections && !String(p.section || '').trim();
 }
 
 /** เช็คว่าค่า section หนึ่งอยู่ในขอบเขตไหม — scope ว่าง = ผ่านเสมอ */
@@ -51,7 +92,15 @@ export const MAINTENANCE_ROLES = ['mtn', 'engineer'];
  *    ห้ามคืน [] เพราะ `.in('line_name', [])` = ไม่เห็นอะไรเลย
  */
 export function scopedLineNames({ role, lineId, sections = [], lines = [] }) {
-  if (role === 'admin' || MAINTENANCE_ROLES.includes(role)) return null;
+  if (role === 'admin') return null;                       // ตาข่ายกันตาย (เหมือน effectiveSections)
+  /* 🔭 25/09: **ถอด hardcode `MAINTENANCE_ROLES` ออกแล้ว** — ไม่ต้องรับ scopeDepth เพิ่ม เพราะ
+     การตัดสินถูกยุบไว้ใน `sections` ที่ `effectiveSections()` คำนวณมาให้แล้ว (จุดเดียวของระบบ)
+       · ช่าง/วิศวกรที่ `scope_depth='all'` ⇒ effectiveSections คืน [] ⇒ ตกมาที่ `return null` = ทั้งโรงงาน
+       · ถ้าวันหน้า admin ตั้งขอบเขตให้ช่างแคบลง ⇒ sections มีค่า ⇒ **มีผลจริง**
+     เดิมบรรทัดนี้คืน null ก่อนดู sections ⇒ ตั้งขอบเขตให้ช่างจากจอแล้ว **ไม่มีผลเงียบๆ** (no-op)
+     ✅ พิสูจน์ก่อนถอด (25/09): ช่าง/วิศวกรทั้ง 16 บัญชี **ไม่มี `sections` เลยสักใบ**
+        ⇒ ผลลัพธ์วันนี้เท่าเดิมเป๊ะ · คำสั่ง user 2026-08-19 ("หน่วยงานช่างเห็นทั้งโรงงาน")
+        ยังเป็นจริง แต่มาจาก **ข้อมูลในฐาน** แทนการ hardcode ⇒ แก้ได้จากจอโดยไม่ต้องแก้โค้ด */
   if (!lines.length) return null;
   if (role === 'leader' && lineId) {
     const me = lines.find(l => String(l.id) === String(lineId));
@@ -94,7 +143,8 @@ export const ORPHAN_SECTION_LABEL = '🏛️ ขึ้นตรงฝ่าย (
 export const sectionValueForSave = (v) => (!v || v === ORPHAN_SECTION ? null : v);
 
 /** แผนกในผังที่ขึ้นตรงฝ่าย (parent_id ว่าง) */
-export const orphanDepts = (deptNodes = []) => deptNodes.filter(d => !d.parent_id);
+// ลำดับ = ตามผัง (sort_order → ชื่อ · listOrder.js) ไม่ขึ้นกับว่าหน้าที่เรียก query มาเรียงแบบไหน (2026-10-01)
+export const orphanDepts = (deptNodes = []) => deptNodes.filter(d => !d.parent_id).sort(orgNodeCompare);
 
 /**
  * ตัวเลือกแผนกตามค่าที่เลือกในช่อง Section (cascade — UI-CONVENTIONS §5.3)
@@ -103,7 +153,7 @@ export const orphanDepts = (deptNodes = []) => deptNodes.filter(d => !d.parent_i
 export function deptOptionsFor(sectionValue, sectionNodes = [], deptNodes = []) {
   if (sectionValue === ORPHAN_SECTION) return orphanDepts(deptNodes);
   const node = sectionNodes.find(s => (s.code || s.name) === sectionValue);
-  return node ? deptNodes.filter(d => d.parent_id === node.id) : [];
+  return node ? deptNodes.filter(d => d.parent_id === node.id).sort(orgNodeCompare) : [];
 }
 
 /** node ของแผนกที่เลือก (ใช้ cascade ต่อไปยัง Group) — จำกัดอยู่ในตัวเลือกที่ถูกต้องเสมอ */
@@ -111,6 +161,28 @@ export function deptNodeFor(sectionValue, department, sectionNodes = [], deptNod
   return deptOptionsFor(sectionValue, sectionNodes, deptNodes)
     .find(d => (d.code || d.name) === department) || null;
 }
+
+/**
+ * 🧭 **แกนสังกัด — โหนดในผังที่ควรเก็บลง `org_node_id`** (2026-09-23 · docs/ORG-AXES-DECISION.md §5.1)
+ *
+ * ทุกจุดที่บันทึก "คนนี้สังกัดไหน" ต้องเรียกตัวนี้ **ห้ามประกอบ id เองในหน้า**
+ * ละเอียดก่อนหยาบ: แผนกที่เลือก → ส่วนงานที่เลือก → null
+ *
+ * ทำไมต้องเก็บ id ทั้งที่มีคอลัมน์ข้อความอยู่แล้ว: ชื่อแผนกซ้ำกันได้จริง (`ทั่วไป` ใต้ PD2 และ PD4)
+ * ⇒ ข้อความตัวเดียวชี้ได้ 2 หน่วย · และย้ายคน 1 คนต้องแก้ข้อความให้ตรงกันหลายคอลัมน์
+ * คอลัมน์ข้อความยังเขียนเหมือนเดิมทุกตัว (เป็น "สำเนาไว้โชว์") — หน้าเก่าจึงไม่กระทบ
+ *
+ * @returns {string|null} org_nodes.id
+ */
+export function orgNodeIdFor(sectionValue, department, sectionNodes = [], deptNodes = []) {
+  const dept = deptNodeFor(sectionValue, department, sectionNodes, deptNodes);
+  if (dept?.id) return dept.id;
+  if (!sectionValue || sectionValue === ORPHAN_SECTION) return null;
+  return sectionNodes.find(s => (s.code || s.name) === sectionValue)?.id || null;
+}
+
+/** ที่มาของ org_node_id — 'manual' = คนเลือกเองจากฟอร์ม (เชื่อได้) ดูคอมเมนต์คอลัมน์ใน DB */
+export const ORG_SRC_MANUAL = 'manual';
 
 /**
  * ค่าที่ควรโชว์ในช่อง Section ของพนักงานที่มีอยู่แล้ว

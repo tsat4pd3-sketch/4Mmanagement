@@ -161,7 +161,7 @@ export default function MachineFloorMap({
                 {editable && (
                   <div onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onMarkerRemove?.(p.id) }}
                     title="เอาออกจากผัง"
-                    style={{ position: 'absolute', top: -6, right: -6, width: 16, height: 16, borderRadius: '50%', background: '#e05c4a', color: '#fff', fontSize: 11, lineHeight: '16px', textAlign: 'center', cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,0,0,0.5)' }}>✕</div>
+                    style={{ position: 'absolute', top: -6, right: -6, width: 16, height: 16, borderRadius: '50%', background: '#e05c4a', color: '#fff', fontSize: 11, lineHeight: '16px', textAlign: 'center', cursor: 'pointer', boxShadow: 'var(--shadow-float)' }}>✕</div>
                 )}
 
                 {/* name pill(s) underneath the circle — ซ่อนเมื่อผังแน่น ยกเว้นถูกเลือก/ลาก/จุดที่ caller บังคับ (เช่น PM เกินกำหนด) */}

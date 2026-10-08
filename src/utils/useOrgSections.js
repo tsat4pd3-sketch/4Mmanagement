@@ -1,5 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
+import { loadProductionLines } from './useProductionLines';
+import { orgValues, naturalCompare, orgKey } from './listOrder';
 
 /* ══ useOrgSections / useOrgDepts — ตัวเลือก "ส่วนงาน"/"แผนก" ยึด org_nodes เสมอ ══════════════
    (ย้ายออกมาจาก Report.jsx เป็น shared util — 2026-09 เมื่อหน้าที่สองต้องใช้ตัวเดียวกัน)
@@ -10,19 +12,19 @@ import { supabase } from '../supabaseClient';
    · กรองด้วย scope (`inSectionScope`) ทับเสมอที่ฝั่งเรียกใช้ ไม่ใช่หน้าที่ hook นี้
    ═════════════════════════════════════════════════════════════════════════════════════════ */
 
-/** ลิสต์ "ส่วนงาน" ทั้งผัง (org_nodes kind='section', active) — เรียงตามชื่อ */
+/** ลิสต์ "ส่วนงาน" ทั้งผัง (org_nodes kind='section', active) — เรียงตาม sort_order ในผัง → ชื่อ (`listOrder.js`) */
 export function useOrgSections() {
   const [orgSections, setOrgSections] = useState([]);
   useEffect(() => {
     let alive = true;
-    supabase.from('org_nodes').select('code, name').eq('kind', 'section').eq('is_active', true).order('name')
+    supabase.from('org_nodes').select('code, name, sort_order').eq('kind', 'section').eq('is_active', true)
       .then(async ({ data }) => {
-        const fromOrg = (data || []).map(n => n.code || n.name).filter(Boolean).sort();
+        const fromOrg = orgValues(data);
         if (fromOrg.length) { if (alive) setOrgSections(fromOrg); return; }
         // ผังยังว่าง (โรงงานใหม่ตอน rollout) → fallback distinct production_lines.section (backward-compat
         // ตามหมายเหตุหัวไฟล์ — เดิมผู้เรียกต้องทำเองทีละหน้า · 2026-09-07 ย้ายเข้า hook)
-        const { data: ln } = await supabase.from('production_lines').select('section').not('section', 'is', null);
-        if (alive) setOrgSections([...new Set((ln || []).map(l => l.section).filter(Boolean))].sort());
+        const ln = await loadProductionLines();   // cache กลาง — อย่ายิงทะเบียนไลน์ซ้ำเพื่อเอาแค่ section
+        if (alive) setOrgSections([...new Set((ln || []).map(l => l.section).filter(Boolean))].sort(naturalCompare));
       });
     return () => { alive = false; };
   }, []);
@@ -36,17 +38,17 @@ export function useOrgDepts() {
   useEffect(() => {
     Promise.all([
       supabase.from('org_nodes').select('id, code, name').eq('kind', 'section').eq('is_active', true),
-      supabase.from('org_nodes').select('code, name, parent_id').eq('kind', 'department').eq('is_active', true).order('name'),
+      supabase.from('org_nodes').select('code, name, parent_id, sort_order').eq('kind', 'department').eq('is_active', true),
     ]).then(([s1, s2]) => setTree({ secs: s1.data || [], depts: s2.data || [] }));
   }, []);
   return useMemo(() => {
-    const nameOf = (n) => n.code || n.name;
-    const all = [...new Set(tree.depts.map(nameOf))].sort();
+    const nameOf = orgKey;
+    const all = orgValues(tree.depts);   // ลำดับตามผัง (sort_order) — เดิม .sort() ตัวอักษร = คนละลำดับกับ /operator
     return (sectionCode) => {
       if (!sectionCode) return all;
       const sec = tree.secs.find(n => nameOf(n) === sectionCode);
       if (!sec) return all;
-      return [...new Set(tree.depts.filter(d => d.parent_id === sec.id).map(nameOf))].sort();
+      return orgValues(tree.depts.filter(d => d.parent_id === sec.id));
     };
   }, [tree]);
 }
@@ -59,10 +61,10 @@ export function useOrgTeams() {
   const [teams, setTeams] = useState(DEFAULT_TEAMS);
   useEffect(() => {
     let alive = true;
-    supabase.from('org_nodes').select('code, name').eq('kind', 'team').eq('is_active', true).order('sort_order', { nullsFirst: false })
+    supabase.from('org_nodes').select('code, name, sort_order').eq('kind', 'team').eq('is_active', true)
       .then(({ data }) => {
         if (!alive) return;
-        const t = [...new Set((data || []).map(n => n.code || n.name).filter(Boolean))];
+        const t = orgValues(data);
         if (t.length) setTeams(t);
       });
     return () => { alive = false; };

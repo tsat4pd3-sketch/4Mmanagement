@@ -14,6 +14,10 @@
      2. **ไม่ตัดของหายเงียบ** — เกิน `maxRows` จะบอกว่าซ่อนไปกี่รายการ
      3. **พิมพ์ชื่อเองได้** (`allowFree`) — ของที่ไม่มีในทะเบียนยังบันทึกได้ พร้อมป้ายบอกว่าไม่ได้อยู่ในทะเบียน
      4. **ลิสต์กางในบรรทัด (in-flow) ไม่ absolute** — อยู่ใน modal ที่ overflow:auto ได้โดยไม่โดน clip
+     5. 🔴 **รหัสห้ามถูกตัดด้วย `…`** (2026-09-30 · feedback หน้างาน "ตอนเปิด Tag ตรงนี้ขอเห็นเลข Mat ด้วย")
+        เดิมยัด Part No. + ชื่อ + MAT ลงบรรทัดเดียวเป็น `label` แล้ว ellipsis กินท้ายบรรทัด
+        ⇒ **MAT หายทุกแถว** เพราะอยู่ท้ายสุด · รหัสที่ถูกตัดครึ่งไม่ได้แค่ "อ่านไม่ครบ" แต่**อ่านผิดตัวได้**
+        ⇒ แยกเป็น "ช่องรหัส (ห้ามตัด)" กับ "ช่องข้อความ (ตัดได้)" — ดูฟิลด์ `lead`/`title`/`code` ข้างล่าง
 
    ⚠️ ปิดลิสต์จากการคลิกนอกกรอบ **ได้** (เป็น picker ไม่ใช่ฟอร์ม — ยังไม่ได้กรอกอะไรหาย)
       คนละเรื่องกับกติกา "modal ฟอร์มห้ามปิดจาก backdrop" (UI-CONVENTIONS §5)
@@ -21,16 +25,35 @@
    onChange({ id, text, opt }) — เลือกจากลิสต์ = ครบทั้ง 3 · พิมพ์เอง = id ว่าง, opt null
    ══════════════════════════════════════════════════════════════════════════ */
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { NO_ROW, initialActiveRow, moveActiveRow } from '../utils/pickerKeys';
 
-/** ตัดช่องว่าง/ขีด/จุด/วงเล็บ + lowercase — คนพิมพ์รหัสอะไหล่ไม่เป๊ะ (M8 D6.6 / m8d66) */
-export const normSearch = (s) => String(s ?? '').toLowerCase().replace(/[\s\-_./()]+/g, '');
+/* เครื่องหมายประกอบของไทย — สระบน/ล่าง · วรรณยุกต์ · ทัณฑฆาต (์) · ไม้ไต่คู้
+   U+0E31 · U+0E34–U+0E3A · U+0E47–U+0E4E */
+const THAI_MARKS = /[\u0E31\u0E34-\u0E3A\u0E47-\u0E4E]/g;
+
+/** ตัดช่องว่าง/ขีด/จุด/วงเล็บ + lowercase — คนพิมพ์รหัสอะไหล่ไม่เป๊ะ (M8 D6.6 / m8d66)
+ *
+ *  🔴 ตัด "เครื่องหมายประกอบของไทย" ด้วย (2026-09-23 · เกิดจริงที่ /add-user)
+ *  ฐานพนักงานเก็บ `เจนนิภา เจริญพันธ` (ไม่มี ์) แต่คนพิมพ์ค้น `เจนนิภา เจริญพันธ์`
+ *  ⇒ ค้นไม่เจอ ⇒ สรุปว่า "ไม่มีคนนี้ในฐาน" ⇒ กดเพิ่มใหม่ ⇒ ชนรหัสพนักงานซ้ำ
+ *  ชื่อคนไทยในฐานพิมพ์มือ สะกดต่างกันได้ 1 ตัวเสมอ — **ตัวค้นต้องทน ไม่ใช่ให้คนพิมพ์ให้เป๊ะ**
+ *  (ผลข้างเคียงที่ยอมรับ: คำที่ต่างกันแค่วรรณยุกต์จะ match กัน เช่น มา/ม้า — เป็นแค่ตัวกรอง
+ *   ไม่ได้เปลี่ยนค่าที่บันทึก จึงกว้างไว้ดีกว่าแคบจนหาไม่เจอ) */
+export const normSearch = (s) => String(s ?? '').toLowerCase()
+  .replace(THAI_MARKS, '').replace(/[\s\-_./()]+/g, '');
 
 export default function SearchSelect({
   value = '',            // id ที่เลือกอยู่ ('' = ยังไม่ได้เลือกจากลิสต์)
   text: textProp,        // ข้อความในช่อง (เมื่อยังไม่ได้เลือก = คำค้น/ชื่อที่พิมพ์เอง)
                          //   ⚠️ ไม่ส่ง = component ถือคำค้นเอง (uncontrolled · 2026-09-08) — ใช้ได้ทั้งใน render
                          //   block/IIFE ที่ใส่ hook ไม่ได้ · ส่งเมื่อต้องการ allowFree แล้วเก็บชื่อที่พิมพ์เองเท่านั้น
-  options = [],          // [{ id, label, sub, badge, badgeColor, group, keywords }]
+  /* options = [{ id, label, sub, badge, badgeColor, group, keywords, lead, title, code }]
+       label  = ค่าที่โชว์ในช่องเมื่อเลือก + ใช้ค้น (เหมือนเดิม — มักเป็นคีย์ที่ฟอร์มเก็บจริง)
+       ── 2 บรรทัดในลิสต์ (ใหม่ 2026-09-30 · ไม่ส่ง = หน้าตาเดิมเป๊ะ) ────────────────
+       บรรทัด 1:  `lead`  (รหัสนำ · mono · **nowrap ห้ามตัด**) + `title` (ข้อความ · ตัดได้ · ไม่ส่ง = `label`)
+       บรรทัด 2:  `code`  (รหัสนำ · mono · **nowrap ห้ามตัด**) + `sub`   (ข้อความ · ตัดได้)
+       🔴 กติกา: **ตัดได้เฉพาะ "ชื่อ" · รหัสห้ามตัด** (รหัสครึ่งตัว = อ่านผิดตัว ไม่ใช่แค่อ่านไม่ครบ) */
+  options = [],
   onChange,              // ({ id, text, opt }) => void
   allowFree = false,     // พิมพ์ชื่อที่ไม่มีในลิสต์ได้ไหม
   placeholder = 'ค้นหา…',
@@ -48,6 +71,12 @@ export default function SearchSelect({
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const [innerText, setInnerText] = useState('');
+  /* 🔴 "กำลังพิมพ์ค้น" แยกจาก "เลือกแล้ว" (2026-10-01 · user: *"พิมไปแล้ว ไม่เห็นกรองให้"*)
+     picker กลางส่งข้อความที่พิมพ์กลับไปให้พาเรนต์เก็บ แล้ว `appendHistoryOptions(current)` แปลงค่านั้นเป็น
+     option "⚠ นอกทะเบียน" ⇒ ช่องนี้เห็นว่า "มีตัวที่เลือกอยู่" ⇒ คำค้นถูกทิ้ง (q='') ⇒ ลิสต์ไม่กรองเลย
+     (เคสจริง EDI จับคู่พาร์ท: พิมพ์ 274 ขึ้นครบ 128 รายการ) · กระทบ picker ทั้ง 8 ตัวที่ใช้ history
+     ⇒ ระหว่างพิมพ์ คำค้น = สิ่งที่พิมพ์เสมอ ไม่ว่าพาเรนต์จะแปลงกลับมาเป็นอะไร · จบเมื่อเลือก/ล้าง/ปิดลิสต์ */
+  const [typing, setTyping] = useState(false);
   const controlled = textProp !== undefined;
   const text = controlled ? textProp : innerText;
   /* เก็บคำค้นไว้เสมอ แม้โหมด controlled — เพราะ picker บางตัว (MachineSelect valueKey='id') สลับโหมดกลางคัน:
@@ -60,31 +89,44 @@ export default function SearchSelect({
   const latest = useRef({});
 
   const sel = useMemo(() => options.find(o => o.id === value) || null, [options, value]);
-  latest.current = { sel, text, allowFree, onChange };
+  latest.current = { sel, text, allowFree, onChange, typing, innerText };
 
   /* ⚠️ allowFree=false = "ต้องเลือกจากทะเบียนเท่านั้น" (2026-09-07 · single-source audit)
      เดิมข้อความที่พิมพ์ค้างไว้ยังไหลผ่าน onChange ไปถึง state ของฟอร์ม → ทุกจุดต้องเขียน guard เอง
      ตอนนี้: ปิดลิสต์ (คลิกนอกกรอบ / Esc) โดยไม่ได้เลือก = ล้างข้อความออกทันที ค่าที่ไม่อยู่ในทะเบียน
      จึงไม่มีทางค้างอยู่ในฟอร์มได้ (พิมพ์ค้นแล้วไม่เจอ = ช่องกลับเป็นว่าง ไม่ใช่เก็บคำค้นเป็นค่า) */
   const closeList = () => {
-    const { sel: s, text: t, allowFree: free, onChange: cb } = latest.current;
+    const { sel: s, text: t, allowFree: free, onChange: cb, typing: ty, innerText: it } = latest.current;
     setOpen(false);
-    if (!free && !s && String(t || '').trim() !== '') cb?.({ id: '', text: '', opt: null });
+    setTyping(false);
+    // พิมพ์ค้างแล้วไม่ได้เลือก = ล้าง (นับกรณีที่พาเรนต์แปลงคำค้นกลับมาเป็น option "นอกทะเบียน" ด้วย)
+    if (!free && ((!s && String(t || '').trim() !== '') || (ty && String(it || '').trim() !== ''))) {
+      setInnerText('');
+      cb?.({ id: '', text: '', opt: null });
+    }
   };
   // เลือกแล้ว = ไม่ถือว่ากำลังค้น (ไม่งั้นเปิดลิสต์อีกทีจะเหลือแถวเดียวคือตัวที่เลือก)
-  const q = sel ? '' : text;
-  const shown = sel ? sel.label : text;
+  const q = typing ? innerText : (sel ? '' : text);
+  const shown = typing ? innerText : (sel ? sel.label : text);
 
   const matched = useMemo(() => {
     const nq = normSearch(q);
     if (!nq) return options;
-    return options.filter(o => normSearch(`${o.label} ${o.keywords || ''}`).includes(nq));
-  }, [options, q]);
+    // ระหว่างพิมพ์: option "นอกทะเบียน" ที่เป็นแค่เงาสะท้อนของคำค้นเอง (พาเรนต์เก็บคำค้น → history เติมกลับ) ไม่ใช่ผลค้นหา
+    const echo = (o) => typing && o.history && normSearch(o.label) === nq;
+    return options.filter(o => !echo(o) && normSearch(
+      `${o.label} ${o.lead || ''} ${o.title || ''} ${o.code || ''} ${o.sub || ''} ${o.keywords || ''}`,
+    ).includes(nq));
+  }, [options, q, typing]);
 
   const rows = matched.slice(0, maxRows);
   const hidden = matched.length - rows.length;
 
-  useEffect(() => { setActive(0); }, [q, open]);
+  /* 🔴 2026-10-02 — "เปิดลิสต์เฉยๆ ต้องไม่มีแถวติดอาวุธ" (กฎ + เทส: utils/pickerKeys.js)
+     เดิม active = 0 เสมอ ⇒ เครื่องสแกนบาร์โค้ดที่ส่ง Enter ตามท้าย (บางรุ่น CR+LF = 2 ครั้ง)
+     ทำให้ช่องที่เพิ่งได้ focus **เลือกตัวบนสุดของลิสต์ให้เอง เงียบๆ**
+     เคสจริง: สแกน PROD.NO ซ้ำ → focus เด้งมาช่อง MAT → MAT เปลี่ยนเป็นพาร์ทอื่นโดยคนไม่รู้ตัว */
+  useEffect(() => { setActive(initialActiveRow(q)); }, [q, open]);
 
   // ปิดเมื่อคลิกนอกกรอบ (picker — ไม่ใช่ฟอร์ม จึงปิดจากคลิกนอกได้)
   useEffect(() => {
@@ -95,16 +137,17 @@ export default function SearchSelect({
     return () => { document.removeEventListener('mousedown', away); document.removeEventListener('touchstart', away); };
   }, [open]);
 
-  const pick = (o) => { emit({ id: o.id, text: o.label, opt: o }); setOpen(false); };
-  const clear = () => { emit({ id: '', text: '', opt: null }); setOpen(true); };
+  const pick = (o) => { setTyping(false); emit({ id: o.id, text: o.label, opt: o }); setOpen(false); };
+  const clear = () => { setTyping(false); emit({ id: '', text: '', opt: null }); setOpen(true); };
 
   const onKey = (e) => {
     if (e.key === 'Escape') { closeList(); return; }
     if (!open && (e.key === 'ArrowDown' || e.key === 'Enter')) { setOpen(true); return; }
     if (!open) return;
-    if (e.key === 'ArrowDown') { e.preventDefault(); setActive(a => Math.min(a + 1, rows.length - 1)); }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); setActive(a => Math.max(a - 1, 0)); }
-    else if (e.key === 'Enter') { if (rows[active]) { e.preventDefault(); pick(rows[active]); } }
+    if (e.key === 'ArrowDown') { e.preventDefault(); setActive(a => moveActiveRow(a, 1, rows.length)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setActive(a => moveActiveRow(a, -1, rows.length)); }
+    // active = NO_ROW ⇒ rows[active] undefined ⇒ Enter ไม่เลือกอะไร (คนยังไม่ได้เล็งแถวไหน)
+    else if (e.key === 'Enter') { if (active !== NO_ROW && rows[active]) { e.preventDefault(); pick(rows[active]); } }
   };
 
   // เลื่อนแถวที่เลือกด้วยคีย์บอร์ดให้อยู่ในสายตา
@@ -131,8 +174,9 @@ export default function SearchSelect({
           value={shown}
           disabled={disabled}
           placeholder={placeholder}
-          onChange={e => { emit({ id: '', text: e.target.value, opt: null }); setOpen(true); }}
+          onChange={e => { setTyping(true); emit({ id: '', text: e.target.value, opt: null }); setOpen(true); }}
           onFocus={() => setOpen(true)}
+          onClick={() => setOpen(true)}   // ช่องที่โฟกัสอยู่แล้ว (เพิ่งเลือกเสร็จ) คลิกซ้ำต้องเปิดลิสต์ได้
           onKeyDown={onKey}
           style={inp}
         />
@@ -144,7 +188,7 @@ export default function SearchSelect({
 
       {/* ⚠️ พิมพ์ชื่อเองแล้วไม่ตรงลิสต์ = ยังบันทึกได้ แต่ต้องบอกให้เห็น ไม่ปล่อยเงียบ */}
       {!open && allowFree && !sel && text.trim() !== '' && (
-        <div style={{ fontSize: 10.5, color: 'var(--accent2)', marginTop: 3 }}>✎ ชื่อที่พิมพ์เอง — ไม่ได้อยู่ในทะเบียน</div>
+        <div style={{ fontSize: 11, color: 'var(--accent2)', marginTop: 3 }}>✎ ชื่อที่พิมพ์เอง — ไม่ได้อยู่ในทะเบียน</div>
       )}
 
       {open && (
@@ -155,7 +199,7 @@ export default function SearchSelect({
               return (
                 <div key={o.id}>
                   {o.group && head && (
-                    <div style={{ padding: '5px 10px 3px', fontSize: 10.5, fontWeight: 800, color: 'var(--muted)', background: 'var(--bg3)' }}>{o.group}</div>
+                    <div style={{ padding: '5px 10px 3px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', background: 'var(--bg3)' }}>{o.group}</div>
                   )}
                   <div
                     onMouseEnter={() => setActive(i)}
@@ -166,8 +210,24 @@ export default function SearchSelect({
                       borderLeft: `3px solid ${i === active ? 'var(--accent)' : 'transparent'}`,
                     }}>
                     <div style={{ minWidth: 0, flex: 1 }}>
-                      <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text)', ...clampSt }}>{o.label}</div>
-                      {o.sub && <div style={{ fontSize: 10.5, color: 'var(--muted)', ...clampSt }}>{o.sub}</div>}
+                      {/* บรรทัด 1 — รหัสนำ (ห้ามตัด) + ข้อความ (ตัดได้) */}
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, minWidth: 0 }}>
+                        {o.lead && (
+                          <span style={{ flexShrink: 0, whiteSpace: 'nowrap', fontFamily: 'monospace', fontSize: 12.5, fontWeight: 800, color: 'var(--text)' }}>{o.lead}</span>
+                        )}
+                        <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: o.lead ? 400 : 700, color: o.lead ? 'var(--text2)' : 'var(--text)', ...clampSt }}>
+                          {o.title ?? o.label}
+                        </span>
+                      </div>
+                      {/* บรรทัด 2 — รหัสนำ (ห้ามตัด) + ข้อความประกอบ (ตัดได้) */}
+                      {(o.code || o.sub) && (
+                        <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, minWidth: 0, fontSize: 11, color: 'var(--muted)' }}>
+                          {o.code && (
+                            <span style={{ flexShrink: 0, whiteSpace: 'nowrap', fontFamily: 'monospace', color: 'var(--text2)' }}>{o.code}</span>
+                          )}
+                          {o.sub && <span style={{ flex: 1, minWidth: 0, ...clampSt }}>{o.sub}</span>}
+                        </div>
+                      )}
                     </div>
                     {o.badge != null && (
                       <span style={{ flexShrink: 0, fontSize: 11, fontWeight: 800, color: o.badgeColor || 'var(--text2)' }}>{o.badge}</span>
@@ -185,7 +245,7 @@ export default function SearchSelect({
           </div>
           {/* ⚠️ ห้ามตัดของหายเงียบ — บอกเสมอว่าซ่อนไปกี่รายการ */}
           {hidden > 0 && (
-            <div style={{ padding: '5px 10px', fontSize: 10.5, color: 'var(--muted)', borderTop: '1px solid var(--border)', background: 'var(--bg3)' }}>
+            <div style={{ padding: '5px 10px', fontSize: 11, color: 'var(--muted)', borderTop: '1px solid var(--border)', background: 'var(--bg3)' }}>
               แสดง {rows.length} จาก {matched.length} — พิมพ์เพิ่มเพื่อค้นให้แคบลง (ซ่อน {hidden})
             </div>
           )}

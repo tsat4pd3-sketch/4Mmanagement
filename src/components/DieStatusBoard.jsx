@@ -6,6 +6,9 @@
 import { useState, useMemo } from 'react';
 import { toast } from './Toast';
 import LineSelect from './LineSelect';
+import FilterBar from './FilterBar';
+import SearchInput from './SearchInput';
+import { ALL } from '../utils/filterLabels';
 import useProductionLines from '../utils/useProductionLines';
 import useDiePressLines from '../utils/useDiePressLines'; // ทะเบียนกลุ่มเครื่องปั๊ม (DR die_press_lines) — 2026-09-08
 import {
@@ -155,19 +158,20 @@ export default function DieStatusBoard({
         </div>
       )}
 
-      {/* ตัวกรอง */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 10 }}>
-        <input value={q} onChange={e => setQ(e.target.value)} placeholder="ค้นหา เลขแม่พิมพ์ / พาร์ท / หมายเหตุ" style={{ ...inp, width: 260 }} />
+      {/* ตัวกรอง — FilterBar มาตรฐาน (UI-STANDARD 2026-09-24): ไลน์ → ค้นหา → จำนวน */}
+      <FilterBar>
         {/* ⚠️ ไลน์ของแม่พิมพ์ = ชื่อ "กลุ่มเครื่องปั๊ม" (เช่น LINE A ( 800 Ton )) ซึ่งบางชื่อ
             ไม่มีในทะเบียนไลน์ผลิต → ตัวที่ตรงจัดลำดับชั้นตามผัง ที่เหลือแยก optgroup ไว้
             (ห้ามตัดทิ้ง ไม่งั้นกรองหาแม่พิมพ์ของกลุ่มนั้นไม่ได้เลย) */}
         <LineSelect
           lines={prodLines.filter(l => lineNames.includes(l.name))}
-          value={fLine} onChange={setFLine} placeholder="ทุกไลน์" style={{ ...inp, width: 190 }}
+          value={fLine} onChange={setFLine} placeholder={ALL.line}
           extraGroups={[{ label: '🔨 กลุ่มเครื่องปั๊ม', options: lineNames.filter(n => !prodLines.some(l => l.name === n)).map(n => ({ value: n })) }]}
         />
-        <span style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 'auto' }}>แสดง {rows.length} ตัว</span>
-      </div>
+        <SearchInput value={q} onChange={setQ} fields="เลขแม่พิมพ์ / พาร์ท / หมายเหตุ" />
+        <span className="spacer" />
+        <span className="filter-count">แสดง {rows.length} ตัว</span>
+      </FilterBar>
 
       <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
         <div style={{ overflowX: 'auto', maxHeight: 'calc(100vh - 340px)', overflowY: 'auto' }}>

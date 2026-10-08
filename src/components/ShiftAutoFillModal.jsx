@@ -285,7 +285,7 @@ export default function ShiftAutoFillModal({ weekStart, lines = [], deptRows = [
 function Stat({ label, value, color }) {
   return (
     <div style={{ padding: '6px 12px', borderRadius: 8, background: 'var(--bg2)', border: '1px solid var(--border)' }}>
-      <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>{label}</div>
+      <div style={{ fontSize: 11, color: 'var(--muted)' }}>{label}</div>
       <div style={{ fontSize: 14, fontWeight: 800, color }}>{value}</div>
     </div>
   );

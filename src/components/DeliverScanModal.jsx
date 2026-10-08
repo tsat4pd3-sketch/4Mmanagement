@@ -82,8 +82,11 @@ export default function DeliverScanModal({ request, points = [], canOverride = f
           <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, alignItems: 'start' }}>
             <div style={{ background: 'var(--bg3)', borderRadius: 10, padding: '8px 10px' }}>
               <div style={{ fontSize: 11, color: 'var(--muted)' }}>พาร์ท</div>
-              <div style={{ fontSize: 15, fontWeight: 900, fontFamily: 'monospace', color: 'var(--text)', wordBreak: 'break-all' }}>{request?.mat_no || '—'}</div>
-              {request?.part_name && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{request.part_name}</div>}
+              {/* ลำดับ ชื่องาน → MAT (UI §6.21 · 2026-09-30) */}
+              {request?.part_name
+                ? <div style={{ fontSize: 15, fontWeight: 900, color: 'var(--text)' }}>{request.part_name}</div>
+                : null}
+              <div style={{ fontSize: request?.part_name ? 11 : 15, fontWeight: request?.part_name ? 400 : 900, fontFamily: 'monospace', color: request?.part_name ? 'var(--muted)' : 'var(--text)', wordBreak: 'break-all' }}>MAT {request?.mat_no || '—'}</div>
             </div>
             <div style={{ background: 'var(--bg3)', borderRadius: 10, padding: '8px 10px' }}>
               <div style={{ fontSize: 11, color: 'var(--muted)' }}>จำนวนที่ขอ</div>
@@ -128,7 +131,7 @@ export default function DeliverScanModal({ request, points = [], canOverride = f
 
               {!overriding && (
                 <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-                  <button onClick={() => setScanOpen(true)} disabled={busy} style={btn('var(--accent)', '#08130c', 'transparent', busy)}>
+                  <button onClick={() => setScanOpen(true)} disabled={busy} style={btn('var(--accent)', 'var(--accent-ink)', 'transparent', busy)}>
                     📷 {ok ? 'สแกนใหม่' : 'สแกน QR จุดส่ง'}
                   </button>
                   <div style={{ flex: 1 }} />

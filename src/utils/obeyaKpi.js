@@ -24,29 +24,42 @@ export const OBEYA_AXES = [
 export const axisMeta = (key) => OBEYA_AXES.find(a => a.key === key) || null;
 
 /* ── สถานะเทียบเป้า ────────────────────────────────────────────────────────────────
-   `better` = ทิศทางที่ดี: 'up' (ยิ่งมากยิ่งดี เช่น OEE) · 'down' (ยิ่งน้อยยิ่งดี เช่น ของเสีย)
-   เกณฑ์เหลือง = พลาดเป้าไม่เกิน 5% ของค่าเป้า — เลือกให้ตรงกับไฟเหลืองของ Andon ในระบบ
-   ⚠️ เป้า 0 (เช่น "อุบัติเหตุ 0 ครั้ง") ไม่มีแถบเหลือง — เกิน 0 คือแดงทันที ไม่มีครึ่งทาง */
-export function statusOf(value, target, better = 'up') {
-  if (value == null || Number.isNaN(Number(value))) return 'none';
-  if (target == null || Number.isNaN(Number(target))) return 'none';
-  const v = Number(value), t = Number(target);
-  if (better === 'down') {
-    if (t === 0) return v === 0 ? 'good' : 'bad';
-    if (v <= t) return 'good';
-    return v <= t * 1.05 ? 'warn' : 'bad';
-  }
-  if (v >= t) return 'good';
-  return v >= t * 0.95 ? 'warn' : 'bad';
-}
-export const STATUS_COLOR = { good: '#22c55e', warn: '#f59e0b', bad: '#ef4444', none: '#64748b' };
-export const statusColor = (s) => STATUS_COLOR[s] || STATUS_COLOR.none;
+   🔴 **นิยามจริงย้ายไป `src/utils/statusTone.js` แล้ว (23/09)** — ไฟล์นี้ re-export ต่อเฉยๆ
+      เหตุผล: กติกาสถานะถูกต้องอยู่แล้วแต่ **ใช้ได้แค่ในห้อง OBEYA** เพราะไฟล์นี้ลาก `oee.js` มาด้วย
+      ⇒ หน้าแรก/Dashboard เอาไปใช้ไม่ไหว เลยไปตั้งสีกันเอง จนสีในแถวเดียวกันมี 2 ความหมายปนกัน
+      (ดูเหตุการณ์เต็มในหัวไฟล์ `statusTone.js`) · **ห้ามประกาศตาราง STATUS_* ซ้ำที่นี่อีก** */
+import { statusOf, STATUS_LABEL } from './statusTone.js';
+export { statusOf, STATUS_COLOR, statusColor, toneOf, toneInk, hasTarget } from './statusTone.js';
 
 /** ห่างเป้าเท่าไหร่ (บวก = ดีกว่าเป้าเสมอ ไม่ว่าทิศทางไหน) — ใช้โชว์ Δ บนหัวแผง */
 export function gapToTarget(value, target, better = 'up') {
   if (value == null || target == null) return null;
   const d = Number(value) - Number(target);
   return +(better === 'down' ? -d : d).toFixed(1);
+}
+
+/* ── ป้ายไฟสถานะบนจอมอนิเตอร์ (2026-09-21 · คำขอ user "อยากได้สเตตัสสี กดเข้าไปดูได้") ──
+   ข้อความบนไฟต้องเป็นชุดเดียวกันทุกบอร์ด — ห้ามให้แต่ละหน้าคิดคำเอง ไม่งั้นจอเดียวกัน
+   คนละแผงจะเรียกสถานะเดียวกันคนละชื่อ (บทเรียนเดิม: KPI แถวเดียวกันได้ 3 คำตอบจาก 3 จอ)
+
+   🔴 **`none` (เทา) มี 2 ความหมายที่ต้องแยกให้คนหน้าจออ่านออก** — กฎความซื่อสัตย์ของจอ:
+      "ยังไม่มีข้อมูล" (ยังไม่เกิดงาน) ≠ "ไม่มีเป้า" (มีตัวเลขแล้ว แต่ไม่มีใครตั้งเป้าให้เทียบ)
+      ทั้งคู่ห้ามถูกนับเป็นเขียว และห้ามโชว์เป็น 0 */
+export { STATUS_LABEL, statusLabel } from './statusTone.js';
+
+/**
+ * ไฟสถานะ 1 ดวง + เหตุผลที่เป็นสีนั้น (ใช้เป็นทั้งป้ายบนจอและ tooltip)
+ * @returns {{ status:'good'|'warn'|'bad'|'none', label:string, why:string }}
+ */
+export function statusWhy(value, target, better = 'up', unit = '') {
+  const num = (x) => x != null && x !== '' && !Number.isNaN(Number(x));
+  const u = unit ? ` ${unit}` : '';
+  if (!num(value)) return { status: 'none', label: 'ยังไม่มีข้อมูล', why: 'ช่วงนี้ยังไม่มีข้อมูลให้คำนวณ — ไม่ใช่ว่าผลเป็นศูนย์' };
+  if (!num(target)) return { status: 'none', label: 'ไม่มีเป้า', why: `มีค่า ${value}${u} แต่ยังไม่ได้ตั้งเป้าไว้ จึงตัดสินว่าผ่าน/ไม่ผ่านไม่ได้` };
+  const s = statusOf(value, target, better);
+  const gap = gapToTarget(value, target, better);
+  const dir = gap >= 0 ? `ดีกว่าเป้า ${Math.abs(gap)}` : `ห่างเป้าอีก ${Math.abs(gap)}`;
+  return { status: s, label: STATUS_LABEL[s], why: `${value}${u} · เป้า ${target}${u} — ${dir}` };
 }
 
 /* ── ตัวช่วยรวมข้อมูลเป็นอนุกรมเวลา ────────────────────────────────────────────────
@@ -95,9 +108,10 @@ export function axisOee({ sessions = [], target = null } = {}) {
   return {
     key: 'OEE', unit: '%', better: 'up', target: tg,
     value: val == null ? null : +val.toFixed(1),
-    a: round1(wavg(rows, r => Number(r.oee_a), wLoad)),
-    p: round1(wavg(rows, r => Number(r.oee_p), wRun)),
-    q: round1(wavg(rows, r => Number(r.oee_q), wProd)),
+    /* audit 05/10: `Number(null) = 0` ⇒ กะที่ stamp oee แต่ a/p/q ว่าง เคยถูกถ่วงเป็น 0 ลาก A·P·Q ต่ำกว่าจริง — null ต้องเป็น null ให้ wavg ข้าม */
+    a: round1(wavg(rows, r => (r.oee_a == null ? null : Number(r.oee_a)), wLoad)),
+    p: round1(wavg(rows, r => (r.oee_p == null ? null : Number(r.oee_p)), wRun)),
+    q: round1(wavg(rows, r => (r.oee_q == null ? null : Number(r.oee_q)), wProd)),
     shifts: rows.length,
     state: 'ok', note: null,
     series: bucketBy(rows, r => r.work_date, (acc, r) => acc.rows.push(r), () => ({ rows: [] }))
@@ -110,6 +124,11 @@ export function axisOee({ sessions = [], target = null } = {}) {
    ⇒ KPI "วันปลอดอุบัติเหตุ" ทำไม่ได้จริง — ห้ามโชว์ 0 ครั้งแล้วให้คนเข้าใจว่าปลอดภัย
    ที่ทำได้ตอนนี้คือ "พฤติกรรม" (PPE ครบตอนเช็คชื่อ) ซึ่งเป็น leading indicator ไม่ใช่ผลลัพธ์
    ⚠️ นับเฉพาะคนที่มาทำงาน (is_present) — คนลาไม่มี PPE เป็นเรื่องปกติ ถ้านับรวมจะได้เลขต่ำหลอก */
+/** 🔴 ข้อความนี้ต้องอยู่บนจอทุกบอร์ดที่โชว์แกน S จนกว่าจะมีทะเบียนอุบัติเหตุจริง (OBEYA-DESIGN §4)
+ *  — export ไว้จุดเดียว เพราะมีหลายจอใช้ (แผง SQDCM · บอร์ดสดบนผังรวมโรงงาน) */
+export const SAFETY_PROXY_NOTE =
+  'ยังไม่มีทะเบียนอุบัติเหตุ/near-miss — ตัวเลขนี้คือ "ใส่ PPE ครบตอนเช็คชื่อ" ไม่ใช่ผลด้านความปลอดภัย';
+
 export function axisSafety({ logs = [], incidents = null, target = 100 } = {}) {
   const present = logs.filter(l => l.is_present);
   const base = {
@@ -126,7 +145,7 @@ export function axisSafety({ logs = [], incidents = null, target = 100 } = {}) {
   return {
     ...base, value, state: 'thin',
     // 🔴 ข้อความนี้ต้องอยู่บนจอเสมอจนกว่าจะมีทะเบียนอุบัติเหตุจริง (OBEYA-DESIGN §4)
-    note: 'ยังไม่มีทะเบียนอุบัติเหตุ/near-miss — ตัวเลขนี้คือ "ใส่ PPE ครบตอนเช็คชื่อ" ไม่ใช่ผลด้านความปลอดภัย',
+    note: SAFETY_PROXY_NOTE,
     checked: present.length,
     series: bucketBy(present, l => l.work_date,
       (a, l) => { a.n += 1; if (full(l)) a.ok += 1; }, () => ({ n: 0, ok: 0 }))
@@ -181,11 +200,18 @@ export function axisDelivery({ target = 0, produced = 0, series = [], lateOrders
    แต่ยังไม่รู้ "ราคาขาย" ⇒ ทำ margin ไม่ได้ (ดู docs/FINANCIAL-GAP-ANALYSIS.md)
    ⇒ KPI ของแกนนี้คือ **มูลค่าความสูญเสีย** — ยิ่งน้อยยิ่งดี (better: 'down')
    ⚠️ ไม่มีอัตราค่าแรงของ cost center = คิดไม่ได้ ต้องบอก ห้ามใส่ 0 แทน (0 บาท = "ไม่เสียอะไรเลย" ซึ่งโกหก) */
-export function axisCost({ dtBaht = 0, ngBaht = 0, series = [], target = null, missingRate = 0, missingCost = 0 } = {}) {
+/* `sessions` = จำนวนกะ (ปิดแล้ว) ในขอบเขต — **0 = ไม่มีข้อมูล ⇒ value null (เทา)** ห้ามคืน 0 บาท
+   (0 บาท = "ไม่เสียอะไรเลย" ⇒ ไฟเขียว "ไม่มีความสูญเสีย" ทั้งที่ยังไม่มีกะผลิตสักกะ — QC audit 05/10)
+   ไม่ส่ง (null) = ไม่รู้ ⇒ พฤติกรรมเดิม */
+export function axisCost({ dtBaht = 0, ngBaht = 0, series = [], target = null, missingRate = 0, missingCost = 0, sessions = null } = {}) {
   const total = (Number(dtBaht) || 0) + (Number(ngBaht) || 0);
   const notes = [];
   if (missingRate) notes.push(`${missingRate} ไลน์ยังไม่ได้ตั้งอัตราค่าแรง/ชม. (cost center)`);
   if (missingCost) notes.push(`${missingCost} พาร์ทยังไม่มีต้นทุน/ชิ้น`);
+  if (sessions === 0 && !(total > 0)) {
+    return { key: 'C', unit: 'บาท', better: 'down', target, value: null, dtBaht: 0, ngBaht: 0,
+      state: 'none', note: 'ยังไม่มีกะที่ปิดแล้วในช่วงนี้ — ยังไม่มีข้อมูลให้คิดความสูญเสีย', series };
+  }
   return {
     key: 'C', unit: 'บาท', better: 'down', target,
     value: total > 0 ? Math.round(total) : (notes.length ? null : 0),
@@ -237,6 +263,32 @@ export function actionBuckets(items = [], today) {
 }
 
 /** สุขภาพของลูปปิด — ใช้ตอบคำถามเดียวที่สำคัญที่สุดของ Obeya: "ที่ตกลงกันไว้ ทำจริงไหม" */
+/** 🔒 ใบ Action ที่ "อยู่ในขอบเขต" (05/10 · audit: ACTION BOARD เดิมโชว์ทุกใบทั้งโรงงานไม่สนทั้ง scope user และขอบเขตที่เลือก)
+ *  · ใบที่ระบุไลน์ → ตัดสินด้วย `lineOk(line)` = ชุดเดียวกับที่กรองข้อมูลผลิตบนจอ (scope user ∩ ขอบเขตที่เลือก)
+ *    `lineOk` คืน `null` = ไลน์นี้ไม่อยู่ในทะเบียนแล้ว (เปลี่ยนชื่อ/ยุบ) → ถอยไปตัดสินด้วยส่วนงานของใบแทน ไม่ทิ้งใบเงียบ
+ *  · ใบที่ระบุแค่ส่วนงาน → ต้องอยู่ในสังกัด user (`sections` · [] = ไม่จำกัด) และใต้ขอบเขตที่เลือก (`scopeSecs` · null = ทั้งโรงงาน)
+ *  · ใบที่ไม่ระบุทั้งคู่ = ใบระดับโรงงาน → เห็นเมื่อดู "ทั้งโรงงาน" และ user ไม่ถูกจำกัดส่วนงาน
+ *  คืน `{ items, hidden }` — hidden = จำนวนที่ถูกกรองออก **จอต้องเขียนบอก ห้ามหายเงียบ** (กฎความซื่อสัตย์) */
+export function scopeActions(items = [], { sections = [], scopeSecs = null, lineOk = null } = {}) {
+  const norm = (s) => (s || '').toString().trim().toLowerCase();
+  const secLimited = !!(sections && sections.length);
+  const userSecs = secLimited ? new Set(sections.map(norm)) : null;
+  const sel = scopeSecs ? new Set([...scopeSecs].map(norm)) : null;
+  const ok = (a) => {
+    if (a.line_name) {
+      const r = lineOk ? lineOk(a.line_name) : true;
+      if (r !== null && r !== undefined) return !!r;
+    }
+    const s = norm(a.section);
+    if (!s) return !secLimited && !sel;
+    if (userSecs && !userSecs.has(s)) return false;
+    if (sel && !sel.has(s)) return false;
+    return true;
+  };
+  const kept = items.filter(ok);
+  return { items: kept, hidden: items.length - kept.length };
+}
+
 export function actionHealth(items = [], today) {
   const b = actionBuckets(items, today);
   const live = b.overdue.length + b.dueSoon.length + b.open.length;
@@ -255,10 +307,13 @@ export function actionHealth(items = [], today) {
    ⚠️ ห้ามใช้ toISOString() (UTC — เพี้ยนข้ามวันสำหรับไทย) · วันที่งานตัด 08:00 ให้ผู้เรียกส่ง
       `today` ที่ได้จาก getWorkDate() เข้ามา ไฟล์นี้ไม่แตะนาฬิกาเอง (เทสจะได้ตรึงเวลาได้ —
       กฎ "เทสระเบิดเวลา" ใน CLAUDE.md) */
+/* ⚠️ ไม่มี "วันนี้" แล้ว (user 2026-09-22 "ตัดออก") — ทุกแผ่นบนจอนี้จัดกลุ่มเป็นจุดต่อวัน โหมดวันได้แท่งเดียว
+   ไม่ใช่กราฟ · สถานะ "ตอนนี้" มีจอทำหน้าที่อยู่แล้ว (/morning-meeting · /tv · /factory-map)
+   `periodRange('day')` ยังรองรับไว้ให้ผู้เรียกเก่า/เทส แต่ไม่โผล่บนปุ่ม · โหมด 'year' อยู่ใน obeyaYear.js */
 export const PERIODS = [
-  { key: 'day',   label: 'วันนี้' },
   { key: 'week',  label: 'สัปดาห์นี้' },
-  { key: 'month', label: 'เดือนนี้' },
+  { key: 'month', label: 'เดือน' },
+  { key: 'year',  label: 'ปี' },
 ];
 export function periodRange(mode, today) {
   const d = String(today);

@@ -16,7 +16,7 @@ import imageCompression from 'browser-image-compression';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { toast } from '../components/Toast';
 import { UserContext } from '../App';
-import { cachedMaster } from '../utils/masterCache';
+import { cachedMaster, mrows } from '../utils/masterCache';
 import { usePerms } from '../utils/usePerms';
 import useIsMobile from '../utils/useIsMobile';
 import { QA_STAGES } from '../utils/qaStages';
@@ -26,9 +26,14 @@ import LineSelect from '../components/LineSelect';
 import InstrumentSelect from '../components/InstrumentSelect';
 import CustomerSelect from '../components/CustomerSelect';
 import useColumnHistory from '../utils/useColumnHistory';
-import { LINE_COLUMNS } from '../utils/useProductionLines';
+import { loadLinesRes, LINE_COLUMNS } from '../utils/useProductionLines';
 import { specLabel } from '../utils/qaSpec';
 import { uploadOpts } from '../utils/storageUpload';
+import { checkWrite } from '../utils/dbWrite';
+import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
+import SearchInput from '../components/SearchInput';
+import { DeleteButton } from '../components/IconButton';
 
 const fmtDT = s => s ? new Date(s).toLocaleString('th-TH', { day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
 
@@ -36,7 +41,7 @@ const inputSt = {
   width: '100%', padding: '8px 10px', borderRadius: 8, fontSize: 13,
   background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)',
 };
-const btnSt = (bg = 'var(--accent)', color = '#fff') => ({
+const btnSt = (bg = 'var(--accent)', color = bg === 'var(--accent)' ? 'var(--accent-ink)' : '#fff') => ({
   padding: '8px 16px', borderRadius: 8, border: 'none', cursor: 'pointer',
   fontWeight: 700, fontSize: 13, background: bg, color,
 });
@@ -137,7 +142,7 @@ export default function QAInspectionSetup() {
   const { can } = usePerms();
   const canManage = can('qa', 'manage');
   // 📜 ค่าที่เคยบันทึกไว้ (Main) — วิธีตรวจ (Visual/CF ที่ไม่ใช่เครื่องมือในทะเบียน) / ลูกค้า ยังเลือกซ้ำได้ ไม่หายเงียบ (2026-09-07)
-  const methodHist = useColumnHistory(supabase, 'qa_check_items', 'method');
+  const methodHist = useColumnHistory(supabase, 'qa_inspection_items', 'method');
   const custHist = useColumnHistory(supabase, 'qa_parts', 'customer');
 
   const [parts, setParts] = useState([]);
@@ -190,7 +195,7 @@ export default function QAInspectionSetup() {
   useEffect(() => {
     // เก็บเป็น object (id/name/parent_line_name) — dropdown จัดชั้นตามผัง (§5.3 ข้อ 8)
     // LINE_COLUMNS ครบ (section/is_active) ให้ <LineSelect> กรองปลดระวาง/จัดลำดับชั้นได้ (2026-09-07)
-    supabase.from('production_lines').select(LINE_COLUMNS).order('name')
+    loadLinesRes()
       .then(({ data }) => setLines(data || []));
   }, []);
 
@@ -329,7 +334,7 @@ export default function QAInspectionSetup() {
    // ⚠️ ตัวที่ผ่าน cachedMaster คืน **array ตรงๆ** (ไม่ใช่ { data }) — destructure ต้องไม่ห่อ { data: … }
       const [prods, { data: boms }] = await Promise.all([
         /* cache master (2026-09-16) — ทะเบียนเปลี่ยนเดือนละไม่กี่ครั้ง · ล้างด้วย invalidateTable() ที่หน้าแก้ทะเบียน */
-        cachedMaster('dr_products:qa', async () => (await supabaseDR.from('dr_products').select('id, name, code, mat_no, p_no, customer, line_name').eq('is_active', true).order('name')).data || []),
+        cachedMaster('dr_products:qa', async () => mrows(await supabaseDR.from('dr_products').select('id, name, code, mat_no, p_no, customer, line_name').eq('is_active', true).order('name'))),
         supabaseDR.from('bom_items').select('id, product_id, mat_no, part_no, part_name, supplier').eq('is_active', true).order('part_name'),
       ]);
       if (!alive) return;
@@ -416,9 +421,17 @@ export default function QAInspectionSetup() {
     if (!sel) return;
     if (!window.confirm(`ลบ ${sel.part_no} พร้อมจุดตรวจทั้งหมด ${items.length} จุด?`)) return;
     const partId = sel.id;
-    const { error } = await supabase.from('qa_parts').delete().eq('id', sel.id);
-    if (error) { toast.error(error.message); return; }
-    // ลบ part สำเร็จแล้ว เก็บกวาดไฟล์ drawing ทั้งโฟลเดอร์ของ part นี้ กันไฟล์กำพร้าใน storage (best-effort)
+    /* 🔴 ต้อง `.select('id')` แล้ว**นับแถว** ก่อนแตะ storage (QC audit 2026-10-06)
+       RLS ปฏิเสธ DELETE = "สำเร็จ 0 แถว ไม่มี error" (กฎเหล็ก DB ข้อ 2) — เดิมเช็คแค่ `error`
+       แล้วเดินไปลบ `qa-drawings/parts/<id>` ทั้งโฟลเดอร์ ⇒ **แถวยังอยู่ แต่แบบหายหมด กู้ไม่ได้**
+       แล้วจอยังขึ้น "ลบแล้ว" · ลำดับที่ปลอดภัยมีทางเดียว: ยืนยันแถวหายจริงก่อน ค่อยเก็บกวาดไฟล์ */
+    const res = await supabase.from('qa_parts').delete().eq('id', sel.id).select('id');
+    if (!checkWrite(res, 'ลบพาร์ท')) return;
+    if (!(res.data || []).length) {
+      toast.error('ลบไม่สำเร็จ (0 แถว) — สิทธิ์ qa:manage ไม่พอ · แบบและจุดตรวจยังอยู่ครบ');
+      return;
+    }
+    // แถวหายจริงแล้ว เก็บกวาดไฟล์ drawing ทั้งโฟลเดอร์ กันไฟล์กำพร้าใน storage (best-effort)
     try {
       const { data: files } = await supabase.storage.from('qa-drawings').list(`parts/${partId}`, { limit: 1000 });
       const paths = (files || []).map(f => `parts/${partId}/${f.name}`);
@@ -476,7 +489,9 @@ export default function QAInspectionSetup() {
     }).select().single();
     setUploading(false);
     if (error) { toast.error(error.message); return; }
-    supabase.from('qa_parts').update({ drawing_updated_at: new Date().toISOString() }).eq('id', sel.id).then(() => loadParts());
+    // เดิม .then() ไม่อ่าน error — ประทับเวลา drawing ล้มเงียบ (QC 05/10)
+    supabase.from('qa_parts').update({ drawing_updated_at: new Date().toISOString() }).eq('id', sel.id)
+      .then(res => { checkWrite(res, 'ประทับเวลาแก้ drawing '); loadParts(); });
     toast.success(`เพิ่ม drawing "${data.title}" แล้ว ✓`);
     await loadDrawings(sel.id);
     setActiveDwgId(data.id);
@@ -524,10 +539,15 @@ export default function QAInspectionSetup() {
   const deleteDrawing = async (dwg) => {
     const cnt = items.filter(i => i.drawing_id === dwg.id).length;
     if (!window.confirm(`ลบแผ่น "${dwg.title}"?${cnt ? `\nballoon ${cnt} จุดบนแผ่นนี้จะถูกถอดตำแหน่ง (ตัวจุดตรวจไม่หาย)` : ''}`)) return;
-    if (cnt) await supabase.from('qa_inspection_items').update({ pos_x: null, pos_y: null, drawing_id: null }).eq('drawing_id', dwg.id);
-    const { error } = await supabase.from('qa_part_drawings').delete().eq('id', dwg.id);
-    if (error) { toast.error(error.message); return; }
-    // ลบ row สำเร็จแล้ว ค่อยลบไฟล์จาก storage ด้วย กันไฟล์กำพร้า (best-effort)
+    /* ถอดตำแหน่ง balloon ก่อนลบแผ่น — ล้มแล้วต้องหยุด (เดิมไม่อ่าน error แล้วลบแผ่นต่อ
+       ⇒ จุดตรวจชี้ drawing_id ที่ไม่มีแล้ว / FK บล็อกการลบแบบงงๆ · QC 05/10) */
+    if (cnt && !checkWrite(await supabase.from('qa_inspection_items').update({ pos_x: null, pos_y: null, drawing_id: null }).eq('drawing_id', dwg.id), 'ถอดตำแหน่ง balloon ')) return;
+    /* 🔴 นับแถวก่อนแตะ storage — RLS ปฏิเสธ DELETE = 0 แถว ไม่มี error (กฎเหล็ก DB ข้อ 2)
+       ไม่นับ = แถวแผ่นแบบยังอยู่ แต่ไฟล์แบบถูกลบ ⇒ แผ่นเสียถาวร (QC audit 06/10) */
+    const dres = await supabase.from('qa_part_drawings').delete().eq('id', dwg.id).select('id');
+    if (!checkWrite(dres, 'ลบแผ่นแบบ')) return;
+    if (!(dres.data || []).length) { toast.error('ลบแผ่นไม่สำเร็จ (0 แถว) — สิทธิ์ qa:manage ไม่พอ · ไฟล์แบบยังอยู่'); return; }
+    // ยืนยันแถวหายจริงแล้ว ค่อยลบไฟล์จาก storage กันไฟล์กำพร้า (best-effort)
     const dwgPath = qaDrawingPath(dwg.drawing_url);
     if (dwgPath) supabase.storage.from('qa-drawings').remove([dwgPath]).catch(() => {});
     toast.success('ลบแผ่นแล้ว');
@@ -611,6 +631,26 @@ export default function QAInspectionSetup() {
     }
   };
 
+  /* 🏷️ ลากป้ายเลข balloon ให้หลบกัน (2026-09-21 · feedback หน้างาน "ลูกศรทับกัน")
+     เก็บเป็น % ของกล่องรูป ⇒ ซูม/ย่อแล้วยังอยู่ทิศเดิม · null ทั้งคู่ = กลับไปทิศอัตโนมัติ
+     ⚠️ อัปเดตแถวในมือทันที (optimistic) ไม่ต้อง reload ทั้งชุด — ลากทีละจุดหลายรอบ
+        ถ้า refetch ทุกครั้งจะกระตุกจนเล็งไม่ได้ · ล้มเหลวค่อยดึงของจริงกลับมาทับ */
+  const saveLabelOffset = async (id, dx, dy) => {
+    setItems(prev => prev.map(it => (it.id === id ? { ...it, label_dx: dx, label_dy: dy } : it)));
+    const ok = checkWrite(await supabase.from('qa_inspection_items')
+      .update({ label_dx: dx, label_dy: dy }).eq('id', id), 'ตำแหน่งป้าย balloon');
+    if (!ok) loadItems(sel?.id);
+  };
+  /** คืนป้ายทุกตัวของแผ่นนี้กลับเป็นทิศอัตโนมัติ — ทางออกเมื่อลากจนมั่ว */
+  const resetLabelOffsets = async () => {
+    const ids = items.filter(i => i.label_dx != null && i.drawing_id === activeDwg?.id).map(i => i.id);
+    if (!ids.length) return;
+    if (!confirm(`คืนตำแหน่งป้ายอัตโนมัติ ${ids.length} จุดบนแผ่นนี้?`)) return;
+    const ok = checkWrite(await supabase.from('qa_inspection_items')
+      .update({ label_dx: null, label_dy: null }).in('id', ids), 'คืนตำแหน่งป้ายอัตโนมัติ');
+    if (ok) { toast.success(`คืนอัตโนมัติ ${ids.length} จุดแล้ว ✓`); loadItems(sel?.id); }
+  };
+
   const openEditItem = (it) => setItemModal({
     ...EMPTY_ITEM, ...it,
     balloon_no: it.balloon_no ?? '', nominal: it.nominal ?? '', usl: it.usl ?? '', lsl: it.lsl ?? '',
@@ -619,21 +659,15 @@ export default function QAInspectionSetup() {
   });
 
   return (
-    <div style={{ padding: '0 18px 30px', maxWidth: 1500, margin: '0 auto' }}>
-      <div style={{ marginBottom: 14 }}>
-        <h1 style={{ fontSize: 20, fontWeight: 900, margin: 0, fontFamily: 'var(--font-display)' }}>
-          📐 มาตรฐานการตรวจ & Drawing
-        </h1>
-        <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 3 }}>
-          อัพโหลดแบบชิ้นงาน วาง balloon จุดตรวจ และกำหนดมาตรฐานการตรวจสอบต่อ part — จุด variable ส่งเข้า SPC (หน้า Quality Control Center) ได้
-        </div>
-      </div>
+    <Page>
+      <PageHeader title="มาตรฐานการตรวจ & Drawing" icon="📐"
+        sub="อัพโหลดแบบชิ้นงาน วาง balloon จุดตรวจ และกำหนดมาตรฐานการตรวจสอบต่อ part — จุด variable ส่งเข้า SPC (หน้า Quality Control Center) ได้" />
 
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(230px, 290px) 1fr', gap: 14, alignItems: 'start' }}>
         {/* ── ซ้าย: รายการ part ── */}
         <div style={{ ...cardSt, padding: 12, ...(isMobile ? null : { position: 'sticky', top: 70 }) }}>
           <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
-            <input style={{ ...inputSt, flex: 1 }} placeholder="🔍 ค้นหา part…" value={search} onChange={e => setSearch(e.target.value)} />
+            <SearchInput value={search} onChange={setSearch} fields="part" />
             {canManage && <button style={{ ...btnSt(), padding: '8px 12px' }} title="เพิ่ม Part" onClick={() => setPartModal({ ...EMPTY_PART })}>＋</button>}
           </div>
           <div style={{ maxHeight: '65vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -741,8 +775,7 @@ export default function QAInspectionSetup() {
                         style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}>✏️</button>
                       <button className="tbtn" title={`เปลี่ยนรูปแผ่น "${activeDwg.title}"`} disabled={uploading} onClick={() => replaceRef.current?.click()}
                         style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}>🔄</button>
-                      <button className="tbtn" title={`ลบแผ่น "${activeDwg.title}"`} onClick={() => deleteDrawing(activeDwg)}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: '#ef4444' }}>🗑</button>
+                      <DeleteButton title={`ลบแผ่น "${activeDwg.title}"`} onClick={() => deleteDrawing(activeDwg)} />
                     </div>
                   )}
                 </div>
@@ -767,6 +800,11 @@ export default function QAInspectionSetup() {
                     <span style={{ fontSize: 12.5, fontWeight: 800, minWidth: 52, textAlign: 'center', color: 'var(--text)' }}>{Math.round(zoom * 100)}%</span>
                     <button style={ghostBtn} onClick={() => setZoom(z => Math.min(4, +(z + 0.5).toFixed(2)))} disabled={zoom >= 4} title="ซูมเข้า">➕</button>
                     {zoom > 1 && <button style={ghostBtn} onClick={() => setZoom(1)}>↺ พอดีกรอบ</button>}
+                    {/* 🏷️ ทางกลับเมื่อลากป้ายจนมั่ว — โผล่เฉพาะเมื่อมีจุดที่ตั้งตำแหน่งเองบนแผ่นนี้ */}
+                    {canManage && items.some(i => i.label_dx != null && i.drawing_id === activeDwg?.id) && (
+                      <button style={ghostBtn} onClick={resetLabelOffsets}
+                        title="คืนป้ายเลขทุกจุดบนแผ่นนี้กลับเป็นทิศอัตโนมัติ">↺ คืนป้ายอัตโนมัติ</button>
+                    )}
                     <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{zoom > 1 ? 'เลื่อนดูส่วนอื่นของแบบได้ในกรอบ' : 'เห็นแบบเต็มใบพอดีกรอบ — ซูมเข้าเพื่อวางจุดละเอียดขึ้น'}</span>
                   </div>
                   {/* div นอก = ตัววัดความกว้างที่ใช้ได้ (ไม่ scroll) · div ใน = กรอบดู สูงไม่เกิน viewH
@@ -803,7 +841,9 @@ export default function QAInspectionSetup() {
                           <CalloutPin key={i.id} xPct={i.pos_x} yPct={i.pos_y} layerW={dwgSize.w} layerH={dwgSize.h} size={BK}
                             label={i.balloon_no} color={i.id === placingId ? '#f59e0b' : (i.rank ? RANK[i.rank]?.color : '#4d9fff')}
                             selected={i.id === placingId} opacity={i.is_active ? 1 : 0.45}
-                            title={`#${i.balloon_no} ${i.characteristic}${i.spec_text ? ` · ${i.spec_text}` : ''}`}
+                            offX={i.label_dx} offY={i.label_dy}
+                            title={`#${i.balloon_no} ${i.characteristic}${i.spec_text ? ` · ${i.spec_text}` : ''}${canManage ? ' · ลากป้ายเลขเพื่อหลบไม่ให้ลูกศรทับกัน' : ''}`}
+                            onLabelMove={canManage ? ((dx, dy) => saveLabelOffset(i.id, dx, dy)) : undefined}
                             onClick={e => { e.stopPropagation(); if (canManage) openEditItem(i); }} />
                         ))}
                       </div>
@@ -869,7 +909,7 @@ export default function QAInspectionSetup() {
                               <button className="tbtn" title="สร้างจุดควบคุม SPC จากจุดตรวจนี้" onClick={() => sendToSPC(it)}
                                 style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: 'var(--accent)', fontWeight: 800 }}>→SPC</button>
                             )}
-                            <button className="tbtn" title="ลบ" onClick={() => delItem(it)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: '#ef4444' }}>🗑</button>
+                            <DeleteButton title="ลบ" onClick={() => delItem(it)} />
                           </td>
                         )}
                       </tr>
@@ -1063,6 +1103,6 @@ export default function QAInspectionSetup() {
           </div>
         </Modal>
       )}
-    </div>
+    </Page>
   );
 }

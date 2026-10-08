@@ -20,10 +20,13 @@ import {
 } from '../utils/dieStatus';
 import { moStatusLabel } from '../utils/mtnStepPerm';   // ป้ายสถานะใบ MO (แยกรอ QA / รอรับมอบ)
 import DieStatusEditor from './DieStatusEditor';
+import FilterBar from './FilterBar';
+import SearchInput from './SearchInput';
+import ScanModal from './ScanModal';   // 📷 สแกนป้ายแม่พิมพ์ → เด้งเข้าหมุด (2026-10-06)
 import { uploadOpts } from '../utils/storageUpload';
 
 const inp = { width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box' };
-const btnPri = { background: 'var(--accent)', color: '#071008', border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' };
+const btnPri = { background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' };
 const btnGhost = { background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 13px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' };
 const warnBox = { background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.45)', borderRadius: 10, padding: '10px 14px', fontSize: 12.5, color: 'var(--text)' };
 
@@ -61,7 +64,7 @@ const missErr = (e) => e && (e.code === '42703' || e.code === '42P01');
 
 export default function DieLayout({
   dies, setsById, areas, openMos, products = [], canEdit, fullName, ready, reload, patchDieExt, reloadAreas,
-  focusDieId, onFocusConsumed,
+  focusDieId, onFocusConsumed, onScanDie,
 }) {
   const navigate = useNavigate();
   const [sp, setSp] = useSearchParams();
@@ -75,6 +78,8 @@ export default function DieLayout({
   const [areaForm, setAreaForm] = useState(null);
   const [mapW, setMapW] = useState(800);
   const [mapH, setMapH] = useState(450);
+  const [scanOpen, setScanOpen] = useState(false);
+  const panelRef = useRef(null);   // แผงรายละเอียดหมุด — สแกนแล้วเลื่อนมาให้เห็น (มือถือแผงอยู่ใต้ผัง)
   const wrapRef = useRef(null);
   const moveRef = useRef(null);
 
@@ -197,10 +202,15 @@ export default function DieLayout({
     if (d) {
       setSelId(d.id);
       if (d.ext?.area_id && d.ext?.pos_x != null) setAreaId(d.ext.area_id);
-      else toast.info('แม่พิมพ์ตัวนี้ยังไม่ได้วางบนผัง — ดูข้อมูลได้ที่แผงขวา');
+      else toast.info(`${d.machine_no} ยังไม่ได้วางบนผัง` + (canEdit ? ' — ✏️ แก้ผัง แล้ว 📍 วาง' : ''));
+      // รอให้แผงวาดก่อนค่อยเลื่อน (เปลี่ยนผัง = รูปใหม่ · layout ขยับ)
+      setTimeout(() => panelRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' }), 150);
+    } else {
+      // แม่ถูกตัดสินว่าเจอแล้ว แต่ไม่อยู่ใน activeDies ของจอนี้ — ห้ามเงียบ
+      toast.error('หาแม่พิมพ์ตัวนี้บนผังไม่เจอ (อาจถูกปิดใช้งาน/อยู่นอกขอบเขต)');
     }
     onFocusConsumed?.();
-  }, [focusDieId, activeDies, onFocusConsumed]);
+  }, [focusDieId, activeDies, onFocusConsumed, canEdit]);
 
   /* ── วาง / ย้าย / เอาออก ─────────────────────────────────────────── */
   const writePlacement = async (dieId, patch, snapForHist) => {
@@ -303,19 +313,23 @@ export default function DieLayout({
 
   return (
     <div>
-      {/* ── แถบเครื่องมือ ── */}
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10 }}>
+      {/* ── แถบเครื่องมือ ── มาตรฐาน FilterBar (UI-STANDARD 2026-09-24 — เดิมช่อง/ปุ่มสูง 3 แบบ) */}
+      <FilterBar>
         {fromFactoryMap && (
           <button onClick={() => navigate('/factory-map')} style={btnGhost}>← กลับผังรวมโรงงาน</button>
         )}
-        <select value={areaId} onChange={e => { setAreaId(e.target.value); setSelId(null); setPlacingId(null); hist.clear(); }} style={{ ...inp, width: 240 }}>
+        <select value={areaId} onChange={e => { setAreaId(e.target.value); setSelId(null); setPlacingId(null); hist.clear(); }}>
           {!areas.length && <option value="">— ยังไม่มีผังจัดเก็บ —</option>}
           {areas.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
         </select>
-        <input value={q} onChange={e => setQ(e.target.value)}
-          placeholder="🔍 หาแม่พิมพ์ — เลขแม่พิมพ์ / ชื่อพาร์ท / สถานะ"
-          style={{ ...inp, width: 320, flex: '1 1 220px' }} />
-        <button onClick={() => setShowLabels(v => !v)} style={{ ...btnGhost, padding: '8px 11px' }} title="โชว์/ซ่อนป้ายชื่อหมุด">
+        <SearchInput value={q} onChange={setQ} fields="เลขแม่พิมพ์ / ชื่อพาร์ท / สถานะ" />
+        {onScanDie && (
+          <button onClick={() => setScanOpen(true)} style={btnGhost} title="สแกนป้าย QR ที่ติดแม่พิมพ์ แล้วเด้งไปหมุดของตัวนั้น">
+            📷 สแกนป้ายแม่พิมพ์
+          </button>
+        )}
+        <span className="spacer" />
+        <button onClick={() => setShowLabels(v => !v)} style={{ ...btnGhost, padding: '0 11px' }} title="โชว์/ซ่อนป้ายชื่อหมุด">
           🏷️ {showLabels ? 'ซ่อนป้าย' : 'โชว์ป้าย'}
         </button>
         {canEdit && <>
@@ -330,7 +344,7 @@ export default function DieLayout({
             🏭 ดูบนผังรวมโรงงาน
           </button>
         )}
-      </div>
+      </FilterBar>
       {/* บอกสถานะ link กับผังรวม — ห้ามเงียบ: ตีกรอบแล้วโซนบนผังรวมจะโชว์สถานะแม่พิมพ์ + คลิกเด้งมาหน้านี้ */}
       {area && mapZoneNames && !onFactoryMap && (
         <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10 }}>
@@ -465,7 +479,7 @@ export default function DieLayout({
           {/* ── แผงขวา ── */}
           <div style={{ display: 'grid', gap: 10 }}>
             {selDie ? (
-              <div style={{ background: 'var(--card)', border: '1px solid var(--accent)', borderRadius: 10, padding: 12 }}>
+              <div ref={panelRef} style={{ background: 'var(--card)', border: '1px solid var(--accent)', borderRadius: 10, padding: 12 }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 6 }}>
                   <div style={{ fontSize: 13.5, fontWeight: 800, wordBreak: 'break-word', flex: 1 }}>🔨 {selDie.machine_no}</div>
                   <button onClick={() => setSelId(null)} style={{ ...btnGhost, padding: '3px 8px', fontSize: 12 }}>✕</button>
@@ -570,6 +584,11 @@ export default function DieLayout({
         </div>
       )}
 
+      {scanOpen && (
+        <ScanModal title="📷 สแกนป้ายแม่พิมพ์" hint="ส่องป้าย QR ที่ติดแม่พิมพ์ หรือพิมพ์/ยิงเลขแม่พิมพ์"
+          onScan={(parsed) => onScanDie(parsed)}   // คืนข้อความ = โชว์ในโมดัลให้สแกนใหม่ · undefined = เจอ ปิดเอง
+          onClose={() => setScanOpen(false)} />
+      )}
       {areaForm && (
         <AreaFormModal {...areaForm} onClose={() => setAreaForm(null)}
           onSaved={async (id) => { setAreaForm(null); await reloadAreas(); if (id) setAreaId(id); }} />

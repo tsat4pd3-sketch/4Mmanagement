@@ -7,6 +7,7 @@ import { toast } from '../components/Toast';
 import { getRoundStatus } from '../utils/deliveryRounds';
 import { routeThroughStops, nodeKind, bestStopOrder } from '../utils/transportGraph';
 import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
 import useTabParam from '../utils/useTabParam';
 import { visibleInterval } from '../utils/usePolling';
 import { RATE } from '../utils/refreshRates';
@@ -130,22 +131,39 @@ export default function Transport() {
   }, [roundStops]);
   const nRoutes = useMemo(() => Object.values(stopsByRound).filter(a => a.length >= 2).length, [stopsByRound]);
 
-  // เขียนลำดับจุดจอดใหม่ทั้งรอบ (delete-then-insert — กัน unique(round_id,seq) ชน)
-  // actionByNode: คงค่า load/drop เดิมของแต่ละจุดไว้ตอนเรียงใหม่ (คอลัมน์ action — migration 20260803)
+  /* เขียนลำดับจุดจอดใหม่ทั้งรอบ — 🔴 **ใส่ชุดใหม่ก่อน แล้วค่อยลบชุดเดิมตาม id** (QC 05/10)
+     เดิม delete-then-insert: insert ล้ม (เน็ตหลุด/สิทธิ์) = เส้นทางของรอบนั้นหายทั้งเส้นเงียบๆ
+     · unique(round_id, seq) ⇒ ชุดใหม่ใช้ seq คนละช่วงกับชุดเดิม (สลับ 0.. ⇄ 1000..) ไม่ชนกัน
+       ลำดับยังเรียงด้วย seq เหมือนเดิม (จอเรียง a.seq - b.seq · ไม่มีใครอ่านค่า seq ดิบ)
+     · ลบชุดเดิมล้ม = ชุดใหม่อยู่ครบแล้วแต่มีจุดซ้อน ⇒ บอกตรงๆ ให้กดบันทึกซ้ำ (จะเก็บกวาดเอง)
+     actionByNode: คงค่า load/drop เดิมของแต่ละจุดไว้ตอนเรียงใหม่ (คอลัมน์ action — migration 20260803) */
   const saveStops = async (roundId, orderedNodeIds, actionByNode = {}) => {
     setBusy(roundId);
     try {
       // ใส่คีย์ action เฉพาะเมื่อคอลัมน์มีจริง (แถวที่ select มามีคีย์นี้) — ยังไม่ apply migration ก็ยังบันทึกได้
       const hasActionCol = roundStops.some(s => 'action' in s);
-      const { error: wErr138 } = await supabaseDR.from('transport_round_stops').delete().eq('round_id', roundId);
-      if (wErr138) { setBusy(null); toast.error('ล้างจุดจอดเดิม (ยังไม่เขียนชุดใหม่ กันซ้ำ)ไม่สำเร็จ: ' + wErr138.message); return; }
+      // อ่านชุดเดิม "สด" จากฐาน (ไม่ใช้ state — อีกเครื่องอาจแก้ไปแล้ว) · อ่านไม่ได้ = หยุด ห้ามเดาว่าไม่มี
+      const { data: old, error: eOld } = await supabaseDR.from('transport_round_stops').select('id, seq').eq('round_id', roundId);
+      if (eOld) throw new Error('อ่านจุดจอดเดิมไม่สำเร็จ — ยังไม่เขียนอะไร: ' + eOld.message);
+      const used = new Set((old || []).map(s => Number(s.seq)));
+      const n = orderedNodeIds.length;
+      const free = (b) => { for (let i = 0; i < n; i++) if (used.has(b + i)) return false; return true; };
+      // ปกติสลับ 0 ⇄ 1000 · ชุดเดิมซ้อนค้างจากรอบที่ล้างไม่ครบ = ต่อท้าย seq สูงสุด
+      const base = free(0) ? 0 : free(1000) ? 1000 : Math.max(...used) + 1;
       if (orderedNodeIds.length) {
         const rows = orderedNodeIds.map((nid, i) => ({
-          round_id: roundId, seq: i, node_id: nid, updated_by_name: fullName,
+          round_id: roundId, seq: base + i, node_id: nid, updated_by_name: fullName,
           ...(hasActionCol ? { action: actionByNode[nid] ?? null } : {}),
         }));
         const { error } = await supabaseDR.from('transport_round_stops').insert(rows);
-        if (error) throw error;
+        if (error) throw new Error('บันทึกเส้นทางใหม่ไม่สำเร็จ — เส้นทางเดิมยังอยู่ครบ: ' + error.message);
+      }
+      const oldIds = (old || []).map(s => s.id);
+      if (oldIds.length) {
+        const { data: del, error: eDel } = await supabaseDR.from('transport_round_stops').delete().in('id', oldIds).select('id');
+        if (eDel || (del?.length || 0) !== oldIds.length) {
+          toast.error(`บันทึกเส้นทางใหม่แล้ว แต่ล้างจุดจอดเดิมไม่ครบ (${del?.length || 0}/${oldIds.length}) — จุดอาจซ้อนกัน กดบันทึกอีกครั้ง${eDel ? ': ' + eDel.message : ''}`);
+        }
       }
       await load();
     } catch (err) { toast.error(err.message); }
@@ -159,7 +177,7 @@ export default function Transport() {
   };
 
   return (
-    <div style={{ padding: 'clamp(12px, 2vw, 24px)', maxWidth: 'min(96vw, 1500px)', margin: '0 auto' }}>
+    <Page>
       <PageHeader
         title="มอบหมายขนส่ง (Transport)" icon="🚚"
         sub="มอบหมายคนขับ/ผู้ขน (carrier) ให้รอบส่งภายในของวันนี้ · ยึดรอบส่งที่ตั้งไว้แล้ว (📦 Line Stock → รอบจัดส่ง) · เฟส 1"
@@ -238,7 +256,7 @@ export default function Transport() {
             <span style={{ fontWeight: 800, fontSize: 15, color: 'var(--text)' }}>👷 คนขับ / ผู้ขน</span>
             {canManage && (
               <button onClick={() => setEditCarrier({ name: '', emp_code: '', shift: 'day', vehicles: [], section: '', is_active: true, note: '' })}
-                style={{ padding: '7px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 700, background: 'var(--accent)', color: '#08130a', border: 'none' }}>
+                style={{ padding: '7px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 700, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>
                 ➕ เพิ่มคนขับ
               </button>
             )}
@@ -270,7 +288,7 @@ export default function Transport() {
         <CarrierModal carrier={editCarrier} vehicles={vehicles} employees={employees} fullName={fullName}
           onClose={() => setEditCarrier(null)} onSaved={() => { setEditCarrier(null); load(); }} />
       )}
-    </div>
+    </Page>
   );
 }
 
@@ -556,7 +574,7 @@ function RouteTab({ byLine, stopsByRound, stopNodes, nById, nodes, edges, imageU
                   </label>
                 )}
                 <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 2 }}>
-                  <button onClick={() => { if (simFrac >= 1) setSimFrac(0); setSimRun(r => !r); }} style={{ padding: '6px 12px', borderRadius: 8, cursor: 'pointer', fontSize: 12.5, fontWeight: 800, background: 'var(--accent)', color: '#08130a', border: 'none' }}>
+                  <button onClick={() => { if (simFrac >= 1) setSimFrac(0); setSimRun(r => !r); }} style={{ padding: '6px 12px', borderRadius: 8, cursor: 'pointer', fontSize: 12.5, fontWeight: 800, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>
                     {simRun ? '⏸ หยุด' : '▶ จำลองการวิ่ง'}
                   </button>
                   <button onClick={() => { setSimRun(false); setSimFrac(0); }} style={{ padding: '6px 10px', borderRadius: 8, cursor: 'pointer', fontSize: 12.5, background: 'var(--bg2)', color: 'var(--text2)', border: '1px solid var(--border)' }}>↺</button>
@@ -704,7 +722,7 @@ function CarrierModal({ carrier, vehicles, employees = [], fullName, onClose, on
             <span style={lbl}>🔎 เลือกจากฐานพนักงาน</span>
             <input value={empQ} onChange={e => setEmpQ(e.target.value)} placeholder="ค้นหาชื่อ / รหัสพนักงาน…" style={inp} />
             {empMatches.length > 0 && (
-              <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 5, marginTop: 2, maxHeight: 220, overflowY: 'auto', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: '0 6px 20px rgba(0,0,0,0.4)' }}>
+              <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 5, marginTop: 2, maxHeight: 220, overflowY: 'auto', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-float)' }}>
                 {empMatches.map(e => (
                   <button key={e.id} onClick={() => pickEmp(e)} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '7px 10px', fontSize: 12.5, background: 'none', border: 'none', borderBottom: '1px solid var(--border2)', color: 'var(--text)', cursor: 'pointer' }}>
                     {e.name} {e.employee_id_code ? <span style={{ color: 'var(--muted)' }}>· {e.employee_id_code}</span> : ''}{e.section ? <span style={{ color: 'var(--muted)' }}> · {e.section}</span> : ''}
@@ -740,7 +758,7 @@ function CarrierModal({ carrier, vehicles, employees = [], fullName, onClose, on
                 return (
                   <button key={v.code} onClick={() => toggleVeh(v.code)} style={{
                     padding: '6px 11px', borderRadius: 20, cursor: 'pointer', fontSize: 12, fontWeight: 700,
-                    background: on ? 'var(--accent)' : 'var(--bg2)', color: on ? '#08130a' : 'var(--text2)',
+                    background: on ? 'var(--accent)' : 'var(--bg2)', color: on ? 'var(--accent-ink)' : 'var(--text2)',
                     border: `1px solid ${on ? 'var(--accent)' : 'var(--border)'}`,
                   }}>{v.icon} {v.name}</button>
                 );
@@ -754,7 +772,7 @@ function CarrierModal({ carrier, vehicles, employees = [], fullName, onClose, on
         </div>
         <div style={{ display: 'flex', gap: 10, marginTop: 18, justifyContent: 'flex-end' }}>
           <button onClick={onClose} style={{ padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 13, background: 'var(--bg2)', color: 'var(--text2)', border: '1px solid var(--border)' }}>ยกเลิก</button>
-          <button onClick={save} disabled={saving} style={{ padding: '8px 18px', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 700, background: 'var(--accent)', color: '#08130a', border: 'none' }}>{saving ? 'กำลังบันทึก...' : '💾 บันทึก'}</button>
+          <button onClick={save} disabled={saving} style={{ padding: '8px 18px', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 700, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>{saving ? 'กำลังบันทึก...' : '💾 บันทึก'}</button>
         </div>
       </div>
     </div>

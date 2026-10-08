@@ -1,18 +1,29 @@
 import { useState, useEffect, useMemo, useContext } from 'react';
 import { supabase } from '../supabaseClient';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { toast } from '../components/Toast';
+import {
+  loadOrgNodeRefs, orgRefBlockMessage, orgRefDeleteNote, orgRefDeactivateNote,
+  orgRefKeyChange, renameOrgRefs, ORG_KIND_TH,
+} from '../utils/orgNodeRefs';
 import { loadDivisions, divisionsSync, divisionOfNode } from '../utils/orgDivisions';
-import { laborMeta } from '../utils/laborType';
+import { laborMeta, laborTypeOfNode } from '../utils/laborType';
 import CostCenterRatePanel from '../components/CostCenterRatePanel';
+import OrgAssignmentsPanel from '../components/OrgAssignmentsPanel';   // 👔 ใครคุมหน่วยไหน + รักษาการ
 import LineSelect from '../components/LineSelect';
 import PersonSelect from '../components/PersonSelect';
 import CostCenterSelect from '../components/CostCenterSelect';
 
 import InfoMore from '../components/InfoMore';
-const KIND_LABEL = { section: 'Section / ส่วน', department: 'Department / แผนก', line: 'Group / กลุ่ม' };
+import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
+import { IconButton, DeleteButton } from '../components/IconButton';
+/* 🔴 ชั้นไหนมีพาเนล/ปุ่มเพิ่มบนจอ ต้องมีป้ายครบทุกชั้น — ขาดตัวไหน หัวโมดัลขึ้น "เพิ่ม undefined"
+   (เกิดจริง 05/10 ตอนเพิ่มชั้นทีมแล้วลืมเติมที่นี่ · มีด่าน regressionGuards) */
+const KIND_LABEL = { section: 'Section / ส่วน', department: 'Department / แผนก', line: 'Group / กลุ่ม', team: 'Team / ทีม' };
 const COST_CENTER_REQUIRED = ['section', 'department', 'line'];
 
 export default function OrgSetup() {
@@ -32,6 +43,7 @@ export default function OrgSetup() {
   const [loading, setLoading] = useState(true);
   const [selSection, setSelSection] = useState(null);
   const [selDept, setSelDept] = useState(null);
+  const [selLine, setSelLine] = useState(null);   // กลุ่มที่เลือก → ไล่ลงชั้น "ทีม"
   const [modal, setModal] = useState(null); // { kind, parentId, editing }
   const [formName, setFormName] = useState('');
   const [formCode, setFormCode] = useState('');
@@ -55,7 +67,7 @@ export default function OrgSetup() {
     setLoading(true);
     const [{ data: orgData }, { data: lineData }, { data: signerRows }] = await Promise.all([
       supabase.from('org_nodes').select('*').order('sort_order'),
-      supabase.from('production_lines').select('id, name, section, cost_center').order('name'),
+      loadLinesRes(),
       supabase.from('section_signers').select('*'),
     ]);
     setNodes(orgData || []);
@@ -74,6 +86,13 @@ export default function OrgSetup() {
     ? orphanDepts
     : nodes.filter(n => n.kind === 'department' && n.parent_id === sectionId);
   const linesOf = (deptId) => nodes.filter(n => n.kind === 'line' && n.parent_id === deptId);
+  /* 🔴 ชั้น "ทีม" มีจริงในผัง (`org_nodes kind='team'`) และถูกใช้งานอยู่ — `useOrgTeams()` อ่านไปทำ
+     ลิสต์ทีม/กะทั้งระบบ (ผังไม่มีทีม = ถอยไป A/B/C เดิม) · แต่เดิมหน้านี้มีแค่ 3 ชั้น
+     ⇒ ทีมที่ seed ไว้ "มองไม่เห็นจากที่ไหนเลย" แล้วไปโผล่ตอนลบกลุ่มว่า "ยังมีหน่วยงานลูก 3 รายการ"
+     (เคสจริง 05/10 · user ถามว่า "ลูกอยู่ไหน" — Assembly Line A1 / Spare Part มีทีม A/B/C อยู่ใต้)
+     **ห้ามถอดพาเนลทีมออก** ถ้าไม่ย้ายการจัดการทีมไปไว้ที่อื่นก่อน ไม่งั้นกลับไปเป็นทางตันเหมือนเดิม */
+  const allLines = useMemo(() => nodes.filter(n => n.kind === 'line'), [nodes]);
+  const teamsOf = (lineId) => nodes.filter(n => n.kind === 'team' && n.parent_id === lineId);
 
   /* id ของ section ที่ผู้ใช้สังกัด — เทียบทั้ง code และ name (บาง section ไม่มี code) */
   const mySecId = useMemo(() => {
@@ -93,6 +112,11 @@ export default function OrgSetup() {
       const dep = allDepts.find(d => d.id === node.parent_id);
       return !!dep && dep.parent_id === mySecId;
     }
+    if (node.kind === 'team') {        // ทีม → ไต่ขึ้น กลุ่ม → แผนก → ส่วนงานของตัวเอง
+      const ln  = allLines.find(l => l.id === node.parent_id);
+      const dep = ln && allDepts.find(d => d.id === ln.parent_id);
+      return !!dep && dep.parent_id === mySecId;
+    }
     return false;                       // section = admin เท่านั้น
   };
   const canAddDeptHere = (secId) => isAdmin || (canOwn && !!mySecId && secId === mySecId);
@@ -101,8 +125,26 @@ export default function OrgSetup() {
     const dep = allDepts.find(d => d.id === deptId);
     return canOwn && !!mySecId && !!dep && dep.parent_id === mySecId;
   };
+  const canAddTeamHere = (lineId) => {
+    if (isAdmin) return true;
+    const ln  = allLines.find(l => l.id === lineId);
+    const dep = ln && allDepts.find(d => d.id === ln.parent_id);
+    return canOwn && !!mySecId && !!dep && dep.parent_id === mySecId;
+  };
+  /* 🔴 ด่านชั้นสองตอนบันทึก ต้องครอบ "ทุกชั้นที่หน้านี้มีปุ่มเพิ่ม" — เดิมเป็นเชน ternary ลงท้าย `: false`
+     ⇒ เพิ่มชั้นใหม่ (ทีม 05/10) แล้วลืมต่อสาขา = ปุ่ม ➕ โชว์ แต่กดบันทึกเด้ง "แก้ได้เฉพาะ…" (เกิดจริง)
+     ใช้ map แทน: ชั้นที่ไม่มีตัวตรวจ = admin เท่านั้น (section) ซึ่งตรงกับปุ่มบนจอ · มีด่าน regressionGuards */
+  const CAN_ADD_HERE = { department: canAddDeptHere, line: canAddLineHere, team: canAddTeamHere };
+
   // single source: cost center ระดับไลน์มาจาก production_lines (ตั้งที่หน้าจัดการไลน์) — org group node ที่ผูก ref_line_id ไม่เก็บซ้ำ
   const lineById = useMemo(() => Object.fromEntries(lines.map(l => [String(l.id), l])), [lines]);
+
+  /* 🗂️ กลุ่มที่อยู่ใต้แผนกสายสนับสนุน "ไม่มีไลน์ผลิตให้ผูก" — ถามไปก็ตอบไม่ได้ (feedback user 24/09:
+     *"ลูกของ indirect ไม่น่าต้องเลือกไลน์ผลิตนะ"* — เคสจริง: `Store Semi` ใต้ PLN & STO › STORE)
+     `labor_type` ตั้งได้แค่ระดับ section/department ⇒ กลุ่มต้องไต่ขึ้นไปหาแม่ (laborTypeOfNode) */
+  const modalParentLabor = useMemo(
+    () => (modal?.kind === 'line' && modal.parentId ? laborTypeOfNode(modal.parentId, nodes) : null),
+    [modal, nodes]);
   // รหัส cost center ที่มีใช้อยู่แล้ว (ผัง + ไลน์) — datalist ให้ reuse รหัสเดิม ไม่พิมพ์เพี้ยน (ยังไม่มี master cost_centers) 2026-09-07
   const ccCodes = useMemo(() => [...new Set([...nodes.map(n => n.cost_center), ...lines.map(l => l.cost_center)].map(c => String(c || '').trim()).filter(Boolean))].sort(), [nodes, lines]);
   const lineCostCenter = (node) => {
@@ -117,9 +159,13 @@ export default function OrgSetup() {
       const sec = sections.find(s => s.id === d.parent_id);
       return { id: d.id, label: `${sec ? sec.name : 'ขึ้นตรงฝ่าย'} > ${d.name}` };
     });
+    if (kind === 'team') return allLines.map(l => {
+      const dep = allDepts.find(d => d.id === l.parent_id);
+      return { id: l.id, label: `${dep ? dep.name : 'ไม่มีแผนก'} > ${l.name}` };
+    });
     return [];
   };
-  const PARENT_LABEL = { department: 'อยู่ภายใต้ Section', line: 'อยู่ภายใต้ Department' };
+  const PARENT_LABEL = { department: 'อยู่ภายใต้ Section', line: 'อยู่ภายใต้ Department', team: 'อยู่ภายใต้ Group' };
 
   useEffect(() => {
     if (!selSection && sections.length) setSelSection(sections[0].id);
@@ -132,6 +178,7 @@ export default function OrgSetup() {
   }, [selSection, nodes]); // eslint-disable-line
 
   const currentLines = selDept ? linesOf(selDept) : [];
+  const currentTeams = selLine ? teamsOf(selLine) : [];
 
   // key ของ section_signers = ค่าที่ production_lines.section ใช้ (= ค่าที่ใบค่าฝีมืออ้างถึง)
   // resolve จาก node.code / node.name โดยเทียบกับค่าจริงใน production_lines กันคีย์ผิดจนข้อมูลกำพร้า
@@ -186,8 +233,9 @@ export default function OrgSetup() {
     // guard ชั้นสอง — ซ่อนปุ่มอย่างเดียวไม่พอ (โมดัลอาจถูกเปิดค้างไว้ตอนสิทธิ์เปลี่ยน)
     if (!isAdmin) {
       const okAdd = modal.editing ? canEditNode(modal.editing)
-        : (modal.kind === 'department' ? canAddDeptHere(modal.parentId) : modal.kind === 'line' ? canAddLineHere(modal.parentId) : false);
-      if (!okAdd) return toast.error('แก้ได้เฉพาะแผนก/กลุ่มใต้ส่วนงานของคุณ');
+        : !!CAN_ADD_HERE[modal.kind]?.(modal.parentId);
+      if (!okAdd) return toast.error(`ไม่มีสิทธิ์${modal.editing ? 'แก้' : 'เพิ่ม'}`
+        + `${ORG_KIND_TH[modal.kind] || 'หน่วยงาน'}ตรงนี้ — ทำได้เฉพาะใต้ส่วนงานของคุณ`);
     }
     // group/line node ที่ผูก production_lines → cost center มาจาก production_lines (single source) ไม่บังคับ/ไม่เช็คซ้ำ
     const linkedLine = modal.kind === 'line' && !!formRefLineId;
@@ -200,6 +248,24 @@ export default function OrgSetup() {
         n.is_active && n.cost_center && n.cost_center.trim() === formCostCenter.trim() && n.id !== modal.editing?.id
       );
       if (dup) return toast.error(`Cost Center นี้ถูกใช้แล้วที่ "${dup.name}" — กรุณาเปลี่ยนเลข`);
+    }
+    /* 🔴 เปลี่ยน "คีย์" ของโหนด = สำเนาชื่อในทะเบียนอื่นชี้ของที่ไม่มีอยู่แล้ว (05/10)
+         คีย์ = `code || name` · กลุ่มใช้ "ชื่อ" (ดู src/utils/orgNodeRefs.js)
+       ⇒ ถามก่อน แล้วไล่เปลี่ยนตามให้ในคราวเดียว · ไม่เปลี่ยนตาม = คนหลุดหน่วยงานเงียบๆ
+         (เคยต้องตามเก็บด้วย migration: 20261004_employees_department_typos_main.sql) */
+    const editNode = modal.editing;
+    const keyChg = editNode ? orgRefKeyChange(editNode, formName.trim(), formCode.trim() || null) : null;
+    let cascade = null;
+    if (keyChg) {
+      const refs = await loadOrgNodeRefs(supabase, editNode, nodes);
+      if (refs.partial) return toast.error('ยังไม่บันทึก — ตรวจไม่ครบว่ามีใครอ้างชื่อเดิมอยู่ · ลองใหม่อีกครั้ง');
+      const affected = (refs.textEmp || 0) + (refs.textProf || 0);
+      if (affected) {
+        if (!confirm(`เปลี่ยน "${keyChg.from}" → "${keyChg.to}" ?\n\n`
+          + `ทะเบียนที่ยังอ้างชื่อเดิม ${affected} รายการจะถูกเปลี่ยนตามให้ด้วย\n`
+          + '(ถ้าไม่เปลี่ยนตาม คนเหล่านั้นจะหลุดจากหน่วยงานนี้เงียบๆ)')) return;
+        cascade = keyChg;
+      }
     }
     setSaving(true);
     const payload = {
@@ -215,56 +281,94 @@ export default function OrgSetup() {
       // ฝ่าย — ติดที่ node ระดับบนสุดพอ ลูกตกทอดขึ้นไปหาเอง (ดู divisionOfNode)
       ...(['section', 'department'].includes(modal.kind) && canDivisions ? { division: formDivision || null } : {}),
     };
-    const { error } = modal.editing
-      ? await supabase.from('org_nodes').update(payload).eq('id', modal.editing.id)
-      : await supabase.from('org_nodes').insert({ ...payload, sort_order: nodes.length + 1 });
+    /* นับแถว (QC 05/10 · กฎเขียน DB ข้อ 2) — RLS ปฏิเสธ UPDATE = 0 แถว ไม่ error
+       ⇒ เดิมขึ้น "แก้ไขสำเร็จ" ทั้งที่ไม่ได้แก้ · ⚠️ สำคัญขึ้นอีกตั้งแต่ 05/10 เพราะ RLS เขียนของ
+         org_nodes ผูก has_perm('org:manage'/'org:manage_own_unit') แล้ว = ปฏิเสธได้จริง */
+    const { data: wrote, error } = editNode
+      ? await supabase.from('org_nodes').update(payload).eq('id', editNode.id).select('id')
+      : await supabase.from('org_nodes').insert({ ...payload, sort_order: nodes.length + 1 }).select('id');
+    if (error)        { setSaving(false); return toast.error('บันทึกไม่สำเร็จ: ' + error.message); }
+    if (!wrote?.length) { setSaving(false); return toast.error('บันทึกไม่สำเร็จ — ไม่มีสิทธิ์แก้ หรือรายการนี้ถูกลบไปแล้ว'); }
+    // ไล่เปลี่ยน "สำเนาชื่อ" ตามคีย์ใหม่ — เขียนไม่ได้ต้องบอกว่าชื่อไม่ตรงกันแล้ว ห้าม toast เขียวทับ
+    const casc = cascade ? await renameOrgRefs(supabase, editNode, cascade.from, cascade.to) : null;
     setSaving(false);
-    if (error) return toast.error('บันทึกไม่สำเร็จ: ' + error.message);
-    toast.success(modal.editing ? 'แก้ไขสำเร็จ' : 'เพิ่มสำเร็จ');
+    if (casc?.failed.length) {
+      toast.error(`เปลี่ยนชื่อในผังแล้ว แต่ทะเบียนแก้ตามไม่ได้ (${casc.failed[0]})`
+        + ' — ชื่อจะไม่ตรงกันจนแก้ที่หน้าพนักงาน');
+    } else if (casc) {
+      toast.success(`แก้ไขสำเร็จ · เปลี่ยนชื่อตามให้ในทะเบียนอื่น ${casc.rows} รายการ`);
+    } else {
+      toast.success(editNode ? 'แก้ไขสำเร็จ' : 'เพิ่มสำเร็จ');
+    }
     setModal(null);
     fetchAll();
   };
 
   const toggleActive = async (node) => {
     // ยืนยันเฉพาะตอน "ปิดใช้งาน" (กระทบ dropdown/การอ้างอิงทั้งระบบ) — เปิดกลับไม่ต้องถาม
-    if (node.is_active && !confirm(`ปิดใช้งาน "${node.name}" ?\n\nจะหายจาก dropdown/การเลือกในหน้าอื่น (ข้อมูลเดิมยังอยู่ เปิดกลับได้)`)) return;
-    const { error } = await supabase.from('org_nodes').update({ is_active: !node.is_active }).eq('id', node.id);
+    /* 🔴 บอกจำนวนคน/บัญชีที่ผูกอยู่ก่อนปิด — เดิมถามลอยๆ คนกดไม่รู้ว่ากระทบใคร
+       (เคสจริง 05/10: กลุ่มที่คนผูกอยู่ 35 คนหายจาก dropdown แล้วหน้าเช็คชื่อว่างเปล่า) */
+    if (node.is_active) {
+      const refs = await loadOrgNodeRefs(supabase, node, nodes);
+      if (!confirm(`ปิดใช้งาน "${node.name}" ?\n\nจะหายจาก dropdown/การเลือกในหน้าอื่น (ข้อมูลเดิมยังอยู่ เปิดกลับได้)`
+        + orgRefDeactivateNote(refs))) return;
+    }
+    const { data: wrote, error } = await supabase.from('org_nodes')
+      .update({ is_active: !node.is_active }).eq('id', node.id).select('id');
     if (error) return toast.error(error.message);
+    if (!wrote?.length) return toast.error(`${node.is_active ? 'ปิด' : 'เปิด'}ใช้งานไม่สำเร็จ — ไม่มีสิทธิ์แก้ หรือรายการนี้ถูกลบไปแล้ว`);
     fetchAll();
   };
 
   const handleDelete = async (node) => {
+    // ไม่มี id = แถวเพี้ยน · ยิง delete ไม่ได้อยู่แล้ว และนับของที่อ้างถึงก็เชื่อไม่ได้ ⇒ ไม่แตะเลย
+    if (!node?.id) return toast.error('ลบไม่ได้: แถวนี้ไม่มี id — รีเฟรชหน้าแล้วลองใหม่');
     // กันลบทั้งที่ยังมีลูก — เดิม confirm บอก "ลบลูกทั้งหมด" แต่โค้ดลบแค่ node เดียว (พึ่ง cascade)
     // ถ้าไม่มี cascade ลูกจะกำพร้า parent_id ค้าง · ให้ย้าย/ลบลูกก่อน หรือกด "ปิดใช้งาน" แทน
-    const childCount = nodes.filter(n => n.parent_id === node.id).length;
-    if (childCount > 0) return toast.error(`ลบไม่ได้: "${node.name}" ยังมีหน่วยงานลูก ${childCount} รายการ — ย้าย/ลบลูกก่อน หรือกด "ปิดใช้งาน" แทน`);
-    if (!confirm(`ลบ "${node.name}" ?\n\n(ถ้าเคยผูกกับข้อมูลอื่นแนะนำ "ปิดใช้งาน" แทนการลบ)`)) return;
-    const { error } = await supabase.from('org_nodes').delete().eq('id', node.id);
-    if (error) return toast.error('ลบไม่สำเร็จ: ' + error.message);
+    /* 🔴 บอกให้ได้ว่า "ลูกคือใคร" — เดิมบอกแค่จำนวน ผู้ใช้เลยหาไม่เจอว่าต้องไปลบอะไรที่ไหน
+       (user ถามตรง ๆ 05/10: "ลูกอยู่ไหน" — ลูกของกลุ่มคือ *ทีม* ซึ่งตอนนั้นยังไม่มีพาเนลให้เห็น) */
+    const children = nodes.filter(n => n.parent_id === node.id);
+    if (children.length > 0) {
+      const kinds = [...new Set(children.map(c => ORG_KIND_TH[c.kind] || c.kind))].join('/');
+      const names = children.slice(0, 6).map(c => c.name).join(', ')
+                  + (children.length > 6 ? ` …อีก ${children.length - 6}` : '');
+      return toast.error(`ลบไม่ได้: "${node.name}" ยังมี${kinds}ลูก ${children.length} รายการ — ${names}`
+        + ' · ย้าย/ลบลูกก่อน หรือกด "ปิดใช้งาน" แทน');
+    }
+    /* 🔴 relate table ไม่ได้มีแค่ "ลูกในผัง" — ตารางอื่นชี้โหนดนี้อยู่ด้วย (05/10 วัดจริง)
+         employees.org_node_id 308 แถว · profiles.org_node_id 72 · org_assignments 4
+         + สำเนาชื่อแบบ text (employees.section/department/group_name/team · profiles.section/team/sections[])
+       เดิมเช็คแค่ลูก ⇒ ลบ "DIE MTN" (ไม่มีลูก) = พนักงาน 9 คนถูก set null เงียบ ·
+       ลบกลุ่ม "APRON ASSY" = 35 คนเหลือชื่อกลุ่มที่ไม่มีอยู่ในผัง · ดู src/utils/orgNodeRefs.js */
+    const refs = await loadOrgNodeRefs(supabase, node, nodes);
+    const blocked = orgRefBlockMessage(node, refs);
+    if (blocked) return toast.error(blocked);
+    if (!confirm(`ลบ "${node.name}" ?` + orgRefDeleteNote(refs)
+      + '\n\n(ถ้าเคยผูกกับข้อมูลอื่นแนะนำ "ปิดใช้งาน" แทนการลบ)')) return;
+    const { data: gone, error } = await supabase.from('org_nodes').delete().eq('id', node.id).select('id');
+    // FK ฝั่ง DB เป็น restrict แล้ว (migration 20261005) — ด่านชั้นสองกันกรณีมีคนผูกเพิ่มระหว่างที่เปิดจอค้าง
+    if (error) return toast.error(error.code === '23503'
+      ? `ลบไม่ได้: ยังมีข้อมูลอื่นผูกกับ "${node.name}" อยู่ (เพิ่งถูกผูกเพิ่ม?) — รีเฟรชแล้วลองอีกครั้ง`
+      : 'ลบไม่สำเร็จ: ' + error.message);
+    if (!gone?.length) return toast.error('ลบไม่สำเร็จ — ไม่มีสิทธิ์ลบ หรือรายการนี้ถูกลบไปแล้ว');
     toast.success('ลบสำเร็จ');
     if (node.kind === 'section' && selSection === node.id) setSelSection(null);
     if (node.kind === 'department' && selDept === node.id) setSelDept(null);
+    if (node.kind === 'line' && selLine === node.id) setSelLine(null);
     fetchAll();
   };
 
   const colStyle = { flex: 1, minWidth: 240, display: 'flex', flexDirection: 'column' };
   const itemStyle = (active) => ({
-    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
     padding: '9px 12px', borderRadius: 8, cursor: 'pointer', marginBottom: 4,
     background: active ? 'rgba(77,159,255,0.12)' : 'var(--bg2)',
     border: `1px solid ${active ? 'var(--accent)' : 'var(--border2)'}`,
   });
 
   return (
-    <div className="page-content">
-      <div style={{ marginBottom: 20 }}>
-        <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 'clamp(16px,3vw,22px)', color: 'var(--text)' }}>
-          🏢 แผนผังองค์กร
-        </h2>
-        <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--muted)' }}>
-          จัดการโครงสร้าง Section/ส่วน → Department/แผนก → Group/กลุ่ม พร้อม Cost Center (master data ที่หน้าอื่นใช้อ้างอิง)
-        </p>
-      </div>
+    <Page>
+      <PageHeader title="แผนผังองค์กร" icon="🏢" sub="จัดการโครงสร้าง Section/ส่วน → Department/แผนก → Group/กลุ่ม พร้อม Cost Center (master data ที่หน้าอื่นใช้อ้างอิง)" />
 
       {/* ซ่อนปุ่มได้ ห้ามซ่อนเหตุผล (UI-CONVENTIONS §6.9) — ต้องรู้ว่าแก้อะไรได้/ไม่ได้ และต้องไปขอใคร */}
       {!isAdmin && (
@@ -295,13 +399,11 @@ export default function OrgSetup() {
             <div style={{ maxHeight: 'calc(100vh - 280px)', overflowY: 'auto' }}>
             {sections.map(s => (
               <div key={s.id} style={itemStyle(selSection === s.id)} onClick={() => setSelSection(s.id)}>
-                <span style={{ fontSize: 13, color: s.is_active ? 'var(--text)' : 'var(--muted)', textDecoration: s.is_active ? 'none' : 'line-through' }}>
-                  {s.name}
-                  <span style={{ fontSize: 11, color: 'var(--muted)' }}> ({deptsOf(s.id).length} แผนก)</span>
-                  {s.cost_center && <CostBadge code={s.cost_center} />}
-                  <LaborBadge type={s.labor_type} />
-                  <DivBadge node={s} nodes={nodes} />
-                </span>
+                <NodeLabel node={s} meta={<span style={{ fontSize: 11, color: 'var(--muted)' }}> ({deptsOf(s.id).length} แผนก)</span>}>
+                  {s.cost_center && <CostBadge key="cc" code={s.cost_center} />}
+                  {s.labor_type && <LaborBadge key="lb" type={s.labor_type} />}
+                  {(s.division || divisionOfNode(s.id, nodes)) && <DivBadge key="dv" node={s} nodes={nodes} />}
+                </NodeLabel>
                 {canEditNode(s) && <RowActions node={s} onEdit={openEdit} onToggle={toggleActive} onDelete={handleDelete} />}
               </div>
             ))}
@@ -325,13 +427,11 @@ export default function OrgSetup() {
             </div>
             {!selSection ? <Empty text="เลือก Section ก่อน" /> : currentDepts.map(d => (
               <div key={d.id} style={itemStyle(selDept === d.id)} onClick={() => setSelDept(d.id)}>
-                <span style={{ fontSize: 13, color: d.is_active ? 'var(--text)' : 'var(--muted)', textDecoration: d.is_active ? 'none' : 'line-through' }}>
-                  {d.name}
-                  <span style={{ fontSize: 11, color: 'var(--muted)' }}> ({linesOf(d.id).length} กลุ่ม)</span>
-                  {d.cost_center && <CostBadge code={d.cost_center} />}
-                  <LaborBadge type={d.labor_type} />
-                  <DivBadge node={d} nodes={nodes} />
-                </span>
+                <NodeLabel node={d} meta={<span style={{ fontSize: 11, color: 'var(--muted)' }}> ({linesOf(d.id).length} กลุ่ม)</span>}>
+                  {d.cost_center && <CostBadge key="cc" code={d.cost_center} />}
+                  {d.labor_type && <LaborBadge key="lb" type={d.labor_type} />}
+                  {(d.division || divisionOfNode(d.id, nodes)) && <DivBadge key="dv" node={d} nodes={nodes} />}
+                </NodeLabel>
                 {canEditNode(d) && <RowActions node={d} onEdit={openEdit} onToggle={toggleActive} onDelete={handleDelete} />}
               </div>
             ))}
@@ -347,15 +447,34 @@ export default function OrgSetup() {
               )}
             </div>
             {!selDept ? <Empty text="เลือกแผนกก่อน" /> : currentLines.map(l => (
-              <div key={l.id} style={itemStyle(false)}>
-                <span style={{ fontSize: 13, color: l.is_active ? 'var(--text)' : 'var(--muted)', textDecoration: l.is_active ? 'none' : 'line-through' }}>
-                  {l.name} {!l.ref_line_id && <span style={{ fontSize: 11, color: '#f59e0b' }}>(ไม่ผูก production_lines)</span>}
-                  {lineCostCenter(l) && <CostBadge code={lineCostCenter(l)} />}
-                </span>
+              <div key={l.id} style={itemStyle(selLine === l.id)} onClick={() => setSelLine(l.id)}>
+                {/* จำนวนทีมใต้กลุ่ม — เห็นตั้งแต่ก่อนกด จะได้รู้ว่าทำไมลบไม่ได้ */}
+                <NodeLabel node={l} meta={teamsOf(l.id).length > 0 && <span style={{ fontSize: 11, color: 'var(--muted)' }}> ({teamsOf(l.id).length} ทีม)</span>}>
+                  {!l.ref_line_id && <span key="nr" style={{ fontSize: 11, color: '#f59e0b', whiteSpace: 'nowrap' }}>(ไม่ผูก production_lines)</span>}
+                  {lineCostCenter(l) && <CostBadge key="cc" code={lineCostCenter(l)} />}
+                </NodeLabel>
                 {canEditNode(l) && <RowActions node={l} onEdit={openEdit} onToggle={toggleActive} onDelete={handleDelete} />}
               </div>
             ))}
             {selDept && !currentLines.length && <Empty text="ยังไม่มีกลุ่มในแผนกนี้" />}
+          </div>
+
+          {/* Teams — ชั้นที่ 4 (2026-10-05) · ทีมมีอยู่ในผังและถูกใช้จริงโดย useOrgTeams()
+              แต่เดิมไม่มีที่ไหนให้เห็น ⇒ ลบกลุ่มไม่ได้แล้วหาลูกไม่เจอ (ดูคอมเมนต์ที่ teamsOf) */}
+          <div style={colStyle} className="card">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+              <strong style={{ fontSize: 13, color: 'var(--text2)' }}>TEAM / ทีม ({currentTeams.length})</strong>
+              {canAddTeamHere(selLine) && (
+                <button className="tbtn" onClick={() => selLine && openCreate('team', selLine)} disabled={!selLine} style={addBtnSt}>➕</button>
+              )}
+            </div>
+            {!selLine ? <Empty text="เลือกกลุ่มก่อน" /> : currentTeams.map(t => (
+              <div key={t.id} style={itemStyle(false)}>
+                <NodeLabel node={t} meta={t.code && t.code !== t.name && <span style={{ fontSize: 11, color: 'var(--muted)' }}> ({t.code})</span>} />
+                {canEditNode(t) && <RowActions node={t} onEdit={openEdit} onToggle={toggleActive} onDelete={handleDelete} />}
+              </div>
+            ))}
+            {selLine && !currentTeams.length && <Empty text="ยังไม่มีทีมในกลุ่มนี้" />}
           </div>
 
           {/* ✍️ ผู้เซ็น/อนุมัติใบค่าฝีมือ ราย section (ย้ายมาจาก LineSetup — เป็นข้อมูลราย "ส่วนงาน") */}
@@ -395,6 +514,11 @@ export default function OrgSetup() {
             );
           })()}
 
+          {/* 👔 ใครคุมหน่วยไหน + รักษาการ (2026-09-24) — ผังจริงพบว่า 7/14 ส่วนหัวหน้าเป็นรักษาการ */}
+          <div style={{ flexBasis: '100%', width: '100%' }}>
+            <OrgAssignmentsPanel nodes={nodes} />
+          </div>
+
           {/* 💰 Activity Rate ต่อ Cost Center (DL/OH/DP บาท/ชม.) — ใช้คิด cost saving ในโปรเจคปรับปรุง (2026-08-11) */}
           <div style={{ flexBasis: '100%', width: '100%' }}>
             <CostCenterRatePanel nodes={nodes} lines={lines} />
@@ -423,8 +547,19 @@ export default function OrgSetup() {
                 </div>
               )}
               <div>
-                <label style={labelSt}>Code (ใช้อ้างอิงค่าเดิมในระบบ — ไม่บังคับ)</label>
-                <input type="text" value={formCode} onChange={e => setFormCode(e.target.value)} placeholder="เช่น PD5 / A" />
+                {/* 🔴 ชั้น "ทีม" ใช้ `code` เป็นคีย์จับคู่จริง — ทะเบียนพนักงานเก็บ 'A'/'B'/'C' ไม่ใช่ "Team A"
+                    (ดู src/utils/orgNodeRefs.js) ⇒ เว้นว่าง = dropdown ทีมได้ชื่อเต็มมา แล้วไม่ตรงกับคนที่มีอยู่ */}
+                <label style={labelSt}>
+                  Code {modal.kind === 'team' ? '(ค่าที่บันทึกในทะเบียนพนักงาน เช่น A / B / C)' : '(ใช้อ้างอิงค่าเดิมในระบบ — ไม่บังคับ)'}
+                </label>
+                <input type="text" value={formCode} onChange={e => setFormCode(e.target.value)}
+                  placeholder={modal.kind === 'team' ? 'เช่น A' : 'เช่น PD5 / A'} />
+                {modal.kind === 'team' && !formCode.trim() && (
+                  <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4, lineHeight: 1.45 }}>
+                    ⚠️ ไม่ใส่ Code = ตัวเลือกทีมจะใช้ชื่อเต็ม <b>"{formName.trim() || 'ชื่อทีม'}"</b> ซึ่ง
+                    <b> ไม่ตรงกับทีมที่พนักงานถูกบันทึกไว้</b> (ของเดิมเก็บเป็น A / B / C)
+                  </div>
+                )}
               </div>
               <div>
                 <label style={labelSt}>
@@ -474,13 +609,31 @@ export default function OrgSetup() {
                   </div>
                 </div>
               )}
-              {modal.kind === 'line' && (
-                <div>
-                  <label style={labelSt}>ผูกกับไลน์ผลิตจริง (production_lines)</label>
-                  <LineSelect lines={lines} value={formRefLineId} valueKey="id"
-                    placeholder="— ไม่ผูก —" onChange={setFormRefLineId} />
-                </div>
-              )}
+              {modal.kind === 'line' && (() => {
+                /* 🔴 ซ่อนได้เฉพาะตอน "ยังไม่มีค่า" — ถ้ามีค่าอยู่แล้วต้องโชว์เสมอ
+                   ซ่อนช่องที่มีข้อมูลอยู่ = ข้อมูลถูกเก็บไว้แต่มองไม่เห็นและแก้ไม่ได้
+                   (บทเรียนเดียวกับทะเบียนพนักงานที่เผลอกรองสายสนับสนุนออก 23/09) */
+                const supportUnit = modalParentLabor === 'indirect';
+                if (supportUnit && !formRefLineId) return (
+                  <div style={{ fontSize: 11, color: 'var(--muted)', background: 'var(--bg3)',
+                                border: '1px solid var(--border2)', borderRadius: 8, padding: '8px 10px' }}>
+                    🗂️ อยู่ใต้หน่วยงาน <b>สายสนับสนุน (Indirect)</b> — ไม่ต้องผูกไลน์ผลิต
+                    <div style={{ marginTop: 2 }}>ถ้าหน่วยนี้มีไลน์ผลิตจริง ให้แก้ประเภทที่แผนกแม่เป็น Direct ก่อน</div>
+                  </div>
+                );
+                return (
+                  <div>
+                    <label style={labelSt}>ผูกกับไลน์ผลิตจริง (production_lines)</label>
+                    <LineSelect lines={lines} value={formRefLineId} valueKey="id"
+                      placeholder="— ไม่ผูก —" onChange={setFormRefLineId} />
+                    {supportUnit && (
+                      <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4 }}>
+                        ⚠️ หน่วยแม่เป็นสายสนับสนุน (Indirect) แต่กลุ่มนี้ผูกไลน์ผลิตไว้ — ตรวจว่าตั้งใจไหม
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
               <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
                 <button onClick={handleSave} disabled={saving} style={{ flex: 2, padding: 11, background: saving ? 'var(--muted)' : 'var(--amber)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: saving ? 'default' : 'pointer' }}>
                   {saving ? 'กำลังบันทึก...' : 'บันทึก'}
@@ -493,23 +646,38 @@ export default function OrgSetup() {
           </div>
         </div>
       )}
-    </div>
+    </Page>
   );
 }
 
 function RowActions({ node, onEdit, onToggle, onDelete }) {
+  // ปุ่มกล่อง 30×30 ชุดเดียวกัน (IconButton) — เดิมเป็นอีโมจิเปล่า 13px ถังขยะเล็กจนดูไม่ออก (user 06/10)
   return (
-    <div style={{ display: 'flex', gap: 4 }} onClick={e => e.stopPropagation()}>
-      <button className="tbtn" onClick={() => onEdit(node)} title="แก้ไข" style={iconBtnSt}>✏️</button>
-      <button className="tbtn" onClick={() => onToggle(node)} title={node.is_active ? 'ปิดใช้งาน' : 'เปิดใช้งาน'} style={iconBtnSt}>{node.is_active ? '🟢' : '⚪'}</button>
-      <button className="tbtn" onClick={() => onDelete(node)} title="ลบ" style={iconBtnSt}>🗑️</button>
+    <div style={{ display: 'flex', gap: 4, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
+      <IconButton onClick={() => onEdit(node)} title={`แก้ไข ${node.name}`}>✏️</IconButton>
+      <IconButton onClick={() => onToggle(node)} title={node.is_active ? 'ปิดใช้งาน' : 'เปิดใช้งาน'}>{node.is_active ? '🟢' : '⚪'}</IconButton>
+      <DeleteButton onClick={() => onDelete(node)} title={`ลบ ${node.name}`} />
+    </div>
+  );
+}
+
+/** ชื่อหน่วย 1 บรรทัด + ป้ายอีกบรรทัด (ป้ายแต่ละอันไม่ตัดกลางคำ)
+ *  เดิมชื่อ+จำนวน+ป้าย 3 อันอยู่ใน <span> เดียว ⇒ ตัดบรรทัดกลางป้าย "🏭 ฝ่ายผลิต" ขาดเป็น 2 ท่อน (user 06/10) */
+function NodeLabel({ node, meta, children }) {
+  const badges = [children].flat().filter(Boolean);
+  return (
+    <div style={{ minWidth: 0, flex: 1, color: node.is_active ? 'var(--text)' : 'var(--muted)' }}>
+      <div style={{ fontSize: 13, textDecoration: node.is_active ? 'none' : 'line-through', overflowWrap: 'anywhere' }}>
+        {node.name}{meta}
+      </div>
+      {badges.length > 0 && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 3 }}>{badges}</div>}
     </div>
   );
 }
 
 function CostBadge({ code }) {
   return (
-    <span style={{ marginLeft: 6, fontSize: 11, padding: '1px 6px', borderRadius: 4, background: 'var(--bg3)', color: 'var(--muted)', border: '1px solid var(--border2)' }}>
+    <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 4, background: 'var(--bg3)', color: 'var(--muted)', border: '1px solid var(--border2)', whiteSpace: 'nowrap' }}>
       💰{code}
     </span>
   );
@@ -524,7 +692,7 @@ function DivBadge({ node, nodes }) {
   return (
     <span title={own ? 'ติดป้ายที่ตัวนี้เอง' : 'ตกทอดจากตัวแม่'}
       style={{
-        marginLeft: 6, fontSize: 10, padding: '1px 6px', borderRadius: 999,
+        fontSize: 11, padding: '1px 6px', borderRadius: 999, whiteSpace: 'nowrap',
         border: `1px solid ${(m?.color || 'var(--border)')}${own ? '' : '55'}`,
         color: m?.color || 'var(--muted)', opacity: own ? 1 : 0.6,
       }}>
@@ -537,7 +705,7 @@ function LaborBadge({ type }) {
   if (!type) return null;
   const m = laborMeta(type);
   return (
-    <span style={{ marginLeft: 6, fontSize: 11, padding: '1px 6px', borderRadius: 4, background: `${m.color}18`, color: m.color, border: `1px solid ${m.color}44`, fontWeight: 600 }}>
+    <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 4, background: `${m.color}18`, color: m.color, border: `1px solid ${m.color}44`, fontWeight: 600, whiteSpace: 'nowrap' }}>
       {m.icon}{m.short}
     </span>
   );
@@ -548,7 +716,6 @@ function Empty({ text }) {
 }
 
 const addBtnSt = { padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg3)', cursor: 'pointer', fontSize: 13 };
-const iconBtnSt = { background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, padding: 2 };
 const labelSt = {
   display: 'block', fontSize: 12, fontWeight: 600,
   color: 'var(--text2)', marginBottom: 6,

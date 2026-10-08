@@ -17,6 +17,7 @@
  *
  * อ่านอย่างเดียว — กดบล็อกเพื่อเปิดใบตรวจของรุ่นนั้น (งานตรวจจริงเท่านั้น · บล็อกคาดการณ์ยังไม่มีใบ)
  */
+import { lineNameCompare } from '../utils/lineHierarchy';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import InternalTimeBoard from './InternalTimeBoard';
@@ -126,7 +127,10 @@ export default function QaFmeBoard({ scopedLineNames, onOpen }) {
      (กฎเหล็กข้อ 9 ใน CLAUDE.md · เกิดจริงกับ StoreLotQueue 4 คิวรี × 705 ครั้ง/วัน) */
   /* 🔴 2026-09-15 — เดิม poll ล้วนไม่มี realtime · ดู src/utils/useLiveBoard.js
      นาฬิกา/วันงานยังเดินตามเดิมด้วย visibleInterval (ไม่ยิง DB) */
-  useLiveBoard(load, { tables: ['production_sessions', 'prod_orders', 'qa_fme_obligations'], topic: 'qa-fme-board' });
+  /* 05/10 (QC audit): `qa_fme_obligations` อยู่ **Main** — เดิมรวมอยู่ใน board เดียวกับตาราง DR (client default = supabaseDR)
+     ⇒ subscribe ผิด project = cron สร้างงานแล้วจอไม่รู้ (รอ poll) · แยก 2 board ตาม project (pattern QaFmeQueue) */
+  useLiveBoard(load, { tables: ['production_sessions', 'prod_orders'], topic: 'qa-fme-board' });
+  useLiveBoard(load, { tables: ['qa_fme_obligations'], topic: 'qa-fme-board-main', client: supabase, rate: RATE.BACKUP });
   useEffect(() => visibleInterval(() => { setNow(Date.now()); setWd(getWorkDate()); }, RATE.BOARD), []);
 
   const nowMin = useMemo(() => {
@@ -185,7 +189,7 @@ export default function QaFmeBoard({ scopedLineNames, onOpen }) {
         data: { kind: 'eta', r, etaMin: fc.etaMin, ct: fc.ct },
       });
     });
-    const lines = [...byLine.keys()].sort();
+    const lines = [...byLine.keys()].sort(lineNameCompare);   // เรียงธรรมชาติชุดเดียวกับ dropdown ไลน์
     return {
       etaCount: n,
       noCt: cantEstimate,
@@ -238,7 +242,7 @@ export default function QaFmeBoard({ scopedLineNames, onOpen }) {
         return (
           <>
             <div onClick={() => setPopup(null)} style={{ position: 'fixed', inset: 0, zIndex: 998 }} />
-            <div style={{ position: 'fixed', left, top, width: W, zIndex: 1300, background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 12, boxShadow: '0 8px 28px rgba(0,0,0,0.45)', overflow: 'hidden' }}>
+            <div style={{ position: 'fixed', left, top, width: W, zIndex: 1300, background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 12, boxShadow: 'var(--shadow-float)', overflow: 'hidden' }}>
               <div style={{ height: 4, background: isEta ? C.eta : (d.isLate ? C.late : C.pending) }} />
               <div style={{ padding: '10px 14px', fontSize: 12.5, lineHeight: 1.7 }}>
                 {isEta ? (

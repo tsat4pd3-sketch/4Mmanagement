@@ -16,10 +16,31 @@ import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { inSectionScope } from '../utils/sectionScope';
-import { buildQrPayload, QR_KINDS } from '../utils/qrCode';
+import { buildQrPayload, buildQrUrl, qrOriginUsable } from '../utils/qrCode';
 import { withDocFoot, loadDocForms, docFormSync, fullCode } from '../utils/docForms';
 import LineSelect from '../components/LineSelect';
 import useProductionLines from '../utils/useProductionLines';
+import { loadLinesRes } from '../utils/useProductionLines';
+import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
+import FilterBar from '../components/FilterBar';
+import SearchInput from '../components/SearchInput';
+import Segmented from '../components/Segmented';
+import { ALL } from '../utils/filterLabels';
+
+/* ชนิดป้าย ⇒ Segmented (UI-STANDARD §3 · เดิมเป็นชิปสีเอง)
+   2026-10-06 · คำสั่ง user: แยกแท็บ 🔨 แม่พิมพ์ ออกจาก ⚙️ เครื่องจักร (เดิมแม่พิมพ์ปนอยู่ในแท็บเครื่องจักร
+   และแท็บจิ๊กชื่อ "จิ๊ก/แม่พิมพ์" = คนพิมพ์ป้ายแม่พิมพ์ผิดแท็บ) · แท็บจิ๊ก = ทะเบียน PM (`jigs` · ESM:J)
+   🔴 แม่พิมพ์เป็นแถวใน `machines` (equipment_kind='die') ⇒ **รหัสในป้ายยังเป็น ESM:M** — ห้ามสร้างชนิดรหัสใหม่
+      (ป้ายที่พิมพ์ไปแล้วต้องสแกนได้เหมือนเดิม · /scan และผังจัดเก็บอ่าน ESM:M อยู่แล้ว) ⇒ แปลงผ่าน qrTypeOf() */
+const KIND_OPTIONS = [
+  { value: 'machine', label: '⚙️ เครื่องจักร' },
+  { value: 'die', label: '🔨 แม่พิมพ์' },
+  { value: 'jig', label: '🧩 จิ๊ก (ทะเบียน PM)' },
+  { value: 'delivery', label: '🎯 จุดส่งงาน' },
+];
+const qrTypeOf = (k) => (k === 'die' ? 'machine' : k);       // แท็บ → ชนิดรหัสในป้าย
+const tabLabelOf = (k) => KIND_OPTIONS.find(o => o.value === k)?.label || k;
 
 const SIZES = {
   sm: { key: 'sm', label: 'เล็ก 40×25mm', w: 40, h: 25, qr: 17, no: 8, sub: 4.6 },
@@ -31,9 +52,9 @@ export default function QrLabels() {
   const { role, sections: scopeSecs = [], lineId } = useContext(UserContext);
   const canPrint = can('qr_labels', 'print', role);
 
-  // machine | jig | delivery — `?kind=` มาจากลิงก์ในแผงจุดส่ง (/linesetup) · ค่าที่ไม่รู้จัก = ตกกลับ machine ห้ามจอว่าง
+  // machine | die | jig | delivery — `?kind=` มาจากลิงก์ในแผงจุดส่ง (/linesetup) · ค่าที่ไม่รู้จัก = ตกกลับ machine ห้ามจอว่าง
   const [searchParams] = useSearchParams();
-  const [kind, setKind] = useState(() => (QR_KINDS[searchParams.get('kind')] ? searchParams.get('kind') : 'machine'));
+  const [kind, setKind] = useState(() => (KIND_OPTIONS.some(o => o.value === searchParams.get('kind')) ? searchParams.get('kind') : 'machine'));
   const [lines, setLines] = useState([]);
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -47,7 +68,7 @@ export default function QrLabels() {
 
   /* ── ไลน์ที่ user มีสิทธิ์เห็น (pattern มาตรฐาน: leader → family, อื่น → sections) ── */
   useEffect(() => {
-    supabase.from('production_lines').select('id, name, section, parent_line_name').order('name')
+    loadLinesRes()
       .then(({ data }) => setLines(data || []));
   }, []);
 
@@ -66,10 +87,14 @@ export default function QrLabels() {
     let alive = true;
     setLoading(true); setSel(new Set()); setShadowCount(0);
     const load = async () => {
-      if (kind === 'machine') {
-        const { data } = await supabaseDR.from('machines')
-          .select('id, machine_no, machine_name, line_name, equipment_category, is_active')
-          .eq('is_active', true).order('line_name').order('machine_no');
+      if (kind === 'machine' || kind === 'die') {
+        // แยกแท็บด้วย equipment_kind · เครื่องที่ยังไม่ระบุชนิด (null) อยู่แท็บเครื่องจักร — ห้ามหายจากทั้ง 2 แท็บ
+        let qy = supabaseDR.from('machines')
+          .select('id, machine_no, machine_name, line_name, equipment_kind, equipment_category, is_active')
+          .eq('is_active', true);
+        qy = kind === 'die' ? qy.eq('equipment_kind', 'die') : qy.or('equipment_kind.is.null,equipment_kind.neq.die');
+        const { data, error } = await qy.order('line_name').order('machine_no');
+        if (error) toast.error('โหลดรายการไม่ได้: ' + error.message);   // ห้ามเงียบ — จอว่างจะอ่านว่า "ไม่มีอุปกรณ์"
         if (alive) setRows(data || []);
       } else if (kind === 'delivery') {
         /* 🎯 จุดส่งงานหน้าไลน์ (ลูปสโตร์เฟส 4) — 1 จุดหลายไลน์ได้ → line_name บนป้าย = ไลน์ทั้งหมดต่อกัน
@@ -117,14 +142,18 @@ export default function QrLabels() {
     return [...s].sort();
   }, [rows, scopedLineNames]);
 
-  const noOf = (r) => (kind === 'machine' ? r.machine_no : kind === 'delivery' ? r.code : r.jig_no) || '';
-  const nameOf = (r) => (kind === 'machine' ? r.machine_name : (r.name || r.part_name)) || '';
+  const isMc = kind === 'machine' || kind === 'die';   // แม่พิมพ์ = แถวใน machines
+  const noOf = (r) => (isMc ? r.machine_no : kind === 'delivery' ? r.code : r.jig_no) || '';
+  const nameOf = (r) => (isMc ? r.machine_name : (r.name || r.part_name)) || '';
   const missingNo = visible.filter(r => !noOf(r).trim()).length;
 
   const toggle = (id) => setSel(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const toggleAll = () => setSel(prev => prev.size === visible.length ? new Set() : new Set(visible.map(r => r.id)));
 
   /* ── พิมพ์ ── */
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  const linkLabels = qrOriginUsable(origin);
+
   const handlePrint = async () => {
     const picked = visible.filter(r => sel.has(r.id));
     if (!picked.length) return toast.error('ยังไม่ได้เลือกรายการ');
@@ -137,7 +166,12 @@ export default function QrLabels() {
     const esc = s => String(s ?? '').replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]));
     const cells = [];
     for (const r of picked) {
-      const payload = buildQrPayload(kind, r.id);
+      /* 🔗 ป้ายแบบ "ลิงก์" (2026-10-02 · คำสั่ง user) — ส่องด้วยกล้องมือถือปกติแล้วเปิดแอป
+         มาที่ /scan ได้เลย ไม่ต้องเปิดแอปเองแล้วค่อยกดสแกน
+         ค่าใน ?c= ยังเป็นรูปแบบเดิม ⇒ ป้ายเก่าที่เป็นข้อความเปล่ายังสแกนในแอปได้เหมือนเดิม
+         🔴 โดเมนใช้ไม่ได้ (localhost/LAN) = ถอยไปป้ายข้อความเดิม ดีกว่าออกป้ายที่ลิงก์เสีย
+            (ถ้าพิมพ์จาก localhost แล้วฝังลิงก์นั้นลงป้าย = ป้ายใช้ได้แค่เครื่องที่พิมพ์) */
+      const payload = linkLabels ? buildQrUrl(qrTypeOf(kind), r.id, origin) : buildQrPayload(qrTypeOf(kind), r.id);
       // margin:0 + errorCorrectionLevel M — ป้ายเล็กสแกนติดง่ายกว่าเมื่อ QR เต็มพื้นที่
       const svg = await QR.toString(payload, { type: 'svg', margin: 0, errorCorrectionLevel: 'M' });
       const no = isDp ? `🎯 ${nameOf(r)}` : (noOf(r) || '— ยังไม่มีเลข —');
@@ -153,7 +187,7 @@ export default function QrLabels() {
     }
 
     const head = fullCode(df) ? `<div class="hd">${esc(fullCode(df))}</div>` : '';
-    const html = `<html><head><meta charset="utf-8"><title>ป้าย QR ${QR_KINDS[kind].label}</title>
+    const html = `<html><head><meta charset="utf-8"><title>ป้าย QR ${tabLabelOf(kind).replace(/^\S+\s/, '')}</title>
 <style>
   @page { size: A4; margin: 8mm; }
   body { font-family: Sarabun, Tahoma, sans-serif; margin: 0; color: #000; }
@@ -181,26 +215,52 @@ export default function QrLabels() {
 
   const th = { padding: '8px 10px', fontSize: 12, color: 'var(--muted)', textAlign: 'left', fontWeight: 700, borderBottom: '1px solid var(--border)' };
   const td = { padding: '7px 10px', fontSize: 13, color: 'var(--text)', borderBottom: '1px solid var(--border)' };
-  const chip = (active, color) => ({
-    padding: '6px 14px', borderRadius: 20, fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
-    border: `1.5px solid ${active ? color : 'var(--border2)'}`,
-    background: active ? `${color}18` : 'var(--bg3)', color: active ? color : 'var(--muted)',
-  });
 
   return (
-    <div style={{ padding: 'clamp(12px,3vw,28px) clamp(14px,3.5vw,32px)', background: 'var(--bg)', minHeight: '100%' }}>
+    <Page style={{ background: 'var(--bg)', minHeight: '100%' }}>
       <ReadOnlyNote show={!canPrint} role={role} what="พิมพ์ป้าย QR" permKey="qr_labels:print" />
-      <h1 style={{ fontSize: 22, fontWeight: 800, color: 'var(--text)', margin: 0 }}>🏷️ พิมพ์ป้าย QR อุปกรณ์</h1>
-      <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 4, marginBottom: 18 }}>
-        พิมพ์ป้ายติดเครื่องจักร/จิ๊ก แล้วสแกนเลือกอุปกรณ์ได้ทันทีในหน้าแจ้งซ่อม · ตรวจ PM · บันทึก Downtime
+      <PageHeader title="พิมพ์ป้าย QR อุปกรณ์" icon="🏷️" sub="พิมพ์ป้ายติดเครื่องจักร/แม่พิมพ์/จิ๊ก แล้วส่องด้วยกล้องมือถือ → เปิดแอปมาที่เมนูของเครื่องตัวนั้นเลย (ตรวจ PM · แจ้งซ่อม)" />
+
+      {/* บอกตรงๆ ว่าป้ายที่กำลังจะพิมพ์เป็นแบบไหน — ป้ายอยู่หน้างานเป็นปี พิมพ์ผิดแบบแล้วต้องรื้อใหม่ทั้งโรงงาน */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', marginBottom: 10,
+        borderRadius: 8, fontSize: 12.5, lineHeight: 1.7,
+        background: 'var(--bg2)', border: `1px solid ${linkLabels ? 'var(--border2)' : '#f59e0b'}`,
+      }}>
+        {linkLabels ? (
+          <span>🔗 ป้ายที่พิมพ์จะเป็น <b>ลิงก์</b> <code style={{ background: 'var(--bg3)', padding: '1px 5px', borderRadius: 4 }}>{origin}/scan</code>
+            {' '}— ส่องด้วยกล้องมือถือปกติแล้วเปิดแอปมาที่เมนูของเครื่องตัวนั้นได้เลย ไม่ต้องเปิดแอปเองก่อน</span>
+        ) : (
+          <span>⚠️ ตอนนี้เปิดจาก <code>{origin || '—'}</code> ซึ่งเครื่องอื่นเข้าไม่ได้ ⇒ ป้ายจะพิมพ์เป็น
+            <b> ข้อความแบบเดิม</b> (สแกนในแอปได้ แต่ส่องด้วยกล้องมือถือเฉยๆ ไม่เด้งเข้าแอป)
+            {' '}— ถ้าต้องการป้ายแบบลิงก์ ให้พิมพ์จากเว็บจริงของระบบ</span>
+        )}
       </div>
 
-      {/* เลือกชนิด */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
-        <button onClick={() => setKind('machine')} style={chip(kind === 'machine', '#4d9fff')}>⚙️ เครื่องจักร</button>
-        <button onClick={() => setKind('jig')} style={chip(kind === 'jig', '#34d399')}>🧩 จิ๊ก/แม่พิมพ์</button>
-        <button onClick={() => setKind('delivery')} style={chip(kind === 'delivery', '#f59e0b')}>🎯 จุดส่งงาน</button>
-      </div>
+      {/* ตัวกรอง — FilterBar มาตรฐาน (UI-STANDARD 2026-09-24): ชนิด → ไลน์ → ค้นหา → spacer → ขนาดป้าย (พารามิเตอร์ของปุ่มพิมพ์) + ปุ่ม */}
+      <FilterBar>
+        <Segmented value={kind} onChange={setKind} label="ชนิดป้าย" options={KIND_OPTIONS} />
+        {/* ไลน์ของอุปกรณ์ — จัดลำดับชั้นตามผัง · ชื่อกลุ่มเครื่องปั๊มที่ไม่มีในทะเบียนไลน์
+            (เช่นไลน์แม่พิมพ์) แยก optgroup ไว้ท้าย ห้ามตัดทิ้ง ไม่งั้นกรองหาอุปกรณ์ไม่เจอ */}
+        <LineSelect
+          lines={prodLines.filter(l => lineOpts.includes(l.name))}
+          value={filterLine} onChange={setFilterLine} placeholder={ALL.line}
+          extraGroups={[{ label: '🔧 อื่นๆ', options: lineOpts.filter(n => !prodLines.some(l => l.name === n)).map(n => ({ value: n })) }]}
+        />
+        <SearchInput value={q} onChange={setQ} fields="เลข/ชื่อ" />
+        <span className="spacer" />
+        <span className="filter-count">เลือก {sel.size} / {visible.length}</span>
+        <span className="filter-label">ขนาดป้าย</span>
+        <select value={size} onChange={e => setSize(e.target.value)}>
+          {Object.values(SIZES).map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+        </select>
+        {canPrint && (
+          <button onClick={handlePrint} disabled={!sel.size}
+            style={{ padding: '0 18px', borderRadius: 8, border: 'none', fontSize: 13.5, fontWeight: 800, cursor: sel.size ? 'pointer' : 'not-allowed', background: sel.size ? 'var(--accent)' : 'var(--bg3)', color: sel.size ? 'var(--accent-ink)' : 'var(--muted)' }}>
+            🖨️ พิมพ์ป้าย ({sel.size})
+          </button>
+        )}
+      </FilterBar>
       {kind === 'delivery' && (
         <div style={{ fontSize: 12.5, color: 'var(--text2)', background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 8, padding: '9px 12px', marginBottom: 12 }}>
           🎯 ป้ายที่สโตร์สแกนตอนวางของถึงไลน์ (ลูปเรียกชิ้นส่วนขั้น 7) — ติดที่จุดวางของจริงหน้าไลน์ · ตั้ง/แก้จุดที่ ⚙️ ตั้งค่าผังไลน์ → 🎯 จุดส่งงาน · แนะนำขนาด <b>ใหญ่ 90×60</b> (สแกนจากระยะแร็ค)
@@ -212,31 +272,6 @@ export default function QrLabels() {
         </div>
       )}
 
-      {/* ตัวกรอง */}
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
-        {/* ไลน์ของอุปกรณ์ — จัดลำดับชั้นตามผัง · ชื่อกลุ่มเครื่องปั๊มที่ไม่มีในทะเบียนไลน์
-            (เช่นไลน์แม่พิมพ์) แยก optgroup ไว้ท้าย ห้ามตัดทิ้ง ไม่งั้นกรองหาอุปกรณ์ไม่เจอ */}
-        <LineSelect
-          lines={prodLines.filter(l => lineOpts.includes(l.name))}
-          value={filterLine} onChange={setFilterLine} placeholder="ทุกไลน์"
-          style={{ width: 200, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13 }}
-          extraGroups={[{ label: '🔧 อื่นๆ', options: lineOpts.filter(n => !prodLines.some(l => l.name === n)).map(n => ({ value: n })) }]}
-        />
-        <input value={q} onChange={e => setQ(e.target.value)} placeholder="ค้นหา เลข/ชื่อ…"
-          style={{ width: 220, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13 }} />
-        <select value={size} onChange={e => setSize(e.target.value)}
-          style={{ width: 170, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13 }}>
-          {Object.values(SIZES).map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
-        </select>
-        <div style={{ flex: 1 }} />
-        <span style={{ fontSize: 13, color: 'var(--muted)' }}>เลือก {sel.size} / {visible.length}</span>
-        {canPrint && (
-          <button onClick={handlePrint} disabled={!sel.size}
-            style={{ padding: '9px 18px', borderRadius: 8, border: 'none', fontSize: 13.5, fontWeight: 800, cursor: sel.size ? 'pointer' : 'not-allowed', background: sel.size ? 'var(--accent)' : 'var(--bg3)', color: sel.size ? '#08130c' : 'var(--muted)' }}>
-            🖨️ พิมพ์ป้าย ({sel.size})
-          </button>
-        )}
-      </div>
 
       {kind === 'jig' && shadowCount > 0 && (
         <div style={{ fontSize: 12.5, color: 'var(--text2)', background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 8, padding: '9px 12px', marginBottom: 12 }}>
@@ -244,9 +279,20 @@ export default function QrLabels() {
           พิมพ์ป้ายเครื่องจักรที่แท็บ <b>⚙️ เครื่องจักร</b> ทางเดียว ไม่งั้นจะได้ QR 2 ใบคนละรหัสติดเครื่องตัวเดียวกัน
         </div>
       )}
+      {kind === 'jig' && (
+        <div style={{ fontSize: 12.5, color: 'var(--text2)', background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 8, padding: '9px 12px', marginBottom: 12 }}>
+          🔨 <b>ป้ายแม่พิมพ์ไม่ได้อยู่แท็บนี้</b> — พิมพ์ที่แท็บ <b>🔨 แม่พิมพ์</b> (สแกนแล้วเด้งเข้าผังจัดเก็บแม่พิมพ์ได้) ·
+          แท็บนี้คือจิ๊กและอุปกรณ์ที่มีแผนตรวจ PM
+        </div>
+      )}
+      {kind === 'die' && !loading && !visible.length && (
+        <div style={{ fontSize: 12.5, color: '#f59e0b', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 8, padding: '9px 12px', marginBottom: 12 }}>
+          ⚠️ ไม่พบแม่พิมพ์{rows.length ? 'ตามตัวกรอง/ขอบเขตไลน์ที่เห็นได้' : 'ในทะเบียน'} — ลงทะเบียนที่ 🧰 ทะเบียนอุปกรณ์ → แท็บ 🔨 แม่พิมพ์ ก่อน แล้วกลับมาพิมพ์ป้ายได้ทันที
+        </div>
+      )}
       {kind === 'jig' && !loading && !visible.length && (
         <div style={{ fontSize: 12.5, color: '#f59e0b', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 8, padding: '9px 12px', marginBottom: 12 }}>
-          ⚠️ ยังไม่มีข้อมูลจิ๊ก/แม่พิมพ์ในระบบ — ลงทะเบียนที่หน้า PM Setup ก่อน แล้วกลับมาพิมพ์ป้ายได้ทันที
+          ⚠️ ยังไม่มีข้อมูลจิ๊กในทะเบียน PM — ลงทะเบียนที่หน้า PM Setup ก่อน แล้วกลับมาพิมพ์ป้ายได้ทันที
         </div>
       )}
       {missingNo > 0 && kind !== 'delivery' && (
@@ -281,6 +327,6 @@ export default function QrLabels() {
           </tbody>
         </table>
       </div>
-    </div>
+    </Page>
   );
 }

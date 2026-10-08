@@ -14,6 +14,8 @@ import SearchSelect from './SearchSelect';
 import SupplierSelect from './SupplierSelect'; // ผู้ทำ tooling = ทะเบียน DR suppliers (แม่พิมพ์/จิ๊ก · ผลิตเอง ขึ้นก่อน) — 2026-09-08
 import useColumnHistory from '../utils/useColumnHistory';
 import { appendHistoryOptions } from '../utils/pickerOptions';
+import { ALL } from '../utils/filterLabels';
+import { DeleteButton } from './IconButton';
 
 export default function NpiTooling({ parts, tooling, steps, stepTemplates, dieSets, canEdit, today, onChanged }) {
   // ตัวเลือกชุดแม่พิมพ์ (DR die_sets) สำหรับ SearchSelect — die_set_code เป็น join key กับ /die-registry ห้ามพิมพ์เอง (2026-09-07)
@@ -101,7 +103,7 @@ export default function NpiTooling({ parts, tooling, steps, stepTemplates, dieSe
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <div style={{ fontSize: 14, fontWeight: 800 }}>🔧 แผนพัฒนาเครื่องมือ ({rows.length})</div>
           <select value={filterPart} onChange={e => setFilterPart(e.target.value)} style={{ ...inp, width: 'auto', minWidth: 160 }}>
-            <option value="">ทุกพาร์ท</option>{parts.map(p => <option key={p.id} value={p.id}>{p.part_no}</option>)}
+            <option value="">{ALL.part}</option>{parts.map(p => <option key={p.id} value={p.id}>{p.part_no}</option>)}
           </select>
         </div>
         {canEdit && <button style={btn()} onClick={() => setPlanModal({ part_id: filterPart || parts[0]?.id || '', tool_name: '', tool_kind: 'die', maker_name: '', maker_kind: 'external', po_no: '', die_set_code: '', plan_start: today, plan_end: '', actual_start: '', actual_end: '', status: 'planned', owner_name: '', note: '', _seedSteps: true })}>+ แผน tooling</button>}
@@ -133,12 +135,12 @@ export default function NpiTooling({ parts, tooling, steps, stepTemplates, dieSe
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
                   {p?.part_no || '—'} · {kind.label} · ผู้ทำ {t.maker_name || '—'} ({t.maker_kind === 'internal' ? 'ภายใน' : 'ภายนอก'}) · {r.done}/{r.total} ขั้น · {r.pct}%{r.delayed ? <span style={{ color: '#ef4444', fontWeight: 800 }}> · ล่าช้า {r.delayed}</span> : null}
-                  {t.die_set_code && <> · 🧱 {die ? <Link to="/die-registry" style={{ color: '#4d9fff' }}>{t.die_set_code}</Link> : <span style={{ color: '#f59e0b' }} title="ไม่พบใน die_sets">{t.die_set_code} (ไม่พบในทะเบียน)</span>}</>}
+                  {t.die_set_code && <> · 🧱 {die ? <Link to="/equipment?tab=die" style={{ color: '#4d9fff' }}>{t.die_set_code}</Link> : <span style={{ color: '#f59e0b' }} title="ไม่พบใน die_sets">{t.die_set_code} (ไม่พบในทะเบียน)</span>}</>}
                 </div>
               </div>
               <GanttRow plan={[t.plan_start, t.plan_end]} actual={[t.actual_start, t.actual_end]} range={range} todayPos={todayPos} pct={r.pct} light={r.light} />
               <div style={{ whiteSpace: 'nowrap' }}>
-                {canEdit && <><button className="tbtn" style={{ ...ghost, padding: '2px 7px' }} onClick={() => setPlanModal({ ...t, plan_start: t.plan_start || '', plan_end: t.plan_end || '', actual_start: t.actual_start || '', actual_end: t.actual_end || '', maker_name: t.maker_name || '', po_no: t.po_no || '', die_set_code: t.die_set_code || '', owner_name: t.owner_name || '', note: t.note || '' })}>✏️</button> <button className="tbtn" style={{ ...ghost, padding: '2px 7px', color: '#ef4444' }} onClick={() => delPlan(t)}>🗑</button> </>}
+                {canEdit && <><button className="tbtn" style={{ ...ghost, padding: '2px 7px' }} onClick={() => setPlanModal({ ...t, plan_start: t.plan_start || '', plan_end: t.plan_end || '', actual_start: t.actual_start || '', actual_end: t.actual_end || '', maker_name: t.maker_name || '', po_no: t.po_no || '', die_set_code: t.die_set_code || '', owner_name: t.owner_name || '', note: t.note || '' })}>✏️</button> <DeleteButton onClick={() => delPlan(t)} title="ลบ" /> </>}
                 <button className="tbtn" style={{ ...ghost, padding: '2px 7px' }} onClick={() => toggle(t.id)}>{open ? '▲' : '▼'}</button>
               </div>
             </div>
@@ -155,7 +157,7 @@ export default function NpiTooling({ parts, tooling, steps, stepTemplates, dieSe
                       </div>
                       <GanttRow plan={[s.plan_start, s.plan_end]} actual={[s.actual_start, s.actual_end]} range={range} todayPos={todayPos} pct={s.progress_pct} light={lt} thin />
                       <div style={{ whiteSpace: 'nowrap' }}>
-                        {canEdit && <><button className="tbtn" style={{ ...ghost, padding: '2px 7px' }} onClick={() => setStepModal({ ...s, plan_start: s.plan_start || '', plan_end: s.plan_end || '', actual_start: s.actual_start || '', actual_end: s.actual_end || '', responsible_name: s.responsible_name || '', note: s.note || '' })}>✏️</button> <button className="tbtn" style={{ ...ghost, padding: '2px 7px', color: '#ef4444' }} onClick={() => delStep(s)}>🗑</button></>}
+                        {canEdit && <><button className="tbtn" style={{ ...ghost, padding: '2px 7px' }} onClick={() => setStepModal({ ...s, plan_start: s.plan_start || '', plan_end: s.plan_end || '', actual_start: s.actual_start || '', actual_end: s.actual_end || '', responsible_name: s.responsible_name || '', note: s.note || '' })}>✏️</button> <DeleteButton onClick={() => delStep(s)} title="ลบ" /></>}
                       </div>
                     </div>
                   );

@@ -1,18 +1,24 @@
-import { useState, useEffect, useCallback, useMemo, useContext, lazy, Suspense } from 'react';
+import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
-import { wavg } from '../utils/oee';
+import { OBEYA_TITLE, OBEYA_ICON } from '../utils/obeyaPage';
+import { wavg, orderPlanQty, dtMinBySession, oeeTargetForLines } from '../utils/oee';
+import { loadBreakPolicies, fetchOeeTargets } from '../utils/oeeMasters';
+import { valueInk } from '../utils/statusTone';
+import { dtBucketName, buildDtIndex } from '../utils/downtimeCategory';
 import { pairAwareTotal, collapseOps } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
+import { loadPairMap } from '../utils/useProducts';
 import { fetchByIds, fetchAllPages } from '../utils/fetchByIds';
 import useIsMobile from '../utils/useIsMobile';
 import { scopedLineNames } from '../utils/sectionScope';
 import { isMoOpen } from '../utils/mtnStepPerm';
 import ParetoAbcChart from '../components/ParetoAbcChart';
 import PageHeader from '../components/PageHeader';
-// แท็บ KPI รายเดือน — lazy: โหลดข้อมูลทั้งปีเฉพาะตอนถูกเปิด ไม่ถ่วงหน้า "วันนี้"
-const KpiMonthly = lazy(() => import('../components/KpiMonthly'));
+import Segmented from '../components/Segmented';
+import Page from '../components/Page';
 /* 🚨 จอเฝ้าระวัง (MtnAndonBoard) ย้ายไปหน้า `/tv` แล้ว (nav audit 2026-08-28)
    หน้านี้ = "คิวงานที่กดไปทำ" · `/tv` = "จอแขวน" — mount บอร์ดเดียวกัน 2 ที่คือทางเข้าซ้ำ */
 
@@ -40,7 +46,7 @@ function getWorkDate() {
 const dayAdd = (s, n) => { const d = new Date(`${s}T00:00:00`); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const fmtNum = (n) => (n == null ? '—' : Math.round(n).toLocaleString('en-US'));
 const fmtDate = (s) => { try { return new Date(`${s}T00:00:00`).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' }); } catch { return s; } };
-const oeeCol = (o) => o == null ? 'var(--muted)' : o >= 80 ? '#22c55e' : o >= 65 ? '#f59e0b' : '#ef4444';
+/* สี OEE เทียบเป้ากลุ่มจริง (oeeTargetForLines + statusOf/valueInk) — คิดใน ProductionView · 05/10 เดิม 80/65 ตายตัว */
 const pctCol = (p) => p == null ? 'var(--muted)' : p >= 95 ? '#22c55e' : p >= 80 ? '#f59e0b' : '#ef4444';
 const daysSince = (iso) => iso ? Math.floor((Date.now() - new Date(iso)) / 86400000) : null;
 const dtMinOf = (d) => d.duration_min != null ? (Number(d.duration_min) || 0)
@@ -65,7 +71,7 @@ const cardSt = { background: 'var(--card)', border: '1px solid var(--border)', b
 // ปุ่มเล็กบนหัวจอ TV ห้องช่าง — เล็กโดยตั้งใจ (พื้นที่แนวตั้งเป็นของผัง ไม่ใช่ของปุ่ม)
 const tvBtn = (on) => ({
   fontSize: 12.5, fontWeight: 700, padding: '5px 11px', borderRadius: 8, cursor: 'pointer',
-  background: on ? 'var(--accent)' : 'var(--bg3)', color: on ? '#08120a' : 'var(--text)',
+  background: on ? 'var(--accent)' : 'var(--bg3)', color: on ? 'var(--accent-ink)' : 'var(--text)',
   border: `1px solid ${on ? 'var(--accent)' : 'var(--border2)'}`,
 });
 
@@ -151,9 +157,13 @@ async function loadProduction(ctx) {
   const { workDate, prevDate, inScope } = ctx;
   const d7 = dayAdd(workDate, -6);
   const [{ data: sess2, error: eS2 }, { data: sess7, error: eS7 }, fourM, logsRes, empRes, { data: staleRaw, error: eStale }] = await Promise.all([
-    supabaseDR.from('production_sessions').select('id, line_name, shift, status, oee, shift_min, work_date').in('work_date', [prevDate, workDate]),
+    // start_time = กรอบกะ ⇒ dtMinBySession ตัด downtime ที่ทับพักก่อนคิดน้ำหนัก wLoad (05/10)
+    supabaseDR.from('production_sessions').select('id, line_name, shift, status, oee, shift_min, work_date, start_time').in('work_date', [prevDate, workDate]),
     supabaseDR.from('production_sessions').select('id, line_name, work_date, shift').gte('work_date', d7).lte('work_date', workDate),
-    supabase.from('four_m_logs').select('id, work_date, line_name, category, description, status, created_by_name').in('status', ['pending', 'pending_qa']).order('work_date', { ascending: true }).limit(100),
+    /* ⚠️ `four_m_logs` **ไม่มีคอลัมน์ `created_by_name`** (มีแต่ `created_by`) — เคยใส่ไว้แล้ว
+       คิวรีล้มทั้งก้อน ⇒ การ์ด "4M รออนุมัติ" ขึ้น 0 ทั้งที่ค้างจริง 16 ใบ (วัดจากฐาน 22/09)
+       และค่านี้ไม่เคยถูกอ่านที่ไหนในหน้านี้เลย ⇒ ตัดออก ไม่ใช่เปลี่ยนเป็น created_by */
+    supabase.from('four_m_logs').select('id, work_date, line_name, category, description, status').in('status', ['pending', 'pending_qa']).order('work_date', { ascending: true }).limit(100),
     supabase.from('daily_production_logs').select('employee_id, is_present').eq('work_date', workDate),
     supabase.from('employees').select('id, line_id').eq('is_active', true),
     // กะค้างจากวันก่อนที่ยังไม่ปิด/ไม่อนุมัติ — คิว escalation (2026-08-25 · "บีบให้เคลียร์ใน 7 วัน")
@@ -170,29 +180,38 @@ async function loadProduction(ctx) {
     fetchByIds(ids, c => supabaseDR.from('prod_orders').select('id, session_id, status, qty, qty_ok, qty_actual, qty_target, mat_no').in('session_id', c)),
     fetchByIds(ids, c => supabaseDR.from('downtime_logs').select('id, session_id, duration_min, started_at, ended_at, machine_no, description, dr_downtime_types(name_th, category)').in('session_id', c)),
     fetchByIds(ids, c => supabaseDR.from('defect_logs').select('id, session_id, qty_ng, qty_suspect').in('session_id', c)),
-    supabaseDR.from('dr_products').select('mat_no, pair_mat_no'),
+    loadPairMap().then(data => ({ data })),   // cache ทะเบียนสินค้ากลาง (25/09)
     fetchByIds(ids7, c => supabaseDR.from('downtime_logs').select('id, session_id, duration_min, started_at, ended_at, machine_no, description, dr_downtime_types(name_th, category)').in('session_id', c)),
     loadOpInfo(), // map รายการขั้นตอน (OP งานขับนัท) — ตัวสุดท้ายไม่เข้า destructure แค่ให้ cache พร้อม
   ]);
+  // นโยบายพัก + เป้า OEE — ล้ม = ติดธง loadErr (ห้ามถือว่า "ไม่มีพัก" แล้วหักซ้ำ / ห้ามเดาเป้า 80/65)
+  const [breaks, tg] = await Promise.all([loadBreakPolicies().catch(() => null), fetchOeeTargets()]);
   /* ⚠️ loadErr ต้องครอบคิวรี "ชั้นแม่" ด้วย (audit 2026-09-02)
      เดิมนับแค่ 4 ตัวลูก ⇒ sess2 พลาด → KPI เป็น — ทั้งแถบ และการ์ด "กะที่ยังไม่ปิด" ขึ้น **เขียว
      "ปิดครบแล้ว"** · staleRaw พลาด → "กะค้างวันก่อน 0" (คิว escalation 7 วันหายไป)
      · fourM พลาด → "4M รออนุมัติ 0" — ทั้งหมดโดยไม่มีแถบเตือนสักอัน */
-  return { sess, sess7: sess7 || [], orders: ordRes.rows, dts: dtRes.rows, defs: defRes.rows, prods: prods || [], dt7: dt7Res.rows,
+  return { sess, sess7: sess7 || [], orders: ordRes.rows, dts: dtRes.rows, defs: defRes.rows, pairs: prods, dt7: dt7Res.rows,
+    breaks: breaks || [], oeeTargets: tg.byGroup,
     loadErr: !!(ordRes.error || dtRes.error || defRes.error || dt7Res.error
-      || eS2 || eS7 || eStale || fourM.error || logsRes.error || empRes.error),
+      || eS2 || eS7 || eStale || fourM.error || logsRes.error || empRes.error || breaks == null || tg.error),
     stale: (staleRaw || []).filter(s => inScope(s.line_name)),
     fourM: (fourM.data || []).filter(f => !f.line_name || inScope(f.line_name)), logs: logsRes.data || [], emps: empRes.data || [] };
 }
 
 function ProductionView({ d, ctx }) {
+  /* พจนานุกรมเดาประเภทดาวน์ไทม์จากคำ — สร้างจากชื่อประเภทในชุดข้อมูลนี้เอง (ไม่ยิงคิวรีเพิ่ม)
+     🔴 hook ต้องอยู่บนสุดก่อน early return ทุกกรณี (กฎ react-hooks/rules-of-hooks ในด่าน build) */
+  const dtIdx = useMemo(() => buildDtIndex(d.dt7), [d.dt7]);
   const { workDate, prevDate, lines, navigate, isMobile } = ctx;
-  const pairOf = useMemo(() => { const m = {}; d.prods.forEach(p => { if (p.pair_mat_no) m[p.mat_no] = p.pair_mat_no; }); return (x) => m[x] || null; }, [d.prods]);
+  /* d.pairs = map { mat: คู่ } จาก cache กลาง · **null = ยังไม่รู้ ⇒ ไม่ยุบงานคู่** ห้ามแทนด้วย {} */
+  const pairOf = useMemo(() => (x) => d.pairs?.[x] || null, [d.pairs]);
 
   const per = useMemo(() => {
     const bySess = {}; d.orders.forEach(o => (bySess[o.session_id] ||= []).push(o));
     const dtBy = {}; d.dts.forEach(x => (dtBy[x.session_id] ||= []).push(x));
     const ngBy = {}; d.defs.forEach(x => { ngBy[x.session_id] = (ngBy[x.session_id] || 0) + (+x.qty_ng || 0) + (+x.qty_suspect || 0); });
+    // น้ำหนัก wLoad: planned ที่ "หักได้จริง" (ตัดส่วนทับพัก) · L.dt = "เครื่องหยุดกี่นาที" ยังเป็นนาทีเต็ม — ห้ามสลับ
+    const eff = dtMinBySession(d.sess, d.dts, d.breaks || []);
     const out = {};
     d.sess.forEach(s => {
       const day = s.work_date === workDate ? 'today' : 'prev';
@@ -203,15 +222,15 @@ function ProductionView({ d, ctx }) {
       os.forEach(od => {
         if (!od.mat_no) return;
         const e = (perMat[od.mat_no] ||= { mat_no: od.mat_no, target: 0, produced: 0 });
-        e.target += od.qty_target ?? od.qty ?? 0;
+        e.target += orderPlanQty(od);   // เป้านับครั้งเดียวทั้งสายยกยอด (oee §6.1)
         e.produced += od.status === 'confirmed' ? (od.qty_ok ?? od.qty ?? 0) : (od.qty_actual ?? 0);
       });
       const nulls = os.filter(od => !od.mat_no);
       const pt = pairAwareTotal(collapseOps(Object.values(perMat), opInfoSync()), pairOf);
-      L.target += pt.target + nulls.reduce((a, od) => a + (od.qty_target ?? od.qty ?? 0), 0);
+      L.target += pt.target + nulls.reduce((a, od) => a + orderPlanQty(od), 0);
       L.actual += pt.produced + nulls.reduce((a, od) => a + (od.status === 'confirmed' ? (od.qty_ok ?? od.qty ?? 0) : (od.qty_actual ?? 0)), 0);
-      let planned = 0;
-      (dtBy[s.id] || []).forEach(x => { const m = dtMinOf(x); if (x.dr_downtime_types?.category === 'planned') planned += m; else L.dt += m; });
+      (dtBy[s.id] || []).forEach(x => { if (x.dr_downtime_types?.category !== 'planned') L.dt += dtMinOf(x); });
+      const planned = eff[s.id]?.planned || 0;
       L.planned += planned;
       L.ng += ngBy[s.id] || 0;
       if (s.status !== 'closed') L.open++;
@@ -222,6 +241,8 @@ function ProductionView({ d, ctx }) {
 
   const today = per.today || { lines: {}, rows: [] };
   const prev = per.prev || { lines: {}, rows: [] };
+  // สี OEE = เทียบเป้ากลุ่ม (กติกาเดียวกับ OBEYA) · เป้าโหลดไม่ได้ = สีปกติ "ตัดสินไม่ได้" (ไม่เดา 80/65)
+  const oeeCol = (o, names) => valueInk(o, oeeTargetForLines(names, lines, d.oeeTargets)?.oee ?? null);
   const sum = (o, f) => Object.values(o.lines).reduce((a, l) => a + (f(l) || 0), 0);
   const oeeToday = wavg(today.rows.filter(r => r.oee != null), r => r.oee, r => Math.max(0, r.shift_min - r.plannedMin));
   const oeePrev = wavg(prev.rows.filter(r => r.oee != null), r => r.oee, r => Math.max(0, r.shift_min - r.plannedMin));
@@ -264,7 +285,7 @@ function ProductionView({ d, ctx }) {
   const dtRecords = useMemo(() => {
     const sMap = {}; d.sess7.forEach(s => { sMap[s.id] = s; });
     return d.dt7.filter(x => x.dr_downtime_types?.category !== 'planned').map(x => ({
-      cat: x.dr_downtime_types?.name_th || 'ไม่ระบุประเภท', value: dtMinOf(x),
+      cat: dtBucketName(x, dtIdx), value: dtMinOf(x),   // 🗑️ เดาจากคำ → ไม่ได้ก็แตกตามเครื่อง
       machine: x.machine_no || '(ไม่ระบุเครื่อง)', line: sMap[x.session_id]?.line_name || '-',
       shift: sMap[x.session_id]?.shift === 'night' ? 'กะดึก' : 'กะเช้า', date: sMap[x.session_id]?.work_date, note: x.description || '',
     })).filter(r => r.value > 0);
@@ -283,7 +304,7 @@ function ProductionView({ d, ctx }) {
 
     <div style={KPI_GRID(isMobile)}>
       <Kpi label="📦 ผลิตวันนี้ / เป้า" value={fmtNum(act)} color={pctCol(pct)} sub={`เป้า ${fmtNum(tgt)} · ${pct == null ? '—' : pct + '%'}`} />
-      <Kpi label="⚙️ OEE (กะที่ปิดแล้ว)" value={oeeToday == null ? '—' : oeeToday} unit={oeeToday == null ? '' : '%'} color={oeeCol(oeeToday)}
+      <Kpi label="⚙️ OEE (กะที่ปิดแล้ว)" value={oeeToday == null ? '—' : oeeToday} unit={oeeToday == null ? '' : '%'} color={oeeCol(oeeToday, today.rows.map(r => r.line))}
         delta={oeeToday != null && oeePrev != null ? +(oeeToday - oeePrev).toFixed(1) : null}
         sub={oeePrev == null ? 'ไม่มีข้อมูลเมื่อวานให้เทียบ' : `เมื่อวาน ${oeePrev}%`} />
       <Kpi label="🔧 Downtime นอกแผน" value={fmtNum(sum(today, l => l.dt))} unit="นาที" color={sum(today, l => l.dt) > 0 ? '#f59e0b' : undefined}
@@ -306,7 +327,7 @@ function ProductionView({ d, ctx }) {
                 <td style={{ ...TD, fontWeight: 700 }}>{l.line}{l.open ? <span style={{ fontSize: 11, color: '#f59e0b' }}> · ยังไม่ปิดกะ</span> : null}</td>
                 <td style={TDR}>{fmtNum(l.target)}</td><td style={TDR}>{fmtNum(l.actual)}</td>
                 <td style={{ ...TDR, color: pctCol(l.pct), fontWeight: 700 }}>{l.pct == null ? '—' : l.pct + '%'}</td>
-                <td style={{ ...TDR, color: oeeCol(l.oee), fontWeight: 700 }}>{l.oee == null ? '—' : l.oee}</td>
+                <td style={{ ...TDR, color: oeeCol(l.oee, [l.line]), fontWeight: 700 }}>{l.oee == null ? '—' : l.oee}</td>
                 <td style={{ ...TDR, color: l.dt > 0 ? '#f59e0b' : 'var(--muted)' }}>{fmtNum(l.dt)}</td>
                 <td style={{ ...TDR, color: l.ng > 0 ? '#ef4444' : 'var(--muted)' }}>{fmtNum(l.ng)}</td>
               </tr>
@@ -332,7 +353,10 @@ async function loadMaintenance(ctx) {
   const { workDate, inScope } = ctx;
   const d30 = dayAdd(workDate, -29);
   const [{ data: mo, error: eMo }, { data: plans, error: ePlans }, { data: sess30, error: eSess30 }] = await Promise.all([
-    supabaseDR.from('mtn_orders').select('*').order('report_at', { ascending: false }).limit(500),
+    /* ⚠️ คอลัมน์ย่อเท่านั้น — `mtn_orders` มี 116 คอลัมน์ · `select('*')&limit=500` ≈ 800 KB/รอบ
+       จอนี้แขวนไว้ทั้งวันหลายเครื่อง (งานลด egress 2026-09-17 · ดู MO_LIST_COLS ใน MtnRepair.jsx) */
+    supabaseDR.from('mtn_orders').select('id, mo_no, status, machine_no, line_name, problem_characteristic, report_at')
+      .order('report_at', { ascending: false }).limit(500),
     supabaseDR.from('pm_plans').select('id, checklist_id, plan_type, next_due_date, last_done_at, interval_days').eq('is_active', true),
     supabaseDR.from('production_sessions').select('id, line_name, work_date').gte('work_date', d30).lte('work_date', workDate),
   ]);
@@ -356,6 +380,9 @@ async function loadMaintenance(ctx) {
 }
 
 function MaintenanceView({ d, ctx }) {
+  /* พจนานุกรมเดาประเภทดาวน์ไทม์จากคำ — สร้างจากชื่อประเภทในชุดข้อมูลนี้เอง (ไม่ยิงคิวรีเพิ่ม)
+     🔴 hook ต้องอยู่บนสุดก่อน early return ทุกกรณี (กฎ react-hooks/rules-of-hooks ในด่าน build) */
+  const dtIdx = useMemo(() => buildDtIndex(d.dt30), [d.dt30]);
   const { workDate, navigate, isMobile, inScope } = ctx;
   const openMo = d.mo.filter(isMoOpen);   // รวม transferred = จบแล้ว (source: utils/mtnStepPerm)
   const scopedMo = openMo.filter(o => !o.line_name || inScope(o.line_name));
@@ -381,7 +408,7 @@ function MaintenanceView({ d, ctx }) {
     d.dt30.filter(x => x.dr_downtime_types?.category !== 'planned' && x.machine_no).forEach(x => {
       const m = (byMc[x.machine_no] ||= { machine: x.machine_no, times: 0, min: 0, line: sMap[x.session_id]?.line_name || '', last: null, causes: {} });
       m.times++; m.min += dtMinOf(x);
-      const c = x.dr_downtime_types?.name_th || 'ไม่ระบุ'; m.causes[c] = (m.causes[c] || 0) + 1;
+      const c = dtBucketName(x, dtIdx); m.causes[c] = (m.causes[c] || 0) + 1;
       const dt = x.started_at || sMap[x.session_id]?.work_date; if (dt && (!m.last || dt > m.last)) m.last = dt;
     });
     const hasMo = new Set(d.mo.filter(o => o.machine_no && (daysSince(o.report_at) ?? 999) <= 30).map(o => o.machine_no));
@@ -760,11 +787,15 @@ function QaView({ d, ctx }) {
 export const DEPTS = [
   { key: 'production', icon: '🏭', label: 'ฝ่ายผลิต', roles: ['leader', 'supervisor', 'manager', 'admin'], load: loadProduction, View: ProductionView },
   { key: 'maintenance', icon: '🔧', label: 'ซ่อมบำรุง', roles: ['mtn', 'engineer'], load: loadMaintenance, View: MaintenanceView },
-  { key: 'store', icon: '📦', label: 'สโตร์', roles: ['planner_store', 'sale'], load: loadStore, View: StoreView },
+  /* ⚠️ ครอบทั้ง 3 role ของฝั่ง Logistic — `warehouse_delivery` แยกออกมา 2026-09-23 ถ้าลืมใส่
+     คนจัดส่งจะเปิดหน้านี้มาแล้วเด้งไปแท็บ 'ฝ่ายผลิต' (default) แทนแท็บสโตร์ของตัวเอง */
+  { key: 'store', icon: '📦', label: 'สโตร์', roles: ['planner_store', 'sale', 'warehouse_delivery'], load: loadStore, View: StoreView },
   { key: 'qa', icon: '✅', label: 'QA / คุณภาพ', roles: ['qa'], load: loadQa, View: QaView },
 ];
 
-export default function DeptDashboard() {
+/* 🧩 `embedded` (23/09) — หน้านี้เป็นแท็บ 📌 ของ `/obeya` แล้ว (route `/dept-dashboard` redirect มา `?tab=todo`)
+   หน้าแม่ส่ง tabs/tab/onTab มาให้วาดแถบแท็บ OBEYA ที่หัวเพจเดียวกัน · เนื้อหา/ตัวกรอง `?dept=` เหมือนเดิมทุกอย่าง */
+export default function DeptDashboard({ embedded = false, tabs, tab: hubTab, onTab } = {}) {
   const { role, lineId, sections } = useContext(UserContext);
   const isMobile = useIsMobile();
   const navigate = useNavigate();
@@ -782,7 +813,7 @@ export default function DeptDashboard() {
      **redirect ไม่ใช่ลบทิ้ง** — จอ TV ที่บุ๊กมาร์กลิงก์เดิมไว้ต้องเปิดได้ต่อ (ห้ามพังของที่แขวนอยู่)
      พา `?team=`/`?sound=` ไปด้วย เพราะเป็นค่าตั้งประจำห้องที่จอนั้นตั้งไว้แล้ว */
   const rawView = sp.get('view');
-  const view = rawView === 'kpi' ? 'kpi' : 'now';
+  const view = 'now';   // เหลือมุมมองเดียว — `?view=kpi` ย้ายไป /obeya?tab=table แล้ว (redirect ด้านล่าง)
   const setView = (v) => { const n = new URLSearchParams(sp); if (v === 'now') n.delete('view'); else n.set('view', v); setSp(n); };
   const cfg = DEPTS.find(x => x.key === dept);
 
@@ -796,6 +827,17 @@ export default function DeptDashboard() {
   const [err, setErr] = useState(null);
   const workDate = getWorkDate();
 
+  /* ลิงก์เก่า `?view=kpi` → `/obeya?tab=table` (17/09 ย้ายตาราง KPI รายเดือนไปอยู่กับบอร์ด KPI)
+     **redirect ไม่ใช่ลบทิ้ง** — คนที่บุ๊กมาร์กแท็บนี้ไว้ต้องยังเข้าถึงงานเดิมได้ (กฎเดียวกับ ?view=andon)
+     พา `?section=` ไปด้วยถ้ามี เพื่อให้เปิดมาอยู่ส่วนงานเดิม */
+  useEffect(() => {
+    if (rawView !== 'kpi') return;
+    const n = new URLSearchParams();
+    n.set('tab', 'table');
+    if (sp.get('section')) n.set('section', sp.get('section'));
+    navigate(`/obeya?${n}`, { replace: true });
+  }, [rawView, sp, navigate]);
+
   /* ลิงก์เก่า `?view=andon` → หน้า `/tv` (จอเฝ้าระวังตัวจริง) — คงค่าประจำห้องไปด้วย
      ต้องเป็น `replace` ไม่งั้นกดย้อนกลับแล้วเด้งวนกลับมาที่นี่อีก */
   useEffect(() => {
@@ -808,7 +850,7 @@ export default function DeptDashboard() {
   }, [rawView, dept, sp, navigate]);
 
   useEffect(() => {
-    supabase.from('production_lines').select('id, name, section, parent_line_name')
+    loadLinesRes()
       .then(({ data }) => setLines(data || []));
   }, []);
 
@@ -837,50 +879,33 @@ export default function DeptDashboard() {
   const scopeText = scopeSet ? `${scopeSet.size} ไลน์ในขอบเขตของคุณ` : 'ทุกไลน์';
 
   return (
-    <div style={{ maxWidth: 'min(97vw, 1800px)', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
+    <Page style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         {/* ── หัวเพจ = `<PageHeader>` ตามกฎ UI-CONVENTIONS §6.8 ──
            (เดิมหน้านี้วาดหัวเรื่อง + แถบแท็บเองรวม 3 แถว ทรงปุ่มไม่ตรงกับหน้าอื่น
             ซึ่งเป็นอาการที่ PageHeader ถูกสร้างมาแก้พอดี · แก้แล้ว 2026-08-26)
            ⚠️ ยังไม่ใช้ `useTabParam` โดยตั้งใจ — `?dept=` ต้องเขียนลง URL เสมอ (default ต่างกันตาม role) */}
         <PageHeader
-          title="Dashboard ส่วนงาน" icon="📊"
+          title={embedded ? OBEYA_TITLE : 'Dashboard ส่วนงาน'} icon={embedded ? OBEYA_ICON : '📊'}
           sub={<>วันงาน {fmtDate(workDate)} · {scopeText} · อ่านอย่างเดียว (กดที่รายการเพื่อไปหน้าที่ทำงานจริง)</>}
           actions={<button onClick={load} style={tvBtn(false)}>🔄 รีเฟรช</button>}
-          tabs={[
-            { key: 'now', label: '⚡ งานวันนี้' },
-            { key: 'kpi', label: '📑 KPI รายเดือน' },
-          ]}
-          tab={view} onTab={setView}
-        >
-          {/* เลือกส่วนงาน = "ตัวกรอง" คนละแกนกับแท็บมุมมอง — ติดป้ายกำกับไว้ไม่ให้อ่านเป็นแท็บชั้นที่ 2
-              (KPI รายเดือนมี section picker ของตัวเองที่ยึด org_nodes จึงไม่ต้องมีแถวนี้) */}
-          {view === 'now' && (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, alignItems: 'center' }}>
-              <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>ส่วนงาน:</span>
-              {DEPTS.map(t => (
-                <button key={t.key} onClick={() => setDept(t.key)} style={{
-                  fontSize: 12.5, fontWeight: 700, padding: '5px 12px', borderRadius: 999, cursor: 'pointer',
-                  background: dept === t.key ? 'var(--bg3)' : 'transparent',
-                  color: dept === t.key ? 'var(--text)' : 'var(--muted)',
-                  border: `1px solid ${dept === t.key ? 'var(--border2)' : 'var(--border)'}`,
-                }}>{t.icon} {t.label}</button>
-              ))}
-              {/* 📺 จอเฝ้าระวังย้ายไปหน้า `/tv` แล้ว (nav audit 2026-08-28) — เดิมเป็นแท็บ 🚨 จอห้องช่าง
-                  ที่ mount `<MtnAndonBoard>` ตัวเดียวกับ `/tv` เป๊ะ = ทางเข้า 2 ทางไปบอร์ดใบเดียวกัน
-                  หน้านี้เป็น "คิวงานที่กดไปทำ" · `/tv` เป็น "จอแขวน" — คนละงาน คนละหน้า
-                  ปุ่มนี้คงทางเข้าเดิมไว้ให้คนที่ชินกับที่นี่ (ห้ามตัดทางออกของใคร) */}
-              <button onClick={() => navigate(`/tv?dept=${dept === 'store' ? 'store' : dept === 'production' ? 'production' : 'maintenance'}`)}
-                title="เปิดจอเฝ้าระวังสำหรับแขวนทีวี (ผัง + เครื่องหยุด + เสียงเตือน)"
-                style={{ ...tvBtn(false), marginLeft: 'auto' }}>📺 จอเฝ้าระวัง (แขวนทีวี)</button>
-            </div>
-          )}
-        </PageHeader>
-
-      {view === 'kpi' && (
-        <Suspense fallback={<div style={{ ...cardSt, textAlign: 'center', color: 'var(--muted)', fontSize: 14 }}>กำลังโหลด...</div>}>
-          <KpiMonthly lines={lines} scopeSet={scopeSet} isMobile={isMobile} />
-        </Suspense>
-      )}
+          /* 📑 KPI รายเดือน ย้ายไป `/obeya?tab=table` แล้ว (17/09 · user ทักว่าซ้ำกับบอร์ด KPI ของ Obeya)
+             เหตุผล: หน้านี้ตัดด้วย `?dept=` = หน้าที่/ฝ่าย · แต่ตาราง KPI ตัดด้วยส่วนงาน × กลุ่มไลน์ × ปี
+             = แกนของ Obeya ⇒ มันไม่เคยใช้แกนของหน้านี้เลย (คอมเมนต์เดิมด้านล่างก็เขียนไว้เอง)
+             เหลือแท็บเดียวจึงไม่ต้องมีแถบแท็บ — `?view=kpi` redirect ไป /obeya ให้อัตโนมัติ */
+          tabs={embedded ? tabs : undefined} tab={embedded ? hubTab : view} onTab={embedded ? onTab : setView}
+          /* เลือกมุมมองฝ่าย = "ตัวกรอง" ของหน้านี้ ⇒ `filters` (ใต้แท็บ ตำแหน่งเดียวกับแท็บอื่นของ OBEYA)
+             แกน `?dept=` คือหน้าที่/ฝ่าย ไม่ใช่ PD1..PD4 — จึงใช้คำว่า "มุมมอง" ไม่ใช่ "ส่วนงาน" */
+          filters={view === 'now' ? (<>
+            <span className="filter-label">มุมมอง</span>
+            <Segmented label="มุมมองฝ่าย" value={dept} onChange={setDept}
+              options={DEPTS.map(t => ({ value: t.key, label: `${t.icon} ${t.label}` }))} />
+            <span className="spacer" />
+            {/* 📺 จอเฝ้าระวังย้ายไปหน้า `/tv` แล้ว (nav audit 2026-08-28) — ปุ่มนี้คงทางเข้าเดิมไว้ (ห้ามตัดทางออกของใคร) */}
+            <button className="ctl-btn" onClick={() => navigate(`/tv?dept=${dept === 'store' ? 'store' : dept === 'production' ? 'production' : 'maintenance'}`)}
+              title="เปิดจอเฝ้าระวังสำหรับแขวนทีวี (ผัง + เครื่องหยุด + เสียงเตือน)"
+              style={tvBtn(false)}>📺 จอเฝ้าระวัง (แขวนทีวี)</button>
+          </>) : undefined}
+        />
 
       {view === 'now' && loading && <div style={{ ...cardSt, textAlign: 'center', color: 'var(--muted)', fontSize: 14 }}>กำลังโหลดข้อมูล...</div>}
       {view === 'now' && err && <div style={{ ...cardSt, borderColor: '#ef4444', color: '#ef4444', fontSize: 13 }}>โหลดข้อมูลไม่สำเร็จ: {err}</div>}
@@ -888,6 +913,6 @@ export default function DeptDashboard() {
       {view === 'now' && !loading && !err && data?.dept === dept && <cfg.View d={data.d} ctx={ctx} />}
       {view === 'now' && !loading && !err && data && data.dept !== dept &&
         <div style={{ ...cardSt, textAlign: 'center', color: 'var(--muted)', fontSize: 14 }}>กำลังเปลี่ยนส่วนงาน...</div>}
-    </div>
+    </Page>
   );
 }

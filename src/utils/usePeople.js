@@ -16,27 +16,33 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../supabaseClient';
 import { cachedMaster, invalidateMaster } from './masterCache';
 import { fetchAllRows } from './fetchAllRows';
+import { setPeopleIndex } from './actorStamp';
 
-const KEY_PROFILES = 'people:profiles';
-const KEY_EMPLOYEES = 'people:employees';
+const KEY_PROFILES = 'people:profiles:v2';     // v2 (06/10) = เพิ่ม mtn_teams (prefer หัวหน้าช่างของทีมที่ใบแจ้งถึง)
+const KEY_EMPLOYEES = 'people:employees:v2';   // v2 (06/10) = เพิ่ม mtn_team
 
 export async function loadProfilesPeople() {
   return cachedMaster(KEY_PROFILES, async () => {
     // profiles ไม่มี email (CLAUDE.md) · position = ตำแหน่งจริง (แสดงผล) · employee_id = ผูกทะเบียนพนักงาน (nullable)
     let r = await supabase.from('profiles')
-      .select('id, full_name, role, section, sections, line_id, position, signature_url, employee_id')
+      .select('id, full_name, role, section, sections, line_id, position, signature_url, employee_id, mtn_teams')
       .order('full_name');
     // tolerant: ยังไม่ apply migration บางตัว (42703) → ถอยไปชุดคอลัมน์ขั้นต่ำ ไม่ให้ picker ว่างทั้งแอป
     if (r.error) r = await supabase.from('profiles').select('id, full_name, role, section, line_id, signature_url').order('full_name');
     if (r.error) throw r.error;
-    return (r.data || []).filter(p => p.full_name && String(p.role) !== 'display');
+    const people = (r.data || []).filter(p => p.full_name && String(p.role) !== 'display');
+    /* ป้อนทะเบียน "ชื่อ → uid" ให้ actorStamp ที่นี่จุดเดียว (2026-09-17)
+       ทำไมตรงนี้: นี่คือฟังก์ชันเดียวที่ผลิตรายชื่อ profiles ทั้งแอป (มี cache ร่วม)
+       ⇒ ทะเบียนสดเสมอ ไม่มีทาง drift กับลิสต์ที่ picker ใช้ · ห้ามไป setPeopleIndex ที่อื่น */
+    setPeopleIndex(people);
+    return people;
   });
 }
 
 export async function loadEmployeesPeople() {
   return cachedMaster(KEY_EMPLOYEES, async () => {
     const { data, error } = await fetchAllRows(supabase, 'employees',
-      'id, employee_id_code, name, line_id, section, department, group_name, team, position, is_active',
+      'id, employee_id_code, name, line_id, section, department, group_name, team, position, is_active, mtn_team',
       q => q.eq('is_active', true).order('name').order('id'));
     if (error) throw error;
     return data || [];

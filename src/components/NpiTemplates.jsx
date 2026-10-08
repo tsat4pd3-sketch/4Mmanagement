@@ -7,6 +7,7 @@ import { toast } from './Toast';
 import { DOC_KIND, OWNER_ROLE } from '../utils/npi';
 import { inp, card, btn, ghost, thSt, tdSt, Field, Pill, Modal } from './NpiUi';
 import CustomerSelect from './CustomerSelect';
+import { DeleteButton } from './IconButton';
 
 const slug = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40);
 
@@ -89,7 +90,7 @@ export default function NpiTemplates({ templates, onChanged }) {
                   <td style={tdSt}>{p.seq}</td>
                   <td style={tdSt}><span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 3, background: p.color || 'var(--border)', marginRight: 6 }} /><b>{p.label}</b>{p.description && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{p.description}</div>}</td>
                   <td style={{ ...tdSt, fontFamily: 'monospace', fontSize: 11 }}>{p.code}</td>
-                  <td style={{ ...tdSt, whiteSpace: 'nowrap' }}><button className="tbtn" style={{ ...ghost, padding: '2px 7px' }} onClick={() => setPhModal({ ...p, color: p.color || '', description: p.description || '' })}>✏️</button> <button className="tbtn" style={{ ...ghost, padding: '2px 7px', color: '#ef4444' }} onClick={() => delPhase(p)}>🗑</button></td>
+                  <td style={{ ...tdSt, whiteSpace: 'nowrap' }}><button className="tbtn" style={{ ...ghost, padding: '2px 7px' }} onClick={() => setPhModal({ ...p, color: p.color || '', description: p.description || '' })}>✏️</button> <DeleteButton onClick={() => delPhase(p)} title="ลบ" /></td>
                 </tr>
               ))}</tbody>
             </table>
@@ -107,12 +108,12 @@ export default function NpiTemplates({ templates, onChanged }) {
                   <tr key={d.id} style={{ opacity: d.is_active === false ? 0.5 : 1 }}>
                     <td style={tdSt}>{phases.find(p => p.code === d.phase_code)?.label || <span style={{ color: '#f59e0b' }}>{d.phase_code} (ไม่มีเฟส)</span>}</td>
                     <td style={tdSt}>{d.seq}</td>
-                    <td style={tdSt}><b style={{ color: 'var(--text)' }}>{d.label}</b><div style={{ fontFamily: 'monospace', fontSize: 10.5, color: 'var(--muted)' }}>{d.code}</div></td>
+                    <td style={tdSt}><b style={{ color: 'var(--text)' }}>{d.label}</b><div style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--muted)' }}>{d.code}</div></td>
                     <td style={tdSt}>{DOC_KIND[d.doc_kind]?.icon} {DOC_KIND[d.doc_kind]?.label}</td>
                     <td style={tdSt}>{OWNER_ROLE[d.owner_role] || d.owner_role || '—'}</td>
                     <td style={tdSt}>{d.required ? '✓' : '—'}</td>
                     <td style={tdSt}>{d.ppap_element && <Pill label="PPAP" color="#a855f7" small />}</td>
-                    <td style={{ ...tdSt, whiteSpace: 'nowrap' }}><button className="tbtn" style={{ ...ghost, padding: '2px 7px' }} onClick={() => setDvModal({ ...d, owner_role: d.owner_role || '' })}>✏️</button> <button className="tbtn" style={{ ...ghost, padding: '2px 7px', color: '#ef4444' }} onClick={() => delDeliv(d)}>🗑</button></td>
+                    <td style={{ ...tdSt, whiteSpace: 'nowrap' }}><button className="tbtn" style={{ ...ghost, padding: '2px 7px' }} onClick={() => setDvModal({ ...d, owner_role: d.owner_role || '' })}>✏️</button> <DeleteButton onClick={() => delDeliv(d)} title="ลบ" /></td>
                   </tr>
                 ))}</tbody>
               </table>

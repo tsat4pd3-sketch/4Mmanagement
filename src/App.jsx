@@ -1,8 +1,11 @@
-import { createContext, useState, useEffect, useRef, lazy, Suspense, useCallback } from 'react';
+import { createContext, useState, useEffect, useRef, useMemo, lazy, Suspense, useCallback } from 'react';
 import { fmtDateTime } from './utils/dateFormat';
 import tsLogo from './assets/TS logo.png';
-import { BrowserRouter as Router, Routes, Route, Link, Navigate, useNavigate, useLocation } from 'react-router-dom';
-import { supabase, setDrActorName } from './supabaseClient';
+import { BrowserRouter as Router, Routes, Route, Link, Navigate, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
+import { supabase } from './supabaseClient';
+import { setActor } from './utils/actorStamp';
+import { loadProfilesPeople } from './utils/usePeople';
+import MyQueuePanel, { useMyQueue } from './components/MyQueuePanel';
 import { ToastContainer, toast } from './components/Toast';
 import Login from './pages/Login';
 import SignatureModal from './components/SignatureModal';
@@ -20,8 +23,11 @@ import { roleLabel } from './utils/roleMeta';                       // ป้า
 import { buildProfileMenu } from './utils/profileMenu';             // รายการเมนูโปรไฟล์ — จุดเดียว ใช้ร่วมกับหน้า Home
 import { uploadMyAvatar } from './utils/profileSelf';               // อัปโหลดรูปโปรไฟล์ (ใช้ร่วมกับหน้า Home)
 import { liveChannel } from './utils/liveChannel';
+import { coalesce } from './utils/liveRefresh';
+import { LIVE } from './utils/refreshRates';
 import { checkWrite } from './utils/dbWrite';
 import { notifTargetPath } from './utils/notifLink';   // ปลายทางของแจ้งเตือน (link ก่อน แล้วค่อย ref_table) — จุดเดียว
+import { FEEDBACK_EVENT } from './utils/feedbackPrefill';   // 💬 หน้าอื่นสั่งเปิดกล่องแจ้งปัญหา
 import { isKioskPath } from './utils/kioskRoutes';      // จอแขวนอ่านอย่างเดียว — ยกเว้น auto-logout
 const ImageCropModal = lazy(() => import('./components/ImageCropModal'));
 const ViewAsModal = lazy(() => import('./components/ViewAsModal')); // 🎭 admin จำลองมุมมอง role อื่น
@@ -33,18 +39,18 @@ const Dashboard    = lazy(() => import('./pages/Dashboard'));
 const Operator     = lazy(() => import('./pages/operator'));
 const LineSetup    = lazy(() => import('./pages/LineSetup'));
 const LayoutSetup  = lazy(() => import('./pages/LayoutSetup'));
-const MachineDatabase = lazy(() => import('./pages/MachineDatabase'));
-const DieRegistry = lazy(() => import('./pages/DieRegistry'));
 const ProcessSetup = lazy(() => import('./pages/ProcessSetup'));
 const QrLabels     = lazy(() => import('./pages/QrLabels'));
+const ScanLanding   = lazy(() => import('./pages/ScanLanding'));
 const AddUser      = lazy(() => import('./pages/AddUser'));
 const CustomerDemand = lazy(() => import('./pages/CustomerDemand'));
 const PlannerSales   = lazy(() => import('./pages/PlannerSales'));
-const RundownStock   = lazy(() => import('./pages/RundownStock'));
+const Monitoring     = lazy(() => import('./pages/Monitoring'));
 const StoreMonitor   = lazy(() => import('./pages/StoreMonitor'));
 const Transport      = lazy(() => import('./pages/Transport'));
 const Report       = lazy(() => import('./pages/Report'));
 const WorkforceInsight = lazy(() => import('./pages/WorkforceInsight'));
+const ManpowerBoard = lazy(() => import('./pages/ManpowerBoard'));
 const ShiftOrganize = lazy(() => import('./pages/ShiftOrganize'));
 const EventLog      = lazy(() => import('./pages/EventLog'));
 const DailyReport   = lazy(() => import('./pages/DailyReport'));
@@ -53,12 +59,14 @@ const ProductHistory = lazy(() => import('./pages/ProductHistory'));
 const VSM           = lazy(() => import('./pages/VSM'));
 const OrderTrace = lazy(() => import('./pages/OrderTrace'));
 const DeptHub       = lazy(() => import('./pages/DeptHub'));
-const DeptDashboard = lazy(() => import('./pages/DeptDashboard'));
 // 📺 จอเฝ้าระวังแขวนห้อง — เปลือกเต็มจอของ <MtnAndonBoard> (ดูหัวไฟล์ TvBoard.jsx · ไม่ใช่บอร์ดใบใหม่)
 const TvBoard = lazy(() => import('./pages/TvBoard'));
 const FlowTower    = lazy(() => import('./pages/FlowTower'));
 const GroupOverview = lazy(() => import('./pages/GroupOverview'));
 const AdoptionOutlook = lazy(() => import('./pages/AdoptionOutlook'));
+const ProgramUpdate = lazy(() => import('./pages/ProgramUpdate'));
+/* 🧭 ไม่ lazy โดยตั้งใจ — หน้านี้ต้องทำงานตอนบันเดิลเก่า/โหลด chunk ไม่ได้ (ดูหัวไฟล์) */
+import NotFound from './pages/NotFound';
 const HeijunkaKanban = lazy(() => import('./pages/HeijunkaKanban'));
 const ProductMaster  = lazy(() => import('./pages/ProductMaster'));
 const LineStock      = lazy(() => import('./pages/LineStock'));
@@ -67,7 +75,8 @@ const RackCenter      = lazy(() => import('./pages/RackCenter'));
 const OrgSetup        = lazy(() => import('./pages/OrgSetup'));
 const PmHub       = lazy(() => import('./pages/PmHub'));   // 🔧 ศูนย์ PM (5 หน้าเดิมเป็นแท็บ)
 const MtnMachineLayout = lazy(() => import('./pages/MtnMachineLayout'));
-const FixtureRegistry = lazy(() => import('./pages/FixtureRegistry'));
+const MtnAnalysis = lazy(() => import('./pages/MtnAnalysis'));
+const EquipmentHub = lazy(() => import('./pages/EquipmentHub'));
 const Energy = lazy(() => import('./pages/Energy'));
 const Improvements = lazy(() => import('./pages/Improvements'));
 const OjtTraining = lazy(() => import('./pages/OjtTraining'));
@@ -80,10 +89,14 @@ const Obeya = lazy(() => import('./pages/Obeya'));
 const ProductionPlan = lazy(() => import('./pages/ProductionPlan'));
 const PermissionsManagement = lazy(() => import('./pages/PermissionsManagement'));
 const AuditLog = lazy(() => import('./pages/AuditLog'));
+// 🗄️ แผนที่ฐานข้อมูล — ตาราง/PK/FK + "หน้าไหนใช้ตารางไหน" (อ่านสดจาก pg_catalog · 2026-09-22)
+const SchemaMap = lazy(() => import('./pages/SchemaMap'));
+const StorageMaintenance = lazy(() => import('./pages/StorageMaintenance'));
 const QualityControl = lazy(() => import('./pages/QualityControl'));
 const QAInspectionSetup = lazy(() => import('./pages/QAInspectionSetup'));
 const PEDocs = lazy(() => import('./pages/PEDocs'));
 const NPI = lazy(() => import('./pages/NPI'));
+const NewModelBoard = lazy(() => import('./pages/NewModelBoard'));
 const ScrapReport = lazy(() => import('./pages/ScrapReport'));
 const NotificationConfig = lazy(() => import('./pages/NotificationConfig'));
 const MtnRepair = lazy(() => import('./pages/MtnRepair'));
@@ -109,14 +122,19 @@ export const NAV_ITEMS = [
   // ⚠️ ชื่อเมนูต้องบอกว่า "เข้าไปทำอะไร" ไม่ใช่บอกแค่ว่าเกี่ยวกับเรื่องอะไร (nav audit 2026-08-27)
   // Dashboard รายส่วนงาน (ผลิต/ซ่อมบำรุง/สโตร์/QA) — หน้าเดียวสลับด้วย ?dept= · ดู docs/DASHBOARD-DESIGN.md
   // ⚠️ นี่คือ "คิวงานที่กดไปทำ" ไม่ใช่จอแขวน — จอแขวนอยู่หมวด 📺 จอแสดงผล (nav audit 2026-08-28)
-  { to: '/dept-dashboard', icon: '📋', label: 'งานค้างของส่วนงาน',  group: 'ภาพรวม' },
   { to: '/factory-map', icon: '🗺️', label: 'ผังรวมโรงงาน',       group: 'ภาพรวม' },
   /* 🏛️ OBEYA — 2 แท็บในหน้าเดียว (รวมงาน 2 session · 2026-09-15 ดูหัวไฟล์ pages/Obeya.jsx)
        ?tab=kpi   บอร์ด KPI ส่วนงาน — ยุบกระดาษ "OBEYA KPI monitoring" ที่แปะผนัง (เดือน × กลุ่มไลน์ × 8 หัวข้อ)
        ?tab=sqdcm จอมอนิเตอร์ SQDCM — กระดาษ A4 สิบแผ่นปูเต็มจอ TV + ACTION BOARD ปิดลูป
      อยู่หมวด "ภาพรวม" ไม่ใช่ "จอแสดงผล" เพราะหน้านี้ **เขียนข้อมูลได้** (บันทึกเหตุความปลอดภัย /
      ตั้ง-ปิด Action) ไม่ใช่จอที่แขวนทิ้งไว้เฉยๆ · deep-link ต่อจอ: ?section=PD3 · ?tab=sqdcm */
-  { to: '/obeya',       icon: '🏛️', label: 'OBEYA (KPI ส่วนงาน + SQDCM)', group: 'ภาพรวม' },
+  /* 📌 งานค้างของส่วนงาน (/dept-dashboard เดิม) ยุบเป็นแท็บ `?tab=todo` ใน OBEYA แล้ว (user 23/09:
+     "งานค้างส่วนงาน ควรย้ายเป็น tab ใน หมวด OBEYA ไปเลย") — route เดิม redirect (LegacyTabRedirect) พา ?dept= มาด้วย
+     · สิทธิ์ยังใช้คีย์ `page:/dept-dashboard` เดิม (แท็บโผล่ตามสิทธิ์ · /permissions ยังตั้งได้) ห้ามลบคีย์ */
+  { to: '/obeya',       icon: '🏛️', label: 'OBEYA (KPI · SQDCM · งานค้าง)', group: 'ภาพรวม' },
+  /* 📦 อัพเดทโปรแกรม — รายการสิ่งที่เพิ่ม/แก้ไปในระบบ อ่านจากประวัติการแก้จริง (git) ไม่ใช่ลิสต์ที่พิมพ์มือ
+       อยู่หมวดภาพรวมเพราะเป็นของทุกคน (ทีมงานอยากรู้ว่าของที่แจ้งไปแก้แล้วยัง · ผู้มาเยี่ยมชมอยากรู้ว่าระบบยังมีคนดูแล) */
+  { to: '/program-update', icon: '📦', label: 'อัพเดทโปรแกรม',    group: 'ภาพรวม' },
 
   /* ── 📺 จอแสดงผล — 3 จอที่ "แขวนทิ้งไว้" ไม่ใช่หน้าที่เปิดมากดทำงาน (nav audit 2026-08-28) ──
      เดิมนั่งปนใน "ภาพรวม" กับ /dept-dashboard (คิวงาน) และ /factory-map (จอสำรวจ มี metric tab)
@@ -131,8 +149,13 @@ export const NAV_ITEMS = [
   { to: '/morning-meeting', icon: '🌅', label: 'ประชุมแถวเช้า',   group: 'ฝ่ายผลิต' },
   { to: '/checkin',     icon: '📝', label: 'เช็คชื่อ & PPE',     group: 'ฝ่ายผลิต' },
   { to: '/management',  icon: '🔄', label: 'จัดการไลน์ผลิต',     group: 'ฝ่ายผลิต' },
+  // 🧑‍🤝‍🧑 แทนบอร์ดกระดาษหน้าไลน์ (ผังคน + ผัง LAYOUT + ป้าย 4M) — อ่านอย่างเดียว (2026-10-06)
+  { to: '/manpower-board', icon: '🧑‍🤝‍🧑', label: 'Manpower Control Board', group: 'ฝ่ายผลิต' },
   { to: '/daily-report',   icon: '📊', label: 'Daily Report',      group: 'ฝ่ายผลิต' },
-  { to: '/production-plan', icon: '🗓️', label: 'วางแผนการผลิต',      group: 'ฝ่ายผลิต' },
+  // วางแผนการผลิต ใช้ 2 ฝ่าย: ผลิตตัดสินเปิดกะ/OT · planner เอายอดลูกค้ามาเทียบกำลังผลิต
+  // ⇒ **บ้านจริง = ฝ่ายผลิต** (ย้ายไป Logistic = หัวหน้าไลน์หาไม่เจอ) · `alsoIn` = โผล่เป็น
+  //    *ทางลัด* ในหมวด Logistic ด้วย (หน้าตาต่างชัด — ดู `isNavGuest`) · สิทธิ์ชุดเดียวเหมือนเดิม
+  { to: '/production-plan', icon: '🗓️', label: 'วางแผนการผลิต',      group: 'ฝ่ายผลิต', alsoIn: LOGISTIC_GROUPS.inbound },
   { to: '/oee-analytics',  icon: '📈', label: 'OEE',                group: 'วิเคราะห์ & รายงาน' },
   { to: '/product-history', icon: '📜', label: 'ประวัติผลิต (by Product)', group: 'วิเคราะห์ & รายงาน' },
   { to: '/vsm',            icon: '🗺️', label: 'VSM สายธารคุณค่า',   group: 'วิเคราะห์ & รายงาน' },
@@ -150,12 +173,15 @@ export const NAV_ITEMS = [
   // เฝ้าระวังสต๊อกจับทั้ง 2 ฝั่ง (A/B เทียบ min-max ของทุกเลข · E ใบสั่งซื้อค้าง) → โผล่ทั้งสองหมวด
   // `alsoIn` = โชว์ซ้ำเฉพาะใน sidebar/หน้า Home · ที่อื่น (สิทธิ์/ค้นหา/breadcrumb/ตัวนับ) นับครั้งเดียว
   { to: '/store-monitor',   icon: '🚨', label: 'เฝ้าระวังสต๊อก (Abnormal)',  group: LOGISTIC_GROUPS.inbound, alsoIn: LOGISTIC_GROUPS.outbound },
+  // 🔴 หมวดแผนงานยุบเข้ามาที่นี่ (30/09 · คำสั่ง user — planner + store = หน่วยเดียว ดู logisticSide.js)
+  { to: '/planner-sales',   icon: '📈', label: 'Planner & Sales',           group: LOGISTIC_GROUPS.inbound },
 
+  /* 📉 บอร์ด Monitoring = ไฟล์ Excel ที่ทีมวางแผนทำมือทุกวัน ยกเข้าระบบ (01/10 · คำสั่ง user)
+     บ้านจริง = แผนงาน (ทีมวางแผนเป็นเจ้าของตัวเลข) · `alsoIn` = ทางลัดให้ฝ่ายผลิตที่ต้องดูของจะขาด */
+  { to: '/monitoring',      icon: '📉', label: 'Monitoring แผน-สต๊อก',    group: LOGISTIC_GROUPS.inbound, alsoIn: 'ฝ่ายผลิต' },
   { to: '/customer-demand', icon: '🚚', label: 'จัดส่งลูกค้า',             group: LOGISTIC_GROUPS.outbound },
-  { to: '/rundown-stock',   icon: '📉', label: 'คาดการณ์ของจะขาด',        group: LOGISTIC_GROUPS.outbound },
   { to: '/rack-center',    icon: '🗃️', label: 'ภาชนะ & Packaging',       group: LOGISTIC_GROUPS.outbound },
 
-  { to: '/planner-sales',   icon: '📈', label: 'Planner & Sales',           group: LOGISTIC_GROUPS.control },
 
   // ⚠️ 4 เมนู PM เดิมขึ้นต้นด้วยคำชุดเดียวกัน ("...อุปกรณ์เครื่องจักร") จนแยกไม่ออกว่าอันไหนทำอะไร
   //    ชื่อใหม่บอกการกระทำ: บันทึกผล / ดูปฏิทิน / ดูว่าจะครบกำหนด / ตั้งจุดที่ต้องตรวจ (nav audit 2026-08-27)
@@ -165,8 +191,14 @@ export const NAV_ITEMS = [
   //    ⭐ วิธีนี้แก้ปัญหา "4 เมนู PM ชื่อขึ้นต้นเหมือนกันจนแยกไม่ออก" ได้แรงกว่าการเปลี่ยนชื่อ
   //       (nav audit 2026-08-27) — ชื่อแท็บในนั้นยึดกฎเดียวกัน: บอกว่าเข้าไปทำอะไร
   { to: '/pm',          icon: '🔧', label: 'ซ่อมบำรุงตามแผน PM (ตรวจ·แผน·ล่วงหน้า·ประสานงาน)', group: 'การตรวจสอบและซ่อมบำรุง' },
+  /* 🔍 หน้าวิเคราะห์ (อ่านอย่างเดียว) แยกจาก /mtn-repair ที่เป็นหน้าทำงาน — 2026-09-22
+     คำสั่ง user: "หมวด mtn ยังไม่มี dashboard ปัญหา เครื่องจักร/แม่พิมพ์/jig fixture · qc7tools ยังไม่เห็น" */
+  { to: '/mtn-analysis', icon: '🔍', label: 'วิเคราะห์ปัญหา (QC 7 Tools)',    group: 'การตรวจสอบและซ่อมบำรุง' },
   { to: '/mtn-layout',  icon: '🗺️', label: 'ผังเครื่องจักร (ซ่อมบำรุง)',      group: 'การตรวจสอบและซ่อมบำรุง' },
-  { to: '/fixture',     icon: '📐', label: 'บันทึกชิม Fixture (JIG)',       group: 'การตรวจสอบและซ่อมบำรุง' },
+  /* 🧰 ศูนย์ทะเบียนอุปกรณ์ — ยุบ 5 ที่ (ฐานข้อมูลเครื่องจักร · ทะเบียนแม่พิมพ์ · Fixture ·
+     คลังอะไหล่ · ผังคลัง) เป็นแท็บในหน้าเดียว · route เดิมทั้งหมด redirect เข้ามา (2026-09-22)
+     คำสั่ง user: "ฟังก์ชันของช่างเหมือนไปกระจายอยู่หลายหน้า" */
+  { to: '/equipment',   icon: '🧰', label: 'ทะเบียนอุปกรณ์ (เครื่อง·แม่พิมพ์·JIG·อะไหล่)', group: 'การตรวจสอบและซ่อมบำรุง' },
   { to: '/energy',      icon: '⚡', label: 'พลังงานไฟฟ้า',                    group: 'การตรวจสอบและซ่อมบำรุง' },
 
   // หมวด "วิศวกรรม (PE)" ที่มีเมนูเดียว ถูกยุบเข้ามาที่นี่ (nav audit 2026-08-27) — หมวดเมนูเดียว
@@ -176,6 +208,7 @@ export const NAV_ITEMS = [
   { to: '/event-log',      icon: '⚡', label: 'CQI-15 Event Log', group: 'คุณภาพ & วิศวกรรม' },
   { to: '/pe-docs',        icon: '📐', label: 'Flow / PFMEA / Control Plan', group: 'คุณภาพ & วิศวกรรม' },
   { to: '/npi',            icon: '🚀', label: 'พาร์ทใหม่ APQP / PPAP',       group: 'คุณภาพ & วิศวกรรม' },
+  { to: '/nm-board',       icon: '🧭', label: 'บอร์ด New Model (IEC)',      group: 'คุณภาพ & วิศวกรรม' },
 
   { to: '/report',        icon: '📋', label: 'รายงาน',            group: 'วิเคราะห์ & รายงาน' },
 
@@ -199,8 +232,6 @@ export const NAV_ITEMS = [
   // ไม่ได้เพิ่มหมวดบนแถบไอคอน — แค่คั่นหัวข้อในแผงเดียวกัน แยก "ของที่กรอกทุกเดือน"
   // ออกจาก "ของที่ตั้งครั้งเดียว" · ห้ามลืมใส่ `sub` ให้เมนูใหม่ในหมวดนี้ (ไม่ใส่ = ตกไปกลุ่มแรก)
   { to: '/products',        icon: '🔩', label: 'Product Master',    group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ฐานข้อมูลหลัก' },
-  { to: '/machine-database', icon: '🏭', label: 'ฐานข้อมูลเครื่องจักร', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ฐานข้อมูลหลัก' },
-  { to: '/die-registry', icon: '🔨', label: 'ทะเบียนแม่พิมพ์', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ฐานข้อมูลหลัก' },
   { to: '/process-setup', icon: '🏭', label: 'กระบวนการผลิต', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ฐานข้อมูลหลัก' },
   { to: '/org-setup',  icon: '🏢', label: 'แผนผังองค์กร',     group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ฐานข้อมูลหลัก' },
   { to: '/layout-setup', icon: '🗺️', label: 'ตั้งค่าผัง/Floorplan', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ฐานข้อมูลหลัก' },
@@ -214,9 +245,12 @@ export const NAV_ITEMS = [
   { to: '/doc-forms',   icon: '📄', label: 'ทะเบียนเอกสาร & ฟอร์ม', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ตั้งค่าระบบ' },
   { to: '/qr-labels', icon: '🏷️', label: 'พิมพ์ป้าย QR', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ตั้งค่าระบบ' },
   { to: '/audit-log',   icon: '📜', label: 'ประวัติการแก้ไขข้อมูล', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ตั้งค่าระบบ' },
+  // 🗄️ ให้คนที่เจอบัคเห็นเองว่า "ข้อมูลที่เพี้ยนอยู่ตารางไหน · ผูกกับอะไร" แล้วแจ้งได้ตรงจุด
+  { to: '/schema',      icon: '🗄️', label: 'โครงสร้างฐานข้อมูล (ตาราง/คีย์)', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ตั้งค่าระบบ' },
+  { to: '/storage-maintenance', icon: '🗜️', label: 'ดูแลพื้นที่จัดเก็บ / ค่าเน็ต', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ตั้งค่าระบบ' },
 ];
 
-export const NAV_GROUP_ORDER = ['ภาพรวม', 'จอแสดงผล', 'ฝ่ายผลิต', 'วิเคราะห์ & รายงาน', 'พนักงาน & ทักษะ', LOGISTIC_GROUPS.inbound, LOGISTIC_GROUPS.outbound, LOGISTIC_GROUPS.control, 'การตรวจสอบและซ่อมบำรุง', 'คุณภาพ & วิศวกรรม', 'ตั้งค่าโปรแกรม,ฐานข้อมูล', 'ผู้บริหาร & เดโม'];
+export const NAV_GROUP_ORDER = ['ภาพรวม', 'จอแสดงผล', 'ฝ่ายผลิต', 'วิเคราะห์ & รายงาน', 'พนักงาน & ทักษะ', LOGISTIC_GROUPS.inbound, LOGISTIC_GROUPS.outbound, 'การตรวจสอบและซ่อมบำรุง', 'คุณภาพ & วิศวกรรม', 'ตั้งค่าโปรแกรม,ฐานข้อมูล', 'ผู้บริหาร & เดโม'];
 
 // ไอคอน + ชื่อย่อของหมวด — ใช้บนแถบไอคอน (rail) ของ sidebar แบบใหม่ (2026-08-18 · คำสั่ง user "เอา D เลย")
 // ชื่อย่อ ≤ ~9 ตัวอักษรให้พอดีความกว้าง rail 64px ที่ฟอนต์ 11px (กฎฟอนต์ขั้นต่ำ UI-CONVENTIONS)
@@ -226,9 +260,8 @@ export const NAV_GROUP_META = {
   'ฝ่ายผลิต':                  { icon: '🏭', short: 'ผลิต' },
   'วิเคราะห์ & รายงาน':        { icon: '📈', short: 'รายงาน' },
   'พนักงาน & ทักษะ':           { icon: '👥', short: 'พนักงาน' },
-  [LOGISTIC_GROUPS.inbound]:  { icon: '🏬', short: 'สโตร์' },
+  [LOGISTIC_GROUPS.inbound]:  { icon: '🏬', short: 'แผน-สโตร์' },
   [LOGISTIC_GROUPS.outbound]:  { icon: '🚚', short: 'จัดส่ง' },
-  [LOGISTIC_GROUPS.control]:   { icon: '🧭', short: 'แผนงาน' },
   'การตรวจสอบและซ่อมบำรุง':    { icon: '🛠️', short: 'ซ่อมบำรุง' },
   'คุณภาพ & วิศวกรรม':         { icon: '✅', short: 'คุณภาพ' },
   'ตั้งค่าโปรแกรม,ฐานข้อมูล':  { icon: '⚙️', short: 'ตั้งค่า' },
@@ -248,6 +281,20 @@ export function navItemsForGroups(groups, role) {
 export const inNavGroup = (item, groups) =>
   groups.includes(item.group) || (item.alsoIn && groups.includes(item.alsoIn));
 
+/* 🚪 หน้านี้เป็น **"แขก" ของหมวดนี้** ไหม — บ้านจริงคือ `item.group` เสมอ
+   `alsoIn` = "โชว์เป็น **ทางลัด** ในหมวดนั้นด้วย" ไม่ใช่ "มี 2 บ้าน" (24/09 · คำสั่ง user)
+
+   ที่มา: user ทักว่า *"ไม่ซ้ำยังไง วางแผนผลิต อยู่ทั้ง sidebar หมวดผลิต กับ วางแผน"*
+   — เดิม `alsoIn` ทำให้เมนูโผล่ 2 หมวด**หน้าตาเหมือนกันเป๊ะ** ⇒ ดูเป็นเมนูซ้ำ และทำให้
+   คำถาม "ตอนนี้อยู่หมวดไหน" มี 2 คำตอบ (ต้นเหตุของบั๊กไฮไลต์ที่ user ทักมาพร้อมกัน)
+
+   🔴 กติกา: **"คุณอยู่ตรงนี้" ต้องมีคำตอบเดียว**
+     · บ้านจริง → ไฮไลต์เต็ม (พื้น accent-dim + แถบซ้าย) ทั้งบนรางและในแผง
+     · แถวทางลัด → หน้าตาต่างชัด (จาง + `↗ <หมวดบ้าน>` ท้ายแถว) · ตอนเปิดหน้านั้นอยู่
+       บอกแค่ "ตัวอักษร accent" ไม่ใส่พื้น/แถบซ้าย — ไม่งั้นมันจะดูเป็นบ้านที่สอง */
+export const isNavGuest = (item, group) =>
+  !!item.alsoIn && item.alsoIn === group && item.group !== group;
+
 // สรุปสิทธิ์เข้าหน้าของ role จากตารางสิทธิ์จริง (role_permissions) — ใช้โชว์ในหน้า จัดการผู้ใช้งาน
 // เพื่อไม่ต้อง hardcode รายชื่อโมดูลต่อ role (เคย hardcode แล้ว drift ตามโมดูลที่เพิ่มไม่ทัน)
 export function accessSummaryForRole(role) {
@@ -266,6 +313,24 @@ export function accessSummaryForRole(role) {
 function RoleRoute({ children, path, userRole }) {
   if (!canAccessPage(path, userRole)) return <Navigate to="/" replace />;
   return children;
+}
+
+/* ─── ทางผ่านของ route ที่ถูกยุบเป็นแท็บ ───────────────────────────────  2026-09-22
+   ยุบหน้าเป็นแท็บทีไร ปัญหาเดิมคือ **`?tab=` ของหน้าลูกชนกับ `?tab=` ของหน้าแม่**
+   ปล่อยไว้ = ลิงก์เก่า `/fixture?tab=shim` พาไป `/equipment?tab=shim` ซึ่งไม่มีแท็บชื่อนั้น
+   → ตกกลับแท็บแรกเงียบๆ (บุ๊กมาร์กของทีมช่างพาไปผิดที่โดยไม่มีใครรู้)
+
+   ตัวนี้จึง **ย้าย `?tab=` เก่าไปเป็น param ของลูก** แล้วค่อยเด้ง · param อื่น (เช่น `?area=`)
+   ถูกส่งต่อครบ · `replace` เสมอ ไม่ให้ปุ่ม Back เด้งกลับมาวนลูป
+   ⚠️ ยุบหน้าอีกครั้งเมื่อไหร่ ให้ใช้ตัวนี้ซ้ำ **ห้ามเขียน `<Navigate to="...">` ลอยๆ** */
+function LegacyTabRedirect({ to, tab, subParam }) {
+  const [sp] = useSearchParams();
+  const next = new URLSearchParams(sp);
+  const oldTab = next.get('tab');
+  next.delete('tab');
+  if (tab) next.set('tab', tab);
+  if (subParam && oldTab) next.set(subParam, oldTab);
+  return <Navigate to={`${to}?${next.toString()}`} replace />;
 }
 
 /* ─── Splash Screen ────────────────────────────────────── */
@@ -344,6 +409,13 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
   const isMobile = useIsMobile();
   const [sigModalOpen,  setSigModalOpen]  = useState(false);
   const [fbOpen, setFbOpen] = useState(false);   // 💬 กล่องรับ feedback หน้างาน
+  // หน้าอื่นขอเปิดกล่องแจ้งปัญหาได้ (เช่นปุ่ม 🐛 ในหน้า /schema) — กล่องนี้ mount อยู่ใน Sidebar
+  // จึงส่ง prop ลงไปไม่ได้ ⇒ ผ่าน event กลาง (src/utils/feedbackPrefill.js) · ห้ามทำกล่องใบที่ 2
+  useEffect(() => {
+    const open = () => setFbOpen(true);
+    window.addEventListener(FEEDBACK_EVENT, open);
+    return () => window.removeEventListener(FEEDBACK_EVENT, open);
+  }, []);
   const [sigUrl,        setSigUrl]        = useState(userSignatureUrl);
   const [pwdModalOpen,  setPwdModalOpen]  = useState(false);
   // 📷 เปลี่ยนรูปโปรไฟล์ — เดิมมีเฉพาะหน้า Home (DeptHub) sidebar ไม่มี (drift · แก้ 2026-08-21)
@@ -360,6 +432,8 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
   // panel = ชื่อหมวด | '__star' (ใช้บ่อย) | '__me' (โปรไฟล์) | null = ปิด
   // ปกติแผง "ลอยทับ" เนื้อหา (เนื้อหาไม่ถูกบีบ — คำสั่ง user) · ปักหมุด 📌 = ค้างไว้และดันเนื้อหา
   const [panel, setPanel] = useState(null);
+  /* คิวงานของฉัน — โหลดที่นี่เพราะ **badge ต้องมีเลขแม้แผงปิดอยู่** (กฎอยู่ MyQueuePanel.jsx) */
+  const myQueue = useMyQueue(panel === '__me');
   const pinnedRef = useRef(pinned);
   useEffect(() => { pinnedRef.current = pinned; }, [pinned]);
 
@@ -395,8 +469,12 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
     ? displayName.split(/[\s@]/)[0].slice(0, 2).toUpperCase()
     : '?';
 
-  // หมวดของหน้าปัจจุบัน — ใช้ไฮไลต์บน rail + เป็นแผง default ตอนปักหมุด + หมวดที่ accordion มือถือเปิดให้เอง
-  const activeGroup = groupedItems.find(g => g.items.some(i => i.to === location.pathname))?.group || null;
+  /* `isHomeHere` = "หน้าที่เปิดอยู่ **มีบ้านจริง** อยู่หมวดนี้ไหม" — ตัวตัดสินไฮไลต์ "อยู่ตรงนี้"
+     ทุกชั้น (ราง · แผงลอย · accordion มือถือ) · หน้าที่มาเป็น *ทางลัด* (`alsoIn`) ไม่นับ
+     ⇒ คำถาม "ตอนนี้อยู่หมวดไหน" มีคำตอบเดียวเสมอ (24/09 · คำสั่ง user — ดู `isNavGuest`)
+     `activeGroup` = หมวดนั้น ใช้เป็น **แผง default** ตอนปักหมุด + หมวดที่ accordion กางให้เอง */
+  const isHomeHere = (i, g) => i.to === location.pathname && !isNavGuest(i, g);
+  const activeGroup = groupedItems.find(g => g.items.some(i => isHomeHere(i, g.group)))?.group || null;
   // หน้าที่ใช้บ่อยของเครื่องนี้ (navRecent) — desktop = แผง ⭐ บน rail · มือถือ = บล็อกบนสุดของ drawer
   const starItems = topPaths(8).map(p => visibleItems.find(i => i.to === p)).filter(Boolean);
 
@@ -417,13 +495,16 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
         marginBottom: 2, cursor: clickable ? 'pointer' : 'default', userSelect: 'none',
       }}>
       {userAvatarUrl ? (
-        <img src={userAvatarUrl} alt="" style={{ width: 32, height: 32, borderRadius: '50%', flexShrink: 0, objectFit: 'cover', border: '1.5px solid var(--accent)' }} />
+        <img loading="lazy" src={userAvatarUrl} alt="" style={{ width: 32, height: 32, borderRadius: '50%', flexShrink: 0, objectFit: 'cover', border: '1.5px solid var(--accent)' }} />
       ) : (
+        /* 🚦 อักษรย่อแทนรูปโปรไฟล์ — **พื้นเรียบ ห้ามไล่เฉด** (23/09)
+           เดิมเป็น `linear-gradient(135deg, var(--accent), #ff6b6b)` = เอาสี Andon เขียว→แดง
+           มาทำของตกแต่ง ทั้งที่ 2 สีนี้ถูกจองไว้แปลว่า "ปกติ/มีปัญหา" ทั้งระบบ (utils/statusTone.js) */
         <div style={{
           width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
-          background: 'linear-gradient(135deg, var(--accent), #ff6b6b)',
+          background: 'var(--bg2)', border: '1px solid var(--border2)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 12, fontWeight: 800, color: '#fff',
+          fontSize: 12, fontWeight: 800, color: 'var(--text2)',
         }}>{initials}</div>
       )}
       <div style={{ flex: 1, minWidth: 0 }}>
@@ -505,7 +586,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
               <div style={{
                 position: 'absolute', top: 2, left: it.on ? 18 : 2,
                 width: 16, height: 16, borderRadius: '50%', background: '#fff',
-                transition: 'left 0.25s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+                transition: 'left 0.25s', boxShadow: 'var(--shadow-float)',
               }} />
             </div>
           </button>
@@ -552,6 +633,44 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
     />
   </>);
 
+  /* แถวเมนู 1 แถว — **ตัวเดียวใช้ทั้งแผงลอยและ drawer** ห้ามก๊อปแยก (เคยแยกแล้วหน้าตาเพี้ยนกัน)
+     `group` = หมวดที่กำลังวาดอยู่ ⇒ รู้ว่าแถวนี้เป็น "บ้านจริง" หรือ "ทางลัด" (ดู `isNavGuest`) */
+  const navRow = (item, group, onClick) => {
+    const cur = location.pathname === item.to;
+    const guest = isNavGuest(item, group);
+    const homeShort = NAV_GROUP_META[item.group]?.short || item.group;
+    return (
+      <Link
+        to={item.to} className="nav-link"
+        aria-current={cur ? 'page' : undefined}
+        title={guest ? `${item.label} — ทางลัด · เมนูนี้อยู่หมวด "${item.group}"` : item.label}
+        style={{
+          ...(cur
+            ? (guest
+              /* ทางลัดที่เป็นหน้าปัจจุบัน: บอกแค่ "หน้านี้เปิดอยู่" ด้วยสีตัวอักษร
+                 **ไม่ใส่พื้น/แถบซ้าย** — 2 อย่างนั้นสงวนให้ "บ้านจริง" ของหน้า */
+              ? { color: 'var(--accent)' }
+              : { background: 'var(--accent-dim)', color: 'var(--accent)', borderLeft: '2px solid var(--accent)' })
+            : (guest ? { color: 'var(--text2)' } : null)),
+          /* บีบช่องไฟคืนให้ชื่อเมนู — แผงกว้างแค่ 210px ป้ายบ้านจริงเลยเบียดชื่อยาวๆ จนตัดคำ
+             🔴 คืนที่ด้วยการลด gap/padding เท่านั้น **ห้ามลดฟอนต์ต่ำกว่า 11px** (UI-STANDARD §5) */
+          ...(guest ? { gap: 8, paddingLeft: 10, paddingRight: 10 } : null),
+        }}
+        onClick={onClick}
+      >
+        <span style={{ fontSize: 17, flexShrink: 0, opacity: guest ? 0.7 : 1 }}>{item.icon}</span>
+        <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.label}</span>
+        {/* ป้าย "บ้านจริง" — บีบ gap/ฟอนต์ให้แคบที่สุดเท่าที่ยังอ่านออก เพราะเมนูชื่อยาวจะโดนเบียดจนตัดคำ
+            (`title` มีชื่อเต็ม + บอกหมวดบ้านเสมอ จึงไม่มีข้อมูลหาย) */}
+        {guest && (
+          <span style={{ marginLeft: 'auto', paddingLeft: 2, flexShrink: 0, fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
+            ↗{homeShort}
+          </span>
+        )}
+      </Link>
+    );
+  };
+
   /* ── Desktop: rail 64px + แผงหมวดลอยทับ (sidebar แบบ D · 2026-08-18) ─────────────
      หลัก: เนื้อหาหลักเสีย 64px เท่านั้น (เดิม 252px) — แผงเมนูลอยทับตอนกดไอคอนหมวด
      เลือกเมนูแล้วปิดเอง · 📌 ปักหมุด = ค้างแผงไว้และดันเนื้อหา (opt-in เท่านั้น) */
@@ -564,16 +683,39 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
       ? (groupedItems.find(g => g.group === panel)?.items || [])
       : null;
 
+    /* ── 🧭 "คุณอยู่ตรงนี้" บนรางไอคอน (2026-09-24 · user ทักว่ารางนอกสุดไม่บอกว่าอยู่หน้าไหน) ──
+       เดิมสลับกันอยู่: **แผงที่เพิ่งกดเปิด** (`isOpenPanel`) ได้ทั้งกรอบเขียว + พื้นเขียวจาง
+       ส่วน **หมวดของหน้าที่เปิดอยู่จริง** (`isCurrent`) ได้แค่ *สีตัวหนังสือ 11px*
+       ⇒ สัญญาณที่แรงที่สุดบนจอ ไปตกกับสถานะชั่วคราว (แผงปิดแล้วก็หาย) ไม่ใช่ข้อเท็จจริงถาวร
+          พอไม่เปิดแผง รางเลยเหมือน "ไม่มีไฮไลต์" ตามที่ user เห็น
+
+       กติกาใหม่ — **ใช้รูปแบบเดียวกันทุกชั้น** (drawer มือถือทำถูกอยู่แล้ว ยึดตามนั้น):
+         · อยู่ที่นี่      = พื้น `--accent-dim` + **แถบเขียวขอบซ้าย** + ตัวอักษร accent
+         · แผงที่เปิดอยู่ = แค่เส้นขอบกลางๆ (`--border2`) — เบากว่าชัดเจน เพราะเป็นสถานะชั่วคราว
+         · เป็นทั้งคู่    = ซ้อนกันได้เอง อ่านออกทั้ง 2 อย่าง
+       ⚠️ แถบซ้ายวาดเป็น element ลอย **ไม่ใช้ `borderLeft`** — ปุ่มกว้าง 56px จัดกลางแนวตั้ง
+          ถ้าใส่ border ของจะเลื่อนไป 3px เฉพาะปุ่มที่ active แล้วคอลัมน์ไอคอนดูไม่ตรงกัน
+          (แถวเต็มความกว้างใน drawer/แผงไม่มีปัญหานี้ จึงใช้ `borderLeft` ได้) */
     const railBtn = ({ key, icon, label, title, onClick, isOpenPanel, isCurrent }) => (
-      <button key={key} onClick={onClick} title={title}
+      <button key={key} onClick={onClick}
+        title={isCurrent ? `${title} — หน้าที่เปิดอยู่ตอนนี้อยู่ในหมวดนี้` : title}
+        aria-current={isCurrent ? 'true' : undefined}
         style={{
+          position: 'relative',
           width: 56, flexShrink: 0, borderRadius: 10, cursor: 'pointer', outline: 'none',
-          border: `1px solid ${isOpenPanel ? 'var(--accent)' : 'transparent'}`,
-          background: isOpenPanel ? 'var(--accent-dim)' : 'transparent',
-          color: (isOpenPanel || isCurrent) ? 'var(--accent)' : 'var(--text2)',
+          border: `1px solid ${isOpenPanel ? 'var(--border2)' : 'transparent'}`,
+          background: isCurrent ? 'var(--accent-dim)' : 'transparent',
+          color: isCurrent ? 'var(--accent)' : 'var(--text2)',
+          fontWeight: isCurrent ? 800 : 400,
           display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1,
           padding: '6px 2px 4px',
         }}>
+        {isCurrent && (
+          <span aria-hidden="true" style={{
+            position: 'absolute', left: 0, top: 6, bottom: 6, width: 3,
+            borderRadius: '0 3px 3px 0', background: 'var(--accent)',
+          }} />
+        )}
         <span style={{ fontSize: 18, lineHeight: 1.15 }}>{icon}</span>
         {/* 11px = ฟอนต์ขั้นต่ำตาม UI-CONVENTIONS — ชื่อย่อจาก NAV_GROUP_META ถูกเลือกให้พอดี 56px */}
         <span style={{ fontSize: 11, lineHeight: 1.2, maxWidth: 56, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</span>
@@ -602,14 +744,19 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
 
             {/* หมวดเมนู — ส่วนกลางเลื่อนได้ กันจอเตี้ยตกขอบ */}
             <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, width: '100%' }}>
-              {groupedItems.map(({ group }) => railBtn({
+              {/* 🔴 เช็คเป็น "หมวดนี้มีหน้าปัจจุบันไหม" ไม่ใช่ `activeGroup === group`
+                  เพราะหน้าที่ตั้ง `alsoIn` อยู่ **2 หมวดจริงๆ** (วางแผนการผลิต = ฝ่ายผลิต + แผน-สโตร์ ·
+                  เฝ้าระวังสต๊อก = สโตร์ + จัดส่ง) · `activeGroup` เป็นค่าเดียวจึงคืนแค่หมวดแรก
+                  ⇒ เดิมยืนอยู่หน้าเดียวกันแท้ๆ แต่รางตอบคนละหมวดแล้วแต่ว่าเปิดแผงไหนค้างไว้
+                  (drawer มือถือเช็คแบบนี้อยู่ก่อนแล้ว — ทำให้ 2 โหมดตอบตรงกันเสียที) */}
+              {groupedItems.map(({ group, items }) => railBtn({
                 key: group,
                 icon: NAV_GROUP_META[group]?.icon || '📁',
                 label: NAV_GROUP_META[group]?.short || group,
                 title: group,
                 onClick: () => setPanel(p => (p === group && !pinned) ? null : group),
                 isOpenPanel: panel === group,
-                isCurrent: activeGroup === group,
+                isCurrent: items.some(i => isHomeHere(i, group)),
               }))}
             </div>
 
@@ -636,6 +783,16 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
               )}
               {remoteCode && (
                 <span title={`รับรีโมทอยู่ · ${remoteCode}`} style={{ position: 'absolute', right: -3, top: -3, fontSize: 12 }}>📺</span>
+              )}
+              {/* เลข "รอคุณโดยตรง" — **นับเฉพาะชั้นนั้น** (badgeCount ใน myQueue.js)
+                  0 = ไม่วาดเลย · โหลดไม่ครบก็ไม่วาด (เลขที่อาจผิดแย่กว่าไม่มีเลข) */}
+              {myQueue.badge > 0 && (
+                <span title={`มีงานรอคุณโดยตรง ${myQueue.badge} รายการ`} style={{
+                  position: 'absolute', right: -4, bottom: -2, minWidth: 17, height: 17, padding: '0 4px',
+                  borderRadius: 999, background: '#ef4444', color: '#fff',
+                  fontSize: 11, fontWeight: 800, lineHeight: '17px', textAlign: 'center',
+                  border: '2px solid var(--bg2)', boxShadow: 'var(--shadow-float)',
+                }}>{myQueue.badge > 99 ? '99+' : myQueue.badge}</span>
               )}
             </button>
             <button onClick={onClose} title="ซ่อนเมนู (เต็มจอ — เหมาะจอ TV)" style={{
@@ -689,16 +846,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
                       borderTop: i === 0 ? 'none' : '1px solid var(--border)',
                     }}>{item.sub}</div>
                   )}
-                  <Link
-                    to={item.to} className="nav-link"
-                    style={location.pathname === item.to
-                      ? { background: 'var(--accent-dim)', color: 'var(--accent)', borderLeft: '2px solid var(--accent)' }
-                      : {}}
-                    onClick={() => { if (!pinned) setPanel(null); }}
-                  >
-                    <span style={{ fontSize: 17, flexShrink: 0 }}>{item.icon}</span>
-                    <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.label}</span>
-                  </Link>
+                  {navRow(item, panel, () => { if (!pinned) setPanel(null); })}
                 </div>
               ))}
 
@@ -711,6 +859,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
                 ) : starItems.map(item => (
                   <Link
                     key={item.to} to={item.to} className="nav-link"
+                    aria-current={location.pathname === item.to ? 'page' : undefined}
                     style={location.pathname === item.to
                       ? { background: 'var(--accent-dim)', color: 'var(--accent)', borderLeft: '2px solid var(--accent)' }
                       : {}}
@@ -718,13 +867,15 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
                   >
                     <span style={{ fontSize: 17, flexShrink: 0 }}>{item.icon}</span>
                     <span style={{ minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.label}</span>
-                    <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--muted)', flexShrink: 0, maxWidth: '38%', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.group}</span>
+                    <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--muted)', flexShrink: 0, maxWidth: '38%', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.group}</span>
                   </Link>
                 ))
               )}
 
               {panel === '__me' && (<>
                 {userCard(false)}
+                <MyQueuePanel q={myQueue.q} busy={myQueue.busy}
+                  onGo={() => { if (!pinned) setPanel(null); }} />
                 {profileActions(() => { if (!pinned) setPanel(null); })}
               </>)}
             </div>
@@ -813,7 +964,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
               >
                 <span style={{ fontSize: 17, flexShrink: 0 }}>{item.icon}</span>
                 <span style={{ minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.label}</span>
-                <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--muted)', flexShrink: 0, maxWidth: '42%', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.group}</span>
+                <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--muted)', flexShrink: 0, maxWidth: '42%', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.group}</span>
               </Link>
             ))
           ) : (<>
@@ -824,6 +975,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
               {starItems.slice(0, 5).map(item => (
                 <Link
                   key={`star-${item.to}`} to={item.to} className="nav-link"
+                  aria-current={location.pathname === item.to ? 'page' : undefined}
                   style={location.pathname === item.to
                     ? { background: 'var(--accent-dim)', color: 'var(--accent)', borderLeft: '2px solid var(--accent)' }
                     : {}}
@@ -839,7 +991,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
             {/* หมวด = accordion เปิดทีละหมวด · หมวดของหน้าปัจจุบันเปิดให้เอง (mOpenGroup undefined = follow) */}
             {groupedItems.map(({ group, items }) => {
               const open = (mOpenGroup === undefined ? activeGroup : mOpenGroup) === group;
-              const groupHasActive = items.some(i => location.pathname === i.to);
+              const groupHasActive = items.some(i => isHomeHere(i, group));
               return (
                 <div key={group} style={{ marginBottom: 2 }}>
                   {/* หัวหมวด — ปกติ = สี text (ขาวอมเขียว เป็นกลาง อ่านง่าย ไม่กลืนกับเขียว accent)
@@ -859,7 +1011,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
                   >
                     <span style={{ fontSize: 15, flexShrink: 0 }}>{NAV_GROUP_META[group]?.icon || '📁'}</span>
                     <span style={{ minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{group}</span>
-                    <span style={{ marginLeft: 'auto', fontSize: 10.5, fontWeight: 600, color: 'var(--muted)', flexShrink: 0 }}>{items.length}</span>
+                    <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 600, color: 'var(--muted)', flexShrink: 0 }}>{items.length}</span>
                     <span style={{ fontSize: 12, opacity: 0.6, transform: open ? 'none' : 'rotate(-90deg)', transition: 'transform 0.15s', flexShrink: 0 }}>▾</span>
                   </button>
                   {open && items.map((item, i) => (
@@ -872,17 +1024,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
                           borderTop: i === 0 ? 'none' : '1px solid var(--border)',
                         }}>{item.sub}</div>
                       )}
-                      <Link
-                        to={item.to}
-                        className="nav-link"
-                        style={location.pathname === item.to
-                          ? { background: 'var(--accent-dim)', color: 'var(--accent)', borderLeft: '2px solid var(--accent)' }
-                          : {}}
-                        onClick={onClose}
-                      >
-                        <span style={{ fontSize: 17, flexShrink: 0 }}>{item.icon}</span>
-                        <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.label}</span>
-                      </Link>
+                      {navRow(item, group, onClose)}
                     </div>
                   ))}
                 </div>
@@ -897,6 +1039,8 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
           {/* User info card — คลิกเพื่อกาง/พับเมนูโปรไฟล์ด้านล่าง */}
           {userCard(true)}
 
+          {/* มือถือ: กางเมนูโปรไฟล์แล้วเห็นคิวงานที่เดียวกันกับ desktop (กฮมาตรฐานเมนูโปรไฟล์: ห้าม drift สองที่) */}
+          {footerOpen && <MyQueuePanel q={myQueue.q} busy={myQueue.busy} onGo={onClose} />}
           {footerOpen && profileActions(onClose)}
         </div>
       </nav>
@@ -1016,11 +1160,14 @@ function NotificationBell({ userId, role }) {
   useEffect(() => {
     load();
     if (!userId) return;
+    // เพดานด้วย coalesce (กฎเขียน DB ข้อ 7 · QC 05/10) — edge ยิงแจ้งเตือนเป็นชุด (หลายแถว/วินาที)
+    // เดิม load() ทุก INSERT = โหลดกระดิ่งซ้ำเท่าจำนวนแถว · เสียงยังเล่นทันทีทุกครั้งเหมือนเดิม
+    const bump = coalesce(load, LIVE.PAGE);
     const ch = liveChannel(supabase, `notif-${userId}`)
       // INSERT = มี notification ใหม่จริง (initial load ไม่เข้าตรงนี้) → รีโหลด + เล่นเสียง
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` }, () => { load(); playNotifChime(); })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` }, () => { bump(); playNotifChime(); })
       .subscribe();
-    return () => supabase.removeChannel(ch);
+    return () => { bump.cancel(); supabase.removeChannel(ch); };
   }, [userId, load]);
 
   const toggleMute = () => {
@@ -1192,7 +1339,7 @@ function NotificationBell({ userId, role }) {
                 <>
                   <span style={{ color: 'var(--accent2)', fontWeight: 600 }}>⚠️ การลงทะเบียนหลุด — กดเปิดใหม่</span>
                   <button onClick={enablePush} disabled={pushBusy}
-                    style={{ marginLeft: 'auto', fontSize: 11.5, fontWeight: 700, color: '#071008', background: 'var(--accent)', border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer' }}>
+                    style={{ marginLeft: 'auto', fontSize: 11.5, fontWeight: 700, color: 'var(--accent-ink)', background: 'var(--accent)', border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer' }}>
                     {pushBusy ? 'กำลังเปิด…' : 'เปิด'}
                   </button>
                 </>
@@ -1210,7 +1357,7 @@ function NotificationBell({ userId, role }) {
                 <>
                   <span style={{ color: 'var(--text2)' }}>📲 เด้งแจ้งเตือนเข้ามือถือแม้ปิดแอป</span>
                   <button onClick={enablePush} disabled={pushBusy}
-                    style={{ marginLeft: 'auto', fontSize: 11.5, fontWeight: 700, color: '#071008', background: 'var(--accent)', border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer' }}>
+                    style={{ marginLeft: 'auto', fontSize: 11.5, fontWeight: 700, color: 'var(--accent-ink)', background: 'var(--accent)', border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer' }}>
                     {pushBusy ? 'กำลังเปิด…' : 'เปิด'}
                   </button>
                 </>
@@ -1457,7 +1604,7 @@ function AutoLogoutWarning({ secsLeft, onStay, onLogout }) {
         <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
           <button onClick={onStay} style={{
             padding: '10px 24px', borderRadius: 9, fontWeight: 700, fontSize: 14, cursor: 'pointer',
-            background: 'var(--accent)', color: '#fff', border: 'none',
+            background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none',
           }}>
             ยังอยู่ที่นี่
           </button>
@@ -1499,7 +1646,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
     // ห้ามใช้ default (global) — global จะ revoke refresh token ของ user นี้ "ทุกเครื่อง"
     // → account ที่ใช้ร่วมกันหลายจุดในโรงงานโดนเด้ง login พร้อมกันทั้งหมดทุกครั้งที่
     // เครื่องใดเครื่องหนึ่ง logout/auto-logout (สาเหตุหลักของ "เด้ง login บ่อย" 2026-07-14)
-    setDrActorName(null);
+    setActor(null, null);   // ล้างตัวตนผู้ใช้ (ชื่อ+uid) ตอน logout
     setDeptAdmin(false);
     await supabase.auth.signOut({ scope: 'local' });
     navigate('/login');
@@ -1526,7 +1673,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
       position: 'fixed', bottom: 14, left: '50%', transform: 'translateX(-50%)', zIndex: 10000,
       display: 'flex', alignItems: 'center', gap: 10, padding: '8px 16px', borderRadius: 999,
       background: 'rgba(147,51,234,0.16)', border: '1.5px solid #a855f7', color: '#c084fc',
-      fontSize: 12.5, fontWeight: 700, backdropFilter: 'blur(6px)', boxShadow: '0 4px 18px rgba(0,0,0,0.4)',
+      fontSize: 12.5, fontWeight: 700, backdropFilter: 'blur(6px)', boxShadow: 'var(--shadow-float)',
       maxWidth: '92vw', flexWrap: 'wrap', justifyContent: 'center',
     }}>
       <span>🎭 กำลังดูในมุมมอง: {roleLabel(viewAs.role)}{viewAs.deptAdmin ? ' + 🛡️ แอดมินหน่วยงาน' : ''}{viewAs.mtnTeams?.length ? ` + 🔧 ${viewAs.mtnTeams.length} ทีมช่าง` : ''}</span>
@@ -1573,9 +1720,34 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
     });
   }, []);
 
+  /* 🔴 ค่าของ UserContext ต้องเป็น "อ็อบเจกต์ตัวเดิม" ตราบใดที่ค่ายังไม่เปลี่ยน (QC 06/10)
+     เดิมเขียนเป็น object literal ตรงใน `value={{ … }}` **3 ที่** และข้างในมี `userSections || []`
+     ⇒ ทั้งอ็อบเจกต์ **และ array `sections`** เป็นตัวใหม่ทุก render ของ layout
+     ⇒ ทุกหน้าที่มี `useEffect([... sections])` ยิง DB ซ้ำทุกครั้งที่ layout re-render
+       (กฎเหล็กการเขียน DB ข้อ 9 — คลาสที่ build/lint/เทส/จอผ่านหมด เห็นจาก log เท่านั้น)
+     ⚠️ ต้องอยู่**ก่อน** guard `if (!session)` ข้างล่าง — ไม่งั้น hook count เปลี่ยนตอน session
+        null→มีค่า = React #310 จอ error ทั้งหน้า (คอมเมนต์เหนือ guard นั้นเตือนไว้แล้ว) */
+  const userCtx = useMemo(() => ({
+    role: userRole, lineId: userLineId, team: userTeam, section: userSection,
+    sections: userSections || [], mtnTeams: userMtnTeams || [],
+    position: userPosition, notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl,
+    avatarUrl: userAvatarUrl, fullName: userFullName, isDeptAdmin: userIsDeptAdmin,
+    realRole: realRole ?? userRole,
+  }), [userRole, userLineId, userTeam, userSection, userSections, userMtnTeams, userPosition,
+       userNotifyEmail, userSignatureUrl, userAvatarUrl, userFullName, userIsDeptAdmin, realRole]);
+  /* layout ปกติต้องรู้ว่า sidebar เปิดอยู่ไหมด้วย — แยก memo เพื่อไม่ให้ `isOpen` ไปสั่น context ของจอ /tv */
+  const userCtxLayout = useMemo(() => ({ ...userCtx, sidebarOpen: isOpen }), [userCtx, isOpen]);
+
   // ⚠️ guard นี้ต้องอยู่ "หลัง" hooks ทุกตัว (useAutoLogout/useState/useCallback ด้านบน) —
   // ถ้าวางก่อน hooks จะเกิด React #310 (hook count เปลี่ยนตอน session null→มีค่า) จอ error
-  if (!session) return <Navigate to="/login" replace />;
+  /* 🔗 ยังไม่ได้ล็อกอินแล้วเปิด deep link (เช่น ส่อง QR เครื่อง → /scan?c=ESM:M:…)
+     ต้องพากลับมาที่เดิมหลังล็อกอิน — เดิมเด้งไปหน้าแรกเฉยๆ แล้วบริบทของป้ายหายหมด
+     คนหน้างานต้องเดินกลับไปส่องใหม่ · เก็บเป็น `?next=` (path ภายในเท่านั้น — Login ตรวจซ้ำ) */
+  if (!session) {
+    const next = `${location.pathname}${location.search}`;
+    const q = (next && next !== '/') ? `?next=${encodeURIComponent(next)}` : '';
+    return <Navigate to={`/login${q}`} replace />;
+  }
 
   // sidebar แบบ D (2026-08-18): desktop เนื้อหาเสียแค่ rail 64px — แผงหมวดลอยทับ ไม่ดันเนื้อหา
   // ยกเว้นปักหมุด 📌 (opt-in) = rail + แผง (var(--rail-w) + var(--sidebar-w))
@@ -1590,7 +1762,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
   if (location.pathname === '/tv') {
     if (!canAccessPage('/tv', role)) return <Navigate to="/" replace />;
     return (
-      <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, sections: userSections || [], mtnTeams: userMtnTeams || [], position: userPosition, notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, avatarUrl: userAvatarUrl, fullName: userFullName, isDeptAdmin: userIsDeptAdmin, realRole: realRole ?? role }}>
+      <UserContext.Provider value={userCtx}>
         <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', color: 'var(--muted)', fontSize: 14, background: 'var(--bg)' }}>กำลังโหลด...</div>}>
           <TvBoard />
         </Suspense>
@@ -1603,7 +1775,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
   // หน้า Hub (เลือกส่วนงาน) — แสดงเต็มจอ ไม่มี sidebar / toggle / bell
   if (location.pathname === '/') {
     return (
-      <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, sections: userSections || [], mtnTeams: userMtnTeams || [], position: userPosition, notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, avatarUrl: userAvatarUrl, fullName: userFullName, isDeptAdmin: userIsDeptAdmin, realRole: realRole ?? role }}>
+      <UserContext.Provider value={userCtx}>
         <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', color: 'var(--muted)', fontSize: 14, background: 'var(--bg)' }}>กำลังโหลด...</div>}>
           <DeptHub onLogout={handleLogout} theme={theme} onToggleTheme={onToggleTheme} userFullName={userFullName} userRole={role} userPosition={userPosition}
             userEmail={userEmail} userAvatarUrl={userAvatarUrl} onAvatarSaved={onAvatarSaved}
@@ -1630,7 +1802,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
   }
 
   return (
-    <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, sections: userSections || [], mtnTeams: userMtnTeams || [], position: userPosition, notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, avatarUrl: userAvatarUrl, fullName: userFullName, isDeptAdmin: userIsDeptAdmin, realRole: realRole ?? role, sidebarOpen: isOpen }}>
+    <UserContext.Provider value={userCtxLayout}>
       {warnSecsLeft !== null && (
         <AutoLogoutWarning secsLeft={warnSecsLeft} onStay={dismissWarning} onLogout={handleLogout} />
       )}
@@ -1703,14 +1875,16 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
               <Route path="/line-oee" element={
                 <RoleRoute path="/line-oee" userRole={role}><LineOeeBoard /></RoleRoute>
               } />
-              <Route path="/dept-dashboard" element={
-                <RoleRoute path="/dept-dashboard" userRole={role}><DeptDashboard /></RoleRoute>
-              } />
+              {/* งานค้างของส่วนงาน → แท็บใน OBEYA (23/09) · ?dept=/?view=/?team=/?sound= ถูกส่งต่อ (DeptDashboard redirect ?view= ต่อเอง) */}
+              <Route path="/dept-dashboard" element={<LegacyTabRedirect to="/obeya" tab="todo" />} />
               <Route path="/flow-tower" element={
                 <RoleRoute path="/flow-tower" userRole={role}><FlowTower /></RoleRoute>
               } />
               <Route path="/adoption-outlook" element={
                 <RoleRoute path="/adoption-outlook" userRole={role}><AdoptionOutlook /></RoleRoute>
+              } />
+              <Route path="/program-update" element={
+                <RoleRoute path="/program-update" userRole={role}><ProgramUpdate /></RoleRoute>
               } />
               <Route path="/group-overview" element={
                 <RoleRoute path="/group-overview" userRole={role}><GroupOverview /></RoleRoute>
@@ -1726,6 +1900,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
               } />
               <Route path="/skills-report" element={
                 <RoleRoute path="/skills-report" userRole={role}><Report mode="skills" /></RoleRoute>
+              } />
+              <Route path="/manpower-board" element={
+                <RoleRoute path="/manpower-board" userRole={role}><ManpowerBoard /></RoleRoute>
               } />
               <Route path="/workforce-insight" element={
                 <RoleRoute path="/workforce-insight" userRole={role}><WorkforceInsight /></RoleRoute>
@@ -1745,15 +1922,19 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
               <Route path="/process-setup" element={
                 <RoleRoute path="/process-setup" userRole={role}><ProcessSetup /></RoleRoute>
               } />
+              {/* 📷 ปลายทางของ QR ที่ติดเครื่อง (ป้ายแบบลิงก์ `/scan?c=ESM:M:<uuid>`) — 2026-10-02
+                  สิทธิ์ piggyback ปลายทางใน permissions.js ⇒ ไม่ต้อง seed page:/scan */}
+              <Route path="/scan" element={
+                <RoleRoute path="/scan" userRole={role}><ScanLanding /></RoleRoute>
+              } />
               <Route path="/qr-labels" element={
                 <RoleRoute path="/qr-labels" userRole={role}><QrLabels /></RoleRoute>
               } />
-              <Route path="/machine-database" element={
-                <RoleRoute path="/machine-database" userRole={role}><MachineDatabase /></RoleRoute>
-              } />
-              <Route path="/die-registry" element={
-                <RoleRoute path="/die-registry" userRole={role}><DieRegistry /></RoleRoute>
-              } />
+              {/* 🧰 3 ทะเบียนเดิมยุบเข้า /equipment (2026-09-22) — route เดิมเหลือไว้เป็นทางผ่าน
+                  `<LegacyTabRedirect>` แปลง `?tab=` เก่าเป็น param ของลูก (`die`/`fx`) ให้ด้วย
+                  เพราะหน้าแม่กิน `?tab=` ไปแล้ว — ปล่อยไว้เฉยๆ = ลิงก์เก่าพาไปผิดแท็บเงียบๆ */}
+              <Route path="/machine-database" element={<LegacyTabRedirect to="/equipment" tab="machine" />} />
+              <Route path="/die-registry"     element={<LegacyTabRedirect to="/equipment" tab="die" subParam="die" />} />
               <Route path="/add-user"   element={
                 <RoleRoute path="/add-user" userRole={role}><AddUser /></RoleRoute>
               } />
@@ -1765,6 +1946,12 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
               } />
               <Route path="/permissions" element={
                 <RoleRoute path="/permissions" userRole={role}><PermissionsManagement /></RoleRoute>
+              } />
+              <Route path="/schema" element={
+                <RoleRoute path="/schema" userRole={role}><SchemaMap /></RoleRoute>
+              } />
+              <Route path="/storage-maintenance" element={
+                <RoleRoute path="/storage-maintenance" userRole={role}><StorageMaintenance /></RoleRoute>
               } />
               <Route path="/audit-log" element={
                 <RoleRoute path="/audit-log" userRole={role}><AuditLog /></RoleRoute>
@@ -1793,16 +1980,16 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
               {/* ⤵ route เก่าที่ยุบเข้าแท็บ Daily Checker แล้ว → redirect (ลิงก์/bookmark เก่ายังใช้ได้
                   และทุกคนเห็นภาพเดียวกัน ไม่ใช่หน้าเดี่ยวที่ไม่มีแท็บพี่น้อง — ดู NAVIGATION-REVIEW §2.4)
                   สิทธิ์เข้า /daily-checker piggyback บน page:/daily-pm‖/pokayoke‖/lpa อยู่แล้ว (permissions.js) */}
-              <Route path="/pokayoke" element={<Navigate to="/daily-checker?tab=pokayoke" replace />} />
-              <Route path="/daily-pm" element={<Navigate to="/daily-checker?tab=pm" replace />} />
-              <Route path="/bbs" element={<Navigate to="/daily-checker?tab=bbs" replace />} />
+              <Route path="/pokayoke" element={<LegacyTabRedirect to="/daily-checker" tab="pokayoke" />} />
+              <Route path="/daily-pm" element={<LegacyTabRedirect to="/daily-checker" tab="pm" subParam="sub" />} />
+              <Route path="/bbs" element={<LegacyTabRedirect to="/daily-checker" tab="bbs" />} />
               <Route path="/improvements" element={
                 <RoleRoute path="/improvements" userRole={role}><Improvements /></RoleRoute>
               } />
               <Route path="/ojt-training" element={
                 <RoleRoute path="/ojt-training" userRole={role}><OjtTraining /></RoleRoute>
               } />
-              <Route path="/lpa" element={<Navigate to="/daily-checker?tab=lpa" replace />} />
+              <Route path="/lpa" element={<LegacyTabRedirect to="/daily-checker" tab="lpa" subParam="sub" />} />
               <Route path="/doc-forms" element={
                 <RoleRoute path="/doc-forms" userRole={role}><DocFormsRegistry /></RoleRoute>
               } />
@@ -1836,6 +2023,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
               <Route path="/npi" element={
                 <RoleRoute path="/npi" userRole={role}><NPI /></RoleRoute>
               } />
+              <Route path="/nm-board" element={
+                <RoleRoute path="/nm-board" userRole={role}><NewModelBoard /></RoleRoute>
+              } />
               <Route path="/products"   element={
                 <RoleRoute path="/products" userRole={role}><ProductMaster /></RoleRoute>
               } />
@@ -1851,8 +2041,12 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
               <Route path="/planner-sales" element={
                 <RoleRoute path="/planner-sales" userRole={role}><PlannerSales /></RoleRoute>
               } />
-              <Route path="/rundown-stock" element={
-                <RoleRoute path="/rundown-stock" userRole={role}><RundownStock /></RoleRoute>
+              {/* 📉 "คาดการณ์ของจะขาด" ยุบเป็นมุมมองหนึ่งของแท็บ FG ใน /monitoring (2026-10-06 ·
+                  user: *"เรื่องเดียวกันปะ สองเรื่องนี้"*) — จอเดิมยังอยู่ครบ แค่ย้ายที่อยู่
+                  ⚠️ หน้าเดิมไม่เคยมี `?tab=` ของตัวเอง จึงไม่ต้องส่ง subParam */}
+              <Route path="/rundown-stock" element={<LegacyTabRedirect to="/monitoring" tab="fg" />} />
+              <Route path="/monitoring" element={
+                <RoleRoute path="/monitoring" userRole={role}><Monitoring /></RoleRoute>
               } />
               <Route path="/store-monitor" element={
                 <RoleRoute path="/store-monitor" userRole={role}><StoreMonitor /></RoleRoute>
@@ -1873,23 +2067,31 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
                 <RoleRoute path="/pm" userRole={role}><PmHub /></RoleRoute>
               } />
               {/* ⤵ route เก่าที่ยุบเข้าแท็บแล้ว → redirect (ลิงก์/bookmark เก่ายังใช้ได้ · ห้าม render ซ้ำ 2 ทาง) */}
-              <Route path="/pm-check"        element={<Navigate to="/pm?tab=check" replace />} />
-              <Route path="/pm-schedule"     element={<Navigate to="/pm?tab=plan" replace />} />
-              <Route path="/pm-forecast"     element={<Navigate to="/pm?tab=forecast" replace />} />
-              <Route path="/pm-coordination" element={<Navigate to="/pm?tab=coord" replace />} />
-              <Route path="/pm-setup"        element={<Navigate to="/pm?tab=setup" replace />} />
+              <Route path="/pm-check"        element={<LegacyTabRedirect to="/pm" tab="check" />} />
+              <Route path="/pm-schedule"     element={<LegacyTabRedirect to="/pm" tab="plan" />} />
+              <Route path="/pm-forecast"     element={<LegacyTabRedirect to="/pm" tab="forecast" subParam="fc" />} />
+              <Route path="/pm-coordination" element={<LegacyTabRedirect to="/pm" tab="coord" />} />
+              <Route path="/pm-setup"        element={<LegacyTabRedirect to="/pm" tab="setup" />} />
               <Route path="/energy" element={
                 <RoleRoute path="/energy" userRole={role}><Energy /></RoleRoute>
+              } />
+              <Route path="/mtn-analysis" element={
+                <RoleRoute path="/mtn-analysis" userRole={role}><MtnAnalysis /></RoleRoute>
               } />
               <Route path="/mtn-layout" element={
                 <RoleRoute path="/mtn-layout" userRole={role}><MtnMachineLayout /></RoleRoute>
               } />
-              <Route path="/fixture" element={
-                <RoleRoute path="/fixture" userRole={role}><FixtureRegistry /></RoleRoute>
+              <Route path="/fixture" element={<LegacyTabRedirect to="/equipment" tab="jig" subParam="fx" />} />
+              <Route path="/equipment" element={
+                <RoleRoute path="/equipment" userRole={role}><EquipmentHub /></RoleRoute>
               } />
               <Route path="/mtn-repair" element={
                 <RoleRoute path="/mtn-repair" userRole={role}><MtnRepair /></RoleRoute>
               } />
+              {/* 🔴 ท้ายลิสต์เสมอ — route ที่ไม่รู้จักต้องขึ้น "ไม่พบหน้านี้" ห้ามวาดจอเปล่าเงียบๆ
+                  (02/10 เคสจริง: ลิงก์หน้าใหม่ถูกเปิดด้วยบันเดิลเก่า ⇒ จอว่าง ⇒ ถูกแจ้งว่า "ล่ม")
+                  **ห้ามย้ายขึ้นก่อน route อื่น** (จะกินทุกที่อยู่) */}
+              <Route path="*" element={<NotFound />} />
             </Routes>
           </Suspense>
         </main>
@@ -1952,9 +2154,14 @@ export default function App() {
   const effLineId   = impersonating ? (viewAs.lineId ?? null) : userLineId;
   const effTeam     = impersonating ? (viewAs.team ?? null) : userTeam;
   const effSection  = impersonating ? ((viewAs.sections || [])[0] ?? null) : userSection;
-  const effSections = impersonating
-    ? effectiveSections(viewAs.role, viewAs.sections || [], (viewAs.sections || [])[0] ?? null)
-    : userSections;
+  /* 🔴 โหมดจำลอง (ViewAs) สร้าง array ใหม่ทุก render ⇒ prop `userSections` ของ layout สั่นตาม
+     ⇒ หน้าที่รับไปใส่ deps ยิง DB ซ้ำไม่หยุด (กฎเหล็กข้อ 9) · ตอนไม่จำลอง `userSections` เป็น state อยู่แล้ว */
+  const viewAsSecKey = impersonating ? (viewAs.sections || []).join('|') : '';
+  const effSections = useMemo(() => (impersonating
+    ? effectiveSections(viewAs.role, viewAs.sections || [], (viewAs.sections || [])[0] ?? null, viewAs.scope_depth)
+    : userSections),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [impersonating, viewAs?.role, viewAsSecKey, viewAs?.scope_depth, userSections]);
   const effMtnTeams = impersonating ? (Array.isArray(viewAs.mtnTeams) ? viewAs.mtnTeams : []) : userMtnTeams;
   const effDeptAdmin = impersonating ? !!viewAs.deptAdmin : userIsDeptAdmin;
 
@@ -1974,7 +2181,7 @@ export default function App() {
 
   const fetchProfile = async (user) => {
     setUserEmail(user.email ?? null);
-    const COLS = 'role, line_id, full_name, team, section, sections, position, notify_email, signature_url, is_dept_admin';
+    const COLS = 'role, line_id, full_name, team, section, sections, position, notify_email, signature_url, is_dept_admin, scope_depth';
     // ⚠️ egress: **คิวรีเดียวต่อการโหลดโปรไฟล์** — เดิมยิง 3 ครั้งไปที่แถวเดียวกัน (ชุดหลัก +
     //    mtn_teams + avatar_url แยกกันคนละ round trip) วัดจาก log จริง 11 ก.ย. 2026 = 6,760 req/วัน
     //    บนตาราง profiles ทั้งที่เป็นข้อมูลของ user คนเดียว ~188 ครั้ง/วัน/คน (ทุกครั้งที่เปิด/รีเฟรชแอป)
@@ -2026,12 +2233,21 @@ export default function App() {
     setUserRole(data?.role ?? null);
     setUserLineId(ident.line_id);
     setUserFullName(data?.full_name ?? null);
-    setDrActorName(data?.full_name ?? null); // traceability: ฝั่ง DR anon ต้อง stamp ชื่อผู้แก้เอง (ดู supabaseClient.js)
+    // traceability: ฝั่ง DR เป็น anon ต้อง stamp "ใครทำ" มาเองทั้งชื่อและ uid (ดู src/utils/actorStamp.js)
+    //   ชื่อ = snapshot ให้คนอ่าน · uid = คีย์ที่นับ/join ได้ (ชื่อสะกดต่างไม่ทำให้กลายเป็นคนละคน)
+    setActor(user.id, data?.full_name ?? null);
     setUserTeam(ident.team);
     setUserSection(ident.section);
     setUserPosition(data?.position ?? null);
     loadPositions();   // master ตำแหน่งงาน — ให้ positionLabel() ใช้ได้ทั้งแอป
-    setUserSections(effectiveSections(data?.role, data?.sections, ident.section));
+    /* อุ่นทะเบียน "ชื่อ → uid" ไว้ตั้งแต่ login (2026-09-17)
+       wrapper เติม uid ให้ชื่อคนอื่นได้ก็ต่อเมื่อทะเบียนโหลดแล้ว — หน้าที่ไม่มี <PersonSelect>
+       (เช่น Daily Report ที่เขียน fix_by/followup_by) จะไม่มีใครโหลดให้เลย
+       ใช้ cache ร่วมกับ picker → ไม่ได้ยิงคิวรีเพิ่ม · ล้มก็ไม่กระทบ (resolve ไม่ได้ = uid null เหมือนเดิม) */
+    loadProfilesPeople().catch(() => {});
+    /* 🔭 ขอบเขตการมองเห็นตัดสินจาก `scope_depth` แล้ว (25/09) ไม่ใช่เดาจาก role/ช่องว่าง
+       พิสูจน์ก่อนสลับว่าผลเท่าของเดิมครบทั้ง 97 บัญชี — ดู docs/ORG-AXES-DECISION.md §7.6 */
+    setUserSections(effectiveSections(data?.role, data?.sections, ident.section, data?.scope_depth));
     setUserNotifyEmail(data?.notify_email ?? null);
     setUserSignatureUrl(data?.signature_url ?? null);
     // mtn_teams / avatar_url มาพร้อม select หลักแล้ว (ไม่ต้องยิงเพิ่มอีก 2 คิวรี — ดูหมายเหตุ egress ข้างบน)
@@ -2077,13 +2293,16 @@ export default function App() {
   // admin แก้สิทธิ์ที่หน้า จัดการสิทธิ์ → ทุกเครื่องที่เปิดอยู่รีเฟรช cache + re-render ทันที
   useEffect(() => {
     if (!session?.user) return;
+    // admin ติ๊กสิทธิ์รัวๆ = event ต่อแถว ⇒ ทุกเครื่องในโรงงานดึง role_permissions ทั้งตาราง (>1000 แถว) ซ้ำทุกติ๊ก
+    // coalesce = ยุบเป็นรอบเดียวต่อเพดาน (กฎเขียน DB ข้อ 7 · QC 05/10)
+    const bump = coalesce(async () => {
+      await loadPermissions(true);
+      setPermsVersion(v => v + 1);
+    }, LIVE.PAGE);
     const ch = liveChannel(supabase, 'role-permissions-sync')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'role_permissions' }, async () => {
-        await loadPermissions(true);
-        setPermsVersion(v => v + 1);
-      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'role_permissions' }, () => bump())
       .subscribe();
-    return () => supabase.removeChannel(ch);
+    return () => { bump.cancel(); supabase.removeChannel(ch); };
   }, [session?.user?.id]);
 
   return (

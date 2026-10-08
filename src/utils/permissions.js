@@ -95,6 +95,33 @@ export function canAccessPage(path, role) {
         || hasPermission('page:/pm-coordination', role)
         || hasPermission('page:/pm-setup', role);
   }
+  /* 🏛️ OBEYA รับแท็บ 📌 งานค้างของส่วนงาน (/dept-dashboard เดิม · 23/09) — piggyback สิทธิ์เดิม
+     คนที่มีสิทธิ์แค่ page:/dept-dashboard ยังเข้า /obeya ได้ (เห็นเฉพาะแท็บ 📌 · Obeya.jsx กรองแท็บด้วย hasPermission) */
+  if (path === '/obeya') {
+    return hasPermission('page:/obeya', role) || hasPermission('page:/dept-dashboard', role);
+  }
+  /* 🧰 ศูนย์ทะเบียนอุปกรณ์ = ศูนย์รวมแท็บทะเบียนของช่าง (เครื่อง/แม่พิมพ์/JIG/อะไหล่)
+     piggyback สิทธิ์หน้าเดิมทั้งหมด — ไม่ต้อง seed page:/equipment
+     แท็บใน EquipmentHub.jsx โผล่ตามสิทธิ์ย่อย ⇒ คนที่เข้าฐานข้อมูลเครื่องจักรไม่ได้
+     ก็ยังไม่เห็นแท็บนั้นเหมือนเดิม (ไม่มีข้อมูลใหม่หลุดให้ใคร) */
+  if (path === '/equipment') {
+    return hasPermission('page:/equipment', role)
+        || hasPermission('page:/machine-database', role)
+        || hasPermission('page:/die-registry', role)
+        || hasPermission('page:/fixture', role)
+        || hasPermission('page:/mtn-repair', role);
+  }
+  /* 📷 /scan = ปลายทางของ QR ที่ติดเครื่อง — เป็น "ทางแยก" ล้วน ไม่มีข้อมูลของตัวเอง
+     (โชว์เลข/ชื่อ/ไลน์ของเครื่อง แล้วลิงก์ไปหน้าที่ผู้ใช้มีสิทธิ์อยู่แล้ว · ปุ่มกรองด้วย canAccessPage ซ้ำอีกชั้น)
+     ⇒ piggyback สิทธิ์ปลายทาง ไม่ต้อง seed `page:/scan` — ไม่งั้นคนส่อง QR จะเจอ "ไม่มีสิทธิ์"
+        ทั้งที่กดเข้าหน้าปลายทางตรงๆ ได้อยู่แล้ว */
+  if (path === '/scan') {
+    return hasPermission('page:/scan', role)
+        || hasPermission('page:/pm-check', role)
+        || hasPermission('page:/mtn-repair', role)
+        || hasPermission('page:/pm-setup', role)
+        || hasPermission('page:/order-trace', role);
+  }
   return hasPermission(`page:${path}`, role);
 }
 
@@ -116,6 +143,19 @@ export function isActionSeeded(resource, action) {
   const suffix = `:${resource}:${action}`;   // cache key = `${role}:${resource}:${action}`
   for (const k of cache.keys()) if (k.endsWith(suffix)) return true;
   return false;
+}
+
+/**
+ * สิทธิ์ของ **ฟีเจอร์ใหม่** ที่เพิ่ง seed คีย์ลงทะเบียน — deploy-safe (2026-09-30)
+ *   • ยังไม่ seed (โค้ดขึ้นก่อน migration) → ปิดไว้ก่อน = โหมดดูอย่างเดียว **จอไม่พัง**
+ *   • seed แล้ว → ใช้สิทธิ์จาก /permissions ตามปกติ
+ *   • admin ผ่านเสมอ — แบบแผนเดียวกับ `canDelete` ด้านล่าง (ไม่งั้น admin จะถูกล็อกออก
+ *     ระหว่างที่ cache สิทธิ์ยังโหลดไม่เสร็จ ซึ่งดูเหมือนระบบพัง)
+ * ⚠️ ใช้กับ "ฟีเจอร์ที่คีย์อาจยังไม่มีในทะเบียน" เท่านั้น — คีย์ที่ seed มานานแล้วใช้ `can()` ตรงๆ
+ */
+export function canSeeded(resource, action, role) {
+  if (role === 'admin') return true;
+  return isActionSeeded(resource, action) && can(resource, action, role);
 }
 
 /**

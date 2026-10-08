@@ -22,19 +22,42 @@ import { dirname, resolve } from 'node:path';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 const appSrc = readFileSync(resolve(root, 'src/App.jsx'), 'utf8');
 const hubSrc = readFileSync(resolve(root, 'src/pages/DeptHub.jsx'), 'utf8');
+const logiSrc = readFileSync(resolve(root, 'src/utils/logisticSide.js'), 'utf8');
+
+/* ชื่อหมวดใน App.jsx เขียนได้ 2 แบบ: สตริงตรงๆ กับ `LOGISTIC_GROUPS.<key>`
+   เดิมเทสนี้จับเฉพาะสตริงตรงๆ ⇒ 4 เมนูฝั่ง Logistic + 3 หมวดใน NAV_GROUP_ORDER
+   **ไม่เคยถูกตรวจเลย** (พิมพ์ key ผิด = alsoIn เป็น undefined เงียบๆ เมนูโผล่หมวดเดียว)
+   → resolve ค่าจาก src/utils/logisticSide.js ให้ตรวจได้ทั้งสองแบบ (2026-09-17) */
+const LOGI = (() => {
+  const m = logiSrc.match(/export const LOGISTIC_GROUPS\s*=\s*\{([\s\S]*?)\n\};/);
+  assert.ok(m, 'หา LOGISTIC_GROUPS ใน src/utils/logisticSide.js ไม่เจอ');
+  return Object.fromEntries([...m[1].matchAll(/(\w+)\s*:\s*'([^']+)'/g)].map(x => [x[1], x[2]]));
+})();
+
+/** แปลง token ที่เขียนใน App.jsx ให้เป็นชื่อหมวดจริง — key ที่ไม่มีอยู่ = ตกเทส ไม่ใช่ข้ามเงียบ */
+function resolveGroup(token) {
+  const lit = token.match(/^'([^']+)'$/);
+  if (lit) return lit[1];
+  const ref = token.match(/^LOGISTIC_GROUPS\.(\w+)$/);
+  assert.ok(ref, `ชื่อหมวด "${token}" เขียนแบบที่เทสอ่านไม่ออก — ใช้สตริงตรงๆ หรือ LOGISTIC_GROUPS.<key>`);
+  assert.ok(LOGI[ref[1]], `LOGISTIC_GROUPS.${ref[1]} ไม่มีอยู่จริง — จะได้ undefined เงียบๆ (เมนูหาย/alsoIn ไม่มีผล)`);
+  return LOGI[ref[1]];
+}
+const GROUP_TOKEN = String.raw`'[^']+'|LOGISTIC_GROUPS\.\w+`;
 
 /** ดึงลิสต์สตริงจาก `export const NAV_GROUP_ORDER = [...]` */
 function navGroupOrder() {
   const m = appSrc.match(/export const NAV_GROUP_ORDER\s*=\s*\[([\s\S]*?)\]/);
   assert.ok(m, 'หา NAV_GROUP_ORDER ใน App.jsx ไม่เจอ (เปลี่ยนชื่อ/ย้ายไฟล์?)');
-  return [...m[1].matchAll(/'([^']+)'/g)].map(x => x[1]);
+  return [...m[1].matchAll(new RegExp(GROUP_TOKEN, 'g'))].map(x => resolveGroup(x[0]));
 }
 
 /** ดึง group ที่ถูกใช้จริงใน NAV_ITEMS (นับ alsoIn ด้วย — หน้าที่โผล่ 2 หมวด) */
 function groupsUsedByNavItems() {
   const m = appSrc.match(/export const NAV_ITEMS\s*=\s*\[([\s\S]*?)\n\];/);
   assert.ok(m, 'หา NAV_ITEMS ใน App.jsx ไม่เจอ');
-  return new Set([...m[1].matchAll(/(?:group|alsoIn):\s*'([^']+)'/g)].map(x => x[1]));
+  const re = new RegExp(String.raw`(?:group|alsoIn):\s*(` + GROUP_TOKEN + ')', 'g');
+  return new Set([...m[1].matchAll(re)].map(x => resolveGroup(x[1])));
 }
 
 test('ทุกหมวดที่เมนูใช้จริง ต้องอยู่ใน NAV_GROUP_ORDER', () => {
@@ -73,8 +96,11 @@ test('alsoIn ต้องเป็นชื่อหมวดจริง แล
   const m = appSrc.match(/export const NAV_ITEMS\s*=\s*\[([\s\S]*?)\n\];/);
   const order = new Set(navGroupOrder());
   // จับคู่ (group, alsoIn) ที่อยู่ในรายการเดียวกัน — alsoIn เขียนต่อท้าย group เสมอ
-  for (const mm of m[1].matchAll(/group:\s*'([^']+)'\s*,\s*alsoIn:\s*'([^']+)'/g)) {
-    const [, grp, also] = mm;
+  const re = new RegExp(String.raw`group:\s*(` + GROUP_TOKEN + String.raw`)\s*,\s*alsoIn:\s*(` + GROUP_TOKEN + ')', 'g');
+  const pairs = [...m[1].matchAll(re)];
+  assert.ok(pairs.length >= 2, `เจอคู่ group+alsoIn แค่ ${pairs.length} รายการ — regex อ่านไม่ออกแล้วหรือเปล่า (เคยตรวจข้ามเงียบมาแล้ว)`);
+  for (const mm of pairs) {
+    const grp = resolveGroup(mm[1]), also = resolveGroup(mm[2]);
     assert.ok(order.has(also), `alsoIn "${also}" ไม่อยู่ใน NAV_GROUP_ORDER — เมนูจะไม่โผล่ในหมวดนั้น`);
     assert.notEqual(also, grp, `alsoIn ซ้ำกับ group ของตัวเอง ("${grp}") — เมนูจะโผล่ 2 บรรทัดในหมวดเดียว`);
   }

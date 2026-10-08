@@ -33,6 +33,13 @@ test('ไม่มีข้อมูลในช่วงเทียบ = nodat
   assert.match(modeNote('nodata'), /ไม่มีข้อมูล|ยังไม่มีกะ/);
 });
 
+test('โหลดไม่สำเร็จ ≠ ไม่มีข้อมูล — ใบต้องบอกว่าดึงข้อมูลพลาด (QC 05/10)', () => {
+  const note = modeNote('nodata', { noData: true, error: 'โหลดกะผลิตไม่สำเร็จ: timeout' });
+  assert.match(note, /โหลดกะผลิตไม่สำเร็จ/);
+  assert.match(note, /ไม่ใช่ว่าไม่มีข้อมูล/);
+  assert.doesNotMatch(modeNote('nodata', { noData: true }), /ดึงข้อมูลไม่สำเร็จ/);
+});
+
 test('ทุกโหมดที่ยังสรุปไม่ได้ ต้องมีข้อความกำกับเสมอ (ห้ามเงียบ)', () => {
   for (const m of ['nodata', 'baseline', 'waiting']) {
     assert.ok(modeNote(m, R({ afterDays: 2 })).length > 10, `mode ${m} ต้องมีข้อความอธิบาย`);

@@ -3,6 +3,191 @@
 > ย้ายมาจาก `CLAUDE.md` (2026-09-03 — แยกไฟล์เพื่อลด context) · โหลด**เฉพาะเมื่อแตะโมดูลนี้** · แก้ไฟล์นี้แทน CLAUDE.md เมื่อกฎของโมดูลเปลี่ยน
 
 
+### 🔴🔴 `verify_jwt` ของฟังก์ชันที่ **cron เรียก** ต้องเป็น `false` เสมอ (2026-09-25 · เคยพังจริง)
+
+**เกิดจริง:** deploy `mtn-daily-summary` เมื่อ 24/09 แล้วติด `verify_jwt: true` ไป
+⇒ สรุปงานซ่อมเช้า **25/09 หายทั้งฉบับ** (Telegram ไม่เข้า · กระดิ่ง 0 ใบ)
+
+**ทำไมถึงหาไม่เจอง่ายๆ — มันเงียบสนิท 2 ชั้น:**
+1. `pg_cron` เรียกผ่าน `net.http_post` **ไม่มี header `Authorization`** (ดู `cron.job` ทุกตัวในโปรเจคนี้)
+   ⇒ เปิด `verify_jwt` = โดน **401 ตั้งแต่หน้าประตู ตัวฟังก์ชันไม่เคยรันเลย**
+2. 🔴 **`cron.job_run_details` ยังขึ้น `succeeded`** — มันวัดแค่ว่า "คิว http_post สำเร็จ" ไม่ใช่ผลลัพธ์ HTTP
+   ⇒ ดูหน้า cron แล้วเขียวหมด ทั้งที่งานไม่ได้ทำ
+
+**วิธีตรวจว่า cron job ทำงานจริงไหม (ห้ามดูแค่ job_run_details):**
+```sql
+-- ผลลัพธ์ HTTP จริง (net._http_response เก็บย้อนหลังสั้นมาก ~15 นาที)
+select status_code, left(content,300), created from net._http_response order by created desc limit 20;
+```
+หรือดูจาก log (ย้อนได้ 24 ชม.) — `source='function_edge_logs'` หา `POST | 401 | .../<slug>`
+· **ตัวชี้วัดที่ดีที่สุด = ผลลัพธ์ปลายทาง** (มีแถวใน `notifications` ของ event นั้นวันนี้ไหม)
+
+**กฎ:** ฟังก์ชันที่ถูกเรียกโดย cron/trigger/ระบบภายใน → `verify_jwt: false`
+(ในโปรเจคนี้: `send-notification` · `daily-4m-summary` · `qa-fme-scan` · `send-push` · `send-event-notification`
+ · `mtn-daily-summary` · `cleanup-orphan-photos` ฯลฯ ล้วน false)
+เปิด `true` เฉพาะฟังก์ชันที่ **คนกดจากหน้าเว็บ** และต้องเช็คสิทธิ์ (`create-user`/`delete-user`/`reset-user-password`)
+⚠️ เครื่องมือ deploy บางตัว **ตั้ง `verify_jwt: true` เป็นค่าเริ่มต้น** — ทุกครั้งที่ deploy ต้องส่งค่าให้ตรงของเดิม
+   แล้ว**เช็คกลับจาก `list_edge_functions`** ว่าได้ค่าที่ตั้งใจจริง
+
+### 🏷️ ป้ายราคาในหน้าตั้งค่าแจ้งเตือน + `notifications.event_key` (2026-09-17)
+
+**คำสั่ง user:** *"ป้ายราคาโชว์ตอนเลือกติ๊กคอนฟิค จะได้รู้"* · *"ตอนนี้มันเลือกแค่ role แต่ไม่เลือก
+ส่วนงานหรือแผนก มันเลยข้ามกันหมด บางอย่างเกี่ยวกับเลเวล supervisor แต่ไม่เกี่ยวกับแผนกนั้นก็ไม่ควรแจ้ง"*
+
+**ที่มา (วัดจริง 17/09):** เหตุการณ์จริงทั้งระบบมีแค่ **~69/วัน** แต่กลายเป็น **3,844 แถว/วัน**
+เพราะตัวคูณผู้รับเฉลี่ย **56 คน/เหตุการณ์** — ใบซ่อม **1 ใบ = 99 แถว** (8 ขั้น × ~50 คน)
+= 79% ของแจ้งเตือนทั้งระบบ · **คนเปิดอ่าน 8%**
+· 41 กฎที่มีผู้รับ → **19 กฎไม่กรองส่วนงานเลย** · **ระบุส่วนงานเอง 0 กฎ · ระบุแผนกเอง 0 กฎ**
+· ช่องจำกัดผู้รับมีในหน้ามาตลอด แต่**ซ่อนหลังปุ่ม "🎯 จำกัดผู้รับ"** ที่ต้องกดเปิด ⇒ ไม่เคยมีใครใช้
+⇒ **ไม่มีใครตั้งผิด — แค่ "ติ๊กเผื่อไว้ก่อน" เพราะตอนติ๊กไม่เห็นว่าแปลว่ากี่แถว/วัน**
+
+**ของที่ทำ:**
+- **ป้ายราคาใต้แถวติ๊ก role** — `≈ 21 คน/ครั้ง · เกิด 31 ครั้ง/วัน · ≈ 651 แจ้งเตือน/วัน · เปิดอ่าน 7%`
+  + คำเตือน 🔴/⚠️ (ไม่จำกัดส่วนงาน · ตัวกรองไม่มีผลกับใคร · คนอ่านน้อย)
+  · **สูตร/เกณฑ์อยู่ `src/utils/notifReach.js` เท่านั้น (pure · 10 เทส) ห้ามคำนวณซ้ำในหน้า**
+- **RPC `notif_rule_reach(p_days)`** (SECURITY DEFINER · guard `has_perm('page:/notification-config')`)
+  — สรุปฝั่ง server เพราะต้องอ่าน `notifications` หลายหมื่นแถว · ดึงมา client = ชนเพดาน 1000 แถว
+- **`notifications.event_key`** + **`notification_rules.title_match`** (LIKE pattern · data-driven)
+  🔴 **ทำไมต้องมี:** ก่อนหน้านี้ไม่มีคอลัมน์บอกว่าแถวไหนมาจากกฎไหน ต้องเดาจาก `title = label`
+  ⇒ วัดจริง **46,307/54,154 แถว (86%) จับคู่ไม่ได้** เพราะ `send-mtn-notification` ตั้ง title เอง
+  (`"🛠️ แจ้งซ่อมใหม่ — Line 60 · -"`) ⇒ **ป้ายราคาจะบอกว่าใบซ่อมราคา 0 ทั้งที่กิน 79% ของระบบ**
+  = ชี้ทางผิดแรงกว่าไม่มีป้าย · เติมที่ trigger `trg_notification_fill_link` (แพทเทิร์นเดียวกับ `link`)
+  · หลังแก้ + backfill: **จับคู่ได้ 93%** (ที่เหลือ = mention/ข้อความทดสอบ ซึ่งไม่มีกฎ — ถูกต้องแล้ว)
+  · ⚠️ **ตัวส่งใหม่ที่ตั้ง title เอง ต้อง seed `title_match` ด้วย** ไม่งั้นป้ายราคาของเรื่องนั้นเป็น 0
+
+> #### 🔴🔴 เจอระหว่างทาง — `notifications` ไม่มี index เลยนอกจาก pkey
+> กระดิ่งยิง `where user_id = ? order by created_at desc limit 30` ทุกครั้งที่เปิดแอป + ทุก realtime event
+> ⇒ **seq scan ทั้งตาราง 64,456 แถว ทุก user ทุกจอ** (ตารางโตวันละ 3,844 แถว)
+> แก้แล้ว: `idx_notifications_user_created (user_id, created_at desc)` + `idx_notifications_created`
+> · ยืนยันด้วย `explain analyze`: seq scan (cost 11,459) → **Index Scan 32 buffers**
+> · **บทเรียน: ตารางที่โตทุกวันและถูกอ่านด้วย filter คงที่ ต้องเช็ค `pg_indexes` ตั้งแต่วันที่สร้าง**
+> — ของแบบนี้ไม่มีใครเห็นจากหน้าจอ เห็นได้จากแผนคิวรีเท่านั้น (คลาสเดียวกับกฎเหล็กข้อ 9)
+
+**กฎที่ตกผลึกเรื่องความซื่อสัตย์ของป้าย** (`notifReach.js` ล็อกด้วยเทส):
+- ประวัติน้อยกว่า 30 แถว = **ไม่สรุป % อ่าน** (ห้ามบอกว่า "ไม่มีคนอ่าน" ทั้งที่เพิ่งเปิดใช้)
+- ไม่เคยเกิดเหตุการณ์ = เขียน **"ยังไม่มีสถิติ"** ห้ามโชว์ `0 แจ้งเตือน/วัน`
+- ระบุส่วนงาน/แผนกเอง = ประมาณผู้รับต่อครั้งไม่ได้ → คืน `null` แล้วโชว์ `≤ N คน` **ห้ามเดาเป็นตัวเลข**
+
+**migration:** `20260917_notif_rule_reach_rpc.sql` · `20260917_notifications_event_key.sql` ·
+`20260917_notifications_indexes.sql` · `20260917_notif_rule_reach_by_event_key` (**apply แล้วทั้งหมด**)
+
+---
+
+### 📣 ย้ายแจ้งเตือน Telegram เข้าระบบ — ⏸️ **ทำแล้วย้อนกลับ รอทำใหม่เป็นแบบ "สรุปรายรอบ"** (2026-09-17)
+
+> **สถานะ: ย้อนกลับหมดแล้ว** (`20260917_revert_inapp_recipients_from_telegram.sql`) — ฐานกลับไปเป็น
+> 14 เรื่อง Telegram-only เหมือนเดิม · **ห้าม re-apply ตัวเดิม** ให้ทำตามทิศทางใหม่ด้านล่าง
+>
+> **ทำไมย้อน (คำสั่ง user):** *"ทำแบบนี้เพิ่ม egress หรอ งั้นชะลอก่อนเลย ว่าจะให้ลด"* ·
+> *"เรื่องบางเรื่องที่แจ้งตลอด แต่ไม่ค่อยมีใครดูหรือสนใจ — อาจจะทำเป็นแจ้งเตือนสรุปตามรอบเวลาดีกว่ามั้ย ยกเว้นเรื่องเร่งด่วน"*
+>
+> **บทเรียนที่แพงที่สุดของรอบนี้ — ไม่ใช่เรื่องต้นทุน แต่เรื่องดีไซน์:**
+> ห้องแชทกับกระดิ่งส่วนตัว **ไม่ใช่ช่องทางชนิดเดียวกัน** · 149 DT/วันไหลผ่านตาในห้องแชทได้
+> แต่ยัดใส่กระดิ่งทีละใบ = คนอ่านไม่ไหวแล้วเลิกอ่านทั้งกระดิ่ง ⇒ **แจ้งเตือนที่ไม่มีใครอ่าน
+> แย่กว่าไม่มีแจ้งเตือน** (คลาสเดียวกับคิว 4M auto 323 ใบที่กลบใบจริง)
+> ⇒ **ย้าย 1:1 จาก Telegram ไม่ใช่คำตอบ · ต้องแยก "เร่งด่วน = รายตัว" ออกจาก "รับรู้ = สรุปรายรอบ" ก่อน**
+>
+> **✅ แก้แล้ว 2026-09-24 — "ยิงแม้ user ไม่มี subscription" ไม่เป็นจริงอีกต่อไป** (ดูหัวข้อถัดไป)
+>
+> **ตัวเลขต้นทุนที่วัดไว้ (กันประเมินผิดซ้ำ):** 1 แถวใน `notifications` = `fn_notify_push` ยิง
+> `send-push` **1 invocation ต่อแถว** (~~ยิงแม้ user ไม่มี subscription~~) + คิวรี `push_subscriptions` 1 ครั้ง
+> ⇒ +2,000 แถว/วัน = +2,000 invocation/วัน · **egress เองน้อย ~2-4 MB/วัน** (payload ~1 KB)
+> — **ตัวแพงจริงคือ invocation + แถวสะสม + คนเลิกอ่าน ไม่ใช่ egress** (egress ก้อนใหญ่คือ poll/รูป
+> เช่น FactoryMap 26 KB/รอบ) · อย่าอ้าง "egress" เป็นเหตุผลลอยๆ ให้ดูว่าต้นทุนจริงอยู่ตรงไหน
+
+### 🔕 fn_notify_push — ไม่ปลุก Edge Function ให้คนที่ยังไม่เปิด Push (2026-09-24)
+
+**วัดจริง 23/09 ฝั่ง Main** (`edge_logs` แยกด้วย user-agent):
+
+| endpoint | ครั้ง/วัน | มาจาก Edge Runtime |
+|---|---:|---:|
+| `push_subscriptions` | 5,929 | 5,627 |
+| `notification_settings` | 5,402 | 5,402 (ทั้งหมด) |
+| **รวม** | **11,331** | = **25.3% ของ REST ทั้งวัน** |
+
+มากกว่าทุก endpoint ที่คนเปิดใช้จริง (`production_lines` 4,041 · `profiles` 3,814 · `role_permissions` 3,358)
+
+**ต้นเหตุ:** trigger ยิง `send-push` 1 ครั้งต่อ 1 แถวใน `notifications` โดยไม่ดูก่อนว่าผู้รับเปิด Push ไหม
+ของจริง 24 ชม.: **แจ้งเตือน 1,377 แถว · ผู้รับมี subscription แค่ 389 (28%)**
+⇒ **988 ครั้ง (72%) ยิงทิ้งเปล่า** และแต่ละครั้งยังอ่าน 2 ตารางเต็มๆ ก่อนตอบ `sent: 0`
+(ทั้งระบบมีคนเปิด Push **23 จาก 97 คน** · subscription 27 แถว)
+
+**ที่แก้** (migration `20260924_push_skip_users_without_subscription_main.sql` + `send-push` v14):
+1. trigger `select ... from push_subscriptions where user_id = NEW.user_id` **ในตัว DB เอง** (index
+   ไม่ผ่าน PostgREST ⇒ ไม่นับเป็น request) · `null` = ไม่เรียก Edge Function เลย
+2. แนบผลเป็น `subs` ไปกับ body ⇒ ฟังก์ชันไม่ต้องคิวรีซ้ำ
+   · **ส่งเฉพาะคีย์ของเครื่องปลายทาง (endpoint/p256dh/auth) ซึ่งเป็นค่าสาธารณะ
+     🔴 ห้ามส่ง VAPID private key ผ่าน body เด็ดขาด** (นั่นเป็นความลับฝั่งผู้ส่ง)
+3. **เข้ากันได้ทั้ง 2 ทาง** — ฟังก์ชันเก่า+trigger ใหม่ = มองข้าม `subs` แล้วคิวรีเอง ·
+   ฟังก์ชันใหม่+trigger เก่า = ไม่มี `subs` ก็คิวรีเอง ⇒ deploy คนละจังหวะได้
+
+> 🔴 **บทเรียน: cache ในตัวแปรโมดูลของ Edge Function แก้ปัญหานี้ไม่ได้**
+> 14/09 เคยใส่ cache VAPID (TTL 10 นาที) พร้อมคอมเมนต์ว่า "ตัดคิวรีนี้ทิ้งได้เกือบหมด"
+> **แต่วัด 23/09 ได้ผลจริงแค่ ~17%** เพราะ Deno สร้าง isolate ใหม่แทบทุกครั้ง (cold start = หน่วยความจำว่าง)
+> ⇒ **ตัวที่ลดได้จริงคือ "จำนวนครั้งที่ถูกเรียก" ไม่ใช่ "จำที่ฝั่งฟังก์ชัน"**
+> และเป็นตัวอย่างของบั๊กคลาส *"แก้แล้ว เขียนเอกสารว่าแก้แล้ว แต่ไม่มีใครกลับไปวัด"*
+> — **แก้ Edge Function เสร็จต้องกลับมาอ่าน log ยืนยันเสมอ**
+
+**ตรวจกลับหลัง apply:** `trg_notify_push` ยังผูกอยู่ + enabled · `pg_get_functiondef` มี `v_subs`/`subs` ·
+edge function v14 `verify_jwt=false` เหมือนเดิม (⚠️ **ตัวนี้ถูกเรียกจาก pg_net ที่ไม่ส่ง Authorization —
+deploy ด้วย `verify_jwt=true` เมื่อไหร่ Push ตายทั้งระบบทันที**)
+
+---
+
+**ข้อมูลที่ถอดไว้แล้ว (ยังใช้ได้ตอนทำรอบใหม่ — ไม่ต้องขุดซ้ำ):**
+
+**คำสั่ง user:** *"จากการแจ้งเตือน telegram ให้ย้ายเข้าระบบเราทั้งหมด สิทธิ์หรือช่องทางก็ไปอ้างอิงจาก telegram"*
+(ต่อจากคำถาม "ถ้าระบบแจ้งเตือนโอเค เราไม่ต้องใช้ telegram แล้วสิ")
+
+**ก่อนแก้:** 14/61 เรื่องที่เปิดอยู่มี Telegram แต่ `inapp_roles` ว่าง ⇒ ปิด Telegram เมื่อไหร่หายเงียบทันที
+(รวมเรื่องด่วนที่สุด: Downtime · เรียกช่าง MTN · Daily PM แดง · สโตร์หยิบผิดพาร์ท)
+**หลังแก้: เหลือ 0** · migration `20260917_inapp_recipients_from_telegram.sql` (+ `20260917_downtime_inapp_drop_mtn`)
+
+**วิธีถอด "ผู้ฟังประจำห้อง" จาก Telegram** (ไม่ได้เดา — ถอดจากกฎที่ตั้งครบ 2 ขาอยู่แล้ว
+เอา role ที่ห้องนั้นใช้ **≥50% ของกฎในห้อง** + `admin` ทุกห้อง):
+
+| ห้อง | role ที่ได้ |
+|---|---|
+| 🔧 Smart Maintenance | admin · manager · supervisor · mtn |
+| 🚚 Smart Logistic | admin · manager · planner_store · sale |
+| 🔍 Smart Quality | admin · manager · qa |
+| 🏭 Smart Production / 📝 Report Technician PD3 | admin · manager · supervisor · leader |
+| 🧑‍🏭 Smart Manpower | admin · manager · supervisor |
+
+> **⚠️ นี่คือ "เพิ่มช่องทาง" ไม่ใช่ "ย้าย"** — Telegram ยังส่งครบทุกเรื่องเหมือนเดิม ตั้งใจให้รันขนาน 2 ขา
+> แล้วค่อยปิด Telegram **ทีละเรื่อง** ที่ `/notification-config`
+
+#### 🔴 2 กับดักที่เจอตอนทำ — จำไว้ก่อนตั้งผู้รับในแอปครั้งต่อไป
+
+1. **ห้องแชทกับกระดิ่งส่วนตัวรับปริมาณไม่เท่ากัน** — `downtime` ยิง **149 ครั้ง/วัน** (วัดจริง 30 วัน)
+   ห้อง Telegram รับไหว แต่กระดิ่ง+เสียง+push ส่วนตัว × 61 คน = **9,100 แถว/วัน**
+   (ฐาน `notifications` ทั้งระบบตอนนี้ 64,456 แถว = **โตเท่าตัวใน 7 วัน**) + เสี่ยง egress
+   (เคยโดน Supabase ล็อกทั้ง org มาแล้ว) ⇒ **เรื่องที่ยิงถี่ต้องแคบกว่าที่ Telegram ตั้งไว้เสมอ**
+   · `downtime`/`downtime_recovered` → `supervisor + leader` + `match_section` = 4-9 คน/ใบ (PD3 = 24) ≈ 1,500/วัน
+2. **`notify_recipients()` มี 2 ทางรั่วที่ทำให้ `inapp_match_section` ไม่ช่วยอะไร:**
+   - **`admin`/`manager` ถูกยกเว้นจากการกรองส่วนงานเสมอ** → ใส่ในเรื่องที่ยิงถี่ = ได้ทุกใบทั้งโรงงาน
+     · **✅ ปิดได้แล้วรายกฎ (2026-09-21): `notification_rules.inapp_scope_strict`**
+       (migration `20260921_notify_scope_strict.sql` · **apply แล้ว**) — `true` = ผู้บริหารถูกกรอง
+       ตามส่วนงานเหมือนคนอื่น · **default `false` = ทุกกฎเดิมพฤติกรรมเหมือนเดิมเป๊ะ**
+       · ติ๊กได้เองที่ `/notification-config` ใต้ "แจ้งเฉพาะคนที่ดูแลส่วนงาน" (ปุ่ม 🎯 จำกัดผู้รับ)
+       · เปิดให้แล้ว 3 เรื่องที่ยิงถี่: `mtn_handover` · `skill_levelup_request` · `defect_recorded`
+         — วัดจริง 14 วันก่อนแก้: ผจก. 4 คนได้ 49.6-59.8 แถว/วัน **อ่านรวมกัน 2 จาก 2,920 (0.07%)**
+         หลังแก้: ผจก.PD1 ได้เฉพาะ PD1 (mtn_handover@PD1 8→7 คน · @PD3 16→14)
+       · **🔴 ห้ามเปิด strict กับเรื่องที่ผู้บริหารต้องเห็นทั้งโรงงานจริงๆ** (สรุปรายวัน/เรื่องข้ามส่วนงาน)
+         — ธงนี้ตั้งใจให้ "เลือกเป็นเรื่องๆ" ไม่ใช่เปิดทั้งระบบ · ย้อน: `set inapp_scope_strict = false`
+   - **คนที่ไม่มี `section`/`sections`/`employees.section` เลย ถูกปล่อยผ่านทุกส่วนงาน** →
+     **ช่างซ่อม 13/13 คนไม่มี section** (ใช้ `mtn_teams[]` แทนตามดีไซน์ของ role งานซ่อม)
+     ⇒ ใส่ role `mtn` ในกฎที่กรองด้วย section **กรองไม่ได้เลยสักคน**
+     · ช่างจึงรับ downtime ผ่าน `downtime_call_mtn` + `downtime_open_15min` (เรื่องที่ต้องลงมือ) แทน
+   · **กฎ: ก่อนพึ่ง `inapp_match_section` ให้เช็คก่อนว่า role ปลายทาง "มี section จริงกี่คน"**
+
+**ย้อนได้:** ค่าเดิมของ 14 เรื่องอยู่ที่ `bk_notification_rules_inapp_20260917` (event_key + inapp_roles + inapp_match_section)
+
+**ยังเหลือก่อนปิด Telegram ได้จริง:** Web Push 22/94 คน (iPhone ต้อง "เพิ่มลงหน้าจอโฮม" ก่อน) ·
+ขา "รับ" (`telegram-webhook`) ยังไม่ deploy · คอมเมนต์ในระบบยังมีแค่ MO/downtime
+
+---
+
 ### 🔗 "กดกระดิ่งแล้วไปที่ปัญหานั้นเลย" — `notifications.link` (2026-09-16)
 
 **ที่มา (feedback ทีมงานผ่าน user):** *"ระบบกระดิ่งแจ้งเตือนในเว็ป มีบางอันที่สามารถคลิกเข้าไปในจุดที่แจ้งเตือนหรือปัญหานั้นๆได้ แต่บางอันก็ไม่ได้"*
@@ -154,6 +339,8 @@ mtn-daily-summary · daily-4m-summary · qa-fme-scan) ซึ่ง **ไม่�
 | `send-mtn-notification` | Main | แจ้งเตือนใบแจ้งซ่อม MO — **แจ้งครบทุกสเตป 1-7** (`mtn_reported`/`assigned`/`repaired`/`checked`/`qa`/`handover`/`closed`) · **แยกไฟล์จาก send-notification (กันไฟล์ใหญ่พัง) แต่ route ผ่าน notification_rules/telegram_channels เดียวกัน** → ตั้งค่า/ปิด/เลือกห้อง/แก้ข้อความได้จาก `/notification-config` (category maintenance) · **route ตามทีม:** มีห้องแท็ก `telegram_channels.team` = `mtn_dept` → เข้าห้องทีม, ไม่มี → ห้องรวม (smart maintenance/fallback) · **v5 (2026-07-22): แต่ละสเตปต่อท้าย "⏳ ขั้นต่อไป: รอ…"** ให้ห้องแชทรู้ว่ารออะไรต่อ (map `NEXT` ในไฟล์) · payload `{ event, mo: {...} }` |
 | `mtn-daily-summary` | Main (pg_cron 02:00 UTC = **09:00 ไทย**) | **สรุปงานซ่อม (MO) ค้างประจำวัน** (2026-07-22) — อ่าน `mtn_orders` ฝั่ง DR (`DR_URL`/`DR_ANON_KEY`, status ไม่ใช่ closed/rejected) นับตามทีม (`mtn_dept`) + ขั้นที่ค้าง (pending→รอรับงาน … handover→รออนุมัติปิด) → ส่งภาพรวมเข้าห้องรวม (event `mtn_daily_summary`) + แยกรายทีมเข้าห้องที่แท็ก team ไว้ · verify_jwt=false (cron เรียกได้ไม่ต้อง JWT) · ปิด/แก้ห้องได้ที่ `/notification-config` · migration `20260722_mtn_daily_summary_rule.sql` (rule) + `20260722_mtn_daily_summary_cron.sql` (cron Main) |
 | ↳ บล็อก **📥 ใบที่รอฝ่ายผู้แจ้ง** (2026-09-16 · v15) | เดียวกัน | ขั้น 4/6/7 (`REPORTER_WAIT`) แยก**รายส่วนงานที่ถอดจาก `line_name`** → ห้อง event `mtn_pickup_pending` (seed 🏭 Smart Production) + กระดิ่งในแอป**รายส่วนงาน** ผ่าน `notify_recipients(p_section)` · เหตุผล+ตัวเลขที่วัดได้ → `docs/modules/mtn-work-order.md` · migration `20260916_mtn_pickup_pending_rule_main.sql` (Main) · ปิดบล็อก = ปิด event นี้ที่ `/notification-config` |
+| `ingest-demand-mail` | DR (verify_jwt=false · token `x-ingest-token` → sha256 เทียบ `demand_mail_tokens`) | **รับไฟล์แนบ EDI 830/862 จากสคริปต์ Outlook บนเครื่อง user** (2026-09-30) → Storage `demand-mail` + คิว `demand_mail_inbox` · **ไม่แกะไฟล์** (ตัวอ่านอยู่ในแอปที่เดียว) · `{action:"ping"}` ไว้ทดสอบ · `{action:"inspect", id}` = ตรวจไฟล์ในคิว (ลายเซ็น zip · ขนาด · ชื่อชีต · 3 แถวแรก) แยก "ไฟล์เสีย" กับ "ตัวอ่านในแอป" · deploy v2 ผ่าน MCP 01/10 · ดู `docs/modules/logistic-planner-sales.md` §📬 |
+| `demand-mail-file` | DR (verify_jwt=true ผ่านด้วย anon key DR · ด่านจริง = header `x-esm-token` token ล็อกอินของ **Main** + `x-esm-apikey`) | **ส่งไฟล์ EDI จากคิว `demand_mail_inbox` ให้คนล็อกอินที่มีสิทธิ์** (2026-10-06 · DB audit B5) — ตรวจ Main `/auth/v1/user` 200 + `rpc/has_perm` (`demand:upload` หรือ `page:/planner-sales`) → โหลดจาก bucket ด้วย service role ตอบ octet-stream · ไม่แกะไฟล์ · เรียกจาก `downloadMailFile()` ใน `DemandMailInbox.jsx` · deploy v1 ผ่าน MCP 06/10 · ทดสอบ: ไม่มี token / token เป็น anon key ⇒ 401 (ผ่าน pg_net) |
 | `send-push` | Main (verify_jwt=false · เรียกจาก trigger) | **Web Push ไปมือถือ** — trigger `trg_notify_push` (`fn_notify_push`, `notifications` AFTER INSERT, pg_net best-effort) POST `{user_id,title,body,type,ref_table,ref_id}` มาที่นี่ · อ่าน VAPID จาก `notification_settings` (id=1 · service role) + ทุก `push_subscriptions` ของ user แล้ว `web-push` ส่งทีละ endpoint · **404/410 = ลบแถว subscription ทิ้ง** (หมดอายุ) · error อื่น (401 VAPID ผิด/403/413/429) log ดัง + ตอบ 502 เมื่อไม่ส่งได้เลย · `routeFor(ref_table)` ต้อง mirror `NOTIF_ROUTE` ใน App.jsx · **2026-09-08: ส่งด้วย `{ TTL: 3600, urgency: 'high' }`** — Android Doze ปลุกเครื่องให้เฉพาะ high-priority (feedback Samsung "เปิดแล้วไม่เคยเด้ง") + TTL 1 ชม. กัน MO เก่าเด้งเป็นกองตอนเครื่องกลับมาออนไลน์ · **ต้อง deploy ใหม่หลังแก้นี้** (ไฟล์ ~5 KB deploy ผ่าน MCP ได้ แล้ว `get_edge_function` ดึงกลับเทียบ `TTL: 3600`) · ฝั่งเว็บ/กฎสถานะ subscription ดู `docs/modules/deploy.md` §Web Push |
 | `telegram-webhook` | Main | ⚠️ **ซอร์สอยู่ใน repo แต่ยังไม่เคย deploy จริง** (ตรวจ 2026-08-06 — ตาราง `telegram_messages`/`telegram_sent_messages`/`telegram_pending_actions` apply แล้ว แต่ function ไม่มีในโปรเจค) → ขา "รับ" ยังไม่ทำงาน: reply ใน Telegram ไม่กลายเป็นคอมเมนต์ · AI intake `/dt` ยังใช้ไม่ได้ · ขา "ส่ง" (send-notification/send-mtn-notification) ทำงานปกติ · เปิดใช้ต้อง deploy + ตั้ง secrets + `setWebhook` กับ Telegram (เป็น action ที่มีผลกับบอทจริง — ถาม user ก่อน) · **ขา "รับ" ของบอท** (2026-07-16): Telegram ยิงทุก update เข้า function นี้ (setWebhook + secret) → (1) กวาดเก็บข้อความกลุ่มที่ลงทะเบียน → `telegram_messages` (2) **reply ใต้ข้อความแจ้งเตือน = คอมเมนต์ `event_comments` ผูกใบงานอัตโนมัติ** (mapping จาก `telegram_sent_messages` — send-notification/send-mtn-notification ถูก patch ให้จำ message_id ของ event ที่มี ref: mtn ทุก event + downtime_call_mtn/open_15min · payload ต้องส่ง `id` มาด้วย) (3) **AI intake**: `/dt RB80 โรบอทชนจิ๊ก 14.00-14.20` ทุกกลุ่ม หรือพิมพ์อิสระในกลุ่มที่อยู่ใน env `AI_INTAKE_CHAT_IDS` → Claude Haiku แยกฟิลด์ → ground กับ machines/dr_downtime_types/production_sessions จริง (work date ตัด 08:00 ไทย) → ปุ่ม [✅ บันทึก][❌ ยกเลิก] ใน Telegram — **คนกดยืนยันเท่านั้นถึง insert `downtime_logs` · AI ห้ามเขียนฐานเอง** (คิว `telegram_pending_actions` หมดอายุ 6 ชม.) · secrets: `TELEGRAM_WEBHOOK_SECRET`, `DR_URL`, `DR_ANON_KEY`, `ANTHROPIC_API_KEY` (ไม่ตั้ง = ปิดเฉพาะ AI), `AI_INTAKE_CHAT_IDS` · migration `20260716_telegram_intake.sql` (Main — 3 ตาราง service-role-only) |
 

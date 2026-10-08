@@ -1,18 +1,23 @@
 import { useState, useEffect, useContext } from 'react';
+import { Link } from 'react-router-dom';
+import { orgNodeCompare } from '../utils/listOrder';
 import { useObjectUrl } from '../utils/useObjectUrl';
 import { supabase } from '../supabaseClient';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import {
   inSectionScope, ORPHAN_SECTION, ORPHAN_SECTION_LABEL,
-  sectionValueForSave, orphanDepts, deptOptionsFor, deptNodeFor,
+  sectionValueForSave, orphanDepts, deptOptionsFor, deptNodeFor, orgNodeIdFor, ORG_SRC_MANUAL,
 } from '../utils/sectionScope';
 import { positionOptionsWith } from '../utils/positions';
 import ImageCropModal from '../components/ImageCropModal';
 import { toast } from '../components/Toast';
 import { filterLinesByDept } from '../utils/lineHierarchy';
-import { lineOptions } from '../components/LineSelect';
+import { lineOptions, lineOptionLabel, groupLineOptions } from '../components/LineSelect';
 import { uploadOpts } from '../utils/storageUpload';
+import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
 
 export default function Register() {
   const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
@@ -41,7 +46,7 @@ export default function Register() {
   const [teamOpts,    setTeamOpts]    = useState([]);
 
   useEffect(() => {
-    supabase.from('production_lines').select('id, name, section, parent_line_name').order('name')
+    loadLinesRes()
       .then(({ data }) => {
         setLines(data || []);
         if (scopeSecs.length === 1) {
@@ -54,9 +59,9 @@ export default function Register() {
       });
     supabase.from('bus_routes').select('id, code, name').eq('is_active', true).order('sort_order')
       .then(({ data }) => setBusRoutes(data || []));
-    supabase.from('org_nodes').select('id, code, name, kind, parent_id, ref_line_id').eq('is_active', true).order('sort_order')
+    supabase.from('org_nodes').select('id, code, name, kind, parent_id, ref_line_id, sort_order').eq('is_active', true)
       .then(({ data }) => {
-        const nodes = data || [];
+        const nodes = [...(data || [])].sort(orgNodeCompare);   // ลำดับผังมาตรฐาน (listOrder.js)
         setOrgSections(nodes.filter(n => n.kind === 'section'));
         setOrgDepts(nodes.filter(n => n.kind === 'department'));
         setOrgLines(nodes.filter(n => n.kind === 'line'));
@@ -86,6 +91,8 @@ export default function Register() {
 
   const handleRegister = async (e) => {
     e.preventDefault();
+    // ด่านชั้นสอง — ปุ่ม disabled อย่างเดียวไม่พอ (ฟอร์มอาจค้างอยู่ตอนสิทธิ์เปลี่ยน · Enter ในช่องกรอกก็ submit ได้)
+    if (!canRegister) return toast.error('บัญชีของคุณไม่มีสิทธิ์ลงทะเบียนพนักงาน');
     setIsUploading(true);
     try {
       const { data: userData } = await supabase.auth.getUser();
@@ -111,6 +118,10 @@ export default function Register() {
         group_name: groupName || null,
         team:       team      || null,
         line_id:    lineId    || null,
+        /* 🧭 แกนสังกัด — ผูกโหนดในผังตั้งแต่ลงทะเบียน (docs/ORG-AXES-DECISION.md §5.1)
+           ข้อความ section/department ข้างบนยังเขียนเหมือนเดิมในฐานะสำเนาไว้โชว์ */
+        org_node_id:  orgNodeIdFor(section, department, orgSections, orgDepts),
+        org_node_src: ORG_SRC_MANUAL,
         bus_route_id: busRouteId || null,
         start_date: startDate || null,
         image_url:  photoUrl,
@@ -132,11 +143,9 @@ export default function Register() {
   };
 
   return (
-    <div style={{
-      minHeight: 'calc(100vh - 80px)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      padding: 20,
-    }}>
+    /* ชิดซ้าย-บนเหมือนหน้าอื่น (เดิมจัดกลางจอ ⇒ ชื่อหน้าเริ่มคนละตำแหน่ง — UI-STANDARD §1) */
+    <Page width="narrow">
+      <PageHeader title="เพิ่มพนักงานใหม่" icon="📸" sub="บันทึกข้อมูลพนักงานเข้าระบบ" />
       <div style={{
         width: '100%', maxWidth: 440,
         background: 'var(--card)',
@@ -145,14 +154,7 @@ export default function Register() {
         padding: '36px 32px',
         boxShadow: 'var(--shadow-lg)',
       }}>
-        <div style={{ marginBottom: 24 }}>
-          <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 20, color: 'var(--text)' }}>
-            📸 เพิ่มพนักงานใหม่
-          </h2>
-          <p style={{ margin: '6px 0 0', fontSize: 13, color: 'var(--muted)' }}>บันทึกข้อมูลพนักงานเข้าระบบ</p>
-        </div>
 
-        <div style={{ height: 2, background: 'var(--accent)', borderRadius: 2, marginBottom: 24, opacity: 0.6 }} />
 
         <form onSubmit={handleRegister} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div>
@@ -230,16 +232,43 @@ export default function Register() {
               // cascade Section→แผนก→กลุ่ม (UI-CONVENTIONS §5.3): กลุ่มจากผังองค์กร (org_nodes kind='line') ใต้แผนกที่เลือก
               //   ตั้ง line_id ผ่าน ref_line_id ของกลุ่ม (production ยังทำงาน) · ผังยังไม่มีกลุ่ม → fallback production_lines
               if (orgGroupOpts.length) {
+                /* 🔴 เก็บ "ชื่อกลุ่ม" ไม่ใช่ `code || name` — ต้องตรงกับ /operator (06/10)
+                     `org_nodes(kind='line').code` บางตัวเป็นคนละสตริงกับชื่อ (ของจริง:
+                     ASSEMBLY 1 → code 'Assembly Line D1' · GWM → code 'Assembly Line D2')
+                     ⇒ เดิมคนที่ลงทะเบียนใหม่ได้ `group_name='Assembly Line D1'` ขณะที่เพื่อน
+                       ร่วมกลุ่ม 35 คนเป็น 'ASSEMBLY 1' = แยกกันคนละกลุ่มในทุกตัวกรอง
+                       และ /operator โชว์ว่า "(นอกผัง — ค่าเดิม)"
+                   🔴 กลุ่มที่ยังไม่ผูกไลน์ผลิต (`ref_line_id` ว่าง) ⇒ line_id = null
+                     = พนักงานใหม่ **ไม่ขึ้นหน้าเช็คชื่อ** ต้องเตือนตรงนี้ ห้ามเงียบ
+                     (เคสจริง 05/10: PD2 ตั้งแผนก+กลุ่มครบแล้วแต่เช็คชื่อว่าง 35 คน) */
+                const curNode = orgGroupOpts.find(g => g.name === groupName || g.code === groupName);
+                const noRef = orgGroupOpts.filter(g => !g.ref_line_id);
                 return (
-                  <select value={groupName} disabled={!department} onChange={e => {
+                  <>
+                  <select value={curNode ? curNode.name : groupName} disabled={!department} onChange={e => {
                     const val = e.target.value;
                     setGroupName(val);
-                    const g = orgGroupOpts.find(x => (x.code || x.name) === val);
+                    const g = orgGroupOpts.find(x => x.name === val || x.code === val);
                     setLineId(g?.ref_line_id || null);
                   }}>
                     <option value="">{department ? '— เลือกกลุ่ม —' : 'เลือกแผนกก่อน'}</option>
-                    {orgGroupOpts.map(g => <option key={g.id} value={g.code || g.name}>{g.name}</option>)}
+                    {orgGroupOpts.map(g => (
+                      <option key={g.id} value={g.name}>{g.name}{g.ref_line_id ? '' : '  ⚠ ยังไม่ผูกไลน์'}</option>
+                    ))}
                   </select>
+                  {curNode && !curNode.ref_line_id && (
+                    <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4, lineHeight: 1.45 }}>
+                      ⚠️ กลุ่ม <b>{curNode.name}</b> ยังไม่ได้ผูกกับไลน์ผลิตจริง — บันทึกได้ แต่พนักงานคนนี้
+                      <b> จะไม่ขึ้นในหน้าเช็คชื่อ</b> · ผูกไลน์ให้กลุ่มนี้ที่{' '}
+                      <Link to="/org-setup" style={{ color: '#f59e0b', fontWeight: 700 }}>ผังองค์กร</Link> ก่อน
+                    </div>
+                  )}
+                  {!curNode && noRef.length > 0 && (
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.45 }}>
+                      ⚠ {noRef.length} กลุ่มในลิสต์นี้ยังไม่ผูกไลน์ผลิต — เลือกแล้วคนจะไม่ขึ้นหน้าเช็คชื่อ
+                    </div>
+                  )}
+                  </>
                 );
               }
               // แผนกขึ้นตรงฝ่ายไม่มี section ให้กรอง — ปล่อยดูทุกไลน์แล้วให้ filterLinesByDept คัดตามแผนก
@@ -254,9 +283,14 @@ export default function Register() {
                   setLineId(line?.id || null);
                 }}>
                   <option value="">{department ? '— เลือก Line —' : 'เลือกแผนกก่อน'}</option>
-                  {lineOptions(lineOpts, { current: groupName }).map(o => (
-                    <option key={o.value} value={o.value}>{`${'\u00a0\u00a0'.repeat(o.depth)}${o.depth ? '↳ ' : ''}${o.label}`}</option>
-                  ))}
+                  {(() => {
+                    // ลำดับ+หัวกลุ่มส่วนงานชุดเดียวกับ <LineSelect> (2026-10-01)
+                    const { pinned, groups } = groupLineOptions(lineOptions(lineOpts, { current: groupName }));
+                    const opt = o => <option key={o.value} value={o.value}>{lineOptionLabel(o)}</option>;
+                    return [...pinned.map(opt), ...groups.map(g => g.label
+                      ? <optgroup key={g.label} label={`📁 ${g.label}`}>{g.options.map(opt)}</optgroup>
+                      : g.options.map(opt))];
+                  })()}
                 </select>
               );
             })()}
@@ -273,7 +307,7 @@ export default function Register() {
           <div>
             <label style={labelSt}>รูปถ่าย (ถ้ามี)</label>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              {photoPreview && <img src={photoPreview} alt="" style={{ width: 48, height: 48, objectFit: 'cover', borderRadius: '50%', border: '1px solid var(--border)' }} />}
+              {photoPreview && <img loading="lazy" src={photoPreview} alt="" style={{ width: 48, height: 48, objectFit: 'cover', borderRadius: '50%', border: '1px solid var(--border)' }} />}
               <input id="photo-upload" type="file" accept="image/*" onChange={e => {
                 const f = e.target.files?.[0];
                 e.target.value = '';
@@ -283,7 +317,7 @@ export default function Register() {
           </div>
           {cropFile && (
             <ImageCropModal file={cropFile} aspect={1} shape="circle" outputSize={480}
-              title="จัดตำแหน่งรูปพนักงานให้ตรงกรอบ" allowGif={false}
+              title="จัดตำแหน่งรูปพนักงานให้ตรงกรอบ" allowGif={false} webp
               onCancel={() => setCropFile(null)}
               onConfirm={f => { setPhoto(f); setCropFile(null); }} />
           )}
@@ -303,7 +337,7 @@ export default function Register() {
           </button>
         </form>
       </div>
-    </div>
+    </Page>
   );
 }
 

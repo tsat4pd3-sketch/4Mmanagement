@@ -11,7 +11,9 @@
  */
 import { useState, useEffect, useContext, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import MatLabel from './MatLabel';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
@@ -64,7 +66,7 @@ export default function StorageZonePanel() {
     const addAll = (rows, key) => (rows || []).forEach(r => { const v = String(r[key] || '').trim().toLowerCase(); if (v) claimed.add(v); });
     try {
       const [pl, da, fa, fm] = await Promise.all([
-        supabase.from('production_lines').select('name'),
+        loadLinesRes(),
         supabaseDR.from('die_storage_areas').select('name').eq('is_active', true),
         supabaseDR.from('pm_facility_areas').select('name'),
         supabaseDR.from('machines').select('line_name').in('equipment_category', ['facility', 'utility']),
@@ -331,8 +333,8 @@ function ZoneFormModal({ zone, initialName, parts, stockByMat, onClose, onSaved 
             <div style={{ display: 'grid', gap: 3, maxHeight: 220, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 8, padding: 6 }}>
               {options.map(p => (
                 <button key={p.mat_no} onClick={() => { setMats(v => [...v, p.mat_no]); }} style={{ ...btnSec, textAlign: 'left', fontSize: 12, display: 'flex', gap: 8 }}>
-                  <b>{p.mat_no}</b>
-                  <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.part_name || ''}</span>
+                  {/* ครบ 3 ค่าผ่านของกลาง (30/09) */}
+                  <MatLabel mat={p.mat_no} name={p.part_name} style={{ flex: 1, minWidth: 0 }} />
                   <span style={{ color: 'var(--muted)' }}>{stockByMat[p.mat_no] ? `คงเหลือ ${Number(stockByMat[p.mat_no]).toLocaleString()}` : '—'}</span>
                 </button>
               ))}
@@ -358,6 +360,6 @@ function ZoneFormModal({ zone, initialName, parts, stockByMat, onClose, onSaved 
 }
 
 const lbl = { display: 'grid', gap: 4, fontSize: 12, color: 'var(--text2)' };
-const btnPri = { background: 'var(--accent)', color: '#08110a', border: 'none', borderRadius: 8, padding: '7px 14px', fontWeight: 700, cursor: 'pointer', fontSize: 13 };
+const btnPri = { background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, padding: '7px 14px', fontWeight: 700, cursor: 'pointer', fontSize: 13 };
 const btnSec = { background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)', borderRadius: 8, padding: '7px 12px', cursor: 'pointer', fontSize: 13 };
 const btnMini = { background: 'transparent', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 6, padding: '2px 8px', cursor: 'pointer', fontSize: 11 };

@@ -27,6 +27,49 @@
 >   และข้าม bucket `jig-images` ทั้ง bucket · ผลหลังรัน: Main 366 ไฟล์ (174 MB) · DR 620 ไฟล์ (54 MB)
 > · **ห้ามตั้ง cache ยาวให้ path ที่ upsert ทับได้** และห้ามแก้ `CACHE_*` โดยไม่อ่านหลักด้านบน
 
+> ### 🗜️ ปุ่มบีบรูปย้ายไปหน้า `/storage-maintenance` + กฎ "ห้ามใส่งานที่ข้ามถาวรเข้าคิว" (2026-09-22)
+> **คำสั่ง user:** *"ที่จริงฟังก์ชันปุ่มบีบอัดรูปน่าจะอยู่ที่ setting"* — ถูกต้อง งานนี้กวาดทั้งระบบ 6 กลุ่ม
+> (ผังไลน์ · ผังโรงงาน · ผังเครื่องจักร · รูปจุดตรวจ PM · รูปซ่อม MO · รูปพนักงาน) ไม่ผูกกับไลน์ใดไลน์หนึ่ง
+> เดิมแขวนที่ `/linesetup` ซึ่งไม่อยู่ใน sidebar (ฝังใน `/layout-setup`) ⇒ **หาไม่เจอ** (user ถามว่าปุ่มอยู่ไหน)
+>
+> - หน้าใหม่ `src/pages/StorageMaintenance.jsx` (หมวดตั้งค่า · `PageHeader`) + แผงกลาง
+>   `src/components/ImageSqueezePanel.jsx` — **ถอดออกจาก `LineSetup.jsx` แล้ว ห้ามมี 2 ปุ่ม**
+> - สิทธิ์ `storage_maintain:run` · หน้า `page:/storage-maintenance` — migration
+>   `20260922_storage_maintenance_page_main.sql` (**apply แล้ว 22/09**) ยกผู้ถือสิทธิ์มาจาก `line_setup:edit`
+>   ให้ผลลัพธ์เหมือนเดิมวันที่ apply · โค้ด `isActionSeeded()` fallback ไป `line_setup:edit` ถ้ายังไม่ seed
+> - **โหมดสำรวจ (`scanOnly: true`)** — จอบอกได้ว่า "เหลือกี่ใบ แยกตามกลุ่ม" **โดยไม่โหลดรูปแม้ใบเดียว**
+>   (อ่านแค่แถวใน DB) · เดิมกดแล้วต้องรอจนจบถึงจะรู้ว่าไม่มีอะไรเหลือ
+>
+> #### 🔴 บทเรียน — ตัวกันวนที่วัดความคืบหน้าจาก "ทั้งล็อต" ถูกอุดได้ด้วยงานที่ข้ามถาวร
+> **เกิดจริง:** user กดปุ่ม 3 ครั้ง ขนาดรวมไม่ลดเลย · ตัวปุ่มแบ่งล็อต 150 ใบ/รอบ + หยุดเมื่อ `done === 0`
+> แต่รูปจุดตรวจ PM **198 ใบที่เล็กกว่าเกณฑ์อยู่แล้ว ไม่เคยกลายเป็น .webp จึงไม่เคยหลุดออกจากลิสต์**
+> ⇒ อยู่หน้าคิวทุกรอบ ⇒ ล็อตแรก skip ทั้งก้อน ⇒ ตัวกันวนเข้าใจผิดว่า "ติดปัญหา" แล้วหยุด
+> ⇒ **รูปซ่อม MO 85 MB (ก้อนใหญ่สุดที่เหลือ) ไม่เคยถึงคิวเลย** · ซ้ำร้าย 198 ใบนั้นถูกดาวน์โหลด
+> เต็มก้อนทุกครั้งที่กด (~9 MB/ครั้ง) เพื่อจะรู้ว่าไม่ต้องทำอะไร
+> **แก้:** (1) `recompressOne` ถาม **HEAD ก่อนโหลด** (2) กรอง `.webp` ตอน**สร้างคิว** (3) จอส่ง
+> **`limit: 0` รอบเดียวจบ** — **กฎข้อ 5 หัวไฟล์ `recompressLayouts.js` ห้ามกลับไปแบ่งล็อต**
+> · หลักทั่วไป: **เอางานที่ข้ามถาวรออกจากคิว ไม่ใช่ไปปรับตัวกันวน**
+
+> ### 🗜️ `ImageCropModal` prop `webp` — เขียนไฟล์ออกเป็น WebP (2026-09-22 · งานลด egress)
+> **ที่มา:** วัดเต็มวัน 21/09 — bucket `employee-photos` ส่งออก **54.9 MB/วัน** (1,391 ครั้ง × เฉลี่ย 40 KB)
+> = ก้อนใหญ่สุดที่เหลือฝั่ง Main · URL ไม่มี query param (ไม่ใช่ปัญหา cache-bust) และ CF cache HIT
+> ถึง 1,193 ครั้ง — **HIT ก็คิด egress** เพราะไบต์ยังออกไปหาเครื่องปลายทาง ⇒ ทางลดเดียวคือทำไฟล์ให้เล็กลง
+>
+> - **prop `webp` (default `false`)** → จุดที่เรียกอยู่เดิมยังได้ JPEG เหมือนเดิมทุกจุด (ไม่เปลี่ยนพฤติกรรม)
+>   · เปิดแล้วที่ **รูปพนักงาน**: `operator.jsx` · `Register.jsx` (คู่กับ `allowGif={false}`)
+> - **ตัวเขียนไฟล์ยุบเป็น `emit(canvas)` จุดเดียวใน ImageCropModal** — เดิมมี `canvas.toBlob(...)` ซ้ำ 2 ที่
+>   (โหมดครอบ / โหมด "ใช้ทั้งรูป") แก้ทีเดียวไม่ครบได้ง่าย
+> - 🔴 **`toBlob(cb, 'image/webp')` บนเบราว์เซอร์ที่เขียน WebP ไม่ได้ (Safari < 16.4) คืน PNG เงียบๆ**
+>   ไม่ throw ไม่คืน null ⇒ ถ้า hardcode นามสกุล `.webp` จะได้ไฟล์ **PNG ชื่อ .webp**: ใหญ่กว่าเดิม
+>   (PNG = lossless) + Content-Type ผิด = งานลด egress กลายเป็นเพิ่ม egress โดยไม่มี error ให้จับ
+>   ⇒ `emit()` เทียบ `blob.type === 'image/webp'` แล้วถอยไป JPEG · **นามสกุลเอาจาก `blob.type` เท่านั้น**
+>   · จุดอัปโหลด 2 หน้าอ่าน ext จาก `photo.name` อยู่แล้ว ⇒ ไหลตามเอง ไม่ต้องแก้
+>   · มีด่าน **`webp-tobiob-needs-type-check`** ใน `regressionGuards` แล้ว — toBlob+webp นอก allow-list = build ล่ม
+> - **รูปเดิม 275 ใบ** ไม่เปลี่ยนเอง → งานกลุ่ม **6) รูปพนักงาน** ใน `src/utils/recompressLayouts.js`
+>   (ปุ่ม 🗜️ ที่ **`/storage-maintenance`** · `employees.image_url` · เฉพาะไฟล์รากของ bucket · ข้าม `layouts/`+`factory/`+`.gif`)
+> - ของในถัง 22/09: `jpg` 231 (เฉลี่ย 66 KB) · **`png` 44 (เฉลี่ย 628 KB)** · `gif` 4 (เฉลี่ย 4.65 MB
+>   = ขยะค้าง 18.2 MB ไม่มีแถวไหนอ้าง ยืนยันแล้ว → `cleanup-orphan-photos`)
+
 > ### 🚫 รูปพนักงานไม่รับ GIF + ทุกการปฏิเสธไฟล์ต้อง "เตือนให้เห็น" (2026-09-11 · คำสั่ง user)
 > **เหตุการณ์:** หลัง egress ทะลุโควต้า วัด bucket `employee-photos` พบ **GIF 20 ไฟล์กิน 84 MB จาก 124 MB**
 > (เฉลี่ย **4.3 MB/รูป** = ใหญ่กว่ารูปนิ่งที่บีบแล้ว ~60 เท่า) — GIF บีบไม่ได้ ระบบส่งต้นฉบับทั้งไฟล์
@@ -67,10 +110,15 @@
 > - **⚠️ ต้องเช็คนามสกุลไฟล์ด้วย ไม่ใช่ดูแต่ MIME** — Android/Chrome หลายรุ่นส่ง `type` เป็นค่าว่าง/`application/octet-stream` กับไฟล์ `.heic`
 > - **⚠️ แปลงให้เร็วที่สุดที่ต้น handler** — โค้ดที่ derive `ext`/ชนิดจากชื่อไฟล์ต่อจากนั้นจะได้ค่าถูกต้องตาม (ไฟล์ที่แปลงแล้วเป็น `.jpg`)
 >   แปลงทีหลังจะได้ไฟล์ JPEG แต่ตั้งชื่อบน storage เป็น `.heic`
-> - **จุดที่ผ่านเกตแล้ว (ครบทุกทางเข้ารูปในระบบ):** `resizeImage.js` (MtnRepair/Improvements/PEDocs/Report/Management/operator) · `NpiUi.uploadNpiFile` (เพิ่ม 2026-09-08 — เคยหลุด)
+> - **จุดที่ผ่านเกตแล้ว:** `resizeImage.js` (MtnRepair/Improvements/PEDocs/Report/Management/operator) · `NpiUi.uploadNpiFile` (เพิ่ม 2026-09-08 — เคยหลุด)
 >   · `ImageCropModal` (รูปพนักงาน/โปรไฟล์/สินค้า/อะไหล่/PMSetup frames) · LineSetup ผังไลน์ · FactoryMap ผังโรงงาน
 >   · MtnMachineLayout โซน facility · PMSetup รูปจุดตรวจ · QAInspectionSetup drawing · DieLayout/RackMap `compressPlan`
 >   → **เพิ่มจุดรับไฟล์รูปใหม่ต้องเรียก `toDecodableImage()` ก่อนเสมอ**
+> - 🔴 **ลิสต์นี้เคยเขียนว่า "ครบทุกทางเข้ารูปในระบบ" — ไม่จริง ตัดคำนั้นออกแล้ว 2026-10-06**
+>   QC audit เจอ `SignatureModal` (แท็บอัปโหลดลายเซ็น) ไม่อยู่ในลิสต์และไม่ผ่านเกตจริง
+>   ⇒ คำว่า "ครบ" ทำให้ session ถัดไปเลิกไล่ตรวจ = เอกสารที่ผิดแย่กว่าไม่มี
+>   **วิธีตรวจว่าครบจริง: `grep -rln "type=\"file\"" src/ | xargs grep -Ln toDecodableImage`**
+>   (ไฟล์ที่รับรูปแล้วไม่เรียกเกต = ต้องมีเหตุผลกำกับ เช่น รับ PDF/ไฟล์อื่นล้วน)
 > - ข้อความบนจอห้ามพูดเรื่อง "ขนาด/ใหญ่เกินไป" กับปัญหา decode — ต้องชี้ "ฟอร์แมต + วิธีตั้งกล้องเป็น JPEG"
 >   (Samsung: ตั้งค่ากล้อง → รูปแบบภาพ → ปิด HEIF · iPhone: ตั้งค่า → กล้อง → รูปแบบ → "เข้ากันได้มากที่สุด")
 > #### ⚠️⚠️ กับดัก worker ของ heic2any — "รูปแรกลงได้ ลงหลายรูปแล้วลงไม่ได้อีกเลยจนรีเฟรช" (2026-09-08 · feedback Samsung/Android ทั้ง PWA + Chrome)
@@ -87,7 +135,14 @@
 > - **ยังไม่ทำ:** ตัวบีบรูปสาย "ผัง/drawing" (2560px/q0.9) ยังกระจาย 7 จุด (`imageCompression` 5 จุด + `compressPlan` ที่ก๊อปกัน 2 ไฟล์)
 >   — ควรยุบเป็น util เดียวเมื่อไปแตะจุดนั้นครั้งหน้า (ตอนนี้เกต HEIC เข้าครบแล้วทุกจุด จึงไม่เร่ง)
 - **GIF (รูปขยับ) ถูกส่งทั้งไฟล์โดยไม่แปลง** เพื่อคงการเคลื่อนไหว (วาดลง canvas จะเหลือเฟรมแรกเฟรมเดียว = การขยับหายเงียบๆ) — จำกัด ≤ 2MB **ทุกจุดที่รับ GIF** (ImageCropModal + LineSetup) **ห้ามถอด cap ออก** (GIF ไม่จำกัดขนาดเฉลี่ย ~4MB เคยกินครึ่ง bucket)
-- **เปลี่ยน/ลบรูปแล้วต้องลบไฟล์เก่าจาก storage เสมอ** (ลบ**หลัง** DB update สำเร็จเท่านั้น + best-effort ห้ามทำ flow หลักพัง) — ทำแล้วใน: DeptHub.jsx (รูปโปรไฟล์ user — bucket `avatars` **แยกจาก employee-photos โดยเจตนา** เพราะ cleanup-orphan-photos สแกน employee-photos เทียบ employees/line_layouts เท่านั้น ไฟล์ avatar ที่ไปอยู่ที่นั่นจะโดนลบ · migration `20260714_profiles_avatar.sql`), operator.jsx (รูปพนักงาน), LineSetup.jsx (ผังไลน์ ทั้งตอนเปลี่ยนผัง/ตอนลบไลน์/**ปุ่ม 🗑 ลบรูปผัง** (2026-08-04 — เคสเผลออัพรูปทับ ลบแล้วไลน์ลูกกลับไปยืมผังไลน์แม่อัตโนมัติ · เช็ค sharers ก่อนลบไฟล์) — เฉพาะผังของตัวเอง **ห้ามลบผังที่ยืมแสดงจากไลน์แม่**), ProductMaster.jsx (dr_products + parts_master ทั้งตอนเปลี่ยนรูปและตอนลบสินค้า — มี guard ไม่ลบรูปที่สินค้า/พาร์ทอื่นแชร์ URL เดียวกัน), QAInspectionSetup.jsx (replace/delete drawing + ลบทั้งโฟลเดอร์ตอนลบ part), PMSetup.jsx (ลบ jig = ลบรูปทั้งชุด frame-*/cp-*), SignatureModal.jsx (ลายเซ็นเก่า — เฉพาะโฟลเดอร์ user ตัวเอง), Management.jsx (รูปหลักฐาน OJT แนบทับ = ลบรูปเดิม), MtnMachineLayout.jsx (รูปโซน facility), Improvements.jsx (รูป before/after ทั้งตอนเปลี่ยนและตอนลบโปรเจค) · หน้าใหม่ที่มีการเปลี่ยนรูปต้องทำแบบเดียวกัน ไม่งั้นไฟล์กำพร้าสะสม (เคยค้าง 117 ไฟล์ / 100MB เพราะอัปโหลดชื่อใหม่ `emp_<timestamp>` โดยไม่ลบของเดิม)
+- 🔴 **"หลัง DB สำเร็จ" ไม่พอ — ต้อง "หลังนับแถวได้ > 0"** (QC audit 2026-10-06 · มีด่าน `storage-delete-after-row-count`)
+  RLS ปฏิเสธ DELETE = **สำเร็จ 0 แถว ไม่มี error** (กฎเหล็ก DB ข้อ 2) ⇒ เช็คแค่ `error` แล้วลบไฟล์ =
+  **แถวยังอยู่ แต่ไฟล์หายถาวร** แล้วจอขึ้น "ลบแล้ว" · แก้ไปแล้ว 5 จุด: `QAInspectionSetup` (delPart
+  ลบ `qa-drawings/parts/<id>` ทั้งโฟลเดอร์ ⇒ ใบตรวจพาร์ทเสียถาวร · deleteDrawing) · `OjtTraining`
+  (ลายเซ็นพนักงานทั้งใบ) · `PMSetup` (รูปจิ๊กทั้งชุด + โมเดล 3D) · `MtnMachineLayout` (รูปผังโซน) ·
+  `LineSetup` (รูปผังไลน์) · **ข้อยกเว้นเดียว = delete ที่ "0 แถวคือเรื่องปกติ"** (เช่นลบของที่อาจ
+  ไม่มีอยู่แต่แรก) ⇒ ขึ้นทะเบียนใน `STORAGE_DEL_ALLOW` พร้อมเหตุผล
+- **เปลี่ยน/ลบรูปแล้วต้องลบไฟล์เก่าจาก storage เสมอ** (ลบ**หลัง** DB สำเร็จ**และนับแถวได้**เท่านั้น + best-effort ห้ามทำ flow หลักพัง) — ทำแล้วใน: DeptHub.jsx (รูปโปรไฟล์ user — bucket `avatars` **แยกจาก employee-photos โดยเจตนา** เพราะ cleanup-orphan-photos สแกน employee-photos เทียบ employees/line_layouts เท่านั้น ไฟล์ avatar ที่ไปอยู่ที่นั่นจะโดนลบ · migration `20260714_profiles_avatar.sql`), operator.jsx (รูปพนักงาน), LineSetup.jsx (ผังไลน์ ทั้งตอนเปลี่ยนผัง/ตอนลบไลน์/**ปุ่ม 🗑 ลบรูปผัง** (2026-08-04 — เคสเผลออัพรูปทับ ลบแล้วไลน์ลูกกลับไปยืมผังไลน์แม่อัตโนมัติ · เช็ค sharers ก่อนลบไฟล์) — เฉพาะผังของตัวเอง **ห้ามลบผังที่ยืมแสดงจากไลน์แม่**), ProductMaster.jsx (dr_products + parts_master ทั้งตอนเปลี่ยนรูปและตอนลบสินค้า — มี guard ไม่ลบรูปที่สินค้า/พาร์ทอื่นแชร์ URL เดียวกัน), QAInspectionSetup.jsx (replace/delete drawing + ลบทั้งโฟลเดอร์ตอนลบ part), PMSetup.jsx (ลบ jig = ลบรูปทั้งชุด frame-*/cp-*), SignatureModal.jsx (ลายเซ็นเก่า — เฉพาะโฟลเดอร์ user ตัวเอง), Management.jsx (รูปหลักฐาน OJT แนบทับ = ลบรูปเดิม), MtnMachineLayout.jsx (รูปโซน facility), Improvements.jsx (รูป before/after ทั้งตอนเปลี่ยนและตอนลบโปรเจค) · หน้าใหม่ที่มีการเปลี่ยนรูปต้องทำแบบเดียวกัน ไม่งั้นไฟล์กำพร้าสะสม (เคยค้าง 117 ไฟล์ / 100MB เพราะอัปโหลดชื่อใหม่ `emp_<timestamp>` โดยไม่ลบของเดิม)
 - **อุปกรณ์ PM ใช้ "รูปหลายมุม (spin)" เท่านั้น — ไม่มีโมเดล 3D แล้ว** (ถอดออก 2026-07-10 เพราะเกินจำเป็น + dep หนัก three/occt wasm 7.6MB): PMSetup อัปหลายรูปมุมต่างๆ (SpinAnnotator) ปักหมุดจุดตรวจต่อเฟรม, หน้าตรวจ (JigSpinCheck) ปัดหมุน+auto-play+หมุด sync checklist 
 > #### ⚠️ ความถี่การตรวจ — ค่าที่ UI ให้เลือก ต้องตรงกับที่ DB รับ (2026-08-21 · feedback "เลือกรายไตรมาสแล้วเซฟไม่ได้")
 > `FREQ_LABEL` (`src/lib/pmSchedule.js`) มี 5 ค่า **daily · weekly · monthly · quarterly · periodic**
@@ -147,7 +202,13 @@
 > → **polling ของจอทำแค่ "เปลี่ยนสีบนผัง"** · ในเมื่อเกณฑ์เตือนคือ 15 นาที การ poll ทุก 30-60 วิ **ไม่ได้ทำให้ใครรู้เร็วขึ้นเลย แค่เปลืองโควต้า** (เหตุผลที่ ANDON ยืดจาก 30 วิ → 5 นาทีได้โดยไม่เสียอะไร)
 > **(ข) realtime มาก่อน · poll เป็นตัวกันเหนียว** — push ส่งเฉพาะแถวที่เปลี่ยน (~200 bytes) ถูกกว่า poll ทั้งชุด (22 KB) เป็นร้อยเท่า **และเร็วกว่าด้วย**
 > จอที่มี realtime: Dashboard · Management · DailyPM · DowntimeSiren · **FactoryMap (เพิ่ม 2026-08-19 — เดิม polling ล้วน 0 channel จึงต้องตั้ง 30 วิ)**
-> **⚠️ ตารางที่ subscribe ต้องอยู่ใน publication `supabase_realtime` ไม่งั้น subscription เงียบไม่ทำงานและไม่มี error ใดๆ** — `mtn_orders` เคยตกหล่น (migration `20260819_realtime_mtn_orders.sql` · **apply แล้ว**) · ตอนนี้ครบ 5: `downtime_logs` `prod_orders` `defect_logs` `production_sessions` `mtn_orders`
+> **⚠️ ตารางที่ subscribe ต้องอยู่ใน publication `supabase_realtime` ไม่งั้น subscription เงียบไม่ทำงานและไม่มี error ใดๆ**
+> 🔴 **ห้ามเก็บลิสต์ตารางเป็นมือที่นี่อีก** — บรรทัดนี้เคยเขียนว่า "ตอนนี้ครบ 5" แล้วล้าสมัย
+> คนถัดไปเชื่อลิสต์นั้น จึงตกหล่นอีก 4 ตาราง (QC 06/10: `monitor_cells`/`monitor_board_parts` ฝั่ง DR
+> · `daily_production_logs`/`four_m_logs` ฝั่ง Main) ⇒ `/monitoring` + แถบหน้าแรกช้าได้ถึง 2 ชม.
+> ⇒ **ทะเบียนจริงอยู่ที่ `src/utils/realtimeTables.js`** (มีด่าน `realtime-table-registered` ใน build)
+> · ของจริงใน DB อ่านสด: `select tablename from pg_publication_tables where pubname='supabase_realtime' order by 1;`
+>   **รันทั้ง 2 project** — ชื่อเดียวกันมีได้ทั้งสองฝั่ง (`notifications` มีทั้งคู่ แต่โค้ด subscribe เฉพาะ Main)
 >
 > #### 🔴🔴 กฎเหล็ก — subscribe realtime ต้องผ่าน **`liveChannel(client, name)`** ห้ามเรียก `client.channel('ชื่อคงที่')` (2026-08-26 · feedback หน้างาน)
 > *"หน้า line management เปิดไปเปิดมา โชว์สกิลพนักงาน ซักพักหน่วงๆ ละค้างไปเลย"* — **ไม่ใช่เรื่องกราฟ/การ์ดสกิล**
@@ -272,3 +333,35 @@
 - **ตัวกิน Storage:** `employee-photos` (Main) 151MB จาก 206 ไฟล์ — แต่ **37 ไฟล์กิน 131MB (87%)** คือ GIF/PNG ยักษ์ 4.7-5.3MB ที่อัปก่อนมี cap 2MB + โฟลเดอร์ `layouts/` (ผัง 16 ไฟล์ 23MB — **ตั้งใจ ห้ามบีบเพิ่ม** ต้องซูมอ่านผังได้) · รูปพนักงานปกติ 144 ไฟล์ ≤200KB (บีบทำงานถูกต้อง)
 
 ---
+
+## 📐 บังคับสัดส่วนรูปตอนอัปโหลด (2026-09-22)
+
+`resizeImage(file, maxPx, quality, { aspect })` — ส่ง `aspect` (เช่น `16/9`) = **ครอบกลางภาพให้**
+ก่อนย่อ · **ไม่ส่ง = ไม่ครอบ พฤติกรรมเดิมทุกประการ**
+· ฟังก์ชันกรอบคือ `centerCrop(w, h, aspect)` (export ไว้ให้เทสเรียกตรง · มีเทส 6 เคส)
+· ใช้จริงแล้ว: รูปในใบ MO ทุก step (`MO_IMG_ASPECT` ใน `MtnRepair.jsx`)
+· 🔴 **เป็น opt-in เท่านั้น** — ตัวนี้เป็น single source ของ 6 หน้า ตั้ง default เมื่อไหร่
+  ทุกหน้าที่อัปโหลดรูปจะถูกตัดขอบเงียบๆ พร้อมกัน
+
+---
+
+## 📷 `acceptImageFile()` — ด่านรับไฟล์รูปจุดเดียว (2026-10-06 · QC audit)
+
+เอกสารนี้เขียนกฎไว้แล้วว่า *"ทุกจุดรับรูปต้องผ่าน `toDecodableImage`"* แต่ **ไม่มีด่านบังคับ**
+⇒ วัด 06/10: มี **12 ช่อง `accept="image/*"` ใน 9 ไฟล์** ที่รับไฟล์ตรงๆ ไม่เคยผ่าน
+
+**2 อาการที่เกิดจริง:**
+1. **รูปจาก iPhone (HEIC) ใช้ไม่ได้** — Chrome/Android decode HEIC ไม่ได้
+   · `SignatureModal` พังตอนกด "บันทึก" (`new Image()` → onerror → *"ไฟล์นี้ไม่ใช่รูปที่รองรับ"*)
+     = เลือกไฟล์ → เห็นพรีวิว → กดเซฟ → พังเอาตอนท้าย (ถ่ายรูปลายเซ็นด้วยมือถือแล้วอัปไม่ได้เลย)
+   · จุดอื่น **อัปโหลดไฟล์ HEIC ดิบขึ้นไปเงียบๆ** แล้วทุกคนที่เปิดดูเห็นรูปเสีย
+2. **เลือกไฟล์ที่ไม่ใช่รูป (PDF/Excel) ไม่มีใครเตือน** — ขัดคำสั่ง user 11/09 ตรงๆ
+   (*"ปฏิเสธไฟล์ต้องขึ้น toast บอกเหตุผล+ทางแก้เสมอ ห้ามปิดหน้าต่างเงียบๆ"*)
+
+**แก้แล้วครบ 12 จุด:** `SignatureModal` · `SpinAnnotator` (หลายไฟล์พร้อมกัน) · `PEDocs` ×2 ·
+`MtnRepair` · `Improvements` · `Management` ×2 · `Report` ×2 · `DailyReport`
+· ผ่านได้ 3 ทาง: `acceptImageFile()` · `<ImageCropModal>` (มีในตัวแล้ว) · เรียก `toDecodableImage` เอง
+· **มีด่าน `image-input-via-accept-helper`** ใน build
+
+**พลอยแก้:** `SignatureModal` ไม่เคย `URL.revokeObjectURL()` ⇒ blob ตรึงไฟล์ในหน่วยความจำจนรีเฟรชหน้า
+(ลายเซ็นถ่ายจากมือถืออาจหลาย MB · ลองใหม่หลายครั้งก็ค้างทับกันไปเรื่อยๆ) → ย้ายไป `finally`

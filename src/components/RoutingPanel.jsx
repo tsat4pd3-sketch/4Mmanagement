@@ -17,6 +17,7 @@ import useIsMobile from '../utils/useIsMobile';
 import { checkWrite } from '../utils/dbWrite';
 import LineSelect from './LineSelect';
 import MachineSelect from './MachineSelect';
+import { DeleteButton } from './IconButton';
 import SupplierSelect from './SupplierSelect'; // ผู้รับจ้าง = ทะเบียน DR suppliers (จ้างนอก/บริการขึ้นก่อน) — 2026-09-08
 import useColumnHistory from '../utils/useColumnHistory'; // 📜 เลขเครื่องที่เคยบันทึกใน routing — ทะเบียน machines ไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
 
@@ -210,7 +211,7 @@ export default function RoutingPanel({ canEdit, lines = [] }) {
                   ⚡ สร้างขั้นตั้งต้นจากไลน์
                 </button>
               )}
-              <button onClick={openNew} style={{ padding: '7px 16px', borderRadius: 6, border: 'none', background: 'var(--accent)', color: '#08130a', cursor: 'pointer', fontSize: 13, fontWeight: 700 }}>+ เพิ่มขั้น</button>
+              <button onClick={openNew} style={{ padding: '7px 16px', borderRadius: 6, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', cursor: 'pointer', fontSize: 13, fontWeight: 700 }}>+ เพิ่มขั้น</button>
             </div>}
           </div>
 
@@ -257,7 +258,7 @@ export default function RoutingPanel({ canEdit, lines = [] }) {
                           <button onClick={() => move(i, 1)} disabled={i === steps.length - 1} title="เลื่อนลง"
                             style={{ background: 'none', border: 'none', cursor: i === steps.length - 1 ? 'default' : 'pointer', opacity: i === steps.length - 1 ? 0.3 : 1, fontSize: 13 }}>▼</button>
                           <button onClick={() => openEdit(r)} title="แก้ไข" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}>✏️</button>
-                          <button onClick={() => remove(r)} title="ลบ" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}>🗑</button>
+                          <DeleteButton onClick={() => remove(r)} title="ลบ" />
                         </>}
                       </td>
                     </tr>
@@ -348,7 +349,7 @@ export default function RoutingPanel({ canEdit, lines = [] }) {
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
               <button onClick={() => setEditing(null)} style={{ padding: '8px 18px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
-              <button onClick={save} disabled={saving} style={{ padding: '8px 20px', borderRadius: 6, border: 'none', background: 'var(--accent)', color: '#08130a', cursor: 'pointer', fontSize: 13, fontWeight: 700, opacity: saving ? 0.6 : 1 }}>
+              <button onClick={save} disabled={saving} style={{ padding: '8px 20px', borderRadius: 6, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', cursor: 'pointer', fontSize: 13, fontWeight: 700, opacity: saving ? 0.6 : 1 }}>
                 {saving ? 'กำลังบันทึก…' : 'บันทึก'}
               </button>
             </div>

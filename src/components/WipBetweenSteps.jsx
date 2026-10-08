@@ -1,11 +1,13 @@
 import { useState, useEffect, useContext, useCallback, useMemo } from 'react';
-import { supabase, supabaseDR } from '../supabaseClient';
+import { supabaseDR } from '../supabaseClient';
+import { loadProductionLines } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { toast } from './Toast';
 import { can } from '../utils/permissions';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { buildWipChains, computeChainWip, netRequirement } from '../utils/wipChain';
 import { fetchAllPages } from '../utils/fetchByIds';
+import { openOnly } from '../utils/shipStatus';
 
 /* ═══ 📦 WIP ระหว่างขั้น (เฟส 1 · 2026-08-18) — แท็บใน /line-stock ═══
    ยอดค้างทุก buffer ของสาย OP คำนวณจากใบผลิตที่บันทึกอยู่แล้ว (Σขั้น − Σปลายทาง)
@@ -38,11 +40,11 @@ export default function WipBetweenSteps() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [{ data: prods, error: pErr }, { data: pm }, { data: lns }] = await Promise.all([
+      const [{ data: prods, error: pErr }, { data: pm }, lns] = await Promise.all([
         supabaseDR.from('dr_products')
           .select('mat_no, name, line_name, is_active, is_operation, op_parent_mat, op_seq'),
         supabaseDR.from('parts_master').select('mat_no, part_name').eq('is_active', true),
-        supabase.from('production_lines').select('id, name, section, parent_line_name'),
+        loadProductionLines(),   // ทะเบียนไลน์ผ่าน cache กลาง (25/09)
       ]);
       if (pErr) throw pErr;
       setProdLines(lns || []);
@@ -72,7 +74,7 @@ export default function WipBetweenSteps() {
       if (parentMats.length) {
         const [{ data: stk }, { data: ords }] = await Promise.all([
           supabaseDR.from('line_stock_summary').select('mat_no, qty_on_hand').in('mat_no', parentMats),
-          supabaseDR.from('customer_shipping_orders').select('mat_no, qty').in('mat_no', parentMats).neq('status', 'shipped'),
+          openOnly(supabaseDR.from('customer_shipping_orders').select('mat_no, qty').in('mat_no', parentMats)),
         ]);
         const fs = {};
         (stk || []).forEach(r => { fs[r.mat_no] = (fs[r.mat_no] || 0) + Number(r.qty_on_hand || 0); });
@@ -241,7 +243,7 @@ export default function WipBetweenSteps() {
                           </div>
                         ))}
                         {r.stations.length > 1 && (
-                          <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 2 }}>เรียงตามยอดสะสม (ต้นทางมาก่อน)</div>
+                          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>เรียงตามยอดสะสม (ต้นทางมาก่อน)</div>
                         )}
                       </td>
                       <td style={{ padding: '7px 8px', textAlign: 'right', whiteSpace: 'nowrap' }}>
@@ -250,13 +252,13 @@ export default function WipBetweenSteps() {
                             {r.inFlight.toLocaleString()}
                           </b>
                         ) : (
-                          <b style={{ fontSize: 15 }}>{r.stepThrough.toLocaleString()} <span style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 400 }}>สะสม</span></b>
+                          <b style={{ fontSize: 15 }}>{r.stepThrough.toLocaleString()} <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}>สะสม</span></b>
                         )}
                         {r.inFlight < 0 && chainView.parentIsProduced && (
-                          <div style={{ fontSize: 10.5, color: '#f59e0b' }}>⚠ ติดลบ — กดนับจริงเพื่อตั้งต้นใหม่</div>
+                          <div style={{ fontSize: 11, color: '#f59e0b' }}>⚠ ติดลบ — กดนับจริงเพื่อตั้งต้นใหม่</div>
                         )}
                         {r.baseline && (
-                          <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>
+                          <div style={{ fontSize: 11, color: 'var(--muted)' }}>
                             นับจริงล่าสุด {r.baseline.qty.toLocaleString()} · {new Date(r.baseline.ts).toLocaleDateString('th-TH')}
                           </div>
                         )}

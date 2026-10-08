@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
+import MatLabel from './MatLabel';
 import { supabaseDR } from '../supabaseClient';
 import { isLeafLine, getChildLineNames, getAncestorNames } from '../utils/lineHierarchy';
 import { fetchAllPages, fetchByIds } from '../utils/fetchByIds';
+import { loadProductsMaster } from '../utils/useProducts';
 import { buildLineWip, WIP_STATUS } from '../utils/lineWipLedger';
 
 /**
@@ -120,13 +122,16 @@ export default function LineWipPanel({ lineName, workDate, lines = [] }) {
       const fgMats = [...new Set(ordRows.map(o => o.matNo).filter(Boolean))];
       const bm = {};
       if (fgMats.length) {
-        const p1 = await fetchByIds(fgMats, (part) =>
-          supabaseDR.from('dr_products').select('id, mat_no').in('mat_no', part));
-        const idOf = {}; (p1.rows || []).forEach(p => { idOf[p.id] = p.mat_no; });
+        /* 25/09: เดิมยิง dr_products เองเพื่อแปลง mat_no → id (2 รอบต่อการโหลด 1 ครั้ง)
+           — ใช้ cache ทะเบียนสินค้ากลางแทน · โหลดไม่สำเร็จ = ธง partial เหมือนตอนคิวรีล้ม */
+        const master = await loadProductsMaster().catch(() => null);
+        if (!master) setPartial(true);
+        const idByMat = new Map((master || []).map(p => [p.mat_no, p.id]));
+        const idOf = {}; fgMats.forEach(m => { const id = idByMat.get(m); if (id) idOf[id] = m; });
         const b1 = await fetchByIds(Object.keys(idOf), (part) =>
           supabaseDR.from('bom_items').select('product_id, mat_no, qty_per_unit')
             .in('product_id', part).eq('is_active', true));
-        if (p1.error || b1.error) setPartial(true);
+        if (b1.error) setPartial(true);
         (b1.rows || []).forEach(b => {
           const fg = idOf[b.product_id];
           if (fg) (bm[fg] = bm[fg] || []).push(b);
@@ -134,9 +139,7 @@ export default function LineWipPanel({ lineName, workDate, lines = [] }) {
         // รอบสอง: BOM ของลูก (ถ้าลูกเป็น product) — ใช้ตรวจซ้อนชั้นอย่างเดียว
         const kids = [...new Set(Object.values(bm).flat().map(b => b.mat_no).filter(m => m && !(m in bm)))];
         if (kids.length) {
-          const p2 = await fetchByIds(kids, (part) =>
-            supabaseDR.from('dr_products').select('id, mat_no').in('mat_no', part));
-          const idOf2 = {}; (p2.rows || []).forEach(p => { idOf2[p.id] = p.mat_no; });
+          const idOf2 = {}; kids.forEach(m => { const id = idByMat.get(m); if (id) idOf2[id] = m; });
           if (Object.keys(idOf2).length) {
             const b2 = await fetchByIds(Object.keys(idOf2), (part) =>
               supabaseDR.from('bom_items').select('product_id, mat_no, qty_per_unit')
@@ -294,7 +297,7 @@ export default function LineWipPanel({ lineName, workDate, lines = [] }) {
                 <div style={{ fontSize: 20, fontWeight: 900, color: k.tone, fontFamily: 'var(--font-display)', lineHeight: 1.25 }}>
                   {fmt(k.now ?? k.all)}
                 </div>
-                <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>
+                <div style={{ fontSize: 11, color: 'var(--muted)' }}>
                   {k.now != null ? <>สะสม {fmt(k.all)} · {k.note}</> : k.note}
                 </div>
               </div>
@@ -321,7 +324,7 @@ export default function LineWipPanel({ lineName, workDate, lines = [] }) {
 
           {/* ── รายพาร์ท ── */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <div style={{ display: 'flex', gap: 8, fontSize: 10.5, color: 'var(--muted)', fontWeight: 700, padding: '2px 0', borderBottom: '1px solid var(--border2)' }}>
+            <div style={{ display: 'flex', gap: 8, fontSize: 11, color: 'var(--muted)', fontWeight: 700, padding: '2px 0', borderBottom: '1px solid var(--border2)' }}>
               <span style={{ width: 18 }} />
               <span style={{ flex: 1 }}>พาร์ท</span>
               <span style={{ width: 74, textAlign: 'right' }}>📥 รับเข้า</span>
@@ -335,8 +338,8 @@ export default function LineWipPanel({ lineName, workDate, lines = [] }) {
                 <div key={p.mat_no} style={{ display: 'flex', gap: 8, alignItems: 'baseline', fontSize: 11.5, padding: '1px 0' }}>
                   <span style={{ width: 18 }} title={meta.label}>{meta.icon}</span>
                   <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    <b style={{ fontFamily: 'var(--font-display)', color: 'var(--text2)' }}>{p.mat_no}</b>
-                    {p.part_name ? <span style={{ color: 'var(--muted)' }}> · {p.part_name}</span> : null}
+                    {/* ครบ 3 ค่าผ่านของกลาง (30/09) */}
+                    <MatLabel mat={p.mat_no} name={p.part_name} size={11} />
                     {p.chainWarn && <span style={{ color: TONE.warn }} title="BOM ซ้อนชั้น — ยอดตัดเป็น FG สูงเกินจริง"> ⚠BOM</span>}
                   </span>
                   <span style={{ width: 74, textAlign: 'right', color: 'var(--muted)' }}>{fmt(p.received)}</span>
@@ -356,7 +359,7 @@ export default function LineWipPanel({ lineName, workDate, lines = [] }) {
             </button>
           )}
 
-          <div style={{ marginTop: 8, fontSize: 10.5, color: 'var(--muted)', lineHeight: 1.5 }}>
+          <div style={{ marginTop: 8, fontSize: 11, color: 'var(--muted)', lineHeight: 1.5 }}>
             📥 <b>รับเข้า</b> = บันทึกจริงจากสโตร์ (issue + ปรับยอด − คืน) ·
             🏭 <b>ตัดเป็น FG</b> = <b>คำนวณ</b> จากยอดผลิต × BOM (ไม่ได้อ่านยอดตัดสต็อก เพราะ backflush ยังไม่ทำงาน) ·
             📦 <b>ค้าง</b> = รับเข้า − ตัดเป็น FG ·

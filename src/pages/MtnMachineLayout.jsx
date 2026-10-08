@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo, useRef, useContext } from 'react'
 import { useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { toDecodableImage } from '../utils/heicToJpeg'
-import imageCompression from 'browser-image-compression'
+import { compressLayoutImage } from '../utils/layoutImage'
 import { supabase, supabaseDR } from '../supabaseClient'
+import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App'
 import { can } from '../utils/permissions'
 import { dueStatus, STATUS_META, DEPT_LABEL, computeNextDue, daysUntilDue } from '../lib/pmSchedule'
@@ -17,6 +18,9 @@ import useTabParam from '../utils/useTabParam'
 import { monthKeyOf, monthRange, shiftMonth, monthLabel, fmtKwh, fmtBaht, deltaPct } from '../utils/energy'
 import { checkWrite } from '../utils/dbWrite';
 import { uploadOpts } from '../utils/storageUpload';
+import Page, { Hub } from '../components/Page';
+import PageHeader from '../components/PageHeader';
+import { ALL } from '../utils/filterLabels';
 
 // 'YYYY-MM-DD' (from pm_plans.next_due_date) → local-midnight Date, so day math
 // stays aligned with the Asia/Bangkok calendar (not UTC).
@@ -48,19 +52,19 @@ async function loadPmForJigs(jigIds) {
   const { data: cls } = await supabaseDR.from('checklists').select('id, equipment_id, department, frequency, name').eq('module', 'mtn').in('equipment_id', jigIds)
   const clIds = (cls || []).map(c => c.id)
   let plans = []
-  if (clIds.length) { const { data } = await supabaseDR.from('pm_plans').select('checklist_id, next_due_date, last_done_at').in('checklist_id', clIds); plans = data || [] }
+  if (clIds.length) { const { data } = await supabaseDR.from('pm_plans').select('checklist_id, interval_days, next_due_date, last_done_at').in('checklist_id', clIds); plans = data || [] }
   const planBy = Object.fromEntries(plans.map(p => [p.checklist_id, p]))
   for (const cl of (cls || [])) {
     const plan = planBy[cl.id]
     const lastDone = plan?.last_done_at ?? null
-    const nextDue = plan?.next_due_date ? parseLocalDate(plan.next_due_date) : computeNextDue(lastDone, cl.frequency)
-    ;(out[cl.equipment_id] ||= []).push({ dept: cl.department, status: dueStatus(nextDue, cl.frequency), nextDue, freq: cl.frequency, clName: cl.name })
+    const nextDue = plan?.next_due_date ? parseLocalDate(plan.next_due_date) : computeNextDue(lastDone, cl.frequency, plan?.interval_days)
+    ;(out[cl.equipment_id] ||= []).push({ dept: cl.department, status: dueStatus(nextDue, cl.frequency, plan?.interval_days), nextDue, freq: cl.frequency, clName: cl.name })
   }
   return out
 }
 
 const S = {
-  page: { padding: 'clamp(12px,3vw,24px) clamp(14px,3.5vw,28px)', minHeight: '100%', background: 'var(--bg)', display: 'flex', flexDirection: 'column', gap: 14 },
+  page: { minHeight: '100%', background: 'var(--bg)', display: 'flex', flexDirection: 'column', gap: 14 },   // ขอบ/ความกว้างมาจาก <Page> (UI-STANDARD 2026-09-24)
   h1: { fontSize: 22, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', margin: 0 },
   sub: { fontSize: 13, color: 'var(--muted)', marginTop: 4 },
   chip: (active, color) => ({
@@ -80,10 +84,10 @@ const S = {
   unplacedRow: { display: 'flex', flexDirection: 'column', gap: 2, padding: '6px 8px', borderRadius: 7, cursor: 'pointer', fontSize: 12 },
   unplacedTop: { display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 },
   unplacedNo: { fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
-  unplacedSub: { fontSize: 10.5, color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', paddingLeft: 15 },
+  unplacedSub: { fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', paddingLeft: 15 },
   // ชิป "วางจุด" ท้ายแถวอุปกรณ์ที่ยังไม่วาง — armed แล้วเปลี่ยนเป็น "คลิกบนผัง"
   placeChip: (armed) => ({
-    marginLeft: 'auto', flexShrink: 0, fontSize: 10.5, fontWeight: 700, whiteSpace: 'nowrap',
+    marginLeft: 'auto', flexShrink: 0, fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap',
     padding: '2px 7px', borderRadius: 20,
     border: `1px solid ${armed ? 'var(--accent)' : 'var(--border2)'}`,
     background: armed ? 'var(--accent-dim)' : 'var(--bg2)',
@@ -176,7 +180,7 @@ export default function MtnMachineLayout({ setupMode = false }) {
   useEffect(() => { hist.clear() }, [areaId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    supabase.from('production_lines').select('id, name, parent_line_name').order('name').then(({ data }) => {
+    loadLinesRes().then(({ data }) => {
       setLines(data || []); if (data?.length && !selectedLine) setSelectedLine(data[0].name)
     })
     reloadAreas()
@@ -322,9 +326,11 @@ export default function MtnMachineLayout({ setupMode = false }) {
     if (!editMode) return
     if (!window.confirm('ลบโซนนี้? (อุปกรณ์ที่วางบนโซนนี้จะถูกเอาออกจากผัง แต่ตัวอุปกรณ์+ประวัติ PM ไม่หาย)')) return
     const oldPath = areas.find(a => a.id === id)?.image_path
-    const { error } = await supabaseDR.from('pm_facility_areas').delete().eq('id', id)
-    if (error) return toast.error(error.message)
-    // ลบ row สำเร็จแล้วค่อยเก็บกวาดไฟล์รูปผังโซน กันไฟล์กำพร้าใน storage (best-effort)
+    /* 🔴 นับแถวก่อนแตะ storage (QC audit 06/10) — ไม่นับ = โซนยังอยู่ แต่รูปผังถูกลบ */
+    const dres = await supabaseDR.from('pm_facility_areas').delete().eq('id', id).select('id')
+    if (!checkWrite(dres, 'ลบโซน')) return
+    if (!(dres.data || []).length) return toast.error('ลบโซนไม่สำเร็จ (0 แถว) — รูปผังยังอยู่')
+    // ยืนยันโซนหายจริงแล้วค่อยเก็บกวาดไฟล์รูปผังโซน กันไฟล์กำพร้าใน storage (best-effort)
     if (oldPath) supabaseDR.storage.from('jig-images').remove([oldPath]).then(() => {}, () => {})
     setAreaId(prev => prev === id ? null : prev); await reloadAreas()
   }
@@ -334,10 +340,10 @@ export default function MtnMachineLayout({ setupMode = false }) {
     try {
       // HEIC/HEIF จากกล้องมือถือ → แปลงเป็น JPEG ก่อน (ext ด้านล่าง derive จากชื่อไฟล์ จึงต้องแปลงก่อน)
       file = await toDecodableImage(file)
-      // รูปผัง/layout มีจำนวนน้อย (ไม่เกิน ~20 รูปทั้งระบบ) แต่ต้องซูมอ่านรายละเอียดได้ —
-      // บีบเบากว่ารูปพนักงานมาก (2560px/2.5MB q0.9) อย่าลดกลับไป 1600px/0.5MB เคยเบลอจนใช้งานไม่ได้
-      const compressed = await imageCompression(file, { maxSizeMB: 2.5, maxWidthOrHeight: 2560, initialQuality: 0.9 })
-      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
+      /* รูปผังต้องซูมอ่านรายละเอียดได้ — **คงความละเอียด 2560px ห้ามลดกลับไป 1600px/0.5MB เคยเบลอจนใช้งานไม่ได้**
+         แปลงเป็น WebP แทนเพื่อตัดขนาดไฟล์ (ผังโซนเดิมเป็น PNG 1.1 MB) · ดู src/utils/layoutImage.js
+         ⚠️ นามสกุลต้องมาจากชนิดไฟล์จริงที่ได้ ไม่ใช่ชื่อไฟล์ต้นทาง (Safari เก่าเขียน webp ไม่ได้) */
+      const { blob: compressed, ext } = await compressLayoutImage(file)
       const path = `facility/${areaId}.${ext}`
       const { error: upErr } = await supabaseDR.storage.from('jig-images').upload(path, compressed, uploadOpts({ mutable: true, upsert: true }))
       if (upErr) throw upErr
@@ -435,30 +441,28 @@ export default function MtnMachineLayout({ setupMode = false }) {
   const unplacedJigs = Object.entries(jigInfo).filter(([id]) => !placedAnyZone.has(id))
 
   return (
-    <div style={S.page}>
+    <Page width="full" style={S.page}>
       <DowntimeSiren mode="call_mtn" />
-      <div style={{ display: 'flex', paddingRight: 52, justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: 10 }}>
-        <div>
-          <h1 style={S.h1}>🗺️ ผังเครื่องจักร (ซ่อมบำรุง)</h1>
-          <p style={S.sub}>ดูสถานะ PM บนผังจริง · กรองตามผู้รับผิดชอบ</p>
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          {/* มาจากผังรวมโรงงาน (คลิกโซน facility) → ปุ่มกลับไปที่เดิม */}
-          {cameFrom === 'factory-map' && (
-            <button onClick={() => navigate('/factory-map')} style={S.viewBtn(false)}>← กลับผังรวมโรงงาน</button>
-          )}
-          {!setupMode && <button onClick={() => { setView('overview'); setSelId(null) }} style={S.viewBtn(view === 'overview')}>🗺️ ภาพรวมทั้งโรงงาน</button>}
-          <button onClick={() => { setView('production'); setSelId(null) }} style={S.viewBtn(view === 'production')}>🏭 ไลน์ผลิต</button>
-          <button onClick={() => { setView('facility'); setSelId(null) }} style={S.viewBtn(view === 'facility')}>🔌 Facility / Utility</button>
-        </div>
-      </div>
+      {/* หัวเพจ + แท็บมุมมองมาตรฐาน (UI-STANDARD 2026-09-24) — param ยังเป็น ?view= เหมือนเดิม */}
+      <PageHeader title="ผังเครื่องจักร (ซ่อมบำรุง)" icon="🗺️"
+        sub="ดูสถานะ PM บนผังจริง · กรองตามผู้รับผิดชอบ"
+        actions={cameFrom === 'factory-map' && (
+          /* มาจากผังรวมโรงงาน (คลิกโซน facility) → ปุ่มกลับไปที่เดิม */
+          <button onClick={() => navigate('/factory-map')} style={S.viewBtn(false)}>← กลับผังรวมโรงงาน</button>
+        )}
+        tabs={[
+          !setupMode && { key: 'overview', label: '🗺️ ภาพรวมทั้งโรงงาน' },
+          { key: 'production', label: '🏭 ไลน์ผลิต' },
+          { key: 'facility', label: '🔌 Facility / Utility' },
+        ]}
+        tab={view} onTab={k => { setView(k); setSelId(null) }} />
 
       {view === 'overview' ? (
-        <FactoryMap />
+        <Hub><FactoryMap /></Hub>
       ) : (
       <>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-        <button onClick={() => setDept('all')} style={S.chip(dept === 'all', 'var(--accent)')}>ทั้งหมด</button>
+        <button onClick={() => setDept('all')} style={S.chip(dept === 'all', 'var(--accent)')}>{ALL.team}</button>
         {teams.map(t => <button key={t.key} onClick={() => setDept(t.key)} style={S.chip(dept === t.key, t.color || '#4d9fff')}>{t.icon || DEPT_ICON[t.key] || ''} {t.label || DEPT_LABEL[t.key]}</button>)}
         {view === 'facility' && canEdit && (
           <button onClick={() => setFacEdit(v => { if (v) { setArmedJig(null); setArmedMachine(null) } return !v })}
@@ -522,7 +526,7 @@ export default function MtnMachineLayout({ setupMode = false }) {
                         <span style={{ fontWeight: 700, color: 'var(--text)' }}>{c.eqName ?? selInfo.name}</span>
                         <span style={{ fontSize: 11, fontWeight: 700, color: '#4d9fff', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 4, padding: '1px 5px' }}>{deptIconOf(c.dept)} {deptLabelOf(c.dept)}</span>
                         <span style={{ color: m.color, fontWeight: 700 }}>{m.label}</span>
-                        <span style={{ color: 'var(--muted)' }}>{c.nextDue ? `ครบ ${c.nextDue.toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok' })}${dd != null ? (dd < 0 ? ` (เกิน ${Math.abs(dd)} วัน)` : ` (อีก ${dd} วัน)`) : ''}` : 'ไม่มีรอบตายตัว'}</span>
+                        <span style={{ color: 'var(--muted)' }}>{c.nextDue ? `ครบ ${c.nextDue.toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok' })}${dd != null ? (dd < 0 ? ` (เกิน ${Math.abs(dd)} วัน)` : ` (อีก ${dd} วัน)`) : ''}` : 'ยังไม่มีวัน PM ครั้งถัดไป'}</span>
                       </div>
                     )
                   })}
@@ -544,7 +548,7 @@ export default function MtnMachineLayout({ setupMode = false }) {
           <div style={S.side}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
               <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>โซน Facility ({areas.length})</span>
-              {editMode && <button onClick={addArea} style={{ background: 'var(--accent)', color: '#071008', border: 'none', borderRadius: 6, padding: '3px 9px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>+ โซน</button>}
+              {editMode && <button onClick={addArea} style={{ background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 6, padding: '3px 9px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>+ โซน</button>}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginBottom: 12 }}>
               {areas.map(a => (
@@ -602,21 +606,21 @@ export default function MtnMachineLayout({ setupMode = false }) {
                                     {/* ปิดลูป: เห็นว่าถึงคิวแล้วกดไปตรวจได้เลย ไม่ต้องไปไล่หาเองในหน้า PM */}
                                     <Link to={`/pm?tab=check&dept=${r.dept || 'maintenance'}&equip=${r.jigId}`}
                                       onClick={e => e.stopPropagation()} title="ไปบันทึกผลตรวจของเครื่องนี้"
-                                      style={{ flexShrink: 0, fontSize: 10.5, fontWeight: 700, color: 'var(--accent)', textDecoration: 'none' }}>✓ ตรวจ</Link>
+                                      style={{ flexShrink: 0, fontSize: 11, fontWeight: 700, color: 'var(--accent)', textDecoration: 'none' }}>✓ ตรวจ</Link>
                                   </div>
                                 )
                               })}
-                              {due.length > 6 && <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>+ อีก {due.length - 6} รายการ</div>}
+                              {due.length > 6 && <div style={{ fontSize: 11, color: 'var(--muted)' }}>+ อีก {due.length - 6} รายการ</div>}
                               {/* ทางออกไปหน้าที่ทำงานจริง — จอนี้อ่านอย่างเดียว */}
                               <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
-                                <Link to="/pm?tab=plan" style={{ fontSize: 10.5, color: 'var(--accent)', textDecoration: 'none' }}>📅 แผน PM ทั้งหมด</Link>
-                                <Link to="/pm?tab=coord" style={{ fontSize: 10.5, color: 'var(--accent)', textDecoration: 'none' }}>🗓️ นัดประสานงาน</Link>
+                                <Link to="/pm?tab=plan" style={{ fontSize: 11, color: 'var(--accent)', textDecoration: 'none' }}>📅 แผน PM ทั้งหมด</Link>
+                                <Link to="/pm?tab=coord" style={{ fontSize: 11, color: 'var(--accent)', textDecoration: 'none' }}>🗓️ นัดประสานงาน</Link>
                               </div>
                             </div>
                           )}
                           {/* มีแผน PM แต่ยังไม่ได้วางบนผัง = หาไม่เจอบนจอ ห้ามซ่อน */}
                           {zonePm?.unplaced > 0 && (
-                            <div style={{ fontSize: 10.5, color: 'var(--accent2)', marginTop: 5 }}>
+                            <div style={{ fontSize: 11, color: 'var(--accent2)', marginTop: 5 }}>
                               ⚠ อุปกรณ์ในโซนนี้ {zonePm.unplaced} ตัวยังไม่ได้วางบนผัง — กด “✏️ แก้ผังโซน” เพื่อวาง
                             </div>
                           )}
@@ -634,7 +638,7 @@ export default function MtnMachineLayout({ setupMode = false }) {
                         {o.mo_no || '⏳ รอออกเลข'} · {o.machine_no}
                       </div>
                     ))}
-                    {zoneMo.length > 3 && <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 2 }}>+ อีก {zoneMo.length - 3} ใบ — ดูที่ใบแจ้งซ่อม</div>}
+                    {zoneMo.length > 3 && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>+ อีก {zoneMo.length - 3} ใบ — ดูที่ใบแจ้งซ่อม</div>}
                   </div>
                   <div>
                     <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>⚡ พลังงานไฟฟ้า{zoneEnergy ? ` · ${monthLabel(zoneEnergy.month)}` : ''}</div>
@@ -642,7 +646,7 @@ export default function MtnMachineLayout({ setupMode = false }) {
                       <>
                         <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, marginTop: 2 }}>
                           <span style={{ fontSize: 20, fontWeight: 900, color: 'var(--text)', fontVariantNumeric: 'tabular-nums' }}>{fmtKwh(zoneEnergy.qty)}</span>
-                          <span style={{ fontSize: 10.5, color: 'var(--muted)', lineHeight: 1.9 }}>kWh</span>
+                          <span style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.9 }}>kWh</span>
                           {d != null && <span style={{ fontSize: 11.5, fontWeight: 800, color: dCol, lineHeight: 1.8 }}>{d > 0 ? '+' : ''}{d}% เทียบเดือนก่อน</span>}
                         </div>
                         {zoneEnergy.cost > 0 && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 1 }}>≈ {fmtBaht(zoneEnergy.cost)} บาท</div>}
@@ -653,7 +657,7 @@ export default function MtnMachineLayout({ setupMode = false }) {
                     )}
                   </div>
                   {/* ⚠️ ห้ามเขียนว่า uptime/online — ยังไม่มีสัญญาณรายเครื่อง (กฎ SCADA) */}
-                  <div style={{ fontSize: 10.5, color: 'var(--muted)', lineHeight: 1.5, borderTop: '1px dashed var(--border)', paddingTop: 7 }}>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.5, borderTop: '1px dashed var(--border)', paddingTop: 7 }}>
                     ⏱ Uptime รายเครื่องยังไม่มีสัญญาณ (ต้องต่อ SCADA/มิเตอร์ก่อน) — สีบนผังมาจากรอบ PM ที่คนบันทึก
                   </div>
                 </div>
@@ -719,6 +723,6 @@ export default function MtnMachineLayout({ setupMode = false }) {
       </div>
       </>
       )}
-    </div>
+    </Page>
   )
 }

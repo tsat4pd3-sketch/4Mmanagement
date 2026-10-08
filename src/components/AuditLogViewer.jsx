@@ -1,4 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import FilterBar from './FilterBar';
+import SearchInput from './SearchInput';
+import { ALL } from '../utils/filterLabels';
 import { AUDIT_ACTIONS, AUDIT_SKIP_FIELDS, tableLabel, fieldLabel, rowLabel } from '../utils/auditLabels';
 
 /* ── AuditLogViewer — จอกลางดูประวัติ "ใครแก้อะไร" (2026-08-19) ────────────────────
@@ -20,7 +23,6 @@ const fmtDT = (iso) => {
   const d = new Date(iso);
   return d.toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
 };
-const inp = { padding: '6px 9px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text)', fontSize: 12.5 };
 
 export default function AuditLogViewer({ client, tables, limit = 300, intro, fmtValue, showTable = true, reloadKey }) {
   const [rows, setRows]       = useState([]);
@@ -74,23 +76,24 @@ export default function AuditLogViewer({ client, tables, limit = 300, intro, fmt
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
+      <FilterBar style={{ marginBottom: 10 }}>
         {showTable && (
-          <select value={fTable} onChange={e => setFTable(e.target.value)} style={{ ...inp, width: 230 }}>
-            <option value="">ทุกตาราง ({tableOpts.length})</option>
+          <select value={fTable} onChange={e => setFTable(e.target.value)}>
+            <option value="">{ALL.table}</option>
             {tableOpts.map(t => <option key={t} value={t}>{tableLabel(t)}</option>)}
           </select>
         )}
-        <select value={fActor} onChange={e => setFActor(e.target.value)} style={{ ...inp, width: 180 }}>
-          <option value="">ทุกคน</option>
+        <select value={fActor} onChange={e => setFActor(e.target.value)}>
+          <option value="">{ALL.person}</option>
           {actorOpts.map(a => <option key={a} value={a}>{a}</option>)}
         </select>
-        <input value={q} onChange={e => setQ(e.target.value)} placeholder="ค้นหาชื่อรายการ / คน" style={{ ...inp, width: 200 }} />
-        <button onClick={load} style={{ ...inp, cursor: 'pointer', fontWeight: 700 }}>↻ รีเฟรช</button>
-        <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
+        <SearchInput value={q} onChange={setQ} fields="ชื่อรายการ / คน" />
+        <span className="spacer" />
+        <span className="filter-count">
           {shown.length} รายการ{rows.length >= limit ? ` (แสดง ${limit} ล่าสุด — เก่ากว่านี้ยังมีอีก)` : ''}
         </span>
-      </div>
+        <button onClick={load} style={{ background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text)', borderRadius: 8, padding: '0 12px', cursor: 'pointer', fontWeight: 700 }}>↻ รีเฟรช</button>
+      </FilterBar>
 
       {loading && <div style={{ color: 'var(--muted)', padding: 16, fontSize: 13 }}>กำลังโหลด…</div>}
 

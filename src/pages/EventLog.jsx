@@ -1,6 +1,8 @@
+import { checkWrite } from '../utils/dbWrite';
 import { useState, useEffect, useContext, useCallback, useMemo } from 'react';
 import * as XLSX from 'xlsx';
 import { supabase } from '../supabaseClient';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { fmtDate } from '../utils/dateFormat';
@@ -15,6 +17,11 @@ import LineSelect from '../components/LineSelect';
 import MachineSelect from '../components/MachineSelect';
 import PersonSelect from '../components/PersonSelect';
 import useColumnHistory from '../utils/useColumnHistory';
+import { statusColor, toneOf, toneInk } from '../utils/statusTone';
+import Page from '../components/Page';
+import FilterBar from '../components/FilterBar';
+import Segmented from '../components/Segmented';
+import { ALL } from '../utils/filterLabels';
 
 /* ─── TimeInput24 — native time picker (spinner arrows + clock UI) ─── */
 function TimeInput24({ value = '', onChange, style = {} }) {
@@ -87,6 +94,8 @@ function getApprovedAt(log) {
 /* ─── Main Component ─────────────────────────────────────────── */
 export default function EventLog() {
   const { role, fullName, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
+  // คีย์เนื้อหาแทน array ใน deps ของตัวโหลด (กฎข้อ 9) — เหตุผลเต็ม: ด่าน no-unstable-ref-in-db-effect-deps
+  const scopeKey = useMemo(() => [...scopeSecs].sort().join('|'), [scopeSecs]);
   const [tab, setTab] = useTabParam(['list', 'create'], 'list');   // โหมดหน้า (list ⇄ ฟอร์มบันทึก) ผูก ?tab=
   const [logs, setLogs]           = useState([]);
   const [eventDefs, setEventDefs] = useState([]);
@@ -123,8 +132,7 @@ export default function EventLog() {
     // ดึงไลน์ก่อน เพื่อคิดขอบเขต (family/section) แล้ว "ดัน scope เข้า query" ก่อน limit —
     // เดิม limit(200) ทั้งโรงงานก่อนกรอง scope ฝั่ง client ทำให้ leader/section เห็น event ตัวเองน้อย/0
     // (200 ใบล่าสุดถูกไลน์อื่นกินหมด) — bug เดียวกับที่ CLAUDE.md เตือนไว้
-    const { data: lineData } = await supabase.from('production_lines')
-      .select('id, name, section, parent_line_name, is_active').order('name');
+    const { data: lineData } = await loadLinesRes();
     let scopedNames = null; // null = ไม่จำกัด (admin/qa/manager ที่ไม่ถูก scope)
     let visibleLines = lineData || [];
     if (role === 'leader' && userLineId) {
@@ -140,7 +148,7 @@ export default function EventLog() {
     let logQ = supabase.from('cqi15_event_logs')
       .select(`*, cqi15_event_definitions(*), cqi15_event_approvals(*, profiles(full_name)), profiles!cqi15_event_logs_reported_by_fkey(full_name)`)
       .order('created_at', { ascending: false });
-    if (scopedNames) logQ = scopedNames.length ? logQ.in('line_name', scopedNames) : logQ.eq('line_name', ' __none__');
+    if (scopedNames) logQ = scopedNames.length ? logQ.in('line_name', scopedNames) : logQ.eq('line_name', '__none__');
     logQ = logQ.limit(200);
     const [
       { data: logData },
@@ -165,7 +173,8 @@ export default function EventLog() {
     setMatrix(matData || []);
     setLines(visibleLines);
     setLoading(false);
-  }, [role, userLineId, scopeSecs]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- scopeKey (string) แทน scopeSecs
+  }, [role, userLineId, scopeKey]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
@@ -287,7 +296,7 @@ export default function EventLog() {
   };
 
   return (
-    <div className="page-content">
+    <Page>
       <PageHeader
         title="CQI-15 Event Log" icon="⚡"
         sub="งานเชื่อม · บันทึกเหตุการณ์ตาม Welding Event Matrix"
@@ -300,17 +309,33 @@ export default function EventLog() {
         )}
       />
 
-      {/* KPI row */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px,1fr))', gap: 12, marginBottom: 24 }}>
+      {/* KPI row — 24/09 (ก้อน E ของ De-AI UI · UI §6.17 + §6.18)
+          🚦 เดิม 4 ใบทาสีประจำใบ: น้ำเงิน/ส้ม/เขียว/แดง ⇒ ปนกัน 2 ความหมายในแถวเดียว
+             ที่แย่ที่สุดคือ "อนุมัติแล้ว" **เขียวตายตัว** — 0 จาก 14 ใบก็ยังเขียว ทั้งที่แปลว่ายังไม่มีใครอนุมัติเลย
+             และ "Cat C (ฉุกเฉิน)" แดงตายตัวทั้งที่ 0 ใบ = ข่าวดี
+          📏 3 ใบหลังเป็น **ส่วนหนึ่งของ "ทั้งหมด"** ไม่ใช่ KPI คนละตัว ⇒ ต้องบอกสัดส่วนของยอดรวม
+             และ "ทั้งหมด" เป็นตัวหาร จึงเป็นใบพระเอกของแถว */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px,1fr))', gap: 12, marginBottom: 24 }}>
         {[
-          { label: 'ทั้งหมด',       value: stats.total,    color: '#4d9fff' },
-          { label: 'รออนุมัติ',      value: stats.pending,  color: '#f59e0b' },
-          { label: 'อนุมัติแล้ว',    value: stats.approved, color: '#22c55e' },
-          { label: 'Cat C (ฉุกเฉิน)', value: stats.catC,    color: '#ef4444' },
+          { label: 'ทั้งหมด', value: stats.total, tone: 'none', primary: true,
+            sub: `ใบ CQI-15 ในช่วงที่กรองอยู่` },
+          // คิวรออนุมัติ = เหลือง ไม่ใช่แดง (งานยังเดินอยู่) — ให้ตรงกับการ์ด 4M บนหน้าแรก
+          { label: 'รออนุมัติ', value: stats.pending, tone: toneOf({ value: stats.pending, zeroIsGood: true, over: 'warn' }) },
+          // จำนวนที่อนุมัติแล้ว = ข้อเท็จจริง ไม่มีเป้า ⇒ เทา (ห้ามเขียวตายตัว)
+          { label: 'อนุมัติแล้ว', value: stats.approved, tone: 'none' },
+          // Cat C = เหตุฉุกเฉิน · 0 = ดีจริง · มีเมื่อไหร่ = แดงจริง
+          { label: 'Cat C (ฉุกเฉิน)', value: stats.catC, tone: toneOf({ value: stats.catC, zeroIsGood: true }) },
         ].map(k => (
-          <div key={k.label} className="card" style={{ borderTop: `3px solid ${k.color}`, padding: '14px 18px' }}>
+          <div key={k.label} className="card"
+            style={{ borderTop: `3px solid ${statusColor(k.tone)}`, padding: '14px 18px',
+              gridColumn: k.primary ? 'span 2' : 'auto' }}>
             <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em' }}>{k.label}</div>
-            <div style={{ fontSize: 32, fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text)', lineHeight: 1.2, marginTop: 4 }}>{k.value}</div>
+            <div style={{ fontSize: k.primary ? 44 : 30, fontWeight: 800, fontFamily: 'var(--font-display)', color: toneInk(k.tone), lineHeight: 1.2, marginTop: 4 }}>
+              {k.value}<span style={{ fontSize: k.primary ? 17 : 13, fontWeight: 500, color: 'var(--text2)', marginLeft: 4 }}>ใบ</span>
+            </div>
+            <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>
+              {k.sub ?? (stats.total > 0 ? `${Math.round(k.value / stats.total * 100)}% ของ ${stats.total} ใบ` : 'ยังไม่มีใบในช่วงนี้')}
+            </div>
           </div>
         ))}
       </div>
@@ -342,7 +367,7 @@ export default function EventLog() {
           onRefresh={() => { fetchAll(); setSelectedLog(null); }}
         />
       )}
-    </div>
+    </Page>
   );
 }
 
@@ -835,35 +860,26 @@ function EventList({ logs, loading, onSelect, role, eventDefs }) {
 
   return (
     <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-      {/* Filters */}
-      <div style={{ display: 'flex', gap: 8, padding: '14px 16px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', alignItems: 'center' }}>
-        <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>กรอง:</span>
+      {/* Filters — UI-STANDARD 2026-09-24: FilterBar (bare ในหัวการ์ด) · หมวด 4 ตัวเลือก = Segmented */}
+      <FilterBar bare style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)' }}>
+        <span className="filter-label">กรอง:</span>
         {/* Category */}
-        <div style={{ display: 'flex', gap: 4 }}>
-          {['all','A','B','C'].map(c => (
-            <button key={c} onClick={() => setFilterCat(c)}
-              style={{ padding: '4px 12px', borderRadius: 20, border: 'none', fontSize: 11, fontWeight: 700, cursor: 'pointer',
-                background: filterCat === c ? (c === 'all' ? 'var(--border2)' : CAT_META[c]?.bg) : 'transparent',
-                color: filterCat === c ? (c === 'all' ? 'var(--text)' : CAT_META[c]?.color) : 'var(--muted)' }}>
-              {c === 'all' ? 'ทั้งหมด' : `Cat ${c}`}
-            </button>
-          ))}
-        </div>
+        <Segmented value={filterCat} onChange={setFilterCat} label="หมวด"
+          options={[{ value: 'all', label: ALL.category }, ...['A', 'B', 'C'].map(c => ({ value: c, label: `Cat ${c}` }))]} />
         {/* Status */}
-        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
-          style={{ padding: '4px 10px', fontSize: 12, width: 'auto', minWidth: 130 }}>
-          <option value="all">ทุกสถานะ</option>
+        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
+          <option value="all">{ALL.status}</option>
           <option value="pending">รอดำเนินการ</option>
           <option value="in_progress">กำลังดำเนินการ</option>
           <option value="approved">อนุมัติแล้ว</option>
           <option value="rejected">ปฏิเสธ</option>
         </select>
-        <input type="date" value={filterDate} onChange={e => setFilterDate(e.target.value)}
-          style={{ padding: '4px 10px', fontSize: 12, width: 'auto', minWidth: 140 }} />
+        <input type="date" value={filterDate} onChange={e => setFilterDate(e.target.value)} />
         {filterDate && (
-          <button onClick={() => setFilterDate('')} style={{ padding: '4px 10px', fontSize: 11, borderRadius: 6, border: 'none', background: 'var(--bg3)', color: 'var(--muted)', cursor: 'pointer' }}>✕</button>
+          <button onClick={() => setFilterDate('')} title="ล้างวันที่" style={{ padding: '0 10px', borderRadius: 6, border: 'none', background: 'var(--bg3)', color: 'var(--muted)', cursor: 'pointer' }}>✕</button>
         )}
-        <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--muted)' }}>{filtered.length} รายการ</span>
+        <span className="spacer" />
+        <span className="filter-count">{filtered.length} รายการ</span>
         {filtered.length > 0 && (
           <>
             <button
@@ -880,7 +896,7 @@ function EventList({ logs, loading, onSelect, role, eventDefs }) {
             </button>
           </>
         )}
-      </div>
+      </FilterBar>
 
       {loading ? (
         <div style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--muted)' }}>กำลังโหลด...</div>
@@ -1038,15 +1054,20 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
     setApprovingRole(roleKey);
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      const { error } = await supabase.from('cqi15_event_approvals')
+      /* RLS ปฏิเสธ UPDATE = "สำเร็จ 0 แถว ไม่มี error" ⇒ ต้องนับแถว (กฎเขียน DB ข้อ 2 · QC 05/10)
+         เดิม toast เขียว "อนุมัติสำเร็จ" ทั้งที่ไม่มีอะไรถูกบันทึก */
+      const { data: upd, error } = await supabase.from('cqi15_event_approvals')
         .update({ status, approved_by: user.id, approved_at: new Date().toISOString(), notes: rejectNote || null })
         .eq('event_log_id', log.id)
-        .eq('role_key', roleKey);
+        .eq('role_key', roleKey)
+        .select('id');
       if (error) throw error;
+      if (!upd?.length) throw new Error(`ไม่มีรายการอนุมัติ [${roleKey}] ถูกบันทึก — ไม่มีสิทธิ์หรือไม่พบรายการ`);
 
       // Refresh approvals
-      const { data: newApprovals } = await supabase
+      const { data: newApprovals, error: eReload } = await supabase
         .from('cqi15_event_approvals').select('*, profiles(full_name)').eq('event_log_id', log.id);
+      if (eReload) throw new Error(`บันทึกผลอนุมัติแล้ว แต่โหลดสถานะรวมไม่สำเร็จ (${eReload.message}) — สถานะใบอาจยังไม่อัพเดท เปิดใบใหม่อีกครั้ง`);
       setApprovals(newApprovals || []);
 
       // Check if all approved → update log status
@@ -1056,9 +1077,13 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
       if (allApproved || anyRejected) {
         const finalUpdate = { overall_status: anyRejected ? 'rejected' : 'approved' };
         if (allApproved) finalUpdate.approved_at = new Date().toISOString();
-        await supabase.from('cqi15_event_logs')
+        const { data: fin, error: eFin } = await supabase.from('cqi15_event_logs')
           .update(finalUpdate)
-          .eq('id', log.id);
+          .eq('id', log.id)
+          .select('id');
+        if (eFin || !fin?.length) {
+          throw new Error(`บันทึกผลอนุมัติ [${roleKey}] แล้ว แต่ปิดสถานะใบไม่สำเร็จ${eFin ? ` (${eFin.message})` : ' (ไม่มีสิทธิ์/ไม่พบใบ)'} — ใบยังค้างสถานะเดิม แจ้ง admin`);
+        }
         toast.success(status === 'approved' ? 'อนุมัติสำเร็จ' : 'ปฏิเสธแล้ว');
         onRefresh();
       } else {
@@ -1081,9 +1106,10 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
 
   const handleCheckResult = async (checkNo, result) => {
     const { data: { user } } = await supabase.auth.getUser();
-    await supabase.from('cqi15_check_completions')
+    // เดิมไม่อ่าน error — บันทึกผลตรวจล้มแล้วจอไม่บอก (QC 05/10 · กฎเขียน DB ข้อ 1)
+    if (!checkWrite(await supabase.from('cqi15_check_completions')
       .upsert({ event_log_id: log.id, check_no: checkNo, result, completed_by: user.id, completed_at: new Date().toISOString() },
-               { onConflict: 'event_log_id,check_no' });
+               { onConflict: 'event_log_id,check_no' }), `บันทึกผลตรวจข้อ ${checkNo} `)) return;
     const { data } = await supabase.from('cqi15_check_completions')
       .select('*, profiles(full_name)').eq('event_log_id', log.id);
     setCompletions(data || []);

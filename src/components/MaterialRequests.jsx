@@ -23,15 +23,18 @@ import PersonSelect from './PersonSelect';
 import StorageLocSelect from './StorageLocSelect';
 import useColumnHistory from '../utils/useColumnHistory';
 import SelectOrFree from './SelectOrFree';
-import { LINE_COLUMNS } from '../utils/useProductionLines';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { useOrgSections } from '../utils/useOrgSections';
 import { scopedLineNames } from '../utils/sectionScope';
 import {
-  movesFor, moveNeeds, moveLabel, KIND_LABEL, statusMeta, nextReqNo, isPullable,
+  movesFor, moveNeeds, moveLabel, KIND_LABEL, statusMeta, nextReqNo, maxReqSeq, reqNoPrefix, isPullable,
 } from '../utils/materialRequest';
 import { printMaterialRequest } from '../lib/materialRequestPrint';
 import { notifyEvent } from '../utils/notifyEvent';
 import SearchSelect from './SearchSelect';
+import FilterBar from './FilterBar';
+import { ALL } from '../utils/filterLabels';
+import { DeleteButton } from './IconButton';
 
 const today = () => {
   const d = new Date();
@@ -83,7 +86,7 @@ export default function MaterialRequests() {
 
   useEffect(() => {
     // production_lines + profiles อยู่ Main · parts_master อยู่ DR
-    supabase.from('production_lines').select(LINE_COLUMNS).order('name')   // ครบ is_active ให้ <LineSelect> (2026-09-07)
+    loadLinesRes()   // ครบ is_active ให้ <LineSelect> (2026-09-07)
       .then(({ data }) => setLines(data || []));
     supabase.from('profiles').select('id, full_name, signature_url').not('signature_url', 'is', null)
       .then(({ data }) => setSigners(data || []));
@@ -119,16 +122,30 @@ export default function MaterialRequests() {
   );
   const hidden = rows.length - visible.length;
 
+  /* ── เลขใบภายใน = "เลขสูงสุดของเดือน + 1" จากทะเบียนจริง (ไม่ผูกตัวกรองบนจอ · ห้าม count()+1)
+     คิวรีล้ม = คืน null ⇒ ไม่ออกเลข ดีกว่าออกเลขที่อาจซ้ำ (หลักเดียวกับ nextProblemDocNo) ── */
+  const issueReqNo = async (d) => {
+    const pre = reqNoPrefix(d);
+    if (!pre) return null;
+    const { data, error } = await supabaseDR.from('material_requests')
+      .select('doc_no').like('doc_no', `${pre}%`);
+    if (error) return null;
+    return nextReqNo(d, maxReqSeq((data || []).map(r => r.doc_no), d));
+  };
+
   /* ── เปิดฟอร์ม ── */
-  const openNew = () => {
+  const openNew = async () => {
     const d = today();
+    const autoNo = await issueReqNo(d);
+    if (!autoNo) toast.error('ออกเลขที่ใบอัตโนมัติไม่สำเร็จ — กรอกเลขเองหรือลองเปิดใหม่');
     setEditor({
       req: {
         kind: 'withdraw', move_code: 'prod', request_date: d, need_date: d,
         // หน่วยงาน default = ส่วนงานของ user (profiles.section) — เดิม hardcode 'QUALITY' ทุกคน (2026-09-07)
         requester_name: fullName || '', requester_dept: mySection || 'QUALITY',
         plant_code: '2140', status: 'draft',
-        doc_no: nextReqNo(d, rows.length),
+        doc_no: autoNo || '',
+        _autoNo: autoNo || null,   // เลขที่ระบบเสนอ — ตอนบันทึกจะออกใหม่ถ้ายังไม่ถูกแก้ (กันชนกับคนที่เปิดฟอร์มพร้อมกัน)
         made_by_name: fullName || '', made_by_date: d,
         made_by_sig_url: signers.find(s => s.full_name === fullName)?.signature_url || null,
       },
@@ -163,6 +180,14 @@ export default function MaterialRequests() {
 
     const payload = { ...req, updated_by_name: fullName || null };
     delete payload.id;
+    delete payload._autoNo;
+    /* ใบใหม่ที่ยังใช้เลขที่ระบบเสนอ → ออกเลขใหม่ ณ ตอนบันทึก (อีกคนอาจบันทึกเลขเดียวกันไปก่อน)
+       เปลี่ยนวันที่เบิกข้ามเดือนก็ได้เลขของเดือนใหม่ · คนพิมพ์เลขเองแล้ว = เคารพค่าที่คนกรอก */
+    if (!req.id && req._autoNo && req.doc_no === req._autoNo) {
+      const fresh = await issueReqNo(req.request_date);
+      if (!fresh) return toast.error('ออกเลขที่ใบไม่สำเร็จ — ยังไม่ได้บันทึก ลองใหม่อีกครั้ง');
+      payload.doc_no = fresh;
+    }
     if (nextStatus) payload.status = nextStatus;
 
     let id = req.id;
@@ -205,7 +230,7 @@ export default function MaterialRequests() {
       event: 'material_request', type: 'info', ref_table: 'material_requests', ref_id: id,
       line_name: req.line_name || null, actor: fullName,
       lines: [
-        `📄 ${req.doc_no || '(ยังไม่ออกเลขใบ)'} · ${req.kind === 'return' ? 'คืนของ' : 'เบิกของ'}${req.move_code ? ` (${req.move_code})` : ''}`,
+        `📄 ${payload.doc_no || '(ยังไม่ออกเลขใบ)'} · ${req.kind === 'return' ? 'คืนของ' : 'เบิกของ'}${req.move_code ? ` (${req.move_code})` : ''}`,
         `🏭 ไลน์: ${req.line_name || '—'} · หน่วยงาน: ${req.requester_dept || '—'}`,
         `📦 ${real.length} รายการ · รวม ${real.reduce((s, it) => s + (Number(it.qty) || 0), 0)} ชิ้น`,
         req.detail ? `📝 ${String(req.detail).slice(0, 200)}` : '',
@@ -226,6 +251,12 @@ export default function MaterialRequests() {
   };
 
   const remove = async (r) => {
+    /* 🔴 ใบที่อนุมัติ/จ่ายของแล้ว = บันทึกการเคลื่อนไหวของคลังจริง (ใบ scrap ดึงไปอ้างอิงได้) ⇒ ห้ามลบจริง
+       ให้ "ยกเลิก" (status cancelled) แทน — สืบย้อนได้ (QC 05/10 · หลักเดียวกับยกเลิกล็อต) */
+    if (isPullable(r)) {
+      if (!window.confirm(`ใบ ${r.doc_no || ''} ${statusMeta(r.status).label} — ลบทิ้งไม่ได้ (เป็นบันทึกการเบิกจริง)\n\nเปลี่ยนสถานะเป็น "ยกเลิก" แทน?`)) return;
+      return setStatus(r, 'cancelled');
+    }
     if (!window.confirm(`ลบใบ ${r.doc_no || ''} ?\nรายการในใบจะถูกลบด้วย · ใบรายงานของเสียที่ดึงจากใบนี้ไปแล้วจะยังอยู่ แต่ลิงก์สืบย้อนจะขาด`)) return;
     const { error } = await supabaseDR.from('material_requests').delete().eq('id', r.id);
     if (error) return toast.error(`ลบไม่สำเร็จ: ${error.message}`);
@@ -260,7 +291,8 @@ export default function MaterialRequests() {
     setPicker(null); setPq('');
   };
 
-  const wrap = { padding: '4px 2px' };
+  // ไม่มี padding บน — ระยะแท็บ→แถบกรองเป็นของ PageHeader (16px มาตรฐาน · stdsweep 05/10 เดิมเกิน 4px = 20px)
+  const wrap = { padding: '0 2px 4px' };
 
   return (
     <div style={wrap}>
@@ -272,22 +304,19 @@ export default function MaterialRequests() {
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 10 }}>
-        <div>
-          <label style={lblSt}>เดือน</label>
-          <input type="month" value={month} onChange={e => setMonth(e.target.value)} style={{ width: 150, ...inpSt }} />
-        </div>
-        <div>
-          <label style={lblSt}>สถานะ</label>
-          <select value={fStatus} onChange={e => setFStatus(e.target.value)} style={{ width: 150, ...inpSt }}>
-            <option value="">ทั้งหมด</option>
-            {['draft', 'submitted', 'approved', 'issued', 'cancelled'].map(s =>
-              <option key={s} value={s}>{statusMeta(s).label}</option>)}
-          </select>
-        </div>
-        <div style={{ flex: 1 }} />
+      {/* UI-STANDARD 2026-09-24: แถบกรองมาตรฐาน — ช่วงเวลา → ตัวกรอง → ปุ่มหลักชิดขวา */}
+      <FilterBar style={{ marginBottom: 10 }}>
+        <span className="filter-label">เดือน</span>
+        <input type="month" value={month} onChange={e => setMonth(e.target.value)} />
+        <span className="filter-label">สถานะ</span>
+        <select value={fStatus} onChange={e => setFStatus(e.target.value)}>
+          <option value="">{ALL.status}</option>
+          {['draft', 'submitted', 'approved', 'issued', 'cancelled'].map(s =>
+            <option key={s} value={s}>{statusMeta(s).label}</option>)}
+        </select>
+        <span className="spacer" />
         {canRecord && <button onClick={openNew} style={btnSt('var(--accent)')}>＋ ออกใบเบิกใหม่</button>}
-      </div>
+      </FilterBar>
 
       <InfoMore style={{ marginBottom: 10 }} id="mr_help"
         lead={<>📦 ใบนี้ใช้เบิกชิ้นงานจากฝ่ายผลิตไปทดสอบ — ของที่ทดสอบแล้วดึงเข้า<b>ใบรายงานของเสีย</b>ได้</>}>
@@ -333,7 +362,7 @@ export default function MaterialRequests() {
                       {canRecord && r.status === 'draft' && <button onClick={() => setStatus(r, 'submitted')} style={miniBtn} title="ส่งขออนุมัติ">📤</button>}
                       {canManage && r.status === 'submitted' && <button onClick={() => setStatus(r, 'approved')} style={miniBtn} title="อนุมัติ">✅</button>}
                       {canRecord && r.status === 'approved' && <button onClick={() => setStatus(r, 'issued')} style={miniBtn} title="สโตร์จ่ายของแล้ว">📦</button>}
-                      {canManage && <button onClick={() => remove(r)} style={miniBtn} title="ลบ">🗑</button>}
+                      {canManage && <DeleteButton onClick={() => remove(r)} title="ลบ" />}
                     </td>
                   </tr>
                 );
@@ -368,7 +397,8 @@ export default function MaterialRequests() {
             {pickList.map(p => (
               <div key={p.mat_no} onClick={() => applyPart(p)}
                 style={{ padding: '7px 9px', borderBottom: '1px solid var(--border)', cursor: 'pointer', fontSize: 12.5 }}>
-                <b>{p.mat_no}</b> <span style={{ color: 'var(--text2)' }}>{p.part_name}</span>
+                {/* ลำดับ ชื่องาน → MAT (UI §6.21) */}
+                <b>{p.part_name || p.mat_no}</b> {p.part_name && <span style={{ color: 'var(--text2)', fontFamily: 'monospace' }}>MAT {p.mat_no}</span>}
                 {p.uom && <span style={{ color: 'var(--muted)', fontSize: 11 }}> · {p.uom}</span>}
               </div>
             ))}
@@ -490,7 +520,7 @@ function Editor({ editor, setReq, setItem, addItem, delItem, canRecord, role, si
                 <td style={tdSt}><input type="number" min="0" value={it.qty_issued ?? ''} readOnly={ro} onChange={e => setItem(it._key, { qty_issued: e.target.value })} style={{ ...inpSt, width: 84 }} /></td>
                 <td style={tdSt}><input type="date" value={it.produced_date || ''} readOnly={ro} onChange={e => setItem(it._key, { produced_date: e.target.value })} style={{ ...inpSt, width: 130 }} /></td>
                 <td style={tdSt}><input value={it.batch_no || ''} readOnly={ro} onChange={e => setItem(it._key, { batch_no: e.target.value })} style={{ ...inpSt, width: 90 }} /></td>
-                <td style={tdSt}>{canRecord && <button onClick={() => delItem(it._key)} style={miniBtn}>🗑</button>}</td>
+                <td style={tdSt}>{canRecord && <DeleteButton onClick={() => delItem(it._key)} title="ลบ" />}</td>
               </tr>
             ))}
           </tbody>

@@ -47,8 +47,11 @@
 
   Doc control: doc_key 'monthly_review' ใน doc_forms (โลโก้/เลขฟอร์ม override ได้จาก /doc-forms)
 */
+import { lineNameCompare } from '../utils/lineHierarchy';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { loadProductionLines } from '../utils/useProductionLines';
 import { pairAwareTotal, collapseOps } from '../utils/pairTotals';
+import { dtBucketName, buildDtIndex } from '../utils/downtimeCategory';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { wavg, wLoad, wRun, wProd, isTrialDefect, normOeeTarget, avgOeeTarget, weightedOeeOf, weekOfMonth,
          buildCtMap, groupLean, dtMinBySession, SIX_BIG_LOSSES, EIGHT_WASTES } from '../utils/oee';
@@ -195,7 +198,9 @@ function ppmOfSessions(ss, defectsIdx, output) {
 function dtOfSessions(ss, dtIdx) {
   const unplanned = rowsOfSessions(ss, dtIdx).filter(d => d.dr_downtime_types?.category !== 'planned');
   const byType = {};
-  unplanned.forEach(d => { const k = d.dr_downtime_types?.name_th || 'อื่น ๆ'; byType[k] = (byType[k] || 0) + (Number(d.duration_min) || 0); });
+  // ⚠️ ห้ามตั้งชื่อ `dtIdx` ที่นี่ — ชนกับพารามิเตอร์ `dtIdx` (= ดัชนีรายกะ) ของฟังก์ชันนี้
+  const typeIdx = buildDtIndex(unplanned);
+  unplanned.forEach(d => { const k = dtBucketName(d, typeIdx); byType[k] = (byType[k] || 0) + (Number(d.duration_min) || 0); });
   const top = Object.entries(byType).sort((a, b) => b[1] - a[1])[0];
   return { dtHr: hr1(unplanned.reduce((a, d) => a + (Number(d.duration_min) || 0), 0)), topDt: top ? top[0] : null, byType, unplanned };
 }
@@ -217,9 +222,11 @@ function dtOfSessions(ss, dtIdx) {
 async function loadOeeTargets({ allLineNames }) {
   const out = { lineGroup: {}, byGroup: {}, failed: false, warns: [] };
   try {
-    const { data, error } = await supabase.from('production_lines').select('name, parent_line_name');
-    if (error) throw error;
-    (data || []).forEach(l => { out.lineGroup[l.name] = l.parent_line_name || l.name; });
+    // ⚠️ ใช้ loadProductionLines() ตรงๆ ไม่ใช่ loadLinesRes() — จุดนี้ต้อง "รู้ว่าโหลดพัง"
+    //    เพื่อขึ้นคำเตือนในสไลด์ (loadLinesRes คืน error:null เสมอ · undefined = พัง, [] = ไม่มีไลน์)
+    const data = await loadProductionLines();
+    if (!data) throw new Error('โหลดทะเบียนไลน์ไม่สำเร็จ');
+    data.forEach(l => { out.lineGroup[l.name] = l.parent_line_name || l.name; });
   } catch (e) { out.warns.push('อ่านผังไลน์แม่-ลูกไม่ได้ — เส้นเป้าใช้ค่ามาตรฐาน'); }
   try {
     const groups = [...new Set(allLineNames.map(ln => out.lineGroup[ln] || ln))];
@@ -471,12 +478,14 @@ async function buildLeanCost({ sections, sessions, downtimes, defects, orders, m
     const ctSecFn = (sid) => { const c = ctBySess[sid]; return c && c.qty > 0 ? c.std / c.qty : 0; };
 
     // cost center ของไลน์ (Main) + activity rate ณ เดือนรายงาน
-    const [lineRes, rateRes] = await Promise.all([
-      supabase.from('production_lines').select('name, parent_line_name, cost_center'),
+    // ⚠️ loadProductionLines() ตรงๆ — จุดนี้ต้อง "รู้ว่าโหลดพัง" (undefined) ไม่ใช่เงียบแล้วได้ []
+    //    ไม่งั้นค่าใช้จ่ายทั้งสไลด์กลายเป็น "ไม่มี cost center" โดยไม่มีใครรู้ว่าอ่านทะเบียนไม่ติด
+    const [lineRows, rateRes] = await Promise.all([
+      loadProductionLines(),
       supabase.from('cost_center_rates').select('cost_center, effective_from, dl_rate, dp_rate, idp_rate, oh_rate'),
     ]);
-    if (lineRes.error || rateRes.error) throw (lineRes.error || rateRes.error);
-    const lines = lineRes.data || [], rates = rateRes.data || [];
+    if (!lineRows || rateRes.error) throw (rateRes.error || new Error('โหลดทะเบียนไลน์ไม่สำเร็จ'));
+    const lines = lineRows, rates = rateRes.data || [];
     const refDate = monthEndOf(monthKey);
     const perHrOf = (ln) => {
       const cc = lineCostCenter(lines, ln);
@@ -694,8 +703,9 @@ export async function buildMonthlyReviewData({ monthKey, sections, trendMonths =
   // จัดกลุ่ม downtime ตามประเภท + รายละเอียดรายครั้ง (สำหรับสไลด์ loss detail)
   const dtGroupsOf = (unplanned) => {
     const g = {};
+    const idx = buildDtIndex(unplanned);
     unplanned.forEach(d => {
-      const k = d.dr_downtime_types?.name_th || 'อื่น ๆ';
+      const k = dtBucketName(d, idx);   // 🗑️ เดาจากคำ → ไม่ได้ก็แตกตามเครื่อง
       g[k] = g[k] || { name: k, min: 0, count: 0, fixed: 0, items: [] };
       g[k].min += Number(d.duration_min) || 0;
       g[k].count += 1;
@@ -785,7 +795,7 @@ export async function buildMonthlyReviewData({ monthKey, sections, trendMonths =
     const agg = aggSessions(ss);
     const output = outputOf(ss);
     const { dtHr, unplanned } = dtStats(ss);
-    const lines = [...new Set(ss.map(s => s.line_name))].sort().map(ln => {
+    const lines = [...new Set(ss.map(s => s.line_name))].sort(lineNameCompare).map(ln => {
       const ls = ss.filter(s => s.line_name === ln);
       const la = aggSessions(ls);
       const lo = outputOf(ls);

@@ -1,30 +1,42 @@
 import { useState, useEffect, useLayoutEffect, useContext, useRef, useCallback, useMemo } from 'react';
+import { sortLineNames } from '../utils/lineHierarchy';
 import { useNavigate, Link } from 'react-router-dom';
 import { toDecodableImage } from '../utils/heicToJpeg';
-import imageCompression from 'browser-image-compression';
+import { compressLayoutImage } from '../utils/layoutImage';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import { pairAwareTotal, collapseOps } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
+import { loadPairMap, loadProductsMaster } from '../utils/useProducts';
 import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
 import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
 import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory';
-import { computeLiveOee, wavg, wLoad, wRun, wProd, buildCtMap, isTrialDefect, defectQty, breakIntervalsIn, overlapMinutesWith, dtMinOutsideBreaks } from '../utils/oee';
+import { computeLiveOee, wavg, wLoad, wRun, wProd, buildCtMap, isTrialDefect, defectQty, ngByMatFrom, breakIntervalsIn, overlapMinutesWith, dtMinOutsideBreaks, dtMinBySession, orderPlanQty, oeeTargetForLines, QBIN_EMBED } from '../utils/oee';
 import { usePolling } from '../utils/usePolling';
 import { RATE, LIVE } from '../utils/refreshRates';
 import { coalesce, makeIdleGate } from '../utils/liveRefresh';
-import { cachedMaster } from '../utils/masterCache';
+import { cachedMaster, mrows } from '../utils/masterCache';
+import { fetchAllRows } from '../utils/fetchAllRows';
+import { loadBreakPolicies, loadCtProducts, loadCtKanban, fetchOeeTargets } from '../utils/oeeMasters';
+import { valueInk, statusOf } from '../utils/statusTone';
+import { useLatestRequest } from '../utils/useLatestRequest';
+import { polyArea, centroid, labelAnchor } from '../utils/regionGeom';
 import { loadPmTeams, isAmTeam } from '../utils/pmTeams';
 import { fetchByIds } from '../utils/fetchByIds';
 import { monthKeyOf, shiftMonth, monthLabel, monthRange, fmtKwh, fmtBaht, deltaPct, energyCat, efFor, co2eKg, fmtTco2e, energyRollup } from '../utils/energy';
 import { OPEN_MO_STATUSES } from '../utils/dieStatus';
 import { fmtDtElapsed } from '../utils/downtimeRules';
 import { zoneFill, zoneHealth, zoneHealthText, zoneKindMeta, ZONE_KINDS, WAREHOUSE_LOCATIONS } from '../utils/storageZones';
+import { statusColor, statusLabel } from '../utils/obeyaKpi';
+import { LIVE_AXES, catToStatus, rollupAxis, boardOverall, ppeStatus, NOT_LIVE_NOTE, SAFETY_PROXY_NOTE } from '../utils/obeyaLive';
 import { liveChannel } from '../utils/liveChannel';
-import { checkWrite } from '../utils/dbWrite';
+import { checkWriteRows } from '../utils/dbWrite';
 import { uploadOpts } from '../utils/storageUpload';
+import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
 
 /* ── ผังรวมโรงงาน (Factory Master Map) — polygon อิสระ + เลือก metric, 2026-07-16 ──────
    รูปผังใหญ่ทั้งโรงงาน 1 รูป + วาด polygon ล้อมแต่ละไลน์ (L/U ได้) ระบายสีตาม metric ที่เลือก
@@ -50,7 +62,8 @@ const shiftDate = (s, delta) => { const d = new Date(`${s}T00:00:00`); d.setDate
 const fmtThaiDate = (s) => { try { return new Date(`${s}T00:00:00`).toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }); } catch { return s; } };
 const fmtNum = (n) => (n == null ? '0' : Math.round(n).toLocaleString('en-US'));
 const pctCol = (p) => p == null ? 'var(--muted)' : p >= 95 ? '#22c55e' : p >= 80 ? '#f59e0b' : '#ef4444';
-const oeeCol = (o) => o == null ? 'var(--muted)' : o >= 80 ? '#22c55e' : o >= 65 ? '#f59e0b' : '#ef4444';
+/* สี OEE = เทียบเป้ากลุ่ม (oee_targets) ผ่าน oeeTargetForLines + statusOf — ประกาศใน component (ต้องรู้ lines/เป้า)
+   05/10: เดิมเลขตายตัว 80/65 ⇒ ไลน์เดียวกันจอนี้เขียว ห้อง OBEYA เหลือง/แดง */
 
 // สีตามหมวดสถานะ (คำนวณต่อ metric) — down = แดงกระพริบ (Andon), อื่นๆ นิ่ง
 const CAT = {
@@ -171,9 +184,16 @@ const METRICS = {
     value: s => s.oee,
     text: s => s.oee != null
       ? `OEE ${Math.round(s.oee)}%${s.oeeLive ? ' (สด)' : ''}${s.oeeCtPartial ? ' ⚠CT ไม่ครบ' : ''}${s.oeePOver ? ` ⚠%P ตัน (${Math.round(s.oeePRaw)}%)` : ''}`
-      : (s.oeeNoCt ? '⚠ ยังไม่ตั้ง CT' : s.hasOpen ? 'กำลังเก็บข้อมูล...' : ''),
+      /* ยังไม่มียอดผลิตสักชิ้น = ประเมิน OEE ไม่ได้ (computeLiveOee คืน noOutput — ห้ามโชว์ 0)
+         ⚠️ ข้อความต้องบอก "รออะไรอยู่" ไม่ใช่ "ระบบกำลังทำงาน" (คำสั่ง user 2026-09-18):
+         ต้นเหตุจริงคือไลน์ยังไม่ปิดการ์ด/ยังไม่ลงยอด ไม่ใช่จอโหลดข้อมูลช้า — วัดจริง 17/09
+         Line 60/61 ปิดใบแรก 13:34-13:36 · SUB APRON 16:14 ⇒ จอเดิมขึ้น "กำลังเก็บข้อมูล..."
+         5.5-8 ชม. จากกะ 12 ชม. คนดูจอ TV เข้าใจว่าระบบค้าง แทนที่จะรู้ว่าต้องไปปิดการ์ด */
+      : (s.oeeNoCt ? '⚠ ยังไม่ตั้ง CT' : s.hasOpen ? 'กำลังรอการคอนเฟิร์มยอดงาน' : ''),
     short: s => s.oee != null ? `${Math.round(s.oee)}%${s.oeePOver ? '⚠' : ''}` : (s.oeeNoCt ? '⚠CT' : ''),
-    cat: s => s.oee == null ? 'idle' : s.oee >= 80 ? 'good' : s.oee >= 65 ? 'ok' : 'bad',
+    /* 05/10: เทียบเป้ากลุ่ม (s.oeeTarget จาก oeeTargetForLines) ผ่าน statusOf — เดิม 80/65 ตายตัว
+       ไม่รู้เป้า (โหลดไม่ได้) = 'idle' (เทา "ตัดสินไม่ได้") ห้ามเดาสี */
+    cat: s => { if (s.oee == null) return 'idle'; const t = statusOf(s.oee, s.oeeTarget); return t === 'good' ? 'good' : t === 'warn' ? 'ok' : t === 'bad' ? 'bad' : 'idle'; },
   },
   breakdown: {
     label: '🔧 Downtime', worstFirst: true, desc: true, facilityNA: true,
@@ -374,18 +394,7 @@ const placeBox = (cands, w, h, placed, maxY, bb, obstacles, allowDrop, search, o
 };
 // ผังแคบกว่านี้ = ย่อข้อความบนป้าย (มือถือ/แท็บเล็ตแนวตั้ง) — PC/จอ TV กว้างกว่านี้เสมอ จึงได้ข้อมูลครบ
 const COMPACT_W = 820;
-const polyArea = (pts) => {
-  let a = 0;
-  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) a += pts[j][0] * pts[i][1] - pts[i][0] * pts[j][1];
-  return Math.abs(a) / 2;
-};
-const centroid = (pts) => pts.length
-  ? [pts.reduce((a, p) => a + p[0], 0) / pts.length, pts.reduce((a, p) => a + p[1], 0) / pts.length]
-  : [50, 50];
-// จุดยึดป้าย = กึ่งกลางแนวนอน + ขอบบนสุดของ polygon → ป้ายเกาะขอบบน ไม่ทับกลางผังไลน์ (2026-07-22)
-const labelAnchor = (pts) => pts.length
-  ? [(Math.min(...pts.map(p => p[0])) + Math.max(...pts.map(p => p[0]))) / 2, Math.min(...pts.map(p => p[1]))]
-  : [50, 50];
+// polyArea/centroid/labelAnchor ย้ายไป utils/regionGeom.js (05/10 — ใช้ร่วมกับ <FactoryMiniMap> จอ TV)
 const EMPTY_ST = { actual: 0, target: 0, onTimeTarget: 0, runN: 0, capN: 0, hasOpen: false, oee: null, oeeLive: false, oeeNoCt: false, oeeCtPartial: false, oeePOver: false, oeePRaw: 0, dtMin: 0, dtMinHour: 0, dtOpenMin: null, dtOpenUnknown: false, dtActive: false, ng: 0,
   headTotal: 0, present: 0, ppeBad: 0, stationTotal: 0, stationFilled: 0, pmTotal: 0, pmOverdue: 0, pmDueSoon: 0,
   amTotal: 0, amOverdue: 0, amDueSoon: 0, pmBusy: 0, pmBusyText: '',
@@ -427,6 +436,14 @@ export default function FactoryMap({ setupMode = false }) {
   const [oeeHistRaw, setOeeHistRaw] = useState(null);    // ⚙️ ประวัติ OEE รายกะ 7 วันก่อน (สำหรับ sparkline การ์ด KPI · null = ยังไม่โหลด)
   const [energyEf, setEnergyEf] = useState(null);        // EF ของเดือนนั้น (null = ยังไม่ตั้ง → ไม่โชว์ tCO2e)
   const [lines, setLines] = useState([]);
+  // เป้า OEE รายกลุ่ม — null = ยังไม่รู้/โหลดไม่ได้ ⇒ สี OEE เป็น "ตัดสินไม่ได้" (ห้ามถอยไป 80/65)
+  const [oeeTargets, setOeeTargets] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    fetchOeeTargets().then(r => { if (alive) setOeeTargets(r.byGroup); });
+    return () => { alive = false; };
+  }, []);
+  const oeeCol = useCallback((o, names = []) => valueInk(o, oeeTargetForLines(names, lines, oeeTargets)?.oee), [lines, oeeTargets]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(canEdit); // setup mode + มีสิทธิ์ → เข้าโหมดแก้เลย
   const [uploading, setUploading] = useState(false);
@@ -435,9 +452,12 @@ export default function FactoryMap({ setupMode = false }) {
   const [showFac, setShowFac] = useState(false); // 🫥 เปิดดูโซนสนับสนุนชั่วคราวบน metric ผลิต (กดจากชิป)
   // แผงขวา: 'review' = สรุปทบทวนทั้งวัน (default · ประชุมผู้จัดการ) · 'live' = จัดอันดับสดตาม metric (เดิม)
   const [panelMode, setPanelMode] = useState('review');
+  // 🏛️ หัวข้อที่กดเจาะอยู่บนบอร์ด OBEYA (null = ยังไม่กด) — ดู obeyaBoard
+  const [obeyaAxis, setObeyaAxis] = useState(null);
   const [reviewDate, setReviewDate] = useState(reviewDefaultDate);
   const [reviewStatus, setReviewStatus] = useState({}); // line_name → full-day aggregate ของ reviewDate
   const [reviewLoading, setReviewLoading] = useState(false);
+  const [reviewError, setReviewError] = useState('');     // โหลดสรุปล้ม = เขียนบนจอ ห้ามโชว์ "ไม่มีข้อมูล" แทน (02/10)
   const [reviewDetail, setReviewDetail] = useState(null); // ไลน์แม่ที่คลิกดู breakdown ไลน์ย่อย (โหมด review)
   const [storyLine, setStoryLine] = useState(null);   // ไลน์ที่คลิกดู "สรุปเรื่องราวทั้งวัน" (modal หลัก)
   const [story, setStory] = useState(null);           // ข้อมูลสรุปของ storyLine
@@ -530,7 +550,7 @@ export default function FactoryMap({ setupMode = false }) {
     const [{ data: fm }, { data: rg }, { data: ln }, { data: lay }] = await Promise.all([
       supabase.from('factory_map').select('id, image_url').order('updated_at', { ascending: false }).limit(1).maybeSingle(),
       supabase.from('factory_line_regions').select('id, line_name, points'),
-      supabase.from('production_lines').select('id, name, parent_line_name').order('name'),
+      loadLinesRes(),
       supabase.from('line_layouts').select('line_name'),
     ]);
     setImageUrl(fm?.image_url || null);
@@ -539,7 +559,7 @@ export default function FactoryMap({ setupMode = false }) {
     setLines(ln || []);
     // โหมดไหลงาน/จำนวนเครื่องขนาน (best-effort — ยังไม่ apply migration 20260723 ก็ข้าม) ใช้หัก DT 1/N ใน OEE สด
     try {
-      const { data: fl } = await supabase.from('production_lines').select('name, flow_mode, parallel_stations');
+      const { data: fl } = await loadLinesRes();
       const m = {}; (fl || []).forEach(l => { m[l.name] = l; });
       flowByLineRef.current = m;
     } catch { /* คอลัมน์ยังไม่มี — N=1 พฤติกรรมเดิม */ }
@@ -596,16 +616,15 @@ export default function FactoryMap({ setupMode = false }) {
       supabaseDR.from('downtime_logs').select('session_id, duration_min, ended_at, started_at, machine_no, dr_downtime_types(category)').in('session_id', sessIds),
       // ⚠️ NG ต้องมาจาก defect_logs — prod_orders.qty_ng ไม่เคยถูกเขียนทั้งระบบ (ยืนยัน 0/6100 แถว)
       // เดิมไม่ส่ง ngQty เข้า computeLiveOee → Q สดเป็น 100% เสมอ = OEE บนผังสูงกว่าความจริงทุกไลน์ (แก้ 2026-08-05)
-      supabaseDR.from('defect_logs').select('session_id, qty_ng, qty_suspect, is_trial, dr_defect_types(excl_from_q)').in('session_id', sessIds),
+      // prod_orders(mat_no) = ไว้ชี้ CT ของ NG ตอนบวกเข้าตัวเศษ %P (ngByMatFrom)
+      supabaseDR.from('defect_logs').select(`session_id, qty_ng, qty_suspect, is_trial, prod_orders(mat_no), dr_defect_types(excl_from_q), ${QBIN_EMBED}`).in('session_id', sessIds),
       // ⚡ master 3 ตัวล่างนี้ผ่าน cache (10 นาที) — เดิมดึงทั้งตารางทุก 30 วิ กิน egress ~70% ของรอบ
       //    โดยไม่ได้ความสดอะไรเพิ่ม (CT/นโยบายพัก เปลี่ยนเดือนละไม่กี่ครั้ง) ดู src/utils/masterCache.js
-      cachedMaster('dr_products:ct', async () =>
-        (await supabaseDR.from('dr_products').select('mat_no, cycle_time_sec, pair_mat_no, process_type')).data || []),
-      cachedMaster('break_policies:active', async () =>
-        (await supabaseDR.from('break_policies').select('shift, process_type, start_time, duration_min, ot_scope').eq('is_active', true)).data || []),
+      loadCtProducts().catch((e) => { console.error('[FactoryMap] โหลด CT สินค้าไม่สำเร็จ:', e); return null; }),
+      // loader กลาง — ล้ม = โยน (เดิม `.data || []` ⇒ ล้ม = "ไม่มีพัก" ค้าง cache 4 ชม.) · จับไว้แล้วบอกบนแถบ
+      loadBreakPolicies().catch((e) => { console.error('[FactoryMap] โหลดนโยบายพักไม่สำเร็จ:', e); return null; }),
       // CT ต้องมาจาก fallback chain เดียวกับตอนปิดกะ (kanban_standards → dr_products) ไม่งั้น P สด ≠ P ที่ stamp
-      cachedMaster('kanban_standards:ct', async () =>
-        (await supabaseDR.from('kanban_standards').select('mat_no, dr_products(cycle_time_sec)').eq('is_active', true)).data || []),
+      loadCtKanban().catch((e) => { console.error('[FactoryMap] โหลด CT kanban ไม่สำเร็จ:', e); return null; }),
       loadOpInfo(), // map รายการขั้นตอน (OP งานขับนัท) — collapseOps ตอนรวมยอด ไม่นับซ้ำ
     ]);
     /* 🔴 query ลูกล้มเหลว = ตัวเลขบนผัง "ผิดแบบดูดี" ไม่ใช่ว่าง — ต้องบอกทุกครั้ง
@@ -615,16 +634,19 @@ export default function FactoryMap({ setupMode = false }) {
        จอ /line-oee มี banner `partial` แบบนี้อยู่แล้ว — 2 จอโชว์ OEE ชุดเดียวกัน
        จอหนึ่งบอกว่าโหลดไม่ครบ อีกจอเงียบ = คนเชื่อจอที่โกหก */
     const { data: orders, error: oErr } = oRes, { data: dts, error: dErr } = dRes, { data: defs, error: fErr } = fRes;
-    const miss = [oErr && 'ใบผลิต', dErr && 'เครื่องหยุด', fErr && 'ของเสีย'].filter(Boolean);
+    const miss = [oErr && 'ใบผลิต', dErr && 'เครื่องหยุด', fErr && 'ของเสีย', breaks == null && 'นโยบายเวลาพัก', (prods == null || kstds == null) && 'CT สินค้า'].filter(Boolean);
     if (miss.length) console.error('[FactoryMap] โหลดไม่ครบ:', { oErr, dErr, fErr });
     setPartial(miss.length ? `⚠️ โหลด${miss.join('/')}ไม่สำเร็จ — OEE/Andon บนผังยังไม่ครบ อย่าเพิ่งใช้ตัดสินใจ` : '');
-    const pairMap = {}, procMap = {};
+    // โหลด CT/คู่ไม่ได้ ⇒ pairMap = null ("ยังไม่รู้คู่" = ไม่ยุบ) ห้ามเป็น {} ("รู้แล้วว่าไม่มีคู่")
+    const pairMap = prods ? {} : null, procMap = {};
     (prods || []).forEach(p => { if (p.pair_mat_no) pairMap[p.mat_no] = p.pair_mat_no; procMap[p.mat_no] = p.process_type; });
     const ctMap = buildCtMap({ kanbanStds: kstds || [], products: prods || [] });
     const ordBySess = {}; (orders || []).forEach(o => { (ordBySess[o.session_id] ||= []).push(o); });
     const dtBySess = {}; (dts || []).forEach(d => { (dtBySess[d.session_id] ||= []).push(d); });
     // ⚠️ Q ไม่นับ "งานทดลอง" (is_trial / ประเภทที่ตั้ง excl_from_q) — สูตรเดียวกับตอนปิดกะ
     const ngBySess = {}; (defs || []).forEach(d => { if (isTrialDefect(d)) return; ngBySess[d.session_id] = (ngBySess[d.session_id] || 0) + defectQty(d); });
+    // คนละตัวกับ ngBySess: %Q ไม่นับงานทดลอง · %P นับทุกชิ้นที่เครื่องทำออกมา (รวมทดลอง/ของสงสัย)
+    const defBySess = {}; (defs || []).forEach(d => (defBySess[d.session_id] ||= []).push(d));
     const nowMs = Date.now();
     // ต้นชั่วโมงปัจจุบัน (clock hour) — ใช้คิด downtime "สะสมเฉพาะชั่วโมงนี้" สำหรับสีบนแผนที่
     const hourStart = (() => { const d = new Date(nowMs); d.setMinutes(0, 0, 0); return d.getTime(); })();
@@ -635,6 +657,7 @@ export default function FactoryMap({ setupMode = false }) {
       // ไลน์เครื่องขนาน (LASER-345/789 N=3): DT ที่ระบุเครื่องหักแค่ 1/N — สูตรเดียวกับ computeOEE ใน DailyReport
       const r = computeLiveOee({
         session: s, orders: os, downtimes: dl, ctMap, workDate, nowMs, ngQty: ngBySess[s.id] || 0,
+        ngForP: ngByMatFrom(defBySess[s.id] || [], os),
         /* ⚠️ ต้องส่งนโยบายพัก + process ของกะ ไม่งั้น A สด ≠ A ที่ stamp ตอนปิดกะ (2026-09-14)
            process มาจาก mat ของใบที่เปิดในกะ — วิธีเดียวกับที่ "ควรผลิตได้ตอนนี้" ใช้อยู่ด้านล่าง */
         breakPolicies: breaks || [],
@@ -647,6 +670,8 @@ export default function FactoryMap({ setupMode = false }) {
            เคสจริง SUB APRON 05/08: คน 4 แต่ 6 พาร์ทวิ่งพร้อมกัน = 6 เครื่อง (2026-08-13) */
         parallelCap: flowModeOf(flowByLineRef.current[s.line_name]?.flow_mode) === 'parallel_machine'
           ? parallelUnitsOf(flowByLineRef.current[s.line_name]) : 1,
+        // งานคู่ gang die / RH-LH = 1 shot ได้ 2 ชิ้น — ยุบก่อนคิดเวลามาตรฐานของ %P (pairTotals.js)
+        pairMap,
       });
       return r; // คืนทั้งก้อน — ต้องรู้ "สาเหตุ" ที่คำนวณไม่ได้ (noOutput vs ไม่ได้ตั้ง CT) ไม่ใช่แค่ null
     };
@@ -660,12 +685,12 @@ export default function FactoryMap({ setupMode = false }) {
       os.forEach(o => {
         if (!o.mat_no) return;
         const e = perMat[o.mat_no] || (perMat[o.mat_no] = { mat_no: o.mat_no, target: 0, produced: 0 });
-        e.target += o.qty_target ?? o.qty ?? 0;
+        e.target += orderPlanQty(o);   // เป้านับครั้งเดียวทั้งสายยกยอด (oee §6.1)
         e.produced += o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0);
       });
       const nullOs = os.filter(o => !o.mat_no);
-      const ptot = pairAwareTotal(collapseOps(Object.values(perMat), opInfoSync()), m => pairMap[m] || null);
-      const target = ptot.target + nullOs.reduce((a, o) => a + (o.qty_target ?? o.qty ?? 0), 0);
+      const ptot = pairAwareTotal(collapseOps(Object.values(perMat), opInfoSync()), m => pairMap?.[m] || null);
+      const target = ptot.target + nullOs.reduce((a, o) => a + orderPlanQty(o), 0);
       const actual = ptot.produced + nullOs.reduce((a, o) => a + (o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0)), 0);
       const dl = dtBySess[s.id] || [];
       // Downtime — นับเฉพาะ "นอกแผน" (planned เช่นนับสต็อก ไม่ใช่ loss) + รวมเวลาที่ "กำลังหยุด" (ยังไม่ปิด) จนถึงตอนนี้
@@ -724,7 +749,7 @@ export default function FactoryMap({ setupMode = false }) {
         // หักเวลาพักตามแผนที่ผ่านไปแล้ว — ใช้สูตรกลางจาก utils/oee.js (เดิมเขียน overlap ซ้ำที่นี่เป็นก๊อปที่ 4)
         const procOfSess = os.map(o => procMap[o.mat_no]).find(Boolean) || null;
         const brkIvWin = breakIntervalsIn({
-          policies: breaks, startMs: anchor, endMs: Math.min(nowMs, capMs),
+          policies: breaks || [], startMs: anchor, endMs: Math.min(nowMs, capMs),
           workDate, shift: s.shift, processType: procOfSess,
         });
         availMin -= brkIvWin.reduce((a, [x, y]) => a + (y - x) / 60000, 0);
@@ -780,7 +805,7 @@ export default function FactoryMap({ setupMode = false }) {
          (ตัดส่วนที่ทับพักออก ไม่งั้นน้ำหนักของกะที่มี PM คร่อมพักเบาเกินจริง · utils/oee §3.1) */
       const wLoadBrkIv = (s.start_time && Number(s.shift_min || 570) > 0)
         ? breakIntervalsIn({
-            policies: breaks,
+            policies: breaks || [],
             startMs: new Date(`${workDate}T${s.start_time.slice(0, 5)}:00`).getTime(),
             endMs: new Date(`${workDate}T${s.start_time.slice(0, 5)}:00`).getTime() + (s.shift_min || 570) * 60000,
             workDate, shift: s.shift,
@@ -901,20 +926,24 @@ export default function FactoryMap({ setupMode = false }) {
   const loadOeeHist = useCallback(async () => {
     const to = shiftDate(getWorkDate(), -1), from = shiftDate(getWorkDate(), -7);
     const { data: sess, error } = await supabaseDR.from('production_sessions')
-      .select('id, line_name, work_date, oee, shift_min')
+      .select('id, line_name, work_date, shift, start_time, oee, shift_min')
       .eq('status', 'closed').gte('work_date', from).lte('work_date', to).order('id').limit(1000);
     if (error) { setOeeHistRaw([]); return; }   // โหลดไม่ได้ = การ์ดไม่มี sparkline/Δ (ค่า OEE หลักยังขึ้นปกติ)
     const rows = (sess || []).filter(s => s.oee != null);
-    const planned = {};
+    /* 05/10: น้ำหนัก wLoad ต้องตัด downtime ที่ทับพักออก (dtMinBySession) — เดิมบวก duration_min ดิบ
+       · downtime/นโยบายพักโหลดไม่ได้ = ไม่มี sparkline (ห้ามถ่วงด้วยน้ำหนักที่ผิดเงียบๆ) */
+    let brk;
+    try { brk = await loadBreakPolicies(); } catch { setOeeHistRaw([]); return; }
+    const dtsAll = [];
     for (let i = 0; i < rows.length; i += 120) {
       const ids = rows.slice(i, i + 120).map(s => s.id);
-      const { data: dts } = await supabaseDR.from('downtime_logs')
-        .select('session_id, duration_min, dr_downtime_types(category)').in('session_id', ids);
-      (dts || []).forEach(r => {
-        if (r.dr_downtime_types?.category === 'planned') planned[r.session_id] = (planned[r.session_id] || 0) + (Number(r.duration_min) || 0);
-      });
+      const { data: dts, error: dErr } = await supabaseDR.from('downtime_logs')
+        .select('session_id, duration_min, started_at, ended_at, dr_downtime_types(category)').in('session_id', ids);
+      if (dErr) { setOeeHistRaw([]); return; }
+      dtsAll.push(...(dts || []));
     }
-    setOeeHistRaw(rows.map(s => ({ line_name: s.line_name, work_date: s.work_date, oee: Number(s.oee), shift_min: s.shift_min, plannedMin: planned[s.id] || 0 })));
+    const eff = dtMinBySession(rows, dtsAll, brk || []);
+    setOeeHistRaw(rows.map(s => ({ line_name: s.line_name, work_date: s.work_date, oee: Number(s.oee), shift_min: s.shift_min, plannedMin: eff[s.id]?.planned || 0 })));
   }, []);
   useEffect(() => { if (metric === 'oee' && oeeHistRaw == null) loadOeeHist(); }, [metric, oeeHistRaw, loadOeeHist]);
 
@@ -926,7 +955,7 @@ export default function FactoryMap({ setupMode = false }) {
     const curShift = (() => { const h = new Date().getHours(); return h >= 8 && h < 20 ? 'day' : 'night'; })();
     const [{ data: emps }, { data: pls }, { data: logsAll }, { data: ws }, saRes] = await Promise.all([
       supabase.from('employees').select('id, line_id').eq('is_active', true),
-      supabase.from('production_lines').select('id, name'),
+      loadLinesRes(),
       supabase.from('daily_production_logs').select('employee_id, is_present, has_helmet, has_boots, has_gloves, assigned_line, shift').eq('work_date', workDate),
       supabase.from('workstations').select('id, line_name'),
       // ประวัติเข้า-ออกจุดงาน (มีเวลาเริ่ม/จบ) — ใช้ถ่วงน้ำหนักตามเวลา ไม่ใช่ดูแค่ ณ ตอนนี้
@@ -1011,10 +1040,13 @@ export default function FactoryMap({ setupMode = false }) {
        แล้วคืนค่าว่าง "เงียบ" (บทเรียนเดิม: จอโชว์ 0 ทั้งที่มีของจริง) */
     const [jgRes, machines] = await Promise.all([
       fetchByIds(eqIds, c => supabaseDR.from('jigs').select('id, line_name, machine_id').in('id', c)),
-      cachedMaster('machines:idline', async () =>
-        (await supabaseDR.from('machines').select('id, line_name').eq('is_active', true)).data || []),
+      // 05/10: เดิม `.data || []` = ล้มแล้ว cache ลิสต์ว่าง 4 ชม. (หลบด่าน master-cache-swallow เพราะเขียน 2 บรรทัด)
+      cachedMaster('machines:idline:v2', async () =>
+        mrows(await fetchAllRows(supabaseDR, 'machines', 'id, line_name', q => q.eq('is_active', true).order('id'))))
+        .catch((e) => { console.warn('loadPM machines', e); return null; }),
     ]);
     if (jgRes.error) { console.warn('loadPM jigs', jgRes.error); return; }
+    if (machines == null) return;   // คงค่าเดิม (ห้ามล้าง = "ไม่มีแผน PM")
     const lineOfMachine = {}; (machines || []).forEach(m => { lineOfMachine[m.id] = m.line_name; });
     const lineOfEq = {}; jgRes.rows.forEach(j => { lineOfEq[j.id] = j.line_name || lineOfMachine[j.machine_id] || ''; });
     const lineOfChecklist = {}; (cls || []).forEach(c => { lineOfChecklist[c.id] = lineOfEq[c.equipment_id]; });
@@ -1089,13 +1121,17 @@ export default function FactoryMap({ setupMode = false }) {
     // ⚡ links/machines เป็น master (เปลี่ยนนานๆ ครั้ง) → cache · เหลือแต่ใบซ่อมที่ต้องสดจริง
     //    และกรอง "ใบที่ยังไม่ปิด" ฝั่ง server — เดิมดึง mtn_orders ทั้งตารางมากรองในเบราว์เซอร์
     const [linkRows, machineRows, mos] = await Promise.all([
-      cachedMaster('facility_supply_links', async () =>
-        (await supabaseDR.from('facility_supply_links').select('machine_id, line_name')).data || []),
-      cachedMaster('machines:supply', async () =>
-        (await supabaseDR.from('machines').select('id, machine_no, machine_name, line_name, equipment_category')).data || []),
+      // 05/10: ล้ม = โยน (ไม่ cache ลิสต์ว่างทับ) · ล้มแล้ว "คงค่าเดิม" ห้ามวาดว่าไม่มีเครื่องเสีย
+      cachedMaster('facility_supply_links:v2', async () =>
+        mrows(await fetchAllRows(supabaseDR, 'facility_supply_links', 'machine_id, line_name', q => q.order('machine_id').order('line_name'))))
+        .catch((e) => { console.warn('loadSupply links', e); return null; }),
+      cachedMaster('machines:supply:v2', async () =>
+        mrows(await fetchAllRows(supabaseDR, 'machines', 'id, machine_no, machine_name, line_name, equipment_category', q => q.order('id'))))
+        .catch((e) => { console.warn('loadSupply machines', e); return null; }),
       supabaseDR.from('mtn_orders').select('machine_no')
-        .not('status', 'in', '("closed","rejected")').then(r => r, () => ({ data: [] })),
+        .not('status', 'in', '("closed","rejected")').then(r => r, (e) => ({ data: null, error: e })),
     ]);
+    if (linkRows == null || machineRows == null || mos?.error) { if (mos?.error) console.warn('loadSupply mtn_orders', mos.error); return; }
     const mcRows = machineRows || [];
     const byId = {}; mcRows.forEach(m => { byId[m.id] = m; });
     const openNos = new Set((mos?.data || []).map(o => o.machine_no));
@@ -1126,7 +1162,7 @@ export default function FactoryMap({ setupMode = false }) {
     setFacilitySupply(fac);
   }, []);
 
-  /* ── 🔨 โซนคลังแม่พิมพ์ — link ผังรวม ↔ ผังจัดเก็บแม่พิมพ์ (/die-registry?tab=layout · 2026-08-19) ──
+  /* ── 🔨 โซนคลังแม่พิมพ์ — link ผังรวม ↔ ผังจัดเก็บแม่พิมพ์ (/equipment?tab=die&die=layout · 2026-09-22) ──
      กรอบบนผังรวมที่ "ชื่อตรงกับชื่อผังจัดเก็บแม่พิมพ์" (die_storage_areas.name · จับคู่ normalize
      trim+lowercase) = โซนคลังแม่พิมพ์ — pattern เดียวกับโซน facility ↔ pm_facility_areas
      (ข้าม project Main↔DR ทำ FK ไม่ได้ ชื่อคือกุญแจ — เปลี่ยนชื่อผังใน DieLayout จะ cascade ชื่อกรอบให้)
@@ -1233,17 +1269,25 @@ export default function FactoryMap({ setupMode = false }) {
 
   /* ── สรุปทบทวนทั้งวัน (กะเช้า+ดึก) ตาม reviewDate — โหลดเมื่อเปลี่ยนวัน/เข้าโหมด review (ไม่ auto refresh) ──
      ต่างจากผังที่โชว์สด: แผงนี้ใช้ค่าที่ปิดกะแล้ว (OEE ที่ stamp, DT/NG/ผลิตทั้งวัน) ไว้ประชุมผู้จัดการ */
+  const beginReview = useLatestRequest();   // เปลี่ยนวันระหว่างโหลด = คำตอบวันเก่าห้ามทับแผง (กฎ DB ข้อ 4)
   const loadReview = useCallback(async () => {
-    setReviewLoading(true);
+    const live = beginReview();
+    setReviewLoading(true); setReviewError('');
+    /* 05/10 (QC audit): เดิมอ่านแค่ data ทุกคิวรี ⇒ คิวรีล้ม = แผงขึ้น 0/0 "ไม่มีผลิต" ทั้งที่ผลิตจริง
+       → error ของคิวรีหลักโยนเข้า catch ⇒ แผงเขียนว่าโหลดไม่สำเร็จ (reviewError) */
+    const need = (res, label) => { if (res?.error) throw new Error(`โหลด${label}ไม่สำเร็จ: ${res.error.message || res.error}`); return res?.data; };
     try {
-      const [{ data: sessions }, empRes, plRes, logRes] = await Promise.all([
+      const [sessRes, empRes, plRes, logRes] = await Promise.all([
         // ⚠️ ต้องมี `shift` — ตาราง "กางวิธีคิด OEE" (oeeRows) โชว์กะ ถ้าไม่ select จะขึ้น "—" ทุกแถว
         //    ซึ่งเป็นแผงที่มีไว้ตอบคำถาม "ทำไมบวกหารแล้วไม่ตรง" โดยเฉพาะ (กะเช้า/ดึกแยกไม่ออก)
-        supabaseDR.from('production_sessions').select('id, line_name, status, shift, oee, qty_ng, ng_qty, shift_min').eq('work_date', reviewDate),
+        // work_date + start_time = กรอบกะ ⇒ ตัด downtime ที่ทับเวลาพักก่อนคิดน้ำหนัก wLoad (dtMinBySession)
+        supabaseDR.from('production_sessions').select('id, line_name, status, shift, oee, qty_ng, ng_qty, shift_min, work_date, start_time').eq('work_date', reviewDate),
         supabase.from('employees').select('id, line_id').eq('is_active', true),
-        supabase.from('production_lines').select('id, name'),
+        loadLinesRes(),
         supabase.from('daily_production_logs').select('employee_id, is_present').eq('work_date', reviewDate),
       ]);
+      const sessions = need(sessRes, 'ข้อมูลกะ');
+      need(empRes, 'รายชื่อพนักงาน'); need(logRes, 'บันทึกเช็คชื่อ');
       const out = {};
       // oeeWSum/oeeWLoad = ถ่วงน้ำหนักด้วยเวลารับภาระ (กฎ OEE: ห้าม mean-of-percentages) · oeeSum/oeeN = fallback เมื่อไม่มีน้ำหนัก
       const ensure = (ln) => (out[ln] || (out[ln] = { actual: 0, target: 0, oeeWSum: 0, oeeWLoad: 0, oeeSum: 0, oeeN: 0, dtMin: 0, ng: 0, present: 0, headTotal: 0, oeeRows: [] }));
@@ -1256,14 +1300,20 @@ export default function FactoryMap({ setupMode = false }) {
       });
       if (sessions?.length) {
         const sessIds = sessions.map(s => s.id);
-        const [{ data: orders }, { data: dts }, { data: rvDefs }, { data: prods }] = await Promise.all([
+        /* ⚠️ loadPairMap() คืน map ตรงๆ (หรือ null) ไม่ใช่ { data } — เคยแกะ `{ data: prods }` ⇒ undefined
+           ⇒ `pairMap[m]` ระเบิด ⇒ catch กลืน ⇒ แผงนี้เป็น 0/0 ทั้งแผงตั้งแต่ 25/09 ถึง 02/10 (user ทัก "เมื่อวานมีผลิตงานนะ") */
+        const [ordRes, dtRes, defRes, pairMap, rvBreaks] = await Promise.all([
           supabaseDR.from('prod_orders').select('session_id, status, qty, qty_ok, qty_actual, qty_target, mat_no').in('session_id', sessIds),
           supabaseDR.from('downtime_logs').select('session_id, duration_min, started_at, ended_at, dr_downtime_types(category)').in('session_id', sessIds),
           supabaseDR.from('defect_logs').select('session_id, qty_ng, qty_suspect').in('session_id', sessIds),
-          supabaseDR.from('dr_products').select('mat_no, pair_mat_no'),
+          loadPairMap(),   // cache ทะเบียนสินค้ากลาง (25/09)
+          loadBreakPolicies(),   // ล้ม = โยน ⇒ แผงบอกโหลดไม่สำเร็จ (ห้ามถือว่า "ไม่มีพัก" แล้วหักซ้ำ)
         ]);
+        const orders = need(ordRes, 'ใบผลิต'), dts = need(dtRes, 'เครื่องหยุด'), rvDefs = need(defRes, 'ของเสีย');
+        // น้ำหนัก wLoad = shift_min − planned ที่ "หักได้จริง" (ตัดส่วนที่ทับพักออก · กฎเหล็ก OEE downtime ทับพัก)
+        const effBySess = dtMinBySession(sessions, dts || [], rvBreaks || []);
         const rvNgBySess = {}; (rvDefs || []).forEach(d => { rvNgBySess[d.session_id] = (rvNgBySess[d.session_id] || 0) + (Number(d.qty_ng) || 0) + (Number(d.qty_suspect) || 0); });
-        const pairMap = {}; (prods || []).forEach(p => { if (p.pair_mat_no) pairMap[p.mat_no] = p.pair_mat_no; });
+        const pairOf = (m) => pairMap?.[m] ?? null;   // pairMap null = ยังไม่รู้คู่ ⇒ ไม่ยุบ (ห้ามแปลงเป็น {} และห้าม index ตรงๆ)
         const ordBySess = {}; (orders || []).forEach(o => { (ordBySess[o.session_id] ||= []).push(o); });
         const dtBySess = {}; (dts || []).forEach(d => { (dtBySess[d.session_id] ||= []).push(d); });
         await loadOpInfo(); // map รายการขั้นตอน (OP) — cache แล้วถูก ไม่ยิงซ้ำ
@@ -1275,21 +1325,20 @@ export default function FactoryMap({ setupMode = false }) {
           os.forEach(od => {
             if (!od.mat_no) return;
             const e = perMat[od.mat_no] || (perMat[od.mat_no] = { mat_no: od.mat_no, target: 0, produced: 0 });
-            e.target += od.qty_target ?? od.qty ?? 0;
+            e.target += orderPlanQty(od);   // เป้านับครั้งเดียวทั้งสายยกยอด (oee §6.1)
             e.produced += od.status === 'confirmed' ? (od.qty_ok ?? od.qty ?? 0) : (od.qty_actual ?? 0);
           });
           const nullOs = os.filter(od => !od.mat_no);
-          const ptot = pairAwareTotal(collapseOps(Object.values(perMat), opInfoSync()), m => pairMap[m] || null);
-          o.target += ptot.target + nullOs.reduce((a, od) => a + (od.qty_target ?? od.qty ?? 0), 0);
+          const ptot = pairAwareTotal(collapseOps(Object.values(perMat), opInfoSync()), pairOf);
+          o.target += ptot.target + nullOs.reduce((a, od) => a + orderPlanQty(od), 0);
           o.actual += ptot.produced + nullOs.reduce((a, od) => a + (od.status === 'confirmed' ? (od.qty_ok ?? od.qty ?? 0) : (od.qty_actual ?? 0)), 0);
-          // Downtime นอกแผนทั้งวัน (dtMin) + เวลาที่วางแผนหยุด (plannedMin) สำหรับถ่วงน้ำหนัก OEE
-          let plannedMin = 0;
+          // Downtime นอกแผนทั้งวัน (dtMin = "เครื่องหยุดกี่นาที" ใช้นาทีเต็ม) · plannedMin (น้ำหนัก) ตัดส่วนทับพักแล้ว
           (dtBySess[s.id] || []).forEach(d => {
-            const mins = d.duration_min != null ? (Number(d.duration_min) || 0)
+            if (d.dr_downtime_types?.category === 'planned') return;
+            o.dtMin += d.duration_min != null ? (Number(d.duration_min) || 0)
               : (d.started_at && d.ended_at ? Math.max(0, (new Date(d.ended_at) - new Date(d.started_at)) / 60000) : 0);
-            if (d.dr_downtime_types?.category === 'planned') plannedMin += mins;
-            else o.dtMin += mins;
           });
+          const plannedMin = effBySess[s.id]?.planned || 0;
           o.ng += rvNgBySess[s.id] ?? s.qty_ng ?? s.ng_qty ?? 0;   // NG ยึด defect_logs (คอลัมน์ session ไม่น่าเชื่อถือ)
           // OEE ถ่วงด้วย "เวลารับภาระ" (shift_min − plannedMin) ตามกฎถ่วงน้ำหนัก OEE
           if (s.oee != null) {
@@ -1302,10 +1351,11 @@ export default function FactoryMap({ setupMode = false }) {
         });
       }
       Object.values(out).forEach(o => { o.dtMin = Math.round(o.dtMin); o.oee = o.oeeWLoad > 0 ? Math.round(o.oeeWSum / o.oeeWLoad) : (o.oeeN ? Math.round(o.oeeSum / o.oeeN) : null); });
+      if (!live()) return;
       setReviewStatus(out);
-    } catch { setReviewStatus({}); }
-    finally { setReviewLoading(false); }
-  }, [reviewDate]);
+    } catch (e) { console.error('[loadReview]', e); if (!live()) return; setReviewStatus({}); setReviewError(e?.message || String(e)); }
+    finally { if (live()) setReviewLoading(false); }
+  }, [reviewDate, beginReview]);
   useEffect(() => { if (panelMode === 'review' && !editing) loadReview(); }, [loadReview, panelMode, editing]);
 
   /* ── สรุปเรื่องราวทั้งวันของไลน์ที่คลิก (modal) — ผลิตรายพาร์ท · Downtime+เหตุผล · ของเสีย · 4M · คน ──
@@ -1326,7 +1376,7 @@ export default function FactoryMap({ setupMode = false }) {
           ids.length ? supabaseDR.from('downtime_logs').select('id, session_id, machine_no, description, duration_min, started_at, ended_at, carry_over, dr_downtime_types(name_th, category)').in('session_id', ids) : { data: [] },
           ids.length ? supabaseDR.from('defect_logs').select('id, session_id, qty_ng, qty_suspect, qty_repair, description, dr_defect_types(name_th), prod_orders(mat_no)').in('session_id', ids) : { data: [] },
           supabase.from('four_m_logs').select('id, line_name, category, description, status').eq('work_date', storyDate).in('line_name', fam),
-          supabaseDR.from('dr_products').select('mat_no, name, pair_mat_no'),
+          loadProductsMaster().then(rows => ({ data: rows || [] })),   // cache กลาง (25/09) — ต้องการ name + pair_mat_no
           loadOpInfo(), // map รายการขั้นตอน (OP) — ให้ยอดรวมใน modal ยุบขั้นซ้ำเหมือนผัง
         ]);
         if (cancelled) return;
@@ -1339,7 +1389,7 @@ export default function FactoryMap({ setupMode = false }) {
         (ordRes.data || []).forEach(o => {
           const k = o.mat_no || '(ไม่ระบุ MAT)';
           const e = byMat[k] || (byMat[k] = { mat: k, name: prodName[o.mat_no] || '', target: 0, produced: 0, orders: 0, manual: 0 });
-          e.target += o.qty_target ?? o.qty ?? 0;
+          e.target += orderPlanQty(o);   // เป้านับครั้งเดียวทั้งสายยกยอด (oee §6.1)
           e.produced += o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0);
           e.orders++; if (o.is_manual) e.manual++;
         });
@@ -1373,7 +1423,7 @@ export default function FactoryMap({ setupMode = false }) {
         // สรุปรายกะ
         const shifts = (sessions || []).map(s => {
           const sOrders = (ordRes.data || []).filter(o => o.session_id === s.id);
-          const t = sOrders.reduce((a, o) => a + (o.qty_target ?? o.qty ?? 0), 0);
+          const t = sOrders.reduce((a, o) => a + orderPlanQty(o), 0);
           const p = sOrders.reduce((a, o) => a + (o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0)), 0);
           const dt = dtRows.filter(d => d.session_id === s.id && !d.planned).reduce((a, d) => a + d.mins, 0);
           const ng = (defRes.data || []).filter(d => d.session_id === s.id).reduce((a, d) => a + (d.qty_ng || 0), 0);
@@ -1520,7 +1570,7 @@ export default function FactoryMap({ setupMode = false }) {
   const openLine = (name, date) => {
     // 🔨 โซนคลังแม่พิมพ์ → เปิดผังจัดเก็บแม่พิมพ์ของโซนนั้นเลย (ต้องเช็คก่อน isFac — ชื่อโซนแม่พิมพ์ก็ไม่ใช่ไลน์ผลิตเหมือนกัน)
     const dz = dieZoneOf(name);
-    if (dz) { setHoverLine(null); navigate(`/die-registry?tab=layout&area=${encodeURIComponent(dz.id)}&from=factory-map`); return; }
+    if (dz) { setHoverLine(null); navigate(`/equipment?tab=die&die=layout&area=${encodeURIComponent(dz.id)}&from=factory-map`); return; }
     // 🏬 โซนคลังสินค้า → popup รายการ MAT ในโซน (เต็ม/ขาด) — เช็คก่อน isFac เหมือนโซนแม่พิมพ์
     const sz = storeZoneOf(name);
     if (sz) { setHoverLine(null); setStoreZoneModal(sz); return; }
@@ -1534,7 +1584,7 @@ export default function FactoryMap({ setupMode = false }) {
     else { setStoryLine(null); setDetailLine(name); }
   };
   // ตีกรอบเฉพาะ "ไลน์บนสุด (top-level)" = parent_line_name IS NULL — 1 กรอบ/กลุ่ม (รวมยอดลูกด้วย stOf)
-  const topNames = useMemo(() => lines.filter(l => !l.parent_line_name).map(l => l.name), [lines]);
+  const topNames = useMemo(() => sortLineNames(lines.filter(l => !l.parent_line_name).map(l => l.name), lines), [lines]);
   // ชื่อไลน์ผลิตทั้งหมด (แม่+ลูก) — กรอบที่ line_name ไม่ตรงไลน์ผลิตใดเลย = โซน MTN/facility
   const allProdNames = useMemo(() => new Set(lines.map(l => l.name)), [lines]);
   const isFac = (name) => !allProdNames.has(name);
@@ -1578,6 +1628,8 @@ export default function FactoryMap({ setupMode = false }) {
     agg.oeeA = wavg(agg.oeeRows, r => r.a, wLoad);
     agg.oeeP = wavg(agg.oeeRows, r => r.p, wRun);
     agg.oeeQ = wavg(agg.oeeRows, r => r.q, wProd);
+    // เป้า OEE ของครอบครัวนี้ (กติกาเดียวกับ OBEYA) — METRICS.oee.cat ตัดสีจากตัวนี้ ไม่ใช่ 80/65 ตายตัว
+    agg.oeeTarget = oeeTargetForLines(familyNames(name), lines, oeeTargets)?.oee ?? null;
     // 🌱 คาร์บอน (C1) — คำนวณจาก kWh × EF ของเดือนที่ผังโชว์ · ไม่มี EF = null (ห้ามเดา)
     agg.kwhCo2 = co2eKg(agg.kwh ?? null, energyEf);
     return agg;
@@ -1651,6 +1703,96 @@ export default function FactoryMap({ setupMode = false }) {
     return arr;
   }, [lineStatus, manpower, pmStatus, supplyStatus, facilitySupply, dieZones, storeZones, regions, metric, editing, showFac, topNames, parentOf]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  /* ── 🏛️ บอร์ดสถานะ OBEYA (สด) — แผงขวาโหมด `obeya` ────────────────────────────────
+     2026-09-22 · คำขอ user: แผงขวาเดิม ("จัดอันดับตาม metric") พูดเรื่องเดียวกับป้ายบนผัง
+     + การ์ด hover ⇒ ซ้ำ · เปลี่ยนเป็น "หัวข้อไหนมีปัญหา" แล้วค่อยกดเจาะหาไลน์
+
+     🔴 กฎเหล็กของแผงนี้ (ดูเหตุผลเต็มใน src/utils/obeyaLive.js):
+       - สถานะรายไลน์ **ยืมจาก METRICS.<x>.cat ของแท็บเจ้าของเรื่องบนผังนี้เอง** ห้ามตั้งเกณฑ์ใหม่
+         (กฎเดียวกับแท็บ 🚦 สุขภาพรวม — ไม่งั้นแผงขวากับสีบนผังตอบไม่ตรงกัน)
+       - หัวข้อที่ดูสดไม่ได้ **ต้องอยู่บนบอร์ดเป็นไฟเทา + บอกเหตุผล** ห้ามซ่อน ห้ามโชว์ 0
+       - ไฟรวมต้องบอกว่าตัดสินจากกี่หัวข้อ (boardOverall)
+     ⚠️ โซนสนับสนุน (MTN/utility/คลัง/แม่พิมพ์) ไม่เข้าบอร์ดนี้ — ไม่มีตัวเลข SQDCM
+        (เอามานับก็ได้แต่จะกลายเป็น "เขียวฟรี" ที่ทำให้ไฟรวมสวยกว่าความจริง) */
+  const obeyaBoard = useMemo(() => {
+    const names = [...new Set([...topNames, ...regions.map(r => r.line_name).filter(n => !parentOf[n])])]
+      .filter(n => !isFac(n));
+    const sts = names.map(name => ({ name, st: stOf(name) }));
+    const openLines = sts.filter(x => x.st.hasOpen);
+
+    /** สร้างหัวข้อจาก metric เจ้าของเรื่อง — status มาจาก cat ของ metric นั้นล้วนๆ */
+    const fromMetric = (mKey, extra = {}) => {
+      const Mx = METRICS[mKey];
+      return rollupAxis({
+        rows: sts.map(({ name, st }) => ({
+          name, status: catToStatus(Mx.cat(st)), text: Mx.text(st), val: Mx.value(st),
+        })),
+        ...extra,
+      });
+    };
+
+    // ⚙️ OEE — ค่ารวมถ่วงด้วยเวลารับภาระ (wLoad) ตามกฎ ห้ามเฉลี่ยเปอร์เซ็นต์ตรงๆ
+    const allOeeRows = sts.flatMap(x => x.st.oeeRows || []);
+    const oeeVal = wavg(allOeeRows, r => r.oee, wLoad);
+    const dtNow = sts.filter(x => x.st.dtActive);
+    const oee = fromMetric('oee', {
+      key: 'OEE',
+      value: oeeVal != null ? `${Math.round(oeeVal)}%` : null,
+      sub: dtNow.length ? `🔴 กำลังหยุด ${dtNow.length} ไลน์` : null,
+    });
+    oee.dtNow = dtNow.map(x => x.name);
+
+    // 🦺 S — PPE ครบตอนเช็คชื่อ (ตัวแทน ไม่ใช่ผลด้านความปลอดภัยจริง — ต้องกำกับบนจอเสมอ)
+    const ppeTot = sts.reduce((a, x) => ({ present: a.present + (x.st.present || 0), ppeBad: a.ppeBad + (x.st.ppeBad || 0) }), { present: 0, ppeBad: 0 });
+    const ppeAll = ppeStatus(ppeTot);
+    const s = rollupAxis({
+      key: 'S',
+      rows: sts.map(({ name, st }) => {
+        const p = ppeStatus(st);
+        return { name, status: p.status, val: p.pct,
+          text: p.status === 'none' ? 'ยังไม่มีคนเช็คชื่อ' : (p.bad ? `⚠PPE ไม่ครบ ${p.bad}/${p.present} คน` : `PPE ครบ ${p.present} คน`) };
+      }),
+      value: ppeAll.pct != null ? `${ppeAll.pct}%` : null,
+      sub: ppeAll.bad ? `⚠ PPE ไม่ครบ ${ppeAll.bad} คน` : null,
+      note: SAFETY_PROXY_NOTE,
+    });
+
+    // 🎯 Q — ยืมเกณฑ์จากแท็บ 🚫 ของเสีย (NG 0 เขียว · <20 เหลือง · ≥20 แดง)
+    const ngTot = sts.reduce((a, x) => a + (x.st.ng || 0), 0);
+    const qAvg = wavg(allOeeRows, r => r.q, wProd);
+    const q = fromMetric('ng', {
+      key: 'Q',
+      value: qAvg != null ? `Q ${Math.round(qAvg)}%` : (openLines.length ? `NG ${fmtNum(ngTot)}` : null),
+      sub: qAvg != null ? `NG รวม ${fmtNum(ngTot)} ชิ้น` : null,
+    });
+
+    // 🚚 D — ยืมเกณฑ์จากแท็บ 📦 ยอดผลิต (ทำได้เทียบ "เป้า ณ เวลานี้" ≥95 เขียว · ≥80 เหลือง)
+    const dTot = sts.reduce((a, x) => ({ actual: a.actual + (x.st.actual || 0), onTime: a.onTime + (x.st.onTimeTarget || 0), target: a.target + (x.st.target || 0) }), { actual: 0, onTime: 0, target: 0 });
+    const d = fromMetric('productivity', {
+      key: 'D',
+      value: dTot.onTime >= 1 ? `${Math.round(dTot.actual / dTot.onTime * 100)}%` : null,
+      sub: dTot.target > 0 ? `${fmtNum(dTot.actual)}/${fmtNum(dTot.onTime)} · เป้าเต็มกะ ${fmtNum(dTot.target)}` : null,
+    });
+
+    /* 💰 C — ผังรวมไม่ได้โหลดอัตราค่าแรง (cost center) / ต้นทุนต่อชิ้น ⇒ คิดมูลค่าความสูญเสียสดไม่ได้
+       🔴 ห้ามเอา kWh รายเดือนมาสวมเป็น "ต้นทุนสด" — คนละหน่วยเวลา และเป็นค่ากรอกมือรายเดือน */
+    const c = rollupAxis({
+      key: 'C', live: false,
+      note: NOT_LIVE_NOTE('ผังรวมไม่ได้โหลดอัตราค่าแรงต่อชั่วโมงและต้นทุนต่อชิ้น จึงคิดมูลค่าความสูญเสียไม่ได้'),
+    });
+
+    // 🧑‍🏭 M — ยืมเกณฑ์จากแท็บ 👷 คน & จุดงาน (คนมา ≥95 เขียว · ≥80 เหลือง · จุดงาน 90/70)
+    const mTot = sts.reduce((a, x) => ({ present: a.present + (x.st.present || 0), head: a.head + (x.st.headTotal || 0) }), { present: 0, head: 0 });
+    const m = fromMetric('people', {
+      key: 'M',
+      value: mTot.head > 0 ? `${Math.round(mTot.present / mTot.head * 100)}%` : null,
+      sub: mTot.head > 0 ? `มา ${fmtNum(mTot.present)}/${fmtNum(mTot.head)} คน` : null,
+    });
+
+    const axes = [oee, s, q, d, c, m];
+    return { axes, overall: boardOverall(axes), lineCount: names.length, openCount: openLines.length };
+  }, [lineStatus, manpower, pmStatus, supplyStatus, facilitySupply, dieZones, storeZones, regions, topNames, parentOf, lines]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── สรุปทบทวนรายวัน: rollup ทั้งครอบครัว (แม่+ลูก) เหมือน stOf แต่อ่านจาก reviewStatus ──
   //    OEE ถ่วงน้ำหนักด้วยเวลารับภาระ (oeeWSum/oeeWLoad) — ห้าม mean-of-percentages · fallback = เฉลี่ยธรรมดา
   const reviewOf = (name) => {
@@ -1695,10 +1837,12 @@ export default function FactoryMap({ setupMode = false }) {
       setUploading(true);
       // HEIC/HEIF จากกล้องมือถือ → แปลงเป็น JPEG ก่อน derive ext/ชนิด (ไฟล์อื่นคืนตัวเดิม)
       file = await toDecodableImage(file);
-      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
-      const isGif = file.type === 'image/gif' || ext === 'gif';
+      const srcExt = (file.name.split('.').pop() || 'jpg').toLowerCase();
+      const isGif = file.type === 'image/gif' || srcExt === 'gif';
       if (isGif && file.size > 2 * 1024 * 1024) { toast.error('GIF ต้องไม่เกิน 2MB'); return; }
-      const blob = isGif ? file : await imageCompression(file, { maxSizeMB: 2.5, maxWidthOrHeight: 2560, initialQuality: 0.9 });
+      /* คงความละเอียด 2560px (ผังโรงงานต้องซูมอ่านชื่อไลน์ได้) แต่แปลงเป็น WebP —
+         ผังเดิมเป็น PNG 2.4 MB และจอ TV ทุกเครื่องโหลดทั้งก้อน · ดู src/utils/layoutImage.js */
+      const { blob, ext } = isGif ? { blob: file, ext: 'gif' } : await compressLayoutImage(file);
       const path = `factory/map_${Date.now()}.${ext}`;
       const { error: upErr } = await supabase.storage.from('employee-photos').upload(path, blob, uploadOpts());
       if (upErr) throw upErr;
@@ -1733,7 +1877,7 @@ export default function FactoryMap({ setupMode = false }) {
     topNames.forEach(t => {
       if (f.has(t)) return;
       const ch = childrenOf[t] || [];
-      if (ch.length && ch.some(c => f.has(c))) out.push(...ch.filter(c => !f.has(c)));
+      if (ch.length && ch.some(c => f.has(c))) out.push(...sortLineNames(ch.filter(c => !f.has(c)), lines));
     });
     return out;
   };
@@ -2013,7 +2157,7 @@ export default function FactoryMap({ setupMode = false }) {
     if (!r) return;
     if (JSON.stringify(r.points) === JSON.stringify(d.base)) return;   // คลิกเฉยๆ ไม่ได้ลาก — ไม่บันทึก/ไม่เข้า history
     if (d.snap) hist.pushSnapshot(d.snap);
-    checkWrite(await supabase.from('factory_line_regions').update({ points: r.points }).eq('id', d.id), 'บันทึกจุด polygon');
+    checkWriteRows(await supabase.from('factory_line_regions').update({ points: r.points }).eq('id', d.id).select('id'), 'บันทึกจุด polygon');
   };
   const deleteRegion = async (id) => {
     const rg = regions.find(r => r.id === id);
@@ -2039,20 +2183,16 @@ export default function FactoryMap({ setupMode = false }) {
   const flashLine = (name) => { setHighlight(name); setTimeout(() => setHighlight(h => h === name ? null : h), 2000); };
 
   return (
-    <div className="page-content" style={{ maxWidth: 'min(98vw, 2400px)', margin: '0 auto' }}>
+    <Page width="full">
+      <PageHeader title="ผังรวมโรงงาน" icon="🗺️"
+        sub={<>ทุกไลน์บนผังเดียว — เลือกดูได้หลายมุมมอง · <b>วางเม้าส์ดูสรุป · คลิกเปิดผังไลน์พร้อมพนักงาน</b> · อัปเดตสดอัตโนมัติ · <b>แผงขวา = ทบทวนรายวัน · 🏛️ สถานะ OBEYA สด · จัดอันดับ</b></>}
+        actions={canEdit && <button onClick={() => { setEditing(v => !v); cancelDraw(); }} style={{ ...btn(editing), position: 'relative' }}>{editing ? '✓ เสร็จ' : '✏️ แก้ผัง'}<ToggleDot on={editing} /></button>} />
       {partial && (
         <div style={{ marginBottom: 10, padding: '8px 12px', borderRadius: 8, fontSize: 12.5, fontWeight: 700,
                       background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.45)', color: '#f87171' }}>
           {partial}
         </div>
       )}
-      <div style={{ display: 'flex', paddingRight: 52, justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
-        <div>
-          <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 'clamp(16px,3vw,22px)', color: 'var(--text)' }}>🗺️ ผังรวมโรงงาน</h2>
-          <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--muted)' }}>ทุกไลน์บนผังเดียว — เลือกดูได้หลายมุมมอง · <b>วางเม้าส์ดูสรุป · คลิกเปิดผังไลน์พร้อมพนักงาน</b> · อัปเดตสดอัตโนมัติ · <b>แผงขวา = สรุปทบทวนทั้งวัน (เลือกวันได้)</b></p>
-        </div>
-        {canEdit && <button onClick={() => { setEditing(v => !v); cancelDraw(); }} style={{ ...btn(editing), position: 'relative' }}>{editing ? '✓ เสร็จ' : '✏️ แก้ผัง'}<ToggleDot on={editing} /></button>}
-      </div>
 
       {/* เลือก metric */}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
@@ -2322,10 +2462,10 @@ export default function FactoryMap({ setupMode = false }) {
                       ...(lblScale !== 1 ? { zoom: lblScale } : {}),
                       background: 'linear-gradient(180deg, rgba(6,10,18,0.94), rgba(6,10,18,0.86))',
                       border: `1px solid ${meta.color}88`, borderLeft: `3px solid ${meta.color}`,
-                      borderRadius: 8, padding: '5px 9px 6px', boxShadow: '0 4px 18px rgba(0,0,0,0.55)',
+                      borderRadius: 8, padding: '5px 9px 6px', boxShadow: 'var(--shadow-float)',
                       textShadow: '0 1px 3px rgba(0,0,0,0.95)', maxWidth: 150,
                     }}>
-                      <div style={{ fontSize: 9.5, fontWeight: 800, color: 'rgba(255,255,255,0.72)', letterSpacing: 0.3,
+                      <div style={{ fontSize: 11, fontWeight: 800, color: 'rgba(255,255,255,0.72)', letterSpacing: 0.3,
                         whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textTransform: 'uppercase', lineHeight: 1.25 }}>
                         {st.dtActive && <span className="dt-alarm-icon" style={{ color: '#ef4444' }}>🔴 </span>}
                         {parent && <span style={{ color: 'rgba(255,255,255,0.5)' }}>↳ </span>}{r.line_name}
@@ -2334,11 +2474,11 @@ export default function FactoryMap({ setupMode = false }) {
                         <span style={{ fontSize: 'clamp(17px,1.5vw,22px)', fontWeight: 900, color: '#fff', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
                           {Math.round(st.oee)}
                         </span>
-                        <span style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.6)', lineHeight: 1.6 }}>% OEE</span>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.6)', lineHeight: 1.6 }}>% OEE</span>
                         <span style={{ marginLeft: 'auto' }}><Spark data={series} color={meta.color} /></span>
                       </div>
                       {/* แถวเนื้อหาการ์ดทุกแถวต้อง nowrap — ข้อความยาวห้ามดันการ์ดสูงเกิน KPI_H ที่ layout จองไว้ (2026-08-26 "box ทับกันเละ") */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2, fontSize: 9.5, fontWeight: 700, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2, fontSize: 11, fontWeight: 700, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden' }}>
                         <span style={{ color: dCol }}>{d == null ? 'ไม่มีฐานเทียบ' : `${d > 0 ? '▲ +' : d < 0 ? '▼ ' : ''}${d} จุด·วันก่อน`}</span>
                         {st.oeeLive && <span style={{ color: 'rgba(255,255,255,0.55)' }}>· สด</span>}
                         {st.oeeCtPartial && <span style={{ color: '#f59e0b' }}>· ⚠CT ไม่ครบ</span>}
@@ -2346,7 +2486,7 @@ export default function FactoryMap({ setupMode = false }) {
                       </div>
                       {/* แตก A·P·Q ให้เห็นบนการ์ด (user 2026-08-25 "บอกแต่ OEE ก็ทำแต่ OEE หรอ") — ถ่วงน้ำหนักตามกฎแล้วใน stOf */}
                       {(st.oeeA != null || st.oeeP != null || st.oeeQ != null) && (
-                        <div style={{ display: 'flex', gap: 7, marginTop: 2, fontSize: 9.5, fontWeight: 800, lineHeight: 1.2, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', overflow: 'hidden' }}>
+                        <div style={{ display: 'flex', gap: 7, marginTop: 2, fontSize: 11, fontWeight: 800, lineHeight: 1.2, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', overflow: 'hidden' }}>
                           <span style={{ color: '#4ade80' }}>A {st.oeeA != null ? Math.round(st.oeeA) : '–'}</span>
                           <span style={{ color: '#60a5fa' }}>P {st.oeeP != null ? Math.round(st.oeeP) : '–'}</span>
                           <span style={{ color: '#c084fc' }}>Q {st.oeeQ != null ? Math.round(st.oeeQ) : '–'}</span>
@@ -2372,10 +2512,10 @@ export default function FactoryMap({ setupMode = false }) {
                       ...(lblScale !== 1 ? { zoom: lblScale } : {}),
                       background: 'linear-gradient(180deg, rgba(6,10,18,0.94), rgba(6,10,18,0.86))',
                       border: `1px solid ${meta.color}88`, borderLeft: `3px solid ${meta.color}`,
-                      borderRadius: 8, padding: '5px 9px 6px', boxShadow: '0 4px 18px rgba(0,0,0,0.55)',
+                      borderRadius: 8, padding: '5px 9px 6px', boxShadow: 'var(--shadow-float)',
                       textShadow: '0 1px 3px rgba(0,0,0,0.95)', maxWidth: 150,
                     }}>
-                      <div style={{ fontSize: 9.5, fontWeight: 800, color: 'rgba(255,255,255,0.72)', letterSpacing: 0.3,
+                      <div style={{ fontSize: 11, fontWeight: 800, color: 'rgba(255,255,255,0.72)', letterSpacing: 0.3,
                         whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textTransform: 'uppercase', lineHeight: 1.25 }}>
                         {st.dtActive && <span className="dt-alarm-icon" style={{ color: '#ef4444' }}>🔴 </span>}
                         {st.isFac ? (st.storeZone ? `${zoneKindMeta(st.storeZone.kind).icon} ` : st.die ? '🔨 ' : '🔧 ') : ''}{r.line_name}
@@ -2384,10 +2524,10 @@ export default function FactoryMap({ setupMode = false }) {
                         <span style={{ fontSize: 'clamp(17px,1.5vw,22px)', fontWeight: 900, color: '#fff', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
                           {fmtKwh(st.kwh)}
                         </span>
-                        <span style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.6)', lineHeight: 1.6 }}>kWh</span>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.6)', lineHeight: 1.6 }}>kWh</span>
                         <span style={{ marginLeft: 'auto' }}><Spark data={st.kwhSeries} color={meta.color} /></span>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2, fontSize: 9.5, fontWeight: 700, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2, fontSize: 11, fontWeight: 700, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden' }}>
                         <span style={{ color: dCol }}>{d == null ? 'ไม่มีฐานเทียบ' : `${d > 0 ? '+' : ''}${d}%`}</span>
                         {st.kwhCo2 != null && <span style={{ color: 'rgba(255,255,255,0.55)' }}>· 🌱 {fmtTco2e(st.kwhCo2)} t</span>}
                         {st.kwhCost > 0 && <span style={{ color: 'rgba(255,255,255,0.55)' }}>· ฿{fmtKwh(st.kwhCost)}</span>}
@@ -2412,7 +2552,7 @@ export default function FactoryMap({ setupMode = false }) {
                     ...(lblScale !== 1 ? { zoom: lblScale } : {}),
                     ...(box?.plain
                       ? { textAlign: 'center', textShadow: '0 1px 2px #000, 0 0 7px rgba(0,0,0,0.95)' }
-                      : { background: 'linear-gradient(180deg, rgba(8,10,16,0.78), rgba(8,10,16,0.58))', border: `1px solid ${meta.color}66`, borderBottom: `2.5px solid ${meta.color}`, borderRadius: 7, padding: '2px 8px 3px', textAlign: 'center', textShadow: '0 1px 3px rgba(0,0,0,0.95)', boxShadow: '0 2px 10px rgba(0,0,0,0.35)' }),
+                      : { background: 'linear-gradient(180deg, rgba(8,10,16,0.78), rgba(8,10,16,0.58))', border: `1px solid ${meta.color}66`, borderBottom: `2.5px solid ${meta.color}`, borderRadius: 7, padding: '2px 8px 3px', textAlign: 'center', textShadow: '0 1px 3px rgba(0,0,0,0.95)', boxShadow: 'var(--shadow-float)' }),
                   }}>
                     <div style={{ fontSize: 'clamp(11px,1vw,14px)', fontWeight: 800, color: '#fff', letterSpacing: 0.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.3 }}>
                       {st.dtActive && metric !== 'breakdown' && <span className="dt-alarm-icon" style={{ color: '#ef4444' }}>🔴 </span>}
@@ -2444,9 +2584,12 @@ export default function FactoryMap({ setupMode = false }) {
           {!editing && !panelHide && (
             <aside style={{ flex: '0 0 360px', maxWidth: '100%', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 16px', maxHeight: 'calc(100vh - 200px)', overflowY: 'auto' }}>
               {/* สลับโหมดแผง */}
-              <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
-                <button onClick={() => setPanelMode('review')} style={{ ...miniTab(panelMode === 'review'), flex: 1 }}>📅 สรุปทบทวนรายวัน</button>
-                <button onClick={() => setPanelMode('live')} style={{ ...miniTab(panelMode === 'live'), flex: 1 }}>⚡ สด (จัดอันดับ)</button>
+              <div style={{ display: 'flex', gap: 5, marginBottom: 12 }}>
+                <button onClick={() => setPanelMode('review')} style={{ ...miniTab(panelMode === 'review'), flex: 1, fontSize: 11.5, padding: '5px 4px' }}>📅 ทบทวนรายวัน</button>
+                <button onClick={() => setPanelMode('obeya')} style={{ ...miniTab(panelMode === 'obeya'), flex: 1, fontSize: 11.5, padding: '5px 4px' }}
+                  title="สถานะรายหัวข้อแบบห้อง OBEYA (SQDCM) จากข้อมูลสดของวันนี้ — กดหัวข้อเพื่อเจาะหาไลน์ที่มีปัญหา">🏛️ OBEYA (สด)</button>
+                <button onClick={() => setPanelMode('live')} style={{ ...miniTab(panelMode === 'live'), flex: 1, fontSize: 11.5, padding: '5px 4px' }}
+                  title="จัดอันดับไลน์ตามแท็บ metric ที่เลือกด้านบน (พลังงาน / PM / Supply Route ดูได้ที่นี่เท่านั้น)">📊 อันดับ</button>
               </div>
 
               {panelMode === 'review' ? (
@@ -2469,7 +2612,7 @@ export default function FactoryMap({ setupMode = false }) {
                     const t = reviewTotals; const pct = t.target > 0 ? Math.round(t.actual / t.target * 100) : null;
                     const stats = [
                       { label: 'ผลิตได้รวม / เป้า', val: `${fmtNum(t.actual)}/${fmtNum(t.target)}${pct != null ? ` · ${pct}%` : ''}`, color: pctCol(pct) },
-                      { label: 'OEE เฉลี่ย', val: t.oee != null ? `${t.oee}%` : '—', color: oeeCol(t.oee),
+                      { label: 'OEE เฉลี่ย', val: t.oee != null ? `${t.oee}%` : '—', color: oeeCol(t.oee, Object.keys(reviewStatus || {})),
                         explain: t.oeeRows?.length ? { title: 'OEE เฉลี่ยทั้งโรงงาน', rows: t.oeeRows } : null },
                       { label: 'Downtime รวม', val: `${fmtNum(t.dtMin)} น.`, color: t.dtMin > 0 ? '#f59e0b' : 'var(--text)' },
                       { label: 'ของเสียรวม', val: fmtNum(t.ng), color: t.ng > 0 ? '#ef4444' : 'var(--text)' },
@@ -2481,11 +2624,11 @@ export default function FactoryMap({ setupMode = false }) {
                           <div key={s.label} onClick={s.explain ? () => setOeeExplain(s.explain) : undefined}
                             title={s.explain ? 'ดูวิธีคิดค่าเฉลี่ย' : undefined}
                             style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, padding: '7px 10px', cursor: s.explain ? 'pointer' : 'default' }}>
-                            <div style={{ fontSize: 10.5, color: 'var(--muted)', fontWeight: 600 }}>
+                            <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}>
                               {s.label}{s.explain && <span style={{ color: 'var(--accent)', fontWeight: 800 }}> ⓘ</span>}
                             </div>
                             <div style={{ fontSize: 15, fontWeight: 800, color: s.color, fontVariantNumeric: 'tabular-nums', lineHeight: 1.2 }}>{s.val}</div>
-                            {s.explain && <div style={{ fontSize: 9.5, color: 'var(--muted)' }}>ถ่วงน้ำหนักตามเวลารับภาระ</div>}
+                            {s.explain && <div style={{ fontSize: 11, color: 'var(--muted)' }}>ถ่วงน้ำหนักตามเวลารับภาระ</div>}
                           </div>
                         ))}
                       </div>
@@ -2494,6 +2637,12 @@ export default function FactoryMap({ setupMode = false }) {
 
                   {reviewLoading ? (
                     <div style={{ fontSize: 12, color: 'var(--muted)', padding: 16, textAlign: 'center' }}>กำลังโหลด...</div>
+                  ) : reviewError ? (
+                    <div style={{ fontSize: 12, color: '#ef4444', padding: 14, textAlign: 'center', border: '1px solid #ef444455', borderRadius: 8 }}>
+                      ⚠️ โหลดสรุปวันนี้ไม่สำเร็จ — ตัวเลขด้านบนจึงเป็น 0 <b>ไม่ใช่ "ไม่มีการผลิต"</b>
+                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, wordBreak: 'break-all' }}>{reviewError}</div>
+                      <button onClick={loadReview} style={{ ...miniTab(false), marginTop: 8, padding: '3px 10px', fontSize: 11.5 }}>↻ ลองใหม่</button>
+                    </div>
                   ) : reviewRanked.every(x => !x.r.target && !x.r.dtMin && !x.r.ng && x.r.oee == null) ? (
                     <div style={{ fontSize: 12, color: 'var(--muted)', padding: 20, textAlign: 'center' }}>ไม่มีข้อมูลการผลิตของวันที่เลือก</div>
                   ) : reviewRanked.map(({ name, r }, i) => {
@@ -2515,7 +2664,7 @@ export default function FactoryMap({ setupMode = false }) {
                           <div style={{ fontSize: 13, fontWeight: 800, color: pctCol(pct), whiteSpace: 'nowrap', flexShrink: 0 }}>{r.target > 0 ? `${fmtNum(r.actual)}/${fmtNum(r.target)} · ${pct}%` : '—'}</div>
                         </div>
                         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', paddingLeft: 27 }}>
-                          <Chip label="OEE" val={r.oee != null ? `${r.oee}%` : '—'} color={oeeCol(r.oee)} />
+                          <Chip label="OEE" val={r.oee != null ? `${r.oee}%` : '—'} color={oeeCol(r.oee, [name])} />
                           <Chip label="DT" val={`${fmtNum(r.dtMin)}น.`} color={r.dtMin > 0 ? '#f59e0b' : 'var(--muted)'} />
                           <Chip label="NG" val={fmtNum(r.ng)} color={r.ng > 0 ? '#ef4444' : 'var(--muted)'} />
                           {r.headTotal > 0 && <Chip label="คน" val={`${r.present}/${r.headTotal}`} color="var(--text2)" />}
@@ -2524,7 +2673,118 @@ export default function FactoryMap({ setupMode = false }) {
                     );
                   })}
                 </>
-              ) : (() => {
+              ) : panelMode === 'obeya' ? (() => {
+                /* ── 🏛️ บอร์ดสถานะ OBEYA (สด) ──────────────────────────────────────
+                   ตอบ "วันนี้เรื่องไหนมีปัญหา" → กดหัวข้อ → เห็นไลน์ที่เป็นต้นเหตุ → กดไลน์ไปที่ผัง
+                   🔴 ห้ามซ่อนหัวข้อที่ตัดสินไม่ได้ · ห้ามโชว์ 0 แทน "ไม่มีข้อมูล" ·
+                      ไฟรวมต้องบอกว่าตัดสินจากกี่หัวข้อ (กฎความซื่อสัตย์ของจอ — CLAUDE.md §OBEYA) */
+                const B = obeyaBoard;
+                const ov = B.overall;
+                /* 🔴 ไฟสถานะ KPI **ห้ามกระพริบ** (UI-CONVENTIONS §2.1) — บอร์ดเปิดค้างทั้งวันและมีไฟ 6 ดวง
+                   กระพริบหมด = "แดงหมด" ที่ §2 ห้ามไว้ + รีเพนต์หนักบนจอ TV · แดง = นิ่ง + เรืองแสง
+                   (ตัวที่ควรกระพริบคือ downtime ที่เปิดค้าง ซึ่งอยู่บนผังคนละแผง) */
+                const dot = (st, size = 11) => (
+                  <span style={{ width: size, height: size, borderRadius: '50%', background: statusColor(st), flexShrink: 0, display: 'inline-block',
+                    boxShadow: st === 'bad' ? `0 0 ${Math.round(size * 0.6)}px ${statusColor(st)}` : 'none' }} />
+                );
+                /* เจาะหาไลน์ที่เป็นต้นเหตุของหัวข้อ — แสดงใต้หัวข้อนั้นเลย
+                   ⚠️ ไม่มีไลน์แดง/เหลือง ≠ "ผ่าน" เสมอไป — ต้องบอกด้วยว่าตัดสินได้กี่จาก กี่ไลน์ */
+                const axisDrill = (ax, meta) => (
+                  <div onClick={(e) => e.stopPropagation()} style={{ marginTop: 8, paddingTop: 8, borderTop: '1px dashed var(--border2)' }}>
+                    <div style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--text2)', marginBottom: 5 }}>
+                      {meta?.icon} {meta?.label} — ไลน์ที่ต้องดู
+                    </div>
+                    {!ax.live ? (
+                      <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.6 }}>
+                        <Link to="/obeya?tab=sqdcm" style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--accent)' }}>🏛️ เปิดห้อง OBEYA →</Link>
+                      </div>
+                    ) : ax.problems.length === 0 ? (
+                      <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.6 }}>
+                        {ax.judged > 0
+                          ? `ไม่มีไลน์ที่หลุด/เฉียดเป้าในหัวข้อนี้ (ตัดสินได้ ${ax.judged} จาก ${ax.total} ไลน์)`
+                          : 'ยังไม่มีไลน์ไหนตัดสินหัวข้อนี้ได้'}
+                      </div>
+                    ) : (<>
+                      {ax.problems.map(({ name, status, text }) => {
+                        const hasRegion = regions.some(r => r.line_name === name);
+                        return (
+                          <div key={name} onClick={() => { if (hasRegion) flashLine(name); openLine(name); }}
+                            style={{ padding: '6px 9px', borderRadius: 8, marginBottom: 4, cursor: 'pointer', background: highlight === name ? 'var(--bg2)' : 'var(--bg)', border: `1px solid ${highlight === name ? statusColor(status) : 'var(--border2)'}` }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                              {dot(status, 9)}
+                              <div style={{ minWidth: 0, flex: 1, fontSize: 12, fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {name}{!hasRegion && <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}> · ยังไม่ตีกรอบ</span>}
+                              </div>
+                            </div>
+                            {text && <div style={{ fontSize: 11, color: statusColor(status), marginTop: 2, paddingLeft: 16, overflowWrap: 'anywhere' }}>{text}</div>}
+                          </div>
+                        );
+                      })}
+                      <div style={{ fontSize: 11, color: 'var(--muted)' }}>กดแถวไลน์เพื่อเน้นบนผัง + เปิดรายละเอียด</div>
+                    </>)}
+                  </div>
+                );
+                return (
+                  <>
+                    <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 2 }}>🏛️ สถานะวันนี้ (สด) — ทั้งโรงงาน</div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>
+                      หัวข้อแบบห้อง OBEYA (SQDCM) · {B.lineCount} ไลน์ · เปิดกะแล้ว {B.openCount} ไลน์ — กดหัวข้อเพื่อดูว่าไลน์ไหนเป็นต้นเหตุ
+                    </div>
+
+                    {/* ไฟรวม — ต้องบอกเสมอว่าตัดสินจากกี่หัวข้อ ไม่งั้นเขียวจาก 2/6 ดูเหมือนเขียวจาก 6/6 */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--bg3)', border: `1px solid ${statusColor(ov.status)}55`, borderLeft: `4px solid ${statusColor(ov.status)}`, borderRadius: 9, padding: '9px 11px', marginBottom: 10 }}>
+                      {dot(ov.status, 16)}
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ fontSize: 14, fontWeight: 800, color: statusColor(ov.status) }}>{statusLabel(ov.status)}</div>
+                        <div style={{ fontSize: 11, color: 'var(--muted)' }}>{ov.note}</div>
+                      </div>
+                    </div>
+
+                    {/* รายหัวข้อ — 1 แถว/หัวข้อ (อ่านง่ายบนจอ TV กว่าตาราง 2 คอลัมน์ที่บีบตัวเลข) */}
+                    {B.axes.map((ax) => {
+                      const meta = LIVE_AXES.find(a => a.key === ax.key);
+                      const col = statusColor(ax.status);
+                      const on = obeyaAxis === ax.key;
+                      const cnt = ax.counts;
+                      return (
+                        <div key={ax.key} onClick={() => setObeyaAxis(on ? null : ax.key)}
+                          title={ax.live ? 'กดเพื่อดูไลน์ที่เป็นต้นเหตุ' : 'หัวข้อนี้ยังดูสดจากผังไม่ได้'}
+                          style={{ padding: '8px 10px', borderRadius: 9, marginBottom: 5, cursor: 'pointer', background: on ? 'var(--bg2)' : 'var(--bg3)', border: `1px solid ${on ? col : 'var(--border2)'}`, borderLeft: `4px solid ${col}` }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            {dot(ax.status, 11)}
+                            <div style={{ minWidth: 0, flex: 1, fontSize: 12.5, fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {meta?.icon} {meta?.label} <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}>{meta?.en}</span>
+                            </div>
+                            <div style={{ fontSize: 15, fontWeight: 800, color: col, whiteSpace: 'nowrap', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>{ax.value ?? '—'}</div>
+                            <span style={{ fontSize: 11, color: 'var(--muted)', flexShrink: 0 }}>{on ? '▾' : '▸'}</span>
+                          </div>
+                          {ax.sub && <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 3, paddingLeft: 19 }}>{ax.sub}</div>}
+                          {ax.live && (
+                            <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginTop: 4, paddingLeft: 19, fontSize: 11, fontWeight: 700 }}>
+                              {/* คำบนไฟต้องมาจาก statusLabel() ที่เดียว (UI-CONVENTIONS §2.1 ข้อ 4)
+                                  ห้ามพิมพ์ "หลุดเป้า/เฉียดเป้า" เองในหน้า — จอเดียวกันจะเรียกคนละชื่อ */}
+                              {['bad', 'warn', 'good'].filter(k => cnt[k]).map(k => (
+                                <span key={k} style={{ color: statusColor(k) }}>● {cnt[k]} {statusLabel(k)}</span>
+                              ))}
+                              {/* ⚪ ตัดสินไม่ได้ ต้องเห็นเสมอ — ไม่งั้นคนอ่านคิดว่าไลน์ที่หายไปคือ "ปกติ" */}
+                              {cnt.none > 0 && <span style={{ color: statusColor('none') }}>● {cnt.none} {statusLabel('none')}</span>}
+                            </div>
+                          )}
+                          {ax.note && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, paddingLeft: 19, lineHeight: 1.45 }}>⚠️ {ax.note}</div>}
+                          {/* drill-down อยู่ "ใต้หัวข้อที่กด" ไม่ใช่ท้ายแผง — แผงสูงกว่าจอ ถ้าไปอยู่ท้าย
+                              คนกดแล้วไม่เห็นอะไรขยับ (แผง 360px มี 6 หัวข้อ = ต้องเลื่อนลงหาเอง) */}
+                          {on && axisDrill(ax, meta)}
+                        </div>
+                      );
+                    })}
+
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 12, lineHeight: 1.5, borderTop: '1px solid var(--border2)', paddingTop: 8 }}>
+                      เกณฑ์สีของทุกหัวข้อ<b> ยืมมาจากแท็บ metric ของเรื่องนั้นบนผังนี้เอง</b> — แผงขวากับสีบนผังจึงตอบตรงกันเสมอ<br />
+                      ต้องการแนวโน้มย้อนหลัง/เป้ารายเดือน → <Link to="/obeya?tab=sqdcm" style={{ color: 'var(--accent)', fontWeight: 700 }}>ห้อง OBEYA</Link>
+                    </div>
+                  </>
+                );
+              })() : (() => {
                 // ── โหมดสด (จัดอันดับตาม metric ที่เลือก) — เดิม ──
                 const counts = ranked.reduce((a, r) => { a[r.cat] = (a[r.cat] || 0) + 1; return a; }, {});
                 const maxVal = Math.max(1, ...ranked.map(r => (r.val == null ? 0 : Math.abs(r.val))));
@@ -2542,7 +2802,7 @@ export default function FactoryMap({ setupMode = false }) {
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>{M.desc ? 'มาก → น้อย (ปัญหาขึ้นบน)' : 'น้อย → มาก (ตามหลังขึ้นบน)'} · คลิกแถวเพื่อเน้นบนผัง</div>
                     {metric === 'productivity' && (
-                      <div style={{ fontSize: 10.5, color: 'var(--muted)', marginBottom: 8, padding: '4px 8px', background: 'var(--bg3)', borderRadius: 6, lineHeight: 1.5 }}>
+                      <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8, padding: '4px 8px', background: 'var(--bg3)', borderRadius: 6, lineHeight: 1.5 }}>
                         รูปแบบ <b style={{ color: 'var(--text2)' }}>ทำได้ / ควรได้ ณ ตอนนี้ / เป้า (ใบที่เปิด)</b><br />
                         <b style={{ color: 'var(--text2)' }}>ควรได้</b> = เวลาที่มีให้ผลิต (ตั้งแต่เริ่มกะ/เปิดใบแรก − พัก − หยุดตามแผน) ÷ CT · ไม่เกินเป้าที่เปิดใบไว้
                       </div>
@@ -2612,7 +2872,7 @@ export default function FactoryMap({ setupMode = false }) {
           return (
             <div ref={hoverCardRef} style={{ position: 'fixed', left, top, width: W, zIndex: 1250, pointerEvents: 'none',
               background: 'var(--card)', border: `1px solid ${zm.color}66`, borderTop: `3px solid ${zm.color}`, borderRadius: 12,
-              boxShadow: '0 12px 34px rgba(0,0,0,0.5)', padding: '12px 14px', color: 'var(--text)' }}>
+              boxShadow: 'var(--shadow-lg)', padding: '12px 14px', color: 'var(--text)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
                 <span style={{ width: 11, height: 11, borderRadius: '50%', background: zm.color, flexShrink: 0 }} />
                 <div style={{ fontSize: 15, fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{km.icon} {hoverLine}</div>
@@ -2630,17 +2890,17 @@ export default function FactoryMap({ setupMode = false }) {
               {topMats.length > 0 && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 8 }}>
                   {topMats.map(m => (
-                    <span key={m.mat_no} style={{ fontSize: 10.5, padding: '1px 7px', borderRadius: 6, border: `1px solid ${m.short ? '#ef4444' : 'var(--border2)'}`, color: m.short ? '#ef4444' : 'var(--text2)' }}>
+                    <span key={m.mat_no} style={{ fontSize: 11, padding: '1px 7px', borderRadius: 6, border: `1px solid ${m.short ? '#ef4444' : 'var(--border2)'}`, color: m.short ? '#ef4444' : 'var(--text2)' }}>
                       {m.mat_no} · {m.qty.toLocaleString()}
                     </span>
                   ))}
-                  {f.mats.length > topMats.length && <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>+อีก {f.mats.length - topMats.length}</span>}
+                  {f.mats.length > topMats.length && <span style={{ fontSize: 11, color: 'var(--muted)' }}>+อีก {f.mats.length - topMats.length}</span>}
                 </div>
               )}
-              <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 6, lineHeight: 1.4 }}>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6, lineHeight: 1.4 }}>
                 ยอดจาก ledger คลังกลาง (FG WAREHOUSE / STORE) — ระบบยังไม่นับยอดรายโซนจริง
               </div>
-              <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 8, textAlign: 'center', fontWeight: 700 }}>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8, textAlign: 'center', fontWeight: 700 }}>
                 🏬 คลิกเพื่อดูรายการ MAT ทั้งหมดในโซน
               </div>
             </div>
@@ -2649,7 +2909,7 @@ export default function FactoryMap({ setupMode = false }) {
         return (
           <div ref={hoverCardRef} style={{ position: 'fixed', left, top, width: W, zIndex: 1250, pointerEvents: 'none',
             background: 'var(--card)', border: `1px solid ${meta.color}66`, borderTop: `3px solid ${meta.color}`, borderRadius: 12,
-            boxShadow: '0 12px 34px rgba(0,0,0,0.5)', padding: '12px 14px', color: 'var(--text)' }}>
+            boxShadow: 'var(--shadow-lg)', padding: '12px 14px', color: 'var(--text)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
               <span className={meta.blink ? 'dt-alarm-blink' : undefined} style={{ width: 11, height: 11, borderRadius: '50%', background: meta.color, flexShrink: 0 }} />
               <div style={{ fontSize: 15, fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--text)' }}>{hoverLine}</div>
@@ -2674,14 +2934,14 @@ export default function FactoryMap({ setupMode = false }) {
                       {/* ไลน์เครื่องขนาน: บอกว่า "ควรได้" คิดจากเครื่องที่เดินได้จริงกี่เครื่อง
                           ไม่งั้นคนอ่านไม่ออกว่าทำไมตัวเลขเปลี่ยนไปตามวัน (คนมาไม่เท่ากัน) */}
                       {k === 'energy' && st.kwh != null && (
-                        <span style={{ display: 'block', fontSize: 10.5, fontWeight: 600, color: 'var(--muted)', marginTop: 1 }}>
+                        <span style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--muted)', marginTop: 1 }}>
                           {st.kwhCost ? `${fmtBaht(st.kwhCost)} บาท · ` : ''}
                           {st.kwhCo2 != null ? `🌱 ${fmtTco2e(st.kwhCo2)} tCO2e · ` : ''}
                           {energyMonth ? monthLabel(energyMonth) : ''}
                         </span>
                       )}
                       {k === 'productivity' && st.capN > 1 && (
-                        <span style={{ display: 'block', fontSize: 10.5, fontWeight: 600, color: 'var(--muted)', marginTop: 1 }}>
+                        <span style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--muted)', marginTop: 1 }}>
                           {st.runN < st.capN
                             ? `คิดจากเดิน ${st.runN}/${st.capN} เครื่อง (ตามกำลังคนที่มา)`
                             : `คิดจากเดินเต็มกำลัง ${st.capN} เครื่อง`}
@@ -2693,12 +2953,12 @@ export default function FactoryMap({ setupMode = false }) {
               })}
             </div>
             {st.isFac && (
-              <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 6, lineHeight: 1.4 }}>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6, lineHeight: 1.4 }}>
                 {st.die ? '🔨 โซนคลังแม่พิมพ์' : '🔧 โซนระบบสนับสนุน (utility)'} — ไม่ใช่ไลน์ผลิต
                 จึงไม่มี {Object.values(METRICS).filter(m => m.facilityNA).map(m => m.label.replace(/^\S+\s/, '')).join(' / ')}
               </div>
             )}
-            <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 9, textAlign: 'center', fontWeight: 700 }}>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 9, textAlign: 'center', fontWeight: 700 }}>
               {hasFloor ? '🏭 คลิกเพื่อเปิดผังไลน์ + พนักงาน' : 'คลิกเพื่อดูรายละเอียด + แยกไลน์ย่อย'}
             </div>
           </div>
@@ -2745,9 +3005,9 @@ export default function FactoryMap({ setupMode = false }) {
                       <tr key={i} style={{ borderBottom: '1px solid var(--border2)', textAlign: 'right', color: 'var(--text)' }}>
                         <td style={{ textAlign: 'left', padding: '6px 7px' }}>
                           <b>{r.line}</b> <span style={{ color: 'var(--muted)' }}>· {sh(r.shift)}</span>
-                          {r.planned > 0 && <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>{r.shiftMin} − {r.planned} (หยุดตามแผน)</div>}
+                          {r.planned > 0 && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.shiftMin} − {r.planned} (หยุดตามแผน)</div>}
                         </td>
-                        <td style={{ padding: '6px 7px', fontWeight: 700, color: oeeCol(r.oee) }}>{r.oee.toFixed(1)}%</td>
+                        <td style={{ padding: '6px 7px', fontWeight: 700, color: oeeCol(r.oee, [r.line]) }}>{r.oee.toFixed(1)}%</td>
                         <td style={{ padding: '6px 7px' }}>{fmtNum(r.w)} น.</td>
                         <td style={{ padding: '6px 7px', color: 'var(--muted)' }}>{fmtNum(r.oee * r.w)}</td>
                       </tr>
@@ -2765,14 +3025,14 @@ export default function FactoryMap({ setupMode = false }) {
               {/* ผลลัพธ์ + เทียบกับเฉลี่ยธรรมดา */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 14 }}>
                 <div style={{ background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.35)', borderRadius: 9, padding: '10px 12px' }}>
-                  <div style={{ fontSize: 10.5, color: 'var(--muted)', fontWeight: 700 }}>✅ ที่ระบบใช้ (ถ่วงน้ำหนัก)</div>
-                  <div style={{ fontSize: 20, fontWeight: 800, color: oeeCol(weighted) }}>{weighted != null ? `${weighted.toFixed(1)}%` : '—'}</div>
-                  <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>{fmtNum(sumWX)} ÷ {fmtNum(sumW)}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>✅ ที่ระบบใช้ (ถ่วงน้ำหนัก)</div>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: oeeCol(weighted, rows.map(x => x.line)) }}>{weighted != null ? `${weighted.toFixed(1)}%` : '—'}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>{fmtNum(sumWX)} ÷ {fmtNum(sumW)}</div>
                 </div>
                 <div style={{ background: 'var(--bg3)', border: '1px dashed var(--border2)', borderRadius: 9, padding: '10px 12px' }}>
-                  <div style={{ fontSize: 10.5, color: 'var(--muted)', fontWeight: 700 }}>❌ ถ้าบวกกันหารเฉยๆ</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>❌ ถ้าบวกกันหารเฉยๆ</div>
                   <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--muted)' }}>{plain != null ? `${plain.toFixed(1)}%` : '—'}</div>
-                  <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>เฉลี่ย {rows.length} กะเท่าๆ กัน</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>เฉลี่ย {rows.length} กะเท่าๆ กัน</div>
                 </div>
               </div>
               <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 12, lineHeight: 1.7 }}>
@@ -2834,9 +3094,9 @@ export default function FactoryMap({ setupMode = false }) {
                     ].map(x => (
                       // การ์ดสูงเท่ากันทุกใบ: บรรทัดล่างจองที่ไว้เสมอ (ไม่มี sub ใช้ nbsp) — ไม่งั้นการ์ดเตี้ยไม่เท่ากัน
                       <div key={x.k} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 9, padding: '9px 11px', display: 'flex', flexDirection: 'column', gap: 1 }}>
-                        <div style={{ fontSize: 10.5, color: 'var(--muted)', fontWeight: 600 }}>{x.k}</div>
+                        <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}>{x.k}</div>
                         <div style={{ fontSize: 17, fontWeight: 800, color: x.c, fontVariantNumeric: 'tabular-nums', lineHeight: 1.15 }}>{x.v}</div>
-                        <div style={{ fontSize: 10.5, color: 'var(--muted)', minHeight: 15 }}>{x.sub || ' '}</div>
+                        <div style={{ fontSize: 11, color: 'var(--muted)', minHeight: 15 }}>{x.sub || ' '}</div>
                       </div>
                     ))}
                   </div>
@@ -2857,7 +3117,7 @@ export default function FactoryMap({ setupMode = false }) {
                               <span style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 800, color: pctCol(p) }}>{x.target > 0 ? `${fmtNum(x.produced)}/${fmtNum(x.target)} · ${p}%` : `${fmtNum(x.produced)} ชิ้น`}</span>
                             </div>
                             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
-                              <Chip label="OEE" val={x.oee != null ? `${Math.round(x.oee)}%${x.oeeLive ? ' (สด)' : ''}` : '—'} color={oeeCol(x.oee)} />
+                              <Chip label="OEE" val={x.oee != null ? `${Math.round(x.oee)}%${x.oeeLive ? ' (สด)' : ''}` : '—'} color={oeeCol(x.oee, [x.line])} />
                               {x.a != null && <Chip label="A" val={`${Math.round(x.a)}%`} color="var(--text2)" />}
                               {x.p != null && <Chip label="P" val={`${Math.round(x.p)}%`} color="var(--text2)" />}
                               {x.q != null && <Chip label="Q" val={`${Math.round(x.q)}%`} color="var(--text2)" />}
@@ -2936,7 +3196,7 @@ export default function FactoryMap({ setupMode = false }) {
                             ))}
                           </div>
                         )}
-                        <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>
+                        <div style={{ fontSize: 11, color: 'var(--muted)' }}>
                           ตั้งสายการไหลที่ หน้าจัดการไลน์ → 🔗 สายการไหลระหว่างไลน์
                         </div>
                       </div>
@@ -2999,7 +3259,7 @@ export default function FactoryMap({ setupMode = false }) {
                           <div key={f.id} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, padding: '7px 10px', display: 'flex', gap: 8, alignItems: 'flex-start' }}>
                             <span style={{ fontSize: 11, fontWeight: 700, color: '#4d9fff', flexShrink: 0 }}>{f.category}</span>
                             <span style={{ fontSize: 12, color: 'var(--text2)', minWidth: 0, flex: 1 }}>{f.description || '—'}</span>
-                            <span style={{ fontSize: 10.5, flexShrink: 0, color: f.status === 'approved' ? '#22c55e' : f.status === 'rejected' ? '#ef4444' : '#f59e0b' }}>
+                            <span style={{ fontSize: 11, flexShrink: 0, color: f.status === 'approved' ? '#22c55e' : f.status === 'rejected' ? '#ef4444' : '#f59e0b' }}>
                               {f.status === 'approved' ? 'อนุมัติ' : f.status === 'rejected' ? 'ปฏิเสธ' : 'รออนุมัติ'}
                             </span>
                           </div>
@@ -3043,14 +3303,14 @@ export default function FactoryMap({ setupMode = false }) {
                                       <span style={{ fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</span>
                                       {r.sub && <span style={{ color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.sub}</span>}
                                       <span style={{ marginLeft: 'auto', flexShrink: 0, fontWeight: 700, color: r.days != null && r.days < 0 ? '#ef4444' : '#f59e0b' }}>
-                                        {r.days == null ? 'ไม่มีรอบตายตัว' : r.days < 0 ? `เกิน ${Math.abs(r.days)} วัน` : r.days === 0 ? 'ครบวันนี้' : `อีก ${r.days} วัน`}
+                                        {r.days == null ? 'ยังไม่มีวัน PM ครั้งถัดไป' : r.days < 0 ? `เกิน ${Math.abs(r.days)} วัน` : r.days === 0 ? 'ครบวันนี้' : `อีก ${r.days} วัน`}
                                       </span>
                                     </div>
                                   ))}
-                                  {pmDue.length > 6 && <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>+ อีก {pmDue.length - 6} รายการ</div>}
+                                  {pmDue.length > 6 && <div style={{ fontSize: 11, color: 'var(--muted)' }}>+ อีก {pmDue.length - 6} รายการ</div>}
                                 </div>
                               )}
-                              <Link to="/pm?tab=plan" style={{ fontSize: 10.5, color: 'var(--accent)', textDecoration: 'none', display: 'inline-block', marginTop: 4 }}>→ ดูแผน PM ทั้งหมด</Link>
+                              <Link to="/pm?tab=plan" style={{ fontSize: 11, color: 'var(--accent)', textDecoration: 'none', display: 'inline-block', marginTop: 4 }}>→ ดูแผน PM ทั้งหมด</Link>
                             </>)}
                           </div>
 
@@ -3072,7 +3332,7 @@ export default function FactoryMap({ setupMode = false }) {
                                     </span>
                                   </div>
                                 ))}
-                                {s.moRows.length > 5 && <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>+ อีก {s.moRows.length - 5} ใบ</div>}
+                                {s.moRows.length > 5 && <div style={{ fontSize: 11, color: 'var(--muted)' }}>+ อีก {s.moRows.length - 5} ใบ</div>}
                               </div>
                             </>)}
                           </div>
@@ -3145,11 +3405,11 @@ export default function FactoryMap({ setupMode = false }) {
                 <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>รวมทั้งกลุ่ม</div>
                 <div style={{ fontSize: 15, fontWeight: 800, color: pctCol(ppct) }}>{parent.target > 0 ? `${fmtNum(parent.actual)}/${fmtNum(parent.target)} · ${ppct}%` : '—'}</div>
                 <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                  <Chip label="OEE" val={parent.oee != null ? `${parent.oee}%` : '—'} color={oeeCol(parent.oee)} />
+                  <Chip label="OEE" val={parent.oee != null ? `${parent.oee}%` : '—'} color={oeeCol(parent.oee, [reviewDetail])} />
                   {parent.oeeRows?.length > 1 && (
                     <button onClick={() => setOeeExplain({ title: `OEE เฉลี่ย · ${reviewDetail}`, rows: parent.oeeRows })}
                       title="ทำไมไม่เท่ากับเฉลี่ยเลขธรรมดา?"
-                      style={{ border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--accent)', borderRadius: 20, fontSize: 10.5, fontWeight: 800, padding: '2px 8px', cursor: 'pointer' }}>ⓘ วิธีคิด</button>
+                      style={{ border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--accent)', borderRadius: 20, fontSize: 11, fontWeight: 800, padding: '2px 8px', cursor: 'pointer' }}>ⓘ วิธีคิด</button>
                   )}
                   <Chip label="DT" val={`${fmtNum(parent.dtMin)}น.`} color={parent.dtMin > 0 ? '#f59e0b' : 'var(--muted)'} />
                   <Chip label="NG" val={fmtNum(parent.ng)} color={parent.ng > 0 ? '#ef4444' : 'var(--muted)'} />
@@ -3170,7 +3430,7 @@ export default function FactoryMap({ setupMode = false }) {
                         <div style={{ fontSize: 13.5, fontWeight: 800, color: pctCol(pct), whiteSpace: 'nowrap', flexShrink: 0 }}>{r.target > 0 ? `${fmtNum(r.actual)}/${fmtNum(r.target)} · ${pct}%` : '—'}</div>
                       </div>
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                        <Chip label="OEE" val={r.oee != null ? `${r.oee}%` : '—'} color={oeeCol(r.oee)} />
+                        <Chip label="OEE" val={r.oee != null ? `${r.oee}%` : '—'} color={oeeCol(r.oee, [name])} />
                         <Chip label="DT" val={`${fmtNum(r.dtMin)}น.`} color={r.dtMin > 0 ? '#f59e0b' : 'var(--muted)'} />
                         <Chip label="NG" val={fmtNum(r.ng)} color={r.ng > 0 ? '#ef4444' : 'var(--muted)'} />
                         {r.headTotal > 0 && <Chip label="คน" val={`${r.present}/${r.headTotal}`} color="var(--text2)" />}
@@ -3298,7 +3558,7 @@ export default function FactoryMap({ setupMode = false }) {
               <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
                 <button onClick={() => navigate('/line-stock?tab=zones')} style={{ flex: 1, padding: '9px 0', borderRadius: 9, fontSize: 13, fontWeight: 700, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' }}>🏬 จัดการโซน / ผูก MAT</button>
                 <button onClick={() => navigate('/rundown-stock')} style={{ flex: 1, padding: '9px 0', borderRadius: 9, fontSize: 13, fontWeight: 700, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' }}>📉 Rundown Stock</button>
-                <button onClick={() => setStoreZoneModal(null)} style={{ flex: 1, padding: '9px 0', borderRadius: 9, fontSize: 13, fontWeight: 800, cursor: 'pointer', background: 'var(--accent)', color: '#fff', border: 'none' }}>ปิด</button>
+                <button onClick={() => setStoreZoneModal(null)} style={{ flex: 1, padding: '9px 0', borderRadius: 9, fontSize: 13, fontWeight: 800, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>ปิด</button>
               </div>
             </div>
           </div>
@@ -3355,7 +3615,7 @@ export default function FactoryMap({ setupMode = false }) {
           </div>
         </div>
       )}
-    </div>
+    </Page>
   );
 }
 

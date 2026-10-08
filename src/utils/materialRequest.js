@@ -65,9 +65,34 @@ export const effQty = (it) => {
   return Number.isFinite(req) && req > 0 ? req : 0;
 };
 
-/** เลขที่เอกสารภายใน (running รายเดือน) — สโตร์อาจใส่เลข SAP จริงทับทีหลังที่ช่อง doc_no */
-export const nextReqNo = (dateStr, countInMonth) => {
+/** prefix เลขที่เอกสารภายในของเดือนนั้น `MR-YYMM-` · วันที่ผิดรูป = '' */
+export const reqNoPrefix = (dateStr) => {
   const [y, m] = String(dateStr || '').split('-');
-  if (!y || !m) return '';
-  return `MR-${y.slice(2)}${m}-${String((countInMonth || 0) + 1).padStart(3, '0')}`;
+  if (!y || !m || y.length !== 4 || m.length !== 2) return '';
+  return `MR-${y.slice(2)}${m}-`;
+};
+
+/**
+ * เลขสูงสุดของเดือนนั้นจากรายการ doc_no (เฉพาะรูป `MR-YYMM-nnn` · เลข SAP ที่สโตร์ใส่ทับ = ข้าม)
+ * ⚠️ ห้ามใช้ `count()+1` (QC 05/10 — เดิมใช้จำนวนแถวที่โชว์บนจอ = ผูกตัวกรองเดือน/สถานะ ⇒ เลขซ้ำ)
+ */
+export const maxReqSeq = (docNos = [], dateStr) => {
+  const pre = reqNoPrefix(dateStr);
+  if (!pre) return 0;
+  let max = 0;
+  for (const d of docNos) {
+    const s = String(d || '').trim();
+    if (!s.startsWith(pre)) continue;
+    const n = /^(\d+)$/.exec(s.slice(pre.length));
+    if (n) max = Math.max(max, Number(n[1]));
+  }
+  return max;
+};
+
+/** เลขที่เอกสารภายใน (running รายเดือน) = "เลขสูงสุดของเดือน + 1" — สโตร์อาจใส่เลข SAP จริงทับทีหลังที่ช่อง doc_no
+ *  @param maxInMonth เลขสูงสุดที่ออกไปแล้วในเดือนนั้น (จาก maxReqSeq) — ไม่ใช่จำนวนแถว */
+export const nextReqNo = (dateStr, maxInMonth) => {
+  const pre = reqNoPrefix(dateStr);
+  if (!pre) return '';
+  return `${pre}${String((maxInMonth || 0) + 1).padStart(3, '0')}`;
 };

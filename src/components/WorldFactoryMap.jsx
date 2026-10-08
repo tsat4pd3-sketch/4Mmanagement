@@ -155,7 +155,7 @@ export default function WorldFactoryMap({
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', marginBottom: 8 }}>
         <button onClick={zoomOut} style={{
           fontSize: 12.5, fontWeight: 700, padding: '4px 11px', borderRadius: 999, cursor: 'pointer',
-          background: zoomCc ? 'var(--bg3)' : 'var(--accent)', color: zoomCc ? 'var(--text)' : '#08120a',
+          background: zoomCc ? 'var(--bg3)' : 'var(--accent)', color: zoomCc ? 'var(--text)' : 'var(--accent-ink)',
           border: `1px solid ${zoomCc ? 'var(--border2)' : 'var(--accent)'}`,
         }}>🌏 ทั้งโลก</button>
         {byCc.map(c => (
@@ -178,7 +178,7 @@ export default function WorldFactoryMap({
             return (
               <button key={g.key || 'all'} onClick={() => setGFilter(g.key)} style={{
                 fontSize: 12.5, fontWeight: 700, padding: '4px 10px', borderRadius: 999, cursor: 'pointer',
-                background: on ? 'var(--accent)' : 'var(--bg3)', color: on ? '#08120a' : 'var(--text)',
+                background: on ? 'var(--accent)' : 'var(--bg3)', color: on ? 'var(--accent-ink)' : 'var(--text)',
                 border: `1px solid ${on ? 'var(--accent)' : 'var(--border2)'}`,
               }}>
                 {g.icon} {g.short}
@@ -243,7 +243,7 @@ export default function WorldFactoryMap({
                   {c.meta.flag} {c.meta.name}
                 </text>
                 <text x={lx} y={ly + 26 / k} textAnchor="middle" fill={col}
-                  fontSize={12 / k} fontWeight="700" style={{ paintOrder: 'stroke', stroke: '#050d18', strokeWidth: 3.4 / k }}>
+                  fontSize={13 / k} fontWeight="700" style={{ paintOrder: 'stroke', stroke: '#050d18', strokeWidth: 3.4 / k }}>
                   {c.list.length} โรง · {fmt(c.actual)} ชิ้น
                 </text>
               </g>
@@ -267,7 +267,7 @@ export default function WorldFactoryMap({
                 <text x={x} y={y + 3.6 * k} textAnchor="middle" fontSize={11 * k}>{c.groupMeta?.icon || '🏭'}</text>
                 {c.real && <>
                   <circle cx={x + r} cy={y - r} r={6 * k} fill="#22c55e" stroke="#fff" strokeWidth={1.2 * k} />
-                  <text x={x + r} y={y - r + 3 * k} textAnchor="middle" fill="#08120a" fontSize={8 * k} fontWeight="900">★</text>
+                  <text x={x + r} y={y - r + 3 * k} textAnchor="middle" fill="#08120a" fontSize={11 * k} fontWeight="900">★</text>
                 </>}
                 {!dim && (
                   <g transform={`translate(${lx}, ${ly})`}>
@@ -291,7 +291,7 @@ export default function WorldFactoryMap({
             <div style={{
               position: 'absolute', left, top, transform: 'translate(-50%, calc(-100% - 22px))',
               pointerEvents: 'none', zIndex: 5, background: 'var(--card)', border: `1px solid ${col}`,
-              borderRadius: 8, padding: '8px 11px', minWidth: 196, boxShadow: '0 10px 26px rgba(0,0,0,0.5)',
+              borderRadius: 8, padding: '8px 11px', minWidth: 196, boxShadow: 'var(--shadow-float)',
             }}>
               <div style={{ fontSize: 14, fontWeight: 800 }}>
                 {hover.kind === 'country' ? `${o.meta.flag} ${o.meta.name}` : `${o.flag} ${o.code}`}

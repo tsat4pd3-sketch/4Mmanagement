@@ -3,6 +3,7 @@ import { supabase } from '../supabaseClient';
 import { toast } from '../components/Toast';
 import { saveMyProfileMedia } from '../utils/profileSelf';
 import { uploadOpts } from '../utils/storageUpload';
+import { acceptImageFile } from '../utils/acceptImageFile';
 
 export default function SignatureModal({ open, onClose, currentSignatureUrl, onSaved }) {
   const [tab, setTab] = useState('draw'); // 'draw' | 'upload'
@@ -93,9 +94,13 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
     ctx.fillRect(0, 0, canvas.width, canvas.height);
   };
 
-  const handleFileChange = (e) => {
-    const file = e.target.files?.[0];
+  const handleFileChange = async (e) => {
+    const picked = e.target.files?.[0];
     e.target.value = '';   // เลือกไฟล์เดิมซ้ำต้องยิง change อีกครั้ง
+    // 🔴 ด่านรับรูปจุดเดียว — HEIC จาก iPhone แปลงเป็น JPEG ที่นี่ · ไม่ใช่รูป = toast แล้วหยุด
+    //    เดิมรับไฟล์อะไรก็ได้ แล้วไปพังตอนกด "บันทึก" (`new Image()` อ่าน HEIC ไม่ได้)
+    //    = ถ่ายรูปลายเซ็นด้วย iPhone แล้วอัปไม่ได้เลย โดยรู้ตอนท้าย (QC 06/10)
+    const file = await acceptImageFile(picked);
     if (!file) return;
     setUploadFile(file);
     const reader = new FileReader();
@@ -121,19 +126,26 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
         if (!uploadFile) { toast.error('กรุณาเลือกไฟล์'); setSaving(false); return; }
         // บีบรูปก่อนอัปโหลดเสมอ (กฎ Storage: ห้ามส่งรูปดิบ) — รูปถ่ายลายเซ็นจากมือถืออาจหลาย MB
         // ย่อเหลือกว้าง ≤800px PNG (คงพื้นหลังโปร่งของไฟล์ลายเซ็นได้) — ลายเซ็นแสดงผลเล็ก ไม่ต้องละเอียดกว่านี้
-        fileBlob = await new Promise((resolve, reject) => {
-          const img = new Image();
-          img.onload = () => {
-            const scale = Math.min(1, 800 / img.width);
-            const canvas = document.createElement('canvas');
-            canvas.width = Math.round(img.width * scale);
-            canvas.height = Math.round(img.height * scale);
-            canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-            canvas.toBlob(b => b ? resolve(b) : reject(new Error('บีบรูปไม่สำเร็จ')), 'image/png');
-          };
-          img.onerror = () => reject(new Error('ไฟล์นี้ไม่ใช่รูปที่รองรับ (ลองใช้ JPG/PNG)'));
-          img.src = URL.createObjectURL(uploadFile);
-        });
+        // ⚠️ blob URL ต้อง revoke ทุกทาง (สำเร็จ/ล้ม) — ไม่ revoke = ตรึงไฟล์ไว้ในหน่วยความจำจนรีเฟรชหน้า
+        //    (ลายเซ็นถ่ายจากมือถืออาจหลาย MB · ลองใหม่หลายครั้งก็ค้างทับกันไปเรื่อยๆ)
+        const objUrl = URL.createObjectURL(uploadFile);
+        try {
+          fileBlob = await new Promise((resolve, reject) => {
+            const img = new Image();
+            img.onload = () => {
+              const scale = Math.min(1, 800 / img.width);
+              const canvas = document.createElement('canvas');
+              canvas.width = Math.round(img.width * scale);
+              canvas.height = Math.round(img.height * scale);
+              canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+              canvas.toBlob(b => b ? resolve(b) : reject(new Error('บีบรูปไม่สำเร็จ')), 'image/png');
+            };
+            img.onerror = () => reject(new Error('ไฟล์นี้ไม่ใช่รูปที่รองรับ (ลองใช้ JPG/PNG)'));
+            img.src = objUrl;
+          });
+        } finally {
+          URL.revokeObjectURL(objUrl);
+        }
         filePath = `${user.id}/${ts}.png`;
         contentType = 'image/png';
       }
@@ -181,7 +193,7 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
         width: 'min(480px, 100%)',
         background: 'var(--card)',
         borderRadius: 16,
-        boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+        boxShadow: 'var(--shadow-lg)',
         overflow: 'hidden',
       }}>
         {/* Header */}
@@ -273,7 +285,7 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
           {/* Actions */}
           <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
             <button onClick={handleSave} disabled={saving} style={{
-              flex: 2, padding: '10px 0', background: 'var(--accent)', color: '#fff',
+              flex: 2, padding: '10px 0', background: 'var(--accent)', color: 'var(--accent-ink)',
               border: 'none', borderRadius: 8, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer',
               opacity: saving ? 0.7 : 1, fontSize: 13,
             }}>

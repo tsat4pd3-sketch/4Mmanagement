@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import CollapseCard from './CollapseCard';
 import { supabaseDR } from '../supabaseClient';
 import { toast } from './Toast';
 import { buildFlowGraph, downstreamOf, upstreamOf, lineAvgCtSec, bufferCoverMin } from '../utils/lineFlow';
 import LineSelect from './LineSelect';
+import { DeleteButton } from './IconButton';
 
 /* ═══ 🔗 สายการไหลระหว่างไลน์ — แผงใน /linesetup (2026-08-19) ═══
    ตอบ "ไลน์นี้ป้อนงานให้ใคร / รับของมาจากใคร" ซึ่งระบบเดิมไม่เคยเก็บไว้ที่ไหนเลย
@@ -14,10 +16,10 @@ import LineSelect from './LineSelect';
 const fmtMin = (m) => (m >= 60 ? `${Math.floor(m / 60)} ชม. ${Math.round(m % 60)} น.` : `${Math.round(m)} นาที`);
 
 export default function LineFlowPanel({ lineName, lines = [], canEdit = false }) {
+  const [open, setOpen] = useState(false);     // กระจกสถานะของ CollapseCard — ใช้กันโหลดข้อมูลก่อนมีคนกาง
   const [links, setLinks] = useState([]);
   const [products, setProducts] = useState([]);
   const [missing, setMissing] = useState(false);   // ตารางยังไม่ apply migration
-  const [open, setOpen] = useState(false);
   const [form, setForm] = useState(null);          // { dir: 'down'|'up', other, buffer_label, buffer_qty }
   const [saving, setSaving] = useState(false);
 
@@ -114,25 +116,18 @@ export default function LineFlowPanel({ lineName, lines = [], canEdit = false })
             style={{ fontSize: 11, fontWeight: 700, color: '#f59e0b' }}>⚠ {other} เป็นแผนก ไม่ใช่ไลน์</span>
         )}
         {canEdit && (
-          <button onClick={() => remove(l)} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, opacity: 0.6 }}>🗑</button>
+          <DeleteButton style={{ marginLeft: 'auto' }} onClick={() => remove(l)} title="ลบ" />
         )}
       </div>
     );
   };
 
   return (
-    <>
-      <div style={{ borderTop: '1px solid var(--border)', margin: '14px 0 12px' }} />
-      <button onClick={() => setOpen(v => !v)}
-        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', background: 'none', border: 'none', padding: 0, marginBottom: open ? 10 : 0, cursor: 'pointer' }}>
-        <h4 style={{ margin: 0, color: 'var(--text)', fontSize: 14, fontFamily: 'var(--font-display)' }}>
-          🔗 สายการไหลระหว่างไลน์ <span style={{ fontSize: 12, fontWeight: 400, color: 'var(--muted)' }}>· ไลน์นี้ป้อนให้ใคร / รับของจากใคร</span>
-        </h4>
-        <span style={{ fontSize: 12, color: 'var(--muted)' }}>{open ? '▲ ซ่อน' : '▼ แสดง'}</span>
-      </button>
-
-      {open && (
-        <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 10, padding: 14 }}>
+    /* พับด้วย CollapseCard ของกลาง — แผงขวาของ /layout-setup เคยมีปุ่มพับ 3 แบบในคอลัมน์เดียว (05/10) */
+    <CollapseCard id="lineFlow" storePrefix="ls" defaultOpen={false} onOpenChange={setOpen}
+      title={<>🔗 สายการไหลระหว่างไลน์ <span style={{ fontSize: 12, fontWeight: 400, color: 'var(--muted)' }}>· ไลน์นี้ป้อนให้ใคร / รับของจากใคร</span></>}>
+      <>
+        <div>
           {missing ? (
             <div style={{ fontSize: 12, color: '#f59e0b', lineHeight: 1.6 }}>
               ⚠️ ยังไม่ได้ apply migration <code>20260819_line_flow_links.sql</code> — แจ้ง admin ให้รันก่อน แล้วแผงนี้จะใช้งานได้
@@ -201,7 +196,7 @@ export default function LineFlowPanel({ lineName, lines = [], canEdit = false })
                   <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
                     <button onClick={() => setForm(null)} style={btnSt}>ยกเลิก</button>
                     <button onClick={save} disabled={saving}
-                      style={{ ...btnSt, background: 'var(--accent)', color: '#08130a', border: 'none', fontWeight: 800, opacity: saving ? 0.6 : 1 }}>
+                      style={{ ...btnSt, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', fontWeight: 800, opacity: saving ? 0.6 : 1 }}>
                       {saving ? 'กำลังบันทึก...' : '💾 บันทึก'}
                     </button>
                   </div>
@@ -210,8 +205,8 @@ export default function LineFlowPanel({ lineName, lines = [], canEdit = false })
             </>
           )}
         </div>
-      )}
-    </>
+      </>
+    </CollapseCard>
   );
 }
 

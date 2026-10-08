@@ -1,5 +1,8 @@
 import { useState, useMemo, useEffect } from 'react';
+import { orgNodeCompare } from '../utils/listOrder';
 import { supabase } from '../supabaseClient';
+import { toast } from '../components/Toast';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { accessSummaryForRole } from '../App';
 import { ROLE_OPTIONS, roleLabel, groupRolesByAxis } from '../utils/roleMeta';
 import { positionOptions, positionOptionsWith, positionLabel, loadPositions, clearPositionsCache, levelOfPosition, maintenanceKindOfPosition, levelMeta, POSITION_LEVELS } from '../utils/positions';
@@ -8,12 +11,29 @@ import { deptNameOf, teamKeyOf } from '../utils/mtnTeams';
 import { pmTeamsSync, loadPmTeams } from '../utils/pmTeams';   // ทีมช่างซ่อมจากตาราง mtn_teams (data-driven) — เลิกวน MTN_TEAMS hardcode (2026-09-07)
 import { checkWrite } from '../utils/dbWrite';
 import LineSelect from '../components/LineSelect';
+import { STAFF_KINDS, STAFF_SHOPFLOOR, STAFF_SUPPORT } from '../utils/staffKind';   // 👥 หน้าไลน์ vs สายสนับสนุน
+import { normSearch } from '../components/SearchSelect';   // ตัว normalize คำค้นกลาง (ทนการสะกดไทย)
+import { orphanDepts, deptOptionsFor, ORPHAN_SECTION, ORPHAN_SECTION_LABEL, sectionValueForSave,
+  orgNodeIdFor, ORG_SRC_MANUAL, scopeIneffective } from '../utils/sectionScope';
+import { SCOPE_DEPTHS, SCOPE_DEPTH_META, depthForLevel, needsScopeReview } from '../utils/scopeDepth';   // 🔭 เห็นกว้างแค่ไหน (คนละแกนกับ role)
 
 import InfoMore from '../components/InfoMore';
-// ทีมช่างซ่อม (profiles.mtn_teams) แยกคิวใบแจ้งซ่อม MO ให้ถูกทีม — โผล่เฉพาะ role ที่เกี่ยวกับงานซ่อม
-// (mtn = ทีมซ่อม, engineer = วิศวกรรม, leader/supervisor = ช่างฝ่ายผลิตที่ first-response บาง PD)
-// admin/manager เห็นคิวทุกทีมอยู่แล้ว ไม่ต้องผูกทีม
-const MTN_TEAM_ROLES = ['mtn', 'engineer', 'leader', 'supervisor'];
+import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
+import FilterBar from '../components/FilterBar';
+import SearchInput from '../components/SearchInput';
+import { ALL } from '../utils/filterLabels';
+/* ทีมช่างซ่อม (profiles.mtn_teams) — เดิมมีหน้าที่เดียวคือ "แยกคิวใบแจ้งซ่อม MO ให้ถูกทีม"
+   🔴 ตั้งแต่ 2026-10-04 ช่องนี้ยังเป็นตัวบอก **"อยู่ฝั่งช่าง หรือ ฝั่งผู้แจ้ง"** ของด่านล็อกช่องเซ็น
+      ขั้น 6/7/8 ด้วย (`actorSideOf()` ใน `utils/mtnStepPerm.js`)
+
+   ⚠️ เดิมซ่อนช่องนี้จาก `admin`/`manager` ด้วยเหตุผล "เห็นคิวทุกทีมอยู่แล้ว ไม่ต้องผูกทีม" —
+      พอมีด่านฝั่ง เหตุผลนั้นใช้ไม่ได้อีก: **ผจก.ช่าง (role=manager) ที่ไม่ได้ผูกทีม จะถูกตีเป็น
+      "ฝั่งผู้แจ้ง" ตาม sections แล้วกดช่อง "ผจก.ช่าง อนุมัติ" ไม่ได้ และไม่มีที่ให้แก้ในแอปเลย**
+      (ตรวจเจอจริง 05/10: ศักดา กาละศรี role=manager · sections=[PD1] · mtn_teams ว่าง → wrong_side)
+   ⇒ เปิดช่องให้ `manager`/`admin` ด้วย · ไม่ติ๊ก = ฝั่งผู้แจ้งตามเดิม (ไม่เปลี่ยนพฤติกรรมของคนที่ไม่ใช่ช่าง)
+   ยังซ่อนจาก role หน้างาน (operator ฯลฯ) — คนกลุ่มนั้นไม่มีช่องเซ็นฝั่งช่างให้กดอยู่แล้ว */
+const MTN_TEAM_ROLES = ['mtn', 'engineer', 'leader', 'supervisor', 'manager', 'admin'];
 const isMtnTeamRole = (r) => MTN_TEAM_ROLES.includes(r);
 
 // ชื่อ/สี/คำอธิบายชุดสิทธิ์ อ่านจาก src/utils/roleMeta.js ที่เดียว (ห้ามนิยามซ้ำในหน้า)
@@ -31,7 +51,7 @@ const RoleOptGroups = ({ withDesc = false }) => ROLE_GROUPS.map(g => (
 ));
 // sections = ขอบเขตส่วนงาน (เลือกได้หลายอัน ทุก role) — ว่าง = เห็นทุกส่วนงาน
 // profiles.section (เดี่ยว) ยังถูกเขียนเป็นตัวแรกของ sections เสมอ เพื่อให้ rollback โค้ดกลับเวอร์ชันเก่าได้โดย supervisor ไม่หลุด scope
-const emptyForm = { email: '', password: '', fullName: '', role: 'supervisor', position: '', sections: [], mtnTeams: [], deptAdmin: false, lineId: '', team: '', notifyEmail: '',
+const emptyForm = { email: '', password: '', fullName: '', role: 'supervisor', position: '', sections: [], mtnTeams: [], deptAdmin: false, lineId: '', team: '', notifyEmail: '', scopeDepth: 'unit',
   // ⚠️ บัญชีของคน ต้องผูกกับตัวตนใน `employees` — ทีม/ไลน์/ส่วนงาน อ่านจากที่นั่น ห้ามให้ admin กรอกเอง
   //    (เคสจริง: หัวหน้า 2 คนทีมสลับกัน เพราะ admin เดาตอนสร้างบัญชี → เช็คชื่อมองไม่เห็นกะตัวเอง)
   // บัญชีของหน่วยงาน/อุปกรณ์ (maintenance/warehouse1/Display) ไม่มีตัวตนใน employees และไม่ควรมี
@@ -52,6 +72,10 @@ const TEAM_DESC = {
 // master list กลางใช้ร่วมทุกหน้า (src/utils/positions.js) — ห้าม hardcode ซ้ำ · ตำแหน่งใหม่เพิ่มเข้าตาราง positions ผ่านปุ่มในฟอร์ม (2026-09-07)
 // ตัวเลือกตำแหน่ง — อ่านสดจาก cache ของ master (loadPositions() เรียกตอน mount) · [{value:key,label:ไทย,level}]
 const posOpts = () => positionOptions();
+
+/* ค้นพนักงาน = ใช้ตัว normalize กลางของ picker (`normSearch` — ทนการสะกดไทย/ช่องว่าง/ขีด)
+   ห้ามเขียนตัวเทียบเอง: ที่นี่เคยเทียบตรงๆ แล้วหาชื่อไม่เจอเพราะ ์ ตัวเดียว (23/09) */
+const nzThai = normSearch;
 
 export default function AddUser() {
   const [users,         setUsers]         = useState([]);
@@ -79,6 +103,14 @@ export default function AddUser() {
   const [emps, setEmps] = useState([]);      // ฐานพนักงาน — ใช้เป็นตัวตนของบัญชีแบบ 'person'
   const [empSearch, setEmpSearch] = useState('');
   const [posVer, setPosVer] = useState(0);   // bump เมื่อ master ตำแหน่งโหลดเสร็จ → dropdown/ป้ายระดับ re-render
+  const [deptOpts, setDeptOpts] = useState([]);   // แผนกจากผังองค์กร — ใช้ตอนเพิ่มคนเข้าฐานพนักงาน
+  const [orphanDeptOpts, setOrphanDeptOpts] = useState([]);   // แผนกขึ้นตรงฝ่าย = ขอบเขตได้เหมือน section
+  const [orgNodes, setOrgNodes] = useState({ sections: [], depts: [] });   // node ดิบ — ใช้ cascade ส่วนงาน→แผนกจากหน้านี้
+  /* ➕ เพิ่มคนเข้าฐานพนักงานจากหน้านี้เลย (2026-09-21 · เฟส 1 ของ docs/IDENTITY-NOTIFY-DESIGN.md)
+     เดิม: คนที่ไม่มีในทะเบียน (QA/PE/ธุรการ/สโตร์) หาไม่เจอใน dropdown → admin กดได้ทางเดียวคือ
+     "บัญชีหน่วยงาน" ⇒ 32 บัญชีของคนจริงถูกติดป้ายผิด · null = ยังไม่ได้กดปุ่ม */
+  const [newEmp, setNewEmp] = useState(null);
+  const [newEmpSaving, setNewEmpSaving] = useState(false);
 
   useEffect(() => {
     // master ตำแหน่งงาน (positions) — ต้องโหลดก่อน positionLabel()/levelOfPosition() ถึงได้ค่าจาก DB
@@ -86,16 +118,27 @@ export default function AddUser() {
     Promise.all([loadPositions(), loadPermissions(), loadPmTeams()]).then(() => setPosVer(v => v + 1));
     // ⚠️ <LineSelect> ต้องการ parent_line_name (ลำดับชั้น) + section (กรอง scope) + is_active
     //    select แค่ id,name = ได้ลิสต์แบนไม่มีลำดับชั้น (กับดักที่เขียนไว้ในหัว LineSelect.jsx)
-    supabase.from('production_lines').select('id, name, parent_line_name, section, is_active').order('name')
+    loadLinesRes()
       .then(({ data }) => setLines(data || []));
-    supabase.from('org_nodes').select('code, name, kind').eq('is_active', true).order('sort_order')
+    /* ⚠️ ต้อง select `parent_id` ด้วย — `orphanDepts()` ตัดสิน "แผนกขึ้นตรงฝ่าย" จาก `!parent_id`
+       ไม่ดึงคอลัมน์มา = undefined ทุกแถว ⇒ **ทุกแผนกกลายเป็นขึ้นตรงฝ่ายหมด** (เกิดจริง 22/09:
+       GOR · LWRBAR · BIG PRESS · HYDROFORM ติดป้าย 🏛️ ทั้งที่อยู่ใต้ส่วนงานผลิต) */
+    supabase.from('org_nodes').select('code, name, kind, parent_id, id, sort_order').eq('is_active', true)
       .then(({ data }) => {
-        const nodes = data || [];
+        const nodes = [...(data || [])].sort(orgNodeCompare);   // ลำดับผังมาตรฐาน (listOrder.js)
         setSectionOpts(nodes.filter(n => n.kind === 'section').map(n => n.code || n.name));
         setTeamOpts([...new Set(nodes.filter(n => n.kind === 'team').map(n => n.code || n.name))]);
+        setDeptOpts([...new Set(nodes.filter(n => n.kind === 'department').map(n => n.code || n.name))]);
+        /* 🔴 ขอบเขตต้องเลือก "แผนกขึ้นตรงฝ่าย" ได้ด้วย (2026-09-21 · feedback "ทำไม section ไม่ขึ้น")
+           ผังองค์กรมี section แค่ PD1-4 / Planning&Store / TEST · หน่วยงานสนับสนุน (QA · MTN ·
+           JIG MTN · DIE MTN) เป็น department ที่ `parent_id is null` = ขึ้นตรงฝ่าย ไม่มี section
+           ⇒ เดิมช่องติ๊กมีแต่ section ⇒ บัญชีที่ scope = 'JIG MTN' (6 ใบ) / 'QA' (6 ใบ)
+             **เปิดโมดัลมาแล้วไม่มีอะไรติ๊ก** ทั้งที่ตั้งไว้แล้ว = อ่านหน้าจอแล้วเข้าใจผิดว่ายังไม่ได้ตั้ง */
+        setOrphanDeptOpts(orphanDepts(nodes.filter(n => n.kind === 'department')).map(n => n.code || n.name));
+        setOrgNodes({ sections: nodes.filter(n => n.kind === 'section'), depts: nodes.filter(n => n.kind === 'department') });
       });
     supabase.from('employees')
-      .select('id, employee_id_code, name, team, line_id, section, department, position')
+      .select('id, employee_id_code, name, team, line_id, section, department, position, staff_kind')
       .eq('is_active', true).order('name')
       .then(({ data }) => setEmps(data || []));
     fetchUsers();
@@ -105,7 +148,7 @@ export default function AddUser() {
     setFetchingUsers(true);
     const { data: profiles } = await supabase
       .from('profiles')
-      .select('id, full_name, role, position, line_id, section, sections, team, notify_email, employee_id, account_kind');
+      .select('id, full_name, role, position, line_id, section, sections, team, notify_email, employee_id, account_kind, scope_depth, scope_depth_src');
     const { data: authUsers } = await supabase.rpc('get_auth_users');
 
     const authMap = {};
@@ -151,7 +194,63 @@ export default function AddUser() {
     setF('position', key);
     setNewPos(null);
   };
+  /* ➕ เพิ่มคนนี้เข้าฐานพนักงาน แล้วผูกกับบัญชีทันที (เฟส 1 · 2026-09-21)
+     ⚠️ สายสนับสนุน (QA/PE/ธุรการ/สโตร์) = `staff_kind: 'support'` + ไม่ต้องมีไลน์/ทีม
+        → ไม่โผล่ในเช็คชื่อ/สกิล/กำลังคน (ตัวกรองอยู่ที่ src/utils/staffKind.js)
+     ⚠️ `employee_id_code` เป็น not null — คนสายสนับสนุนที่ยังไม่มีรหัสจริงให้ออกรหัสชั่วคราวไปก่อน
+        (แก้ทีหลังได้ที่ /operator) ห้ามปล่อยว่างเพราะ insert จะล้มเงียบๆ */
+  const addEmployee = async () => {
+    const name = String(newEmp?.name || '').trim();
+    const code = String(newEmp?.employee_id_code || '').trim();
+    if (!name) { setError('เพิ่มพนักงาน: กรอกชื่อ-นามสกุล'); return; }
+    if (!code) { setError('เพิ่มพนักงาน: กรอกรหัสพนักงาน (ยังไม่มีรหัสจริงให้ใส่รหัสชั่วคราวไปก่อน)'); return; }
+    /* รหัสซ้ำ = ระบบรู้อยู่แล้วว่าเป็นใคร ⇒ **ผูกให้เลย** ไม่ใช่บอกว่า "ซ้ำ" แล้วปล่อยคนงง
+       (เกิดจริง 23/09: ค้นชื่อไม่เจอเพราะสะกดต่าง 1 ตัว → กดเพิ่ม → เจอ "รหัสซ้ำ" → ตัน) */
+    const dup = emps.find(e => (e.employee_id_code || '').trim().toLowerCase() === code.toLowerCase());
+    if (dup) {
+      setForm(f => ({ ...f, employeeId: dup.id, fullName: dup.name || f.fullName }));
+      setNewEmp(null);
+      setError(null);
+      setMessage(`รหัส ${code} มีอยู่แล้วในฐานพนักงาน — ผูกบัญชีนี้กับ "${dup.name}" ให้แล้ว (ตรวจชื่อให้ตรงก่อนบันทึก)`);
+      return;
+    }
+    setNewEmpSaving(true);
+    const { data: userData } = await supabase.auth.getUser();
+    const row = {
+      employee_id_code: code,
+      name,
+      department: newEmp.department || null,
+      section: sectionValueForSave(newEmp.section),   // sentinel "ขึ้นตรงฝ่าย" → null (ตรงกับผังจริง)
+      /* 🧭 แกนสังกัด — คนใหม่ต้องผูกโหนดในผังตั้งแต่แรก ไม่ต้องรอ backfill มาเดาทีหลัง
+         (docs/ORG-AXES-DECISION.md §5.1 · ข้อความ section/department ข้างบน = สำเนาไว้โชว์) */
+      org_node_id: orgNodeIdFor(newEmp.section, newEmp.department, orgNodes.sections, orgNodes.depts),
+      org_node_src: ORG_SRC_MANUAL,
+      staff_kind: newEmp.staff_kind || STAFF_SHOPFLOOR,
+      position: form.position || null,
+      created_by: userData?.user?.id || null,
+    };
+    const res = await supabase.from('employees').insert(row).select('id, employee_id_code, name, team, line_id, section, department, position').single();
+    setNewEmpSaving(false);
+    if (!checkWrite(res, 'เพิ่มพนักงานเข้าฐาน')) return;
+    const created = res.data;
+    setEmps(prev => [...prev, created].sort((a, b) => (a.name || '').localeCompare(b.name || '', 'th')));
+    setForm(f => ({ ...f, employeeId: created.id, fullName: created.name || f.fullName }));
+    setNewEmp(null);
+    setError(null);
+    setMessage(`เพิ่ม "${created.name}" เข้าฐานพนักงานแล้ว และผูกกับบัญชีนี้ให้เรียบร้อย`);
+  };
+
   const empById = useMemo(() => Object.fromEntries(emps.map(e => [e.id, e])), [emps]);
+  /* ผลค้นพนักงาน — ถ้าคำค้นไม่ตรงใคร **ห้ามคืนลิสต์ว่าง** (ลิสต์ว่าง = คนอ่านสรุปว่า "ไม่มีคนนี้"
+     แล้วไปสร้างซ้ำ — เกิดจริง 23/09) · คืนทุกคนแทน แล้วขึ้นป้ายบอกว่าไม่พบคำค้น */
+  const empMatches = useMemo(() => {
+    const q = nzThai(empSearch);
+    if (!q) return emps;
+    const hit = emps.filter(e => nzThai(e.name).includes(q) || nzThai(e.employee_id_code).includes(q));
+    return hit.length ? hit : emps;
+  }, [emps, empSearch]);
+  const empSearchMissed = !!nzThai(empSearch) && !emps.some(e =>
+    nzThai(e.name).includes(nzThai(empSearch)) || nzThai(e.employee_id_code).includes(nzThai(empSearch)));
   const lineName = (id) => lines.find(l => String(l.id) === String(id))?.name || '';
   /** ดึงตัวตนจากฐานพนักงานมาทับบัญชี — ฐานพนักงานคือค่าจริง (หัวหน้าแผนกดูแล) */
   const syncFromEmployee = async (u) => {
@@ -161,17 +260,29 @@ export default function AddUser() {
       .update({ team: e.team || null, line_id: e.line_id || null, section: e.section || null })
       .eq('id', u.id).select('id');
     // RLS ปฏิเสธ update = 0 แถว ไม่ error → ต้องนับแถว ห้ามขึ้นว่าสำเร็จลอยๆ
-    if (error || !data?.length) { setError('อัปเดตไม่สำเร็จ: ' + (error?.message || 'ไม่มีสิทธิ์แก้บัญชีนี้')); return; }
+    // ⚠️ ปุ่มนี้อยู่บนตาราง (modal ปิดอยู่) — setError แสดงเฉพาะใน modal ⇒ ต้องเป็น toast ไม่งั้นล้มเงียบ (QC 05/10)
+    if (error || !data?.length) { toast.error('อัปเดตไม่สำเร็จ: ' + (error?.message || 'ไม่มีสิทธิ์แก้บัญชีนี้')); return; }
     setMessage(`อัปเดต "${u.full_name}" ให้ตรงกับฐานพนักงานแล้ว`);
     fetchUsers();
   };
 
-  // เขียน mtn_teams แยก best-effort (คอลัมน์เพิ่งเพิ่ม 20260722 · create-user edge ยังไม่รู้จัก field นี้)
-  //   role ที่ไม่เกี่ยวงานซ่อม → เคลียร์เป็น null · error (ยังไม่ apply migration) = เงียบ ไม่ทำ flow หลักพัง
+  /* 🔴 ขั้นย่อยหลังสร้าง/แก้บัญชี (QC 05/10) — **คืนข้อความ error (หรือ null) ให้ผู้เรียกรวบ** ห้าม setError เอง
+     เดิม setError แล้วผู้เรียก setShowModal(false) + ข้อความเขียว "สำเร็จ" ⇒ error อยู่ใน modal ที่ปิดไปแล้ว = มองไม่เห็น
+     ⇒ admin เข้าใจว่าผูกพนักงาน/ตั้งขอบเขต/แอดมินหน่วยงานแล้ว ทั้งที่ไม่ได้ตั้ง
+     นับแถวด้วย — RLS ปฏิเสธ UPDATE = 0 แถว ไม่ error (กฎเขียน DB ข้อ 2) */
+  const subStepErr = (label, { data, error }) => {
+    if (error) return `${label}: ${error.message}`;
+    if (!data?.length) return `${label}: ไม่มีแถวถูกแก้ (ไม่มีสิทธิ์?)`;
+    return null;
+  };
+  // เขียน mtn_teams แยก (คอลัมน์เพิ่ม 20260722 · create-user edge ยังไม่รู้จัก field นี้)
+  //   role ที่ไม่เกี่ยวงานซ่อม → เคลียร์เป็น null · 42703 (ยังไม่ apply migration) = ข้ามได้ ไม่ใช่ความล้มเหลว
   const saveMtnTeams = async (id) => {
-    if (!id) return;
+    if (!id) return null;
     const val = isMtnTeamRole(form.role) && form.mtnTeams.length ? form.mtnTeams : null;
-    await supabase.from('profiles').update({ mtn_teams: val }).eq('id', id); // ignore error โดยตั้งใจ
+    const res = await supabase.from('profiles').update({ mtn_teams: val }).eq('id', id).select('id');
+    if (res.error?.code === '42703') return null;
+    return subStepErr('ทีมช่างซ่อม', res);
   };
 
   // เขียน employee_id / account_kind แยก best-effort (create-user edge ยังไม่รู้จัก field พวกนี้)
@@ -180,24 +291,57 @@ export default function AddUser() {
     if (!id) return;
     const kind = form.accountKind || null;
     const eid  = kind === 'person' ? (form.employeeId || null) : null;
-    const { error } = await supabase.from('profiles')
+    const res = await supabase.from('profiles')
       .update({ employee_id: eid, account_kind: kind }).eq('id', id).select('id');
     // ⚠️ ห้ามเงียบ — ยังไม่ apply migration แล้วบอกว่าสำเร็จ = คนเข้าใจผิดว่าผูกแล้ว
-    if (error) setError('บันทึกบัญชีแล้ว แต่ยังผูกกับพนักงานไม่ได้: ' + error.message);
+    return subStepErr('ผูกกับพนักงาน', res);
+  };
+
+  /* 🔭 ความกว้างของขอบเขต — เขียนตามหลังตอน "สร้างบัญชีใหม่"
+     (edge function create-user ยังไม่รู้จักคอลัมน์นี้ ⇒ แถวใหม่จะได้ default `unit` ของคอลัมน์ไปก่อน
+      ซึ่ง**แคบ** = ปลอดภัยตาม deny-by-default · แล้วค่อยอัพเป็นค่าที่ admin เลือก)
+     ⚠️ ห้ามเงียบเมื่อล้ม — บอกว่าสร้างสำเร็จทั้งที่ขอบเขตไม่ได้ตั้ง = คนเข้าใจผิดว่าคุมแล้ว */
+  const saveScopeDepth = async (id) => {
+    if (!id) return null;
+    const res = await supabase.from('profiles')
+      .update({ scope_depth: form.scopeDepth || 'unit', scope_depth_src: 'manual' })
+      .eq('id', id).select('id');
+    return subStepErr('ขอบเขตการมองเห็น', res);
   };
 
   // เขียน is_dept_admin แยก best-effort (คอลัมน์เพิ่งเพิ่ม 20260803 · create-user edge ยังไม่รู้จัก field นี้)
   //   role ที่ไม่เข้าเกณฑ์ (admin/display) → false เสมอ · error (ยังไม่ apply migration) = เงียบ
   const saveDeptAdmin = async (id) => {
-    if (!id) return;
+    if (!id) return null;
     const val = DEPT_ADMIN_ELIGIBLE(form.role) ? !!form.deptAdmin : false;
     // supabase-js ไม่ throw — try/catch เดิมไม่มีวันจับ · migration 20260803 apply แล้ว ไม่มีเหตุให้เงียบอีก
-    const { error } = await supabase.from('profiles').update({ is_dept_admin: val }).eq('id', id);
-    if (error) setError('บันทึกบัญชีแล้ว แต่ตั้ง "แอดมินหน่วยงาน" ไม่สำเร็จ: ' + error.message);
+    const res = await supabase.from('profiles').update({ is_dept_admin: val }).eq('id', id).select('id');
+    return subStepErr('แอดมินหน่วยงาน', res);
+  };
+  /** ผลรวมขั้นย่อย → ข้อความเขียวเฉพาะเมื่อครบทุกขั้น · ขาดขั้นไหน = toast แดงบอกรายขั้น (modal ปิดแล้วก็ยังเห็น) */
+  const reportSubSteps = (okMsg, errs) => {
+    const bad = errs.filter(Boolean);
+    if (!bad.length) { setMessage(okMsg); return; }
+    setMessage(null);
+    toast.error(`${okMsg.replace('สำเร็จ', '')}แล้ว แต่บางส่วนตั้งไม่สำเร็จ — ${bad.join(' · ')} (เปิดแก้บัญชีนี้แล้วบันทึกซ้ำ)`);
   };
 
   // ป้องกันบั๊ก fail-open: ถ้า supervisor/leader ไม่มี section/line_id ทุกหน้าที่กรองข้อมูลตาม
   // section/line_id จะข้าม condition แล้วโชว์ข้อมูลทุกไลน์ทุกแผนกเหมือน admin โดยไม่มีอะไรเตือน
+  /* 🔴 บัญชีของคนต้องมีตัวตนเสมอ (2026-09-23 · เกิดจริง: บัญชี jennipha ถูกบันทึกโดย
+     `account_kind='person'` แต่ `employee_id` และ `full_name` เป็น null ทั้งคู่
+     ⇒ ลิสต์ผู้ใช้ขึ้น "ไม่ระบุชื่อ" · ทุกจอที่โชว์ชื่อผู้ทำ/ผู้อนุมัติได้ค่าว่างตามไปด้วย)
+     เดิมช่องพนักงานมีดอกจัน * แต่ไม่มีตัวตรวจจริง — ชื่อที่พิมพ์ในช่องค้นไม่ได้ถูกบันทึกที่ไหนเลย */
+  const validateIdentity = () => {
+    if (form.accountKind === 'person' && !form.employeeId)
+      return 'บัญชีของคนต้องผูกกับพนักงานในฐานข้อมูล — ถ้ายังไม่มีชื่อเขาในฐาน ให้กดปุ่ม '
+           + '"＋ ไม่มีชื่อในฐานพนักงาน — เพิ่มคนนี้เข้าฐาน" (ชื่อที่พิมพ์ในช่องค้นยังไม่ถูกบันทึก) '
+           + '· ถ้านี่เป็นจอ TV หรือบัญชีประจำเครื่อง ให้เลือกประเภท "บัญชีกลาง (ไม่ใช่คน)" แทน';
+    if (!form.accountKind)
+      return 'เลือกประเภทบัญชีก่อน — บัญชีของคน (ต้องผูกตัวตน) หรือบัญชีกลาง (จอ TV / ประจำเครื่อง)';
+    return null;
+  };
+
   const validateScope = () => {
     if (form.role === 'supervisor' && !form.sections.length) return 'ชุดสิทธิ์ระดับส่วน ต้องกำหนด Section อย่างน้อย 1 ส่วนงาน ไม่งั้นจะเห็นข้อมูลทุกส่วนงานแบบไม่จำกัด';
     if (form.role === 'leader' && (!form.lineId || !form.team)) return 'ชุดสิทธิ์ระดับไลน์ ต้องกำหนดทั้งไลน์ผลิตและ Team ไม่งั้นจะเห็นข้อมูลทุกไลน์แบบไม่จำกัด';
@@ -223,6 +367,7 @@ export default function AddUser() {
       role:        u.role         || 'supervisor',
       position:    u.position     || '',
       sections:    (u.sections?.length ? u.sections : (u.section ? [u.section] : [])),
+      scopeDepth:  u.scope_depth || 'unit',
       mtnTeams:    Array.isArray(u.mtn_teams) ? u.mtn_teams : [],
       deptAdmin:   u.is_dept_admin === true,
       lineId:      u.line_id      ? String(u.line_id) : '',
@@ -242,6 +387,8 @@ export default function AddUser() {
 
   const handleCreate = async () => {
     if (!form.email || !form.password) return setError('กรุณากรอก Email และรหัสผ่าน');
+    const idErr = validateIdentity();
+    if (idErr) return setError(idErr);
     const scopeErr = validateScope();
     if (scopeErr) return setError(scopeErr);
     setLoading(true);
@@ -276,11 +423,13 @@ export default function AddUser() {
       if (!res.ok) throw new Error(data.error || 'เกิดข้อผิดพลาด');
       // create-user v14 เขียนโปรไฟล์ครบทุก field ในจังหวะเดียวแล้ว (ไม่มีจังหวะสองให้พลาด)
       // mtn_teams เขียนตามหลัง best-effort (edge ยังไม่รู้จัก field นี้)
-      await saveMtnTeams(data.user?.id);
-      await saveDeptAdmin(data.user?.id);
-      await saveEmpLink(data.user?.id);
-
-      setMessage(`สร้าง user "${form.email}" (${form.role}) สำเร็จ`);
+      const subErrs = [
+        await saveMtnTeams(data.user?.id),
+        await saveDeptAdmin(data.user?.id),
+        await saveEmpLink(data.user?.id),
+        await saveScopeDepth(data.user?.id),
+      ];
+      reportSubSteps(`สร้าง user "${form.email}" (${form.role}) สำเร็จ`, subErrs);
       setShowModal(false);
       fetchUsers();
     } catch (err) {
@@ -342,27 +491,37 @@ export default function AddUser() {
   };
 
   const handleUpdate = async () => {
+    const idErr = validateIdentity();
+    if (idErr) return setError(idErr);
     const scopeErr = validateScope();
     if (scopeErr) return setError(scopeErr);
     setLoading(true);
     setMessage(null);
     setError(null);
     try {
-      const { error: err } = await supabase.from('profiles').update({
+      const { data: updRows, error: err } = await supabase.from('profiles').update({
         full_name:    form.fullName    || null,
         role:         form.role,
         position:     form.position    || null,
         section:      form.sections[0] || null,
         sections:     form.sections.length ? form.sections : null,
+        /* 🔭 ความกว้างที่ "คนเลือกเอง" — ต่างจาก legacy_open ที่ได้ all มาจากการเว้นว่าง
+           (docs/ACCESS-CONTROL-STANDARDS.md §2 · ขอบเขตตัดสิทธิ์ให้แคบลงเท่านั้น ห้ามขยาย) */
+        scope_depth:     form.scopeDepth || 'unit',
+        scope_depth_src: 'manual',
         team:         form.team        || null,
         line_id:      form.lineId      ? Number(form.lineId) : null,
         notify_email: form.notifyEmail || null,
-      }).eq('id', editingId);
+      }).eq('id', editingId).select('id');
       if (err) throw err;
-      await saveMtnTeams(editingId); // best-effort แยก กัน edit พังถ้ายังไม่ apply migration
-      await saveDeptAdmin(editingId); // best-effort แยก (migration 20260803)
-      await saveEmpLink(editingId);   // best-effort แยก (migration 20260821)
-      setMessage('อัปเดตข้อมูลผู้ใช้สำเร็จ');
+      // RLS ปฏิเสธ = 0 แถว ไม่ error — ห้ามขึ้นเขียว (modal ยังเปิด ⇒ setError ผ่าน catch เห็นได้)
+      if (!updRows?.length) throw new Error('บันทึกไม่สำเร็จ — ไม่มีสิทธิ์แก้บัญชีนี้ หรือบัญชีถูกลบไปแล้ว');
+      const subErrs = [
+        await saveMtnTeams(editingId),   // แยกเขียน กัน edit พังถ้ายังไม่ apply migration
+        await saveDeptAdmin(editingId),  // (migration 20260803)
+        await saveEmpLink(editingId),    // (migration 20260821)
+      ];
+      reportSubSteps('อัปเดตข้อมูลผู้ใช้สำเร็จ', subErrs);
       setShowModal(false);
       fetchUsers();
     } catch (err) {
@@ -418,22 +577,16 @@ export default function AddUser() {
   );
 
   return (
-    <div className="page-content">
-      {/* Header */}
-      <div style={{ display: 'flex', paddingRight: 52, justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 10 }}>
-        <div>
-          <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 'clamp(16px,3vw,22px)', color: 'var(--text)' }}>
-            🔑 จัดการผู้ใช้งาน
-          </h2>
-          <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--muted)' }}>กำหนดสิทธิ์และสังกัด Section / Group / Team ของแต่ละ user</p>
-        </div>
-        <button
-          onClick={openCreate}
-          style={{ padding: '10px 20px', background: 'var(--amber)', color: '#fff', border: 'none', borderRadius: 8, fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}
-        >
-          ➕ เพิ่มผู้ใช้ใหม่
-        </button>
-      </div>
+    <Page>
+      <PageHeader title="จัดการผู้ใช้งาน" icon="🔑" sub="กำหนดสิทธิ์และสังกัด Section / Group / Team ของแต่ละ user"
+        actions={
+          <button
+            onClick={openCreate}
+            style={{ padding: '10px 20px', background: 'var(--amber)', color: '#fff', border: 'none', borderRadius: 8, fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}
+          >
+            ➕ เพิ่มผู้ใช้ใหม่
+          </button>
+        } />
 
       {message && (
         <div style={{ marginBottom: 14, padding: '10px 14px', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.25)', borderRadius: 8, color: 'var(--green)', fontSize: 13 }}>
@@ -441,32 +594,29 @@ export default function AddUser() {
         </div>
       )}
 
-      {/* Toolbar: ค้นหา + กรอง + ตัวนับ (input ใน flex row ต้องกำหนด width — index.css ตั้ง input{width:100%}) */}
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
-        <input type="search" placeholder="🔍 ค้นหา ชื่อ / อีเมล / ตำแหน่ง..." value={q}
-          onChange={e => setQ(e.target.value)}
-          style={{ width: 260, padding: '8px 12px', borderRadius: 8, fontSize: 13 }} />
-        <select value={filterRole} onChange={e => setFilterRole(e.target.value)}
-          style={{ width: 'auto', minWidth: 130, padding: '8px 10px', borderRadius: 8, fontSize: 13 }}>
-          <option value="">ทุกชุดสิทธิ์</option>
-          <RoleOptGroups />
-        </select>
-        <select value={filterSection} onChange={e => setFilterSection(e.target.value)}
-          style={{ width: 'auto', minWidth: 120, padding: '8px 10px', borderRadius: 8, fontSize: 13 }}>
-          <option value="">ทุก Section</option>
+      {/* Toolbar: ขอบเขต → ชุดสิทธิ์ → ค้นหา → ตัวนับ (UI-STANDARD 2026-09-24 · FilterBar คุมขนาดช่องเอง) */}
+      <FilterBar style={{ marginBottom: 12 }}>
+        <select value={filterSection} onChange={e => setFilterSection(e.target.value)}>
+          <option value="">{ALL.section}</option>
           {sectionOpts.map(sec => <option key={sec} value={sec}>{sec}</option>)}
         </select>
+        <select value={filterRole} onChange={e => setFilterRole(e.target.value)}>
+          <option value="">{ALL.role}</option>
+          <RoleOptGroups />
+        </select>
+        <SearchInput value={q} onChange={setQ} fields="ชื่อ / อีเมล / ตำแหน่ง" />
         {(q || filterRole || filterSection) && (
           <button onClick={() => { setQ(''); setFilterRole(''); setFilterSection(''); }}
             style={{ padding: '8px 12px', borderRadius: 8, fontSize: 12, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>
             ✕ ล้างตัวกรอง
           </button>
         )}
-        <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--muted)' }}>
+        <span className="spacer" />
+        <span className="filter-count">
           {view.length === users.length ? `ทั้งหมด ${users.length} คน` : `แสดง ${view.length} จาก ${users.length} คน`}
           <span style={{ marginLeft: 6, opacity: 0.7 }}>· ไม่มีการจำกัดจำนวน user</span>
         </span>
-      </div>
+      </FilterBar>
 
       {/* ── worklist: บัญชีที่ตัวตนไม่ตรงกับฐานพนักงาน / ยังไม่ระบุประเภท ──────────
           ⚠️ ห้ามซ่อนเงียบ — ข้อมูลไม่ตรงทำให้ "มองไม่เห็นกะตัวเอง" (Checkin กรองด้วย team ของบัญชี)
@@ -541,6 +691,51 @@ export default function AddUser() {
             )}
           </div>
         );
+      })()}
+
+      {/* 📋 คิวทบทวนสิทธิ์ — ISO 27001 A.5.18 บังคับให้ทบทวนสิทธิ์เป็นรอบ
+          `legacy_open` = บัญชีที่เห็นทั้งโรงงานเพราะ "ไม่เคยตั้งขอบเขต" ไม่ใช่เพราะมีคนตัดสินใจให้
+          ⇒ แสดงเป็นตัวเลขให้ไล่เคลียร์จนหมดแล้วหายไปเอง (pattern เดียวกับ "ข้อมูลไม่ตรงผังองค์กร")
+          🔴 ห้ามแก้ให้อัตโนมัติ — คนต้องเป็นคนตัดสินว่าใครควรเห็นแค่ไหน */}
+      {(() => {
+        const review = users.filter(needsScopeReview);
+        /* 🚩 "ตั้งแคบไว้แต่ไม่มีผลจริง" — แคบกว่า all แต่ไม่มีหน่วยให้ยึด ⇒ ยังเห็นทั้งโรงงาน
+           ต้องแยกจากคิวข้างบน เพราะคนละอาการ: อันนั้น "ไม่เคยตั้ง" · อันนี้ "ตั้งแล้วแต่ไม่ครบ"
+           ปล่อยเงียบ = จอบอกว่าถูกจำกัด แต่ความจริงไม่ถูกจำกัด (แย่กว่าไม่ตั้งเลย) */
+        const ghost = users.filter(scopeIneffective);
+        if (!review.length && !ghost.length) return null;
+        return (<>
+          {ghost.length > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+              background: 'rgba(239,68,68,0.10)', border: '1px solid rgba(239,68,68,0.35)',
+              borderRadius: 10, padding: '9px 12px', marginBottom: 10, fontSize: 12, color: 'var(--text2)' }}>
+              <b style={{ color: '#ef4444' }}>🚩 ตั้งขอบเขตไว้แต่ไม่มีผลจริง {ghost.length} บัญชี</b>
+              <span>
+                เลือกความกว้างไว้แคบกว่า “ทั้งโรงงาน” แต่<b>ยังไม่ได้ติ๊กส่วนงาน</b> —
+                จำกัดให้อยู่ในหน่วยตัวเองไม่ได้ถ้าไม่เคยบอกว่าหน่วยไหน ⇒ <b>ยังเห็นทั้งโรงงานอยู่</b>
+              </span>
+              <span style={{ color: 'var(--muted)' }}>
+                ({ghost.slice(0, 4).map(u => u.full_name || '—').join(' · ')}
+                {ghost.length > 4 ? ` · +${ghost.length - 4}` : ''})
+              </span>
+            </div>
+          )}
+          {review.length > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+            background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.35)',
+            borderRadius: 10, padding: '9px 12px', marginBottom: 10, fontSize: 12, color: 'var(--text2)' }}>
+            <b style={{ color: '#f59e0b' }}>🔭 ยังไม่ได้ทบทวนขอบเขต {review.length} บัญชี</b>
+            <span>
+              เห็น<b>ทั้งโรงงาน</b>เพราะไม่เคยตั้งขอบเขตไว้ — ไม่ใช่เพราะมีคนตั้งใจให้
+              · เปิดแก้ไขแล้วเลือก “ขอบเขตการมองเห็น” ให้ตรงงานจริง แล้วรายการนี้จะหายไปเอง
+            </span>
+            <span style={{ color: 'var(--muted)' }}>
+              ({review.slice(0, 4).map(u => u.full_name || u.email || '—').join(' · ')}
+              {review.length > 4 ? ` · +${review.length - 4}` : ''})
+            </span>
+          </div>
+          )}
+        </>);
       })()}
 
       {/* User Table */}
@@ -713,7 +908,9 @@ export default function AddUser() {
                 <div style={{ display: 'flex', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
                   {[
                     { k: 'person', icon: '👤', label: 'บัญชีของคน', desc: 'ผูกกับพนักงานในฐานข้อมูล' },
-                    { k: 'shared', icon: '🏢', label: 'บัญชีหน่วยงาน/อุปกรณ์', desc: 'ไม่มีตัวตนพนักงาน' },
+                    /* ⚠️ 2026-09-21 เปลี่ยนคำจาก "บัญชีหน่วยงาน/อุปกรณ์" — คำเดิมอ่านแล้วเหมือน
+                       "บัญชีของหน่วยงานนั้น" เลยถูกเลือกให้คนจริง 32 ใบ (QC/หัวหน้าแผนก/วิศวกร) */
+                    { k: 'shared', icon: '🖥️', label: 'บัญชีกลาง (ไม่ใช่คน)', desc: 'จอ TV · บัญชีประจำกะ/เครื่อง' },
                   ].map(o => (
                     <button key={o.k} type="button"
                       onClick={() => { setF('accountKind', o.k); if (o.k === 'shared') setF('employeeId', ''); }}
@@ -732,6 +929,17 @@ export default function AddUser() {
                 {!form.accountKind && (
                   <div style={{ fontSize: 11, color: '#f59e0b', marginBottom: 6 }}>
                     ⚠️ บัญชีนี้ยังไม่ได้ระบุประเภท — เลือกให้ถูก แล้วระบบจะรู้ว่าต้องผูกตัวตนไหม
+                  </div>
+                )}
+                {/* 🔴 กันซ้ำรอย: 32 บัญชีของคนจริงเคยถูกติดป้าย "ไม่ใช่คน" เพราะหาชื่อในฐานไม่เจอ
+                    ชื่อที่เป็น "คำไทย 2 คำขึ้นไป" = แทบจะเป็นชื่อคนเสมอ → เตือนไว้ก่อน (ไม่บล็อก) */}
+                {form.accountKind === 'shared' && /^[\u0E00-\u0E7F]+\s+[\u0E00-\u0E7F]+/.test((form.fullName || '').trim()) && (
+                  <div style={{ fontSize: 11, color: '#f59e0b', marginBottom: 6, lineHeight: 1.5 }}>
+                    ⚠️ ชื่อ "{form.fullName}" ดูเป็นชื่อคน — ถ้าเป็นคนจริงให้เลือก <b>บัญชีของคน</b> แล้วผูกตัวตน
+                    (ไม่มีในฐานพนักงานก็กดเพิ่มได้จากตรงนั้นเลย) · บัญชีกลางไว้ใช้กับ <b>จอ TV / บัญชีประจำเครื่อง</b> เท่านั้น
+                    <div style={{ color: 'var(--muted)', marginTop: 2 }}>
+                      ติดป้ายผิด = ระบบตอบไม่ได้ว่าเขาอยู่แผนกไหน ⇒ ตัวกรอง "แผนก" ของการแจ้งเตือนใช้กับเขาไม่ได้
+                    </div>
                   </div>
                 )}
 
@@ -753,13 +961,7 @@ export default function AddUser() {
                         }));
                       }}>
                       <option value="">— เลือกพนักงาน —</option>
-                      {emps
-                        .filter(e2 => {
-                          const q = empSearch.trim().toLowerCase();
-                          if (!q) return true;
-                          return (e2.name || '').toLowerCase().includes(q)
-                              || (e2.employee_id_code || '').toLowerCase().includes(q);
-                        })
+                      {empMatches
                         .slice(0, 300)
                         .map(e2 => (
                           <option key={e2.id} value={e2.id}>
@@ -767,9 +969,118 @@ export default function AddUser() {
                           </option>
                         ))}
                     </select>
+                    {empSearchMissed && (
+                      <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4, lineHeight: 1.5 }}>
+                        🔎 ไม่พบชื่อที่ตรงกับ "{empSearch.trim()}" — <b>แสดงรายชื่อทั้งหมดไว้ให้เลือกแทน</b>
+                        <div style={{ color: 'var(--muted)', marginTop: 2 }}>
+                          ชื่อในฐานอาจสะกดต่างเล็กน้อย (เช่นไม่มี ์ ท้ายคำ) · ลองค้นด้วย<b>รหัสพนักงาน</b>หรือคำสั้นๆ
+                          ก่อนกดเพิ่มคนใหม่ — เพิ่มซ้ำแล้วจะมีคนเดียวกัน 2 แถวในฐาน
+                        </div>
+                      </div>
+                    )}
                     <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
                       ทีม / ไลน์ / ส่วนงาน จะมาจากฐานพนักงานอัตโนมัติ — หัวหน้าแผนกแก้ที่นั่นแล้วถือเป็นค่าจริง
                     </div>
+
+                    {/* ➕ ไม่มีชื่อเขาในฐาน = เพิ่มจากตรงนี้ได้เลย ไม่ต้องไปหน้าอื่น (2026-09-21)
+                        คนสายสนับสนุน (QA/PE/ธุรการ/สโตร์) ไม่เคยถูกลงทะเบียนไว้ — เดิมทางออกเดียว
+                        คือกดเป็น "บัญชีหน่วยงาน" ซึ่งทำให้ระบบตอบไม่ได้ว่าเขาอยู่แผนกไหน */}
+                    {!form.employeeId && !newEmp && (
+                      <button type="button"
+                        onClick={() => setNewEmp({ name: (empSearch.trim() || form.fullName || ''), employee_id_code: '', department: '', section: '', staff_kind: STAFF_SUPPORT })}
+                        style={{ marginTop: 8, width: 'auto', padding: '7px 12px', borderRadius: 8, border: '1px dashed var(--accent)',
+                          background: 'transparent', color: 'var(--accent)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                        ＋ ไม่มีชื่อในฐานพนักงาน — เพิ่มคนนี้เข้าฐาน
+                      </button>
+                    )}
+
+                    {newEmp && (
+                      <div style={{ marginTop: 8, padding: 10, background: 'var(--bg3)', borderRadius: 8, border: '1px solid var(--border2)', display: 'grid', gap: 8 }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>➕ เพิ่มคนนี้เข้าฐานพนักงาน</div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: 8 }}>
+                          <div>
+                            <label style={labelSt}>ชื่อ - นามสกุล <span style={{ color: 'var(--red)' }}>*</span></label>
+                            <input type="text" autoFocus value={newEmp.name}
+                              onChange={e => setNewEmp(v => ({ ...v, name: e.target.value }))} />
+                          </div>
+                          <div>
+                            <label style={labelSt}>รหัสพนักงาน <span style={{ color: 'var(--red)' }}>*</span></label>
+                            <input type="text" placeholder="เช่น 12345" value={newEmp.employee_id_code}
+                              onChange={e => setNewEmp(v => ({ ...v, employee_id_code: e.target.value }))} />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label style={labelSt}>ประเภทพนักงาน</label>
+                          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                            {STAFF_KINDS.map(k => (
+                              <button key={k.key} type="button" onClick={() => setNewEmp(v => ({ ...v, staff_kind: k.key }))}
+                                style={{ flex: '1 1 190px', width: 'auto', textAlign: 'left', cursor: 'pointer', padding: '7px 10px', borderRadius: 8, fontSize: 12,
+                                  border: `1px solid ${newEmp.staff_kind === k.key ? 'var(--accent)' : 'var(--border2)'}`,
+                                  background: newEmp.staff_kind === k.key ? 'rgba(34,197,94,0.10)' : 'var(--bg2)',
+                                  color: newEmp.staff_kind === k.key ? 'var(--text)' : 'var(--text2)' }}>
+                                <div style={{ fontWeight: 700 }}>{k.label}</div>
+                                <div style={{ fontSize: 11, color: 'var(--muted)' }}>{k.desc}</div>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* 🔴 23/09 — เดิมบังคับ "สายสนับสนุน = ขึ้นตรงฝ่าย" (ส่วนงานถูกล็อกว่าง) ซึ่งผิดกับของจริง:
+                            ธุรการ/QC ที่ประจำส่วนงานมีอยู่จริง (ชญาดา = clerk สังกัด PD3) และการปล่อยส่วนงานว่าง
+                            มีผลข้างเคียงกับ**การแจ้งเตือน** — `notify_recipients()` ปล่อยคนที่ไม่มีส่วนงานเลย
+                            (ทั้งฝั่งบัญชีและฝั่งพนักงาน) ผ่านตัวกรองทุกส่วนงาน ⇒ เด้งหาเขาทุกใบทั้งโรงงาน
+                            ⇒ เลือกส่วนงานได้ทั้ง 2 ประเภท · "ขึ้นตรงฝ่าย" เป็น**ตัวเลือกหนึ่ง** ไม่ใช่ค่าบังคับ
+                            แผนก cascade ตามส่วนงาน (ใช้ deptOptionsFor เดียวกับหน้าลงทะเบียนพนักงาน) */}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                          <div>
+                            <label style={labelSt}>ส่วนงาน (Section)</label>
+                            <select value={newEmp.section}
+                              onChange={e => setNewEmp(v => ({ ...v, section: e.target.value, department: '' }))}>
+                              <option value="">— ไม่ระบุ —</option>
+                              <option value={ORPHAN_SECTION}>{ORPHAN_SECTION_LABEL}</option>
+                              {sectionOpts.map(sc => <option key={sc} value={sc}>{sc}</option>)}
+                            </select>
+                          </div>
+                          <div>
+                            <label style={labelSt}>แผนก</label>
+                            <select value={newEmp.department} onChange={e => setNewEmp(v => ({ ...v, department: e.target.value }))}>
+                              <option value="">{newEmp.section ? '— ไม่ระบุ —' : '— เลือกส่วนงานก่อน —'}</option>
+                              {deptOptionsFor(newEmp.section, orgNodes.sections, orgNodes.depts)
+                                .map(d => <option key={d.id} value={d.code || d.name}>{d.code || d.name}</option>)}
+                            </select>
+                          </div>
+                        </div>
+
+                        {/* 🔔 ไม่มีส่วนงานทั้ง 2 ฝั่ง = ตัวกรองส่วนงานของการแจ้งเตือนใช้กับเขาไม่ได้ */}
+                        {!newEmp.section && form.sections.length === 0 && (
+                          <div style={{ fontSize: 11, color: '#f59e0b', lineHeight: 1.5 }}>
+                            🔔 ไม่ได้ระบุส่วนงาน และบัญชีนี้ก็ยังไม่ได้ติ๊กขอบเขตส่วนงาน
+                            ⇒ <b>เขาจะได้รับแจ้งเตือนของทุกส่วนงาน</b> (ระบบถือว่า "ไม่จำกัดขอบเขต")
+                            <div style={{ color: 'var(--muted)', marginTop: 2 }}>
+                              ถ้าเขาดูแลเฉพาะบางส่วนงาน ให้ติ๊ก "ขอบเขตส่วนงาน" ข้างล่างด้วย
+                            </div>
+                          </div>
+                        )}
+
+                        <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+                          {newEmp.staff_kind === STAFF_SUPPORT
+                            ? 'สายสนับสนุน = ไม่ผูกไลน์/ทีม ⇒ ไม่โผล่ในหน้าเช็คชื่อ · ไม่ถูกนับเป็นกำลังคนหน้าไลน์ · ไม่มีแผงสกิล'
+                            : 'พนักงานหน้าไลน์ = จะถูกนับในเช็คชื่อ/กำลังคน — ไลน์และทีมไปตั้งต่อที่หน้าพนักงาน (/operator)'}
+                        </div>
+
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          <button type="button" onClick={addEmployee} disabled={newEmpSaving}
+                            style={{ width: 'auto', padding: '8px 14px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: newEmpSaving ? 0.6 : 1 }}>
+                            {newEmpSaving ? 'กำลังบันทึก...' : 'บันทึกเข้าฐานพนักงาน + ผูกกับบัญชีนี้'}
+                          </button>
+                          <button type="button" onClick={() => setNewEmp(null)}
+                            style={{ width: 'auto', padding: '8px 14px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text2)', fontSize: 12, cursor: 'pointer' }}>
+                            ยกเลิก
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </>
                 ) : (
                   <>
@@ -805,7 +1116,7 @@ export default function AddUser() {
                       {POSITION_LEVELS.map(l => <option key={l.key} value={l.key}>{l.label}</option>)}
                     </select>
                     <button type="button" onClick={addPosition} disabled={newPosSaving}
-                      style={{ whiteSpace: 'nowrap', padding: '8px 12px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#071008', fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: newPosSaving ? 0.6 : 1 }}>
+                      style={{ whiteSpace: 'nowrap', padding: '8px 12px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: newPosSaving ? 0.6 : 1 }}>
                       {newPosSaving ? '...' : 'บันทึกตำแหน่ง'}
                     </button>
                   </div>
@@ -868,20 +1179,74 @@ export default function AddUser() {
                 })()}
               </div>
 
+              {/* 🔭 ความกว้างของการมองเห็น — คนละแกนกับ role (role = ทำอะไรได้ · อันนี้ = เห็นกว้างแค่ไหน)
+                  ที่มา user: "job level manager มองได้หมด ซึ่งความจริงต้องดูว่าอยู่แผนกไหน ส่วนงานไหน"
+                  🔴 ค่าเริ่มต้นต้องแคบเสมอ — "ทั้งโรงงาน" ต้องเป็นการเลือกที่เห็นได้ ไม่ใช่ผลของการเว้นว่าง
+                     (deny by default · docs/ACCESS-CONTROL-STANDARDS.md §2) */}
+              <div style={{ gridColumn: '1 / -1' }}>
+                {(() => {
+                  const lvl = levelOfPosition(form.position);
+                  const suggested = depthForLevel(lvl);
+                  return (
+                    <>
+                      <label style={labelSt}>ขอบเขตการมองเห็น (เห็นกว้างแค่ไหน)</label>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                        {SCOPE_DEPTHS.map(d => {
+                          const m = SCOPE_DEPTH_META[d];
+                          const on = (form.scopeDepth || 'unit') === d;
+                          const wide = d === 'all';
+                          const col = wide ? '#f59e0b' : '#4d9fff';
+                          return (
+                            <button key={d} type="button" title={m.desc}
+                              onClick={() => setF('scopeDepth', d)}
+                              style={{ padding: '6px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700,
+                                cursor: 'pointer', background: on ? `${col}22` : 'var(--bg2)',
+                                border: `1px solid ${on ? col : 'var(--border2)'}`,
+                                color: on ? col : 'var(--text2)' }}>
+                              {m.icon} {m.label}
+                              {d === suggested && <span style={{ fontSize: 11, opacity: 0.75 }}> · แนะนำ</span>}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
+                        {SCOPE_DEPTH_META[form.scopeDepth || 'unit'].desc}
+                        {lvl && <> · ระดับ <b>{levelMeta(lvl)?.label || lvl}</b> ปกติใช้
+                          “{SCOPE_DEPTH_META[suggested].label}” — <b>ตั้งต่างจากที่แนะนำได้</b> ของจริงมีข้อยกเว้นเสมอ</>}
+                        {!lvl && <> · ยังไม่ได้เลือกตำแหน่ง — เลือกแล้วระบบจะแนะนำความกว้างที่เหมาะให้</>}
+                      </div>
+                      {form.scopeDepth === 'all' && (
+                        <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4, lineHeight: 1.5 }}>
+                          ⚠️ <b>เห็นทุกส่วนงานทั้งโรงงาน</b> — รวมถึงได้รับแจ้งเตือนของทุกฝ่ายด้วย
+                          <br />ให้เฉพาะคนที่ต้องดูข้ามฝ่ายจริงๆ (ผู้บริหาร · QA · ช่างที่ดูแลทั้งโรงงาน)
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
+
               <div style={{ gridColumn: '1 / -1' }}>
                 <label style={labelSt}>
                   ขอบเขตส่วนงาน (Section) {form.role === 'supervisor' && <span style={{ color: 'var(--red)' }}>* จำเป็นอย่างน้อย 1</span>}
                 </label>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '8px 10px', background: 'var(--bg3)', borderRadius: 8, border: '1px solid var(--border2)' }}>
                   {sectionOpts.length === 0 && <span style={{ fontSize: 12, color: 'var(--muted)' }}>ไม่มีข้อมูล Section</span>}
-                  {sectionOpts.map(s => {
+                  {/* ส่วนงานผลิต + แผนกขึ้นตรงฝ่าย + ค่าเก่าที่ไม่อยู่ในทะเบียน
+                      (pattern เดียวกับ positionOptionsWith) — **ห้ามซ่อนค่าที่ตั้งไว้แล้ว**
+                      ไม่งั้นคนอ่านหน้าจอเข้าใจว่า "ยังไม่ได้ตั้ง" ทั้งที่ตั้งไว้ */}
+                  {[...new Set([...sectionOpts, ...orphanDeptOpts, ...form.sections])].map(s => {
                     const checked = form.sections.includes(s);
+                    const isOrphan  = orphanDeptOpts.includes(s);
+                    const offList   = !sectionOpts.includes(s) && !isOrphan;   // ค่าเก่านอกทะเบียน
                     return (
-                      <label key={s} style={{
+                      <label key={s} title={isOrphan ? 'แผนกขึ้นตรงฝ่าย — ไม่ได้สังกัดส่วนงานผลิต'
+                                          : offList ? 'ค่าเดิมที่ไม่มีในผังองค์กรแล้ว — ยังใช้งานอยู่ ติ๊กออกได้ถ้าไม่ต้องการ' : ''}
+                        style={{
                         display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer',
                         padding: '4px 10px', borderRadius: 6, fontSize: 12, fontWeight: 600, userSelect: 'none',
                         background: checked ? 'rgba(77,159,255,0.15)' : 'var(--bg2)',
-                        border: `1px solid ${checked ? 'rgba(77,159,255,0.5)' : 'var(--border2)'}`,
+                        border: `1px ${offList ? 'dashed' : 'solid'} ${checked ? 'rgba(77,159,255,0.5)' : 'var(--border2)'}`,
                         color: checked ? '#4d9fff' : 'var(--text2)',
                       }}>
                         <input
@@ -890,14 +1255,15 @@ export default function AddUser() {
                           onChange={() => setF('sections', checked ? form.sections.filter(x => x !== s) : [...form.sections, s])}
                           style={{ margin: 0 }}
                         />
-                        {s}
+                        {isOrphan ? `🏛️ ${s}` : s}{offList ? ' ⚠' : ''}
                       </label>
                     );
                   })}
                 </div>
                 {/* กติกาสำคัญ (ไม่ติ๊ก = เห็นทุกส่วนงาน) เห็นตลอด · เหตุผล/ข้อควรระวังพับไว้ */}
                 <InfoMore size={11} style={{ marginTop: 4 }} id="au_sections"
-                  lead={<>เลือกได้หลายส่วนงาน — เห็นข้อมูลเฉพาะที่ติ๊ก · <b>ไม่ติ๊กเลย = เห็นทุกส่วนงาน</b></>}>
+                  lead={<>เลือกได้หลายส่วนงาน — เห็นข้อมูลเฉพาะที่ติ๊ก · <b>ไม่ติ๊กเลย = เห็นทุกส่วนงาน</b>
+                    {orphanDeptOpts.length > 0 && <> · 🏛️ = <b>แผนกขึ้นตรงฝ่าย</b> (QA / ช่าง — ไม่ได้สังกัดส่วนงานผลิต)</>}</>}>
                   ใช้ได้กับทุกชุดสิทธิ์ (เช่น สิทธิ์ทั้งฝ่าย ที่ดูแลเฉพาะบางส่วน)
                   <br />💡 ขอบเขตนี้มีผลกับ<b>ข้อมูลฝ่ายผลิต</b> (พนักงาน/ไลน์/เช็คชื่อ/รายงาน) — สาย Logistic/Store/ขาย <b>ไม่ต้องติ๊ก</b> เพราะโมดูล Logistic ไม่ได้แบ่งข้อมูลตามส่วนงาน ใช้ Role คุมการเข้าหน้าแทน
                 </InfoMore>
@@ -906,7 +1272,13 @@ export default function AddUser() {
               {/* ทีมช่างซ่อม — แยกคิวใบแจ้งซ่อม MO (โผล่เฉพาะ role งานซ่อม) · แยกจาก Section ไม่กระทบ scope ข้อมูลผลิต */}
               {isMtnTeamRole(form.role) && (
                 <div style={{ gridColumn: '1 / -1' }}>
-                  <label style={labelSt}>🔧 ทีมช่างซ่อม (แยกคิวใบแจ้งซ่อม MO)</label>
+                  <label style={labelSt}>🔧 ทีมช่างซ่อม (แยกคิวใบแจ้งซ่อม MO + บอกว่าอยู่ฝั่งช่าง)</label>
+                  {/* 🔒 ช่องนี้ตัดสิน "ฝั่ง" ของด่านล็อกช่องเซ็นขั้น 6/7/8 ด้วย — ต้องเขียนบอกคนตั้งค่า
+                      ไม่งั้น ผจก.ช่างที่ไม่ได้ติ๊กจะกดช่องของตัวเองไม่ได้ แล้วหาสาเหตุไม่เจอ */}
+                  <div style={{ fontSize: 11.5, color: 'var(--muted)', margin: '-2px 0 6px', lineHeight: 1.6 }}>
+                    ติ๊ก = <b>ฝั่งซ่อมบำรุง</b> (กดช่องเซ็น “หัวหน้าแผนกช่าง” / “ผจก.ช่าง” ในใบ MO ได้) ·
+                    ไม่ติ๊ก = <b>ฝั่งผู้แจ้ง</b> (กดช่อง “ผจก.ฝ่ายที่แจ้ง อนุมัติปิดใบ” ได้)
+                  </div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '8px 10px', background: 'var(--bg3)', borderRadius: 8, border: '1px solid var(--border2)' }}>
                     {/* 2026-09-07: วนทีมจาก mtn_teams (pmTeamsSync — data-driven) แทน MTN_TEAMS hardcode · ค่าที่เก็บ = key เสมอ */}
                     {pmTeamsSync().map(team => {
@@ -962,13 +1334,32 @@ export default function AddUser() {
                   (ต้นเหตุเดิมของ "ทีมสลับกัน" คือช่องพวกนี้ให้กรอกเองได้) */}
               {(() => {
                 const linked = form.accountKind === 'person' && !!form.employeeId;
+                /* 🔴 ช่องที่ล็อก ต้องโชว์ "ค่าที่มีผลจริง" ไม่ใช่ค่าที่ค้างในบัญชี (25/09 · feedback user)
+                   เกิดจริง: ตีรณา — ฐานพนักงาน team='A' แต่ `profiles.team` เป็น null ⇒ ช่องขึ้น
+                   "— เลือก —" ทั้งที่ป้ายเขียนว่า "จากฐานพนักงาน" = จอโกหก แล้วกดแก้ก็ไม่ได้เพราะล็อกไว้
+                   ตัวตัดสินจริงอยู่ที่ App.jsx: `emp.team ?? profiles.team` (ฐานพนักงานชนะเมื่อมีค่า)
+                   ⇒ ที่นี่ต้องคิดด้วยสูตรเดียวกัน ห้ามอ่าน form.team เฉยๆ ตอน linked */
+                const emp = linked ? empById[form.employeeId] : null;
+                const effTeam = linked ? (emp?.team ?? form.team ?? '') : form.team;
+                const effLine = linked ? (emp?.line_id ?? form.lineId ?? '') : form.lineId;
+                /* ลิงก์ออกจากทางตัน — ช่องที่แก้ที่นี่ไม่ได้ ต้องบอกว่าไปแก้ที่ไหน และพาไปถึงตัวคน
+                   (เดิมบอกไว้ใน `title` อย่างเดียว = ต้องเอาเมาส์ไปจ่อถึงจะเห็น มือถือไม่มีทางรู้เลย) */
+                const empLink = emp
+                  ? `/operator?q=${encodeURIComponent(emp.employee_id_code || emp.name || '')}`
+                  : '/operator';
+                const fixHint = linked && (
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
+                    แก้ค่านี้ที่ <a href={empLink} style={{ color: 'var(--accent)', fontWeight: 600 }}>
+                      👥 ฐานข้อมูลพนักงาน →</a> (หัวหน้าแผนกเป็นคนดูแล)
+                  </div>
+                );
                 return (<>
                   <div>
                     <label style={labelSt}>
                       Team {form.role === 'leader' && !linked && <span style={{ color: 'var(--red)' }}>* จำเป็น</span>}
                       {linked && <span style={{ color: 'var(--muted)', fontWeight: 400 }}> · จากฐานพนักงาน</span>}
                     </label>
-                    <select value={form.team} disabled={linked}
+                    <select value={effTeam} disabled={linked}
                       title={linked ? 'แก้ที่ฐานข้อมูลพนักงาน (หน้าพนักงาน) — ที่นี่แสดงค่าจริงเท่านั้น' : undefined}
                       onChange={e => setF('team', e.target.value)}>
                       <option value="">— เลือก —</option>
@@ -983,6 +1374,7 @@ export default function AddUser() {
                         {' '}<b style={{ color: 'var(--text2)' }}>C</b> = ไม่หมุนกะ <b>เห็นคนทั้งไลน์ทุกทีม</b> (สำหรับหัวหน้าที่ไม่ได้ยืนประจำกะ)
                       </div>
                     )}
+                    {fixHint}
                   </div>
 
                   {/* ใช้ <LineSelect> ตัวกลาง (มีลำดับชั้น/scope/ไลน์ปลดระวาง) + ล็อกเมื่อผูกพนักงาน */}
@@ -991,8 +1383,9 @@ export default function AddUser() {
                       ไลน์ผลิต / Group {form.role === 'leader' && !linked && <span style={{ color: 'var(--red)' }}>* จำเป็น</span>}
                       {linked && <span style={{ color: 'var(--muted)', fontWeight: 400 }}> · จากฐานพนักงาน</span>}
                     </label>
-                    <LineSelect lines={lines} value={form.lineId} valueKey="id"
+                    <LineSelect lines={lines} value={effLine} valueKey="id"
                       disabled={linked} onChange={v => setF('lineId', v)} />
+                    {fixHint}
                   </div>
                 </>);
               })()}
@@ -1045,7 +1438,7 @@ export default function AddUser() {
           </div>
         </div>
       )}
-    </div>
+    </Page>
   );
 }
 

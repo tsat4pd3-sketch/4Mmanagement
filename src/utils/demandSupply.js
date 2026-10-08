@@ -40,6 +40,19 @@ export const daysInMonthOf = (s) => {
  *  จอที่เหลือบวกทุก source แล้ว demand เฟ้อ 2 เท่า · QC flow-audit D1 2026-08-25)
  * ⚠️ ต้อง select คอลัมน์ `source` มาด้วย — แถวไม่มี source ถูกมองเป็น manual
  */
+/**
+ * แถว forecast 1 แถว = ความต้องการของกี่วัน (grain ต่างกันตาม source — เกลี่ยผิด = demand เพี้ยน)
+ *   `edi_830` = ก้อนราย 7 วัน (period_month = วันต้นสัปดาห์)
+ *   `edi_862` = **ราย 1 วัน** — แถวแผนระยะยาวจากไฟล์ 862 ที่ไม่มีเวลาส่ง (2026-09-21)
+ *               period_month คือวันส่งจริงของแถวนั้น ไม่ใช่ก้อนเดือน
+ *               ⚠️ เกลี่ยทั้งเดือนจะทำให้ demand ของวันนั้นเหลือ ~1/30 = simulate บอก "ของพอ" ผิด
+ *   อื่นๆ (manual) = ก้อนทั้งเดือน (period_month = วันที่ 1)
+ */
+export const forecastSpreadDays = (f, spreadDays = 7) =>
+  f?.source === 'edi_830' ? spreadDays
+    : f?.source === 'edi_862' ? 1
+      : daysInMonthOf(f?.period_month);
+
 export function dedupeForecastRows(rows) {
   const hasEdi = new Set();
   (rows || []).forEach((r) => {
@@ -73,7 +86,7 @@ export function demandByDay(orders, forecasts, spreadDays = 7) {
   (forecasts || []).forEach((f) => {
     const q = Number(f.qty) || 0;
     if (!f.period_month || !(q > 0)) return;
-    const days = f.source === 'edi_830' ? spreadDays : daysInMonthOf(f.period_month);
+    const days = forecastSpreadDays(f, spreadDays);
     const per = q / days;
     for (let i = 0; i < days; i++) add(addDay(String(f.period_month).slice(0, 10), i), per, 'forecast');
   });

@@ -9,6 +9,7 @@ import { invalidateCostCenters } from '../utils/useCostCenters';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import { RATE_COMPONENTS, rateFor, fmtBaht } from '../utils/costSaving';
+import { DeleteButton } from './IconButton';
 
 /* ═══ 💰 Activity Rate ต่อ Cost Center — แผงใน /org-setup (2026-08-11) ═══
    rate ที่บัญชีคำนวณ ต่อ cost center (ก้อนตาม RATE_COMPONENTS) — ใช้แปลงผล Improvement เป็น cost saving
@@ -195,7 +196,7 @@ export default function CostCenterRatePanel({ nodes, lines }) {
                         {lns.length > 0 && !cur && <span title="ไลน์ใช้รหัสนี้อยู่ แต่ยังไม่ตั้ง rate — cost saving ของไลน์นี้จะคำนวณไม่ได้" style={{ marginLeft: 6, fontSize: 11, color: '#f59e0b', fontWeight: 800 }}>⚠</span>}
                         {lns.length > 0 && !cc.startsWith('21406') && (
                           <span title="ไลน์ใช้รหัสนี้อยู่ แต่ไม่ใช่ชุดระดับกลุ่ม (21406) — เช็คกับบัญชีแล้วแก้ที่หน้าจัดการไลน์/ผังองค์กร"
-                            style={{ marginLeft: 6, fontSize: 10, fontWeight: 800, color: '#f59e0b', background: 'rgba(245,158,11,0.13)', borderRadius: 5, padding: '1px 5px' }}>ไม่ใช่ 21406?</span>
+                            style={{ marginLeft: 6, fontSize: 11, fontWeight: 800, color: '#f59e0b', background: 'rgba(245,158,11,0.13)', borderRadius: 5, padding: '1px 5px' }}>ไม่ใช่ 21406?</span>
                         )}
                       </td>
                       <td style={{ padding: '7px 10px', fontSize: 11, color: 'var(--muted)', maxWidth: 260 }}>
@@ -244,7 +245,7 @@ export default function CostCenterRatePanel({ nodes, lines }) {
                         <td style={{ padding: '4px 10px', whiteSpace: 'nowrap', textAlign: 'right' }}>
                           {canEdit && <>
                             <button onClick={() => setForm({ ...emptyForm(), ...r })} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12 }}>✏️</button>
-                            <button onClick={() => handleDelete(r)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12 }}>🗑</button>
+                            <DeleteButton onClick={() => handleDelete(r)} title="ลบ" />
                           </>}
                         </td>
                       </tr>
@@ -336,7 +337,7 @@ export default function CostCenterRatePanel({ nodes, lines }) {
                 </label>
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
                   <button onClick={() => setForm(null)} style={{ padding: '7px 16px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>ยกเลิก</button>
-                  <button onClick={handleSave} disabled={saving} style={{ padding: '7px 18px', borderRadius: 7, border: 'none', background: 'var(--accent)', color: '#08130a', fontSize: 12, fontWeight: 800, cursor: 'pointer', opacity: saving ? 0.6 : 1 }}>
+                  <button onClick={handleSave} disabled={saving} style={{ padding: '7px 18px', borderRadius: 7, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 12, fontWeight: 800, cursor: 'pointer', opacity: saving ? 0.6 : 1 }}>
                     {saving ? 'กำลังบันทึก...' : '💾 บันทึก'}
                   </button>
                 </div>

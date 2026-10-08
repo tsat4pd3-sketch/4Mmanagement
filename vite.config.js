@@ -1,5 +1,8 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+// 🗄️ virtual:schema-usage — "หน้าไหนแตะตารางไหน" สแกนซอร์สสดตอน build (ใช้โดยหน้า /schema)
+//    ⚠️ ต้องใส่ใน audit/vite.audit.mjs ด้วย ไม่งั้น crashsweep เปิดหน้า /schema ไม่ได้
+import schemaUsage from './scripts/vite-plugin-schema-usage.mjs'
 
 // BUILD_ID = เวลาที่ build — ฝังลงโค้ด (__BUILD_ID__) และเขียนเป็น dist/version.json
 // ให้ version guard ใน src/main.jsx เทียบได้ว่าแท็บนี้ถือเวอร์ชันล่าสุดอยู่มั้ย
@@ -9,6 +12,7 @@ const BUILD_ID = Date.now().toString()
 export default defineConfig({
   plugins: [
     react(),
+    schemaUsage(process.cwd()),
     {
       name: 'emit-version-json',
       generateBundle() {

@@ -1,15 +1,20 @@
-import { useState, useEffect, useMemo, useContext, useCallback, Fragment } from 'react';
+import { useState, useEffect, useMemo, useContext, useCallback, useRef, Fragment } from 'react';
 import { supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import CollapseCardBase from '../components/CollapseCard';
 import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
+import SearchInput from '../components/SearchInput';
+import { ALL } from '../utils/filterLabels';
 import DailyBars from '../components/DailyBars';
 import DemandVsProduction from '../components/DemandVsProduction';
 import { fetchAllPages, fetchByIds } from '../utils/fetchByIds';
 import LineSelect from '../components/LineSelect';
 import useProductionLines from '../utils/useProductionLines';
+import TimeRangeBar from '../components/TimeRangeBar';
+import useTimeRange from '../utils/useTimeRange';
 
 // ประวัติผลิตราย Product — ดูย้อนหลังว่าสินค้าตัวหนึ่งผลิตที่ไลน์ไหน/กะไหน เท่าไหร่ เสียเท่าไหร่ (2026-07-24)
 // + ประวัติการแก้ master data ของสินค้านั้น (audit_log — ใครแก้ line_name/CT เมื่อไหร่)
@@ -50,8 +55,10 @@ export default function ProductHistory() {
   const [openDays, setOpenDays]     = useState(() => new Set());   // drill: วัน → ไลน์·กะ → ใบ
   const [openShifts, setOpenShifts] = useState(() => new Set());
   const toggleSet = (setter, key) => setter(prev => { const n = new Set(prev); if (n.has(key)) n.delete(key); else n.add(key); return n; });
-  const [from, setFrom]         = useState(() => addDays(todayStr(), -90));
-  const [to, setTo]             = useState(todayStr);
+  /* ⏱️ ช่วงข้อมูล = แถบกลาง (UI §6.16) · `defaultDays: 90` คงพฤติกรรมเดิมของหน้านี้
+     หน้านี้แสดงรายเดือน/รายไลน์ ไม่ได้ให้เลือกขนาดถังเอง ⇒ `scales={null}` */
+  const tr = useTimeRange({ defaultDays: 90 });
+  const { from, to } = tr;
   const [orders, setOrders]     = useState([]);
   const [defects, setDefects]   = useState([]);
   const [audit, setAudit]       = useState([]);
@@ -89,8 +96,13 @@ export default function ProductHistory() {
     [groupMode, canGroup, groupMats, selMat],
   );
 
+  /* 🔴 stale-response guard (กฎเขียน DB ข้อ 4 · QC 05/10) — คิวรีนี้ยาว (แบ่งหน้าหลายรอบ)
+     สลับสินค้า/ช่วงวันระหว่างโหลด = คำตอบของสินค้าเก่ากลับมาทีหลังแล้วเขียนทับจอใหม่ */
+  const reqRef = useRef(0);
   const loadHistory = useCallback(async (mats) => {
     if (!mats?.length) return;
+    const myReq = ++reqRef.current;
+    const stale = () => myReq !== reqRef.current;
     setLoading(true);
     // ใบผลิตของ mat ที่เลือก (เดี่ยวหรือทั้งกลุ่ม) + join session (line/date/shift/oee)
     /* ⚠️ ต้องแบ่งหน้า — `.limit(2000)` ใช้ไม่ได้จริง PostgREST clamp ที่ 1000 เสมอ (audit 2026-09-02)
@@ -105,6 +117,7 @@ export default function ProductHistory() {
       .gte('production_sessions.work_date', from).lte('production_sessions.work_date', to),
       { orderBy: ['opened_at', 'id'] });
     // fetchAllPages เรียงขึ้นเสมอ (ต้องคงที่คู่กับ .range) — ใบล่าสุดขึ้นก่อนเป็นเรื่องการแสดงผล เรียงกลับที่นี่
+    if (stale()) return;
     const ord = ordRes.rows.slice().reverse();
     const ordWarn = ordRes.error ? 'โหลดใบผลิตไม่สำเร็จ' : (ordRes.truncated ? 'ใบผลิตโหลดได้ไม่ครบ' : '');
     /* ⚠️ defect_logs **ไม่มีคอลัมน์ mat_no** — ผูกกับสินค้าผ่าน prod_order_id เท่านั้น
@@ -116,6 +129,7 @@ export default function ProductHistory() {
     const defRes = await fetchByIds(oIds, (c) => supabaseDR.from('defect_logs')
       .select('prod_order_id, qty_ng, qty_suspect, dr_defect_types(name_th)')
       .in('prod_order_id', c));
+    if (stale()) return;
     const def = defRes.rows;
     const defWarn = defRes.error ? 'โหลดของเสียไม่สำเร็จ' : (defRes.truncated ? 'ของเสียโหลดได้ไม่ครบ' : '');
     // audit ของแถว dr_products นี้ (best-effort — ถ้ายังไม่ apply migration audit_log จะว่าง)
@@ -127,6 +141,7 @@ export default function ProductHistory() {
         .order('changed_at', { ascending: false }).limit(200);
       auditRows = a || [];
     } catch { auditRows = []; }
+    if (stale()) return;
     setOrders(ord || []); setDefects(def); setAudit(auditRows);
     // ⚠️ โหลดไม่ครบ = ตัวเลขบนหน้านี้ต่ำกว่าจริง ต้องบอกเสมอ ห้ามให้ดูเหมือนข้อมูลครบ
     setLoadWarn([ordWarn, defWarn].filter(Boolean).join(' · '));
@@ -257,7 +272,7 @@ export default function ProductHistory() {
   const td = { fontSize: 12, padding: '6px 8px', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' };
 
   return (
-    <div style={{ padding: '16px 20px', maxWidth: 1400, margin: '0 auto' }}>
+    <Page>
       <PageHeader
         title="ประวัติผลิต (by Product)" icon="📜"
         sub="เลือกสินค้าเพื่อดูว่าเคยผลิตที่ไลน์ไหน/กะไหน เท่าไหร่ เสียเท่าไหร่ + ประวัติการแก้ไขข้อมูลสินค้า (ใครแก้เมื่อไหร่)"
@@ -274,32 +289,22 @@ export default function ProductHistory() {
         </div>
       )}
 
-      {/* ตัวเลือกสินค้า + ช่วงวันที่ */}
+      {/* ตัวเลือกสินค้า + ช่วงวันที่ — แถบกรองเดียว (UI-STANDARD 2026-09-24: ไลน์/ค้นหาเป็น children ของ TimeRangeBar
+          เดิมช่องสูง 3 ขนาดในแถวเดียว + ช่องค้นหายืด 1074px) */}
+      <TimeRangeBar
+        scale={tr.scale} from={from} to={to} today={tr.today} scales={null}
+        onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset} style={{ marginBottom: 12 }}
+      >
+        {/* <LineSelect> กลาง (ลำดับชั้น + scope + ตัดปลดระวาง) — เฉพาะไลน์ที่มีสินค้าจริง · ชื่อนอกทะเบียนแยก optgroup ห้ามซ่อน (2026-09-07) */}
+        <LineSelect lines={lines.filter(l => lineGroups.inUse.has(l.name))} value={filterLine} onChange={setFilterLine}
+          role={role} lineId={lineId} sections={sections} placeholder={ALL.line}
+          extraGroups={[{ label: '⚠ นอกผัง (ชื่อไลน์ไม่ตรงทะเบียนไลน์ผลิต)', options: lineGroups.off.map(n => ({ value: n })) }]} />
+        <SearchInput value={search} onChange={setSearch} fields="MAT.NO / ชื่อ / P/N" />
+      </TimeRangeBar>
+
       <div style={{ ...card, marginBottom: 16 }}>
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-          <div style={{ flex: 1, minWidth: 240 }}>
-            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>ค้นหาสินค้า (MAT.NO / ชื่อ / P/N)</label>
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="เช่น 50029377, REINF, B222"
-              style={{ marginTop: 4 }} />
-          </div>
-          <div>
-            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>ไลน์</label>
-            {/* <LineSelect> กลาง (ลำดับชั้น + scope + ตัดปลดระวาง) — เฉพาะไลน์ที่มีสินค้าจริง · ชื่อนอกทะเบียนแยก optgroup ห้ามซ่อน (2026-09-07) */}
-            <LineSelect lines={lines.filter(l => lineGroups.inUse.has(l.name))} value={filterLine} onChange={setFilterLine}
-              role={role} lineId={lineId} sections={sections} placeholder="ทุกไลน์" style={{ marginTop: 4, width: 220 }}
-              extraGroups={[{ label: '⚠ นอกผัง (ชื่อไลน์ไม่ตรงทะเบียนไลน์ผลิต)', options: lineGroups.off.map(n => ({ value: n })) }]} />
-          </div>
-          <div>
-            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>ตั้งแต่</label>
-            <input type="date" value={from} onChange={e => setFrom(e.target.value)} style={{ marginTop: 4, width: 150 }} />
-          </div>
-          <div>
-            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>ถึง</label>
-            <input type="date" value={to} onChange={e => setTo(e.target.value)} style={{ marginTop: 4, width: 150 }} />
-          </div>
-        </div>
         {/* ผลค้นหา — ลิสต์จัดกลุ่มตามไลน์ (เลื่อนในกรอบ) · เลือกแล้วพับอัตโนมัติ กดหัวเพื่อกางเปลี่ยนสินค้า */}
-        <div style={{ marginTop: 10 }}>
+        <div>
           <div onClick={() => setPickerOpen(o => !o)}
             style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', userSelect: 'none', marginBottom: 6 }}>
             <div style={{ fontSize: 11, color: 'var(--muted)' }}>
@@ -322,10 +327,11 @@ export default function ProductHistory() {
                     <div key={p.id} onClick={() => { setSelMat(p); setPickerOpen(false); setShowAllDays(false); setOpenDays(new Set()); setOpenShifts(new Set()); }}
                       style={{ display: 'flex', gap: 12, alignItems: 'baseline', padding: '6px 12px', cursor: 'pointer',
                         borderBottom: '1px solid var(--border)',
-                        background: sel ? 'var(--accent)' : 'transparent', color: sel ? '#08131f' : 'var(--text)' }}>
-                      <span style={{ fontWeight: 800, fontSize: 12, fontFamily: 'ui-monospace, monospace', whiteSpace: 'nowrap', minWidth: 90 }}>{p.mat_no}</span>
-                      <span style={{ fontSize: 12, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}{!p.is_active && ' ⛔'}</span>
-                      {p.p_no && <span style={{ fontSize: 11, color: sel ? '#08131f' : 'var(--muted)', whiteSpace: 'nowrap' }}>P/N {p.p_no}</span>}
+                        background: sel ? 'var(--accent)' : 'transparent', color: sel ? 'var(--accent-ink)' : 'var(--text)' }}>
+                      {/* ลำดับ Part No. → ชื่องาน → MAT (UI §6.21 · 2026-09-30) */}
+                      {p.p_no && <span style={{ fontWeight: 800, fontSize: 12, fontFamily: 'ui-monospace, monospace', whiteSpace: 'nowrap', minWidth: 90 }}>{p.p_no}</span>}
+                      <span style={{ fontSize: 12, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: p.p_no ? 400 : 800 }}>{p.name}{!p.is_active && ' ⛔'}</span>
+                      <span style={{ fontSize: 11, fontFamily: 'ui-monospace, monospace', color: sel ? '#08131f' : 'var(--muted)', whiteSpace: 'nowrap' }}>MAT {p.mat_no}</span>
                     </div>
                   );
                 })}
@@ -347,10 +353,11 @@ export default function ProductHistory() {
                 <div style={{ fontSize: 16, fontWeight: 800 }}>
                   {groupMode && canGroup
                     ? <>🔗 {selMat.p_no} · {selMat.name} <span style={{ fontSize: 12, fontWeight: 700, color: '#4d9fff' }}>(รวม {groupMats.length} MAT SAP)</span></>
-                    : <>{selMat.mat_no} · {selMat.name}</>}
+                    : <>{selMat.p_no ? `${selMat.p_no} · ` : ''}{selMat.name}</>}
                 </div>
+                {/* ลำดับ Part No. → ชื่องาน (บรรทัดบน) → MAT (บรรทัดล่าง) — UI §6.21 · 2026-09-30 */}
                 <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
-                  P/N {selMat.p_no || '—'} · ไลน์ปัจจุบัน <b>{selMat.line_name || '—'}</b> · CT {selMat.cycle_time_sec || '—'}s {!selMat.is_active && '· ⛔ ปิดใช้งาน'}
+                  <span style={{ fontFamily: 'ui-monospace, monospace' }}>MAT {selMat.mat_no}</span> · ไลน์ปัจจุบัน <b>{selMat.line_name || '—'}</b> · CT {selMat.cycle_time_sec || '—'}s {!selMat.is_active && '· ⛔ ปิดใช้งาน'}
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -563,6 +570,6 @@ export default function ProductHistory() {
           </CollapseCard>
         </>
       )}
-    </div>
+    </Page>
   );
 }

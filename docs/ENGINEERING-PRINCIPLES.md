@@ -118,6 +118,14 @@
 1. **Additive ก่อนเสมอ** — เพิ่มคอลัมน์/ตาราง/แถว ไม่ลบ ไม่เปลี่ยนความหมายของคอลัมน์เดิม
 2. **คอลัมน์ใหม่ต้องมี default หรือ nullable** + โค้ดต้องทำงานได้ทั้ง "apply แล้ว" และ "ยังไม่ apply"
 3. **ลบของเก่าเป็นขั้นตอนแยก** ทำหลังยืนยันว่าไม่มีใครใช้แล้ว (โปรเจคนี้เก็บ `document_controls`, `mtn_mo_counter`, `model_path` ไว้เป็น vestigial โดยตั้งใจ)
+4. **สำรองข้อมูลก่อนแก้ = ถูกต้อง แต่ต้องสร้างใน schema `archive` ห้ามไว้ใน `public`** (2026-09-22)
+   `create table xxx_bak_<วันที่> as select …` ไว้ใน public แล้วไม่มีใครเก็บกวาด ⇒ สะสม **37 ตารางใน 1 เดือน**
+   และ **35 ตัวไม่มี RLS** (copy ข้อมูลมา แต่ policy ไม่ได้ตามมาด้วย) — ฝั่ง DR ที่ client วิ่งด้วย `anon` เสมอ
+   แปลว่าใครมี anon key ก็อ่าน/เขียนสำเนาข้อมูลผลิตจริงได้โดยไม่ต้อง login
+   → `create schema if not exists archive;` แล้วตั้งชื่อ `archive.<ตาราง>_<เหตุผล>_<YYYYMMDD>`
+   (schema นี้ไม่ถูก expose ผ่าน PostgREST · มีด่าน `regressionGuards` จับ migration ใหม่ที่ทำผิดแล้ว)
+   · **เก็บกวาดของเก่าใช้ "ย้าย" ไม่ใช่ "ลบ"** — `alter table … set schema archive` ย้อนได้บรรทัดเดียว
+     ส่วนการ drop จริงเป็นการตัดสินใจของ user เสมอ · ดูสภาพปัจจุบันได้ที่แท็บ 🩺 ในหน้า `/schema`
 4. **เขียน migration file ลง `supabase/migrations/` เสมอ** — ห้ามแก้ schema ผ่าน UI/MCP เฉยๆ แล้วไม่ทิ้งร่องรอย
 5. **งานที่ย้อนยาก (drop column, เปลี่ยน RLS, migrate ข้อมูล)** → หยุดถาม user ก่อน + เขียน `docs/ROLLBACK_*.md`
 

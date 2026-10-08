@@ -14,6 +14,9 @@
 
   --accent:      #3dd65c;
   --accent-dim:  rgba(61, 214, 92, 0.09);
+  /* แสงเรืองของสี accent — ใช้กับตัวชี้แท็บใน PageHeader (ห้าม color-mix() เพดาน Chromium 94) */
+  --accent-glow: rgba(61, 214, 92, 0.45);
+  --accent-ink:  #08120a;   /* สีตัวหนังสือบนพื้น accent — ธีมสว่าง accent เป็นเขียวเข้ม ต้องกลับเป็นขาว */
   --accent2:     #f59a3f;
   --accent2-dim: rgba(245, 154, 63, 0.09);
 
@@ -46,7 +49,39 @@
   --radius-sm: 3px;
   --radius-lg: 8px;
 
-  --shadow-sm: 0 2px 8px rgba(0,0,0,0.5);
+  /* ── 🎚️ token รูปทรง (2026-09-22 · audit UX/UI: มุมโค้ง 9 ค่า / padding ปุ่ม 140 แบบ ปนกันทั้งระบบ) ──
+     **ของใหม่ให้ใช้ token เสมอ · ของเดิมค่อยๆ แทนตอนที่แตะหน้านั้นอยู่แล้ว ห้าม sweep ทั้งระบบทีเดียว**
+     (คำสั่ง user 22/09 — sweep รวดเดียวจะไปโดนจุดที่ตั้งใจใช้ค่าพิเศษ เช่น marker วงกลมบนผัง §1)
+     ค่าที่เลือก = ค่าที่ใช้อยู่มากที่สุดจริงในรีโป ไม่ได้คิดใหม่ ⇒ ของเดิมส่วนใหญ่ไม่ต้องขยับ */
+  --r-xs: 4px;     /* ชิปเล็ก/ป้ายตัวเลข */
+  --r-sm: 6px;     /* ปุ่มเล็ก · input ในแถบเครื่องมือ (389 จุดใช้อยู่) */
+  --r-md: 8px;     /* ค่ามาตรฐานของระบบ — การ์ด/ปุ่ม/กล่อง (893 จุดใช้อยู่ = ค่ากลางจริง) */
+  --r-lg: 12px;    /* การ์ดใหญ่ · แผง · modal */
+  --r-pill: 999px; /* แท็บ/ชิปทรงแคปซูล (PageHeader ใช้ค่านี้) */
+
+  /* ขนาดปุ่ม — 3 ระดับพอ (เดิม 140 แบบ) · ใช้คู่กับ font-size ที่ระบุ */
+  --btn-pad-sm: 5px 12px;    /* ชิป/แท็บย่อย · 12.5px */
+  --btn-pad-md: 7px 14px;    /* ปุ่มทั่วไป/แท็บหลัก · 13.5px */
+  --btn-pad-lg: 10px 18px;   /* ปุ่มหลักของหน้า · 14px */
+
+  /* 🌑 เงาใต้การ์ดในธีมมืด = **none** (2026-09-24 · คำสั่ง user · ก้อน D ของ De-AI UI)
+     เงามีหน้าที่เดียวคือบอกว่า "ของชิ้นนี้ลอยอยู่เหนือหน้า" (modal · dropdown · toast ·
+     หัวตาราง sticky ตอนเลื่อน) — การ์ดที่นั่งแบนอยู่กับที่**และมีขอบอยู่แล้ว** ไม่ได้ลอย
+     บนพื้นเกือบดำ เงาดำ `rgba(0,0,0,0.5)` ยิ่งไม่ได้ทำงาน: มองแทบไม่เห็น เหลือแค่ขอบมัวๆ
+     ⇒ ของตกแต่งล้วน · วัดจริงด้วย `audit/uxsweep.mjs` ก่อนแก้: 6 หน้ามีรวมกัน ~60 จุด
+     🔴 **ธีมสว่างเก็บเงาไว้** (ดูบล็อก [data-theme="light"]) — ที่นั่นเส้นขอบจางมาก
+        เงาคือสิ่งเดียวที่แยกการ์ดออกจากพื้นขาว ถอดแล้วแบนจนอ่านยาก
+        ⇒ **ตัดของที่ไม่ทำงาน เก็บของที่ทำงาน ไม่ใช่ตัดให้เหมือนกันทั้ง 2 ธีม**
+     · `--shadow-md`/`--shadow-lg` ไม่แตะ — 2 ตัวนั้นใช้กับของที่ลอยจริง
+       (`.kpi-lift:hover` = ยกการ์ดขึ้นตอน hover · modal) */
+  --shadow-sm: none;
+  /* 🎈 `--shadow-float` = ของที่ **ลอยทับเนื้อหาจริง** แต่ไม่ใช่ modal เต็มจอ
+     (ป้ายเตือนลอยบนรูปผัง · ชิปชื่อโซนบนแผนที่ · tooltip ของกราฟ · badge ที่ยื่นออกนอกการ์ด)
+     ⇒ **มีเงาในทั้ง 2 ธีม** เพราะเงาคือสิ่งที่บอกว่ามันลอย ไม่ใช่การตกแต่ง
+     🔴 ตัวนี้มีไว้ให้แยกออกจาก `--shadow-sm` ให้ชัดในโค้ด — เห็น `--shadow-float` = ตั้งใจให้ลอย ·
+        เห็น `--shadow-sm` = การ์ดแบน ให้ธีมตัดสิน · **ห้ามเขียนเงาเป็น hex/rgba ดิบในหน้าอีก**
+        (มีด่าน `card-shadow-via-token` ใน regressionGuards) */
+  --shadow-float: 0 2px 8px rgba(0,0,0,0.45);
   --shadow-md: 0 4px 20px rgba(0,0,0,0.7);
   --shadow-lg: 0 10px 40px rgba(0,0,0,0.85);
 }
@@ -63,6 +98,8 @@
 
   --accent:      #0d3d14;
   --accent-dim:  rgba(13, 61, 20, 0.07);
+  --accent-glow: rgba(13, 61, 20, 0.30);
+  --accent-ink:  #ffffff;
   --accent2:     #e87c1e;
   --accent2-dim: rgba(232, 124, 30, 0.08);
 
@@ -84,7 +121,9 @@
   --pd4-bg:     rgba(232, 124, 30, 0.07);
   --pd4-border: rgba(232, 124, 30, 0.22);
 
+  /* 🔆 ธีมสว่าง **เก็บเงาไว้** — ขอบในธีมนี้จาง เงาคือตัวแยกการ์ดออกจากพื้นขาว (ดู :root) */
   --shadow-sm: 0 2px 8px rgba(0,0,0,0.07);
+  --shadow-float: 0 2px 8px rgba(0,0,0,0.18);   /* ของที่ลอยจริง — มีเงาทั้ง 2 ธีม (ดู :root) */
   --shadow-md: 0 4px 20px rgba(0,0,0,0.10);
   --shadow-lg: 0 10px 40px rgba(0,0,0,0.14);
 }
@@ -315,6 +354,99 @@ button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
 }
 @media (max-width: 768px)  { .page-content { padding: 14px; } }
 
+/* ══ 📐 มาตรฐานกรอบหน้า + แถบกรอง (2026-09-24 · docs/UI-STANDARD.md) ═══════════════════════
+   กรอบหน้า = `.page-content` (ผ่าน <Page>) ที่เดียว · ช่องกรอง = token --ctl-* ที่เดียว
+   ⚠️ ห้ามตั้ง padding/maxWidth ที่รากของหน้าเอง และห้ามใส่ขนาด inline ที่ช่องในแถบกรอง */
+:root {
+  --ctl-h: 34px;          /* ความสูงช่องกรอง/ปุ่มในแถบ — Carbon "small field" 32 + ขอบ 1px × 2 */
+  --ctl-fs: 13px;
+  --ctl-r: var(--r-md);   /* 8px — ค่ากลางที่ใช้มากที่สุดในระบบ */
+  --ctl-pad-x: 10px;
+}
+/* form/narrow ชิดซ้ายตำแหน่งเดียวกับหน้าอื่น (ไม่จัดกลาง) — ชื่อหน้าต้องเริ่มที่ x เดียวกันทุกหน้า (stdsweep) */
+.page-content.page-form   { max-width: 960px; margin-left: 0; }
+.page-content.page-narrow { max-width: 640px; margin-left: 0; }
+.page-content.page-full   { max-width: none; }
+/* หน้าที่ถูกฝังเป็นแท็บใน hub: ชั้นในไม่เพิ่มขอบซ้ำ (specificity 2 class ชนะ media query ข้างบน) */
+.page-content .page-content { padding: 0; max-width: none; margin: 0; }
+
+.filter-bar {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  background: var(--card); border: 1px solid var(--border); border-radius: var(--r-lg);
+  padding: 10px 12px; margin-bottom: 12px; min-width: 0;
+}
+.filter-bar.bare { background: none; border: 0; padding: 0; }
+/* TimeRangeBar = filter-bar หลายแถว — ตัวกรองของหน้าส่งเข้าเป็น children (แถวแรก) */
+.filter-bar.trb { flex-direction: column; align-items: stretch; }
+.trb-row { display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; min-width: 0; }
+/* 🔴 `max-width` จำเป็นจริง ห้ามถอด (25/09) — `min-width:0` **ไม่พอ** กับ flex column
+   `.filter-bar.trb` เป็น column + `align-items: stretch` ⇒ ขนาดของ "เส้น" = ขนาด max-content
+   ของ .trb-row ⇒ ลูกที่กว้าง (เช่น <select> ที่ตัวเลือกยาวอย่างชื่อไลน์) ดันแถวให้กว้างกว่ากรอบ
+   แล้ว stretch ก็ยืดแถวตามเส้นนั้น **ไม่ใช่ตามกรอบ** → ของล้นขอบการ์ดบนมือถือ
+   (วัดจริง 390px: กรอบ 370px · แถว 449px · select 449px) · max-width บังคับให้เส้นจบที่กรอบ
+   แล้ว `max-width:100%` ของ select จึงมีตัวตั้งที่แน่นอน = หดพอดีกรอบ */
+.trb-row { max-width: 100%; }
+.trb-row > * { min-width: 0; }
+.filter-bar > * { min-width: 0; }
+.filter-bar :is(select, input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]):not([type=file])),
+.search-input input {
+  width: auto; height: var(--ctl-h); font-size: var(--ctl-fs);
+  padding: 0 var(--ctl-pad-x); border-radius: var(--ctl-r); max-width: 100%;
+}
+.filter-bar select { max-width: 280px; }
+.filter-bar input[type=date] { width: 150px; }
+.filter-bar input[type=month] { width: 160px; }
+.filter-bar .grow { flex: 1 1 220px; }
+.filter-bar .spacer { margin-left: auto; }
+.filter-bar .sep { width: 1px; align-self: stretch; background: var(--border); margin: 0 2px; }
+.filter-label { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.filter-count { font-size: 12px; color: var(--muted); white-space: nowrap; }
+/* ปุ่มในแถบกรองสูงเท่าช่อง (ไม่แตะสี — ปุ่มแต่ละชนิดยังคุมสีเอง) */
+.filter-bar > button, .filter-bar .ctl-btn { min-height: var(--ctl-h); }
+
+/* 🔘 Segmented — ตัวเลือก 2–5 ตัวที่เท่ากัน ("ทั้งหมด" ซ้ายสุด) */
+.seg {
+  display: inline-flex; align-items: stretch; height: var(--ctl-h); flex-shrink: 0;
+  border: 1px solid var(--border2); border-radius: var(--ctl-r); overflow: hidden; background: var(--bg3);
+}
+.seg > button {
+  border: 0; border-right: 1px solid var(--border2); border-radius: 0; background: transparent;
+  color: var(--text2); font-size: var(--ctl-fs); font-weight: 700; padding: 0 12px; cursor: pointer; white-space: nowrap;
+}
+.seg > button:last-child { border-right: 0; }
+.seg > button.on { background: var(--accent); color: var(--accent-ink); }
+.seg > button:disabled { opacity: .45; cursor: not-allowed; }
+.seg.seg-sm { height: 28px; }
+.seg.seg-sm > button { font-size: 12px; padding: 0 9px; }
+
+/* 🔍 SearchInput — ไอคอนในกรอบ + ปุ่มล้าง */
+.search-input { position: relative; display: inline-flex; align-items: center; min-width: 180px; }
+.search-input.grow { flex: 1 1 220px; }
+.search-input input { width: 100%; padding-left: 30px; padding-right: 28px; }
+.search-input input::-webkit-search-cancel-button { display: none; }
+.search-input .search-ico { position: absolute; left: 9px; font-size: 13px; opacity: .7; pointer-events: none; }
+.search-input .search-clear {
+  position: absolute; right: 4px; width: 24px; height: 24px; border: 0; background: none;
+  color: var(--muted); cursor: pointer; font-size: 13px; padding: 0;
+}
+
+@media (max-width: 768px) {
+  /* iOS ซูมเมื่อฟอนต์ช่องกรอก < 16px (กฎเดิมของธีม) — class ข้างบน specificity สูงกว่า ต้องย้ำ */
+  .filter-bar :is(select, input), .search-input input { font-size: 16px; }
+  .filter-bar select { max-width: 100%; }
+  .filter-bar { padding: 8px 10px; }
+  /* 🔴 <Segmented> บนจอแคบ — ต้องขึ้นบรรทัดใหม่ได้ ห้ามปล่อยให้ดันพ้นกรอบ (25/09)
+     `.seg` ตั้ง `flex-shrink: 0` + ปุ่มข้างใน `white-space: nowrap` ⇒ กลุ่ม 4-5 ปุ่มที่ป้ายยาว
+     (CustomerDemand 405px · DeptDashboard 396px · Improvements 374px ในกรอบ 370px)
+     **หดไม่ลงเลย** แล้วดันแถวกรองทะลุขอบการ์ดออกนอกจอ — ปุ่มท้ายๆ กดไม่ถึง
+     (`overflow: hidden` ของ .seg ทำให้ปัดดูก็ไม่ได้ด้วย = ตัวเลือกหายไปเฉยๆ)
+     บนมือถือจึงให้ wrap — เสียความสวยของแถบเดียว แต่ได้ "ตัวเลือกครบ กดได้ทุกตัว"
+     ⚠️ เดสก์ท็อปไม่แตะ (จอกว้างพอเสมอ · Material 3 segmented button ไม่ wrap) */
+  .seg { flex-wrap: wrap; height: auto; flex-shrink: 1; max-width: 100%; }
+  .seg > button { min-height: var(--ctl-h); }
+  .seg.seg-sm > button { min-height: 28px; }
+}
+
 /* ─── Overlay / Modal ────────────────────────────────────────────────────── */
 /* ⚠️ กฎเหล็ก (2026-08-04) — modal ต้องเลื่อนได้เสมอเมื่อเนื้อหาสูงกว่าจอ
    บั๊กเดิม: `position:fixed; align-items:center` + ไม่มี overflow → เนื้อหาสูงกว่าจอจะ
@@ -438,6 +570,22 @@ button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
   .mgrid { grid-template-columns: minmax(0, 1fr) !important; }   /* minmax(0,…) = ยอมหด · 1fr เฉยๆ มีพื้น min-content ดันล้นจอ */
 }
 
+/* ─── 🔘 ปุ่มไอคอนในแถวรายการ — <IconButton> / <DeleteButton> (2026-10-06 · feedback user) ───
+   เดิมปุ่มลบเป็นอีโมจิ 🗑️ เปล่าๆ ตัวเล็ก ไม่มีกรอบ ⇒ บน Windows เห็นเป็นถังเส้นบางสีเทา "เล็กจนดูไม่ออก"
+   กล่อง 30×30 สูงเท่าแถว · danger = แดงทั้งกรอบและไอคอน (SVG ใช้ currentColor) · UI-CONVENTIONS §7.1 */
+.icon-btn {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  width: 30px; height: 30px; padding: 0; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--border2); background: var(--bg3); color: var(--text2);
+  font-size: 15px; line-height: 1;
+}
+.icon-btn.danger { color: #ef4444; border-color: rgba(239, 68, 68, 0.45); background: rgba(239, 68, 68, 0.08); }
+.icon-btn:disabled { opacity: 0.45; cursor: default; }
+@media (hover: hover) {
+  .icon-btn:hover:not(:disabled) { border-color: var(--accent); }
+  .icon-btn.danger:hover:not(:disabled) { border-color: #ef4444; background: rgba(239, 68, 68, 0.16); }
+}
+
 /* ─── Touch targets (2026-07-11) ─────────────────────────────────
    ปุ่มไอคอน/ปุ่มเล็กในตาราง (✏️ 🗑️ ✕ 💾 ฯลฯ) ที่ติด className="tbtn"
    → อุปกรณ์จอทัช (pointer:coarse) ขยาย hit area เป็น ≥40px กดง่ายด้วยนิ้ว
@@ -484,7 +632,12 @@ button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
 .kpi-lift { transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease; }
 @media (hover: hover) {
   .kpi-lift:hover { transform: translateY(-4px); box-shadow: var(--shadow-md); }
+  /* ช่องตารางที่กดแก้ได้ (/monitoring) — เดิมมีแต่ cursor:'cell' ซึ่งไม่มีใครสังเกต
+     ทีมวางแผนจึงคิดว่าแก้ตัวเลขไม่ได้ ต้องนำเข้าไฟล์อย่างเดียว (05/10) */
+  .mon-cell-edit:hover { background: var(--accent-dim) !important; }
 }
+/* เส้นประใต้ตัวเลข = "ช่องนี้กรอกทับได้" — เห็นได้ทั้งจอสัมผัสและจอที่มีเมาส์ */
+.mon-cell-edit { text-decoration: underline dotted var(--border2); text-underline-offset: 3px; }
 
 /* ─── Loading spinner กลาง — ใช้ animation: 'spin ...' ได้ทุกหน้า (ห้าม define ซ้ำต่อหน้า) ── */
 @keyframes spin {
@@ -510,6 +663,21 @@ button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
   animation: moCardBlink 1.1s ease-in-out infinite;
   border-color: #ef4444 !important;
 }
+/* 📋 รายการ MO แบบ 1 ใบ 1 บรรทัด (/mtn-repair · 05/10) — แถวแน่นกว่าตารางฐาน · ใบรอรับงาน = แถบแดงซ้ายกระพริบ (Andon แดง) ไม่กระพริบทั้งแถว — 100+ แถวกระพริบพร้อมกันอ่านไม่ได้ */
+/* ─── จอรายการ (record list) = ตาราง 1 รายการ 1 บรรทัด ──────────────────────────────
+   `.rec-list` = คลาสกลางของทุกหน้า · `.mo-list` = ชื่อเดิมของ /mtn-repair (ที่มาของ pattern นี้)
+   คงไว้เป็นชื่อพ้อง ห้ามถอด — ดู docs/UI-CONVENTIONS.md §6.22 ว่า "จอไหนเป็นการ์ด จอไหนเป็นตาราง" */
+table.rec-list, table.mo-list { font-size: 13px; }
+table.rec-list th, table.mo-list th { font-size: 11.5px; letter-spacing: 0.04em; padding: 9px 10px; white-space: nowrap; position: sticky; top: 0; background: var(--card); z-index: 1; }
+table.rec-list td, table.mo-list td { font-size: 13px; padding: 7px 10px; }
+table.rec-list tbody tr, table.mo-list tbody tr { cursor: pointer; }
+table.rec-list tbody tr:focus-visible td, table.mo-list tbody tr:focus-visible td { background: var(--accent-dim); outline: none; }
+/* ช่องข้อความยาว (รายละเอียด/หมายเหตุ) — ตัดด้วย … ไม่ให้ดันแถวสูงเป็น 3 บรรทัด */
+table.rec-list td.rec-note, table.mo-list td.mo-note { color: var(--muted); max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* แถวที่ "รอคนทำ" — แถบแดงซ้ายกระพริบ **แถวเดียว ไม่กระพริบทั้งตาราง** (Andon: กระพริบสงวนให้แดง) */
+table.rec-list tr.rec-row-alert td, table.mo-list tr.mo-row-alert td { background: rgba(239, 68, 68, 0.06); }
+table.rec-list tr.rec-row-alert td:first-child, table.mo-list tr.mo-row-alert td:first-child { box-shadow: inset 4px 0 0 #ef4444; animation: moRowBar 1.1s ease-in-out infinite; }
+@keyframes moRowBar { 50% { box-shadow: inset 4px 0 0 rgba(239, 68, 68, 0.35); } }
 @keyframes dtAlarmBannerPulse {
   0%, 100% { background-color: rgba(239, 68, 68, 0.12); border-color: rgba(239, 68, 68, 0.45); }
   50%      { background-color: rgba(239, 68, 68, 0.28); border-color: #ef4444; }
@@ -656,3 +824,65 @@ button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
   background: transparent !important;
 }
 .dr-partbox > *:last-child { border-bottom-width: 0 !important; }
+
+/* ══ 🧭 บอร์ด New Model (/nm-board) — ชั้น "วัสดุ" ของการ์ด (2026-10-05 · คำสั่ง user) ══════════
+   *"ไม่อยากให้ design ออกมาเหมือนเว็บทั่วไปที่สร้างจาก AI ง่อยๆ ... ต้องสวยกว่านี้ ดู premium กว่านี้"*
+
+   สิ่งที่ทำให้บอร์ดเดิมดู "เว็บ AI": **ทุกใบคือกล่องขอบสีเต็มใบ** ⇒ 21 ใบ = 21 กรอบสีแย่งสายตากัน
+   ไม่มีพื้นผิว ไม่มีลำดับชั้น เหลือแต่สี่เหลี่ยมเรียงกัน
+   ⇒ เปลี่ยนเป็น **พื้นผิวเรียบ + รางสถานะด้านซ้าย** (สีอยู่ที่ราง ไม่ใช่ทั้งกรอบ)
+     · ขอบเป็นเส้นผมสีสถานะจางๆ · ใบแดงเท่านั้นที่ได้กรอบเต็ม + แสงเรือง (Andon แดงต้องตะโกน)
+
+   🔴 ข้อห้ามของจอ TV (Chromium 94 · UI-CONVENTIONS §เพดานเบราว์เซอร์) ที่บล็อกนี้ทำตาม:
+      ห้าม color-mix · ห้าม CSS nesting · ห้าม @container — ใช้ alpha-rgba + custom property ล้วน
+   🔴 เงาที่นี่เป็น **แสงเรืองสถานะ (`0 0 Npx`)** ไม่ใช่เงาการ์ด — คนละเรื่องกับ §6.20
+      (uxsweep ไม่นับ `0 0 Npx` เป็นเงา · การ์ดแบนยังไม่มีเงาตามกฎเดิม)
+   ═══════════════════════════════════════════════════════════════════════════════════════════ */
+.nmb-card {
+  position: relative;
+  border: 1px solid var(--border);
+  background: var(--card);
+  /* แสงตกจากด้านบนบางๆ — ทำให้การ์ดเป็น "แผ่นวัสดุ" ไม่ใช่สี่เหลี่ยมทึบ */
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0) 46%);
+  transition: border-color .15s ease, transform .15s ease;
+}
+/* รางสถานะ — สีอยู่ตรงนี้ที่เดียว อ่านจากระยะไกลได้เท่ากรอบเต็มใบ แต่ไม่แย่งสายตากันเอง */
+.nmb-card::before {
+  content: '';
+  position: absolute; left: 0; top: 0; bottom: 0;
+  width: var(--nmb-rail, 5px);
+  background: var(--nmb-color, var(--border2));
+  border-top-left-radius: inherit;
+  border-bottom-left-radius: inherit;
+}
+/* ใบที่ยังไม่ประเมิน — รางเป็นลายขีด ไม่ใช่สีทึบ: "ไม่มีข้อมูล" ต้องดูต่างจาก "ประเมินแล้วได้เทา" */
+.nmb-card[data-eva="none"]::before {
+  background-image: repeating-linear-gradient(135deg,
+    rgba(255, 255, 255, 0.22) 0 3px, rgba(255, 255, 255, 0) 3px 7px);
+}
+.nmb-card[data-eva="R"] {
+  box-shadow: 0 0 26px rgba(239, 68, 68, 0.16);   /* แสงเรืองสถานะ ไม่ใช่เงาการ์ด */
+}
+.nmb-go { opacity: .3; transition: opacity .15s ease; }
+@media (hover: hover) {
+  .nmb-card:hover { border-color: var(--nmb-color, var(--border2)); transform: translateY(-1px); }
+  .nmb-card:hover .nmb-go { opacity: 1; }
+}
+/* ป้ายกำกับตัวเล็ก (MODEL · ลูกค้า · สถานะ) — ตัวพิมพ์เล็กจัด + ระยะห่างตัวอักษร = อ่านว่า "ป้าย" ไม่ใช่ "เนื้อหา" */
+.nmb-eyebrow {
+  letter-spacing: .16em; text-transform: uppercase;
+  color: var(--muted); font-weight: 700;
+}
+.nmb-num { font-variant-numeric: tabular-nums; }
+/* วงแหวน KPI หัวบอร์ด — วงแหวนสถานะ + แกนมืด (เดิมเป็นวงกลมทึบแบนๆ) */
+.nmb-ring {
+  border-radius: 50%;
+  background: var(--bg2);
+  border: var(--nmb-ring-w, 6px) solid var(--nmb-color, var(--border2));
+  box-shadow: 0 0 22px var(--nmb-glow, transparent), inset 0 0 14px rgba(0, 0, 0, .5);
+  display: flex; align-items: center; justify-content: center;
+}
+/* จอเบา (data-perf="lite") — ตัดแสงเรือง/ทรานซิชันที่เป็นความสวยงามล้วน เก็บสีกับรางไว้ */
+[data-perf="lite"] .nmb-card,
+[data-perf="lite"] .nmb-card[data-eva="R"] { box-shadow: none; transition: none; }
+[data-perf="lite"] .nmb-ring { box-shadow: none; }

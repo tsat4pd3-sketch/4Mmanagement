@@ -12,8 +12,11 @@
   รูปประกอบ (แถบท้ายปก + divider) โหลดเป็น dataURL ที่นี่แล้วส่งเข้า builder
   — builder ห้าม import รูปเอง (เหตุผลใน monthlyReviewPptx.js)
 */
+import { sortLike } from '../utils/listOrder';
+import { lineNameCompare } from '../utils/lineHierarchy';
 import { useState, useEffect, useMemo, useContext, useRef } from 'react';
 import { supabase } from '../supabaseClient';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { inSectionScope } from '../utils/sectionScope';
 import { toast } from './Toast';
@@ -54,6 +57,8 @@ function TriBox({ state, onChange }) { // state: 'all' | 'some' | 'none'
 
 export default function MonthlyReviewExport({ onClose }) {
   const { fullName, position, sections: scopeSecs } = useContext(UserContext);
+  // คีย์เนื้อหาแทน array ใน deps ของตัวโหลด (กฎข้อ 9) — เหตุผลเต็ม: ด่าน no-unstable-ref-in-db-effect-deps
+  const scopeKey = useMemo(() => [...(scopeSecs || [])].sort().join('|'), [scopeSecs]);
   const [monthKey, setMonthKey] = useState(prevMonthKey());
   // จำนวนเดือนที่แสดงในเด็ค (รวมเดือนรายงาน) — 1 = เหมือนเดิม ไม่มีสไลด์เทรนด์
   const [trendMonths, setTrendMonths] = useState(3);
@@ -77,7 +82,7 @@ export default function MonthlyReviewExport({ onClose }) {
       // section จากผังองค์กร (กฎ: section picker ยึด org_nodes) + fallback production_lines
       const [nodeRes, lineRes] = await Promise.all([
         supabase.from('org_nodes').select('code, kind, sort_order').eq('kind', 'section').order('sort_order'),
-        supabase.from('production_lines').select('name, section, parent_line_name'),
+        loadLinesRes(),
       ]);
       if (!alive) return;
       const { data: nodes } = nodeRes, { data: lines } = lineRes;
@@ -89,7 +94,7 @@ export default function MonthlyReviewExport({ onClose }) {
       const lineArr = lines || [];
       const parentNames = new Set(lineArr.map(l => l.parent_line_name).filter(Boolean));
       let secs = (nodes || []).map(n => n.code);
-      if (!secs.length) secs = [...new Set(lineArr.map(l => l.section).filter(Boolean))].sort();
+      if (!secs.length) secs = sortLike(lineArr.map(l => l.section), []);
       const scoped = secs.filter(c => !scopeSecs?.length || inSectionScope(scopeSecs, c));
       const out = scoped.map(code => {
         const leaves = lineArr.filter(l => l.section === code && !parentNames.has(l.name));
@@ -99,14 +104,14 @@ export default function MonthlyReviewExport({ onClose }) {
           const g = l.parent_line_name || l.name;
           (byGroup[g] = byGroup[g] || []).push(l.name);
         });
-        const groups = Object.keys(byGroup).sort().map(g => ({ name: g, lines: byGroup[g].sort() }));
+        const groups = Object.keys(byGroup).sort(lineNameCompare).map(g => ({ name: g, lines: byGroup[g].sort(lineNameCompare) }));
         return { code, groups };
       }).filter(s => s.groups.length);
       setTree(out);
       setSelLines(new Set(out.flatMap(s => s.groups.flatMap(g => g.lines)))); // default = ทุกไลน์ใน scope
     })();
     return () => { alive = false; };
-  }, [scopeSecs]);
+  }, [scopeKey]);
 
   const linesOfSec = (s) => s.groups.flatMap(g => g.lines);
   const stateOf = (lines) => {
@@ -310,7 +315,7 @@ export default function MonthlyReviewExport({ onClose }) {
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
             <button onClick={onClose} disabled={busy} style={{ padding: '9px 18px', borderRadius: 8, border: '1px solid var(--border)', background: 'none', color: 'var(--text2)', cursor: 'pointer', fontWeight: 700 }}>ยกเลิก</button>
-            <button onClick={handleGenerate} disabled={busy} style={{ padding: '9px 22px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#fff', fontWeight: 800, cursor: busy ? 'wait' : 'pointer', opacity: busy ? 0.7 : 1 }}>
+            <button onClick={handleGenerate} disabled={busy} style={{ padding: '9px 22px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, cursor: busy ? 'wait' : 'pointer', opacity: busy ? 0.7 : 1 }}>
               {busy ? '⏳ กำลังสร้าง…' : '📽️ สร้างไฟล์ .pptx'}
             </button>
           </div>

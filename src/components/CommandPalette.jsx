@@ -101,7 +101,7 @@ export default function CommandPalette({ open, onClose, role }) {
         style={{
           width: 'min(620px, 100%)', maxHeight: '70vh', display: 'flex', flexDirection: 'column',
           background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 12,
-          boxShadow: '0 24px 70px rgba(0,0,0,0.5)', overflow: 'hidden',
+          boxShadow: 'var(--shadow-lg)', overflow: 'hidden',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 14px', borderBottom: '1px solid var(--border)' }}>
@@ -161,6 +161,6 @@ export default function CommandPalette({ open, onClose, role }) {
 }
 
 const kbd = {
-  fontSize: 10.5, fontFamily: 'var(--font-body)', padding: '2px 5px', borderRadius: 4,
+  fontSize: 11, fontFamily: 'var(--font-body)', padding: '2px 5px', borderRadius: 4,
   background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)', margin: '0 1px',
 };

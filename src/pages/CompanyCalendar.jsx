@@ -6,6 +6,8 @@ import { toast } from '../components/Toast';
 import { DAY_TYPE_META } from '../utils/companyCalendar';
 
 import InfoMore from '../components/InfoMore';
+import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
 const MONTH_NAMES = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
 const WEEKDAY_HEAD = ['อา.','จ.','อ.','พ.','พฤ.','ศ.','ส.'];
 const DAY_TYPES = ['working', 'ot15', 'ot2', 'shutdown75'];
@@ -118,17 +120,14 @@ export default function CompanyCalendar() {
   }, {});
 
   return (
-    <div className="page-content">
-      <div style={{ display: 'flex', paddingRight: 52, justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 10 }}>
-        <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 'clamp(16px,3vw,22px)', color: 'var(--text)' }}>
-          📅 ปฏิทินบริษัท — วันทำงาน/วันหยุด
-        </h2>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <button onClick={() => setYear(y => y - 1)} style={navBtnSt}>‹</button>
+    <Page>
+      <PageHeader title="ปฏิทินบริษัท — วันทำงาน/วันหยุด" icon="📅"
+        filters={<>
+          <span className="filter-label">ปี</span>
+          <button className="ctl-btn" onClick={() => setYear(y => y - 1)} style={navBtnSt}>‹</button>
           <span style={{ fontWeight: 700, fontSize: 15, color: 'var(--text)', minWidth: 50, textAlign: 'center' }}>{year}</span>
-          <button onClick={() => setYear(y => y + 1)} style={navBtnSt}>›</button>
-        </div>
-      </div>
+          <button className="ctl-btn" onClick={() => setYear(y => y + 1)} style={navBtnSt}>›</button>
+        </>} />
 
       {/* Legend / summary */}
       <div style={{ display: 'flex', gap: 14, marginBottom: 18, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -243,7 +242,7 @@ export default function CompanyCalendar() {
           position: 'sticky', bottom: 16, marginTop: 18,
           display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap',
           background: 'var(--bg3)', border: '1px solid var(--accent)', borderRadius: 10,
-          padding: '12px 16px', boxShadow: '0 6px 24px rgba(0,0,0,0.35)',
+          padding: '12px 16px', boxShadow: 'var(--shadow-float)',
         }}>
           <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>
             ● มีการเปลี่ยนแปลงที่ยังไม่บันทึก {pendingCount} วัน
@@ -254,11 +253,11 @@ export default function CompanyCalendar() {
           </div>
         </div>
       )}
-    </div>
+    </Page>
   );
 }
 
 const navBtnSt = { padding: '6px 14px', borderRadius: 7, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer', fontSize: 16, flexShrink: 0 };
-const primaryBtnSt = { padding: '7px 16px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 7, fontWeight: 700, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 };
-const saveBtnSt = { padding: '8px 18px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 7, fontWeight: 800, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap' };
+const primaryBtnSt = { padding: '7px 16px', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 7, fontWeight: 700, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 };
+const saveBtnSt = { padding: '8px 18px', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 7, fontWeight: 800, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap' };
 const cancelBtnSt = { padding: '8px 18px', background: 'var(--bg2)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 7, fontWeight: 700, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap' };

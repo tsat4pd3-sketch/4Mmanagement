@@ -9,6 +9,8 @@ import { toast } from './Toast';
 import { fmtDate } from '../utils/dateFormat';
 import { rpnOf, applyProposal } from '../utils/peMaster';
 import { inp, card, btn, ghost, thSt, tdSt, Field, Pill, Modal, WarnBar } from './NpiUi';
+import SearchInput from './SearchInput';
+import { DeleteButton } from './IconButton';
 
 const KIND_LABEL = { process: 'Process', incoming_insp: 'Incoming Insp.', storage: 'Storage', transport: 'Transport', inspection: 'Inspection', rework: 'Rework', warehouse: 'Warehouse', delivery: 'Delivery' };
 const rpnColor = (v) => (v == null ? 'var(--muted)' : v >= 100 ? '#ef4444' : v >= 70 ? '#f59e0b' : '#22c55e');
@@ -57,28 +59,50 @@ export default function PeMasterLibrary({ masters, masterItems, proposals, usage
   };
   const delItem = (it) => { if (window.confirm(`ลบ "${it.failure_mode}" ออกจาก master? (แถวในพาร์ทที่ผูกอยู่ไม่ถูกลบ แค่หลุดจาก master)`)) write('ลบรายการ', () => supabase.from('pe_master_items').delete().eq('id', it.id)); };
 
-  /* รับข้อเสนอ = ทับค่า master + version+1 (improve) หรือเพิ่มแถวใหม่ (new_item) แล้วปิดข้อเสนอ */
+  /* รับข้อเสนอ = ทับค่า master + version+1 (improve) หรือเพิ่มแถวใหม่ (new_item) แล้วปิดข้อเสนอ
+     🔴 claim ก่อน (compare-and-swap `status='proposed'` → 'accepted' นับแถว) แล้วค่อยเขียน master (QC 05/10)
+        เดิมเขียน master ก่อนแล้วค่อยปิดข้อเสนอ ⇒ กด 2 เครื่องพร้อมกัน = เพิ่มแถว/ขึ้น version ซ้ำ ·
+        ปิดข้อเสนอล้ม = master ถูกแก้แล้วแต่ข้อเสนอยังค้าง (กดรับซ้ำได้) · เขียน master ล้ม = คืน claim (กฎเขียน DB ข้อ 6) */
   const accept = async (p) => {
     if (!canApprove) return;
-    setSaving(true);
-    let err;
+    let m = null;
     if (p.kind === 'improve' && p.master_item_id) {
-      const m = itemById[p.master_item_id];
-      if (!m) { setSaving(false); return toast.error('ไม่พบ master item แล้ว (ถูกลบ?) — ปฏิเสธข้อเสนอนี้แทน'); }
+      m = itemById[p.master_item_id];
+      if (!m) return toast.error('ไม่พบ master item แล้ว (ถูกลบ?) — ปฏิเสธข้อเสนอนี้แทน');
+    }
+    setSaving(true);
+    const { data: claimed, error: eClaim } = await supabase.from('pe_master_proposals')
+      .update({ status: 'accepted', decided_by: fullName || 'ไม่ระบุชื่อ', decided_at: new Date().toISOString() })
+      .eq('id', p.id).eq('status', 'proposed').select('id');
+    if (eClaim) { setSaving(false); return toast.error(`รับข้อเสนอไม่สำเร็จ: ${eClaim.message}`); }
+    if (!claimed?.length) { setSaving(false); onChanged(); return toast.error('ข้อเสนอนี้ถูกตัดสินไปแล้ว (หรือไม่มีสิทธิ์) — โหลดรายการใหม่ให้แล้ว'); }
+
+    let err;
+    if (m) {
       const next = applyProposal(m, p);
       const { id, master_process_id, created_at, created_by_name, origin_set_id, origin_item_id, updated_at, ...patch } = next; // eslint-disable-line no-unused-vars
-      ({ error: err } = await supabase.from('pe_master_items').update(patch).eq('id', m.id));
+      const { data, error } = await supabase.from('pe_master_items').update(patch).eq('id', m.id).select('id');
+      err = error || (!data?.length ? { message: 'ไม่มีแถว master ถูกแก้ (ถูกลบ/ไม่มีสิทธิ์)' } : null);
     } else {
       const a = p.after || {};
       ({ error: err } = await supabase.from('pe_master_items').insert({ master_process_id: p.master_process_id, seq: items.length + 1, requirement: a.requirement || null, failure_mode: a.failure_mode, effects: a.effects || null,
         severity: a.severity ?? null, classification: a.classification || null, causes: a.causes || null, prevention: a.prevention || null, occurrence: a.occurrence ?? null, detection_ctrl: a.detection_ctrl || null, detection: a.detection ?? null,
         best_practice: a.best_practice || null, origin_set_id: p.source_set_id || null, origin_item_id: p.source_item_id || null, created_by_name: fullName || null }));
     }
-    if (!err) ({ error: err } = await supabase.from('pe_master_processes').update({ version: ((masters.find(m => m.id === p.master_process_id)?.version) || 1) + 1 }).eq('id', p.master_process_id));
-    if (!err) ({ error: err } = await supabase.from('pe_master_proposals').update({ status: 'accepted', decided_by: fullName || 'ไม่ระบุชื่อ', decided_at: new Date().toISOString() }).eq('id', p.id));
+    if (err) {
+      // เขียน master ไม่ได้ ⇒ คืนข้อเสนอเป็น "proposed" ให้ตัดสินใหม่ได้ (คืนไม่ได้ต้องบอกบนจอ ห้ามเงียบ)
+      const { data: back, error: eBack } = await supabase.from('pe_master_proposals')
+        .update({ status: 'proposed', decided_by: null, decided_at: null }).eq('id', p.id).eq('status', 'accepted').select('id');
+      setSaving(false); onChanged();
+      return toast.error(`รับข้อเสนอไม่สำเร็จ: ${err.message}${eBack || !back?.length ? ' — ⚠️ คืนสถานะข้อเสนอไม่สำเร็จ ข้อเสนอค้างเป็น "รับแล้ว" ทั้งที่ master ยังไม่เปลี่ยน แจ้ง admin' : ''}`);
+    }
+    const { data: vRows, error: eVer } = await supabase.from('pe_master_processes')
+      .update({ version: ((masters.find(x => x.id === p.master_process_id)?.version) || 1) + 1 })
+      .eq('id', p.master_process_id).select('id');
     setSaving(false);
-    if (err) return toast.error(`รับข้อเสนอไม่สำเร็จ: ${err.message}`);
-    toast.success('อัพเดท master แล้ว — พาร์ทอื่นที่ถือเวอร์ชันเก่าจะเห็นป้าย ⬆️'); onChanged();
+    onChanged();
+    if (eVer || !vRows?.length) return toast.error(`อัพเดท master แล้ว แต่ขึ้นเลข version กระบวนการไม่สำเร็จ${eVer ? `: ${eVer.message}` : ''} — พาร์ทอื่นจะยังไม่เห็นป้าย ⬆️ แจ้ง admin`);
+    toast.success('อัพเดท master แล้ว — พาร์ทอื่นที่ถือเวอร์ชันเก่าจะเห็นป้าย ⬆️');
   };
   const reject = async () => {
     const r = rejectModal; if (!r.reason?.trim()) return toast.error('กรอกเหตุผล');
@@ -99,12 +123,12 @@ export default function PeMasterLibrary({ masters, masterItems, proposals, usage
         {/* ── รายการกระบวนการมาตรฐาน ── */}
         <div style={card}>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 8, flexWrap: 'wrap' }}>
-            <input style={{ ...inp, flex: 1, minWidth: 140 }} placeholder="ค้นกระบวนการ / tag" value={q} onChange={e => setQ(e.target.value)} />
+            <SearchInput value={q} onChange={setQ} fields="กระบวนการ / tag" style={{ minWidth: 140 }} />
             <label style={{ fontSize: 11.5, whiteSpace: 'nowrap' }}><input type="checkbox" checked={onlyUnconfirmed} onChange={e => setOnlyUnconfirmed(e.target.checked)} /> รอยืนยัน</label>
             {canApprove && <button style={btn()} onClick={() => setMpModal({ name: '', kind: 'process', process_type: '', tags: '', description: '', is_active: true })}>+ กระบวนการ</button>}
           </div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>{list.length} กระบวนการ · เรียงตามจำนวนพาร์ทที่ใช้</div>
-          {!list.length && <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>ยังไม่มีกระบวนการมาตรฐาน — apply migration 20260915_pe_fmea_master_main จะ seed จากชุดเอกสารที่มีอยู่ให้</div>}
+          {!list.length && <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{(masters || []).length ? 'ไม่มีกระบวนการที่ตรงกับตัวกรอง — ลองล้างคำค้น / เอาติ๊ก "รอยืนยัน" ออก' : 'ทะเบียนยังว่าง — กด "+ กระบวนการ" เพื่อสร้างตัวแรก (seed จากชุดเอกสารที่มีอยู่ทำไปแล้วตอน apply migration)'}</div>}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             {list.map(m => {
               const u = usage[m.id] || { sets: 0, ops: 0 };
@@ -201,7 +225,7 @@ export default function PeMasterLibrary({ masters, masterItems, proposals, usage
                         <td style={{ ...tdSt, textAlign: 'right', fontWeight: 800, color: rpnColor(rpnOf(it)) }}>{rpnOf(it) ?? '—'}</td>
                         <td style={tdSt}>v{it.version}</td>
                         <td style={{ ...tdSt, fontSize: 11 }}>{it.origin_set_id ? (setById[it.origin_set_id]?.part_no || '—') : '—'}</td>
-                        <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>{canApprove && <><button className="tbtn" style={{ ...ghost, padding: '2px 7px' }} onClick={() => setItemModal({ ...it, severity: it.severity ?? '', occurrence: it.occurrence ?? '', detection: it.detection ?? '' })}>✏️</button> <button className="tbtn" style={{ ...ghost, padding: '2px 7px', color: '#ef4444' }} onClick={() => delItem(it)}>🗑</button></>}</td>
+                        <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>{canApprove && <><button className="tbtn" style={{ ...ghost, padding: '2px 7px' }} onClick={() => setItemModal({ ...it, severity: it.severity ?? '', occurrence: it.occurrence ?? '', detection: it.detection ?? '' })}>✏️</button> <DeleteButton onClick={() => delItem(it)} title="ลบ" /></>}</td>
                       </tr>
                     ))}</tbody>
                   </table>

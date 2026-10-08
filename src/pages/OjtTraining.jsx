@@ -1,9 +1,12 @@
 import { useState, useEffect, useContext, useMemo, useRef } from 'react';
+import { orgValues, orgNodeCompare } from '../utils/listOrder';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { supabase } from '../supabaseClient';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
+import { checkWrite } from '../utils/dbWrite';
 import { inSectionScope, ORPHAN_SECTION, ORPHAN_SECTION_LABEL, deptOptionsFor, orphanDepts, sectionValueForSave, sectionValueForEdit } from '../utils/sectionScope';
 import { mergeBorrowedEmployees, currentWorkShift } from '../utils/lineHelpers';
 import { fmtDate, todayLocal } from '../utils/dateFormat';
@@ -15,6 +18,9 @@ import PersonSelect from '../components/PersonSelect';
 import useColumnHistory from '../utils/useColumnHistory';
 import SelectOrFree from '../components/SelectOrFree';
 import { uploadOpts } from '../utils/storageUpload';
+import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
+import { DeleteButton } from '../components/IconButton';
 
 /* ══════════════════════════════════════════════════════════════
    📖 OJT Training — ใบแจ้งการอบรมสอนงานโดยหัวหน้างาน (ON THE JOB TRAINING)
@@ -83,7 +89,7 @@ function SignPadModal({ title, onCancel, onDone }) {
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
           <button onClick={clear} style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>🗑️ ล้าง</button>
           <button onClick={onCancel} style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
-          <button onClick={done} style={{ padding: '7px 18px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: 13 }}>✔ ใช้ลายเซ็นนี้</button>
+          <button onClick={done} style={{ padding: '7px 18px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: 'pointer', fontSize: 13 }}>✔ ใช้ลายเซ็นนี้</button>
         </div>
       </div>
     </div>
@@ -92,6 +98,8 @@ function SignPadModal({ title, onCancel, onDone }) {
 
 export default function OjtTraining() {
   const { role, lineId: userLineId, sections: scopeSecs = [], fullName } = useContext(UserContext);
+  // คีย์เนื้อหาแทน array ใน deps ของตัวโหลด (กฎข้อ 9) — เหตุผลเต็ม: ด่าน no-unstable-ref-in-db-effect-deps
+  const scopeKey = useMemo(() => [...(scopeSecs || [])].sort().join('|'), [scopeSecs]);
   const canRecord = can('ojt', 'record', role);
   const canDelete = can('ojt', 'delete', role);
   // 📜 ชื่อผู้สอน/ผู้ประเมินที่เคยบันทึกไว้ (Main ojt_*) — วิทยากรภายนอกที่ไม่มีใน profiles/employees ยังเลือกซ้ำได้ (2026-09-07)
@@ -126,8 +134,8 @@ export default function OjtTraining() {
     setLoading(true);
     const [{ data: tr }, { data: ln }, { data: org }, { data: profs }, { data: divs }] = await Promise.all([
       supabase.from('ojt_trainings').select('*, ojt_training_attendees(id)').order('train_date', { ascending: false }).order('created_at', { ascending: false }).limit(300),
-      supabase.from('production_lines').select('id, name, section, parent_line_name').order('name'),
-      supabase.from('org_nodes').select('id, code, name, kind, parent_id').eq('is_active', true).order('sort_order'),
+      loadLinesRes(),
+      supabase.from('org_nodes').select('id, code, name, kind, parent_id, sort_order').eq('is_active', true),
       supabase.from('profiles').select('id, full_name, signature_url').order('full_name'),
       // "ฝ่าย" = org_divisions (ชั้นบนสุดของผัง · migration 20260818) — เดิมช่องนี้พิมพ์เอง (2026-09-07)
       supabase.from('org_divisions').select('code, label, is_active').order('sort_order'),
@@ -135,8 +143,8 @@ export default function OjtTraining() {
     setLines(ln || []);
     setDivisions((divs || []).filter(d => d.is_active !== false).map(d => d.label).filter(Boolean));
     // ลำดับตามผัง (query .order('sort_order') แล้ว) — ห้าม .sort() ตัวอักษรทับ (QC audit 2026-08-18)
-    setOrgSections((org || []).filter(n => n.kind === 'section').map(n => n.code || n.name));
-    setOrgSectionNodes((org || []).filter(n => n.kind === 'section'));
+    setOrgSections(orgValues((org || []).filter(n => n.kind === 'section')));
+    setOrgSectionNodes((org || []).filter(n => n.kind === 'section').sort(orgNodeCompare));
     setOrgDeptNodes((org || []).filter(n => n.kind === 'department'));
     setProfiles(profs || []);
     setTrainings(tr || []);
@@ -165,7 +173,7 @@ export default function OjtTraining() {
       if (alive) setEmployees(data || []);
     })();
     return () => { alive = false; };
-  }, [lines, role, userLineId, scopeSecs, scopeLineIds]);
+  }, [lines, role, userLineId, scopeKey, scopeLineIds]);
 
   /* 🤝 คนที่ถูก "ยืมตัว" มาไลน์ใน scope **ของวันที่ในใบอบรม** (ไม่ใช่ของวันนี้)
      feedback 2026-09-07: ยืมข้ามส่วนงานแล้วเปิดใบ OJT ให้ไม่ได้ (picker กรองตามสังกัดเดิม)
@@ -260,13 +268,20 @@ export default function OjtTraining() {
       const { error } = await supabase.storage.from('signatures').upload(path, blob, uploadOpts({ contentType: 'image/png' }));
       if (error) { toast.error('อัปโหลดลายเซ็นไม่สำเร็จ: ' + error.message); return; }
       const url = supabase.storage.from('signatures').getPublicUrl(path).data.publicUrl;
-      // เซ็นทับของเดิม — ลบไฟล์เก่าทิ้ง (best-effort, เฉพาะโฟลเดอร์ตัวเอง)
+      /* เซ็นทับของเดิม — **จดไว้ก่อน ลบหลังบันทึกใบสำเร็จ** (QC 05/10)
+         เดิมลบไฟล์เก่าทันทีตอนเซ็น ⇒ ยกเลิก/บันทึกล้ม = แถวในฐานยังชี้ไฟล์เก่าที่ถูกลบไปแล้ว = ลายเซ็นหายถาวร
+         (best-effort · เฉพาะโฟลเดอร์ตัวเอง ตาม RLS bucket signatures) */
       const old = editing.attendees[idx]?.sign_url;
+      let oldPath = null;
       if (old?.includes('/signatures/')) {
-        const oldPath = decodeURIComponent(old.split('/signatures/')[1] || '').split('?')[0];
-        if (oldPath.startsWith(`${user.id}/`)) supabase.storage.from('signatures').remove([oldPath]).catch(() => {});
+        const p0 = decodeURIComponent(old.split('/signatures/')[1] || '').split('?')[0];
+        if (p0.startsWith(`${user.id}/`)) oldPath = p0;
       }
-      setAtt(idx, 'sign_url', url);
+      setEditing(prev => ({
+        ...prev,
+        attendees: prev.attendees.map((a, i) => (i === idx ? { ...a, sign_url: url } : a)),
+        _replacedSigPaths: oldPath ? [...(prev._replacedSigPaths || []), oldPath] : (prev._replacedSigPaths || []),
+      }));
       toast.success('บันทึกลายเซ็นแล้ว');
     } catch (e) { toast.error('เกิดข้อผิดพลาด: ' + e.message); }
   };
@@ -294,20 +309,43 @@ export default function OjtTraining() {
       };
       const { error } = await supabase.from('ojt_trainings').upsert(row, { onConflict: 'id' });
       if (error) throw error;
-      // attendees: ล้างของเดิมแล้ว insert ชุดปัจจุบัน (จำนวนน้อย — ง่ายและ sort_order ตรงตามหน้าจอเสมอ)
-      const { error: delErr } = await supabase.from('ojt_training_attendees').delete().eq('training_id', editing.id);
-      if (delErr) throw delErr;
-      const { error: insErr } = await supabase.from('ojt_training_attendees').insert(
-        editing.attendees.map((a, i) => ({
-          training_id: editing.id, employee_id: a.employee_id || null,
-          emp_code: a.emp_code || null, emp_name: a.emp_name || null,
-          pre_score: a.pre_score === null || a.pre_score === '' ? null : Number(a.pre_score),
-          post_score: a.post_score === null || a.post_score === '' ? null : Number(a.post_score),
-          sign_url: a.sign_url || null, eval_agree: a.eval_agree === null ? null : !!a.eval_agree,
-          evaluator_name: a.evaluator_name || null, sort_order: i,
-        }))
-      );
-      if (insErr) throw insErr;
+      /* attendees: **เขียนชุดใหม่ก่อน แล้วค่อยลบคนที่ถูกเอาออก** (QC 05/10)
+         เดิม delete ทั้งใบแล้ว insert ⇒ insert ล้ม (check score/เน็ต) = ผู้เข้าอบรม+ลายเซ็นทั้งใบหายถาวร
+         แถวเดิม (มี id) = upsert ทับด้วย id · แถวใหม่ = insert · แล้วลบเฉพาะ id ที่ไม่อยู่ในชุดแล้ว */
+      const toRow = (a, i) => ({
+        training_id: editing.id, employee_id: a.employee_id || null,
+        emp_code: a.emp_code || null, emp_name: a.emp_name || null,
+        pre_score: a.pre_score === null || a.pre_score === '' ? null : Number(a.pre_score),
+        post_score: a.post_score === null || a.post_score === '' ? null : Number(a.post_score),
+        sign_url: a.sign_url || null, eval_agree: a.eval_agree === null ? null : !!a.eval_agree,
+        evaluator_name: a.evaluator_name || null, sort_order: i,
+      });
+      const keepRows = editing.attendees.map((a, i) => (a.id ? { id: a.id, ...toRow(a, i) } : null)).filter(Boolean);
+      const newRows  = editing.attendees.map((a, i) => (a.id ? null : toRow(a, i))).filter(Boolean);
+      const keptIds = keepRows.map(r => r.id);
+      if (keepRows.length) {
+        const { error: upErr } = await supabase.from('ojt_training_attendees').upsert(keepRows, { onConflict: 'id' });
+        if (upErr) throw upErr;
+      }
+      if (newRows.length) {
+        const { data: ins, error: insErr } = await supabase.from('ojt_training_attendees').insert(newRows).select('id');
+        if (insErr) throw insErr;
+        keptIds.push(...(ins || []).map(r => r.id));
+      }
+      if (!editing.isNew) {
+        let del = supabase.from('ojt_training_attendees').delete().eq('training_id', editing.id);
+        if (keptIds.length) del = del.not('id', 'in', `(${keptIds.join(',')})`);
+        /* ⚠️ จุดนี้ **ห้ามนับแถว** — delete นี้ลบ "คนที่ถูกเอาออกจากใบ" ซึ่งปกติคือ 0 คน
+           ⇒ 0 แถว = เรื่องปกติ ไม่ใช่สัญญาณล้มเหลว (ต่างจาก delete ที่ลบของที่เลือกไว้แน่ๆ)
+           ไฟล์ลายเซ็นที่ลบด้านล่างเป็นของ "รอบที่ถูกเซ็นทับ" ไม่ใช่ของแถวที่ลบที่นี่ */
+        const { error: delErr } = await del;
+        // ชุดใหม่บันทึกครบแล้ว — ลบคนที่เอาออกไม่สำเร็จ = เตือน (คนนั้นยังค้างในใบ) ไม่ใช่ล้มทั้งใบ
+        if (delErr) toast.error('บันทึกใบแล้ว แต่เอารายชื่อที่ลบออกไม่สำเร็จ (ยังค้างในใบ): ' + delErr.message);
+      }
+      // ใบบันทึกสำเร็จแล้ว ค่อยลบไฟล์ลายเซ็นเก่าที่ถูกเซ็นทับ (best-effort)
+      if (editing._replacedSigPaths?.length) {
+        supabase.storage.from('signatures').remove(editing._replacedSigPaths).catch(() => {});
+      }
       if (editing.isNew) notifyEvent({
         event: 'ojt_training', type: 'info', ref_table: 'ojt_trainings', ref_id: editing.id,
         section: sectionValueForSave(editing.section) || null, actor: fullName,
@@ -329,9 +367,12 @@ export default function OjtTraining() {
   const handleDelete = async (t) => {
     if (!window.confirm(`ลบใบอบรม "${t.topic || thDate(t.train_date)}" ? (รายชื่อ+ลายเซ็นพนักงานในใบนี้จะถูกลบด้วย)`)) return;
     const { data: att } = await supabase.from('ojt_training_attendees').select('sign_url').eq('training_id', t.id);
-    const { error } = await supabase.from('ojt_trainings').delete().eq('id', t.id);
-    if (error) { toast.error('ลบไม่สำเร็จ: ' + error.message); return; }
-    // ลบไฟล์ลายเซ็นของใบนี้ (best-effort หลัง DB delete สำเร็จ — กฎ storage)
+    /* 🔴 นับแถวก่อนแตะ storage (QC audit 06/10) — RLS ปฏิเสธ = 0 แถว ไม่มี error
+       ไม่นับ = ใบอบรมยังอยู่ แต่ลายเซ็นพนักงานทุกคนถูกลบ ⇒ ใบเสียถาวร เซ็นใหม่ไม่ได้ */
+    const dres = await supabase.from('ojt_trainings').delete().eq('id', t.id).select('id');
+    if (!checkWrite(dres, 'ลบใบอบรม')) return;
+    if (!(dres.data || []).length) { toast.error('ลบไม่สำเร็จ (0 แถว) — สิทธิ์ไม่พอ · ใบและลายเซ็นยังอยู่ครบ'); return; }
+    // ยืนยันใบหายจริงแล้ว ค่อยลบไฟล์ลายเซ็นของใบนี้ (best-effort — กฎ storage)
     const { data: { user } } = await supabase.auth.getUser();
     const paths = (att || []).map(a => a.sign_url).filter(u => u?.includes('/signatures/'))
       .map(u => decodeURIComponent(u.split('/signatures/')[1] || '').split('?')[0])
@@ -490,17 +531,14 @@ table{border-collapse:collapse}
   };
 
   /* ── profile picker สำหรับช่องลายเซ็นหัวเอกสาร ── */
-  const SigPicker = ({ label, nameKey, sigKey }) => (
+  /* picker กลาง (UI §5.1.2 — ช่องชื่อคนห้ามเป็น <select> ยาว) · เรียกเป็นฟังก์ชัน ไม่ใช่ <SigPicker/>
+     (component ที่ประกาศใน render = remount ทุก render ⇒ ช่องค้นหาเสียโฟกัส/คำค้นหาย)
+     allowFree=false = ตรงพฤติกรรมเดิม (เลือกได้เฉพาะบัญชีในระบบ — ลายเซ็นมาจาก profiles.signature_url) */
+  const sigPicker = (label, nameKey, sigKey) => (
     <div>
       <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 4 }}>{label}</div>
-      <select value={editing[nameKey] || ''} onChange={e => {
-        const p = profiles.find(x => x.full_name === e.target.value);
-        setF(nameKey, e.target.value);
-        setF(sigKey, p?.signature_url || null);
-      }} style={{ width: '100%', padding: '7px 10px', borderRadius: 7, fontSize: 13 }}>
-        <option value="">— เลือก —</option>
-        {profiles.filter(p => p.full_name).map(p => <option key={p.id} value={p.full_name}>{p.full_name}{p.signature_url ? ' ✍️' : ''}</option>)}
-      </select>
+      <PersonSelect source="profiles" allowFree={false} value={editing[nameKey] || ''}
+        onChange={p => setEditing(prev => ({ ...prev, [nameKey]: p.name || '', [sigKey]: p.signature_url || null }))} />
       {editing[sigKey] && <img src={editing[sigKey]} alt="" style={{ height: 30, marginTop: 4, background: '#fff', borderRadius: 4, padding: 2 }} />}
     </div>
   );
@@ -520,22 +558,18 @@ table{border-collapse:collapse}
   }, [empSearch, attendeePool]);
 
   return (
-    <div className="page-content">
+    <Page>
       <ReadOnlyNote show={!canRecord} role={role} what="สร้าง/แก้ใบอบรม OJT"
         permKey="ojt:record" hint="ยังเปิดดูใบเดิมและพิมพ์ได้ตามปกติ" />
-      {/* paddingRight: 52 = เว้นที่ให้ 🔔 (fixed top-right) ไม่ทับปุ่ม ➕ สร้างใบอบรม */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18, flexWrap: 'wrap', gap: 10, paddingRight: 52 }}>
-        <div>
-          <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 'clamp(16px,3vw,22px)', color: 'var(--text)' }}>📖 อบรมสอนงาน OJT</h2>
-          <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>ใบแจ้งการอบรมสอนงานโดยหัวหน้างาน (ON THE JOB TRAINING) — paperless แทนฟอร์ม {ojtFormNo}</div>
-        </div>
-        {canRecord && (
+      {/* PageHeader เว้นที่ให้ 🔔 (fixed top-right) เอง — ไม่ทับปุ่ม ➕ สร้างใบอบรม */}
+      <PageHeader title="อบรมสอนงาน OJT" icon="📖"
+        sub={<>ใบแจ้งการอบรมสอนงานโดยหัวหน้างาน (ON THE JOB TRAINING) — paperless แทนฟอร์ม {ojtFormNo}</>}
+        actions={canRecord ? (
           <button onClick={() => setEditing(emptyDraft())}
-            style={{ padding: '9px 18px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: 13 }}>
+            style={{ padding: '9px 18px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: 'pointer', fontSize: 13 }}>
             ➕ สร้างใบอบรม
           </button>
-        )}
-      </div>
+        ) : null} />
 
       {loading ? <div style={{ textAlign: 'center', padding: 40, color: 'var(--muted)' }}>กำลังโหลด...</div> : (
         <div className="card table-sticky" style={{ overflowX: 'auto' }}>
@@ -568,8 +602,7 @@ table{border-collapse:collapse}
                         style={{ padding: '4px 10px', borderRadius: 6, fontSize: 12, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', marginRight: 6 }}>✏️</button>
                     )}
                     {canDelete && (
-                      <button onClick={() => handleDelete(t)}
-                        style={{ padding: '4px 10px', borderRadius: 6, fontSize: 12, cursor: 'pointer', background: 'transparent', color: '#ef4444', border: '1px solid rgba(239,68,68,0.4)' }}>🗑</button>
+                      <DeleteButton onClick={() => handleDelete(t)} title="ลบ" />
                     )}
                   </td>
                 </tr>
@@ -672,7 +705,7 @@ table{border-collapse:collapse}
                   <input type="text" placeholder="🔍 ค้นหาชื่อ/รหัสพนักงาน แล้วคลิกเพื่อเพิ่ม..." value={empSearch} onChange={e => setEmpSearch(e.target.value)}
                     style={{ width: 'min(100%, 380px)', padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
                   {searchResults.length > 0 && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, zIndex: 10, background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, width: 'min(100%, 380px)', maxHeight: 220, overflowY: 'auto', boxShadow: '0 8px 24px rgba(0,0,0,0.4)' }}>
+                    <div style={{ position: 'absolute', top: '100%', left: 0, zIndex: 10, background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, width: 'min(100%, 380px)', maxHeight: 220, overflowY: 'auto', boxShadow: 'var(--shadow-float)' }}>
                       {searchResults.map(e => (
                         <div key={e.id} onClick={() => addEmployee(e)}
                           style={{ padding: '7px 10px', cursor: 'pointer', fontSize: 13, color: 'var(--text)', borderBottom: '1px solid var(--border)' }}>
@@ -738,15 +771,15 @@ table{border-collapse:collapse}
 
               {/* ลายเซ็นหัวเอกสาร */}
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10 }}>
-                <SigPicker label="ผู้จัดทำ" nameKey="maker_name" sigKey="maker_sig_url" />
-                <SigPicker label="ระดับจัดการอนุมัติ" nameKey="approver_name" sigKey="approver_sig_url" />
-                <SigPicker label="ผู้รับทราบ" nameKey="hr_name" sigKey="hr_sig_url" />
+                {sigPicker('ผู้จัดทำ', 'maker_name', 'maker_sig_url')}
+                {sigPicker('ระดับจัดการอนุมัติ', 'approver_name', 'approver_sig_url')}
+                {sigPicker('ผู้รับทราบ', 'hr_name', 'hr_sig_url')}
               </div>
 
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', borderTop: '1px solid var(--border)', paddingTop: 14 }}>
                 <button onClick={() => setEditing(null)} style={{ padding: '9px 18px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
                 <button onClick={handleSave} disabled={saving || !canRecord}
-                  style={{ padding: '9px 22px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#fff', fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', fontSize: 13, opacity: saving ? 0.6 : 1 }}>
+                  style={{ padding: '9px 22px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', fontSize: 13, opacity: saving ? 0.6 : 1 }}>
                   {saving ? '⏳ กำลังบันทึก...' : '💾 บันทึกใบอบรม'}
                 </button>
               </div>
@@ -756,7 +789,7 @@ table{border-collapse:collapse}
       )}
 
       {signTarget && <SignPadModal title={signTarget.title} onCancel={() => setSignTarget(null)} onDone={handleSignDone} />}
-    </div>
+    </Page>
   );
 }
 

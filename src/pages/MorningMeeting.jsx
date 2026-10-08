@@ -1,22 +1,30 @@
 import { useState, useEffect, useContext, useCallback, useMemo, useRef, Fragment, lazy, Suspense } from 'react';
+import { orgValues, sortLike } from '../utils/listOrder';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
 import { can } from '../utils/permissions';
+import { dtBucketName, buildDtIndex } from '../utils/downtimeCategory';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import LineSelect from '../components/LineSelect';
 import PersonSelect from '../components/PersonSelect';
 import useColumnHistory from '../utils/useColumnHistory';
-import { LINE_COLUMNS } from '../utils/useProductionLines';
+import { loadLinesRes, LINE_COLUMNS } from '../utils/useProductionLines';
 import useIsMobile from '../utils/useIsMobile';
 import { fmtDate } from '../utils/dateFormat';
 import { orderTotal } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
+import { loadPairMap } from '../utils/useProducts';
 import { loadDocForms, withDocFoot } from '../utils/docForms';
-import { wavg, wLoad, dtMinBySession } from '../utils/oee';
+import { wavg, wLoad, dtMinBySession, orderPlanQty } from '../utils/oee';
 import { notifyEvent } from '../utils/notifyEvent';
+import Page from '../components/Page';
+import PageHeader from '../components/PageHeader';
+import FilterBar from '../components/FilterBar';
+import { useLatestRequest } from '../utils/useLatestRequest';
+import { ALL } from '../utils/filterLabels';
 loadDocForms(); // ทะเบียนเอกสาร — แถบเลขฟอร์มท้ายใบพิมพ์ (ตั้งที่ /doc-forms · 2026-07-30)
 
 // Gesture Mode (MediaPipe) — lazy ทั้ง component และโค้ด MediaPipe ข้างใน: โหลดเฉพาะตอนผู้ใช้กด 📷
@@ -72,6 +80,8 @@ export default function MorningMeeting() {
   const [orgSections, setOrgSections] = useState([]); // ส่วนงานจากผังองค์กร (source of truth) — ไม่เดาจาก production_lines
   const [secFilter, setSecFilter]     = useState('');
   const [loading, setLoading]         = useState(true);
+  const [loadErr, setLoadErr]         = useState('');   // คิวรีล้ม ≠ "ไม่มีปัญหา" — ต้องเขียนบนจอ (05/10)
+  const begin = useLatestRequest();   // เปลี่ยนวัน/ส่วนงานระหว่างโหลด = คำตอบเก่าห้ามทับจอ (กฎ DB ข้อ 4)
   const [sessions, setSessions]       = useState([]);
   const [downtimes, setDowntimes]     = useState([]);
   const [breakPols, setBreakPols]     = useState([]); // break_policies (DR) — ตัด DT ที่ทับพักออกก่อนถ่วงน้ำหนัก
@@ -115,8 +125,7 @@ export default function MorningMeeting() {
     const fromLines = [...new Set(scopedLines.map(l => l.section).filter(Boolean))];
     const base = orgSections.length ? orgSections : fromLines;
     const scoped = scopeSecs.length ? base.filter(s => inSectionScope(scopeSecs, s)) : base;
-    // คงลำดับตามผัง (org_nodes เรียง sort_order มาแล้ว) — .sort() ตัวอักษรเฉพาะ fallback ที่เดาจากไลน์
-    return orgSections.length ? [...new Set(scoped)] : [...new Set(scoped)].sort();
+    return sortLike(scoped, orgSections);   // ลำดับตามผัง · ค่านอกผังต่อท้าย (listOrder.js)
   }, [scopedLines, orgSections, scopeSecs]);
   const viewLines = useMemo(
     () => (secFilter ? scopedLines.filter(l => l.section === secFilter) : scopedLines),
@@ -136,29 +145,32 @@ export default function MorningMeeting() {
 
   useEffect(() => {
     (async () => {
-      const { data } = await supabase.from('production_lines')
-        .select(`${LINE_COLUMNS}, std_day_shift, std_night_shift`) // 2026-09-07 ครบคอลัมน์ให้ <LineSelect> (is_active)
-        .order('name');
+      const { data } = await loadLinesRes();   // cache กลาง (25/09) — กำลังคนอยู่ใน LINE_COLUMNS แล้ว
       setAllLines(data || []);
       // ส่วนงานจากผังองค์กร (org_nodes kind='section') — ลิสต์/ลำดับตามผัง ไม่เดาจาก production_lines.section
-      const { data: og } = await supabase.from('org_nodes').select('code, name').eq('kind', 'section').eq('is_active', true).order('name');
-      setOrgSections((og || []).map(n => n.code || n.name));
+      const { data: og } = await supabase.from('org_nodes').select('code, name, sort_order').eq('kind', 'section').eq('is_active', true);
+      setOrgSections(orgValues(og));
     })();
   }, []);
 
   /* ── โหลดข้อมูลของวันประชุม ── */
   const load = useCallback(async () => {
     if (!allLines.length) return;
+    const live = begin();
     if (!lineNames.length) {
       setSessions([]); setDowntimes([]); setDefects([]); setOrders([]);
       setFourM([]); setAttendance([]); setOpenDts([]); setActions([]); setLoading(false);
       return;
     }
     setLoading(true);
+    /* 05/10 (QC audit): เดิมอ่านแค่ data ทุกคิวรี ⇒ downtime/ของเสีย/4M ล้ม = แผง "ไม่มีปัญหา" ว่างเปล่า
+       ⇒ เก็บชื่อคิวรีที่ล้มไว้บอกบนจอ (ตัวเลขที่เหลือยังโชว์ได้ แต่ต้องรู้ว่าไม่ครบ) */
+    const errs = [];
+    const chk = (res, label) => { if (res?.error) { errs.push(label); console.error('[MorningMeeting]', label, res.error); } return res?.data; };
     try {
       const D = meetingDate;
       await loadOpInfo(); // map รายการขั้นตอน (OP) — ให้ opInfoSync พร้อมก่อนคำนวณยอด (cache · ครั้งแรกครั้งเดียว)
-      const [{ data: sess }, { data: fm }, { data: att }, { data: actToday }, { data: actCarry }, { data: mcs }, { data: brkPols }] = await Promise.all([
+      const [sessRes, fmRes, attRes, actTodayRes, actCarryRes, mcsRes, brkRes] = await Promise.all([
         supabaseDR.from('production_sessions')
           .select('*, dr_products(name, mat_no)')
           .eq('work_date', D).in('line_name', lineNames).limit(500),
@@ -180,6 +192,10 @@ export default function MorningMeeting() {
         // ⚠️ ต้อง select ot_scope ด้วย ไม่งั้นนับพักเกินในกะเช้าที่ทำโอ
         supabaseDR.from('break_policies').select('shift, process_type, start_time, duration_min, ot_scope').eq('is_active', true),
       ]);
+      if (!live()) return;
+      const sess = chk(sessRes, 'ข้อมูลกะ'), fm = chk(fmRes, '4M'), att = chk(attRes, 'เช็คชื่อ');
+      const actToday = chk(actTodayRes, 'Action วันนี้'), actCarry = chk(actCarryRes, 'Action ค้าง');
+      const mcs = chk(mcsRes, 'ทะเบียนเครื่อง'), brkPols = chk(brkRes, 'นโยบายพัก');
       setBreakPols(brkPols || []);
       setSessions(sess || []);
       const mCnt = {};
@@ -203,39 +219,43 @@ export default function MorningMeeting() {
 
       const ids = (sess || []).map(s => s.id);
       if (ids.length) {
-        const [{ data: dt }, { data: def }, { data: po }] = await Promise.all([
+        const [dtRes, defRes, poRes] = await Promise.all([
           supabaseDR.from('downtime_logs')
             .select('*, dr_downtime_types(name_th, color, category)').in('session_id', ids),
           supabaseDR.from('defect_logs')
             .select('*, dr_defect_types(name_th, color), prod_orders(prod_no, part_name, mat_no)').in('session_id', ids),
           supabaseDR.from('prod_orders').select('*').in('session_id', ids).order('opened_at'),
         ]);
+        const pm = await loadPairMap();   // คู่ RH/LH จาก cache ทะเบียนสินค้ากลาง (25/09) — แหล่งเดียวกับทุกจอ
+        if (!live()) return;
+        const dt = chk(dtRes, 'เครื่องหยุด'), def = chk(defRes, 'ของเสีย'), po = chk(poRes, 'ใบผลิต');
         setDowntimes(dt || []); setDefects(def || []); setOrders(po || []);
-        const mats = [...new Set((po || []).map(o => o.mat_no).filter(Boolean))];
-        if (mats.length) {
-          const { data: prods } = await supabaseDR.from('dr_products').select('mat_no, pair_mat_no').in('mat_no', mats).not('pair_mat_no', 'is', null);
-          const pm = {}; (prods || []).forEach(p => { if (p.mat_no && p.pair_mat_no) pm[p.mat_no] = p.pair_mat_no; });
-          setPairMat(pm);
-        } else setPairMat({});
+        setPairMat(pm || {});
       } else {
         setDowntimes([]); setDefects([]); setOrders([]); setPairMat({});
       }
 
       // readiness: เครื่องที่ยังซ่อมค้าง "ตอนนี้" — มองจากกะ 3 วันล่าสุด (รวม carry-over ข้ามกะ)
-      const { data: recentSess } = await supabaseDR.from('production_sessions')
+      const recentSess = chk(await supabaseDR.from('production_sessions')
         .select('id, line_name, shift')
-        .gte('work_date', dayAdd(getWorkDate(), -2)).in('line_name', lineNames).limit(300);
+        .gte('work_date', dayAdd(getWorkDate(), -2)).in('line_name', lineNames).limit(300), 'กะล่าสุด (เครื่องค้างซ่อม)');
       const rIds = (recentSess || []).map(s => s.id);
       if (rIds.length) {
-        const { data: odt } = await supabaseDR.from('downtime_logs')
+        const odt = chk(await supabaseDR.from('downtime_logs')
           .select('*, dr_downtime_types(name_th, color)')
-          .in('session_id', rIds).is('ended_at', null).is('duration_min', null).limit(100);
+          .in('session_id', rIds).is('ended_at', null).is('duration_min', null).limit(100), 'เครื่องค้างซ่อม');
+        if (!live()) return;
         const lineBySess = {};
         (recentSess || []).forEach(s => { lineBySess[s.id] = s.line_name; });
         setOpenDts((odt || []).map(d => ({ ...d, _line: lineBySess[d.session_id] })));
       } else setOpenDts([]);
+      if (!live()) return;
+      setLoadErr(errs.length ? `⚠️ โหลด${errs.join(' / ')}ไม่สำเร็จ — แผงที่เกี่ยวข้องยังไม่ครบ (ว่าง ≠ ไม่มีปัญหา) อย่าเพิ่งใช้ตัดสินใจ` : '');
+    } catch (e) {
+      console.error('[MorningMeeting] load', e);
+      if (live()) setLoadErr(`🔴 โหลดข้อมูลไม่สำเร็จ: ${e?.message || e}`);
     } finally {
-      setLoading(false);
+      if (live()) setLoading(false);
     }
   }, [allLines.length, lineNames, viewLines, meetingDate]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -258,10 +278,13 @@ export default function MorningMeeting() {
   // orderTotal = pair-aware + op-aware (รายการขั้นตอน OP งานขับนัทไม่บวกซ้ำ — collapseOps ใน pairTotals)
   const pairSum = (os, pick) => orderTotal(os, pick, m => pairMat[m] || null, opInfoSync());
   const sessTarget = (s) => {
-    const os = (ordersBySession[s.id] || []).filter(o => !['cancelled', 'imported', 'carry_over'].includes(o.status));
-    if (hasPairIn(os)) return pairSum(os, o => o.qty_target ?? o.qty ?? 0);
+    /* เป้าของใบ = orderPlanQty (oee §6.1 · 05/10) — เดิมตัด imported/carry_over ทิ้งทั้งใบ แต่ยอดผลิต
+       (sessActual) ยังนับ ⇒ กะที่ส่งงานต่อ % เกิน 100 · ตอนนี้ imported = ส่วนของเป้าที่ทำในกะนี้
+       carry_over (ยังไม่มีใครรับ) = เป้าเต็ม — สูตรเดียวกับ Obeya/FactoryMap/DeptDashboard/GroupOverview */
+    const os = (ordersBySession[s.id] || []).filter(o => o.status !== 'cancelled');
+    if (hasPairIn(os)) return pairSum(os, orderPlanQty);
     if (s.target_qty) return s.target_qty;
-    return orderTotal(os, o => o.qty_target ?? o.qty ?? 0, () => null, opInfoSync());
+    return orderTotal(os, orderPlanQty, () => null, opInfoSync());
   };
   /* ยอดจริงของกะ — คิดจาก "ใบงาน" ผ่าน orderTotal (pair-aware + op-aware) เสมอเมื่อมีใบให้ดึง
      (QC audit 2026-08-20 · T1-10) เดิม fallback ไป s.qty_ok/s.actual_qty ก่อน ซึ่งเป็น "ผลรวมดิบ"
@@ -366,7 +389,7 @@ export default function MorningMeeting() {
         const pool = dts.filter(d => d.dr_downtime_types?.category !== 'planned');
         const g = {};
         (pool.length ? pool : dts).forEach(d => {
-          const k = d.dr_downtime_types?.name_th || 'Downtime';
+          const k = dtBucketName(d, null);   // การ์ดรายใบ — ไม่ต้องเดา ใช้ของจริง
           g[k] = (g[k] || 0) + (Number(d.duration_min) || 0);
         });
         const top = Object.entries(g).sort((a, b) => b[1] - a[1])[0];
@@ -385,10 +408,13 @@ export default function MorningMeeting() {
   }, [orders, sessions, downtimes, attendance, fourM]);
 
   // แยก นอกแผน (ตัวจริงที่ต้องคุยในประชุม — มีแถบ+note) / ในแผน (planned: นับสต็อก ฯลฯ — โชว์จางๆ ท้ายแผง)
+  const dtIdx = useMemo(() => buildDtIndex(downtimes), [downtimes]);
   const topDowntime = useMemo(() => {
     const g = {};
     downtimes.forEach(d => {
-      const k = d.dr_downtime_types?.name_th || 'ไม่ระบุ';
+      /* 🗑️ ประเภทที่บอกอะไรไม่ได้ ("อื่นๆ" / "Alarm ไม่ระบุสาเหตุ") แตกตามเครื่อง
+         — 92% ของใบพวกนี้กรอก machine_no ไว้แล้ว (utils/downtimeCategory 23/09) */
+      const k = dtBucketName(d, dtIdx);
       g[k] = g[k] || { name: k, color: d.dr_downtime_types?.color, planned: d.dr_downtime_types?.category === 'planned', min: 0, count: 0, machines: new Set(), carry: false, descs: {} };
       const min = Number(d.duration_min) || 0;
       g[k].min += min;
@@ -404,7 +430,7 @@ export default function MorningMeeting() {
       unplanned: all.filter(x => !x.planned).sort((a, b) => b.min - a.min).slice(0, 6),
       planned: all.filter(x => x.planned).sort((a, b) => b.min - a.min).slice(0, 4),
     };
-  }, [downtimes]);
+  }, [downtimes, dtIdx]);
 
   const topDefects = useMemo(() => {
     const g = {};
@@ -860,12 +886,14 @@ export default function MorningMeeting() {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, ...(bounded ? { maxHeight: 'calc(100vh - 340px)', overflowY: 'auto' } : null) }}>
         {/* เครื่องยังซ่อมค้าง — Andon แดง (กระพริบเฉพาะที่ยังค้างจริง ตามกฎ) */}
         {openDts.length > 0 ? openDts.map(d => (
-          <div key={d.id} className="dt-alarm-blink" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '6px 10px', borderRadius: 8, background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.5)' }}>
+          /* 🔴 มือถือ @390px (mobilesweep 2026-09-24): ชื่อไลน์ยาว เช่น "LINE APRON ASSY (HYDROFORM) ชุดที่ 1"
+             + ชิป nowrap ดันแถวล้น 328→386px ⇒ มือถือพับบรรทัด · ชิ้น nowrap หดแบบ ellipsis (UI-CONVENTIONS §มือถือ ข้อ 3) */
+          <div key={d.id} className="dt-alarm-blink" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '6px 10px', borderRadius: 8, background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.5)', flexWrap: isMobile ? 'wrap' : 'nowrap', minWidth: 0 }}>
             <span style={{ fontSize: 14 }}>🚨</span>
-            <b>{d._line}</b>
-            <span>{d.machine_no || ''}</span>
-            <span style={{ color: '#fca5a5' }}>{d.dr_downtime_types?.name_th || 'Downtime'}{d.description ? ` — ${d.description}` : ''}</span>
-            <span style={chip('#ef4444')}>ยังซ่อมไม่เสร็จ</span>
+            <b style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>{d._line}</b>
+            <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>{d.machine_no || ''}</span>
+            <span style={{ color: '#fca5a5', flex: '1 1 auto', minWidth: 0, overflowWrap: 'anywhere' }}>{d.dr_downtime_types?.name_th || 'Downtime'}{d.description ? ` — ${d.description}` : ''}</span>
+            <span style={{ ...chip('#ef4444'), overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>ยังซ่อมไม่เสร็จ</span>
             {canRecord && (
               <button className="tbtn" onClick={() => openActModal({
                 problem: `เครื่อง ${d.machine_no || ''} ${d._line}: ${d.dr_downtime_types?.name_th || 'Downtime'} ยังซ่อมไม่เสร็จ`,
@@ -878,9 +906,9 @@ export default function MorningMeeting() {
         )}
         {/* 4M ที่ยังรออนุมัติ (ทุกวัน ไม่เฉพาะเมื่อวาน = ของที่ควรตามในที่ประชุม) — เหลืองนิ่งตาม Andon */}
         {fourM.filter(m => ['pending', 'pending_qa'].includes(m.status)).map(m => (
-          <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '6px 10px', borderRadius: 8, background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.45)' }}>
-            <span>🟡</span><b>{m.line_name}</b>
-            <span style={{ color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>4M {m.category}: {m.description}</span>
+          <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '6px 10px', borderRadius: 8, background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.45)', flexWrap: isMobile ? 'wrap' : 'nowrap', minWidth: 0 }}>
+            <span>🟡</span><b style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>{m.line_name}</b>
+            <span style={{ color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: '1 1 auto', minWidth: 0, maxWidth: '100%' }}>4M {m.category}: {m.description}</span>
             {/* ⚠️ guard เหมือนบรรทัด 789 — วันนี้ปลอดภัยเพราะ filter การันตีคีย์ไว้ 2 ตัว
                 แต่เติมสถานะที่ 3 เข้า filter แล้วลืมเติมใน FOURM_STATUS = จอขาว */}
             <span style={chip('#f59e0b')}>{FOURM_STATUS[m.status]?.label || m.status}</span>
@@ -994,22 +1022,10 @@ export default function MorningMeeting() {
   });
 
   return (
-    <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
-      {/* toolbar */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', paddingRight: 52 }}>
-        <h1 style={{ margin: 0, fontSize: 'clamp(17px, 2.2vw, 22px)', fontWeight: 900, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
-          🌅 ประชุมแถวเช้า
-        </h1>
-        <input type="date" value={meetingDate} onChange={e => setMeetingDate(e.target.value)}
-          style={{ width: 140, padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
-        {sectionOpts.length > 1 && (
-          <select value={secFilter} onChange={e => setSecFilter(e.target.value)} style={{ width: 'auto', minWidth: 110, padding: '7px 10px', borderRadius: 7, fontSize: 13 }}>
-            <option value="">ทุกส่วนงาน</option>
-            {sectionOpts.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
-        )}
-        <span style={{ fontSize: 12, color: 'var(--muted)' }}>สรุปวันงาน {fmtDate(meetingDate)}</span>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+    <Page style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {/* หัวเพจ + ปุ่ม (UI-STANDARD 2026-09-24) — โหมดประชุม (tvMode) เป็น overlay เต็มจอแยกต่างหาก ไม่ใช้หัวนี้ */}
+      <PageHeader title="ประชุมแถวเช้า" icon="🌅" sub={`สรุปวันงาน ${fmtDate(meetingDate)}`}
+        actions={<>
           <button onClick={() => { setSlide(0); setTvMode(true); }} style={btnSt(false)} title="โหมดจอ TV — ไล่วาระทีละหน้า (◀ ▶ เปลี่ยน, Esc ออก)">📺 โหมดประชุม</button>
           <button onClick={handlePrint} style={btnSt(false)} title="พิมพ์สรุปเป็นเอกสาร">🖨️ พิมพ์</button>
           {canRecord && (
@@ -1017,9 +1033,23 @@ export default function MorningMeeting() {
               {sendingTg ? '⏳ กำลังส่ง…' : '📤 ส่งสรุป Telegram'}
             </button>
           )}
-        </div>
-      </div>
+        </>} />
+      <FilterBar style={{ marginTop: -12 }}>
+        {sectionOpts.length > 1 && (
+          <select value={secFilter} onChange={e => setSecFilter(e.target.value)}>
+            <option value="">{ALL.section}</option>
+            {sectionOpts.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+        )}
+        <span className="filter-label">วันที่ประชุม</span>
+        <input type="date" value={meetingDate} onChange={e => setMeetingDate(e.target.value)} />
+      </FilterBar>
 
+      {!loading && loadErr && (
+        <div role="alert" style={{ padding: '10px 14px', borderRadius: 10, border: '1px solid #ef444488', background: '#ef444414', color: '#ef4444', fontSize: 14, fontWeight: 700 }}>
+          {loadErr}
+        </div>
+      )}
       {loading ? (
         <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลดข้อมูล…</div>
       ) : (
@@ -1125,6 +1155,6 @@ export default function MorningMeeting() {
           </div>
         </div>
       )}
-    </div>
+    </Page>
   );
 }

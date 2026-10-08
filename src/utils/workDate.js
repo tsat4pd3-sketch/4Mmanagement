@@ -1,0 +1,131 @@
+/* ══ 📅 workDate — "วันทำงาน" จุดเดียวของทั้งระบบ (pure · 2026-09-23) ════════════════════
+ *
+ * กฎที่ CLAUDE.md เขียนไว้ตั้งแต่ต้นโปรเจค:
+ *   · **ห้ามใช้ `new Date().toISOString()` หาวันที่งาน** — คืน UTC ซึ่งต่างจากไทย (UTC+7)
+ *   · วันทำงาน = วันปฏิทิน แต่ **ก่อน 08:00 นับเป็นวันก่อนหน้า** (กะดึกข้ามเที่ยงคืน)
+ *
+ * ⚠️ แต่ **ไม่เคยมี util กลางจริง** — สำรวจ 23/09 เจอโค้ดชุดเดียวกันถูกก๊อปนิยามซ้ำ **27 ไฟล์**
+ *    (`getWorkDate` · `getWorkDateStr` · อารมณ์เดียวกันแบบ inline arrow) ⇒ กฎอยู่ในเอกสาร
+ *    แต่ของจริงกระจาย 27 ชุด · แก้กฎทีต้องไล่แก้ 27 ที่ = สักวันต้องมีที่ตกหล่น
+ *    ไฟล์นี้คือ single source ที่ควรมีตั้งแต่แรก — **โค้ดใหม่ต้อง import จากที่นี่เท่านั้น**
+ *    (ของเดิม 27 จุดยังไม่ย้าย — เป็นงานกวาดแยกต่างหาก ดู docs/modules/time-range-filter.md)
+ *
+ * ⚠️ รับ `now` เป็นพารามิเตอร์ได้เสมอ เพื่อให้เทสตรึงเวลาได้
+ *    (กฎ CLAUDE.md: `npm test` รันรอบ "นาฬิกา +400 วัน" ด้วย — ฟังก์ชันที่กินเวลาปัจจุบัน
+ *     แบบตรึงไม่ได้ = เทสระเบิดเวลา ที่ตกเองวันหลังโดยไม่มีใครแตะโค้ด)
+ */
+
+/** ชั่วโมงที่ถือว่า "ขึ้นวันทำงานใหม่" — ตรงกับกะเช้าที่เริ่ม 08:00 */
+export const WORK_DAY_START_HOUR = 8;
+
+/** `Date` → `'YYYY-MM-DD'` ตามเวลาเครื่อง (ไม่ใช่ UTC) */
+export const localDateStr = (d = new Date()) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+/**
+ * วันทำงานปัจจุบัน `'YYYY-MM-DD'` — ก่อน 08:00 นับเป็นวันก่อนหน้า
+ * @param now เวลาอ้างอิง (ใส่เองได้เพื่อเทส) · default = ตอนนี้
+ */
+export function getWorkDate(now = new Date()) {
+  const d = new Date(now);
+  if (d.getHours() < WORK_DAY_START_HOUR) d.setDate(d.getDate() - 1);
+  return localDateStr(d);
+}
+
+/** กะปัจจุบัน — เช้า 08:00–19:59 · ดึก 20:00–07:59 */
+export function getCurrentShift(now = new Date()) {
+  const h = new Date(now).getHours();
+  return h >= WORK_DAY_START_HOUR && h < 20 ? 'day' : 'night';
+}
+
+/** เวลาเริ่มกะมาตรฐาน — กะเช้า 08:00 · กะดึก 20:00 */
+export const shiftStartTime = (shift) => (shift === 'night' ? '20:00' : '08:00');
+
+/**
+ * ค่าเริ่มต้นของฟอร์ม "เปิดกะใหม่" — **วันทำงาน + กะ + เวลาเริ่ม คิดพร้อมกันจากเวลาเดียวกัน**
+ *
+ * 🔴 ทำไมต้องเป็นฟังก์ชันเดียว ห้ามคิดแยกชิ้น (2026-10-06 · เคสจริง LINE C):
+ *    ปุ่ม "+ เปิดกะใหม่" เดิมรีเฟรชแค่ `shift` จากนาฬิกา **แต่ปล่อย `work_date` ค้างค่าเดิม**
+ *    ⇒ ตอน 07:40 กะออโต้เป็น **ดึง** (เพราะกะดึก = 20:00–07:59) ขณะที่วันยังเป็นวันปฏิทินวันนี้
+ *    = "กะดึกของวันนี้" ซึ่ง**เริ่ม 20:00 คืนนี้ = เปิดกะล่วงหน้า 12 ชม.**
+ *    คนกดแล้วรู้ว่าผิด ปิดทิ้งใน 1 นาที → ได้ใบผี `shift_min` 720 ค้างในฐาน
+ *    (ของจริง: ก่อน 08:00 กะดึกที่กำลังเดินอยู่คือกะของ **เมื่อวาน** — `getWorkDate()` ตอบถูกอยู่แล้ว
+ *     ขอแค่ให้คิดคู่กัน)
+ *
+ * @param now เวลาอ้างอิง (ใส่เองได้เพื่อเทส) · default = ตอนนี้
+ * @returns `{ work_date, shift, start_time }`
+ */
+export function openShiftDefaults(now = new Date()) {
+  const shift = getCurrentShift(now);
+  return { work_date: getWorkDate(now), shift, start_time: shiftStartTime(shift) };
+}
+
+/* ── จัดเวลาจริง (timestamp) ลง "วันทำงาน/กะ" ───────────────────────────────────────
+ * ใช้ตอนเอา **เวลาที่เกิดขึ้นจริงแล้ว** (report_at, created_at, ฯลฯ) ไปจัดกลุ่ม/กรอง
+ *
+ * 🔴 คนละเรื่องกับ `resolveShiftTime()` ใน `shiftWindow.js` — ห้ามสลับกัน
+ *    · ที่นี่  = มี timestamp จริงอยู่แล้ว → "อันนี้อยู่กะไหน/วันทำงานไหน"
+ *    · ที่นั่น = คนพิมพ์ 'HH:mm' มาลอยๆ → ต้องหา offset วันที่ทำให้ตกในกรอบกะของ session นั้น
+ *      (จึงต้องรู้ start_time/shift_min ของกะ — ที่นี่ไม่ต้องรู้ เพราะเวลาเต็มมากับข้อมูลแล้ว)
+ *
+ * ⚠️ ค่าที่อ่านไม่ได้/ว่าง → คืน `null` **ห้ามคืนค่าเดา** (`new Date(null)` = 1970 ⇒ แถวจะไป
+ *    กองอยู่ในกะเช้าปี 1970 เงียบๆ ซึ่งแย่กว่าไม่มีค่า)
+ */
+const toDate = (ts) => {
+  if (ts == null || ts === '') return null;
+  const d = new Date(ts);
+  return Number.isFinite(d.getTime()) ? d : null;
+};
+
+/** timestamp → 'day' | 'night' · null เมื่ออ่านเวลาไม่ได้ */
+export function shiftOfTime(ts) {
+  const d = toDate(ts);
+  return d ? getCurrentShift(d) : null;
+}
+
+/** timestamp → วันทำงาน 'YYYY-MM-DD' (ก่อน 08:00 = วันก่อนหน้า) · null เมื่ออ่านเวลาไม่ได้ */
+export function workDateOfTime(ts) {
+  const d = toDate(ts);
+  return d ? getWorkDate(d) : null;
+}
+
+/**
+ * บวก/ลบวันจากสตริง `'YYYY-MM-DD'` — **คำนวณฝั่ง UTC ล้วน ไม่พึ่ง timezone เครื่อง**
+ *
+ * ⚠️ ทำไมต้องมีตัวนี้: สำรวจ 06/10 เจอ `addDays(dateStr, n)` ถูกก๊อปนิยามซ้ำ **18 ชุด**
+ *    ทดสอบทั้ง 18 ชุดใต้ TZ ={UTC, Asia/Bangkok, America/Los_Angeles, Pacific/Kiritimati}
+ *    → **พัง 1 ชุด** (`MonitorFgSync`) เพราะผสม 2 ระบบเวลาในฟังก์ชันเดียว:
+ *      parse ด้วย `+07:00` → เลื่อนวันด้วย `setDate/getDate` (เวลาเครื่อง) → คืนค่าด้วย `toISOString` (UTC)
+ *    ⇒ **คลาดไป 1 วันทุก timezone** (`addDays(today, 0)` คืนเมื่อวาน)
+ *
+ * 🔴 กฎ: ตัวที่คืน "สตริงวันที่" **ห้ามปิดท้ายด้วย `.toISOString().slice(0,10)`** —
+ *    toISOString อ่านฝั่ง UTC ⇒ ถ้าขาเข้าไม่ใช่ UTC ล้วน จะคลาดวันแบบเงียบ (มีด่าน `no-toisostring-date`)
+ *
+ * @returns `'YYYY-MM-DD'` · **`null` เมื่อแกะวันที่ไม่ออก (ห้ามเดาเป็นวันนี้)**
+ */
+export function addDaysStr(iso, n = 0) {
+  const [y, m, d] = String(iso || '').slice(0, 10).split('-').map(Number);
+  if (!y || !m || !d) return null;
+  const t = new Date(Date.UTC(y, m - 1, d + Number(n || 0)));
+  if (Number.isNaN(t.getTime())) return null;
+  return `${t.getUTCFullYear()}-${String(t.getUTCMonth() + 1).padStart(2, '0')}-${String(t.getUTCDate()).padStart(2, '0')}`;
+}
+
+/**
+ * `'YYYY-MM-DD'` **ตามเวลาไทย** ของ timestamp — ไม่พึ่ง timezone ของเครื่อง
+ *
+ * สำนวนที่ถูกต้อง: เลื่อน epoch ไป +7 ชม. แล้วอ่านฝั่ง UTC
+ * (หลักเดียวกับ `bkkHourKey()` ใน `timeRange.js` ที่ตอบ "ชั่วโมงไหนของวันไทย")
+ *
+ * 🔴 **ห้ามใช้หาวันที่งาน** — ตัวนี้ตอบ "วันตามปฏิทินไทย" ไม่ได้ตัด 08:00
+ *    วันทำงานใช้ `getWorkDate()` · ตัวนี้ไว้ตอบ "ย้อนหลัง N วันจากตอนนี้ ได้วันที่อะไร"
+ *    เพื่อส่งเป็น `from=` ให้หน้าปลายทาง (เช่น คิวงานของฉัน)
+ *
+ * @param ms epoch ms · ค่าที่อ่านไม่ออกคืน `null` (ห้ามเดาเป็นวันนี้)
+ */
+export function bkkDateStr(ms) {
+  const t = typeof ms === 'number' ? ms : Date.parse(ms);
+  if (!Number.isFinite(t)) return null;
+  const d = new Date(t + 7 * 3600000);        // +07:00 แล้วอ่าน UTC = วันตามปฏิทินไทย
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+}

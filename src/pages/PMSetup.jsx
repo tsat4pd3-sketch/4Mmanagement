@@ -4,18 +4,21 @@ import { useMergeParams } from '../utils/useTabParam'
 import { motion, AnimatePresence } from 'framer-motion'
 import { toDecodableImage } from '../utils/heicToJpeg'
 import imageCompression from 'browser-image-compression'
+import { compressPhotoImage } from '../utils/layoutImage'
 import { supabase, supabaseDR } from '../supabaseClient'
 import { UserContext } from '../App'
 import { can } from '../utils/permissions'
 import { toast } from '../components/Toast'
-import { FREQ_LABEL, DEPT_LABEL, EQUIP_TYPE_LABEL } from '../lib/pmSchedule'
+import CommitInput from '../components/CommitInput';
+import { DEPT_LABEL, EQUIP_TYPE_LABEL, CYCLE_PRESETS, cycleDaysOf, cycleLabel, freqForCycle, ymdBangkok } from '../lib/pmSchedule'
+import { addDays as addDaysYmd } from '../utils/pmUsage'
 import { loadPmTeams, pmTeamsSync, teamKind, teamKindOf, teamEquipTypeOf, clearPmTeamsCache } from '../utils/pmTeams'
 // picker กลาง (single-source audit 2026-09-07) — ไลน์/เครื่อง/พาร์ท/กระบวนการ อ่านจากทะเบียน ไม่พิมพ์เอง
 import LineSelect from '../components/LineSelect'
 import MachineSelect from '../components/MachineSelect'
 import ProductSelect from '../components/ProductSelect'
 import useColumnHistory from '../utils/useColumnHistory' // 📜 เลขเครื่องที่เคยบันทึกใน jigs — Machine Master ไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
-import { LINE_COLUMNS } from '../utils/useProductionLines'
+import { loadLinesRes, LINE_COLUMNS } from '../utils/useProductionLines'
 import { loadProcessTypes, activeProcessTypes } from '../utils/processTypes'
 import { teamsForUser } from '../utils/mtnTeams'
 import { findChecklist, getOrCreateChecklist, setChecklistFrequency, listChecklistsByDept, moveChecklistDept, copyChecklistToDept } from '../lib/pmChecklists'
@@ -27,6 +30,8 @@ import useImgBox from '../utils/useImgBox'
 import CalloutPin from '../components/CalloutPin'
 import { checkWrite } from '../utils/dbWrite';
 import { uploadOpts } from '../utils/storageUpload';
+import Page from '../components/Page';
+import PageHeader from '../components/PageHeader';
 
 const DEPT_COLORS = {
   maintenance:     '#fb923c',
@@ -92,7 +97,7 @@ function getPublicUrl(path) {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const S = {
-  page: { padding: 'clamp(12px,3vw,28px) clamp(14px,3.5vw,32px)', minHeight: '100%', background: 'var(--bg)' },
+  page: { minHeight: '100%', background: 'var(--bg)' },   // ขอบ/ความกว้างมาจาก <Page> (UI-STANDARD 2026-09-24)
   header: { display: 'flex', paddingRight: 52, alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 28, flexWrap: 'wrap', gap: 12 },
   h1: { fontSize: 22, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', margin: 0 },
   sub: { fontSize: 13, color: 'var(--muted)', marginTop: 4 },
@@ -124,7 +129,7 @@ const S = {
   }),
   primaryBtn: {
     padding: '9px 18px', borderRadius: 'var(--radius)', fontSize: 14, fontWeight: 700,
-    background: 'var(--accent)', color: '#071008', border: 'none', cursor: 'pointer',
+    background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', cursor: 'pointer',
   },
   empty: {
     display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
@@ -161,7 +166,7 @@ const S = {
   }),
   cpCard: { background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, padding: 14 },
   cancelBtn: { flex: 1, padding: '9px 0', borderRadius: 'var(--radius)', fontSize: 14, fontWeight: 600, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)', cursor: 'pointer' },
-  saveBtn: { flex: 1, padding: '9px 0', borderRadius: 'var(--radius)', fontSize: 14, fontWeight: 700, background: 'var(--accent)', color: '#071008', border: 'none', cursor: 'pointer' },
+  saveBtn: { flex: 1, padding: '9px 0', borderRadius: 'var(--radius)', fontSize: 14, fontWeight: 700, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', cursor: 'pointer' },
   modeBtn: (active) => ({
     flex: 1, padding: '8px 12px', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer',
     border: `1.5px solid ${active ? 'var(--accent)' : 'var(--border2)'}`,
@@ -174,7 +179,7 @@ const S = {
 const calcAnnoViewH = () => Math.round(Math.min(620, Math.max(260, (typeof window === 'undefined' ? 900 : window.innerHeight) * 0.46)))
 
 // ─── ImageAnnotator (upload + click-to-pin) ────────────────────────────────────
-function ImageAnnotator({ imageUrl, checkpoints, labels, activePinKey, onImageClick, onPinRemove }) {
+function ImageAnnotator({ imageUrl, checkpoints, labels, activePinKey, onImageClick, onPinRemove, onPinLabelMove }) {
   const layerRef = useRef(null)
   // pin สเกล/clamp/วางตำแหน่ง อิง "กล่องรูปจริง" หัก letterbox ของ objectFit:contain
   // (docs/UI-CONVENTIONS.md §5.1 — pattern เดียวกับ MachineFloorMap)
@@ -271,8 +276,10 @@ function ImageAnnotator({ imageUrl, checkpoints, labels, activePinKey, onImageCl
                 const col = isActive ? 'var(--accent)' : categoryColor(cp.category)
                 return (
                   <CalloutPin key={cp._key} xPct={cp.x_pos * 100} yPct={cp.y_pos * 100} layerW={imgBox.rw} layerH={imgBox.rh} size={PK}
+                    offX={cp.label_dx} offY={cp.label_dy}
                     label={labels?.[i] ?? i + 1} color={col} selected={isActive}
-                    title={`${cp.name || `จุด ${i + 1}`} — คลิกเพื่อลบ`}
+                    title={`${cp.name || `จุด ${i + 1}`} — คลิกเพื่อลบ${onPinLabelMove ? ' · ลากป้ายเลขเพื่อหลบไม่ให้ลูกศรทับกัน' : ''}`}
+                    onLabelMove={onPinLabelMove ? ((dx, dy) => onPinLabelMove(cp._key, dx, dy)) : undefined}
                     onClick={e => { e.stopPropagation(); onPinRemove(cp._key) }} />
                 )
               })}
@@ -280,7 +287,7 @@ function ImageAnnotator({ imageUrl, checkpoints, labels, activePinKey, onImageCl
           )}
           {activePinKey && (
             <div style={{ position: 'sticky', bottom: 8, display: 'flex', justifyContent: 'center', pointerEvents: 'none' }}>
-              <span style={{ padding: '5px 12px', borderRadius: 20, background: 'var(--accent)', color: '#071008', fontSize: 11, fontWeight: 700 }}>📍 คลิกที่รูปเพื่อวางตำแหน่ง</span>
+              <span style={{ padding: '5px 12px', borderRadius: 20, background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 11, fontWeight: 700 }}>📍 คลิกที่รูปเพื่อวางตำแหน่ง</span>
             </div>
           )}
         </div>
@@ -325,7 +332,10 @@ function CheckpointCard({ cp, label, onChange, onDelete, onDuplicate, onCpImage,
 
       <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
         <input value={cp.name} onChange={e => onChange({ name: e.target.value })} placeholder="ชื่อจุดตรวจสอบ เช่น LP1" />
-        <input value={cp.group_name ?? ''} onChange={e => onChange({ group_name: e.target.value })}
+        {/* 🔴 ช่องนี้ = ตัวจัดกลุ่มการ์ด (groupCheckpoints + <div key={g.name}>) ⇒ ถ้าส่งค่าออกทุก
+            keystroke การ์ดจะย้ายกลุ่ม/ถูก unmount ทุกตัวอักษร = หลุดโฟกัส ต้องคลิกกลับทุกครั้ง
+            ⇒ ต้องเป็น <CommitInput> (ส่งค่าตอน blur/Enter) ห้ามเปลี่ยนกลับเป็น <input> */}
+        <CommitInput value={cp.group_name ?? ''} onCommit={v => onChange({ group_name: v })}
           placeholder="กลุ่ม/หัวข้อ (Item) เช่น Locate Pin" list="cp-group-options" />
       </div>
 
@@ -478,7 +488,19 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
   const [kindFilter, setKindFilter] = useState(editJig?.equipment_type ?? teamEquipTypeOf(department) ?? 'all')
   const [equipCategory, setEquipCategory] = useState(editJig?.equipment_category ?? 'production')
 
-  const [frequency, setFrequency] = useState('periodic')
+  /* รอบ PM = จำนวนวัน (2026-09-23 · feedback "ตั้งแผน PM ไม่ได้ว่าครั้งถัดไปจะ PM เมื่อไหร่")
+     เดิมเลือก frequency 5 ค่า และ default = 'periodic' ("ตามรอบ") ที่ไม่มีจำนวนวัน ⇒ 130/142 แผนไม่มีวันครบกำหนด
+     ตอนนี้: เก็บจำนวนวันที่ pm_plans.interval_days · frequency = ป้ายที่แปลงจากจำนวนวัน (freqForCycle)
+     `nextDue` = วัน PM ครั้งถัดไปที่ช่างกำหนดเอง (ไม่บังคับ) — เขียนเฉพาะเมื่อแก้ช่องนี้ (nextDueDirty) */
+  const [cycleDays, setCycleDays] = useState('')
+  const [nextDue, setNextDue] = useState('')
+  const [nextDueDirty, setNextDueDirty] = useState(false)
+  const [origFreq, setOrigFreq] = useState(null)
+  // รอบเดิม + วันทำ PM ล่าสุด — เปลี่ยนรอบแล้วต้องคิดวันครบใหม่ = ทำล่าสุด + รอบใหม่ (ไม่งั้นค้างวันที่คิดจากรอบเก่า)
+  // ⚠️ ห้ามเรียก RPC pm_refresh_plan แทน — มันเขียน last_done_at ทับจาก inspections อย่างเดียว
+  //    (ล้างวันที่ PmCoordination/PMCheckData stamp ไว้)
+  const [origCycle, setOrigCycle] = useState(null)
+  const [lastDoneYmd, setLastDoneYmd] = useState(null)
   // Phase 2 — plan type (time | usage | hybrid) + usage-based predictive fields
   const [planType, setPlanType] = useState('time')
   const [usageThreshold, setUsageThreshold] = useState('')
@@ -490,6 +512,21 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
   const initialImagePathsRef = useRef(new Set()) // path รูปตอนเปิดแก้ไข — ใช้เก็บกวาดไฟล์ที่ถูกถอดตอน save
   const [frameIdx, setFrameIdx] = useState(0)
   const [imgBusy, setImgBusy] = useState(false)
+  /* 📌 จอกว้าง = แยก 2 คอลัมน์ "รูปค้างไว้ซ้าย · รายการจุดตรวจเลื่อนขวา" (user 23/09
+     "จอที่ต้องใช้รูปอ้างอิงตอนตรวจ ควรตรึงรูปไว้") — จอแคบตรึงรูปไว้บนหัวแทน
+     ⚠️ sticky ในนี้เกาะกับ `modalBody` (ตัวที่ overflowY:auto) ไม่ใช่ viewport */
+  const [wideModal, setWideModal] = useState(() => typeof window !== 'undefined' && window.matchMedia('(min-width: 1180px)').matches)
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1180px)')
+    const on = e => setWideModal(e.matches)
+    mq.addEventListener('change', on)
+    return () => mq.removeEventListener('change', on)
+  }, [])
+  /* 🔴 ต้องประกาศ **หลัง** `wideModal` — เคยวางไว้ก่อนแล้วโมดัลพังทั้งใบด้วย
+     "Cannot access 'wideModal' before initialization" (TDZ ของ const)
+     ⚠️ ด่านที่มีอยู่จับไม่ได้สักตัว: `no-undef` ไม่ฟ้องเพราะตัวแปร**มีจริงในสโคป** แค่ยังไม่ถูกสร้าง ·
+        build/เทสผ่าน · crashsweep ผ่านเพราะมันไม่เคย**เปิดโมดัล** (23/09 — ทีมงานแจ้ง "แอพล่ม") */
+  const twoColSetup = wideModal && layoutType === 'image_pin'
   // โมเดล 3D (ถ้ามี) — { path, format } = ของเดิม · _glb = ไฟล์ใหม่ที่แปลงเป็น GLB แล้ว รอ upload
   const [activePinKey, setActivePinKey] = useState(null)
 
@@ -517,7 +554,7 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
     // production lines (MAIN project) for the usage "นับยอดจากไลน์" dropdown + ไลน์ของอุปกรณ์
     // LINE_COLUMNS = ครบตามสัญญา <LineSelect> (ลำดับชั้น + section + is_active) · 2026-09-07
     // ตั้งใจไม่ scope ตาม section — config นับ shot อ้างไลน์ข้ามส่วนงานได้ (เช่นแม่พิมพ์ย้ายเครื่อง)
-    supabase.from('production_lines').select(LINE_COLUMNS).order('name')
+    loadLinesRes()
       .then(({ data }) => setLineOptions((data ?? []).filter(l => l.name)))
     supabaseDR.from('pm_facility_areas').select('id, name').order('sort_order').order('name')
       .then(({ data }) => setFacilityAreas((data ?? []).filter(a => a.name)), () => {})
@@ -530,7 +567,8 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
     //    เครื่องนี้อาจยังไม่มี checklist ของแผนกที่เลือก = ฟอร์มเปล่าให้เริ่มลงจุดตรวจใหม่ (สร้างจริงตอน save)
     ;(async () => {
       const cl = await findChecklist(editJig.id, 'mtn', department)
-      setFrequency(cl?.frequency ?? 'periodic')
+      setOrigFreq(cl?.frequency ?? null)
+      setCycleDays(''); setNextDue(''); setNextDueDirty(false); setOrigCycle(null); setLastDoneYmd(null)
       // load spin frames (jig_images); fall back to jigs.image_path as one frame
       // — รูปเป็นของ "เครื่อง" ไม่ใช่ของ checklist จึงต้องโหลดเสมอแม้แผนกนี้ยังไม่มี checklist
       const { data: imgs } = await supabaseDR.from('jig_images').select('*').eq('jig_id', editJig.id).order('sort')
@@ -555,7 +593,19 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
         ...(cps ?? []).map(c => c.image_path),
       ].filter(Boolean))
       if (!cl) return
-      const { data: plan } = await supabaseDR.from('pm_plans').select('plan_type, usage_threshold, usage_source_line').eq('checklist_id', cl.id).maybeSingle()
+      const { data: plan } = await supabaseDR.from('pm_plans').select('plan_type, usage_threshold, usage_source_line, interval_days, next_due_date, last_done_at').eq('checklist_id', cl.id).maybeSingle()
+      { const d = cycleDaysOf(cl.frequency, plan?.interval_days); setCycleDays(d ? String(d) : ''); setOrigCycle(d || null) }
+      {
+        // ทำล่าสุด = กติกาเดียวกับ PMSchedule: pm_plans.last_done_at ก่อน · ไม่มี = ผลตรวจล่าสุดที่ไม่ถูก reject
+        let last = plan?.last_done_at || null
+        if (!last) {
+          const { data: li } = await supabaseDR.from('inspections').select('inspected_at').eq('checklist_id', cl.id)
+            .neq('approval_status', 'rejected').order('inspected_at', { ascending: false }).limit(1)
+          last = li?.[0]?.inspected_at || null
+        }
+        setLastDoneYmd(ymdBangkok(last))
+      }
+      setNextDue(plan?.next_due_date ? String(plan.next_due_date).slice(0, 10) : '')
       if (plan) {
         setPlanType(plan.plan_type ?? 'time')
         setUsageThreshold(plan.usage_threshold != null ? String(plan.usage_threshold) : '')
@@ -777,12 +827,14 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
         for (const f of frames) {
           let path = f.image_path ?? null
           if (f._file) {
-            const ext = (f._file.name?.split('.').pop() || 'jpg').toLowerCase()
+            /* WebP — `jig-images/jigs/` คือก้อนใหญ่สุดฝั่ง Storage ของ DR (90 MB/วัน)
+               นามสกุลต้องมาจากชนิดไฟล์จริงที่ได้ ไม่ใช่ชื่อไฟล์ต้นทาง · ดู src/utils/layoutImage.js */
+            const { blob, ext } = await compressPhotoImage(f._file)
             path = `jigs/${jigId}/frame-${f._key}.${ext}`
-            const { error: upErr } = await supabaseDR.storage.from('jig-images').upload(path, f._file, uploadOpts({ mutable: true, upsert: true }))
+            const { error: upErr } = await supabaseDR.storage.from('jig-images').upload(path, blob, uploadOpts({ mutable: true, upsert: true }))
             if (upErr) throw upErr
           }
-          if (path) resolvedFrames.push({ key: f._key, path, title: f.title ?? null })
+          if (path) resolvedFrames.push({ key: f._key, id: f.id ?? null, path, title: f.title ?? null })
         }
       }
       const imagePath = layoutType === 'list' ? null : (resolvedFrames[0]?.path ?? null)
@@ -799,17 +851,31 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
       })
       if (jigErr) throw jigErr
 
-      // ── replace jig_images (spin frames) → map each frameKey to its new row id ──
+      // ── sync jig_images (spin frames) แบบ "แก้ตาม id" — ห้ามลบทั้งชุดแล้ว insert ใหม่ (QC 05/10)
+      //    เดิม delete-all ⇒ fixture_points.image_id / jig_checkpoints.image_id (ON DELETE SET NULL) หลุดทุกครั้งที่กดบันทึก
       const frameIdByKey = {}
-      const { error: wErr753 } = await supabaseDR.from('jig_images').delete().eq('jig_id', jigId);
-      if (wErr753) { toast.error('ล้างรูปจิ๊กเดิม (ยังไม่เขียนชุดใหม่ กันซ้ำ)ไม่สำเร็จ: ' + wErr753.message); return; }
-      if (resolvedFrames.length) {
-        const { data: insImgs, error: imgErr } = await supabaseDR.from('jig_images')
-          .insert(resolvedFrames.map((f, i) => ({ jig_id: jigId, image_path: f.path, sort: i, is_spin_frame: spinMode, title: f.title })))
-          .select('id, image_path')
-        if (imgErr) throw imgErr
-        const idByPath = Object.fromEntries((insImgs ?? []).map(r => [r.image_path, r.id]))
-        resolvedFrames.forEach(f => { frameIdByKey[f.key] = idByPath[f.path] })
+      {
+        const { data: curImgs, error: eCur } = await supabaseDR.from('jig_images').select('id').eq('jig_id', jigId)
+        if (eCur) throw eCur
+        const keepIds = new Set()
+        for (let i = 0; i < resolvedFrames.length; i++) {
+          const f = resolvedFrames[i]
+          const row = { image_path: f.path, sort: i, is_spin_frame: spinMode, title: f.title }
+          if (f.id) {
+            const { error: eU } = await supabaseDR.from('jig_images').update(row).eq('id', f.id)
+            if (eU) throw eU
+            keepIds.add(f.id); frameIdByKey[f.key] = f.id
+          } else {
+            const { data: ins, error: eI } = await supabaseDR.from('jig_images').insert({ jig_id: jigId, ...row }).select('id').single()
+            if (eI) throw eI
+            frameIdByKey[f.key] = ins.id
+          }
+        }
+        const dropImg = (curImgs ?? []).map(r => r.id).filter(id => !keepIds.has(id))
+        if (dropImg.length) {
+          const { error: eD } = await supabaseDR.from('jig_images').delete().in('id', dropImg)
+          if (eD) throw eD
+        }
       }
 
       const cl = await getOrCreateChecklist(jigId, 'mtn', department, userId)
@@ -820,13 +886,16 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
           — ตาราง checklists สร้างนอก migration folder จึงไม่มีนิยามในรีโปให้ตรวจ)
          กติกา: งานหลักต้องสำเร็จ + บอกให้ชัดว่าอะไรไม่ถูกบันทึกและต้องทำอะไร **ห้ามเงียบ** */
       let freqWarn = null
+      const cycleN = Number(cycleDays) > 0 ? Math.round(Number(cycleDays)) : null
+      const frequency = freqForCycle(cycleN)
       try {
-        await setChecklistFrequency(cl.id, frequency)
+        // ⚠️ ต้องก่อนเขียน interval_days — trigger pm_checklist_sync ล้าง interval_days ตาม frequency ที่เปลี่ยน
+        if (frequency !== origFreq) await setChecklistFrequency(cl.id, frequency)
       } catch (e) {
         const constraint = e?.code === '23514' || /check constraint|violates/i.test(e?.message || '')
         freqWarn = constraint
-          ? `บันทึกจุดตรวจเรียบร้อย แต่ตั้งความถี่เป็น “${FREQ_LABEL[frequency] ?? frequency}” ไม่ได้ — ฐานข้อมูลยังไม่รับค่านี้ (ความถี่ยังเป็นค่าเดิม) · แจ้ง admin ให้รัน migration 20260821_checklists_frequency_values`
-          : `บันทึกจุดตรวจเรียบร้อย แต่ตั้งความถี่ไม่ได้: ${e?.message || e}`
+          ? `บันทึกจุดตรวจเรียบร้อย แต่ตั้งรอบเป็น “${cycleLabel(null, cycleN)}” ไม่ได้ — ฐานข้อมูลยังไม่รับค่านี้ · แจ้ง admin ให้รัน migration 20260821_checklists_frequency_values`
+          : `บันทึกจุดตรวจเรียบร้อย แต่ตั้งรอบไม่ได้: ${e?.message || e}`
       }
 
       // Phase 2 — persist the plan type + usage rule (row exists via trigger; upsert on checklist_id)
@@ -839,16 +908,24 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
           usage_metric: uses ? 'produced_qty' : null,
           usage_threshold: uses ? thr : null,
           usage_source_line: uses ? (usageLine.trim() || lineName || null) : null,
-        }, { onConflict: 'checklist_id' }), 'บันทึกประเภทแผน PM / เกณฑ์ usage');
+          interval_days: cycleN,
+          // วัน PM ครั้งถัดไป — เขียนเฉพาะเมื่อช่างแก้ช่องนี้ (ไม่งั้นวันที่ระบบคิดให้จะถูกทับด้วยค่าเดิม)
+          ...(nextDueDirty
+            ? { next_due_date: nextDue || null, next_due_reason: nextDue ? 'time' : null }
+            : (cycleN && cycleN !== origCycle && lastDoneYmd)
+              ? { next_due_date: addDaysYmd(lastDoneYmd, cycleN), next_due_reason: 'time' }
+              : {}),
+        }, { onConflict: 'checklist_id' }), 'บันทึกรอบ PM / ประเภทแผน / เกณฑ์ usage');
       }
 
       // อัพโหลดรูปอ้างอิงต่อจุด (ที่เพิ่งแนบใหม่) ก่อน insert
       const cpImagePaths = {}
       for (const c of checkpoints) {
         if (!c._imgFile) continue
-        const ext = (c._imgFile.name?.split('.').pop() || 'jpg').toLowerCase()
+        // WebP — เหตุผลเดียวกับเฟรมด้านบน (นามสกุลจากชนิดจริงเสมอ)
+        const { blob, ext } = await compressPhotoImage(c._imgFile)
         const p = `jigs/${jigId}/cp-${c._key}.${ext}`
-        const { error: imgErr } = await supabaseDR.storage.from('jig-images').upload(p, c._imgFile, uploadOpts({ mutable: true, upsert: true }))
+        const { error: imgErr } = await supabaseDR.storage.from('jig-images').upload(p, blob, uploadOpts({ mutable: true, upsert: true }))
         if (imgErr) throw imgErr
         cpImagePaths[c._key] = p
       }
@@ -857,11 +934,10 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
       const { named, ordered } = groupCheckpoints(checkpoints)
       const groupOrderMap = Object.fromEntries(named.map((g, i) => [g.name, i]))
 
-      const { error: wErr808 } = await supabaseDR.from('jig_checkpoints').delete().eq('checklist_id', cl.id);
-      if (wErr808) { toast.error('ล้างจุดตรวจเดิม (ยังไม่เขียนชุดใหม่ กันซ้ำ)ไม่สำเร็จ: ' + wErr808.message); return; }
-      if (ordered.length > 0) {
-        const { error: cpErr } = await supabaseDR.from('jig_checkpoints').insert(
-          ordered.map((c, i) => ({
+      /* 🔴 sync จุดตรวจแบบ "แก้ตาม id" (QC 05/10) — ห้าม delete ทั้ง checklist แล้ว insert ใหม่
+         `inspection_results.checkpoint_id` เป็น ON DELETE CASCADE ⇒ เดิมกดบันทึก 1 ครั้ง = **ประวัติผลตรวจทั้งใบหายถาวร**
+         และ fixture_points.checkpoint_id (SET NULL) หลุดทุกครั้ง · จุดที่ถูกถอดจริงเท่านั้นที่ลบ — มีประวัติต้องยืนยันก่อน */
+      const cpRow = (c, i) => ({
             checklist_id: cl.id, jig_id: jigId, name: c.name.trim(), type: c.type,
             axis: c.type === 'variable' ? (c.axis ?? null) : null,
             category: c.category ?? null, checking_method: c.checking_method ?? null, unit: c.unit || null,
@@ -872,15 +948,46 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
             ucl: c.ucl !== '' && c.ucl != null ? Number(c.ucl) : null,
             x_pos: layoutType === 'list' ? null : (c.x_pos ?? null),
             y_pos: layoutType === 'list' ? null : (c.y_pos ?? null),
+            // 🏷️ ตำแหน่งป้ายเลขที่คนลากเอง (% ของกล่องรูป) — null = ทิศอัตโนมัติ (2026-09-21)
+            label_dx: layoutType === 'list' ? null : (c.label_dx ?? null),
+            label_dy: layoutType === 'list' ? null : (c.label_dy ?? null),
             image_id: layoutType === 'list' ? null : (frameIdByKey[c._frameKey] ?? frameIdByKey[resolvedFrames[0]?.key] ?? null),
             sort_order: i,
             group_name: (c.group_name || '').trim() || null,
             group_order: groupOrderMap[(c.group_name || '').trim()] ?? null,
             description: (c.description || '').trim() || null,
             image_path: cpImagePaths[c._key] ?? c.image_path ?? null,
-          }))
-        )
+      })
+      const { data: curCps, error: eCurCp } = await supabaseDR.from('jig_checkpoints').select('id, name').eq('checklist_id', cl.id)
+      if (eCurCp) throw eCurCp
+      const curIds = new Set((curCps ?? []).map(r => r.id))
+      const keepCp = new Set(ordered.map(c => c.id).filter(id => id && curIds.has(id)))
+      const dropCp = (curCps ?? []).filter(r => !keepCp.has(r.id))
+      if (dropCp.length) {
+        const { count: histN, error: eHist } = await supabaseDR.from('inspection_results')
+          .select('id', { count: 'exact', head: true }).in('checkpoint_id', dropCp.map(r => r.id))
+        if (eHist) throw eHist
+        if (histN > 0 && !window.confirm(
+          `จุดตรวจที่ถูกลบ ${dropCp.length} จุด (${dropCp.map(r => r.name).slice(0, 5).join(', ')}${dropCp.length > 5 ? ' …' : ''})\n` +
+          `มีประวัติผลตรวจผูกอยู่ ${histN} รายการ — ลบจุดแล้ว **ประวัติผลตรวจของจุดนั้นจะหายถาวร**\n\nยืนยันลบ?`)) {
+          toast.info('ยังไม่บันทึก — จุดตรวจเดิมยังอยู่ครบ'); return
+        }
+      }
+      for (let i = 0; i < ordered.length; i++) {
+        const c = ordered[i]
+        if (c.id && keepCp.has(c.id)) {
+          const { error: eU } = await supabaseDR.from('jig_checkpoints').update(cpRow(c, i)).eq('id', c.id)
+          if (eU) throw eU
+        }
+      }
+      const fresh = ordered.map((c, i) => [c, i]).filter(([c]) => !(c.id && keepCp.has(c.id))).map(([c, i]) => cpRow(c, i))
+      if (fresh.length) {
+        const { error: cpErr } = await supabaseDR.from('jig_checkpoints').insert(fresh)
         if (cpErr) throw cpErr
+      }
+      if (dropCp.length) {
+        const { error: eD } = await supabaseDR.from('jig_checkpoints').delete().in('id', dropCp.map(r => r.id))
+        if (eD) throw eD
       }
       // เก็บกวาดไฟล์เฟรม/รูปจุดตรวจที่ถูกถอดออกในรอบแก้ไขนี้ — ลบหลัง DB สำเร็จเท่านั้น (best-effort, กติกา CLAUDE.md)
       {
@@ -944,7 +1051,8 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
 
   return (
     <div style={S.overlay}>
-      <motion.div style={S.modal} onClick={e => e.stopPropagation()}
+      {/* โหมด "รูป + จุดตรวจ" ต้องการที่ 2 คอลัมน์ → กว้างขึ้น (โหมดรายการใช้ 1000 เท่าเดิม) */}
+      <motion.div style={{ ...S.modal, maxWidth: twoColSetup ? 1340 : 1000 }} onClick={e => e.stopPropagation()}
         initial={{ opacity: 0, scale: 0.96, y: 16 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.96, y: 16 }} transition={{ duration: 0.18 }}>
         {/* Header */}
         <div style={S.modalHead}>
@@ -1180,9 +1288,24 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
           )}
 
           <div>
-            <label style={S.label}>ความถี่การตรวจ ({deptLabel})</label>
+            <label style={S.label}>รอบ PM — ทำซ้ำทุกกี่วัน ({deptLabel})</label>
             <div style={S.freqBtns}>
-              {Object.entries(FREQ_LABEL).map(([v, lbl]) => <button key={v} onClick={() => setFrequency(v)} style={S.freqBtn(frequency === v)}>{lbl}</button>)}
+              {CYCLE_PRESETS.map(p => <button key={p.days} onClick={() => setCycleDays(String(p.days))} style={S.freqBtn(Number(cycleDays) === p.days)}>{p.label}</button>)}
+            </div>
+            <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'flex-end', marginTop: 8 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: 'var(--text2)' }}>
+                หรือกำหนดเอง ทุก
+                <input type="number" min="1" max="3650" value={cycleDays} onChange={e => setCycleDays(e.target.value)} style={{ width: 80 }} aria-label="รอบ PM (วัน)" />
+                วัน
+              </label>
+              <label style={{ fontSize: 12.5, color: 'var(--text2)' }}>วัน PM ครั้งถัดไป <span style={{ color: 'var(--muted)' }}>(ไม่บังคับ)</span>
+                <input type="date" value={nextDue} onChange={e => { setNextDue(e.target.value); setNextDueDirty(true) }} style={{ width: 170, display: 'block', marginTop: 3 }} />
+              </label>
+            </div>
+            <div style={{ marginTop: 6, fontSize: 11.5, color: Number(cycleDays) > 0 ? 'var(--muted)' : '#f59a3f' }}>
+              {Number(cycleDays) > 0
+                ? <>รอบ: <b style={{ color: 'var(--accent)' }}>{cycleLabel(null, Number(cycleDays))}</b> · ครบกำหนด = {nextDue ? 'วันที่กำหนดไว้ แล้วหลังตรวจจริง = วันตรวจ + รอบ' : 'วันตรวจล่าสุด + รอบ (ยังไม่เคยตรวจ = ใส่วัน PM ครั้งถัดไปเพื่อให้ระบบเตือนได้)'}</>
+                : <>⚠️ ยังไม่ตั้งรอบ = ระบบคิดวันครบกำหนดและเตือนล่วงหน้าไม่ได้{planType === 'usage' ? ' (แผนตามการใช้งานอย่างเดียวไม่ต้องมีรอบวันก็ได้)' : ''}</>}
             </div>
           </div>
 
@@ -1200,7 +1323,7 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
             </div>
             {(planType === 'time' || planType === 'hybrid') && (
               <div style={{ marginTop: 8, fontSize: 11, color: 'var(--muted)' }}>
-                🗓️ <b>ตามเวลา</b> = ใช้รอบจาก “ความถี่การตรวจ” ด้านบน (ตอนนี้: <b style={{ color: 'var(--accent)' }}>{FREQ_LABEL[frequency] ?? frequency}</b>) → ครบกำหนด = วันตรวจล่าสุด + รอบนั้น
+                🗓️ <b>ตามเวลา</b> = ใช้ “รอบ PM” ด้านบน (ตอนนี้: <b style={{ color: 'var(--accent)' }}>{cycleLabel(null, Number(cycleDays) || null)}</b>) → ครบกำหนด = วันตรวจล่าสุด + รอบนั้น
               </div>
             )}
             {(planType === 'usage' || planType === 'hybrid') && (
@@ -1232,8 +1355,19 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
             </div>
           </div>
 
+          {/* ── 📌 รูปอ้างอิงต้อง "ค้างอยู่" ตอนไล่กรอกจุดตรวจ (user 23/09) ──────────────
+              จอกว้าง: grid 2 คอลัมน์ · รูปซ้าย `position:sticky` · รายการจุดตรวจเลื่อนขวา
+              จอแคบ: คอลัมน์เดียว · รูปตรึงบนหัว (พื้นหลังทึบ full-bleed กันรายการเลื่อนทะลุใต้รูป)
+              🔴 sticky เกาะ `modalBody` ที่เป็น overflowY:auto — ห้ามใส่ overflow ให้กล่อง grid นี้
+                 ไม่งั้นจะกลายเป็น scroll container ซ้อนแล้ว "ขัง" sticky ไว้ข้างใน (กับดักใน CLAUDE.md) */}
+          <div style={twoColSetup
+            ? { display: 'grid', gridTemplateColumns: 'minmax(360px, 1fr) minmax(380px, 560px)', gap: 20, alignItems: 'start' }
+            : { display: 'flex', flexDirection: 'column', gap: 16 }}>
           {layoutType === 'image_pin' && (
-            <div>
+            <div style={twoColSetup
+              ? { position: 'sticky', top: 0, alignSelf: 'start' }
+              : { position: 'sticky', top: 0, zIndex: 5, background: 'var(--bg2)',
+                  margin: '0 -24px', padding: '0 24px 8px', borderBottom: '1px solid var(--border)' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
                 <label style={{ ...S.label, marginBottom: 0 }}>รูปอุปกรณ์ (หลายมุม) + จุดตรวจ</label>
                 {frames.length > 0 && pinnedCount > 0 && <span style={{ fontSize: 11, color: 'var(--accent)' }}>📍 {pinnedCount}/{checkpoints.length} จุดวางแล้ว</span>}
@@ -1244,16 +1378,24 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
                 pins={grouped.ordered
                   .filter(c => c.x_pos != null && ((c._frameKey ?? frames[0]?._key) === frames[frameIdx]?._key))
                   .map(c => ({ key: c._key, x: c.x_pos, y: c.y_pos, label: cpLabels[c._key],
+                    label_dx: c.label_dx, label_dy: c.label_dy,
+                    selected: activePinKey === c._key,
                     color: activePinKey === c._key ? 'var(--accent)' : categoryColor(c.category) }))}
                 onPlace={(x, y) => { updateCp(activePinKey, { x_pos: x, y_pos: y, _frameKey: frames[frameIdx]?._key ?? null }); setActivePinKey(null) }}
                 onRemovePin={(key) => { updateCp(key, { x_pos: null, y_pos: null }); if (activePinKey === key) setActivePinKey(null) }}
+                onLabelMove={(key, dx, dy) => updateCp(key, { label_dx: dx, label_dy: dy })}
                 onAddFrames={addFrames} onRemoveFrame={removeFrame}
                 pinHasDetail={Object.fromEntries(checkpoints.map(c => [c._key, !!(c._imgPreview || c.image_path)]))} />
               {activePinKey && <p style={{ fontSize: 11, color: 'var(--muted)', margin: '4px 0 0' }}>✦ หมุนไปเฟรมที่เห็นจุดชัด แล้วคลิกวางตำแหน่ง</p>}
               {/* คิวครอบรูป — เลือกหลายไฟล์ = ครอบทีละใบ (ผู้ใช้เลือกกรอบเอง ไม่ auto-crop) */}
               {cropQueue[0] && (
                 <ImageCropModal
-                  file={cropQueue[0]} aspect={3 / 4} outputSize={900} quality={0.82}
+                  /* 📐 กรอบครอบเป็น "แนวนอน" (4:3) — เดิม 3:4 แนวตั้ง สวนทางกับที่จอตรวจต้องการ
+                     (วัดจริงที่ 390px 23/09: แนวนอนเต็มความกว้างพอดี · แนวตั้งเหลือขอบว่างข้างละครึ่งจอ)
+                     outputSize 900→1200 เพื่อให้ด้านยาวยังได้ 1200px เท่าเดิม —
+                     โหมด "ใช้ทั้งรูป" ย่อด้วย cap = max(outputSize, outputSize/aspect)
+                     ถ้าพลิก aspect เฉยๆ cap จะตกจาก 1200 เหลือ 900 = รูปเก่าคมกว่ารูปใหม่ */
+                  file={cropQueue[0]} aspect={4 / 3} outputSize={1200} quality={0.82}
                   allowFull fullLabel="ใช้ทั้งรูป (ไม่ครอบ) — สำหรับรูปภาพรวมเครื่อง"
                   title={`จัดกรอบรูป${cropQueue.length > 1 ? ` (เหลืออีก ${cropQueue.length - 1} รูป)` : ''}`}
                   onCancel={() => setCropQueue(q => q.slice(1))}
@@ -1282,6 +1424,7 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
               )}
               {grouped.ungrouped.map(renderCard)}
             </div>
+          </div>
           </div>
 
           {error && <p style={{ color: 'var(--red)', fontSize: 13 }}>{error}</p>}
@@ -1434,9 +1577,12 @@ export default function PMSetup() {
 
   const handleDelete = async (jig) => {
     if (!confirm(`ลบ "${jig.name}" ?`)) return
-    const { error } = await supabaseDR.from('jigs').delete().eq('id', jig.id)
-    if (error) { toast.error(error.message); return }
-    // ลบ jig สำเร็จแล้ว เก็บกวาดรูปทั้งชุดของ jig นี้ (frame-*/cp-* อยู่ใต้ jigs/<id>/) กันไฟล์กำพร้าใน storage (best-effort)
+    /* 🔴 นับแถวก่อนแตะ storage (QC audit 06/10) — ไม่นับ = แถว jig ยังอยู่
+       แต่รูปทั้งชุด (เฟรม + จุดตรวจ + โมเดล 3D) ถูกลบ ⇒ ทะเบียนจิ๊กเสียรูปถาวร */
+    const dres = await supabaseDR.from('jigs').delete().eq('id', jig.id).select('id')
+    if (!checkWrite(dres, 'ลบจิ๊ก')) return
+    if (!(dres.data || []).length) { toast.error('ลบไม่สำเร็จ (0 แถว) — รูปและประวัติยังอยู่ครบ'); return }
+    // ยืนยันแถวหายจริงแล้ว เก็บกวาดรูปทั้งชุดของ jig นี้ (frame-*/cp-* อยู่ใต้ jigs/<id>/) กันไฟล์กำพร้าใน storage (best-effort)
     try {
       const folder = `jigs/${jig.id}`
       const { data: files } = await supabaseDR.storage.from('jig-images').list(folder, { limit: 1000 })
@@ -1456,13 +1602,12 @@ export default function PMSetup() {
   const handleSaved = (warn) => { if (!warn) setShowModal(false); fetchData() }
 
   return (
-    <div style={S.page}>
-      <div style={S.header}>
-        <div>
-          <h1 style={S.h1}>ตั้งจุดตรวจ PM — อุปกรณ์ &amp; จุดตรวจ</h1>
-          <p style={S.sub}>{jigs.length} อุปกรณ์ · แผนก {teams.find(t => t.key === department)?.label ?? DEPT_LABEL[department] ?? department}</p>
+    <Page style={S.page}>
+      <PageHeader title="ตั้งจุดตรวจ PM — อุปกรณ์ & จุดตรวจ" icon="⚙️"
+        sub={<>
+          <div>{jigs.length} อุปกรณ์ · แผนก {teams.find(t => t.key === department)?.label ?? DEPT_LABEL[department] ?? department}</div>
           {/* AM (ผลิตตรวจเอง) กับ PM (ช่าง) คนละงานกัน — บอกให้ชัดว่ากำลังตั้งค่าของใคร */}
-          <p style={{ ...S.sub, marginTop: 2 }}>
+          <div style={{ marginTop: 2 }}>
             <b>{teamKind(department).short} · {teamKind(department).full}</b> — {teamKind(department).desc}
             {canSetup && (
               <>
@@ -1473,16 +1618,13 @@ export default function PMSetup() {
                 </button>
               </>
             )}
-          </p>
-        </div>
-        {canSetup && (
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <button onClick={() => setTaxModal('category')} style={S.btnSm('var(--muted)')}>⚙ ประเภท</button>
-            <button onClick={() => setTaxModal('method')} style={S.btnSm('var(--muted)')}>⚙ วิธีตรวจ</button>
-            <button onClick={openCreate} style={S.primaryBtn}>+ เพิ่มอุปกรณ์</button>
           </div>
-        )}
-      </div>
+        </>}
+        actions={canSetup && <>
+          <button onClick={() => setTaxModal('category')} style={S.btnSm('var(--muted)')}>⚙ ประเภท</button>
+          <button onClick={() => setTaxModal('method')} style={S.btnSm('var(--muted)')}>⚙ วิธีตรวจ</button>
+          <button onClick={openCreate} style={S.primaryBtn}>+ เพิ่มอุปกรณ์</button>
+        </>} />
 
       <div style={S.deptBar}>
         {teams.map(d => <button key={d.key} onClick={() => setDept(d.key)} style={S.deptBtn(department === d.key, d.color || DEPT_COLORS[d.key] || '#3dd65c')}>{d.icon ? `${d.icon} ` : ''}{d.label}</button>)}
@@ -1521,6 +1663,6 @@ export default function PMSetup() {
         )}
       </AnimatePresence>
 
-    </div>
+    </Page>
   )
 }

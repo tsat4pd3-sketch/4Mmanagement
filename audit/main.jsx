@@ -1,8 +1,12 @@
 import React, { Suspense, useState, useEffect } from 'react'
 import { createRoot } from 'react-dom/client'
 import { MemoryRouter } from 'react-router-dom'
-import { UserContext, Sidebar } from '../src/App'
+import { UserContext, Sidebar, NAV_ITEMS } from '../src/App'
+/* เปิดทะเบียนเมนูให้ `audit/stdsweep.mjs` อ่าน — ตรวจว่า "คุณอยู่ตรงนี้" บนรางตรงกับหมวดจริงไหม
+   (`alsoIn` = หน้าที่อยู่ 2 หมวดจริงๆ ต้องถูกไฮไลต์ทั้งคู่) */
+window.__NAV = NAV_ITEMS.map(i => ({ to: i.to, group: i.group, alsoIn: i.alsoIn || null }))
 import ScrollHint from '../src/components/ScrollHint'
+import { ToastContainer } from '../src/components/Toast'
 import '../src/index.css'
 
 const mods = import.meta.glob('../src/pages/*.jsx')
@@ -20,7 +24,24 @@ class EB extends React.Component {
    ที่ต้อง daily_report:record) **ไม่เคยถูก render ใน crashsweep เลย** — ตรวจตาไม่ได้ด้วย
    default ยังเป็น 'manager' เหมือนเดิม (ไม่กระทบผลตรวจเดิม) */
 const ROLE = new URLSearchParams(location.search).get('role') || 'manager';
-const CTX = { role:ROLE, lineId:1, team:'A', section:'PD1', sections:[], fullName:'ทดสอบ ระบบ',
+/* ⚠️ harness เดิมใช้ `<MemoryRouter>` เปล่าๆ ⇒ `useSearchParams()` ในหน้าลูก**ว่างเสมอ**
+   ทำให้โค้ดสาย "รับตัวกรองจาก URL" (เช่น /oee-analytics?section=PD3 ที่เจาะมาจาก OBEYA)
+   ไม่เคยถูกรันใน harness เลยสักครั้ง = บั๊กทั้งคลาสมองไม่เห็น (2026-09-22)
+   ⇒ ส่ง query string จริงของ harness เข้าไปเป็นที่อยู่ตั้งต้น (ตัด `p`/`role` ที่เป็นของ harness เองออก) */
+const ENTRY = (() => {
+  const q = new URLSearchParams(location.search);
+  q.delete('p'); q.delete('role'); q.delete('sections');
+  /* `?path=/production-plan` — ตั้ง **pathname** ของที่อยู่ตั้งต้น (2026-09-24)
+     เดิมตรึงเป็น `/` เสมอ ⇒ lab ของ sidebar จำลอง "กำลังอยู่หน้าไหน" ไม่ได้เลย
+     แล้วไฮไลต์ "คุณอยู่ตรงนี้" บนราง **ไม่เคยถูกเห็นใน harness สักครั้ง**
+     (นั่นคือเหตุผลที่ bug ไฮไลต์รางหลุดไปถึงหน้างาน — user ต้องมาทักเอง) */
+  const path = q.get('path') || '/'; q.delete('path');
+  return q.toString() ? `${path}?${q}` : path;
+})();
+/* ?sections=PD2,PD3 — จำลอง user ที่ถูกจำกัดส่วนงาน (2026-10-05) · เดิม sections:[] ตายตัว ⇒ สาย "ขอบเขตจาก URL
+   อยู่นอกสังกัด user" / ตัวกรองส่วนงานของบอร์ด OBEYA ไม่เคยถูกรันใน harness เลย */
+const SECTIONS = (new URLSearchParams(location.search).get('sections') || '').split(',').map(s => s.trim()).filter(Boolean);
+const CTX = { role:ROLE, lineId:1, team:'A', section:SECTIONS[0] || 'PD1', sections:SECTIONS, fullName:'ทดสอบ ระบบ',
   userId:'x', email:'a@b.c', position:'หัวหน้าส่วน', signatureUrl:null, avatarUrl:null,
   mtnTeams:[], isDeptAdmin:false, sidebarOpen:false }
 
@@ -32,7 +53,7 @@ function SidebarLab(){
   window.__setPin = setPinned
   const marginLeft = open ? (pinned ? 'calc(var(--rail-w) + var(--sidebar-w))' : 'var(--rail-w)') : 0
   return (
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[ENTRY]}>
       <UserContext.Provider value={{ ...CTX, role:'admin' }}>
         <div style={{ display:'flex', minHeight:'100vh', background:'var(--bg)' }}>
           <Sidebar isOpen={open} onClose={()=>setOpen(false)} onLogout={()=>{}} theme="dark" onToggleTheme={()=>{}}
@@ -58,17 +79,37 @@ function App(){
     mods[key]().then(m => setC(()=>m.default)).catch(e => { window.__crash=true; console.error(e) })
   },[name])
   return (
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[ENTRY]}>
       <UserContext.Provider value={CTX}>
         {/* จำลองโครงเดียวกับ App จริง: main เลื่อนแนวตั้งอย่างเดียว */}
         <main id="mainbox" style={{ flex:1, minHeight:'100vh', paddingTop:14, background:'var(--bg)',
           overflowY:'auto', overflowX:'hidden', minWidth:0 }}>
           <ScrollHint/><EB><Suspense fallback={<div>loading</div>}>{C ? <C/> : null}</Suspense></EB>
+          {/* ToastContainer ต้องมีในหน้าปกติด้วย (05/10) — เดิมมีแค่ใน FeedbackLab ⇒ toast จากหน้าอื่น (เช่น "ขอบเขตนอกสังกัด" ของบอร์ด KPI) ไม่โผล่ ตรวจอัตโนมัติไม่ได้ */}
+          <ToastContainer/>
         </main>
       </UserContext.Provider>
     </MemoryRouter>
   )
 }
+/* ?p=__feedback — โมดัล 💬 แจ้งปัญหา (2026-09-22)
+   มันถูก render จาก App shell ไม่ใช่จากหน้าไหน ⇒ crashsweep ที่ไล่เปิดทีละ "หน้า" มองไม่เห็นเลย
+   พอเพิ่มช่องแนบรูป (สิ่งที่พังได้จริง: preview/ถอดรูป/ล้นโมดัลบนมือถือ) เลยต้องมี harness ของตัวเอง */
+const FeedbackLab = () => (
+  <MemoryRouter initialEntries={[ENTRY]}>
+    <UserContext.Provider value={{ ...CTX, role:'admin' }}>
+      <EB><Suspense fallback={<div>loading</div>}>
+        {React.createElement(React.lazy(() => import('../src/components/FeedbackModal')), { onClose(){} })}
+      </Suspense></EB>
+      {/* ⚠️ ต้องมี ToastContainer ใน harness ด้วย — ไม่งั้น `toast.error(...)` ไม่โผล่ที่ไหนเลย
+          แล้วกฎ "ปฏิเสธไฟล์ต้องขึ้น toast บอกเหตุผล ห้ามเงียบ" จะตรวจอัตโนมัติไม่ได้
+          (เจอ 22/09: เทสรายงานว่า 'ไม่มีข้อความเตือน' ทั้งที่โค้ดเรียก toast ถูกแล้ว) */}
+      <ToastContainer/>
+    </UserContext.Provider>
+  </MemoryRouter>
+)
+
 window.__PAGES = NAMES
-const wantSidebar = new URLSearchParams(location.search).get('p') === '__sidebar'
-createRoot(document.getElementById('root')).render(wantSidebar ? <SidebarLab/> : <App/>)
+const only = new URLSearchParams(location.search).get('p')
+createRoot(document.getElementById('root')).render(
+  only === '__sidebar' ? <SidebarLab/> : only === '__feedback' ? <FeedbackLab/> : <App/>)

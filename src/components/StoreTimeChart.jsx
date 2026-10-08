@@ -1,8 +1,10 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
+import { lineNameCompare } from '../utils/lineHierarchy';
 import useIsMobile from '../utils/useIsMobile';
 import { FRAME_START, frameMin, breaksToFrame } from '../utils/timeFrame';
 import { getRoundStatus, roundDeliveryMin, addMinutes } from '../utils/deliveryRounds';
 import { forecastRunout, byUrgency, RUNOUT_REASON } from '../utils/wipRunout';
+import { storeBtn } from '../utils/storeUi';   // 🖐 เป้ากด 44px ของโมดูลสโตร์ (2026-09-25)
 import { slocCodeOfLine } from '../utils/storageLoc';   // 🏬 มุม SAP ของไลน์ปลายทาง (2026-09-08)
 
 /* ═══ 🕐 Store Time Chart — สโตร์เตรียมของส่งเข้าไลน์ (2xx/3xx/5xx) ═══════════
@@ -47,6 +49,12 @@ const fmtMin = (m) => {
 
 export default function StoreTimeChart({
   rounds, deliveries, view, storeStock, kanbanStd, lineMap, workDate, breakPolicies, nowMs,
+  /* 🎯 `focusPick` = ตัวนับที่เพิ่มขึ้นเมื่อกด "เลือกพาร์ทไปส่ง" มาจากหน้าอื่น (2026-09-25 · feedback หน้างาน)
+     *"เลือกพาร์ทไปส่ง คลิกละมาหน้านี้ ถ้าไม่ใช่เราไม่รู้ว่าต้องเลื่อนลงมาละคลิกตรงนี้"*
+     🔴 **ลิงก์ที่พาข้ามหน้าต้องพาไปถึง "จุดที่ต้องลงมือ" ไม่ใช่แค่หัวหน้าเพจ** — วัดจริง 25/09:
+        หน้านี้สูง 3,285px บนจอ 900px ⇒ แผงติ๊กพาร์ทอยู่ต่ำกว่าขอบจอ **2.5 จอ** เปิดมาแล้วไม่มีทางรู้ว่ามี
+     ใช้ "ตัวนับ" ไม่ใช่ boolean — กดปุ่มเดิมซ้ำต้องเลื่อนให้ใหม่ทุกครั้ง (boolean = ครั้งที่ 2 เงียบ) */
+  focusPick = 0,
   // ── เลือกพาร์ทไปส่ง (2026-09-07 · user: "คือสิ่งที่ต้องไปส่ง แต่กดเลือกชิ้นงานที่จะไปส่งไม่ได้") ──
   //   openRequests = ใบขอเติมที่ยังไม่จบ (กันสร้างซ้ำ — unique index ระดับ DB กันอีกชั้น)
   //   onCreateRequests(items) = สร้างใบเข้า 🔄 คิวเติม WIP · items[].line ต้องเป็น **ไลน์ย่อยที่สุด** ไม่ใช่กลุ่ม
@@ -64,6 +72,18 @@ export default function StoreTimeChart({
   const [qOpen, setQOpen]           = useState({});   // กางรายการพาร์ทของคิวส่งตามคำขอ
   const [sel, setSel]               = useState({});   // key `${group}|${mat}` → item ที่เลือกจะไปส่ง
   const [creating, setCreating]     = useState(false);
+  /* เลื่อนไปที่แผงติ๊กพาร์ทเมื่อถูกส่งมาจากปุ่มหน้าอื่น
+     ⚠️ ตัวเลื่อนของทั้งหน้าคือ <body> ไม่ใช่ <html> — `scrollIntoView` ไล่หาบรรพบุรุษที่เลื่อนได้เอง
+        จึงใช้ได้ทั้ง 2 กรณี · ห้ามใช้ท่านี้กับกล่องแท็บแนวนอน (จอกระโดด · UI §6.8 ข้อ 7) */
+  const pickRef = useRef(null);
+  const [pickGlow, setPickGlow] = useState(false);
+  useEffect(() => {
+    if (!focusPick || !pickRef.current) return;
+    pickRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setPickGlow(true);
+    const t = setTimeout(() => setPickGlow(false), 2600);
+    return () => clearTimeout(t);
+  }, [focusPick]);
   /* 📥 มอง WIP ที่ไลน์ = 0 สำหรับพาร์ทที่ยังไม่ได้ตั้งยอด (user 2026-09-01)
      default = เปิด เพราะสภาพจริงคือพาร์ทส่วนใหญ่ยังไม่มีแถวสต็อกที่ไลน์
      → ปิดไว้ = สโตร์เปิดจอมาแล้วไม่เห็นความต้องการอะไรเลย (ปัญหาที่ทำให้ต้องมีโหมดนี้)
@@ -442,7 +462,7 @@ export default function StoreTimeChart({
               )}
             </div>
 
-            {Object.keys(byLine).sort().map(g => {
+            {Object.keys(byLine).sort(lineNameCompare).map(g => {
               const list = byLine[g];
               const lanes = lanesByLine[g] || { map: {}, count: 1 };
               const isCol = !!collapsed[g];
@@ -530,7 +550,7 @@ export default function StoreTimeChart({
         return (
           <>
             <div onClick={() => setPopup(null)} style={{ position: 'fixed', inset: 0, zIndex: 1400 }} />
-            <div style={{ position: 'fixed', left, top, width: W, zIndex: 1401, background: 'var(--bg3)', border: `1px solid ${st.border}`, borderRadius: 12, boxShadow: '0 10px 30px rgba(0,0,0,0.45)', padding: 12 }}>
+            <div style={{ position: 'fixed', left, top, width: W, zIndex: 1401, background: 'var(--bg3)', border: `1px solid ${st.border}`, borderRadius: 12, boxShadow: 'var(--shadow-float)', padding: 12 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                 <span style={{ fontSize: 14, fontWeight: 900, color: 'var(--text)' }}>
                   {r.shift === 'night' ? '🌙' : '☀️'} รอบ {r.round_no} · {hhmm(r.delivery_time)}
@@ -543,7 +563,7 @@ export default function StoreTimeChart({
               </div>
               <StockNote cov={cov} fmt={fmt} />
               <button onClick={() => goToCard(r)}
-                style={{ marginTop: 10, width: '100%', padding: '7px 10px', borderRadius: 8, fontSize: 12, fontWeight: 800, cursor: 'pointer', background: 'var(--accent)', color: '#08130a', border: 'none', fontFamily: 'var(--font-body)' }}>
+                style={{ marginTop: 10, width: '100%', padding: '7px 10px', borderRadius: 8, fontSize: 12, fontWeight: 800, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', fontFamily: 'var(--font-body)' }}>
                 ↓ ดูของที่ต้องเตรียม
               </button>
             </div>
@@ -638,12 +658,12 @@ export default function StoreTimeChart({
             <div style={isMobile ? { overflowX: 'auto', WebkitOverflowScrolling: 'touch' } : undefined}>
               <div style={isMobile ? { minWidth: 780 } : undefined}>
                 <div style={{ display: 'flex', borderBottom: '1px solid var(--border2)' }}>
-                  <div style={{ width: leftW, flexShrink: 0, padding: '4px 8px', fontSize: 10.5, color: 'var(--muted)', fontWeight: 700, ...(isMobile ? { position: 'sticky', left: 0, zIndex: 6, background: 'var(--card)' } : null) }}>
+                  <div style={{ width: leftW, flexShrink: 0, padding: '4px 8px', fontSize: 11, color: 'var(--muted)', fontWeight: 700, ...(isMobile ? { position: 'sticky', left: 0, zIndex: 6, background: 'var(--card)' } : null) }}>
                     ไลน์ · จะขาดของเมื่อไหร่
                   </div>
                   <div style={{ flex: 1, position: 'relative', height: 20 }}>
                     {hourMarks.filter((_, i) => i % 2 === 0).map(m => (
-                      <span key={m} style={{ position: 'absolute', left: `${((m - tStart) / span) * 100}%`, top: 3, fontSize: 10, color: 'var(--muted)', transform: 'translateX(-50%)' }}>
+                      <span key={m} style={{ position: 'absolute', left: `${((m - tStart) / span) * 100}%`, top: 3, fontSize: 11, color: 'var(--muted)', transform: 'translateX(-50%)' }}>
                         {fmtMin(m)}
                       </span>
                     ))}
@@ -658,7 +678,7 @@ export default function StoreTimeChart({
                     <div key={q.line} style={{ display: 'flex', borderTop: '1px solid var(--border)' }}>
                       <div style={{ width: leftW, flexShrink: 0, padding: '5px 10px', borderRight: '1px solid var(--border2)', overflow: 'hidden', ...(isMobile ? { position: 'sticky', left: 0, zIndex: 6, background: 'var(--card)' } : null) }}>
                         <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{q.line}</div>
-                        <div style={{ fontSize: 10.5, fontWeight: 700, color: tone }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: tone }}>
                           {first == null ? '— ยังคำนวณเวลาไม่ได้'
                             : `${q.firstAssumed ? '📥 ' : ''}${clockOf(first)} · ${inMs(first, q.firstAssumed)}`}
                         </div>
@@ -707,7 +727,7 @@ export default function StoreTimeChart({
                         })}
                         {/* ไม่มีเวลาให้พลอตเลย = ต้องบอกว่าทำไม ห้ามปล่อยแถวว่าง */}
                         {q.parts.every(p => p.runoutMs == null) && (
-                          <div style={{ position: 'absolute', top: 9, left: 8, fontSize: 10.5, color: 'var(--muted)', zIndex: 2 }}>
+                          <div style={{ position: 'absolute', top: 9, left: 8, fontSize: 11, color: 'var(--muted)', zIndex: 2 }}>
                             {q.counts.unknown > 0 ? `❔ ${q.counts.unknown} พาร์ทยังไม่มียอด WIP ที่ไลน์ — คำนวณไม่ได้`
                               : q.counts.no_ct > 0 ? `⚠️ ยังไม่ตั้ง cycle time (${q.noCtMats.slice(0, 2).join(' · ')}) — คำนวณเวลาไม่ได้`
                               : q.counts.idle > 0 ? '⏸️ ไลน์ยังไม่มีใบผลิตเปิด'
@@ -720,7 +740,7 @@ export default function StoreTimeChart({
                 })}
               </div>
             </div>
-            <div style={{ padding: '5px 10px', borderTop: '1px solid var(--border2)', fontSize: 10.5, color: 'var(--muted)' }}>
+            <div style={{ padding: '5px 10px', borderTop: '1px solid var(--border2)', fontSize: 11, color: 'var(--muted)' }}>
               ⚠️ WIP ที่ใช้คำนวณ = ยอดในระบบ <b>หักด้วยของที่ผลิตไปแล้ววันนี้</b> (คำนวณจากใบผลิต ไม่ได้อ่านจากยอดตัดสต็อก
               เพราะ backflush ยังไม่ทำงาน) · {assumeWip0
                 ? <>พาร์ทที่ยังไม่เคยตั้งยอดที่ไลน์ ถูกมองเป็น <b>0</b> (วงแหวน 📥) — เป็น<b>กำหนดส่ง</b> ไม่ใช่ “ของหมดแล้ว”</>
@@ -728,25 +748,30 @@ export default function StoreTimeChart({
             </div>
           </div>
 
+          {/* 🎯 จุดจอดของลิงก์ "เลือกพาร์ทไปส่ง" */}
+          <div ref={pickRef} />
           {/* แถบสร้างใบส่ง — เลือกจากรายการที่ต้องหยิบ แล้วเข้าคิว 🔄 คิวเติม WIP (คิวเดียวกับที่ไลน์เรียก ไม่แตกคิวใหม่) */}
           {canPick && (
-            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10, padding: '8px 12px',
-              background: selItems.length ? 'rgba(34,197,94,0.10)' : 'var(--bg2)', border: `1px solid ${selItems.length ? 'rgba(34,197,94,0.4)' : 'var(--border)'}`, borderRadius: 10 }}>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10, padding: '12px 14px',
+              background: selItems.length ? 'rgba(34,197,94,0.10)' : 'var(--bg2)',
+              border: `${pickGlow ? 2 : 1}px solid ${pickGlow ? 'var(--accent)' : (selItems.length ? 'rgba(34,197,94,0.4)' : 'var(--border)')}`,
+              borderRadius: 'var(--radius-lg)', boxShadow: pickGlow ? 'var(--shadow-float)' : undefined, scrollMarginTop: 16 }}>
               <span style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--text)' }}>
-                {selItems.length ? `☑ เลือกแล้ว ${selItems.length} รายการ · ${selItems.reduce((s, it) => s + it.qty, 0).toLocaleString()} ชิ้น` : 'ติ๊กพาร์ทในรายการที่ต้องหยิบ แล้วกดสร้างใบส่ง'}
+                {selItems.length ? `☑ เลือกแล้ว ${selItems.length} รายการ · ${selItems.reduce((s, it) => s + it.qty, 0).toLocaleString()} ชิ้น` : '① ติ๊กพาร์ทในรายการด้านล่าง → ② กดสร้างใบส่ง'}
               </span>
-              <span style={{ fontSize: 11, color: 'var(--muted)', flex: '1 1 200px' }}>
+              <span style={{ fontSize: 12, color: 'var(--muted)', flex: '1 1 200px' }}>
                 ใบจะเข้า 🔄 คิวเติม WIP (คิวเดียวกับที่ไลน์เรียก) → กด "เริ่มเตรียม" สแกนพาร์ท+จำนวน (ตัดสต็อกให้เลย) → ถึงไลน์สแกนจุดส่ง → ผลิตยืนยันรับ
               </span>
               {selItems.length > 0 && (
                 <button onClick={() => setSel({})} disabled={creating}
-                  style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid var(--border2)', background: 'transparent', color: 'var(--muted)', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
+                  style={{ minHeight: 44, padding: '10px 16px', borderRadius: 'var(--radius)', border: '1px solid var(--border2)', background: 'transparent', color: 'var(--muted)', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
                   ล้าง
                 </button>
               )}
               <button onClick={createSelected} disabled={!selItems.length || creating}
-                style={{ padding: '7px 14px', borderRadius: 8, border: 'none', background: selItems.length ? 'var(--accent)' : 'var(--bg3)', color: selItems.length ? '#08130c' : 'var(--muted)',
-                  fontSize: 12.5, fontWeight: 800, cursor: selItems.length ? 'pointer' : 'not-allowed', fontFamily: 'var(--font-body)' }}>
+                style={{ minHeight: 44, padding: '10px 20px', borderRadius: 'var(--radius)', border: 'none',
+                  background: selItems.length ? 'var(--accent)' : 'var(--bg3)', color: selItems.length ? 'var(--accent-ink)' : 'var(--muted)',
+                  fontSize: 14, fontWeight: 800, cursor: selItems.length ? 'pointer' : 'not-allowed', fontFamily: 'var(--font-body)' }}>
                 {creating ? 'กำลังสร้าง…' : `🚚 สร้างใบส่ง (${selItems.length})`}
               </button>
             </div>
@@ -779,7 +804,7 @@ export default function StoreTimeChart({
                       : '✅ ของที่ไลน์พอถึงจบแผนวันนี้'}
                   </div>
                   {q.assumedCount > 0 && (
-                    <div style={{ fontSize: 10.5, color: '#f59e0b', marginTop: 1 }}
+                    <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 1 }}
                       title="พาร์ทเหล่านี้ยังไม่เคยมีการจ่ายเข้าไลน์ในระบบ — คิดเป็น 0 ยอดที่แสดงจึงยังไม่หักของที่อาจมีอยู่แล้ว">
                       📥 {q.assumedCount} พาร์ทส่งเต็มจำนวน — ยังไม่มียอดที่ไลน์ให้หัก
                     </div>
@@ -802,7 +827,7 @@ export default function StoreTimeChart({
                         fontSize: 11, fontWeight: 700, color: 'var(--muted)', fontFamily: 'var(--font-body)' }}>
                       {open ? '▾ ซ่อนรายการ' : `▸ ดูรายการที่ต้องหยิบ (${q.parts.length})`}
                     </button>
-                    {inQueue > 0 && <span style={{ fontSize: 10.5, color: '#38bdf8', fontWeight: 700 }} title="มีใบขอเติมค้างอยู่ในคิวเติม WIP แล้ว">📋 ในคิวแล้ว {inQueue}</span>}
+                    {inQueue > 0 && <span style={{ fontSize: 11, color: '#38bdf8', fontWeight: 700 }} title="มีใบขอเติมค้างอยู่ในคิวเติม WIP แล้ว">📋 ในคิวแล้ว {inQueue}</span>}
                     {canPick && pickable > 0 && (
                       <button onClick={() => { selectReady(q); setQOpen(s => ({ ...s, [q.line]: true })); }}
                         style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 11, fontWeight: 700, color: 'var(--accent)', fontFamily: 'var(--font-body)' }}>
@@ -827,25 +852,26 @@ export default function StoreTimeChart({
                             background: picked ? 'rgba(34,197,94,0.10)' : 'transparent', borderRadius: 6, padding: picked ? '2px 4px' : 0 }}>
                             {canPick && (
                               existing
-                                ? <span style={{ fontSize: 10.5, color: '#38bdf8', fontWeight: 700, whiteSpace: 'nowrap' }} title={`มีใบค้างอยู่แล้ว → ${existing.line_name}`}>📋 {existing.status === 'pending' ? 'รอหยิบ' : existing.status === 'preparing' ? 'กำลังจัด' : 'ส่งแล้ว'}</span>
+                                ? <span style={{ fontSize: 11, color: '#38bdf8', fontWeight: 700, whiteSpace: 'nowrap' }} title={`มีใบค้างอยู่แล้ว → ${existing.line_name}`}>📋 {existing.status === 'pending' ? 'รอหยิบ' : existing.status === 'preparing' ? 'กำลังจัด' : 'ส่งแล้ว'}</span>
                                 : <input type="checkbox" checked={!!picked} onChange={() => toggleSel(q, p)} disabled={!(p.netTotal > 0)}
                                     title={p.netTotal > 0 ? 'เลือกไปส่ง' : 'ไม่มียอดต้องส่ง'} style={{ width: 'auto', cursor: 'pointer', margin: 0 }} />
                             )}
                             <span style={{ color: m.c }} title={`ของในสโตร์: ${m.t}`}>{m.t}</span>
-                            <span style={{ fontWeight: 700, color: 'var(--text2)', fontFamily: 'var(--font-display)' }}>{p.mat_no}</span>
-                            <span style={{ color: 'var(--muted)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.part_name || ''}</span>
+                            {/* ลำดับ ชื่องาน → MAT (UI §6.21) */}
+                            <span style={{ fontWeight: 700, color: 'var(--text2)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.part_name || ''}</span>
+                            <span style={{ color: 'var(--muted)', fontFamily: 'var(--font-display)' }}>MAT {p.mat_no}</span>
                             {/* เวลาที่ "ของที่ไลน์" จะหมด — คนละตัวกับของในสโตร์
                                 📥 = ยังไม่ได้ตั้งยอดที่ไลน์ (มองเป็น 0) → เวลานี้คือกำหนดส่ง ไม่ใช่เวลาที่ของหมดจริง */}
                             <span title={p.assumed
                               ? `WIP ที่ไลน์: ยังไม่ได้ตั้งยอด — ระบบมองเป็น 0 · เวลานี้คือเวลาที่ไลน์เริ่มต้องใช้ (${rr.label})`
                               : `WIP ที่ไลน์: ${p.wipNow == null ? 'ไม่มียอด' : fmt(p.wipNow)} · ${rr.label}`}
-                              style={{ color: urgTone(p.runoutMs, p.assumed), whiteSpace: 'nowrap', fontSize: 10.5, fontWeight: 700 }}>
+                              style={{ color: urgTone(p.runoutMs, p.assumed), whiteSpace: 'nowrap', fontSize: 11, fontWeight: 700 }}>
                               {p.runoutMs != null ? `${p.assumed ? '📥' : '⏳'} ${clockOf(p.runoutMs)}` : rr.icon}
                             </span>
                             <span style={{ fontWeight: 800, color: m.c, whiteSpace: 'nowrap' }}>
                               {fmt(p.netTotal)}{p.cards > 0 ? ` · ${p.cards}ใบ` : ''}
                             </span>
-                            <span style={{ color: 'var(--muted)', whiteSpace: 'nowrap', fontSize: 10.5 }}>
+                            <span style={{ color: 'var(--muted)', whiteSpace: 'nowrap', fontSize: 11 }}>
                               {p.have == null ? 'สโตร์ —' : `สโตร์ ${fmt(p.have)}`}
                             </span>
                             {/* ไลน์ย่อยปลายทาง — โชว์เมื่อเลือกแล้ว · กลุ่มที่มีหลายไลน์ย่อยเปิดกะให้คนเลือกเอง (ระบบไม่เดา) */}
@@ -855,10 +881,10 @@ export default function StoreTimeChart({
                                     title={picked.sameSloc
                                       ? `ทุกไลน์ในกลุ่มอยู่พื้นที่ SAP ${picked.sloc} เดียวกัน — ระบบเลือกไลน์แรกให้ · เปลี่ยนได้ถ้ารู้ว่าต้องวางหน้าไลน์ไหน`
                                       : 'หลายไลน์ย่อยกินพาร์ทนี้ (คนละพื้นที่ SAP) — เลือกไลน์ที่จะไปวางของ'}
-                                    style={{ width: 'auto', fontSize: 10.5, padding: '1px 4px', borderRadius: 6, border: `1px solid ${picked.sameSloc ? 'rgba(34,197,94,0.5)' : 'rgba(245,158,11,0.7)'}`, background: 'var(--bg2)', color: picked.sameSloc ? 'var(--accent)' : '#f59e0b' }}>
+                                    style={{ width: 'auto', fontSize: 11, padding: '1px 4px', borderRadius: 6, border: `1px solid ${picked.sameSloc ? 'rgba(34,197,94,0.5)' : 'rgba(245,158,11,0.7)'}`, background: 'var(--bg2)', color: picked.sameSloc ? 'var(--accent)' : '#f59e0b' }}>
                                     {picked.lines.map(ln => { const c = slocOf(ln); return <option key={ln} value={ln}>➜ {c ? `${c} · ` : ''}{ln}</option>; })}
                                   </select>
-                                : <span style={{ fontSize: 10.5, color: 'var(--accent)', fontWeight: 700, whiteSpace: 'nowrap' }}
+                                : <span style={{ fontSize: 11, color: 'var(--accent)', fontWeight: 700, whiteSpace: 'nowrap' }}
                                     title={picked.sloc ? `พื้นที่ SAP ${picked.sloc} · ของวางที่ ${picked.line}` : 'ไลน์นี้ยังไม่ผูกรหัสคลัง SAP (ผูกที่ 📦 Line Stock → 🏬 โซนคลัง)'}>
                                     ➜ {picked.sloc ? `${picked.sloc} · ` : ''}{picked.line}
                                   </span>
@@ -869,7 +895,7 @@ export default function StoreTimeChart({
                     </div>
                   )}
                   {blocked > 0 && (
-                    <div style={{ marginTop: 6, fontSize: 10.5, color: '#f59e0b' }}>
+                    <div style={{ marginTop: 6, fontSize: 11, color: '#f59e0b' }}>
                       ส่งได้ไม่ครบ — {blocked} พาร์ทของในสโตร์ไม่พอ
                     </div>
                   )}
@@ -950,21 +976,21 @@ export default function StoreTimeChart({
 
                   {canOperate && need && (
                     <button onClick={() => onConfirm(r, alloc.parts)} disabled={confirming === r.id}
-                      style={{ marginTop: 9, width: '100%', padding: '8px 10px', borderRadius: 8, fontSize: 12, fontWeight: 800, cursor: 'pointer', background: 'rgba(34,197,94,0.15)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.35)', fontFamily: 'var(--font-body)' }}>
-                      {confirming === r.id ? '...' : '✅ ยืนยันส่งออกจากสโตร์'}
+                      style={storeBtn('primary', { marginTop: 9, width: '100%' })}>
+                      {confirming === r.id ? 'กำลังบันทึก…' : '✅ ยืนยันส่งออกจากสโตร์'}
                     </button>
                   )}
                   {canOperate && conf && !done && (
                     <div style={{ display: 'flex', gap: 6, marginTop: 9 }}>
                       <button onClick={() => onReceive(r, alloc.parts, 'full')}
-                        style={{ flex: 1, padding: '8px 4px', borderRadius: 8, fontSize: 12, fontWeight: 800, cursor: 'pointer', background: 'rgba(34,197,94,0.15)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.35)', fontFamily: 'var(--font-body)' }}>✔️ รับครบ</button>
+                        style={storeBtn('primary', { flex: 1, padding: '10px 6px' })}>✔️ รับครบ</button>
                       <button onClick={() => onReceive(r, alloc.parts, 'partial')}
-                        style={{ flex: 1, padding: '8px 4px', borderRadius: 8, fontSize: 12, fontWeight: 800, cursor: 'pointer', background: 'rgba(245,158,11,0.15)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.35)', fontFamily: 'var(--font-body)' }}>⚠️ รับไม่ครบ</button>
+                        style={storeBtn('secondary', { flex: 1, padding: '10px 6px', color: '#f59e0b', borderColor: 'rgba(245,158,11,0.45)' })}>⚠️ รับไม่ครบ</button>
                     </div>
                   )}
 
                   <button onClick={() => setExpanded(isOpen ? null : r.id)}
-                    style={{ marginTop: 8, width: '100%', padding: '5px 10px', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'var(--bg2)', color: 'var(--text2)', border: '1px solid var(--border)', fontFamily: 'var(--font-body)' }}>
+                    style={storeBtn('secondary', { marginTop: 8, width: '100%', fontSize: 12.5, fontWeight: 700, color: 'var(--text2)' })}>
                     {isOpen ? '▾ ซ่อนรายการของ' : `▸ ดูของที่ต้องเตรียม (${alloc.parts.length})`}
                   </button>
                 </div>

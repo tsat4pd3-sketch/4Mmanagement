@@ -1,8 +1,20 @@
+import { fmtAxis } from '../utils/chartAxis';
+import { sortLike } from '../utils/listOrder';
 import { useState, useEffect, useMemo, useContext, Fragment } from 'react';
 import { supabase } from '../supabaseClient';
+import { loadDocForms } from '../utils/docForms';
+import { downloadCsvDoc, csvText } from '../utils/csvDoc';
+import { loadLinesRes } from '../utils/useProductionLines';
+import TimeRangeBar from '../components/TimeRangeBar';
+import useTimeRange from '../utils/useTimeRange';
+import { onlyShopfloorStaff } from '../utils/staffKind';   // 👥 นับคน = เฉพาะพนักงานหน้างาน (กฎ staffKind.js)
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
+import FilterBar from '../components/FilterBar';
+import Segmented from '../components/Segmented';
+import { ALL, SHIFT_OPTIONS } from '../utils/filterLabels';
 import useTabParam from '../utils/useTabParam';
 import { useOrgSections } from '../utils/useOrgSections';
 import { inSectionScope } from '../utils/sectionScope';
@@ -14,6 +26,7 @@ import {
   summarizeOtMonth, otCoverage, daysOfMonth, prevMonthKey, projectTotal, monthDayStats,
 } from '../utils/otSummary';
 import { exportOtMonthlyExcel } from '../lib/otExportExcel';
+import { useLatestRequest } from '../utils/useLatestRequest';
 import {
   ResponsiveContainer, ComposedChart, BarChart, Bar, Line, XAxis, YAxis,
   CartesianGrid, ReferenceLine, Tooltip, Legend, Cell,
@@ -56,11 +69,6 @@ function getWorkDate() {
   if (now.getHours() < 8) now.setDate(now.getDate() - 1);
   return toLocalDateStr(now); // ห้าม toISOString() — UTC จะลบวันซ้ำอีกชั้นช่วง 00:00-06:59
 }
-function daysAgoStr(n) {
-  const d = new Date();
-  d.setDate(d.getDate() - n);
-  return toLocalDateStr(d);
-}
 function monthsAgoStr(n) {
   const d = new Date();
   d.setMonth(d.getMonth() - n);
@@ -74,20 +82,16 @@ const monthLabel = (ym) => {
   const TH_M = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
   return `${TH_M[Number(m) - 1] || m} ${String(Number(y) + 543).slice(-2)}`;
 };
-function downloadCSV(filename, headers, rows) {
-  const escape = v => {
-    let s = v == null ? '' : String(v);
-    if (/^[=+\-@]/.test(s) && !/^-?\d+(\.\d+)?$/.test(s)) s = `'${s}`;
-    return s.includes(',') || s.includes('"') || s.includes('\n') || s.includes('\r') ? `"${s.replace(/"/g, '""')}"` : s;
-  };
-  const lines = [headers.map(escape).join(','), ...rows.map(r => r.map(escape).join(','))];
-  const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a'); a.href = url; a.download = filename; a.click();
-  URL.revokeObjectURL(url);
+/* CSV = เอกสาร ⇒ ชื่อไฟล์ต้องผ่านทะเบียน /doc-forms (src/utils/csvDoc.js · 06/10)
+   ทะเบียนยังไม่ตั้งเลขฟอร์ม = ได้ชื่อเดิมเป๊ะ ไม่มีอะไรเปลี่ยน */
+function downloadCSV(docKey, filename, headers, rows) {
+  downloadCsvDoc(docKey, filename, csvText(headers, rows));
 }
 
-const selSt = { width: 'auto', padding: '7px 10px', borderRadius: 7, fontSize: 13, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)', cursor: 'pointer' };
+// UI-STANDARD 2026-09-24 — ปุ่ม export ในแถบกรอง (ขนาดช่อง/ความสูงมาจาก .filter-bar)
+const csvBtnSt = { padding: '0 14px', borderRadius: 8, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', background: 'rgba(77,159,255,0.12)', color: 'var(--blue)', border: '1px solid rgba(77,159,255,0.35)' };
+// กะ: state เดิมใช้ 'all' = ทุกกะ ⇒ map ค่าแรกของ SHIFT_OPTIONS ('' → 'all') คงความหมายเดิม
+const SHIFT_SEG = SHIFT_OPTIONS.map(o => (o.value === '' ? { ...o, value: 'all' } : o));
 const cardSt = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 18px', minWidth: 130, flex: 1 };
 
 function Kpi({ label, value, sub, color }) {
@@ -136,14 +140,20 @@ function useEmployeeScope(lines) {
 
 /* ══════════════════════════════ 📊 กำลังคนรายวัน ══════════════════════════════ */
 function ManpowerTab({ employees, empById, lines, sectionsList, secFilter, setSecFilter, inScope }) {
-  const [from, setFrom] = useState(daysAgoStr(29));
-  const [to, setTo] = useState(getWorkDate());
+  /* ⏱️ ช่วงข้อมูล = แถบกลาง (UI §6.16) · แท็บในหน้านี้ใช้ `?from=&to=` ร่วมกัน
+     ⇒ สลับแท็บแล้วช่วงเวลาไม่หาย ซึ่งเป็นสิ่งที่คนคาดหวังอยู่แล้ว
+     หน้านี้ไล่ข้อมูลรายวันตรงๆ ไม่ได้แบ่งถัง ⇒ `scales={null}` (ปุ่มตายแย่กว่าไม่มีปุ่ม) */
+  const tr = useTimeRange({ defaultDays: 30 });
+  const { from, to } = tr;
   const [shift, setShift] = useState('all');
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [partial, setPartial] = useState(false);
 
+  // เปลี่ยนช่วงวันระหว่างโหลด (หลายหน้า × fetchAllPages = นาน) = คำตอบช่วงเก่าห้ามทับจอ (กฎ DB ข้อ 4 · 05/10)
+  const begin = useLatestRequest();
   const load = async () => {
+    const live = begin();
     setLoading(true);
     const { rows: data, error, truncated } = await fetchAllPages(
       () => supabase.from('daily_production_logs')
@@ -151,6 +161,7 @@ function ManpowerTab({ employees, empById, lines, sectionsList, secFilter, setSe
         .gte('work_date', from).lte('work_date', to),
       { orderBy: ['work_date', 'id'] },
     );
+    if (!live()) return;
     if (error) toast.error('โหลดข้อมูลไม่ครบ: ' + error);
     setPartial(!!error || truncated);
     setRows(data || []);
@@ -202,26 +213,24 @@ function ManpowerTab({ employees, empById, lines, sectionsList, secFilter, setSe
 
   return (
     <div>
-      <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-        <select value={secFilter} onChange={e => setSecFilter(e.target.value)} style={selSt}>
-          <option value="">ทุกส่วนงาน</option>
+      {/* ⏱️ แถบกรองเวลามาตรฐาน (UI §6.16) — วางเป็นแถวของตัวเองเหนือตัวกรองเฉพาะหน้า */}
+      <TimeRangeBar
+        scale={tr.scale} from={from} to={to} today={tr.today} scales={null}
+        onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset} style={{ marginBottom: 16 }}
+      >
+        <select value={secFilter} onChange={e => setSecFilter(e.target.value)}>
+          <option value="">{ALL.section}</option>
           {sectionsList.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
-        <select value={shift} onChange={e => setShift(e.target.value)} style={selSt}>
-          <option value="all">ทุกกะ</option>
-          <option value="day">☀️ กะเช้า</option>
-          <option value="night">🌙 กะดึก</option>
-        </select>
-        <input type="date" value={from} onChange={e => setFrom(e.target.value)} style={{ width: 140, padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
-        <span style={{ color: 'var(--muted)', fontSize: 13 }}>—</span>
-        <input type="date" value={to} onChange={e => setTo(e.target.value)} style={{ width: 140, padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
-        <button onClick={() => downloadCSV(`manpower_${from}_${to}.csv`,
+        <Segmented value={shift} onChange={setShift} options={SHIFT_SEG} label="กะ" />
+        <span className="spacer" />
+        <button onClick={() => downloadCSV('csv_manpower_daily', `manpower_${from}_${to}.csv`,
           ['วันที่', 'มาทำงาน', 'ลา', 'ขาด(ไม่ระบุเหตุ)', 'OT', 'รวมเช็คชื่อ'],
           daily.map(d => [d.date, d.present, d.leave, d.absent, d.ot, d.total]))}
-          style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'rgba(77,159,255,0.12)', color: 'var(--blue)', border: '1px solid rgba(77,159,255,0.35)' }}>
+          style={csvBtnSt}>
           ⬇️ CSV
         </button>
-      </div>
+      </TimeRangeBar>
 
       {partial && (
         <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 8, background: 'rgba(224,92,74,0.1)', border: '1px solid rgba(224,92,74,0.3)', fontSize: 12, color: 'var(--red)' }}>
@@ -245,7 +254,7 @@ function ManpowerTab({ employees, empById, lines, sectionsList, secFilter, setSe
             <ComposedChart data={daily} margin={{ top: 10, left: 0, right: 12, bottom: 0 }}>
               <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
               <XAxis dataKey="date" tick={{ fontSize: 11, fill: 'var(--text2)' }} tickFormatter={d => d.slice(5)} />
-              <YAxis tick={{ fontSize: 11.5, fill: 'var(--text2)' }} width={40} allowDecimals={false} />
+              <YAxis tickFormatter={fmtAxis} tick={{ fontSize: 11.5, fill: 'var(--text2)' }} width="auto" allowDecimals={false} />
               <Tooltip content={<ChartTip />} />
               <Legend wrapperStyle={{ fontSize: 12 }} />
               {stdTotal != null && (
@@ -287,13 +296,18 @@ function ManpowerTab({ employees, empById, lines, sectionsList, secFilter, setSe
 
 /* ══════════════════════════════ 🔀 เปลี่ยนจุดงานรายวัน ══════════════════════════════ */
 function MovesTab({ empById, sectionsList, secFilter, setSecFilter, inScope }) {
-  const [from, setFrom] = useState(daysAgoStr(29));
-  const [to, setTo] = useState(getWorkDate());
+  /* ⏱️ ช่วงข้อมูล = แถบกลาง (UI §6.16) · แท็บในหน้านี้ใช้ `?from=&to=` ร่วมกัน
+     ⇒ สลับแท็บแล้วช่วงเวลาไม่หาย ซึ่งเป็นสิ่งที่คนคาดหวังอยู่แล้ว
+     หน้านี้ไล่ข้อมูลรายวันตรงๆ ไม่ได้แบ่งถัง ⇒ `scales={null}` (ปุ่มตายแย่กว่าไม่มีปุ่ม) */
+  const tr = useTimeRange({ defaultDays: 30 });
+  const { from, to } = tr;
   const [raw, setRaw] = useState([]);
   const [loading, setLoading] = useState(false);
   const [partial, setPartial] = useState(false);
 
+  const begin = useLatestRequest();   // กันคำตอบช่วงเก่าทับจอ (กฎ DB ข้อ 4 · 05/10)
   const load = async () => {
+    const live = begin();
     setLoading(true);
     const { rows: data, error, truncated } = await fetchAllPages(
       () => supabase.from('station_assignment_logs')
@@ -301,6 +315,7 @@ function MovesTab({ empById, sectionsList, secFilter, setSecFilter, inScope }) {
         .gte('work_date', from).lte('work_date', to),
       { orderBy: ['employee_id', 'work_date', 'started_at'] },
     );
+    if (!live()) return;
     if (error) toast.error('โหลดข้อมูลไม่ครบ: ' + error);
     setPartial(!!error || truncated);
     setRaw(data || []);
@@ -356,21 +371,23 @@ function MovesTab({ empById, sectionsList, secFilter, setSecFilter, inScope }) {
 
   return (
     <div>
-      <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-        <select value={secFilter} onChange={e => setSecFilter(e.target.value)} style={selSt}>
-          <option value="">ทุกส่วนงาน</option>
+      {/* ⏱️ แถบกรองเวลามาตรฐาน (UI §6.16) — วางเป็นแถวของตัวเองเหนือตัวกรองเฉพาะหน้า */}
+      <TimeRangeBar
+        scale={tr.scale} from={from} to={to} today={tr.today} scales={null}
+        onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset} style={{ marginBottom: 16 }}
+      >
+        <select value={secFilter} onChange={e => setSecFilter(e.target.value)}>
+          <option value="">{ALL.section}</option>
           {sectionsList.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
-        <input type="date" value={from} onChange={e => setFrom(e.target.value)} style={{ width: 140, padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
-        <span style={{ color: 'var(--muted)', fontSize: 13 }}>—</span>
-        <input type="date" value={to} onChange={e => setTo(e.target.value)} style={{ width: 140, padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
-        <button onClick={() => downloadCSV(`station_moves_${from}_${to}.csv`,
+        <span className="spacer" />
+        <button onClick={() => downloadCSV('csv_station_moves', `station_moves_${from}_${to}.csv`,
           ['วันที่', 'กะ', 'รหัส', 'ชื่อ', 'ไลน์', 'จุดเดิม', 'จุดใหม่', 'เวลา', 'ผู้มอบหมาย'],
           moves.map(mv => [mv.work_date, mv.shift, empById[mv.employee_id]?.employee_id_code, empById[mv.employee_id]?.name, mv.line_name, mv.from, mv.to, mv.at, mv.by]))}
-          style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'rgba(77,159,255,0.12)', color: 'var(--blue)', border: '1px solid rgba(77,159,255,0.35)' }}>
+          style={csvBtnSt}>
           ⬇️ CSV
         </button>
-      </div>
+      </TimeRangeBar>
 
       {partial && (
         <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 8, background: 'rgba(224,92,74,0.1)', border: '1px solid rgba(224,92,74,0.3)', fontSize: 12, color: 'var(--red)' }}>
@@ -390,7 +407,7 @@ function MovesTab({ empById, sectionsList, secFilter, setSecFilter, inScope }) {
             <BarChart data={daily} margin={{ top: 10, left: 0, right: 12, bottom: 0 }}>
               <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
               <XAxis dataKey="date" tick={{ fontSize: 11, fill: 'var(--text2)' }} tickFormatter={d => d.slice(5)} />
-              <YAxis tick={{ fontSize: 11.5, fill: 'var(--text2)' }} width={40} allowDecimals={false} />
+              <YAxis tickFormatter={fmtAxis} tick={{ fontSize: 11.5, fill: 'var(--text2)' }} width="auto" allowDecimals={false} />
               <Tooltip content={<ChartTip />} />
               <Bar dataKey="moves" name="ครั้งที่ย้าย" fill="var(--blue)" radius={[3, 3, 0, 0]} isAnimationActive={false} />
             </BarChart>
@@ -543,18 +560,18 @@ function TurnoverTab({ employees, sectionsList, secFilter, setSecFilter, inScope
 
   return (
     <div>
-      <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-        <select value={secFilter} onChange={e => setSecFilter(e.target.value)} style={selSt}>
-          <option value="">ทุกส่วนงาน</option>
+      <FilterBar style={{ marginBottom: 16 }}>
+        <select value={secFilter} onChange={e => setSecFilter(e.target.value)}>
+          <option value="">{ALL.section}</option>
           {sectionsList.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
-        <select value={monthsBack} onChange={e => setMonthsBack(Number(e.target.value))} style={selSt}>
+        <select value={monthsBack} onChange={e => setMonthsBack(Number(e.target.value))}>
           <option value={3}>3 เดือนล่าสุด</option>
           <option value={6}>6 เดือนล่าสุด</option>
           <option value={12}>12 เดือนล่าสุด</option>
         </select>
-        {(loading) && <span style={{ fontSize: 12, color: 'var(--muted)' }}>กำลังโหลดประวัติการออกงาน…</span>}
-      </div>
+        {(loading) && <span className="filter-count">กำลังโหลดประวัติการออกงาน…</span>}
+      </FilterBar>
 
       {partial && (
         <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 8, background: 'rgba(224,92,74,0.1)', border: '1px solid rgba(224,92,74,0.3)', fontSize: 12, color: 'var(--red)' }}>
@@ -581,7 +598,7 @@ function TurnoverTab({ employees, sectionsList, secFilter, setSecFilter, inScope
           <BarChart data={monthly} margin={{ top: 10, left: 0, right: 12, bottom: 0 }}>
             <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
             <XAxis dataKey="label" tick={{ fontSize: 11.5, fill: 'var(--text2)' }} />
-            <YAxis tick={{ fontSize: 11.5, fill: 'var(--text2)' }} width={40} allowDecimals={false} />
+            <YAxis tickFormatter={fmtAxis} tick={{ fontSize: 11.5, fill: 'var(--text2)' }} width="auto" allowDecimals={false} />
             <Tooltip content={<ChartTip />} />
             <Legend wrapperStyle={{ fontSize: 12 }} />
             <Bar dataKey="hires" name="เข้าใหม่" fill="var(--accent)" radius={[3, 3, 0, 0]} isAnimationActive={false} />
@@ -783,7 +800,7 @@ function OtMonthlyTab({ empById, sectionsList, secFilter, setSecFilter, inScope 
   };
   const doCSV = () => {
     if (!shown.length) { toast.info('ไม่มีข้อมูลให้ export'); return; }
-    downloadCSV(`OT-รายบุคคล-${month}.csv`,
+    downloadCSV('csv_ot_individual', `OT-รายบุคคล-${month}.csv`,
       ['ลำดับ', 'รหัสพนักงาน', 'ชื่อ-นามสกุล', 'ตำแหน่ง', 'ส่วน', 'ฝ่าย', 'OT วันทำงาน', 'OT วันหยุด', 'Total (วัน)', 'หมายเหตุ'],
       exportRows().map((r, i) => [i + 1, r.code, r.name, r.position, r.section, r.department, r.working, r.holiday, r.total, r.reason]));
   };
@@ -793,17 +810,17 @@ function OtMonthlyTab({ empById, sectionsList, secFilter, setSecFilter, inScope 
 
   return (
     <div>
-      <div style={{ display: 'flex', gap: 10, marginBottom: 14, alignItems: 'center', flexWrap: 'wrap' }}>
-        <select value={month} onChange={e => setMonth(e.target.value)} style={selSt}>
-          {monthOpts.map(m => <option key={m} value={m}>{monthLabel(m)}{m === monthKey(today) ? ' (เดือนนี้)' : ''}</option>)}
-        </select>
-        <select value={secFilter} onChange={e => setSecFilter(e.target.value)} style={selSt}>
-          <option value="">ทุกส่วนงาน</option>
+      <FilterBar style={{ marginBottom: 14 }}>
+        <select value={secFilter} onChange={e => setSecFilter(e.target.value)}>
+          <option value="">{ALL.section}</option>
           {sectionsList.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <select value={month} onChange={e => setMonth(e.target.value)}>
+          {monthOpts.map(m => <option key={m} value={m}>{monthLabel(m)}{m === monthKey(today) ? ' (เดือนนี้)' : ''}</option>)}
         </select>
         <label style={{ fontSize: 12.5, display: 'flex', alignItems: 'center', gap: 6 }}>
           เกณฑ์
-          <input type="number" min={1} max={31} value={threshold} style={{ ...selSt, width: 66 }}
+          <input type="number" min={1} max={31} value={threshold} style={{ width: 66 }}
             onChange={e => setThreshold(Math.max(1, Math.min(31, Number(e.target.value) || 20)))} />
           วันขึ้นไป
         </label>
@@ -816,10 +833,10 @@ function OtMonthlyTab({ empById, sectionsList, secFilter, setSecFilter, inScope 
           <input type="checkbox" checked={useBookings} onChange={e => setUseBookings(e.target.checked)} />
           นับใบจอง OT ที่ไม่มีเช็คชื่อด้วย
         </label>
-        <div style={{ flex: 1 }} />
-        <button onClick={doExcel} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', background: 'rgba(77,159,255,0.12)', color: 'var(--blue)', border: '1px solid rgba(77,159,255,0.35)' }}>⬇️ Excel (ฟอร์ม HR)</button>
-        <button onClick={doCSV} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', background: 'rgba(77,159,255,0.12)', color: 'var(--blue)', border: '1px solid rgba(77,159,255,0.35)' }}>⬇️ CSV</button>
-      </div>
+        <span className="spacer" />
+        <button onClick={doExcel} style={csvBtnSt}>⬇️ Excel (ฟอร์ม HR)</button>
+        <button onClick={doCSV} style={csvBtnSt}>⬇️ CSV</button>
+      </FilterBar>
 
       {loading && <div style={{ color: 'var(--muted)', fontSize: 12.5, marginBottom: 10 }}>กำลังโหลด…</div>}
       {partial && (
@@ -918,7 +935,7 @@ function OtMonthlyTab({ empById, sectionsList, secFilter, setSecFilter, inScope 
                     <td style={{ textAlign: 'center' }}>{r.working}</td>
                     <td style={{ textAlign: 'center' }}>
                       {r.holiday + r.shutdown}
-                      {r.shutdown > 0 && <span title="ม.75 (หยุดจ่าย 75%)" style={{ fontSize: 10, color: 'var(--muted)', marginLeft: 4 }}>({r.shutdown} ม.75)</span>}
+                      {r.shutdown > 0 && <span title="ม.75 (หยุดจ่าย 75%)" style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 4 }}>({r.shutdown} ม.75)</span>}
                     </td>
                     <td style={{ textAlign: 'center', fontWeight: 900, color: over ? 'var(--red)' : 'var(--text)' }}>{r.total}</td>
                     {isCurrentMonth && (
@@ -986,6 +1003,8 @@ function OtMonthlyTab({ empById, sectionsList, secFilter, setSecFilter, inScope 
 /* ══════════════════════════════ หน้าหลัก ══════════════════════════════ */
 export default function WorkforceInsight() {
   const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
+  // ทะเบียนเอกสาร — ชื่อไฟล์ CSV อ่านเลขฟอร์มจาก cache นี้ (lazy chunk ต้องโหลดเอง)
+  useEffect(() => { loadDocForms(); }, []);
   const [tab, setTab] = useTabParam(['manpower', 'moves', 'turnover', 'ot'], 'manpower');
   const [lines, setLines] = useState([]);
   const [employees, setEmployees] = useState([]);
@@ -993,10 +1012,11 @@ export default function WorkforceInsight() {
   const [secFilter, setSecFilter] = useState('');
 
   useEffect(() => {
-    supabase.from('production_lines').select('id, name, parent_line_name, section, is_active, std_day_shift, std_night_shift')
+    loadLinesRes()
       .then(({ data }) => setLines(data || []));
-    supabase.from('employees')
-      .select('id, name, employee_id_code, section, department, team, line_id, is_active, start_date, position')
+    // 👥 กำลังคน/turnover นับเฉพาะพนักงานหน้าไลน์ — คนทางอ้อม (QA/PE/ธุรการ) ไม่เข้าสูตร
+    onlyShopfloorStaff(supabase.from('employees')
+      .select('id, name, employee_id_code, section, department, team, line_id, is_active, start_date, position'))
       .then(({ data }) => setEmployees(data || []));
     loadPositions();
   }, []);
@@ -1008,14 +1028,14 @@ export default function WorkforceInsight() {
       const myLine = lines.find(l => String(l.id) === String(userLineId));
       return myLine?.section ? [myLine.section] : [];
     }
-    const all = orgSectionList.length ? orgSectionList : [...new Set(lines.map(l => l.section).filter(Boolean))].sort();
+    const all = orgSectionList.length ? orgSectionList : sortLike(lines.map(l => l.section), orgSectionList);
     return scopeSecs.length ? all.filter(s => inSectionScope(scopeSecs, s)) : all;
   }, [lines, orgSectionList, role, userLineId, scopeSecs]);
 
   const empById = useMemo(() => Object.fromEntries(employees.map(e => [e.id, e])), [employees]);
 
   return (
-    <div>
+    <Page>
       <PageHeader
         title="กำลังคน & Turnover" icon="📈"
         sub="เช็คชื่อรายวัน · การเปลี่ยนจุดงาน · อัตราการเข้า-ออก · OT รายบุคคลรายเดือน — อ่านอย่างเดียว"
@@ -1043,6 +1063,6 @@ export default function WorkforceInsight() {
         <OtMonthlyTab empById={empById} sectionsList={sectionsList}
           secFilter={secFilter} setSecFilter={setSecFilter} inScope={inScope} />
       )}
-    </div>
+    </Page>
   );
 }

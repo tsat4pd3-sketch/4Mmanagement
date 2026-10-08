@@ -79,7 +79,15 @@ const TEAM_ICON = { maintenance: '🔧', jig_maintenance: '🗜️', die_mainten
         มา 3 ชม. ว่า "⏱️ เพิ่งหยุด" · เจอจริง 2026-08-26) */
 function severity(x, thrMin) {
   if (isPlannedDT(x)) return { k: 'planned', rank: 3, color: '#6b7280', label: '🗓️ หยุดตามแผน', blink: false };
-  if (x.call_mtn && !x.call_mtn_ack_at) return { k: 'call', rank: 0, color: '#ef4444', label: '📞 เรียกช่าง', blink: true };
+  /* 🔴 ป้าย "เรียกช่าง" ต้องบอก **ทีมที่ถูกเรียก** เสมอ (06/10 · feedback ทีม MTN)
+     *"เราจะไม่รู้ว่า PD เรียกใคร … เราจะรู้ได้ยังไงว่าเค้าเรียกเรา"* — เดิมการ์ดเขียนแค่
+     "📞 เรียกช่าง" ทุกใบเหมือนกันหมด จอในห้องช่างเลยแยกไม่ออกว่าใบไหนของทีมตัวเอง
+     `call_mtn_team` = ทีมที่คนกดเลือกเอง (ข้อเท็จจริง) · ไม่ได้ระบุ = ไม่เติมคำ ห้ามเดาบนป้าย */
+  if (x.call_mtn && !x.call_mtn_ack_at) {
+    const ct = teamKeyOf(x.call_mtn_team);
+    return { k: 'call', rank: 0, color: '#ef4444', blink: true,
+      label: ct ? `📞 เรียก ${deptNameOf(ct)}` : '📞 เรียกช่าง (ไม่ระบุทีม)' };
+  }
   if (isOverDtThreshold(x, thrMin)) return { k: 'over', rank: 1, color: '#f59e0b', label: '⏰ หยุดเกินเกณฑ์', blink: false };
   return { k: 'new', rank: 2, color: '#facc15', label: '⏱️ เพิ่งหยุด', blink: false };
 }
@@ -153,7 +161,7 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
        ⚠️ คอลัมน์ชื่อประเภทคือ `name_th` (dr_*_types ทุกตัว) — ใส่ `name` = 42703 คิวรีล้มทั้งก้อนเงียบ */
     const [dtRes, sessRes] = await Promise.all([
       supabaseDR.from('downtime_logs')
-        .select('id, machine_no, description, started_at, call_mtn, call_mtn_at, call_mtn_ack_at, open_alerted_at, open_ack_at, duration_min, ended_at, dr_downtime_types(name_th, category), production_sessions(line_name, status, shift)')
+        .select('id, machine_no, description, started_at, call_mtn, call_mtn_at, call_mtn_ack_at, call_mtn_team, open_alerted_at, open_ack_at, duration_min, ended_at, dr_downtime_types(name_th, category), production_sessions(line_name, status, shift)')
         .is('duration_min', null).is('ended_at', null),
       supabaseDR.from('production_sessions').select('line_name, status').eq('work_date', workDate),
     ]);
@@ -211,7 +219,18 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
       .forEach(o => { const k = normNo(o.machine_no); if (!m[k]) m[k] = teamKeyOf(o.mtn_dept); });
     return m;
   }, [d.mo]);
+  /* 🔴 ลำดับความจริงของ "ใบนี้เป็นของทีมไหน" — **ของที่คนเลือกเอง ชนะการเดาเสมอ**
+     (กฎเดียวกับหัวไฟล์ utils/mtnTeams.js: ชนิดอุปกรณ์เป็นแค่การเดา ตัวตัดสินจริงคือ
+      `mtn_orders.mtn_dept` และ `downtime_logs.call_mtn_team`)
+     1. `call_mtn_team`  = ทีมที่ฝ่ายผลิตกดเลือกตอนเรียกช่าง ← ข้อเท็จจริง เพิ่ม 06/10
+     2. ใบ MO ที่เปิดค้างกับเครื่องนี้                      ← ข้อเท็จจริง
+     3. เดาจาก `equipment_kind` ของเครื่อง                 ← เดา
+     ⚠️ เดิมเริ่มที่ข้อ 2 และ **ถ้าไม่มีเลขเครื่องก็คืน null ทันที** ⇒ ใบที่เรียกทีม JIG
+        บนแถวที่ไม่ได้ระบุเครื่อง กลายเป็น "ไม่รู้ทีม" ทั้งที่คนกดระบุไว้ชัดเจน
+        (เกิดจริงตอนทีม MTN ทดสอบ 06/10 15:33 — แถวนั้น machine_no ว่าง) */
   const teamOfDt = useCallback((x) => {
+    const declared = teamKeyOf(x.call_mtn_team);
+    if (declared) return declared;
     const k = normNo(x.machine_no);
     if (!k) return null;
     if (moTeamByMc[k]) return moTeamByMc[k];
@@ -237,6 +256,10 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
   const live = allRows.filter(r => r._s.k !== 'planned');
   const planned = allRows.filter(r => r._s.k === 'planned');
   const nCall = live.filter(r => r._s.k === 'call').length;
+  /* "เรียกเราไหม" — ใบที่ระบุทีมตรงกับห้องนี้ · และใบที่คนกดไม่ได้เลือกทีมเลย (ช่องโหว่ข้อมูล)
+     ⚠️ 2 ตัวนี้ใช้ **เสริม** พาดหัวเท่านั้น ห้ามเอาไปแทน `nCall` (พาดหัวต้องพูดความจริงทั้งโรงงาน) */
+  const nCallMine = team ? live.filter(r => r._s.k === 'call' && teamKeyOf(r.call_mtn_team) === team).length : 0;
+  const nCallNoTeam = live.filter(r => r._s.k === 'call' && !teamKeyOf(r.call_mtn_team)).length;
   // ของทีมอื่น = รู้ทีมแน่ชัดและไม่ใช่ทีมที่เลือก · ไม่รู้ทีม = ถือว่าเกี่ยวกับทุกคน (ห้ามหรี่)
   const otherTeam = useCallback((r) => !!(team && r._team && r._team !== team), [team]);
 
@@ -319,7 +342,9 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
           ค่าเริ่มต้น = เฉพาะ "เรียกช่าง" (ห้องช่างรอถูกเรียก — พฤติกรรมเดิม ไม่กระทบจอที่แขวนอยู่แล้ว)
           `sound=all` = ดังตอนเครื่องหยุดเกินเกณฑ์ด้วย สำหรับห้องที่นั่งรวมกับฝ่ายผลิต
           ⚠️ ห้าม mount 2 ตัว — ใช้ mode='all' (เหตุผลอยู่หัวไฟล์ DowntimeSiren) */}
-      <DowntimeSiren mode={soundAll ? 'all' : 'call_mtn'} />
+      {/* 🔧 ส่งทีมของห้องเข้าไปด้วย (06/10) — เดิมไซเรนดังทุกใบทุกทีม ห้อง DIE จึงได้ยินงาน JIG
+          แล้วแยกไม่ออกว่าใบไหนของตัวเอง · ใบที่ไม่ระบุทีมยังดังทุกห้องเหมือนเดิม (fail-open) */}
+      <DowntimeSiren mode={soundAll ? 'all' : 'call_mtn'} team={team} />
 
       {/* ── แถบสรุปบนสุด — อ่านจากอีกฝั่งห้องได้ · ชิปเลือกทีมอยู่ในแถวนี้ด้วย ──
           ⚠️ ชิปทีมเคยเป็นแถวของตัวเองเหนือแถบสรุป — ยุบเข้ามาเพราะบนจอ TV ทุกแถวที่เพิ่ม
@@ -331,6 +356,20 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
       }}>
         <div style={{ fontSize: 15 * big, fontWeight: 900, color: nCall ? '#ef4444' : live.length ? '#f59e0b' : '#22c55e' }}>
           {nCall ? `📞 เรียกช่าง ${nCall} เครื่อง` : live.length ? `🔧 เครื่องหยุดอยู่ ${live.length} เครื่อง` : '✅ ไม่มีเครื่องหยุดอยู่ตอนนี้'}
+          {/* 🔴 พาดหัวยังนับ "ทุกทีม" เสมอ (ห้ามกรอง — กฎข้อเท็จจริงของฝ่ายผลิต)
+              แต่ห้องช่างต้องตอบได้ทันทีว่า "เรียกเราไหม" ⇒ ต่อท้ายว่าของทีมนี้กี่ใบ
+              + ใบที่คนกดไม่ได้เลือกทีม ต้องเขียนบอก (ช่องโหว่ข้อมูล ห้ามกลืน) */}
+          {!!nCall && team && (
+            <span style={{ fontSize: 11 * big, fontWeight: 800, marginLeft: 10, color: nCallMine ? '#ef4444' : 'var(--muted)' }}>
+              {nCallMine ? `← ของ ${deptNameOf(team)} ${nCallMine} ใบ` : `← ไม่มีใบของ ${deptNameOf(team)}`}
+            </span>
+          )}
+          {!!nCallNoTeam && (
+            <span title="ฝ่ายผลิตกดเรียกโดยไม่ได้เลือกทีม — ใบพวกนี้ขึ้นทุกห้องและดังทุกห้อง"
+              style={{ fontSize: 11 * big, fontWeight: 800, marginLeft: 10, color: 'var(--accent2)' }}>
+              · ไม่ระบุทีม {nCallNoTeam} ใบ
+            </span>
+          )}
         </div>
         {/* ชิปเลือกทีมช่างมีความหมายเฉพาะจอของช่าง — จอผลิต/สโตร์ไม่ได้แบ่งงานตามทีมช่าง
             (โชว์ไว้จะกินความสูงจอโดยไม่มีใครกด · ผังคือพระเอกของจอนี้) */}
@@ -477,17 +516,17 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
                 </span>
                 <span style={{ marginLeft: 'auto', flexShrink: 0, fontWeight: 800, color: r._s.color }}>{r._s.label}</span>
               </div>
-              {r.description && <div style={{ fontSize: 10.5 * big, color: 'var(--muted)' }}>💬 {r.description}</div>}
-              {r._min == null && <div style={{ fontSize: 10 * big, color: 'var(--muted)' }}>⏱ ไม่ได้ระบุเวลาเริ่ม — บอกไม่ได้ว่าหยุดมานานแค่ไหน</div>}
+              {r.description && <div style={{ fontSize: 11 * big, color: 'var(--muted)' }}>💬 {r.description}</div>}
+              {r._min == null && <div style={{ fontSize: 11 * big, color: 'var(--muted)' }}>⏱ ไม่ได้ระบุเวลาเริ่ม — บอกไม่ได้ว่าหยุดมานานแค่ไหน</div>}
               {/* ⚠️ ไม่มี machine_no = จับคู่ทีมไม่ได้ → ขึ้นให้ทุกทีมเห็น และต่อประวัติเครื่อง/ใบซ่อมไม่ได้ */}
               {!r.machine_no && (
-                <div style={{ fontSize: 10 * big, color: 'var(--accent2)', lineHeight: 1.4 }}>
+                <div style={{ fontSize: 11 * big, color: 'var(--accent2)', lineHeight: 1.4 }}>
                   ผู้แจ้งไม่ได้เลือกเครื่องตอนลง Downtime — จัดคิวให้ทีมไม่ได้ (จึงแสดงให้ทุกทีม)
                 </div>
               )}
               {/* ของทีมอื่น: บอกให้ชัดว่าไลน์หยุดจริง แต่คิวซ่อมไม่ใช่ของห้องนี้ */}
               {oth && (
-                <div style={{ fontSize: 10 * big, color: 'var(--muted)', lineHeight: 1.4 }}>
+                <div style={{ fontSize: 11 * big, color: 'var(--muted)', lineHeight: 1.4 }}>
                   🔁 ไลน์นี้หยุดอยู่จริง แต่เป็นคิวซ่อมของทีม <b>{deptNameOf(r._team)}</b>
                 </div>
               )}
@@ -503,7 +542,7 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
               </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {planned.map(r => (
-                  <span key={r.id} style={{ fontSize: 10.5 * big, color: 'var(--text2)', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 7, padding: '3px 8px' }}>
+                  <span key={r.id} style={{ fontSize: 11 * big, color: 'var(--text2)', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 7, padding: '3px 8px' }}>
                     {r.machine_no || r.production_sessions?.line_name} · {r.dr_downtime_types?.name_th || ''} · {fmtMin(r._min)}
                   </span>
                 ))}
@@ -519,7 +558,7 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
           <div style={{ ...card, borderColor: pmOver ? '#ef4444' : pm.length ? '#f59e0b' : 'var(--border)' }}>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8 }}>
               <span style={{ fontSize: 12.5 * big, fontWeight: 900 }}>📅 PM ที่ต้องทำ</span>
-              <span style={{ marginLeft: 'auto', fontSize: 10.5 * big, color: 'var(--muted)', fontWeight: 700 }}>
+              <span style={{ marginLeft: 'auto', fontSize: 11 * big, color: 'var(--muted)', fontWeight: 700 }}>
                 เกินกำหนด {pmOver} · วันนี้ {pmToday}
               </span>
             </div>
@@ -533,7 +572,7 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
             )}
             {pm.slice(0, 8).map(p => (
               <div key={p.id} onClick={() => navigate('/pm?tab=plan')}
-                style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0', borderTop: '1px solid var(--border)', fontSize: 10.5 * big }}>
+                style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0', borderTop: '1px solid var(--border)', fontSize: 11 * big }}>
                 <span style={{ minWidth: 0, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   <b style={{ color: 'var(--text)' }}>{p.name}</b>
                   {/* ช่างต้องรู้ว่าต้องเดินไปไหน — ชื่ออุปกรณ์อย่างเดียวไม่พอ */}
@@ -547,7 +586,7 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
               </div>
             ))}
             {pm.length > 8 && (
-              <div onClick={() => navigate('/pm?tab=plan')} style={{ cursor: 'pointer', fontSize: 10.5 * big, color: 'var(--muted)', paddingTop: 5, borderTop: '1px solid var(--border)' }}>
+              <div onClick={() => navigate('/pm?tab=plan')} style={{ cursor: 'pointer', fontSize: 11 * big, color: 'var(--muted)', paddingTop: 5, borderTop: '1px solid var(--border)' }}>
                 + อีก {pm.length - 8} แผน — ดูทั้งหมดที่แผน PM ›
               </div>
             )}
@@ -567,12 +606,12 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
                   </div>
                 ))}
               </div>
-              <div style={{ fontSize: 10 * big, fontWeight: 800, color: 'var(--muted)', marginBottom: 4 }}>ค้างนานสุด</div>
+              <div style={{ fontSize: 11 * big, fontWeight: 800, color: 'var(--muted)', marginBottom: 4 }}>ค้างนานสุด</div>
               {mo.slice(0, 4).map(o => {
                 const age = daysSince(o.report_at);
                 return (
                   <div key={o.id} onClick={() => navigate('/mtn-repair')}
-                    style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', gap: 8, padding: '4px 0', borderTop: '1px solid var(--border)', fontSize: 10.5 * big }}>
+                    style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', gap: 8, padding: '4px 0', borderTop: '1px solid var(--border)', fontSize: 11 * big }}>
                     <span style={{ color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {o.machine_no || o.line_name || o.mo_no || '-'}
                     </span>
@@ -687,6 +726,6 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
 
 const chip = (on) => ({
   fontSize: 12.5, fontWeight: 800, padding: '5px 12px', borderRadius: 999, cursor: 'pointer',
-  background: on ? 'var(--accent)' : 'var(--bg3)', color: on ? '#08120a' : 'var(--text)',
+  background: on ? 'var(--accent)' : 'var(--bg3)', color: on ? 'var(--accent-ink)' : 'var(--text)',
   border: `1px solid ${on ? 'var(--accent)' : 'var(--border2)'}`,
 });

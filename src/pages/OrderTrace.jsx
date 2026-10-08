@@ -1,10 +1,12 @@
 import { useState, useEffect, useMemo, useContext, useCallback } from 'react';
+import { orIlike } from '../utils/pgrstFilter';
 import { useSearchParams } from 'react-router-dom';
 import { useMergeParams } from '../utils/useTabParam';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { inSectionScope } from '../utils/sectionScope';
-import { getLineFamilyNames } from '../utils/lineHierarchy';
+import { getLineFamilyNames, lineNameCompare } from '../utils/lineHierarchy';
 import { stdGroupOf } from '../utils/stdManpower';
 import CollapseCard from '../components/CollapseCard';
 import { toast } from '../components/Toast';
@@ -13,10 +15,14 @@ import { isParallelLine } from '../utils/lineTypes';
 import { noteSimilarity, CLUSTER_THRESHOLD } from '../utils/textCluster';
 import { PART_WORDS, wordGroups } from '../utils/peLink';
 import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
+import SearchInput from '../components/SearchInput';
 import useTabParam from '../utils/useTabParam';
 import SymptomSearch from '../components/SymptomSearch';
 import { inspMeta } from '../utils/inspectionStatus';
 import { julianLabel, parseJulianTerm, toJulian } from '../utils/julianDate';
+import TimeRangeBar from '../components/TimeRangeBar';
+import useTimeRange from '../utils/useTimeRange';
 
 /*
   🔎 สอบกลับ Order (Order Traceability) — 2026-07-30
@@ -70,8 +76,9 @@ export default function OrderTrace() {
 
   const [lines, setLines] = useState([]);
   const [search, setSearch] = useState('');
-  const [from, setFrom] = useState(() => addDays(todayStr(), -30));
-  const [to, setTo] = useState(todayStr);
+  /* ⏱️ ช่วงวันงาน = แถบกลาง (UI §6.16) · หน้าสอบกลับไม่ได้แบ่งถังเวลา ⇒ `scales={null}` */
+  const tr = useTimeRange({ defaultDays: 30 });
+  const { from, to } = tr;
 
   /* 🗓 ค้นด้วย Julian date (คำขอ user 2026-09-15: "เพิ่มให้หาจาก julian date ด้วยได้มั้ย จะได้ง่ายขึ้น")
      หน้างานถือชิ้นงานที่มีเลข Julian ปั๊มอยู่ → พิมพ์เลขนั้นลงช่องค้นหาตรงๆ ได้เลย
@@ -89,6 +96,7 @@ export default function OrderTrace() {
   const [results, setResults] = useState([]);       // ใบที่ค้นเจอ
   const [includeOpen, setIncludeOpen] = useState(false);   // สอบกลับ = ของที่ออกจากไลน์แล้ว → ตัดใบที่ยังผลิตอยู่ออก
   const [searching, setSearching] = useState(false);
+  const [searchErr, setSearchErr] = useState('');   // ค้นล้ม ≠ "ไม่เจอใบ" — ต้องเขียนบนจอ (กฎข้อ 12)
   const [sel, setSel] = useState(null);              // order ที่เลือก (พร้อม session)
   const [trace, setTrace] = useState(null);          // bundle ข้อมูลสอบกลับ
   const [claimFm, setClaimFm] = useState('');        // failure mode ที่เลือกจาก PFMEA ของพาร์ทนี้
@@ -97,12 +105,10 @@ export default function OrderTrace() {
 
   useEffect(() => {
     // flow_mode ตัดสินว่า "ใบหนึ่งใช้เครื่องกี่ตัว" (ไหลทีละชิ้นผ่านทุกเครื่อง vs เครื่องขนานตัวใครตัวมัน)
-    // — best-effort: ยังไม่ apply migration ก็ถอยไป select เดิม (flowModeOf() default = one_piece_flow)
+    // 25/09: เดิม select เอง + ถอยชุดคอลัมน์ — ย้ายมา cache กลาง (ชุดคอลัมน์อยู่ useProductionLines.js ที่เดียว)
     (async () => {
-      const base = 'id, name, section, parent_line_name, std_day_shift, std_night_shift';
-      let r = await supabase.from('production_lines').select(`${base}, flow_mode, parallel_stations`).order('name');
-      if (r.error) r = await supabase.from('production_lines').select(base).order('name');
-      setLines(r.data || []);
+      const { data } = await loadLinesRes();
+      setLines(data || []);
     })();
   }, []);
 
@@ -133,7 +139,7 @@ export default function OrderTrace() {
       if (o.mat_no) matSet.add(o.mat_no);
       if (ss.work_date) daySet.add(ss.work_date);
     });
-    s.lines = [...lineSet].sort(); s.mats = [...matSet].sort(); s.days = [...daySet].sort();
+    s.lines = [...lineSet].sort(lineNameCompare); s.mats = [...matSet].sort(); s.days = [...daySet].sort();
     return s;
   }, [results]);
 
@@ -155,7 +161,8 @@ export default function OrderTrace() {
         .gte('production_sessions.work_date', from).lte('production_sessions.work_date', to)
         .order('opened_at', { ascending: false }).limit(300);
       if (!allowOpen) query = query.neq('status', 'open');
-      if (q) query = query.or(`prod_no.ilike.%${q}%,mat_no.ilike.%${q}%,part_name.ilike.%${q}%`);
+      // ห่อค่าด้วย orIlike — คำค้นที่มี , ( ) (ชื่อชิ้นงาน "BRKT (RH), LOWER") เคยทำคิวรีล้ม (QC 05/10)
+      if (q) query = query.or(orIlike(['prod_no', 'mat_no', 'part_name'], q));
       const { data, error } = await query;
       if (error) throw error;
       return (data || []).filter(o => inScope(o.production_sessions?.line_name));
@@ -178,6 +185,7 @@ export default function OrderTrace() {
       const seen = new Set(jr.map(r => r.id));
       return { rows: [...jr, ...tr.filter(r => !seen.has(r.id))], jHits: j ? jr.length : null };
     };
+    setSearchErr('');
     try {
       let { rows, jHits } = await both(withOpen);
       // สแกนมาแล้วไม่เจอเพราะใบยังผลิตอยู่ → หาให้ใหม่ (ไม่ปล่อยให้สแกนแล้วเงียบ)
@@ -189,7 +197,13 @@ export default function OrderTrace() {
       setResults(rows);
       if (q && rows.length === 1 && rows[0].prod_no === q) setSel(rows[0]);   // สแกนตรงเป๊ะใบเดียว → เปิดเลย
       return rows;
-    } catch { setResults([]); setJulHits(null); return []; }
+    } catch (e) {
+      /* 🔴 QC 05/10 — เดิม `catch {}` เงียบ ⇒ คิวรีล้มแล้วจอเหมือน "ค้นไม่เจอ" (คนเข้าใจว่าไม่มีใบนี้) */
+      setResults([]); setJulHits(null);
+      setSearchErr(`ค้นหาไม่สำเร็จ: ${e?.message || e}`);
+      toast.error(`ค้นหาใบผลิตไม่สำเร็จ: ${e?.message || e}`);
+      return [];
+    }
     finally { setSearching(false); }
   }, [search, from, to, inScope, includeOpen, julOf]);
 
@@ -940,7 +954,7 @@ export default function OrderTrace() {
   const fmtDur = s => s == null ? '—' : s < 60 ? `${Math.round(s)} วินาที` : fmtMin(s / 60);   // วินาที → อ่านง่าย
 
   return (
-    <div style={{ maxWidth: 'min(97vw, 1500px)', margin: '0 auto' }}>
+    <Page>
       <PageHeader
         title="สอบกลับ Order (Order Traceability)" icon="🔎"
         sub={tab === 'symptom'
@@ -971,28 +985,34 @@ export default function OrderTrace() {
       )}
 
       {tab === 'order' && (<>
-      {/* ── ค้นหา ── */}
-      <div style={{ ...card, marginBottom: 16, display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
-        <input type="text" value={search} onChange={e => { setSearch(e.target.value); setJulYear(null); }}
-          onKeyDown={e => { if (e.key === 'Enter') doSearch(); }}
-          placeholder="🔍 สแกน PROD.NO / MAT.NO / ชื่อชิ้นงาน / เลข Julian (เช่น 24726A)"
-          style={{ width: 340, fontSize: 14 }} autoFocus />
-        <span style={{ fontSize: 12, color: 'var(--muted)' }}>ช่วงวันงาน</span>
-        <input type="date" value={from} onChange={e => setFrom(e.target.value)} style={{ width: 140 }} />
-        <span style={{ color: 'var(--muted)' }}>—</span>
-        <input type="date" value={to} onChange={e => setTo(e.target.value)} style={{ width: 140 }} />
-        <button onClick={() => doSearch()} disabled={searching}
-          style={{ padding: '8px 20px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#fff', fontWeight: 800, cursor: 'pointer' }}>
-          {searching ? '⏳' : 'ค้นหา'}
-        </button>
+      {/* ── ค้นหา ── แถบเดียวกับช่วงวัน (UI-STANDARD 2026-09-24: ตัวกรองของหน้าเป็น children ของ TimeRangeBar) */}
+      <TimeRangeBar
+        scale={tr.scale} from={from} to={to} today={tr.today} scales={null}
+        onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset} style={{ marginBottom: 16 }}
+      >
         <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text2)', cursor: 'pointer' }}
           title="สอบกลับ = ทวนสอบของที่ออกจากไลน์ไปแล้ว · ใบที่ยังผลิตอยู่จึงไม่แสดงโดยปริยาย">
           <input type="checkbox" checked={includeOpen} style={{ width: 'auto' }}
             onChange={e => { const v = e.target.checked; setIncludeOpen(v); doSearch(undefined, { includeOpen: v }); }} />
           รวมใบที่กำลังผลิต
         </label>
-        {sel && <button onClick={() => { setSel(null); }} style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid var(--border)', background: 'none', color: 'var(--text2)', cursor: 'pointer', fontWeight: 700 }}>✕ ปิด — ดูใบอื่น</button>}
-      </div>
+        {/* ช่องค้นหา + ปุ่มค้นหา = กลุ่มเดียวกัน (UX audit 05/10) — เดิมช่อง grow ยืดเต็มแถวแล้วปุ่มไปอยู่สุดขอบ
+            + placeholder ยาวจนถูกตัด ("…เลข Julian เช่น 24726A" ไม่เคยโชว์ครบ) ⇒ ป้ายสั้น · รายละเอียดอยู่ใน title */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: '1 1 360px', minWidth: 0, maxWidth: 640 }}
+          title="สแกนบาร์โค้ด PROD.NO หรือพิมพ์ MAT.NO / ชื่อชิ้นงาน / เลข Julian บนชิ้นงาน (เช่น 24726A)">
+          <SearchInput value={search} onChange={v => { setSearch(v); setJulYear(null); }}
+            onKeyDown={e => { if (e.key === 'Enter') doSearch(); }}
+            fields="PROD.NO / MAT / ชื่อชิ้นงาน / Julian" autoFocus />
+          <button onClick={() => doSearch()} disabled={searching}
+            style={{ height: 'var(--ctl-h)', padding: '0 18px', flexShrink: 0, borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, cursor: 'pointer' }}>
+            {searching ? '⏳' : 'ค้นหา'}
+          </button>
+        </div>
+        {sel && <>
+          <span className="spacer" />
+          <button onClick={() => { setSel(null); }} style={{ padding: '0 14px', borderRadius: 8, border: '1px solid var(--border)', background: 'none', color: 'var(--text2)', cursor: 'pointer', fontWeight: 700 }}>✕ ปิด — ดูใบอื่น</button>
+        </>}
+      </TimeRangeBar>
 
       {/* 🗓 ตีความเลข Julian ให้เห็นเสมอ — ห้ามแปลงเงียบ
              ระบบเดาปีให้ได้ (3-4 หลักไม่มีปีเต็ม) ⇒ ต้องโชว์วันที่ที่ได้ + ให้กดเปลี่ยนปีเองได้ */}
@@ -1025,6 +1045,12 @@ export default function OrderTrace() {
         </div>
       )}
 
+      {searchErr && !sel && (
+        <div style={{ ...card, marginBottom: 12, borderColor: '#ef4444', color: '#ef4444', fontSize: 12.5, fontWeight: 700 }}>
+          ⚠️ {searchErr} — ผลว่างด้านล่าง <u>ไม่ได้แปลว่าไม่มีใบนี้</u> ลองค้นใหม่อีกครั้ง
+        </div>
+      )}
+
       {/* ── ผลค้นหา: สรุปภาพรวมก่อน แล้วตารางเต็มพื้นที่ (เห็นข้อมูลก่อนคลิกเลือกใบ) ── */}
       {!sel && results.length > 0 && (
         <>
@@ -1040,9 +1066,9 @@ export default function OrderTrace() {
                 { l: 'วันที่ผลิต', v: sum.days.length, s: sum.days.length ? `${fmtDate(sum.days[0])} → ${fmtDate(sum.days[sum.days.length - 1])}` : null },
               ].map(k => (
                 <div key={k.l} style={{ minWidth: 88 }}>
-                  <div style={{ fontSize: 10.5, color: 'var(--muted)', fontWeight: 700 }}>{k.l}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{k.l}</div>
                   <div style={{ fontSize: 19, fontWeight: 900, color: k.c || 'var(--text)', lineHeight: 1.2 }}>{k.v}</div>
-                  {k.s && <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>{k.s}</div>}
+                  {k.s && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{k.s}</div>}
                 </div>
               ))}
               <div style={{ marginLeft: 'auto', fontSize: 11.5, color: 'var(--muted)', textAlign: 'right' }}>
@@ -1075,7 +1101,7 @@ export default function OrderTrace() {
                       onMouseEnter={e => e.currentTarget.style.background = 'var(--bg3)'} onMouseLeave={e => e.currentTarget.style.background = ''}>
                       <td style={{ padding: '7px 6px', fontWeight: 700, whiteSpace: 'nowrap' }}>
                         {o.prod_no}
-                        <span style={{ fontSize: 10 }}>
+                        <span style={{ fontSize: 11 }}>
                           {o.is_backfill && <span title="ยิงย้อนหลัง"> ⏪</span>}
                           {o.reopen_count > 0 && <span title={`เคยถอยใบ ${o.reopen_count} ครั้ง`}> ↩️</span>}
                           {o.paired_order_id && <span title="งานคู่ RH/LH"> 🔗</span>}
@@ -1083,17 +1109,18 @@ export default function OrderTrace() {
                         </span>
                       </td>
                       <td>
-                        <div style={{ fontWeight: 600 }}>{o.mat_no || '—'}</div>
-                        <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>{o.part_name || ''}{o.customer ? ` · ${o.customer}` : ''}</div>
+                        {/* ลำดับ ชื่องาน → MAT (UI §6.21) */}
+                        <div style={{ fontWeight: 600 }}>{o.part_name || o.mat_no || '—'}</div>
+                        <div style={{ fontSize: 11, color: 'var(--muted)' }}>{o.part_name ? `MAT ${o.mat_no || '—'}` : ''}{o.customer ? ` · ${o.customer}` : ''}</div>
                       </td>
                       <td>
                         <div>{s.line_name || '—'}</div>
-                        {o.machine_no && <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>⚙️ {o.machine_no}</div>}
+                        {o.machine_no && <div style={{ fontSize: 11, color: 'var(--muted)' }}>⚙️ {o.machine_no}</div>}
                       </td>
                       <td style={{ whiteSpace: 'nowrap' }}>
                         {fmtDate(s.work_date)} {s.shift === 'night' ? '🌙' : '☀️'}
                         {/* Julian ของวันผลิต — หน้างานเอาไปเทียบกับเลขที่ปั๊มบนชิ้นงานได้ทันที (ไม่ได้เก็บใน DB · คำนวณสด) */}
-                        {s.work_date && <div style={{ fontSize: 10, color: jul && s.work_date === jul.date ? '#f59e0b' : 'var(--muted)', fontWeight: jul && s.work_date === jul.date ? 800 : 400 }}
+                        {s.work_date && <div style={{ fontSize: 11, color: jul && s.work_date === jul.date ? '#f59e0b' : 'var(--muted)', fontWeight: jul && s.work_date === jul.date ? 800 : 400 }}
                           title="เลข Julian ที่ควรปั๊มบนชิ้นงานของใบนี้ (วัน 3 หลัก + ปี 2 หลัก + กะ A/B)">
                           🗓 {toJulian(s.work_date, s.shift)}
                         </div>}
@@ -1433,7 +1460,7 @@ export default function OrderTrace() {
                             : <span style={{ color: 'var(--muted)', fontSize: 11.5 }}>— ({orderAnalysis.group.missCtN} ชิ้นงานในกลุ่มยังไม่ตั้ง CT)</span>}
                         </div>
                       </div>
-                      <div style={{ marginTop: 8, fontSize: 10.5, color: 'var(--muted)' }}>
+                      <div style={{ marginTop: 8, fontSize: 11, color: 'var(--muted)' }}>
                         เทียบมาตรฐาน = Σ(จำนวน × CT ของชิ้นงานนั้น) ÷ เวลาเดินสุทธิ (สูตรเดียวกับ %P ของ OEE) · หัก DT ในช่วง {Math.round(orderAnalysis.group.dtUnpl)} นาทีนอกแผน / {Math.round(orderAnalysis.group.dtPlan)} นาทีตามแผน
                       </div>
                     </div>
@@ -1721,6 +1748,6 @@ export default function OrderTrace() {
         </>
       )}
       </>)}
-    </div>
+    </Page>
   );
 }

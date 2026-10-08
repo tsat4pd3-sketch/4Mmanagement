@@ -18,6 +18,7 @@
       (กฎเดิมของ StoreMonitor — จอที่ยืนยันสิ่งที่ไม่จริง แย่กว่าจอที่ว่าง)
    ══════════════════════════════════════════════════════════════════════════ */
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import MatLabel from './MatLabel';
 import { supabaseDR } from '../supabaseClient';
 import { visibleInterval } from '../utils/usePolling';
 import { RATE } from '../utils/refreshRates';
@@ -111,12 +112,12 @@ export default function StoreWaitCards({ inScope, navigate, big = 1, onLineWait 
           </span>
         </div>
         {w.items.slice(0, 3).map((it, i) => (
-          <div key={i} style={{ fontSize: 10.5 * big, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <div key={i} style={{ fontSize: 11 * big, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {it.what ? `${it.what} · ` : ''}{it.detail}
           </div>
         ))}
         {w.items.length > 3 && (
-          <div style={{ fontSize: 10 * big, color: 'var(--muted)' }}>+ อีก {w.items.length - 3} รายการ</div>
+          <div style={{ fontSize: 11 * big, color: 'var(--muted)' }}>+ อีก {w.items.length - 3} รายการ</div>
         )}
       </div>
     ))}
@@ -132,16 +133,14 @@ export default function StoreWaitCards({ inScope, navigate, big = 1, onLineWait 
       {!shortMats.length && <div style={{ fontSize: 11.5 * big, color: '#22c55e', fontWeight: 700 }}>✅ ทุกพาร์ทอยู่เหนือ Min</div>}
       {shortMats.slice(0, 6).map((r, i) => (
         <div key={`${r.mat_no}-${i}`} onClick={() => navigate?.('/line-stock')}
-          style={{ cursor: 'pointer', display: 'flex', gap: 8, padding: '4px 0', borderTop: '1px solid var(--border)', fontSize: 10.5 * big }}>
-          <b style={{ color: 'var(--text)', flexShrink: 0 }}>{r.mat_no}</b>
-          <span style={{ color: 'var(--muted)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {r.part_name || ''}
-          </span>
+          style={{ cursor: 'pointer', display: 'flex', gap: 8, padding: '4px 0', borderTop: '1px solid var(--border)', fontSize: 11 * big }}>
+          {/* ครบ 3 ค่าผ่านของกลาง — รหัสไม่ถูกตัด ชื่อตัดได้ตัวเดียว (30/09) */}
+          <MatLabel mat={r.mat_no} name={r.part_name} size={10.5 * big} style={{ minWidth: 0, flex: 1 }} />
         </div>
       ))}
       {shortMats.length > 6 && (
         <div onClick={() => navigate?.('/store-monitor')}
-          style={{ cursor: 'pointer', fontSize: 10.5 * big, color: 'var(--muted)', paddingTop: 5, borderTop: '1px solid var(--border)' }}>
+          style={{ cursor: 'pointer', fontSize: 11 * big, color: 'var(--muted)', paddingTop: 5, borderTop: '1px solid var(--border)' }}>
           + อีก {shortMats.length - 6} พาร์ท — ดูทั้งหมดที่เฝ้าระวังสต๊อก ›
         </div>
       )}

@@ -12,13 +12,14 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { supabaseDR } from '../supabaseClient';
-import { sumDefectQty } from '../utils/oee';
+import { sumDefectQty, QBIN_EMBED } from '../utils/oee';
 import { cachedMaster } from '../utils/masterCache';
 import { buildPnIndex, resolveMatNo, normMat } from '../utils/matResolve';
 import {
   effectWindow, splitBeforeAfter, judgeEffect, effectSummaryText,
   VERDICTS, DEFAULT_WINDOW, todayStr,
 } from '../utils/capaEffect';
+import { ALL } from '../utils/filterLabels';
 
 const inputSt = { width: '100%', padding: '6px 9px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 12 };
 const btn = (bg, fg = '#08130a') => ({ padding: '5px 11px', borderRadius: 7, border: 'none', background: bg, color: fg, fontSize: 11.5, fontWeight: 700, cursor: 'pointer' });
@@ -140,7 +141,7 @@ export default function CapaEffectiveness({ capa, onChange, canEdit, canWriteRes
       const ids = sessions.map((s) => s.id);
       /* ธงงานทดลอง (20260817_defect_trial_flag) อาจยังไม่ apply → ถอยไป select ชุดเดิม
          ⚠️ ถอยแล้วต้องบอกบนจอ: ตัวเลขจะรวมงานทดลองปนเข้ามา ไม่ใช่แค่ "ไม่มีธง" */
-      const FULL = 'session_id, qty_ng, qty_suspect, is_trial, defect_type_id, prod_orders(mat_no), dr_defect_types(excl_from_q)';
+      const FULL = `session_id, qty_ng, qty_suspect, is_trial, defect_type_id, prod_orders(mat_no), dr_defect_types(excl_from_q), ${QBIN_EMBED}`;
       const SLIM = 'session_id, qty_ng, qty_suspect, defect_type_id, prod_orders(mat_no)';
       let sel = FULL, noTrialFlag = false, rows = [];
       // ⚠️ ต้องครบ 3 ชั้นตามกฎ: แบ่งก้อน id (120) + **แบ่งหน้า (1000)** + .order() คู่กับ .range()
@@ -253,7 +254,7 @@ export default function CapaEffectiveness({ capa, onChange, canEdit, canWriteRes
                   const t = types.find((x) => x.id === e.target.value);
                   onChange({ eff_defect_type_id: e.target.value || null, eff_defect_type_label: t?.name_th || null });
                 }}>
-                <option value="">— ทุกประเภท —</option>
+                <option value="">{ALL.type}</option>
                 {types.map((t) => <option key={t.id} value={t.id}>{t.name_th}</option>)}
               </select>
             </label>

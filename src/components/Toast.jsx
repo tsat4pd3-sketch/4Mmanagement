@@ -69,7 +69,7 @@ export function ToastContainer() {
           padding: '10px 18px', borderRadius: 10,
           background: 'rgba(18,18,28,0.96)', border: `1px solid ${COLORS[t.type]}55`,
           borderLeft: `4px solid ${COLORS[t.type]}`,
-          boxShadow: '0 4px 24px rgba(0,0,0,0.5)',
+          boxShadow: 'var(--shadow-float)',
           fontSize: 13, fontWeight: 600, color: '#f0f0f4',
           maxWidth: 'min(90vw, 560px)', cursor: 'pointer',
           animation: 'toastIn 0.25s cubic-bezier(0.34,1.56,0.64,1)',

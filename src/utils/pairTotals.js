@@ -17,6 +17,21 @@
           - OP พาร์ทจริงไม่อยู่ในชุด = ยุบกลุ่มพี่น้อง OP เดียวกันเหลือแถวเดียว ใช้ max ของขั้น
             (ทุกขั้นทำชิ้นเดียวกัน — max = จำนวนชิ้นที่เข้าอย่างน้อย 1 ขั้น ใกล้ความจริงสุดเมื่อไม่มีตัวจริง)
           - OP ที่ยังไม่ผูกพาร์ทจริง (parent null) = นับแบบเดิม (worklist ใน /products ให้คนเติม ห้ามเดา)
+
+   🔴 "พาร์ทจริง" = **สินค้า ไม่ใช่ MAT** (2026-10-05 · คำสั่ง user) ───────────────────────
+   user: *"มันต่างแค่ลูกค้าไง แต่ product มันคือตัวเดียวกันเลย แค่ต้องแยกเพราะเวลาขาย
+   จะต้องแยกบิล แยกรหัส และแยก mat SAP"* ⇒ สินค้าตัวเดียวแตกเป็นหลาย MAT ตามลูกค้า
+   (RH Line 60 = 10100384 FTM · 10100385 AAT · 10106790 FVL · 20066636 FORD — `p_no` เดียวกันหมด)
+   แต่ `op_parent_mat` เป็น **คอลัมน์ text ช่องเดียว** ชี้ได้แค่ MAT ตัวเดียว ⇒ วันที่ไลน์รัน
+   "ลูกค้าอื่นของสินค้าเดียวกัน" ขั้นตอนจะไม่ยุบ แล้ว**ยอดถูกนับ 2 ครั้ง** (ขั้น + ตัวจริง)
+   วัดจริงในฐาน DR 05/10 (ต่อ วันทำงาน+กะ · ทั้งโรงงาน): **27 กะ · 18,659 ชิ้น · OP 5 ตัว**
+   (90031601 HYDROFORM 10,329 · 50031625 Laser LWR 5,350 · 90031603 LASER-345 2,308 ฯลฯ)
+   ⇒ `op.alts` = MAT อื่นที่เป็น **สินค้าตัวเดียวกับ parent** (แกน `p_no` — `opItems.loadOpInfo`)
+     · เจอ alt ตัวใดในชุด = ถือว่าพาร์ทจริงถือยอดแล้ว → ตัดขั้นทิ้งเหมือน parent ตรงตัว
+     · ไม่มีทั้ง parent ทั้ง alts = ยุบเป็นแถวเดียว **เข้ากลุ่มเดียวกับพี่น้อง** (ห้ามแตกเป็น 2 แถว
+       เพราะ 2 OP ที่ชี้คนละลูกค้าของสินค้าเดียวกัน = ยังนับซ้ำอยู่)
+   ⚠️ จับกลุ่มด้วย **แกน `p_no` เท่านั้น ห้ามใช้ชื่อ** — ชื่อเป็นข้อความที่คนพิมพ์ ชนกันได้
+      (ยุบเกิน = ตัดขั้นที่ไม่ควรตัด = ยอด**ขาด** ซึ่งกู้คืนไม่ได้) · `alts` ไม่มี = พฤติกรรมเดิมเป๊ะ
    opMap ว่าง/ไม่ส่ง = คืน input เดิมเป๊ะ (backward-compatible) */
 export function collapseOps(perMat, opMap) {
   if (!opMap || !Object.keys(opMap).length) return perMat;
@@ -28,10 +43,14 @@ export function collapseOps(perMat, opMap) {
     const parent = op.parent;
     if (!parent) { out.push(r); return }               // ยังไม่ผูกพาร์ทจริง — คงนับเดิม
     if (present.has(parent)) return;                    // พาร์ทจริงถือยอดแล้ว — ขั้นไม่บวกซ้ำ
+    if ((op.alts || []).some(a => present.has(a))) return;  // สินค้าตัวเดียวกัน คนละลูกค้า = ตัวจริงเหมือนกัน
     /* `_ops` = ชั้น OP ที่ยุบมาเป็นแถวนี้ (client-only ขึ้นต้น _ ไม่ลง DB)
        จำเป็นเพราะ pair_mat_no ของงานคู่ถูกประกาศไว้ที่ "ชั้น OP" ไม่ใช่ที่พาร์ทจริง
        ยุบแล้วทิ้ง = คู่ที่คนละพาร์ทจริงจับกันไม่ติด แล้วบวกซ้ำ (ดู resolvePairAcrossOps) */
-    const g = groups[parent] = groups[parent] || { mat_no: parent, target: 0, produced: 0, _ops: [] };
+    /* คีย์กลุ่ม = parent ของตัวเอง เว้นแต่พี่น้อง "สินค้าเดียวกัน" เปิดกลุ่มไว้ก่อนแล้ว
+       → เข้ากลุ่มนั้น (ไม่งั้น 2 OP ที่ชี้คนละลูกค้าของสินค้าเดียวกันยังแตกเป็น 2 แถว = นับซ้ำ) */
+    const key = groups[parent] ? parent : ((op.alts || []).find(a => groups[a]) || parent);
+    const g = groups[key] = groups[key] || { mat_no: key, target: 0, produced: 0, _ops: [] };
     if (r.mat_no != null) g._ops.push(r.mat_no);
     g.target   = Math.max(g.target,   Number(r.target)   || 0);
     g.produced = Math.max(g.produced, Number(r.produced) || 0);
@@ -103,4 +122,88 @@ export function pairAwareTotal(perMat, pairOf) {
     }
   });
   return { target, produced, hasPair };
+}
+
+/* ── ยุบงานคู่ให้เหลือ "1 shot" สำหรับสายเวลามาตรฐานของ OEE (2026-09-18 · user ยืนยัน) ──
+   user: *"ถ้างานคู่ แบบ gang die / 1 shot ได้งาน 2 ชิ้น หรือ คู่ซ้าย-ขวา ต้องนับเป็น shot หรือ cycle"*
+
+   🔴 กติกาที่ต้องแยกให้ขาด — **ชิ้น ≠ shot**:
+     · %Q · ยอดผลิต · ของเสีย  → นับ **ชิ้น** (1 shot = 2 ชิ้น) ห้ามยุบ
+     · %P (เวลามาตรฐาน Σ qty×CT) → นับ **shot** เพราะ CT ที่ตั้งไว้คือเวลาต่อ 1 จังหวะเครื่อง
+   ไม่ยุบ = ตัวเศษของ %P เป็น 2 เท่า → ทะลุ 100 แล้วโดน cap เงียบ
+   วัดจริง 45 วัน (ratio = เวลามาตรฐาน ÷ เวลาเครื่องเดิน · เกิน 1 = เป็นไปไม่ได้):
+     LASER-345 1.80→1.04 · HDF2 1.15→0.72 · HDF1 1.14→0.66
+     ไลน์ไม่มีคู่ไม่ขยับเลย (Line 61 0.71 · BENDING E50 0.59) = ยืนยันว่าแตะเฉพาะไลน์งานคู่
+
+   แถวเข้า/ออก = { mat_no, qty, ct, winStart?, winEnd? } · คู่ที่เจอทั้ง 2 ข้างในชุด →
+   เหลือแถวเดียว: qty = max (จำนวน shot) · ct = max · window = union (วิ่งพร้อมกันจังหวะเดียว)
+   ⚠️ `pairOf` ไม่ส่ง/ไม่มีคู่ในชุด = **คืนแถวเดิมเป๊ะทุกกรณี** (backward compatible) */
+export function collapsePairShots(rows, pairOf = () => null) {
+  const byMat = new Map();
+  rows.forEach(r => { if (r?.mat_no != null) byMat.set(r.mat_no, r) });
+  const seen = new Set();
+  const out = [];
+  rows.forEach(r => {
+    const mat = r?.mat_no;
+    if (mat != null && seen.has(mat)) return;
+    const pm = mat != null ? pairOf(mat) : null;
+    const partner = pm != null && pm !== mat ? byMat.get(pm) : null;
+    if (!partner) { if (mat != null) seen.add(mat); out.push(r); return }
+    seen.add(mat); seen.add(partner.mat_no);
+    // ตัวรอด = ข้างที่ยอดมากกว่า (ถือ mat_no ไว้ให้ matRunMinMap/ชื่อพาร์ทอ้างถึงได้เหมือนเดิม)
+    const keep = (Number(r.qty) || 0) >= (Number(partner.qty) || 0) ? r : partner;
+    const nums = [r, partner].map(x => [Number(x.winStart), Number(x.winEnd)]);
+    const starts = nums.map(n => n[0]).filter(Number.isFinite);
+    const ends   = nums.map(n => n[1]).filter(Number.isFinite);
+    out.push({
+      ...keep,
+      qty: Math.max(Number(r.qty) || 0, Number(partner.qty) || 0),
+      ct:  Math.max(Number(r.ct)  || 0, Number(partner.ct)  || 0),
+      ...(starts.length ? { winStart: Math.min(...starts) } : {}),
+      ...(ends.length   ? { winEnd:   Math.max(...ends)   } : {}),
+      _pairedWith: keep.mat_no === mat ? partner.mat_no : mat,
+    });
+  });
+  return out;
+}
+
+/* ═══ งานคู่ กับ "ภาระเวลา" (shift-load) ตอน **วางแผน** — 2026-09-22 ═══════════════
+   ที่มา: audit แผนผลิต 22/09 — `ProductionPlan` บวก `qty ÷ กำลังต่อกะ` ของ RH และ LH
+   แยกกัน ทั้งที่ปั๊มทีเดียวได้ทั้งคู่ ⇒ โหลดของคู่ถูกนับ **2 เท่า**
+   วัดจริงในฐาน DR วันเดียวกัน (คู่ที่มี demand ครบทั้ง 2 ข้าง):
+     20065635 ↔ 20065715  LASER-789         (85,320 / 86,091 ชิ้น)
+     20059957 ↔ 20059959  LINE D 110&300T   (76,447 / 81,367)
+     20059966 ↔ 20059967  LINE D 110&300T   (85,516 / 85,212)
+   ⇒ LINE D (ซึ่ง `std_night_shift = 0` = ไม่มีกะดึกให้เปิด) ถูกดันไป tier "🚨 เกินกำลัง"
+     ทั้งที่โหลดจริงประมาณครึ่งเดียว
+
+   🔴 กติกา (ต่อจากกฎเหล็ก "ชิ้น ≠ shot" ใน CLAUDE.md):
+     · **ยอดชิ้น** (ต้องส่งลูกค้า/ของเสีย/%Q) = **บวกตามปกติ** — RH กับ LH ส่งแยกใบ เป็นชิ้นจริงทั้งคู่
+     · **ภาระเวลา / จำนวน shot** = **max ของสองข้าง** — ข้างที่กินเวลามากกว่าเป็นตัวกำหนด
+   เลือก `max(load)` ไม่ใช่ `max(qty) ÷ min(cap)` เพราะข้างที่แทบไม่เคยผลิตเดี่ยวจะมี median
+   กำลังต่ำผิดปกติ แล้วดึงโหลดทั้งคู่เฟ้อขึ้น (overstate โหลด = สั่งเปิด OT เกินจำเป็น)      */
+
+/**
+ * รวม shift-load ของหลายพาร์ทในหน่วยเดียวกัน โดยยุบคู่ RH/LH เป็นภาระเดียว
+ * @param {Record<string, number>|Map<string, number>} loadByMat  mat_no → ภาระ (หน่วยอะไรก็ได้ แต่ต้องหน่วยเดียวกัน)
+ * @param {(mat: string) => string|null|undefined} pairOf  คืน pair_mat_no ของ mat (จาก Product Master)
+ * @returns {number} ผลรวมหลังยุบคู่ — คู่ที่มีข้างเดียวในชุดข้อมูล นับตามปกติ (ไม่ใช่คู่กันในรอบนี้)
+ */
+export function pairLoadTotal(loadByMat, pairOf = () => null) {
+  const m = loadByMat instanceof Map
+    ? new Map([...loadByMat].map(([k, v]) => [k, Number(v) || 0]))
+    : new Map(Object.entries(loadByMat || {}).map(([k, v]) => [k, Number(v) || 0]));
+  const seen = new Set();
+  let total = 0;
+  for (const [mat, load] of m) {
+    if (seen.has(mat)) continue;
+    seen.add(mat);
+    const pm = pairOf(mat);
+    // คู่ต้อง "อยู่ในชุดข้อมูลรอบนี้" ด้วย — ไม่มีอีกข้าง = ผลิตเดี่ยวรอบนี้ นับเต็ม
+    if (pm != null && pm !== mat && m.has(pm)) {
+      seen.add(pm);
+      total += Math.max(load, m.get(pm));
+    } else total += load;
+  }
+  return total;
 }

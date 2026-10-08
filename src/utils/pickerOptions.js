@@ -1,3 +1,4 @@
+import { lineNameCompare } from './lineHierarchy.js';
 /* ── pickerOptions — ตัวสร้าง option list ของ picker กลาง (pure · ไม่ import supabase/react) ──
    (2026-09-07 · single-source audit) ใช้โดย <PersonSelect> <MachineSelect> <ProductSelect>
    แยกออกมาให้เทสได้ตรงๆ (node:test) — กฎการ "เรียงของที่เกี่ยวข้องขึ้นก่อน ไม่ตัดของอื่นทิ้ง"
@@ -12,19 +13,23 @@ export const sameName = (a, b) => normName(a).toLowerCase() === normName(b).toLo
 /** คน — profiles (user ระบบ) + employees (ทะเบียนพนักงาน)
  *  prefer ด้วย lines / lineIds / section / roles = ขึ้นก่อน (strict = ตัดคนอื่นทิ้ง) */
 export function personOptions({
-  profiles = [], employees = [], source = 'profiles', lines, lineIds, section, roles, strict = false,
+  profiles = [], employees = [], source = 'profiles', lines, lineIds, section, roles, teams, strict = false,
   posLabel = (v) => String(v || ''), roleLabel = (v) => String(v || ''),
 } = {}) {
   const prefLines = new Set((lines || []).map(up).filter(Boolean));
   const prefLineIds = new Set((lineIds || []).filter(x => x != null && x !== '').map(Number));
   const prefSection = up(section);
   const prefRoles = new Set((roles || []).map(String));
-  const hasPref = !!(prefLines.size || prefLineIds.size || prefSection || prefRoles.size);
+  // ทีมช่าง (mtn_teams ของ profile / mtn_team ของ employee) — 06/10 คอมเมนต์ทีม DIE: หัวหน้าช่างที่เป็น "พนักงาน" ไม่มี role
+  // ⇒ prefer ด้วย roles อย่างเดียวไม่มีวันขึ้น 🎯 · ส่ง teams=[ทีมของใบ] ให้คนในทีมขึ้นก่อน (ไม่ตัดคนอื่น)
+  const prefTeams = new Set((teams || []).filter(Boolean).map(String));
+  const hasPref = !!(prefLines.size || prefLineIds.size || prefSection || prefRoles.size || prefTeams.size);
   const prefer = (o) =>
     (prefLineIds.size && o.line_id != null && prefLineIds.has(Number(o.line_id))) ||
     (prefLines.size && o.line_name && prefLines.has(up(o.line_name))) ||
     (prefSection && o.section && up(o.section) === prefSection) ||
-    (prefRoles.size && o.role && prefRoles.has(String(o.role))) || false;
+    (prefRoles.size && o.role && prefRoles.has(String(o.role))) ||
+    (prefTeams.size && (o.mtn_teams || []).some(t => prefTeams.has(String(t)))) || false;
 
   const out = [];
   const byName = new Map();
@@ -38,6 +43,7 @@ export function personOptions({
         kind: 'profile', uid: p.id, employee_id: p.employee_id || null, employee_code: null,
         signature_url: p.signature_url || null, section: p.section || null, position: p.position || null,
         role: p.role || null, line_id: p.line_id ?? null, line_name: p.line_name || null, team: null,
+        mtn_teams: Array.isArray(p.mtn_teams) ? p.mtn_teams : [],
       };
       out.push(o); byName.set(o.label.toLowerCase(), o);
     }
@@ -54,6 +60,7 @@ export function personOptions({
         if (dup.line_id == null) dup.line_id = e.line_id ?? null;
         if (!dup.position) dup.position = e.position || null;
         if (!dup.section) dup.section = e.section || null;
+        if (e.mtn_team && !dup.mtn_teams.includes(e.mtn_team)) dup.mtn_teams = [...dup.mtn_teams, e.mtn_team];
         continue;
       }
       out.push({
@@ -62,15 +69,19 @@ export function personOptions({
         keywords: `${e.employee_id_code || ''} ${e.section || ''} ${e.department || ''} ${e.group_name || ''} ${e.team || ''} ${e.position || ''}`,
         kind: 'employee', uid: null, employee_id: e.id, employee_code: e.employee_id_code || null, signature_url: null,
         section: e.section || null, position: e.position || null, role: null, line_id: e.line_id ?? null, line_name: e.line_name || null, team: e.team || null,
+        mtn_teams: e.mtn_team ? [e.mtn_team] : [],
       });
     }
   }
-  const tagged = out.map(o => ({ ...o, _pref: hasPref ? !!prefer(o) : false }));
+  // คนในทีมช่างของใบ (teams) อยู่ชั้นบนสุด — เหนือ "มี role หัวหน้า" ที่กว้างทั้งโรงงาน
+  const inTeam = (o) => prefTeams.size > 0 && (o.mtn_teams || []).some(t => prefTeams.has(String(t)));
+  const tagged = out.map(o => ({ ...o, _pref: hasPref ? (inTeam(o) ? 2 : prefer(o) ? 1 : 0) : 0 }));
   const kept = strict && hasPref ? tagged.filter(o => o._pref) : tagged;
   kept.sort((a, b) => (b._pref - a._pref) || a.label.localeCompare(b.label, 'th'));
   return kept.map(o => ({
     ...o,
-    group: hasPref && o._pref ? '🎯 ที่เกี่ยวข้อง' : (o.kind === 'profile' ? '👤 ผู้ใช้ระบบ' : '🪪 พนักงาน'),
+    _pref: o._pref > 0,
+    group: o._pref === 2 ? '👷 ทีมช่างของใบนี้' : (hasPref && o._pref ? '🎯 ที่เกี่ยวข้อง' : (o.kind === 'profile' ? '👤 ผู้ใช้ระบบ' : '🪪 พนักงาน')),
     badge: o.signature_url ? '✍️' : null,
   }));
 }
@@ -112,7 +123,7 @@ export function machineOptions(machines, { lines, kinds, strict = false, include
   // groupByLine: เรียงตามไลน์ก่อนแล้วค่อยรหัสเครื่อง — แถวของไลน์เดียวกันต้องอยู่ติดกัน
   // ไม่งั้นหัวกลุ่มโผล่ซ้ำ (SearchSelect ขึ้นหัวกลุ่มเมื่อค่า group เปลี่ยนจากแถวก่อนหน้า)
   tagged.sort((a, b) => (b._pref - a._pref)
-    || (groupByLine ? String(a.line_name || '\uFFFF').localeCompare(String(b.line_name || '\uFFFF'), 'th') : 0)
+    || (groupByLine ? ((!a.line_name) - (!b.line_name) || lineNameCompare(a.line_name || '', b.line_name || '')) : 0)   // ลำดับไลน์มาตรฐาน · ไม่ระบุไลน์ = ท้าย
     || a.label.localeCompare(b.label, undefined, { numeric: true }));
   return tagged.map(o => ({
     ...o,
@@ -129,15 +140,26 @@ export function productOptions(products, { lines, strict = false, includeOps = f
   if (!includeOps) rows = rows.filter(p => !p.is_operation);
   if (strict && pref.size) rows = rows.filter(p => pref.has(up(p.line_name)));
   rows = rows.filter(p => includeInactive || p.is_active !== false || up(p.mat_no) === cur);
-  const tagged = rows.map(p => ({
+  /* 🔴 2 บรรทัด · รหัสห้ามถูกตัด (2026-09-30 · feedback "ขอเห็นเลข Mat ด้วย")
+     บรรทัด 1 = Part No. (lead · ห้ามตัด) + ชื่องาน (title · ตัดได้ตัวเดียว)
+     บรรทัด 2 = MAT SAP (code · ห้ามตัด) + ลูกค้า/ไลน์ (sub · ตัดได้)
+     `label` ยังเป็น mat_no เพราะเป็น **ค่าที่ฟอร์มเก็บจริง** — เปลี่ยนแล้วชิปที่เลือกจะโชว์คนละค่ากับที่บันทึก
+     ไม่มีทั้ง Part No. และชื่อ ⇒ ยก MAT ขึ้นเป็นหัวแถว (ห้ามได้แถวหัวว่าง) */
+  const tagged = rows.map(p => {
+    const hasHead = !!(p.p_no || p.name);
+    return {
     id: p.id, label: p.mat_no, key: up(p.mat_no),
-    sub: [p.name, p.p_no, p.customer, p.line_name].filter(Boolean).join(' · '),
+    lead: p.p_no || null,
+    title: hasHead ? (p.name || '') : `MAT ${p.mat_no}`,
+    code: hasHead ? `MAT ${p.mat_no}` : null,
+    sub: [p.customer, p.line_name].filter(Boolean).join(' · '),
     keywords: `${p.name || ''} ${p.p_no || ''} ${p.customer || ''} ${p.line_name || ''}`,
     badge: p.is_active === false ? '⏸' : (p.customer || null),
     badgeColor: p.is_active === false ? 'var(--muted)' : undefined,
     mat_no: p.mat_no, name: p.name || null, p_no: p.p_no || null, customer: p.customer || null, line_name: p.line_name || null,
     _pref: pref.size ? pref.has(up(p.line_name)) : false,
-  }));
+    };
+  });
   tagged.sort((a, b) => (b._pref - a._pref) || a.label.localeCompare(b.label, undefined, { numeric: true }));
   const main = tagged.map(o => ({ ...o, group: pref.size ? (o._pref ? '🎯 ไลน์ที่เลือก' : '🏭 ไลน์อื่น') : '📦 Product Master' }));
   const seen = new Set(main.map(o => o.key));
@@ -146,7 +168,11 @@ export function productOptions(products, { lines, strict = false, includeOps = f
     if (!o?.mat_no) continue;
     const k = up(o.mat_no); if (seen.has(k)) continue; seen.add(k);
     extra.push({
-      id: `x:${k}`, label: String(o.mat_no).trim(), key: k, sub: o.sub || o.name || '', keywords: `${o.name || ''} ${o.p_no || ''} ${o.keywords || ''}`,
+      id: `x:${k}`, label: String(o.mat_no).trim(), key: k,
+      lead: o.p_no || null,
+      title: (o.p_no || o.name) ? (o.name || '') : `MAT ${String(o.mat_no).trim()}`,
+      code: (o.p_no || o.name) ? `MAT ${String(o.mat_no).trim()}` : null,
+      sub: o.sub || '', keywords: `${o.name || ''} ${o.p_no || ''} ${o.keywords || ''}`,
       mat_no: String(o.mat_no).trim(), name: o.name || null, p_no: o.p_no || null, customer: o.customer || null, line_name: o.line_name || null,
       group: o.group || '🧩 พาร์ทลูก (BOM / parts_master)', extra: true,
     });

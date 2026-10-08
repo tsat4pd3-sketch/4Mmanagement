@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { CLOSE_AHEAD_WARN_MIN, dtCoverMin, fmtOffset } from '../utils/shiftWindow';
 
 /**
  * ⏱ ไทม์ไลน์เครื่องหยุดรายไลน์ — "หยุดตอนไหนของวัน" ไม่ใช่แค่ "หยุดรวมกี่นาที"
@@ -68,6 +69,8 @@ export default function DowntimeTimeline({ sessions = [], downtimes = [], workDa
   const view = useMemo(() => {
     const sessById = {};
     sessions.forEach(s => { sessById[s.id] = s; });
+    const dtBySession = {};
+    downtimes.forEach(d => { (dtBySession[d.session_id] ||= []).push(d); });
 
     // แถว = ไลน์ (กะเช้า+ดึกของไลน์เดียวกันอยู่แถวเดียวกัน คนละตำแหน่งบนแกน 24 ชม.)
     const byLine = new Map();
@@ -81,7 +84,17 @@ export default function DowntimeTimeline({ sessions = [], downtimes = [], workDa
     for (const s of sessions) {
       const sp = sessionSpan(s, workDate, nowMs);
       if (!sp) continue;
-      push(s.line_name || '—', 'runs', { ...sp, shift: s.shift, status: s.status });
+      /* กะที่ปิดแล้วแต่ "เวลาจบ" ล้ำหน้าเวลาที่กดปิดจริง = แถบเขียวลากไปอนาคต (2026-10-02)
+         ไม่ตัดแถบให้สั้นลงเอง — ความจริงคือข้อมูลผิด ไม่ใช่จอผิด ⇒ ติดป้ายให้คนไปแก้เวลาปิดกะ
+         (กฎความซื่อสัตย์ของจอ · ต้นเหตุ+เกณฑ์ดู `checkCloseTime` ใน utils/shiftWindow.js)
+         🔴 หัก "ปลายกะที่ลง downtime คลุมไว้แล้ว" ออกก่อนตัดสิน (05/10) — ปิดงานเที่ยงแล้วลง
+            "ไม่มีแผนผลิต" ถึงเลิกงาน = กะเดินถึงเวลานั้นจริง **ห้ามติดป้ายว่าผิด**
+            (เกณฑ์เดิมดูแต่ `aheadMin` ⇒ ติดป้ายผิด 5 ใบจาก 9 ใบที่เข้าเกณฑ์) */
+      const closedMs = s?.status === 'closed' && s?.closed_at ? new Date(s.closed_at).getTime() : null;
+      const aheadMin = Number.isFinite(closedMs) && closedMs ? Math.round((sp.en - closedMs) / 60000) : 0;
+      const unaccountedMin = aheadMin > 0
+        ? Math.max(0, aheadMin - dtCoverMin(dtBySession[s.id] || [], closedMs, sp.en)) : 0;
+      push(s.line_name || '—', 'runs', { ...sp, shift: s.shift, status: s.status, aheadMin, unaccountedMin });
       lo = Math.min(lo, sp.st); hi = Math.max(hi, sp.en);
     }
 
@@ -150,7 +163,7 @@ export default function DowntimeTimeline({ sessions = [], downtimes = [], workDa
             <div style={{ width: labelW, flexShrink: 0 }} />
             <div style={{ position: 'relative', flex: 1, height: 16 }}>
               {ticks.map(t => (
-                <span key={t} style={{ position: 'absolute', left: `${pct(t)}%`, transform: 'translateX(-50%)', fontSize: 10, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
+                <span key={t} style={{ position: 'absolute', left: `${pct(t)}%`, transform: 'translateX(-50%)', fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
                   {hhmm(t)}
                 </span>
               ))}
@@ -159,13 +172,20 @@ export default function DowntimeTimeline({ sessions = [], downtimes = [], workDa
 
           {rows.map(r => {
             const unplannedMin = r.stops.filter(x => !x.planned).reduce((s, x) => s + x.mins, 0);
+            const unaccMin = Math.max(0, ...r.runs.map(x => x.unaccountedMin || 0));
             return (
               <div key={r.line} style={{ display: 'flex', alignItems: 'center', gap: 0, marginBottom: 4 }}>
                 <div style={{ width: labelW, flexShrink: 0, paddingRight: 8, minWidth: 0 }}>
                   <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.line}>{r.line}</div>
-                  <div style={{ fontSize: 10, color: unplannedMin > 0 ? '#ef4444' : 'var(--muted)' }}>
+                  <div style={{ fontSize: 11, color: unplannedMin > 0 ? '#ef4444' : 'var(--muted)' }}>
                     {unplannedMin > 0 ? `หยุด ${unplannedMin} น.` : 'ไม่มีหยุดนอกแผน'}
                   </div>
+                  {unaccMin > CLOSE_AHEAD_WARN_MIN && (
+                    <div title={`กะนี้ปิดไปแล้ว แต่ "เวลาปิดกะ" ที่บันทึกไว้ล้ำหน้าเวลาที่กดปิดจริง และช่วงที่ล้ำ ${fmtOffset(unaccMin)} ไม่มีใบ Downtime รองรับเลย\nแถบเขียวจึงลากไปในอนาคต และเวลาเดินเครื่อง (ฐานของ %A/%P) ถูกคิดเกินจริงเท่านั้น\n→ แก้ที่หน้า Daily Report ปุ่มแก้เวลาเริ่ม-ปิดกะ หรือลง Downtime คลุมช่วงที่ไม่ได้ผลิต`}
+                      style={{ fontSize: 11, fontWeight: 800, color: '#f59e0b', cursor: 'help' }}>
+                      ⚠️ ปลายกะไม่มีอะไรรองรับ {fmtOffset(unaccMin)}
+                    </div>
+                  )}
                 </div>
 
                 <div style={{ position: 'relative', flex: 1, height: 26, background: 'var(--bg2)', borderRadius: 5, border: '1px solid var(--border)', overflow: 'hidden' }}>
@@ -195,7 +215,7 @@ export default function DowntimeTimeline({ sessions = [], downtimes = [], workDa
                 {/* กรอกแค่จำนวนนาที = วางบนแกนไม่ได้ — ต้องเห็น ห้ามหายเงียบ */}
                 {r.untimed > 0 && (
                   <div title="รายการที่กรอกแค่จำนวนนาที ไม่มีเวลาเริ่ม — วางบนไทม์ไลน์ไม่ได้ (ยอดรวม/พาเรโต้ยังนับให้ครบ)"
-                    style={{ marginLeft: 6, flexShrink: 0, fontSize: 10, fontWeight: 700, color: '#f59e0b', whiteSpace: 'nowrap' }}>
+                    style={{ marginLeft: 6, flexShrink: 0, fontSize: 11, fontWeight: 700, color: '#f59e0b', whiteSpace: 'nowrap' }}>
                     ⏱ +{r.untimed} ({r.untimedMin} น.)
                   </div>
                 )}
@@ -219,7 +239,7 @@ export default function DowntimeTimeline({ sessions = [], downtimes = [], workDa
       )}
 
       {totalUntimed > 0 && (
-        <div style={{ marginTop: 6, fontSize: 10.5, color: '#f59e0b', lineHeight: 1.55 }}>
+        <div style={{ marginTop: 6, fontSize: 11, color: '#f59e0b', lineHeight: 1.55 }}>
           ⏱ มี <b>{totalUntimed} รายการ</b> ที่กรอกแค่จำนวนนาที ไม่มีเวลาเริ่ม — วางบนไทม์ไลน์ไม่ได้
           (ยอดรวมและพาเรโต้ด้านล่างยังนับให้ครบ) · กรอกเวลาเริ่มตอนบันทึก Downtime จะเห็นช่วงจริงบนแถบนี้
         </div>

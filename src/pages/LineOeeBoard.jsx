@@ -1,21 +1,29 @@
 import { useState, useEffect, useMemo, useCallback, useContext } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
-import { wavg, wLoad, wRun, wProd, buildCtMap, computeLiveOee, isTrialDefect, defectQty, dtMinBySession } from '../utils/oee';
+import { wavg, wLoad, wRun, wProd, buildCtMap, computeLiveOee, isTrialDefect, defectQty, ngByMatFrom, dtMinBySession, QBIN_EMBED } from '../utils/oee';
 import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
 import { isOpenDT, isPlannedDT } from '../utils/downtimeRules';
-import { getLineFamilyNames } from '../utils/lineHierarchy';
-import { scopedLineNames } from '../utils/sectionScope';
+import { dtBucketName, dtTrashStats, buildDtIndex } from '../utils/downtimeCategory';
+import { getLineFamilyNames, getLeafLineNames, getAncestorNames, isLeafLine } from '../utils/lineHierarchy';
+import LineSelect, { lineOptions } from '../components/LineSelect';
+import { getWorkDate } from '../utils/workDate';
 import { cachedMaster } from '../utils/masterCache';
+import { loadBreakPolicies, loadCtProducts, loadCtKanban } from '../utils/oeeMasters';
 import { fetchByIds } from '../utils/fetchByIds';
 import { usePolling } from '../utils/usePolling';
 import RATE from '../utils/refreshRates';
 import { useLiveBoard } from '../utils/useLiveBoard';
+import { useLatestRequest } from '../utils/useLatestRequest';
+import { fetchAllRows } from '../utils/fetchAllRows';
+import { mrows } from '../utils/masterCache';
 import {
   ResponsiveContainer, AreaChart, Area, BarChart, Bar, XAxis, YAxis,
   CartesianGrid, ReferenceLine, LabelList, Cell,
 } from 'recharts';
+import { CELL_BAR_FILL } from '../utils/chartAxis';
 
 /* ═══ 📟 OEE บอร์ดหน้าไลน์ — /line-oee (2026-08-25 · คำสั่ง user "เพิ่มหน้า OEE หน้าไลน์แบบนี้") ═══
    จอ TV ประจำไลน์ผลิต 1 จอ = 1 ไลน์ (deep-link ?line=<ชื่อกลุ่มไลน์>) — โครงตามภาพอ้างอิง
@@ -42,12 +50,6 @@ const DAYS_TREND = 14;   // เทรนด์ย้อนหลัง
 const DAYS_KPI = 7;      // หน้าต่างตัวเลข Overall/A/P/Q/Pareto (weekly)
 const DEFAULT_TARGET = 90 * 90 * 99 / 1e4; // 80.19 — ค่ามาตรฐานเมื่อกรุ๊ปไม่ตั้ง target (กฎ oee_targets)
 const shiftDate = (s, d) => { const x = new Date(`${s}T00:00:00`); x.setDate(x.getDate() + d); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`; };
-// work date ไทยตัด 08:00 (กะดึกข้ามวัน) — ห้าม toISOString (UTC เพี้ยน · กฎ Date/Time)
-const getWorkDate = () => {
-  const d = new Date();
-  if (d.getHours() < 8) d.setDate(d.getDate() - 1);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-};
 const ddmm = (s) => `${s.slice(8, 10)}/${s.slice(5, 7)}`;
 const hrs = (min) => (min / 60).toLocaleString(undefined, { maximumFractionDigits: 1 });
 const nf = (v, d = 0) => (v == null || !Number.isFinite(v) ? '—' : Number(v).toLocaleString(undefined, { maximumFractionDigits: d }));
@@ -66,10 +68,9 @@ export default function LineOeeBoard() {
   /* ── ไลน์ + scope (pattern มาตรฐาน: leader = family ตัวเอง · อื่นตาม sections) ── */
   useEffect(() => {
     (async () => {
-      // tolerant: flow_mode/parallel_stations อาจยังไม่ apply ในบาง env → ถอย select ชุดพื้นฐาน
-      let { data: d, error } = await supabase.from('production_lines')
-        .select('id, name, section, parent_line_name, is_active, flow_mode, parallel_stations').order('name');
-      if (error) ({ data: d } = await supabase.from('production_lines').select('id, name, section, parent_line_name, is_active').order('name'));
+      // 25/09: เดิม select เอง + ถอยชุดคอลัมน์เมื่อ flow_mode ยังไม่ apply — ย้ายมา cache กลางแล้ว
+      // (ชุดคอลัมน์/การถอยเป็นหน้าที่ของ useProductionLines.js ที่เดียว)
+      const { data: d } = await loadLinesRes();
       setLines(d || []);
     })();
   }, []);
@@ -82,33 +83,54 @@ export default function LineOeeBoard() {
   const [everLines, setEverLines] = useState(null); // null = ยังโหลดไม่เสร็จ — อย่าเพิ่งกรองด้วยเงื่อนไขนี้
   useEffect(() => {
     (async () => {
-      const rows = await cachedMaster('production_sessions:line_names_ever', async () =>
-        (await supabaseDR.from('production_sessions').select('line_name')).data || []);
-      setEverLines(new Set((rows || []).map(r => r.line_name).filter(Boolean)));
+      /* 05/10 (QC audit): เดิม `select('line_name')` เปล่า = ตัดที่ 1,000 แถว (กะทั้งระบบเกินไปนานแล้ว)
+         ⇒ ไลน์ที่เปิดกะหลังแถวที่ 1,000 "ไม่เคยผลิต" หายจาก dropdown · และ `.data || []` = ล้มแล้ว cache
+         ลิสต์ว่าง 4 ชม. ⇒ แบ่งหน้าครบ + โยนเมื่อล้ม (cache ไม่ถูกทับ) · ล้ม = ไม่กรองด้วยเงื่อนไขนี้ (ดีกว่าหาย) */
+      try {
+        const rows = await cachedMaster('production_sessions:line_names_ever:v2', async () =>
+          mrows(await fetchAllRows(supabaseDR, 'production_sessions', 'line_name', q => q.order('id'))));
+        setEverLines(new Set((rows || []).map(r => r.line_name).filter(Boolean)));
+      } catch (e) { console.error('[LineOeeBoard] โหลดประวัติไลน์ไม่สำเร็จ — ไม่กรองไลน์ที่ไม่เคยเปิดกะ', e); }
     })();
   }, []);
-  const scopeNames = useMemo(() => scopedLineNames({ role, lineId, sections, lines }), [role, lineId, sections, lines]);
-  const topOptions = useMemo(() => {
-    const tops = lines
-      .filter(l => !l.parent_line_name && l.is_active !== false)
-      .filter(l => !everLines || getLineFamilyNames(lines, l.name).some(n => everLines.has(n)))
-      .map(l => l.name);
-    if (!scopeNames) return tops;
-    const sc = new Set(scopeNames);
-    return tops.filter(t => getLineFamilyNames(lines, t).some(n => sc.has(n)));
-  }, [lines, scopeNames, everLines]);
+  /* 🔴 2026-09-24 บั๊กที่ user จับได้ต่อจากรอบ 08-25: dropdown มีแต่ **ไลน์แม่** (9-10 ตัว)
+     — `!l.parent_line_name` ตัดไลน์ลูกทิ้งหมด ทั้งที่ **งานจริงเกือบทั้งหมดอยู่ที่ไลน์ลูก**
+     (วัดจริง: Line 60 = 109 กะ · LASER-345 = 106 · HDF2 = 107 ส่วนไลน์แม่ HYDROFORM 11 กะ
+      และหยุดใช้ตั้งแต่ 02/07 — แม่กลายเป็น "แผนก" ไปแล้ว ไม่ใช่จุดผลิต)
+     ⇒ จอ TV ประจำไลน์เปิดดู OEE ของไลน์ตัวเองไม่ได้เลย ต้องดูค่าเฉลี่ยรวมทั้งครอบครัว
+        ซึ่งกลบกันเอง (laser + assy + bending คนละ process อยู่ใต้แม่เดียวกัน)
+     แก้: ใช้ `<LineSelect>` (picker กลาง · UI §5.1.2) กางลำดับชั้นแม่→ลูกให้ครบ
+     ⚠️ คงกฎเดิมของรอบ 08-25 ไว้: ไลน์ปลดระวาง + ไลน์ที่ "ไม่เคยเปิดกะเลย" ต้องไม่โผล่
+        แต่เช็คที่ **ไลน์ลูกใต้มัน (leaf)** ไม่ใช่ทั้งครอบครัว — getLineFamilyNames รวม
+        *สายบน* ด้วย ⇒ ไลน์ลูกที่ไม่เคยเปิดกะจะติดมาเพราะแม่เคยเปิด (Office PD4 ยังถูกตัดถูกต้อง
+        แต่ LINE GWM ที่ไม่เคยเปิดกะจะหลุดเข้ามา) */
+  const boardLines = useMemo(() => {
+    const act = lines.filter(l => l.is_active !== false);
+    if (!everLines) return act;            // ยังโหลดไม่เสร็จ = ยังไม่กรองด้วยเงื่อนไขนี้
+    return act.filter(l => everLines.has(l.name) || getLeafLineNames(act, l.name).some(n => everLines.has(n)));
+  }, [lines, everLines]);
+  const options = useMemo(
+    () => lineOptions(boardLines, { role, lineId, sections }).map(o => o.value),
+    [boardLines, role, lineId, sections],
+  );
   // deep-link ?line= — นอก scope/สะกดผิด = ตกไปตัวแรกที่เข้าได้ (pattern เดียวกับ Management)
   const line = useMemo(() => {
     const q = sp.get('line');
-    return q && topOptions.includes(q) ? q : (topOptions[0] || '');
-  }, [sp, topOptions]);
+    return q && options.includes(q) ? q : (options[0] || '');
+  }, [sp, options]);
   const setLine = (v) => { const n = new URLSearchParams(sp); n.set('line', v); setSp(n, { replace: true }); };
 
   /* ── โหลดข้อมูลทั้งหน้าต่าง (ไลน์เดียว 14 วัน — payload เล็ก) · poll RATE.BOARD ── */
+  const begin = useLatestRequest();   // เปลี่ยนไลน์ระหว่างโหลด = คำตอบของไลน์เก่าห้ามทับจอ (กฎ DB ข้อ 4)
   const load = useCallback(async () => {
     if (!line || !lines.length) return;
+    const live = begin();
     const today = getWorkDate();
-    const fam = getLineFamilyNames(lines, line);
+    /* 🔴 ไลน์ที่ไม่มีลูก (leaf) = ดู **ของตัวเองอย่างเดียว**
+       getLineFamilyNames คืน "ตัวเอง + สายบน" ด้วย ⇒ เลือก Laser GOR แล้วกะเก่าของไลน์แม่ GOR
+       จะถูกเอามาเฉลี่ยปนด้วย = จอบอก OEE ของไลน์อื่น (กฎ "หน่วยย่อยที่สุด" ใน lineHierarchy.js)
+       ไลน์แม่ที่มีลูก = roll-up ทั้งครอบครัวเหมือนเดิม */
+    const fam = isLeafLine(lines, line) ? [line] : getLineFamilyNames(lines, line);
     const from = shiftDate(today, -(DAYS_TREND - 1));
     let bad = false;
 
@@ -116,6 +138,7 @@ export default function LineOeeBoard() {
       .select('id, line_name, work_date, shift, status, oee, oee_a, oee_p, oee_q, shift_min, actual_qty, start_time')
       .gte('work_date', from).lte('work_date', today).in('line_name', fam.length ? fam : [line])
       .order('id').limit(1000);
+    if (!live()) return;
     if (e1) { setData(null); setPartial(true); return; }
     const sessions = sess || [];
     const ids = sessions.map(s => s.id);
@@ -125,17 +148,17 @@ export default function LineOeeBoard() {
         .select('id, session_id, duration_min, started_at, ended_at, machine_no, description, call_mtn, dr_downtime_types(name_th, category)')
         .in('session_id', c)),
       fetchByIds(ids, c => supabaseDR.from('defect_logs')
-        .select('id, session_id, qty_ng, qty_suspect, is_trial, dr_defect_types(name_th, excl_from_q)')
+        // prod_orders(mat_no) = ไว้ชี้ CT ของ NG ตอนบวกเข้าตัวเศษ %P (ngByMatFrom)
+        .select(`id, session_id, qty_ng, qty_suspect, is_trial, prod_orders(mat_no), dr_defect_types(name_th, excl_from_q), ${QBIN_EMBED}`)
         .in('session_id', c)),
       // master ผ่าน cache กลาง — key เดียวกับ FactoryMap = แชร์กัน ไม่ดึงซ้ำ (กฎ egress)
-      cachedMaster('dr_products:ct', async () =>
-        (await supabaseDR.from('dr_products').select('mat_no, cycle_time_sec, pair_mat_no, process_type')).data || []),
-      cachedMaster('kanban_standards:ct', async () =>
-        (await supabaseDR.from('kanban_standards').select('mat_no, dr_products(cycle_time_sec)').eq('is_active', true)).data || []),
+      // ล้ม = null (loader กลางโยน ไม่ cache ลิสต์ว่างทับของดี) ⇒ ติดธง partial บอกบนจอ ห้ามถือว่า "ไม่มี CT/ไม่มีพัก"
+      loadCtProducts().catch(() => null),
+      loadCtKanban().catch(() => null),
       // นโยบายพัก — ต้องส่งเข้า computeLiveOee ไม่งั้น A/P สดไม่ตรงกับค่าที่ stamp ตอนปิดกะ (2026-09-14)
-      cachedMaster('break_policies:active', async () =>
-        (await supabaseDR.from('break_policies').select('shift, process_type, start_time, duration_min, ot_scope').eq('is_active', true)).data || []),
+      loadBreakPolicies().catch(() => null),
     ]);
+    if (prods == null || kstds == null || breaks == null) bad = true;
     if (dtR.error || dtR.truncated || defR.error || defR.truncated) bad = true;
 
     // orders เฉพาะกะที่ยังเปิดของวันนี้ (สำหรับ OEE สด + ยอดระหว่างกะ)
@@ -148,15 +171,29 @@ export default function LineOeeBoard() {
       orders = oR.rows;
     }
 
-    // เป้า OEE ของกรุ๊ป (Main) — A×P×Q เสมอ
-    const { data: tg } = await supabase.from('oee_targets')
-      .select('group_name, target_a, target_p, target_q').eq('group_name', line).maybeSingle();
+    /* เป้า OEE ของกรุ๊ป (Main) — A×P×Q เสมอ
+       ⚠️ oee_targets ตั้งไว้ที่ **ระดับกรุ๊ป/ไลน์แม่** เท่านั้น (วัดจริง 24/09: 11 แถว ไม่มีไลน์ลูกสักตัว)
+       ⇒ เลือกไลน์ลูกแล้ว .eq(line) ได้ null → จอตกไป DEFAULT_TARGET 80.19 เงียบๆ ทั้งที่กรุ๊ปตั้ง 85.05
+       ให้ไล่ขึ้นสายบนหาตัวที่ใกล้ที่สุด แล้ว**บอกบนจอว่าเป็นเป้าของกรุ๊ปไหน** (ห้ามยืมเงียบ) */
+    const tgNames = [line, ...getAncestorNames(lines, line)];
+    const { data: tgRows, error: tgErr } = await supabase.from('oee_targets')
+      .select('group_name, target_a, target_p, target_q').in('group_name', tgNames);
+    if (tgErr) bad = true;   // โหลดเป้าไม่ได้ ≠ "ไม่ได้ตั้งเป้า" — ห้ามตกไปเป้ามาตรฐานเงียบๆ
+    const tgBy = Object.fromEntries((tgRows || []).map(r => [r.group_name, r]));
+    const tgName = tgNames.find(n => tgBy[n]) || null;
+    const tg = tgName ? { ...tgBy[tgName], inheritedFrom: tgName === line ? null : tgName } : null;
 
     // ── OEE สดของกะเปิดวันนี้ — util กลางตัวเดียวกับ FactoryMap/OEE Analytics ──
     const ctMap = buildCtMap({ kanbanStds: kstds || [], products: prods || [] });
-    const procByMat = {}; (prods || []).forEach(p2 => { procByMat[p2.mat_no] = p2.process_type; });
+    const procByMat = {}; const pairMap = prods ? {} : null;   // โหลดไม่ได้ = null (ไม่ยุบ) ห้าม {} (= รู้แล้วว่าไม่มีคู่)
+    (prods || []).forEach(p2 => {
+      procByMat[p2.mat_no] = p2.process_type;
+      if (p2.pair_mat_no) pairMap[p2.mat_no] = p2.pair_mat_no;   // งานคู่ RH/LH (แม่พิมพ์คู่/gang die)
+    });
     const dtBySess = {}; dtR.rows.forEach(d2 => (dtBySess[d2.session_id] ||= []).push(d2));
     const ngBySess = {}; defR.rows.forEach(d2 => { if (isTrialDefect(d2)) return; ngBySess[d2.session_id] = (ngBySess[d2.session_id] || 0) + defectQty(d2); });
+    // คนละตัวกับ ngBySess: %Q ไม่นับงานทดลอง · %P นับทุกชิ้นที่เครื่องทำออกมา (รวมทดลอง/ของสงสัย)
+    const defBySess = {}; defR.rows.forEach(d2 => (defBySess[d2.session_id] ||= []).push(d2));
     const lineCfg = Object.fromEntries(lines.map(l => [l.name, l]));
     const ordBySess = {}; orders.forEach(o => (ordBySess[o.session_id] ||= []).push(o));
     const liveBySess = {};
@@ -164,17 +201,21 @@ export default function LineOeeBoard() {
       liveBySess[s.id] = computeLiveOee({
         session: s, orders: ordBySess[s.id] || [], downtimes: dtBySess[s.id] || [], ctMap,
         workDate: today, nowMs: Date.now(), ngQty: ngBySess[s.id] || 0,
+        ngForP: ngByMatFrom(defBySess[s.id] || [], ordBySess[s.id] || []),
         parallelN: parallelUnitsOf(lineCfg[s.line_name]),
         parallelCap: flowModeOf(lineCfg[s.line_name]?.flow_mode) === 'parallel_machine' ? parallelUnitsOf(lineCfg[s.line_name]) : 1,
         breakPolicies: breaks || [],
         processType: (ordBySess[s.id] || []).map(o => procByMat[o.mat_no]).find(Boolean) || null,
+        // งานคู่ gang die / RH-LH = 1 shot ได้ 2 ชิ้น — ยุบก่อนคิดเวลามาตรฐานของ %P (pairTotals.js)
+        pairMap,
       });
     });
 
+    if (!live()) return;
     setPartial(bad);
     setData({ today, sessions, dts: dtR.rows, defs: defR.rows, ordBySess, dtBySess, ngBySess, liveBySess, target: tg || null, breaks: breaks || [] });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- linesKey แทน lines (ดูหมายเหตุด้านล่าง)
-  }, [line, linesKey]);
+  }, [line, linesKey, begin]);
 
   /* 🔴 2026-09-15 — ผูก deps ของตัวโหลดกับ "เนื้อ" (string) ไม่ใช่ identity ของ array
      array ใบใหม่เนื้อเดิม = ตัวโหลดเปลี่ยน identity ทุก render ⇒ ยิงคิวรีซ้ำฟรีๆ
@@ -247,10 +288,14 @@ export default function LineOeeBoard() {
 
     // Pareto (หน้าต่างสัปดาห์เดียวกับ KPI)
     const kpiSessIds = new Set(sessions.filter(s => s.work_date >= kpiFrom).map(s => s.id));
+    /* พจนานุกรมเดาประเภทจากคำ — สร้างจากชื่อประเภทที่อยู่ในชุดนี้เอง ไม่ยิงคิวรีเพิ่ม */
+    const dtIdx = buildDtIndex(dts);
     const dtTop = {}, defTop = {};
     dts.forEach(d2 => {
       if (!kpiSessIds.has(d2.session_id) || d2.dr_downtime_types?.category === 'planned') return; // Pareto นับเฉพาะนอกแผน
-      const k = d2.dr_downtime_types?.name_th || 'ไม่ระบุประเภท';
+      /* 🗑️ ถังขยะ "อื่นๆ / Alarm ไม่ระบุสาเหตุ" ต้องแตกตามเครื่อง (utils/downtimeCategory 23/09)
+         ไม่งั้นแท่งเดียวกินนาทีจากหลายเครื่องรวมกัน — ช่างอ่านแล้วไปไล่ต่อไม่ได้ */
+      const k = dtBucketName(d2, dtIdx);
       dtTop[k] = (dtTop[k] || 0) + (Number(d2.duration_min) || 0);
     });
     defs.forEach(d2 => {
@@ -273,6 +318,7 @@ export default function LineOeeBoard() {
       trend, overall, A, P, Q, tgt, variance: overall != null ? +(overall - tgt).toFixed(1) : null,
       loadMin, runMin, unplMin, plMin, produced, ngTotal,
       dtTop6: top6(dtTop), defTop6: top6(defTop), history,
+      dtTrash: dtTrashStats(dts.filter(d2 => kpiSessIds.has(d2.session_id) && d2.dr_downtime_types?.category !== 'planned'), { index: dtIdx }),
       hasOpen: !!openNow.length, activeDt, liveNow, kpiN: kpiRows.length,
       liveInWindow: kpiRows.some(r => r.live && r.oee != null),
     };
@@ -302,17 +348,17 @@ export default function LineOeeBoard() {
       {!items.length ? <div style={{ fontSize: 12.5, color: 'var(--muted)', padding: '26px 0', textAlign: 'center' }}>ไม่มีข้อมูลในช่วง {DAYS_KPI} วัน</div> : (
         <ResponsiveContainer width="100%" height={190}>
           <BarChart data={items} margin={{ top: 20, left: 0, right: 6, bottom: 4 }}>
-            <XAxis dataKey="name" tick={{ fontSize: 10.5, fill: 'var(--text2)' }} interval={0}
+            <XAxis dataKey="name" tick={{ fontSize: 11, fill: 'var(--text2)' }} interval={0}
               tickFormatter={n => n.length > 9 ? n.slice(0, 8) + '…' : n} angle={-25} height={48} textAnchor="end" />
             <YAxis hide />
-            <Bar dataKey="v" radius={[4, 4, 0, 0]} isAnimationActive={false}>
+            <Bar dataKey="v" fill={CELL_BAR_FILL} radius={[4, 4, 0, 0]} isAnimationActive={false}>
               <LabelList dataKey="v" position="top" style={{ fontSize: 11, fontWeight: 800, fill: 'var(--text)' }} />
               {items.map((_, i) => <Cell key={i} fill={color} fillOpacity={1 - i * 0.11} />)}
             </Bar>
           </BarChart>
         </ResponsiveContainer>
       )}
-      <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>{unit}</div>
+      <div style={{ fontSize: 11, color: 'var(--muted)' }}>{unit}</div>
     </div>
   );
 
@@ -322,11 +368,10 @@ export default function LineOeeBoard() {
       {/* header — ไม่ใช้ PageHeader (บอร์ดจอ TV — ข้อยกเว้นเดียวกับ Dashboard/Management) */}
       <div style={{ ...card, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: '10px 16px' }}>
         <span style={{ fontSize: 17, fontWeight: 900, color: 'var(--text)' }}>📟 OEE รายไลน์ (Weekly)</span>
-        {/* width กัน index.css select width:100% */}
-        <select value={line} onChange={e => setLine(e.target.value)}
-          style={{ width: 230, padding: '6px 10px', fontSize: 14, fontWeight: 700, borderRadius: 8, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' }}>
-          {topOptions.map(t => <option key={t} value={t}>{t}</option>)}
-        </select>
+        {/* picker กลาง (UI §5.1.2) — ลำดับชั้นแม่→ลูกครบ · width กัน index.css select width:100% */}
+        <LineSelect lines={boardLines} value={line} onChange={setLine} placeholder={null}
+          role={role} lineId={lineId} sections={sections}
+          style={{ width: 250, padding: '6px 10px', fontSize: 14, fontWeight: 700, borderRadius: 8, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' }} />
         <span style={{ fontSize: 12, color: 'var(--muted)' }}>หน้าต่าง {DAYS_KPI} วันล่าสุด{C?.liveInWindow ? ' · รวมกะที่กำลังเปิด (สด)' : ''}</span>
         <span style={{ marginLeft: 'auto', fontSize: 20, fontWeight: 900, color: 'var(--text)', fontVariantNumeric: 'tabular-nums' }}>
           {now.toLocaleTimeString('th-TH', { hour12: false })}
@@ -360,7 +405,12 @@ export default function LineOeeBoard() {
                     {C.variance == null ? '—' : `${varUp ? '▲ +' : '▼ '}${C.variance}`}</b>
                 </div>
               </div>
-              {!data?.target && <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 4 }}>เป้ามาตรฐาน (ยังไม่ตั้ง 🎯 ที่ /oee-analytics)</div>}
+              {!data?.target && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>เป้ามาตรฐาน (ยังไม่ตั้ง 🎯 ที่ /oee-analytics)</div>}
+              {data?.target?.inheritedFrom && (
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
+                  ใช้เป้าของกรุ๊ป <b style={{ color: 'var(--text2)' }}>{data.target.inheritedFrom}</b> (ไลน์นี้ยังไม่ตั้งเป้าของตัวเอง)
+                </div>
+              )}
             </div>
             {/* ⚠️ 2026-08-25 บั๊กที่ user ทัก "ปัจจุบันล่ะ มีแต่ย้อนหลัง 7 วันหรอ" — สถานะสดเดิมมีอยู่
                 แค่ซ่อนอยู่แถบเล็กท้ายจอ ตัวเลขใหญ่สุดบนจอ (72.0%) คือค่าเฉลี่ย 7 วัน ไม่ใช่ตอนนี้
@@ -397,7 +447,7 @@ export default function LineOeeBoard() {
             <div style={{ ...card, flex: 1, minWidth: 380 }}>
               <div style={capSt}>OEE Trend รายวัน ({DAYS_TREND} วัน · เฉลี่ยถ่วงเวลารับภาระ)</div>
               <ResponsiveContainer width="100%" height={168}>
-                <AreaChart data={C.trend} margin={{ top: 8, left: -14, right: 8, bottom: 0 }}>
+                <AreaChart data={C.trend} margin={{ top: 8, left: 4, right: 8, bottom: 0 }}>
                   <defs>
                     <linearGradient id="oeeG" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="0%" stopColor="#2dd4bf" stopOpacity={0.55} /><stop offset="100%" stopColor="#2dd4bf" stopOpacity={0.06} />
@@ -405,7 +455,7 @@ export default function LineOeeBoard() {
                   </defs>
                   <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
                   <XAxis dataKey="d" tick={{ fontSize: 11, fill: 'var(--text2)' }} />
-                  <YAxis domain={[0, 100]} ticks={[0, 50, 100]} tick={{ fontSize: 11, fill: 'var(--text2)' }} tickFormatter={v => `${v}%`} />
+                  <YAxis width="auto" domain={[0, 100]} ticks={[0, 50, 100]} tick={{ fontSize: 11, fill: 'var(--text2)' }} tickFormatter={v => `${v}%`} />
                   <ReferenceLine y={C.tgt} stroke="#f59e0b" strokeDasharray="6 4"
                     label={{ value: `target ${C.tgt.toFixed(0)}%`, position: 'insideTopRight', fill: '#f59e0b', fontSize: 11, fontWeight: 800 }} />
                   <Area type="monotone" dataKey="oee" stroke="#2dd4bf" strokeWidth={2.2} fill="url(#oeeG)" connectNulls={false} isAnimationActive={false} dot={{ r: 2.5 }} />
@@ -436,7 +486,11 @@ export default function LineOeeBoard() {
 
           {/* แถว 3: Pareto + Alarm history */}
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-            {barChart(`Alarm Top 6 (นาที · ${DAYS_KPI} วัน)`, C.dtTop6, '#f97316', 'เฉพาะหยุดนอกแผน — หยุดตามแผนไม่ใช่ loss')}
+            {barChart(`Alarm Top 6 (นาที · ${DAYS_KPI} วัน)`, C.dtTop6, '#f97316',
+                      `เฉพาะหยุดนอกแผน — หยุดตามแผนไม่ใช่ loss${C.dtTrash?.vague
+                        ? ` · 🗑️ ไม่ได้ระบุสาเหตุ ${C.dtTrash.vague} ใบ (${
+                          C.dtTrash.guessed ? `🔎 เดาจากคำ ${C.dtTrash.guessed} · ` : ''}แตกตามเครื่อง${
+                          C.dtTrash.noMachine ? ` · ${C.dtTrash.noMachine} ใบไม่กรอกเครื่อง = ชี้เป้าไม่ได้` : ''})` : ''}`)}
             {barChart(`Defect Top 6 (ชิ้น · ${DAYS_KPI} วัน)`, C.defTop6, '#ef4444', 'รวมทุกรายการ (🧪 = งานทดลอง ไม่ถูกนับใน %Q)')}
             <div style={{ ...card, flex: 1.2, minWidth: 340 }}>
               <div style={capSt}>Alarm History (ล่าสุด)</div>

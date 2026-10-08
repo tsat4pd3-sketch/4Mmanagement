@@ -19,6 +19,7 @@
 import { useState, useMemo } from 'react';
 import { supabaseDR } from '../supabaseClient';
 import { moveTargets } from '../utils/moveTargets';
+import MatLabel from './MatLabel';
 import { toast } from './Toast';
 
 const th = { padding: '7px 10px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left', whiteSpace: 'nowrap' };
@@ -155,7 +156,8 @@ export default function StockMoveToChild({ lines, stock, products, productBom, c
           <div style={{ overflowX: 'auto', maxHeight: 340, overflowY: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
               <thead><tr style={{ background: 'var(--bg2)', position: 'sticky', top: 0 }}>
-                <th style={th}>MAT</th><th style={th}>ชื่อพาร์ท</th><th style={{ ...th, textAlign: 'right' }}>คงเหลือ</th>
+                {/* ยุบ "ชื่อพาร์ท + MAT" เป็นคอลัมน์เดียว — <MatLabel> ให้ครบ Part No./ชื่อ/MAT (30/09) */}
+                <th style={th}>ชิ้นงาน</th><th style={{ ...th, textAlign: 'right' }}>คงเหลือ</th>
                 <th style={th}>อยู่ที่ (ไลน์แม่)</th><th style={th}>ย้ายไป (ไลน์ลูก)</th>
                 <th style={{ ...th, textAlign: 'right' }}>จำนวน</th><th style={th}></th>
               </tr></thead>
@@ -165,8 +167,7 @@ export default function StockMoveToChild({ lines, stock, products, productBom, c
                   const hint = r.groups.find(g => g.lines.includes(sel));
                   return (
                     <tr key={r.key}>
-                      <td style={{ ...td, fontFamily: 'monospace', fontWeight: 700, color: '#0ea5e9' }}>{r.mat_no}</td>
-                      <td style={{ ...td, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.part_name || ''}>{r.part_name || '—'}</td>
+                      <td style={{ ...td, maxWidth: 320 }}><MatLabel mat={r.mat_no} name={r.part_name} /></td>
                       <td style={{ ...td, textAlign: 'right', fontWeight: 800 }}>{r.qty.toLocaleString()}</td>
                       <td style={{ ...td, color: 'var(--muted)' }}>{r.line_name}</td>
                       <td style={td}>
@@ -182,15 +183,15 @@ export default function StockMoveToChild({ lines, stock, products, productBom, c
                         </select>
                         {/* 🔴 ของอยู่ผิดแผนก ไม่ใช่แค่ผิดชั้น — ปลายทางที่ถูกอยู่คนละแผนก */}
                         {r.warn && (
-                          <div style={{ fontSize: 10, color: '#ef4444', marginTop: 3, fontWeight: 700, maxWidth: 210, whiteSpace: 'normal', lineHeight: 1.45 }}>
+                          <div style={{ fontSize: 11, color: '#ef4444', marginTop: 3, fontWeight: 700, maxWidth: 210, whiteSpace: 'normal', lineHeight: 1.45 }}>
                             🔴 {r.warn.text}
                           </div>
                         )}
                         {!r.sure && !r.warn && (
-                          <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 2 }}>⚠ มีหลายปลายทาง — เลือกเอง</div>
+                          <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 2 }}>⚠ มีหลายปลายทาง — เลือกเอง</div>
                         )}
                         {sel && hint?.note && (
-                          <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>{hint.label} — {hint.note}</div>
+                          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{hint.label} — {hint.note}</div>
                         )}
                       </td>
                       <td style={{ ...td, textAlign: 'right' }}>

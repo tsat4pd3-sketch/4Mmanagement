@@ -25,9 +25,11 @@
    ⚠️ ตัวเลือกทั้งหมดอยู่ใน **URL** (`?dept=` `?team=` `?sound=` `?sec=`) เพื่อให้แต่ละห้อง
       บุ๊กมาร์กของตัวเองแล้วเปิดค้างได้ **โดยไม่ต้องมีคนมากดทุกเช้า** (หลักเดียวกับ `?team=`/`?sound=` เดิม)
    ══════════════════════════════════════════════════════════════════════════ */
+import { sortLike } from '../utils/listOrder';
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { loadProductionLines } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import MtnAndonBoard from '../components/MtnAndonBoard';
 import useIsMobile from '../utils/useIsMobile';
@@ -35,8 +37,8 @@ import { scopedLineNames, inSectionScope } from '../utils/sectionScope';
 import { visibleInterval } from '../utils/usePolling';
 import { RATE } from '../utils/refreshRates';
 import { useLiveBoard } from '../utils/useLiveBoard';
-import { cachedMaster } from '../utils/masterCache';
 import { OPEN_MO_STATUSES } from '../utils/dieStatus';
+import { ALL } from '../utils/filterLabels';
 
 /* วันงาน — ตัด 08:00 ตามกฎทั้งระบบ (ห้าม toISOString: คืน UTC = เพี้ยน 1 วันช่วง 00:00-07:00 ไทย) */
 function getWorkDate() {
@@ -70,19 +72,30 @@ export default function TvBoard() {
   const [lines, setLines] = useState([]);
   const [d, setD] = useState(null);
   const [err, setErr] = useState(null);
+  /* ทะเบียนไลน์: 'loading' | 'ok' | 'empty' | ข้อความ error — 05/10 (QC audit): เดิม `.catch(() => setLines([]))`
+     ⇒ โหลดล้ม = lines ว่างตลอดกาล ⇒ loader ไม่ยิง ⇒ จอ TV ค้าง "กำลังโหลด..." ทั้งวันโดยไม่มีใครรู้
+     ตอนนี้: ล้ม = เขียนบนจอ + ลองใหม่เองทุก 30 วิ (จอไม่มีคนเฝ้า) + ปุ่มลองใหม่ */
+  const [linesState, setLinesState] = useState('loading');
+  const [linesTry, setLinesTry] = useState(0);
   const [fs, setFs] = useState(false);
   const [barOpen, setBarOpen] = useState(false);   // แถบตั้งค่า — พับไว้ จอ TV ต้องเป็นเนื้อหาล้วน
   const workDate = getWorkDate();
 
   useEffect(() => {
-    /* ทะเบียนไลน์เป็น master → cache (จอเปิดค้างทั้งวัน ห้าม poll ซ้ำ · กฎ egress)
-       key ตั้งตาม "ชุดคอลัมน์" ไม่ใช่ชื่อหน้า — หน้าอื่นที่ต้องการชุดเดียวกันจะได้ใช้ cache ร่วมได้ */
-    cachedMaster('production_lines:scope', async () => {
-      const { data, error } = await supabase.from('production_lines').select('id, name, section, parent_line_name');
-      if (error) throw error;
-      return data || [];
-    }).then(setLines).catch(() => setLines([]));
-  }, []);
+    /* ทะเบียนไลน์เป็น master → cache กลาง (จอเปิดค้างทั้งวัน ห้าม poll ซ้ำ · กฎ egress)
+       25/09: เดิมตั้งคีย์ของตัวเอง (`production_lines:scope`) = แยก cache กับหน้าอื่นที่อ่านไลน์เหมือนกัน
+       ⇒ ย้ายมาใช้ `loadProductionLines()` คีย์เดียวทั้งแอป (ดู src/utils/useProductionLines.js) */
+    let alive = true, t = null;
+    loadProductionLines()
+      .then(d => { if (!alive) return; setLines(d || []); setLinesState((d || []).length ? 'ok' : 'empty'); })
+      .catch(e => {
+        if (!alive) return;
+        console.error('[TvBoard] โหลดทะเบียนไลน์ไม่สำเร็จ:', e);
+        setLinesState(e?.message || String(e) || 'โหลดทะเบียนไลน์ไม่สำเร็จ');
+        t = setTimeout(() => setLinesTry(n => n + 1), 30000);
+      });
+    return () => { alive = false; if (t) clearTimeout(t); };
+  }, [linesTry]);
 
   useEffect(() => {
     const on = () => setFs(!!document.fullscreenElement);
@@ -136,9 +149,10 @@ export default function TvBoard() {
       if (planRes.error) throw planRes.error;
       const cls = clsRes.data || [];
       const eqIds = [...new Set(cls.map(c => c.equipment_id).filter(Boolean))];
-      const { data: jigs } = eqIds.length
+      const { data: jigs, error: jErr } = eqIds.length
         ? await supabaseDR.from('jigs').select('id, name, jig_no, machine_no, line_name').in('id', eqIds)
         : { data: [] };
+      if (jErr) throw jErr;   // ไม่รู้ชื่ออุปกรณ์ = แผน PM ขึ้นไม่ครบ ห้ามเงียบ
       setD({ mo: moRes.data || [], plans: planRes.data || [], cls, jigs: jigs || [], loadErr: false });
       setErr(null);
     } catch (e) { setErr(e?.message || 'โหลดข้อมูลไม่สำเร็จ'); }
@@ -151,7 +165,7 @@ export default function TvBoard() {
   useLiveBoard(load, { tables: ['mtn_orders', 'inspections'], topic: 'tv-board', rate: RATE.ANALYTIC });
 
   const secOpts = useMemo(
-    () => [...new Set(lines.map(l => l.section).filter(Boolean))].sort(), [lines]);
+    () => sortLike(lines.map(l => l.section), []), [lines]);
   const cur = DEPTS.find(x => x.key === dept);
 
   return (
@@ -184,8 +198,9 @@ export default function TvBoard() {
           <span style={{ width: 1, height: 20, background: 'var(--border2)' }} />
           {/* ส่วนงาน — ค่าที่ไม่มีในลิสต์ (ส่วนงานถูกเปลี่ยนชื่อ) ต้องยังเลือกเห็นได้ ห้ามหายเงียบ */}
           <select value={secFilter} onChange={e => setParam('sec', e.target.value)}
-            style={{ width: 190, fontSize: 12.5, padding: '5px 8px', borderRadius: 8, background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' }}>
-            <option value="">ทุกส่วนงาน (ตามสิทธิ์)</option>
+            title="ทุกส่วนงานที่บัญชีนี้มีสิทธิ์เห็น"
+            style={{ width: 'auto', maxWidth: 220, height: 'var(--ctl-h)', fontSize: 'var(--ctl-fs)', padding: '0 var(--ctl-pad-x)', borderRadius: 'var(--ctl-r)', background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' }}>
+            <option value="">{ALL.section}</option>
             {secOpts.map(s => <option key={s} value={s}>{s}</option>)}
             {secFilter && !secOpts.includes(secFilter) && <option value={secFilter}>⚠ {secFilter} (ไม่มีในทะเบียน)</option>}
           </select>
@@ -205,7 +220,16 @@ export default function TvBoard() {
           ⚠ โหลดข้อมูลไม่สำเร็จ — ตัวเลขบนจอยังไม่ใช่ของจริง ({err})
         </div>
       )}
-      {!d && !err && (
+      {linesState !== 'loading' && linesState !== 'ok' && (
+        <div role="alert" style={{ background: 'var(--card)', border: '1px solid #ef4444', color: '#ef4444', borderRadius: 10, padding: 12, fontSize: 14, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <span>⚠ {linesState === 'empty'
+            ? 'ไม่พบทะเบียนไลน์ผลิต — จอนี้แสดงอะไรไม่ได้ (ตั้งไลน์ที่หน้า ตั้งค่าไลน์ผลิต)'
+            : `โหลดทะเบียนไลน์ไม่สำเร็จ — กำลังลองใหม่อัตโนมัติทุก 30 วินาที (${linesState})`}</span>
+          <button onClick={() => { setLinesState('loading'); setLinesTry(n => n + 1); }}
+            style={{ fontSize: 13, padding: '4px 12px', borderRadius: 8, border: '1px solid #ef4444', background: 'transparent', color: '#ef4444', cursor: 'pointer' }}>↻ ลองใหม่</button>
+        </div>
+      )}
+      {!d && !err && (linesState === 'loading' || linesState === 'ok') && (
         <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 14, padding: 40 }}>กำลังโหลด...</div>
       )}
       {d && <MtnAndonBoard d={d} ctx={ctx} cards={dept} />}
@@ -215,6 +239,6 @@ export default function TvBoard() {
 
 const btn = (on) => ({
   fontSize: 12.5, fontWeight: 800, padding: '5px 12px', borderRadius: 999, cursor: 'pointer',
-  background: on ? 'var(--accent)' : 'var(--bg3)', color: on ? '#08120a' : 'var(--text)',
+  background: on ? 'var(--accent)' : 'var(--bg3)', color: on ? 'var(--accent-ink)' : 'var(--text)',
   border: `1px solid ${on ? 'var(--accent)' : 'var(--border2)'}`,
 });

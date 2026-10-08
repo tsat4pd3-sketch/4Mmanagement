@@ -16,7 +16,7 @@
  * ⚠️ ชั้นนี้เป็น "มุมมองสด" เท่านั้น — ห้ามเอาไป stamp/บันทึกทับ snapshot ของใบ VSM
  */
 // ⚠️ ใส่นามสกุล .js เพราะไฟล์นี้ถูกรันตรงด้วย node:test (Vite ก็รับได้) — ทุกตัวเป็น pure module
-import { computeLiveOee, wavg, wLoad, sumDefectQty, dtMinBySession } from '../utils/oee.js';
+import { computeLiveOee, wavg, wLoad, sumDefectQty, ngByMatFrom, dtMinBySession, orderPlanQty } from '../utils/oee.js';
 import { parallelUnitsOf, isParallelLine } from '../utils/lineTypes.js';
 import { isOpenDT, isPlannedDT, dtElapsedMin } from '../utils/downtimeRules.js';
 
@@ -42,10 +42,11 @@ const bySession = rows => {
  * @param ctMap     จาก buildCtMap (utils/oee.js)
  * @param lines     production_lines (name, flow_mode, parallel_stations) — ใช้หา N เครื่องขนาน
  * @param breakPolicies break_policies ที่ is_active — **ต้องส่ง** ไม่งั้น A/P สด ≠ ค่าที่ stamp ตอนปิดกะ (2026-09-14)
+ * @param pairMap   mat_no → pair_mat_no (งานคู่ gang die / RH-LH) — **ต้องส่ง** ไม่งั้นเวลามาตรฐานของ %P นับ 2 เท่า (2026-09-18)
  */
 export function buildVsmLive({
   boxes = [], sessions = [], orders = [], downtimes = [], defects = [],
-  ctMap = {}, lines = [], nowMs = Date.now(), breakPolicies = [],
+  ctMap = {}, lines = [], nowMs = Date.now(), breakPolicies = [], pairMap = {},
 }) {
   const ordBy = bySession(orders);
   const dtBy = bySession(downtimes);
@@ -93,9 +94,13 @@ export function buildVsmLive({
       downtimes: dtBy[openSess.id] || [],
       ctMap,
       ngQty: sumDefectQty(dfBy[openSess.id] || [], 'line'),
+      // ของเสีย/ทดลองกินรอบเครื่อง → เข้าตัวเศษ %P ด้วย (utils/oee.js `ngByMatFrom`)
+      ngForP: ngByMatFrom(dfBy[openSess.id] || [], ordBy[openSess.id] || []),
       workDate: openSess.work_date,
       nowMs, parallelN, parallelCap,
       breakPolicies,
+      // งานคู่ gang die / RH-LH = 1 shot ได้ 2 ชิ้น — ยุบก่อนคิดเวลามาตรฐานของ %P (pairTotals.js)
+      pairMap,
     }) : null;
 
     /* OEE กะที่ปิดแล้ววันนี้ = ค่า stamp ถ่วงเวลารับภาระ (plannedMin จาก DT category='planned')
@@ -142,7 +147,7 @@ export function buildVsmLive({
         orderCount += 1;
         // สูตรบังคับ "ผลิตได้ระหว่างกะ" — ห้ามเปลี่ยน (CLAUDE.md §ยอดที่จะส่งต่อกะหน้า)
         produced += o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0);
-        target += (o.qty_target ?? o.qty ?? 0);
+        target += orderPlanQty(o);   // เป้านับครั้งเดียวทั้งสายยกยอด · ใบยกเลิก = 0 (oee §6.1 · 05/10)
       });
     });
     byKey[b.key] = { ...lv, produced, target, orderCount };

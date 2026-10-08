@@ -34,6 +34,11 @@ model: inherit
   (ตัด 08:00 + local time) ไม่มี copy ไหนเพี้ยน
 - **A4** บอร์ดเวลา (Heijunka/Shipping/Rack/Store) ต้องใช้ `frameMin`/`frameMinFromIso`/`breaksToFrame`
   จาก `src/utils/timeFrame.js` — ห้ามเขียน wrap นาทีเอง
+- **A7** 🔴 **เวลาที่คนกรอก ต้อง resolve ด้วยกรอบกะจริง** (2026-09-23 · docs/modules/daily-report.md)
+  ห้าม hardcode `shift === 'night' && ชั่วโมง < 8` → ใช้ `resolveShiftTime()` / `shiftWindow()` /
+  `checkShiftTime()` จาก `src/utils/shiftWindow.js` (มีด่าน `regressionGuards` แล้ว)
+  · grep: `'night'` ใกล้ `< 8` · และช่องกรอกเวลาที่บันทึกลงฐาน **ต้องมีด่านเช็คว่าอยู่ในกรอบกะ**
+    (เคยเกิด: downtime 04:19 บนกะที่เปิด 08:00 — AM/PM สลับ ไหลเข้าฐานเงียบๆ 86 แถว)
 - **A5** 🔴 **downtime ที่ทับเวลาพักตามนโยบาย ห้ามหักซ้ำ** (2026-09-15 · docs/modules/oee.md)
   พักเป็น planned stop ที่ถูกกันออกจากฐานเวลาแล้ว — โค้ดที่เอานาที downtime ไปหักจากฐานเวลา
   (`netAvail` · `runMin` · `wLoad` = `shift_min − plannedMin` · `strictOee.plannedDtMin` · `upMin`/MTBF)
@@ -50,7 +55,8 @@ model: inherit
 - **B1** ตารางฝั่ง DR (production_sessions, downtime_logs, defect_logs, machines, prod_orders,
   dr_products, break_policies ฯลฯ) ต้อง query ผ่าน `supabaseDR` — ตารางฝั่ง Main (profiles, employees,
   production_lines, four_m_logs, role_permissions, notifications ฯลฯ) ผ่าน `supabase` —
-  หา query ที่ใช้ client ผิดฝั่ง (เทียบชื่อตารางกับรายการใน CLAUDE.md "Supabase Projects" + "Database Schema")
+  หา query ที่ใช้ client ผิดฝั่ง (เทียบชื่อตารางกับ CLAUDE.md "Supabase Projects" +
+  `docs/modules/db-schema.md` — ย้ายออกจาก CLAUDE.md 2026-09-23 · ตารางที่ไม่อยู่ในเอกสารให้ดูหน้า `/schema` ซึ่งอ่านสดจาก pg_catalog ทั้ง 2 project)
 - **B2** migration ใน `supabase/migrations/` ต้อง**ไม่มี**การเปลี่ยน RLS policy ของตารางฝั่ง DR
   ไปเป็น `TO authenticated` (supabaseDR ไม่เคยส่ง JWT — จะพังทั้งระบบ เคยเกิดแล้ว)
 - **B3** การเปลี่ยน schema ต้องมี migration file ใน `supabase/migrations/` — ถ้าเจอโค้ดอ้างถึง
@@ -77,6 +83,15 @@ model: inherit
 ### หมวด C — Permissions (data-driven)
 
 - **[C-RLS-1]** policy RLS ฝั่ง Main ที่เขียนได้ (`for all/update/delete`) ห้าม hardcode `role = any(array[...])` — ต้องเป็น `has_perm('<คีย์เดียวกับ can() ของปุ่มนั้น>')` (2026-09-04 · `20260904_rls_match_ui_permissions.sql`) · ตรวจ: `grep -n "ARRAY\['admin'" supabase/migrations/*.sql` เทียบกับ pg_policies ปัจจุบัน
+- **[C-RLS-3]** policy เขียนที่เป็น `using (true)` บนตาราง**ทะเบียน/master** ฝั่ง Main = ใครที่ login ก็ลบทิ้งได้ ถึงปุ่มบนจอจะซ่อน — ต้องมี `has_perm()` ด้วยคีย์เดียวกับปุ่ม (05/10 · `org_nodes` เคยเปิดโล่งทั้ง insert/update/delete · `20261005_org_nodes_ref_integrity_main.sql`) · ตรวจ: `select relname, polname, polcmd from pg_policy ... where polqual = 'true' and polcmd <> 'r'`
+- **[C-REF-1]** ปุ่มลบ/เปลี่ยนชื่อแถวใน **ทะเบียนที่ปลายทางจับคู่ด้วยข้อความ (ไม่ผูก FK)** ต้องไล่เช็ค/ไล่แก้ปลายทางก่อน ห้ามเช็คแค่ "มีลูกในตารางตัวเอง" · ต้นแบบ `src/utils/orgNodeRefs.js` (`loadOrgNodeRefs`/`orgRefBlockMessage`/`renameOrgRefs`) · นับไม่ครบ = ห้ามลบ (fail-closed) · 📄 `docs/modules/org-hierarchy.md` §relate table
+- **[C-RLS-4]** policy `FOR ALL TO authenticated USING (true) WITH CHECK (true)` บนตารางใดก็ตามฝั่ง Main = **ด่านอยู่ที่ UI ชั้นเดียว** เรียก REST ตรงๆ ก็ผ่าน (06/10 เจอ 6 ตาราง: `doc_forms`+ลูก · `factory_map`+`factory_line_regions` · `oee_targets`) · predicate ต้องเป็น **union ของคีย์ที่เปิดปุ่มเขียนบนจอจริง** (แคบกว่าปุ่ม = สร้างบั๊ก "กดแล้วเขียวแต่ไม่บันทึก") · 🔴 ตารางที่มีแต่ policy `FOR ALL` ต้อง **เพิ่ม policy อ่านก่อน** แล้วค่อยรัด ไม่งั้นปิดการอ่านไปด้วย · 📄 `docs/modules/role-system.md`
+- **[C-KEY-1]** `can('<resource>','<action>')` ที่คีย์ **ไม่มีในทะเบียนสิทธิ์เลย** → คืน `false` เสมอ ⇒ ฟีเจอร์นั้นไม่มีใครใช้ได้ เหลือแค่ admin ที่ bypass (06/10: `CapacityBoard` เรียก `production_plan:edit` + `master_data:manage` ซึ่งไม่เคยถูก seed · `master_data:manage` เป็นชื่อเก่าที่เกษียณ 22/07) · ตรวจ: เทียบคีย์ที่โค้ดเรียกกับ `select distinct permission_key from role_permissions`
+- **[C-KEY-2]** จอกับ RLS ต้องใช้คีย์ **ชุดเดียวกัน** — จอเปิดปุ่มด้วย `A || B` แต่ RLS เช็คแค่ `A` ⇒ คนที่มีแค่ `B` กดแล้วได้ 0 แถวเงียบ (06/10: `OrgAssignmentsPanel`) · แก้ได้ 2 ทาง: รัดจอให้ตรง RLS (+เขียนบนจอว่าทำไมไม่มีปุ่ม) หรือขยาย RLS — **ห้ามขยาย RLS ลอยๆ ถ้าคีย์นั้นหมายถึง "เฉพาะหน่วยของตัวเอง"**
+- **[B-WRITE-1]** `checkWrite(await … .update/.delete … .select('id'), …)` = **ต่อ `.select()` ไว้แต่ไม่มีใครนับแถว** (`checkWrite` อ่านแค่ `error`) ⇒ ผู้เขียนเชื่อว่ากันบั๊ก RLS-เงียบแล้ว แต่ไม่ได้กัน → ต้องเป็น `checkWriteRows()` (06/10 เจอ 7 จุด · มีด่านใน build แล้ว)
+- **[E-IMG-1]** `<input type="file" accept="image/*">` ที่ไม่ผ่าน `acceptImageFile()` / `<ImageCropModal>` / `toDecodableImage()` ⇒ รูป HEIC จาก iPhone พังตอนเซฟ หรืออัปไฟล์ดิบขึ้นไปแล้วทุกคนเห็นรูปเสีย + ไฟล์ที่ไม่ใช่รูปไม่มีใครเตือน (06/10 เจอ 12 ช่องใน 9 ไฟล์ · มีด่านแล้ว)
+- **[A-DATE-1]** อะไรก็ตามที่คืน **"สตริงวันที่"** แล้วปิดท้ายด้วย `.toISOString().slice(0,10)` ⇒ ถ้าขาเข้าไม่ใช่ UTC ล้วน จะคลาดวันเงียบ (06/10: `MonitorFgSync` ผสม parse `+07:00` กับ output UTC ⇒ `addDays(today,0)` คืนเมื่อวาน) → `addDaysStr()`/`getWorkDate()`/`localDateStr()` ใน `src/utils/workDate.js`
+- **[F-UI-3]** ช่องค้นหา/ช่องเลือกต้องแยกให้ถูกชนิด: **กรองรายการบนจอ** = `<SearchInput>` · **เลือก 1 ค่าจากทะเบียน** = picker กลาง (`ProductSelect`/`CustomerSelect`/`PersonSelect`/`SearchSelect` …) · 🔴 **ห้ามวางคู่กัน** (ช่องค้น + dropdown ยาว = 2 ก้าวเพื่อเลือก 1 ค่า และ dropdown ยังตัดรหัสท้าย) · 📄 `UI-CONVENTIONS.md` §5.1.3
 - **[C-RLS-2]** ตารางที่ client เรียก `.upsert()` ต้องมี UPDATE policy (ไม่มี = ชนแถวเดิมแล้ว 42501) · ตารางที่ client `.update()/.delete()` แล้วผลลัพธ์สำคัญ ต้อง `.select('id')` นับแถว (RLS ปฏิเสธ = 0 แถวไม่มี error)
 - **[B-WRITE-1]** ทุก `insert/update/delete/upsert` ต้องอ่าน `error` (ใช้ `checkWrite` จาก `src/utils/dbWrite.js` หรืออ่าน `{ error }` เอง) · grep: `^\s*await supabase(DR)?\.from\('[^']+'\)\.(insert|update|delete|upsert)\(` ต้องได้ 0 (ยกเว้น `AddUser.jsx` mtn_teams ที่ตั้งใจ · `webpush.js` ใน try ของ unsubscribe) — `await supabase.from(...).insert(...)` เปล่าๆ หรือ `const { data } = ...` = กลืน error · `try{await supabase…}catch{}` = โค้ดตาย (supabase-js ไม่ throw)
 - **[B-WRITE-2]** effect ที่ await แล้ว set state ตาม selection ต้องมี guard กัน stale response (`alive`/request id) — CLAUDE.md §กฎเหล็กการเขียน DB จาก client ข้อ 4
@@ -224,6 +239,14 @@ model: inherit
   `parent_line_name` โดยไม่จัดลำดับ · query production_lines ที่ select แค่ `name` (ไม่มี
   parent_line_name = จัดชั้นไม่ได้) · cascade แผนกต้องใช้ helper `deptOptionsFor`/`ORPHAN_SECTION`
   (sectionScope) ห้ามเขียน `parent_id === secNode.id` เอง — เขียนเองแล้วแผนกขึ้นตรงฝ่ายหาย
+- **F10c** 🔴 **ตัวกรอง/dropdown ไลน์ห้ามตัดไลน์ลูกทิ้ง + ห้ามวาด `<option>` ของไลน์เอง** (2026-09-24
+  · UI-CONVENTIONS §5.3 ข้อ 9 รอบ 2 · มีด่าน build `line-dropdown-hand-built`) — จับ:
+  `filter(l => !l.parent_line_name)` เพื่อทำลิสต์ให้คนเลือก (งานจริงอยู่ที่ไลน์ลูก — `/line-oee`
+  เคยเหลือแต่ไลน์แม่ 9 ตัว) · `<option>` ที่เยื้องชั้นเองด้วย `repeat(depth)`/`'↳ '`
+  (ใช้ `lineOptionLabel()` จาก LineSelect) · เอา `getLineFamilyNames` ไป**กรองข้อมูลของไลน์ลูก**
+  ทั้งที่ควรเป็นตัวเอง (family รวม*สายบน* ⇒ กะของไลน์แม่ปนเข้ามา — ใช้ `isLeafLine` แตกสาขาก่อน) ·
+  เป้า/เกณฑ์ที่ตั้งระดับกรุ๊ป (`oee_targets`) ที่ `.eq(lineชื่อลูก)` แล้วตกไปค่า default เงียบ
+  (ต้องไล่ `getAncestorNames` + เขียนบนจอว่ายืมเป้าจากกรุ๊ปไหน)
   (เคยพัง OjtTraining: ออกใบให้ช่าง MTN ไม่ได้) · ข้อยกเว้น: ลิสต์ derive จากข้อมูลจริงที่เป็น
   string ล้วน (เช่น line filter จาก sessions) = ยอมรับได้ · datalist พิมพ์อิสระ = ไม่บังคับ
   (ลำดับ 4M: Man, Machine, Material) · ปุ่ม 🏷️ ป้ายชื่อ = โชว์/ซ่อน **สองสถานะเท่านั้น** (default โชว์
@@ -288,6 +311,39 @@ model: inherit
   ข้อยกเว้น: master-creation form ที่กำลังตั้งชื่อ master นั้นเอง · search box กรองลิสต์ · ช่องที่ audit
   `docs/SINGLE-SOURCE-AUDIT-2026-09-07.md` ระบุ "ยังไม่ทำ" (ไม่มี master: model · inst_type · container category) · supplier / cost center / press line มี master แล้ว 2026-09-08
 
+- [ ] **F-STD มาตรฐานหน้าตา (`docs/UI-STANDARD.md` · 2026-09-24)** — อ่านไฟล์นั้นก่อนตรวจ
+  · หน้าใน `src/pages/` ที่ไม่มี `<Page` และไม่อยู่ในรายการยกเว้น §1 = 🟡 · รากหน้าตั้ง `padding`/`maxWidth` เอง = 🟡
+  · หน้าที่ไม่มี `<PageHeader` (นอกรายการยกเว้น) = 🔴 (UI-CONVENTIONS §6.8)
+  · `<option …>ทุก…` / `placeholder="ทุก…"` ที่พิมพ์เอง แทน `ALL.*` จาก `utils/filterLabels.js` = 🟡 · `ALL SHIFT`/`ทุก Team`/`ทุก Section` = 🔴
+  · select/input ในแถบกรองที่ใส่ `width/height/padding/fontSize/borderRadius` inline = 🟡 (inline ชนะ token)
+  · ตัวกรอง 2–5 ตัวเลือก (โดยเฉพาะกะ) เป็น `<select>` แทน `<Segmented>` = 🟡
+  · ช่องค้นหากรองลิสต์ที่ไม่ใช่ `<SearchInput>` = 🟡
+  · hub ที่ฝังหน้าลูกโดยไม่ครอบ `<Hub>` = 🔴 (หัวซ้อน)
+  · ยืนยันด้วยจอจริง: `node audit/stdsweep.mjs`
+- [ ] **F-LINEORDER ลำดับรายการไลน์** (2026-10-01 · UI-CONVENTIONS §5.3 ข้อ 9) — ทุกที่ต้องเป็น ส่วนงาน → แม่ → ลูก เรียงธรรมชาติ
+  · เรียงชื่อไลน์ด้วย `.sort()` ดิบ / `localeCompare` = 🟡 (ใช้ `sortLineNames`/`lineNameCompare` · ด่าน `line-names-raw-sort` จับรูปแบบหลักได้แล้ว)
+  · วาด `<option>` ไลน์เองโดยไม่ผ่าน `groupLineOptions(lineOptions(…))` = 🔴 (ไม่มีหัวกลุ่มส่วนงาน/ลำดับคนละแบบ)
+- [ ] **F-ORDER ลำดับรายการผังองค์กร** (2026-10-01 · UI-CONVENTIONS §5.3 ข้อ 10) — ส่วนงาน/แผนก/ทีม ต้องผ่าน `src/utils/listOrder.js`
+  · `from('org_nodes')…order('name')` / `.sort()` ดิบบนลิสต์ส่วนงาน-ทีม = 🟡 (ด่าน `org-list-raw-order`)
+- [ ] **F-MAT ลำดับ Part No. → Part Name → MAT SAP** (2026-09-30 · คำสั่ง user · UI-CONVENTIONS §6.21)
+  · จอที่วาด `{row.mat_no}` ไว้**ก่อน** `{row.part_name}` / `{row.p_no}` ในบล็อกเดียวกัน = 🔴
+  · ตารางที่คอลัมน์ MAT อยู่ก่อนคอลัมน์ชื่อชิ้นงาน = 🔴 (ต้องสลับทั้ง `<th>` และ `<td>`)
+  · MAT ที่อยู่ท้ายแล้วไม่มีป้าย `MAT ` กำกับ = 🟡 (เลขเปล่าแยกไม่ออกจาก Part No.)
+  · **ตัด MAT ทิ้ง** เพราะย้ายไปท้าย = 🔴 (เป็นคีย์ที่ผูกข้อมูลทั้งระบบ)
+  · เปลี่ยน `value`/`label` ของ picker ให้เป็น Part No. ทั้งที่ฟอร์มเก็บ mat_no = 🔴 (ชิปโชว์คนละค่ากับที่บันทึก)
+  · ✅ ด่านอัตโนมัติ: `src/utils/__tests__/matOrderSweep.test.mjs` (ข้อยกเว้นอยู่ใน ALLOW ต้องมีเหตุผลกำกับ)
+  · 🔴 **รหัส (Part No./MAT) ที่ถูก `ellipsis` ตัดได้ = 🔴** — ต้อง `whiteSpace:'nowrap'` + `flexShrink:0`
+    · ตัดได้เฉพาะ **ชื่องาน** (ต้องมี `title` ให้ชี้อ่านเต็ม) · ยัดหลายรหัสลง `label` ของ option = 🔴
+      (ใช้ `lead`/`title`/`code`/`sub` ของ `<SearchSelect>` แทน · ด่าน `picker-label-stuffed-with-codes`)
+    · ตารางที่มีคอลัมน์ `ชื่อชิ้นงาน` กับ `MAT` แยกกัน = 🟡 → ยุบเป็นคอลัมน์เดียววาดด้วย `<MatLabel>` (UI §6.21)
+  · ไม่ตรวจ `src/lib/**` — ใบพิมพ์/export เรียงตามฟอร์มกระดาษทางการ ห้ามสลับ
+
+- **F-AXIS0** แกน Y ที่ไม่เริ่ม 0 ต้องมาจาก `focusDomain()` + `<FocusAxisNote>` (ObeyaSheet) — ห้าม `domain={[dataMin => …]}` / `domain={[95, 100]}` เอง
+  · grep: `domain=\{\[(dataMin|\(?\w+\)? =>|[1-9])` · `domain:\s*\[(dataMin|\w+ =>)` · ด่าน `chart-yaxis-domain-hand-made`
+- **F-KPILEVEL** ช่องตัดสิน KPI (`yn`/`ynTotal`/สีจุดกราฟ) ต้องเป็นระดับ 1/0.5/0 จาก `scoreDef` — ห้าม `v >= target` / `v < target` เอง (2 สีไม่รู้จัก Commitment)
+  · grep: `yn(Total)?:\s*[^,]*(>=|<=)` · `const \w*(miss|hit|pass)Target\w* =` · ด่าน `kpi-yn-boolean-compare`
+- **F-TDZ** อ่าน `const/let` ก่อนบรรทัดประกาศใน scope เดียวกัน (จอขาว "Cannot access before initialization") — lint `no-use-before-define` จับให้แล้ว แต่ถ้าเห็น `const a = b.x` เหนือ `const b` ให้รายงาน
+
 ### หมวด G — Workflow & เอกสาร
 - **G1** pattern ใหม่ที่ใช้หลายหน้า ต้องมีบันทึกใน docs/UI-CONVENTIONS.md · schema/workflow ใหม่
   ต้องอยู่ใน CLAUDE.md — เทียบโค้ดจริงกับเอกสาร หาจุดที่**เอกสารล้าสมัย** (เอกสารผิดแย่กว่าไม่มี)
@@ -297,6 +353,20 @@ model: inherit
   - รายงานภายในที่ `window.open`+print โดยไม่มี layout ฟอร์มทางการ ต้องห่อด้วย `withDocFoot(html, doc_key)` — จุดพิมพ์ใหม่ที่ไม่ห่อ = 🟡
   - โลโก้ต้องผ่าน `urlToDataUrl(docFormSync(key).logo_url || tsLogoUrl)` — hardcode/วาดโลโก้เอง = 🟡
   - ห้ามเขียนตาราง `document_controls`/`document_control_revisions` เพิ่ม (เลิกใช้ 2026-07-30 — ยุบเข้า `doc_forms`/`doc_form_revisions`) = 🔴
+- **G4 ฟอร์มที่ "ยื่นออกไปแล้ว" ต้องเป็นบันทึก** (2026-09-25 · CLAUDE.md §ใบรายงานปัญหา +
+  `docs/modules/production-problem-report-bins.md`) — ใบที่มีเลขที่/ต้องเก็บตามอายุเอกสาร
+  ต้องมีทะเบียนของตัวเอง ไม่ใช่ generate ใหม่ทุกครั้งที่กดพิมพ์:
+  - จุดกดพิมพ์ที่ **ไม่เขียนทะเบียนก่อน** (พิมพ์แล้วจบ ไม่มีร่องรอยว่าเคยออกใบไหน) = 🔴
+    · เขียนทะเบียนล้มแล้ว **พิมพ์ต่อเงียบๆ** = 🔴 (ได้ใบไม่มีเลขที่ที่ไม่มีใครรู้ว่ามีอยู่)
+  - พิมพ์ซ้ำที่ **build ใหม่จากข้อมูลปัจจุบัน** แทนการอ่าน `snapshot` ของใบนั้น = 🔴
+    (ใบเลขเดียวกันต้องเป็นเนื้อเดียวกับที่ยื่นไป) · ไม่เทียบ/ไม่บอกบนจอเมื่อข้อมูลเปลี่ยน = 🟡
+  - เลขที่ running ที่ใช้ `count()+1` แทน "เลขสูงสุดของช่วง + 1" = 🔴 (ออกใบย้อนวันแล้วเลขชน)
+  - ค่ากติกาจาก WI ที่ถูกประกาศซ้ำในหน้า (`TAG_MAX_DAYS` · ลิสต์ผลพิจารณา QA · เลข `WI-PD3-xxx`) = 🔴
+    → ต้อง import จาก `src/utils/qualityBin.js` / อ่านจากทะเบียน `repair_wi_registry`
+  - คอลัมน์สถานะแบบ `closed_at`/`is_done` ที่ **ต้องมีคนกดปิดเอง** เพื่อให้ตัวเตือนหยุดนับ = 🟡
+    → คำนวณจากข้อเท็จจริงที่มีอยู่แล้วแทน (ไม่มีใครกด = ของค้างเทียมเต็มจอ แล้วคนเลิกเชื่อจอ)
+  - ✅ ด่านอัตโนมัติที่มีแล้ว: `problem-report-must-be-recorded` · `quality-bin-rules-hand-built` ·
+    `repair-wi-number-hardcoded` (`src/utils/__tests__/regressionGuards.test.mjs`)
 
 ## รูปแบบรายงานผล (return เป็นข้อความล้วน)
 

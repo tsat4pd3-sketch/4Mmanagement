@@ -13,6 +13,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabaseDR } from '../supabaseClient';
 import { toast } from '../components/Toast';
 import { MQTT_FIELDS, mqttField, LIVE_STALE_MIN, liveAgeMin } from '../utils/energy';
+import { DeleteButton } from './IconButton';
 
 const inp = { width: '100%', padding: '7px 9px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box' };
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: 14 };
@@ -170,7 +171,7 @@ export default function EnergyMqttTopics({ points, canEdit }) {
             <label style={{ fontSize: 11.5, color: 'var(--muted)', flex: '1 1 160px' }}>หมายเหตุ<br />
               <input value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} style={inp} /></label>
             <button onClick={save} disabled={busy}
-              style={{ padding: '8px 18px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+              style={{ padding: '8px 18px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
               {busy ? '⏳' : editId ? '💾 บันทึก' : '+ เพิ่ม'}
             </button>
             {editId && <button onClick={() => { setEditId(null); setForm(EMPTY); }}
@@ -234,8 +235,8 @@ export default function EnergyMqttTopics({ points, canEdit }) {
                   <tr key={r.id} style={r.is_active ? null : { opacity: 0.5 }}>
                     <td style={{ ...td, fontFamily: 'monospace', fontSize: 11.5 }}>
                       {r.topic}
-                      {r.json_path && <div style={{ color: 'var(--muted)', fontSize: 10.5 }}>{r.json_path}</div>}
-                      {r.note && <div style={{ color: 'var(--muted)', fontSize: 10.5, fontFamily: 'var(--font-body)' }}>{r.note}</div>}
+                      {r.json_path && <div style={{ color: 'var(--muted)', fontSize: 11 }}>{r.json_path}</div>}
+                      {r.note && <div style={{ color: 'var(--muted)', fontSize: 11, fontFamily: 'var(--font-body)' }}>{r.note}</div>}
                     </td>
                     <td style={td}>{f.label}<span style={{ color: 'var(--muted)' }}>{f.unit ? ` (${f.unit})` : ''}</span></td>
                     <td style={td}>{r.scope_kind === 'zone' ? '🔧' : '🏭'} {r.scope_name}</td>
@@ -256,7 +257,7 @@ export default function EnergyMqttTopics({ points, canEdit }) {
                           {r.is_active ? 'ใช้อยู่' : 'ปิด'}
                         </button>
                         <button onClick={() => editRow(r)} style={{ padding: '3px 8px', borderRadius: 6, fontSize: 11, marginRight: 4, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>✏️</button>
-                        <button onClick={() => del(r)} style={{ padding: '3px 8px', borderRadius: 6, fontSize: 11, border: '1px solid var(--border2)', background: 'var(--bg3)', color: BAD, cursor: 'pointer' }}>🗑</button>
+                        <DeleteButton onClick={() => del(r)} title="ลบ" />
                       </td>
                     )}
                   </tr>

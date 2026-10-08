@@ -18,6 +18,9 @@ import { findRepeats, sureRepeats, REPEAT_MONTHS } from '../utils/peLink';
 import { notifyEvent } from '../utils/notifyEvent';
 import { checkWrite } from '../utils/dbWrite';
 import LineSelect from './LineSelect';
+import FilterBar from './FilterBar';
+import Segmented from './Segmented';
+import { ALL } from '../utils/filterLabels';
 import PartSelect from './PartSelect';
 import CustomerSelect from './CustomerSelect';
 import useColumnHistory from '../utils/useColumnHistory';
@@ -34,11 +37,11 @@ const SEVERITY = { minor: { label: 'เล็กน้อย', color: '#6b7280' 
 const inputSt = { width: '100%', padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13 };
 const thSt = { padding: '8px 10px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left', whiteSpace: 'nowrap' };
 const tdSt = { padding: '8px 10px', fontSize: 12.5, color: 'var(--text2)', borderTop: '1px solid var(--border)', verticalAlign: 'top' };
-const btnSt = (bg = 'var(--accent)', fg = '#08130a') => ({ padding: '7px 14px', borderRadius: 8, border: 'none', background: bg, color: fg, fontWeight: 800, fontSize: 12.5, cursor: 'pointer' });
+const btnSt = (bg = 'var(--accent)', fg = 'var(--accent-ink)') => ({ padding: '7px 14px', borderRadius: 8, border: 'none', background: bg, color: fg, fontWeight: 800, fontSize: 12.5, cursor: 'pointer' });
 const ghostBtn = { padding: '6px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 12, fontWeight: 700, cursor: 'pointer' };
 
 const Chip = ({ label, color }) => (
-  <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 999, fontSize: 10.5, fontWeight: 800, color, background: `${color}22`, border: `1px solid ${color}66`, whiteSpace: 'nowrap' }}>{label}</span>
+  <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 800, color, background: `${color}22`, border: `1px solid ${color}66`, whiteSpace: 'nowrap' }}>{label}</span>
 );
 const Field = ({ label, children, span }) => (
   <label style={{ display: 'block', gridColumn: span ? `span ${span}` : undefined }}>
@@ -117,6 +120,7 @@ export default function QaClaims({ lines = [], role, lineId, sections, partOpts 
     if (f.id) ({ data: row, error } = await supabase.from('qa_customer_claims').update(payload).eq('id', f.id).select('id').single());
     else {
       const claim_no = await nextDocNo('qa_customer_claims', 'claim_no', 'CLM');
+      if (!claim_no) { setBusy(false); toast.error('ออกเลขที่เคลมไม่สำเร็จ — ยังไม่ได้บันทึก ลองใหม่อีกครั้ง'); return null; }
       ({ data: row, error } = await supabase.from('qa_customer_claims').insert({ ...payload, claim_no, created_by: fullName || null }).select('id').single());
     }
     setBusy(false);
@@ -144,6 +148,7 @@ export default function QaClaims({ lines = [], role, lineId, sections, partOpts 
     if (!canRecord) return;
     setBusy(true);
     const capa_no = await nextDocNo('qa_capa', 'capa_no', 'CAPA');
+    if (!capa_no) { setBusy(false); toast.error('ออกเลขที่ CAPA ไม่สำเร็จ — ลองใหม่อีกครั้ง'); return; }
     const { data, error } = await supabase.from('qa_capa').insert({
       capa_no, ncr_id: c.ncr_id || null,
       title: `เคลมลูกค้า ${c.customer} — ${c.defect_desc.slice(0, 50)} (${c.claim_no})`,
@@ -190,7 +195,7 @@ export default function QaClaims({ lines = [], role, lineId, sections, partOpts 
           <div key={label} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '10px 13px' }}>
             <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{label}</div>
             <div style={{ fontSize: 22, fontWeight: 800, color: color || 'var(--text)' }}>{val}</div>
-            <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>{sub}</div>
+            <div style={{ fontSize: 11, color: 'var(--muted)' }}>{sub}</div>
           </div>
         ))}
       </div>
@@ -208,14 +213,14 @@ export default function QaClaims({ lines = [], role, lineId, sections, partOpts 
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        {[['active', 'ยังไม่ปิด'], ['closed', 'ปิดแล้ว'], ['all', 'ทั้งหมด']].map(([v, l]) => (
-          <button key={v} onClick={() => setFilter(v)}
-            style={{ ...ghostBtn, ...(filter === v ? { background: 'var(--accent-dim)', color: 'var(--accent)', borderColor: 'var(--accent)' } : {}) }}>{l}</button>
-        ))}
-        <div style={{ flex: 1 }} />
+      {/* UI-STANDARD 2026-09-24: 3 ตัวเลือกเท่ากัน → Segmented · "ทุก…" ซ้ายสุด (state 'all' เดิม) */}
+      <FilterBar>
+        <Segmented label="สถานะ" value={filter} onChange={setFilter} options={[
+          { value: 'all', label: ALL.status }, { value: 'active', label: 'ยังไม่ปิด' }, { value: 'closed', label: 'ปิดแล้ว' },
+        ]} />
+        <span className="spacer" />
         {canRecord && <button style={btnSt()} onClick={() => setDetail(EMPTY())}>📮 รับเคลมใหม่</button>}
-      </div>
+      </FilterBar>
 
       <div className="table-sticky" style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 12 }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
@@ -237,12 +242,12 @@ export default function QaClaims({ lines = [], role, lineId, sections, partOpts 
                     {maybe && <div><Chip label="❓ อาจซ้ำ" color="#f59e0b" /></div>}
                   </td>
                   <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>{c.claim_date}</td>
-                  <td style={tdSt}>{c.customer}{c.customer_ref && <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>ref {c.customer_ref}</div>}</td>
-                  <td style={tdSt}>{c.part_no || '—'}{c.line_name && <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>🏭 {c.line_name}</div>}</td>
-                  <td style={{ ...tdSt, maxWidth: 260 }}>{(c.defect_desc || '').slice(0, 70)}<div><Chip label={SEVERITY[c.severity]?.label} color={SEVERITY[c.severity]?.color} /> <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>{CATEGORY[c.category]}</span></div></td>
+                  <td style={tdSt}>{c.customer}{c.customer_ref && <div style={{ fontSize: 11, color: 'var(--muted)' }}>ref {c.customer_ref}</div>}</td>
+                  <td style={tdSt}>{c.part_no || '—'}{c.line_name && <div style={{ fontSize: 11, color: 'var(--muted)' }}>🏭 {c.line_name}</div>}</td>
+                  <td style={{ ...tdSt, maxWidth: 260 }}>{(c.defect_desc || '').slice(0, 70)}<div><Chip label={SEVERITY[c.severity]?.label} color={SEVERITY[c.severity]?.color} /> <span style={{ fontSize: 11, color: 'var(--muted)' }}>{CATEGORY[c.category]}</span></div></td>
                   <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>{c.qty_claim}{c.qty_returned ? ` / คืน ${c.qty_returned}` : ''}</td>
                   <td style={{ ...tdSt, whiteSpace: 'nowrap', color: late ? '#ef4444' : undefined, fontWeight: late ? 800 : undefined }}>
-                    {c.due_reply_date || '—'}{late && <div style={{ fontSize: 10.5 }}>เลยกำหนด</div>}
+                    {c.due_reply_date || '—'}{late && <div style={{ fontSize: 11 }}>เลยกำหนด</div>}
                   </td>
                   <td style={tdSt}><Chip label={st.label} color={st.color} /></td>
                   <td style={tdSt}>
@@ -265,8 +270,8 @@ export default function QaClaims({ lines = [], role, lineId, sections, partOpts 
 
 function ClaimModal({ detail, setDetail, lines, role, lineId, sections, partOpts = [], canRecord, canManage, busy, save, openCapa, repeats }) {
   // 📜 ค่าที่เคยบันทึกใน qa_claims (Main) — พาร์ท/ลูกค้าที่ทะเบียนยังไม่มี ยังเลือกซ้ำได้ (สะกดเดิม = ไม่แตกกลุ่มเคลมซ้ำ) (2026-09-07)
-  const partHist = useColumnHistory(supabase, 'qa_claims', 'part_no', { upper: true });
-  const custHist = useColumnHistory(supabase, 'qa_claims', 'customer');
+  const partHist = useColumnHistory(supabase, 'qa_customer_claims', 'part_no', { upper: true });
+  const custHist = useColumnHistory(supabase, 'qa_customer_claims', 'customer');
   const set = (k) => (e) => setDetail((f) => ({ ...f, [k]: e.target.value }));
   const ro = !canRecord || detail.status === 'closed';
   return (

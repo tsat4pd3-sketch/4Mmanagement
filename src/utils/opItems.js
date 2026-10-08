@@ -7,23 +7,45 @@
    การใช้: loader ของหน้า await loadOpInfo() (cache ระดับ module) แล้วจุดคำนวณอ่าน opInfoSync()
    best-effort: migration ยังไม่ apply / query พัง → คืน {} = พฤติกรรมเดิมเป๊ะ ไม่มีอะไรพัง
    ═══════════════════════════════════════════════════════════════════════════════════════ */
-import { supabaseDR } from '../supabaseClient'
+import { loadProductsMaster, invalidateProducts } from './useProducts'
+import { partCoreOf } from './partGroup'
 
 let _cache = null
 
-/** โหลด map ของรายการ OP: { [mat_no]: { parent, seq } } — cache ครั้งเดียวต่อ session
- *  parent ว่างได้เสมอ = ของที่ขั้นนี้ประกอบมาไม่มีใบผลิตของตัวเอง (ดู src/utils/opLink.js) */
+/** โหลด map ของรายการ OP: { [mat_no]: { parent, seq, alts? } }
+ *  parent ว่างได้เสมอ = ของที่ขั้นนี้ประกอบมาไม่มีใบผลิตของตัวเอง (ดู src/utils/opLink.js)
+ *
+ *  🔴 `alts` = MAT อื่นที่เป็น **สินค้าตัวเดียวกับ `parent`** (คนละลูกค้า → คนละ MAT SAP คนละบิล
+ *  แต่พาร์ทเดียวกัน · คำสั่ง user 05/10) จับกลุ่มด้วย **แกน `p_no` เท่านั้น ห้ามใช้ชื่อ**
+ *  — `op_parent_mat` ชี้ได้ MAT เดียว ⇒ วันที่ไลน์รันลูกค้าอื่น ขั้นตอนจะไม่ยุบแล้วนับซ้ำ
+ *  (วัดจริง 05/10: 27 กะ · 18,659 ชิ้น) · ตัวตัดสินอยู่ที่ `collapseOps` (pairTotals.js)
+ *
+ *  25/09: เดิมยิง `dr_products` เองแล้ว cache ไว้ใน**ตัวแปรของโมดูล** ⇒ หายทุกครั้งที่เปิดแอปใหม่
+ *  (วัดจริง 481 ครั้ง/วัน ≈ จำนวน boot) — ย้ายมาอ่านทะเบียนสินค้าชุดกลางซึ่ง cache ข้าม boot
+ *  ใน localStorage อยู่แล้ว · ตัวแปรด้านล่างเหลือไว้เป็น snapshot ให้ `opInfoSync()` อ่านแบบ sync */
 export async function loadOpInfo(force = false) {
   if (_cache && !force) return _cache
   try {
-    const { data, error } = await supabaseDR
-      .from('dr_products')
-      .select('mat_no, op_parent_mat, op_seq')
-      .eq('is_operation', true)
-    if (error) throw error
+    if (force) invalidateProducts()
+    const rows = await loadProductsMaster()
+    if (!rows) throw new Error('โหลดทะเบียนสินค้าไม่สำเร็จ')
+    /* แกน p_no → MAT ของ "พาร์ทจริง" ทุกตัวในแกนนั้น — **ตัดแถว OP ออก** (ขั้นตอนไม่ใช่ตัวจริง
+       และ p_no ของขั้นมักเป็นเลขวัตถุดิบ/เลขส่งออก ซึ่งจับกลุ่มกับพาร์ทจริงไม่ได้) */
+    const membersOf = {}, coreOf = {}
+    rows.forEach(r => {
+      if (!r.mat_no || r.is_operation) return
+      const c = partCoreOf(r.p_no)
+      if (!c) return
+      coreOf[r.mat_no] = c
+      ;(membersOf[c] = membersOf[c] || []).push(r.mat_no)
+    })
     const m = {}
-    ;(data || []).forEach(r => {
-      if (r.mat_no) m[r.mat_no] = { parent: r.op_parent_mat || null, seq: r.op_seq ?? null }
+    rows.forEach(r => {
+      if (!(r.is_operation && r.mat_no)) return
+      const parent = r.op_parent_mat || null
+      const core = parent ? coreOf[parent] : null
+      const alts = core ? (membersOf[core] || []).filter(x => x !== parent) : []
+      m[r.mat_no] = { parent, seq: r.op_seq ?? null, ...(alts.length ? { alts } : {}) }
     })
     _cache = m
   } catch (e) {

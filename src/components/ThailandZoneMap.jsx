@@ -104,7 +104,7 @@ export default function ThailandZoneMap({ zones, groups = [], onPickZone, onPick
             return (
               <button key={g.key || 'all'} onClick={() => setGFilter(g.key)} style={{
                 fontSize: 12.5, fontWeight: 700, padding: '4px 10px', borderRadius: 999, cursor: 'pointer',
-                background: on ? 'var(--accent)' : 'var(--bg3)', color: on ? '#08120a' : 'var(--text)',
+                background: on ? 'var(--accent)' : 'var(--bg3)', color: on ? 'var(--accent-ink)' : 'var(--text)',
                 border: `1px solid ${on ? 'var(--accent)' : 'var(--border2)'}`,
               }}>
                 {g.icon} {g.short}
@@ -178,7 +178,7 @@ export default function ThailandZoneMap({ zones, groups = [], onPickZone, onPick
                 {/* ★ = บริษัทเรา (ข้อมูลจริง) */}
                 {c.real && <>
                   <circle cx={x + r - 1} cy={y - r + 1} r="8" fill="#22c55e" stroke="#fff" strokeWidth="1.5" />
-                  <text x={x + r - 1} y={y - r + 5} textAnchor="middle" fill="#08120a" fontSize="10" fontWeight="900">★</text>
+                  <text x={x + r - 1} y={y - r + 5} textAnchor="middle" fill="#08120a" fontSize="11" fontWeight="900">★</text>
                 </>}
                 {/* ป้ายชื่อใต้หมุด */}
                 {!dim && (
@@ -198,7 +198,7 @@ export default function ThailandZoneMap({ zones, groups = [], onPickZone, onPick
             position: 'absolute', left: `${px(hover.lon) / 1000 * 100}%`, top: `${py(hover.lat) / H * 100}%`,
             transform: 'translate(-50%, calc(-100% - 26px))', pointerEvents: 'none', zIndex: 5,
             background: 'var(--card)', border: `1px solid ${statusColor(hover.status)}`, borderRadius: 8,
-            padding: '8px 11px', minWidth: 190, boxShadow: '0 8px 22px rgba(0,0,0,0.45)',
+            padding: '8px 11px', minWidth: 190, boxShadow: 'var(--shadow-float)',
           }}>
             <div style={{ fontSize: 14, fontWeight: 800 }}>{hover.flag} {hover.code}</div>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 5 }}>{hover.name}</div>

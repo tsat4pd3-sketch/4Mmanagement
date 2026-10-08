@@ -18,7 +18,10 @@ import { supabase } from '../supabaseClient'
  *    'both' = ระดับหัวหน้า ดูแลทั้งสองฝั่ง
  *    null   = สายสนับสนุน ไม่ควรมีสิทธิ์บันทึก/อนุมัติผลตรวจ (ธุรการ/เลขา/เจ้าหน้าที่)
  *  ⚠️ ใช้เป็น "คำแนะนำ/คำเตือน" เท่านั้น — สิทธิ์จริงยังคุมที่ role_permissions ตามเดิม
- *     (ห้ามเอามาบล็อกการทำงาน เพราะหน้างานมีข้อยกเว้นเสมอ) */
+ *     (ห้ามเอามาบล็อกการทำงาน เพราะหน้างานมีข้อยกเว้นเสมอ)
+ *  🔴 **ข้อยกเว้นเดียว: ช่องเซ็นในลูป MO** (`mtn_repair` ขั้น 6/7/8) ใช้ `positionRank()`
+ *     ล็อกการกดจริง — คำสั่ง user 2026-10-02 เพราะใบ MO ฉบับกระดาษมีช่องเซ็นแยกตามตำแหน่ง
+ *     (ผู้ตรวจสอบ=หัวหน้าแผนก · รับรองโดย=ผจก.ส่วน · ผู้จัดการ) แล้วระบบเปิดให้คนเดียวกันกดได้หมด */
 export const POSITION_LEVELS = [
   { key: 'operator',   label: 'ปฏิบัติการ (หน้างาน)', rank: 10, maintenance: 'am' },
   { key: 'staff',      label: 'ธุรการ / สนับสนุน',    rank: 10, maintenance: null },
@@ -67,6 +70,11 @@ export const positionsSync = () => _cache || DEFAULT_POSITIONS
 
 const rows = () => positionsSync()
 
+/** เกรดที่ตำแหน่งนี้ใช้ได้ตามแม่แบบ HR (positions.grade_codes) — [] = แม่แบบไม่ได้ระบุ **ห้ามเดา**
+ *  ใช้เสนอค่า + เตือนเมื่อเกรดไม่ตรงตำแหน่ง · ดู src/utils/grades.js + docs/modules/org-hierarchy.md §2 */
+export const gradeCodesOfPosition = (v) =>
+  rows().find(r => r.key === positionKeyOf(v))?.grade_codes || []
+
 /** ค่าใดๆ (key หรือชื่อไทย/อังกฤษเก่า) → key · ไม่รู้จัก = คืนค่าเดิม (ไม่กลืนหาย) */
 export function positionKeyOf(v) {
   const s = String(v || '').trim(); if (!s) return ''
@@ -92,6 +100,20 @@ export function levelOfPosition(v) {
   const k = positionKeyOf(v)
   return rows().find(p => p.key === k)?.level || null
 }
+/** ค่าใดๆ → "ระดับชั้นงาน" เป็นตัวเลข (operator 10 … manager 60) · ไม่รู้จัก = null
+ *
+ *  🔴 **`null` = "ระบบไม่รู้ตำแหน่ง" ไม่ใช่ "ตำแหน่งต่ำ"** — ผู้เรียกห้ามเอาไปเทียบ `< minRank`
+ *     ตรงๆ (87/98 คนมีตำแหน่ง · ที่เหลือจะถูกล็อกออกทันทีทั้งที่ไม่ได้ทำอะไรผิด)
+ *     ให้ปล่อยผ่านแล้ว**เขียนบนจอ**ว่าไม่ได้ตรวจ (ดู stepAssumptions ใน mtnStepPerm.js)
+ *
+ *  ⚠️ ใช้ล็อกการกดได้**เฉพาะช่องเซ็นในลูป MO** (ข้อยกเว้นเดียว — คำสั่ง user 2026-10-02
+ *     "ไม่มีลอคตำแหน่งในการกด") เพราะใบ MO ฉบับกระดาษมีช่องเซ็นแยกตามตำแหน่งจริงๆ
+ *     ที่อื่นยังเป็น "คำแนะนำ/คำเตือน" ตามกฎเดิมด้านบน — ห้ามเอาไปบล็อกงานหน้างาน */
+export function positionRank(v) {
+  const lv = levelOfPosition(v)
+  return lv ? (levelMeta(lv)?.rank ?? null) : null
+}
+
 /** ระดับนี้ควรทำงานบำรุงรักษาแบบไหน — 'am' | 'pm' | 'both' | null (ไม่รู้จัก/สายสนับสนุน) */
 export function maintenanceKindOfPosition(v) {
   const lv = levelOfPosition(v)

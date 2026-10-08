@@ -1,15 +1,23 @@
 import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
-import { getLineFamilyNames } from '../utils/lineHierarchy';
-import { DIE_SET_KINDS, dieSetKindLabel } from '../utils/equipmentKinds';
+import { getLineFamilyNames, lineNameCompare } from '../utils/lineHierarchy';
+import { dieSetKindLabel, dieSetKindOptions, dieSetKindKey } from '../utils/equipmentKinds';
+import useDieSetKinds, { invalidateDieSetKinds } from '../utils/useDieSetKinds'; // ทะเบียนรูปแบบชุด (DR die_set_kinds) — 2026-10-05
 import { OPEN_MO_STATUSES, buildOpenMoMap, openMosOf } from '../utils/dieStatus';
 import PageHeader from '../components/PageHeader';
-import useTabParam from '../utils/useTabParam';
+import Page from '../components/Page';
+import FilterBar from '../components/FilterBar';
+import SearchInput from '../components/SearchInput';
+import { ALL, allOf } from '../utils/filterLabels';
+import useTabParam, { useMergeParams } from '../utils/useTabParam';
+import { useSearchParams } from 'react-router-dom';
+import { buildQrPayload, parseQrPayload, findDieByScan } from '../utils/qrCode';   // 📷 สแกนป้ายแม่พิมพ์ → หมุดบนผัง (2026-10-06)
 import DieLayout from '../components/DieLayout';
 import DieStatusBoard from '../components/DieStatusBoard';
 import ProductSelect from '../components/ProductSelect'; // MAT SAP = picker กลาง (single-source audit 2026-09-07)
@@ -17,6 +25,7 @@ import useColumnHistory from '../utils/useColumnHistory'; // 📜 MAT ที่�
 import SelectOrFree from '../components/SelectOrFree';
 import SimpleMasterPanel from '../components/SimpleMasterPanel';
 import CollapseCard from '../components/CollapseCard';
+import PressSetupRules from '../components/PressSetupRules';   // ⏱️ กฎเวลาเปลี่ยนรุ่นงานปั๊ม (2026-09-25)
 import useDiePressLines, { invalidateDiePressLines } from '../utils/useDiePressLines'; // ทะเบียนกลุ่มเครื่องปั๊ม (DR die_press_lines) — 2026-09-08
 
 /* ═══════════════════════════════════════════════════════════════
@@ -79,9 +88,11 @@ const numOrNull = (v) => {
   return Number.isFinite(n) ? n : null;
 };
 
+const KIND_NONE = '__none__';   // ตัวกรอง "ยังไม่ระบุรูปแบบชุด" (die_sets.kind = null)
+
 const emptySet = {
   id: null, set_code: '', part_no: '', part_name: '', model: '', line_name: '',
-  kind: 'tandem', op_total: '', pieces_per_stroke: 1, mat_no: '', note: '', is_active: true,
+  kind: '', op_total: '',   // ว่าง = "ยังไม่ระบุ" (06/10 · คำสั่ง user — เดิม default tandem = เดาแทนหน้างาน) pieces_per_stroke: 1, mat_no: '', note: '', is_active: true,
 };
 
 export default function DieRegistry() {
@@ -89,14 +100,38 @@ export default function DieRegistry() {
   // ใช้สิทธิ์ชุดเดียวกับฐานข้อมูลเครื่องจักร — แม่พิมพ์อยู่ตาราง machines เดียวกัน คนดูแลกลุ่มเดียวกัน
   // (เลี่ยงการ seed permission key ใหม่ ซึ่งมีกับดัก enum_range ทำให้ role ที่เพิ่มทีหลัง fail-closed)
   const canEdit = can('machines', 'edit', role);
-  const [tab, setTab] = useTabParam(['registry', 'layout', 'status'], 'registry');
+  /* ⚠️ param ชื่อ `die` ไม่ใช่ `tab` — หน้านี้ถูก embed เป็นแท็บใน `/equipment` (2026-09-22)
+     ซึ่งกิน `?tab=` ไปแล้ว · แท็บซ้อนแท็บต้องคนละ param (UI-CONVENTIONS §6.8)
+     ลิงก์เก่า `/die-registry?tab=layout` ยังใช้ได้ — App.jsx แปลงให้ตอน redirect */
+  const [tab, setTab] = useTabParam(['registry', 'layout', 'status'], 'registry', 'die');
   // 2026-09-08: ทะเบียน die_press_lines — แหล่งหลักของชื่อ "ไลน์/กลุ่มเครื่องปั๊ม" ของแม่พิมพ์ (แยกจาก production_lines)
   const pressLines = useDiePressLines();
+  // 2026-10-05: รูปแบบชุด = ทะเบียน die_set_kinds (เดิม hardcode 4 ค่า) — ทีมแม่พิมพ์เพิ่ม/ตั้งชื่อเรียกเองได้
+  const [opTypes, setOpTypes] = useState([]);
+  const [kindsVer, setKindsVer] = useState(0);
+  const setKinds = useDieSetKinds(kindsVer);
+  /* ตัวเลือก "ชนิดอุปกรณ์ในใบแจ้งซ่อม" ของแผง ⚙️ รูปแบบชุด = ชื่อใน mtn_item_types ของทีม DIE + ของกลาง
+     โหลดแยกจาก load() หลัก (ใช้แค่ในแผงตั้งค่า) · โหลดไม่ได้ = ลิสต์ว่าง + ขึ้น toast (ห้ามเงียบ) */
+  const [dieItemTypes, setDieItemTypes] = useState([]);
+  useEffect(() => {
+    let alive = true;
+    supabaseDR.from('mtn_item_types').select('name, team').eq('is_active', true).order('sort_order').then(({ data, error }) => {
+      if (!alive) return;
+      if (error) { toast.error('โหลดชนิดอุปกรณ์ (ใบแจ้งซ่อม) ไม่สำเร็จ: ' + error.message); return; }
+      setDieItemTypes((data || []).filter(t => !t.team || t.team === 'die_maintenance').map(t => t.name));
+    });
+    return () => { alive = false; };
+  }, []);
+  const dieItemTypeOpts = useMemo(() => {
+    const names = new Set(dieItemTypes);
+    setKinds.forEach(k => { if (k.mo_item_type) names.add(k.mo_item_type); }); // ค่าที่ตั้งไว้แล้วต้องอยู่ในลิสต์เสมอ
+    opTypes.forEach(o => { if (o.mo_item_type) names.add(o.mo_item_type); });
+    return [...names].map(n => ({ value: n, label: n }));
+  }, [dieItemTypes, setKinds, opTypes]);
 
   const [lines, setLines]   = useState([]);
   const [dies, setDies]     = useState([]);   // machines (equipment_kind='die') + equipment_die
   const [sets, setSets]     = useState([]);
-  const [opTypes, setOpTypes] = useState([]);
   const [products, setProducts] = useState([]); // dr_products — ผูก mat_no ของชุด
   const [areas, setAreas]     = useState([]);   // die_storage_areas — ผังจัดเก็บ
   const [openMos, setOpenMos] = useState([]);   // ใบซ่อม MO ที่ยังไม่ปิด (derive สถานะซ่อม)
@@ -124,7 +159,7 @@ export default function DieRegistry() {
     //    เหมือนข้อมูลหาย (กฎเหล็กข้อ 1) → เก็บชื่อชุดที่ล้มไปโชว์เป็นแถบเตือน (audit 2026-09-08)
     const warn = [];
     const [lnRes, mcRes, stRes, otRes, pdRes, areaRes, moRes] = await Promise.all([
-      supabase.from('production_lines').select('id, name, section, parent_line_name').order('name'),
+      loadLinesRes(),
       // ตัวตนของแม่พิมพ์ยังอยู่ machines — embed ส่วนขยายมาด้วยในนัดเดียว
       supabaseDR.from('machines')
         .select('id, machine_no, machine_name, line_name, is_active, equipment_die(*)')
@@ -200,7 +235,7 @@ export default function DieRegistry() {
     const s = new Set();
     sets.forEach(x => { if (x.line_name && inScope(x.line_name)) s.add(x.line_name); });
     dies.forEach(d => { if (d.line_name && inScope(d.line_name)) s.add(d.line_name); });
-    return [...s].sort((a, b) => a.localeCompare(b));
+    return [...s].sort(lineNameCompare);   // เรียงธรรมชาติชุดเดียวกับ dropdown ไลน์ (2026-10-01)
   }, [sets, dies, inScope]);
   /* 2026-09-08: ตัวเลือกไลน์ในฟอร์มชุด = ทะเบียน die_press_lines ที่เปิดใช้ (ขึ้นก่อน) ∪ ชื่อที่ชุด/แม่พิมพ์ใช้อยู่แล้ว
         (ค่าเก่าที่ยังไม่ลงทะเบียนต้องเลือกซ้ำได้ ห้ามหายเงียบ — SelectOrFree ตัดซ้ำให้เอง) */
@@ -232,6 +267,7 @@ export default function DieRegistry() {
     if (dup > 0) out.push(`OP ซ้ำ ${dup} ตัว — อาจเป็นหลายชุดที่ถูกรวมกัน (เช่นแยกตามวัสดุ) ต้องแยกชุดเอง`);
     const noOp = mem.filter(d => d.ext?.op_seq == null).length;
     if (noOp) out.push(`ยังไม่ระบุ OP ${noOp} ตัว`);
+    if (!s.kind)    out.push('ยังไม่ระบุรูปแบบชุด');
     if (!s.part_no) out.push('ยังไม่ระบุเลขพาร์ท');
     if (!s.mat_no)  out.push('ยังไม่ผูก MAT SAP');
     if (s.op_total && mem.length !== s.op_total && dup === 0)
@@ -244,7 +280,7 @@ export default function DieRegistry() {
     return sets
       .filter(s => inScope(s.line_name))                                    // scope ก่อน filter อิสระเสมอ
       .filter(s => !filterLine || s.line_name === filterLine)
-      .filter(s => !filterKind || s.kind === filterKind)
+      .filter(s => !filterKind || (filterKind === KIND_NONE ? !s.kind : s.kind === filterKind))
       .filter(s => !q || [s.part_no, s.part_name, s.model, s.set_code, s.mat_no]
         .some(v => (v || '').toLowerCase().includes(q))
         || (diesBySet[s.id] || []).some(d => (d.machine_no || '').toLowerCase().includes(q)))
@@ -263,6 +299,8 @@ export default function DieRegistry() {
       todo: vis.filter(s => issuesOf(s).length > 0).length,
       unlinked: unlinked.length,
       noTon: visDie.filter(d => d.ext?.tonnage_ton == null).length,
+      noHeight: visDie.filter(d => d.ext?.die_height_mm == null).length,
+      noKind: vis.filter(s => !s.kind).length,   // รูปแบบชุด = null (ยังไม่ระบุ · 06/10)
     };
   }, [sets, dies, unlinked, inScope, issuesOf]);
 
@@ -275,6 +313,26 @@ export default function DieRegistry() {
   /* ── ข้อมูลใช้ร่วมแท็บ 🗺️ ผังจัดเก็บ / 📊 สถานะ ── */
   const scopedDies = useMemo(() => dies.filter(d => inScope(d.line_name)), [dies, inScope]);
   const setsById = useMemo(() => Object.fromEntries(sets.map(s => [s.id, s])), [sets]);
+  /* ── 📷 สแกนป้ายแม่พิมพ์ → เด้งเข้าหมุดบนผังจัดเก็บ (2026-10-06 · คำสั่ง user) ──
+     2 ทางเข้า ใช้ตัวตัดสินเดียวกัน (`findDieByScan`):
+       (1) ปุ่ม 📷 ในแท็บผัง  (2) ลิงก์จากหน้า /scan → `?die=layout&focus=<machines.id>`
+     ค้นใน `dies` ทั้งหมด (ไม่ใช่ scopedDies) — ไม่งั้นแยก "นอกขอบเขตไลน์" ออกจาก "ไม่มีในทะเบียน" ไม่ได้ */
+  const focusFromScan = useCallback((parsed) => {
+    const r = findDieByScan(parsed, dies, d => inScope(d.line_name));
+    if (r.error) return r.error;
+    setFocusDieId(r.die.id);
+    return undefined;
+  }, [dies, inScope]);
+  const [sp] = useSearchParams();
+  const setParams = useMergeParams();
+  const focusParam = sp.get('focus');
+  useEffect(() => {
+    if (!focusParam || loading) return;
+    const err = focusFromScan(parseQrPayload(buildQrPayload('machine', focusParam)));
+    if (err) toast.error(err);   // ห้ามเงียบ — คนสแกนมาจากหน้าชั้นวาง ต้องรู้ว่าทำไมหมุดไม่เด้ง
+    setParams({ focus: null, die: 'layout' }, { replace: true });
+  }, [focusParam, loading, focusFromScan, setParams]);
+
   const moDieCount = useMemo(() => {
     const m = buildOpenMoMap(openMos);
     return scopedDies.filter(d => d.is_active && openMosOf(d, m).length > 0).length;
@@ -291,7 +349,7 @@ export default function DieRegistry() {
       part_name: f.part_name.trim(),
       model: f.model?.trim() || null,
       line_name: f.line_name || null,
-      kind: f.kind || 'tandem',
+      kind: f.kind || null,   // null = ยังไม่ระบุ (ห้ามเดาเป็นค่าใดค่าหนึ่ง)
       op_total: numOrNull(f.op_total),
       pieces_per_stroke: numOrNull(f.pieces_per_stroke) ?? 1,
       mat_no: f.mat_no?.trim() || null,
@@ -304,6 +362,7 @@ export default function DieRegistry() {
     setSaving(false);
     if (error) return toast.error('บันทึกไม่สำเร็จ: ' + error.message);
     toast.success('บันทึกชุดแม่พิมพ์แล้ว');
+    invalidateDieSetKinds(); // ใบแจ้งซ่อมแม่พิมพ์เติม "ชนิดอุปกรณ์" จากรูปแบบชุด — ล้าง cache ให้เห็นค่าใหม่
     setEditSet(null); load();
   };
 
@@ -318,6 +377,7 @@ export default function DieRegistry() {
       op_name: f.op_name?.trim() || null,
       op_type: f.op_type || null,
       tonnage_ton: numOrNull(f.tonnage_ton),
+      die_height_mm: numOrNull(f.die_height_mm),
       pieces_per_stroke: numOrNull(f.pieces_per_stroke),
       regrind_count: numOrNull(f.regrind_count) ?? 0,
       regrind_limit: numOrNull(f.regrind_limit),
@@ -329,6 +389,7 @@ export default function DieRegistry() {
     setSaving(false);
     if (error) return toast.error('บันทึกไม่สำเร็จ: ' + error.message);
     toast.success('บันทึกแม่พิมพ์แล้ว');
+    invalidateDieSetKinds(); // ประเภท OP ของแม่พิมพ์ = ตัวเติม "ชนิดอุปกรณ์" ในใบแจ้งซ่อม — ล้าง cache ให้เห็นค่าใหม่
     setEditDie(null); load();
   };
 
@@ -336,7 +397,8 @@ export default function DieRegistry() {
     machine_id: d.id, machine_no: d.machine_no, machine_name: d.machine_name,
     die_set_id: d.ext?.die_set_id || '',
     op_seq: d.ext?.op_seq ?? '', op_name: d.ext?.op_name || '', op_type: d.ext?.op_type || '',
-    tonnage_ton: d.ext?.tonnage_ton ?? '', pieces_per_stroke: d.ext?.pieces_per_stroke ?? '',
+    tonnage_ton: d.ext?.tonnage_ton ?? '', die_height_mm: d.ext?.die_height_mm ?? '',
+    pieces_per_stroke: d.ext?.pieces_per_stroke ?? '',
     regrind_count: d.ext?.regrind_count ?? 0, regrind_limit: d.ext?.regrind_limit ?? '',
     note: d.ext?.note || '', shot_total: d.ext?.shot_total ?? 0,
   });
@@ -345,10 +407,12 @@ export default function DieRegistry() {
     const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n;
   });
 
-  if (loading) return <div style={{ padding: 24, color: 'var(--muted)' }}>กำลังโหลด...</div>;
+  if (loading) return <Page><div style={{ padding: 24, color: 'var(--muted)' }}>กำลังโหลด...</div></Page>;
 
   return (
-    <div style={{ padding: '16px 18px 40px', maxWidth: 1500, margin: '0 auto' }}>
+    <Page>
+      {/* 🧩 embedded — หน้านี้เป็นแท็บของ `/equipment` แล้ว (route เดิม redirect มา)
+          อยู่ใน <Hub> ⇒ PageHeader ไม่วาดชื่อหน้าซ้ำ เหลือคำอธิบาย + แถบแท็บย่อย `?die=` */}
       <PageHeader
         title="ทะเบียนแม่พิมพ์" icon="🔨"
         sub={`1 พาร์ท = 1 ชุด · ตัวตนของแม่พิมพ์อยู่ในฐานเดียวกับเครื่องจักร (เลขเครื่อง/QR/ประวัติซ่อมใช้ร่วมกัน)${scopeActive ? ' · เห็นเฉพาะส่วนงานของคุณ' : ''}`}
@@ -379,6 +443,7 @@ export default function DieRegistry() {
           canEdit={canEdit} fullName={fullName} ready={layoutReady}
           reload={load} reloadAreas={reloadAreas} patchDieExt={patchDieExt}
           focusDieId={focusDieId} onFocusConsumed={() => setFocusDieId(null)}
+          onScanDie={focusFromScan}
         />
       )}
 
@@ -397,9 +462,15 @@ export default function DieRegistry() {
           { t: 'ชุดแม่พิมพ์', v: stat.sets },
           { t: 'แม่พิมพ์', v: stat.dies },
           { t: 'ยังไม่ระบุตัน', v: stat.noTon, warn: stat.noTon > 0 },
+          /* ⏱️ ความสูงแม่พิมพ์ = ตัวแปรของเวลาเปลี่ยนรุ่น — ยังไม่ครบ = จัดลำดับผลิตให้ประหยัดที่สุดไม่ได้
+             (ตั้งใจโชว์จำนวนที่ "ยังไม่รู้" ตรงๆ ไม่ซ่อน ตามกฎความซื่อสัตย์ของจอ) */
+          { t: 'ยังไม่ระบุความสูง', v: stat.noHeight, warn: stat.noHeight > 0,
+            hint: 'ความสูงแม่พิมพ์ (มม.) ใช้คำนวณเวลาเปลี่ยนรุ่นงานปั๊ม — ยังไม่กรอก = ระบบจัดลำดับให้ประหยัดเวลาไม่ได้' },
+          { t: 'ยังไม่ระบุรูปแบบชุด', v: stat.noKind, warn: stat.noKind > 0,
+            hint: 'รูปแบบชุดว่าง = ใบแจ้งซ่อมเติมชนิดอุปกรณ์ให้ไม่ได้ (ถ้าแม่พิมพ์ไม่มีประเภท OP) · กรองด้วยช่อง "รูปแบบชุด" → ยังไม่ระบุ' },
           { t: 'ชุดที่ข้อมูลไม่ครบ', v: stat.todo, warn: stat.todo > 0 },
         ].map(c => (
-          <div key={c.t} style={{
+          <div key={c.t} title={c.hint || undefined} style={{
             background: 'var(--card)', border: `1px solid ${c.warn ? 'rgba(245,158,11,0.5)' : 'var(--border)'}`,
             borderRadius: 10, padding: '8px 14px', minWidth: 110,
           }}>
@@ -448,28 +519,26 @@ export default function DieRegistry() {
         </div>
       )}
 
-      {/* filter bar */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 12 }}>
-        <input value={search} onChange={e => setSearch(e.target.value)}
-          placeholder="ค้นหา พาร์ท / ชื่อชุด / MAT / เลขแม่พิมพ์"
-          style={{ ...inputStyle, width: 280 }} />
-        <select value={filterLine} onChange={e => setFilterLine(e.target.value)} style={{ ...inputStyle, width: 190 }}>
-          <option value="">ทุกไลน์</option>
+      {/* filter bar — มาตรฐาน FilterBar (UI-STANDARD 2026-09-24) · ไลน์ = ชื่อเครื่องปั๊มจากแม่พิมพ์ (ไม่ใช่ production_lines) จึงไม่ใช้ LineSelect */}
+      <FilterBar>
+        <select value={filterLine} onChange={e => setFilterLine(e.target.value)}>
+          <option value="">{ALL.line}</option>
           {dieLineNames.map(n => <option key={n} value={n}>{n}</option>)}
         </select>
-        <select value={filterKind} onChange={e => setFilterKind(e.target.value)} style={{ ...inputStyle, width: 200 }}>
-          <option value="">ทุกรูปแบบชุด</option>
-          {DIE_SET_KINDS.map(k => <option key={k.key} value={k.key}>{k.label}</option>)}
+        <select value={filterKind} onChange={e => setFilterKind(e.target.value)}>
+          <option value="">{allOf('รูปแบบชุด')}</option>
+          <option value={KIND_NONE}>— ยังไม่ระบุ ({stat.noKind}) —</option>
+          {setKinds.map(k => <option key={k.key} value={k.key}>{k.label}{k.is_active ? '' : ' (ปิดใช้)'}</option>)}
         </select>
+        <SearchInput value={search} onChange={setSearch} fields="พาร์ท / ชื่อชุด / MAT / เลขแม่พิมพ์" />
+        <span className="spacer" />
+        <span className="filter-count">แสดง {rows.length} ชุด</span>
         {canEdit && (
-          <button onClick={() => setEditSet({ ...emptySet, line_name: filterLine || '' })} style={{ ...saveBtnStyle, padding: '8px 14px' }}>
+          <button onClick={() => setEditSet({ ...emptySet, line_name: filterLine || '' })} style={{ ...saveBtnStyle, padding: '0 14px' }}>
             + เพิ่มชุด
           </button>
         )}
-        <span style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 'auto' }}>
-          แสดง {rows.length} ชุด
-        </span>
-      </div>
+      </FilterBar>
 
       {rows.length === 0 && (
         <div style={{ padding: 28, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
@@ -509,7 +578,7 @@ export default function DieRegistry() {
                     <span style={{
                       fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 999,
                       background: 'var(--bg3)', color: 'var(--text2)', whiteSpace: 'nowrap',
-                    }}>{dieSetKindLabel(s.kind)}</span>
+                    ...(s.kind ? null : { color: '#f59e0b' }) }}>{s.kind ? dieSetKindLabel(s.kind, setKinds) : 'ยังไม่ระบุรูปแบบ'}</span>
                     <span style={{ fontSize: 11.5, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
                       {s.members.length} ตัว{s.op_total ? ` / ${s.op_total} OP` : ''}
                     </span>
@@ -545,6 +614,7 @@ export default function DieRegistry() {
                               <th style={{ padding: '4px 6px', fontWeight: 600 }}>กระบวนการ</th>
                               <th style={{ padding: '4px 6px', fontWeight: 600 }}>เลขแม่พิมพ์</th>
                               <th style={{ padding: '4px 6px', fontWeight: 600, textAlign: 'right' }}>ตัน</th>
+                              <th style={{ padding: '4px 6px', fontWeight: 600, textAlign: 'right' }} title="ความสูงแม่พิมพ์ (มม.) — ใช้คำนวณเวลาเปลี่ยนรุ่น">สูง (มม.)</th>
                               <th style={{ padding: '4px 6px', fontWeight: 600, textAlign: 'right' }}>shot สะสม</th>
                               <th style={{ padding: '4px 6px', fontWeight: 600, textAlign: 'right' }}>เจียร</th>
                               {canEdit && <th style={{ width: 40 }} />}
@@ -563,6 +633,7 @@ export default function DieRegistry() {
                                   <td style={{ padding: '5px 6px', color: 'var(--muted)', maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                                     title={d.machine_no}>{d.machine_no}</td>
                                   <td style={{ padding: '5px 6px', textAlign: 'right' }}>{e.tonnage_ton ?? <Blank />}</td>
+                                  <td style={{ padding: '5px 6px', textAlign: 'right' }}>{e.die_height_mm ?? <Blank />}</td>
                                   <td style={{ padding: '5px 6px', textAlign: 'right', color: 'var(--muted)' }}>
                                     {Number(e.shot_total || 0).toLocaleString()}
                                   </td>
@@ -604,6 +675,42 @@ export default function DieRegistry() {
             { key: 'note', label: 'หมายเหตุ' },
           ]} />
       </CollapseCard>
+
+      {/* ⚙️ ทะเบียนรูปแบบชุดแม่พิมพ์ (DR die_set_kinds · 2026-10-05) — เดิม hardcode 4 ค่า (Tandem/Progressive/Transfer/Single)
+          ทีมแม่พิมพ์เพิ่มเอง (HYDROFORM/BEND ฯลฯ) + ตั้ง "ชื่อที่หน้างานเรียก" เอง (ศัพท์ทางการหน้างานไม่เข้าใจ)
+          key สร้างให้อัตโนมัติ — คนกรอกแค่ชื่อ · mo_item_type = ชนิดอุปกรณ์ที่ใบแจ้งซ่อมเติมให้เมื่อเลือกแม่พิมพ์ */}
+      {/* ⚙️ ทะเบียนประเภท OP ของแม่พิมพ์ (DR die_op_types · แผงจัดการ 2026-10-06) — เดิมมีตารางแต่ไม่มีที่แก้บนจอ
+          mo_item_type = ชนิดอุปกรณ์ในใบแจ้งซ่อม **ชนะรูปแบบชุด** (HDF: ชุดเดียวมี HYDRO/BENDING/PREFORM — คอมเมนต์ทีม DIE 06/10) */}
+      <CollapseCard id="die_op_types" title="⚙️ ประเภท OP ของแม่พิมพ์ (ทะเบียน)" count={opTypes.length} defaultOpen={false} storePrefix="die_registry">
+        <SimpleMasterPanel client={supabaseDR} table="die_op_types" keyCol="key" canManage={canEdit}
+          keyFrom={dieSetKindKey}
+          stampCol="updated_by_name" stampName={fullName}
+          onChanged={() => { invalidateDieSetKinds(); load(); }}
+          help="ประเภท OP = หน้าที่ของแม่พิมพ์ตัวนั้น (ตั้งที่ปุ่มแก้แม่พิมพ์รายตัว) · &quot;ชนิดอุปกรณ์ในใบแจ้งซ่อม&quot; ที่ตั้งตรงนี้ **ชนะ** ค่าของรูปแบบชุด — ใช้กับชุดที่มีแม่พิมพ์ต่างหน้าที่กันในชุดเดียว (เช่น HDF: HYDRO / BENDING / PREFORM) · ว่าง = ใช้ค่าของรูปแบบชุด · ปิดใช้ = ไม่โผล่ให้เลือกใหม่ (แม่พิมพ์เก่ายังอ่านออก)"
+          fields={[
+            { key: 'label', label: 'ชื่อที่หน้างานเรียก', required: true, placeholder: 'เช่น Hydroform / ดัด' },
+            { key: 'mo_item_type', label: 'ชนิดอุปกรณ์ในใบแจ้งซ่อม', type: 'select', options: dieItemTypeOpts, width: 190 },
+          ]} />
+      </CollapseCard>
+
+      <CollapseCard id="die_set_kinds" title="⚙️ รูปแบบชุดแม่พิมพ์ (ทะเบียน)" count={setKinds.filter(k => k.is_active).length} defaultOpen={false} storePrefix="die_registry">
+        <SimpleMasterPanel client={supabaseDR} table="die_set_kinds" keyCol="key" canManage={canEdit}
+          keyFrom={dieSetKindKey}
+          stampCol="updated_by_name" stampName={fullName}
+          onChanged={() => { invalidateDieSetKinds(); setKindsVer(v => v + 1); }}
+          help="ตั้งชื่อเป็นคำที่หน้างานเรียกจริงได้เลย (แก้ชื่อทีหลังได้ ชุดเดิมไม่กระทบ) · &quot;ชนิดอุปกรณ์ในใบแจ้งซ่อม&quot; = ค่าที่ใบ MO เติมให้เองเมื่อผู้แจ้งเลือกแม่พิมพ์ในชุดแบบนี้ (ว่าง = ให้ผู้แจ้งเลือกเอง · เพิ่มชื่อใหม่ได้ที่ /mtn-repair แท็บข้อมูลหลัก › ชนิดอุปกรณ์) · ปิดใช้ = ไม่โผล่ให้เลือกใหม่ (ชุดเก่ายังอ่านออก)"
+          fields={[
+            { key: 'label', label: 'ชื่อที่หน้างานเรียก', required: true, placeholder: 'เช่น HYDROFORM DIE / แม่พิมพ์ดัด' },
+            { key: 'description', label: 'คำอธิบาย (ภาษาบ้านๆ)', placeholder: 'โชว์ใต้ช่องเลือกตอนแก้ชุด' },
+            { key: 'mo_item_type', label: 'ชนิดอุปกรณ์ในใบแจ้งซ่อม', type: 'select', options: dieItemTypeOpts, width: 190 },
+          ]} />
+      </CollapseCard>
+
+      {/* ⏱️ กฎเวลาเปลี่ยนรุ่น (press_setup_rules · 2026-09-25 · user: setup time change over die เป็นตัวแปร)
+          อยู่ที่นี่เพราะ "ความสูงแม่พิมพ์" ที่กฎใช้ ก็กรอกในแท็บนี้ — ตั้งค่านานๆ ครั้ง จึงพับไว้ */}
+      <CollapseCard id="press_setup_rules" title="⏱️ กฎเวลาเปลี่ยนรุ่น (setup / change over die)" defaultOpen={false} storePrefix="die_registry">
+        <PressSetupRules dies={scopedDies} lineNames={dieLineNames} canEdit={canEdit} />
+      </CollapseCard>
       </>}
 
       {/* ── modal: ชุดแม่พิมพ์ ── */}
@@ -643,12 +750,15 @@ export default function DieRegistry() {
                 onChange={v => setEditSet(f => ({ ...f, line_name: v }))} />
             </Field>
             <Field label="รูปแบบชุด">
-              <select style={inputStyle} value={editSet.kind || 'tandem'}
+              {/* ตัวเลือกจากทะเบียน die_set_kinds (แผง ⚙️ ท้ายแท็บ) · ค่าปัจจุบันที่ถูกปิดใช้ยังอยู่ในลิสต์ (ไม่บันทึกทับเงียบ) */}
+              <select style={inputStyle} value={editSet.kind || ''}
                 onChange={e => setEditSet(f => ({ ...f, kind: e.target.value }))}>
-                {DIE_SET_KINDS.map(k => <option key={k.key} value={k.key}>{k.label}</option>)}
+                <option value="">— ยังไม่ระบุ —</option>
+                {dieSetKindOptions(setKinds, editSet.kind || '').map(k => <option key={k.key} value={k.key}>{k.label}</option>)}
               </select>
               <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>
-                {DIE_SET_KINDS.find(k => k.key === editSet.kind)?.desc}
+                {editSet.kind ? setKinds.find(k => k.key === editSet.kind)?.desc : 'ยังไม่ระบุ — ใบแจ้งซ่อมจะเติมชนิดอุปกรณ์จากรูปแบบชุดไม่ได้ (ถ้าแม่พิมพ์ไม่มีประเภท OP ผู้แจ้งต้องเลือกเอง)'}
+                {canEdit && <> · ไม่มีแบบที่ต้องการ? เพิ่มได้ที่แผง ⚙️ รูปแบบชุดแม่พิมพ์ ท้ายแท็บนี้</>}
               </div>
             </Field>
             <Field label="จำนวน OP ทั้งชุด">
@@ -708,6 +818,13 @@ export default function DieRegistry() {
               <input style={inputStyle} type="number" step="1" value={editDie.tonnage_ton ?? ''}
                 onChange={e => setEditDie(f => ({ ...f, tonnage_ton: e.target.value }))} />
             </Field>
+            {/* ⏱️ ความสูงแม่พิมพ์ — ตัวแปรหลักของเวลาเปลี่ยนรุ่น (user 2026-09-24)
+                ต่างกันมาก = ปรับ shut height นาน ⇒ ลำดับผลิตที่ดีคือเรียงความสูงให้ไล่กัน
+                ว่าง = "ยังไม่รู้" ระบบจะไม่เดาแทน (pressSetup.js คืน state unknown_height) */}
+            <Field label="ความสูงแม่พิมพ์ (มม.)" hint="ใช้คำนวณเวลาเปลี่ยนรุ่น — ว่าง = ยังไม่รู้ ระบบจะไม่เดาให้">
+              <input style={inputStyle} type="number" step="0.1" min="0" value={editDie.die_height_mm ?? ''}
+                onChange={e => setEditDie(f => ({ ...f, die_height_mm: e.target.value }))} />
+            </Field>
             <Field label="ชิ้น / stroke" hint="ว่าง = ใช้ค่าของชุด">
               <input style={inputStyle} type="number" min="1" value={editDie.pieces_per_stroke ?? ''}
                 onChange={e => setEditDie(f => ({ ...f, pieces_per_stroke: e.target.value }))} />
@@ -736,7 +853,7 @@ export default function DieRegistry() {
           </div>
         </Modal>
       )}
-    </div>
+    </Page>
   );
 }
 

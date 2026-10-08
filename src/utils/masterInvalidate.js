@@ -24,8 +24,10 @@ import { invalidateMaster } from './masterCache.js';   // ใส่ .js ให�
 /** ตาราง → คีย์ cache ทุกตัวที่ "เนื้อมาจากตารางนั้น" (ตารางเดียวมีได้หลายคีย์คนละ shape) */
 export const KEYS_BY_TABLE = {
   dr_products: [
-    'dr_products:picker',        // useProducts (picker กลาง)
-    'dr_products:ct',            // FactoryMap · LineOeeBoard (mat_no + cycle_time)
+    'dr_products:picker:v2',     // useProducts (picker กลาง) · :v2 = รอบที่เพิ่ม pair_mat_no + op_seq (25/09)
+    'dr_products:picker',        // คีย์เก่า — คงไว้เพื่อล้างของค้างบนเครื่องที่ยังไม่ได้ build ใหม่
+    'dr_products:ct:v2',         // loadCtProducts (utils/oeeMasters) — FactoryMap · LineOeeBoard
+    'dr_products:ct',            // คีย์เก่า (ก่อน 05/10 ถูกตัด 1000 แถว) — ล้างทิ้งด้วย
     'dr_products_ct_pair',       // QaFmeBoard
     'dr_products_link',          // QaFmeQueue
     'pn_index:src',              // CapaEffectiveness (mat_no → p_no)
@@ -39,26 +41,32 @@ export const KEYS_BY_TABLE = {
   ],
   machines: [
     'machines:picker',           // useMachines (picker กลาง)
+    'machines:idline:v2',        // FactoryMap loadPM (05/10 แบ่งหน้า + โยนเมื่อล้ม)
     'machines:idline',           // FactoryMap loadManpower/loadPM
     'machines:kind',             // MtnAndonBoard
+    'machines:supply:v2',        // FactoryMap loadSupply (05/10 แบ่งหน้า + โยนเมื่อล้ม)
     'machines:supply',           // FactoryMap loadSupply
     'machines:full',             // DailyReport load() — แถวเต็ม (ตัวหนักสุด 368 KB)
     'machines:pmcoord',          // PmCoordination
   ],
-  kanban_standards: ['kanban_standards:ct', 'kanban_standards:full'],   // :full = DailyReport (164 KB)
-  break_policies:  ['break_policies:active'],
+  kanban_standards: ['kanban_standards:ct:v2', 'kanban_standards:ct', 'kanban_standards:full'],   // :full = DailyReport (164 KB)
+  break_policies:  ['break_policies:active:v2', 'break_policies:active'],   // :v2 = loadBreakPolicies() (05/10) · คีย์เก่าล้างทิ้งด้วย
   dr_downtime_types: ['dr_downtime_types:active'],
   dr_defect_types:   ['dr_defect_types:active'],
   production_lines: [
-    'production_lines',          // useProductionLines (picker กลาง)
-    'production_lines:scope',
-    'fx_lines',                  // FixtureRegistry
+    'production_lines:v2',       // useProductionLines (picker กลาง) · :v2 = รอบที่เพิ่ม 6 คอลัมน์ (25/09)
+    'production_lines',          // คีย์เก่า — ล้างทิ้งด้วย เผื่อเครื่องที่ยังค้าง cache ชุดก่อน
+    // 3 คีย์ล่างเลิกใช้แล้ว (25/09 — ย้ายมาใช้ 'production_lines:v2' คีย์เดียวทั้งแอป)
+    // **ห้ามลบออกจากทะเบียน** — เครื่องที่ยังไม่ได้รับ build ใหม่ยังมีของค้างใน localStorage
+    'production_lines:scope',    // เดิม TvBoard
+    'fx_lines',                  // เดิม FixtureRegistry
     'factory_map',               // FactoryMiniMap — รูปผัง/ภูมิภาคผูกกับไลน์
     'factory_line_regions',
     'production_lines:dr',       // DailyReport load()
     'production_lines:flow',     // DailyReport — flow_mode/parallel_stations
   ],
-  storage_locations: ['storage_locations:picker'],
+  storage_locations: ['storage_locations:v2'],
+  line_delivery_points: ['line_delivery_points:v1'],   // useDeliveryPoints (01/10)   // :v2 = รอบที่เพิ่ม line_names (bump คีย์ตอนเปลี่ยน shape)
   die_press_lines:   ['die_press_lines:master'],
   suppliers:         ['suppliers:master'],
   cost_centers:      ['cost_centers:master'],
@@ -66,12 +74,13 @@ export const KEYS_BY_TABLE = {
   parts_master:      ['part_registry:main'],
   profiles:          ['people:profiles'],
   employees:         ['people:employees'],
-  facility_supply_links: ['facility_supply_links'],
+  facility_supply_links: ['facility_supply_links:v2', 'facility_supply_links'],
 };
 
 /** คีย์ที่ไม่ผูกกับตาราง master ตัวใดตัวหนึ่ง — ตั้งใจให้หมดอายุตาม TTL เท่านั้น */
 export const UNMANAGED = [
   // รายชื่อไลน์ "ที่เคยมีกะ" — งอกเองเมื่อเปิดกะไลน์ใหม่ ไม่มีหน้าไหนแก้โดยตรง
+  'production_sessions:line_names_ever:v2',   // 05/10 แบ่งหน้าครบ (คีย์เก่าถูกตัด 1,000 แถว)
   'production_sessions:line_names_ever',
 ];
 

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabaseDR } from '../supabaseClient';
 import { orderTotal } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
+import { loadPairMap } from '../utils/useProducts';
 import { usePolling } from '../utils/usePolling';
 import { RATE } from '../utils/refreshRates';
 import { useLiveBoard } from '../utils/useLiveBoard';
@@ -56,13 +57,13 @@ export default function ProdProgressStrip({ workDate, scopeNames = null, onOpenL
       const ids = (sess || []).map(s => s.id);
       if (!ids.length) { setD({ lines: [], noShift: true }); setErr(''); return; }
 
-      const [{ data: po, error: e2 }, { data: prods }] = await Promise.all([
+      const [{ data: po, error: e2 }, pairMap] = await Promise.all([   // loadPairMap() คืน map/null ไม่ใช่ { data } (เคยแกะผิด ⇒ ไม่ยุบงานคู่เงียบๆ)
         supabaseDR.from('prod_orders')
           .select('session_id, mat_no, qty, qty_target, qty_ok, qty_actual, status').in('session_id', ids),
-        supabaseDR.from('dr_products').select('mat_no, pair_mat_no').eq('is_active', true),
+        loadPairMap(),   // cache ทะเบียนสินค้ากลาง (25/09) · รวมพาร์ทที่ปิดใช้งานด้วย — ไม่กระทบ
       ]);
       if (e2) throw e2;
-      const pairOf = (m) => (prods || []).find(p => p.mat_no === m)?.pair_mat_no ?? null;
+      const pairOf = (m) => pairMap?.[m] ?? null;   // pairMap = null (โหลดไม่สำเร็จ) ⇒ ไม่ยุบงานคู่
       const opMap = opInfoSync();
       const lineOf = Object.fromEntries((sess || []).map(s => [s.id, s.line_name]));
 
@@ -156,7 +157,7 @@ export default function ProdProgressStrip({ workDate, scopeNames = null, onOpenL
                   <div style={{ height: 4, borderRadius: 3, background: 'var(--bg3)', overflow: 'hidden', margin: '3px 0 2px' }}>
                     <div style={{ width: `${Math.min(100, l.pct)}%`, height: '100%', background: col(l.pct) }} />
                   </div>
-                  <div style={{ fontSize: 10, color: 'var(--muted)' }}>🎫 {l.cnt} ใบ{l.open > 0 ? ` · ยังเปิด ${l.open}` : ''}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>🎫 {l.cnt} ใบ{l.open > 0 ? ` · ยังเปิด ${l.open}` : ''}</div>
                 </>
               ) : (
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>เปิดกะแล้ว · ยังไม่มีใบสั่งผลิต</div>

@@ -2,6 +2,8 @@ import { useContext, Suspense, lazy } from 'react';
 import { UserContext } from '../App';
 import { canAccessPage } from '../utils/permissions';
 import useTabParam from '../utils/useTabParam';
+import PageHeader from '../components/PageHeader';
+import Page, { Hub } from '../components/Page';
 
 /* ── Daily Checker — ศูนย์รวมระบบเช็ครายวันของไลน์ผลิต (2026-07-23) ──────────────────
    ขมวด Daily PM + LPA (+ ระบบเช็คอื่นที่จะเพิ่ม) เป็นหน้าเดียว แยกด้วยแท็บ
@@ -34,33 +36,21 @@ export default function DailyChecker() {
   const Cur = available.find(t => t.key === active)?.Comp;
 
   return (
-    <div>
-      {/* หัว + แท็บ (สลับระบบเช็ค) */}
-      <div style={{ padding: 'clamp(10px,2.5vw,18px) clamp(12px,3vw,24px) 0', maxWidth: 'min(98vw, 2400px)', margin: '0 auto' }}>
-        <h2 style={{ margin: '0 0 2px', fontFamily: 'var(--font-display)', fontSize: 'clamp(15px,2.6vw,20px)', color: 'var(--text)' }}>🗂️ Daily Checker</h2>
-        <p style={{ margin: '0 0 10px', fontSize: 12, color: 'var(--muted)' }}>ศูนย์รวมระบบตรวจเช็ครายวันของไลน์ผลิต — เลือกแท็บด้านล่าง</p>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', borderBottom: '1px solid var(--border)', paddingBottom: 10 }}>
-          {available.map(t => {
-            const on = active === t.key;
-            return (
-              <button key={t.key} onClick={() => setActive(t.key)} style={{
-                padding: '9px 18px', borderRadius: 9, fontSize: 13, fontWeight: 700, cursor: 'pointer',
-                border: `1px solid ${on ? 'var(--accent)' : 'var(--border2)'}`,
-                background: on ? 'var(--accent-dim)' : 'var(--bg3)', color: on ? 'var(--accent)' : 'var(--text2)',
-              }}>{t.label}</button>
-            );
-          })}
-        </div>
-      </div>
+    <Page>
+      {/* หัว + แท็บ — ใช้ PageHeader มาตรฐาน (UI §6.8) ห้ามวาดหัว/แถบแท็บเอง
+          หน้าลูกครอบด้วย <Hub> ⇒ ไม่วาดชื่อหน้าซ้ำ · <Page> ของหน้าลูกไม่เพิ่มขอบซ้ำ (UI-STANDARD §1) */}
+        <PageHeader title="Daily Checker" icon="🗂️"
+          sub="ศูนย์รวมระบบตรวจเช็ครายวันของไลน์ผลิต — เลือกแท็บด้านล่าง"
+          tabs={available.map(t => ({ key: t.key, label: t.label }))} tab={active} onTab={setActive} />
 
       {/* เนื้อหาแท็บ (component หน้าเดิม) */}
       {Cur ? (
         <Suspense fallback={<div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลด...</div>}>
-          <Cur />
+          <Hub><Cur /></Hub>
         </Suspense>
       ) : (
         <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>ยังไม่มีสิทธิ์เข้าระบบเช็คใดในหน้านี้</div>
       )}
-    </div>
+    </Page>
   );
 }
