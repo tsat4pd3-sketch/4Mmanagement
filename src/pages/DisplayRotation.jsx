@@ -118,14 +118,18 @@ export default function DisplayRotation() {
       };
     }), [accounts, plans, emails]);
 
-  const pageOptions = useMemo(() => PAGE_OPTIONS.map(p => {
-    const ok = targetRole ? canAccessPage(p.to, targetRole) : true;
+  /* 🔴 ให้เลือกได้เฉพาะหน้าที่บัญชีนั้น "เข้าได้จริง" (คำสั่ง user 09/10: "หน้าที่เข้าไม่ได้ก็ไม่ควรมีให้ setup")
+     ยังไม่เลือกบัญชี = ไม่มีตัวเลือก · จำนวนที่ซ่อนต้องเขียนบนจอ (ห้ามหายเงียบ — คนตั้งจะงงว่าหน้าที่หาไปไหน) */
+  const { pageOptions, hiddenPages } = useMemo(() => {
+    if (!targetRole) return { pageOptions: [], hiddenPages: 0 };
+    const ok = PAGE_OPTIONS.filter(p => canAccessPage(p.to, targetRole));
     return {
-      id: p.to, label: `${p.icon} ${p.label}`, code: p.to,
-      sub: p.group, group: p.group, keywords: p.to,
-      badge: ok ? null : '⛔ ไม่มีสิทธิ์', badgeColor: 'var(--red)',
+      pageOptions: ok.map(p => ({
+        id: p.to, label: `${p.icon} ${p.label}`, code: p.to, sub: p.group, group: p.group, keywords: p.to,
+      })),
+      hiddenPages: PAGE_OPTIONS.length - ok.length,
     };
-  }), [targetRole]);
+  }, [targetRole]);
 
   /* ⚠️ ห้ามกรองแถวว่างก่อน buildPlaylist — `idx` ของหน้าที่ข้ามต้องตรงกับแถวบนจอ
      (แถวว่างคั่น = ป้าย ⛔ ไปติดผิดแถว) · แถวที่ยังไม่เลือกหน้า ไม่นับเป็น "จะถูกข้าม" (ตอนบันทึกถูกตัดทิ้งอยู่แล้ว) */
@@ -142,6 +146,11 @@ export default function DisplayRotation() {
     const items = cleanItemsForSave(form.items);
     const bad = items.find(it => !isValidRotationPath(it.path));
     if (bad) { toast.error(`ที่อยู่หน้าไม่ถูกต้อง: "${bad.path}" — ต้องขึ้นต้นด้วย / และอยู่ในระบบนี้`); return; }
+    const denied = items.filter(it => !canAccessPage(pathOnly(it.path), targetRole));
+    if (denied.length) {
+      toast.error(`บัญชีนี้เข้าไม่ได้ ${denied.length} หน้า (${denied.map(d => d.path).join(', ')}) — เอาออกก่อนบันทึก`);
+      return;
+    }
     setSaving(true);
     const { data: me } = await supabase.auth.getUser();
     const myName = accounts.find(a => a.id === me?.user?.id)?.full_name || null;
@@ -252,6 +261,10 @@ export default function DisplayRotation() {
                 วนจริง {preview.playable.length} หน้า · ครบรอบ {fmtSec(cycleSec)}
                 {preview.skipped.length > 0 && <span style={{ color: 'var(--red)', fontWeight: 700 }}> · จะถูกข้าม {preview.skipped.length} หน้า</span>}
               </div>
+              <div style={{ fontSize: 12, color: 'var(--muted)', flexBasis: '100%' }}>
+                เลือกได้ {pageOptions.length} หน้าที่บัญชีนี้ ({roleLabel(targetRole)}) เข้าได้
+                {hiddenPages > 0 && ` · ซ่อน ${hiddenPages} หน้าที่ไม่มีสิทธิ์ (เปิดสิทธิ์ได้ที่ /permissions)`}
+              </div>
             </div>
 
             {form.items.length === 0 && (
@@ -268,7 +281,7 @@ export default function DisplayRotation() {
                     padding: 10, borderRadius: 10, border: `1px solid ${skip ? 'var(--red)' : 'var(--border2)'}`, background: 'var(--bg2)' }}>
                     <div style={{ fontWeight: 800, fontSize: 14, paddingTop: 8, textAlign: 'center' }}>{i + 1}</div>
                     <div style={{ display: 'grid', gap: 6, minWidth: 0 }}>
-                      <SearchSelect value={PAGE_OPTIONS.some(p => p.to === base) ? base : ''} options={pageOptions}
+                      <SearchSelect value={pageOptions.some(p => p.id === base) ? base : ''} options={pageOptions}
                         placeholder="— ค้นหาหน้า —" disabled={!canEdit}
                         onChange={({ id }) => setItem(i, { path: id ? `${id}${q}` : '' })} />
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
@@ -291,8 +304,8 @@ export default function DisplayRotation() {
                       </div>
                       {skip && (
                         <div style={{ fontSize: 12, color: 'var(--red)', fontWeight: 700 }}>
-                          ⛔ จะถูกข้ามบนจอ — {SKIP_REASON_LABEL[skip.reason]}
-                          {skip.reason === 'no_access' && ' (เปิดสิทธิ์ให้ role นี้ที่ /permissions หรือเอาหน้านี้ออก)'}
+                          ⛔ <code>{skip.path}</code> — {SKIP_REASON_LABEL[skip.reason]} · จอจะข้ามหน้านี้
+                          {skip.reason === 'no_access' && ' — เอาออกก่อนจึงบันทึกได้ (หรือเปิดสิทธิ์ให้ role นี้ที่ /permissions)'}
                         </div>
                       )}
                     </div>
