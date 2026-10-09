@@ -89,6 +89,9 @@ user: *"recheck work flow ทุก tab ให้ที ใครทำอะไ
    ผ่าน **`openPlusHistory()` ของกลางใน `src/utils/fetchByIds.js`** (ย้ายจาก HeijunkaKanban · รับคอลัมน์เวลา — `rack_requests` ไม่มี `created_at` ใช้ `requested_at`)
    · ใบค้าง rack = ไม่ใช่ `received/cancelled` · บรรจุภัณฑ์ = ไม่ใช่ `issued/cancelled` (status NOT NULL ทั้งคู่) ·
    `/rack-center` เดิมกลืน error แล้วบอร์ดว่าง ⇒ ตอนนี้ toast + คงข้อมูลรอบก่อน · เทส `openPlusHistory.test.mjs` + ด่าน regressionGuards
+   · 🔑 **08/10:** 2 คิวรีนี้ไม่ใช่ transaction ⇒ ใบที่ถูกกดรับ/ปิด *ระหว่าง* 2 คิวรีเข้าเงื่อนไขทั้งคู่ = ใบเดียวมา 2 แถว
+     (คีย์ซ้ำบนบอร์ด · ตัวนับหัวคอลัมน์บวกเกิน) ⇒ `openPlusHistory` ยุบด้วย `mergeById` แล้ว **ประวัติชนะ**
+     (ใบที่ปิดไปแล้วห้ามค้างในคอลัมน์รอทำให้มีคนกดซ้ำ) · `src/utils/mergeRows.js` · UI §6.27
 8. ✅ **แก้แล้ว 06/10 (user สั่ง)** — ~~ฝั่งไลน์ (`LinePartCallPanel`) ยกเลิก/รับใบ WIP ได้จากทุกสถานะ ไม่นับแถว~~
    ปุ่มบนจอถูกอยู่แล้ว (ยกเลิกโชว์แค่ใบ `hold` · รับโชว์แค่ใบ `delivered`) แต่คำสั่ง DB ไม่ล็อก ⇒ จอค้างยกเลิกใบที่สโตร์หยิบ/ตัดสต็อกแล้วได้
    และกดรับชุบใบ `cancelled` ได้ · ตอนนี้ CAS `.eq('status','hold'|'delivered')` + `.select('id')` นับแถว · 0 แถว = toast แดง + โหลดใหม่ · ด่าน regressionGuards

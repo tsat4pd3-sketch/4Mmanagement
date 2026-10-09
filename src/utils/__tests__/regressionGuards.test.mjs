@@ -3426,3 +3426,101 @@ test('🛡️ am-team-via-isAmTeam — ห้าม hardcode department "product
     + '            ⇒ ส้มยิงทุกไลน์ / จอ AM ว่าง / สอบกลับนับใบช่างเป็น AM\n'
     + '   แก้ยังไง: isAmTeam(department) จาก src/utils/pmTeams.js (โหลด loadPmTeams() ก่อน) · ฝั่ง edge อ่าน mtn_teams.kind\n');
 });
+
+/* ── 🖼️ ลบรูปใน storage ต้องนับผู้อ้างก่อน เมื่อ path ถูกแชร์ได้ (08/10 · QC audit) ────────
+   เคสจริง: `copyChecklistToEquipment/Dept` คัดลอกจุดตรวจไปเครื่องอื่นโดย **ใช้ image_path เดิม
+   ร่วมกัน ไม่ก๊อปไฟล์** ⇒ `handleDelete` ที่ลบทั้งโฟลเดอร์ `jigs/<id>/` ทำให้รูปจุดตรวจของทุก
+   เครื่องที่ก๊อปไป **หายถาวร กู้ไม่ได้ และไม่มี error ฟ้อง** · path เดียวถูกอ้างจาก 3 ตาราง
+   (jig_images · jigs · jig_checkpoints) ⇒ ต้องผ่าน `orphanImagePaths()` ที่นับครบทั้ง 3 + fail-closed
+   📄 `docs/modules/pm-hub-check-setup.md` §คัดลอกแผน PM */
+test('🛡️ jig-image-delete-needs-ref-count — ลบรูป bucket jig-images ต้องผ่าน orphanImagePaths()', () => {
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const rel = relative(ROOT, file);
+    if (rel.includes('__tests__') || rel.endsWith('utils/jigImageRefs.js')) continue;
+    const code = stripComments(readFileSync(file, 'utf8'));
+    if (!/from\(\s*['"]jig-images['"]\s*\)[\s\S]{0,200}?\.remove\(/.test(code)) continue;
+    /* เฉพาะไฟล์ที่แตะ path ใต้ `jigs/` — นั่นคือชุดที่ถูกแชร์ตอนคัดลอกจุดตรวจ
+       รูปผังโซน `facility/<id>.<ext>` (MtnMachineLayout) เป็น 1 path ต่อ 1 แถว ไม่ถูกแชร์ ⇒ ไม่เข้าข่าย
+       ⚠️ ถ้าวันหน้ามีการแชร์ path แบบอื่น ให้ขยายเงื่อนไขนี้ ไม่ใช่ใส่ allow-list รายไฟล์ */
+    if (!/['"`]jigs\//.test(code)) continue;
+    if (!/orphanImagePaths\s*\(/.test(code)) bad.push(rel);
+  }
+  assert.deepEqual(bad, [], '\n\n❌ ลบไฟล์ใน bucket `jig-images` โดยไม่นับผู้อ้าง: ' + bad.join(', ') + '\n'
+    + '   ทำไม: จุดตรวจที่ "คัดลอกไปเครื่อง/แผนกอื่น" ใช้ image_path เดิมร่วมกัน (ไม่ก๊อปไฟล์)\n'
+    + '         ⇒ ลบรูปของเครื่องต้นแบบ = รูปของทุกเครื่องที่ก๊อปไปเสียถาวร ไม่มี error ฟ้อง\n'
+    + '   แก้ยังไง: `const { orphan } = await orphanImagePaths(paths, { exceptJigId })` แล้วลบแค่ orphan\n'
+    + '             (นับไม่ได้ = ของกลางคืน orphan ว่าง = ไม่ลบ · ไฟล์กำพร้าค้าง ดีกว่าลบของที่ยังใช้)\n');
+});
+
+/* ── 📄 CSV export ต้องผ่าน `utils/csvDoc.js` (ทะเบียนเอกสาร + กัน formula injection) ──────
+   กฎ 06/10 (user เคาะ "เข้า ทำเลย"): CSV ที่หลุดออกจากระบบก็เป็นเอกสาร ต้อง register /doc-forms
+   รอบนั้น seed 8 คีย์ แต่ **ตก /report (10 จุด) และ /daily-report (2 จุด)** ซึ่งเขียน helper เอง
+   🔴 ตัวของ DailyReport ยัง **ไม่มีตัวกัน formula injection เลย** — ค่าที่คนพิมพ์ขึ้นต้น `=`
+      ถูก Excel รันเป็นสูตร · ไฟล์มีรหัสพนักงาน ชื่อ-สกุล การมาทำงาน เบี้ยทักษะ
+   📄 `docs/modules/doc-forms.md` §CSV export ก็เป็นเอกสาร */
+test('🛡️ csv-export-via-csvdoc — หน้าที่ทำไฟล์ CSV ห้ามประกอบ Blob/escape เอง', () => {
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const rel = relative(ROOT, file);
+    if (rel.includes('__tests__') || rel.endsWith('utils/csvDoc.js')) continue;
+    const code = stripComments(readFileSync(file, 'utf8'));
+    // สร้าง Blob ชนิด text/csv เอง = ไม่ผ่านทะเบียน/ไม่การันตีว่ากัน formula injection
+    if (/new Blob\([^)]*text\/csv/.test(code)) bad.push(`${rel} (new Blob text/csv)`);
+  }
+  assert.deepEqual(bad, [], '\n\n❌ มีจุดทำไฟล์ CSV เองไม่ผ่านของกลาง: ' + bad.join(', ') + '\n'
+    + '   ทำไม: (1) ไม่เข้าทะเบียน /doc-forms — doc_control คุมเลขฟอร์ม/Rev ไม่ได้\n'
+    + '         (2) ทุกชุดที่เขียนเองมีสิทธิ์ลืมตัวกัน CSV formula injection (เกิดจริงที่ DailyReport)\n'
+    + '   แก้ยังไง: `downloadCsvDoc(docKey, legacyName, csvText(headers, rows))` + seed doc_key\n'
+    + '             (form_code = null ⇒ วันที่ apply ชื่อไฟล์เหมือนเดิมเป๊ะ)\n');
+});
+
+/* ── 🎞️ ตัวเช็ค GIF + เพดานขนาด ต้องมาจาก `utils/imageFileKind.js` จุดเดียว (08/10 · QC audit) ──
+   กฎเดิม (storage-images.md): *"ตัวตรวจชนิดไฟล์ = imageFileKind.js จุดเดียว (ดูนามสกุลด้วย
+   ไม่ใช่แค่ MIME)"* — แต่ไม่มีด่าน ⇒ drift กลับมา **6 ไฟล์** (รวมของกลาง ImageCropModal เอง)
+   🔴 ทำไมสำคัญ: **Android/Chrome ส่ง MIME ว่างมากับรูปจริง** ⇒ `type === 'image/gif'` เป็นเท็จ
+      = เพดาน 2MB รั่ว = GIF เฉลี่ย 4 MB/ไฟล์ ขึ้น storage (เคยทำ egress ทะลุโควต้าจน
+      Supabase ล็อกบริการทั้ง organization — ทั้งโรงงาน login ไม่ได้)
+   · เลขเพดานก็ห้ามเขียนซ้ำ — `GIF_MAX_BYTES` / `GIF_TOO_BIG_MSG` */
+test('🛡️ gif-check-via-imagefilekind — ห้ามเทียบ image/gif หรือเขียนเพดาน GIF เองในหน้า', () => {
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const rel = relative(ROOT, file);
+    if (rel.includes('__tests__') || rel.endsWith('utils/imageFileKind.js')) continue;
+    const code = stripComments(readFileSync(file, 'utf8'));
+    // layoutImage.js เทียบ type ภายในตัวบีบ (ได้ไฟล์ที่ผ่านด่านมาแล้ว) — ข้อยกเว้นที่บันทึกไว้
+    if (!rel.endsWith('utils/layoutImage.js') && /['"]image\/gif['"]\s*===|===\s*['"]image\/gif['"]/.test(code)) {
+      bad.push(`${rel} (เทียบ 'image/gif' เอง → ใช้ isGifFile())`);
+    }
+    if (/2\s*\*\s*1024\s*\*\s*1024/.test(code) && /gif/i.test(code)) {
+      bad.push(`${rel} (เขียนเพดาน GIF 2MB เอง → ใช้ GIF_MAX_BYTES)`);
+    }
+  }
+  assert.deepEqual(bad, [], '\n\n❌ ตัวเช็ค GIF เขียนเองนอกของกลาง:\n' + bad.map(b => '   • ' + b).join('\n') + '\n'
+    + '   ทำไม: Android ส่ง MIME ว่างมากับรูปจริง ⇒ เทียบ type ล้วน = เพดาน 2MB รั่ว\n'
+    + '         GIF บีบไม่ได้ (เฉลี่ย 4 MB/ไฟล์) · egress เคยทะลุโควต้าจนทั้งโรงงาน login ไม่ได้\n'
+    + '   แก้ยังไง: `isGifFile(file)` + `GIF_MAX_BYTES` / `GIF_TOO_BIG_MSG` จาก utils/imageFileKind.js\n');
+});
+
+/* ── 📦 ไลบรารี export ก้อนใหญ่ ต้อง lazy (08/10 · QC audit · egress ข้อ 11) ──────────────
+   `jspdf` ~400 KB · `jspdf-autotable` ~30 KB · `xlsx` ~424 KB · `exceljs` ~930 KB
+   static import = **โหลดตอน "เปิดหน้า" ไม่ใช่ตอน "กด export"** · วัดจากบันเดิลจริง 08/10:
+   `PMCheckData-*.js` ดึง jspdf + autotable มาทุกครั้งที่เปิด /pm?tab=check (429 KB)
+   และ `EventLog` ดึง xlsx 424 KB — ที่เหลือทั้งระบบ lazy อยู่แล้ว 2 จุดนี้เป็นตัวที่ตก */
+test('🛡️ export-libs-lazy-import — jspdf/xlsx/exceljs ห้าม static import', () => {
+  const LIBS = ['jspdf', 'jspdf-autotable', 'xlsx', 'exceljs'];
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const rel = relative(ROOT, file);
+    if (rel.includes('__tests__')) continue;
+    const code = stripComments(readFileSync(file, 'utf8'));
+    for (const lib of LIBS) {
+      const re = new RegExp(`^\\s*import\\s[^;]*?from\\s+['"]${lib.replace('/', '\\/')}['"]`, 'm');
+      if (re.test(code)) bad.push(`${rel} → ${lib}`);
+    }
+  }
+  assert.deepEqual(bad, [], '\n\n❌ ไลบรารี export ถูก static import:\n' + bad.map(b => '   • ' + b).join('\n') + '\n'
+    + '   ทำไม: โหลดตอนเปิดหน้า แม้ผู้ใช้ไม่เคยกด export (jspdf 429 KB · xlsx 424 KB · exceljs 930 KB)\n'
+    + '   แก้ยังไง: `const { default: jsPDF } = await import(\'jspdf\')` ในฟังก์ชัน export\n'
+    + '             (ฟังก์ชันที่เป็น async อยู่แล้วเปลี่ยนได้โดยไม่กระทบผู้เรียก)\n');
+});

@@ -36,6 +36,7 @@ import { loadPmTeams, isAmTeam } from '../utils/pmTeams';
 import { EQUIPMENT_KINDS, KIND_META } from '../utils/equipmentKinds';
 import { fmtDur } from '../utils/mtnMetrics';
 import { STATUS_META } from '../lib/pmSchedule';
+import { loadPmSpareDemand } from '../lib/pmSpareData';
 import {
   buildMaintenanceLevels, summarizeItems, actionsOf, splitWindows,
   PRIORITY, TREND_META, THRESH, WINDOW,
@@ -135,6 +136,7 @@ export default function MaintenanceLevels() {
       // ต้นวันทำงานแรก (08:00 ไทย) — ขอบล่างของ downtime · ขอบบนไม่ต้อง (ถึงปัจจุบัน)
       const sinceIso = new Date(`${baseFrom}T08:00:00+07:00`).toISOString();
       await loadPmTeams().catch(() => {});   // ให้ isAmTeam อ่าน mtn_teams.kind ได้จริงก่อนประกอบ 3 ระดับ
+      const sparePromise = loadPmSpareDemand({ todayStr });   // ยิงคู่กับชุดด้านล่าง ไม่ต่อคิว
       const res = await Promise.all([
         fetchAllRows(supabaseDR, 'machines', 'id, line_name, machine_no, machine_name, equipment_kind, is_active',
           qq => qq.eq('is_active', true).order('sort_order').order('id')),
@@ -155,9 +157,13 @@ export default function MaintenanceLevels() {
         fetchAllRows(supabaseDR, 'inspections', 'checklist_id, inspected_at',
           qq => qq.neq('approval_status', 'rejected').order('inspected_at', { ascending: false }).order('id')),
       ]);
+      /* 🔩 ความต้องการอะไหล่ของ PM ที่จะถึง (ตัวเดียวกับแถบในแท็บแผน PM/คลังอะไหล่) — ป้อนกฎ spare_short
+         ล้ม = กฎนี้ไม่ทำงาน แต่ต้องบอกบนจอ (ห้ามแปลว่า "อะไหล่พอ") */
+      const spareRes = await sparePromise;
       if (!alive) return;
       const NAMES = ['ทะเบียนเครื่อง', 'downtime', 'กะการผลิต', 'นโยบายพัก', 'ใบตรวจ PM', 'อุปกรณ์ PM', 'แผน PM', 'ผลตรวจ'];
       const errs = res.map((r, i) => (r.error ? NAMES[i] : null)).filter(Boolean);
+      if (spareRes.error) errs.push('อะไหล่ของแผน PM (คำแนะนำเรื่องอะไหล่ไม่ครบ)');
       if (errs.length) {
         setLoadErr(`โหลดไม่สำเร็จ: ${errs.join(' · ')} — ตัวเลขบนจอไม่ครบ`);
         toast.error(`โหลดข้อมูลไม่ครบ: ${errs.join(' · ')}`);
@@ -165,7 +171,7 @@ export default function MaintenanceLevels() {
       const [mc, dt, ss, bp, cl, jg, pl, ins] = res.map(r => r.data || []);
       const lastInsp = {};
       for (const i of ins) if (!lastInsp[i.checklist_id]) lastInsp[i.checklist_id] = i.inspected_at;
-      setRaw({ machines: mc, downtimes: dt, sessions: ss, breakPolicies: bp, checklists: cl, jigs: jg, plans: pl, lastInsp });
+      setRaw({ machines: mc, downtimes: dt, sessions: ss, breakPolicies: bp, checklists: cl, jigs: jg, plans: pl, lastInsp, spare: spareRes.demand || null });
       setLoading(false);
     })();
     return () => { alive = false; };
@@ -181,6 +187,7 @@ export default function MaintenanceLevels() {
       machines: raw.machines, downtimes: raw.downtimes, sessions: raw.sessions, breakPolicies: raw.breakPolicies,
       lineFamilyOf, sessionLineOf: (id) => sesLine.get(id) || '',
       isAm: isAmTeam,   // AM ออกจากชั้น Preventive (audit 08/10)
+      spare: raw.spare,
       todayStr, nowMs: Date.now(),
     });
   }, [raw, lineFamilyOf, todayStr]);
@@ -380,7 +387,7 @@ export default function MaintenanceLevels() {
         ② นับ "เครื่องเสีย" จาก downtime ที่ระบุเครื่อง (ไม่นับหยุดตามแผน) หารด้วยชั่วโมงเดินเครื่องของไลน์ (หักพักตามนโยบายแล้ว) ·
         MTBF/MTTR สูตรเดียวกับแท็บ KPI ช่าง · MTTR นับจากไลน์หยุดถึงเดินต่อ (รวมเวลารอช่าง) ·
         "คาดเสียครั้งถัดไป" = เสียล่าสุด + MTBF เฉลี่ย — <b>เป็นค่าเฉลี่ย ไม่ใช่คำทำนายแม่นยำ</b> ·
-        ③ แนวโน้มต้องเสีย ≥{THRESH.minStops} ครั้งจึงนับ (น้อยกว่านั้นอาจบังเอิญ)
+        ③ อะไหล่: เทียบยอดใช้สะสมของ PM ทุกใบทั้งโรงงาน (ตัวเดียวกับแถบ 🔩 ในแท็บแผน PM) กับสต็อก · แนวโน้มต้องเสีย ≥{THRESH.minStops} ครั้งจึงนับ (น้อยกว่านั้นอาจบังเอิญ)
         <br />
         <b style={{ color: 'var(--text2)' }}>ข้อจำกัดตอนนี้</b> ·
         แม่พิมพ์/จิ๊ก ใช้ชั่วโมงเดินของไลน์แทนเวลาที่ถูกใช้จริง (อัตราเสียต่ำกว่าจริง) ·

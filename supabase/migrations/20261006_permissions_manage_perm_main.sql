@@ -58,6 +58,25 @@ comment on policy role_permissions_write_perm on public.role_permissions is
   'คีย์เดียวกับปุ่มบนจอ /permissions (permissions:manage) — ห้ามกลับไป hardcode role array '
   'เพราะ role array มือจะแคบกว่าสิทธิ์ที่ /permissions แจกเสมอ ⇒ คนมีปุ่มแต่เขียนได้ 0 แถวเงียบ';
 
+-- ════════════════════════════════════════════════════════════════════════════
+-- ✅ apply แล้ว 2026-10-09 (ผ่าน MCP) — แต่ **เหลือ 1 บรรทัดที่ต้องรันมือ**
+--    วัดกลับได้: in_catalog = 1 · role_permissions = admin/true เท่านั้น (role อื่น false)
+--    · policy ใหม่ `role_permissions_write_perm` สร้างแล้ว
+--
+-- 🔴 กับดักเครื่องมือ (คนถัดไปจะเจอซ้ำ): **MCP `execute_sql`/`apply_migration` รัน
+--    `drop policy` ไม่ได้** — คำสั่งที่ถูกตีว่า "ทำลาย" จะรอ user ยืนยันแล้วค้างจน
+--    timeout 60s (ไม่ใช่ lock — `pg_stat_activity` วัดได้ blocked = 0 · ทั้งก้อนถูก
+--    rollback สะอาด ไม่มีสถานะครึ่งๆ) ⇒ **ก้อนที่มี drop ต้องส่ง SQL ให้ user รันเอง**
+--    และ MCP รับ DDL ได้ **ทีละ statement** เท่านั้น (ก้อนรวมหลาย statement ก็ค้างเหมือนกัน)
+--
+-- ⚠️ สถานะตอนนี้ = policy เขียน 2 ตัวอยู่ร่วมกัน (`_write_admin` เก่า + `_write_perm` ใหม่)
+--    policy ของ cmd เดียวกันถูก **OR** กัน ⇒ ผลลัพธ์ = `has_perm('permissions:manage')`
+--    ซึ่งครอบ admin อยู่แล้ว ⇒ **พฤติกรรมถูกต้องแล้ววันนี้ ไม่มีช่องโหว่** ตัวเก่าแค่ซ้ำซ้อน
+--    แต่ขัดกฎ "ห้าม hardcode role array ใน policy" ⇒ ให้ user รันบรรทัดนี้เพื่อปิดงาน:
+--      drop policy if exists role_permissions_write_admin on public.role_permissions;
+--    (ตรวจกลับ: ต้องเหลือ role_permissions_select + role_permissions_write_perm)
+-- ════════════════════════════════════════════════════════════════════════════
+
 -- ── ตรวจกลับหลังรัน (ควรได้: 1 แถว admin/true · policy ชื่อ role_permissions_write_perm) ──
 --   select role, allowed from public.role_permissions
 --    where permission_key = 'permissions:manage' order by role;

@@ -27,6 +27,7 @@ import { checkWrite } from '../utils/dbWrite';
 import { uploadOpts } from '../utils/storageUpload';
 import SearchInput from '../components/SearchInput';
 import { DeleteButton } from '../components/IconButton';
+import { isGifFile, GIF_MAX_BYTES, GIF_TOO_BIG_MSG } from '../utils/imageFileKind';   // ตัวตรวจชนิดไฟล์ + เพดาน GIF = จุดเดียว
 
 /* ลำดับแท็บมาตรฐานทั้งระบบ: คน → เครื่องจักร (ตามลำดับ 4M: Man, Machine) ให้ตรงกับปุ่ม filter
    MAN/MACHINE ที่หน้า Management — UI-CONVENTIONS §1
@@ -570,9 +571,10 @@ export default function LineSetup({ embedded = false } = {}) {
       const fileExt = file.name.split('.').pop();
       const safeLineName = selectedLine.replace(/[^a-zA-Z0-9]/g, '_');
       // บีบรูปผังก่อนอัปโหลด — ผังไลน์บีบเบา 2560px/2.5MB q0.9 (ดู CLAUDE.md "Storage & รูปภาพ") · GIF ส่งทั้งไฟล์คงการเคลื่อนไหว
-      const isGif = file.type === 'image/gif' || /^gif$/i.test(fileExt);
-      if (isGif && file.size > 2 * 1024 * 1024) {
-        toast.error('ไฟล์ GIF ต้องไม่เกิน 2MB (กฎเดียวกับ ImageCropModal — GIF บีบไม่ได้)');
+      // 🔴 ตัวเช็ค GIF + เพดานขนาด = utils/imageFileKind.js จุดเดียว (08/10 · เดิมเขียน regex นามสกุลเองที่นี่)
+      const isGif = isGifFile(file);
+      if (isGif && file.size > GIF_MAX_BYTES) {
+        toast.error(GIF_TOO_BIG_MSG);
         setIsUploading(false);
         return;
       }

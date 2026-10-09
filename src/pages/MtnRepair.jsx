@@ -1327,10 +1327,10 @@ function cmtBlockHtml(cmt, esc, opt = {}) {
 }
 
 /* ── พิมพ์ใบ MO — เลือก layout ตามทีมช่าง (JIG/DIE = FM-JIG-008 · MTN/PRODUCTION = FM-MTN-006) ── */
-function printMoReport(o, dparts = [], logo0, dlabor = [], cmt = NO_CMT) {
+function printMoReport(o, dparts = [], logo0, dlabor = [], cmt = NO_CMT, costErr = null) {
   const teamKey = teamKeyOf(o.mtn_dept || deptForItem(o.item_type));
   // เฉพาะทีม MTN ใช้ฟอร์ม FM-MTN-006 · JIG MTN / DIE MTN / PRODUCTION ใช้ FM-JIG-008 เดิม (คำสั่ง user 2026-07-22)
-  if (teamKey === 'maintenance') return printMoReportMtn(o, dparts, logo0, dlabor, cmt);
+  if (teamKey === 'maintenance') return printMoReportMtn(o, dparts, logo0, dlabor, cmt, costErr);
   const dept = deptNameOf(teamKey);   // ใบพิมพ์แสดง "ชื่อทีม" ไม่ใช่ key
   // ใบทีม DIE พิมพ์ป้าย "Die No. / Die Type" แทน "Jig No / MC Name" (คอมเมนต์ทีม DIE 06/10 — ฟอร์มเดียวกับ JIG แต่ของที่ซ่อมคือแม่พิมพ์)
   const isDieTeam = teamKey === 'die_maintenance';
@@ -1405,7 +1405,7 @@ function printMoReport(o, dparts = [], logo0, dlabor = [], cmt = NO_CMT) {
     <tr><td class="sech" style="height:20pt"><b>3 [REPAIR]</b> <span class="en">ส่วนผู้ซ่อม</span></td></tr>
     <tr><td style="height:99pt">${L('วันที่เสร็จ:', beDT(o.repair_done_at))}
         ${P(L('ผู้ซ่อมหลัก:', o.tech_main), L('ผู้ซ่อมรอง:', o.tech_secondary))}
-        ${L('สาเหตุปัญหา:', o.root_cause)}${L('วิธีการแก้ไข:', o.solution)}${dparts.length ? L('อะไหล่:', dparts.map(p => `${p.part_name} ×${p.qty}${p.unit || ''}`).join(', ')) : ''}</td></tr>
+        ${L('สาเหตุปัญหา:', o.root_cause)}${L('วิธีการแก้ไข:', o.solution)}${dparts.length ? L('อะไหล่:', dparts.map(p => `${p.part_name} ×${p.qty}${p.unit || ''}`).join(', ')) : ''}${costErr ? `<div style="font-size:7.2pt;margin-top:3pt">⚠ รายการอะไหล่/ค่าแรงโหลดไม่สำเร็จ — ใบนี้อาจแสดงไม่ครบ</div>` : ''}</td></tr>
   </table>
   <table>
     <tr><td class="sech" style="width:50.2%;height:21pt"><b>[BEFORE IMPROVEMENT]</b> <span class="en">ภาพปัญหาก่อนปรับปรุง</span></td>
@@ -1436,7 +1436,7 @@ function printMoReport(o, dparts = [], logo0, dlabor = [], cmt = NO_CMT) {
    → ค่าใช้จ่าย (ค่าแรงรายคน | อะไหล่รายรายการ) → ความพึงพอใจ + ลายเซ็นท้าย → ความคิดเห็น
    ⚠️ รูปก่อน/หลังไม่มีในกระดาษ → ไปหน้า 2 และพิมพ์เฉพาะเมื่อมีรูปจริง (หน้าแรกต้องเหมือนต้นฉบับ)
    ⚠️ สูตรรวมเงิน/คะแนนอ่านจาก `src/utils/mtnMoForm.js` ที่เดียว ห้ามคิดเลขซ้ำที่นี่ */
-function printMoReportMtn(o, dparts = [], logo0, dlabor = [], cmt = NO_CMT) {
+function printMoReportMtn(o, dparts = [], logo0, dlabor = [], cmt = NO_CMT, costErr = null) {
   const df = docFormSync('mo_report_mtn', { form_code: 'FM-MTN-006', rev: '', effective_date: '', footer_note: 'MAINTENANCE ORDER MO31 08 2015.xls' });
   const beDT = (v) => { if (!v) return ''; const d = new Date(v); const p = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(d); const g = {}; p.forEach(x => g[x.type] = x.value); return `${+g.day}/${+g.month}/${(+g.year + 543) % 100} ${g.hour === '24' ? '00' : g.hour}:${g.minute}`; };
   const beD = (v) => { if (!v) return ''; const d = new Date(v); const p = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(d); const g = {}; p.forEach(x => g[x.type] = x.value); return `${+g.day} / ${+g.month} / ${(+g.year + 543) % 100}`; };
@@ -1590,7 +1590,7 @@ function printMoReportMtn(o, dparts = [], logo0, dlabor = [], cmt = NO_CMT) {
   </table>
 
   <!-- ══ ค่าใช้จ่าย ══ -->
-  <table><tr><td class="sec">ค่าใช้จ่ายในการดำเนินการ</td></tr></table>
+  <table><tr><td class="sec">ค่าใช้จ่ายในการดำเนินการ${costErr ? ' &nbsp;<span style="font-weight:400;font-size:9px">⚠ รายการอะไหล่/ค่าแรงโหลดไม่สำเร็จ — ตัวเลขด้านล่างอาจไม่ครบ</span>' : ''}</td></tr></table>
   <table style="table-layout:fixed"><tr>
     <td style="width:50%;padding:0;border-right:none">
       <table class="tb">
@@ -1675,8 +1675,27 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, signatureUr
   const bd = minutesBetween(o.report_at, o.repair_done_at);
   const [dparts, setDparts] = useState([]);
   const [dlabor, setDlabor] = useState([]);   // ค่าแรงรายคน (ตาราง 5 แถวบนฟอร์ม MTN)
-  useEffect(() => { supabaseDR.from('mtn_order_parts').select('*').eq('order_id', o.id).then(({ data }) => setDparts(data || [])); }, [o.id]);
-  useEffect(() => { supabaseDR.from('mtn_order_labor').select('*').eq('order_id', o.id).order('seq').then(({ data }) => setDlabor(data || [])); }, [o.id]);
+  /* 🔴 2 ชุดนี้ถูก **พิมพ์ลงใบ FM-JIG-008 / FM-MTN-006** (ค่าใช้จ่ายบนเอกสารที่เก็บตามอายุเอกสาร)
+     ⇒ กลืน error = พิมพ์ใบที่ "ไม่มีอะไหล่ ไม่มีค่าแรง" เงียบๆ (QC audit 08/10)
+     มาตรฐานเดียวกับคอมเมนต์: โหลดล้ม → ส่งธงเข้าใบพิมพ์ให้เขียนกำกับ ห้ามปล่อยให้ดูเหมือน "ไม่มี"
+     + stale-guard (กฎเหล็ก DB ข้อ 4) — เปิดใบใหม่เร็วๆ ตอบช้าทับตอบเร็วได้ */
+  const [dcostErr, setDcostErr] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    setDcostErr(null);
+    Promise.all([
+      supabaseDR.from('mtn_order_parts').select('*').eq('order_id', o.id),
+      supabaseDR.from('mtn_order_labor').select('*').eq('order_id', o.id).order('seq'),
+    ]).then(([pr, lr]) => {
+      if (!alive) return;
+      setDparts(pr.data || []);
+      setDlabor(lr.data || []);
+      const e = pr.error?.message || lr.error?.message || null;
+      setDcostErr(e);
+      if (e) toast.error('โหลดอะไหล่/ค่าแรงของใบนี้ไม่สำเร็จ — ตัวเลขค่าใช้จ่ายบนจอและบนใบพิมพ์จะไม่ครบ');
+    });
+    return () => { alive = false; };
+  }, [o.id]);
   /* 🔧 ช่างของทีมนี้ทำขั้น 2-3 ของ "ใบทีมตัวเอง" ได้ (feedback หน้างาน 2026-08-21)
      ที่มา: ช่างฝ่ายผลิตอยู่ระหว่างระดับส่วนกับระดับกลุ่ม — role ที่มีอยู่ไม่มีตัวไหนพอดี
      แทนที่จะเพิ่ม role ใหม่ (กฎเหล็ก: เจอแกนใหม่ให้เพิ่ม attribute) ใช้ 2 ชั้นคู่กัน:
@@ -2321,7 +2340,7 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, signatureUr
               loadMoComments(o.id),
             ]);
             if (cmt.error) toast.error('โหลดคอมเมนต์ของใบนี้ไม่สำเร็จ — ใบที่พิมพ์จะเขียนกำกับไว้');
-            printMoReport(o, dparts, logo, dlabor, cmt);
+            printMoReport(o, dparts, logo, dlabor, cmt, dcostErr);
           }} style={btnGhost}>🖨️ พิมพ์ / บันทึก PDF</button>
           <button onClick={onClose} style={btnGhost}>ปิด</button>
           {skipQa.ok && <button onClick={() => onStep(5, false, { skipQa: true })} style={{ ...btnGhost, color: '#f59e0b', borderColor: '#f59e0b' }} title="QA ตัดสินว่างานนี้ไม่เกี่ยวกับคุณภาพชิ้นงาน — ไม่ต้องตรวจ ส่งไปรับมอบ/ติดตามผลเลย (เฉพาะ QA กดได้)">⏭ QA ระบุว่าไม่เกี่ยวกับคุณภาพ — ไปขั้น 6</button>}
