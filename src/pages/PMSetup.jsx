@@ -12,7 +12,7 @@ import { toast } from '../components/Toast'
 import CommitInput from '../components/CommitInput';
 import { DEPT_LABEL, EQUIP_TYPE_LABEL, CYCLE_PRESETS, cycleDaysOf, cycleLabel, freqForCycle, ymdBangkok } from '../lib/pmSchedule'
 import { addDays as addDaysYmd } from '../utils/pmUsage'
-import { loadPmTeams, pmTeamsSync, teamKind, teamKindOf, teamEquipTypeOf, clearPmTeamsCache } from '../utils/pmTeams'
+import { loadPmTeams, pmTeamsSync, teamKind, teamKindOf, teamEquipTypeOf, clearPmTeamsCache, isAmTeam } from '../utils/pmTeams'
 // picker กลาง (single-source audit 2026-09-07) — ไลน์/เครื่อง/พาร์ท/กระบวนการ อ่านจากทะเบียน ไม่พิมพ์เอง
 import LineSelect from '../components/LineSelect'
 import MachineSelect from '../components/MachineSelect'
@@ -503,6 +503,7 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
   // ⚠️ ห้ามเรียก RPC pm_refresh_plan แทน — มันเขียน last_done_at ทับจาก inspections อย่างเดียว
   //    (ล้างวันที่ PmCoordination/PMCheckData stamp ไว้)
   const [origCycle, setOrigCycle] = useState(null)
+  const [planBasis, setPlanBasis] = useState('calendar')   // cycle_basis ของแผน — run_day = ห้ามเขียน next_due_date แบบปฏิทิน (08/10)
   const [lastDoneYmd, setLastDoneYmd] = useState(null)
   // Phase 2 — plan type (time | usage | hybrid) + usage-based predictive fields
   const [planType, setPlanType] = useState('time')
@@ -615,7 +616,8 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
         ...(cps ?? []).map(c => c.image_path),
       ].filter(Boolean))
       if (!cl) return
-      const { data: plan } = await supabaseDR.from('pm_plans').select('plan_type, usage_threshold, usage_source_line, interval_days, next_due_date, last_done_at').eq('checklist_id', cl.id).maybeSingle()
+      const { data: plan } = await supabaseDR.from('pm_plans').select('plan_type, usage_threshold, usage_source_line, interval_days, next_due_date, last_done_at, cycle_basis').eq('checklist_id', cl.id).maybeSingle()
+      setPlanBasis(plan?.cycle_basis === 'run_day' ? 'run_day' : 'calendar')
       { const d = cycleDaysOf(cl.frequency, plan?.interval_days); setCycleDays(d ? String(d) : ''); setOrigCycle(d || null) }
       {
         // ทำล่าสุด = กติกาเดียวกับ PMSchedule: pm_plans.last_done_at ก่อน · ไม่มี = ผลตรวจล่าสุดที่ไม่ถูก reject
@@ -897,6 +899,12 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
         equipment_type: equipType, equipment_category: equipCategory,
       })
       if (jigErr) throw jigErr
+      /* 🔗 ย้ายไลน์ของอุปกรณ์ ⇒ ทะเบียน AM รายวันต้องตามไป (08/10 audit) — เดิมค้างไลน์เก่า ⇒ ไลน์เก่าเตือนค้าง/ไลน์ใหม่ไม่เตือน
+         (กติกาเดียวกับ assignJigLine ใน DailyPM.jsx) · ล้ม = บอก ไม่เงียบ แต่ไม่ยกเลิกการบันทึกอุปกรณ์ */
+      if (editJig?.id && (editJig.line_name || null) !== (lineName || null)) {
+        const { error: tgErr } = await supabaseDR.from('pm_daily_line_targets').update({ line_name: lineName || null }).eq('jig_id', editJig.id).eq('is_active', true)
+        if (tgErr) toast.error('ย้ายรายการลงทะเบียน AM ตามไลน์ใหม่ไม่สำเร็จ: ' + tgErr.message + ' — ไปแก้ที่จอ AM รายวัน')
+      }
 
       // ── sync jig_images (spin frames) แบบ "แก้ตาม id" — ห้ามลบทั้งชุดแล้ว insert ใหม่ (QC 05/10)
       //    เดิม delete-all ⇒ fixture_points.image_id / jig_checkpoints.image_id (ON DELETE SET NULL) หลุดทุกครั้งที่กดบันทึก
@@ -956,12 +964,18 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
           usage_threshold: uses ? thr : null,
           usage_source_line: uses ? (usageLine.trim() || lineName || null) : null,
           interval_days: cycleN,
-          // วัน PM ครั้งถัดไป — เขียนเฉพาะเมื่อช่างแก้ช่องนี้ (ไม่งั้นวันที่ระบบคิดให้จะถูกทับด้วยค่าเดิม)
-          ...(nextDueDirty
-            ? { next_due_date: nextDue || null, next_due_reason: nextDue ? 'time' : null }
-            : (cycleN && cycleN !== origCycle && lastDoneYmd)
-              ? { next_due_date: addDaysYmd(lastDoneYmd, cycleN), next_due_reason: 'time' }
-              : {}),
+          /* 🔗 ฐานรอบ (08/10 audit AM↔PM): ทีม AM + รอบรายวัน = run_day (นับวันเดินเครื่อง) · แผน run_day **ห้ามเขียน next_due_date แบบปฏิทิน**
+             (เดิมเขียนทับ ⇒ pm-plan-reminder กลับมาเตือนช่างเรื่อง AM · ผังขึ้นเกินกำหนดปลอมวันหยุด) */
+          ...((isAmTeam(department) && cycleN === 1) || planBasis === 'run_day'
+            ? { cycle_basis: 'run_day', next_due_date: null, next_due_reason: 'run_day' }
+            : {
+              // วัน PM ครั้งถัดไป — เขียนเฉพาะเมื่อช่างแก้ช่องนี้ (ไม่งั้นวันที่ระบบคิดให้จะถูกทับด้วยค่าเดิม)
+              ...(nextDueDirty
+                ? { next_due_date: nextDue || null, next_due_reason: nextDue ? 'time' : null }
+                : (cycleN && cycleN !== origCycle && lastDoneYmd)
+                  ? { next_due_date: addDaysYmd(lastDoneYmd, cycleN), next_due_reason: 'time' }
+                  : {}),
+            }),
         }, { onConflict: 'checklist_id' }), 'บันทึกรอบ PM / ประเภทแผน / เกณฑ์ usage');
       }
 
@@ -1690,7 +1704,7 @@ export default function PMSetup() {
     // แท็บ AM (ฝ่ายผลิต): เครื่องต้อง "ลงทะเบียน AM" (pm_daily_line_targets) ด้วย ถึงจะโผล่ให้ตรวจ
     // ที่หน้า PM ตรวจสอบ — ลงจุดตรวจอย่างเดียวไม่พอ · ดึงมาเพื่อเตือนบนการ์ด ไม่ให้ 2 หน้าดูขัดกัน
     let reg = null
-    if (department === 'production') {
+    if (isAmTeam(department)) {   // ทีม AM ผ่าน mtn_teams.kind — ห้าม hardcode 'production' (08/10)
       const { data: tg } = await supabaseDR.from('pm_daily_line_targets').select('jig_id').eq('is_active', true)
       reg = new Set((tg ?? []).map(t => t.jig_id))
     }

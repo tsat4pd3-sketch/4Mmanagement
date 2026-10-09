@@ -303,6 +303,7 @@ export function buildMaintenanceLevels({
   checklists = [], jigs = [], plans = [], lastInspByChecklist = {},
   machines = [], downtimes = [], sessions = [], breakPolicies = [],
   lineFamilyOf = null, sessionLineOf = null,
+  isAm = () => false,   // (department) => true เมื่อเป็นทีม AM (ผลิตตรวจเอง) — ผู้เรียกส่ง isAmTeam จาก utils/pmTeams (ไฟล์นี้ต้อง pure)
   spare = null,          // ผลของ spareDemand() — ไม่ส่ง = กฎ spare_short ไม่ทำงาน
   todayStr, nowMs, w = WINDOW, t = THRESH,
 } = {}) {
@@ -322,7 +323,11 @@ export function buildMaintenanceLevels({
   const checksByKey = new Map();
   const equipMeta = new Map();
   let checklistNoEquip = 0;
+  let amChecklists = 0;
   for (const cl of checklists) {
+    /* 🔴 AM (ผลิตตรวจเอง) ไม่ใช่ชั้น Preventive ของช่าง (audit 08/10) — เดิมปนเข้ามาทำ overdue/never/withCycle
+       เพี้ยน + สร้าง action "ทำ PM ที่เลยกำหนด" ให้แผน AM run_day ทุกวันที่ไม่ได้ผลิต · นับไว้บอกบนจอ ไม่ทิ้งเงียบ */
+    if (isAm(cl.department)) { amChecklists++; continue; }
     const j = jigById.get(cl.equipment_id);
     if (!j) { checklistNoEquip++; continue; }
     const m = (j.machine_id && machineById.get(j.machine_id)) || resolveEquip(j.machine_no, index).machine;
@@ -383,6 +388,7 @@ export function buildMaintenanceLevels({
     coverage: {
       recentFrom: win.recentFrom, baseFrom: win.baseFrom, todayStr,
       checklistNoEquip,
+      amChecklists,                                                     // ใบตรวจ AM ที่กันออกจากชั้น Preventive (ดูจอ AM)
       unmatched: R.summary.unmatched,                                   // เลขที่กรอกแต่ไม่อยู่ในทะเบียน
       unknownShifts: R.summary.unknownShifts + B.summary.unknownShifts,  // กะที่หาชั่วโมงไม่ได้
       hasBreakPolicy: R.summary.hasBreakPolicy,

@@ -139,7 +139,7 @@ export default function TvBoard() {
               .in('status', OPEN_MO_STATUSES).order('report_at', { ascending: false }).limit(300)
           : Promise.resolve({ data: [] }),
         needPm
-          ? supabaseDR.from('pm_plans').select('id, checklist_id, plan_type, next_due_date, interval_days').eq('is_active', true)
+          ? supabaseDR.from('pm_plans').select('id, checklist_id, plan_type, next_due_date, interval_days, last_done_at, cycle_basis, deferred_to, deferred_at').eq('is_active', true)
           : Promise.resolve({ data: [] }),
         needPm
           ? supabaseDR.from('checklists').select('id, equipment_id, department').eq('module', 'mtn')

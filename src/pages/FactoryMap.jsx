@@ -28,6 +28,7 @@ import { loadPmTeams, isAmTeam } from '../utils/pmTeams';
 import { fetchByIds } from '../utils/fetchByIds';
 import { loadDailyAm, dailyAmLineStatus, amShiftInfo } from '../lib/dailyAmBoard';
 import { DAILY_PM_WINDOW_MIN } from '../lib/pmDailyStatus';
+import { planDueBucket } from '../lib/pmSchedule';
 import { useLiveBoard } from '../utils/useLiveBoard';
 import { monthKeyOf, shiftMonth, monthLabel, monthRange, fmtKwh, fmtBaht, deltaPct, energyCat, efFor, co2eKg, fmtTco2e, energyRollup } from '../utils/energy';
 import { OPEN_MO_STATUSES } from '../utils/dieStatus';
@@ -121,6 +122,9 @@ const prodHealthSignals = (s) => {
   if (s.pmBusy) sig.push({ cat: 'good', txt: '🔧 กำลังทำ PM' });
   if (s.pmOverdue) sig.push({ cat: 'bad', txt: `PM เกิน ${s.pmOverdue}` });
   else if (s.pmDueSoon) sig.push({ cat: 'ok', txt: `PM ใกล้ครบ ${s.pmDueSoon}` });
+  // 🔴 แผนที่ไม่เคยตรวจ/ไม่รู้รอบ ≠ ปกติ (08/10 — JIG MTN 106 แผนเคยถูกนับเป็น "PM ปกติ" ทั้งที่ไม่เคยตรวจสักใบ)
+  if (s.pmNever) sig.push({ cat: 'ok', txt: `PM ไม่เคยตรวจ ${s.pmNever}` });
+  if (s.pmNoCycle) sig.push({ cat: 'ok', txt: `PM ไม่ตั้งรอบ ${s.pmNoCycle}` });
   /* 🏭 AM รายวัน — จาก "กะนี้ตรวจแล้วหรือยัง" (lib/dailyAmBoard.js) ไม่ใช่วันครบกำหนดของแผน (08/10) */
   if (s.amDNg) sig.push({ cat: 'bad', txt: `AM พบผิดปกติ ${s.amDNg}` });
   else if (s.amDLate) sig.push({ cat: 'bad', txt: `AM ยังไม่ตรวจ ${s.amDLate} (เกินเวลา)` });
@@ -145,6 +149,20 @@ const prodHealthText = (s) => {
   return sig.length > 2 ? `${t} +${sig.length - 2}` : t;   // เกิน 2 เหตุ = นับบอก ห้ามตัดเงียบ
 };
 
+/* 🛠️ PM ช่าง — ข้อความจากถังของ planDueBucket (lib/pmSchedule.js)
+   🔴 "ปกติ" เขียนได้ต่อเมื่อทุกแผน **มีวันครบกำหนดและยังไม่ถึง** เท่านั้น · ไม่เคยตรวจ/ไม่ตั้งรอบ = ต้องเห็น ไม่ใช่เขียว (08/10) */
+const pmPlanText = (s) => {
+  if (!s.pmTotal) return '';
+  const parts = [];
+  if (s.pmOverdue) parts.push(`⚠ เกินกำหนด ${s.pmOverdue}`);
+  if (s.pmDueSoon) parts.push(`ใกล้ครบ ${s.pmDueSoon}`);
+  if (s.pmNever) parts.push(`ไม่เคยตรวจ ${s.pmNever}`);
+  if (s.pmNoCycle) parts.push(`ไม่ตั้งรอบ ${s.pmNoCycle}`);
+  if (!parts.length) return `PM ปกติ (${s.pmTotal})`;
+  const okN = s.pmTotal - s.pmOverdue - s.pmDueSoon - s.pmNever - s.pmNoCycle;
+  return parts.join(' · ') + (okN > 0 ? ` · ปกติ ${okN}` : '');
+};
+
 /* 🏭 AM รายวัน — ตัวแปลสถานะรวม (หลายไลน์ในครอบครัวบวกกันมาแล้ว) → สี/ข้อความ · กฎสีเดียวกับ computeDailyPmStatus:
    NG ชนะ · ยังไม่ตรวจเกินเวลา = แดง · รอตรวจในกรอบ = เหลือง · ตรวจครบ = เขียว · ยังไม่เริ่มผลิต = เทา (ไม่ใช่เขียว) */
 const amDailyCat = (s) => {
@@ -166,6 +184,7 @@ const amDailyText = (s) => {
   } else if (s.amTotal) parts.push(`ยังไม่ลงทะเบียนจุดตรวจรายวัน (${s.amTotal} แผน)`);
   if (s.amOverdue) parts.push(`แผน AM เกิน ${s.amOverdue}`);
   else if (s.amDueSoon) parts.push(`แผน AM ใกล้ครบ ${s.amDueSoon}`);
+  if (s.amNever) parts.push(`แผน AM ไม่เคยตรวจ ${s.amNever}`);
   return parts.join(' · ');
 };
 const amDailyShort = (s) => {
@@ -289,11 +308,10 @@ const METRICS = {
         (สิ่งที่เกิดอยู่ตอนนี้สำคัญกว่าสิ่งที่ค้าง) และเป็นสีฟ้า **ไม่ใช่ alarm ห้ามกระพริบ** */
   pm: {
     label: '🛠️ PM ช่าง (Preventive)', worstFirst: true, desc: true,
-    value: s => s.pmBusy ? 2000 + s.pmBusy : (s.pmTotal ? s.pmOverdue * 1000 + s.pmDueSoon : null),
-    text: s => s.pmBusy ? `🔧 กำลังทำ PM วันนี้${s.pmBusyText ? ` · ${s.pmBusyText}` : ''}`
-      : s.pmTotal ? (s.pmOverdue ? `⚠ เกินกำหนด ${s.pmOverdue}` : s.pmDueSoon ? `ใกล้ครบ ${s.pmDueSoon}` : `PM ปกติ (${s.pmTotal})`) : '',
-    cat: s => s.pmBusy ? 'busy' : !s.pmTotal ? 'idle' : s.pmOverdue ? 'bad' : s.pmDueSoon ? 'ok' : 'good',
-    short: s => s.pmBusy ? '🔧 PM' : !s.pmTotal ? '' : s.pmOverdue ? `⚠ ${s.pmOverdue}` : s.pmDueSoon ? `~${s.pmDueSoon}` : '',
+    value: s => s.pmBusy ? 2000 + s.pmBusy : (s.pmTotal ? s.pmOverdue * 1000 + s.pmNever * 50 + s.pmNoCycle * 20 + s.pmDueSoon : null),
+    text: s => s.pmBusy ? `🔧 กำลังทำ PM วันนี้${s.pmBusyText ? ` · ${s.pmBusyText}` : ''}` : pmPlanText(s),
+    cat: s => s.pmBusy ? 'busy' : !s.pmTotal ? 'idle' : s.pmOverdue ? 'bad' : (s.pmDueSoon || s.pmNever || s.pmNoCycle) ? 'ok' : 'good',
+    short: s => s.pmBusy ? '🔧 PM' : !s.pmTotal ? '' : s.pmOverdue ? `⚠ ${s.pmOverdue}` : s.pmDueSoon ? `~${s.pmDueSoon}` : s.pmNever ? `? ${s.pmNever}` : s.pmNoCycle ? `? ${s.pmNoCycle}` : '',
   },
   /* 🏭 AM — ผลิตตรวจเครื่องเองทุกต้นกะ · ตัดสินจาก "กะนี้ตรวจแล้วหรือยัง" (`amDaily*` จาก lib/dailyAmBoard.js)
      แยกแท็บจาก PM เพราะเป็นคนละงาน คนละคนรับผิดชอบ — เอามารวมนับก็ตอบไม่ได้ว่าใครต้องไปทำ
@@ -444,6 +462,7 @@ const EMPTY_ST = { actual: 0, target: 0, onTimeTarget: 0, runN: 0, capN: 0, hasO
   headTotal: 0, present: 0, ppeBad: 0, stationTotal: 0, stationFilled: 0, pmTotal: 0, pmOverdue: 0, pmDueSoon: 0,
   amTotal: 0, amOverdue: 0, amDueSoon: 0, pmBusy: 0, pmBusyText: '',
   amDTotal: 0, amDChecked: 0, amDNg: 0, amDLate: 0, amDWait: 0, amDIdle: 0, amDHasSession: false,
+  pmNever: 0, pmNoCycle: 0, pmRunDay: 0, amNever: 0, amNoCycle: 0, amRunDay: 0,
   supList: [], supAtRisk: false };
 // รวมชื่อ utility ที่จ่ายไลน์นี้ (dedup ตามเลขเครื่อง) เอาที่กำลังซ่อม (atRisk) ก่อน
 // รวมชื่อ utility ที่จ่ายไลน์นี้ — dedup ตามเลขเครื่องก่อน แล้วยุบชื่อที่ซ้ำเป็น "ชื่อ ×N" (กันโชว์ชื่อเดียวซ้ำหลายรอบ)
@@ -1100,25 +1119,31 @@ export default function FactoryMap({ setupMode = false }) {
        (กฎเหล็ก: แยก AM รายส่วนงาน/rollout โรงงานที่เรียกทีมคนละชื่อ แล้วจะพังเงียบ) */
     const amOfChecklist = {}; (cls || []).forEach(c => { amOfChecklist[c.id] = isAmTeam(c.department); });
     const plRes = await fetchByIds((cls || []).map(c => c.id),
-      c => supabaseDR.from('pm_plans').select('checklist_id, next_due_date').eq('is_active', true).in('checklist_id', c));
+      c => supabaseDR.from('pm_plans').select('checklist_id, next_due_date, last_done_at, interval_days, cycle_basis, deferred_to, deferred_at').eq('is_active', true).in('checklist_id', c));
     if (plRes.error) { console.warn('loadPM plans', plRes.error); return; }
     const plans = plRes.rows;
-    const now = new Date(); const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-    const soon = new Date(now.getTime() + 7 * 864e5); const soonStr = `${soon.getFullYear()}-${String(soon.getMonth() + 1).padStart(2, '0')}-${String(soon.getDate()).padStart(2, '0')}`;
+    const today = getWorkDate();
     const out = {};
     /* ⚠️ อุปกรณ์ที่ยังไม่ได้ผูกไลน์ = วางบนผังไม่ได้ **แต่ห้ามทิ้งเงียบ** — โดยเฉพาะตัวที่เกินกำหนด
        (แผน PM ที่ไม่รู้ว่าอยู่ไลน์ไหน จะหายจากทุกจอที่จัดกลุ่มตามไลน์) → นับไว้โชว์เป็นชิป */
     const orphan = { total: 0, overdue: 0 };
-    const blank = () => ({ pmTotal: 0, pmOverdue: 0, pmDueSoon: 0, amTotal: 0, amOverdue: 0, amDueSoon: 0, pmBusy: 0, pmBusyText: '' });
+    const blank = () => ({ pmTotal: 0, pmOverdue: 0, pmDueSoon: 0, pmNever: 0, pmNoCycle: 0, pmRunDay: 0,
+      amTotal: 0, amOverdue: 0, amDueSoon: 0, amNever: 0, amNoCycle: 0, amRunDay: 0, pmBusy: 0, pmBusyText: '' });
+    /* 🔴 ถังจาก planDueBucket (lib/pmSchedule.js) — เดิมเช็คแค่ `next_due_date < today` ⇒ แผนที่ไม่เคยตรวจ
+       (next_due_date null — JIG MTN 106/106) และแผน run_day ถูกนับเป็น "ปกติ" (audit 08/10) */
     (plans || []).forEach(p => {
-      const overdue = p.next_due_date && p.next_due_date < today;
+      const { bucket } = planDueBucket(p, today, { soonDays: 7 });
+      const overdue = bucket === 'overdue';
       const ln = lineOfChecklist[p.checklist_id];
       if (!ln) { orphan.total++; if (overdue) orphan.overdue++; return; }
       const o = out[ln] || blank();
       const k = amOfChecklist[p.checklist_id] ? 'am' : 'pm';
       o[`${k}Total`]++;
       if (overdue) o[`${k}Overdue`]++;
-      else if (p.next_due_date && p.next_due_date <= soonStr) o[`${k}DueSoon`]++;
+      else if (bucket === 'due_soon') o[`${k}DueSoon`]++;
+      else if (bucket === 'never') o[`${k}Never`]++;
+      else if (bucket === 'no_cycle') o[`${k}NoCycle`]++;
+      else if (bucket === 'run_day') o[`${k}RunDay`]++;
       out[ln] = o;
     });
     setPmOrphan(orphan);
@@ -1536,16 +1561,17 @@ export default function FactoryMap({ setupMode = false }) {
               .select('id, equipment_id, department, name, frequency').eq('module', 'mtn').in('equipment_id', c));
             const clById = {}; clRes.rows.forEach(c => { clById[c.id] = c; });
             const plRes = await fetchByIds(clRes.rows.map(c => c.id), c => supabaseDR.from('pm_plans')
-              .select('checklist_id, next_due_date, last_done_at').eq('is_active', true).in('checklist_id', c));
+              .select('checklist_id, next_due_date, last_done_at, interval_days, cycle_basis, deferred_to, deferred_at').eq('is_active', true).in('checklist_id', c));
             const today = getWorkDate();
+            // ถังเดียวกับป้ายบนผัง (planDueBucket) — AM run_day แยกออก (ตัดสินที่จอ AM) · ไม่เคยตรวจ/ไม่ตั้งรอบ ต้องโผล่ในลิสต์
             pmRows = plRes.rows.map(p => {
               const cl = clById[p.checklist_id], j = jigById[cl?.equipment_id];
-              const days = p.next_due_date
-                ? Math.round((new Date(`${p.next_due_date}T00:00:00`) - new Date(`${today}T00:00:00`)) / 864e5) : null;
+              const { bucket, daysTo } = planDueBucket(p, today, { frequency: cl?.frequency, soonDays: 7 });
               return { key: p.checklist_id, name: j?.jig_no || j?.name || 'อุปกรณ์ (ไม่พบชื่อ)',
-                sub: j?.jig_no && j?.name && j.jig_no !== j.name ? j.name : '', dept: cl?.department,
-                due: p.next_due_date, days, lastDone: p.last_done_at };
-            }).sort((a, b) => (a.days ?? 9e9) - (b.days ?? 9e9));
+                sub: j?.jig_no && j?.name && j.jig_no !== j.name ? j.name : '', dept: cl?.department, am: isAmTeam(cl?.department),
+                due: p.next_due_date, days: daysTo, bucket, lastDone: p.last_done_at };
+            }).filter(r => !r.am || r.bucket !== 'run_day')
+              .sort((a, b) => (a.days ?? 9e9) - (b.days ?? 9e9));
           } else pmRows = [];
           // ใบซ่อมค้าง — ใบเปิดมีไม่มาก ดึงทั้งชุดแล้วกรองด้วยไลน์/เลขเครื่องของไลน์นี้
           const famSet = new Set(fam);
@@ -1664,7 +1690,9 @@ export default function FactoryMap({ setupMode = false }) {
       if (m) { agg.headTotal += m.headTotal || 0; agg.present += m.present || 0; agg.ppeBad += m.ppeBad || 0; agg.stationTotal += m.stationTotal || 0; agg.stationFilled += m.stationFilled || 0; }
       const pm = pmStatus[n];
       if (pm) { agg.pmTotal += pm.pmTotal || 0; agg.pmOverdue += pm.pmOverdue || 0; agg.pmDueSoon += pm.pmDueSoon || 0;
+               agg.pmNever += pm.pmNever || 0; agg.pmNoCycle += pm.pmNoCycle || 0; agg.pmRunDay += pm.pmRunDay || 0;
                agg.amTotal += pm.amTotal || 0; agg.amOverdue += pm.amOverdue || 0; agg.amDueSoon += pm.amDueSoon || 0;
+               agg.amNever += pm.amNever || 0; agg.amNoCycle += pm.amNoCycle || 0; agg.amRunDay += pm.amRunDay || 0;
                agg.pmBusy += pm.pmBusy || 0; if (!agg.pmBusyText) agg.pmBusyText = pm.pmBusyText || ''; }
       const ad = amDaily[n];   // 🏭 AM รายวัน — บวกทั้งครอบครัว (target ลงทะเบียนต่อไลน์ · เวลาเริ่มผลิตรวมแม่-ลูกมาแล้วใน loader)
       if (ad) { agg.amDTotal += ad.total; agg.amDChecked += ad.checked; agg.amDNg += ad.ngN; agg.amDLate += ad.late; agg.amDWait += ad.wait; agg.amDIdle += ad.notStarted; agg.amDHasSession = agg.amDHasSession || !!ad.hasSession; }
@@ -3351,7 +3379,7 @@ export default function FactoryMap({ setupMode = false }) {
                          ไม่งั้นคนอ่านเข้าใจว่าเป็นข้อมูลย้อนหลังของวันนั้น */}
                   {(() => {
                     const st = stOf(storyLine);
-                    const pmDue = (s.pmRows || []).filter(r => r.days == null || r.days <= 7);
+                    const pmDue = (s.pmRows || []).filter(r => r.bucket !== 'ok');   // เกิน/ใกล้ครบ/ไม่เคยตรวจ/ไม่ตั้งรอบ
                     const eDelta = st.kwhPrev ? deltaPct(st.kwh, st.kwhPrev) : null;
                     return (
                       <StorySection title="🧭 สถานะปัจจุบันของไลน์ (ไม่ขึ้นกับวันที่เลือก)">
@@ -3369,6 +3397,8 @@ export default function FactoryMap({ setupMode = false }) {
                               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px', marginTop: 4, fontSize: 12, fontWeight: 800 }}>
                                 <span style={{ color: st.pmOverdue ? '#ef4444' : 'var(--muted)' }}>เกินกำหนด {st.pmOverdue || 0}</span>
                                 <span style={{ color: st.pmDueSoon ? '#f59e0b' : 'var(--muted)' }}>ใกล้ครบ {st.pmDueSoon || 0}</span>
+                                <span style={{ color: st.pmNever ? '#f59e0b' : 'var(--muted)' }}>ไม่เคยตรวจ {st.pmNever || 0}</span>
+                                {st.pmNoCycle > 0 && <span style={{ color: '#f59e0b' }}>ไม่ตั้งรอบ {st.pmNoCycle}</span>}
                                 <span style={{ color: 'var(--muted)' }}>ทั้งหมด {st.pmTotal || 0}</span>
                               </div>
                               {pmDue.length > 0 && (
@@ -3379,7 +3409,7 @@ export default function FactoryMap({ setupMode = false }) {
                                       <span style={{ fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</span>
                                       {r.sub && <span style={{ color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.sub}</span>}
                                       <span style={{ marginLeft: 'auto', flexShrink: 0, fontWeight: 700, color: r.days != null && r.days < 0 ? '#ef4444' : '#f59e0b' }}>
-                                        {r.days == null ? 'ยังไม่มีวัน PM ครั้งถัดไป' : r.days < 0 ? `เกิน ${Math.abs(r.days)} วัน` : r.days === 0 ? 'ครบวันนี้' : `อีก ${r.days} วัน`}
+                                        {r.bucket === 'never' ? 'ไม่เคยตรวจ' : r.bucket === 'no_cycle' ? 'ยังไม่ตั้งรอบ' : r.days == null ? 'ยังไม่มีวัน PM ครั้งถัดไป' : r.days < 0 ? `เกิน ${Math.abs(r.days)} วัน` : r.days === 0 ? 'ครบวันนี้' : `อีก ${r.days} วัน`}{r.am ? ' · AM' : ''}
                                       </span>
                                     </div>
                                   ))}

@@ -32,6 +32,7 @@ import useTabParam from '../utils/useTabParam';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { inSectionScope } from '../utils/sectionScope';
 import { getWorkDate } from '../utils/workDate';
+import { loadPmTeams, isAmTeam } from '../utils/pmTeams';
 import { EQUIPMENT_KINDS, KIND_META } from '../utils/equipmentKinds';
 import { fmtDur } from '../utils/mtnMetrics';
 import { STATUS_META } from '../lib/pmSchedule';
@@ -134,6 +135,7 @@ export default function MaintenanceLevels() {
       const { baseFrom } = splitWindows({ todayStr });
       // ต้นวันทำงานแรก (08:00 ไทย) — ขอบล่างของ downtime · ขอบบนไม่ต้อง (ถึงปัจจุบัน)
       const sinceIso = new Date(`${baseFrom}T08:00:00+07:00`).toISOString();
+      await loadPmTeams().catch(() => {});   // ให้ isAmTeam อ่าน mtn_teams.kind ได้จริงก่อนประกอบ 3 ระดับ
       const sparePromise = loadPmSpareDemand({ todayStr });   // ยิงคู่กับชุดด้านล่าง ไม่ต่อคิว
       const res = await Promise.all([
         fetchAllRows(supabaseDR, 'machines', 'id, line_name, machine_no, machine_name, equipment_kind, is_active',
@@ -150,7 +152,7 @@ export default function MaintenanceLevels() {
           qq => qq.eq('module', 'mtn').order('id')),
         fetchAllRows(supabaseDR, 'jigs', 'id, name, jig_no, machine_id, machine_no, line_name, equipment_type',
           qq => qq.order('id')),
-        fetchAllRows(supabaseDR, 'pm_plans', 'id, checklist_id, plan_type, interval_days, next_due_date, last_done_at, deferred_to, deferred_at, is_active',
+        fetchAllRows(supabaseDR, 'pm_plans', 'id, checklist_id, plan_type, interval_days, next_due_date, last_done_at, deferred_to, deferred_at, is_active, cycle_basis',
           qq => qq.eq('is_active', true).order('id')),
         fetchAllRows(supabaseDR, 'inspections', 'checklist_id, inspected_at',
           qq => qq.neq('approval_status', 'rejected').order('inspected_at', { ascending: false }).order('id')),
@@ -184,6 +186,7 @@ export default function MaintenanceLevels() {
       checklists: raw.checklists, jigs: raw.jigs, plans: raw.plans, lastInspByChecklist: raw.lastInsp,
       machines: raw.machines, downtimes: raw.downtimes, sessions: raw.sessions, breakPolicies: raw.breakPolicies,
       lineFamilyOf, sessionLineOf: (id) => sesLine.get(id) || '',
+      isAm: isAmTeam,   // AM ออกจากชั้น Preventive (audit 08/10)
       spare: raw.spare,
       todayStr, nowMs: Date.now(),
     });
@@ -393,6 +396,7 @@ export default function MaintenanceLevels() {
         {cov?.unknownShifts ? ` กะที่หาชั่วโมงไม่ได้ ${cov.unknownShifts} กะ (ชั่วโมงเดินต่ำกว่าจริง) ·` : ''}
         {cov && !cov.hasBreakPolicy ? ' ⚠️ ไม่พบนโยบายเวลาพัก — ชั่วโมงเดินสูงกว่าจริง ·' : ''}
         {cov?.checklistNoEquip ? ` ใบตรวจ PM ที่หาอุปกรณ์ไม่เจอ ${cov.checklistNoEquip} ใบ ·` : ''}
+        {cov?.amChecklists ? ` ใบตรวจ AM (ผลิตตรวจเอง) ${cov.amChecklists} ใบ ไม่นับในชั้น Preventive — ดูที่จอ AM ·` : ''}
         {' '}อุปกรณ์ที่ไม่มีแผน PM และไม่เสียเลยใน 90 วันไม่ขึ้นรายการ
       </div>
     </Page>

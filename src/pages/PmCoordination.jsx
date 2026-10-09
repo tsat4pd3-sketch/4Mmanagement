@@ -81,7 +81,7 @@ export default function PmCoordination() {
       cachedMaster('machines:pmcoord', async () => mrows(await supabaseDR.from('machines').select('id, machine_no, machine_name, line_name, equipment_kind').eq('is_active', true).order('sort_order'))),
       supabaseDR.from('pm_coordination_plans').select('*').order('created_at', { ascending: false }).limit(500),
       // แผน PM เดิม (best-effort — ยังไม่มีตารางก็ไม่พัง)
-      supabaseDR.from('pm_plans').select('id, checklist_id, next_due_date, plan_type, interval_days, usage_metric, usage_threshold').eq('is_active', true).then(r => r).catch(() => ({ data: [] })),
+      supabaseDR.from('pm_plans').select('id, checklist_id, next_due_date, plan_type, interval_days, usage_metric, usage_threshold, cycle_basis').eq('is_active', true).then(r => r).catch(() => ({ data: [] })),
       supabaseDR.from('checklists').select('id, equipment_id, department, name, frequency').eq('module', 'mtn').then(r => r).catch(() => ({ data: [] })),
     ]);
     setLines(ln || []); setMachines(mc || []);
@@ -103,7 +103,7 @@ export default function PmCoordination() {
       if (!machine_name && !machine_no) return null;
       const isUsage = p.plan_type === 'usage' || p.usage_metric || p.usage_threshold != null;
       return { plan_id: p.id, next_due_date: p.next_due_date, department: cl.department, checklist_name: cl.name, frequency: cl.frequency,
-        machine_id: mc2?.id || null, machine_no, machine_name, line_name, is_usage: isUsage, interval_days: p.interval_days || null };
+        machine_id: mc2?.id || null, machine_no, machine_name, line_name, is_usage: isUsage, interval_days: p.interval_days || null, cycle_basis: p.cycle_basis || 'calendar' };
     }).filter(Boolean).sort((a, b) => String(a.next_due_date || '9999').localeCompare(String(b.next_due_date || '9999')));
     setPmPlans(upcoming);
     const planIds = (pl || []).map(p => p.id);
@@ -242,7 +242,8 @@ function PlanCard({ plan: p, tasks, canManage, pmPlan, fullName, onEdit, onReloa
         const done = getWorkDate();
         const patch = { last_done_at: done };
         // ตามรอบเวลา → เลื่อน next_due = วันทำ + interval_days · ตาม usage → forecast คำนวณเองจาก last_done_at
-        if (!pmPlan.is_usage && pmPlan.interval_days) {
+        // 🔴 run_day (AM นับวันเดินเครื่อง) ไม่มีวันครบกำหนดแบบปฏิทิน — ห้ามเขียนทับ (08/10 audit · reminder cron จะเตือนช่างเรื่อง AM)
+        if (!pmPlan.is_usage && pmPlan.interval_days && pmPlan.cycle_basis !== 'run_day') {
           const d = new Date(done + 'T00:00:00'); d.setDate(d.getDate() + Number(pmPlan.interval_days));
           patch.next_due_date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
         }
