@@ -623,6 +623,9 @@ const TABLE_FIXED = {
        · MTBF ตั้งหน่วย "นาที" ทับ = สาขา `toRowUnit` ×60 · ห้ามถอด */
     { id: 'kd-5', year: 2026, section: 'JIG MTN', scope_kind: 'department', scope_value: 'JIG MTN', line_group: null, category: 'internal', seq: 5, name: 'Mean Time Between Failure (MTBF)', source: 'manual', unit: 'นาที', target_compare: '>=', target_value: 10000, commit_compare: '>=', commit_value: 9000, direction: 'up', weight: 4, is_active: true, catalog_id: null, std_unit: 'Maintenance', std_item_id: null, kpi_catalog: null },
     { id: 'kd-6', year: 2026, section: 'JIG MTN', scope_kind: 'department', scope_value: 'JIG MTN', line_group: null, category: 'customer', seq: 6, name: 'MO Closed on target', source: 'manual', unit: '%', target_compare: '>=', target_value: 99, commit_compare: '>=', commit_value: 95, direction: 'up', weight: 6, is_active: true, catalog_id: null, std_unit: 'Maintenance', std_item_id: null, kpi_catalog: null },
+    /* ✍️ OEE กรอกมือของ PD1 (09/10 · เคสจริง PD2 คีย์ OEE ม.ค.–ส.ค. แล้วไม่ขึ้น) — เปิดสาขา overlay บนแถว auto:
+       เดือนที่กรอก = ค่าทางการ (ทึบ) · เดือนที่ไม่กรอก = ค่าระบบ (computed ลายประ) · ห้ามถอด */
+    { id: 'kd-8', year: 2026, section: 'PD1', scope_kind: 'section', scope_value: 'PD1', line_group: null, category: 'internal', seq: 8, name: 'OEE', source: 'manual', target_value: 85, direction: 'up', weight: 5, is_active: true, catalog_id: 'kc-oee', std_unit: 'Production', std_item_id: null, kpi_catalog: { id: 'kc-oee', name: 'OEE', unit: '%', category: 'internal', direction: 'up', decimals: 2, summary_mode: 'average', value_scope: 'own', board_slot: 'oee' } },
   ],
   /* ค่าจริง + แผนรายเดือนของ KPI กรอกมือ (2026-09-25) — ไม่มี 2 ตารางนี้ใน mock แปลว่า
      ทั้งตารางกรอกมือ · คอลัมน์สรุปทั้งปี · มินิกราฟ · แถว 📅 แผน **ไม่เคยถูกรันด้วยข้อมูลจริงใน harness**
@@ -634,6 +637,11 @@ const TABLE_FIXED = {
     ...[93.1, 94.0, 95.2, 96.4, 95.8, 94.9].map((v, i) => ({ id: `ke-1-${i}`, kpi_id: 'kd-1', month: i + 1, value: v })),
     ...[120.5, 98.2, 140.9, 88.4].map((v, i) => ({ id: `ke-4-${i}`, kpi_id: 'kd-4', month: i + 1, value: v })),
     ...[97.5, 99.1, 98.0].map((v, i) => ({ id: `ke-6-${i}`, kpi_id: 'kd-6', month: i + 1, value: v })),
+    ...[92.42, 94.27, 93.1].map((v, i) => ({ id: `ke-8-${i}`, kpi_id: 'kd-8', month: i + 1, value: v })),
+  ],
+  /* 🧩 ลำดับแผ่นที่คนจัด (09/10) — PD1 เอา OEE ขึ้นก่อน %RM · คีย์ 'gone' = แผ่นที่ไม่มีแล้ว ต้องถูกข้ามไม่พัง (ห้ามถอด) */
+  kpi_board_layouts: [
+    { id: 'kbl-1', year: 2026, scope_kind: 'section', scope_value: 'PD1', row_keys: ['oee', 'gone', 'rm'], updated_by_name: 'ทดสอบ ระบบ' },
   ],
   /* 📝 หมายเหตุรายเดือน (30/09) — แผ่น %RM (slot rm) ที่ทั้งโรงงาน เดือน 3 มีโน้ต ⇒ เปิดสายเครื่องหมาย 📝 บนแท่ง + โมดัล (ห้ามถอด) */
   kpi_month_notes: [

@@ -969,3 +969,24 @@ user: *"เคยเห็น feature graph analyze ที่ขยายดู�
 - harness: `?p=Obeya&tab=kpi&scope=department:JIG%20MTN` / `cost_center:2140600006` → แผ่น MTBF "⚡ ระบบคำนวณ · ยังไม่ยืนยัน · YTD 43,788.6 นาที"
 
 > 📌 **2026-10-05:** CLAUDE.md เหลือเฉพาะกฎที่ "ข้าม session จริง" (scoreDef · กฎความซื่อสัตย์ของจอ · ห้ามแข่ง KPI Online · โหมดปีห้ามโหลดแถวดิบ · not-null default · OrgScopePicker · ห้ามยุบ kpi/sqdcm) ตามกฎรับเข้าใหม่ — **รายละเอียดที่เหลือย้ายมาอยู่ไฟล์นี้ทั้งหมด ไม่มีกฎไหนถูกตัดหาย** (ตรวจแล้วว่าทุกคีย์มีในไฟล์นี้ 2-5 ที่)
+
+## 🧩 จัดเรียงแผ่น KPI เอง + ✍️ ค่ากรอกมือบนแถว auto (2026-10-09 · feedback user PD2)
+
+**เคสจริง:** PD2 คีย์ OEE ม.ค.–ส.ค. ลงนิยาม OEE ของส่วนงาน (`kpi_manual_entries` 8 เดือน · PD3/PD4 ก็มี) แต่บอร์ดไม่ขึ้น — แถว `auto:'oee'`
+อ่านแต่ค่าที่ระบบคำนวณจากกะ (`axisOeeYear`) ไม่เคยแตะ `man.entries` · และขอจัดตำแหน่ง card เองไม่ได้
+
+**ค่ากรอกมือบนแถว OEE/PPM** (`overlayManual()` ใน `ObeyaKpiBoard.jsx` · หลักเดียวกับ KPI ช่าง "คนกรอกชนะเสมอ"):
+- เดือนที่กรอก = **ค่าทางการ** (แท่งทึบ) · เดือนที่ไม่กรอก = ค่าระบบคำนวณจากกะ (`computed:true` ลายประ) · ไม่เขียนลงฐาน
+- หัวแผ่น "✍️ กรอกมือ (ค่าทางการ)" · note "✍️ ค่ากรอกมือ N เดือน · ⚡ ระบบคำนวณจากกะ M เดือน" · สรุปปี = เฉลี่ยเดือน ติด ≈ (`sumApprox`)
+- เป้า OEE ยังมาจากทะเบียนเป้า A×P×Q (กฎ `oee_targets` — ไม่เอา target ของนิยามกรอกมือ) · PPM: ไม่มีนิยาม `auto:ppm` ⇒ ใช้นิยามกรอกมือเป็น `def`
+- ไม่มีค่ากรอกเลย = พฤติกรรมเดิมเป๊ะ
+
+**จัดเรียงแผ่น** — ตาราง **`kpi_board_layouts`** (Main · migration `20261009_kpi_board_layouts_main.sql` · apply แล้ว 09/10):
+- 1 แถว/ (ปี, `scope_kind`, `scope_value`) · `row_keys text[]` = คีย์แผ่นตามลำดับ (ช่องมาตรฐาน `rm/dloh/inv/csat/oee/ppm/safe/train` หรือ `def:<uuid>` —
+  คีย์เดียวกับ `kpi_month_notes.row_key`) · RLS อ่านทุกคน · เขียน `has_perm('kpi:manage')` · upsert key = unique (year, scope_kind, scope_value)
+- กติกาเรียง = `applyBoardOrder()` (`utils/kpiBoardRows.js` · pure · มีเทส): คีย์ในลิสต์มาก่อน · แผ่นใหม่ที่ไม่อยู่ในลิสต์ต่อท้ายตามลำดับ template ·
+  คีย์ที่ไม่มีแผ่นแล้วข้าม · ลิสต์ว่าง = template
+- UI: ปุ่ม "🧩 จัดเรียงแผ่น" (เฉพาะ `can('kpi','manage')`) ⇒ ทุกแผ่นมี ◀ ▶ มุมขวาบน (จอสัมผัส/TV ไม่มีเมาส์ลาก) · กดแล้วบันทึกทันที
+  (`checkWriteRows` · ล้ม = คืนลำดับเดิม + toast) · `layoutOverride` ใช้ลำดับที่เพิ่งกดทันทีไม่รอโหลดกลับ · ลำดับมีผลกับทุกคนที่ดูขอบเขตนั้น
+- ยังไม่ทำ: ขนาดแผ่น 2 ช่อง (ถ้าต้องการค่อยเพิ่มคอลัมน์ `spans jsonb`) · โหมดจอ TV ไม่มีปุ่มจัดเรียง (ตั้งใจ — จัดจากหน้าปกติ)
+- harness: `audit/mockSupabase.js` มี `kd-8` (OEE กรอกมือ PD1 3 เดือน) + `kpi_board_layouts` PD1 `['oee','gone','rm']` — ห้ามถอด (สาขา overlay + คีย์หาย)
