@@ -3,6 +3,7 @@ import { lineNameCompare } from '../utils/lineHierarchy';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { loadLinesRes } from '../utils/useProductionLines';
+import { scopedLineNames, filterRowsByLineScope } from '../utils/sectionScope';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { isFgMat } from '../utils/matPrefix';
@@ -304,11 +305,28 @@ function StockTab({ role, scope }) {
     return out;
   }, [bomMap, knownMats]);
 
+  /* 🔭 ชั้น 0 — ขอบเขตของผู้ดู (QC audit รอบ 4 · 2026-10-09)
+     เดิมกรองแค่ `<LineSelect {...scope}>` (dropdown) แต่ชิป/ตาราง/ประวัติโชว์ทุกไลน์
+     ทั้งที่ป้ายเขียนว่า "ในสิทธิ์ที่เห็น" ⇒ **จอโกหก** และ supervisor กรองไลน์ที่ตัวเองเห็นในตารางไม่ได้
+     · กฎขอบเขตอยู่ที่ `sectionScope.js` จุดเดียว — `null` = ทั้งโรงงาน (admin/ช่าง/QA/สโตร์)
+     · 🔴 คลัง (`STORE` / `FG WAREHOUSE`) **ไม่มีในทะเบียนไลน์ ⇒ ตัดสินไม่ได้ ⇒ ไม่ซ่อน**
+       แต่ต้องเขียนบนจอ (ดู `scopeNote` ใต้ชิป) — วัดจริง 09/10 = 44% ของแถวทั้งจอ */
+  const scopeNames = useMemo(
+    () => scopedLineNames({ role: scope.role, lineId: scope.lineId, sections: scope.sections, lines }),
+    [scope.role, scope.lineId, scope.sections, lines]);
+  const lineNameList = useMemo(() => lines.map(l => l.name), [lines]);
+  const stockScoped = useMemo(
+    () => filterRowsByLineScope(stock, { scopedNames: scopeNames, lineNames: lineNameList }),
+    [stock, scopeNames, lineNameList]);
+  const txnScoped = useMemo(
+    () => filterRowsByLineScope(txns, { scopedNames: scopeNames, lineNames: lineNameList }),
+    [txns, scopeNames, lineNameList]);
+
   /* กรอง 2 ชั้น: ไลน์/คลัง → ฝั่งงาน (ขาเข้า Store 2xx/3xx/5xx · ขาออก Warehouse FG 1xx)
      ตัวนับบนชิปต้องนับ "หลังกรองไลน์แล้ว" เพื่อให้เลขตรงกับที่ตาข้างล่างเห็นจริง */
   const lineStock = useMemo(() => (
-    lineFilter ? stock.filter(s => s.line_name === lineFilter) : stock
-  ), [stock, lineFilter]);
+    lineFilter ? stockScoped.rows.filter(s => s.line_name === lineFilter) : stockScoped.rows
+  ), [stockScoped, lineFilter]);
 
   const sideCounts = useMemo(() => {
     const g = splitBySide(lineStock);
@@ -441,7 +459,8 @@ function StockTab({ role, scope }) {
         {[
           { label:'ไลน์ที่มี stock', value: Object.keys(stockByLine).length, unit:'ไลน์', icon:'🏭' },
           { label:'รายการพาร์ท', value: filteredStock.length, unit:'รายการ', icon:'🔩',
-            sub: lineFilter ? `เฉพาะ ${lineFilter}` : 'ทุกไลน์/คลังในสิทธิ์ที่เห็น' },
+            sub: lineFilter ? `เฉพาะ ${lineFilter}`
+                 : scopeNames ? `${scopeNames.length} ไลน์ในขอบเขตของคุณ + คลัง` : 'ทุกไลน์/คลัง' },
           { label:'Stock หมด / ติดลบ', value: totalLow, unit:'รายการ', icon:'⚠️', warn: totalLow > 0,
             sub: filteredStock.length > 0 ? `${Math.round(totalLow / filteredStock.length * 100)}% ของ ${filteredStock.length} รายการ` : 'ยังไม่มีรายการ' },
         ].map(c => (
@@ -454,6 +473,22 @@ function StockTab({ role, scope }) {
           </div>
         ))}
       </div>
+
+      {/* 🔭 ซ่อนอะไรไปต้องเขียนบนจอ — "เคลียร์หมด" ≠ "ถูกกรองออก" (กฎความซื่อสัตย์ของจอ)
+          · ตัวที่ตัดสินไม่ได้ (คลังที่ไม่มีในทะเบียนไลน์) โชว์ต่อ แต่ต้องบอกว่าไม่ได้ตรวจขอบเขต */}
+      {scopeNames && (stockScoped.hidden > 0 || stockScoped.offRegistry.length > 0) && (
+        <div style={{ ...card, padding:'8px 12px', marginBottom:12, fontSize:11.5, color:'var(--text2)',
+                      borderColor:'var(--border)', display:'flex', flexWrap:'wrap', gap:'4px 10px' }}>
+          <span>🔭 <b>ขอบเขตของคุณ:</b> {scopeNames.join(' · ')}</span>
+          {stockScoped.hidden > 0 && (
+            <span>· ซ่อนไลน์นอกขอบเขต <b>{stockScoped.hidden.toLocaleString()}</b> รายการ</span>
+          )}
+          {stockScoped.offRegistry.length > 0 && (
+            <span>· <b>{stockScoped.offRegistry.join(' / ')}</b> ไม่ใช่ไลน์ในทะเบียน
+              (ตรวจขอบเขตไม่ได้ จึงยังโชว์อยู่)</span>
+          )}
+        </div>
+      )}
 
       {/* แถบย่อ/กางทุกกลุ่ม — กลุ่มเยอะ+พาร์ทเยอะ ต้องพับเก็บได้ ไม่งั้นต้องเลื่อนยาวมากกว่าจะเจอไลน์ที่ต้องการ */}
       {!showTxn && Object.keys(stockByLine).length > 1 && (() => {
@@ -582,10 +617,10 @@ function StockTab({ role, scope }) {
                 </tr>
               </thead>
               <tbody>
-                {txns.length === 0 && (
+                {txnScoped.rows.length === 0 && (
                   <tr><td colSpan={7} style={{ padding:30, textAlign:'center', color:'var(--muted)', fontSize:13 }}>ยังไม่มีข้อมูล</td></tr>
                 )}
-                {txns.map(t => (
+                {txnScoped.rows.map(t => (
                   <tr key={t.id}>
                     <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)', fontSize:12, color:'var(--muted)', whiteSpace:'nowrap' }}>{t.work_date}</td>
                     <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)', fontSize:13, fontWeight:600 }}>{t.line_name}</td>

@@ -200,3 +200,38 @@ export function sectionValueForEdit(section, department, deptNodes = [], section
   if (department && orphanDepts(deptNodes).some(d => (d.code || d.name) === department)) return ORPHAN_SECTION;
   return section || '';
 }
+
+/**
+ * 🔭 กรองแถวข้อมูลตาม "ขอบเขตไลน์" แบบซื่อสัตย์ — คืนทั้งของที่เหลือ **และของที่ซ่อน**
+ * (2026-10-09 · QC audit รอบ 4 — เดิม `/line-stock` กรองแค่ dropdown แต่ตาราง/ชิปโชว์ทุกไลน์
+ *  ทั้งที่ป้ายเขียนว่า "ในสิทธิ์ที่เห็น" = จอโกหก)
+ *
+ * @param rows                แถวข้อมูล
+ * @param opts.scopedNames    ชื่อไลน์ที่เห็นได้ (ผลของ `scopedLineNames`) · **`null` = ไม่จำกัด**
+ * @param opts.lineNames      ชื่อไลน์ทั้งทะเบียน — ใช้ตอบว่า "ค่านี้เป็นไลน์หรือเปล่า"
+ * @param opts.nameOf         ดึงชื่อไลน์ออกจากแถว (default `r.line_name`)
+ * @returns {{rows: any[], hidden: number, offRegistry: string[]}}
+ *
+ * 🔴 **ค่าที่ไม่อยู่ในทะเบียนไลน์ = "ตัดสินไม่ได้" ⇒ ไม่ซ่อน** แต่ผู้เรียก**ต้องเขียนบนจอ**
+ *    ว่าโชว์อยู่เพราะตัดสินไม่ได้ (หลักเดียวกับล็อกฝั่งใบ MO: *ไม่รู้ = ไม่บล็อก แต่จอต้องบอก*)
+ *    — วัดจริง 09/10: `line_stock_summary` มี `STORE` 119 แถว + `FG WAREHOUSE` 73 แถว
+ *      = **44% ของทั้งจอ** และทั้งคู่**ไม่มีใน `production_lines`** ⇒ กรองตรงๆ = ยอดคลังหายหมด
+ * 🔴 **`hidden` ต้องถูกเขียนบนจอเสมอ** — ซ่อนเงียบ = จอโกหกอีกแบบ (คนนับยอดไม่ตรงกันข้ามแผนก)
+ * ⚠️ ทะเบียนไลน์ยังโหลดไม่เสร็จ (`lineNames` ว่าง) = ทุกค่าตัดสินไม่ได้ ⇒ ไม่ซ่อนอะไรเลย (fail-open
+ *    โดยตั้งใจ — ห้ามซ่อนข้อมูลเพราะ "ยังไม่รู้" · `scopedLineNames` ก็คืน null ในสถานะนี้อยู่แล้ว)
+ */
+export function filterRowsByLineScope(rows = [], { scopedNames = null, lineNames = [], nameOf } = {}) {
+  const get = nameOf || ((r) => r?.line_name);
+  if (!scopedNames || !scopedNames.length) return { rows, hidden: 0, offRegistry: [] };
+  const allow = new Set(scopedNames.map(norm));
+  const known = new Set((lineNames || []).map(norm));
+  const off = new Map();                               // norm → ชื่อที่เขียนจริง (ไว้โชว์)
+  const kept = rows.filter((r) => {
+    const raw = get(r);
+    const n = norm(raw);
+    if (allow.has(n)) return true;
+    if (!known.has(n)) { off.set(n, raw || '(ไม่ระบุไลน์)'); return true; }
+    return false;
+  });
+  return { rows: kept, hidden: rows.length - kept.length, offRegistry: [...off.values()] };
+}
