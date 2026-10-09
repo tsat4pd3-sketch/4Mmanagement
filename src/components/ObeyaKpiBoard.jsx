@@ -34,7 +34,7 @@ import { packPages, clampPage, pageLabels, cellsUsed } from '../utils/boardPager
 import { statusColor, gapToTarget } from '../utils/obeyaKpi';
 import {
   yearOf, monthKeys, monthLabel, lastDayOf, SUMMARY_KEY,
-  axisOeeYear, axisPpmYear, manualMonthSeries, monthBarScore,
+  axisOeeYear, axisPpmYear, manualMonthSeries, monthBarScore, autoMonthsOf, fillAutoWithManual,
 } from '../utils/obeyaYear';
 import { ST, worstStatus, safetyKind, isInjury, ymd } from '../utils/obeya';
 
@@ -68,7 +68,7 @@ import { ST, worstStatus, safetyKind, isInjury, ymd } from '../utils/obeya';
    • **สถานะแถว KPI ผ่าน `scoreDef()` เท่านั้น** (เกณฑ์ทางการ ถึง Target = 1 · ถึง Commitment = 0.5 · ไม่ถึง = 0)
      — ทั้งไฟบนหัวแผ่นและสีแท่งรายเดือน (`monthBarScore`) · ห้ามใช้ statusVsTarget/แถบ ±5% กับแถว KPI
    • **ไม่มีเป้า ≠ ผ่าน** = เทา + บอกว่าไปตั้งที่ไหน · **ไม่มีค่า ≠ 0** = ไม่มีแท่ง
-   • **Safety**: ค่า KPI = สรุปจากหน่วยงานความปลอดภัย (กรอกมือ · user 07/09) → ไม่มีค่อยถอยไปนับ `safety_events`
+   • **Safety**: ⚡ นับบาดเจ็บจาก `safety_events` รายเดือน = ค่าหลัก · ✍️ สรุปจากหน่วยงานความปลอดภัย (กรอกมือ) เติมเฉพาะเดือนที่หน้างานไม่มีบันทึก (09/10 — เดิม 07/09 สรุปหน่วยงานชนะ)
      · ไม่มีบันทึกเลย = เทา **ห้ามเขียว** · ห้ามบวก 2 แหล่ง
    • egress: useLiveBoard(production_sessions · RATE.BOARD + idle gate) — แท็บซ่อน = หยุดยิง · ห้าม subscribe realtime prod_orders/downtime_logs
    ═══════════════════════════════════════════════════════════════════════════════════════════ */
@@ -413,26 +413,24 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       let series = [], def = null, unit = r.unit || man?.unit || '', note = '', fromDept = !!man?.inherited, manual = !r.auto;
       let months = 0, sumKind = 'average', sumApprox = false, computedN = 0;
 
-      /* ✍️ ค่าที่หน่วยกรอกมือลงนิยาม OEE/PPM ของตัวเอง = **ค่าทางการของเดือนนั้น** (09/10 · PD2 คีย์ OEE ม.ค.–ส.ค. แล้วไม่ขึ้น
-         เพราะแถว auto อ่านแต่ค่าที่ระบบคำนวณจากกะ) — เดือนที่กรอก = ค่ากรอก (ทึบ) · เดือนที่ไม่กรอก = ค่าระบบ (ติดป้าย computed ลายประ)
-         หลักเดียวกับ KPI ช่าง: คนกรอกชนะเสมอ · ไม่เขียนลงฐาน · จอต้องบอกว่ามาจากไหนกี่เดือน */
-      const overlayManual = (k) => {
-        const manEntries = man?.entries || {};
-        const manN = Object.values(manEntries).filter(v => v != null && v !== '').length;
-        if (!manN) return { series: k.series, months: k.months, manN: 0, compN: 0 };
-        const compMonths = {};
-        k.series.slice(0, 12).forEach((p, i) => { if (p.v != null && (manEntries[i + 1] ?? null) == null) compMonths[i + 1] = p.v; });
-        const merged = manualMonthSeries({ entries: { ...compMonths, ...manEntries }, year, summary: 'average' });
-        const series2 = merged.series.map((p, i) => (i < 12 && compMonths[i + 1] != null ? { ...p, computed: true } : p));
-        return { series: series2, months: merged.months, manN, compN: Object.keys(compMonths).length, approx: true };
+      /* ⚡ ค่าที่ระบบคำนวณ = ค่าหลักของ **ทุกแถว auto** (user 09/10: "auto ชนะ manual · เดือนไหนไม่มี auto มี manual ก็โชว์ manual")
+         ✍️ ค่าที่หน่วยกรอกมือลงนิยามของตัวเองใช้เติมเฉพาะเดือนที่ระบบไม่มีค่า (PD2 คีย์ OEE ม.ค.–ส.ค. = ช่วงก่อนเริ่มใช้ Daily Report
+         ⇒ ไม่มีกะให้คำนวณ แล้วบอร์ดไม่ขึ้นเลย) · เดือนที่มีทั้งคู่ = ค่าระบบ **จอต้องเขียนว่าทับกี่เดือน ห้ามเงียบ** · กติกา = `fillAutoWithManual()` (utils/obeyaYear.js) */
+      const overlayManual = (k) => fillAutoWithManual({ autoMonths: autoMonthsOf(k.series), manEntries: man?.entries, year });
+      const mixNote = (ov, autoLabel = 'ระบบคำนวณจากกะ') => (ov.fillN || ov.overlapN)
+        ? `⚡ ${autoLabel} ${ov.autoN} เดือน${ov.fillN ? ` · ✍️ เติมค่ากรอกมือ ${ov.fillN} เดือนที่ระบบไม่มีค่า` : ''}${ov.overlapN ? ` · ค่ากรอกมือ ${ov.overlapN} เดือนถูกค่าระบบทับ` : ''}`
+        : '';
+      const applyOverlay = (k, ov) => {
+        if (ov.series) { series = ov.series; months = ov.months; sumApprox = true; }   // ปนค่าถ่วงเวลากับค่ากรอกมือ ⇒ สรุปปี = เฉลี่ยเดือน ติด ≈
+        else { series = k.series; months = k.months; }
       };
       if (r.auto === 'oee') {
         const k0 = axisOeeYear({ rows: gSess, year, target: { oee: oeeTarget } });
         const ov = overlayManual(k0);
-        series = ov.series; months = ov.months; computedN = ov.compN;
-        if (ov.manN) { sumApprox = true; manual = true; fromDept = !!man?.inherited; }
+        applyOverlay(k0, ov);
         def = { target_value: oeeTarget, direction: 'up' };
-        note = ov.manN ? `✍️ ค่ากรอกมือ ${ov.manN} เดือน (ค่าทางการ)${ov.compN ? ` · ⚡ ระบบคำนวณจากกะ ${ov.compN} เดือน` : ''} · เป้า A×P×Q จากทะเบียนเป้า OEE`
+        const mix0 = mixNote(ov);
+        note = mix0 ? `${mix0} · เป้า A×P×Q จากทะเบียนเป้า OEE`
           : !members.groups.length ? 'ขอบเขตนี้ไม่มีไลน์ผลิต — ไม่มี OEE ให้คำนวณ'
           : setGroups === members.groups.length && members.groups.length === 1
             ? `เป้าจากทะเบียนเป้า OEE (A${tg[members.groups[0]].target_a ?? DEFAULT_APQ.a}×P${tg[members.groups[0]].target_p ?? DEFAULT_APQ.p}×Q${tg[members.groups[0]].target_q ?? DEFAULT_APQ.q})`
@@ -443,31 +441,39 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
         def = ad ? { ...ad } : null;
         const k = axisPpmYear({ sessions: gSess, defects: gDefs, year, target: def?.target_value ?? null, direction: def?.direction || 'down' });
         const ov = overlayManual(k);
-        series = ov.series; months = ov.months; computedN = ov.compN;
-        if (ov.manN) { sumApprox = true; manual = true; fromDept = !!man?.inherited; if (!def && man?.def) def = man.def; }
-        note = ov.manN ? `✍️ ค่ากรอกมือ ${ov.manN} เดือน (ค่าทางการ)${ov.compN ? ` · ⚡ ระบบคำนวณจากกะ ${ov.compN} เดือน` : ''}`
+        applyOverlay(k, ov);
+        if (!def && man?.def && (ov.fillN || ov.overlapN)) def = man.def;   // ไม่มีนิยาม auto:ppm ⇒ เป้า/ทิศจากนิยามกรอกมือของหน่วย
+        const mixP = mixNote(ov);
+        note = mixP ? mixP
           : k.months ? `ของเสีย ${nf(k.ngQty)} ชิ้น (ไม่รวมงานทดลอง) · บันทึก ${nf(k.defectRows)} รายการ` : '';
       } else if (r.auto === 'safety') {
-        /* ค่า KPI Safety = สรุปจากหน่วยงานความปลอดภัย (กรอกมือ · user 07/09) → ไม่มีค่อยถอยไปนับบันทึกหน้างาน
-           ห้ามบวก 2 แหล่ง · ไม่มีบันทึกเลย = เทา ห้ามเขียว (0 ที่บันทึก ≠ 0 ที่เกิดจริง) */
+        /* Safety: ⚡ บันทึกเหตุการณ์หน้างาน (นับบาดเจ็บรายเดือน) = ค่าหลัก · ✍️ สรุปจากหน่วยงานความปลอดภัย (กรอกมือ · กลุ่ม→ส่วนงาน)
+           เติมเฉพาะเดือนที่หน้างานไม่มีบันทึก (09/10 user: ทุกแถว auto กติกาเดียว "auto ชนะ" — เดิม 07/09 สรุปหน่วยงานชนะทั้งปี)
+           · ห้ามบวก 2 แหล่งในเดือนเดียว · 🔴 "ไม่มีบันทึก" ≠ 0 ที่เกิดจริง ⇒ auto "มีค่า" = มีบันทึก ≥ 1 ครั้งในเดือนนั้น ·
+           เดือนที่ว่างทั้งคู่ = 0 เฉพาะเมื่อปีนี้มีบันทึกหน้างานบ้างแล้ว (พฤติกรรมเดิม) · ไม่มีอะไรเลย = เทา ห้ามเขียว */
         const manSec = manualOf(r.name, true, r.key);
-        if (manSec && Object.keys(manSec.entries).length) {
-          const k = manualMonthSeries({ entries: manSec.entries, year, summary: summaryModeOf(manSec.def) });
-          series = k.series; months = k.months; def = manSec.def; unit = manSec.unit || r.unit;
-          sumKind = k.effMode; sumApprox = k.approx;
-          fromDept = true; manual = true;
-          const inj = (safety || []).filter(e => ym(e.event_date) === monthKey && inEv(e) && isInjury(e)).length;
-          note = `สรุปจากหน่วยงานความปลอดภัย${manSec.inherited ? ` (ค่าระดับ ${org.labelOf(manSec.at.kind, manSec.at.value)})` : ''} · หน้างานบันทึกบาดเจ็บเดือนนี้ ${inj} ครั้ง`;
-        } else if ((safety || []).length) {
-          const cnt = {};
-          (safety || []).forEach((e) => { if (inEv(e) && isInjury(e)) cnt[ym(e.event_date)] = (cnt[ym(e.event_date)] || 0) + 1; });
+        const cnt = {};
+        (safety || []).forEach((e) => { if (inEv(e) && isInjury(e)) cnt[ym(e.event_date)] = (cnt[ym(e.event_date)] || 0) + 1; });
+        const hasFloor = (safety || []).length > 0;
+        const autoMonths = {};
+        monthKeys(year).forEach((k, i) => { if (cnt[k] > 0) autoMonths[i + 1] = cnt[k]; });
+        const fx = fillAutoWithManual({ autoMonths, manEntries: manSec?.entries, year, summary: 'sum' });
+        if (hasFloor || fx.fillN) {
           const upto = monthKeys(year).filter(k => k <= monthKey);
-          series = monthKeys(year).map(k => (upto.includes(k) ? { k, v: cnt[k] || 0 } : { k, v: null, empty: true }));
-          const total = upto.reduce((a, k) => a + (cnt[k] || 0), 0);
-          series.push({ k: SUMMARY_KEY, v: total, summary: true, kind: 'sum' });
-          months = upto.length; sumKind = 'sum';
-          def = { target_value: 0, direction: 'down' };
-          note = `นับจากบันทึกเหตุการณ์ความปลอดภัยหน้างาน · เป้า 0 ครั้ง${members.names.size ? ' · เหตุที่ไม่ระบุไลน์ไม่ถูกนับในขอบเขตนี้' : ' · นับตามส่วนงานที่บันทึก'}`;
+          series = monthKeys(year).map((k, i) => {
+            if (autoMonths[i + 1] != null) return { k, v: autoMonths[i + 1] };
+            if (fx.series?.[i]?.manualFill) return fx.series[i];
+            return hasFloor && upto.includes(k) ? { k, v: 0 } : { k, v: null, empty: true };
+          });
+          const filled = series.filter(p => p.v != null);
+          series.push({ k: SUMMARY_KEY, v: filled.length ? filled.reduce((a, p) => a + p.v, 0) : null, summary: true, kind: 'sum' });
+          months = filled.length; sumKind = 'sum';
+          def = manSec?.def || { target_value: 0, direction: 'down' }; unit = manSec?.unit || r.unit;
+          const parts = [`⚡ นับบาดเจ็บจากบันทึกหน้างาน ${fx.autoN} เดือน`];
+          if (fx.fillN) parts.push(`✍️ เติมสรุปจากหน่วยงานความปลอดภัย ${fx.fillN} เดือนที่หน้างานไม่มีบันทึก${manSec?.inherited ? ` (ค่าระดับ ${org.labelOf(manSec.at.kind, manSec.at.value)})` : ''}`);
+          if (fx.overlapN) parts.push(`สรุปหน่วยงาน ${fx.overlapN} เดือนถูกบันทึกหน้างานทับ`);
+          if (!manSec?.def) parts.push(`เป้า 0 ครั้ง${members.names.size ? ' · เหตุที่ไม่ระบุไลน์ไม่ถูกนับในขอบเขตนี้' : ' · นับตามส่วนงานที่บันทึก'}`);
+          note = parts.join(' · ');
         } else {
           series = monthKeys(year).map(k => ({ k, v: null, empty: true })).concat([{ k: SUMMARY_KEY, v: null, summary: true }]);
           note = 'ยังไม่มีใครบันทึกเหตุการณ์ และยังไม่กรอกสรุปจากหน่วยงานความปลอดภัย';
@@ -524,6 +530,8 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       if (stale) why = `ค่าล่าสุด ${monthLabel(valueKey)} (${monthLabel(monthKey)} ยังไม่กรอก) · ${why}`;
       const curComputed = value != null && !!series.find(p => p.k === valueKey)?.computed;
       if (curComputed) why = `⚡ ค่าที่ระบบคำนวณ ยังไม่ยืนยัน · ${why}`;
+      const curFilled = value != null && !!series.find(p => p.k === valueKey)?.manualFill;
+      if (curFilled) why = `✍️ เดือนนี้ใช้ค่ากรอกมือ (ระบบไม่มีกะให้คำนวณ) · ${why}`;
       const ytd = series[12]?.v ?? null;
       const actualMonths = series.slice(0, 12).filter(p => p.v != null).length;
       /* 📈 คาดปลายปี = ผลจริง + แผนของเดือนที่เหลือ (30/09) — แผนอยู่ที่นิยามของขอบเขตนี้ (แถว auto = นิยาม auto:<key>)
@@ -548,7 +556,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
         hasTarget: !!(def && (target != null || def.commit_value != null || def.commitment)),
       };
       return {
-        ...r, def, unit, dir, series, value, valueKey, stale, target, st, why, note, manual, fromDept, months, sumKind, sumApprox, ytd, actualMonths, forecast, computedN, curComputed,
+        ...r, def, unit, dir, series, value, valueKey, stale, target, st, why, note, manual, fromDept, months, sumKind, sumApprox, ytd, actualMonths, forecast, computedN, curComputed, curFilled,
         commit: def?.commit_value == null ? null : Number(def.commit_value), hasPlan: Object.keys(planMap).length > 0,
         dec: decimalsOf(def),
         delta: target != null && value != null && dir ? gapToTarget(value, target, dir) : null,
@@ -726,9 +734,9 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
             <LabelList dataKey="vLabel" position="top" style={{ fontSize: fs(9.5), fontWeight: 700, fill: 'var(--text)' }} />
             {data.map((p, i) => (
               <Cell key={i} fill={statusColor(r.def ? monthBarScore(p, r.def) : 'none')}
-                fillOpacity={p.summary ? 0.55 : p.computed ? 0.38 : (p.k === monthKey ? 1 : 0.8)}
-                stroke={p.summary || p.computed ? 'var(--text2)' : (p.k === monthKey ? 'var(--text)' : 'none')}
-                strokeDasharray={p.summary ? '3 2' : p.computed ? '2 2' : undefined} cursor={p.summary ? 'default' : 'pointer'} />
+                fillOpacity={p.summary ? 0.55 : (p.computed || p.manualFill) ? 0.38 : (p.k === monthKey ? 1 : 0.8)}
+                stroke={p.summary || p.computed || p.manualFill ? 'var(--text2)' : (p.k === monthKey ? 'var(--text)' : 'none')}
+                strokeDasharray={p.summary ? '3 2' : (p.computed || p.manualFill) ? '2 2' : undefined} cursor={p.summary ? 'default' : 'pointer'} />
             ))}
           </Bar>
           {/* 📅 เส้นแผนรายเดือน — KPI แบบสะสมเทียบเป้าทั้งปีตั้งแต่ต้นปีจะดู "ตกตลอด" ต้องเทียบแผนของเดือนนั้น (user 30/09) */}
@@ -872,8 +880,8 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
                 )}
                 <Sheet k={k} cw={cw} icon={r.icon} title={r.name}
                   /* 30/09 (user): เลขใหญ่ = ค่าเดือนที่เลือก · บรรทัดรอง = YTD บอกวิธีรวม+จำนวนเดือน · ท้ายแผ่น = คาดปลายปี */
-                  sub={`${r.manual ? (r.curComputed ? '⚡ ระบบคำนวณ · ยังไม่ยืนยัน' : (r.auto ? '✍️ กรอกมือ (ค่าทางการ)' : '✍️ กรอกมือ')) : '⚡ ระบบคำนวณ'}${r.ytd != null
-                    ? ` · YTD ${nf(r.ytd, r.dec)}${r.unit ? ' ' + r.unit : ''} (${r.sumApprox ? '≈ เฉลี่ย' : summaryShort(r.sumKind)}${r.auto && !r.fromDept && r.sumKind !== 'sum' ? 'ถ่วงน้ำหนัก' : ''} ${r.actualMonths} เดือน)`
+                  sub={`${r.manual ? (r.curComputed ? '⚡ ระบบคำนวณ · ยังไม่ยืนยัน' : '✍️ กรอกมือ') : r.curFilled ? '✍️ กรอกมือ (เดือนนี้ไม่มีค่าระบบ)' : '⚡ ระบบคำนวณ'}${r.ytd != null
+                    ? ` · YTD ${nf(r.ytd, r.dec)}${r.unit ? ' ' + r.unit : ''} (${r.sumApprox ? '≈ เฉลี่ย' : summaryShort(r.sumKind)}${r.auto && !r.fromDept && !r.sumApprox && r.sumKind !== 'sum' ? 'ถ่วงน้ำหนัก' : ''} ${r.actualMonths} เดือน)`
                     : ''}`}
                   big={r.value == null ? '—' : nf(r.value, r.dec)}
                   unit={r.value != null ? r.unit : ''} bigNote={r.value != null ? `เดือน ${monthLabel(r.valueKey)}${r.stale ? ' (ล่าสุด)' : ''}` : ''} delta={r.delta}
