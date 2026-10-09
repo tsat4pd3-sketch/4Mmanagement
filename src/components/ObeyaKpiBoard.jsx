@@ -156,8 +156,8 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
   const year = yearOf(date);
   const monthKey = date.slice(0, 7);
   /* ⚡ ทีมช่างของขอบเขตนี้ (แผนก/ส่วนงาน · หรือเจ้าของรหัส CC) → KPI ช่าง MO Closed/MBD/MTBF/MTTR ระบบคำนวณให้
-     (06/10 · user ส่งจอ CC JIG MTN "ยังไม่มีข้อมูล" ทั้งที่ระบบคำนวณได้) — ระบบ **เสนอ** บนบอร์ด แต่ไม่เขียนลงฐาน
-     ค่ายืนยัน = คนกด "ใช้ค่านี้" ที่แท็บ ⚙️ (กฎเดิม ห้ามเขียนทับค่าที่กรอกมือ) · ทีมเทียบชื่อแบบเดียวกับ KpiMonthly */
+     (06/10 · user ส่งจอ CC JIG MTN "ยังไม่มีข้อมูล" ทั้งที่ระบบคำนวณได้) · 09/10 user: "ถ้ามีออโต้ก็ให้โชว์ออโต้เลย ไม่มีก็เอาค่ากรอกมือ"
+     ⇒ กติกาเดียวกับแถว auto ทุกแถว (`fillAutoWithManual`) · ไม่เขียนลงฐาน · ทีมเทียบชื่อแบบเดียวกับ KpiMonthly */
   const [pmTeams, setPmTeams] = useState(() => pmTeamsSync());
   useEffect(() => { let alive = true; loadPmTeams().then(t => { if (alive && t) setPmTeams(t); }); return () => { alive = false; }; }, []);
   const mtnTeam = useMemo(() => {
@@ -411,7 +411,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
     return boardRows.map((r) => {
       const man = manualOf(r.name, false, r.key, r.defId || null);
       let series = [], def = null, unit = r.unit || man?.unit || '', note = '', fromDept = !!man?.inherited, manual = !r.auto;
-      let months = 0, sumKind = 'average', sumApprox = false, computedN = 0;
+      let months = 0, sumKind = 'average', sumApprox = false;
 
       /* ⚡ ค่าที่ระบบคำนวณ = ค่าหลักของ **ทุกแถว auto** (user 09/10: "auto ชนะ manual · เดือนไหนไม่มี auto มี manual ก็โชว์ manual")
          ✍️ ค่าที่หน่วยกรอกมือลงนิยามของตัวเองใช้เติมเฉพาะเดือนที่ระบบไม่มีค่า (PD2 คีย์ OEE ม.ค.–ส.ค. = ช่วงก่อนเริ่มใช้ Daily Report
@@ -481,23 +481,29 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       } else {
         /* 🔴 24/09: วิธีรวมแท่ง "สรุป" มาจาก `kpi_catalog.summary_mode` ของ KPI ตัวนั้น
            เดิมเฉลี่ยตายตัว ⇒ Scrap/Cost Reduction ที่ต้องรวมทั้งปีโชว์ค่าเฉลี่ย */
-        /* ⚡ KPI ช่างที่ระบบคำนวณได้ (MO Closed/MBD/MTBF/MTTR): เดือนที่ยังไม่มีค่ายืนยัน เติมค่าที่ระบบคำนวณ **แบบติดป้าย**
-           (`computed`) — ค่าที่คนกด "ใช้ค่านี้"/กรอกมือ ชนะเสมอ · ไม่เขียนลงฐาน · จอต้องบอกว่ากี่เดือนเป็นค่าเสนอ */
+        /* ⚡ KPI ช่างที่ระบบคำนวณได้ (MO Closed/MBD/MTBF/MTTR): **ค่าระบบชนะ** · ค่ากรอกมือเติมเฉพาะเดือนที่ระบบไม่มีค่า
+           (09/10 user — เดิม "ระบบเสนอ คนตัดสิน" ผ่านปุ่ม "ใช้ค่านี้" ถอดแล้ว) · ไม่เขียนลงฐาน · จอต้องบอกว่ามาจากไหนกี่เดือน */
         const manEntries = man?.entries || {};
         const ak = autoSeries && man?.def ? autoKpiOfName(man.def.kpi_catalog?.name || man.def.name) : null;
-        const compMonths = {};
-        if (ak) autoSeries.months.forEach((m, i) => {
-          const v = toRowUnit(m[ak.key], ak.key, unitOf(man.def) || unit);
-          if (v != null && (manEntries[i + 1] ?? null) == null) compMonths[i + 1] = v;
-        });
-        const k = manualMonthSeries({ entries: { ...compMonths, ...manEntries }, year, summary: summaryModeOf(man?.def) });
-        series = k.series.map((p, i) => (i < 12 && compMonths[i + 1] != null ? { ...p, computed: true } : p));
-        months = k.months; def = man?.def || null;
-        sumKind = k.effMode; sumApprox = k.approx;
-        computedN = Object.keys(compMonths).length;
-        if (computedN) {
-          const confirmed = Object.values(manEntries).filter(v => v != null && v !== '').length;
-          note = `⚡ ระบบคำนวณ ${computedN} เดือน (ทีม ${mtnTeam.label} · สูตร KPI Guideline 2026 หน้า 10 · ยังไม่กด "ใช้ค่านี้" ที่แท็บ ⚙️) · ยืนยันแล้ว ${confirmed} เดือน`;
+        const summary = summaryModeOf(man?.def);
+        if (ak) {
+          const autoMonths = {};
+          autoSeries.months.forEach((m, i) => {
+            const v = toRowUnit(m[ak.key], ak.key, unitOf(man.def) || unit);
+            if (v != null) autoMonths[i + 1] = v;
+          });
+          const fx = fillAutoWithManual({ autoMonths, manEntries, year, summary });
+          const k = fx.series
+            ? { series: fx.series, months: fx.months, effMode: fx.effMode, approx: fx.approx }
+            : manualMonthSeries({ entries: autoMonths, year, summary });
+          series = k.series; months = k.months; def = man?.def || null;
+          sumKind = k.effMode; sumApprox = k.approx;
+          manual = fx.autoN === 0;   // มีค่าระบบสักเดือน = แถวนี้ค่าหลักมาจากระบบ
+          note = `${mixNote(fx, 'ระบบคำนวณ')}${fx.autoN && !fx.fillN && !fx.overlapN ? `⚡ ระบบคำนวณ ${fx.autoN} เดือน` : ''} (ทีม ${mtnTeam.label} · สูตร KPI Guideline 2026 หน้า 10)`;
+        } else {
+          const k = manualMonthSeries({ entries: manEntries, year, summary });
+          series = k.series; months = k.months; def = man?.def || null;
+          sumKind = k.effMode; sumApprox = k.approx;
         }
       }
 
@@ -528,8 +534,6 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
         why = r.auto && !fromDept ? 'ยังไม่ตั้งเป้า — ตั้งที่แท็บ ⚙️ ปุ่ม 🎯 ท้ายแถว' : 'ยังไม่ตั้งเป้า — ตั้งที่แท็บ ⚙️ ตอนแก้นิยาม KPI';
       }
       if (stale) why = `ค่าล่าสุด ${monthLabel(valueKey)} (${monthLabel(monthKey)} ยังไม่กรอก) · ${why}`;
-      const curComputed = value != null && !!series.find(p => p.k === valueKey)?.computed;
-      if (curComputed) why = `⚡ ค่าที่ระบบคำนวณ ยังไม่ยืนยัน · ${why}`;
       const curFilled = value != null && !!series.find(p => p.k === valueKey)?.manualFill;
       if (curFilled) why = `✍️ เดือนนี้ใช้ค่ากรอกมือ (ระบบไม่มีกะให้คำนวณ) · ${why}`;
       const ytd = series[12]?.v ?? null;
@@ -556,7 +560,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
         hasTarget: !!(def && (target != null || def.commit_value != null || def.commitment)),
       };
       return {
-        ...r, def, unit, dir, series, value, valueKey, stale, target, st, why, note, manual, fromDept, months, sumKind, sumApprox, ytd, actualMonths, forecast, computedN, curComputed, curFilled,
+        ...r, def, unit, dir, series, value, valueKey, stale, target, st, why, note, manual, fromDept, months, sumKind, sumApprox, ytd, actualMonths, forecast, curFilled,
         commit: def?.commit_value == null ? null : Number(def.commit_value), hasPlan: Object.keys(planMap).length > 0,
         dec: decimalsOf(def),
         delta: target != null && value != null && dir ? gapToTarget(value, target, dir) : null,
@@ -734,9 +738,9 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
             <LabelList dataKey="vLabel" position="top" style={{ fontSize: fs(9.5), fontWeight: 700, fill: 'var(--text)' }} />
             {data.map((p, i) => (
               <Cell key={i} fill={statusColor(r.def ? monthBarScore(p, r.def) : 'none')}
-                fillOpacity={p.summary ? 0.55 : (p.computed || p.manualFill) ? 0.38 : (p.k === monthKey ? 1 : 0.8)}
-                stroke={p.summary || p.computed || p.manualFill ? 'var(--text2)' : (p.k === monthKey ? 'var(--text)' : 'none')}
-                strokeDasharray={p.summary ? '3 2' : (p.computed || p.manualFill) ? '2 2' : undefined} cursor={p.summary ? 'default' : 'pointer'} />
+                fillOpacity={p.summary ? 0.55 : p.manualFill ? 0.38 : (p.k === monthKey ? 1 : 0.8)}
+                stroke={p.summary || p.manualFill ? 'var(--text2)' : (p.k === monthKey ? 'var(--text)' : 'none')}
+                strokeDasharray={p.summary ? '3 2' : p.manualFill ? '2 2' : undefined} cursor={p.summary ? 'default' : 'pointer'} />
             ))}
           </Bar>
           {/* 📅 เส้นแผนรายเดือน — KPI แบบสะสมเทียบเป้าทั้งปีตั้งแต่ต้นปีจะดู "ตกตลอด" ต้องเทียบแผนของเดือนนั้น (user 30/09) */}
@@ -880,7 +884,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
                 )}
                 <Sheet k={k} cw={cw} icon={r.icon} title={r.name}
                   /* 30/09 (user): เลขใหญ่ = ค่าเดือนที่เลือก · บรรทัดรอง = YTD บอกวิธีรวม+จำนวนเดือน · ท้ายแผ่น = คาดปลายปี */
-                  sub={`${r.manual ? (r.curComputed ? '⚡ ระบบคำนวณ · ยังไม่ยืนยัน' : '✍️ กรอกมือ') : r.curFilled ? '✍️ กรอกมือ (เดือนนี้ไม่มีค่าระบบ)' : '⚡ ระบบคำนวณ'}${r.ytd != null
+                  sub={`${r.manual ? '✍️ กรอกมือ' : r.curFilled ? '✍️ กรอกมือ (เดือนนี้ไม่มีค่าระบบ)' : '⚡ ระบบคำนวณ'}${r.ytd != null
                     ? ` · YTD ${nf(r.ytd, r.dec)}${r.unit ? ' ' + r.unit : ''} (${r.sumApprox ? '≈ เฉลี่ย' : summaryShort(r.sumKind)}${r.auto && !r.fromDept && !r.sumApprox && r.sumKind !== 'sum' ? 'ถ่วงน้ำหนัก' : ''} ${r.actualMonths} เดือน)`
                     : ''}`}
                   big={r.value == null ? '—' : nf(r.value, r.dec)}
