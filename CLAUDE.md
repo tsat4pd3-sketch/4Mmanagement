@@ -143,14 +143,12 @@ Reject → status: "rejected" + reject_reason
 
 ## Daily Report — ออเดอร์ manual สำหรับไลน์ไม่มี kanban card (2026-07-12)
 
-ไลน์บางไลน์ (เช่น HDF1 ที่ส่งงานต่อ LASER CUT 123) ไม่มีเลข SAP order ให้สแกน เปิด-ปิดใบแบบปกติไม่ได้:
 > 📄 รายละเอียดเต็ม → `docs/modules/daily-report.md`
 
 ---
 
 ## QR / บาร์โค้ดอุปกรณ์ — สแกนเลือกเครื่อง/จิ๊ก/สินค้า (2026-08-03 · คำสั่ง user)
 
-หน้างานเลือกอุปกรณ์จาก dropdown ยาวๆ ตอนใส่ถุงมือ/รีบ = ช้าและเลือกผิด → พิมพ์ป้าย QR ติดอุปกรณ์ แล้วสแกนเลือก
 > 📄 รายละเอียดเต็ม → `docs/modules/qr-equipment-scan.md`
 
 ---
@@ -222,7 +220,6 @@ Reject → status: "rejected" + reject_reason
 
 ## Improvements — โปรเจคปรับปรุง Kaizen (2026-07-12)
 
-หน้า `/improvements` (กลุ่มฝ่ายผลิต) — บันทึกโปรเจคปรับปรุงผูกกับปัญหาจริง แล้วเทียบผลก่อน/หลังจากข้อมูลที่เกิดจริงอัตโนมัติ ไม่ต้องกรอกผลเอง
 > 📄 รายละเอียดเต็ม → `docs/modules/improvements-kaizen.md`
 
 ---
@@ -494,6 +491,14 @@ Reject → status: "rejected" + reject_reason
 หน้า `/pm-forecast` (🔧 PM ล่วงหน้า (Planner), กลุ่มการตรวจสอบและซ่อมบำรุง) — ให้ วางแผน/ผลิตเห็นวันที่จะต้อง PM ล่วงหน้า 1-2 สัปดาห์ + buffer ที่ต้องผลิตเผื่อ ก่อนเครื่องหยุดทำ PM
 > 📄 รายละเอียดเต็ม → `docs/modules/pm-predictive-planner-sync.md`
 
+> ### 🔴 AM ↔ PM — กฎข้าม session (2026-10-09 · audit `docs/modules/am-pm-linkage-audit.md`)
+> · **ทีม AM = `isAmTeam(department)` (`utils/pmTeams.js`) ห้าม hardcode `'production'`** (มีด่าน) · ฝั่ง edge อ่าน `mtn_teams.kind`
+> · **`next_due_date` ว่าง ≠ ปกติ** — ตัวนับ PM ทุกจอผ่าน `planDueBucket()` (`lib/pmSchedule.js`) · ถัง `never`/`no_cycle` ต้องเขียนบนจอ
+>   · แผน `run_day` ไม่มีวันปฏิทิน: `resolvePlanDue` คืน `status:'run_day'` **ห้ามถอยไป last_done+interval** · ตัดสินจริงที่จอ AM/PMSchedule
+> · **"กะนี้ AM ตรวจแล้วหรือยัง" มีที่เดียว = `lib/dailyAmBoard.js`** (ทะเบียน `pm_daily_line_targets` + inspections + opened_at) · ห้ามคิวรี inspections เอง (มีด่าน)
+> · **ทะเบียนรายวัน ⇒ แผน AM เป็น run_day อัตโนมัติที่ชั้น DB** (`pm_am_plan_follow_registry` · trigger บน `pm_daily_line_targets`) —
+>   **ห้ามเขียน `next_due_date` ลงแผน run_day** จากจอใด · เอาออกจากทะเบียน = `is_active=false` ห้าม delete · AM ไม่นับในชั้น Preventive ของช่าง
+
 ---
 
 ## PM Coordination — แผนประสานงาน PM ข้ามวัน (MTN แจ้ง Production · 2026-07-23)
@@ -681,15 +686,14 @@ Reject → status: "rejected" + reject_reason
 
 ## Storage & รูปภาพ (กติกาสำคัญ — 2026-07-09)
 
-- อัปโหลดรูปทุกหน้าต้องผ่าน `ImageCropModal` — รูปนิ่งถูก crop + บีบเป็น JPEG 480px q0.85 (~100KB) อัตโนมัติ
-- **🔴 ทุก `.upload()` ต้องส่ง options ผ่าน `uploadOpts()` (`src/utils/storageUpload.js`) — มีเทสในด่าน build** (2026-09-11)
-  ไม่ส่ง `cacheControl` = ได้ default 1 ชม. ⇒ รูปถูกโหลดใหม่ทุกชั่วโมง · **เคยทำ egress ทะลุโควต้าจน Supabase
-  ล็อกบริการทั้ง organization มาแล้ว (ทั้งโรงงาน login ไม่ได้)** · path ที่ `upsert` ทับได้ต้องใส่ `mutable: true`
-- **🔴 ทุกช่อง `<input type="file" accept="image/*">` ต้องผ่าน `acceptImageFile()`** (`src/utils/acceptImageFile.js` · มีด่าน `image-input-via-accept-helper`) — HEIC จาก iPhone เบราว์เซอร์ Android/Chrome decode ไม่ได้ ⇒ ไม่แปลง = พังตอนกดบันทึก หรืออัปไฟล์ดิบขึ้นไปแล้วทุกคนเห็นรูปเสีย · ที่เข้าหน้าครอปใช้ `<ImageCropModal>` ตามเดิม (มีในตัวแล้ว)
-- **🚫 รูปพนักงานไม่รับ GIF** (`allowGif={false}`) — บีบไม่ได้ เฉลี่ย 4.3 MB/รูป · ตัวตรวจชนิดไฟล์ =
-  `src/utils/imageFileKind.js` จุดเดียว (ดูนามสกุลด้วย ไม่ใช่แค่ MIME) · **ปฏิเสธไฟล์ต้องขึ้น toast
-  บอกเหตุผล+ทางแก้เสมอ ห้ามปิดหน้าต่างเงียบๆ** (คำสั่ง user 2026-09-11)
-> 📄 รายละเอียดเต็ม → `docs/modules/storage-images.md`
+- อัปโหลดรูปทุกหน้าต้องผ่าน `ImageCropModal` (crop + บีบ JPEG 480px q0.85 อัตโนมัติ)
+- **🔴 ทุก `.upload()` ต้องส่ง options ผ่าน `uploadOpts()` (`src/utils/storageUpload.js` · มีด่าน)** — ไม่ส่ง `cacheControl` = โหลดซ้ำทุกชั่วโมง
+  (เคยทำ egress ทะลุโควต้าจนทั้ง organization ถูกล็อก) · path ที่ `upsert` ทับได้ต้องใส่ `mutable: true`
+- **🔴 ทุกช่อง `<input type="file" accept="image/*">` ต้องผ่าน `acceptImageFile()`** (`src/utils/acceptImageFile.js` · มีด่าน) — HEIC จาก iPhone
+  เบราว์เซอร์อื่น decode ไม่ได้ · ที่เข้าหน้าครอปใช้ `<ImageCropModal>` (มีในตัวแล้ว)
+- **🚫 รูปพนักงานไม่รับ GIF** (`allowGif={false}` · ตัวตรวจชนิดไฟล์ = `src/utils/imageFileKind.js` จุดเดียว ดูนามสกุลด้วย) ·
+  **ปฏิเสธไฟล์ต้องขึ้น toast บอกเหตุผล+ทางแก้ ห้ามปิดเงียบ** (คำสั่ง user 2026-09-11)
+> 📄 เหตุการณ์ egress · ตัวเลข GIF · กับดัก HEIC → `docs/modules/storage-images.md`
 
 ---
 

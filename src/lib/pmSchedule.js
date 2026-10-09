@@ -1,5 +1,6 @@
 const FREQ_DAYS = { daily: 1, weekly: 7, monthly: 30, quarterly: 90 }
 import { addDaysStr } from '../utils/workDate.js'
+import { basisOf, CYCLE_BASIS } from '../utils/pmRunDay.js'
 
 /* ═══ รอบ PM = "จำนวนวัน" (2026-09-23 · feedback "ตั้งแผน PM ไม่ได้ว่าครั้งถัดไปจะ PM เมื่อไหร่") ═══
    ต้นเหตุ: รอบเดิมเลือกได้แค่ 5 ค่าของ `checklists.frequency` และค่า default ของฟอร์มคือ 'periodic'
@@ -112,6 +113,10 @@ export const STATUS_META = {
      ไม่งั้น KPI จะสวยขึ้นเพราะวันหยุด · ใช้กับแผน `cycle_basis='run_day'` เท่านั้น (02/10) */
   idle_skip: { label: 'ไม่ได้ผลิต (ไม่ต้องตรวจ)', color: '#6b7280', order: 3.5 },
   periodic:  { label: 'ยังไม่ตั้งรอบ PM', color: '#527855', order: 4 },  // ไม่มีจำนวนวัน = ระบบเตือนไม่ได้ (เดิมป้าย 'ไม่มีรอบตายตัว' ฟังเหมือนตั้งใจ)
+  /* 🔴 run_day = "ครบกำหนดเมื่อเดินครบ N วัน" ไม่มีวันปฏิทิน (08/10 audit AM↔PM) — จอที่ไม่มีข้อมูลวันเดินเครื่อง
+     **ต้องตอบว่า "ตัดสินที่นี่ไม่ได้" ห้ามถอยไป last_done + interval** (เดิมทำแบบนั้นแล้ว AM รายวันขึ้นแดง
+     ทุกวันที่ไม่ได้ผลิต) · ตัดสินจริงที่ PMSchedule (`resolveRunDayDue`) หรือจอ AM รายวัน (`lib/dailyAmBoard.js`) */
+  run_day:   { label: 'ตามวันเดินเครื่อง (ดูจอ AM / แผน PM)', color: '#527855', order: 3.7 },
 }
 
 // เลื่อนแผน PM แบบตกลงกันแล้ว (คิวผลิตแน่น ฯลฯ) — active เมื่อ deferred_to ตั้งไว้
@@ -156,6 +161,10 @@ export const diffYmd = (from, to) => Math.round((ymdUtc(to) - ymdUtc(from)) / 86
 export function resolvePlanDue({ frequency, plan = null, lastInspectedAt = null, todayStr }) {
   const lastYmd = ymdBangkok(plan?.last_done_at ?? lastInspectedAt ?? null)
   const freqDays = cycleDaysOf(frequency, plan?.interval_days)
+  // 🔴 run_day: ไม่มีวันครบกำหนดแบบปฏิทิน และ next_due_date ที่ค้างอยู่ (ถ้ามี) เป็นค่าตกค้าง ห้ามใช้
+  if (basisOf(plan) === CYCLE_BASIS.RUN_DAY) {
+    return { lastYmd, dueYmd: null, daysTo: null, status: 'run_day', isDeferred: false, hasCycle: !!freqDays, runDay: true }
+  }
   const origDue = plan?.next_due_date
     ? String(plan.next_due_date).slice(0, 10)
     : (freqDays && lastYmd ? addYmd(lastYmd, freqDays) : null)
@@ -171,4 +180,22 @@ export function resolvePlanDue({ frequency, plan = null, lastInspectedAt = null,
   }
   const hasCycle = !!freqDays
   return { lastYmd, dueYmd, daysTo, status, isDeferred, hasCycle }
+}
+
+/* ═══ planDueBucket — "ถัง" ของแผน 1 ใบสำหรับจอที่นับรวม (ผังรวมโรงงาน · Dashboard ส่วนงาน · Andon) ═══
+   🔴 บทเรียน 08/10 (audit AM↔PM): จอเหล่านี้เคยนับแค่ overdue/due_soon แล้วถือว่าที่เหลือ "ปกติ" ⇒
+      แผนที่ **ไม่เคยตรวจเลย** (JIG MTN 106/106 แผน · next_due_date null) และแผนที่ **ไม่รู้รอบ** (interval null)
+      ถูกนับเป็นเขียวทั้งโรงงาน · กฎ: null ≠ ปกติ — ต้องแยกถังให้คนเห็น
+   @param soonDays หน้าต่าง "ใกล้ครบ" ของจอนั้น (ผัง 7 · Dashboard 14) — จอใหญ่ใช้วันคงที่ ไม่ใช่สเกลตามรอบแบบ statusForDays
+   @returns { bucket: 'run_day'|'overdue'|'due_soon'|'ok'|'never'|'no_cycle', daysTo, dueYmd, status } */
+export function planDueBucket(plan, todayStr, { frequency = null, lastInspectedAt = null, soonDays = 7 } = {}) {
+  const r = resolvePlanDue({ frequency, plan, lastInspectedAt, todayStr })
+  let bucket
+  if (r.status === 'run_day') bucket = 'run_day'
+  else if (r.status === 'periodic') bucket = 'no_cycle'
+  else if (r.status === 'never') bucket = 'never'
+  else if (r.daysTo != null && r.daysTo < 0) bucket = 'overdue'
+  else if (r.daysTo != null && r.daysTo <= soonDays) bucket = 'due_soon'
+  else bucket = 'ok'
+  return { bucket, daysTo: r.daysTo, dueYmd: r.dueYmd, status: r.status }
 }

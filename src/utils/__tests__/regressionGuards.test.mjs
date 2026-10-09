@@ -3415,6 +3415,18 @@ test('🛡️ MonitorBoardGrid + RundownStock: หัวคอลัมน์ช
     '\n\n❌ บอร์ดต้องเปิดมาที่คอลัมน์วันนี้ (startIndexForToday) และชี้วันนี้แบบรู้จักบอร์ดรายสัปดาห์ (isTodayPeriod)\n');
 });
 
+test('🛡️ am-team-via-isAmTeam — ห้าม hardcode department "production" เป็นทีม AM (ใช้ isAmTeam จาก mtn_teams.kind)', () => {
+  const hits = walk(join(ROOT, 'src'), ['.js', '.jsx'])
+    .filter(f => !/utils\/pmTeams\.js$/.test(f))
+    .filter(f => /\.eq\(['"]department['"],\s*['"]production['"]\)|department\s*[!=]==\s*['"]production['"]|\.has\(['"]production['"]\)/.test(stripComments(readFileSync(f, 'utf8'))))
+    .map(f => relative(ROOT, f));
+  assert.deepEqual(hits, [],
+    '\n\n❌ มีโค้ดตัดสิน "ทีม AM" ด้วย department === \'production\' ตรงๆ: ' + hits.join(', ') + '\n'
+    + '   ที่มา 2026-10-08 (audit AM↔PM): AM แยกรายส่วนงานได้ (mtn_teams.kind=\'am\' หลาย key) — hardcode = ทีมใหม่ไม่ถูกนับว่าตรวจแล้ว\n'
+    + '            ⇒ ส้มยิงทุกไลน์ / จอ AM ว่าง / สอบกลับนับใบช่างเป็น AM\n'
+    + '   แก้ยังไง: isAmTeam(department) จาก src/utils/pmTeams.js (โหลด loadPmTeams() ก่อน) · ฝั่ง edge อ่าน mtn_teams.kind\n');
+});
+
 /* ── 🖼️ ลบรูปใน storage ต้องนับผู้อ้างก่อน เมื่อ path ถูกแชร์ได้ (08/10 · QC audit) ────────
    เคสจริง: `copyChecklistToEquipment/Dept` คัดลอกจุดตรวจไปเครื่องอื่นโดย **ใช้ image_path เดิม
    ร่วมกัน ไม่ก๊อปไฟล์** ⇒ `handleDelete` ที่ลบทั้งโฟลเดอร์ `jigs/<id>/` ทำให้รูปจุดตรวจของทุก

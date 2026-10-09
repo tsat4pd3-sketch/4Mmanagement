@@ -20,6 +20,7 @@ import { loadPmTeams, pmTeamsSync, teamKind, recordPermFor, isAmTeam } from '../
 import { MTN_TEAMS, deptNameOf, teamKeyOf, teamForEquipmentKind } from '../utils/mtnTeams'
 import { checkWrite } from '../utils/dbWrite';
 import { getWorkDate } from '../utils/workDate'
+import { amShiftInfo } from '../lib/dailyAmBoard'
 import { DEFAULT_POINT_KINDS, pointDueStatus, pointPin, shimStack, deriveShimAction } from '../utils/fixturePoints'
 import { recordShimEvent } from '../utils/fixtureShimApi'
 import Page from '../components/Page'
@@ -768,20 +769,16 @@ export default function PMCheckData() {
   const [dailyLineByJig, setDailyLineByJig] = useState(null)   // jig_id -> [line_name] (null = แท็บอื่น)
   const [checkedThisShift, setCheckedThisShift] = useState({}) // jig_id -> 'pass' | 'fail'
   useEffect(() => {
-    if (department !== 'production') { setDailyLineByJig(null); setCheckedThisShift({}); return }
+    // 🔗 ทีม AM = `isAmTeam` (ห้าม hardcode 'production') · กะ/เวลาเริ่มกะ = `amShiftInfo` ชุดเดียวกับจอ AM/ผังรวมโรงงาน (08/10)
+    if (!isAmTeam(department)) { setDailyLineByJig(null); setCheckedThisShift({}); return }
     let cancelled = false
     ;(async () => {
-      const [{ data: tg }, { data: prodCls }] = await Promise.all([
+      const [{ data: tg }, { data: amCls }] = await Promise.all([
         supabaseDR.from('pm_daily_line_targets').select('jig_id, line_name').eq('is_active', true),
-        supabaseDR.from('checklists').select('id').eq('module', 'mtn').eq('department', 'production'),
+        supabaseDR.from('checklists').select('id, department').eq('module', 'mtn'),
       ])
-      // จุดเริ่มกะปัจจุบัน (เช้า 08:00 / ดึก 20:00, ก่อน 08:00 = กะดึกของวันก่อน)
-      const now = new Date()
-      const isDay = now.getHours() >= 8 && now.getHours() < 20
-      const ws = new Date(now)
-      if (now.getHours() < 8) ws.setDate(ws.getDate() - 1)
-      ws.setHours(isDay ? 8 : 20, 0, 0, 0)
-      const clIds = new Set((prodCls ?? []).map(c => c.id))
+      const ws = amShiftInfo().shiftStart
+      const clIds = new Set((amCls ?? []).filter(c => isAmTeam(c.department)).map(c => c.id))
       const { data: insp } = await supabaseDR.from('inspections')
         .select('jig_id, status, checklist_id')
         .gte('inspected_at', ws.toISOString())
@@ -1045,12 +1042,13 @@ export default function PMCheckData() {
       if (overall !== 'pending' && checklistId) {
         try {
           const { data: plans, error: pErr } = await supabaseDR.from('pm_plans')
-            .select('id, plan_type, interval_days, last_done_at').eq('checklist_id', checklistId).eq('is_active', true)
+            .select('id, plan_type, interval_days, last_done_at, cycle_basis').eq('checklist_id', checklistId).eq('is_active', true)
           if (pErr) throw pErr
           // วันที่ทำ PM = "วันทำงาน" (ก่อน 08:00 = วันก่อนหน้า) — เดิมใช้วันปฏิทินเครื่อง ⇒ กะดึกตรวจตี 2
           // ได้วันถัดไป แผนเลื่อนรอบเกินจริง 1 วัน + ข้ามด่าน "วันนี้ stamp แล้ว" (QC 05/10)
           const done = getWorkDate()
           for (const pl of (plans || [])) {
+            if (pl.cycle_basis === 'run_day') continue   // 🔴 run_day ไม่มีวันครบกำหนดแบบปฏิทิน — trigger pm_refresh_plan ดูแลเอง ห้ามเขียน next_due_date ทับ (08/10)
             if (pl.last_done_at && String(pl.last_done_at).slice(0, 10) >= done) continue // วันนี้ stamp ไปแล้ว (ตรวจซ้ำ/AM รายกะ) — ไม่เขียนซ้ำ
             const patch = { last_done_at: done }
             // ตามรอบเวลา (time/hybrid) → เลื่อน next_due = วันทำ + interval_days · usage → forecast คำนวณเองจาก last_done_at
@@ -1075,7 +1073,7 @@ export default function PMCheckData() {
       }).map(cp => cp.name)
       handleDailyPmSave({ jig: selectedJig, department, overall, ngTopics }).catch(() => {})
       // อัปเดตป้าย "ตรวจแล้ว/รอตรวจ" ในรายการซ้ายทันที ไม่ต้องรอโหลดใหม่
-      if (department === 'production') setCheckedThisShift(prev => ({ ...prev, [selectedJig.id]: overall }))
+      if (isAmTeam(department)) setCheckedThisShift(prev => ({ ...prev, [selectedJig.id]: overall }))
 
       toast.success('บันทึกผลการตรวจสำเร็จ')
       const init = {}
@@ -1109,7 +1107,8 @@ export default function PMCheckData() {
   //   โผล่ใต้ทีม D ถ้า (ก) มี checklist ของทีม D อยู่แล้ว (ตรงกับหน้า PMSchedule) หรือ
   //   (ข) ประเภทอุปกรณ์ = ประเภท default ของทีม (ให้เริ่ม checklist ใหม่ได้) · ผลิต = ทุกชนิด
   const teamEquip = (teams.find(t => t.key === department) || {}).equip_type
-  const deptJigsAll = department === 'production'
+  const hasAmChecklist = (jigId) => [...(clDeptByJig[jigId] || [])].some(isAmTeam)
+  const deptJigsAll = isAmTeam(department)
     ? jigs
     : jigs.filter(j => (teamEquip && (j.equipment_type || 'machine') === teamEquip) || clDeptByJig[j.id]?.has(department))
   // คำค้นแยกเป็นคำ ทุกคำต้องเจอ (เช่น "laser 789" · "jhyd08") — เทียบกับ เลขเครื่อง+ชื่อ+ไลน์ รวมกัน
@@ -1150,11 +1149,11 @@ export default function PMCheckData() {
             style={{ minWidth: 44, minHeight: 44, padding: 0, fontSize: 18, borderRadius: 8,
               background: 'var(--bg3)', border: '1px solid var(--border2)', cursor: 'pointer' }}>📷</button>
         </div>
-        {qWords.length > 0 && department !== 'production' && (
+        {qWords.length > 0 && !isAmTeam(department) && (
           <div style={{ padding: '0 16px 6px', fontSize: 11, color: 'var(--muted)' }}>พบ {deptJigs.length} จาก {deptJigsAll.length} เครื่อง</div>
         )}
         <div style={S.jigList}>
-          {department === 'production' ? (() => {
+          {isAmTeam(department) ? (() => {
             // แท็บฝ่ายผลิต: เฉพาะเครื่องที่ลงทะเบียน Daily PM จัดกลุ่มตามไลน์ + สถานะกะนี้
             if (dailyLineByJig == null) return <p style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', marginTop: 20 }}>กำลังโหลด...</p>
             const lineParam = searchParams.get('line')
@@ -1172,7 +1171,7 @@ export default function PMCheckData() {
             //    department=production) แต่หน้านี้ลิสต์เฉพาะเครื่องที่ "ลงทะเบียน AM" (pm_daily_line_targets)
             //    → เครื่องที่ลงจุดตรวจไว้แล้วแต่ยังไม่ลงทะเบียน หายไปเงียบๆ (เจอจริง 21 จาก 27 เครื่อง)
             //    ไม่เดาลงทะเบียนให้เอง (เป็นการตัดสินใจว่าไลน์ไหนต้องตรวจอะไร) แต่ต้องไม่ซ่อน
-            const pendingReg = jigs.filter(j => clDeptByJig[j.id]?.has('production') && !dailyLineByJig[j.id])
+            const pendingReg = jigs.filter(j => hasAmChecklist(j.id) && !dailyLineByJig[j.id])
             const pendingBlock = pendingReg.length > 0 && (
               <div style={{ marginTop: 12, padding: '10px 12px', borderRadius: 8, border: '1px dashed #f59e0b55', background: 'rgba(245,158,11,0.08)' }}>
                 <div style={{ fontSize: 11.5, fontWeight: 800, color: '#f59e0b' }}>⚠ มีรายการตรวจ AM แล้ว แต่ยังไม่ได้ลงทะเบียน · {pendingReg.length} เครื่อง</div>
@@ -1219,7 +1218,7 @@ export default function PMCheckData() {
                         </div>
                         {jig.machine_no && <p style={{ fontSize: 11, color: 'var(--muted)', margin: '2px 0 0' }}>{jig.machine_no}</p>}
                         {/* ลงทะเบียนไว้แต่ยังไม่มีจุดตรวจ AM — เปิดเข้าไปจะเจอฟอร์มเปล่า บอกไว้ตั้งแต่ในลิสต์ */}
-                        {!clDeptByJig[jig.id]?.has('production') && (
+                        {!hasAmChecklist(jig.id) && (
                           <p style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700, margin: '2px 0 0' }}>⚠ ยังไม่มีจุดตรวจ AM</p>
                         )}
                       </div>

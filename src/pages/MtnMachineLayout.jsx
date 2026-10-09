@@ -6,8 +6,9 @@ import { supabase, supabaseDR } from '../supabaseClient'
 import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App'
 import { can } from '../utils/permissions'
-import { dueStatus, STATUS_META, DEPT_LABEL, computeNextDue, daysUntilDue } from '../lib/pmSchedule'
-import { loadPmTeams, pmTeamsSync } from '../utils/pmTeams'
+import { dueStatus, STATUS_META, DEPT_LABEL, computeNextDue, daysUntilDue, resolvePlanDue } from '../lib/pmSchedule'
+import { loadPmTeams, pmTeamsSync, isAmTeam } from '../utils/pmTeams'
+import { getWorkDate } from '../utils/workDate'
 import { toast } from '../components/Toast'
 import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory'
 import MachineFloorMap from '../components/MachineFloorMap'
@@ -52,13 +53,18 @@ async function loadPmForJigs(jigIds) {
   const { data: cls } = await supabaseDR.from('checklists').select('id, equipment_id, department, frequency, name').eq('module', 'mtn').in('equipment_id', jigIds)
   const clIds = (cls || []).map(c => c.id)
   let plans = []
-  if (clIds.length) { const { data } = await supabaseDR.from('pm_plans').select('checklist_id, interval_days, next_due_date, last_done_at').in('checklist_id', clIds); plans = data || [] }
+  // ⚠️ เฉพาะแผน active (เดิมไม่กรอง = แผนที่ปิดไปแล้วยังระบายสีหมุด) · select ครบให้ resolvePlanDue รู้ cycle_basis
+  if (clIds.length) { const { data } = await supabaseDR.from('pm_plans').select('checklist_id, interval_days, next_due_date, last_done_at, cycle_basis, is_active, deferred_to, deferred_at').in('checklist_id', clIds).eq('is_active', true); plans = data || [] }
   const planBy = Object.fromEntries(plans.map(p => [p.checklist_id, p]))
+  const todayStr = getWorkDate()
   for (const cl of (cls || [])) {
     const plan = planBy[cl.id]
-    const lastDone = plan?.last_done_at ?? null
-    const nextDue = plan?.next_due_date ? parseLocalDate(plan.next_due_date) : computeNextDue(lastDone, cl.frequency, plan?.interval_days)
-    ;(out[cl.equipment_id] ||= []).push({ dept: cl.department, status: dueStatus(nextDue, cl.frequency, plan?.interval_days), nextDue, freq: cl.frequency, clName: cl.name })
+    /* 🔴 สูตรกลาง resolvePlanDue (lib/pmSchedule.js) — รู้จัก run_day แล้ว (audit 08/10)
+       เดิมคิดเอง `last_done + interval` ⇒ AM รายวันขึ้นหมุดแดง "เกินกำหนด" ทุกวันจันทร์ (ไม่ได้ผลิตเสาร์-อาทิตย์)
+       และ AM ทับสถานะ PM ช่างบนเครื่องเดียวกันตอน dept='all' */
+    const due = resolvePlanDue({ frequency: cl.frequency, plan: plan || null, todayStr })
+    ;(out[cl.equipment_id] ||= []).push({ dept: cl.department, am: isAmTeam(cl.department), status: due.status,
+      nextDue: due.dueYmd ? parseLocalDate(due.dueYmd) : null, freq: cl.frequency, clName: cl.name })
   }
   return out
 }
@@ -397,7 +403,8 @@ export default function MtnMachineLayout({ setupMode = false }) {
 
   /* ── enrich markers for the current view + department filter ── */
   const colorFor = (checklists) => {
-    const relevant = dept === 'all' ? checklists : checklists.filter(c => c.dept === dept)
+    // "ทุกทีม" = PM ช่าง — AM (ผลิตตรวจเอง) ตัดสินที่จอ AM ไม่เอามาทับสีหมุดของช่าง · เลือกทีม AM ตรงๆ ยังเห็น
+    const relevant = dept === 'all' ? checklists.filter(c => !c.am) : checklists.filter(c => c.dept === dept)
     const responsible = relevant.length > 0
     const worst = responsible ? worstStatus(relevant.map(c => c.status)) : null
     return { color: responsible ? (STATUS_META[worst]?.color ?? '#556') : '#3a4a3d', dim: dept !== 'all' && !responsible, worst }
@@ -570,7 +577,7 @@ export default function MtnMachineLayout({ setupMode = false }) {
                   <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)' }}>📊 สถานะโซนนี้</div>
                   {/* 🛠️ PM — นับจากอุปกรณ์ที่สังกัดโซน (เกณฑ์เดียวกับผังรวมโรงงาน) ไม่ใช่แค่หมุดบนผัง */}
                   {(() => {
-                    const rows = (zonePm?.rows || []).filter(r => dept === 'all' || r.dept === dept)
+                    const rows = (zonePm?.rows || []).filter(r => (dept === 'all' ? !r.am : r.dept === dept))   // ทุกทีม = PM ช่าง · AM ดูจอ AM
                     const cnt = {}; rows.forEach(r => { cnt[r.status] = (cnt[r.status] || 0) + 1 })
                     const due = rows.filter(r => r.status === 'overdue' || r.status === 'due_soon' || r.status === 'never')
                     return (
