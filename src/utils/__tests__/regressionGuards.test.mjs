@@ -3524,3 +3524,12 @@ test('🛡️ export-libs-lazy-import — jspdf/xlsx/exceljs ห้าม static
     + '   แก้ยังไง: `const { default: jsPDF } = await import(\'jspdf\')` ในฟังก์ชัน export\n'
     + '             (ฟังก์ชันที่เป็น async อยู่แล้วเปลี่ยนได้โดยไม่กระทบผู้เรียก)\n');
 });
+
+/* ── ยอดคงเหลือชีทไลน์ปั๊มห้ามลงเป็นสต็อกที่ชื่อไลน์ผลิต (09/10 · user "เลขนั้นแค่บอกว่าผลิตได้เท่าไหร่ ไม่ได้บอกว่าของอยู่ไหน") ── */
+test('🛡️ MonitoringUpload ต้องส่ง stockLocOf (refStockOf) ให้ monitoringToRecords', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/components/MonitoringUpload.jsx'), 'utf8'));
+  assert.ok(/monitoringToRecords\([\s\S]*?stockLocOf[\s\S]*?\}\)/.test(code) && /refStockOf\(/.test(code),
+    '\n\n❌ ตัวนำเข้า Monitoring ไม่ส่ง stockLocOf — BALANCE ชีทไลน์ปั๊มจะกลับไปลงเป็นสต็อกที่ชื่อไลน์ผลิต\n'
+    + '   ผล: ยอดค้างที่ LINE A–D ไม่มีใครเบิก/รับ · จุดเรียกเติมที่อ้าง STORE ขึ้น "ยังเช็คไม่ได้" ทั้งที่ของเต็มสโตร์\n'
+    + '   แก้: stockLocOf = (mat, line) => refStockOf(...) แบบ seedOnly (utils/partRefStock.js)\n');
+});
