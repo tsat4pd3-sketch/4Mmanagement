@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   orgRefValues, otherNodesWithSameValue, orgRefKeyChange,
-  orgRefBlockMessage, orgRefDeleteNote, orgRefDeactivateNote,
+  orgRefBlockMessage, orgRefDeleteNote, orgRefDeactivateNote, ORG_TEXT_REF,
 } from '../orgNodeRefs.js';
 
 const N = (o) => ({ id: o.id || 'x', kind: 'team', name: '', code: null, is_active: true, ...o });
@@ -71,4 +71,49 @@ test('ปิดใช้งาน: คนเดียวกันถูกนั
   assert.match(note, /พนักงาน 9 คน/);          // ไม่ใช่ 18
   assert.equal(orgRefDeactivateNote({ empId: 0, textEmp: 0, profId: 0 }), '');
   assert.equal(orgRefDeactivateNote({ partial: true, empId: 9 }), '');
+});
+
+/* ── ทะเบียนนอกฝั่งพนักงานที่เคย "ไม่ถูกนับเลย" (2026-10-08) ─────────────────────────
+   วัด 08/10 ด้วยการสแกนทุกคอลัมน์ text ของ schema public: ลบ/เปลี่ยนชื่อแผนกแล้ว
+   `shift_schedules.dept_name` 35 แถว · `kpi_definitions.scope_value` (MTN 11 · JIG MTN 13)
+   · `cost_centers.section` กำพร้าเงียบ เพราะตัวนับมองแค่ employees/profiles */
+
+test('ตัวนับต้องครอบทะเบียนนอกฝั่งพนักงาน — ตารางกะ · นิยาม KPI · ศูนย์ต้นทุน', () => {
+  const dep = (ORG_TEXT_REF.department.extra || []).map(x => `${x.tbl}.${x.col}`);
+  assert.ok(dep.includes('shift_schedules.dept_name'), 'ตารางกะต้องถูกนับ');
+  assert.ok(dep.includes('kpi_definitions.scope_value'), 'นิยาม KPI ต้องถูกนับ');
+  assert.ok(dep.includes('cost_centers.section'), 'ศูนย์ต้นทุนต้องถูกนับ');
+  // 🔴 ชื่อศูนย์ต้นทุนเอง / ผู้ตรวจในใบ CP = คนละความหมาย ห้ามนับ
+  const all = Object.values(ORG_TEXT_REF).flatMap(t => (t.extra || []).map(x => `${x.tbl}.${x.col}`));
+  assert.ok(!all.includes('cost_centers.name'));
+  assert.ok(!all.includes('pe_cp_items.person'));
+});
+
+test('kpi_definitions เก็บ 2 ชั้นในคอลัมน์เดียว ⇒ ต้องกรอง scope_kind ตามชั้นของโหนด', () => {
+  const kpiOf = (kind) => (ORG_TEXT_REF[kind].extra || []).find(x => x.tbl === 'kpi_definitions');
+  assert.equal(kpiOf('section').kindCol, 'scope_kind');
+  assert.equal(kpiOf('section').kindValue, 'section');
+  assert.equal(kpiOf('department').kindValue, 'department');
+  // ชั้นที่ KPI ไม่ได้ผูก ต้องไม่มี entry (ไม่ใช่กรองว่าง)
+  assert.equal(kpiOf('team'), undefined);
+  assert.equal(kpiOf('line'), undefined);
+});
+
+test('cost_centers ไม่มีคอลัมน์ id — ต้องนับแถวด้วย PK จริง (code)', () => {
+  const cc = (ORG_TEXT_REF.department.extra || []).find(x => x.tbl === 'cost_centers');
+  assert.equal(cc.pk, 'code');   // .select('id') = คิวรีล้ม = rename รายงานผิด
+});
+
+test('ข้อความบล็อกต้องบอกชื่อทะเบียนที่ยังอ้างอยู่ ไม่ใช่เงียบ', () => {
+  const node = N({ kind: 'department', name: 'Maintenance', code: 'MTN' });
+  const refs = {
+    empId: 0, profId: 0, heads: 0, textEmp: 0, textProf: 0, textOther: 46,
+    otherBy: [{ label: 'ตารางกะ', n: 35 }, { label: 'นิยาม KPI', n: 11 }],
+    values: ['MTN'], sharedWith: [],
+  };
+  const msg = orgRefBlockMessage(node, refs);
+  assert.match(msg, /ตารางกะ 35 รายการ/);
+  assert.match(msg, /นิยาม KPI 11 รายการ/);
+  // มีโหนดอื่นถือคีย์เดียวกัน = ชื่อไม่กำพร้า ⇒ ไม่บล็อกด้วยสำเนาชื่อ
+  assert.equal(orgRefBlockMessage(node, { ...refs, sharedWith: [N({ id: 'z' })] }), null);
 });
