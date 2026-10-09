@@ -1,9 +1,10 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo, useContext } from 'react'
 import { lineNameCompare } from '../utils/lineHierarchy';
 import { Link, useSearchParams } from 'react-router-dom'
 import { useMergeParams } from '../utils/useTabParam'
 import { motion, AnimatePresence } from 'framer-motion'
 import { supabase, supabaseDR } from '../supabaseClient'
+import { UserContext } from '../App'
 import { can } from '../utils/permissions'
 import { toast } from '../components/Toast'
 import { getSpcStatus, STATUS_COLOR } from '../lib/spc'
@@ -675,8 +676,14 @@ export default function PMCheckData() {
   const equipParam = searchParams.get('equip')
 
   const [userId, setUserId] = useState(null)
-  const [userRole, setUserRole] = useState(null)
-  const [fullName, setFullName] = useState('')
+  /* 🔐 role/ชื่อ ต้องมาจาก `UserContext` เท่านั้น (QC audit รอบ 4 · 2026-10-09)
+     เดิมหน้านี้ยิง `profiles` ของตัวเองซ้ำจาก DB — **ไฟล์เดียวในโปรเจคที่ทำ** ⇒ ผลเสีย 2 ข้อ:
+       (ก) ได้แต่ `role` ดิบ **ไม่ได้ `sections`/`isDeptAdmin`** ที่ `effectiveSections()` ตีความให้
+       (ข) 🎭 **โหมด "ดูแทน role อื่น" ไม่มีผลบนหน้านี้** — admin สวมเป็น mtn เพื่อทดสอบ
+           แต่ `can()` ที่นี่ยังอ่าน role จริงจากฐาน ⇒ เห็นปุ่มครบ แล้วสรุปผลทดสอบผิด
+     🔴 `userId` ยังต้องเป็น **auth uid จริง** เสมอ (คนตรวจ/คนอนุมัติ/คนสั่ง export ในใบ)
+        ห้ามเอา role ที่ถูกสวมไปปนกับตัวตนคนเซ็น */
+  const { role: userRole, fullName } = useContext(UserContext)
   /* 🔧 เจอ NG → เปิดใบแจ้งซ่อม MO ต่อได้เลย (2026-09-02 · feedback หน้างาน)
      ⚠️ **ระบบเสนอ คนกดยืนยัน** ห้ามเปิดใบให้อัตโนมัติ (กฎเดิมทั้งโปรเจค) —
         ใบซ่อมเป็นงานที่มีคนต้องรับผิดชอบจริง ไม่ใช่ผลข้างเคียงของการกดบันทึก */
@@ -749,12 +756,9 @@ export default function PMCheckData() {
     })
   }, [])
 
+  // ตัวตนคนกด (uid) — role/ชื่อ อ่านจาก context ข้างบนแล้ว ไม่ยิง `profiles` ซ้ำ
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      setUserId(data?.user?.id ?? null)
-      if (data?.user?.id) supabase.from('profiles').select('role, full_name').eq('id', data.user.id).single()
-        .then(({ data: p }) => { setUserRole(p?.role ?? null); setFullName(p?.full_name ?? '') })
-    })
+    supabase.auth.getUser().then(({ data }) => setUserId(data?.user?.id ?? null))
   }, [])
 
   useEffect(() => {

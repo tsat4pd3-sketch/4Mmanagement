@@ -2148,6 +2148,45 @@ test('🔐 permissions-page-needs-viewer-gate — /permissions ต้องเ�
 });
 
 
+/* ═══ own-profile-role-via-context — ห้ามหน้าไหนอ่าน `profiles` ของ "ตัวเอง" ซ้ำจากฐาน ═══
+   (2026-10-09 · QC audit รอบ 4 — `PMCheckData.jsx` เป็นไฟล์เดียวในโปรเจคที่ทำ)
+
+   `App.jsx` โหลด profile ของผู้ล็อกอินครั้งเดียวแล้วตีความให้ครบ (`effectiveSections()` ·
+   `is_dept_admin` · โหมด 🎭 ดูแทน role อื่น) แล้วแจกผ่าน `UserContext`
+   หน้าที่ไปยิง `profiles` ของตัวเองซ้ำ จะได้แต่ **คอลัมน์ดิบ** ⇒
+     · ขอบเขตหาย — `sections` ที่ context คำนวณให้ (ตาข่าย admin · scope_depth) ไม่ถูกใช้
+     · 🎭 **โหมดดูแทนไม่มีผล** — admin สวมเป็น mtn เพื่อทดสอบ แต่หน้านั้นยังอ่าน role จริง
+       ⇒ เห็นปุ่มครบ แล้วสรุปว่า "role นี้ทำได้" ผิด (ทดสอบสิทธิ์เชื่อถือไม่ได้ทั้งหน้า)
+   ✅ `src/App.jsx` = เจ้าของเรื่อง (คนโหลดตัวจริงแล้วแจกต่อ) — ยกเว้นตัวเดียวเท่านั้น
+   🔴 `auth.getUser()` เพื่อเอา **uid** ยังทำได้ตามปกติ (ตัวตนคนเซ็น/คนอนุมัติในใบ
+      ต้องเป็น uid จริงเสมอ ห้ามใช้ role ที่ถูกสวม) — ด่านนี้จับเฉพาะการ "อ่าน role/สังกัด" */
+test('🔐 own-profile-role-via-context — role/สังกัดของผู้ใช้ต้องมาจาก UserContext ไม่ใช่คิวรี profiles ซ้ำ', () => {
+  const ALLOW = { 'src/App.jsx': 'เจ้าของเรื่อง — โหลด profile ของผู้ล็อกอินแล้วแจกผ่าน UserContext' };
+  const SELF = /\.eq\(\s*'id'\s*,\s*[^)]*(user\.id|uid|auth\.uid\(\))/;   // "กรองด้วยตัวเอง"
+  const CTX_COLS = /\b(role|sections|section|is_dept_admin|line_id|team)\b/;
+  const bad = [];
+  for (const f of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const rel = relative(ROOT, f);
+    if (ALLOW[rel]) continue;
+    const src = stripComments(readFileSync(f, 'utf8'));
+    const re = /from\(\s*'profiles'\s*\)\s*\.select\(\s*([`'"])([^`'"]*)\1\s*\)/g;
+    for (let m; (m = re.exec(src));) {
+      const cols = m[2];
+      if (!CTX_COLS.test(cols)) continue;                  // ไม่ได้ขอคอลัมน์ที่ context มีให้ = ไม่เกี่ยว
+      const tail = src.slice(m.index, m.index + m[0].length + 160);
+      if (!SELF.test(tail)) continue;                      // อ่านของ "คนอื่น" (ทะเบียนผู้ใช้) = ปกติ
+      bad.push(`${rel} — select('${cols}') ของตัวเอง`);
+    }
+  }
+  assert.deepEqual(bad, [],
+    '\n\n❌ อ่าน profile ของตัวเองซ้ำจากฐาน:\n   ' + bad.join('\n   ') + '\n'
+    + '   ทำไมสำคัญ: ได้คอลัมน์ดิบ ⇒ ขอบเขต (sections ที่ effectiveSections ตีความ) หาย\n'
+    + '     และโหมด 🎭 "ดูแทน role อื่น" ไม่มีผลบนหน้านั้น = ทดสอบสิทธิ์เชื่อถือไม่ได้\n'
+    + "   แก้: const { role, fullName, sections } = useContext(UserContext)\n"
+    + '   🔴 ต้องการแค่ uid (คนเซ็น/คนอนุมัติ) → `supabase.auth.getUser()` ยังใช้ได้ตามปกติ\n');
+});
+
+
 /* ═══ กฎเชิงความสัมพันธ์ #4 — ภาระเวลาของงานคู่ RH/LH ห้ามบวกกัน (2026-09-22 · audit แผนผลิต) ═══
    `ProductionPlan` แปลงความต้องการเป็น shift-load ด้วย `qty ÷ กำลังต่อกะ` ต่อพาร์ท แล้ว**บวกรวม**
    ⇒ คู่ RH/LH (ปั๊มทีเดียวได้ 2 ข้าง) ถูกนับเวลา 2 เท่า
