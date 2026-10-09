@@ -53,6 +53,7 @@ import { OPEN_MO_STATUSES, MO_STATUS_LABEL } from '../utils/dieStatus';
 import { moStatusLabel } from '../utils/mtnStepPerm';   // ป้ายที่แยก "รอ QA" ออกจาก "รอรับมอบ" — ต้องมีตัวใบถึงจะแยกได้
 import { MTN_TEAMS, deptNameOf, teamKeyOf, teamsForUser, teamForEquipmentKind } from '../utils/mtnTeams';
 import { loadPmTeams, isAmTeam } from '../utils/pmTeams';
+import { planDueBucket } from '../lib/pmSchedule';
 import DowntimeSiren from './DowntimeSiren';
 import FactoryMiniMap from './FactoryMiniMap';
 import ProdProgressStrip from './ProdProgressStrip';
@@ -314,25 +315,31 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
   /* ── PM เกินกำหนด / ใกล้ครบกำหนด (กรองทีมด้วย `checklists.department` = ตัวจริงว่าใครตรวจ) ──
      ⚠️ แยก AM (ผลิตตรวจเอง) ออกจาก PM (ช่าง) ด้วยแกนข้อมูล `mtn_teams.kind` — ห้าม hardcode 'production'
         ไม่ตัดทิ้ง (ตอน "ทุกทีม" ต้องเห็นครบ) แต่ต้อง **ติดป้ายบอก** ไม่งั้นงานของผลิตถูกอ่านเป็นงานช่าง */
-  const allPm = useMemo(() => {
+  /* 🔴 ถังจาก planDueBucket (lib/pmSchedule.js · audit 08/10) — เดิม `filter(p => p.next_due_date)` ทิ้งแผนที่
+     **ไม่เคยตรวจ** และแผน run_day เงียบๆ แล้วการ์ดขึ้น "✅ ไม่มีแผนที่ถึงกำหนด" เขียว · ตอนนี้: ไม่เคยตรวจ = อยู่ในลิสต์
+     (ป้าย "ไม่เคยตรวจ") · AM run_day ไม่อยู่ในลิสต์นี้ (ตัดสินที่จอ AM) แต่ต้องนับบอก */
+  const pmBuckets = useMemo(() => {
     const clById = {}; (d.cls || []).forEach(c => { clById[c.id] = c; });
     const jigById = {}; (d.jigs || []).forEach(j => { jigById[j.id] = j; });
-    return (d.plans || []).filter(p => p.next_due_date).map(p => {
+    return (d.plans || []).map(p => {
       const cl = clById[p.checklist_id];
       const j = jigById[cl?.equipment_id];
       const dept = teamKeyOf(cl?.department);
-      return {
-        ...p, dept, am: isAmTeam(dept),
-        name: j?.name || j?.jig_no || j?.machine_no || 'อุปกรณ์ (ไม่พบชื่อ)', line: j?.line_name || '',
-        days: Math.round((new Date(`${p.next_due_date}T00:00:00`) - new Date(`${workDate}T00:00:00`)) / 86400000),
-      };
-    }).filter(p => p.days <= PM_SOON_DAYS).sort((a, b) => a.days - b.days);
+      const { bucket, daysTo } = planDueBucket(p, workDate, { frequency: cl?.frequency, soonDays: PM_SOON_DAYS });
+      return { ...p, dept, am: isAmTeam(dept), bucket, name: j?.name || j?.jig_no || j?.machine_no || 'อุปกรณ์ (ไม่พบชื่อ)', line: j?.line_name || '', days: daysTo };
+    });
   }, [d, workDate]);
+  const allPm = useMemo(() => pmBuckets
+    .filter(p => p.bucket === 'overdue' || p.bucket === 'due_soon' || p.bucket === 'never')
+    .sort((a, b) => (a.days ?? 9e9) - (b.days ?? 9e9)), [pmBuckets]);
+  const pmRunDayN = pmBuckets.filter(p => p.bucket === 'run_day' && (!team || !p.dept || p.dept === team)).length;
+  const pmNoCycleN = pmBuckets.filter(p => p.bucket === 'no_cycle' && (!team || !p.dept || p.dept === team)).length;
   // ทีมที่ไม่รู้ (checklist ไม่ได้ตั้ง department) ต้องเห็นเสมอ — หลักเดียวกับ downtime ที่ไม่ระบุเครื่อง
   const pm = useMemo(() => (team ? allPm.filter(p => !p.dept || p.dept === team) : allPm), [allPm, team]);
   const pmHidden = allPm.length - pm.length;
-  const pmOver = pm.filter(p => p.days < 0).length;
+  const pmOver = pm.filter(p => p.bucket === 'overdue').length;
   const pmToday = pm.filter(p => p.days === 0).length;
+  const pmNever = pm.filter(p => p.bucket === 'never').length;
 
   const big = isMobile ? 1 : 2;   // ตัวคูณขนาดตัวอักษรสำหรับจอ TV
 
@@ -559,14 +566,14 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8 }}>
               <span style={{ fontSize: 12.5 * big, fontWeight: 900 }}>📅 PM ที่ต้องทำ</span>
               <span style={{ marginLeft: 'auto', fontSize: 11 * big, color: 'var(--muted)', fontWeight: 700 }}>
-                เกินกำหนด {pmOver} · วันนี้ {pmToday}
+                เกินกำหนด {pmOver} · วันนี้ {pmToday}{pmNever ? ` · ไม่เคยตรวจ ${pmNever}` : ''}
               </span>
             </div>
             {!pm.length && (
               <div style={{ fontSize: 11.5 * big, fontWeight: 700, color: allPm.length ? 'var(--muted)' : '#22c55e' }}>
                 {/* "ไม่มีแผนถึงกำหนด" ≠ "ไม่มีแผนเลย" — ถ้าทั้งระบบไม่มีแผน PM ต้องบอกให้ไปตั้ง ไม่ใช่ขึ้นเขียวว่าปกติดี */}
                 {(d.plans || []).length
-                  ? `✅ ไม่มีแผนที่ถึงกำหนดใน ${PM_SOON_DAYS} วัน (แผนที่ใช้งานอยู่ ${(d.plans || []).length})`
+                  ? `✅ ไม่มีแผนที่ถึงกำหนดใน ${PM_SOON_DAYS} วัน (แผนที่ใช้งานอยู่ ${(d.plans || []).length}${pmRunDayN ? ` · AM ตามวันเดิน ${pmRunDayN} ดูจอ AM` : ''}${pmNoCycleN ? ` · ⚠ ไม่ตั้งรอบ ${pmNoCycleN}` : ''})`
                   : '⚠ ยังไม่มีแผน PM ในระบบ — ตั้งจุดตรวจ/รอบเวลาที่ ⚙️ ตั้งค่าจุดตรวจ'}
               </div>
             )}
@@ -580,8 +587,8 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
                   {/* AM = ผลิตตรวจเอง ไม่ใช่งานของช่าง — ต้องแยกให้ขาดตอนดู "ทุกทีม" */}
                   {p.am && <span style={{ color: '#3dd65c', fontWeight: 800 }}> · AM</span>}
                 </span>
-                <b style={{ flexShrink: 0, color: p.days < 0 ? '#ef4444' : p.days === 0 ? '#f59e0b' : 'var(--muted)' }}>
-                  {p.days < 0 ? `เกิน ${Math.abs(p.days)} วัน` : p.days === 0 ? 'วันนี้' : `อีก ${p.days} วัน`}
+                <b style={{ flexShrink: 0, color: p.bucket === 'never' ? '#f59e0b' : p.days < 0 ? '#ef4444' : p.days === 0 ? '#f59e0b' : 'var(--muted)' }}>
+                  {p.bucket === 'never' ? 'ไม่เคยตรวจ' : p.days < 0 ? `เกิน ${Math.abs(p.days)} วัน` : p.days === 0 ? 'วันนี้' : `อีก ${p.days} วัน`}
                 </b>
               </div>
             ))}

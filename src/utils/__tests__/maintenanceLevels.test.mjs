@@ -194,3 +194,21 @@ test('รอบ PM: periodic + interval 180 คิดวันครบได้
   assert.equal(dueStatus(null, 'periodic', 180), 'never');
   assert.equal(dueStatus(null, 'periodic', null), 'periodic');
 });
+
+/* 🔗 audit AM↔PM 08/10 — run_day ห้ามถอยไป last_done+interval · ไม่เคยตรวจ/ไม่รู้รอบ ต้องเป็นถังของตัวเอง */
+import { planDueBucket } from '../../lib/pmSchedule.js';
+test('resolvePlanDue: แผน run_day คืน status run_day ไม่มี dueYmd (ห้ามเกินกำหนดปลอมวันที่ไม่ได้ผลิต)', () => {
+  const r = resolvePlanDue({ frequency: 'daily', plan: { cycle_basis: 'run_day', interval_days: 1, last_done_at: '2026-10-03T02:00:00Z', next_due_date: '2026-10-04' }, todayStr: '2026-10-06' });
+  assert.equal(r.status, 'run_day'); assert.equal(r.dueYmd, null); assert.equal(r.daysTo, null); assert.equal(r.runDay, true);
+});
+test('planDueBucket: never / no_cycle / run_day / overdue / due_soon / ok แยกถังชัด', () => {
+  const T = '2026-10-08';
+  assert.equal(planDueBucket({ cycle_basis: 'calendar', interval_days: 30, last_done_at: null, next_due_date: null }, T).bucket, 'never');
+  assert.equal(planDueBucket({ cycle_basis: 'calendar', interval_days: null, last_done_at: null, next_due_date: null }, T).bucket, 'no_cycle');
+  assert.equal(planDueBucket({ cycle_basis: 'run_day', interval_days: 1, last_done_at: '2026-10-01T01:00:00Z' }, T).bucket, 'run_day');
+  assert.equal(planDueBucket({ cycle_basis: 'calendar', interval_days: 30, next_due_date: '2026-10-01' }, T).bucket, 'overdue');
+  assert.equal(planDueBucket({ cycle_basis: 'calendar', interval_days: 30, next_due_date: '2026-10-12' }, T, { soonDays: 7 }).bucket, 'due_soon');
+  assert.equal(planDueBucket({ cycle_basis: 'calendar', interval_days: 30, next_due_date: '2026-10-30' }, T, { soonDays: 7 }).bucket, 'ok');
+  // ไม่มี next_due_date แต่มี last_done + รอบ ⇒ คิดจาก last_done + interval เหมือนเดิม (calendar เท่านั้น)
+  assert.equal(planDueBucket({ cycle_basis: 'calendar', interval_days: 7, last_done_at: '2026-09-20T01:00:00Z' }, T).bucket, 'overdue');
+});

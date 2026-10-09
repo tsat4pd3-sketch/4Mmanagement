@@ -404,6 +404,11 @@ export default function LineSetup({ embedded = false } = {}) {
     const childCount = lines.filter(l => l.parent_line_name === line.name).length;
     const warn = childCount > 0 ? `\n\nไลน์นี้เป็นไลน์หลักของ ${childCount} ไลน์ลูก — ลูกจะถูกเปลี่ยนเป็น standalone อัตโนมัติ` : '';
     if (!window.confirm(`ลบไลน์ "${line.name}" ?\n\nจุดงานและผังไลน์ทั้งหมดในไลน์นี้จะถูกลบด้วย${warn}`)) return;
+    /* 🔗 ทะเบียน AM รายวัน (DR · จับคู่ด้วยชื่อไลน์ ไม่มี FK) — มีจุดตรวจ active อยู่ = ห้ามลบ ให้เอาออกที่จอ AM ก่อน
+       (กฎ "ทะเบียนที่จับคู่ด้วยข้อความ นับไม่ครบ = ห้ามลบ" · 08/10 audit: เดิมลบไลน์แล้วทะเบียนค้าง บอร์ด AM สร้างการ์ดให้ไลน์ที่ไม่มีแล้ว) */
+    const { count: amCount, error: amErr } = await supabaseDR.from('pm_daily_line_targets').select('id', { count: 'exact', head: true }).eq('line_name', line.name).eq('is_active', true);
+    if (amErr || amCount == null) { toast.error('ตรวจทะเบียน AM รายวันของไลน์ไม่สำเร็จ — ยังลบไม่ได้ (กันทะเบียนค้าง): ' + (amErr?.message || '')); return; }
+    if (amCount > 0) { toast.error(`ไลน์นี้มีจุดตรวจ AM รายวันลงทะเบียนอยู่ ${amCount} รายการ — เอาออกที่ /daily-checker?tab=pm (ลงทะเบียนเครื่องตรวจ) ก่อนลบไลน์`); return; }
     // Clear parent ref from children first
     if (childCount > 0) {
       checkWrite(await supabase.from('production_lines').update({ parent_line_name: null }).eq('parent_line_name', line.name), 'ปลดไลน์ลูกออกจากไลน์ที่ลบ');
