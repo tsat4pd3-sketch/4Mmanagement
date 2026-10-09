@@ -177,7 +177,7 @@ user ส่งไฟล์จริง `1.Monitoring-Sep.xlsx` มา: *"ไฟ�
 | `Order` ชีทลูกค้า + `ORDER REQUIREMENT` ของ Argen (ดิว ≥ วันนี้) | `customer_shipping_orders` (`pending`) | 232 แถว · 414,178 ชิ้น (ถึง 08/03/70) |
 | `OUT` / `SEND TO GREAT` + ความต้องการที่ดิวผ่านไปแล้ว | **`monitoring_shipments`** (ตารางใหม่) | 1,434 แถว · 1.85 ล้านชิ้น |
 | `MIN` / `MAX` | `line_part_levels` | 60 พาร์ท / 6 ไลน์ (ตารางนี้ว่างมาตลอด) |
-| `BALANCE` / `Stock W/H` | `line_stock_transactions` type `adjust` | 88 รายการ |
+| `BALANCE` / `Stock W/H` | `line_stock_transactions` type `adjust` | 88 รายการ · **09/10: BALANCE ชีทไลน์ปั๊มลงคลังตามกฎแบบตั้งต้นเท่านั้น ไม่ลงที่ชื่อไลน์** (📄 `store-board-workflow.md`) |
 | `LOT` / `Packing` | **ไม่เขียน** — เทียบให้ดูเฉยๆ | — |
 
 ### 🔴 กฎที่ห้ามพลาด (ทุกข้อเจอกับไฟล์จริงแล้ว และมีเทสตรึง)
