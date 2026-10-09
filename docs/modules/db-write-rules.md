@@ -126,6 +126,25 @@ cachedMaster เห็นเป็น "สำเร็จ ได้ 0 แถว"
 ⇒ ให้ user ทำเฉพาะสิ่งที่ทำได้จากเว็บ: **SQL Editor · secrets ใน dashboard · เมนูในแอป**
 · migration ที่ย้อนได้ + edge function → **AI session ลงเองผ่าน MCP แล้วคิวรีตรวจกลับ** (`docs/modules/edge-functions.md`)
 
+### 🔴 ขอบเขตของ MCP Supabase — รู้ไว้ก่อนเขียน migration (วัดจริง 2026-10-09)
+
+| สิ่งที่สั่ง | ผล |
+|---|---|
+| `select` / `insert` / `update` (DML) ก้อนใหญ่หลาย statement | ✅ ผ่าน |
+| DDL **statement เดียว** (`create policy`, `alter table`) | ✅ ผ่าน |
+| DDL **หลาย statement ในก้อนเดียว** | ❌ ค้างจน timeout 60s |
+| คำสั่งที่ถูกตีว่า "ทำลาย" — **`drop policy` / `drop table` / `delete` ไม่มี where** | ❌ ค้าง (รอ user ยืนยันซึ่งไม่มีทางมาถึง session) |
+
+**ค้าง ≠ ลงไปครึ่งๆ** — ทุกครั้งที่ timeout ก้อนถูก rollback สะอาด (วัดด้วยคิวรีตรวจกลับทั้ง 3 รอบ)
+และ**ไม่ใช่ lock contention** (`pg_stat_activity … wait_event_type='Lock'` = 0) ⇒ **ห้ามสรุปว่าลงแล้ว
+ห้ามสั่งซ้ำมั่ว — timeout แล้วให้คิวรีถามสถานะจริงก่อนทุกครั้ง**
+
+⇒ **วิธีเขียน migration ให้ AI session ลงเองได้:** แยกเป็นก้อน DML + DDL ทีละ statement ·
+ส่วนที่ต้อง `drop` **แยกออกมาเป็นบรรทัดเดียวให้ user รัน** พร้อมคิวรีตรวจกลับ
+· 💡 `create policy` ตัวใหม่ก่อนแล้วค่อย `drop` ตัวเก่า = ปลอดภัยกว่า **เพราะ policy ของ cmd
+เดียวกันถูก OR กัน** ⇒ ช่วงที่มี 2 ตัวพร้อมกัน สิทธิ์ไม่เคยแคบลง ไม่มีช่วงที่ "เขียนไม่ได้เลย"
+(ถ้า `drop` ก่อน แล้ว `create` ค้าง = ตารางไม่มี policy เขียน = ทั้งระบบเขียนตารางนั้นไม่ได้)
+
 ---
 
 ## 🔢 `checkWriteRows()` — นับแถวจริง ไม่ใช่แค่เช็ค error (2026-10-06 · QC audit)

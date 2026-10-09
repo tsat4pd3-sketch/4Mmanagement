@@ -34,7 +34,11 @@ insert into doc_forms (doc_key, title, form_code) values
   ('xlsx_cqi15_event_log',       'CQI-15 Welding Event Log (Excel)',      null)
 on conflict (doc_key) do nothing;
 
--- ตรวจผล (ควรได้ csv 22 แถว = 8 ของรอบแรก + 14 ของรอบนี้ · xlsx 2 แถว):
+-- ✅ apply แล้ว 2026-10-09 (ผ่าน MCP · วัดกลับได้ csv 23 · xlsx 2 · form_code ว่างทั้งหมด
+--    ⇒ ชื่อไฟล์ทุกปุ่มไม่เปลี่ยน) · 16 คีย์ที่ insert มี 4 ตัวที่ทะเบียนมีอยู่ก่อนแล้ว
+--    (csv_4m_changes · csv_skill_matrix · csv_multi_skill · csv_skill_allowance) ⇒ do nothing
+--
+-- ตรวจผล (csv 23 แถว · xlsx 2 แถว):
 --   select count(*) filter (where doc_key like 'csv_%') as csv_keys,
 --          count(*) filter (where doc_key like 'xlsx_%') as xlsx_keys from doc_forms;
 --   select doc_key, title, form_code, rev from doc_forms where doc_key like 'csv_%' order by doc_key;

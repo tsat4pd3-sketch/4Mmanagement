@@ -117,7 +117,7 @@ downloadCsvDoc('<doc_key>', '<ชื่อไฟล์เดิม>', csvText(he
 
 **ที่เก็บไปแล้ว:** รอบ 1 (06/10) 8 คีย์ · **รอบ 2 (08/10) 16 คีย์** =
 `/report` 10 ปุ่ม + `/daily-report` 4 ชนิดรายงาน + Excel 2 ตัว (แม่แบบอะไหล่ · CQI-15 Event Log)
-migration `20261008_doc_forms_csv_round2_main.sql` (MAIN)
+migration `20261008_doc_forms_csv_round2_main.sql` (MAIN · **apply แล้ว 2026-10-09** — วัดกลับ csv 23 · xlsx 2 · `form_code` ว่างทั้งหมด ⇒ ชื่อไฟล์ยังไม่เปลี่ยน รอ doc_control ตั้งเลขที่ `/doc-forms`)
 
 🔴 **สำเนาที่ก๊อปไปมักตกข้อ "กัน formula injection"** — `DailyReport.exportCSV` ตัวเดิมไม่มีด่านนี้
 (ของ `Report.jsx` มี) ⇒ ค่าที่หน้างานพิมพ์ในช่อง 'รายละเอียด'/'เครื่องจักร' ขึ้นต้น `=` `+` `@`
