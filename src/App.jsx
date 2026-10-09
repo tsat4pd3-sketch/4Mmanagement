@@ -104,6 +104,8 @@ const FactoryMap = lazy(() => import('./pages/FactoryMap'));
 const LineOeeBoard = lazy(() => import('./pages/LineOeeBoard'));
 const RemoteControl = lazy(() => import('./pages/RemoteControl'));
 const RemoteReceiver = lazy(() => import('./components/RemoteReceiver'));
+const DisplayRotator = lazy(() => import('./components/DisplayRotator')); // 📺 จอวนหน้าตามแผนของบัญชี (/display-rotation)
+const DisplayRotation = lazy(() => import('./pages/DisplayRotation'));
 
 /* ─── Role System ──────────────────────────────────────────── */
 export const UserContext = createContext({ role: 'admin', lineId: null, team: null, section: null, notifyEmail: null, signatureUrl: null, fullName: null });
@@ -241,6 +243,8 @@ export const NAV_ITEMS = [
   { to: '/permissions', icon: '🔐', label: 'จัดการสิทธิ์',       group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ตั้งค่าระบบ' },
   // จัดการผู้ใช้งาน ย้ายเข้าหมวดตั้งค่าฯ (คำสั่ง user 2026-07-20) — เดิมเป็นลิงก์พิเศษลอยท้าย sidebar
   { to: '/add-user',    icon: '🔑', label: 'จัดการผู้ใช้งาน',     group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ตั้งค่าระบบ' },
+  // 📺 ตั้งว่าบัญชีจอไหนเปิดหน้าอะไรวนบ้าง (2026-10-09) · ตัววนอยู่ที่ components/DisplayRotator.jsx
+  { to: '/display-rotation', icon: '🔁', label: 'ตั้งค่าจอวนหน้า', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ตั้งค่าระบบ' },
   { to: '/notification-config', icon: '🔔', label: 'ตั้งค่าการแจ้งเตือน', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ตั้งค่าระบบ' },
   { to: '/doc-forms',   icon: '📄', label: 'ทะเบียนเอกสาร & ฟอร์ม', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ตั้งค่าระบบ' },
   { to: '/qr-labels', icon: '🏷️', label: 'พิมพ์ป้าย QR', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ตั้งค่าระบบ' },
@@ -1754,6 +1758,14 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
   const marginLeft = (!isMobile && isOpen)
     ? (railPinned ? 'calc(var(--rail-w) + var(--sidebar-w))' : 'var(--rail-w)')
     : 0;
+  /* 📺 จอวนหน้า — บัญชีที่มีแผนใน `display_rotations` จะวนหน้าเอง (ตั้งที่ /display-rotation)
+     ต้องอยู่ทุก branch (/tv · Home · หน้าปกติ) ไม่งั้นวนเข้า /tv แล้วตัววนหายไปพร้อม layout
+     ปิดตอน admin จำลองมุมมอง (viewAs) — ไม่งั้นจอ admin วนตามแผนของตัวเอง */
+  const rotator = (
+    <Suspense fallback={null}>
+      <DisplayRotator userId={userId} role={userRole} disabled={!!viewAs} />
+    </Suspense>
+  );
   const role       = userRole; // ไม่ fallback เป็น 'admin' อีกต่อไป — profileLoaded gate ด้านบนรับประกันว่า role ถูก resolve แล้วก่อนถึงจุดนี้
 
   /* 📺 จอ TV (`/tv`) — แสดงเต็มจอ ไม่มี sidebar / rail / กระดิ่ง / RemoteReceiver / CommandPalette
@@ -1766,6 +1778,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
         <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', color: 'var(--muted)', fontSize: 14, background: 'var(--bg)' }}>กำลังโหลด...</div>}>
           <TvBoard />
         </Suspense>
+        {rotator}
         {viewAsBanner}
         {viewAsModal}
       </UserContext.Provider>
@@ -1795,6 +1808,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
             <RemoteReceiver code={remoteCode} onStop={onToggleRemote} />
           </Suspense>
         )}
+        {rotator}
         {viewAsBanner}
         {viewAsModal}
       </UserContext.Provider>
@@ -1820,6 +1834,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
             <RemoteReceiver code={remoteCode} onStop={onToggleRemote} />
           </Suspense>
         )}
+        {rotator}
         <Sidebar
           isOpen={isOpen}
           onClose={() => setIsOpen(false)}
@@ -1955,6 +1970,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
               } />
               <Route path="/audit-log" element={
                 <RoleRoute path="/audit-log" userRole={role}><AuditLog /></RoleRoute>
+              } />
+              <Route path="/display-rotation" element={
+                <RoleRoute path="/display-rotation" userRole={role}><DisplayRotation /></RoleRoute>
               } />
               <Route path="/notification-config" element={
                 <RoleRoute path="/notification-config" userRole={role}><NotificationConfig /></RoleRoute>

@@ -159,6 +159,7 @@ const PAGE_GROUPS = [
       { key: 'page:/permissions',       label: 'จัดการสิทธิ์ (หน้านี้)' },
       { key: 'page:/add-user',          label: 'จัดการผู้ใช้งาน' },
       { key: 'page:/notification-config', label: 'ตั้งค่าการแจ้งเตือน' },
+      { key: 'page:/display-rotation', label: 'ตั้งค่าจอวนหน้า — บัญชีจอไหนเปิดหน้าอะไรวนบ้าง' },
       { key: 'page:/doc-forms',         label: 'ทะเบียนเอกสาร & ฟอร์ม' },
       { key: 'page:/qr-labels',         label: 'พิมพ์ป้าย QR อุปกรณ์' },
       { key: 'page:/audit-log',        label: 'ประวัติการแก้ไขข้อมูล (Audit Log)' },
