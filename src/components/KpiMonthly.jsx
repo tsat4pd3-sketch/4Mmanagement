@@ -236,7 +236,8 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
   const [showPlan, setShowPlan] = useState(false); // ปิดไว้ก่อน — เปิดแล้วตารางสูงเท่าตัว
   /* ⚡ KPI ช่างตามสูตรทางการ (KPI Guideline 2026 หน้า 10 · 24/09) — ขอบเขตที่เป็น "ทีมช่าง" (mtn_teams.dept_name ตรงกับ
      ชื่อแผนกในผัง เช่น JIG MTN) โหลด Σ รายเดือนจาก RPC `kpi_mtn_rollup` แล้วคำนวณ MO Closed/MBD/MTBF/MTTR ใน `utils/kpiAuto.js`
-     · ระบบ "เสนอ" ค่าใต้แถวกรอกมือ คนกด "ใช้ค่านี้" ถึงจะลง kpi_manual_entries (ค่าทางการยังเป็นของเจ้าของใบ) */
+     · บรรทัด ⚡ ใต้แถวกรอกมือ = ค่าที่บอร์ดใช้จริง (09/10 user: ค่าระบบชนะ · ค่ากรอกมือใช้เฉพาะเดือนที่ระบบไม่มีค่า)
+       ปุ่ม "ใช้ค่านี้" ถอดแล้ว — ไม่เขียนค่าระบบลง kpi_manual_entries อีก (ค่าที่กรอกมือยังเก็บไว้เป็นหลักฐาน/ตัวเติม) */
   const [pmTeams, setPmTeams] = useState(() => pmTeamsSync());
   const [mtnRoll, setMtnRoll] = useState(null);     // { year, data } จาก RPC · null = ยังไม่โหลด/ไม่ใช่ทีมช่าง
   const [kpiMissing, setKpiMissing] = useState(false); // ตารางยังไม่ apply migration
@@ -292,17 +293,6 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
   const autoSeries = useMemo(() => (mtnTeam && mtnRoll && mtnRoll.year === year && mtnRoll.data
     ? mtnAutoSeries(mtnRoll.data, year, mtnTeam) : null), [mtnTeam, mtnRoll, year]);
   /* เติมค่าที่ระบบคำนวณลงเดือนที่ยังว่าง — เขียนผ่าน kpi_manual_entries เหมือนคนกรอก (สอบกลับได้ · ค่าทับมือไม่ได้) */
-  const fillFromAuto = async (d2, ak, vals) => {
-    const rows = vals.map((v, i) => ({ kpi_id: d2.id, month: i + 1, value: v == null ? null : Math.round(v * 10000) / 10000 }))
-      .filter(r => r.value != null && (entries[d2.id]?.[r.month] ?? null) == null);
-    if (!rows.length) { toast.info('ไม่มีเดือนว่างให้เติม (เดือนที่กรอกมือไว้แล้วระบบไม่ทับ)'); return; }
-    if (!window.confirm(`เติมค่าที่ระบบคำนวณ (${ak.label} · สูตร KPI Guideline 2026) ลง ${rows.length} เดือนที่ยังว่าง?\nเดือนที่กรอกมือไว้แล้วจะไม่ถูกทับ`)) return;
-    const { data: w, error } = await supabase.from('kpi_manual_entries').upsert(rows, { onConflict: 'kpi_id,month' }).select('kpi_id');
-    if (error || !w?.length) { toast.error('เติมไม่สำเร็จ' + (error ? ': ' + error.message : ' (ไม่มีสิทธิ์ kpi:manage)')); return; }
-    setEntries(p => { const m = { ...(p[d2.id] || {}) }; rows.forEach(r => { m[r.month] = r.value; }); return { ...p, [d2.id]: m }; });
-    toast.success(`เติม ${rows.length} เดือนแล้ว`);
-  };
-
   const isPlantScope = isPlant(scope);   // primitive สำหรับ deps (กฎ DB ข้อ 9)
   const load = useCallback(async () => {
     /* 🔴 รอผังพร้อมก่อน — ก่อน orgReady ขอบเขตย่อยทุกตัว lineNamesOf() = [] ⇒ lineNames ว่าง ⇒ คิวรีด้านล่าง
@@ -1064,7 +1054,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
             {mtnTeam && (
               <span style={{ fontSize: 11.5, color: 'var(--accent)' }} title={`ที่มา: mtn_orders (ทีม ${mtnTeam.key}) · downtime_logs นอกแผนที่ปิดแล้ว ของอุปกรณ์ชนิด ${mtnTeam.equip_type || 'ทุกชนิด'} · ${HOURS_PER_MONTH} ชม./เครื่อง/เดือนตามเอกสาร`}>
                 ⚡ ทีมช่าง <b>{mtnTeam.label}</b> — MO Closed on target · Machine Break Down · MTBF · MTTR ระบบคำนวณตามสูตร <b>KPI Guideline 2026 หน้า 10</b>
-                {autoSeries ? ` (เครื่อง ${autoSeries.machines} ตัว · มีข้อมูล ${autoSeries.months.filter(m => m.hasData).length} เดือน)` : mtnRoll ? ' (โหลดไม่ได้)' : ' (กำลังโหลด…)'} — แถวที่จับคู่ได้จะมีบรรทัด ⚡ ให้กด "ใช้ค่านี้"
+                {autoSeries ? ` (เครื่อง ${autoSeries.machines} ตัว · มีข้อมูล ${autoSeries.months.filter(m => m.hasData).length} เดือน)` : mtnRoll ? ' (โหลดไม่ได้)' : ' (กำลังโหลด…)'} — แถวที่จับคู่ได้มีบรรทัด ⚡ = ค่าที่บอร์ด 📋 ใช้จริง (เดือนที่ระบบไม่มีค่า บอร์ดใช้ค่าที่กรอกมือ)
               </span>
             )}
           </div>
@@ -1248,7 +1238,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
                                   title={m.hasData ? tip : 'เดือนนี้ยังไม่มีข้อมูลในระบบ'}>
                                   {v == null ? '·' : fmtKpi(v, d2)}
                                   {v != null && (entries[d2.id]?.[i + 1] ?? null) != null && Math.abs(Number(entries[d2.id][i + 1]) - v) > Math.max(0.5, Math.abs(v) * 0.05) && (
-                                    <span title="ต่างจากค่าที่กรอกมือเกิน 5%" style={{ color: '#f59e0b' }}> ≠</span>
+                                    <span title="ต่างจากค่าที่กรอกมือเกิน 5% (บอร์ดโชว์ค่าระบบ)" style={{ color: '#f59e0b' }}> ≠</span>
                                   )}
                                 </td>
                               );
@@ -1256,12 +1246,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
                             <td style={{ ...tdSt, fontSize: 11 }} colSpan={2}>
                               {(() => { const s2 = summaryOf(autoVals, d2); return s2.value == null ? '—' : `${fmtKpi(s2.value, d2)} (${summaryShort(s2.effMode)})`; })()}
                             </td>
-                            {canManage && (
-                              <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>
-                                <button onClick={() => fillFromAuto(d2, ak, autoVals)} title="เติมค่าที่ระบบคำนวณลงเดือนที่ยังว่าง (ไม่ทับที่กรอกมือ)"
-                                  style={{ ...btnSt, padding: '2px 8px', fontSize: 11 }}>⬇ ใช้ค่านี้</button>
-                              </td>
-                            )}
+                            {canManage && <td style={tdSt} />}
                           </tr>
                         )}
                         </Fragment>
