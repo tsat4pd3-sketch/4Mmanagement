@@ -85,8 +85,14 @@ Deno.serve(async () => {
     if (!plans || !plans.length) return new Response(JSON.stringify({ ok: true, plans: 0 }), { headers: { 'Content-Type': 'application/json' } });
 
     const clIds = [...new Set(plans.map(p => p.checklist_id))];
-    const { data: cls } = await db.from('checklists').select('id, name, frequency, equipment_id').in('id', clIds);
+    const { data: cls } = await db.from('checklists').select('id, name, frequency, equipment_id, department').in('id', clIds);
     const clById = Object.fromEntries((cls ?? []).map(c => [c.id, c]));
+    /* 🔗 08/10 (audit AM↔PM): ห้องนี้เป็นของ **ช่าง** — แผน AM (ทีม kind='am' · ผลิตตรวจเอง) ไม่เตือนที่นี่
+       (AM รายวันมี pm-daily-scan ส้ม/แดง/เขียวของตัวเอง · AM รอบปฏิทินดูที่จอ AM/ผังรวมโรงงาน)
+       เดิมไม่ select department เลย ⇒ แผน AM ที่ยังมีวันปฏิทินไปโผล่เป็น "PM ใกล้ถึงกำหนด" ในห้องช่าง */
+    const rTeams = await db.from('mtn_teams').select('key, kind');
+    const amKeys = new Set((rTeams.data ?? []).filter(t => t.kind === 'am').map(t => t.key));
+    if (!amKeys.size) amKeys.add('production');
     const eqIds = [...new Set((cls ?? []).map(c => c.equipment_id).filter(Boolean))];
     const { data: jigs } = eqIds.length ? await db.from('jigs').select('id, name, machine_no, line_name, part_name').in('id', eqIds) : { data: [] };
     const jigById = Object.fromEntries((jigs ?? []).map(j => [j.id, j]));
@@ -100,7 +106,9 @@ Deno.serve(async () => {
     const sent = new Set((sentRows ?? []).map(r => `${r.plan_id}|${r.due_date}|${r.stage}`));
 
     let fired = 0, failed = 0;
+    let skippedAm = 0;
     for (const p of plans) {
+      if (amKeys.has(clById[p.checklist_id]?.department)) { skippedAm++; continue; }
       // เลื่อนแผน PM แบบตกลงแล้ว (ยังไม่ถูกทำหลังเลื่อน) → เตือนโดยนับถอยหลังไปวันที่เลื่อน แทนวันเดิม
       const deferActive = p.deferred_to && (!p.last_done_at || (p.deferred_at && new Date(p.last_done_at) < new Date(p.deferred_at)));
       const due = String(deferActive ? p.deferred_to : p.next_due_date);
@@ -127,7 +135,7 @@ Deno.serve(async () => {
       fired++;
     }
     // ส่งพลาดต้องดังพอให้เห็นใน log/response — ไม่งั้นเงียบแบบเดิม (cron ขึ้น succeeded ทุกวัน)
-    return new Response(JSON.stringify({ ok: failed === 0, plans: plans.length, fired, failed }), {
+    return new Response(JSON.stringify({ ok: failed === 0, plans: plans.length, fired, failed, skippedAm }), {
       status: failed ? 502 : 200, headers: { 'Content-Type': 'application/json' },
     });
   } catch (err) {

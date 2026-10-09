@@ -16,6 +16,7 @@ import StatusZones from './StatusZones';
 import {
   DEFAULT_STALE_MIN, receiptAgeMin, ageText, validateReceive, receiptZoneStatus, sortReceipts,
 } from '../utils/stockReceipts';
+import { mergeById } from '../utils/mergeRows';
 
 /* ═══ 📥 คิวรอรับเข้าคลัง — ของที่ปิดใบผลิตแล้ว รอคนนับของจริงแล้วกดรับ (2026-10-02 · คำสั่ง user)
 
@@ -63,7 +64,9 @@ export default function StockReceiptQueue() {
     ]);
     const err = pend.error || done.error;
     setLoadErr(err ? err.message : '');
-    setRows([...(pend.data || []), ...(done.data || [])]);
+    /* ใบที่ถูกกดรับ "ระหว่าง" 2 คิวรี (คิวนี้มีหลายเครื่องเปิดพร้อมกัน + realtime) เข้าเงื่อนไขทั้งคู่
+       ⇒ คีย์ซ้ำ + ใบเดียวโผล่ทั้งแถวรอรับและรับแล้ว · ชุดหลัง (รับแล้ว) ชนะ — utils/mergeRows.js */
+    setRows(mergeById(pend.data || [], done.data || []));
     const m = {};
     (rules.data || []).forEach(r => { m[r.dest_line_name] = Math.min(m[r.dest_line_name] ?? Infinity, r.stale_after_min || DEFAULT_STALE_MIN); });
     setStaleByDest(m);

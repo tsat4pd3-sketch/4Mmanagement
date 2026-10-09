@@ -15,6 +15,8 @@ import { fetchByIds, fetchAllPages } from '../utils/fetchByIds';
 import useIsMobile from '../utils/useIsMobile';
 import { scopedLineNames } from '../utils/sectionScope';
 import { isMoOpen } from '../utils/mtnStepPerm';
+import { planDueBucket } from '../lib/pmSchedule';
+import { loadPmTeams, isAmTeam } from '../utils/pmTeams';
 import ParetoAbcChart from '../components/ParetoAbcChart';
 import PageHeader from '../components/PageHeader';
 import Segmented from '../components/Segmented';
@@ -357,8 +359,9 @@ async function loadMaintenance(ctx) {
        จอนี้แขวนไว้ทั้งวันหลายเครื่อง (งานลด egress 2026-09-17 · ดู MO_LIST_COLS ใน MtnRepair.jsx) */
     supabaseDR.from('mtn_orders').select('id, mo_no, status, machine_no, line_name, problem_characteristic, report_at')
       .order('report_at', { ascending: false }).limit(500),
-    supabaseDR.from('pm_plans').select('id, checklist_id, plan_type, next_due_date, last_done_at, interval_days').eq('is_active', true),
+    supabaseDR.from('pm_plans').select('id, checklist_id, plan_type, next_due_date, last_done_at, interval_days, cycle_basis, deferred_to, deferred_at').eq('is_active', true),
     supabaseDR.from('production_sessions').select('id, line_name, work_date').gte('work_date', d30).lte('work_date', workDate),
+    loadPmTeams().catch(() => {}),   // ให้ isAmTeam อ่าน mtn_teams.kind ได้จริง (แยก AM ออกจาก PM ช่าง)
   ]);
   const sIds = (sess30 || []).filter(s => inScope(s.line_name)).map(s => s.id);
   /* ⚠️ 30 วัน ≈ 270 กะ — `.in()` ตรงๆ URL ยาวเกินจน proxy ตัด แล้วคืนค่าว่าง "เงียบ"
@@ -389,17 +392,26 @@ function MaintenanceView({ d, ctx }) {
   const stale = scopedMo.filter(o => (daysSince(o.report_at) ?? 0) >= 3);
 
   // PM: แผนที่ถึงกำหนด/เกินกำหนด (ผูกชื่ออุปกรณ์ผ่าน checklist → jigs)
-  const pmRows = useMemo(() => {
+  /* 🔴 ถังจาก planDueBucket (lib/pmSchedule.js · audit 08/10) — เดิม `filter(p => p.next_due_date)` ทำให้แผนที่
+     **ไม่เคยตรวจ** (JIG MTN 106/106) และแผน run_day หายเงียบ แล้ว KPI ขึ้นเขียว "PM เกินกำหนด 0"
+     · AM (ผลิตตรวจเอง) แยกออกจากตัวนับ PM ช่าง — คนละคนรับผิดชอบ สถานะจริงอยู่ที่จอ AM/ผังรวมโรงงาน */
+  const pmAll = useMemo(() => {
     const clById = {}; d.cls.forEach(c => { clById[c.id] = c; });
     const jigById = {}; d.jigs.forEach(j => { jigById[j.id] = j; });
-    return d.plans.filter(p => p.next_due_date).map(p => {
-      const j = jigById[clById[p.checklist_id]?.equipment_id];
-      const days = Math.round((new Date(`${p.next_due_date}T00:00:00`) - new Date(`${workDate}T00:00:00`)) / 86400000);
-      return { ...p, name: j?.name || j?.jig_no || j?.machine_no || 'อุปกรณ์ (ไม่พบชื่อ)', line: j?.line_name || '', days };
-    }).sort((a, b) => a.days - b.days);
+    return d.plans.map(p => {
+      const cl = clById[p.checklist_id];
+      const j = jigById[cl?.equipment_id];
+      const { bucket, daysTo } = planDueBucket(p, workDate, { soonDays: 14 });
+      return { ...p, am: isAmTeam(cl?.department), bucket, name: j?.name || j?.jig_no || j?.machine_no || 'อุปกรณ์ (ไม่พบชื่อ)', line: j?.line_name || '', days: daysTo };
+    }).sort((a, b) => (a.days ?? 9e9) - (b.days ?? 9e9));
   }, [d, workDate]);
-  const overdue = pmRows.filter(p => p.days < 0);
-  const dueSoon = pmRows.filter(p => p.days >= 0 && p.days <= 14);
+  const pmRows = pmAll.filter(p => !p.am);
+  const amPlans = pmAll.filter(p => p.am);
+  const overdue = pmRows.filter(p => p.bucket === 'overdue');
+  const dueSoon = pmRows.filter(p => p.bucket === 'due_soon');
+  const pmNever = pmRows.filter(p => p.bucket === 'never');
+  const pmNoCycle = pmRows.filter(p => p.bucket === 'no_cycle');
+  const pmWithDue = pmRows.filter(p => p.days != null);
 
   // ⭐ เครื่องที่หยุดซ้ำแต่ไม่มีใบซ่อม — ช่องว่างจริง (downtime หลักพัน vs ใบซ่อมหลักหน่วย)
   const gap = useMemo(() => {
@@ -424,6 +436,8 @@ function MaintenanceView({ d, ctx }) {
     ...callMtn.map(x => ({ icon: '📞', title: `เรียกช่างแล้วยังไม่ปิด — ${x.machine_no || 'ไม่ระบุเครื่อง'}`, detail: x.dr_downtime_types?.name_th || x.description || '', tag: 'ด่วน', tagColor: '#ef4444', to: '/mtn-repair' })),
     ...stale.map(o => ({ icon: '🛠️', title: `${o.mo_no || 'ใบซ่อม'} — ${o.machine_no || o.line_name || ''}`, detail: o.problem_characteristic || '', age: daysSince(o.report_at), tag: o.status, tagColor: '#f59e0b', to: '/mtn-repair' })),
     ...overdue.slice(0, 6).map(p => ({ icon: '📅', title: `PM เกินกำหนด — ${p.name}`, detail: `${p.line} · ครบกำหนด ${fmtDate(p.next_due_date)}`, tag: `เกิน ${Math.abs(p.days)} วัน`, tagColor: '#ef4444', to: '/pm?tab=plan' })),
+    // แผนที่ไม่เคยตรวจ = ยังไม่มีวันครบกำหนดให้เลย — ยุบเป็นบรรทัดเดียว (หลักร้อยรายการ) แต่ห้ามหาย
+    ...(pmNever.length ? [{ icon: '📅', title: `แผน PM ที่ไม่เคยตรวจเลย ${pmNever.length} แผน`, detail: [...new Set(pmNever.map(p => p.line).filter(Boolean))].slice(0, 6).join(' · '), tag: 'ไม่เคยตรวจ', tagColor: '#f59e0b', to: '/pm?tab=plan' }] : []),
   ];
 
   return (<>
@@ -435,10 +449,11 @@ function MaintenanceView({ d, ctx }) {
       <Kpi label="🛠️ ใบซ่อมเปิดอยู่" value={scopedMo.length} unit="ใบ" color={scopedMo.length ? '#f59e0b' : '#22c55e'}
         sub={Object.entries(byStep).map(([k, v]) => `${k} ${v}`).join(' · ') || 'ไม่มีใบค้าง'} />
       <Kpi label="⏳ ค้างเกิน 3 วัน" value={stale.length} unit="ใบ" color={stale.length ? '#ef4444' : '#22c55e'} sub="นับจากวันที่แจ้ง" />
-      <Kpi label="📅 PM เกินกำหนด" value={overdue.length} unit="แผน" color={overdue.length ? '#ef4444' : '#22c55e'} sub={`ใกล้ครบใน 14 วัน ${dueSoon.length} แผน`} />
+      <Kpi label="📅 PM เกินกำหนด" value={overdue.length} unit="แผน" color={overdue.length ? '#ef4444' : (pmNever.length || pmNoCycle.length) ? '#f59e0b' : '#22c55e'}
+        sub={`ใกล้ครบใน 14 วัน ${dueSoon.length}${pmNever.length ? ` · ไม่เคยตรวจ ${pmNever.length}` : ''}${pmNoCycle.length ? ` · ไม่ตั้งรอบ ${pmNoCycle.length}` : ''}`} />
       <Kpi label="🔻 DT เครื่องเสีย 30 วัน" value={fmtNum(unplannedMin)} unit="นาที" sub="downtime นอกแผนทุกสาเหตุ" />
       <Kpi label="⚠️ เครื่องหยุดซ้ำ ไม่มีใบซ่อม" value={gap.length} unit="เครื่อง" color={gap.length ? '#ef4444' : '#22c55e'} sub="หยุด ≥2 ครั้งใน 30 วัน" />
-      <Kpi label="📋 แผน PM ที่ใช้งาน" value={d.plans.length} unit="แผน" sub={`มีวันครบกำหนด ${pmRows.length}`} />
+      <Kpi label="📋 แผน PM ช่างที่ใช้งาน" value={pmRows.length} unit="แผน" sub={`มีวันครบกำหนด ${pmWithDue.length}${amPlans.length ? ` · AM ผลิตตรวจเอง ${amPlans.length} แผน (ดูจอ AM)` : ''}`} />
     </div>
 
     <Section title="⚠️ เครื่องที่หยุดซ้ำ แต่ยังไม่มีใบแจ้งซ่อม" tone="warn"

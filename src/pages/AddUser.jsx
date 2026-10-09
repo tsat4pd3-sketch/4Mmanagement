@@ -84,6 +84,7 @@ export default function AddUser() {
   const [sectionOpts,   setSectionOpts]   = useState([]);
   const [teamOpts,      setTeamOpts]      = useState([]);
   const [fetchingUsers, setFetchingUsers] = useState(true);
+  const [authErr, setAuthErr] = useState(null);   // 🔴 อ่านอีเมล login ไม่ได้ (admin-only) = ต้องเขียนบนจอ ห้ามโชว์ช่องว่าง
   const [showModal,     setShowModal]     = useState(false);
   const [modalMode,     setModalMode]     = useState('create');
   const [editingId,     setEditingId]     = useState(null);
@@ -150,7 +151,11 @@ export default function AddUser() {
     const { data: profiles } = await supabase
       .from('profiles')
       .select('id, full_name, role, position, line_id, section, sections, team, notify_email, employee_id, account_kind, scope_depth, scope_depth_src, org_node_id');   // 🪪 org_node_id ต้องมา ไม่งั้น identityDiff() เทียบช่องนั้นไม่ได้แล้วเงียบ
-    const { data: authUsers } = await supabase.rpc('get_auth_users');
+    /* 🔴 get_auth_users() เป็น admin-only ฝั่ง DB (raise 'forbidden: admin only')
+       ⇒ คนที่ /permissions ให้สิทธิ์เข้าหน้านี้แต่ไม่ใช่ role admin จะได้ลิสต์ที่ **ไม่มีอีเมลเลย**
+       เดิมกลืน error ⇒ จอโกหกว่า "บัญชีพวกนี้ไม่มีอีเมล" · ต้องเขียนบนจอ (QC audit 08/10) */
+    const { data: authUsers, error: eAuth } = await supabase.rpc('get_auth_users');
+    setAuthErr(eAuth ? eAuth.message : null);
 
     const authMap = {};
     (authUsers || []).forEach(u => { authMap[u.id] = u; });
@@ -632,6 +637,17 @@ export default function AddUser() {
           <span style={{ marginLeft: 6, opacity: 0.7 }}>· ไม่มีการจำกัดจำนวน user</span>
         </span>
       </FilterBar>
+
+      {/* 🔴 อ่านอีเมล login ไม่ได้ = ช่องอีเมลว่างทุกแถว · ต้องบอกว่า "อ่านไม่ได้" ไม่ใช่ "ไม่มี" (08/10) */}
+      {authErr && (
+        <div style={{ fontSize: 12, fontWeight: 700, color: '#ef4444', padding: '8px 10px', marginBottom: 10,
+          borderRadius: 8, border: '1px solid rgba(239,68,68,0.5)', background: 'var(--card)' }}>
+          ⚠ อ่านอีเมล login ไม่ได้ — ช่องอีเมลในตารางจะว่างทั้งหมด (<b>ไม่ได้หมายความว่าบัญชีไม่มีอีเมล</b>)
+          <div style={{ fontWeight: 400, color: 'var(--text2)', marginTop: 2 }}>
+            อีเมลอยู่ที่ `auth.users` ซึ่งอ่านได้เฉพาะ role <b>admin</b> · เหตุผลจากระบบ: {authErr}
+          </div>
+        </div>
+      )}
 
       {/* ── worklist: บัญชีที่ตัวตนไม่ตรงกับฐานพนักงาน / ยังไม่ระบุประเภท ──────────
           ⚠️ ห้ามซ่อนเงียบ — ข้อมูลไม่ตรงทำให้ "มองไม่เห็นกะตัวเอง" (Checkin กรองด้วย team ของบัญชี)

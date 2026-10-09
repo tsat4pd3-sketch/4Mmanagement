@@ -237,6 +237,23 @@ const AM_TARGET = {
 const AM_INSP = { 2: 'fail', 5: 'pending', 8: 'pending', 12: 'pending', 13: 'pending', 14: 'pending' }
 
 const TABLE_ROWS = {
+  /* 🔑 ทะเบียน action ในตารางสิทธิ์ — **ห้ามปล่อยให้ resource/action เป็น null** (2026-10-08)
+     เดิม `permission_catalog` ได้ ROWS ทั่วไป (ไม่มี 2 คอลัมน์นี้) ⇒ คีย์ของทุกแถวกลายเป็น
+     `undefined:undefined` เหมือนกันหมด ⇒ harness เตือนคีย์ซ้ำ 14 แถว และ **แท็บ "การทำงาน"
+     ของ /permissions ไม่เคยถูกเรนเดอร์จริงเลย** (14 แถวที่ React กลืนเหลือแถวเดียว)
+     ของจริง 2 คอลัมน์นี้ not null + เป็น PK คู่กัน (`${resource}:${action}`)
+     แถว 15 ตั้งใจให้ `group_name` เป็นหมวดที่ไม่มีในเมนู ⇒ ต้องขึ้นป้าย ⚠️ หมวดกำพร้า */
+  permission_catalog: (r, i) => ({
+    ...r,
+    /* คู่ resource:action ต้อง **ไม่ซ้ำกันเลยทั้ง 15 แถว** (ของจริงเป็น PK คู่) —
+       จับคู่แบบ i%5 × ⌊i/5⌋ ⇒ 15 แถวได้ 15 คีย์ไม่ซ้ำ · แถว NULLISH(14) ก็ได้ค่าด้วย
+       เพราะ 2 คอลัมน์นี้ not null ของจริง (ของที่ nullable ยังปล่อย null ตามเดิม) */
+    resource: ['four_m', 'products', 'daily_report', 'mtn_order', 'line_stock'][i % 5],
+    action: ['create', 'approve', 'manage_master', 'close_cost', 'issue'][Math.floor(i / 5) % 5],
+    label: `สิทธิ์ทดสอบ ${i}`,
+    group_name: i >= 15 ? 'หมวดที่ไม่มีในเมนู' : ['ฝ่ายผลิต', 'การตรวจสอบและซ่อมบำรุง', 'คุณภาพ & วิศวกรรม'][i % 3],
+    sort: i,
+  }),
   /* 🌳 BOM — **ห้ามถอดรูปทรง "ของชิ้นเดียวถูกนิยามไว้ 2 ใบ"** (2026-10-08)
      เดิม `bom_items` ได้ ROWS ทั่วไปที่ `parent_mat` เป็น null ทุกแถว + `product_id` เป็น `p-N`
      ซึ่ง**ไม่ตรงกับ id ของ dr_products เลยสักแถว** ⇒ 2 สาขานี้ไม่เคยถูกเรนเดอร์ใน crashsweep:
@@ -606,6 +623,10 @@ const TABLE_FIXED = {
        · MTBF ตั้งหน่วย "นาที" ทับ = สาขา `toRowUnit` ×60 · ห้ามถอด */
     { id: 'kd-5', year: 2026, section: 'JIG MTN', scope_kind: 'department', scope_value: 'JIG MTN', line_group: null, category: 'internal', seq: 5, name: 'Mean Time Between Failure (MTBF)', source: 'manual', unit: 'นาที', target_compare: '>=', target_value: 10000, commit_compare: '>=', commit_value: 9000, direction: 'up', weight: 4, is_active: true, catalog_id: null, std_unit: 'Maintenance', std_item_id: null, kpi_catalog: null },
     { id: 'kd-6', year: 2026, section: 'JIG MTN', scope_kind: 'department', scope_value: 'JIG MTN', line_group: null, category: 'customer', seq: 6, name: 'MO Closed on target', source: 'manual', unit: '%', target_compare: '>=', target_value: 99, commit_compare: '>=', commit_value: 95, direction: 'up', weight: 6, is_active: true, catalog_id: null, std_unit: 'Maintenance', std_item_id: null, kpi_catalog: null },
+    /* ✍️ OEE กรอกมือของ PD1 (09/10 · เคสจริง PD2 คีย์ OEE ม.ค.–ส.ค. แล้วไม่ขึ้น) — เปิดสาขา overlay บนแถว auto:
+       เดือนที่กรอก = ค่าทางการ (ทึบ) · เดือนที่ไม่กรอก = ค่าระบบ (computed ลายประ) · ห้ามถอด */
+    { id: 'kd-8', year: 2026, section: 'PD1', scope_kind: 'section', scope_value: 'PD1', line_group: null, category: 'internal', seq: 8, name: 'OEE', source: 'manual', target_value: 85, direction: 'up', weight: 5, is_active: true, catalog_id: 'kc-oee', std_unit: 'Production', std_item_id: null, kpi_catalog: { id: 'kc-oee', name: 'OEE', unit: '%', category: 'internal', direction: 'up', decimals: 2, summary_mode: 'average', value_scope: 'own', board_slot: 'oee' } },
+    { id: 'kd-9', year: 2026, section: 'PD1', scope_kind: 'section', scope_value: 'PD1', line_group: null, category: 'internal', seq: 9, name: 'Safety', source: 'manual', target_value: 0, direction: 'down', weight: 5, is_active: true, catalog_id: 'kc-safe', std_unit: 'Production', std_item_id: null, kpi_catalog: { id: 'kc-safe', name: 'Safety', unit: 'ครั้ง', category: 'internal', direction: 'down', decimals: 0, summary_mode: 'sum', value_scope: 'own', board_slot: 'safe' } },
   ],
   /* ค่าจริง + แผนรายเดือนของ KPI กรอกมือ (2026-09-25) — ไม่มี 2 ตารางนี้ใน mock แปลว่า
      ทั้งตารางกรอกมือ · คอลัมน์สรุปทั้งปี · มินิกราฟ · แถว 📅 แผน **ไม่เคยถูกรันด้วยข้อมูลจริงใน harness**
@@ -617,6 +638,13 @@ const TABLE_FIXED = {
     ...[93.1, 94.0, 95.2, 96.4, 95.8, 94.9].map((v, i) => ({ id: `ke-1-${i}`, kpi_id: 'kd-1', month: i + 1, value: v })),
     ...[120.5, 98.2, 140.9, 88.4].map((v, i) => ({ id: `ke-4-${i}`, kpi_id: 'kd-4', month: i + 1, value: v })),
     ...[97.5, 99.1, 98.0].map((v, i) => ({ id: `ke-6-${i}`, kpi_id: 'kd-6', month: i + 1, value: v })),
+    ...[92.42, 94.27, 93.1].map((v, i) => ({ id: `ke-8-${i}`, kpi_id: 'kd-8', month: i + 1, value: v })),
+    { id: 'ke-9-0', kpi_id: 'kd-9', month: 1, value: 1 }, { id: 'ke-9-1', kpi_id: 'kd-9', month: 2, value: 0 },   // Safety สรุปหน่วยงาน ⇒ เติมเดือนที่หน้างานไม่มีบันทึก (ROWS ทั่วไปไม่มี event_date/kind ⇒ นับได้ 0)
+    { id: 'ke-8-aug', kpi_id: 'kd-8', month: 8, value: 90.5 },   // เดือนที่ระบบมีค่าจากกะ (sessions 2026-08-04) ⇒ ต้องถูกค่าระบบทับ + จอเขียนบอก
+  ],
+  /* 🧩 ลำดับแผ่นที่คนจัด (09/10) — PD1 เอา OEE ขึ้นก่อน %RM · คีย์ 'gone' = แผ่นที่ไม่มีแล้ว ต้องถูกข้ามไม่พัง (ห้ามถอด) */
+  kpi_board_layouts: [
+    { id: 'kbl-1', year: 2026, scope_kind: 'section', scope_value: 'PD1', row_keys: ['oee', 'gone', 'rm'], updated_by_name: 'ทดสอบ ระบบ' },
   ],
   /* 📝 หมายเหตุรายเดือน (30/09) — แผ่น %RM (slot rm) ที่ทั้งโรงงาน เดือน 3 มีโน้ต ⇒ เปิดสายเครื่องหมาย 📝 บนแท่ง + โมดัล (ห้ามถอด) */
   kpi_month_notes: [

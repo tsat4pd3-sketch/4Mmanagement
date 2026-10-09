@@ -117,7 +117,25 @@ downloadCsvDoc('<doc_key>', '<ชื่อไฟล์เดิม>', csvText(he
 
 **ที่เก็บไปแล้ว:** รอบ 1 (06/10) 8 คีย์ · **รอบ 2 (08/10) 16 คีย์** =
 `/report` 10 ปุ่ม + `/daily-report` 4 ชนิดรายงาน + Excel 2 ตัว (แม่แบบอะไหล่ · CQI-15 Event Log)
-migration `20261008_doc_forms_csv_round2_main.sql` (MAIN)
+migration `20261008_doc_forms_csv_round2_main.sql` (MAIN · **apply แล้ว 2026-10-09** — วัดกลับ csv 23 · xlsx 2 · `form_code` ว่างทั้งหมด ⇒ ชื่อไฟล์ยังไม่เปลี่ยน รอ doc_control ตั้งเลขที่ `/doc-forms`)
+
+> ### 🔴 "ไฟล์ migration เข้า main แล้ว" ≠ "ฐานมีของแล้ว" (บทเรียน 08/10)
+> รอบ 2 **ไฟล์เข้า main แต่ไม่มีใคร apply** — ฐานยังมี csv 13 แถว ขณะโค้ดอ่าน **12 คีย์ที่ไม่มีใน
+> ทะเบียน** ⇒ `docFormSync` คืน `undefined` ⇒ **ได้ชื่อไฟล์เดิม ไม่ล้ม ไม่มี error**
+> = doc_control เปิด `/doc-forms` ก็ไม่เห็นปุ่มพวกนี้ ตั้งเลขฟอร์มไม่ได้เลย (อาการเงียบสนิท)
+> · 2 session ทำเรื่องเดียวกันพร้อมกัน ⇒ คนเขียนไฟล์กับคน apply คนละคน แล้วตกหล่น
+> **⇒ ปิด session ที่แตะทะเบียน ต้องคิวรีฐานทวนเสมอ ห้ามเชื่อว่าไฟล์ที่ merge แล้ว = apply แล้ว:**
+> ```sql
+> -- project "MAIN" (ewhdfqwfwofivojtsizn) · ควรได้ csv 22+ · xlsx 2
+> select count(*) filter (where doc_key like 'csv\_%')  as csv_keys,
+>        count(*) filter (where doc_key like 'xlsx\_%') as xlsx_keys from doc_forms;
+> ```
+> · เทียบกับคีย์ที่โค้ดอ่านจริง: `grep -rhoE "['\"](csv|xlsx)_[a-z0-9_]+['\"]" src/`
+>   (⚠️ `/daily-report` ประกอบคีย์แบบ `csv_dr_${reportType}` ⇒ grep ตรงๆ ไม่เห็น 4 คีย์นั้น)
+
+🧹 **คีย์ที่ไม่มีโค้ดอ่าน = "คีย์ไร้ปุ่ม" ต้องถอน** — ตั้งเลขฟอร์มแล้วไม่เห็นผล + มี 2 แถวของรายงาน
+เดียวกันให้เลือกผิด · ถอนไป 7 คีย์ 08/10 (`20261008b_doc_forms_drop_dup_csv_keys_main.sql`)
+· **ยังค้าง `csv_attendance`** — รอบ 2 ใช้ชื่อ `csv_attendance_sheet` แทน ⇒ ตัวเดิมไร้ปุ่ม
 
 🔴 **สำเนาที่ก๊อปไปมักตกข้อ "กัน formula injection"** — `DailyReport.exportCSV` ตัวเดิมไม่มีด่านนี้
 (ของ `Report.jsx` มี) ⇒ ค่าที่หน้างานพิมพ์ในช่อง 'รายละเอียด'/'เครื่องจักร' ขึ้นต้น `=` `+` `@`

@@ -1,5 +1,8 @@
-import jsPDF from 'jspdf'
-import autoTable from 'jspdf-autotable'
+/* 🔴 jspdf + autotable = ~429 KB — ต้อง **lazy** โหลดตอนกด export เท่านั้น (QC audit 08/10)
+   เดิม static import ⇒ เปิดหน้า /pm?tab=check ดาวน์โหลด 429 KB ทุกครั้ง แม้ไม่เคยกด PDF
+   (ยืนยันจากบันเดิลจริง: PMCheckData-*.js มี import ของ jspdf.es.min + plugin.autotable)
+   ไฟล์พี่น้อง `pmExportExcel.js` lazy อยู่แล้ว · DailyReport/Checkin ก็ lazy · ตัวนี้เป็นตัวที่ตก
+   ⚠️ `exportInspectionPDF` เป็น async อยู่แล้ว ⇒ เปลี่ยนเป็น lazy ได้โดยไม่กระทบผู้เรียก */
 import { supabaseDR } from '../supabaseClient'
 
 // ── Constants ─────────────────────────────────────────────────
@@ -93,6 +96,9 @@ export async function exportInspectionPDF({
   const CAT = buildCatMaps(categories)
   const catColor = (cat) => CAT.color[cat] ?? [107, 114, 128]
   const CAT_LABEL = CAT.label
+  const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
+    import('jspdf'), import('jspdf-autotable'),
+  ])
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
   doc.setFont('helvetica', 'normal')
 

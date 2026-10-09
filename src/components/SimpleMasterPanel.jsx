@@ -15,6 +15,10 @@
      fields      [{ key, label, type: 'text'|'number'|'select'|'tags'|'textarea', options: [{value,label}], required, width, mono, placeholder }]
      stampCol    คอลัมน์ชื่อผู้แก้ (เช่น 'updated_by_name') + stampName — ไม่ส่ง = ไม่แตะ
      canManage   สิทธิ์เขียน (ผู้เรียกตัดสินผ่าน can()) · onChanged() เรียกหลังเขียนสำเร็จ (ให้ invalidate cache picker)
+     onBeforeDelete  async (row) => ข้อความ | null — **ด่านนับปลายทางก่อนลบ (fail-closed)**
+                 คืนข้อความ = ไม่ลบ + ขึ้น toast เหตุผล · คืน null = ลบได้ · โยน/ล้ม = ไม่ลบ
+                 🔴 ทะเบียนที่ปลายทางเก็บเป็น "ข้อความ" (ไม่ผูก FK) ต้องส่งตัวนี้ทุกตัว —
+                 ตัวอย่าง `utils/costCenterRefs.js` (เคส 06/10 ลบ 29 รหัสที่บัญชีตั้ง rate ไว้แล้ว)
      title · help · emptyText · offNote (ข้อความเตือนตอนปิดใช้)
    ══════════════════════════════════════════════════════════════════════════ */
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -48,7 +52,7 @@ function FieldInput({ f, value, onChange, disabled }) {
 
 export default function SimpleMasterPanel({
   client, table, keyCol = 'code', keyFrom, fields = [], stampCol, stampName,
-  canManage = false, onChanged, title, help, emptyText = 'ยังไม่มีรายการ', offNote = 'รายการนี้จะไม่โผล่ในตัวเลือกให้เลือกใหม่ (ข้อมูลเก่าที่ใช้อยู่ไม่กระทบ)',
+  canManage = false, onChanged, onBeforeDelete, title, help, emptyText = 'ยังไม่มีรายการ', offNote = 'รายการนี้จะไม่โผล่ในตัวเลือกให้เลือกใหม่ (ข้อมูลเก่าที่ใช้อยู่ไม่กระทบ)',
   maxHeight = 360,
 }) {
   const [rows, setRows] = useState([]);
@@ -108,6 +112,16 @@ export default function SimpleMasterPanel({
   };
 
   const remove = async (r) => {
+    /* 🔴 นับปลายทางก่อนถาม — ถามแล้วค่อยปฏิเสธ = คนกดยืนยันไปแล้วแต่ไม่เกิดอะไร
+       นับไม่ได้/โยน = **ไม่ลบ** (fail-closed) เพราะการลบทะเบียนย้อนไม่ได้
+       (เคส 06/10: ลบรหัสที่บัญชีตั้ง activity rate ไว้แล้ว 29 รหัส เพราะแผงนี้ไม่เคยนับอะไรเลย) */
+    if (onBeforeDelete) {
+      setBusy(true);
+      let msg;
+      try { msg = await onBeforeDelete(r); } catch { msg = 'ตรวจการใช้งานไม่สำเร็จ — ยังลบไม่ได้ ลองอีกครั้ง'; }
+      setBusy(false);
+      if (msg) { toast.error(msg); return; }
+    }
     if (!window.confirm(`ลบ "${r[keyCol]}" ออกจากทะเบียน?\n\nข้อมูลเก่าที่บันทึกด้วยชื่อ/รหัสนี้ยังอ่านออก (ไม่ผูก FK) — ถ้าแค่เลิกใช้ แนะนำกด "ปิดใช้" แทน`)) return;
     const res = await client.from(table).delete().eq(keyCol, r[keyCol]).select(keyCol);
     if (!checkWrite(res, `ลบ ${r[keyCol]}`)) return;

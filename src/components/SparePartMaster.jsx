@@ -261,9 +261,6 @@ export default function SparePartMaster({ parts = [], reload, fullName, role, my
       <ReadOnlyNote show={!canEdit && !canMove} role={role} what="แก้ทะเบียนอะไหล่/รับเข้า-เบิก"
         permKey="mtn_repair:manage_master, mtn_repair:service"
         hint="ค้นหาอะไหล่/ดูตำแหน่งชั้นวางได้ตามปกติ (ตั้งใจให้ช่างทุกคนค้นของได้)" />
-      {/* 🔩 อะไหล่ที่ PM ที่จะถึงต้องใช้ (2026-10-08) — ตัวเดียวกับแท็บแผน PM ⇒ ฝั่งคลัง/ฝั่งช่างเห็นเลขชุดเดียวกัน
-          reloadKey = จำนวนอะไหล่ + ยอดรวมสต็อก ⇒ รับเข้า/เบิกแล้วตัวเลขขยับตาม (primitive · กฎเหล็ก DB ข้อ 9) */}
-      <SpareDemandBanner todayStr={localDateStr()} reloadKey={`${parts.length}:${parts.reduce((t, p) => t + (Number(p.stock_qty) || 0), 0)}`} />
       {/* ── แถบเครื่องมือ ── มาตรฐาน FilterBar (UI-STANDARD 2026-09-24): ขอบเขต → ตัวกรอง → ค้นหา → ปุ่ม */}
       <FilterBar>
         <select value={fTeam} onChange={e => setFTeam(e.target.value)}>
@@ -298,6 +295,12 @@ export default function SparePartMaster({ parts = [], reload, fullName, role, my
         {canEdit && <button onClick={() => setShowCats(true)} style={{ ...btnGhost, padding: '0 13px', fontSize: 12.5 }}>🏷️ หมวด</button>}
         {canEdit && <button onClick={() => setEditPart('new')} style={{ ...btnPri, padding: '0 15px', fontSize: 12.5 }}>➕ เพิ่มอะไหล่</button>}
       </FilterBar>
+
+      {/* 🔩 อะไหล่ที่ PM ที่จะถึงต้องใช้ (2026-10-08) — ตัวเดียวกับแท็บแผน PM ⇒ ฝั่งคลัง/ฝั่งช่างเห็นเลขชุดเดียวกัน
+          reloadKey = จำนวนอะไหล่ + ยอดรวมสต็อก ⇒ รับเข้า/เบิกแล้วตัวเลขขยับตาม (primitive · กฎเหล็ก DB ข้อ 9)
+          🔴 ต้องอยู่ **ใต้แถบกรอง** — ลำดับมาตรฐาน ชื่อหน้า → แท็บ → แถบกรอง → เนื้อหา (UI-STANDARD §2.1)
+             เดิมวางเหนือแถบกรอง ⇒ stdsweep วัดระยะแท็บ→แถบกรองได้ 75px (มาตรฐาน 16 · แก้ 08/10) */}
+      <SpareDemandBanner todayStr={localDateStr()} reloadKey={`${parts.length}:${parts.reduce((t, p) => t + (Number(p.stock_qty) || 0), 0)}`} />
 
       {/* ── สรุป ── */}
       <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginBottom: 12 }}>

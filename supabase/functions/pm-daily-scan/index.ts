@@ -2,10 +2,15 @@
 // check in time). Runs on the Product DB project via pg_cron. Green/red are
 // event-driven from the app; only orange needs a timer, so only orange lives here.
 //
-// For the current line×shift: if the first order was confirmed more than
+// For the current line×shift: if the first order was OPENED more than
 // WINDOW_MIN ago and the line still hasn't checked every registered item, POST
 // an 'orange' pm_daily to the MAIN send-notification function (which owns the
 // bot token + room routing). Deduped via pm_daily_alerts so it fires once.
+//
+// 🔗 08/10 (audit AM↔PM) — กติกาต้องตรงกับบอร์ด `src/lib/dailyAmBoard.js` + `computeDailyPmStatus` ทุกข้อ:
+//   · ทีม AM = mtn_teams.kind='am' (ไม่ hardcode 'production') · ใบตรวจ status 'pending' = ยังไม่ตรวจ
+//   · กะ void ไม่ใช่กะจริง (ไม่เริ่มนาฬิกา) · ครอบครัวไลน์ = ทุกชั้นบน-ล่าง · อ่าน sessions/orders ล้ม = หยุด
+//   แก้ที่นี่แล้วต้องแก้ฝั่งบอร์ดด้วย (และกลับกัน) — ไม่งั้นส้มยิงทั้งที่บอร์ดเขียว
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
@@ -70,9 +75,13 @@ Deno.serve(async () => {
     for (const t of active) (byLine[t.line_name] ||= []).push(t.jig_id);
     const allJigIds = [...new Set(active.map(t => t.jig_id))];
 
+    // ทีม AM จากทะเบียนทีม (kind='am') — อ่านไม่ได้ถอยไป 'production' (ค่าเดิมก่อนมี mtn_teams)
+    const rTeams = await db.from('mtn_teams').select('key, kind');
+    const amKeys = new Set((rTeams.data ?? []).filter(t => t.kind === 'am').map(t => t.key));
+    if (!amKeys.size) amKeys.add('production');
     const [rJigs, rProdCls, rAlerts] = await Promise.all([
       db.from('jigs').select('id, name, machine_no').in('id', allJigIds),
-      db.from('checklists').select('id').eq('module', 'mtn').eq('department', 'production'),
+      db.from('checklists').select('id, department').eq('module', 'mtn'),
       db.from('pm_daily_alerts').select('line_name').eq('work_date', si.workDateStr).eq('shift', si.shift).eq('color', 'orange'),
     ]);
     // ⚠️ 3 คิวรีนี้พลาดแล้ว "เตือนเกิน" ทั้งหมด — ต้องหยุด ห้ามเดินต่อด้วยค่าว่าง:
@@ -82,20 +91,24 @@ Deno.serve(async () => {
     const eLoad = rJigs.error || rProdCls.error || rAlerts.error;
     if (eLoad) throw new Error('โหลดข้อมูลตั้งต้นไม่สำเร็จ — หยุดไว้ก่อนกันเตือนเกิน: ' + eLoad.message);
     const jigById: Record<string, { name?: string; machine_no?: string }> = Object.fromEntries((rJigs.data ?? []).map(j => [j.id, j]));
-    const prodIds = new Set((rProdCls.data ?? []).map(c => c.id));
+    const prodIds = new Set((rProdCls.data ?? []).filter(c => amKeys.has(c.department)).map(c => c.id));
     const alerted = new Set((rAlerts.data ?? []).map(a => a.line_name));
 
-    const { data: insp, error: eInsp } = await db.from('inspections').select('jig_id, checklist_id, inspected_at').in('jig_id', allJigIds).gte('inspected_at', startISO);
+    const { data: insp, error: eInsp } = await db.from('inspections').select('jig_id, checklist_id, status, inspected_at').in('jig_id', allJigIds).gte('inspected_at', startISO).order('inspected_at', { ascending: false });
     // อ่านประวัติการตรวจไม่ได้ = ไม่รู้ว่าใครตรวจแล้ว → เตือนไปก็ผิด (กฎ "ไม่รู้ ≠ ยังไม่ทำ")
     if (eInsp) throw new Error('อ่านประวัติการตรวจ AM ไม่สำเร็จ — หยุดไว้ก่อนกันเตือนคนที่ตรวจแล้ว: ' + eInsp.message);
-    const checked = new Set<string>();
-    for (const i of insp ?? []) if (prodIds.has(i.checklist_id)) checked.add(i.jig_id);
+    // ล่าสุดชนะ (เรียง desc) · 'pending' = ตรวจไม่ครบ ยังไม่นับ — กติกาเดียวกับ computeDailyPmStatus
+    const latest: Record<string, string> = {};
+    for (const i of insp ?? []) { if (!prodIds.has(i.checklist_id)) continue; if (!(i.jig_id in latest)) latest[i.jig_id] = i.status; }
+    const checked = new Set<string>(Object.entries(latest).filter(([, st]) => st && st !== 'pending').map(([id]) => id));
 
     const lines = Object.keys(byLine);
     /* ⚠️ ห้ามกรอง `.in('line_name', lines)` — อุปกรณ์ลงทะเบียน AM ไว้ที่ **ไลน์แม่** (HYDROFORM)
        แต่กะเปิดที่ **ไลน์ลูก** (HDF1/HDF2) → กรองด้วยชื่อไลน์ที่ลงทะเบียน = ตัดกะจริงทิ้งหมด
        ดึงกะของกะนี้ทั้งหมด (หลักสิบแถว) แล้วค่อยจับคู่ตามครอบครัวไลน์ด้านล่าง */
-    const { data: sessions } = await db.from('production_sessions').select('id, line_name').eq('work_date', si.workDateStr).eq('shift', si.shift);
+    // กะจริงเท่านั้น (open/pending_close/closed) — ใบ void = เปิดผิดแล้วปิดทิ้ง ห้ามเริ่มนาฬิกา (ชุดเดียวกับ SESSION_STATUSES_REAL)
+    const { data: sessions, error: eSess } = await db.from('production_sessions').select('id, line_name').eq('work_date', si.workDateStr).eq('shift', si.shift).in('status', ['open', 'pending_close', 'closed']);
+    if (eSess) throw new Error('อ่านกะการผลิตไม่สำเร็จ — ไม่รู้ว่าไลน์ไหนเริ่มผลิต หยุดไว้ก่อน: ' + eSess.message);
     const sessLine: Record<string, string> = {};
     (sessions ?? []).forEach(s => { sessLine[s.id] = s.line_name; });
     const firstOrder: Record<string, string> = {};
@@ -103,7 +116,8 @@ Deno.serve(async () => {
       /* ⚠️ "เริ่มผลิต" = `opened_at` (เปิดใบ) ไม่ใช่ `confirmed_at` (ปิดใบ = ผลิตเสร็จ)
          ต้องตรงกับหน้า /daily-checker?tab=pm ไม่งั้นจอกับตัวเตือนตัดสินคนละเวลา
          (แก้ 2026-08-24 — เดิมนาฬิกาเริ่มนับตอนใบแรกจบ ใบที่กินหลายชั่วโมงเลยไม่เคยถูกเตือน) */
-      const { data: orders } = await db.from('prod_orders').select('session_id, opened_at, confirmed_at').in('session_id', sessions.map(s => s.id));
+      const { data: orders, error: eOrd } = await db.from('prod_orders').select('session_id, opened_at, confirmed_at').in('session_id', sessions.map(s => s.id));
+      if (eOrd) throw new Error('อ่านใบผลิตไม่สำเร็จ — ไม่รู้เวลาเริ่มผลิต หยุดไว้ก่อน: ' + eOrd.message);
       for (const o of orders ?? []) {
         const ln = sessLine[o.session_id];
         const at = o.opened_at || o.confirmed_at;
@@ -137,9 +151,13 @@ Deno.serve(async () => {
             parentOf[r.name] = r.parent_line_name;
             if (r.parent_line_name) (childrenOf[r.parent_line_name] ||= []).push(r.name);
           }
+          // ครอบครัว = ตัวเอง + บรรพบุรุษทุกชั้น + ลูกหลานทุกชั้น (ชุดเดียวกับ getLineFamilyNames ฝั่งจอ — เดิมเอาแค่ 1 ชั้น)
           for (const l of lines) {
-            const fam = new Set<string>([l, ...(childrenOf[l] ?? [])]);
-            if (parentOf[l]) fam.add(parentOf[l] as string);
+            const fam = new Set<string>([l]);
+            let up: string | null | undefined = parentOf[l]; let guard = 0;
+            while (up && !fam.has(up) && guard++ < 20) { fam.add(up); up = parentOf[up]; }
+            const stack = [...(childrenOf[l] ?? [])];
+            while (stack.length) { const c = stack.pop() as string; if (fam.has(c)) continue; fam.add(c); stack.push(...(childrenOf[c] ?? [])); }
             famOf[l] = [...fam];
           }
         }

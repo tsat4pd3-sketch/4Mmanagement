@@ -11,6 +11,7 @@ import { stdGroupOf } from '../utils/stdManpower';
 import CollapseCard from '../components/CollapseCard';
 import { toast } from '../components/Toast';
 import { deptNameOf } from '../utils/mtnTeams';
+import { loadPmTeams, isAmTeam } from '../utils/pmTeams';
 import { isParallelLine } from '../utils/lineTypes';
 import { noteSimilarity, CLUSTER_THRESHOLD } from '../utils/textCluster';
 import { PART_WORDS, wordGroups } from '../utils/peLink';
@@ -367,19 +368,25 @@ export default function OrderTrace() {
         const { data: tg } = await supabaseDR.from('pm_daily_line_targets').select('jig_id').in('line_name', famNames).eq('is_active', true);
         const jigIds = [...new Set((tg || []).map(x => x.jig_id))];
         if (jigIds.length) {
-          const dayStart = `${sess.work_date}T00:00:00+07:00`;
+          // "วันทำงาน" = 08:00 → 08:00 วันถัดไป (เดิมเริ่มเที่ยงคืน = 32 ชม. กินใบตรวจกะดึกของวันก่อน)
+          const dayStart = `${sess.work_date}T08:00:00+07:00`;
           const dayEnd = `${addDays(sess.work_date, 1)}T08:00:00+07:00`;
           // ⚠️ "ตรวจ AM แล้ว" = การตรวจของ **ฝ่ายผลิต** เท่านั้น — ถ้าไม่กรอง department
           //    วันที่ช่าง JIG MTN เข้า PM เครื่องนั้น จะถูกนับว่าผลิตตรวจ AM แล้วทั้งที่ยังไม่ได้ตรวจ
           //    (หลักเดียวกับ prodIds ใน src/lib/pmDailyAlarm.js)
-          const { data: amCls } = await supabaseDR.from('checklists')
-            .select('id, equipment_id').in('equipment_id', jigIds).eq('module', 'mtn').eq('department', 'production');
-          const amClIds = new Set((amCls || []).map(c => c.id));
-          const { data: inspRaw } = await supabaseDR.from('inspections')
+          /* 🔴 ทีม AM ผ่าน `isAmTeam` (ห้าม hardcode 'production' · audit 08/10) · คิวรีล้ม = **ไม่รู้** ห้ามถอยไปนับทุกใบเป็น AM
+             (เดิม `!amClIds.size ||` = ล้มแล้วนับใบช่าง JIG MTN เป็น "ผลิตตรวจแล้ว") · 'pending' = ยังตรวจไม่ครบ ไม่นับ · เสีย = 'fail' เท่านั้น */
+          await loadPmTeams().catch(() => {});
+          const { data: amCls, error: amErr } = await supabaseDR.from('checklists')
+            .select('id, equipment_id, department').in('equipment_id', jigIds).eq('module', 'mtn');
+          const amClIds = new Set((amCls || []).filter(c => isAmTeam(c.department)).map(c => c.id));
+          const { data: inspRaw, error: inspErr } = await supabaseDR.from('inspections')
             .select('jig_id, checklist_id, status, inspected_at').in('jig_id', jigIds)
             .gte('inspected_at', dayStart).lt('inspected_at', dayEnd);
-          const insp = (inspRaw || []).filter(i => !amClIds.size || amClIds.has(i.checklist_id));
-          t.dailyPm = { total: jigIds.length, done: new Set(insp.map(i => i.jig_id)).size, fail: insp.filter(i => i.status === 'fail' || i.status === 'ng').length };
+          const insp = (amErr || inspErr) ? [] : (inspRaw || []).filter(i => amClIds.has(i.checklist_id) && i.status !== 'pending');
+          t.dailyPm = (amErr || inspErr)
+            ? { total: jigIds.length, done: null, fail: 0, unknown: true }
+            : { total: jigIds.length, done: new Set(insp.map(i => i.jig_id)).size, fail: insp.filter(i => i.status === 'fail').length };
           // เก็บระดับ jig ไว้ให้แผงอุปกรณ์ชี้ได้ว่า "เครื่องตัวนี้" วันนั้นตรวจ AM แล้วหรือยัง
           t.amTargetJigs = new Set(jigIds);
           t.amDoneJigs = new Set(insp.map(i => i.jig_id));
@@ -470,7 +477,7 @@ export default function OrderTrace() {
           const clIds = clList.map(c => c.id);
           if (clIds.length) {
             const { data: pls, error: plsErr } = await supabaseDR.from('pm_plans')
-              .select('checklist_id, plan_type, interval_days, next_due_date, last_done_at, is_active').in('checklist_id', clIds);
+              .select('checklist_id, plan_type, interval_days, next_due_date, last_done_at, is_active, cycle_basis').in('checklist_id', clIds);
             if (plsErr) { partial = true; console.warn('[trace] pm_plans', plsErr); }
             (pls || []).filter(p => p.is_active !== false).forEach(p => {
               const jid = jigOfCl[p.checklist_id]; if (!jid) return;
@@ -546,9 +553,11 @@ export default function OrderTrace() {
              ค่านี้ก็ขยับไปข้างหน้าแล้ว ใบเก่าจะดูเหมือน PM ปกติทั้งที่ตอนนั้นค้างจริง
              → "ค้าง ณ วันผลิต" ต้องคำนวณย้อนจากประวัติจริง: ตรวจครั้งล่าสุดก่อนผลิต + interval_days
              (แผนแบบ usage/hybrid ย้อนไม่ได้ — ไม่เดา ปล่อยเป็นไม่ทราบ แล้วโชว์ค่าปัจจุบันโดยติดป้ายกำกับ) */
-          let overdue = 0, dueAtProd = null, nextDue = null, planDept = null, usageOnly = false;
+          let overdue = 0, dueAtProd = null, nextDue = null, planDept = null, usageOnly = false, runDayPlan = false;
           plans.forEach(p => {
             if (!nextDue || (p.next_due_date && p.next_due_date < nextDue)) { nextDue = p.next_due_date || nextDue; planDept = p.dept || planDept; }
+            // 🔴 run_day (AM รายวัน) ไม่มีรอบปฏิทิน — ย้อนด้วย interval_days = "เกินกำหนด N วัน" ปลอมทุกวันหยุด (audit 08/10) · สถานะ AM วันนั้นอยู่ที่ t.dailyPm
+            if (p.cycle_basis === 'run_day') { runDayPlan = true; return; }
             if (p.plan_type && p.plan_type !== 'time') { usageOnly = true; return; }
             if (!p.interval_days) return;
             const prev = inspByCl[p.checklist_id];   // ครั้งล่าสุดของ "แผนนั้น" โดยตรง
@@ -586,7 +595,7 @@ export default function OrderTrace() {
             + (daysSinceFix != null && daysSinceFix <= 7 ? 30 : 0) + (neverInspected ? 20 : 0) + (dts.length ? 10 : 0)
             + (jig && !plans.length ? 5 : 0);
           return { kind, id, label, name, machineNo, jigId: jig?.id || null, hasPmPlan: plans.length > 0, usage, sortOrder,
-            overdue, dueAtProd, neverInspected, usageOnly, nextDue, planDept, lastPlanDone, lastInsp, insps, mos, lastFixed, daysSinceFix, dts, audits, confirmed, risk,
+            overdue, dueAtProd, neverInspected, usageOnly, runDayPlan, nextDue, planDept, lastPlanDone, lastInsp, insps, mos, lastFixed, daysSinceFix, dts, audits, confirmed, risk,
             amTarget: jig ? t.amTargetJigs?.has(jig.id) : false, amDone: jig ? t.amDoneJigs?.has(jig.id) : false,
             inspName: lastInsp ? (profName[lastInsp.inspector_id] || 'ไม่ทราบชื่อ') : null };
         };
@@ -1672,7 +1681,9 @@ export default function OrderTrace() {
                 defaultOpen={Boolean(trace.dailyPm || trace.poka.length || trace.lpa.length)}>
                 <div style={{ display: 'grid', gap: 6, fontSize: 12.5 }}>
                   {trace.dailyPm && (
-                    <div>🔧 Daily PM (AM): เช็คแล้ว <b>{trace.dailyPm.done}/{trace.dailyPm.total}</b> เครื่อง{trace.dailyPm.fail ? <span style={{ color: '#ef4444' }}> · พบ NG {trace.dailyPm.fail} รายการ</span> : ''}</div>
+                    <div>🔧 Daily PM (AM): {trace.dailyPm.unknown
+                      ? <span style={{ color: '#f59e0b' }}>⚠ ดึงผลตรวจไม่สำเร็จ — ไม่ทราบว่าตรวจแล้ว {trace.dailyPm.total} เครื่องหรือยัง</span>
+                      : <>เช็คแล้ว <b>{trace.dailyPm.done}/{trace.dailyPm.total}</b> เครื่อง{trace.dailyPm.fail ? <span style={{ color: '#ef4444' }}> · พบ NG {trace.dailyPm.fail} รายการ</span> : ''}</>}</div>
                   )}
                   {trace.poka.map((c, i) => (
                     <div key={`p${i}`}>🛡️ Poka-Yoke {c.dev?.name || ''}{c.dev?.station ? ` (${c.dev.station})` : ''} — {c.result === 'pass' ? <span style={{ color: '#22c55e' }}>ผ่าน</span> : <span style={{ color: '#ef4444' }}>ไม่ผ่าน</span>} · {c.checker_name || '—'}</div>

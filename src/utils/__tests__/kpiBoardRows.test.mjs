@@ -2,7 +2,7 @@
    ข้อมูลจำลองถอดจากฐานจริง 05/10: MTN 11 นิยามไม่มี catalog · PD4 ครบ 8 ช่อง · PD1/PD2 ไม่มีนิยาม · plant ถือ %RM/CSat (ค่าร่วม) */
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { pickBoardRows, normKpiRowName } from '../kpiBoardRows.js';
+import { pickBoardRows, normKpiRowName, applyBoardOrder, moveBoardKey } from '../kpiBoardRows.js';
 import { scopeOfDef, sameScope, isPlant } from '../orgScope.js';
 import { boardSlotOf } from '../kpiSetup.js';
 
@@ -106,4 +106,19 @@ test('ownScopes: CC ของแผนก MTN เห็นแผ่นพิเ�
   assert.equal(withOwn.rows.some(r => r.auto === 'oee'), false, 'CC ของช่างไม่มีไลน์ = ไม่มี OEE');
   const without = pickBoardRows(base);
   assert.deepEqual(without.rows.filter(r => r.extra), [], 'ไม่บอกเจ้าของ = นิยามของแผนกเป็นแค่ตกทอด ไม่ทำแผ่นพิเศษ');
+});
+
+/* 🧩 จัดเรียงแผ่นเอง (09/10 · user PD2) — คีย์ที่คนจัดมาก่อน · แผ่นใหม่ต่อท้าย · คีย์ที่ไม่มีแผ่นแล้วข้าม */
+test('applyBoardOrder: เรียงตาม row_keys · คีย์ที่ไม่อยู่ในลิสต์ต่อท้ายตามลำดับเดิม · คีย์หายไปไม่พัง · ว่าง = เดิม', () => {
+  const rows = [{ key: 'rm' }, { key: 'oee' }, { key: 'ppm' }, { key: 'def:9' }];
+  assert.deepEqual(applyBoardOrder(rows, ['oee', 'def:9', 'gone']).map(r => r.key), ['oee', 'def:9', 'rm', 'ppm']);
+  assert.deepEqual(applyBoardOrder(rows, []).map(r => r.key), ['rm', 'oee', 'ppm', 'def:9']);
+  assert.deepEqual(applyBoardOrder(rows, null).map(r => r.key), ['rm', 'oee', 'ppm', 'def:9']);
+});
+test('moveBoardKey: สลับกับเพื่อนบ้าน · ชนขอบ = ไม่เปลี่ยน · ไม่แก้ array เดิม', () => {
+  const k = ['a', 'b', 'c'];
+  assert.deepEqual(moveBoardKey(k, 'b', -1), ['b', 'a', 'c']);
+  assert.deepEqual(moveBoardKey(k, 'c', 1), ['a', 'b', 'c']);
+  assert.deepEqual(moveBoardKey(k, 'zz', 1), ['a', 'b', 'c']);
+  assert.deepEqual(k, ['a', 'b', 'c']);
 });
