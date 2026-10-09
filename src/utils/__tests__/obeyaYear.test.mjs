@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import {
   yearRange, monthRange, prevMonthRange, monthKeys, monthLabel, SUMMARY_KEY,
   axisOeeYear, axisQualityYear, axisSafetyYear, axisManYear, axisDeliveryYear, axisCostYear, paretoYear, monthBarStatus,
-  axisPpmYear, manualMonthSeries, monthBarScore,
+  axisPpmYear, manualMonthSeries, monthBarScore, autoMonthsOf, fillAutoWithManual,
 } from '../obeyaYear.js';
 
 test('ช่วงเวลา: ปีปัจจุบันตัดที่ today · ปีย้อนหลังทั้งปี · เดือน drill-down ตัดที่ today', () => {
@@ -162,4 +162,28 @@ test('PPM: ยอดผลิต 0 แต่มีของเสีย = null �
   const { axisPpmYear } = await import('../obeyaYear.js');
   const p = axisPpmYear({ sessions: [], defects: [{ m: '2026-01', ng: 91, trial_ng: 0, rows: 4 }], year: 2026 });
   assert.equal(p.series[0].v, null);
+});
+
+/* ⚡ auto ชนะ · ✍️ manual เติมเฉพาะเดือนที่ auto ไม่มี (user 09/10 — ใช้กับทุกแถว auto บนบอร์ด KPI) */
+test('fillAutoWithManual: เดือนที่มี auto ใช้ auto · เดือนที่ไม่มี auto เติม manual (ติดธง) · นับเดือนที่ถูกทับ', () => {
+  const autoMonths = { 8: 88.1, 9: 90.2 };
+  const r = fillAutoWithManual({ autoMonths, manEntries: { 1: 92.4, 2: '93.1', 8: 70, 3: '', 4: null }, year: 2026 });
+  assert.equal(r.autoN, 2); assert.equal(r.fillN, 2); assert.equal(r.overlapN, 1);
+  assert.equal(r.series[7].v, 88.1); assert.equal(r.series[7].manualFill, undefined);   // ส.ค. auto ชนะ (manual 70 ถูกทับ)
+  assert.equal(r.series[0].v, 92.4); assert.equal(r.series[0].manualFill, true);
+  assert.equal(r.series[1].v, 93.1); assert.equal(r.series[1].manualFill, true);
+  assert.equal(r.series[2].v, null); assert.equal(r.series[3].v, null);   // ค่าว่าง/null ไม่นับเป็นกรอก
+  assert.equal(r.months, 4);
+  assert.equal(r.series[12].summary, true);
+});
+test('fillAutoWithManual: ไม่มีเดือนให้เติม ⇒ series null (ผู้เรียกใช้ซีรีส์ auto เดิม) แต่ยังรายงานเดือนที่ถูกทับ', () => {
+  const r = fillAutoWithManual({ autoMonths: { 8: 88 }, manEntries: { 8: 70 }, year: 2026 });
+  assert.equal(r.series, null); assert.equal(r.fillN, 0); assert.equal(r.overlapN, 1); assert.equal(r.months, 1);
+  const r2 = fillAutoWithManual({ autoMonths: {}, manEntries: {}, year: 2026 });
+  assert.equal(r2.series, null); assert.equal(r2.autoN, 0);
+});
+test('autoMonthsOf: เก็บเฉพาะ 12 เดือนที่มีค่า ข้ามแท่งสรุป', () => {
+  const ser = monthKeys(2026).map((k, i) => ({ k, v: i === 7 ? 88 : null })).concat([{ k: SUMMARY_KEY, v: 88, summary: true }]);
+  assert.deepEqual(autoMonthsOf(ser), { 8: 88 });
+  assert.deepEqual(autoMonthsOf([]), {});
 });
