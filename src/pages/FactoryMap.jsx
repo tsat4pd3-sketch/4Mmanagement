@@ -14,7 +14,7 @@ import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
 import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
 import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory';
-import { computeLiveOee, wavg, wLoad, wRun, wProd, buildCtMap, isTrialDefect, defectQty, ngByMatFrom, breakIntervalsIn, overlapMinutesWith, dtMinOutsideBreaks, dtMinBySession, orderPlanQty, oeeTargetForLines, QBIN_EMBED } from '../utils/oee';
+import { computeLiveOee, shiftStartDate, wavg, wLoad, wRun, wProd, buildCtMap, isTrialDefect, defectQty, ngByMatFrom, breakIntervalsIn, overlapMinutesWith, dtMinOutsideBreaks, dtMinBySession, orderPlanQty, oeeTargetForLines, QBIN_EMBED } from '../utils/oee';
 import { usePolling } from '../utils/usePolling';
 import { RATE, LIVE } from '../utils/refreshRates';
 import { coalesce, makeIdleGate } from '../utils/liveRefresh';
@@ -40,6 +40,7 @@ import { checkWriteRows } from '../utils/dbWrite';
 import { uploadOpts } from '../utils/storageUpload';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
+import { isGifFile, GIF_MAX_BYTES, GIF_TOO_BIG_MSG } from '../utils/imageFileKind';   // ตัวตรวจชนิดไฟล์ + เพดาน GIF = จุดเดียว
 
 /* ── ผังรวมโรงงาน (Factory Master Map) — polygon อิสระ + เลือก metric, 2026-07-16 ──────
    รูปผังใหญ่ทั้งโรงงาน 1 รูป + วาด polygon ล้อมแต่ละไลน์ (L/U ได้) ระบายสีตาม metric ที่เลือก
@@ -785,7 +786,7 @@ export default function FactoryMap({ setupMode = false }) {
       //   เดิมใช้ "เป้าเต็ม × สัดส่วนเวลาของกะ" ซึ่งต่ำเกินจริงในระบบ pull (ใบทยอยเปิด เป้าเลยโตทีหลัง)
       let onTimeTarget = target, runN = 0, capN = 0;   // เครื่องที่เดินได้จริง / เต็มกำลัง (ไว้อธิบายบนจอ)
       if (s.status === 'open' && s.start_time) {
-        const shiftStart = new Date(`${workDate}T${s.start_time.slice(0, 5)}:00`).getTime();
+        const shiftStart = new Date(`${shiftStartDate(workDate, s.start_time.slice(0, 5), s.shift)}T${s.start_time.slice(0, 5)}:00`).getTime();
         // เปิดใบแรกช้ากว่าเริ่มกะ = เพิ่งเริ่มผลิตตอนนั้น (ก่อนหน้านั้นยังไม่มีงานให้ทำ)
         const firstOpen = os.reduce((m, o) => { const t = o.opened_at ? new Date(o.opened_at).getTime() : null; return t && (m == null || t < m) ? t : m; }, null);
         const anchor = Math.max(shiftStart, firstOpen ?? shiftStart);
@@ -851,8 +852,8 @@ export default function FactoryMap({ setupMode = false }) {
       const wLoadBrkIv = (s.start_time && Number(s.shift_min || 570) > 0)
         ? breakIntervalsIn({
             policies: breaks || [],
-            startMs: new Date(`${workDate}T${s.start_time.slice(0, 5)}:00`).getTime(),
-            endMs: new Date(`${workDate}T${s.start_time.slice(0, 5)}:00`).getTime() + (s.shift_min || 570) * 60000,
+            startMs: new Date(`${shiftStartDate(workDate, s.start_time.slice(0, 5), s.shift)}T${s.start_time.slice(0, 5)}:00`).getTime(),
+            endMs: new Date(`${shiftStartDate(workDate, s.start_time.slice(0, 5), s.shift)}T${s.start_time.slice(0, 5)}:00`).getTime() + (s.shift_min || 570) * 60000,
             workDate, shift: s.shift,
           })
         : [];
@@ -1904,8 +1905,9 @@ export default function FactoryMap({ setupMode = false }) {
       // HEIC/HEIF จากกล้องมือถือ → แปลงเป็น JPEG ก่อน derive ext/ชนิด (ไฟล์อื่นคืนตัวเดิม)
       file = await toDecodableImage(file);
       const srcExt = (file.name.split('.').pop() || 'jpg').toLowerCase();
-      const isGif = file.type === 'image/gif' || srcExt === 'gif';
-      if (isGif && file.size > 2 * 1024 * 1024) { toast.error('GIF ต้องไม่เกิน 2MB'); return; }
+      // 🔴 ตัวเช็ค GIF + เพดานขนาด = utils/imageFileKind.js จุดเดียว (08/10)
+      const isGif = isGifFile(file);
+      if (isGif && file.size > GIF_MAX_BYTES) { toast.error(GIF_TOO_BIG_MSG); return; }
       /* คงความละเอียด 2560px (ผังโรงงานต้องซูมอ่านชื่อไลน์ได้) แต่แปลงเป็น WebP —
          ผังเดิมเป็น PNG 2.4 MB และจอ TV ทุกเครื่องโหลดทั้งก้อน · ดู src/utils/layoutImage.js */
       const { blob, ext } = isGif ? { blob: file, ext: 'gif' } : await compressLayoutImage(file);

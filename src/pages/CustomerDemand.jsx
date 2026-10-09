@@ -5,6 +5,7 @@ import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
 import { FRAME_START, frameMin, breaksToFrame } from '../utils/timeFrame';
+import { mergeById } from '../utils/mergeRows';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
 import FilterBar from '../components/FilterBar';
@@ -218,10 +219,13 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
     setFgDest(fgDestName);
     setWfSteps(wfs || []);
     setPastDue(past || []);
-    const list = [
-      ...(d1 || []).filter(o => !o.ship_time || o.ship_time.slice(0, 5) >= '08:00'),
-      ...(d2 || []),
-    ];
+    /* 2 คิวรีคนละ due_date (D · D+1 กะดึก) ไม่ใช่ transaction ⇒ ใบที่ถูกอัพโหลดทับ/แก้เวลาส่ง
+       ระหว่างอ่าน เข้าเงื่อนไขทั้งคู่ได้ = บล็อกซ้ำบน Shipping Time Chart + ตัวนับ "กี่รอบ" เกินจริง
+       (วัดจริง 08/10: harness เตือนคีย์ซ้ำ 4 ใบ) · ชุดหลัง (กะดึกของ D+1) ชนะ — utils/mergeRows.js */
+    const list = mergeById(
+      (d1 || []).filter(o => !o.ship_time || o.ship_time.slice(0, 5) >= '08:00'),
+      d2 || [],
+    );
     // เรียงตามเวลาบนกรอบวันงาน — ใช้ frameMin จาก utils/timeFrame (ห้ามเขียน wrap นาทีเองซ้ำ — UI-CONVENTIONS §6) · ไม่ระบุเวลา = ท้ายสุด
     const wrapKey = (o) => frameMin(o.ship_time?.slice(0, 5)) ?? 100000;
     list.sort((a, b) => wrapKey(a) - wrapKey(b));

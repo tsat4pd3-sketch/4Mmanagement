@@ -1,6 +1,8 @@
 /* mock client สำหรับ audit layout เท่านั้น — คืนข้อมูลว่าง ให้หน้า render โครงออกมาได้ */
 
 /* ชื่อประเภทจริงจากระบบ — ยาว/สั้นคละกันเหมือนของจริง (ใช้ทดสอบกราฟจัดอันดับ + ป้ายแกนที่ถูกตัด) */
+/** วันงานย้อนหลัง n วันจากวันนี้ (เวลาไทย) — ให้รายงานย้อนหลังที่ default 30 วันมีข้อมูล */
+const _recentDay = (n) => new Date(Date.now() + 7 * 3600e3 - 8 * 3600e3 - n * 86400e3).toISOString().slice(0, 10);
 const DT_NAMES = ['JIG มีปัญหา (ชำรุด/ปรับแก้)', 'Robot (Alarm/Error)', 'เลเซอร์มีปัญหา',
   'เครื่องแจ้งเตือน Alarm (ไม่ระบุสาเหตุ)', 'อื่นๆ (นอกแผน)', 'แก้ไขปัญหาคุณภาพ',
   'รอกระบวนการก่อนหน้า (นอกแผน)', 'ราง Conveyor มีปัญหา', 'Sensor / Reed มีปัญหา', 'ลวดเชื่อมติด',
@@ -235,6 +237,23 @@ const AM_TARGET = {
 const AM_INSP = { 2: 'fail', 5: 'pending', 8: 'pending', 12: 'pending', 13: 'pending', 14: 'pending' }
 
 const TABLE_ROWS = {
+  /* 🔑 ทะเบียน action ในตารางสิทธิ์ — **ห้ามปล่อยให้ resource/action เป็น null** (2026-10-08)
+     เดิม `permission_catalog` ได้ ROWS ทั่วไป (ไม่มี 2 คอลัมน์นี้) ⇒ คีย์ของทุกแถวกลายเป็น
+     `undefined:undefined` เหมือนกันหมด ⇒ harness เตือนคีย์ซ้ำ 14 แถว และ **แท็บ "การทำงาน"
+     ของ /permissions ไม่เคยถูกเรนเดอร์จริงเลย** (14 แถวที่ React กลืนเหลือแถวเดียว)
+     ของจริง 2 คอลัมน์นี้ not null + เป็น PK คู่กัน (`${resource}:${action}`)
+     แถว 15 ตั้งใจให้ `group_name` เป็นหมวดที่ไม่มีในเมนู ⇒ ต้องขึ้นป้าย ⚠️ หมวดกำพร้า */
+  permission_catalog: (r, i) => ({
+    ...r,
+    /* คู่ resource:action ต้อง **ไม่ซ้ำกันเลยทั้ง 15 แถว** (ของจริงเป็น PK คู่) —
+       จับคู่แบบ i%5 × ⌊i/5⌋ ⇒ 15 แถวได้ 15 คีย์ไม่ซ้ำ · แถว NULLISH(14) ก็ได้ค่าด้วย
+       เพราะ 2 คอลัมน์นี้ not null ของจริง (ของที่ nullable ยังปล่อย null ตามเดิม) */
+    resource: ['four_m', 'products', 'daily_report', 'mtn_order', 'line_stock'][i % 5],
+    action: ['create', 'approve', 'manage_master', 'close_cost', 'issue'][Math.floor(i / 5) % 5],
+    label: `สิทธิ์ทดสอบ ${i}`,
+    group_name: i >= 15 ? 'หมวดที่ไม่มีในเมนู' : ['ฝ่ายผลิต', 'การตรวจสอบและซ่อมบำรุง', 'คุณภาพ & วิศวกรรม'][i % 3],
+    sort: i,
+  }),
   /* 🌳 BOM — **ห้ามถอดรูปทรง "ของชิ้นเดียวถูกนิยามไว้ 2 ใบ"** (2026-10-08)
      เดิม `bom_items` ได้ ROWS ทั่วไปที่ `parent_mat` เป็น null ทุกแถว + `product_id` เป็น `p-N`
      ซึ่ง**ไม่ตรงกับ id ของ dr_products เลยสักแถว** ⇒ 2 สาขานี้ไม่เคยถูกเรนเดอร์ใน crashsweep:
@@ -301,7 +320,13 @@ const TABLE_ROWS = {
       changed_at: `2026-${String(8 + (i % 3)).padStart(2, '0')}-1${i % 9}T03:00:00Z` };
   },
   line_technicians: (r, i) => ({ ...r, employee_id: `id-${i}`, line_id: 'id-3' }),
-  line_helpers: (r, i) => ({ ...r, employee_id: `id-${(i % 4) + 7}`, to_line_id: 'id-9', shift: i % 2 ? 'day' : 'night' }),
+  line_helpers: (r, i) => ({ ...r, employee_id: `id-${(i % 4) + 7}`, to_line_id: 'id-9', shift: i % 2 ? 'day' : 'night',
+    work_date: _recentDay(i % 20) }),
+  /* 📊 แผน vs มาจริง (08/10) — เช็คชื่อกระจาย 20 วันล่าสุด · คนตรงกับทะเบียน (id-*) · คละ มา/ลา/ขาด
+     ⇒ จอย้อนหลังรายวันมีทั้งกะที่ขาด/ครบ/เกิน/ไม่ได้เช็ค · หน้าอื่นที่อ่านเช็คชื่อวันนี้ยังได้แถววันนี้ (i%20 = 0) */
+  shift_schedules: (r, i) => ({ ...r, line_id: 'id-3', dept_name: null, day_team: i % 2 ? 'A' : 'B', work_date: _recentDay(i % 20) }),
+  daily_production_logs: (r, i) => ({ ...r, employee_id: `id-${(i % 14) + 1}`, work_date: _recentDay(i % 20),
+    shift: i % 3 ? 'day' : 'night', is_present: i % 6 !== 0, leave_type: i % 12 === 0 ? 'ลาป่วย' : null }),
   /* จุดงาน + จุดประจำ + รูปผัง — ให้สาย "รูปคนบนผัง LAYOUT" ถูกรัน (เดิมไม่มีพิกัด = ไม่มีจุดถูกวาด) */
   workstations: (r, i) => ({ ...r, station_name: `ST-${i} SPOT WELD`, line_id: 'id-3', line_name: LINE_NAME(3),
     pos_top: isNullish(r) ? null : String(15 + (i * 5) % 70), pos_left: isNullish(r) ? null : String(8 + (i * 7) % 84) }),

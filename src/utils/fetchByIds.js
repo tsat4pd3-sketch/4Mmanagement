@@ -18,6 +18,7 @@
  * ⚠️ คืน `error`/`failed` ออกมาให้ผู้เรียกเสมอ — **ห้ามกลืน** จอที่โชว์ตัวเลขรวมต้องบอกได้ว่า
  *    "ตัวเลขนี้ไม่ครบ" ไม่ใช่แสดง 0 เหมือนไม่มีข้อมูลจริง
  */
+import { mergeById } from './mergeRows.js';
 
 /**
  * ⚠️ **`orderBy` ดีฟอลต์เป็น `'id'` — ตาราง/วิวที่ไม่มีคอลัมน์ `id` ต้องส่ง orderBy เองเสมอ**
@@ -84,7 +85,10 @@ export const openPlusHistory = async (openQ, histQ, histN, timeKey = 'created_at
     histQ().order(timeKey, { ascending: false }).limit(histN),
   ]);
   const err = op.error ? { message: op.error } : op.truncated ? { message: 'ใบค้างเยอะเกินเพดาน — โหลดได้ไม่ครบ' } : hi.error;
-  const data = [...op.rows, ...(hi.data || [])].sort((a, b) => String(b[timeKey] || '').localeCompare(String(a[timeKey] || '')));
+  /* ใบที่เปลี่ยนสถานะ "ระหว่าง" 2 คิวรี (คนอื่นกดรับ/ปิดใบพอดี) เข้าเงื่อนไขทั้งคู่ ⇒ มาถึงจอ 2 แถว id เดียวกัน
+     ⇒ คีย์ซ้ำบนบอร์ด + ตัวนับ "ค้างกี่ใบ" บวกเกินจริง (วัดจริง 08/10: /rack-center คีย์ซ้ำ 15 ใบ)
+     ประวัติ (ชุดหลัง) ชนะ — ใบที่ปิดไปแล้วต้องไม่ค้างอยู่ในคอลัมน์รอทำให้มีคนกดซ้ำ · กฎใน utils/mergeRows.js */
+  const data = mergeById(op.rows, hi.data || []).sort((a, b) => String(b[timeKey] || '').localeCompare(String(a[timeKey] || '')));
   return { data, error: err || null };
 };
 

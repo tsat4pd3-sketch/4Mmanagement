@@ -36,7 +36,7 @@ import StoreLotQueue from '../components/StoreLotQueue';
 import LineWipPanel from '../components/LineWipPanel';
 import LinePartCallPanel from '../components/LinePartCallPanel';
 import ProcessTypeSetup from '../components/ProcessTypeSetup';
-import { computeSessionOee, strictOee, strictGap, STRICT_WARN_SHARE_PCT, policyBreakOverlapMin, breakIntervalsIn, dtMinOutsideBreaks, overlapMinutesWith, buildCtMap, ctForMat, groupSameProductKeys, shiftFrameOf, clampWinToShift, unionIv, dtMinOutsideWork, SIX_BIG_LOSSES, EIGHT_WASTES, sumDefectQty, isTrialDefect, splitDefectQty, QBIN_EMBED, sumSuspectPending } from '../utils/oee';
+import { computeSessionOee, strictOee, strictGap, STRICT_WARN_SHARE_PCT, policyBreakOverlapMin, breakIntervalsIn, dtMinOutsideBreaks, overlapMinutesWith, buildCtMap, ctForMat, groupSameProductKeys, shiftFrameOf, shiftStartDate, clampWinToShift, unionIv, dtMinOutsideWork, SIX_BIG_LOSSES, EIGHT_WASTES, sumDefectQty, isTrialDefect, splitDefectQty, QBIN_EMBED, sumSuspectPending } from '../utils/oee';
 import { resolveShiftTime, checkShiftTime, shiftWindow, windowLabel, fmtOffset, MAX_SHIFT_MIN, checkCloseTime } from '../utils/shiftWindow';
 import ScanModal from '../components/ScanModal';
 import SearchSelect from '../components/SearchSelect';
@@ -308,6 +308,13 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   const isMobile = useIsMobile(); // ≤768px: sidebar รายชื่อกะเป็นแถวบนสุด (สูงไม่เกิน 45vh เลื่อนในตัว) ไม่ sticky — desktop ไม่เปลี่ยน
   const wide1100 = !useIsMobile(1099); // ≥1100px → modal แผ่ 2 คอลัมน์ (reactive แทน innerWidth ครั้งเดียว)
   const navigate = useNavigate();
+  /* 🔴 2026-10-08 — ref ของ `bumpSess` (ตัว coalesce ใน effect realtime ข้างล่าง)
+     `load()` ต้อง "เคาะ" เพดานนี้ตอนจบ ไม่งั้น realtime ของการเซฟ **ตัวเราเอง** เด้งกลับมา
+     แล้วโหลดซ้ำใน ~600 ms ทั้งที่เพิ่งโหลดไป
+     วัดจริง 06/10: รายการกะทั้งวัน 667 ครั้ง ซ้ำใน 2 วิ **293 ครั้ง = 43.9%**
+     ⚠️ ต้องเป็น ref: `bumpSess` ถูกสร้างใหม่ทุกครั้งที่ effect รีรัน (สลับกะ) แต่ `load` ต้องนิ่ง
+        (เป็น dep ของ effect นั้นเอง) ⇒ อ่านค่าตอน "เรียก" ไม่ใช่ตอน "สร้าง" */
+  const sessBumpRef = useRef(null);
   const [lines, setLines]           = useState([]);
   const [lineMap, setLineMap]       = useState({});
   const [products, setProducts]     = useState([]);
@@ -623,6 +630,10 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       setSelSession(null);
     }
     setLoading(false);
+    /* เคาะเพดานของ realtime: "รายการกะชุดนี้เพิ่งโหลดไปแล้ว" — ครอบ**ทุก**เส้นทางที่เรียก load()
+       (effect ตอน mount · handler ที่บันทึกสำเร็จแล้วเรียกตรงๆ 6 จุด · ตัว bump เอง)
+       ⇒ จุดเรียก load() ที่เพิ่มในอนาคตได้ผลนี้เองโดยไม่ต้องไปเติมทีละจุด (ที่พลาดง่ายที่สุด) */
+    sessBumpRef.current?.touch?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- scopeKey (string) แทน scopeSecs ดูหมายเหตุที่ scopeKey
   }, [role, scopeKey, userLineId]);
 
@@ -874,6 +885,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       load();
       if (sid) loadCarryOrders(sid, selSession.line_name);
     }, LIVE.SHIFT);
+    sessBumpRef.current = bumpSess;   // ให้ load() เคาะเพดานตัวนี้ได้ (ดูหมายเหตุที่ sessBumpRef)
     const bumpOrd  = coalesce(() => { if (sid) loadProdOrders(sid, selSession.line_name); }, LIVE.PAGE);
     const bumpDt   = coalesce(() => { if (sid) loadDT(sid); }, LIVE.PAGE);
     const bumpDef  = coalesce(() => { if (sid) loadDefectLogs(sid); }, LIVE.PAGE);
@@ -973,7 +985,12 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
           const done = new Set((conts || []).map(c => c.carried_from_id));
           const pending = carryDts.filter(d => !done.has(d.id));
           if (pending.length) {
-            const startISO = new Date(`${openForm.work_date}T${(openForm.start_time || '08:00').slice(0, 5)}:00`).toISOString();
+            /* 🔴 เวลาเริ่มกะของใบที่ยกข้ามกะ — ต้องผ่าน shiftStartDate() ไม่งั้นกะดึกที่เริ่ม
+               00:00-07:59 จะเขียน timestamp เร็วไป 1 วัน แล้วใบนั้นหลุดนอกกรอบกะของตัวเอง
+               (ตัวนี้ **เขียนลงฐาน** ⇒ เป็นต้นทางของข้อมูลเพี้ยน ไม่ใช่แค่จอ · QC 08/10) */
+            const openHm = (openForm.start_time || '08:00').slice(0, 5);
+            const startISO = new Date(
+              `${shiftStartDate(openForm.work_date, openHm, openForm.shift)}T${openHm}:00`).toISOString();
             const { error: contErr } = await supabaseDR.from('downtime_logs').insert(pending.map(d => ({
               session_id:       data.id,
               downtime_type_id: d.downtime_type_id,
@@ -4347,7 +4364,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 {/* Timeline: machine run / policy break / planned-unplanned downtime — รายละเอียดของ %A, ใช้เวลาเริ่ม-ปิดกะที่บันทึกไว้แล้ว (full-width) */}
                 {(() => {
                   if (!selSession?.work_date || !selSession.start_time) return null;
-                  const winStart = new Date(`${selSession.work_date}T${selSession.start_time.slice(0,5)}:00`).getTime();
+                  const winStart = new Date(`${shiftStartDate(selSession.work_date, selSession.start_time.slice(0,5), selSession.shift)}T${selSession.start_time.slice(0,5)}:00`).getTime();
                   const endTimeStr = selSession.end_time || nowTime();
                   let winEnd = new Date(`${selSession.work_date}T${endTimeStr.slice(0,5)}:00`).getTime();
                   if (winEnd <= winStart) winEnd += 86400000; // กะดึกข้ามวัน
@@ -4808,7 +4825,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   if (!selSession?.work_date) return null;
                   const startTimeStr = closeStartTime || selSession.start_time;
                   if (!startTimeStr) return null;
-                  const winStart = new Date(`${selSession.work_date}T${startTimeStr.slice(0,5)}:00`).getTime();
+                  const winStart = new Date(`${shiftStartDate(selSession.work_date, startTimeStr.slice(0,5), selSession.shift)}T${startTimeStr.slice(0,5)}:00`).getTime();
                   const endTimeStr = closeEndTime || nowTime();
                   let winEnd = new Date(`${selSession.work_date}T${endTimeStr.slice(0,5)}:00`).getTime();
                   if (winEnd <= winStart) winEnd += 86400000; // กะดึกข้ามวัน
@@ -6486,7 +6503,7 @@ function HistoryTab({ role }) {
                   {/* OEE จริง — นับ Downtime "ในแผน" เป็นการสูญเสียด้วย (กันการติ๊กในแผนเพื่อดัน OEE)
                       ฐาน = เวลากะ − พักตามนโยบาย · ดู src/utils/oee.js */}
                   {s.oee != null && (() => {
-                    const shiftStartMs = s.start_time ? new Date(`${s.work_date}T${s.start_time.slice(0, 5)}:00`).getTime() : null;
+                    const shiftStartMs = s.start_time ? new Date(`${shiftStartDate(s.work_date, s.start_time.slice(0, 5), s.shift)}T${s.start_time.slice(0, 5)}:00`).getTime() : null;
                     let shiftEndMs = s.end_time ? new Date(`${s.work_date}T${s.end_time.slice(0, 5)}:00`).getTime() : null;
                     if (shiftStartMs && shiftEndMs && shiftEndMs <= shiftStartMs) shiftEndMs += 86400000;
                     const brkIvS = shiftStartMs && shiftEndMs ? histBreakIv(shiftStartMs, shiftEndMs, s.work_date, s.shift) : [];

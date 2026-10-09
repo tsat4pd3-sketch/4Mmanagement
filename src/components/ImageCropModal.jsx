@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { toast } from './Toast';
 import { isHeicFile, toDecodableImage } from '../utils/heicToJpeg';
-import { looksLikeImage, isGifFile, extOf } from '../utils/imageFileKind';
+import { looksLikeImage, isGifFile, extOf, GIF_MAX_BYTES } from '../utils/imageFileKind';
 
 /* ─── ImageCropModal ───────────────────────────────────────────────────────
    Crop/reposition + zoom รูปก่อนอัปโหลด ให้เห็นกรอบจริงที่จะถูกใช้แสดงผล
@@ -18,7 +18,7 @@ import { looksLikeImage, isGifFile, extOf } from '../utils/imageFileKind';
 // GIF (รูปขยับ): การวาดลง canvas ได้เฟรมแรกเฟรมเดียว = การเคลื่อนไหวหาย
 // จึงส่งไฟล์ต้นฉบับผ่านไปทั้งไฟล์แทน แลกกับการจำกัดขนาด ไม่งั้น storage บวม
 // (เคยเจอ GIF เฉลี่ยไฟล์ละ ~4MB ใหญ่กว่ารูปนิ่งที่บีบแล้ว ~30 เท่า)
-const GIF_MAX_BYTES = 2 * 1024 * 1024;
+// 🔴 เพดานขนาดอยู่ที่ utils/imageFileKind.js จุดเดียว (08/10 — เดิมประกาศซ้ำ 6 ที่)
 
 // ตัวตรวจชนิดไฟล์อยู่ที่ utils/imageFileKind.js จุดเดียว (มีเทส) — ห้ามเขียนซ้ำในหน้า
 
@@ -60,7 +60,8 @@ export default function ImageCropModal({
   const FRAME_W = 300;
   const FRAME_H = Math.round(FRAME_W / aspect);
 
-  const isGif = srcFile?.type === 'image/gif';
+  // 🔴 isGifFile() ดูนามสกุลด้วย — Android ส่ง MIME ว่างมากับรูปจริง (เทียบ type ล้วน = พลาด)
+  const isGif = isGifFile(srcFile);
 
   useEffect(() => {
     // ตั้ง converting ให้ตรงกับไฟล์ปัจจุบันเสมอ (sync) — เดิมตั้ง true เฉพาะเมื่อเป็น HEIC และ reset เฉพาะเมื่อ !cancelled
@@ -92,7 +93,7 @@ export default function ImageCropModal({
         return;
       }
       // เช็คขนาด GIF หลังแปลงเสมอ (ไฟล์ที่แปลงแล้วเป็น JPEG ไม่เข้าเงื่อนไขนี้)
-      if (f.type === 'image/gif' && f.size > GIF_MAX_BYTES) {
+      if (isGifFile(f) && f.size > GIF_MAX_BYTES) {
         toast.error(`รูปขยับ (GIF) ต้องมีขนาดไม่เกิน 2 MB (ไฟล์นี้ ${(f.size / 1024 / 1024).toFixed(1)} MB) — ลองใช้ GIF ที่สั้นลง/เล็กลง หรือย่อไฟล์ก่อนอัปโหลด`);
         onCancel?.();
         return;

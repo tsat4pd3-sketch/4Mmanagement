@@ -1192,6 +1192,23 @@ const RULES = [
     },
   },
   {
+    id: 'shift-frame-start-via-helper',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* จับการต่อ "เวลาเริ่มกะ" จาก work_date + start_time ตรงๆ เป็น timestamp
+       (รูปที่เจอจริงทั้ง 6 สำเนา: `${wd}T${st}` / `${work_date}T${start_time}`) */
+    re: /new Date\(`\$\{[\w.?]*(wd|work_date|workDate)\}T\$\{[^`]*(st|start_time|startHm|openHm|startTimeStr)\b/g,
+    why: 'กะดึกที่บันทึกเวลาเริ่ม 00:00-07:59 = **เช้าของวันถัดไป** ⇒ ต่อ work_date + start_time ตรงๆ '
+       + 'ได้กรอบกะ **เร็วไป 20 ชม.** แล้วไปโดน clampWinToShift (ช่วงของ MAT) + dtMinOutsideWork '
+       + '⇒ %A/%P เพี้ยนเงียบ · และจุดที่ **เขียนลงฐาน** (ใบ downtime ที่ยกข้ามกะใน DailyReport) '
+       + 'ยังทำให้ timestamp ในฐานเพี้ยนไป 1 วันด้วย = ต้นทางของข้อมูลเสีย ไม่ใช่แค่จอ '
+       + '· กฎนี้ถูกก๊อป **6 สำเนา** (shiftFrameOf · computeLiveOee · computeSessionOee · sessionWindow '
+       + '· mtnMetrics · DailyReport) รอบแก้ 06/10 ไปแก้แค่ 2 ⇒ ที่เหลือยังพังต่ออีก 2 วัน (QC 08/10)',
+    fix: "ห่อวันด้วย `shiftStartDate(workDate, 'HH:MM', shift)` จาก src/utils/oee.js ก่อนต่อเป็น Date",
+    allow: {
+      'src/utils/oee.js': 'เจ้าของกฎ — shiftStartDate ประกาศและถูกเรียกครบทุกจุดในไฟล์นี้แล้ว (ตรวจด้วยเทส shiftStartDate.test.mjs)',
+    },
+  },
+  {
     id: 'shift-start-date-via-helper',
     scan: ['src'], ext: ['.jsx', '.js'],
     /* จับการ "บวก 1 วันให้กะดึก" ที่เขียนเองนอกของกลาง — รูปที่เจอจริงคือ
@@ -1479,6 +1496,22 @@ test('🛡️ close-time-needs-downtimes — ทุกจุดที่เร�
    ผลพิจารณาอยู่ในทะเบียนถังเหลือง/แดง ⇒ คิวรีที่เอา defect_logs ไปคิด %Q **ต้อง embed ทะเบียนถังมาด้วย**
    ไม่ embed = `suspectState()` คืน 'unknown' ⇒ ระบบถอยไปใช้พฤติกรรมเดิม (นับสงสัยเป็นของเสีย)
    ⇒ จอ 2 จออ่านข้อมูลชุดเดียวกันแล้วตอบ %Q ไม่เท่ากัน — คลาสเดียวกับที่เคยเกิดกับ `excl_from_q` */
+/* ── 🛡️ self-save-must-touch-coalesce (2026-10-08) ────────────────────────────────────
+   จอที่ "บันทึกเองแล้วเรียกตัวโหลดตรงๆ" **และ** มี `coalesce` ฟัง realtime ของตารางเดียวกัน
+   ⇒ realtime ของการเซฟ **ตัวเราเอง** เด้งกลับมาแล้วโหลดซ้ำใน ~600 ms (settleMs)
+   เพราะ `lastRun` ของ coalesce ขยับเฉพาะตอน `run()` ของมันเอง — ไม่รู้ว่าเราโหลดไปแล้ว
+   วัดจริง 06/10: รายการกะทั้งวันของ DailyReport 667 ครั้ง · ซ้ำใน 2 วิ **293 = 43.9%**
+   🔑 แก้ที่ปลาย `load()` ด้วย `<bumpRef>.current?.touch?.()` — ครอบทุกเส้นทางที่โหลด
+      **ห้ามเอาการบันทึกไปรอเพดาน** (กดบันทึกแล้วจอนิ่ง 600 ms บนจอกรอกงาน = แย่กว่าเดิม) */
+test('🛡️ self-save-must-touch-coalesce — DailyReport.load() ต้องเคาะเพดาน coalesce ตอนจบ', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'));
+  assert.match(code, /sessBumpRef\.current\s*=\s*bumpSess/,
+    'ต้องผูก bumpSess เข้า ref ใน effect realtime — ไม่ผูก = touch() ไม่มีผล (เงียบ)');
+  assert.match(code, /sessBumpRef\.current\?\.touch\?\.\(\)/,
+    'ปลาย load() ต้องเรียก sessBumpRef.current?.touch?.() — ไม่เรียก = ทุกครั้งที่บันทึกบนจอที่เงียบ '
+  + 'มาก่อน จ่ายรอบโหลดฟรี 1 รอบ (วัดจริง 06/10 = 43.9% ของคิวรีที่หนักสุดในระบบ)');
+});
+
 /* ── 🛡️ no-session-object-in-db-effect-deps (2026-10-06) ──────────────────────────────
    deps ของ effect/useCallback ที่ยิง DB **ห้ามมี object** (กฎเหล็กข้อ 9 ใน CLAUDE.md)
    `selSession` เป็นตัวที่พลาดซ้ำได้ง่ายที่สุด เพราะ `load()` ของ DailyReport ปิดท้ายด้วย
@@ -3311,6 +3344,26 @@ test('🛡️ daily-am-single-loader — จอ AM รายวัน (DailyPM �
     '\n\n❌ METRICS.am ใน FactoryMap กลับไปตัดสินจาก amTotal/amOverdue (วันครบกำหนดแผน) — ต้องใช้ amD* จาก dailyAmLineStatus\n');
 });
 
+/* ── ลบแถวทะเบียน cost center ต้องนับปลายทางก่อน (08/10 · เคสจริง 06/10) ──────────────
+   06/10 มีการลบ 31 แถวใน `cost_centers` ด้วยเหตุผล "ชื่อว่าง น่าจะไม่ได้ใช้" — ตรวจย้อนพบว่า
+   29 รหัสในนั้นบัญชีตั้ง activity rate ปี 2026 ไว้ครบ (ชื่อหน่วยจริงอยู่ใน cost_center_rates.note)
+   แผงทะเบียนลบทันทีโดยไม่เคยนับปลายทาง — ขัดกฎ CLAUDE.md "นับไม่ครบ = ห้ามลบ (fail-closed)" */
+test('🛡️ cost-center-delete-needs-refs — แผงทะเบียน cost_centers ต้องส่ง onBeforeDelete', () => {
+  const bad = walk(join(ROOT, 'src'), ['.js', '.jsx']).filter((f) => {
+    const code = stripComments(readFileSync(f, 'utf8'));
+    if (!/table=["']cost_centers["']/.test(code)) return false;
+    return !/onBeforeDelete/.test(code) || !/costCenterRefs/.test(code);
+  }).map(f => f.replace(ROOT + '/', ''));
+  assert.deepEqual(bad, [],
+    '\n\n❌ แผงที่เรนเดอร์ทะเบียน `cost_centers` ไม่มีด่านนับปลายทางก่อนลบ: ' + bad.join(', ') + '\n'
+    + '   ทำไมผิด: cost_centers.code จับคู่ด้วย "ข้อความ" ไม่ผูก FK ⇒ ลบแล้วไม่มีใครเตือน\n'
+    + '            ปลายทางมี 3 ทาง: production_lines · org_nodes · **cost_center_rates (ค่าแรงจากบัญชี)**\n'
+    + '            + แกน KPI (scope_kind=cost_center) · เช็คแค่ไลน์/ผัง = ตอบ "ไม่มีใครใช้" ทั้งที่มี\n'
+    + '            รหัสที่หลุดจากทะเบียน <CostCenterSelect> (allowFree=false) เลือกไม่ได้อีก\n'
+    + '   แก้ยังไง: onBeforeDelete={async (r) => costCenterBlockMessage(r.code,\n'
+    + '               await loadCostCenterRefs(supabase, r.code))}  (src/utils/costCenterRefs.js)\n');
+});
+
 
 /* ═══ 📑 CSV export ต้องผ่านทะเบียนเอกสาร (2026-10-08 · QC audit รอบ 3) ═══
    CLAUDE.md §doc-forms: *"เอกสาร export ใหม่ทุกตัว (ฟอร์มพิมพ์/PDF/Excel/รายงานภายใน/CSV —
@@ -3347,4 +3400,115 @@ test('📑 csv-export-via-csvDoc — สร้างไฟล์ CSV ต้อ�
     + '        + seed doc_key ใน migration (ดู 20261008_doc_forms_csv_round2_main.sql)\n'
     + '        + เรียก loadDocForms() ที่หน้านั้น (docFormSync เป็น sync ⇒ ต้อง warm cache เอง)\n'
     + '   🔴 ห้ามแทรกบรรทัดเลขฟอร์มในเนื้อ CSV — เลขฟอร์มอยู่ที่ "ชื่อไฟล์" เท่านั้น\n');
+});
+
+/* ── ตารางมอนิเตอร์ใช้หัวคอลัมน์/วันเริ่มชุดเดียว (08/10 · user "หัวตาราง/การกรอง/วันเริ่ม ให้ทิศทางเดียวกัน") ── */
+test('🛡️ MonitorBoardGrid + RundownStock: หัวคอลัมน์ช่วงเวลาผ่าน utils/periodHead.js · บอร์ดเปิดมาที่วันนี้', () => {
+  for (const f of ['src/components/MonitorBoardGrid.jsx', 'src/pages/RundownStock.jsx']) {
+    const code = stripComments(readFileSync(join(ROOT, f), 'utf8'));
+    assert.ok(/from '\.\.\/utils\/periodHead'/.test(code) && /periodHead\(/.test(code),
+      `\n\n❌ ${f} เขียนป้ายหัวคอลัมน์เอง — ต้องใช้ periodHead() (ป้าย/วันนี้/สี ชุดเดียวทุกตาราง)\n`);
+    assert.ok(!/const dayLabel\s*=/.test(code), `\n\n❌ ${f} กลับไปมี dayLabel ของตัวเองอีกแล้ว\n`);
+  }
+  const grid = stripComments(readFileSync(join(ROOT, 'src/components/MonitorBoardGrid.jsx'), 'utf8'));
+  assert.ok(/startIndexForToday\(/.test(grid) && /isTodayPeriod\(/.test(grid),
+    '\n\n❌ บอร์ดต้องเปิดมาที่คอลัมน์วันนี้ (startIndexForToday) และชี้วันนี้แบบรู้จักบอร์ดรายสัปดาห์ (isTodayPeriod)\n');
+});
+
+/* ── 🖼️ ลบรูปใน storage ต้องนับผู้อ้างก่อน เมื่อ path ถูกแชร์ได้ (08/10 · QC audit) ────────
+   เคสจริง: `copyChecklistToEquipment/Dept` คัดลอกจุดตรวจไปเครื่องอื่นโดย **ใช้ image_path เดิม
+   ร่วมกัน ไม่ก๊อปไฟล์** ⇒ `handleDelete` ที่ลบทั้งโฟลเดอร์ `jigs/<id>/` ทำให้รูปจุดตรวจของทุก
+   เครื่องที่ก๊อปไป **หายถาวร กู้ไม่ได้ และไม่มี error ฟ้อง** · path เดียวถูกอ้างจาก 3 ตาราง
+   (jig_images · jigs · jig_checkpoints) ⇒ ต้องผ่าน `orphanImagePaths()` ที่นับครบทั้ง 3 + fail-closed
+   📄 `docs/modules/pm-hub-check-setup.md` §คัดลอกแผน PM */
+test('🛡️ jig-image-delete-needs-ref-count — ลบรูป bucket jig-images ต้องผ่าน orphanImagePaths()', () => {
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const rel = relative(ROOT, file);
+    if (rel.includes('__tests__') || rel.endsWith('utils/jigImageRefs.js')) continue;
+    const code = stripComments(readFileSync(file, 'utf8'));
+    if (!/from\(\s*['"]jig-images['"]\s*\)[\s\S]{0,200}?\.remove\(/.test(code)) continue;
+    /* เฉพาะไฟล์ที่แตะ path ใต้ `jigs/` — นั่นคือชุดที่ถูกแชร์ตอนคัดลอกจุดตรวจ
+       รูปผังโซน `facility/<id>.<ext>` (MtnMachineLayout) เป็น 1 path ต่อ 1 แถว ไม่ถูกแชร์ ⇒ ไม่เข้าข่าย
+       ⚠️ ถ้าวันหน้ามีการแชร์ path แบบอื่น ให้ขยายเงื่อนไขนี้ ไม่ใช่ใส่ allow-list รายไฟล์ */
+    if (!/['"`]jigs\//.test(code)) continue;
+    if (!/orphanImagePaths\s*\(/.test(code)) bad.push(rel);
+  }
+  assert.deepEqual(bad, [], '\n\n❌ ลบไฟล์ใน bucket `jig-images` โดยไม่นับผู้อ้าง: ' + bad.join(', ') + '\n'
+    + '   ทำไม: จุดตรวจที่ "คัดลอกไปเครื่อง/แผนกอื่น" ใช้ image_path เดิมร่วมกัน (ไม่ก๊อปไฟล์)\n'
+    + '         ⇒ ลบรูปของเครื่องต้นแบบ = รูปของทุกเครื่องที่ก๊อปไปเสียถาวร ไม่มี error ฟ้อง\n'
+    + '   แก้ยังไง: `const { orphan } = await orphanImagePaths(paths, { exceptJigId })` แล้วลบแค่ orphan\n'
+    + '             (นับไม่ได้ = ของกลางคืน orphan ว่าง = ไม่ลบ · ไฟล์กำพร้าค้าง ดีกว่าลบของที่ยังใช้)\n');
+});
+
+/* ── 📄 CSV export ต้องผ่าน `utils/csvDoc.js` (ทะเบียนเอกสาร + กัน formula injection) ──────
+   กฎ 06/10 (user เคาะ "เข้า ทำเลย"): CSV ที่หลุดออกจากระบบก็เป็นเอกสาร ต้อง register /doc-forms
+   รอบนั้น seed 8 คีย์ แต่ **ตก /report (10 จุด) และ /daily-report (2 จุด)** ซึ่งเขียน helper เอง
+   🔴 ตัวของ DailyReport ยัง **ไม่มีตัวกัน formula injection เลย** — ค่าที่คนพิมพ์ขึ้นต้น `=`
+      ถูก Excel รันเป็นสูตร · ไฟล์มีรหัสพนักงาน ชื่อ-สกุล การมาทำงาน เบี้ยทักษะ
+   📄 `docs/modules/doc-forms.md` §CSV export ก็เป็นเอกสาร */
+test('🛡️ csv-export-via-csvdoc — หน้าที่ทำไฟล์ CSV ห้ามประกอบ Blob/escape เอง', () => {
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const rel = relative(ROOT, file);
+    if (rel.includes('__tests__') || rel.endsWith('utils/csvDoc.js')) continue;
+    const code = stripComments(readFileSync(file, 'utf8'));
+    // สร้าง Blob ชนิด text/csv เอง = ไม่ผ่านทะเบียน/ไม่การันตีว่ากัน formula injection
+    if (/new Blob\([^)]*text\/csv/.test(code)) bad.push(`${rel} (new Blob text/csv)`);
+  }
+  assert.deepEqual(bad, [], '\n\n❌ มีจุดทำไฟล์ CSV เองไม่ผ่านของกลาง: ' + bad.join(', ') + '\n'
+    + '   ทำไม: (1) ไม่เข้าทะเบียน /doc-forms — doc_control คุมเลขฟอร์ม/Rev ไม่ได้\n'
+    + '         (2) ทุกชุดที่เขียนเองมีสิทธิ์ลืมตัวกัน CSV formula injection (เกิดจริงที่ DailyReport)\n'
+    + '   แก้ยังไง: `downloadCsvDoc(docKey, legacyName, csvText(headers, rows))` + seed doc_key\n'
+    + '             (form_code = null ⇒ วันที่ apply ชื่อไฟล์เหมือนเดิมเป๊ะ)\n');
+});
+
+/* ── 🎞️ ตัวเช็ค GIF + เพดานขนาด ต้องมาจาก `utils/imageFileKind.js` จุดเดียว (08/10 · QC audit) ──
+   กฎเดิม (storage-images.md): *"ตัวตรวจชนิดไฟล์ = imageFileKind.js จุดเดียว (ดูนามสกุลด้วย
+   ไม่ใช่แค่ MIME)"* — แต่ไม่มีด่าน ⇒ drift กลับมา **6 ไฟล์** (รวมของกลาง ImageCropModal เอง)
+   🔴 ทำไมสำคัญ: **Android/Chrome ส่ง MIME ว่างมากับรูปจริง** ⇒ `type === 'image/gif'` เป็นเท็จ
+      = เพดาน 2MB รั่ว = GIF เฉลี่ย 4 MB/ไฟล์ ขึ้น storage (เคยทำ egress ทะลุโควต้าจน
+      Supabase ล็อกบริการทั้ง organization — ทั้งโรงงาน login ไม่ได้)
+   · เลขเพดานก็ห้ามเขียนซ้ำ — `GIF_MAX_BYTES` / `GIF_TOO_BIG_MSG` */
+test('🛡️ gif-check-via-imagefilekind — ห้ามเทียบ image/gif หรือเขียนเพดาน GIF เองในหน้า', () => {
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const rel = relative(ROOT, file);
+    if (rel.includes('__tests__') || rel.endsWith('utils/imageFileKind.js')) continue;
+    const code = stripComments(readFileSync(file, 'utf8'));
+    // layoutImage.js เทียบ type ภายในตัวบีบ (ได้ไฟล์ที่ผ่านด่านมาแล้ว) — ข้อยกเว้นที่บันทึกไว้
+    if (!rel.endsWith('utils/layoutImage.js') && /['"]image\/gif['"]\s*===|===\s*['"]image\/gif['"]/.test(code)) {
+      bad.push(`${rel} (เทียบ 'image/gif' เอง → ใช้ isGifFile())`);
+    }
+    if (/2\s*\*\s*1024\s*\*\s*1024/.test(code) && /gif/i.test(code)) {
+      bad.push(`${rel} (เขียนเพดาน GIF 2MB เอง → ใช้ GIF_MAX_BYTES)`);
+    }
+  }
+  assert.deepEqual(bad, [], '\n\n❌ ตัวเช็ค GIF เขียนเองนอกของกลาง:\n' + bad.map(b => '   • ' + b).join('\n') + '\n'
+    + '   ทำไม: Android ส่ง MIME ว่างมากับรูปจริง ⇒ เทียบ type ล้วน = เพดาน 2MB รั่ว\n'
+    + '         GIF บีบไม่ได้ (เฉลี่ย 4 MB/ไฟล์) · egress เคยทะลุโควต้าจนทั้งโรงงาน login ไม่ได้\n'
+    + '   แก้ยังไง: `isGifFile(file)` + `GIF_MAX_BYTES` / `GIF_TOO_BIG_MSG` จาก utils/imageFileKind.js\n');
+});
+
+/* ── 📦 ไลบรารี export ก้อนใหญ่ ต้อง lazy (08/10 · QC audit · egress ข้อ 11) ──────────────
+   `jspdf` ~400 KB · `jspdf-autotable` ~30 KB · `xlsx` ~424 KB · `exceljs` ~930 KB
+   static import = **โหลดตอน "เปิดหน้า" ไม่ใช่ตอน "กด export"** · วัดจากบันเดิลจริง 08/10:
+   `PMCheckData-*.js` ดึง jspdf + autotable มาทุกครั้งที่เปิด /pm?tab=check (429 KB)
+   และ `EventLog` ดึง xlsx 424 KB — ที่เหลือทั้งระบบ lazy อยู่แล้ว 2 จุดนี้เป็นตัวที่ตก */
+test('🛡️ export-libs-lazy-import — jspdf/xlsx/exceljs ห้าม static import', () => {
+  const LIBS = ['jspdf', 'jspdf-autotable', 'xlsx', 'exceljs'];
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const rel = relative(ROOT, file);
+    if (rel.includes('__tests__')) continue;
+    const code = stripComments(readFileSync(file, 'utf8'));
+    for (const lib of LIBS) {
+      const re = new RegExp(`^\\s*import\\s[^;]*?from\\s+['"]${lib.replace('/', '\\/')}['"]`, 'm');
+      if (re.test(code)) bad.push(`${rel} → ${lib}`);
+    }
+  }
+  assert.deepEqual(bad, [], '\n\n❌ ไลบรารี export ถูก static import:\n' + bad.map(b => '   • ' + b).join('\n') + '\n'
+    + '   ทำไม: โหลดตอนเปิดหน้า แม้ผู้ใช้ไม่เคยกด export (jspdf 429 KB · xlsx 424 KB · exceljs 930 KB)\n'
+    + '   แก้ยังไง: `const { default: jsPDF } = await import(\'jspdf\')` ในฟังก์ชัน export\n'
+    + '             (ฟังก์ชันที่เป็น async อยู่แล้วเปลี่ยนได้โดยไม่กระทบผู้เรียก)\n');
 });

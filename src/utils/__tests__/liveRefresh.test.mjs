@@ -121,3 +121,29 @@ test('payloadField — อ่านได้ทั้ง INSERT/UPDATE (new) แ
   assert.equal(payloadField({}, 'session_id'), undefined);
   assert.equal(payloadField(null, 'session_id'), undefined);
 });
+
+/* ── coalesce().touch() — "โหลดไปเองนอกรอบนี้แล้ว" (2026-10-08) ────────────────────────
+   เคสจริงที่ทำให้ต้องมี: จอกรอกงานกดบันทึก → handler เรียก `load()` ตรงๆ (ถูกต้อง เซฟเอง
+   ต้องเห็นผลทันที) แต่ `lastRun` ไม่ขยับ ⇒ realtime ของการเซฟ **ตัวเราเอง** เด้งกลับมา
+   แล้วยิงโหลดอีกรอบใน ~600 ms ทั้งที่ข้อมูลชุดนั้นเพิ่งโหลดไป
+   วัดจริง 06/10: รายการกะทั้งวันของ DailyReport 667 ครั้ง **ซ้ำใน 2 วิ 293 ครั้ง = 43.9%** */
+test('🔴 touch() แล้ว event ที่เด้งกลับทันทีต้องไม่ยิงรอบใหม่ (เซฟเอง = โหลดไปแล้ว)', async () => {
+  let n = 0;
+  const bump = coalesce(() => { n += 1; }, 10_000, 20);
+  bump.touch();          // = handler ของการบันทึกเพิ่งเรียก load() ตรงๆ ไปแล้ว
+  bump();                // realtime ของการเซฟตัวเองเด้งกลับมา
+  await sleep(60);       // เกิน settleMs ไปแล้ว
+  assert.equal(n, 0, 'ไม่ touch = จ่ายรอบโหลดฟรีทุกครั้งที่บันทึกบนจอที่เงียบมาก่อน');
+  bump.cancel();
+});
+
+test('touch() ไม่ได้ปิดเพดานถาวร — ครบ minGap แล้ว event ถัดไปยังโหลดตามปกติ', async () => {
+  let n = 0;
+  const bump = coalesce(() => { n += 1; }, 40, 10);
+  bump.touch();
+  await sleep(70);       // ครบเพดานแล้ว (จำลองคนอื่นบันทึกทีหลัง)
+  bump();
+  await sleep(40);
+  assert.equal(n, 1, 'touch ต้องมีผลแค่ช่วงเพดานเดียว ไม่ใช่ปิด realtime ทิ้ง');
+  bump.cancel();
+});
