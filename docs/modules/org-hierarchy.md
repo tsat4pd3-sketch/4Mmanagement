@@ -971,6 +971,60 @@
 - **"ปิดใช้งาน" ต้องบอกจำนวนคน/บัญชีที่ผูกอยู่ก่อนกด** — คนเดียวกันถูกนับได้ 2 ทาง
   (`org_node_id` + สำเนาชื่อ) ⇒ ใช้ค่ามากสุด **ห้ามบวกกัน**
 
+### 🔴 รอบ 2 (2026-10-08) — ตัวนับ "ใครอ้างโหนดนี้" ตกไป 3 ตาราง · และวิธีเปลี่ยนชื่อโดยคีย์ไม่ขยับ
+
+**ที่มา:** user ให้ชื่อแผนกจริงของ 2 ทีมช่าง (*"Maintenance , DIE Maintenance"*) เพื่อเติมสังกัด
+ให้ 5 บัญชี `role=mtn` ที่ `profiles.section = null` (QC audit 08/10 ชี้ไว้)
+
+#### 3 ตารางที่ `loadOrgNodeRefs()` ไม่เคยนับ — ลบแผนกแล้วกำพร้าเงียบ
+
+ลิสต์ relate table รอบ 05/10 ไล่จาก "ตารางที่นึกออก" ⇒ **ตก 3 ตัว** · วัดใหม่ 08/10:
+
+| ตาราง · คอลัมน์ | แถวที่ถือคีย์ | ผลถ้าไม่นับ |
+|---|---|---|
+| `shift_schedules.dept_name` | `MTN` 35 (+ BIG PRESS/GOR/LWRBAR/SMALL PRESS/ทั่วไป ละ 7) | ตารางกะของแผนกชี้ชื่อที่ไม่มีอยู่ |
+| `kpi_definitions.scope_value` | `MTN` 11 · `JIG MTN` 13 · PD1-4 56 | **นิยาม KPI ทั้งระบบหลุดขอบเขต** |
+| `cost_centers.section` | ผูกส่วนงาน/แผนก | รหัสศูนย์ต้นทุนกำพร้า |
+
+🔴 **วิธีหาลิสต์ให้ครบ = สแกนฐาน ไม่ใช่เขียนจากความจำ** — สแกน *ทุกคอลัมน์ text ของ schema
+`public`* หาค่าที่เท่ากับคีย์โหนด (`query_to_xml` ครอบ `information_schema.columns`) แล้ว**คัดตัวที่
+"คนละความหมาย" ออกด้วยมือ**:
+- `cost_centers.name` — มี `MTN`/`DIE MTN`/`JIG MTN` อยู่จริง แต่นั่นคือ **ชื่อศูนย์ต้นทุนเอง**
+- `pe_cp_items.person` 8 แถว — `MTN` = **ผู้ตรวจในใบ Control Plan** ไม่ใช่หน่วยงาน
+
+⇒ แก้แล้วที่ `ORG_TEXT_REF[].extra` (`src/utils/orgNodeRefs.js`) · นับเข้า `textOther`/`otherBy`
+⇒ ข้อความบล็อกบอกชื่อทะเบียนรายตัว ("ตารางกะ 35 รายการ · นิยาม KPI 11 รายการ") · `renameOrgRefs()`
+ไล่เปลี่ยนตามให้ด้วย · เทส 4 เคสใน `__tests__/orgNodeRefs.test.mjs`
+
+**2 กับดักของ `extra` ที่ต้องรู้ก่อนเพิ่มตารางใหม่:**
+1. 🔴 **`kpi_definitions` เก็บทั้งส่วนงานและแผนกในคอลัมน์เดียว** ⇒ ต้องกรอง `scope_kind` ตามชั้นของ
+   โหนด · ไม่กรอง = ส่วนงานที่ชื่อซ้ำกับแผนกจะนับของกันเอง (และ rename จะเขียนข้ามชั้น)
+2. 🔴 **`cost_centers` ไม่มีคอลัมน์ `id`** (PK = `code`) ⇒ `extra[].pk` · เผลอ `.select('id')`
+   = คิวรีล้ม = `rename` รายงานจำนวนผิดโดยไม่มีใครรู้
+
+#### 🔑 เปลี่ยน "ชื่อที่คนอ่าน" โดยคีย์ไม่ขยับ — ย้ายตัวย่อไปไว้ที่ `code`
+
+`orgKey(n) = n.code || n.name` ⇒ โหนดที่ `code` ว่าง การเปลี่ยน `name` = **เปลี่ยนคีย์**
+= 55 แถวข้างบนชี้ของที่ไม่มีอยู่ (ต้อง `renameOrgRefs()` ไล่ตามทั้งหมด = เสี่ยงและย้อนยาก)
+
+⇒ ท่าที่ใช้กับ MTN / DIE MTN: **ตั้ง `code` = ตัวย่อเดิม · `name` = ชื่อจริง**
+
+| | ก่อน | หลัง | orgKey |
+|---|---|---|---|
+| แผนกซ่อมบำรุง | `code=null` · `name='MTN'` | `code='MTN'` · `name='Maintenance'` | `MTN` (ไม่ขยับ) |
+| แผนกซ่อมแม่พิมพ์ | `code=null` · `name='DIE MTN'` | `code='DIE MTN'` · `name='DIE Maintenance'` | `DIE MTN` (ไม่ขยับ) |
+
+⇒ **ไม่ต้อง re-key แถวใดเลย** (employees.department 18 · shift_schedules 35 · kpi_definitions 11
+· cost_centers 4 ยังตรงครบ) · `mtn_teams.dept_name` ฝั่ง DR และ `DEFAULT_TEAMS` ใน
+`src/utils/pmTeams.js` **ไม่ต้องแก้** — ยังเท่ากับ orgKey (KpiMonthly/ObeyaKpiBoard จับคู่ตัวนี้)
+· ป้ายทีมบนจอ PM/MO (`DEPT_LABEL` ใน `src/lib/pmSchedule.js`) เป็น**ชื่อทีม คนละแกนกับชื่อแผนก**
+ตั้งใจไม่แตะ (คำสั่ง user 22/07 ให้ชื่อทีมตรงกันระหว่าง 2 หน้า)
+
+**สังกัดของ 5 บัญชี** — เก็บเป็น orgKey (`MTN` 3 · `DIE MTN` 2) ให้ตรงแบบเดียวกับบัญชี
+`JIG MTN`/`QA` ที่มีอยู่ (วัด 08/10: กลุ่มนั้น `profiles.section` = ตัวย่อ · `org_node_id` = null)
+· เขียนทับเฉพาะแถวที่ `section` ยังว่าง · migration
+`20261008c_org_mtn_die_dept_names_main.sql` (**apply แล้ว 08/10** · rollback อยู่หัวไฟล์)
+
 ### migration + rollback
 
 `supabase/migrations/20261005_org_nodes_ref_integrity_main.sql` — **apply แล้ว 2026-10-05**
