@@ -1020,6 +1020,22 @@
 · ป้ายทีมบนจอ PM/MO (`DEPT_LABEL` ใน `src/lib/pmSchedule.js`) เป็น**ชื่อทีม คนละแกนกับชื่อแผนก**
 ตั้งใจไม่แตะ (คำสั่ง user 22/07 ให้ชื่อทีมตรงกันระหว่าง 2 หน้า)
 
+#### 🏷️ ป้ายบนจอต้องเป็น "ชื่อจริง" — คีย์เป็นของระบบ คนไม่ต้องเห็น (09/10)
+
+ย้ายตัวย่อไป `code` แล้ว **ยังไม่พอ** — `orgScope.js` ส่ง `nodeCode()` เป็น**ป้าย**ด้วย
+⇒ ทุก dropdown/ข้อความขอบเขตที่วาดผ่าน `<OrgScopePicker>` โชว์ `MTN` ทั้งที่ชื่อจริงคือ `Maintenance`
+
+⇒ แก้ที่ `buildOrgScope` → `push('department', nodeCode(dep), **dep.name** || nodeCode(dep), …)`
+**ป้าย ≠ ค่า** · ตรวจแล้วว่า `labelOf`/`pathOf` เป็น display ล้วน (ข้อความขอบเขต · toast · ป้ายกำกับ
+นิยาม KPI ที่ตกทอด) — **การจับคู่ทุกที่ใช้ `o.value`** (รวม `mtn_teams.dept_name` ที่
+`KpiMonthly`/`ObeyaKpiBoard` เทียบ) ⇒ ขอบเขต/นิยาม KPI ที่บันทึกเป็น `MTN` ยังหาเจอครบ
+· เทสคุมไว้ใน `__tests__/orgScopeDept.test.mjs` (ป้าย = ชื่อ · `has()`/`optionOf().value` = ตัวย่อ)
+
+จุดอื่นที่โชว์แผนกอยู่แล้วถูกต้อง ไม่ต้องแก้: `/org-setup` วาด `node.name` + `({code})` ·
+`ManpowerBoard` ใช้ `d.name` (`manpowerBoard.js` เก็บ `name: d.name`)
+⚠️ `orgValues()` คืน **คีย์** (ไม่ใช่ชื่อ) — ตอนนี้ผู้เรียกทุกตัวกรอง `kind='section'` และส่วนงาน
+ทุกตัวมี `code === name` จึงไม่ต่าง · **ถ้าวันหนึ่งมีส่วนงานที่ code ≠ name ต้องมาแก้จุดนี้ด้วย**
+
 **สังกัดของ 5 บัญชี** — เก็บเป็น orgKey (`MTN` 3 · `DIE MTN` 2) ให้ตรงแบบเดียวกับบัญชี
 `JIG MTN`/`QA` ที่มีอยู่ (วัด 08/10: กลุ่มนั้น `profiles.section` = ตัวย่อ · `org_node_id` = null)
 · เขียนทับเฉพาะแถวที่ `section` ยังว่าง · migration

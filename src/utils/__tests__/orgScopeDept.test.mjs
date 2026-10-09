@@ -31,3 +31,31 @@ test('แผนกที่ไม่มีไลน์ผลิต (QA) = ชุ
   const ix = buildOrgScope({ nodes, lines });
   assert.deepEqual(ix.lineNamesOf('department', 'QA'), []);
 });
+
+/* ── 🏷️ ป้ายแผนก = ชื่อจริง · คีย์ = code||name (2026-10-09 · คำสั่ง user) ───────────────
+   แผนกซ่อมบำรุงถือตัวย่อไว้ที่ `code` เพื่อให้ทะเบียนอื่น (ตารางกะ · นิยาม KPI · ศูนย์ต้นทุน
+   · employees.department) ที่จับคู่ด้วย "ข้อความ" ยังตรง — แต่ **บนจอต้องอ่านว่าชื่อจริง**
+   เดิม orgScope ส่ง nodeCode() เป็นป้ายด้วย ⇒ ทุก dropdown/ข้อความขอบเขตโชว์ "MTN" */
+const mtnNodes = [
+  { id: 'mtn', kind: 'department', code: 'MTN', name: 'Maintenance', parent_id: null, sort_order: 37, is_active: true },
+  { id: 'die', kind: 'department', code: 'DIE MTN', name: 'DIE Maintenance', parent_id: null, sort_order: 36, is_active: true },
+  { id: 'qa2', kind: 'department', code: null, name: 'QA', parent_id: null, sort_order: 36, is_active: true },
+];
+
+test('ป้ายแผนกใช้ชื่อจริง แต่ค่าที่เก็บ/จับคู่ยังเป็นตัวย่อเดิม', () => {
+  const ix = buildOrgScope({ nodes: mtnNodes, lines: [] });
+  // ป้ายบนจอ = ชื่อจริง (labelOf เติมคำนำหน้าชั้น "แผนก: " อยู่แล้วตามเดิม)
+  assert.equal(ix.labelOf('department', 'MTN'), 'แผนก: Maintenance');
+  assert.equal(ix.labelOf('department', 'DIE MTN'), 'แผนก: DIE Maintenance');
+  // ป้ายดิบที่ dropdown วาด (<option> ใช้ o.label ไม่มีคำนำหน้า)
+  assert.equal(ix.optionOf('department', 'MTN').label, 'Maintenance');
+  assert.equal(ix.optionOf('department', 'DIE MTN').label, 'DIE Maintenance');
+  // 🔴 คีย์ไม่ขยับ — ขอบเขต/นิยาม KPI ที่บันทึกเป็น 'MTN' ต้องยังหาเจอ
+  assert.ok(ix.has('department', 'MTN'));
+  assert.ok(ix.has('department', 'DIE MTN'));
+  assert.equal(ix.optionOf('department', 'MTN').value, 'MTN');
+  // ไม่มี code = ป้ายเท่าชื่อเหมือนเดิม (พฤติกรรมเดิมเป๊ะ)
+  assert.equal(ix.labelOf('department', 'QA'), 'แผนก: QA');
+  assert.equal(ix.optionOf('department', 'QA').label, 'QA');
+  assert.ok(ix.has('department', 'QA'));
+});
