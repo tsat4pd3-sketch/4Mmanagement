@@ -147,11 +147,13 @@ export function buildDatePeriods(dates) {
  * @param {Array}    a.rows     [{ key, label, kind, recur?, editable? }] — มาจาก monitor_boards.rows
  * @param {Function} a.manual   (partId, rowKey, periodKey) → ค่าที่คนกรอก (undefined = ไม่กรอก)
  * @param {Function} [a.system] (partId, rowKey, periodKey) → ค่าที่ระบบรู้ (undefined = ระบบไม่รู้)
+ * @param {Function} [a.anchor] (partId, rowKey, periodKey) → ข้อเท็จจริงที่ทับแถว recur ช่องนั้น
+ *                    (BALANCE วันนี้ = ยอดจริงจาก ledger · 12/10) · undefined = เดินสูตรตามปกติ
  * @returns {{ cells: Map, rows: Array, periods: Array, seedKey: string|null }}
  *   cells: key `${partId}|${rowKey}|${periodKey}` → { v, src, editable }
- *          src = 'input' | 'system' | 'recur' | 'const' | 'date' | 'unknown'
+ *          src = 'input' | 'system' | 'recur' | 'ledger' | 'const' | 'date' | 'unknown'
  */
-export function buildGrid({ parts = [], periods = [], rows = [], manual, system }) {
+export function buildGrid({ parts = [], periods = [], rows = [], manual, system, anchor }) {
   const cells = new Map();
   const get = (fn, pid, rk, pk) => {
     if (typeof fn !== 'function') return undefined;
@@ -221,6 +223,14 @@ export function buildGrid({ parts = [], periods = [], rows = [], manual, system 
           }
           cur[row.key] = v;
           put(pid, row.key, pk, v, v === null ? 'unknown' : 'input', true);
+          continue;
+        }
+        /* 🔗 จุดยึดจากข้อเท็จจริง (12/10 · SSOT ยอดสต็อก) — เช่น BALANCE วันนี้ = ยอดคงเหลือจริงใน ledger
+           ทับผลสูตร แล้วคอลัมน์ถัดไปเดินสูตรต่อจากค่านี้ · ไม่รู้ (undefined) = ใช้สูตรเดิม */
+        const av = get(anchor, pid, row.key, pk);
+        if (av !== undefined && num(av) !== null) {
+          cur[row.key] = num(av);
+          put(pid, row.key, pk, cur[row.key], 'ledger', false);
           continue;
         }
         const def = recurDef(row.recur);
