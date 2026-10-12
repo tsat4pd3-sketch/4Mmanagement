@@ -711,7 +711,14 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
     }
     navigate(q.toString() ? `${path}?${q}` : path);
   };
-  const setMonth = (k) => { if (k && k !== SUMMARY_KEY && k <= today.slice(0, 7)) setParam('date', monthEnd(k, today)); };
+  /* 📡 เดือนปัจจุบัน = "สด" (ไม่มี ?date ใน URL ⇒ ตามวันทำงานจริง ข้ามเดือนแล้วบอร์ดเลื่อนตามเอง — จอ TV เปิดค้างเป็นเดือน)
+     เดิมกด ◀ แล้ว ▶ กลับมาเดือนนี้ ยังปัก `date=` ค้างไว้ ⇒ บอร์ดค้างที่เดือนนั้นตลอดกาล (user 12/10 "default ควรจะเป็น live รึป่าว")
+     ⇒ กลับมาถึงเดือนปัจจุบัน = ถอด `date` ออก · เดือนย้อนหลังเท่านั้นที่ปัก */
+  const live = !sp.get('date');
+  const setMonth = (k) => {
+    if (!k || k === SUMMARY_KEY || k > today.slice(0, 7)) return;
+    setParam('date', k === today.slice(0, 7) ? '' : monthEnd(k, today));
+  };
   const shiftMonth = (n) => {
     const [y, m] = monthKey.split('-').map(Number);
     const d = new Date(y, m - 1 + n, 1);
@@ -888,8 +895,11 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       <span className="sep" />
       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
         <button onClick={() => shiftMonth(-1)} title="เดือนก่อน" style={navBtn}>◀</button>
-        <b style={{ fontSize: 13, minWidth: 92, textAlign: 'center' }}>{monthText}</b>
-        <button onClick={() => shiftMonth(1)} disabled={monthKey >= today.slice(0, 7)} title="เดือนถัดไป" style={navBtn}>▶</button>
+        <b style={{ fontSize: 13, minWidth: 92, textAlign: 'center' }} title={live ? 'เดือนปัจจุบัน — ตามวันจริง ข้ามเดือนแล้วเลื่อนเอง' : `ปักดูเดือน ${monthText} อยู่ — กด "สด" เพื่อกลับเดือนปัจจุบัน`}>
+          {monthText}{live && <span style={{ marginLeft: 5, fontSize: 11, fontWeight: 800, color: '#22c55e', verticalAlign: 'middle' }}>● สด</span>}
+        </b>
+        <button onClick={() => shiftMonth(1)} disabled={live} title={live ? 'อยู่เดือนปัจจุบันแล้ว' : 'เดือนถัดไป'} style={navBtn}>▶</button>
+        {!live && <button onClick={() => setParam('date', '')} title="กลับเดือนปัจจุบัน (ตามวันจริง)" style={{ ...navBtn, fontSize: 11.5, padding: '2px 8px', fontWeight: 700 }}>⟲ สด</button>}
       </span>
       <span className="sep" />
       {/* 🎯 โฟกัสช่วงค่า — ยกพื้นแกน Y ให้เห็น gap T/C (แกนไม่เริ่ม 0 ⇒ แผ่นเขียนบอกเอง) */}
