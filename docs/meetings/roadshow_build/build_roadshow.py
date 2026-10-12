@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""ESM Department Roadshow deck (TSG theme) — draft 1 · 2026-10-06
+"""ESM Department Roadshow deck (TSG theme R01 — พื้นขาวทุกหน้า รวมปก/ปิด · 12/10) — draft 1 · 2026-10-06
 Run:  python3 build_roadshow.py   →  ../TSAT_ESM_Department_Roadshow_2026-10.pptx
 Sources (every number traced):
   · roadshow-metrics-2026-10-06.md  (DB queries 06/10 — Production→MTN · shift close)
@@ -15,7 +15,7 @@ from pptx.enum.shapes import MSO_SHAPE
 import tsg_theme as T
 from tsg_theme import GREEN_D, GREEN_M, GREEN_TINT, ORANGE, GREY, AMBER, WHITE, GOLD, RGBColor
 
-PART = RGBColor(0xD8, 0xE4, 0xD0)
+PART = T.BORDER  # R01 เส้นขอบการ์ด D9D9D9
 MEASURED = "Measured from ESM database · 06 Oct 2026"
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "TSAT_ESM_Department_Roadshow_2026-10.pptx")
 
@@ -84,21 +84,13 @@ s = T.title_slide(p, "ESM Department Roadshow",
                   "Zero defect is possible")
 notes(s, "เปิด: วันนี้ไม่ใช่การโชว์ฟีเจอร์ แต่แต่ละส่วนงานจะเล่าว่า เมื่อก่อนทำงานแบบ manual ยังไง พอใช้ ESM แล้วลดอะไร ช่วยอะไร และการทำงานกับแผนกอื่นไวขึ้นแค่ไหน — ตัวเลขทุกตัววัดจากฐานข้อมูลจริง วันที่เขียนไว้มุมสไลด์")
 
-# ── 2 Agenda ────────────────────────────────────────────────────────
-s = T.blank(p); page[0] += 1
-T.text(s, 0.5, 0.28, 8, 0.95, [[("Agenda", {"sz": 34, "b": True, "c": GREEN_D})]], anchor=MSO_ANCHOR.MIDDLE)
-s.shapes.add_picture(os.path.join(T.ASSET, "logo_big.png"), Inches(9.2), Inches(1.6), Inches(3.4), Inches(3.6))
-items = [("Why ESM", "One shopfloor record instead of paper, Excel and chat groups"),
-         ("Cross-department speed", "Measured hand-offs: calls, repairs, approvals"),
-         ("Department stories", "Production · MTN · JIG/DIE · Store · Logistic · Planning · QA · PE · HR · Management"),
-         ("Honest status & next steps", "What is still slow and what each department commits to")]
-for i, (t1, t2) in enumerate(items):
-    yy = 1.55 + i * 1.18
-    T.rect(s, 0.7, yy, 0.62, 0.62, fill=ORANGE, shape=MSO_SHAPE.OVAL)
-    T.text(s, 0.7, yy, 0.62, 0.62, [[(str(i + 1), {"sz": 20, "b": True, "c": WHITE})]], align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
-    T.text(s, 1.55, yy - 0.05, 7.4, 0.45, [[(t1, {"sz": 18, "b": True, "c": GREEN_D})]])
-    T.text(s, 1.55, yy + 0.38, 7.4, 0.4, [[(t2, {"sz": 12, "c": GREY})]])
-T.footer(s, page[0])
+# ── 2 Agenda (R01: ลิสต์เลขเขียว ไม่มีวงกลมส้ม) ─────────────────────
+page[0] += 1
+s = T.agenda_slide(p, page[0], "ESM DEPARTMENT ROADSHOW", "Agenda", [
+    ("Why ESM", "One shopfloor record instead of paper, Excel and chat groups"),
+    ("Cross-department speed", "Measured hand-offs: calls, repairs, approvals"),
+    ("Department stories", "Production · MTN · JIG/DIE · Store · Logistic · Planning · QA · PE · HR · Management"),
+    ("Honest status & next steps", "What is still slow and what each department commits to")])
 notes(s, "4 ช่วง: ทำไมต้อง ESM → ตัวเลขการส่งต่องานข้ามแผนกที่วัดได้จริง → แต่ละส่วนงานเล่าหน้างานตัวเอง (ส่วนงานละ ~3 นาที) → สถานะตรงๆ ว่าอะไรยังช้า และแต่ละส่วนงานจะทำอะไรต่อ")
 
 # ── 3 Why ESM ───────────────────────────────────────────────────────
@@ -401,11 +393,9 @@ for i, (a, b) in enumerate(steps):
     T.text(s, 4.15, yy, 8.5, 1.15, [[(b, {"sz": 14, "c": GREEN_M})]], anchor=MSO_ANCHOR.MIDDLE)
 notes(s, "อ้างอิงไทม์ไลน์คุมงานใน docs/ADOPTION-ROADMAP.md · ตัวเลขบนสไลด์ทั้งหมดจะวัดใหม่เช้าวันโชว์ และเขียนวันที่วัดไว้ทุกสไลด์")
 
-# ── Closing ─────────────────────────────────────────────────────────
-s = T.blank(p)
-T.rect(s, 0, 0, T.SW, T.SH, fill=GREEN_D)
-T.text(s, 1.0, 2.6, 11.3, 1.0, [[("Before We Build Parts, We Build People", {"sz": 34, "b": True, "c": WHITE})]], align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
-T.text(s, 1.0, 3.8, 11.3, 0.8, [[("Thank you", {"sz": 28, "b": True, "c": GOLD})]], align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
+# ── Closing (R01: พื้นขาว) ──────────────────────────────────────────
+page[0] += 1
+s = T.closing_slide(p, page[0], "Before We Build Parts, We Build People", [("Thank you", GREEN_M)])
 notes(s, "ปิด: ระบบไม่ได้ทำงานแทนคน — ระบบทำให้คนทุกแผนกเห็นข้อมูลชุดเดียวกัน และส่งงานต่อกันได้เร็วขึ้น")
 
 p.save(OUT)
