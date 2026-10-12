@@ -3789,3 +3789,15 @@ test('🛡️ pptx-theme-r01 — ตัวสร้างเด็คห้า�
     + '   แก้ยังไง: import tsg_theme จาก docs/meetings/roadshow_build/ (title_slide / agenda_slide / section_divider / closing_slide)\n'
     + '            เด็ค .pptx เก่าที่ไม่มีสคริปต์ → python3 docs/meetings/roadshow_build/retheme_r01.py <file>\n');
 });
+
+/* ── Monitoring 12/10 (user): IN ต้องเป็น "คลังกดรับแล้ว" + ORDER บอร์ดแร็คต้องไปถึงหน้า Delivery ── */
+test('🛡️ Monitoring: IN จาก ledger รับเข้า (inAtRef) ไม่ใช่ใบผลิตคอนเฟิร์ม · ORDER บอร์ดแร็คซิงค์ใบส่งของ', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/Monitoring.jsx'), 'utf8'));
+  assert.ok(!/IN_ORDER_STATUS|orderInQty\(/.test(code),
+    '\n\n❌ Monitoring กลับไปนับ IN จากใบผลิตที่คอนเฟิร์ม — ของยังไม่ถึงคลัง (รอสโตร์/คลัง FG กดรับ) แต่ยอดวิ่งเข้าตารางแล้ว\n'
+    + '   แก้: IN = inAtRef(ledger issue ที่คลังอ้างอิง) · ใบรอรับ (stock_receipts pending) เขียนบนจอแยก\n');
+  assert.ok(/inAtRef\(/.test(code), '\n\n❌ Monitoring ไม่ได้คิด IN ผ่าน inAtRef (utils/monitorSystem.js)\n');
+  assert.ok(/rackOrderSyncPlan\(/.test(code) && /syncRackOrder\(/.test(code),
+    '\n\n❌ ช่อง ORDER บอร์ดรายแร็คไม่ซิงค์ customer_shipping_orders — คนพิมพ์ยอดแล้วไม่ขึ้น Shipping Time Chart ต้องไปเพิ่มมือซ้ำ\n');
+  assert.ok(/horizon:\s*\d/.test(code), '\n\n❌ บอร์ดรายวันส่งต้องส่ง horizon ให้ boardPeriods — ไม่งั้นไม่มีคอลัมน์วันนี้ให้พิมพ์\n');
+});
