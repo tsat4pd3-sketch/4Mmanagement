@@ -12,7 +12,7 @@ import { scoreDef, defBars, unitOf, decimalsOf, summaryModeOf, summaryShort, fmt
 import { scopedLineNames } from '../utils/sectionScope';
 import useOrgScope from '../utils/useOrgScope';
 import OrgScopePicker from './OrgScopePicker';
-import { PLANT, isPlant, scopeKey, parseScopeKey, scopeOfDef, scopeCovers, sameScope, filterScopeOptions, drillParams } from '../utils/orgScope';
+import { PLANT, isPlant, scopeKey, parseScopeKey, scopeOfDef, scopeCovers, sameScope, filterScopeOptions, drillParams, scopeUnder } from '../utils/orgScope';
 import { canAccessPage } from '../utils/permissions';
 import { useLiveBoard } from '../utils/useLiveBoard';
 import { LIVE, RATE } from '../utils/refreshRates';
@@ -23,6 +23,7 @@ import ReadOnlyNote from './ReadOnlyNote';
 import SafetyEventModal from './SafetyEventModal';
 import KpiMonthNoteModal from './KpiMonthNoteModal';
 import { tooltipProps, CELL_BAR_FILL, focusDomain, axisUnitLabel, axisUnitTop } from '../utils/chartAxis';
+import { groupChildDefs, rollupChildDefs } from '../utils/kpiRollup';
 import { pickBoardRows, normKpiRowName, moveBoardKey } from '../utils/kpiBoardRows';
 import { checkWriteRows } from '../utils/dbWrite';
 import { loadPmTeams, pmTeamsSync } from '../utils/pmTeams';
@@ -304,9 +305,11 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       // นิยามของ "ขอบเขตที่เลือก + บรรพบุรุษ" — นิยามระดับแม่ตกทอดถึงลูก (ตกลงรุ่นเดียวกับแท็บ ⚙️)
       const sel = parseScopeKey(scopeKeyStr);
       const kdefs = (kdRes.data || []).filter(d => scopeCovers(org, scopeOfDef(d), sel));
+      /* ⬆ นิยามของ "หน่วยลูก" (12/10 · user: ลูกมี แม่ไม่มี ต้องโชว์ที่แม่ด้วย) — เก็บแยกจาก kdefs เพื่อไม่ให้ไปปนกับการตกทอดขาลง */
+      const kdefsBelow = (kdRes.data || []).filter(d => scopeUnder(org, scopeOfDef(d), sel));
       let kentries = [], kplans = [];
-      if (kdefs.length) {
-        const ke = await fetchByIds(kdefs.map(d => d.id), part => supabase
+      if (kdefs.length || kdefsBelow.length) {
+        const ke = await fetchByIds([...kdefs, ...kdefsBelow].map(d => d.id), part => supabase
           .from('kpi_manual_entries').select('kpi_id, month, value').in('kpi_id', part));
         if (ke.error) warn.push('ค่า KPI รายเดือน');
         kentries = ke.rows;
@@ -338,7 +341,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       setData({
         sessions: roll.sessions || [], defects: roll.defects || [],
         openSess: (op.rows || []).length, targets: tg.data || [],
-        safety, safetyMissing, actions, actsMissing, kdefs, kentries, kplans, knotes, kpiMissing, warn, mtnRoll, layoutKeys,
+        safety, safetyMissing, actions, actsMissing, kdefs, kdefsBelow, kentries, kplans, knotes, kpiMissing, warn, mtnRoll, layoutKeys,
       });
     } catch (e) {
       if (seq === reqRef.current) { setErr(e?.message || 'โหลดข้อมูลไม่สำเร็จ'); setData(null); }
@@ -353,7 +356,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
   /* ── แถว KPI 8 หัวข้อของกลุ่มที่เลือก — ทุกแถวมี series 12 เดือน + แท่งสรุป ──────────────────── */
   const rows = useMemo(() => {
     if (!data || !scope) return [];
-    const { sessions, defects, targets, safety, kdefs, kentries, kplans, knotes, mtnRoll } = data;
+    const { sessions, defects, targets, safety, kdefs, kdefsBelow, kentries, kplans, knotes, mtnRoll } = data;
     const autoSeries = mtnTeam && mtnRoll ? mtnAutoSeries(mtnRoll, year, mtnTeam) : null;
     const planByKpi = {};
     (kplans || []).forEach(e => (planByKpi[e.kpi_id] = planByKpi[e.kpi_id] || {})[e.month] = e.plan_value);
@@ -411,15 +414,19 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
        · ขอบเขตที่ยังไม่ตั้ง KPI เลย = โชว์ template เต็มพร้อม "ยังไม่ได้ตั้ง" (บอร์ดว่างเปล่าไม่บอกอะไรใคร)
        · KPI ที่ตั้งไว้ที่ขอบเขตนี้ตรงๆ แต่ไม่เข้าช่องไหน (MTBF/MTTR/Cost Reduction …) = แผ่นเต็มต่อท้าย `def:<id>`
          (เดิมยัดรวมเป็นลิสต์ในแผง "Key Performance" ใบเดียว — อ่านจากไกลไม่ได้ ไม่มีกราฟ ไม่มีหมายเหตุรายเดือน) */
+    /* ⬆ KPI ของหน่วยลูกที่แม่ไม่ถือ = รวมขึ้นแม่ (utils/kpiRollup.js · 12/10) — จัดกลุ่มตามทะเบียน/ชื่อ · ค่ารวมคิดตอนวาดแถว */
+    const childGroups = groupChildDefs(kdefsBelow || []);
+    const rollupOf = (gk) => (gk && childGroups.has(gk) ? rollupChildDefs(childGroups.get(gk), entByKpi, { labelOf: org.labelOf }) : null);
     /* กติกาเลือกแผ่นอยู่ใน utils/kpiBoardRows.js (pure · มีเทส) — ที่นี่แค่ส่ง closure หา-นิยาม 2 ตัว */
     const { rows: boardRows } = pickBoardRows({
-      templates: boardRowsFor(year), kdefs, scope, hasLines: members.groups.length > 0,
+      templates: boardRowsFor(year), kdefs, scope, hasLines: members.groups.length > 0, childGroups,
       findManual: (r) => manualOf(r.name, false, r.key), findAuto: autoDefOf,
       ownScopes: [scope, ...(org.unitsOf ? org.unitsOf(scope.kind, scope.value) : [])],   // CC = หน่วยเจ้าของรหัส (06/10)
       order: layoutOverride || data.layoutKeys,   // ลำดับที่คนจัด (ค่าที่เพิ่งกดยังไม่โหลดกลับ ชนะค่าที่โหลดมา)
     });
     return boardRows.map((r) => {
-      const man = manualOf(r.name, false, r.key, r.defId || null);
+      const man = r.rollup ? null : manualOf(r.name, false, r.key, r.defId || null);
+      const roll = r.rollup ? rollupOf(r.rollup) : null;   // แผ่นที่ค่ามาจากหน่วยลูกล้วน (แม่/บรรพบุรุษไม่มีนิยาม)
       let series = [], def = null, unit = r.unit || man?.unit || '', note = '', fromDept = !!man?.inherited, manual = !r.auto;
       let months = 0, sumKind = 'average', sumApprox = false;
 
@@ -499,7 +506,16 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
         const manEntries = man?.entries || {};
         const ak = autoSeries && man?.def ? autoKpiOfName(man.def.kpi_catalog?.name || man.def.name) : null;
         const summary = summaryModeOf(man?.def);
-        if (ak) {
+        if (roll) {
+          /* ⬆ รวมจากหน่วยลูก — ผลรวม (sum) หรือเฉลี่ยไม่ถ่วงน้ำหนัก (≈) · เป้าตามกติกาใน kpiRollup.js · ไม่เขียนลงฐาน */
+          const k = manualMonthSeries({ entries: roll.entries, year, summary: summaryModeOf(roll.def) });
+          series = k.series; months = k.months; def = roll.def; unit = unitOf(roll.def) || unit;
+          sumKind = k.effMode; sumApprox = k.approx || roll.approx; manual = true;
+          const names = roll.children.map(c => c.label).join(' · ');
+          const partial = roll.partial.length ? ` · เดือนที่ลูกกรอกไม่ครบ: ${roll.partial.map(m => monthLabel(`${year}-${String(m).padStart(2, '0')}`)).join(' ')}` : '';
+          note = `⬆ รวมจาก ${roll.n} หน่วยลูก (${roll.combine === 'sum' ? 'ผลรวม' : 'เฉลี่ยไม่ถ่วงน้ำหนัก'}): ${names}${partial}`
+            + (roll.targetNote ? ` · ${roll.targetNote} — อยากตัดสินด้วยเป้าของระดับนี้ ให้ตั้ง KPI นี้ที่ ⚙️ (แผ่นรวมจะเปลี่ยนเป็นของระดับนี้เอง)` : '');
+        } else if (ak) {
           const autoMonths = {};
           autoSeries.months.forEach((m, i) => {
             const v = toRowUnit(m[ak.key], ak.key, unitOf(man.def) || unit);
@@ -541,7 +557,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       /* 🔴 สถานะ = เกณฑ์ทางการ 1/0.5/0 ผ่าน scoreDef เท่านั้น (17/09) — "เหลือง" = ถึง Commitment แต่ไม่ถึง Target */
       let st = ST.unknown, why = '';
       if (value == null) {
-        why = r.auto && !fromDept ? (note || 'ยังไม่มีข้อมูลเดือนนี้') : (man || fromDept ? 'ยังไม่กรอกค่าเดือนนี้' : 'ยังไม่ได้ตั้ง KPI ตัวนี้ — ตั้งที่แท็บ ⚙️');
+        why = r.auto && !fromDept ? (note || 'ยังไม่มีข้อมูลเดือนนี้') : roll ? 'หน่วยลูกยังไม่กรอกค่าเดือนนี้' : (man || fromDept ? 'ยังไม่กรอกค่าเดือนนี้' : 'ยังไม่ได้ตั้ง KPI ตัวนี้ — ตั้งที่แท็บ ⚙️');
       } else if (def && (target != null || bars?.commit_value != null)) {
         const sc = scoreDef(value, def);
         st = sc.status === 'good' ? ST.good : sc.status === 'warn' ? ST.warn : sc.status === 'bad' ? ST.bad : ST.unknown;
@@ -577,7 +593,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
         hasTarget: !!(def && (target != null || bars?.commit_value != null)),
       };
       return {
-        ...r, def, unit, dir, series, value, valueKey, stale, target, st, why, note, manual, fromDept, months, sumKind, sumApprox, ytd, actualMonths, forecast, curFilled, mix,
+        ...r, def, unit, dir, series, value, valueKey, stale, target, st, why, note, manual, fromDept, months, sumKind, sumApprox, ytd, actualMonths, forecast, curFilled, mix, roll,
         atLabel: man?.inherited && man.at ? org.labelOf(man.at.kind, man.at.value) : '',
         commit: bars?.commit_value ?? null, hasPlan: Object.keys(planMap).length > 0,
         dec: decimalsOf(def),
@@ -709,6 +725,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
   /* 🏷️ บรรทัดรอง = "ที่มาของตัวเลข" แบบย่อ — แทนกล่อง ⚠️ ยาวๆ ใต้แผ่น (09/10) · เต็มความอยู่ใน tooltip ไฟ + popup 🔍
      ⚡ N เดือน = ระบบคำนวณ · ✍️ N เดือน = เติมค่ากรอกมือ · ✍️ ทับ N = กรอกไว้แต่ค่าระบบชนะ · ค่าระดับแม่ติดชื่อระดับ */
   const srcLabel = (r) => {
+    if (r.roll) return `⬆ รวม ${r.roll.n} หน่วยลูก${r.roll.approx ? ' (≈ เฉลี่ย)' : ''}`;
     if (r.manual) return `✍️ กรอกมือ${r.atLabel ? ` (ระดับ ${r.atLabel})` : ''}`;
     const m = r.mix;
     if (m && (m.fillN || m.overlapN)) return `⚡ ${m.autoN} เดือน · ✍️ ${m.fillN} เดือน${m.overlapN ? ` · ทับ ${m.overlapN}` : ''}`;
@@ -932,7 +949,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
                   /* 🧹 ท้ายแผ่น ≤ 1 บรรทัด (user 09/10 "note เยอะไป กราฟเล็กลง") — เหลือเฉพาะ (ก) คาดปลายปีที่คำนวณได้ หรือ (ข) เตือนที่ต้องเห็น
                      (ไฟเทา/ค่ากรอกมือถูกทับ/ขอบเขตโรงงานยังไม่มีนิยาม) · Target/Commit/ที่มาเต็มๆ ย้ายไป tooltip ของไฟ + popup 🔍 (`zoomFoot`) */
                   foot={(kk) => (kk > k * 1.15 ? zoomFoot(r, kk) : (forecastLine(r, kk) || cardWarn(r, kk)))}
-                  link={r.to ? 'เจาะดู' : (r.manual ? 'กรอก/ตั้งเป้า' : null)}
+                  link={r.to ? 'เจาะดู' : r.roll ? 'ตั้ง KPI ระดับนี้' : (r.manual ? 'กรอก/ตั้งเป้า' : null)}
                   onLink={() => (r.to ? goTo(r.to) : onTab?.('table'))}>
                   {(kk, w) => rowChart(r, kk, w)}
                 </Sheet>
