@@ -6,6 +6,9 @@ import {
 } from '../utils/monitorGrid';
 import { rowDefs, balanceRowKey, minRowKey } from '../utils/monitorBoards';
 import { matText } from '../utils/matLabel';
+import { supabaseDR } from '../supabaseClient';
+import PartThumb from './PartThumb';
+import { loadPartImages, partImageOf } from '../utils/partImages';   // 🖼️ รูปชิ้นงาน (12/10 · user "รูปยังไม่ขึ้น")
 import { periodHead, isTodayPeriod, startIndexForToday, periodTone } from '../utils/periodHead';   // 🗓️ หัวคอลัมน์ชุดเดียวทุกตาราง (08/10)
 
 /* ══ 📉 MonitorBoardGrid — ตารางบอร์ด Monitoring (พาร์ท × ช่วงเวลา × แถว) ════════════════
@@ -67,6 +70,13 @@ export default function MonitorBoardGrid({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- คีย์รูปร่างคอลัมน์ (string) ไม่ใช่ identity ของ array
     [firstKey, periods.length, todayKey, pKind, windowSize]);
   useEffect(() => { setWinStart(homeStart); }, [board?.id, homeStart]);
+  /* 🖼️ ทะเบียนรูป (cachedMaster ในตัว) — โหลดไม่ได้ = กล่อง "ยังไม่มีรูป" ไม่ทำจอพัง */
+  const [imgMap, setImgMap] = useState({});
+  useEffect(() => {
+    let alive = true;
+    loadPartImages(supabaseDR).then(({ map }) => { if (alive) setImgMap(map || {}); });
+    return () => { alive = false; };
+  }, []);
   const win = useMemo(() => {
     if (periods.length <= windowSize) return periods;
     const body = periods.slice(1);
@@ -316,7 +326,10 @@ export default function MonitorBoardGrid({
                 <tr key={`${part.id}|${row.key}`} style={{ background: rowBg }}>
                   {ri === 0 ? (
                     <td rowSpan={rows.length} style={{ ...tdSticky, width: HEAD_W, verticalAlign: 'top', background: pi % 2 ? 'var(--bg2)' : 'var(--card)' }}>
-                      <PartHead part={part} board={board} shortAt={shortAt} racks={racks} raw={raw} />
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                        <PartThumb url={partImageOf(imgMap, part.mat_no)} alt={part.part_name || part.mat_no || ''} size={44} />
+                        <PartHead part={part} board={board} shortAt={shortAt} racks={racks} raw={raw} />
+                      </div>
                     </td>
                   ) : null}
                   <td style={{
@@ -432,7 +445,7 @@ function PartHead({ part, board, shortAt, racks = null, raw = null }) {
   if (part.ct_sec) sub.push(`CT ${part.ct_sec}s`);
   if (part.pieces_per_shot > 1) sub.push(`${part.pieces_per_shot} ชิ้น/จังหวะ`);
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 1, maxWidth: HEAD_W - 16 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0, maxWidth: HEAD_W - 16 - 52 }}>
       {/* 🔴 `matText(mat, index, row)` — อาร์กิวเมนต์แรกคือ "เลข MAT" ไม่ใช่ทั้งแถว
           เดิมส่ง `matText(part)` ⇒ หัวพาร์ททุกแถวขึ้น `MAT [object Object]` แทนเลขจริง (แก้ 05/10)
           ชื่อพาร์ทวาดเป็นบรรทัดของตัวเองข้างล่าง (clamp 2 บรรทัด) จึงไม่ส่ง `name` เข้ามาซ้ำ */}
