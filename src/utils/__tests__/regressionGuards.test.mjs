@@ -3739,7 +3739,7 @@ test('🛡️ session-produced-qty-single-source — ห้ามรวมยอ
    ปุ่ม "แก้เวลากะ + คำนวณ OEE ใหม่" เคยเขียนทับแค่ oee_a/p/q/oee/shift_min
    แต่ %P/%Q ถูกคำนวณจาก **ใบผลิตชุดปัจจุบัน** ⇒ ถ้าใบถูกแก้ยอดหลังปิดกะ
    แถวเดียวกันจะขัดแย้งกันเอง: actual_qty 1,000 แต่ %P คิดจาก 1,100
-   (วัดจริง ก.ย. 2026: 27 กะ · 835 ชิ้น ที่ actual_qty ต่ำกว่าผลรวมใบผลิตจริง) */
+   (วัดจริง ก.ย. 2026: 26 กะ · 885 ชิ้น ที่ actual_qty ต่ำกว่าผลรวมใบผลิตจริง) */
 test('🛡️ oee-restamp-needs-qty — ทุก payload ที่เขียน oee_a ต้องเขียน actual_qty ด้วย', () => {
   const file = join(ROOT, 'src/pages/DailyReport.jsx');
   const code = stripComments(readFileSync(file, 'utf8'));

@@ -16,7 +16,7 @@ import { UserContext } from '../App';
 import { nextDocNo } from '../utils/qaDocNo';
 import { findRepeats, sureRepeats, REPEAT_MONTHS } from '../utils/peLink';
 import { notifyEvent } from '../utils/notifyEvent';
-import { checkWrite } from '../utils/dbWrite';
+import { checkWriteRows } from '../utils/dbWrite';
 import LineSelect from './LineSelect';
 import FilterBar from './FilterBar';
 import Segmented from './Segmented';
@@ -157,7 +157,9 @@ export default function QaClaims({ lines = [], role, lineId, sections, partOpts 
       status: 'open', created_by: fullName || null,
     }).select('id').single();
     if (error) { setBusy(false); toast.error(error.message); return; }
-    checkWrite(await supabase.from('qa_customer_claims').update({ capa_id: data.id, status: c.status === 'open' ? 'investigating' : c.status }).eq('id', c.id), 'ผูก CAPA เข้าเคลม');
+    /* นับแถว — ใบ CAPA ถูกสร้างแล้ว ถ้าผูกกลับไม่ติด เคลมจะไม่มี capa_id = ใบ CAPA กำพร้า หาไม่เจอจากเคลม */
+    checkWriteRows(await supabase.from('qa_customer_claims').update({ capa_id: data.id, status: c.status === 'open' ? 'investigating' : c.status }).eq('id', c.id).select('id'), 'ผูก CAPA เข้าเคลม',
+      { zeroMsg: `เปิด CAPA ${capa_no} แล้ว แต่ผูกกลับเข้าเคลมไม่ได้ (0 แถว) — ไปผูกเองที่แท็บ CAPA` });
     notifyEvent({
       event: 'qa_capa_opened', type: 'info', ref_table: 'qa_capa', ref_id: data.id,
       line_name: c.line_name || null, actor: fullName,
