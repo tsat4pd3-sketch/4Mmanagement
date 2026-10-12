@@ -896,7 +896,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
         <button onClick={() => shiftMonth(-1)} title="เดือนก่อน" style={navBtn}>◀</button>
         <b style={{ fontSize: 13, minWidth: 92, textAlign: 'center' }} title={live ? 'เดือนปัจจุบัน — ตามวันจริง ข้ามเดือนแล้วเลื่อนเอง' : `ปักดูเดือน ${monthText} อยู่ — กด "สด" เพื่อกลับเดือนปัจจุบัน`}>
-          {monthText}{live && <span style={{ marginLeft: 5, fontSize: 10.5, fontWeight: 800, color: '#22c55e', verticalAlign: 'middle' }}>● สด</span>}
+          {monthText}{live && <span style={{ marginLeft: 5, fontSize: 11, fontWeight: 800, color: '#22c55e', verticalAlign: 'middle' }}>● สด</span>}
         </b>
         <button onClick={() => shiftMonth(1)} disabled={live} title={live ? 'อยู่เดือนปัจจุบันแล้ว' : 'เดือนถัดไป'} style={navBtn}>▶</button>
         {!live && <button onClick={() => setParam('date', '')} title="กลับเดือนปัจจุบัน (ตามวันจริง)" style={{ ...navBtn, fontSize: 11.5, padding: '2px 8px', fontWeight: 700 }}>⟲ สด</button>}
