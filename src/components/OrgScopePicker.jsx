@@ -23,7 +23,10 @@ import { SCOPE_KIND_META, scopeKey, parseScopeKey, filterScopeOptions, isPlant }
    เดิมรหัส cc ~74 ตัวถูกต่อท้ายลิสต์เดียวกับผังองค์กร ⇒ เลื่อนหาหน่วยงานไม่เจอ และรหัสเปล่าๆ
    ไม่บอกว่าเป็นของใคร · ตอนนี้:
      · ช่องซ้าย = ผังองค์กรล้วน (ไม่มี cc) · ช่องขวา = 💰 Cost Center ล้วน (`รหัส · ชื่อจากทะเบียน`)
-     · **ค่ายังเป็นค่าเดียว** (`scope`) — เลือกช่องไหน อีกช่องกลับเป็นว่างเอง (KPI 1 แถวมี 1 ขอบเขต)
+     · **ค่ายังเป็นค่าเดียว** (`scope`) — KPI 1 แถวมี 1 ขอบเขต · เลือกหน่วยในผัง ⇒ ช่อง 💰 ว่าง ("ทุกรหัส")
+     · 🔗 **เลือกรหัส ⇒ ช่องผังแสดง "หน่วยเจ้าของรหัส" ไม่ใช่ "ทั้งโรงงาน"** (12/10 · user: *"มีการเลือก 2 แบบ user งง ควรจะลิงก์กัน
+       พอเลือกแบบ cost center ดันไปโชว์ทั้งโรงงาน"*) — เจ้าของ = หน่วยแคบสุดใน `ccOwnersOf(code)` ที่อยู่ในตัวเลือกจริง ·
+       ช่อง 💰 ขึ้นขอบเน้นว่าเป็นตัวกรองที่ทำงานอยู่ + ชิป `↑ ทั้ง <เจ้าของ>` กดเพื่อถอยไปดูทั้งหน่วย · รหัสที่ผังไม่ผูก = ช่องผังยังเป็นทั้งโรงงาน (จริง)
      · หน่วยที่มีรหัสผูกอยู่ โชว์ชิป `💰 รหัส` ต่อท้าย **กดเพื่อสลับไปใช้รหัสนั้นเป็นขอบเขตได้**
      · พิมพ์รหัสในช่องผัง (โหมดค้นหา) เจอหน่วยงานเจ้าของรหัส — `cost_center` อยู่ใน keywords
      · กลุ่มไลน์ที่ลูกใช้หลายรหัส **ไม่เดาเอารหัสใดรหัสหนึ่ง** — เขียนว่า "N รหัส"
@@ -71,7 +74,15 @@ export default function OrgScopePicker({
 
   const isCc = value?.kind === 'cost_center';
   const curKey = isPlant(value) ? 'plant' : scopeKey(value.kind, value.value);
-  const orgKey = isCc ? 'plant' : curKey;     // เลือก cc อยู่ ⇒ ช่องผังกลับไปที่ "ทั้งโรงงาน"
+  /* 🔗 เลือก cc อยู่ ⇒ ช่องผังแสดง "หน่วยเจ้าของรหัส" (แคบสุดที่อยู่ในตัวเลือก) — เดิมถอยไป "ทั้งโรงงาน" แล้วคนอ่านว่า
+     "กำลังดูทั้งโรงงาน" ทั้งที่กรองด้วยรหัสของ BIG PRESS อยู่ (user 12/10) · รหัสที่ผังไม่ผูกใคร = 'plant' ตามจริง */
+  const ccOwner = useMemo(() => {
+    if (!isCc || !index?.ccOwnersOf) return null;
+    const owners = index.ccOwnersOf(value.value).slice().reverse();   // แคบ → กว้าง
+    return owners.find(w => all.some(o => o.key === scopeKey(w.kind, w.value))) || null;
+  }, [isCc, index, value, all]);
+  const ownerKey = ccOwner ? scopeKey(ccOwner.kind, ccOwner.value) : null;
+  const orgKey = isCc ? (ownerKey || 'plant') : curKey;
   // ค่าที่เลือกไว้แต่ไม่อยู่ในตัวเลือก (นอกขอบเขต/ผังเปลี่ยน) ต้องไม่หายเงียบ — โชว์เป็นแถว ⚠
   const known = all.some(o => o.key === curKey);
   const ghost = !known && curKey !== 'plant'
@@ -114,9 +125,12 @@ export default function OrgScopePicker({
   const ccSelect = ccAllowed && ccOpts.length ? (
     <select
       value={isCc ? curKey : ''} disabled={disabled}
-      title="Cost Center — แกนคนละสายกับผังองค์กร (1 กลุ่มไลน์ครอบหลายรหัสได้ และหลายไลน์ใช้รหัสเดียวกันได้)"
-      onChange={e => (e.target.value ? emit(e.target.value) : emit('plant'))}
-      style={{ width: 210, fontSize: 13, ...inputStyle }}>
+      title={isCc
+        ? `กำลังกรองด้วยรหัสนี้ (หน่วยเจ้าของ = ${ccOwner ? index.labelOf(ccOwner.kind, ccOwner.value) : 'ผังยังไม่ผูกหน่วย'}) · เลือก "ทุกรหัส" = กลับไปดูทั้งหน่วยเจ้าของ`
+        : 'Cost Center — แกนคนละสายกับผังองค์กร (1 กลุ่มไลน์ครอบหลายรหัสได้ และหลายไลน์ใช้รหัสเดียวกันได้)'}
+      /* "ทุกรหัส" ตอนกรองด้วย cc อยู่ = ถอยไปหน่วยเจ้าของ (ไม่ใช่กระโดดไปทั้งโรงงาน) */
+      onChange={e => (e.target.value ? emit(e.target.value) : emit(ownerKey || 'plant'))}
+      style={{ width: 210, fontSize: 13, ...inputStyle, ...(isCc ? { borderColor: 'var(--accent)', boxShadow: '0 0 0 1px var(--accent)' } : null) }}>
       <option value="">💰 {allOf('รหัส Cost Center')}</option>
       {/* รหัสที่เลือกไว้แต่ไม่อยู่ในตัวเลือก (ผังเปลี่ยน/นอกขอบเขต) ต้องไม่หายเงียบ */}
       {ghost && isCc && <option value={ghost.key}>⚠ {ghost.label}</option>}
@@ -132,7 +146,13 @@ export default function OrgScopePicker({
     </select>
   ) : null;
 
-  const wrap = (node) => (ccSelect || ccHint
+  const ownerChip = isCc && ccOwner ? (
+    <button type="button" onClick={() => emit(ownerKey)} title={`เลิกกรองด้วยรหัส — ดูทั้ง ${index.labelOf(ccOwner.kind, ccOwner.value)}`}
+      style={{ padding: '3px 8px', fontSize: 11.5, borderRadius: 999, cursor: 'pointer', fontWeight: 700, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text2)' }}>
+      ↑ ทั้ง {index.labelOf(ccOwner.kind, ccOwner.value)}
+    </button>
+  ) : null;
+  const wrap = (node) => (ccSelect || ccHint || ownerChip
     ? (
       <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
         {node}
@@ -150,6 +170,7 @@ export default function OrgScopePicker({
             </span>
           ))}
         {ccSelect}
+        {ownerChip}
       </span>
     )
     : node);
@@ -207,7 +228,9 @@ export default function OrgScopePicker({
     </option>
   );
   return wrap(
-    <select id={id} value={orgKey} disabled={disabled} title={title}
+    <select id={id} value={orgKey} disabled={disabled}
+      title={isCc && ccOwner ? `หน่วยเจ้าของรหัส ${value.value} (กำลังกรองด้วยรหัสอยู่ — เปลี่ยนช่องนี้ = เลิกกรองด้วยรหัส)` : title}
+      /* เลือกหน่วยเจ้าของซ้ำตอนกรองด้วย cc = เลิกกรองด้วยรหัส (select ไม่ยิง change ถ้าค่าเท่าเดิม ⇒ จับที่ click ของ option ไม่ได้ · ใช้ชิป ↑ แทน) */
       onChange={e => emit(e.target.value)}
       style={{ width, fontSize: 13, ...style, ...inputStyle }}>
       {ghost && !isCc && <option value={ghost.key}>⚠ {ghost.label}</option>}
