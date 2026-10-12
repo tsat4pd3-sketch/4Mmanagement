@@ -1,7 +1,7 @@
 /* ⬆ รวม KPI ของหน่วยลูกขึ้นแม่ (2026-10-12 · user: "ลูกมี แม่ไม่มี ต้องโชว์ที่แม่ด้วย") — pure · ไม่แตะเวลาปัจจุบัน */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { groupChildDefs, rollupChildDefs, rollupGroupKey } from '../kpiRollup.js';
+import { groupChildDefs, rollupChildDefs, rollupGroupKey, fillParentWithChildren, childGroupKeyFor } from '../kpiRollup.js';
 import { pickBoardRows } from '../kpiBoardRows.js';
 import { buildOrgScope, scopeUnder, scopeOfDef } from '../orgScope.js';
 
@@ -95,4 +95,23 @@ test('pickBoardRows + childGroups: ช่องมาตรฐานที่ล
   const r3 = pickBoardRows({ templates: T, kdefs: [], scope: PD1, hasLines: false, findManual: () => null, findAuto: () => null });
   assert.equal(r3.fallbackTemplate, true);
   assert.deepEqual(r3.rows.map(r => r.key), ['rm', 'oee', 'train']);
+});
+
+test('fillParentWithChildren: แม่ชนะรายเดือน · เดือนแม่ว่างเติมจากลูก · แม่กรอก 0 = กรอกแล้ว · ไม่บวกแม่+ลูก', () => {
+  const roll = { entries: { 1: 2, 2: 2, 3: 5 } };
+  const fx = fillParentWithChildren({ 1: 2, 2: '', 4: 0 }, roll);
+  assert.deepEqual(fx.entries, { 1: 2, 2: 2, 3: 5, 4: 0 });   // ม.ค. แม่ 2 (ไม่ใช่ 4) · ก.พ./มี.ค. เติมจากลูก · เม.ย. แม่กรอก 0 คงไว้
+  assert.deepEqual(fx.filled, [2, 3]);
+  assert.deepEqual(fx.covered, [1]);
+  assert.deepEqual(fillParentWithChildren({ 5: 9 }, null), { entries: { 5: 9 }, filled: [], covered: [] });
+});
+
+test('childGroupKeyFor: ทะเบียนเดียวกับนิยามแม่ก่อน · ช่องมาตรฐานเทียบ board_slot/ชื่อ · แผ่น def: ของแม่ไม่เทียบชื่อ', () => {
+  const rm = cat('c-rm', 'Raw Material Control', 'average', { board_slot: 'rm' });
+  const other = cat('c-x', '%RM (Raw Material)', 'average');
+  const g = groupChildDefs([def(1, 'department', 'BIG', rm), def(2, 'department', 'SMALL', other)]);
+  assert.equal(childGroupKeyFor(g, { key: 'rm', name: '%RM (Raw Material)' }, def(9, 'section', 'PD1', rm)), 'cat:c-rm');
+  assert.equal(childGroupKeyFor(g, { key: 'rm', name: '%RM (Raw Material)' }, null), 'cat:c-rm');   // board_slot ชนะชื่อ
+  assert.equal(childGroupKeyFor(g, { key: 'def:9', name: 'Kaizen', defId: 9 }, def(9, 'section', 'PD1', cat('c-kz', 'Kaizen', 'sum'))), null);
+  assert.equal(childGroupKeyFor(new Map(), { key: 'rm', name: 'x' }, null), null);
 });

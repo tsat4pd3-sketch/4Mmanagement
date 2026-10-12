@@ -23,7 +23,7 @@ import ReadOnlyNote from './ReadOnlyNote';
 import SafetyEventModal from './SafetyEventModal';
 import KpiMonthNoteModal from './KpiMonthNoteModal';
 import { tooltipProps, CELL_BAR_FILL, focusDomain, axisUnitLabel, axisUnitTop } from '../utils/chartAxis';
-import { groupChildDefs, rollupChildDefs } from '../utils/kpiRollup';
+import { groupChildDefs, rollupChildDefs, childGroupKeyFor, fillParentWithChildren } from '../utils/kpiRollup';
 import { pickBoardRows, normKpiRowName, moveBoardKey } from '../utils/kpiBoardRows';
 import { checkWriteRows } from '../utils/dbWrite';
 import { loadPmTeams, pmTeamsSync } from '../utils/pmTeams';
@@ -437,6 +437,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       const mixNote = (ov, autoLabel = 'ระบบคำนวณจากกะ') => (ov.fillN || ov.overlapN)
         ? `⚡ ${autoLabel} ${ov.autoN} เดือน${ov.fillN ? ` · ✍️ เติมค่ากรอกมือ ${ov.fillN} เดือนที่ระบบไม่มีค่า` : ''}${ov.overlapN ? ` · ค่ากรอกมือ ${ov.overlapN} เดือนถูกค่าระบบทับ` : ''}`
         : '';
+      let childMix = null;   // ⬆ เดือนที่เติมจากลูก { filled, covered, n, approx } (แม่มี KPI เอง)
       let mix = null;   // ที่มาตัวเลขแบบย่อ { autoN, fillN, overlapN } — ขึ้นบรรทัดรองของแผ่น (ไม่ใช่กล่องเตือน · user 09/10 "remark เยอะไป")
       const applyOverlay = (k, ov) => {
         mix = ov;
@@ -531,9 +532,25 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
           manual = fx.autoN === 0;   // มีค่าระบบสักเดือน = แถวนี้ค่าหลักมาจากระบบ
           note = `${mixNote(fx, 'ระบบคำนวณ')}${fx.autoN && !fx.fillN && !fx.overlapN ? `⚡ ระบบคำนวณ ${fx.autoN} เดือน` : ''} (ทีม ${mtnTeam.label} · สูตร KPI Guideline 2026 หน้า 10)`;
         } else {
-          const k = manualMonthSeries({ entries: manEntries, year, summary });
-          series = k.series; months = k.months; def = man?.def || null;
-          sumKind = k.effMode; sumApprox = k.approx;
+          /* ⬆ แม่มี KPI นี้เอง: **แม่ชนะเป็นรายเดือน** — เดือนที่แม่กรอกใช้ค่าแม่ (ไม่บวกลูกซ้ำ) · เดือนที่แม่ไม่ได้กรอกเติมค่ารวมจากลูก
+             (user 12/10 "แม่มี 2 ลูกกรอก 2 ไม่ใช่ 4") · เฉพาะนิยามของระดับนี้เอง — นิยามที่ตกทอดจากแม่ (inherited) ไม่เติม (ค่าเป็นของระดับนั้น) */
+          const gk = man?.def && !man.inherited ? childGroupKeyFor(childGroups, r, man.def) : null;
+          const rollC = gk ? rollupOf(gk) : null;
+          const fx = rollC && Object.keys(rollC.entries).length ? fillParentWithChildren(manEntries, rollC) : null;
+          if (fx && fx.filled.length) {
+            const k = manualMonthSeries({ entries: fx.entries, year, summary });
+            series = k.series.map((p, i) => (i < 12 && fx.filled.includes(i + 1) ? { ...p, childFill: true } : p));
+            months = k.months; def = man?.def || null;
+            sumKind = k.effMode; sumApprox = k.approx || rollC.approx;
+            childMix = { filled: fx.filled.length, covered: fx.covered.length, n: rollC.n, approx: rollC.approx };
+            const mon = (m) => monthLabel(`${year}-${String(m).padStart(2, '0')}`);
+            note = `⬆ เดือนที่ระดับนี้ไม่ได้กรอก (${fx.filled.map(mon).join(' ')}) ใช้ค่า${rollC.combine === 'sum' ? 'รวม' : 'เฉลี่ย'}จาก ${rollC.n} หน่วยลูก: ${rollC.children.map(c => c.label).join(' · ')}`
+              + (fx.covered.length ? ` · เดือนที่กรอกเองแล้ว (${fx.covered.map(mon).join(' ')}) ใช้ค่าของระดับนี้ ไม่บวกของลูกซ้ำ` : '');
+          } else {
+            const k = manualMonthSeries({ entries: manEntries, year, summary });
+            series = k.series; months = k.months; def = man?.def || null;
+            sumKind = k.effMode; sumApprox = k.approx;
+          }
         }
       }
 
@@ -568,6 +585,8 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       }
       if (stale) why = `ค่าล่าสุด ${monthLabel(valueKey)} (${monthLabel(monthKey)} ยังไม่กรอก) · ${why}`;
       const curFilled = value != null && !!series.find(p => p.k === valueKey)?.manualFill;
+      const curChild = value != null && !!series.find(p => p.k === valueKey)?.childFill;
+      if (curChild) why = `⬆ เดือนนี้ระดับนี้ไม่ได้กรอก ใช้ค่ารวมจากหน่วยลูก · ${why}`;
       if (curFilled) why = `✍️ เดือนนี้ใช้ค่ากรอกมือ (ระบบไม่มีกะให้คำนวณ) · ${why}`;
       const ytd = series[12]?.v ?? null;
       const actualMonths = series.slice(0, 12).filter(p => p.v != null).length;
@@ -593,7 +612,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
         hasTarget: !!(def && (target != null || bars?.commit_value != null)),
       };
       return {
-        ...r, def, unit, dir, series, value, valueKey, stale, target, st, why, note, manual, fromDept, months, sumKind, sumApprox, ytd, actualMonths, forecast, curFilled, mix, roll,
+        ...r, def, unit, dir, series, value, valueKey, stale, target, st, why, note, manual, fromDept, months, sumKind, sumApprox, ytd, actualMonths, forecast, curFilled, curChild, childMix, mix, roll,
         atLabel: man?.inherited && man.at ? org.labelOf(man.at.kind, man.at.value) : '',
         commit: bars?.commit_value ?? null, hasPlan: Object.keys(planMap).length > 0,
         dec: decimalsOf(def),
@@ -726,6 +745,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
      ⚡ N เดือน = ระบบคำนวณ · ✍️ N เดือน = เติมค่ากรอกมือ · ✍️ ทับ N = กรอกไว้แต่ค่าระบบชนะ · ค่าระดับแม่ติดชื่อระดับ */
   const srcLabel = (r) => {
     if (r.roll) return `⬆ รวม ${r.roll.n} หน่วยลูก${r.roll.approx ? ' (≈ เฉลี่ย)' : ''}`;
+    if (r.childMix) return `✍️ กรอกมือ · ⬆ เติมจากลูก ${r.childMix.filled} เดือน${r.childMix.approx ? ' (≈)' : ''}`;
     if (r.manual) return `✍️ กรอกมือ${r.atLabel ? ` (ระดับ ${r.atLabel})` : ''}`;
     const m = r.mix;
     if (m && (m.fillN || m.overlapN)) return `⚡ ${m.autoN} เดือน · ✍️ ${m.fillN} เดือน${m.overlapN ? ` · ทับ ${m.overlapN}` : ''}`;
@@ -792,9 +812,9 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
             <LabelList dataKey="vLabel" position="top" style={{ fontSize: fs(9.5), fontWeight: 700, fill: 'var(--text)' }} />
             {data.map((p, i) => (
               <Cell key={i} fill={statusColor(r.def ? monthBarScore(p, r.def) : 'none')}
-                fillOpacity={p.summary ? 0.55 : p.manualFill ? 0.38 : (p.k === monthKey ? 1 : 0.8)}
-                stroke={p.summary || p.manualFill ? 'var(--text2)' : (p.k === monthKey ? 'var(--text)' : 'none')}
-                strokeDasharray={p.summary ? '3 2' : p.manualFill ? '2 2' : undefined} cursor={p.summary ? 'default' : 'pointer'} />
+                fillOpacity={p.summary ? 0.55 : (p.manualFill || p.childFill) ? 0.38 : (p.k === monthKey ? 1 : 0.8)}
+                stroke={p.summary || p.manualFill || p.childFill ? 'var(--text2)' : (p.k === monthKey ? 'var(--text)' : 'none')}
+                strokeDasharray={p.summary ? '3 2' : (p.manualFill || p.childFill) ? '2 2' : undefined} cursor={p.summary ? 'default' : 'pointer'} />
             ))}
           </Bar>
           {/* 📅 เส้นแผนรายเดือน — KPI แบบสะสมเทียบเป้าทั้งปีตั้งแต่ต้นปีจะดู "ตกตลอด" ต้องเทียบแผนของเดือนนั้น (user 30/09) */}
@@ -940,7 +960,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
                 )}
                 <Sheet k={k} cw={cw} icon={r.icon} title={r.name}
                   /* 30/09 (user): เลขใหญ่ = ค่าเดือนที่เลือก · บรรทัดรอง = YTD บอกวิธีรวม+จำนวนเดือน · ท้ายแผ่น = คาดปลายปี */
-                  sub={`${srcLabel(r)}${r.ytd != null
+                  sub={`${r.curChild ? '⬆ ค่ารวมจากหน่วยลูก (เดือนนี้ระดับนี้ไม่ได้กรอก)' : srcLabel(r)}${r.ytd != null
                     ? ` · YTD ${nf(r.ytd, r.dec)}${r.unit ? ' ' + r.unit : ''} (${r.sumApprox ? '≈ เฉลี่ย' : summaryShort(r.sumKind)}${r.auto && !r.fromDept && !r.sumApprox && r.sumKind !== 'sum' ? 'ถ่วงน้ำหนัก' : ''} ${r.actualMonths} เดือน)`
                     : ''}`}
                   big={r.value == null ? '—' : nf(r.value, r.dec)}
