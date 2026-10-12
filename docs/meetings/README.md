@@ -63,3 +63,4 @@
 
 
 > 🎨 **ธีมเด็ค = TSG Revision 01** (12/10 · user แจ้ง "หน้าปกกะหน้าท้ายต้องสีขาว revision ล่าสุด") — `roadshow_build/tsg_theme.py` ถอดจาก `Presentation_template_VX_R01.pptx` ชุดเดียวกับ `src/lib/monthlyReviewPptx.js` (พื้นขาวทุกหน้า · เขียว 068734 · ส้ม D95323 · เขียวเข้ม 0D3D14 เฉพาะ headline box/หัวตาราง · โลโก้ R01) · ⚠️ skill `tsg-presentation-theme` ที่ sync มาใน session ยังเป็น R00 (ปก/ปิดพื้นเขียว) **ห้ามเอามาทับ `tsg_theme.py`**
+> · 12/10 เคลียร์ R00 หมดแล้ว: ลบ asset R00 ออกจาก `tsg_assets/` · เด็คเก่า 3 ไฟล์ (`ESM_Work_Instruction_TSG.pptx` · 2 เด็คประชุม 25/09) แปลงเป็น R01 ด้วย `roadshow_build/retheme_r01.py` (Pull Loop สร้างใหม่จาก `build_flow_pull_loop.py`) · เด็ค HTML `ESM_Work_Instruction_Presentation.html` ปก/หน้าคั่นพื้นขาวแล้ว · ด่าน `pptx-theme-r01` ใน `regressionGuards` กันไม่ให้ตัวสร้างสไลด์กลับไปใช้ R00 · infographic A4 (`build_infographic.py` · `build_workflow_infographics.py`) ยังเป็นสี R00 — ไม่ใช่สไลด์ ยังไม่ได้รับคำสั่งให้เปลี่ยน
