@@ -319,7 +319,7 @@ export default function MorningMeeting() {
     // และตัวเลขในประชุมเช้า/Telegram/ใบพิมพ์ ไม่ตรงกับ /oee-analytics (แก้ 2026-08-05)
     /* plannedMin = นาทีที่หักจากฐานเวลาได้จริง (ตัดส่วนที่ทับพักตามนโยบายออก · utils/oee §3.1)
        ต้องเป็นชุดเดียวกับ /oee-analytics ไม่งั้น OEE เฉลี่ยในใบประชุม/Telegram คนละเลขกับจอ */
-    const dtEffBy = dtMinBySession(closed, downtimes, breakPols);
+    const dtEffBy = dtMinBySession(closed, downtimes, breakPols, { lines: allLines });   // หารเลนไลน์เครื่องขนาน (oee.js §3.2)
     const oeeRows = closed.map(s => ({
       oee: Number(s.oee), shift_min: s.shift_min,
       plannedMin: dtEffBy[s.id]?.planned || 0,

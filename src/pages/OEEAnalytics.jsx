@@ -21,7 +21,7 @@ import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
 import { lazy, Suspense } from 'react';
 import { defectUnitCost, fmtBaht, lineCostCenter, rateFor, ratePerHour, RATE_COMPONENTS } from '../utils/costSaving';
-import { computeLiveOee, shiftStartDate, LIVE_MIN_ELAPSED, strictOee, wavg, wLoad, wRun, wProd, policyBreakForShift, breakIntervalsIn, dtMinOutsideBreaks, buildCtMap, sumDefectQty, splitDefectQty, ngByMatFrom, isTrialDefect, avgOeeTarget, QBIN_EMBED, defectQty, defectQtyAll, suspectPendingQty } from '../utils/oee';
+import { computeLiveOee, shiftStartDate, LIVE_MIN_ELAPSED, strictOee, wavg, wLoad, wRun, wProd, policyBreakForShift, breakIntervalsIn, dtMinOutsideBreaks, laneWeightFn, parallelNBySession, buildCtMap, sumDefectQty, splitDefectQty, ngByMatFrom, isTrialDefect, avgOeeTarget, QBIN_EMBED, defectQty, defectQtyAll, suspectPendingQty } from '../utils/oee';
 import { statusColor, statusOf } from '../utils/statusTone';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
@@ -70,7 +70,11 @@ const METRIC_LABEL = { a: 'AVAILABILITY (A)', p: 'PERFORMANCE (P)', q: 'QUALITY 
 /* breakPols: ต้องส่งมาเสมอ — `plannedMin`/`unplannedMin` ที่คืนไปคือ "นาทีที่หักจากฐานเวลาได้จริง"
    นาที downtime ที่ตกอยู่ในช่วงพักตามนโยบายถูกกันออกจากฐานไปแล้วรอบหนึ่ง **ห้ามหักซ้ำ** (utils/oee §3.1)
    ⚠️ คนละตัวกับนาทีในพาเรโต/มูลค่า (`dtRecords`) ที่ยังใช้ duration_min เต็ม = "เครื่องหยุดกี่นาที" */
-function calcOEE(sessions, downtimes, defects, breakPols = []) {
+/* `lines` = ทะเบียนไลน์ (แมป ชื่อไลน์ → แถว) — ไลน์เครื่องขนานบันทึก downtime รายเครื่อง
+   ⇒ ต้องหารด้วยจำนวนเลนก่อนเอามาหักจากเวลากะ (oee.js §3.2) ไม่งั้น `plannedMin` ทะลุความยาวกะ
+   แล้วน้ำหนัก wLoad ของกะนั้นเหลือ 0 = หายจากค่าเฉลี่ยเงียบๆ */
+function calcOEE(sessions, downtimes, defects, breakPols = [], lines = null) {
+  const laneOf = lines ? parallelNBySession(lines) : null;
   const results = [];
   for (const s of sessions) {
     const sessionDT = downtimes.filter(d => d.session_id === s.id);
@@ -82,8 +86,9 @@ function calcOEE(sessions, downtimes, defects, breakPols = []) {
       ? breakIntervalsIn({ policies: breakPols, startMs, endMs: startMs + Number(s.shift_min) * 60000,
           workDate: s.work_date, shift: s.shift })
       : [];
-    const plannedMin   = sessionDT.filter(d => d.dr_downtime_types?.category === 'planned').reduce((a, d) => a + dtMinOutsideBreaks(d, brkIv), 0);
-    const unplannedMin = sessionDT.filter(d => d.dr_downtime_types?.category !== 'planned').reduce((a, d) => a + dtMinOutsideBreaks(d, brkIv), 0);
+    const laneW = laneOf ? laneWeightFn(laneOf(s)) : () => 1;
+    const plannedMin   = sessionDT.filter(d => d.dr_downtime_types?.category === 'planned').reduce((a, d) => a + dtMinOutsideBreaks(d, brkIv) * laneW(d), 0);
+    const unplannedMin = sessionDT.filter(d => d.dr_downtime_types?.category !== 'planned').reduce((a, d) => a + dtMinOutsideBreaks(d, brkIv) * laneW(d), 0);
 
     const ngQty = sessionDefects.reduce((a, d) => a + (d.qty_ng || 0), 0) + (s.qty_ng || 0);
     const totalQty = s.actual_qty || 0;
@@ -625,7 +630,7 @@ export default function OEEAnalytics() {
   const tdDowntimesScoped = useMemo(() => tdTeam ? tdDowntimes.filter(d => tdSessionIdSet.has(d.session_id)) : tdDowntimes, [tdDowntimes, tdTeam, tdSessionIdSet]);
   const tdDefectsScoped   = useMemo(() => tdTeam ? tdDefects.filter(d => tdSessionIdSet.has(d.session_id)) : tdDefects,   [tdDefects, tdTeam, tdSessionIdSet]);
 
-  const tdRows = useMemo(() => calcOEE(tdSessionsTeamFiltered, tdDowntimesScoped, tdDefectsScoped, breakPols), [tdSessionsTeamFiltered, tdDowntimesScoped, tdDefectsScoped, breakPols]);
+  const tdRows = useMemo(() => calcOEE(tdSessionsTeamFiltered, tdDowntimesScoped, tdDefectsScoped, breakPols, flowByLine), [tdSessionsTeamFiltered, tdDowntimesScoped, tdDefectsScoped, breakPols, flowByLine]);
 
   const tdKpi = useMemo(() => {
     // งานคู่ RH/LH (pair_mat_no) นับเป็น 1 คู่/stroke — เฉพาะกะที่มีคู่จริงถึงคำนวณจาก prod_orders ที่เหลือใช้ค่า stamped เดิม
@@ -1054,7 +1059,7 @@ export default function OEEAnalytics() {
   useEffect(() => { loadData(); }, [loadData]);
 
   // ── Computed rows ──────────────────────────────────────────────
-  const rows = useMemo(() => calcOEE(sessions, downtimes, defects, breakPols), [sessions, downtimes, defects, breakPols]);
+  const rows = useMemo(() => calcOEE(sessions, downtimes, defects, breakPols, flowByLine), [sessions, downtimes, defects, breakPols, flowByLine]);
 
   /* ยอดผลิตจากใบงาน (pair-aware + op-aware) ของกลุ่ม session ใดๆ — ใช้ทั้ง KPI หัวแท็บ และตารางรายช่วง
      (QC audit 2026-08-20 · T3-12: เดิมตารางรายช่วงบวก actual_qty ดิบ → บวกกันแล้วไม่เท่า KPI หัวแท็บ
