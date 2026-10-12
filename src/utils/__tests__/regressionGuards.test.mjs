@@ -3665,3 +3665,23 @@ test('🛡️ oee-restamp-needs-qty — ทุก payload ที่เขีย�
     + '   แก้ยังไง: ใส่ actual_qty / qty_ok = sessionProducedQty(...) ใน payload เดียวกัน\n\n'
     + bad.map(b => '   • ' + b).join('\n') + '\n');
 });
+
+/* ── เด็ค PowerPoint ทุกตัว = ธีม TSG Revision 01 (12/10 · คำสั่ง user "ทำใหม่หลังจากนี้ต้อง revision1") ──
+   R00 = ปก/ปิดพื้นเขียว · R01 = พื้นขาวทุกหน้า · skill tsg-presentation-theme ที่ sync มายังเป็น R00 */
+test('🛡️ pptx-theme-r01 — ตัวสร้างเด็คห้ามใช้ asset/สีของธีม TSG R00', () => {
+  const theme = readFileSync(join(ROOT, 'docs/meetings/roadshow_build/tsg_theme.py'), 'utf8');
+  assert.match(theme, /REVISION = "R01"/,
+    '\n\n❌ docs/meetings/roadshow_build/tsg_theme.py ไม่ใช่ R01 แล้ว — อย่าเอาไฟล์จาก skill tsg-presentation-theme (R00) มาทับ\n');
+  const R00 = /bg_title\.png|div_pd3\.png|div_pd4\.png|div_jig\.png|logo_big\.png|logo_footer\.png|C0561E|0xC0, ?0x56, ?0x1E|EBD9B0/;
+  const hits = walk(join(ROOT, 'docs'), ['.py'])
+    .filter(f => !f.endsWith('retheme_r01.py'))
+    // เฉพาะตัวสร้าง "สไลด์" (pptx + เด็ค HTML) — infographic A4 ไม่อยู่ในคำสั่งนี้
+    .filter(f => f.endsWith('build_presentation.py') || /from pptx|import tsg_theme/.test(readFileSync(f, 'utf8')))
+    .filter(f => R00.test(readFileSync(f, 'utf8')))
+    .map(f => relative(ROOT, f));
+  assert.deepEqual(hits, [],
+    '\n\n❌ ตัวสร้างเด็คยังอ้าง asset/สีของธีม TSG R00 (ปก/ปิดพื้นเขียว): ' + hits.join(', ') + '\n'
+    + '   ทำไม: user สั่ง 12/10 ว่าเด็คทุกตัวต้องเป็น Revision 01 — พื้นขาวทุกหน้ารวมปก/ปิด · เขียว 068734 · ส้ม D95323\n'
+    + '   แก้ยังไง: import tsg_theme จาก docs/meetings/roadshow_build/ (title_slide / agenda_slide / section_divider / closing_slide)\n'
+    + '            เด็ค .pptx เก่าที่ไม่มีสคริปต์ → python3 docs/meetings/roadshow_build/retheme_r01.py <file>\n');
+});

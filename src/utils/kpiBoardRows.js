@@ -21,23 +21,43 @@ export const normKpiRowName = x => String(x ?? '').toLowerCase().replace(/[\s\-_
  * @param findAuto   (autoKey) => def | null — นิยาม `auto:<key>` ที่ใกล้สุด
  * @param ownScopes  ขอบเขตที่นับว่าเป็น "ของตัวเอง" สำหรับแผ่นพิเศษ (06/10: เลือก CC = หน่วยเจ้าของรหัสด้วย `[scope, ...unitsOf(scope)]`)
  *                   — ไม่ส่ง = [scope] (พฤติกรรมเดิม)
+ * @param childGroups Map<groupKey, defs[]> ของนิยาม "หน่วยลูก" (จาก `kpiRollup.groupChildDefs`) — 12/10: ลูกมี แม่ไม่มี ⇒ รวมขึ้นแม่
+ *                   · ช่องมาตรฐานที่แม่/บรรพบุรุษไม่ถือแต่ลูกถือ = แผ่นช่องนั้น (ค่ารวมจากลูก) · กลุ่มที่ไม่เข้าช่อง = แผ่น `roll:<groupKey>`
  * @param order      ลำดับแผ่นที่คนจัดเอง (`kpi_board_layouts.row_keys` · 09/10) — คีย์ที่อยู่ในลิสต์มาก่อนตามลำดับ
  *                   คีย์ที่ไม่อยู่ (KPI เพิ่มใหม่) ต่อท้ายตามลำดับเดิม · คีย์ที่ไม่มีแผ่นแล้ว = ข้าม · ไม่ส่ง/ว่าง = ลำดับ template
  * @returns { rows, fallbackTemplate }
  */
-export function pickBoardRows({ templates, kdefs, scope, hasLines, findManual, findAuto, ownScopes = null, order = null }) {
+export function pickBoardRows({ templates, kdefs, scope, hasLines, findManual, findAuto, ownScopes = null, order = null, childGroups = null }) {
   const own = ownScopes && ownScopes.length ? ownScopes : [scope];
   const plantView = isPlant(scope);
   const isMan = d => !String(d?.source || '').startsWith('auto:');
   const held = (kdefs || []).filter(d => plantView || !isPlant(scopeOfDef(d)));
-  const hasAnyDef = held.length > 0;
+  const groups = childGroups instanceof Map ? childGroups : new Map();
+  const hasAnyDef = held.length > 0 || groups.size > 0;
+  /* กลุ่มลูกที่ "ตรงช่องมาตรฐาน" — ตาม board_slot ของทะเบียน ไม่มีค่อยเทียบชื่อ (กติกาเดียวกับ findManual) */
+  const childGroupForRow = (r) => {
+    for (const [gk, ds] of groups) {
+      const lead = ds[0];
+      const slot = boardSlotOf(lead);
+      if (slot ? slot === r.key : normKpiRowName(lead.kpi_catalog?.name || lead.name) === normKpiRowName(r.name)) return gk;
+    }
+    return null;
+  };
   const holds = (r) => {
     if (!hasAnyDef) return true;
     if (r.auto && hasLines) return true;
     const man = findManual(r);
     if (man && (plantView || !isPlant(man.at))) return true;
     if (r.auto) { const ad = findAuto(r.auto); if (ad && (plantView || !isPlant(scopeOfDef(ad)))) return true; }
-    return false;
+    return !!childGroupForRow(r);   // แม่ไม่ถือ แต่ลูกถือ ⇒ แผ่นช่องนี้ (รวมจากลูก)
+  };
+  /* ช่องมาตรฐานที่ได้ค่าจาก "ลูก" เท่านั้น (แม่/บรรพบุรุษไม่มีนิยาม · ไม่ใช่ auto ที่คำนวณเอง) ติด `rollup: groupKey` ให้บอร์ดไปรวม */
+  const rollupKeyOf = (r) => {
+    if (r.auto && hasLines) return null;
+    const man = findManual(r);
+    if (man && (plantView || !isPlant(man.at))) return null;
+    if (r.auto) { const ad = findAuto(r.auto); if (ad && (plantView || !isPlant(scopeOfDef(ad)))) return null; }
+    return childGroupForRow(r);
   };
   const mainKeys = new Set(templates.map(r => r.key));
   const mainNames = new Set(templates.map(r => normKpiRowName(r.name)));
@@ -47,7 +67,18 @@ export function pickBoardRows({ templates, kdefs, scope, hasLines, findManual, f
     .filter(d => own.some(sc => sameScope(scopeOfDef(d), sc)) && isMan(d) && !onMain(d))
     .sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0))
     .map(d => ({ key: `def:${d.id}`, name: d.kpi_catalog?.name || d.name || '(ไม่มีชื่อ)', icon: '📌', auto: null, defId: d.id, extra: true }));
-  return { rows: applyBoardOrder([...templates.filter(holds), ...extras], order), fallbackTemplate: !hasAnyDef };
+  /* ⬆ กลุ่มของลูกที่ไม่เข้าช่องมาตรฐาน และแม่ไม่ได้ตั้ง KPI ชื่อ/ทะเบียนเดียวกันไว้เอง = แผ่นรวม `roll:<groupKey>` ต่อท้าย */
+  const ownKeys = new Set(extras.map(r => r.key));
+  const ownGroupKeys = new Set((kdefs || []).filter(d => own.some(sc => sameScope(scopeOfDef(d), sc)) && isMan(d))
+    .map(d => (d.catalog_id || d.kpi_catalog?.id) ? `cat:${d.catalog_id || d.kpi_catalog.id}` : `name:${normKpiRowName(d.kpi_catalog?.name || d.name)}`));
+  const rolled = [];
+  for (const [gk, ds] of groups) {
+    const lead = ds[0];
+    if (onMain(lead) || ownGroupKeys.has(gk)) continue;
+    rolled.push({ key: `roll:${gk}`, name: lead.kpi_catalog?.name || lead.name || '(ไม่มีชื่อ)', icon: '⬆', auto: null, rollup: gk, extra: true, childN: ds.length });
+  }
+  const main = templates.filter(holds).map((r) => { const gk = rollupKeyOf(r); return gk ? { ...r, rollup: gk } : r; });
+  return { rows: applyBoardOrder([...main, ...extras, ...rolled.filter(r => !ownKeys.has(r.key))], order), fallbackTemplate: !hasAnyDef };
 }
 
 /** เรียงแผ่นตามลำดับที่คนจัด (pure) — ดูคำอธิบาย `order` ด้านบน */

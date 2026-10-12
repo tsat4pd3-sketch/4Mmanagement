@@ -3,7 +3,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import re, json, os
 D=json.load(open("kpi.json")); MONTHS=D["months"]
-ORANGE="#C0561E"; ORANGE_D="#8A3B12"; GREEN="#0D3D14"; GREEN2="#2C5F2D"; TGT="#222222"; GRID="#DCE4D6"
+# TSG R01: ส้ม D95323 · ป้าย/แกนเขียว 068734 · ขอบ D9D9D9
+ORANGE="#D95323"; ORANGE_D="#AE5A21"; GREEN="#0D3D14"; GREEN2="#068734"; TGT="#222222"; GRID="#D9D9D9"
 def ytd_from(k):
     return k["ytd"]
 os.makedirs("charts_tsg",exist_ok=True)

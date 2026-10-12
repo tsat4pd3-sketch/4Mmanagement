@@ -282,7 +282,6 @@ Reject → status: "rejected" + reject_reason
 
 ## Factory Master Map — ผังรวมโรงงานผังเดียว (2026-07-16)
 
-หน้า `/factory-map` (`FactoryMap.jsx`, กลุ่มฝ่ายผลิต) — รูปผังใหญ่ของทั้งโรงงาน 1 รูป แล้ววาด polygon (รูปทรงอิสระ) ล้อมพื้นที่แต่ละไลน์ ระบายสีตามสถานะการผลิตของไลน์นั้น — ดูทุกไลน์บนจอเดียว (เหมาะจอ TV)
 > 📄 รายละเอียดเต็ม → `docs/modules/factory-master-map.md`
 
 ---
@@ -296,14 +295,12 @@ Reject → status: "rejected" + reject_reason
 
 ## Adoption Outlook — 🔮 ภาพเมื่อข้อมูลเชื่อมกันทั้งองค์กร (`/adoption-outlook` · 2026-08-13)
 
-หน้า `AdoptionOutlook.jsx` (ภาพรวม) — ตอบผู้บริหารว่า "เมื่อทุกแผนกใช้จริงและข้อมูลเชื่อมกันหมด จะมองเห็นมิติไหนได้บ้าง" (สอบกลับ · เตือนก่อนคุณภาพหลุด · กระทบการส่ง)
 > 📄 รายละเอียดเต็ม → `docs/modules/adoption-outlook.md`
 
 ---
 
 ## Group Overview — 🏢 ภาพรวมกลุ่มบริษัท TSG (MOCKUP หลายบริษัท · 2026-08-05)
 
-หน้า `/group-overview` (`GroupOverview.jsx`, กลุ่มภาพรวม) — เป็นตัวอย่างหน้าจอ (mockup) ไม่ใช่ระบบ multi-company จริง สร้างตามคำสั่ง user เพื่อตอบผู้บริหารว่า "ระบบนี้ใช้กับหลายบริษัทในกลุ่ม + ดูภาพรวมข้ามบริษัทได้มั้ย"
 > 📄 รายละเอียดเต็ม → `docs/modules/group-overview.md`
 
 ---
@@ -332,7 +329,6 @@ Reject → status: "rejected" + reject_reason
 
 ## Remote Control — จอตาม-มือถือคุม (2026-07-15)
 
-แก้โจทย์จอที่ไม่มีเมาส์/คีย์บอร์ด/กล้อง (Smart TV, โปรเจคเตอร์, จอบอร์ดหน้าไลน์) — ใช้ได้ทุกหน้า ผ่าน Supabase Realtime broadcast (channel `esm-remote-<รหัส 6 หลัก>`) ไม่มีตาราง/เซิร์ฟเวอร์ใหม่:
 > 📄 รายละเอียดเต็ม → `docs/modules/remote-control.md`
 
 ---
@@ -486,7 +482,6 @@ Reject → status: "rejected" + reject_reason
 
 ## PM Predictive & Planner Sync — เห็นวัน PM ล่วงหน้า + buffer (2026-07-16)
 
-หน้า `/pm-forecast` (🔧 PM ล่วงหน้า (Planner), กลุ่มการตรวจสอบและซ่อมบำรุง) — ให้ วางแผน/ผลิตเห็นวันที่จะต้อง PM ล่วงหน้า 1-2 สัปดาห์ + buffer ที่ต้องผลิตเผื่อ ก่อนเครื่องหยุดทำ PM
 > 📄 รายละเอียดเต็ม → `docs/modules/pm-predictive-planner-sync.md`
 
 > ### 🔴 AM ↔ PM — กฎข้าม session (2026-10-09 · audit `docs/modules/am-pm-linkage-audit.md`)
@@ -501,7 +496,6 @@ Reject → status: "rejected" + reject_reason
 
 ## PM Coordination — แผนประสานงาน PM ข้ามวัน (MTN แจ้ง Production · 2026-07-23)
 
-หน้า `/pm-coordination` (`PmCoordination.jsx`, การตรวจสอบและซ่อมบำรุง) — "ใบแจ้งแผน" ที่ MTN ส่งประสานงานกับผลิต สำหรับงาน PM/แก้เครื่องที่กินหลายวัน
 > 📄 รายละเอียดเต็ม → `docs/modules/pm-coordination.md`
 
 ---
@@ -811,6 +805,12 @@ Reject → status: "rejected" + reject_reason
 >   `:has()` **ในที่ที่พังแล้วเสียการใช้งาน** (ตัวที่มีใน `index.css` ปล่อยไว้ได้ — เบราว์เซอร์เก่าทิ้งแค่ rule นั้น ไม่พัง)
 > - **ตรวจก่อน merge:** `grep -oF "color-mix(" dist/assets/*` ต้องได้ 0
 > 📄 ตารางฟีเจอร์ที่วัดจากบันเดิลจริง → `docs/UI-CONVENTIONS.md` §เพดานเบราว์เซอร์
+
+### 🎨 เด็ค/สไลด์ทุกตัว (pptx · HTML) = ธีม TSG **Revision 01** (2026-10-12 · คำสั่ง user)
+
+> **พื้นขาวทุกหน้า รวมปกและหน้าปิด** · เขียว `068734` · ส้ม `D95323` · เขียวเข้ม `0D3D14` เฉพาะ headline box/หัวตาราง · โลโก้ R01
+> · python → `docs/meetings/roadshow_build/tsg_theme.py` · ในแอป → `src/lib/monthlyReviewPptx.js` · เด็คเก่า → `retheme_r01.py`
+> · 🔴 **skill `tsg-presentation-theme` ที่ sync มายังเป็น R00 (ปก/ปิดพื้นเขียว) — ห้ามใช้ asset/สีของมัน** (ด่าน `pptx-theme-r01`)
 
 ### ⚠️ กับดัก CSS ที่เจอซ้ำหลายจุด (เหตุผล+เคสจริง → `docs/UI-CONVENTIONS.md` §7 + §7.1)
 
