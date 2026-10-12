@@ -1240,3 +1240,17 @@ toast หลังกด · **และข้อความใน ledger** (`no
     `customer_shipping_orders`/`purchase_requests`/`raw_withdrawal_requests`/`wip_replenish_requests` **ไม่อยู่ใน publication realtime** (เช็ค 05/10)
 - 🔴 `raw_withdrawal_requests` มีแค่ `pending`/`issued`/`cancelled` (**ไม่มี `done`**) — "ค้าง" = `eq('status','pending')` · ยอดรวม = ไม่นับ `cancelled`
   (เดิม `.neq('status','done')` ขึ้นค้าง 1,472 แทน 482 · ด่าน `raw-withdrawal-status-set`)
+
+## 🏬 SLoc ว่างใน ledger — trigger ไม่รู้จักไลน์ลูก (2026-10-12 · audit SSOT ยอดสต็อก)
+
+`fn_stock_txn_fill_sloc` (DR · BEFORE INSERT บน `line_stock_transactions`) จับคู่ `storage_locations.line_names`
+**ตรงตัว** — แต่ทะเบียนผูกที่ไลน์แม่ (P411 = LINE APRON ASSY · P409 = HYDROFORM) ขณะที่ ledger เขียนด้วย
+ชื่อไลน์ลูก ⇒ แถวที่ฟังก์ชันฝั่ง DB เขียนได้ SLoc ว่าง (client `slocOfLine` ไล่หาแม่ได้ ⇒ ไลน์เดียวมีทั้ง P411 และว่าง)
+⇒ `v_sloc_stock` ยอดขาด
+
+- **แก้ 12/10** (`20261012_sloc_child_lines_backfill_dr.sql` · apply แล้ว): DR ไม่มีลำดับชั้นไลน์
+  (`production_lines` อยู่ Main) ⇒ ใส่ชื่อไลน์ลูกลง `line_names` ตรงๆ (P411 +Line 60/61/SUB APRON ·
+  P409 +ลูก 8 ไลน์ของ HYDROFORM) แล้วเติมแถวเก่า **1,044 แถว** · ภาพก่อนแก้อยู่ `archive.*_20261012` · ย้อนท้ายไฟล์
+- 🔴 **ไลน์ลูกที่เพิ่มทีหลัง ต้องเติมชื่อใน SLoc ของแม่ด้วย** ไม่งั้นกลับมาว่างอีก (แท็บพื้นที่ใน `/line-stock` นับแถวว่างให้เห็น)
+- **ยังว่าง (รอ user ระบุ SLoc):** LINE A–D · ASSEMBLY 1 (+D5/D6) · Assy GOR · Assy LWR — ~2,100 แถว
+  (P401/P402/R401 ยังไม่ผูกไลน์เลย · ห้ามเดา)
