@@ -878,13 +878,13 @@ function StaffingTab({ section, deptParam, today, nodes, employees, lines, slotP
     for (const r of raw.sched) (sch[r.work_date] ||= []).push(r);
     const out = [];
     for (let d = from; d && d <= to; d = addDaysStr(d, 1)) {
-      const board = buildManpowerBoard({ section, nodes, employees: rosterOn(employees, d), lines, maps: buildScheduleMaps(sch[d] || []),
+      const board = buildManpowerBoard({ section, nodes, employees: rosterOn(employees, d, { today, attendance: att[d] }), lines, maps: buildScheduleMaps(sch[d] || []),
         attendance: att[d] || {}, slotPlans, lineTechs, helpers: raw.borrowed.byDate?.[d] || [], stations, stationPlans, homeByEmp });
       out.push({ date: d, depts: (board?.depts || []).filter(x => !deptParam || x.key === deptParam)
         .map(x => ({ key: x.key, name: x.name, shifts: staffingOfDept(x) })) });
     }
     return out;
-  }, [raw, from, to, section, deptParam, nodes, employees, lines, slotPlans, lineTechs, stations, stationPlans, homeByEmp]);
+  }, [raw, from, to, today, section, deptParam, nodes, employees, lines, slotPlans, lineTechs, stations, stationPlans, homeByEmp]);
   const summary = useMemo(() => summarizeStaffing(days), [days]);
   const rowsOf = useMemo(() => summary.flatMap(sm => ['day', 'night'].map(sh => ({ key: sm.key, name: sm.name, sh }))), [summary]);
 
