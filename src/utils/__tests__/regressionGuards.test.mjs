@@ -3572,3 +3572,38 @@ test('🛡️ MonitoringUpload ต้องส่ง stockLocOf (refStockOf) ใ
     + '   ผล: ยอดค้างที่ LINE A–D ไม่มีใครเบิก/รับ · จุดเรียกเติมที่อ้าง STORE ขึ้น "ยังเช็คไม่ได้" ทั้งที่ของเต็มสโตร์\n'
     + '   แก้: stockLocOf = (mat, line) => refStockOf(...) แบบ seedOnly (utils/partRefStock.js)\n');
 });
+
+
+/* ═══ 🗑️ ลบคำถาม LPA ต้องนับปลายทางก่อน + บอกขอบเขต (2026-10-12 · feedback หน้างาน) ═══
+   เคสจริง: *"Layer ข้อ 22,23 หายไปครับ"* — 02/10 มีคนกด 🗑 ลบข้อ common 2 ข้อ (VISUAL/ANDON)
+   ⇒ หายจากใบตรวจ **ทุกไลน์** ทันที (คนกดอยู่ในมุมมอง "ทุกไลน์" แต่ confirm เดิมไม่บอกว่าเป็นของส่วนรวม)
+   `lpa_audit_answers` ไม่มี FK ⇒ คำตอบกำพร้า 2,444 แถว (17%) กระทบใบตรวจ 581 ใบ
+   — ข้อมูลไม่หาย (มี question_text snapshot) แต่ใบเก่าแสดงไม่ครบ เพราะจอวาดจากลิสต์คำถามปัจจุบัน */
+test('🛡️ lpa-question-delete-needs-refs — ลบ lpa_questions ต้องผ่านด่านนับปลายทาง', () => {
+  const bad = walk(join(ROOT, 'src'), ['.js', '.jsx']).filter((f) => {
+    const code = stripComments(readFileSync(f, 'utf8'));
+    if (!/from\(['"]lpa_questions['"]\)[\s\S]{0,80}?\.delete\(\)/.test(code)) return false;
+    return !/lpaQuestionBlockMessage/.test(code) || !/lpaDeleteConfirmText/.test(code);
+  }).map(f => f.replace(ROOT + '/', ''));
+  assert.deepEqual(bad, [],
+    '\n\n❌ ลบ `lpa_questions` โดยไม่มีด่านนับปลายทาง/ไม่บอกขอบเขต: ' + bad.join(', ') + '\n'
+    + '   ทำไมผิด: ข้อ common (line_name ว่าง) = ของส่วนรวม ลบทีเดียวหายทุกไลน์\n'
+    + '            และคำตอบเก่าใน lpa_audit_answers ไม่มี FK ⇒ กลายเป็นกำพร้า ใบย้อนหลังอ่านไม่ครบ\n'
+    + '   แก้ยังไง: นับก่อนถาม → lpaQuestionBlockMessage(q, await loadLpaQuestionRefs(supabase, q.id))\n'
+    + '            มีคนใช้อยู่ = ไม่ลบ ให้ "⏸ ปิดใช้งาน" แทน · ลบได้ค่อย confirm ด้วย lpaDeleteConfirmText(q)\n'
+    + '            (src/utils/lpaQuestionRefs.js)\n');
+});
+
+/* ใบตรวจ LPA ที่บันทึกแล้ว = **บันทึก** ไม่ใช่ใบที่ generate ใหม่ (กฎเดียวกับฟอร์มที่ยื่นออกไปแล้ว)
+   ⇒ ต้องวาด/เขียนกลับ "ข้อที่ถูกถอดออกจากเช็คลิสต์ไปแล้ว" ด้วย ไม่งั้น:
+     (ก) ใบเก่าแสดงไม่ครบ  (ข) แค่กดบันทึกซ้ำ คำตอบของข้อที่ถูกลบจะหายถาวร (delete-then-insert) */
+test('🛡️ lpa-audit-keeps-removed-answers — ใบตรวจต้องพกคำตอบของข้อที่ถูกถอดออกไปแล้ว', () => {
+  const f = join(ROOT, 'src/pages/LayerProcessAudit.jsx');
+  const code = stripComments(readFileSync(f, 'utf8'));
+  assert.ok(/savedOnlyAnswers\(/.test(code),
+    '\n\n❌ LayerProcessAudit ไม่เรียก savedOnlyAnswers — ข้อที่ถูกลบ/ปิดใช้ทีหลังจะหายจากใบย้อนหลัง\n');
+  assert.ok(/question_text:\s*a\.question_text/.test(code) || /text:\s*a\.question_text/.test(code),
+    '\n\n❌ ตอนโหลดใบเก่าไม่ได้พก question_text (snapshot) มาด้วย ⇒ ข้อที่ถูกลบจะไม่มีข้อความให้แสดง\n');
+  assert.ok(/removedAnswers\.map\(/.test(code),
+    '\n\n❌ saveAudit ไม่ได้เขียนคำตอบของข้อที่ถูกถอดออกกลับลงฐาน ⇒ กดบันทึกซ้ำ = ข้อมูลหายรอบสอง\n');
+});
