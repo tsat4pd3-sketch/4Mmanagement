@@ -48,7 +48,8 @@ export const REALTIME_TABLES = {
   notifications:           'main',
   qa_fme_obligations:      'main',
   role_permissions:        'main',
+  wip_replenish_requests:  'main',   // เพิ่ม 12/10 — จอ TV สโตร์ "ไลน์เรียกของ" · อยู่ใน publication Main แล้ว (ตรวจ 12/10)
 };
 
-/** ตรวจแล้วกับ DB จริงเมื่อ — อยู่ใน publication ครบทั้ง 18 ตารางทั้ง 2 ฝั่ง */
-export const REALTIME_VERIFIED_AT = '2026-10-06';
+/** ตรวจแล้วกับ DB จริงเมื่อ — อยู่ใน publication ครบทุกตารางในทะเบียนทั้ง 2 ฝั่ง */
+export const REALTIME_VERIFIED_AT = '2026-10-12';

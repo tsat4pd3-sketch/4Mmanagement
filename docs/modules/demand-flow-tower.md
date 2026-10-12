@@ -167,13 +167,12 @@ Store sub part → Production sub part (Stamping) → Store raw/purchase → Pur
 | `/heijunka` คิวสโตร์ทุกตู้ (2xx/3xx/5xx) + แท็บความต้องการ | ✅ แปลงแล้ว |
 | `/store-monitor` เฝ้าระวังสต๊อก | ✅ แปลงแล้ว |
 | `/rack-center` packaging | ✅ แปลงแล้ว (`showImg={false}` — ภาชนะไม่ใช่ชิ้นงาน) |
-| `StoreWaitCards` (บอร์ด TV) | 🔵 ไม่แปลง — สรุป**รายไลน์** ไม่ใช่รายพาร์ท คนละหน่วยข้อมูล |
+| `StoreWaitCards` (บอร์ด TV) | ✅ 12/10 — แผง "🔔 ไลน์เรียกของ" ใช้ `<PartCard>` (รอบส่ง C/D ยังสรุปรายไลน์ตามเดิม) · ดู dept-dashboard-tv.md |
 | `/customer-demand` (1xx) | 🔵 ไม่แปลง — การ์ดรอบส่งเป็น**ขั้นตอนเวลา** ไม่ใช่พาร์ท (user ระบุเองว่า workflow ต่างกันได้) |
 
-🔴 **ช่องว่างที่ยังเหลือ:** `/store-monitor` การ์ดยัง**ไม่มีตัวเลขหลัก** เพราะวิว `v_store_abnormal`
-คืนเฉพาะประโยค `detail` ไม่มีคอลัมน์ตัวเลข (on_hand / min / max) — ถ้าจะให้การ์ดโชว์
-"คงเหลือ X / Min Y" แบบจออื่น ต้องเพิ่มคอลัมน์ในวิว (เติมท้าย = backward compatible)
-**ยังไม่ทำ รอ user สั่ง** · ตอนนี้ใช้ `note` แสดงประโยคเดิมไปก่อน ไม่แกะสตริงเอง (เปราะ)
+✅ **12/10 วิว `v_store_abnormal` มีคอลัมน์ `qty_on_hand`/`min_qty`/`max_qty` ท้ายวิวแล้ว**
+(migration `20261012_store_abnormal_qty_cols.sql` · apply แล้ว · จอ TV สโตร์ใช้แล้ว)
+🔴 **ช่องว่างที่ยังเหลือ:** การ์ด `/store-monitor` ยังใช้ `note` (ประโยคเดิม) — เปลี่ยนไปอ่านคอลัมน์ตัวเลขได้แล้ว ยังไม่ได้ทำ
 
 ### 🔢 หัวการ์ด: Part No. นำ — แต่วัตถุดิบ 5xx นำด้วยชื่อ (2026-09-30 · วัดทะเบียนจริง)
 
@@ -1241,3 +1240,17 @@ toast หลังกด · **และข้อความใน ledger** (`no
     `customer_shipping_orders`/`purchase_requests`/`raw_withdrawal_requests`/`wip_replenish_requests` **ไม่อยู่ใน publication realtime** (เช็ค 05/10)
 - 🔴 `raw_withdrawal_requests` มีแค่ `pending`/`issued`/`cancelled` (**ไม่มี `done`**) — "ค้าง" = `eq('status','pending')` · ยอดรวม = ไม่นับ `cancelled`
   (เดิม `.neq('status','done')` ขึ้นค้าง 1,472 แทน 482 · ด่าน `raw-withdrawal-status-set`)
+
+## 🏬 SLoc ว่างใน ledger — trigger ไม่รู้จักไลน์ลูก (2026-10-12 · audit SSOT ยอดสต็อก)
+
+`fn_stock_txn_fill_sloc` (DR · BEFORE INSERT บน `line_stock_transactions`) จับคู่ `storage_locations.line_names`
+**ตรงตัว** — แต่ทะเบียนผูกที่ไลน์แม่ (P411 = LINE APRON ASSY · P409 = HYDROFORM) ขณะที่ ledger เขียนด้วย
+ชื่อไลน์ลูก ⇒ แถวที่ฟังก์ชันฝั่ง DB เขียนได้ SLoc ว่าง (client `slocOfLine` ไล่หาแม่ได้ ⇒ ไลน์เดียวมีทั้ง P411 และว่าง)
+⇒ `v_sloc_stock` ยอดขาด
+
+- **แก้ 12/10** (`20261012_sloc_child_lines_backfill_dr.sql` · apply แล้ว): DR ไม่มีลำดับชั้นไลน์
+  (`production_lines` อยู่ Main) ⇒ ใส่ชื่อไลน์ลูกลง `line_names` ตรงๆ (P411 +Line 60/61/SUB APRON ·
+  P409 +ลูก 8 ไลน์ของ HYDROFORM) แล้วเติมแถวเก่า **1,044 แถว** · ภาพก่อนแก้อยู่ `archive.*_20261012` · ย้อนท้ายไฟล์
+- 🔴 **ไลน์ลูกที่เพิ่มทีหลัง ต้องเติมชื่อใน SLoc ของแม่ด้วย** ไม่งั้นกลับมาว่างอีก (แท็บพื้นที่ใน `/line-stock` นับแถวว่างให้เห็น)
+- **ยังว่าง (รอ user ระบุ SLoc):** LINE A–D · ASSEMBLY 1 (+D5/D6) · Assy GOR · Assy LWR — ~2,100 แถว
+  (P401/P402/R401 ยังไม่ผูกไลน์เลย · ห้ามเดา)

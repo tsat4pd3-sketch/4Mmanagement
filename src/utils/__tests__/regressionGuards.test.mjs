@@ -1003,6 +1003,20 @@ const RULES = [
     allow: {},
   },
   {
+    id: 'quality-photo-via-helper',
+    scan: ['src/pages', 'src/components'], ext: ['.jsx'],
+    // จับการแตะถัง quality-images ตรงๆ จากหน้า (upload / remove / getPublicUrl)
+    re: /storage\s*\.from\(\s*['"]quality-images['"]\s*\)/g,
+    why: 'รูปหลักฐานของเสียพาดผ่าน 3 จอ (ลงงานเสีย → ถังเหลือง/แดง → ใบรายงานของเสีย) '
+       + 'และมีกติกาที่พลาดแล้วเห็นผลช้า: ① บีบ webp 1024px (480px ของรูปโปรไฟล์เล็กเกินกว่าจะเห็นตำหนิ) '
+       + '② นามสกุลจาก imgExt(blob) ห้าม hardcode .jpg ③ uploadOpts() ไม่งั้น cacheControl หาย '
+       + '— เคยทำ egress ทะลุโควต้าจนทั้ง organization ถูกล็อก · บทเรียนเดียวกับ mtnImage.js: '
+       + 'กติกาที่ฝังอยู่ในหน้าแรก ทำให้จุดที่ 2 ต้องก๊อป แล้วตกหล่นทีละข้อ',
+    fix: 'ใช้ uploadQualityPhoto(file, folder, key) / removeQualityImg(url) '
+       + 'จาก src/utils/qualityImage.js (ช่องกรอกใช้ <QualityPhotoField>)',
+    allow: {},
+  },
+  {
     id: 'mo-image-via-mtnImage',
     scan: ['src/pages', 'src/components'], ext: ['.jsx'],
     // จับการอัปโหลดขึ้น bucket mtn-images โดยไม่ผ่าน util กลาง
@@ -1732,6 +1746,9 @@ const INLINE_WLOAD = /shift_?[mM]in[^;\n]{0,30}\)? *- *[A-Za-z_.]*[pP]lanned/;
 const WLOAD_ALLOW = {
   'src/utils/obeyaKpi.js':
     'โมดูล pure — รับ rows ที่มี plannedMin มาแล้ว ไม่ได้อ่าน downtime เอง (หน้าที่เรียกเป็นคนรับผิดชอบ)',
+  'src/utils/manpowerBoard.js':
+    'compareOeeByStaffing (12/10) — เฉลี่ยค่า oee/oee_p ที่ stamp ตอนปิดกะแล้ว ไม่อ่าน downtime เลย → plannedMin = 0 '
+    + '→ wLoad ถ่วงด้วย shift_min ล้วน (แบบเดียวกับ axisOee ใน obeyaKpi) = ไม่มีการหักพักซ้ำ',
   'src/pages/PlannerSales.jsx':
     'ตั้งใจไม่โหลด downtime → plannedMin = 0 → wLoad ถอยไปถ่วงด้วย shift_min (มีคอมเมนต์อธิบายที่บรรทัด 883-884) '
     + '= ประมาณการ ไม่ใช่การหักซ้ำ',
@@ -3571,6 +3588,93 @@ test('🛡️ MonitoringUpload ต้องส่ง stockLocOf (refStockOf) ใ
     '\n\n❌ ตัวนำเข้า Monitoring ไม่ส่ง stockLocOf — BALANCE ชีทไลน์ปั๊มจะกลับไปลงเป็นสต็อกที่ชื่อไลน์ผลิต\n'
     + '   ผล: ยอดค้างที่ LINE A–D ไม่มีใครเบิก/รับ · จุดเรียกเติมที่อ้าง STORE ขึ้น "ยังเช็คไม่ได้" ทั้งที่ของเต็มสโตร์\n'
     + '   แก้: stockLocOf = (mat, line) => refStockOf(...) แบบ seedOnly (utils/partRefStock.js)\n');
+});
+
+/* ── 🔒 หน้า login ห้ามบอกว่า "อีเมลนี้มีบัญชีหรือไม่" (2026-10-12 · คำสั่ง user) ──────────
+   เดิมแยกข้อความ "ไม่พบบัญชี" ออกจาก "รหัสผ่านผิด" ด้วย RPC `login_email_exists`
+   ซึ่ง **grant ให้ `anon`** (จำเป็น เพราะใช้ก่อน login) ⇒ ใครก็ยิงไล่เดาได้ว่าอีเมลไหนมีบัญชี
+   = account enumeration = ได้ลิสต์เป้าไปไล่ลองรหัสผ่าน (ระบบเปิดบนอินเทอร์เน็ตจริง
+   Render + anon key ที่อ่านได้จากหน้าเว็บ) · ฟังก์ชันถูก drop แล้ว 12/10
+   ⇒ ด่านนี้กันการเอากลับมา ไม่ว่าจะชื่อเดิมหรือ RPC ตัวใหม่ที่ทำหน้าที่เดียวกัน */
+test('🛡️ login-no-email-oracle — ห้ามมีโค้ดถามว่าอีเมลนี้มีบัญชีอยู่ไหม', () => {
+  const bad = [];
+  const SUSPECT = /\b(login_email_exists|email_exists|account_exists|user_exists)\b/;
+  for (const file of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
+    const rel = relative(ROOT, file);
+    if (rel.includes('__tests__')) continue;
+    const code = stripComments(readFileSync(file, 'utf8'));   // พูดถึงในคอมเมนต์ได้ (อธิบายว่าทำไมถอด)
+    code.split('\n').forEach((ln, i) => {
+      const m = ln.match(SUSPECT);
+      if (m) bad.push(`${rel}:${i + 1} — ${m[1]}`);
+    });
+  }
+  assert.deepEqual(bad, [],
+    '\n\n❌ เจอโค้ดที่ถามว่า "อีเมลนี้มีบัญชีไหม" กลับมาแล้ว\n'
+    + '   ทำไมสำคัญ: หน้า login เปิดให้ anon ⇒ ตอบคำถามนี้ = ปล่อยให้คนนอกไล่เดาได้ว่า\n'
+    + '             อีเมลไหนมีบัญชีในระบบ แล้วเอาไปไล่ลองรหัสผ่าน (account enumeration)\n'
+    + '   แก้ยังไง: ใช้ข้อความรวม "อีเมลหรือรหัสผ่านไม่ถูกต้อง" + บอกทางออก (ติดต่อ admin)\n'
+    + '             ห้ามแยก 2 กรณีนี้ ไม่ว่าจะด้วย RPC · ตาราง profiles · หรือ error ของ Auth\n\n'
+    + bad.map(b => `   • ${b}`).join('\n') + '\n');
+});
+
+/* ── 📄 บันทึกต้นฉบับของใบ MO ต้องมีคนเขียนที่เดียว (2026-10-12 · คำสั่ง user) ─────────────
+   `mtn_orders.snapshot` = เนื้อใบ ณ เวลาปิดใบ · เขียน **ครั้งเดียว** แล้วห้ามทับ
+   (ทับได้ = บันทึกเปลี่ยนตามคนแก้ = หมดความเป็นบันทึก · ใบมีเลขที่เอกสารและเก็บตามอายุเอกสาร)
+   ตัวเขียนเดียวคือ `saveMoSnapshot()` ซึ่งกันทับด้วย `.is('snapshot', null)` ที่ชั้น WHERE
+   ⇒ ด่านนี้กันหน้าอื่น/โค้ดใหม่เขียนตรงๆ ข้ามด่านนั้น */
+test('🛡️ mo-snapshot-single-writer — เขียน mtn_orders.snapshot ได้ที่ mtnMoSnapshot.js เท่านั้น', () => {
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
+    const rel = relative(ROOT, file);
+    if (rel.includes('__tests__') || rel === 'src/lib/mtnMoSnapshot.js') continue;
+    const code = stripComments(readFileSync(file, 'utf8'));
+    code.split('\n').forEach((ln, i) => {
+      if (/\bsnapshot\s*:/.test(ln) && /mtn_order|moSnap|snapshot_at/.test(code)) {
+        if (/\bsnapshot\s*:/.test(ln) && !/serializeMo|moFromSnapshot/.test(ln)) {
+          bad.push(`${rel}:${i + 1} — ${ln.trim().slice(0, 90)}`);
+        }
+      }
+    });
+  }
+  assert.deepEqual(bad, [],
+    '\n\n❌ มีจุดเขียน `snapshot:` ของใบ MO นอก src/lib/mtnMoSnapshot.js\n'
+    + '   ทำไมสำคัญ: บันทึกต้นฉบับต้องเขียนครั้งเดียวแล้วห้ามทับ — ตัวเขียนเดียวกันทับด้วย\n'
+    + '             `.is(\'snapshot\', null)` · เขียนตรงๆ ที่อื่น = ข้ามด่านนั้น\n'
+    + '   แก้ยังไง: เรียก `saveMoSnapshot(order)` จาก src/lib/mtnMoSnapshot.js\n\n'
+    + bad.map(b => `   • ${b}`).join('\n') + '\n');});
+
+/* ═══ 🗑️ ลบคำถาม LPA ต้องนับปลายทางก่อน + บอกขอบเขต (2026-10-12 · feedback หน้างาน) ═══
+   เคสจริง: *"Layer ข้อ 22,23 หายไปครับ"* — 02/10 มีคนกด 🗑 ลบข้อ common 2 ข้อ (VISUAL/ANDON)
+   ⇒ หายจากใบตรวจ **ทุกไลน์** ทันที (คนกดอยู่ในมุมมอง "ทุกไลน์" แต่ confirm เดิมไม่บอกว่าเป็นของส่วนรวม)
+   `lpa_audit_answers` ไม่มี FK ⇒ คำตอบกำพร้า 2,444 แถว (17%) กระทบใบตรวจ 581 ใบ
+   — ข้อมูลไม่หาย (มี question_text snapshot) แต่ใบเก่าแสดงไม่ครบ เพราะจอวาดจากลิสต์คำถามปัจจุบัน */
+test('🛡️ lpa-question-delete-needs-refs — ลบ lpa_questions ต้องผ่านด่านนับปลายทาง', () => {
+  const bad = walk(join(ROOT, 'src'), ['.js', '.jsx']).filter((f) => {
+    const code = stripComments(readFileSync(f, 'utf8'));
+    if (!/from\(['"]lpa_questions['"]\)[\s\S]{0,80}?\.delete\(\)/.test(code)) return false;
+    return !/lpaQuestionBlockMessage/.test(code) || !/lpaDeleteConfirmText/.test(code);
+  }).map(f => f.replace(ROOT + '/', ''));
+  assert.deepEqual(bad, [],
+    '\n\n❌ ลบ `lpa_questions` โดยไม่มีด่านนับปลายทาง/ไม่บอกขอบเขต: ' + bad.join(', ') + '\n'
+    + '   ทำไมผิด: ข้อ common (line_name ว่าง) = ของส่วนรวม ลบทีเดียวหายทุกไลน์\n'
+    + '            และคำตอบเก่าใน lpa_audit_answers ไม่มี FK ⇒ กลายเป็นกำพร้า ใบย้อนหลังอ่านไม่ครบ\n'
+    + '   แก้ยังไง: นับก่อนถาม → lpaQuestionBlockMessage(q, await loadLpaQuestionRefs(supabase, q.id))\n'
+    + '            มีคนใช้อยู่ = ไม่ลบ ให้ "⏸ ปิดใช้งาน" แทน · ลบได้ค่อย confirm ด้วย lpaDeleteConfirmText(q)\n'
+    + '            (src/utils/lpaQuestionRefs.js)\n');
+});
+
+/* ใบตรวจ LPA ที่บันทึกแล้ว = **บันทึก** ไม่ใช่ใบที่ generate ใหม่ (กฎเดียวกับฟอร์มที่ยื่นออกไปแล้ว)
+   ⇒ ต้องวาด/เขียนกลับ "ข้อที่ถูกถอดออกจากเช็คลิสต์ไปแล้ว" ด้วย ไม่งั้น:
+     (ก) ใบเก่าแสดงไม่ครบ  (ข) แค่กดบันทึกซ้ำ คำตอบของข้อที่ถูกลบจะหายถาวร (delete-then-insert) */
+test('🛡️ lpa-audit-keeps-removed-answers — ใบตรวจต้องพกคำตอบของข้อที่ถูกถอดออกไปแล้ว', () => {
+  const f = join(ROOT, 'src/pages/LayerProcessAudit.jsx');
+  const code = stripComments(readFileSync(f, 'utf8'));
+  assert.ok(/savedOnlyAnswers\(/.test(code),
+    '\n\n❌ LayerProcessAudit ไม่เรียก savedOnlyAnswers — ข้อที่ถูกลบ/ปิดใช้ทีหลังจะหายจากใบย้อนหลัง\n');
+  assert.ok(/question_text:\s*a\.question_text/.test(code) || /text:\s*a\.question_text/.test(code),
+    '\n\n❌ ตอนโหลดใบเก่าไม่ได้พก question_text (snapshot) มาด้วย ⇒ ข้อที่ถูกลบจะไม่มีข้อความให้แสดง\n');
+  assert.ok(/removedAnswers\.map\(/.test(code),
+    '\n\n❌ saveAudit ไม่ได้เขียนคำตอบของข้อที่ถูกถอดออกกลับลงฐาน ⇒ กดบันทึกซ้ำ = ข้อมูลหายรอบสอง\n');
 });
 
 /* ═══ ไลน์เครื่องขนาน — นาที downtime ต้องหารจำนวนเลนก่อนเป็นน้ำหนัก wLoad (2026-10-12) ═══

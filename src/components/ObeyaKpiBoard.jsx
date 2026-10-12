@@ -12,7 +12,7 @@ import { scoreDef, defBars, unitOf, decimalsOf, summaryModeOf, summaryShort, fmt
 import { scopedLineNames } from '../utils/sectionScope';
 import useOrgScope from '../utils/useOrgScope';
 import OrgScopePicker from './OrgScopePicker';
-import { PLANT, isPlant, scopeKey, parseScopeKey, scopeOfDef, scopeCovers, sameScope, filterScopeOptions, drillParams, scopeUnder } from '../utils/orgScope';
+import { PLANT, isPlant, scopeKey, parseScopeKey, scopeOfDef, scopeCovers, sameScope, filterScopeOptions, drillParams, scopeUnder, scopePathText } from '../utils/orgScope';
 import { canAccessPage } from '../utils/permissions';
 import { useLiveBoard } from '../utils/useLiveBoard';
 import { LIVE, RATE } from '../utils/refreshRates';
@@ -242,17 +242,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
   }, [scope, org, scopeOpts]);
   const parentScope = useMemo(() => (scope && !isPlant(scope) ? org.ancestorsOf(scope.kind, scope.value).slice(-1)[0] || PLANT : null), [scope, org]);
   const secSet = useMemo(() => (scope ? org.sectionsOf(scope.kind, scope.value) : null), [scope, org]);   // null = ไม่จำกัด
-  /* ชื่อขอบเขตบนหัวบอร์ด — CC เขียน "เส้นทางหน่วยเจ้าของ › 💰 รหัส · ชื่อ" (12/10 · เดิมขึ้นแค่เลขรหัส คนอ่านไม่ออกว่าของใคร) */
-  const scopeText = useMemo(() => {
-    if (!scope) return '—';
-    if (isPlant(scope)) return 'ทั้งโรงงาน';
-    if (scope.kind === 'cost_center') {
-      const owner = (org.unitsOf?.(scope.kind, scope.value) || []).slice(-1)[0] || null;   // unitsOf = กว้าง→แคบ ⇒ ตัวท้าย = แคบสุด
-      const head = owner ? [...org.pathOf(owner.kind, owner.value), owner.value].filter((x, i, a) => a.indexOf(x) === i).join(' › ') : 'ผังยังไม่ผูกหน่วย';
-      return `${head} › 💰 ${org.ccLabel ? org.ccLabel(scope.value) : scope.value}`;
-    }
-    return [...org.pathOf(scope.kind, scope.value), scope.value].filter((x, i, a) => a.indexOf(x) === i).join(' › ');
-  }, [scope, org]);
+  const scopeText = useMemo(() => scopePathText(org, scope, 'ทั้งโรงงาน'), [scope, org]);   // CC = เส้นทางเจ้าของ › 💰 รหัส (utils/orgScope)
 
   /* ── โหลด — ทุกก้อนเช็ค error → warn[] เพื่อขึ้นแถบ "โหลดไม่ครบ" ห้ามเงียบ ─────────────────────
      deps เป็น primitive ล้วน (กฎเหล็ก DB ข้อ 9) · lineNames ส่งเป็นสตริงคั่นด้วย | */
@@ -711,7 +701,14 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
     }
     navigate(q.toString() ? `${path}?${q}` : path);
   };
-  const setMonth = (k) => { if (k && k !== SUMMARY_KEY && k <= today.slice(0, 7)) setParam('date', monthEnd(k, today)); };
+  /* 📡 เดือนปัจจุบัน = "สด" (ไม่มี ?date ใน URL ⇒ ตามวันทำงานจริง ข้ามเดือนแล้วบอร์ดเลื่อนตามเอง — จอ TV เปิดค้างเป็นเดือน)
+     เดิมกด ◀ แล้ว ▶ กลับมาเดือนนี้ ยังปัก `date=` ค้างไว้ ⇒ บอร์ดค้างที่เดือนนั้นตลอดกาล (user 12/10 "default ควรจะเป็น live รึป่าว")
+     ⇒ กลับมาถึงเดือนปัจจุบัน = ถอด `date` ออก · เดือนย้อนหลังเท่านั้นที่ปัก */
+  const live = !sp.get('date');
+  const setMonth = (k) => {
+    if (!k || k === SUMMARY_KEY || k > today.slice(0, 7)) return;
+    setParam('date', k === today.slice(0, 7) ? '' : monthEnd(k, today));
+  };
   const shiftMonth = (n) => {
     const [y, m] = monthKey.split('-').map(Number);
     const d = new Date(y, m - 1 + n, 1);
@@ -888,8 +885,11 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       <span className="sep" />
       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
         <button onClick={() => shiftMonth(-1)} title="เดือนก่อน" style={navBtn}>◀</button>
-        <b style={{ fontSize: 13, minWidth: 92, textAlign: 'center' }}>{monthText}</b>
-        <button onClick={() => shiftMonth(1)} disabled={monthKey >= today.slice(0, 7)} title="เดือนถัดไป" style={navBtn}>▶</button>
+        <b style={{ fontSize: 13, minWidth: 92, textAlign: 'center' }} title={live ? 'เดือนปัจจุบัน — ตามวันจริง ข้ามเดือนแล้วเลื่อนเอง' : `ปักดูเดือน ${monthText} อยู่ — กด "สด" เพื่อกลับเดือนปัจจุบัน`}>
+          {monthText}{live && <span style={{ marginLeft: 5, fontSize: 11, fontWeight: 800, color: '#22c55e', verticalAlign: 'middle' }}>● สด</span>}
+        </b>
+        <button onClick={() => shiftMonth(1)} disabled={live} title={live ? 'อยู่เดือนปัจจุบันแล้ว' : 'เดือนถัดไป'} style={navBtn}>▶</button>
+        {!live && <button onClick={() => setParam('date', '')} title="กลับเดือนปัจจุบัน (ตามวันจริง)" style={{ ...navBtn, fontSize: 11.5, padding: '2px 8px', fontWeight: 700 }}>⟲ สด</button>}
       </span>
       <span className="sep" />
       {/* 🎯 โฟกัสช่วงค่า — ยกพื้นแกน Y ให้เห็น gap T/C (แกนไม่เริ่ม 0 ⇒ แผ่นเขียนบอกเอง) */}

@@ -16,7 +16,8 @@
    ═══════════════════════════════════════════════════════════════════════════ */
 import { useState, useEffect, useMemo, useContext, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabaseDR } from '../supabaseClient';
+import { supabase, supabaseDR } from '../supabaseClient';
+import { RATE_COMPONENTS, lineCostCenter, rateFor, ratePerHour, fmtBaht } from '../utils/costSaving';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import LineSelect from '../components/LineSelect';
@@ -137,6 +138,8 @@ export default function MaintenanceLevels() {
       const sinceIso = new Date(`${baseFrom}T08:00:00+07:00`).toISOString();
       await loadPmTeams().catch(() => {});   // ให้ isAmTeam อ่าน mtn_teams.kind ได้จริงก่อนประกอบ 3 ระดับ
       const sparePromise = loadPmSpareDemand({ todayStr });   // ยิงคู่กับชุดด้านล่าง ไม่ต่อคิว
+      /* 💰 rate บาท/ชม. ต่อ cost center (Main) — ตัวเดียวกับแกน C ของ SQDCM · ล้ม = ไม่โชว์บาท แต่บอกบนจอ */
+      const ratePromise = supabase.from('cost_center_rates').select('cost_center, effective_from, dl_rate, dp_rate, idp_rate, oh_rate');
       const res = await Promise.all([
         fetchAllRows(supabaseDR, 'machines', 'id, line_name, machine_no, machine_name, equipment_kind, is_active',
           qq => qq.eq('is_active', true).order('sort_order').order('id')),
@@ -171,7 +174,10 @@ export default function MaintenanceLevels() {
       const [mc, dt, ss, bp, cl, jg, pl, ins] = res.map(r => r.data || []);
       const lastInsp = {};
       for (const i of ins) if (!lastInsp[i.checklist_id]) lastInsp[i.checklist_id] = i.inspected_at;
-      setRaw({ machines: mc, downtimes: dt, sessions: ss, breakPolicies: bp, checklists: cl, jigs: jg, plans: pl, lastInsp, spare: spareRes.demand || null });
+      const rateRes = await ratePromise;
+      if (!alive) return;
+      if (rateRes.error) setLoadErr(e => `${e ? `${e} · ` : ''}โหลดอัตราต้นทุน (cost center) ไม่สำเร็จ — มูลค่าบาทไม่แสดง`);
+      setRaw({ machines: mc, downtimes: dt, sessions: ss, breakPolicies: bp, checklists: cl, jigs: jg, plans: pl, lastInsp, spare: spareRes.demand || null, rates: rateRes.data || [] });
       setLoading(false);
     })();
     return () => { alive = false; };
@@ -188,9 +194,16 @@ export default function MaintenanceLevels() {
       lineFamilyOf, sessionLineOf: (id) => sesLine.get(id) || '',
       isAm: isAmTeam,   // AM ออกจากชั้น Preventive (audit 08/10)
       spare: raw.spare,
+      // ทุกก้อน (DL/DP/IDP/OH) — นิยามเดียวกับ "ความสูญเสีย C" ของ SQDCM · rate ณ วันนี้
+      ratePerHourOfLine: (ln) => {
+        const cc = lineCostCenter(lines, ln);
+        const r = cc ? rateFor(raw.rates, cc, todayStr) : null;
+        const v = ratePerHour(r, RATE_COMPONENTS.map(c => c.key));
+        return v > 0 ? v : null;
+      },
       todayStr, nowMs: Date.now(),
     });
-  }, [raw, lineFamilyOf, todayStr]);
+  }, [raw, lineFamilyOf, lines, todayStr]);
 
   /* ขอบเขตไลน์ — เกณฑ์เดียวกับ /mtn-analysis และ /mtn-repair (ต้องแก้พร้อมกันทั้ง 3 ที่) */
   const scopeLines = useMemo(() => {
@@ -252,6 +265,8 @@ export default function MaintenanceLevels() {
           <Stat label={`คาดเสียภายใน ${THRESH.soonDays} วัน`} value={sum.predictive.etaSoon} color={sum.predictive.etaSoon ? '#f59a3f' : undefined} />
           <Stat label="ดีขึ้น" value={sum.predictive.better} color={sum.predictive.better ? '#3dd65c' : undefined} />
           <Stat label="เวลาหยุดที่คาด 30 วันข้างหน้า" value={fmtDur(sum.predictive.riskMin30)} />
+          <Stat label="มูลค่าโดยประมาณ" value={sum.predictive.riskBaht30 ? `฿${fmtBaht(sum.predictive.riskBaht30)}` : '—'}
+            sub={sum.predictive.riskNoRate ? `(ไม่รวม ${sum.predictive.riskNoRate} ตัวที่ไลน์ไม่มี rate)` : ''} />
         </LevelCard>
 
         <LevelCard step="3" title="Prescriptive — บอกว่าควรทำอะไร" en="Recommended actions" color="#3dd65c"
@@ -330,9 +345,9 @@ export default function MaintenanceLevels() {
         </div>
       ) : (
         <div className="table-sticky" style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 12 }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1080 }}>
             <thead><tr style={{ background: 'var(--bg3)' }}>
-              {['อุปกรณ์', '① แผน PM', '② เสีย 30 วัน', 'ต่อ 100 ชม.เดิน', 'แนวโน้ม', 'MTBF', 'คาดเสียครั้งถัดไป', 'เวลาหยุดที่คาด 30 วัน', '③ คำแนะนำ'].map(h => <th key={h} style={th}>{h}</th>)}
+              {['อุปกรณ์', '① แผน PM', '② เสีย 30 วัน', 'ต่อ 100 ชม.เดิน', 'แนวโน้ม', 'MTBF', 'คาดเสียครั้งถัดไป', 'เวลาหยุดที่คาด 30 วัน', '≈ มูลค่า', '③ คำแนะนำ'].map(h => <th key={h} style={th}>{h}</th>)}
             </tr></thead>
             <tbody>
               {scoped.slice(0, limit).map(it => {
@@ -364,6 +379,9 @@ export default function MaintenanceLevels() {
                         : <>{fmtMs(it.pd.etaMs)}<div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{it.pd.etaDays < 0 ? `เลยรอบเฉลี่ยมา ${-it.pd.etaDays} วัน` : `อีก ${it.pd.etaDays} วัน`}</div></>}
                     </td>
                     <td style={{ ...td, whiteSpace: 'nowrap' }}>{fmtDur(it.pd.riskMin30)}</td>
+                    <td style={{ ...td, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                      {it.pd.riskBaht30 != null ? `฿${fmtBaht(it.pd.riskBaht30)}` : <span style={{ color: 'var(--muted)' }} title={it.pd.riskMin30 ? 'ไลน์นี้ยังไม่มี cost center / rate — ตั้งที่ /org-setup' : ''}>—</span>}
+                    </td>
                     <td style={td}>
                       {top ? <Chip color={PRIORITY[top].color}>{it.actions.length} ข้อ · {PRIORITY[top].label}</Chip> : <span style={{ color: 'var(--muted)', fontSize: 12 }}>—</span>}
                     </td>
@@ -387,7 +405,7 @@ export default function MaintenanceLevels() {
         ② นับ "เครื่องเสีย" จาก downtime ที่ระบุเครื่อง (ไม่นับหยุดตามแผน) หารด้วยชั่วโมงเดินเครื่องของไลน์ (หักพักตามนโยบายแล้ว) ·
         MTBF/MTTR สูตรเดียวกับแท็บ KPI ช่าง · MTTR นับจากไลน์หยุดถึงเดินต่อ (รวมเวลารอช่าง) ·
         "คาดเสียครั้งถัดไป" = เสียล่าสุด + MTBF เฉลี่ย — <b>เป็นค่าเฉลี่ย ไม่ใช่คำทำนายแม่นยำ</b> ·
-        ③ อะไหล่: เทียบยอดใช้สะสมของ PM ทุกใบทั้งโรงงาน (ตัวเดียวกับแถบ 🔩 ในแท็บแผน PM) กับสต็อก · แนวโน้มต้องเสีย ≥{THRESH.minStops} ครั้งจึงนับ (น้อยกว่านั้นอาจบังเอิญ)
+        มูลค่า ≈ นาทีที่คาด ÷ 60 × อัตรา บาท/ชม. ของ cost center ไลน์ (DL+DP+IDP+OH · สูตรเดียวกับแกน C ของ SQDCM · rate ทั้งไลน์ ไม่ใช่ต่อเครื่อง) · ③ อะไหล่: เทียบยอดใช้สะสมของ PM ทุกใบทั้งโรงงาน (ตัวเดียวกับแถบ 🔩 ในแท็บแผน PM) กับสต็อก · แนวโน้มต้องเสีย ≥{THRESH.minStops} ครั้งจึงนับ (น้อยกว่านั้นอาจบังเอิญ)
         <br />
         <b style={{ color: 'var(--text2)' }}>ข้อจำกัดตอนนี้</b> ·
         แม่พิมพ์/จิ๊ก ใช้ชั่วโมงเดินของไลน์แทนเวลาที่ถูกใช้จริง (อัตราเสียต่ำกว่าจริง) ·

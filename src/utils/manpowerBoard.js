@@ -22,6 +22,7 @@ import { shiftFromTeam, scheduleTeamFor } from './shiftAssign.js';
 import { stdCapacityOf } from './stdManpower.js';
 import { getLineFamily } from './lineHierarchy.js';
 import { orgNodeCompare, naturalCompare } from './listOrder.js';
+import { wavg, wLoad, wRun } from './oee.js';
 
 /** แถว (row) ของผังที่คนแต่ละตำแหน่งไปอยู่ */
 export const ROW = Object.freeze({
@@ -613,5 +614,89 @@ export function rosterOn(employees, date, { today = null, attendance = null } = 
     if (!sd || sd <= date) return true;
     if (today && sd > today) return true;
     return !!attendance?.[e.id];
+  });
+}
+
+/* ── 🔗 คนมาน้อย ↔ OEE (2026-10-12 · คำสั่ง user "ลุย" ข้อ 2 ของข้อเสนอ) ─────────────────────────────
+   ตอบ "ขาดคนแล้วเสียอะไร" — เทียบ OEE ของกะที่ "คนมาตามปกติ" กับกะที่ "คนมาน้อยกว่าปกติ" ในแผนกเดียวกัน
+   - 🔴 **"ปกติ" = มัธยฐานของคนยืนจริงต่อกะของแผนกนั้นเอง** — ไม่ใช่ "ครบตามที่นั่ง"
+     เหตุ (ตรวจข้อมูลจริง 12/10): std ของไลน์สูงกว่าคนในทะเบียน (APRON std 17/กะ · มีคน 12–13/กะ)
+     ⇒ เกือบทุกกะ "ขาด" เทียบที่นั่ง ⇒ ไม่มีกลุ่ม "ครบ" ให้เทียบ · เทียบกับตัวเองตอบได้เสมอ และไม่ขึ้นกับ std ที่ยังไม่แม่น
+   - 🔴 ใช้ค่าที่ stamp ตอนปิดกะเท่านั้น (`production_sessions.oee/oee_p`) ห้ามคำนวณ OEE ใหม่ (หลักเดียวกับ axisOee)
+     ถ่วงน้ำหนักตามตำรา: OEE ด้วยเวลารับภาระ (`wLoad`) · %P ด้วยเวลาเดินเครื่อง (`wRun`)
+   - 🔴 **ไม่รวมยอดชิ้น (`actual_qty`) ข้ามไลน์ในแผนก** — ไลน์ย่อยป้อนกันเป็นขั้น (sub-assy → assy) บวกกัน = นับซ้ำ
+     (กฎ "พาร์ทจริง/ชั้น OP") ⇒ เทียบเป็น "อัตรา" (OEE · %P) ที่เทียบข้ามกะได้ตรงๆ
+   - กะที่ไม่ได้เช็คชื่อ (`gap: null`) / ไม่มีกะผลิตปิดแล้ว (วันหยุด · ไลน์ไม่เดิน) = ไม่เข้ากลุ่มไหน
+   - กลุ่มละ < `MIN_SHIFTS_TO_COMPARE` กะ = `verdict: 'thin'` จอต้องเขียนว่าน้อยเกินจะสรุป (ห้ามโชว์ส่วนต่างเหมือนเป็นข้อสรุป)
+   - เป็น "ความสัมพันธ์" ไม่ใช่ข้อพิสูจน์สาเหตุ — กะที่คนมาน้อยอาจมีเครื่องเสียด้วย ⇒ จอต้องบอกข้อนี้  */
+export const MIN_SHIFTS_TO_COMPARE = 3;
+const normName = (v) => String(v || '').trim().toLowerCase();
+
+/** OEE ของกะผลิตชุดหนึ่ง (แถว production_sessions ที่ปิดแล้ว) — ไม่มีแถวที่มี oee = null */
+export function oeeOfSessions(rows) {
+  const ok = (rows || []).filter(r => r.oee != null);
+  if (!ok.length) return null;
+  return {
+    oee: wavg(ok, r => Number(r.oee), wLoad),
+    p: wavg(ok, r => (r.oee_p == null ? null : Number(r.oee_p)), wRun),
+    sessions: ok.length,
+  };
+}
+
+/** จัดกะผลิตเป็นดัชนี `วัน|กะ|ชื่อไลน์` */
+export function indexSessions(sessions) {
+  const m = new Map();
+  for (const s of sessions || []) {
+    const k = `${s.work_date}|${s.shift}|${normName(s.line_name)}`;
+    (m.get(k) || m.set(k, []).get(k)).push(s);
+  }
+  return m;
+}
+
+/** กะผลิตของแผนก (ทุกไลน์ในครอบครัว) วัน/กะนั้น */
+export function sessionsOfDeptShift(idx, lines, date, shift) {
+  const out = [];
+  for (const l of lines || []) out.push(...(idx.get(`${date}|${shift}|${normName(l.name)}`) || []));
+  return out;
+}
+
+const median = (xs) => {
+  const a = [...xs].sort((x, y) => x - y);
+  if (!a.length) return null;
+  const m = Math.floor(a.length / 2);
+  return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
+};
+
+/**
+ * `days` = [{ date, depts: [{ key, name, shifts: staffingOfDept(), sessions: { day: [...], night: [...] } }] }]
+ * คืนต่อแผนก { key, name, normal: number|null (มัธยฐานคนยืนจริง), usual: {shifts, oee, p}, low: {...},
+ *            diffOee, diffP, verdict: 'ok'|'thin'|'none' }
+ *   usual = กะที่คนยืนจริง ≥ มัธยฐาน · low = กะที่น้อยกว่ามัธยฐาน
+ */
+export function compareOeeByStaffing(days) {
+  const by = new Map();
+  for (const day of days || []) {
+    for (const d of day.depts || []) {
+      if (!by.has(d.key)) by.set(d.key, { key: d.key, name: d.name, cells: [] });
+      for (const sh of ['day', 'night']) {
+        const s = d.shifts?.[sh];
+        const rows = (d.sessions?.[sh] || []).filter(r => r.oee != null);
+        if (!s || s.gap == null || !rows.length) continue;
+        by.get(d.key).cells.push({ onFloor: s.onFloor, rows });
+      }
+    }
+  }
+  return [...by.values()].map(a => {
+    const normal = median(a.cells.map(c => c.onFloor));
+    const pick = (f) => {
+      const cs = a.cells.filter(f);
+      return cs.length ? { shifts: cs.length, ...oeeOfSessions(cs.flatMap(c => c.rows)) } : null;
+    };
+    const usual = normal == null ? null : pick(c => c.onFloor >= normal);
+    const low = normal == null ? null : pick(c => c.onFloor < normal);
+    const verdict = !a.cells.length ? 'none'
+      : (!usual || !low || usual.shifts < MIN_SHIFTS_TO_COMPARE || low.shifts < MIN_SHIFTS_TO_COMPARE) ? 'thin' : 'ok';
+    const diff = (k) => (usual?.[k] != null && low?.[k] != null ? +(low[k] - usual[k]).toFixed(1) : null);
+    return { key: a.key, name: a.name, normal, usual, low, diffOee: diff('oee'), diffP: diff('p'), verdict };
   });
 }

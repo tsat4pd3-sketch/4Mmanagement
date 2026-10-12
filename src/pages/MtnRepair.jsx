@@ -34,6 +34,7 @@ import EventComments from '../components/EventComments';
    🔴 อ่าน `event_comments` ของเดิมที่ <EventComments> ใช้อยู่ — ห้ามทำที่เก็บคอมเมนต์ชุดที่ 2
    🔴 รูปแบบบรรทัดอยู่ที่ moCommentLines() ที่เดียว (ใบ JIG + ใบ MTN + Excel ต้องเหมือนกัน) */
 import { loadMoComments, moCommentLines } from '../lib/moComments';
+import { moFromSnapshot, moPrintNote, saveMoSnapshot, snapshotUsesFile } from '../lib/mtnMoSnapshot';
 import ScanModal from '../components/ScanModal';
 import { resolveMachine } from '../utils/qrCode';
 import { isDie, dieItemTypeOf } from '../utils/equipmentKinds';
@@ -1327,10 +1328,10 @@ function cmtBlockHtml(cmt, esc, opt = {}) {
 }
 
 /* ── พิมพ์ใบ MO — เลือก layout ตามทีมช่าง (JIG/DIE = FM-JIG-008 · MTN/PRODUCTION = FM-MTN-006) ── */
-function printMoReport(o, dparts = [], logo0, dlabor = [], cmt = NO_CMT, costErr = null) {
+function printMoReport(o, dparts = [], logo0, dlabor = [], cmt = NO_CMT, costErr = null, note = null) {
   const teamKey = teamKeyOf(o.mtn_dept || deptForItem(o.item_type));
   // เฉพาะทีม MTN ใช้ฟอร์ม FM-MTN-006 · JIG MTN / DIE MTN / PRODUCTION ใช้ FM-JIG-008 เดิม (คำสั่ง user 2026-07-22)
-  if (teamKey === 'maintenance') return printMoReportMtn(o, dparts, logo0, dlabor, cmt, costErr);
+  if (teamKey === 'maintenance') return printMoReportMtn(o, dparts, logo0, dlabor, cmt, costErr, note);
   const dept = deptNameOf(teamKey);   // ใบพิมพ์แสดง "ชื่อทีม" ไม่ใช่ key
   // ใบทีม DIE พิมพ์ป้าย "Die No. / Die Type" แทน "Jig No / MC Name" (คอมเมนต์ทีม DIE 06/10 — ฟอร์มเดียวกับ JIG แต่ของที่ซ่อมคือแม่พิมพ์)
   const isDieTeam = teamKey === 'die_maintenance';
@@ -1421,6 +1422,7 @@ function printMoReport(o, dparts = [], logo0, dlabor = [], cmt = NO_CMT, costErr
   <table class="signs">
     <tr>${sign(moSig[0], o.checker_name, o.checker_sign, o.check_at, 0)}${sign(moSig[1], o.qa_checker, o.qa_sign, o.qa_at, 1)}${sign(moSig[2], o.ho_checker, o.ho_sign, o.ho_at, 2)}${sign(moSig[3], o.approver_name, o.approve_sign, o.approve_at, 3)}</tr>
   </table>
+  ${note ? `<div style="font-size:7pt;margin:2pt 0 1pt;color:#333">&#9432; ${esc(note)}</div>` : ''}
   <div class="ft"><span>${[dfMo.form_code, dfMo.rev].filter(Boolean).join('-')}${dfMo.footer_note ? ' · ' + dfMo.footer_note : ''}</span><span>${dfMo.effective_date ? 'Effective : ' + dfMo.effective_date : ''}</span></div>
   <script>window.onload=function(){setTimeout(function(){window.print()},500)}</script>
   </body></html>`;
@@ -1436,7 +1438,7 @@ function printMoReport(o, dparts = [], logo0, dlabor = [], cmt = NO_CMT, costErr
    → ค่าใช้จ่าย (ค่าแรงรายคน | อะไหล่รายรายการ) → ความพึงพอใจ + ลายเซ็นท้าย → ความคิดเห็น
    ⚠️ รูปก่อน/หลังไม่มีในกระดาษ → ไปหน้า 2 และพิมพ์เฉพาะเมื่อมีรูปจริง (หน้าแรกต้องเหมือนต้นฉบับ)
    ⚠️ สูตรรวมเงิน/คะแนนอ่านจาก `src/utils/mtnMoForm.js` ที่เดียว ห้ามคิดเลขซ้ำที่นี่ */
-function printMoReportMtn(o, dparts = [], logo0, dlabor = [], cmt = NO_CMT, costErr = null) {
+function printMoReportMtn(o, dparts = [], logo0, dlabor = [], cmt = NO_CMT, costErr = null, note = null) {
   const df = docFormSync('mo_report_mtn', { form_code: 'FM-MTN-006', rev: '', effective_date: '', footer_note: 'MAINTENANCE ORDER MO31 08 2015.xls' });
   const beDT = (v) => { if (!v) return ''; const d = new Date(v); const p = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(d); const g = {}; p.forEach(x => g[x.type] = x.value); return `${+g.day}/${+g.month}/${(+g.year + 543) % 100} ${g.hour === '24' ? '00' : g.hour}:${g.minute}`; };
   const beD = (v) => { if (!v) return ''; const d = new Date(v); const p = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(d); const g = {}; p.forEach(x => g[x.type] = x.value); return `${+g.day} / ${+g.month} / ${(+g.year + 543) % 100}`; };
@@ -1636,6 +1638,7 @@ function printMoReportMtn(o, dparts = [], logo0, dlabor = [], cmt = NO_CMT, cost
   </tr></table>
 
   <table><tr><td class="note">${line('ความคิดเห็นเพิ่มเติม', '', '0')}<span style="white-space:pre-wrap">${esc(o.extra_comment || '')}</span></td></tr></table>
+  ${note ? `<div style="font-size:7pt;margin:2pt 0 1pt;color:#333">&#9432; ${esc(note)}</div>` : ''}
   <div class="ft"><span>${[df.form_code, df.rev].filter(Boolean).join('-')}</span><span>${df.footer_note || ''}</span><span>${df.effective_date ? 'Effective : ' + df.effective_date : ''}</span></div>
 
   ${(o.before_img || o.after_img) ? `<div class="ph"><table>
@@ -2335,12 +2338,26 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, signatureUr
             /* 💬 โหลดคอมเมนต์ **ตอนกดพิมพ์** ไม่ใช่ตอนเปิดใบ — คนเปิดดูเฉยๆ ไม่ต้องจ่าย query
                (คอมเมนต์ที่โชว์บนจอเป็นของ <EventComments> ซึ่งโหลดเองอยู่แล้ว)
                🔴 error ไม่กลืน — ส่งต่อให้ใบพิมพ์เขียนบนใบว่าคอมเมนต์อาจไม่ครบ */
-            const [logo, cmt] = await Promise.all([
+            /* 📄 ใบที่ปิดแล้ว = พิมพ์จาก **บันทึกต้นฉบับ** ไม่ generate สด (12/10 · คำสั่ง user)
+               ตัวตัดสินอยู่ที่ `moPrintSource()`/`moFromSnapshot()` ที่เดียว
+               🔴 ห้ามเช็ค `status`/`snapshot` เองที่นี่ · เลขฟอร์ม/Rev/โลโก้ ยังอ่านสดจาก
+                  ทะเบียน /doc-forms เสมอ (ไม่อยู่ใน snapshot — doc_control ต้องแก้ได้) */
+            const snap = moFromSnapshot(o.snapshot);
+            const fromSnap = o.status === 'closed' && !!snap;
+            const [logo, cmtLive] = await Promise.all([
               logoDataUrl(docFormSync(key).logo_url),
-              loadMoComments(o.id),
+              fromSnap ? Promise.resolve(NO_CMT) : loadMoComments(o.id),
             ]);
-            if (cmt.error) toast.error('โหลดคอมเมนต์ของใบนี้ไม่สำเร็จ — ใบที่พิมพ์จะเขียนกำกับไว้');
-            printMoReport(o, dparts, logo, dlabor, cmt, dcostErr);
+            if (!fromSnap && cmtLive.error) toast.error('โหลดคอมเมนต์ของใบนี้ไม่สำเร็จ — ใบที่พิมพ์จะเขียนกำกับไว้');
+            printMoReport(
+              fromSnap ? snap.order : o,
+              fromSnap ? snap.parts : dparts,
+              logo,
+              fromSnap ? snap.labor : dlabor,
+              fromSnap ? snap.cmt   : cmtLive,
+              fromSnap ? null       : dcostErr,
+              moPrintNote(o),
+            );
           }} style={btnGhost}>🖨️ พิมพ์ / บันทึก PDF</button>
           <button onClick={onClose} style={btnGhost}>ปิด</button>
           {skipQa.ok && <button onClick={() => onStep(5, false, { skipQa: true })} style={{ ...btnGhost, color: '#f59e0b', borderColor: '#f59e0b' }} title="QA ตัดสินว่างานนี้ไม่เกี่ยวกับคุณภาพชิ้นงาน — ไม่ต้องตรวจ ส่งไปรับมอบ/ติดตามผลเลย (เฉพาะ QA กดได้)">⏭ QA ระบุว่าไม่เกี่ยวกับคุณภาพ — ไปขั้น 6</button>}
@@ -2778,10 +2795,32 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
       // ข้ามลายเซ็นที่เป็นของโปรไฟล์ (signatures/<uid>/profile...) — ใช้ร่วมทั้งระบบ ห้ามลบ
       for (const fld of ['before_img', 'after_img', 'qa_img', 'checker_sign', 'qa_sign', 'ho_sign', 'mtn_head_sign', 'approve_sign', 'cost_mgr_sign']) {
         const oldUrl = o[fld], newUrl = upd[fld];
-        if (oldUrl && newUrl && oldUrl !== newUrl && !oldUrl.includes('/profile')) removeMtnImg(oldUrl);
+        /* 🔴 ไฟล์ที่ **บันทึกต้นฉบับยังอ้างอยู่ ห้ามลบ** (12/10) — ใบที่ปิดแล้วถ้าแก้ขั้นปิดใบ
+           แล้วเซ็นใหม่ ลายเซ็นตัวเดิมยังถูก snapshot ชี้อยู่ · ลบไป = พิมพ์ใบจากบันทึกแล้ว
+           ช่องลายเซ็นเป็นรูปเสีย กู้ไม่ได้ ไม่มี error ฟ้อง (คลาสเดียวกับรูปจุดตรวจจิ๊กหายข้ามเครื่อง) */
+        if (oldUrl && newUrl && oldUrl !== newUrl && !oldUrl.includes('/profile')
+            && !snapshotUsesFile(o.snapshot, oldUrl)) removeMtnImg(oldUrl);
       }
       // isReject = ตีกลับจริงแล้ว (ทั้งบันทึกครั้งแรกและตอนแก้ไข) → ผู้แจ้งต้องได้รับแจ้งเสมอ ไม่งั้นใบเด้งกลับแบบเงียบ
-      if (!editMode || isReject) { const { data: fresh } = await supabaseDR.from('mtn_orders').select('*').eq('id', o.id).single(); const ev = skipQa ? 'mtn_qa_skipped' : isReject ? 'mtn_returned' : stepEventOf(step, isMtnForm); if (ev) notifyMtn(fresh, ev); }
+      if (!editMode || isReject) {
+        const { data: fresh } = await supabaseDR.from('mtn_orders').select('*').eq('id', o.id).single();
+        /* 📄 ปิดใบ = เก็บ "บันทึกต้นฉบับ" ครั้งเดียว (12/10 · คำสั่ง user)
+           hook เดียวคลุมทั้ง 2 ทางปิด — `cost_mgr_close` (ใบ MTN ขั้น 8) และ `close`
+           (JIG/DIE/PD ขั้น 7) ⇒ ไม่ต้องไปแปะในแต่ละสาขา (เพิ่มทางปิดใหม่ก็ยังครอบคลุม)
+           🔴 เช็คจาก `fresh.status` ที่อ่านกลับมา **ไม่ใช่** จากสาขาที่เพิ่งวิ่ง —
+              แถวจริงเท่านั้นที่บอกได้ว่าปิดสำเร็จ (RLS ปฏิเสธ update = 0 แถว ไม่มี error)
+           🔴 ล้มเหลวห้ามเงียบ แต่ก็ **ไม่ทำให้การปิดใบเป็นโมฆะ** (ใบปิดไปแล้วจริง)
+              ⇒ บอก user แล้วใบนั้นกลายเป็น `closed_no_record` ซึ่งใบพิมพ์เขียนกำกับให้เอง */
+        if (!editMode && fresh?.status === 'closed') {
+          const snapRes = await saveMoSnapshot(fresh);
+          if (!snapRes.ok) {
+            toast.error('ปิดใบแล้ว แต่เก็บบันทึกต้นฉบับไม่สำเร็จ — ' + snapRes.reason
+              + ' · ใบที่พิมพ์จะเขียนกำกับว่าเป็นข้อมูลปัจจุบัน');
+          }
+        }
+        const ev = skipQa ? 'mtn_qa_skipped' : isReject ? 'mtn_returned' : stepEventOf(step, isMtnForm);
+        if (ev) notifyMtn(fresh, ev);
+      }
       setSaving(false); toast.success(editMode ? 'แก้ไขแล้ว' : 'บันทึกแล้ว'); onSaved();
     } catch (e) { setSaving(false); toast.error(e.message || 'บันทึกไม่สำเร็จ'); }
   };

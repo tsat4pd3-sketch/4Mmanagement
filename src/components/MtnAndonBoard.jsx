@@ -57,10 +57,11 @@ import { planDueBucket } from '../lib/pmSchedule';
 import DowntimeSiren from './DowntimeSiren';
 import FactoryMiniMap from './FactoryMiniMap';
 import ProdProgressStrip from './ProdProgressStrip';
-import StoreWaitCards from './StoreWaitCards';
+import StoreWaitCards, { useStoreTv } from './StoreWaitCards';
 import { liveChannel } from '../utils/liveChannel';
 
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14 };
+const EMPTY = Object.freeze({});
 /* หน้าต่าง "ใกล้ครบกำหนด" — ใช้ 7 วันเท่าผังรวมโรงงาน (`/factory-map` metric PM)
    ⚠️ เดิมจอนี้ใช้ 3 วัน → ผังบอก "PM ใกล้ครบ 2" แต่จอห้องช่างเงียบ = 2 จอตอบคนละอย่าง
       (user ทัก 2026-08-26 "PM จะถึงกำหนดกลับ ไม่มีอะไรแจ้งเลย ในหน้าแดชบอร์ดจอห้องช่าง") */
@@ -98,7 +99,7 @@ function severity(x, thrMin) {
    ⚠️ นี่คือทางที่เอกสารวางไว้ว่า "ถ้าจะแยกจอ ให้ทำเป็น `?cards=` บนบอร์ดเดิม **ห้ามสร้างบอร์ดที่ 2**"
       — ก๊อปบอร์ดไปทำอีกใบเมื่อไหร่ = drift แน่นอน (บทเรียนบอร์ด Heijunka ที่ก๊อปกันแล้วต่างกันไปเรื่อยๆ) */
 export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
-  const { inScope, navigate, isMobile, workDate, scopeNames } = ctx;
+  const { inScope, navigate, isMobile, workDate, scopeNames, lines: ctxLines } = ctx;
   const showPm = cards === 'maintenance';                 // PM = งานของช่าง — ฝ่ายผลิต/สโตร์ไม่ต้องเห็นรายแผน
   const showMo = cards !== 'store';                       // ใบซ่อมค้าง: ช่างทำ · ผลิตรอ · สโตร์ไม่เกี่ยว
   const showStore = cards === 'store';
@@ -111,9 +112,13 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
   const [dtErr, setDtErr] = useState(null);
   const [thr, setThr] = useState(DT_OPEN_ALERT_MIN_DEFAULT);  // เกณฑ์ "หยุดเกินกี่นาที" (dt_alert_config)
   const [zoom, setZoom] = useState(null);           // ไลน์ที่กดจากผัง → เจาะดูปัญหาของไลน์นั้น
-  /* ไลน์ที่ "รอของจากสโตร์" — ยกขึ้นมาจาก <StoreWaitCards> เพื่อระบายสีบนผังด้วย
-     (จอสโตร์ต้องตอบ "ไปส่งไลน์ไหน" จากแผนที่ ไม่ใช่ไล่อ่านลิสต์อย่างเดียว) */
-  const [storeWait, setStoreWait] = useState({});
+  /* 📦 ข้อมูลฝั่งสโตร์ — hook ตัวเดียวป้อน 3 ที่: พาดหัว · สีบนผัง · การ์ดในคอลัมน์ (12/10)
+     (จอสโตร์ต้องตอบ "ไลน์ไหนเรียกอะไร" จากพาดหัว+แผนที่ ไม่ใช่ไล่อ่านลิสต์อย่างเดียว)
+     hook ต้องเรียกทุกแผนก (กฎ rules-of-hooks) — `enabled=false` = ไม่ยิง DB ไม่ subscribe */
+  const knownLineKey = (ctxLines || []).map(l => l.name).join('\u0001');
+  const knownLines = useMemo(() => new Set(knownLineKey ? knownLineKey.split('\u0001') : []), [knownLineKey]);
+  const storeTv = useStoreTv({ enabled: showStore, inScope, scoped: !!scopeNames, knownLines });
+  const storeWait = showStore ? storeTv.lineMap : EMPTY;
   const [, setTick] = useState(0);                  // นาฬิกาเดิน — ให้ "กี่นาทีแล้ว" ขยับเอง
 
   /* ความสูงคอลัมน์ขวา = **ความสูงจริงของผัง** (วัดด้วย ResizeObserver ไม่ใช่เดา `100vh - Npx`)
@@ -351,11 +356,43 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
           ⚠️ ห้าม mount 2 ตัว — ใช้ mode='all' (เหตุผลอยู่หัวไฟล์ DowntimeSiren) */}
       {/* 🔧 ส่งทีมของห้องเข้าไปด้วย (06/10) — เดิมไซเรนดังทุกใบทุกทีม ห้อง DIE จึงได้ยินงาน JIG
           แล้วแยกไม่ออกว่าใบไหนของตัวเอง · ใบที่ไม่ระบุทีมยังดังทุกห้องเหมือนเดิม (fail-open) */}
-      <DowntimeSiren mode={soundAll ? 'all' : 'call_mtn'} team={team} />
+      {/* 🔕 จอสโตร์เงียบเป็นค่าเริ่มต้น (12/10 · user: "จอของแต่ละส่วนงานแสดงเรื่องของส่วนงานนั้น")
+          เสียงเรียกช่างไม่ใช่งานสโตร์ · ห้องสโตร์ที่อยากได้ยินตั้ง `?sound=all` ในแถบตั้งค่าจอได้ */}
+      {(!showStore || soundAll) && <DowntimeSiren mode={soundAll ? 'all' : 'call_mtn'} team={team} />}
 
       {/* ── แถบสรุปบนสุด — อ่านจากอีกฝั่งห้องได้ · ชิปเลือกทีมอยู่ในแถวนี้ด้วย ──
           ⚠️ ชิปทีมเคยเป็นแถวของตัวเองเหนือแถบสรุป — ยุบเข้ามาเพราะบนจอ TV ทุกแถวที่เพิ่ม
           คือความสูงที่ผังเสียไป (ผังคือพระเอกของจอนี้) · ยังเลือกทีมได้ครบเหมือนเดิม */}
+      {/* 📦 จอสโตร์: พาดหัวบนสุด = งานของสโตร์ (12/10 · user "จอของแต่ละส่วนงานแสดงเรื่องของส่วนงานนั้น")
+          เครื่องหยุดยังอยู่ — ย่อเป็นบรรทัดรองในแถบเดียวกัน + ลิสต์เต็มในคอลัมน์ขวา (สโตร์ต้องรู้ว่าไลน์ไหนหยุด
+          จะได้ไม่วิ่งเอาของไปส่งไลน์ที่ยังผลิตไม่ได้) */}
+      {showStore && (() => {
+        const n = storeTv.req.cards.length;
+        const nl = Object.keys(storeTv.reqLines).length;
+        const nWait = storeTv.waiting.length;
+        const nShort = storeTv.short.rows.length;
+        const hot = n > 0 || nWait > 0;
+        const failed = storeTv.reqErr || storeTv.err;
+        return (
+          <div style={{
+            ...card, display: 'flex', flexWrap: 'wrap', gap: '6px 18px', alignItems: 'baseline',
+            borderColor: failed ? '#ef4444' : hot ? '#a855f7' : 'var(--border)',
+            backgroundImage: hot ? 'linear-gradient(rgba(168,85,247,0.10), rgba(168,85,247,0.10))' : undefined,
+          }}>
+            <span style={{ fontSize: 15 * big, fontWeight: 900, color: failed ? '#ef4444' : n ? '#c084fc' : '#22c55e' }}>
+              {!storeTv.loaded ? 'กำลังโหลดคำขอจากไลน์…'
+                : storeTv.reqErr ? '⚠ ดึงคำขอจากไลน์ไม่สำเร็จ'
+                : n ? `🔔 ไลน์เรียกของ ${n} รายการ · ${nl} ไลน์` : '✅ ไม่มีไลน์ไหนเรียกของ'}
+            </span>
+            {nWait > 0 && <span style={{ fontSize: 12 * big, fontWeight: 900, color: '#ef4444' }}>🚚 รอบส่งค้าง {nWait} ไลน์</span>}
+            <span style={{ fontSize: 11 * big, fontWeight: 800, color: nShort ? '#facc15' : '#22c55e' }}>📉 ต่ำกว่า Min {nShort}</span>
+            <span style={{ marginLeft: 'auto', fontSize: 11 * big, fontWeight: 800, color: nCall ? '#ef4444' : live.length ? '#f59e0b' : 'var(--muted)' }}>
+              {nCall ? `📞 เรียกช่าง ${nCall} เครื่อง` : live.length ? `🔧 เครื่องหยุด ${live.length}` : '✅ ไม่มีเครื่องหยุด'}
+            </span>
+          </div>
+        );
+      })()}
+      {!showStore && (
       <div style={{
         ...card, display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'center', justifyContent: 'space-between',
         borderColor: nCall ? '#ef4444' : live.length ? '#f59e0b' : 'var(--border)',
@@ -407,6 +444,7 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
           )}
         </div>
       </div>
+      )}
 
       {/* ⚠️ กรองทีมแล้วต้องบอกว่าซ่อนอะไรไป — การจับคู่เครื่อง↔ทีมเป็นการเดาจากชนิดอุปกรณ์
           (PM เดาไม่ได้ ใช้ `checklists.department` = ตัวจริง แต่ก็ยังต้องบอกว่าซ่อนไปกี่แผน) */}
@@ -434,16 +472,22 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
              (สูตรบังคับ `confirmed ? (qty_ok ?? qty) : (qty_actual ?? 0)` + งานคู่ RH/LH + ยุบชั้น OP
               อยู่ใน `orderTotal` แล้ว · เขียนเองเมื่อไหร่ = ตัวเลข 2 จอไม่ตรงกันทันที)
           พับเป็นค่าเริ่มต้นในตัว — ยอดรวม + "ตามหลัง N ไลน์" ยังเห็นตลอดแม้พับ จึงไม่กินความสูงจอ */}
-      {/* กางเป็นค่าเริ่มต้นทุกชิป (JIG/DIE/MTN ด้วย — user 2026-09-14 "เลือก mtn, jig, die ก็ยังโชว์")
+      {/* 🔴 12/10 (user ดูจอจริง "แถบสั่งผลิตไปไลน์ไหนก็ยัง งงๆ เห็นกันทุกแผนก") — **ขึ้นเฉพาะจอฝ่ายผลิต**
+          ยอดผลิตเทียบใบสั่งผลิตคือเรื่องของผลิต · จอช่าง/สโตร์มีเรื่องของตัวเองอยู่แล้ว (เครื่องหยุด·PM / ไลน์เรียกของ)
+          ⚠️ เดิม 14/09 กางให้ทุกชิปทีมช่าง — ถอดออกตามหลัก "จอแต่ละส่วนงานแสดงเรื่องของส่วนงานนั้น"
           ยังพับเองได้ และค่าที่พับไว้ชนะเสมอ (localStorage ต่อเครื่อง) */}
-      <ProdProgressStrip workDate={workDate} scopeNames={scopeNames}
-        defaultOpen
-        onOpenLine={(ln) => navigate(`/management?line=${encodeURIComponent(ln)}&view=heijunka`)} />
+      {cards === 'production' && (
+        <ProdProgressStrip workDate={workDate} scopeNames={scopeNames}
+          defaultOpen
+          onOpenLine={(ln) => navigate(`/management?line=${encodeURIComponent(ln)}&view=heijunka`)} />
+      )}
 
       {/* ผังคือพระเอกของจอนี้ (user 2026-08-26 "เน้นแผนผังดีมั้ย") — แต่ **ห้ามแลกกับลิสต์ข้อความ**
           ผังตอบ "อยู่ตรงไหน" · ลิสต์ตอบ "อะไร/นานแค่ไหน" ช่างต้องได้ทั้งคู่จากที่นั่งเดียว
           → ผังกินพื้นที่มากขึ้น (1.7fr) + สูงขึ้น · ลิสต์ยังกว้างพอไม่ตัดบรรทัด (≥300px) */}
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(0,2.8fr) minmax(300px,1fr)', gap: 12, alignItems: 'start' }}>
+      {/* จอสโตร์: คอลัมน์ขวากว้างขึ้นให้การ์ดชิ้นงาน (รูป 84 + รหัส + จำนวน · PartCard ต่ำสุด 330px)
+          ผังถูกจำกัดด้วยความสูงจออยู่แล้ว — สัดส่วน 2.8 เดิมเหลือที่ว่างเปล่าข้างผัง ~200px บนจอ 1920 (12/10) */}
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : showStore ? 'minmax(0,1.7fr) minmax(400px,1fr)' : 'minmax(0,2.8fr) minmax(300px,1fr)', gap: 12, alignItems: 'start' }}>
         {/* ══ 🗺️ ผังโรงงาน — ไลน์ที่แจ้งกระพริบตรงตำแหน่งจริง · กดกรอบ = เจาะดูปัญหาของไลน์นั้น ══ */}
         <div ref={leftRef} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <FactoryMiniMap stateOf={stateOf} onPick={setZoom} bottomReserve={legH + 14} />
@@ -457,7 +501,7 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
             <span><b style={{ color: '#facc15' }}>■</b> เพิ่งหยุด</span>
             <span><b style={{ color: '#22c55e' }}>■</b> เปิดกะอยู่</span>
             <span><b style={{ color: '#6b7280' }}>■</b> ไม่ได้เปิดกะ</span>
-            {showStore && <span>📦 = รอของจากสโตร์ (เครื่องหยุดชนะเสมอ)</span>}
+            {showStore && <span><b style={{ color: '#a855f7' }}>■</b> ไลน์เรียกของ · ป้าย 📦 = รอบส่งค้าง/รอของ (เครื่องหยุดชนะเสมอ)</span>}
             {showPm && <span>· ผัง<b>ไม่กรองทีม</b> — ไลน์หยุดคือเรื่องของทุกคน (ชิปทีมกรองเฉพาะคิวใบซ่อม/แผน PM)</span>}
             <span>· สีมาจาก <b>กะที่เปิด + downtime ที่คนลงไว้</b> ยังไม่มีสัญญาณรายเครื่อง (ต้องต่อ SCADA/มิเตอร์ก่อน)</span>
           </div>
@@ -479,7 +523,7 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
               (กฎเดิมของบอร์ดนี้: จอ TV ไม่มีใครเลื่อน — อะไรอยู่ล่างสุด = มองไม่เห็นตลอดกาล
                ส่วนลิสต์เครื่องหยุดยังอยู่ต่อด้านล่างเสมอ เพราะสโตร์ต้องรู้ว่าไลน์ไหนหยุดอยู่
                จะได้ไม่วิ่งเอาของไปส่งไลน์ที่ยังผลิตไม่ได้) */}
-          {showStore && <StoreWaitCards inScope={inScope} navigate={navigate} big={big} onLineWait={setStoreWait} />}
+          {showStore && <StoreWaitCards data={storeTv} navigate={navigate} big={big} />}
 
           <div style={{ fontSize: 13 * big, fontWeight: 900 }}>🚨 เครื่องที่หยุดอยู่ตอนนี้</div>
 

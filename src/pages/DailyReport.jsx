@@ -6,6 +6,9 @@ import { fmtDate, fmtDateTime, fmtDateTimeFull, fmtTime } from '../utils/dateFor
 import { buildMachineKeyMap, snapMachineNo } from '../utils/machineNo';
 import { dtBucketName, buildDtIndex } from '../utils/downtimeCategory';
 import { toast } from '../components/Toast';
+/* 📷 รูปหลักฐานของเสีย — ของกลางเดียวกับถังเหลือง/แดง (ด่าน quality-photo-via-helper · 2026-10-12) */
+import QualityPhotoField from '../components/QualityPhotoField';
+import { uploadQualityPhoto, removeQualityImg } from '../utils/qualityImage';
 import { uploadMoBeforeImg } from '../utils/mtnImage';
 import { buildProblemReport, dtNeedsFix, countPendingFix, PROBLEM_MIN_MINUTES } from '../lib/prodProblemReport';
 /* 📝 ทะเบียนใบรายงานปัญหาการผลิต FM-PD1-019 — ออกใบ = บันทึกก่อนแล้วค่อยพิมพ์ · พิมพ์ซ้ำ = ใบเดิมจาก snapshot
@@ -461,7 +464,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   const [defectTypes, setDefectTypes]   = useState([]);
   const [defectLogs, setDefectLogs]     = useState([]);
   const [showDefect, setShowDefect]     = useState(false);
-  const [defectForm, setDefectForm]     = useState({ id: null, mat_no: '', defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '', is_trial: false });
+  const [defectForm, setDefectForm]     = useState({ id: null, mat_no: '', defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '', is_trial: false, defect_img: '' });
+  /* ไฟล์รูปที่เพิ่งเลือก (ยังไม่อัปโหลด) — อัปตอนกดบันทึกเท่านั้น กดยกเลิกแล้วต้องไม่มีไฟล์ค้างในถัง */
+  const [defectFile, setDefectFile]     = useState(null);
   /* ใบสแกนใบไหนกางช่อง "ทำได้กี่ชิ้น" อยู่ — ค่าเริ่มต้นพับหมด
      เหตุผล: ระบบดึง (kanban) เปิดค้างทีละ 20-30 ใบได้ แต่ "ใบที่ทำค้างจริง" มีไม่กี่ใบ
      ที่เหลือคือยังไม่เริ่ม (ยกเต็มใบ) หรือเดี๋ยวสแกนปิดเต็มใบ → กางช่องทุกใบ = จอรก
@@ -2077,6 +2082,16 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       return;
     }
     setSavingDefect(true);
+    /* 📷 อัปโหลดรูป **ก่อน** เขียนแถว — ล้มแล้วเขียนต่อ = แถวบอกว่ามีรูปแต่เปิดไม่ขึ้น (ห้ามล้มเหลวเงียบ)
+       ⚠️ คีย์ชื่อไฟล์ใช้ `session_id` ไม่ใช่ id ของแถว (ตอน insert ยังไม่มี id) */
+    let defectImgUrl = defectForm.defect_img || null;
+    try {
+      if (defectFile) defectImgUrl = await uploadQualityPhoto(defectFile, 'defect', selSession.id);
+    } catch (e) {
+      setSavingDefect(false);
+      toast.error(`อัปโหลดรูปไม่สำเร็จ: ${e.message} — ยังไม่ได้บันทึกงานเสีย ลองกดบันทึกอีกครั้ง`);
+      return;
+    }
     const { data: { user } } = await supabase.auth.getUser();
     const matchedOrder = defectForm.mat_no
       ? (prodOrders.find(o => o.mat_no === defectForm.mat_no && o.status === 'open')
@@ -2090,6 +2105,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       qty_repair:       repair,
       description:      defectForm.description || null,
       is_trial:         !!defectForm.is_trial,
+      defect_img:       defectImgUrl,
     };
     const { error } = defectForm.id
       ? await supabaseDR.from('defect_logs').update(payload).eq('id', defectForm.id)
@@ -2101,6 +2117,10 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
         });
     setSavingDefect(false);
     if (error) { toast.error(error.message); return; }
+    /* 🔴 ลบไฟล์เก่าได้หลังเขียนแถวสำเร็จเท่านั้น (กฎเหล็ก db-write ข้อ 2) */
+    if (defectForm.id && defectForm.defect_img && defectForm.defect_img !== defectImgUrl) {
+      removeQualityImg(defectForm.defect_img);
+    }
     const label = [ng ? `NG ${ng}` : '', suspect ? `สงสัย ${suspect}` : '', repair ? `ซ่อม ${repair}` : ''].filter(Boolean).join(' · ');
     if (!defectForm.id) notifyEvent({
       event: 'defect_recorded', type: 'error', ref_table: 'defect_logs',
@@ -2114,7 +2134,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     });
     toast.success(defectForm.id ? `แก้ไขงานเสีย: ${label} ✓` : `บันทึกงานเสีย: ${label} ✓`);
     setShowDefect(false);
-    setDefectForm({ id: null, mat_no: '', defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '', is_trial: false });
+    setDefectForm({ id: null, mat_no: '', defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '', is_trial: false, defect_img: '' });
+    setDefectFile(null);
     loadDefectLogs(selSession.id);
   };
 
@@ -3386,7 +3407,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                     <button onClick={() => {
                       const activeMatNos = Array.from(new Set(prodOrders.filter(o => o.status === 'open').map(o => o.mat_no))).filter(Boolean);
                       setShowDefect(true);
-                      setDefectForm({ id: null, mat_no: activeMatNos.length === 1 ? activeMatNos[0] : '', defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '', is_trial: false });
+                      setDefectForm({ id: null, mat_no: activeMatNos.length === 1 ? activeMatNos[0] : '', defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '', is_trial: false, defect_img: '' });
+                      setDefectFile(null);
                     }}
                       style={{ background: '#ef4444', color: '#fff', border: 'none', borderRadius: 7, padding: '7px 16px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
                       🔴 บันทึกงานเสีย
@@ -3831,7 +3853,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       })()}
                       {canEditRecords && (
                         <div style={{ display: 'flex', gap: 4 }}>
-                          <button className="tbtn" onClick={() => { setDefectForm({ id: d.id, mat_no: d.prod_orders?.mat_no || '', defect_type_id: d.defect_type_id || '', qty_ng: String(d.qty_ng||0), qty_suspect: String(d.qty_suspect||0), qty_repair: String(d.qty_repair||0), description: d.description || '', is_trial: d.is_trial === true }); setShowDefect(true); }}
+                          <button className="tbtn" onClick={() => { setDefectForm({ id: d.id, mat_no: d.prod_orders?.mat_no || '', defect_type_id: d.defect_type_id || '', qty_ng: String(d.qty_ng||0), qty_suspect: String(d.qty_suspect||0), qty_repair: String(d.qty_repair||0), description: d.description || '', is_trial: d.is_trial === true, defect_img: d.defect_img || '' }); setDefectFile(null); setShowDefect(true); }}
                             style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 13, padding: '0 4px' }}>✎</button>
                           <button className="tbtn" onClick={() => handleDeleteDefectLog(d.id)}
                             style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, padding: '0 4px' }}>✕</button>
@@ -5617,6 +5639,17 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 <Field label="รายละเอียด / สาเหตุ">
                   <input type="text" value={defectForm.description} onChange={e => setDefectForm(f => ({ ...f, description: e.target.value }))} placeholder="เช่น มิติไม่ได้เพราะแม่พิมพ์สึก..." style={inputStyle} />
                 </Field>
+
+                {/* 📷 รูปงานเสีย — **ทางเลือก ห้ามทำเป็นช่องบังคับ** (คำสั่ง user 12/10)
+                    หน้างานใส่ถุงมือ/รีบ บังคับถ่ายทุกใบ = คนเลิกลงข้อมูล
+                    รูปนี้ไหลต่อไปเป็น `found_img` ของใบถังเมื่อกดส่งลงถังเหลือง/แดง */}
+                <div style={{ marginTop: 10 }}>
+                  <QualityPhotoField
+                    label="📷 รูปงานเสีย" hint="ไม่บังคับ — ถ่ายไว้แล้วจะติดไปกับใบถังเหลือง/แดงด้วย"
+                    url={defectForm.defect_img || null} file={defectFile}
+                    onPick={(f) => { setDefectFile(f); if (!f) setDefectForm(fm => ({ ...fm, defect_img: '' })); }}
+                  />
+                </div>
 
                 {/* 🧪 งานทดลอง — ของเสียจากลองแม่พิมพ์/ลองงานใหม่ ไม่ควรลงโทษ %Q ของไลน์
                     แต่ยอดยังถูกเก็บครบเพื่อคิดมูลค่าของเสีย (2026-08-17 · คำสั่ง user) */}
