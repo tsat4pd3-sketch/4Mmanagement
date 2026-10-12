@@ -349,3 +349,38 @@ test('fg_run — ไม่ใส่ยอดยกมา = null ทั้งแ�
   });
   assert.deepEqual(periods.map(p => valueAt(g, 'p1', 'balance', p.key)), [null, null, null]);
 });
+
+/* ── 🔗 จุดยึด (anchor) — BALANCE วันนี้ = ยอดจริงจาก ledger (SSOT ยอดสต็อก · 12/10) ── */
+test('anchor ทับแถว recur ช่องนั้น แล้วคอลัมน์ถัดไปเดินสูตรต่อจากค่าจริง', () => {
+  const periods = buildDayPeriods('2026-10-10', 4);
+  const g = buildGrid({
+    parts: [{ id: 'p' }], periods, rows: PRESS,
+    manual: mk({ 'p|balance|2026-10-10': 1000, 'p|out|2026-10-13': 100 }),
+    anchor: (pid, rk, pk) => (rk === 'balance' && pk === '2026-10-12' ? 400 : undefined),
+  });
+  /* 10/10 ยกมา 1000 · 11/10 สูตร 1000 · 12/10 ยึด ledger 400 · 13/10 = 400 − 100 */
+  assert.deepEqual(periods.map((x) => valueAt(g, 'p', 'balance', x.key)), [1000, 1000, 400, 300]);
+  const c = cellAt(g, 'p', 'balance', '2026-10-12');
+  assert.equal(c.src, 'ledger');
+  assert.equal(c.editable, false, 'ยอดจริงจากคลังห้ามพิมพ์ทับบนบอร์ด — แก้ที่ตรวจนับ');
+});
+
+test('anchor ไม่รู้ (undefined/ไม่ใช่เลข) = เดินสูตรเดิม ไม่เดา 0', () => {
+  const periods = buildDayPeriods('2026-10-10', 3);
+  const g = buildGrid({
+    parts: [{ id: 'p' }], periods, rows: PRESS,
+    manual: mk({ 'p|balance|2026-10-10': 50 }),
+    anchor: (pid, rk, pk) => (pk === '2026-10-11' ? 'x' : undefined),
+  });
+  assert.deepEqual(periods.map((x) => valueAt(g, 'p', 'balance', x.key)), [50, 50, 50]);
+  assert.equal(cellAt(g, 'p', 'balance', '2026-10-11').src, 'recur');
+});
+
+test('anchor รู้ยอดจริง แม้ไม่มียอดยกมา — วันนี้มีเลข · วันก่อนหน้ายังเป็น null', () => {
+  const periods = buildDayPeriods('2026-10-10', 3);
+  const g = buildGrid({
+    parts: [{ id: 'p' }], periods, rows: PRESS,
+    anchor: (pid, rk, pk) => (rk === 'balance' && pk === '2026-10-11' ? 70 : undefined),
+  });
+  assert.deepEqual(periods.map((x) => valueAt(g, 'p', 'balance', x.key)), [null, 70, 70]);
+});

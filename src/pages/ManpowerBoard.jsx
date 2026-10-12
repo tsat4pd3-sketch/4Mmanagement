@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useContext, useRef } from 'react';
-import { supabase } from '../supabaseClient';
+import { supabase, supabaseDR } from '../supabaseClient';
+import { SESSION_STATUSES_DONE } from '../utils/sessionStatus';
 import { UserContext } from '../App';
 import Page from '../components/Page';
 import PageHeader from '../components/PageHeader';
@@ -31,6 +32,7 @@ import {
   buildManpowerBoard, fourMStatus, layoutPeople, lineFamilyOf, paginateTv, tvCardCapacity,
   describeSlotChanges, summarizeSlotChanges, SLOT_AUDIT_TABLES, SLOT_KIND_META,
   staffingOfDept, summarizeStaffing, rosterOn,
+  indexSessions, sessionsOfDeptShift, oeeOfSessions, compareOeeByStaffing, MIN_SHIFTS_TO_COMPARE,
   ATTEND_META, FOUR_M, shiftMeta, SHIFT_META,
 } from '../utils/manpowerBoard';
 
@@ -844,7 +846,7 @@ function StaffingTab({ section, deptParam, today, nodes, employees, lines, slotP
   const capFrom = addDaysStr(to, -(STAFFING_MAX_DAYS - 1));
   const from = tr.from < capFrom ? capFrom : tr.from;
   const clipped = from !== tr.from;
-  const [raw, setRaw] = useState({ logs: [], sched: [], borrowed: { byDate: {}, missing: 0 } });
+  const [raw, setRaw] = useState({ logs: [], sched: [], borrowed: { byDate: {}, missing: 0 }, sessions: [] });
   const [state, setState] = useState({ loading: true, errors: [], truncated: false });
   const linesRef = useRef(lines); linesRef.current = lines;
   const empRef = useRef(employees); empRef.current = employees;
@@ -859,11 +861,15 @@ function StaffingTab({ section, deptParam, today, nodes, employees, lines, slotP
       fetchAllPages(() => supabase.from('shift_schedules').select('id, work_date, line_id, dept_name, day_team')
         .gte('work_date', from).lte('work_date', to), { orderBy: 'id', maxPages: 10 }),
       loadBorrowedRange({ from, to, employees: empRef.current, lines: linesRef.current }),
-    ]).then(([a, s, b]) => {
+      // 🔗 กะผลิตที่ปิดแล้ว (ฝั่ง DR) — ใช้ OEE ที่ stamp ตอนปิดกะเท่านั้น · select แบบผอม
+      fetchAllPages(() => supabaseDR.from('production_sessions').select('id, line_name, work_date, shift, oee, oee_a, oee_p, shift_min')
+        .gte('work_date', from).lte('work_date', to).in('status', SESSION_STATUSES_DONE), { orderBy: 'id', maxPages: 10 }),
+    ]).then(([a, s, b, ps]) => {
       if (!alive) return;
-      setRaw({ logs: a.rows || [], sched: s.rows || [], borrowed: b });
-      setState({ loading: false, errors: [a.error && `เช็คชื่อ: ${a.error}`, s.error && `ตารางกะ: ${s.error}`, b.error && `คนยืมตัว: ${b.error}`].filter(Boolean),
-        truncated: a.truncated || s.truncated || b.truncated });
+      setRaw({ logs: a.rows || [], sched: s.rows || [], borrowed: b, sessions: ps.rows || [] });
+      setState({ loading: false, errors: [a.error && `เช็คชื่อ: ${a.error}`, s.error && `ตารางกะ: ${s.error}`, b.error && `คนยืมตัว: ${b.error}`,
+        ps.error && `กะผลิต/OEE: ${ps.error}`].filter(Boolean),
+        truncated: a.truncated || s.truncated || b.truncated || ps.truncated });
     });
     return () => { alive = false; };
   }, [from, to, lineCount, empCount]);
@@ -876,16 +882,19 @@ function StaffingTab({ section, deptParam, today, nodes, employees, lines, slotP
       if (!cur || (!cur.is_present && r.is_present)) m[r.employee_id] = r;
     }
     for (const r of raw.sched) (sch[r.work_date] ||= []).push(r);
+    const sIdx = indexSessions(raw.sessions);
     const out = [];
     for (let d = from; d && d <= to; d = addDaysStr(d, 1)) {
-      const board = buildManpowerBoard({ section, nodes, employees: rosterOn(employees, d), lines, maps: buildScheduleMaps(sch[d] || []),
+      const board = buildManpowerBoard({ section, nodes, employees: rosterOn(employees, d, { today, attendance: att[d] }), lines, maps: buildScheduleMaps(sch[d] || []),
         attendance: att[d] || {}, slotPlans, lineTechs, helpers: raw.borrowed.byDate?.[d] || [], stations, stationPlans, homeByEmp });
       out.push({ date: d, depts: (board?.depts || []).filter(x => !deptParam || x.key === deptParam)
-        .map(x => ({ key: x.key, name: x.name, shifts: staffingOfDept(x) })) });
+        .map(x => ({ key: x.key, name: x.name, shifts: staffingOfDept(x),
+          sessions: { day: sessionsOfDeptShift(sIdx, x.lines, d, 'day'), night: sessionsOfDeptShift(sIdx, x.lines, d, 'night') } })) });
     }
     return out;
-  }, [raw, from, to, section, deptParam, nodes, employees, lines, slotPlans, lineTechs, stations, stationPlans, homeByEmp]);
+  }, [raw, from, to, today, section, deptParam, nodes, employees, lines, slotPlans, lineTechs, stations, stationPlans, homeByEmp]);
   const summary = useMemo(() => summarizeStaffing(days), [days]);
+  const oeeCmp = useMemo(() => compareOeeByStaffing(days), [days]);
   const rowsOf = useMemo(() => summary.flatMap(sm => ['day', 'night'].map(sh => ({ key: sm.key, name: sm.name, sh }))), [summary]);
 
   const th = { textAlign: 'left', fontSize: 12, padding: '8px 10px', color: 'var(--muted)', whiteSpace: 'nowrap' };
@@ -893,8 +902,14 @@ function StaffingTab({ section, deptParam, today, nodes, employees, lines, slotP
   const num = { ...td, textAlign: 'right' };
   const pct = (x) => (x == null ? '–' : `${Math.round(x * 100)}%`);
   const dShort = (d) => { const [, m, dd] = d.split('-'); return `${Number(dd)}/${Number(m)}`; };
-  const cellOf = (key, date, sh) => days.find(x => x.date === date)?.depts.find(x => x.key === key)?.shifts[sh] || null;
-  const tip = (s) => `ที่นั่ง ${s.seats} · ยืนจริง ${s.onFloor}\nช่องว่าง ${s.empty} · ลา ${s.leave} · ขาดงาน ${s.absent} · ยังไม่เช็ค ${s.unchecked} · ถูกยืมออก ${s.lentOut} · ยืมเข้า ${s.borrowedIn}${s.noPlan ? '\n⚠️ บางทีมไม่มีแผนช่อง — ใช้จำนวนคนในทะเบียนเป็นที่นั่ง' : ''}`;
+  const deptOf = (key, date) => days.find(x => x.date === date)?.depts.find(x => x.key === key) || null;
+  const cellOf = (key, date, sh) => deptOf(key, date)?.shifts[sh] || null;
+  const tip = (s, sess) => {
+    const o = oeeOfSessions(sess);
+    return `ที่นั่ง ${s.seats} · ยืนจริง ${s.onFloor}\nช่องว่าง ${s.empty} · ลา ${s.leave} · ขาดงาน ${s.absent} · ยังไม่เช็ค ${s.unchecked} · ถูกยืมออก ${s.lentOut} · ยืมเข้า ${s.borrowedIn}`
+      + `\n${o ? `OEE ${o.oee}%${o.p != null ? ` · %P ${o.p}%` : ''} (${o.sessions} กะผลิต)` : 'ไม่มีกะผลิตที่ปิดแล้ว'}`
+      + (s.noPlan ? '\n⚠️ บางทีมไม่มีแผนช่อง — ใช้จำนวนคนในทะเบียนเป็นที่นั่ง' : '');
+  };
 
   return (
     <div style={{ display: 'grid', gap: 12 }}>
@@ -946,6 +961,43 @@ function StaffingTab({ section, deptParam, today, nodes, employees, lines, slotP
           </div>
 
           <div className="card" style={{ padding: 0, overflowX: 'auto' }}>
+            <div style={{ padding: '10px 12px', fontWeight: 800 }}>🔗 คนมาน้อยแล้ว OEE เป็นอย่างไร <span style={{ fontWeight: 400, fontSize: 12, color: 'var(--muted)' }}>(เทียบกะที่คนมาตามปกติ กับกะที่คนมาน้อยกว่าปกติ ของแผนกเดียวกัน)</span></div>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead><tr>
+                <th style={th}>แผนก</th>
+                <th style={{ ...th, textAlign: 'right' }}>ปกติ (คนยืนจริง/กะ)</th>
+                <th style={{ ...th, textAlign: 'right' }}>คนมาตามปกติ: OEE · %P</th>
+                <th style={{ ...th, textAlign: 'right' }}>คนมาน้อยกว่าปกติ: OEE · %P</th>
+                <th style={{ ...th, textAlign: 'right' }}>ส่วนต่าง OEE</th>
+              </tr></thead>
+              <tbody>
+                {oeeCmp.map(c => {
+                  const g = (x) => (x ? `${x.oee ?? '–'}% · ${x.p ?? '–'}% (${x.shifts} กะ)` : '–');
+                  return (
+                    <tr key={c.key}>
+                      <td style={{ ...td, fontWeight: 700, whiteSpace: 'normal', minWidth: 140 }}>{c.name}</td>
+                      <td style={num}>{c.normal == null ? '–' : `${Math.round(c.normal * 10) / 10} คน`}</td>
+                      <td style={num}>{g(c.usual)}</td>
+                      <td style={num}>{g(c.low)}</td>
+                      <td style={{ ...num, fontWeight: 800 }}>
+                        {c.verdict === 'none' ? <span style={{ fontWeight: 400, color: 'var(--muted)' }}>ไม่มีกะผลิตที่ปิดแล้วในกะที่เช็คชื่อ</span>
+                          : c.verdict === 'thin' ? <span style={{ fontWeight: 400, color: '#f59e0b' }}>กะน้อยเกินจะสรุป (ต้องมีฝั่งละ ≥ {MIN_SHIFTS_TO_COMPARE} กะ)</span>
+                          : c.diffOee == null ? '–' : `${c.diffOee > 0 ? '+' : ''}${c.diffOee} จุด`}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <div style={{ padding: '8px 12px', fontSize: 12, color: 'var(--muted)', lineHeight: 1.6 }}>
+              <b>ปกติ</b> = มัธยฐานของคนยืนจริงต่อกะของแผนกนั้นเอง (ไม่ใช่ที่นั่งตาม std — std บางไลน์ยังตั้งสูงกว่าคนในทะเบียน จนเกือบทุกกะดู "ขาด") ·
+              นับเฉพาะกะที่เช็คชื่อแล้วและมีกะผลิตปิดแล้ว · OEE/%P = ค่าที่ระบบบันทึกตอนปิดกะของทุกไลน์ในแผนก (ถ่วงด้วยเวลา) ·
+              ไม่รวมยอดชิ้นข้ามไลน์เพราะไลน์ย่อยป้อนงานต่อกัน บวกกันจะนับซ้ำ ·
+              ⚠️ เป็น<b>ความสัมพันธ์</b> ไม่ใช่ข้อพิสูจน์ว่าคนน้อยเป็นสาเหตุ — กะนั้นอาจมีเครื่องเสีย/ของขาดด้วย ดูต้นเหตุที่ Daily Report ของกะนั้น
+            </div>
+          </div>
+
+          <div className="card" style={{ padding: 0, overflowX: 'auto' }}>
             <div style={{ padding: '10px 12px', fontWeight: 800 }}>รายวัน — ขาดกี่คน <span style={{ fontWeight: 400, fontSize: 12, color: 'var(--muted)' }}>(ตัวเลข = ขาด · +n = เกิน · ✓ = ครบ · · = ไม่ได้เช็คชื่อ · ชี้ที่ช่องเพื่อดูสาเหตุ)</span></div>
             <table style={{ borderCollapse: 'collapse' }}>
               <thead><tr>
@@ -963,9 +1015,9 @@ function StaffingTab({ section, deptParam, today, nodes, employees, lines, slotP
                       const base = { ...td, textAlign: 'center', padding: '6px 4px', minWidth: 34, fontSize: 12 };
                       if (!s || (!s.seats && !s.evaluated)) return <td key={d.date} style={{ ...base, color: 'var(--muted)' }} />;
                       if (!s.evaluated) return <td key={d.date} style={{ ...base, color: 'var(--muted)' }} title="ไม่มีใครในแผนกถูกเช็คชื่อกะนี้ — ไม่รู้ว่ามาครบไหม">·</td>;
-                      if (s.gap > 0) return <td key={d.date} title={tip(s)} style={{ ...base, fontWeight: 800, color: 'var(--text)', background: `rgba(239,68,68,${Math.min(0.15 + s.gap * 0.08, 0.6).toFixed(2)})` }}>{s.gap}</td>;
-                      if (s.gap < 0) return <td key={d.date} title={tip(s)} style={{ ...base, color: '#0ea5e9' }}>+{-s.gap}</td>;
-                      return <td key={d.date} title={tip(s)} style={{ ...base, color: 'var(--muted)' }}>✓</td>;
+                      if (s.gap > 0) return <td key={d.date} title={tip(s, deptOf(r.key, d.date)?.sessions?.[r.sh])} style={{ ...base, fontWeight: 800, color: 'var(--text)', background: `rgba(239,68,68,${Math.min(0.15 + s.gap * 0.08, 0.6).toFixed(2)})` }}>{s.gap}</td>;
+                      if (s.gap < 0) return <td key={d.date} title={tip(s, deptOf(r.key, d.date)?.sessions?.[r.sh])} style={{ ...base, color: '#0ea5e9' }}>+{-s.gap}</td>;
+                      return <td key={d.date} title={tip(s, deptOf(r.key, d.date)?.sessions?.[r.sh])} style={{ ...base, color: 'var(--muted)' }}>✓</td>;
                     })}
                   </tr>
                 ))}

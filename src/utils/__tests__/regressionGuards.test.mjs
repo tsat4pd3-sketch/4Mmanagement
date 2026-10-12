@@ -1732,6 +1732,9 @@ const INLINE_WLOAD = /shift_?[mM]in[^;\n]{0,30}\)? *- *[A-Za-z_.]*[pP]lanned/;
 const WLOAD_ALLOW = {
   'src/utils/obeyaKpi.js':
     'โมดูล pure — รับ rows ที่มี plannedMin มาแล้ว ไม่ได้อ่าน downtime เอง (หน้าที่เรียกเป็นคนรับผิดชอบ)',
+  'src/utils/manpowerBoard.js':
+    'compareOeeByStaffing (12/10) — เฉลี่ยค่า oee/oee_p ที่ stamp ตอนปิดกะแล้ว ไม่อ่าน downtime เลย → plannedMin = 0 '
+    + '→ wLoad ถ่วงด้วย shift_min ล้วน (แบบเดียวกับ axisOee ใน obeyaKpi) = ไม่มีการหักพักซ้ำ',
   'src/pages/PlannerSales.jsx':
     'ตั้งใจไม่โหลด downtime → plannedMin = 0 → wLoad ถอยไปถ่วงด้วย shift_min (มีคอมเมนต์อธิบายที่บรรทัด 883-884) '
     + '= ประมาณการ ไม่ใช่การหักซ้ำ',
@@ -3606,4 +3609,117 @@ test('🛡️ lpa-audit-keeps-removed-answers — ใบตรวจต้อง
     '\n\n❌ ตอนโหลดใบเก่าไม่ได้พก question_text (snapshot) มาด้วย ⇒ ข้อที่ถูกลบจะไม่มีข้อความให้แสดง\n');
   assert.ok(/removedAnswers\.map\(/.test(code),
     '\n\n❌ saveAudit ไม่ได้เขียนคำตอบของข้อที่ถูกถอดออกกลับลงฐาน ⇒ กดบันทึกซ้ำ = ข้อมูลหายรอบสอง\n');
+});
+
+/* ═══ ไลน์เครื่องขนาน — นาที downtime ต้องหารจำนวนเลนก่อนเป็นน้ำหนัก wLoad (2026-10-12) ═══
+   ที่มา: recheck ใบ OEE/Defect PD3+PD4 ก.ย. 2026 เทียบกับระบบ — %A/%Q ตรง แต่ OEE เดือนของ
+   LASER-345 ต่ำกว่าที่ควร เพราะ `dtMinBySession` รวมนาที DT **รายเครื่อง** (3 เครื่อง) มาหัก
+   จากเวลากะเดียว ⇒ plannedMin ทะลุความยาวกะ ⇒ `wLoad = max(0, …)` เหลือ 0
+   ⇒ **กะนั้นถูกตัดออกจากค่าเฉลี่ยโดยไม่มี error** (ก.ย. 2026: 11 กะน้ำหนัก 0 · LASER-345 22/37 กะ
+   โดนลดน้ำหนักเกินครึ่ง ⇒ OEE เดือน 82.9% → 80.6% แล้วถูก export เป็นฟอร์มไปเซ็น)
+   `computeSessionOee` หาร 1/N ถูกมาตั้งแต่แรก — ที่พังคือ "ตัวถ่วงน้ำหนัก" เท่านั้น */
+test('🛡️ dt-by-session-needs-lines — ทุกการเรียก dtMinBySession ต้องส่งทะเบียนไลน์ { lines }', () => {
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const rel = relative(ROOT, file);
+    if (rel.includes('__tests__') || rel === 'src/utils/oee.js') continue;
+    const code = stripComments(readFileSync(file, 'utf8'));
+    let m; const re = /dtMinBySession\s*\(/g;
+    while ((m = re.exec(code))) {
+      // อ่านอาร์กิวเมนต์จนวงเล็บปิด (รองรับวงเล็บซ้อน เช่น `brk.data || []`)
+      let i = m.index + m[0].length, depth = 1;
+      while (i < code.length && depth > 0) { const c = code[i++]; if (c === '(') depth++; else if (c === ')') depth--; }
+      const args = code.slice(m.index + m[0].length, i - 1);
+      if (!/\blines\b/.test(args)) bad.push(`${rel}:${code.slice(0, m.index).split('\n').length}`);
+    }
+  }
+  assert.deepEqual(bad, [],
+    '\n\n❌ จุดด้านล่างเรียก dtMinBySession โดยไม่ส่ง { lines } (ทะเบียนไลน์)\n'
+    + '   ทำไมห้าม: ไลน์เครื่องขนาน (LASER-345/789 = 3 เครื่อง · SUB APRON = 6 สถานี) บันทึก downtime\n'
+    + '   **รายเครื่อง** ⇒ ผลรวมนาทีของกะเดียวทะลุความยาวกะได้ตามปกติ (วัดจริง 09/09/2026: 1,025 น. บนกะ 720 น.)\n'
+    + '   ไม่หารเลนก่อน ⇒ wLoad = shift_min − plannedMin เหลือ 0 = กะนั้นหายจากค่าเฉลี่ยเงียบๆ\n'
+    + '   แก้ยังไง: dtMinBySession(sessions, downtimes, breakPolicies, { lines })\n'
+    + '             `lines` รับได้ทั้งอาร์เรย์ทะเบียนไลน์ และแมป { [ชื่อไลน์]: แถว } (oee.js §3.2)\n\n'
+    + bad.map(b => '   • ' + b).join('\n') + '\n');
+});
+
+/* ═══ ยอดผลิตของ "ทั้งกะ" ห้ามวน reduce ใบผลิตเองในหน้า (2026-10-12) ═══
+   กฎเดียวกันเคยอยู่ 3 ที่ (orderProducedQty / computeSessionOee / handleCloseSession)
+   ⇒ `confirmed → o.qty` ที่หนึ่ง กับ `qty_ok ?? qty` อีกที่หนึ่ง = รอวัน drift
+   ยุบเป็น `sessionProducedQty()` (oee.js §6.0.1) แล้ว — ห้ามเขียนใหม่ */
+test('🛡️ session-produced-qty-single-source — ห้ามรวมยอดผลิตของกะเองด้วย reduce', () => {
+  const ALLOW = {
+    'src/utils/oee.js': 'เจ้าของสูตร',
+  };
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const rel = relative(ROOT, file);
+    if (rel.includes('__tests__') || ALLOW[rel]) continue;
+    const code = stripComments(readFileSync(file, 'utf8'));
+    // `…filter(o => o.status === 'confirmed')…reduce(… + o.qty …)` ภายในช่วงสั้นๆ เดียวกัน
+    const re = /status\s*===\s*'confirmed'[\s\S]{0,200}?\.reduce\([^)]{0,120}\+\s*[A-Za-z_$][\w$]*\.qty\b/g;
+    let m;
+    while ((m = re.exec(code))) bad.push(`${rel}:${code.slice(0, m.index).split('\n').length}`);
+  }
+  assert.deepEqual(bad, [],
+    '\n\n❌ จุดด้านล่างรวม "ยอดผลิตของกะ" เองจากใบผลิต\n'
+    + '   ทำไมห้าม: สูตรนี้เคยมี 3 สำเนาที่กติกาไม่ตรงกัน (`o.qty` vs `qty_ok ?? qty`)\n'
+    + '   และต้องนับใบ carry_over/imported/cancelled ด้วย — ลืมข้อใดข้อหนึ่ง = ยอดหายเงียบ\n'
+    + '   แก้ยังไง: sessionProducedQty(orders, carryQtyActual) จาก utils/oee.js (§6.0.1)\n\n'
+    + bad.map(b => '   • ' + b).join('\n') + '\n');
+});
+
+/* ═══ คำนวณ OEE ใหม่ = ต้อง re-stamp "ยอด" ด้วยเสมอ (2026-10-12) ═══
+   ปุ่ม "แก้เวลากะ + คำนวณ OEE ใหม่" เคยเขียนทับแค่ oee_a/p/q/oee/shift_min
+   แต่ %P/%Q ถูกคำนวณจาก **ใบผลิตชุดปัจจุบัน** ⇒ ถ้าใบถูกแก้ยอดหลังปิดกะ
+   แถวเดียวกันจะขัดแย้งกันเอง: actual_qty 1,000 แต่ %P คิดจาก 1,100
+   (วัดจริง ก.ย. 2026: 27 กะ · 835 ชิ้น ที่ actual_qty ต่ำกว่าผลรวมใบผลิตจริง) */
+test('🛡️ oee-restamp-needs-qty — ทุก payload ที่เขียน oee_a ต้องเขียน actual_qty ด้วย', () => {
+  const file = join(ROOT, 'src/pages/DailyReport.jsx');
+  const code = stripComments(readFileSync(file, 'utf8'));
+  const bad = [];
+  /* ข้าม payload ของ Telegram (`notifyProdClose({...})`) — มันแค่ "ส่งข้อความ" ไม่ได้เขียนลงฐาน
+     (ใช้คีย์ `total_qty` ไม่ใช่ `actual_qty` โดยตั้งใจ) ⇒ ไม่เกี่ยวกับกฎนี้ */
+  const notifySpans = [];
+  let nm; const nre = /notifyProdClose\s*\(/g;
+  while ((nm = nre.exec(code))) {
+    let i = nm.index + nm[0].length, depth = 1;
+    while (i < code.length && depth > 0) { const c = code[i++]; if (c === '(') depth++; else if (c === ')') depth--; }
+    notifySpans.push([nm.index, i]);
+  }
+  const inNotify = (idx) => notifySpans.some(([a, b]) => idx > a && idx < b);
+
+  let m; const re = /\boee_a\s*:/g;
+  while ((m = re.exec(code))) {
+    if (inNotify(m.index)) continue;
+    // มองย้อนขึ้นไป/ลงมารอบๆ payload เดียวกัน (ออบเจกต์ที่ stamp ค่า OEE ยาวไม่เกิน ~40 บรรทัด)
+    const from = Math.max(0, m.index - 2500), to = Math.min(code.length, m.index + 1200);
+    if (!/\bactual_qty\s*:/.test(code.slice(from, to))) bad.push(`DailyReport.jsx:${code.slice(0, m.index).split('\n').length}`);
+  }
+  assert.deepEqual(bad, [],
+    '\n\n❌ จุดด้านล่าง stamp ค่า OEE ลง production_sessions โดยไม่ stamp ยอดผลิตด้วย\n'
+    + '   ทำไมห้าม: %P/%Q คิดจากใบผลิตชุดปัจจุบัน — ปล่อย actual_qty/qty_ok ค้างค่าเดิม\n'
+    + '   = แถวเดียวกันขัดแย้งกันเอง (ยอด 1,000 แต่ %P คิดจาก 1,100) อธิบายให้ผู้บริหารไม่ได้\n'
+    + '   แก้ยังไง: ใส่ actual_qty / qty_ok = sessionProducedQty(...) ใน payload เดียวกัน\n\n'
+    + bad.map(b => '   • ' + b).join('\n') + '\n');
+});
+
+/* ── เด็ค PowerPoint ทุกตัว = ธีม TSG Revision 01 (12/10 · คำสั่ง user "ทำใหม่หลังจากนี้ต้อง revision1") ──
+   R00 = ปก/ปิดพื้นเขียว · R01 = พื้นขาวทุกหน้า · skill tsg-presentation-theme ที่ sync มายังเป็น R00 */
+test('🛡️ pptx-theme-r01 — ตัวสร้างเด็คห้ามใช้ asset/สีของธีม TSG R00', () => {
+  const theme = readFileSync(join(ROOT, 'docs/meetings/roadshow_build/tsg_theme.py'), 'utf8');
+  assert.match(theme, /REVISION = "R01"/,
+    '\n\n❌ docs/meetings/roadshow_build/tsg_theme.py ไม่ใช่ R01 แล้ว — อย่าเอาไฟล์จาก skill tsg-presentation-theme (R00) มาทับ\n');
+  const R00 = /bg_title\.png|div_pd3\.png|div_pd4\.png|div_jig\.png|logo_big\.png|logo_footer\.png|C0561E|0xC0, ?0x56, ?0x1E|EBD9B0/;
+  const hits = walk(join(ROOT, 'docs'), ['.py'])
+    .filter(f => !f.endsWith('retheme_r01.py'))
+    // เฉพาะตัวสร้าง "สไลด์" (pptx + เด็ค HTML) — infographic A4 ไม่อยู่ในคำสั่งนี้
+    .filter(f => f.endsWith('build_presentation.py') || /from pptx|import tsg_theme/.test(readFileSync(f, 'utf8')))
+    .filter(f => R00.test(readFileSync(f, 'utf8')))
+    .map(f => relative(ROOT, f));
+  assert.deepEqual(hits, [],
+    '\n\n❌ ตัวสร้างเด็คยังอ้าง asset/สีของธีม TSG R00 (ปก/ปิดพื้นเขียว): ' + hits.join(', ') + '\n'
+    + '   ทำไม: user สั่ง 12/10 ว่าเด็คทุกตัวต้องเป็น Revision 01 — พื้นขาวทุกหน้ารวมปก/ปิด · เขียว 068734 · ส้ม D95323\n'
+    + '   แก้ยังไง: import tsg_theme จาก docs/meetings/roadshow_build/ (title_slide / agenda_slide / section_divider / closing_slide)\n'
+    + '            เด็ค .pptx เก่าที่ไม่มีสคริปต์ → python3 docs/meetings/roadshow_build/retheme_r01.py <file>\n');
 });
