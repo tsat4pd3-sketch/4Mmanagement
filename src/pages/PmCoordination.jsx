@@ -15,7 +15,7 @@ import { loadPmTeams, pmTeamsSync } from '../utils/pmTeams';
 import { toast } from '../components/Toast';
 import tsLogoUrl from '../assets/TS logo.png';
 import { loadDocForms, withDocFoot, docFormSync } from '../utils/docForms';
-import { checkWrite } from '../utils/dbWrite';
+import { checkWrite, checkWriteRows } from '../utils/dbWrite';
 import { getWorkDate } from '../utils/workDate';
 import SearchSelect from '../components/SearchSelect';
 import Page from '../components/Page';
@@ -227,7 +227,8 @@ function PlanCard({ plan: p, tasks, canManage, pmPlan, fullName, onEdit, onReloa
         } },
       });
       if (eFn) throw eFn;
-      const ok = checkWrite(await supabaseDR.from('pm_coordination_plans').update({ status: 'notified', updated_at: new Date().toISOString() }).eq('id', p.id), 'ส่งแจ้งเตือนแล้ว แต่ตั้งสถานะ "แจ้งแล้ว"');
+      /* นับแถว — แจ้งเตือนออกไปแล้ว ถ้าสถานะไม่ขยับ ใบจะยังขึ้น "ยังไม่แจ้ง" แล้วมีคนกดแจ้งซ้ำ (สแปมผลิต) */
+      const ok = checkWriteRows(await supabaseDR.from('pm_coordination_plans').update({ status: 'notified', updated_at: new Date().toISOString() }).eq('id', p.id).select('id'), 'ส่งแจ้งเตือนแล้ว แต่ตั้งสถานะ "แจ้งแล้ว"');
       if (ok) toast.success('แจ้ง Production แล้ว');
       onReload();
     } catch (e) { toast.error('แจ้งไม่สำเร็จ: ' + (e.message || e)); }
@@ -257,7 +258,7 @@ function PlanCard({ plan: p, tasks, canManage, pmPlan, fullName, onEdit, onReloa
     onReload();
   };
   const toggleTask = async (t) => {
-    checkWrite(await supabaseDR.from('pm_coordination_tasks').update({ done: !t.done }).eq('id', t.id), 'ติ๊กงาน');
+    checkWriteRows(await supabaseDR.from('pm_coordination_tasks').update({ done: !t.done }).eq('id', t.id).select('id'), 'ติ๊กงาน');
     onReload();
   };
   const del = async () => {

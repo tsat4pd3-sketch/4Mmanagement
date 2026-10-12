@@ -29,7 +29,7 @@ import MonitoringUpload from '../components/MonitoringUpload';
 import DemandMailInbox from '../components/DemandMailInbox';
 import { fetchAllPages } from '../utils/fetchByIds';
 import { dedupeForecastRows } from '../utils/demandSupply';
-import { checkWrite } from '../utils/dbWrite';
+import { checkWrite, checkWriteRows } from '../utils/dbWrite';
 import { fmtAxis } from '../utils/chartAxis';
 import { loadDocForms } from '../utils/docForms';
 import { downloadCsvDoc } from '../utils/csvDoc';
@@ -1540,11 +1540,13 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
       let failed = 0;
       for (const [cust, sap] of pairs) {
         const name = drMap[sap]?.name || null;
-        let ok = checkWrite(await supabaseDR.from('dr_products').update({ p_no: cust }).eq('mat_no', sap), 'ผูกเลขลูกค้าเข้าสินค้า');                       // future uploads
+        /* นับแถว — คู่ที่มาถึงตรงนี้ถูกกรองแล้วว่าเลข SAP มีใน Product Master (drMap) ⇒ 0 แถว = เขียนไม่ติดจริง
+           ปล่อยผ่านคือ forecast ถูก re-point ไป MAT ที่ไม่มีใครรู้จัก (เคสที่คอมเมนต์ข้างบนเตือนไว้) */
+        let ok = checkWriteRows(await supabaseDR.from('dr_products').update({ p_no: cust }).eq('mat_no', sap).select('mat_no'), 'ผูกเลขลูกค้าเข้าสินค้า');   // future uploads
         // single source: p_no เก็บซ้ำใน kanban_standards ด้วย — เขียน write-through กันตาราง 2 ฝั่ง map เลข SAP ไม่ตรง (stale → map ผิด)
         // best-effort (บางพาร์ทไม่มีแถว kanban = 0 แถว ไม่ใช่ error) — แต่ error จริงต้องเห็น (supabase-js ไม่ throw · try/catch เดิมไม่มีวันจับ)
-        ok = checkWrite(await supabaseDR.from('kanban_standards').update({ p_no: cust }).eq('mat_no', sap), 'เขียน p_no ลง kanban_standards') && ok;
-        ok = checkWrite(await supabaseDR.from('customer_forecasts').update({ mat_no: sap, part_name: name }).eq('mat_no', cust), 'แก้ forecast เดิมให้ใช้ MAT ใหม่') && ok; // existing forecast
+        ok = checkWrite(await supabaseDR.from('kanban_standards').update({ p_no: cust }).eq('mat_no', sap), 'เขียน p_no ลง kanban_standards') && ok;   // ⚠️ ไม่นับแถว: พาร์ทที่ไม่มีแถว kanban = 0 แถว ถูกต้องแล้ว
+        ok = checkWrite(await supabaseDR.from('customer_forecasts').update({ mat_no: sap, part_name: name }).eq('mat_no', cust), 'แก้ forecast เดิมให้ใช้ MAT ใหม่') && ok; // ⚠️ ไม่นับแถว: ยังไม่มี forecast ของเลขลูกค้านี้ = 0 แถว ถูกต้องแล้ว
         if (!ok) failed++;
       }
       if (failed) {

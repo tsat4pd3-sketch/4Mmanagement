@@ -1058,7 +1058,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
         if (ov.start) {
           const firstOrder = orders.reduce((a, b) => (!a.opened_at || (b.opened_at && new Date(b.opened_at) < new Date(a.opened_at))) ? b : a);
           const ms = new Date(`${selSession.work_date}T${ov.start.slice(0, 5)}:00`).getTime();
-          checkWrite(await supabaseDR.from('prod_orders').update({ opened_at: new Date(ms).toISOString() }).eq('id', firstOrder.id), 'บันทึกเวลาเริ่ม MAT');
+          /* นับแถว — เวลานี้เป็นฐานของ %A/%P ที่กำลังจะ stamp ลงกะ ถ้าเขียนไม่ติด
+             OEE จะถูกคิดจากเวลาที่ไม่เคยถูกบันทึก (จอกับฐานไม่ตรงกันถาวร · กฎเขียน DB ข้อ 2) */
+          checkWriteRows(await supabaseDR.from('prod_orders').update({ opened_at: new Date(ms).toISOString() }).eq('id', firstOrder.id).select('id'), 'บันทึกเวลาเริ่ม MAT');
         }
         if (ov.end) {
           const confirmedOds = orders.filter(o => o.status === 'confirmed' && o.confirmed_at);
@@ -1066,7 +1068,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
             const lastOrder = confirmedOds.reduce((a, b) => (new Date(b.confirmed_at) > new Date(a.confirmed_at)) ? b : a);
             let ms = new Date(`${selSession.work_date}T${ov.end.slice(0, 5)}:00`).getTime();
             if (lastOrder.opened_at && ms < new Date(lastOrder.opened_at).getTime()) ms += 86400000;
-            checkWrite(await supabaseDR.from('prod_orders').update({ confirmed_at: new Date(ms).toISOString() }).eq('id', lastOrder.id), 'บันทึกเวลาปิด MAT');
+            checkWriteRows(await supabaseDR.from('prod_orders').update({ confirmed_at: new Date(ms).toISOString() }).eq('id', lastOrder.id).select('id'), 'บันทึกเวลาปิด MAT');
           }
         }
       }
@@ -1710,21 +1712,23 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       // separate_order: นี่คือการสแกนคู่ RH/LH ใบที่สอง — ผูกกลับไปยังใบแรกที่รออยู่
       // sync opened_at ให้ตรงกับใบแรก เพราะผลิตพร้อมกันจริงแม้สแกนคนละเวลา
       const firstOrder = prodOrders.find(o => o.id === pendingPairId);
-      checkWrite(await supabaseDR.from('prod_orders').update({ paired_order_id: data.id }).eq('id', pendingPairId), 'ผูกคู่ RH/LH (ใบแรก)');
-      checkWrite(await supabaseDR.from('prod_orders').update({
+      /* 🔴 นับแถว — คู่ที่ผูกไม่ติดจะถูกนับเป็น 2 ใบแยกกัน ⇒ เวลามาตรฐานของ %P เบิ้ล
+         (กฎเหล็ก "ชิ้น ≠ shot" · collapsePairShots อ่าน paired_order_id เป็นตัวตัดสิน) */
+      checkWriteRows(await supabaseDR.from('prod_orders').update({ paired_order_id: data.id }).eq('id', pendingPairId).select('id'), 'ผูกคู่ RH/LH (ใบแรก)');
+      checkWriteRows(await supabaseDR.from('prod_orders').update({
         paired_order_id: pendingPairId,
         ...(firstOrder?.opened_at ? { opened_at: firstOrder.opened_at } : {}),
-      }).eq('id', data.id), 'ผูกคู่ RH/LH (ใบที่สอง)');
+      }).eq('id', data.id).select('id'), 'ผูกคู่ RH/LH (ใบที่สอง)');
       setPendingPairId(null);
       toast.success(`เปิด Order คู่ RH/LH พร้อมกัน ✓ (${prodNo})`);
     } else if (partnerMatNo) {
       const existingPartner = prodOrders.find(o => o.mat_no === partnerMatNo && o.status === 'open' && !o.paired_order_id);
       if (existingPartner) {
-        checkWrite(await supabaseDR.from('prod_orders').update({ paired_order_id: data.id }).eq('id', existingPartner.id), 'ผูกคู่ RH/LH (ใบที่เปิดค้าง)');
-        checkWrite(await supabaseDR.from('prod_orders').update({
+        checkWriteRows(await supabaseDR.from('prod_orders').update({ paired_order_id: data.id }).eq('id', existingPartner.id).select('id'), 'ผูกคู่ RH/LH (ใบที่เปิดค้าง)');
+        checkWriteRows(await supabaseDR.from('prod_orders').update({
           paired_order_id: existingPartner.id,
           ...(existingPartner.opened_at ? { opened_at: existingPartner.opened_at } : {}),
-        }).eq('id', data.id), 'ผูกคู่ RH/LH (ใบใหม่)');
+        }).eq('id', data.id).select('id'), 'ผูกคู่ RH/LH (ใบใหม่)');
         toast.success(`เปิด Order ${prodNo} ✓ และผูกคู่กับ ${existingPartner.prod_no} (RH/LH) อัตโนมัติ`);
       } else {
         setPendingPairId(data.id);
@@ -1984,7 +1988,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
         if (pe) {
           toast.error(`เปิดเป้าคู่ไม่สำเร็จ: ${pe.message}`);
         } else {
-          checkWrite(await supabaseDR.from('prod_orders').update({ paired_order_id: pairCreated.id }).eq('id', created.id), 'ผูกคู่ RH/LH');
+          checkWriteRows(await supabaseDR.from('prod_orders').update({ paired_order_id: pairCreated.id }).eq('id', created.id).select('id'), 'ผูกคู่ RH/LH');
           toast.success(`เปิดเป้าคู่ ${pairMat} · ${qty} ชิ้น ✓${pairSession.id !== selSession.id ? ` (ไลน์ ${pairLine} — ไปอัพเดทยอดที่หน้ากะของไลน์นั้น)` : ''}`);
         }
       }
@@ -2170,15 +2174,21 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       const dup = prodOrders.find(p => p.prod_no === o.prod_no);
       if (dup) {
         // มีในกะนี้แล้ว — mark ต้นทางทุกใบ (รวมใบซ้ำในกะเก่าๆ) เป็น imported เพื่อให้ banner เคลียร์ออก
-        checkWrite(await supabaseDR.from('prod_orders').update({ status: 'imported' })
-          .eq('prod_no', o.prod_no).in('status', ['carry_over', 'open']).neq('session_id', selSession.id), 'ปิดใบต้นทางเป็น imported (ถ้าค้างจะถูกรับซ้ำรอบหน้า)');
+        /* นับแถว — ไม่ปิดต้นทาง = แบนเนอร์ยอดค้างไม่เคลียร์ แล้วใบเดิมถูกรับซ้ำรอบหน้า (เป้านับซ้ำ)
+           0 แถวอาจเป็นเพราะกะอื่นปิดไปแล้ว ⇒ ข้อความบอกทางออกไว้ ไม่ใช่แค่ "ล้มเหลว" */
+        checkWriteRows(await supabaseDR.from('prod_orders').update({ status: 'imported' })
+          .eq('prod_no', o.prod_no).in('status', ['carry_over', 'open']).neq('session_id', selSession.id).select('id'), 'ปิดใบต้นทาง',
+          { zeroMsg: `ไม่ได้ปิดใบต้นทาง ${o.prod_no} (0 แถว — อาจมีกะอื่นปิดไปแล้ว) · ถ้าแบนเนอร์ยอดค้างยังไม่หาย กดรับยอดอีกครั้ง` });
         continue;
       }
       const remainQty = o.qty - (o.qty_actual || 0);
       if (remainQty <= 0) {
         // ผลิตครบเป้าแล้ว ไม่ต้องยกยอด — แค่ปิดต้นทางไม่ให้ขึ้นเตือนค้างอีก
-        checkWrite(await supabaseDR.from('prod_orders').update({ status: 'imported' })
-          .eq('prod_no', o.prod_no).in('status', ['carry_over', 'open']).neq('session_id', selSession.id), 'ปิดใบต้นทางเป็น imported (ถ้าค้างจะถูกรับซ้ำรอบหน้า)');
+        /* นับแถว — ไม่ปิดต้นทาง = แบนเนอร์ยอดค้างไม่เคลียร์ แล้วใบเดิมถูกรับซ้ำรอบหน้า (เป้านับซ้ำ)
+           0 แถวอาจเป็นเพราะกะอื่นปิดไปแล้ว ⇒ ข้อความบอกทางออกไว้ ไม่ใช่แค่ "ล้มเหลว" */
+        checkWriteRows(await supabaseDR.from('prod_orders').update({ status: 'imported' })
+          .eq('prod_no', o.prod_no).in('status', ['carry_over', 'open']).neq('session_id', selSession.id).select('id'), 'ปิดใบต้นทาง',
+          { zeroMsg: `ไม่ได้ปิดใบต้นทาง ${o.prod_no} (0 แถว — อาจมีกะอื่นปิดไปแล้ว) · ถ้าแบนเนอร์ยอดค้างยังไม่หาย กดรับยอดอีกครั้ง` });
         continue;
       }
       const { error } = await supabaseDR.from('prod_orders').insert({
@@ -2203,8 +2213,11 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       if (!error) {
         imported++;
         // Mark original orders (ทุกใบที่ prod_no ตรงกันในกะเก่า) as 'imported'
-        checkWrite(await supabaseDR.from('prod_orders').update({ status: 'imported' })
-          .eq('prod_no', o.prod_no).in('status', ['carry_over', 'open']).neq('session_id', selSession.id), 'ปิดใบต้นทางเป็น imported (ถ้าค้างจะถูกรับซ้ำรอบหน้า)');
+        /* นับแถว — ไม่ปิดต้นทาง = แบนเนอร์ยอดค้างไม่เคลียร์ แล้วใบเดิมถูกรับซ้ำรอบหน้า (เป้านับซ้ำ)
+           0 แถวอาจเป็นเพราะกะอื่นปิดไปแล้ว ⇒ ข้อความบอกทางออกไว้ ไม่ใช่แค่ "ล้มเหลว" */
+        checkWriteRows(await supabaseDR.from('prod_orders').update({ status: 'imported' })
+          .eq('prod_no', o.prod_no).in('status', ['carry_over', 'open']).neq('session_id', selSession.id).select('id'), 'ปิดใบต้นทาง',
+          { zeroMsg: `ไม่ได้ปิดใบต้นทาง ${o.prod_no} (0 แถว — อาจมีกะอื่นปิดไปแล้ว) · ถ้าแบนเนอร์ยอดค้างยังไม่หาย กดรับยอดอีกครั้ง` });
       }
     }
     toast.success(`รับยอดค้างมาแล้ว ${imported} Order`);
@@ -2413,7 +2426,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       if (ov.start) {
         const firstOrder = orders.reduce((a, b) => (!a.opened_at || (b.opened_at && new Date(b.opened_at) < new Date(a.opened_at))) ? b : a);
         const ms = new Date(`${selSession.work_date}T${ov.start.slice(0,5)}:00`).getTime();
-        checkWrite(await supabaseDR.from('prod_orders').update({ opened_at: new Date(ms).toISOString() }).eq('id', firstOrder.id), 'บันทึกเวลาเริ่ม MAT');
+        checkWriteRows(await supabaseDR.from('prod_orders').update({ opened_at: new Date(ms).toISOString() }).eq('id', firstOrder.id).select('id'), 'บันทึกเวลาเริ่ม MAT');
       }
       if (ov.end) {
         const confirmedOrders = orders.filter(o => o.status === 'confirmed' && o.confirmed_at);
@@ -2421,7 +2434,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
           const lastOrder = confirmedOrders.reduce((a, b) => (new Date(b.confirmed_at) > new Date(a.confirmed_at)) ? b : a);
           let ms = new Date(`${selSession.work_date}T${ov.end.slice(0,5)}:00`).getTime();
           if (lastOrder.opened_at && ms < new Date(lastOrder.opened_at).getTime()) ms += 86400000;
-          checkWrite(await supabaseDR.from('prod_orders').update({ confirmed_at: new Date(ms).toISOString() }).eq('id', lastOrder.id), 'บันทึกเวลาปิด MAT');
+          checkWriteRows(await supabaseDR.from('prod_orders').update({ confirmed_at: new Date(ms).toISOString() }).eq('id', lastOrder.id).select('id'), 'บันทึกเวลาปิด MAT');
         }
       }
     }
@@ -2724,9 +2737,11 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   const handleCallMtn = async (d, team) => {
     if (d.call_mtn) return;
     const teamKey = teamKeyOf(team) || 'maintenance';   // ว่าง = ไม่กรองทีม → กลับไปเด้งทั้งโรงงาน ห้ามปล่อย
-    const ok = checkWrite(await supabaseDR.from('downtime_logs').update({
+    /* นับแถว — ถ้าเขียนไม่ติดแล้วยิงแจ้งเตือนต่อ ช่างจะมาโดยที่ใบไม่มีประวัติ "เรียกเมื่อไหร่/ใครเรียก"
+       และปุ่มยังกดซ้ำได้เรื่อยๆ (กฎเขียน DB ข้อ 2) */
+    const ok = checkWriteRows(await supabaseDR.from('downtime_logs').update({
       call_mtn: true, call_mtn_at: new Date().toISOString(), call_mtn_by: fullName, call_mtn_team: teamKey,
-    }).eq('id', d.id), 'เรียกช่าง');
+    }).eq('id', d.id).select('id'), 'เรียกช่าง');
     if (!ok) return;
     const dtType = dtTypes.find(t => t.id === d.downtime_type_id);
     const mcName = machines.find(m => m.machine_no === d.machine_no)?.machine_name || '';
@@ -7846,11 +7861,13 @@ function ProductSetup({ role }) {
       if (error) { setSaving(false); toast.error(error.message); return; }
       // Mark old product as superseded
       if (ecSource) {
-        checkWrite(await supabaseDR.from('dr_products').update({
+        /* นับแถว — ปิดเลขเดิมไม่ติด = พาร์ทเดียวมี 2 เลข active พร้อมกัน (CT/kanban/แผนหยิบผิดเลข) */
+        checkWriteRows(await supabaseDR.from('dr_products').update({
           is_active: false,
           superseded_at: form.effective_from || today(),
           superseded_by: inserted.id,
-        }).eq('id', ecSource.id), 'บันทึกข้อมูลสินค้า');
+        }).eq('id', ecSource.id).select('id'), 'ปิดใช้งานสินค้าเลขเดิม (EC)',
+          { zeroMsg: `บันทึกเลขใหม่แล้ว แต่ปิดเลขเดิม ${ecSource.mat_no || ''} ไม่ได้ (0 แถว) — ไปปิดเองที่ทะเบียนสินค้า ไม่งั้นมี 2 เลขใช้งานพร้อมกัน` });
       }
     } else {
       const { error } = await supabaseDR.from('dr_products').update(payload).eq('id', editing);

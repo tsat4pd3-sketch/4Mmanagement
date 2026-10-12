@@ -5,7 +5,7 @@ import { can } from '../utils/permissions'
 import { toast } from '../components/Toast'
 import { NODE_KINDS, nodeKind, buildAdj, edgeWeight, segIntersect, closestPointOnSeg } from '../utils/transportGraph'
 import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory'
-import { checkWrite } from '../utils/dbWrite';
+import { checkWriteRows } from '../utils/dbWrite';
 import LineSelect from './LineSelect'
 import useProductionLines from '../utils/useProductionLines'
 import { WAREHOUSE_LOCATIONS } from '../utils/storageZones'
@@ -214,7 +214,9 @@ export default function TransportMapEditor() {
     const node = await createNodeRow(pt.x, pt.y, 'junction')
     if (!node) return null
     const bidir = edge.bidir !== false
-    checkWrite(await supabaseDR.from('transport_edges').delete().eq('id', edge.id), 'บันทึกผังขนส่ง');
+    /* 🔴 ลบท่อนเดิมไม่สำเร็จ = ห้ามแทรก 2 ท่อนใหม่ต่อ (ไม่งั้นมีถนนทับกัน 3 เส้น เส้นทางคำนวณเพี้ยน)
+       RLS/แถวหายไปแล้ว = 0 แถวไม่มี error ⇒ ต้องนับแถว (กฎเขียน DB ข้อ 2) */
+    if (!checkWriteRows(await supabaseDR.from('transport_edges').delete().eq('id', edge.id).select('id'), 'ลบถนนท่อนเดิม')) return null;
     const { data: two, error } = await supabaseDR.from('transport_edges').insert([
       { a_node: edge.a_node, b_node: node.id, bidir, is_active: true, updated_by_name: fullName },
       { a_node: node.id, b_node: edge.b_node, bidir, is_active: true, updated_by_name: fullName },

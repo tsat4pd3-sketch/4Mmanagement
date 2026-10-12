@@ -338,3 +338,14 @@ VW=1366 VH=768 node audit/lengthsweep.mjs        # วัดบนจอโน�
 
 ⚠️ ยังไม่ทำ: `role_permissions` ยังไม่มี `permission_key` ที่ตรงกับคีย์บนจอ ⇒ ช่องติ๊กใน harness
 ขึ้น "ไม่ติ๊ก" ทั้งตาราง (สาขา checked ยังไม่ถูกวาด) — ไม่ใช่คีย์ซ้ำ จึงยังไม่แก้ในรอบนี้
+
+### 🔑 `role_permissions` — permission_key/role ต้องตรงกับคีย์บนจอ (2026-10-12)
+
+ต่อจากข้อข้างบน: ปรับ `permission_catalog` แล้วแถวยัง "ไม่ติ๊ก" ทั้งตาราง เพราะ `role_permissions`
+ยังได้ `ROWS` ทั่วไป (ไม่มี `permission_key`/`role`/`allowed`) ⇒ `map` ของ `/permissions` ว่างเปล่า
+⇒ **สาขา checked + ปุ่ม toggle ที่มีค่าเดิม + ตัวกรอง "ต่างจากค่าเริ่มต้น" ไม่เคยถูกเรนเดอร์เลย**
+
+mock ตั้ง 15 คู่ `(permission_key, role)` **ไม่ซ้ำกัน** (ของจริงเป็น unique คู่นี้) โดยคีย์ต้องเป็นของจริง
+ทั้ง 2 แท็บ: `page:/daily-report` · `page:/obeya` (แท็บการเข้าถึงหน้า) + `products:create` ·
+`four_m:approve` · `daily_report:create` (แท็บการทำงาน — ตรงกับ `permission_catalog` ข้างบน)
+· `allowed` คละ true/false (ช่องที่ "ปิดไว้ชัดเจน" ก็ต้องมีในจอ)

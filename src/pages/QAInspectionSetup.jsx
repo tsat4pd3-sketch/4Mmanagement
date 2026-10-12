@@ -29,7 +29,7 @@ import useColumnHistory from '../utils/useColumnHistory';
 import { loadLinesRes, LINE_COLUMNS } from '../utils/useProductionLines';
 import { specLabel } from '../utils/qaSpec';
 import { uploadOpts } from '../utils/storageUpload';
-import { checkWrite } from '../utils/dbWrite';
+import { checkWrite, checkWriteRows } from '../utils/dbWrite';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
 import SearchInput from '../components/SearchInput';
@@ -541,7 +541,7 @@ export default function QAInspectionSetup() {
     if (!window.confirm(`ลบแผ่น "${dwg.title}"?${cnt ? `\nballoon ${cnt} จุดบนแผ่นนี้จะถูกถอดตำแหน่ง (ตัวจุดตรวจไม่หาย)` : ''}`)) return;
     /* ถอดตำแหน่ง balloon ก่อนลบแผ่น — ล้มแล้วต้องหยุด (เดิมไม่อ่าน error แล้วลบแผ่นต่อ
        ⇒ จุดตรวจชี้ drawing_id ที่ไม่มีแล้ว / FK บล็อกการลบแบบงงๆ · QC 05/10) */
-    if (cnt && !checkWrite(await supabase.from('qa_inspection_items').update({ pos_x: null, pos_y: null, drawing_id: null }).eq('drawing_id', dwg.id), 'ถอดตำแหน่ง balloon ')) return;
+    if (cnt && !checkWriteRows(await supabase.from('qa_inspection_items').update({ pos_x: null, pos_y: null, drawing_id: null }).eq('drawing_id', dwg.id).select('id'), 'ถอดตำแหน่ง balloon', { min: cnt })) return;
     /* 🔴 นับแถวก่อนแตะ storage — RLS ปฏิเสธ DELETE = 0 แถว ไม่มี error (กฎเหล็ก DB ข้อ 2)
        ไม่นับ = แถวแผ่นแบบยังอยู่ แต่ไฟล์แบบถูกลบ ⇒ แผ่นเสียถาวร (QC audit 06/10) */
     const dres = await supabase.from('qa_part_drawings').delete().eq('id', dwg.id).select('id');

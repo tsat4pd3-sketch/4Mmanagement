@@ -68,7 +68,7 @@ import { loadLinesRes, LINE_COLUMNS } from '../utils/useProductionLines';
 import { liveChannel } from '../utils/liveChannel';
 import { LIVE } from '../utils/refreshRates';
 import { coalesce } from '../utils/liveRefresh';
-import { checkWrite } from '../utils/dbWrite';
+import { checkWrite, checkWriteRows } from '../utils/dbWrite';
 import { uploadOpts } from '../utils/storageUpload';
 import { acceptImageFile } from '../utils/acceptImageFile';
 import { DeleteButton } from '../components/IconButton';
@@ -2683,6 +2683,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
            🔴 delete ล้ม = ห้าม insert ต่อ (ไม่งั้นค่าแรงซ้อนกัน 2 ชุด ยอดรวมเบิ้ล) */
         if (isMtnForm) {
           const rows = laborRows.filter(r => r.worker_name && (Number(r.rate_per_hour) > 0 || Number(r.hours) > 0));
+          // ⚠️ ไม่นับแถว: บันทึกครั้งแรกยังไม่มีค่าแรงเดิม = 0 แถว ถูกต้องแล้ว (ที่ต้องกันคือ error → ห้าม insert ต่อ)
           const delOk = checkWrite(await supabaseDR.from('mtn_order_labor').delete().eq('order_id', o.id), 'ล้างค่าแรงเดิมของใบนี้');
           if (delOk) {
             for (let i = 0; i < rows.length; i++) {
@@ -2696,7 +2697,8 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
               }), 'บันทึกค่าแรงรายคน (ใบพิมพ์จะไม่มีตารางค่าแรง)');
             }
             const tot = sumLabor(rows);
-            if (tot != null) checkWrite(await supabaseDR.from('mtn_orders').update({ labor_cost: tot }).eq('id', o.id), 'อัปเดตยอดรวมค่าแรง');
+            // นับแถว — ยอดรวมค่าแรงคือตัวเลขเงินบนใบ/รายงานต้นทุน เขียนไม่ติดแล้วเงียบ = ใบกับตารางค่าแรงไม่ตรงกัน
+            if (tot != null) checkWriteRows(await supabaseDR.from('mtn_orders').update({ labor_cost: tot }).eq('id', o.id).select('id'), 'อัปเดตยอดรวมค่าแรง');
           }
         }
         // ตัดสต็อก: รวมยอดต่ออะไหล่ก่อน (กันนับซ้ำเมื่อใส่อะไหล่ตัวเดียวกัน 2 แถวในใบเดียว)
