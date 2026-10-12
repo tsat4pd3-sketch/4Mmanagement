@@ -355,6 +355,14 @@ async function buildFullExtras({ monthKey, sections, allLineNames, matchNames, t
    select แบบผอม (ไม่เอา fix/followup/รูป/MO/LPA — พวกนั้นใช้เฉพาะเดือนรายงาน)
    ล้มเหลว = คืน warn ไม่ throw — เด็คต้องออกได้เสมอ แค่ไม่มีกราฟเทรนด์ (ห้ามเงียบ)
 ─────────────────────────────────────────────────────────────────── */
+/* ทะเบียนไลน์สำหรับ "หารนาที DT ของไลน์เครื่องขนาน" (oee.js §3.2) — cache กลาง ไม่ยิงคิวรีเพิ่ม
+   โหลดพัง = คืน null ⇒ dtMinBySession ไม่หารเลน (เท่าพฤติกรรมเดิมเป๊ะ) ไม่ล้มทั้งเด็ค
+   🔴 ไม่ส่งตัวนี้ = ไลน์เครื่องขนานเอานาทีรวมของทุกเครื่องมาหักจากเวลากะเดียว ⇒ น้ำหนัก wLoad
+      ของกะนั้นเหลือ 0 = หายจากค่าเฉลี่ยในเด็คที่ส่งผู้บริหาร โดยไม่มี error */
+async function laneLinesBestEffort() {
+  try { return (await loadProductionLines()) || null; } catch { return null; }
+}
+
 async function buildTrendMonths({ monthKeys, sections, allLineNames, perLine = false }) {
   if (!monthKeys.length) return { series: {}, byLine: null, warn: null };
   const from = `${monthKeys[0]}-01`;
@@ -397,7 +405,7 @@ async function buildTrendMonths({ monthKeys, sections, allLineNames, perLine = f
     /* 🔴 plannedMin ต้องตัดนาทีที่ทับเวลาพักออกก่อน — มันถูกกันออกจากฐานเวลาไปแล้ว
        รวม `duration_min` เองที่นี่ = หักซ้ำ (กฎเหล็ก CLAUDE.md §OEE 2026-09-15)
        กระทบ "ชั่วโมงรับภาระ" + OEE เฉลี่ยในเด็ค PPTX ที่ส่งผู้บริหาร ⇒ ไม่ตรงกับ /oee-analytics */
-    const dtEffTrend = dtMinBySession(sessions, downtimes, brkR.data || []);
+    const dtEffTrend = dtMinBySession(sessions, downtimes, brkR.data || [], { lines: await laneLinesBestEffort() });
     const plannedBySess = Object.fromEntries(Object.entries(dtEffTrend).map(([k, v]) => [k, v.planned]));
     const ngBySess = {};
     defects.forEach(d => {
@@ -675,7 +683,7 @@ export async function buildMonthlyReviewData({ monthKey, sections, trendMonths =
   // เฉลี่ยถ่วงน้ำหนักตามกฎ OEE (util กลาง oee.js): A/OEE ถ่วงเวลารับภาระ · P ถ่วงเวลาเดินเครื่อง · Q ถ่วงจำนวนผลิต
   // สแกน downtimes ครั้งเดียวแล้วเก็บเป็น map (เดิมวนทั้งก้อนต่อ session — ยิ่งเลือกไลน์เยอะยิ่งช้าทวีคูณ)
   /* 🔴 ตัดนาทีที่ทับเวลาพักก่อนเสมอ (กฎเหล็ก §OEE 2026-09-15) — ดูเหตุผลที่ชุด trend ด้านบน */
-  const dtEffMain = dtMinBySession(sessions, downtimes, brkRes.data || []);
+  const dtEffMain = dtMinBySession(sessions, downtimes, brkRes.data || [], { lines: await laneLinesBestEffort() });
   const plannedMinOf = (sid) => dtEffMain[sid]?.planned || 0;
   // ทั้ง 4 ตัวนี้เรียกสูตรกลาง (§0) — เดือนย้อนหลังใน trend ใช้สูตรเดียวกันเป๊ะ
   const ordersIdx = indexBySession(orders), dtIdx = indexBySession(downtimes), defIdx = indexBySession(defects);

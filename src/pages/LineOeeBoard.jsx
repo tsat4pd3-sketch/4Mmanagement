@@ -238,7 +238,7 @@ export default function LineOeeBoard() {
     // planned/unplanned นาทีต่อกะ
     // นาทีที่ทับช่วงพักตามนโยบายถูกตัดออกแล้ว — ต้องเป็นชุดเดียวกับ /oee-analytics (utils/oee §3.1)
     // ไม่งั้นน้ำหนัก wLoad ของกะที่มีหยุดตามแผนคร่อมพัก เบากว่าจออื่น = ค่าเฉลี่ยคนละเลข
-    const dtEffBySess = dtMinBySession(sessions, dts, breaks || []);
+    const dtEffBySess = dtMinBySession(sessions, dts, breaks || [], { lines });   // หารเลนไลน์เครื่องขนาน (oee.js §3.2)
     const plannedBy = {}, unplannedBy = {};
     Object.entries(dtEffBySess).forEach(([sid, v]) => { plannedBy[sid] = v.planned; unplannedBy[sid] = v.unplanned; });
 

@@ -642,6 +642,12 @@ const TABLE_FIXED = {
        เดือนที่กรอก = ค่าทางการ (ทึบ) · เดือนที่ไม่กรอก = ค่าระบบ (computed ลายประ) · ห้ามถอด */
     { id: 'kd-8', year: 2026, section: 'PD1', scope_kind: 'section', scope_value: 'PD1', line_group: null, category: 'internal', seq: 8, name: 'OEE', source: 'manual', target_value: 85, direction: 'up', weight: 5, is_active: true, catalog_id: 'kc-oee', std_unit: 'Production', std_item_id: null, kpi_catalog: { id: 'kc-oee', name: 'OEE', unit: '%', category: 'internal', direction: 'up', decimals: 2, summary_mode: 'average', value_scope: 'own', board_slot: 'oee' } },
     { id: 'kd-9', year: 2026, section: 'PD1', scope_kind: 'section', scope_value: 'PD1', line_group: null, category: 'internal', seq: 9, name: 'Safety', source: 'manual', target_value: 0, direction: 'down', weight: 5, is_active: true, catalog_id: 'kc-safe', std_unit: 'Production', std_item_id: null, kpi_catalog: { id: 'kc-safe', name: 'Safety', unit: 'ครั้ง', category: 'internal', direction: 'down', decimals: 0, summary_mode: 'sum', value_scope: 'own', board_slot: 'safe' } },
+    // ⬆ 12/10 นิยามของ "หน่วยลูก" (แผนก id-2 ใต้ PD1) ที่ PD1 ไม่มี ⇒ บอร์ด PD1 ต้องรวมขึ้นเป็นแผ่น roll:… (sum · เป้ารวม) — ห้ามถอด
+    { id: 'kd-10', year: 2026, section: 'PD1', scope_kind: 'department', scope_value: LINE_NAME(2), line_group: null, category: 'internal', seq: 10, name: 'Scrap Cost', source: 'manual', target_value: 50, direction: 'down', weight: 5, is_active: true, catalog_id: 'kc-scrap', std_unit: 'Production', std_item_id: null, kpi_catalog: { id: 'kc-scrap', name: 'Scrap Cost', unit: 'พันบาท', category: 'internal', direction: 'down', decimals: 1, summary_mode: 'sum', value_scope: 'own', board_slot: null } },
+    // ⬆ 12/10 แม่ PD1 (kd-12) กับลูกแผนก id-2 (kd-11) ถือ KPI ทะเบียนเดียวกัน kc-rw (own · ไม่ใช่ค่าโรงงานร่วม): PD1 กรอกเอง ก.พ. · ลูกกรอก ม.ค.+ก.พ.
+    //    ⇒ ม.ค. เติมจากลูก · ก.พ. ใช้ของ PD1 ไม่บวกซ้ำ (user: "แม่มี 2 ลูกกรอก 2 ไม่ใช่ 4") — ห้ามถอด
+    { id: 'kd-12', year: 2026, section: 'PD1', scope_kind: 'section', scope_value: 'PD1', line_group: null, category: 'internal', seq: 12, name: 'Rework Rate', source: 'manual', target_value: 3, direction: 'down', weight: 5, is_active: true, catalog_id: 'kc-rw', std_unit: 'Production', std_item_id: null, kpi_catalog: { id: 'kc-rw', name: 'Rework Rate', unit: '%', category: 'internal', direction: 'down', decimals: 2, summary_mode: 'average', value_scope: 'own', board_slot: null } },
+    { id: 'kd-11', year: 2026, section: 'PD1', scope_kind: 'department', scope_value: LINE_NAME(2), line_group: null, category: 'internal', seq: 11, name: 'Rework Rate', source: 'manual', target_value: 3, direction: 'down', weight: 5, is_active: true, catalog_id: 'kc-rw', std_unit: 'Production', std_item_id: null, kpi_catalog: { id: 'kc-rw', name: 'Rework Rate', unit: '%', category: 'internal', direction: 'down', decimals: 2, summary_mode: 'average', value_scope: 'own', board_slot: null } },
   ],
   /* ค่าจริง + แผนรายเดือนของ KPI กรอกมือ (2026-09-25) — ไม่มี 2 ตารางนี้ใน mock แปลว่า
      ทั้งตารางกรอกมือ · คอลัมน์สรุปทั้งปี · มินิกราฟ · แถว 📅 แผน **ไม่เคยถูกรันด้วยข้อมูลจริงใน harness**
@@ -654,7 +660,10 @@ const TABLE_FIXED = {
     ...[120.5, 98.2, 140.9, 88.4].map((v, i) => ({ id: `ke-4-${i}`, kpi_id: 'kd-4', month: i + 1, value: v })),
     ...[97.5, 99.1, 98.0].map((v, i) => ({ id: `ke-6-${i}`, kpi_id: 'kd-6', month: i + 1, value: v })),
     ...[92.42, 94.27, 93.1].map((v, i) => ({ id: `ke-8-${i}`, kpi_id: 'kd-8', month: i + 1, value: v })),
-    { id: 'ke-9-0', kpi_id: 'kd-9', month: 1, value: 1 }, { id: 'ke-9-1', kpi_id: 'kd-9', month: 2, value: 0 },   // Safety สรุปหน่วยงาน ⇒ เติมเดือนที่หน้างานไม่มีบันทึก (ROWS ทั่วไปไม่มี event_date/kind ⇒ นับได้ 0)
+    { id: 'ke-9-0', kpi_id: 'kd-9', month: 1, value: 1 }, { id: 'ke-9-1', kpi_id: 'kd-9', month: 2, value: 0 },
+    ...[12.5, 9.8, 14.1].map((v, i) => ({ id: `ke-10-${i}`, kpi_id: 'kd-10', month: i + 1, value: v })),   // ⬆ ค่าของหน่วยลูก (roll-up ขึ้น PD1)
+    { id: 'ke-12-feb', kpi_id: 'kd-12', month: 2, value: 2.2 },   // แม่ PD1 กรอกเอง ก.พ. (ชนะของลูก)
+    { id: 'ke-11-0', kpi_id: 'kd-11', month: 1, value: 4.5 }, { id: 'ke-11-1', kpi_id: 'kd-11', month: 2, value: 9 },   // ลูก: ม.ค. ถูกเติมขึ้นแม่ · ก.พ. ถูกของแม่ทับ   // Safety สรุปหน่วยงาน ⇒ เติมเดือนที่หน้างานไม่มีบันทึก (ROWS ทั่วไปไม่มี event_date/kind ⇒ นับได้ 0)
     { id: 'ke-8-aug', kpi_id: 'kd-8', month: 8, value: 90.5 },   // เดือนที่ระบบมีค่าจากกะ (sessions 2026-08-04) ⇒ ต้องถูกค่าระบบทับ + จอเขียนบอก
   ],
   /* 🧩 ลำดับแผ่นที่คนจัด (09/10) — PD1 เอา OEE ขึ้นก่อน %RM · คีย์ 'gone' = แผ่นที่ไม่มีแล้ว ต้องถูกข้ามไม่พัง (ห้ามถอด) */

@@ -171,7 +171,7 @@ Reject → status: "rejected" + reject_reason
 > ### 🔴🔴 กฎเหล็กข้าม session — **ตัวเศษ %P = "ทุกชิ้นที่เครื่องทำออกมา" ไม่ใช่แค่งานดี** (2026-10-04)
 > `P = CT × Total Count ÷ Run` · `Q = Good ÷ Total Count` · **Total Count = ดี + เสีย + ทดลอง + สงสัย**
 > นับแต่งานดี = ของเสีย 1 ชิ้นถูกหัก **2 ครั้ง** (%P และ %Q) ⇒ OEE ต่ำกว่าจริง · **งานทดลองเข้าด้วย**
-> (คำสั่ง user "ใช้เครื่องลองผลิต") ⇒ `defectQtyAll` ⇒ QA ตัดสินของสงสัย **%Q ขยับ · %P ไม่ขยับ**
+> ⇒ `defectQtyAll` ⇒ QA ตัดสินของสงสัย **%Q ขยับ · %P ไม่ขยับ**
 > · เติมผ่าน **`ngByMatFrom()`** → `ngForP` (จอสด) · ปิดกะคิดเองจาก `defects` · **ห้ามบวกในหน้า**
 >   คิวรี `defect_logs` ต้อง embed `prod_orders(mat_no)` · ด่าน `oee-live-needs-ngforp`
 > · 🔴 **ชี้ MAT ไม่ได้ = ไม่รู้ CT ⇒ ไม่เข้า %P ต้องเขียนบนจอ (`ngNoMatP`)** · "ผลิตได้" ยังเป็นงานดี
@@ -181,6 +181,8 @@ Reject → status: "rejected" + reject_reason
 > · **ทุกจุดที่เอา downtime ไปหักจากฐานเวลา (netAvail/runMin/wLoad/strictOee/MTBF) ต้องผ่าน
 >   `dtMinOutsideBreaks()` + `breakIntervalsIn()` ใน `src/utils/oee.js` เท่านั้น ห้ามรวม `duration_min` เองในหน้า**
 > · จุดที่ตอบ "เครื่องหยุดกี่นาที" (พาเรโต/มูลค่า/MTTR/ตาราง DT) ยังใช้ `duration_min` เต็มเหมือนเดิม — **ห้ามสลับ 2 ชุดนี้**
+> · 🔴 **ไลน์เครื่องขนานบันทึก DT รายเครื่อง ⇒ หารจำนวนเลนก่อนหักจากเวลากะ (`laneWeightFn()`) · `dtMinBySession` ต้องส่ง `{ lines }`**
+>   (มีด่าน) ไม่ส่ง = `wLoad` เหลือ 0 = **กะหายจากค่าเฉลี่ยเงียบๆ** · 🔴 **stamp `oee_a` ต้อง stamp `actual_qty` ด้วย** (`sessionProducedQty()` · มีด่าน)
 
 > ### 🔴 บอร์ดไทม์ไลน์ต้องบอก "หลุดแผนแค่ไหน" เป็น **เวลา + ยอด** ไม่ใช่ "กี่ใบ" (2026-09-30)
 > · ตัวเลขทุกตัวมาจาก **`planStatusOf()`** (`utils/heijunkaQueue.js`) · วาดด้วย **`<PlanSlipBar>`** **ห้ามคิดเองในหน้า** ·
@@ -189,14 +191,12 @@ Reject → status: "rejected" + reject_reason
 > · 🔴 **"ถูกพาล" นับเฉพาะใบที่ต่อท้ายต้นเหตุที่ช้าจริง · โทษไม่เกินเวลาที่ต้นเหตุกินเกิน** (เข้าคิว ≠ ดีเลย์)
 >   · 🔴 จัดอันดับด้วย `blameTotalMin` **ห้ามเรียงด้วย `ownLateMin` ล้วน** (มีด่าน) · ใบยังไม่ปิด = เขียน `≥`
 > · 🔴 **ใบไม่เคยถูกปิด = `neverClosed` ⇒ เขียน "N ใบไม่เคยถูกปิด" ห้ามรายงานเป็น "ช้ากว่าแผน N ชม."**
-> 📄 ตัววาด (`PlanSlipBar`/`DelayBlameBar`) + ตัวเลข/เคสเต็ม → `docs/modules/oee.md` §หลุดแผนไปแค่ไหน
 
 > ### 🔴🔴 กฎเหล็กข้าม session — **ชิ้น ≠ shot** (งานคู่ gang die / RH-LH · 2026-09-18)
 > CT = เวลาต่อ **1 จังหวะ** แต่ปั๊มทีเดียวได้ 2 ชิ้น ⇒ บวก `qty×CT` ทั้งสองข้าง = เวลามาตรฐาน 2 เท่า (%P ทะลุ 100 แล้วถูก cap เงียบ)
 > · **ยอดผลิต/%Q/ของเสีย นับ "ชิ้น" · เวลามาตรฐานของ %P นับ "shot" — ห้ามสลับ**
 > · ยุบผ่าน `collapsePairShots()` (`utils/pairTotals.js`) — **ภาระกะตอนวางแผน ใช้ `pairLoadTotal()`
->   ในไฟล์เดียวกัน** (22/09 · มีด่าน) · `computeLiveOee` ต้องส่ง `pairMap`
->   ทุกจอ (มีด่าน `regressionGuards`) · **ลืม `select('pair_mat_no')` = pairMap ว่าง = นับ 2 เท่าเงียบๆ**
+>   ในไฟล์เดียวกัน** (มีด่าน) · `computeLiveOee` ต้องส่ง `pairMap` ทุกจอ (มีด่าน) · **ลืม `select('pair_mat_no')` = pairMap ว่าง = นับ 2 เท่าเงียบๆ**
 
 > ### 🔴🔴 กฎเหล็กข้าม session — **"พาร์ทจริง" = สินค้า ไม่ใช่ MAT ตัวเดียว** (2026-10-05 · คำสั่ง user)
 > `op_parent_mat` เป็น **text ช่องเดียว** ⇒ กะที่รันลูกค้าอื่นของ "สินค้าเดียวกัน" ชั้น OP ไม่ยุบ แล้ว**นับซ้ำเงียบๆ**
@@ -206,7 +206,7 @@ Reject → status: "rejected" + reject_reason
 
 > ### 🔴🔴 กฎเหล็กข้าม session — **"ของสงสัย" ยังไม่ใช่ของเสีย จนกว่า QA จะตัดสิน** (2026-09-30 · คำสั่ง user)
 > · **ของสงสัย = ยังไม่รู้ว่าดีหรือเสีย ⇒ กันออกจาก %Q แล้ว "เขียนบนจอว่ารอพิจารณากี่ชิ้น"**
->   (หลักเดียวกับงานทดลอง `is_trial`/`excl_from_q`) · ผลพิจารณาอ่านจาก `quality_bin_records`
+>   (หลักเดียวกับงานทดลอง) · ผลพิจารณาอ่านจาก `quality_bin_records`
 >   ผูกด้วย `defect_log_id` · ตัดสินที่ `suspectState()` (§7.1 `oee.js`) **ห้ามคิดเองในหน้า**
 >   — `scrap`/ย้ายลงถังแดง = เสีย · `good`/`repair`/`use_as_is`/`return_date` = ไม่เสีย · ไม่มีผล = **รอ**
 > · 🔴 **%Q ใช้ `defectQty` · พาเรโต/มูลค่า/รายการ + ตัวเศษ %P ใช้ `defectQtyAll` — ห้ามสลับ**
@@ -282,7 +282,6 @@ Reject → status: "rejected" + reject_reason
 
 ## Factory Master Map — ผังรวมโรงงานผังเดียว (2026-07-16)
 
-หน้า `/factory-map` (`FactoryMap.jsx`, กลุ่มฝ่ายผลิต) — รูปผังใหญ่ของทั้งโรงงาน 1 รูป แล้ววาด polygon (รูปทรงอิสระ) ล้อมพื้นที่แต่ละไลน์ ระบายสีตามสถานะการผลิตของไลน์นั้น — ดูทุกไลน์บนจอเดียว (เหมาะจอ TV)
 > 📄 รายละเอียดเต็ม → `docs/modules/factory-master-map.md`
 
 ---
@@ -296,14 +295,12 @@ Reject → status: "rejected" + reject_reason
 
 ## Adoption Outlook — 🔮 ภาพเมื่อข้อมูลเชื่อมกันทั้งองค์กร (`/adoption-outlook` · 2026-08-13)
 
-หน้า `AdoptionOutlook.jsx` (ภาพรวม) — ตอบผู้บริหารว่า "เมื่อทุกแผนกใช้จริงและข้อมูลเชื่อมกันหมด จะมองเห็นมิติไหนได้บ้าง" (สอบกลับ · เตือนก่อนคุณภาพหลุด · กระทบการส่ง)
 > 📄 รายละเอียดเต็ม → `docs/modules/adoption-outlook.md`
 
 ---
 
 ## Group Overview — 🏢 ภาพรวมกลุ่มบริษัท TSG (MOCKUP หลายบริษัท · 2026-08-05)
 
-หน้า `/group-overview` (`GroupOverview.jsx`, กลุ่มภาพรวม) — เป็นตัวอย่างหน้าจอ (mockup) ไม่ใช่ระบบ multi-company จริง สร้างตามคำสั่ง user เพื่อตอบผู้บริหารว่า "ระบบนี้ใช้กับหลายบริษัทในกลุ่ม + ดูภาพรวมข้ามบริษัทได้มั้ย"
 > 📄 รายละเอียดเต็ม → `docs/modules/group-overview.md`
 
 ---
@@ -332,7 +329,6 @@ Reject → status: "rejected" + reject_reason
 
 ## Remote Control — จอตาม-มือถือคุม (2026-07-15)
 
-แก้โจทย์จอที่ไม่มีเมาส์/คีย์บอร์ด/กล้อง (Smart TV, โปรเจคเตอร์, จอบอร์ดหน้าไลน์) — ใช้ได้ทุกหน้า ผ่าน Supabase Realtime broadcast (channel `esm-remote-<รหัส 6 หลัก>`) ไม่มีตาราง/เซิร์ฟเวอร์ใหม่:
 > 📄 รายละเอียดเต็ม → `docs/modules/remote-control.md`
 
 ---
@@ -475,8 +471,6 @@ Reject → status: "rejected" + reject_reason
 > · 🔴 **`varMin` (เทียบลำดับ ไม่ต้องรู้เวลาฐาน เพราะหักกลบ) ≠ `totalMin`** · ชั้น 2-3 ยังไม่ทำ ห้ามเริ่มจนกว่า user สั่ง
 > 📄 `docs/modules/die-maintenance.md`
 
-> 📄 รายละเอียดเต็ม → `docs/modules/die-maintenance.md`
-
 ---
 
 ## Fixture Shim Record — คุมความยั่งยืนของจิ๊ก (2026-09-01 · คำขอลูกค้า)
@@ -488,7 +482,6 @@ Reject → status: "rejected" + reject_reason
 
 ## PM Predictive & Planner Sync — เห็นวัน PM ล่วงหน้า + buffer (2026-07-16)
 
-หน้า `/pm-forecast` (🔧 PM ล่วงหน้า (Planner), กลุ่มการตรวจสอบและซ่อมบำรุง) — ให้ วางแผน/ผลิตเห็นวันที่จะต้อง PM ล่วงหน้า 1-2 สัปดาห์ + buffer ที่ต้องผลิตเผื่อ ก่อนเครื่องหยุดทำ PM
 > 📄 รายละเอียดเต็ม → `docs/modules/pm-predictive-planner-sync.md`
 
 > ### 🔴 AM ↔ PM — กฎข้าม session (2026-10-09 · audit `docs/modules/am-pm-linkage-audit.md`)
@@ -503,7 +496,6 @@ Reject → status: "rejected" + reject_reason
 
 ## PM Coordination — แผนประสานงาน PM ข้ามวัน (MTN แจ้ง Production · 2026-07-23)
 
-หน้า `/pm-coordination` (`PmCoordination.jsx`, การตรวจสอบและซ่อมบำรุง) — "ใบแจ้งแผน" ที่ MTN ส่งประสานงานกับผลิต สำหรับงาน PM/แก้เครื่องที่กินหลายวัน
 > 📄 รายละเอียดเต็ม → `docs/modules/pm-coordination.md`
 
 ---
@@ -813,6 +805,12 @@ Reject → status: "rejected" + reject_reason
 >   `:has()` **ในที่ที่พังแล้วเสียการใช้งาน** (ตัวที่มีใน `index.css` ปล่อยไว้ได้ — เบราว์เซอร์เก่าทิ้งแค่ rule นั้น ไม่พัง)
 > - **ตรวจก่อน merge:** `grep -oF "color-mix(" dist/assets/*` ต้องได้ 0
 > 📄 ตารางฟีเจอร์ที่วัดจากบันเดิลจริง → `docs/UI-CONVENTIONS.md` §เพดานเบราว์เซอร์
+
+### 🎨 เด็ค/สไลด์ทุกตัว (pptx · HTML) = ธีม TSG **Revision 01** (2026-10-12 · คำสั่ง user)
+
+> **พื้นขาวทุกหน้า รวมปกและหน้าปิด** · เขียว `068734` · ส้ม `D95323` · เขียวเข้ม `0D3D14` เฉพาะ headline box/หัวตาราง · โลโก้ R01
+> · python → `docs/meetings/roadshow_build/tsg_theme.py` · ในแอป → `src/lib/monthlyReviewPptx.js` · เด็คเก่า → `retheme_r01.py`
+> · 🔴 **skill `tsg-presentation-theme` ที่ sync มายังเป็น R00 (ปก/ปิดพื้นเขียว) — ห้ามใช้ asset/สีของมัน** (ด่าน `pptx-theme-r01`)
 
 ### ⚠️ กับดัก CSS ที่เจอซ้ำหลายจุด (เหตุผล+เคสจริง → `docs/UI-CONVENTIONS.md` §7 + §7.1)
 
