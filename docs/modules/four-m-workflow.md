@@ -24,3 +24,62 @@
   `pending_doc|pending|pending_qa` อยู่ = **ไม่ออกใบใหม่** (ไม่จำกัดวัน — ใบเมื่อวานที่รอ OJT คืองานเดียวกัน)
   · เช็คซ้ำล้ม = ไม่ออกใบ + toast ให้เปิดเองที่หน้า 4M (ห้ามเสี่ยงท่วมคิว · ห้ามเงียบ)
 - ปิด `station_assignment_logs` เดิมล้ม = ไม่ insert record ใหม่ (กันคนเดียวเปิดค้าง 2 จุด)
+
+## 🔒 ด่านอนุมัติอยู่ชั้นฐานข้อมูลแล้ว — `trg_protect_four_m_status` (2026-10-12 · QC audit รอบ 6)
+
+**ก่อนแก้:** `four_m_logs` มี policy เดียว `Allow authenticated full access four_m` (`for all using(true)`)
+⇒ ปุ่มบนจอ gate ด้วย `can('four_m','approve_sv'|'approve_qa'|'reset')` แต่ **ยิง REST ตรงไม่ผ่านปุ่ม**
+= อนุมัติใบของตัวเองได้ · ปิดใบข้ามขั้น QA ได้ · ย้อน `approved_at`/สวมชื่อผู้อนุมัติได้
+(ลายเซ็นอนุมัติ 4M = หลักฐาน IATF ว่าการเปลี่ยน Man/Machine/Method/Material ถูกรับรองแล้ว)
+
+### 🔴 ทำไมต้องเป็น trigger ไม่ใช่ policy
+
+policy แยกตาม **คำสั่ง** ไม่ได้แยกตาม **คอลัมน์** แต่ UPDATE ของตารางนี้มี 2 ความหมายปนกัน:
+
+| การแก้ | ใครทำได้วันนี้ | ต้องมีคีย์ไหม |
+|---|---|---|
+| เดินสถานะ / ลงลายเซ็นอนุมัติ | ปุ่มใน `/report` | ✅ ต้องมี |
+| แนบรูปคำขอ / แก้คำบรรยาย | `Management.jsx:2278` ปุ่ม "แนบเอกสาร" — **ไม่มี `can()` gate** (`page:/management` ถือ 8 role รวม `display`) | ❌ ไม่ต้อง |
+
+⇒ รัด UPDATE ด้วยคีย์อนุมัติ = **ปุ่มแนบเอกสารพังเงียบ** (0 แถว ไม่มี error · กฎเหล็ก DB ข้อ 2) ·
+รัดด้วย union ที่รวม `page:/management` = **เท่ากับไม่รัด** ⇒ ด่านต้องอยู่ชั้นคอลัมน์
+(ต้นแบบเดียวกับ `protect_profile_role()` ของ `profiles`)
+
+### ตารางเส้นทางที่อนุญาต (ไล่จากโค้ดจริง — predicate ห้ามแคบกว่าปุ่ม)
+
+| จาก → ไป | ใคร/ปุ่ม | คีย์ |
+|---|---|---|
+| `pending_doc` → `pending` | แนบเอกสารแล้วส่งเข้าคิว = **ยื่นเรื่อง ไม่ใช่อนุมัติ** | ไม่ต้องมี · แต่ห้ามแตะคอลัมน์อนุมัติพร้อมกัน |
+| `pending` → `pending_qa` \| `approved` | `Report.handleApprove` ขั้น SV (`approved` = ใบ `requires_qa=false`) | `four_m:approve_sv` |
+| `pending_qa` → `approved` | `Report` ขั้น QA | `four_m:approve_qa` |
+| `*` → `rejected` | `Report.handleReject` | `approve_sv` **or** `approve_qa` |
+| `*` → `pending` (รีเซ็ต) | `Report.jsx:2090` | `four_m:reset` |
+| สถานะไม่ขยับ + ไม่แตะคอลัมน์อนุมัติ | แนบรูป/แก้คำบรรยาย | ผ่าน |
+| เส้นทางอื่นทั้งหมด | — | **บล็อก** |
+
+· `auth.uid() is null` (service role / `daily-4m-summary` / `send-notification`) = ผ่านเสมอ · admin bypass
+· **ใบ 4M ห้ามลบ** → restrictive policy `four_m_logs_delete_guard` (`four_m:reset`) — ไม่มีจอไหนลบ
+  (grep ทั้ง `src/` + `supabase/functions/` = 0 จุด) ด่านนี้กัน **REST ตรง** ไม่ใช่เปิดทางให้ลบ
+· ทดสอบ 10 เส้นทางด้วย JWT ของ role จริงแล้ว rollback — ผลครบใน migration
+
+migration `20261012b_four_m_status_guard_main.sql` (**apply แล้ว 2026-10-12** · มี ROLLBACK ครบ)
+
+### 🐞 ของที่เจอระหว่างทาง — **ยังไม่แก้ รอ user ตัดสิน**
+
+CHECK `four_m_logs_status_check` = `ANY('pending','pending_qa','approved','rejected')`
+⇒ **ไม่มี `pending_doc`** แต่โค้ดใช้ค่านี้ 3 จุด:
+
+| จุด | ทำอะไร |
+|---|---|
+| `Management.jsx:696` | **insert** `status:'pending_doc'` (ย้ายคนข้ามไลน์ที่ต้อง OJT) |
+| `Management.jsx:1089` | `pendingDocByLine` — ป้าย "รอเอกสาร" ต่อจุดงาน |
+| `utils/personAlarm.js:8` | `MAN_PENDING_STATUSES` รวม `pending_doc` |
+
+**ผลที่วัดได้:** insert ล้มด้วย `23514` **ทุกครั้ง** · `four_m_logs` **ไม่มีแถว `pending_doc` เลยสักแถว**
+⇒ ใบ 4M Man "ย้ายข้ามไลน์ต้อง OJT" **ไม่เคยถูกสร้าง** — หน้างานเห็น toast แดง (โค้ดเช็ค error ถูกต้อง
+ไม่เงียบ) แล้วงานหลุดร่องรอยไป · แผง "แนบเอกสาร OJT" (`:2278`→`:2854`) เป็น **dead code**
+
+🔴 **ทำไมไม่เติมค่าเข้า CHECK เลย:** ใบ `pending_doc` จะไหลเข้าคิว `/report` ทันที ทั้งที่จอยังไม่มีป้ายแยก
+(`STATUS_META[l.status] || STATUS_META.pending` ⇒ โชว์เป็น "รอหัวหน้า") = **ขัดกฎข้อแรกของไฟล์นี้**
+*"4M ที่ระบบสร้างเอง ห้ามเข้าคิวอนุมัติเงียบๆ"* ⇒ ต้องแก้ CHECK + จอคิว + `STATUS_META` พร้อมกัน
+· กฎ ① ใน `protect_four_m_status()` เขียนรอไว้แล้ว — วันเปิดใช้ไม่ต้องแก้ trigger อีก
