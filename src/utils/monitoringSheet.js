@@ -369,7 +369,15 @@ export function parseMonitoringWorkbook(sheets = [], { asOf } = {}) {
       เสมอ ⇒ ในบริบทนี้ FG = ขาออกเสมอ ไม่เคยเป็นขาเข้า */
 const isFgMat = (mat) => String(mat ?? '').trim().charAt(0) === '1';
 
-export function monitoringToRecords(parsed, { monthKey, lineOfMat, today, customers = [] } = {}) {
+/* 🔴 BALANCE ของชีทไลน์ปั๊ม = "ไลน์นี้ผลิตมาได้เท่าไหร่" **ไม่ได้บอกว่าของอยู่ไหน** (user 09/10 · ของจริงอยู่ STORE)
+   เดิมลงเป็นสต็อกที่ชื่อไลน์ผลิต ⇒ ยอดค้างที่ LINE A–D ซึ่งไม่มีใครเบิก/รับ แล้วจุดเรียกเติมที่อ้าง STORE
+   ขึ้น "ยังเช็คไม่ได้" ทั้งที่ของเต็มสโตร์ (20060001: 3,884 ที่ LINE B · STORE ไม่มีแถว)
+   ⇒ ผู้เรียกส่ง `stockLocOf(mat, line)` → `{ loc, seedOnly }` | null
+      · loc = คลังตามกฎรับเข้า (`refStockOf` ใน utils/partRefStock.js — ตัวเดียวกับจุดเรียกเติม)
+      · seedOnly = ตั้งยอดได้เฉพาะ "คลังนั้นยังไม่มียอดของพาร์ทนี้เลย" ⇒ **ไม่ทับยอดที่สโตร์รับ/นับจริงแล้ว**
+      · null = ข้าม (FG → ชีทลูกค้าเป็นเจ้าของยอดคลัง FG) · นับไว้ใน `pressStockSkipped` ห้ามเงียบ
+   ไม่ส่งมา = พฤติกรรมเดิม (ลงที่ไลน์ ทับได้) */
+export function monitoringToRecords(parsed, { monthKey, lineOfMat, today, customers = [], stockLocOf } = {}) {
   /* 🔴 ชื่อลูกค้าต้องติดไปกับใบเสมอ (เพิ่ม 24/09) — เดิมไม่เขียนเลย ⇒ ใบทั้ง 232 ใบ customer = null
      จอ 🚚 Delivery จัดกลุ่มตามลูกค้า ⇒ ของจากไฟล์นี้ไปกองรวมใน "— ไม่ระบุลูกค้า —"
      แพลนนิ่งจึงรายงานว่า "ลูกค้า TSESA ไม่ขึ้น" ทั้งที่ระบบอ่านชีทได้
@@ -378,8 +386,9 @@ export function monitoringToRecords(parsed, { monthKey, lineOfMat, today, custom
   const forecasts = [], orders = [], levels = [], lots = [], stock = [], shipped = [];
   /* นับ FG ที่ถูกกันออกจาก min/max ที่ไลน์ — ต้องรายงานออกไป **ห้ามข้ามเงียบ**
      (ข้ามเงียบ = คนนำเข้าไม่รู้ว่าตัวเลข min ในไฟล์บางส่วนไม่ได้ถูกใช้) */
-  let fgLevelsSkipped = 0;
+  let fgLevelsSkipped = 0, pressStockSkipped = 0;
   const lineOf = typeof lineOfMat === 'function' ? lineOfMat : () => null;
+  const locOf = typeof stockLocOf === 'function' ? stockLocOf : (_m, line) => (line ? { loc: line, seedOnly: false } : null);
   const markPast = (o) => ({ ...o, past: today ? o.due_date < today : false });
 
   (parsed?.press || []).forEach(({ sheet, parts }) => {
@@ -393,7 +402,11 @@ export function monitoringToRecords(parsed, { monthKey, lineOfMat, today, custom
       if (p.min > 0 && line && !isFgMat(p.mat_no)) levels.push({ line_name: line, mat_no: p.mat_no, min_qty: p.min, max_qty: null, note: `Monitoring · ${sheet}` });
       else if (p.min > 0 && line) fgLevelsSkipped++;   // FG = ขาออกของไลน์ ไม่ใช่ของที่เบิกเข้า (ดูหมายเหตุบนสุด)
       if (p.lot > 0 || p.packing > 0) lots.push({ mat_no: p.mat_no, part_name: p.part_name, lot_size: p.lot || null, qty_per_kanban: p.packing || null });
-      if (typeof p.balance === 'number' && line) stock.push({ line_name: line, mat_no: p.mat_no, part_name: p.part_name, qty: p.balance, sheet });
+      if (typeof p.balance === 'number' && line) {
+        const at = locOf(p.mat_no, line);
+        if (at?.loc) stock.push({ line_name: at.loc, mat_no: p.mat_no, part_name: p.part_name, qty: p.balance, sheet, seedOnly: !!at.seedOnly });
+        else pressStockSkipped++;
+      }
       Object.entries(p.out || {}).forEach(([d, q]) => shipped.push({ mat_no: p.mat_no, part_name: p.part_name, due_date: d, qty: q, sheet }));
       /* ORDER REQUIREMENT (ชีท Argen) = ความต้องการล่วงหน้าจริง รายสัปดาห์ ⇒ เป็นออเดอร์ได้
          (ต่างจาก `out` ซึ่งเป็นประวัติการส่ง — ห้ามสลับ) */
@@ -478,7 +491,7 @@ export function monitoringToRecords(parsed, { monthKey, lineOfMat, today, custom
            orders: ordersUniq, orderDupes,
            levels: lv.rows, levelDupes: lv.dupes, levelConflicts: lv.conflict,
            lots, stock: stockOk, stockNegative,
-           stockDupes: stock.length - stockUniq.length, shipped, fgLevelsSkipped };
+           stockDupes: stock.length - stockUniq.length, shipped, fgLevelsSkipped, pressStockSkipped };
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -506,13 +519,26 @@ export function monitoringToRecords(parsed, { monthKey, lineOfMat, today, custom
  *  🔴 QC 05/10 — ต้องเรียก**ซ้ำด้วยยอดสด ณ ตอนกดยืนยัน** (MonitoringUpload) ห้ามใช้ส่วนต่างตอนพรีวิว:
  *     กดยืนยันรอบแรกลงไปบางก้อนแล้วล้ม → กดซ้ำด้วยส่วนต่างเดิม = ยอดเพี้ยนซ้อน · คิดจากยอดสด ⇒ ก้อนที่ลงแล้วได้ 0 (ข้าม)
  *  `norm` = ตัวจับคู่เลข MAT ของหน้า (ตัดช่องว่าง/ขีด) · พาร์ทที่ไม่มีแถวสต็อก = ยอดปัจจุบัน 0 */
+/* แถว `seedOnly` (ยอดผลิตจากชีทไลน์ปั๊ม) ตั้งได้เฉพาะคลังที่ยังไม่มีแถวของพาร์ทนั้นเลย
+   — มีแถวแล้ว (แม้ยอด 0) = สโตร์รับ/นับเองแล้ว ห้ามเอาเลขในไฟล์ไปทับ · ดูรายการที่ข้ามด้วย `stockSeedKept` */
+const stockHave = (stockRows, norm) => {
+  const have = new Map();
+  (stockRows || []).forEach(s => { have.set(`${s.line_name}|${norm(s.mat_no)}`, Number(s.qty_on_hand) || 0); });
+  return have;
+};
 export function stockAdjustPlan(fileStock = [], stockRows = [], norm = (s) => String(s ?? '')) {
-  const have = {};
-  (stockRows || []).forEach(s => { have[`${s.line_name}|${norm(s.mat_no)}`] = Number(s.qty_on_hand) || 0; });
-  return (fileStock || []).map(s => {
-    const cur = have[`${s.line_name}|${norm(s.mat_no)}`] || 0;
+  const have = stockHave(stockRows, norm);
+  return (fileStock || []).filter(s => !(s.seedOnly && have.has(`${s.line_name}|${norm(s.mat_no)}`))).map(s => {
+    const cur = have.get(`${s.line_name}|${norm(s.mat_no)}`) || 0;
     return { ...s, have: cur, delta: (Number(s.qty) || 0) - cur };
   }).filter(s => s.delta !== 0);
+}
+
+/** ยอดผลิตจากไฟล์ที่ **ไม่ได้** ตั้งเป็นสต็อก เพราะคลังนั้นมียอดในระบบแล้ว (โชว์ในพรีวิว ห้ามข้ามเงียบ) */
+export function stockSeedKept(fileStock = [], stockRows = [], norm = (s) => String(s ?? '')) {
+  const have = stockHave(stockRows, norm);
+  return (fileStock || []).filter(s => s.seedOnly && have.has(`${s.line_name}|${norm(s.mat_no)}`))
+    .map(s => ({ ...s, have: have.get(`${s.line_name}|${norm(s.mat_no)}`) }));
 }
 
 export function sheetCustomer(sheet, registry = []) {

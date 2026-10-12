@@ -110,7 +110,7 @@ export function buildVsmLive({
           ไม่ตรงกับ /oee-analytics ทั้งที่เป็นกะชุดเดียวกัน */
     let closedOee = null;
     if (closed.length) {
-      const dtEffBy = dtMinBySession(closed, closed.flatMap(s => dtBy[s.id] || []), breakPolicies);
+      const dtEffBy = dtMinBySession(closed, closed.flatMap(s => dtBy[s.id] || []), breakPolicies, { lines });   // หารเลนไลน์เครื่องขนาน (oee.js §3.2)
       const withLoad = closed.map(s => ({ ...s, plannedMin: dtEffBy[s.id]?.planned || 0 }));
       const v = wavg(withLoad, s => num(s.oee), wLoad);
       closedOee = v == null ? null : Math.round(v * 10) / 10;

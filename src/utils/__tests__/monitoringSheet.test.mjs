@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   cellDate, detectMonitoringKind, parsePressSheet, parseCustomerSheet, parseGridSheet,
-  parseMonitoringWorkbook, monitoringToRecords, stockAdjustPlan,
+  parseMonitoringWorkbook, monitoringToRecords, stockAdjustPlan, stockSeedKept,
 } from '../monitoringSheet.js';
 
 const D = (y, m, d) => new Date(y, m - 1, d);
@@ -806,4 +806,49 @@ test('ค่าซ้ำที่ "ตรงกันเป๊ะ" ต้อง�
   assert.equal(rec.levelDupes, 1);
   assert.equal(rec.levelConflicts, 0);
   assert.equal(rec.forecastConflicts, 0);
+});
+
+/* ── BALANCE ชีทไลน์ปั๊ม = ยอดผลิต ไม่ใช่ที่อยู่ของ (user 09/10) ─────────────────────── */
+const PRESS_BAL = {
+  press: [{ sheet: '600T', parts: [
+    { mat_no: '20060001', part_name: 'BAR FRT', balance: 3884, fc: 0, out: {}, plan: {}, demand: {} },
+    { mat_no: '10076603', part_name: 'FG', balance: 200, fc: 0, out: {}, plan: {}, demand: {} },
+  ] }],
+  customer: [],
+};
+test('monitoringToRecords — stockLocOf: ยอดผลิตลงคลังตามกฎ (seedOnly) · null = ข้ามแล้วนับไว้', () => {
+  const r = monitoringToRecords(PRESS_BAL, {
+    lineOfMat: () => 'LINE B ( 600 Ton )',
+    stockLocOf: (m) => (m.startsWith('1') ? null : { loc: 'STORE', seedOnly: true }),
+  });
+  assert.deepEqual(r.stock.map(s => [s.line_name, s.mat_no, s.seedOnly]), [['STORE', '20060001', true]],
+    'ห้ามลงที่ชื่อไลน์ผลิตอีก — ของอยู่สโตร์');
+  assert.equal(r.pressStockSkipped, 1, 'FG ที่ข้ามต้องถูกนับให้พรีวิวบอกได้');
+});
+test('monitoringToRecords — ไม่ส่ง stockLocOf = พฤติกรรมเดิม (ลงที่ไลน์ ทับได้)', () => {
+  const r = monitoringToRecords(PRESS_BAL, { lineOfMat: () => 'LINE B ( 600 Ton )' });
+  assert.deepEqual(r.stock.map(s => [s.line_name, s.seedOnly]), [['LINE B ( 600 Ton )', false], ['LINE B ( 600 Ton )', false]]);
+});
+test('stockAdjustPlan — seedOnly ตั้งได้เฉพาะคลังที่ยังไม่มีแถว · มีแถวแล้ว (แม้ 0) = ไม่ทับยอดที่สโตร์รับ/นับจริง', () => {
+  const norm = (s) => String(s ?? '').trim();
+  const file = [
+    { line_name: 'STORE', mat_no: '20060001', qty: 3884, seedOnly: true },
+    { line_name: 'STORE', mat_no: '20063131', qty: 6000, seedOnly: true },
+    { line_name: 'STORE', mat_no: '20059954', qty: 783, seedOnly: true },
+    { line_name: 'FG WAREHOUSE', mat_no: '10076603', qty: 2600 },
+  ];
+  const stk = [
+    { line_name: 'STORE', mat_no: '20063131', qty_on_hand: 2400 },
+    { line_name: 'STORE', mat_no: '20059954', qty_on_hand: 0 },
+    { line_name: 'FG WAREHOUSE', mat_no: '10076603', qty_on_hand: 200 },
+  ];
+  const plan = stockAdjustPlan(file, stk, norm);
+  assert.deepEqual(plan.map(s => [s.mat_no, s.delta]), [['20060001', 3884], ['10076603', 2400]],
+    'ชีทลูกค้า (ไม่ seedOnly) ยังตั้งยอดคลัง FG ให้ตรงไฟล์ได้เหมือนเดิม');
+  assert.deepEqual(stockSeedKept(file, stk, norm).map(s => [s.mat_no, s.have]), [['20063131', 2400], ['20059954', 0]]);
+  // กดยืนยันซ้ำหลังลงไปแล้ว = แถวมีแล้ว ⇒ ไม่ซ้อน
+  const after = [...stk.filter(r => r.mat_no !== '10076603'),
+    { line_name: 'FG WAREHOUSE', mat_no: '10076603', qty_on_hand: 2600 },
+    { line_name: 'STORE', mat_no: '20060001', qty_on_hand: 3884 }];
+  assert.deepEqual(stockAdjustPlan(plan, after, norm).map(s => s.mat_no), []);
 });

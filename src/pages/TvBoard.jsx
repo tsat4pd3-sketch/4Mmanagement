@@ -39,18 +39,14 @@ import { RATE } from '../utils/refreshRates';
 import { useLiveBoard } from '../utils/useLiveBoard';
 import { OPEN_MO_STATUSES } from '../utils/dieStatus';
 import { ALL } from '../utils/filterLabels';
+// วันงาน — ของกลาง (ตัด 08:00 · 12/10 เลิกก๊อปฟังก์ชันไว้ในไฟล์ตามกฎ CLAUDE.md)
+import { getWorkDate } from '../utils/workDate';
 
-/* วันงาน — ตัด 08:00 ตามกฎทั้งระบบ (ห้าม toISOString: คืน UTC = เพี้ยน 1 วันช่วง 00:00-07:00 ไทย) */
-function getWorkDate() {
-  const d = new Date();
-  if (d.getHours() < 8) d.setDate(d.getDate() - 1);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
 
 const DEPTS = [
   { key: 'maintenance', icon: '🔧', label: 'ช่างซ่อมบำรุง', sub: 'เครื่องหยุด · PM · ใบซ่อม' },
   { key: 'production', icon: '🏭', label: 'ฝ่ายผลิต', sub: 'เครื่องหยุด · ยอดผลิตเทียบเป้า' },
-  { key: 'store', icon: '📦', label: 'สโตร์', sub: 'ไลน์ที่รอของ · พาร์ทจะขาด' },
+  { key: 'store', icon: '📦', label: 'สโตร์', sub: 'ไลน์เรียกของ · รอบส่งค้าง · พาร์ทจะขาด' },
 ];
 
 export default function TvBoard() {
@@ -139,7 +135,7 @@ export default function TvBoard() {
               .in('status', OPEN_MO_STATUSES).order('report_at', { ascending: false }).limit(300)
           : Promise.resolve({ data: [] }),
         needPm
-          ? supabaseDR.from('pm_plans').select('id, checklist_id, plan_type, next_due_date, interval_days').eq('is_active', true)
+          ? supabaseDR.from('pm_plans').select('id, checklist_id, plan_type, next_due_date, interval_days, last_done_at, cycle_basis, deferred_to, deferred_at').eq('is_active', true)
           : Promise.resolve({ data: [] }),
         needPm
           ? supabaseDR.from('checklists').select('id, equipment_id, department').eq('module', 'mtn')
@@ -206,8 +202,9 @@ export default function TvBoard() {
           </select>
           <span style={{ width: 1, height: 20, background: 'var(--border2)' }} />
           {/* 🔊 ขอบเขตเสียง — ตัว <DowntimeSiren> ในบอร์ดอ่าน `?sound=` ตัวเดียวกัน */}
+          {/* จอสโตร์เงียบเป็นค่าเริ่มต้น (เสียงเรียกช่างไม่ใช่งานสโตร์ · 12/10) — เปิดได้ด้วย `?sound=all` */}
           <button onClick={() => setParam('sound', sp.get('sound') === 'all' ? '' : 'all')} style={btn(sp.get('sound') === 'all')}>
-            {sp.get('sound') === 'all' ? '🔊 ดังทุกเครื่องหยุด' : '🔔 ดังเฉพาะเรียกช่าง'}
+            {sp.get('sound') === 'all' ? '🔊 ดังทุกเครื่องหยุด' : dept === 'store' ? '🔕 ไม่มีเสียง' : '🔔 ดังเฉพาะเรียกช่าง'}
           </button>
           <span style={{ fontSize: 11, color: 'var(--muted)' }}>
             ตั้งเสร็จแล้ว <b>บุ๊กมาร์กหน้านี้ไว้ที่ทีวี</b> — ค่าอยู่ใน URL จอจะจำเอง ไม่ต้องมากดทุกเช้า

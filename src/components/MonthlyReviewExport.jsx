@@ -93,7 +93,13 @@ export default function MonthlyReviewExport({ onClose }) {
       setLoadError(null);
       const lineArr = lines || [];
       const parentNames = new Set(lineArr.map(l => l.parent_line_name).filter(Boolean));
-      let secs = (nodes || []).map(n => n.code);
+      /* 🔑 รายชื่อส่วนงานต้องไม่มีค่าว่าง/ซ้ำ — `s.code` เป็นคีย์ของแถวในลิสต์ขอบเขต + คีย์ของ openSecs
+         `org_nodes.code` เป็น nullable (วัดจริง 08/10 ฝั่ง Main: kind=section 6 แถว · code ว่าง 1 แถว)
+         ⇒ ว่าง 2 แถวขึ้นไป = คีย์ซ้ำ `null` ⇒ React กลืนแถวหนึ่งเงียบๆ = **ส่วนงานหายจากขอบเขตรายงาน**
+         (เจอใน harness 08/10) · และส่วนงานที่ไม่มี code จับคู่ `production_lines.section`
+         (เก็บเป็น "ข้อความของ code") ไม่ได้เลย ⇒ ไม่มีไลน์ให้เลือกอยู่แล้ว ตัดออกไม่เสียของ
+         · สาขา fallback ใช้ `sortLike` ซึ่งกรองว่าง/ยุบซ้ำให้แล้ว */
+      let secs = [...new Set((nodes || []).map(n => n.code).filter(c => c != null && c !== ''))];
       if (!secs.length) secs = sortLike(lineArr.map(l => l.section), []);
       const scoped = secs.filter(c => !scopeSecs?.length || inSectionScope(scopeSecs, c));
       const out = scoped.map(code => {

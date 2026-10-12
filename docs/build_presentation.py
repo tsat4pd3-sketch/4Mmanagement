@@ -642,7 +642,8 @@ body = "\n".join(render(s, i + 1, total) for i, s in enumerate(slides))
 CSS = """
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
- --gd:#0D3D14; --gm:#14571F; --or:#C0561E; --gold:#EBD9B0;
+ /* ธีม TSG Revision 01 (12/10): พื้นขาวทุกหน้ารวมปก · เขียวหลัก 068734 · ส้ม D95323 · เขียวเข้มเฉพาะหัวตาราง */
+ --gd:#0D3D14; --gm:#068734; --or:#D95323; --gold:#D95323;
  --ink:#16261a; --mut:#5b6b5f; --line:#d8e0d6; --bg:#f4f6f2;
  --ts-logo:url("data:image/png;base64,__LOGO__");
 }
@@ -655,8 +656,8 @@ body{font-family:Tahoma,"Sarabun","Noto Sans Thai",sans-serif;background:#0a1a0e
 .logo{position:absolute;top:26px;right:44px;width:52px;height:44px;opacity:.92;
  background:var(--ts-logo) center/contain no-repeat}
 .pg{position:absolute;bottom:18px;right:44px;font-size:13px;color:var(--mut);letter-spacing:.5px}
-h1{font-size:78px;color:#fff;letter-spacing:3px;line-height:1}
-h2{font-size:34px;color:var(--gd);border-bottom:4px solid var(--or);
+h1{font-size:78px;color:var(--gm);letter-spacing:3px;line-height:1}
+h2{font-size:34px;color:var(--gm);border-bottom:4px solid var(--or);
  padding-bottom:12px;margin-bottom:22px;padding-right:120px;line-height:1.25}
 h2 .ic{margin-right:10px}
 /* จัดเนื้อหาให้อยู่กลางแนวตั้งเมื่อสั้นกว่าจอ — กันหน้าโหวงตอนฉายโปรเจคเตอร์
@@ -665,21 +666,21 @@ h2 .ic{margin-right:10px}
 h3{font-size:19px;margin-bottom:12px}
 
 /* cover */
-.cover{background:linear-gradient(150deg,var(--gd) 0%,var(--gm) 62%,#0a2b10 100%);
+.cover{background:#fff;
  align-items:flex-start;justify-content:center;padding-left:76px}
-.cover .logo{opacity:1;width:72px;height:60px;filter:drop-shadow(0 2px 8px rgba(0,0,0,.4))}
+.cover .logo{opacity:1;width:72px;height:72px}
 .c-sub{font-size:29px;color:var(--gold);margin-top:14px;letter-spacing:1px}
-.c-line{font-size:20px;color:#cfe3d2;margin-top:30px}
-.c-foot{position:absolute;bottom:52px;left:76px;font-size:15px;color:#9dbba4;
+.c-line{font-size:20px;color:var(--gm);margin-top:30px}
+.c-foot{position:absolute;bottom:52px;left:76px;font-size:15px;color:var(--mut);
  border-top:2px solid var(--or);padding-top:12px}
 
 /* section divider */
-.sec{background:linear-gradient(140deg,var(--gd),var(--gm));justify-content:center;padding-left:76px}
-.sec-num{font-size:120px;font-weight:bold;color:rgba(235,217,176,.22);line-height:.9}
-.sec h2{font-size:52px;color:#fff;border:0;border-left:7px solid var(--or);
+.sec{background:#fff;justify-content:center;padding-left:76px}
+.sec-num{font-size:120px;font-weight:bold;color:rgba(6,135,52,.14);line-height:.9}
+.sec h2{font-size:52px;color:var(--gm);border:0;border-left:7px solid var(--or);
  padding:4px 0 4px 22px;margin:10px 0 0}
 .sec-sub{font-size:21px;color:var(--gold);margin-top:16px;padding-left:29px}
-.sec .pg{color:#9dbba4}
+.sec .pg{color:var(--mut)}
 
 /* agenda */
 .ag{display:grid;grid-template-columns:1fr 1fr;gap:12px 26px;align-content:start}
@@ -687,7 +688,7 @@ h3{font-size:19px;margin-bottom:12px}
  border:1px solid var(--line);border-left:5px solid var(--gd);border-radius:7px;padding:12px 15px}
 .ag-n{flex:0 0 30px;height:30px;border-radius:50%;background:var(--or);color:#fff;
  font-size:15px;font-weight:bold;display:flex;align-items:center;justify-content:center}
-.ag-row > div > b:first-child{display:block;font-size:17px;color:var(--gd);margin-bottom:3px}
+.ag-row > div > b:first-child{display:block;font-size:17px;color:var(--gm);margin-bottom:3px}
 .ag-row > div > span{font-size:13.5px;color:var(--mut);line-height:1.5}
 
 /* table */
@@ -770,7 +771,7 @@ tbody tr:nth-child(even){background:#f8faf7}
 .cl{display:flex;gap:16px;align-items:center;background:#fff;border:1px solid var(--line);
  border-left:5px solid var(--or);border-radius:7px;padding:13px 18px}
 .cl-i{font-size:30px;flex:0 0 40px;text-align:center}
-.cl > div > b:first-child{display:block;font-size:18px;color:var(--gd);margin-bottom:2px}
+.cl > div > b:first-child{display:block;font-size:18px;color:var(--gm);margin-bottom:2px}
 .cl > div > span{font-size:15px;color:#3d4d41;line-height:1.5}
 
 /* progress + hint */
@@ -778,7 +779,7 @@ tbody tr:nth-child(even){background:#f8faf7}
  width:0;transition:width .18s ease;z-index:50}
 #hint{position:fixed;left:22px;bottom:14px;font-size:12px;color:var(--mut);
  z-index:50;opacity:.85;transition:opacity .4s}
-.sec #hint,.cover #hint{color:#9dbba4}
+.sec #hint,.cover #hint{color:var(--mut)}
 @media print{
  body{overflow:visible;background:#fff}
  #deck{height:auto}

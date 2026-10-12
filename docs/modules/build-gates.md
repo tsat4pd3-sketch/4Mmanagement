@@ -47,6 +47,13 @@ CLAUDE.md เคยโต + มี `@import` จนกิน context 550k tokens
 → Daily Report จอหลักว่างทั้งหน้า · `/products` แท็บ Kanban Std พังจาก `undefined.toLocaleString()`
 รายละเอียด + เหตุผลของแถวพิเศษใน mock รายตัว → `audit/README.md`
 
+### 🔑 รายงาน "คีย์ซ้ำในลิสต์" ด้วย (2026-10-08)
+`pageerror` จับคีย์ซ้ำไม่ได้ (React เตือนทาง `console.error` ไม่ throw) แต่ของจริงมันกลืน/วาดซ้ำแถว
+แบบไม่การันตี ⇒ crashsweep เฝ้า console แล้วพิมพ์ `🔑 <หน้า>: คีย์ซ้ำในลิสต์ N ตัว`
+· วัดรอบแรก 08/10 เจอ 4 หน้า (/morning-meeting 14 · /rack-center 15 · /customer-demand 4 · /permissions 14)
+· ต้นเหตุทั้งชุด = ต่อผล 2 คิวรีของตารางเดียวกันด้วย `[...a, ...b]` ⇒ แก้ที่ `src/utils/mergeRows.js`
+· **ไม่ทำเป็นด่าน grep** — regex จับ "ต่ออาร์เรย์" แม่นไม่ได้ (ของถูกในรีโป ~20 จุด) · UI §6.27
+
 ## `mobilesweep.mjs` (2026-09-16)
 จับ 3 อาการที่ build/lint/เทส/crashsweep ผ่านหมดแต่ใช้งานจริงไม่ได้ที่ 390px
 

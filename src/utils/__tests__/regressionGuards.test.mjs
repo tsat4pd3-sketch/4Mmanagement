@@ -1732,6 +1732,9 @@ const INLINE_WLOAD = /shift_?[mM]in[^;\n]{0,30}\)? *- *[A-Za-z_.]*[pP]lanned/;
 const WLOAD_ALLOW = {
   'src/utils/obeyaKpi.js':
     'โมดูล pure — รับ rows ที่มี plannedMin มาแล้ว ไม่ได้อ่าน downtime เอง (หน้าที่เรียกเป็นคนรับผิดชอบ)',
+  'src/utils/manpowerBoard.js':
+    'compareOeeByStaffing (12/10) — เฉลี่ยค่า oee/oee_p ที่ stamp ตอนปิดกะแล้ว ไม่อ่าน downtime เลย → plannedMin = 0 '
+    + '→ wLoad ถ่วงด้วย shift_min ล้วน (แบบเดียวกับ axisOee ใน obeyaKpi) = ไม่มีการหักพักซ้ำ',
   'src/pages/PlannerSales.jsx':
     'ตั้งใจไม่โหลด downtime → plannedMin = 0 → wLoad ถอยไปถ่วงด้วย shift_min (มีคอมเมนต์อธิบายที่บรรทัด 883-884) '
     + '= ประมาณการ ไม่ใช่การหักซ้ำ',
@@ -2145,6 +2148,45 @@ test('🔐 permissions-page-needs-viewer-gate — /permissions ต้องเ�
     + '        const canManage = canSeeded(\'permissions\', \'manage\', myRole);\n'
     + '        → ใช้ปิด disabled ของ checkbox + ด่านใน toggle() + <ReadOnlyNote show={!canManage} …>\n'
     + '        → upsert ต้อง .select() แล้วเช็ค res.data.length ก่อนถือว่าสำเร็จ\n');
+});
+
+
+/* ═══ own-profile-role-via-context — ห้ามหน้าไหนอ่าน `profiles` ของ "ตัวเอง" ซ้ำจากฐาน ═══
+   (2026-10-09 · QC audit รอบ 4 — `PMCheckData.jsx` เป็นไฟล์เดียวในโปรเจคที่ทำ)
+
+   `App.jsx` โหลด profile ของผู้ล็อกอินครั้งเดียวแล้วตีความให้ครบ (`effectiveSections()` ·
+   `is_dept_admin` · โหมด 🎭 ดูแทน role อื่น) แล้วแจกผ่าน `UserContext`
+   หน้าที่ไปยิง `profiles` ของตัวเองซ้ำ จะได้แต่ **คอลัมน์ดิบ** ⇒
+     · ขอบเขตหาย — `sections` ที่ context คำนวณให้ (ตาข่าย admin · scope_depth) ไม่ถูกใช้
+     · 🎭 **โหมดดูแทนไม่มีผล** — admin สวมเป็น mtn เพื่อทดสอบ แต่หน้านั้นยังอ่าน role จริง
+       ⇒ เห็นปุ่มครบ แล้วสรุปว่า "role นี้ทำได้" ผิด (ทดสอบสิทธิ์เชื่อถือไม่ได้ทั้งหน้า)
+   ✅ `src/App.jsx` = เจ้าของเรื่อง (คนโหลดตัวจริงแล้วแจกต่อ) — ยกเว้นตัวเดียวเท่านั้น
+   🔴 `auth.getUser()` เพื่อเอา **uid** ยังทำได้ตามปกติ (ตัวตนคนเซ็น/คนอนุมัติในใบ
+      ต้องเป็น uid จริงเสมอ ห้ามใช้ role ที่ถูกสวม) — ด่านนี้จับเฉพาะการ "อ่าน role/สังกัด" */
+test('🔐 own-profile-role-via-context — role/สังกัดของผู้ใช้ต้องมาจาก UserContext ไม่ใช่คิวรี profiles ซ้ำ', () => {
+  const ALLOW = { 'src/App.jsx': 'เจ้าของเรื่อง — โหลด profile ของผู้ล็อกอินแล้วแจกผ่าน UserContext' };
+  const SELF = /\.eq\(\s*'id'\s*,\s*[^)]*(user\.id|uid|auth\.uid\(\))/;   // "กรองด้วยตัวเอง"
+  const CTX_COLS = /\b(role|sections|section|is_dept_admin|line_id|team)\b/;
+  const bad = [];
+  for (const f of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const rel = relative(ROOT, f);
+    if (ALLOW[rel]) continue;
+    const src = stripComments(readFileSync(f, 'utf8'));
+    const re = /from\(\s*'profiles'\s*\)\s*\.select\(\s*([`'"])([^`'"]*)\1\s*\)/g;
+    for (let m; (m = re.exec(src));) {
+      const cols = m[2];
+      if (!CTX_COLS.test(cols)) continue;                  // ไม่ได้ขอคอลัมน์ที่ context มีให้ = ไม่เกี่ยว
+      const tail = src.slice(m.index, m.index + m[0].length + 160);
+      if (!SELF.test(tail)) continue;                      // อ่านของ "คนอื่น" (ทะเบียนผู้ใช้) = ปกติ
+      bad.push(`${rel} — select('${cols}') ของตัวเอง`);
+    }
+  }
+  assert.deepEqual(bad, [],
+    '\n\n❌ อ่าน profile ของตัวเองซ้ำจากฐาน:\n   ' + bad.join('\n   ') + '\n'
+    + '   ทำไมสำคัญ: ได้คอลัมน์ดิบ ⇒ ขอบเขต (sections ที่ effectiveSections ตีความ) หาย\n'
+    + '     และโหมด 🎭 "ดูแทน role อื่น" ไม่มีผลบนหน้านั้น = ทดสอบสิทธิ์เชื่อถือไม่ได้\n'
+    + "   แก้: const { role, fullName, sections } = useContext(UserContext)\n"
+    + '   🔴 ต้องการแค่ uid (คนเซ็น/คนอนุมัติ) → `supabase.auth.getUser()` ยังใช้ได้ตามปกติ\n');
 });
 
 
@@ -3413,4 +3455,271 @@ test('🛡️ MonitorBoardGrid + RundownStock: หัวคอลัมน์ช
   const grid = stripComments(readFileSync(join(ROOT, 'src/components/MonitorBoardGrid.jsx'), 'utf8'));
   assert.ok(/startIndexForToday\(/.test(grid) && /isTodayPeriod\(/.test(grid),
     '\n\n❌ บอร์ดต้องเปิดมาที่คอลัมน์วันนี้ (startIndexForToday) และชี้วันนี้แบบรู้จักบอร์ดรายสัปดาห์ (isTodayPeriod)\n');
+});
+
+test('🛡️ am-team-via-isAmTeam — ห้าม hardcode department "production" เป็นทีม AM (ใช้ isAmTeam จาก mtn_teams.kind)', () => {
+  const hits = walk(join(ROOT, 'src'), ['.js', '.jsx'])
+    .filter(f => !/utils\/pmTeams\.js$/.test(f))
+    .filter(f => /\.eq\(['"]department['"],\s*['"]production['"]\)|department\s*[!=]==\s*['"]production['"]|\.has\(['"]production['"]\)/.test(stripComments(readFileSync(f, 'utf8'))))
+    .map(f => relative(ROOT, f));
+  assert.deepEqual(hits, [],
+    '\n\n❌ มีโค้ดตัดสิน "ทีม AM" ด้วย department === \'production\' ตรงๆ: ' + hits.join(', ') + '\n'
+    + '   ที่มา 2026-10-08 (audit AM↔PM): AM แยกรายส่วนงานได้ (mtn_teams.kind=\'am\' หลาย key) — hardcode = ทีมใหม่ไม่ถูกนับว่าตรวจแล้ว\n'
+    + '            ⇒ ส้มยิงทุกไลน์ / จอ AM ว่าง / สอบกลับนับใบช่างเป็น AM\n'
+    + '   แก้ยังไง: isAmTeam(department) จาก src/utils/pmTeams.js (โหลด loadPmTeams() ก่อน) · ฝั่ง edge อ่าน mtn_teams.kind\n');
+});
+
+/* ── 🖼️ ลบรูปใน storage ต้องนับผู้อ้างก่อน เมื่อ path ถูกแชร์ได้ (08/10 · QC audit) ────────
+   เคสจริง: `copyChecklistToEquipment/Dept` คัดลอกจุดตรวจไปเครื่องอื่นโดย **ใช้ image_path เดิม
+   ร่วมกัน ไม่ก๊อปไฟล์** ⇒ `handleDelete` ที่ลบทั้งโฟลเดอร์ `jigs/<id>/` ทำให้รูปจุดตรวจของทุก
+   เครื่องที่ก๊อปไป **หายถาวร กู้ไม่ได้ และไม่มี error ฟ้อง** · path เดียวถูกอ้างจาก 3 ตาราง
+   (jig_images · jigs · jig_checkpoints) ⇒ ต้องผ่าน `orphanImagePaths()` ที่นับครบทั้ง 3 + fail-closed
+   📄 `docs/modules/pm-hub-check-setup.md` §คัดลอกแผน PM */
+test('🛡️ jig-image-delete-needs-ref-count — ลบรูป bucket jig-images ต้องผ่าน orphanImagePaths()', () => {
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const rel = relative(ROOT, file);
+    if (rel.includes('__tests__') || rel.endsWith('utils/jigImageRefs.js')) continue;
+    const code = stripComments(readFileSync(file, 'utf8'));
+    if (!/from\(\s*['"]jig-images['"]\s*\)[\s\S]{0,200}?\.remove\(/.test(code)) continue;
+    /* เฉพาะไฟล์ที่แตะ path ใต้ `jigs/` — นั่นคือชุดที่ถูกแชร์ตอนคัดลอกจุดตรวจ
+       รูปผังโซน `facility/<id>.<ext>` (MtnMachineLayout) เป็น 1 path ต่อ 1 แถว ไม่ถูกแชร์ ⇒ ไม่เข้าข่าย
+       ⚠️ ถ้าวันหน้ามีการแชร์ path แบบอื่น ให้ขยายเงื่อนไขนี้ ไม่ใช่ใส่ allow-list รายไฟล์ */
+    if (!/['"`]jigs\//.test(code)) continue;
+    if (!/orphanImagePaths\s*\(/.test(code)) bad.push(rel);
+  }
+  assert.deepEqual(bad, [], '\n\n❌ ลบไฟล์ใน bucket `jig-images` โดยไม่นับผู้อ้าง: ' + bad.join(', ') + '\n'
+    + '   ทำไม: จุดตรวจที่ "คัดลอกไปเครื่อง/แผนกอื่น" ใช้ image_path เดิมร่วมกัน (ไม่ก๊อปไฟล์)\n'
+    + '         ⇒ ลบรูปของเครื่องต้นแบบ = รูปของทุกเครื่องที่ก๊อปไปเสียถาวร ไม่มี error ฟ้อง\n'
+    + '   แก้ยังไง: `const { orphan } = await orphanImagePaths(paths, { exceptJigId })` แล้วลบแค่ orphan\n'
+    + '             (นับไม่ได้ = ของกลางคืน orphan ว่าง = ไม่ลบ · ไฟล์กำพร้าค้าง ดีกว่าลบของที่ยังใช้)\n');
+});
+
+/* ── 📄 CSV export ต้องผ่าน `utils/csvDoc.js` (ทะเบียนเอกสาร + กัน formula injection) ──────
+   กฎ 06/10 (user เคาะ "เข้า ทำเลย"): CSV ที่หลุดออกจากระบบก็เป็นเอกสาร ต้อง register /doc-forms
+   รอบนั้น seed 8 คีย์ แต่ **ตก /report (10 จุด) และ /daily-report (2 จุด)** ซึ่งเขียน helper เอง
+   🔴 ตัวของ DailyReport ยัง **ไม่มีตัวกัน formula injection เลย** — ค่าที่คนพิมพ์ขึ้นต้น `=`
+      ถูก Excel รันเป็นสูตร · ไฟล์มีรหัสพนักงาน ชื่อ-สกุล การมาทำงาน เบี้ยทักษะ
+   📄 `docs/modules/doc-forms.md` §CSV export ก็เป็นเอกสาร */
+test('🛡️ csv-export-via-csvdoc — หน้าที่ทำไฟล์ CSV ห้ามประกอบ Blob/escape เอง', () => {
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const rel = relative(ROOT, file);
+    if (rel.includes('__tests__') || rel.endsWith('utils/csvDoc.js')) continue;
+    const code = stripComments(readFileSync(file, 'utf8'));
+    // สร้าง Blob ชนิด text/csv เอง = ไม่ผ่านทะเบียน/ไม่การันตีว่ากัน formula injection
+    if (/new Blob\([^)]*text\/csv/.test(code)) bad.push(`${rel} (new Blob text/csv)`);
+  }
+  assert.deepEqual(bad, [], '\n\n❌ มีจุดทำไฟล์ CSV เองไม่ผ่านของกลาง: ' + bad.join(', ') + '\n'
+    + '   ทำไม: (1) ไม่เข้าทะเบียน /doc-forms — doc_control คุมเลขฟอร์ม/Rev ไม่ได้\n'
+    + '         (2) ทุกชุดที่เขียนเองมีสิทธิ์ลืมตัวกัน CSV formula injection (เกิดจริงที่ DailyReport)\n'
+    + '   แก้ยังไง: `downloadCsvDoc(docKey, legacyName, csvText(headers, rows))` + seed doc_key\n'
+    + '             (form_code = null ⇒ วันที่ apply ชื่อไฟล์เหมือนเดิมเป๊ะ)\n');
+});
+
+/* ── 🎞️ ตัวเช็ค GIF + เพดานขนาด ต้องมาจาก `utils/imageFileKind.js` จุดเดียว (08/10 · QC audit) ──
+   กฎเดิม (storage-images.md): *"ตัวตรวจชนิดไฟล์ = imageFileKind.js จุดเดียว (ดูนามสกุลด้วย
+   ไม่ใช่แค่ MIME)"* — แต่ไม่มีด่าน ⇒ drift กลับมา **6 ไฟล์** (รวมของกลาง ImageCropModal เอง)
+   🔴 ทำไมสำคัญ: **Android/Chrome ส่ง MIME ว่างมากับรูปจริง** ⇒ `type === 'image/gif'` เป็นเท็จ
+      = เพดาน 2MB รั่ว = GIF เฉลี่ย 4 MB/ไฟล์ ขึ้น storage (เคยทำ egress ทะลุโควต้าจน
+      Supabase ล็อกบริการทั้ง organization — ทั้งโรงงาน login ไม่ได้)
+   · เลขเพดานก็ห้ามเขียนซ้ำ — `GIF_MAX_BYTES` / `GIF_TOO_BIG_MSG` */
+test('🛡️ gif-check-via-imagefilekind — ห้ามเทียบ image/gif หรือเขียนเพดาน GIF เองในหน้า', () => {
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const rel = relative(ROOT, file);
+    if (rel.includes('__tests__') || rel.endsWith('utils/imageFileKind.js')) continue;
+    const code = stripComments(readFileSync(file, 'utf8'));
+    // layoutImage.js เทียบ type ภายในตัวบีบ (ได้ไฟล์ที่ผ่านด่านมาแล้ว) — ข้อยกเว้นที่บันทึกไว้
+    if (!rel.endsWith('utils/layoutImage.js') && /['"]image\/gif['"]\s*===|===\s*['"]image\/gif['"]/.test(code)) {
+      bad.push(`${rel} (เทียบ 'image/gif' เอง → ใช้ isGifFile())`);
+    }
+    if (/2\s*\*\s*1024\s*\*\s*1024/.test(code) && /gif/i.test(code)) {
+      bad.push(`${rel} (เขียนเพดาน GIF 2MB เอง → ใช้ GIF_MAX_BYTES)`);
+    }
+  }
+  assert.deepEqual(bad, [], '\n\n❌ ตัวเช็ค GIF เขียนเองนอกของกลาง:\n' + bad.map(b => '   • ' + b).join('\n') + '\n'
+    + '   ทำไม: Android ส่ง MIME ว่างมากับรูปจริง ⇒ เทียบ type ล้วน = เพดาน 2MB รั่ว\n'
+    + '         GIF บีบไม่ได้ (เฉลี่ย 4 MB/ไฟล์) · egress เคยทะลุโควต้าจนทั้งโรงงาน login ไม่ได้\n'
+    + '   แก้ยังไง: `isGifFile(file)` + `GIF_MAX_BYTES` / `GIF_TOO_BIG_MSG` จาก utils/imageFileKind.js\n');
+});
+
+/* ── 📦 ไลบรารี export ก้อนใหญ่ ต้อง lazy (08/10 · QC audit · egress ข้อ 11) ──────────────
+   `jspdf` ~400 KB · `jspdf-autotable` ~30 KB · `xlsx` ~424 KB · `exceljs` ~930 KB
+   static import = **โหลดตอน "เปิดหน้า" ไม่ใช่ตอน "กด export"** · วัดจากบันเดิลจริง 08/10:
+   `PMCheckData-*.js` ดึง jspdf + autotable มาทุกครั้งที่เปิด /pm?tab=check (429 KB)
+   และ `EventLog` ดึง xlsx 424 KB — ที่เหลือทั้งระบบ lazy อยู่แล้ว 2 จุดนี้เป็นตัวที่ตก */
+test('🛡️ export-libs-lazy-import — jspdf/xlsx/exceljs ห้าม static import', () => {
+  const LIBS = ['jspdf', 'jspdf-autotable', 'xlsx', 'exceljs'];
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const rel = relative(ROOT, file);
+    if (rel.includes('__tests__')) continue;
+    const code = stripComments(readFileSync(file, 'utf8'));
+    for (const lib of LIBS) {
+      const re = new RegExp(`^\\s*import\\s[^;]*?from\\s+['"]${lib.replace('/', '\\/')}['"]`, 'm');
+      if (re.test(code)) bad.push(`${rel} → ${lib}`);
+    }
+  }
+  assert.deepEqual(bad, [], '\n\n❌ ไลบรารี export ถูก static import:\n' + bad.map(b => '   • ' + b).join('\n') + '\n'
+    + '   ทำไม: โหลดตอนเปิดหน้า แม้ผู้ใช้ไม่เคยกด export (jspdf 429 KB · xlsx 424 KB · exceljs 930 KB)\n'
+    + '   แก้ยังไง: `const { default: jsPDF } = await import(\'jspdf\')` ในฟังก์ชัน export\n'
+    + '             (ฟังก์ชันที่เป็น async อยู่แล้วเปลี่ยนได้โดยไม่กระทบผู้เรียก)\n');
+});
+
+/* ── ยอดคงเหลือชีทไลน์ปั๊มห้ามลงเป็นสต็อกที่ชื่อไลน์ผลิต (09/10 · user "เลขนั้นแค่บอกว่าผลิตได้เท่าไหร่ ไม่ได้บอกว่าของอยู่ไหน") ── */
+test('🛡️ MonitoringUpload ต้องส่ง stockLocOf (refStockOf) ให้ monitoringToRecords', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/components/MonitoringUpload.jsx'), 'utf8'));
+  assert.ok(/monitoringToRecords\([\s\S]*?stockLocOf[\s\S]*?\}\)/.test(code) && /refStockOf\(/.test(code),
+    '\n\n❌ ตัวนำเข้า Monitoring ไม่ส่ง stockLocOf — BALANCE ชีทไลน์ปั๊มจะกลับไปลงเป็นสต็อกที่ชื่อไลน์ผลิต\n'
+    + '   ผล: ยอดค้างที่ LINE A–D ไม่มีใครเบิก/รับ · จุดเรียกเติมที่อ้าง STORE ขึ้น "ยังเช็คไม่ได้" ทั้งที่ของเต็มสโตร์\n'
+    + '   แก้: stockLocOf = (mat, line) => refStockOf(...) แบบ seedOnly (utils/partRefStock.js)\n');
+});
+
+
+/* ═══ 🗑️ ลบคำถาม LPA ต้องนับปลายทางก่อน + บอกขอบเขต (2026-10-12 · feedback หน้างาน) ═══
+   เคสจริง: *"Layer ข้อ 22,23 หายไปครับ"* — 02/10 มีคนกด 🗑 ลบข้อ common 2 ข้อ (VISUAL/ANDON)
+   ⇒ หายจากใบตรวจ **ทุกไลน์** ทันที (คนกดอยู่ในมุมมอง "ทุกไลน์" แต่ confirm เดิมไม่บอกว่าเป็นของส่วนรวม)
+   `lpa_audit_answers` ไม่มี FK ⇒ คำตอบกำพร้า 2,444 แถว (17%) กระทบใบตรวจ 581 ใบ
+   — ข้อมูลไม่หาย (มี question_text snapshot) แต่ใบเก่าแสดงไม่ครบ เพราะจอวาดจากลิสต์คำถามปัจจุบัน */
+test('🛡️ lpa-question-delete-needs-refs — ลบ lpa_questions ต้องผ่านด่านนับปลายทาง', () => {
+  const bad = walk(join(ROOT, 'src'), ['.js', '.jsx']).filter((f) => {
+    const code = stripComments(readFileSync(f, 'utf8'));
+    if (!/from\(['"]lpa_questions['"]\)[\s\S]{0,80}?\.delete\(\)/.test(code)) return false;
+    return !/lpaQuestionBlockMessage/.test(code) || !/lpaDeleteConfirmText/.test(code);
+  }).map(f => f.replace(ROOT + '/', ''));
+  assert.deepEqual(bad, [],
+    '\n\n❌ ลบ `lpa_questions` โดยไม่มีด่านนับปลายทาง/ไม่บอกขอบเขต: ' + bad.join(', ') + '\n'
+    + '   ทำไมผิด: ข้อ common (line_name ว่าง) = ของส่วนรวม ลบทีเดียวหายทุกไลน์\n'
+    + '            และคำตอบเก่าใน lpa_audit_answers ไม่มี FK ⇒ กลายเป็นกำพร้า ใบย้อนหลังอ่านไม่ครบ\n'
+    + '   แก้ยังไง: นับก่อนถาม → lpaQuestionBlockMessage(q, await loadLpaQuestionRefs(supabase, q.id))\n'
+    + '            มีคนใช้อยู่ = ไม่ลบ ให้ "⏸ ปิดใช้งาน" แทน · ลบได้ค่อย confirm ด้วย lpaDeleteConfirmText(q)\n'
+    + '            (src/utils/lpaQuestionRefs.js)\n');
+});
+
+/* ใบตรวจ LPA ที่บันทึกแล้ว = **บันทึก** ไม่ใช่ใบที่ generate ใหม่ (กฎเดียวกับฟอร์มที่ยื่นออกไปแล้ว)
+   ⇒ ต้องวาด/เขียนกลับ "ข้อที่ถูกถอดออกจากเช็คลิสต์ไปแล้ว" ด้วย ไม่งั้น:
+     (ก) ใบเก่าแสดงไม่ครบ  (ข) แค่กดบันทึกซ้ำ คำตอบของข้อที่ถูกลบจะหายถาวร (delete-then-insert) */
+test('🛡️ lpa-audit-keeps-removed-answers — ใบตรวจต้องพกคำตอบของข้อที่ถูกถอดออกไปแล้ว', () => {
+  const f = join(ROOT, 'src/pages/LayerProcessAudit.jsx');
+  const code = stripComments(readFileSync(f, 'utf8'));
+  assert.ok(/savedOnlyAnswers\(/.test(code),
+    '\n\n❌ LayerProcessAudit ไม่เรียก savedOnlyAnswers — ข้อที่ถูกลบ/ปิดใช้ทีหลังจะหายจากใบย้อนหลัง\n');
+  assert.ok(/question_text:\s*a\.question_text/.test(code) || /text:\s*a\.question_text/.test(code),
+    '\n\n❌ ตอนโหลดใบเก่าไม่ได้พก question_text (snapshot) มาด้วย ⇒ ข้อที่ถูกลบจะไม่มีข้อความให้แสดง\n');
+  assert.ok(/removedAnswers\.map\(/.test(code),
+    '\n\n❌ saveAudit ไม่ได้เขียนคำตอบของข้อที่ถูกถอดออกกลับลงฐาน ⇒ กดบันทึกซ้ำ = ข้อมูลหายรอบสอง\n');
+});
+
+/* ═══ ไลน์เครื่องขนาน — นาที downtime ต้องหารจำนวนเลนก่อนเป็นน้ำหนัก wLoad (2026-10-12) ═══
+   ที่มา: recheck ใบ OEE/Defect PD3+PD4 ก.ย. 2026 เทียบกับระบบ — %A/%Q ตรง แต่ OEE เดือนของ
+   LASER-345 ต่ำกว่าที่ควร เพราะ `dtMinBySession` รวมนาที DT **รายเครื่อง** (3 เครื่อง) มาหัก
+   จากเวลากะเดียว ⇒ plannedMin ทะลุความยาวกะ ⇒ `wLoad = max(0, …)` เหลือ 0
+   ⇒ **กะนั้นถูกตัดออกจากค่าเฉลี่ยโดยไม่มี error** (ก.ย. 2026: 11 กะน้ำหนัก 0 · LASER-345 22/37 กะ
+   โดนลดน้ำหนักเกินครึ่ง ⇒ OEE เดือน 82.9% → 80.6% แล้วถูก export เป็นฟอร์มไปเซ็น)
+   `computeSessionOee` หาร 1/N ถูกมาตั้งแต่แรก — ที่พังคือ "ตัวถ่วงน้ำหนัก" เท่านั้น */
+test('🛡️ dt-by-session-needs-lines — ทุกการเรียก dtMinBySession ต้องส่งทะเบียนไลน์ { lines }', () => {
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const rel = relative(ROOT, file);
+    if (rel.includes('__tests__') || rel === 'src/utils/oee.js') continue;
+    const code = stripComments(readFileSync(file, 'utf8'));
+    let m; const re = /dtMinBySession\s*\(/g;
+    while ((m = re.exec(code))) {
+      // อ่านอาร์กิวเมนต์จนวงเล็บปิด (รองรับวงเล็บซ้อน เช่น `brk.data || []`)
+      let i = m.index + m[0].length, depth = 1;
+      while (i < code.length && depth > 0) { const c = code[i++]; if (c === '(') depth++; else if (c === ')') depth--; }
+      const args = code.slice(m.index + m[0].length, i - 1);
+      if (!/\blines\b/.test(args)) bad.push(`${rel}:${code.slice(0, m.index).split('\n').length}`);
+    }
+  }
+  assert.deepEqual(bad, [],
+    '\n\n❌ จุดด้านล่างเรียก dtMinBySession โดยไม่ส่ง { lines } (ทะเบียนไลน์)\n'
+    + '   ทำไมห้าม: ไลน์เครื่องขนาน (LASER-345/789 = 3 เครื่อง · SUB APRON = 6 สถานี) บันทึก downtime\n'
+    + '   **รายเครื่อง** ⇒ ผลรวมนาทีของกะเดียวทะลุความยาวกะได้ตามปกติ (วัดจริง 09/09/2026: 1,025 น. บนกะ 720 น.)\n'
+    + '   ไม่หารเลนก่อน ⇒ wLoad = shift_min − plannedMin เหลือ 0 = กะนั้นหายจากค่าเฉลี่ยเงียบๆ\n'
+    + '   แก้ยังไง: dtMinBySession(sessions, downtimes, breakPolicies, { lines })\n'
+    + '             `lines` รับได้ทั้งอาร์เรย์ทะเบียนไลน์ และแมป { [ชื่อไลน์]: แถว } (oee.js §3.2)\n\n'
+    + bad.map(b => '   • ' + b).join('\n') + '\n');
+});
+
+/* ═══ ยอดผลิตของ "ทั้งกะ" ห้ามวน reduce ใบผลิตเองในหน้า (2026-10-12) ═══
+   กฎเดียวกันเคยอยู่ 3 ที่ (orderProducedQty / computeSessionOee / handleCloseSession)
+   ⇒ `confirmed → o.qty` ที่หนึ่ง กับ `qty_ok ?? qty` อีกที่หนึ่ง = รอวัน drift
+   ยุบเป็น `sessionProducedQty()` (oee.js §6.0.1) แล้ว — ห้ามเขียนใหม่ */
+test('🛡️ session-produced-qty-single-source — ห้ามรวมยอดผลิตของกะเองด้วย reduce', () => {
+  const ALLOW = {
+    'src/utils/oee.js': 'เจ้าของสูตร',
+  };
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const rel = relative(ROOT, file);
+    if (rel.includes('__tests__') || ALLOW[rel]) continue;
+    const code = stripComments(readFileSync(file, 'utf8'));
+    // `…filter(o => o.status === 'confirmed')…reduce(… + o.qty …)` ภายในช่วงสั้นๆ เดียวกัน
+    const re = /status\s*===\s*'confirmed'[\s\S]{0,200}?\.reduce\([^)]{0,120}\+\s*[A-Za-z_$][\w$]*\.qty\b/g;
+    let m;
+    while ((m = re.exec(code))) bad.push(`${rel}:${code.slice(0, m.index).split('\n').length}`);
+  }
+  assert.deepEqual(bad, [],
+    '\n\n❌ จุดด้านล่างรวม "ยอดผลิตของกะ" เองจากใบผลิต\n'
+    + '   ทำไมห้าม: สูตรนี้เคยมี 3 สำเนาที่กติกาไม่ตรงกัน (`o.qty` vs `qty_ok ?? qty`)\n'
+    + '   และต้องนับใบ carry_over/imported/cancelled ด้วย — ลืมข้อใดข้อหนึ่ง = ยอดหายเงียบ\n'
+    + '   แก้ยังไง: sessionProducedQty(orders, carryQtyActual) จาก utils/oee.js (§6.0.1)\n\n'
+    + bad.map(b => '   • ' + b).join('\n') + '\n');
+});
+
+/* ═══ คำนวณ OEE ใหม่ = ต้อง re-stamp "ยอด" ด้วยเสมอ (2026-10-12) ═══
+   ปุ่ม "แก้เวลากะ + คำนวณ OEE ใหม่" เคยเขียนทับแค่ oee_a/p/q/oee/shift_min
+   แต่ %P/%Q ถูกคำนวณจาก **ใบผลิตชุดปัจจุบัน** ⇒ ถ้าใบถูกแก้ยอดหลังปิดกะ
+   แถวเดียวกันจะขัดแย้งกันเอง: actual_qty 1,000 แต่ %P คิดจาก 1,100
+   (วัดจริง ก.ย. 2026: 27 กะ · 835 ชิ้น ที่ actual_qty ต่ำกว่าผลรวมใบผลิตจริง) */
+test('🛡️ oee-restamp-needs-qty — ทุก payload ที่เขียน oee_a ต้องเขียน actual_qty ด้วย', () => {
+  const file = join(ROOT, 'src/pages/DailyReport.jsx');
+  const code = stripComments(readFileSync(file, 'utf8'));
+  const bad = [];
+  /* ข้าม payload ของ Telegram (`notifyProdClose({...})`) — มันแค่ "ส่งข้อความ" ไม่ได้เขียนลงฐาน
+     (ใช้คีย์ `total_qty` ไม่ใช่ `actual_qty` โดยตั้งใจ) ⇒ ไม่เกี่ยวกับกฎนี้ */
+  const notifySpans = [];
+  let nm; const nre = /notifyProdClose\s*\(/g;
+  while ((nm = nre.exec(code))) {
+    let i = nm.index + nm[0].length, depth = 1;
+    while (i < code.length && depth > 0) { const c = code[i++]; if (c === '(') depth++; else if (c === ')') depth--; }
+    notifySpans.push([nm.index, i]);
+  }
+  const inNotify = (idx) => notifySpans.some(([a, b]) => idx > a && idx < b);
+
+  let m; const re = /\boee_a\s*:/g;
+  while ((m = re.exec(code))) {
+    if (inNotify(m.index)) continue;
+    // มองย้อนขึ้นไป/ลงมารอบๆ payload เดียวกัน (ออบเจกต์ที่ stamp ค่า OEE ยาวไม่เกิน ~40 บรรทัด)
+    const from = Math.max(0, m.index - 2500), to = Math.min(code.length, m.index + 1200);
+    if (!/\bactual_qty\s*:/.test(code.slice(from, to))) bad.push(`DailyReport.jsx:${code.slice(0, m.index).split('\n').length}`);
+  }
+  assert.deepEqual(bad, [],
+    '\n\n❌ จุดด้านล่าง stamp ค่า OEE ลง production_sessions โดยไม่ stamp ยอดผลิตด้วย\n'
+    + '   ทำไมห้าม: %P/%Q คิดจากใบผลิตชุดปัจจุบัน — ปล่อย actual_qty/qty_ok ค้างค่าเดิม\n'
+    + '   = แถวเดียวกันขัดแย้งกันเอง (ยอด 1,000 แต่ %P คิดจาก 1,100) อธิบายให้ผู้บริหารไม่ได้\n'
+    + '   แก้ยังไง: ใส่ actual_qty / qty_ok = sessionProducedQty(...) ใน payload เดียวกัน\n\n'
+    + bad.map(b => '   • ' + b).join('\n') + '\n');
+});
+
+/* ── เด็ค PowerPoint ทุกตัว = ธีม TSG Revision 01 (12/10 · คำสั่ง user "ทำใหม่หลังจากนี้ต้อง revision1") ──
+   R00 = ปก/ปิดพื้นเขียว · R01 = พื้นขาวทุกหน้า · skill tsg-presentation-theme ที่ sync มายังเป็น R00 */
+test('🛡️ pptx-theme-r01 — ตัวสร้างเด็คห้ามใช้ asset/สีของธีม TSG R00', () => {
+  const theme = readFileSync(join(ROOT, 'docs/meetings/roadshow_build/tsg_theme.py'), 'utf8');
+  assert.match(theme, /REVISION = "R01"/,
+    '\n\n❌ docs/meetings/roadshow_build/tsg_theme.py ไม่ใช่ R01 แล้ว — อย่าเอาไฟล์จาก skill tsg-presentation-theme (R00) มาทับ\n');
+  const R00 = /bg_title\.png|div_pd3\.png|div_pd4\.png|div_jig\.png|logo_big\.png|logo_footer\.png|C0561E|0xC0, ?0x56, ?0x1E|EBD9B0/;
+  const hits = walk(join(ROOT, 'docs'), ['.py'])
+    .filter(f => !f.endsWith('retheme_r01.py'))
+    // เฉพาะตัวสร้าง "สไลด์" (pptx + เด็ค HTML) — infographic A4 ไม่อยู่ในคำสั่งนี้
+    .filter(f => f.endsWith('build_presentation.py') || /from pptx|import tsg_theme/.test(readFileSync(f, 'utf8')))
+    .filter(f => R00.test(readFileSync(f, 'utf8')))
+    .map(f => relative(ROOT, f));
+  assert.deepEqual(hits, [],
+    '\n\n❌ ตัวสร้างเด็คยังอ้าง asset/สีของธีม TSG R00 (ปก/ปิดพื้นเขียว): ' + hits.join(', ') + '\n'
+    + '   ทำไม: user สั่ง 12/10 ว่าเด็คทุกตัวต้องเป็น Revision 01 — พื้นขาวทุกหน้ารวมปก/ปิด · เขียว 068734 · ส้ม D95323\n'
+    + '   แก้ยังไง: import tsg_theme จาก docs/meetings/roadshow_build/ (title_slide / agenda_slide / section_divider / closing_slide)\n'
+    + '            เด็ค .pptx เก่าที่ไม่มีสคริปต์ → python3 docs/meetings/roadshow_build/retheme_r01.py <file>\n');
 });

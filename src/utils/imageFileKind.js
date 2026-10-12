@@ -33,3 +33,11 @@ export function isGifFile(file) {
   if (!file) return false;
   return String(file.type || '').toLowerCase() === 'image/gif' || extOf(file.name) === 'gif';
 }
+
+/* ── เพดานขนาด GIF (2026-10-08 · ย้ายมาจาก ImageCropModal ให้เป็นของกลาง) ────────────
+   GIF บีบไม่ได้ (บีบแล้วการเคลื่อนไหวหาย) ⇒ ทุกจุดที่ "ส่งผ่านทั้งไฟล์" ต้องกันขนาดเอง
+   🔴 เดิมเลขนี้ถูกประกาศซ้ำ 6 ที่ (ImageCropModal · LineSetup · FactoryMap · RackMap ·
+      DieLayout · PEDocs) และบางจุดเทียบ `file.type === 'image/gif'` ล้วน ซึ่ง
+      **Android ส่ง MIME ว่างมากับรูปจริง** ⇒ เพดานรั่ว · ต้องใช้ `isGifFile()` คู่กับค่านี้ */
+export const GIF_MAX_BYTES = 2 * 1024 * 1024;
+export const GIF_TOO_BIG_MSG = 'GIF ต้องไม่เกิน 2MB — บีบขนาดไม่ได้ (บีบแล้วการเคลื่อนไหวหาย) · บันทึกเป็น JPG/PNG ถ้าไม่ต้องการภาพเคลื่อนไหว';

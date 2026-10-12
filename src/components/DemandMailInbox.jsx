@@ -44,6 +44,7 @@ export default function DemandMailInbox({ refreshKey, onOpen, fullName }) {
   const [latestDone, setLatestDone] = useState({});
   const [missing, setMissing] = useState([]);         // เมลที่หัวเรื่องบอกว่ามีไฟล์ แต่ไฟล์ไม่มาถึง   // ชนิด → เวลาเมลของฉบับล่าสุดที่นำเข้าแล้ว
   const [err, setErr] = useState(null);
+  const [doneErr, setDoneErr] = useState(null);   // 🔴 ตรวจ "มีฉบับใหม่กว่าไหม" ไม่สำเร็จ = ด่านใช้ไม่ได้ ห้ามเงียบ
   const [busy, setBusy] = useState(null);
 
   const load = useCallback(async () => {
@@ -54,9 +55,13 @@ export default function DemandMailInbox({ refreshKey, onOpen, fullName }) {
     setRows(data || []);
     /* 🔴 ฉบับเก่ากว่าที่นำเข้าไปแล้ว = ห้ามนำเข้าทับ — 862 แทนที่ใบ pending ทั้งช่วง
        ⇒ ไฟล์ 25/09 ที่นำเข้าหลังไฟล์ 01/10 จะดึงออเดอร์ถอยหลังกลับไป (เปิดเครื่องทีหลังแล้วเมลค้างหลายฉบับ = เกิดได้จริง) */
-    const { data: done } = await supabaseDR.from('demand_mail_inbox')
+    /* 🔴 คิวรีนี้คือ **แหล่งเดียว** ของป้าย "นำเข้าฉบับใหม่กว่าไปแล้ว" และของ confirm ที่กั้นปุ่มนำเข้า
+       ⇒ กลืน error = ด่านเปิดโล่งเงียบ นำเข้าฉบับเก่าทับใหม่ได้โดยไม่มีอะไรฟ้อง (QC audit 08/10)
+       fail-closed: ตรวจไม่ได้ ⇒ ยังต้อง confirm ทุกใบ + เขียนบนแผงว่าตรวจไม่ได้ */
+    const { data: done, error: eDone } = await supabaseDR.from('demand_mail_inbox')
       .select('file_name, received_at, created_at').eq('status', 'imported')
       .order('received_at', { ascending: false }).limit(20);
+    setDoneErr(eDone ? eDone.message : null);
     const latest = {};
     (done || []).forEach(r => { const k = kindOf(r.file_name); if (k && !(latest[k] >= tsOf(r))) latest[k] = tsOf(r); });
     setLatestDone(latest);
@@ -98,6 +103,8 @@ export default function DemandMailInbox({ refreshKey, onOpen, fullName }) {
   const newerOf = (r) => {
     const k = kindOf(r.file_name);
     if (!k) return null;
+    // 🔴 ตรวจไม่ได้ = ถือว่า "อาจมีฉบับใหม่กว่า" ⇒ ยังต้อง confirm (ห้าม fail-open · QC audit 08/10)
+    if (doneErr) return 'ตรวจไม่ได้ว่ามีฉบับใหม่กว่าไปแล้วหรือยัง';
     if (latestDone[k] > tsOf(r)) return 'นำเข้าฉบับใหม่กว่าไปแล้ว';
     if (rows.some(o => o.id !== r.id && kindOf(o.file_name) === k && tsOf(o) > tsOf(r))) return 'มีฉบับใหม่กว่าในคิว';
     return null;
@@ -113,6 +120,9 @@ export default function DemandMailInbox({ refreshKey, onOpen, fullName }) {
           background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--text2)', cursor: 'pointer' }}>↻</button>
       </div>
       {err && <div style={{ fontSize: 12, color: '#ef4444' }}>⚠ โหลดคิวไฟล์จากเมลไม่ได้: {err}</div>}
+      {doneErr && <div style={{ fontSize: 12, color: '#ef4444', fontWeight: 700 }}>
+        ⚠ ตรวจไม่ได้ว่าไฟล์ไหนมีฉบับใหม่กว่านำเข้าไปแล้ว ({doneErr}) — ทุกใบจะถามยืนยันก่อนเปิด
+      </div>}
       {missing.map(m => (
         <div key={m.message_id || m.subject} style={{ fontSize: 12, color: '#ef4444', fontWeight: 700, marginTop: 4,
           padding: '6px 8px', borderRadius: 8, border: '1px solid rgba(239,68,68,0.5)', background: 'var(--card)' }}>

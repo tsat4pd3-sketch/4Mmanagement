@@ -10,5 +10,13 @@
         ]
       }
     ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(git fetch *)",
+      "Bash(git merge-base *)",
+      "Bash(git rev-list *)",
+      "Bash(npm run check:context)"
+    ]
   }
 }

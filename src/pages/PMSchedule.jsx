@@ -5,6 +5,7 @@ import { supabaseDR } from '../supabaseClient'
 import { DEPT_LABEL, dueStatusDefer, deferActive, STATUS_META, computeNextDue, daysUntilDue, cycleLabel, cycleDaysOf, CYCLE_PRESETS, freqForCycle, ymdBangkok } from '../lib/pmSchedule'
 import { setChecklistFrequency } from '../lib/pmChecklists'
 import { loadProductionLines } from '../utils/useProductionLines'
+import { fetchAllPages, fetchByIds } from '../utils/fetchByIds'   // 🔴 เพดาน 1000 แถว + URL ยาว (กฎเหล็ก DB ข้อ 5)
 import { getLineFamilyNames } from '../utils/lineHierarchy'
 import {
   CYCLE_BASIS, BASIS_LABEL, BASIS_HINT, DEFAULT_MAX_IDLE_DAYS,
@@ -114,6 +115,8 @@ export default function PMSchedule() {
   // 🔩 อะไหล่ของแผน PM (2026-10-08) — แถวที่เปิดโมดัลอยู่ · จำนวนอะไหล่ที่ผูกต่อ checklist · ตัวกระตุ้นให้แถบสรุปโหลดใหม่
   const [spareFor, setSpareFor] = useState(null)
   const [spareCount, setSpareCount] = useState(() => new Map())
+  const [spareErr, setSpareErr] = useState(null)   // 🔴 นับอะไหล่ไม่ได้ = ปุ่มต้องเขียน "?" ไม่ใช่ "ยังไม่ผูก"
+  const [loadErr, setLoadErr] = useState(null)     // 🔴 โหลดแผนล้ม ≠ แผนกนี้ไม่มีแผน (ห้ามใช้ข้อความเดียวกัน)
   const [spareReload, setSpareReload] = useState(0)
   const [teams, setTeams] = useState(pmTeamsSync()) // ทีมช่าง data-driven (mtn_teams)
   useEffect(() => { loadPmTeams().then(setTeams) }, [])
@@ -137,13 +140,17 @@ export default function PMSchedule() {
   const fetchData = async () => {
     setLoading(true)
 
-    const { data: checklists } = await supabaseDR
-      .from('checklists')
-      .select('id, equipment_id, frequency, name')
-      .eq('module', 'mtn')
-      .eq('department', department)
-
-    if (!checklists || checklists.length === 0) { setRows([]); setLoading(false); return }
+    /* 🔴 คิวรีหลักของหน้านี้ (QC audit 08/10) — เดิมไม่อ่าน error เลย ⇒ RLS/เน็ต/42703 ล้ม
+          = เดินเข้า early-return เดียวกับ "แผนกนี้ไม่มีแผน" ⇒ ทั้งแท็บว่าง **โดยไม่มีอะไรฟ้อง**
+       🔴 และไม่มี paging ⇒ ชนเพดาน 1000 แถวเงียบ (MTN 325 เครื่อง × หลายแผนก) */
+    const { rows: checklists, error: eCl, truncated: trCl } = await fetchAllPages(
+      () => supabaseDR.from('checklists').select('id, equipment_id, frequency, name')
+        .eq('module', 'mtn').eq('department', department),
+    )
+    const clLoadErr = eCl || (trCl ? 'รายการตรวจเยอะเกินเพดาน — โหลดได้ไม่ครบ' : null)
+    setLoadErr(clLoadErr)
+    if (clLoadErr) { setRows([]); setLoading(false); return }   // ว่างเพราะล้ม ≠ ว่างเพราะไม่มีแผน
+    if (!checklists.length) { setRows([]); setLoading(false); return }
 
     const clIds = checklists.map(c => c.id)
     const eqIds = [...new Set(checklists.map(c => c.equipment_id))]
@@ -226,9 +233,15 @@ export default function PMSchedule() {
     setInsps((inspections ?? []).map(i => ({ ...i, eqName: eqNameByCl[i.checklist_id] ?? '—' })))
     setRows(built)
     // จำนวนอะไหล่ที่ผูกต่อแผน — ล้ม = ไม่โชว์ตัวเลขบนปุ่ม (ปุ่มยังเปิดโมดัลได้ และโมดัลบอก error เอง)
-    const { data: spLines, error: spErr } = await supabaseDR.from('pm_plan_spares').select('checklist_id').in('checklist_id', clIds)
-    if (spErr) console.warn('[pm-schedule] โหลดอะไหล่ของแผนไม่สำเร็จ:', spErr.message)
-    setSpareCount(sparesCountByChecklist(spLines || []))
+    /* 🔴 ผ่าน fetchByIds (08/10) — เดิม `.in()` ดิบกับ checklist ทุกตัวของแผนก (300+ uuid
+          ≈ 12,000 ตัวอักษรใน URL · เกณฑ์ระบบ 120 id/ก้อน) + ไม่มี paging ⇒ จำนวนขาดเงียบ
+       🔴 ล้ม = ปุ่มต้องเขียน "?" ไม่ใช่โชว์ว่า "ยังไม่ผูกอะไหล่" (คนจะไปผูกซ้ำ) */
+    const { rows: spLines, error: spErr, truncated: spTr } = await fetchByIds(
+      clIds, (ids) => supabaseDR.from('pm_plan_spares').select('checklist_id').in('checklist_id', ids),
+    )
+    const spFail = spErr || (spTr ? 'อ่านได้ไม่ครบ' : null)
+    setSpareErr(spFail)
+    setSpareCount(spFail ? new Map() : sparesCountByChecklist(spLines || []))
     setLoading(false)
   }
 
@@ -240,11 +253,13 @@ export default function PMSchedule() {
   useEffect(() => {
     if (!spareReload || !clIdKey) return
     let alive = true
-    supabaseDR.from('pm_plan_spares').select('checklist_id').in('checklist_id', clIdKey.split(','))
-      .then(({ data, error }) => {
+    fetchByIds(clIdKey.split(','), (ids) => supabaseDR.from('pm_plan_spares').select('checklist_id').in('checklist_id', ids))
+      .then(({ rows, error, truncated }) => {
         if (!alive) return
-        if (error) return toast.error('โหลดจำนวนอะไหล่ของแผนไม่สำเร็จ: ' + error.message)
-        setSpareCount(sparesCountByChecklist(data || []))
+        const fail = error || (truncated ? 'อ่านได้ไม่ครบ' : null)
+        setSpareErr(fail)
+        if (fail) return toast.error('โหลดจำนวนอะไหล่ของแผนไม่สำเร็จ: ' + fail)
+        setSpareCount(sparesCountByChecklist(rows || []))
       })
     return () => { alive = false }
   }, [spareReload, clIdKey])
@@ -344,6 +359,18 @@ export default function PMSchedule() {
         <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 60 }}>
           <div style={{ width: 32, height: 32, border: '2px solid var(--accent)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
         </div>
+      ) : loadErr ? (
+        /* 🔴 โหลดล้ม ต้องเขียนว่า "โหลดไม่สำเร็จ" ห้ามใช้หน้าตาเดียวกับ "ยังไม่มีแผน" (QC audit 08/10)
+              — คนอ่านว่า "แผนกนี้ไม่มีแผน PM" แล้วไปตั้งใหม่ทับ หรือเชื่อว่าไม่มีงานค้าง */
+        <div style={{ background: 'var(--card)', border: '1px solid rgba(239,68,68,0.5)', borderRadius: 'var(--radius-lg)', padding: '40px 24px', textAlign: 'center' }}>
+          <div style={{ fontSize: 36, marginBottom: 12 }}>⚠️</div>
+          <p style={{ fontSize: 15, fontWeight: 700, color: '#ef4444', marginBottom: 8 }}>โหลดแผน PM ไม่สำเร็จ</p>
+          <p style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 10 }}>
+            <b>ไม่ได้หมายความว่าแผนกนี้ไม่มีแผน</b> — ตารางด้านล่างว่างเพราะอ่านข้อมูลไม่ได้<br />เหตุผลจากระบบ: {loadErr}
+          </p>
+          <button onClick={fetchData} style={{ fontSize: 13, fontWeight: 700, padding: '7px 16px', borderRadius: 8, cursor: 'pointer',
+            background: 'var(--accent)', color: 'var(--accent-ink)', border: '1px solid var(--accent)' }}>↻ ลองโหลดอีกครั้ง</button>
+        </div>
       ) : rows.length === 0 ? (
         <div style={{ background: 'var(--card)', border: '1px dashed var(--border2)', borderRadius: 'var(--radius-lg)', padding: '48px 24px', textAlign: 'center' }}>
           <div style={{ fontSize: 36, marginBottom: 12 }}>📅</div>
@@ -427,7 +454,7 @@ export default function PMSchedule() {
                     </td>
                     <td style={{ textAlign: 'right' }}>
                       <div style={{ display: 'inline-flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                        <button onClick={() => setSpareFor(r)} title="อะไหล่ที่ใช้ใน PM รอบหนึ่ง + เบิกตามแผน" style={{ ...S.actionBtn(spareCount.get(cl.id) ? '#4a90e0' : '#8b8b96') }}>🔩 {spareCount.get(cl.id) ? `อะไหล่ ${spareCount.get(cl.id)}` : 'อะไหล่'}</button>
+                        <button onClick={() => setSpareFor(r)} title={spareErr ? `นับจำนวนอะไหล่ที่ผูกไว้ไม่ได้ (${spareErr}) — เปิดดูในโมดัลได้` : "อะไหล่ที่ใช้ใน PM รอบหนึ่ง + เบิกตามแผน"} style={{ ...S.actionBtn(spareErr ? '#f59e0b' : spareCount.get(cl.id) ? '#4a90e0' : '#8b8b96') }}>🔩 {spareErr ? 'อะไหล่ ?' : spareCount.get(cl.id) ? `อะไหล่ ${spareCount.get(cl.id)}` : 'อะไหล่'}</button>
                         {canDefer && <button onClick={() => setCycleFor([r])} style={{ ...S.actionBtn(nextDue ? '#8b8b96' : '#f59a3f') }} title="ตั้งรอบ PM / วัน PM ครั้งถัดไป">📅 {nextDue ? 'รอบ/วัน' : 'ตั้งวัน PM'}</button>}
                         {canDefer && r.plan?.id && (isDeferred
                           ? <button onClick={() => cancelDefer(r)} style={{ ...S.actionBtn('#8b8b96') }} title="ยกเลิกการเลื่อน">✕ ยกเลิกเลื่อน</button>

@@ -58,7 +58,8 @@
     - ⚠️ **คอลัมน์คือ `resource` + `action` แยกกัน ไม่ใช่ `permission_key`** (key ที่โค้ดเช็คคือ `resource:action` ที่ประกอบขึ้นตอน runtime) · เขียน insert ผิดคอลัมน์ = error 42703
     - ⚠️ **`group_name` ต้องเป็นชื่อหมวดตาม `NAV_GROUP_ORDER` เท่านั้น + `sort` ตามช่วงของหมวด** (**ช่วงต่อหมวดอยู่ในตาราง `nav_groups` — `select name, sort_lo, sort_hi from nav_groups order by seq`** · ณ 2026-09-07: ภาพรวม 100-149 · จอแสดงผล 150-199 · ฝ่ายผลิต 2xx · วิเคราะห์ & รายงาน 3xx · พนักงาน & ทักษะ 4xx · Logistic ขาเข้า 500-519 / ขาออก 520-539 / แผนงาน 540-599 · ซ่อมบำรุง 6xx · คุณภาพ & วิศวกรรม 7xx · ตั้งค่า 900-949 · ผู้บริหาร & เดโม 950-999 · 8xx ว่าง — เลือกเลขที่ยังว่าง ห้ามซ้ำ · เช็คหลัง seed: `select * from v_permission_catalog_sort_drift` ต้องว่าง) · **ตั้งแต่ 2026-09-07 `permission_catalog.group_name` มี FK → `nav_groups(name)`** (migration `20260907_nav_groups_registry.sql` **apply แล้ว**) — seed ด้วยชื่อหมวดที่ไม่มีในทะเบียน = migration **error ทันที** ไม่ใช่ warning · **เปลี่ยน/เพิ่มหมวดเมนู = แก้ `NAV_GROUP_ORDER` + เขียน migration ใหม่ชื่อ `*_nav_groups_*.sql` (upsert ทั้งชุด) ในคอมมิทเดียวกัน** — เทส `src/utils/__tests__/navGroupsRegistry.test.mjs` อ่านไฟล์ตัวล่าสุดเทียบ App.jsx ไม่ตรง = build ไม่ผ่าน · เปลี่ยนชื่อหมวด: update `nav_groups.name` แถวเดียว catalog ตามเอง (on update cascade) — พิมพ์ชื่อหมวดเอง = หมวดกำพร้าโผล่กลางตาราง (audit 2026-08-19 เจอ 'ซ่อมบำรุง'/'ประชุมแถวเช้า' เป็นหมวดเดี่ยว + sort ชนกัน 8 คู่ → จัดใหม่ทั้งตารางด้วย migration `20260819_permission_catalog_regroup.sql` **apply แล้ว 2026-08-19** — cosmetic ล้วน ไม่แตะ role_permissions · ผลตรวจ: 9 หมวด 89 แถว ตรงเป๊ะ) · **⚠️ แล้วยังหลุดอีกรอบ:** `20260818_org_divisions.sql` seed `org:manage_divisions` ด้วย `group_name='ตั้งค่า/ฐานข้อมูล'` (ชื่อผิด) แต่ถูก apply **หลัง** audit รอบนั้น จึงตกสำรวจ → เก็บด้วย `20260824_permission_catalog_org_divisions_group.sql` (**apply แล้ว 2026-08-24** · ผลตรวจ: 9 หมวด 94 แถว · หมวดตั้งค่าฯ sort ถึง 940) — **บทเรียน: migration ที่ seed catalog แล้ว apply ทีหลัง ต้องตรวจ group_name ซ้ำเสมอ audit รอบเก่าไม่ครอบให้** · **`PAGE_GROUPS` ใน PermissionsManagement.jsx ต้อง mirror `NAV_ITEMS` เสมอ** (หมวด/ลำดับ/ชื่อ — เพิ่มหน้าใหม่แก้ 2 ที่ให้ตรงกัน) · QC checklist ข้อ C6
   - **ลงทะเบียนแล้วยังไม่จบ** — กับดัก `enum_range` (ดูย่อหน้าถัดไป) ทำให้ role ที่เพิ่มทีหลังไม่มีแถว ต้องไปติ๊กที่ `/permissions` เองอยู่ดี
-  - **ห้ามใส่ key ลงทะเบียนโดยที่โค้ดไม่เรียกใช้** — ติ๊กแล้วไม่มีผล คนตั้งค่างง (ลบ `org:manage`/`users:manage`/`permissions:manage` ออกแล้ว — 3 หน้านั้นคุมด้วย `page:*` + admin-only พอ)
+  - **ห้ามใส่ key ลงทะเบียนโดยที่โค้ดไม่เรียกใช้** — ติ๊กแล้วไม่มีผล คนตั้งค่างง (ลบ `org:manage`/`users:manage` ออกแล้ว — 2 หน้านั้นคุมด้วย `page:*` + admin-only พอ)
+    - 🔴 **แต่ `permissions:manage` คืนทะเบียนแล้ว 2026-10-09** (migration `20261006_permissions_manage_perm_main.sql`) — เหตุผล: `/permissions` **เป็นหน้าที่ติ๊ก `page:/permissions` ให้ role อื่นได้จากตัวมันเอง** ⇒ "admin-only พอ" เป็น**สมมติฐานที่หมดอายุ** (กฎเหล็ก DB ข้อ 10) · ตอนนี้ทั้งปุ่มบนจอ (`canSeeded('permissions','manage')`) และ policy เขียนของ `role_permissions` อ่าน**คีย์เดียวกัน** · ค่าเริ่มต้น = admin เท่านั้น (role อื่น `allowed=false` ชัดเจน กัน bucket `dept_admin` แจกให้โดยไม่มีใครเจตนา)
   - **คอลัมน์ 🛡️ แอดมินหน่วยงาน โผล่เฉพาะแท็บ "สิทธิ์การทำงาน"** (`PAGE_COLS` กรอง `bucket` ออกจากแท็บหน้า) เพราะ `hasPermission()` บล็อก `page:*` ของ bucket ไว้ — ติ๊กในแท็บหน้าไม่มีผลจริง **ห้ามเอาคอลัมน์นี้กลับเข้าแท็บการเข้าถึงหน้า**
   - **ตรวจว่าครบไหม:** เทียบ key ที่โค้ดเรียก (`can('x','y')` / `canDelete` / `hasPermission` — ระวัง call แบบ dynamic เช่น `approve_${role}` ใน EventLog และ `STEP_PERM[step]` ใน MtnRepair) กับ `permission_catalog` และเทียบ `NAV_ITEMS` กับ `PAGE_GROUPS`
 - **🛡️ แอดมินหน่วยงาน (Department Admin) — 2 ชั้นต่อหน่วยงานสนับสนุน (2026-08-03 · คำสั่ง user):** แยก "คนใช้งาน" (ดู/ใช้ แต่แก้ไม่ได้) ออกจาก "แอดมินหน่วยงาน" (แก้ master/ตั้งค่า/อนุมัติ — เฉพาะ scope หน่วยงานตัวเอง ไม่ใช่ admin ระบบ) โดย**ไม่เพิ่ม role รายหน่วยงานเป็นสิบตัว**
@@ -88,6 +89,37 @@
 > - **policy ที่ต้องการหลาย key ให้ `or` กัน** (`employee_skills` = `skills:edit` ∨ `skills:approve_levelup` ∨ `skills:delete`) แล้วปรับต่อที่ `/permissions` ได้เลยไม่ต้องเขียน migration ใหม่
 > - **⚠️ RLS ปฏิเสธ UPDATE/DELETE = 0 rows ไม่ error** (เงียบ!) มีแต่ INSERT/upsert ที่โยน 42501 → **โค้ดที่เขียนตารางซึ่งคุมด้วย RLS ต้อง gate ด้วย `can()` ฝั่ง UI ให้ตรงกับ policy ด้วย** อย่าหวังพึ่ง error
 > - **ผลของการแก้ (วัดกับผู้ใช้จริง):** ได้สิทธิ์เพิ่ม mtn 8 + planner_store(dept_admin) 1 · **เสียสิทธิ์ leader 17 คน** (ตรงตามที่ `role_permissions` ตั้งไว้)
+### 🔭 ขอบเขตของ "จอที่โชว์ยอดรายไลน์" — กรอง dropdown อย่างเดียวไม่พอ (2026-10-09 · QC audit รอบ 4)
+
+**เคสจริง:** `/line-stock` แท็บ 📦 Stock ส่ง `{...scope}` เข้า `<LineSelect>` (dropdown กรองแล้ว)
+แต่ **ชิปสรุป · ตาราง · ประวัติ transaction โหลดมาทั้งโรงงาน** ทั้งที่ป้ายใต้ชิปเขียนว่า
+*"ทุกไลน์/คลังในสิทธิ์ที่เห็น"* ⇒ **จอโกหก** + supervisor กรองไลน์ที่ตัวเองเห็นในตารางไม่ได้
+(ทะเบียนไลน์มีแค่ PD1–PD4 33 ไลน์ · บัญชีที่ถูกบีบจริง **44 บัญชี** — supervisor 25 · leader 16 ·
+manager 3 · doc_control 2 · display 1 · planner_store 1 — ที่เหลือ `scope_depth='all'` = ไม่กระทบ)
+
+**กติกา:** กรองแถวผ่าน **`filterRowsByLineScope()`** (`src/utils/sectionScope.js` · มีเทส
+`lineScopeRows.test.mjs`) คู่กับ `scopedLineNames()` — **ห้ามเขียนเงื่อนไขกรองเองในหน้า**
+- 🔴 **ค่าที่ไม่อยู่ในทะเบียนไลน์ = "ตัดสินไม่ได้" ⇒ ไม่ซ่อน แต่จอต้องเขียนว่าไม่ได้ตรวจ**
+  (หลักเดียวกับล็อกฝั่งใบ MO: *ไม่รู้ = ไม่บล็อก แต่บอก*) — วัดจริง 09/10: `line_stock_summary`
+  มี `STORE` 119 แถว + `FG WAREHOUSE` 73 แถว = **44% ของทั้งจอ** และทั้งคู่ไม่ใช่ไลน์
+  ⇒ กรองตรงๆ = ยอดคลังหายหมด (คนสโตร์เปิดจอแล้วว่างเปล่า)
+- 🔴 **`hidden` ต้องเขียนบนจอเสมอ** — "เคลียร์หมด" ≠ "ถูกกรองออก"
+- ⚠️ ทะเบียนไลน์ยังไม่โหลด = ไม่ซ่อนอะไรเลย (fail-open — ห้ามซ่อนข้อมูลเพราะ "ยังไม่รู้")
+- ⛔ **คิวอนุมัติ (`pending`) ยังไม่กรอง** โดยตั้งใจ — บีบคิวอนุมัติ = ใบค้างไม่มีคนอนุมัติ
+  เป็น product decision รอ user สั่ง (ปุ่มยังคุมด้วย `can('line_stock','approve')` เหมือนเดิม)
+
+### 🔐 role/สังกัดของผู้ใช้ อ่านจาก `UserContext` เท่านั้น — มีด่านแล้ว (2026-10-09)
+
+บรรทัด "ทุกหน้าอ่าน role ผ่าน `UserContext`" ข้างบน **เคยไม่จริง**: `PMCheckData.jsx` ยิง
+`profiles.select('role, full_name').eq('id', <ตัวเอง>)` ซ้ำจากฐาน (ไฟล์เดียวในโปรเจค) ⇒
+- ได้แต่คอลัมน์ดิบ **ไม่ได้ `sections` ที่ `effectiveSections()` ตีความให้** (ตาข่าย admin · `scope_depth`)
+- 🎭 **โหมดดูแทน role อื่นไม่มีผลบนหน้านั้น** — admin สวมเป็น mtn เพื่อทดสอบ แต่ `can()` ยังอ่าน
+  role จริง ⇒ เห็นปุ่มครบแล้วสรุปผลทดสอบผิด (จอทดสอบสิทธิ์ที่โกหก = แย่กว่าไม่มีโหมดทดสอบ)
+
+⇒ ด่าน **`own-profile-role-via-context`** (`regressionGuards`) ยกเว้นได้เฉพาะ `src/App.jsx`
+(เจ้าของเรื่อง — โหลดตัวจริงแล้วแจกต่อ) · 🔴 `supabase.auth.getUser()` เพื่อเอา **uid** ยังทำได้
+ตามปกติ: คนตรวจ/คนอนุมัติ/คนสั่ง export ในใบต้องเป็น uid จริงเสมอ **ห้ามปนกับ role ที่ถูกสวม**
+
 > #### ⚠️ ขอบเขตสกิล 2 ระดับ: ฝ่าย → เจาะจงหน่วยงาน (2026-08-18 · คำสั่ง user)
 > **ที่มา:** ช่างแผนก MTN เปิดโมดัลแก้ไขพนักงานแล้วเจอสกิลฝ่ายผลิต 29 ตัวขึ้น "ไม่เกี่ยวข้อง" เรียงยาวจนหาของตัวเองไม่เจอ
 > - **ผังองค์กร *ไม่มี* ชั้นฝ่ายเป็น node โดยตั้งใจ** — ระดับบนสุดคือ **ส่วนงาน** (PD1-4, Planning&Store) กับ **แผนกขึ้นตรงฝ่าย** (MTN, JIG MTN, DIE MTN, QA) · แทรก node ชั้นใหม่จะไปพัง cascade section→department ทุกหน้า
@@ -718,3 +750,61 @@ migration: `20261006_rls_tighten_open_write_main.sql` (**apply แล้ว** ·
 
 migration: `20261006_rls_positions_grades_perm_keys_main.sql` (**apply แล้ว**)
 ⚠️ **ไม่แตะแถว `manage_master_data`** — ยังไม่ได้ไล่ครบว่ามี policy อื่นอ่านอยู่หรือไม่ (ลบ = เสี่ยง)
+
+## 🔒 RLS รอบ 5 — แยก 3 ชั้นก่อนรัด (2026-10-12 · QC audit)
+
+🔴 **รายการค้างเดิมเขียนว่า "12 ตาราง" — วัดจริงได้ 231 policy** (บทเรียนเดียวกับ "คีย์ซ้ำ ×13"
+ใน `qc-audit-history.md`: *รายการค้างคือสิ่งที่เห็นผ่านๆ ไม่ใช่ขอบเขต*) · และ **3 ชั้นนี้ความเสี่ยงไม่เท่ากัน
+ห้ามรัดเหมา**:
+
+| ชั้น | นับได้ | ความเสี่ยงจริง | รอบนี้ทำ |
+|---|---|---|---|
+| **ก. PUBLIC (รวม `anon`)** | 5 policy / 5 ตาราง | 🔴 ใครมี anon key ก็อ่านได้ ไม่ต้องล็อกอิน | ✅ ปิดครบ |
+| **ข. เขียนได้ทุกคนที่ล็อกอิน** | 71 policy / 42 ตาราง | 🔴 ด่านอยู่ที่ UI ชั้นเดียว — ยิง REST ตรงก็ผ่าน | ✅ 3 ตาราง (เหลือ 39) |
+| **ค. อ่านได้ทุกคนที่ล็อกอิน (SELECT)** | 115 policy / 115 ตาราง | 🟡 **ตั้งใจเป็นแบบนี้** สำหรับระบบภายใน | ⛔ ไม่แตะ |
+
+> 🔴 **ชั้น ค. ห้ามรัดเหมาเพื่อ "ให้ตัวเลขสวย"** — ทุกจอพึ่งการอ่าน master (ทะเบียนไลน์ · ผังองค์กร ·
+> คลัง KPI) ถ้าจะรัดต้องทำต่อตารางพร้อมพิสูจน์ว่าจอไหนอ่าน และใครควรเห็น **ไม่ใช่งานของรอบเดียว**
+> ⇒ ผลพลอยได้: การรัด `scope_depth` (ข้อ จ) เป็น **defense-in-depth** ไม่ใช่การอุดรูอ่านข้อมูล
+> เพราะชั้น ค. ยังเปิดอยู่ — พูดให้ตรงไว้ ดีกว่าเคลมเกิน
+
+### (จ) `anon` อ่าน KPI ได้ทั้งคลัง — ปิดแล้ว
+
+วัดก่อนแก้ด้วย `set local role anon`: **`kpi_standard_items` 318 แถว · `kpi_month_notes` 74 ·
+`kpi_board_layouts` 3** (อีก 2 ตารางว่าง policy ก็ยังเปิด) · `profiles` ได้ 0 = ตัวทดสอบเชื่อถือได้
+ทั้ง 5 ตารางถูกแตะด้วย client `supabase` (authenticated) **ที่เดียว** ไม่มี edge function/`supabaseDR`
+⇒ รัดเป็น `to authenticated` = **พฤติกรรมแอปเท่าเดิมเป๊ะ** (ยืนยัน authenticated ยังได้ 318/74/3)
+
+🔴 **ต้องรัด policy `_write` ด้วย ไม่ใช่แค่ `_read`** — `_write` เป็น `for all` ⇒ `using` ของมันถูกใช้
+กับ SELECT ด้วย · ปล่อยเป็น PUBLIC ไว้ anon จะไปโดน `has_perm()` ที่ตัวเองไม่มีสิทธิ์เรียก แล้วได้
+**error `42501` แทน "0 แถว"** (ข้อมูลไม่รั่ว แต่ log สกปรกและสืบยาก — เจอตอนตรวจกลับรอบแรก)
+
+### (ฉ) `scope_depth` ไม่อยู่ในด่านของ `protect_profile_role()`
+
+policy UPDATE ของ `profiles` เป็น `using(true) with check(true)` — **ด่านจริงคือ trigger**
+`trg_protect_profile_role` ซึ่งห้ามแก้ `role`/`sections`/`is_dept_admin`/`employee_id` ของตัวเอง
+แต่ **`scope_depth` (ตัวตัดสินขอบเขตตัวจริงตั้งแต่ 25/09) ไม่อยู่ในรายการ** ⇒ ตั้งเป็น `'all'` เองได้
+→ เติม `scope_depth` · `scope_depth_src` · `account_kind` · `org_node_id` เข้าข้อ ③ ของ trigger
+(ทั้ง 4 เขียนจาก `/add-user` ที่เดียว · self-service มีแค่ลายเซ็น/รูปผ่าน RPC ⇒ ไม่มี flow พัง)
+🔴 **คอลัมน์ใหม่ที่เป็น "สิทธิ์/ขอบเขต" ต้องเติมเข้า trigger ในคอมมิทเดียวกับที่เพิ่มคอลัมน์** —
+คลาสนี้เงียบสนิท: build/เทส/จอผ่านหมด เห็นได้จากการอ่าน trigger เทียบ schema เท่านั้น
+
+### (ช) ทะเบียนหลัก 3 ตาราง — รัดตามคีย์ของปุ่มจริง
+
+| ตาราง | จอเจ้าของ (จอเดียว) | predicate ใหม่ |
+|---|---|---|
+| `production_lines` | `LineSetup.jsx` | INSERT/UPDATE `line_setup:edit` · DELETE `line_setup:delete` **or** `:edit` |
+| `company_calendar` | `CompanyCalendar.jsx` | `company_calendar:edit` (⚠️ หน้านี้ **upsert** ⇒ ต้องมีทั้ง INSERT + UPDATE) |
+| `skill_definitions` | `operator.jsx` แท็บ ⚙️ กำหนดสกิล | `skills:edit` (+ เพิ่ม policy อ่านก่อนรัด `auth_all`) |
+
+· DELETE ของ `production_lines` ใช้ **OR 2 คีย์** เพราะ `canDelete()` ใช้ `:delete` เมื่อถูก seed แล้ว
+  แต่ OR ไว้ = **ไม่แคบกว่าปุ่มแน่นอน** (กฎ "ห้ามแคบกว่าคีย์ที่เปิดปุ่ม")
+· ตรวจกลับด้วย `set_config('request.jwt.claims')` แล้ว rollback: **qa อ่านไลน์ 36 · สกิล 70 ·
+  ปฏิทิน 278 แถว · เขียน 0 ทุกตาราง** · **supervisor update `production_lines` = 1 แถว**
+
+migration `20261012_rls_round5_anon_scope_masters_main.sql` (**apply แล้ว 2026-10-12** · มี ROLLBACK ครบ)
+
+**เหลือเป็นงานต่อ:** ชั้น ข. อีก **39 ตาราง** — ตัวที่ควรทำก่อนเพราะกระทบตัวเลขที่คนใช้ตัดสินใจ:
+`four_m_logs` (ข้ามคิวอนุมัติได้) · `attendances`/`daily_production_logs`/`shift_schedules` (เข้างาน-กะ) ·
+`kpi_actuals`/`kpi_targets`/`kpi_raw_inputs`/`kpi_section_detail` (เลข KPI) · `employees`
+· 📌 `profile_org_access` = **ตารางตาย** (0 แถว · ไม่มีโค้ด/migration ไหนอ้างถึง) — พิจารณาถอดทิ้ง ไม่ใช่รัด

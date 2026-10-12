@@ -59,7 +59,7 @@ const MS_LABEL = { todo: 'ยังไม่เริ่ม', doing: 'กำล�
  * @param {string}   p.issuedBy     ผู้พิมพ์ (fullName)
  */
 export async function printImprovementA3({
-  imp, result, cost, target, milestones = [], started, peReqs = [],
+  imp, result, cost, potentialCost, target, milestones = [], started, peReqs = [],
   framework, workDaysMonth, today, issuedBy, section = null,
 }) {
   const a3 = a3Data(imp);
@@ -82,6 +82,11 @@ export async function printImprovementA3({
   const money = moneyHeadline(mode, cost?.totalPerDay);
   const note = modeNote(mode, r);
   const secs = a3Sections(fw);
+  /* "มูลค่าปัญหา" ของช่อง ② = เพดานจาก baseline ล้วน — คนละตัวกับ Δ ที่ประหยัดได้ในช่อง ⑦
+     โหมด confirmed ตัว `cost` เป็น Δ แล้ว ⇒ ต้องรับเพดานมาแยก (ไม่มีส่งมา = ถอยไปใช้ของ target/cost) */
+  const capPerMonth = potentialCost?.totalPerMonth
+    ?? target?.capPerMonth
+    ?? (cost?.totalPerMonth != null && money.potential ? cost.totalPerMonth : null);
   const secOf = (key) => secs.find(s => s.key === key) || { no: '', title: '', meta: { s: '', label: '', color: '#6b7280' } };
   const prog = planProgress(milestones);
   const unit = r && !r.noData ? r.unit : '';
@@ -133,7 +138,7 @@ export async function printImprovementA3({
         <div><div class="v">${fmt(r.beforePerDay, 1)}</div><div class="l">ก่อนแก้ (${esc(unit)}/วัน)</div></div>
         <div><div class="v">${fmt(r.beforeTotal, 0)}</div><div class="l">รวมก่อนแก้ (${esc(unit)})</div></div>
         <div><div class="v">${fmt(r.beforeDays, 0)}</div><div class="l">วันผลิตที่ใช้เทียบ</div></div>
-        <div><div class="v">${cost?.totalPerMonth != null && money.potential ? fmtBaht(Math.abs(cost.totalPerMonth)) : '—'}</div><div class="l">มูลค่าปัญหา (บาท/เดือน)</div></div>
+        <div><div class="v">${capPerMonth != null ? fmtBaht(Math.abs(capPerMonth)) : '—'}</div><div class="l">มูลค่าปัญหา (บาท/เดือน)</div></div>
       </div>
       ${bar(started ? 'ก่อนแก้' : 'ปัจจุบัน', r.beforePerDay, r.beforeTotal, r.beforeDays, '#dc2626')}
       ${r.source === 'mtn' ? `<div class="sub">⏱ เครื่องหยุดจริงจาก downtime ที่ผูกใบ: ก่อน ${fmt(r.beforeMin)} นาที${(r.beforeMinUnlinked || 0) ? ` · ⚠ ${r.beforeMinUnlinked} ใบไม่มี downtime ผูก (นาทีส่วนนั้นไม่ถูกนับ)` : ''}</div>` : ''}
@@ -184,8 +189,11 @@ export async function printImprovementA3({
     ? `<div class="warn">⚠ ${esc(note)}</div>`
     : `${noBaseline ? noBaselineWarn : ''}
       ${mode === 'confirmed'
-        ? `<div class="big" style="color:${pct != null && pct > 0 ? '#16a34a' : '#dc2626'}">${pct == null ? '—' : `${pct > 0 ? '▼' : '▲'} ${Math.abs(pct)}%`}
-             <span class="sub">เทียบก่อน/หลังวันเริ่มแก้ (${esc(imp.start_date)})</span></div>`
+        ? (pct == null
+            /* ก่อนแก้ = 0 ⇒ หารไม่ได้ · ต้องบอกว่า "ไม่มีฐานเทียบ" ไม่ใช่ปล่อยขีดให้เดาเอง */
+            ? `<div class="warn">คิด % ไม่ได้ — ช่วงก่อนแก้ไม่มี ${esc(unit)} เกิดขึ้นเลย (ไม่มีฐานเทียบ) · ตัวเลขด้านล่างคือของจริงทั้ง 2 ช่วง</div>`
+            : `<div class="big" style="color:${pct > 0 ? '#16a34a' : '#dc2626'}">${pct > 0 ? '▼' : '▲'} ${Math.abs(pct)}%
+                 <span class="sub">เทียบก่อน/หลังวันเริ่มแก้ (${esc(imp.start_date)})</span></div>`)
         : `<div class="warn">⏳ ${esc(note)}</div>`}
       ${noBaseline ? '' : bar(started ? 'ก่อนแก้' : 'ปัจจุบัน', r.beforePerDay, r.beforeTotal, r.beforeDays, '#dc2626')}
       ${started ? bar('หลังแก้', r.afterPerDay, r.afterTotal, r.afterDays, mode === 'confirmed' && pct > 0 ? '#16a34a' : '#f59e0b') : ''}

@@ -169,7 +169,13 @@ export function buildOrgScope({ nodes = [], lines = [], divisions = [], costCent
     const all = new Set();
     groups.forEach((_, grp) => familyOf(grp).forEach(x => all.add(x)));
     const shared = lineNodes.filter(refSharedNode).map(n => nodeCode(n));
-    push('department', nodeCode(dep), nodeCode(dep), depth, parentKey, all,
+    /* 🔴 ป้าย = **ชื่อแผนก** · value = **คีย์ (code||name)** — คนละตัวกัน (2026-10-09 · คำสั่ง user)
+       เดิมส่ง `nodeCode(dep)` เป็นป้ายด้วย ⇒ แผนกที่มี `code` เป็นตัวย่อโชว์ตัวย่อทุกจอ
+       (เช่น "MTN" / "DIE MTN" ทั้งที่ชื่อจริงคือ "Maintenance" / "DIE Maintenance")
+       ป้ายเป็น display ล้วน — `labelOf`/`pathOf` ใช้แค่เขียนบนจอ/คำค้น
+       ส่วนการจับคู่ทุกที่ใช้ `o.value` (เช่น `mtn_teams.dept_name` ใน KpiMonthly/ObeyaKpiBoard)
+       ⇒ เปลี่ยนป้ายไม่กระทบขอบเขต/นิยาม KPI ที่บันทึกไว้ */
+    push('department', nodeCode(dep), dep.name || nodeCode(dep), depth, parentKey, all,
       { cost_center: dep.cost_center || null, ...(shared.length ? { refShared: shared } : {}) });
     if (secCode) sectionOfKey.set(dKey, secCode);
     [...groups.keys()].sort(naturalCompare).forEach((grp) => {
@@ -430,6 +436,19 @@ export function scopeCovers(index, defScope, selected) {
 export const sameScope = (a, b) => (isPlant(a) && isPlant(b)) || (!!a && !!b && a.kind === b.kind && a.value === b.value);
 
 /** ขอบเขตของแถว kpi_definitions (รองรับแถวเก่าที่มีแต่ section/line_group) */
+/** นิยามนี้อยู่ "ใต้" ขอบเขตที่เลือกไหม (ลูก/หลาน — ไม่รวมตัวเอง · ไม่รวมระดับโรงงาน) — 12/10 user: "ลูกมี แม่ไม่มี ต้องโชว์ที่แม่ด้วย"
+ *  CC = ดูจากหน่วยเจ้าของรหัส (รหัสที่เจ้าของคือหน่วยที่เลือก = อยู่ใต้) · เลือกทั้งโรงงาน = ทุกนิยามที่ไม่ใช่ระดับโรงงานอยู่ใต้ */
+export function scopeUnder(index, defScope, selected) {
+  if (isPlant(defScope) || sameScope(defScope, selected)) return false;
+  const units = defScope.kind === 'cost_center' && index.unitsOf ? index.unitsOf(defScope.kind, defScope.value) : [defScope];
+  if (!units.length) return false;
+  if (isPlant(selected)) return true;
+  const selUnits = [selected, ...(index.unitsOf ? index.unitsOf(selected.kind, selected.value) : [])];
+  const same = (a, b) => a.kind === b.kind && a.value === b.value;
+  return units.some(u => selUnits.some(s => (defScope.kind === 'cost_center' && same(u, s))
+    || index.ancestorsOf(u.kind, u.value).some(a => same(a, s))));
+}
+
 export function scopeOfDef(d) {
   if (!d) return { ...PLANT };
   if (d.scope_kind && d.scope_kind !== 'plant' && d.scope_value) return { kind: d.scope_kind, value: d.scope_value };

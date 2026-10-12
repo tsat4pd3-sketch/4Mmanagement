@@ -1,6 +1,9 @@
 import { checkWrite } from '../utils/dbWrite';
 import { useState, useEffect, useContext, useCallback, useMemo } from 'react';
-import * as XLSX from 'xlsx';
+/* 🔴 xlsx = ~424 KB — lazy โหลดตอนกด export เท่านั้น (QC audit 08/10)
+   เดิม static import ⇒ เปิดหน้า /event-log ดาวน์โหลด 424 KB ทุกครั้งแม้ไม่เคยกด export
+   ทุกที่อื่นในระบบใช้ `await import('xlsx')` อยู่แล้ว (PullSignalUpload · SparePartMaster ·
+   MonitoringUpload · MonitorImport · PeExcelImportModal · PlannerSales) — หน้านี้เป็นตัวที่ตก */
 import { supabase } from '../supabaseClient';
 import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
@@ -571,7 +574,8 @@ function fmtTime(isoOrTime) {
 }
 
 /* ─── Excel Export ───────────────────────────────────────────── */
-function exportExcel(logs) {
+async function exportExcel(logs) {
+  const XLSX = await import('xlsx');
   if (!logs.length) { toast.info('ไม่มีข้อมูลที่จะส่งออก'); return; }
 
   const d = new Date();
@@ -885,7 +889,7 @@ function EventList({ logs, loading, onSelect, role, eventDefs }) {
         {filtered.length > 0 && (
           <>
             <button
-              onClick={() => exportExcel(filtered)}
+              onClick={() => { exportExcel(filtered).catch(e => toast.error('ทำไฟล์ Excel ไม่สำเร็จ: ' + (e?.message || e))); }}
               title="Export Excel"
               style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid #22c55e40', background: 'rgba(34,197,94,0.1)', color: '#22c55e', fontSize: 11, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
               📥 Export Excel

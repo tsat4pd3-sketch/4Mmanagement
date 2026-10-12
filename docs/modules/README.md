@@ -34,6 +34,7 @@
 | Value Stream Mapping — `/vsm` (เฟส 1 · 2026-08-13) | `docs/modules/vsm.md` | 19 KB |
 | Production Plan — วางแผนการผลิต (Active Planner, 2026-07-15) | `docs/modules/production-plan.md` | 8 KB |
 | Remote Control — จอตาม-มือถือคุม (2026-07-15) | `docs/modules/remote-control.md` | 4 KB |
+| 🔁 จอวนหน้า (display rotation) — `/display-rotation` (2026-10-09) | `docs/modules/display-rotation.md` | 4 KB |
 | MTN Work-Order — ใบแจ้งซ่อม MO 7 ขั้น (2026-07-14) | `docs/modules/mtn-work-order.md` | 148 KB |
 | 🔍 KPI ช่าง + QC 7 Tools — `/mtn-analysis` (2026-09-22) | `docs/modules/mtn-problem-analysis.md` | 16 KB |
 | คลังอะไหล่ (Spare Part Master) — FM-JIG-009 + Rank ตาม WI-JIG-010 (2026-08-05) | `docs/modules/spare-part-master.md` | 24 KB |

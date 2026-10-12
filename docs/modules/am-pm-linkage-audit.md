@@ -1,8 +1,7 @@
 # 🔗 Audit — AM กับ PM ทั้งโปรเจค "มันต้อง link กัน" (2026-10-08 · คำสั่ง user)
 
-> สถานะ: **รายงานผล ยังไม่แก้** (ยกเว้นผังรวมโรงงาน AM ที่แก้ไปก่อนหน้าในวันเดียวกัน) ·
-> ลำดับแก้ที่เสนออยู่ท้ายไฟล์ — ข้อที่เป็น product decision (ยุบ 2 ระบบ AM) **ต้องให้ user สั่งก่อน**
-> (`pm-predictive-planner-sync.md` §งานค้าง ห้ามหยิบไปทำเอง)
+> สถานะ 2026-10-09: **รอบ 1 + รอบ 2 แก้แล้ว** (user สั่ง "ลุยยาว" 08/10) — รายละเอียดสิ่งที่ทำอยู่ §4 ท้ายไฟล์ ·
+> รอบ 3 (KPI %compliance · นิยาม "เดินวันนี้" opened vs confirmed) ยังรอ user
 
 ## 0. ภาพรวม — AM มี 2 ระบบที่ไม่คุยกัน · PM มีสูตร "ครบกำหนด" ที่ไม่รู้จัก run_day
 
@@ -100,3 +99,34 @@
 **รอบ 3 — product decision (ต้องสั่ง):** ยุบ 2 ระบบ AM ให้เหลือกติกาเดียว (ทะเบียน = แผน run_day) · KPI %compliance AM/PM (ตัวหารตัด `idle_skip`) ขึ้น OBEYA/DeptDashboard · นิยาม "เดินวันนี้" opened vs confirmed ให้ตรงกันระหว่าง PMSchedule กับบอร์ด AM
 
 📄 เกี่ยวข้อง: `factory-master-map.md` §AM รายวันบนผัง · `pm-predictive-planner-sync.md` §งานค้าง · `pm-hub-check-setup.md`
+
+## 4. สิ่งที่แก้แล้ว (2026-10-09 · รอบ 1 + รอบ 2)
+
+**กฎใหม่ที่ทุก session ต้องรู้ (ย่อจาก CLAUDE.md §PM Predictive):**
+- 🔴 **`null next_due_date ≠ ปกติ`** — ทุกตัวนับ PM ใช้ `planDueBucket(plan, todayStr, {soonDays})` (`lib/pmSchedule.js`) ⇒ ถัง
+  `overdue · due_soon · ok · never · no_cycle · run_day` · never/no_cycle ต้องเขียนบนจอ (เหลือง) · run_day ตัดสินที่จอ AM/PMSchedule เท่านั้น
+- 🔴 **`resolvePlanDue` รู้จัก `basisOf(plan)`** — run_day คืน `status:'run_day'` + `dueYmd:null` **ไม่ถอยไป last_done+interval** (มีเทส)
+- 🔴 **ทีม AM = `isAmTeam(department)`** ห้าม hardcode `'production'` — ด่าน `am-team-via-isAmTeam` · ฝั่ง edge อ่าน `mtn_teams.kind='am'`
+- 🔴 **AM ไม่ใช่ชั้น Preventive ของช่าง** — `buildMaintenanceLevels({ isAm })` กันออก + นับบอก `coverage.amChecklists` · MtnMachineLayout `dept='all'` = PM ช่างเท่านั้น
+- 🔴 **ทะเบียนรายวัน ↔ แผน AM เชื่อมที่ชั้น DB** (migration `20261008_am_registry_plan_link_dr.sql` · DR):
+  `pm_am_plan_follow_registry(jig)` — จิ๊กที่มี target active ⇒ แผน AM = `run_day · interval 1 · max_idle 30 · active · due null` ·
+  trigger `trg_pm_daily_target_plan_sync` (ติ๊ก/เปิดใช้ทะเบียน) · `pm_checklist_sync` ใหม่: ทีม AM + รอบ ≤1 วัน ⇒ run_day ตั้งแต่สร้าง ·
+  ย้ายทีม AM→PM ⇒ กลับ calendar · backfill แล้ว: production run_day **31** (เดิม 7) · calendar เหลือ 2 (จิ๊กที่ไม่อยู่ในทะเบียน)
+- **ทะเบียนรายวัน: เอาออก = `is_active=false`** (ไม่ลบ · รวมแถวเฉพาะกะ) · **ติ๊กเข้า ต้องมีใบตรวจ AM ก่อน** (fail-closed · toast ชี้ไป PM Setup) ·
+  ติ๊กซ้ำ = เปิดใช้แถวเดิม (unique ไลน์×จิ๊ก×กะ)
+- **ห้ามเขียน `next_due_date` ลงแผน run_day** — PMSetup (`planBasis`) · PmCoordination · PMCheckData ข้ามแล้ว · AM + รอบ 1 วัน ที่ PMSetup ⇒ `cycle_basis:'run_day'`
+- **ย้ายไลน์ของจิ๊กที่ PM Setup ⇒ ทะเบียน AM ตามไป** · **ลบไลน์ที่มีทะเบียน AM active = บล็อก** (LineSetup · นับไม่ได้ก็บล็อก)
+- **กติกา "ตรวจแล้ว" ชุดเดียว:** `pmDailyAlarm` ใช้ `loadDailyAm` + `dailyAmLineStatus` (ครอบครัวไลน์ · กะ · dedupe ด้วย `pm_daily_alerts` สี red/green
+  คีย์เดียวกับส้ม) · `PMCheckData` ใช้ `amShiftInfo` + `isAmTeam` · `OrderTrace` หน้าต่าง 08:00→08:00 · pending ไม่นับ · คิวรีล้ม = `unknown` ไม่นับทุกใบเป็น AM
+- **edge `pm-daily-scan` v5:** ทีม AM จาก mtn_teams · pending ไม่นับ (ล่าสุดชนะ) · กะ void ไม่เริ่มนาฬิกา · ครอบครัวไลน์ทุกชั้น · sessions/orders ล้ม = หยุด
+  (ตรวจแล้ว 09/10 00:20–00:50 UTC: 200 `hierarchy:ok` ทุกรอบ)
+- **edge `pm-plan-reminder` v5:** ข้ามแผนของทีม AM (`skippedAm` ใน response) — ห้องช่างไม่เตือนเรื่อง AM
+
+**จอที่เปลี่ยนหน้าตา:** ผังรวมโรงงาน (PM ป้าย "ไม่เคยตรวจ N · ไม่ตั้งรอบ N" · modal PM แยกถัง · AM "แผน AM ไม่เคยตรวจ") ·
+`/dept-dashboard?dept=maintenance` (KPI PM แยก AM ออก + action "แผน PM ที่ไม่เคยตรวจเลย N แผน") · Andon/TV (รายการ PM มี "ไม่เคยตรวจ" ·
+empty-state บอก AM ตามวันเดิน/ไม่ตั้งรอบ) · `/mtn-layout` (หมุด AM ไม่แดงปลอม) · `/maintenance-levels` (บรรทัด coverage บอกใบ AM ที่กันออก) ·
+`/order-trace` (AM unknown เมื่อคิวรีล้ม · ไม่มี "PM เกินกำหนด ณ วันผลิต" ปลอมจาก run_day)
+
+**ที่ยังไม่ทำ (รอบ 3 · รอ user):** KPI %compliance AM/PM ขึ้น OBEYA/DeptDashboard (ตัวหารตัด `idle_skip`) · นิยาม "เดินวันนี้" ให้ตรงกัน
+ระหว่าง PMSchedule (ใบ confirmed ผ่าน `pm_usage_daily`) กับบอร์ด AM (ใบ opened) · `pm-plan-reminder` ยังไม่เตือนแผน "ไม่เคยตรวจ" (ตั้งใจ — 106 แผน
+JIG MTN จะท่วมห้อง · ให้เห็นบนจอแทน) · hardcode `machines.equipment_category === 'production'` (คนละความหมาย = หมวดอุปกรณ์ ไม่ใช่ทีม) ไม่แตะ

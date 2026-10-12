@@ -219,6 +219,15 @@ export function findDieByScan(scan, dies = [], inScope = () => true) {
  * @param {Array} pmRows  แถว jigs ทั้งหมด
  * @returns {{ rows: Array, shadow: number, dup: Array }} rows มี `_qr` = ชนิดรหัสในป้ายของแต่ละแถว
  */
+/**
+ * 🔑 คีย์ของแถวในลิสต์ป้าย — **ต้องมีชนิดแหล่งนำหน้า** (2026-10-08)
+ * แท็บจิ๊กรวม 2 ตาราง (`machines` + `jigs`) ที่ `id` เป็นของคนละทะเบียน ⇒ ใช้ `id` เปล่าเป็นคีย์
+ * = คีย์ซ้ำได้โดยไม่ใช่แถวเดียวกัน (วัดจริงใน harness 08/10: ซ้ำ 8 จาก 15 แถว ⇒ React กลืนแถวที่เลือกไว้)
+ * และ Set ที่เก็บ "แถวที่ติ๊ก" ก็ชี้ผิดแถวได้ ⇒ พิมพ์ป้ายผิดใบ
+ * (กฎข้อ 3 ของ UI-CONVENTIONS §6.27: คนละตาราง = prefix คีย์ตามแหล่ง ห้ามยุบด้วย id)
+ */
+export const labelRowKey = (r) => `${r?._qr || 'machine'}:${r?.id}`;
+
 export function mergeJigLabelRows(mcJigs = [], pmRows = []) {
   const mcNos = new Set(mcJigs.map(m => normCode(m.machine_no)).filter(Boolean));
   const orphans = pmRows.filter(j => !j.machine_id && j.equipment_type !== 'machine');

@@ -18,7 +18,8 @@ import { supabaseDR } from '../supabaseClient';
 import { toast } from './Toast';
 import { checkWrite } from '../utils/dbWrite';
 import fetchAllRows from '../utils/fetchAllRows';
-import { parseMonitoringWorkbook, monitoringToRecords, sheetReport, stockAdjustPlan } from '../utils/monitoringSheet';
+import { parseMonitoringWorkbook, monitoringToRecords, sheetReport, stockAdjustPlan, stockSeedKept } from '../utils/monitoringSheet';
+import { refStockOf, inflowDestOf } from '../utils/partRefStock';
 import { buildBoardPlan, writeBoardPlan, BoardPlanPreview } from './MonitorImport';
 
 /* วันที่งาน (ตัด 08:00 — งานกะดึกข้ามวันนับเป็นวันก่อนหน้า)
@@ -69,7 +70,7 @@ export default function MonitoringUpload({ canUpload, canBoard = true, fullName,
 
       /* ไลน์ของพาร์ท + ยอดคงเหลือปัจจุบัน — อ่านจากทะเบียนจริง ไม่เดาในไฟล์ */
       const { data: prodRows, error: prodErr } = await fetchAllRows(
-        supabaseDR, 'dr_products', 'mat_no, name, line_name', q => q.order('mat_no'));
+        supabaseDR, 'dr_products', 'mat_no, name, line_name, is_active, is_operation', q => q.order('mat_no'));
       if (prodErr) { toast.error(`อ่านทะเบียนสินค้าไม่สำเร็จ: ${prodErr.message} — ยังไม่เขียนอะไร`); setBusy(false); return; }
       /* 🔴 ทะเบียนลูกค้า — ชื่อชีท (TSPK / TSESA+LA) → ลูกค้าจริง
          เดิมไม่เขียน customer เลย ⇒ ใบทั้งหมดไปกองใน "— ไม่ระบุลูกค้า —" ที่จอ 🚚 Delivery
@@ -86,10 +87,30 @@ export default function MonitoringUpload({ canUpload, canBoard = true, fullName,
         if (!nameOfMat[k]) nameOfMat[k] = p.name || '';
       });
 
+      /* 📦 BALANCE ชีทไลน์ปั๊ม = ยอดผลิต ไม่ใช่ที่อยู่ของ (user 09/10) ⇒ ลงคลังตามกฎรับเข้า แบบตั้งต้นเท่านั้น
+         ตัวเลือกคลัง = `refStockOf` ตัวเดียวกับจุดเรียกเติม (พาร์ทล็อตสโตร์ = ที่ไลน์ · นอกนั้นตามกฎ)
+         🔴 อ่านกฎ/ล็อตไม่ได้ = **ไม่ลงยอดผลิตเลย** (ถอยไปลงที่ไลน์ = บั๊กเดิมกลับมา) */
+      const [ruleR, lotR] = await Promise.all([
+        supabaseDR.from('stock_inflow_rules').select('match_type, match_value, dest_line_name, is_active').eq('is_active', true),
+        fetchAllRows(supabaseDR, 'child_lot_requests', 'child_mat_no', q => q.neq('status', 'cancelled').order('child_mat_no')),
+      ]);
+      const stockRulesOk = !ruleR.error && !lotR.error;
+      if (!stockRulesOk) toast.info(`อ่านกฎรับเข้าคลัง/ล็อตสโตร์ไม่ได้ — รอบนี้ไม่ลงยอดคงเหลือจากชีทไลน์ปั๊ม (ส่วนอื่นนำเข้าได้): ${(ruleR.error || lotR.error).message}`);
+      const rules = ruleR.data || [];
+      const lotMats = new Set((lotR.data || []).map(r => String(r.child_mat_no ?? '').trim()).filter(Boolean));
+      const fgDest = inflowDestOf('1', rules.filter(r => r.match_type === 'prefix'));
+      const stockLocOf = (mat, line) => {
+        if (!stockRulesOk) return null;
+        const ref = refStockOf(mat, { lineName: line, products: prodRows || [], rules, lotMats });
+        if (ref.kind === 'produce' && fgDest && ref.loc === fgDest) return null;   // คลัง FG = ชีทลูกค้าเป็นเจ้าของยอด
+        return { loc: ref.loc, seedOnly: true };
+      };
+
       const month = monthKeyOf(today);
       const rec = monitoringToRecords(parsed, {
         monthKey: month, today, customers: custRows || [],
         lineOfMat: (m) => lineOfMat[norm(m)] || null,
+        stockLocOf,
       });
       /* 🔎 สรุปรายชีท — จอต้องบอกได้ว่าชีทไหนให้ 0 ใบ **เพราะอะไร**
          "อ่านถูกแล้วไม่มีของ" กับ "อ่านไม่ออก" หน้าตาเหมือนกันบนจอถ้าไม่แยกข้อความ */
@@ -99,6 +120,7 @@ export default function MonitoringUpload({ canUpload, canBoard = true, fullName,
       const { data: stkRows, error: stkErr } = await readStock();
       if (stkErr) { toast.error(`อ่านยอดคงเหลือไม่สำเร็จ: ${stkErr.message} — ยังไม่เขียนอะไร`); setBusy(false); return; }
       const stockPlan = stockAdjustPlan(rec.stock, stkRows, norm);
+      const stockKept = stockSeedKept(rec.stock, stkRows, norm);
 
       /* LOT/Packing: เทียบกับ kanban_standards — แสดงอย่างเดียว ไม่เขียน */
       const { data: kbRows, error: kbErr } = await fetchAllRows(
@@ -118,7 +140,7 @@ export default function MonitoringUpload({ canUpload, canBoard = true, fullName,
       /* 🔴 ชั้นบอร์ด (ตาราง 13 ชีท) แกะจาก `sheets` ชุดเดียวกัน — อ่านไฟล์ครั้งเดียว เขียนครั้งเดียว
          (08/10 คำสั่ง user: *"จุดอัพโหลดควรมีจุดเดียวแล้วโปรแกรมใช้ด้วยกัน"*) */
       const board = buildBoardPlan(sheets, { today });
-      setPreview({ fileName: file.name, month, parsed, rec, stockPlan, lotDiff, nameOfMat, norm, today, bySheet, board });
+      setPreview({ fileName: file.name, month, parsed, rec, stockPlan, stockKept, lotDiff, nameOfMat, norm, today, bySheet, board });
     } catch (e) {
       toast.error(`อ่านไฟล์ไม่สำเร็จ: ${e.message}`);
     }
@@ -313,7 +335,10 @@ function PreviewPanel({ p, canBoard, onCancel, onConfirm, busy, card, warnBox })
     ['🚚 ออเดอร์ล่วงหน้า', `${future.length} แถว · ${fmt(future.reduce((s, r) => s + r.qty, 0))} ชิ้น`, 'ดิวตั้งแต่วันนี้ไป — เขียนทับรอบก่อน'],
     ['📜 ประวัติการส่ง', `${histCount} แถว`, 'ลงตารางประวัติ ไม่ใช่ใบส่งของ · อัพซ้ำไม่เกิดแถวซ้ำ'],
     ['📉 MIN/MAX', `${rec.levels.length} พาร์ท`, 'ต่อไลน์ — ทับค่าเดิมของพาร์ทนั้น'],
-    ['📦 ปรับยอดสต็อก', `${stockPlan.length} รายการ`, 'ลงเป็นรายการ adjust (ไม่ลบของเก่า ย้อนได้)'],
+    ['📦 ปรับยอดสต็อก', `${stockPlan.length} รายการ`,
+      'ลงเป็นรายการ adjust (ไม่ลบของเก่า ย้อนได้) · ยอดจากชีทไลน์ปั๊มลงคลังตามกฎ (STORE ฯลฯ) ไม่ใช่ที่ไลน์'
+      + ((p.stockKept || []).length ? ` · ไม่ทับ ${p.stockKept.length} พาร์ทที่คลังมียอดในระบบแล้ว` : '')
+      + (rec.pressStockSkipped ? ` · ข้าม ${rec.pressStockSkipped} พาร์ท FG (ยอดคลัง FG มาจากชีทลูกค้า)` : '')],
   ];
   return (
     <div style={{ ...card, borderColor: 'var(--accent)' }}>

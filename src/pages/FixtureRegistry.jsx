@@ -405,17 +405,13 @@ export default function FixtureRegistry() {
         tab={tab} onTab={setTab}
       />
 
-      {dataWarn && (
-        <div style={{ background: 'rgba(239,68,68,0.10)', border: '1px solid rgba(239,68,68,0.45)',
-                      borderRadius: 10, padding: '9px 14px', fontSize: 12.5, marginBottom: 12 }}>
-          ⚠️ {dataWarn}
-        </div>
-      )}
-
-      {/* เลือกฟิกเจอร์ — ใช้ร่วม 2 แท็บแรก */}
+      {/* เลือกฟิกเจอร์ — ใช้ร่วม 2 แท็บแรก
+          🔴 แถบกรองต้องเป็น **การ์ดของตัวเอง เป็นลูกตัวแรกใต้แถบแท็บ** (UI-STANDARD §2.1 ระยะ 16px
+             + §3.1 "แถบกรอง = การ์ด 1 แถบ") — เดิมซ้อนอยู่ในการ์ดเดียวกับรายละเอียดฟิกเจอร์
+             ⇒ stdsweep วัดระยะแท็บ→แถบกรองได้ 75px (มาตรฐาน 16) · แก้ 08/10 */}
       {(tab === 'points' || tab === 'shim') && (
-        <div style={{ ...card, marginBottom: 12, display: 'grid', gap: 10 }}>
-          <FilterBar bare style={{ marginBottom: 0 }}>
+        <>
+          <FilterBar>
             <SearchInput value={q} onChange={setQ} fields="ฟิกเจอร์" grow={false} />
             <select value={fxId} onChange={e => setFxId(e.target.value)}>
               <option value="">— เลือกจิ๊ก / ฟิกเจอร์ ({shownFixtures.length}) —</option>
@@ -433,7 +429,7 @@ export default function FixtureRegistry() {
           </FilterBar>
 
           {fx && (
-            <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 12, color: 'var(--muted)' }}>
+            <div style={{ ...card, marginBottom: 12, display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 12, color: 'var(--muted)' }}>
               <span>พาร์ทที่จับ: {shadow?.part_no ? <b style={{ color: 'var(--text)' }}>{shadow.part_no}</b> : <Blank />}</span>
               <span>
                 shot สะสม: {shot.shots == null
@@ -444,6 +440,17 @@ export default function FixtureRegistry() {
               <span>ชิ้นต่อ 1 ครั้ง: {fx.pieces_per_cycle ?? <span style={{ color: '#f59e0b' }}>ยังไม่ตั้ง (ถือว่า 1)</span>}</span>
             </div>
           )}
+        </>
+      )}
+
+      {/* 🔴 ลำดับมาตรฐาน: ชื่อหน้า → แท็บ → แถบกรอง → **เนื้อหา** (UI-STANDARD §2.1)
+          แถบเตือน "โหลดไม่ครบ" เป็นเนื้อหา ⇒ อยู่ใต้แถบกรอง · เดิมอยู่ระหว่างแท็บกับแถบกรอง
+          ⇒ stdsweep วัดระยะแท็บ→แถบกรองได้ 75px เวลาที่แถบเตือนโผล่ (แก้ 08/10)
+          ⚠️ ยังอยู่บนสุดของเนื้อหา — คนต้องเห็นก่อนเชื่อตัวเลขด้านล่าง */}
+      {dataWarn && (
+        <div style={{ background: 'rgba(239,68,68,0.10)', border: '1px solid rgba(239,68,68,0.45)',
+                      borderRadius: 10, padding: '9px 14px', fontSize: 12.5, marginBottom: 12 }}>
+          ⚠️ {dataWarn}
         </div>
       )}
 

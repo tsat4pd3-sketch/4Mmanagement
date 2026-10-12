@@ -14,7 +14,7 @@
    ⚠️ RLS ฝั่ง DR ปฏิเสธ UPDATE/DELETE = 0 แถวเงียบ ⇒ ทุกการเขียน `.select('id')` แล้วนับแถว
    ⚠️ สูตรอยู่ `src/utils/pmSpares.js` · ตัวโหลดอยู่ `src/lib/pmSpareData.js` — ห้ามคิดเลขในไฟล์นี้
    ═══════════════════════════════════════════════════════════════════════════ */
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { supabaseDR } from '../supabaseClient'
 import { toast } from './Toast'
 import SearchSelect from './SearchSelect'
@@ -64,7 +64,12 @@ export function PlanSparesModal({ row, canEdit, canIssue, byName, byUid, onClose
   const [pickQty, setPickQty] = useState('1')
   const [busy, setBusy] = useState(false)
 
+  /* 🔴 stale-guard (กฎเหล็ก DB ข้อ 4 · QC audit 08/10) — โมดัลนี้เปลี่ยน `clId` ได้โดยไม่ unmount
+     (กดข้ามแผนจากโมดัลความต้องการรวม) ⇒ ไม่มี guard = ตอบช้าของแผนเก่าทับตอบเร็วของแผนใหม่
+     = เห็นอะไหล่ของแผนอื่น · แถบในไฟล์เดียวกันมี guard ถูกแล้ว ตัวนี้ขาด */
+  const reqRef = useRef(0)
   const load = useCallback(async () => {
+    const my = ++reqRef.current
     setLoading(true); setLoadErr('')
     const [ls, ps, hs] = await Promise.all([
       supabaseDR.from('pm_plan_spares').select('id, part_id, qty_per_pm, note').eq('checklist_id', clId).order('created_at'),
@@ -72,6 +77,7 @@ export function PlanSparesModal({ row, canEdit, canIssue, byName, byUid, onClose
       supabaseDR.from('mtn_stock_txns').select('id, part_id, qty, created_at, by_name').eq('ref_checklist_id', clId)
         .order('created_at', { ascending: false }).limit(20),
     ])
+    if (my !== reqRef.current) return    // มีคำขอใหม่กว่าแล้ว — ทิ้งผลนี้ ห้าม setState
     const errs = [ls.error && 'รายการอะไหล่', ps.error && 'ทะเบียนอะไหล่', hs.error && 'ประวัติเบิก'].filter(Boolean)
     if (errs.length) setLoadErr(`โหลดไม่สำเร็จ: ${errs.join(' · ')}`)
     setLines(ls.data || []); setParts(ps.data || []); setHistory(hs.data || [])
@@ -213,7 +219,19 @@ export function SpareDemandBanner({ todayStr, reloadKey = 0, onOpenPlan }) {
   useEffect(() => {
     let alive = true
     setState(s => ({ ...s, loading: true }))
-    loadPmSpareDemand({ todayStr }).then(r => { if (alive) setState({ loading: false, demand: r.demand, error: r.error }) })
+    /* 🔴 ต้องมี catch (QC audit 08/10) — ถ้า spareDemand()/resolvePlanDue() โยน (ข้อมูลเพี้ยนแถวเดียวก็พอ)
+       เดิมเป็น unhandled rejection ⇒ loading ค้าง true ตลอด ⇒ **แถบหายเงียบ**
+       ซึ่งขัดคอมเมนต์ของตัวเองข้างล่าง ("ห้ามซ่อนทั้งแถบ — คนจะไม่รู้ว่ามีฟีเจอร์นี้") */
+    loadPmSpareDemand({ todayStr })
+      .then(r => { if (alive) setState({ loading: false, demand: r.demand, error: r.error }) })
+      .catch(e => {
+        if (!alive) return
+        setState({
+          loading: false,
+          demand: { rows: [], noDue: [], summary: { horizonDays: 0, parts: 0, short: 0, belowMin: 0, noDuePlans: 0 } },
+          error: `คิดความต้องการอะไหล่ไม่สำเร็จ: ${e?.message || e}`,
+        })
+      })
     return () => { alive = false }
   }, [todayStr, reloadKey])
 

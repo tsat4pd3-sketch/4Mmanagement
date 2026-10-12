@@ -254,6 +254,31 @@ export function manualMonthSeries({ entries = {}, year, summary = 'average' } = 
   return { series, ytd: sum, months: filled.length, mode, effMode, approx };
 }
 
+/** เดือนที่ซีรีส์ auto "มีค่า" → `{ 1: v, … }` (ตัวเลขเดือนเป็นคีย์ · เดือนว่าง/null ไม่อยู่) */
+export function autoMonthsOf(series = []) {
+  const out = {};
+  (series || []).slice(0, 12).forEach((p, i) => { if (p && p.v != null) out[i + 1] = p.v; });
+  return out;
+}
+
+/** ⚡ ค่าระบบชนะ · ✍️ ค่ากรอกมือเติม **เฉพาะเดือนที่ระบบไม่มีค่า** — กติกาเดียวของทุกแถว auto บนบอร์ด KPI (user 09/10)
+ *  คืน `series: null` เมื่อไม่มีเดือนให้เติม (ผู้เรียกใช้ซีรีส์ auto เดิมเป๊ะ — เช่น OEE ถ่วงน้ำหนักเวลา ไม่ถูกแทนด้วยค่าเฉลี่ย)
+ *  · `overlapN` = เดือนที่กรอกมือไว้แต่ระบบมีค่า ⇒ ถูกทับ **จอต้องเขียนบอก ห้ามเงียบ** · แท่งที่เติม = `manualFill:true`
+ *  · ไม่เขียนลงฐาน — เป็นแค่วิธี "โชว์" */
+export function fillAutoWithManual({ autoMonths = {}, manEntries = {}, year, summary = 'average' } = {}) {
+  const fill = {};
+  let overlapN = 0;
+  for (const [m, v] of Object.entries(manEntries || {})) {
+    if (v == null || v === '') continue;
+    if (autoMonths[m] != null) overlapN++; else fill[m] = v;
+  }
+  const autoN = Object.keys(autoMonths).length, fillN = Object.keys(fill).length;
+  if (!fillN) return { series: null, months: autoN, autoN, fillN: 0, overlapN };
+  const merged = manualMonthSeries({ entries: { ...autoMonths, ...fill }, year, summary });
+  const series = merged.series.map((p, i) => (i < 12 && fill[i + 1] != null ? { ...p, manualFill: true } : p));
+  return { series, months: merged.months, autoN, fillN, overlapN, effMode: merged.effMode, approx: merged.approx };
+}
+
 /** สถานะแท่งรายเดือนตาม **เกณฑ์ทางการ 1/0.5/0** (`scoreDef`) — ใช้กับแถว KPI บนบอร์ด KPI ส่วนงาน
  *  (จอ SQDCM ยังใช้ `monthBarStatus`/`statusOf` เพราะแกน SQDCM ไม่ใช่ "แถว KPI" ที่มี Commitment) */
 export const monthBarScore = (p, def) => {

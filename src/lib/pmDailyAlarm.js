@@ -1,29 +1,35 @@
-// System 1 — fire the Daily PM Telegram alarm (green/red) when a production
-// daily-PM inspection is saved. Orange (didn't check in time) is handled by the
-// scheduled scan, not here. Routing/room selection lives in the send-notification
-// edge function (event 'pm_daily').
+// System 1 — fire the Daily AM Telegram alarm (green/red) when a production
+// daily-AM inspection is saved. Orange (didn't check in time) is handled by the
+// scheduled scan (edge pm-daily-scan), not here. Routing/room selection lives in
+// the send-notification edge function (event 'pm_daily').
+//
+// 🔗 08/10 (audit AM↔PM): ข้อมูล/กติกา "ตรวจแล้ว" ทั้งหมดมาจาก `lib/dailyAmBoard.js` ตัวเดียว
+//    — เดิมไฟล์นี้คิดกะเอง · หา target ด้วย `.eq('line_name', jig.line_name)` (ไม่รวมครอบครัวไลน์ ⇒
+//    จิ๊กที่ลงทะเบียนไว้ที่ไลน์แม่ HYDROFORM ไม่เคยยิงแดง/เขียว) · hardcode 'production' · ส่ง firstOrderAt:null
+//    · แดงยิงซ้ำทุกครั้งที่บันทึก NG · ตอนนี้ dedupe ด้วย `pm_daily_alerts` (line, work_date, shift, color)
+//    ตารางเดียวกับที่ scan ใช้กันส้มซ้ำ
 import { supabase, supabaseDR } from '../supabaseClient'
-import { computeDailyPmStatus } from './pmDailyStatus'
-
-function getShiftInfo(now = new Date()) {
-  const h = now.getHours()
-  const totalMin = h * 60 + now.getMinutes()
-  const isDay = totalMin >= 8 * 60 && totalMin < 20 * 60
-  const workDate = new Date(now)
-  if (h < 8) workDate.setDate(workDate.getDate() - 1)
-  const shiftStart = new Date(workDate)
-  shiftStart.setHours(isDay ? 8 : 20, 0, 0, 0)
-  const pad = (n) => String(n).padStart(2, '0')
-  return {
-    shift: isDay ? 'day' : 'night',
-    workDateStr: `${workDate.getFullYear()}-${pad(workDate.getMonth() + 1)}-${pad(workDate.getDate())}`,
-    label: isDay ? '☀️ กะเช้า' : '🌙 กะดึก',
-    shiftStart,
-  }
-}
+import { isAmTeam } from '../utils/pmTeams'
+import { loadDailyAm, dailyAmLineStatus } from './dailyAmBoard'
 
 async function fire(pm) {
-  try { await supabase.functions.invoke('send-notification', { body: { event: 'pm_daily', pm } }) } catch { /* best-effort */ }
+  try {
+    const { error } = await supabase.functions.invoke('send-notification', { body: { event: 'pm_daily', pm } })
+    return !error
+  } catch { return false }
+}
+
+/** ยิง 1 ครั้งต่อ (ไลน์ · วันทำงาน · กะ · สี) — มีแถวกันซ้ำแล้ว = ไม่ยิง · ยิงไม่สำเร็จ = ไม่ mark (รอบหน้าลองใหม่) */
+async function fireOnce(key, pm) {
+  const { data: dup, error: dErr } = await supabaseDR.from('pm_daily_alerts').select('id')
+    .eq('line_name', key.line_name).eq('work_date', key.work_date).eq('shift', key.shift).eq('color', key.color).limit(1)
+  if (dErr || dup?.length) return false   // อ่านตัวกันซ้ำไม่ได้ = ห้ามเดาว่ายังไม่เคยส่ง
+  const ok = await fire(pm)
+  if (ok) {
+    const { error: mErr } = await supabaseDR.from('pm_daily_alerts').insert({ ...key })
+    if (mErr && mErr.code !== '23505') console.warn('pm_daily mark failed', mErr.message)   // 23505 = ชน unique (มีคนยิงพร้อมกัน) ไม่เป็นไร
+  }
+  return ok
 }
 
 /**
@@ -33,43 +39,26 @@ async function fire(pm) {
  * @param ngTopics    names of the NG checkpoints in this inspection
  */
 export async function handleDailyPmSave({ jig, department, overall, ngTopics = [] }) {
-  if (department !== 'production' || !jig?.line_name) return
-  const si = getShiftInfo()
+  if (!isAmTeam(department) || !jig?.id) return
+  const res = await loadDailyAm()
+  if (!res.ok) return   // best-effort — บันทึกผลตรวจสำเร็จไปแล้ว แค่ไม่ยิงแจ้งเตือน (scan ส้มยังทำงาน)
+  const si = res.shift
+  // ไลน์ที่จิ๊กนี้ลงทะเบียนไว้ (เฉพาะกะนี้) — target ชี้ไลน์แม่ได้ ไม่ใช่ jig.line_name เสมอไป
+  const lines = [...new Set(res.targets
+    .filter(t => t.jig_id === jig.id && (!t.shift || t.shift === si.shift))
+    .map(t => t.line_name))]
+  if (!lines.length) return   // ไม่ได้ลงทะเบียน AM = ไม่มีเสียงเตือนรายไลน์
+  const byLine = dailyAmLineStatus({ ...res, shift: si.shift, now: new Date() })
 
-  // Only registered daily-PM equipment triggers the line alarm.
-  const { data: targets } = await supabaseDR.from('pm_daily_line_targets')
-    .select('jig_id, shift').eq('line_name', jig.line_name).eq('is_active', true)
-  const active = (targets ?? []).filter(t => !t.shift || t.shift === si.shift)
-  if (!active.some(t => t.jig_id === jig.id)) return
-
-  const base = { line_name: jig.line_name, shift_label: si.label, work_date: si.workDateStr }
-
-  // Red the moment a check comes back NG.
-  if (overall === 'fail') {
-    await fire({ ...base, color: 'red', ng: [{ machine: jig.machine_no, name: jig.name, topics: ngTopics }] })
-    return
-  }
-
-  // Otherwise green only once the whole line is complete and all pass.
-  const jigIds = active.map(t => t.jig_id)
-  const [{ data: jigRows }, { data: prodCls }] = await Promise.all([
-    supabaseDR.from('jigs').select('id, name, machine_no').in('id', jigIds),
-    supabaseDR.from('checklists').select('id').eq('module', 'mtn').eq('department', 'production'),
-  ])
-  const jigById = Object.fromEntries((jigRows ?? []).map(j => [j.id, j]))
-  const prodIds = new Set((prodCls ?? []).map(c => c.id))
-  const { data: insp } = await supabaseDR.from('inspections')
-    .select('jig_id, status, checklist_id, inspected_at')
-    .in('jig_id', jigIds).gte('inspected_at', si.shiftStart.toISOString())
-    .order('inspected_at', { ascending: false })
-  const results = {}
-  for (const i of insp ?? []) {
-    if (!prodIds.has(i.checklist_id)) continue
-    if (!results[i.jig_id]) results[i.jig_id] = { status: i.status }
-  }
-  const tg = jigIds.map(id => ({ jig_id: id, name: jigById[id]?.name, machine_no: jigById[id]?.machine_no }))
-  const st = computeDailyPmStatus({ targets: tg, results, firstOrderAt: null, now: new Date() })
-  if (st.status === 'green') {
-    await fire({ ...base, color: 'green', checked: st.checked, total: st.total })
+  for (const line_name of lines) {
+    const key = { line_name, work_date: si.workDateStr, shift: si.shift }
+    const base = { line_name, shift_label: si.label, work_date: si.workDateStr }
+    if (overall === 'fail') {
+      // แดงทันทีที่พบผิดปกติ (1 ครั้งต่อไลน์ต่อกะ — จุดที่ 2 ดูในจอ AM/ผังรวมโรงงาน)
+      await fireOnce({ ...key, color: 'red' }, { ...base, color: 'red', ng: [{ machine: jig.machine_no, name: jig.name, topics: ngTopics }] })
+      continue
+    }
+    const st = byLine[line_name]
+    if (st?.status === 'green') await fireOnce({ ...key, color: 'green' }, { ...base, color: 'green', checked: st.checked, total: st.total })
   }
 }

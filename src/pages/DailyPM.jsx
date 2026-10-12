@@ -11,6 +11,8 @@ import { can } from '../utils/permissions'
 import { inSectionScope } from '../utils/sectionScope'
 import { getLineFamilyNames } from '../utils/lineHierarchy'
 import { loadDailyAm, amShiftInfo, dailyAmLineStatus } from '../lib/dailyAmBoard'
+import { loadPmTeams, isAmTeam } from '../utils/pmTeams'
+import { checkWriteRows } from '../utils/dbWrite'
 import LineSelect from '../components/LineSelect' // dropdown ไลน์ = <LineSelect> เท่านั้น (single-source audit 2026-09-07)
 import useTabParam from '../utils/useTabParam'
 import { visibleInterval } from '../utils/usePolling'
@@ -149,20 +151,32 @@ export default function DailyPM() {
     const key = `${line_name}::${jig.id}`
     const isOn = registeredKey.has(key)
     if (isOn) {
-      const row = targets.find(t => t.line_name === line_name && t.jig_id === jig.id && !t.shift)
-      if (row) {
-        // ติ๊กออก = ลบแถวลงทะเบียน (destructive) → ยืนยันก่อน · ติ๊กเข้าเป็น additive ไม่ต้องถาม (UI-CONVENTIONS §5.4)
-        if (!window.confirm(`เอา "${jig.name}" ออกจากรายการเช็ค Daily PM ของไลน์ ${line_name} ?`)) return
-        const { error } = await supabaseDR.from('pm_daily_line_targets').delete().eq('id', row.id)
-        if (error) return toast.error(error.message)
-        setTargets(prev => prev.filter(t => t.id !== row.id))
-      }
+      /* ติ๊กออก = ปิดใช้ (is_active=false) ทุกแถวของ ไลน์×จิ๊ก (รวมแถวเฉพาะกะ ที่เดิมเอาออกจาก UI ไม่ได้) — ไม่ลบ เก็บประวัติ
+         (08/10 audit AM↔PM) · ยืนยันก่อนเพราะมีผลต่อการเตือนทั้งไลน์ · แผน AM ของจิ๊กไม่ถูกแตะ (คนตัดสินเองที่ PM Setup) */
+      const rows = targets.filter(t => t.line_name === line_name && t.jig_id === jig.id)
+      if (!rows.length) return
+      if (!window.confirm(`เอา "${jig.name}" ออกจากรายการเช็ค AM รายวันของไลน์ ${line_name} ?${rows.some(t => t.shift) ? '\n\n(รวมแถวที่ตั้งไว้เฉพาะกะด้วย)' : ''}`)) return
+      const ok = checkWriteRows(await supabaseDR.from('pm_daily_line_targets').update({ is_active: false })
+        .in('id', rows.map(t => t.id)).select('id'), 'เอาออกจากทะเบียน AM')
+      if (!ok) return
+      setTargets(prev => prev.filter(t => !rows.some(r => r.id === t.id)))
     } else {
-      const { data, error } = await supabaseDR.from('pm_daily_line_targets')
-        .insert({ line_name, jig_id: jig.id, shift: null, created_by: userId })
-        .select().single()
-      if (error) return toast.error(error.message)
-      setTargets(prev => [...prev, data])
+      /* 🔗 ติ๊กเข้า = "จิ๊กนี้ต้องตรวจทุกต้นกะ" ⇒ ต้องมีใบตรวจของทีม AM ก่อน ไม่งั้นลงทะเบียนแล้วเปิดเจอฟอร์มเปล่า
+         (fail-closed · 08/10) · แผน AM ของจิ๊กจะกลายเป็น run_day ให้เองที่ชั้น DB (trigger trg_pm_daily_target_plan_sync) */
+      await loadPmTeams().catch(() => {})
+      const { data: cls, error: cErr } = await supabaseDR.from('checklists').select('id, department').eq('module', 'mtn').eq('equipment_id', jig.id)
+      if (cErr) return toast.error('ตรวจใบตรวจ AM ของอุปกรณ์ไม่สำเร็จ: ' + cErr.message)
+      if (!(cls || []).some(c => isAmTeam(c.department))) {
+        return toast.error(`"${jig.name}" ยังไม่มีใบตรวจ AM — ไปสร้างจุดตรวจที่ ⚙️ PM Setup (แท็บ AM) ก่อน แล้วค่อยลงทะเบียน`)
+      }
+      // เคยลงทะเบียนแล้วเอาออก ⇒ เปิดใช้แถวเดิม (unique index ไลน์×จิ๊ก×กะ กัน insert ซ้ำ)
+      const { data: old } = await supabaseDR.from('pm_daily_line_targets').select('id').eq('line_name', line_name).eq('jig_id', jig.id).is('shift', null).maybeSingle()
+      const res = old
+        ? await supabaseDR.from('pm_daily_line_targets').update({ is_active: true }).eq('id', old.id).select().single()
+        : await supabaseDR.from('pm_daily_line_targets').insert({ line_name, jig_id: jig.id, shift: null, created_by: userId }).select().single()
+      if (res.error) return toast.error(res.error.message)
+      setTargets(prev => [...prev, res.data])
+      toast.success(`ลงทะเบียน ${jig.name} แล้ว — แผน AM ของเครื่องนี้นับตามวันเดินเครื่อง (run_day) อัตโนมัติ`)
     }
   }
 

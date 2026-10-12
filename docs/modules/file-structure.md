@@ -31,6 +31,8 @@ src/
 │                      #   useOrgSections (+useOrgTeams) · usePartOptions · useInstruments · useColumnHistory (📜 ค่าที่เคยบันทึก —
 │                      #   ทะเบียนไม่มีก็ยังเลือกได้ ห้ามล้าง/บล็อก) · pickerOptions.js + partOptions.js
 │                      #   (pure — มีเทส) · fetchAllRows.js (กับดัก 1000 แถว)
+│                      #   mergeRows.js (mergeById/uniqueById — ต่อผล "หลายคิวรีของตารางเดียวกัน"
+│                      #     ห้าม `[...a, ...b]` ดิบ: แถวที่ถูกแก้ระหว่าง 2 คิวรี = คีย์ซ้ำ · UI §6.27)
 │                      #   🇹🇭 ชั้นภาษา: thaiText.js (ตัดคำไทย ICU · คีย์เสียงข้ามสคริปต์ · ทนพิมพ์ผิด) +
 │                      #     termStats.js (log-odds) + autoCategory.js (เดาหมวด) + downtimeCategory.js
 │                      #   roleMeta.js (ชื่อ/สี role จุดเดียว), useIsMobile.js, markerScale.js, timeFrame.js,
