@@ -601,5 +601,17 @@ export function summarizeStaffing(days) {
   return [...by.values()].map(a => ({ ...a, fill: a.seats ? a.onFloor / a.seats : null }));
 }
 
-/** คนในทะเบียน "ณ วันนั้น" — ตัดคนที่เริ่มงานหลังวันนั้น (start_date) · ไม่มี start_date = นับ (ไม่รู้ ≠ ยังไม่เข้า) */
-export const rosterOn = (employees, date) => (employees || []).filter(e => !e.start_date || String(e.start_date).slice(0, 10) <= date);
+/** คนในทะเบียน "ณ วันนั้น" — ตัดคนที่เริ่มงานหลังวันนั้น (start_date)
+ *  🔴 start_date เชื่อไม่ได้ทั้งหมด (ตรวจข้อมูลจริง 12/10: 21 คนกรอกปี พ.ศ. ลงช่อง ค.ศ. เช่น 2565 ·
+ *     บางคนวันเริ่มงานช้ากว่าวันที่มาเช็คชื่อจริง) ⇒ 3 กฎ:
+ *     ① ไม่มี start_date = นับ (ไม่รู้ ≠ ยังไม่เข้า)
+ *     ② start_date อยู่หลัง "วันนี้" = ค่าผิดปกติ ⇒ ไม่ใช้ตัดใคร (กฎเดียวกับ Turnover ใน /workforce-insight)
+ *     ③ ถูกเช็คชื่อวันนั้น = อยู่ในทะเบียนแน่นอน ไม่ว่า start_date จะว่าอะไร (ของจริงชนะทะเบียน) */
+export function rosterOn(employees, date, { today = null, attendance = null } = {}) {
+  return (employees || []).filter(e => {
+    const sd = e.start_date ? String(e.start_date).slice(0, 10) : '';
+    if (!sd || sd <= date) return true;
+    if (today && sd > today) return true;
+    return !!attendance?.[e.id];
+  });
+}
