@@ -246,3 +246,25 @@ test('spare_short: ใกล้ถึง ≤3 วัน หรือสั่ง
   assert.equal(late.priority, 1);
   assert.equal(late.byYmd, TODAY);
 });
+
+/* ── 💰 มูลค่าเวลาหยุดที่คาด (2026-10-12) ── */
+import { summarizeItems } from '../maintenanceLevels.js';
+
+test('riskBaht30: นาที ÷ 60 × บาท/ชม.ของไลน์ · ไม่รู้ rate = null ไม่ใช่ 0 และนับว่าขาด rate', () => {
+  const machines = [{ id: 'm1', machine_no: 'SP-78', equipment_kind: 'machine', line_name: 'L1', is_active: true }];
+  const sessions = [];
+  for (let i = 0; i < 90; i++) {
+    sessions.push({ id: `s${i}`, line_name: 'L1', work_date: new Date(Date.UTC(2026, 8, 23) - i * 86400000).toISOString().slice(0, 10), shift: 'day', shift_min: 600, start_time: '08:00' });
+  }
+  const brk = { category: 'unplanned', name_th: 'เครื่องเสีย' };
+  const dt = (iso) => ({ machine_no: 'SP-78', started_at: iso, ended_at: new Date(Date.parse(iso) + 30 * 60000).toISOString(), duration_min: 30, dr_downtime_types: brk });
+  const downtimes = [dt('2026-09-05T10:00:00+07:00'), dt('2026-09-12T10:00:00+07:00'), dt('2026-09-18T10:00:00+07:00')];
+  const base = { machines, downtimes, sessions, todayStr: TODAY, nowMs: NOW };
+  const withRate = buildMaintenanceLevels({ ...base, ratePerHourOfLine: (ln) => (ln === 'L1' ? 600 : null) });
+  const it = withRate.items.find(i => i.machineNo === 'SP-78');
+  assert.ok(it.pd.riskMin30 > 0);
+  assert.equal(it.pd.riskBaht30, Math.round((it.pd.riskMin30 / 60) * 600));
+  const noRate = buildMaintenanceLevels(base);
+  assert.equal(noRate.items.find(i => i.machineNo === 'SP-78').pd.riskBaht30, null);
+  assert.equal(summarizeItems(noRate.items).predictive.riskNoRate, 1);
+});
