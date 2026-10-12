@@ -44,9 +44,15 @@ comment on column public.scrap_report_items.defect_img is
 
 -- `image_path` = คอลัมน์ตาย ไม่เคยถูกเขียนเลย (12/10 วัดได้ 0 จาก 8 แถว) และไม่มีโค้ดบรรทัดไหนอ่าน/เขียน
 -- (grep ทั้งรีโป: image_path ที่เหลือเป็นของ jigs / jig_checkpoints / pm_facility_areas คนละตาราง)
--- ⚠️ **ไม่ drop** — ตั้งใจ: `drop column` บนตารางนี้ค้าง lock จน statement timeout ตอน apply (12/10)
---    และการถอดคอลัมน์คือสิ่งเดียวในไฟล์นี้ที่ย้อนไม่ได้ ⇒ ทำเครื่องหมาย deprecated ไว้แทน
---    ใครจะเก็บกวาดทีหลัง ให้รันตอนไม่มีคนใช้: alter table public.scrap_report_items drop column image_path;
+-- ⚠️ **ไม่ drop ผ่าน AI session** — ลองแล้ว 4 ครั้ง (12/10) `drop column` บนตารางนี้ทำให้ช่องทาง MCP
+--    ค้างครบ 60 วิทุกครั้งแล้ว rollback · **ไม่ใช่การรอ lock** (ตั้ง `lock_timeout='3s'` +
+--    `statement_timeout='10s'` แล้วยังค้าง 60 วิ = ตัว statement ไม่ได้ทำงานนานเอง) ·
+--    ตรวจแล้วไม่มี view/rule ไหน depend คอลัมน์นี้ · ไม่มี transaction อื่นค้างใน DB
+--    ⇒ เป็นข้อจำกัดของ "ท่อ" ไม่ใช่ของ schema · `add column` บนตารางเดียวกันผ่านฉลุย
+--    ⇒ ให้ user รันเองใน **Supabase SQL Editor** (project "Product DB" / eyhclzkifitbhbljgoav):
+--        alter table public.scrap_report_items drop column image_path;
+--    ปลอดภัย: 12/10 วัดได้ 8 แถว กรอก image_path 0 แถว · grep ทั้งรีโปไม่มีโค้ดอ่าน/เขียน
+--    ระหว่างที่ยังไม่ได้รัน คอลัมน์นี้ถูก mark DEPRECATED ด้วย comment ข้างล่าง — **ห้ามเขียนลงช่องนี้**
 comment on column public.scrap_report_items.image_path is
   'DEPRECATED 2026-10-12 — คอลัมน์ตาย ไม่เคยถูกเขียน (0/8 แถว) และไม่มีโค้ดบรรทัดไหนอ่าน/เขียน · ใช้ defect_img แทน · ห้ามเขียนลงช่องนี้';
 
