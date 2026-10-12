@@ -124,13 +124,21 @@ export default function StorageLocPanel() {
     // ไลน์เดียวผูก 2 SLoc ตรงๆ ไม่ได้ (ตกทอดจากแม่แล้วผูกเองที่ลูกได้ — ลูกชนะแม่)
     const clash = rows.filter(r => r.code !== edit?.code && r.is_active !== false && (r.line_names || []).some(n => lineNames.includes(n)));
     if (clash.length) { toast.error(`${clash.map(r => r.code).join(', ')} ผูกไลน์เดียวกันอยู่แล้ว — ไลน์หนึ่งอยู่ได้พื้นที่เดียว เอาออกจากตัวเก่าก่อน`); return false; }
+    /* 🔴 12/10: trigger `fn_stock_txn_fill_sloc` (DR) จับคู่ชื่อไลน์ "ตรงตัว" — DR ไม่มีผังไลน์ให้ไล่หาแม่
+       ⇒ ผูกที่แม่อย่างเดียว แถว ledger ที่ฟังก์ชันฝั่ง DB เขียน (ปิดใบผลิต/ระเบิด BOM/กดรับ) ได้ SLoc ว่าง
+       (เคยค้าง 1,044 แถวที่ Line 60/61/HDF1/LASER E50) ⇒ เก็บไลน์ลูกที่ตกทอดลงทะเบียนด้วยตอนบันทึก
+       คำนวณด้วย `linesOfSloc` ตัวเดียวกับพรีวิว ⇒ ลูกที่ผูกพื้นที่อื่นเองไม่ถูกดึงมา (ลูกชนะแม่เหมือนเดิม) */
+    const tmpRows = [...rows.filter(r => r.code !== (edit?.code || code)), { code, line_names: lineNames, is_active: true }];
+    const storedNames = form.is_active
+      ? [...new Set([...lineNames, ...linesOfSloc(tmpRows, lines, code)])]
+      : lineNames;
     const payload = {
       code, name: form.name.trim(), kind: form.kind || null,
       note: form.note?.trim() || null,
       sort_order: Number(form.sort_order) || 100,
       is_active: !!form.is_active,
       updated_by_name: fullName || null,
-      ...(noLineMap ? {} : { line_names: lineNames }),
+      ...(noLineMap ? {} : { line_names: storedNames }),
     };
     // แก้รหัส = สร้างแถวใหม่ (code เป็น PK) → บล็อกไว้ ให้ลบแล้วสร้างใหม่แทน กันรหัสกำพร้าใน BOM
     const q = edit?.code
