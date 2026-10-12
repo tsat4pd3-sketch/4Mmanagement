@@ -1,0 +1,42 @@
+-- ════════════════════════════════════════════════════════════════════════════
+-- Main project ("MAIN" · ewhdfqwfwofivojtsizn) — **apply แล้ว 2026-10-12**
+-- 🧑‍🔧 ตำแหน่งนอกทะเบียน "ผช.ช่างเทคนิค" → `technician` (คำสั่ง user 2026-10-12)
+--
+-- ที่มา: user สังเกตเองตั้งแต่ต้น session ว่ามี 2 บัญชีถือตำแหน่งที่ไม่มีในทะเบียน `positions`
+--   วัดจริง 12/10: `profiles.position = 'ผช.ช่างเทคนิค'` 2 แถว
+--     · กรกฎ แสงอาวุธ      (role supervisor · PD3 · mtn_teams production)
+--     · ชาญณรงค์ ยอดนนท์   (role supervisor · PD3 · mtn_teams production)
+--   ทะเบียนมีแต่ `technician` / "ช่างเทคนิค" — ไม่มีชั้น "ผู้ช่วย"
+--   ⇒ แกนเกรด (`positions.level`) จัดชั้น 2 คนนี้ไม่ได้ · จอที่เรียง/นับตามตำแหน่งข้ามไปเงียบๆ
+--
+-- user ตัดสิน: **"เปลี่ยนเป็นช่างเลย ทำงานเหมือนกัน"** ⇒ ไม่เพิ่มตำแหน่งใหม่ในทะเบียน
+--   (ถ้าเพิ่มตำแหน่งที่ไม่มีในผังองค์กรจริง = ทะเบียนบวมด้วยชั้นที่ HR ไม่รับรอง)
+--
+-- ⚠️ เก็บเป็น **key** (`technician`) ไม่ใช่ label ไทย — ตรงแบบเดียวกับบัญชีอื่นทั้งระบบ
+--    (วัด 12/10: `engineer` · `section_head` · `manager` ล้วนเก็บ key)
+--    เก็บ label = `positions` join ไม่ติด = กลับไปเป็นตำแหน่งนอกทะเบียนอีกแบบ
+-- ⚠️ **ไม่แตะ `role`** — role = ชุดสิทธิ์ใช้ระบบ คนละแกนกับตำแหน่งงาน (กฎ CLAUDE.md §Role System)
+--    ทั้ง 2 บัญชียังเป็น `supervisor` เหมือนเดิม สิทธิ์ไม่เปลี่ยน
+-- ⚠️ แตะเฉพาะค่าที่ตรงเป๊ะ — ไม่ใช้ `ilike`/`%` กันไปโดนตำแหน่งอื่นที่มีคำว่า "ช่าง"
+--
+-- ⏪ ROLLBACK:
+--   update profiles set position = 'ผช.ช่างเทคนิค'
+--    where id in ('<ดูจาก audit log / git history>');
+--   -- หรือย้อนจากชื่อ (ถ้ายังไม่มีใครแก้ซ้ำ):
+--   -- update profiles set position = 'ผช.ช่างเทคนิค'
+--   --  where full_name in ('กรกฎ แสงอาวุธ', 'ชาญณรงค์ ยอดนนท์') and position = 'technician';
+-- ════════════════════════════════════════════════════════════════════════════
+
+update profiles set position = 'technician'
+ where position = 'ผช.ช่างเทคนิค';
+
+-- ✅ ตรวจผล (project "MAIN" · ewhdfqwfwofivojtsizn)
+--   -- 1) ไม่เหลือตำแหน่งนอกทะเบียนแล้ว (ต้องคืน 0 แถว)
+--   select pr.position, count(*) from profiles pr
+--    where coalesce(btrim(pr.position),'') <> ''
+--      and not exists (select 1 from positions p
+--             where p.key = pr.position or p.label_th = pr.position or p.label_en = pr.position)
+--    group by 1;
+--   -- 2) 2 คนนี้ย้ายเข้า technician แล้ว · role ยังเป็น supervisor เหมือนเดิม
+--   select full_name, role, position from profiles
+--    where full_name in ('กรกฎ แสงอาวุธ', 'ชาญณรงค์ ยอดนนท์');
