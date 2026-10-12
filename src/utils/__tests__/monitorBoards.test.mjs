@@ -156,3 +156,17 @@ test('dedupeByKey — ค่าล่างชนะ ห้ามรวมยอ
   // ลำดับแถวยึดตำแหน่งที่เจอครั้งแรก (แถวในบอร์ดต้องเรียงเหมือนในไฟล์)
   assert.deepEqual(d.rows.map((r) => r.k), ['a', 'b']);
 });
+
+/* ── 12/10: บอร์ดรายวันส่งต้องมีคอลัมน์วันนี้เสมอ (TSPK ยอดล่าสุด 8/10 = พิมพ์ออเดอร์วันนี้ไม่ได้) ── */
+import { boardPeriods as bp2 } from '../monitorBoards.js';
+test('boardPeriods(date) + horizon — เติมวันนี้และวันถัดไป · ไม่มีช่องกรอกเลยก็ยังมีคอลัมน์', () => {
+  const now = new Date('2026-10-12T12:00:00Z');   // หลัง 08:00 ทั้งเวลาไทยและ UTC (getWorkDate อ่านเวลาเครื่อง)
+  const b = { period_kind: 'date', period_count: 4 };
+  const ps = bp2(b, { dates: ['2026-10-07', '2026-10-08'], horizon: 3, now });
+  const ds = ps.map(p => p.date);
+  assert.ok(ds.includes('2026-10-12') && ds.includes('2026-10-14'), ds.join(','));
+  assert.ok(ds.includes('2026-10-08'), 'วันที่มีข้อมูลเดิมยังอยู่');
+  assert.equal(ds[0], '2026-10-06', 'คอลัมน์ยกมา = วันก่อนวันแรก');
+  assert.ok(bp2(b, { dates: [], horizon: 2, now }).length >= 2);
+  assert.equal(bp2(b, { dates: [] }).length, 0, 'ไม่ส่ง horizon = พฤติกรรมเดิม');
+});

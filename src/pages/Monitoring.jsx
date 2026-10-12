@@ -14,8 +14,8 @@ import useTabParam from '../utils/useTabParam';
 import MonitorBoardGrid from '../components/MonitorBoardGrid';
 import { BOARD_TABS, boardPeriods, rowDefs } from '../utils/monitorBoards';
 import {
-  sumByMatDate, firstByMat, makeSystemLookup, OUT_TXN_TYPES, IN_ORDER_STATUS, orderInQty,
-  DEMAND_SKIP_STATUS, onHandAtRef, outAtRef, fgAnchorBalance, makeAnchorLookup,
+  sumByMatDate, firstByMat, makeSystemLookup, OUT_TXN_TYPES, IN_TXN_TYPES,
+  DEMAND_SKIP_STATUS, onHandAtRef, outAtRef, inAtRef, fgAnchorBalance, makeAnchorLookup, rackOrderSyncPlan,
 } from '../utils/monitorSystem';
 import { refStockOf } from '../utils/partRefStock';
 import { isTodayPeriod } from '../utils/periodHead';
@@ -72,7 +72,7 @@ export default function Monitoring() {
   const [sysAnchor, setSysAnchor] = useState(() => new Map());
   const [sysOut, setSysOut] = useState(() => new Map());
   const [sysMin, setSysMin] = useState(() => new Map());
-  const [registry, setRegistry] = useState(() => new Set());
+  const [registry, setRegistry] = useState(null);
   const [loading, setLoading] = useState(true);
   const [warn, setWarn] = useState('');
   const [truncated, setTruncated] = useState(false);
@@ -169,7 +169,8 @@ export default function Monitoring() {
     if (board.period_kind !== 'date') return boardPeriods(board);
     /* บอร์ดรายวันส่ง: คอลัมน์มาจากวันที่ที่มีออเดอร์จริงในช่องที่กรอกไว้ */
     const ds = cells.filter(c => c.row_key === 'order').map(c => String(c.period_key).slice(0, 10));
-    return boardPeriods(board, { dates: ds });
+    /* 📅 + วันนี้และอีก 6 วันเสมอ — ไม่งั้นบอร์ดที่ยอดล่าสุดเป็นของวันก่อน ไม่มีช่องให้พิมพ์ออเดอร์วันนี้ (12/10) */
+    return boardPeriods(board, { dates: ds, horizon: 7 });
   }, [board, cells]);
 
   const dFrom = periods[0]?.date || '';
@@ -181,7 +182,17 @@ export default function Monitoring() {
     const scope = isFg ? bCust : bLine;
     if (!scope || !dFrom || !dTo || !matsKey) {
       setSysIn(new Map()); setSysOut(new Map()); setSysMin(new Map()); setSysOrder(new Map());
-      setSysAnchor(new Map()); setSysNote(''); return;
+      setSysAnchor(new Map()); setSysNote('');
+      /* 🔴 บอร์ดที่ไม่ผูกไลน์/ลูกค้า (รายแร็ค) ก็ต้องเช็คทะเบียน — เดิมข้ามไป ⇒ ทุกพาร์ทขึ้น
+         "ยังไม่อยู่ในทะเบียนสินค้า" ทั้งที่อยู่ (12/10 · 10057225) = ป้ายเตือนปลอม */
+      const myKey = `reg|${matsKey}`;
+      curSysRef.current = myKey;
+      if (!matsKey) { setRegistry(new Set()); return; }
+      const r = await fetchAllPages(() => supabaseDR.from('dr_products')
+        .select('mat_no').eq('is_active', true).in('mat_no', matsKey.split(',')), { orderBy: ['mat_no'] });
+      if (curSysRef.current !== myKey) return;
+      setRegistry(r.error || r.truncated ? null : new Set((r.rows || []).map(x => String(x.mat_no || '').trim())));
+      return;
     }
     const mats = matsKey.split(',');
     const myKey = `${isFg ? 'fg' : 'line'}|${scope}|${dFrom}|${dTo}|${matsKey}`;
@@ -190,7 +201,7 @@ export default function Monitoring() {
 
     /* ── บอร์ด FG: ยอดลูกค้าสั่ง (862/830) + ผลิตเข้า (ทุกไลน์) ───────────────────── */
     if (isFg) {
-      const [demR, lateR, inR, prodR2, stkR, ruleR, kbR] = await Promise.all([
+      const [demR, lateR, prodR2, stkR, ruleR, kbR] = await Promise.all([
         fetchAllPages(() => supabaseDR.from('customer_shipping_orders')
           .select('mat_no, qty, due_date, status')
           .eq('customer', bCust).in('mat_no', mats)
@@ -202,11 +213,6 @@ export default function Monitoring() {
           .select('mat_no, qty, due_date, status')
           .eq('customer', bCust).in('mat_no', mats)
           .lt('due_date', dFrom)), { orderBy: ['mat_no'] }),
-        fetchAllPages(() => supabaseDR.from('prod_orders')
-          .select('mat_no, qty_ok, qty_actual, production_sessions!inner(work_date)')
-          .in('status', IN_ORDER_STATUS).in('mat_no', mats)
-          .gte('production_sessions.work_date', dFrom)
-          .lte('production_sessions.work_date', dTo), { orderBy: ['mat_no'] }),
         fetchAllPages(() => supabaseDR.from('dr_products')
           .select('mat_no, p_no, is_operation').eq('is_active', true), { orderBy: ['mat_no'] }),
         /* ของพร้อมส่ง = **คลัง FG เท่านั้น** — รวมทุกคลัง = นับของที่ยังส่งลูกค้าไม่ได้ */
@@ -233,10 +239,6 @@ export default function Monitoring() {
       }
       setSysOrder(dem);
 
-      setSysIn(sumByMatDate(
-        (inR.rows || []).map(x => ({ mat_no: x.mat_no, work_date: x.production_sessions?.work_date, qty: orderInQty(x) })),
-      ));
-
       /* ── ยอดยกมา = ของพร้อมส่งในคลัง FG ───────────────────────────────────────
          🔴 ออเดอร์อ้าง "เลขลูกค้า" แต่คลังเก็บ "เลข SAP" ⇒ ต้อง resolve ก่อน
             เทียบตรงๆ = ได้ "ไม่มีของ" ทั้งที่ของเต็มคลังอยู่ใต้เลข SAP */
@@ -251,6 +253,7 @@ export default function Monitoring() {
       const pnIdx = buildPnIndex([...(prodR2.rows || []), ...(kbR.rows || [])]);
       const hasStock = (m) => onHand.has(m);
       const seedBal = new Map();
+      const stockMatOf = new Map();   // เลข SAP ในคลัง → เลขบนบอร์ด
       let unresolved = 0;
       for (const mt of mats) {
         const res = pickStockMat(mt, pnIdx, hasStock);
@@ -258,16 +261,35 @@ export default function Monitoring() {
            ห้ามใส่ 0 (0 แปลว่า "รู้ว่าไม่มีของ" ซึ่งคนละเรื่องกับ "ยังเช็คไม่ได้") */
         if (!res.mat) { unresolved++; continue; }
         seedBal.set(mt, onHand.get(res.mat) ?? 0);
+        stockMatOf.set(res.mat, mt);
       }
       setSysSeedBal(seedBal);
+      /* 📥 IN = ของที่คลัง FG กดรับแล้ว (ledger `issue`) — ไม่ใช่ใบผลิตที่คอนเฟิร์ม (user 12/10)
+         ดึงหลัง resolve เลข SAP (ใบลูกค้าอ้างเลขลูกค้า) · กรองคลัง FG + เลขที่ resolve ได้ที่ฝั่ง DB (egress)
+         ไม่รู้คลัง FG = ไม่มี IN · ไม่เดา */
+      let inErr = null;
+      if (fgDest && stockMatOf.size) {
+        const inR = await fetchAllPages(() => supabaseDR.from('line_stock_transactions')
+          .select('id, line_name, mat_no, qty, type, status, work_date')
+          .in('type', IN_TXN_TYPES).eq('status', 'approved').eq('line_name', fgDest)
+          .in('mat_no', [...stockMatOf.keys()])
+          .gte('work_date', dFrom).lte('work_date', dTo), { orderBy: ['id'] });
+        if (!mine()) return;
+        inErr = inR.error || (inR.errors && inR.errors[0]) || (inR.truncated ? 'ดึงข้อมูลได้ไม่ครบ' : null);
+        const inRows = (inR.rows || []).map(r => ({ ...r, mat_no: stockMatOf.get(String(r.mat_no || '').trim()) }));
+        setSysIn(inAtRef(inRows, () => fgDest));
+      } else {
+        setSysIn(new Map());
+      }
       /* 🔗 คอลัมน์วันนี้ยึดของจริง: คลัง FG ตอนนี้ − ค้างส่งถึงกำหนด + ส่งล่วงหน้า (กันหักซ้ำ) */
       setSysAnchor(fgAnchorBalance({
         onHand: seedBal, today: getWorkDate(),
         orders: [...(demR.rows || []), ...(lateR.rows || [])],
       }));
       setSysNote([
-        fgDest ? `ของพร้อมส่งนับจากคลัง ${fgDest} · คอลัมน์วันนี้ = ยอดจริงในคลัง − ค้างส่งถึงกำหนด` : '⚠️ ยังไม่ได้ตั้งกฎรับเข้าของ FG ⇒ นับสต๊อกทุกคลังรวมกัน (สูงกว่าจริง)',
+        fgDest ? `ของพร้อมส่งนับจากคลัง ${fgDest} · IN = ที่คลังกดรับแล้ว · คอลัมน์วันนี้ = ยอดจริงในคลัง − ค้างส่งถึงกำหนด` : '⚠️ ยังไม่ได้ตั้งกฎรับเข้าของ FG ⇒ นับสต๊อกทุกคลังรวมกัน (สูงกว่าจริง) · ไม่มี IN',
         unresolved ? `⚠️ ${unresolved} พาร์ทยังจับคู่เลข MAT SAP ไม่ได้ ⇒ ไม่รู้ยอดยกมา (ขึ้นขีดทั้งแถว)` : '',
+        inErr ? `⚠️ อ่านยอดรับเข้าคลัง FG ไม่ครบ (${inErr.message || inErr}) ⇒ แถว IN อาจขาด` : '',
       ].filter(Boolean).join(' · '));
 
       /* ไม่มีไลน์ ⇒ ไม่รู้ MIN/OUT ของบอร์ดนี้ — ปล่อยว่างให้จอขึ้นขีด ห้ามเดา 0 */
@@ -276,19 +298,15 @@ export default function Monitoring() {
       return;
     }
 
-    const [ordR, txnR, lvlR, prodR, stkR, ruleR, lotR] = await Promise.all([
-      fetchAllPages(() => supabaseDR.from('prod_orders')
-        .select('mat_no, qty_ok, qty_actual, production_sessions!inner(work_date, line_name)')
-        .in('status', IN_ORDER_STATUS)
-        .in('mat_no', mats)
-        .gte('production_sessions.work_date', dFrom)
-        .lte('production_sessions.work_date', dTo)
-        .eq('production_sessions.line_name', bLine), { orderBy: ['mat_no'] }),
+    const [rcpR, txnR, lvlR, prodR, stkR, ruleR, lotR] = await Promise.all([
+      /* ⏳ ผลิตคอนเฟิร์มแล้วแต่คลังยังไม่กดรับ — ยังไม่นับใน IN แต่ต้องบอกบนจอ (ห้ามหายเงียบ) */
+      fetchAllPages(() => supabaseDR.from('stock_receipts')
+        .select('id, mat_no, qty_expected').eq('status', 'pending').in('mat_no', mats), { orderBy: ['id'] }),
       /* ของออก: ดึงทุกคลังของ MAT เหล่านี้ แล้วให้ `outAtRef` เลือกเฉพาะคลังอ้างอิงของแต่ละพาร์ท
          (12/10 · เดิมกรอง `line_name = ไลน์ของบอร์ด` + นับ issue ⇒ ของเข้าถูกนับเป็นของออก) */
       fetchAllPages(() => supabaseDR.from('line_stock_transactions')
         .select('id, line_name, mat_no, qty, type, status, work_date')
-        .in('type', OUT_TXN_TYPES).eq('status', 'approved').in('mat_no', mats)
+        .in('type', [...OUT_TXN_TYPES, ...IN_TXN_TYPES]).eq('status', 'approved').in('mat_no', mats)
         .gte('work_date', dFrom).lte('work_date', dTo), { orderBy: ['id'] }),
       fetchAllPages(() => supabaseDR.from('line_part_levels')
         .select('mat_no, min_qty').eq('line_name', bLine).eq('is_active', true).in('mat_no', mats),
@@ -302,9 +320,6 @@ export default function Monitoring() {
         .select('id, child_mat_no').in('child_mat_no', mats).neq('status', 'cancelled'), { orderBy: ['id'] }),
     ]);
     if (!mine()) return;
-    setSysIn(sumByMatDate(
-      (ordR.rows || []).map(o => ({ mat_no: o.mat_no, work_date: o.production_sessions?.work_date, qty: orderInQty(o) })),
-    ));
     /* 🔴 คลังอ้างอิงของพาร์ท = `refStockOf` ตัวเดียวกับจุดเรียกเติม + ตัวนำเข้า Monitoring
        (ผลิตเอง → คลังตามกฎรับเข้า · ล็อตสโตร์ → ที่ไลน์ผลิต · ของที่ไลน์ใช้ → หน้าไลน์)
        อ่านกฎ/ล็อต/ยอดคลังไม่ครบ = ไม่รู้ว่าของอยู่ไหน ⇒ ไม่ยึดยอด (ปล่อยสูตร) แล้วเขียนบนจอ ห้ามเดาคลัง */
@@ -317,6 +332,10 @@ export default function Monitoring() {
     const locOf = refErr ? () => null : (mt) => refStockOf(mt, refCtx).loc;
     const onHand = refErr ? new Map() : onHandAtRef(stkR.rows || [], locOf);
     setSysOut(refErr ? new Map() : outAtRef(txnR.rows || [], locOf));
+    /* 📥 IN = ของที่คลังอ้างอิงกดรับแล้ว (ledger `issue`) — ไม่ใช่ใบผลิตคอนเฟิร์ม (user 12/10) */
+    setSysIn(refErr ? new Map() : inAtRef(txnR.rows || [], locOf));
+    const rcpRows = rcpR.rows || [];
+    const rcpQty = rcpRows.reduce((a, r) => a + (Number(r.qty_expected) || 0), 0);
     setSysMin(firstByMat(lvlR.rows || []));
     setSysOrder(new Map()); setSysSeedBal(new Map());
     setSysAnchor(onHand);
@@ -325,7 +344,9 @@ export default function Monitoring() {
     setSysNote(refErr
       ? `⚠️ อ่านกฎรับเข้าคลัง/ยอดคลังไม่ครบ (${refErr.message || refErr}) ⇒ คอลัมน์วันนี้ยังไม่ได้ยึดยอดจริง และไม่มีของออกจากระบบ — BALANCE เป็นค่าจากสูตรล้วน`
       : [
-        `คอลัมน์วันนี้ = ยอดคงเหลือจริงในคลัง (${locs.join(' · ') || '–'}) · ของออก = ใช้/คืนจากคลังนั้น`,
+        `คอลัมน์วันนี้ = ยอดคงเหลือจริงในคลัง (${locs.join(' · ') || '–'}) · IN = คลังกดรับแล้ว · ของออก = ใช้/คืนจากคลังนั้น`,
+        rcpRows.length ? `⏳ ผลิตคอนเฟิร์มแล้วรอคลังกดรับ ${rcpRows.length} ใบ · ${rcpQty.toLocaleString()} ชิ้น (ยังไม่นับใน IN — รับที่ /line-stock?tab=receipts)` : '',
+        loadErr(rcpR) ? '⚠️ อ่านใบรอรับเข้าไม่ได้ — ไม่รู้ว่ามีของค้างรับเท่าไหร่' : '',
         noRow ? `⚠️ ${noRow} พาร์ทไม่มีแถวในคลังอ้างอิง ⇒ ยังเช็คยอดจริงไม่ได้ (เดินสูตรจากยอดยกมา) — ตั้งยอดที่ /line-stock?tab=count` : '',
       ].filter(Boolean).join(' · '));
     setRegistry(new Set((prodR.rows || []).map(r => String(r.mat_no || '').trim())));
@@ -365,15 +386,55 @@ export default function Monitoring() {
   );
 
   const partsWithFlag = useMemo(
-    () => parts.map(p => ({ ...p, in_registry: !p.mat_no || registry.has(String(p.mat_no).trim()) })),
+    /* registry = null = เช็คไม่ได้ ⇒ ไม่ขึ้นป้าย (ไม่รู้ ≠ ไม่อยู่ในทะเบียน) */
+    () => parts.map(p => ({ ...p, in_registry: !p.mat_no || !registry || registry.has(String(p.mat_no).trim()) })),
     [parts, registry],
   );
+
+  /* 🚚 ORDER บนบอร์ดรายแร็ค → ใบส่งของหน้า Delivery (user 12/10 "ข้อมูลลูกค้าลงแล้วแต่ไม่ขึ้น
+     Shipping Time Chart ต้องไป add manual") — กติกา `rackOrderSyncPlan` · แตะเฉพาะใบ source `monitoring`
+     ที่ยังไม่ส่ง (ชุดเดียวกับที่ตัวนำเข้าไฟล์ล้าง/ลงใหม่) · ล้มต้องบอก เพราะบอร์ดบันทึกไปแล้ว */
+  const syncRackOrder = useCallback(async (partId, periodKey, qty) => {
+    const part = parts.find(x => x.id === partId);
+    const mat = String(part?.mat_no || '').trim();
+    if (!mat) return;
+    const cust = board?.customer || '';
+    if (!cust) { toast.info(`บอร์ด ${board?.name || ''} ยังไม่ผูกลูกค้า — ยอดนี้ยังไม่ขึ้นหน้า Delivery`); return; }
+    const fail = (msg) => toast.error(`บันทึกบนบอร์ดแล้ว แต่ส่งเข้าใบส่งของ (Delivery) ไม่สำเร็จ: ${msg} — แก้ช่องนี้อีกครั้ง`);
+    const { data: rows, error } = await supabaseDR.from('customer_shipping_orders')
+      .select('id, qty, status, source').eq('customer', cust).eq('mat_no', mat).eq('due_date', periodKey)
+      .in('status', ['pending', 'shipped']);
+    if (error) { fail(error.message); return; }
+    const mine = (rows || []).filter(r => r.status === 'pending' && r.source === 'monitoring');
+    const covered = (rows || []).filter(r => !mine.includes(r)).reduce((a, r) => a + (Number(r.qty) || 0), 0);
+    const plan = rackOrderSyncPlan({ qty, covered, pending: mine });
+    if (plan.update) {
+      const r = await supabaseDR.from('customer_shipping_orders').update({ qty: plan.update.qty })
+        .eq('id', plan.update.id).eq('status', 'pending').select('id');
+      if (r.error || !r.data?.length) { fail(r.error?.message || 'ใบถูกส่ง/แก้ไปก่อนแล้ว'); return; }
+    }
+    if (plan.insertQty) {
+      const r = await supabaseDR.from('customer_shipping_orders').insert({
+        mat_no: mat, part_name: part?.part_name || null, customer: cust,
+        customer_part_no: part?.part_no || null, due_date: periodKey, qty: plan.insertQty,
+        status: 'pending', source: 'monitoring', note: `Monitoring · บอร์ด ${board?.name || ''}`,
+        created_by_name: fullName || null,
+      }).select('id');
+      if (r.error || !r.data?.length) { fail(r.error?.message || 'ไม่มีสิทธิ์เขียน'); return; }
+    }
+    if (plan.deleteIds.length) {
+      const r = await supabaseDR.from('customer_shipping_orders').delete()
+        .in('id', plan.deleteIds).eq('status', 'pending').select('id');
+      if (r.error) { fail(r.error.message); return; }
+    }
+  }, [parts, board, fullName]);
 
   /* ── บันทึกช่อง ───────────────────────────────────────────────────────────────── */
   const onEditCell = useCallback(async ({ partId, rowKey, periodKey, value }) => {
     if (!canEdit) return;
     const def = rowDefs(board).find(r => r.key === rowKey);
     const isText = def?.kind === 'date';
+    const isRackOrder = board?.kind === 'rack' && rowKey === 'order';
     const raw = String(value ?? '').trim();
 
     /* ลบค่าทิ้ง = ลบแถว ไม่ใช่เขียน 0 — "ว่าง" กับ "ศูนย์" ต้องแยกกันได้ตลอด */
@@ -383,6 +444,7 @@ export default function Monitoring() {
       if (!checkWrite(r, 'ล้างค่าในช่อง')) return;
       setCells(cs => cs.filter(c => !(c.board_part_id === partId && c.row_key === rowKey
         && String(c.period_key).slice(0, 10) === periodKey)));
+      if (isRackOrder) await syncRackOrder(partId, periodKey, null);
       return;
     }
     let qty = null;
@@ -407,7 +469,8 @@ export default function Monitoring() {
       next.push({ board_part_id: partId, row_key: rowKey, period_key: periodKey, qty: row.qty, txt: row.txt });
       return next;
     });
-  }, [canEdit, board, fullName]);
+    if (isRackOrder) await syncRackOrder(partId, periodKey, row.qty);
+  }, [canEdit, board, fullName, syncRackOrder]);
 
   const tabs = BOARD_TABS.map(t => ({
     key: t.key,
