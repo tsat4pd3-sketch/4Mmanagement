@@ -36,7 +36,7 @@ import StoreLotQueue from '../components/StoreLotQueue';
 import LineWipPanel from '../components/LineWipPanel';
 import LinePartCallPanel from '../components/LinePartCallPanel';
 import ProcessTypeSetup from '../components/ProcessTypeSetup';
-import { computeSessionOee, strictOee, strictGap, STRICT_WARN_SHARE_PCT, policyBreakOverlapMin, breakIntervalsIn, dtMinOutsideBreaks, overlapMinutesWith, buildCtMap, ctForMat, groupSameProductKeys, shiftFrameOf, shiftStartDate, clampWinToShift, unionIv, dtMinOutsideWork, SIX_BIG_LOSSES, EIGHT_WASTES, sumDefectQty, isTrialDefect, splitDefectQty, QBIN_EMBED, sumSuspectPending } from '../utils/oee';
+import { computeSessionOee, sessionProducedQty, strictOee, strictGap, STRICT_WARN_SHARE_PCT, policyBreakOverlapMin, breakIntervalsIn, dtMinOutsideBreaks, overlapMinutesWith, buildCtMap, ctForMat, groupSameProductKeys, shiftFrameOf, shiftStartDate, clampWinToShift, unionIv, dtMinOutsideWork, SIX_BIG_LOSSES, EIGHT_WASTES, sumDefectQty, isTrialDefect, splitDefectQty, QBIN_EMBED, sumSuspectPending } from '../utils/oee';
 import { resolveShiftTime, checkShiftTime, shiftWindow, windowLabel, fmtOffset, MAX_SHIFT_MIN, checkCloseTime } from '../utils/shiftWindow';
 import ScanModal from '../components/ScanModal';
 import SearchSelect from '../components/SearchSelect';
@@ -1072,8 +1072,20 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       const endChanged   = closeEndTime   && closeEndTime   !== selSession.end_time;
       // กะไม่มีผลผลิต → A/Q ไม่มีความหมาย (กันเลข 100/0 รั่วเข้าค่าเฉลี่ย %A/%Q — ดูหมายเหตุใน handleCloseSession)
       const noProduction = totalProduced === 0 && P == null;
+      /* 🔴 ยอดที่ stamp ต้อง re-stamp พร้อม A/P/Q เสมอ (2026-10-12)
+         `computeOEE` คิด %P/%Q จาก **ใบผลิตชุดปัจจุบัน** ⇒ ถ้าปล่อย actual_qty/qty_ok ค้างค่าเดิม
+         แถวเดียวกันจะขัดแย้งกันเอง: "ยอดผลิต 1,000" แต่ %P คิดจาก 1,100 (หลักเดียวกับที่
+         handleCloseSession ระวังไว้ตั้งแต่ 15/09) · วัดจริง ก.ย. 2026: 27 กะ · 835 ชิ้น
+         ที่ actual_qty ต่ำกว่าผลรวมใบผลิตจริง เพราะใบถูกแก้ยอดหลังปิดกะแล้วมีคนมากด "คำนวณ OEE ใหม่"
+         ⇒ รายงานรายเดือนนับยอดขาด แต่ %P ถูก = อธิบายให้ผู้บริหารไม่ได้ */
+      const reNg      = defectLogs.reduce((a, d) => a + (d.qty_ng      || 0), 0);
+      const reSuspect = defectLogs.reduce((a, d) => a + (d.qty_suspect || 0), 0);
+      const reRepair  = defectLogs.reduce((a, d) => a + (d.qty_repair  || 0), 0);
       const update = {
         shift_min: shiftMin,
+        // ยอดดี = ยอดผลิต (การ์ดที่สแกน = ของดีล้วน) — กติกาเดียวกับ handleCloseSession ห้ามแยกสูตร
+        actual_qty: totalProduced, qty_ok: totalProduced,
+        ng_qty: reNg, qty_ng: reNg, qty_suspect: reSuspect, qty_repair: reRepair,
         // CT ที่ใช้คิด %P รอบนี้ — ต้อง re-stamp ด้วย เพราะ %P ถูกคำนวณใหม่ทั้งก้อน (เฟส 0 Adaptive CT)
         ...(Object.keys(ctUsed || {}).length ? { ct_snapshot: ctUsed } : {}),
         oee_a: (noProduction || A == null) ? null : parseFloat((A * 100).toFixed(2)),
@@ -1085,7 +1097,12 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       };
       const { error: wErr769 } = await supabaseDR.from('production_sessions').update(update).eq('id', selSession.id);
       if (wErr769) { toast.error('บันทึกเวลา/OEE ของกะไม่สำเร็จ: ' + wErr769.message); return; }
-      toast.success('บันทึกเวลาและคำนวณ OEE ใหม่สำเร็จ');
+      /* ยอดเปลี่ยน = ต้องเห็น ห้ามแก้เงียบ — คนกดปุ่มนี้ตั้งใจแก้ "เวลา" ไม่ได้ตั้งใจแก้ "ยอด"
+         ถ้ายอดขยับด้วย แปลว่าใบผลิตถูกแก้หลังปิดกะ ซึ่งเขาควรรู้ก่อนเอาเลขไปรายงาน */
+      const qtyBefore = Number(selSession.actual_qty) || 0;
+      toast.success(qtyBefore !== totalProduced
+        ? `บันทึกเวลาและคำนวณ OEE ใหม่สำเร็จ · ยอดผลิตอัปเดตตามใบผลิตล่าสุด ${qtyBefore.toLocaleString()} → ${totalProduced.toLocaleString()} ชิ้น`
+        : 'บันทึกเวลาและคำนวณ OEE ใหม่สำเร็จ');
       setShowEditTimes(false);
       setMatTimeOverride({});
       load();
@@ -2392,13 +2409,12 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     const totalQtyNg      = defectLogs.reduce((s, d) => s + (d.qty_ng      || 0), 0);
     const totalQtySuspect = defectLogs.reduce((s, d) => s + (d.qty_suspect || 0), 0);
     const totalQtyRepair  = defectLogs.reduce((s, d) => s + (d.qty_repair  || 0), 0);
-    const confirmed       = prodOrders.filter(o => o.status === 'confirmed');
     /* 🔴 ยอดที่ stamp ต้องนับใบ `carry_over`/`imported` ด้วย ให้ตรงกับ totalProduced ใน computeOEE
-       ไม่งั้นแถวเดียวกันขัดแย้งกันเอง — actual_qty นับ 384 แต่ %P คิดจาก 352 (เคส Assy LWR 15/09) */
-    const carryActual     = prodOrders
-      .filter(o => ['open', 'carry_over', 'cancelled', 'imported'].includes(o.status))
-      .reduce((s, o) => s + (parseInt(carryQtyActual[o.id]) || Number(o.qty_actual) || 0), 0);
-    const totalProducedFinal = confirmed.reduce((s, o) => s + o.qty, 0) + carryActual;
+       ไม่งั้นแถวเดียวกันขัดแย้งกันเอง — actual_qty นับ 384 แต่ %P คิดจาก 352 (เคส Assy LWR 15/09)
+       ⇒ ใช้สูตรกลาง `sessionProducedQty` (oee.js §6.0.1) ตัวเดียวกับ computeSessionOee
+          ห้ามวน reduce ใบผลิตเองที่นี่อีก (12/10 · เคยเป็นสำเนาที่ 3 ของกฎเดียวกัน) */
+    const totalProducedFinal = sessionProducedQty(prodOrders, carryQtyActual);
+    const confirmed       = prodOrders.filter(o => o.status === 'confirmed');   // ใช้สรุปรายการพาร์ทใน Telegram เท่านั้น (ไม่ใช่ตัวคิดยอด)
     // ยอดดี = ยอดผลิต (การ์ดที่สแกน = ของดีล้วน · NG/suspect/repair คือของที่ผลิตเพิ่มต่างหาก ไม่หักซ้ำ · 2026-08-02)
     const totalQtyOk      = totalProducedFinal;
 

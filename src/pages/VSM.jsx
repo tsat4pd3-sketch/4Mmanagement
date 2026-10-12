@@ -222,7 +222,7 @@ export default function VSM() {
          🔴 planned ต้องตัดนาทีที่ทับเวลาพักออกก่อน — มันถูกกันออกจากฐานเวลาไปแล้ว
             รวม `duration_min` เองที่นี่ = หักซ้ำ (กฎเหล็ก §OEE 2026-09-15 · แก้ 2026-09-16)
          ⚠️ VSM เก็บ snapshot ถาวรและพิมพ์เป็นเอกสาร — ตัวเลขผิดที่บันทึกไปแล้วแก้ย้อนหลังไม่ได้ */
-      const dtEffBy = dtMinBySession(sessions, dtRaw, bp.data || []);
+      const dtEffBy = dtMinBySession(sessions, dtRaw, bp.data || [], { lines });   // หารเลนไลน์เครื่องขนาน (oee.js §3.2)
       sessions.forEach(s => { s.plannedMin = dtEffBy[s.id]?.planned || 0; });
 
       const stockByMat = {};

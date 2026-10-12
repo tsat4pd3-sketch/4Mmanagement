@@ -213,7 +213,7 @@ function ProductionView({ d, ctx }) {
     const dtBy = {}; d.dts.forEach(x => (dtBy[x.session_id] ||= []).push(x));
     const ngBy = {}; d.defs.forEach(x => { ngBy[x.session_id] = (ngBy[x.session_id] || 0) + (+x.qty_ng || 0) + (+x.qty_suspect || 0); });
     // น้ำหนัก wLoad: planned ที่ "หักได้จริง" (ตัดส่วนทับพัก) · L.dt = "เครื่องหยุดกี่นาที" ยังเป็นนาทีเต็ม — ห้ามสลับ
-    const eff = dtMinBySession(d.sess, d.dts, d.breaks || []);
+    const eff = dtMinBySession(d.sess, d.dts, d.breaks || [], { lines });   // หารเลนไลน์เครื่องขนาน (oee.js §3.2)
     const out = {};
     d.sess.forEach(s => {
       const day = s.work_date === workDate ? 'today' : 'prev';
