@@ -245,9 +245,14 @@
   🔴 **ห้ามเปลี่ยนเป็น `TO authenticated`** — `supabaseDR` ไม่เคย authenticate (กฎเหล็ก CLAUDE.md)
 - **คนละถังกับ `mtn-images` โดยตั้งใจ** — รูปซ่อมเครื่อง (ของช่าง) กับรูปของเสีย (ของ QA/ผลิต)
   มีอายุเอกสารและคนดูแลคนละชุด ปนถังแล้วแยกไม่ออกตอนจะล้าง
-- ⚠️ `scrap_report_items.image_path` **ไม่ได้ drop** — `drop column` ค้าง lock จน statement timeout
-  ตอน apply (12/10) และเป็นสิ่งเดียวในไฟล์นี้ที่ย้อนไม่ได้ ⇒ ใส่ `comment` ว่า DEPRECATED ไว้แทน
-  **ห้ามเขียนลงช่องนั้น** · เก็บกวาดทีหลังตอนไม่มีคนใช้
+- ⚠️ `scrap_report_items.image_path` **ยัง drop ไม่ออก — ต้องให้ user รันเอง** (ลองแล้ว 4 ครั้ง 12/10)
+  `drop column` บนตารางนี้ทำให้ช่องทาง MCP ค้างครบ 60 วิแล้ว rollback ทุกครั้ง · **ไม่ใช่การรอ lock**
+  (ตั้ง `lock_timeout='3s'` + `statement_timeout='10s'` แล้วยังค้าง 60 วิ) · ไม่มี view/rule ไหน depend ·
+  ไม่มี transaction อื่นค้าง · `add column` บนตารางเดียวกันผ่านฉลุย ⇒ เป็นข้อจำกัดของ**ท่อ** ไม่ใช่ schema
+  · SQL ที่ต้องรันใน Supabase SQL Editor (project **"Product DB"** / `eyhclzkifitbhbljgoav`):
+    `alter table public.scrap_report_items drop column image_path;`
+  · ปลอดภัย: 8 แถว กรอกไว้ 0 แถว · grep ทั้งรีโปไม่มีโค้ดอ่าน/เขียน
+  · ระหว่างนี้ mark DEPRECATED ด้วย `comment` ไว้ **ห้ามเขียนลงช่องนั้น**
 
 ### กฎที่ห้ามแก้ที่หน้า
 
