@@ -1,4 +1,5 @@
 import { useState, useEffect, useContext, useMemo, useRef } from 'react';
+import { LPA_LAYERS } from '../utils/prodRoutine';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
@@ -38,12 +39,8 @@ import { loadLpaQuestionRefs, lpaQuestionBlockMessage, lpaDeleteConfirmText, sav
 const FORM_NO = 'FM-QMR-008 Rev.01';
 const EFFECTIVE = '12/05/2017';
 
-const LAYERS = [
-  { key: 'leader', label: 'Leader', freq: 'ทุกวัน', planKey: 'plan_leader' },
-  { key: 'supervisor', label: 'Supervisor', freq: 'รายสัปดาห์', planKey: 'plan_supervisor' },
-  { key: 'manager', label: 'Manager', freq: 'รายเดือน', planKey: 'plan_manager' },
-  { key: 'gm', label: 'GM', freq: 'รายไตรมาส', planKey: 'plan_gm' },
-];
+// ชั้นผู้ตรวจ — ที่เดียวทั้งระบบ (จอ TV ฝ่ายผลิตอ่านชุดเดียวกันเพื่อนับ "แผนวันนี้ยังไม่ตรวจ" · 12/10)
+const LAYERS = LPA_LAYERS;
 const CATEGORIES = [
   { key: 'safety', label: 'Safety & 5ส.', full: 'Safety & 5S Related (ความปลอดภัยและเกี่ยวกับ 5ส.)' },
   { key: 'quality', label: 'Product & Quality', full: 'Product & Quality (เกี่ยวข้องกับการผลิต & ตรวจสอบคุณภาพ)' },
