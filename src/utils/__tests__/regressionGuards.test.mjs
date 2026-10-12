@@ -1003,6 +1003,20 @@ const RULES = [
     allow: {},
   },
   {
+    id: 'quality-photo-via-helper',
+    scan: ['src/pages', 'src/components'], ext: ['.jsx'],
+    // จับการแตะถัง quality-images ตรงๆ จากหน้า (upload / remove / getPublicUrl)
+    re: /storage\s*\.from\(\s*['"]quality-images['"]\s*\)/g,
+    why: 'รูปหลักฐานของเสียพาดผ่าน 3 จอ (ลงงานเสีย → ถังเหลือง/แดง → ใบรายงานของเสีย) '
+       + 'และมีกติกาที่พลาดแล้วเห็นผลช้า: ① บีบ webp 1024px (480px ของรูปโปรไฟล์เล็กเกินกว่าจะเห็นตำหนิ) '
+       + '② นามสกุลจาก imgExt(blob) ห้าม hardcode .jpg ③ uploadOpts() ไม่งั้น cacheControl หาย '
+       + '— เคยทำ egress ทะลุโควต้าจนทั้ง organization ถูกล็อก · บทเรียนเดียวกับ mtnImage.js: '
+       + 'กติกาที่ฝังอยู่ในหน้าแรก ทำให้จุดที่ 2 ต้องก๊อป แล้วตกหล่นทีละข้อ',
+    fix: 'ใช้ uploadQualityPhoto(file, folder, key) / removeQualityImg(url) '
+       + 'จาก src/utils/qualityImage.js (ช่องกรอกใช้ <QualityPhotoField>)',
+    allow: {},
+  },
+  {
     id: 'mo-image-via-mtnImage',
     scan: ['src/pages', 'src/components'], ext: ['.jsx'],
     // จับการอัปโหลดขึ้น bucket mtn-images โดยไม่ผ่าน util กลาง

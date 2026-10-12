@@ -34,6 +34,9 @@ import { printQualityBin } from '../lib/qualityBinPrint';
    ⚠️ ห้าม hardcode 5/1 วัน หรือรายชื่อผลพิจารณาซ้ำในหน้านี้ (2026-09-25) */
 import { TAG_MAX_DAYS, QA_DECISIONS, decisionOf, binTagAge, binClosed, overdueBins, SPECIAL_USE_FORM } from '../utils/qualityBin';
 import SimpleMasterPanel from './SimpleMasterPanel';
+/* 📷 รูปหลักฐานของเสีย — ช่องแนบ + ตัวบีบ/อัปโหลด เป็นของกลาง ห้ามเขียนเองในหน้า (2026-10-12) */
+import QualityPhotoField from './QualityPhotoField';
+import { uploadQualityPhoto, removeQualityImg } from '../utils/qualityImage';
 import { notifyEvent } from '../utils/notifyEvent';
 import { DeleteButton } from './IconButton';
 
@@ -58,6 +61,9 @@ const BLANK = {
   repair_date: '', repair_detail: '', repair_by: '', qty_ok: '', qty_ng: '', return_date: '',
   disposed_by: '', disposed_position: '', note: '',
   qa_decision: '', special_use_doc_no: '',
+  /* URL รูปที่บันทึกไว้แล้ว — ไฟล์ที่ "เพิ่งเลือก" อยู่ใน state แยก (foundFile/repairFile)
+     แยกกันเพราะกดยกเลิกแล้วต้องไม่มีไฟล์ค้างในถัง (อัปโหลดตอนกดบันทึกเท่านั้น) */
+  found_img: '', repair_img: '',
 };
 
 const inp = {
@@ -229,10 +235,16 @@ export default function QualityBins() {
     [scopeNames, lines],
   );
 
-  const openNew = () => { setForm({ ...BLANK, reported_by: '' }); setMatLocked(false); setEditing('new'); };
+  /* ไฟล์รูปที่เพิ่งเลือก (ยังไม่อัปโหลด) — เปิด/ปิดฟอร์มต้องล้างทุกครั้ง ไม่งั้นรูปของใบก่อนติดมาด้วย */
+  const [foundFile, setFoundFile] = useState(null);
+  const [repairFile, setRepairFile] = useState(null);
+  const setPhotoFiles = () => { setFoundFile(null); setRepairFile(null); };
+
+  const openNew = () => { setForm({ ...BLANK, reported_by: '' }); setMatLocked(false); setPhotoFiles(); setEditing('new'); };
   const openEdit = (r) => {
     setForm(Object.fromEntries(Object.keys(BLANK).map(k => [k, r[k] ?? ''])));
     setMatLocked(false);
+    setPhotoFiles();
     setEditing(r);
   };
   // ครอบครัวไลน์ที่เลือกในฟอร์ม — ให้ picker สินค้า/คน ของไลน์นั้นขึ้นก่อน (ไม่ตัดไลน์อื่น)
@@ -252,6 +264,20 @@ export default function QualityBins() {
       toast.info(`บันทึกได้ แต่ยังไม่มีเลขใบ ${SPECIAL_USE_FORM} — รายการนี้จะยังนับเป็นของค้างในถังจนกว่าจะกรอกเลขใบ`);
     }
     setSaving(true);
+    /* 📷 อัปโหลดรูป **ก่อน** เขียนแถว — อัปล้มแล้วเขียนแถวต่อ = ใบบอกว่ามีรูปแต่เปิดไม่ขึ้น
+       ⇒ ล้ม = หยุดทั้งการบันทึก แล้วบอกตรงๆ ว่ายังไม่ได้บันทึก (ห้ามล้มเหลวเงียบ)
+       ไฟล์ใหม่ชนะ URL เดิม · ไม่มีทั้งคู่ = null (ผู้ใช้กด "เอารูปออก" แล้ว form.*_img ถูกล้างเป็น '') */
+    let foundUrl = form.found_img || null;
+    let repairUrl = form.repair_img || null;
+    try {
+      const key = editing === 'new' ? 'new' : editing.id;
+      if (foundFile) foundUrl = await uploadQualityPhoto(foundFile, 'bin', key);
+      if (isY && repairFile) repairUrl = await uploadQualityPhoto(repairFile, 'bin', key);
+    } catch (e) {
+      setSaving(false);
+      toast.error(`อัปโหลดรูปไม่สำเร็จ: ${e.message} — ยังไม่ได้บันทึกรายการ ลองกดบันทึกอีกครั้ง`);
+      return;
+    }
     const payload = {
       bin,
       work_date: form.work_date,
@@ -272,6 +298,9 @@ export default function QualityBins() {
       disposed_by: form.disposed_by.trim() || null,
       disposed_position: form.disposed_position.trim() || null,
       note: form.note.trim() || null,
+      found_img: foundUrl,
+      /* ถังแดงไม่มีขั้นซ่อม — เขียน null ไว้เสมอ ไม่ใช่ปล่อยค่าเดิมค้าง (ใบที่ย้ายมาจากเหลืองจะสับสน) */
+      repair_img: isY ? repairUrl : null,
     };
     /* ── §5.4 ผลพิจารณาของ QA (ถังเหลือง) ──
        ⚠️ null = "ยังไม่พิจารณา" ไม่ใช่ "ไม่มีผล" — ห้ามเขียน '' ลงไปแทน (จะกลายเป็นค่าที่ตัดสินไม่ได้)
@@ -289,6 +318,12 @@ export default function QualityBins() {
       : await supabaseDR.from('quality_bin_records').update(payload).eq('id', editing.id);
     setSaving(false);
     if (error) { toast.error(error.message); return; }
+    /* 🔴 ลบไฟล์เก่าได้**หลัง**เขียนแถวสำเร็จเท่านั้น — ลบก่อนแล้วเขียนล้ม = แถวยังชี้ URL ที่ไฟล์หายแล้ว
+       (กฎเหล็ก db-write ข้อ 2) · ลบล้มปล่อยเงียบได้ ไฟล์กำพร้าไม่ทำให้จอผิด */
+    if (editing !== 'new') {
+      if (editing.found_img && editing.found_img !== foundUrl) removeQualityImg(editing.found_img);
+      if (editing.repair_img && editing.repair_img !== payload.repair_img) removeQualityImg(editing.repair_img);
+    }
     if (editing === 'new') notifyEvent({
       event: 'quality_bin_added', type: bin === 'red' ? 'error' : 'info',
       ref_table: 'quality_bin_records', line_name: payload.line_name || null, actor: fullName,
@@ -328,6 +363,9 @@ export default function QualityBins() {
       /* 🔴 ส่งต่อ defect_log_id ของใบเหลือง — %Q อ่านคำตัดสินของสงสัยผ่าน embed ด้วยคีย์นี้ (suspectState)
          ไม่ส่ง = ใบแดงไม่โผล่ใน embed ⇒ ของที่ยืนยันเสียแล้วยังขึ้น "รอ QA" ตลอดกาล (QC 05/10) */
       defect_log_id: r.defect_log_id || null,
+      /* 📷 รูปตอนพบเป็นของ "ชิ้นงานเดียวกัน" — ใบแดงที่ไม่มีรูปทั้งที่ใบเหลืองมี = หลักฐานขาดกลางทาง
+         เก็บเป็น URL เดียวกัน ไม่ copy ไฟล์ (ใบเหลืองยังอ้างอยู่ ลบใบใดใบหนึ่งไม่ลบไฟล์ทิ้ง) */
+      found_img: r.found_img || null,
     });
     if (error) { toast.error(error.message); return; }
     toast.success('สร้างรายการถังแดงแล้ว — ไปกรอกผู้กำจัดทำลายที่แท็บถังแดง');
@@ -432,6 +470,19 @@ export default function QualityBins() {
                     <div style={{ fontSize: 11, color: '#0ea5e9' }}
                       title="สร้างจากบันทึกงานเสียในหน้า Daily Report — ไม่ได้คีย์ใหม่">
                       📋 จาก Daily Report
+                    </div>
+                  )}
+                  {/* 📷 ภาพย่อในตาราง — ไม่เพิ่มคอลัมน์ (หัวตาราง 2 ถังคนละชุด เพิ่มแล้วต้องแก้ 2 ที่)
+                      กดแล้วเปิดรูปเต็มคนละแท็บ ไม่ต้องเปิดฟอร์มแก้ไขเพื่อดูรูป */}
+                  {(r.found_img || r.repair_img) && (
+                    <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
+                      {[['found_img', 'รูปตอนพบ'], ['repair_img', 'รูปหลังซ่อม']].map(([k, t]) => r[k] && (
+                        <a key={k} href={r[k]} target="_blank" rel="noreferrer" title={t}>
+                          {/* 🔴 loading="lazy" บังคับ — ระบบนี้ไม่มี image transform ภาพย่อ 34px
+                              ก็ยังโหลดไฟล์เต็มใบ ⇒ เปิดตารางทีเดียวลากทุกแถว (ด่าน list-thumb-needs-lazy) */}
+                          <img src={r[k]} alt={t} loading="lazy" style={{ height: 34, width: 45, objectFit: 'cover', borderRadius: 4, border: '1px solid var(--border)' }} />
+                        </a>
+                      ))}
                     </div>
                   )}
                 </td>
@@ -556,6 +607,16 @@ export default function QualityBins() {
 
               <div style={{ gridColumn: '1 / -1' }}><label style={lbl}>สาเหตุ</label>
                 <input value={form.cause} onChange={e => setForm(f => ({ ...f, cause: e.target.value }))} style={inp} /></div>
+              {/* 📷 รูปตอนพบ — ทางเลือก ห้ามบังคับ (หน้างานใส่ถุงมือ/รีบ · คำสั่ง user 12/10)
+                  ประโยชน์หลัก: QA ตัดสิน 4 ทางจากรูปได้โดยไม่ต้องเดินไปดูของ และของที่ถูกซ่อม/
+                  ทำลายไปแล้วยังสืบย้อนได้ว่าเสียยังไง */}
+              <div style={{ gridColumn: '1 / -1' }}>
+                <QualityPhotoField
+                  label="📷 รูปตอนพบของเสีย" hint="ไม่บังคับ — แนบไว้ช่วยให้ QA ตัดสินได้โดยไม่ต้องเดินไปดูของ"
+                  url={form.found_img || null} file={foundFile}
+                  onPick={(f) => { setFoundFile(f); if (!f) setForm(fm => ({ ...fm, found_img: '' })); }}
+                />
+              </div>
               {/* 2026-09-07 ชื่อคนเลือกจาก employees+profiles ผ่าน <PersonSelect> (คนในครอบครัวไลน์ขึ้นก่อน · เก็บชื่อ snapshot — ตาราง DR) */}
               <div><label style={lbl}>ผู้แจ้ง (พนักงาน)</label>
                 <PersonSelect value={form.reported_by} source="both" lines={famLines} history={reportedHist} inputStyle={inp} onChange={({ name }) => setForm(f => ({ ...f, reported_by: name }))} /></div>
@@ -614,6 +675,14 @@ export default function QualityBins() {
                   <input type="number" value={form.qty_ng} onChange={e => setForm(f => ({ ...f, qty_ng: e.target.value }))} style={inp} /></div>
                 <div><label style={lbl}>วันที่นำกลับเข้ากระบวนการ</label>
                   <input type="date" value={form.return_date} onChange={e => setForm(f => ({ ...f, return_date: e.target.value }))} style={inp} /></div>
+                {/* 📷 รูปหลังซ่อม — ปิดลูป "ซ่อมแล้วใช้ได้จริง" คู่กับรายละเอียดการซ่อม (I DO I CHECK) */}
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <QualityPhotoField
+                    label="📷 รูปหลังซ่อม" hint="ไม่บังคับ — คู่กับรายละเอียดการซ่อม ใช้ยืนยันว่าซ่อมแล้วใช้ได้จริง"
+                    url={form.repair_img || null} file={repairFile}
+                    onPick={(f) => { setRepairFile(f); if (!f) setForm(fm => ({ ...fm, repair_img: '' })); }}
+                  />
+                </div>
               </>) : (<>
                 <div style={{ gridColumn: '1 / -1', borderTop: '1px solid var(--border)', paddingTop: 8, fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>การกำจัดทำลาย (ตาม DOA)</div>
                 <div><label style={lbl}>ผู้กำจัดทำลาย</label>
