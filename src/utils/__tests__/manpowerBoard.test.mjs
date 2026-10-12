@@ -297,7 +297,9 @@ test('แผน vs มาจริง: ที่นั่ง = การ์ด+�
   assert.equal(sum.fill, 10 / 14);
 });
 
-test('rosterOn: ตัดคนที่เริ่มงานหลังวันนั้น · ไม่มี start_date = นับ', () => {
-  const r = M.rosterOn([{ id: 'a', start_date: '2026-10-05' }, { id: 'b', start_date: null }, { id: 'c', start_date: '2026-10-01' }], '2026-10-03');
-  assert.deepEqual(r.map(e => e.id), ['b', 'c']);
+test('rosterOn: ตัดคนที่เริ่มงานหลังวันนั้น · ไม่มี start_date = นับ · ปี พ.ศ./ค่าอนาคต ไม่ใช้ตัด · เช็คชื่อแล้วชนะ', () => {
+  const E = [{ id: 'a', start_date: '2026-10-05' }, { id: 'b', start_date: null }, { id: 'c', start_date: '2026-10-01' },
+    { id: 'be', start_date: '2565-09-01' }, { id: 'came', start_date: '2026-10-06' }];
+  const r = M.rosterOn(E, '2026-10-03', { today: '2026-10-12', attendance: { came: { is_present: true } } });
+  assert.deepEqual(r.map(e => e.id), ['b', 'c', 'be', 'came'], 'a เริ่มหลังวันนั้นจริง = ตัด · ปี พ.ศ. (อยู่หลังวันนี้) = ค่าผิด ไม่ตัด · มาเช็คชื่อแล้ว = อยู่');
 });
