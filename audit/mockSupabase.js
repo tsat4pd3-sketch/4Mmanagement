@@ -258,6 +258,18 @@ const TABLE_ROWS = {
      ของ /permissions ไม่เคยถูกเรนเดอร์จริงเลย** (14 แถวที่ React กลืนเหลือแถวเดียว)
      ของจริง 2 คอลัมน์นี้ not null + เป็น PK คู่กัน (`${resource}:${action}`)
      แถว 15 ตั้งใจให้ `group_name` เป็นหมวดที่ไม่มีในเมนู ⇒ ต้องขึ้นป้าย ⚠️ หมวดกำพร้า */
+  /* 🔑 ช่องติ๊กในตารางสิทธิ์ — **ห้ามปล่อยให้ `permission_key` เป็น null** (2026-10-12)
+     เดิม `role_permissions` ได้ ROWS ทั่วไป (ไม่มี permission_key/role/allowed) ⇒ `map` ของ
+     /permissions ว่างเปล่า ⇒ ทุกช่องขึ้น "ไม่ติ๊ก" ⇒ **สาขา checked + ปุ่ม toggle ที่มีค่าเดิม
+     ไม่เคยถูกเรนเดอร์ใน harness เลย** (รวมทั้งตัวนับ "ต่างจากค่าเริ่มต้น" ของตัวกรอง onlyDiff)
+     คีย์ที่ใช้ต้องเป็นของจริงทั้ง 2 แท็บ: `page:/…` (แท็บการเข้าถึงหน้า) + `resource:action`
+     (แท็บการทำงาน — ต้องตรงกับ permission_catalog ข้างล่าง ไม่งั้นช่องที่ติ๊กไว้ไม่ตรงแถวไหนเลย) */
+  role_permissions: (r, i) => ({
+    ...r,
+    permission_key: ['page:/daily-report', 'page:/obeya', 'products:create', 'four_m:approve', 'daily_report:create'][i % 5],
+    role: ['manager', 'supervisor', 'leader'][Math.floor(i / 5) % 3],
+    allowed: i % 4 !== 0,   // คละ true/false — ช่องที่ "ปิดไว้ชัดเจน" ก็ต้องมีในจอ
+  }),
   permission_catalog: (r, i) => ({
     ...r,
     /* คู่ resource:action ต้อง **ไม่ซ้ำกันเลยทั้ง 15 แถว** (ของจริงเป็น PK คู่) —

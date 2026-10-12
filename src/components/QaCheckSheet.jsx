@@ -387,7 +387,9 @@ export default function QaCheckSheet({ canRecord }) {
       }).select('id').single();
       if (rbErr) toast.error(`บันทึกชิ้นแล้ว แต่ลงถังแดงไม่สำเร็จ: ${rbErr.message} — ไปลงที่แท็บถังแดงเอง`);
       else {
-        checkWrite(await supabase.from('qa_inspection_pieces').update({ red_bin_id: rb.id }).eq('id', pc.id), 'ผูกถังแดงเข้าชิ้น');
+        /* นับแถว — แถวถังแดงถูกสร้างแล้ว ผูกกลับไม่ติด = ชิ้นที่ตกไม่รู้ว่าอยู่ถังไหน (กฎเขียน DB ข้อ 2) */
+        checkWriteRows(await supabase.from('qa_inspection_pieces').update({ red_bin_id: rb.id }).eq('id', pc.id).select('id'), 'ผูกถังแดงเข้าชิ้น',
+          { zeroMsg: 'ลงถังแดงแล้ว แต่ผูกกลับเข้าชิ้นที่ตรวจไม่ได้ (0 แถว) — ตัวเลขถังแดงยังถูก แต่สอบกลับจากใบตรวจจะไม่เจอ' });
         notifyEvent({ event: 'quality_bin_added', type: 'error', ref_table: 'quality_bin_records', ref_id: rb.id,
           line_name: part?.line_name || null, actor: fullName,
           lines: ['🔴 ถังแดง (ของเสียยืนยันแล้ว — จากใบตรวจ QA)', `🏭 ไลน์: ${part?.line_name || '—'} · ${part?.part_no || '—'}`, `🔢 1 ชิ้น · ${failedTxt}`] });
@@ -482,7 +484,9 @@ export default function QaCheckSheet({ canRecord }) {
       created_by: fullName || null,
     }).select().single();
     if (error) { setBusy(false); toast.error(`เปิด NCR ไม่สำเร็จ: ${error.message}`); return; }
-    checkWrite(await supabase.from('qa_inspection_results').update({ ncr_id: data.id }).eq('id', res.id), 'ผูก NCR เข้าผลตรวจ');
+    /* นับแถว — NCR ถูกเปิดแล้ว ผูกกลับไม่ติด = ผลตรวจไม่รู้ว่ามี NCR แล้ว กดเปิดซ้ำได้อีก */
+    checkWriteRows(await supabase.from('qa_inspection_results').update({ ncr_id: data.id }).eq('id', res.id).select('id'), 'ผูก NCR เข้าผลตรวจ',
+      { zeroMsg: `เปิด NCR ${ncr_no} แล้ว แต่ผูกกลับเข้าผลตรวจไม่ได้ (0 แถว) — อย่ากดเปิด NCR ซ้ำ ไปดูที่หน้า NCR` });
     notifyEvent({
       event: 'qa_ncr_opened', type: 'error', ref_table: 'qa_ncr', ref_id: data.id,
       line_name: part?.line_name || null, actor: fullName,
