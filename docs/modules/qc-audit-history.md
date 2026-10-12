@@ -131,7 +131,7 @@ B5 — Edge Function `demand-mail-file` (ตรวจ token Main + has_perm) + �
 | 15 | `FlowTower.jsx` · `HeijunkaKanban.jsx` ใบเบิก/ใบ child | ค้าง = `pending` (ตารางไม่มี `done` — เดิมนับ cancelled เป็นค้าง 1,472 แทน 482) · คิวสโตร์โหลดใบค้างทุกหน้า + ประวัติล่าสุด (เดิม 172 ใบรอจ่ายหาย · ใบยกเลิกขึ้นปุ่มจ่าย) · ด่าน `raw-withdrawal-status-set` |
 
 **⏳ ค้าง — โค้ดล้วน (ทำได้เลย · เรียงตามผลต่อ roadshow)**
-- จอเดโม: Obeya SQDCM โหลดเป้า OEE ล้มแล้วถอยไปเป้า default เงียบ · MtnAnalysis แท็บ QC7 พาเรโต ป้าย "100.0%" ล้นกรอบ 11px (chartsweep)
+- จอเดโม: Obeya SQDCM โหลดเป้า OEE ล้มแล้วถอยไปเป้า default เงียบ · MtnAnalysis แท็บ QC7 พาเรโต ป้าย "100.0%" ล้นกรอบ 11px (chartsweep) → ✅ ปิดแล้ว (chartsweep 12/10: 83 หน้า · 200 มุมมอง · 27 กราฟ · ปัญหา 0)
 - ข้อมูล/สต็อก: write ไม่เช็ค error ~8 จุด (ลำดับรอง)
 **⛔ ค้าง — ต้องให้ user ตัดสิน (RLS/edge/security — ห้าม auto-merge)**
 - 🔴 `telegram_channels` / `notification_rules` เขียนได้ทุก authenticated (เปลี่ยน chat_id รับแจ้งเตือนทั้งโรงงานได้)
