@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useContext } from 'react'
 import { orgValues, orgNodeCompare } from '../utils/listOrder';
 import { supabase, supabaseDR } from '../supabaseClient'
 import { toast } from '../components/Toast'
@@ -9,6 +9,7 @@ import InfoMore from '../components/InfoMore'
 import { reachLabel, reachWarnings } from '../utils/notifReach'   // 🏷️ ป้ายราคาต่อเรื่อง — สูตรอยู่ util ที่เดียว (มีเทส)
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
+import { UserContext } from '../App';
 
 const inputStyle = {
   width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)',
@@ -130,6 +131,16 @@ export default function NotificationConfig() {
   const [busy, setBusy] = useState(null)
   const [newRoom, setNewRoom] = useState({ name: '', chat_id: '' })
   const [tokenStatus, setTokenStatus] = useState({ is_set: false, last4: null })
+  /* 🔒 ช่อง Bot Token เปิดให้ **admin เท่านั้น** — ให้ตรงกับด่านฝั่ง DB เป๊ะ
+     `set_bot_token()` เช็ค `profiles.role = 'admin'` ข้างใน แต่หน้านี้เปิดให้
+     admin · dept_admin · manager · supervisor (`page:/notification-config`)
+     ⇒ เดิมวาดช่อง+ปุ่มให้ทุกคน กดแล้วได้ `forbidden: admin only` ดิบๆ (ปุ่มเขียวแต่ไม่เซฟ)
+     ⚠️ ที่นี่เทียบ role ตรงๆ ไม่ผ่าน `can()` **โดยเจตนา** — token เป็น "กุญแจ" ไม่ใช่ฟีเจอร์
+     ด่านบนจอต้องเท่ากับด่านใน DB เสมอ · จะเปลี่ยนเป็นคีย์สิทธิ์ ต้องแก้ฟังก์ชันฝั่ง DB พร้อมกัน
+     ไม่งั้นได้ mismatch กลับมาอีกแบบ · ใช้ `role` (ไม่ใช่ `realRole`) เพื่อให้ "ดูในมุมคนอื่น"
+     เห็นตรงกับที่คนนั้นเห็นจริง — และ view-as เปิดให้ admin เท่านั้น จึงไม่มีทางได้ปุ่มตาย */
+  const { role } = useContext(UserContext)
+  const canSetToken = role === 'admin'
   const [tokenInput, setTokenInput] = useState('')
   const [editingTpl, setEditingTpl] = useState(null) // event_key being edited
   const [tplDraft, setTplDraft] = useState('')
@@ -192,6 +203,7 @@ export default function NotificationConfig() {
   }
 
   const saveToken = async () => {
+    if (!canSetToken) return toast.error('ตั้ง Bot Token ได้เฉพาะ admin')
     if (!tokenInput.trim()) return toast.error('วาง token ก่อน')
     setBusy('token')
     const { error } = await supabase.rpc('set_bot_token', { p_token: tokenInput.trim() })
@@ -327,15 +339,25 @@ export default function NotificationConfig() {
         <div style={{ fontSize: 12, color: tokenStatus.is_set ? 'var(--accent)' : 'var(--accent2)', minWidth: 150 }}>
           {tokenStatus.is_set ? `✅ ตั้งค่าแล้ว (••••${tokenStatus.last4 ?? ''})` : '⚠️ ยังไม่ได้ตั้ง token'}
         </div>
-        <input
-          type="password" autoComplete="off"
-          value={tokenInput} onChange={e => setTokenInput(e.target.value)}
-          placeholder={tokenStatus.is_set ? 'วาง token ใหม่เพื่อเปลี่ยน' : 'วาง token จาก @BotFather'}
-          style={{ ...monoStyle, flex: 1, minWidth: 220 }}
-        />
-        <button onClick={saveToken} disabled={busy === 'token'} style={{ background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, padding: '9px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
-          {busy === 'token' ? 'บันทึก...' : 'บันทึก Token'}
-        </button>
+        {canSetToken ? (
+          <>
+            <input
+              type="password" autoComplete="off"
+              value={tokenInput} onChange={e => setTokenInput(e.target.value)}
+              placeholder={tokenStatus.is_set ? 'วาง token ใหม่เพื่อเปลี่ยน' : 'วาง token จาก @BotFather'}
+              style={{ ...monoStyle, flex: 1, minWidth: 220 }}
+            />
+            <button onClick={saveToken} disabled={busy === 'token'} style={{ background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, padding: '9px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+              {busy === 'token' ? 'บันทึก...' : 'บันทึก Token'}
+            </button>
+          </>
+        ) : (
+          /* 🔒 ไม่ใช่ admin = ไม่วาดช่อง/ปุ่มเลย — เขียนบอกเหตุผล ห้ามโชว์ปุ่มที่กดแล้วไม่ผ่าน */
+          <div style={{ flex: 1, minWidth: 220, fontSize: 12, color: 'var(--muted)' }}>
+            ตั้ง/เปลี่ยน token ได้เฉพาะ <b style={{ color: 'var(--text2)' }}>admin</b> —
+            ส่วนอื่นของหน้านี้ (ห้อง · เรื่องที่แจ้ง · ผู้รับ) ตั้งได้ตามปกติ
+          </div>
+        )}
         <div style={{ flexBasis: '100%', fontSize: 11, color: 'var(--muted)' }}>
           🔒 token เก็บแบบเข้ารหัสฝั่ง server — บันทึกแล้วดูย้อนหลังไม่ได้ (โชว์แค่ 4 ตัวท้าย) · ถ้าไม่ตั้งที่นี่ ระบบใช้ token เดิมที่ตั้งไว้ในระบบ
         </div>
