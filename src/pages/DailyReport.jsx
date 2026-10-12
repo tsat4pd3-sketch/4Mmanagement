@@ -6,6 +6,9 @@ import { fmtDate, fmtDateTime, fmtDateTimeFull, fmtTime } from '../utils/dateFor
 import { buildMachineKeyMap, snapMachineNo } from '../utils/machineNo';
 import { dtBucketName, buildDtIndex } from '../utils/downtimeCategory';
 import { toast } from '../components/Toast';
+/* 📷 รูปหลักฐานของเสีย — ของกลางเดียวกับถังเหลือง/แดง (ด่าน quality-photo-via-helper · 2026-10-12) */
+import QualityPhotoField from '../components/QualityPhotoField';
+import { uploadQualityPhoto, removeQualityImg } from '../utils/qualityImage';
 import { uploadMoBeforeImg } from '../utils/mtnImage';
 import { buildProblemReport, dtNeedsFix, countPendingFix, PROBLEM_MIN_MINUTES } from '../lib/prodProblemReport';
 /* 📝 ทะเบียนใบรายงานปัญหาการผลิต FM-PD1-019 — ออกใบ = บันทึกก่อนแล้วค่อยพิมพ์ · พิมพ์ซ้ำ = ใบเดิมจาก snapshot
@@ -36,7 +39,7 @@ import StoreLotQueue from '../components/StoreLotQueue';
 import LineWipPanel from '../components/LineWipPanel';
 import LinePartCallPanel from '../components/LinePartCallPanel';
 import ProcessTypeSetup from '../components/ProcessTypeSetup';
-import { computeSessionOee, strictOee, strictGap, STRICT_WARN_SHARE_PCT, policyBreakOverlapMin, breakIntervalsIn, dtMinOutsideBreaks, overlapMinutesWith, buildCtMap, ctForMat, groupSameProductKeys, shiftFrameOf, shiftStartDate, clampWinToShift, unionIv, dtMinOutsideWork, SIX_BIG_LOSSES, EIGHT_WASTES, sumDefectQty, isTrialDefect, splitDefectQty, QBIN_EMBED, sumSuspectPending } from '../utils/oee';
+import { computeSessionOee, sessionProducedQty, strictOee, strictGap, STRICT_WARN_SHARE_PCT, policyBreakOverlapMin, breakIntervalsIn, dtMinOutsideBreaks, overlapMinutesWith, buildCtMap, ctForMat, groupSameProductKeys, shiftFrameOf, shiftStartDate, clampWinToShift, unionIv, dtMinOutsideWork, SIX_BIG_LOSSES, EIGHT_WASTES, sumDefectQty, isTrialDefect, splitDefectQty, QBIN_EMBED, sumSuspectPending } from '../utils/oee';
 import { resolveShiftTime, checkShiftTime, shiftWindow, windowLabel, fmtOffset, MAX_SHIFT_MIN, checkCloseTime } from '../utils/shiftWindow';
 import ScanModal from '../components/ScanModal';
 import SearchSelect from '../components/SearchSelect';
@@ -461,7 +464,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   const [defectTypes, setDefectTypes]   = useState([]);
   const [defectLogs, setDefectLogs]     = useState([]);
   const [showDefect, setShowDefect]     = useState(false);
-  const [defectForm, setDefectForm]     = useState({ id: null, mat_no: '', defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '', is_trial: false });
+  const [defectForm, setDefectForm]     = useState({ id: null, mat_no: '', defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '', is_trial: false, defect_img: '' });
+  /* ไฟล์รูปที่เพิ่งเลือก (ยังไม่อัปโหลด) — อัปตอนกดบันทึกเท่านั้น กดยกเลิกแล้วต้องไม่มีไฟล์ค้างในถัง */
+  const [defectFile, setDefectFile]     = useState(null);
   /* ใบสแกนใบไหนกางช่อง "ทำได้กี่ชิ้น" อยู่ — ค่าเริ่มต้นพับหมด
      เหตุผล: ระบบดึง (kanban) เปิดค้างทีละ 20-30 ใบได้ แต่ "ใบที่ทำค้างจริง" มีไม่กี่ใบ
      ที่เหลือคือยังไม่เริ่ม (ยกเต็มใบ) หรือเดี๋ยวสแกนปิดเต็มใบ → กางช่องทุกใบ = จอรก
@@ -1072,8 +1077,20 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       const endChanged   = closeEndTime   && closeEndTime   !== selSession.end_time;
       // กะไม่มีผลผลิต → A/Q ไม่มีความหมาย (กันเลข 100/0 รั่วเข้าค่าเฉลี่ย %A/%Q — ดูหมายเหตุใน handleCloseSession)
       const noProduction = totalProduced === 0 && P == null;
+      /* 🔴 ยอดที่ stamp ต้อง re-stamp พร้อม A/P/Q เสมอ (2026-10-12)
+         `computeOEE` คิด %P/%Q จาก **ใบผลิตชุดปัจจุบัน** ⇒ ถ้าปล่อย actual_qty/qty_ok ค้างค่าเดิม
+         แถวเดียวกันจะขัดแย้งกันเอง: "ยอดผลิต 1,000" แต่ %P คิดจาก 1,100 (หลักเดียวกับที่
+         handleCloseSession ระวังไว้ตั้งแต่ 15/09) · วัดจริง ก.ย. 2026: 27 กะ · 835 ชิ้น
+         ที่ actual_qty ต่ำกว่าผลรวมใบผลิตจริง เพราะใบถูกแก้ยอดหลังปิดกะแล้วมีคนมากด "คำนวณ OEE ใหม่"
+         ⇒ รายงานรายเดือนนับยอดขาด แต่ %P ถูก = อธิบายให้ผู้บริหารไม่ได้ */
+      const reNg      = defectLogs.reduce((a, d) => a + (d.qty_ng      || 0), 0);
+      const reSuspect = defectLogs.reduce((a, d) => a + (d.qty_suspect || 0), 0);
+      const reRepair  = defectLogs.reduce((a, d) => a + (d.qty_repair  || 0), 0);
       const update = {
         shift_min: shiftMin,
+        // ยอดดี = ยอดผลิต (การ์ดที่สแกน = ของดีล้วน) — กติกาเดียวกับ handleCloseSession ห้ามแยกสูตร
+        actual_qty: totalProduced, qty_ok: totalProduced,
+        ng_qty: reNg, qty_ng: reNg, qty_suspect: reSuspect, qty_repair: reRepair,
         // CT ที่ใช้คิด %P รอบนี้ — ต้อง re-stamp ด้วย เพราะ %P ถูกคำนวณใหม่ทั้งก้อน (เฟส 0 Adaptive CT)
         ...(Object.keys(ctUsed || {}).length ? { ct_snapshot: ctUsed } : {}),
         oee_a: (noProduction || A == null) ? null : parseFloat((A * 100).toFixed(2)),
@@ -1085,7 +1102,12 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       };
       const { error: wErr769 } = await supabaseDR.from('production_sessions').update(update).eq('id', selSession.id);
       if (wErr769) { toast.error('บันทึกเวลา/OEE ของกะไม่สำเร็จ: ' + wErr769.message); return; }
-      toast.success('บันทึกเวลาและคำนวณ OEE ใหม่สำเร็จ');
+      /* ยอดเปลี่ยน = ต้องเห็น ห้ามแก้เงียบ — คนกดปุ่มนี้ตั้งใจแก้ "เวลา" ไม่ได้ตั้งใจแก้ "ยอด"
+         ถ้ายอดขยับด้วย แปลว่าใบผลิตถูกแก้หลังปิดกะ ซึ่งเขาควรรู้ก่อนเอาเลขไปรายงาน */
+      const qtyBefore = Number(selSession.actual_qty) || 0;
+      toast.success(qtyBefore !== totalProduced
+        ? `บันทึกเวลาและคำนวณ OEE ใหม่สำเร็จ · ยอดผลิตอัปเดตตามใบผลิตล่าสุด ${qtyBefore.toLocaleString()} → ${totalProduced.toLocaleString()} ชิ้น`
+        : 'บันทึกเวลาและคำนวณ OEE ใหม่สำเร็จ');
       setShowEditTimes(false);
       setMatTimeOverride({});
       load();
@@ -2060,6 +2082,16 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       return;
     }
     setSavingDefect(true);
+    /* 📷 อัปโหลดรูป **ก่อน** เขียนแถว — ล้มแล้วเขียนต่อ = แถวบอกว่ามีรูปแต่เปิดไม่ขึ้น (ห้ามล้มเหลวเงียบ)
+       ⚠️ คีย์ชื่อไฟล์ใช้ `session_id` ไม่ใช่ id ของแถว (ตอน insert ยังไม่มี id) */
+    let defectImgUrl = defectForm.defect_img || null;
+    try {
+      if (defectFile) defectImgUrl = await uploadQualityPhoto(defectFile, 'defect', selSession.id);
+    } catch (e) {
+      setSavingDefect(false);
+      toast.error(`อัปโหลดรูปไม่สำเร็จ: ${e.message} — ยังไม่ได้บันทึกงานเสีย ลองกดบันทึกอีกครั้ง`);
+      return;
+    }
     const { data: { user } } = await supabase.auth.getUser();
     const matchedOrder = defectForm.mat_no
       ? (prodOrders.find(o => o.mat_no === defectForm.mat_no && o.status === 'open')
@@ -2073,6 +2105,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       qty_repair:       repair,
       description:      defectForm.description || null,
       is_trial:         !!defectForm.is_trial,
+      defect_img:       defectImgUrl,
     };
     const { error } = defectForm.id
       ? await supabaseDR.from('defect_logs').update(payload).eq('id', defectForm.id)
@@ -2084,6 +2117,10 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
         });
     setSavingDefect(false);
     if (error) { toast.error(error.message); return; }
+    /* 🔴 ลบไฟล์เก่าได้หลังเขียนแถวสำเร็จเท่านั้น (กฎเหล็ก db-write ข้อ 2) */
+    if (defectForm.id && defectForm.defect_img && defectForm.defect_img !== defectImgUrl) {
+      removeQualityImg(defectForm.defect_img);
+    }
     const label = [ng ? `NG ${ng}` : '', suspect ? `สงสัย ${suspect}` : '', repair ? `ซ่อม ${repair}` : ''].filter(Boolean).join(' · ');
     if (!defectForm.id) notifyEvent({
       event: 'defect_recorded', type: 'error', ref_table: 'defect_logs',
@@ -2097,7 +2134,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     });
     toast.success(defectForm.id ? `แก้ไขงานเสีย: ${label} ✓` : `บันทึกงานเสีย: ${label} ✓`);
     setShowDefect(false);
-    setDefectForm({ id: null, mat_no: '', defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '', is_trial: false });
+    setDefectForm({ id: null, mat_no: '', defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '', is_trial: false, defect_img: '' });
+    setDefectFile(null);
     loadDefectLogs(selSession.id);
   };
 
@@ -2392,13 +2430,12 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     const totalQtyNg      = defectLogs.reduce((s, d) => s + (d.qty_ng      || 0), 0);
     const totalQtySuspect = defectLogs.reduce((s, d) => s + (d.qty_suspect || 0), 0);
     const totalQtyRepair  = defectLogs.reduce((s, d) => s + (d.qty_repair  || 0), 0);
-    const confirmed       = prodOrders.filter(o => o.status === 'confirmed');
     /* 🔴 ยอดที่ stamp ต้องนับใบ `carry_over`/`imported` ด้วย ให้ตรงกับ totalProduced ใน computeOEE
-       ไม่งั้นแถวเดียวกันขัดแย้งกันเอง — actual_qty นับ 384 แต่ %P คิดจาก 352 (เคส Assy LWR 15/09) */
-    const carryActual     = prodOrders
-      .filter(o => ['open', 'carry_over', 'cancelled', 'imported'].includes(o.status))
-      .reduce((s, o) => s + (parseInt(carryQtyActual[o.id]) || Number(o.qty_actual) || 0), 0);
-    const totalProducedFinal = confirmed.reduce((s, o) => s + o.qty, 0) + carryActual;
+       ไม่งั้นแถวเดียวกันขัดแย้งกันเอง — actual_qty นับ 384 แต่ %P คิดจาก 352 (เคส Assy LWR 15/09)
+       ⇒ ใช้สูตรกลาง `sessionProducedQty` (oee.js §6.0.1) ตัวเดียวกับ computeSessionOee
+          ห้ามวน reduce ใบผลิตเองที่นี่อีก (12/10 · เคยเป็นสำเนาที่ 3 ของกฎเดียวกัน) */
+    const totalProducedFinal = sessionProducedQty(prodOrders, carryQtyActual);
+    const confirmed       = prodOrders.filter(o => o.status === 'confirmed');   // ใช้สรุปรายการพาร์ทใน Telegram เท่านั้น (ไม่ใช่ตัวคิดยอด)
     // ยอดดี = ยอดผลิต (การ์ดที่สแกน = ของดีล้วน · NG/suspect/repair คือของที่ผลิตเพิ่มต่างหาก ไม่หักซ้ำ · 2026-08-02)
     const totalQtyOk      = totalProducedFinal;
 
@@ -3370,7 +3407,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                     <button onClick={() => {
                       const activeMatNos = Array.from(new Set(prodOrders.filter(o => o.status === 'open').map(o => o.mat_no))).filter(Boolean);
                       setShowDefect(true);
-                      setDefectForm({ id: null, mat_no: activeMatNos.length === 1 ? activeMatNos[0] : '', defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '', is_trial: false });
+                      setDefectForm({ id: null, mat_no: activeMatNos.length === 1 ? activeMatNos[0] : '', defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '', is_trial: false, defect_img: '' });
+                      setDefectFile(null);
                     }}
                       style={{ background: '#ef4444', color: '#fff', border: 'none', borderRadius: 7, padding: '7px 16px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
                       🔴 บันทึกงานเสีย
@@ -3815,7 +3853,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       })()}
                       {canEditRecords && (
                         <div style={{ display: 'flex', gap: 4 }}>
-                          <button className="tbtn" onClick={() => { setDefectForm({ id: d.id, mat_no: d.prod_orders?.mat_no || '', defect_type_id: d.defect_type_id || '', qty_ng: String(d.qty_ng||0), qty_suspect: String(d.qty_suspect||0), qty_repair: String(d.qty_repair||0), description: d.description || '', is_trial: d.is_trial === true }); setShowDefect(true); }}
+                          <button className="tbtn" onClick={() => { setDefectForm({ id: d.id, mat_no: d.prod_orders?.mat_no || '', defect_type_id: d.defect_type_id || '', qty_ng: String(d.qty_ng||0), qty_suspect: String(d.qty_suspect||0), qty_repair: String(d.qty_repair||0), description: d.description || '', is_trial: d.is_trial === true, defect_img: d.defect_img || '' }); setDefectFile(null); setShowDefect(true); }}
                             style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 13, padding: '0 4px' }}>✎</button>
                           <button className="tbtn" onClick={() => handleDeleteDefectLog(d.id)}
                             style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, padding: '0 4px' }}>✕</button>
@@ -5601,6 +5639,17 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 <Field label="รายละเอียด / สาเหตุ">
                   <input type="text" value={defectForm.description} onChange={e => setDefectForm(f => ({ ...f, description: e.target.value }))} placeholder="เช่น มิติไม่ได้เพราะแม่พิมพ์สึก..." style={inputStyle} />
                 </Field>
+
+                {/* 📷 รูปงานเสีย — **ทางเลือก ห้ามทำเป็นช่องบังคับ** (คำสั่ง user 12/10)
+                    หน้างานใส่ถุงมือ/รีบ บังคับถ่ายทุกใบ = คนเลิกลงข้อมูล
+                    รูปนี้ไหลต่อไปเป็น `found_img` ของใบถังเมื่อกดส่งลงถังเหลือง/แดง */}
+                <div style={{ marginTop: 10 }}>
+                  <QualityPhotoField
+                    label="📷 รูปงานเสีย" hint="ไม่บังคับ — ถ่ายไว้แล้วจะติดไปกับใบถังเหลือง/แดงด้วย"
+                    url={defectForm.defect_img || null} file={defectFile}
+                    onPick={(f) => { setDefectFile(f); if (!f) setDefectForm(fm => ({ ...fm, defect_img: '' })); }}
+                  />
+                </div>
 
                 {/* 🧪 งานทดลอง — ของเสียจากลองแม่พิมพ์/ลองงานใหม่ ไม่ควรลงโทษ %Q ของไลน์
                     แต่ยอดยังถูกเก็บครบเพื่อคิดมูลค่าของเสีย (2026-08-17 · คำสั่ง user) */}

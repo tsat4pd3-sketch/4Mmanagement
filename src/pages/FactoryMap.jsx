@@ -14,7 +14,7 @@ import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
 import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
 import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory';
-import { computeLiveOee, shiftStartDate, wavg, wLoad, wRun, wProd, buildCtMap, isTrialDefect, defectQty, ngByMatFrom, breakIntervalsIn, overlapMinutesWith, dtMinOutsideBreaks, dtMinBySession, orderPlanQty, oeeTargetForLines, QBIN_EMBED } from '../utils/oee';
+import { computeLiveOee, shiftStartDate, wavg, wLoad, wRun, wProd, buildCtMap, isTrialDefect, defectQty, ngByMatFrom, breakIntervalsIn, overlapMinutesWith, dtMinOutsideBreaks, laneWeightFn, dtMinBySession, orderPlanQty, oeeTargetForLines, QBIN_EMBED } from '../utils/oee';
 import { usePolling } from '../utils/usePolling';
 import { RATE, LIVE } from '../utils/refreshRates';
 import { coalesce, makeIdleGate } from '../utils/liveRefresh';
@@ -876,8 +876,11 @@ export default function FactoryMap({ setupMode = false }) {
             workDate, shift: s.shift,
           })
         : [];
+      /* ไลน์เครื่องขนานบันทึก downtime รายเครื่อง ⇒ หารด้วยจำนวนเลนก่อนหักจากเวลากะ (oee.js §3.2)
+         ไม่หาร = plannedMin ทะลุความยาวกะ ⇒ wLoad เหลือ 0 ⇒ กะนั้นหายจากค่าเฉลี่ยของไลน์เงียบๆ */
+      const laneW = laneWeightFn(parallelUnitsOf(flowByLineRef.current[s.line_name]));
       const plannedDtMinAll = dl.filter(d => d.dr_downtime_types?.category === 'planned')
-        .reduce((a, d) => a + dtMinOutsideBreaks(d, wLoadBrkIv), 0);
+        .reduce((a, d) => a + dtMinOutsideBreaks(d, wLoadBrkIv) * laneW(d), 0);
       const lr = s.oee != null ? null : liveOee(s, os, dl);
       const oeeVal = s.oee != null ? Number(s.oee) : (lr && lr.oee != null ? Math.round(lr.oee) : null);
       const isLive = s.oee == null && oeeVal != null;
@@ -1007,7 +1010,7 @@ export default function FactoryMap({ setupMode = false }) {
       if (dErr) { setOeeHistRaw([]); return; }
       dtsAll.push(...(dts || []));
     }
-    const eff = dtMinBySession(rows, dtsAll, brk || []);
+    const eff = dtMinBySession(rows, dtsAll, brk || [], { lines: flowByLineRef.current });   // หารเลนไลน์เครื่องขนาน (oee.js §3.2)
     setOeeHistRaw(rows.map(s => ({ line_name: s.line_name, work_date: s.work_date, oee: Number(s.oee), shift_min: s.shift_min, plannedMin: eff[s.id]?.planned || 0 })));
   }, []);
   useEffect(() => { if (metric === 'oee' && oeeHistRaw == null) loadOeeHist(); }, [metric, oeeHistRaw, loadOeeHist]);
@@ -1401,7 +1404,7 @@ export default function FactoryMap({ setupMode = false }) {
         ]);
         const orders = need(ordRes, 'ใบผลิต'), dts = need(dtRes, 'เครื่องหยุด'), rvDefs = need(defRes, 'ของเสีย');
         // น้ำหนัก wLoad = shift_min − planned ที่ "หักได้จริง" (ตัดส่วนที่ทับพักออก · กฎเหล็ก OEE downtime ทับพัก)
-        const effBySess = dtMinBySession(sessions, dts || [], rvBreaks || []);
+        const effBySess = dtMinBySession(sessions, dts || [], rvBreaks || [], { lines: flowByLineRef.current });   // หารเลนไลน์เครื่องขนาน (oee.js §3.2)
         const rvNgBySess = {}; (rvDefs || []).forEach(d => { rvNgBySess[d.session_id] = (rvNgBySess[d.session_id] || 0) + (Number(d.qty_ng) || 0) + (Number(d.qty_suspect) || 0); });
         const pairOf = (m) => pairMap?.[m] ?? null;   // pairMap null = ยังไม่รู้คู่ ⇒ ไม่ยุบ (ห้ามแปลงเป็น {} และห้าม index ตรงๆ)
         const ordBySess = {}; (orders || []).forEach(o => { (ordBySess[o.session_id] ||= []).push(o); });

@@ -47,6 +47,19 @@ model: inherit
     `.reduce(... duration_min ...)` **แล้วผลถูกเอาไปลบออกจากเวลากะ** — ถ้าเจอ = ขัดกฎ
   · ยกเว้น (ถูกต้องแล้ว): จุดที่ตอบ "เครื่องหยุดกี่นาที" — พาเรโต · มูลค่าความเสียหาย · MTTR ·
     ตารางรายการ DT · `groupLean` — พวกนี้ใช้ `duration_min` เต็ม **ห้ามไปตัด**
+- **A5.1** 🔴 **ไลน์เครื่องขนาน — นาที downtime ต้องหารจำนวนเลนก่อนเป็นน้ำหนัก** (2026-10-12 · docs/modules/oee.md)
+  ไลน์ที่มี `parallel_stations > 1` (LASER-345/789 = 3 · SUB APRON = 6) บันทึก DT **รายเครื่อง**
+  ⇒ ผลรวมของกะเดียวทะลุความยาวกะได้ (วัดจริง 09/09/2026: 1,025 น. บนกะ 720 น.)
+  ไม่หารเลนก่อน ⇒ `wLoad = shift_min − plannedMin` เหลือ 0 = **กะหายจากค่าเฉลี่ยเงียบๆ**
+  · grep: `dtMinBySession(` ทุกจุดต้องมี `{ lines }` เป็นอาร์กิวเมนต์ที่ 4 (ด่าน `dt-by-session-needs-lines`)
+  · grep: สูตรหาร `1 / parallelN` ที่เขียนเองในหน้า — ต้องเป็น `laneWeightFn()` จาก `oee.js` เท่านั้น
+  · ยกเว้น (ถูกต้องแล้ว): แถว DT ที่ **ไม่มี `machine_no`** = หยุดทั้งไลน์ ห้ามหาร
+- **A5.2** 🔴 **ยอดผลิตของกะมีสูตรเดียว + คำนวณ OEE ใหม่ต้อง re-stamp ยอด** (2026-10-12)
+  · ยอดผลิตของกะ = `sessionProducedQty(orders, carryQtyActual)` (`oee.js` §6.0.1)
+    — ห้ามวน `filter(status === 'confirmed').reduce(... + o.qty)` เองในหน้า (ด่าน `session-produced-qty-single-source`)
+  · payload ไหนที่เขียน `oee_a` ลง `production_sessions` **ต้องเขียน `actual_qty`/`qty_ok` ด้วย**
+    (ด่าน `oee-restamp-needs-qty`) — ไม่งั้นแถวเดียวกันขัดแย้งกันเอง: ยอด 1,000 แต่ %P คิดจาก 1,100
+    (วัดจริง ก.ย. 2026: 27 กะ · 835 ชิ้น) · ยอดขยับ = ต้องขึ้น toast บอกก่อน-หลัง ห้ามแก้เงียบ
 - **A6** ห้ามสร้างช่วงเวลาพักเอง — `break_policies` → ช่วงเวลา ต้องผ่าน `breakIntervalsIn()` /
   `policyBreakOverlapMin()` / `policyBreakForShift()` เท่านั้น (เคยมีสูตรซ้ำ 4 ชุด ให้ผลต่างกัน
   · ชุดที่เขียนเองมักตก `process_type = null` และ `ot_scope` → นับพักเกิน 20 นาทีทุกกะเช้าที่ทำโอ)

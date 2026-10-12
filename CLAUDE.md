@@ -171,7 +171,7 @@ Reject → status: "rejected" + reject_reason
 > ### 🔴🔴 กฎเหล็กข้าม session — **ตัวเศษ %P = "ทุกชิ้นที่เครื่องทำออกมา" ไม่ใช่แค่งานดี** (2026-10-04)
 > `P = CT × Total Count ÷ Run` · `Q = Good ÷ Total Count` · **Total Count = ดี + เสีย + ทดลอง + สงสัย**
 > นับแต่งานดี = ของเสีย 1 ชิ้นถูกหัก **2 ครั้ง** (%P และ %Q) ⇒ OEE ต่ำกว่าจริง · **งานทดลองเข้าด้วย**
-> (คำสั่ง user "ใช้เครื่องลองผลิต") ⇒ `defectQtyAll` ⇒ QA ตัดสินของสงสัย **%Q ขยับ · %P ไม่ขยับ**
+> ⇒ `defectQtyAll` ⇒ QA ตัดสินของสงสัย **%Q ขยับ · %P ไม่ขยับ**
 > · เติมผ่าน **`ngByMatFrom()`** → `ngForP` (จอสด) · ปิดกะคิดเองจาก `defects` · **ห้ามบวกในหน้า**
 >   คิวรี `defect_logs` ต้อง embed `prod_orders(mat_no)` · ด่าน `oee-live-needs-ngforp`
 > · 🔴 **ชี้ MAT ไม่ได้ = ไม่รู้ CT ⇒ ไม่เข้า %P ต้องเขียนบนจอ (`ngNoMatP`)** · "ผลิตได้" ยังเป็นงานดี
@@ -181,6 +181,8 @@ Reject → status: "rejected" + reject_reason
 > · **ทุกจุดที่เอา downtime ไปหักจากฐานเวลา (netAvail/runMin/wLoad/strictOee/MTBF) ต้องผ่าน
 >   `dtMinOutsideBreaks()` + `breakIntervalsIn()` ใน `src/utils/oee.js` เท่านั้น ห้ามรวม `duration_min` เองในหน้า**
 > · จุดที่ตอบ "เครื่องหยุดกี่นาที" (พาเรโต/มูลค่า/MTTR/ตาราง DT) ยังใช้ `duration_min` เต็มเหมือนเดิม — **ห้ามสลับ 2 ชุดนี้**
+> · 🔴 **ไลน์เครื่องขนานบันทึก DT รายเครื่อง ⇒ หารจำนวนเลนก่อนหักจากเวลากะ (`laneWeightFn()`) · `dtMinBySession` ต้องส่ง `{ lines }`**
+>   (มีด่าน) ไม่ส่ง = `wLoad` เหลือ 0 = **กะหายจากค่าเฉลี่ยเงียบๆ** · 🔴 **stamp `oee_a` ต้อง stamp `actual_qty` ด้วย** (`sessionProducedQty()` · มีด่าน)
 
 > ### 🔴 บอร์ดไทม์ไลน์ต้องบอก "หลุดแผนแค่ไหน" เป็น **เวลา + ยอด** ไม่ใช่ "กี่ใบ" (2026-09-30)
 > · ตัวเลขทุกตัวมาจาก **`planStatusOf()`** (`utils/heijunkaQueue.js`) · วาดด้วย **`<PlanSlipBar>`** **ห้ามคิดเองในหน้า** ·
@@ -189,14 +191,12 @@ Reject → status: "rejected" + reject_reason
 > · 🔴 **"ถูกพาล" นับเฉพาะใบที่ต่อท้ายต้นเหตุที่ช้าจริง · โทษไม่เกินเวลาที่ต้นเหตุกินเกิน** (เข้าคิว ≠ ดีเลย์)
 >   · 🔴 จัดอันดับด้วย `blameTotalMin` **ห้ามเรียงด้วย `ownLateMin` ล้วน** (มีด่าน) · ใบยังไม่ปิด = เขียน `≥`
 > · 🔴 **ใบไม่เคยถูกปิด = `neverClosed` ⇒ เขียน "N ใบไม่เคยถูกปิด" ห้ามรายงานเป็น "ช้ากว่าแผน N ชม."**
-> 📄 ตัววาด (`PlanSlipBar`/`DelayBlameBar`) + ตัวเลข/เคสเต็ม → `docs/modules/oee.md` §หลุดแผนไปแค่ไหน
 
 > ### 🔴🔴 กฎเหล็กข้าม session — **ชิ้น ≠ shot** (งานคู่ gang die / RH-LH · 2026-09-18)
 > CT = เวลาต่อ **1 จังหวะ** แต่ปั๊มทีเดียวได้ 2 ชิ้น ⇒ บวก `qty×CT` ทั้งสองข้าง = เวลามาตรฐาน 2 เท่า (%P ทะลุ 100 แล้วถูก cap เงียบ)
 > · **ยอดผลิต/%Q/ของเสีย นับ "ชิ้น" · เวลามาตรฐานของ %P นับ "shot" — ห้ามสลับ**
 > · ยุบผ่าน `collapsePairShots()` (`utils/pairTotals.js`) — **ภาระกะตอนวางแผน ใช้ `pairLoadTotal()`
->   ในไฟล์เดียวกัน** (22/09 · มีด่าน) · `computeLiveOee` ต้องส่ง `pairMap`
->   ทุกจอ (มีด่าน `regressionGuards`) · **ลืม `select('pair_mat_no')` = pairMap ว่าง = นับ 2 เท่าเงียบๆ**
+>   ในไฟล์เดียวกัน** (มีด่าน) · `computeLiveOee` ต้องส่ง `pairMap` ทุกจอ (มีด่าน) · **ลืม `select('pair_mat_no')` = pairMap ว่าง = นับ 2 เท่าเงียบๆ**
 
 > ### 🔴🔴 กฎเหล็กข้าม session — **"พาร์ทจริง" = สินค้า ไม่ใช่ MAT ตัวเดียว** (2026-10-05 · คำสั่ง user)
 > `op_parent_mat` เป็น **text ช่องเดียว** ⇒ กะที่รันลูกค้าอื่นของ "สินค้าเดียวกัน" ชั้น OP ไม่ยุบ แล้ว**นับซ้ำเงียบๆ**
@@ -206,7 +206,7 @@ Reject → status: "rejected" + reject_reason
 
 > ### 🔴🔴 กฎเหล็กข้าม session — **"ของสงสัย" ยังไม่ใช่ของเสีย จนกว่า QA จะตัดสิน** (2026-09-30 · คำสั่ง user)
 > · **ของสงสัย = ยังไม่รู้ว่าดีหรือเสีย ⇒ กันออกจาก %Q แล้ว "เขียนบนจอว่ารอพิจารณากี่ชิ้น"**
->   (หลักเดียวกับงานทดลอง `is_trial`/`excl_from_q`) · ผลพิจารณาอ่านจาก `quality_bin_records`
+>   (หลักเดียวกับงานทดลอง) · ผลพิจารณาอ่านจาก `quality_bin_records`
 >   ผูกด้วย `defect_log_id` · ตัดสินที่ `suspectState()` (§7.1 `oee.js`) **ห้ามคิดเองในหน้า**
 >   — `scrap`/ย้ายลงถังแดง = เสีย · `good`/`repair`/`use_as_is`/`return_date` = ไม่เสีย · ไม่มีผล = **รอ**
 > · 🔴 **%Q ใช้ `defectQty` · พาเรโต/มูลค่า/รายการ + ตัวเศษ %P ใช้ `defectQtyAll` — ห้ามสลับ**
@@ -470,8 +470,6 @@ Reject → status: "rejected" + reject_reason
 >   `fitsPress` คืน `null` ≠ `false` · ตัวไม่รู้ความสูงต่อท้ายลำดับ ห้ามตัดทิ้ง · `canPlan` ≠ `canTotal`
 > · 🔴 **`varMin` (เทียบลำดับ ไม่ต้องรู้เวลาฐาน เพราะหักกลบ) ≠ `totalMin`** · ชั้น 2-3 ยังไม่ทำ ห้ามเริ่มจนกว่า user สั่ง
 > 📄 `docs/modules/die-maintenance.md`
-
-> 📄 รายละเอียดเต็ม → `docs/modules/die-maintenance.md`
 
 ---
 
