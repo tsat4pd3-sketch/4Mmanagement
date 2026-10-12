@@ -1732,6 +1732,9 @@ const INLINE_WLOAD = /shift_?[mM]in[^;\n]{0,30}\)? *- *[A-Za-z_.]*[pP]lanned/;
 const WLOAD_ALLOW = {
   'src/utils/obeyaKpi.js':
     'โมดูล pure — รับ rows ที่มี plannedMin มาแล้ว ไม่ได้อ่าน downtime เอง (หน้าที่เรียกเป็นคนรับผิดชอบ)',
+  'src/utils/manpowerBoard.js':
+    'compareOeeByStaffing (12/10) — เฉลี่ยค่า oee/oee_p ที่ stamp ตอนปิดกะแล้ว ไม่อ่าน downtime เลย → plannedMin = 0 '
+    + '→ wLoad ถ่วงด้วย shift_min ล้วน (แบบเดียวกับ axisOee ใน obeyaKpi) = ไม่มีการหักพักซ้ำ',
   'src/pages/PlannerSales.jsx':
     'ตั้งใจไม่โหลด downtime → plannedMin = 0 → wLoad ถอยไปถ่วงด้วย shift_min (มีคอมเมนต์อธิบายที่บรรทัด 883-884) '
     + '= ประมาณการ ไม่ใช่การหักซ้ำ',
