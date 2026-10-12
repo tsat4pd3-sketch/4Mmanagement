@@ -3789,3 +3789,20 @@ test('🛡️ pptx-theme-r01 — ตัวสร้างเด็คห้า�
     + '   แก้ยังไง: import tsg_theme จาก docs/meetings/roadshow_build/ (title_slide / agenda_slide / section_divider / closing_slide)\n'
     + '            เด็ค .pptx เก่าที่ไม่มีสคริปต์ → python3 docs/meetings/roadshow_build/retheme_r01.py <file>\n');
 });
+
+/* ── 🔴 LOT size ≠ Packing — ห้ามยุบ 2 เรื่องเป็นรายการเดียว (12/10 · คำสั่ง user "แยกกันนะ") ──
+   `kanban_standards.lot_size` = ขนาดล็อตผลิต (คุมจังหวะออกใบสั่ง · `pullAccumulator`/`kanbanCalc`)
+   `kanban_standards.qty_per_kanban` = Packing (ชิ้นต่อกล่อง/ต่อบัตร · คุมการบรรจุ-การส่ง)
+   เดิมจอเทียบรวมเป็นแถวเดียว "ไม่ตรง" แล้วนับรวม ⇒ ตัวเลขตอบไม่ได้ว่าต้องไปแก้เรื่องไหนกับใคร */
+test('🛡️ kanban-lot-vs-packing-split — จอเทียบทะเบียน kanban ต้องแยกกอง LOT / Packing', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/components/MonitoringUpload.jsx'), 'utf8'));
+  assert.ok(!/\bdLot\s*\|\|\s*dPack\b|\bdPack\s*\|\|\s*dLot\b/.test(code),
+    '\n\n❌ MonitoringUpload รวม "LOT ไม่ตรง" กับ "Packing ไม่ตรง" เป็นรายการเดียวอีกแล้ว\n'
+    + '   ทำไมห้าม: 2 ค่านี้คุมคนละเรื่อง — lot_size = จังหวะออกใบสั่งผลิต (pullAccumulator/kanbanCalc)\n'
+    + '   · qty_per_kanban = การบรรจุ/ป้ายบัตร · คนละคนตัดสิน · รวมกันแล้วนับ "N พาร์ทไม่ตรง"\n'
+    + '   = ตอบไม่ได้ว่าต้องไปคุยกับใครเรื่องอะไร และเรื่องที่ค้างจะไปบล็อกเรื่องที่ชัดอยู่แล้ว\n'
+    + '   แก้ยังไง: แยกเป็น { lot, pack, noStd } แล้ววาดคนละตาราง (ดู <KbDiffTable>)\n');
+  assert.ok(/kbDiff\s*=\s*\{\s*lot:\s*\[\]\s*,\s*pack:\s*\[\]\s*,\s*noStd:\s*\[\]\s*\}/.test(code),
+    '\n\n❌ ไม่พบการแยกกอง `kbDiff = { lot, pack, noStd }` ใน MonitoringUpload — ดูเหตุผลด้านบน\n'
+    + '   ("ยังไม่มีในทะเบียน" เป็นกองที่ 3 คนละเรื่องกับ "มีแล้วแต่ไม่ตรง")\n');
+});
