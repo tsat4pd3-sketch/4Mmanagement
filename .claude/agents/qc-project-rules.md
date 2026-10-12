@@ -59,7 +59,7 @@ model: inherit
     — ห้ามวน `filter(status === 'confirmed').reduce(... + o.qty)` เองในหน้า (ด่าน `session-produced-qty-single-source`)
   · payload ไหนที่เขียน `oee_a` ลง `production_sessions` **ต้องเขียน `actual_qty`/`qty_ok` ด้วย**
     (ด่าน `oee-restamp-needs-qty`) — ไม่งั้นแถวเดียวกันขัดแย้งกันเอง: ยอด 1,000 แต่ %P คิดจาก 1,100
-    (วัดจริง ก.ย. 2026: 27 กะ · 835 ชิ้น) · ยอดขยับ = ต้องขึ้น toast บอกก่อน-หลัง ห้ามแก้เงียบ
+    (วัดจริง ก.ย. 2026: 26 กะ · 885 ชิ้น) · ยอดขยับ = ต้องขึ้น toast บอกก่อน-หลัง ห้ามแก้เงียบ
 - **A6** ห้ามสร้างช่วงเวลาพักเอง — `break_policies` → ช่วงเวลา ต้องผ่าน `breakIntervalsIn()` /
   `policyBreakOverlapMin()` / `policyBreakForShift()` เท่านั้น (เคยมีสูตรซ้ำ 4 ชุด ให้ผลต่างกัน
   · ชุดที่เขียนเองมักตก `process_type = null` และ `ot_scope` → นับพักเกิน 20 นาทีทุกกะเช้าที่ทำโอ)
