@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   sumByMatDate, firstByMat, makeSystemLookup,
+  onHandAtRef, outAtRef, fgAnchorBalance, makeAnchorLookup,
   OUT_TXN_TYPES, IN_ORDER_STATUS, orderInQty, DEMAND_SKIP_STATUS,
 } from '../monitorSystem.js';
 
@@ -37,16 +38,19 @@ test('sumByMatDate — แถวที่ขาดเลข/วัน/จำน�
 
 test('sumByMatDate — keep กรองชนิดธุรกรรมได้', () => {
   const rows = [
-    { mat_no: 'A', work_date: '2026-10-01', qty: 100, type: 'issue' },
+    { mat_no: 'A', work_date: '2026-10-01', qty: 100, type: 'consume' },
+    { mat_no: 'A', work_date: '2026-10-01', qty: 700, type: 'issue' },
     { mat_no: 'A', work_date: '2026-10-01', qty: 5, type: 'adjust' },
   ];
   const m = sumByMatDate(rows, { keep: (r) => OUT_TXN_TYPES.includes(r.type) });
-  assert.equal(m.get('A|2026-10-01'), 100, 'adjust ต้องไม่ถูกนับเป็นของออก');
+  assert.equal(m.get('A|2026-10-01'), 100, 'adjust/issue ต้องไม่ถูกนับเป็นของออก');
 });
 
 test('adjust ไม่อยู่ในชนิด "ของออก" (วัดจริง: ติดลบ 155/249 แถว ต่ำสุด −312,120)', () => {
-  assert.deepEqual(OUT_TXN_TYPES, ['issue', 'consume']);
+  assert.deepEqual(OUT_TXN_TYPES, ['consume', 'return']);
   assert.ok(!OUT_TXN_TYPES.includes('adjust'));
+  /* 🔴 12/10: issue = ของเข้า (ปิดล็อตลงที่ไลน์ผลิต) — เคยนับเป็นของออก ⇒ ยอดผลิตหักกลับเท่ากัน */
+  assert.ok(!OUT_TXN_TYPES.includes('issue'));
 });
 
 test('IN_ORDER_STATUS — นับเฉพาะใบที่คอนเฟิร์มยอดแล้ว (ระบบไม่มีสถานะ closed)', () => {
@@ -140,4 +144,58 @@ test('DEMAND_SKIP_STATUS — ยกเลิกแล้วไม่นับ ·
     { date: 'due_date', keep: (r) => !DEMAND_SKIP_STATUS.includes(r.status) },
   );
   assert.equal(idx.get('A|2026-10-06'), 150);
+});
+
+/* ── 🔗 SSOT ยอดสต็อก (12/10) — บอร์ดต้องยึดยอดคงเหลือจาก ledger ไม่ใช่สูตรของตัวเอง ── */
+const locOf = (m) => ({ A: 'STORE', B: 'LINE D', C: 'FG WAREHOUSE' })[m] || null;
+
+test('onHandAtRef — เอาเฉพาะแถวของคลังอ้างอิง · ไม่มีแถว = ไม่ใส่ (ไม่รู้ ≠ 0)', () => {
+  const m = onHandAtRef([
+    { line_name: 'STORE', mat_no: 'A', qty_on_hand: '120' },
+    { line_name: 'LINE C', mat_no: 'A', qty_on_hand: -500 },     // ยอดที่ไลน์อื่น ห้ามปน
+    { line_name: 'LINE D', mat_no: 'B', qty_on_hand: 0 },
+    { line_name: 'STORE', mat_no: 'Z', qty_on_hand: 9 },         // ไม่รู้คลังอ้างอิง
+  ], locOf);
+  assert.equal(m.get('A'), 120);
+  assert.equal(m.get('B'), 0, 'มีแถวแต่ 0 = รู้ว่าไม่มีของ');
+  assert.equal(m.has('C'), false, 'ไม่มีแถวในคลัง = ไม่รู้');
+  assert.equal(m.has('Z'), false);
+});
+
+test('outAtRef — consume/return ที่คลังอ้างอิงเท่านั้น · issue ไม่ใช่ของออก · pending ไม่นับ', () => {
+  const m = outAtRef([
+    { line_name: 'STORE', mat_no: 'A', work_date: '2026-10-10', qty: 30, type: 'consume', status: 'approved' },
+    { line_name: 'STORE', mat_no: 'A', work_date: '2026-10-10', qty: 5, type: 'return', status: 'approved' },
+    { line_name: 'STORE', mat_no: 'A', work_date: '2026-10-10', qty: 500, type: 'issue', status: 'approved' },
+    { line_name: 'LINE C', mat_no: 'A', work_date: '2026-10-10', qty: 700, type: 'consume', status: 'approved' },
+    { line_name: 'STORE', mat_no: 'A', work_date: '2026-10-10', qty: 9, type: 'consume', status: 'pending' },
+  ], locOf);
+  assert.equal(m.get('A|2026-10-10'), 35);
+});
+
+test('fgAnchorBalance — คลังตอนนี้ − ค้างส่งถึงกำหนด + ส่งล่วงหน้าที่ยังไม่ถึงกำหนด', () => {
+  const m = fgAnchorBalance({
+    onHand: new Map([['C', 1000]]),
+    today: '2026-10-12',
+    orders: [
+      { mat_no: 'C', qty: 100, due_date: '2026-10-05', status: 'pending' },   // ค้างส่ง → หัก
+      { mat_no: 'C', qty: 200, due_date: '2026-10-12', status: 'pending' },   // ถึงกำหนดวันนี้ → หัก
+      { mat_no: 'C', qty: 300, due_date: '2026-10-11', status: 'shipped' },   // ส่งแล้ว อยู่ในคลังที่หักไปแล้ว → ไม่แตะ
+      { mat_no: 'C', qty: 50, due_date: '2026-10-20', status: 'shipped' },    // ส่งล่วงหน้า → บวกกลับ (คอลัมน์ 20/10 จะหักอีกรอบ)
+      { mat_no: 'C', qty: 999, due_date: '2026-10-01', status: 'cancelled' },
+      { mat_no: 'C', qty: 400, due_date: '2026-10-15', status: 'pending' },   // อนาคต → สูตรหักเอง
+      { mat_no: 'X', qty: 10, due_date: '2026-10-01', status: 'pending' },    // ไม่รู้คลัง → ไม่สร้างค่า
+    ],
+  });
+  assert.equal(m.get('C'), 1000 - 100 - 200 + 50);
+  assert.equal(m.has('X'), false);
+});
+
+test('makeAnchorLookup — ยึดเฉพาะ BALANCE คอลัมน์วันนี้ · ไม่รู้ = undefined', () => {
+  const look = makeAnchorLookup({ partMat: new Map([['p1', 'A'], ['p2', 'Q']]), balByMat: new Map([['A', 42]]), anchorKey: '2026-10-12' });
+  assert.equal(look('p1', 'balance', '2026-10-12'), 42);
+  assert.equal(look('p1', 'balance', '2026-10-13'), undefined);
+  assert.equal(look('p1', 'in', '2026-10-12'), undefined);
+  assert.equal(look('p2', 'balance', '2026-10-12'), undefined);
+  assert.equal(makeAnchorLookup({})('p1', 'balance', 'x'), undefined);
 });

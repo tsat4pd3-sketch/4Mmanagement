@@ -40,6 +40,7 @@ AMBER = RGBColor(0xC8, 0x8A, 0x00)      # สีที่ 3 ("Other") — สถ
 GREY = RGBColor(0x55, 0x55, 0x55)
 WHITE = RGBColor(0xFF, 0xFF, 0xFF)
 GOLD = AMBER                            # (ชื่อเดิม R00 — ปก R01 ไม่มีตัวทองแล้ว)
+PRES_GREEN = GREY                       # (ชื่อเดิม R00 — บรรทัดองค์กรบนปก)
 FONT = "Tahoma"
 SW, SH = 13.333, 7.5
 LOGO = "logo_r01.png"
