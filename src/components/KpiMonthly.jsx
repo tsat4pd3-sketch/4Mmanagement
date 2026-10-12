@@ -13,7 +13,8 @@ import { mtnAutoSeries, autoKpiOfName, toRowUnit, HOURS_PER_MONTH } from '../uti
 import { loadPmTeams, pmTeamsSync } from '../utils/pmTeams';
 import OrgScopePicker from './OrgScopePicker';
 import FilterBar from './FilterBar';
-import { PLANT, isPlant, parseScopeKey, scopeKey, scopeOfDef, scopeCovers, sameScope, defScopeColumns } from '../utils/orgScope';
+import { PLANT, isPlant, parseScopeKey, scopeKey, scopeOfDef, scopeCovers, sameScope, defScopeColumns, scopeUnder, scopePathText } from '../utils/orgScope';
+import { groupChildDefs, rollupChildDefs, rollupGroupKey, childGroupKeyFor } from '../utils/kpiRollup';
 import { checkWriteRows } from '../utils/dbWrite';
 import { findClosedTwin, restoreQuestion } from '../utils/kpiClosed';
 import { scoreDef, KPI_LEVELS, KPI_PERSPECTIVES, perspectiveLabel, KPI_SUMMARY_MODES,
@@ -229,6 +230,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
   const [data, setData] = useState(null); // { key, sessions, dtBySession, dtUnpBySession, defects, partCost, targets }
   // ── KPI กรอกมือ (เฟส 2) ──
   const [allDefs, setAllDefs] = useState(null);          // null = ยังโหลด
+  const [belowDefs, setBelowDefs] = useState([]);         // ⬆ นิยามของหน่วยลูก (12/10) — ไว้โชว์ค่าที่บอร์ดเติมจากลูก · ไม่แก้ที่นี่
   const [closedDefs, setClosedDefs] = useState([]);      // 🗄️ นิยามที่ปิดใช้งานอยู่ (is_active=false) ในขอบเขตที่ดู — ให้เปิดคืนได้จากจอ (07/10)
   const [entries, setEntries] = useState({});      // kpi_id -> { month: value }
   /* แผนรายเดือน (kpi_month_plans) — คนละตารางกับค่าจริงโดยตั้งใจ (unique(kpi_id,month) ของค่าจริงจะพังถ้ายัด kind เข้าไป) */
@@ -399,7 +401,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
     if (!alive()) return;
     if (error) {
       setKpiMissing((error.code || '') === '42P01');
-      setAllDefs([]); setEntries({}); setPlans({});
+      setAllDefs([]); setBelowDefs([]); setEntries({}); setPlans({});
       return;
     }
     setKpiMissing(false);
@@ -407,16 +409,19 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
        ดูทั้งโรงงาน = เห็นเฉพาะระดับโรงงาน (ไม่ใช่รวมทุกแผนกปนกัน — ใบ KPI เป็นของหน่วยงาน) */
     const rows = (d || []).filter(x => scopeCovers(org, scopeOfDef(x), scope));
     setAllDefs(rows);
+    /* ⬆ นิยามของหน่วยลูก (12/10 · กติกาเดียวกับบอร์ด: แม่ชนะรายเดือน · เดือนที่แม่ว่างบอร์ดเติมค่ารวมจากลูก) — ตารางนี้ต้องเห็นเลขชุดเดียวกับบอร์ด */
+    const below = (d || []).filter(x => scopeUnder(org, scopeOfDef(x), scope));
+    setBelowDefs(below);
     /* 🗄️ แถวที่ปิดใช้งานอยู่ — ยังครองคีย์ unique อยู่ ⇒ ต้องมีที่ให้ "เปิดคืน" บนจอ (07/10 · feedback: ปิดหัวข้อแล้ว add ใหม่ไม่ได้)
        โหลดล้ม = ถือว่าไม่มี (ไม่ทำทั้งแท็บล่ม) · กรองขอบเขตแบบเดียวกับตารางหลัก */
     const cl = await supabase.from('kpi_definitions').select(CAT_EMBED).eq('year', year).eq('is_active', false)
       .order('category').order('seq');
     if (!alive()) return;
     setClosedDefs(cl.error ? [] : (cl.data || []).filter(x => x.is_active === false && scopeCovers(org, scopeOfDef(x), scope)));
-    if (!rows.length) { setEntries({}); setPlans({}); return; }
+    if (!rows.length && !below.length) { setEntries({}); setPlans({}); return; }
     // KPI 1 ตัว × 12 เดือน — นิยามเยอะขึ้นเมื่อไหร่ก็เกิน 1000 แถวได้ (fetchByIds ทำครบทั้งก้อนและหน้า)
     const map = {};
-    const entRes = await fetchByIds(rows.map(r => r.id), (c) => supabase.from('kpi_manual_entries')
+    const entRes = await fetchByIds([...rows, ...below].map(r => r.id), (c) => supabase.from('kpi_manual_entries')
       .select('id, kpi_id, month, value').in('kpi_id', c));
     if (!alive()) return;
     if (entRes.error) { toast.error('โหลดค่า KPI กรอกมือไม่สำเร็จ: ' + entRes.error); return; }
@@ -580,6 +585,20 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
   /* นิยามที่ "ถือค่า" ของแถว — KPI แบบ plant = นิยามโรงงาน (อาจเป็นตัวเดียวกับแถวเมื่อดูขอบเขต ทั้งโรงงาน) · แบบ own = ตัวเอง */
   const valueDefOf = useCallback(d => (valueScopeOf(d) === 'plant' ? sharedValueDef(allDefs, d) : d), [allDefs]);
   const defScopeTag = useCallback(d => (isInherited(d) ? org.labelOf(scopeOfDef(d).kind, scopeOfDef(d).value) : ''), [isInherited, org]);
+  /* ⬆ ค่าจากหน่วยลูก (utils/kpiRollup · 12/10): แถวของระดับนี้เอง — เดือนที่ยังไม่กรอก บอร์ดใช้ค่ารวมจากลูก ⇒ โชว์เป็นคำใบ้ใต้ช่อง (ไม่ใช่ค่าที่บันทึก)
+     · กลุ่มที่ลูกถือแต่ระดับนี้ (และระดับแม่) ไม่มี = บล็อก "⬆ KPI ที่หน่วยลูกถือ" อ่านอย่างเดียว + ปุ่มตั้งที่ระดับนี้ */
+  const childGroups = useMemo(() => groupChildDefs(belowDefs), [belowDefs]);
+  const childRollOf = useCallback((d2) => {
+    if (!childGroups.size || isInherited(d2) || valueScopeOf(d2) === 'plant') return null;
+    const gk = childGroupKeyFor(childGroups, { key: null, name: defName(d2), defId: d2.id }, d2);
+    return gk ? rollupChildDefs(childGroups.get(gk), entries, { labelOf: org.labelOf }) : null;
+  }, [childGroups, isInherited, entries, org]);
+  const childOnly = useMemo(() => {
+    if (!childGroups.size) return [];
+    const held = new Set((allDefs || []).map(rollupGroupKey));
+    return [...childGroups.entries()].filter(([gk]) => !held.has(gk))
+      .map(([gk, ds]) => ({ gk, lead: ds[0], roll: rollupChildDefs(ds, entries, { labelOf: org.labelOf }) }));
+  }, [childGroups, allDefs, entries, org]);
 
   /* ชุดที่ใช้เทียบกับ "ทะเบียนมาตรฐานของกลุ่ม" = **ทุกแถวในขอบเขตนี้ รวมแถวอัตโนมัติด้วย**
      ใบ KPI ทางการถ่วงน้ำหนักรวม 50 จาก KPI ทั้งใบ ไม่ได้แยกว่าใครเป็นคนกรอก ⇒ ส่งแต่ `defs`
@@ -1048,7 +1067,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
             </button>
             {!isPlant(scope) && (
               <span style={{ fontSize: 11.5, color: '#f59e0b' }}>
-                📍 ขอบเขต <b>{org.labelOf(scope.kind, scope.value)}</b> — แถวที่ติดป้ายในวงเล็บ = นิยามระดับแม่ที่ตกทอดมา (แก้ที่ระดับนั้น)
+                📍 ขอบเขต <b>{scopePathText(org, scope)}</b> — แถวที่ติดป้ายในวงเล็บ = นิยามระดับแม่ที่ตกทอดมา (แก้ที่ระดับนั้น)
               </span>
             )}
             {mtnTeam && (
@@ -1121,6 +1140,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
                       const vDef = valueDefOf(d2);                       // null = plant แต่ยังไม่มีนิยามโรงงาน
                       const sharedRO = plantKpi && !!vDef && vDef.id !== d2.id;
                       const rowVals = valuesOf(d2);
+                      const childRoll = childRollOf(d2);
                       return (
                         <Fragment key={d2.id}>
                         <tr>
@@ -1152,10 +1172,14 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
                           {Array.from({ length: 12 }, (_, i) => {
                             const v = rowVals[i];
                             const yn = manualLv(d2, v);
+                            const cv = v == null ? childRoll?.entries?.[i + 1] : undefined;   // ⬆ เดือนที่ระดับนี้ว่าง แต่ลูกมี = บอร์ดใช้ค่านี้
                             return (
                               <td key={i} style={{ ...tdSt, padding: '3px 4px' }} title={sharedRO ? 'ค่าโรงงาน — กรอกที่ขอบเขต ทั้งโรงงาน' : (plantKpi && !vDef ? 'ยังไม่มีนิยามระดับโรงงาน' : undefined)}>
                                 <CellInput value={v} disabled={!canManage || sharedRO || (plantKpi && !vDef)} onCommit={raw => saveCell((vDef || d2).id, i + 1, raw)} />
-                                <LvMark lv={yn} small />
+                                {cv != null
+                                  ? <div title={`บอร์ดใช้ค่า${childRoll.combine === 'sum' ? 'รวม' : 'เฉลี่ย'}จาก ${childRoll.n} หน่วยลูก (${childRoll.children.map(c => c.label).join(' · ')}) เพราะระดับนี้ยังไม่กรอกเดือนนี้ · กรอกเองเมื่อไหร่ ค่าของระดับนี้ชนะ ไม่บวกซ้ำ`}
+                                      style={{ fontSize: 11, color: '#38bdf8', fontWeight: 700, lineHeight: 1.2 }}>⬆ {fmtKpi(cv, d2)}</div>
+                                  : <LvMark lv={yn} small />}
                               </td>
                             );
                           })}
@@ -1256,6 +1280,42 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
                 ))}
               </tbody>
             </table>
+          )}
+          {childOnly.length > 0 && (
+            <div style={{ marginTop: 10, border: '1px solid var(--border)', borderRadius: 6, padding: '8px 10px', background: 'var(--bg2)' }}>
+              <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--text)' }}>
+                ⬆ KPI ที่หน่วยลูกถือ แต่ {isPlant(scope) ? 'ระดับโรงงาน' : org.labelOf(scope.kind, scope.value)} ยังไม่ตั้ง — บอร์ด 📋 แสดงค่ารวมจากลูก ({childOnly.length} ตัว)
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>
+                อ่านอย่างเดียว (แก้ค่าที่ขอบเขตลูก) · ผลรวม = KPI แบบรวมปี · ≈ เฉลี่ยไม่ถ่วงน้ำหนัก = KPI แบบ % · ตั้ง KPI นี้ที่ระดับนี้แล้ว ค่าที่กรอกเองจะชนะเป็นรายเดือน
+              </div>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ borderCollapse: 'collapse', fontSize: 12 }}>
+                  <tbody>
+                    {childOnly.map(({ gk, lead, roll }) => (
+                      <tr key={gk}>
+                        <td style={{ ...tdSt, textAlign: 'left', whiteSpace: 'normal', minWidth: 190 }}>
+                          <b>{defName(lead)}</b>{defUnit(lead) && <span style={{ marginLeft: 4, fontSize: 11, color: 'var(--muted)' }}>({defUnit(lead)})</span>}
+                          <div style={{ fontSize: 11, color: 'var(--muted)' }}>จาก {roll.n} หน่วย: {roll.children.map(c => c.label).join(' · ')}{roll.approx ? ' · ≈ เฉลี่ย' : ' · ผลรวม'}</div>
+                        </td>
+                        {Array.from({ length: 12 }, (_, i) => (
+                          <td key={i} style={{ ...tdSt, fontSize: 11.5, color: roll.entries[i + 1] == null ? 'var(--muted)' : '#38bdf8', fontVariantNumeric: 'tabular-nums' }}
+                            title={roll.coverage[i + 1] ? `ลูกกรอก ${roll.coverage[i + 1].n}/${roll.coverage[i + 1].of} หน่วย` : 'ลูกยังไม่กรอก'}>
+                            {roll.entries[i + 1] == null ? '·' : fmtKpi(roll.entries[i + 1], lead)}
+                          </td>
+                        ))}
+                        {canManage && (
+                          <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>
+                            <button onClick={() => setEditDef({ catalog_id: lead.catalog_id || '', kpi_catalog: lead.kpi_catalog || null, name: defName(lead), category: lead.category || 'internal', direction: lead.direction || '' })}
+                              title="ตั้ง KPI นี้ที่ระดับนี้ (เป้า/น้ำหนักของระดับนี้เอง · เดือนที่กรอกเองจะชนะค่าจากลูก)" style={{ ...btnSt, padding: '2px 8px', fontSize: 11 }}>＋ ตั้งที่ระดับนี้</button>
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           )}
           <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8 }}>
             กรอกแล้วบันทึกทันทีตอนออกจากช่อง (Enter/คลิกที่อื่น) · ลบค่า = เว้นว่าง ·
