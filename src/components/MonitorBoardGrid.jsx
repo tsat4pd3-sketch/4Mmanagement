@@ -42,7 +42,7 @@ const card = {
 };
 
 export default function MonitorBoardGrid({
-  board, parts = [], periods = [], manualMap, systemMap,
+  board, parts = [], periods = [], manualMap, systemMap, anchorMap,
   onEditCell, editable = false, truncated = false, loadWarn = '',
   windowSize = 14,
 }) {
@@ -77,8 +77,8 @@ export default function MonitorBoardGrid({
   /* ── กริดคิดเต็มทุกคอลัมน์เสมอ (ไม่ใช่แค่ที่มองเห็น) ──────────────────────────────
      เพราะ BALANCE/UNBOUND เป็น recurrence — คิดแค่ช่วงที่มองเห็นจะได้ยอดยกมาผิด */
   const grid = useMemo(
-    () => buildGrid({ parts, periods, rows, manual: manualMap, system: systemMap }),
-    [parts, periods, rows, manualMap, systemMap],
+    () => buildGrid({ parts, periods, rows, manual: manualMap, system: systemMap, anchor: anchorMap }),
+    [parts, periods, rows, manualMap, systemMap, anchorMap],
   );
 
   const balKey = balanceRowKey(board);
@@ -346,7 +346,8 @@ export default function MonitorBoardGrid({
                         /* คลาสนี้ให้ hover + เส้นประใต้ตัวเลข = "ช่องนี้กดแก้ได้" (index.css · เฉพาะเครื่องที่มีเมาส์) */
                         className={c?.editable && editable ? 'mon-cell-edit' : undefined}
                         onClick={() => c?.editable && !editing && startEdit(part.id, row.key, p.key, c.v)}
-                        title={br ? `ต่ำกว่า MIN ${fmtN(br.short)} ชิ้น (MIN ${fmtN(br.min)})` : (c?.src === 'system' ? 'ระบบดึงจากใบผลิต/สต๊อก — กดเพื่อกรอกทับ' : undefined)}
+                        title={br ? `ต่ำกว่า MIN ${fmtN(br.short)} ชิ้น (MIN ${fmtN(br.min)})` : (c?.src === 'system' ? 'ระบบดึงจากใบผลิต/สต๊อก — กดเพื่อกรอกทับ'
+                          : c?.src === 'ledger' ? '🔗 ยอดคงเหลือจริงในคลัง (ledger) ณ ตอนนี้ — ไม่ใช่สูตร · ยอดไม่ตรงของจริงให้ตรวจนับที่ /line-stock?tab=count' : undefined)}
                         style={{
                           ...tdBase, textAlign: 'right', cursor: c?.editable && editable ? 'cell' : 'default',
                           minWidth: COL_W, width: COL_W, padding: editing ? 0 : tdBase.padding,
@@ -357,8 +358,8 @@ export default function MonitorBoardGrid({
                           color: neg || br ? '#f87171' : (c?.src === 'system' ? 'var(--text2)' : (isCalc ? 'var(--muted)' : 'var(--text)')),
                           /* ตัวเลขของแถวสูตร = เอียง ⇒ มองผ่านๆ ก็รู้ว่า "เครื่องคิดให้" ไม่ใช่ของที่ใครพิมพ์
                              (สีจางอย่างเดียวไม่พอ — ตัวเลขที่ระบบดึงมา `system` ก็จางเหมือนกัน แต่กรอกทับได้) */
-                          fontStyle: isCalc ? 'italic' : undefined,
-                          fontWeight: br || neg ? 700 : (c?.src === 'input' ? 600 : 400),
+                          fontStyle: isCalc && c?.src !== 'ledger' ? 'italic' : undefined,
+                          fontWeight: br || neg || c?.src === 'ledger' ? 700 : (c?.src === 'input' ? 600 : 400),
                         }}>
                         {editing ? (
                           <input ref={inputRef} autoFocus

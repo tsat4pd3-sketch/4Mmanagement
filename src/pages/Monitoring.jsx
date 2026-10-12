@@ -15,8 +15,10 @@ import MonitorBoardGrid from '../components/MonitorBoardGrid';
 import { BOARD_TABS, boardPeriods, rowDefs } from '../utils/monitorBoards';
 import {
   sumByMatDate, firstByMat, makeSystemLookup, OUT_TXN_TYPES, IN_ORDER_STATUS, orderInQty,
-  DEMAND_SKIP_STATUS,
+  DEMAND_SKIP_STATUS, onHandAtRef, outAtRef, fgAnchorBalance, makeAnchorLookup,
 } from '../utils/monitorSystem';
+import { refStockOf } from '../utils/partRefStock';
+import { isTodayPeriod } from '../utils/periodHead';
 import { buildPnIndex, pickStockMat } from '../utils/matResolve';
 import { openOnly } from '../utils/shipStatus';
 
@@ -63,7 +65,11 @@ export default function Monitoring() {
   const [sysIn, setSysIn] = useState(() => new Map());
   const [sysOrder, setSysOrder] = useState(() => new Map());   // บอร์ด FG: ยอดลูกค้าสั่งจาก EDI 862/830
   const [sysSeedBal, setSysSeedBal] = useState(() => new Map()); // บอร์ด FG: ของพร้อมส่งในคลัง FG (ยอดยกมา)
-  const [fgNote, setFgNote] = useState('');                      // สิ่งที่บอร์ด FG ตอบไม่ได้ — ต้องเขียนบนจอ
+  const [sysNote, setSysNote] = useState('');                    // สิ่งที่บอร์ดตอบไม่ได้ / ยึดยอดจากคลังไหน — ต้องเขียนบนจอ
+  /* 🔗 BALANCE คอลัมน์วันนี้ = ยอดคงเหลือจริงจาก ledger (SSOT ยอดสต็อก · 12/10)
+     เดิมบอร์ดคิดยอดเองจาก "ยกมาที่กรอก + ผลิต − ออก" แล้วห่างจาก ledger ถึงหลักหมื่นชิ้นต่อพาร์ท
+     ⇒ วันนี้ยึดของจริง · วันถัดไปเดินสูตรต่อจากของจริง · ข้อมูลอยู่ที่ ledger ที่เดียว */
+  const [sysAnchor, setSysAnchor] = useState(() => new Map());
   const [sysOut, setSysOut] = useState(() => new Map());
   const [sysMin, setSysMin] = useState(() => new Map());
   const [registry, setRegistry] = useState(() => new Set());
@@ -174,7 +180,8 @@ export default function Monitoring() {
   const loadSystem = useCallback(async () => {
     const scope = isFg ? bCust : bLine;
     if (!scope || !dFrom || !dTo || !matsKey) {
-      setSysIn(new Map()); setSysOut(new Map()); setSysMin(new Map()); setSysOrder(new Map()); return;
+      setSysIn(new Map()); setSysOut(new Map()); setSysMin(new Map()); setSysOrder(new Map());
+      setSysAnchor(new Map()); setSysNote(''); return;
     }
     const mats = matsKey.split(',');
     const myKey = `${isFg ? 'fg' : 'line'}|${scope}|${dFrom}|${dTo}|${matsKey}`;
@@ -253,8 +260,13 @@ export default function Monitoring() {
         seedBal.set(mt, onHand.get(res.mat) ?? 0);
       }
       setSysSeedBal(seedBal);
-      setFgNote([
-        fgDest ? `ของพร้อมส่งนับจากคลัง ${fgDest}` : '⚠️ ยังไม่ได้ตั้งกฎรับเข้าของ FG ⇒ นับสต๊อกทุกคลังรวมกัน (สูงกว่าจริง)',
+      /* 🔗 คอลัมน์วันนี้ยึดของจริง: คลัง FG ตอนนี้ − ค้างส่งถึงกำหนด + ส่งล่วงหน้า (กันหักซ้ำ) */
+      setSysAnchor(fgAnchorBalance({
+        onHand: seedBal, today: getWorkDate(),
+        orders: [...(demR.rows || []), ...(lateR.rows || [])],
+      }));
+      setSysNote([
+        fgDest ? `ของพร้อมส่งนับจากคลัง ${fgDest} · คอลัมน์วันนี้ = ยอดจริงในคลัง − ค้างส่งถึงกำหนด` : '⚠️ ยังไม่ได้ตั้งกฎรับเข้าของ FG ⇒ นับสต๊อกทุกคลังรวมกัน (สูงกว่าจริง)',
         unresolved ? `⚠️ ${unresolved} พาร์ทยังจับคู่เลข MAT SAP ไม่ได้ ⇒ ไม่รู้ยอดยกมา (ขึ้นขีดทั้งแถว)` : '',
       ].filter(Boolean).join(' · '));
 
@@ -264,7 +276,7 @@ export default function Monitoring() {
       return;
     }
 
-    const [ordR, txnR, lvlR, prodR] = await Promise.all([
+    const [ordR, txnR, lvlR, prodR, stkR, ruleR, lotR] = await Promise.all([
       fetchAllPages(() => supabaseDR.from('prod_orders')
         .select('mat_no, qty_ok, qty_actual, production_sessions!inner(work_date, line_name)')
         .in('status', IN_ORDER_STATUS)
@@ -272,22 +284,50 @@ export default function Monitoring() {
         .gte('production_sessions.work_date', dFrom)
         .lte('production_sessions.work_date', dTo)
         .eq('production_sessions.line_name', bLine), { orderBy: ['mat_no'] }),
+      /* ของออก: ดึงทุกคลังของ MAT เหล่านี้ แล้วให้ `outAtRef` เลือกเฉพาะคลังอ้างอิงของแต่ละพาร์ท
+         (12/10 · เดิมกรอง `line_name = ไลน์ของบอร์ด` + นับ issue ⇒ ของเข้าถูกนับเป็นของออก) */
       fetchAllPages(() => supabaseDR.from('line_stock_transactions')
-        .select('mat_no, qty, type, work_date')
-        .eq('line_name', bLine).in('type', OUT_TXN_TYPES).in('mat_no', mats)
-        .gte('work_date', dFrom).lte('work_date', dTo), { orderBy: ['mat_no'] }),
+        .select('id, line_name, mat_no, qty, type, status, work_date')
+        .in('type', OUT_TXN_TYPES).eq('status', 'approved').in('mat_no', mats)
+        .gte('work_date', dFrom).lte('work_date', dTo), { orderBy: ['id'] }),
       fetchAllPages(() => supabaseDR.from('line_part_levels')
         .select('mat_no, min_qty').eq('line_name', bLine).eq('is_active', true).in('mat_no', mats),
         { orderBy: ['mat_no'] }),
-      fetchAllPages(() => supabaseDR.from('dr_products').select('mat_no').in('mat_no', mats), { orderBy: ['mat_no'] }),
+      fetchAllPages(() => supabaseDR.from('dr_products')
+        .select('mat_no, line_name, is_active, is_operation').in('mat_no', mats), { orderBy: ['mat_no'] }),
+      fetchAllPages(() => supabaseDR.from('line_stock_summary')
+        .select('line_name, mat_no, qty_on_hand').in('mat_no', mats), { orderBy: ['mat_no', 'line_name'] }),
+      supabaseDR.from('stock_inflow_rules').select('match_type, match_value, dest_line_name, is_active').eq('is_active', true),
+      fetchAllPages(() => supabaseDR.from('child_lot_requests')
+        .select('id, child_mat_no').in('child_mat_no', mats).neq('status', 'cancelled'), { orderBy: ['id'] }),
     ]);
     if (!mine()) return;
     setSysIn(sumByMatDate(
       (ordR.rows || []).map(o => ({ mat_no: o.mat_no, work_date: o.production_sessions?.work_date, qty: orderInQty(o) })),
     ));
-    setSysOut(sumByMatDate(txnR.rows || []));
+    /* 🔴 คลังอ้างอิงของพาร์ท = `refStockOf` ตัวเดียวกับจุดเรียกเติม + ตัวนำเข้า Monitoring
+       (ผลิตเอง → คลังตามกฎรับเข้า · ล็อตสโตร์ → ที่ไลน์ผลิต · ของที่ไลน์ใช้ → หน้าไลน์)
+       อ่านกฎ/ล็อต/ยอดคลังไม่ครบ = ไม่รู้ว่าของอยู่ไหน ⇒ ไม่ยึดยอด (ปล่อยสูตร) แล้วเขียนบนจอ ห้ามเดาคลัง */
+    const loadErr = (r) => r?.error || (r?.errors && r.errors[0]) || (r?.truncated ? 'ดึงข้อมูลได้ไม่ครบ' : null);
+    const refErr = loadErr(ruleR) || loadErr(lotR) || loadErr(stkR) || loadErr(txnR) || loadErr(prodR);
+    const refCtx = {
+      lineName: bLine, products: prodR.rows || [], rules: ruleR.data || [],
+      lotMats: new Set((lotR.rows || []).map(r => String(r.child_mat_no || '').trim())),
+    };
+    const locOf = refErr ? () => null : (mt) => refStockOf(mt, refCtx).loc;
+    const onHand = refErr ? new Map() : onHandAtRef(stkR.rows || [], locOf);
+    setSysOut(refErr ? new Map() : outAtRef(txnR.rows || [], locOf));
     setSysMin(firstByMat(lvlR.rows || []));
-    setSysOrder(new Map()); setSysSeedBal(new Map()); setFgNote('');
+    setSysOrder(new Map()); setSysSeedBal(new Map());
+    setSysAnchor(onHand);
+    const locs = [...new Set(mats.map(m => locOf(m)).filter(Boolean))].sort();
+    const noRow = mats.filter(m => !onHand.has(m)).length;
+    setSysNote(refErr
+      ? `⚠️ อ่านกฎรับเข้าคลัง/ยอดคลังไม่ครบ (${refErr.message || refErr}) ⇒ คอลัมน์วันนี้ยังไม่ได้ยึดยอดจริง และไม่มีของออกจากระบบ — BALANCE เป็นค่าจากสูตรล้วน`
+      : [
+        `คอลัมน์วันนี้ = ยอดคงเหลือจริงในคลัง (${locs.join(' · ') || '–'}) · ของออก = ใช้/คืนจากคลังนั้น`,
+        noRow ? `⚠️ ${noRow} พาร์ทไม่มีแถวในคลังอ้างอิง ⇒ ยังเช็คยอดจริงไม่ได้ (เดินสูตรจากยอดยกมา) — ตั้งยอดที่ /line-stock?tab=count` : '',
+      ].filter(Boolean).join(' · '));
     setRegistry(new Set((prodR.rows || []).map(r => String(r.mat_no || '').trim())));
   }, [isFg, bCust, bLine, dFrom, dTo, matsKey]);
 
@@ -310,6 +350,18 @@ export default function Monitoring() {
       seedBalance: sysSeedBal, seedKey: periods[0]?.key,
     }),
     [partMat, sysIn, sysOut, sysOrder, sysMin, sysSeedBal, periods],
+  );
+
+  /* คอลัมน์ "วันนี้" (ไม่ใช่ช่องยอดยกมา) — จุดยึดยอดจริงจาก ledger · วันนี้อยู่นอกช่วงบอร์ด = ไม่ยึด */
+  const anchorKey = useMemo(() => {
+    if (!board || !(isFg || bLine)) return null;
+    const today = getWorkDate();
+    const hit = periods.slice(1).find(p => isTodayPeriod(p.date, today, board.period_kind || 'day'));
+    return hit ? hit.key : null;
+  }, [board, isFg, bLine, periods]);
+  const anchorMap = useMemo(
+    () => makeAnchorLookup({ partMat, balByMat: sysAnchor, anchorKey }),
+    [partMat, sysAnchor, anchorKey],
   );
 
   const partsWithFlag = useMemo(
@@ -406,10 +458,10 @@ export default function Monitoring() {
                   EDI 862/830 · ผลิตเข้าจากใบผลิตทุกไลน์ ⇒ ต้องแยกข้อความ ไม่งั้นจอโกหก (06/10) */}
               {isFg
                 ? (bCust
-                  ? `ผูกลูกค้า ${bCust} ⇒ ยอดยกมา = ของพร้อมส่งในคลัง FG · ลูกค้าสั่งจาก EDI 862/830 (รวมใบค้างส่งไว้คอลัมน์แรก) · ผลิตเข้านับจากใบผลิตทุกไลน์${fgNote ? ` · ${fgNote}` : ''}`
+                  ? `ผูกลูกค้า ${bCust} ⇒ ยอดยกมา = ของพร้อมส่งในคลัง FG · ลูกค้าสั่งจาก EDI 862/830 (รวมใบค้างส่งไว้คอลัมน์แรก) · ผลิตเข้านับจากใบผลิตทุกไลน์${sysNote ? ` · ${sysNote}` : ''}`
                   : '⚠️ บอร์ด FG ใบนี้ยังไม่ผูกลูกค้า ⇒ ระบบดึงยอดลูกค้าสั่งให้ไม่ได้ — กด "📦 สร้างบอร์ด FG จากออเดอร์" ใหม่อีกครั้ง')
                 : board?.line_name
-                  ? `ผูกไลน์ ${board.line_name} ⇒ ระบบเติมของเข้า/ออก/ขั้นต่ำให้`
+                  ? `ผูกไลน์ ${board.line_name} ⇒ ระบบเติมของเข้า/ออก/ขั้นต่ำให้${sysNote ? ` · ${sysNote}` : ''}`
                   : 'ยังไม่ผูกไลน์ ⇒ ทุกช่องต้องกรอกเอง'}
             </span>
           </FilterBar>
@@ -463,7 +515,7 @@ export default function Monitoring() {
       ) : (
         <MonitorBoardGrid
           board={board} parts={partsWithFlag} periods={periods}
-          manualMap={manualMap} systemMap={systemMap}
+          manualMap={manualMap} systemMap={systemMap} anchorMap={anchorMap}
           onEditCell={onEditCell} editable={canEdit} truncated={truncated}
           windowSize={board?.period_kind === 'week' ? 10 : 14}
         />
