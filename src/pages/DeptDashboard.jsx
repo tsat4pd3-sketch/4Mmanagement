@@ -275,7 +275,7 @@ function ProductionView({ d, ctx }) {
     return Object.entries(by).filter(([ln]) => inScope(ln)).map(([line, st]) => ({ line, ...st }));
   }, [d.am, inScope]);
   const amTotal = amLines.reduce((a, l) => a + l.total, 0);
-  const amChecked = amLines.reduce((a, l) => a + l.checked.length, 0);
+  const amChecked = amLines.reduce((a, l) => a + (typeof l.checked === "number" ? l.checked : (l.checked?.length || 0)), 0);   // computeDailyPmStatus คืน checked เป็นจำนวน (ไม่ใช่ array) · กัน NaN บนจอ
   const amLate = amLines.reduce((a, l) => a + l.late, 0);
   const amWait = amLines.reduce((a, l) => a + l.wait, 0);
   const amNg = amLines.reduce((a, l) => a + l.ngN, 0);
