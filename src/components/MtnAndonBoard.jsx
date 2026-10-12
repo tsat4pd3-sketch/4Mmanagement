@@ -472,11 +472,15 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
              (สูตรบังคับ `confirmed ? (qty_ok ?? qty) : (qty_actual ?? 0)` + งานคู่ RH/LH + ยุบชั้น OP
               อยู่ใน `orderTotal` แล้ว · เขียนเองเมื่อไหร่ = ตัวเลข 2 จอไม่ตรงกันทันที)
           พับเป็นค่าเริ่มต้นในตัว — ยอดรวม + "ตามหลัง N ไลน์" ยังเห็นตลอดแม้พับ จึงไม่กินความสูงจอ */}
-      {/* กางเป็นค่าเริ่มต้นทุกชิป (JIG/DIE/MTN ด้วย — user 2026-09-14 "เลือก mtn, jig, die ก็ยังโชว์")
+      {/* 🔴 12/10 (user ดูจอจริง "แถบสั่งผลิตไปไลน์ไหนก็ยัง งงๆ เห็นกันทุกแผนก") — **ขึ้นเฉพาะจอฝ่ายผลิต**
+          ยอดผลิตเทียบใบสั่งผลิตคือเรื่องของผลิต · จอช่าง/สโตร์มีเรื่องของตัวเองอยู่แล้ว (เครื่องหยุด·PM / ไลน์เรียกของ)
+          ⚠️ เดิม 14/09 กางให้ทุกชิปทีมช่าง — ถอดออกตามหลัก "จอแต่ละส่วนงานแสดงเรื่องของส่วนงานนั้น"
           ยังพับเองได้ และค่าที่พับไว้ชนะเสมอ (localStorage ต่อเครื่อง) */}
-      <ProdProgressStrip workDate={workDate} scopeNames={scopeNames}
-        defaultOpen
-        onOpenLine={(ln) => navigate(`/management?line=${encodeURIComponent(ln)}&view=heijunka`)} />
+      {cards === 'production' && (
+        <ProdProgressStrip workDate={workDate} scopeNames={scopeNames}
+          defaultOpen
+          onOpenLine={(ln) => navigate(`/management?line=${encodeURIComponent(ln)}&view=heijunka`)} />
+      )}
 
       {/* ผังคือพระเอกของจอนี้ (user 2026-08-26 "เน้นแผนผังดีมั้ย") — แต่ **ห้ามแลกกับลิสต์ข้อความ**
           ผังตอบ "อยู่ตรงไหน" · ลิสต์ตอบ "อะไร/นานแค่ไหน" ช่างต้องได้ทั้งคู่จากที่นั่งเดียว
