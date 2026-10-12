@@ -6,6 +6,8 @@ import { loadPairMap } from '../utils/useProducts';
 import { usePolling } from '../utils/usePolling';
 import { RATE } from '../utils/refreshRates';
 import { useLiveBoard } from '../utils/useLiveBoard';
+import { SESSION_STATUSES_REAL, SESSION_STATUSES_DONE } from '../utils/sessionStatus';
+import { countsInProgress, orderTargetQty, orderMadeQty, lineVerdict, PROGRESS_COLOR } from '../utils/prodProgress';
 
 /* ═══ 📤 สั่งผลิตไปไลน์ไหน · ผลิตได้ตามที่มอบหมายไหม (แถบสรุปสำหรับฝั่ง Store) ═══
    ที่มา (user 2026-08-24): "สโตร์ควรเห็นทั้ง มอนิเตอร์ kanban ของสต๊อกที่กำลังจะต้องสั่งผลิต
@@ -14,11 +16,13 @@ import { useLiveBoard } from '../utils/useLiveBoard';
    ⚠️ **ห้ามก๊อปบอร์ด Heijunka ของฝ่ายผลิตมา render ซ้ำที่นี่** (กฎเดิมใน CLAUDE.md — กัน drift)
       อันนี้เป็น "สรุปยอด" คนละอย่างกับบอร์ด · อยากเห็นบอร์ดจริงให้กด 📊 บอร์ดไลน์ ซึ่งเด้งไปตัวจริง
 
-   กติกาตัวเลข (ห้ามคิดเอง — ใช้ helper กลาง):
+   กติกาตัวเลข (ห้ามคิดเอง — ใช้ helper กลาง `utils/prodProgress.js`):
    • ผลิตได้ = `confirmed ? (qty_ok ?? qty) : (qty_actual ?? 0)`   ← สูตรบังคับของระบบ
-   • เป้า    = `qty_target ?? qty`
+   • เป้า    = `qty_target ?? qty` · ใบ `cancelled` ไม่นับ · `carry_over`/`imported` นับเฉพาะที่ทำจริง (12/10)
    • งานคู่ RH/LH นับเป็น 1 ครั้งปั๊ม + ยุบชั้น OP เข้าพาร์ทจริง → `orderTotal(...)`
    • ยังไม่เปิดกะ = บอกตรงๆ ห้ามโชว์ 0% แดง (ไม่ใช่ว่าไลน์ทำไม่ได้ แต่ยังไม่เริ่ม)
+   • 🔴 **กะยังไม่จบ = ไม่ตัดสินแดง/เขียว** (12/10 · user "งงๆ") — เป้าเป็นยอดทั้งกะ และกะที่เปิดอยู่
+     ไม่มีเวลาเลิก ⇒ คิด "ควรได้เท่าไหร่ตอนนี้" ไม่ได้ ห้ามเดา · ตัดสินสีเฉพาะกะที่ปิดแล้ว (`lineVerdict`)
 
    ⚠️ **พับเก็บเป็นค่าเริ่มต้น** (user 2026-08-25: "ดูรก และอะไรเยอะไปหมด") — 15 ไลน์ = 15 การ์ด
       ดันเนื้อหาจริงของหน้า Store ลงไปครึ่งจอ · แถวสรุป (รวม X/Y ชิ้น + ไลน์ที่ตามหลัง)
@@ -50,7 +54,8 @@ export default function ProdProgressStrip({ workDate, scopeNames = null, onOpenL
     try {
       await loadOpInfo();
       let sq = supabaseDR.from('production_sessions')
-        .select('id, line_name, shift, status').eq('work_date', workDate);
+        .select('id, line_name, shift, status').eq('work_date', workDate)
+        .in('status', SESSION_STATUSES_REAL);   // ใบโมฆะ (void) ไม่ใช่กะจริง — ชุดสถานะจาก sessionStatus.js
       if (scopeNames?.length) sq = sq.in('line_name', scopeNames);
       const { data: sess, error: e1 } = await sq;
       if (e1) throw e1;
@@ -67,22 +72,26 @@ export default function ProdProgressStrip({ workDate, scopeNames = null, onOpenL
       const opMap = opInfoSync();
       const lineOf = Object.fromEntries((sess || []).map(s => [s.id, s.line_name]));
 
+      const blank = (ln) => ({ line: ln, orders: [], cnt: 0, open: 0, shiftOpen: false });
       const byLine = {};
+      (sess || []).forEach(s => {
+        const g = (byLine[s.line_name] = byLine[s.line_name] || blank(s.line_name));
+        if (!SESSION_STATUSES_DONE.includes(s.status)) g.shiftOpen = true;   // ยังมีกะที่ยังไม่จบ
+      });
       (po || []).forEach(o => {
         const ln = lineOf[o.session_id];
-        if (!ln) return;
-        (byLine[ln] = byLine[ln] || { line: ln, orders: [], cnt: 0, open: 0 }).orders.push(o);
-        byLine[ln].cnt++;
-        if (o.status === 'open') byLine[ln].open++;
+        if (!ln || !countsInProgress(o)) return;
+        const g = (byLine[ln] = byLine[ln] || blank(ln));
+        g.orders.push(o);
+        g.cnt++;
+        if (o.status === 'open') g.open++;
       });
-      (sess || []).forEach(s => { byLine[s.line_name] = byLine[s.line_name] || { line: s.line_name, orders: [], cnt: 0, open: 0 }; });
 
       const lines = Object.values(byLine).map(g => {
-        const target = orderTotal(g.orders, o => Number(o.qty_target ?? o.qty ?? 0), pairOf, opMap);
-        const made = orderTotal(g.orders,
-          o => (o.status === 'confirmed' ? Number(o.qty_ok ?? o.qty ?? 0) : Number(o.qty_actual ?? 0)), pairOf, opMap);
-        return { ...g, target, made, pct: target > 0 ? (made / target) * 100 : null };
-      }).sort((a, b) => (a.pct ?? 999) - (b.pct ?? 999));   // ตามหลังสุดขึ้นก่อน
+        const target = orderTotal(g.orders, orderTargetQty, pairOf, opMap);
+        const made = orderTotal(g.orders, orderMadeQty, pairOf, opMap);
+        return { ...g, target, made, ...lineVerdict({ target, made, open: g.shiftOpen }) };
+      }).sort((a, b) => (b.behind - a.behind) || ((a.pct ?? 999) - (b.pct ?? 999)));   // ตามหลัง(กะปิดแล้ว)ขึ้นก่อน
       setD({ lines, noShift: false });
       setErr('');
     } catch (e) { setErr(String(e.message || e)); }
@@ -105,21 +114,28 @@ export default function ProdProgressStrip({ workDate, scopeNames = null, onOpenL
 
   const tot = d.lines.reduce((a, l) => ({ target: a.target + l.target, made: a.made + l.made }), { target: 0, made: 0 });
   const totPct = tot.target > 0 ? (tot.made / tot.target) * 100 : null;
-  const col = (p) => (p == null ? 'var(--muted)' : p >= 100 ? '#22c55e' : p >= 85 ? '#f59e0b' : '#ef4444');
+  const anyLive = d.lines.some(l => l.shiftOpen);
+  // สีรวม: ยังมีกะเปิด = กลาง (ตัดสินไม่ได้) · ปิดหมด = ตัดสินจากยอดรวม
+  const totColor = totPct == null ? PROGRESS_COLOR.none
+    : anyLive ? PROGRESS_COLOR.live : lineVerdict({ target: tot.target, made: tot.made, open: false }).color;
 
-  // ไลน์ที่ยังตามหลัง (<85%) — เลขนี้ต้องเห็นแม้พับอยู่ ไม่งั้นพับแล้วปัญหาหายไปด้วย
-  const behind = d.lines.filter(l => l.pct != null && l.pct < 85).length;
+  // ไลน์ที่ตามหลัง = **ปิดกะแล้ว** ได้ < 85% — เลขนี้ต้องเห็นแม้พับอยู่ ไม่งั้นพับแล้วปัญหาหายไปด้วย
+  const behind = d.lines.filter(l => l.behind).length;
 
   return (
     <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', marginBottom: 12 }}>
       <div onClick={toggle} style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap', cursor: 'pointer', marginBottom: open && d.lines.length ? 8 : 0 }}>
         <span style={{ fontSize: 13, fontWeight: 800, fontFamily: 'var(--font-display)' }}>
-          {open ? '▾' : '▸'} 📤 สั่งผลิตไปไลน์ไหน · ทำได้ตามที่มอบหมายไหม
+          {open ? '▾' : '▸'} 🏭 ยอดผลิตวันนี้ เทียบใบสั่งผลิต
         </span>
         {totPct != null && (
-          <span style={{ fontSize: 12, fontWeight: 800, color: col(totPct) }}>
-            รวม {fmt(tot.made)}/{fmt(tot.target)} ชิ้น ({totPct.toFixed(0)}%)
+          <span style={{ fontSize: 12, fontWeight: 800, color: totColor }}>
+            ทำได้ {fmt(tot.made)} จากเป้าทั้งกะ {fmt(tot.target)} ชิ้น ({totPct.toFixed(0)}%)
           </span>
+        )}
+        {/* บอกตรงๆ ว่าทำไมยังไม่มีสีแดง/เขียว — ไม่งั้นคนอ่าน % ต่ำตอนเช้าว่า "ตามหลัง" (12/10) */}
+        {anyLive && totPct != null && (
+          <span style={{ fontSize: 11, color: 'var(--muted)' }}>· เป้าเป็นยอดทั้งกะ — กะยังไม่จบ ยังไม่ตัดสินว่าตามหลัง</span>
         )}
         {!open && behind > 0 && (
           <span style={{ fontSize: 11.5, fontWeight: 800, color: '#ef4444' }}>· ตามหลัง {behind} ไลน์</span>
@@ -140,24 +156,24 @@ export default function ProdProgressStrip({ workDate, scopeNames = null, onOpenL
             <div key={l.line}
               onClick={() => onOpenLine?.(l.line)}
               title={l.target > 0
-                ? `${l.line} · ใบสั่งผลิต ${l.cnt} ใบ (ยังเปิดอยู่ ${l.open}) · เป้า ${fmt(l.target)} ชิ้น · ทำได้ ${fmt(l.made)} ชิ้น`
+                ? `${l.line} · ใบสั่งผลิต ${l.cnt} ใบ (ยังเปิดอยู่ ${l.open}) · เป้าทั้งกะ ${fmt(l.target)} ชิ้น · ทำได้ ${fmt(l.made)} ชิ้น · ${l.note}`
                 : `${l.line} · เปิดกะแล้วแต่ยังไม่มีใบสั่งผลิต`}
               style={{
                 cursor: onOpenLine ? 'pointer' : 'default', minWidth: 150, flex: '0 1 auto',
-                background: 'var(--bg2)', border: `1px solid ${l.pct == null ? 'var(--border)' : `${col(l.pct)}55`}`,
+                background: 'var(--bg2)', border: `1px solid ${l.pct == null ? 'var(--border)' : `${l.color}55`}`,
                 borderRadius: 9, padding: '7px 11px',
               }}>
               <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)' }}>{l.line}</div>
               {l.target > 0 ? (
                 <>
-                  <div style={{ fontSize: 15, fontWeight: 900, color: col(l.pct), fontFamily: 'var(--font-display)' }}>
+                  <div style={{ fontSize: 15, fontWeight: 900, color: l.color, fontFamily: 'var(--font-display)' }}>
                     {fmt(l.made)}<span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>/{fmt(l.target)}</span>
                     <span style={{ fontSize: 11, marginLeft: 5 }}>{l.pct.toFixed(0)}%</span>
                   </div>
                   <div style={{ height: 4, borderRadius: 3, background: 'var(--bg3)', overflow: 'hidden', margin: '3px 0 2px' }}>
-                    <div style={{ width: `${Math.min(100, l.pct)}%`, height: '100%', background: col(l.pct) }} />
+                    <div style={{ width: `${Math.min(100, l.pct)}%`, height: '100%', background: l.color }} />
                   </div>
-                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>🎫 {l.cnt} ใบ{l.open > 0 ? ` · ยังเปิด ${l.open}` : ''}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>{l.note} · 🎫 {l.cnt} ใบ{l.open > 0 ? ` (ค้าง ${l.open})` : ''}</div>
                 </>
               ) : (
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>เปิดกะแล้ว · ยังไม่มีใบสั่งผลิต</div>

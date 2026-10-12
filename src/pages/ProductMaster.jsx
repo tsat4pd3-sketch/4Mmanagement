@@ -43,7 +43,7 @@ const upMat = (m) => String(m ?? '').trim().toUpperCase();
 import { productReadiness, READINESS_COLOR } from '../utils/productReadiness';
 import { uomLabel, itemNoLabel, nextItemNo, byItemNo, buildBomIndex, moveBomLine, explodeBom } from '../utils/bomTree';
 import { slocLabel, slocValid, slocKindMeta, SLOC_FORMAT_HINT } from '../utils/storageLoc';
-import { checkWrite } from '../utils/dbWrite';
+import { checkWrite, checkWriteRows } from '../utils/dbWrite';
 import { uploadOpts } from '../utils/storageUpload';
 import Page from '../components/Page';
 import PageHeader from '../components/PageHeader';
@@ -458,11 +458,13 @@ export default function ProductMaster() {
         if (error) { toast.error(friendlySaveError(error, payload.mat_no, form.is_operation)); return; }
         savedId = inserted.id;
         if (ecSource) {
-          checkWrite(await supabaseDR.from('dr_products').update({
+          /* นับแถว — ปิดเลขเดิมไม่ติด = พาร์ทเดียวมี 2 เลข active พร้อมกัน (CT/kanban/แผนหยิบผิดเลข) */
+          checkWriteRows(await supabaseDR.from('dr_products').update({
             is_active: false,
             superseded_at: form.effective_from || localDateStr(),
             superseded_by: inserted.id,
-          }).eq('id', ecSource.id), 'บันทึกสินค้า');
+          }).eq('id', ecSource.id).select('id'), 'ปิดใช้งานสินค้าเลขเดิม (EC)',
+            { zeroMsg: `บันทึกเลขใหม่แล้ว แต่ปิดเลขเดิม ${ecSource.mat_no || ''} ไม่ได้ (0 แถว) — ไปปิดเองที่ทะเบียนสินค้า ไม่งั้นมี 2 เลขใช้งานพร้อมกัน` });
           // EC = พาร์ทเดิม revision ใหม่ → ลงทะเบียน MAT ใหม่เข้าทะเบียนกลาง parts_master ให้อัตโนมัติ
           // สืบทอดเฉพาะ "คุณสมบัติทางกายภาพ" จากเลขเดิม (uom/จำนวนต่อกล่อง/supplier/รูป) —
           // ต้นทุน (material/standard) ไม่สืบทอด: rev ใหม่ต้นทุนเปลี่ยนได้ ให้บัญชีเติมเอง ห้ามเดา
@@ -496,7 +498,7 @@ export default function ProductMaster() {
               if (oldPm) {
                 const tag = `ถูกแทนโดย EC → ${payload.mat_no} มีผล ${effDate}`;
                 if (!String(oldPm.note || '').includes(tag)) {
-                  checkWrite(await supabaseDR.from('parts_master').update({ note: oldPm.note ? `${oldPm.note} · ${tag}` : tag }).eq('id', oldPm.id), 'ติดหมายเหตุทะเบียนกลางเดิม');
+                  checkWriteRows(await supabaseDR.from('parts_master').update({ note: oldPm.note ? `${oldPm.note} · ${tag}` : tag }).eq('id', oldPm.id).select('id'), 'ติดหมายเหตุทะเบียนกลางเดิม');
                 }
               }
             } catch (e) { console.warn('EC → parts_master:', e); }
@@ -546,6 +548,7 @@ export default function ProductMaster() {
       }
       // ชิ้นงานเดียวกัน (ชื่อตรงกัน) ต่างแค่ customer/mat — sync รูปให้ทุก variant อัตโนมัติ
       if (imageFile && payload.name) {
+        // ⚠️ ไม่นับแถว: พาร์ทที่ไม่มี variant ชื่อเดียวกัน = 0 แถว ถูกต้องแล้ว
         checkWrite(await supabaseDR.from('dr_products').update({ image_url: imageUrl })
           .eq('name', payload.name).neq('id', savedId), 'sync รูปให้ variant');  // eq ไม่ใช่ ilike — กันชื่อที่มี % _ ไปแมตช์ผิดตัว
       }
@@ -553,7 +556,7 @@ export default function ProductMaster() {
       if (imageFile && imageUrl && payload.mat_no) {
         const { data: pmRows } = await supabaseDR.from('parts_master').select('id, image_url').eq('mat_no', payload.mat_no).limit(1);
         if (pmRows?.[0] && !pmRows[0].image_url) {
-          checkWrite(await supabaseDR.from('parts_master').update({ image_url: imageUrl }).eq('id', pmRows[0].id), 'sync รูปไปทะเบียนกลาง');
+          checkWriteRows(await supabaseDR.from('parts_master').update({ image_url: imageUrl }).eq('id', pmRows[0].id).select('id'), 'sync รูปไปทะเบียนกลาง');
         }
       }
       toast.success(ecSource ? '🔄 Engineering Change บันทึกสำเร็จ' : 'บันทึกสำเร็จ');
@@ -3187,7 +3190,8 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
   async function toggleActive(p) {
     // ยืนยันเฉพาะตอน "ปิดใช้งาน" พาร์ท — เปิดกลับไม่ต้องถาม
     if (p.is_active && !confirm(`ปิดใช้งานพาร์ท "${p.part_no || p.mat_no || ''}" ?\n\nจะหายจากการเลือกใช้ (ข้อมูลเดิมยังอยู่ เปิดกลับได้)`)) return;
-    checkWrite(await supabaseDR.from('parts_master').update({ is_active: !p.is_active }).eq('id', p.id), 'เปิด/ปิดใช้งานพาร์ท');
+    /* นับแถว — ปุ่มสลับสถานะ: 0 แถวแล้ว load() จะวาดค่าเดิมกลับมา = ดูเหมือนปุ่มกดไม่ติดโดยไม่มีคำอธิบาย */
+    checkWriteRows(await supabaseDR.from('parts_master').update({ is_active: !p.is_active }).eq('id', p.id).select('id'), 'เปิด/ปิดใช้งานพาร์ท');
     load();
   }
 

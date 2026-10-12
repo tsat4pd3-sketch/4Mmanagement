@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { groupChildDefs, rollupChildDefs, rollupGroupKey, fillParentWithChildren, childGroupKeyFor } from '../kpiRollup.js';
 import { pickBoardRows } from '../kpiBoardRows.js';
-import { buildOrgScope, scopeUnder, scopeOfDef } from '../orgScope.js';
+import { buildOrgScope, scopeUnder, scopePathText } from '../orgScope.js';
 
 const cat = (id, name, summary_mode, extra = {}) => ({ id, name, summary_mode, unit: '%', value_scope: 'own', board_slot: null, ...extra });
 const def = (id, scope_kind, scope_value, catalog, extra = {}) => ({ id, scope_kind, scope_value, source: 'manual', seq: id, name: catalog.name, catalog_id: catalog.id, kpi_catalog: catalog, is_active: true, ...extra });
@@ -114,4 +114,12 @@ test('childGroupKeyFor: ทะเบียนเดียวกับนิย�
   assert.equal(childGroupKeyFor(g, { key: 'rm', name: '%RM (Raw Material)' }, null), 'cat:c-rm');   // board_slot ชนะชื่อ
   assert.equal(childGroupKeyFor(g, { key: 'def:9', name: 'Kaizen', defId: 9 }, def(9, 'section', 'PD1', cat('c-kz', 'Kaizen', 'sum'))), null);
   assert.equal(childGroupKeyFor(new Map(), { key: 'rm', name: 'x' }, null), null);
+});
+
+test('scopePathText: หน่วย = เส้นทางผัง · CC = เส้นทางเจ้าของ › 💰 รหัส · โรงงาน = ป้ายที่ส่ง', () => {
+  const ix = buildOrgScope({ nodes, lines });
+  assert.equal(scopePathText(ix, { kind: 'plant', value: '' }, 'ทุกส่วนงาน'), 'ทุกส่วนงาน');
+  assert.equal(scopePathText(ix, { kind: 'department', value: 'BIG PRESS' }), 'PD1 › BIG PRESS');
+  assert.match(scopePathText(ix, { kind: 'cost_center', value: '2140561001' }), /^PD1 › BIG PRESS(?: › LINE A)? › 💰 2140561001/);
+  assert.match(scopePathText(ix, { kind: 'cost_center', value: '999' }), /ผังยังไม่ผูกหน่วย › 💰 999/);
 });

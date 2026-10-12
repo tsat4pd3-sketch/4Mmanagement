@@ -33,15 +33,19 @@ export default function Login() {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (!error) { setLoading(false); navigate(next); return; }
 
-    // แปล error เป็นไทย + แยกประเภท "ไม่พบบัญชี" vs "รหัสผ่านผิด" (คำสั่ง user 2026-07-14)
-    // ใช้ RPC login_email_exists (security definer ฝั่ง server) เช็คว่าอีเมลนี้มีบัญชีจริงมั้ย
+    // แปล error เป็นไทย (ยังแยกประเภท network / rate-limit / ยังไม่ยืนยัน เหมือนเดิม)
     const m = (error.message || '').toLowerCase();
     let msg;
     if (m.includes('invalid login credentials')) {
-      const { data: exists, error: rpcErr } = await supabase.rpc('login_email_exists', { p_email: email });
-      if (rpcErr || exists === null) msg = '❌ อีเมลหรือรหัสผ่านไม่ถูกต้อง';
-      else if (exists === false)     msg = `❌ ไม่พบบัญชี "${email}" ในระบบ — ตรวจตัวสะกดอีเมล หรือติดต่อ admin ให้สร้างบัญชี`;
-      else                           msg = '🔒 อีเมลถูกต้อง แต่รหัสผ่านไม่ถูกต้อง — ลองใหม่ หรือให้ admin รีเซ็ตรหัสผ่านให้';
+      /* 🔒 **ห้ามแยก "ไม่พบบัญชีนี้" ออกจาก "รหัสผ่านผิด"** (คำสั่ง user 2026-10-12)
+         เดิมเรียก RPC `login_email_exists` ซึ่ง grant ให้ `anon` (ต้องเป็น anon เพราะใช้ก่อน login)
+         เพื่อบอกหน้างานให้ชัดว่าพิมพ์อีเมลผิด — แต่หน้า login เปิดบนอินเทอร์เน็ตจริง
+         (Render + anon key ที่อ่านได้จากหน้าเว็บ) ⇒ ใครก็ยิง RPC ไล่เดาได้ว่า "อีเมลไหนมีบัญชี"
+         = ได้ลิสต์เป้าไปไล่ลองรหัสผ่าน (account enumeration) · ฟังก์ชันถูก drop ทิ้งแล้ว
+         🔴 ห้ามเอากลับมา ไม่ว่าจะด้วย RPC ตัวใหม่ · ตาราง profiles · หรืออ่านจาก error ของ
+            Supabase Auth — ชดเชย UX ด้วย "ข้อความบอกทางออก" แทน (มีด่าน login-no-email-oracle) */
+      msg = '❌ อีเมลหรือรหัสผ่านไม่ถูกต้อง — ตรวจตัวสะกดอีเมลอีกครั้ง'
+          + ' · ถ้าเพิ่งได้บัญชีใหม่ หรือลืมรหัสผ่าน ให้ติดต่อ admin';
     } else if (m.includes('email not confirmed')) {
       msg = '📧 บัญชีนี้ยังไม่ถูกยืนยัน — ติดต่อ admin';
     } else if (error.status === 429 || m.includes('too many') || m.includes('rate limit')) {

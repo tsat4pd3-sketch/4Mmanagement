@@ -29,7 +29,7 @@ import usePeople from '../utils/usePeople';
 import { inSectionScope } from '../utils/sectionScope';
 import { MARKS, MARK_BY_KEY, markGlyph, markColor, daysInMonth, ppeToMark } from '../utils/bbsMarks';
 import { printBbsSheet } from '../lib/bbsPrint';
-import { checkWrite } from '../utils/dbWrite';
+import { checkWriteRows } from '../utils/dbWrite';
 import SearchSelect from '../components/SearchSelect';
 import useIsMobile from '../utils/useIsMobile';
 import Page from '../components/Page';
@@ -731,8 +731,10 @@ function AgreementsModal({ agreements, canManage, role, onClose }) {
       const keep = new Set(up.filter(u => u.id).map(u => u.id));
       const gone = agreements.filter(a => !keep.has(a.id));
       if (gone.length) {
-        checkWrite(await supabase.from('bbs_agreements').update({ is_active: false })
-          .in('id', gone.map(g => g.id)), 'ปิดข้อตกลงเดิม');
+        /* นับแถวแบบ "ต้องครบทุกใบ" — ปิดไม่ครบแล้วขึ้น "บันทึกข้อตกลงแล้ว" + ปิดหน้าต่าง
+           = ข้อที่เอาออกกลับมาโผล่ในใบ BBS รอบหน้า (กฎเขียน DB ข้อ 2) */
+        checkWriteRows(await supabase.from('bbs_agreements').update({ is_active: false })
+          .in('id', gone.map(g => g.id)).select('id'), 'ปิดข้อตกลงเดิม', { min: gone.length });
       }
       toast.success('บันทึกข้อตกลงแล้ว');
       onClose();
