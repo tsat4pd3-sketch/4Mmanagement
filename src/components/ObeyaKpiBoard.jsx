@@ -241,7 +241,17 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
   }, [scope, org, scopeOpts]);
   const parentScope = useMemo(() => (scope && !isPlant(scope) ? org.ancestorsOf(scope.kind, scope.value).slice(-1)[0] || PLANT : null), [scope, org]);
   const secSet = useMemo(() => (scope ? org.sectionsOf(scope.kind, scope.value) : null), [scope, org]);   // null = ไม่จำกัด
-  const scopeText = scope ? (isPlant(scope) ? 'ทั้งโรงงาน' : [...org.pathOf(scope.kind, scope.value), scope.value].filter((x, i, a) => a.indexOf(x) === i).join(' › ')) : '—';
+  /* ชื่อขอบเขตบนหัวบอร์ด — CC เขียน "เส้นทางหน่วยเจ้าของ › 💰 รหัส · ชื่อ" (12/10 · เดิมขึ้นแค่เลขรหัส คนอ่านไม่ออกว่าของใคร) */
+  const scopeText = useMemo(() => {
+    if (!scope) return '—';
+    if (isPlant(scope)) return 'ทั้งโรงงาน';
+    if (scope.kind === 'cost_center') {
+      const owner = (org.unitsOf?.(scope.kind, scope.value) || []).slice(-1)[0] || null;   // unitsOf = กว้าง→แคบ ⇒ ตัวท้าย = แคบสุด
+      const head = owner ? [...org.pathOf(owner.kind, owner.value), owner.value].filter((x, i, a) => a.indexOf(x) === i).join(' › ') : 'ผังยังไม่ผูกหน่วย';
+      return `${head} › 💰 ${org.ccLabel ? org.ccLabel(scope.value) : scope.value}`;
+    }
+    return [...org.pathOf(scope.kind, scope.value), scope.value].filter((x, i, a) => a.indexOf(x) === i).join(' › ');
+  }, [scope, org]);
 
   /* ── โหลด — ทุกก้อนเช็ค error → warn[] เพื่อขึ้นแถบ "โหลดไม่ครบ" ห้ามเงียบ ─────────────────────
      deps เป็น primitive ล้วน (กฎเหล็ก DB ข้อ 9) · lineNames ส่งเป็นสตริงคั่นด้วย | */
