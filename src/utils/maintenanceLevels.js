@@ -305,6 +305,10 @@ export function buildMaintenanceLevels({
   lineFamilyOf = null, sessionLineOf = null,
   isAm = () => false,   // (department) => true เมื่อเป็นทีม AM (ผลิตตรวจเอง) — ผู้เรียกส่ง isAmTeam จาก utils/pmTeams (ไฟล์นี้ต้อง pure)
   spare = null,          // ผลของ spareDemand() — ไม่ส่ง = กฎ spare_short ไม่ทำงาน
+  /* 💰 บาท/ชม. ของไลน์ (lineName) → number | null — ผู้เรียกประกอบจาก costSaving.js
+     (`lineCostCenter` → `rateFor` → `ratePerHour` ทุกก้อน · สูตรเดียวกับแกน C ของ SQDCM)
+     ไม่ส่ง/คืน null = ไม่รู้มูลค่า ⇒ riskBaht30 = null (ห้ามตีเป็น 0) */
+  ratePerHourOfLine = null,
   todayStr, nowMs, w = WINDOW, t = THRESH,
 } = {}) {
   const spareShortByCl = spareShortageByChecklist(spare);
@@ -363,6 +367,9 @@ export function buildMaintenanceLevels({
     };
     const pv = preventiveOf(checksByKey.get(key) || []);
     const pd = predictiveOf(rec, base, { nowMs, w, t });
+    // 💰 มูลค่าเวลาหยุดที่คาด 30 วัน = นาที ÷ 60 × บาท/ชม. ของไลน์ (ประมาณการ — rate ทั้งไลน์ ไม่ใช่ต่อเครื่อง)
+    const perHr = ratePerHourOfLine && meta.lineName ? ratePerHourOfLine(meta.lineName) : null;
+    pd.riskBaht30 = pd.riskMin30 != null && perHr > 0 ? Math.round((pd.riskMin30 / 60) * perHr) : null;
     // เครื่องที่ไม่มีแผน และไม่เคยเสียทั้ง 90 วัน = ไม่มีอะไรจะบอก ⇒ ไม่ขึ้นรายการ (แต่นับในสรุป)
     if (!pv.hasPlan && pd.stopsR === 0 && pd.stopsB === 0) continue;
     // อะไหล่ไม่พอของ PM ทุกใบบนอุปกรณ์นี้ (เรียงตามวันใช้ · อะไหล่ตัวเดียวกันจากหลายใบ เก็บวันที่เร็วสุด)
@@ -415,6 +422,9 @@ export function summarizeItems(items = [], t = THRESH) {
       etaSoon: cnt(i => i.pd.etaDays != null && i.pd.etaDays <= t.soonDays),
       nodata: cnt(i => i.pd.trend === 'nodata'),
       riskMin30: items.reduce((s, i) => s + (i.pd.riskMin30 || 0), 0),
+      riskBaht30: items.reduce((s, i) => s + (i.pd.riskBaht30 || 0), 0),
+      // มีเวลาเสี่ยงแต่คิดเงินไม่ได้ (ไลน์ไม่มี cost center / ไม่มี rate) — จอต้องบอกว่ายอดบาทไม่รวมกี่ตัว
+      riskNoRate: cnt(i => i.pd.riskMin30 > 0 && i.pd.riskBaht30 == null),
     },
     prescriptive: {
       total: acts.length,

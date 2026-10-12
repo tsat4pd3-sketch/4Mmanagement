@@ -3590,6 +3590,58 @@ test('🛡️ MonitoringUpload ต้องส่ง stockLocOf (refStockOf) ใ
     + '   แก้: stockLocOf = (mat, line) => refStockOf(...) แบบ seedOnly (utils/partRefStock.js)\n');
 });
 
+/* ── 🔒 หน้า login ห้ามบอกว่า "อีเมลนี้มีบัญชีหรือไม่" (2026-10-12 · คำสั่ง user) ──────────
+   เดิมแยกข้อความ "ไม่พบบัญชี" ออกจาก "รหัสผ่านผิด" ด้วย RPC `login_email_exists`
+   ซึ่ง **grant ให้ `anon`** (จำเป็น เพราะใช้ก่อน login) ⇒ ใครก็ยิงไล่เดาได้ว่าอีเมลไหนมีบัญชี
+   = account enumeration = ได้ลิสต์เป้าไปไล่ลองรหัสผ่าน (ระบบเปิดบนอินเทอร์เน็ตจริง
+   Render + anon key ที่อ่านได้จากหน้าเว็บ) · ฟังก์ชันถูก drop แล้ว 12/10
+   ⇒ ด่านนี้กันการเอากลับมา ไม่ว่าจะชื่อเดิมหรือ RPC ตัวใหม่ที่ทำหน้าที่เดียวกัน */
+test('🛡️ login-no-email-oracle — ห้ามมีโค้ดถามว่าอีเมลนี้มีบัญชีอยู่ไหม', () => {
+  const bad = [];
+  const SUSPECT = /\b(login_email_exists|email_exists|account_exists|user_exists)\b/;
+  for (const file of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
+    const rel = relative(ROOT, file);
+    if (rel.includes('__tests__')) continue;
+    const code = stripComments(readFileSync(file, 'utf8'));   // พูดถึงในคอมเมนต์ได้ (อธิบายว่าทำไมถอด)
+    code.split('\n').forEach((ln, i) => {
+      const m = ln.match(SUSPECT);
+      if (m) bad.push(`${rel}:${i + 1} — ${m[1]}`);
+    });
+  }
+  assert.deepEqual(bad, [],
+    '\n\n❌ เจอโค้ดที่ถามว่า "อีเมลนี้มีบัญชีไหม" กลับมาแล้ว\n'
+    + '   ทำไมสำคัญ: หน้า login เปิดให้ anon ⇒ ตอบคำถามนี้ = ปล่อยให้คนนอกไล่เดาได้ว่า\n'
+    + '             อีเมลไหนมีบัญชีในระบบ แล้วเอาไปไล่ลองรหัสผ่าน (account enumeration)\n'
+    + '   แก้ยังไง: ใช้ข้อความรวม "อีเมลหรือรหัสผ่านไม่ถูกต้อง" + บอกทางออก (ติดต่อ admin)\n'
+    + '             ห้ามแยก 2 กรณีนี้ ไม่ว่าจะด้วย RPC · ตาราง profiles · หรือ error ของ Auth\n\n'
+    + bad.map(b => `   • ${b}`).join('\n') + '\n');
+});
+
+/* ── 📄 บันทึกต้นฉบับของใบ MO ต้องมีคนเขียนที่เดียว (2026-10-12 · คำสั่ง user) ─────────────
+   `mtn_orders.snapshot` = เนื้อใบ ณ เวลาปิดใบ · เขียน **ครั้งเดียว** แล้วห้ามทับ
+   (ทับได้ = บันทึกเปลี่ยนตามคนแก้ = หมดความเป็นบันทึก · ใบมีเลขที่เอกสารและเก็บตามอายุเอกสาร)
+   ตัวเขียนเดียวคือ `saveMoSnapshot()` ซึ่งกันทับด้วย `.is('snapshot', null)` ที่ชั้น WHERE
+   ⇒ ด่านนี้กันหน้าอื่น/โค้ดใหม่เขียนตรงๆ ข้ามด่านนั้น */
+test('🛡️ mo-snapshot-single-writer — เขียน mtn_orders.snapshot ได้ที่ mtnMoSnapshot.js เท่านั้น', () => {
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
+    const rel = relative(ROOT, file);
+    if (rel.includes('__tests__') || rel === 'src/lib/mtnMoSnapshot.js') continue;
+    const code = stripComments(readFileSync(file, 'utf8'));
+    code.split('\n').forEach((ln, i) => {
+      if (/\bsnapshot\s*:/.test(ln) && /mtn_order|moSnap|snapshot_at/.test(code)) {
+        if (/\bsnapshot\s*:/.test(ln) && !/serializeMo|moFromSnapshot/.test(ln)) {
+          bad.push(`${rel}:${i + 1} — ${ln.trim().slice(0, 90)}`);
+        }
+      }
+    });
+  }
+  assert.deepEqual(bad, [],
+    '\n\n❌ มีจุดเขียน `snapshot:` ของใบ MO นอก src/lib/mtnMoSnapshot.js\n'
+    + '   ทำไมสำคัญ: บันทึกต้นฉบับต้องเขียนครั้งเดียวแล้วห้ามทับ — ตัวเขียนเดียวกันทับด้วย\n'
+    + '             `.is(\'snapshot\', null)` · เขียนตรงๆ ที่อื่น = ข้ามด่านนั้น\n'
+    + '   แก้ยังไง: เรียก `saveMoSnapshot(order)` จาก src/lib/mtnMoSnapshot.js\n\n'
+    + bad.map(b => `   • ${b}`).join('\n') + '\n');});
 
 /* ═══ 🗑️ ลบคำถาม LPA ต้องนับปลายทางก่อน + บอกขอบเขต (2026-10-12 · feedback หน้างาน) ═══
    เคสจริง: *"Layer ข้อ 22,23 หายไปครับ"* — 02/10 มีคนกด 🗑 ลบข้อ common 2 ข้อ (VISUAL/ANDON)
@@ -3687,7 +3739,7 @@ test('🛡️ session-produced-qty-single-source — ห้ามรวมยอ
    ปุ่ม "แก้เวลากะ + คำนวณ OEE ใหม่" เคยเขียนทับแค่ oee_a/p/q/oee/shift_min
    แต่ %P/%Q ถูกคำนวณจาก **ใบผลิตชุดปัจจุบัน** ⇒ ถ้าใบถูกแก้ยอดหลังปิดกะ
    แถวเดียวกันจะขัดแย้งกันเอง: actual_qty 1,000 แต่ %P คิดจาก 1,100
-   (วัดจริง ก.ย. 2026: 27 กะ · 835 ชิ้น ที่ actual_qty ต่ำกว่าผลรวมใบผลิตจริง) */
+   (วัดจริง ก.ย. 2026: 26 กะ · 885 ชิ้น ที่ actual_qty ต่ำกว่าผลรวมใบผลิตจริง) */
 test('🛡️ oee-restamp-needs-qty — ทุก payload ที่เขียน oee_a ต้องเขียน actual_qty ด้วย', () => {
   const file = join(ROOT, 'src/pages/DailyReport.jsx');
   const code = stripComments(readFileSync(file, 'utf8'));

@@ -1,4 +1,5 @@
 import { useState, useEffect, useContext, useMemo, useRef } from 'react';
+import { LPA_LAYERS } from '../utils/prodRoutine';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
@@ -38,12 +39,8 @@ import { loadLpaQuestionRefs, lpaQuestionBlockMessage, lpaDeleteConfirmText, sav
 const FORM_NO = 'FM-QMR-008 Rev.01';
 const EFFECTIVE = '12/05/2017';
 
-const LAYERS = [
-  { key: 'leader', label: 'Leader', freq: 'ทุกวัน', planKey: 'plan_leader' },
-  { key: 'supervisor', label: 'Supervisor', freq: 'รายสัปดาห์', planKey: 'plan_supervisor' },
-  { key: 'manager', label: 'Manager', freq: 'รายเดือน', planKey: 'plan_manager' },
-  { key: 'gm', label: 'GM', freq: 'รายไตรมาส', planKey: 'plan_gm' },
-];
+// ชั้นผู้ตรวจ — ที่เดียวทั้งระบบ (จอ TV ฝ่ายผลิตอ่านชุดเดียวกันเพื่อนับ "แผนวันนี้ยังไม่ตรวจ" · 12/10)
+const LAYERS = LPA_LAYERS;
 const CATEGORIES = [
   { key: 'safety', label: 'Safety & 5ส.', full: 'Safety & 5S Related (ความปลอดภัยและเกี่ยวกับ 5ส.)' },
   { key: 'quality', label: 'Product & Quality', full: 'Product & Quality (เกี่ยวข้องกับการผลิต & ตรวจสอบคุณภาพ)' },
@@ -164,7 +161,11 @@ export default function LayerProcessAudit() {
 
   /* questions master */
   const [qEditing, setQEditing] = useState(null);
-  const [qScope, setQScope] = useState(''); // หน้า ⚙️ คำถาม: '' = ทุกไลน์ (common) · ชื่อไลน์ = จัดการเฉพาะไลน์นั้น
+  const [qScope, setQScope] = useState(''); // หน้า ⚙️ คำถาม: '' = ทะเบียนกลาง (common) · ชื่อไลน์ = จัดการเฉพาะไลน์นั้น
+  /* 🔴 เปิดแท็บ ⚙️ มา ต้องลงที่ "ไลน์ของตัวเอง" ก่อนเสมอ ไม่ใช่ทะเบียนกลาง (2026-10-12 · คำสั่ง user)
+     เคสจริง 02/10: คนตั้งใจเอาข้อออกจากไลน์ตัวเอง แต่จอเปิดมาที่ทะเบียนกลาง เลยกดลบของส่วนรวมทิ้ง
+     `qScopePicked` = เคยเลือกเองหรือยัง — เลือกแล้วห้าม auto เปลี่ยนทับ (รวมถึงตอนเลือก "ทะเบียนกลาง" เอง) */
+  const [qScopePicked, setQScopePicked] = useState(false);
   const [printing, setPrinting] = useState(false);
   const [docReady, setDocReady] = useState(false); // ทะเบียนเอกสารโหลดแล้ว → subtitle/ปุ่มดึงเลขฟอร์มจาก registry
 
@@ -473,6 +474,20 @@ export default function LayerProcessAudit() {
     } catch (e) { toast.error('บันทึกแผนไม่สำเร็จ: ' + e.message); }
     finally { setSavingPlan(false); }
   };
+
+  /* ── แท็บ ⚙️ หัวข้อตรวจ: ลงที่ไลน์ของตัวเองก่อนเสมอ + สรุปที่มาของเช็คลิสต์ ── */
+  useEffect(() => {
+    if (tab === 'questions' && !qScopePicked && selLine) setQScope(selLine);
+  }, [tab, qScopePicked, selLine]);
+
+  /* "เช็คลิสต์ของไลน์นี้ประกอบจากอะไรบ้าง" — ดึงจากทะเบียนกลางกี่ข้อ ปิดไว้กี่ข้อ ของตัวเองกี่ข้อ */
+  const qScopeStats = useMemo(() => {
+    if (!qScope) return null;
+    const act = questions.filter(q => q.is_active);
+    const master = act.filter(q => !q.line_name);
+    const off = master.filter(q => (q.hidden_for_lines || []).includes(qScope)).length;
+    return { off, used: master.length - off, own: act.filter(q => q.line_name === qScope).length };
+  }, [questions, qScope]);
 
   /* ═════════ TAB: บันทึกผลตรวจ ═════════ */
   const auditQuestions = useMemo(() => questionsFor(selLine, auditDate), [questions, selLine, auditDate]);
@@ -1212,12 +1227,12 @@ ${issuesHtml}
           <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 10 }}>
             <div>
               <div style={lb}>จัดการคำถามของ</div>
-              <LineSelect lines={visibleLines} value={qScope} onChange={setQScope} style={{ minWidth: 220 }}
-                placeholder="🌐 ทุกไลน์ (common — ฐานที่ backfall)" />
+              <LineSelect lines={visibleLines} value={qScope} onChange={(v) => { setQScopePicked(true); setQScope(v); }} style={{ minWidth: 220 }}
+                placeholder="🌐 ทะเบียนกลาง (ใช้ร่วมทุกไลน์)" />
             </div>
             <button
               onClick={() => setQEditing({ category: 'safety', seq: (Math.max(0, ...questions.map(q => q.seq)) + 1), question: '', line_name: qScope || '', issue_start: '', issue_end: '', is_active: true })}
-              style={btnAccent}>➕ เพิ่มคำถาม{qScope ? ` (เฉพาะ ${qScope})` : ' (ทุกไลน์)'}</button>
+              style={btnAccent}>➕ เพิ่มคำถาม{qScope ? ` (เฉพาะไลน์ ${qScope})` : ' (เข้าทะเบียนกลาง — ทุกไลน์เห็น)'}</button>
           </div>
           {/* 🔴 ป้าย "ตอนนี้คุณกำลังแก้ของใคร" — ห้ามถอด (2026-10-12 · feedback user)
               เคสจริง: มีคนกดลบข้อ common 2 ข้อจากมุมมอง "ทุกไลน์" ⇒ หายจากใบตรวจทุกไลน์
@@ -1231,10 +1246,17 @@ ${issuesHtml}
               <>
                 <b style={{ fontSize: 13, color: 'var(--accent)' }}>🏭 กำลังแก้หัวข้อตรวจของไลน์ "{qScope}"</b>
                 <div style={{ color: 'var(--text2)', marginTop: 2 }}>
-                  ข้อที่ติดป้าย <b>ทะเบียนกลาง</b> = ของส่วนรวม แก้เนื้อหาที่นี่ไม่ได้ (ไปแก้ที่ 🌐 ทุกไลน์) —
-                  ไม่อยากใช้ข้อไหน กด <b>🚫 ซ่อนไลน์นี้</b> ไลน์อื่นไม่กระทบ ·
+                  ข้อที่ติดป้าย <b>🌐 ทะเบียนกลาง</b> = ของส่วนรวม แก้เนื้อหา/ลบที่นี่ไม่ได้ —
+                  ไม่อยากใช้ข้อไหนที่ไลน์นี้ กด <b>ไม่ใช้ที่ไลน์นี้</b> (ไลน์อื่นไม่กระทบ) ·
                   ข้อที่ติดป้าย <b>เฉพาะไลน์นี้</b> เป็นของไลน์คุณเอง เพิ่ม/แก้/ลบได้เต็มที่
                 </div>
+                {qScopeStats && (
+                  <div style={{ marginTop: 5, fontSize: 12, color: 'var(--text)' }}>
+                    เช็คลิสต์ของไลน์นี้ = <b>ดึงจากทะเบียนกลาง {qScopeStats.used}</b>
+                    {qScopeStats.off > 0 && <span style={{ color: 'var(--muted)' }}> (ปิดไว้ {qScopeStats.off})</span>}
+                    {' '}+ <b>ของไลน์นี้เอง {qScopeStats.own}</b> = <b>{qScopeStats.used + qScopeStats.own} ข้อ</b>
+                  </div>
+                )}
               </>
             ) : (
               <>
@@ -1268,12 +1290,17 @@ ${issuesHtml}
                         {lineOwn && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', background: 'var(--accent-dim)', border: '1px solid var(--accent)', borderRadius: 4, padding: '0 5px', marginLeft: 6 }}>เฉพาะไลน์นี้</span>}
                         {!qScope && q.line_name && <span style={{ fontSize: 11, color: 'var(--muted)' }}> · ไลน์ {q.line_name}</span>}
                         {(q.issue_start || q.issue_end) && <span style={{ fontSize: 11, color: 'var(--muted)' }}> · {thDate(q.issue_start)} - {thDate(q.issue_end)}</span>}
-                        {hiddenHere && <span style={{ fontSize: 11, fontWeight: 700, color: '#ef4444' }}> · 🚫 ซ่อนไลน์นี้</span>}
+                        {hiddenHere && <span style={{ fontSize: 11, fontWeight: 700, color: '#ef4444' }}> · 🚫 ไลน์นี้ไม่ใช้ข้อนี้</span>}
                         {!q.is_active && <span style={{ fontSize: 11, color: '#ef4444' }}> · ปิดใช้งาน</span>}
                       </div>
                       {qScope && isCommon ? (
                         // ข้อ common ในมุมมองรายไลน์ → ซ่อน/แสดงเฉพาะไลน์นี้ (แก้เนื้อหาไปทำที่ "ทุกไลน์")
-                        <button className="tbtn" onClick={() => toggleHideForLine(q, qScope)} style={{ ...btnGray, color: hiddenHere ? 'var(--accent)' : '#ef4444', padding: '4px 10px', fontSize: 12 }}>{hiddenHere ? '👁 แสดงไลน์นี้' : '🚫 ซ่อนไลน์นี้'}</button>
+                        /* ป้ายปุ่มต้องบอก "ผลที่จะเกิด" ไม่ใช่ศัพท์ซ่อน/แสดง — คนอ่านแล้วนึกว่าซ่อนจากทุกคน */
+                        <button className="tbtn" onClick={() => toggleHideForLine(q, qScope)}
+                          title={hiddenHere ? `เอาข้อนี้กลับมาใช้ที่ไลน์ ${qScope}` : `เลิกใช้ข้อนี้เฉพาะไลน์ ${qScope} (ไลน์อื่นและทะเบียนกลางไม่กระทบ)`}
+                          style={{ ...btnGray, color: hiddenHere ? 'var(--accent)' : '#ef4444', padding: '4px 10px', fontSize: 12, whiteSpace: 'nowrap' }}>
+                          {hiddenHere ? '✓ ใช้ที่ไลน์นี้' : '🚫 ไม่ใช้ที่ไลน์นี้'}
+                        </button>
                       ) : (
                         // ข้อ common (มุมมองทุกไลน์) หรือข้อเฉพาะไลน์ → แก้/ปิด/ลบเต็มที่
                         <>

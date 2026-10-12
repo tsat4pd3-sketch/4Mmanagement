@@ -58,6 +58,7 @@ import DowntimeSiren from './DowntimeSiren';
 import FactoryMiniMap from './FactoryMiniMap';
 import ProdProgressStrip from './ProdProgressStrip';
 import StoreWaitCards, { useStoreTv } from './StoreWaitCards';
+import ProdRoutineCard, { useProdRoutine } from './ProdRoutineCard';
 import { liveChannel } from '../utils/liveChannel';
 
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14 };
@@ -119,6 +120,10 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
   const knownLines = useMemo(() => new Set(knownLineKey ? knownLineKey.split('\u0001') : []), [knownLineKey]);
   const storeTv = useStoreTv({ enabled: showStore, inScope, scoped: !!scopeNames, knownLines });
   const storeWait = showStore ? storeTv.lineMap : EMPTY;
+  /* 📋 งานประจำกะของฝ่ายผลิต (AM · Poka-Yoke · LPA) — เฉพาะจอผลิต (12/10 · user "เครื่องยังไม่ตรวจ AM
+     หรืองาน routine อื่นๆ ที่ผลิตต้องทำก็ควรจะโชว์") · hook เรียกทุกแผนก `enabled` คุมการยิง DB */
+  const showRoutine = cards === 'production';
+  const routine = useProdRoutine({ enabled: showRoutine, inScope, lines: ctxLines });
   const [, setTick] = useState(0);                  // นาฬิกาเดิน — ให้ "กี่นาทีแล้ว" ขยับเอง
 
   /* ความสูงคอลัมน์ขวา = **ความสูงจริงของผัง** (วัดด้วย ResizeObserver ไม่ใช่เดา `100vh - Npx`)
@@ -433,6 +438,12 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
         {/* ⚠️ เดิมชิปนี้นับเฉพาะ "เกินกำหนด" → งานที่ *กำลังจะ* ถึงกำหนดไม่มีสัญญาณใดๆ บนจอเลย
             (user 2026-08-26) · ตอนนี้บอกทั้ง 2 ระดับ และกดไปหน้าแผน PM ได้ */}
         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 12.5 * big, fontWeight: 800 }}>
+          {showRoutine && routine.loaded && (
+            <span style={{ color: routine.errs.length ? '#ef4444' : routine.counts?.lines ? '#f59e0b' : '#22c55e' }}>
+              {routine.errs.length ? '⚠ งานประจำกะดึงไม่ครบ'
+                : routine.counts?.lines ? `📋 งานประจำกะค้าง ${routine.counts.lines} ไลน์` : '📋 งานประจำกะครบ'}
+            </span>
+          )}
           {showMo && <span style={{ color: mo.length ? '#f59e0b' : '#22c55e' }}>🛠️ ใบซ่อมค้าง {mo.length}</span>}
           {showPm && (
           <span onClick={() => navigate('/pm?tab=plan')} style={{ cursor: 'pointer', color: pmOver ? '#ef4444' : (pmToday || pm.length) ? '#f59e0b' : '#22c55e' }}>
@@ -472,11 +483,15 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
              (สูตรบังคับ `confirmed ? (qty_ok ?? qty) : (qty_actual ?? 0)` + งานคู่ RH/LH + ยุบชั้น OP
               อยู่ใน `orderTotal` แล้ว · เขียนเองเมื่อไหร่ = ตัวเลข 2 จอไม่ตรงกันทันที)
           พับเป็นค่าเริ่มต้นในตัว — ยอดรวม + "ตามหลัง N ไลน์" ยังเห็นตลอดแม้พับ จึงไม่กินความสูงจอ */}
-      {/* กางเป็นค่าเริ่มต้นทุกชิป (JIG/DIE/MTN ด้วย — user 2026-09-14 "เลือก mtn, jig, die ก็ยังโชว์")
+      {/* 🔴 12/10 (user ดูจอจริง "แถบสั่งผลิตไปไลน์ไหนก็ยัง งงๆ เห็นกันทุกแผนก") — **ขึ้นเฉพาะจอฝ่ายผลิต**
+          ยอดผลิตเทียบใบสั่งผลิตคือเรื่องของผลิต · จอช่าง/สโตร์มีเรื่องของตัวเองอยู่แล้ว (เครื่องหยุด·PM / ไลน์เรียกของ)
+          ⚠️ เดิม 14/09 กางให้ทุกชิปทีมช่าง — ถอดออกตามหลัก "จอแต่ละส่วนงานแสดงเรื่องของส่วนงานนั้น"
           ยังพับเองได้ และค่าที่พับไว้ชนะเสมอ (localStorage ต่อเครื่อง) */}
-      <ProdProgressStrip workDate={workDate} scopeNames={scopeNames}
-        defaultOpen
-        onOpenLine={(ln) => navigate(`/management?line=${encodeURIComponent(ln)}&view=heijunka`)} />
+      {cards === 'production' && (
+        <ProdProgressStrip workDate={workDate} scopeNames={scopeNames}
+          defaultOpen
+          onOpenLine={(ln) => navigate(`/management?line=${encodeURIComponent(ln)}&view=heijunka`)} />
+      )}
 
       {/* ผังคือพระเอกของจอนี้ (user 2026-08-26 "เน้นแผนผังดีมั้ย") — แต่ **ห้ามแลกกับลิสต์ข้อความ**
           ผังตอบ "อยู่ตรงไหน" · ลิสต์ตอบ "อะไร/นานแค่ไหน" ช่างต้องได้ทั้งคู่จากที่นั่งเดียว
@@ -596,6 +611,9 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
               </div>
             </div>
           )}
+
+          {/* 📋 จอผลิต: งานประจำกะที่ยังไม่ทำ — ต่อจากเครื่องหยุด ก่อนใบซ่อมค้าง (ใบซ่อมเป็นคิวยาวที่ยอมให้ตกจอได้) */}
+          {showRoutine && <ProdRoutineCard data={routine} navigate={navigate} big={big} />}
 
           {/* ⚠️ PM มาก่อนใบซ่อมค้างโดยตั้งใจ (2026-08-26) — คอลัมน์นี้ยาวกว่าจอ TV และไม่มีใครเลื่อน
               → อะไรอยู่ล่างสุด = มองไม่เห็นตลอดกาล · ใบซ่อมค้างเป็น "คิวงาน" ที่มีหน้าของตัวเอง

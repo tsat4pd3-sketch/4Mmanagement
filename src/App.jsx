@@ -1246,6 +1246,9 @@ function NotificationBell({ userId, role }) {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
+  /* ⚠️ 2 ปุ่มนี้ตั้งใจใช้ checkWrite (ไม่นับแถว) — "อ่านแล้ว" เป็นสถานะส่วนตัวที่กู้เองได้
+     (โหลดหน้าใหม่ก็เห็นสถานะจริง) และ markAllRead เป็น `.in()` หลายแถวซึ่งสำเร็จบางส่วนได้
+     ⇒ นับแถวจะได้ toast แดงบนงานที่ไม่สำคัญ/บอกไม่ถูกว่าใบไหนพลาด (กฎเขียน DB ข้อ 2 — ด้านที่ไม่ควรรัด) */
   const markAllRead = async () => {
     const unread = notifs.filter(n => !n.is_read).map(n => n.id);
     if (!unread.length) return;

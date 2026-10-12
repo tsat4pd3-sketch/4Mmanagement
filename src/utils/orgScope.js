@@ -449,6 +449,17 @@ export function scopeUnder(index, defScope, selected) {
     || index.ancestorsOf(u.kind, u.value).some(a => same(a, s))));
 }
 
+/** ชื่อขอบเขตแบบ "เส้นทาง" สำหรับหัวจอ — CC = "เส้นทางหน่วยเจ้าของ › 💰 รหัส · ชื่อ" (12/10 · เดิมหัวบอร์ดขึ้นแค่เลขรหัส) · plant = ป้ายที่ส่งมา */
+export function scopePathText(index, scope, plantLabel = 'ทั้งโรงงาน') {
+  if (!scope || isPlant(scope)) return plantLabel;
+  const path = (sc) => [...(index.pathOf?.(sc.kind, sc.value) || []), sc.value].filter((x, i, a) => x && a.indexOf(x) === i).join(' › ');
+  if (scope.kind === 'cost_center') {
+    const owner = (index.unitsOf?.(scope.kind, scope.value) || []).slice(-1)[0] || null;   // unitsOf = กว้าง→แคบ ⇒ ตัวท้าย = แคบสุด
+    return `${owner ? path(owner) : 'ผังยังไม่ผูกหน่วย'} › 💰 ${index.ccLabel ? index.ccLabel(scope.value) : scope.value}`;
+  }
+  return path(scope);
+}
+
 export function scopeOfDef(d) {
   if (!d) return { ...PLANT };
   if (d.scope_kind && d.scope_kind !== 'plant' && d.scope_value) return { kind: d.scope_kind, value: d.scope_value };
