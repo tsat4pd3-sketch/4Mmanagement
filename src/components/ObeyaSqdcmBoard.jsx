@@ -52,7 +52,7 @@ import { fetchAllPages, fetchByIds } from '../utils/fetchByIds';
 import { inSectionScope, scopedLineNames } from '../utils/sectionScope';
 import useOrgScope from '../utils/useOrgScope';
 import OrgScopePicker from './OrgScopePicker';
-import { PLANT, isPlant, parseScopeKey, drillParams } from '../utils/orgScope';
+import { PLANT, isPlant, parseScopeKey, drillParams, scopePathText } from '../utils/orgScope';
 import useColumnHistory from '../utils/useColumnHistory';
 import { useLiveBoard } from '../utils/useLiveBoard';
 import { LIVE, RATE } from '../utils/refreshRates';
@@ -154,7 +154,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
   const secFilter = isPlant(scope) ? '' : (org.sectionOf(scope.kind, scope.value) || '');
   /* ส่วนงานทั้งหมดที่อยู่ใต้ขอบเขตที่เลือก (ฝ่าย = หลายส่วนงาน) — ใช้กรองใบ Action ที่ระบุแค่ส่วนงาน · null = ทั้งโรงงาน */
   const scopeSecs = useMemo(() => (isPlant(scope) ? null : org.sectionsOf(scope.kind, scope.value)), [scope, org]);
-  const scopeText = isPlant(scope) ? 'ทุกส่วนงาน' : org.labelOf(scope.kind, scope.value);
+  const scopeText = scopePathText(org, scope, 'ทุกส่วนงาน');   // CC = เส้นทางหน่วยเจ้าของ › 💰 รหัส (12/10)
   const [targets, setTargets] = useState({});
   const [ccRates, setCcRates] = useState([]);
   /* daily_production_logs.assigned_line = **id จุดงาน (workstations.id)** ไม่ใช่ชื่อไลน์ (docs/modules/morning-meeting.md)
