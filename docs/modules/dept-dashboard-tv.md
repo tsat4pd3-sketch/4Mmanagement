@@ -78,6 +78,10 @@
 > `/dept-dashboard` · `/factory-map` · `/mtn-repair` · `/pm-forecast` · `/fixture` ได้
 > แต่ **`/machine-database` = false และ `/die-registry` ไม่มีแถว = เข้าไม่ได้**)
 
+> #### 🔁 จอเดียววนหลายหน้า (2026-10-09) → ตั้งที่ `/display-rotation` (📄 `docs/modules/display-rotation.md`)
+> ตัววน (`DisplayRotator`) **ไม่ได้ทำให้หน้าในรอบกลายเป็น kiosk** — บัญชีที่ไม่ใช่ role `display` ยังโดน idle-logout
+> ทุกหน้ายกเว้น `/tv` ⇒ จอวนหน้าควรใช้บัญชี role `display` · ห้ามแก้ด้วยการยัดหน้าเพิ่มใน `KIOSK_PATHS`
+
 > #### 🔴🔴 กฎเหล็ก — `/tv` เป็น **"เปลือก" ของ `<MtnAndonBoard>`** ห้ามกลายเป็นบอร์ดใบที่ 2
 > `dept` คุม **เนื้อของคอลัมน์ขวาเท่านั้น** (prop `cards`) — ผัง · ลิสต์เครื่องหยุด · เสียง · แถบยอดผลิต
 > เป็น**โค้ดชุดเดียวกับบอร์ดที่เคยเป็นแท็บใน `/dept-dashboard`** ทุกบรรทัด
