@@ -23,6 +23,7 @@ import { stdCapacityOf } from './stdManpower.js';
 import { getLineFamily } from './lineHierarchy.js';
 import { orgNodeCompare, naturalCompare } from './listOrder.js';
 import { wavg, wLoad, wRun } from './oee.js';
+import { skillFit, skillMapOf } from './skillFit.js';
 
 /** แถว (row) ของผังที่คนแต่ละตำแหน่งไปอยู่ */
 export const ROW = Object.freeze({
@@ -699,4 +700,30 @@ export function compareOeeByStaffing(days) {
     const diff = (k) => (usual?.[k] != null && low?.[k] != null ? +(low[k] - usual[k]).toFixed(1) : null);
     return { key: a.key, name: a.name, normal, usual, low, diffOee: diff('oee'), diffP: diff('p'), verdict };
   });
+}
+
+/* ── 🎯 คนมาครบ แต่ฝีมือถึงไหม (2026-10-12 · คำสั่ง user "ลุย" ข้อ 3 ของข้อเสนอ) ─────────────────────
+   จากผลของ `layoutPeople()` — คนที่ "มาวันนี้และยืนอยู่ที่จุดนั้นจริง" เทียบทักษะกับที่จุดงานต้องการ (`skillFit()`)
+   - นับเฉพาะ attend = present และไม่ใช่ `away` (วันนี้ไปยืนจุดอื่น → ถูกนับที่จุดที่ไปยืนแทน)
+     คนลา/ขาด/ยังไม่เช็คชื่อ = ไม่ได้ยืนอยู่ ⇒ ไม่นับ (ไม่ใช่ความเสี่ยงฝีมือ)
+   - 🔴 จุดที่ยังไม่ตั้งทักษะที่ต้องการ = นับแยก `noReqPeople` ห้ามนับว่า "ผ่าน"
+   - `temp` (ย้ายมาวันนี้) ติดธงไว้ — คนย้ายมาชั่วคราวคือกลุ่มเสี่ยงที่หัวหน้าต้องเห็นก่อน
+   คืน { gaps: [{ emp, station, shift, temp, fit, missing:[details ที่ไม่ผ่าน] }] (เรียงคะแนนต่ำก่อน),
+         checked, ok, noReqPeople, noReqStations }  */
+export function stationSkillGaps(placed, { skillsByEmp = {}, reqsByStation = {} } = {}) {
+  const gaps = [];
+  let checked = 0, ok = 0, noReqPeople = 0, noReqStations = 0;
+  for (const x of placed || []) {
+    const reqs = reqsByStation[String(x.station.id)] || [];
+    const standing = (x.people || []).filter(p => p.attend === 'present' && !p.away);
+    if (!reqs.length) { noReqStations += 1; noReqPeople += standing.length; continue; }
+    for (const p of standing) {
+      const fit = skillFit(reqs, skillMapOf(skillsByEmp[p.emp.id]));
+      checked += 1;
+      if (fit.score >= 100) { ok += 1; continue; }
+      gaps.push({ emp: p.emp, station: x.station, shift: p.shift, temp: !!p.temp, fit, missing: fit.details.filter(d => !d.pass) });
+    }
+  }
+  gaps.sort((a, b) => a.fit.score - b.fit.score || (b.temp - a.temp) || naturalCompare(a.emp.name || '', b.emp.name || ''));
+  return { gaps, checked, ok, noReqPeople, noReqStations };
 }

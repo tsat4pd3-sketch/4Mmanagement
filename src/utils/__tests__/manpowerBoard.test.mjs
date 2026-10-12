@@ -326,3 +326,21 @@ test('คนมาน้อย ↔ OEE: "ปกติ" = มัธยฐาน�
   assert.equal(r.verdict, 'thin', 'กลุ่มละไม่ถึง 3 กะ = ห้ามสรุป');
   assert.equal(M.compareOeeByStaffing([{ date: 'x', depts: [{ key: 'e', name: 'E', shifts: { day: { gap: null } }, sessions: {} }] }])[0].verdict, 'none');
 });
+
+test('stationSkillGaps: นับเฉพาะคนมาที่ยืนจริง · จุดไม่ตั้งทักษะไม่นับว่าผ่าน · ต่ำสุดก่อน · ย้ายมาชั่วคราวติดธง', () => {
+  const P = (id, attend, extra = {}) => ({ emp: { id, name: id }, attend, shift: 'day', ...extra });
+  const placed = [
+    { station: { id: 1, station_name: 'ST1' }, people: [P('ok', 'present'), P('half', 'present', { temp: true }), P('leave', 'leave'), P('away', 'present', { away: true })] },
+    { station: { id: 2, station_name: 'ST2' }, people: [P('zero', 'present')] },
+    { station: { id: 3, station_name: 'ST3' }, people: [P('x', 'present'), P('y', 'present')] },
+  ];
+  const r = M.stationSkillGaps(placed, {
+    skillsByEmp: { ok: [{ skill_name: 'w', score: 75 }, { skill_name: 'g', score: 50 }], half: [{ skill_name: 'w', score: 75 }] },
+    reqsByStation: { 1: [{ skill_name: 'w', min_score: 50 }, { skill_name: 'g', min_score: 50 }], 2: [{ skill_name: 'w', min_score: 25 }] },
+  });
+  assert.equal(r.checked, 3, 'ลา + ไปยืนจุดอื่น ไม่นับ');
+  assert.equal(r.ok, 1);
+  assert.deepEqual(r.gaps.map(g => [g.emp.id, g.fit.score, g.temp]), [['zero', 0, false], ['half', 50, true]]);
+  assert.deepEqual(r.gaps[1].missing.map(m => m.skill_name), ['g']);
+  assert.equal(r.noReqStations, 1); assert.equal(r.noReqPeople, 2, 'จุดไม่ตั้งทักษะ = ไม่รู้ ห้ามนับว่าผ่าน');
+});

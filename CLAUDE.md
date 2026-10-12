@@ -749,7 +749,7 @@ Reject → status: "rejected" + reject_reason
 11. **🔴 egress คิดเป็น "ไบต์" ไม่ใช่ "จำนวน request" — `select('*')` บนตารางกว้างคือตัวกินจริง** ⇒ **จอรายการเลือกเฉพาะคอลัมน์ที่ใช้ · ใบเต็มดึงตอนเปิดทีละใบ** (`.eq('id', id)`) — มีด่าน · **รูปผังห้ามเป็น PNG** ใช้ `compressLayoutImage()` (`src/utils/layoutImage.js`) **ห้ามลดความละเอียด**
 12. **helper ที่คืนค่าเปล่าห้ามแกะ `{ data }`** (`loadPairMap`/`loadOpInfo`/`loadProductsMaster`/`loadProductionLines` = undefined เงียบ · มีด่าน) · **`catch {}` แล้วโชว์ "ไม่มีข้อมูล" = จอโกหก**
 
-### Skill Fit — `computeFit(employee, station)` / `fitColor(score)` (📄 `docs/modules/file-structure.md`)
+### Skill Fit — ของใหม่ใช้ `skillFit()` (`src/utils/skillFit.js`) ห้ามก๊อปสูตรเพิ่ม (📄 `docs/modules/file-structure.md`)
 
 ## กฎการทำงานของทุก AI session (Workflow Discipline)
 
