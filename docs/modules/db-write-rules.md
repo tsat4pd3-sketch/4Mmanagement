@@ -133,11 +133,18 @@ cachedMaster เห็นเป็น "สำเร็จ ได้ 0 แถว"
 | `select` / `insert` / `update` (DML) ก้อนใหญ่หลาย statement | ✅ ผ่าน |
 | DDL **statement เดียว** (`create policy`, `alter table`) | ✅ ผ่าน |
 | DDL **หลาย statement ในก้อนเดียว** | ❌ ค้างจน timeout 60s |
-| คำสั่งที่ถูกตีว่า "ทำลาย" — **`drop policy` / `drop table` / `delete` ไม่มี where** | ❌ ค้าง (รอ user ยืนยันซึ่งไม่มีทางมาถึง session) |
+| คำสั่งที่ถูกตีว่า "ทำลาย" — **`drop policy` / `drop table` / `drop column` / `delete` ไม่มี where** | ❌ ค้าง (รอ user ยืนยันซึ่งไม่มีทางมาถึง session) |
 
 **ค้าง ≠ ลงไปครึ่งๆ** — ทุกครั้งที่ timeout ก้อนถูก rollback สะอาด (วัดด้วยคิวรีตรวจกลับทั้ง 3 รอบ)
 และ**ไม่ใช่ lock contention** (`pg_stat_activity … wait_event_type='Lock'` = 0) ⇒ **ห้ามสรุปว่าลงแล้ว
 ห้ามสั่งซ้ำมั่ว — timeout แล้วให้คิวรีถามสถานะจริงก่อนทุกครั้ง**
+
+**ยืนยันซ้ำกับ `alter table … drop column` (12/10 · `scrap_report_items.image_path`)** — ลอง 4 ครั้ง
+ค้าง 60 วิแล้ว rollback ทุกครั้ง · พิสูจน์ว่า**ไม่ใช่ statement ช้าและไม่ใช่การรอ lock**: ตั้ง
+`lock_timeout='3s'` + `statement_timeout='10s'` แล้ว**ยังค้าง 60 วิ** (ถ้า statement ทำงานจริงต้องถูกฆ่าที่ 10 วิ)
+· ไม่มี view/rule depend · ไม่มี transaction อื่นค้าง · `add column`/`comment on column` บนตารางเดียวกันผ่านฉลุย
+⇒ 🔴 **เจอกลุ่มนี้อย่าลองซ้ำให้เสียเวลา — วาง SQL ให้ user รันใน SQL Editor พร้อมคิวรีเช็คผลทันที**
+(เคสนี้ user รันแล้วเช็คกลับได้ 0 ภายในนาทีเดียว เร็วกว่าที่ AI session ลองเองไป 4 รอบ)
 
 ⇒ **วิธีเขียน migration ให้ AI session ลงเองได้:** แยกเป็นก้อน DML + DDL ทีละ statement ·
 ส่วนที่ต้อง `drop` **แยกออกมาเป็นบรรทัดเดียวให้ user รัน** พร้อมคิวรีตรวจกลับ
