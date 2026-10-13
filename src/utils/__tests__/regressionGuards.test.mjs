@@ -4071,3 +4071,24 @@ test('🛡️ supabase-dedupe-fetch — ทั้ง supabase และ supabase
       + '   แก้: createClient(url, key, { global: { fetch: dedupeFetch } })\n');
   });
 });
+
+/* ── 🖥️ บัญชีกลางห้ามลบ — ด่านต้องอยู่ "ก่อน" admin bypass (2026-10-13 · คำสั่ง user) ──
+   บัญชีกลาง = จอ TV / บัญชีประจำเครื่อง-กะ (`maintenance` · `toolingmaintenance` · TV-1..13)
+   ใช้ร่วมกันหลายคน ⇒ ลบแถวแล้วสอบกลับไม่ได้ว่าใครกด (audit เขียนได้แค่ชื่อบัญชี)
+   🔴 บัญชี `ADMIN` ในฐานจริงก็เป็นบัญชีกลาง ⇒ ถ้าเช็ค `_sharedAccount` **หลัง** `role === 'admin'`
+      ด่านนี้จะไร้ผลกับบัญชีที่อันตรายที่สุด (ลบได้ทุกตาราง) — เคยพลาดแบบเดียวกันที่ล็อกช่องเซ็น MO
+      ("ล็อกเต็ม manage_master ก็ข้ามไม่ได้")                                                   */
+test('🛡️ shared-account-no-delete — canDelete ต้องเช็คบัญชีกลางก่อน admin bypass', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/utils/permissions.js'), 'utf8'));
+  const fn = code.slice(code.indexOf('export function canDelete'));
+  const body = fn.slice(0, fn.indexOf('\n}'));
+  const iShared = body.indexOf('_sharedAccount');
+  const iAdmin = body.indexOf("role === 'admin'");
+  assert.ok(iShared >= 0,
+    '\n\n❌ canDelete ไม่มีด่านบัญชีกลาง (_sharedAccount) แล้ว\n'
+    + '   ผล: บัญชีกลาง (จอ TV / maintenance / toolingmaintenance) กดลบได้อีก\n'
+    + '        แล้ว audit สอบกลับไม่ได้ว่าใครกด (คำสั่ง user 13/10 "บัญชีกลาง ไม่ควรลบได้")\n');
+  assert.ok(iAdmin < 0 || iShared < iAdmin,
+    '\n\n❌ ด่านบัญชีกลางอยู่หลัง admin bypass — บัญชี ADMIN เองเป็นบัญชีกลาง\n'
+    + '   ⇒ ด่านไร้ผลกับบัญชีที่ลบได้ทุกตาราง · ย้าย `if (_sharedAccount) return false;` ขึ้นบนสุด\n');
+});

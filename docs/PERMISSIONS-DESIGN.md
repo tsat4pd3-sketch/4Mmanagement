@@ -363,3 +363,39 @@ SECURITY DEFINER ไม่มีด่านสิทธิ์ข้างใน
 migration `20261012_mtn_sec_revoke_scan_and_email_oracle_main.sql` (**apply แล้ว 12/10** · MAIN)
 · ใช้ `revoke` ไม่ใช่ `drop function` เพราะ (1) revoke ปิดช่องครบแล้วและย้อน 1 บรรทัด
 (2) `drop` ค้างที่ตัว MCP ทุกครั้ง (timeout 60s) ⇒ SQL เก็บกวาดส่งให้ user รันเอง
+
+
+---
+
+## §13 🖥️ บัญชีกลาง (`account_kind='shared'`) **ห้ามลบอะไรทั้งนั้น** (2026-10-13 · คำสั่ง user)
+
+*"บัญชีกลาง ไม่ควรลบได้นะ"* — มาจาก feedback หน้างานทีม MTN:
+*"สำหรับ Account ส่วนงานอย่างของ MTN ผมมองว่าไม่น่าจะให้สามารถลบ MO ได้ จะได้ไม่กดลบกันมั่ว"*
+
+**ทำไม:** บัญชีกลาง = จอ TV / บัญชีประจำเครื่อง-กะ (`maintenance` · `jigmaintenance` ·
+`toolingmaintenance` · `TV-1..13` · `warehouse1` …) **ใช้ร่วมกันหลายคน** ⇒ ลบแถวแล้ว
+**สอบกลับไม่ได้ว่าใครกด** (audit เขียนได้แค่ชื่อบัญชี) · บัญชีของคน (`person`) สิทธิ์เดิมไม่เปลี่ยน
+
+**ด่าน 2 ชั้น**
+| ชั้น | ที่อยู่ | ครอบอะไร |
+|---|---|---|
+| จอ | `canDelete()` ใน `src/utils/permissions.js` (flag module-level `_sharedAccount` ตั้งจาก `App.jsx` ตอน `fetchProfile`) | ทุกปุ่มลบที่เรียก `canDelete` อยู่แล้ว **ทั้งฝั่ง Main และ DR** |
+| DB | `has_perm()` ของ **Main** — `case when p.account_kind='shared' and perm_key like '%:delete' then false` (migration `20261013_has_perm_shared_no_delete_main.sql`) | ทุก RLS policy ฝั่ง Main |
+
+🔴 **ด่านต้องอยู่ก่อน `role === 'admin'` ทั้ง 2 ชั้น** — บัญชี `ADMIN` ในฐานจริง**เป็นบัญชีกลาง**
+⇒ เช็คหลัง admin = ด่านไร้ผลกับบัญชีที่ลบได้ทุกตาราง (มีด่าน `shared-account-no-delete` ใน regressionGuards)
+
+🔴 **ฝั่ง DR ไม่มี `has_perm`** (วิ่งด้วย `anon` — known gap ของโปรเจค) ⇒ ใบ MO / ตาราง DR
+**พึ่งด่านฝั่งจอเท่านั้น** · ห้ามถอด `canDelete` ออกจากปุ่มลบของหน้าฝั่ง DR
+
+**ซ่อนปุ่มได้ ห้ามซ่อนเหตุผล** (UI §6.9) — จอที่บล็อกต้องเขียน "🔒 บัญชีกลางลบใบไม่ได้" + tooltip
+บอกทางออก (ล็อกอินด้วยบัญชีตัวเอง) · ทำแล้วที่ `/mtn-repair` ใบ MO
+
+**ผลกระทบที่วัดจากฐานจริง 13/10** (บัญชีกลาง 45 บัญชี):
+- `mtn` 3 บัญชี → เสีย `mtn_repair:delete` + `machines:delete` ← **ที่หน้างานขอมา**
+- `manager` 1 · `admin` 1 · `supervisor` 2 → เสียคีย์ลบที่ role นั้นถืออยู่
+- `qa` 14 · `display` 16 · `engineer` · `planner_store` · `engineer_nm` · `warehouse_delivery` 5
+  → **ไม่เสียอะไร** (role ไม่ถือคีย์ลบอยู่แล้ว)
+- ⚠️ **ข้อมูลทะเบียนไม่สะอาด:** บัญชีกลางหลายตัวเป็น "ชื่อคนจริง" (qa 14 ตัว · `ขวัญพร` ·
+  `ชัยยุทธ`) — ถ้าเป็นบัญชีของคน ให้แก้ **ประเภทบัญชี → "บัญชีของคน"** ที่ `/add-user`
+  แล้วสิทธิ์ลบกลับมาเอง (ห้ามแก้ `account_kind` ให้เงียบๆ — มันคือตัวตนของบัญชี)
