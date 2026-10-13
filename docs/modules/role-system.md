@@ -899,3 +899,74 @@ migration `20261012d_rls_round7_attendance_shift_main.sql` (**apply แล้ว
 📌 **รอ user ตัดสิน:** KPI เก่า 4 ตาราง (42/313/11/0 แถว) ควรย้ายเข้า schema `archive` หรือ drop
 
 migration `20261013_rls_round8_people_stations_kpi_legacy_main.sql` (**apply แล้ว 2026-10-13** · ROLLBACK + ลำดับย้อนครบ)
+
+
+## 🪪 แถบ "ตัวตนไม่ตรงกับฐานพนักงาน" — ช่องไหนระบบใช้ฝั่งไหน (2026-10-13)
+
+> user: *"เรื่องนี้เหมือนเคยแก้ไปแล้ว ตอนนี้ทำไมมีพนักงานหลายคนโชว์ขึ้นมา"*
+
+**ทำไมเลขกระโดด:** 08/10 ขยายการเทียบจาก **2 ช่อง (ทีม+ไลน์)** เป็น **5 ช่อง** (เพิ่ม ส่วนงาน · ตำแหน่ง ·
+หน่วยในผัง) ⇒ ของที่เพี้ยนเงียบมาตลอดโผล่ขึ้นมาพร้อมกัน **ไม่ใช่ของใหม่ ไม่ใช่อาการย้อนกลับ**
+วัดจริง 13/10 (บัญชีที่ผูกพนักงานแล้ว 43 ใบ): ทีม 1 · ไลน์ 2 · ส่วนงาน 6 · ตำแหน่ง 6 · หน่วยในผัง 5
+⇒ กติกาเดิมโชว์ **3 ใบ** · กติกาใหม่โชว์ **17 ใบ**
+
+### 🔴 แต่ "ฐานพนักงานชนะ" ไม่จริงทุกช่อง — ตรวจของจริงใน `src/App.jsx` ตอน login
+
+| ช่อง | ระบบใช้ฝั่งไหน | ที่มา |
+|---|---|---|
+| `team` · `line_id` · `section` | **ฐานพนักงาน** (`emp.<f> ?? profile.<f>`) | App.jsx ~2310 |
+| `position` | **บัญชี (`profiles`) ล้วน** — ค่าฝั่งพนักงานไม่ถูกใช้เลย | `setUserPosition(data?.position)` |
+| `org_node_id` | **ไม่มีตัวชนะ** คนละจออ่านคนละตาราง (`profiles` 72 แถว · `employees` 308) | `orgNodeRefs.js` |
+
+⇒ ปุ่ม **"ใช้ค่าจากฐานพนักงาน"** เขียนครบทุกช่องใน `IDENTITY_FIELDS` ⇒ บนช่อง `position`
+มัน**เปลี่ยนระดับสิทธิ์จริง** (`positionRank()` = ด่านช่องเซ็นขั้น 6/7/8 + คิว "รอคุณอนุมัติ MO")
+ไม่ใช่ "ล้างค่าขยะ" อย่างที่แถบเคยเขียน
+
+**แก้แล้ว (13/10):**
+- `IDENTITY_FIELDS` ทุกช่องต้องประกาศ **`uses`** (`USES_EMP` / `USES_ACCT` / `USES_SPLIT`) — มีเทส
+  ช่องที่ไม่ใช่ `USES_EMP` ต้องมี `note` อธิบายว่าทับแล้วเกิดอะไร (มีเทส)
+- `identityDiff()` / `identityFallbacks()` พก `uses` + `note` ไปให้จอ ⇒ บรรทัดบนแถบระบายเขียว
+  **ฝั่งที่ระบบใช้จริง** (ไม่ใช่ฝั่งพนักงานเสมอ) + ติด ⚠️ หน้าชื่อช่อง
+- `changesBehaviour(diff)` คัดช่องที่ทับแล้วของจริงเปลี่ยน ⇒ ปุ่มติด ⚠️ และ **ถามยืนยันก่อน**
+  (แถวที่ต่างแค่ ทีม/ไลน์/ส่วนงาน ยังกดรวดเดียวเหมือนเดิม ไม่ถาม)
+- 🔴 **ห้ามเขียนคำอธิบายเหมาทุกช่องอีก** — ถ้าวันหน้า App.jsx merge `position` ด้วย ค่อยเปลี่ยน `uses`
+  ที่ `identitySync.js` ที่เดียว แล้วจอจะตามเอง
+
+**งานค้าง (ยังไม่ทำ · ต้องให้ user เคาะ):** จะให้ `position` / `org_node_id` มี single source แบบ
+ทีม/ไลน์/ส่วนงาน ไหม — ถ้าเอา ต้องแก้ `App.jsx` ให้ merge แล้วไล่เช็คทุกจอที่อ่าน `profiles.org_node_id`
+---
+## 🔒 RLS รอบ 9 — OT · งานนอกไลน์ · ประวัติย้ายจุดงาน · ทะเบียนเล็ก (2026-10-13)
+
+| ตาราง | แถว | predicate | ปุ่มเจ้าของ |
+|---|---|---|---|
+| `ot_night_bookings` | 3,561 | `checkin:record` | Checkin.jsx (จอง OT กะดึก) |
+| `line_helpers` | 41 | `checkin:record` | Checkin.jsx (ยืมคนช่วยไลน์) |
+| `operator_special_tasks` | 628 | `management:assign_special_task` | Management.jsx |
+| `station_assignment_logs` | 9,158 | `management:assign_manpower` | Management.jsx:620 (insert เท่านั้น) |
+| `special_task_types` · `leave_types` | 5 / 4 | `ot_master:manage` | Report.jsx `<SimpleNameMaster>` |
+
+· 🔴 **4 ใน 6 ตัวมีแต่ policy `FOR ALL`** ⇒ สร้าง policy อ่านก่อนแล้วค่อยรัด —
+  **รอบ 7 (`shift_schedules`) · รอบ 8 (`workstations` ฯลฯ) · รอบ 9 เจอแบบเดียวกันทุกรอบ
+  ⇒ ถือเป็นรูปแบบประจำของตารางยุคแรก ไม่ใช่เหตุบังเอิญ** เช็คก่อนรัดทุกครั้ง
+· `station_assignment_logs` = ประวัติ มีแต่ `insert` จากจอ ⇒ รัดด้วยคีย์ของคนที่ทำให้เกิดแถว
+
+### 🔎 กับดักการ grep ที่เจอรอบนี้ — แผง CRUD กลางรับ "ชื่อตาราง" เป็น prop
+
+`special_task_types` / `leave_types` ไม่มี `from('<table>').insert` ให้ grep เจอเลย เพราะเขียนผ่าน
+`<SimpleNameMaster table="leave_types">` ⇒ **grep หาแต่ `from('x')` จะสรุปว่า "ไม่มีใครเขียน" แล้วรัดผิด**
+⇒ เติมรูปแบบ `table={'x'}` เข้าด่าน `rls-tightened-tables-need-key` แล้ว (ตรวจย้อนแล้ว: วางไฟล์ที่ใช้แผงนี้
+โดยไม่มีคีย์ = เทสแดงทันที) · **ตารางใหม่ที่รัด ต้องเติมใน `RLS_KEYED_TABLES` ทุกครั้ง**
+
+### ผลตรวจกลับ (simulated JWT · rollback ทั้งก้อน)
+
+| role | ผล |
+|---|---|
+| `engineer` (ไม่ถือคีย์ไหนเลย) | อ่าน OT 3,561 · ประวัติย้ายจุด 9,158 · คนช่วยไลน์ 41 · ประเภทลา 4 แถว — **เขียน 0 ทั้ง 6 ตาราง** |
+| `leader` | OT 1 · คนช่วย 1 · งานพิเศษ 1 · **ประวัติย้ายจุด 0** (ไม่ถือ `assign_manpower`) · **ทะเบียนลา 0** (ไม่ถือ `ot_master`) |
+| `manager` | ประวัติ 1 · ทะเบียนลา 1 · ทะเบียนงานพิเศษ 1 |
+
+migration `20261013b_rls_round9_ot_specialtask_logs_main.sql` (**apply แล้ว 2026-10-13** · ROLLBACK ครบ)
+
+**เหลือชั้น ข. อีก 23 ตาราง** — ใช้งานจริง 14 · ว่าง 0 แถว 9 (`cqi15_*` 3 · `ppe_checks`/`ppe_requirements` ·
+`production_shots` · `qa_customer_claims` · `attendances` · `profile_org_access` — 2 ตัวท้ายเป็นตารางตาย เสนอลบ)
+· 🔵 `four_m_logs` / `profiles` **policy เปิดโดยเจตนา — ด่านจริงคือ trigger** (รอบ 5-6) ไม่ต้องรัด policy

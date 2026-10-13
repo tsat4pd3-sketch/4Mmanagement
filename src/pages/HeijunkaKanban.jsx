@@ -16,6 +16,7 @@ import { MAT_CLASSES, matColor, matMatches } from '../utils/matPrefix';
 import ProdProgressStrip from '../components/ProdProgressStrip';
 import StoreTimeChart from '../components/StoreTimeChart';
 import PurchaseBulkModal from '../components/PurchaseBulkModal';
+import PlatingBoard from '../components/PlatingBoard';
 import DeliverScanModal from '../components/DeliverScanModal';
 import PickScanModal from '../components/PickScanModal';
 import { DELIVER_GATES, PICK_GATES } from '../utils/replenishGate';
@@ -62,6 +63,8 @@ const VIEW_META = {
   timeline: { label: '📊 Heijunka Board',   act: false, purpose: 'กริดรอบส่ง 24 ชม. — ดูว่ารอบไหนส่งอะไรบ้าง (มีเฉพาะไลน์ที่ใช้รอบ)' },
   pull:     { label: '🔄 Pull / ใบสั่งผลิต', act: true,  purpose: 'ระบบดึง: demand สะสมครบล็อตแล้วออกใบสั่งผลิต + ใบเบิกวัตถุดิบ' },
   demand:   { label: '📋 ความต้องการวันนี้', act: false, purpose: 'ต้องใช้พาร์ทอะไร กี่ชิ้น กี่ใบคัมบัง — สลับดูแบบการ์ดหรือตารางได้' },
+  // 🧪 งานชุบภายนอก (2026-10-13) — ส่งก่อนชุบออก → ค้างร้าน → รับหลังชุบคืน → ส่งเข้า W/H เป็น 1xx · กฎ utils/plating.js
+  plating:  { label: '🧪 งานชุบ',           act: true,  purpose: 'ส่งงานก่อนชุบออกไปร้าน · ดูยอดค้างร้าน · รับงานหลังชุบคืน · ส่งเข้า W/H (แปลงเป็น 1xx ตาม BOM) · ตั้งเส้นทางชุบเอง' },
 };
 
 /* ─── HEIJUNKA KANBAN — Subcomponent Part Demand ──────────────────────────
@@ -2730,6 +2733,8 @@ export default function HeijunkaKanban() {
             rounds={rounds} deliveries={deliveries} view={view} kanbanStd={kanbanStd} fmt={fmt} lineMap={lineMap}
             workDate={workDate} breakPolicies={breakPolicies} nowMs={nowMs}
           />
+        ) : viewMode === 'plating' ? (
+          <PlatingBoard />
         ) : viewMode === 'pull' ? (
           <PullBoard
             lotRequests={lotRequests} rawRequests={rawRequests} accumulator={accumulator}

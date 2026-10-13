@@ -27,7 +27,7 @@ import { DeleteButton } from '../components/IconButton';
    (เคส 12/10: ลบข้อ common 2 ข้อ = หายจากใบตรวจทุกไลน์ · ดู src/utils/lpaQuestionRefs.js) */
 import { loadLpaQuestionRefs, lpaQuestionBlockMessage, lpaDeleteConfirmText, savedOnlyAnswers } from '../utils/lpaQuestionRefs';
 /* 🔴 ช่องว่างในตารางตรวจรายวันต้องแยกได้ว่า "ไม่ได้ตรวจ / ไม่ได้ผลิต / ไม่มีแผนตรวจ" (13/10 · คำสั่ง user) */
-import { checkDayState, CHECK_DAY, CHECK_DAY_META, summarizeCheckDays, checkDaysNote } from '../utils/dailyCheckDay';
+import { checkDayState, CHECK_DAY_META, CHECK_DAY_LEGEND, summarizeCheckDays, checkDaysNote } from '../utils/dailyCheckDay';
 import { loadRunDays, ranOn } from '../utils/runDays';
 
 /* ══════════════════════════════════════════════════════════════
@@ -1206,6 +1206,31 @@ ${issuesHtml}
               </div>
               <button onClick={printReport} disabled={printing} style={btnBlue}>{printing ? '...' : `🖨️ พิมพ์รายงาน ${lpaFormCode}`}</button>
             </div>
+            {/* 🔴 คำอธิบายสัญลักษณ์ 2 ชุด แยกให้เห็นว่าเป็นคนละชั้นข้อมูล (คำสั่ง user 13/10)
+                — "คำตอบ" = ไปตรวจแล้วเจออะไร · "สถานะวัน" = วันนั้นต้องตรวจไหม/มีใครไปตรวจไหม */}
+            <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center', fontSize: 11.5, color: 'var(--muted)', marginBottom: 8 }}>
+              <span>
+                <b style={{ color: 'var(--text2)' }}>คำตอบในช่อง:</b>{' '}
+                {ANSWERS.map(a => (
+                  <span key={a.key} style={{ marginRight: 8 }}>
+                    <b style={{ color: a.color }}>{a.label}</b> {a.desc.replace(/\s*\(.*\)$/, '')}
+                  </span>
+                ))}
+              </span>
+              <span style={{ borderLeft: '1px solid var(--border)', paddingLeft: 14 }}>
+                <b style={{ color: 'var(--text2)' }}>สถานะวัน (แถวบนสุด):</b>{' '}
+                {CHECK_DAY_LEGEND.map(k => {
+                  const m = CHECK_DAY_META[k];
+                  return (
+                    <span key={k} style={{ marginRight: 8 }}>
+                      <span style={{ display: 'inline-block', padding: '0 3px', borderRadius: 4, border: `1px solid ${m.color}`, background: m.tint || undefined, color: m.color, fontWeight: 700 }}>{m.mark}</span>{' '}
+                      {m.label}
+                    </span>
+                  );
+                })}
+                · <span style={{ display: 'inline-block', width: 11, height: 11, background: 'rgba(46,125,50,0.25)', border: '1px solid var(--border)', verticalAlign: -1 }} /> วันหยุดโรงงาน
+              </span>
+            </div>
             <div style={{ overflowX: 'auto' }}>
               <table style={{ borderCollapse: 'collapse', minWidth: 1100 }}>
                 <thead>
@@ -1218,8 +1243,11 @@ ${issuesHtml}
                     <th style={{ ...cellStyle, background: 'rgba(245,158,11,0.15)' }}>Q</th>
                   </tr>
                   {/* 🔴 แถว "สถานะวัน" — ตอบให้ได้ว่าช่องว่างข้างล่างแปลว่าอะไร
-                      (✗ ต้องตรวจแต่ไม่ได้ตรวจ · – ไม่ได้ผลิต · ? ไม่รู้ว่าผลิตไหม · ว่าง = ไม่ต้องตรวจ/ตรวจแล้ว)
-                      วางไว้ชั้นเดียวแถวบน ไม่ทาสีทุกช่องคำถาม — ขาดตรวจ 1 วันคือ "วันนั้น" ไม่ใช่ความผิดของทุกข้อ */}
+                      (ขาด = ต้องตรวจแต่ไม่ได้ตรวจ · NP = ไม่ได้เปิดกะ/ไม่ได้ผลิต · ? = ไม่รู้ว่าผลิตไหม
+                       · · = ไม่มีแผนตรวจวันนั้น · ว่าง = ตรวจแล้ว ให้ดูคำตอบข้างล่าง)
+                      🔴 ห้ามใช้ ✗ / – / N/A — ชนพจนานุกรมคำตอบ (ดูกฎข้อ 4 ใน utils/dailyCheckDay.js)
+                      กันอ่านสลับ 3 ชั้น: คำย่อไม่ซ้ำคำตอบ + ใส่กรอบ chip (คำตอบไม่มีกรอบ)
+                      + ทา `tint` ทั้งคอลัมน์ (คำตอบไม่เคยทาทั้งคอลัมน์) */}
                   <tr style={{ fontSize: 11 }}>
                     <th style={{ ...cellStyle, minWidth: 40 }} />
                     <th style={{ ...cellStyle, textAlign: 'left', position: 'sticky', left: 0, background: 'var(--card)', zIndex: 2, fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}>
@@ -1230,9 +1258,12 @@ ${issuesHtml}
                       const meta = CHECK_DAY_META[st];
                       return (
                         <th key={d} title={meta.label}
-                          style={{ ...cellStyle, fontSize: 11, fontWeight: 800, color: meta.color,
-                            background: st === CHECK_DAY.missed ? 'rgba(239,68,68,0.12)' : undefined }}>
-                          {meta.mark}
+                          style={{ ...cellStyle, fontSize: 11, fontWeight: 700, color: meta.color,
+                            padding: '3px 1px', background: meta.tint || undefined }}>
+                          {meta.mark && (
+                            <span style={{ display: 'inline-block', padding: '0 3px', borderRadius: 4,
+                              border: `1px solid ${meta.color}`, lineHeight: '14px', fontSize: 11 }}>{meta.mark}</span>
+                          )}
                         </th>
                       );
                     })}
@@ -1250,9 +1281,9 @@ ${issuesHtml}
                         <tr key={q.id}>
                           <td style={cellStyle}>{q.seq}</td>
                           <td style={{ ...cellStyle, textAlign: 'left', fontSize: 12, color: cat.key === 'special' ? '#f87171' : 'var(--text2)', position: 'sticky', left: 0, background: 'var(--card)', zIndex: 1 }}>{q.question}</td>
-                          {daysArr.map(d => isHoliday(dateOf(selMonth, d))
+                          {daysArr.map((d, di) => isHoliday(dateOf(selMonth, d))
                             ? <td key={d} style={{ ...cellStyle, background: 'rgba(46,125,50,0.25)' }}></td>
-                            : ansTd(leaderAud[d], q.id, {}, d))}
+                            : ansTd(leaderAud[d], q.id, { background: CHECK_DAY_META[dayStates[di]].tint || undefined }, d))}
                           {svAud.map((a, i) => ansTd(a, q.id, { background: 'rgba(34,197,94,0.1)' }, 'w' + i))}
                           {ansTd(mgrAud, q.id, { background: 'rgba(148,163,184,0.1)' })}
                           {ansTd(gmAud, q.id, { background: 'rgba(245,158,11,0.1)' })}
