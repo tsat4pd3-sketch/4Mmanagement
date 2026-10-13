@@ -158,6 +158,30 @@ const RULES = [
     allow: {},   // ตัวอย่างใน masterCache.js อยู่ในคอมเมนต์ — ตัวสแกนตัดคอมเมนต์ก่อนตรวจอยู่แล้ว
   },
   {
+    id: 'shift-sched-no-raw-byline',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* จับการอ่าน `maps.byLine[...]` ตรงๆ นอก `utils/shiftAssign.js` */
+    re: /\.byLine\s*\[/g,
+    why: 'ตารางกะเก็บแถว "ต่อไลน์" แต่ **ไลน์ลูกตกทอดกะจากไลน์แม่** (จอตั้งค่า `ShiftOrganize.effTeam` ทำแบบนี้มาตลอด) '
+       + '⇒ อ่าน `byLine[line_id]` ตรงตัว = ไลน์ลูกที่ยังไม่มีแถวของตัวเองได้ `null` ทั้งที่จอบอกว่าตั้งกะแล้ว '
+       + '· เกิดจริง 13/10 (PD2): `Line D2 - LWR BAR` + `Line D3 - STAMPED` สร้าง 09/10 หลังตารางถูกเติมล่วงหน้า '
+       + 'ถึง 03/01/2027 ⇒ ไม่มีแถวเลยสักแถว ⇒ **พนักงาน 18 คนไม่มีกะ** หายจากใบเช็คชื่อ/กำลังคนไลน์เป็น 0',
+    fix: 'ใช้ `lineScheduleTeam(lineId, maps)` (ถามเป็นไลน์) หรือ `scheduleTeamFor(emp, maps)` (ถามเป็นคน) '
+       + 'จาก `src/utils/shiftAssign.js` — 2 ตัวนี้ไล่ขึ้นไลน์แม่ให้แล้ว',
+    allow: { 'src/utils/shiftAssign.js': true },
+  },
+  {
+    id: 'shift-sched-maps-needs-lines',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* `buildScheduleMaps(rows)` ที่ไม่ส่ง lines = ไม่มีสายไลน์แม่ให้ไล่ (เงียบ ไม่มี error) */
+    re: /buildScheduleMaps\([^,)]*\)/g,
+    why: 'ไม่ส่ง `lines` = `parentOf` ว่าง ⇒ การตกทอดจากไลน์แม่ไม่ทำงาน ⇒ กลับไปเป็นบั๊กเดิมแบบเงียบๆ '
+       + '(ไลน์ลูกที่ไม่มีแถวของตัวเอง = คนไม่มีกะ) · อาการเหมือนตารางกะยังไม่ได้ตั้ง ทั้งที่ตั้งแล้ว',
+    fix: 'ส่งทะเบียนไลน์เข้าไปด้วยเสมอ: `buildScheduleMaps(scheduleRows, lines)` '
+       + '(ต้องมี `id` · `name` · `parent_line_name` — `LINE_COLUMNS` มีครบอยู่แล้ว)',
+    allow: { 'src/utils/__tests__/shiftAssign.test.mjs': true },   // เทสจงใจเรียกแบบไม่ส่ง lines เพื่อยืนยันพฤติกรรมเดิม
+  },
+  {
     id: 'registry-loader-no-silent-catch',
     scan: ['src/utils'], ext: ['.js'],
     /* จับ `loadXxx()…​.catch(() => {})` ใน **ของกลาง** (src/utils) — กลืนแล้วคืนลิสต์ว่างเงียบๆ */
