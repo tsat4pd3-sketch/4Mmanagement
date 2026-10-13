@@ -3818,3 +3818,68 @@ test('🛡️ Monitoring: IN จาก ledger รับเข้า (inAtRef) �
     '\n\n❌ ช่อง ORDER บอร์ดรายแร็คไม่ซิงค์ customer_shipping_orders — คนพิมพ์ยอดแล้วไม่ขึ้น Shipping Time Chart ต้องไปเพิ่มมือซ้ำ\n');
   assert.ok(/horizon:\s*\d/.test(code), '\n\n❌ บอร์ดรายวันส่งต้องส่ง horizon ให้ boardPeriods — ไม่งั้นไม่มีคอลัมน์วันนี้ให้พิมพ์\n');
 });
+
+/* ── 🔑 rls-tightened-tables-need-key (13/10 · รอบ 8) ───────────────────────────
+   RLS ฝั่ง DB รัดตารางกลุ่มนี้ด้วย has_perm('<คีย์เดียวกับปุ่มบนจอ>') แล้ว
+   ⇒ ไฟล์ไหนก็ตามที่ **เขียน** ตารางพวกนี้ ต้องอ้างคีย์นั้นในไฟล์เดียวกันด้วย
+     (เรียก can(...) / ส่ง prop canXxx / เช็คก่อนเรียก)
+
+   ทำไมถึงต้องมีด่าน: เจอของจริงใน Management.jsx — ปุ่ม "📌 บันทึกตำแหน่งประจำ" กับ "↩ Pool"
+   ไม่มี can() กันเลย (มีแต่ `canDrag` ที่ประกาศอยู่ในฟังก์ชันวาดการ์ด จึงไม่ครอบปุ่มใน modal)
+   พอฝั่ง DB รัด → ปุ่มยังโชว์ กดแล้วเด้ง error จาก Postgres = ผู้ใช้เจอปุ่มตายโดยไม่รู้สาเหตุ
+   นี่คือกลับด้านของกฎ db-write-rules ข้อ 3 ("จอที่คุมสิทธิ์เองก็ต้องเช็คสิทธิ์ผู้ดู")
+
+   ด่านนี้ดูแค่ "คีย์ถูกอ้างในไฟล์ไหม" ไม่ได้พิสูจน์ว่ากันถูกจุด — ตั้งใจให้หยาบไว้ก่อน
+   จะได้ไม่ false positive · ตารางที่รัดเพิ่มในรอบถัดไป ให้เติมในตารางนี้ */
+const RLS_KEYED_TABLES = {
+  employee_home_positions: ['management:assign_manpower', 'assign_manpower'],
+  workstations:            ['line_setup:edit', 'line_setup'],
+  station_requirements:    ['line_setup:edit', 'line_setup', 'skills:delete', 'skills'],
+  shift_schedules:         ['shift_schedule:edit', 'shift_schedule'],
+  daily_production_logs:   ['checkin:record', 'checkin', 'management:assign_manpower', 'assign_manpower'],
+};
+
+test('🛡️ rls-tightened-tables-need-key — ไฟล์ที่เขียนตารางที่ถูกรัด RLS ต้องอ้างคีย์สิทธิ์ของมันด้วย', () => {
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const code = stripComments(readFileSync(file, 'utf8'));
+    for (const [table, keys] of Object.entries(RLS_KEYED_TABLES)) {
+      const writeRe = new RegExp(
+        `from\\(\\s*['"\`]${table}['"\`]\\s*\\)[\\s\\S]{0,300}?\\.(insert|update|upsert|delete)\\s*\\(`, 'g');
+      if (!writeRe.test(code)) continue;
+      if (keys.some(k => code.includes(k))) continue;
+      bad.push(`${relative(ROOT, file)} → เขียน ${table} แต่ไม่พบคีย์ ${keys.slice(0, 2).join(' / ')}`);
+    }
+  }
+  assert.deepEqual(bad, [],
+    '\n\n❌ มีไฟล์เขียนตารางที่ RLS รัดด้วย has_perm แล้ว โดยไม่เช็คสิทธิ์ฝั่งจอ:\n   '
+    + bad.join('\n   ')
+    + '\n\n   ผลที่เกิด: ปุ่มยังโชว์ให้คนที่ไม่มีสิทธิ์ กดแล้วได้ error ดิบจาก Postgres (หรือ "สำเร็จ 0 แถว"\n'
+    + '   แบบเงียบ ถ้าเป็น UPDATE/DELETE — ดู db-write-rules ข้อ 2)\n'
+    + '   แก้: ประกาศ const canXxx = can(\'<resource>\', \'<action>\', role) ที่ระดับคอมโพเนนต์\n'
+    + '   แล้ว (ก) ซ่อนปุ่มเมื่อไม่มีสิทธิ์ และ (ข) เช็คซ้ำในฟังก์ชันที่เขียน DB (ซ่อนปุ่มอย่างเดียวไม่พอ)\n'
+    + '   ตารางคีย์อยู่ที่ RLS_KEYED_TABLES ในไฟล์นี้ · migration 20261013_rls_round8_*.sql\n');
+});
+
+/* ── 🔑 manpower-actions-need-perm (13/10 · บั๊กจริงที่ด่านข้างบนจับไม่ได้) ──────
+   ด่าน `rls-tightened-tables-need-key` ดูแค่ "ไฟล์นี้อ้างคีย์ไหม" ⇒ **จับเคสนี้ไม่ได้**
+   เพราะ Management.jsx มี can('management','assign_manpower') อยู่แล้ว — แต่ไปอยู่ใน
+   `canDrag` ที่ประกาศ *ข้างใน* ฟังก์ชันวาดการ์ดพนักงาน จึงไม่ครอบปุ่มใน modal จุดงาน
+   ⇒ ใครเปิด modal ได้ก็กด "📌 บันทึกตำแหน่งประจำ" / "↩ Pool" ได้ทั้งที่ไม่มีสิทธิ์
+   บทเรียน: **"ไฟล์มีคีย์" ≠ "ทางเข้านั้นถูกกัน"** — ด่านหยาบต้องมีด่านเจาะจงคู่เสมอ */
+test('🛡️ manpower-actions-need-perm — ฟังก์ชันที่เขียนกำลังคนต้องเช็ค canAssignManpower ในตัวเอง', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/Management.jsx'), 'utf8'));
+  assert.ok(/const\s+canAssignManpower\s*=\s*can\(\s*'management'\s*,\s*'assign_manpower'/.test(code),
+    '\n\n❌ Management.jsx ไม่มี `canAssignManpower` ระดับคอมโพเนนต์แล้ว\n'
+    + '   ตัวแปรสิทธิ์ที่ประกาศอยู่ในฟังก์ชันย่อย (เช่น canDrag) ครอบปุ่มใน modal ไม่ถึง\n');
+  // ด่านสิทธิ์ต้องเป็น guard clause ช่วงต้นฟังก์ชัน ⇒ ดู 600 ตัวอักษรแรกหลังบรรทัดประกาศก็พอ
+  // (ตัดจบฟังก์ชันด้วย regex เปราะเกินไป — ฟังก์ชันพวกนี้ยาวและมี `};` ซ้อนข้างใน)
+  for (const fn of ['assignWorker', 'saveHomePosition']) {
+    const at = code.indexOf(`const ${fn} = async`);
+    assert.ok(at >= 0, `\n\n❌ หาฟังก์ชัน ${fn} ใน Management.jsx ไม่เจอ (เปลี่ยนชื่อ/ย้ายไฟล์? อัพเดทด่านนี้ด้วย)\n`);
+    assert.ok(code.slice(at, at + 600).includes('canAssignManpower'),
+      `\n\n❌ ${fn}() เขียน DB โดยไม่เช็ค canAssignManpower ในตัวฟังก์ชันเอง\n`
+      + '   ซ่อนปุ่มอย่างเดียวไม่พอ — RLS ฝั่ง DB รัด daily_production_logs / employee_home_positions\n'
+      + '   ด้วย management:assign_manpower แล้ว ถ้าไม่กันที่นี่ ผู้ใช้จะเจอ error ดิบจาก Postgres\n');
+  }
+});
