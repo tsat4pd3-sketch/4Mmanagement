@@ -47,6 +47,7 @@ import { resolveMachine, normCode } from '../utils/qrCode';
 import { pickUnusedColor } from '../utils/colorPick';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
+import CollapseCard from '../components/CollapseCard';
 import FilterBar from '../components/FilterBar';
 import SearchInput from '../components/SearchInput';
 import { ALL } from '../utils/filterLabels';
@@ -8291,13 +8292,17 @@ function DowntimeTypeSetup({ role }) {
         const upItems = pgItems.filter(i => i.category === 'unplanned');
         const plItems = pgItems.filter(i => i.category === 'planned');
         return (
-          <div key={pg.key} style={{ marginBottom: 24, border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
-            <div style={{ padding: '10px 16px', background: 'var(--bg2)', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{ width: 10, height: 10, borderRadius: '50%', background: pg.color }} />
-              <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{pg.label}</span>
-              <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 'auto' }}>{pgItems.length} รายการ</span>
-            </div>
-            <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          /* 📏 พับตามกระบวนการ (2026-10-13 · ด่าน lengthsweep) — ฐานจริง 13/10 มี **86 ประเภท**
+             กางหมดพร้อมกัน = แท็บตั้งค่ายาว ~5,000px (วัดบน mock ได้ 13,727px = 12.7 เท่าของจอ)
+             · หัวกลุ่มยังโชว์จุดสี + ชื่อกระบวนการ + จำนวนรายการเหมือนเดิม **พับก็ยังเห็นจำนวน**
+             · พับเป็น default: คนเข้ามาแก้ประเภทของกระบวนการเดียว ไม่ได้มาอ่าน 86 แถว */
+          <CollapseCard key={pg.key} id={`dt_${pg.key}`} storePrefix="dr" defaultOpen={false}
+            count={pgItems.length} style={{ marginBottom: 12 }}
+            title={<span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ width: 10, height: 10, borderRadius: '50%', background: pg.color, display: 'inline-block' }} />
+              {pg.label}
+            </span>}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {upItems.length > 0 && (
                 <div>
                   <div style={{ fontSize: 11, fontWeight: 700, color: '#ef4444', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.5px' }}>⚠ นอกแผน ({upItems.length})</div>
@@ -8311,7 +8316,7 @@ function DowntimeTypeSetup({ role }) {
                 </div>
               )}
             </div>
-          </div>
+          </CollapseCard>
         );
       })}
 
