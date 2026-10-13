@@ -823,13 +823,13 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '14px 2px 10px', borderBottom: '1px solid var(--border)', marginBottom: 8, flexShrink: 0 }}>
               <span style={{ fontSize: 17, flexShrink: 0 }}>{panelMeta.icon}</span>
               <span style={{ fontSize: 13.5, fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text)', flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{panelMeta.title}</span>
-              <button onClick={onTogglePin} title={pinned ? 'เลิกปักหมุด — แผงจะปิดเองหลังเลือกเมนู' : 'ปักหมุดแผงค้างไว้ (เนื้อหาหลักจะแคบลง)'} style={{
+              {onTogglePin && <button onClick={onTogglePin} title={pinned ? 'เลิกปักหมุด — แผงจะปิดเองหลังเลือกเมนู' : 'ปักหมุดแผงค้างไว้ (เนื้อหาหลักจะแคบลง)'} style={{
                 width: 26, height: 26, borderRadius: 6, flexShrink: 0, cursor: 'pointer', outline: 'none',
                 border: `1px solid ${pinned ? 'var(--accent)' : 'var(--border2)'}`,
                 background: pinned ? 'var(--accent-dim)' : 'transparent',
                 color: pinned ? 'var(--accent)' : 'var(--muted)', fontSize: 12,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}>📌</button>
+              }}>📌</button>}
               {!pinned && (
                 <button onClick={() => setPanel(null)} title="ปิดแผง (Esc)" style={{
                   width: 26, height: 26, borderRadius: 6, flexShrink: 0, cursor: 'pointer', outline: 'none',
@@ -1702,8 +1702,12 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
   const isMobile = useIsMobile();
   const isTV     = !useIsMobile(1919);   // จอ ≥1920 (TV) — reactive แทน innerWidth ครั้งเดียว
   const [isOpen, setIsOpen] = useState(() => typeof window !== 'undefined' && window.innerWidth > 768);
+  /* 📺 เมนูบนจอ /tv (13/10 · feedback user "เข้ามาแล้วกลับออกไปหน้าอื่นไม่ได้") — state แยกจาก `isOpen`
+     ⇒ เปิดจอ TV มาต้องปิดเสมอ (ไม่รับค่าค้างจากหน้าก่อน) · ปิดเองเมื่อเปลี่ยนหน้า */
+  const [tvNavOpen, setTvNavOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
+  useEffect(() => { setTvNavOpen(false); }, [location.pathname]);
   const userId = session?.user?.id ?? null;
 
   useEffect(() => {
@@ -1846,8 +1850,32 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
     return (
       <UserContext.Provider value={userCtx}>
         <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', color: 'var(--muted)', fontSize: 14, background: 'var(--bg)' }}>กำลังโหลด...</div>}>
-          <TvBoard />
+          {/* บัญชีจอแขวน (role display) = ไม่มีคนกด ⇒ ไม่มีปุ่มเมนู (คงหน้าโล่งตามเดิม) */}
+          <TvBoard onOpenMenu={role === 'display' ? null : () => setTvNavOpen(true)} />
         </Suspense>
+        {role !== 'display' && (
+          <Sidebar
+            isOpen={tvNavOpen}
+            onClose={() => setTvNavOpen(false)}
+            onLogout={handleLogout}
+            theme={theme}
+            onToggleTheme={onToggleTheme}
+            userRole={role}
+            userLineId={userLineId}
+            userPosition={userPosition}
+            userEmail={userEmail}
+            userFullName={userFullName}
+            userSignatureUrl={userSignatureUrl}
+            userAvatarUrl={userAvatarUrl}
+            remoteCode={remoteCode}
+            onToggleRemote={onToggleRemote}
+            onOpenPalette={() => setPaletteOpen(true)}
+            pinned={false}
+            realRole={realRole}
+            onOpenViewAs={realRole === 'admin' ? () => setViewAsOpen(true) : undefined}
+            onAvatarSaved={onAvatarSaved}
+          />
+        )}
         {rotator}
         {viewAsBanner}
         {viewAsModal}

@@ -49,7 +49,7 @@ const DEPTS = [
   { key: 'store', icon: '📦', label: 'สโตร์', sub: 'ไลน์เรียกของ · รอบส่งค้าง · พาร์ทจะขาด' },
 ];
 
-export default function TvBoard() {
+export default function TvBoard({ onOpenMenu = null }) {
   const { role, lineId, sections } = useContext(UserContext);
   const navigate = useNavigate();
   const isMobile = useIsMobile();
@@ -179,6 +179,8 @@ export default function TvBoard() {
           {scopeSet ? ` · ${scopeSet.size} ไลน์` : ' · ทุกไลน์'}
         </span>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {/* ☰ เมนู (13/10 · feedback user) — เดิมเข้ามาแล้วไปหน้าอื่นไม่ได้ · ไม่ส่ง onOpenMenu (บัญชีจอแขวน) = ไม่วาด */}
+          {onOpenMenu && <button onClick={onOpenMenu} style={btn(false)} title="เปิดเมนู — ไปหน้าอื่น (จอยังโล่งเหมือนเดิมจนกว่าจะกด)">☰ เมนู</button>}
           <button onClick={toggleFs} style={btn(fs)} title="เต็มจอ — เก็บแถบเบราว์เซอร์คืนพื้นที่ให้ผัง">⛶</button>
           <button onClick={() => setBarOpen(o => !o)} style={btn(barOpen)}>⚙️ ตั้งค่าจอ</button>
         </div>
