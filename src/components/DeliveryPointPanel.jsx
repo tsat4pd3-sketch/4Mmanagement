@@ -192,9 +192,9 @@ export default function DeliveryPointPanel({ lineName, lines = [] }) {
                       {r.storage_location
                         ? <span title="พื้นที่ SAP (Storage Location) ของไลน์ที่จุดนี้รับของให้" style={{ fontFamily: 'monospace', fontSize: 11, fontWeight: 800, padding: '1px 7px', borderRadius: 8, background: 'rgba(34,197,94,0.12)', color: '#22c55e' }}>🏬 {r.storage_location}</span>
                         /* 🔴 จุดที่ไม่มีรหัสคลัง = ด่าน "ส่งถูกพื้นที่ SAP ไหม" ไม่ทำงานกับจุดนี้
-                           ต้องเขียนบนจอ ห้ามเงียบ — วัดจริง 05/10: จุดส่งที่มีอยู่ 4 จุด ว่างทั้ง 4
-                           (ไลน์ปั๊ม A/B/C/D เป็นไลน์ราก ไม่มี `storage_locations` แถวไหนครอบ ⇒ derive ไม่ได้
-                            ไม่ใช่ "ลืมกด backfill" — ต้องมีคนลงทะเบียนพื้นที่ก่อน) */
+                           ต้องเขียนบนจอ ห้ามเงียบ — **ไม่ใช่ "ลืมกด backfill" ต้องมีคนลงทะเบียนพื้นที่ก่อน**
+                           วัดจริง 13/10: ไลน์ปั๊ม A/B/C/D ลงทะเบียนแล้ว (P407/P406/P401/P405) จุดได้รหัสครบ
+                           · ที่ยังว่าง = 7 จุดของ PD2 (ASSEMBLY 1 + Line D1–D6 + SPARE PART) ที่ยังไม่มี SLoc */
                         : <span title="จุดนี้ยังไม่ผูกพื้นที่ SAP — ระบบตรวจไม่ได้ว่าสโตร์ส่งถูกพื้นที่ไหม" style={{ fontSize: 11, fontWeight: 800, padding: '1px 7px', borderRadius: 8, background: 'rgba(245,158,11,0.12)', color: '#f59e0b' }}>🏬 ไม่ผูกพื้นที่ SAP</span>}
                       {off && <span style={{ fontSize: 11, color: 'var(--muted)' }}>⏸ ปิดใช้งาน</span>}
                     </div>

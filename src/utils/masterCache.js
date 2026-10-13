@@ -88,6 +88,18 @@ export function mrows(res) {
 let failSink = null;
 export function onMasterLoadFail(fn) { failSink = typeof fn === 'function' ? fn : null; }
 
+/* ── ทะเบียน "คีย์ไหนโหลดล้มล่าสุด" (2026-10-13) ───────────────────────────────
+   🔴 ลิสต์ว่างมี **2 ความหมาย**: "ไม่มีของในทะเบียน" กับ "โหลดไม่สำเร็จ"
+      toast กลางใน main.jsx บอกว่า "มีอะไรล้ม" แต่**ผ่านไปแล้วก็หาย** และไม่บอกว่า
+      ช่องเลือกที่กำลังเพ่งอยู่ตรงหน้าเป็นช่องที่ล้มหรือไม่ ⇒ หน้างานสรุปว่า
+      "ลูกค้า/ไลน์/พาร์ทนี้ยังไม่ได้ลงทะเบียน" แล้วไปสร้างซ้ำ
+   ⇒ เก็บผลล้มต่อคีย์ไว้ที่นี่ ให้ `useMasterRows` อ่านไปเขียนข้างช่องได้
+      (เคลียร์เมื่อคีย์นั้นโหลดสำเร็จ — ของที่หายไปเองต้องไม่ค้างเป็นคำเตือนถาวร) */
+const failures = new Map();   // key → { at, message, hadFallback }
+
+/** สถานะล้มล่าสุดของคีย์นี้ — `null` = ปกติ (อย่าใช้ตัดสินว่า "มีข้อมูลไหม") */
+export function masterLoadState(key) { return failures.get(key) || null; }
+
 const DEFAULT_TTL = MASTER_TTL;
 const cache = new Map();   // key → { at, data, inflight }
 
@@ -170,6 +182,7 @@ export async function cachedMaster(key, loader, ttl = DEFAULT_TTL) {
       const data = await loader();
       cache.set(key, { at: Date.now(), data });
       lsWrite(key, data);
+      failures.delete(key);   // สำเร็จแล้ว = คำเตือนข้างช่องต้องหายไปด้วย
       return data;
     } catch (e) {
       /* 🔴 โหลดพลาด — 3 อย่างที่ "ต้อง" ทำ (ดูรอบ 3 ในหัวไฟล์)
@@ -180,9 +193,54 @@ export async function cachedMaster(key, loader, ttl = DEFAULT_TTL) {
       console.warn('[masterCache] โหลด', key, 'ไม่สำเร็จ — ใช้ค่าเดิมไปก่อน', e);
       const kept = hit?.data ?? lsAny(key)?.data;
       cache.set(key, { at: 0, data: kept });
+      failures.set(key, { at: Date.now(), message: e?.message || 'โหลดไม่สำเร็จ', hadFallback: kept !== undefined });
       try { failSink?.(key, e, { hadFallback: kept !== undefined }); } catch { /* ตัวแจ้งพังห้ามลาม */ }
       return kept ?? [];
     }
+  })();
+
+  cache.set(key, { ...(hit || {}), inflight: p });
+  return p;
+}
+
+/* ── cachedRows — เหมือน cachedMaster แต่คืนรูป `{ data, error }` ของ supabase (2026-10-13) ──
+   มีไว้สำหรับจอที่ **"โหลดพลาด" ต้องแยกออกจาก "ว่างจริง" ให้ได้ที่ฝั่งผู้เรียก**
+   เคสต้นแบบ: บอร์ด AM รายวัน (`src/lib/dailyAmBoard.js`) — ทะเบียนว่าง = จอขึ้น "ไม่มีจุดตรวจ"
+   ซึ่งเป็น**คำตอบผิดที่ดูเหมือนคำตอบถูก** ⇒ ผู้เรียกต้องได้ `error` กลับไปเพื่อคงค่าเดิมไว้
+
+   ต่างจาก `cachedMaster` ตรงเดียว: ตัวนั้น**กลืน error แล้วคืนของเก่า/`[]`** + แจ้งผ่าน failSink
+   (ถูกแล้วสำหรับ picker — dropdown ว่างชั่วคราวไม่ทำให้ใครตัดสินใจผิด)
+   🔴 ล้มเหลว = **ไม่เขียน cache ทั้ง memory และ localStorage** ⇒ รอบหน้ายิงใหม่ทันที
+   · ของเก่าที่ยังไม่หมดอายุไม่ถูกแตะ — รอบถัดไปที่เน็ตกลับมาก็ใช้ของใหม่
+   · ตาราง/คอลัมน์ไม่มี (migration ยังไม่ apply) = "ว่างจริง" cache ได้ ตามกติกาเดียวกับ `mrows()` */
+export async function cachedRows(key, runQuery, ttl = DEFAULT_TTL) {
+  const hit = cache.get(key);
+  if (hit && hit.data !== undefined && Date.now() - hit.at < ttl) return { data: hit.data, error: null };
+  if (hit?.inflight) return hit.inflight;      // หลายจุดเรียกพร้อมกัน = ยิงจริงครั้งเดียว
+
+  const stored = lsRead(key, ttl);
+  if (stored) {
+    cache.set(key, { at: stored.at, data: stored.data });
+    return { data: stored.data, error: null };
+  }
+
+  const p = (async () => {
+    let res;
+    try {
+      res = await runQuery();
+    } catch (e) {                               // runQuery โยนเอง (เน็ตหลุดกลางทาง) = ล้มเหลว
+      res = { data: null, error: e };
+    }
+    const err = res?.error;
+    if (err && !SCHEMA_MISSING.has(err.code)) {
+      cache.delete(key);                        // ล้าง inflight ทิ้ง ไม่เก็บผลล้มเหลว
+      return { data: null, error: err };
+    }
+    if (err) console.warn('[masterCache] โครงสร้างยังไม่มี —', err.code, err.message, '· ถือว่าว่าง');
+    const data = res?.data || [];
+    cache.set(key, { at: Date.now(), data });
+    lsWrite(key, data);
+    return { data, error: null };
   })();
 
   cache.set(key, { ...(hit || {}), inflight: p });
@@ -194,6 +252,7 @@ export async function cachedMaster(key, loader, ttl = DEFAULT_TTL) {
 export function invalidateMaster(key) {
   if (key == null) {
     cache.clear();
+    failures.clear();
     try {
       for (let i = localStorage.length - 1; i >= 0; i--) {
         const k = localStorage.key(i);
@@ -202,6 +261,7 @@ export function invalidateMaster(key) {
     } catch { /* localStorage ปิดอยู่ */ }
   } else {
     cache.delete(key);
+    failures.delete(key);
     try { localStorage.removeItem(lsKey(key)); } catch { /* localStorage ปิดอยู่ */ }
   }
 }

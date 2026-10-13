@@ -384,3 +384,28 @@ test('anchor รู้ยอดจริง แม้ไม่มียอดย
   });
   assert.deepEqual(periods.map((x) => valueAt(g, 'p', 'balance', x.key)), [null, 70, 70]);
 });
+
+/* ── 🔒 ล็อกช่อง IN เมื่อระบบเป็นเจ้าของ (13/10) ── */
+test('locked — ช่องที่ล็อกไม่ใช้ค่าที่คนกรอก · ระบบไม่มีรายการ = 0 · แก้ไม่ได้', () => {
+  const periods = buildDayPeriods('2026-10-10', 3);
+  const g = buildGrid({
+    parts: [{ id: 'p' }], periods, rows: PRESS,
+    manual: mk({ 'p|balance|2026-10-10': 100, 'p|in|2026-10-11': 999, 'p|in|2026-10-12': 5 }),
+    system: (pid, rk, pk) => (rk === 'in' && pk === '2026-10-12' ? 40 : undefined),
+    locked: (pid, rk, pk) => rk === 'in' && pk >= '2026-10-11',
+  });
+  assert.equal(valueAt(g, 'p', 'in', '2026-10-11'), 0, 'ค่ากรอก 999 ถูกทิ้ง · ระบบไม่มี = 0');
+  assert.equal(valueAt(g, 'p', 'in', '2026-10-12'), 40, 'ใช้ค่าระบบ ไม่ใช่ 5 ที่กรอก');
+  assert.equal(cellAt(g, 'p', 'in', '2026-10-12').src, 'locked');
+  assert.equal(cellAt(g, 'p', 'in', '2026-10-12').editable, false);
+  assert.deepEqual(periods.map((x) => valueAt(g, 'p', 'balance', x.key)), [100, 100, 140]);
+});
+
+test('locked ไม่ส่งมา = พฤติกรรมเดิม (คนกรอกชนะ)', () => {
+  const periods = buildDayPeriods('2026-10-10', 2);
+  const g = buildGrid({
+    parts: [{ id: 'p' }], periods, rows: PRESS,
+    manual: mk({ 'p|balance|2026-10-10': 0, 'p|in|2026-10-11': 7 }), system: () => 3,
+  });
+  assert.equal(valueAt(g, 'p', 'in', '2026-10-11'), 7);
+});

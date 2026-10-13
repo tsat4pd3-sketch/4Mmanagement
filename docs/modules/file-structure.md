@@ -97,3 +97,10 @@ skillMapOf(employeeSkillRows)
 // ⚠️ ยังมีสำเนาเดิม computeFit ใน Management/Dashboard/OrderTrace (คืน 100 vs null ต่างกันเมื่อจุดไม่ตั้ง) — ของใหม่ห้ามก๊อปเพิ่ม
 fitColor(score)                // Management.jsx — 100 ม่วง | 75+ เขียว | 50+ เขียวอ่อน | 25+ ส้ม | <25 แดง
 ```
+
+### ของกลางเพิ่ม 2026-10-13
+- **`src/utils/useMasterRows.js`** — สถานะโหลด "ทะเบียนที่ช่องเลือกใช้" → `{ rows, failed, stale, message, loading, reload }`
+  · `registryFailText(ชื่อทะเบียน, stale)` = ข้อความมาตรฐานข้างช่อง **ห้ามแต่งเองในหน้า**
+  · hook ทะเบียนทุกตัวคง default export เดิม (คืนแถวล้วน) + เพิ่ม `use<X>State()` ให้ช่องเลือก
+  · อ่านผลล้มต่อคีย์จาก `masterLoadState(key)` ใน `masterCache.js` — **`cachedMaster` ไม่ throw ⇒ รอ `catch` ไม่มีวันรู้**
+  · ส่งเข้า prop `loadFail` ของ `<SearchSelect>` (UI-CONVENTIONS §6.26)

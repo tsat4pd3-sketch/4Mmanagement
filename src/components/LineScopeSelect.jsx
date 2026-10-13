@@ -34,7 +34,7 @@ export default function LineScopeSelect({
 }) {
   const ctx = useContext(UserContext) || {};
   const scopeSecs = ctx.sections || [];
-  const { index: ownIndex } = useOrgScope(givenIndex ? [] : lines);
+  const { index: ownIndex, failed: ownFailed } = useOrgScope(givenIndex ? [] : lines);
   const index = givenIndex || ownIndex;
   const byKey = useMemo(() => new Map(lines.map(l => [String(l[valueKey]), l])), [lines, valueKey]);
   const byName = useMemo(() => new Map(lines.map(l => [l.name, l])), [lines]);
@@ -68,7 +68,7 @@ export default function LineScopeSelect({
   };
 
   return (
-    <OrgScopePicker index={index} value={value} onChange={emit} scopeSet={scopeSet} sections={scopeSecs}
+    <OrgScopePicker index={index} value={value} onChange={emit} scopeSet={scopeSet} sections={scopeSecs} failed={ownFailed}
       costCenter={false} pickable={pickDept ? PICKABLE_DEPT : PICKABLE} disabled={disabled} id={id} style={style} width={width}
       title="ขอบเขต: ส่วนงาน / กลุ่มไลน์ / ไลน์ (หัวสีเทา = ฝ่าย/แผนก ดูได้ที่จอ OBEYA)" />
   );

@@ -6,6 +6,7 @@ import { toDecodableImage } from '../utils/heicToJpeg'
 import imageCompression from 'browser-image-compression'
 import { compressPhotoImage } from '../utils/layoutImage'
 import { supabase, supabaseDR } from '../supabaseClient'
+import { invalidateTable } from '../utils/masterInvalidate'
 import { UserContext } from '../App'
 import { can } from '../utils/permissions'
 import { toast } from '../components/Toast'
@@ -899,11 +900,13 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
         equipment_type: equipType, equipment_category: equipCategory,
       })
       if (jigErr) throw jigErr
+      invalidateTable('jigs')   // ทะเบียนเข้า cache แล้ว (13/10) — บอร์ด AM อ่านจากคีย์ 'jigs:am'
       /* 🔗 ย้ายไลน์ของอุปกรณ์ ⇒ ทะเบียน AM รายวันต้องตามไป (08/10 audit) — เดิมค้างไลน์เก่า ⇒ ไลน์เก่าเตือนค้าง/ไลน์ใหม่ไม่เตือน
          (กติกาเดียวกับ assignJigLine ใน DailyPM.jsx) · ล้ม = บอก ไม่เงียบ แต่ไม่ยกเลิกการบันทึกอุปกรณ์ */
       if (editJig?.id && (editJig.line_name || null) !== (lineName || null)) {
         const { error: tgErr } = await supabaseDR.from('pm_daily_line_targets').update({ line_name: lineName || null }).eq('jig_id', editJig.id).eq('is_active', true)
         if (tgErr) toast.error('ย้ายรายการลงทะเบียน AM ตามไลน์ใหม่ไม่สำเร็จ: ' + tgErr.message + ' — ไปแก้ที่จอ AM รายวัน')
+        else invalidateTable('pm_daily_line_targets')
       }
 
       // ── sync jig_images (spin frames) แบบ "แก้ตาม id" — ห้ามลบทั้งชุดแล้ว insert ใหม่ (QC 05/10)
@@ -1541,7 +1544,8 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
                      โหมด "ใช้ทั้งรูป" ย่อด้วย cap = max(outputSize, outputSize/aspect)
                      ถ้าพลิก aspect เฉยๆ cap จะตกจาก 1200 เหลือ 900 = รูปเก่าคมกว่ารูปใหม่ */
                   file={cropQueue[0]} aspect={4 / 3} outputSize={1200} quality={0.82}
-                  allowFull fullLabel="ใช้ทั้งรูป (ไม่ครอบ) — สำหรับรูปภาพรวมเครื่อง"
+                  /* ไม่ใส่ fullDefault — จอนี้ส่วนใหญ่ครอบเฉพาะจุดตรวจ พฤติกรรมเดิมคือเริ่มที่โหมดครอบ */
+                  allowFull fullHint="เก็บทั้งภาพไว้ — สำหรับรูปภาพรวมเครื่องที่จุดตรวจกระจายทั้งภาพ"
                   title={`จัดกรอบรูป${cropQueue.length > 1 ? ` (เหลืออีก ${cropQueue.length - 1} รูป)` : ''}`}
                   onCancel={() => setCropQueue(q => q.slice(1))}
                   onConfirm={pushFrame} />
@@ -1727,6 +1731,7 @@ export default function PMSetup() {
     const dres = await supabaseDR.from('jigs').delete().eq('id', jig.id).select('id')
     if (!checkWrite(dres, 'ลบจิ๊ก')) return
     if (!(dres.data || []).length) { toast.error('ลบไม่สำเร็จ (0 แถว) — รูปและประวัติยังอยู่ครบ'); return }
+    invalidateTable('jigs')
     /* ยืนยันแถวหายจริงแล้ว เก็บกวาดรูปของ jig นี้ (เฟรมหมุน + จุดตรวจ อยู่ใต้ jigs/<id>/)
        🔴 ห้ามลบทั้งโฟลเดอร์ (QC audit 08/10) — `copyChecklistToEquipment/Dept` คัดลอกจุดตรวจไปเครื่องอื่น
           โดย **ใช้ image_path เดิมร่วมกัน** ⇒ ลบเครื่องต้นแบบ = รูปจุดตรวจของทุกเครื่องที่ก๊อปไป

@@ -11,6 +11,7 @@
 import { useEffect, useState } from 'react';
 import { supabaseDR } from '../supabaseClient';
 import { cachedMaster, invalidateMaster, mrows } from './masterCache';
+import useMasterRows from './useMasterRows.js';
 import { DIE_SET_KINDS, normDieSetKind, buildDieItemTypeMap } from './equipmentKinds';
 import { fetchAllRows } from './fetchAllRows';
 
@@ -31,15 +32,19 @@ export async function loadDieOpTypes() {
     .select('key, label, mo_item_type, sort_order, is_active').order('sort_order')));
 }
 
-export default function useDieSetKinds(version = 0) {
-  const [rows, setRows] = useState(() => DIE_SET_KINDS.map(normDieSetKind));
-  useEffect(() => {
-    let alive = true;
-    loadDieSetKinds().then(d => { if (alive) setRows(d); }).catch(() => {});
-    return () => { alive = false; };
-  }, [version]);
-  return rows;
+/* ค่าสำรองในโค้ด — ต้องเป็นค่าคงที่ก้อนเดียว ห้าม map ใหม่ทุก render (ไม่งั้น useMemo ปลายทางพังทุกครั้ง) */
+const BUILTIN_KINDS = DIE_SET_KINDS.map(normDieSetKind);
+
+/** สถานะโหลดทะเบียน — `{ rows, failed, stale, message, loading, reload }`
+ *  🔴 ช่องเลือกที่ต้องบอกว่า "ลิสต์ว่างเพราะไม่มีของ หรือเพราะโหลดไม่สำเร็จ" ใช้ตัวนี้
+ *     (ตัว default คืนแค่แถว = พฤติกรรมเดิม ไม่ต้องแก้จุดเรียกเก่า)
+ *  ⚠️ ทะเบียนนี้มีค่าสำรองในโค้ด ⇒ `rows` ไม่เคยว่าง แต่ `failed` ยังมีความหมาย:
+ *     "ที่เห็นคือค่าสำรอง ไม่ใช่ทะเบียนจริงของทีมแม่พิมพ์" */
+export function useDieSetKindsState(version = 0) {
+  return useMasterRows(KEY, loadDieSetKinds, { empty: BUILTIN_KINDS, dep: version });
 }
+
+export default function useDieSetKinds(version = 0) { return useDieSetKindsState(version).rows; }
 
 /** แม่พิมพ์ที่ผูกชุดแล้ว → [{ machine_no, kind }] */
 async function loadDieLinks() {
@@ -63,7 +68,10 @@ export function useDieItemTypeMap(enabled) {
     let alive = true;
     Promise.all([loadDieLinks(), loadDieSetKinds(), loadDieOpTypes()])
       .then(([links, kinds, ops]) => { if (alive) setMap(buildDieItemTypeMap(links, kinds, ops)); })
-      .catch(() => { if (alive) setMap(new Map()); });   // โหลดไม่ได้ = ให้ผู้แจ้งเลือกเองตามเดิม (ไม่บล็อกการแจ้งซ่อม)
+      .catch((e) => {   // โหลดไม่ได้ = ให้ผู้แจ้งเลือกเองตามเดิม (ไม่บล็อกการแจ้งซ่อม) แต่ต้องเห็นใน log
+        console.warn('[useDieItemTypeMap] โหลดทะเบียนชนิดอุปกรณ์ไม่สำเร็จ — ผู้แจ้งต้องเลือกเอง', e);
+        if (alive) setMap(new Map());
+      });
     return () => { alive = false; };
   }, [enabled, map]);
   return map;

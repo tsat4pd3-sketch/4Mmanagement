@@ -636,7 +636,8 @@ Reject → status: "rejected" + reject_reason
 
 13 ชีท = **การตั้งค่า ไม่ใช่ 13 จอ** — ชุดแถวอยู่ใน `monitor_boards.rows` (DR) · เลขทุกตัวออกจาก
 `buildGrid()` (`utils/monitorGrid.js`) ที่เดียว (มีด่าน)
-· 🔴 **ช่องยอดยกมาว่าง = `null` ทั้งแถว ห้ามเดา 0** · ระบบไม่รู้ = ขีด `–` · คนกรอกชนะระบบเสมอ
+· 🔴 **ช่องยอดยกมาว่าง = `null` ทั้งแถว ห้ามเดา 0** · ระบบไม่รู้ = ขีด `–` · คนกรอกชนะระบบ —
+  🔒 **ยกเว้นช่อง IN ที่ระบบมีตัวเลขแล้ว = ล็อก** (`makeLockLookup` · `monitorSystem.js`) ยอดไม่ตรง = ขอปรับยอดคลัง (`StockAdjustRequestModal`) ห้ามเปิดให้พิมพ์ทับ
 · ⚠️ **แต่ละชีทคิด Total SL คนละสูตร — เก็บเป็น `sl_row` ห้ามยุบเอง**
 · 📦 **บอร์ดชนิด `fg` ผูก "ลูกค้า" ไม่ใช่ "ไลน์"** (ยอดสั่งจาก EDI 862/830) ⇒ **IN ห้ามกรองไลน์**
 📄 `docs/modules/monitoring-boards.md`
@@ -737,17 +738,18 @@ Reject → status: "rejected" + reject_reason
 > 📄 **คำอธิบายเต็ม + ตัวเลข/เคสจริงของทุกข้อ → `docs/modules/db-write-rules.md`** (ห้ามตัดข้อไหนออกจากลิสต์นี้)
 
 1. **supabase-js ไม่ throw** (`const { data } = await …` = กลืน error 100%) ⇒ **ทุก insert/update/delete อ่าน `error` ผ่าน `checkWrite(await …, 'ป้ายงาน')`** (`src/utils/dbWrite.js`) · delete-then-insert: delete ล้ม = หยุด ห้าม insert ต่อ
-2. **RLS ปฏิเสธ UPDATE/DELETE = "สำเร็จ 0 แถว ไม่มี error"** (มีแต่ INSERT ที่โยน 42501) ⇒ ปุ่มที่ผลลัพธ์สำคัญต้อง **`checkWriteRows(await ….select('id'), 'ป้ายงาน')`** — `checkWrite` **ไม่นับแถว** ⇒ ต่อ `.select()` แล้วส่งเข้า `checkWrite` = เสียเปล่า + คิดว่ากันแล้ว (2 ด่าน: `checkwrite-rows-not-plain` · `checkwriterows-needs-select`) · 🔴 **ลบไฟล์ใน storage ได้หลังนับแถว > 0 เท่านั้น** (เช็คแค่ `error` = แถวยังอยู่แต่ไฟล์หายถาวร · มีด่าน `storage-delete-after-row-count`) · 🔴 **ทะเบียนที่จับคู่ด้วยข้อความ ลบได้หลังนับปลายทางครบ — นับไม่ได้ = ห้ามลบ** (`utils/orgNodeRefs.js` · `utils/processTypeRefs.js`)
-3. **policy RLS ต้อง `has_perm('<คีย์เดียวกับปุ่มบนจอ>')` ห้าม hardcode role array** (role array มือแคบกว่าสิทธิ์ที่ `/permissions` แจกเสมอ · **จอที่คุมสิทธิ์เองก็ต้องเช็คสิทธิ์ผู้ดู** — มีด่าน) · **ตารางใหม่ต้องมี policy ครบทุก cmd ที่ client ใช้ — `upsert` ต้องมี UPDATE** · 🔑 **คีย์ของ `upsert` ต้องเป็น unique index คอลัมน์ล้วน ห้าม expression/partial** (PostgREST infer ไม่เจอ = `42P10` = ไม่เขียนเลยทั้งก้อน · เกิดมา 3 รอบ · มีด่าน)
+2. **RLS ปฏิเสธ UPDATE/DELETE = "สำเร็จ 0 แถว ไม่มี error"** (มีแต่ INSERT ที่โยน 42501) ⇒ ปุ่มที่ผลลัพธ์สำคัญต้อง **`checkWriteRows(await ….select('id'), 'ป้ายงาน')`** — `checkWrite` **ไม่นับแถว** ⇒ ต่อ `.select()` แล้วส่งเข้า `checkWrite` = เสียเปล่า (2 ด่าน) · 🔴 **ลบไฟล์ใน storage ได้หลังนับแถว > 0 เท่านั้น** (เช็คแค่ `error` = แถวยังอยู่แต่ไฟล์หายถาวร · มีด่าน) · 🔴 **ทะเบียนที่จับคู่ด้วยข้อความ ลบได้หลังนับปลายทางครบ — นับไม่ได้ = ห้ามลบ** (`utils/orgNodeRefs.js` · `utils/processTypeRefs.js`)
+3. **policy RLS ต้อง `has_perm('<คีย์เดียวกับปุ่มบนจอ>')` ห้าม hardcode role array** (**จอที่คุมสิทธิ์เองก็ต้องเช็คสิทธิ์ผู้ดู** — มีด่าน) · **ตารางใหม่ต้องมี policy ครบทุก cmd ที่ client ใช้ — `upsert` ต้องมี UPDATE** · 🔑 **คีย์ของ `upsert` ต้องเป็น unique index คอลัมน์ล้วน ห้าม expression/partial** (`42P10` = ไม่เขียนเลยทั้งก้อน · มีด่าน)
 4. **stale-response race** — ทุก effect ที่ await แล้ว set state ต้องมี guard (`let alive = true` + cleanup / request id / ref ปัจจุบัน)
 5. **`.in(ids)` ยาว = URL เกินเพดาน proxy → คืนค่าว่างเงียบ** ⇒ ผ่าน `fetchByIds` (chunk) · **เพดาน 1000 แถว/คิวรี** ⇒ ตารางที่โตได้ห้าม `select()` เปล่า
 6. **claim สถานะ (compare-and-swap) ก่อนเขียน ledger ⇒ ledger ล้มต้องคืนสถานะ**
-7. **realtime ต้องมี "เพดาน" ไม่ใช่ debounce · และต้องกรองว่า "เรื่องนี้ของฉันไหม"** — **`coalesce(fn, LIVE.x)` (`src/utils/liveRefresh.js`) เท่านั้น ห้าม debounce/`setTimeout` เอง** · ระดับใน `src/utils/refreshRates.js` **ห้ามใส่ ms ดิบ** · **subscribe ต้องมี `filter:` เมื่อรู้ขอบเขต** — ⚠️ **DELETE กรองด้วยคอลัมน์ที่ไม่ใช่ pk ไม่ได้** ให้แยก subscribe DELETE ไม่กรอง **ห้ามแก้ด้วย `REPLICA IDENTITY FULL`** · 🔴 **ตารางที่ subscribe ต้องอยู่ในทะเบียน `src/utils/realtimeTables.js` + publication จริง** (ไม่อยู่ = เงียบสนิท ไม่มี error · มีด่าน)
+7. **realtime ต้องมี "เพดาน" ไม่ใช่ debounce · และต้องกรองว่า "เรื่องนี้ของฉันไหม"** — **`coalesce(fn, LIVE.x)` (`src/utils/liveRefresh.js`) เท่านั้น ห้าม debounce/`setTimeout` เอง** · ระดับใน `src/utils/refreshRates.js` **ห้ามใส่ ms ดิบ** · **subscribe ต้องมี `filter:` เมื่อรู้ขอบเขต** — ⚠️ **DELETE กรองด้วยคอลัมน์ที่ไม่ใช่ pk ไม่ได้** ให้แยก subscribe DELETE ไม่กรอง **ห้ามแก้ด้วย `REPLICA IDENTITY FULL`** · 🔴 **ตารางที่ subscribe ต้องอยู่ในทะเบียน `src/utils/realtimeTables.js` + publication จริง** (ไม่อยู่ = เงียบสนิท · มีด่าน)
 8. **จอที่มี realtime — poll ต้องข้ามรอบเมื่อไม่มีอะไรเปลี่ยน** (`makeIdleGate(LIVE.FLOOR)`) · **ห้ามใช้กับจอที่ไม่มี realtime** (ไม่มีใคร touch = จอค้าง) · **จอใหม่ใช้ `useLiveBoard(load, { tables, topic })` ห้ามประกอบเองทีละชิ้น**
 9. **`useCallback`/`useEffect` ที่ยิง DB ห้ามมี object/array ใน deps** (แปลงเป็น string/primitive ก่อน · prop ที่เป็น array ต้อง `useMemo` ที่หน้าแม่) · **คลาสนี้ build/lint/เทส/จอผ่านหมด เห็นจาก log เท่านั้น**
 10. **สมมติฐานเรื่องสิทธิ์ที่เขียนในคอมเมนต์ "มีอายุ"** — ห้ามพึ่ง "หน้านี้ admin-only อยู่แล้ว" เป็นด่านของแผง/ตาราง
-11. **🔴 egress คิดเป็น "ไบต์" ไม่ใช่ "จำนวน request" — `select('*')` บนตารางกว้างคือตัวกินจริง** ⇒ **จอรายการเลือกเฉพาะคอลัมน์ที่ใช้ · ใบเต็มดึงตอนเปิดทีละใบ** (`.eq('id', id)`) — มีด่าน · **รูปผังห้ามเป็น PNG** ใช้ `compressLayoutImage()` (`src/utils/layoutImage.js`) **ห้ามลดความละเอียด**
+11. **🔴 egress คิดเป็น "ไบต์" ไม่ใช่ "จำนวน request" — `select('*')` บนตารางกว้างคือตัวกินจริง** ⇒ **จอรายการเลือกเฉพาะคอลัมน์ที่ใช้ · ใบเต็มดึงตอนเปิดทีละใบ** — มีด่าน · **รูปผังห้ามเป็น PNG** ใช้ `compressLayoutImage()` (`src/utils/layoutImage.js`) **ห้ามลดความละเอียด**
 12. **helper ที่คืนค่าเปล่าห้ามแกะ `{ data }`** (`loadPairMap`/`loadOpInfo`/`loadProductsMaster`/`loadProductionLines` = undefined เงียบ · มีด่าน) · **`catch {}` แล้วโชว์ "ไม่มีข้อมูล" = จอโกหก**
+    · 🔴 **ลิสต์ว่าง 2 ความหมาย** — ทะเบียน picker ผ่าน **`useMasterRows`** → `loadFail` (มีด่าน) · **อ่านไม่ได้แล้วจะเขียน/ลบ = fail-closed**
 
 ### Skill Fit — ของใหม่ใช้ `skillFit()` (`src/utils/skillFit.js`) ห้ามก๊อปสูตรเพิ่ม (📄 `docs/modules/file-structure.md`)
 

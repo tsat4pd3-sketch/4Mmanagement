@@ -7,7 +7,8 @@
    ══════════════════════════════════════════════════════════════════════════ */
 import { useMemo } from 'react';
 import SearchSelect from './SearchSelect';
-import useCostCenters from '../utils/useCostCenters';
+import { useCostCentersState } from '../utils/useCostCenters';
+import { registryFailText } from '../utils/useMasterRows.js';
 import { appendHistoryOptions } from '../utils/pickerOptions';
 
 const norm = (s) => String(s ?? '').trim();
@@ -16,7 +17,7 @@ export default function CostCenterSelect({
   value = '', onChange, history = [], allowFree = false, placeholder = 'ค้นรหัส / ชื่อ cost center…',
   disabled, inputStyle, style, section,
 }) {
-  const rows = useCostCenters();
+  const { rows, failed, stale } = useCostCentersState();
   const options = useMemo(() => {
     const pref = norm(section).toUpperCase();
     const tagged = rows.filter(r => r.is_active !== false || norm(r.code) === norm(value)).map(r => ({
@@ -37,6 +38,7 @@ export default function CostCenterSelect({
   return (
     <SearchSelect value={sel ? sel.id : ''} text={sel ? sel.label : (value || '')} options={options} onChange={emit}
       allowFree={allowFree} placeholder={placeholder} emptyText="ไม่พบรหัสในทะเบียน — เพิ่มได้ที่ /org-setup แผง 💰 Cost Center"
+      loadFail={failed ? registryFailText('ทะเบียน Cost Center', stale) : ''}
       disabled={disabled} inputStyle={{ fontFamily: 'monospace', ...inputStyle }} style={style} />
   );
 }

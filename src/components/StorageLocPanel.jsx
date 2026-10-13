@@ -152,6 +152,10 @@ export default function StorageLocPanel() {
       return false;
     }
     toast.success(edit?.code ? 'แก้ไขแล้ว' : `เพิ่มรหัส ${code} แล้ว`);
+    /* 🔴 13/10: trigger ฝั่ง DB เติม SLoc ได้แค่ "ตอน insert" ⇒ แถวที่เขียนก่อนวันลงทะเบียนค้างว่างต่อไป
+       (เคยค้าง 602 แถวที่ไลน์ปั๊ม ตั้งแต่ลงทะเบียน 4 รหัสจนถึงรอบ backfill ถัดไป) ⇒ ผูกไลน์เสร็จต้องชวนกด ♻️ เลย
+       ไม่แปะให้เองเพราะปุ่มนั้นเขียนทีเดียวทั้งทะเบียน (ต้องให้คนเห็นพรีวิว+ยืนยันก่อน) */
+    if (storedNames.length && untagged > 0) toast.info(`ยังมีรายการเก่า ${untagged.toLocaleString()} แถวไม่มีมุม SAP — กด ♻️ แปะรหัสย้อนหลัง`);
     setEdit(null); load();
     return true;
   };

@@ -45,8 +45,8 @@ const card = {
 };
 
 export default function MonitorBoardGrid({
-  board, parts = [], periods = [], manualMap, systemMap, anchorMap,
-  onEditCell, editable = false, truncated = false, loadWarn = '',
+  board, parts = [], periods = [], manualMap, systemMap, anchorMap, lockMap,
+  onEditCell, onLockedCell, editable = false, truncated = false, loadWarn = '',
   windowSize = 14,
 }) {
   const rows = useMemo(() => rowDefs(board), [board]);
@@ -87,8 +87,8 @@ export default function MonitorBoardGrid({
   /* ── กริดคิดเต็มทุกคอลัมน์เสมอ (ไม่ใช่แค่ที่มองเห็น) ──────────────────────────────
      เพราะ BALANCE/UNBOUND เป็น recurrence — คิดแค่ช่วงที่มองเห็นจะได้ยอดยกมาผิด */
   const grid = useMemo(
-    () => buildGrid({ parts, periods, rows, manual: manualMap, system: systemMap, anchor: anchorMap }),
-    [parts, periods, rows, manualMap, systemMap, anchorMap],
+    () => buildGrid({ parts, periods, rows, manual: manualMap, system: systemMap, anchor: anchorMap, locked: lockMap }),
+    [parts, periods, rows, manualMap, systemMap, anchorMap, lockMap],
   );
 
   const balKey = balanceRowKey(board);
@@ -357,18 +357,23 @@ export default function MonitorBoardGrid({
                     return (
                       <td key={p.key}
                         /* คลาสนี้ให้ hover + เส้นประใต้ตัวเลข = "ช่องนี้กดแก้ได้" (index.css · เฉพาะเครื่องที่มีเมาส์) */
-                        className={c?.editable && editable ? 'mon-cell-edit' : undefined}
-                        onClick={() => c?.editable && !editing && startEdit(part.id, row.key, p.key, c.v)}
+                        className={(c?.editable && editable) || (c?.src === 'locked' && onLockedCell) ? 'mon-cell-edit' : undefined}
+                        onClick={() => {
+                          /* 🔒 ช่องที่ระบบเป็นเจ้าของ — กดแล้วเปิดใบขอปรับยอดคลัง ไม่ใช่ช่องพิมพ์ทับ (13/10) */
+                          if (c?.src === 'locked') { if (onLockedCell) onLockedCell({ partId: part.id, rowKey: row.key, periodKey: p.key }); return; }
+                          if (c?.editable && !editing) startEdit(part.id, row.key, p.key, c.v);
+                        }}
                         title={br ? `ต่ำกว่า MIN ${fmtN(br.short)} ชิ้น (MIN ${fmtN(br.min)})` : (c?.src === 'system' ? 'ระบบดึงจากใบผลิต/สต๊อก — กดเพื่อกรอกทับ'
+                          : c?.src === 'locked' ? `🔒 ระบบเป็นเจ้าของ (คลังกดรับแล้ว) — แก้บนบอร์ดไม่ได้${onLockedCell ? ' · กดเพื่อขอปรับยอดคลัง' : ''}`
                           : c?.src === 'ledger' ? '🔗 ยอดคงเหลือจริงในคลัง (ledger) ณ ตอนนี้ — ไม่ใช่สูตร · ยอดไม่ตรงของจริงให้ตรวจนับที่ /line-stock?tab=count' : undefined)}
                         style={{
-                          ...tdBase, textAlign: 'right', cursor: c?.editable && editable ? 'cell' : 'default',
+                          ...tdBase, textAlign: 'right', cursor: (c?.editable && editable) ? 'cell' : (c?.src === 'locked' && onLockedCell ? 'pointer' : 'default'),
                           minWidth: COL_W, width: COL_W, padding: editing ? 0 : tdBase.padding,
                           borderLeft: isToday ? '2px solid var(--accent)'
                             : (isSeed || ci === 1 ? '2px solid var(--border2)' : tdBase.borderLeft),
                           borderRight: isToday ? '2px solid var(--accent)' : undefined,
                           background: isToday ? 'var(--accent-dim)' : (isSeed ? 'var(--bg3)' : undefined),
-                          color: neg || br ? '#f87171' : (c?.src === 'system' ? 'var(--text2)' : (isCalc ? 'var(--muted)' : 'var(--text)')),
+                          color: neg || br ? '#f87171' : (c?.src === 'system' || c?.src === 'locked' ? 'var(--text2)' : (isCalc ? 'var(--muted)' : 'var(--text)')),
                           /* ตัวเลขของแถวสูตร = เอียง ⇒ มองผ่านๆ ก็รู้ว่า "เครื่องคิดให้" ไม่ใช่ของที่ใครพิมพ์
                              (สีจางอย่างเดียวไม่พอ — ตัวเลขที่ระบบดึงมา `system` ก็จางเหมือนกัน แต่กรอกทับได้) */
                           fontStyle: isCalc && c?.src !== 'ledger' ? 'italic' : undefined,
