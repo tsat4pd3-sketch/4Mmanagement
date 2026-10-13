@@ -141,7 +141,13 @@ const RULES = [
     /* จับ loader ของ cachedMaster ที่กลืน error เป็นลิสต์ว่าง — `.data || []` บนบรรทัดเดียวกับ cachedMaster( */
     /* 05/10 ขยายเป็น 2 บรรทัด — loader ที่ขึ้นบรรทัดใหม่หลัง `async () =>` หลบด่านเดิมได้ทั้งที่กลืน error เหมือนกัน
        (เจอจริง: FactoryMap dr_products:ct / kanban_standards:ct / break_policies:active / machines:* · LineOeeBoard) */
-    re: /cachedMaster\([^\n]*(?:\n[^\n]*)?\.data\s*\|\|\s*\[\]/g,
+    /* 13/10 ขยายอีกครั้ง — loader ที่ยาวหลายบรรทัด (อ่าน 2 ตารางแล้ว return object) หลบ 2 บรรทัดเดิมได้
+       เจอจริง: `usePartOptions` → `return { sets: a.data || [], qaParts: b.data || [] }` (บรรทัดที่ 6 ของ loader)
+       ⇒ ทะเบียนพาร์ททั้งชุดกลายเป็นว่างแล้วถูก cache 4 ชม. **และ `cachedMaster` ไม่เห็น error
+          ⇒ toast กลางใน main.jsx ไม่ขึ้นด้วย = เงียบสนิท** (ช่องเลือกพาร์ทว่าง = "ไม่มีพาร์ทนี้")
+       หน้าต่าง 500 ตัวอักษร และ **หยุดเมื่อเจอ `throw` / `mrows` / ปลาย loader (`})`)**
+       ⇒ loader ที่เช็ค error ไว้ก่อนแล้ว (useProducts/useMachines/usePeople/partImages) ไม่ถูกจับผิด */
+    re: /cachedMaster\((?:(?!\}\s*\)|throw|mrows)[\s\S]){0,500}?\.data\s*(\|\||\?\?)/g,
     why: 'supabase-js **ไม่ throw** ⇒ `(await …).data || []` ทำให้คิวรีที่ล้ม (เน็ตสะดุด/timeout/RLS) '
        + 'กลายเป็น "โหลดสำเร็จ ได้ 0 แถว" แล้ว `cachedMaster` **เขียนลิสต์ว่างลง localStorage ทับของดี '
        + 'ค้างในเครื่องนั้นอีก 4 ชม.** โดยไม่มีข้อความบนจอเลย — เครื่องอื่นที่โหลดติดยังเห็นครบ '
@@ -150,6 +156,20 @@ const RULES = [
     fix: 'ห่อด้วย `mrows(await …)` จาก `src/utils/masterCache.js` — ตาราง/คอลัมน์ยังไม่มี (42P01/42703) '
        + 'ยังคืน [] เหมือนเดิม · error อื่นโยน ⇒ cache ไม่ถูกทับ + ขึ้น toast ให้คนเห็น',
     allow: {},   // ตัวอย่างใน masterCache.js อยู่ในคอมเมนต์ — ตัวสแกนตัดคอมเมนต์ก่อนตรวจอยู่แล้ว
+  },
+  {
+    id: 'registry-loader-no-silent-catch',
+    scan: ['src/utils'], ext: ['.js'],
+    /* จับ `loadXxx()…​.catch(() => {})` ใน **ของกลาง** (src/utils) — กลืนแล้วคืนลิสต์ว่างเงียบๆ */
+    re: /\bload[A-Z]\w*\([^;]{0,200}\.catch\(\s*\(\s*\)\s*=>\s*\{\s*\}\s*\)/g,
+    why: 'ลิสต์ว่างมี 2 ความหมาย — "ทะเบียนไม่มีของ" กับ "โหลดไม่สำเร็จ" · hook ทะเบียนทั้ง 13 ตัวเคยลงท้าย '
+       + 'ด้วย `.catch(() => {})` ⇒ หน้างานเปิดช่องเลือกเห็นว่าง แล้วสรุปว่า "ยังไม่ได้ลงทะเบียน" ไปสร้างซ้ำ '
+       + '(`useProductionLines` เป็นตัวอ่านทะเบียนไลน์ตัวเดียวที่อนุญาต ⇒ ล้มทีเดียว dropdown ไลน์ว่างทั้งแอป '
+       + 'โดยจอไม่บอกเหตุ) · `usePartOptions`/`useOrgScope`/`useOrgDepts` ล้มแบบนี้ได้โดย toast กลางไม่ขึ้นด้วย',
+    fix: 'ของกลางใช้ `useMasterRows(KEY, loadXxx)` (`src/utils/useMasterRows.js`) → คืน `{ rows, failed, stale }` '
+       + 'แล้วช่องเลือกส่งเข้า `loadFail` ของ `<SearchSelect>` · ตัวที่ไม่ผ่าน cachedMaster ต้อง `console.warn` '
+       + 'แล้วคืนธงล้มเหลวให้จอเขียนบอก **ห้าม `catch` เปล่า**',
+    allow: {},
   },
   {
     id: 'role-retired-flag-honored',

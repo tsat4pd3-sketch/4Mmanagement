@@ -8,7 +8,8 @@
    ══════════════════════════════════════════════════════════════════════════ */
 import { useMemo } from 'react';
 import SearchSelect from './SearchSelect';
-import useInstruments from '../utils/useInstruments';
+import { useInstrumentsState } from '../utils/useInstruments';
+import { registryFailText } from '../utils/useMasterRows.js';
 import { appendHistoryOptions } from '../utils/pickerOptions';
 
 const up = (v) => String(v ?? '').trim().toUpperCase();
@@ -19,8 +20,10 @@ export default function InstrumentSelect({
   freeHint = 'วิธีตรวจที่ไม่ใช่เครื่องมือ (Visual/CF) หรือเครื่องมือที่ยังไม่ลงทะเบียนที่ /qa แท็บ 📏',
   history = [], inputStyle, style,
 }) {
-  const loaded = useInstruments();
+  const { rows: loaded, failed, stale } = useInstrumentsState();
   const instruments = given?.length ? given : loaded;
+  // ผู้เรียกส่งลิสต์มาเอง = ไม่ได้ใช้ทะเบียน ⇒ ไม่ต้องเตือนเรื่องทะเบียน
+  const fail = !given?.length && failed ? registryFailText('ทะเบียนเครื่องมือวัด', stale) : '';
   const options = useMemo(() => (instruments || []).filter(i => i?.code).map(i => ({
     id: i.id, label: i.code, key: up(i.code), sub: [i.name, i.inst_type, i.line_name].filter(Boolean).join(' · '),
     keywords: `${i.name || ''} ${i.inst_type || ''} ${i.line_name || ''} ${i.brand || ''}`,
@@ -31,7 +34,7 @@ export default function InstrumentSelect({
   return (
     <SearchSelect value={sel ? sel.id : ''} text={sel ? sel.label : (value || '')} options={optionsAll} disabled={disabled}
       allowFree={allowFree} freeHint={freeHint} placeholder={placeholder}
-      emptyText="ไม่พบเครื่องมือวัดในทะเบียน — ลงทะเบียนได้ที่ /qa แท็บ 📏 เครื่องมือวัด"
+      emptyText="ไม่พบเครื่องมือวัดในทะเบียน — ลงทะเบียนได้ที่ /qa แท็บ 📏 เครื่องมือวัด" loadFail={fail}
       inputStyle={inputStyle} style={style}
       onChange={({ text, opt }) => onChange?.(opt ? opt.label : text)} />
   );

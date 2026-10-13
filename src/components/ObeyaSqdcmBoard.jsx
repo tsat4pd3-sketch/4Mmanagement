@@ -152,7 +152,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
 
   // ── master (โหลดครั้งเดียว) ────────────────────────────────────────────────────
   const [lines, setLines] = useState([]);
-  const { index: org } = useOrgScope(lines);
+  const { index: org, failed: orgFailed } = useOrgScope(lines);
   const scopeLineSet = useMemo(() => (isPlant(scope) ? null : new Set(org.lineNamesOf(scope.kind, scope.value))), [scope, org]);
   // ส่วนงานที่ขอบเขตนี้สังกัด — ใช้ตอนตั้ง Action item / ส่งต่อ ?section= ให้หน้าที่ยังอ่านแค่ section
   const secFilter = isPlant(scope) ? '' : (org.sectionOf(scope.kind, scope.value) || '');
@@ -738,7 +738,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
           sub={`${periodText} · ${from} → ${to} · ${shiftCount.toLocaleString()} กะที่ปิดแล้ว`}
           filters={(
             <>
-              <OrgScopePicker index={org} value={scope} onChange={setScope} scopeSet={null} sections={sections}
+              <OrgScopePicker index={org} value={scope} onChange={setScope} scopeSet={null} sections={sections} failed={orgFailed}
                 plantLabel={ALL.section} width={230} title="เลือกขอบเขตตามผังองค์กร (ฝ่าย/ส่วนงาน/แผนก/กลุ่มไลน์/ไลน์/CC)" />
               <span className="sep" />
               {/* ช่วงที่ดู — value ว่างเมื่อใช้กรอบกำหนดเอง/เจาะเดือน ⇒ กดปุ่มเดิมซ้ำได้ (pickPeriod ล้าง custom) */}

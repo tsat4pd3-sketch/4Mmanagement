@@ -7,7 +7,8 @@
    ══════════════════════════════════════════════════════════════════════════ */
 import { useMemo } from 'react';
 import SearchSelect from './SearchSelect';
-import useSuppliers, { SUPPLIER_KINDS } from '../utils/useSuppliers';
+import { useSuppliersState, SUPPLIER_KINDS } from '../utils/useSuppliers';
+import { registryFailText } from '../utils/useMasterRows.js';
 import { appendHistoryOptions } from '../utils/pickerOptions';
 
 const up = (s) => String(s ?? '').trim().toUpperCase().replace(/\s+/g, ' ');
@@ -17,7 +18,7 @@ export default function SupplierSelect({
   placeholder = 'ค้นชื่อผู้ขาย / ผู้รับจ้าง…', freeHint = 'ผู้ขายรายใหม่ — เพิ่มเข้าทะเบียนได้ที่ /products แท็บ 🏭 Supplier',
   disabled, inputStyle, style,
 }) {
-  const rows = useSuppliers();
+  const { rows, failed, stale } = useSuppliersState();
   const options = useMemo(() => {
     const pref = new Set(kinds || []);
     let list = rows.filter(r => r.is_active !== false || up(r.name) === up(value));
@@ -41,6 +42,7 @@ export default function SupplierSelect({
   return (
     <SearchSelect value={sel ? sel.id : ''} text={sel ? sel.label : (value || '')} options={options} onChange={emit}
       allowFree={allowFree} placeholder={placeholder} freeHint={freeHint} emptyText="ไม่พบผู้ขายในทะเบียน"
+      loadFail={failed ? registryFailText('ทะเบียนผู้ขาย', stale) : ''}
       disabled={disabled} inputStyle={inputStyle} style={style} />
   );
 }

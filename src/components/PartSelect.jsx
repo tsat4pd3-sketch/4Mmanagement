@@ -11,7 +11,8 @@
    ══════════════════════════════════════════════════════════════════════════ */
 import { useMemo } from 'react';
 import SearchSelect from './SearchSelect';
-import usePartOptions from '../utils/usePartOptions';
+import { usePartOptionsState } from '../utils/usePartOptions';
+import { registryFailText } from '../utils/useMasterRows.js';
 import { partKey } from '../utils/partOptions';
 import { appendHistoryOptions } from '../utils/pickerOptions';
 
@@ -21,13 +22,15 @@ export default function PartSelect({
   history = [],          // เลขพาร์ทที่เคยบันทึกในคอลัมน์ปลายทาง — ทะเบียนไม่มีก็ยังเลือกได้ (กลุ่ม 📜)
   inputStyle, style,
 }) {
-  const loaded = usePartOptions();
+  const { options: loaded, failed, stale } = usePartOptionsState();
+  // ผู้เรียกส่งลิสต์มาเอง = ไม่ได้ใช้ทะเบียน ⇒ ไม่ต้องเตือน
+  const fail = !given && failed ? registryFailText('ทะเบียนพาร์ท', stale) : '';
   const options = useMemo(() => appendHistoryOptions(given || loaded, { history, current: value, keyOf: partKey, make: (v) => ({ part_no: v, part_name: '', mat_no: null }) }), [given, loaded, history, value]);
   const sel = useMemo(() => options.find(o => o.key === partKey(value)) || null, [options, value]);
   return (
     <SearchSelect value={sel ? sel.id : ''} text={sel ? sel.label : (value || '')} options={options} disabled={disabled}
       allowFree={allowFree} freeHint={freeHint} placeholder={placeholder}
-      emptyText="ไม่พบเลขพาร์ทในทะเบียน (ชุดเอกสาร PE / มาตรฐานตรวจ QA / Product Master)"
+      emptyText="ไม่พบเลขพาร์ทในทะเบียน (ชุดเอกสาร PE / มาตรฐานตรวจ QA / Product Master)" loadFail={fail}
       inputStyle={{ fontFamily: 'monospace', ...inputStyle }} style={style}
       onChange={({ text, opt }) => onChange?.(opt
         ? { part_no: opt.part_no, part_name: opt.history ? null : (opt.part_name || ''), mat_no: opt.mat_no || null, known: !opt.history, opt }
