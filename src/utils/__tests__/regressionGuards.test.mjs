@@ -3870,3 +3870,28 @@ test('🛡️ quality-photo-full-by-default — QualityPhotoField ต้อง�
     + '   หลุดกรอบ ใช้เป็นหลักฐานไม่ได้ และกู้คืนไม่ได้ (เก็บแต่รูปที่ครอบแล้ว)\n'
     + '   แก้ยังไง: <ImageCropModal ... allowFull fullDefault fullHint="…" />\n');
 });
+
+/* ── 📎 หน้าพิมพ์ที่มีรูป ต้องรอรูปโหลดก่อนสั่ง print (2026-10-13) ────────────────
+   `window.print()` **ไม่รอรูป** — สั่งพิมพ์ทันทีที่ฟอนต์พร้อม จะได้ภาคผนวกเป็นช่องว่าง
+   โดยไม่มี error ให้เห็นเลย (คนเซ็นใบไปแล้วถึงรู้ว่ารูปไม่ติด) · และ `loading="lazy"`
+   ในหน้าพิมพ์ยิ่งซ้ำ — รูปที่ยังไม่ถูกเลื่อนถึงจะไม่ถูกโหลดเลย
+   ⚠️ กฎ `list-thumb-needs-lazy` เป็นเรื่องของ "จอรายการ" (กัน egress) คนละเรื่องกับหน้าพิมพ์ */
+test('🛡️ print-photos-need-wait — ใบพิมพ์ที่แนบภาคผนวกรูป ต้องเรียก __waitImgs ก่อน print()', () => {
+  const bad = [];
+  for (const f of walk(join(ROOT, 'src/lib'), ['.js'])) {
+    const rel = relative(ROOT, f);
+    // เทียบกับโค้ดที่ตัดคอมเมนต์แล้วเสมอ — ไม่งั้นคอมเมนต์ที่ "เตือนห้ามใช้ lazy" จะทำให้ด่านยิงใส่ตัวเอง
+    const code = stripComments(readFileSync(f, 'utf8'));
+    if (/loading\s*=\s*\\?["']lazy/.test(code)) bad.push(`${rel} — ใส่ loading="lazy" ในหน้าพิมพ์`);
+    if (!/photoAppendixHtml/.test(code)) continue;
+    if (!/__waitImgs/.test(code)) bad.push(`${rel} — แนบภาคผนวกรูปแต่ไม่ได้รอรูปโหลด (waitImgsScript/__waitImgs)`);
+    if (/window\.print\(\)/.test(code) && !/__waitImgs\(/.test(code)) bad.push(`${rel} — สั่ง print() โดยไม่ผ่าน __waitImgs`);
+  }
+  assert.deepEqual(bad, [],
+    '\n\n❌ หน้าพิมพ์ต่อไปนี้เสี่ยงพิมพ์ออกมาเป็นช่องว่าง:\n'
+    + bad.map(b => '   • ' + b).join('\n') + '\n'
+    + '   แก้ยังไง: ฝัง ${waitImgsScript()} ในแท็ก <script> ของใบ แล้วสั่งพิมพ์ผ่าน\n'
+    + '            window.__waitImgs(function () { window.print(); })\n'
+    + '            (ของกลางอยู่ที่ src/lib/photoAppendix.js — รูปพัง/ช้าเกิน 8 วิ จะติดป้าย\n'
+    + '             "โหลดรูปไม่สำเร็จ" บนกระดาษแล้วพิมพ์ต่อ ไม่ค้างรอไม่จบ)\n');
+});
