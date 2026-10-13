@@ -326,15 +326,9 @@ export default function MonitorBoardGrid({
                 <tr key={`${part.id}|${row.key}`} style={{ background: rowBg }}>
                   {ri === 0 ? (
                     <td rowSpan={rows.length} style={{ ...tdSticky, width: HEAD_W, verticalAlign: 'top', background: pi % 2 ? 'var(--bg2)' : 'var(--card)' }}>
-                      {/* 🔴 `minWidth: 0` ที่ลูกฝั่งข้อความ ห้ามถอด — flex item มีพื้น `min-width:auto`
-                          ⇒ ชื่อพาร์ทยาวๆ (เช่น "BRACKET;SHOCK ABS") ดันกล่องจนล้น `HEAD_W` แล้ว
-                          **ปัดตามไม่ได้เพราะหัวตารางเป็น sticky** (mobilesweep @390px จับได้ 13/10:
-                          กล่อง 275 / เนื้อหา 294) · ของเดิมพังเฉพาะมือถือ บนจอ TV/PC มองไม่เห็น */}
                       <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
                         <PartThumb url={partImageOf(imgMap, part.mat_no)} alt={part.part_name || part.mat_no || ''} size={44} />
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <PartHead part={part} board={board} shortAt={shortAt} racks={racks} raw={raw} />
-                        </div>
+                        <PartHead part={part} board={board} shortAt={shortAt} racks={racks} raw={raw} />
                       </div>
                     </td>
                   ) : null}
