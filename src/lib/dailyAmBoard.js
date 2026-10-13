@@ -16,7 +16,7 @@ import { getLineFamilyNames } from '../utils/lineHierarchy'
 import { SESSION_STATUSES_REAL } from '../utils/sessionStatus'
 import { loadLinesRes } from '../utils/useProductionLines'
 import { loadPmTeams, isAmTeam } from '../utils/pmTeams'
-import { amShiftInfo, isDailyAmEquipment } from './pmDailyStatus'
+import { amShiftInfo, isDailyAmEquipment, openFamilyLines } from './pmDailyStatus'
 
 // ส่วน pure (กะ · ขอบเขตอุปกรณ์ · สรุปต่อไลน์) อยู่ใน pmDailyStatus.js (ไม่แตะ supabase ⇒ เทสได้) — re-export ให้จอเรียกจากที่เดียว
 export { amShiftInfo, isDailyAmEquipment, dailyAmTargetsByLine, dailyAmLineStatus } from './pmDailyStatus'
@@ -99,7 +99,11 @@ export async function loadDailyAm({ now = new Date(), lines = null } = {}) {
   /* ⚠️ ไลน์แม่-ไลน์ลูกต้องนับรวมกัน — อุปกรณ์ลงทะเบียน AM ไว้ที่ไลน์แม่ HYDROFORM แต่กะเปิดที่ไลน์ลูก HDF1/HDF2
      เทียบชื่อไลน์ตรงตัว = การ์ด HYDROFORM ค้าง "ยังไม่เริ่มผลิต" ตลอดกาล */
   const linesForFam = lineRes.data ?? []
+  const openRaw = new Set(Object.values(sessionLine))   // ชื่อที่เปิดกะ "ตรงตัว"
   const firstOrderByLine = {}
+  /* 🔴 "ไลน์นี้เดินอยู่ไหม" ต้องไล่ไลน์แม่-ลูก ไม่ใช่เทียบชื่อตรงตัว — กฎ + เหตุผลอยู่ที่
+     `openFamilyLines()` ใน `pmDailyStatus.js` (ฝั่ง pure · มีเทส) ห้ามวนเองที่นี่ */
+  const openFam = openFamilyLines(linesForFam, openRaw)
   for (const l of linesForFam) {
     const fam = getLineFamilyNames(linesForFam, l.id)
     const names = fam?.length ? fam : [l.name]
@@ -113,6 +117,6 @@ export async function loadDailyAm({ now = new Date(), lines = null } = {}) {
 
   return {
     ok: true, shift: si, jigs, targets, lines: linesForFam, resultByJig, firstOrderByLine,
-    openSessionLines: new Set(Object.values(sessionLine)),
+    openSessionLines: openFam,
   }
 }
