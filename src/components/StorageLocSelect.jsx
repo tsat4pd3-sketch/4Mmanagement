@@ -6,12 +6,13 @@
    ══════════════════════════════════════════════════════════════════════════ */
 import { useMemo } from 'react';
 import SearchSelect from './SearchSelect';
-import useStorageLocations from '../utils/useStorageLocations';
+import { useStorageLocationsState } from '../utils/useStorageLocations';
+import { registryFailText } from '../utils/useMasterRows.js';
 import { slocLabel, slocValid, SLOC_KINDS } from '../utils/storageLoc';
 import { appendHistoryOptions } from '../utils/pickerOptions';
 
 export default function StorageLocSelect({ value = '', onChange, allowFree = true, placeholder = 'รหัสคลัง เช่น S401…', disabled, inputStyle, style, kinds, history = [] }) {
-  const rows = useStorageLocations();
+  const { rows, failed, stale } = useStorageLocationsState();
   const options = useMemo(() => rows
     .filter(r => r.is_active !== false || slocLabel(r.code) === slocLabel(value))
     .filter(r => !kinds?.length || kinds.includes(r.kind))
@@ -31,6 +32,7 @@ export default function StorageLocSelect({ value = '', onChange, allowFree = tru
       <SearchSelect value={sel ? sel.id : ''} text={sel ? sel.label : (value || '')} options={optionsAll} onChange={emit}
         allowFree={allowFree} placeholder={placeholder} freeHint="รูปแบบ ตัวอักษร 1-3 + เลข 3 หลัก"
         emptyText="ไม่พบรหัสคลังนี้ในทะเบียน" disabled={disabled}
+        loadFail={failed ? registryFailText('ทะเบียนรหัสคลัง', stale) : ''}
         inputStyle={{ fontFamily: 'monospace', textTransform: 'uppercase', ...(bad ? { borderColor: '#ef4444' } : {}), ...inputStyle }} />
       {bad && <div style={{ fontSize: 11, color: '#ef4444', marginTop: 2 }}>✗ รูปแบบรหัสคลังไม่ถูกต้อง (เช่น S401 / P402)</div>}
     </div>

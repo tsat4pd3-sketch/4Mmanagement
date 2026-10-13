@@ -65,6 +65,11 @@ export const KEYS_BY_TABLE = {
     'production_lines:dr',       // DailyReport load()
     'production_lines:flow',     // DailyReport — flow_mode/parallel_stations
   ],
+  /* ทะเบียนของบอร์ด AM รายวัน (`src/lib/dailyAmBoard.js` · FactoryMap + DailyPM) — 13/10
+     3 ตัวนี้เคยถูกดึงใหม่ทุกรอบ refresh = 1,308 ครั้ง/วัน · เป็นค่าที่คูณตามจำนวนจอที่เปิด */
+  jigs:                  ['jigs:am'],
+  pm_daily_line_targets: ['pm_daily_line_targets:active'],
+  checklists:            ['checklists:mtn'],
   storage_locations: ['storage_locations:v2'],
   line_delivery_points: ['line_delivery_points:v1'],   // useDeliveryPoints (01/10)   // :v2 = รอบที่เพิ่ม line_names (bump คีย์ตอนเปลี่ยน shape)
   die_press_lines:   ['die_press_lines:master'],

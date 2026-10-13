@@ -33,7 +33,7 @@ export default function ImageSqueezePanel({ canRun = false, onDone }) {
     setScanning(true);
     try {
       const r = await recompressLayouts({ supabase, supabaseDR, scanOnly: true });
-      if (alive()) setScan({ total: r.total, byGroup: r.byGroup || {} });
+      if (alive()) setScan({ total: r.total, byGroup: r.byGroup || {}, checkedSkip: r.checkedSkip || 0 });
     } catch (e) {
       if (alive()) { setScan(null); toast.error('สำรวจรูปไม่สำเร็จ: ' + (e?.message || e)); }
     } finally { if (alive()) setScanning(false); }
@@ -70,7 +70,8 @@ export default function ImageSqueezePanel({ canRun = false, onDone }) {
         supabase, supabaseDR, limit: 0,
         onProgress: (text, i, n) => setBusy(`${text} (${i}/${n})`),
       });
-      const all = { done: r.done, skip: r.skip, error: r.error, savedBytes: r.savedBytes, errors: r.errors };
+      const all = { done: r.done, skip: r.skip, error: r.error, savedBytes: r.savedBytes, errors: r.errors,
+        marked: r.marked || 0, markError: r.markError || '' };
       const remaining = r.remaining;
       const mb = (all.savedBytes / 1048576).toFixed(1);
       setResult({ ...all, remaining, stalled: false, mb });
@@ -127,7 +128,7 @@ export default function ImageSqueezePanel({ canRun = false, onDone }) {
       {/* 📋 เหลือให้ทำกี่ใบ แยกตามกลุ่ม — กฎความซื่อสัตย์ของจอ: ยังไม่รู้ ต้องเขียนว่ายังไม่รู้ ห้ามโชว์ 0 */}
       <div style={card}>
         <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 8 }}>
-          📋 รูปที่ยังไม่ได้บีบ
+          📋 รูปที่ยังไม่ได้ตรวจ
           <span style={{ fontWeight: 400, fontSize: 11.5, color: 'var(--muted)', marginLeft: 8 }}>
             (นับจากแถวในฐานข้อมูล ไม่ได้โหลดรูป — ไม่มีค่าเน็ต)
           </span>
@@ -141,7 +142,12 @@ export default function ImageSqueezePanel({ canRun = false, onDone }) {
           </div>
         ) : scan.total === 0 ? (
           <div style={{ fontSize: 12.5, color: 'var(--accent)' }}>
-            ✅ ไม่มีรูปค้าง — ทุกกลุ่มเป็น WebP แล้ว
+            ✅ ไม่มีรูปค้าง — ตรวจครบทุกใบแล้ว
+            {scan.checkedSkip > 0 && (
+              <span style={{ color: 'var(--muted)' }}>
+                {' '}({scan.checkedSkip.toLocaleString()} ใบตรวจแล้วไม่ต้องบีบ)
+              </span>
+            )}
           </div>
         ) : (
           <div style={{ display: 'grid', gap: 6, alignContent: 'start' }}>
@@ -158,6 +164,14 @@ export default function ImageSqueezePanel({ canRun = false, onDone }) {
               <span style={{ color: 'var(--text2)' }}>รวม</span>
               <b style={{ color: 'var(--accent2)' }}>{scan.total.toLocaleString()} ใบ</b>
             </div>
+            {/* 🔴 แยก "ตรวจแล้วไม่ต้องบีบ" ออกจาก "ยังไม่ได้ตรวจ" — เดิมรวมกันแล้วเรียกว่า
+                "ยังไม่ได้บีบ" ⇒ เลขไม่ลดสักที ทั้งที่งานเสร็จแล้ว (user ทัก 13/10) */}
+            {scan.checkedSkip > 0 && (
+              <div style={{ fontSize: 11.5, color: 'var(--muted)', paddingTop: 2 }}>
+                อีก {scan.checkedSkip.toLocaleString()} ใบ <b>ตรวจแล้วไม่ต้องบีบ</b> (เล็กอยู่แล้ว / บีบแล้วไม่เล็กลงพอ)
+                — ไม่นับรวมและไม่โหลดซ้ำอีก
+              </div>
+            )}
             <button onClick={() => doScan()} disabled={!!busy} style={{ ...linkBtn, justifySelf: 'start', marginTop: 2 }}>
               🔄 สำรวจใหม่
             </button>
@@ -172,6 +186,12 @@ export default function ImageSqueezePanel({ canRun = false, onDone }) {
             บีบสำเร็จ <b style={{ color: 'var(--accent)' }}>{result.done.toLocaleString()} ใบ</b>{' '}
             · ประหยัดพื้นที่/ค่าเน็ต <b style={{ color: 'var(--accent)' }}>{result.mb} MB</b><br />
             ข้าม {result.skip.toLocaleString()} ใบ <span style={{ color: 'var(--muted)' }}>(เล็กอยู่แล้ว / เป็น WebP แล้ว / บีบแล้วไม่เล็กลงพอ)</span>
+            {result.marked > 0 && (<><br /><span style={{ color: 'var(--muted)' }}>
+              จดไว้ว่า “ตรวจแล้วไม่ต้องบีบ” {result.marked.toLocaleString()} ใบ — รอบหน้าจะไม่ถูกหยิบมาโหลดซ้ำ
+            </span></>)}
+            {result.markError && (<><br /><span style={{ color: '#ef4444' }}>
+              จดทะเบียน “ตรวจแล้ว” ไม่สำเร็จ ({result.markError}) — เลขที่เหลือจะยังไม่ลด
+            </span></>)}
             {result.error > 0 && (<><br /><span style={{ color: '#ef4444' }}>ไม่สำเร็จ {result.error} ใบ</span></>)}
             {result.remaining > 0 && (<><br />เหลืออีก <b>{result.remaining.toLocaleString()} ใบ</b>{result.stalled ? ' — หยุดไว้เพราะรอบล่าสุดไม่คืบหน้า (มีไฟล์เสีย)' : ' — กดซ้ำได้'}</>)}
           </div>

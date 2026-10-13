@@ -8,6 +8,8 @@
  * เซฟเป็น PDF = เลือก "Save as PDF" ใน dialog พิมพ์ของเบราว์เซอร์
  */
 import { getDocForm, fullCode } from '../utils/docForms';
+/* 📎 ภาคผนวกรูปหลักฐาน = เอกสารแนบต่อท้าย ไม่แตะเนื้อฟอร์ม FM-PD2-002 (13/10 · คำสั่ง user) */
+import { photoAppendixHtml, PHOTO_APPENDIX_CSS, waitImgsScript } from './photoAppendix';
 import tsLogoUrl from '../assets/TS logo.png';
 
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -48,6 +50,16 @@ export async function printScrapReport({ report, items }) {
   const chk = k => (cats.includes(k) ? '☑' : '☐');
 
   const sorted = [...items].sort((a, b) => (a.seq || 0) - (b.seq || 0));
+  /* 📷 รูปหลักฐานต่อแถว — เลข No. อิง "ลำดับที่พิมพ์ในตาราง" (i+1) ไม่ใช่ seq ในฐาน
+     เพราะคนอ่านใบเทียบกับเลขที่เห็นบนกระดาษ · แถวที่ไม่มีรูปไม่กินช่องในภาคผนวก */
+  const photos = sorted.map((it, i) => (it?.defect_img ? {
+    url: it.defect_img, no: i + 1,
+    /* ⚠️ แถวของใบนี้ไม่มีคอลัมน์ "ชนิดของเสีย" เป็นข้อความ (มีแต่รหัส defect_codes + ช่องติ๊ก M1-M5)
+       ⇒ ใช้รหัสถ้ามี ไม่มีก็เขียนกลางๆ **ห้ามเดาชนิดจากข้อความอื่น** */
+    label: it.defect_codes ? `ของเสีย ${it.defect_codes}` : 'รูปของเสีย',
+    sub: [it.part_no || it.mat_no, it.part_name, Number(it.qty) ? `${Number(it.qty)} ชิ้น` : '']
+      .filter(Boolean).join(' · '),
+  } : null)).filter(Boolean);
   const ROWS = Math.max(27, sorted.length);   // ตรึงจำนวนแถวเหมือนฟอร์มกระดาษ
   const rowsHtml = Array.from({ length: ROWS }, (_, i) => {
     const it = sorted[i];
@@ -79,6 +91,7 @@ export async function printScrapReport({ report, items }) {
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(df.form_code || 'FM-PD2-002')} ${esc(report.doc_no || '')}</title>
 <style>
   @page { size: A4 portrait; margin: 8mm; }
+  ${PHOTO_APPENDIX_CSS}
   * { box-sizing: border-box; }
   body { font-family: 'Sarabun', Tahoma, sans-serif; font-size: 9px; color: #000; margin: 0; }
   .hd { text-align: center; }
@@ -176,7 +189,15 @@ export async function printScrapReport({ report, items }) {
     <tr><td colspan="3">สำเนา : ฝ่ายบัญชี BU TSAT4&nbsp;&nbsp;&nbsp; ผู้ส่งของ ${esc(report.sender_name || '..................')}&nbsp;&nbsp;&nbsp; ผู้รับของ (HRM) ${esc(report.receiver_name || '..................')}</td></tr>
   </table>
   <div class="code-no">${esc(fullCode(df))}</div>
-<script>window.onload = () => window.print();</script>
+  ${photoAppendixHtml(photos, {
+    title: `ภาคผนวก : รูปหลักฐานของเสีย — แนบท้าย${df.title || 'ใบรายงานของเสีย'}`,
+    logo, code: report.doc_no || fullCode(df), cols: 3, rows: 3, imgH: '52mm',
+  })}
+<script>
+  ${waitImgsScript()}
+  /* 🔴 print() ไม่รอรูป — สั่งพิมพ์เลยจะได้หน้าแนบเป็นช่องว่าง */
+  window.onload = () => window.__waitImgs(() => window.print());
+</script>
 </body></html>`;
 
   const w = window.open('', '_blank');

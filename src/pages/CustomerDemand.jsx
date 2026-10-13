@@ -1061,7 +1061,12 @@ function WorkflowSection({ canEdit }) {
 
   // ลูกค้าที่ยังไม่มีชุดของตัวเอง → คัดลอกจากค่ามาตรฐานมาเป็นจุดตั้งต้น
   const copyFromDefault = async () => {
-    const { data: defs } = await supabaseDR.from('shipping_workflow_steps').select('*').is('customer', null).eq('is_active', true).order('step_no');
+    /* 🔴 อ่านค่ามาตรฐานไม่ได้ ≠ "ยังไม่มีค่ามาตรฐาน" — เดิมแกะแค่ `{ data: defs }`
+       ⇒ คิวรีล้มแล้วจอบอกว่า "ยังไม่มีค่ามาตรฐานให้คัดลอก" = จอโกหก (กฎเขียน DB ข้อ 12)
+       คนอ่านแล้วไปตั้งค่ามาตรฐานใหม่ทั้งชุด ทั้งที่มีอยู่แล้ว */
+    const defRes = await supabaseDR.from('shipping_workflow_steps').select('*').is('customer', null).eq('is_active', true).order('step_no');
+    if (defRes.error) { toast.error('อ่านค่ามาตรฐานไม่สำเร็จ — ยังไม่ได้คัดลอก (ไม่ได้แปลว่าไม่มีค่ามาตรฐาน) ลองใหม่อีกครั้ง: ' + defRes.error.message); return; }
+    const defs = defRes.data;
     if (!defs?.length) { toast.error('ยังไม่มีค่ามาตรฐานให้คัดลอก'); return; }
     const { error } = await supabaseDR.from('shipping_workflow_steps')
       .insert(defs.map(d => ({ customer: scope, step_no: d.step_no, name: d.name, offset_min: d.offset_min, requires_status: d.requires_status, deducts_stock: d.deducts_stock ?? false })));

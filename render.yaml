@@ -4,6 +4,17 @@ services:
     env: static
     buildCommand: npm run build
     staticPublishPath: ./dist
+    # deploy เป็นรอบทุกชั่วโมงผ่าน Deploy Hook (.github/workflows/scheduled-deploy.yml) — ห้ามเปิดคืน
+    # service นี้ "Blueprint managed" ⇒ ปิดใน dashboard อย่างเดียว sync รอบหน้าอาจเปิดกลับ
+    autoDeploy: false
+    # ประหยัด pipeline minutes (2026-10-13 · build ล่มเพราะโควต้าเดือนหมด) — push ที่แก้แค่
+    # เอกสาร .md / ตั้งค่า AI ไม่ต้อง build (ไม่เปลี่ยนเว็บ) · ห้ามใส่ docs/** ทั้งโฟลเดอร์:
+    # เทสอ่าน docs/**/*.py · ⚠️ มีผลเฉพาะ service ที่สร้างจาก Blueprint — ไม่งั้นตั้งใน dashboard
+    buildFilter:
+      ignoredPaths:
+        - "*.md"
+        - "**/*.md"
+        - ".claude/**"
     routes:
       - type: rewrite
         source: /*

@@ -11,6 +11,7 @@ import { can } from '../utils/permissions'
 import { inSectionScope } from '../utils/sectionScope'
 import { getLineFamilyNames } from '../utils/lineHierarchy'
 import { loadDailyAm, amShiftInfo, dailyAmLineStatus } from '../lib/dailyAmBoard'
+import { invalidateTable } from '../utils/masterInvalidate'
 import { loadPmTeams, isAmTeam } from '../utils/pmTeams'
 import { checkWriteRows } from '../utils/dbWrite'
 import LineSelect from '../components/LineSelect' // dropdown ไลน์ = <LineSelect> เท่านั้น (single-source audit 2026-09-07)
@@ -133,11 +134,13 @@ export default function DailyPM() {
     if (!ok) { setJigs(prev => [...prev]); return } // re-render → select กลับค่าเดิม
     const { error } = await supabaseDR.from('jigs').update({ line_name }).eq('id', jig.id)
     if (error) return toast.error(error.message)
+    invalidateTable('jigs')   // ทะเบียนเข้า cache แล้ว (13/10) — ไม่ล้าง = จออื่นเห็นไลน์เดิมถึง 4 ชม.
     // ย้ายรายการลงทะเบียนที่มีอยู่ตามไปด้วย — ไม่งั้นแถวเก่าค้างที่ไลน์เดิม สถานะไลน์เดิมจะเตือนค้างทั้งที่เครื่องย้ายไปแล้ว
     const movedReg = targets.some(t => t.jig_id === jig.id)
     if (movedReg) {
       const { error: e2 } = await supabaseDR.from('pm_daily_line_targets').update({ line_name }).eq('jig_id', jig.id)
       if (e2) return toast.error(e2.message)
+      invalidateTable('pm_daily_line_targets')
       setTargets(prev => prev.map(t => (t.jig_id === jig.id ? { ...t, line_name } : t)))
     }
     toast.success(jig.line_name
@@ -159,6 +162,7 @@ export default function DailyPM() {
       const ok = checkWriteRows(await supabaseDR.from('pm_daily_line_targets').update({ is_active: false })
         .in('id', rows.map(t => t.id)).select('id'), 'เอาออกจากทะเบียน AM')
       if (!ok) return
+      invalidateTable('pm_daily_line_targets')
       setTargets(prev => prev.filter(t => !rows.some(r => r.id === t.id)))
     } else {
       /* 🔗 ติ๊กเข้า = "จิ๊กนี้ต้องตรวจทุกต้นกะ" ⇒ ต้องมีใบตรวจของทีม AM ก่อน ไม่งั้นลงทะเบียนแล้วเปิดเจอฟอร์มเปล่า
@@ -175,6 +179,7 @@ export default function DailyPM() {
         ? await supabaseDR.from('pm_daily_line_targets').update({ is_active: true }).eq('id', old.id).select().single()
         : await supabaseDR.from('pm_daily_line_targets').insert({ line_name, jig_id: jig.id, shift: null, created_by: userId }).select().single()
       if (res.error) return toast.error(res.error.message)
+      invalidateTable('pm_daily_line_targets')
       setTargets(prev => [...prev, res.data])
       toast.success(`ลงทะเบียน ${jig.name} แล้ว — แผน AM ของเครื่องนี้นับตามวันเดินเครื่อง (run_day) อัตโนมัติ`)
     }

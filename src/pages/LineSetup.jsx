@@ -434,8 +434,15 @@ export default function LineSetup({ embedded = false } = {}) {
     }
     // ลบเฉพาะไฟล์ของไลน์นี้เอง — ข้ามถ้าไลน์อื่น (เช่นไลน์แม่/ลูกที่ยืมผัง) ยังชี้ URL เดียวกันอยู่
     if (delLayout?.image_url?.includes('/employee-photos/layouts/')) {
-      const { data: sharers } = await supabase.from('line_layouts').select('line_name').eq('image_url', delLayout.image_url).limit(1);
-      if (!sharers?.length) {
+      /* 🔴 นับ "ไลน์อื่นที่ใช้รูปนี้ร่วม" ให้ได้ก่อนลบไฟล์ — **นับไม่ได้ = ไม่ลบ** (fail-closed · กฎเขียน DB ข้อ 2
+         "ลบไฟล์ใน storage ได้หลังนับแถว > 0 เท่านั้น" · ต้นแบบ utils/orgNodeRefs.js)
+         เดิมแกะแค่ `{ data: sharers }` ⇒ คิวรีล้ม = undefined ⇒ `!undefined?.length` เป็น **true**
+         ⇒ ลบไฟล์ทิ้งทั้งที่ไลน์อื่นยังใช้ · ไลน์แม่-ลูกยืมผัง URL เดียวกันเป็นเรื่องปกติของโปรเจคนี้
+         ⇒ ผังหายทั้งตระกูล กู้ไม่ได้ และไม่มี error ฟ้องใคร */
+      const shared = await supabase.from('line_layouts').select('line_name').eq('image_url', delLayout.image_url).limit(1);
+      if (shared.error) {
+        toast.error('ลบไลน์แล้ว แต่เช็คไม่ได้ว่ามีไลน์อื่นใช้รูปผังนี้ร่วมอยู่ไหม — จึงไม่ลบไฟล์รูป (ไฟล์ค้างไม่กระทบการใช้งาน ดีกว่าลบรูปของไลน์อื่น)');
+      } else if (!(shared.data || []).length) {
         const oldName = decodeURIComponent(delLayout.image_url.split('/employee-photos/')[1] || '');
         if (oldName.startsWith('layouts/')) supabase.storage.from('employee-photos').remove([oldName]).catch(() => {});
       }
@@ -626,8 +633,11 @@ export default function LineSetup({ embedded = false } = {}) {
       if (!(dres.data || []).length) { toast.error('ลบรูปผังไม่สำเร็จ (0 แถว) — สิทธิ์ไม่พอ · รูปผังยังอยู่'); return; }
       // ลบไฟล์จาก storage หลัง DB สำเร็จ (best-effort) — เฉพาะเมื่อไม่มีไลน์อื่นแชร์ URL เดียวกัน
       if (layoutImage.includes('/employee-photos/layouts/')) {
-        const { data: sharers } = await supabase.from('line_layouts').select('line_name').eq('image_url', layoutImage).limit(1);
-        if (!sharers?.length) {
+        /* 🔴 fail-closed เหมือนตอนลบไลน์ — นับผู้ใช้ร่วมไม่ได้ = ไม่แตะไฟล์ (ดูเหตุผลเต็มที่ handleDeleteLine) */
+        const shared = await supabase.from('line_layouts').select('line_name').eq('image_url', layoutImage).limit(1);
+        if (shared.error) {
+          toast.error('ลบรูปผังออกจากไลน์นี้แล้ว แต่เช็คไม่ได้ว่าไลน์อื่นใช้ไฟล์เดียวกันอยู่ไหม — จึงไม่ลบไฟล์ (กันรูปของไลน์อื่นหาย)');
+        } else if (!(shared.data || []).length) {
           const oldName = decodeURIComponent(layoutImage.split('/employee-photos/')[1] || '');
           if (oldName.startsWith('layouts/')) supabase.storage.from('employee-photos').remove([oldName]).catch(() => {});
         }

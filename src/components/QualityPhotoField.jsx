@@ -3,8 +3,9 @@
  *   ลงงานเสียในกะ (Daily Report) → ลงถังเหลือง/แดง (QualityBins) → ใบรายงานของเสีย (ScrapReport)
  *
  * 🔴 กติกาที่ห้ามแก้ที่หน้า (2026-10-12 · คำสั่ง user):
- *   · ไฟล์ผ่าน `<ImageCropModal allowFull>` เสมอ — **ครอบได้ แต่ต้องกด "ใช้ทั้งรูป" ได้ด้วย**
+ *   · ไฟล์ผ่าน `<ImageCropModal allowFull fullDefault>` เสมอ — **เริ่มที่ "ใช้ทั้งรูป" ครอบได้แต่ต้องตั้งใจเลือก**
  *     รูปหลักฐานที่ครอบจนตำหนิหลุดกรอบ = รูปใช้ไม่ได้เลย (บทเรียนเดียวกับรูปผังเครื่องจักร 21/08)
+ *     🔴 ห้ามถอด `fullDefault` — ค่าเริ่มต้นคือสิ่งที่คนรีบๆ หน้าไลน์จะได้จริง (คำสั่ง user 13/10)
  *   · บีบ/อัปโหลดผ่าน `src/utils/qualityImage.js` เท่านั้น (ด่าน `quality-photo-via-helper`)
  *   · **รูปเป็นทางเลือกเสมอ ห้ามทำเป็นช่องบังคับ** — หน้างานใส่ถุงมือ/รีบ บังคับถ่ายทุกใบ = คนเลิกลงข้อมูล
  *   · "ยังไม่มีรูป" ต้องเขียนบนจอ **ห้ามซ่อนช่องเงียบๆ** (กฎความซื่อสัตย์ของจอ)
@@ -72,7 +73,7 @@ export default function QualityPhotoField({
       {cropFile && (
         <ImageCropModal
           file={cropFile} aspect={QUALITY_IMG_ASPECT} outputSize={1024} quality={0.8} webp
-          allowFull fullLabel="ใช้ทั้งรูป (ไม่ครอบ) — แนะนำสำหรับรูปหลักฐาน"
+          allowFull fullDefault fullHint="เก็บทั้งภาพไว้ — ค่าแนะนำสำหรับรูปหลักฐาน"
           title="จัดกรอบรูปหลักฐานของเสีย"
           onCancel={() => setCropFile(null)}
           onConfirm={(cropped) => { onPick(cropped); setCropFile(null); }}
