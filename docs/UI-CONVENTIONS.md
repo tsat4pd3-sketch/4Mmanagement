@@ -1220,7 +1220,7 @@ const [tab, setTab] = useTabParam(TABS.map(t => t.key), 'list');   // src/utils/
 **ข้อยกเว้นที่ตั้งใจ:** `/linesetup` **ไม่ redirect** เข้า `/layout-setup?tab=production` — เพราะแท็บนั้น gate ด้วย `line_setup:edit` และ **ชี้กลับมา `/linesetup` เป็นทาง "ดูอย่างเดียว"** ของคนที่ไม่มีสิทธิ์แก้ · redirect แล้วจะกลายเป็นวงวน
 
 **📺 ข้อยกเว้น "บอร์ดจอ TV" — ไม่มี `PageHeader` โดยตั้งใจ** (หัวเรื่อง+breadcrumb กินแนวตั้งซึ่งเป็นพื้นที่ของบอร์ด):
-`Login` (มีแบรนด์เอง) · `Dashboard` · `Management` · `LineOeeBoard` (`/line-oee`) · **`/tv` (จอเฝ้าระวังแขวนห้อง — ไม่มี sidebar/กระดิ่งด้วย)** · `LineSetup` (ถูกฝังในแท็บหน้าอื่น) · `DeptHub` (หน้าแรก — hero ของระบบ ไม่ใช่หน้างาน · เพิ่มในรายการ 2026-09-24)
+`Login` (มีแบรนด์เอง) · `Dashboard` · `Management` · `LineOeeBoard` (`/line-oee`) · **`/tv` (จอเฝ้าระวังแขวนห้อง — ไม่มี sidebar/กระดิ่งด้วย · 13/10: ปุ่ม `☰ เมนู` เปิด sidebar แบบลอยได้ ยกเว้นบัญชี role `display` · state `tvNavOpen` แยกจากหน้าอื่น เปิดจอมาปิดเสมอ)** · `LineSetup` (ถูกฝังในแท็บหน้าอื่น) · `DeptHub` (หน้าแรก — hero ของระบบ ไม่ใช่หน้างาน · เพิ่มในรายการ 2026-09-24)
 · **`/nm-board?tv=1` (บอร์ด New Model บนจอ 70" — ข้อยกเว้นราย *มุมมอง* ซ้อนทับเป็น overlay `position:fixed` ไม่แตะ routing · 2026-09-23)**
 
 **📺 กติกาเพิ่มสำหรับบอร์ดที่ตั้งใจแขวนจอใหญ่ (70") — ตกผลึกจาก `/nm-board?tv=1` (2026-09-23)**
