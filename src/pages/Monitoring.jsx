@@ -16,7 +16,7 @@ import { BOARD_TABS, boardPeriods, rowDefs } from '../utils/monitorBoards';
 import {
   sumByMatDate, firstByMat, makeSystemLookup, OUT_TXN_TYPES, IN_TXN_TYPES,
   DEMAND_SKIP_STATUS, onHandAtRef, outAtRef, inAtRef, fgAnchorBalance, makeAnchorLookup, rackOrderSyncPlan,
-  rebucketToWeeks,
+  rebucketToWeeks, lockFromByMat, makeLockLookup,
 } from '../utils/monitorSystem';
 import { refStockOf, rawSourceLocOf } from '../utils/partRefStock';
 import { isTodayPeriod } from '../utils/periodHead';
@@ -30,6 +30,7 @@ const MonitorFgSync = lazy(() => import('../components/MonitorFgSync'));
 /* 📉 "คาดการณ์ของจะขาด" ของเดิม — embed ทั้งดุ้น ไม่แก้ของเดิม (pattern เดียวกับ /equipment · PmHub)
    เหตุผลที่**ยุบตารางเข้าด้วยกันตรงๆ ไม่ได้** เขียนไว้ที่ docs/modules/monitoring-boards.md §6.6 */
 const RundownStock = lazy(() => import('./RundownStock'));
+const StockAdjustRequestModal = lazy(() => import('../components/StockAdjustRequestModal'));
 
 /* ══ 📉 /monitoring — บอร์ดติดตามแผน-สต๊อก (ยกไฟล์ Excel ของทีมวางแผนเข้าระบบ) ═══════════
    user 01/10: *"ตอนนี้ทีมวางแผนจะต้องทำข้อมูลนี้ใน excel เค้าอยากทำในระบบเรา ทำได้มั้ย"*
@@ -71,6 +72,10 @@ export default function Monitoring() {
      เดิมบอร์ดคิดยอดเองจาก "ยกมาที่กรอก + ผลิต − ออก" แล้วห่างจาก ledger ถึงหลักหมื่นชิ้นต่อพาร์ท
      ⇒ วันนี้ยึดของจริง · วันถัดไปเดินสูตรต่อจากของจริง · ข้อมูลอยู่ที่ ledger ที่เดียว */
   const [sysAnchor, setSysAnchor] = useState(() => new Map());
+  /* 🔒 13/10 — MAT → วันแรกที่ระบบมีตัวเลข (ล็อกช่อง IN) · MAT → คลังอ้างอิง (ปลายทางของ "ขอปรับยอด") */
+  const [sysLock, setSysLock] = useState(() => new Map());
+  const [sysLoc, setSysLoc] = useState(() => new Map());
+  const [adjReq, setAdjReq] = useState(null);            // { mat, part_name, loc, onHand }
   const [sysOut, setSysOut] = useState(() => new Map());
   const [sysMin, setSysMin] = useState(() => new Map());
   const [registry, setRegistry] = useState(null);
@@ -81,6 +86,8 @@ export default function Monitoring() {
   const [showFgSync, setShowFgSync] = useState(false);
 
   const canEdit = canSeeded('monitoring', 'manage', role);
+  /* ขอปรับยอดคลัง = สิทธิ์เดียวกับกรอกเคลื่อนไหวที่ /line-stock (ใบเข้าคิวอนุมัติ line_stock:approve) */
+  const canRequestAdj = can('line_stock', 'issue', role);
   /* ชั้น FC/ออเดอร์/สต็อก ของไฟล์เดียวกันใช้สิทธิ์เดิมของจออัพโหลด (demand:upload) —
      ไม่มีสิทธิ์ = จอบอกว่าข้ามส่วนนั้น ไม่ใช่เขียนเงียบ */
   const canUpload = can('demand', 'upload', role);
@@ -184,12 +191,24 @@ export default function Monitoring() {
   const periodsRef = useRef(periods);
   periodsRef.current = periods;
 
+  /* 🔒 ล็อกช่อง IN ของพาร์ทที่ระบบมีตัวเลขแล้ว (`lockFromByMat` · monitorSystem.js)
+     🔴 ไม่รู้คลัง/โหลดไม่ครบ = ไม่ล็อก (ล็อกแล้วระบบไม่มีค่า = บังคับ 0 ผิดๆ) · โหลดใบผลิตไม่ครบ = ใช้แค่หลักฐานจากคลัง */
+  const applyLock = useCallback(({ refErr, poR, inRows, locOf, mats }) => {
+    if (refErr) { setSysLock(new Map()); setSysLoc(new Map()); return; }
+    const poOk = !(poR?.error || poR?.truncated);
+    setSysLock(lockFromByMat({
+      inRows: inRows || [], locOf,
+      prodRows: poOk ? (poR.rows || []).map(r => ({ mat_no: r.mat_no, work_date: r.production_sessions?.work_date })) : [],
+    }));
+    setSysLoc(new Map((mats || []).map(m => [m, locOf(m)]).filter(([, l]) => l)));
+  }, []);
+
   const curSysRef = useRef('');
   const loadSystem = useCallback(async () => {
     const scope = isFg ? bCust : (isGreat ? 'great' : bLine);
     if (!scope || !dFrom || !dTo || !matsKey) {
       setSysIn(new Map()); setSysOut(new Map()); setSysMin(new Map()); setSysOrder(new Map());
-      setSysAnchor(new Map()); setSysNote('');
+      setSysAnchor(new Map()); setSysNote(''); setSysLock(new Map()); setSysLoc(new Map());
       /* 🔴 บอร์ดที่ไม่ผูกไลน์/ลูกค้า (รายแร็ค) ก็ต้องเช็คทะเบียน — เดิมข้ามไป ⇒ ทุกพาร์ทขึ้น
          "ยังไม่อยู่ในทะเบียนสินค้า" ทั้งที่อยู่ (12/10 · 10057225) = ป้ายเตือนปลอม */
       const myKey = `reg|${matsKey}`;
@@ -212,7 +231,7 @@ export default function Monitoring() {
        ส่งลูกค้า (send) ยังเป็นช่องกรอก — ส่งเกรทไม่ผ่าน customer_shipping_orders */
     if (isGreat) {
       const wkEnd = addDaysStr(dTo, 6) || dTo;
-      const [rcpR, txnR, prodR, stkR, ruleR, lotR] = await Promise.all([
+      const [rcpR, txnR, prodR, stkR, ruleR, lotR, poR] = await Promise.all([
         fetchAllPages(() => supabaseDR.from('stock_receipts')
           .select('id, mat_no, qty_expected').eq('status', 'pending').in('mat_no', mats), { orderBy: ['id'] }),
         fetchAllPages(() => supabaseDR.from('line_stock_transactions')
@@ -226,6 +245,10 @@ export default function Monitoring() {
         supabaseDR.from('stock_inflow_rules').select('match_type, match_value, dest_line_name, is_active').eq('is_active', true),
         fetchAllPages(() => supabaseDR.from('child_lot_requests')
           .select('id, child_mat_no').in('child_mat_no', mats).neq('status', 'cancelled'), { orderBy: ['id'] }),
+        /* 🔒 Daily Report ลงยอด MAT นี้แล้ว = ระบบเป็นเจ้าของช่อง IN (คำสั่ง user 13/10) */
+        fetchAllPages(() => supabaseDR.from('prod_orders')
+          .select('id, mat_no, production_sessions!inner(work_date)').eq('status', 'confirmed').in('mat_no', mats)
+          .gte('production_sessions.work_date', dFrom).lte('production_sessions.work_date', getWorkDate()), { orderBy: ['id'] }),
       ]);
       if (!mine()) return;
       const loadErr = (r) => r?.error || (r?.errors && r.errors[0]) || (r?.truncated ? 'ดึงข้อมูลได้ไม่ครบ' : null);
@@ -239,6 +262,7 @@ export default function Monitoring() {
       setSysIn(refErr ? new Map() : rebucketToWeeks(inAtRef(txnR.rows || [], locOf), periodsRef.current));
       setSysAnchor(onHand);
       setSysOut(new Map()); setSysMin(new Map()); setSysOrder(new Map()); setSysSeedBal(new Map());
+      applyLock({ refErr, poR, inRows: txnR.rows, locOf, mats });
       const rcpQty = (rcpR.rows || []).reduce((a, r) => a + (Number(r.qty_expected) || 0), 0);
       const locs = [...new Set(mats.map(m => locOf(m)).filter(Boolean))].sort();
       const noRow = mats.filter(m => !onHand.has(m)).length;
@@ -352,7 +376,7 @@ export default function Monitoring() {
       return;
     }
 
-    const [rcpR, txnR, lvlR, prodR, stkR, ruleR, lotR] = await Promise.all([
+    const [rcpR, txnR, lvlR, prodR, stkR, ruleR, lotR, poR] = await Promise.all([
       /* ⏳ ผลิตคอนเฟิร์มแล้วแต่คลังยังไม่กดรับ — ยังไม่นับใน IN แต่ต้องบอกบนจอ (ห้ามหายเงียบ) */
       fetchAllPages(() => supabaseDR.from('stock_receipts')
         .select('id, mat_no, qty_expected').eq('status', 'pending').in('mat_no', mats), { orderBy: ['id'] }),
@@ -372,6 +396,10 @@ export default function Monitoring() {
       supabaseDR.from('stock_inflow_rules').select('match_type, match_value, dest_line_name, is_active').eq('is_active', true),
       fetchAllPages(() => supabaseDR.from('child_lot_requests')
         .select('id, child_mat_no').in('child_mat_no', mats).neq('status', 'cancelled'), { orderBy: ['id'] }),
+      /* 🔒 Daily Report ลงยอด MAT นี้แล้ว = ระบบเป็นเจ้าของช่อง IN (คำสั่ง user 13/10) */
+      fetchAllPages(() => supabaseDR.from('prod_orders')
+        .select('id, mat_no, production_sessions!inner(work_date)').eq('status', 'confirmed').in('mat_no', mats)
+        .gte('production_sessions.work_date', dFrom).lte('production_sessions.work_date', getWorkDate()), { orderBy: ['id'] }),
     ]);
     if (!mine()) return;
     /* 🔴 คลังอ้างอิงของพาร์ท = `refStockOf` ตัวเดียวกับจุดเรียกเติม + ตัวนำเข้า Monitoring
@@ -393,6 +421,7 @@ export default function Monitoring() {
     setSysMin(firstByMat(lvlR.rows || []));
     setSysOrder(new Map()); setSysSeedBal(new Map());
     setSysAnchor(onHand);
+    applyLock({ refErr, poR, inRows: txnR.rows, locOf, mats });
     const locs = [...new Set(mats.map(m => locOf(m)).filter(Boolean))].sort();
     const noRow = mats.filter(m => !onHand.has(m)).length;
     setSysNote(refErr
@@ -438,6 +467,20 @@ export default function Monitoring() {
     () => makeAnchorLookup({ partMat, balByMat: sysAnchor, anchorKey }),
     [partMat, sysAnchor, anchorKey],
   );
+  const lockMap = useMemo(
+    () => makeLockLookup({ partMat, lockFrom: sysLock, periods, kind: board?.period_kind || 'day', today: getWorkDate() }),
+    [partMat, sysLock, periods, board?.period_kind],
+  );
+  const lockNote = sysLock.size
+    ? ` · 🔒 IN ล็อก ${sysLock.size} พาร์ท (ระบบมีตัวเลขแล้ว — ตั้งแต่วันแรกที่มีถึงวันนี้ · ยอดไม่ตรงกดช่องเพื่อขอปรับยอดคลัง)`
+    : '';
+  /* กดช่อง IN ที่ล็อก ⇒ เปิดใบ "ขอปรับยอดคลัง" (ไม่ใช่พิมพ์ทับ) */
+  const onLockedCell = useCallback(({ partId }) => {
+    const part = parts.find(p => p.id === partId);
+    const mat = String(part?.mat_no || '').trim();
+    if (!mat) return;
+    setAdjReq({ mat, part_name: part?.part_name || '', loc: sysLoc.get(mat) || null, onHand: sysAnchor.has(mat) ? sysAnchor.get(mat) : null });
+  }, [parts, sysLoc, sysAnchor]);
 
   const partsWithFlag = useMemo(
     /* registry = null = เช็คไม่ได้ ⇒ ไม่ขึ้นป้าย (ไม่รู้ ≠ ไม่อยู่ในทะเบียน) */
@@ -578,9 +621,9 @@ export default function Monitoring() {
                   ? `ผูกลูกค้า ${bCust} ⇒ ยอดยกมา = ของพร้อมส่งในคลัง FG · ลูกค้าสั่งจาก EDI 862/830 (รวมใบค้างส่งไว้คอลัมน์แรก) · ผลิตเข้านับจากใบผลิตทุกไลน์${sysNote ? ` · ${sysNote}` : ''}`
                   : '⚠️ บอร์ด FG ใบนี้ยังไม่ผูกลูกค้า ⇒ ระบบดึงยอดลูกค้าสั่งให้ไม่ได้ — กด "📦 สร้างบอร์ด FG จากออเดอร์" ใหม่อีกครั้ง')
                 : isGreat
-                  ? `ส่งเกรท (รายสัปดาห์) ⇒ ระบบเติมของเข้าให้ · ส่งลูกค้ากรอกเอง${sysNote ? ` · ${sysNote}` : ''}`
+                  ? `ส่งเกรท (รายสัปดาห์) ⇒ ระบบเติมของเข้าให้ · ส่งลูกค้ากรอกเอง${sysNote ? ` · ${sysNote}` : ''}${lockNote}`
                 : board?.line_name
-                  ? `ผูกไลน์ ${board.line_name} ⇒ ระบบเติมของเข้า/ออก/ขั้นต่ำให้${sysNote ? ` · ${sysNote}` : ''}`
+                  ? `ผูกไลน์ ${board.line_name} ⇒ ระบบเติมของเข้า/ออก/ขั้นต่ำให้${sysNote ? ` · ${sysNote}` : ''}${lockNote}`
                   : 'ยังไม่ผูกไลน์ ⇒ ทุกช่องต้องกรอกเอง'}
             </span>
           </FilterBar>
@@ -634,11 +677,17 @@ export default function Monitoring() {
       ) : (
         <MonitorBoardGrid
           board={board} parts={partsWithFlag} periods={periods}
-          manualMap={manualMap} systemMap={systemMap} anchorMap={anchorMap}
+          manualMap={manualMap} systemMap={systemMap} anchorMap={anchorMap} lockMap={lockMap}
+          onLockedCell={canRequestAdj ? onLockedCell : null}
           onEditCell={onEditCell} editable={canEdit} truncated={truncated}
           windowSize={board?.period_kind === 'week' ? 10 : 14}
         />
       )}
+      {adjReq ? (
+        <Suspense fallback={null}>
+          <StockAdjustRequestModal req={adjReq} by={fullName} onClose={() => setAdjReq(null)} />
+        </Suspense>
+      ) : null}
 
       {showFgSync ? (
         <Suspense fallback={null}>
