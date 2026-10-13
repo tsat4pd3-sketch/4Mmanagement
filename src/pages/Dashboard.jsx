@@ -13,7 +13,7 @@ import DowntimeSiren from '../components/DowntimeSiren';
 import { buildMan4mPendingMatcher, ppeMissingList } from '../utils/personAlarm';
 import { inSectionScope } from '../utils/sectionScope';
 import { canAccessPage } from '../utils/permissions';
-import { buildScheduleMaps, resolveAssignedShift, shiftFromTeam } from '../utils/shiftAssign';
+import { buildScheduleMaps, resolveAssignedShift, shiftFromTeam, lineScheduleTeam } from '../utils/shiftAssign';
 import { getLineFamilyNames, sortLineNames } from '../utils/lineHierarchy';
 import useIsMobile from '../utils/useIsMobile';
 import { toneOf, toneInk, statusColor } from '../utils/statusTone';
@@ -501,7 +501,7 @@ export default function Dashboard() {
     // ตารางกะ: ไลน์ผลิต + หน่วยงานสนับสนุน — สูตรเดียวกับ Checkin ผ่าน utils/shiftAssign.js
     // (เดิมหน้านี้เขียนซ้ำเองแล้ว **ตกเงื่อนไข Team C** → คนทีม C หายจากบอร์ดทั้งกะเช้าและกะดึก
     //  เพราะบอร์ดกรองด้วย assignedShift ซึ่งเป็น null)
-    const schedMaps = buildScheduleMaps(scheduleData);
+    const schedMaps = buildScheduleMaps(scheduleData, lineData);   // ส่ง lines = ไลน์ลูกตกทอดกะจากไลน์แม่
 
     // Build per-employee override map
     const empOverride = {};
@@ -538,8 +538,9 @@ export default function Dashboard() {
       if (!emp.line_id) return;
       if (!counts[emp.line_id]) counts[emp.line_id] = { day: 0, night: 0, all: 0 };
       counts[emp.line_id].all++;
-      // กำลังคนเป็นเรื่องของ "ไลน์" → ใช้ตารางกะของไลน์ตรงๆ (ไม่ตกไปกะหน่วยงาน)
-      const sh = shiftFromTeam(schedMaps.byLine[emp.line_id], emp.team);
+      /* กำลังคนเป็นเรื่องของ "ไลน์" → ใช้ตารางกะของไลน์ (รวมตกทอดจากไลน์แม่) ไม่ตกไปกะหน่วยงาน
+         🔴 ห้ามอ่าน `schedMaps.byLine[...]` ตรงๆ — ข้ามการตกทอดไลน์แม่ แล้วไลน์ลูกจะนับกำลังคนเป็น 0 (มีด่าน) */
+      const sh = shiftFromTeam(lineScheduleTeam(emp.line_id, schedMaps), emp.team);
       if (sh === 'day')        counts[emp.line_id].day++;
       else if (sh === 'night') counts[emp.line_id].night++;
     });
