@@ -99,3 +99,48 @@ export function splitLevels(levels = [], ctx = {}, haveAt = () => null) {
   out.produceDue.sort((a, b) => (a.have / (a.min || 1)) - (b.have / (b.min || 1)));
   return out;
 }
+
+/* ═══ 📤 วัตถุดิบ/ชิ้นส่วนที่ "ใช้ผลิตล็อต" — ตัดสต็อกจากคลังที่ของอยู่จริง (2026-10-12 · audit SSOT ยอดสต็อก · user เคาะ)
+
+   เดิมตัด `consume` ที่ `source_line` ของล็อต (ไลน์ที่ใช้) ทั้งที่ไม่เคยมีใครจ่ายของเข้าไลน์นั้นใน ledger
+   ⇒ ไลน์ที่ใช้ติดลบ (LINE C −21,600 ของ 20058693) ขณะที่คลังที่ของอยู่จริง (LINE D ที่ผลิต · STORE) ไม่เคยลด
+   = ยอดเดียวกันโผล่ 2 ที่ ผิดทั้งคู่
+
+   กติกา (ตัวเลือกคลังชุดเดียวกับ `refStockOf` — จุดเรียกเติม/บอร์ด Monitoring/ตัวนำเข้า):
+   1. ของที่ผลิตในโรงงาน (Product Master มีไลน์ผลิต · ไม่ใช่ชั้น OP) ⇒ คลังที่ของผลิตเสร็จเข้า
+      (ล็อตสโตร์ = ไลน์ที่ผลิต · นอกนั้นตามกฎ `stock_inflow_rules`)
+   2. ไม่ได้ผลิตเอง แต่มีกฎรับเข้า ⇒ คลังตามกฎ
+   3. ของซื้อ (MAT ขึ้นต้น 3/5 — เกณฑ์เดียวกับ trigger `fn_explode_child_demand` ที่ออก purchase_requests)
+      ⇒ `receiptLine` (คลังรับของซื้อ = STORE · `stockReceipt.RECEIPT_LINE`)
+   4. ไม่รู้เลย ⇒ ไลน์ที่ใช้ (พฤติกรรมเดิม — ไม่เดาคลังใหม่ให้)
+   ═══════════════════════════════════════════════════════════════════════════════ */
+export function rawSourceLocOf(mat, { consumingLine, products = [], rules = [], lotMats = [], receiptLine = 'STORE' } = {}) {
+  const m = key(mat);
+  if (!m) return key(consumingLine) || null;
+  const prod = (products || []).find(p => key(p?.mat_no) === m && p?.is_active !== false && !p?.is_operation);
+  if (prod && key(prod.line_name)) {
+    const ref = refStockOf(m, { lineName: prod.line_name, products, rules, lotMats });
+    if (ref.kind === 'produce') return ref.loc;
+  }
+  const dest = inflowDestOf(m, rules);
+  if (dest) return dest;
+  if (/^[35]/.test(m)) return receiptLine;
+  return key(consumingLine) || null;
+}
+
+/**
+ * แบ่งยอดตัดวัตถุดิบ: ใช้ของที่ "ถูกจ่ายเข้าไลน์ที่ใช้แล้ว" ก่อน (ไลน์มียอดบวก = สโตร์จ่ายเข้ามาจริง)
+ * ส่วนที่เกินค่อยตัดที่คลังต้นทาง (`rawSourceLocOf`) — กันทั้ง 2 ทางผิด:
+ *   ตัดที่ไลน์ล้วน = ไลน์ติดลบทั้งที่ของยังอยู่คลัง · ตัดที่คลังล้วน = ของที่จ่ายเข้าไลน์แล้วค้างเป็นยอดผีที่ไลน์
+ * @returns {Array<{loc:string, qty:number}>} เฉพาะก้อนที่ > 0 (ผลรวม = qty เสมอ)
+ */
+export function splitRawConsume(qty, { consumingLine, sourceLoc, lineHave = 0 } = {}) {
+  const q = Number(qty) || 0;
+  if (q <= 0) return [];
+  if (!sourceLoc || key(sourceLoc) === key(consumingLine)) return [{ loc: consumingLine, qty: q }];
+  const take = Math.min(q, Math.max(0, Number(lineHave) || 0));
+  return [
+    ...(take > 0 ? [{ loc: consumingLine, qty: take }] : []),
+    ...(q - take > 0 ? [{ loc: sourceLoc, qty: q - take }] : []),
+  ];
+}

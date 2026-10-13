@@ -31,7 +31,7 @@ import ManpowerBoardSetup from '../components/ManpowerBoardSetup';
 import {
   buildManpowerBoard, fourMStatus, layoutPeople, lineFamilyOf, paginateTv, tvCardCapacity,
   describeSlotChanges, summarizeSlotChanges, SLOT_AUDIT_TABLES, SLOT_KIND_META,
-  staffingOfDept, summarizeStaffing, rosterOn,
+  staffingOfDept, summarizeStaffing, rosterOn, stationSkillGaps,
   indexSessions, sessionsOfDeptShift, oeeOfSessions, compareOeeByStaffing, MIN_SHIFTS_TO_COMPARE,
   ATTEND_META, FOUR_M, shiftMeta, SHIFT_META,
 } from '../utils/manpowerBoard';
@@ -219,7 +219,7 @@ export default function ManpowerBoard() {
       {loading ? <div style={{ padding: 24, color: 'var(--muted)' }}>กำลังโหลด…</div>
         : !board ? <div className="card" style={{ padding: 24 }}>ยังไม่มีส่วนงานในผังองค์กร (ตั้งที่ /org-setup)</div>
         : tab === 'org' ? (tv ? <OrgTv board={board} depts={depts} skills={skills} /> : <OrgTab board={board} depts={depts} skills={skills} />)
-        : tab === 'layout' ? <LayoutTab board={board} depts={depts} lines={lines} attendance={attendance} maps={maps} tv={tv} stationPlans={stationPlans} />
+        : tab === 'layout' ? <LayoutTab board={board} depts={depts} lines={lines} attendance={attendance} maps={maps} tv={tv} stationPlans={stationPlans} skills={skills} />
         : tab === 'staffing' ? <StaffingTab section={section} deptParam={deptParam} today={workDate} nodes={nodes} employees={employees} lines={lines}
             slotPlans={slotPlans} lineTechs={lineTechs} stations={stations} stationPlans={stationPlans} homeByEmp={homeByEmp} />
         : tab === 'history' ? <HistoryTab section={section} dept={deptParam ? (board?.depts || []).find(d => d.key === deptParam) || null : null} deptParam={deptParam} nodes={nodes} lines={lines} stations={stations} employees={employees} />
@@ -463,7 +463,7 @@ function OrgTab({ board, depts, skills }) {
 }
 
 /* ═════════════════════════ 🗺️ ผัง LAYOUT ═════════════════════════ */
-function LayoutTab({ board, depts, lines, attendance, maps, tv, stationPlans }) {
+function LayoutTab({ board, depts, lines, attendance, maps, tv, stationPlans, skills }) {
   const [layouts, setLayouts] = useState([]);
   const [stations, setStations] = useState([]);
   const [homes, setHomes] = useState({});
@@ -500,7 +500,8 @@ function LayoutTab({ board, depts, lines, attendance, maps, tv, stationPlans }) 
   useEffect(() => {
     let alive = true;
     if (!layout) { setStations([]); return undefined; }
-    const q = supabase.from('workstations').select('id, line_name, line_id, station_name, pos_top, pos_left');
+    // 🎯 ทักษะที่จุดต้องการ (station_requirements) มากับจุดเลย — ใช้ตอบ "ยืนจุดที่ฝีมือถึงไหม"
+    const q = supabase.from('workstations').select('id, line_name, line_id, station_name, pos_top, pos_left, station_requirements(skill_name, min_score)');
     (layout.line_id != null ? q.or(`line_id.eq.${layout.line_id},line_name.eq."${layout.line_name}"`) : q.eq('line_name', layout.line_name))
       .then(({ data, error }) => { if (alive) { setStations(data || []); if (error) setErr(error.message); } });
     return () => { alive = false; };
@@ -515,6 +516,10 @@ function LayoutTab({ board, depts, lines, attendance, maps, tv, stationPlans }) 
   const shiftOfEmp = useCallback((e) => (e?.team ? shiftFromTeam(scheduleTeamFor(e, maps), e.team) : null), [maps]);
   const placed = useMemo(() => layoutPeople({ stations, homeByEmp: homes, attendance, empById, shiftOfEmp, stationPlans }),
     [stations, homes, attendance, empById, shiftOfEmp, stationPlans]);
+  const fitGaps = useMemo(() => stationSkillGaps(placed, {
+    skillsByEmp: skills?.byEmp || {},
+    reqsByStation: Object.fromEntries(stations.map(st => [String(st.id), st.station_requirements || []])),
+  }), [placed, skills, stations]);
 
   if (!layouts.length) return <div className="card" style={{ padding: 24, color: 'var(--muted)' }}>ไลน์ของแผนกที่เลือกยังไม่มีรูปผัง (อัพโหลดที่ /line-setup){err ? ` · ${err}` : ''}</div>;
   const unplaced = stations.filter(s => s.pos_top == null || s.pos_left == null).length;
@@ -540,8 +545,53 @@ function LayoutTab({ board, depts, lines, attendance, maps, tv, stationPlans }) 
         {stations.length} จุดงาน · ยังไม่มีคนประจำ {emptyStations} จุด{unplaced ? ` · ยังไม่วางพิกัด ${unplaced} จุด` : ''}
         {shortage.n > 0 && <span style={{ color: '#f59e0b' }}> · 📍 ขาดคนประจำ เช้า {shortage.day} · ดึก {shortage.night} ช่อง{shortage.unknown ? ` · ยังไม่รู้กะ ${shortage.unknown} ช่อง (ตั้งตารางกะที่ /shift-organize)` : ''}</span>} — ตั้งจุดประจำที่ /management
       </div>
+      <div style={{ fontSize: 12, color: fitGaps.gaps.length ? '#f59e0b' : 'var(--muted)' }}>
+        🎯 ฝีมือตรงจุดไหม (คนที่มาวันนี้): ตรวจ {fitGaps.checked} คน · ผ่านครบทุกทักษะ {fitGaps.ok} คน
+        {fitGaps.gaps.length > 0 && <b> · ยืนจุดที่ทักษะยังไม่ถึง {fitGaps.gaps.length} คน</b>}
+        {fitGaps.noReqStations > 0 && <span style={{ color: 'var(--muted)' }}> · ยังไม่ตั้งทักษะที่จุดต้องการ {fitGaps.noReqStations} จุด ({fitGaps.noReqPeople} คนที่ยืนอยู่ ตรวจไม่ได้ — ตั้งที่ /line-setup)</span>}
+      </div>
       <LayoutMap layout={layout} placed={placed} reserve={tv ? 48 : 12} />
+      {!tv && fitGaps.gaps.length > 0 && <SkillGapTable gaps={fitGaps.gaps} defs={skills?.defs || {}} />}
       {tv && <BoardPager page={clampPage(tvIdx, layouts.length)} count={layouts.length} onPage={setTvIdx} labels={layouts.map(l => l.line_name)} />}
+    </div>
+  );
+}
+
+/* 🎯 รายชื่อคนที่ยืนจุดที่ทักษะยังไม่ถึง — ต่ำสุดก่อน · ขาดทักษะไหน (มี/ต้องการ) · ✳ = ย้ายมาวันนี้ */
+function SkillGapTable({ gaps, defs }) {
+  const th = { textAlign: 'left', fontSize: 12, padding: '8px 10px', color: 'var(--muted)', whiteSpace: 'nowrap' };
+  const td = { padding: '7px 10px', fontSize: 13, borderTop: '1px solid var(--border)', verticalAlign: 'top' };
+  return (
+    <div className="card" style={{ padding: 0, overflowX: 'auto' }}>
+      <div style={{ padding: '10px 12px', fontWeight: 800 }}>🎯 ยืนจุดที่ทักษะยังไม่ถึง <span style={{ fontWeight: 400, fontSize: 12, color: 'var(--muted)' }}>(คนที่มาวันนี้ · เทียบกับทักษะที่จุดงานต้องการ)</span></div>
+      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <thead><tr><th style={th}>พนักงาน</th><th style={th}>จุดงาน</th><th style={th}>กะ</th><th style={{ ...th, textAlign: 'right' }}>ผ่าน</th><th style={th}>ทักษะที่ยังไม่ถึง (มี / ต้องการ)</th></tr></thead>
+        <tbody>
+          {gaps.map(g => (
+            <tr key={`${g.emp.id}-${g.station.id}`}>
+              <td style={{ ...td, fontWeight: 700 }}>{g.emp.name}{g.temp && <span title="ย้ายมายืนจุดนี้วันนี้ (จุดประจำอยู่ที่อื่น)" style={{ marginLeft: 6, color: '#0ea5e9' }}>✳ ย้ายมาวันนี้</span>}</td>
+              <td style={td}>{g.station.station_name || '–'}</td>
+              <td style={{ ...td, whiteSpace: 'nowrap', color: shiftMeta(g.shift).color }}>{shiftMeta(g.shift).label}</td>
+              <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{g.fit.passed}/{g.fit.total}</td>
+              <td style={td}>
+                <span style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {g.missing.map(m => (
+                    <span key={m.skill_name} style={{ whiteSpace: 'nowrap', fontSize: 12, padding: '1px 8px', borderRadius: 999,
+                      border: `1px ${m.assessed ? 'solid' : 'dashed'} var(--border2)`, color: m.assessed ? 'var(--text)' : 'var(--muted)' }}>
+                      {defs[m.skill_name]?.label || m.skill_name}{' '}
+                      {m.assessed ? <b style={{ fontVariantNumeric: 'tabular-nums' }}>{m.actual}/{m.required}</b> : <span>ยังไม่ประเมิน (ต้องการ {m.required})</span>}
+                    </span>
+                  ))}
+                </span>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div style={{ padding: '8px 12px', fontSize: 12, color: 'var(--muted)' }}>
+        กรอบทึบ = ประเมินแล้วแต่คะแนนยังไม่ถึง (มี/ต้องการ) · กรอบประ = ยังไม่เคยประเมินทักษะนั้น (นับเป็น 0) ·
+        ประเมิน/ปรับคะแนนที่ /operator · ตั้งทักษะที่จุดต้องการที่ /line-setup
+      </div>
     </div>
   );
 }

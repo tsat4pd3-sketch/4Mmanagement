@@ -106,13 +106,22 @@ export function lastCountAt(txns) {
  *    closedByCount = ส่งก่อนรอบตรวจนับล่าสุด → ยอดที่นับสะท้อนไปแล้ว **ห้ามหักซ้ำ**
  *    unresolved    = จับคู่เลข SAP ไม่ได้ → หักไม่ได้ ต้องแก้ทะเบียนก่อน (ห้ามเดา)
  */
-export function pendingShipCuts({ orders, cutIds, counted, fgLine, sapOf }) {
+/** 🔴 เส้นตั้งต้นยอดทั้งระบบ — migration `20261001_line_stock_reset_to_zero.sql` ล้างยอดทุกคลังเป็น 0
+ *  (ยอดเดิมเชื่อถือไม่ได้ · คำสั่ง user) = **รอบตรวจนับของทุก (คลัง, mat) พร้อมกัน** รวมถึง MAT ที่ตอนนั้นไม่มีแถว
+ *  ⇒ ใบที่ส่งก่อนเส้นนี้ห้ามหักย้อนหลังเด็ดขาด
+ *  เคสจริง 07/10: MAT ที่ไม่มีแถวในคลังตอนล้าง ไม่มี `adjust` ให้ `lastCountAt` เห็น ⇒ ปุ่มหักย้อนหลังลากใบ ส.ค.–ก.ย.
+ *  159 ใบ / 23,476 ชิ้น มาหัก FG WAREHOUSE จนติดลบ 6 MAT (−24,344) ทั้งที่ของไม่เคยถูกรับเข้าระบบ
+ *  (เวลา = created_at ของแถวล้างยอดจริงใน DR) */
+export const STOCK_BASELINE_AT = '2026-10-01T04:30:42Z';
+
+export function pendingShipCuts({ orders, cutIds, counted, fgLine, sapOf, baselineAt = STOCK_BASELINE_AT }) {
   const open = [], closedByCount = [], unresolved = [];
   (orders || []).forEach(o => {
     if (cutIds?.has?.(o.id)) return;
     const sap = sapOf ? sapOf(o.mat_no) : o.mat_no;
     if (!sap) { unresolved.push({ ...o, sap: null }); return; }
-    const mark = counted?.[`${fgLine}\u0000${sap}`];
+    const own = counted?.[`${fgLine}\u0000${sap}`];
+    const mark = own && (!baselineAt || own > baselineAt) ? own : (baselineAt || own);
     const at = o.shipped_at || (o.due_date ? `${o.due_date}T23:59:59Z` : null);
     if (mark && at && at <= mark) { closedByCount.push({ ...o, sap, countedAt: mark }); return; }
     open.push({ ...o, sap });

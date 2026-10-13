@@ -18,7 +18,7 @@ globalThis.localStorage = {
   removeItem: (k) => { store.delete(k); },
 };
 
-const { cachedMaster, invalidateMaster } = await import('../masterCache.js');
+const { cachedMaster, cachedRows, invalidateMaster } = await import('../masterCache.js');
 
 let hits = 0;
 const loader = async () => { hits++; return [{ id: 1, name: 'เครื่อง A' }]; };
@@ -119,3 +119,49 @@ function invalidateMemoryOnly() {
   invalidateMaster();
   store = keep;
 }
+
+
+/* ══ cachedRows — ตัวที่ "โหลดพลาด ต้องไม่กลายเป็นว่าง" (2026-10-13) ════════════════════
+   ใช้กับบอร์ด AM รายวัน: ทะเบียนว่าง = จอขึ้น "ไม่มีจุดตรวจ" = คำตอบผิดที่ดูเหมือนถูก
+   ⇒ ต่างจาก cachedMaster ตรงที่ **คืน error ให้ผู้เรียกตัดสินใจเอง และไม่ cache ผลล้มเหลว** */
+
+test('cachedRows: สำเร็จ = cache แล้วยิงครั้งเดียว', async () => {
+  let n = 0;
+  const q = async () => { n++; return { data: [{ id: 1 }], error: null }; };
+  const a = await cachedRows('rows:test', q);
+  const b = await cachedRows('rows:test', q);
+  assert.equal(n, 1, 'ต้องยิง DB ครั้งเดียว');
+  assert.deepEqual(a, { data: [{ id: 1 }], error: null });
+  assert.deepEqual(b.data, [{ id: 1 }]);
+});
+
+test('🔴 cachedRows: ล้มเหลว = คืน error · ไม่ cache · รอบหน้ายิงใหม่', async () => {
+  let n = 0;
+  const bad = async () => { n++; return { data: null, error: { code: '57014', message: 'timeout' } }; };
+  const r = await cachedRows('rows:fail', bad);
+  assert.equal(r.error?.message, 'timeout', 'ต้องส่ง error กลับไป ห้ามกลืนเป็น []');
+  assert.equal(r.data, null, 'ล้มเหลวห้ามคืนลิสต์ว่าง — ผู้เรียกจะแยกไม่ออกจาก "ไม่มีข้อมูลจริง"');
+  assert.equal(store.size, 0, 'ผลล้มเหลวห้ามลง localStorage');
+
+  const good = async () => { n++; return { data: [{ id: 9 }], error: null }; };
+  const r2 = await cachedRows('rows:fail', good);
+  assert.equal(n, 2, 'รอบหน้าต้องยิงใหม่ทันที ไม่ติด cache ของรอบที่ล้ม');
+  assert.deepEqual(r2.data, [{ id: 9 }]);
+});
+
+test('cachedRows: ตาราง/คอลัมน์ยังไม่มี (migration ยังไม่ apply) = ว่างจริง cache ได้', async () => {
+  const q = async () => ({ data: null, error: { code: '42P01', message: 'no table' } });
+  const r = await cachedRows('rows:missing', q);
+  assert.equal(r.error, null, 'โครงสร้างไม่มี = ว่างจริง ไม่ใช่โหลดพลาด (กติกาเดียวกับ mrows)');
+  assert.deepEqual(r.data, []);
+});
+
+test('cachedRows: invalidateMaster ล้างได้จริง', async () => {
+  let n = 0;
+  const q = async () => { n++; return { data: [{ id: n }], error: null }; };
+  await cachedRows('rows:inv', q);
+  invalidateMaster('rows:inv');
+  const r = await cachedRows('rows:inv', q);
+  assert.equal(n, 2);
+  assert.deepEqual(r.data, [{ id: 2 }]);
+});

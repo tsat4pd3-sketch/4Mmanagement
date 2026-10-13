@@ -20,7 +20,8 @@ import DeliverScanModal from '../components/DeliverScanModal';
 import PickScanModal from '../components/PickScanModal';
 import { DELIVER_GATES, PICK_GATES } from '../utils/replenishGate';
 import { slocCodeOfLine } from '../utils/storageLoc';
-import { buildReceiptRows } from '../utils/stockReceipt';   // 📥 ของซื้อเข้าคลัง ไม่ใช่เข้าไลน์ (2026-10-01)   // 🏬 ชั้นบัญชี SAP — tag ใบ/ledger ตอนเขียน (2026-09-08)
+import { buildReceiptRows, RECEIPT_LINE } from '../utils/stockReceipt';
+import { rawSourceLocOf, splitRawConsume } from '../utils/partRefStock';   // 📤 ตัดวัตถุดิบล็อตจากคลังที่ของอยู่จริง (2026-10-12)   // 📥 ของซื้อเข้าคลัง ไม่ใช่เข้าไลน์ (2026-10-01)   // 🏬 ชั้นบัญชี SAP — tag ใบ/ledger ตอนเขียน (2026-09-08)
 import { notifyEvent } from '../utils/notifyEvent';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
@@ -1639,6 +1640,37 @@ export default function HeijunkaKanban() {
     }
   }, []);
 
+  /* 📤 คลังที่ต้องตัดวัตถุดิบ/ชิ้นส่วนของล็อต (12/10 · audit SSOT ยอดสต็อก · user เคาะ "หักจากคลังที่ของอยู่จริง")
+     เดิมตัดที่ `source_line` (ไลน์ที่ใช้) ซึ่งไม่เคยมีใครจ่ายของเข้า ⇒ ไลน์ที่ใช้ติดลบ · คลังจริงไม่ลด
+     กติกาอยู่ `rawSourceLocOf` (partRefStock.js) · 🔴 โหลดทะเบียนไม่ได้ = throw ⇒ คืนสถานะ ห้ามถอยไปตัดผิดคลังเงียบๆ */
+  const loadRawLocOf = async (mats, consumingLine) => {
+    const list = [...new Set((mats || []).map(m => String(m || '').trim()).filter(Boolean))];
+    if (!list.length) return (m, qty) => [{ loc: consumingLine, qty: Number(qty) || 0 }];
+    const [pr, rr, lr, sr] = await Promise.all([
+      supabaseDR.from('dr_products').select('mat_no, line_name, is_active, is_operation').in('mat_no', list),
+      supabaseDR.from('stock_inflow_rules').select('match_type, match_value, dest_line_name, is_active').eq('is_active', true),
+      supabaseDR.from('child_lot_requests').select('child_mat_no').in('child_mat_no', list).neq('status', 'cancelled').limit(1000),
+      supabaseDR.from('line_stock_summary').select('mat_no, qty_on_hand').eq('line_name', consumingLine).in('mat_no', list),
+    ]);
+    const err = pr.error || rr.error || lr.error || sr.error;
+    if (err) throw new Error(`อ่านทะเบียนคลังของวัตถุดิบไม่ได้ (${err.message})`);
+    const ctx = {
+      consumingLine, products: pr.data || [], rules: rr.data || [], receiptLine: RECEIPT_LINE,
+      lotMats: new Set((lr.data || []).map(r => String(r.child_mat_no || '').trim())),
+    };
+    /* ของที่จ่ายเข้าไลน์ที่ใช้แล้ว (ยอดบวก) ใช้ก่อน — หักออกระหว่างแบ่งหลายใบในล็อตเดียว */
+    const have = new Map((sr.data || []).map(r => [String(r.mat_no || '').trim(), parseFloat(r.qty_on_hand) || 0]));
+    return (m, qty) => {
+      const k = String(m || '').trim();
+      const parts = splitRawConsume(qty, { consumingLine, sourceLoc: rawSourceLocOf(k, ctx), lineHave: have.get(k) || 0 });
+      const usedHere = parts.filter(x => x.loc === consumingLine).reduce((t, x) => t + x.qty, 0);
+      if (usedHere) have.set(k, (have.get(k) || 0) - usedHere);
+      return parts;
+    };
+  };
+  /* หมายเหตุ ledger บอกไลน์ที่ใช้เสมอเมื่อคลังที่ตัดเป็นคนละที่ — สอบกลับได้ว่าของไปใช้ที่ไหน */
+  const usedAtNote = (loc, line) => (line && loc !== line ? ` · ใช้ที่ ${line}` : '');
+
   const advanceLot = async (lot, next) => {
     if (lot.status === next) return;
     setPullBusy(lot.id);
@@ -1683,9 +1715,12 @@ export default function HeijunkaKanban() {
               .select('id, raw_mat_no, part_name, qty');
             if (eRaw) throw eRaw;
             claimedRawIds = (lotRaws || []).map(r => r.id);
+            const splitOf = await loadRawLocOf((lotRaws || []).map(r => r.raw_mat_no), lot.source_line);
             (lotRaws || []).forEach(r => {
-              txns.push({ line_name: lot.source_line, mat_no: r.raw_mat_no, part_name: r.part_name, qty: r.qty,
-                type: 'consume', work_date: wd, note: `auto: ใช้ผลิต ${lot.child_mat_no} (ล็อต)`, created_by: fullName || 'สโตร์' });
+              splitOf(r.raw_mat_no, r.qty).forEach(({ loc, qty }) => {
+                txns.push({ line_name: loc, mat_no: r.raw_mat_no, part_name: r.part_name, qty,
+                  type: 'consume', work_date: wd, note: `auto: ใช้ผลิต ${lot.child_mat_no} (ล็อต)${usedAtNote(loc, lot.source_line)}`, created_by: fullName || 'สโตร์' });
+              });
             });
           }
           if (txns.length) {
@@ -1815,10 +1850,11 @@ export default function HeijunkaKanban() {
           .select('source_line, child_mat_no').eq('id', raw.lot_request_id).maybeSingle();
         if (eLot) throw eLot;
         if (lot?.source_line) {
-          const { error: eTx } = await supabaseDR.from('line_stock_transactions').insert({
-            line_name: lot.source_line, mat_no: raw.raw_mat_no, part_name: raw.part_name, qty: raw.qty,
-            type: 'consume', work_date: getWorkDate(), note: `auto: ใช้ผลิต ${lot.child_mat_no} (ล็อต · จ่ายวัตถุดิบ)`,
-            created_by: fullName || 'สโตร์' });
+          const parts = (await loadRawLocOf([raw.raw_mat_no], lot.source_line))(raw.raw_mat_no, raw.qty);
+          const { error: eTx } = !parts.length ? { error: null } : await supabaseDR.from('line_stock_transactions').insert(parts.map(({ loc, qty }) => ({
+            line_name: loc, mat_no: raw.raw_mat_no, part_name: raw.part_name, qty,
+            type: 'consume', work_date: getWorkDate(), note: `auto: ใช้ผลิต ${lot.child_mat_no} (ล็อต · จ่ายวัตถุดิบ)${usedAtNote(loc, lot.source_line)}`,
+            created_by: fullName || 'สโตร์' })));
           if (eTx) throw eTx;
         }
       } catch (ledgerErr) {

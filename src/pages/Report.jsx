@@ -1387,6 +1387,12 @@ table{border-collapse:collapse;width:100%}
 }
 
 const STATUS_META = {
+  /* 📎 รอแนบเอกสาร — ใบที่ระบบเปิดให้ตอนย้ายคนข้ามไลน์ แต่ยังไม่มีหลักฐาน OJT (2026-10-12)
+     🔴 **ไม่ใช่ใบรออนุมัติ** — `isActionable` นับแค่ pending/pending_qa ⇒ ไม่มีปุ่มอนุมัติให้กด
+        และทุกจอที่นับ "ค้างรออนุมัติ" กรอง `.in('status',['pending','pending_qa'])` อยู่แล้ว
+     ⇒ ขาดป้ายนี้ = ตกไปที่ fallback `STATUS_META.pending` แล้วจอโกหกว่า "รอ SV Approve"
+        (ขัดกฎ §4M "4M ที่ระบบสร้างเอง ห้ามเข้าคิวอนุมัติเงียบๆ") */
+  pending_doc: { label: '📎 รอแนบเอกสาร OJT', color: '#38bdf8', bg: 'rgba(56,189,248,0.12)' },
   pending:     { label: '⏳ รอ SV Approve',  color: '#f59e0b', bg: 'rgba(245,158,11,0.12)'  },
   pending_qa:  { label: '🔍 รอ QA Approve',  color: '#a855f7', bg: 'rgba(168,85,247,0.12)'  },
   approved:    { label: '✅ Approved',        color: '#22c55e', bg: 'rgba(34,197,94,0.12)'   },
@@ -1938,10 +1944,8 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
         </select>
         <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
           <option value="">{ALL.status}</option>
-          <option value="pending">⏳ รอ SV Approve</option>
-          <option value="pending_qa">🔍 รอ QA Approve</option>
-          <option value="approved">✅ Approved</option>
-          <option value="rejected">❌ Rejected</option>
+          {/* วาดจาก STATUS_META ตัวเดียว — เดิม hardcode ป้ายซ้ำ ⇒ เพิ่มสถานะแล้วลืมแก้ที่นี่ */}
+          {Object.entries(STATUS_META).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
         </select>
         {actionableCount > 0 && (
           <span style={{ fontSize: 11, fontWeight: 700, background: 'rgba(245,158,11,0.15)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 6, padding: '3px 8px' }}>

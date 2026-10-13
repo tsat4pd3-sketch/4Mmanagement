@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { countDelta, toAdjustTxns, countSummary, lastCountAt, pendingShipCuts } from '../stockCount.js';
+import { countDelta, toAdjustTxns, countSummary, lastCountAt, pendingShipCuts, STOCK_BASELINE_AT } from '../stockCount.js';
 
 /* ─── countDelta — "นับได้เท่าไหร่" ไม่ใช่ "เพิ่ม/ลดเท่าไหร่" ─────────────── */
 test('countDelta: ช่องว่าง = ยังไม่นับ ไม่ใช่ศูนย์', () => {
@@ -106,23 +106,23 @@ const COUNTED = { 'FG\u0000A1': '2026-09-23T05:00:00Z' };
 const SAP_OF = (m) => (m === 'ZZ' ? null : m);
 
 test('pendingShipCuts: ใบที่ส่งก่อนรอบตรวจนับ ถือว่าปิดแล้ว ห้ามหักซ้ำ', () => {
-  const r = pendingShipCuts({ orders: ORDERS, cutIds: new Set(), counted: COUNTED, fgLine: 'FG', sapOf: SAP_OF });
+  const r = pendingShipCuts({ orders: ORDERS, cutIds: new Set(), counted: COUNTED, fgLine: 'FG', sapOf: SAP_OF, baselineAt: null });
   assert.deepEqual(r.closedByCount.map(x => x.id), ['o1']);
 });
 
 test('pendingShipCuts: ใบที่ส่งหลังรอบตรวจนับ ยังต้องหัก', () => {
-  const r = pendingShipCuts({ orders: ORDERS, cutIds: new Set(), counted: COUNTED, fgLine: 'FG', sapOf: SAP_OF });
+  const r = pendingShipCuts({ orders: ORDERS, cutIds: new Set(), counted: COUNTED, fgLine: 'FG', sapOf: SAP_OF, baselineAt: null });
   assert.deepEqual(r.open.map(x => x.id).sort(), ['o2', 'o3']);
 });
 
 test('pendingShipCuts: จับคู่เลข SAP ไม่ได้ = แยกไว้ ห้ามเดาแล้วหักมั่ว', () => {
-  const r = pendingShipCuts({ orders: ORDERS, cutIds: new Set(), counted: COUNTED, fgLine: 'FG', sapOf: SAP_OF });
+  const r = pendingShipCuts({ orders: ORDERS, cutIds: new Set(), counted: COUNTED, fgLine: 'FG', sapOf: SAP_OF, baselineAt: null });
   assert.deepEqual(r.unresolved.map(x => x.id), ['o4']);
   assert.equal(r.unresolved[0].sap, null);
 });
 
 test('pendingShipCuts: ใบที่หักไปแล้ว หายจากทุกกอง (idempotent)', () => {
-  const r = pendingShipCuts({ orders: ORDERS, cutIds: new Set(['o1', 'o2', 'o3', 'o4']), counted: COUNTED, fgLine: 'FG', sapOf: SAP_OF });
+  const r = pendingShipCuts({ orders: ORDERS, cutIds: new Set(['o1', 'o2', 'o3', 'o4']), counted: COUNTED, fgLine: 'FG', sapOf: SAP_OF, baselineAt: null });
   assert.equal(r.open.length + r.closedByCount.length + r.unresolved.length, 0);
 });
 
@@ -135,6 +135,25 @@ test('pendingShipCuts: ไม่มี shipped_at ให้ถอยไปใช
 });
 
 test('pendingShipCuts: คลังคนละตัวไม่ปิดให้กัน (นับ FG ไม่ปิดใบของ STORE)', () => {
-  const r = pendingShipCuts({ orders: [ORDERS[0]], cutIds: new Set(), counted: COUNTED, fgLine: 'STORE', sapOf: SAP_OF });
+  const r = pendingShipCuts({ orders: [ORDERS[0]], cutIds: new Set(), counted: COUNTED, fgLine: 'STORE', sapOf: SAP_OF, baselineAt: null });
   assert.deepEqual(r.open.map(x => x.id), ['o1']);
+});
+
+/* ─── เส้นตั้งต้นยอดทั้งระบบ 01/10 = รอบนับของทุก MAT (เคสจริง 07/10 FG ติดลบ −24,344) ─── */
+test('pendingShipCuts: ใบที่ส่งก่อนวันล้างยอดทั้งระบบ ปิดหมด แม้ MAT นั้นไม่เคยมีแถวนับ', () => {
+  const orders = [
+    { id: 'old', mat_no: 'N1', qty: 112, due_date: '2026-08-27' },
+    { id: 'new', mat_no: 'N1', qty: 70, shipped_at: '2026-10-05T03:00:00Z' },
+  ];
+  const r = pendingShipCuts({ orders, cutIds: new Set(), counted: {}, fgLine: 'FG' });
+  assert.deepEqual(r.closedByCount.map(x => x.id), ['old']);
+  assert.deepEqual(r.open.map(x => x.id), ['new']);
+  assert.equal(STOCK_BASELINE_AT < '2026-10-02', true);
+});
+
+test('pendingShipCuts: รอบนับรายพาร์ทที่ใหม่กว่าเส้นตั้งต้น ยังเป็นตัวตัดสิน', () => {
+  const orders = [{ id: 'a', mat_no: 'A1', qty: 5, shipped_at: '2026-10-06T03:00:00Z' }];
+  const counted = { 'FG\u0000A1': '2026-10-08T00:00:00Z' };
+  const r = pendingShipCuts({ orders, cutIds: new Set(), counted, fgLine: 'FG' });
+  assert.deepEqual(r.closedByCount.map(x => x.id), ['a']);
 });

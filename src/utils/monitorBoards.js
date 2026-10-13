@@ -163,13 +163,21 @@ export function minRowKey(board) {
  * @param {object} board แถวจาก monitor_boards
  * @param {object} [o]   { now, dates } · `dates` = วันที่ที่ระบุเอง (period_kind='date')
  */
-export function boardPeriods(board, { now, dates } = {}) {
+export function boardPeriods(board, { now, dates, horizon = 0 } = {}) {
   const kind = board?.period_kind || 'day';
   const n = Number(board?.period_count) || 0;
   if (kind === 'date') {
     /* บอร์ดรายวันส่ง: คอลัมน์มาจาก "วันที่ลูกค้าสั่งรับ" ที่มีอยู่จริง ไม่ใช่ปฏิทินต่อเนื่อง
-       ⇒ ต้องมีคอลัมน์ยอดยกมาด้วย (วันก่อนวันสั่งแรก) ไม่งั้นสูตร deplete เริ่มจาก null */
-    const list = (Array.isArray(dates) ? dates : []).map((d) => String(d).slice(0, 10)).filter(Boolean);
+       ⇒ ต้องมีคอลัมน์ยอดยกมาด้วย (วันก่อนวันสั่งแรก) ไม่งั้นสูตร deplete เริ่มจาก null
+       📅 `horizon` (12/10 · user "column วันนี้ไม่ขึ้น เหมือนมีแต่ข้อมูลเก่า") — เติมวันนี้ + ถัดไปอีก
+          horizon−1 วันเสมอ: เดิมคอลัมน์เกิดจากช่องที่กรอกแล้วเท่านั้น ⇒ บอร์ดที่ยอดล่าสุดเป็นของ 8/10
+          ไม่มีช่องให้พิมพ์ออเดอร์วันนี้เลย (TSPK) */
+    const extra = [];
+    if (horizon > 0) {
+      const t = getWorkDate(now);
+      for (let i = 0; i < horizon; i++) extra.push(addDays(t, i));
+    }
+    const list = [...(Array.isArray(dates) ? dates : []), ...extra].map((d) => String(d).slice(0, 10)).filter(Boolean);
     const uniq = [...new Set(list)].sort();
     if (!uniq.length) return [];
     return buildDatePeriods([addDays(uniq[0], -1), ...uniq]);

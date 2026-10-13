@@ -1020,6 +1020,30 @@
 · ป้ายทีมบนจอ PM/MO (`DEPT_LABEL` ใน `src/lib/pmSchedule.js`) เป็น**ชื่อทีม คนละแกนกับชื่อแผนก**
 ตั้งใจไม่แตะ (คำสั่ง user 22/07 ให้ชื่อทีมตรงกันระหว่าง 2 หน้า)
 
+#### 🧑‍🔧 ตำแหน่งนอกทะเบียน "ผช.ช่างเทคนิค" → `technician` (12/10 · คำสั่ง user)
+
+2 บัญชี (กรกฎ แสงอาวุธ · ชาญณรงค์ ยอดนนท์ — supervisor · PD3 · ทีม production) ถือตำแหน่งที่
+**ไม่มีในทะเบียน `positions`** ⇒ แกนเกรด (`positions.level`) จัดชั้นไม่ได้ จอที่เรียง/นับตามตำแหน่ง
+ข้ามไปเงียบๆ · ทะเบียนมีแต่ `technician`/"ช่างเทคนิค" ไม่มีชั้น "ผู้ช่วย"
+
+user ตัดสิน: **"เปลี่ยนเป็นช่างเลย ทำงานเหมือนกัน"** ⇒ ย้ายเข้า `technician`
+**ไม่เพิ่มตำแหน่งใหม่ในทะเบียน** (ชั้นที่ผังองค์กรจริงไม่มี = ทะเบียนบวมด้วยของที่ HR ไม่รับรอง)
+
+🔴 **เก็บเป็น key ไม่ใช่ label ไทย** — ทั้งระบบเก็บ key (`engineer`/`section_head`/`manager`)
+เก็บ label = join ทะเบียนไม่ติด = กลายเป็นตำแหน่งนอกทะเบียนอีกแบบ
+🔴 **ไม่แตะ `role`** — role = ชุดสิทธิ์ใช้ระบบ คนละแกนกับตำแหน่งงาน · ทั้งคู่ยังเป็น `supervisor`
+· วัดหลังแก้: ตำแหน่งนอกทะเบียน **0** · `technician` รวม 12 บัญชี
+· migration `20261012b_profiles_position_asst_tech_to_technician_main.sql` (**apply แล้ว 12/10**)
+
+**คิวรีไล่ของค้างแบบนี้ซ้ำได้** (ตำแหน่งที่ไม่มีในทะเบียน — ควรได้ 0 เสมอ):
+```sql
+select pr.position, count(*) from profiles pr
+ where coalesce(btrim(pr.position),'') <> ''
+   and not exists (select 1 from positions p
+          where p.key = pr.position or p.label_th = pr.position or p.label_en = pr.position)
+ group by 1;
+```
+
 #### 🏷️ ป้ายบนจอต้องเป็น "ชื่อจริง" — คีย์เป็นของระบบ คนไม่ต้องเห็น (09/10)
 
 ย้ายตัวย่อไป `code` แล้ว **ยังไม่พอ** — `orgScope.js` ส่ง `nodeCode()` เป็น**ป้าย**ด้วย
