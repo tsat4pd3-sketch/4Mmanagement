@@ -267,6 +267,32 @@ export function buildQueue(src = {}, me = {}, now = new Date()) {
     else if (keep(a)) unit.push({ ...it, tier: TIER.UNIT, tag: a.assignee || 'ยังไม่มีผู้รับผิดชอบ' });
   }
 
+  // ── ⬆️ คำขอขึ้นขั้นทักษะรออนุมัติ (2026-10-13 · คำสั่ง user) ───────────────────────
+  //    ตรวจจริง 13/10: ค้าง 132 คำขอ เก่าสุด 24/08 — **ไม่เคยโผล่ในคิวของใครเลย** ⇒ คะแนนค้างใต้ขั้น (49/74/99)
+  //    แล้วจอ "ฝีมือตรงจุดไหม" (Manpower Board) ฟ้องว่าฝีมือไม่ถึงทั้งที่ได้ขั้นแล้ว
+  //    · โหลด/นับเฉพาะคนที่ **อนุมัติได้จริง** (`me.canLevelUp` < 100 · `me.canLevelUp100` ขั้น 100 — คีย์เดียวกับปุ่มใน /operator)
+  //    · ชั้น `unit` **บรรทัดเดียวต่อขอบเขต** ห้ามแตกรายคำขอ (132 แถวท่วมคิว = ไม่มีใครอ่าน · บทเรียนกระดิ่ง)
+  //    · ไม่ขึ้น badge (ไม่ใช่งานที่รอ "ตัวเรา" คนเดียว — หัวหน้าหลายคนกดได้)
+  if (me.canLevelUp || me.canLevelUp100) {
+    const lu = need('levelUps', src.levelUps).filter(r => (Number(r.to_level) >= 100 ? me.canLevelUp100 : me.canLevelUp) && keep(r));
+    if (lu.length) {
+      const byLv = {};
+      let oldest = null;
+      for (const r of lu) {
+        byLv[r.to_level] = (byLv[r.to_level] || 0) + 1;
+        const a = ageDays(r.requested_at, now);
+        if (a != null && (oldest == null || a > oldest)) oldest = a;
+      }
+      unit.push({
+        key: 'levelup', icon: '⬆️', tier: TIER.UNIT, count: lu.length,
+        title: `คำขอขึ้นขั้นทักษะรออนุมัติ ${lu.length.toLocaleString()} รายการ`,
+        detail: Object.keys(byLv).sort((a, b) => b - a).map(k => `ขั้น ${k}: ${byLv[k]}`).join(' · '),
+        age: oldest, tag: 'รอหัวหน้าอนุมัติ',
+        to: '/operator?tab=levelup',
+      });
+    }
+  }
+
   // ── ชั้น 3: ของทั้งโรงงานที่ไม่มีเจ้าภาพ — **สรุปบรรทัดเดียว ห้ามแตกรายตัว** ──────
   //    ใบขอซื้อค้าง 6,743 รายการมาจากตัวระเบิดความต้องการ ไม่ใช่ "งานที่คนหนึ่งต้องทำทีละใบ"
   //    ใบ MO ที่รอ "ตำแหน่ง" ก็เข้าชั้นนี้ด้วย (ดูคอมเมนต์ที่ `byPos` ข้างบน)

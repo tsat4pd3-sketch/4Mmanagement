@@ -344,3 +344,13 @@ test('stationSkillGaps: นับเฉพาะคนมาที่ยืน�
   assert.deepEqual(r.gaps[1].missing.map(m => m.skill_name), ['g']);
   assert.equal(r.noReqStations, 1); assert.equal(r.noReqPeople, 2, 'จุดไม่ตั้งทักษะ = ไม่รู้ ห้ามนับว่าผ่าน');
 });
+
+test('stationSkillGaps: ขาดเพราะรอหัวหน้าอนุมัติขั้น = onlyApproval (นับแยก)', () => {
+  const placed = [{ station: { id: 1 }, people: [{ emp: { id: 'a', name: 'a' }, attend: 'present', shift: 'day' }, { emp: { id: 'b', name: 'b' }, attend: 'present', shift: 'day' }] }];
+  const r = M.stationSkillGaps(placed, {
+    skillsByEmp: { a: [{ skill_name: 'w', score: 49, pending_level: 50 }], b: [{ skill_name: 'w', score: 20 }] },
+    reqsByStation: { 1: [{ skill_name: 'w', min_score: 50 }] },
+  });
+  assert.equal(r.gaps.length, 2); assert.equal(r.onlyApproval, 1);
+  assert.equal(r.gaps.find(g => g.emp.id === 'a').onlyApproval, true);
+});
