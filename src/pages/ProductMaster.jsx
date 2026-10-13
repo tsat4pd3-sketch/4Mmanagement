@@ -11,7 +11,7 @@ import { toast } from '../components/Toast';
 import { loadProcessTypes, activeProcessTypes, procDisplay, procColor } from '../utils/processTypes';
 loadProcessTypes(); // master กระบวนการ data-driven
 import ImageCropModal from '../components/ImageCropModal';
-import { can } from '../utils/permissions';
+import { can, canDelete as canDeleteUtil } from '../utils/permissions';
 import useIsMobile from '../utils/useIsMobile';
 import RoutingPanel from '../components/RoutingPanel';
 import useTabParam from '../utils/useTabParam';
@@ -263,7 +263,11 @@ export default function ProductMaster() {
   void isDeptAdmin;
   const canCreate = can('products', 'create', role);
   const canEdit   = can('products', 'edit', role);
-  const canDelete = can('products', 'delete', role);
+  /* 🖥️🔴 ต้องผ่าน `canDelete()` ของกลาง (utils/permissions.js) — เดิมประกาศตัวแปรชื่อ `canDelete`
+     ทับ util แล้วเรียกแค่ `can(...)` ⇒ อ่านโค้ดเหมือนมีด่าน แต่ **ด่าน "บัญชีกลางห้ามลบ" ไม่ทำงาน**
+     (ออดิท 13/10 เจอแบบนี้ 5 หน้า) · เปลี่ยนชื่อตัวแปรเป็น `mayDelete` + เรียก util ผ่าน alias
+     ⚠️ ห้ามตั้งชื่อตัวแปรท้องถิ่นว่า `canDelete` อีก — มีด่าน `no-shadow-candelete` */
+  const mayDelete = canDeleteUtil('products', 'create', role);
   // ผูกแท็บกับ URL ตาม UI-CONVENTIONS §6.8 (2026-08-20 — worklist ใน /vsm ต้อง deep-link มาที่ ?tab=routing ได้)
   const [mainTab, setMainTab] = useTabParam(['products', 'bom', 'bomdup', 'packaging', 'parts', 'kanban', 'routing', 'ct', 'customers', 'suppliers', 'export'], 'products');
   /* 🧩 เด้งไปแท็บ BOM แล้วเลือกแถวนั้นให้เลย (?tab=bom&mat=…) — ลิสต์ BOM ยาว 100+ แถว
@@ -1045,13 +1049,13 @@ export default function ProductMaster() {
                     </div>
                     <RelatedLinks matNo={item.mat_no} productId={item.id} />
                   </div>
-                  {(canEdit || canDelete) && (
+                  {(canEdit || mayDelete) && (
                     <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'flex-start' }}>
                       {canEdit && active && <button onClick={() => openEC(active)} title="Engineering Change" style={{ background: 'rgba(168,85,247,0.12)', border: '1px solid rgba(168,85,247,0.35)', borderRadius: 6, padding: '4px 10px', fontSize: 11, cursor: 'pointer', color: '#a855f7', fontWeight: 700 }}>🔄 EC</button>}
                       {canEdit && <button onClick={() => openEdit(item)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 10px', fontSize: 12, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>}
                       {/* สินค้าที่ปิดใช้งาน (ไม่ใช่ superseded โดย EC) → ปุ่มเปิดกลับ · สินค้าที่ยัง active → ✕ ปิดใช้งาน */}
-                      {canDelete && !item.is_active && !item.superseded_by && <button onClick={() => handleReactivate(item.id)} title="เปิดใช้งานสินค้ากลับ" style={{ background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 6, padding: '4px 10px', fontSize: 11, cursor: 'pointer', color: '#22c55e', fontWeight: 700 }}>♻️ เปิดใช้งาน</button>}
-                      {canDelete && item.is_active && <button className="tbtn" onClick={() => handleDelete(item.id)} title="ปิดใช้งานสินค้า (เก็บประวัติ)" style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 14 }}>✕</button>}
+                      {mayDelete && !item.is_active && !item.superseded_by && <button onClick={() => handleReactivate(item.id)} title="เปิดใช้งานสินค้ากลับ" style={{ background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 6, padding: '4px 10px', fontSize: 11, cursor: 'pointer', color: '#22c55e', fontWeight: 700 }}>♻️ เปิดใช้งาน</button>}
+                      {mayDelete && item.is_active && <button className="tbtn" onClick={() => handleDelete(item.id)} title="ปิดใช้งานสินค้า (เก็บประวัติ)" style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 14 }}>✕</button>}
                     </div>
                   )}
                 </div>
@@ -1094,10 +1098,10 @@ export default function ProductMaster() {
                               <span style={{ fontSize: 18, fontWeight: 900, color: '#0ea5e9', lineHeight: 1 }}>{std.qty_per_kanban}</span>
                               <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 3 }}>ชิ้น/ใบ</span>
                             </div>
-                            {(canEdit || canDelete) && (
+                            {(canEdit || mayDelete) && (
                               <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
                                 {canEdit && <button onClick={() => openKanbanEdit(std)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 5, padding: '3px 8px', fontSize: 11, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>}
-                                {canDelete && <button className="tbtn" onClick={() => handleKanbanDelete(std.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 13 }}>✕</button>}
+                                {mayDelete && <button className="tbtn" onClick={() => handleKanbanDelete(std.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 13 }}>✕</button>}
                               </div>
                             )}
                           </div>
@@ -1178,11 +1182,11 @@ export default function ProductMaster() {
                         {v.revCount > 1 && <span style={{ fontSize: 11, padding: '1px 5px', borderRadius: 10, background: 'rgba(168,85,247,0.12)', color: '#a855f7', fontWeight: 700 }}>🔄 {v.revCount} rev</span>}
                         {/* ✅ แถบความครบแบบย่อ (ไอคอน+เครื่องหมาย) — แถวตัวแปรมีของเยอะแล้ว ใส่ชื่อขั้นเต็มจะล้น */}
                         <ReadyChips ready={readyOf(v)} onGo={goFixStep(v)} compact />
-                        {(canEdit || canDelete) && (
+                        {(canEdit || mayDelete) && (
                           <div style={{ display: 'flex', gap: 4, marginLeft: 'auto', flexShrink: 0 }}>
                             {canEdit && <button onClick={() => openEC(v)} title="Engineering Change" style={{ background: 'rgba(168,85,247,0.12)', border: '1px solid rgba(168,85,247,0.35)', borderRadius: 6, padding: '3px 8px', fontSize: 11, cursor: 'pointer', color: '#a855f7', fontWeight: 700 }}>🔄 EC</button>}
                             {canEdit && <button onClick={() => openEdit(v)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, padding: '3px 8px', fontSize: 11, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>}
-                            {canDelete && <button className="tbtn" onClick={() => handleDelete(v.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 13 }}>✕</button>}
+                            {mayDelete && <button className="tbtn" onClick={() => handleDelete(v.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 13 }}>✕</button>}
                           </div>
                         )}
                       </div>
@@ -1212,10 +1216,10 @@ export default function ProductMaster() {
                                 <span style={{ fontSize: 18, fontWeight: 900, color: '#0ea5e9', lineHeight: 1 }}>{std.qty_per_kanban}</span>
                                 <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 3 }}>ชิ้น/ใบ</span>
                               </div>
-                              {(canEdit || canDelete) && (
+                              {(canEdit || mayDelete) && (
                                 <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
                                   {canEdit && <button onClick={() => openKanbanEdit(std)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 5, padding: '3px 8px', fontSize: 11, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>}
-                                  {canDelete && <button className="tbtn" onClick={() => handleKanbanDelete(std.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 13 }}>✕</button>}
+                                  {mayDelete && <button className="tbtn" onClick={() => handleKanbanDelete(std.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 13 }}>✕</button>}
                                 </div>
                               )}
                             </div>
@@ -1514,11 +1518,11 @@ export default function ProductMaster() {
       {partsPickFor && <PartsPickModal parts={pmParts} onPick={handlePartPick} onClose={() => setPartsPickFor(null)} />}
       </>)}
 
-      {mainTab === 'bom'   && <BOMPanel canCreate={canCreate} canEdit={canEdit} canDelete={canDelete} fullName={fullName} />}
+      {mainTab === 'bom'   && <BOMPanel canCreate={canCreate} canEdit={canEdit} mayDelete={mayDelete} fullName={fullName} />}
       {/* 🔁 คู่ที่ "ของชิ้นเดียวถูกนิยามไว้ 2 ใบ" — กดแล้วเด้งไปเปิดใบนั้นในแท็บ BOM (ใช้ `openBomFor` ตัวเดิม
           ที่ worklist ของ /vsm ใช้อยู่ — ลิสต์ยาว บอกให้ "ไปหาเอง" = คนไม่ไป) */}
       {mainTab === 'bomdup' && <BomDupPanel onOpenSheet={openBomFor} />}
-      {mainTab === 'packaging' && <PackagingPanel canCreate={canCreate} canEdit={canEdit} canDelete={canDelete} fullName={fullName} />}
+      {mainTab === 'packaging' && <PackagingPanel canCreate={canCreate} canEdit={canEdit} mayDelete={mayDelete} fullName={fullName} />}
       {mainTab === 'parts' && <PartsMasterPanel canCreate={canCreate} canEdit={canEdit} fullName={fullName} setCsvPreview={setCsvPreview} reloadKey={partsReloadKey} />}
       {mainTab === 'kanban' && <KanbanStdPanel canEdit={canEdit} fullName={fullName} />}
       {mainTab === 'routing' && <RoutingPanel canEdit={can('routing','manage',role) || canEdit} lines={lines} />}
@@ -1671,7 +1675,7 @@ const TD = ({ children, style }) => (
   <td style={{ padding: '8px 10px', fontSize: 13, color: 'var(--text)', borderTop: '1px solid var(--border)', ...style }}>{children}</td>
 );
 
-function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
+function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
   const isMobile = useIsMobile(); // ≤768px: two-pane ยุบเป็นคอลัมน์เดียว (desktop ไม่เปลี่ยน)
   const plLines = useProductionLines(); // ทะเบียนไลน์ (LINE_COLUMNS) สำหรับ <LineSelect> ช่อง source_line (2026-09-07)
   const [products, setProducts]     = useState([]);
@@ -2415,7 +2419,7 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
                     <BomTreeView rootMat={selProduct.mat_no} rootName={selProduct.name}
                       bomOf={bomIx.bomOf} sheetFor={bomIx.sheetFor} ownSheetOf={bomIx.ownSheetOf}
                       isOpSheet={isOpSheet}
-                      onDeleteDupes={canDelete ? handleDeleteDupes : undefined}
+                      onDeleteDupes={mayDelete ? handleDeleteDupes : undefined}
                       onOpenSheet={openSheetOfMat} />
                   </div>
                 )}
@@ -2434,7 +2438,7 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
                   <thead>
                     <tr style={{ background: 'var(--bg2)' }}>
                       <TH w={62}>Item</TH><TH w={150}>ชั้น / ขั้นตอน</TH><TH>Part Name</TH><TH>Part No.</TH><TH>Mat SAP</TH><TH w={90}>ใช้/ชิ้น</TH><TH w={90}>Qty/Pkg</TH><TH w={60}>หน่วย</TH><TH w={70}>คลัง</TH><TH>ผลิตที่ไลน์</TH><TH>Supplier</TH>
-                      {(canEdit || canDelete) && <TH w={90}> </TH>}
+                      {(canEdit || mayDelete) && <TH w={90}> </TH>}
                     </tr>
                   </thead>
                   <tbody>
@@ -2506,11 +2510,11 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
                           ? <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: 'rgba(59,130,246,0.12)', color: '#3b82f6' }}>🏭 {it.source_line}</span>
                           : <span style={{ color: 'var(--muted)' }}>—</span>}</TD>
                         <TD style={{ color: 'var(--muted)', fontSize: 12 }}>{it.supplier || '—'}</TD>
-                        {(canEdit || canDelete) && (
+                        {(canEdit || mayDelete) && (
                           <TD>
                             <div style={{ display: 'flex', gap: 6 }}>
                               {canEdit && <button className="tbtn" onClick={() => openEdit_(it)} style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', fontSize: 12 }}>✏️</button>}
-                              {canDelete && <DeleteButton onClick={() => handleDelete(it)} title="ลบ" />}
+                              {mayDelete && <DeleteButton onClick={() => handleDelete(it)} title="ลบ" />}
                             </div>
                           </TD>
                         )}
@@ -3478,7 +3482,7 @@ const PKG_CATEGORIES = ['BOX', 'RACK', 'BASKET', 'PALLETTE', 'Other'];
 const EMPTY_PKG_MASTER = { code: '', name: '', category: 'BOX', supplier: '' };
 const cardSt = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 16 };
 
-function PackagingPanel({ canCreate, canEdit, canDelete, fullName }) {
+function PackagingPanel({ canCreate, canEdit, mayDelete, fullName }) {
   const isMobile = useIsMobile(); // ≤768px: two-pane ยุบเป็นคอลัมน์เดียว (desktop ไม่เปลี่ยน)
   const [products, setProducts]   = useState([]);
   const [selProduct, setSelProduct] = useState(null);
@@ -3606,7 +3610,7 @@ function PackagingPanel({ canCreate, canEdit, canDelete, fullName }) {
                 : links.length === 0 ? <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--muted)', fontSize: 13, background: 'var(--bg2)', borderRadius: 8, border: '1px dashed var(--border)' }}>ยังไม่ผูก packaging{canCreate && ' — กด "+ ผูก Packaging"'}</div>
                 : (
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                    <thead><tr style={{ background: 'var(--bg2)' }}><TH>Code</TH><TH>ชื่อ</TH><TH w={140}>ชิ้น/บรรจุภัณฑ์</TH><TH>หมายเหตุ</TH>{(canEdit || canDelete) && <TH w={90}> </TH>}</tr></thead>
+                    <thead><tr style={{ background: 'var(--bg2)' }}><TH>Code</TH><TH>ชื่อ</TH><TH w={140}>ชิ้น/บรรจุภัณฑ์</TH><TH>หมายเหตุ</TH>{(canEdit || mayDelete) && <TH w={90}> </TH>}</tr></thead>
                     <tbody>
                       {links.map(it => (
                         <tr key={it.id}>
@@ -3614,9 +3618,9 @@ function PackagingPanel({ canCreate, canEdit, canDelete, fullName }) {
                           <TD>{it.packaging_name || '—'}</TD>
                           <TD style={{ fontWeight: 800, color: 'var(--accent)' }}>{it.pcs_per_pkg}</TD>
                           <TD style={{ color: 'var(--muted)', fontSize: 12 }}>{it.note || '—'}</TD>
-                          {(canEdit || canDelete) && <TD><div style={{ display: 'flex', gap: 6 }}>
+                          {(canEdit || mayDelete) && <TD><div style={{ display: 'flex', gap: 6 }}>
                             {canEdit && <button className="tbtn" onClick={() => openEditLink(it)} style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', fontSize: 12 }}>✏️</button>}
-                            {canDelete && <DeleteButton onClick={() => delLink(it)} title="ลบ" />}
+                            {mayDelete && <DeleteButton onClick={() => delLink(it)} title="ลบ" />}
                           </div></TD>}
                         </tr>
                       ))}

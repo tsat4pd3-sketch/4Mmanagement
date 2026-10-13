@@ -5,7 +5,7 @@ import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { invalidateTable } from '../utils/masterInvalidate';
 import { toast } from '../components/Toast';
-import { can } from '../utils/permissions';
+import { can, canDelete as canDeleteUtil } from '../utils/permissions';
 import { EQUIPMENT_KINDS, kindOf, kindLabel, kindIcon } from '../utils/equipmentKinds';   // แม่พิมพ์/จิ๊กไม่ใช่เครื่องจักร — กรองแยกกัน
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames, lineNameCompare } from '../utils/lineHierarchy';
@@ -68,7 +68,11 @@ export default function MachineDatabase() {
   const { role, lineId: userLineId, sections: scopeSecs } = useContext(UserContext);
   const canCreate = can('machines', 'create', role);
   const canEdit   = can('machines', 'edit', role);
-  const canDelete = can('machines', 'delete', role);
+  /* 🖥️🔴 ต้องผ่าน `canDelete()` ของกลาง (utils/permissions.js) — เดิมประกาศตัวแปรชื่อ `canDelete`
+     ทับ util แล้วเรียกแค่ `can(...)` ⇒ อ่านโค้ดเหมือนมีด่าน แต่ **ด่าน "บัญชีกลางห้ามลบ" ไม่ทำงาน**
+     (ออดิท 13/10 เจอแบบนี้ 5 หน้า) · เปลี่ยนชื่อตัวแปรเป็น `mayDelete` + เรียก util ผ่าน alias
+     ⚠️ ห้ามตั้งชื่อตัวแปรท้องถิ่นว่า `canDelete` อีก — มีด่าน `no-shadow-candelete` */
+  const mayDelete = canDeleteUtil('machines', 'create', role);
 
   const [machines, setMachines]     = useState([]);
   const [lines, setLines]           = useState([]);
@@ -422,10 +426,10 @@ export default function MachineDatabase() {
                     {!item.is_active && <span style={{ fontSize: 11, color: '#ef4444' }}>(ปิดใช้)</span>}
                   </div>
                 </div>
-                {(canEdit || canDelete) && (
+                {(canEdit || mayDelete) && (
                   <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                     {canEdit && <button className="tbtn" onClick={() => openEdit(item)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 12px', fontSize: 12, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>}
-                    {canDelete && <button className="tbtn" onClick={() => handleDelete(item)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 15 }}>✕</button>}
+                    {mayDelete && <button className="tbtn" onClick={() => handleDelete(item)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 15 }}>✕</button>}
                   </div>
                 )}
               </div>

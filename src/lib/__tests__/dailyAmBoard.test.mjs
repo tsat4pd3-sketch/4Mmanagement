@@ -2,7 +2,7 @@
 // ⏱️ ทุกเคสตรึง `now` — ห้ามพึ่งนาฬิกาเครื่อง (รอบเทส +400 วัน)
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { amShiftInfo, dailyAmLineStatus, dailyAmTargetsByLine, isDailyAmEquipment } from '../pmDailyStatus.js'
+import { amShiftInfo, dailyAmLineStatus, dailyAmTargetsByLine, isDailyAmEquipment, openFamilyLines } from '../pmDailyStatus.js'
 
 const jigs = [
   { id: 'j1', name: 'ROBOT 1', machine_no: 'RB-01', equipment_type: 'machine', equipment_category: 'production' },
@@ -64,4 +64,48 @@ test('dailyAmLineStatus — ในกรอบ 60 นาที = wait · เก�
   // pending (ยังไม่สรุปผล) ยังไม่ถือว่าตรวจแล้ว
   const pend = dailyAmLineStatus({ targets, jigs: amJigs, resultByJig: { j2: { status: 'pending' } }, firstOrderByLine: { 'LINE B': opened }, shift: 'day', now: new Date(2026, 9, 8, 9, 30) })
   assert.equal(pend['LINE B'].status, 'orange'); assert.equal(pend['LINE B'].checked, 0)
+})
+
+/* ══ openFamilyLines — "ไลน์ไหนเดินอยู่" ต้องนับไลน์แม่-ลูก (2026-10-13) ══════════════════
+   เคสจริงที่วัดมา: ไลน์แม่ HYDROFORM / GOR / LWR BAR / LINE APRON ASSY เปิดกะ 0 ครั้งใน 45 วัน
+   (ลูกเดินทุกวันแทน) แต่ถือแผน LPA รวม 30 แผน ⇒ เทียบชื่อตรงตัว = งานตรวจของไลน์แม่หายเงียบ */
+const famLines = [
+  { id: 1, name: 'HYDROFORM', parent_line_name: null },
+  { id: 2, name: 'HDF1',      parent_line_name: 'HYDROFORM' },
+  { id: 3, name: 'HDF2',      parent_line_name: 'HYDROFORM' },
+  { id: 4, name: 'LINE SOLO', parent_line_name: null },
+]
+
+test('openFamilyLines: ลูกเปิดกะ ⇒ ไลน์แม่ต้องถือว่าเดินอยู่', () => {
+  const open = openFamilyLines(famLines, new Set(['HDF1']))
+  assert.ok(open.has('HDF1'), 'ตัวที่เปิดกะจริงต้องอยู่')
+  assert.ok(open.has('HYDROFORM'), 'ไลน์แม่ต้องถูกนับ — ไม่งั้นแผน LPA ของแม่หายเงียบ')
+})
+
+test('openFamilyLines: ไลน์พี่น้องที่ไม่ได้เดิน ห้ามถูกลากเข้ามา', () => {
+  const open = openFamilyLines(famLines, new Set(['HDF1']))
+  assert.ok(!open.has('HDF2'), 'HDF2 ไม่ได้เปิดกะ ห้ามนับ (family ไม่รวมพี่น้อง)')
+  assert.ok(!open.has('LINE SOLO'), 'ไลน์นอกครอบครัวห้ามนับ')
+})
+
+test('openFamilyLines: แม่เปิดกะ ⇒ ลูกนับด้วย (พื้นที่เดียวกันเดินอยู่)', () => {
+  const open = openFamilyLines(famLines, new Set(['HYDROFORM']))
+  assert.ok(open.has('HDF1') && open.has('HDF2'), 'ลูกต้องถูกนับเมื่อแม่เดิน')
+})
+
+test('openFamilyLines: ชื่อที่เปิดกะแต่ไม่อยู่ในทะเบียนไลน์ ต้องไม่หาย', () => {
+  const open = openFamilyLines(famLines, new Set(['SW-10']))   // เปิดกะด้วยชื่อเครื่อง
+  assert.ok(open.has('SW-10'))
+  assert.equal(open.size, 1, 'ห้ามลากไลน์อื่นเข้ามา')
+})
+
+test('openFamilyLines: ไม่มีกะเปิดเลย / ไม่ส่งทะเบียนไลน์ = ชุดว่าง ไม่พัง', () => {
+  assert.equal(openFamilyLines(famLines, new Set()).size, 0)
+  assert.equal(openFamilyLines(null, new Set(['HDF1'])).size, 1)
+  assert.equal(openFamilyLines(famLines, null).size, 0)
+})
+
+test('openFamilyLines: รับ array ได้ด้วย (ไม่ใช่ Set) — ห้ามคืนว่างเงียบ', () => {
+  const open = openFamilyLines(famLines, ['HDF2'])
+  assert.ok(open.has('HDF2') && open.has('HYDROFORM'))
 })

@@ -184,6 +184,20 @@ const RULES = [
     allow: {},
   },
   {
+    id: 'am-open-lines-family-aware',
+    scan: ['src/lib/dailyAmBoard.js'], ext: ['.js'],
+    /* "ไลน์ไหนเดินอยู่" ต้องผ่าน openFamilyLines() — ประกอบ Set เองที่นี่ = กลับไปเทียบชื่อตรงตัว */
+    re: /openSessionLines:\s*new Set\(/g,
+    why: 'ไลน์แม่หลายตัวไม่เคยเปิดกะในชื่อตัวเอง (วัด 45 วัน: GOR · LWR BAR · HYDROFORM '
+       + '· LINE APRON ASSY = 0 ครั้ง · ลูกเดินทุกวันแทน) แต่ถือ **แผน LPA รวม 30 แผน** '
+       + '⇒ ชุด "ไลน์ที่เดินอยู่" ที่เทียบชื่อตรงตัวจะไม่มีชื่อไลน์แม่ ⇒ `pokayokeByLine`/`lpaByLine` '
+       + '(`utils/prodRoutine.js`) ใช้ชุดนี้เป็นประตู แล้ว**ข้ามงานตรวจของไลน์แม่ทั้งก้อนเงียบๆ** '
+       + '· จอ AM ก็เขียน "ยังไม่เปิดกะ" ให้ไลน์ที่ลูกเดินอยู่',
+    fix: 'คืน `openSessionLines: openFamilyLines(lines, openRaw)` (`src/lib/pmDailyStatus.js` · มีเทส) '
+       + '— family = ตัวเอง + แม่/ปู่ + ลูก/หลาน **ไม่รวมพี่น้อง**',
+    allow: {},
+  },
+  {
     id: 'check-day-mark-not-answer',
     scan: ['src/utils/dailyCheckDay.js'], ext: ['.js'],
     /* สัญลักษณ์ "สถานะวัน" ห้ามยืมตัวอักษรจากพจนานุกรม "คำตอบของการตรวจ" */
@@ -4032,6 +4046,26 @@ test('🛡️ am-board-registries-cached — jigs/checklists/pm_daily_line_targe
     + '        และทุกจุดที่เขียนตารางนั้นต้องเรียก invalidateTable(\'<ตาราง>\') หลังบันทึกสำเร็จ\n');
 });
 
+/* ── 📝 รายละเอียดในใบแจ้งซ่อม MO ต้องชัดพอให้ช่างเตรียมตัว (13/10 · คำขอทีม MTN ผ่าน user) ──
+   วัดจากของจริง (DR `mtn_orders` 90 วัน 718 ใบ): ไม่กรอกเลย 10 ใบ (1.4%) · สั้น 1–15 ตัว
+   109 ใบ (15%) · เฉลี่ย 40 ตัว · ไม่เลือกกลุ่มอาการ 0 ใบ ⇒ ปัญหาคือ "สั้นจนเดาไม่ออก"
+   🔴 เตือนได้ ห้ามบล็อกความยาว — บังคับแล้วคนเลิกแจ้งในระบบ ไปบอกช่างปากเปล่า เสียทั้งสายข้อมูล
+      (บล็อกได้ชั้นเดียว: เลือกอาการ "อื่นๆ/ไม่ระบุ" แล้วไม่เขียนอะไรเลย = ไม่เหลือข้อมูลให้ใครเลย)
+   ⇒ เกณฑ์อยู่ใน `utils/moNoteQuality.js` ที่เดียว · หน้าแจ้งซ่อมต้องเรียกใช้ ห้ามคิดเกณฑ์เอง   */
+test('🛡️ mo-note-quality-gate — ฟอร์มแจ้งซ่อมต้องตรวจคุณภาพรายละเอียดผ่าน moNoteCheck', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8'));
+  assert.ok(/moNoteCheck\(/.test(code),
+    '\n\n❌ MtnRepair ไม่ได้เรียก moNoteCheck — ช่อง "ระบุรายละเอียดปัญหา" กลับไปเป็นช่องเปล่า\n'
+    + '   ผล: ใบที่เขียน 1–15 ตัวอักษร (15% ของใบ) ไม่มีใครเตือน ช่างต้องเดินไปถามเอง\n'
+    + '   แก้: moNoteCheck({ note, group, character }) จาก src/utils/moNoteQuality.js\n'
+    + '        → เตือนใต้ช่อง (level thin) + บล็อกตอน blocked (อื่นๆ + ไม่เขียนอะไรเลย)\n');
+  assert.ok(/noteCheck\.blocked/.test(code),
+    '\n\n❌ ผล moNoteCheck ไม่ได้ถูกใช้กันตอนกดบันทึก — เตือนบนจอแต่ส่งผ่านได้ทุกกรณี\n');
+  assert.ok(!/MO_NOTE_MIN\s*=/.test(code),
+    '\n\n❌ เกณฑ์ความยาวถูกประกาศซ้ำในหน้า — แก้ที่เดียวไม่พอ แล้วจอกับด่านจะตอบคนละเลข\n'
+    + '   แก้: import { MO_NOTE_MIN } from "../utils/moNoteQuality"\n');
+});
+
 /* ── ช่องแนบ "รูปหลักฐานของเสีย" ต้องเริ่มที่โหมด "ใช้ทั้งรูป" (2026-10-13 · คำสั่ง user) ──
    เดิมโมดัลครอบรูปมีช่องติ๊ก "ใช้ทั้งรูป" ที่ **ไม่ติ๊ก = ครอบ 4:3** ⇒ หน้างานที่รีบ
    กด "✓ ใช้รูปนี้" เลย จะได้รูปที่ถูกตัดขอบโดยไม่รู้ตัว — รูปหลักฐานที่ตำหนิหลุดกรอบ
@@ -4114,4 +4148,46 @@ test('🛡️ plating-writes-via-rpc — ห้ามเขียน plating_ord
   const pre = (js.match(/VENDOR_LOC_PREFIX\s*=\s*'([^']+)'/) || [])[1];
   assert.ok(pre, 'หา VENDOR_LOC_PREFIX ใน utils/plating.js ไม่เจอ');
   assert.ok(sql.includes(`'${pre}' || btrim(p_vendor)`), `ชื่อคลังร้านใน RPC plating_send ต้องเป็น '${pre}' || vendor ให้ตรงกับ JS`);
+});
+
+/* ── 🖥️ บัญชีกลางห้ามลบ — ด่านต้องอยู่ "ก่อน" admin bypass (2026-10-13 · คำสั่ง user) ──
+   บัญชีกลาง = จอ TV / บัญชีประจำเครื่อง-กะ (`maintenance` · `toolingmaintenance` · TV-1..13)
+   ใช้ร่วมกันหลายคน ⇒ ลบแถวแล้วสอบกลับไม่ได้ว่าใครกด (audit เขียนได้แค่ชื่อบัญชี)
+   🔴 บัญชี `ADMIN` ในฐานจริงก็เป็นบัญชีกลาง ⇒ ถ้าเช็ค `_sharedAccount` **หลัง** `role === 'admin'`
+      ด่านนี้จะไร้ผลกับบัญชีที่อันตรายที่สุด (ลบได้ทุกตาราง) — เคยพลาดแบบเดียวกันที่ล็อกช่องเซ็น MO
+      ("ล็อกเต็ม manage_master ก็ข้ามไม่ได้")                                                   */
+test('🛡️ shared-account-no-delete — canDelete ต้องเช็คบัญชีกลางก่อน admin bypass', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/utils/permissions.js'), 'utf8'));
+  const fn = code.slice(code.indexOf('export function canDelete'));
+  const body = fn.slice(0, fn.indexOf('\n}'));
+  const iShared = body.indexOf('_sharedAccount');
+  const iAdmin = body.indexOf("role === 'admin'");
+  assert.ok(iShared >= 0,
+    '\n\n❌ canDelete ไม่มีด่านบัญชีกลาง (_sharedAccount) แล้ว\n'
+    + '   ผล: บัญชีกลาง (จอ TV / maintenance / toolingmaintenance) กดลบได้อีก\n'
+    + '        แล้ว audit สอบกลับไม่ได้ว่าใครกด (คำสั่ง user 13/10 "บัญชีกลาง ไม่ควรลบได้")\n');
+  assert.ok(iAdmin < 0 || iShared < iAdmin,
+    '\n\n❌ ด่านบัญชีกลางอยู่หลัง admin bypass — บัญชี ADMIN เองเป็นบัญชีกลาง\n'
+    + '   ⇒ ด่านไร้ผลกับบัญชีที่ลบได้ทุกตาราง · ย้าย `if (_sharedAccount) return false;` ขึ้นบนสุด\n');
+});
+
+
+/* ── 🖥️ ห้ามตั้งตัวแปรท้องถิ่นชื่อ `canDelete` ทับ util (ออดิท 13/10) ──────────────────
+   เจอจริง 5 หน้า: `const canDelete = can('products','delete', role)` ⇒ **อ่านโค้ดเหมือนมีด่าน
+   แต่เป็น `can()` เปล่าๆ** ⇒ ด่าน "บัญชีกลางห้ามลบ" (canDelete ของกลาง) ไม่ทำงานเลย
+   และ grep หา `canDelete(` ก็เจอ = หลงว่าครอบแล้ว · ตัวที่โดน: ลบสินค้า · ปิดเครื่องจักร ·
+   ลบใบ LPA · ลบ event log · ลบ OJT — ของที่ลบแล้วกู้ไม่ได้ทั้งนั้น
+   🔴 ถ้าจะมีตัวแปรสรุปสิทธิ์ลบในหน้า ให้ชื่ออื่น (เช่น `mayDelete`) แล้วค่าต้องมาจาก util    */
+test('🛡️ no-shadow-candelete — ห้ามประกาศตัวแปร/พารามิเตอร์ชื่อ canDelete ในหน้า', () => {
+  const bad = [];
+  for (const f of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const rel = relative(ROOT, f);
+    if (rel === 'src/utils/permissions.js' || rel.includes('__tests__')) continue;
+    const code = stripComments(readFileSync(f, 'utf8'));
+    if (/\b(?:const|let|var)\s+canDelete\s*=/.test(code)) bad.push(rel);
+  }
+  assert.deepEqual(bad, [], '\n\n❌ ประกาศ canDelete ทับ util (ด่านบัญชีกลางจะไม่ทำงาน):\n'
+    + bad.map(b => '   • ' + b).join('\n')
+    + '\n   แก้: ตั้งชื่อ `mayDelete` แล้วเรียก canDelete() ของกลาง\n'
+    + '        import { canDelete as canDeleteUtil } from \'../utils/permissions\';\n');
 });
