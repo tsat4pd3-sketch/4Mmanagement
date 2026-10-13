@@ -17,7 +17,7 @@ import { issueProblemReport, reprintProblemReport, loadProblemDocs, docMatchesNo
 import { loadProcessTypes, activeProcessTypes, procDisplay, procColor } from '../utils/processTypes';
 loadProcessTypes(); // master กระบวนการ (data-driven) — dropdown/ป้ายในหน้านี้อ่านผ่าน sync cache
 import tsLogoUrl from '../assets/TS logo.png';
-import { can, canAccessPage } from '../utils/permissions';
+import { can, canAccessPage, isSharedAccount } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { fetchByIds } from '../utils/fetchByIds';
@@ -516,7 +516,10 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   const canRequestClose  = can('daily_report', 'request_close', role); // request or direct-close
   const canApproveClose  = can('daily_report', 'approve_close', role); // approve pending_close
   const canScan          = can('daily_report', 'record', role);        // scan open/close, defects, downtime
-  const canDeleteSession = can('daily_report', 'delete_session', role); // ลบกะ (seed: admin — ปรับที่ /permissions)
+  /* 🖥️ ลบกะ = การลบที่หนักสุดฝั่ง DR (ลากใบผลิต/downtime/ของเสียของกะไปด้วย)
+     ⇒ ต้องผ่านด่าน "บัญชีกลางห้ามลบ" ด้วย · คีย์นี้ไม่ลงท้าย `:delete` ⇒ ด่าน DB ฝั่ง Main
+     มองไม่เห็น และตารางอยู่ฝั่ง DR (anon) ⇒ **ด่านฝั่งจอคือด่านเดียวจริงๆ** */
+  const canDeleteSession = !isSharedAccount() && can('daily_report', 'delete_session', role); // ลบกะ (seed: admin — ปรับที่ /permissions)
   // leader แก้ไข/ลบ order, defect, downtime ได้เฉพาะตอนกะยังเปิดอยู่ (ยังไม่ส่งขออนุมัติปิดกะ) —
   // ถ้าส่งขอปิดกะแล้ว (pending_close) ต้องรอ SV อนุมัติ/ปฏิเสธก่อน ถ้าโดนปฏิเสธ สถานะจะกลับเป็น open ให้แก้ไขได้อีก
   const canEditRecords   = canManage || (canRequestClose && selSession?.status === 'open');
@@ -6077,7 +6080,7 @@ function StaleTab({ stale, onOpenSession, role }) {
         </div>
 
         {/* 🧹 กะเปล่า = เปิดผิด/เปิดทิ้งไว้ ลบทิ้งได้โดยไม่กระทบรายงาน — กะที่มีข้อมูลจริงยังต้องให้คนปิดเองเสมอ */}
-        {can('daily_report', 'delete_session', role) && rows.length > 0 && (
+        {!isSharedAccount() && can('daily_report', 'delete_session', role) && rows.length > 0 && (
           <div style={{ marginTop: 10, paddingTop: 9, borderTop: '1px dashed var(--border2)', display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
             {!emptyScan ? (
               <>
@@ -6205,7 +6208,7 @@ function HistoryTab({ role }) {
   const [histFix, setHistFix] = useState(null);      // { kind, row, title, sessionId }
   const [histBreaks, setHistBreaks] = useState([]); // break_policies — หักพักตามนโยบายจากช่วงวิ่งของพาร์ท
 
-  const canDeleteSession = can('daily_report', 'delete_session', role);
+  const canDeleteSession = !isSharedAccount() && can('daily_report', 'delete_session', role);  // 🖥️ บัญชีกลางลบกะไม่ได้ (ดูคอมเมนต์ตัวแรกของไฟล์)
 
   // ── %P รายชิ้นในประวัติ — สูตรเดียวกับ modal ตรวจสอบคำขอปิดกะ (หัก DT + พักนโยบายจาก window) ──
   // breakIv: ช่วงพักในหน้าต่างเดียวกัน — นาที DT ที่ตกในช่วงพักถูกหักไปแล้วรอบหนึ่ง ห้ามหักซ้ำ (utils/oee §3.1)

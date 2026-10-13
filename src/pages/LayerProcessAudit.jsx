@@ -2,7 +2,7 @@ import { useState, useEffect, useContext, useMemo, useRef } from 'react';
 import { LPA_LAYERS } from '../utils/prodRoutine';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
-import { can } from '../utils/permissions';
+import { can, canDelete as canDeleteUtil } from '../utils/permissions';
 import { toast } from '../components/Toast';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
@@ -120,7 +120,11 @@ export default function LayerProcessAudit() {
   const { role, lineId: userLineId, sections: scopeSecs = [], fullName } = useContext(UserContext);
   const canRecord = can('lpa', 'record', role);
   const canManage = can('lpa', 'manage', role);
-  const canDelete = can('lpa', 'delete', role);
+  /* 🖥️🔴 ต้องผ่าน `canDelete()` ของกลาง (utils/permissions.js) — เดิมประกาศตัวแปรชื่อ `canDelete`
+     ทับ util แล้วเรียกแค่ `can(...)` ⇒ อ่านโค้ดเหมือนมีด่าน แต่ **ด่าน "บัญชีกลางห้ามลบ" ไม่ทำงาน**
+     (ออดิท 13/10 เจอแบบนี้ 5 หน้า) · เปลี่ยนชื่อตัวแปรเป็น `mayDelete` + เรียก util ผ่าน alias
+     ⚠️ ห้ามตั้งชื่อตัวแปรท้องถิ่นว่า `canDelete` อีก — มีด่าน `no-shadow-candelete` */
+  const mayDelete = canDeleteUtil('lpa', 'manage', role);
   // 📜 ชื่อที่เคยบันทึกไว้ (Main lpa_*) — ผู้ตรวจ/4 ชั้นที่ไม่มีใน profiles (ย้ายจากกระดาษ) ยังเลือกซ้ำได้ (2026-09-07)
   const auditorHist = useColumnHistory(supabase, 'lpa_audits', 'auditor_name');
   const layerHist = {
@@ -606,7 +610,7 @@ export default function LayerProcessAudit() {
   };
 
   const deleteAudit = async () => {
-    if (!draft?.id || !canDelete) return;
+    if (!draft?.id || !mayDelete) return;
     if (!window.confirm(`ลบผลตรวจ ${thDate(auditDate)} ${SHIFT_META[selShift]} ชั้น ${LAYERS.find(l => l.key === auditLayer)?.label}?`)) return;
     const { error } = await supabase.from('lpa_audits').delete().eq('id', draft.id);
     if (error) { toast.error('ลบไม่สำเร็จ: ' + error.message); return; }
@@ -1060,7 +1064,7 @@ ${issuesHtml}
           {draft?.id && (
             <div style={{ fontSize: 12, color: '#22c55e', marginBottom: 8, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
               ✅ วันนี้บันทึกผลตรวจชั้นนี้ไว้แล้ว — แก้ไขแล้วกดบันทึกทับได้
-              {canDelete && <button onClick={deleteAudit} style={{ ...btnGray, color: '#ef4444', border: '1px solid rgba(239,68,68,0.4)', fontSize: 12, padding: '4px 10px' }}>🗑 ลบผลตรวจนี้</button>}
+              {mayDelete && <button onClick={deleteAudit} style={{ ...btnGray, color: '#ef4444', border: '1px solid rgba(239,68,68,0.4)', fontSize: 12, padding: '4px 10px' }}>🗑 ลบผลตรวจนี้</button>}
             </div>
           )}
 
