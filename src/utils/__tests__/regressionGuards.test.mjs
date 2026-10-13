@@ -3848,3 +3848,25 @@ test('🛡️ am-board-registries-cached — jigs/checklists/pm_daily_line_targe
     + '   แก้: cachedRows(\'<คีย์>\', () => supabaseDR.from(\'<ตาราง>\')...) + ลงทะเบียนคีย์ใน masterInvalidate.js\n'
     + '        และทุกจุดที่เขียนตารางนั้นต้องเรียก invalidateTable(\'<ตาราง>\') หลังบันทึกสำเร็จ\n');
 });
+
+/* ── ช่องแนบ "รูปหลักฐานของเสีย" ต้องเริ่มที่โหมด "ใช้ทั้งรูป" (2026-10-13 · คำสั่ง user) ──
+   เดิมโมดัลครอบรูปมีช่องติ๊ก "ใช้ทั้งรูป" ที่ **ไม่ติ๊ก = ครอบ 4:3** ⇒ หน้างานที่รีบ
+   กด "✓ ใช้รูปนี้" เลย จะได้รูปที่ถูกตัดขอบโดยไม่รู้ตัว — รูปหลักฐานที่ตำหนิหลุดกรอบ
+   ใช้เป็นหลักฐานไม่ได้ และ **กู้คืนไม่ได้** (ต้นฉบับไม่ถูกเก็บ เก็บแต่ผลลัพธ์ที่ครอบแล้ว)
+   ⇒ ค่าเริ่มต้นของจุดนี้ต้องเป็น "ทั้งรูป" · อยากครอบต้องตั้งใจกดเลือก
+   ⚠️ กฎนี้คุมแค่ "จุดรูปหลักฐาน" — PMSetup (รูปภาพรวมเครื่อง) ยังเริ่มที่โหมดครอบตามเดิม */
+test('🛡️ quality-photo-full-by-default — QualityPhotoField ต้องส่ง fullDefault ให้ ImageCropModal', () => {
+  const file = join(ROOT, 'src/components/QualityPhotoField.jsx');
+  const code = stripComments(readFileSync(file, 'utf8'));
+  const call = code.match(/<ImageCropModal[\s\S]*?\/>/);
+  assert.ok(call, '\n\n❌ ไม่พบ <ImageCropModal> ใน QualityPhotoField.jsx — ช่องแนบรูปหลักฐานต้องผ่านโมดัลครอบกลางเท่านั้น\n');
+  const bad = [];
+  if (!/\ballowFull\b/.test(call[0])) bad.push('ไม่มี allowFull — ผู้ใช้สลับไปโหมด "ใช้ทั้งรูป" ไม่ได้เลย');
+  if (!/\bfullDefault\b/.test(call[0])) bad.push('ไม่มี fullDefault — ค่าเริ่มต้นกลับไปเป็น "ครอบ" รูปหลักฐานจะถูกตัดขอบเงียบๆ');
+  assert.deepEqual(bad, [],
+    '\n\n❌ <ImageCropModal> ใน src/components/QualityPhotoField.jsx ตั้งค่าไม่ครบ:\n'
+    + bad.map(b => '   • ' + b).join('\n') + '\n'
+    + '   ทำไมสำคัญ: ค่าเริ่มต้นคือสิ่งที่คนรีบๆ หน้าไลน์จะได้จริง — รูปหลักฐานที่ครอบจนตำหนิ\n'
+    + '   หลุดกรอบ ใช้เป็นหลักฐานไม่ได้ และกู้คืนไม่ได้ (เก็บแต่รูปที่ครอบแล้ว)\n'
+    + '   แก้ยังไง: <ImageCropModal ... allowFull fullDefault fullHint="…" />\n');
+});
