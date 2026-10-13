@@ -107,3 +107,27 @@ export function routineRows({ am = {}, poka = {}, lpa = {} } = {}) {
   return { rows, counts };
 }
 const sumOf = (r) => (r.am?.n || 0) + (r.poka?.n || 0) + (r.lpa?.layers.length || 0);
+
+/** สีบนผังของไลน์ที่งานประจำกะค้าง (12/10 · user "ระบายสีไลน์ที่งานประจำค้างบนผังด้วย")
+ *  ⚠️ **ห้ามใช้แดง/ส้ม/เหลือง** — 3 สีนั้นบนผังเป็นของสถานะเครื่อง (เรียกช่าง/หยุดเกินเกณฑ์/เพิ่งหยุด)
+ *     ใช้สีเดียวกัน = คนอ่านว่าเครื่องหยุดทั้งที่แค่ยังไม่ได้ตรวจ · ฟ้าอมเขียว = "มีงานต้องทำ" แยกจากทุกสีที่มีอยู่
+ *     (ม่วง = ไลน์เรียกของบนจอสโตร์) · ไม่กระพริบ (กฎ Andon: กระพริบเฉพาะแดงของเครื่อง) */
+export const ROUTINE_MAP_COLOR = '#06b6d4';
+
+/**
+ * ป้ายบนผังต่อไลน์ จากผลของ routineRows() — สั้นพอวางในกรอบไลน์
+ * ผิดปกติ (NG) ขึ้นก่อน → AM → Poka-Yoke → LPA · ทุกป้ายสีเดียวกัน แยกด้วยข้อความ
+ * @returns {{ [line]: { color, label } }}
+ */
+export function routineMapOf(rows = []) {
+  const out = {};
+  for (const r of rows) {
+    const parts = [];
+    if (r.ng > 0) parts.push(`NG ${r.ng}`);
+    if (r.am) parts.push(`AM ${r.am.n}${r.am.late ? '!' : ''}`);
+    if (r.poka) parts.push(`PY ${r.poka.n}`);
+    if (r.lpa) parts.push('LPA');
+    if (parts.length) out[r.line] = { color: ROUTINE_MAP_COLOR, label: `📋 ${parts.join(' · ')}` };
+  }
+  return out;
+}
