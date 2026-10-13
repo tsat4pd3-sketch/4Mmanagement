@@ -1476,7 +1476,11 @@ function printMoReportMtn(o, dparts = [], logo0, dlabor = [], cmt = NO_CMT, cost
   const grid = (v, n = 11) => { const t = String(v || ''); let h = ''; for (let i = 0; i < n; i++) h += `<td class="gx">${esc(t[i] || '')}</td>`; return `<table class="gr"><tr>${h}</tr></table>`; };
   const line = (label, v, w = '') => `<span class="lb">${label}</span><span class="dot" style="${w ? `min-width:${w}` : ''}">${esc(v ?? '')}</span>`;
   // ลายเซ็น: รูปเซ็น (ถ้ามี) + ชื่อ + วันที่ __/__/__
-  const sg = (title, name, url, at, note = '') => `<div class="sgb"><div class="sgi">${url ? `<img src="${esc(url)}"/>` : ''}</div><div class="sgt">${esc(title)}</div><div class="sgn">${esc(name || '')}</div><div class="sgd">${at ? esc(beD(at)) : '....../....../......'}</div>${note ? `<div class="sgx">${esc(note)}</div>` : ''}</div>`;
+  /* ช่องเซ็น = ตัวคั่นความสูงขั้นต่ำ (sgsp) + บล็อกที่กางเต็มช่องแบบ absolute
+     🔴 ทำไมต้อง absolute: ใบนี้พิมพ์ลงกระดาษ ตารางไม่มีความสูงที่แน่นอนให้ % เทียบ ⇒ `height:100%`
+        ใน td ยุบเป็นสูงเท่าเนื้อหาทุกครั้ง (ลองแล้ว ไม่ขยับเลย) · absolute ใน td ที่ position:relative
+        ได้ความสูงจริงของช่องเสมอ · ชื่อ-วันที่อยู่ล่างสุด ที่ว่างที่เหลือทั้งหมด = ที่เซ็น */
+  const sg = (title, name, url, at, note = '') => `<div class="sgsp" style="height:${note ? 72 : 58}px"></div><div class="sgb"><div class="sgi">${url ? `<img src="${esc(url)}"/>` : ''}</div><div class="sgt">${esc(title)}</div><div class="sgn">${esc(name || '')}</div><div class="sgd">${at ? esc(beD(at)) : '....../....../......'}</div>${note ? `<div class="sgx">${esc(note)}</div>` : ''}</div>`;
 
   /* ── ตารางค่าแรง 5 แถวตามฟอร์ม (เกิน 5 ต่อท้ายได้ ไม่ตัดข้อมูลทิ้ง) ── */
   const laborList = (dlabor || []).filter(r => r && (r.worker_name || r.amount != null || r.rate_per_hour != null));
@@ -1525,13 +1529,22 @@ function printMoReportMtn(o, dparts = [], logo0, dlabor = [], cmt = NO_CMT, cost
     .hdco{font-size:11px;font-weight:700} .hden{font-size:9px}
     .mono{font-weight:700;letter-spacing:.3px}
     .tb th{border:1px solid #000;font-weight:700;padding:2px;font-size:9.5px;text-align:center}
-    .sgb{text-align:center;padding:1px 2px}
-    .sgi{height:26px;display:flex;align-items:flex-end;justify-content:center}
-    .sgi img{max-height:26px;max-width:95%}
-    .sgt{font-size:9px;border-top:1px dotted #555;padding-top:1px}
-    .sgn{font-size:9.5px;font-weight:700;min-height:12px}
-    .sgd{font-size:9px}
-    .sgx{font-size:8px;color:#333}
+    /* 🖊️ ช่องเซ็น (2026-10-13 · คำสั่ง user "ที่ว่างเหลือเยอะ ขยับชื่อลงมาเพื่อให้ลายเซ็นใหญ่ขึ้น")
+       เดิม .sgi ตรึง 26px แล้วชื่อ/วันที่ไปกองบนสุดของช่อง ⇒ ใต้ชื่อเหลือที่ว่าง ~70px ทิ้งเปล่า
+       และลายเซ็นจริงถูกบีบอยู่ในแถบ 26px · ตอนนี้บล็อกสูงเต็มช่อง (flex column) ·
+       **ที่เซ็นกินที่ที่เหลือทั้งหมด · ชื่อ-วันที่ปักไว้ล่างสุด** ⇒ เซ็นด้วยมือก็มีที่ · รูปเซ็นก็ใหญ่ขึ้น
+       🔴 ต้องมี height:100% ทั้ง td และตารางซ้อน ไม่งั้นเปอร์เซ็นต์ไม่มีฐานให้เทียบ แล้วกลับไปสูงเท่าเนื้อหา
+       (CSS นี้อยู่ใน template literal — ห้ามใส่ backtick ในคอมเมนต์ เคยทำพังมาแล้ว) */
+    .sgc{padding:0;position:relative}
+    .sgsp{height:58px}
+    .sgb{position:absolute;left:0;right:0;top:0;bottom:0;display:flex;flex-direction:column;justify-content:flex-end;text-align:center;padding:1px 2px}
+    .sgi{flex:1 1 auto;min-height:18px;display:flex;align-items:flex-end;justify-content:center;padding-bottom:1px}
+    .sgi img{max-height:100%;max-width:95%;object-fit:contain}
+    .sgt{font-size:9px;border-top:1px dotted #555;padding-top:1px;flex:0 0 auto}
+    .sgn{font-size:9.5px;font-weight:700;min-height:12px;flex:0 0 auto}
+    .sgd{font-size:9px;flex:0 0 auto}
+    .sgx{font-size:8px;color:#333;flex:0 0 auto}
+    .sgtab{height:100%}
     .note{min-height:34px}
     .ft{display:flex;justify-content:space-between;font-size:8.5px;margin-top:3px}
     .ph{page-break-before:always}
@@ -1576,12 +1589,14 @@ function printMoReportMtn(o, dparts = [], logo0, dlabor = [], cmt = NO_CMT, cost
         <div style="white-space:pre-wrap">${esc(o.report_note || o.problem_detail || '')}</div>
         ${cmtBlockHtml(cmt, esc, { fs: '9px' })}
       </td>
-      <td style="width:19%;padding:0">${sg('ผู้ออก M/O (ตัวบรรจง)', o.reported_by_name || o.reporter_prod, null, o.report_at)}</td>
-      <td style="width:19%;padding:0">${sg('ผู้จัดการต้นสังกัด', o.dept_manager_name, o.dept_manager_sign, o.dept_manager_at)}</td>
+      <td class="sgc" style="width:19%">${sg('ผู้ออก M/O (ตัวบรรจง)', o.reported_by_name || o.reporter_prod, null, o.report_at)}</td>
+      <td class="sgc" style="width:19%">${sg('ผู้จัดการต้นสังกัด', o.dept_manager_name, o.dept_manager_sign, o.dept_manager_at)}</td>
     </tr>
     <tr>
-      <td rowspan="2" style="border-top:none"></td>
-      <td colspan="2" style="padding:0">${sg('ผู้จัดการโรงงาน', o.plant_manager_name, o.plant_manager_sign, o.plant_manager_at, needsPlantMgrByCost(o) ? `งบเกิน ${PLANT_MGR_COST_LIMIT.toLocaleString()} — เซ็นแล้วส่งบัญชี` : 'MO. สร้าง ส่ง ผจก.โรงงานอนุมัติ')}</td>
+      <!-- ช่องซ้ายต่อจากกล่องรายละเอียดข้างบน (ไม่มีเส้นคั่น) = ที่เขียนด้วยมือต่อของผู้แจ้ง — ไม่ใช่ที่ว่างทิ้งเปล่า
+           🔴 เดิมเขียน rowspan="2" แต่ตารางนี้มีแค่ 2 แถว (กินแถวที่ไม่มีอยู่) ⇒ ตัดออก -->
+      <td style="border-top:none;height:56px"></td>
+      <td class="sgc" colspan="2">${sg('ผู้จัดการโรงงาน', o.plant_manager_name, o.plant_manager_sign, o.plant_manager_at, needsPlantMgrByCost(o) ? `งบเกิน ${PLANT_MGR_COST_LIMIT.toLocaleString()} — เซ็นแล้วส่งบัญชี` : 'MO. สร้าง ส่ง ผจก.โรงงานอนุมัติ')}</td>
     </tr>
   </table>
 
@@ -1601,12 +1616,15 @@ function printMoReportMtn(o, dparts = [], logo0, dlabor = [], cmt = NO_CMT, cost
         <div style="margin-top:4px">${line('วันที่เริ่ม', beD(o.repair_start_at), '75px')} ${line('เวลา', beTime(o.repair_start_at), '40px')}
           ${line('วันที่เสร็จ', beD(o.repair_done_at), '75px')} ${line('เวลา', beTime(o.repair_done_at), '40px')}</div>
       </td>
-      <td style="width:38%;padding:0">
-        <div style="padding:2px 4px;border-bottom:1px solid #000">${line('วันที่รับแจ้ง', beD(o.report_at), '85px')} ${line('เวลา', beTime(o.report_at), '40px')}</div>
-        <table class="nob" style="table-layout:fixed"><tr>
-          <td style="width:50%;border-right:1px solid #000">${sg('ผู้รับ MO (ซ่อมบำรุง)', o.accepted_by, null, o.accept_at)}</td>
-          <td style="width:50%">${sg('ผู้อนุมัติ (ผจก.ส่วนซ่อมบำรุง)', o.mo_approved_by, o.mo_approve_sign, o.mo_approved_at)}</td>
-        </tr></table>
+      <!-- คอลัมน์ขวาสูงตามคอลัมน์ซ้าย ⇒ แถบวันที่รับแจ้งคงที่ · ที่เหลือยกให้ 2 ช่องเซ็นทั้งหมด -->
+      <td style="width:38%;padding:0;height:100%">
+        <table class="nob sgtab" style="table-layout:fixed;height:100%">
+          <tr><td colspan="2" style="padding:2px 4px;border-bottom:1px solid #000;height:1px">${line('วันที่รับแจ้ง', beD(o.report_at), '85px')} ${line('เวลา', beTime(o.report_at), '40px')}</td></tr>
+          <tr>
+            <td class="sgc" style="width:50%;border-right:1px solid #000">${sg('ผู้รับ MO (ซ่อมบำรุง)', o.accepted_by, null, o.accept_at)}</td>
+            <td class="sgc" style="width:50%">${sg('ผู้อนุมัติ (ผจก.ส่วนซ่อมบำรุง)', o.mo_approved_by, o.mo_approve_sign, o.mo_approved_at)}</td>
+          </tr>
+        </table>
       </td>
     </tr>
   </table>
@@ -1644,16 +1662,21 @@ function printMoReportMtn(o, dparts = [], logo0, dlabor = [], cmt = NO_CMT, cost
       </table>
       <div style="margin-top:3px">${line('คะแนนรวม', ss.sum == null ? '' : `${ss.sum}/${ss.max}`, '60px')} ${line('คิดเป็น', ss.pct == null ? '' : `${ss.pct} %`, '55px')} ${line('ลงชื่อผู้ประเมิน', o.satisfaction_by, '85px')}</div>
     </td>
-    <td style="width:50%;padding:0">
-      <table class="nob" style="table-layout:fixed"><tr>
-        <td style="width:50%;border-right:1px solid #000;border-bottom:1px solid #000">${sg('ผู้ตรวจสอบ (หัวหน้าแผนก MTN)', o.mtn_head_name, o.mtn_head_sign, o.mtn_head_at)}</td>
-        <td style="width:50%;border-bottom:1px solid #000">${sg('รับรองโดย (ผจก.ส่วนซ่อมบำรุง)', o.approver_name, o.approve_sign, o.approve_at)}</td>
-      </tr></table>
-      <div style="padding:3px 5px">
-        <div>${line('ค่าใช้จ่ายทั้งหมดเป็นของหน่วยงาน', o.cost_owner_dept, '110px')}</div>
-        <div style="margin-top:2px">และได้รับมอบงานเรียบร้อยแล้ว</div>
-      </div>
-      <div style="padding:0">${sg('ผู้จัดการ', o.cost_mgr_name, o.cost_mgr_sign, o.cost_mgr_at)}</div>
+    <!-- คอลัมน์ขวาสูงตามตารางความพึงพอใจ ⇒ ยกที่ที่เหลือให้ช่องเซ็น 3 ช่อง (เดิมกองบนสุด เหลือที่ว่างใต้ชื่อ) -->
+    <td style="width:50%;padding:0;height:100%">
+      <table class="nob sgtab" style="table-layout:fixed;height:100%">
+        <tr>
+          <td class="sgc" style="width:50%;border-right:1px solid #000;border-bottom:1px solid #000">${sg('ผู้ตรวจสอบ (หัวหน้าแผนก MTN)', o.mtn_head_name, o.mtn_head_sign, o.mtn_head_at)}</td>
+          <td class="sgc" style="width:50%;border-bottom:1px solid #000">${sg('รับรองโดย (ผจก.ส่วนซ่อมบำรุง)', o.approver_name, o.approve_sign, o.approve_at)}</td>
+        </tr>
+        <tr>
+          <td colspan="2" style="padding:3px 5px;border:none;height:1px">
+            <div>${line('ค่าใช้จ่ายทั้งหมดเป็นของหน่วยงาน', o.cost_owner_dept, '110px')}</div>
+            <div style="margin-top:2px">และได้รับมอบงานเรียบร้อยแล้ว</div>
+          </td>
+        </tr>
+        <tr><td class="sgc" colspan="2" style="border:none">${sg('ผู้จัดการ', o.cost_mgr_name, o.cost_mgr_sign, o.cost_mgr_at)}</td></tr>
+      </table>
     </td>
   </tr></table>
 
