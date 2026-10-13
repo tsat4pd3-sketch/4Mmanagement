@@ -362,6 +362,12 @@ const TABLE_ROWS = {
     station_requirements: i % 3 ? [{ skill_name: 'SPOT', min_score: 50 }, { skill_name: 'GAUGE', min_score: 75 }] : [],
     pos_top: isNullish(r) ? null : String(15 + (i * 5) % 70), pos_left: isNullish(r) ? null : String(8 + (i * 7) % 84) }),
   employee_home_positions: (r, i) => ({ ...r, employee_id: `id-${i}`, station_id: `id-${(i % 7) + 1}` }),
+  /* 🏬 รหัสคลัง (SLoc) — **ต้องมีอย่างน้อย 1 รหัสที่ "ผูกไลน์" ไว้ ห้ามถอด** (13/10)
+     ไม่มีเลย ⇒ มุมมอง "ตามพื้นที่ SAP" ของ /line-stock ถอยไปโหมดไลน์ทุกครั้ง
+     = สาขาที่สโตร์/วางแผนเปิดดูทุกวัน (จัดกลุ่มตามพื้นที่ · รวมยอดข้ามไลน์) ไม่เคยถูกเรนเดอร์ใน harness
+     · รหัสต้องตรงรูปแบบ `SLOC_RE` (ตัวอักษร+เลข 3 หลัก) ไม่งั้นแผงทะเบียนขึ้นป้าย "รหัสผิดรูปแบบ" ทุกแถว */
+  storage_locations: (r, i) => ({ ...r, code: `P4${String(i).padStart(2, '0')}`, kind: 'production',
+    line_names: i === 1 ? [r.line_name] : [], sort_order: i }),
   /* 🔴 ใบแจ้งซ่อม MO — ต้องคละ **สถานะจริงของ workflow** (2026-10-06)
      เดิมทุกแถวได้ `status: 'open'` จาก ROW() ซึ่ง **ไม่ใช่สถานะของ mtn_orders เลย**
      ⇒ `nextStepOf()` คืน null ทุกแถว ⇒ โค้ดสาย "ใบนี้รอขั้นไหน / รอใคร" (ตัวกรองรอขั้นไหน ·

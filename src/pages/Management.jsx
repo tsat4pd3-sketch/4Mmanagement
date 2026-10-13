@@ -154,6 +154,11 @@ export default function Management() {
   const navigate = useNavigate();
   const isLeader = role === 'leader';
   const isSupervisor = role === 'supervisor';
+  /* 🔑 สิทธิ์จัดกำลังคน — ตัวเดียวทั้งหน้า
+     เดิมมีแต่ `canDrag` ที่ประกาศในฟังก์ชันวาดการ์ด (บรรทัด ~980) ⇒ ปุ่มใน modal จุดงาน
+     (📌 บันทึกตำแหน่งประจำ · ↩ Pool) ไม่ถูกกันเลย ใครเปิด modal ได้ก็กดได้
+     ⇒ ต้องกันทั้งที่ปุ่มและที่ฟังก์ชัน (ซ่อนปุ่มอย่างเดียวไม่พอ — Enter/โค้ดเรียกตรงยังเข้าถึงได้) */
+  const canAssignManpower = can('management', 'assign_manpower', role);
 
   const [workers,        setWorkers]        = useState([]);
   const [specialTaskOptions, setSpecialTaskOptions] = useState(DEFAULT_SPECIAL_TASKS); // master งานนอกไลน์ (best-effort)
@@ -574,6 +579,9 @@ export default function Management() {
   const assignWorker = async (logId, stationId) => {
     // guard ชั้นสุดท้าย — โหมดย้อนหลัง/กะอื่น ห้ามเขียนอะไรทั้งสิ้น (ซ่อนปุ่มอย่างเดียวไม่พอ)
     if (!isLiveView) { toast.error('โหมดดูย้อนหลัง — จัดกำลังคนได้เฉพาะกะปัจจุบันของวันนี้'); return; }
+    // ด่านสิทธิ์ — RLS ฝั่ง DB รัด daily_production_logs ด้วย management:assign_manpower แล้ว
+    // ถ้าไม่กันที่นี่ คนที่ไม่มีสิทธิ์จะกดแล้วเจอ error ดิบจาก Postgres
+    if (!canAssignManpower) { toast.error('บัญชีของคุณไม่มีสิทธิ์จัดกำลังคน'); return; }
     const finalAssign = stationId === 'Pool' ? null : stationId;
     const droppedWorker = workers.find(w => w.id === logId);
     const prevAssign = droppedWorker?.assigned_line ?? null;
@@ -888,6 +896,7 @@ export default function Management() {
   const saveHomePosition = async (worker, stationId) => {
     const empId = worker.employee_id || worker.employees?.id;
     if (!empId) return;
+    if (!canAssignManpower) { toast.error('บัญชีของคุณไม่มีสิทธิ์จัดกำลังคน'); return; }
     // ใช้ line_name ของสถานีจริง ไม่ใช่ selectedLine เฉยๆ — เพราะตอนนี้ selectedLine อาจเป็นไลน์หลัก
     // (เช่น HYDROFORM) ที่รวมจุดงานจากไลน์ย่อยหลายไลน์ (HDF1/HDF2/...) เข้ามาแสดงพร้อมกัน
     const station = dynamicStations.find(s => String(s.id) === String(stationId));
@@ -2750,7 +2759,7 @@ export default function Management() {
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
                       <div style={{ background: fitColor(fitHere.score), color: '#fff', fontWeight: 900, fontSize: 18, padding: '2px 10px', borderRadius: 6 }}>{fitHere.score}</div>
                       <div style={{ display: 'flex', gap: 6 }}>
-                        {homePositions[workerHere.employee_id] !== String(st.id) && (
+                        {canAssignManpower && homePositions[workerHere.employee_id] !== String(st.id) && (
                           <button
                             onClick={async () => { await saveHomePosition(workerHere, st.id); }}
                             style={{ fontSize: 11, padding: '3px 8px', borderRadius: 6, background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.3)', cursor: 'pointer', fontWeight: 700 }}
@@ -2760,10 +2769,10 @@ export default function Management() {
                         {homePositions[workerHere.employee_id] === String(st.id) && (
                           <span style={{ fontSize: 11, padding: '3px 8px', borderRadius: 6, background: 'rgba(34,197,94,0.12)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', fontWeight: 700 }}>🏠 ตำแหน่งประจำ</span>
                         )}
-                        <button
+                        {canAssignManpower && <button
                           onClick={() => { assignWorker(workerHere.id, 'Pool'); setStationModal(null); }}
                           style={{ fontSize: 11, padding: '3px 8px', borderRadius: 6, background: 'rgba(231,76,60,0.1)', color: 'var(--red)', border: '1px solid rgba(231,76,60,0.3)', cursor: 'pointer', fontWeight: 700 }}
-                        >↩ Pool</button>
+                        >↩ Pool</button>}
                       </div>
                     </div>
                   </div>

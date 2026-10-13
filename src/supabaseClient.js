@@ -1,5 +1,13 @@
 import { createClient } from '@supabase/supabase-js'
 import { setActor, getActor, actorFields, applyStepActors } from './utils/actorStamp'
+import { makeDedupeFetch } from './utils/dedupeFetch'
+
+/* 🔴 ยุบคำขอ GET ที่เหมือนกันและกำลังวิ่งพร้อมกัน (2026-10-13 · งานลด egress)
+   วัดจริง 13/10: คำขอซ้ำบนตารางหลักห่างกัน **median 3-77 ms** = หลายแผงบนหน้าเดียวกัน
+   ต่างคนต่างยิงคิวรีชุดเดียวกันในเรนเดอร์รอบเดียว (ไม่ใช่ poll/realtime/คนกดซ้ำ)
+   ⚠️ **ไม่ใช่ cache** — settle แล้วลบคีย์ทันที ของสดยังสดเท่าเดิม · กติกาเต็มอยู่ใน dedupeFetch.js
+   ⚠️ ห้ามย้ายไปใส่ที่อื่น — ต้องอยู่ที่ createClient ของ **ทั้งสอง** client ไม่งั้นครอบไม่ครบ */
+const dedupeFetch = makeDedupeFetch((...a) => fetch(...a))
 
 const supabaseUrl     = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -10,13 +18,13 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 // (อาการ: แท็บใหม่จาก ctrl+click เห็นเลขฝั่ง DR ปกติ แต่เลขฝั่ง Main เป็น 0 + เมนูหาย)
 // localStorage แชร์ session ข้ามแท็บ + supabase-js ประสานการ refresh ให้เอง
 // ส่วนความปลอดภัยเครื่องส่วนกลางมี auto-logout idle 30 นาทีคุมอยู่แล้ว (useAutoLogout ใน App.jsx)
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, { global: { fetch: dedupeFetch } })
 
 // Second project — Daily Report & PM data
 const supabaseDrUrl  = import.meta.env.VITE_SUPABASE_DR_URL  || 'https://eyhclzkifitbhbljgoav.supabase.co'
 const supabaseDrKey  = import.meta.env.VITE_SUPABASE_DR_KEY  || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV5aGNsemtpZml0YmhibGpnb2F2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY4ODExMDQsImV4cCI6MjA5MjQ1NzEwNH0.fHTA70fQ8yAvQuwAeM9HQ_UQjMdR3FUkxu_klvXs-h4'
 
-export const supabaseDR = createClient(supabaseDrUrl, supabaseDrKey)
+export const supabaseDR = createClient(supabaseDrUrl, supabaseDrKey, { global: { fetch: dedupeFetch } })
 
 // ═══ DR actor stamping (traceability) — 2026-07-24 · เพิ่ม uid 2026-09-16 ═══════════════════
 // DR เป็น anon เสมอ → ฐานข้อมูลไม่รู้ว่าใครแก้ · trigger fn_audit อ่าน updated_by_name/_uid เป็น actor
