@@ -190,12 +190,14 @@ async function usersByRole(roles: string[]): Promise<string[]> {
   const { data } = await supabase.from('profiles').select('id').in('role', roles);
   return (data ?? []).map((p) => p.id as string);
 }
-async function insertNotifications(userIds: string[], title: string, body: string, type: string, refTable?: string, refId?: unknown) {
+// eventKey: ใส่ให้เสมอเมื่อรู้ — ไม่ใส่ = trigger ยุบกระดิ่ง (fn_notification_rollup) กับตัวตั้งค่าใน /notification-config
+//   มองไม่เห็นเรื่องนี้เลย (13/10 วัดได้: "เครื่องยังหยุด เกิน N นาที" ~800 ใบ/สัปดาห์ event_key ว่างทุกใบ เพราะชื่อเรื่องมีเลขนาทีต่างกันทุกใบ)
+async function insertNotifications(userIds: string[], title: string, body: string, type: string, refTable?: string, refId?: unknown, eventKey?: string) {
   const ids = [...new Set(userIds)].filter(Boolean);
   if (!ids.length) return;
   // supabase-js คืน { error } ไม่ throw — try/catch เดิมไม่มีวันทำงาน แจ้งเตือนในแอปหายเงียบ
   const { error } = await supabase.from('notifications').insert(
-    ids.map((uid) => ({ user_id: uid, title, body, type, ref_table: refTable ?? null, ref_id: refId != null ? String(refId) : null })),
+    ids.map((uid) => ({ user_id: uid, title, body, type, ref_table: refTable ?? null, ref_id: refId != null ? String(refId) : null, event_key: eventKey ?? null })),
   );
   if (error) console.error('insertNotifications', error.message);
 }
@@ -246,6 +248,17 @@ async function recipientsForDowntime(lineName: string | undefined, event: string
   } catch (e) { console.error('notify_recipients downtime', e); }
   return [...mtn, ...heads, ...extra];
 }
+// คนที่ยังมีกระดิ่งของ "เครื่องหยุดใบเดียวกันนี้" ค้างไม่ได้อ่าน — ยิงซ้ำไม่ได้ข้อมูลใหม่ (13/10 · user "ลดจำนวนแจ้งเตือนที่ edge ยิงออก")
+//   ใช้กับตัวเตือนซ้ำ `downtime_open_15min` เท่านั้น · **ห้ามใช้กับ `downtime_call_mtn`** (เรียกช่างครั้งแรก ทุกใบต้องดัง)
+//   คนที่อ่านแล้ว หรือยังไม่เคยได้ ยังได้ใบเตือนตามปกติ · อ่านไม่สำเร็จ = ไม่กรอง (ส่งเกินดีกว่าเงียบ)
+async function withoutUnreadFor(userIds: string[], refTable: string, refId: unknown): Promise<string[]> {
+  if (refId == null || !userIds.length) return userIds;
+  const { data, error } = await supabase.from('notifications').select('user_id')
+    .eq('ref_table', refTable).eq('ref_id', String(refId)).eq('is_read', false).limit(1000);
+  if (error) { console.error('withoutUnreadFor', error.message); return userIds; }
+  const seen = new Set((data ?? []).map((r) => r.user_id as string));
+  return userIds.filter((u) => !seen.has(u));
+}
 // แจ้งในแอป (กระดิ่ง+เสียง+push) ตามที่ตั้งไว้ในหน้า /notification-config
 // ⚠️ ผู้รับมาจาก RPC `notify_recipients` จุดเดียวของระบบ (role × ส่วนงาน × แผนก)
 //    **ห้ามกลับไปกรองด้วย role อย่างเดียวในไฟล์นี้** — Telegram กับในแอปต้องอ้างกติกาแถวเดียวกัน
@@ -269,7 +282,7 @@ async function notifyInApp(
   if (!users.length) return;
   const title = routes[event]?.label || event;
   const body = String(htmlMessage).replace(/<[^>]+>/g, '').replace(/\s*\n\s*/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300);
-  await insertNotifications(users, title, body, type);
+  await insertNotifications(users, title, body, type, undefined, undefined, event);
 }
 
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' };
@@ -482,7 +495,7 @@ Deno.serve(async (req) => {
       await insertNotifications(await recipientsForDowntime(d.line_name, 'downtime_call_mtn'),
         `📞 เรียกช่างด่วน — ${d.machine_no || d.line_name || '-'}`,
         `${d.line_name || ''} · ${d.type_name || 'Downtime'}${d.description ? ' · ' + d.description : ''}`,
-        'error', 'downtime_logs', d.id);
+        'error', 'downtime_logs', d.id, 'downtime_call_mtn');
       return json({ ok: true });
     }
 
@@ -511,10 +524,11 @@ Deno.serve(async (req) => {
       if (d.id) await sendTelegramTracked(message, chat, 'downtime', d.id, 'downtime_open_15min').catch(console.error);
       else await sendTelegram(message, chat).catch(console.error);
       // urgent → แจ้งในแอป (กระดิ่ง+เสียง+push) ให้ทีมช่าง
-      await insertNotifications(await recipientsForDowntime(d.line_name, 'downtime_open_15min'),
+      await insertNotifications(
+        await withoutUnreadFor(await recipientsForDowntime(d.line_name, 'downtime_open_15min'), 'downtime_logs', d.id),
         `🚨 เครื่องยังหยุด เกิน ${d.open_min ?? ''} นาที — ${d.machine_no || d.line_name || '-'}`,
         `${d.line_name || ''} · ${d.type_name || 'Downtime'}`,
-        'error', 'downtime_logs', d.id);
+        'error', 'downtime_logs', d.id, 'downtime_open_15min');
       return json({ ok: true });
     }
 
