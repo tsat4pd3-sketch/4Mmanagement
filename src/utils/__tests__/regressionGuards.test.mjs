@@ -70,7 +70,7 @@ const RULES = [
   },
   {
     id: 'mo-wait-stage-via-mowaitmeta',
-    scan: ['src/utils/myQueue.js', 'src/pages/MtnRepair.jsx'], ext: ['.js', '.jsx'],
+    scan: ['src/utils/myQueue.js', 'src/pages/MtnRepair.jsx', 'src/utils/mtnStale.js'], ext: ['.js', '.jsx'],
     /* จับการถาม "ใบนี้รอขั้นไหน" ด้วย nextStepOf() ตรงๆ ในตัวจัดกอง/ตัวกรอง */
     re: /(const|let)\s+\w*[Ww]ait\w*\s*=[^\n]*nextStepOf\(/g,
     why: '🔒 **ด่านอนุมัติก่อนเริ่มงานไม่มีเลขขั้น** — ใบ improve/build ที่ ผจก.ฝ่ายที่แจ้งยังไม่เซ็น '
@@ -169,6 +169,32 @@ const RULES = [
     fix: 'ห่อด้วย `mrows(await …)` จาก `src/utils/masterCache.js` — ตาราง/คอลัมน์ยังไม่มี (42P01/42703) '
        + 'ยังคืน [] เหมือนเดิม · error อื่นโยน ⇒ cache ไม่ถูกทับ + ขึ้น toast ให้คนเห็น',
     allow: {},   // ตัวอย่างใน masterCache.js อยู่ในคอมเมนต์ — ตัวสแกนตัดคอมเมนต์ก่อนตรวจอยู่แล้ว
+  },
+  {
+    id: 'daily-check-unknown-not-false',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* จับการบีบ "ไม่รู้ว่าวันนั้นผลิตไหม" ให้กลายเป็น "ไม่ได้ผลิต" */
+    re: /ranOn\([^)]*\)\s*(\?\?|\|\|)\s*false/g,
+    why: 'ตารางตรวจรายวันต้องแยก 3 อย่าง: **ไม่ได้ตรวจ / ไม่ได้ผลิต / ต้องตรวจวันนั้น** (คำสั่ง user 13/10) '
+       + '· `ranOn()` คืน `null` = "อ่านข้อมูลการเปิดกะไม่สำเร็จ" ⇒ บีบเป็น `false` = จอสรุปว่า '
+       + '"ไม่ได้ผลิต ไม่ต้องตรวจ" ⇒ **วันที่ขาดตรวจทั้งเดือนหายเกลี้ยงเพราะคิวรีล้มครั้งเดียว** '
+       + '— เป็นการโกหกที่อันตรายกว่าไม่เช็ค เพราะจอดูสะอาดขึ้นตอนระบบพัง',
+    fix: 'ส่ง `null` ต่อให้ `checkDayState()` (`src/utils/dailyCheckDay.js`) แล้วมันจะคืน `unknown` '
+       + '· จอวาด ❔ และเขียนจำนวนวันที่ไม่รู้ด้วย `checkDaysNote()` (ตัวหารของ % ไม่นับ unknown)',
+    allow: {},
+  },
+  {
+    id: 'check-day-mark-not-answer',
+    scan: ['src/utils/dailyCheckDay.js'], ext: ['.js'],
+    /* สัญลักษณ์ "สถานะวัน" ห้ามยืมตัวอักษรจากพจนานุกรม "คำตอบของการตรวจ" */
+    re: /mark:\s*'(?:Y|N|T|NA|N\/A|✓|✗|×|x|X|–|—|-)'/g,
+    why: 'ใบตรวจรายวัน (LPA FM-QMR-008) ตอบด้วย `Y`/`N`/`T`/`N/A` ซึ่งทุกตัวหมายถึง '
+       + '**"ไปตรวจแล้ว เจอผลอย่างนี้"** ⇒ ถ้า `CHECK_DAY_META.mark` ใช้ตัวเดียวกัน (หรือ `✗`/`–` '
+       + 'ที่ตาอ่านเป็น `N`/`N/A`) คนอ่านจะนึกว่า **"ตรวจแล้วเจอผิดปกติ" ทั้งที่ยังไม่มีใครไปตรวจ** '
+       + '(คำสั่ง user 13/10 — ชนทั้งตัวอักษรและสี: ✗ แดง = N แดง · – เทา = N/A เทา · ? เหลือง = T เหลือง)',
+    fix: 'ใช้คำย่อที่ไม่อยู่ในพจนานุกรมคำตอบ — `ขาด` (ขาดตรวจ) · `NP` (Non-Production) · `?` (ไม่รู้) '
+       + '· `·` (ไม่มีแผน) · และกันอ่านสลับด้วย `tint` ทาทั้งคอลัมน์ + กรอบ chip (คำตอบไม่มีทั้งสองอย่าง)',
+    allow: {},
   },
   {
     id: 'shift-sched-no-raw-byline',
@@ -1552,6 +1578,26 @@ test('🛡️ open-shift-date-and-shift-together — ฟอร์มเปิด
    = กะเดินถึงเวลานั้นจริง ส่วนที่เหลือเป็น planned stop ที่ถูกกันออกจากฐานเวลาไปแล้ว)
    ไม่ส่ง `downtimes` เข้าไป = ฟังก์ชันถือว่าไม่มีอะไรรองรับ ⇒ **เตือนผิด/ติดป้ายผิด**
    วัดจริง 05/10: เกณฑ์ที่ดูแต่ `aheadMin` ติดป้ายผิด 5 ใบจาก 9 ใบที่เข้าเกณฑ์ (SP-72/74/88 · Line 60/61) */
+/* ── 🛡️ mo-stale-since-cols (2026-10-13) ──────────────────────────────────────────────
+   แผง "ใบค้างขั้นเดิม" นับวันจากเวลาที่ใบ**เข้าขั้นปัจจุบัน** (`STALE_SINCE_COLS` ใน utils/mtnStale.js)
+   แต่หน้าลิสต์ MO select แบบ **เลือกคอลัมน์** (`MO_LIST_COLS` — เพื่อ egress ห้ามกลับไป `select('*')`)
+   ⇒ เพิ่มคอลัมน์เวลาเข้าขั้นใหม่ในฝั่ง util แล้วลืมเติมใน MO_LIST_COLS = ค่านั้นเป็น `undefined`
+      ⇒ `stageSinceOf()` **ถอยไปนับจากวันแจ้งเงียบๆ** (ตัวเลขเก่ากว่าจริง แต่จอยังขึ้นเป็นปกติ)
+   คลาสเดียวกับที่เคยเกิดจริงมาแล้วหลายรอบในโมดูลนี้ (`mtn_head_at`/`approve_at` ที่ต้อง select
+   มาด้วยไม่งั้น `mtnCloseStage()` แยก 3 ขั้นปิดใบไม่ออก · `pair_mat_no` ที่ลืม select แล้วนับ 2 เท่า) */
+test('🛡️ mo-stale-since-cols — MO_LIST_COLS ต้อง select ทุกคอลัมน์ที่ mtnStale อ่าน', async () => {
+  const { STALE_SINCE_COLS } = await import('../mtnStale.js');
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8'));
+  const m = code.match(/const MO_LIST_COLS\s*=\s*\[([\s\S]*?)\]\.join/);
+  assert.ok(m, 'หา MO_LIST_COLS ใน MtnRepair.jsx ไม่เจอ — เปลี่ยนชื่อ/รูปแบบแล้วต้องมาแก้ด่านนี้ด้วย');
+  const picked = new Set([...m[1].matchAll(/'([a-z0-9_]+)'/g)].map(x => x[1]));
+  const missing = STALE_SINCE_COLS.filter(c => !picked.has(c));
+  assert.deepEqual(missing, [],
+    '\n\n❌ MO_LIST_COLS ไม่ได้ select คอลัมน์เวลาเข้าขั้นที่ utils/mtnStale.js อ่าน\n'
+    + '   ผล: ค่าเป็น undefined ⇒ แผงใบค้างถอยไปนับจากวันแจ้งเงียบๆ (ตัวเลขเก่ากว่าความจริง)\n'
+    + `   เติมใน MO_LIST_COLS: ${missing.join(' · ')}\n`);
+});
+
 test('🛡️ close-time-needs-downtimes — ทุกจุดที่เรียก checkCloseTime ต้องส่ง downtimes', () => {
   const bad = [];
   for (const file of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
@@ -3908,6 +3954,13 @@ const RLS_KEYED_TABLES = {
   station_requirements:    ['line_setup:edit', 'line_setup', 'skills:delete', 'skills'],
   shift_schedules:         ['shift_schedule:edit', 'shift_schedule'],
   daily_production_logs:   ['checkin:record', 'checkin', 'management:assign_manpower', 'assign_manpower'],
+  // รอบ 9 (13/10)
+  ot_night_bookings:       ['checkin:record', 'checkin'],
+  line_helpers:            ['checkin:record', 'checkin'],
+  operator_special_tasks:  ['management:assign_special_task', 'assign_special_task'],
+  station_assignment_logs: ['management:assign_manpower', 'assign_manpower'],
+  special_task_types:      ['ot_master:manage', 'ot_master'],
+  leave_types:             ['ot_master:manage', 'ot_master'],
 };
 
 test('🛡️ rls-tightened-tables-need-key — ไฟล์ที่เขียนตารางที่ถูกรัด RLS ต้องอ้างคีย์สิทธิ์ของมันด้วย', () => {
@@ -3917,7 +3970,11 @@ test('🛡️ rls-tightened-tables-need-key — ไฟล์ที่เขี�
     for (const [table, keys] of Object.entries(RLS_KEYED_TABLES)) {
       const writeRe = new RegExp(
         `from\\(\\s*['"\`]${table}['"\`]\\s*\\)[\\s\\S]{0,300}?\\.(insert|update|upsert|delete)\\s*\\(`, 'g');
-      if (!writeRe.test(code)) continue;
+      /* 🔴 แผง CRUD กลาง (<SimpleNameMaster table="x"> / <SimpleMasterPanel table="x">) รับ "ชื่อตาราง"
+         เป็น prop ⇒ ไฟล์ที่ใช้มันไม่มี `from('x').insert` ให้ grep เจอ แต่มันเขียนจริง
+         (เจอรอบ 9: special_task_types / leave_types เขียนจาก Report.jsx แบบนี้) */
+      const panelRe = new RegExp(`table=\\{?\\s*['"\`]${table}['"\`]`, 'g');
+      if (!writeRe.test(code) && !panelRe.test(code)) continue;
       if (keys.some(k => code.includes(k))) continue;
       bad.push(`${relative(ROOT, file)} → เขียน ${table} แต่ไม่พบคีย์ ${keys.slice(0, 2).join(' / ')}`);
     }
@@ -4037,4 +4094,24 @@ test('🛡️ supabase-dedupe-fetch — ทั้ง supabase และ supabase
       + '   ผล: คำขอ GET ที่ซ้อนเวลากันกลับมายิงซ้ำทุกตัว (วัดได้ 70% ของคำขอทั้งหมด)\n'
       + '   แก้: createClient(url, key, { global: { fetch: dedupeFetch } })\n');
   });
+});
+
+/* ── 🧪 งานชุบภายนอก — ทุกการเขียนผ่าน RPC `plating_*` เท่านั้น (13/10 · คำสั่ง user) ──
+   ส่ง/รับ/ตัดยอด/ส่งเข้า W/H เขียน 2-3 ตารางพร้อมกัน (ใบ + ประวัติ + ledger ทั้งต้นทางและปลายทาง)
+   เขียนแยกจาก client = ล้มครึ่งทาง ⇒ ของหายจากคลังแต่ไม่ไปค้างร้าน (หรือรับคืนแล้วยอดค้างไม่ลด)
+   และชื่อที่เก็บเสมือนของร้านใน ledger ต้องตรงกันทั้ง JS และ SQL ไม่งั้นยอดค้างร้านแยก 2 ถัง */
+test('🛡️ plating-writes-via-rpc — ห้ามเขียน plating_orders/plating_moves ตรงจากจอ · ชื่อคลังร้านตรงกับ RPC', () => {
+  const bad = [];
+  for (const f of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const rel = relative(ROOT, f);
+    if (rel.includes('__tests__')) continue;
+    const code = stripComments(readFileSync(f, 'utf8'));
+    if (/from\(\s*['"]plating_(orders|moves)['"]\s*\)\s*\.\s*(insert|update|upsert|delete)\b/.test(code)) bad.push(rel);
+  }
+  assert.deepEqual(bad, [], '\n\n❌ เขียนตารางงานชุบตรงจากจอ — ใช้ supabaseDR.rpc(\'plating_*\') แทน:\n' + bad.map(b => '   • ' + b).join('\n'));
+  const js = readFileSync(join(ROOT, 'src/utils/plating.js'), 'utf8');
+  const sql = readFileSync(join(ROOT, 'supabase/migrations/20261013_plating_loop_dr.sql'), 'utf8');
+  const pre = (js.match(/VENDOR_LOC_PREFIX\s*=\s*'([^']+)'/) || [])[1];
+  assert.ok(pre, 'หา VENDOR_LOC_PREFIX ใน utils/plating.js ไม่เจอ');
+  assert.ok(sql.includes(`'${pre}' || btrim(p_vendor)`), `ชื่อคลังร้านใน RPC plating_send ต้องเป็น '${pre}' || vendor ให้ตรงกับ JS`);
 });

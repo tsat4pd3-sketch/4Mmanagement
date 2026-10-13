@@ -1429,7 +1429,10 @@ export default function Improvements() {
               <h3 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: 'var(--text)' }}>{modal.id ? '✏️ แก้ไขโปรเจคปรับปรุง' : '➕ เพิ่มโปรเจคปรับปรุง'}</h3>
               <button onClick={() => setModal(null)} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer' }}>×</button>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(300px, 100%), 1fr))', gap: 16 }}>
+            {/* data-align-ok: ฟอร์มกรอก — ช่องกว้างตาม "ชนิดข้อมูล" โดยตั้งใจ (วันที่ 150 · จำนวน 110 · หน่วย 130)
+                ไม่ใช่ลิสต์ทะเบียนที่ต้องอ่านลงมาเป็นคอลัมน์ ⇒ บอก audit/alignsweep.mjs ให้ข้าม (UI §6.28) */}
+            <div data-align-ok="ฟอร์มกรอก — ช่องกว้างตามชนิดข้อมูล ไม่ใช่ลิสต์ทะเบียน"
+              style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(300px, 100%), 1fr))', gap: 16 }}>
               {/* ซ้าย: ข้อมูลโปรเจค */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>ชื่อโปรเจค *

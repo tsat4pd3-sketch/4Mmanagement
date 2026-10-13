@@ -934,3 +934,39 @@ migration `20261013_rls_round8_people_stations_kpi_legacy_main.sql` (**apply แ
 
 **งานค้าง (ยังไม่ทำ · ต้องให้ user เคาะ):** จะให้ `position` / `org_node_id` มี single source แบบ
 ทีม/ไลน์/ส่วนงาน ไหม — ถ้าเอา ต้องแก้ `App.jsx` ให้ merge แล้วไล่เช็คทุกจอที่อ่าน `profiles.org_node_id`
+---
+## 🔒 RLS รอบ 9 — OT · งานนอกไลน์ · ประวัติย้ายจุดงาน · ทะเบียนเล็ก (2026-10-13)
+
+| ตาราง | แถว | predicate | ปุ่มเจ้าของ |
+|---|---|---|---|
+| `ot_night_bookings` | 3,561 | `checkin:record` | Checkin.jsx (จอง OT กะดึก) |
+| `line_helpers` | 41 | `checkin:record` | Checkin.jsx (ยืมคนช่วยไลน์) |
+| `operator_special_tasks` | 628 | `management:assign_special_task` | Management.jsx |
+| `station_assignment_logs` | 9,158 | `management:assign_manpower` | Management.jsx:620 (insert เท่านั้น) |
+| `special_task_types` · `leave_types` | 5 / 4 | `ot_master:manage` | Report.jsx `<SimpleNameMaster>` |
+
+· 🔴 **4 ใน 6 ตัวมีแต่ policy `FOR ALL`** ⇒ สร้าง policy อ่านก่อนแล้วค่อยรัด —
+  **รอบ 7 (`shift_schedules`) · รอบ 8 (`workstations` ฯลฯ) · รอบ 9 เจอแบบเดียวกันทุกรอบ
+  ⇒ ถือเป็นรูปแบบประจำของตารางยุคแรก ไม่ใช่เหตุบังเอิญ** เช็คก่อนรัดทุกครั้ง
+· `station_assignment_logs` = ประวัติ มีแต่ `insert` จากจอ ⇒ รัดด้วยคีย์ของคนที่ทำให้เกิดแถว
+
+### 🔎 กับดักการ grep ที่เจอรอบนี้ — แผง CRUD กลางรับ "ชื่อตาราง" เป็น prop
+
+`special_task_types` / `leave_types` ไม่มี `from('<table>').insert` ให้ grep เจอเลย เพราะเขียนผ่าน
+`<SimpleNameMaster table="leave_types">` ⇒ **grep หาแต่ `from('x')` จะสรุปว่า "ไม่มีใครเขียน" แล้วรัดผิด**
+⇒ เติมรูปแบบ `table={'x'}` เข้าด่าน `rls-tightened-tables-need-key` แล้ว (ตรวจย้อนแล้ว: วางไฟล์ที่ใช้แผงนี้
+โดยไม่มีคีย์ = เทสแดงทันที) · **ตารางใหม่ที่รัด ต้องเติมใน `RLS_KEYED_TABLES` ทุกครั้ง**
+
+### ผลตรวจกลับ (simulated JWT · rollback ทั้งก้อน)
+
+| role | ผล |
+|---|---|
+| `engineer` (ไม่ถือคีย์ไหนเลย) | อ่าน OT 3,561 · ประวัติย้ายจุด 9,158 · คนช่วยไลน์ 41 · ประเภทลา 4 แถว — **เขียน 0 ทั้ง 6 ตาราง** |
+| `leader` | OT 1 · คนช่วย 1 · งานพิเศษ 1 · **ประวัติย้ายจุด 0** (ไม่ถือ `assign_manpower`) · **ทะเบียนลา 0** (ไม่ถือ `ot_master`) |
+| `manager` | ประวัติ 1 · ทะเบียนลา 1 · ทะเบียนงานพิเศษ 1 |
+
+migration `20261013b_rls_round9_ot_specialtask_logs_main.sql` (**apply แล้ว 2026-10-13** · ROLLBACK ครบ)
+
+**เหลือชั้น ข. อีก 23 ตาราง** — ใช้งานจริง 14 · ว่าง 0 แถว 9 (`cqi15_*` 3 · `ppe_checks`/`ppe_requirements` ·
+`production_shots` · `qa_customer_claims` · `attendances` · `profile_org_access` — 2 ตัวท้ายเป็นตารางตาย เสนอลบ)
+· 🔵 `four_m_logs` / `profiles` **policy เปิดโดยเจตนา — ด่านจริงคือ trigger** (รอบ 5-6) ไม่ต้องรัด policy
