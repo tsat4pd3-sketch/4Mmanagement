@@ -144,6 +144,12 @@ const MO_LIST_COLS = [
   'mtn_dept', 'item_type', 'line_name', 'machine_no', // ฟิลเตอร์ทีม/ไลน์ + การ์ด
   'problem_characteristic', 'problem_group', 'report_note', 'report_at',
   'work_date', 'repair_type',                         // ตัวกรอง วันที่/กะ/ประเภทงานซ่อม (2026-09-25)
+  /* 🧑 ชื่อผู้แจ้ง — โชว์เป็นคอลัมน์ท้ายตาราง + ค้นหาได้ (13/10 · คำสั่ง user
+     "เปลี่ยนช่องประเภทเป็นชื่อผู้แจ้ง เพื่อง่ายในการไล่หาของ user เอง")
+     ⚠️ ต้องมี 2 ฟิลด์ — วัด 13/10 จาก 720 ใบ: reported_by_name 689 · reporter_prod 692
+        · ไม่มีทั้งคู่ 25 ใบ ⇒ เอาตัวเดียวจะมีใบที่ขึ้นว่างทั้งที่อีกช่องมีชื่อ
+     (`repair_type` ยังต้องดึงต่อ — ตัวกรอง "ทุกประเภท" ใช้อยู่ แค่ไม่โชว์เป็นคอลัมน์แล้ว) */
+  'reported_by_name', 'reporter_prod',
   'repair_done_at', 'accept_at', 'satisfaction',      // แท็บ KPI (first-response · ความพึงพอใจ)
   'quality_related', 'qa_skipped_at',                 // สถานะ QA บนป้าย
   'dept_manager_at', 'purpose',                       // moStatusLabel() ใช้ตัดสินป้ายใบอนุมัติ
@@ -530,7 +536,7 @@ export default function MtnRepair() {
     if (fDept) rows = rows.filter(o => sameTeam(o.mtn_dept || deptForItem(o.item_type), fDept));
     if (fShift) rows = rows.filter(o => shiftOfTime(o.report_at) === fShift);
     if (fRepairType) rows = rows.filter(o => (o.repair_type || '') === fRepairType);
-    if (fText.trim()) { const t = fText.trim().toLowerCase(); rows = rows.filter(o => [o.mo_no, o.machine_no, o.item_type, o.problem_characteristic, o.report_note, o.line_name].some(v => (v || '').toLowerCase().includes(t))); }
+    if (fText.trim()) { const t = fText.trim().toLowerCase(); rows = rows.filter(o => [o.mo_no, o.machine_no, o.item_type, o.problem_characteristic, o.report_note, o.line_name, o.reported_by_name, o.reporter_prod].some(v => (v || '').toLowerCase().includes(t))); }
     return rows;
   }, [orders, scopeLines, fStatus, fLine, fDept, fShift, fRepairType, fText, lines]);
 
@@ -687,7 +693,7 @@ export default function MtnRepair() {
             {waitOpts.map(w => <option key={w.stage} value={w.stage}>{w.icon} รอ{w.title} ({w.n})</option>)}
             {fWait && !waitOpts.some(w => w.stage === fWait) && <option value={fWait}>⚠ {fWait} (ไม่มีใบค้าง)</option>}
           </select>
-          <SearchInput value={fText} onChange={setFText} fields="เลข MO / เครื่อง / ปัญหา" />
+          <SearchInput value={fText} onChange={setFText} fields="เลข MO / เครื่อง / ปัญหา / ชื่อผู้แจ้ง" />
           <span className="spacer" />
           <span className="filter-count">{shown.length} รายการ</span>
           {/* ⬇️ Export ข้อมูล MO ของช่วงที่เลือก (06/10 · user: "ยังไม่มีระบบ export data ของ mo
@@ -733,7 +739,7 @@ export default function MtnRepair() {
           <table className="mo-list">
             <thead><tr>
               <th>เลข MO</th><th>สถานะ</th><th>ขั้น</th><th>แจ้งเมื่อ</th><th>ทีมช่าง</th>
-              <th>ไลน์</th><th>ชนิด · เครื่อง</th><th>ปัญหา</th><th>รายละเอียด</th><th>ประเภท</th>
+              <th>ไลน์</th><th>ชนิด · เครื่อง</th><th>ปัญหา</th><th>รายละเอียด</th><th>ชื่อผู้แจ้ง</th>
             </tr></thead>
             <tbody>
               {shown.map(o => <MoRow key={o.id} o={o} onOpen={() => openDetail(o)} />)}
@@ -782,7 +788,12 @@ function MoRow({ o, onOpen }) {
       <td style={{ color: 'var(--text2)', minWidth: 120 }}>{o.item_type || '—'}{o.machine_no ? <> · <b style={{ color: 'var(--text)' }}>{o.machine_no}</b></> : ''}</td>
       <td style={{ minWidth: 140 }}>{o.problem_characteristic || '—'}</td>
       <td className="mo-note" title={o.report_note || ''}>{o.report_note || <span style={{ color: 'var(--muted)' }}>—</span>}</td>
-      <td style={{ whiteSpace: 'nowrap', color: 'var(--text2)' }}>{o.repair_type || '—'}</td>
+      {/* 🧑 ชื่อผู้แจ้ง (แทนคอลัมน์ "ประเภท" เดิม · 13/10 คำสั่ง user) — เป็นเป้าสแกนสายตา
+          ⇒ ใช้สี `--text` ไม่ใช่ `--text2` · ลำดับ `reported_by_name` ก่อน เหมือนใบรายละเอียด
+          (ประเภทงานซ่อมยังดูได้จากตัวกรอง "ทุกประเภท" และในใบที่เปิดดู) */}
+      <td style={{ whiteSpace: 'nowrap', color: 'var(--text)' }}>
+        {o.reported_by_name || o.reporter_prod || <span style={{ color: 'var(--muted)' }}>—</span>}
+      </td>
     </tr>
   );
 }
