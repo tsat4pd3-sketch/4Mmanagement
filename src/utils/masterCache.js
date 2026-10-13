@@ -189,6 +189,50 @@ export async function cachedMaster(key, loader, ttl = DEFAULT_TTL) {
   return p;
 }
 
+/* ── cachedRows — เหมือน cachedMaster แต่คืนรูป `{ data, error }` ของ supabase (2026-10-13) ──
+   มีไว้สำหรับจอที่ **"โหลดพลาด" ต้องแยกออกจาก "ว่างจริง" ให้ได้ที่ฝั่งผู้เรียก**
+   เคสต้นแบบ: บอร์ด AM รายวัน (`src/lib/dailyAmBoard.js`) — ทะเบียนว่าง = จอขึ้น "ไม่มีจุดตรวจ"
+   ซึ่งเป็น**คำตอบผิดที่ดูเหมือนคำตอบถูก** ⇒ ผู้เรียกต้องได้ `error` กลับไปเพื่อคงค่าเดิมไว้
+
+   ต่างจาก `cachedMaster` ตรงเดียว: ตัวนั้น**กลืน error แล้วคืนของเก่า/`[]`** + แจ้งผ่าน failSink
+   (ถูกแล้วสำหรับ picker — dropdown ว่างชั่วคราวไม่ทำให้ใครตัดสินใจผิด)
+   🔴 ล้มเหลว = **ไม่เขียน cache ทั้ง memory และ localStorage** ⇒ รอบหน้ายิงใหม่ทันที
+   · ของเก่าที่ยังไม่หมดอายุไม่ถูกแตะ — รอบถัดไปที่เน็ตกลับมาก็ใช้ของใหม่
+   · ตาราง/คอลัมน์ไม่มี (migration ยังไม่ apply) = "ว่างจริง" cache ได้ ตามกติกาเดียวกับ `mrows()` */
+export async function cachedRows(key, runQuery, ttl = DEFAULT_TTL) {
+  const hit = cache.get(key);
+  if (hit && hit.data !== undefined && Date.now() - hit.at < ttl) return { data: hit.data, error: null };
+  if (hit?.inflight) return hit.inflight;      // หลายจุดเรียกพร้อมกัน = ยิงจริงครั้งเดียว
+
+  const stored = lsRead(key, ttl);
+  if (stored) {
+    cache.set(key, { at: stored.at, data: stored.data });
+    return { data: stored.data, error: null };
+  }
+
+  const p = (async () => {
+    let res;
+    try {
+      res = await runQuery();
+    } catch (e) {                               // runQuery โยนเอง (เน็ตหลุดกลางทาง) = ล้มเหลว
+      res = { data: null, error: e };
+    }
+    const err = res?.error;
+    if (err && !SCHEMA_MISSING.has(err.code)) {
+      cache.delete(key);                        // ล้าง inflight ทิ้ง ไม่เก็บผลล้มเหลว
+      return { data: null, error: err };
+    }
+    if (err) console.warn('[masterCache] โครงสร้างยังไม่มี —', err.code, err.message, '· ถือว่าว่าง');
+    const data = res?.data || [];
+    cache.set(key, { at: Date.now(), data });
+    lsWrite(key, data);
+    return { data, error: null };
+  })();
+
+  cache.set(key, { ...(hit || {}), inflight: p });
+  return p;
+}
+
 /** ล้าง cache — ไม่ส่ง key = ล้างทั้งหมด (เรียกหลังแก้ master สำเร็จ)
  *  ⚠️ ต้องล้าง localStorage ด้วยเสมอ ไม่งั้นแก้ master แล้วเปิดแอปใหม่ยังเห็นของเก่า */
 export function invalidateMaster(key) {

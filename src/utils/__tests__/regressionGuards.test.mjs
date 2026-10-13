@@ -3828,3 +3828,23 @@ test('🛡️ Monitoring: IN จาก ledger รับเข้า (inAtRef) �
     '\n\n❌ ช่อง ORDER บอร์ดรายแร็คไม่ซิงค์ customer_shipping_orders — คนพิมพ์ยอดแล้วไม่ขึ้น Shipping Time Chart ต้องไปเพิ่มมือซ้ำ\n');
   assert.ok(/horizon:\s*\d/.test(code), '\n\n❌ บอร์ดรายวันส่งต้องส่ง horizon ให้ boardPeriods — ไม่งั้นไม่มีคอลัมน์วันนี้ให้พิมพ์\n');
 });
+
+/* ── 📋 ทะเบียนของบอร์ด AM รายวัน ต้องผ่าน cache (13/10 · งานลด egress รอบ "โตตามจำนวนจอ") ──
+   วัดจาก log 09/10: `loadDailyAm()` ถูกเรียกใหม่ทุก event ของ inspections/prod_orders/
+   production_sessions ⇒ ดึง `jigs` 545 + `checklists` 497 + `pm_daily_line_targets` 266
+   = **1,308 ครั้ง/วัน** ทั้งที่ 3 ตารางนี้เป็น "ทะเบียน" เปลี่ยนเดือนละไม่กี่ครั้ง
+   บนจอ TV ที่เปิดค้าง = ยิงทุก 10 นาทีตลอดคืน · 🔴 **ตัวเลขนี้คูณตามจำนวนจอที่เปิด**
+   ⇒ ต้องผ่าน `cachedRows` (ไม่ใช่ `cachedMaster` — บอร์ดนี้ "โหลดพลาด" ต้องไม่กลายเป็น "ว่าง"
+      เพราะว่าง = จอขึ้น "ไม่มีจุดตรวจ" ซึ่งเป็นคำตอบผิดที่ดูเหมือนคำตอบถูก)                */
+test('🛡️ am-board-registries-cached — jigs/checklists/pm_daily_line_targets ใน dailyAmBoard ต้องผ่าน cachedRows', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/lib/dailyAmBoard.js'), 'utf8'));
+  const bad = [];
+  for (const t of ['jigs', 'pm_daily_line_targets', 'checklists']) {
+    const re = new RegExp(`cachedRows\\(\\s*'[^']+'\\s*,[^\\n]*from\\('${t}'\\)`);
+    if (!re.test(code)) bad.push(t);
+  }
+  assert.deepEqual(bad, [], '\n\n❌ ทะเบียนบอร์ด AM ไม่ได้ผ่าน cachedRows: ' + bad.join(', ') + '\n'
+    + '   ผล: จอ AM/ผังรวมโรงงานดึงทะเบียนใหม่ทุกรอบ refresh = 1,308 ครั้ง/วัน และโตตามจำนวนจอ\n'
+    + '   แก้: cachedRows(\'<คีย์>\', () => supabaseDR.from(\'<ตาราง>\')...) + ลงทะเบียนคีย์ใน masterInvalidate.js\n'
+    + '        และทุกจุดที่เขียนตารางนั้นต้องเรียก invalidateTable(\'<ตาราง>\') หลังบันทึกสำเร็จ\n');
+});

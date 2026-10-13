@@ -804,7 +804,31 @@ policy UPDATE ของ `profiles` เป็น `using(true) with check(true)` �
 
 migration `20261012_rls_round5_anon_scope_masters_main.sql` (**apply แล้ว 2026-10-12** · มี ROLLBACK ครบ)
 
-**เหลือเป็นงานต่อ:** ชั้น ข. อีก **39 ตาราง** — ตัวที่ควรทำก่อนเพราะกระทบตัวเลขที่คนใช้ตัดสินใจ:
-`four_m_logs` (ข้ามคิวอนุมัติได้) · `attendances`/`daily_production_logs`/`shift_schedules` (เข้างาน-กะ) ·
-`kpi_actuals`/`kpi_targets`/`kpi_raw_inputs`/`kpi_section_detail` (เลข KPI) · `employees`
-· 📌 `profile_org_access` = **ตารางตาย** (0 แถว · ไม่มีโค้ด/migration ไหนอ้างถึง) — พิจารณาถอดทิ้ง ไม่ใช่รัด
+**เหลือเป็นงานต่อ:** ชั้น ข. อีก **36 ตาราง** (รอบ 6 ปิด `four_m_logs` · รอบ 7 ปิด 2 ตารางเข้างาน-กะ)
+— ตัวที่ควรทำก่อนเพราะกระทบตัวเลขที่คนใช้ตัดสินใจ: `kpi_actuals`/`kpi_targets`/`kpi_raw_inputs`/
+`kpi_section_detail` (เลข KPI) · `employees` · `ppe_*` · `ojt_*`
+· 📌 **ตารางตาย 2 ตัว** — `profile_org_access` · `attendances` (0 แถว · ไม่มีโค้ด/migration ไหนอ้างถึง)
+  **พิจารณาถอดทิ้ง ไม่ใช่รัด** — เขียน policy ให้ของที่ไม่มีใครใช้ = เดา requirement ของของที่ไม่มีอยู่
+
+## 🔒 RLS รอบ 7 — เช็คชื่อ + ตารางกะ (2026-10-12 · ต่อจากรอบ 5)
+
+ชั้น ข. 2 ตารางที่คนหน้างานแตะทุกวัน — ด่านเดิมอยู่ที่ `can()` บนจอชั้นเดียว ยิง REST ตรงก็ผ่าน
+
+| ตาราง | จอที่เขียน (ไล่ทั้งรีโป + DB function + edge function แล้ว) | predicate ใหม่ |
+|---|---|---|
+| `daily_production_logs` | `Checkin.jsx:610` · `Management.jsx:584` | INSERT/UPDATE `checkin:record` **or** `management:assign_manpower` |
+| `shift_schedules` | `ShiftOrganize.jsx:307,311` · `ShiftAutoFillModal.jsx:136` | ALL `shift_schedule:edit` **or** `shift_schedule:edit_dept` |
+
+· 🔴 **OR 2 คีย์ ไม่ใช่เลือกข้างเดียว** — 2 ตารางนี้มี 2 จอเขียนคนละเรื่องบนตารางเดียว
+  (เช็คชื่อรายวัน vs จัดกำลังคน) · เลือกคีย์เดียว = จออีกจอพังทันที
+· 🔴 **`auth_all` ของ `shift_schedules` เป็น `for all` ⇒ `using` ครอบ SELECT ด้วย** —
+  ต้อง `create policy` อ่านแยก**ก่อน** แล้วค่อยรัด `auth_all` · สลับลำดับ = จอทุกหน้าที่อ่านตารางกะมืด
+  (บทเรียนเดียวกับข้อ (จ) รอบ 5 แต่ครั้งนี้กระทบ "อ่าน" ไม่ใช่แค่ log สกปรก)
+· ⚠️ **`shift_schedules` ไม่มีคอลัมน์ `shift`** — ของจริง `work_date · line_id · day_team · note ·
+  dept_name · is_manual · created_by` (5,194 แถว) · เทสที่เขียนจากความจำพังด้วย `42703` ก่อนจะได้ผล
+
+ตรวจกลับด้วย simulated JWT แล้ว rollback ทั้งก้อน: **display อ่าน log 14,830 + ตารางกะ 5,194 แถว
+แต่แก้ 0 ทั้งคู่** · leader แก้ log ได้ 1 แถว · **qa แก้ log 0 (ไม่ถือ `checkin:record`) แต่แก้ตารางกะได้ 1
+(ถือ `:edit_dept`)** — คู่นี้สำคัญเพราะพิสูจน์ว่าแยกตามคีย์จริง ไม่ใช่แยกตาม "ล็อกอินหรือยัง"
+
+migration `20261012d_rls_round7_attendance_shift_main.sql` (**apply แล้ว 2026-10-12** · มี ROLLBACK + ลำดับย้อน)
