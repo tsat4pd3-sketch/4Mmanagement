@@ -38,6 +38,10 @@ import { useLiveBoard } from '../utils/useLiveBoard';
 import SearchSelect from '../components/SearchSelect';
 import StockReceiptQueue from '../components/StockReceiptQueue';
 import Segmented from '../components/Segmented';
+import PartThumb from '../components/PartThumb';
+import usePartImages from '../utils/usePartImages';
+import { useStorageLocationsState } from '../utils/useStorageLocations';
+import { groupStockBySloc, slocGroupTitle } from '../utils/slocStockView';
 import { INFLOW_MODES, inflowModeOf, inflowPatchFor } from '../utils/stockReceipts';
 import { IconButton, DeleteButton } from '../components/IconButton';
 
@@ -93,7 +97,18 @@ function StockTab({ role, scope }) {
   // ฝั่งงาน: '' ทั้งหมด · inbound (Store 2xx/3xx/5xx) · outbound (Warehouse FG 1xx) · unknown
   const [sideFilter, setSideFilter] = useState('');
   const [bomMap,  setBomMap]  = useState({});
-  const [ksMap,   setKsMap]   = useState({});       // mat_no → { min, max } จาก kanban_standards
+  const [ksMap,   setKsMap]   = useState({});       // mat_no → { min, max, std } จาก kanban_standards (std = จำนวนต่อกล่อง/คัมบัง)
+  /* 🏬 โหมดจัดกลุ่ม — "ไลน์" (ของเดิม) หรือ "พื้นที่ SAP" (คำขอทีมวางแผน 13/10 · ดู utils/slocStockView.js)
+     ทะเบียนโหลดไม่ได้/ยังไม่มีรหัสเลย = ถอยไปโหมดไลน์ **แล้วเขียนบนจอ** ห้ามโชว์กลุ่ม "ไม่ผูก" ก้อนเดียวเฉยๆ */
+  const [groupBy, setGroupBy] = useState(() => {
+    try { return localStorage.getItem('ls_group_by') === 'line' ? 'line' : 'sloc'; } catch { return 'sloc'; }
+  });
+  const pickGroupBy = (v) => {
+    try { localStorage.setItem('ls_group_by', v); } catch { /* ignore */ }
+    setGroupBy(v);
+  };
+  const imgOf = usePartImages();                    // 🖼️ รูปชิ้นงาน — ของกลางเดียวกับบอร์ดสโตร์ (UI §6.23)
+  const slocReg = useStorageLocationsState();       // ทะเบียนรหัสคลัง — ว่างเพราะไม่มี vs โหลดไม่ได้ ต้องแยกให้ออก
   const [knownMats, setKnownMats] = useState(() => new Set()); // mat ที่มีในฐาน (parts_master/BOM) — กันสร้างของผี
   const [products, setProducts] = useState([]);     // [{id, name, mat_no, line_name}]
   // 📜 MAT ที่เคยบันทึกใน line_stock_transactions (DR) — เคยรับ/จ่ายไปแล้วแต่ยังไม่อยู่ในทะเบียนใด ยังเลือกซ้ำได้ (save ยังถามยืนยันเหมือนพิมพ์เอง) · 2026-09-07
@@ -161,7 +176,7 @@ function StockTab({ role, scope }) {
         { orderBy: 'id' }),
       fetchAllPages(() => supabaseDR.from('dr_products').select('id, name, mat_no, line_name').eq('is_active', true),
         { orderBy: ['line_name', 'name', 'id'] }),
-      fetchAllPages(() => supabaseDR.from('kanban_standards').select('mat_no, min_qty, max_qty').eq('is_active', true),
+      fetchAllPages(() => supabaseDR.from('kanban_standards').select('mat_no, min_qty, max_qty, qty_per_kanban').eq('is_active', true),
         { orderBy: 'id' }),
       fetchAllPages(() => supabaseDR.from('parts_master').select('mat_no').eq('is_active', true),
         { orderBy: 'id' }),
@@ -187,7 +202,9 @@ function StockTab({ role, scope }) {
     setBomMap(bm);
     setProductBom(pb);
     const km = {};
-    (ks || []).forEach(s => { km[s.mat_no] = { min: s.min_qty, max: s.max_qty }; });
+    /* std = `qty_per_kanban` (จำนวนต่อกล่อง/คัมบัง = คอลัมน์ STD/PCS ในใบของทีมวางแผน)
+       🔴 คนละตัวกับ `lot_size` (ขนาดล็อตผลิต) — ห้ามสลับ (ดู kanban-auto-calc.md) */
+    (ks || []).forEach(s => { km[s.mat_no] = { min: s.min_qty, max: s.max_qty, std: s.qty_per_kanban }; });
     setKsMap(km);
     const known = new Set();
     (pm || []).forEach(p => known.add(p.mat_no));
@@ -349,6 +366,29 @@ function StockTab({ role, scope }) {
 
   const totalLow = filteredStock.filter(s => (s.qty_on_hand || 0) <= 0).length;
 
+  /* 🏬 ทะเบียนรหัสคลังใช้ได้ไหม — โหลดไม่สำเร็จ หรือยังไม่มีรหัสที่ผูกไลน์เลย = ไม่มีอะไรให้จัดกลุ่ม
+     ⇒ บังคับโหมดไลน์ + เขียนเหตุผลบนจอ (ห้ามโชว์กลุ่ม "ยังไม่ผูก" ก้อนเดียวแล้วให้เดาเอง) */
+  const slocUsable = !slocReg.failed && (slocReg.rows || []).some(s => s?.is_active !== false && (s?.line_names || []).length);
+  const groupMode = slocUsable ? groupBy : 'line';
+
+  /* กลุ่มที่เอาไปวาด — 2 โหมดคืนรูปร่างเดียวกัน (key · title · parts[{mat_no, part_name, qty, byLine}])
+     เพื่อให้ตารางมีตัววาดชุดเดียว (เดิมโหมดไลน์วาดจาก row ดิบ — ก๊อป 2 ชุด = ดริฟต์แน่นอน) */
+  const groups = useMemo(() => {
+    if (groupMode === 'sloc') {
+      return groupStockBySloc(filteredStock, { slocs: slocReg.rows || [], lines })
+        .map(g => ({ ...g, title: slocGroupTitle(g) }));
+    }
+    return Object.entries(stockByLine).map(([lineName, rows]) => ({
+      key: lineName, code: null, lineNames: [lineName],
+      title: `${lines.some(l => l.name === lineName) ? '📍' : '🏬'} ${lineName}`,
+      parts: rows.map(r => ({
+        mat_no: r.mat_no, part_name: r.part_name,
+        qty: parseFloat(r.qty_on_hand) || 0,
+        byLine: [{ line_name: lineName, qty: parseFloat(r.qty_on_hand) || 0 }],
+      })),
+    }));
+  }, [groupMode, filteredStock, slocReg.rows, lines, stockByLine]);
+
   return (
     <>
       <ReadOnlyNote show={!canIssue} role={role} what="จ่าย/รับของเข้าสโตร์"
@@ -490,17 +530,32 @@ function StockTab({ role, scope }) {
         </div>
       )}
 
-      {/* แถบย่อ/กางทุกกลุ่ม — กลุ่มเยอะ+พาร์ทเยอะ ต้องพับเก็บได้ ไม่งั้นต้องเลื่อนยาวมากกว่าจะเจอไลน์ที่ต้องการ */}
-      {!showTxn && Object.keys(stockByLine).length > 1 && (() => {
-        const names = Object.keys(stockByLine);
-        const allFolded = names.every(n => collapsedGroups.has(n));
+      {/* 🏬 สลับมุมมอง + แถบย่อ/กางทุกกลุ่ม — กลุ่มเยอะ+พาร์ทเยอะ ต้องพับเก็บได้
+          มุมมอง "พื้นที่ SAP" = คำขอทีมวางแผน 13/10 (ใบ Monitor Stock แบ่งตาม Store Location) */}
+      {!showTxn && (() => {
+        const keys = groups.map(g => g.key);
+        const allFolded = keys.length > 0 && keys.every(k => collapsedGroups.has(k));
         return (
-          <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
-            <button type="button" onClick={() => persistCollapsed(allFolded ? new Set() : new Set(names))}
-              style={{ ...inputSt, width:'auto', cursor:'pointer', fontSize:12, padding:'6px 12px' }}>
-              {allFolded ? '▼ กางทั้งหมด' : '▶ ย่อทั้งหมด'}
-            </button>
-            <span style={{ fontSize:11, color:'var(--muted)' }}>{names.length} ไลน์/คลัง · แตะหัวกลุ่มเพื่อย่อ-กาง</span>
+          <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10, flexWrap:'wrap' }}>
+            <Segmented value={groupMode} onChange={pickGroupBy}
+              options={[{ value:'sloc', label:'🏬 ตามพื้นที่ SAP' }, { value:'line', label:'📍 ตามไลน์' }]} />
+            {keys.length > 1 && (
+              <button type="button" onClick={() => persistCollapsed(allFolded ? new Set() : new Set(keys))}
+                style={{ ...inputSt, width:'auto', cursor:'pointer', fontSize:12, padding:'6px 12px' }}>
+                {allFolded ? '▼ กางทั้งหมด' : '▶ ย่อทั้งหมด'}
+              </button>
+            )}
+            <span style={{ fontSize:11, color:'var(--muted)' }}>
+              {keys.length} {groupMode === 'sloc' ? 'พื้นที่' : 'ไลน์/คลัง'} · แตะหัวกลุ่มเพื่อย่อ-กาง
+              {groupMode === 'sloc' && ' · ยอดในพื้นที่เดียวกันรวมข้ามไลน์แล้ว (MIN/MAX เป็นค่าต่อ MAT ระดับพื้นที่)'}
+            </span>
+            {/* ทะเบียนใช้ไม่ได้ = ต้องบอกว่าทำไมปุ่มพื้นที่ไม่ทำงาน ห้ามเงียบ */}
+            {!slocUsable && (
+              <span style={{ fontSize:11, color:'#f59e0b', fontWeight:700 }}>
+                🏬 {slocReg.failed ? 'โหลดทะเบียนรหัสคลังไม่สำเร็จ' : 'ยังไม่มีรหัสคลังที่ผูกไลน์ไว้'} — แสดงตามไลน์ไปก่อน
+                (ตั้งที่แท็บ 🏬 โซนคลัง)
+              </span>
+            )}
           </div>
         );
       })()}
@@ -513,51 +568,77 @@ function StockTab({ role, scope }) {
           ให้ทั้งหน้า scroll ตามปกติ + ย่อ/กางกลุ่มแทน — ดู docs/UI-CONVENTIONS.md §6.8 */}
       {!showTxn && (
         <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
-          {Object.keys(stockByLine).length === 0 ? (
+          {groups.length === 0 ? (
             <div style={{ ...card, padding:'40px 20px', textAlign:'center', color:'var(--muted)', fontSize:14 }}>
               ยังไม่มีข้อมูล Stock{lineFilter ? ` ในไลน์ ${lineFilter}` : ''} — กด "+ จ่ายพาร์ทเข้าไลน์" เพื่อเริ่ม
             </div>
           ) : (
-            Object.entries(stockByLine).map(([lineName, parts]) => {
-              const lowParts = parts.filter(p => (p.qty_on_hand || 0) <= 0);
-              const folded  = collapsedGroups.has(lineName);
+            groups.map(g => {
+              const lowParts = g.parts.filter(p => p.qty <= 0);
+              const folded  = collapsedGroups.has(g.key);
               return (
-                <div key={lineName} style={{ ...card, padding:0, overflow:'hidden' }}>
-                  <div onClick={() => toggleGroup(lineName)}
-                       style={{ padding:'12px 16px', display:'flex', justifyContent:'space-between', alignItems:'center', background:'var(--bg2)', borderBottom: folded ? 'none' : '1px solid var(--border)', cursor:'pointer', userSelect:'none' }}>
+                <div key={g.key} style={{ ...card, padding:0, overflow:'hidden' }}>
+                  <div onClick={() => toggleGroup(g.key)}
+                       style={{ padding:'12px 16px', display:'flex', justifyContent:'space-between', alignItems:'center', gap:10, flexWrap:'wrap', background:'var(--bg2)', borderBottom: folded ? 'none' : '1px solid var(--border)', cursor:'pointer', userSelect:'none' }}>
                     <div style={{ fontWeight:800, fontSize:15, fontFamily:'var(--font-display)', color:'var(--text)', display:'flex', alignItems:'center', gap:8 }}>
                       <span style={{ fontSize:11, color:'var(--muted)', width:10 }}>{folded ? '▶' : '▼'}</span>
-                      {lines.some(l => l.name === lineName) ? '📍' : '🏬'} {lineName}
+                      {g.title}
                     </div>
-                    <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+                    <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
+                      {/* โหมดพื้นที่ต้องบอกว่าก้อนนี้มาจากไลน์ไหนบ้าง — ไม่งั้นตัวเลขรวมไม่มีที่มา */}
+                      {groupMode === 'sloc' && g.lineNames.length > 0 && (
+                        <span style={{ fontSize:11, color:'var(--muted)' }}>📍 {g.lineNames.join(' · ')}</span>
+                      )}
                       {lowParts.length > 0 && <span style={{ fontSize:11, padding:'2px 9px', borderRadius:10, background:'rgba(239,68,68,0.12)', color:'#ef4444', fontWeight:700 }}>⚠️ {lowParts.length} รายการหมด</span>}
-                      <span style={{ fontSize:11, color:'var(--muted)' }}>{parts.length} พาร์ท</span>
+                      <span style={{ fontSize:11, color:'var(--muted)' }}>{g.parts.length} พาร์ท</span>
                     </div>
                   </div>
+                  {/* 🧾 คอลัมน์ตามใบ Monitor Stock ของทีมวางแผน (13/10): ลำดับ · รูป · ชิ้นงาน · STD/กล่อง · MAX · MIN · คงเหลือ
+                      ชื่อชิ้นงานต้องผ่าน <MatLabel> (Part No. → ชื่อ → MAT SAP) — ห้ามเรียงเอง (ด่าน matOrderSweep) */}
                   <div style={{ overflowX:'auto', display: folded ? 'none' : undefined }}>
                     <table style={{ width:'100%', borderCollapse:'collapse' }}>
                       <thead>
                         <tr style={{ background:'var(--bg2)' }}>
-                          {['ชิ้นงาน','คงเหลือ (ชิ้น)','Min / Max','สถานะ'].map(h => (
-                            <th key={h} style={{ padding:'8px 14px', fontSize:11, fontWeight:800, color:'var(--muted)', textAlign: (h==='คงเหลือ (ชิ้น)'||h==='Min / Max') ? 'right' : 'left', whiteSpace:'nowrap', textTransform:'uppercase' }}>{h}</th>
+                          {[['#','left'],['รูป','left'],['ชิ้นงาน','left'],['STD/กล่อง','right'],['MAX','right'],['MIN','right'],['คงเหลือ (ชิ้น)','right'],['สถานะ','left']].map(([h, al]) => (
+                            <th key={h} style={{ padding:'8px 14px', fontSize:11, fontWeight:800, color:'var(--muted)', textAlign: al, whiteSpace:'nowrap', textTransform:'uppercase' }}>{h}</th>
                           ))}
                           {canIssue && <th style={{ padding:'8px 14px', width:90 }}></th>}
                         </tr>
                       </thead>
                       <tbody>
-                        {parts.map(p => {
-                          const qty = parseFloat(p.qty_on_hand) || 0;
+                        {g.parts.map((p, i) => {
+                          const qty = p.qty;
                           const st = stockStatus(qty, p.mat_no);
                           const ks = ksMap[p.mat_no];
+                          const name = p.part_name || bomMap[p.mat_no];
+                          // ปุ่มจ่ายต้องรู้ไลน์ — แถวที่รวมมาจากหลายไลน์ ให้ไปเลือกในฟอร์ม (ห้ามเดาไลน์แทนคน)
+                          const oneLine = p.byLine.length === 1 ? p.byLine[0].line_name : '';
                           return (
                             <tr key={p.mat_no} style={{ opacity: qty <= 0 ? 0.7 : 1 }}>
+                              <td style={{ padding:'10px 14px', borderTop:'1px solid var(--border)', fontSize:11.5, color:'var(--muted)' }}>{i + 1}</td>
+                              <td style={{ padding:'6px 14px', borderTop:'1px solid var(--border)' }}>
+                                <PartThumb url={imgOf(p.mat_no)} alt={[p.mat_no, name].filter(Boolean).join(' · ')} size={40} />
+                              </td>
                               <td style={{ padding:'10px 14px', borderTop:'1px solid var(--border)', maxWidth:340 }}>
-                                <MatLabel mat={p.mat_no} name={p.part_name || bomMap[p.mat_no]} size={13} />
+                                <MatLabel mat={p.mat_no} name={name} size={13} />
+                                {/* รวมข้ามไลน์แล้วต้องกางให้เห็นว่าไลน์ไหนถืออยู่เท่าไหร่ (ยอดรวมที่ไม่มีที่มา = คนไม่เชื่อ) */}
+                                {groupMode === 'sloc' && p.byLine.length > 1 && (
+                                  <div style={{ fontSize:11, color:'var(--muted)', marginTop:2 }}>
+                                    {p.byLine.map(b => `${b.line_name} ${b.qty.toLocaleString()}`).join(' · ')}
+                                  </div>
+                                )}
+                              </td>
+                              <td title="จำนวนต่อกล่อง/คัมบัง (ค่ามาตรฐานคัมบัง) — คนละตัวกับขนาดล็อตผลิต"
+                                  style={{ padding:'10px 14px', borderTop:'1px solid var(--border)', textAlign:'right', fontSize:12, color:'var(--muted)', whiteSpace:'nowrap' }}>
+                                {ks?.std != null ? Number(ks.std).toLocaleString() : '—'}
+                              </td>
+                              <td style={{ padding:'10px 14px', borderTop:'1px solid var(--border)', textAlign:'right', fontSize:12, color:'var(--muted)', whiteSpace:'nowrap' }}>
+                                {ks?.max != null ? Number(ks.max).toLocaleString() : '—'}
+                              </td>
+                              <td style={{ padding:'10px 14px', borderTop:'1px solid var(--border)', textAlign:'right', fontSize:12, color:'var(--muted)', whiteSpace:'nowrap' }}>
+                                {ks?.min != null ? Number(ks.min).toLocaleString() : '—'}
                               </td>
                               <td style={{ padding:'10px 14px', borderTop:'1px solid var(--border)', textAlign:'right', fontSize:16, fontWeight:900, color: st.color }}>{qty.toLocaleString()}</td>
-                              <td style={{ padding:'10px 14px', borderTop:'1px solid var(--border)', textAlign:'right', fontSize:12, color:'var(--muted)', whiteSpace:'nowrap' }}>
-                                {ks && (ks.min != null || ks.max != null) ? `${ks.min ?? '—'} / ${ks.max ?? '—'}` : '—'}
-                              </td>
                               <td style={{ padding:'10px 14px', borderTop:'1px solid var(--border)' }}>
                                 <span style={{ fontSize:11, padding:'2px 8px', borderRadius:10, fontWeight:700, background: st.bg, color: st.color }}>
                                   {st.label}
@@ -571,7 +652,8 @@ function StockTab({ role, scope }) {
                                       🚚 หักผ่าน Delivery
                                     </span>
                                   ) : (
-                                    <button onClick={() => { setForm({ ...EMPTY_FORM, line_name: lineName, mat_no: p.mat_no, part_name: p.part_name || bomMap[p.mat_no] || '', type:'issue', work_date:getToday() }); setShowForm(true); }}
+                                    <button title={oneLine ? `จ่ายเข้า ${oneLine}` : 'พาร์ทนี้อยู่หลายไลน์ในพื้นที่เดียวกัน — เลือกไลน์ปลายทางในฟอร์ม'}
+                                      onClick={() => { setForm({ ...EMPTY_FORM, line_name: oneLine, mat_no: p.mat_no, part_name: name || '', type:'issue', work_date:getToday() }); setShowForm(true); }}
                                       style={{ ...btn('rgba(34,197,94,0.1)', '#22c55e'), padding:'4px 10px', fontSize:11, border:'1px solid rgba(34,197,94,0.3)' }}>
                                       + จ่าย
                                     </button>
