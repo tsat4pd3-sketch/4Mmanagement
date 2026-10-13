@@ -1017,6 +1017,16 @@ const RULES = [
     allow: {},
   },
   {
+    id: 'action-photo-via-helper',
+    scan: ['src/pages', 'src/components'], ext: ['.jsx'],
+    re: /storage\s*\.from\(\s*['"]action-images['"]\s*\)/g,
+    why: 'รูปหลักฐานตอนปิด Action Item มีกติกาเดียวกับรูปของเสีย: บีบ webp 1024px · นามสกุลจาก '
+       + 'imgExt(blob) · uploadOpts() (ไม่ใส่ = cacheControl หาย เคยทำ egress ทะลุโควต้าจนทั้ง '
+       + 'organization ถูกล็อก) — ฝังไว้ในหน้าแล้วจุดที่ 2 จะก๊อปแล้วตกหล่น',
+    fix: 'ใช้ uploadActionPhoto(file, id) / removeActionImg(url) จาก src/utils/actionImage.js',
+    allow: {},
+  },
+  {
     id: 'mo-image-via-mtnImage',
     scan: ['src/pages', 'src/components'], ext: ['.jsx'],
     // จับการอัปโหลดขึ้น bucket mtn-images โดยไม่ผ่าน util กลาง
