@@ -9,7 +9,7 @@ import { wavg, wLoad, sumDefectQty, dtMinBySession, QBIN_EMBED } from '../utils/
 import { defectUnitCost } from '../utils/costSaving';
 import { fetchByIds } from '../utils/fetchByIds';
 import useOrgScope from '../utils/useOrgScope';
-import { mtnAutoSeries, autoKpiOfName, toRowUnit, HOURS_PER_MONTH } from '../utils/kpiAuto';
+import { mtnAutoSeries, autoKpiOfName, toRowUnit, HOURS_PER_MONTH, autoUnitMismatch } from '../utils/kpiAuto';
 import { loadPmTeams, pmTeamsSync } from '../utils/pmTeams';
 import OrgScopePicker from './OrgScopePicker';
 import FilterBar from './FilterBar';
@@ -1147,6 +1147,11 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
                           <td style={{ ...tdSt, textAlign: 'left', whiteSpace: 'normal', minWidth: 190 }}>
                             <b style={{ color: 'var(--text)' }}>{defName(d2)}</b>
                             {defUnit(d2) && <span style={{ marginLeft: 4, fontSize: 11, color: 'var(--muted)' }}>({defUnit(d2)})</span>}
+                            {/* ⚠ หน่วยขัดสูตรทางการ (13/10 — ทะเบียน MBD ถูกแก้เป็น "Hrs." ทั้งที่สูตร ×100 = %) · เตือน ไม่บล็อก */}
+                            {autoUnitMismatch(defName(d2), defUnit(d2)) && (
+                              <span title={`สูตรทางการ KPI Guideline 2026 หน้า 10 ให้หน่วย "${autoUnitMismatch(defName(d2), defUnit(d2)).expect}" — ค่าที่ระบบคำนวณบนบอร์ดเป็นหน่วยนั้น ถ้ากรอกมือเป็น "${defUnit(d2)}" จะปนกันคนละหน่วยในแผ่นเดียว`}
+                                style={{ marginLeft: 5, fontSize: 11, color: '#ef4444', fontWeight: 700 }}>⚠ หน่วยขัดสูตร (ต้องเป็น {autoUnitMismatch(defName(d2), defUnit(d2)).expect})</span>
+                            )}
                             {!d2.catalog_id && !catMissing && (
                               <span title="ยังไม่ได้ผูกกับทะเบียนชื่อ KPI — เปิดแก้ไขแล้วเลือกชื่อจากทะเบียนเพื่อให้เทียบข้ามปีได้"
                                 style={{ marginLeft: 5, fontSize: 11, color: '#f59e0b' }}>⚠ ไม่ผูกทะเบียน</span>
@@ -1723,6 +1728,11 @@ function DefModal({ init, year, scope, org, orgFailed = '', scopeSet, userSectio
               <div>
                 <div style={lbl}>หน่วย — เฉพาะแถวนี้ {catUnit ? `(ว่าง = ตามทะเบียน: ${catUnit})` : '(ทะเบียนยังไม่ตั้งหน่วย)'}</div>
                 <input style={inp} value={f.unit} onChange={e => set('unit', e.target.value)} placeholder={catUnit || 'เช่น % · บาท · ครั้ง'} />
+                {autoUnitMismatch(f.name || curCat?.name, f.unit || catUnit) && (
+                  <div style={{ fontSize: 11, color: '#ef4444', marginTop: 3 }}>
+                    ⚠ KPI นี้ระบบคำนวณตามสูตรทางการเป็น "{autoUnitMismatch(f.name || curCat?.name, f.unit || catUnit).expect}" — ตั้งเป็น "{f.unit || catUnit}" จะทำให้ค่ากรอกมือกับค่าระบบคนละหน่วยในแผ่นเดียว
+                  </div>
+                )}
               </div>
               <div>
                 <div style={lbl}>ทศนิยม — เฉพาะแถวนี้ (ว่าง = ตามทะเบียน: {catDec})</div>

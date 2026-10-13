@@ -27,7 +27,7 @@ import { groupChildDefs, rollupChildDefs, childGroupKeyFor, fillParentWithChildr
 import { pickBoardRows, normKpiRowName, moveBoardKey } from '../utils/kpiBoardRows';
 import { checkWriteRows } from '../utils/dbWrite';
 import { loadPmTeams, pmTeamsSync } from '../utils/pmTeams';
-import { mtnAutoSeries, autoKpiOfName, toRowUnit } from '../utils/kpiAuto';
+import { mtnAutoSeries, autoKpiOfName, toRowUnit, autoDetailText } from '../utils/kpiAuto';
 import { GAP, useSheetGrid, StatusLamp, Sheet, WarnNote, EmptyChart, FocusAxisNote } from './ObeyaSheet';
 import BoardPager from './BoardPager';
 import useFitHeight from '../utils/useFitHeight';
@@ -508,16 +508,18 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
             + (roll.targetNote ? ` · ${roll.targetNote} — อยากตัดสินด้วยเป้าของระดับนี้ ให้ตั้ง KPI นี้ที่ ⚙️ (แผ่นรวมจะเปลี่ยนเป็นของระดับนี้เอง)` : '');
         } else if (ak) {
           const autoMonths = {};
+          const autoDetail = {};   // 🔢 ตัวตั้ง/ตัวหารของเดือนนั้น (ชม.หยุด · ครั้ง · เครื่อง) — user 13/10 "อยากเห็น hrs. ด้วย" ทั้งที่ KPI เป็น %
           autoSeries.months.forEach((m, i) => {
             const v = toRowUnit(m[ak.key], ak.key, unitOf(man.def) || unit);
-            if (v != null) autoMonths[i + 1] = v;
+            if (v != null) { autoMonths[i + 1] = v; autoDetail[i + 1] = autoDetailText(m, ak.key); }
           });
           const fx = fillAutoWithManual({ autoMonths, manEntries, year, summary });
           mix = fx;
           const k = fx.series
             ? { series: fx.series, months: fx.months, effMode: fx.effMode, approx: fx.approx }
             : manualMonthSeries({ entries: autoMonths, year, summary });
-          series = k.series; months = k.months; def = man?.def || null;
+          series = k.series.map((p, i) => (i < 12 && !p.manualFill && autoDetail[i + 1] ? { ...p, detail: autoDetail[i + 1] } : p));
+          months = k.months; def = man?.def || null;
           sumKind = k.effMode; sumApprox = k.approx;
           manual = fx.autoN === 0;   // มีค่าระบบสักเดือน = แถวนี้ค่าหลักมาจากระบบ
           note = `${mixNote(fx, 'ระบบคำนวณ')}${fx.autoN && !fx.fillN && !fx.overlapN ? `⚡ ระบบคำนวณ ${fx.autoN} เดือน` : ''} (ทีม ${mtnTeam.label} · สูตร KPI Guideline 2026 หน้า 10)`;
@@ -575,6 +577,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       }
       if (stale) why = `ค่าล่าสุด ${monthLabel(valueKey)} (${monthLabel(monthKey)} ยังไม่กรอก) · ${why}`;
       const curFilled = value != null && !!series.find(p => p.k === valueKey)?.manualFill;
+      const curDetail = value != null ? (series.find(p => p.k === valueKey)?.detail || null) : null;   // ที่มาของเลขเดือนที่โชว์ (แถว auto ช่าง)
       const curChild = value != null && !!series.find(p => p.k === valueKey)?.childFill;
       if (curChild) why = `⬆ เดือนนี้ระดับนี้ไม่ได้กรอก ใช้ค่ารวมจากหน่วยลูก · ${why}`;
       if (curFilled) why = `✍️ เดือนนี้ใช้ค่ากรอกมือ (ระบบไม่มีกะให้คำนวณ) · ${why}`;
@@ -602,7 +605,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
         hasTarget: !!(def && (target != null || bars?.commit_value != null)),
       };
       return {
-        ...r, def, unit, dir, series, value, valueKey, stale, target, st, why, note, manual, fromDept, months, sumKind, sumApprox, ytd, actualMonths, forecast, curFilled, curChild, childMix, mix, roll,
+        ...r, def, unit, dir, series, value, valueKey, stale, target, st, why, note, manual, fromDept, months, sumKind, sumApprox, ytd, actualMonths, forecast, curFilled, curChild, curDetail, childMix, mix, roll,
         atLabel: man?.inherited && man.at ? org.labelOf(man.at.kind, man.at.value) : '',
         commit: bars?.commit_value ?? null, hasPlan: Object.keys(planMap).length > 0,
         dec: decimalsOf(def),
@@ -797,7 +800,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
           <YAxis domain={yDomain} ticks={focus ? focus.ticks : undefined} allowDataOverflow={!!focus} tick={axisTick} width="auto"
             tickFormatter={v => (Math.abs(v) >= 1000 ? `${Math.round(v / 1000)}k` : v)}
             label={axisUnitLabel(r.unit, { fontSize: fs(9.5), lift: fs(6) })} />
-          <Tooltip {...chartTip} formatter={(v, name) => [`${nf(v, r.dec)}${r.unit ? ' ' + r.unit : ''}`, name === 'plan' ? '📅 แผน' : r.name]}
+          <Tooltip {...chartTip} formatter={(v, name, item) => [`${nf(v, r.dec)}${r.unit ? ' ' + r.unit : ''}${name !== 'plan' && item?.payload?.detail ? ` · ${item.payload.detail}` : ''}`, name === 'plan' ? '📅 แผน' : r.name]}
             labelFormatter={(l, pl) => (pl?.[0]?.payload?.summary
               ? `สรุปปี ${year} (${r.sumKind === 'sum' ? 'รวม' : 'เฉลี่ย'}${r.auto && !r.fromDept ? 'ถ่วงน้ำหนัก' : ''}ทั้งปี)`
               : `${monthLabel(pl?.[0]?.payload?.k || '')} ${year}${pl?.[0]?.payload?.notes?.length ? ` · 📝 ${pl[0].payload.notes.length} หมายเหตุ` : ''} · กดเพื่อดูเดือนนี้ + หมายเหตุ`)} />
@@ -964,7 +967,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
                     ? ` · YTD ${nf(r.ytd, r.dec)}${r.unit ? ' ' + r.unit : ''} (${r.sumApprox ? '≈ เฉลี่ย' : summaryShort(r.sumKind)}${r.auto && !r.fromDept && !r.sumApprox && r.sumKind !== 'sum' ? 'ถ่วงน้ำหนัก' : ''} ${r.actualMonths} เดือน)`
                     : ''}`}
                   big={r.value == null ? '—' : nf(r.value, r.dec)}
-                  unit={r.value != null ? r.unit : ''} bigNote={r.value != null ? `เดือน ${monthLabel(r.valueKey)}${r.stale ? ' (ล่าสุด)' : ''}` : ''} delta={r.delta}
+                  unit={r.value != null ? r.unit : ''} bigNote={r.value != null ? `เดือน ${monthLabel(r.valueKey)}${r.stale ? ' (ล่าสุด)' : ''}${r.curDetail ? ` · ${r.curDetail}` : ''}` : ''} delta={r.delta}
                   stat={toLamp(r.st, r.note && !(r.st === ST.unknown) ? `${r.why} · ${r.note}` : r.why)}
                   /* 🧹 ท้ายแผ่น ≤ 1 บรรทัด (user 09/10 "note เยอะไป กราฟเล็กลง") — เหลือเฉพาะ (ก) คาดปลายปีที่คำนวณได้ หรือ (ข) เตือนที่ต้องเห็น
                      (ไฟเทา/ค่ากรอกมือถูกทับ/ขอบเขตโรงงานยังไม่มีนิยาม) · Target/Commit/ที่มาเต็มๆ ย้ายไป tooltip ของไฟ + popup 🔍 (`zoomFoot`) */

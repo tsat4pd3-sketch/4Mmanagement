@@ -1,6 +1,7 @@
 // System 1 — Production Daily Preventive Maintenance status logic (pure).
 // ⚠️ ไฟล์นี้ต้อง pure (ไม่ import supabase) — เทสใน src/lib/__tests__/dailyAmBoard.test.mjs · ตัวโหลดอยู่ dailyAmBoard.js
 import { getWorkDate, getCurrentShift, shiftStartTime } from '../utils/workDate.js'
+import { getLineFamilyNames } from '../utils/lineHierarchy.js'
 // One line × shift × work_date rolls up over the equipment registered in
 // pm_daily_line_targets ("must be checked every shift"). Shared by the status
 // dashboard and the orange-alarm scheduler so both agree on what each colour means.
@@ -141,3 +142,32 @@ export function dailyAmLineStatus({ targets, jigs, resultByJig = {}, firstOrderB
   return out
 }
 
+
+/**
+ * "ไลน์ไหนเดินอยู่กะนี้" — **นับไลน์แม่-ลูกด้วย** ห้ามเทียบชื่อตรงตัว (2026-10-13)
+ *
+ * 🔴 ทำไมต้องมี: วัดจากของจริง 45 วัน — `GOR` · `LWR BAR` · `HYDROFORM` · `LINE APRON ASSY`
+ *    เปิดกะ **0 ครั้ง** (ลูกเดินทุกวันแทน) แต่ 4 ตัวนี้ถือ **แผน LPA รวม 30 แผน**
+ *    ⇒ เทียบชื่อตรงตัว = ชุด "ไลน์ที่เดินอยู่" ไม่มีชื่อไลน์แม่
+ *    ⇒ ปลายทางที่ใช้ชุดนี้เป็น "ประตู" (`pokayokeByLine`/`lpaByLine` · `utils/prodRoutine.js`)
+ *      **ข้ามงานตรวจของไลน์แม่ทั้งก้อนเงียบๆ** + จอ AM เขียน "ยังไม่เปิดกะ" ให้ไลน์ที่ลูกเดินอยู่
+ *
+ * family (`getLineFamilyNames`) = ตัวเอง + แม่/ปู่ + ลูก/หลานของตัวเอง — **ไม่รวมพี่น้อง**
+ * ⇒ ไลน์พี่น้องที่ไม่ได้เดินไม่ถูกลากเข้ามา · ชื่อที่เปิดกะแต่ไม่อยู่ในทะเบียนไลน์ (เปิดด้วยชื่อเครื่อง)
+ *   ยังอยู่ในชุดเหมือนเดิม ไม่หายไป
+ *
+ * @param {object[]} lines    ทะเบียนไลน์ (ต้องมี `id` · `name` · `parent_line_name`)
+ * @param {Set<string>|string[]} openRaw  ชื่อไลน์ที่มีกะเปิดจริง (จาก `production_sessions`)
+ * @returns {Set<string>} ชื่อไลน์ที่ถือว่า "เดินอยู่"
+ */
+export function openFamilyLines(lines, openRaw) {
+  const raw = openRaw instanceof Set ? openRaw : new Set(openRaw || [])
+  const out = new Set(raw)
+  for (const l of lines || []) {
+    if (l?.name == null) continue
+    const fam = getLineFamilyNames(lines, l.id)
+    const names = fam?.length ? fam : [l.name]
+    if (names.some(n => raw.has(n))) out.add(l.name)
+  }
+  return out
+}

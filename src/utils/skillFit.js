@@ -13,19 +13,31 @@ export function skillMapOf(rows) {
   return m;
 }
 
+/** แถว employee_skills → { skill_name: pending_level } (เฉพาะที่มีคำขอเลื่อนขั้นค้างอนุมัติ) */
+export function pendingMapOf(rows) {
+  const m = {};
+  for (const r of rows || []) if (r.pending_level != null) m[r.skill_name] = Number(r.pending_level);
+  return m;
+}
+
 /**
  * @param {Array<{skill_name, min_score}>} reqs  ทักษะที่จุดงานต้องการ
  * @param {Object} skillMap  { skill_name: score }
- * @returns null (จุดไม่ได้ตั้ง) | { score, passed, total, details: [{ skill_name, required, actual, assessed, pass }] }
+ * @param {Object} [pendingMap] { skill_name: pending_level } — ได้ขั้นแล้วแต่รอหัวหน้าอนุมัติ
+ *   ⇒ details[].pending = ขั้นที่รอ · `waitApproval` = ไม่ผ่านตอนนี้ แต่จะผ่านทันทีเมื่ออนุมัติ
+ *   🔴 ยังนับว่า "ไม่ผ่าน" (คะแนนจริงยังไม่ถึง) — แค่ติดธงให้จอแยกว่าค้างที่คนอนุมัติ ไม่ใช่ฝีมือ
+ * @returns null (จุดไม่ได้ตั้ง) | { score, passed, total, details: [{ skill_name, required, actual, assessed, pass, pending, waitApproval }] }
  */
-export function skillFit(reqs, skillMap) {
+export function skillFit(reqs, skillMap, pendingMap = null) {
   const list = (reqs || []).filter(r => r && r.skill_name);
   if (!list.length) return null;
   const details = list.map(r => {
     const required = Number(r.min_score) || 0;
     const assessed = skillMap != null && Object.prototype.hasOwnProperty.call(skillMap, r.skill_name);
     const actual = Number(skillMap?.[r.skill_name] ?? 0) || 0;
-    return { skill_name: r.skill_name, required, actual, assessed, pass: actual >= required };
+    const pending = pendingMap?.[r.skill_name] ?? null;
+    const pass = actual >= required;
+    return { skill_name: r.skill_name, required, actual, assessed, pass, pending, waitApproval: !pass && pending != null && pending >= required };
   });
   const passed = details.filter(d => d.pass).length;
   return { score: Math.round((passed / details.length) * 100), passed, total: details.length, details };

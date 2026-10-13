@@ -48,7 +48,7 @@ const PAGE_GROUPS = [
     group: 'จอแสดงผล',
     pages: [
       { key: 'page:/dashboard',   label: 'ไทม์ไลน์ผลิตทุกไลน์ (TV)' },
-      { key: 'page:/tv',          label: 'จอเฝ้าระวังแขวนห้อง (ช่าง/ผลิต/สโตร์)' },
+      { key: 'page:/tv',          label: 'Andon Board (จอแขวน)' },
       { key: 'page:/line-oee',    label: 'OEE รายไลน์ (จอหน้าไลน์)' },
       { key: 'page:/obeya',       label: 'บอร์ด KPI ส่วนงาน (OBEYA)' },
     ],

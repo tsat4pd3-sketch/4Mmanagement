@@ -23,7 +23,7 @@ import { stdCapacityOf } from './stdManpower.js';
 import { getLineFamily } from './lineHierarchy.js';
 import { orgNodeCompare, naturalCompare } from './listOrder.js';
 import { wavg, wLoad, wRun } from './oee.js';
-import { skillFit, skillMapOf } from './skillFit.js';
+import { skillFit, skillMapOf, pendingMapOf } from './skillFit.js';
 
 /** แถว (row) ของผังที่คนแต่ละตำแหน่งไปอยู่ */
 export const ROW = Object.freeze({
@@ -708,8 +708,9 @@ export function compareOeeByStaffing(days) {
      คนลา/ขาด/ยังไม่เช็คชื่อ = ไม่ได้ยืนอยู่ ⇒ ไม่นับ (ไม่ใช่ความเสี่ยงฝีมือ)
    - 🔴 จุดที่ยังไม่ตั้งทักษะที่ต้องการ = นับแยก `noReqPeople` ห้ามนับว่า "ผ่าน"
    - `temp` (ย้ายมาวันนี้) ติดธงไว้ — คนย้ายมาชั่วคราวคือกลุ่มเสี่ยงที่หัวหน้าต้องเห็นก่อน
-   คืน { gaps: [{ emp, station, shift, temp, fit, missing:[details ที่ไม่ผ่าน] }] (เรียงคะแนนต่ำก่อน),
-         checked, ok, noReqPeople, noReqStations }  */
+   คืน { gaps: [{ emp, station, shift, temp, fit, missing:[details ที่ไม่ผ่าน], onlyApproval }] (เรียงคะแนนต่ำก่อน),
+         checked, ok, noReqPeople, noReqStations, onlyApproval }
+   ⏳ `onlyApproval` = ทุกข้อที่ขาด ได้ขั้นแล้วแต่ค้างรอหัวหน้าอนุมัติ (pending_level ≥ เกณฑ์) — ค้างที่คน ไม่ใช่ฝีมือ  */
 export function stationSkillGaps(placed, { skillsByEmp = {}, reqsByStation = {} } = {}) {
   const gaps = [];
   let checked = 0, ok = 0, noReqPeople = 0, noReqStations = 0;
@@ -718,12 +719,16 @@ export function stationSkillGaps(placed, { skillsByEmp = {}, reqsByStation = {} 
     const standing = (x.people || []).filter(p => p.attend === 'present' && !p.away);
     if (!reqs.length) { noReqStations += 1; noReqPeople += standing.length; continue; }
     for (const p of standing) {
-      const fit = skillFit(reqs, skillMapOf(skillsByEmp[p.emp.id]));
+      const rows = skillsByEmp[p.emp.id];
+      const fit = skillFit(reqs, skillMapOf(rows), pendingMapOf(rows));
       checked += 1;
       if (fit.score >= 100) { ok += 1; continue; }
-      gaps.push({ emp: p.emp, station: x.station, shift: p.shift, temp: !!p.temp, fit, missing: fit.details.filter(d => !d.pass) });
+      const missing = fit.details.filter(d => !d.pass);
+      // ⏳ ทุกข้อที่ขาด "ได้ขั้นแล้ว รอแค่หัวหน้าอนุมัติ" = ค้างที่คนอนุมัติ ไม่ใช่ฝีมือ
+      gaps.push({ emp: p.emp, station: x.station, shift: p.shift, temp: !!p.temp, fit, missing,
+        onlyApproval: missing.length > 0 && missing.every(d => d.waitApproval) });
     }
   }
   gaps.sort((a, b) => a.fit.score - b.fit.score || (b.temp - a.temp) || naturalCompare(a.emp.name || '', b.emp.name || ''));
-  return { gaps, checked, ok, noReqPeople, noReqStations };
+  return { gaps, checked, ok, noReqPeople, noReqStations, onlyApproval: gaps.filter(g => g.onlyApproval).length };
 }

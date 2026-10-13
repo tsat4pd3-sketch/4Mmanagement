@@ -298,6 +298,17 @@ mtn-daily-summary · daily-4m-summary · qa-fme-scan) ซึ่ง **ไม่�
     - **เปิดค้าง (ไม่ปิดรายการ)** → `downtime-open-scan` (DR pg_cron ทุก 5 นาที) แจ้ง `downtime_open_15min` เมื่อ `started_at` เกิน `dt_alert_config.open_alert_min` นาที (config ได้จากหน้า `/notification-config`, default 15) แล้ว stamp `open_alerted_at` กันซ้ำ → เตือน**เสียงหน้า Production** (Dashboard/Management)
     - **ปุ่ม "📞 เรียกช่าง" ในแถว Downtime (DailyReport)** → `downtime_call_mtn` แจ้งทันที (set `call_mtn=true, call_mtn_at, call_mtn_by`) → เตือน**เสียงหน้า Maintenance** (MtnMachineLayout)
     - **เสียงบนเว็บ:** `src/components/DowntimeSiren.jsx` (mode `call_mtn` / `open_15min`) — Web Audio วนจนกด "รับทราบ" (set `call_mtn_ack_at` / `open_ack_at`) · scope เสียงแยกหน้าตามคำสั่ง user (เรียกช่างดังหน้า MTN, เปิดค้างดังหน้า Production)
+> ### 🔕 ลดกระดิ่งที่ edge ยิง (2026-10-13 · user "ลดจำนวนแจ้งเตือนที่ edge ยิงออกด้วย" · send-notification **v48**)
+> - **`insertNotifications(…, eventKey)` ต้องส่ง event_key เสมอเมื่อรู้** — เดิม "🚨 เครื่องยังหยุด เกิน N นาที" ~835 ใบ/7 วัน
+>   event_key ว่างทุกใบ (ชื่อเรื่องมีเลขนาทีต่างกันทุกใบ `fn_notification_fill_link` เดาไม่ออก) ⇒ ตัวยุบกระดิ่ง/ตั้งค่าใน
+>   `/notification-config` มองไม่เห็นเรื่องนี้ · `notifyInApp()` ก็ส่ง `event` ตรงแล้ว (ไม่พึ่งเดาจากชื่อเรื่อง)
+> - **`downtime_open_15min` ไม่ยิงซ้ำให้คนที่ยังมีกระดิ่งของ downtime ใบเดียวกันค้างไม่ได้อ่าน** (`withoutUnreadFor()`) —
+>   🔴 **ห้ามใช้กับ `downtime_call_mtn`** (เรียกช่างครั้งแรก ทุกใบต้องดัง) · อ่านไม่สำเร็จ = ไม่กรอง (ส่งเกินดีกว่าเงียบ)
+>   · ผู้รับพื้นฐาน (`mtn` ทั้งหมด + หัวหน้าไลน์) **ยังอยู่ครบ** — ลดที่ "ซ้ำ" ไม่ใช่ลดที่ "ใครได้"
+> - ยุบเพิ่มที่ชั้น DB (`20261013_notif_rollup_more_main.sql`): `defect_recorded`/`ojt_training`/`quality_bin_added` 180 น. ·
+>   `downtime_open_15min` 60 น. · `pm_plan_reminder`/`mtn_pickup_pending`/`mtn_accept_pending`/`mtn_qa_pending` 720 น.
+>   · ประเมินจาก 7 วันจริง: 2,495 → ~1,750 ใบ (−30%) ในกลุ่มนี้ (ojt 216→36 · defect 645→402 · pm_plan 192→96)
+
 > ### 🔴🔴 กฎเหล็ก — "หยุดเกินเกณฑ์" ตัดสินจาก **เวลาที่ผ่านไปจริง** ห้ามใช้ธง `open_alerted_at` (2026-08-26 · user ทัก "alarm เสียงก็ไม่มี")
 > **`open_alerted_at` = ตัวกันแจ้ง Telegram ซ้ำ ไม่ใช่สถานะ alarm** — edge `downtime-open-scan` stamp ให้ **ก็ต่อเมื่อ POST หา `send-notification` สำเร็จ** (`if (res && res.ok)`)
 > ⇒ Telegram ล่ม / ปิด rule / ไม่มีห้อง = **ธงไม่ถูกตั้งตลอดกาล** → ไซเรนบนจอ (`.not('open_alerted_at','is',null)`) **ไม่เคยดังเลย** และจอห้องช่างอ่านเครื่องที่หยุดมา **3 ชม. 14 น. ว่า "⏱️ เพิ่งหยุด"** (เคสจริง Assy LWR 26/08)
