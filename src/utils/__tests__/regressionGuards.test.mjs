@@ -3939,3 +3939,20 @@ test('🛡️ print-photos-need-wait — ใบพิมพ์ที่แนบ
     + '            (ของกลางอยู่ที่ src/lib/photoAppendix.js — รูปพัง/ช้าเกิน 8 วิ จะติดป้าย\n'
     + '             "โหลดรูปไม่สำเร็จ" บนกระดาษแล้วพิมพ์ต่อ ไม่ค้างรอไม่จบ)\n');
 });
+
+/* ── 🔁 ตัวยุบคำขอ GET ที่ซ้อนเวลากัน ต้องผูกกับ client ทั้งสองฝั่ง (13/10 · งานลด egress) ──
+   วัดจริง 13/10: คำขอ GET ที่เหมือนกันเป๊ะบนตารางหลักซ้ำกัน **median 3–77 ms**
+   = หลายแผงบนหน้าเดียวกันต่างคนต่างยิงคิวรีชุดเดียวกันในเรนเดอร์รอบเดียว (ไม่ใช่ poll/realtime)
+   `makeDedupeFetch` แก้ทั้งระบบที่จุดเดียว — **แต่ได้ผลก็ต่อเมื่อถูกส่งเข้า createClient จริง**
+   ถอดออก/ลืมฝั่งใดฝั่งหนึ่ง = กลับไปจ่าย 2-3 เท่าทันทีโดยไม่มีอะไรพัง = ไม่มีใครรู้ตัว         */
+test('🛡️ supabase-dedupe-fetch — ทั้ง supabase และ supabaseDR ต้องส่ง dedupeFetch เข้า createClient', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/supabaseClient.js'), 'utf8'));
+  const calls = [...code.matchAll(/createClient\([^)]*\)/g)].map(m => m[0]);
+  assert.equal(calls.length, 2, `ควรมี createClient 2 ตัว (Main + DR) พบ ${calls.length}`);
+  calls.forEach((c) => {
+    assert.match(c, /global:\s*\{\s*fetch:\s*dedupeFetch\s*\}/,
+      '\n\n❌ createClient ตัวนี้ไม่ได้ส่ง dedupeFetch:\n   ' + c + '\n'
+      + '   ผล: คำขอ GET ที่ซ้อนเวลากันกลับมายิงซ้ำทุกตัว (วัดได้ 70% ของคำขอทั้งหมด)\n'
+      + '   แก้: createClient(url, key, { global: { fetch: dedupeFetch } })\n');
+  });
+});
