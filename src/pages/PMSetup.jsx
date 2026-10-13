@@ -1541,7 +1541,8 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
                      โหมด "ใช้ทั้งรูป" ย่อด้วย cap = max(outputSize, outputSize/aspect)
                      ถ้าพลิก aspect เฉยๆ cap จะตกจาก 1200 เหลือ 900 = รูปเก่าคมกว่ารูปใหม่ */
                   file={cropQueue[0]} aspect={4 / 3} outputSize={1200} quality={0.82}
-                  allowFull fullLabel="ใช้ทั้งรูป (ไม่ครอบ) — สำหรับรูปภาพรวมเครื่อง"
+                  /* ไม่ใส่ fullDefault — จอนี้ส่วนใหญ่ครอบเฉพาะจุดตรวจ พฤติกรรมเดิมคือเริ่มที่โหมดครอบ */
+                  allowFull fullHint="เก็บทั้งภาพไว้ — สำหรับรูปภาพรวมเครื่องที่จุดตรวจกระจายทั้งภาพ"
                   title={`จัดกรอบรูป${cropQueue.length > 1 ? ` (เหลืออีก ${cropQueue.length - 1} รูป)` : ''}`}
                   onCancel={() => setCropQueue(q => q.slice(1))}
                   onConfirm={pushFrame} />
