@@ -171,7 +171,7 @@ export default function TvBoard({ onOpenMenu = null }) {
           → ตัวเลือกทั้งหมดพับหลังปุ่ม ⚙️ · เปิดมาเจอเนื้อหาเลย */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <span style={{ fontSize: 16, fontWeight: 900, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
-          {cur.icon} จอ TV · {cur.label}
+          {cur.icon} Andon Board · {cur.label}
         </span>
         <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
           {cur.sub} · วันงาน {workDate}
