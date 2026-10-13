@@ -4025,3 +4025,23 @@ test('🛡️ supabase-dedupe-fetch — ทั้ง supabase และ supabase
       + '   แก้: createClient(url, key, { global: { fetch: dedupeFetch } })\n');
   });
 });
+
+/* ── 🧪 งานชุบภายนอก — ทุกการเขียนผ่าน RPC `plating_*` เท่านั้น (13/10 · คำสั่ง user) ──
+   ส่ง/รับ/ตัดยอด/ส่งเข้า W/H เขียน 2-3 ตารางพร้อมกัน (ใบ + ประวัติ + ledger ทั้งต้นทางและปลายทาง)
+   เขียนแยกจาก client = ล้มครึ่งทาง ⇒ ของหายจากคลังแต่ไม่ไปค้างร้าน (หรือรับคืนแล้วยอดค้างไม่ลด)
+   และชื่อที่เก็บเสมือนของร้านใน ledger ต้องตรงกันทั้ง JS และ SQL ไม่งั้นยอดค้างร้านแยก 2 ถัง */
+test('🛡️ plating-writes-via-rpc — ห้ามเขียน plating_orders/plating_moves ตรงจากจอ · ชื่อคลังร้านตรงกับ RPC', () => {
+  const bad = [];
+  for (const f of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const rel = relative(ROOT, f);
+    if (rel.includes('__tests__')) continue;
+    const code = stripComments(readFileSync(f, 'utf8'));
+    if (/from\(\s*['"]plating_(orders|moves)['"]\s*\)\s*\.\s*(insert|update|upsert|delete)\b/.test(code)) bad.push(rel);
+  }
+  assert.deepEqual(bad, [], '\n\n❌ เขียนตารางงานชุบตรงจากจอ — ใช้ supabaseDR.rpc(\'plating_*\') แทน:\n' + bad.map(b => '   • ' + b).join('\n'));
+  const js = readFileSync(join(ROOT, 'src/utils/plating.js'), 'utf8');
+  const sql = readFileSync(join(ROOT, 'supabase/migrations/20261013_plating_loop_dr.sql'), 'utf8');
+  const pre = (js.match(/VENDOR_LOC_PREFIX\s*=\s*'([^']+)'/) || [])[1];
+  assert.ok(pre, 'หา VENDOR_LOC_PREFIX ใน utils/plating.js ไม่เจอ');
+  assert.ok(sql.includes(`'${pre}' || btrim(p_vendor)`), `ชื่อคลังร้านใน RPC plating_send ต้องเป็น '${pre}' || vendor ให้ตรงกับ JS`);
+});
