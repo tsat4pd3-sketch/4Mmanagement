@@ -1,4 +1,8 @@
 import { supabaseDR } from '../supabaseClient'
+import { invalidateTable } from '../utils/masterInvalidate'
+
+/* 🔑 ทะเบียน `checklists` เข้า cache แล้ว (13/10 · คีย์ 'checklists:mtn' — บอร์ด AM รายวัน)
+   ⇒ ทุกทางที่เขียนตารางนี้ต้องล้าง cache หลังสำเร็จ ไม่งั้นจอ AM เห็นของเก่าได้ถึง 4 ชม. */
 
 // One physical jig/machine/die (`jigs` row, shared with the real `machines`
 // master via machine_id) has a separate checklist per department, so the same
@@ -45,12 +49,14 @@ export async function getOrCreateChecklist(equipmentId, module, department, user
     .select('id, frequency')
     .single()
   if (insertErr) throw insertErr
+  invalidateTable('checklists')
   return created
 }
 
 export async function setChecklistFrequency(checklistId, frequency) {
   const { error } = await supabaseDR.from('checklists').update({ frequency }).eq('id', checklistId)
   if (error) throw error
+  invalidateTable('checklists')
 }
 
 // สรุปว่าเครื่องนี้มีรายการตรวจของแผนกไหนบ้าง (กี่จุดตรวจ / เคยตรวจกี่ครั้ง)
@@ -118,6 +124,7 @@ export async function moveChecklistDept(checklistId, toDepartment, { replace = f
   }
   const { error } = await supabaseDR.from('checklists').update({ department: toDepartment }).eq('id', checklistId)
   if (error) throw error
+  invalidateTable('checklists')
   return { moved: true }
 }
 

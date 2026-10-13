@@ -226,3 +226,13 @@ test('rackOrderSyncPlan — ยอดบนบอร์ด → ใบรอส�
   assert.deepEqual(rackPlan({ qty: 300, covered: 100, pending: [] }), { insertQty: 200, deleteIds: [] });
   assert.deepEqual(rackPlan({ qty: null, covered: 0, pending: [{ id: 'a', qty: 210 }] }), { deleteIds: ['a'] }, 'ล้างช่อง = ลบใบรอส่งของบอร์ด');
 });
+
+import { rebucketToWeeks } from '../monitorSystem.js';
+test('rebucketToWeeks — รวมยอดรายวันเข้าคอลัมน์สัปดาห์ · นอกช่วงทิ้ง', () => {
+  const idx = new Map([['A|2026-10-05', 100], ['A|2026-10-11', 50], ['A|2026-10-12', 7], ['A|2026-09-01', 999]]);
+  const periods = [{ key: '2026-10-05', date: '2026-10-05' }, { key: '2026-10-12', date: '2026-10-12' }];
+  const m = rebucketToWeeks(idx, periods);
+  assert.equal(m.get('A|2026-10-05'), 150);
+  assert.equal(m.get('A|2026-10-12'), 7);
+  assert.equal(m.size, 2);
+});
