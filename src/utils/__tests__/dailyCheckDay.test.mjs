@@ -7,7 +7,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  CHECK_DAY, checkDayState, summarizeCheckDays, checkDaysNote, runKey, ranOn,
+  CHECK_DAY, CHECK_DAY_META, CHECK_DAY_LEGEND, checkDayState, summarizeCheckDays, checkDaysNote, runKey, ranOn,
 } from '../dailyCheckDay.js';
 
 test('มีผลตรวจ = ตรวจแล้ว เสมอ — ชนะทุกเงื่อนไข (ตรวจในวันไม่ผลิต/วันหยุดก็ยังนับ)', () => {
@@ -74,4 +74,40 @@ test('ranOn: ยังไม่โหลด / โหลดไม่สำเร�
 test('runKey: ถามระดับวัน กับ ระดับวัน+กะ ต้องเป็นคนละคีย์', () => {
   assert.notEqual(runKey('2026-10-13'), runKey('2026-10-13', 'day'));
   assert.equal(runKey('2026-10-13', null), '2026-10-13');
+});
+
+/* ── สัญลักษณ์ห้ามชน "คำตอบของการตรวจ" (คำสั่ง user 13/10) ────────────────────────────────
+   ใบ LPA ตอบด้วย Y / N / T / N/A ซึ่งทุกตัวแปลว่า "ไปตรวจแล้ว เจอผลอย่างนี้"
+   ⇒ สถานะวันยืมตัวอักษรพวกนั้น (หรือ ✗ / – ที่ตาอ่านเป็น N / N/A) = คนอ่านนึกว่าตรวจแล้วเจอผิดปกติ */
+const ANSWER_TOKENS = ['Y', 'N', 'T', 'NA', 'N/A', '✓', '✗', '×', 'x', 'X', '–', '—', '-'];
+
+test('CHECK_DAY_META: ทุกสถานะมี meta ครบ และ mark ไม่ยืมตัวอักษรของคำตอบ', () => {
+  for (const key of Object.values(CHECK_DAY)) {
+    const m = CHECK_DAY_META[key];
+    assert.ok(m, `ไม่มี meta ของ ${key}`);
+    assert.equal(typeof m.label, 'string');
+    assert.ok(m.label.length > 0, `${key} ต้องมี label ให้ tooltip/legend`);
+    assert.ok('tint' in m, `${key} ต้องประกาศ tint (null ก็ได้) — จอใช้ทาทั้งคอลัมน์`);
+    assert.ok(!ANSWER_TOKENS.includes(m.mark), `mark ของ ${key} = "${m.mark}" ชนพจนานุกรมคำตอบ`);
+  }
+});
+
+test('CHECK_DAY_META: 3 สถานะที่ต้องสะดุดตา ต้องมีทั้ง mark และ tint', () => {
+  for (const key of [CHECK_DAY.missed, CHECK_DAY.no_run, CHECK_DAY.unknown]) {
+    assert.ok(CHECK_DAY_META[key].mark, `${key} ต้องมี mark (ปล่อยว่าง = ปนกับ "ตรวจแล้ว")`);
+    assert.ok(CHECK_DAY_META[key].tint, `${key} ต้องมี tint เพื่อทาทั้งคอลัมน์`);
+  }
+  assert.equal(CHECK_DAY_META[CHECK_DAY.no_run].mark, 'NP', 'Non-Production = NP (คำสั่ง user)');
+});
+
+test('CHECK_DAY_META: สถานะที่ "ไม่ต้องตรวจอยู่แล้ว" ห้ามทาสีให้ดูเหมือนมีปัญหา', () => {
+  for (const key of [CHECK_DAY.done, CHECK_DAY.off, CHECK_DAY.future, CHECK_DAY.not_planned]) {
+    assert.equal(CHECK_DAY_META[key].tint, null, `${key} ห้ามมี tint`);
+  }
+});
+
+test('CHECK_DAY_LEGEND: ต้องครอบคลุมทุกสถานะที่เขียน mark ลงจอ', () => {
+  const marked = Object.values(CHECK_DAY).filter(k => CHECK_DAY_META[k].mark);
+  for (const k of marked) assert.ok(CHECK_DAY_LEGEND.includes(k), `legend ขาด ${k} — คนอ่านต้องเดาเอง`);
+  assert.equal(CHECK_DAY_LEGEND.length, marked.length, 'legend มีตัวที่ไม่ได้วาด mark');
 });
