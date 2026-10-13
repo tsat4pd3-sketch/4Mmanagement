@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { toast } from './Toast';
 import { isHeicFile, toDecodableImage } from '../utils/heicToJpeg';
 import { looksLikeImage, isGifFile, extOf, GIF_MAX_BYTES } from '../utils/imageFileKind';
+import Segmented from './Segmented';
 
 /* ─── ImageCropModal ───────────────────────────────────────────────────────
    Crop/reposition + zoom รูปก่อนอัปโหลด ให้เห็นกรอบจริงที่จะถูกใช้แสดงผล
@@ -29,7 +30,11 @@ export default function ImageCropModal({
   //   ใช้กับรูปที่ครอบแล้วเสียข้อมูล เช่นรูปภาพรวมเครื่องจักรที่มีจุดตรวจกระจายทั้งภาพ
   //   (feedback หน้างาน 2026-08-21: "ปรับตำแหน่งที่จะโดน crop ให้เห็นจุดสำคัญครบไม่ได้")
   //   ปิดเป็นค่าเริ่มต้น → จุดที่เรียกอยู่เดิม (รูปพนักงาน/โปรไฟล์) ไม่เปลี่ยนพฤติกรรม
-  allowFull = false, fullLabel = 'ใช้ทั้งรูป (ไม่ครอบ)',
+  //   · `fullHint` = คำอธิบายใต้กรอบตอนอยู่โหมด "ใช้ทั้งรูป" (ป้ายบนปุ่มตรึงสั้นไว้ ห้ามยัดประโยคยาว)
+  //   🔴 `fullDefault` = เริ่มที่โหมด "ใช้ทั้งรูป" — เปิดเฉพาะจุดที่ "ครอบแล้วเสียของ" (รูปหลักฐานของเสีย)
+  //      เหตุผล: ค่าเริ่มต้นคือสิ่งที่คนรีบๆ จะได้จริง · ไม่เปิด = ยังเริ่มที่โหมดครอบเหมือนเดิม
+  //      ⚠️ AND กับ allowFull เสมอ — ถ้าไม่เปิด allowFull แล้วเริ่มที่โหมดเต็ม ผู้ใช้จะสลับกลับไม่ได้ (ไม่มีปุ่ม)
+  allowFull = false, fullHint = '', fullDefault = false,
   // 🚫 allowGif = false → ไม่รับ GIF ที่จุดนี้ (รูปพนักงาน: operator / Register · 2026-09-11)
   //   เหตุผล: GIF บีบไม่ได้ (ส่งต้นฉบับทั้งไฟล์) เฉลี่ย 4.3 MB/รูป = ใหญ่กว่ารูปนิ่งที่บีบแล้ว 60 เท่า
   //   เคยทำ egress ทะลุโควต้าจน Supabase ล็อกบริการทั้ง organization (ทั้งโรงงาน login ไม่ได้)
@@ -45,7 +50,7 @@ export default function ImageCropModal({
   webp = false,
   onCancel, onConfirm,
 }) {
-  const [useFull, setUseFull] = useState(false);
+  const [useFull, setUseFull] = useState(allowFull && fullDefault);
   // srcFile = ไฟล์ที่ใช้จริงในโมดัล — HEIC จากกล้องมือถือถูกแปลงเป็น JPEG แล้ว (ไฟล์อื่น = ตัวเดิม)
   // ⚠️ ทุกจุดที่เคยอ้าง `file` ข้างใน (ชนิด/ชื่อ/ตัวส่งออก) ต้องอ้าง srcFile แทน ไม่งั้นได้ไฟล์ที่อ่านไม่ออก
   const [srcFile, setSrcFile] = useState(null);
@@ -246,24 +251,34 @@ export default function ImageCropModal({
               }} />
           )}
         </div>
+        {/* 🔘 โหมดรูป — ปุ่มเลือก 2 ทาง แทนช่องติ๊กเดิม (2026-10-13 · คำสั่ง user)
+            เดิม checkbox ที่ "ไม่ติ๊ก = ครอบ" ⇒ คนหน้างานรีบกด "✓ ใช้รูปนี้" ได้รูปที่ถูกตัดขอบ
+            โดยไม่รู้ตัว · รูปหลักฐานของเสียที่ตำหนิหลุดกรอบ = ใช้เป็นหลักฐานไม่ได้ และกู้คืนไม่ได้
+            ⚠️ ใช้ <Segmented size="sm"> ของกลาง (UI-STANDARD §3 · สูง 28px = เท่าแถวติ๊กเดิม)
+               **ห้ามวาดปุ่มการ์ดใหญ่เอง** — คำสั่ง user 13/10: "เปลืองเนื้อที่หน้าจอโทรศัพท์"
+            ⚠️ วางไว้ "ก่อน" แถบซูม — สลับโหมดแล้วแถบซูมโผล่/หาย ปุ่มที่เพิ่งกดต้องไม่ขยับหนี */}
+        {allowFull && !isGif && (
+          <div style={{ marginTop: 12 }}>
+            <Segmented size="sm" label="โหมดรูป" value={useFull ? 'full' : 'crop'}
+              onChange={v => setUseFull(v === 'full')}
+              options={[
+                { value: 'full', label: '🖼️ ใช้ทั้งรูป' },
+                { value: 'crop', label: '🔍 ครอบ/ซูม' },
+              ]} />
+          </div>
+        )}
         {!useFull && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 }}>
             <span style={{ fontSize: 13 }}>🔍</span>
             <input type="range" min={minScale * 0.4} max={minScale * 4} step={0.01} value={scale}
               onChange={e => onScaleChange(Number(e.target.value))} style={{ flex: 1 }} />
           </div>
         )}
-        {allowFull && !isGif && (
-          <label style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 12, fontSize: 12.5, color: 'var(--text)', cursor: 'pointer' }}>
-            <input type="checkbox" checked={useFull} onChange={e => setUseFull(e.target.checked)} style={{ width: 'auto', margin: 0 }} />
-            🖼️ {fullLabel}
-          </label>
-        )}
         <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', marginTop: 6 }}>
           {isGif
             ? '🎞️ รูปขยับ (GIF) จะถูกใช้ทั้งภาพเพื่อคงการเคลื่อนไหว — การ crop/ซูมในกรอบนี้ไม่มีผลกับไฟล์จริง'
             : useFull
-              ? 'เก็บทั้งภาพไว้ ไม่ตัดอะไรทิ้ง — เหมาะกับรูปภาพรวมที่มีจุดตรวจกระจายทั้งภาพ'
+              ? (fullHint || 'เก็บทั้งภาพไว้ ไม่ตัดอะไรทิ้ง')
               : 'ลากรูปเพื่อขยับตำแหน่ง • เลื่อนแถบเพื่อซูม — กรอบนี้คือพื้นที่จริงที่จะแสดงผล'}
         </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>

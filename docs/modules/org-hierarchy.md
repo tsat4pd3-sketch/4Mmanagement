@@ -75,10 +75,10 @@
 > - **ยังไม่ทำ (ชั้น 3):** เพิ่ม 7 แผนกย่อยใต้ `Planning&Store` + ติดป้ายฝั่ง แล้วแยก scope/สิทธิ์จริง
 >   ตอนนี้ทุกคนยังเห็นทุกหน้าเหมือนเดิม — การแยกที่ทำแล้วเป็นชั้น **เมนู + เนื้อในหน้า** เท่านั้น
 > ### ⚠️ กฎเหล็ก — "ฝ่าย (Division)" เป็น **ป้ายที่ node** ไม่ใช่ชั้นใน tree (2026-08-18 · ย้ำอีกครั้ง 2026-08-19)
-> ระบบมีกลไกฝ่ายอยู่แล้ว: ตาราง **`org_divisions`** (production/maintenance/quality/logistic/office)
+> ระบบมีกลไกฝ่ายอยู่แล้ว: ตาราง **`org_divisions`** (production/maintenance/**engineering** (13/10)/quality/logistic/office)
 > + คอลัมน์ **`org_nodes.division`** ติดป้ายที่ node ระดับบนสุด แล้ว**ลูกตกทอดขึ้นไปหา** (`divisionOfNode`)
 > — หลักเดียวกับ `cost_center`/`head_name` ที่ไลน์ลูกตกทอดจากไลน์แม่
-> - ติดป้ายแล้ว: PD1–PD4→production · Planning&Store→logistic · MTN/JIG MTN/DIE MTN→maintenance · QA→quality
+> - ติดป้ายแล้ว: PD1–PD4→production · Planning&Store→logistic · MTN/JIG MTN/DIE MTN→maintenance · QA→quality · **PE→engineering** (13/10)
 > - ตั้งค่าที่ `/org-setup` (dropdown ฝ่ายในโมดัลแก้ไข section/department) · อ่านผ่าน **`src/utils/orgDivisions.js`**
 >   (`loadDivisions`/`divisionsSync`/`divisionMeta`/`divisionLabel`/`divisionOfNode`/`divisionOfEmployee`)
 > - **🔴 ห้ามเพิ่ม `kind='division'` เป็น node ชั้นใหม่ใน `org_nodes`** — จะพัง cascade section→department ทุกหน้า
@@ -752,7 +752,7 @@
 | `office` ฝ่ายสำนักงาน | 🟡 น่าจะ = Steel Auto Office Plant 4 หรือ สนับสนุนกลาง |
 | `quality` **ฝ่ายคุณภาพ** | 🔴 **ไม่มีฝ่ายนี้** — QA เป็น *ส่วน* ใต้ฝ่าย Engineering |
 | `maintenance` **ฝ่ายช่าง** | 🔴 **ไม่มีฝ่ายนี้** — Maintenance / Tooling MTN เป็น *ส่วน* |
-| *(ไม่มี)* | 🔴 ขาด **ฝ่าย Engineering** |
+| `engineering` ฝ่ายวิศวกรรม | ✅ **เพิ่มแล้ว 13/10** (ORG-016 · ติดป้ายที่ส่วน PE) — QA ยังอยู่ `quality` รอ user เคาะว่าจะย้ายมาใต้ Engineering ตามผังไหม |
 
 #### เทียบ PD1-PD4 กับส่วนจริง — **แก้ตรงกันครบแล้ว 24/09**
 
@@ -810,8 +810,9 @@
 
 **seed จากผัง 4 แถว** (เฉพาะที่ cost center ตรงเป๊ะ + ชื่อคนตรง):
 ศักดา→PD1 (acting) · ศิริพร→PD2 (acting) · ดุลยทรรศน์→PD3, PD4 (head)
-ส่วนที่เหลือในผัง (Process Engineering · W/H&DEL · QSM · CIC · จัดซื้อ · HRM · บัญชี · Tooling MTN)
-**ยังไม่มีโหนดในระบบ** จึง seed ไม่ได้ — เพิ่มเองจากแผง 👔 ใน `/org-setup`
+ส่วนที่เหลือในผัง (W/H&DEL · QSM · CIC · จัดซื้อ · HRM · บัญชี · Tooling MTN)
+**ยังไม่มีโหนดในระบบ** จึง seed ไม่ได้ — เพิ่มเองจากแผง 👔 ใน `/org-setup` ·
+**Process Engineering มีโหนดแล้ว 13/10 (§10) แต่หัวหน้า 3 ท่านยังไม่มีบัญชี ⇒ ยัง seed `org_assignments` ไม่ได้**
 
 > ### ⚖️ ทำไมการ "เพิ่มขอบเขต" ตรงนี้ไม่ขัดกฎ role-centric
 > กฎใน `docs/ACCESS-CONTROL-STANDARDS.md` §2 ห้าม **อนุมานสิทธิ์กว้างจากการเว้นว่าง** (fail-open)
@@ -822,6 +823,55 @@
 
 **🔴 ยังไม่ต่อเข้าตัวคำนวณขอบเขตจริง** — เก็บ/แสดง/เตือนเท่านั้น
 ต่อสายพร้อม `scope_depth` ครั้งเดียว (`docs/ORG-AXES-DECISION.md` §7.6)
+
+---
+
+### 10. 🧪 ส่วน Process Engineering — ถอดจาก ORG-016_TSAT4_PE_Process_Rev.05 (Effective 6 Oct 2026 · เพิ่มเข้าระบบ 13/10)
+
+user ส่งผังทางการของส่วน PE มา (FM-HRM-1-001(03) · TSAT Branch 1) · migration `20261013_pe_process_engineering_org_main.sql` (**apply แล้ว 13/10**)
+
+**โครงในผัง → ที่ระบบเก็บ**
+
+| ชั้นในผัง | Cost | หัวหน้าตามผัง | ในระบบ |
+|---|---|---|---|
+| ฝ่าย Engineering | 2140340000 | ชัยยุทธ พรหมภา · ผจก.ทั่วไป (G2) | ป้าย `org_divisions.engineering` "ฝ่ายวิศวกรรม" ⚙️ (**ไม่ใช่โหนด** ตามกฎฝ่าย) |
+| ส่วน Process Engineering | 2140446000 | เพ็ญศิริ วงศ์ภักดี · **รก.**ผจก. (S1)`*` | section `PE` "Process Engineering" · indirect · division=engineering |
+| Process Engineering | 2140446000 | ศิวาวุธ · **รก.**หัวหน้าส่วน (S2)`*` | **หน่วยเดียวกับส่วน** (cost เดียวกัน) |
+| แผนก Process Engineering | 2140446000 | สุกกิจ · **รก.**หัวหน้าแผนก (S2)`*` | **หน่วยเดียวกับส่วน** (cost เดียวกัน) |
+| Process Engineering 1 | 2140546100 | — | department `PE1` ใต้ `PE` |
+| Process Engineering 2 | 2140546200 | — | department `PE2` ใต้ `PE` |
+
+🔴 **3 กล่องที่ใช้ Cost 2140446000 ร่วมกัน = หน่วยงบประมาณเดียว** — เป็น 3 ชั้นของ "รักษาการ" (S1→S2→S2)
+ไม่ใช่ 3 หน่วยงาน · `/org-setup` ก็ไม่ให้ cost center ซ้ำระหว่างโหนดอยู่แล้ว ⇒ **ห้ามสร้างโหนด "แผนก Process Engineering"
+ซ้อนอีกชั้น** (จะชนด่าน cost ซ้ำ และทำให้ `cost_centers`/KPI การเงิน นับหน่วยเดียวเป็น 2)
+· ทะเบียน `cost_centers` เพิ่ม `2140446000 PE` · `2140546100 PE1` · `2140546200 PE2` (section = `PE`)
+
+**อัตรากำลัง 13 ตามผัง (ยังไม่ได้ลง `employees` — ดูเหตุผลข้างล่าง)** — ชื่อถอดจากสแกนความละเอียดต่ำ
+ตัวที่ติด `?` อ่านไม่ชัด **ต้องเทียบกับ HR ก่อนคีย์** (กฎ §5 "ห้ามเดา")
+
+| หน่วย | ชื่อ (ตามผัง) | ตำแหน่ง | เกรด | `positions.key` ที่ตรง |
+|---|---|---|---|---|
+| PE (ส่วน) | เพ็ญศิริ วงศ์ภักดี | รก.ผู้จัดการส่วน | S1 | `section_head` (acting) |
+| PE (ส่วน) | ศิวาวุธ เค้าสา`?` | รก.หัวหน้าส่วน | S2 | `section_head` (acting) |
+| PE (ส่วน) | สุกกิจ ประคำ`?` | รก.หัวหน้าแผนก | S2 | `dept_head` (acting) |
+| PE1 | อนุชิต อุ่นจันที | วิศวกร | S3 | `engineer` |
+| PE1 | สุธิมา อินทรัตนพล | วิศวกร | S3 | `engineer` |
+| PE1 | ศัทราวรรณ ศีตาวัตร`?` | วิศวกร | S3 | `engineer` |
+| PE1 | ภูมรินทร์ ฤดีอิน`?` | ช่างเทคนิค | T3 | `technician` |
+| PE1 | ธนภัทร นะเรืองรัมย์ | ช่างเทคนิค | T3 | `technician` |
+| PE2 | ภาณุวัฒน์ โพธิ์ศิลป์`?` | วิศวกร | S3 | `engineer` |
+| PE2 | *(ตำแหน่งว่าง 1)* | วิศวกร | S3 | — |
+| PE2 | บุญมี สิมันตะ | วิศวกร | S3 | `engineer` |
+| PE2 | ศิริวรรณ พันธุ์ไสว | พนักงาน | T1 | `officer` (เกรด T1 — ทะเบียน `officer` ระบุ S1-S3 ⇒ จอจะเตือนเกรดไม่ตรง · ไม่บล็อก) |
+| PE2 | เสาลี เจริญสุข`?` | ช่างเทคนิค | T2 | `technician` |
+| PE2 | ณัฐวุฒิ เปี่ยมดี`?` | ช่างเทคนิค | T3 | `technician` |
+
+**ทำไมยังไม่ลง `employees` / `org_assignments`:**
+- `employees.employee_id_code` = **NOT NULL UNIQUE** แต่ผังไม่มีรหัสพนักงาน ⇒ แต่งรหัสเอง = คีย์ปลอมไหลเข้าเช็คชื่อ/รายงาน
+  ⇒ รอรหัสจาก HR แล้วคีย์ที่ `/operator` (section=`PE` · department=`PE1`/`PE2` · `staff_kind='support'` · ไม่ต้องมีไลน์/ทีม)
+- `org_assignments.profile_id` ต้องเป็นบัญชีผู้ใช้ · หัวหน้า 3 ท่านยังไม่มีบัญชี (บัญชี role `engineer` ที่มีคือบัญชีกลาง
+  `processengineering`) ⇒ สร้างบัญชีก่อน แล้วค่อยผูก 👔 รักษาการที่ `/org-setup` (ใส่ `ends_on` ด้วย — ผังไม่ได้บอก)
+- QA ในผังจริงอยู่ใต้ฝ่าย Engineering เหมือน PE แต่ระบบยังติดป้าย `quality` — **ไม่ย้ายให้เองในรอบนี้** (กระทบขอบเขต KPI/scrap report ที่กรองด้วยฝ่าย)
 
 ---
 

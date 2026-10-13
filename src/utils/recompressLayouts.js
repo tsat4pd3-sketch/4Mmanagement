@@ -78,7 +78,7 @@ async function recompressOne({ storage, url, newPathOf, saveRows, oldName, minBy
     const h = await fetch(url, { method: 'HEAD', cache: 'no-store' });
     const len = Number(h.headers.get('content-length'));
     if (h.ok && Number.isFinite(len) && len > 0 && len < minBytes) {
-      return { status: 'skip', before: len, msg: 'เล็กอยู่แล้ว' };
+      return { status: 'skip', before: len, msg: 'เล็กอยู่แล้ว', mark: 'small' };
     }
   } catch { /* HEAD ไม่ผ่าน = ไม่ใช่เหตุให้ล้มงาน ไปโหลดจริงต่อ */ }
 
@@ -90,7 +90,7 @@ async function recompressOne({ storage, url, newPathOf, saveRows, oldName, minBy
   } catch (e) { return { status: 'error', msg: 'โหลดรูปไม่ได้: ' + (e?.message || e) }; }
 
   const before = blob.size;
-  if (before < minBytes) return { status: 'skip', before, msg: 'เล็กอยู่แล้ว' };
+  if (before < minBytes) return { status: 'skip', before, msg: 'เล็กอยู่แล้ว', mark: 'small' };
 
   let out;
   try { out = await compress(blob); }
@@ -98,11 +98,18 @@ async function recompressOne({ storage, url, newPathOf, saveRows, oldName, minBy
 
   const after = out.blob.size;
   // กฎข้อ 3 — ไม่เล็กลงพอ ก็อย่าไปยุ่งกับของเดิม
-  if (after > before * (1 - RECOMPRESS_MIN_GAIN)) return { status: 'skip', before, after, msg: 'บีบแล้วไม่เล็กลงพอ' };
+  if (after > before * (1 - RECOMPRESS_MIN_GAIN)) return { status: 'skip', before, after, msg: 'บีบแล้วไม่เล็กลงพอ', mark: 'no_gain' };
 
   const newPath = newPathOf(out.ext);
   const up = await storage.upload(newPath, out.blob, uploadOpts());
-  if (up.error) return { status: 'error', before, after, msg: 'อัปโหลดไม่สำเร็จ: ' + up.error.message };
+  /* 🔴 "The resource already exists" = ไฟล์ปลายทางถูกอัปสำเร็จไปแล้วรอบก่อน **แต่ DB อัปเดตไม่ผ่าน**
+     แล้วตัวเก็บกวาด (`storage.remove` + `.catch(() => {})`) ลบไม่สำเร็จแบบเงียบๆ ⇒ กลายเป็นไฟล์กำพร้า
+     เดิมนับเป็น error ⇒ **ใบนั้นพังซ้ำทุกครั้งที่กด ตลอดไป** (เห็นจริงบนจอ 13/10)
+     ของในไฟล์นั้นมาจากตัวบีบตัวเดียวกัน ต้นทางเดียวกัน ⇒ ใช้ต่อได้เลย ไปอัปเดต DB ให้ชี้มันแทน
+     🔑 **ห้ามแก้ด้วย `upsert: true`** — path ที่ทับได้ต้องเป็น `mutable` (cache 1 ชม.)
+        = ทำลายเหตุผลทั้งหมดของงานนี้ (กฎ uploadOpts ใน CLAUDE.md §Storage) */
+  const existed = /already exists/i.test(up.error?.message || '');
+  if (up.error && !existed) return { status: 'error', before, after, msg: 'อัปโหลดไม่สำเร็จ: ' + up.error.message };
 
   // กฎข้อ 1 — DB ต้องสำเร็จก่อน ถ้าพลาดให้เก็บกวาดไฟล์ใหม่ทิ้ง แล้วคงของเดิมไว้ครบ
   const saved = await saveRows(newPath);
@@ -129,6 +136,21 @@ export async function recompressLayouts({ supabase, supabaseDR, onProgress = () 
   const sum = { done: 0, skip: 0, error: 0, savedBytes: 0, remaining: 0, errors: [] };
   const jobs = [];
 
+  /* 🔴 ทะเบียน "ตรวจแล้ว ไม่ต้องบีบ" (13/10 · user: "ทำไมบีบแล้วก็ยังค้างว่ายังไม่ได้บีบอีก 495")
+     คิวนี้คัดด้วย "path ยังไม่ใช่ .webp" ⇒ ไฟล์หลุดคิวได้ทางเดียวคือถูกแปลงจริง
+     แต่ใบที่ **ตั้งใจไม่แตะ** (เล็กกว่าเกณฑ์ / บีบแล้วไม่เล็กลงพอ) ไม่มีวันเปลี่ยนสภาพ
+     ⇒ ค้างในคิวตลอดกาล + **ถูกดาวน์โหลดเต็มก้อนใหม่ทุกครั้งที่กด** เพื่อไปรู้คำตอบเดิม
+     (รูปพนักงาน 271 ใบ เฉลี่ย 66 KB ≈ 18 MB ต่อการกด 1 ครั้ง — บนหน้าที่ตั้งมาเพื่อลด egress)
+     ⇒ จำคำตัดสินไว้ที่ `image_squeeze_marks` (Main) · คีย์ = bucket + path
+     ⚠️ โหลดไม่ได้ (ตารางยังไม่ถูก apply / ไม่มีสิทธิ์) = ถือว่าไม่มีทะเบียน **ทำงานเหมือนเดิมเป๊ะ**
+        ห้ามล้มทั้งงานเพราะของที่เป็นแค่ตัวช่วย */
+  const marks = new Set();
+  try {
+    const { data: mk } = await supabase.from('image_squeeze_marks').select('bucket, path');
+    (mk || []).forEach(m => marks.add(`${m.bucket}|${m.path}`));
+  } catch { /* ไม่มีทะเบียน = คิวเท่าเดิม */ }
+  const marked = (j) => marks.has(`${j.bucket}|${j.oldName}`);
+
   /* 1) ผังไลน์ — Main · bucket employee-photos · layouts/ */
   const { data: layoutRows } = await supabase.from('line_layouts').select('line_name, image_url');
   const mainStore = supabase.storage.from('employee-photos');
@@ -138,7 +160,7 @@ export async function recompressLayouts({ supabase, supabaseDR, onProgress = () 
     if (/\.webp$/i.test(oldName)) return;                     // ทำแล้ว — ไม่ต้องนับเข้าคิว (ให้เลข "เหลือ" ตรงความจริง)
     jobs.push({
       group: 'ผังไลน์', label: `ผังไลน์ ${rows.map(r => r.line_name).join(', ')}`,
-      url, oldName, storage: mainStore,
+      url, oldName, storage: mainStore, bucket: 'employee-photos',
       newPathOf: ext => `layouts/${oldName.replace(/^layouts\//, '').replace(/\.[^.]+$/, '')}_c.${ext}`,
       saveRows: async (newPath) => {
         const { data: pub } = mainStore.getPublicUrl(newPath);
@@ -156,7 +178,7 @@ export async function recompressLayouts({ supabase, supabaseDR, onProgress = () 
     if (/\.webp$/i.test(oldName)) return;
     jobs.push({
       group: 'ผังโรงงาน', label: 'ผังโรงงาน',
-      url, oldName, storage: mainStore,
+      url, oldName, storage: mainStore, bucket: 'employee-photos',
       newPathOf: ext => `factory/${oldName.replace(/^factory\//, '').replace(/\.[^.]+$/, '')}_c.${ext}`,
       saveRows: async (newPath) => {
         const { data: pub } = mainStore.getPublicUrl(newPath);
@@ -168,11 +190,11 @@ export async function recompressLayouts({ supabase, supabaseDR, onProgress = () 
   /* 3) ผังเครื่องจักร — DR · bucket jig-images · เก็บเป็น path ไม่ใช่ URL */
   const drStore = supabaseDR.storage.from('jig-images');
   const { data: areaRows } = await supabaseDR.from('pm_facility_areas').select('id, image_path');
-  (areaRows || []).filter(a => a.image_path).forEach((a) => {
+  (areaRows || []).filter(a => a.image_path && !/\.webp$/i.test(a.image_path)).forEach((a) => {
     const { data: pub } = drStore.getPublicUrl(a.image_path);
     jobs.push({
       group: 'ผังเครื่องจักร', label: `ผังเครื่องจักรโซน ${a.id}`,
-      url: pub.publicUrl, oldName: a.image_path, storage: drStore,
+      url: pub.publicUrl, oldName: a.image_path, storage: drStore, bucket: 'jig-images',
       newPathOf: ext => `facility/${a.id}.${ext}`,
       saveRows: async (newPath) => supabaseDR.from('pm_facility_areas').update({ image_path: newPath }).eq('id', a.id),
     });
@@ -193,7 +215,7 @@ export async function recompressLayouts({ supabase, supabaseDR, onProgress = () 
     const { data: pub } = drStore.getPublicUrl(p);
     jobs.push({
       group: 'รูปจุดตรวจ PM', label: `รูป PM ${p.split('/').pop()}`,
-      url: pub.publicUrl, oldName: p, storage: drStore,
+      url: pub.publicUrl, oldName: p, storage: drStore, bucket: 'jig-images',
       minBytes: PHOTO_MIN_BYTES, compress: compressPhotoImage,
       newPathOf: ext => `${p.replace(/\.[^./]+$/, '')}.${ext}`,
       saveRows: async (newPath) => {
@@ -221,7 +243,7 @@ export async function recompressLayouts({ supabase, supabaseDR, onProgress = () 
       if (!oldName || oldName.startsWith('sign/') || /\.webp$/i.test(oldName)) return;
       jobs.push({
         group: 'รูปซ่อม MO', label: `รูปซ่อม ${col} · ${oldName.split('/').pop()}`,
-        url, oldName, storage: mtnStore,
+        url, oldName, storage: mtnStore, bucket: 'mtn-images',
         minBytes: PHOTO_MIN_BYTES, compress: compressPhotoImage,
         newPathOf: ext => `${oldName.replace(/\.[^./]+$/, '')}.${ext}`,
         saveRows: async (newPath) => {
@@ -244,7 +266,7 @@ export async function recompressLayouts({ supabase, supabaseDR, onProgress = () 
     if (/\.gif$/i.test(oldName)) return;                    // GIF บีบไม่ได้ (คงการเคลื่อนไหว)
     jobs.push({
       group: 'รูปพนักงาน', label: `รูปพนักงาน ${rows[0]?.name || oldName}`,
-      url, oldName, storage: mainStore,
+      url, oldName, storage: mainStore, bucket: 'employee-photos',
       minBytes: PHOTO_MIN_BYTES, compress: compressPhotoImage,
       newPathOf: ext => `${oldName.replace(/\.[^.]+$/, '')}.${ext}`,
       saveRows: async (newPath) => {
@@ -255,7 +277,11 @@ export async function recompressLayouts({ supabase, supabaseDR, onProgress = () 
     });
   });
 
-  const total = jobs.length;
+  /* ตัดใบที่ตรวจแล้วออกจากคิว — ทั้งโหมดสำรวจและโหมดรัน ต้องใช้ชุดเดียวกัน
+     ไม่งั้นเลขบนจอกับงานที่ทำจริงจะไม่ตรงกัน (ซึ่งคือต้นเรื่องของรอบนี้) */
+  const checkedSkip = jobs.filter(marked).length;
+  const queue = jobs.filter(j => !marked(j));
+  const total = queue.length;
 
   /* 🔍 โหมดสำรวจ — ตอบว่า "ยังเหลือให้บีบกี่ใบ แยกตามกลุ่ม" **โดยไม่โหลดรูปแม้ใบเดียว**
      (อ่านแค่แถวใน DB ซึ่งอ่านอยู่แล้วข้างบน ⇒ ไม่มีค่า egress ของรูปเลย)
@@ -264,19 +290,34 @@ export async function recompressLayouts({ supabase, supabaseDR, onProgress = () 
         ใบที่โหลดมาแล้วเล็กอยู่แล้ว/บีบไม่ลง จะถูกนับเป็น skip ตอนรันจริง */
   if (scanOnly) {
     const byGroup = {};
-    jobs.forEach(j => { byGroup[j.group || 'อื่นๆ'] = (byGroup[j.group || 'อื่นๆ'] || 0) + 1; });
-    return { ...sum, scan: true, total, byGroup };
+    queue.forEach(j => { byGroup[j.group || 'อื่นๆ'] = (byGroup[j.group || 'อื่นๆ'] || 0) + 1; });
+    return { ...sum, scan: true, total, byGroup, checkedSkip };
   }
 
-  const batch = limit > 0 ? jobs.slice(0, limit) : jobs;
+  const batch = limit > 0 ? queue.slice(0, limit) : queue;
+  const newMarks = [];
   for (let i = 0; i < batch.length; i++) {
     const j = batch[i];
     onProgress(`กำลังบีบ: ${j.label}`, i, batch.length);
     const r = await recompressOne(j);
     if (r.status === 'done') { sum.done++; sum.savedBytes += (r.before - r.after); }
-    else if (r.status === 'skip') sum.skip++;
+    else if (r.status === 'skip') {
+      sum.skip++;
+      // คำตัดสิน "ถาวร" เท่านั้น — 'เป็น WebP แล้ว' ไม่ต้องจด (ถูกกรองตั้งแต่สร้างคิวอยู่แล้ว)
+      if (r.mark) newMarks.push({ bucket: j.bucket, path: j.oldName, verdict: r.mark, bytes: r.before ?? null });
+    }
     else { sum.error++; sum.errors.push(`${j.label} — ${r.msg}`); }
   }
+
+  /* จดทะเบียนทีเดียวตอนจบ — ล้มก็ไม่ใช่เรื่องใหญ่ (รอบหน้าตรวจซ้ำ = พฤติกรรมเดิม)
+     แต่ **ห้ามเงียบ** ไม่งั้นเลขจะไม่ลดแล้วไม่มีใครรู้ว่าทำไม (กฎ: ห้ามล้มเหลวเงียบ) */
+  if (newMarks.length) {
+    const { error } = await supabase.from('image_squeeze_marks')
+      .upsert(newMarks, { onConflict: 'bucket,path' });
+    if (error) { sum.markError = error.message; sum.errors.push('จดทะเบียน "ตรวจแล้ว" ไม่สำเร็จ: ' + error.message); }
+    else sum.marked = newMarks.length;
+  }
+
   sum.remaining = Math.max(0, total - batch.length);
   onProgress('เสร็จแล้ว', batch.length, batch.length);
   return sum;

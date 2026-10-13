@@ -362,6 +362,12 @@ const TABLE_ROWS = {
     station_requirements: i % 3 ? [{ skill_name: 'SPOT', min_score: 50 }, { skill_name: 'GAUGE', min_score: 75 }] : [],
     pos_top: isNullish(r) ? null : String(15 + (i * 5) % 70), pos_left: isNullish(r) ? null : String(8 + (i * 7) % 84) }),
   employee_home_positions: (r, i) => ({ ...r, employee_id: `id-${i}`, station_id: `id-${(i % 7) + 1}` }),
+  /* 🏬 รหัสคลัง (SLoc) — **ต้องมีอย่างน้อย 1 รหัสที่ "ผูกไลน์" ไว้ ห้ามถอด** (13/10)
+     ไม่มีเลย ⇒ มุมมอง "ตามพื้นที่ SAP" ของ /line-stock ถอยไปโหมดไลน์ทุกครั้ง
+     = สาขาที่สโตร์/วางแผนเปิดดูทุกวัน (จัดกลุ่มตามพื้นที่ · รวมยอดข้ามไลน์) ไม่เคยถูกเรนเดอร์ใน harness
+     · รหัสต้องตรงรูปแบบ `SLOC_RE` (ตัวอักษร+เลข 3 หลัก) ไม่งั้นแผงทะเบียนขึ้นป้าย "รหัสผิดรูปแบบ" ทุกแถว */
+  storage_locations: (r, i) => ({ ...r, code: `P4${String(i).padStart(2, '0')}`, kind: 'production',
+    line_names: i === 1 ? [r.line_name] : [], sort_order: i }),
   /* 🔴 ใบแจ้งซ่อม MO — ต้องคละ **สถานะจริงของ workflow** (2026-10-06)
      เดิมทุกแถวได้ `status: 'open'` จาก ROW() ซึ่ง **ไม่ใช่สถานะของ mtn_orders เลย**
      ⇒ `nextStepOf()` คืน null ทุกแถว ⇒ โค้ดสาย "ใบนี้รอขั้นไหน / รอใคร" (ตัวกรองรอขั้นไหน ·
@@ -377,7 +383,24 @@ const TABLE_ROWS = {
     qa_skipped_at: null, purpose: i % 4 === 0 ? 'improve' : 'repair',
     report_at: '2026-08-04T09:30:00+07:00',
     mtn_head_at: i % 2 ? '2026-08-05T09:00:00+07:00' : null, approve_at: null,
-    reported_by_name: 'สมชาย ใจดี', assigned_to: 'ช่างเอก',
+    /* ⏳ เวลา "เข้าขั้น" — ฐานนับของแผงใบค้างขั้นเดิม (`STAGE_SINCE` ใน utils/mtnStale.js · 13/10)
+       ต้องสอดคล้องกับ `status` ด้านบน (`i % 6`) ไม่งั้นใบอยู่ขั้น 5 แต่ไม่มีเวลาของขั้น 1-4 = ข้อมูลที่เป็นไปไม่ได้
+       🔴 **ห้ามตั้งให้ทุกแถว** — แถวที่ไม่มีเวลาเข้าขั้น (nullish + แถวที่เว้นไว้) คือตัวที่ทำให้เส้นทาง
+          `exact:false` ("ถอยไปนับจากวันแจ้ง" + บรรทัด ℹ️ บนแผง) ถูกเรนเดอร์จริงในด่าน */
+    accept_at:      i % 6 >= 1 ? '2026-08-05T08:00:00+07:00' : null,
+    repair_done_at: i % 6 >= 2 ? '2026-08-07T08:00:00+07:00' : null,
+    check_at:       i % 6 >= 3 && i % 5 !== 0 ? '2026-08-09T08:00:00+07:00' : null,
+    qa_at:          i % 6 >= 4 ? '2026-08-10T08:00:00+07:00' : null,
+    ho_at:          i % 6 >= 4 ? '2026-08-11T08:00:00+07:00' : null,
+    repair_start_at: null, returned_at: null, vendor_sent_at: null,
+    /* 🧑 ชื่อผู้แจ้ง — ลิสต์ MO โชว์เป็นคอลัมน์ตั้งแต่ 13/10 ⇒ ต้องมีทั้ง 3 เคสในด่าน
+       (วัดจากฐาน 13/10: 720 ใบ · reported_by_name 689 · reporter_prod 692 · ไม่มีทั้งคู่ 25)
+       · แถว NULLISH = ไม่มีทั้งคู่ ⇒ เส้นทาง '—' ถูกเรนเดอร์จริง
+       · บางแถวว่างช่องแรกแต่มีช่องสอง ⇒ เส้นทาง fallback `reported_by_name || reporter_prod` ถูกวิ่ง
+       🔴 ห้ามตั้งชื่อให้ทุกแถว (เดิมเป็นแบบนั้น) = 2 เส้นทางนั้นหลุดด่านทั้งคู่ */
+    reported_by_name: isNullish(r) ? null : (i % 4 === 1 ? null : 'สมชาย ใจดี'),
+    reporter_prod: isNullish(r) ? null : (i % 4 === 1 ? 'ผู้แจ้งฝ่ายผลิต' : null),
+    assigned_to: 'ช่างเอก',
   }),
   line_layouts: (r, i) => ({ ...r, line_id: `id-${i}`, line_name: LINE_NAME(i), image_url: FACTORY_MAP_IMG }),
   /* คิวรับเข้าคลัง (2026-10-02) — คละ รอรับ/ค้างเกินกำหนด/รับแล้ว(ยอดไม่ตรง) ให้ทุกโซนของ StockReceiptQueue ถูกรัน */

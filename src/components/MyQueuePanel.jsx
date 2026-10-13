@@ -15,13 +15,16 @@
    4. **ว่างต้องขึ้น "ไม่มีงานค้าง" ห้ามซ่อนแผง** · โหลดไม่ครบต้องเขียนบนจอว่าไม่ครบ
       (ผู้ใช้ต้องแยก "เคลียร์หมดแล้ว" ออกจาก "คิวรีล่ม" ให้ได้)
    ═══════════════════════════════════════════════════════════════════════════ */
-import { useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { UserContext } from '../App';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { getActor } from '../utils/actorStamp';
 import { loadProductionLines } from '../utils/useProductionLines';
-import { OPEN_MO_STATUSES } from '../utils/mtnStepPerm';
+import { OPEN_MO_STATUSES, actorSideOf } from '../utils/mtnStepPerm';
+import { positionRank } from '../utils/positions';
+import { can as canPerm, isActionSeeded } from '../utils/permissions';
+import { teamKeyOf } from '../utils/mtnTeams';
 import {
   TIER, TIER_TITLE, EMPTY_TEXT, OLD_DAYS, buildQueue, badgeCount, capped,
 } from '../utils/myQueue';
@@ -39,6 +42,11 @@ const MO_COLS = [
   'reporter_prod', 'reporter_prod_uid', 'reported_by_name', 'reported_by_uid',
   // nextStepOf() ต้องใช้ตัดสินขั้นถัดไป (รอ QA หรือข้ามแล้ว · ช่วงเซ็นปิดของใบ MTN) — 05/10
   'qa_skipped_at', 'purpose', 'mtn_head_at', 'approve_at',
+  /* 🔒 ด่านอนุมัติก่อนเริ่มงาน (`isApprovalBlocked`) — 13/10
+     🔴 ขาดช่องใดช่องหนึ่ง = undefined = "ไม่รู้" ⇒ ใบที่รอ ผจก.เซ็น ตกกลับไปนับเป็น
+        "รอช่างรับงาน" เงียบๆ แล้วไม่เข้าชั้น `mine` ของใครเลย (อาการที่ user เจอ)
+     `dept_manager_name` = เกณฑ์ "ชื่ออยู่ในใบ" ของ canSignMtnApproval() */
+  'dept_manager_at', 'plant_manager_at', 'dept_manager_name', 'plant_manager_name',
 ].join(', ');
 
 const DEAD = ['cancelled', 'rejected'];
@@ -48,7 +56,8 @@ export async function loadMyQueue(me) {
      แล้วมันจะติด `partial` ให้เอง (ห้ามกลืนเป็น [] = จอจะบอกว่า "ไม่มีงาน" ทั้งที่ไม่รู้) */
   const ok = (r) => (r.error ? undefined : (r.data || []));
 
-  const [moR, sesR, prR, fourR, actR, lines] = await Promise.all([
+  const canLu = !!(me.canLevelUp || me.canLevelUp100);
+  const [moR, sesR, prR, fourR, actR, lines, luR] = await Promise.all([
     /* กรองด้วยสถานะที่ยังมีคนต้องทำต่อ — เดิม `.gt('current_step', 1)` ตัดใบ "รอจ่ายงาน" (current_step = 1)
        ทิ้งทั้งหมด และ `.is('approve_at', null)` ตัดใบ MTN ที่อนุมัติแล้วแต่ยังรอปิดใบ (ขั้น 8) */
     supabaseDR.from('mtn_orders').select(MO_COLS)
@@ -63,7 +72,13 @@ export async function loadMyQueue(me) {
     supabase.from('meeting_action_items').select('id, problem, section, line_name, assignee, due_date, meeting_date, status')
       .in('status', ['open', 'doing']).order('due_date', { ascending: true, nullsFirst: false }).limit(100),
     loadProductionLines().catch(() => []),          // มี cache ร่วมกับ picker — ปกติไม่ยิงคิวรีเพิ่ม
+    /* ⬆️ คำขอขึ้นขั้นทักษะ — โหลดเฉพาะคนที่อนุมัติได้ (ไม่มีสิทธิ์ = ไม่ยิงคิวรีเลย) · ส่วนงานมาจากตัวพนักงาน */
+    canLu
+      ? supabase.from('skill_level_up_requests').select('id, to_level, requested_at, employees!inner(section, is_active)')
+        .eq('status', 'pending').eq('employees.is_active', true).limit(500)
+      : Promise.resolve({ data: null, error: null }),
   ]);
+  const levelUps = canLu ? ok(luR)?.map(r => ({ id: r.id, to_level: r.to_level, requested_at: r.requested_at, section: r.employees?.section })) : undefined;
 
   /* `four_m_logs` ไม่มีคอลัมน์ส่วนงาน — เทียบขอบเขตผ่านทะเบียนไลน์ (ไลน์ → ส่วนงาน)
      ไลน์ที่ไม่อยู่ในทะเบียน = ตอบไม่ได้ว่าส่วนงานไหน ⇒ ปล่อย undefined ให้ inMyScope ตัดออกเอง */
@@ -84,7 +99,7 @@ export async function loadMyQueue(me) {
     });
   }
 
-  return buildQueue({ mo, sessions: ok(sesR), fourM, actions: ok(actR), summaries }, me);
+  return buildQueue({ mo, sessions: ok(sesR), fourM, actions: ok(actR), summaries, levelUps }, me);
 }
 
 /* ── UI ชิ้นเล็ก ────────────────────────────────────────────────────────── */
@@ -153,34 +168,70 @@ function Group({ tier, items, onGo }) {
    แยกจากตัววาดเพราะ **badge ต้องมีเลขแม้แผงปิดอยู่** — ถ้าโหลดอยู่ในตัววาด
    พอผู้ใช้ปิดแผง component จะ unmount แล้วเลขหาย (แล้วโหลดใหม่ทุกครั้งที่เปิด = เปลืองฟรี)
    @param {boolean} open  แผงเปิดอยู่ไหม — ใช้ตัดสินว่าถึงเวลารีเฟรชของเก่าหรือยัง */
+/* 🔁 ผลโหลดใช้ร่วมกันทุกตัวที่เรียก hook นี้ (13/10) — sidebar กับกระดิ่งต่างเรียก ⇒ ห้ามยิงคิวรีชุดเดียวกัน 2 รอบ
+   คีย์ = ตัวตน+ขอบเขต · ตัวที่เรียกพร้อมกันรอ promise เดียวกัน · โหลดเสร็จแจ้งทุกตัวให้เห็นเลขเดียวกัน */
+const shared = { key: null, at: 0, promise: null, q: null, listeners: new Set() };
+
 export function useMyQueue(open = false) {
-  const { sections, fullName } = useContext(UserContext);
-  const [q, setQ] = useState(null);
+  const { sections, fullName, role, position, mtnTeams } = useContext(UserContext);
+  const [q, setQ] = useState(shared.q);
   const [busy, setBusy] = useState(false);
-  const atRef = useRef(0);
   const secKey = (sections || []).join('|');        // 🔴 array ใน deps = ยิงซ้ำฟรีๆ → แปลงเป็น string
+  const teamKey = (mtnTeams || []).join('|');
 
-  const load = useCallback(async () => {
-    const actor = getActor();
-    setBusy(true);
-    try {
-      const r = await loadMyQueue({
-        uid: actor.uid, name: actor.name || fullName || null,
-        sections: secKey ? secKey.split('|') : [],
-      });
-      setQ(r); atRef.current = Date.now();
-    } catch {
-      /* supabase-js คืน error ไม่ throw — มาถึงนี่ได้เฉพาะกรณีผิดปกติ ⇒ ถือว่าไม่ครบ ห้ามขึ้นว่าไม่มีงาน */
-      setQ({ mine: [], unit: [], floor: [], counts: { mine: 0, unit: 0, floor: 0 }, missing: ['all'], partial: true });
-    } finally { setBusy(false); }
-  }, [secKey, fullName]);
-
-  useEffect(() => { load(); }, [load]);             // รอบแรกตอน mount (1 ครั้ง/session)
   useEffect(() => {
-    if (open && Date.now() - atRef.current > STALE_MIN * 60000) load();
+    const on = (v) => setQ(v);
+    shared.listeners.add(on);
+    return () => { shared.listeners.delete(on); };
+  }, []);
+
+  const load = useCallback(async (force = true) => {
+    const actor = getActor();
+    const key = [actor.uid, actor.name || fullName, secKey, teamKey, role, position].join('§');
+    if (shared.key === key) {
+      if (shared.promise) { setBusy(true); try { await shared.promise; } finally { setBusy(false); } return; }
+      if (!force && shared.q && Date.now() - shared.at < STALE_MIN * 60000) { setQ(shared.q); return; }
+    }
+    shared.key = key;
+    setBusy(true);
+    shared.promise = (async () => {
+      try {
+        const secs = secKey ? secKey.split('|') : [];
+        const teams = teamKey ? teamKey.split('|') : [];
+        const myTeamKeys = new Set(teams.map(teamKeyOf));
+        return await loadMyQueue({
+          uid: actor.uid, name: actor.name || fullName || null,
+          sections: secs,
+          /* ✍️ เกณฑ์ "ช่องเซ็นที่ตำแหน่งเราเซ็นได้คนเดียว" (13/10) — ชุดเดียวกับ DetailDrawer ใน /mtn-repair
+             (actorSideOf + positionRank + สิทธิ์ mtn_repair) ⇒ ใบที่ขึ้นว่า "รอคุณเซ็น" = ใบที่กดเซ็นได้จริง */
+          actorSide: actorSideOf({ mtnTeams: teams, role, sections: secs }),
+          posRank: positionRank(position),
+          can: (a) => canPerm('mtn_repair', a, role),
+          seeded: (a) => isActionSeeded('mtn_repair', a),
+          hasTeams: teams.length > 0,
+          inTeam: (o) => myTeamKeys.has(teamKeyOf(o.mtn_dept)),
+          // ⬆️ คีย์เดียวกับปุ่มอนุมัติใน /operator?tab=levelup
+          canLevelUp: canPerm('skills', 'approve_levelup', role),
+          canLevelUp100: canPerm('skills', 'approve_levelup_100', role),
+        });
+      } catch {
+        /* supabase-js คืน error ไม่ throw — มาถึงนี่ได้เฉพาะกรณีผิดปกติ ⇒ ถือว่าไม่ครบ ห้ามขึ้นว่าไม่มีงาน */
+        return { mine: [], unit: [], floor: [], counts: { mine: 0, unit: 0, floor: 0 }, missing: ['all'], partial: true };
+      }
+    })();
+    try {
+      const r = await shared.promise;
+      shared.q = r; shared.at = Date.now();
+      shared.listeners.forEach(fn => fn(r));
+    } finally { shared.promise = null; setBusy(false); }
+  }, [secKey, teamKey, fullName, role, position]);
+
+  useEffect(() => { load(false); }, [load]);        // รอบแรกตอน mount (1 ครั้ง/session · ตัวที่ 2 ใช้ผลร่วม)
+  useEffect(() => {
+    if (open) load(false);                           // เปิดแผง/กระดิ่ง = รีเฟรชเฉพาะเมื่อของเก่าเกิน STALE_MIN
   }, [open, load]);
 
-  return { q, busy, reload: load, badge: badgeCount(q) };
+  return { q, busy, reload: () => load(true), badge: badgeCount(q) };
 }
 
 /** ตัววาดล้วน — รับผลจาก `useMyQueue()` มาโชว์ (host เป็นคนถือ state) */

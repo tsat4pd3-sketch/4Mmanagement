@@ -35,22 +35,38 @@ export function useOrgSections() {
 // ไม่คืน list แบนรวมทุก section (dropdown แผนกจะเลือกข้าม section ได้ + ชื่อซ้ำ — บั๊กที่แก้ไปแล้ว 2026-07-21)
 export function useOrgDepts() {
   const [tree, setTree] = useState({ secs: [], depts: [] });
+  /* 🔴 โหลดผังไม่สำเร็จ ≠ "ไม่มีแผนกในผัง" (2026-10-13) — เดิม `s1.data || []` ไม่เช็ค error เลย
+     ⇒ คิวรีล้ม = dropdown ส่วนงาน/แผนกว่าง แล้วคนสรุปว่า "แผนกนี้ยังไม่อยู่ในผัง" ไปเพิ่มซ้ำ
+     (ตัวนี้ไม่ผ่าน `cachedMaster` โดยตั้งใจ — ผังแก้ที่ /org-setup ต้องเห็นทันที ⇒ toast กลางไม่ครอบมา) */
+  const [failed, setFailed] = useState('');
   useEffect(() => {
+    let alive = true;
     Promise.all([
       supabase.from('org_nodes').select('id, code, name').eq('kind', 'section').eq('is_active', true),
       supabase.from('org_nodes').select('code, name, parent_id, sort_order').eq('kind', 'department').eq('is_active', true),
-    ]).then(([s1, s2]) => setTree({ secs: s1.data || [], depts: s2.data || [] }));
+    ]).then(([s1, s2]) => {
+      if (!alive) return;
+      const err = s1.error || s2.error;
+      if (err) console.warn('[useOrgDepts] โหลดผังส่วนงาน/แผนกไม่สำเร็จ — ลิสต์จะไม่ครบ', err);
+      setFailed(err ? 'โหลดผังส่วนงาน/แผนกไม่สำเร็จ' : '');
+      setTree({ secs: s1.data || [], depts: s2.data || [] });
+    });
+    return () => { alive = false; };
   }, []);
   return useMemo(() => {
     const nameOf = orgKey;
     const all = orgValues(tree.depts);   // ลำดับตามผัง (sort_order) — เดิม .sort() ตัวอักษร = คนละลำดับกับ /operator
-    return (sectionCode) => {
+    const fn = (sectionCode) => {
       if (!sectionCode) return all;
       const sec = tree.secs.find(n => nameOf(n) === sectionCode);
       if (!sec) return all;
       return orgValues(tree.depts.filter(d => d.parent_id === sec.id));
     };
-  }, [tree]);
+    /* ส่ง "ล้มเหลว" ติดไปกับฟังก์ชัน — คง API เดิม (`deptsOf(section)`) ไม่ต้องแก้จุดเรียก
+       จอที่อยากเขียนบอกอ่าน `deptsOf.failed` ได้ (ว่าง = ปกติ) */
+    fn.failed = failed;
+    return fn;
+  }, [tree, failed]);
 }
 
 /** ลิสต์ "ทีม/กะ" จากผัง (org_nodes kind='team') — ผังยังไม่มีทีม = ถอยไป A/B/C เดิม

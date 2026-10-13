@@ -181,3 +181,30 @@ export function mtnApprovalState(order = {}) {
     ackPending: !blocking && missing.length > 0,
   };
 }
+
+/**
+ * ใบนี้ "ติดด่านอนุมัติก่อนเริ่มงาน" อยู่จริงไหม — จุดเดียวที่ตอบคำถามนี้ทั้งระบบ  2026-10-13
+ *
+ * 🔴 ที่มา (คำสั่ง user *"มีงานรอเราอนุมัติ MO แต่เราหาไม่เจอ"*): ด่านนี้ **ไม่ใช่ "ขั้น"**
+ *    — มันคือช่องลายเซ็นที่อยู่นอกลำดับขั้น ⇒ ทุกจอที่ไล่คิวด้วย `nextStepOf()` นับใบที่ค้างอยู่ตรงนี้
+ *    เป็น "รอช่างรับงาน (ขั้น 2)" ทั้งที่ช่างกดรับไม่ได้ (`canDoStep` บล็อกด้วย `approvalBlocked`)
+ *    ⇒ ไม่มีจอไหนบอกได้ว่ารอใคร · คนต้องไปตามกันใน LINE
+ *
+ * ⚠️ `undefined` = ไม่ได้ select คอลัมน์นั้นมา = **ไม่รู้ ห้ามเดา** ⇒ คืน false
+ *    (คิวรีที่จะใช้คำตอบนี้ต้อง select `status`, `purpose`, `mtn_dept`, `dept_manager_at`
+ *     และ `plant_manager_at` ด้วย — ขาดตัวใดตัวหนึ่ง = ใบจะกลับไปนับเป็น "รอช่างรับงาน" ตามเดิม)
+ */
+export function isApprovalBlocked(order = {}) {
+  if (String(order?.status || '').trim() !== 'pending') return false;
+  if (!order?.purpose || !isMtnFormRow(order)) return false;
+  if (order.dept_manager_at === undefined) return false;
+  if (needsPlantManager(order.purpose) && order.plant_manager_at === undefined) return false;
+  return mtnApprovalState(order).blocked;
+}
+
+/** ช่องลายเซ็นที่ใบนี้ค้างอยู่ ('dept' | 'plant' | null) — ผู้จัดการต้นสังกัดมาก่อนเสมอ */
+export function approvalKindPending(order = {}) {
+  if (!isApprovalBlocked(order)) return null;
+  const { missing } = mtnApprovalState(order);
+  return missing.includes('dept') ? 'dept' : (missing.includes('plant') ? 'plant' : null);
+}

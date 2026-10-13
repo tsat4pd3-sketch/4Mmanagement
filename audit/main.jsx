@@ -1,7 +1,7 @@
 import React, { Suspense, useState, useEffect } from 'react'
 import { createRoot } from 'react-dom/client'
 import { MemoryRouter } from 'react-router-dom'
-import { UserContext, Sidebar, NAV_ITEMS } from '../src/App'
+import { UserContext, Sidebar, NAV_ITEMS, NotificationBell } from '../src/App'
 /* เปิดทะเบียนเมนูให้ `audit/stdsweep.mjs` อ่าน — ตรวจว่า "คุณอยู่ตรงนี้" บนรางตรงกับหมวดจริงไหม
    (`alsoIn` = หน้าที่อยู่ 2 หมวดจริงๆ ต้องถูกไฮไลต์ทั้งคู่) */
 window.__NAV = NAV_ITEMS.map(i => ({ to: i.to, group: i.group, alsoIn: i.alsoIn || null }))
@@ -109,7 +109,23 @@ const FeedbackLab = () => (
   </MemoryRouter>
 )
 
+/* ?p=__bell — กระดิ่ง 2 แท็บ (🎯 รอคุณ · 📢 แจ้งเตือนทั่วไป · 2026-10-13) อยู่ใน App shell เหมือน FeedbackModal
+   ⇒ crashsweep รายหน้ามองไม่เห็น · ?p=__bell&open=1 เปิด dropdown ให้เลย */
+function BellLab(){
+  useEffect(() => {
+    if (new URLSearchParams(location.search).get('open')) setTimeout(() => document.querySelector('button[title]')?.click(), 600)
+  }, [])
+  return (
+    <MemoryRouter initialEntries={[ENTRY]}>
+      <UserContext.Provider value={{ ...CTX, role:'admin', sections:['PD1'], mtnTeams:[] }}>
+        <EB><NotificationBell userId="x" role="admin" /></EB>
+        <ToastContainer/>
+      </UserContext.Provider>
+    </MemoryRouter>
+  )
+}
+
 window.__PAGES = NAMES
 const only = new URLSearchParams(location.search).get('p')
 createRoot(document.getElementById('root')).render(
-  only === '__sidebar' ? <SidebarLab/> : only === '__feedback' ? <FeedbackLab/> : <App/>)
+  only === '__sidebar' ? <SidebarLab/> : only === '__feedback' ? <FeedbackLab/> : only === '__bell' ? <BellLab/> : <App/>)

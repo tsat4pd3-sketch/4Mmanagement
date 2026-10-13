@@ -232,7 +232,12 @@ Reject → status: "rejected" + reject_reason
 
 ## Layer Process Audit — LPA paperless (2026-07-20)
 
-หน้า `/lpa` (`LayerProcessAudit.jsx`, ฝ่ายผลิต — ย้ายจากหมวด QA/QC ตามคำสั่ง user 2026-07-20) — แทนฟอร์มกระดาษ 2 ใบ: แผนตรวจรายเดือน (ไลน์+กะ) + ใบผลตรวจ
+หน้า `/lpa` (`LayerProcessAudit.jsx`, ฝ่ายผลิต) — แทนฟอร์มกระดาษ 2 ใบ: แผนตรวจรายเดือน (ไลน์+กะ) + ใบผลตรวจ
+🔴 **ช่องว่างในตารางตรวจรายวันต้องตอบได้ว่า "ไม่ได้ตรวจ / ไม่ได้ผลิต / ไม่ต้องตรวจวันนั้น"** —
+ตัดสินที่ **`src/utils/dailyCheckDay.js`** (`checkDayState()`) + รู้ว่าวันไหนผลิตจาก `src/utils/runDays.js`
+· **ตัวหาร % = ตรวจแล้ว + ขาดตรวจ เท่านั้น** · 🔴 **อ่านไม่ได้ = `unknown` ห้ามบีบเป็น "ไม่ได้ผลิต"** (มีด่าน)
+· 🔴 **สัญลักษณ์สถานะห้ามยืมตัวอักษรของ "คำตอบ" ในใบเดียวกัน** (`✗`≈`N` · `–`≈`N/A` = "ตรวจแล้วผิดปกติ")
+  ⇒ ใช้ `CHECK_DAY_META`/`CHECK_DAY_LEGEND` **ห้ามแต่ง mark/สีเองในหน้า** (มีด่าน · UI §6.29)
 > 📄 รายละเอียดเต็ม → `docs/modules/lpa-audit.md`
 
 ---
@@ -408,7 +413,6 @@ Reject → status: "rejected" + reject_reason
 
 ## 📐 มาตรฐานหน้าตา — กรอบหน้า · หัวเพจ · แถบกรอง · ค้นหา (2026-09-24 · คำสั่ง user)
 
-*"แก้ทุกตัวเลย เราต้องมี standardize แล้ว"* — อ้างอิง Nielsen #4 Consistency · Carbon field sizes · Material 3 · WCAG 2.2
 · รากหน้า = `<Page>` (`components/Page.jsx`) **ห้ามตั้ง padding/maxWidth เอง** · หัว = `PageHeader` · hub ครอบหน้าลูกด้วย `<Hub>`
 · 🔴 **ลำดับตายตัว: ชื่อหน้า → แท็บ → แถบกรอง → เนื้อหา** — ตัวกรองส่ง `filters=` ห้ามใส่ `actions=` (ปุ่มคำสั่งเท่านั้น · มีด่าน)
 · แถบกรอง = `<FilterBar>` หรือ children ของ `<TimeRangeBar>` — **ห้ามใส่ขนาด inline ที่ช่อง** (token `--ctl-*`)
@@ -489,6 +493,8 @@ Reject → status: "rejected" + reject_reason
 > · **`next_due_date` ว่าง ≠ ปกติ** — ตัวนับ PM ทุกจอผ่าน `planDueBucket()` (`lib/pmSchedule.js`) · ถัง `never`/`no_cycle` ต้องเขียนบนจอ
 >   · แผน `run_day` ไม่มีวันปฏิทิน: `resolvePlanDue` คืน `status:'run_day'` **ห้ามถอยไป last_done+interval** · ตัดสินจริงที่จอ AM/PMSchedule
 > · **"กะนี้ AM ตรวจแล้วหรือยัง" มีที่เดียว = `lib/dailyAmBoard.js`** (ทะเบียน `pm_daily_line_targets` + inspections + opened_at) · ห้ามคิวรี inspections เอง (มีด่าน)
+>   · 🔴 **"ไลน์ไหนเดินอยู่" ต้องนับไลน์แม่-ลูก** ผ่าน `openFamilyLines()` (`lib/pmDailyStatus.js`) **ห้ามเทียบชื่อตรงตัว** (มีด่าน)
+>     — ไลน์แม่หลายตัวไม่เคยเปิดกะในชื่อตัวเอง ⇒ ชุดนี้เป็นประตูของงานตรวจ (`utils/prodRoutine.js`) = **งานตรวจหายเงียบ**
 > · **ทะเบียนรายวัน ⇒ แผน AM เป็น run_day อัตโนมัติที่ชั้น DB** (`pm_am_plan_follow_registry` · trigger บน `pm_daily_line_targets`) —
 >   **ห้ามเขียน `next_due_date` ลงแผน run_day** จากจอใด · เอาออกจากทะเบียน = `is_active=false` ห้าม delete · AM ไม่นับในชั้น Preventive ของช่าง
 
@@ -519,7 +525,7 @@ Reject → status: "rejected" + reject_reason
 · โครงสร้างอ่าน**สด**จาก pg_catalog (RPC `esm_schema_overview` / `esm_schema_table` ทั้ง 2 project)
 · **ห้ามเขียนรายชื่อตาราง/คอลัมน์เป็นลิสต์มือที่ไหนอีก** — snapshot มือล้าสมัยทุกครั้ง
 · 🔴 **migration ที่ copy ข้อมูลกันพลาด ต้องสร้างใน schema `archive` ห้ามไว้ใน `public`**
-  (เคยค้าง 37 ตาราง · 35 ตัวไม่มี RLS = anon อ่านสำเนาข้อมูลจริงได้ · ย้ายแล้ว 22/09 + มีด่านใน build)
+  (เคยหลุดจน anon อ่านสำเนาข้อมูลจริงได้ · มีด่านใน build)
 > 📄 `docs/modules/schema-map.md`
 
 ---
@@ -623,10 +629,9 @@ Reject → status: "rejected" + reject_reason
 ## 📌 คิวงานของฉัน — แผงในเมนูบัญชี (2026-09-25 · คำสั่ง user)
 
 กฎการแบ่งชั้น = `src/utils/myQueue.js` (pure · มีเทส) · โหลด/วาด = `components/MyQueuePanel.jsx`
-- **ดึง ไม่ใช่ยิง** — ไม่สร้างแถว `notifications` ไม่เรียก send-push
-- **🔴 3 ชั้นห้ามยุบ:** `mine` รอเราตรง · `unit` คิวหน่วยงาน · `floor` ทั้งโรงงาน (**สรุปบรรทัดเดียว ห้ามแตกรายตัว**)
-  — ชื่อในใบ ≠ งานส่วนตัว (ตัวเลขวัดจริงใน `my-queue.md`)
-- **🔴 badge นับเฉพาะ `mine` ผ่าน `badgeCount()`** · 0 หรือโหลดไม่ครบ = **ไม่วาดเลย**
+- **ดึง ไม่ใช่ยิง** (ไม่สร้างแถว `notifications`) · **🔔 กระดิ่งแท็บ "🎯 รอคุณ" = ชั้น `mine` ชุดเดียวกัน** (`useMyQueue` โหลดร่วม)
+- **🔴 3 ชั้นห้ามยุบ:** `mine` รอเราตรง (+ช่องเซ็นที่ตำแหน่งเราเซ็นได้คนเดียว `soleSignerFor()`) · `unit` คิวหน่วยงาน · `floor` ทั้งโรงงาน (**สรุปบรรทัดเดียว**)
+- **🔴 badge (รูปโปรไฟล์ + กระดิ่ง + ไอคอนแอป) นับเฉพาะ `mine` ผ่าน `badgeCount()`** · 0 หรือโหลดไม่ครบ = **ไม่วาดเลย**
 - **🔴 ว่างต้องขึ้น "ไม่มีงานค้าง" ห้ามซ่อน · โหลดไม่ครบต้องเขียนบนจอ** (`partial`) — "เคลียร์หมด" ≠ "คิวรีล่ม"
 > 📄 `docs/modules/my-queue.md`
 
@@ -636,7 +641,8 @@ Reject → status: "rejected" + reject_reason
 
 13 ชีท = **การตั้งค่า ไม่ใช่ 13 จอ** — ชุดแถวอยู่ใน `monitor_boards.rows` (DR) · เลขทุกตัวออกจาก
 `buildGrid()` (`utils/monitorGrid.js`) ที่เดียว (มีด่าน)
-· 🔴 **ช่องยอดยกมาว่าง = `null` ทั้งแถว ห้ามเดา 0** · ระบบไม่รู้ = ขีด `–` · คนกรอกชนะระบบเสมอ
+· 🔴 **ช่องยอดยกมาว่าง = `null` ทั้งแถว ห้ามเดา 0** · ระบบไม่รู้ = ขีด `–` · คนกรอกชนะระบบ —
+  🔒 **ยกเว้นช่อง IN ที่ระบบมีตัวเลขแล้ว = ล็อก** (`makeLockLookup` · `monitorSystem.js`) ยอดไม่ตรง = ขอปรับยอดคลัง (`StockAdjustRequestModal`) ห้ามเปิดให้พิมพ์ทับ
 · ⚠️ **แต่ละชีทคิด Total SL คนละสูตร — เก็บเป็น `sl_row` ห้ามยุบเอง**
 · 📦 **บอร์ดชนิด `fg` ผูก "ลูกค้า" ไม่ใช่ "ไลน์"** (ยอดสั่งจาก EDI 862/830) ⇒ **IN ห้ามกรองไลน์**
 📄 `docs/modules/monitoring-boards.md`
@@ -737,17 +743,18 @@ Reject → status: "rejected" + reject_reason
 > 📄 **คำอธิบายเต็ม + ตัวเลข/เคสจริงของทุกข้อ → `docs/modules/db-write-rules.md`** (ห้ามตัดข้อไหนออกจากลิสต์นี้)
 
 1. **supabase-js ไม่ throw** (`const { data } = await …` = กลืน error 100%) ⇒ **ทุก insert/update/delete อ่าน `error` ผ่าน `checkWrite(await …, 'ป้ายงาน')`** (`src/utils/dbWrite.js`) · delete-then-insert: delete ล้ม = หยุด ห้าม insert ต่อ
-2. **RLS ปฏิเสธ UPDATE/DELETE = "สำเร็จ 0 แถว ไม่มี error"** (มีแต่ INSERT ที่โยน 42501) ⇒ ปุ่มที่ผลลัพธ์สำคัญต้อง **`checkWriteRows(await ….select('id'), 'ป้ายงาน')`** — `checkWrite` **ไม่นับแถว** ⇒ ต่อ `.select()` แล้วส่งเข้า `checkWrite` = เสียเปล่า + คิดว่ากันแล้ว (2 ด่าน: `checkwrite-rows-not-plain` · `checkwriterows-needs-select`) · 🔴 **ลบไฟล์ใน storage ได้หลังนับแถว > 0 เท่านั้น** (เช็คแค่ `error` = แถวยังอยู่แต่ไฟล์หายถาวร · มีด่าน `storage-delete-after-row-count`) · 🔴 **ทะเบียนที่จับคู่ด้วยข้อความ ลบได้หลังนับปลายทางครบ — นับไม่ได้ = ห้ามลบ** (`utils/orgNodeRefs.js` · `utils/processTypeRefs.js`)
-3. **policy RLS ต้อง `has_perm('<คีย์เดียวกับปุ่มบนจอ>')` ห้าม hardcode role array** (role array มือแคบกว่าสิทธิ์ที่ `/permissions` แจกเสมอ · **จอที่คุมสิทธิ์เองก็ต้องเช็คสิทธิ์ผู้ดู** — มีด่าน) · **ตารางใหม่ต้องมี policy ครบทุก cmd ที่ client ใช้ — `upsert` ต้องมี UPDATE** · 🔑 **คีย์ของ `upsert` ต้องเป็น unique index คอลัมน์ล้วน ห้าม expression/partial** (PostgREST infer ไม่เจอ = `42P10` = ไม่เขียนเลยทั้งก้อน · เกิดมา 3 รอบ · มีด่าน)
+2. **RLS ปฏิเสธ UPDATE/DELETE = "สำเร็จ 0 แถว ไม่มี error"** (มีแต่ INSERT ที่โยน 42501) ⇒ ปุ่มที่ผลลัพธ์สำคัญต้อง **`checkWriteRows(await ….select('id'), 'ป้ายงาน')`** — `checkWrite` **ไม่นับแถว** ⇒ ต่อ `.select()` แล้วส่งเข้า `checkWrite` = เสียเปล่า (2 ด่าน) · 🔴 **ลบไฟล์ใน storage ได้หลังนับแถว > 0 เท่านั้น** (เช็คแค่ `error` = แถวยังอยู่แต่ไฟล์หายถาวร · มีด่าน) · 🔴 **ทะเบียนที่จับคู่ด้วยข้อความ ลบได้หลังนับปลายทางครบ — นับไม่ได้ = ห้ามลบ** (`utils/orgNodeRefs.js` · `utils/processTypeRefs.js`)
+3. **policy RLS ต้อง `has_perm('<คีย์เดียวกับปุ่มบนจอ>')` ห้าม hardcode role array** (**จอที่คุมสิทธิ์เองก็ต้องเช็คสิทธิ์ผู้ดู** — มีด่าน) · **ตารางใหม่ต้องมี policy ครบทุก cmd ที่ client ใช้ — `upsert` ต้องมี UPDATE** · 🔑 **คีย์ของ `upsert` ต้องเป็น unique index คอลัมน์ล้วน ห้าม expression/partial** (`42P10` = ไม่เขียนเลยทั้งก้อน · มีด่าน)
 4. **stale-response race** — ทุก effect ที่ await แล้ว set state ต้องมี guard (`let alive = true` + cleanup / request id / ref ปัจจุบัน)
 5. **`.in(ids)` ยาว = URL เกินเพดาน proxy → คืนค่าว่างเงียบ** ⇒ ผ่าน `fetchByIds` (chunk) · **เพดาน 1000 แถว/คิวรี** ⇒ ตารางที่โตได้ห้าม `select()` เปล่า
 6. **claim สถานะ (compare-and-swap) ก่อนเขียน ledger ⇒ ledger ล้มต้องคืนสถานะ**
-7. **realtime ต้องมี "เพดาน" ไม่ใช่ debounce · และต้องกรองว่า "เรื่องนี้ของฉันไหม"** — **`coalesce(fn, LIVE.x)` (`src/utils/liveRefresh.js`) เท่านั้น ห้าม debounce/`setTimeout` เอง** · ระดับใน `src/utils/refreshRates.js` **ห้ามใส่ ms ดิบ** · **subscribe ต้องมี `filter:` เมื่อรู้ขอบเขต** — ⚠️ **DELETE กรองด้วยคอลัมน์ที่ไม่ใช่ pk ไม่ได้** ให้แยก subscribe DELETE ไม่กรอง **ห้ามแก้ด้วย `REPLICA IDENTITY FULL`** · 🔴 **ตารางที่ subscribe ต้องอยู่ในทะเบียน `src/utils/realtimeTables.js` + publication จริง** (ไม่อยู่ = เงียบสนิท ไม่มี error · มีด่าน)
+7. **realtime ต้องมี "เพดาน" ไม่ใช่ debounce · และต้องกรองว่า "เรื่องนี้ของฉันไหม"** — **`coalesce(fn, LIVE.x)` (`src/utils/liveRefresh.js`) เท่านั้น ห้าม debounce/`setTimeout` เอง** · ระดับใน `src/utils/refreshRates.js` **ห้ามใส่ ms ดิบ** · **subscribe ต้องมี `filter:` เมื่อรู้ขอบเขต** — ⚠️ **DELETE กรองด้วยคอลัมน์ที่ไม่ใช่ pk ไม่ได้** ให้แยก subscribe DELETE ไม่กรอง **ห้ามแก้ด้วย `REPLICA IDENTITY FULL`** · 🔴 **ตารางที่ subscribe ต้องอยู่ในทะเบียน `src/utils/realtimeTables.js` + publication จริง** (ไม่อยู่ = เงียบสนิท · มีด่าน)
 8. **จอที่มี realtime — poll ต้องข้ามรอบเมื่อไม่มีอะไรเปลี่ยน** (`makeIdleGate(LIVE.FLOOR)`) · **ห้ามใช้กับจอที่ไม่มี realtime** (ไม่มีใคร touch = จอค้าง) · **จอใหม่ใช้ `useLiveBoard(load, { tables, topic })` ห้ามประกอบเองทีละชิ้น**
 9. **`useCallback`/`useEffect` ที่ยิง DB ห้ามมี object/array ใน deps** (แปลงเป็น string/primitive ก่อน · prop ที่เป็น array ต้อง `useMemo` ที่หน้าแม่) · **คลาสนี้ build/lint/เทส/จอผ่านหมด เห็นจาก log เท่านั้น**
 10. **สมมติฐานเรื่องสิทธิ์ที่เขียนในคอมเมนต์ "มีอายุ"** — ห้ามพึ่ง "หน้านี้ admin-only อยู่แล้ว" เป็นด่านของแผง/ตาราง
-11. **🔴 egress คิดเป็น "ไบต์" ไม่ใช่ "จำนวน request" — `select('*')` บนตารางกว้างคือตัวกินจริง** ⇒ **จอรายการเลือกเฉพาะคอลัมน์ที่ใช้ · ใบเต็มดึงตอนเปิดทีละใบ** (`.eq('id', id)`) — มีด่าน · **รูปผังห้ามเป็น PNG** ใช้ `compressLayoutImage()` (`src/utils/layoutImage.js`) **ห้ามลดความละเอียด**
+11. **🔴 egress คิดเป็น "ไบต์" ไม่ใช่ "จำนวน request" — `select('*')` บนตารางกว้างคือตัวกินจริง** ⇒ **จอรายการเลือกเฉพาะคอลัมน์ที่ใช้ · ใบเต็มดึงตอนเปิดทีละใบ** — มีด่าน · **รูปผังห้ามเป็น PNG** ใช้ `compressLayoutImage()` (`src/utils/layoutImage.js`) **ห้ามลดความละเอียด**
 12. **helper ที่คืนค่าเปล่าห้ามแกะ `{ data }`** (`loadPairMap`/`loadOpInfo`/`loadProductsMaster`/`loadProductionLines` = undefined เงียบ · มีด่าน) · **`catch {}` แล้วโชว์ "ไม่มีข้อมูล" = จอโกหก**
+    · 🔴 **ลิสต์ว่าง 2 ความหมาย** — ทะเบียน picker ผ่าน **`useMasterRows`** → `loadFail` (มีด่าน) · **อ่านไม่ได้แล้วจะเขียน/ลบ = fail-closed**
 
 ### Skill Fit — ของใหม่ใช้ `skillFit()` (`src/utils/skillFit.js`) ห้ามก๊อปสูตรเพิ่ม (📄 `docs/modules/file-structure.md`)
 
@@ -757,7 +764,7 @@ Reject → status: "rejected" + reject_reason
 > (อย่าให้มี 2 ชุด — section นี้เป็นเจ้าของเรื่อง **ด่าน build** เท่านั้น)
 > · เอกสารบังคับอ่าน: ทุกงาน `ENGINEERING-PRINCIPLES.md` · UI `UI-CONVENTIONS.md` · สิทธิ์ `PERMISSIONS-DESIGN.md` · DB → §Supabase Projects (**2 projects!**) + migration เสมอ
 
-**build ผ่าน (`npm run build`) ก่อน commit เสมอ** · merge เข้า `main` = deploy จริง
+**build ผ่าน (`npm run build`) ก่อน commit เสมอ** · merge เข้า `main` = **deploy แบบกันถี่** (ห่างรอบก่อน ≥60 น. = ทันที · ไม่งั้นรอเงียบ 30 น. · `.github/workflows/scheduled-deploy.yml` · ด่วนกด Run workflow) · 🔴 **ห้ามเปิด Auto-Deploy ของ Render คืน** (นาที build หมดกลางเดือน · 📄 `docs/modules/deploy.md`)
 📄 **ที่มาของทุกด่าน + เคสจริงที่ทำให้ต้องมี → `docs/modules/build-gates.md`** (อ่านก่อนจะแตะ/ถอดด่านใดๆ)
 - **`npm run build` = `check:context` → `lint:critical` → `npm test` → `vite build`** ·
      ตัวรันเทส = `scripts/run-tests.mjs` (เก็บ `src/**/__tests__/*.test.mjs` เอง — **วางไฟล์เทสใหม่แล้วถูกเก็บอัตโนมัติ**)
@@ -831,6 +838,9 @@ Reject → status: "rejected" + reject_reason
 
 **กะเช้า 08:00–17:30** (OT 17:30–20:00) · **กะดึก 20:00–07:59** (OT 20:00–22:30) · Extended OT 20:00–23:00
 - **Team A/B** หมุนกะสลับกัน · **Team C** กะเช้าตลอด · **work date: ก่อน 08:00 = วันก่อนหน้า** (`getWorkDate()`)
+- 🔴 **"คนนี้เข้ากะไหน" อ่านจาก `src/utils/shiftAssign.js` เท่านั้น** — `scheduleTeamFor(emp, maps)` (รายคน) ·
+  `lineScheduleTeam(lineId, maps)` (รายไลน์) · **ห้ามอ่าน `maps.byLine[id]` ตรงๆ** และ `buildScheduleMaps(rows, **lines**)`
+  ต้องส่ง `lines` เสมอ — **ไลน์ลูกตกทอดกะจากไลน์แม่** เหมือนจอตั้งค่า · ไม่ส่ง = ไลน์ลูกที่ยังไม่มีแถว = **คนไม่มีกะเงียบๆ** (2 ด่าน)
 - **วันหยุด = มา OT ทั้งกะ 4 รูปแบบ** (8/10 ชม. เช้า-ดึก) — ช่วงเวลา/label/default อ่านจาก **`src/utils/otPeriods.js` ที่เดียว ห้าม hardcode ซ้ำในหน้า**
 - 🔴 **"วันหยุด" มี 2 ความหมาย ห้ามเช็ค `!= 'working'` แบบเหมา** — (ก) วันหยุดโรงงาน (kanban/LPA/แผนงาน · `shutdown75` นับเป็นหยุด) (ข) **วันหยุดแบบ OT** ใช้ `isOtHolidayType()`/`isOtHoliday()` ใน `companyCalendar.js` = **ot15/ot2 เท่านั้น**
 > 📄 ตาราง 4 รูปแบบ OT + มาตรา 75 (`shutdown75`) + จุดจองทุกทาง + migration → `docs/modules/shift-ot.md`

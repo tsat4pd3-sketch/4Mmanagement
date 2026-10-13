@@ -131,7 +131,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
   const [sp, setSp] = useSearchParams();
 
   const [lines, setLines] = useState([]);
-  const { index: org, ready: orgReady } = useOrgScope(lines);   // ผังองค์กรทุกมิติ (23/09) — แทน org_nodes kind='section'
+  const { index: org, ready: orgReady, failed: orgFailed } = useOrgScope(lines);   // ผังองค์กรทุกมิติ (23/09) — แทน org_nodes kind='section'
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
@@ -876,7 +876,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
   const controls = (
     <>
       {/* ขอบเขต = ผังองค์กรทุกมิติ (23/09) — 1 บอร์ดต่อ 1 ขอบเขต (ฝ่าย/ส่วนงาน/แผนก/กลุ่มไลน์/ไลน์/CC) · ชิป = เจาะลง/กลับขึ้นหนึ่งชั้น */}
-      <OrgScopePicker index={org} value={scope || PLANT} onChange={setScope} scopeSet={scopeSet} sections={sections}
+      <OrgScopePicker index={org} value={scope || PLANT} onChange={setScope} scopeSet={scopeSet} sections={sections} failed={orgFailed}
         width={230} title="เลือกขอบเขตตามผังองค์กร" />
       {parentScope && <button onClick={() => setScope(parentScope)} style={pill(false)} title={`กลับขึ้น ${org.labelOf(parentScope.kind, parentScope.value)}`}>↑</button>}
       {childChips.map(c => (

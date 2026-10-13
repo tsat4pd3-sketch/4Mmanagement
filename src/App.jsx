@@ -6,12 +6,13 @@ import { supabase } from './supabaseClient';
 import { setActor } from './utils/actorStamp';
 import { loadProfilesPeople } from './utils/usePeople';
 import MyQueuePanel, { useMyQueue } from './components/MyQueuePanel';
+import { OLD_DAYS } from './utils/myQueue';
 import { ToastContainer, toast } from './components/Toast';
 import Login from './pages/Login';
 import SignatureModal from './components/SignatureModal';
 import ChangePasswordModal from './components/ChangePasswordModal';
 const FeedbackModal = lazy(() => import('./components/FeedbackModal'));
-import { loadPermissions, canAccessPage, setDeptAdmin } from './utils/permissions';
+import { loadPermissions, canAccessPage, setDeptAdmin, setSharedAccount } from './utils/permissions';
 import { LOGISTIC_GROUPS } from './utils/logisticSide';
 import { trackVisit, topPaths } from './utils/navRecent';
 import { effectiveSections } from './utils/sectionScope';
@@ -145,7 +146,7 @@ export const NAV_ITEMS = [
   { to: '/dashboard',   icon: '📊', label: 'ไทม์ไลน์ผลิตทุกไลน์ (TV)', group: 'จอแสดงผล' },
   /* 📺 จอเฝ้าระวัง (`?dept=` ช่าง/ผลิต/สโตร์) — เต็มจอ ไม่มี sidebar/กระดิ่ง
      render ที่ branch พิเศษใน ProtectedLayout (เหมือนหน้า Home) ไม่ได้อยู่ใน <Routes> ด้านล่าง */
-  { to: '/tv', icon: '📺', label: 'จอเฝ้าระวังแขวนห้อง (ช่าง/ผลิต/สโตร์)', group: 'จอแสดงผล' },
+  { to: '/tv', icon: '📺', label: 'Andon Board (จอแขวน)', group: 'จอแสดงผล' },
   // 📟 บอร์ด OEE ประจำไลน์ (จอ TV หน้าไลน์ · deep-link ?line=) — อ่านตารางเราเท่านั้น เตรียมรับ SCADA เป็น "เซ็นเซอร์"
   { to: '/line-oee', icon: '📟', label: 'OEE รายไลน์ (จอหน้าไลน์)', group: 'จอแสดงผล' },
   { to: '/morning-meeting', icon: '🌅', label: 'ประชุมแถวเช้า',   group: 'ฝ่ายผลิต' },
@@ -822,13 +823,13 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '14px 2px 10px', borderBottom: '1px solid var(--border)', marginBottom: 8, flexShrink: 0 }}>
               <span style={{ fontSize: 17, flexShrink: 0 }}>{panelMeta.icon}</span>
               <span style={{ fontSize: 13.5, fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text)', flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{panelMeta.title}</span>
-              <button onClick={onTogglePin} title={pinned ? 'เลิกปักหมุด — แผงจะปิดเองหลังเลือกเมนู' : 'ปักหมุดแผงค้างไว้ (เนื้อหาหลักจะแคบลง)'} style={{
+              {onTogglePin && <button onClick={onTogglePin} title={pinned ? 'เลิกปักหมุด — แผงจะปิดเองหลังเลือกเมนู' : 'ปักหมุดแผงค้างไว้ (เนื้อหาหลักจะแคบลง)'} style={{
                 width: 26, height: 26, borderRadius: 6, flexShrink: 0, cursor: 'pointer', outline: 'none',
                 border: `1px solid ${pinned ? 'var(--accent)' : 'var(--border2)'}`,
                 background: pinned ? 'var(--accent-dim)' : 'transparent',
                 color: pinned ? 'var(--accent)' : 'var(--muted)', fontSize: 12,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}>📌</button>
+              }}>📌</button>}
               {!pinned && (
                 <button onClick={() => setPanel(null)} title="ปิดแผง (Esc)" style={{
                   width: 26, height: 26, borderRadius: 6, flexShrink: 0, cursor: 'pointer', outline: 'none',
@@ -1125,12 +1126,18 @@ const NOTIF_ROUTE = {
   material_requests:   '/qa?tab=matreq',
 };
 
-function NotificationBell({ userId, role }) {
+export function NotificationBell({ userId, role }) {
   const [notifs, setNotifs]     = useState([]);
   const [open,   setOpen]       = useState(false);
   const [muted,  setMuted]      = useState(() => localStorage.getItem('esm-notif-sound') === 'off');
   const dropRef                 = useRef(null);
   const navigate                = useNavigate();
+  /* 🎯 แท็บ "รอคุณ" (13/10 · user "ไม่ได้แยกของ user เองหรือของส่วนงาน … คนเปิด MO หาเรื่องด่วนของตัวเองไม่เจอ")
+     = **สถานะปัจจุบัน** จากกฎคิวงานของฉัน (`utils/myQueue.js` ชั้น mine) ไม่ใช่ฟีดเหตุการณ์ —
+     งานที่ทำเสร็จหายเอง ไม่ถูกแจ้งเตือนส่วนงานดันตกลิสต์ · ตัวเลขบนกระดิ่งนับเฉพาะแท็บนี้ (`badgeCount`)
+     โหลดร่วมกับแผงบัญชีใน sidebar (ผลชุดเดียว ไม่ยิงซ้ำ — ดู useMyQueue) */
+  const myQueue                 = useMyQueue(open);
+  const [tab, setTab]           = useState(null);   // null = เลือกให้อัตโนมัติ (มีงานรอคุณ → แท็บนั้นก่อน)
 
   const load = useCallback(async () => {
     if (!userId) return;
@@ -1262,13 +1269,15 @@ function NotificationBell({ userId, role }) {
   };
 
   const unread = notifs.filter(n => !n.is_read).length;
+  const mineN = myQueue.badge;                       // 0 เมื่อโหลดไม่ครบด้วย (badgeCount) — ตัวเลขที่อาจผิดแย่กว่าไม่มี
+  const curTab = tab || (mineN > 0 ? 'mine' : 'feed');
 
-  // PWA: จำนวนที่ยังไม่อ่าน → badge จุดแดง/เลขบนไอคอนแอปที่ติดตั้ง (Android/desktop Chrome/Edge)
+  // PWA: badge บนไอคอนแอป = งานที่รอคุณ (ชุดเดียวกับเลขบนกระดิ่ง · 13/10 เดิมนับแจ้งเตือนทั่วไปที่ยังไม่อ่าน)
   // ⚠️ iOS ไม่รองรับ App Badging API (Apple ยังไม่ทำ) — guard ด้วย 'setAppBadge' in navigator · อัปเดตเฉพาะตอนเปิดแอป (ไม่มี SW/push)
   useEffect(() => {
     if (!('setAppBadge' in navigator)) return;
-    (unread > 0 ? navigator.setAppBadge(unread) : navigator.clearAppBadge()).catch(() => {});
-  }, [unread]);
+    (mineN > 0 ? navigator.setAppBadge(mineN) : navigator.clearAppBadge()).catch(() => {});
+  }, [mineN]);
   useEffect(() => () => { navigator.clearAppBadge?.().catch(() => {}); }, []); // ล้าง badge ตอน logout/unmount
 
   const typeColor = { success: '#22c55e', error: '#ef4444', warning: '#f59e0b', info: '#4d9fff' };
@@ -1276,7 +1285,7 @@ function NotificationBell({ userId, role }) {
   return (
     <div ref={dropRef} style={{ position: 'fixed', top: 10, right: 14, zIndex: 1200 }}>
       <button
-        onClick={() => { setOpen(o => !o); if (!open) load(); }}
+        onClick={() => { setOpen(o => !o); if (!open) { load(); setTab(null); } }}
         style={{
           width: 36, height: 36, borderRadius: 8,
           background: 'var(--bg3)', border: '1px solid var(--border2)',
@@ -1284,10 +1293,11 @@ function NotificationBell({ userId, role }) {
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           cursor: 'pointer', position: 'relative', boxShadow: 'var(--shadow-sm)',
         }}
-        title="แจ้งเตือน"
+        title={mineN > 0 ? `มีงานรอคุณ ${mineN} รายการ` : unread > 0 ? `แจ้งเตือนทั่วไปยังไม่อ่าน ${unread}` : 'แจ้งเตือน'}
       >
         🔔
-        {unread > 0 && (
+        {/* เลขแดง = งานที่รอคุณโดยตรงเท่านั้น · แจ้งเตือนทั่วไปที่ยังไม่อ่าน = จุดเล็กสีเทา (ไม่แย่งความสนใจ) */}
+        {mineN > 0 ? (
           <span style={{
             position: 'absolute', top: -4, right: -4,
             background: '#ef4444', color: '#fff',
@@ -1296,8 +1306,10 @@ function NotificationBell({ userId, role }) {
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             padding: '0 3px', lineHeight: 1,
           }}>
-            {unread > 99 ? '99+' : unread}
+            {mineN > 99 ? '99+' : mineN}
           </span>
+        ) : unread > 0 && (
+          <span aria-hidden style={{ position: 'absolute', top: -2, right: -2, width: 9, height: 9, borderRadius: '50%', background: 'var(--muted)', border: '2px solid var(--bg3)' }} />
         )}
       </button>
 
@@ -1319,7 +1331,7 @@ function NotificationBell({ userId, role }) {
                 style={{ fontSize: 14, background: 'none', border: 'none', cursor: 'pointer', padding: 0, lineHeight: 1, opacity: muted ? 0.5 : 1 }}>
                 {muted ? '🔕' : '🔔'}
               </button>
-              {unread > 0 && (
+              {curTab === 'feed' && unread > 0 && (
                 <button onClick={markAllRead} style={{ fontSize: 11, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
                   อ่านทั้งหมด
                 </button>
@@ -1372,6 +1384,60 @@ function NotificationBell({ userId, role }) {
             </div>
           )}
 
+          {/* แท็บ: 🎯 รอคุณ (สถานะงานจริงตอนนี้) · 📢 แจ้งเตือนทั่วไป (ฟีดเหตุการณ์ของส่วนงาน) */}
+          <div role="tablist" style={{ display: 'flex', borderBottom: '1px solid var(--border)' }}>
+            {[
+              { k: 'mine', label: '🎯 รอคุณ', n: mineN, hot: mineN > 0 },
+              { k: 'feed', label: '📢 แจ้งเตือนทั่วไป', n: unread, hot: false },
+            ].map(t => (
+              <button key={t.k} role="tab" aria-selected={curTab === t.k} onClick={() => setTab(t.k)}
+                style={{
+                  flex: 1, padding: '8px 6px', fontSize: 12, fontWeight: curTab === t.k ? 800 : 600, cursor: 'pointer',
+                  background: curTab === t.k ? 'var(--accent-dim)' : 'transparent', border: 'none',
+                  borderBottom: `2px solid ${curTab === t.k ? 'var(--accent)' : 'transparent'}`,
+                  color: curTab === t.k ? 'var(--text)' : 'var(--muted)',
+                }}>
+                {t.label}
+                {t.n > 0 && <span style={{ marginLeft: 5, fontSize: 11, fontWeight: 800, color: t.hot ? '#ef4444' : 'var(--muted)' }}>{t.n > 99 ? '99+' : t.n}</span>}
+              </button>
+            ))}
+          </div>
+
+          {curTab === 'mine' && (
+            <div style={{ overflowY: 'auto', flex: 1 }}>
+              {myQueue.q?.partial && (
+                <div style={{ padding: '6px 14px', fontSize: 11, color: '#f59e0b' }}>⚠️ โหลดคิวงานไม่ครบ — รายการด้านล่างไม่ใช่ทั้งหมด</div>
+              )}
+              {!myQueue.q && <div style={{ padding: '20px 14px', textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>กำลังดูงานที่รอคุณ…</div>}
+              {myQueue.q && !myQueue.q.mine.length && (
+                <div style={{ padding: '18px 14px', textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>✅ ไม่มีงานที่รอคุณอยู่</div>
+              )}
+              {myQueue.q?.mine.map(it => (
+                <div key={it.key} onClick={() => { setOpen(false); if (it.to) navigate(it.to); }}
+                  style={{ padding: '9px 14px', borderBottom: '1px solid var(--border)', cursor: it.to ? 'pointer' : 'default',
+                    background: it.sign ? 'var(--accent-dim)' : 'transparent', borderLeft: it.sign ? '4px solid #ef4444' : '4px solid transparent' }}>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}>
+                    <span style={{ fontSize: 13 }}>{it.icon}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', lineHeight: 1.4 }}>{it.title}</div>
+                      {it.detail && <div style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.detail}</div>}
+                      <div style={{ fontSize: 11, color: it.age != null && it.age >= OLD_DAYS ? '#ef4444' : 'var(--muted)', marginTop: 2 }}>
+                        {it.sign ? '✍️ ช่องนี้รอคุณเซ็น · ' : ''}{it.age != null ? `ค้าง ${it.age} วัน` : ''}
+                      </div>
+                    </div>
+                    {it.to && <span style={{ flexShrink: 0, alignSelf: 'center', fontSize: 14, color: 'var(--muted)' }}>›</span>}
+                  </div>
+                </div>
+              ))}
+              {myQueue.q && myQueue.q.counts.unit > 0 && (
+                <div style={{ padding: '8px 14px', fontSize: 11, color: 'var(--muted)' }}>
+                  🏭 คิวของหน่วยงานคุณอีก {myQueue.q.counts.unit} รายการ (ไม่ได้รอคุณโดยตรง) — ดูที่เมนูบัญชี › คิวงานของฉัน
+                </div>
+              )}
+            </div>
+          )}
+
+          {curTab === 'feed' && (
           <div style={{ overflowY: 'auto', flex: 1 }}>
             {notifs.length === 0 ? (
               <div style={{ padding: '20px 14px', textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>ไม่มีแจ้งเตือน</div>
@@ -1409,6 +1475,7 @@ function NotificationBell({ userId, role }) {
               </div>
             ))}
           </div>
+          )}
         </div>
       )}
     </div>
@@ -1631,12 +1698,16 @@ function AutoLogoutWarning({ secsLeft, onStay, onLogout }) {
 /* ─── Protected Layout ─────────────────────────────────────────────── */
 // permsVersion ไม่ได้ใช้ในฟังก์ชันโดยตรง — รับไว้เพื่อให้ prop เปลี่ยนแล้ว layout ทั้งต้น re-render
 // (RoleRoute/Sidebar อ่าน permission cache แบบ sync ผ่าน canAccessPage ระหว่าง render)
-function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, viewAs, onApplyViewAs, userLineId, userTeam, userSection, userSections, userMtnTeams, userIsDeptAdmin, userPosition, userEmail, userFullName, userNotifyEmail, userSignatureUrl, userAvatarUrl, onAvatarSaved, onSignatureSaved, permsVersion }) {
+function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, viewAs, onApplyViewAs, userLineId, userTeam, userSection, userSections, userMtnTeams, userIsDeptAdmin, userAccountKind, userPosition, userEmail, userFullName, userNotifyEmail, userSignatureUrl, userAvatarUrl, onAvatarSaved, onSignatureSaved, permsVersion }) {
   const isMobile = useIsMobile();
   const isTV     = !useIsMobile(1919);   // จอ ≥1920 (TV) — reactive แทน innerWidth ครั้งเดียว
   const [isOpen, setIsOpen] = useState(() => typeof window !== 'undefined' && window.innerWidth > 768);
+  /* 📺 เมนูบนจอ /tv (13/10 · feedback user "เข้ามาแล้วกลับออกไปหน้าอื่นไม่ได้") — state แยกจาก `isOpen`
+     ⇒ เปิดจอ TV มาต้องปิดเสมอ (ไม่รับค่าค้างจากหน้าก่อน) · ปิดเองเมื่อเปลี่ยนหน้า */
+  const [tvNavOpen, setTvNavOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
+  useEffect(() => { setTvNavOpen(false); }, [location.pathname]);
   const userId = session?.user?.id ?? null;
 
   useEffect(() => {
@@ -1655,6 +1726,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
     // เครื่องใดเครื่องหนึ่ง logout/auto-logout (สาเหตุหลักของ "เด้ง login บ่อย" 2026-07-14)
     setActor(null, null);   // ล้างตัวตนผู้ใช้ (ชื่อ+uid) ตอน logout
     setDeptAdmin(false);
+    setSharedAccount(false);
     await supabase.auth.signOut({ scope: 'local' });
     navigate('/login');
   };
@@ -1740,8 +1812,11 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
     position: userPosition, notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl,
     avatarUrl: userAvatarUrl, fullName: userFullName, isDeptAdmin: userIsDeptAdmin,
     realRole: realRole ?? userRole,
+    /* 🖥️ บัญชีกลาง = ลบไม่ได้ — จอต้องเอาไป**เขียนเหตุผล**ให้เห็น ไม่ใช่ซ่อนปุ่มเงียบ (UI §6.9) */
+    accountKind: userAccountKind, isSharedAccount: userAccountKind === 'shared',
   }), [userRole, userLineId, userTeam, userSection, userSections, userMtnTeams, userPosition,
-       userNotifyEmail, userSignatureUrl, userAvatarUrl, userFullName, userIsDeptAdmin, realRole]);
+       userNotifyEmail, userSignatureUrl, userAvatarUrl, userFullName, userIsDeptAdmin, realRole,
+       userAccountKind]);
   /* layout ปกติต้องรู้ว่า sidebar เปิดอยู่ไหมด้วย — แยก memo เพื่อไม่ให้ `isOpen` ไปสั่น context ของจอ /tv */
   const userCtxLayout = useMemo(() => ({ ...userCtx, sidebarOpen: isOpen }), [userCtx, isOpen]);
 
@@ -1779,8 +1854,32 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
     return (
       <UserContext.Provider value={userCtx}>
         <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', color: 'var(--muted)', fontSize: 14, background: 'var(--bg)' }}>กำลังโหลด...</div>}>
-          <TvBoard />
+          {/* บัญชีจอแขวน (role display) = ไม่มีคนกด ⇒ ไม่มีปุ่มเมนู (คงหน้าโล่งตามเดิม) */}
+          <TvBoard onOpenMenu={role === 'display' ? null : () => setTvNavOpen(true)} />
         </Suspense>
+        {role !== 'display' && (
+          <Sidebar
+            isOpen={tvNavOpen}
+            onClose={() => setTvNavOpen(false)}
+            onLogout={handleLogout}
+            theme={theme}
+            onToggleTheme={onToggleTheme}
+            userRole={role}
+            userLineId={userLineId}
+            userPosition={userPosition}
+            userEmail={userEmail}
+            userFullName={userFullName}
+            userSignatureUrl={userSignatureUrl}
+            userAvatarUrl={userAvatarUrl}
+            remoteCode={remoteCode}
+            onToggleRemote={onToggleRemote}
+            onOpenPalette={() => setPaletteOpen(true)}
+            pinned={false}
+            realRole={realRole}
+            onOpenViewAs={realRole === 'admin' ? () => setViewAsOpen(true) : undefined}
+            onAvatarSaved={onAvatarSaved}
+          />
+        )}
         {rotator}
         {viewAsBanner}
         {viewAsModal}
@@ -2138,6 +2237,7 @@ export default function App() {
   const [userAvatarUrl,    setUserAvatarUrl]    = useState(null); // รูปโปรไฟล์ user (profiles.avatar_url — 2026-07-14)
   const [userMtnTeams,     setUserMtnTeams]     = useState([]);   // ทีมช่างซ่อมที่ user สังกัด (profiles.mtn_teams — 2026-07-22) แยกคิว MO
   const [userIsDeptAdmin,  setUserIsDeptAdmin]  = useState(false); // แอดมินหน่วยงาน (profiles.is_dept_admin — 2026-08-03) ซ้อนบน role เดิม
+  const [userAccountKind,  setUserAccountKind]  = useState(null);  // 'person' | 'shared' (บัญชีกลาง = จอ TV/ประจำเครื่อง · ลบไม่ได้)
   const [showSplash,   setShowSplash]   = useState(true);
   const [theme, setTheme] = useState(() => localStorage.getItem('4m-theme') || 'dark');
   // ต้อง resolve ทั้ง profile (role จริง) และ permissions ก่อนค่อย render route tree —
@@ -2207,7 +2307,8 @@ export default function App() {
     //    mtn_teams + avatar_url แยกกันคนละ round trip) วัดจาก log จริง 11 ก.ย. 2026 = 6,760 req/วัน
     //    บนตาราง profiles ทั้งที่เป็นข้อมูลของ user คนเดียว ~188 ครั้ง/วัน/คน (ทุกครั้งที่เปิด/รีเฟรชแอป)
     //    คอลัมน์ mtn_teams (20260722) / avatar_url (20260714) apply ครบแล้วทั้งคู่ (ตรวจ 2026-09-11)
-    const COLS_FULL = COLS + ', employee_id, mtn_teams, avatar_url';
+    // account_kind (บัญชีของคน/บัญชีกลาง) — ใช้คุม "บัญชีกลางห้ามลบ" (utils/permissions.js)
+    const COLS_FULL = COLS + ', employee_id, mtn_teams, avatar_url, account_kind';
     let { data, error } = await supabase.from('profiles').select(COLS_FULL).eq('id', user.id).single();
     // คอลัมน์เสริมยังไม่ apply (42703) → ถอยไป select ชุดพื้นฐาน ห้ามให้ login พังทั้งระบบ
     // (ค่าที่หายไปจะเป็น null → ทีมช่าง/รูปโปรไฟล์ไม่ขึ้น แต่เข้าใช้งานได้ตามปกติ)
@@ -2281,6 +2382,12 @@ export default function App() {
       const v = data?.is_dept_admin === true;
       setUserIsDeptAdmin(v); setDeptAdmin(v);
     }
+    /* 🖥️ บัญชีกลาง (จอ TV / บัญชีประจำเครื่อง) ห้ามลบอะไรทั้งนั้น — ตั้ง flag **sync ก่อน render แรก**
+       เหมือน dept_admin (ถ้าตั้งช้า ปุ่มลบจะโผล่แวบหนึ่งก่อนหาย = คนกดทันจริง)
+       ⚠️ คอลัมน์อยู่ใน COLS_FULL ⇒ DB ที่ยังไม่มีคอลัมน์จะถอยไป COLS แล้วค่านี้เป็น undefined
+          = ไม่บล็อก (พฤติกรรมเดิม) · ฝั่ง DB ของ Main มีด่าน has_perm ซ้อนอีกชั้น */
+    setUserAccountKind(data?.account_kind ?? null);
+    setSharedAccount(data?.account_kind === 'shared');
     setProfileLoaded(true);
   };
 
@@ -2362,6 +2469,7 @@ export default function App() {
                 userSections={effSections}
                 userMtnTeams={effMtnTeams}
                 userIsDeptAdmin={effDeptAdmin}
+                userAccountKind={userAccountKind}
                 userPosition={userPosition}
                 userEmail={userEmail}
                 userFullName={userFullName}

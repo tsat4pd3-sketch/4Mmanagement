@@ -832,3 +832,141 @@ migration `20261012_rls_round5_anon_scope_masters_main.sql` (**apply แล้�
 (ถือ `:edit_dept`)** — คู่นี้สำคัญเพราะพิสูจน์ว่าแยกตามคีย์จริง ไม่ใช่แยกตาม "ล็อกอินหรือยัง"
 
 migration `20261012d_rls_round7_attendance_shift_main.sql` (**apply แล้ว 2026-10-12** · มี ROLLBACK + ลำดับย้อน)
+
+
+## 🔒 RLS รอบ 8 — ทะเบียนคน + จุดงาน + KPI รุ่นเก่า (2026-10-13)
+
+### 🔴 บทเรียนซ้ำรอบที่ 3 — **รายการค้างชี้ผิดตัว ต้องวัดก่อนลงมือทุกครั้ง**
+
+รายการค้างจากรอบ 5 เขียนว่า `kpi_actuals`/`kpi_targets`/`kpi_raw_inputs`/`kpi_section_detail`
+= "เลข KPI" · วัดจริง: **ไม่มีโค้ดอ้างถึงเลย เขียนครั้งสุดท้าย 25 พ.ค.** (เลิกใช้แล้ว)
+เลข KPI วันนี้อยู่ที่ `kpi_definitions` · `kpi_catalog` · `kpi_manual_entries` · `kpi_month_plans` ·
+`kpi_base_inputs` · `kpi_month_notes` · `kpi_board_layouts` · `kpi_standard_items`
+⇒ **8 ตัวนั้นถูกรัดด้วย `has_perm('kpi:manage')` ไว้แล้วก่อนรอบนี้ ไม่มีงานต้องทำ**
+(`kpi_monthly` = คีย์ทะเบียนเอกสาร · `kpi_mtn_rollup` = RPC ฝั่ง DR — ไม่ใช่ตาราง Main ทั้งคู่)
+· วัดชั้น ข ใหม่ทั้งชุดได้ **37 ตาราง** (รายการเดิมบอก 39 แต่สมาชิกไม่ตรง)
+
+### ⚠️ `role_permissions` มีแถว `allowed=false` — คิวรีสรุปผู้ถือคีย์ต้องกรองเสมอ
+
+นับแถวเปล่าๆ จะรายงานผู้ถือเกินจริง (`skills:delete` ดูเหมือน 9 role จริง 3) ·
+**ด่านจริงคือเทสจำลอง JWT ไม่ใช่คิวรีสรุป** — รอบนี้เทสจับได้ว่าผมสรุปผู้ถือผิด 2 คีย์
+· `can()` ฝั่งจอ (`src/utils/permissions.js:49`) อ่าน `allowed` ตัวเดียวกับ `has_perm` ⇒ จอกับ DB ตัดสินตรงกัน
+
+### ตารางที่รัด
+
+| ตาราง | cmd | predicate | ปุ่มเจ้าของ |
+|---|---|---|---|
+| `employees` | INSERT | `employees:register` **or** `page:/add-user` | Register.jsx · AddUser.jsx |
+| `employees` | UPDATE | OR 7 คีย์ (`employees:edit`/`:deactivate`/`:edit_all_sections` · `line_setup:edit` · `org:manage_divisions`/`:manage_own_unit` · `storage_maintain:run`) | operator.jsx · LineSetup · OrgSetup · ImageSqueezePanel |
+| `employees` | DELETE | `employees:deactivate` | **ไม่มีจอไหนลบ** — ของจริงคือ soft-delete `is_active=false` |
+| `workstations` | ALL | `line_setup:edit` | LineSetup.jsx |
+| `station_requirements` | ALL | `line_setup:edit` **or** `skills:delete` | LineSetup · operator.jsx:748 |
+| `employee_home_positions` | ALL | `management:assign_manpower` | Management.jsx modal จุดงาน |
+| KPI เก่า 4 ตาราง | ALL | `kpi:manage` | ไม่มี (เลิกใช้ · รัดให้ตรงโดเมนตัวเอง) |
+
+· 🔴 **3 ตาราง (`workstations`/`station_requirements`/`employee_home_positions`) มีแต่ policy `FOR ALL`
+  ตัวเดียว** ⇒ ต้อง `create policy` อ่านก่อนแล้วค่อยรัด (บทเรียนเดียวกับ `shift_schedules` รอบ 7)
+· **สิ่งที่ได้จริงไม่ใช่ "ปิดรูรั่ว" แต่คือ "เพิกถอนสิทธิ์ที่ `/permissions` แล้วมีผลถึง DB"** —
+  เดิมถอนคีย์ไปก็ยังยิง REST เขียนได้อยู่ดี · พูดให้ตรงดีกว่าเคลมเกิน
+
+### 🔑 บั๊กจริงที่เจอระหว่างทาง — ปุ่มจัดกำลังคนใน modal ไม่มี `can()` เลย
+
+`Management.jsx` มี `can('management','assign_manpower')` อยู่แล้ว **แต่ไปอยู่ใน `canDrag` ที่ประกาศ
+ข้างในฟังก์ชันวาดการ์ดพนักงาน** ⇒ ครอบปุ่มใน modal จุดงานไม่ถึง · ใครเปิด modal ได้ก็กด
+"📌 บันทึกตำแหน่งประจำ" / "↩ Pool" ได้ทั้งที่ไม่มีสิทธิ์
+⇒ แก้ 2 ชั้น: `canAssignManpower` ระดับคอมโพเนนต์ · ซ่อนปุ่ม **และ** เช็คซ้ำใน `assignWorker()` /
+`saveHomePosition()` (ซ่อนปุ่มอย่างเดียวไม่พอ)
+
+🔴 **ด่าน 2 ชั้น เพราะชั้นหยาบจับเคสนี้ไม่ได้:**
+- `rls-tightened-tables-need-key` — ไฟล์ที่เขียนตารางที่รัดแล้ว ต้องอ้างคีย์นั้นในไฟล์
+  (จับ "ไฟล์ใหม่ที่ลืมเช็คสิทธิ์ทั้งไฟล์") · **ทะเบียน `RLS_KEYED_TABLES` ต้องเติมทุกครั้งที่รัดตารางเพิ่ม**
+- `manpower-actions-need-perm` — เจาะจงว่า `assignWorker`/`saveHomePosition` ต้องมี `canAssignManpower`
+  ในตัวฟังก์ชันเอง (**ตรวจย้อนแล้ว: ถอดด่านออก = เทสแดงทันที**)
+- บทเรียนข้ามโมดูล: **"ไฟล์มีคีย์" ≠ "ทางเข้านั้นถูกกัน"** — ด่านหยาบต้องมีด่านเจาะจงคู่เสมอ
+
+### ผลตรวจกลับ (simulated JWT · rollback ทั้งก้อน)
+
+| role | อ่าน | เขียน |
+|---|---|---|
+| `engineer` (ไม่ถือคีย์ไหนเลย) | emp 314 · จุดงาน 132 · ทักษะจุดงาน 539 แถว | **0 ทุกตาราง** |
+| `mtn` (ถือ `employees:edit`) | — | emp 1 · จุดงาน 0 · ทักษะ 0 · ตำแหน่งประจำ 0 |
+| `manager` (ถือครบ) | — | จุดงาน 1 · ทักษะ 1 · ตำแหน่งประจำ 1 · KPI เก่า 1 |
+| `supervisor` (ไม่ถือ `skills:delete`) | — | ทักษะจุดงาน 1 — ผ่านขา `line_setup:edit` (พิสูจน์ว่า OR ทำงาน) |
+
+⚠️ **ของที่ไม่แก้ให้ (เป็นนโยบาย ไม่ใช่โค้ด):** `sale` / `warehouse_delivery` ถือ `employees:register`
++ `employees:edit` · ตอนนี้ DB บังคับตามทะเบียนแล้ว ⇒ ถอนที่ `/permissions` เมื่อไหร่มีผลทันที
+
+📌 **รอ user ตัดสิน:** KPI เก่า 4 ตาราง (42/313/11/0 แถว) ควรย้ายเข้า schema `archive` หรือ drop
+
+migration `20261013_rls_round8_people_stations_kpi_legacy_main.sql` (**apply แล้ว 2026-10-13** · ROLLBACK + ลำดับย้อนครบ)
+
+
+## 🪪 แถบ "ตัวตนไม่ตรงกับฐานพนักงาน" — ช่องไหนระบบใช้ฝั่งไหน (2026-10-13)
+
+> user: *"เรื่องนี้เหมือนเคยแก้ไปแล้ว ตอนนี้ทำไมมีพนักงานหลายคนโชว์ขึ้นมา"*
+
+**ทำไมเลขกระโดด:** 08/10 ขยายการเทียบจาก **2 ช่อง (ทีม+ไลน์)** เป็น **5 ช่อง** (เพิ่ม ส่วนงาน · ตำแหน่ง ·
+หน่วยในผัง) ⇒ ของที่เพี้ยนเงียบมาตลอดโผล่ขึ้นมาพร้อมกัน **ไม่ใช่ของใหม่ ไม่ใช่อาการย้อนกลับ**
+วัดจริง 13/10 (บัญชีที่ผูกพนักงานแล้ว 43 ใบ): ทีม 1 · ไลน์ 2 · ส่วนงาน 6 · ตำแหน่ง 6 · หน่วยในผัง 5
+⇒ กติกาเดิมโชว์ **3 ใบ** · กติกาใหม่โชว์ **17 ใบ**
+
+### 🔴 แต่ "ฐานพนักงานชนะ" ไม่จริงทุกช่อง — ตรวจของจริงใน `src/App.jsx` ตอน login
+
+| ช่อง | ระบบใช้ฝั่งไหน | ที่มา |
+|---|---|---|
+| `team` · `line_id` · `section` | **ฐานพนักงาน** (`emp.<f> ?? profile.<f>`) | App.jsx ~2310 |
+| `position` | **บัญชี (`profiles`) ล้วน** — ค่าฝั่งพนักงานไม่ถูกใช้เลย | `setUserPosition(data?.position)` |
+| `org_node_id` | **ไม่มีตัวชนะ** คนละจออ่านคนละตาราง (`profiles` 72 แถว · `employees` 308) | `orgNodeRefs.js` |
+
+⇒ ปุ่ม **"ใช้ค่าจากฐานพนักงาน"** เขียนครบทุกช่องใน `IDENTITY_FIELDS` ⇒ บนช่อง `position`
+มัน**เปลี่ยนระดับสิทธิ์จริง** (`positionRank()` = ด่านช่องเซ็นขั้น 6/7/8 + คิว "รอคุณอนุมัติ MO")
+ไม่ใช่ "ล้างค่าขยะ" อย่างที่แถบเคยเขียน
+
+**แก้แล้ว (13/10):**
+- `IDENTITY_FIELDS` ทุกช่องต้องประกาศ **`uses`** (`USES_EMP` / `USES_ACCT` / `USES_SPLIT`) — มีเทส
+  ช่องที่ไม่ใช่ `USES_EMP` ต้องมี `note` อธิบายว่าทับแล้วเกิดอะไร (มีเทส)
+- `identityDiff()` / `identityFallbacks()` พก `uses` + `note` ไปให้จอ ⇒ บรรทัดบนแถบระบายเขียว
+  **ฝั่งที่ระบบใช้จริง** (ไม่ใช่ฝั่งพนักงานเสมอ) + ติด ⚠️ หน้าชื่อช่อง
+- `changesBehaviour(diff)` คัดช่องที่ทับแล้วของจริงเปลี่ยน ⇒ ปุ่มติด ⚠️ และ **ถามยืนยันก่อน**
+  (แถวที่ต่างแค่ ทีม/ไลน์/ส่วนงาน ยังกดรวดเดียวเหมือนเดิม ไม่ถาม)
+- 🔴 **ห้ามเขียนคำอธิบายเหมาทุกช่องอีก** — ถ้าวันหน้า App.jsx merge `position` ด้วย ค่อยเปลี่ยน `uses`
+  ที่ `identitySync.js` ที่เดียว แล้วจอจะตามเอง
+
+**งานค้าง (ยังไม่ทำ · ต้องให้ user เคาะ):** จะให้ `position` / `org_node_id` มี single source แบบ
+ทีม/ไลน์/ส่วนงาน ไหม — ถ้าเอา ต้องแก้ `App.jsx` ให้ merge แล้วไล่เช็คทุกจอที่อ่าน `profiles.org_node_id`
+---
+## 🔒 RLS รอบ 9 — OT · งานนอกไลน์ · ประวัติย้ายจุดงาน · ทะเบียนเล็ก (2026-10-13)
+
+| ตาราง | แถว | predicate | ปุ่มเจ้าของ |
+|---|---|---|---|
+| `ot_night_bookings` | 3,561 | `checkin:record` | Checkin.jsx (จอง OT กะดึก) |
+| `line_helpers` | 41 | `checkin:record` | Checkin.jsx (ยืมคนช่วยไลน์) |
+| `operator_special_tasks` | 628 | `management:assign_special_task` | Management.jsx |
+| `station_assignment_logs` | 9,158 | `management:assign_manpower` | Management.jsx:620 (insert เท่านั้น) |
+| `special_task_types` · `leave_types` | 5 / 4 | `ot_master:manage` | Report.jsx `<SimpleNameMaster>` |
+
+· 🔴 **4 ใน 6 ตัวมีแต่ policy `FOR ALL`** ⇒ สร้าง policy อ่านก่อนแล้วค่อยรัด —
+  **รอบ 7 (`shift_schedules`) · รอบ 8 (`workstations` ฯลฯ) · รอบ 9 เจอแบบเดียวกันทุกรอบ
+  ⇒ ถือเป็นรูปแบบประจำของตารางยุคแรก ไม่ใช่เหตุบังเอิญ** เช็คก่อนรัดทุกครั้ง
+· `station_assignment_logs` = ประวัติ มีแต่ `insert` จากจอ ⇒ รัดด้วยคีย์ของคนที่ทำให้เกิดแถว
+
+### 🔎 กับดักการ grep ที่เจอรอบนี้ — แผง CRUD กลางรับ "ชื่อตาราง" เป็น prop
+
+`special_task_types` / `leave_types` ไม่มี `from('<table>').insert` ให้ grep เจอเลย เพราะเขียนผ่าน
+`<SimpleNameMaster table="leave_types">` ⇒ **grep หาแต่ `from('x')` จะสรุปว่า "ไม่มีใครเขียน" แล้วรัดผิด**
+⇒ เติมรูปแบบ `table={'x'}` เข้าด่าน `rls-tightened-tables-need-key` แล้ว (ตรวจย้อนแล้ว: วางไฟล์ที่ใช้แผงนี้
+โดยไม่มีคีย์ = เทสแดงทันที) · **ตารางใหม่ที่รัด ต้องเติมใน `RLS_KEYED_TABLES` ทุกครั้ง**
+
+### ผลตรวจกลับ (simulated JWT · rollback ทั้งก้อน)
+
+| role | ผล |
+|---|---|
+| `engineer` (ไม่ถือคีย์ไหนเลย) | อ่าน OT 3,561 · ประวัติย้ายจุด 9,158 · คนช่วยไลน์ 41 · ประเภทลา 4 แถว — **เขียน 0 ทั้ง 6 ตาราง** |
+| `leader` | OT 1 · คนช่วย 1 · งานพิเศษ 1 · **ประวัติย้ายจุด 0** (ไม่ถือ `assign_manpower`) · **ทะเบียนลา 0** (ไม่ถือ `ot_master`) |
+| `manager` | ประวัติ 1 · ทะเบียนลา 1 · ทะเบียนงานพิเศษ 1 |
+
+migration `20261013b_rls_round9_ot_specialtask_logs_main.sql` (**apply แล้ว 2026-10-13** · ROLLBACK ครบ)
+
+**เหลือชั้น ข. อีก 23 ตาราง** — ใช้งานจริง 14 · ว่าง 0 แถว 9 (`cqi15_*` 3 · `ppe_checks`/`ppe_requirements` ·
+`production_shots` · `qa_customer_claims` · `attendances` · `profile_org_access` — 2 ตัวท้ายเป็นตารางตาย เสนอลบ)
+· 🔵 `four_m_logs` / `profiles` **policy เปิดโดยเจตนา — ด่านจริงคือ trigger** (รอบ 5-6) ไม่ต้องรัด policy

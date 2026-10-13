@@ -69,6 +69,19 @@ const RULES = [
     allow: {},
   },
   {
+    id: 'mo-wait-stage-via-mowaitmeta',
+    scan: ['src/utils/myQueue.js', 'src/pages/MtnRepair.jsx', 'src/utils/mtnStale.js'], ext: ['.js', '.jsx'],
+    /* จับการถาม "ใบนี้รอขั้นไหน" ด้วย nextStepOf() ตรงๆ ในตัวจัดกอง/ตัวกรอง */
+    re: /(const|let)\s+\w*[Ww]ait\w*\s*=[^\n]*nextStepOf\(/g,
+    why: '🔒 **ด่านอนุมัติก่อนเริ่มงานไม่มีเลขขั้น** — ใบ improve/build ที่ ผจก.ฝ่ายที่แจ้งยังไม่เซ็น '
+       + 'ช่างกดรับงานไม่ได้ แต่ `nextStepOf()` คืน 2 ⇒ ตัวกรอง "รอขั้นไหน" + คิวงานของฉัน + กระดิ่ง '
+       + 'เหมาไปกองเดียวกับ "รอช่างรับงาน" ⇒ **ไม่มีจอไหนบอกว่ารอใคร** คนต้องไปตามกันใน LINE '
+       + '(13/10/2026 · user: "มีงานรอเราอนุมัติ MO แต่เราหาไม่เจอ")',
+    fix: 'ใช้ `moWaitMeta(order)` จาก src/utils/mtnStepPerm.js — คืน { stage, step, meta } ที่ด่านอนุมัติ '
+       + "ชนะเลขขั้น (stage = 'approve_first' · step = null)",
+    allow: {},
+  },
+  {
     id: 'jigs-has-no-department-column',
     scan: ['src'], ext: ['.jsx', '.js'],
     /* select จากตาราง jigs (DR) ที่ขอคอลัมน์ department — ตารางนี้ไม่มีคอลัมน์นั้น */
@@ -141,7 +154,13 @@ const RULES = [
     /* จับ loader ของ cachedMaster ที่กลืน error เป็นลิสต์ว่าง — `.data || []` บนบรรทัดเดียวกับ cachedMaster( */
     /* 05/10 ขยายเป็น 2 บรรทัด — loader ที่ขึ้นบรรทัดใหม่หลัง `async () =>` หลบด่านเดิมได้ทั้งที่กลืน error เหมือนกัน
        (เจอจริง: FactoryMap dr_products:ct / kanban_standards:ct / break_policies:active / machines:* · LineOeeBoard) */
-    re: /cachedMaster\([^\n]*(?:\n[^\n]*)?\.data\s*\|\|\s*\[\]/g,
+    /* 13/10 ขยายอีกครั้ง — loader ที่ยาวหลายบรรทัด (อ่าน 2 ตารางแล้ว return object) หลบ 2 บรรทัดเดิมได้
+       เจอจริง: `usePartOptions` → `return { sets: a.data || [], qaParts: b.data || [] }` (บรรทัดที่ 6 ของ loader)
+       ⇒ ทะเบียนพาร์ททั้งชุดกลายเป็นว่างแล้วถูก cache 4 ชม. **และ `cachedMaster` ไม่เห็น error
+          ⇒ toast กลางใน main.jsx ไม่ขึ้นด้วย = เงียบสนิท** (ช่องเลือกพาร์ทว่าง = "ไม่มีพาร์ทนี้")
+       หน้าต่าง 500 ตัวอักษร และ **หยุดเมื่อเจอ `throw` / `mrows` / ปลาย loader (`})`)**
+       ⇒ loader ที่เช็ค error ไว้ก่อนแล้ว (useProducts/useMachines/usePeople/partImages) ไม่ถูกจับผิด */
+    re: /cachedMaster\((?:(?!\}\s*\)|throw|mrows)[\s\S]){0,500}?\.data\s*(\|\||\?\?)/g,
     why: 'supabase-js **ไม่ throw** ⇒ `(await …).data || []` ทำให้คิวรีที่ล้ม (เน็ตสะดุด/timeout/RLS) '
        + 'กลายเป็น "โหลดสำเร็จ ได้ 0 แถว" แล้ว `cachedMaster` **เขียนลิสต์ว่างลง localStorage ทับของดี '
        + 'ค้างในเครื่องนั้นอีก 4 ชม.** โดยไม่มีข้อความบนจอเลย — เครื่องอื่นที่โหลดติดยังเห็นครบ '
@@ -150,6 +169,88 @@ const RULES = [
     fix: 'ห่อด้วย `mrows(await …)` จาก `src/utils/masterCache.js` — ตาราง/คอลัมน์ยังไม่มี (42P01/42703) '
        + 'ยังคืน [] เหมือนเดิม · error อื่นโยน ⇒ cache ไม่ถูกทับ + ขึ้น toast ให้คนเห็น',
     allow: {},   // ตัวอย่างใน masterCache.js อยู่ในคอมเมนต์ — ตัวสแกนตัดคอมเมนต์ก่อนตรวจอยู่แล้ว
+  },
+  {
+    id: 'daily-check-unknown-not-false',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* จับการบีบ "ไม่รู้ว่าวันนั้นผลิตไหม" ให้กลายเป็น "ไม่ได้ผลิต" */
+    re: /ranOn\([^)]*\)\s*(\?\?|\|\|)\s*false/g,
+    why: 'ตารางตรวจรายวันต้องแยก 3 อย่าง: **ไม่ได้ตรวจ / ไม่ได้ผลิต / ต้องตรวจวันนั้น** (คำสั่ง user 13/10) '
+       + '· `ranOn()` คืน `null` = "อ่านข้อมูลการเปิดกะไม่สำเร็จ" ⇒ บีบเป็น `false` = จอสรุปว่า '
+       + '"ไม่ได้ผลิต ไม่ต้องตรวจ" ⇒ **วันที่ขาดตรวจทั้งเดือนหายเกลี้ยงเพราะคิวรีล้มครั้งเดียว** '
+       + '— เป็นการโกหกที่อันตรายกว่าไม่เช็ค เพราะจอดูสะอาดขึ้นตอนระบบพัง',
+    fix: 'ส่ง `null` ต่อให้ `checkDayState()` (`src/utils/dailyCheckDay.js`) แล้วมันจะคืน `unknown` '
+       + '· จอวาด ❔ และเขียนจำนวนวันที่ไม่รู้ด้วย `checkDaysNote()` (ตัวหารของ % ไม่นับ unknown)',
+    allow: {},
+  },
+  {
+    id: 'am-open-lines-family-aware',
+    scan: ['src/lib/dailyAmBoard.js'], ext: ['.js'],
+    /* "ไลน์ไหนเดินอยู่" ต้องผ่าน openFamilyLines() — ประกอบ Set เองที่นี่ = กลับไปเทียบชื่อตรงตัว */
+    re: /openSessionLines:\s*new Set\(/g,
+    why: 'ไลน์แม่หลายตัวไม่เคยเปิดกะในชื่อตัวเอง (วัด 45 วัน: GOR · LWR BAR · HYDROFORM '
+       + '· LINE APRON ASSY = 0 ครั้ง · ลูกเดินทุกวันแทน) แต่ถือ **แผน LPA รวม 30 แผน** '
+       + '⇒ ชุด "ไลน์ที่เดินอยู่" ที่เทียบชื่อตรงตัวจะไม่มีชื่อไลน์แม่ ⇒ `pokayokeByLine`/`lpaByLine` '
+       + '(`utils/prodRoutine.js`) ใช้ชุดนี้เป็นประตู แล้ว**ข้ามงานตรวจของไลน์แม่ทั้งก้อนเงียบๆ** '
+       + '· จอ AM ก็เขียน "ยังไม่เปิดกะ" ให้ไลน์ที่ลูกเดินอยู่',
+    fix: 'คืน `openSessionLines: openFamilyLines(lines, openRaw)` (`src/lib/pmDailyStatus.js` · มีเทส) '
+       + '— family = ตัวเอง + แม่/ปู่ + ลูก/หลาน **ไม่รวมพี่น้อง**',
+    allow: {},
+  },
+  {
+    id: 'check-day-mark-not-answer',
+    scan: ['src/utils/dailyCheckDay.js'], ext: ['.js'],
+    /* สัญลักษณ์ "สถานะวัน" ห้ามยืมตัวอักษรจากพจนานุกรม "คำตอบของการตรวจ" */
+    re: /mark:\s*'(?:Y|N|T|NA|N\/A|✓|✗|×|x|X|–|—|-)'/g,
+    why: 'ใบตรวจรายวัน (LPA FM-QMR-008) ตอบด้วย `Y`/`N`/`T`/`N/A` ซึ่งทุกตัวหมายถึง '
+       + '**"ไปตรวจแล้ว เจอผลอย่างนี้"** ⇒ ถ้า `CHECK_DAY_META.mark` ใช้ตัวเดียวกัน (หรือ `✗`/`–` '
+       + 'ที่ตาอ่านเป็น `N`/`N/A`) คนอ่านจะนึกว่า **"ตรวจแล้วเจอผิดปกติ" ทั้งที่ยังไม่มีใครไปตรวจ** '
+       + '(คำสั่ง user 13/10 — ชนทั้งตัวอักษรและสี: ✗ แดง = N แดง · – เทา = N/A เทา · ? เหลือง = T เหลือง)',
+    fix: 'ใช้คำย่อที่ไม่อยู่ในพจนานุกรมคำตอบ — `ขาด` (ขาดตรวจ) · `NP` (Non-Production) · `?` (ไม่รู้) '
+       + '· `·` (ไม่มีแผน) · และกันอ่านสลับด้วย `tint` ทาทั้งคอลัมน์ + กรอบ chip (คำตอบไม่มีทั้งสองอย่าง)',
+    allow: {},
+  },
+  {
+    id: 'shift-sched-no-raw-byline',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* จับการอ่าน `maps.byLine[...]` ตรงๆ นอก `utils/shiftAssign.js`
+       🔴 ยกเว้น index ที่เป็น "ตัวเลขล้วน" (`byLine[0]`) = การอ่านสมาชิก array ไม่ใช่การ lookup ด้วย line id
+          — ชื่อ `byLine` ถูกใช้โดยโมดูลอื่นที่ไม่เกี่ยวกับตารางกะด้วย (เช่น `LineStock.jsx` เก็บยอดสต็อก
+          รายไลน์เป็น array แล้วอ่าน `p.byLine[0].line_name`) · เจอจริง 13/10 ตอน merge 2 session
+          ที่แตะคนละไฟล์ · การ lookup ด้วย id (`byLine[lineId]` / `byLine[emp.line_id]`) ยังโดนจับเหมือนเดิม */
+    re: /\.byLine\s*\[(?!\s*\d+\s*\])/g,
+    why: 'ตารางกะเก็บแถว "ต่อไลน์" แต่ **ไลน์ลูกตกทอดกะจากไลน์แม่** (จอตั้งค่า `ShiftOrganize.effTeam` ทำแบบนี้มาตลอด) '
+       + '⇒ อ่าน `byLine[line_id]` ตรงตัว = ไลน์ลูกที่ยังไม่มีแถวของตัวเองได้ `null` ทั้งที่จอบอกว่าตั้งกะแล้ว '
+       + '· เกิดจริง 13/10 (PD2): `Line D2 - LWR BAR` + `Line D3 - STAMPED` สร้าง 09/10 หลังตารางถูกเติมล่วงหน้า '
+       + 'ถึง 03/01/2027 ⇒ ไม่มีแถวเลยสักแถว ⇒ **พนักงาน 18 คนไม่มีกะ** หายจากใบเช็คชื่อ/กำลังคนไลน์เป็น 0',
+    fix: 'ใช้ `lineScheduleTeam(lineId, maps)` (ถามเป็นไลน์) หรือ `scheduleTeamFor(emp, maps)` (ถามเป็นคน) '
+       + 'จาก `src/utils/shiftAssign.js` — 2 ตัวนี้ไล่ขึ้นไลน์แม่ให้แล้ว',
+    allow: { 'src/utils/shiftAssign.js': true },
+  },
+  {
+    id: 'shift-sched-maps-needs-lines',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* `buildScheduleMaps(rows)` ที่ไม่ส่ง lines = ไม่มีสายไลน์แม่ให้ไล่ (เงียบ ไม่มี error) */
+    re: /buildScheduleMaps\([^,)]*\)/g,
+    why: 'ไม่ส่ง `lines` = `parentOf` ว่าง ⇒ การตกทอดจากไลน์แม่ไม่ทำงาน ⇒ กลับไปเป็นบั๊กเดิมแบบเงียบๆ '
+       + '(ไลน์ลูกที่ไม่มีแถวของตัวเอง = คนไม่มีกะ) · อาการเหมือนตารางกะยังไม่ได้ตั้ง ทั้งที่ตั้งแล้ว',
+    fix: 'ส่งทะเบียนไลน์เข้าไปด้วยเสมอ: `buildScheduleMaps(scheduleRows, lines)` '
+       + '(ต้องมี `id` · `name` · `parent_line_name` — `LINE_COLUMNS` มีครบอยู่แล้ว)',
+    allow: { 'src/utils/__tests__/shiftAssign.test.mjs': true },   // เทสจงใจเรียกแบบไม่ส่ง lines เพื่อยืนยันพฤติกรรมเดิม
+  },
+  {
+    id: 'registry-loader-no-silent-catch',
+    scan: ['src/utils'], ext: ['.js'],
+    /* จับ `loadXxx()…​.catch(() => {})` ใน **ของกลาง** (src/utils) — กลืนแล้วคืนลิสต์ว่างเงียบๆ */
+    re: /\bload[A-Z]\w*\([^;]{0,200}\.catch\(\s*\(\s*\)\s*=>\s*\{\s*\}\s*\)/g,
+    why: 'ลิสต์ว่างมี 2 ความหมาย — "ทะเบียนไม่มีของ" กับ "โหลดไม่สำเร็จ" · hook ทะเบียนทั้ง 13 ตัวเคยลงท้าย '
+       + 'ด้วย `.catch(() => {})` ⇒ หน้างานเปิดช่องเลือกเห็นว่าง แล้วสรุปว่า "ยังไม่ได้ลงทะเบียน" ไปสร้างซ้ำ '
+       + '(`useProductionLines` เป็นตัวอ่านทะเบียนไลน์ตัวเดียวที่อนุญาต ⇒ ล้มทีเดียว dropdown ไลน์ว่างทั้งแอป '
+       + 'โดยจอไม่บอกเหตุ) · `usePartOptions`/`useOrgScope`/`useOrgDepts` ล้มแบบนี้ได้โดย toast กลางไม่ขึ้นด้วย',
+    fix: 'ของกลางใช้ `useMasterRows(KEY, loadXxx)` (`src/utils/useMasterRows.js`) → คืน `{ rows, failed, stale }` '
+       + 'แล้วช่องเลือกส่งเข้า `loadFail` ของ `<SearchSelect>` · ตัวที่ไม่ผ่าน cachedMaster ต้อง `console.warn` '
+       + 'แล้วคืนธงล้มเหลวให้จอเขียนบอก **ห้าม `catch` เปล่า**',
+    allow: {},
   },
   {
     id: 'role-retired-flag-honored',
@@ -1491,6 +1592,26 @@ test('🛡️ open-shift-date-and-shift-together — ฟอร์มเปิด
    = กะเดินถึงเวลานั้นจริง ส่วนที่เหลือเป็น planned stop ที่ถูกกันออกจากฐานเวลาไปแล้ว)
    ไม่ส่ง `downtimes` เข้าไป = ฟังก์ชันถือว่าไม่มีอะไรรองรับ ⇒ **เตือนผิด/ติดป้ายผิด**
    วัดจริง 05/10: เกณฑ์ที่ดูแต่ `aheadMin` ติดป้ายผิด 5 ใบจาก 9 ใบที่เข้าเกณฑ์ (SP-72/74/88 · Line 60/61) */
+/* ── 🛡️ mo-stale-since-cols (2026-10-13) ──────────────────────────────────────────────
+   แผง "ใบค้างขั้นเดิม" นับวันจากเวลาที่ใบ**เข้าขั้นปัจจุบัน** (`STALE_SINCE_COLS` ใน utils/mtnStale.js)
+   แต่หน้าลิสต์ MO select แบบ **เลือกคอลัมน์** (`MO_LIST_COLS` — เพื่อ egress ห้ามกลับไป `select('*')`)
+   ⇒ เพิ่มคอลัมน์เวลาเข้าขั้นใหม่ในฝั่ง util แล้วลืมเติมใน MO_LIST_COLS = ค่านั้นเป็น `undefined`
+      ⇒ `stageSinceOf()` **ถอยไปนับจากวันแจ้งเงียบๆ** (ตัวเลขเก่ากว่าจริง แต่จอยังขึ้นเป็นปกติ)
+   คลาสเดียวกับที่เคยเกิดจริงมาแล้วหลายรอบในโมดูลนี้ (`mtn_head_at`/`approve_at` ที่ต้อง select
+   มาด้วยไม่งั้น `mtnCloseStage()` แยก 3 ขั้นปิดใบไม่ออก · `pair_mat_no` ที่ลืม select แล้วนับ 2 เท่า) */
+test('🛡️ mo-stale-since-cols — MO_LIST_COLS ต้อง select ทุกคอลัมน์ที่ mtnStale อ่าน', async () => {
+  const { STALE_SINCE_COLS } = await import('../mtnStale.js');
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8'));
+  const m = code.match(/const MO_LIST_COLS\s*=\s*\[([\s\S]*?)\]\.join/);
+  assert.ok(m, 'หา MO_LIST_COLS ใน MtnRepair.jsx ไม่เจอ — เปลี่ยนชื่อ/รูปแบบแล้วต้องมาแก้ด่านนี้ด้วย');
+  const picked = new Set([...m[1].matchAll(/'([a-z0-9_]+)'/g)].map(x => x[1]));
+  const missing = STALE_SINCE_COLS.filter(c => !picked.has(c));
+  assert.deepEqual(missing, [],
+    '\n\n❌ MO_LIST_COLS ไม่ได้ select คอลัมน์เวลาเข้าขั้นที่ utils/mtnStale.js อ่าน\n'
+    + '   ผล: ค่าเป็น undefined ⇒ แผงใบค้างถอยไปนับจากวันแจ้งเงียบๆ (ตัวเลขเก่ากว่าความจริง)\n'
+    + `   เติมใน MO_LIST_COLS: ${missing.join(' · ')}\n`);
+});
+
 test('🛡️ close-time-needs-downtimes — ทุกจุดที่เรียก checkCloseTime ต้องส่ง downtimes', () => {
   const bad = [];
   for (const file of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
@@ -3829,6 +3950,82 @@ test('🛡️ Monitoring: IN จาก ledger รับเข้า (inAtRef) �
   assert.ok(/horizon:\s*\d/.test(code), '\n\n❌ บอร์ดรายวันส่งต้องส่ง horizon ให้ boardPeriods — ไม่งั้นไม่มีคอลัมน์วันนี้ให้พิมพ์\n');
 });
 
+/* ── 🔑 rls-tightened-tables-need-key (13/10 · รอบ 8) ───────────────────────────
+   RLS ฝั่ง DB รัดตารางกลุ่มนี้ด้วย has_perm('<คีย์เดียวกับปุ่มบนจอ>') แล้ว
+   ⇒ ไฟล์ไหนก็ตามที่ **เขียน** ตารางพวกนี้ ต้องอ้างคีย์นั้นในไฟล์เดียวกันด้วย
+     (เรียก can(...) / ส่ง prop canXxx / เช็คก่อนเรียก)
+
+   ทำไมถึงต้องมีด่าน: เจอของจริงใน Management.jsx — ปุ่ม "📌 บันทึกตำแหน่งประจำ" กับ "↩ Pool"
+   ไม่มี can() กันเลย (มีแต่ `canDrag` ที่ประกาศอยู่ในฟังก์ชันวาดการ์ด จึงไม่ครอบปุ่มใน modal)
+   พอฝั่ง DB รัด → ปุ่มยังโชว์ กดแล้วเด้ง error จาก Postgres = ผู้ใช้เจอปุ่มตายโดยไม่รู้สาเหตุ
+   นี่คือกลับด้านของกฎ db-write-rules ข้อ 3 ("จอที่คุมสิทธิ์เองก็ต้องเช็คสิทธิ์ผู้ดู")
+
+   ด่านนี้ดูแค่ "คีย์ถูกอ้างในไฟล์ไหม" ไม่ได้พิสูจน์ว่ากันถูกจุด — ตั้งใจให้หยาบไว้ก่อน
+   จะได้ไม่ false positive · ตารางที่รัดเพิ่มในรอบถัดไป ให้เติมในตารางนี้ */
+const RLS_KEYED_TABLES = {
+  employee_home_positions: ['management:assign_manpower', 'assign_manpower'],
+  workstations:            ['line_setup:edit', 'line_setup'],
+  station_requirements:    ['line_setup:edit', 'line_setup', 'skills:delete', 'skills'],
+  shift_schedules:         ['shift_schedule:edit', 'shift_schedule'],
+  daily_production_logs:   ['checkin:record', 'checkin', 'management:assign_manpower', 'assign_manpower'],
+  // รอบ 9 (13/10)
+  ot_night_bookings:       ['checkin:record', 'checkin'],
+  line_helpers:            ['checkin:record', 'checkin'],
+  operator_special_tasks:  ['management:assign_special_task', 'assign_special_task'],
+  station_assignment_logs: ['management:assign_manpower', 'assign_manpower'],
+  special_task_types:      ['ot_master:manage', 'ot_master'],
+  leave_types:             ['ot_master:manage', 'ot_master'],
+};
+
+test('🛡️ rls-tightened-tables-need-key — ไฟล์ที่เขียนตารางที่ถูกรัด RLS ต้องอ้างคีย์สิทธิ์ของมันด้วย', () => {
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const code = stripComments(readFileSync(file, 'utf8'));
+    for (const [table, keys] of Object.entries(RLS_KEYED_TABLES)) {
+      const writeRe = new RegExp(
+        `from\\(\\s*['"\`]${table}['"\`]\\s*\\)[\\s\\S]{0,300}?\\.(insert|update|upsert|delete)\\s*\\(`, 'g');
+      /* 🔴 แผง CRUD กลาง (<SimpleNameMaster table="x"> / <SimpleMasterPanel table="x">) รับ "ชื่อตาราง"
+         เป็น prop ⇒ ไฟล์ที่ใช้มันไม่มี `from('x').insert` ให้ grep เจอ แต่มันเขียนจริง
+         (เจอรอบ 9: special_task_types / leave_types เขียนจาก Report.jsx แบบนี้) */
+      const panelRe = new RegExp(`table=\\{?\\s*['"\`]${table}['"\`]`, 'g');
+      if (!writeRe.test(code) && !panelRe.test(code)) continue;
+      if (keys.some(k => code.includes(k))) continue;
+      bad.push(`${relative(ROOT, file)} → เขียน ${table} แต่ไม่พบคีย์ ${keys.slice(0, 2).join(' / ')}`);
+    }
+  }
+  assert.deepEqual(bad, [],
+    '\n\n❌ มีไฟล์เขียนตารางที่ RLS รัดด้วย has_perm แล้ว โดยไม่เช็คสิทธิ์ฝั่งจอ:\n   '
+    + bad.join('\n   ')
+    + '\n\n   ผลที่เกิด: ปุ่มยังโชว์ให้คนที่ไม่มีสิทธิ์ กดแล้วได้ error ดิบจาก Postgres (หรือ "สำเร็จ 0 แถว"\n'
+    + '   แบบเงียบ ถ้าเป็น UPDATE/DELETE — ดู db-write-rules ข้อ 2)\n'
+    + '   แก้: ประกาศ const canXxx = can(\'<resource>\', \'<action>\', role) ที่ระดับคอมโพเนนต์\n'
+    + '   แล้ว (ก) ซ่อนปุ่มเมื่อไม่มีสิทธิ์ และ (ข) เช็คซ้ำในฟังก์ชันที่เขียน DB (ซ่อนปุ่มอย่างเดียวไม่พอ)\n'
+    + '   ตารางคีย์อยู่ที่ RLS_KEYED_TABLES ในไฟล์นี้ · migration 20261013_rls_round8_*.sql\n');
+});
+
+/* ── 🔑 manpower-actions-need-perm (13/10 · บั๊กจริงที่ด่านข้างบนจับไม่ได้) ──────
+   ด่าน `rls-tightened-tables-need-key` ดูแค่ "ไฟล์นี้อ้างคีย์ไหม" ⇒ **จับเคสนี้ไม่ได้**
+   เพราะ Management.jsx มี can('management','assign_manpower') อยู่แล้ว — แต่ไปอยู่ใน
+   `canDrag` ที่ประกาศ *ข้างใน* ฟังก์ชันวาดการ์ดพนักงาน จึงไม่ครอบปุ่มใน modal จุดงาน
+   ⇒ ใครเปิด modal ได้ก็กด "📌 บันทึกตำแหน่งประจำ" / "↩ Pool" ได้ทั้งที่ไม่มีสิทธิ์
+   บทเรียน: **"ไฟล์มีคีย์" ≠ "ทางเข้านั้นถูกกัน"** — ด่านหยาบต้องมีด่านเจาะจงคู่เสมอ */
+test('🛡️ manpower-actions-need-perm — ฟังก์ชันที่เขียนกำลังคนต้องเช็ค canAssignManpower ในตัวเอง', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/Management.jsx'), 'utf8'));
+  assert.ok(/const\s+canAssignManpower\s*=\s*can\(\s*'management'\s*,\s*'assign_manpower'/.test(code),
+    '\n\n❌ Management.jsx ไม่มี `canAssignManpower` ระดับคอมโพเนนต์แล้ว\n'
+    + '   ตัวแปรสิทธิ์ที่ประกาศอยู่ในฟังก์ชันย่อย (เช่น canDrag) ครอบปุ่มใน modal ไม่ถึง\n');
+  // ด่านสิทธิ์ต้องเป็น guard clause ช่วงต้นฟังก์ชัน ⇒ ดู 600 ตัวอักษรแรกหลังบรรทัดประกาศก็พอ
+  // (ตัดจบฟังก์ชันด้วย regex เปราะเกินไป — ฟังก์ชันพวกนี้ยาวและมี `};` ซ้อนข้างใน)
+  for (const fn of ['assignWorker', 'saveHomePosition']) {
+    const at = code.indexOf(`const ${fn} = async`);
+    assert.ok(at >= 0, `\n\n❌ หาฟังก์ชัน ${fn} ใน Management.jsx ไม่เจอ (เปลี่ยนชื่อ/ย้ายไฟล์? อัพเดทด่านนี้ด้วย)\n`);
+    assert.ok(code.slice(at, at + 600).includes('canAssignManpower'),
+      `\n\n❌ ${fn}() เขียน DB โดยไม่เช็ค canAssignManpower ในตัวฟังก์ชันเอง\n`
+      + '   ซ่อนปุ่มอย่างเดียวไม่พอ — RLS ฝั่ง DB รัด daily_production_logs / employee_home_positions\n'
+      + '   ด้วย management:assign_manpower แล้ว ถ้าไม่กันที่นี่ ผู้ใช้จะเจอ error ดิบจาก Postgres\n');
+  }
+});
+
 /* ── 📋 ทะเบียนของบอร์ด AM รายวัน ต้องผ่าน cache (13/10 · งานลด egress รอบ "โตตามจำนวนจอ") ──
    วัดจาก log 09/10: `loadDailyAm()` ถูกเรียกใหม่ทุก event ของ inspections/prod_orders/
    production_sessions ⇒ ดึง `jigs` 545 + `checklists` 497 + `pm_daily_line_targets` 266
@@ -3867,4 +4064,109 @@ test('🛡️ mo-note-quality-gate — ฟอร์มแจ้งซ่อม�
   assert.ok(!/MO_NOTE_MIN\s*=/.test(code),
     '\n\n❌ เกณฑ์ความยาวถูกประกาศซ้ำในหน้า — แก้ที่เดียวไม่พอ แล้วจอกับด่านจะตอบคนละเลข\n'
     + '   แก้: import { MO_NOTE_MIN } from "../utils/moNoteQuality"\n');
+});
+
+/* ── ช่องแนบ "รูปหลักฐานของเสีย" ต้องเริ่มที่โหมด "ใช้ทั้งรูป" (2026-10-13 · คำสั่ง user) ──
+   เดิมโมดัลครอบรูปมีช่องติ๊ก "ใช้ทั้งรูป" ที่ **ไม่ติ๊ก = ครอบ 4:3** ⇒ หน้างานที่รีบ
+   กด "✓ ใช้รูปนี้" เลย จะได้รูปที่ถูกตัดขอบโดยไม่รู้ตัว — รูปหลักฐานที่ตำหนิหลุดกรอบ
+   ใช้เป็นหลักฐานไม่ได้ และ **กู้คืนไม่ได้** (ต้นฉบับไม่ถูกเก็บ เก็บแต่ผลลัพธ์ที่ครอบแล้ว)
+   ⇒ ค่าเริ่มต้นของจุดนี้ต้องเป็น "ทั้งรูป" · อยากครอบต้องตั้งใจกดเลือก
+   ⚠️ กฎนี้คุมแค่ "จุดรูปหลักฐาน" — PMSetup (รูปภาพรวมเครื่อง) ยังเริ่มที่โหมดครอบตามเดิม */
+test('🛡️ quality-photo-full-by-default — QualityPhotoField ต้องส่ง fullDefault ให้ ImageCropModal', () => {
+  const file = join(ROOT, 'src/components/QualityPhotoField.jsx');
+  const code = stripComments(readFileSync(file, 'utf8'));
+  const call = code.match(/<ImageCropModal[\s\S]*?\/>/);
+  assert.ok(call, '\n\n❌ ไม่พบ <ImageCropModal> ใน QualityPhotoField.jsx — ช่องแนบรูปหลักฐานต้องผ่านโมดัลครอบกลางเท่านั้น\n');
+  const bad = [];
+  if (!/\ballowFull\b/.test(call[0])) bad.push('ไม่มี allowFull — ผู้ใช้สลับไปโหมด "ใช้ทั้งรูป" ไม่ได้เลย');
+  if (!/\bfullDefault\b/.test(call[0])) bad.push('ไม่มี fullDefault — ค่าเริ่มต้นกลับไปเป็น "ครอบ" รูปหลักฐานจะถูกตัดขอบเงียบๆ');
+  assert.deepEqual(bad, [],
+    '\n\n❌ <ImageCropModal> ใน src/components/QualityPhotoField.jsx ตั้งค่าไม่ครบ:\n'
+    + bad.map(b => '   • ' + b).join('\n') + '\n'
+    + '   ทำไมสำคัญ: ค่าเริ่มต้นคือสิ่งที่คนรีบๆ หน้าไลน์จะได้จริง — รูปหลักฐานที่ครอบจนตำหนิ\n'
+    + '   หลุดกรอบ ใช้เป็นหลักฐานไม่ได้ และกู้คืนไม่ได้ (เก็บแต่รูปที่ครอบแล้ว)\n'
+    + '   แก้ยังไง: <ImageCropModal ... allowFull fullDefault fullHint="…" />\n');
+});
+
+/* ── 📎 หน้าพิมพ์ที่มีรูป ต้องรอรูปโหลดก่อนสั่ง print (2026-10-13) ────────────────
+   `window.print()` **ไม่รอรูป** — สั่งพิมพ์ทันทีที่ฟอนต์พร้อม จะได้ภาคผนวกเป็นช่องว่าง
+   โดยไม่มี error ให้เห็นเลย (คนเซ็นใบไปแล้วถึงรู้ว่ารูปไม่ติด) · และ `loading="lazy"`
+   ในหน้าพิมพ์ยิ่งซ้ำ — รูปที่ยังไม่ถูกเลื่อนถึงจะไม่ถูกโหลดเลย
+   ⚠️ กฎ `list-thumb-needs-lazy` เป็นเรื่องของ "จอรายการ" (กัน egress) คนละเรื่องกับหน้าพิมพ์ */
+test('🛡️ print-photos-need-wait — ใบพิมพ์ที่แนบภาคผนวกรูป ต้องเรียก __waitImgs ก่อน print()', () => {
+  const bad = [];
+  for (const f of walk(join(ROOT, 'src/lib'), ['.js'])) {
+    const rel = relative(ROOT, f);
+    // เทียบกับโค้ดที่ตัดคอมเมนต์แล้วเสมอ — ไม่งั้นคอมเมนต์ที่ "เตือนห้ามใช้ lazy" จะทำให้ด่านยิงใส่ตัวเอง
+    const code = stripComments(readFileSync(f, 'utf8'));
+    if (/loading\s*=\s*\\?["']lazy/.test(code)) bad.push(`${rel} — ใส่ loading="lazy" ในหน้าพิมพ์`);
+    if (!/photoAppendixHtml/.test(code)) continue;
+    if (!/__waitImgs/.test(code)) bad.push(`${rel} — แนบภาคผนวกรูปแต่ไม่ได้รอรูปโหลด (waitImgsScript/__waitImgs)`);
+    if (/window\.print\(\)/.test(code) && !/__waitImgs\(/.test(code)) bad.push(`${rel} — สั่ง print() โดยไม่ผ่าน __waitImgs`);
+  }
+  assert.deepEqual(bad, [],
+    '\n\n❌ หน้าพิมพ์ต่อไปนี้เสี่ยงพิมพ์ออกมาเป็นช่องว่าง:\n'
+    + bad.map(b => '   • ' + b).join('\n') + '\n'
+    + '   แก้ยังไง: ฝัง ${waitImgsScript()} ในแท็ก <script> ของใบ แล้วสั่งพิมพ์ผ่าน\n'
+    + '            window.__waitImgs(function () { window.print(); })\n'
+    + '            (ของกลางอยู่ที่ src/lib/photoAppendix.js — รูปพัง/ช้าเกิน 8 วิ จะติดป้าย\n'
+    + '             "โหลดรูปไม่สำเร็จ" บนกระดาษแล้วพิมพ์ต่อ ไม่ค้างรอไม่จบ)\n');
+});
+
+/* ── 🔁 ตัวยุบคำขอ GET ที่ซ้อนเวลากัน ต้องผูกกับ client ทั้งสองฝั่ง (13/10 · งานลด egress) ──
+   วัดจริง 13/10: คำขอ GET ที่เหมือนกันเป๊ะบนตารางหลักซ้ำกัน **median 3–77 ms**
+   = หลายแผงบนหน้าเดียวกันต่างคนต่างยิงคิวรีชุดเดียวกันในเรนเดอร์รอบเดียว (ไม่ใช่ poll/realtime)
+   `makeDedupeFetch` แก้ทั้งระบบที่จุดเดียว — **แต่ได้ผลก็ต่อเมื่อถูกส่งเข้า createClient จริง**
+   ถอดออก/ลืมฝั่งใดฝั่งหนึ่ง = กลับไปจ่าย 2-3 เท่าทันทีโดยไม่มีอะไรพัง = ไม่มีใครรู้ตัว         */
+test('🛡️ supabase-dedupe-fetch — ทั้ง supabase และ supabaseDR ต้องส่ง dedupeFetch เข้า createClient', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/supabaseClient.js'), 'utf8'));
+  const calls = [...code.matchAll(/createClient\([^)]*\)/g)].map(m => m[0]);
+  assert.equal(calls.length, 2, `ควรมี createClient 2 ตัว (Main + DR) พบ ${calls.length}`);
+  calls.forEach((c) => {
+    assert.match(c, /global:\s*\{\s*fetch:\s*dedupeFetch\s*\}/,
+      '\n\n❌ createClient ตัวนี้ไม่ได้ส่ง dedupeFetch:\n   ' + c + '\n'
+      + '   ผล: คำขอ GET ที่ซ้อนเวลากันกลับมายิงซ้ำทุกตัว (วัดได้ 70% ของคำขอทั้งหมด)\n'
+      + '   แก้: createClient(url, key, { global: { fetch: dedupeFetch } })\n');
+  });
+});
+
+/* ── 🧪 งานชุบภายนอก — ทุกการเขียนผ่าน RPC `plating_*` เท่านั้น (13/10 · คำสั่ง user) ──
+   ส่ง/รับ/ตัดยอด/ส่งเข้า W/H เขียน 2-3 ตารางพร้อมกัน (ใบ + ประวัติ + ledger ทั้งต้นทางและปลายทาง)
+   เขียนแยกจาก client = ล้มครึ่งทาง ⇒ ของหายจากคลังแต่ไม่ไปค้างร้าน (หรือรับคืนแล้วยอดค้างไม่ลด)
+   และชื่อที่เก็บเสมือนของร้านใน ledger ต้องตรงกันทั้ง JS และ SQL ไม่งั้นยอดค้างร้านแยก 2 ถัง */
+test('🛡️ plating-writes-via-rpc — ห้ามเขียน plating_orders/plating_moves ตรงจากจอ · ชื่อคลังร้านตรงกับ RPC', () => {
+  const bad = [];
+  for (const f of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const rel = relative(ROOT, f);
+    if (rel.includes('__tests__')) continue;
+    const code = stripComments(readFileSync(f, 'utf8'));
+    if (/from\(\s*['"]plating_(orders|moves)['"]\s*\)\s*\.\s*(insert|update|upsert|delete)\b/.test(code)) bad.push(rel);
+  }
+  assert.deepEqual(bad, [], '\n\n❌ เขียนตารางงานชุบตรงจากจอ — ใช้ supabaseDR.rpc(\'plating_*\') แทน:\n' + bad.map(b => '   • ' + b).join('\n'));
+  const js = readFileSync(join(ROOT, 'src/utils/plating.js'), 'utf8');
+  const sql = readFileSync(join(ROOT, 'supabase/migrations/20261013_plating_loop_dr.sql'), 'utf8');
+  const pre = (js.match(/VENDOR_LOC_PREFIX\s*=\s*'([^']+)'/) || [])[1];
+  assert.ok(pre, 'หา VENDOR_LOC_PREFIX ใน utils/plating.js ไม่เจอ');
+  assert.ok(sql.includes(`'${pre}' || btrim(p_vendor)`), `ชื่อคลังร้านใน RPC plating_send ต้องเป็น '${pre}' || vendor ให้ตรงกับ JS`);
+});
+
+/* ── 🖥️ บัญชีกลางห้ามลบ — ด่านต้องอยู่ "ก่อน" admin bypass (2026-10-13 · คำสั่ง user) ──
+   บัญชีกลาง = จอ TV / บัญชีประจำเครื่อง-กะ (`maintenance` · `toolingmaintenance` · TV-1..13)
+   ใช้ร่วมกันหลายคน ⇒ ลบแถวแล้วสอบกลับไม่ได้ว่าใครกด (audit เขียนได้แค่ชื่อบัญชี)
+   🔴 บัญชี `ADMIN` ในฐานจริงก็เป็นบัญชีกลาง ⇒ ถ้าเช็ค `_sharedAccount` **หลัง** `role === 'admin'`
+      ด่านนี้จะไร้ผลกับบัญชีที่อันตรายที่สุด (ลบได้ทุกตาราง) — เคยพลาดแบบเดียวกันที่ล็อกช่องเซ็น MO
+      ("ล็อกเต็ม manage_master ก็ข้ามไม่ได้")                                                   */
+test('🛡️ shared-account-no-delete — canDelete ต้องเช็คบัญชีกลางก่อน admin bypass', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/utils/permissions.js'), 'utf8'));
+  const fn = code.slice(code.indexOf('export function canDelete'));
+  const body = fn.slice(0, fn.indexOf('\n}'));
+  const iShared = body.indexOf('_sharedAccount');
+  const iAdmin = body.indexOf("role === 'admin'");
+  assert.ok(iShared >= 0,
+    '\n\n❌ canDelete ไม่มีด่านบัญชีกลาง (_sharedAccount) แล้ว\n'
+    + '   ผล: บัญชีกลาง (จอ TV / maintenance / toolingmaintenance) กดลบได้อีก\n'
+    + '        แล้ว audit สอบกลับไม่ได้ว่าใครกด (คำสั่ง user 13/10 "บัญชีกลาง ไม่ควรลบได้")\n');
+  assert.ok(iAdmin < 0 || iShared < iAdmin,
+    '\n\n❌ ด่านบัญชีกลางอยู่หลัง admin bypass — บัญชี ADMIN เองเป็นบัญชีกลาง\n'
+    + '   ⇒ ด่านไร้ผลกับบัญชีที่ลบได้ทุกตาราง · ย้าย `if (_sharedAccount) return false;` ขึ้นบนสุด\n');
 });

@@ -92,7 +92,7 @@ export default function ManpowerBoard() {
       setNodes(nRes.data || []);
       setEmployees(eRes.rows || []);
       const sk = await fetchByIds((eRes.rows || []).map(e => e.id),
-        (ids) => supabase.from('employee_skills').select('id, employee_id, skill_name, score').in('employee_id', ids));
+        (ids) => supabase.from('employee_skills').select('id, employee_id, skill_name, score, pending_level').in('employee_id', ids));
       if (!alive) return;
       if (sk.error) errs.push(sk.error);
       const byEmp = {};
@@ -166,7 +166,7 @@ export default function ManpowerBoard() {
     for (const r of attLogs) { const cur = m[r.employee_id]; if (!cur || (!cur.is_present && r.is_present)) m[r.employee_id] = r; }
     return m;
   }, [attLogs]);
-  const maps = useMemo(() => buildScheduleMaps(sched), [sched]);
+  const maps = useMemo(() => buildScheduleMaps(sched, lines), [sched, lines]);   // lines = ไลน์ลูกตกทอดกะจากไลน์แม่
   const board = useMemo(() => buildManpowerBoard({ section, nodes, employees, lines, maps, attendance, slotPlans, lineTechs, helpers, stations, stationPlans, homeByEmp }),
     [section, nodes, employees, lines, maps, attendance, slotPlans, lineTechs, helpers, stations, stationPlans, homeByEmp]);
   const depts = useMemo(() => (board?.depts || []).filter(d => !deptParam || d.key === deptParam), [board, deptParam]);
@@ -548,6 +548,7 @@ function LayoutTab({ board, depts, lines, attendance, maps, tv, stationPlans, sk
       <div style={{ fontSize: 12, color: fitGaps.gaps.length ? '#f59e0b' : 'var(--muted)' }}>
         🎯 ฝีมือตรงจุดไหม (คนที่มาวันนี้): ตรวจ {fitGaps.checked} คน · ผ่านครบทุกทักษะ {fitGaps.ok} คน
         {fitGaps.gaps.length > 0 && <b> · ยืนจุดที่ทักษะยังไม่ถึง {fitGaps.gaps.length} คน</b>}
+        {fitGaps.onlyApproval > 0 && <span> (⏳ ในนี้ {fitGaps.onlyApproval} คนได้ขั้นแล้ว แค่รอหัวหน้าอนุมัติที่ /operator?tab=levelup)</span>}
         {fitGaps.noReqStations > 0 && <span style={{ color: 'var(--muted)' }}> · ยังไม่ตั้งทักษะที่จุดต้องการ {fitGaps.noReqStations} จุด ({fitGaps.noReqPeople} คนที่ยืนอยู่ ตรวจไม่ได้ — ตั้งที่ /line-setup)</span>}
       </div>
       <LayoutMap layout={layout} placed={placed} reserve={tv ? 48 : 12} />
@@ -580,6 +581,7 @@ function SkillGapTable({ gaps, defs }) {
                       border: `1px ${m.assessed ? 'solid' : 'dashed'} var(--border2)`, color: m.assessed ? 'var(--text)' : 'var(--muted)' }}>
                       {defs[m.skill_name]?.label || m.skill_name}{' '}
                       {m.assessed ? <b style={{ fontVariantNumeric: 'tabular-nums' }}>{m.actual}/{m.required}</b> : <span>ยังไม่ประเมิน (ต้องการ {m.required})</span>}
+                      {m.pending != null && <span title="ได้ขั้นนี้แล้วจากการสะสม EXP — รอหัวหน้ากดอนุมัติ" style={{ marginLeft: 4, color: m.waitApproval ? '#0ea5e9' : 'var(--muted)' }}>⏳ รออนุมัติขั้น {m.pending}</span>}
                     </span>
                   ))}
                 </span>
@@ -590,6 +592,7 @@ function SkillGapTable({ gaps, defs }) {
       </table>
       <div style={{ padding: '8px 12px', fontSize: 12, color: 'var(--muted)' }}>
         กรอบทึบ = ประเมินแล้วแต่คะแนนยังไม่ถึง (มี/ต้องการ) · กรอบประ = ยังไม่เคยประเมินทักษะนั้น (นับเป็น 0) ·
+        ⏳ = ได้ขั้นแล้วจากการสะสม EXP แต่รอหัวหน้าอนุมัติ (สีฟ้า = อนุมัติแล้วจะผ่านจุดนี้ทันที) ·
         ประเมิน/ปรับคะแนนที่ /operator · ตั้งทักษะที่จุดต้องการที่ /line-setup
       </div>
     </div>
@@ -935,7 +938,7 @@ function StaffingTab({ section, deptParam, today, nodes, employees, lines, slotP
     const sIdx = indexSessions(raw.sessions);
     const out = [];
     for (let d = from; d && d <= to; d = addDaysStr(d, 1)) {
-      const board = buildManpowerBoard({ section, nodes, employees: rosterOn(employees, d, { today, attendance: att[d] }), lines, maps: buildScheduleMaps(sch[d] || []),
+      const board = buildManpowerBoard({ section, nodes, employees: rosterOn(employees, d, { today, attendance: att[d] }), lines, maps: buildScheduleMaps(sch[d] || [], lines),
         attendance: att[d] || {}, slotPlans, lineTechs, helpers: raw.borrowed.byDate?.[d] || [], stations, stationPlans, homeByEmp });
       out.push({ date: d, depts: (board?.depts || []).filter(x => !deptParam || x.key === deptParam)
         .map(x => ({ key: x.key, name: x.name, shifts: staffingOfDept(x),

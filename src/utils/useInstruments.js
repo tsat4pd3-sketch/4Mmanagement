@@ -1,8 +1,8 @@
 /* ── useInstruments — ทะเบียนเครื่องมือวัด (Main qa_instruments) สำหรับ picker  (2026-09-07) ──
    คู่กับ <InstrumentSelect> · หน้าที่แก้ทะเบียน (แท็บ 📏 ใน /qa) เรียก invalidateInstruments() หลังบันทึก */
-import { useEffect, useState } from 'react';
 import { supabase } from '../supabaseClient';
 import { cachedMaster, invalidateMaster } from './masterCache';
+import useMasterRows from './useMasterRows.js';
 
 const KEY = 'qa_instruments:picker';
 
@@ -16,12 +16,9 @@ export async function loadInstruments() {
 }
 export const invalidateInstruments = () => invalidateMaster(KEY);
 
-export default function useInstruments() {
-  const [rows, setRows] = useState([]);
-  useEffect(() => {
-    let alive = true;
-    loadInstruments().then(d => { if (alive) setRows(d || []); }).catch(() => {});
-    return () => { alive = false; };
-  }, []);
-  return rows;
-}
+/** สถานะโหลดทะเบียน — `{ rows, failed, stale, message, loading, reload }`
+ *  🔴 ช่องเลือกที่ต้องบอกว่า "ลิสต์ว่างเพราะไม่มีของ หรือเพราะโหลดไม่สำเร็จ" ใช้ตัวนี้
+ *     (ตัว default คืนแค่แถว = พฤติกรรมเดิม ไม่ต้องแก้จุดเรียกเก่า) */
+export function useInstrumentsState() { return useMasterRows(KEY, loadInstruments); }
+
+export default function useInstruments() { return useInstrumentsState().rows; }

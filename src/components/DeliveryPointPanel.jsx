@@ -61,11 +61,20 @@ export default function DeliveryPointPanel({ lineName, lines = [] }) {
   // จุดส่งผูกได้เฉพาะไลน์ leaf — dropdown เพิ่มไลน์ต้องกรองไลน์แม่ออกตั้งแต่ต้น (กรอง dropdown ด้วย ไม่ใช่แค่ข้อมูล)
   const leafLines = useMemo(() => lines.filter(l => isLeafLine(lines, l.name)), [lines]);
 
+  /* 🔴 ขอบเขตที่ "เห็น" ต้องกว้างกว่าขอบเขตที่ "ตั้งได้" (13/10 · feedback หน้างาน "ตั้งไปแล้วหายไปเลย")
+     จุดส่งผูกได้เฉพาะไลน์ลูก (leaf) แต่คนยืนดูที่ **ไลน์แม่** ได้ และแผงนี้เองก็ชวนให้ตั้ง
+     "จุดเดียวรับของให้ทั้งแผนก" ตอนอยู่ที่ไลน์แม่ ⇒ ถ้าลิสต์กรองด้วย `contains([lineName])` ตรงตัว
+     จุดที่เพิ่งบันทึก (line_names = ชื่อไลน์ลูก) จะหายจากจอทันทีที่กดบันทึก = ดูเหมือนบันทึกไม่ติด
+     (เกิดจริง: GOR → "ASSY GOR 297" · HYDROFORM → "Hydroform 1+2") ⇒ ใช้ `overlaps` กับ ไลน์เอง + ลูกทุกชั้น
+     ⚠️ deps ของ useCallback ห้ามเป็น array (กฎ DB ข้อ 9) ⇒ ส่งเป็นสตริงแล้วแตกข้างใน */
+  const scopeKey = useMemo(() => [...new Set([lineName, ...leafKids])].filter(Boolean).join('\u0001'),
+    [lineName, leafKids]);
+
   const load = useCallback(async () => {
     if (!lineName) return;
     setLoadErr('');
     const [{ data, error }, sl] = await Promise.all([
-      supabaseDR.from('line_delivery_points').select('*').contains('line_names', [lineName]).order('sort_order').order('name'),
+      supabaseDR.from('line_delivery_points').select('*').overlaps('line_names', scopeKey.split('\u0001')).order('sort_order').order('name'),
       loadStorageLocations(),   // master → cache กลาง (ห้ามยิงตรง · ดู utils/useStorageLocations.js)
     ]);
     setSlocs(sl || []);
@@ -75,7 +84,7 @@ export default function DeliveryPointPanel({ lineName, lines = [] }) {
     }
     setMissing(false);
     setRows(data || []);
-  }, [lineName]);
+  }, [lineName, scopeKey]);
 
   useEffect(() => { if (open) load(); }, [open, load]);
   useEffect(() => { setForm(null); }, [lineName]);
@@ -183,7 +192,10 @@ export default function DeliveryPointPanel({ lineName, lines = [] }) {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(260px,100%), 1fr))', gap: 8, alignContent: 'start', marginTop: 8 }}>
               {rows.map(r => {
                 const off = r.is_active === false;
-                const others = (Array.isArray(r.line_names) ? r.line_names : []).filter(n => n !== lineName);
+                const pLines = Array.isArray(r.line_names) ? r.line_names : [];
+                const others = pLines.filter(n => n !== lineName);
+                // ยืนที่ไลน์แม่ = จุดนี้เป็นของไลน์ลูก (ไม่ใช่ "ใช้ร่วมกับ") — เขียนให้ตรงว่าของไลน์ไหน
+                const viaChild = !pLines.includes(lineName);
                 return (
                   <div key={r.id} style={{ border: `1px solid ${off ? 'var(--border)' : 'rgba(34,197,94,0.35)'}`, borderRadius: 10, padding: '9px 12px', background: off ? 'var(--bg3)' : 'var(--bg2)', opacity: off ? 0.7 : 1 }}>
                     <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
@@ -192,9 +204,9 @@ export default function DeliveryPointPanel({ lineName, lines = [] }) {
                       {r.storage_location
                         ? <span title="พื้นที่ SAP (Storage Location) ของไลน์ที่จุดนี้รับของให้" style={{ fontFamily: 'monospace', fontSize: 11, fontWeight: 800, padding: '1px 7px', borderRadius: 8, background: 'rgba(34,197,94,0.12)', color: '#22c55e' }}>🏬 {r.storage_location}</span>
                         /* 🔴 จุดที่ไม่มีรหัสคลัง = ด่าน "ส่งถูกพื้นที่ SAP ไหม" ไม่ทำงานกับจุดนี้
-                           ต้องเขียนบนจอ ห้ามเงียบ — วัดจริง 05/10: จุดส่งที่มีอยู่ 4 จุด ว่างทั้ง 4
-                           (ไลน์ปั๊ม A/B/C/D เป็นไลน์ราก ไม่มี `storage_locations` แถวไหนครอบ ⇒ derive ไม่ได้
-                            ไม่ใช่ "ลืมกด backfill" — ต้องมีคนลงทะเบียนพื้นที่ก่อน) */
+                           ต้องเขียนบนจอ ห้ามเงียบ — **ไม่ใช่ "ลืมกด backfill" ต้องมีคนลงทะเบียนพื้นที่ก่อน**
+                           วัดจริง 13/10: ไลน์ปั๊ม A/B/C/D ลงทะเบียนแล้ว (P407/P406/P401/P405) จุดได้รหัสครบ
+                           · ที่ยังว่าง = 7 จุดของ PD2 (ASSEMBLY 1 + Line D1–D6 + SPARE PART) ที่ยังไม่มี SLoc */
                         : <span title="จุดนี้ยังไม่ผูกพื้นที่ SAP — ระบบตรวจไม่ได้ว่าสโตร์ส่งถูกพื้นที่ไหม" style={{ fontSize: 11, fontWeight: 800, padding: '1px 7px', borderRadius: 8, background: 'rgba(245,158,11,0.12)', color: '#f59e0b' }}>🏬 ไม่ผูกพื้นที่ SAP</span>}
                       {off && <span style={{ fontSize: 11, color: 'var(--muted)' }}>⏸ ปิดใช้งาน</span>}
                     </div>
@@ -204,7 +216,11 @@ export default function DeliveryPointPanel({ lineName, lines = [] }) {
                         <Link to="/line-stock?tab=zones" style={{ color: '#f59e0b', fontWeight: 800 }}> 📦 Line Stock → 🏬 โซนคลัง</Link> แล้วกด ✏️ แก้ + บันทึกจุดนี้ซ้ำ
                       </div>
                     )}
-                    {others.length > 0 && <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>🔀 ใช้ร่วมกับ {others.join(' · ')}</div>}
+                    {others.length > 0 && (
+                      <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>
+                        {viaChild ? '📍 ของไลน์ย่อย: ' : '🔀 ใช้ร่วมกับ '}{others.join(' · ')}
+                      </div>
+                    )}
                     {r.note && <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>{r.note}</div>}
                     {canManage && (
                       <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>

@@ -15,6 +15,35 @@ Environment Variables:
   VITE_SUPABASE_ANON_KEY=<key from Supabase dashboard>
 ```
 
+### 💸 Build pipeline minutes — build ล่มเพราะโควต้าหมด (2026-10-13)
+
+Render นับ **นาที build ต่อเดือน** (ไม่เกี่ยวกับจำนวนคนเข้าเว็บ) · เพดานค่าใช้จ่ายตั้งไว้ $0 ⇒ นาทีหมด = **merge แล้วไม่ deploy**
+(เว็บยังเสิร์ฟเวอร์ชันล่าสุดที่ build ผ่าน) · ต.ค. 2026 หมดวันที่ 13 หลัง push เข้า main 112 ครั้งใน 13 วัน
+- `render.yaml` → `buildFilter.ignoredPaths` ข้ามการ build เมื่อ push แตะแค่ `*.md` / `.claude/**`
+  (วัดย้อนหลังได้แค่ ~6% ของ push — **ตัวประหยัดจริงคือ merge เป็นรอบ ไม่ใช่ทีละงานเล็ก**)
+- 🔴 **ห้ามใส่ `docs/**` / `supabase/**` / `audit/**` ทั้งโฟลเดอร์** — เทสใน build อ่านไฟล์ในนั้น (`docs/**/*.py`,
+  migrations, `audit/mobilesweep.mjs`) ข้ามแล้วด่านพังจะไปโผล่ตอน push โค้ดครั้งถัดไปแทน
+- `buildFilter` ใน yaml มีผลเฉพาะ service ที่สร้างจาก Blueprint — ไม่งั้นต้องตั้งซ้ำที่ dashboard
+  (Settings → Build & Deploy → Build Filters → Ignored Paths)
+
+### ⏰ Deploy ตาม merge + กันถี่ (2026-10-13 · คำสั่ง user)
+
+push เข้า main วันละถึง 31 ครั้ง (หลาย session ขนาน) ⇒ ~290 build/เดือน เกินนาทีฟรี 500 (build จริง ~2.5 นาที)
+- **`.github/workflows/scheduled-deploy.yml`** ทำงานตอน **push เข้า main** (ข้าม push ที่แตะแค่ `.md`/`.claude`):
+  deploy ล่าสุดเก่ากว่า **60 นาที** = deploy ทันที · ไม่งั้นรอ "เงียบ" **30 นาที** (push ใหม่ระหว่างรอ = ยกเลิกตัวเก่า
+  `concurrency: cancel-in-progress` แล้วนับใหม่) แต่ไม่เกินครบ 60 นาทีจากรอบก่อน · จำลองจาก push จริง ≈ **~130 build/เดือน (~320 นาที)**
+- จำ commit + เวลาที่ deploy ด้วย **annotated tag `render-deployed`** (เวลา = taggerdate) · ไม่มีของใหม่ = ข้าม · มีแค่ `.md`/`.claude` = เลื่อน tag ไม่ build
+- **cron รายชั่วโมงเหลือเป็นตัวสำรองเท่านั้น** — 13/10 cron ของ GitHub ข้าม 3 รอบติด (11:07/12:07/13:07) ทั้งที่ไฟล์ถูก
+  ⇒ 🔴 **ห้ามกลับไปพึ่ง schedule อย่างเดียว**
+- repo เป็น **public** ⇒ นาที GitHub Actions ไม่จำกัด การ `sleep` รอใน job จึงไม่มีค่าใช้จ่าย · **ถ้า repo เปลี่ยนเป็น private ต้องคิดใหม่** (เพดานฟรี 2,000 นาที/เดือน)
+- **ด่วน** (บั๊กหน้างาน): GitHub → Actions → *Scheduled deploy* → **Run workflow** = deploy ทันทีเสมอ
+  · AI session สั่ง Run workflow ไม่ได้ (MCP ได้ 403) — ต้องให้ user กด
+- hook ตอบไม่ใช่ 2xx = งานแดง ไม่เลื่อน tag · secret ไม่มี = push/cron ขึ้น warning / กดมือขึ้น error
+- ⚠️ tag เลื่อนตอน Render **รับคิว** ไม่ใช่ตอน build ผ่าน — build ล้มบน Render ต้องกด Run workflow ซ้ำหลังแก้
+- 🔴 **Render Auto-Deploy ต้องปิด** — service เป็น **Blueprint managed** ⇒ คุมด้วย `autoDeploy: false` ใน `render.yaml` (ปิดใน dashboard อย่างเดียว sync แล้วอาจเปิดกลับ) ไม่งั้น build ซ้ำ 2 ทาง
+- ตั้งครั้งแรก (ทำแล้ว 13/10): Render → Settings → **Deploy Hook** → GitHub secret `RENDER_DEPLOY_HOOK` · **URL นี้เป็นความลับ**
+- spend limit ของ Render ตั้ง $5 (ต.ค. นาทีฟรีหมดแล้ว) · user จะตั้งกลับ $0 แล้วถอดบัตรเดือน พ.ย. — **ตั้ง $0 ก่อนถอดบัตร**
+
 ### PWA — เพิ่มลงหน้าจอโฮม เปิดเหมือนแอป (2026-07-23)
 
 รองรับ "เพิ่มลงหน้าจอโฮม" (iOS Safari / Android Chrome) เปิดแบบ standalone (เต็มจอ ไม่มีแถบ browser มีไอคอนเอง) เหมาะจอหน้าไลน์/มือถือหัวหน้า
