@@ -184,6 +184,20 @@ const RULES = [
     allow: {},
   },
   {
+    id: 'am-open-lines-family-aware',
+    scan: ['src/lib/dailyAmBoard.js'], ext: ['.js'],
+    /* "ไลน์ไหนเดินอยู่" ต้องผ่าน openFamilyLines() — ประกอบ Set เองที่นี่ = กลับไปเทียบชื่อตรงตัว */
+    re: /openSessionLines:\s*new Set\(/g,
+    why: 'ไลน์แม่หลายตัวไม่เคยเปิดกะในชื่อตัวเอง (วัด 45 วัน: GOR · LWR BAR · HYDROFORM '
+       + '· LINE APRON ASSY = 0 ครั้ง · ลูกเดินทุกวันแทน) แต่ถือ **แผน LPA รวม 30 แผน** '
+       + '⇒ ชุด "ไลน์ที่เดินอยู่" ที่เทียบชื่อตรงตัวจะไม่มีชื่อไลน์แม่ ⇒ `pokayokeByLine`/`lpaByLine` '
+       + '(`utils/prodRoutine.js`) ใช้ชุดนี้เป็นประตู แล้ว**ข้ามงานตรวจของไลน์แม่ทั้งก้อนเงียบๆ** '
+       + '· จอ AM ก็เขียน "ยังไม่เปิดกะ" ให้ไลน์ที่ลูกเดินอยู่',
+    fix: 'คืน `openSessionLines: openFamilyLines(lines, openRaw)` (`src/lib/pmDailyStatus.js` · มีเทส) '
+       + '— family = ตัวเอง + แม่/ปู่ + ลูก/หลาน **ไม่รวมพี่น้อง**',
+    allow: {},
+  },
+  {
     id: 'check-day-mark-not-answer',
     scan: ['src/utils/dailyCheckDay.js'], ext: ['.js'],
     /* สัญลักษณ์ "สถานะวัน" ห้ามยืมตัวอักษรจากพจนานุกรม "คำตอบของการตรวจ" */
