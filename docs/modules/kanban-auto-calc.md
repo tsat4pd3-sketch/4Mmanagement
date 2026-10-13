@@ -5,6 +5,20 @@
 
 Planner/Sale อัพโหลด forecast ลูกค้า → ระบบคำนวณจำนวน kanban ที่ใช้ในระบบดึงอัตโนมัติ · สูตรถอดจากไฟล์ Excel จริง (verify กับตัวอย่างที่คำนวณมือ) · helper กลาง **`src/utils/kanbanCalc.js`** (pure functions — `calcWithdrawalKanban`/`calcProductionKanban`/`nextMonthKey`, `⌈x⌉` = `Math.ceil(x-1e-9)`) · UI = `KanbanCalcTab` ใน `PlannerSales.jsx`
 
+> ### 🔴🔴 **LOT size ≠ Packing — คนละเรื่อง ห้ามยุบเป็นตัวเดียว/ตัดสินพร้อมกัน** (2026-10-12 · คำสั่ง user)
+> ทั้งคู่อยู่ใน `kanban_standards` แถวเดียวกันก็จริง แต่**คุมคนละเรื่อง คนละคนตัดสิน**:
+>
+> | | คืออะไร | กระทบอะไร |
+> |---|---|---|
+> | **`lot_size`** (ขนาดล็อตผลิต) | สะสมความต้องการครบเท่าไหร่ถึงออกใบสั่งผลิต | `utils/pullAccumulator.js` (จังหวะเปิดใบ) · `utils/kanbanCalc.js` (`Total = Max + lot`) · ตั้งเล็กเกินจริง = ใบสั่งพุ่งเป็นร้อยใบ |
+> | **`qty_per_kanban`** (Packing) | จำนวนชิ้นต่อกล่อง/ต่อบัตร | การบรรจุ/ป้ายบัตร/การส่ง — **ไม่เกี่ยวกับจังหวะเปิดใบผลิต** |
+>
+> ⇒ **จอเทียบ/จอรายงานต้องแยกกอง แยกตัวนับ** — รวมเป็น "N พาร์ทไม่ตรง" ก้อนเดียว = ตอบไม่ได้ว่า
+> ต้องไปคุยกับใครเรื่องอะไร และเรื่องที่ยังตกลงไม่ได้จะไปค้างเรื่องที่ชัดอยู่แล้ว
+> · ต้นแบบ: จอเทียบในตัวนำเข้า Monitoring (`MonitoringUpload` → `kbDiff = { lot, pack, noStd }` + `<KbDiffTable>`)
+> · **"ยังไม่มีในทะเบียน" เป็นกองที่ 3** — คนละเรื่องกับ "มีแล้วแต่ไม่ตรง"
+> · มีด่าน `regressionGuards` (`kanban-lot-vs-packing-split`) กันยุบกลับ
+
 - **2 ชนิด (toggle บนหัวแท็บ):** 🔄 **Withdrawal** (คัมบังเบิกถอน FG) · 🏭 **Production** (คัมบังสั่งผลิต press — Vol/Day, Info/Process/Safety LT, Kanban/Lot, Kanban(sys))
 - **⚠️ PI (Production) กับ PW (Withdrawal) ไม่คำนวณพาร์ทร่วมกัน — แยกด้วย `dr_products.process_type` ไม่ใช่เลข MAT (2026-08-03 · คำสั่ง user):** Production kanban สั่งไลน์**ปั๊ม/ผลิตเป็น lot** · Withdrawal เบิกถอน/ป้อนไลน์**ประกอบ** · **ห้ามแยกด้วยเลข MAT SAP** — งานปั๊มที่ขายตรงก็เป็น FG เบอร์ 1 ได้ (เลข MAT บอกไม่ได้ว่าปั๊มหรือประกอบ) · เกณฑ์จริง (`procMatchesTab` ใน KanbanCalcTab): Production = `process_type==='metal_forming'` · Withdrawal = `!== 'metal_forming'` (welding_assembly + พาร์ทที่ยังไม่ตั้ง process ซึ่ง default = welding_assembly) · `'common'` (ทุกกระบวนการ) = แสดงทั้ง 2 แท็บ · banner บนแต่ละแท็บนับ "ซ่อน N พาร์ทที่เป็นอีกกระบวนการ" (โปร่งใส ไม่ปล่อยหายเงียบ) + ชี้ให้ตั้ง process_type ที่ Product Master · **ถ้าพาร์ทปั๊มไม่ขึ้นแท็บ Production = process_type ยังไม่ตั้งเป็น metal_forming (data ไม่ใช่ logic)** — แก้ที่ `/products`
 - **เดือน default = เดือนถัดไป** (`nextMonthKey` — planner คำนวณปลายเดือนสำหรับเดือนหน้า) · **วันทำงาน/เดือน ลิงก์ปฏิทินบริษัท** (`countWorkingDays`: จ-ศ − วันหยุด + เสาร์/อาทิตย์ที่มาร์ค `working` · แก้ทับได้) · Production เพิ่มช่อง ชม.ทำงาน/วัน (default 16) คิด available time

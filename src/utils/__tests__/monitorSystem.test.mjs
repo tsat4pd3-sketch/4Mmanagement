@@ -199,3 +199,30 @@ test('makeAnchorLookup — ยึดเฉพาะ BALANCE คอลัมน�
   assert.equal(look('p2', 'balance', '2026-10-12'), undefined);
   assert.equal(makeAnchorLookup({})('p1', 'balance', 'x'), undefined);
 });
+
+/* ── 12/10: IN = คลังกดรับแล้ว · ORDER บอร์ดแร็ค → ใบส่งของ ─────────────────────────── */
+import { inAtRef as inAtRef2, rackOrderSyncPlan as rackPlan } from '../monitorSystem.js';
+
+test('inAtRef — นับเฉพาะ issue ที่คลังอ้างอิง (approved) · ใบรอรับ/คลังอื่น/adjust ไม่นับ', () => {
+  const rows = [
+    { line_name: 'FG WAREHOUSE', mat_no: '10088642', qty: 200, type: 'issue', status: 'approved', work_date: '2026-10-12' },
+    { line_name: 'FG WAREHOUSE', mat_no: '10088642', qty: 50, type: 'adjust', status: 'approved', work_date: '2026-10-12' },
+    { line_name: 'ASSEMBLY 1', mat_no: '10088642', qty: 999, type: 'issue', status: 'approved', work_date: '2026-10-12' },
+    { line_name: 'FG WAREHOUSE', mat_no: '10088642', qty: 30, type: 'issue', status: 'pending', work_date: '2026-10-12' },
+    { line_name: 'FG WAREHOUSE', mat_no: '10088642', qty: 7, type: 'consume', status: 'approved', work_date: '2026-10-12' },
+  ];
+  const m = inAtRef2(rows, () => 'FG WAREHOUSE');
+  assert.equal(m.get('10088642|2026-10-12'), 200);
+  assert.equal(inAtRef2(rows, () => null).size, 0, 'ไม่รู้คลังอ้างอิง = ไม่มี IN (ไม่เดา)');
+});
+
+test('rackOrderSyncPlan — ยอดบนบอร์ด → ใบรอส่ง source monitoring', () => {
+  assert.deepEqual(rackPlan({ qty: 210, covered: 0, pending: [] }), { insertQty: 210, deleteIds: [] });
+  assert.deepEqual(rackPlan({ qty: 210, covered: 0, pending: [{ id: 'a', qty: 210 }] }), { deleteIds: [] }, 'ตรงแล้ว = ไม่เขียน');
+  assert.deepEqual(rackPlan({ qty: 420, covered: 0, pending: [{ id: 'a', qty: 210 }, { id: 'b', qty: 5 }] }),
+    { update: { id: 'a', qty: 420 }, deleteIds: ['b'] });
+  assert.deepEqual(rackPlan({ qty: 210, covered: 210, pending: [{ id: 'a', qty: 210 }] }), { deleteIds: ['a'] },
+    'ส่งไปแล้ว/มีใบจากทางอื่นครบ = ไม่ซ้อนใบ');
+  assert.deepEqual(rackPlan({ qty: 300, covered: 100, pending: [] }), { insertQty: 200, deleteIds: [] });
+  assert.deepEqual(rackPlan({ qty: null, covered: 0, pending: [{ id: 'a', qty: 210 }] }), { deleteIds: ['a'] }, 'ล้างช่อง = ลบใบรอส่งของบอร์ด');
+});
