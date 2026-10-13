@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext } from 'react';
+import { useState, useEffect, useContext, useMemo } from 'react';
 import { orgValues, sortLike } from '../utils/listOrder';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { supabase } from '../supabaseClient';
@@ -400,6 +400,22 @@ export default function ShiftOrganize() {
     ? lines.filter(l => String(l.id) === String(userLineId))
     : scopeSecs.length ? lines.filter(l => inSectionScope(scopeSecs, l.section)) : lines;
 
+  /* 🔴 คำเตือน "ไลน์นี้ยังไม่มีกะ" รายไลน์ (2026-10-13 · ต่อจากเคส Line D2/D3)
+     เดิมจอเตือนเฉพาะตอน**ทั้งตาราง**ว่าง ⇒ ไลน์เดียวที่เพิ่งสร้าง (หลังเติมตารางล่วงหน้าไปแล้ว)
+     เงียบสนิท — หัวหน้าเห็นแถวมีขีด `—` ปนกับไลน์ที่ตั้งครบ แล้วสรุปว่า "เซ็ทหมดแล้ว"
+     ⚠️ ไลน์ลูกที่ **ตามไลน์แม่** ถือว่ามีกะแล้ว (`effTeam` ไล่ให้) — ไม่ใช่ปัญหา ห้ามเตือน
+     🔴 เรียงตามจำนวนคนที่กระทบ — ไลน์เปล่าที่ไม่มีกะ ไม่ใช่เรื่องด่วน */
+  const empCountByLine = useMemo(() => {
+    const m = {};
+    for (const e of employees) if (e?.line_id != null) m[e.line_id] = (m[e.line_id] || 0) + 1;
+    return m;
+  }, [employees]);
+  const noShiftLines = scopedLines
+    .filter(l => !effTeam(l.id))
+    .map(l => ({ ...l, n: empCountByLine[l.id] || 0 }))
+    .sort((a, b) => b.n - a.n);
+  const noShiftPeople = noShiftLines.reduce((s, l) => s + l.n, 0);
+
   const allSections = orgSections.length ? orgSections : sortLike(lines.map(l => l.section), orgSections);
   const scopedSections = (role === 'leader' && userLineId)
     ? sortLike(scopedLines.map(l => l.section), orgSections)
@@ -494,6 +510,32 @@ export default function ShiftOrganize() {
         />
       )}
 
+      {/* 🔴 ไลน์ที่ยังไม่มีกะในสัปดาห์นี้ — ต้องเห็นก่อนเลื่อนหาเอง (ไลน์ที่มีคนขึ้นก่อน) */}
+      {noShiftLines.length > 0 && (
+        <div style={{
+          padding: '10px 14px', borderRadius: 8, marginBottom: 10,
+          background: noShiftPeople ? 'rgba(239,68,68,0.08)' : 'rgba(245,158,11,0.08)',
+          border: `1px solid ${noShiftPeople ? 'rgba(239,68,68,0.3)' : 'rgba(245,158,11,0.25)'}`,
+          fontSize: 12.5, color: noShiftPeople ? 'var(--red)' : 'var(--amber)',
+        }}>
+          ⚠️ <strong>{noShiftLines.length} ไลน์ยังไม่มีกะในสัปดาห์นี้</strong>
+          {noShiftPeople > 0 && <> — กระทบ <strong>{noShiftPeople} คน</strong> (กะไม่ขึ้นในใบเช็คชื่อ · กำลังคนนับเป็น 0)</>}
+          <div style={{ marginTop: 5, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {noShiftLines.map(l => (
+              <span key={l.id} style={{
+                padding: '2px 8px', borderRadius: 999, fontSize: 11.5, fontWeight: 700,
+                background: 'var(--bg3)', border: '1px solid var(--border)',
+                color: l.n ? 'var(--red)' : 'var(--muted)',
+              }}>{l.name}{l.n ? ` · ${l.n} คน` : ' · ไม่มีพนักงาน'}</span>
+            ))}
+          </div>
+          <div style={{ marginTop: 5, fontSize: 11.5, color: 'var(--muted)' }}>
+            กด <b>+ กำหนด</b> ที่แถวนั้น หรือ <b>🔁 เติมกะล่วงหน้า</b> — ไลน์ที่สร้างใหม่หลังเติมตารางไปแล้ว จะไม่มีแถวของตัวเอง
+            {' '}· ไลน์ลูกที่ขึ้น <b>↳ ตามไลน์แม่</b> ถือว่ามีกะแล้ว ไม่อยู่ในลิสต์นี้
+          </div>
+        </div>
+      )}
+
       {/* Weekly Shift Table — overflowX: ตารางกว้าง ~610px ให้เลื่อนแนวนอนบนมือถือ (desktop ไม่มี scrollbar เพราะพื้นที่พอ) */}
       <div className="card table-sticky" style={{ marginBottom: 8, overflowX: 'auto' }}>
         <table>
@@ -520,6 +562,13 @@ export default function ShiftOrganize() {
                     {line.name}
                     {following && team && <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 600, color: 'var(--muted)' }} title={`ตามไลน์แม่ (${parentName})`}>↳ ตามไลน์แม่</span>}
                     {isChild && !following && <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, color: '#f59e0b' }} title="ตั้งกะเอง ไม่ตามไลน์แม่">✎ แก้เอง</span>}
+                    {/* 🔴 ไม่มีกะ + มีคนอยู่ = คนกลุ่มนั้นกะไม่ขึ้นทั้งใบเช็คชื่อ/กำลังคน — ต้องเห็นที่แถว ไม่ใช่แค่ขีด — */}
+                    {!team && (empCountByLine[line.id] || 0) > 0 && (
+                      <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 800, color: 'var(--red)' }}
+                        title="ไลน์นี้ยังไม่มีกะในสัปดาห์นี้ และไม่มีไลน์แม่ให้ตกทอด ⇒ พนักงานกลุ่มนี้จะไม่มีกะ">
+                        ⚠️ ไม่มีกะ · {empCountByLine[line.id]} คน
+                      </span>
+                    )}
                   </td>
                   <td style={{ fontSize: 12, color: 'var(--muted)' }}>{line.section || '—'}</td>
                   <td style={{ textAlign: 'center' }}>
