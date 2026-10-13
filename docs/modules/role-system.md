@@ -832,3 +832,70 @@ migration `20261012_rls_round5_anon_scope_masters_main.sql` (**apply แล้�
 (ถือ `:edit_dept`)** — คู่นี้สำคัญเพราะพิสูจน์ว่าแยกตามคีย์จริง ไม่ใช่แยกตาม "ล็อกอินหรือยัง"
 
 migration `20261012d_rls_round7_attendance_shift_main.sql` (**apply แล้ว 2026-10-12** · มี ROLLBACK + ลำดับย้อน)
+
+
+## 🔒 RLS รอบ 8 — ทะเบียนคน + จุดงาน + KPI รุ่นเก่า (2026-10-13)
+
+### 🔴 บทเรียนซ้ำรอบที่ 3 — **รายการค้างชี้ผิดตัว ต้องวัดก่อนลงมือทุกครั้ง**
+
+รายการค้างจากรอบ 5 เขียนว่า `kpi_actuals`/`kpi_targets`/`kpi_raw_inputs`/`kpi_section_detail`
+= "เลข KPI" · วัดจริง: **ไม่มีโค้ดอ้างถึงเลย เขียนครั้งสุดท้าย 25 พ.ค.** (เลิกใช้แล้ว)
+เลข KPI วันนี้อยู่ที่ `kpi_definitions` · `kpi_catalog` · `kpi_manual_entries` · `kpi_month_plans` ·
+`kpi_base_inputs` · `kpi_month_notes` · `kpi_board_layouts` · `kpi_standard_items`
+⇒ **8 ตัวนั้นถูกรัดด้วย `has_perm('kpi:manage')` ไว้แล้วก่อนรอบนี้ ไม่มีงานต้องทำ**
+(`kpi_monthly` = คีย์ทะเบียนเอกสาร · `kpi_mtn_rollup` = RPC ฝั่ง DR — ไม่ใช่ตาราง Main ทั้งคู่)
+· วัดชั้น ข ใหม่ทั้งชุดได้ **37 ตาราง** (รายการเดิมบอก 39 แต่สมาชิกไม่ตรง)
+
+### ⚠️ `role_permissions` มีแถว `allowed=false` — คิวรีสรุปผู้ถือคีย์ต้องกรองเสมอ
+
+นับแถวเปล่าๆ จะรายงานผู้ถือเกินจริง (`skills:delete` ดูเหมือน 9 role จริง 3) ·
+**ด่านจริงคือเทสจำลอง JWT ไม่ใช่คิวรีสรุป** — รอบนี้เทสจับได้ว่าผมสรุปผู้ถือผิด 2 คีย์
+· `can()` ฝั่งจอ (`src/utils/permissions.js:49`) อ่าน `allowed` ตัวเดียวกับ `has_perm` ⇒ จอกับ DB ตัดสินตรงกัน
+
+### ตารางที่รัด
+
+| ตาราง | cmd | predicate | ปุ่มเจ้าของ |
+|---|---|---|---|
+| `employees` | INSERT | `employees:register` **or** `page:/add-user` | Register.jsx · AddUser.jsx |
+| `employees` | UPDATE | OR 7 คีย์ (`employees:edit`/`:deactivate`/`:edit_all_sections` · `line_setup:edit` · `org:manage_divisions`/`:manage_own_unit` · `storage_maintain:run`) | operator.jsx · LineSetup · OrgSetup · ImageSqueezePanel |
+| `employees` | DELETE | `employees:deactivate` | **ไม่มีจอไหนลบ** — ของจริงคือ soft-delete `is_active=false` |
+| `workstations` | ALL | `line_setup:edit` | LineSetup.jsx |
+| `station_requirements` | ALL | `line_setup:edit` **or** `skills:delete` | LineSetup · operator.jsx:748 |
+| `employee_home_positions` | ALL | `management:assign_manpower` | Management.jsx modal จุดงาน |
+| KPI เก่า 4 ตาราง | ALL | `kpi:manage` | ไม่มี (เลิกใช้ · รัดให้ตรงโดเมนตัวเอง) |
+
+· 🔴 **3 ตาราง (`workstations`/`station_requirements`/`employee_home_positions`) มีแต่ policy `FOR ALL`
+  ตัวเดียว** ⇒ ต้อง `create policy` อ่านก่อนแล้วค่อยรัด (บทเรียนเดียวกับ `shift_schedules` รอบ 7)
+· **สิ่งที่ได้จริงไม่ใช่ "ปิดรูรั่ว" แต่คือ "เพิกถอนสิทธิ์ที่ `/permissions` แล้วมีผลถึง DB"** —
+  เดิมถอนคีย์ไปก็ยังยิง REST เขียนได้อยู่ดี · พูดให้ตรงดีกว่าเคลมเกิน
+
+### 🔑 บั๊กจริงที่เจอระหว่างทาง — ปุ่มจัดกำลังคนใน modal ไม่มี `can()` เลย
+
+`Management.jsx` มี `can('management','assign_manpower')` อยู่แล้ว **แต่ไปอยู่ใน `canDrag` ที่ประกาศ
+ข้างในฟังก์ชันวาดการ์ดพนักงาน** ⇒ ครอบปุ่มใน modal จุดงานไม่ถึง · ใครเปิด modal ได้ก็กด
+"📌 บันทึกตำแหน่งประจำ" / "↩ Pool" ได้ทั้งที่ไม่มีสิทธิ์
+⇒ แก้ 2 ชั้น: `canAssignManpower` ระดับคอมโพเนนต์ · ซ่อนปุ่ม **และ** เช็คซ้ำใน `assignWorker()` /
+`saveHomePosition()` (ซ่อนปุ่มอย่างเดียวไม่พอ)
+
+🔴 **ด่าน 2 ชั้น เพราะชั้นหยาบจับเคสนี้ไม่ได้:**
+- `rls-tightened-tables-need-key` — ไฟล์ที่เขียนตารางที่รัดแล้ว ต้องอ้างคีย์นั้นในไฟล์
+  (จับ "ไฟล์ใหม่ที่ลืมเช็คสิทธิ์ทั้งไฟล์") · **ทะเบียน `RLS_KEYED_TABLES` ต้องเติมทุกครั้งที่รัดตารางเพิ่ม**
+- `manpower-actions-need-perm` — เจาะจงว่า `assignWorker`/`saveHomePosition` ต้องมี `canAssignManpower`
+  ในตัวฟังก์ชันเอง (**ตรวจย้อนแล้ว: ถอดด่านออก = เทสแดงทันที**)
+- บทเรียนข้ามโมดูล: **"ไฟล์มีคีย์" ≠ "ทางเข้านั้นถูกกัน"** — ด่านหยาบต้องมีด่านเจาะจงคู่เสมอ
+
+### ผลตรวจกลับ (simulated JWT · rollback ทั้งก้อน)
+
+| role | อ่าน | เขียน |
+|---|---|---|
+| `engineer` (ไม่ถือคีย์ไหนเลย) | emp 314 · จุดงาน 132 · ทักษะจุดงาน 539 แถว | **0 ทุกตาราง** |
+| `mtn` (ถือ `employees:edit`) | — | emp 1 · จุดงาน 0 · ทักษะ 0 · ตำแหน่งประจำ 0 |
+| `manager` (ถือครบ) | — | จุดงาน 1 · ทักษะ 1 · ตำแหน่งประจำ 1 · KPI เก่า 1 |
+| `supervisor` (ไม่ถือ `skills:delete`) | — | ทักษะจุดงาน 1 — ผ่านขา `line_setup:edit` (พิสูจน์ว่า OR ทำงาน) |
+
+⚠️ **ของที่ไม่แก้ให้ (เป็นนโยบาย ไม่ใช่โค้ด):** `sale` / `warehouse_delivery` ถือ `employees:register`
++ `employees:edit` · ตอนนี้ DB บังคับตามทะเบียนแล้ว ⇒ ถอนที่ `/permissions` เมื่อไหร่มีผลทันที
+
+📌 **รอ user ตัดสิน:** KPI เก่า 4 ตาราง (42/313/11/0 แถว) ควรย้ายเข้า schema `archive` หรือ drop
+
+migration `20261013_rls_round8_people_stations_kpi_legacy_main.sql` (**apply แล้ว 2026-10-13** · ROLLBACK + ลำดับย้อนครบ)
