@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { lineNameCompare } from '../utils/lineHierarchy';
 import { supabaseDR } from '../supabaseClient';
+import { invalidateTable } from '../utils/masterInvalidate';
 import { toast } from '../components/Toast';
 import { suggestFixtureCandidates } from '../utils/fixturePoints';
 import { jigEquipTypeOf, EQUIPMENT_KINDS } from '../utils/equipmentKinds';
@@ -86,6 +87,7 @@ export default function FixtureClassify({ machines, mapKeys, canEdit, lines = []
       const { error: jErr } = await supabaseDR
         .from('jigs').update({ equipment_type: jigEquipTypeOf(kind) }).in('machine_id', ids);
       if (jErr) shadowWarn = ' · ⚠️ sync แถวเงาใน jigs ไม่สำเร็จ (แจ้ง admin)';
+      else invalidateTable('jigs');   // ทะเบียนเข้า cache แล้ว (13/10 · คีย์ 'jigs:am')
 
       if (okN < ids.length) {
         toast.error(`บันทึกได้ ${okN}/${ids.length} รายการ — ที่เหลือไม่ถูกเขียน (เช็คสิทธิ์/การเชื่อมต่อ)`);

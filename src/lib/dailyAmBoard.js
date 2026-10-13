@@ -10,6 +10,7 @@
    · ไฟล์นี้ = "โหลด + จัดกลุ่มต่อไลน์" · สูตรสี/หน้าต่าง 60 นาทียังอยู่ที่ pmDailyStatus.js ที่เดิม
    · ทุกจอที่โชว์ AM รายวัน (DailyPM · FactoryMap · จอถัดไป) ต้องเรียกจากที่นี่ — เขียนซ้ำ = วันหนึ่งสองจอตอบคนละสี */
 import { supabaseDR } from '../supabaseClient'
+import { cachedRows } from '../utils/masterCache'
 import { fetchByIds } from '../utils/fetchByIds'
 import { getLineFamilyNames } from '../utils/lineHierarchy'
 import { SESSION_STATUSES_REAL } from '../utils/sessionStatus'
@@ -31,11 +32,19 @@ export async function loadDailyAm({ now = new Date(), lines = null } = {}) {
   const startISO = si.shiftStart.toISOString()
   await loadPmTeams().catch(() => {})   // ให้ isAmTeam อ่าน mtn_teams.kind ได้จริง (โหลดพลาด = fallback เดาจาก key)
 
+  /* 🔴 3 ตัวแรกเป็น **ทะเบียน** (setup) ไม่ใช่ข้อมูลสด ⇒ ผ่าน cache (2026-10-13 · งานลด egress)
+     วัดจริง 09/10: จอนี้ reload ทุกครั้งที่มี event ของ inspections/prod_orders/production_sessions
+     ⇒ `jigs` 545 + `checklists` 497 + `pm_daily_line_targets` 266 = **1,308 ครั้ง/วัน**
+     ทั้งที่ 3 ตารางนี้เปลี่ยนเดือนละไม่กี่ครั้ง · บนจอ TV ที่เปิดค้างคือ**ทุก 10 นาทีตลอดคืน**
+     🔴 ตัวเลขนี้คูณตามจำนวนจอที่เปิด — เป็นค่าใช้จ่ายที่โตตามการใช้งาน ไม่ใช่ตามงานที่ทำ
+     ⚠️ ใช้ `cachedRows` (ไม่ใช่ `cachedMaster`) เพราะบอร์ดนี้ **"โหลดพลาด" ต้องไม่กลายเป็น "ว่าง"**
+        — ว่าง = จอขึ้น "ไม่มีจุดตรวจ" = คำตอบผิดที่ดูเหมือนคำตอบถูก (ดูหัวไฟล์ ข้อ ok:false)
+     🔑 แก้ทะเบียนแล้วต้องเห็นทันที → ทุกจุดที่เขียน 3 ตารางนี้เรียก `invalidateTable()` แล้ว */
   const [jigRes, tgRes, clRes, lineRes] = await Promise.all([
-    supabaseDR.from('jigs').select('id, name, machine_no, line_name, jig_no, equipment_type, equipment_category').eq('module', 'mtn').order('line_name').order('name'),
-    supabaseDR.from('pm_daily_line_targets').select('*').eq('is_active', true),
+    cachedRows('jigs:am', () => supabaseDR.from('jigs').select('id, name, machine_no, line_name, jig_no, equipment_type, equipment_category').eq('module', 'mtn').order('line_name').order('name')),
+    cachedRows('pm_daily_line_targets:active', () => supabaseDR.from('pm_daily_line_targets').select('*').eq('is_active', true)),
     // แยก AM / PM ด้วยแกนข้อมูล `mtn_teams.kind` — ห้าม hardcode `department === 'production'`
-    supabaseDR.from('checklists').select('id, equipment_id, department').eq('module', 'mtn'),
+    cachedRows('checklists:mtn', () => supabaseDR.from('checklists').select('id, equipment_id, department').eq('module', 'mtn')),
     lines ? Promise.resolve({ data: lines, error: null }) : loadLinesRes(),   // คืน { data, error } · LINE_COLUMNS ครบตามสัญญา <LineSelect>
   ])
   const err = jigRes.error || tgRes.error || clRes.error || lineRes.error

@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { toDecodableImage } from '../utils/heicToJpeg'
 import { compressLayoutImage } from '../utils/layoutImage'
 import { supabase, supabaseDR } from '../supabaseClient'
+import { invalidateTable } from '../utils/masterInvalidate'
 import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App'
 import { can } from '../utils/permissions'
@@ -380,6 +381,7 @@ export default function MtnMachineLayout({ setupMode = false }) {
         machine_id: m.id, machine_no: m.machine_no || null, line_name: m.line_name || null,
       }).select('id').single()
       if (je) return toast.error('สร้างอุปกรณ์ PM ไม่สำเร็จ: ' + je.message)
+      invalidateTable('jigs')   // ทะเบียนเข้า cache แล้ว (13/10 · คีย์ 'jigs:am')
       jigId = jig.id
     }
     if (!jigId) return
