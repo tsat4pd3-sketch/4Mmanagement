@@ -17,14 +17,23 @@ const norm = (s) => (s ?? '').toString().trim().toLowerCase();
  * แปลงแถว shift_schedules เป็น map สำหรับ lookup
  * @returns {{ byLine: Object, byDept: Object, count: number }} count = จำนวนขอบเขตที่ตั้งกะไว้แล้ว
  */
-export function buildScheduleMaps(rows) {
+export function buildScheduleMaps(rows, lines) {
   const byLine = {}, byDept = {};
   for (const r of rows || []) {
     // dept_name อาจไม่มีคอลัมน์ (ยังไม่ apply migration) → r.dept_name = undefined → ตกไปสาย line ตามเดิม
     if (r?.dept_name) byDept[norm(r.dept_name)] = r.day_team;
     else if (r?.line_id != null) byLine[r.line_id] = r.day_team;
   }
-  return { byLine, byDept, count: Object.keys(byLine).length + Object.keys(byDept).length };
+  /* 🔴 สายไลน์แม่ของไลน์ลูก (2026-10-13) — ส่ง `lines` มาด้วยเสมอ
+     จอตั้งค่า (`ShiftOrganize.effTeam`) ให้ **ไลน์ลูกตามไลน์แม่** อยู่แล้ว แต่ของกลางนี้
+     อ่าน `byLine[line_id]` ตรงตัว ⇒ ไลน์ลูกที่ยังไม่มีแถวของตัวเอง = ไม่มีกะ ทั้งที่จอบอกว่าตั้งแล้ว */
+  const byName = {}, parentOf = {};
+  for (const l of lines || []) if (l?.name != null) byName[l.name] = l;
+  for (const l of lines || []) {
+    const p = l?.parent_line_name ? byName[l.parent_line_name] : null;
+    if (p && p.id !== l.id) parentOf[l.id] = p.id;
+  }
+  return { byLine, byDept, parentOf, count: Object.keys(byLine).length + Object.keys(byDept).length };
 }
 
 /**
@@ -34,9 +43,24 @@ export function buildScheduleMaps(rows) {
  */
 export function scheduleTeamFor(emp, maps) {
   if (!emp || !maps) return null;
-  if (emp.line_id != null && maps.byLine[emp.line_id]) return maps.byLine[emp.line_id];
+  /* ไลน์ตัวเอง → ไลน์แม่ → ปู่ … (เพดาน 6 ชั้น เท่ากับจอตั้งค่า กันผังวนลูป)
+     🔴 ไลน์ที่ **มีแถวของตัวเอง** ได้ค่าเดิมเป๊ะ — การตกทอดทำงานเฉพาะไลน์ที่ไม่มีแถวเท่านั้น */
+  const t = lineScheduleTeam(emp.line_id, maps);
+  if (t) return t;
   const d = norm(emp.department);
   return (d && maps.byDept[d]) || null;
+}
+
+/** ทีมกะเช้าของ "ไลน์" ตัวนี้ (รวมตกทอดจากไลน์แม่) — สำหรับจอที่ถามเป็นไลน์ ไม่ใช่รายคน
+ *  🔴 ใช้ตัวนี้แทนการอ่าน `maps.byLine[id]` ตรงๆ เสมอ (อ่านตรงๆ = ข้ามการตกทอด · มีด่าน) */
+export function lineScheduleTeam(lineId, maps) {
+  if (lineId == null || !maps?.byLine) return null;   // ยังไม่ได้โหลด/ส่ง maps เปล่ามา = ยังไม่รู้ (ห้ามพัง)
+  let id = lineId;
+  for (let hop = 0; id != null && hop <= 6; hop++) {
+    if (maps.byLine[id]) return maps.byLine[id];
+    id = maps.parentOf?.[id];
+  }
+  return null;
 }
 
 /**

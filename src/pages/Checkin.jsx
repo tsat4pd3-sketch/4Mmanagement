@@ -328,7 +328,7 @@ export default function Checkin() {
     const empAll = [...empData, ...helperEmps];
 
     // ตารางกะ: ไลน์ผลิต (line_id) + หน่วยงานสนับสนุน (dept_name) — ดู utils/shiftAssign.js
-    const schedMaps = buildScheduleMaps(scheduleData);
+    const schedMaps = buildScheduleMaps(scheduleData, lineData);   // ส่ง lines = ไลน์ลูกตกทอดกะจากไลน์แม่
     setNoSchedule(schedMaps.count === 0);
 
     const empOverride = {};
