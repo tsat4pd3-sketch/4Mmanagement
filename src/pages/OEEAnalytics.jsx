@@ -6,6 +6,7 @@ import {
   ReferenceLine, LabelList,
 } from 'recharts';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { buildScheduleMaps, lineScheduleTeam } from '../utils/shiftAssign';
 import { UserContext } from '../App';
 import { inSectionScope } from '../utils/sectionScope';
 import { dtBucketName, buildDtIndex, dtTrashStats } from '../utils/downtimeCategory';
@@ -403,7 +404,7 @@ export default function OEEAnalytics() {
   const [tdCtMap, setTdCtMap] = useState({});                 // mat_no -> cycle_time_sec (คำนวณ OEE สดของกะที่ยังไม่ปิด)
   const [tdOrdersBySession, setTdOrdersBySession] = useState({}); // session_id -> prod_orders[] (สำหรับนับงานคู่ RH/LH เป็น 1 คู่)
   const [tdPairMat, setTdPairMat] = useState({}); // mat_no -> pair_mat_no
-  const [shiftSchedMap, setShiftSchedMap] = useState({}); // line_id -> day_team
+  const [shiftSchedMap, setShiftSchedMap] = useState({}); // ผลของ buildScheduleMaps (byLine + parentOf)
   const [tdLoading, setTdLoading] = useState(false);
 
   // Cascading Section → Department(group) → Line options (2026-09-07: ส่วนงานยึด org_nodes · แผนก/ไลน์ผ่าน <LineSelect> กลาง)
@@ -592,19 +593,20 @@ export default function OEEAnalytics() {
   // ทีมตามตาราง shift_schedules (A/B สลับกันตามวัน, C กะเช้าตลอด) — best effort, ถ้าไม่มีข้อมูลจะไม่ระบุ
   useEffect(() => {
     if (!tdDate || !linesFull.length) return;
-    const ids = linesFull.map(l => l.id);
-    supabase.from('shift_schedules').select('line_id, day_team').eq('work_date', tdDate).in('line_id', ids)
-      .then(({ data }) => {
-        const m = {};
-        (data || []).forEach(r => { m[r.line_id] = r.day_team; });
-        setShiftSchedMap(m);
+    /* 🔴 ไม่กรอง `.in('line_id', ids)` แล้ว — ไลน์ลูกตกทอดกะจาก**ไลน์แม่** ซึ่งอาจไม่อยู่ในขอบเขตที่ดูอยู่
+       และห้ามอ่าน `byLine[id]` ตรงๆ (ข้ามการตกทอด = ไลน์ลูกที่ยังไม่มีแถวของตัวเองจะ "ไม่ระบุทีม")
+       ⚠️ อ่านไม่ได้ ≠ "ไม่มีตารางกะ" — เดิมแกะแค่ `{ data }` แล้วเงียบ */
+    supabase.from('shift_schedules').select('line_id, dept_name, day_team').eq('work_date', tdDate)
+      .then(({ data, error }) => {
+        if (error) { console.warn('[OEEAnalytics] อ่านตารางกะไม่สำเร็จ — ทีมของกะจะไม่ระบุ', error); setShiftSchedMap({}); return; }
+        setShiftSchedMap(buildScheduleMaps(data || [], linesFull));
       });
   }, [tdDate, linesFull]);
 
   const lineIdByName = useMemo(() => Object.fromEntries(linesFull.map(l => [l.name, l.id])), [linesFull]);
   const resolveTeam = useCallback((lineName, shift) => {
     const id = lineIdByName[lineName];
-    const dayTeam = id != null ? shiftSchedMap[id] : undefined;
+    const dayTeam = lineScheduleTeam(id, shiftSchedMap) || undefined;
     if (!dayTeam) return null;
     if (shift === 'day') return dayTeam;
     if (dayTeam === 'C') return null; // Team C ไม่มีกะดึก

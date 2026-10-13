@@ -6,6 +6,7 @@ import { supabase } from './supabaseClient';
 import { setActor } from './utils/actorStamp';
 import { loadProfilesPeople } from './utils/usePeople';
 import MyQueuePanel, { useMyQueue } from './components/MyQueuePanel';
+import { OLD_DAYS } from './utils/myQueue';
 import { ToastContainer, toast } from './components/Toast';
 import Login from './pages/Login';
 import SignatureModal from './components/SignatureModal';
@@ -1125,12 +1126,18 @@ const NOTIF_ROUTE = {
   material_requests:   '/qa?tab=matreq',
 };
 
-function NotificationBell({ userId, role }) {
+export function NotificationBell({ userId, role }) {
   const [notifs, setNotifs]     = useState([]);
   const [open,   setOpen]       = useState(false);
   const [muted,  setMuted]      = useState(() => localStorage.getItem('esm-notif-sound') === 'off');
   const dropRef                 = useRef(null);
   const navigate                = useNavigate();
+  /* 🎯 แท็บ "รอคุณ" (13/10 · user "ไม่ได้แยกของ user เองหรือของส่วนงาน … คนเปิด MO หาเรื่องด่วนของตัวเองไม่เจอ")
+     = **สถานะปัจจุบัน** จากกฎคิวงานของฉัน (`utils/myQueue.js` ชั้น mine) ไม่ใช่ฟีดเหตุการณ์ —
+     งานที่ทำเสร็จหายเอง ไม่ถูกแจ้งเตือนส่วนงานดันตกลิสต์ · ตัวเลขบนกระดิ่งนับเฉพาะแท็บนี้ (`badgeCount`)
+     โหลดร่วมกับแผงบัญชีใน sidebar (ผลชุดเดียว ไม่ยิงซ้ำ — ดู useMyQueue) */
+  const myQueue                 = useMyQueue(open);
+  const [tab, setTab]           = useState(null);   // null = เลือกให้อัตโนมัติ (มีงานรอคุณ → แท็บนั้นก่อน)
 
   const load = useCallback(async () => {
     if (!userId) return;
@@ -1262,13 +1269,15 @@ function NotificationBell({ userId, role }) {
   };
 
   const unread = notifs.filter(n => !n.is_read).length;
+  const mineN = myQueue.badge;                       // 0 เมื่อโหลดไม่ครบด้วย (badgeCount) — ตัวเลขที่อาจผิดแย่กว่าไม่มี
+  const curTab = tab || (mineN > 0 ? 'mine' : 'feed');
 
-  // PWA: จำนวนที่ยังไม่อ่าน → badge จุดแดง/เลขบนไอคอนแอปที่ติดตั้ง (Android/desktop Chrome/Edge)
+  // PWA: badge บนไอคอนแอป = งานที่รอคุณ (ชุดเดียวกับเลขบนกระดิ่ง · 13/10 เดิมนับแจ้งเตือนทั่วไปที่ยังไม่อ่าน)
   // ⚠️ iOS ไม่รองรับ App Badging API (Apple ยังไม่ทำ) — guard ด้วย 'setAppBadge' in navigator · อัปเดตเฉพาะตอนเปิดแอป (ไม่มี SW/push)
   useEffect(() => {
     if (!('setAppBadge' in navigator)) return;
-    (unread > 0 ? navigator.setAppBadge(unread) : navigator.clearAppBadge()).catch(() => {});
-  }, [unread]);
+    (mineN > 0 ? navigator.setAppBadge(mineN) : navigator.clearAppBadge()).catch(() => {});
+  }, [mineN]);
   useEffect(() => () => { navigator.clearAppBadge?.().catch(() => {}); }, []); // ล้าง badge ตอน logout/unmount
 
   const typeColor = { success: '#22c55e', error: '#ef4444', warning: '#f59e0b', info: '#4d9fff' };
@@ -1276,7 +1285,7 @@ function NotificationBell({ userId, role }) {
   return (
     <div ref={dropRef} style={{ position: 'fixed', top: 10, right: 14, zIndex: 1200 }}>
       <button
-        onClick={() => { setOpen(o => !o); if (!open) load(); }}
+        onClick={() => { setOpen(o => !o); if (!open) { load(); setTab(null); } }}
         style={{
           width: 36, height: 36, borderRadius: 8,
           background: 'var(--bg3)', border: '1px solid var(--border2)',
@@ -1284,10 +1293,11 @@ function NotificationBell({ userId, role }) {
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           cursor: 'pointer', position: 'relative', boxShadow: 'var(--shadow-sm)',
         }}
-        title="แจ้งเตือน"
+        title={mineN > 0 ? `มีงานรอคุณ ${mineN} รายการ` : unread > 0 ? `แจ้งเตือนทั่วไปยังไม่อ่าน ${unread}` : 'แจ้งเตือน'}
       >
         🔔
-        {unread > 0 && (
+        {/* เลขแดง = งานที่รอคุณโดยตรงเท่านั้น · แจ้งเตือนทั่วไปที่ยังไม่อ่าน = จุดเล็กสีเทา (ไม่แย่งความสนใจ) */}
+        {mineN > 0 ? (
           <span style={{
             position: 'absolute', top: -4, right: -4,
             background: '#ef4444', color: '#fff',
@@ -1296,8 +1306,10 @@ function NotificationBell({ userId, role }) {
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             padding: '0 3px', lineHeight: 1,
           }}>
-            {unread > 99 ? '99+' : unread}
+            {mineN > 99 ? '99+' : mineN}
           </span>
+        ) : unread > 0 && (
+          <span aria-hidden style={{ position: 'absolute', top: -2, right: -2, width: 9, height: 9, borderRadius: '50%', background: 'var(--muted)', border: '2px solid var(--bg3)' }} />
         )}
       </button>
 
@@ -1319,7 +1331,7 @@ function NotificationBell({ userId, role }) {
                 style={{ fontSize: 14, background: 'none', border: 'none', cursor: 'pointer', padding: 0, lineHeight: 1, opacity: muted ? 0.5 : 1 }}>
                 {muted ? '🔕' : '🔔'}
               </button>
-              {unread > 0 && (
+              {curTab === 'feed' && unread > 0 && (
                 <button onClick={markAllRead} style={{ fontSize: 11, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
                   อ่านทั้งหมด
                 </button>
@@ -1372,6 +1384,60 @@ function NotificationBell({ userId, role }) {
             </div>
           )}
 
+          {/* แท็บ: 🎯 รอคุณ (สถานะงานจริงตอนนี้) · 📢 แจ้งเตือนทั่วไป (ฟีดเหตุการณ์ของส่วนงาน) */}
+          <div role="tablist" style={{ display: 'flex', borderBottom: '1px solid var(--border)' }}>
+            {[
+              { k: 'mine', label: '🎯 รอคุณ', n: mineN, hot: mineN > 0 },
+              { k: 'feed', label: '📢 แจ้งเตือนทั่วไป', n: unread, hot: false },
+            ].map(t => (
+              <button key={t.k} role="tab" aria-selected={curTab === t.k} onClick={() => setTab(t.k)}
+                style={{
+                  flex: 1, padding: '8px 6px', fontSize: 12, fontWeight: curTab === t.k ? 800 : 600, cursor: 'pointer',
+                  background: curTab === t.k ? 'var(--accent-dim)' : 'transparent', border: 'none',
+                  borderBottom: `2px solid ${curTab === t.k ? 'var(--accent)' : 'transparent'}`,
+                  color: curTab === t.k ? 'var(--text)' : 'var(--muted)',
+                }}>
+                {t.label}
+                {t.n > 0 && <span style={{ marginLeft: 5, fontSize: 11, fontWeight: 800, color: t.hot ? '#ef4444' : 'var(--muted)' }}>{t.n > 99 ? '99+' : t.n}</span>}
+              </button>
+            ))}
+          </div>
+
+          {curTab === 'mine' && (
+            <div style={{ overflowY: 'auto', flex: 1 }}>
+              {myQueue.q?.partial && (
+                <div style={{ padding: '6px 14px', fontSize: 11, color: '#f59e0b' }}>⚠️ โหลดคิวงานไม่ครบ — รายการด้านล่างไม่ใช่ทั้งหมด</div>
+              )}
+              {!myQueue.q && <div style={{ padding: '20px 14px', textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>กำลังดูงานที่รอคุณ…</div>}
+              {myQueue.q && !myQueue.q.mine.length && (
+                <div style={{ padding: '18px 14px', textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>✅ ไม่มีงานที่รอคุณอยู่</div>
+              )}
+              {myQueue.q?.mine.map(it => (
+                <div key={it.key} onClick={() => { setOpen(false); if (it.to) navigate(it.to); }}
+                  style={{ padding: '9px 14px', borderBottom: '1px solid var(--border)', cursor: it.to ? 'pointer' : 'default',
+                    background: it.sign ? 'var(--accent-dim)' : 'transparent', borderLeft: it.sign ? '4px solid #ef4444' : '4px solid transparent' }}>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}>
+                    <span style={{ fontSize: 13 }}>{it.icon}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', lineHeight: 1.4 }}>{it.title}</div>
+                      {it.detail && <div style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.detail}</div>}
+                      <div style={{ fontSize: 11, color: it.age != null && it.age >= OLD_DAYS ? '#ef4444' : 'var(--muted)', marginTop: 2 }}>
+                        {it.sign ? '✍️ ช่องนี้รอคุณเซ็น · ' : ''}{it.age != null ? `ค้าง ${it.age} วัน` : ''}
+                      </div>
+                    </div>
+                    {it.to && <span style={{ flexShrink: 0, alignSelf: 'center', fontSize: 14, color: 'var(--muted)' }}>›</span>}
+                  </div>
+                </div>
+              ))}
+              {myQueue.q && myQueue.q.counts.unit > 0 && (
+                <div style={{ padding: '8px 14px', fontSize: 11, color: 'var(--muted)' }}>
+                  🏭 คิวของหน่วยงานคุณอีก {myQueue.q.counts.unit} รายการ (ไม่ได้รอคุณโดยตรง) — ดูที่เมนูบัญชี › คิวงานของฉัน
+                </div>
+              )}
+            </div>
+          )}
+
+          {curTab === 'feed' && (
           <div style={{ overflowY: 'auto', flex: 1 }}>
             {notifs.length === 0 ? (
               <div style={{ padding: '20px 14px', textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>ไม่มีแจ้งเตือน</div>
@@ -1409,6 +1475,7 @@ function NotificationBell({ userId, role }) {
               </div>
             ))}
           </div>
+          )}
         </div>
       )}
     </div>

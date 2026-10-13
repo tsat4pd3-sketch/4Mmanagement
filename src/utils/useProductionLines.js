@@ -8,9 +8,9 @@
       — คอลัมน์ที่ dropdown ต้องใช้จะครบเสมอ และประหยัด egress (cache ร่วมทั้งแอป)
 
    คู่กับ <LineSelect> (src/components/LineSelect.jsx) ซึ่งรับ array นี้ไปวาด dropdown */
-import { useEffect, useState } from 'react';
 import { supabase } from '../supabaseClient';
 import { cachedMaster, invalidateMaster } from './masterCache';
+import useMasterRows from './useMasterRows.js';
 
 /* 🔴 ชุดคอลัมน์นี้เป็น **superset ของทุกหน้าที่ใช้** ตั้งใจให้ทุกจอแชร์ cache ก้อนเดียว (2026-09-25)
    เดิมมีแค่ 5 คอลัมน์ ⇒ หน้าที่อยากได้ `cost_center`/`flow_mode`/`line_type`/กำลังคน **ยิงเองแทน**
@@ -52,12 +52,9 @@ export const loadLinesRes = async () => ({ data: (await loadProductionLines()) |
 
 export const invalidateProductionLines = () => invalidateMaster(KEY);
 
-export default function useProductionLines() {
-  const [lines, setLines] = useState([]);
-  useEffect(() => {
-    let alive = true;
-    loadProductionLines().then(d => { if (alive) setLines(d || []); }).catch(() => {});
-    return () => { alive = false; };
-  }, []);
-  return lines;
-}
+/** สถานะโหลดทะเบียน — `{ rows, failed, stale, message, loading, reload }`
+ *  🔴 ช่องเลือกที่ต้องบอกว่า "ลิสต์ว่างเพราะไม่มีของ หรือเพราะโหลดไม่สำเร็จ" ใช้ตัวนี้
+ *     (ตัว default คืนแค่แถว = พฤติกรรมเดิม ไม่ต้องแก้จุดเรียกเก่า) */
+export function useProductionLinesState() { return useMasterRows(KEY, loadProductionLines); }
+
+export default function useProductionLines() { return useProductionLinesState().rows; }

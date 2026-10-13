@@ -56,6 +56,10 @@ function optionLabel(o, { withIcon = true } = {}) {
  *                  (2026-10-02 · `<LineScopeSelect>` ใช้ ['section','line_group','line'] เพราะหน้าพวกนั้นกรองได้แค่ส่วนงาน/ไลน์)
  */
 export default function OrgScopePicker({
+  /* 🔴 `failed` = ข้อความจาก `useOrgScope().failed` — ผังโหลดไม่สำเร็จ ⇒ ตัวเลือกไม่ครบ
+     ถ้าไม่เขียนบอก จอจะดูเหมือน "องค์กรมีแค่นี้" (กฎความซื่อสัตย์ของจอ · CLAUDE.md §OBEYA)
+     ผู้เรียกที่ส่ง `index` มาเอง ต้องส่งตัวนี้มาด้วย */
+  failed = '',
   index, value, onChange, scopeSet = null, sections = [], kinds = null, costCenter = true,
   plantLabel = SCOPE_KIND_META.plant.label, native = true, pickable = null, width = 260, style, inputStyle, disabled, title, id,
 }) {
@@ -152,10 +156,15 @@ export default function OrgScopePicker({
       ↑ ทั้ง {index.labelOf(ccOwner.kind, ccOwner.value)}
     </button>
   ) : null;
-  const wrap = (node) => (ccSelect || ccHint || ownerChip
+  /* ⚠️ ผังโหลดไม่สำเร็จ — ต้องเห็นข้างช่องทั้ง 2 โหมด (native select ไม่มีที่เขียนในลิสต์) */
+  const failNote = failed
+    ? <span key="orgfail" style={{ fontSize: 11, fontWeight: 700, color: 'var(--red)' }}>⚠️ {failed} — ตัวเลือกไม่ครบ</span>
+    : null;
+  const wrap = (node) => (ccSelect || ccHint || ownerChip || failNote
     ? (
       <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
         {node}
+        {failNote}
         {ccHint && (ccHint.code
           ? (
             <button type="button" onClick={() => emit(scopeKey('cost_center', ccHint.code))} title={ccHint.title}
@@ -204,6 +213,7 @@ export default function OrgScopePicker({
         onChange={({ id: k }) => { if (k) emit(k); else if (plantLabel != null) emit('plant'); }}
         placeholder={ccAllowed ? 'ค้นส่วนงาน / แผนก / ไลน์ / รหัส cost center…' : 'ค้นส่วนงาน / แผนก / ไลน์…'}
         emptyText="ไม่พบในผังองค์กร — ตั้งผังที่ /org-setup"
+        loadFail={failed ? `⚠️ ${failed} — ตัวเลือกขอบเขตไม่ครบ (ไม่ได้แปลว่าผังมีแค่นี้)` : ''}
         maxRows={999} disabled={disabled} inputId={id} style={{ width, ...style }} inputStyle={inputStyle} />
     );
   }

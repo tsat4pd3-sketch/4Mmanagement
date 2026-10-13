@@ -147,13 +147,15 @@ export function buildDatePeriods(dates) {
  * @param {Array}    a.rows     [{ key, label, kind, recur?, editable? }] — มาจาก monitor_boards.rows
  * @param {Function} a.manual   (partId, rowKey, periodKey) → ค่าที่คนกรอก (undefined = ไม่กรอก)
  * @param {Function} [a.system] (partId, rowKey, periodKey) → ค่าที่ระบบรู้ (undefined = ระบบไม่รู้)
+ * @param {Function} [a.locked] (partId, rowKey, periodKey) → true = ช่องนี้ระบบเป็นเจ้าของ (ไม่รับค่าที่คนกรอก ·
+ *                    ระบบไม่มีรายการ = 0) — src 'locked' แก้บนบอร์ดไม่ได้ ต้องขอปรับยอดคลัง (13/10)
  * @param {Function} [a.anchor] (partId, rowKey, periodKey) → ข้อเท็จจริงที่ทับแถว recur ช่องนั้น
  *                    (BALANCE วันนี้ = ยอดจริงจาก ledger · 12/10) · undefined = เดินสูตรตามปกติ
  * @returns {{ cells: Map, rows: Array, periods: Array, seedKey: string|null }}
  *   cells: key `${partId}|${rowKey}|${periodKey}` → { v, src, editable }
- *          src = 'input' | 'system' | 'recur' | 'ledger' | 'const' | 'date' | 'unknown'
+ *          src = 'input' | 'system' | 'locked' | 'recur' | 'ledger' | 'const' | 'date' | 'unknown'
  */
-export function buildGrid({ parts = [], periods = [], rows = [], manual, system, anchor }) {
+export function buildGrid({ parts = [], periods = [], rows = [], manual, system, anchor, locked }) {
   const cells = new Map();
   const get = (fn, pid, rk, pk) => {
     if (typeof fn !== 'function') return undefined;
@@ -192,7 +194,15 @@ export function buildGrid({ parts = [], periods = [], rows = [], manual, system,
           put(pid, row.key, pk, v, v === null ? 'unknown' : 'const', true);
           continue;
         }
-        /* input / system — ค่าที่คนกรอกชนะค่าที่ระบบรู้เสมอ */
+        /* 🔒 ช่องที่ระบบเป็นเจ้าของแล้ว — ค่าที่คนกรอก (เช่นนำเข้าจาก Excel) ไม่ถูกใช้ · ระบบไม่มีรายการ = 0 */
+        if (row.kind === 'system' && typeof locked === 'function' && locked(pid, row.key, pk)) {
+          const sv = get(system, pid, row.key, pk);
+          const v = sv === undefined ? 0 : (num(sv) ?? 0);
+          cur[row.key] = v;
+          put(pid, row.key, pk, v, 'locked', false);
+          continue;
+        }
+        /* input / system — ค่าที่คนกรอกชนะค่าที่ระบบรู้เสมอ (ยกเว้นช่องที่ล็อกข้างบน) */
         if (mv !== undefined && String(mv) !== '') {
           const v = num(mv);
           cur[row.key] = v;

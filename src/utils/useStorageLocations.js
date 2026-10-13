@@ -1,9 +1,9 @@
 /* ── useStorageLocations — ทะเบียนรหัสคลัง (DR `storage_locations`) สำหรับ picker  (2026-09-07) ──
    คู่กับ helper pure ใน storageLoc.js (format/ชนิด) — ไฟล์นี้เป็นตัวโหลด+cache เท่านั้น
    ⚠️ หน้าใหม่ที่ต้องการ "เลือกรหัสคลัง" ใช้ <StorageLocSelect> ห้ามพิมพ์ input เปล่า */
-import { useEffect, useState } from 'react';
 import { supabaseDR } from '../supabaseClient';
 import { cachedMaster, invalidateMaster, mrows } from './masterCache';
+import useMasterRows from './useMasterRows.js';
 
 /* 🔴 เปลี่ยน "ชุดคอลัมน์" ของ cachedMaster เมื่อไหร่ **ต้องเปลี่ยนคีย์ด้วยเสมอ** (2026-09-21)
    cache อยู่ใน localStorage ของแต่ละเครื่อง อายุ 4 ชม. ⇒ ถ้าใช้คีย์เดิม เครื่องที่มีของเก่าค้าง
@@ -27,12 +27,9 @@ export async function loadStorageLocations() {
 }
 export const invalidateStorageLocations = () => invalidateMaster(KEY);
 
-export default function useStorageLocations() {
-  const [rows, setRows] = useState([]);
-  useEffect(() => {
-    let alive = true;
-    loadStorageLocations().then(d => { if (alive) setRows(d || []); }).catch(() => {});
-    return () => { alive = false; };
-  }, []);
-  return rows;
-}
+/** สถานะโหลดทะเบียน — `{ rows, failed, stale, message, loading, reload }`
+ *  🔴 ช่องเลือกที่ต้องบอกว่า "ลิสต์ว่างเพราะไม่มีของ หรือเพราะโหลดไม่สำเร็จ" ใช้ตัวนี้
+ *     (ตัว default คืนแค่แถว = พฤติกรรมเดิม ไม่ต้องแก้จุดเรียกเก่า) */
+export function useStorageLocationsState() { return useMasterRows(KEY, loadStorageLocations); }
+
+export default function useStorageLocations() { return useStorageLocationsState().rows; }

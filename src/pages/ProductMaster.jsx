@@ -476,10 +476,22 @@ export default function ProductMaster() {
                  (บั๊กจริง 05/10: ทั้งก้อนนี้เคยอยู่ใน `if (!exist?.length)` ⇒ พอเลขใหม่มีในทะเบียนอยู่แล้ว
                   ซึ่งเป็นเรื่องปกติ มันข้ามทั้งบล็อก **รวมถึงการติดหมายเหตุที่แถวเก่า**
                   วัดจริง: ทะเบียน 370 แถว มีโน้ตที่พูดถึง EC = 0 แถว ทั้งที่ทำ EC ไปแล้ว 4 ครั้ง) */
+              /* 🔴 อ่านแถวของ "เลขเดิม" ไม่สำเร็จ ≠ "เลขเดิมไม่มีในทะเบียน" (2026-10-13)
+                 เดิมแกะแค่ `{ data }` ⇒ คิวรีล้ม = `oldPm` null เงียบ แล้วเสียไป **2 อย่างพร้อมกัน**:
+                   1. MAT ใหม่ไม่ได้สืบทอด uom / จำนวนต่อกล่อง / supplier (จอบอกว่า "เลขเดิมไม่มีในทะเบียน" = โกหก)
+                   2. **แถวของเลขเดิมไม่ถูกติดหมายเหตุ EC** — ซึ่งคือบั๊กที่วัดเจอเมื่อ 05/10 เป๊ะ
+                      (ทะเบียน 370 แถว มีโน้ต EC = 0 แถว ทั้งที่ทำ EC ไปแล้ว 4 ครั้ง · ดูคอมเมนต์ 🔴 ข้างบน)
+                 ⇒ แยก "ไม่มีจริง" ออกจาก "อ่านไม่ได้" แล้วบอกให้ไปทำมือ ห้ามเงียบ */
               let oldPm = null;
+              let oldPmUnread = false;
               if (ecSource.mat_no) {
-                const { data } = await supabaseDR.from('parts_master').select('*').eq('mat_no', ecSource.mat_no).limit(1);
-                oldPm = data?.[0] || null;
+                const oldRes = await supabaseDR.from('parts_master').select('*').eq('mat_no', ecSource.mat_no).limit(1);
+                oldPmUnread = !!oldRes.error;
+                oldPm = oldRes.data?.[0] || null;
+                if (oldPmUnread) {
+                  toast.error(`อ่านทะเบียนของเลขเดิม ${ecSource.mat_no} ไม่สำเร็จ — MAT ใหม่จะไม่สืบทอด uom/จำนวนต่อกล่อง/supplier `
+                    + `และแถวของเลขเดิมจะไม่ถูกติดหมายเหตุ EC · ไปทำมือที่ tab 🗂 (${oldRes.error.message})`);
+                }
               }
               if (!exist?.length) {
                 const { error: pmErr } = await supabaseDR.from('parts_master').insert({
@@ -490,7 +502,7 @@ export default function ProductMaster() {
                 });
                 if (pmErr) toast.error('ลงทะเบียน Parts Master ไม่สำเร็จ: ' + pmErr.message + ' — ไปเพิ่มเองที่ tab 🗂');
                 else if (oldPm) toast.info('🗂 ลงทะเบียน MAT ใหม่ใน Parts Master แล้ว (สืบทอดข้อมูลจากเลขเดิม · ต้นทุนให้บัญชีเติม)');
-                else toast.info('🗂 ลงทะเบียน MAT ใหม่ใน Parts Master แล้ว — เลขเดิมไม่มีในทะเบียน ไปเติม จำนวนต่อกล่อง/supplier/ต้นทุน ที่ tab 🗂');
+                else if (!oldPmUnread) toast.info('🗂 ลงทะเบียน MAT ใหม่ใน Parts Master แล้ว — เลขเดิมไม่มีในทะเบียน ไปเติม จำนวนต่อกล่อง/supplier/ต้นทุน ที่ tab 🗂');
               }
               /* ฝากรอยไว้ที่แถวทะเบียนของเลขเดิม (นอกเงื่อนไขข้างบน — ดูคอมเมนต์ 🔴)
                  ไม่ปิด `is_active`: ของ rev เก่ายังไหลอยู่ในคลัง/รอบส่งช่วงเปลี่ยนผ่าน การเลิกใช้เป็นการตัดสินใจของคน

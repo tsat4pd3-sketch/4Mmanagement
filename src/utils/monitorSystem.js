@@ -19,6 +19,8 @@
       (ใส่ทุกช่องก็ได้ค่าเดียวกัน แต่เปลืองและทำให้ "คนแก้ค่าเองกลางทาง" ใช้ไม่ได้)
    ═══════════════════════════════════════════════════════════════════════════════════════ */
 
+import { addDaysStr } from './workDate.js';
+
 const num = (v) => {
   if (v === null || v === undefined || v === '') return null;
   const n = Number(v);
@@ -243,4 +245,54 @@ export function rebucketToWeeks(idx, periods = []) {
     out.set(nk, (out.get(nk) || 0) + v);
   }
   return out;
+}
+
+/* ═══ 🔒 ล็อกช่อง IN เมื่อระบบเริ่มมีตัวเลขของพาร์ทนั้นแล้ว (13/10 · คำสั่ง user) ═══════════════
+   *"พาร์ทไหนที่เริ่มมีตัวเลขจากระบบเข้ามาแล้ว หรือมีใน product master แล้ว daily report เริ่มลงยอดแล้ว
+     จะไม่รับ IN manual ดีกว่า แต่จะต้องมีช่องทางให้ขอปรับยอด"*
+   · ล็อกตั้งแต่ "วันแรกที่ระบบมีตัวเลข" = วันแรกที่คลังอ้างอิงรับเข้า (ledger `issue`) หรือวันแรกที่ใบผลิต
+     ของ MAT นั้นคอนเฟิร์มยอด (Daily Report) — แล้วแต่อันไหนมาก่อน
+   · 🔴 ก่อนวันนั้น = ประวัติจาก Excel ที่ระบบไม่มีตัวแทน ⇒ **ไม่ล็อก ไม่ทิ้ง** (ลบ = ประวัติหาย)
+   · 🔴 ล็อกเฉพาะคอลัมน์ที่เริ่ม ≤ วันนี้ (ของจริง) · คอลัมน์อนาคตยังกรอกได้ (= คาดการณ์ ระบบยังไม่มีอะไรให้)
+   · ช่องที่ล็อกแต่ระบบไม่มีรายการ = **0** (ระบบติดตามพาร์ทนี้อยู่ ไม่มีรับเข้า = ไม่มีของเข้า) ไม่ใช่ "ไม่รู้"
+   · ยอดไม่ตรงของจริง ⇒ "ขอปรับยอด" = ใบ `adjust` สถานะ pending เข้าคิวอนุมัติเดิมของ /line-stock (ห้ามพิมพ์ทับบนบอร์ด) */
+const d10 = (v) => String(v ?? '').slice(0, 10);
+
+/** MAT → วันแรกที่ระบบมีตัวเลข (YYYY-MM-DD) · ไม่มีหลักฐานเลย = ไม่ใส่ (ไม่ล็อก กรอกเองได้) */
+export function lockFromByMat({ inRows = [], prodRows = [], locOf = () => null } = {}) {
+  const m = new Map();
+  const take = (mt, d) => {
+    if (!mt || !/^\d{4}-\d{2}-\d{2}$/.test(d)) return;
+    if (!m.has(mt) || d < m.get(mt)) m.set(mt, d);
+  };
+  for (const r of inRows || []) {
+    const mt = String(r?.mat_no ?? '').trim();
+    if (!IN_TXN_TYPES.includes(r?.type)) continue;
+    if (r?.status !== undefined && r.status !== 'approved') continue;
+    const loc = locOf(mt);
+    if (!loc || String(r?.line_name ?? '').trim() !== String(loc).trim()) continue;
+    take(mt, d10(r?.work_date));
+  }
+  for (const r of prodRows || []) take(String(r?.mat_no ?? '').trim(), d10(r?.work_date));
+  return m;
+}
+
+/** คอลัมน์นี้ล็อกไหม — ต้อง (ก) ครอบ/อยู่หลังวันแรกที่ระบบมีตัวเลข และ (ข) เริ่มไม่เกินวันนี้ */
+export function isLockedPeriod(periodDate, { kind = 'day', lockFrom, today } = {}) {
+  const p = d10(periodDate);
+  if (!p || !lockFrom || !today || p > today) return false;
+  if (kind !== 'week') return p >= lockFrom;
+  const end = addDaysStr(p, 6) || p;   // บวกวันด้วยของกลาง (กฎ no-utc-workdate)
+  return end >= lockFrom;
+}
+
+/** ฟังก์ชัน `locked(partId, rowKey, periodKey)` ให้ `buildGrid` — ล็อกเฉพาะแถวใน `rows` (ค่าเริ่ม IN) */
+export function makeLockLookup({ partMat, lockFrom, periods = [], kind = 'day', today, rows = ['in'] } = {}) {
+  const dateOf = new Map((periods || []).map((p) => [p.key, p.date]));
+  return (partId, rk, pk) => {
+    if (!rows.includes(rk) || !(lockFrom instanceof Map)) return false;
+    const mat = partMat?.get?.(partId);
+    if (!mat || !lockFrom.has(mat)) return false;
+    return isLockedPeriod(dateOf.get(pk) ?? pk, { kind, lockFrom: lockFrom.get(mat), today });
+  };
 }

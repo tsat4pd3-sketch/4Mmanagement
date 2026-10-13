@@ -8,6 +8,9 @@
  * ⚠️ หมายเหตุท้ายใบเป็น "เนื้อฟอร์ม" (บอกขั้นตอนงาน) ไม่ใช่ footer ของทะเบียน จึงอยู่ในโค้ด
  */
 import { getDocForm, fullCode, withDocFoot } from '../utils/docForms';
+/* 📎 ภาคผนวกรูปหลักฐาน = เอกสารแนบต่อท้าย **ไม่แตะเนื้อฟอร์มที่ขึ้นทะเบียน** (13/10 · คำสั่ง user)
+   ของกลางอยู่ที่ lib/photoAppendix.js — ใบอื่นที่จะแนบรูปต้องใช้ตัวเดียวกัน ห้ามก๊อปไปเขียนใหม่ */
+import { photoAppendixHtml, PHOTO_APPENDIX_CSS, waitImgsScript } from './photoAppendix';
 import tsLogoUrl from '../assets/TS logo.png';
 
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -119,6 +122,15 @@ export async function printQualityBin({ bin, records = [], sample = null, sectio
     return `<td${c.c ? ' class="c"' : ''}>${esc(String(v))}</td>`;
   }).join('')}</tr>`;
 
+  /* 📷 รายการรูปของภาคผนวก — เลข No. ต้องตรงกับแถวในตารางหน้าหลัก ไม่งั้นโยงกันไม่ได้
+     ถังแดงไม่มี "รูปหลังซ่อม" (ของเสียถาวร ไม่มีขั้นซ่อม) ⇒ ใบแดงมีแต่รูปตอนพบ */
+  const partOf = (r) => [r.part_name, r.part_no || r.mat_no].filter(Boolean).join(' / ');
+  const photos = [];
+  records.forEach((r, i) => {
+    if (r.found_img) photos.push({ url: r.found_img, no: i + 1, label: 'รูปตอนพบ', sub: partOf(r) });
+    if (bin === 'yellow' && r.repair_img) photos.push({ url: r.repair_img, no: i + 1, label: 'รูปหลังซ่อม', sub: partOf(r) });
+  });
+
   const pageHtml = (rows, pageIdx) => `
   <section class="pg">
     <div class="hd">
@@ -162,12 +174,20 @@ export async function printQualityBin({ bin, records = [], sample = null, sectio
   tr.sample td.sam { writing-mode:vertical-rl; transform:rotate(180deg); font-size:8px; padding:0 }
   .ft { border:1.4px solid #000; border-top:none; padding:3px 6px; font-size:8.5px; line-height:1.35 }
   .code { text-align:right; font-size:8px; color:#555; margin-top:2px }
+${PHOTO_APPENDIX_CSS}
 </style></head><body>
   ${pages.map(pageHtml).join('')}
+  ${photoAppendixHtml(photos, {
+    title: `ภาคผนวก : รูปหลักฐาน — แนบท้าย${df.title || S.title}`,
+    logo, code, cols: 4, rows: 2, imgH: '62mm',
+  })}
   ${code ? `<div class="code">${esc(code)}${df.effective_date ? ` · Effective: ${esc(df.effective_date)}` : ''}</div>` : ''}
 <script>
+  ${waitImgsScript()}
   (function () {
-    function go() { window.focus(); window.print(); }
+    /* 🔴 ต้องรอ "รูปโหลดครบ" ด้วย ไม่ใช่แค่ฟอนต์ — window.print() ไม่รอรูป
+       พิมพ์ก่อนรูปมา = ภาคผนวกออกมาเป็นช่องว่าง (ไม่มี error ให้เห็นเลย) */
+    function go() { window.__waitImgs(function () { window.focus(); window.print(); }); }
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(function(){ setTimeout(go, 80); });
     else window.addEventListener('load', function(){ setTimeout(go, 200); });
   })();
