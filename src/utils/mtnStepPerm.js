@@ -202,6 +202,24 @@ export function isOrderReporter(order, fullName) {
 }
 
 /**
+ * ชื่อผู้แจ้งที่จะเขียนบนจอ/ในใบ — คืน `{ main, extra }` (2026-10-13 · คำสั่ง user "โชว์ทั้งคู่เมื่อต่างกัน")
+ *
+ * ทำไมมี 2 ฟิลด์: `reporter_prod` = ช่องในฟอร์มที่**พิมพ์แก้ได้** (ชื่อคนที่แจ้งจริงหน้างาน)
+ * · `reported_by_name` = ระบบ stamp ชื่อ**บัญชีที่เปิดใบ** ตอน insert (แก้ไม่ได้ · เป็นตัวตัดสินสิทธิ์
+ * ใน `isOrderReporter` ห้ามสลับ) ⇒ ใบที่เปิดด้วยบัญชีกลาง (เช่น toolingmaintenance) 2 ค่านี้ไม่ตรงกัน
+ *
+ * 🔴 เทียบด้วย `norm` (ตัดช่องว่างซ้ำ/ตัวพิมพ์) ก่อนเสมอ — ไม่งั้นชื่อเดียวกันที่พิมพ์เว้นวรรค 2 เคาะ
+ *    จะถูกเขียนซ้ำ 2 ครั้งบนจอ (เจอจริง: "ยุทธภูมิ  การัมย์")
+ */
+export function orderReporterText(order) {
+  const form = String(order?.reporter_prod ?? '').trim();
+  const stamp = String(order?.reported_by_name ?? '').trim();
+  if (!form) return { main: stamp || null, extra: null };
+  if (!stamp || norm(form) === norm(stamp)) return { main: form, extra: null };
+  return { main: form, extra: stamp };
+}
+
+/**
  * ทำขั้นนี้ได้ไหม — ใช้ทั้งตอนซ่อนปุ่มและตอนกดบันทึก
  *
  * opts:

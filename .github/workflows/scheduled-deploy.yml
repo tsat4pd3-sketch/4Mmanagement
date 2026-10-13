@@ -1,0 +1,68 @@
+# Deploy เป็นรอบแทนทุก merge (2026-10-13 · build pipeline minutes ของ Render หมดกลางเดือน)
+# 📄 docs/modules/deploy.md §Deploy เป็นรอบ
+# - ตื่นทุกชั่วโมง (นาทีที่ 7) → main มีของใหม่ตั้งแต่รอบก่อน = สั่ง Render deploy
+#   ไม่มีของใหม่ = ไม่ build (ไม่กินนาที) · push แค่ .md / .claude = เลื่อนตัวชี้ ไม่ build
+# - ด่วน: Actions → "Scheduled deploy" → Run workflow (ปุ่ม Deploy now — deploy เสมอ)
+# - จำว่า deploy ถึง commit ไหนแล้วด้วย tag `render-deployed`
+# - ต้องปิด Auto-Deploy ใน Render ก่อน ไม่งั้น build ซ้ำ 2 ทาง
+name: Scheduled deploy
+
+on:
+  schedule:
+    - cron: '7 * * * *'   # ทุกชั่วโมง นาทีที่ 7 (เลี่ยงคิวต้นชั่วโมง) · ชั่วโมงที่ไม่มีของใหม่ = ไม่ build
+  workflow_dispatch:
+
+permissions:
+  contents: write   # เลื่อน tag render-deployed
+
+concurrency:
+  group: scheduled-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Decide & deploy
+        env:
+          HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+          MANUAL: ${{ github.event_name == 'workflow_dispatch' }}
+        run: |
+          set -euo pipefail
+          if [ -z "${HOOK:-}" ]; then
+            msg="ยังไม่ได้ตั้ง secret RENDER_DEPLOY_HOOK — ไม่มีการ deploy (ดู docs/modules/deploy.md)"
+            if [ "$MANUAL" = "true" ]; then echo "::error::$msg"; exit 1; fi
+            echo "::warning::$msg"; exit 0
+          fi
+
+          HEAD_SHA=$(git rev-parse HEAD)
+          LAST=$(git rev-parse -q --verify 'refs/tags/render-deployed^{commit}' || true)
+          echo "main=$HEAD_SHA  last-deployed=${LAST:-none}"
+
+          if [ "$MANUAL" != "true" ] && [ -n "$LAST" ]; then
+            if [ "$LAST" = "$HEAD_SHA" ]; then
+              echo "ไม่มีของใหม่ตั้งแต่รอบก่อน — ข้าม"; exit 0
+            fi
+            # ไฟล์ที่ไม่เปลี่ยนเว็บ (ตรงกับ buildFilter ใน render.yaml)
+            SITE=$(git diff --name-only "$LAST" "$HEAD_SHA" | grep -vE '\.md$|^\.claude/' || true)
+            if [ -z "$SITE" ]; then
+              echo "มีแค่ไฟล์ .md/.claude — ไม่ build แค่เลื่อนตัวชี้"
+              git tag -f render-deployed "$HEAD_SHA"
+              git push -f origin refs/tags/render-deployed
+              exit 0
+            fi
+          fi
+
+          code=$(curl -sS -o /tmp/resp -w '%{http_code}' -X POST "${HOOK}&ref=${HEAD_SHA}")
+          cat /tmp/resp; echo
+          if [ "${code#2}" = "$code" ]; then
+            echo "::error::Render deploy hook ตอบ HTTP $code — ไม่ได้ deploy"; exit 1
+          fi
+          git tag -f render-deployed "$HEAD_SHA"
+          git push -f origin refs/tags/render-deployed
+          echo "สั่ง deploy $HEAD_SHA แล้ว (ดูผล build ที่ Render)"

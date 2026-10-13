@@ -26,6 +26,19 @@ Render นับ **นาที build ต่อเดือน** (ไม่เ�
 - `buildFilter` ใน yaml มีผลเฉพาะ service ที่สร้างจาก Blueprint — ไม่งั้นต้องตั้งซ้ำที่ dashboard
   (Settings → Build & Deploy → Build Filters → Ignored Paths)
 
+### ⏰ Deploy เป็นรอบ — ไม่ deploy ทุก merge (2026-10-13 · คำสั่ง user)
+
+push เข้า main วันละถึง 31 ครั้ง (หลาย session ขนาน) ⇒ ~290 build/เดือน เกินโควต้า (~110) · จำลองจาก push จริง:
+deploy ทุกชั่วโมง = **~90 build/เดือน** (−69% · ชั่วโมงไม่มีของใหม่ไม่ build) — ใกล้เพดาน ~110 ถ้าเริ่มชนอีก ถอยเป็น 2 ชม. (~63)
+- **`.github/workflows/scheduled-deploy.yml`** ตื่น**ทุกชั่วโมง** (นาทีที่ 7) · เทียบ main กับ tag `render-deployed`
+  มีของใหม่ = เรียก Render Deploy Hook (`&ref=<sha>`) · ไม่มี = ข้าม · มีแค่ `.md`/`.claude` = เลื่อน tag ไม่ build
+- **ด่วน** (บั๊กหน้างาน): GitHub → Actions → *Scheduled deploy* → **Run workflow** = deploy ทันทีเสมอ
+- hook ตอบไม่ใช่ 2xx = งานแดง ไม่เลื่อน tag (รอบหน้าลองใหม่) · secret ไม่มี = รอบตามเวลาขึ้น warning / กดมือขึ้น error
+- ⚠️ tag เลื่อนตอน Render **รับคิว** ไม่ใช่ตอน build ผ่าน — build ล้มบน Render ต้องกด Run workflow ซ้ำหลังแก้
+- 🔴 **Render Auto-Deploy ต้องปิด** (Settings → Build & Deploy → Auto-Deploy = Off) ไม่งั้น build ซ้ำ 2 ทาง
+- ตั้งครั้งแรก: Render → Settings → **Deploy Hook** คัดลอก URL → GitHub repo → Settings → Secrets and variables →
+  Actions → New secret ชื่อ `RENDER_DEPLOY_HOOK` · **URL นี้เป็นความลับ** (ใครมีก็สั่ง deploy ได้)
+
 ### PWA — เพิ่มลงหน้าจอโฮม เปิดเหมือนแอป (2026-07-23)
 
 รองรับ "เพิ่มลงหน้าจอโฮม" (iOS Safari / Android Chrome) เปิดแบบ standalone (เต็มจอ ไม่มีแถบ browser มีไอคอนเอง) เหมาะจอหน้าไลน์/มือถือหัวหน้า

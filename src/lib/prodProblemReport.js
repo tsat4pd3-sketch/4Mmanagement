@@ -16,6 +16,8 @@
  * ⚠️ ป้ายช่องติ๊กถอดมาจากฟอร์มกระดาษที่สแกนมา — ถ้าตัวสะกดไม่ตรงของจริง แก้ที่ 3 ลิสต์ข้างล่างนี้
  */
 import { getDocForm, fullCode, withDocFoot, sigAt } from '../utils/docForms';
+/* 📎 ภาคผนวกรูป = เอกสารแนบ ไม่ใช่เนื้อฟอร์ม (ของกลาง ห้ามเขียนซ้ำในใบ) */
+import { photoAppendixHtml, PHOTO_APPENDIX_CSS, waitImgsScript } from './photoAppendix';
 import tsLogoUrl from '../assets/TS logo.png';
 
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -191,8 +193,24 @@ export function buildProblemReport({ downtimes = [], defects = [], minMinutes = 
     pending: inReport.filter(r => !hasText(r.followup_result)).length,
   };
 
+  /* 📎 รูปหลักฐานของเสีย → ภาคผนวกต่อท้ายใบ (13/10 · คำสั่ง user — ทางเลือก B "ไม่แตะเนื้อฟอร์ม")
+     🔴 ต้องอยู่ใน **เนื้อใบ** (เข้า snapshot ด้วย) ไม่ใช่ดึงสดตอนพิมพ์ —
+        ใบที่ยื่นออกไปแล้วพิมพ์ซ้ำต้องได้ใบเดิม แม้ของเสียต้นทางถูกแก้/ลบทีหลัง
+     ⚠️ เก็บ "URL" ไม่ใช่ไฟล์ — ไฟล์ถูกลบจริงเมื่อไหร่ ใบจะขึ้น "โหลดรูปไม่สำเร็จ" ซึ่งตรงความจริง
+        กว่าการพิมพ์ช่องว่าง (ตัวบอกอยู่ใน lib/photoAppendix.js) */
+  /* 🔴 ไม่ใส่ `no` — ใบนี้ยุบรายการเป็นบุลเล็ต **ไม่มีเลขแถว** ⇒ ป้าย "No.N" จะชี้ไปยังเลขที่
+     ไม่มีอยู่บนกระดาษ (อ้างอิงผิดบนเอกสารที่ยื่นออกไป) · โยงกลับด้วย ชนิด+MAT+จำนวน+เวลา แทน
+     — ต่างจากใบถังเหลือง/แดง และใบรายงานของเสีย ที่ตารางมีเลขแถวจริงให้อ้าง */
+  const photos = defects.filter(d => d.defect_img).map(d => ({
+    url: d.defect_img,
+    label: d.dr_defect_types?.name_th || 'ของเสีย',
+    sub: [d.prod_orders?.mat_no, dfQty(d) ? `${dfQty(d)} ชิ้น` : '', hhmm(d.started_at)]
+      .filter(Boolean).join(' · '),
+  }));
+
   return {
     headline,
+    photos,
     quality: { ...q, qty: qtyNg, time: span(defects), by: who(defects), count: defects.length },
     machine: { ...m, time: span(machineDt), by: who(machineDt), count: machineDt.length,
                minutes: machineDt.reduce((a, d) => a + (Number(d.duration_min) || 0), 0) },
@@ -219,7 +237,9 @@ const COLS = ['quality', 'machine', 'wait'];
 /** buildProblemReport() → อ็อบเจกต์ที่ JSON เก็บได้ (Set → array) */
 export function serializeReport(R) {
   if (!R) return null;
-  const out = { v: 1, headline: R.headline ?? '', followup: R.followup, meta: R.meta };
+  /* v2 (13/10) = เพิ่ม `photos` · ใบเก่า v1 อ่านแล้วได้ photos = [] → ไม่มีภาคผนวก (ถูกต้อง:
+     ตอนออกใบนั้นยังไม่มีรูปจริงๆ) — **ห้าม backfill รูปปัจจุบันลงใบเก่า** ใบจะไม่ตรงกับที่ยื่นไป */
+  const out = { v: 2, headline: R.headline ?? '', photos: R.photos || [], followup: R.followup, meta: R.meta };
   COLS.forEach(k => {
     const c = R[k] || {};
     out[k] = { ...c, checked: [...(c.checked || [])] };
@@ -230,7 +250,8 @@ export function serializeReport(R) {
 /** snapshot ที่อ่านจากฐาน → รูปแบบที่ใบพิมพ์ใช้ได้ (array → Set) · ของเสีย/ว่าง = null */
 export function reportFromSnapshot(snap) {
   if (!snap || typeof snap !== 'object' || !snap.quality) return null;
-  const out = { headline: snap.headline ?? '', followup: snap.followup || { lines: [], by: '', pending: 0 }, meta: snap.meta || {} };
+  const out = { headline: snap.headline ?? '', photos: Array.isArray(snap.photos) ? snap.photos : [],
+    followup: snap.followup || { lines: [], by: '', pending: 0 }, meta: snap.meta || {} };
   COLS.forEach(k => {
     const c = snap[k] || {};
     out[k] = { ...c, checked: new Set(Array.isArray(c.checked) ? c.checked : []) };
@@ -257,6 +278,9 @@ export function reportSignature(R) {
     R.headline ?? '',
     ...COLS.map(k => part(R[k])),
     (R.followup?.lines || []).join('|'), R.followup?.by || '',
+    /* 📎 รูปนับเป็น "เนื้อใบ" ด้วย — แนบรูปเพิ่มหลังออกใบแล้ว จอต้องขึ้นว่าข้อมูลไม่ตรงกับใบที่ยื่นไป
+       (ใบเก่าก่อน 13/10 ไม่มี photos ⇒ ค่าว่าง = signature เดิมไม่เปลี่ยน ใบเก่าจึงไม่ขึ้นเตือนลอยๆ) */
+    (R.photos || []).map(p => p.url).join('|'),
   ].join('##');
 }
 
@@ -293,6 +317,7 @@ export async function printProdProblemReport({ session, downtimes, defects, minM
 <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;800&display=swap" rel="stylesheet">
 <style>
   @page { size: A4 portrait; margin: 7mm; }
+  ${PHOTO_APPENDIX_CSS}
   * { box-sizing: border-box; }
   html, body { margin:0; padding:0; background:#fff }
   body { font-family:'Sarabun',sans-serif; color:#000; font-size:11px }
@@ -417,7 +442,12 @@ export async function printProdProblemReport({ session, downtimes, defects, minM
     <span>${esc(code)}</span>
   </div>
 </div>
+${photoAppendixHtml(R.photos, {
+  title: `ภาคผนวก : รูปหลักฐานของเสีย — แนบท้าย${df.title || 'ใบรายงานปัญหาการผลิต'}`,
+  logo, code: docNo || code, cols: 3, rows: 3, imgH: '52mm',
+})}
 <script>
+  ${waitImgsScript()}
   (function () {
     function fit() {
       var el = document.getElementById('sheet');
@@ -425,7 +455,9 @@ export async function printProdProblemReport({ session, downtimes, defects, minM
       el.style.zoom = 1;
       var h = el.scrollHeight;
       if (h > maxH) el.style.zoom = Math.max(0.5, (maxH / h) * 0.995);
-      window.focus(); window.print();
+      /* 🔴 รอรูปภาคผนวกโหลดครบก่อนสั่งพิมพ์ — print() ไม่รอรูป (ได้หน้าแนบเปล่า)
+         ⚠️ ย่อใบหลักก่อนเสมอ: ตัวย่อวัดจาก #sheet ซึ่งไม่มีรูปอยู่ข้างใน ลำดับนี้จึงไม่กวนกัน */
+      window.__waitImgs(function () { window.focus(); window.print(); });
     }
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(function(){ setTimeout(fit, 60); });
     else window.addEventListener('load', function(){ setTimeout(fit, 160); });
