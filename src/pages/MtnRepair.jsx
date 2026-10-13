@@ -17,9 +17,11 @@ import { toast } from '../components/Toast';
 import { PURPOSES, CAUSE_CATS, needsPlantManager, needsApprovalFirst, laborAmount, partAmount, sumLabor, sumParts, grandTotal, satScore, mtnApprovalState, purposeOfPrint, qaAppliesTo, isMtnFormRow, QA_SKIP_REASON_PURPOSE, QA_SKIP_REASON_MTN_FORM, needsPlantMgrByCost, orderCostTotal, PLANT_MGR_COST_LIMIT } from '../utils/mtnMoForm';
 import AuditLogViewer from '../components/AuditLogViewer';
 import { can, canDelete, isActionSeeded } from '../utils/permissions';
-import { MO_STATUS_META as STATUS_META, QA_NOT_RELATED, QA_RELATED, QA_SKIP_REASON_STEP4, canBounceBack, canDoStep, canHandoff, canSignMtnApproval, canSkipQa, isMoOpen, isOrderReporter, isQaSkipped, isWaitingQa, lastStep, orderReporterText, nextStepOf, moQaState, mtnCloseStage, moStatusLabel, moStatusMeta, orderInReporterScope, stageOf, stepDenyHint, stepLabel, stepMeta, actorSideOf, stepAssumptions, assumptionHint } from '../utils/mtnStepPerm';
+import { MO_STATUS_META as STATUS_META, QA_NOT_RELATED, QA_RELATED, QA_SKIP_REASON_STEP4, canBounceBack, canDoStep, canHandoff, canSignMtnApproval, canSkipQa, isMoOpen, isOrderReporter, isQaSkipped, isWaitingQa, lastStep, orderReporterText, nextStepOf, moQaState, mtnCloseStage, moStatusLabel, moStatusMeta, orderInReporterScope, stageOf, waitStageOf, stepDenyHint, stepLabel, stepMeta, actorSideOf, stepAssumptions, assumptionHint } from '../utils/mtnStepPerm';
 import { positionRank } from '../utils/positions';
 import { findOpenOnMachine, dupLevel } from '../utils/mtnDuplicate';
+/* ⏳ ใบค้างขั้นเดิม — สูตร "ค้างกี่วัน/ขั้นไหน" อยู่ที่นี่ที่เดียว ห้ามนับวันในหน้า (13/10) */
+import { buildMoStaleBoard } from '../utils/mtnStale';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { teamsForUser, teamForSection, teamForItem, sameTeam, filterByTeam, visibleForTeam, seesEverything, teamKeyOf, deptNameOf, teamOptions } from '../utils/mtnTeams';
@@ -39,6 +41,7 @@ import ScanModal from '../components/ScanModal';
 import { resolveMachine } from '../utils/qrCode';
 import { isDie, dieItemTypeOf } from '../utils/equipmentKinds';
 import { useDieItemTypeMap } from '../utils/useDieSetKinds'; // เลขแม่พิมพ์ → ชนิดอุปกรณ์ จากทะเบียน (2026-10-05)
+import MoStalePanel from '../components/MoStalePanel';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
 import FilterBar from '../components/FilterBar';
@@ -154,6 +157,12 @@ const MO_LIST_COLS = [
   'quality_related', 'qa_skipped_at',                 // สถานะ QA บนป้าย
   'dept_manager_at', 'purpose',                       // moStatusLabel() ใช้ตัดสินป้ายใบอนุมัติ
   'mtn_head_at', 'approve_at',                        // แยก 3 ขั้นที่ค้างใน status handover (ขั้น 6/7/8)
+  /* ⏳ เวลา "เข้าขั้นปัจจุบัน" — ฐานนับของแผงใบค้าง (`STALE_SINCE_COLS` ใน utils/mtnStale.js · 13/10)
+     🔴 ขาดตัวใดตัวหนึ่ง = ค่าเป็น undefined ⇒ แผงถอยไปนับจากวันแจ้ง**เงียบๆ** (เลขเก่ากว่าจริง)
+        ⇒ มีด่าน `mo-stale-since-cols` เทียบ 2 ชุดนี้ให้ตรงกันตอน build
+     egress: 6 คอลัมน์เวลา (ส่วนใหญ่ null) ~25-50 ไบต์/ใบ ⇒ ≤ ~0.3 MB ที่เพดาน 1000 ใบ —
+     ยอมจ่ายเพราะไม่ต้องยิงคิวรีชุดที่ 2 และทุกตัวถูกใช้จริง (ห้ามเติมคอลัมน์ที่ไม่มีคนอ่าน) */
+  'repair_start_at', 'check_at', 'qa_at', 'ho_at', 'returned_at', 'vendor_sent_at',
 ].join(',');
 const SCOPE_OPTS = [{ v: 'in_line', t: 'ซ่อมในไลน์' }, { v: 'off_line', t: 'ซ่อมนอกไลน์' }];
 const CHECK_RESULTS = ['ตรวจสอบผ่าน', 'ตรวจสอบไม่ผ่าน'];
@@ -191,12 +200,9 @@ const STAGE_EVENT = {
 };
 const stepEventOf = (step, mtnForm) => STAGE_EVENT[stageOf(step, { mtnForm })] || null;
 
-/** ใบนี้รอ "จังหวะงาน" อะไรอยู่ — คืน `stage` (qa/assign/close/…) · `null` = จบแล้ว/ตัดสินไม่ได้
- *  🔴 ต้องผ่าน `stageOf()` เสมอ ห้ามเทียบเลขขั้น (เลขทับกัน 2 ฟอร์ม — กฎใน CLAUDE.md) */
-const waitStageOf = (o) => {
-  const step = nextStepOf(o);
-  return step ? stageOf(step, { mtnForm: isMtnFormRow(o) }) : null;
-};
+/* `waitStageOf` ("ใบนี้รอจังหวะงานอะไร") ย้ายไป `src/utils/mtnStepPerm.js` แล้ว 2026-10-13
+   — มีผู้ใช้คนที่ 2 (แผงใบค้าง `mtnStale.js`) ปล่อยไว้ 2 ก้อนแล้วจะจัดกลุ่มคนละแบบเงียบๆ
+   ห้ามเขียนกลับมาที่นี่ · ตัวมันคำนวณ `mtnForm` ให้เอง (เลขขั้นทับกัน 2 ฟอร์ม) */
 
 /* "ขั้นไหนใครทำ" ย้ายไป src/utils/mtnStepPerm.js (MTN_STEPS/canDoStep) แล้ว — 2026-09-02
    เดิมเป็น STEP_PERM ที่นี่ แล้วเกณฑ์ถูกเขียนซ้ำ 2 ก้อน (ตัวซ่อนปุ่ม + guard ตอนบันทึก)
@@ -476,12 +482,18 @@ export default function MtnRepair() {
      และใบเก่ากว่า 1000 ใบล่าสุดหายเงียบ (ตัวนับ "ตัวกรองวันที่ซ่อน" ก็นับไม่เห็น) */
   const ORDER_CAP = 1000;
   const [ordersErr, setOrdersErr] = useState('');
+  /* ⏱️ เวลาที่ชุดใบนี้ถูกโหลด — ฐานนับ "ค้างกี่วัน" ของแผงใบค้าง
+     🔴 ต้องจับเวลา **ตอนโหลด** ไม่ใช่ตอน render — `Date.now()` ใน useMemo/ตัวคำนวณ = impure
+        (เลขวันขยับเองระหว่าง render · ด่าน react-hooks/purity) · ตรึงไว้แล้วมันสดเองทุกครั้งที่
+        realtime พา reload มา ⇒ ไม่ต้องตั้ง timer เอง (กฎ "realtime ต้องมีเพดาน" ใน CLAUDE.md) */
+  const [ordersAt, setOrdersAt] = useState(() => Date.now());
   const loadOrders = useCallback(async () => {
     // ⚠️ คอลัมน์ย่อเท่านั้น — ดูเหตุผล (egress) ที่ MO_LIST_COLS ด้านบน ห้ามเปลี่ยนกลับเป็น '*'
     const { data, error } = await supabaseDR.from('mtn_orders').select(MO_LIST_COLS).order('report_at', { ascending: false }).limit(ORDER_CAP);
     if (error) { setOrdersErr(error.message); return; }   // คงรายการเดิมไว้ ดีกว่าล้างเป็น "ไม่มีรายการ"
     setOrdersErr('');
     setOrders(data || []);
+    setOrdersAt(Date.now());
   }, []);
 
   /* ใบเต็ม 116 คอลัมน์ — โหลดเฉพาะใบที่เปิดดูจริง (ไม่ใช่ทั้งพันใบทุกรอบ) */
@@ -620,7 +632,24 @@ export default function MtnRepair() {
     } finally { setExporting(false); }   // ล้มกลางทาง ปุ่มต้องปลดเสมอ
   }, [shown, tr.from, tr.to, fDept, fLine, fStatus, fShift, fRepairType, fText]);
 
-  const openCount = useMemo(() => orders.filter(o => isMoOpen(o) && (!scopeLines || !o.line_name || scopeLines.has(o.line_name))).length, [orders, scopeLines]);
+  /* ใบในขอบเขตของผู้ใช้ (ส่วนงาน/ครอบครัวไลน์) — **ไม่ผ่านตัวกรองบนจอ**
+     ⇒ ตัวนับหัวเพจ + แผงใบค้าง นับจากชุดเดียวกันเสมอ (เดิม openCount กรองเองซ้ำในบรรทัดเดียว) */
+  const scopedOrders = useMemo(
+    () => orders.filter(o => !scopeLines || !o.line_name || scopeLines.has(o.line_name)),
+    [orders, scopeLines]);
+  const openCount = useMemo(() => scopedOrders.filter(isMoOpen).length, [scopedOrders]);
+
+  /* ⏳ แผง "ใบค้างขั้นเดิมเกินเกณฑ์" (13/10 · user อนุมัติ 12/10) — วัดจริง 13/10: เปิดอยู่ 391 ใบ
+     ค้างขั้นเดิม ≥7 วัน 293 ใบ · ≥30 วัน 21 · เก่าสุด 47 วัน · **ไม่มีจอไหนบอกใครมาก่อน**
+     🔴 นับจาก `scopedOrders` ไม่ใช่ `shown` — ใบค้างคือใบเก่าโดยนิยาม ถ้าให้ตัวกรองวันที่/สถานะ
+        มากรองก่อนนับ ยอดจะหายไปตามตัวกรองที่คนไม่ได้ตั้งใจ (กฎเดียวกับ "ของค้างเกินอายุแท็ก" ใน QualityBins)
+     🔴 ฐานเวลา = `ordersAt` (จับตอนโหลด) — ห้ามเรียก `Date.now()` ในตัวคำนวณ/ใน memo
+     🔴 สูตรทั้งหมดอยู่ `utils/mtnStale.js` — ห้ามนับวัน/เทียบเลขขั้นในหน้านี้ */
+  const staleBoard = useMemo(() => buildMoStaleBoard(scopedOrders, {
+    now: ordersAt,
+    // ทีมของใบ = ค่าในใบก่อน ถอยไปเดาจากชนิดอุปกรณ์ (เกณฑ์เดียวกับตัวกรองทีมด้านบน)
+    teamOf: (o) => teamKeyOf(o.mtn_dept || deptForItem(o.item_type)) || '',
+  }), [scopedOrders, ordersAt]);
 
   /* 📊 first-response ของช่างฝ่ายผลิต — "เข้าไป action แล้วแก้เองได้กี่ครั้ง / ส่งต่อกี่ครั้ง"
      (คำสั่ง user 2026-09-14: "เก็บเป็นประวัติไว้ว่าเข้าไป action ก่อนแล้วกี่ครั้ง ทำเองได้/ไม่ได้กี่ครั้ง")
@@ -732,6 +761,17 @@ export default function MtnRepair() {
             )}
           </div>
         )}
+        {/* ⏳ ใบค้างขั้นเดิมเกินเกณฑ์ — อยู่เหนือลิสต์ที่มันพูดถึง (13/10 · user อนุมัติ 12/10)
+            🔴 **ไม่ใช่แท็บใหม่** (หน้านี้มี 2 แท็บ ห้ามเพิ่ม) และ **ไม่ยิงคิวรีเพิ่ม** — นับจาก `orders`
+               ที่โหลดไว้แล้ว ⇒ egress 0 (กฎเดียวกับกล่องเตือนใบซ้ำ 30/09)
+            🔴 ว่างต้องเขียนว่า "ไม่มีใบค้าง" ห้ามซ่อนแผง · โหลดไม่ครบต้องเขียนบนจอ (ส่ง loadErr/partial เข้าไป)
+            กดชิป "ขั้น"/"ทีม" = ตั้งตัวกรองของแถบด้านบน (ไม่สร้างตัวกรองชุดที่ 2 — UI-STANDARD) */}
+        <MoStalePanel
+          board={staleBoard} loadErr={ordersErr} partial={orders.length >= ORDER_CAP}
+          onStage={(stage) => { setFStatus('open'); setFWait(stage); }}
+          onTeam={(dept) => { setFStatus('open'); setFDept(dept); }}
+          teamName={deptNameOf} statusLabel={moStatusLabel} onOpen={openDetail}
+        />
         {/* 📋 รายการ = ตาราง 1 ใบ 1 บรรทัด (05/10 · คำสั่ง user "ข้อมูล 100+ MO แล้ว การ์ดดูยากมาก")
             สแกนตาลงทีละคอลัมน์ได้ · เดิมการ์ด 5 ใบ/แถว = เห็นแค่ ~15 ใบต่อจอ */}
         <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'auto', maxHeight: 'calc(100vh - 170px)' }}>

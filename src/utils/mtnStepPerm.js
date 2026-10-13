@@ -176,6 +176,16 @@ export const stepMeta = (step, { mtnForm = false } = {}) =>
 export const stageOf = (step, { mtnForm = false } = {}) =>
   (Number(step) === 1 ? 'report' : stepMeta(step, { mtnForm })?.stage) || null;
 
+/** ใบนี้รอ "จังหวะงาน" อะไรอยู่ — คืน `stage` (qa/assign/handover/…) · `null` = จบแล้ว/ไม่อยู่ในลูปขั้น
+ *  🔴 เจ้าของเกณฑ์นี้อยู่ที่นี่ที่เดียว (ย้ายมาจาก MtnRepair.jsx 2026-10-13 ตอนทำแผงใบค้าง) —
+ *     เดิมหน้าเดียวใช้ จึงเขียนไว้ในหน้า · พอมีผู้ใช้คนที่ 2 (`mtnStale.js`) ปล่อยไว้ 2 ก้อน
+ *     = พอ `nextStepOf` เปลี่ยน ตัวกรอง `?wait=` กับแผงใบค้างจะจัดกลุ่มคนละแบบเงียบๆ
+ *  ⚠️ `mtnForm` คำนวณให้เอง (ห้ามให้ผู้เรียกเดา — เลขขั้นทับกัน 2 ฟอร์ม) */
+export const waitStageOf = (order = {}) => {
+  const step = nextStepOf(order);
+  return step ? stageOf(step, { mtnForm: isMtnFormRow(order) }) : null;
+};
+
 /** ป้ายปุ่ม/หัวข้อขั้น — สร้างจากที่นี่ที่เดียว ห้ามพิมพ์ชื่อขั้นซ้ำในหน้า */
 export const stepLabel = (step, { withWho = true, mtnForm = false } = {}) => {
   const m = stepMeta(step, { mtnForm });
