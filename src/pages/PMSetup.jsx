@@ -34,6 +34,7 @@ import { uploadOpts } from '../utils/storageUpload';
 import { orphanImagePaths } from '../utils/jigImageRefs';   // 🖼️ นับผู้อ้างรูปก่อนลบ (รูปจุดตรวจถูกแชร์ตอนคัดลอกแผน PM)
 import { fetchAllPages } from '../utils/fetchByIds';   // 🔴 เพดาน 1000 แถว (กฎเหล็ก DB ข้อ 5)
 import SearchInput from '../components/SearchInput';   // ช่องกรองลิสต์ = ของกลาง (UI-STANDARD §4)
+import { cpJumpMatches } from '../utils/cpJump';   // 🎯 ทางลัดไปที่จุดตรวจ (13/10)
 import Page from '../components/Page';
 import PageHeader from '../components/PageHeader';
 
@@ -127,6 +128,9 @@ const S = {
   }),
   meta: { fontSize: 11, color: 'var(--muted)', margin: 0 },
   actions: { display: 'flex', gap: 6, justifyContent: 'flex-end', marginTop: 4 },
+  // ปุ่มรองในแถบ "ไปที่จุด" — btnSm ต่อ alpha-hex ท้ายสี ใช้กับ var(--…) ไม่ได้
+  jumpBtn: { padding: '4px 10px', borderRadius: 6, fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap', cursor: 'pointer',
+    border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)' },
   btnSm: (color) => ({
     padding: '4px 10px', borderRadius: 6, fontSize: 12, fontWeight: 600,
     border: `1px solid ${color}30`, background: `${color}12`, color, cursor: 'pointer',
@@ -534,6 +538,15 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
   const twoColSetup = wideModal && layoutType === 'image_pin'
   // โมเดล 3D (ถ้ามี) — { path, format } = ของเดิม · _glb = ไฟล์ใหม่ที่แปลงเป็น GLB แล้ว รอ upload
   const [activePinKey, setActivePinKey] = useState(null)
+  /* 🎯 ทางลัด "ไปที่จุดตรวจ" (13/10 · ทีม MTN: "จุดเยอะ ต้อง scroll จนเมื่อยนิ้ว")
+     เลื่อน **เฉพาะ `modalBody`** ด้วย scrollTo — ห้าม scrollIntoView (เลื่อนหน้าข้างหลังโมดัลไปด้วย = จอกระโดด)
+     · เผื่อความสูงของแถบที่ตรึงอยู่ (`jumpStickyRef`) ไม่งั้นการ์ดไปจมใต้แถบ · เรืองกรอบ ~2.5 วิ (UI §6.23 ข้อ 3) */
+  const bodyRef = useRef(null)
+  const jumpStickyRef = useRef(null)
+  const cardRefs = useRef({})
+  const [flashKey, setFlashKey] = useState(null)
+  const [jumpQ, setJumpQ] = useState('')
+  const [pendingJump, setPendingJump] = useState(null)   // จุดที่เพิ่งเพิ่ม — รอ render เสร็จค่อยเลื่อนไป
 
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -769,7 +782,33 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
   }
 
   const updateCp = (key, patch) => setCheckpoints(prev => prev.map(c => c._key === key ? { ...c, ...patch } : c))
-  const addCp = () => setCheckpoints(prev => [...prev, newCheckpoint()])
+  const jumpToCp = (key) => {
+    const box = bodyRef.current, el = cardRefs.current[key]
+    if (!box || !el) return
+    // ขอบล่างของแถบที่ตรึง = padding บนของ modalBody + ค่า `top` ของแถบ + ความสูงแถบ (แถบหัวคอลัมน์ใช้ top:-20 · รูปจอแคบใช้ top:0)
+    const st = jumpStickyRef.current
+    const stickyH = st ? (parseFloat(getComputedStyle(box).paddingTop) || 0) + (parseFloat(getComputedStyle(st).top) || 0) + st.offsetHeight : 0
+    const top = el.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop - stickyH - 8
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    box.scrollTo({ top: Math.max(0, top), behavior: reduce ? 'auto' : 'smooth' })
+    setFlashKey(key)
+  }
+  // จุดใหม่ต่อท้ายลิสต์ — จุดเยอะแล้วกดเพิ่มจะไม่เห็นการ์ดที่เพิ่งเกิด ⇒ พาไปให้เลย
+  const addCp = () => {
+    const cp = newCheckpoint()
+    setCheckpoints(prev => [...prev, cp])
+    setPendingJump(cp._key)
+  }
+  useEffect(() => {
+    if (!pendingJump) return
+    jumpToCp(pendingJump)
+    setPendingJump(null)
+  }, [pendingJump]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!flashKey) return
+    const t = setTimeout(() => setFlashKey(null), 2500)
+    return () => clearTimeout(t)
+  }, [flashKey])
   const deleteCp = (key) => {
     setCheckpoints(prev => prev.filter(c => c._key !== key))
     if (activePinKey === key) setActivePinKey(null)
@@ -846,7 +885,14 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
   const handleSave = async () => {
     if (!name.trim()) { setError('กรุณาใส่ชื่ออุปกรณ์'); return }
     if (addMode === 'workstation' && !isEdit && !machineId) { setError('กรุณาเลือกเครื่องจักรจาก Floor Map'); return }
-    if (checkpoints.some(c => !c.name.trim())) { setError('กรุณาใส่ชื่อทุกจุดตรวจสอบ'); return }
+    {
+      const blank = groupCheckpoints(checkpoints).ordered.filter(c => !c.name.trim())
+      if (blank.length) {
+        setError(`กรุณาใส่ชื่อทุกจุดตรวจสอบ (ยังว่าง ${blank.length} จุด — พาไปจุดแรกให้แล้ว)`)
+        jumpToCp(blank[0]._key)
+        return
+      }
+    }
     /* จุดชนิด "ค่าวัด" ต้องมีเกณฑ์ — ไม่มีเกณฑ์ = measureStatus ไม่มีอะไรให้ fail → **ผ่านตลอดกาล**
        (จุดตรวจที่ตัดสินอะไรไม่ได้เลย แต่หน้าจอขึ้นเขียวว่าตรวจแล้ว = หลอกคนอ่านผลตรวจ) */
     const num = v => (v !== '' && v != null ? Number(v) : null)
@@ -1105,11 +1151,59 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
   const catScopeKey = (equipCategory === 'facility' || equipCategory === 'utility') ? 'facility' : equipType
   const scopedCategories = (categories ?? []).filter(c => !c.equip_types?.length || c.equip_types.includes(catScopeKey))
   const renderCard = (cp) => (
-    <CheckpointCard key={cp._key} cp={cp} label={cpLabels[cp._key]}
-      onChange={patch => updateCp(cp._key, patch)} onDelete={() => deleteCp(cp._key)}
-      onDuplicate={() => duplicateCp(cp._key)} onCpImage={e => handleCpImage(cp._key, e)}
-      isPinning={activePinKey === cp._key} onPinToggle={() => togglePin(cp._key)} hasImage={frames.length > 0}
-      categories={scopedCategories} allCategories={categories} methods={methods} />
+    <div key={cp._key} ref={el => { if (el) cardRefs.current[cp._key] = el; else delete cardRefs.current[cp._key] }}
+      style={{ borderRadius: 8, transition: 'box-shadow .3s',
+        boxShadow: flashKey === cp._key ? '0 0 0 2px var(--accent), 0 0 14px var(--accent-glow)' : 'none' }}>
+      <CheckpointCard cp={cp} label={cpLabels[cp._key]}
+        onChange={patch => updateCp(cp._key, patch)} onDelete={() => deleteCp(cp._key)}
+        onDuplicate={() => duplicateCp(cp._key)} onCpImage={e => handleCpImage(cp._key, e)}
+        isPinning={activePinKey === cp._key} onPinToggle={() => togglePin(cp._key)} hasImage={frames.length > 0}
+        categories={scopedCategories} allCategories={categories} methods={methods} />
+    </div>
+  )
+
+  /* 🎯 แถบ "ไปที่จุด" — โชว์เมื่อจุดเยอะพอจะต้องเลื่อนหา (≥ JUMP_MIN)
+     จอกว้าง/โหมดรายการ: ตรึงบนหัวคอลัมน์จุดตรวจ · จอแคบ+รูป: แถวเดียวเลื่อนแนวนอนอยู่ใต้รูปที่ตรึงไว้
+     (รูปกินหัวจอมือถืออยู่แล้ว — แถบหลายแถวจะเหลือที่ให้การ์ดไม่กี่บรรทัด) */
+  const JUMP_MIN = 6
+  const showJump = checkpoints.length >= JUMP_MIN
+  const jumpCompact = layoutType === 'image_pin' && !twoColSetup
+  const jumpHits = showJump ? cpJumpMatches(jumpQ, grouped.ordered, cpLabels) : []
+  const jumpBar = showJump && (
+    <div style={{ display: 'flex', flexDirection: jumpCompact ? 'row' : 'column', gap: 6, marginTop: 8, alignItems: jumpCompact ? 'center' : 'stretch' }}>
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center', flex: jumpCompact ? '0 0 150px' : undefined }}>
+        <SearchInput value={jumpQ} onChange={setJumpQ} placeholder={jumpCompact ? 'ไปที่จุด…' : 'ไปที่จุด — พิมพ์เลข (1.3) / ชื่อ / กลุ่ม แล้วกด Enter'}
+          ariaLabel="ไปที่จุดตรวจ"
+          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); if (jumpHits[0]) jumpToCp(jumpHits[0]._key) } }} />
+        {!jumpCompact && (
+          <>
+            <button type="button" onClick={() => bodyRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
+              title="กลับขึ้นบนสุด" style={S.jumpBtn}>⤒ บนสุด</button>
+            <button type="button" onClick={() => { const last = grouped.ordered[grouped.ordered.length - 1]; if (last) jumpToCp(last._key) }}
+              title="ไปจุดสุดท้าย" style={S.jumpBtn}>⤓ ท้ายสุด</button>
+          </>
+        )}
+      </div>
+      <div style={jumpCompact
+        ? { display: 'flex', gap: 4, overflowX: 'auto', flex: 1, minWidth: 0, paddingBottom: 2 }
+        : { display: 'flex', gap: 4, flexWrap: 'wrap', maxHeight: 74, overflowY: 'auto', alignContent: 'start' }}>
+        {jumpHits.map(c => {
+          const blank = !c.name.trim()
+          return (
+            <button key={c._key} type="button" onClick={() => jumpToCp(c._key)}
+              title={`${cpLabels[c._key]} · ${blank ? '(ยังไม่ตั้งชื่อ)' : c.name}${c.group_name ? ` — ${c.group_name}` : ''}`}
+              style={{ flex: '0 0 auto', padding: '3px 8px', borderRadius: 12, fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
+                maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                border: `1px ${blank ? 'dashed' : 'solid'} ${blank ? 'var(--red)' : flashKey === c._key ? 'var(--accent)' : 'var(--border2)'}`,
+                background: flashKey === c._key ? 'var(--accent-dim)' : 'var(--bg3)',
+                color: blank ? 'var(--red)' : 'var(--text)' }}>
+              {cpLabels[c._key]}<span style={{ fontWeight: 500, color: blank ? 'var(--red)' : 'var(--muted)' }}> {blank ? 'ไม่มีชื่อ' : c.name}</span>
+            </button>
+          )
+        })}
+        {jumpHits.length === 0 && <span style={{ fontSize: 12, color: 'var(--muted)', padding: '3px 0' }}>ไม่พบจุดที่ตรงกับ "{jumpQ}"</span>}
+      </div>
+    </div>
   )
 
   return (
@@ -1126,7 +1220,7 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer', lineHeight: 1 }}>×</button>
         </div>
 
-        <div style={S.modalBody}>
+        <div ref={bodyRef} style={S.modalBody}>
           {isEdit && (() => {
             // 1 เครื่อง = หลายรายการตรวจแยกตามแผนก — ให้เห็นภาพรวมและย้าย/คัดลอกได้โดยไม่ต้องพิมพ์ใหม่
             const allTeams = pmTeamsSync()
@@ -1512,7 +1606,7 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
             ? { display: 'grid', gridTemplateColumns: 'minmax(360px, 1fr) minmax(380px, 560px)', gap: 20, alignItems: 'start' }
             : { display: 'flex', flexDirection: 'column', gap: 16 }}>
           {layoutType === 'image_pin' && (
-            <div style={twoColSetup
+            <div ref={twoColSetup ? undefined : jumpStickyRef} style={twoColSetup
               ? { position: 'sticky', top: 0, alignSelf: 'start' }
               : { position: 'sticky', top: 0, zIndex: 5, background: 'var(--bg2)',
                   margin: '0 -24px', padding: '0 24px 8px', borderBottom: '1px solid var(--border)' }}>
@@ -1535,6 +1629,7 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
                 onAddFrames={addFrames} onRemoveFrame={removeFrame}
                 pinHasDetail={Object.fromEntries(checkpoints.map(c => [c._key, !!(c._imgPreview || c.image_path)]))} />
               {activePinKey && <p style={{ fontSize: 11, color: 'var(--muted)', margin: '4px 0 0' }}>✦ หมุนไปเฟรมที่เห็นจุดชัด แล้วคลิกวางตำแหน่ง</p>}
+              {jumpCompact && jumpBar}
               {/* คิวครอบรูป — เลือกหลายไฟล์ = ครอบทีละใบ (ผู้ใช้เลือกกรอบเอง ไม่ auto-crop) */}
               {cropQueue[0] && (
                 <ImageCropModal
@@ -1554,9 +1649,17 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
           )}
 
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-              <label style={{ ...S.label, marginBottom: 0 }}>จุดตรวจสอบ ({checkpoints.length})</label>
-              <button onClick={addCp} style={{ ...S.btnSm('var(--accent)'), fontSize: 12 }}>+ เพิ่มจุดตรวจ</button>
+            {/* หัวคอลัมน์จุดตรวจ — ตรึงไว้เมื่อมีแถบ "ไปที่จุด" (ยกเว้นจอแคบ+รูป ที่แถบไปอยู่ใต้รูปแล้ว) */}
+            <div ref={showJump && !jumpCompact ? jumpStickyRef : undefined}
+              style={showJump && !jumpCompact
+                /* top:-20 = ทับ padding บนของ modalBody ด้วย — top:0 เหลือช่อง 20px ให้การ์ดเลื่อนโผล่เหนือแถบ */
+                ? { position: 'sticky', top: -20, zIndex: 4, background: 'var(--bg2)', margin: '0 0 10px', padding: '20px 0 8px', borderBottom: '1px solid var(--border)' }
+                : { marginBottom: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <label style={{ ...S.label, marginBottom: 0 }}>จุดตรวจสอบ ({checkpoints.length})</label>
+                <button onClick={addCp} style={{ ...S.btnSm('var(--accent)'), fontSize: 12 }}>+ เพิ่มจุดตรวจ</button>
+              </div>
+              {!jumpCompact && jumpBar}
             </div>
             <datalist id="cp-group-options">
               {[...new Set(checkpoints.map(c => (c.group_name || '').trim()).filter(Boolean))].map(g => <option key={g} value={g} />)}
