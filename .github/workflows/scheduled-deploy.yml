@@ -1,6 +1,6 @@
 # Deploy เป็นรอบแทนทุก merge (2026-10-13 · build pipeline minutes ของ Render หมดกลางเดือน)
 # 📄 docs/modules/deploy.md §Deploy เป็นรอบ
-# - ตื่นตามเวลา (ไทย) 10:00 12:00 14:00 16:00 18:00 22:00 → main มีของใหม่ตั้งแต่รอบก่อน = สั่ง Render deploy
+# - ตื่นทุกชั่วโมง (นาทีที่ 7) → main มีของใหม่ตั้งแต่รอบก่อน = สั่ง Render deploy
 #   ไม่มีของใหม่ = ไม่ build (ไม่กินนาที) · push แค่ .md / .claude = เลื่อนตัวชี้ ไม่ build
 # - ด่วน: Actions → "Scheduled deploy" → Run workflow (ปุ่ม Deploy now — deploy เสมอ)
 # - จำว่า deploy ถึง commit ไหนแล้วด้วย tag `render-deployed`
@@ -9,7 +9,7 @@ name: Scheduled deploy
 
 on:
   schedule:
-    - cron: '7 3,5,7,9,11,15 * * *'   # UTC = ไทย 10/12/14/16/18/22 (+7 นาที เลี่ยงคิวต้นชั่วโมง)
+    - cron: '7 * * * *'   # ทุกชั่วโมง นาทีที่ 7 (เลี่ยงคิวต้นชั่วโมง) · ชั่วโมงที่ไม่มีของใหม่ = ไม่ build
   workflow_dispatch:
 
 permissions:

@@ -29,8 +29,8 @@ Render นับ **นาที build ต่อเดือน** (ไม่เ�
 ### ⏰ Deploy เป็นรอบ — ไม่ deploy ทุก merge (2026-10-13 · คำสั่ง user)
 
 push เข้า main วันละถึง 31 ครั้ง (หลาย session ขนาน) ⇒ ~290 build/เดือน เกินโควต้า (~110) · จำลองจาก push จริง:
-deploy ตามรอบ = **~63 build/เดือน** (−78%) ไม่ว่าวันนั้นงานจะรัวแค่ไหน
-- **`.github/workflows/scheduled-deploy.yml`** ตื่นเวลาไทย **10/12/14/16/18/22 น.** · เทียบ main กับ tag `render-deployed`
+deploy ทุกชั่วโมง = **~90 build/เดือน** (−69% · ชั่วโมงไม่มีของใหม่ไม่ build) — ใกล้เพดาน ~110 ถ้าเริ่มชนอีก ถอยเป็น 2 ชม. (~63)
+- **`.github/workflows/scheduled-deploy.yml`** ตื่น**ทุกชั่วโมง** (นาทีที่ 7) · เทียบ main กับ tag `render-deployed`
   มีของใหม่ = เรียก Render Deploy Hook (`&ref=<sha>`) · ไม่มี = ข้าม · มีแค่ `.md`/`.claude` = เลื่อน tag ไม่ build
 - **ด่วน** (บั๊กหน้างาน): GitHub → Actions → *Scheduled deploy* → **Run workflow** = deploy ทันทีเสมอ
 - hook ตอบไม่ใช่ 2xx = งานแดง ไม่เลื่อน tag (รอบหน้าลองใหม่) · secret ไม่มี = รอบตามเวลาขึ้น warning / กดมือขึ้น error
