@@ -12,7 +12,7 @@ import Login from './pages/Login';
 import SignatureModal from './components/SignatureModal';
 import ChangePasswordModal from './components/ChangePasswordModal';
 const FeedbackModal = lazy(() => import('./components/FeedbackModal'));
-import { loadPermissions, canAccessPage, setDeptAdmin } from './utils/permissions';
+import { loadPermissions, canAccessPage, setDeptAdmin, setSharedAccount } from './utils/permissions';
 import { LOGISTIC_GROUPS } from './utils/logisticSide';
 import { trackVisit, topPaths } from './utils/navRecent';
 import { effectiveSections } from './utils/sectionScope';
@@ -1698,7 +1698,7 @@ function AutoLogoutWarning({ secsLeft, onStay, onLogout }) {
 /* ─── Protected Layout ─────────────────────────────────────────────── */
 // permsVersion ไม่ได้ใช้ในฟังก์ชันโดยตรง — รับไว้เพื่อให้ prop เปลี่ยนแล้ว layout ทั้งต้น re-render
 // (RoleRoute/Sidebar อ่าน permission cache แบบ sync ผ่าน canAccessPage ระหว่าง render)
-function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, viewAs, onApplyViewAs, userLineId, userTeam, userSection, userSections, userMtnTeams, userIsDeptAdmin, userPosition, userEmail, userFullName, userNotifyEmail, userSignatureUrl, userAvatarUrl, onAvatarSaved, onSignatureSaved, permsVersion }) {
+function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, viewAs, onApplyViewAs, userLineId, userTeam, userSection, userSections, userMtnTeams, userIsDeptAdmin, userAccountKind, userPosition, userEmail, userFullName, userNotifyEmail, userSignatureUrl, userAvatarUrl, onAvatarSaved, onSignatureSaved, permsVersion }) {
   const isMobile = useIsMobile();
   const isTV     = !useIsMobile(1919);   // จอ ≥1920 (TV) — reactive แทน innerWidth ครั้งเดียว
   const [isOpen, setIsOpen] = useState(() => typeof window !== 'undefined' && window.innerWidth > 768);
@@ -1726,6 +1726,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
     // เครื่องใดเครื่องหนึ่ง logout/auto-logout (สาเหตุหลักของ "เด้ง login บ่อย" 2026-07-14)
     setActor(null, null);   // ล้างตัวตนผู้ใช้ (ชื่อ+uid) ตอน logout
     setDeptAdmin(false);
+    setSharedAccount(false);
     await supabase.auth.signOut({ scope: 'local' });
     navigate('/login');
   };
@@ -1811,8 +1812,11 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
     position: userPosition, notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl,
     avatarUrl: userAvatarUrl, fullName: userFullName, isDeptAdmin: userIsDeptAdmin,
     realRole: realRole ?? userRole,
+    /* 🖥️ บัญชีกลาง = ลบไม่ได้ — จอต้องเอาไป**เขียนเหตุผล**ให้เห็น ไม่ใช่ซ่อนปุ่มเงียบ (UI §6.9) */
+    accountKind: userAccountKind, isSharedAccount: userAccountKind === 'shared',
   }), [userRole, userLineId, userTeam, userSection, userSections, userMtnTeams, userPosition,
-       userNotifyEmail, userSignatureUrl, userAvatarUrl, userFullName, userIsDeptAdmin, realRole]);
+       userNotifyEmail, userSignatureUrl, userAvatarUrl, userFullName, userIsDeptAdmin, realRole,
+       userAccountKind]);
   /* layout ปกติต้องรู้ว่า sidebar เปิดอยู่ไหมด้วย — แยก memo เพื่อไม่ให้ `isOpen` ไปสั่น context ของจอ /tv */
   const userCtxLayout = useMemo(() => ({ ...userCtx, sidebarOpen: isOpen }), [userCtx, isOpen]);
 
@@ -2233,6 +2237,7 @@ export default function App() {
   const [userAvatarUrl,    setUserAvatarUrl]    = useState(null); // รูปโปรไฟล์ user (profiles.avatar_url — 2026-07-14)
   const [userMtnTeams,     setUserMtnTeams]     = useState([]);   // ทีมช่างซ่อมที่ user สังกัด (profiles.mtn_teams — 2026-07-22) แยกคิว MO
   const [userIsDeptAdmin,  setUserIsDeptAdmin]  = useState(false); // แอดมินหน่วยงาน (profiles.is_dept_admin — 2026-08-03) ซ้อนบน role เดิม
+  const [userAccountKind,  setUserAccountKind]  = useState(null);  // 'person' | 'shared' (บัญชีกลาง = จอ TV/ประจำเครื่อง · ลบไม่ได้)
   const [showSplash,   setShowSplash]   = useState(true);
   const [theme, setTheme] = useState(() => localStorage.getItem('4m-theme') || 'dark');
   // ต้อง resolve ทั้ง profile (role จริง) และ permissions ก่อนค่อย render route tree —
@@ -2302,7 +2307,8 @@ export default function App() {
     //    mtn_teams + avatar_url แยกกันคนละ round trip) วัดจาก log จริง 11 ก.ย. 2026 = 6,760 req/วัน
     //    บนตาราง profiles ทั้งที่เป็นข้อมูลของ user คนเดียว ~188 ครั้ง/วัน/คน (ทุกครั้งที่เปิด/รีเฟรชแอป)
     //    คอลัมน์ mtn_teams (20260722) / avatar_url (20260714) apply ครบแล้วทั้งคู่ (ตรวจ 2026-09-11)
-    const COLS_FULL = COLS + ', employee_id, mtn_teams, avatar_url';
+    // account_kind (บัญชีของคน/บัญชีกลาง) — ใช้คุม "บัญชีกลางห้ามลบ" (utils/permissions.js)
+    const COLS_FULL = COLS + ', employee_id, mtn_teams, avatar_url, account_kind';
     let { data, error } = await supabase.from('profiles').select(COLS_FULL).eq('id', user.id).single();
     // คอลัมน์เสริมยังไม่ apply (42703) → ถอยไป select ชุดพื้นฐาน ห้ามให้ login พังทั้งระบบ
     // (ค่าที่หายไปจะเป็น null → ทีมช่าง/รูปโปรไฟล์ไม่ขึ้น แต่เข้าใช้งานได้ตามปกติ)
@@ -2376,6 +2382,12 @@ export default function App() {
       const v = data?.is_dept_admin === true;
       setUserIsDeptAdmin(v); setDeptAdmin(v);
     }
+    /* 🖥️ บัญชีกลาง (จอ TV / บัญชีประจำเครื่อง) ห้ามลบอะไรทั้งนั้น — ตั้ง flag **sync ก่อน render แรก**
+       เหมือน dept_admin (ถ้าตั้งช้า ปุ่มลบจะโผล่แวบหนึ่งก่อนหาย = คนกดทันจริง)
+       ⚠️ คอลัมน์อยู่ใน COLS_FULL ⇒ DB ที่ยังไม่มีคอลัมน์จะถอยไป COLS แล้วค่านี้เป็น undefined
+          = ไม่บล็อก (พฤติกรรมเดิม) · ฝั่ง DB ของ Main มีด่าน has_perm ซ้อนอีกชั้น */
+    setUserAccountKind(data?.account_kind ?? null);
+    setSharedAccount(data?.account_kind === 'shared');
     setProfileLoaded(true);
   };
 
@@ -2457,6 +2469,7 @@ export default function App() {
                 userSections={effSections}
                 userMtnTeams={effMtnTeams}
                 userIsDeptAdmin={effDeptAdmin}
+                userAccountKind={userAccountKind}
                 userPosition={userPosition}
                 userEmail={userEmail}
                 userFullName={userFullName}
