@@ -160,8 +160,12 @@ const RULES = [
   {
     id: 'shift-sched-no-raw-byline',
     scan: ['src'], ext: ['.jsx', '.js'],
-    /* จับการอ่าน `maps.byLine[...]` ตรงๆ นอก `utils/shiftAssign.js` */
-    re: /\.byLine\s*\[/g,
+    /* จับการอ่าน `maps.byLine[...]` ตรงๆ นอก `utils/shiftAssign.js`
+       🔴 ยกเว้น index ที่เป็น "ตัวเลขล้วน" (`byLine[0]`) = การอ่านสมาชิก array ไม่ใช่การ lookup ด้วย line id
+          — ชื่อ `byLine` ถูกใช้โดยโมดูลอื่นที่ไม่เกี่ยวกับตารางกะด้วย (เช่น `LineStock.jsx` เก็บยอดสต็อก
+          รายไลน์เป็น array แล้วอ่าน `p.byLine[0].line_name`) · เจอจริง 13/10 ตอน merge 2 session
+          ที่แตะคนละไฟล์ · การ lookup ด้วย id (`byLine[lineId]` / `byLine[emp.line_id]`) ยังโดนจับเหมือนเดิม */
+    re: /\.byLine\s*\[(?!\s*\d+\s*\])/g,
     why: 'ตารางกะเก็บแถว "ต่อไลน์" แต่ **ไลน์ลูกตกทอดกะจากไลน์แม่** (จอตั้งค่า `ShiftOrganize.effTeam` ทำแบบนี้มาตลอด) '
        + '⇒ อ่าน `byLine[line_id]` ตรงตัว = ไลน์ลูกที่ยังไม่มีแถวของตัวเองได้ `null` ทั้งที่จอบอกว่าตั้งกะแล้ว '
        + '· เกิดจริง 13/10 (PD2): `Line D2 - LWR BAR` + `Line D3 - STAMPED` สร้าง 09/10 หลังตารางถูกเติมล่วงหน้า '
