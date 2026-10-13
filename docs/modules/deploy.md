@@ -15,6 +15,17 @@ Environment Variables:
   VITE_SUPABASE_ANON_KEY=<key from Supabase dashboard>
 ```
 
+### 💸 Build pipeline minutes — build ล่มเพราะโควต้าหมด (2026-10-13)
+
+Render นับ **นาที build ต่อเดือน** (ไม่เกี่ยวกับจำนวนคนเข้าเว็บ) · เพดานค่าใช้จ่ายตั้งไว้ $0 ⇒ นาทีหมด = **merge แล้วไม่ deploy**
+(เว็บยังเสิร์ฟเวอร์ชันล่าสุดที่ build ผ่าน) · ต.ค. 2026 หมดวันที่ 13 หลัง push เข้า main 112 ครั้งใน 13 วัน
+- `render.yaml` → `buildFilter.ignoredPaths` ข้ามการ build เมื่อ push แตะแค่ `*.md` / `.claude/**`
+  (วัดย้อนหลังได้แค่ ~6% ของ push — **ตัวประหยัดจริงคือ merge เป็นรอบ ไม่ใช่ทีละงานเล็ก**)
+- 🔴 **ห้ามใส่ `docs/**` / `supabase/**` / `audit/**` ทั้งโฟลเดอร์** — เทสใน build อ่านไฟล์ในนั้น (`docs/**/*.py`,
+  migrations, `audit/mobilesweep.mjs`) ข้ามแล้วด่านพังจะไปโผล่ตอน push โค้ดครั้งถัดไปแทน
+- `buildFilter` ใน yaml มีผลเฉพาะ service ที่สร้างจาก Blueprint — ไม่งั้นต้องตั้งซ้ำที่ dashboard
+  (Settings → Build & Deploy → Build Filters → Ignored Paths)
+
 ### PWA — เพิ่มลงหน้าจอโฮม เปิดเหมือนแอป (2026-07-23)
 
 รองรับ "เพิ่มลงหน้าจอโฮม" (iOS Safari / Android Chrome) เปิดแบบ standalone (เต็มจอ ไม่มีแถบ browser มีไอคอนเอง) เหมาะจอหน้าไลน์/มือถือหัวหน้า
