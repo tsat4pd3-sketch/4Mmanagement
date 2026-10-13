@@ -219,3 +219,28 @@ export function orderInQty(o) {
  *  🔴 ส่งแล้ว (`shipped`) **ยังนับ** เพราะบอร์ด FG หักยอดตามวันส่งที่ลูกค้าขอ
  *     (ของออกไปแล้วก็ต้องหายจากสต๊อก — ไม่ใช่ว่าหายไปจากความต้องการ) */
 export const DEMAND_SKIP_STATUS = ['cancelled'];
+
+/**
+ * ย้ายดัชนี `mat|วันที่` ไปเป็น `mat|คีย์คอลัมน์` ของบอร์ดรายสัปดาห์ (Argen · 13/10)
+ * วันที่ตกคอลัมน์ไหน = คอลัมน์ล่าสุดที่เริ่ม ≤ วันที่นั้น และยังไม่เกิน 7 วัน · นอกช่วงบอร์ด = ทิ้ง (ไม่ยัดเข้าคอลัมน์ขอบ)
+ * @param {Map<string, number>} idx  ผลจาก sumByMatDate
+ * @param {Array<{key:string,date:string}>} periods  เรียงจากเก่าไปใหม่
+ */
+export function rebucketToWeeks(idx, periods = []) {
+  const out = new Map();
+  if (!(idx instanceof Map) || !periods.length) return out;
+  const ps = periods.map((p) => ({ key: p.key, t: Date.parse(`${String(p.date).slice(0, 10)}T00:00:00Z`) }));
+  const WEEK = 7 * 86400000;
+  for (const [k, v] of idx) {
+    const cut = k.lastIndexOf('|');
+    const mat = k.slice(0, cut);
+    const t = Date.parse(`${k.slice(cut + 1)}T00:00:00Z`);
+    if (!Number.isFinite(t)) continue;
+    let hit = null;
+    for (const p of ps) { if (p.t <= t && t < p.t + WEEK) hit = p.key; }
+    if (!hit) continue;
+    const nk = `${mat}|${hit}`;
+    out.set(nk, (out.get(nk) || 0) + v);
+  }
+  return out;
+}
