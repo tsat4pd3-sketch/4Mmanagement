@@ -2,7 +2,7 @@
 // pure module (ไม่ import supabase) → import ตรงได้เลย ไม่ต้อง bundle
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { canDoStep, canSignMtnApproval, lastStep, canSkipQa, isOrderReporter, isQaSkipped, isWaitingQa, MTN_STEPS, stepDenyHint, stepLabel, stepMeta } from '../mtnStepPerm.js';
+import { canDoStep, canSignMtnApproval, lastStep, canSkipQa, isOrderReporter, orderReporterText, isQaSkipped, isWaitingQa, MTN_STEPS, stepDenyHint, stepLabel, stepMeta } from '../mtnStepPerm.js';
 
 // ผูก role เป็นชุดสิทธิ์ง่ายๆ: keys = คีย์ที่ role นั้นถือ
 const perms = (keys, seededKeys = null) => ({
@@ -518,4 +518,29 @@ test('moStatusMeta: สถานะแปลกปลอม/ว่าง ถอ�
   // ป้ายยังมาจาก moStatusLabel() เสมอ (ใบที่ติดด่านอนุมัติต้องไม่ขึ้น "รอรับงาน")
   const blocked = { status: 'pending', purpose: 'improve', dept_manager_at: null, current_step: 1 };
   assert.equal(moStatusMeta(blocked).label, MO_LABEL_WAIT_APPROVAL);
+});
+
+/* ── 🧑 ชื่อผู้แจ้งบนจอ — "ต่างกันต้องโชว์ทั้งคู่" (2026-10-13 · คำสั่ง user) ───────── */
+
+test('orderReporterText: ตรงกัน = โชว์ชื่อเดียว · ต่างกัน = โชว์ทั้งคู่', () => {
+  assert.deepEqual(orderReporterText({ reporter_prod: 'สมชาย ใจดี', reported_by_name: 'สมชาย ใจดี' }),
+    { main: 'สมชาย ใจดี', extra: null });
+  // ใบที่เปิดด้วยบัญชีกลาง — ชื่อในฟอร์มขึ้นก่อน ส่วนบัญชีที่เปิดใบต่อท้าย
+  assert.deepEqual(orderReporterText({ reporter_prod: 'ธวัช พิมพ์วงศ์', reported_by_name: 'toolingmaintenance' }),
+    { main: 'ธวัช พิมพ์วงศ์', extra: 'toolingmaintenance' });
+});
+
+test('orderReporterText: ช่องว่างซ้ำ/ตัวพิมพ์ ไม่ทำให้ชื่อเดียวกันถูกเขียน 2 ครั้ง', () => {
+  // เจอจริงในฐาน: ชื่อพิมพ์เว้นวรรค 2 เคาะ
+  assert.deepEqual(orderReporterText({ reporter_prod: 'ยุทธภูมิ  การัมย์', reported_by_name: 'ยุทธภูมิ การัมย์' }),
+    { main: 'ยุทธภูมิ  การัมย์', extra: null });
+  assert.deepEqual(orderReporterText({ reporter_prod: ' Somchai ', reported_by_name: 'somchai' }),
+    { main: 'Somchai', extra: null });
+});
+
+test('orderReporterText: มีฟิลด์เดียว/ไม่มีเลย — ห้ามพ่น undefined ออกจอ', () => {
+  assert.deepEqual(orderReporterText({ reported_by_name: 'สมชาย ใจดี' }), { main: 'สมชาย ใจดี', extra: null });
+  assert.deepEqual(orderReporterText({ reporter_prod: 'สมหญิง' }), { main: 'สมหญิง', extra: null });
+  assert.deepEqual(orderReporterText({ reporter_prod: '   ', reported_by_name: null }), { main: null, extra: null });
+  assert.deepEqual(orderReporterText(null), { main: null, extra: null });
 });

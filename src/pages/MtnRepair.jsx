@@ -17,7 +17,7 @@ import { toast } from '../components/Toast';
 import { PURPOSES, CAUSE_CATS, needsPlantManager, needsApprovalFirst, laborAmount, partAmount, sumLabor, sumParts, grandTotal, satScore, mtnApprovalState, purposeOfPrint, qaAppliesTo, isMtnFormRow, QA_SKIP_REASON_PURPOSE, QA_SKIP_REASON_MTN_FORM, needsPlantMgrByCost, orderCostTotal, PLANT_MGR_COST_LIMIT } from '../utils/mtnMoForm';
 import AuditLogViewer from '../components/AuditLogViewer';
 import { can, canDelete, isActionSeeded } from '../utils/permissions';
-import { MO_STATUS_META as STATUS_META, QA_NOT_RELATED, QA_RELATED, QA_SKIP_REASON_STEP4, canBounceBack, canDoStep, canHandoff, canSignMtnApproval, canSkipQa, isMoOpen, isOrderReporter, isQaSkipped, isWaitingQa, lastStep, nextStepOf, moQaState, mtnCloseStage, moStatusLabel, moStatusMeta, orderInReporterScope, stageOf, stepDenyHint, stepLabel, stepMeta, actorSideOf, stepAssumptions, assumptionHint } from '../utils/mtnStepPerm';
+import { MO_STATUS_META as STATUS_META, QA_NOT_RELATED, QA_RELATED, QA_SKIP_REASON_STEP4, canBounceBack, canDoStep, canHandoff, canSignMtnApproval, canSkipQa, isMoOpen, isOrderReporter, isQaSkipped, isWaitingQa, lastStep, orderReporterText, nextStepOf, moQaState, mtnCloseStage, moStatusLabel, moStatusMeta, orderInReporterScope, stageOf, stepDenyHint, stepLabel, stepMeta, actorSideOf, stepAssumptions, assumptionHint } from '../utils/mtnStepPerm';
 import { positionRank } from '../utils/positions';
 import { findOpenOnMachine, dupLevel } from '../utils/mtnDuplicate';
 import { inSectionScope } from '../utils/sectionScope';
@@ -144,6 +144,12 @@ const MO_LIST_COLS = [
   'mtn_dept', 'item_type', 'line_name', 'machine_no', // ฟิลเตอร์ทีม/ไลน์ + การ์ด
   'problem_characteristic', 'problem_group', 'report_note', 'report_at',
   'work_date', 'repair_type',                         // ตัวกรอง วันที่/กะ/ประเภทงานซ่อม (2026-09-25)
+  /* 🧑 ชื่อผู้แจ้ง — โชว์เป็นคอลัมน์ท้ายตาราง + ค้นหาได้ (13/10 · คำสั่ง user
+     "เปลี่ยนช่องประเภทเป็นชื่อผู้แจ้ง เพื่อง่ายในการไล่หาของ user เอง")
+     ⚠️ ต้องมี 2 ฟิลด์ — วัด 13/10 จาก 720 ใบ: reported_by_name 689 · reporter_prod 692
+        · ไม่มีทั้งคู่ 25 ใบ ⇒ เอาตัวเดียวจะมีใบที่ขึ้นว่างทั้งที่อีกช่องมีชื่อ
+     (`repair_type` ยังต้องดึงต่อ — ตัวกรอง "ทุกประเภท" ใช้อยู่ แค่ไม่โชว์เป็นคอลัมน์แล้ว) */
+  'reported_by_name', 'reporter_prod',
   'repair_done_at', 'accept_at', 'satisfaction',      // แท็บ KPI (first-response · ความพึงพอใจ)
   'quality_related', 'qa_skipped_at',                 // สถานะ QA บนป้าย
   'dept_manager_at', 'purpose',                       // moStatusLabel() ใช้ตัดสินป้ายใบอนุมัติ
@@ -530,7 +536,7 @@ export default function MtnRepair() {
     if (fDept) rows = rows.filter(o => sameTeam(o.mtn_dept || deptForItem(o.item_type), fDept));
     if (fShift) rows = rows.filter(o => shiftOfTime(o.report_at) === fShift);
     if (fRepairType) rows = rows.filter(o => (o.repair_type || '') === fRepairType);
-    if (fText.trim()) { const t = fText.trim().toLowerCase(); rows = rows.filter(o => [o.mo_no, o.machine_no, o.item_type, o.problem_characteristic, o.report_note, o.line_name].some(v => (v || '').toLowerCase().includes(t))); }
+    if (fText.trim()) { const t = fText.trim().toLowerCase(); rows = rows.filter(o => [o.mo_no, o.machine_no, o.item_type, o.problem_characteristic, o.report_note, o.line_name, o.reported_by_name, o.reporter_prod].some(v => (v || '').toLowerCase().includes(t))); }
     return rows;
   }, [orders, scopeLines, fStatus, fLine, fDept, fShift, fRepairType, fText, lines]);
 
@@ -687,7 +693,7 @@ export default function MtnRepair() {
             {waitOpts.map(w => <option key={w.stage} value={w.stage}>{w.icon} รอ{w.title} ({w.n})</option>)}
             {fWait && !waitOpts.some(w => w.stage === fWait) && <option value={fWait}>⚠ {fWait} (ไม่มีใบค้าง)</option>}
           </select>
-          <SearchInput value={fText} onChange={setFText} fields="เลข MO / เครื่อง / ปัญหา" />
+          <SearchInput value={fText} onChange={setFText} fields="เลข MO / เครื่อง / ปัญหา / ชื่อผู้แจ้ง" />
           <span className="spacer" />
           <span className="filter-count">{shown.length} รายการ</span>
           {/* ⬇️ Export ข้อมูล MO ของช่วงที่เลือก (06/10 · user: "ยังไม่มีระบบ export data ของ mo
@@ -733,7 +739,7 @@ export default function MtnRepair() {
           <table className="mo-list">
             <thead><tr>
               <th>เลข MO</th><th>สถานะ</th><th>ขั้น</th><th>แจ้งเมื่อ</th><th>ทีมช่าง</th>
-              <th>ไลน์</th><th>ชนิด · เครื่อง</th><th>ปัญหา</th><th>รายละเอียด</th><th>ประเภท</th>
+              <th>ไลน์</th><th>ชนิด · เครื่อง</th><th>ปัญหา</th><th>รายละเอียด</th><th>ชื่อผู้แจ้ง</th>
             </tr></thead>
             <tbody>
               {shown.map(o => <MoRow key={o.id} o={o} onOpen={() => openDetail(o)} />)}
@@ -782,7 +788,21 @@ function MoRow({ o, onOpen }) {
       <td style={{ color: 'var(--text2)', minWidth: 120 }}>{o.item_type || '—'}{o.machine_no ? <> · <b style={{ color: 'var(--text)' }}>{o.machine_no}</b></> : ''}</td>
       <td style={{ minWidth: 140 }}>{o.problem_characteristic || '—'}</td>
       <td className="mo-note" title={o.report_note || ''}>{o.report_note || <span style={{ color: 'var(--muted)' }}>—</span>}</td>
-      <td style={{ whiteSpace: 'nowrap', color: 'var(--text2)' }}>{o.repair_type || '—'}</td>
+      {/* 🧑 ชื่อผู้แจ้ง (แทนคอลัมน์ "ประเภท" เดิม · 13/10 คำสั่ง user) — เป็นเป้าสแกนสายตา
+          ⇒ ใช้สี `--text` ไม่ใช่ `--text2` (ประเภทงานซ่อมยังดูได้จากตัวกรอง "ทุกประเภท" และในใบที่เปิดดู)
+          🔴 **ต่างกันต้องโชว์ทั้งคู่** (คำสั่ง user 13/10) — ใบที่เปิดด้วยบัญชีกลางจะมีชื่อในฟอร์มคนหนึ่ง
+          แต่ระบบ stamp อีกชื่อหนึ่ง ⇒ โชว์ชื่อเดียวแล้วคนที่แจ้งหาใบตัวเองไม่เจอ
+          · ตัดสินที่ `orderReporterText()` (ของกลาง `utils/mtnStepPerm.js`) ห้ามเทียบ 2 ฟิลด์เองในหน้า */}
+      <td style={{ whiteSpace: 'nowrap', color: 'var(--text)' }}>
+        {(() => {
+          const { main, extra } = orderReporterText(o);
+          if (!main) return <span style={{ color: 'var(--muted)' }}>—</span>;
+          return <>
+            {main}
+            {extra ? <span style={{ color: 'var(--muted)', fontSize: 11 }} title="ชื่อในฟอร์มกับบัญชีที่เปิดใบไม่ตรงกัน (ใบที่เปิดด้วยบัญชีกลาง)"> · เปิดโดย {extra}</span> : null}
+          </>;
+        })()}
+      </td>
     </tr>
   );
 }
@@ -3260,6 +3280,21 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
     })();
     const warnBox = { fontSize: 11.5, borderRadius: 7, padding: '7px 10px', marginBottom: 10, lineHeight: 1.65 };
 
+    /* 📐 แถวทะเบียนต้อง "ตรงเป็นคอลัมน์" (2026-10-13 · คำสั่ง user *"จัดระเบียบหน้านี้ด้วย"* เรื่อง alignment)
+       เดิมทุกแถวเป็น flex ที่ **ยืดได้** (`flex: 1 1 ${w}px`) + ของท้ายแถวกว้างไม่เท่ากัน
+       (ชิป 👁 มีจำนวนไม่เท่ากันต่อแถว เพราะตัดทีมของแถวนั้นออก) ⇒ ช่องกรอกของแต่ละแถว
+       เริ่ม-จบไม่ตรงกัน และแถว "+ เพิ่ม" (กว้างคงที่) ก็ไม่ตรงกับแถวข้อมูลเลย
+       ⇒ ใช้ **template ชุดเดียว** ที่ทั้งแถวเพิ่มและทุกแถวข้อมูลอ้างร่วมกัน
+       🔴 ต้องเป็น px คงที่ ห้ามใช้ `subgrid` (Chromium 117 · เพดานจอ TV = 94 → ดู CLAUDE.md)
+       · กว้างรวมเกินจอมือถือ = ให้ "ปัดได้" ด้วยกล่อง `overflowX:'auto'` ข้างนอก ห้ามปล่อยล้นเฉยๆ */
+    const GRID_COLS = [
+      ...fields.map(fl => `${fl.w || 200}px`),
+      ...(teamed ? ['190px'] : []),                 // ทีมเจ้าของแถว
+      ...(shared && teamed ? ['210px'] : []),       // ชิป 👁 ทีมที่เห็นด้วย (ชิปพับบรรทัดในช่องตัวเอง ไม่ดันคอลัมน์อื่น)
+      '132px',                                      // ปุ่มลบ / 🔒 ดูอย่างเดียว / ปุ่ม + เพิ่ม
+    ].join(' ');
+    const rowGrid = { display: 'grid', gridTemplateColumns: GRID_COLS, gap: 8, alignItems: 'center' };
+
     return (
       <div>
         {teamed && (
@@ -3290,16 +3325,20 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
           : <div style={{ ...warnBox, color: 'var(--muted)', background: 'var(--bg3)', border: '1px solid var(--border)' }}>
               ✅ ทุกแถวมีกลุ่มใหญ่ครบ · ไม่มีหัวข้อย่อยซ้ำในทีม+กลุ่มเดียวกัน
             </div>)}
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
-          {fields.map(fl => <input key={fl.k} value={nw[fl.k] || ''} onChange={e => setNw(p => ({ ...p, [fl.k]: e.target.value }))} placeholder={fl.ph} style={{ ...inp, width: fl.w || 200 }} />)}
+        <div style={{ overflowX: 'auto', paddingBottom: 2 }}>
+        <div style={{ width: 'max-content', minWidth: '100%' }}>
+        {/* เยื้องเท่าการ์ดแถวข้อมูล (padding 10 + ขอบ 1) ⇒ ช่องกรอกของแถวเพิ่มตรงกับแถวข้อมูลพอดี */}
+        <div style={{ ...rowGrid, marginBottom: 10, padding: '0 11px' }}>
+          {fields.map(fl => <input key={fl.k} value={nw[fl.k] || ''} onChange={e => setNw(p => ({ ...p, [fl.k]: e.target.value }))} placeholder={fl.ph} style={{ ...inp, width: '100%', minWidth: 0 }} />)}
           {teamed && (
             /* เพิ่มของกลาง (🌐) ได้เฉพาะหัวหน้า — คนทีมเดียวเพิ่มได้แต่ของทีมตัวเอง */
-            <select value={nwTeam || fTeam} onChange={e => setNwTeam(e.target.value)} style={{ ...inp, width: 190 }}>
+            <select value={nwTeam || fTeam} onChange={e => setNwTeam(e.target.value)} style={{ ...inp, width: '100%', minWidth: 0 }}>
               {(isBoss || unscoped) && <option value="">🌐 ใช้ร่วมทุกทีม</option>}
               {teamOpts.filter(t => isBoss || unscoped || myKeys.includes(teamKeyOf(t.key)))
                 .map(t => <option key={t.key} value={t.key}>{t.icon || ''} {t.dept_name || t.label}</option>)}
             </select>
           )}
+          {shared && teamed ? <div /> : null}
           <button onClick={() => {
             if (!nw[fields[0].k]) return;
             // ทีมของแถวใหม่: ที่เลือกในช่อง หรือ default = ทีมที่กำลังกรองอยู่ (เพิ่มของทีมตัวเองได้เลย)
@@ -3312,24 +3351,24 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
               payload.team = t;
             }
             addRow(table, payload); setNw({}); setNwTeam('');
-          }} style={btnPri}>+ {addLabel}</button>
+          }} style={{ ...btnPri, width: '100%' }}>+ {addLabel}</button>
         </div>
         <div style={{ display: 'grid', gap: 6 }}>{shown.map(it => {
           const ok = canEditRow(it);
           const ro = { background: 'var(--bg2)', color: 'var(--text2)', cursor: 'default' };
           return (
           <div key={it.id} title={ok ? undefined : lockNote(it)}
-            style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px', opacity: ok ? 1 : 0.72 }}>
+            style={{ ...rowGrid, background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px', opacity: ok ? 1 : 0.72 }}>
             {fields.map(fl => <input key={fl.k} defaultValue={it[fl.k] || ''} readOnly={!ok} onBlur={ok ? async e => {
               const nv = e.target.value, ov = it[fl.k] || '';
               if (nv === ov) return;
               await updRow(table, it.id, { [fl.k]: nv });
               const col = NAME_CASCADE[table]?.[fl.k];   // ชื่อนี้ถูกคัดลอกไปเก็บในใบซ่อมด้วยไหม
               if (col) await cascadeRename(col, ov, nv);
-            } : undefined} style={{ ...inp, ...(ok ? null : ro), flex: `1 1 ${fl.w || 200}px`, width: 'auto', minWidth: 120 }} />)}
+            } : undefined} style={{ ...inp, ...(ok ? null : ro), width: '100%', minWidth: 0 }} />)}
             {teamed && (
               <select value={it.team || ''} disabled={!ok} onChange={e => changeTeam(it, e.target.value)}
-                title={ok ? 'ทีมที่ใช้รายการนี้' : lockNote(it)} style={{ ...inp, ...(ok ? null : ro), width: 180, flex: '0 0 auto' }}>
+                title={ok ? 'ทีมที่ใช้รายการนี้' : lockNote(it)} style={{ ...inp, ...(ok ? null : ro), width: '100%', minWidth: 0 }}>
                 <option value="">🌐 ใช้ร่วมทุกทีม</option>
                 {teamOpts.map(t => <option key={t.key} value={t.key}>{t.icon || ''} {t.dept_name || t.label}</option>)}
               </select>
@@ -3340,7 +3379,7 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
               const cur = Array.isArray(it.shared_teams) ? it.shared_teams.map(teamKeyOf) : [];
               const pickable = teamOpts.filter(t => !seesEverything(t.key) && teamKeyOf(t.key) !== teamKeyOf(it.team));
               return (
-                <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }} title="ทีมอื่นที่เห็นรายการนี้ด้วย (เห็นได้ แต่แก้ไม่ได้)">
+                <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap', minWidth: 0 }} title="ทีมอื่นที่เห็นรายการนี้ด้วย (เห็นได้ แต่แก้ไม่ได้)">
                   <span style={{ fontSize: 11, color: 'var(--muted)' }}>👁</span>
                   {pickable.map(t => {
                     const on = cur.includes(teamKeyOf(t.key));
@@ -3356,12 +3395,14 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
                 </div>);
             })()}
             {ok
-              ? <DeleteButton style={{ marginLeft: 'auto' }} onClick={() => delRow(table, it.id)} title="ลบ" />
-              : <span title={lockNote(it)} style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>🔒 ดูอย่างเดียว</span>}
+              ? <DeleteButton style={{ justifySelf: 'end' }} onClick={() => delRow(table, it.id)} title="ลบ" />
+              : <span title={lockNote(it)} style={{ justifySelf: 'end', fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>🔒 ดูอย่างเดียว</span>}
           </div>); })}
           {!shown.length && <div style={{ color: 'var(--muted)', fontSize: 13, padding: 12 }}>
             ไม่มีรายการของทีมนี้ — เพิ่มด้านบน (หรือเลือก "ทุกทีม" เพื่อดูของทีมอื่น)
           </div>}
+        </div>
+        </div>
         </div>
       </div>
     );
