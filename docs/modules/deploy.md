@@ -35,7 +35,7 @@ deploy ทุกชั่วโมง = **~90 build/เดือน** (−69% ·
 - **ด่วน** (บั๊กหน้างาน): GitHub → Actions → *Scheduled deploy* → **Run workflow** = deploy ทันทีเสมอ
 - hook ตอบไม่ใช่ 2xx = งานแดง ไม่เลื่อน tag (รอบหน้าลองใหม่) · secret ไม่มี = รอบตามเวลาขึ้น warning / กดมือขึ้น error
 - ⚠️ tag เลื่อนตอน Render **รับคิว** ไม่ใช่ตอน build ผ่าน — build ล้มบน Render ต้องกด Run workflow ซ้ำหลังแก้
-- 🔴 **Render Auto-Deploy ต้องปิด** (Settings → Build & Deploy → Auto-Deploy = Off) ไม่งั้น build ซ้ำ 2 ทาง
+- 🔴 **Render Auto-Deploy ต้องปิด** — service เป็น **Blueprint managed** ⇒ คุมด้วย `autoDeploy: false` ใน `render.yaml` (ปิดใน dashboard อย่างเดียว sync แล้วอาจเปิดกลับ) ไม่งั้น build ซ้ำ 2 ทาง
 - ตั้งครั้งแรก: Render → Settings → **Deploy Hook** คัดลอก URL → GitHub repo → Settings → Secrets and variables →
   Actions → New secret ชื่อ `RENDER_DEPLOY_HOOK` · **URL นี้เป็นความลับ** (ใครมีก็สั่ง deploy ได้)
 
