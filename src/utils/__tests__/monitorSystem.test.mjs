@@ -236,3 +236,43 @@ test('rebucketToWeeks — รวมยอดรายวันเข้าคอ
   assert.equal(m.get('A|2026-10-12'), 7);
   assert.equal(m.size, 2);
 });
+
+import { lockFromByMat, isLockedPeriod, makeLockLookup } from '../monitorSystem.js';
+test('lockFromByMat — วันแรกจากคลังรับเข้า (คลังอ้างอิงเท่านั้น) หรือใบผลิต แล้วแต่อันไหนก่อน', () => {
+  const locOf = (m) => (m === 'A' || m === 'B' ? 'STORE' : null);
+  const m = lockFromByMat({
+    locOf,
+    inRows: [
+      { mat_no: 'A', line_name: 'STORE', type: 'issue', status: 'approved', work_date: '2026-10-05' },
+      { mat_no: 'A', line_name: 'LINE C', type: 'issue', status: 'approved', work_date: '2026-09-01' }, // คนละคลัง
+      { mat_no: 'A', line_name: 'STORE', type: 'adjust', status: 'approved', work_date: '2026-09-02' },   // ไม่ใช่ของเข้า
+      { mat_no: 'B', line_name: 'STORE', type: 'issue', status: 'pending', work_date: '2026-09-03' },     // ยังไม่อนุมัติ
+    ],
+    prodRows: [{ mat_no: 'A', work_date: '2026-10-07' }, { mat_no: 'C', work_date: '2026-10-09' }],
+  });
+  assert.equal(m.get('A'), '2026-10-05');
+  assert.equal(m.has('B'), false, 'ไม่มีหลักฐาน = ไม่ล็อก กรอกเองได้');
+  assert.equal(m.get('C'), '2026-10-09', 'Daily Report ลงยอดแล้ว = ล็อก');
+});
+
+test('isLockedPeriod — ล็อกตั้งแต่วันแรก ถึงวันนี้ · อนาคตกรอกได้ · สัปดาห์ที่ครอบวันแรกล็อก', () => {
+  const o = { lockFrom: '2026-10-05', today: '2026-10-13' };
+  assert.equal(isLockedPeriod('2026-10-04', o), false, 'ประวัติก่อนระบบ');
+  assert.equal(isLockedPeriod('2026-10-05', o), true);
+  assert.equal(isLockedPeriod('2026-10-13', o), true);
+  assert.equal(isLockedPeriod('2026-10-14', o), false, 'อนาคต');
+  assert.equal(isLockedPeriod('2026-09-28', { ...o, kind: 'week' }), false, 'สัปดาห์ 28/09–04/10 จบก่อนวันแรก');
+  assert.equal(isLockedPeriod('2026-09-29', { ...o, kind: 'week' }), true, 'สัปดาห์ 29/09–05/10 ครอบ 05/10');
+  assert.equal(isLockedPeriod('2026-10-12', { ...o, kind: 'week' }), true);
+  assert.equal(isLockedPeriod('2026-10-05', { today: '2026-10-13' }), false, 'ไม่มีวันแรก = ไม่ล็อก');
+});
+
+test('makeLockLookup — ล็อกเฉพาะแถว IN ของพาร์ทที่มีวันแรก', () => {
+  const look = makeLockLookup({
+    partMat: new Map([['p1', 'A'], ['p2', 'Z']]), lockFrom: new Map([['A', '2026-10-05']]),
+    periods: [{ key: '2026-10-06', date: '2026-10-06' }], today: '2026-10-13',
+  });
+  assert.equal(look('p1', 'in', '2026-10-06'), true);
+  assert.equal(look('p1', 'send', '2026-10-06'), false);
+  assert.equal(look('p2', 'in', '2026-10-06'), false);
+});
