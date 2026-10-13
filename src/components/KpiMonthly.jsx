@@ -222,7 +222,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
     } catch { /* SSR/harness ไม่มี window.location */ }
     return { ...PLANT };
   });
-  const { index: org, ready: orgReady } = useOrgScope(lines);
+  const { index: org, ready: orgReady, failed: orgFailed } = useOrgScope(lines);
   const { sections: userSections } = useContext(UserContext);   // สังกัดของ user — ตัดตัวเลือกขอบเขต (node ที่ไม่มีไลน์ใช้ตัวนี้ตัดสิน)
   const [loading, setLoading] = useState(false);
   const [prog, setProg] = useState('');
@@ -927,7 +927,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
       {/* UI-STANDARD 2026-09-24: แถบกรองมาตรฐาน — ขอบเขต → ปี → spacer → export (หัวเรื่อง "KPI รายเดือน" อยู่ที่ PageHeader ของ /obeya แล้ว) */}
       <FilterBar>
         {/* ขอบเขต = ผังองค์กรทุกมิติ (23/09) — ตัวเดียวแทน select ส่วนงาน + กลุ่มไลน์ */}
-        <OrgScopePicker index={org} value={scope} onChange={setScope} scopeSet={scopeSet} sections={userSections}
+        <OrgScopePicker index={org} value={scope} onChange={setScope} scopeSet={scopeSet} sections={userSections} failed={orgFailed}
           plantLabel="ทุกส่วนงานในขอบเขต" width={isMobile ? '100%' : 320} title="เลือกขอบเขตตามผังองค์กร: ฝ่าย / ส่วนงาน / แผนก / กลุ่มไลน์ / ไลน์ / cost center" />
         <span className="filter-label">ปี</span>
         <select value={year} onChange={e => setYear(+e.target.value)}>
@@ -1355,7 +1355,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
       )}
 
       {editDef && (
-        <DefModal
+        <DefModal orgFailed={orgFailed}
           init={editDef} year={year} scope={scope} org={org} scopeSet={scopeSet} userSections={userSections}
           catalog={catalog} catMissing={catMissing} usedIds={defs.map(d2 => d2.catalog_id).filter(Boolean)}
           onClose={() => setEditDef(null)}
@@ -1607,7 +1607,7 @@ function CatalogModal({ rows, canManage, usedNames = [], onClose, onChanged }) {
 /* ── โมดัลนิยาม KPI (เพิ่ม/แก้) ──
    ⚠️ ชื่อ KPI เลือกจากทะเบียน (kpi_catalog) เป็นหลัก — พิมพ์เองได้แต่ต้องเห็นว่า
    "กำลังสร้างชื่อใหม่" และถ้าคล้ายชื่อที่มีอยู่ต้องเตือนก่อน (ต้นตอของ KPI แตกหัวข้อ) */
-function DefModal({ init, year, scope, org, scopeSet, userSections = [], catalog = [], catMissing = false, usedIds = [], onClose, onSave }) {
+function DefModal({ init, year, scope, org, orgFailed = '', scopeSet, userSections = [], catalog = [], catMissing = false, usedIds = [], onClose, onSave }) {
   const [f, setF] = useState(() => ({
     id: init.id || null,
     catalog_id: init.catalog_id || '',
@@ -1746,7 +1746,7 @@ function DefModal({ init, year, scope, org, scopeSet, userSections = [], catalog
           </div>
           <div>
             <div style={lbl}>ขอบเขต (ตามผังองค์กร · โรงงาน = ทุกหน่วยงาน)</div>
-            <OrgScopePicker index={org} value={f.scope} onChange={v => set('scope', v)} scopeSet={scopeSet} sections={userSections}
+            <OrgScopePicker index={org} value={f.scope} onChange={v => set('scope', v)} scopeSet={scopeSet} sections={userSections} failed={orgFailed}
               width="100%" inputStyle={inp} />
           </div>
           <div>

@@ -657,9 +657,15 @@ export default function Management() {
           if (manCase === 1) {
             // Silent: log directly as approved, no notification
             const desc = `${droppedWorker.employees?.name} ย้ายไปจุด ${station.station_name} (ไลน์เดิม / skill ผ่าน / มีประวัติ)`;
-            const { data: dup } = await supabase.from('four_m_logs')
+            /* 🔴 เช็คใบซ้ำไม่ได้ = **ไม่สร้างใบ** (fail-closed) — เดิมแกะแค่ `{ data: dup }`
+               ⇒ อ่านพลาด = undefined = "ยังไม่มีใบ" ⇒ สร้างซ้ำทุกครั้งที่ย้ายจุดคนเดิม
+               ขัดกฎ "ตัวสร้างอัตโนมัติต้องกันใบซ้ำ" (CLAUDE.md §4M ที่ระบบสร้างเอง)
+               ใบที่ขาดไปกู้ได้ด้วยการย้ายจุดอีกครั้ง · ใบซ้ำในประวัติ 4M ลบไม่ได้ (ห้าม delete) */
+            const dupRes = await supabase.from('four_m_logs')
               .select('id').eq('work_date', today).eq('category', 'Man').eq('description', desc).limit(1);
-            if (!dup?.length) {
+            if (dupRes.error) {
+              toast.error('เข้าจุดงานแล้ว แต่เช็คใบ 4M Man ซ้ำไม่ได้ จึงยังไม่บันทึกใบ (กันใบซ้ำ): ' + dupRes.error.message);
+            } else if (!dupRes.data?.length) {
               // supabase-js ไม่ throw — ไม่เช็ค error = ประวัติย้ายจุด (4M Man) หายเงียบ
               const { error: m4Err } = await supabase.from('four_m_logs').insert([{
                 work_date: today, line_name: station.line_name, category: 'Man',

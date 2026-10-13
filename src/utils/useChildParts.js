@@ -7,9 +7,9 @@
    ⚠️ คอลัมน์คนละชื่อกับ `dr_products` — `part_name`/`part_no` (ไม่ใช่ `name`/`p_no`)
       select ผิด = 42703 เงียบ (กับดัก `dr_products.name` vs `parts_master.part_name`)
    · ตารางอยู่ DR (anon เสมอ) · ผ่าน `cachedMaster` TTL 4 ชม. เพราะหลายจอเรียกพร้อมกัน */
-import { useEffect, useState } from 'react';
 import { supabaseDR } from '../supabaseClient';
 import { cachedMaster, invalidateMaster } from './masterCache.js';
+import useMasterRows from './useMasterRows.js';
 import { fetchAllRows } from './fetchAllRows.js';
 
 const KEY = 'parts_master:matlabel';
@@ -25,13 +25,11 @@ export async function loadChildParts() {
 }
 export const invalidateChildParts = () => invalidateMaster(KEY);
 
-export default function useChildParts() {
-  const [parts, setParts] = useState([]);
-  useEffect(() => {
-    let alive = true;
-    // โหลดไม่ได้ = ป้ายตกกลับไปเป็นเลข MAT เปล่า (เหมือนก่อนมีฟีเจอร์นี้) ห้ามทำให้จอพัง
-    loadChildParts().then(d => { if (alive) setParts(d); }).catch(() => {});
-    return () => { alive = false; };
-  }, []);
-  return parts;
-}
+/** สถานะโหลดทะเบียน — `{ rows, failed, stale, message, loading, reload }`
+ *  🔴 ช่องเลือกที่ต้องบอกว่า "ลิสต์ว่างเพราะไม่มีของ หรือเพราะโหลดไม่สำเร็จ" ใช้ตัวนี้
+ *     (ตัว default คืนแค่แถว = พฤติกรรมเดิม ไม่ต้องแก้จุดเรียกเก่า) */
+export function useChildPartsState() { return useMasterRows(KEY, loadChildParts); }
+
+// โหลดไม่ได้ = ป้ายตกกลับไปเป็นเลข MAT เปล่า (เหมือนก่อนมีฟีเจอร์นี้) ห้ามทำให้จอพัง
+// — แต่ `failed` ต้องส่งต่อให้จอที่อยากเขียนบอกได้ (ใช้ useChildPartsState)
+export default function useChildParts() { return useChildPartsState().rows; }

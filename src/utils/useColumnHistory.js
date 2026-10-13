@@ -8,8 +8,8 @@
 
    ⚠️ best-effort: อ่านล่าสุด `limit` แถวแล้ว dedupe ฝั่ง client (PostgREST ไม่มี distinct) · cache ร่วม
    ผ่าน masterCache · ตาราง/คอลัมน์ไม่มี = คืน [] · คิวรีล้มจริง = โยน (ห้าม cache ว่างทับ) */
-import { useEffect, useState } from 'react';
 import { cachedMaster, invalidateMaster, mrows } from './masterCache';
+import useMasterRows from './useMasterRows.js';
 
 const norm = (v) => String(v ?? '').trim();
 
@@ -35,13 +35,15 @@ export async function loadColumnHistory(client, table, column, { limit = 3000, u
 }
 export const invalidateColumnHistory = (table, column) => invalidateMaster(`hist:${table}.${column}`);
 
-export default function useColumnHistory(client, table, column, { enabled = true, limit = 3000, upper = false } = {}) {
-  const [rows, setRows] = useState([]);
-  useEffect(() => {
-    if (!enabled || !client || !table || !column) return undefined;
-    let alive = true;
-    loadColumnHistory(client, table, column, { limit, upper }).then(d => { if (alive) setRows(d || []); }).catch(() => {});
-    return () => { alive = false; };
-  }, [client, table, column, enabled, limit, upper]);
-  return rows;
+/** สถานะโหลด "ค่าที่เคยบันทึก" — `{ rows, failed, stale, message, loading, reload }`
+ *  🔴 ล้ม = กลุ่ม 📜 หายไปจาก picker ⇒ คนหาค่าที่ตัวเองเพิ่งกรอกไม่เจอ ต้องเขียนบอกได้ */
+export function useColumnHistoryState(client, table, column, { enabled = true, limit = 3000, upper = false } = {}) {
+  // คีย์ต้องตรงกับที่ `loadColumnHistory` ส่งให้ cachedMaster (ไม่ตรง = ถามสถานะล้มผิดคีย์)
+  return useMasterRows(`hist:${table}.${column}`,
+    () => loadColumnHistory(client, table, column, { limit, upper }),
+    { enabled: !!(enabled && client && table && column), dep: `${limit}|${upper ? 1 : 0}` });
+}
+
+export default function useColumnHistory(client, table, column, opt = {}) {
+  return useColumnHistoryState(client, table, column, opt).rows;
 }

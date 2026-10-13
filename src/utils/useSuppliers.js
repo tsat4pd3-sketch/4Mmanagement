@@ -3,9 +3,9 @@
    part_routings.vendor_name · mtn_spare_parts.supplier · npi_tooling_plans.maker_name) ยังเก็บ name (text) เหมือนเดิม
    จัดการที่ /products แท็บ 🏭 Supplier · แก้แล้วเรียก invalidateSuppliers()
    ⚠️ หน้าใหม่ที่ต้องการ "เลือก supplier" ใช้ <SupplierSelect> ห้าม <input> เปล่า */
-import { useEffect, useState } from 'react';
 import { supabaseDR } from '../supabaseClient';
 import { cachedMaster, invalidateMaster, mrows } from './masterCache';
+import useMasterRows from './useMasterRows.js';
 
 const KEY = 'suppliers:master';
 export const SUPPLIER_KINDS = {
@@ -26,12 +26,9 @@ export async function loadSuppliers() {
 }
 export const invalidateSuppliers = () => invalidateMaster(KEY);
 
-export default function useSuppliers() {
-  const [rows, setRows] = useState([]);
-  useEffect(() => {
-    let alive = true;
-    loadSuppliers().then(d => { if (alive) setRows(d || []); }).catch(() => {});
-    return () => { alive = false; };
-  }, []);
-  return rows;
-}
+/** สถานะโหลดทะเบียน — `{ rows, failed, stale, message, loading, reload }`
+ *  🔴 ช่องเลือกที่ต้องบอกว่า "ลิสต์ว่างเพราะไม่มีของ หรือเพราะโหลดไม่สำเร็จ" ใช้ตัวนี้
+ *     (ตัว default คืนแค่แถว = พฤติกรรมเดิม ไม่ต้องแก้จุดเรียกเก่า) */
+export function useSuppliersState() { return useMasterRows(KEY, loadSuppliers); }
+
+export default function useSuppliers() { return useSuppliersState().rows; }

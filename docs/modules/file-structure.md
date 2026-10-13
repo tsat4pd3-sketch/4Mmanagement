@@ -95,3 +95,10 @@ const { role, lineId, team, section, sections, fullName } = useContext(UserConte
 computeFit(employee, station)  // % ของทักษะที่ผ่าน min_score
 fitColor(score)                // 80+ green | 60-79 amber | 40-59 orange | <40 red
 ```
+
+### ของกลางเพิ่ม 2026-10-13
+- **`src/utils/useMasterRows.js`** — สถานะโหลด "ทะเบียนที่ช่องเลือกใช้" → `{ rows, failed, stale, message, loading, reload }`
+  · `registryFailText(ชื่อทะเบียน, stale)` = ข้อความมาตรฐานข้างช่อง **ห้ามแต่งเองในหน้า**
+  · hook ทะเบียนทุกตัวคง default export เดิม (คืนแถวล้วน) + เพิ่ม `use<X>State()` ให้ช่องเลือก
+  · อ่านผลล้มต่อคีย์จาก `masterLoadState(key)` ใน `masterCache.js` — **`cachedMaster` ไม่ throw ⇒ รอ `catch` ไม่มีวันรู้**
+  · ส่งเข้า prop `loadFail` ของ `<SearchSelect>` (UI-CONVENTIONS §6.26)

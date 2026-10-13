@@ -88,6 +88,18 @@ export function mrows(res) {
 let failSink = null;
 export function onMasterLoadFail(fn) { failSink = typeof fn === 'function' ? fn : null; }
 
+/* ── ทะเบียน "คีย์ไหนโหลดล้มล่าสุด" (2026-10-13) ───────────────────────────────
+   🔴 ลิสต์ว่างมี **2 ความหมาย**: "ไม่มีของในทะเบียน" กับ "โหลดไม่สำเร็จ"
+      toast กลางใน main.jsx บอกว่า "มีอะไรล้ม" แต่**ผ่านไปแล้วก็หาย** และไม่บอกว่า
+      ช่องเลือกที่กำลังเพ่งอยู่ตรงหน้าเป็นช่องที่ล้มหรือไม่ ⇒ หน้างานสรุปว่า
+      "ลูกค้า/ไลน์/พาร์ทนี้ยังไม่ได้ลงทะเบียน" แล้วไปสร้างซ้ำ
+   ⇒ เก็บผลล้มต่อคีย์ไว้ที่นี่ ให้ `useMasterRows` อ่านไปเขียนข้างช่องได้
+      (เคลียร์เมื่อคีย์นั้นโหลดสำเร็จ — ของที่หายไปเองต้องไม่ค้างเป็นคำเตือนถาวร) */
+const failures = new Map();   // key → { at, message, hadFallback }
+
+/** สถานะล้มล่าสุดของคีย์นี้ — `null` = ปกติ (อย่าใช้ตัดสินว่า "มีข้อมูลไหม") */
+export function masterLoadState(key) { return failures.get(key) || null; }
+
 const DEFAULT_TTL = MASTER_TTL;
 const cache = new Map();   // key → { at, data, inflight }
 
@@ -170,6 +182,7 @@ export async function cachedMaster(key, loader, ttl = DEFAULT_TTL) {
       const data = await loader();
       cache.set(key, { at: Date.now(), data });
       lsWrite(key, data);
+      failures.delete(key);   // สำเร็จแล้ว = คำเตือนข้างช่องต้องหายไปด้วย
       return data;
     } catch (e) {
       /* 🔴 โหลดพลาด — 3 อย่างที่ "ต้อง" ทำ (ดูรอบ 3 ในหัวไฟล์)
@@ -180,6 +193,7 @@ export async function cachedMaster(key, loader, ttl = DEFAULT_TTL) {
       console.warn('[masterCache] โหลด', key, 'ไม่สำเร็จ — ใช้ค่าเดิมไปก่อน', e);
       const kept = hit?.data ?? lsAny(key)?.data;
       cache.set(key, { at: 0, data: kept });
+      failures.set(key, { at: Date.now(), message: e?.message || 'โหลดไม่สำเร็จ', hadFallback: kept !== undefined });
       try { failSink?.(key, e, { hadFallback: kept !== undefined }); } catch { /* ตัวแจ้งพังห้ามลาม */ }
       return kept ?? [];
     }
@@ -194,6 +208,7 @@ export async function cachedMaster(key, loader, ttl = DEFAULT_TTL) {
 export function invalidateMaster(key) {
   if (key == null) {
     cache.clear();
+    failures.clear();
     try {
       for (let i = localStorage.length - 1; i >= 0; i--) {
         const k = localStorage.key(i);
@@ -202,6 +217,7 @@ export function invalidateMaster(key) {
     } catch { /* localStorage ปิดอยู่ */ }
   } else {
     cache.delete(key);
+    failures.delete(key);
     try { localStorage.removeItem(lsKey(key)); } catch { /* localStorage ปิดอยู่ */ }
   }
 }

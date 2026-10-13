@@ -7,9 +7,9 @@
 
    fallback: ตารางยังไม่ apply / ว่าง → derive distinct จาก dr_products.customer ∪ ship_to_plants.customer_name
    (พฤติกรรมเดิม 2026-09-07) เพื่อไม่ให้ picker ว่างทั้งแอป · แก้ master แล้วเรียก invalidateCustomers() */
-import { useEffect, useState } from 'react';
 import { supabaseDR } from '../supabaseClient';
 import { cachedMaster, invalidateMaster } from './masterCache';
+import useMasterRows from './useMasterRows.js';
 
 const KEY = 'customers:master';
 const normKey = (s) => String(s || '').trim().toUpperCase().replace(/\s+/g, ' ');
@@ -17,7 +17,11 @@ const normKey = (s) => String(s || '').trim().toUpperCase().replace(/\s+/g, ' ')
 async function loadDerived() {
   const [p, s] = await Promise.all([
     supabaseDR.from('dr_products').select('customer').not('customer', 'is', null).limit(5000),
-    supabaseDR.from('ship_to_plants').select('customer_name').then(r => r).catch(() => ({ data: [] })),
+    /* แหล่งเสริม (เติมชื่อที่ยังไม่เคยผลิต · น้ำหนัก n=0) — ตารางอาจยังไม่มี ⇒ ไม่ให้ล้มทั้งก้อน
+       แต่ห้ามไร้ร่องรอย: error จริงต้องเห็นใน log ไม่งั้น "ลูกค้าหาย" หาต้นเหตุไม่ได้ */
+    supabaseDR.from('ship_to_plants').select('customer_name')
+      .then(r => { if (r?.error) console.warn('[useCustomers] อ่าน ship_to_plants ไม่สำเร็จ — ชื่อลูกค้าที่ยังไม่เคยผลิตจะไม่ขึ้น', r.error); return r; },
+            (e) => { console.warn('[useCustomers] อ่าน ship_to_plants ไม่สำเร็จ', e); return { data: [] }; }),
   ]);
   if (p.error) throw p.error;
   const count = new Map();
@@ -50,12 +54,9 @@ export function canonicalCustomer(customers, name) {
   return hit ? hit.name : name;
 }
 
-export default function useCustomers() {
-  const [customers, setCustomers] = useState([]);
-  useEffect(() => {
-    let alive = true;
-    loadCustomers().then(d => { if (alive) setCustomers(d || []); }).catch(() => {});
-    return () => { alive = false; };
-  }, []);
-  return customers;
-}
+/** สถานะโหลดทะเบียน — `{ rows, failed, stale, message, loading, reload }`
+ *  🔴 ช่องเลือกที่ต้องบอกว่า "ลิสต์ว่างเพราะไม่มีของ หรือเพราะโหลดไม่สำเร็จ" ใช้ตัวนี้
+ *     (ตัว default คืนแค่แถว = พฤติกรรมเดิม ไม่ต้องแก้จุดเรียกเก่า) */
+export function useCustomersState() { return useMasterRows(KEY, loadCustomers); }
+
+export default function useCustomers() { return useCustomersState().rows; }
