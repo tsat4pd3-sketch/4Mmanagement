@@ -179,7 +179,7 @@ const CARD_META = {
    ⇒ ย้ายไปโทนเย็นที่ไม่มีความหมายสถานะ (teal / indigo) · การ์ดยังแยกกันออกด้วย emoji + code + สีอื่น */
   'ภาพรวม':                   { code: 'OVW·01', color: '#3dd65c', route: '/obeya?tab=todo', label: 'Overview & Control',    desc: 'งานค้างของส่วนงาน · ผังรวมโรงงาน' },
   // 📺 จอที่ "แขวนทิ้งไว้" — แยกจากภาพรวมเพราะไม่ใช่หน้าที่เปิดมากดทำงาน (nav audit 2026-08-28)
-  'จอแสดงผล':              { code: 'TVB·02', color: '#38bdf8', route: '/tv',           label: 'Wall Displays',           desc: 'ไทม์ไลน์ผลิตทุกไลน์ · จอเฝ้าระวังแขวนห้อง · OEE รายไลน์' },
+  'จอแสดงผล':              { code: 'TVB·02', color: '#38bdf8', route: '/tv',           label: 'Wall Displays',           desc: 'ไทม์ไลน์ผลิตทุกไลน์ · Andon Board · OEE รายไลน์' },
   'ฝ่ายผลิต':                 { code: 'PRD·02', color: '#14b8a6', route: '/daily-report', label: 'Production',              desc: 'เช็คชื่อ-PPE · จัดการไลน์ · Daily Report · Daily Checker · Kaizen' },
   'วิเคราะห์ & รายงาน':       { code: 'ANL·03', color: '#c084fc', route: '/oee-analytics', label: 'Analytics & Reports',    desc: 'OEE · VSM · สอบกลับ Order · ประวัติผลิต · รายงาน/ใบพิมพ์' },
   'พนักงาน & ทักษะ':          { code: 'HRM·04', color: '#22d3ee', route: '/operator',     label: 'People & Skills',         desc: 'ฐานข้อมูลพนักงาน · สกิล & Level Up · OJT · ตารางกะ' },
