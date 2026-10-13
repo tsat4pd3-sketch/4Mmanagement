@@ -3928,6 +3928,13 @@ const RLS_KEYED_TABLES = {
   station_requirements:    ['line_setup:edit', 'line_setup', 'skills:delete', 'skills'],
   shift_schedules:         ['shift_schedule:edit', 'shift_schedule'],
   daily_production_logs:   ['checkin:record', 'checkin', 'management:assign_manpower', 'assign_manpower'],
+  // รอบ 9 (13/10)
+  ot_night_bookings:       ['checkin:record', 'checkin'],
+  line_helpers:            ['checkin:record', 'checkin'],
+  operator_special_tasks:  ['management:assign_special_task', 'assign_special_task'],
+  station_assignment_logs: ['management:assign_manpower', 'assign_manpower'],
+  special_task_types:      ['ot_master:manage', 'ot_master'],
+  leave_types:             ['ot_master:manage', 'ot_master'],
 };
 
 test('🛡️ rls-tightened-tables-need-key — ไฟล์ที่เขียนตารางที่ถูกรัด RLS ต้องอ้างคีย์สิทธิ์ของมันด้วย', () => {
@@ -3937,7 +3944,11 @@ test('🛡️ rls-tightened-tables-need-key — ไฟล์ที่เขี�
     for (const [table, keys] of Object.entries(RLS_KEYED_TABLES)) {
       const writeRe = new RegExp(
         `from\\(\\s*['"\`]${table}['"\`]\\s*\\)[\\s\\S]{0,300}?\\.(insert|update|upsert|delete)\\s*\\(`, 'g');
-      if (!writeRe.test(code)) continue;
+      /* 🔴 แผง CRUD กลาง (<SimpleNameMaster table="x"> / <SimpleMasterPanel table="x">) รับ "ชื่อตาราง"
+         เป็น prop ⇒ ไฟล์ที่ใช้มันไม่มี `from('x').insert` ให้ grep เจอ แต่มันเขียนจริง
+         (เจอรอบ 9: special_task_types / leave_types เขียนจาก Report.jsx แบบนี้) */
+      const panelRe = new RegExp(`table=\\{?\\s*['"\`]${table}['"\`]`, 'g');
+      if (!writeRe.test(code) && !panelRe.test(code)) continue;
       if (keys.some(k => code.includes(k))) continue;
       bad.push(`${relative(ROOT, file)} → เขียน ${table} แต่ไม่พบคีย์ ${keys.slice(0, 2).join(' / ')}`);
     }
