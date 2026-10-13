@@ -352,10 +352,14 @@ const TABLE_ROWS = {
   /* 📊 แผน vs มาจริง (08/10) — เช็คชื่อกระจาย 20 วันล่าสุด · คนตรงกับทะเบียน (id-*) · คละ มา/ลา/ขาด
      ⇒ จอย้อนหลังรายวันมีทั้งกะที่ขาด/ครบ/เกิน/ไม่ได้เช็ค · หน้าอื่นที่อ่านเช็คชื่อวันนี้ยังได้แถววันนี้ (i%20 = 0) */
   shift_schedules: (r, i) => ({ ...r, line_id: 'id-3', dept_name: null, day_team: i % 2 ? 'A' : 'B', work_date: _recentDay(i % 20) }),
+  /* 🎯 คะแนนทักษะคละ 25–100 ให้คนในทะเบียน (id-*) — มีทั้งคนผ่านครบ ผ่านบางข้อ และไม่มีคะแนน */
+  employee_skills: (r, i) => ({ ...r, employee_id: `id-${(i % 14) + 1}`, skill_name: i % 2 ? 'SPOT' : 'GAUGE', score: [25, 50, 75, 100][i % 4] }),
   daily_production_logs: (r, i) => ({ ...r, employee_id: `id-${(i % 14) + 1}`, work_date: _recentDay(i % 20),
     shift: i % 3 ? 'day' : 'night', is_present: i % 6 !== 0, leave_type: i % 12 === 0 ? 'ลาป่วย' : null }),
   /* จุดงาน + จุดประจำ + รูปผัง — ให้สาย "รูปคนบนผัง LAYOUT" ถูกรัน (เดิมไม่มีพิกัด = ไม่มีจุดถูกวาด) */
   workstations: (r, i) => ({ ...r, station_name: `ST-${i} SPOT WELD`, line_id: 'id-3', line_name: LINE_NAME(3),
+    /* 🎯 (12/10) ทักษะที่จุดต้องการ — 2 ใน 3 จุดตั้งไว้ ⇒ แผง "ยืนจุดที่ทักษะยังไม่ถึง" + "ยังไม่ตั้งทักษะ" ถูกรันทั้งคู่ */
+    station_requirements: i % 3 ? [{ skill_name: 'SPOT', min_score: 50 }, { skill_name: 'GAUGE', min_score: 75 }] : [],
     pos_top: isNullish(r) ? null : String(15 + (i * 5) % 70), pos_left: isNullish(r) ? null : String(8 + (i * 7) % 84) }),
   employee_home_positions: (r, i) => ({ ...r, employee_id: `id-${i}`, station_id: `id-${(i % 7) + 1}` }),
   /* 🔴 ใบแจ้งซ่อม MO — ต้องคละ **สถานะจริงของ workflow** (2026-10-06)

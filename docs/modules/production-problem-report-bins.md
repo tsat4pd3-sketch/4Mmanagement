@@ -245,21 +245,19 @@
   🔴 **ห้ามเปลี่ยนเป็น `TO authenticated`** — `supabaseDR` ไม่เคย authenticate (กฎเหล็ก CLAUDE.md)
 - **คนละถังกับ `mtn-images` โดยตั้งใจ** — รูปซ่อมเครื่อง (ของช่าง) กับรูปของเสีย (ของ QA/ผลิต)
   มีอายุเอกสารและคนดูแลคนละชุด ปนถังแล้วแยกไม่ออกตอนจะล้าง
-- ⚠️ `scrap_report_items.image_path` **ยัง drop ไม่ออก — ต้องให้ user รันเอง** (ลองแล้ว 4 ครั้ง 12/10)
-  `drop column` บนตารางนี้ทำให้ช่องทาง MCP ค้างครบ 60 วิแล้ว rollback ทุกครั้ง · **ไม่ใช่การรอ lock**
-  (ตั้ง `lock_timeout='3s'` + `statement_timeout='10s'` แล้วยังค้าง 60 วิ) · ไม่มี view/rule ไหน depend ·
-  ไม่มี transaction อื่นค้าง · `add column` บนตารางเดียวกันผ่านฉลุย ⇒ เป็นข้อจำกัดของ**ท่อ** ไม่ใช่ schema
-  · SQL ที่ต้องรันใน Supabase SQL Editor (project **"Product DB"** / `eyhclzkifitbhbljgoav`):
-    `alter table public.scrap_report_items drop column image_path;`
-  · ปลอดภัย: 8 แถว กรอกไว้ 0 แถว · grep ทั้งรีโปไม่มีโค้ดอ่าน/เขียน
-  · ระหว่างนี้ mark DEPRECATED ด้วย `comment` ไว้ **ห้ามเขียนลงช่องนั้น**
+- ✅ `scrap_report_items.image_path` (คอลัมน์ตาย) **ถอดออกแล้ว 12/10** — user รันเองใน SQL Editor
+  ตรวจกลับแล้วเหลือ 0 คอลัมน์ · ตอนถอดมี 8 แถว กรอกไว้ 0 แถว ไม่มีโค้ดอ่าน/เขียน
+  🔴 **บทเรียน: `drop column` สั่งผ่าน MCP ไม่ได้** (ลอง 4 ครั้ง ค้าง 60 วิแล้ว rollback ทุกครั้ง ·
+  **ไม่ใช่การรอ lock** — ตั้ง `lock_timeout='3s'`+`statement_timeout='10s'` ก็ยังค้าง · `add column`/
+  `comment on column` บนตารางเดียวกันผ่านฉลุย) ⇒ **อย่าลองซ้ำ ส่ง SQL ให้ user รันพร้อมคิวรีเช็คผล**
 
 ### กฎที่ห้ามแก้ที่หน้า
 
 - 🔴 **บีบ/อัปโหลด/ลบ ผ่าน `src/utils/qualityImage.js` เท่านั้น** — ด่าน `quality-photo-via-helper`
   (บทเรียนเดียวกับ `mtnImage.js`: กติกาที่ฝังอยู่ในหน้าแรก ทำให้จุดที่ 2 ต้องก๊อป แล้วตกหล่นทีละข้อ)
   · 1024px + WebP (480px ของรูปโปรไฟล์เล็กเกินกว่าจะเห็นตำหนิ) · นามสกุลจาก `imgExt(blob)` · `uploadOpts()`
-- 🔴 **ช่องกรอกใช้ `<QualityPhotoField>`** — ผ่าน `acceptImageFile()` (HEIC) + `<ImageCropModal allowFull>`
+- 🔴 **ช่องกรอกใช้ `<QualityPhotoField>`** — ผ่าน `acceptImageFile()` (HEIC) + `<ImageCropModal allowFull fullDefault>`
+  (13/10 · คำสั่ง user — เริ่มที่โหมด "ใช้ทั้งรูป" · ตัวเลือกเป็น `<Segmented size="sm">` 2 ปุ่ม ไม่ใช่ช่องติ๊ก · มีด่าน)
   **รูปหลักฐานที่ครอบจนตำหนิหลุดกรอบ = รูปใช้ไม่ได้เลย** ⇒ ต้องกด "ใช้ทั้งรูป" ได้เสมอ
 - 🔴 **รูปเป็นทางเลือก ห้ามทำเป็นช่องบังคับ** (หน้างานใส่ถุงมือ/รีบ บังคับถ่ายทุกใบ = คนเลิกลงข้อมูล)
   · "ยังไม่มีรูป" ต้องเขียนบนจอ ห้ามซ่อนช่องเงียบๆ

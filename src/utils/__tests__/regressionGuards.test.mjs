@@ -1037,6 +1037,16 @@ const RULES = [
     allow: {},
   },
   {
+    id: 'action-photo-via-helper',
+    scan: ['src/pages', 'src/components'], ext: ['.jsx'],
+    re: /storage\s*\.from\(\s*['"]action-images['"]\s*\)/g,
+    why: 'รูปหลักฐานตอนปิด Action Item มีกติกาเดียวกับรูปของเสีย: บีบ webp 1024px · นามสกุลจาก '
+       + 'imgExt(blob) · uploadOpts() (ไม่ใส่ = cacheControl หาย เคยทำ egress ทะลุโควต้าจนทั้ง '
+       + 'organization ถูกล็อก) — ฝังไว้ในหน้าแล้วจุดที่ 2 จะก๊อปแล้วตกหล่น',
+    fix: 'ใช้ uploadActionPhoto(file, id) / removeActionImg(url) จาก src/utils/actionImage.js',
+    allow: {},
+  },
+  {
     id: 'mo-image-via-mtnImage',
     scan: ['src/pages', 'src/components'], ext: ['.jsx'],
     // จับการอัปโหลดขึ้น bucket mtn-images โดยไม่ผ่าน util กลาง
@@ -3808,4 +3818,75 @@ test('🛡️ pptx-theme-r01 — ตัวสร้างเด็คห้า�
     + '   ทำไม: user สั่ง 12/10 ว่าเด็คทุกตัวต้องเป็น Revision 01 — พื้นขาวทุกหน้ารวมปก/ปิด · เขียว 068734 · ส้ม D95323\n'
     + '   แก้ยังไง: import tsg_theme จาก docs/meetings/roadshow_build/ (title_slide / agenda_slide / section_divider / closing_slide)\n'
     + '            เด็ค .pptx เก่าที่ไม่มีสคริปต์ → python3 docs/meetings/roadshow_build/retheme_r01.py <file>\n');
+});
+
+/* ── 🔴 LOT size ≠ Packing — ห้ามยุบ 2 เรื่องเป็นรายการเดียว (12/10 · คำสั่ง user "แยกกันนะ") ──
+   `kanban_standards.lot_size` = ขนาดล็อตผลิต (คุมจังหวะออกใบสั่ง · `pullAccumulator`/`kanbanCalc`)
+   `kanban_standards.qty_per_kanban` = Packing (ชิ้นต่อกล่อง/ต่อบัตร · คุมการบรรจุ-การส่ง)
+   เดิมจอเทียบรวมเป็นแถวเดียว "ไม่ตรง" แล้วนับรวม ⇒ ตัวเลขตอบไม่ได้ว่าต้องไปแก้เรื่องไหนกับใคร */
+test('🛡️ kanban-lot-vs-packing-split — จอเทียบทะเบียน kanban ต้องแยกกอง LOT / Packing', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/components/MonitoringUpload.jsx'), 'utf8'));
+  assert.ok(!/\bdLot\s*\|\|\s*dPack\b|\bdPack\s*\|\|\s*dLot\b/.test(code),
+    '\n\n❌ MonitoringUpload รวม "LOT ไม่ตรง" กับ "Packing ไม่ตรง" เป็นรายการเดียวอีกแล้ว\n'
+    + '   ทำไมห้าม: 2 ค่านี้คุมคนละเรื่อง — lot_size = จังหวะออกใบสั่งผลิต (pullAccumulator/kanbanCalc)\n'
+    + '   · qty_per_kanban = การบรรจุ/ป้ายบัตร · คนละคนตัดสิน · รวมกันแล้วนับ "N พาร์ทไม่ตรง"\n'
+    + '   = ตอบไม่ได้ว่าต้องไปคุยกับใครเรื่องอะไร และเรื่องที่ค้างจะไปบล็อกเรื่องที่ชัดอยู่แล้ว\n'
+    + '   แก้ยังไง: แยกเป็น { lot, pack, noStd } แล้ววาดคนละตาราง (ดู <KbDiffTable>)\n');
+  assert.ok(/kbDiff\s*=\s*\{\s*lot:\s*\[\]\s*,\s*pack:\s*\[\]\s*,\s*noStd:\s*\[\]\s*\}/.test(code),
+    '\n\n❌ ไม่พบการแยกกอง `kbDiff = { lot, pack, noStd }` ใน MonitoringUpload — ดูเหตุผลด้านบน\n'
+    + '   ("ยังไม่มีในทะเบียน" เป็นกองที่ 3 คนละเรื่องกับ "มีแล้วแต่ไม่ตรง")\n');
+});
+
+/* ── Monitoring 12/10 (user): IN ต้องเป็น "คลังกดรับแล้ว" + ORDER บอร์ดแร็คต้องไปถึงหน้า Delivery ── */
+test('🛡️ Monitoring: IN จาก ledger รับเข้า (inAtRef) ไม่ใช่ใบผลิตคอนเฟิร์ม · ORDER บอร์ดแร็คซิงค์ใบส่งของ', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/Monitoring.jsx'), 'utf8'));
+  assert.ok(!/IN_ORDER_STATUS|orderInQty\(/.test(code),
+    '\n\n❌ Monitoring กลับไปนับ IN จากใบผลิตที่คอนเฟิร์ม — ของยังไม่ถึงคลัง (รอสโตร์/คลัง FG กดรับ) แต่ยอดวิ่งเข้าตารางแล้ว\n'
+    + '   แก้: IN = inAtRef(ledger issue ที่คลังอ้างอิง) · ใบรอรับ (stock_receipts pending) เขียนบนจอแยก\n');
+  assert.ok(/inAtRef\(/.test(code), '\n\n❌ Monitoring ไม่ได้คิด IN ผ่าน inAtRef (utils/monitorSystem.js)\n');
+  assert.ok(/rackOrderSyncPlan\(/.test(code) && /syncRackOrder\(/.test(code),
+    '\n\n❌ ช่อง ORDER บอร์ดรายแร็คไม่ซิงค์ customer_shipping_orders — คนพิมพ์ยอดแล้วไม่ขึ้น Shipping Time Chart ต้องไปเพิ่มมือซ้ำ\n');
+  assert.ok(/horizon:\s*\d/.test(code), '\n\n❌ บอร์ดรายวันส่งต้องส่ง horizon ให้ boardPeriods — ไม่งั้นไม่มีคอลัมน์วันนี้ให้พิมพ์\n');
+});
+
+/* ── 📋 ทะเบียนของบอร์ด AM รายวัน ต้องผ่าน cache (13/10 · งานลด egress รอบ "โตตามจำนวนจอ") ──
+   วัดจาก log 09/10: `loadDailyAm()` ถูกเรียกใหม่ทุก event ของ inspections/prod_orders/
+   production_sessions ⇒ ดึง `jigs` 545 + `checklists` 497 + `pm_daily_line_targets` 266
+   = **1,308 ครั้ง/วัน** ทั้งที่ 3 ตารางนี้เป็น "ทะเบียน" เปลี่ยนเดือนละไม่กี่ครั้ง
+   บนจอ TV ที่เปิดค้าง = ยิงทุก 10 นาทีตลอดคืน · 🔴 **ตัวเลขนี้คูณตามจำนวนจอที่เปิด**
+   ⇒ ต้องผ่าน `cachedRows` (ไม่ใช่ `cachedMaster` — บอร์ดนี้ "โหลดพลาด" ต้องไม่กลายเป็น "ว่าง"
+      เพราะว่าง = จอขึ้น "ไม่มีจุดตรวจ" ซึ่งเป็นคำตอบผิดที่ดูเหมือนคำตอบถูก)                */
+test('🛡️ am-board-registries-cached — jigs/checklists/pm_daily_line_targets ใน dailyAmBoard ต้องผ่าน cachedRows', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/lib/dailyAmBoard.js'), 'utf8'));
+  const bad = [];
+  for (const t of ['jigs', 'pm_daily_line_targets', 'checklists']) {
+    const re = new RegExp(`cachedRows\\(\\s*'[^']+'\\s*,[^\\n]*from\\('${t}'\\)`);
+    if (!re.test(code)) bad.push(t);
+  }
+  assert.deepEqual(bad, [], '\n\n❌ ทะเบียนบอร์ด AM ไม่ได้ผ่าน cachedRows: ' + bad.join(', ') + '\n'
+    + '   ผล: จอ AM/ผังรวมโรงงานดึงทะเบียนใหม่ทุกรอบ refresh = 1,308 ครั้ง/วัน และโตตามจำนวนจอ\n'
+    + '   แก้: cachedRows(\'<คีย์>\', () => supabaseDR.from(\'<ตาราง>\')...) + ลงทะเบียนคีย์ใน masterInvalidate.js\n'
+    + '        และทุกจุดที่เขียนตารางนั้นต้องเรียก invalidateTable(\'<ตาราง>\') หลังบันทึกสำเร็จ\n');
+});
+
+/* ── ช่องแนบ "รูปหลักฐานของเสีย" ต้องเริ่มที่โหมด "ใช้ทั้งรูป" (2026-10-13 · คำสั่ง user) ──
+   เดิมโมดัลครอบรูปมีช่องติ๊ก "ใช้ทั้งรูป" ที่ **ไม่ติ๊ก = ครอบ 4:3** ⇒ หน้างานที่รีบ
+   กด "✓ ใช้รูปนี้" เลย จะได้รูปที่ถูกตัดขอบโดยไม่รู้ตัว — รูปหลักฐานที่ตำหนิหลุดกรอบ
+   ใช้เป็นหลักฐานไม่ได้ และ **กู้คืนไม่ได้** (ต้นฉบับไม่ถูกเก็บ เก็บแต่ผลลัพธ์ที่ครอบแล้ว)
+   ⇒ ค่าเริ่มต้นของจุดนี้ต้องเป็น "ทั้งรูป" · อยากครอบต้องตั้งใจกดเลือก
+   ⚠️ กฎนี้คุมแค่ "จุดรูปหลักฐาน" — PMSetup (รูปภาพรวมเครื่อง) ยังเริ่มที่โหมดครอบตามเดิม */
+test('🛡️ quality-photo-full-by-default — QualityPhotoField ต้องส่ง fullDefault ให้ ImageCropModal', () => {
+  const file = join(ROOT, 'src/components/QualityPhotoField.jsx');
+  const code = stripComments(readFileSync(file, 'utf8'));
+  const call = code.match(/<ImageCropModal[\s\S]*?\/>/);
+  assert.ok(call, '\n\n❌ ไม่พบ <ImageCropModal> ใน QualityPhotoField.jsx — ช่องแนบรูปหลักฐานต้องผ่านโมดัลครอบกลางเท่านั้น\n');
+  const bad = [];
+  if (!/\ballowFull\b/.test(call[0])) bad.push('ไม่มี allowFull — ผู้ใช้สลับไปโหมด "ใช้ทั้งรูป" ไม่ได้เลย');
+  if (!/\bfullDefault\b/.test(call[0])) bad.push('ไม่มี fullDefault — ค่าเริ่มต้นกลับไปเป็น "ครอบ" รูปหลักฐานจะถูกตัดขอบเงียบๆ');
+  assert.deepEqual(bad, [],
+    '\n\n❌ <ImageCropModal> ใน src/components/QualityPhotoField.jsx ตั้งค่าไม่ครบ:\n'
+    + bad.map(b => '   • ' + b).join('\n') + '\n'
+    + '   ทำไมสำคัญ: ค่าเริ่มต้นคือสิ่งที่คนรีบๆ หน้าไลน์จะได้จริง — รูปหลักฐานที่ครอบจนตำหนิ\n'
+    + '   หลุดกรอบ ใช้เป็นหลักฐานไม่ได้ และกู้คืนไม่ได้ (เก็บแต่รูปที่ครอบแล้ว)\n'
+    + '   แก้ยังไง: <ImageCropModal ... allowFull fullDefault fullHint="…" />\n');
 });

@@ -16,6 +16,7 @@ import { loadLinesRes } from '../utils/useProductionLines';
 import { inSectionScope } from '../utils/sectionScope';
 import { fetchActiveDowntimes, dtElapsedMin } from '../utils/downtimeAlarm';
 import { buildMan4mPendingMatcher, ppeMissingList } from '../utils/personAlarm';
+import { docRequirement } from '../utils/fourMDoc';
 import { markerScale } from '../utils/markerScale';
 import useIsMobile from '../utils/useIsMobile';
 import { visibleInterval } from '../utils/usePolling';
@@ -693,18 +694,47 @@ export default function Management() {
               toast.info('เข้าตำแหน่งแล้ว — มีใบ 4M Man ของคน/จุดนี้รอเอกสารอยู่แล้ว (ไม่ออกใบซ้ำ)');
               return;
             }
+            /* 📎 ยืมเอกสาร OJT เดิมได้ไหม — กฎอยู่ที่ `utils/fourMDoc.js` ที่เดียว (คำสั่ง user 12/10)
+               เงื่อนไขร่วม: ต้องเคยมีใบ 4M ของคน+จุดนี้ที่ **แนบเอกสารไว้และอนุมัติแล้ว**
+                 (ก) มีประวัติทำจุดนี้ + ทุกสกิลที่จุดต้องการ > 25 ⇒ ใช้ใบเดิมได้ ไม่จำกัดอายุ
+                 (ข) นอกนั้น ⇒ ใบเดิมต้องไม่เกิน 6 เดือน
+               🔴 ใบที่ยัง pending/pending_qa **ไม่นับเป็นหลักฐาน** (ยังไม่ผ่านการตรวจ)
+               🔴 ตารางนี้ไม่มีคอลัมน์ employee/station ⇒ จับคู่จาก `description` ที่ระบบสร้างเอง
+                  (ชื่อคน + ชื่อจุด) — กรองฝั่ง JS ไม่ยัดชื่อลง `ilike` เพราะชื่อคน/ชื่อจุดมี `%` `,` ได้
+                  ปริมาณเล็กมาก (ใบ Man ที่อนุมัติแล้วและมีเอกสารทั้งระบบ = 14 ใบ) จึงถูกกว่าการเสี่ยง filter เพี้ยน
+               🔴 ตรวจใบเดิมไม่ได้ (คิวรีล้ม) = **ถือว่าต้องแนบ** ห้ามยกเว้นเพราะ "ไม่รู้" */
+            const empName = droppedWorker.employees?.name || '';
+            const docRes = await supabase.from('four_m_logs')
+              .select('id, work_date, description')
+              .eq('category', 'Man').eq('status', 'approved')
+              .not('request_image_url', 'is', null)
+              .order('work_date', { ascending: false }).limit(200);
+            if (docRes.error) {
+              toast.error('เข้าตำแหน่งแล้ว แต่ตรวจเอกสาร OJT เดิมไม่สำเร็จ — ยังไม่ได้เปิดใบ ให้เปิดเองที่หน้า 4M: ' + docRes.error.message);
+              return;
+            }
+            const priorDoc = (docRes.data || []).find(l =>
+              empName && (l.description || '').includes(empName)
+              && (l.description || '').includes(station.station_name)) || null;
+            const req = docRequirement({
+              hasHistory, reqScores: fit.details.map(d => d.actual), priorDoc, today,
+            });
             const { error: m4Err } = await supabase.from('four_m_logs').insert([{
               work_date: today,
               line_name: station.line_name,
               category: 'Man',
-              description: desc,
+              // 🔴 ยกเว้นแล้วต้องเขียนเหตุผลลงในใบ ห้ามยกเว้นเงียบ (auditor ต้องเห็นว่ายืมใบไหน)
+              description: req.needDoc ? desc : `${desc} — ${req.reason}`,
               requires_qa: mc.requiresQa,
-              status: 'pending_doc',
+              // ยืมใบเดิมได้ = เข้าคิวอนุมัติปกติ · ยืมไม่ได้ = รอแนบเอกสารก่อน (ยังไม่เข้าคิวอนุมัติ)
+              status: req.needDoc ? 'pending_doc' : 'pending',
+              doc_ref_log_id: req.refLogId,
               change_subtype: manCase === 2 ? 'cross_skill_ok' : 'cross_needs_ojt',
               created_by: (await supabase.auth.getUser()).data.user?.id ?? null,
             }]);
             if (m4Err) toast.error('เข้าตำแหน่งแล้ว แต่เปิดใบ 4M Man ไม่สำเร็จ — ต้องเปิดเองที่หน้า 4M: ' + m4Err.message);
-            else toast.info('เข้าตำแหน่งแล้ว — กรุณาแนบเอกสาร OJT ภายหลัง');
+            else if (req.needDoc) toast.info(`เข้าตำแหน่งแล้ว — ${req.reason}`);
+            else toast.success(`เข้าตำแหน่งแล้ว — ${req.reason} (ใบเข้าคิวอนุมัติแล้ว ไม่ต้องแนบ)`);
             fetchData();
           }
         }

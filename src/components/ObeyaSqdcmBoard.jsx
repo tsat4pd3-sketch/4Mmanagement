@@ -63,6 +63,10 @@ import { defectUnitCost, fmtBaht, lineCostCenter, rateFor, ratePerHour, RATE_COM
 import { notifyEvent } from '../utils/notifyEvent';
 import TimeRangeBar from './TimeRangeBar';
 import Segmented from './Segmented';
+/* 📷 ปิด action ต้องแนบรูปหลักฐานได้ (12/10 · คำสั่ง user) — อัปโหลดผ่าน utils/actionImage.js เท่านั้น
+   `<QualityPhotoField>` เป็นช่องกรอกล้วน (คืน File ให้หน้าแม่) ใช้ซ้ำได้ สัดส่วน 4:3 ชุดเดียวกัน */
+import QualityPhotoField from './QualityPhotoField';
+import { uploadActionPhoto, removeActionImg } from '../utils/actionImage';
 import { LOOKBACK_DAYS, presetRange, addDays, rangeDays, normalizeRange } from '../utils/timeRange';
 import {
   OBEYA_AXES, PERIODS, periodRange, prevRange, statusColor, statusOf, statusWhy, gapToTarget,
@@ -581,14 +585,38 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
       loadActions();
     } finally { setSaving(false); }
   };
-  const setStatus = async (a, status) => {
-    const patch = { status, updated_at: new Date().toISOString() };
+  const setStatus = async (a, status, extra = null) => {
+    const patch = { status, updated_at: new Date().toISOString(), ...(extra || {}) };
     if (status === 'done') patch.done_at = new Date().toISOString();
     // ⚠️ RLS ปฏิเสธ UPDATE = "สำเร็จ 0 แถว ไม่มี error" ⇒ ต้องนับแถวจริง ห้ามเชื่อ !error
     const res = await supabase.from('meeting_action_items').update(patch).eq('id', a.id).select('id');
-    if (!checkWrite(res, 'อัพเดท Action')) return;
-    if (!res.data?.length) return toast.error('ไม่มีสิทธิ์อัพเดทใบนี้ (ติดต่อผู้ดูแลระบบ)');
+    if (!checkWrite(res, 'อัพเดท Action')) return false;
+    if (!res.data?.length) { toast.error('ไม่มีสิทธิ์อัพเดทใบนี้ (ติดต่อผู้ดูแลระบบ)'); return false; }
     setActions(prev => prev.map(x => (x.id === a.id ? { ...x, ...patch } : x)));
+    return true;
+  };
+
+  /* ── ปิด action = บันทึก "ทำอะไรไป" + รูปหลักฐาน (12/10 · คำสั่ง user) ──────────────
+     🔴 ทั้ง 2 ช่อง **ไม่บังคับ** — บังคับเมื่อไหร่คนเลิกกดปิด แล้วบอร์ดเต็มไปด้วยงานค้างปลอม
+     🔴 อัปโหลดรูปก่อน แล้วค่อยเขียนแถว · เขียนแถวไม่ผ่าน = ลบไฟล์ที่เพิ่งอัปทิ้ง (ไม่ให้มีไฟล์กำพร้า) */
+  const [closing, setClosing] = useState(null);   // { a, result, file } | null
+  const [closeSaving, setCloseSaving] = useState(false);
+  const doClose = async () => {
+    if (!closing) return;
+    setCloseSaving(true);
+    let url = null;
+    try {
+      if (closing.file) url = await uploadActionPhoto(closing.file, closing.a.id);
+    } catch (e) {
+      setCloseSaving(false);
+      return toast.error('อัปโหลดรูปไม่สำเร็จ: ' + e.message);   // ล้มที่รูป = ยังไม่ปิดใบ (ห้ามปิดเงียบแล้วรูปหาย)
+    }
+    const extra = { result_value: closing.result?.trim() || null, ...(url ? { result_img: url } : {}) };
+    const ok = await setStatus(closing.a, 'done', extra);
+    setCloseSaving(false);
+    if (!ok) { if (url) removeActionImg(url); return; }
+    toast.success('ปิดงานแล้ว');
+    setClosing(null);
   };
 
   // ── ตัวช่วยวาดกราฟ (หน้าตาเดียวกันทุกแผ่น — ห้ามแต่ละแผ่นตั้งเอง) ────────────────
@@ -1049,8 +1077,13 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
                           <span style={{ fontSize: fs(10), color: 'var(--muted)', whiteSpace: 'nowrap' }}>
                             {a.line_name || '—'} · {(a.assignee || '').trim() || 'ยังไม่ระบุผู้รับผิดชอบ'} · {a.due_date || 'ไม่มีกำหนด'}
                           </span>
+                          {a.result_img && (
+                            <a href={a.result_img} target="_blank" rel="noreferrer" title="รูปหลักฐานที่แนบไว้"
+                              style={{ fontSize: fs(11), textDecoration: 'none' }}>📷</a>
+                          )}
                           {canRecord && (
-                            <button onClick={() => setStatus(a, 'done')} style={{
+                            /* เปิดหน้าต่างปิดงาน (ใส่ผล + รูป) แทนการปิดทันที — ปิดเปล่าๆ ไม่มีหลักฐานว่าแก้อะไร */
+                            <button onClick={() => setClosing({ a, result: a.result_value || '', file: null })} style={{
                               fontSize: fs(10), fontWeight: 700, padding: '1px 7px', borderRadius: 999, cursor: 'pointer',
                               background: 'var(--bg2)', color: '#22c55e', border: '1px solid #22c55e55',
                             }}>ปิด</button>
@@ -1071,6 +1104,43 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
       </div>
       {/* 📖 แถบเปลี่ยนหน้า — โผล่เฉพาะตอนมีมากกว่า 1 หน้า */}
       <BoardPager page={pg} count={pages.length} onPage={setPg} labels={pgLabels} compact={board} />
+
+      {/* ── modal ปิด action (ผลที่ทำ + รูปหลักฐาน · ทั้งคู่ไม่บังคับ) ───────────── */}
+      {closing && (
+        <div className="modal-scroll" style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 2000,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14,
+        }}>
+          <div onClick={e => e.stopPropagation()} style={{
+            background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 10,
+            padding: 16, width: 'min(460px, 100%)', maxHeight: '90%', overflowY: 'auto',
+          }}>
+            <h3 style={{ margin: '0 0 4px', fontSize: 17 }}>✅ ปิดงานติดตาม</h3>
+            <div style={{ fontSize: 12.5, color: 'var(--text2)', marginBottom: 10 }}>
+              {(closing.a.problem || '').trim() || '(ไม่มีหัวข้อ)'}
+            </div>
+            <div style={{ display: 'grid', gap: 9 }}>
+              <label style={{ fontSize: 12.5, color: 'var(--muted)' }}>ทำอะไรไป / ผลที่ได้ (ไม่บังคับ)
+                <textarea value={closing.result} rows={3} onChange={e => setClosing({ ...closing, result: e.target.value })}
+                  style={{ marginTop: 3, fontSize: 13.5 }} placeholder="เช่น เปลี่ยนตัวจับชิ้นงานเป็นแบบ quick clamp · เวลาเปลี่ยนรุ่นลดจาก 25 → 14 นาที" />
+              </label>
+              <QualityPhotoField label="📷 รูปหลักฐาน (ไม่บังคับ)" url={closing.a.result_img || null} file={closing.file}
+                hint="ถ่ายสิ่งที่แก้ไปจริง — เดือนหน้าปัญหาเดิมกลับมาจะได้ย้อนดูได้"
+                onPick={(f) => setClosing({ ...closing, file: f })} />
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
+              <button onClick={() => setClosing(null)} disabled={closeSaving} style={{
+                fontSize: 13, padding: '7px 14px', borderRadius: 8, cursor: 'pointer',
+                background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)',
+              }}>ยกเลิก</button>
+              <button onClick={doClose} disabled={closeSaving} style={{
+                fontSize: 13, fontWeight: 800, padding: '7px 18px', borderRadius: 8, cursor: 'pointer',
+                background: '#22c55e', color: '#06240f', border: 'none',
+              }}>{closeSaving ? '⏳ กำลังบันทึก...' : '✅ ปิดงาน'}</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── modal ตั้ง action ─────────────────────────────────────────────────── */}
       {modal && (

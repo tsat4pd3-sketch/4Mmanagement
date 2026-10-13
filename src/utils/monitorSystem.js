@@ -122,6 +122,46 @@ export function outAtRef(rows = [], locOf = () => null) {
   });
 }
 
+/* 📥 IN = ของที่ **คลังกดรับเข้าแล้ว** ไม่ใช่ "ผลิตคอนเฟิร์มแล้ว" (user 12/10)
+ *  ผลิตคอนเฟิร์ม → ออกใบรอรับ (`stock_receipts` pending) → สโตร์/คลัง FG นับแล้วกด "รับ" → ledger `issue` ที่คลังปลายทาง
+ *  เดิมนับจาก `prod_orders` confirmed ⇒ ยอดวิ่งเข้าตารางทันทีทั้งที่ของยังไม่ถึงคลัง (ค้างรับ 171 ใบเกินกำหนด 12/10)
+ *  · พาร์ทล็อตสโตร์ = ปิดล็อตที่บอร์ดสโตร์ลง `issue` ที่ไลน์ผลิต (คลังอ้างอิงของมัน) — ตัวเดียวกัน */
+export const IN_TXN_TYPES = ['issue'];
+
+/** ของเข้าต่อวันที่คลังอ้างอิง (`mat|work_date` → Σ) — เฉพาะ `approved` + IN_TXN_TYPES */
+export function inAtRef(rows = [], locOf = () => null) {
+  return sumByMatDate(rows, {
+    keep: (r) => {
+      if (!IN_TXN_TYPES.includes(r?.type)) return false;
+      if (r?.status !== undefined && r.status !== 'approved') return false;
+      const loc = locOf(String(r?.mat_no ?? '').trim());
+      return !!loc && String(r?.line_name ?? '').trim() === String(loc).trim();
+    },
+  });
+}
+
+/**
+ * 🚚 ช่อง ORDER ของบอร์ดรายแร็ค (ชีทลูกค้า) → ใบส่งของ `customer_shipping_orders` (user 12/10)
+ * คนพิมพ์ยอดลงบอร์ดแล้วไม่ขึ้น Shipping Time Chart ⇒ ต้องไปเพิ่มมืออีกรอบที่ /delivery
+ * กติกา: ใบที่ยังไม่ส่ง (`pending` · source `monitoring` — ชุดเดียวกับที่ตัวนำเข้าเขียน/ล้าง) ของ
+ *   (ลูกค้า, MAT, วันส่ง) ต้องรวมได้ = ยอดในช่อง − `covered`
+ *   · covered = ส่งไปแล้ว (ทุก source) + ใบรอส่งที่มาจากทางอื่น (เพิ่มมือที่ /delivery · EDI) — กันออเดอร์ซ้อน 2 ใบ
+ *   · ส่งแล้ว/ยกเลิก/ใบจากทางอื่น **ห้ามแตะ** — แก้ได้เฉพาะใบ source `monitoring` ที่ยังไม่ส่ง
+ * @param {{ qty:number|null, covered:number, pending:Array<{id,qty}> }} a  qty = null/≤0 คือล้างช่อง
+ * @returns {{ update?:{id,qty}, insertQty?:number, deleteIds:string[] }}
+ */
+export function rackOrderSyncPlan({ qty, covered = 0, pending = [] } = {}) {
+  const want = Math.max(0, (num(qty) ?? 0) - (num(covered) ?? 0));
+  const rows = (pending || []).filter(r => r?.id);
+  if (!(want > 0)) return { deleteIds: rows.map(r => r.id) };
+  if (!rows.length) return { insertQty: want, deleteIds: [] };
+  const [first, ...rest] = rows;
+  return {
+    ...(num(first.qty) !== want ? { update: { id: first.id, qty: want } } : {}),
+    deleteIds: rest.map(r => r.id),
+  };
+}
+
 /**
  * ยอด FG "ของพอส่งไหม" ณ วันนี้ — จุดยึด (anchor) ของบอร์ด FG
  *   = ของในคลัง FG ตอนนี้ − ใบที่ถึงกำหนด (≤ วันนี้) แต่ยังไม่ส่ง + ใบที่ส่งล่วงหน้าแล้วแต่กำหนด > วันนี้
@@ -179,3 +219,28 @@ export function orderInQty(o) {
  *  🔴 ส่งแล้ว (`shipped`) **ยังนับ** เพราะบอร์ด FG หักยอดตามวันส่งที่ลูกค้าขอ
  *     (ของออกไปแล้วก็ต้องหายจากสต๊อก — ไม่ใช่ว่าหายไปจากความต้องการ) */
 export const DEMAND_SKIP_STATUS = ['cancelled'];
+
+/**
+ * ย้ายดัชนี `mat|วันที่` ไปเป็น `mat|คีย์คอลัมน์` ของบอร์ดรายสัปดาห์ (Argen · 13/10)
+ * วันที่ตกคอลัมน์ไหน = คอลัมน์ล่าสุดที่เริ่ม ≤ วันที่นั้น และยังไม่เกิน 7 วัน · นอกช่วงบอร์ด = ทิ้ง (ไม่ยัดเข้าคอลัมน์ขอบ)
+ * @param {Map<string, number>} idx  ผลจาก sumByMatDate
+ * @param {Array<{key:string,date:string}>} periods  เรียงจากเก่าไปใหม่
+ */
+export function rebucketToWeeks(idx, periods = []) {
+  const out = new Map();
+  if (!(idx instanceof Map) || !periods.length) return out;
+  const ps = periods.map((p) => ({ key: p.key, t: Date.parse(`${String(p.date).slice(0, 10)}T00:00:00Z`) }));
+  const WEEK = 7 * 86400000;
+  for (const [k, v] of idx) {
+    const cut = k.lastIndexOf('|');
+    const mat = k.slice(0, cut);
+    const t = Date.parse(`${k.slice(cut + 1)}T00:00:00Z`);
+    if (!Number.isFinite(t)) continue;
+    let hit = null;
+    for (const p of ps) { if (p.t <= t && t < p.t + WEEK) hit = p.key; }
+    if (!hit) continue;
+    const nk = `${mat}|${hit}`;
+    out.set(nk, (out.get(nk) || 0) + v);
+  }
+  return out;
+}

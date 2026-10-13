@@ -53,3 +53,15 @@ test('routineRows — ไม่มีอะไรค้าง = ว่าง (�
   assert.equal(rows.length, 0)
   assert.equal(counts.lines, 0)
 })
+
+test('routineMapOf — ป้ายสั้นบนผัง · สีแยกจากสถานะเครื่อง (ไม่ใช่แดง/ส้ม/เหลือง)', async () => {
+  const { routineMapOf, ROUTINE_MAP_COLOR } = await import('../prodRoutine.js')
+  const m = routineMapOf([
+    { line: 'Line 60', ng: 0, am: { n: 2, late: 2 }, poka: { n: 1 }, lpa: { layers: ['Leader'] } },
+    { line: 'ASSEMBLY 1', ng: 1, am: null, poka: null, lpa: null },
+  ])
+  assert.deepEqual(m['Line 60'], { color: ROUTINE_MAP_COLOR, label: '📋 AM 2! · PY 1 · LPA' })
+  assert.equal(m['ASSEMBLY 1'].label, '📋 NG 1')
+  assert.ok(!['#ef4444', '#f59e0b', '#facc15', '#22c55e'].includes(ROUTINE_MAP_COLOR))
+  assert.deepEqual(routineMapOf([]), {})
+})

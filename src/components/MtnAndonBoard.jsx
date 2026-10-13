@@ -59,6 +59,7 @@ import FactoryMiniMap from './FactoryMiniMap';
 import ProdProgressStrip from './ProdProgressStrip';
 import StoreWaitCards, { useStoreTv } from './StoreWaitCards';
 import ProdRoutineCard, { useProdRoutine } from './ProdRoutineCard';
+import { routineMapOf, ROUTINE_MAP_COLOR } from '../utils/prodRoutine';
 import { liveChannel } from '../utils/liveChannel';
 
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14 };
@@ -124,6 +125,8 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
      หรืองาน routine อื่นๆ ที่ผลิตต้องทำก็ควรจะโชว์") · hook เรียกทุกแผนก `enabled` คุมการยิง DB */
   const showRoutine = cards === 'production';
   const routine = useProdRoutine({ enabled: showRoutine, inScope, lines: ctxLines });
+  // สีบนผังของไลน์ที่งานประจำค้าง (12/10) — ตัวเลขชุดเดียวกับการ์ด/ชิปพาดหัว
+  const routineMap = useMemo(() => (showRoutine ? routineMapOf(routine.rows) : EMPTY), [showRoutine, routine.rows]);
   const [, setTick] = useState(0);                  // นาฬิกาเดิน — ให้ "กี่นาทีแล้ว" ขยับเอง
 
   /* ความสูงคอลัมน์ขวา = **ความสูงจริงของผัง** (วัดด้วย ResizeObserver ไม่ใช่เดา `100vh - Npx`)
@@ -307,9 +310,13 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
     if (st) return { color: st.color, blink: st.blink, label: `หยุด ${fmtMin(st.min)}` };
     const w = storeWait[lineName];
     if (w) return { color: w.color, blink: false, label: `📦 ${w.label}` };
+    /* 📋 จอผลิต: งานประจำกะค้าง (AM/Poka-Yoke/LPA) — รองจากเครื่องหยุด ก่อน "เปิดกะอยู่" (12/10)
+       สีฟ้าอมเขียวแยกจากสีสถานะเครื่องโดยตั้งใจ · ไม่กระพริบ (ดู ROUTINE_MAP_COLOR) */
+    const rt = routineMap[lineName];
+    if (rt) return { color: rt.color, blink: false, label: rt.label };
     if (openSet.has(lineName)) return { color: '#22c55e', blink: false, label: null };
     return null;   // ไม่ได้เปิดกะ → เทาจาง
-  }, [lineState, openSet, storeWait]);
+  }, [lineState, openSet, storeWait, routineMap]);
 
   /* ── ใบซ่อมค้าง (จาก loader ของส่วนงานซ่อมบำรุง — ไม่ยิงซ้ำ) ── */
   const allMo = useMemo(() => (d.mo || [])
@@ -513,6 +520,7 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
             <span><b style={{ color: '#22c55e' }}>■</b> เปิดกะอยู่</span>
             <span><b style={{ color: '#6b7280' }}>■</b> ไม่ได้เปิดกะ</span>
             {showStore && <span><b style={{ color: '#a855f7' }}>■</b> ไลน์เรียกของ · ป้าย 📦 = รอบส่งค้าง/รอของ (เครื่องหยุดชนะเสมอ)</span>}
+            {showRoutine && <span><b style={{ color: ROUTINE_MAP_COLOR }}>■</b> งานประจำกะค้าง (📋 AM · PY = Poka-Yoke · LPA · ! = เลยกรอบ AM · เครื่องหยุดชนะเสมอ)</span>}
             {showPm && <span>· ผัง<b>ไม่กรองทีม</b> — ไลน์หยุดคือเรื่องของทุกคน (ชิปทีมกรองเฉพาะคิวใบซ่อม/แผน PM)</span>}
             <span>· สีมาจาก <b>กะที่เปิด + downtime ที่คนลงไว้</b> ยังไม่มีสัญญาณรายเครื่อง (ต้องต่อ SCADA/มิเตอร์ก่อน)</span>
           </div>

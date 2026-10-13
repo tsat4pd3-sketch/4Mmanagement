@@ -750,7 +750,7 @@ Reject → status: "rejected" + reject_reason
 12. **helper ที่คืนค่าเปล่าห้ามแกะ `{ data }`** (`loadPairMap`/`loadOpInfo`/`loadProductsMaster`/`loadProductionLines` = undefined เงียบ · มีด่าน) · **`catch {}` แล้วโชว์ "ไม่มีข้อมูล" = จอโกหก**
     · 🔴 **ลิสต์ว่าง 2 ความหมาย** — ทะเบียน picker ผ่าน **`useMasterRows`** → `loadFail` (มีด่าน) · **อ่านไม่ได้แล้วจะเขียน/ลบ = fail-closed**
 
-### Skill Fit — `computeFit(employee, station)` / `fitColor(score)` (📄 `docs/modules/file-structure.md`)
+### Skill Fit — ของใหม่ใช้ `skillFit()` (`src/utils/skillFit.js`) ห้ามก๊อปสูตรเพิ่ม (📄 `docs/modules/file-structure.md`)
 
 ## กฎการทำงานของทุก AI session (Workflow Discipline)
 

@@ -2580,7 +2580,7 @@ export default function Dashboard() {
                         background: f.status === 'approved' ? 'rgba(34,197,94,0.15)' : f.status === 'rejected' ? 'rgba(239,68,68,0.15)' : 'rgba(245,158,11,0.15)',
                         color: f.status === 'approved' ? '#22c55e' : f.status === 'rejected' ? '#ef4444' : '#f59e0b',
                       }}>
-                        {f.status === 'approved' ? '✓ อนุมัติแล้ว' : f.status === 'rejected' ? '✕ ปฏิเสธ' : f.status === 'pending_qa' ? '🔍 รอ QA' : '⏳ รออนุมัติ'}
+                        {f.status === 'approved' ? '✓ อนุมัติแล้ว' : f.status === 'rejected' ? '✕ ปฏิเสธ' : f.status === 'pending_qa' ? '🔍 รอ QA' : f.status === 'pending_doc' ? '📎 รอแนบเอกสาร' : '⏳ รออนุมัติ'}
                       </span>
                       {f.description && <span style={{ fontSize: 13, color: 'var(--text)', width: '100%' }}>{f.description}</span>}
                     </div>

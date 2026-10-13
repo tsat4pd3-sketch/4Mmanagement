@@ -92,8 +92,10 @@ const { role, lineId, team, section, sections, fullName } = useContext(UserConte
 
 ### Skill Fit Scoring (`src/utils/` — ใช้ในหน้าจัดคนเข้าสถานี)
 ```js
-computeFit(employee, station)  // % ของทักษะที่ผ่าน min_score
-fitColor(score)                // 80+ green | 60-79 amber | 40-59 orange | <40 red
+skillFit(reqs, skillMap)  // src/utils/skillFit.js (ของกลาง 2026-10-12) — null = จุดไม่ตั้งทักษะ · details มี assessed
+skillMapOf(employeeSkillRows)
+// ⚠️ ยังมีสำเนาเดิม computeFit ใน Management/Dashboard/OrderTrace (คืน 100 vs null ต่างกันเมื่อจุดไม่ตั้ง) — ของใหม่ห้ามก๊อปเพิ่ม
+fitColor(score)                // Management.jsx — 100 ม่วง | 75+ เขียว | 50+ เขียวอ่อน | 25+ ส้ม | <25 แดง
 ```
 
 ### ของกลางเพิ่ม 2026-10-13
