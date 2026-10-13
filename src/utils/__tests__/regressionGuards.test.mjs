@@ -4150,3 +4150,24 @@ test('🛡️ shared-account-no-delete — canDelete ต้องเช็คบ
     '\n\n❌ ด่านบัญชีกลางอยู่หลัง admin bypass — บัญชี ADMIN เองเป็นบัญชีกลาง\n'
     + '   ⇒ ด่านไร้ผลกับบัญชีที่ลบได้ทุกตาราง · ย้าย `if (_sharedAccount) return false;` ขึ้นบนสุด\n');
 });
+
+
+/* ── 🖥️ ห้ามตั้งตัวแปรท้องถิ่นชื่อ `canDelete` ทับ util (ออดิท 13/10) ──────────────────
+   เจอจริง 5 หน้า: `const canDelete = can('products','delete', role)` ⇒ **อ่านโค้ดเหมือนมีด่าน
+   แต่เป็น `can()` เปล่าๆ** ⇒ ด่าน "บัญชีกลางห้ามลบ" (canDelete ของกลาง) ไม่ทำงานเลย
+   และ grep หา `canDelete(` ก็เจอ = หลงว่าครอบแล้ว · ตัวที่โดน: ลบสินค้า · ปิดเครื่องจักร ·
+   ลบใบ LPA · ลบ event log · ลบ OJT — ของที่ลบแล้วกู้ไม่ได้ทั้งนั้น
+   🔴 ถ้าจะมีตัวแปรสรุปสิทธิ์ลบในหน้า ให้ชื่ออื่น (เช่น `mayDelete`) แล้วค่าต้องมาจาก util    */
+test('🛡️ no-shadow-candelete — ห้ามประกาศตัวแปร/พารามิเตอร์ชื่อ canDelete ในหน้า', () => {
+  const bad = [];
+  for (const f of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const rel = relative(ROOT, f);
+    if (rel === 'src/utils/permissions.js' || rel.includes('__tests__')) continue;
+    const code = stripComments(readFileSync(f, 'utf8'));
+    if (/\b(?:const|let|var)\s+canDelete\s*=/.test(code)) bad.push(rel);
+  }
+  assert.deepEqual(bad, [], '\n\n❌ ประกาศ canDelete ทับ util (ด่านบัญชีกลางจะไม่ทำงาน):\n'
+    + bad.map(b => '   • ' + b).join('\n')
+    + '\n   แก้: ตั้งชื่อ `mayDelete` แล้วเรียก canDelete() ของกลาง\n'
+    + '        import { canDelete as canDeleteUtil } from \'../utils/permissions\';\n');
+});
