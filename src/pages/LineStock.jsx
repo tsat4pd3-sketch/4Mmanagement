@@ -371,7 +371,7 @@ function StockTab({ role, scope }) {
   const slocUsable = !slocReg.failed && (slocReg.rows || []).some(s => s?.is_active !== false && (s?.line_names || []).length);
   const groupMode = slocUsable ? groupBy : 'line';
 
-  /* กลุ่มที่เอาไปวาด — 2 โหมดคืนรูปร่างเดียวกัน (key · title · parts[{mat_no, part_name, qty, byLine}])
+  /* กลุ่มที่เอาไปวาด — 2 โหมดคืนรูปร่างเดียวกัน (key · title · parts[{mat_no, part_name, qty, lineQtys}])
      เพื่อให้ตารางมีตัววาดชุดเดียว (เดิมโหมดไลน์วาดจาก row ดิบ — ก๊อป 2 ชุด = ดริฟต์แน่นอน) */
   const groups = useMemo(() => {
     if (groupMode === 'sloc') {
@@ -384,7 +384,7 @@ function StockTab({ role, scope }) {
       parts: rows.map(r => ({
         mat_no: r.mat_no, part_name: r.part_name,
         qty: parseFloat(r.qty_on_hand) || 0,
-        byLine: [{ line_name: lineName, qty: parseFloat(r.qty_on_hand) || 0 }],
+        lineQtys: [{ line_name: lineName, qty: parseFloat(r.qty_on_hand) || 0 }],
       })),
     }));
   }, [groupMode, filteredStock, slocReg.rows, lines, stockByLine]);
@@ -612,7 +612,7 @@ function StockTab({ role, scope }) {
                           const ks = ksMap[p.mat_no];
                           const name = p.part_name || bomMap[p.mat_no];
                           // ปุ่มจ่ายต้องรู้ไลน์ — แถวที่รวมมาจากหลายไลน์ ให้ไปเลือกในฟอร์ม (ห้ามเดาไลน์แทนคน)
-                          const oneLine = p.byLine.length === 1 ? p.byLine[0].line_name : '';
+                          const oneLine = p.lineQtys.length === 1 ? p.lineQtys[0].line_name : '';
                           return (
                             <tr key={p.mat_no} style={{ opacity: qty <= 0 ? 0.7 : 1 }}>
                               <td style={{ padding:'10px 14px', borderTop:'1px solid var(--border)', fontSize:11.5, color:'var(--muted)' }}>{i + 1}</td>
@@ -622,9 +622,9 @@ function StockTab({ role, scope }) {
                               <td style={{ padding:'10px 14px', borderTop:'1px solid var(--border)', maxWidth:340 }}>
                                 <MatLabel mat={p.mat_no} name={name} size={13} />
                                 {/* รวมข้ามไลน์แล้วต้องกางให้เห็นว่าไลน์ไหนถืออยู่เท่าไหร่ (ยอดรวมที่ไม่มีที่มา = คนไม่เชื่อ) */}
-                                {groupMode === 'sloc' && p.byLine.length > 1 && (
+                                {groupMode === 'sloc' && p.lineQtys.length > 1 && (
                                   <div style={{ fontSize:11, color:'var(--muted)', marginTop:2 }}>
-                                    {p.byLine.map(b => `${b.line_name} ${b.qty.toLocaleString()}`).join(' · ')}
+                                    {p.lineQtys.map(b => `${b.line_name} ${b.qty.toLocaleString()}`).join(' · ')}
                                   </div>
                                 )}
                               </td>

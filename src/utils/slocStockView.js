@@ -22,7 +22,7 @@ const num = (v) => (Number.isFinite(parseFloat(v)) ? parseFloat(v) : 0);
  * @param {{ slocs: Array, lines: Array }} reg  ทะเบียนรหัสคลัง + ทะเบียนไลน์ (ไว้ไล่สายบน)
  * @returns {Array<{key, code, name, kind, lineNames, parts}>}
  *   · `code: null` = กลุ่ม "ยังไม่ผูกพื้นที่" (อยู่ท้ายเสมอ)
- *   · parts[] = { mat_no, part_name, qty, byLine:[{line_name, qty}] } เรียงตาม mat_no
+ *   · parts[] = { mat_no, part_name, qty, lineQtys:[{line_name, qty}] } เรียงตาม mat_no
  */
 export function groupStockBySloc(rows, { slocs = [], lines = [] } = {}) {
   const orderOf = {};
@@ -46,19 +46,19 @@ export function groupStockBySloc(rows, { slocs = [], lines = [] } = {}) {
     const g = groups.get(key);
     if (line) g.lineSet.add(line);
     const mat = (r?.mat_no ?? '').toString();
-    if (!g.partMap.has(mat)) g.partMap.set(mat, { mat_no: mat, part_name: r?.part_name || '', qty: 0, byLine: [] });
+    if (!g.partMap.has(mat)) g.partMap.set(mat, { mat_no: mat, part_name: r?.part_name || '', qty: 0, lineQtys: [] });
     const p = g.partMap.get(mat);
     if (!p.part_name && r?.part_name) p.part_name = r.part_name;
     const q = num(r?.qty_on_hand);
     p.qty += q;
-    p.byLine.push({ line_name: line, qty: q });
+    p.lineQtys.push({ line_name: line, qty: q });
   });
 
   const out = [...groups.values()].map(g => ({
     key: g.key, code: g.code, name: g.name, kind: g.kind,
     lineNames: [...g.lineSet],
     parts: [...g.partMap.values()]
-      .map(p => ({ ...p, byLine: p.byLine.sort((a, b) => b.qty - a.qty || a.line_name.localeCompare(b.line_name)) }))
+      .map(p => ({ ...p, lineQtys: p.lineQtys.sort((a, b) => b.qty - a.qty || a.line_name.localeCompare(b.line_name)) }))
       .sort((a, b) => a.mat_no.localeCompare(b.mat_no)),
   }));
   // เรียงตาม sort_order ของทะเบียน แล้วค่อยรหัส · กลุ่ม "ยังไม่ผูก" ท้ายสุด

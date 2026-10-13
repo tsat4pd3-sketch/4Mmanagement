@@ -26,7 +26,7 @@ test('พาร์ทเดียวกันหลายไลน์ในพ�
   assert.equal(g[0].parts[0].qty, 5080);
   assert.equal(g[0].parts[0].part_name, 'ME09HSA1D1AA', 'ชื่อพาร์ทจากแถวที่มีชื่อ');
   // กางรายไลน์ไว้ใต้แถว — มาก→น้อย · ห้ามซ่อนว่าไลน์ไหนถืออยู่เท่าไหร่
-  assert.deepEqual(g[0].parts[0].byLine, [
+  assert.deepEqual(g[0].parts[0].lineQtys, [
     { line_name: 'Line 60', qty: 3000 },
     { line_name: 'Line 61', qty: 2080 },
   ]);
@@ -62,5 +62,5 @@ test('ยอดติดลบ/ค่าพัง ต้องไม่กลา
     { line_name: 'SUB APRON', mat_no: 'A', qty_on_hand: 'x' },
   ], { slocs: SLOCS, lines: LINES });
   assert.equal(g[0].parts[0].qty, -470);
-  assert.equal(g[0].parts[0].byLine.length, 3);
+  assert.equal(g[0].parts[0].lineQtys.length, 3);
 });
