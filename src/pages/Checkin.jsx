@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext } from 'react';
+import { useState, useEffect, useContext, useMemo } from 'react';
 import { orgValues, sortLike } from '../utils/listOrder';
 import { supabase } from '../supabaseClient';
 import { onlyShopfloorStaff } from '../utils/staffKind';   // 👥 นับคน = เฉพาะพนักงานหน้างาน (กฎ staffKind.js)
@@ -120,6 +120,19 @@ export default function Checkin() {
   const [exporting,      setExporting]      = useState(false);
   const [previewNight,   setPreviewNight]   = useState(false);
   const [calLoaded,      setCalLoaded]      = useState(false);
+
+  /* 🔴 "ใครกะไม่ขึ้นบ้าง" — จัดกลุ่มตามไลน์ ให้แถบเตือนบอกเป็นรายไลน์ได้ (13/10)
+     คนที่ถูกยืมมาช่วยกะนี้ถูกตรึง `assignedShift` ไว้แล้ว จึงไม่เข้าเงื่อนไขนี้โดยอัตโนมัติ */
+  const noShiftRows = useMemo(() => {
+    const by = new Map();
+    for (const e of employees) {
+      if (e?.assignedShift) continue;
+      const nm = lines.find(l => l.id === e.line_id)?.name || e.section || 'ไม่ระบุไลน์';
+      by.set(nm, (by.get(nm) || 0) + 1);
+    }
+    return [...by.entries()].sort((a, b) => b[1] - a[1]);
+  }, [employees, lines]);
+  const noShiftPeople = noShiftRows.reduce((sum, r) => sum + r[1], 0);
 
   /* ── 🤝 ยืมพนักงานข้ามไลน์รายกะ (line_helpers — migration 20260819_line_helpers_main) ──
      หัวหน้าดึงคนไลน์อื่นมาช่วยกะนี้ → โผล่ในรายชื่อเช็คชื่อของไลน์ปลายทาง + ผังจัดกำลังคน
@@ -1411,6 +1424,32 @@ export default function Checkin() {
           fontSize: 13, color: 'var(--amber)', display: 'flex', alignItems: 'center', gap: 8,
         }}>
           ⚠️ <span>ยังไม่มีตาราง shift สำหรับวันนี้ — ไปกำหนดได้ที่หน้า <strong>ตารางกะ</strong></span>
+        </div>
+      )}
+
+      {/* 🔴 "บางคนกะไม่ขึ้น" ต้องบอกว่าใคร/ไลน์ไหน (2026-10-13 · feedback หน้างาน PD2)
+          เดิมเตือนเฉพาะตอน**ทั้งตาราง**ว่าง (noSchedule) ⇒ ไลน์เดียวที่ยังไม่มีกะ = เงียบสนิท
+          หัวหน้าเห็นช่องกะว่างปนกับคนที่มีกะ แล้วเดาเองว่าข้อมูลพนักงานผิด (ของจริง: ตารางกะไม่มีแถวของไลน์นั้น)
+          ⚠️ คนกลุ่มนี้ **ยังอยู่ในลิสต์ให้เช็คชื่อได้ตามปกติ** — คำเตือนนี้อธิบายเหตุ ไม่ได้บล็อกงาน */}
+      {!noSchedule && noShiftRows.length > 0 && (
+        <div style={{
+          padding: '10px 14px', borderRadius: 8, marginBottom: 14,
+          background: 'rgba(239,68,68,0.07)', border: '1px solid rgba(239,68,68,0.28)',
+          fontSize: 12.5, color: 'var(--red)',
+        }}>
+          ⚠️ <strong>{noShiftPeople} คนยังไม่มีกะ</strong> — ตารางกะสัปดาห์นี้ยังไม่มีแถวของไลน์เหล่านี้
+          (และไม่มีไลน์แม่ให้ตกทอด) · เช็คชื่อได้ตามปกติ แต่กะจะว่างและกำลังคนของไลน์นับเป็น 0
+          <div style={{ marginTop: 5, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {noShiftRows.map(([nm, n]) => (
+              <span key={nm} style={{
+                padding: '2px 8px', borderRadius: 999, fontSize: 11.5, fontWeight: 700,
+                background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--red)',
+              }}>{nm} · {n} คน</span>
+            ))}
+          </div>
+          <div style={{ marginTop: 5, fontSize: 11.5, color: 'var(--muted)' }}>
+            แก้ที่หน้า <strong>ตารางกะ</strong> — กด <b>+ กำหนด</b> ที่ไลน์นั้น (ไลน์ที่สร้างใหม่หลังเติมตารางล่วงหน้าไปแล้ว จะไม่มีแถวของตัวเอง)
+          </div>
         </div>
       )}
 
