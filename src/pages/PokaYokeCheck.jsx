@@ -16,6 +16,8 @@ import Page from '../components/Page';
 import FilterBar from '../components/FilterBar';
 import Segmented from '../components/Segmented';
 import { DeleteButton } from '../components/IconButton';
+/* 🔴 "ยังไม่ได้ทดสอบ" ต้องแยกจาก "กะนี้ไม่ได้ผลิต" (13/10 · คำสั่ง user) */
+import { loadRunDays, ranOn } from '../utils/runDays';
 const NO_LINES = [];
 
 /* ── Poka-Yoke Check — ทดสอบอุปกรณ์ error-proofing รายวัน/กะ (TPM · 2026-07-23) ──────
@@ -80,9 +82,14 @@ export default function PokaYokeCheck() {
 
   useEffect(() => { if (!selLine && visibleLines.length) setSelLine(visibleLines[0].name); }, [visibleLines, selLine]);
 
+  /* วันนี้/กะนี้ไลน์นี้เปิดกะไหม — `null` ระหว่างโหลด · `{ok:false}` = อ่านไม่ได้ (⇒ เขียนบนจอว่าไม่รู้) */
+  const [runs, setRuns] = useState(null);
+
   const load = useCallback(async () => {
-    if (!selLine) { setDevices([]); setChecks({}); setLoading(false); return; }
+    if (!selLine) { setDevices([]); setChecks({}); setRuns(null); setLoading(false); return; }
     setLoading(true);
+    // กะนี้ไลน์นี้เปิดกะจริงไหม (DR · คนละ project) — ล้ม = "ไม่รู้" ห้ามแปลว่าไม่ได้ผลิต
+    loadRunDays({ lineNames: [selLine], from: selDate, to: selDate }).then(setRuns);
     const { data: devs } = await supabase.from('pokayoke_devices').select('*').eq('line_name', selLine).order('sort').order('id');
     const list = devs || [];
     setDevices(list);
@@ -137,6 +144,7 @@ export default function PokaYokeCheck() {
     load();
   };
 
+  const ran = ranOn(runs, selDate, selShift);   // true ผลิต · false ไม่ผลิต · null ไม่รู้
   const activeDevs = devices.filter(d => d.is_active);
   const done = activeDevs.filter(d => checks[d.id]).length;
   const failN = activeDevs.filter(d => checks[d.id]?.result === 'fail').length;
@@ -145,6 +153,22 @@ export default function PokaYokeCheck() {
     <Page>
       <PageHeader title="Poka-Yoke Check" icon="🛡️"
         sub={`ทดสอบอุปกรณ์กันความผิดพลาด (error-proofing) ด้วยชิ้น master NG ทุกกะ — จับ NG ได้ = ผ่าน · ${SHIFT_LABEL[selShift]} · ${selDate}`} />
+
+      {/* 🔴 "ยังไม่ทดสอบ" กับ "กะนี้ไม่ได้ผลิต" คนละเรื่อง — ไม่บอก คนอ่านจะนับเป็นขาดตรวจทั้งที่ไลน์ไม่ได้เดิน
+          (หลักเดียวกับ AM ที่แยก notStarted ออกจาก late มาตั้งแต่ 08/10 · utils/dailyCheckDay.js) */}
+      {ran === false && (
+        <div style={{ padding: '9px 13px', borderRadius: 8, marginBottom: 10, fontSize: 12.5,
+          background: 'rgba(148,163,184,0.10)', border: '1px solid var(--border)', color: 'var(--muted)' }}>
+          ⚪ <b>{selLine}</b> ไม่ได้เปิดกะใน {SHIFT_LABEL[selShift]} วันที่ {selDate} — <b>ยังไม่ต้องทดสอบ</b> ·
+          อุปกรณ์ที่ยังว่างอยู่ไม่นับเป็นขาดตรวจ
+        </div>
+      )}
+      {ran == null && runs && (
+        <div style={{ padding: '9px 13px', borderRadius: 8, marginBottom: 10, fontSize: 12.5,
+          background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', color: 'var(--amber)' }}>
+          ❔ อ่านข้อมูลการเปิดกะไม่สำเร็จ — บอกไม่ได้ว่ากะนี้ไลน์นี้เดินหรือไม่ ⇒ ที่ว่างอยู่อาจเป็น "ไม่ได้ผลิต" ไม่ใช่ "ขาดตรวจ"
+        </div>
+      )}
 
       {/* ตัวเลือก — UI-STANDARD 2026-09-24: FilterBar · กะ 2 ตัวเลือก = Segmented */}
       <FilterBar style={{ marginBottom: 12 }}>

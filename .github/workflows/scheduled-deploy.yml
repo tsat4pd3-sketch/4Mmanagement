@@ -1,15 +1,20 @@
-# Deploy เป็นรอบแทนทุก merge (2026-10-13 · build pipeline minutes ของ Render หมดกลางเดือน)
-# 📄 docs/modules/deploy.md §Deploy เป็นรอบ
-# - ตื่นทุกชั่วโมง (นาทีที่ 7) → main มีของใหม่ตั้งแต่รอบก่อน = สั่ง Render deploy
-#   ไม่มีของใหม่ = ไม่ build (ไม่กินนาที) · push แค่ .md / .claude = เลื่อนตัวชี้ ไม่ build
-# - ด่วน: Actions → "Scheduled deploy" → Run workflow (ปุ่ม Deploy now — deploy เสมอ)
-# - จำว่า deploy ถึง commit ไหนแล้วด้วย tag `render-deployed`
-# - ต้องปิด Auto-Deploy ใน Render ก่อน ไม่งั้น build ซ้ำ 2 ทาง
+# Deploy Render แบบ "ตาม merge + กันถี่" (2026-10-13 · pipeline minutes ของ Render หมดกลางเดือน)
+# 📄 docs/modules/deploy.md §Deploy ตาม merge + กันถี่
+# - push เข้า main → ถ้า deploy ล่าสุดเก่ากว่า MAX_WAIT นาที = deploy ทันที
+#   ไม่งั้นรอให้เงียบ QUIET นาที (push ใหม่ระหว่างรอ = ยกเลิกตัวเก่า เริ่มนับใหม่) แต่ไม่เกินครบ MAX_WAIT
+# - ไม่มีของใหม่ = ไม่ build · มีแค่ .md/.claude = เลื่อนตัวชี้ ไม่ build
+# - cron รายชั่วโมง = ตัวสำรอง (cron ของ GitHub ไม่การันตีเวลา — 13/10 ข้าม 3 รอบติด ห้ามพึ่งอย่างเดียว)
+# - ด่วน: Actions → "Scheduled deploy" → Run workflow = deploy ทันทีเสมอ
+# - จำว่า deploy ถึง commit ไหน/เมื่อไหร่ด้วย annotated tag `render-deployed`
+# - ต้องปิด Auto-Deploy ใน Render (render.yaml autoDeploy: false) ไม่งั้น build ซ้ำ 2 ทาง
 name: Scheduled deploy
 
 on:
+  push:
+    branches: [main]
+    paths-ignore: ['**.md', '.claude/**']
   schedule:
-    - cron: '7 * * * *'   # ทุกชั่วโมง นาทีที่ 7 (เลี่ยงคิวต้นชั่วโมง) · ชั่วโมงที่ไม่มีของใหม่ = ไม่ build
+    - cron: '7 * * * *'   # ตัวสำรอง · นาทีที่ 7 เลี่ยงคิวต้นชั่วโมง
   workflow_dispatch:
 
 permissions:
@@ -17,13 +22,18 @@ permissions:
 
 concurrency:
   group: scheduled-deploy
-  cancel-in-progress: false
+  cancel-in-progress: true   # push ใหม่ล้มตัวที่กำลังรอ = debounce
+
+env:
+  QUIET_MIN: 30
+  MAX_WAIT_MIN: 60
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 75
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: main
           fetch-depth: 0
@@ -31,30 +41,44 @@ jobs:
       - name: Decide & deploy
         env:
           HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
-          MANUAL: ${{ github.event_name == 'workflow_dispatch' }}
+          EVENT: ${{ github.event_name }}
         run: |
           set -euo pipefail
           if [ -z "${HOOK:-}" ]; then
             msg="ยังไม่ได้ตั้ง secret RENDER_DEPLOY_HOOK — ไม่มีการ deploy (ดู docs/modules/deploy.md)"
-            if [ "$MANUAL" = "true" ]; then echo "::error::$msg"; exit 1; fi
+            if [ "$EVENT" = "workflow_dispatch" ]; then echo "::error::$msg"; exit 1; fi
             echo "::warning::$msg"; exit 0
           fi
+          git fetch -q --force origin 'refs/tags/render-deployed:refs/tags/render-deployed' || true
 
-          HEAD_SHA=$(git rev-parse HEAD)
+          mark() {  # เลื่อน tag + เวลา (annotated)
+            git -c user.name=deploy-bot -c user.email=deploy-bot@users.noreply.github.com \
+              tag -f -a render-deployed -m "deployed $(date -u +%FT%TZ)" "$1"
+            git push -q -f origin refs/tags/render-deployed
+          }
+
+          HEAD_SHA=$(git rev-parse origin/main)
           LAST=$(git rev-parse -q --verify 'refs/tags/render-deployed^{commit}' || true)
-          echo "main=$HEAD_SHA  last-deployed=${LAST:-none}"
+          LAST_AT=$(git for-each-ref --format='%(taggerdate:unix)' refs/tags/render-deployed)
+          LAST_AT=${LAST_AT:-0}   # tag เก่าแบบ lightweight = ไม่รู้เวลา = ถือว่าเก่า
+          echo "main=$HEAD_SHA last=${LAST:-none} last_at=$LAST_AT event=$EVENT"
 
-          if [ "$MANUAL" != "true" ] && [ -n "$LAST" ]; then
-            if [ "$LAST" = "$HEAD_SHA" ]; then
-              echo "ไม่มีของใหม่ตั้งแต่รอบก่อน — ข้าม"; exit 0
-            fi
-            # ไฟล์ที่ไม่เปลี่ยนเว็บ (ตรงกับ buildFilter ใน render.yaml)
+          if [ "$EVENT" != "workflow_dispatch" ] && [ -n "$LAST" ]; then
+            if [ "$LAST" = "$HEAD_SHA" ]; then echo "ไม่มีของใหม่ — ข้าม"; exit 0; fi
             SITE=$(git diff --name-only "$LAST" "$HEAD_SHA" | grep -vE '\.md$|^\.claude/' || true)
-            if [ -z "$SITE" ]; then
-              echo "มีแค่ไฟล์ .md/.claude — ไม่ build แค่เลื่อนตัวชี้"
-              git tag -f render-deployed "$HEAD_SHA"
-              git push -f origin refs/tags/render-deployed
-              exit 0
+            if [ -z "$SITE" ]; then echo "มีแค่ .md/.claude — เลื่อนตัวชี้ ไม่ build"; mark "$HEAD_SHA"; exit 0; fi
+
+            if [ "$EVENT" = "push" ]; then
+              NOW=$(date +%s)
+              DUE=$(( LAST_AT + MAX_WAIT_MIN*60 ))
+              if [ "$NOW" -lt "$DUE" ]; then
+                WAIT=$(( QUIET_MIN*60 ))
+                [ $(( DUE - NOW )) -lt "$WAIT" ] && WAIT=$(( DUE - NOW ))
+                echo "deploy ล่าสุดยังไม่ครบ ${MAX_WAIT_MIN} นาที — รอ ${WAIT}s (push ใหม่ระหว่างนี้จะยกเลิกรอบนี้)"
+                sleep "$WAIT"
+                git fetch -q origin main
+                HEAD_SHA=$(git rev-parse origin/main)
+              fi
             fi
           fi
 
@@ -63,6 +87,5 @@ jobs:
           if [ "${code#2}" = "$code" ]; then
             echo "::error::Render deploy hook ตอบ HTTP $code — ไม่ได้ deploy"; exit 1
           fi
-          git tag -f render-deployed "$HEAD_SHA"
-          git push -f origin refs/tags/render-deployed
+          mark "$HEAD_SHA"
           echo "สั่ง deploy $HEAD_SHA แล้ว (ดูผล build ที่ Render)"

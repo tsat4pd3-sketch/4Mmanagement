@@ -233,6 +233,9 @@ Reject → status: "rejected" + reject_reason
 ## Layer Process Audit — LPA paperless (2026-07-20)
 
 หน้า `/lpa` (`LayerProcessAudit.jsx`, ฝ่ายผลิต — ย้ายจากหมวด QA/QC ตามคำสั่ง user 2026-07-20) — แทนฟอร์มกระดาษ 2 ใบ: แผนตรวจรายเดือน (ไลน์+กะ) + ใบผลตรวจ
+🔴 **ช่องว่างในตารางตรวจรายวันต้องตอบได้ว่า "ไม่ได้ตรวจ / ไม่ได้ผลิต / ไม่ต้องตรวจวันนั้น"** —
+ตัดสินที่ **`src/utils/dailyCheckDay.js`** (`checkDayState()`) + รู้ว่าวันไหนผลิตจาก `src/utils/runDays.js`
+· **ตัวหาร % = ตรวจแล้ว + ขาดตรวจ เท่านั้น** · 🔴 **อ่านไม่ได้ = `unknown` ห้ามบีบเป็น "ไม่ได้ผลิต"** (มีด่าน)
 > 📄 รายละเอียดเต็ม → `docs/modules/lpa-audit.md`
 
 ---
@@ -757,7 +760,7 @@ Reject → status: "rejected" + reject_reason
 > (อย่าให้มี 2 ชุด — section นี้เป็นเจ้าของเรื่อง **ด่าน build** เท่านั้น)
 > · เอกสารบังคับอ่าน: ทุกงาน `ENGINEERING-PRINCIPLES.md` · UI `UI-CONVENTIONS.md` · สิทธิ์ `PERMISSIONS-DESIGN.md` · DB → §Supabase Projects (**2 projects!**) + migration เสมอ
 
-**build ผ่าน (`npm run build`) ก่อน commit เสมอ** · merge เข้า `main` = **เข้าคิว deploy รอบถัดไป** (ทุกชั่วโมง · `.github/workflows/scheduled-deploy.yml` · ด่วนกด Run workflow) · 🔴 **ห้ามเปิด Auto-Deploy ของ Render คืน** (นาที build หมดกลางเดือน · 📄 `docs/modules/deploy.md`)
+**build ผ่าน (`npm run build`) ก่อน commit เสมอ** · merge เข้า `main` = **deploy แบบกันถี่** (ห่างรอบก่อน ≥60 น. = ทันที · ไม่งั้นรอเงียบ 30 น. · `.github/workflows/scheduled-deploy.yml` · ด่วนกด Run workflow) · 🔴 **ห้ามเปิด Auto-Deploy ของ Render คืน** (นาที build หมดกลางเดือน · 📄 `docs/modules/deploy.md`)
 📄 **ที่มาของทุกด่าน + เคสจริงที่ทำให้ต้องมี → `docs/modules/build-gates.md`** (อ่านก่อนจะแตะ/ถอดด่านใดๆ)
 - **`npm run build` = `check:context` → `lint:critical` → `npm test` → `vite build`** ·
      ตัวรันเทส = `scripts/run-tests.mjs` (เก็บ `src/**/__tests__/*.test.mjs` เอง — **วางไฟล์เทสใหม่แล้วถูกเก็บอัตโนมัติ**)
