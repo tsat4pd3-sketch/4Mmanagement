@@ -146,7 +146,7 @@ export const NAV_ITEMS = [
   { to: '/dashboard',   icon: '📊', label: 'ไทม์ไลน์ผลิตทุกไลน์ (TV)', group: 'จอแสดงผล' },
   /* 📺 จอเฝ้าระวัง (`?dept=` ช่าง/ผลิต/สโตร์) — เต็มจอ ไม่มี sidebar/กระดิ่ง
      render ที่ branch พิเศษใน ProtectedLayout (เหมือนหน้า Home) ไม่ได้อยู่ใน <Routes> ด้านล่าง */
-  { to: '/tv', icon: '📺', label: 'จอเฝ้าระวังแขวนห้อง (ช่าง/ผลิต/สโตร์)', group: 'จอแสดงผล' },
+  { to: '/tv', icon: '📺', label: 'Andon Board (จอแขวน)', group: 'จอแสดงผล' },
   // 📟 บอร์ด OEE ประจำไลน์ (จอ TV หน้าไลน์ · deep-link ?line=) — อ่านตารางเราเท่านั้น เตรียมรับ SCADA เป็น "เซ็นเซอร์"
   { to: '/line-oee', icon: '📟', label: 'OEE รายไลน์ (จอหน้าไลน์)', group: 'จอแสดงผล' },
   { to: '/morning-meeting', icon: '🌅', label: 'ประชุมแถวเช้า',   group: 'ฝ่ายผลิต' },
