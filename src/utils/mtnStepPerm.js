@@ -27,7 +27,9 @@
 
 /* ⚠️ import ได้เฉพาะ util ที่ pure ด้วยกัน (mtnMoForm ไม่แตะ supabase) · ต้องมีนามสกุล .js
    ไม่งั้น `npm test` (node:test รันไฟล์ตรงๆ ไม่ผ่าน Vite) จะ ERR_MODULE_NOT_FOUND */
-import { isMtnFormRow, mtnApprovalState, qaAppliesTo } from './mtnMoForm.js';
+import {
+  isMtnFormRow, mtnApprovalState, qaAppliesTo, isApprovalBlocked, approvalKindPending,
+} from './mtnMoForm.js';
 
 /** ขั้นที่ 1 ไม่อยู่ในตารางนี้ — เป็นการ "เปิดใบ" คุมด้วย mtn_repair:report ตรงๆ */
 export const MTN_STEPS = {
@@ -606,7 +608,7 @@ export function moStatusLabel(order) {
   const st = String(order?.status || '').trim();
   /* ใบที่ติดด่านอนุมัติ ต้องไม่ขึ้น "📣 รอรับงาน" — ช่างเห็นแล้วกดรับไม่ได้ ก็จะกองค้างเงียบ (2026-09-15)
      ⚠️ ตัดสินเฉพาะแถวที่ select `dept_manager_at` มาด้วยจริง (undefined = ไม่รู้ ห้ามเดา) */
-  if (st === 'pending' && order?.purpose && order?.dept_manager_at !== undefined && mtnApprovalState(order).blocked) return MO_LABEL_WAIT_APPROVAL;
+  if (isApprovalBlocked(order)) return MO_LABEL_WAIT_APPROVAL;
   /* ใบ MTN ค้างที่ `handover` ได้ 3 ขั้น (6 หัวหน้าแผนกช่างตรวจ · 7 ผจก.ช่างอนุมัติ · 8 ปิดใบ)
      แยกด้วยเวลาเซ็นจริง — ป้ายต้องบอกว่า "รอใคร" ไม่ใช่เหมารวมว่ารออนุมัติปิด (2026-09-22)
      ⚠️ ฟอร์มอื่น (JIG/DIE/PRODUCTION) `handover` = รอขั้น 7 อนุมัติปิดขั้นเดียว → ป้ายรวมเดิม
@@ -622,6 +624,61 @@ export function moStatusLabel(order) {
   // แถวที่ไม่ได้ select `qa_skipped_at` มาด้วย = ตัดสินไม่ได้ว่าข้ามหรือยัง → ใช้ป้ายรวม ห้ามเดา
   if (order?.qa_skipped_at === undefined) return MO_STATUS_LABEL.checked;
   return isWaitingQa(order) ? MO_LABEL_WAIT_QA : MO_LABEL_WAIT_HANDOVER;
+}
+
+/* ══ 🔒 ด่านอนุมัติก่อนเริ่มงาน = "จังหวะงาน" ที่ไม่มีเลขขั้น ════════════  2026-10-13
+   คำสั่ง user: *"มีงานรอเราอนุมัติ MO แต่เราหาไม่เจอ — ผู้จัดการฝ่ายที่แจ้งต้องอนุมัติให้ MTN ดำเนินการ"*
+
+   ใบ improve/build ที่ยังไม่มีลายเซ็นผู้จัดการ **ช่างกดรับงานไม่ได้** แต่ `nextStepOf()` คืน 2
+   ⇒ ตัวกรอง "รอขั้นไหน" / คิวงานของฉัน / กระดิ่ง เหมารวมไปกองเดียวกับ "รอช่างรับงาน"
+   ⇒ กองนี้ไม่เคยมีชื่อของตัวเองบนจอไหนเลย · **ห้ามกลับไปเทียบ `nextStepOf()` ตรงๆ อีก**
+   ใช้ `moWaitMeta()` ตัวเดียวทุกจอ (ด่าน `regressionGuards`) */
+export const STAGE_APPROVE_FIRST = 'approve_first';
+
+/** meta ของด่านนี้ — รูปร่างเดียวกับ `MTN_STEPS[n]` (จอ/คิวใช้ `icon`/`title`/`whoShort` เหมือนกันหมด)
+ *  `side`/`minRank` = เกณฑ์เดียวกับช่องเซ็นฝั่งผู้แจ้ง (ขั้น 7 ของฟอร์ม JIG/DIE = ผจก. ฝ่ายที่แจ้ง) */
+export const APPROVE_FIRST_META = {
+  stage: STAGE_APPROVE_FIRST, key: 'approve', fallback: null,
+  ownTeam: false, byReporter: false, reporterSide: true, side: 'reporter', minRank: 50,
+  icon: '🔒', title: 'ผู้จัดการอนุมัติ (ก่อนเริ่มงาน)',
+  who: 'ผจก. ของฝ่ายที่แจ้ง (ต้นสังกัดผู้เปิดใบ)', whoShort: 'ผจก.ฝ่ายที่แจ้ง',
+};
+
+/**
+ * "ใบนี้รออะไรอยู่" — `{ stage, step, meta }` ชุดเดียวกันทุกจอ
+ * 🔴 ด่านอนุมัติชนะเลขขั้นเสมอ (ช่างกดรับไม่ได้ = ใบไม่ได้รอช่าง)
+ * `step` เป็น `null` ได้ ⇒ ผู้เรียกที่จะส่งต่อ `canDoStep(step, …)` ต้องเช็ค stage ก่อน
+ */
+export function moWaitMeta(order) {
+  if (isApprovalBlocked(order)) {
+    return { stage: STAGE_APPROVE_FIRST, step: null, meta: APPROVE_FIRST_META };
+  }
+  const mtnForm = isMtnFormRow(order);
+  const step = nextStepOf(order);
+  if (!step) return { stage: null, step: null, meta: null };
+  return { stage: stageOf(step, { mtnForm }), step, meta: stepMeta(step, { mtnForm }) };
+}
+
+/**
+ * ช่องอนุมัติของใบนี้ "รอคนนี้อยู่คนเดียว" ไหม — ใช้ตัดสินว่าจะเข้าชั้น `mine` + ขึ้น badge
+ *
+ * 🔴 กติกาเดียวกับ `soleSignerFor` ของขั้นที่ล็อกตำแหน่ง:
+ *    · ชื่ออยู่ในใบ = ช่องนี้รอคนนี้ตรงๆ (ชนะทุกเกณฑ์)
+ *    · ผู้ถือสิทธิ์ `approve` ต้อง **อยู่ฝั่งผู้แจ้ง + ตำแหน่งถึงเกณฑ์** — ไม่รู้ฝั่ง/ตำแหน่ง = ไม่นับ
+ *    · **`manage_master` ไม่นับ** (หัวหน้าระบบเซ็นแทนได้ ≠ คนที่ช่องนี้รอ) ไม่งั้น admin
+ *      จะได้ใบรออนุมัติทั้งโรงงานเป็น "รอคุณ" = badge ค้างถาวร (ซ้ำรอยกระดิ่งเดิม)
+ */
+export function approvalWaitsOnMe(order, me = {}) {
+  const kind = approvalKindPending(order);
+  if (!kind) return false;
+  const v = canSignMtnApproval(kind, {
+    order, fullName: me.name || '', can: me.can || (() => false),
+  });
+  if (!v.ok) return false;
+  if (v.code === 'named') return true;
+  if (v.code !== 'approve') return false;
+  if (!me.actorSide || me.actorSide !== APPROVE_FIRST_META.side) return false;
+  return me.posRank != null && me.posRank >= APPROVE_FIRST_META.minRank;
 }
 
 /**

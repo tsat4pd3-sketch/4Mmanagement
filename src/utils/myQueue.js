@@ -25,7 +25,9 @@
    (เลขขั้นคนละความหมายระหว่างฟอร์ม JIG/DIE กับ MTN — กฎเหล็กใน CLAUDE.md)
    ═══════════════════════════════════════════════════════════════════════════ */
 import { personKey, normPersonName } from './actorStamp.js';
-import { stepMeta, nextStepOf, canDoStep } from './mtnStepPerm.js';
+import {
+  canDoStep, moWaitMeta, approvalWaitsOnMe, STAGE_APPROVE_FIRST,
+} from './mtnStepPerm.js';
 import { isMtnFormRow } from './mtnMoForm.js';
 import { bkkDateStr } from './workDate.js';
 
@@ -79,10 +81,11 @@ export function isMe({ uid, name }, me) {
  *    ไปโผล่เป็น "ตรวจรับงาน" ที่ผู้แจ้งซึ่งเซ็นไปแล้ว · QA ไม่เห็นในคิวเลย)
  */
 export function moWaitingOn(o = {}) {
-  const mtnForm = isMtnFormRow(o);
-  const step = nextStepOf(o) ?? 0;
-  const meta = step ? stepMeta(step, { mtnForm }) : null;
-  if (!meta) return { step, meta: null, who: null, byName: false };
+  /* 🔴 "รออะไร" ถามที่ `moWaitMeta()` ที่เดียว — **ห้ามเรียก `nextStepOf()` เองที่นี่อีก**
+     ด่านอนุมัติก่อนเริ่มงานไม่มีเลขขั้น (step = null) ถ้าถามจากเลขขั้นจะได้ "รอช่างรับงาน"
+     ทั้งที่ช่างกดรับไม่ได้ ⇒ ใบหายเข้ากองของคนอื่น (13/10 · คำสั่ง user) */
+  const { step, meta } = moWaitMeta(o);
+  if (!meta) return { step: step ?? 0, meta: null, who: null, byName: false };
 
   if (meta.byReporter) {
     return {
@@ -134,6 +137,9 @@ export const inMyScope = (row, me) => scopeStateOf(row, me) === 'in';
 export function soleSignerFor(o, w, me = {}) {
   const m = w?.meta;
   if (!m || w.byName || m.minRank == null) return false;
+  /* 🔒 ด่านอนุมัติก่อนเริ่มงาน = ช่องลายเซ็นนอกลำดับขั้น (ไม่มี `step` ให้ `canDoStep` ตัดสิน)
+     ⇒ เกณฑ์ผู้เซ็นอยู่ที่ `approvalWaitsOnMe()` (mtnStepPerm.js) — กติกาเดียวกับข้างล่างทุกข้อ */
+  if (m.stage === STAGE_APPROVE_FIRST) return approvalWaitsOnMe(o, me);
   if (!me.actorSide || me.actorSide === 'unknown' || me.actorSide !== m.side) return false;
   if (me.posRank == null || me.posRank < m.minRank) return false;
   const r = canDoStep(w.step, {

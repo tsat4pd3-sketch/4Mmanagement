@@ -17,7 +17,7 @@ import { toast } from '../components/Toast';
 import { PURPOSES, CAUSE_CATS, needsPlantManager, needsApprovalFirst, laborAmount, partAmount, sumLabor, sumParts, grandTotal, satScore, mtnApprovalState, purposeOfPrint, qaAppliesTo, isMtnFormRow, QA_SKIP_REASON_PURPOSE, QA_SKIP_REASON_MTN_FORM, needsPlantMgrByCost, orderCostTotal, PLANT_MGR_COST_LIMIT } from '../utils/mtnMoForm';
 import AuditLogViewer from '../components/AuditLogViewer';
 import { can, canDelete, isActionSeeded } from '../utils/permissions';
-import { MO_STATUS_META as STATUS_META, QA_NOT_RELATED, QA_RELATED, QA_SKIP_REASON_STEP4, canBounceBack, canDoStep, canHandoff, canSignMtnApproval, canSkipQa, isMoOpen, isOrderReporter, isQaSkipped, isWaitingQa, lastStep, orderReporterText, nextStepOf, moQaState, mtnCloseStage, moStatusLabel, moStatusMeta, orderInReporterScope, stageOf, stepDenyHint, stepLabel, stepMeta, actorSideOf, stepAssumptions, assumptionHint } from '../utils/mtnStepPerm';
+import { MO_STATUS_META as STATUS_META, QA_NOT_RELATED, QA_RELATED, QA_SKIP_REASON_STEP4, canBounceBack, canDoStep, canHandoff, canSignMtnApproval, canSkipQa, isMoOpen, isOrderReporter, isQaSkipped, isWaitingQa, lastStep, orderReporterText, nextStepOf, moQaState, mtnCloseStage, moStatusLabel, moStatusMeta, orderInReporterScope, stageOf, stepDenyHint, stepLabel, stepMeta, moWaitMeta, actorSideOf, stepAssumptions, assumptionHint } from '../utils/mtnStepPerm';
 import { positionRank } from '../utils/positions';
 import { findOpenOnMachine, dupLevel } from '../utils/mtnDuplicate';
 import { inSectionScope } from '../utils/sectionScope';
@@ -152,7 +152,9 @@ const MO_LIST_COLS = [
   'reported_by_name', 'reporter_prod',
   'repair_done_at', 'accept_at', 'satisfaction',      // แท็บ KPI (first-response · ความพึงพอใจ)
   'quality_related', 'qa_skipped_at',                 // สถานะ QA บนป้าย
-  'dept_manager_at', 'purpose',                       // moStatusLabel() ใช้ตัดสินป้ายใบอนุมัติ
+  /* ด่านอนุมัติก่อนเริ่มงาน — `isApprovalBlocked()` ต้องเห็นทั้ง 3 ช่อง
+     🔴 ขาดช่องใดช่องหนึ่ง = undefined = "ไม่รู้" ⇒ ใบตกกลับไปอยู่กอง "รอช่างรับงาน" เงียบๆ */
+  'dept_manager_at', 'plant_manager_at', 'purpose',
   'mtn_head_at', 'approve_at',                        // แยก 3 ขั้นที่ค้างใน status handover (ขั้น 6/7/8)
 ].join(',');
 const SCOPE_OPTS = [{ v: 'in_line', t: 'ซ่อมในไลน์' }, { v: 'off_line', t: 'ซ่อมนอกไลน์' }];
@@ -191,12 +193,9 @@ const STAGE_EVENT = {
 };
 const stepEventOf = (step, mtnForm) => STAGE_EVENT[stageOf(step, { mtnForm })] || null;
 
-/** ใบนี้รอ "จังหวะงาน" อะไรอยู่ — คืน `stage` (qa/assign/close/…) · `null` = จบแล้ว/ตัดสินไม่ได้
- *  🔴 ต้องผ่าน `stageOf()` เสมอ ห้ามเทียบเลขขั้น (เลขทับกัน 2 ฟอร์ม — กฎใน CLAUDE.md) */
-const waitStageOf = (o) => {
-  const step = nextStepOf(o);
-  return step ? stageOf(step, { mtnForm: isMtnFormRow(o) }) : null;
-};
+/** ใบนี้รอ "จังหวะงาน" อะไรอยู่ — คืน `stage` (qa/assign/approve_first/…) · `null` = จบแล้ว/ตัดสินไม่ได้
+ *  🔴 ต้องผ่าน `moWaitMeta()` เสมอ ห้ามเทียบเลขขั้น (เลขทับกัน 2 ฟอร์ม + ด่านอนุมัติไม่มีเลขขั้น) */
+const waitStageOf = (o) => moWaitMeta(o).stage;
 
 /* "ขั้นไหนใครทำ" ย้ายไป src/utils/mtnStepPerm.js (MTN_STEPS/canDoStep) แล้ว — 2026-09-02
    เดิมเป็น STEP_PERM ที่นี่ แล้วเกณฑ์ถูกเขียนซ้ำ 2 ก้อน (ตัวซ่อนปุ่ม + guard ตอนบันทึก)
@@ -552,10 +551,8 @@ export default function MtnRepair() {
   const waitOpts = useMemo(() => {
     const m = new Map();
     for (const o of beforeWait) {
-      const st = waitStageOf(o);
+      const { stage: st, meta } = moWaitMeta(o);
       if (!st) continue;
-      const step = nextStepOf(o);
-      const meta = stepMeta(step, { mtnForm: isMtnFormRow(o) });
       const cur = m.get(st) || { stage: st, title: meta?.title || st, icon: meta?.icon || '🔧', n: 0 };
       cur.n += 1; m.set(st, cur);
     }
@@ -687,7 +684,7 @@ export default function MtnRepair() {
             {repairTypes.map(r => <option key={r.id} value={r.name}>{r.name}{r.prefix ? ` (${r.prefix})` : ''}</option>)}
           </select>
           {/* 🕰️ "รอขั้นไหน" — ตัวเลือกสร้างจากใบที่มีจริง (ขั้นที่ไม่มีใบค้างไม่ต้องโผล่)
-              ค่าเก็บเป็น `stage` ไม่ใช่เลขขั้น · ป้ายมาจาก `stepMeta()` ห้ามพิมพ์ชื่อขั้นซ้ำ */}
+              ค่าเก็บเป็น `stage` ไม่ใช่เลขขั้น · ป้ายมาจาก `moWaitMeta()` ห้ามพิมพ์ชื่อขั้นซ้ำ */}
           <select value={fWait} onChange={e => setFWait(e.target.value)} aria-label="รอขั้นไหน">
             <option value="">{allOf('ขั้น')}</option>
             {waitOpts.map(w => <option key={w.stage} value={w.stage}>{w.icon} รอ{w.title} ({w.n})</option>)}

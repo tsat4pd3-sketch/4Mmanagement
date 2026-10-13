@@ -42,6 +42,11 @@ const MO_COLS = [
   'reporter_prod', 'reporter_prod_uid', 'reported_by_name', 'reported_by_uid',
   // nextStepOf() ต้องใช้ตัดสินขั้นถัดไป (รอ QA หรือข้ามแล้ว · ช่วงเซ็นปิดของใบ MTN) — 05/10
   'qa_skipped_at', 'purpose', 'mtn_head_at', 'approve_at',
+  /* 🔒 ด่านอนุมัติก่อนเริ่มงาน (`isApprovalBlocked`) — 13/10
+     🔴 ขาดช่องใดช่องหนึ่ง = undefined = "ไม่รู้" ⇒ ใบที่รอ ผจก.เซ็น ตกกลับไปนับเป็น
+        "รอช่างรับงาน" เงียบๆ แล้วไม่เข้าชั้น `mine` ของใครเลย (อาการที่ user เจอ)
+     `dept_manager_name` = เกณฑ์ "ชื่ออยู่ในใบ" ของ canSignMtnApproval() */
+  'dept_manager_at', 'plant_manager_at', 'dept_manager_name', 'plant_manager_name',
 ].join(', ');
 
 const DEAD = ['cancelled', 'rejected'];

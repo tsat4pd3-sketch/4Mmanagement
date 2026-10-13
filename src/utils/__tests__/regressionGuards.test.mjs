@@ -69,6 +69,19 @@ const RULES = [
     allow: {},
   },
   {
+    id: 'mo-wait-stage-via-mowaitmeta',
+    scan: ['src/utils/myQueue.js', 'src/pages/MtnRepair.jsx'], ext: ['.js', '.jsx'],
+    /* จับการถาม "ใบนี้รอขั้นไหน" ด้วย nextStepOf() ตรงๆ ในตัวจัดกอง/ตัวกรอง */
+    re: /(const|let)\s+\w*[Ww]ait\w*\s*=[^\n]*nextStepOf\(/g,
+    why: '🔒 **ด่านอนุมัติก่อนเริ่มงานไม่มีเลขขั้น** — ใบ improve/build ที่ ผจก.ฝ่ายที่แจ้งยังไม่เซ็น '
+       + 'ช่างกดรับงานไม่ได้ แต่ `nextStepOf()` คืน 2 ⇒ ตัวกรอง "รอขั้นไหน" + คิวงานของฉัน + กระดิ่ง '
+       + 'เหมาไปกองเดียวกับ "รอช่างรับงาน" ⇒ **ไม่มีจอไหนบอกว่ารอใคร** คนต้องไปตามกันใน LINE '
+       + '(13/10/2026 · user: "มีงานรอเราอนุมัติ MO แต่เราหาไม่เจอ")',
+    fix: 'ใช้ `moWaitMeta(order)` จาก src/utils/mtnStepPerm.js — คืน { stage, step, meta } ที่ด่านอนุมัติ '
+       + "ชนะเลขขั้น (stage = 'approve_first' · step = null)",
+    allow: {},
+  },
+  {
     id: 'jigs-has-no-department-column',
     scan: ['src'], ext: ['.jsx', '.js'],
     /* select จากตาราง jigs (DR) ที่ขอคอลัมน์ department — ตารางนี้ไม่มีคอลัมน์นั้น */
