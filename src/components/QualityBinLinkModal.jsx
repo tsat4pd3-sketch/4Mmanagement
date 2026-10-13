@@ -103,12 +103,19 @@ export default function QualityBinLinkModal({ defect, session, actorName, existi
         disposed_position: disposedPos.trim() || null,
       } : {}),
       defect_log_id: defect.id,
+      /* 📷 รูปที่หน้างานถ่ายไว้ตอนลงงานเสีย = รูปของชิ้นเดียวกัน ⇒ ติดไปกับใบถังเลย (2026-10-12)
+         เก็บเป็น URL เดียวกัน ไม่ copy ไฟล์ — ใบงานเสียยังอ้างอยู่ ลบใบใดใบหนึ่งไม่ลบไฟล์ทิ้ง
+         ไม่พาไป = คนต้องถ่ายซ้ำที่หน้าถัง ซึ่งของอาจถูกย้ายไปแล้ว */
+      found_img: defect?.defect_img || null,
     }));
     const { data, error } = await supabaseDR.from('quality_bin_records').insert(payload).select('id');
     setSaving(false);
     if (error) {
       toast.error(error.code === '42703'
-        ? 'ยังบันทึกไม่ได้ — ต้อง apply migration 20260819_qbin_link_defect_log ก่อน (แจ้ง admin)'
+        /* 42703 = คอลัมน์ไม่มี · payload นี้ใช้ 2 คอลัมน์ที่มาจากคนละ migration
+           (`defect_log_id` 19/08 · `found_img` 12/10) ⇒ ห้ามระบุชื่อ migration เดียวแบบเดิม
+           ไม่งั้นชี้ให้ admin ไปรัน migration ที่รันไปแล้ว แล้ววนหาไม่เจอว่าขาดตัวไหน */
+        ? `ยังบันทึกไม่ได้ — ตาราง quality_bin_records ขาดคอลัมน์ที่โค้ดนี้ใช้ (${error.message}) · แจ้ง admin ให้ apply migration ที่ค้าง`
         : error.code === '42P01'
           ? 'ยังไม่ได้ติดตั้งตารางถังเหลือง/แดง — แจ้ง admin ให้ apply migration 20260819_quality_bin_records'
           : `บันทึกไม่สำเร็จ: ${error.message}`);

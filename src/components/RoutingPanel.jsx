@@ -14,7 +14,7 @@ import { toast } from '../components/Toast';
 import { activeProcessTypes } from '../utils/processTypes';
 import { nextSeq } from '../utils/routing';
 import useIsMobile from '../utils/useIsMobile';
-import { checkWrite } from '../utils/dbWrite';
+import { checkWriteRows } from '../utils/dbWrite';
 import LineSelect from './LineSelect';
 import MachineSelect from './MachineSelect';
 import { DeleteButton } from './IconButton';
@@ -133,8 +133,10 @@ export default function RoutingPanel({ canEdit, lines = [] }) {
     if (!a || !b) return;
     const { error } = await supabaseDR.from('part_routings').update({ seq: -a.seq }).eq('id', a.id);
     if (error) { toast.error(error.message); return; }
-    checkWrite(await supabaseDR.from('part_routings').update({ seq: a.seq }).eq('id', b.id), 'บันทึกเส้นทาง');
-    checkWrite(await supabaseDR.from('part_routings').update({ seq: b.seq }).eq('id', a.id), 'บันทึกเส้นทาง');
+    /* 🔴 นับแถว (กฎเขียน DB ข้อ 2) — แถว a ถูกพักไว้ที่ seq ติดลบแล้ว
+       ถ้า 2 คำสั่งนี้โดน 0 แถวเงียบๆ ลำดับขั้นจะค้างเป็นเลขลบ = เส้นทางผลิตเพี้ยนทั้งพาร์ท */
+    checkWriteRows(await supabaseDR.from('part_routings').update({ seq: a.seq }).eq('id', b.id).select('id'), 'บันทึกเส้นทาง');
+    checkWriteRows(await supabaseDR.from('part_routings').update({ seq: b.seq }).eq('id', a.id).select('id'), 'บันทึกเส้นทาง');
     loadSteps(sel.mat_no);
   };
 

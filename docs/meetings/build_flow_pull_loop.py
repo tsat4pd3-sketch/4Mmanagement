@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
-"""โฟลว์การเรียกงาน ผลิต → สโตร์ (Production Pull Loop) — ประชุม 25/09/2026
+"""โฟลว์การเรียกงาน ผลิต → สโตร์ (Production Pull Loop) — ประชุม 25/09/2026 · ธีม TSG R01 (12/10)
 ตัวเลขทุกตัวมาจากคิวรีจริง 25/09/2026 (Main ewhdfqwfwofivojtsizn · DR eyhclzkifitbhbljgoav)"""
+import os, sys
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "roadshow_build"))  # ธีมกลาง TSG R01
 import tsg_theme as T
 from tsg_theme import (PRES_GREEN, rect, text, head, footer, blank, new_pres, title_slide,
                        GREEN_D, GREEN_M, GREEN_TINT, ORANGE, ORANGE_LT, GREY, AMBER, WHITE, GOLD)
@@ -221,15 +223,11 @@ for no, who, what, when, tone in AC:
     y += h + 0.09
 pg(s)
 
-# ── S7 Closing ─────────────────────────────────────────────────────────────
-s = blank(p)
-rect(s, 0, 0, T.SW, T.SH, fill=GREEN_D)
-text(s, 1.0, 2.55, 11.3, 0.9,
-     [[("ของทุกชิ้นที่เข้าไลน์ ต้องมีใบในระบบ", {"sz": 34, "b": True, "c": WHITE})]], align=PP_ALIGN.CENTER)
-text(s, 1.0, 3.55, 11.3, 0.6,
-     [[("ไม่มีใบ = วัดไม่ได้ว่าช้าตรงไหน = แก้ไม่ได้", {"sz": 20, "b": True, "c": GOLD})]], align=PP_ALIGN.CENTER)
-text(s, 1.0, 4.65, 11.3, 0.5,
-     [[("Before We Build Parts, We Build People", {"sz": 16, "b": True, "i": True, "c": PRES_GREEN})]], align=PP_ALIGN.CENTER)
+# ── S7 Closing (R01: พื้นขาว) ──────────────────────────────────────────────
+PAGE[0] += 1
+T.closing_slide(p, PAGE[0], "ของทุกชิ้นที่เข้าไลน์ ต้องมีใบในระบบ", [
+    ("ไม่มีใบ = วัดไม่ได้ว่าช้าตรงไหน = แก้ไม่ได้", ORANGE),
+    ("Before We Build Parts, We Build People", GREEN_M)])
 
-p.save("flow_pull_loop.pptx")
+p.save(os.path.join(os.path.dirname(os.path.abspath(__file__)), "TSAT_Production_Pull_Loop_Flow_2026-09-25.pptx"))
 print("saved", PAGE[0] + 1, "slides")

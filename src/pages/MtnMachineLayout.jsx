@@ -18,7 +18,7 @@ import FactoryMap from './FactoryMap'
 import { jigEquipTypeOf } from '../utils/equipmentKinds'
 import useTabParam from '../utils/useTabParam'
 import { monthKeyOf, monthRange, shiftMonth, monthLabel, fmtKwh, fmtBaht, deltaPct } from '../utils/energy'
-import { checkWrite } from '../utils/dbWrite';
+import { checkWrite, checkWriteRows } from '../utils/dbWrite';
 import { uploadOpts } from '../utils/storageUpload';
 import Page, { Hub } from '../components/Page';
 import PageHeader from '../components/PageHeader';
@@ -394,13 +394,14 @@ export default function MtnMachineLayout({ setupMode = false }) {
     if (!editMode) return
     hist.pushHistory()
     setFacPoints(prev => prev.map(p => p.id === pointId ? { ...p, pos_top: pct.top, pos_left: pct.left } : p))
-    checkWrite(await supabaseDR.from('pm_facility_points').update({ pos_top: pct.top, pos_left: pct.left }).eq('id', pointId), 'บันทึกผัง');
+    /* นับแถว — จอขยับหมุดไปแล้วบรรทัดบน ถ้าเขียนไม่ติดมันจะเด้งกลับที่เดิมตอนโหลดใหม่ */
+    checkWriteRows(await supabaseDR.from('pm_facility_points').update({ pos_top: pct.top, pos_left: pct.left }).eq('id', pointId).select('id'), 'บันทึกตำแหน่งบนผัง');
   }
   const removePoint = async (pointId) => {
     if (!editMode) return
     hist.pushHistory()
     setFacPoints(prev => prev.filter(p => p.id !== pointId))
-    checkWrite(await supabaseDR.from('pm_facility_points').delete().eq('id', pointId), 'บันทึกผัง');
+    checkWriteRows(await supabaseDR.from('pm_facility_points').delete().eq('id', pointId).select('id'), 'ถอดอุปกรณ์ออกจากผัง');
   }
 
   /* ── enrich markers for the current view + department filter ── */

@@ -38,12 +38,12 @@ comment on index public.monitoring_shipments_key_uniq is
 comment on column public.monitoring_shipments.sheet is
   'ชีทต้นทางในไฟล์ (110T / Argen / TSPK …) — ไม่มี = '''' ห้าม null (เป็นส่วนหนึ่งของคีย์ upsert)';
 
--- ══ ของเก่าที่เหลือทิ้งไว้โดยเจตนา ════════════════════════════════════════════════
--- `monitoring_shipments_uniq` (expression index) ตอนนี้ **ซ้ำซ้อน** กับตัวใหม่
--- (sheet เป็น NOT NULL แล้ว ⇒ coalesce(sheet,'') = sheet เป๊ะ) — ไม่ผิด แค่เปลืองตอนเขียน
--- ⚠️ DROP INDEX รันผ่าน MCP ไม่ได้ (ค้างทุกท่า · พิสูจน์แล้ว 05/10) ⇒ ถ้าจะเก็บกวาด
---    ให้ user รันบรรทัดนี้เองใน SQL Editor ของ project "Product DB":
+-- ══ index เก่า — **ถอดแล้ว 2026-10-12** (user รันเองใน SQL Editor) ════════════════
+-- `monitoring_shipments_uniq` (expression `coalesce(sheet,'')`) ซ้ำซ้อนกับตัวใหม่
+-- (sheet เป็น NOT NULL แล้ว ⇒ coalesce(sheet,'') = sheet เป๊ะ) จึงถอดทิ้งไป:
 --      drop index if exists public.monitoring_shipments_uniq;
+-- ตรวจหลังถอด (12/10): index เหลือ 3 ตัว · 2,324 แถว · คีย์ซ้ำ 0 ⇒ ยังกันซ้ำได้เท่าเดิม
+-- ⚠️ DROP INDEX รันผ่าน MCP ไม่ได้ (ค้างทุกท่า · พิสูจน์แล้ว 05/10) — ครั้งหน้าก็ต้องให้ user รันเอง
 --
 -- ══ ตรวจผลหลังรัน ═══════════════════════════════════════════════════════════════
 --   select indexname from pg_indexes where tablename='monitoring_shipments' order by 1;

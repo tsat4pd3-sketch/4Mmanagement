@@ -1,4 +1,5 @@
 import { useState, useEffect, useContext, useMemo, useRef } from 'react';
+import { LPA_LAYERS } from '../utils/prodRoutine';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
@@ -22,6 +23,9 @@ import FilterBar from '../components/FilterBar';
 import Segmented from '../components/Segmented';
 import { ALL } from '../utils/filterLabels';
 import { DeleteButton } from '../components/IconButton';
+/* 🔴 ห้ามถอด — ด่านก่อนลบข้อในทะเบียน + ตัวกู้ข้อที่ถูกถอดออกจากเช็คลิสต์ให้ใบย้อนหลัง
+   (เคส 12/10: ลบข้อ common 2 ข้อ = หายจากใบตรวจทุกไลน์ · ดู src/utils/lpaQuestionRefs.js) */
+import { loadLpaQuestionRefs, lpaQuestionBlockMessage, lpaDeleteConfirmText, savedOnlyAnswers } from '../utils/lpaQuestionRefs';
 
 /* ══════════════════════════════════════════════════════════════
    📋 Layer Process Audit (LPA) — paperless แทนฟอร์มกระดาษ 2 ใบ:
@@ -35,12 +39,8 @@ import { DeleteButton } from '../components/IconButton';
 const FORM_NO = 'FM-QMR-008 Rev.01';
 const EFFECTIVE = '12/05/2017';
 
-const LAYERS = [
-  { key: 'leader', label: 'Leader', freq: 'ทุกวัน', planKey: 'plan_leader' },
-  { key: 'supervisor', label: 'Supervisor', freq: 'รายสัปดาห์', planKey: 'plan_supervisor' },
-  { key: 'manager', label: 'Manager', freq: 'รายเดือน', planKey: 'plan_manager' },
-  { key: 'gm', label: 'GM', freq: 'รายไตรมาส', planKey: 'plan_gm' },
-];
+// ชั้นผู้ตรวจ — ที่เดียวทั้งระบบ (จอ TV ฝ่ายผลิตอ่านชุดเดียวกันเพื่อนับ "แผนวันนี้ยังไม่ตรวจ" · 12/10)
+const LAYERS = LPA_LAYERS;
 const CATEGORIES = [
   { key: 'safety', label: 'Safety & 5ส.', full: 'Safety & 5S Related (ความปลอดภัยและเกี่ยวกับ 5ส.)' },
   { key: 'quality', label: 'Product & Quality', full: 'Product & Quality (เกี่ยวข้องกับการผลิต & ตรวจสอบคุณภาพ)' },
@@ -161,7 +161,11 @@ export default function LayerProcessAudit() {
 
   /* questions master */
   const [qEditing, setQEditing] = useState(null);
-  const [qScope, setQScope] = useState(''); // หน้า ⚙️ คำถาม: '' = ทุกไลน์ (common) · ชื่อไลน์ = จัดการเฉพาะไลน์นั้น
+  const [qScope, setQScope] = useState(''); // หน้า ⚙️ คำถาม: '' = ทะเบียนกลาง (common) · ชื่อไลน์ = จัดการเฉพาะไลน์นั้น
+  /* 🔴 เปิดแท็บ ⚙️ มา ต้องลงที่ "ไลน์ของตัวเอง" ก่อนเสมอ ไม่ใช่ทะเบียนกลาง (2026-10-12 · คำสั่ง user)
+     เคสจริง 02/10: คนตั้งใจเอาข้อออกจากไลน์ตัวเอง แต่จอเปิดมาที่ทะเบียนกลาง เลยกดลบของส่วนรวมทิ้ง
+     `qScopePicked` = เคยเลือกเองหรือยัง — เลือกแล้วห้าม auto เปลี่ยนทับ (รวมถึงตอนเลือก "ทะเบียนกลาง" เอง) */
+  const [qScopePicked, setQScopePicked] = useState(false);
   const [printing, setPrinting] = useState(false);
   const [docReady, setDocReady] = useState(false); // ทะเบียนเอกสารโหลดแล้ว → subtitle/ปุ่มดึงเลขฟอร์มจาก registry
 
@@ -471,8 +475,25 @@ export default function LayerProcessAudit() {
     finally { setSavingPlan(false); }
   };
 
+  /* ── แท็บ ⚙️ หัวข้อตรวจ: ลงที่ไลน์ของตัวเองก่อนเสมอ + สรุปที่มาของเช็คลิสต์ ── */
+  useEffect(() => {
+    if (tab === 'questions' && !qScopePicked && selLine) setQScope(selLine);
+  }, [tab, qScopePicked, selLine]);
+
+  /* "เช็คลิสต์ของไลน์นี้ประกอบจากอะไรบ้าง" — ดึงจากทะเบียนกลางกี่ข้อ ปิดไว้กี่ข้อ ของตัวเองกี่ข้อ */
+  const qScopeStats = useMemo(() => {
+    if (!qScope) return null;
+    const act = questions.filter(q => q.is_active);
+    const master = act.filter(q => !q.line_name);
+    const off = master.filter(q => (q.hidden_for_lines || []).includes(qScope)).length;
+    return { off, used: master.length - off, own: act.filter(q => q.line_name === qScope).length };
+  }, [questions, qScope]);
+
   /* ═════════ TAB: บันทึกผลตรวจ ═════════ */
   const auditQuestions = useMemo(() => questionsFor(selLine, auditDate), [questions, selLine, auditDate]);
+  /* ข้อที่ "ตรวจไปแล้วแต่วันนี้ไม่อยู่ในเช็คลิสต์" (ถูกลบ/ปิดใช้/ซ่อนไลน์ทีหลัง) — ต้องยังโชว์ในใบเดิม
+     🔴 ใบที่บันทึกแล้ว = บันทึก ไม่ใช่ใบที่ generate ใหม่ · อ่านอย่างเดียว (แก้ไม่ได้ เพราะไม่มีข้อให้อ้างแล้ว) */
+  const removedAnswers = useMemo(() => savedOnlyAnswers(draft?.answers, auditQuestions), [draft?.answers, auditQuestions]);
 
   useEffect(() => {
     if (!selLine || tab !== 'audit') return;
@@ -485,7 +506,9 @@ export default function LayerProcessAudit() {
       setAuditPlanStations([...new Set((pl?.lpa_plan_days || []).map(d => (d.station || '').trim()).filter(Boolean))]);
       if (existing) {
         const ans = {};
-        (existing.lpa_audit_answers || []).forEach(a => { if (a.question_id) ans[a.question_id] = { answer: a.answer, note: a.note || '' }; });
+        /* เก็บ `question_text` ที่ snapshot ไว้ตอนตรวจด้วย — ข้อที่ถูกลบ/ปิดใช้ทีหลังจะไม่มีคำถาม
+           ให้ดูอีกแล้ว ถ้าไม่พกข้อความมา ใบเก่าจะหายไปเงียบๆ (ดู savedOnlyAnswers) */
+        (existing.lpa_audit_answers || []).forEach(a => { if (a.question_id) ans[a.question_id] = { answer: a.answer, note: a.note || '', text: a.question_text || '' }; });
         setDraft({ id: existing.id, station: existing.station || planStation, auditor_name: existing.auditor_name || fullName || '', auditor_sig_url: existing.auditor_sig_url || null, answers: ans });
       } else {
         setDraft({ id: null, station: planStation, auditor_name: fullName || '', auditor_sig_url: myProfile?.signature_url || null, answers: {} });
@@ -541,12 +564,18 @@ export default function LayerProcessAudit() {
       if (error) throw error;
       const { error: delErr } = await supabase.from('lpa_audit_answers').delete().eq('audit_id', saved.id);
       if (delErr) throw delErr;
-      const { error: insErr } = await supabase.from('lpa_audit_answers').insert(
-        auditQuestions.map(q => ({
+      /* 🔴 ต้องเขียนกลับ "ข้อที่ถูกถอดออกจากเช็คลิสต์ไปแล้ว" ด้วย — ของเดิม delete-then-insert
+         เฉพาะข้อที่ยังอยู่ ⇒ แค่กดบันทึกซ้ำใบเก่า คำตอบของข้อที่ถูกลบจะหายถาวรรอบสอง */
+      const { error: insErr } = await supabase.from('lpa_audit_answers').insert([
+        ...auditQuestions.map(q => ({
           audit_id: saved.id, question_id: q.id, question_text: q.question,
           answer: draft.answers[q.id].answer, note: draft.answers[q.id].note?.trim() || null,
-        }))
-      );
+        })),
+        ...removedAnswers.map(a => ({
+          audit_id: saved.id, question_id: a.question_id, question_text: a.question_text,
+          answer: a.answer, note: a.note?.trim() || null,
+        })),
+      ]);
       if (insErr) throw insErr;
       // แจ้งเฉพาะ "เจอข้อบกพร่อง" (ตอบ N/T) — ตรวจผ่านล้วนไม่ต้องรบกวนใคร
       const finds = auditQuestions.filter(q => ['N', 'T'].includes(draft.answers[q.id]?.answer));
@@ -611,8 +640,18 @@ export default function LayerProcessAudit() {
     if (error) { toast.error('บันทึกไม่สำเร็จ (ต้อง apply migration hidden_for_lines ก่อน): ' + error.message); return; }
     setQuestions(prev => prev.map(x => x.id === q.id ? { ...x, hidden_for_lines: next } : x));
   };
+  const [qBusy, setQBusy] = useState(false);
   const deleteQuestion = async (q) => {
-    if (!window.confirm(`ลบคำถาม "${q.question.slice(0, 50)}"? (ผลตรวจเก่าเก็บข้อความ snapshot ไว้แล้ว ไม่หาย)`)) return;
+    /* 🔴 นับปลายทางก่อนถาม — ถามแล้วค่อยปฏิเสธ = คนกดยืนยันไปแล้วแต่ไม่เกิดอะไร
+       นับไม่ได้/โยน = **ไม่ลบ** (fail-closed) · มีผลตรวจอ้างอยู่ = ให้ "⏸ ปิดใช้งาน" แทน */
+    setQBusy(true);
+    let refs = null;
+    try { refs = await loadLpaQuestionRefs(supabase, q.id); } catch { refs = null; }
+    setQBusy(false);
+    const block = lpaQuestionBlockMessage(q, refs);
+    if (block) { toast.error(block); return; }
+    // ยืนยันต้องบอกขอบเขตเสมอ (common = กระทบทุกไลน์ · คนกดมักไม่รู้ตัว — คำสั่ง user 12/10)
+    if (!window.confirm(lpaDeleteConfirmText(q))) return;
     const { error } = await supabase.from('lpa_questions').delete().eq('id', q.id);
     if (error) { toast.error(error.message); return; }
     setQuestions(prev => prev.filter(x => x.id !== q.id));
@@ -1064,6 +1103,36 @@ ${issuesHtml}
             );
           })}
 
+          {/* 📦 ข้อที่ตรวจไปแล้ว แต่วันนี้ไม่อยู่ในเช็คลิสต์ (ถูกลบ/ปิดใช้/ซ่อนไลน์ทีหลัง)
+              🔴 ห้ามซ่อน — ใบที่บันทึกแล้วต้องอ่านได้ครบตามที่ตรวจจริง ไม่งั้นใบเก่าดูเหมือนตรวจน้อยข้อ
+                 (เคส 12/10: ลบข้อ common 2 ข้อ ⇒ คำตอบกำพร้า 2,444 แถว ใน 581 ใบ หายจากจอทันที)
+              อ่านอย่างเดียว: ข้อถูกถอดไปแล้ว แก้คำตอบไม่ได้ แต่ข้อความ/คำตอบเดิมยังอยู่ครบ */}
+          {removedAnswers.length > 0 && (
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: '#f59e0b', padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
+                📦 ข้อที่ถอดออกจากเช็คลิสต์แล้ว — เก็บไว้จากตอนตรวจ ({removedAnswers.length} ข้อ)
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--muted)', padding: '4px 0' }}>
+                ข้อเหล่านี้ถูกลบ/ปิดใช้งาน/ซ่อนของไลน์นี้ไปหลังวันที่ตรวจ — แสดงไว้ให้ใบตรวจอ่านครบตามที่ตรวจจริง (แก้ไม่ได้)
+              </div>
+              {removedAnswers.map(a => {
+                const m = ansMeta(a.answer);
+                return (
+                  <div key={a.question_id} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '7px 0', borderBottom: '1px dashed var(--border)', flexWrap: 'wrap' }}>
+                    <div style={{ flex: '1 1 380px', fontSize: 13, color: 'var(--text2)' }}>
+                      {a.question_text || <i style={{ color: 'var(--muted)' }}>(ไม่ได้เก็บข้อความคำถามไว้)</i>}
+                      {a.note && <div style={{ fontSize: 11, color: 'var(--muted)' }}>↳ {a.note}</div>}
+                    </div>
+                    <span style={{
+                      minWidth: 40, textAlign: 'center', padding: '6px 8px', borderRadius: 7, fontWeight: 800, fontSize: 13,
+                      border: '1.5px solid ' + (m?.color || 'var(--border2)'), background: m?.color || 'var(--bg3)', color: m ? '#fff' : 'var(--text2)',
+                    }}>{m?.label || a.answer || '-'}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
           {canRecord && (
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 6 }}>
               <button onClick={saveAudit} disabled={savingAudit} style={{ ...btnAccent, padding: '10px 26px' }}>
@@ -1158,17 +1227,47 @@ ${issuesHtml}
           <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 10 }}>
             <div>
               <div style={lb}>จัดการคำถามของ</div>
-              <LineSelect lines={visibleLines} value={qScope} onChange={setQScope} style={{ minWidth: 220 }}
-                placeholder="🌐 ทุกไลน์ (common — ฐานที่ backfall)" />
+              <LineSelect lines={visibleLines} value={qScope} onChange={(v) => { setQScopePicked(true); setQScope(v); }} style={{ minWidth: 220 }}
+                placeholder="🌐 ทะเบียนกลาง (ใช้ร่วมทุกไลน์)" />
             </div>
             <button
               onClick={() => setQEditing({ category: 'safety', seq: (Math.max(0, ...questions.map(q => q.seq)) + 1), question: '', line_name: qScope || '', issue_start: '', issue_end: '', is_active: true })}
-              style={btnAccent}>➕ เพิ่มคำถาม{qScope ? ` (เฉพาะ ${qScope})` : ' (ทุกไลน์)'}</button>
+              style={btnAccent}>➕ เพิ่มคำถาม{qScope ? ` (เฉพาะไลน์ ${qScope})` : ' (เข้าทะเบียนกลาง — ทุกไลน์เห็น)'}</button>
           </div>
-          <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10, lineHeight: 1.5 }}>
-            {qScope
-              ? <>เห็น <b>ข้อ common (ทุกไลน์)</b> เป็นฐาน + <b>ข้อเฉพาะไลน์นี้</b> · ข้อ common สามารถ <b>🚫 ซ่อนเฉพาะไลน์นี้</b> ได้ (ไลน์อื่นไม่กระทบ) · ข้อเฉพาะไลน์แก้/ลบได้เต็มที่</>
-              : <>ข้อ common ใช้ <b>ทุกไลน์เป็นค่าเริ่มต้น</b> (backfall) · แต่ละไลน์ไปเพิ่ม/ซ่อนของตัวเองได้ที่ dropdown ด้านบน · ข้อ "เฝ้าระวังปัญหา" (special) ผูกช่วงวันที่</>}
+          {/* 🔴 ป้าย "ตอนนี้คุณกำลังแก้ของใคร" — ห้ามถอด (2026-10-12 · feedback user)
+              เคสจริง: มีคนกดลบข้อ common 2 ข้อจากมุมมอง "ทุกไลน์" ⇒ หายจากใบตรวจทุกไลน์
+              จอเดิมบอกขอบเขตด้วยตัวเล็กสีเทาบรรทัดเดียว คนอ่านผ่าน = นึกว่าลบแค่ของตัวเอง */}
+          <div style={{
+            marginBottom: 10, padding: '8px 11px', borderRadius: 8, lineHeight: 1.55, fontSize: 12,
+            border: '1px solid ' + (qScope ? 'var(--accent)' : '#f59e0b'),
+            background: qScope ? 'var(--accent-dim)' : 'rgba(245,158,11,0.12)',
+          }}>
+            {qScope ? (
+              <>
+                <b style={{ fontSize: 13, color: 'var(--accent)' }}>🏭 กำลังแก้หัวข้อตรวจของไลน์ "{qScope}"</b>
+                <div style={{ color: 'var(--text2)', marginTop: 2 }}>
+                  ข้อที่ติดป้าย <b>🌐 ทะเบียนกลาง</b> = ของส่วนรวม แก้เนื้อหา/ลบที่นี่ไม่ได้ —
+                  ไม่อยากใช้ข้อไหนที่ไลน์นี้ กด <b>ไม่ใช้ที่ไลน์นี้</b> (ไลน์อื่นไม่กระทบ) ·
+                  ข้อที่ติดป้าย <b>เฉพาะไลน์นี้</b> เป็นของไลน์คุณเอง เพิ่ม/แก้/ลบได้เต็มที่
+                </div>
+                {qScopeStats && (
+                  <div style={{ marginTop: 5, fontSize: 12, color: 'var(--text)' }}>
+                    เช็คลิสต์ของไลน์นี้ = <b>ดึงจากทะเบียนกลาง {qScopeStats.used}</b>
+                    {qScopeStats.off > 0 && <span style={{ color: 'var(--muted)' }}> (ปิดไว้ {qScopeStats.off})</span>}
+                    {' '}+ <b>ของไลน์นี้เอง {qScopeStats.own}</b> = <b>{qScopeStats.used + qScopeStats.own} ข้อ</b>
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <b style={{ fontSize: 13, color: '#f59e0b' }}>🌐 กำลังแก้ “ทะเบียนกลาง” — ทุกไลน์ใช้ร่วมกัน</b>
+                <div style={{ color: 'var(--text2)', marginTop: 2 }}>
+                  แก้/ลบที่นี่ <b>กระทบใบตรวจของทุกไลน์พร้อมกัน</b> ·
+                  ถ้าจะเพิ่ม/เอาออกเฉพาะแผนกตัวเอง ให้เลือกไลน์จากช่อง “จัดการคำถามของ” ด้านบนก่อน ·
+                  ข้อที่เคยถูกตรวจไปแล้ว <b>ลบไม่ได้</b> (ใบย้อนหลังจะอ่านไม่ครบ) ให้กด ⏸ ปิดใช้งานแทน
+                </div>
+              </>
+            )}
           </div>
           {CATEGORIES.map(cat => {
             // ทุกไลน์: เฉพาะ common (null) · รายไลน์: common (null) + ของไลน์นั้น
@@ -1185,22 +1284,29 @@ ${issuesHtml}
                     <div key={q.id} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '5px 0', borderBottom: '1px dashed var(--border)', opacity: (q.is_active && !hiddenHere) ? 1 : 0.45 }}>
                       <div style={{ flex: 1, fontSize: 13, color: cat.key === 'special' ? '#f87171' : 'var(--text2)' }}>
                         <b>{q.seq}.</b> {q.question}
-                        {qScope && isCommon && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 4, padding: '0 5px', marginLeft: 6 }}>common</span>}
+                        {/* ป้ายขอบเขตต้องขึ้น**ทั้ง 2 มุมมอง** — เดิมมุมมอง "ทุกไลน์" ไม่มีป้ายเลย
+                            คนกดจึงไม่รู้ว่าแถวที่กำลังลบเป็นของส่วนรวม (เคส 12/10) */}
+                        {isCommon && <span style={{ fontSize: 11, fontWeight: 700, color: '#f59e0b', background: 'rgba(245,158,11,0.12)', border: '1px solid #f59e0b', borderRadius: 4, padding: '0 5px', marginLeft: 6 }}>🌐 ทะเบียนกลาง</span>}
                         {lineOwn && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', background: 'var(--accent-dim)', border: '1px solid var(--accent)', borderRadius: 4, padding: '0 5px', marginLeft: 6 }}>เฉพาะไลน์นี้</span>}
                         {!qScope && q.line_name && <span style={{ fontSize: 11, color: 'var(--muted)' }}> · ไลน์ {q.line_name}</span>}
                         {(q.issue_start || q.issue_end) && <span style={{ fontSize: 11, color: 'var(--muted)' }}> · {thDate(q.issue_start)} - {thDate(q.issue_end)}</span>}
-                        {hiddenHere && <span style={{ fontSize: 11, fontWeight: 700, color: '#ef4444' }}> · 🚫 ซ่อนไลน์นี้</span>}
+                        {hiddenHere && <span style={{ fontSize: 11, fontWeight: 700, color: '#ef4444' }}> · 🚫 ไลน์นี้ไม่ใช้ข้อนี้</span>}
                         {!q.is_active && <span style={{ fontSize: 11, color: '#ef4444' }}> · ปิดใช้งาน</span>}
                       </div>
                       {qScope && isCommon ? (
                         // ข้อ common ในมุมมองรายไลน์ → ซ่อน/แสดงเฉพาะไลน์นี้ (แก้เนื้อหาไปทำที่ "ทุกไลน์")
-                        <button className="tbtn" onClick={() => toggleHideForLine(q, qScope)} style={{ ...btnGray, color: hiddenHere ? 'var(--accent)' : '#ef4444', padding: '4px 10px', fontSize: 12 }}>{hiddenHere ? '👁 แสดงไลน์นี้' : '🚫 ซ่อนไลน์นี้'}</button>
+                        /* ป้ายปุ่มต้องบอก "ผลที่จะเกิด" ไม่ใช่ศัพท์ซ่อน/แสดง — คนอ่านแล้วนึกว่าซ่อนจากทุกคน */
+                        <button className="tbtn" onClick={() => toggleHideForLine(q, qScope)}
+                          title={hiddenHere ? `เอาข้อนี้กลับมาใช้ที่ไลน์ ${qScope}` : `เลิกใช้ข้อนี้เฉพาะไลน์ ${qScope} (ไลน์อื่นและทะเบียนกลางไม่กระทบ)`}
+                          style={{ ...btnGray, color: hiddenHere ? 'var(--accent)' : '#ef4444', padding: '4px 10px', fontSize: 12, whiteSpace: 'nowrap' }}>
+                          {hiddenHere ? '✓ ใช้ที่ไลน์นี้' : '🚫 ไม่ใช้ที่ไลน์นี้'}
+                        </button>
                       ) : (
                         // ข้อ common (มุมมองทุกไลน์) หรือข้อเฉพาะไลน์ → แก้/ปิด/ลบเต็มที่
                         <>
                           <button className="tbtn" onClick={() => setQEditing({ ...q })} style={{ ...btnGray, padding: '4px 10px', fontSize: 12 }}>✏️</button>
                           <button className="tbtn" onClick={() => toggleQuestion(q)} style={{ ...btnGray, padding: '4px 10px', fontSize: 12 }}>{q.is_active ? '⏸' : '▶'}</button>
-                          <DeleteButton onClick={() => deleteQuestion(q)} title="ลบ" />
+                          <DeleteButton onClick={() => deleteQuestion(q)} disabled={qBusy} title={q.line_name ? `ลบข้อเฉพาะไลน์ ${q.line_name}` : 'ลบข้อของส่วนรวม (ทุกไลน์)'} />
                         </>
                       )}
                     </div>

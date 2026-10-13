@@ -15,6 +15,9 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { toast } from '../components/Toast';
 import { UserContext } from '../App';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
+/* 📷 รูปหลักฐานของเสีย — ของกลางชุดเดียวกับถังเหลือง/แดง (ด่าน quality-photo-via-helper · 2026-10-12) */
+import QualityPhotoField from '../components/QualityPhotoField';
+import { uploadQualityPhoto } from '../utils/qualityImage';
 import LineSelect from '../components/LineSelect';
 import { loadLinesRes } from '../utils/useProductionLines';
 import ProductSelect from '../components/ProductSelect';
@@ -72,6 +75,11 @@ const EMPTY_ITEM = () => ({
   /* 🔴 แถวนี้มาจากถังแดงใบไหน (quality_bin_records) — WI-PD3-069 §5.5 (2026-09-25)
      WI สั่งให้ Scrap Report อ้างอิง "รายละเอียดและจำนวนตามแท็กแดง" ไม่ใช่ดึงจาก defect_logs ตรงๆ */
   src_bin_id: null,
+  /* 📷 รูปของเสียในใบ — ปกติ **สืบทอด** มาจาก quality_bin_records.found_img ตอนกด "ดึงจากถังแดง"
+     แนบเองได้เฉพาะแถวที่ไม่มีต้นทาง (รายการที่คีย์มือ)
+     ⚠️ ห้ามผูกไฟล์ในถังกับ id ของแถวนี้ — `scrap_report_items` ถูกลบ-เขียนใหม่ทุกครั้งที่บันทึกใบ
+        (id เปลี่ยนทุกรอบ) ⇒ ชื่อไฟล์ใช้ id ของ "ใบ" เป็นคีย์แทน */
+  defect_img: null,
 });
 
 function Modal({ title, onClose, children, width = 560 }) {
@@ -430,7 +438,7 @@ export default function ScrapReport() {
     const { report } = editor;
     if (!report.line_name || !report.report_date) { toast.error('เลือกไลน์และวันที่ก่อน'); return; }
     const { data: bins, error } = await supabaseDR.from('quality_bin_records')
-      .select('id, mat_no, part_name, part_no, qty, cause, work_date')
+      .select('id, mat_no, part_name, part_no, qty, cause, work_date, found_img')
       .eq('bin', 'red').eq('is_active', true)
       .eq('line_name', report.line_name).eq('work_date', report.report_date)
       .is('scrap_report_id', null);
@@ -446,6 +454,8 @@ export default function ScrapReport() {
       mat_no: b.mat_no || '', part_name: b.part_name || '', part_no: b.part_no || '',
       qty: b.qty ?? '', confirm_qty: b.qty ?? '', m_cause: b.cause || '',
       src_bin_id: b.id,
+      /* 📷 รูปจากแท็กแดงติดมาด้วย — ไม่พามา คนต้องถ่ายซ้ำตอนออกใบ ซึ่งของอาจถูกทำลายไปแล้ว */
+      defect_img: b.found_img || null,
     }));
     if (!add.length) { toast.info('รายการถังแดงทั้งหมดถูกดึงเข้าใบนี้แล้ว'); return; }
     const next = [...editor.items, ...add];
@@ -453,6 +463,10 @@ export default function ScrapReport() {
     toast.success(`ดึงจากถังแดง ${add.length} รายการ ✓ — บันทึกใบแล้วระบบจะผูกใบถังกลับให้อัตโนมัติ`);
     explodeOpItems(next, null, true);
   };
+
+  /* 📷 แถวที่กำลังแนบรูปอยู่ (_key) — เปิดเป็นโมดัลเล็ก ไม่ยัดช่องอัปโหลดลงในตาราง
+     (ตารางรายการกว้าง 1050px อยู่แล้ว · ยัดช่องไฟล์เข้าไปอีก = ปัดจอไม่จบ) */
+  const [photoItem, setPhotoItem] = useState(null);
 
   const setRep = (patch) => setEditor(e => ({ ...e, report: { ...e.report, ...patch } }));
   const setItem = (key, patch) => setEditor(e => ({ ...e, items: e.items.map(it => it._key === key ? { ...it, ...patch } : it) }));
@@ -511,12 +525,28 @@ export default function ScrapReport() {
          ต้องเป็น "แก้ใบเดิม" ไม่ใช่สร้างหัวใบใหม่ (เดิมได้หัวใบกำพร้าไม่มีรายการ + เลขใบกระโดด · QC 05/10) */
       setEditor(e => (e ? { ...e, report: { ...e.report, id: repId, doc_no } } : e));
     }
+    /* 📷 อัปโหลดรูปที่ยังค้างเป็นไฟล์ — ทำ **ก่อน** ลบรายการเดิมเสมอ (ชื่อไฟล์ผูกกับ "ใบ" ไม่ใช่ "รายการ" —
+       รายการถูกลบ-เขียนใหม่ทุกครั้งที่บันทึก id จึงเปลี่ยนทุกรอบ สืบกลับไม่ได้)
+       🔴 ต้องอยู่**ก่อน** `delete` ของรายการเดิม — ถ้าอัปล้มหลังลบไปแล้ว รายการทั้งใบหายโดยที่
+          ยังไม่มีอะไรมาแทน (คลาสเดียวกับที่คอมเมนต์ของ delete เตือนไว้) */
+    let items2 = items;
+    if (items.some(it => it._imgFile)) {
+      try {
+        items2 = await Promise.all(items.map(async it => (
+          it._imgFile ? { ...it, defect_img: await uploadQualityPhoto(it._imgFile, 'scrap', repId), _imgFile: null } : it
+        )));
+        setEditor(e => (e ? { ...e, items: items2 } : e));   // อัปแล้วอย่าให้ค้างเป็นไฟล์ กดบันทึกซ้ำจะอัปซ้ำ
+      } catch (e2) {
+        toast.error(`อัปโหลดรูปไม่สำเร็จ: ${e2.message} — รายการเดิมยังอยู่ครบ ไม่ถูกลบ — แก้แล้วกดบันทึกอีกครั้ง`);
+        return;
+      }
+    }
     // replace items ทั้งชุด — เช็ค error ของ delete ก่อน insert ใหม่
     // (ถ้า delete ล้มแล้วปล่อยผ่าน อาจได้ item ซ้ำ · ถ้า insert ล้มหลัง delete สำเร็จ รายการหายหมด — เตือนให้กดบันทึกใหม่)
     const { error: eDel } = await supabaseDR.from('scrap_report_items').delete().eq('report_id', repId);
     if (eDel) { toast.error('ลบรายการเดิมไม่สำเร็จ: ' + eDel.message); return; }
-    if (items.length) {
-      const rows = items.map((it, i) => ({
+    if (items2.length) {
+      const rows = items2.map((it, i) => ({
         report_id: repId, seq: i + 1, source: it.source, part_no: it.part_no || null, part_name: it.part_name || null,
         mat_no: it.mat_no || null, model: it.model || null, code: it.code || null, bom_ref: it.bom_ref || null,
         qty: Number(it.qty) || 0, m_cause: it.m_cause || null, stage: it.stage || null,
@@ -525,19 +555,20 @@ export default function ScrapReport() {
         src_request_item_id: it.src_request_item_id || null,
         src_op_mat: it.src_op_mat || null,
         src_bin_id: it.src_bin_id || null,
+        defect_img: it.defect_img || null,
       }));
       // 42703 = ยังไม่ apply migration ของคอลัมน์ src_op_mat/src_bin_id → ถอยไปชุดเดิม (ห้ามให้ทั้งใบบันทึกไม่ได้)
       let { error } = await supabaseDR.from('scrap_report_items').insert(rows);
       if (error?.code === '42703') {
         ({ error } = await supabaseDR.from('scrap_report_items')
-          .insert(rows.map(({ src_op_mat, src_bin_id, ...r }) => r)));   // eslint-disable-line no-unused-vars
+          .insert(rows.map(({ src_op_mat, src_bin_id, defect_img, ...r }) => r)));   // eslint-disable-line no-unused-vars
       }
       if (error) { toast.error(error.message); return; }
 
       /* 🔴 ผูกใบถังแดงกลับมาที่ใบนี้ (WI-PD3-069 §5.5) — ทำ **หลัง** items บันทึกสำเร็จเท่านั้น
          ไม่งั้นใบถังจะถูกมาร์คว่า "ออกใบแล้ว" ทั้งที่รายการยังไม่เข้าใบ = ของหลุดจากสายขออนุมัติทำลาย
          ⚠️ RLS ปฏิเสธ UPDATE = 0 แถว ไม่มี error ⇒ ต้อง .select('id') แล้วนับ (กฎเหล็กข้อ 2) */
-      const binIds = [...new Set(items.map(it => it.src_bin_id).filter(Boolean))];
+      const binIds = [...new Set(items2.map(it => it.src_bin_id).filter(Boolean))];
       if (binIds.length) {
         const { data: linked, error: bErr } = await supabaseDR.from('quality_bin_records')
           .update({ scrap_report_id: repId }).in('id', binIds).select('id');
@@ -742,7 +773,7 @@ export default function ScrapReport() {
                 <th style={thSt}>#</th><th style={thSt}>ที่มา</th><th style={thSt}>PART NO.</th><th style={thSt}>PART NAME</th>
                 <th style={thSt}>MAT SAP</th><th style={thSt}>MODEL</th><th style={thSt}>CODE</th><th style={thSt}>BOM</th>
                 <th style={thSt}>Q'TY</th><th style={thSt}>สาเหตุ</th><th style={thSt}>ช่วง</th><th style={thSt}>ยืนยัน</th>
-                <th style={thSt}>รหัสงานเสีย</th><th style={thSt}></th>
+                <th style={thSt}>รหัสงานเสีย</th><th style={thSt} title="รูปหลักฐานของเสีย">📷</th><th style={thSt}></th>
               </tr></thead>
               <tbody>
                 {editor.items.map((it, i) => (
@@ -810,10 +841,26 @@ export default function ScrapReport() {
                         {it.defect_codes || '+ เลือก'}
                       </button>
                     </td>
+                    {/* 📷 รูปหลักฐาน — แถวที่ดึงจากถังแดงจะมีรูปติดมาเอง (found_img ของแท็กแดง)
+                        แถวที่คีย์มือแนบเองได้ · ว่าง = ปุ่มจางๆ ไม่ใช่ช่องว่างให้เดา */}
+                    <td style={tdSt}>
+                      {(it.defect_img || it._imgFile) ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                          <img src={it._imgFile ? URL.createObjectURL(it._imgFile) : it.defect_img}
+                            alt="รูปของเสีย" loading="lazy" title={it._imgFile ? 'ยังไม่ได้อัปโหลด — จะอัปตอนกดบันทึกใบ' : 'กดเพื่อเปลี่ยน/ดูรูป'}
+                            onClick={() => setPhotoItem(it._key)}
+                            style={{ height: 30, width: 40, objectFit: 'cover', borderRadius: 4, cursor: 'pointer',
+                              border: `1px solid ${it._imgFile ? '#f59e0b' : 'var(--border)'}` }} />
+                        </div>
+                      ) : (
+                        <button style={{ ...ghostBtn, padding: '4px 7px', opacity: 0.7 }} title="แนบรูปของเสีย (ไม่บังคับ)"
+                          onClick={() => setPhotoItem(it._key)}>📎</button>
+                      )}
+                    </td>
                     <td style={tdSt}><DeleteButton onClick={() => delItem(it._key)} title="ลบ" /></td>
                   </tr>
                 ))}
-                {editor.items.length === 0 && <tr><td style={tdSt} colSpan={14}><span style={{ color: 'var(--muted)' }}>ยังไม่มีรายการ — กด "ดึงจาก Daily Report" หรือ "เพิ่มจาก SAP/BOM"</span></td></tr>}
+                {editor.items.length === 0 && <tr><td style={tdSt} colSpan={15}><span style={{ color: 'var(--muted)' }}>ยังไม่มีรายการ — กด "ดึงจาก Daily Report" หรือ "เพิ่มจาก SAP/BOM"</span></td></tr>}
               </tbody>
               {editor.items.length > 0 && (
                 <tfoot><tr>
@@ -912,6 +959,34 @@ export default function ScrapReport() {
           onClose={() => setDefectPicker(null)}
           onSave={(codes) => { setItem(defectPicker, { defect_codes: codes }); setDefectPicker(null); }} />
       )}
+
+      {/* 📷 แนบรูปของเสียให้รายการ — ไฟล์เก็บไว้ใน state (`_imgFile`) แล้วอัปตอนกดบันทึกใบ
+          ⚠️ ไม่อัปทันที: ใบที่ยังไม่บันทึกแล้วปิดทิ้ง จะเหลือไฟล์กำพร้าในถัง */}
+      {photoItem && (() => {
+        const it = editor.items.find(x => x._key === photoItem);
+        if (!it) return null;
+        const fromBin = !!it.src_bin_id;
+        return (
+          <Modal title={`📷 รูปของเสีย — ${it.part_name || it.mat_no || 'รายการที่เลือก'}`} onClose={() => setPhotoItem(null)} width={460}>
+            <div style={{ padding: 16 }}>
+              {fromBin && (
+                <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.6, marginBottom: 10 }}>
+                  🔴 รายการนี้ดึงมาจากแท็กแดง — รูปที่เห็นคือรูปตอนลงถัง เปลี่ยนที่นี่จะมีผลเฉพาะใบนี้
+                  (ไม่ย้อนกลับไปแก้ใบถัง)
+                </div>
+              )}
+              <QualityPhotoField
+                label="รูปหลักฐาน" hint="ไม่บังคับ"
+                url={it.defect_img || null} file={it._imgFile || null}
+                onPick={(f) => setItem(photoItem, f ? { _imgFile: f } : { _imgFile: null, defect_img: null })}
+              />
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
+                <button style={{ ...ghostBtn, padding: '7px 16px' }} onClick={() => setPhotoItem(null)}>ปิด</button>
+              </div>
+            </div>
+          </Modal>
+        );
+      })()}
     </Page>
   );
 }

@@ -249,7 +249,7 @@ export default function GroupOverview() {
       ]);
       const orders = need(ordRes, 'ใบผลิต'), dts = need(dtRes, 'เครื่องหยุด'), defs = need(defRes, 'ของเสีย');
       // น้ำหนัก wLoad = shift_min − planned ที่ "หักได้จริง" (ตัดส่วนทับพัก · กฎเหล็ก OEE downtime ทับพัก)
-      const effBySess = dtMinBySession(sessions, dts || [], brk || []);
+      const effBySess = dtMinBySession(sessions, dts || [], brk || [], { lines: plRes.data || [] });   // หารเลนไลน์เครื่องขนาน (oee.js §3.2)
       const ngBySess = {}; (defs || []).forEach(x => { ngBySess[x.session_id] = (ngBySess[x.session_id] || 0) + (Number(x.qty_ng) || 0) + (Number(x.qty_suspect) || 0); });
       const pairOf = (m) => pairMap?.[m] ?? null;   // null = ยังไม่รู้คู่ ⇒ ไม่ยุบ (ห้ามแปลงเป็น {} — จะกลายเป็น "รู้แล้วว่าไม่มีคู่")
       const ordBySess = {}; (orders || []).forEach(o => { (ordBySess[o.session_id] ||= []).push(o); });

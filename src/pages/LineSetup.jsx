@@ -23,7 +23,7 @@ import PersonSelect from '../components/PersonSelect';
 import CostCenterSelect from '../components/CostCenterSelect';
 import { invalidateProductionLines } from '../utils/useProductionLines';
 import { notifyEvent } from '../utils/notifyEvent';
-import { checkWrite } from '../utils/dbWrite';
+import { checkWrite, checkWriteRows } from '../utils/dbWrite';
 import { uploadOpts } from '../utils/storageUpload';
 import SearchInput from '../components/SearchInput';
 import { DeleteButton } from '../components/IconButton';
@@ -376,7 +376,9 @@ export default function LineSetup({ embedded = false } = {}) {
   const handleUpdateParent = async (line, parentName) => {
     // เปลี่ยนโครงสร้าง master (ไลน์แม่) — ยืนยันก่อน กันแตะ dropdown พลาด · ยกเลิก = revert หน้าจอ
     if (!confirm(`เปลี่ยน "ไลน์แม่" ของ ${line.name} เป็น "${parentName || '(ไม่มี — เป็นไลน์หลัก)'}" ?\n\nกระทบการรวมเครื่อง/ผัง/กำลังผลิตของทั้งกลุ่ม`)) { await fetchLines(); return; }
-    checkWrite(await supabase.from('production_lines').update({ parent_line_name: parentName || null }).eq('id', line.id), 'ตั้งไลน์แม่');
+    /* นับแถว — ไม่มีสิทธิ์/แถวหาย = 0 แถวไม่มี error แล้ว fetchLines() วาดค่าเดิมกลับมาเหมือนจอค้าง
+       (เปลี่ยนโครงสร้างไลน์กระทบการรวมเครื่อง/ผัง/กำลังผลิตทั้งกลุ่ม · กฎเขียน DB ข้อ 2) */
+    checkWriteRows(await supabase.from('production_lines').update({ parent_line_name: parentName || null }).eq('id', line.id).select('id'), 'ตั้งไลน์แม่');
     await fetchLines();
   };
 
@@ -412,7 +414,9 @@ export default function LineSetup({ embedded = false } = {}) {
     if (amCount > 0) { toast.error(`ไลน์นี้มีจุดตรวจ AM รายวันลงทะเบียนอยู่ ${amCount} รายการ — เอาออกที่ /daily-checker?tab=pm (ลงทะเบียนเครื่องตรวจ) ก่อนลบไลน์`); return; }
     // Clear parent ref from children first
     if (childCount > 0) {
-      checkWrite(await supabase.from('production_lines').update({ parent_line_name: null }).eq('parent_line_name', line.name), 'ปลดไลน์ลูกออกจากไลน์ที่ลบ');
+      /* นับแถว — เข้ามาในนี้เมื่อ childCount > 0 เท่านั้น ⇒ 0 แถว = ลูกยังชี้ไลน์แม่ที่กำลังถูกลบ
+         (ทะเบียนที่จับคู่ด้วย "ชื่อ" ไม่มี FK ช่วย — ปล่อยไว้คือไลน์ลูกกำพร้า) */
+      checkWriteRows(await supabase.from('production_lines').update({ parent_line_name: null }).eq('parent_line_name', line.name).select('id'), 'ปลดไลน์ลูกออกจากไลน์ที่ลบ', { min: childCount });
     }
     // อ่าน URL ผังก่อนลบ row — จะได้ลบไฟล์ใน storage ตามหลัง DB สำเร็จ (กติกา CLAUDE.md กันไฟล์กำพร้า)
     const { data: delLayout } = await supabase.from('line_layouts').select('image_url').eq('line_name', line.name).maybeSingle();
@@ -436,6 +440,8 @@ export default function LineSetup({ embedded = false } = {}) {
         if (oldName.startsWith('layouts/')) supabase.storage.from('employee-photos').remove([oldName]).catch(() => {});
       }
     }
+    /* ⚠️ ที่นี่ใช้ checkWrite (ไม่นับแถว) โดยตั้งใจ — ไลน์ที่ไม่มีพนักงานผูกอยู่เลยก็มีจริง
+       0 แถว = ปกติ ไม่ใช่ความล้มเหลว (นับแถวจะกลายเป็น toast แดงหลอก) */
     checkWrite(await supabase.from('employees').update({ line_id: null }).eq('line_id', line.id), 'ปลดพนักงานออกจากไลน์ที่ลบ');
     const { error: eLine } = await supabase.from('production_lines').delete().eq('id', line.id);
     if (eLine) { toast.error('ลบไลน์ไม่สำเร็จ: ' + eLine.message); return; }
@@ -451,7 +457,7 @@ export default function LineSetup({ embedded = false } = {}) {
   const handleUpdateSection = async (line, section) => {
     // เปลี่ยน Section ของไลน์ = กระทบ scope/สิทธิ์การมองเห็น — ยืนยันก่อน · ยกเลิก = revert หน้าจอ
     if (!confirm(`เปลี่ยน "Section" ของ ${line.name} เป็น "${section || '(ไม่มี)'}" ?\n\nกระทบขอบเขตการมองเห็น (scope) และการผูกใบค่าฝีมือ`)) { await fetchLines(); return; }
-    checkWrite(await supabase.from('production_lines').update({ section: section || null }).eq('id', line.id), 'ตั้ง section ของไลน์');
+    checkWriteRows(await supabase.from('production_lines').update({ section: section || null }).eq('id', line.id).select('id'), 'ตั้ง section ของไลน์');
     await fetchLines();
   };
 
@@ -507,7 +513,7 @@ export default function LineSetup({ embedded = false } = {}) {
       const { data: hid } = await supabase.from('lpa_questions').select('id, hidden_for_lines').contains('hidden_for_lines', [old]);
       for (const q of hid || []) {
         const next = (q.hidden_for_lines || []).map(n => (n === old ? name : n));
-        checkWrite(await supabase.from('lpa_questions').update({ hidden_for_lines: next }).eq('id', q.id), 'ซ่อน/แสดงข้อ LPA ของไลน์');
+        checkWriteRows(await supabase.from('lpa_questions').update({ hidden_for_lines: next }).eq('id', q.id).select('id'), 'เปลี่ยนชื่อไลน์ในข้อ LPA ที่ซ่อนไว้');
       }
     } catch { /* best-effort — คอลัมน์ยังไม่ apply ก็ข้าม */ }
     // DR project (client supabaseDR) — production_sessions/dr_products สำคัญสุด (กะที่เปิด + product→line map)
@@ -855,6 +861,8 @@ export default function LineSetup({ embedded = false } = {}) {
     if (!window.confirm('ยืนยันการลบจุดงานนี้?')) return;
     hist.pushHistory();
     // ล้างทักษะไม่สำเร็จ = หยุด (FK ทำให้ลบจุดต่อไม่ได้อยู่แล้ว) · ลบจุดต้องนับแถว — เดิม error/0 แถวเงียบ (QC 05/10)
+    /* ⚠️ checkWrite (ไม่นับแถว) โดยตั้งใจ — จุดงานที่ยังไม่ได้ตั้งทักษะเลยก็มีจริง 0 แถว = ปกติ
+       ตัวที่ต้องนับแถวคือการลบจุดงานเองบรรทัดล่าง (ทำไว้แล้ว) */
     if (!checkWrite(await supabase.from('station_requirements').delete().eq('station_id', id), 'ล้างทักษะของจุดงานที่ลบ')) return;
     const { data: gone, error } = await supabase.from('workstations').delete().eq('id', id).select('id');
     if (error) toast.error('ลบจุดงานไม่สำเร็จ: ' + error.message);

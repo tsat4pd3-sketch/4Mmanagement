@@ -17,6 +17,7 @@ import { scopedLineNames } from '../utils/sectionScope';
 import { isMoOpen } from '../utils/mtnStepPerm';
 import { planDueBucket } from '../lib/pmSchedule';
 import { loadPmTeams, isAmTeam } from '../utils/pmTeams';
+import { loadDailyAm, dailyAmLineStatus } from '../lib/dailyAmBoard';
 import ParetoAbcChart from '../components/ParetoAbcChart';
 import PageHeader from '../components/PageHeader';
 import Segmented from '../components/Segmented';
@@ -187,13 +188,16 @@ async function loadProduction(ctx) {
     loadOpInfo(), // map รายการขั้นตอน (OP งานขับนัท) — ตัวสุดท้ายไม่เข้า destructure แค่ให้ cache พร้อม
   ]);
   // นโยบายพัก + เป้า OEE — ล้ม = ติดธง loadErr (ห้ามถือว่า "ไม่มีพัก" แล้วหักซ้ำ / ห้ามเดาเป้า 80/65)
-  const [breaks, tg] = await Promise.all([loadBreakPolicies().catch(() => null), fetchOeeTargets()]);
+  /* 🔍 AM รายวัน (ผลิตตรวจเครื่องเองต้นกะ) — แหล่งเดียว `lib/dailyAmBoard.js` (กฎ AM↔PM 09/10 · ห้ามคิวรี inspections เอง)
+     user 12/10: "ฝ่ายผลิตก็ต้องโชว์เครื่องจักรที่ไม่ตรวจด้วย" · โหลดล้ม = ธง amErr เขียนบนจอ (ไม่ใช่ "ตรวจครบ") */
+  const [breaks, tg, am] = await Promise.all([loadBreakPolicies().catch(() => null), fetchOeeTargets(),
+    loadDailyAm({ lines: ctx.lines }).catch(e => ({ ok: false, error: e }))]);
   /* ⚠️ loadErr ต้องครอบคิวรี "ชั้นแม่" ด้วย (audit 2026-09-02)
      เดิมนับแค่ 4 ตัวลูก ⇒ sess2 พลาด → KPI เป็น — ทั้งแถบ และการ์ด "กะที่ยังไม่ปิด" ขึ้น **เขียว
      "ปิดครบแล้ว"** · staleRaw พลาด → "กะค้างวันก่อน 0" (คิว escalation 7 วันหายไป)
      · fourM พลาด → "4M รออนุมัติ 0" — ทั้งหมดโดยไม่มีแถบเตือนสักอัน */
   return { sess, sess7: sess7 || [], orders: ordRes.rows, dts: dtRes.rows, defs: defRes.rows, pairs: prods, dt7: dt7Res.rows,
-    breaks: breaks || [], oeeTargets: tg.byGroup,
+    breaks: breaks || [], oeeTargets: tg.byGroup, am: am?.ok ? am : null, amErr: !am?.ok,
     loadErr: !!(ordRes.error || dtRes.error || defRes.error || dt7Res.error
       || eS2 || eS7 || eStale || fourM.error || logsRes.error || empRes.error || breaks == null || tg.error),
     stale: (staleRaw || []).filter(s => inScope(s.line_name)),
@@ -204,7 +208,7 @@ function ProductionView({ d, ctx }) {
   /* พจนานุกรมเดาประเภทดาวน์ไทม์จากคำ — สร้างจากชื่อประเภทในชุดข้อมูลนี้เอง (ไม่ยิงคิวรีเพิ่ม)
      🔴 hook ต้องอยู่บนสุดก่อน early return ทุกกรณี (กฎ react-hooks/rules-of-hooks ในด่าน build) */
   const dtIdx = useMemo(() => buildDtIndex(d.dt7), [d.dt7]);
-  const { workDate, prevDate, lines, navigate, isMobile } = ctx;
+  const { workDate, prevDate, lines, navigate, isMobile, inScope } = ctx;
   /* d.pairs = map { mat: คู่ } จาก cache กลาง · **null = ยังไม่รู้ ⇒ ไม่ยุบงานคู่** ห้ามแทนด้วย {} */
   const pairOf = useMemo(() => (x) => d.pairs?.[x] || null, [d.pairs]);
 
@@ -213,7 +217,7 @@ function ProductionView({ d, ctx }) {
     const dtBy = {}; d.dts.forEach(x => (dtBy[x.session_id] ||= []).push(x));
     const ngBy = {}; d.defs.forEach(x => { ngBy[x.session_id] = (ngBy[x.session_id] || 0) + (+x.qty_ng || 0) + (+x.qty_suspect || 0); });
     // น้ำหนัก wLoad: planned ที่ "หักได้จริง" (ตัดส่วนทับพัก) · L.dt = "เครื่องหยุดกี่นาที" ยังเป็นนาทีเต็ม — ห้ามสลับ
-    const eff = dtMinBySession(d.sess, d.dts, d.breaks || []);
+    const eff = dtMinBySession(d.sess, d.dts, d.breaks || [], { lines });   // หารเลนไลน์เครื่องขนาน (oee.js §3.2)
     const out = {};
     d.sess.forEach(s => {
       const day = s.work_date === workDate ? 'today' : 'prev';
@@ -263,6 +267,27 @@ function ProductionView({ d, ctx }) {
 
   const openDT = d.dts.filter(isOpenDT);
   const pendingClose = today.rows.filter(r => r.status === 'pending_close');
+  /* 🔍 AM กะนี้ต่อไลน์ (เฉพาะไลน์ในขอบเขต user) — สี/กรอบ 60 นาที = `dailyAmLineStatus` (lib/pmDailyStatus) ห้ามคิดเอง
+     · idle (ยังไม่เริ่มผลิต) ไม่เตือน (กติกาเดียวกับจอ AM/Telegram) · late = เลยกรอบ · wait = ยังอยู่ในกรอบ · red = พบผิดปกติ */
+  const amLines = useMemo(() => {
+    if (!d.am) return [];
+    const by = dailyAmLineStatus({ ...d.am, shift: d.am.shift?.shift, now: new Date() });
+    return Object.entries(by).filter(([ln]) => inScope(ln)).map(([line, st]) => ({ line, ...st }));
+  }, [d.am, inScope]);
+  const amTotal = amLines.reduce((a, l) => a + l.total, 0);
+  const amChecked = amLines.reduce((a, l) => a + (typeof l.checked === "number" ? l.checked : (l.checked?.length || 0)), 0);   // computeDailyPmStatus คืน checked เป็นจำนวน (ไม่ใช่ array) · กัน NaN บนจอ
+  const amLate = amLines.reduce((a, l) => a + l.late, 0);
+  const amWait = amLines.reduce((a, l) => a + l.wait, 0);
+  const amNg = amLines.reduce((a, l) => a + l.ngN, 0);
+  const amNotStarted = amLines.reduce((a, l) => a + l.notStarted, 0);
+  const amActions = amLines.flatMap((l) => {
+    const names = (arr) => arr.slice(0, 3).map(t => t.machine_no || t.name).join(', ') + (arr.length > 3 ? ` +${arr.length - 3}` : '');
+    const out = [];
+    if (l.ngN) out.push({ icon: '🔴', title: `AM พบผิดปกติ ${l.ngN} เครื่อง — ${l.line}`, detail: names(l.ng), tag: 'ผิดปกติ', tagColor: '#ef4444', to: '/daily-checker?tab=pm' });
+    if (l.late) out.push({ icon: '🔍', title: `AM ยังไม่ตรวจ ${l.late} เครื่อง — ${l.line}`, detail: `เลยกรอบ 60 นาทีหลังเริ่มผลิต · ${names(l.missing)}`, tag: 'เลยเวลา', tagColor: '#ef4444', to: '/daily-checker?tab=pm' });
+    else if (l.wait) out.push({ icon: '🔍', title: `AM รอตรวจ ${l.wait} เครื่อง — ${l.line}`, detail: `ยังอยู่ในกรอบ 60 นาที · ${names(l.missing)}`, tag: 'รอตรวจ', tagColor: '#f59e0b', to: '/daily-checker?tab=pm' });
+    return out;
+  });
   /* กะค้างจากวันก่อน — ยุบเป็นแถวเดียว ไม่แตกรายกะ (57 กะจะกลบคิวงานจริง — บทเรียน 4M [Auto]
      323 ใบกลบใบจริง 19 ใบ) · เกิน 7 วัน = แดง · แถวพาไป /daily-report ที่มี banner รายกะเต็มๆ */
   const staleRows = (d.stale || []).map(s => ({ ...s, age: daysSince(`${s.work_date}T08:00:00`) }));
@@ -276,6 +301,8 @@ function ProductionView({ d, ctx }) {
     }] : []),
     ...pendingClose.map(r => ({ icon: '📋', title: `คำขอปิดกะ — ${r.line}`, detail: r.shift === 'night' ? 'กะดึก' : 'กะเช้า', tag: 'รออนุมัติ', tagColor: '#f59e0b', to: '/daily-report' })),
     ...openDT.map(x => ({ icon: '🔴', title: `${x.dr_downtime_types?.name_th || 'Downtime'} ยังไม่ปิด`, detail: x.machine_no || x.description || '', tag: 'เครื่องหยุด', tagColor: '#ef4444', to: '/daily-report' })),
+    ...amActions,
+    ...(d.amErr ? [{ icon: '⚠️', title: 'โหลดสถานะตรวจเครื่อง AM ไม่ได้', detail: 'ยังไม่รู้ว่ากะนี้ตรวจครบไหม — เปิดจอ AM ตรวจสอบ', tag: 'ไม่ทราบ', tagColor: '#f59e0b', to: '/daily-checker?tab=pm' }] : []),
     ...d.fourM.map(f => ({ icon: '📝', title: `4M ${f.category} — ${f.line_name || '-'}`, detail: (f.description || '').slice(0, 40), age: daysSince(`${f.work_date}T08:00:00`), tag: f.status === 'pending_qa' ? 'รอ QA' : 'รอ SV', tagColor: '#f59e0b', to: fourMLink(f) })),
   ];
 
@@ -300,12 +327,17 @@ function ProductionView({ d, ctx }) {
         🔴 โหลดใบงาน/Downtime/ของเสียไม่สำเร็จบางส่วน — ตัวเลขด้านล่าง<b>ไม่ครบ</b> (ดูรายละเอียดใน console)
       </div>
     )}
-    <Section title="🚨 ต้องทำตอนนี้" sub={`คำขอปิดกะ ${pendingClose.length} · กะค้างวันก่อน ${staleRows.length} · เครื่องหยุดค้าง ${openDT.length} · 4M รออนุมัติ ${d.fourM.length}`} tone={actions.length ? 'alert' : null}>
+    <Section title="🚨 ต้องทำตอนนี้" sub={`คำขอปิดกะ ${pendingClose.length} · กะค้างวันก่อน ${staleRows.length} · เครื่องหยุดค้าง ${openDT.length} · AM ยังไม่ตรวจ ${d.am ? amLate + amWait : '?'} เครื่อง${amNg ? ` (ผิดปกติ ${amNg})` : ''} · 4M รออนุมัติ ${d.fourM.length}`} tone={actions.length ? 'alert' : null}>
       <ActionList items={actions} onPick={(it) => navigate(it.to)} />
     </Section>
 
     <div style={KPI_GRID(isMobile)}>
       <Kpi label="📦 ผลิตวันนี้ / เป้า" value={fmtNum(act)} color={pctCol(pct)} sub={`เป้า ${fmtNum(tgt)} · ${pct == null ? '—' : pct + '%'}`} />
+      {/* 🔍 AM กะนี้ — ไม่มีทะเบียน ≠ ตรวจครบ · โหลดไม่ได้ = — (กฎความซื่อสัตย์ของจอ) */}
+      <Kpi label={`🔍 AM ตรวจเครื่องแล้ว (${d.am?.shift?.label || 'กะนี้'})`}
+        value={d.amErr ? '—' : amTotal ? `${amChecked}/${amTotal}` : '0'} unit={d.amErr || !amTotal ? '' : 'เครื่อง'}
+        color={d.amErr ? undefined : amNg || amLate ? '#ef4444' : amWait ? '#f59e0b' : amTotal && amChecked === amTotal ? '#22c55e' : undefined}
+        sub={d.amErr ? 'โหลดสถานะ AM ไม่ได้' : !amTotal ? 'ไลน์ในขอบเขตยังไม่ลงทะเบียนเครื่อง AM' : `เลยเวลา ${amLate} · รอตรวจ ${amWait} · ยังไม่เริ่มผลิต ${amNotStarted}${amNg ? ` · ผิดปกติ ${amNg}` : ''}`} />
       <Kpi label="⚙️ OEE (กะที่ปิดแล้ว)" value={oeeToday == null ? '—' : oeeToday} unit={oeeToday == null ? '' : '%'} color={oeeCol(oeeToday, today.rows.map(r => r.line))}
         delta={oeeToday != null && oeePrev != null ? +(oeeToday - oeePrev).toFixed(1) : null}
         sub={oeePrev == null ? 'ไม่มีข้อมูลเมื่อวานให้เทียบ' : `เมื่อวาน ${oeePrev}%`} />
@@ -405,8 +437,13 @@ function MaintenanceView({ d, ctx }) {
       return { ...p, am: isAmTeam(cl?.department), bucket, name: j?.name || j?.jig_no || j?.machine_no || 'อุปกรณ์ (ไม่พบชื่อ)', line: j?.line_name || '', days: daysTo };
     }).sort((a, b) => (a.days ?? 9e9) - (b.days ?? 9e9));
   }, [d, workDate]);
-  const pmRows = pmAll.filter(p => !p.am);
-  const amPlans = pmAll.filter(p => p.am);
+  /* 🔭 กรองแผน PM ตามขอบเขต user ด้วย (12/10 · user: "user PD2 ดูของช่างก็ต้องเป็นงานช่างที่เกี่ยวกับ PD2") — เดิมนับทั้งโรงงาน
+     · อุปกรณ์ที่ทะเบียนไม่ระบุไลน์ กรองไม่ได้ ⇒ แสดงรวมแล้วเขียนบอกจำนวน (ห้ามตัดทิ้งเงียบ) */
+  const scoped = !!ctx.scopeNames;
+  const pmInScope = pmAll.filter(p => !p.line || inScope(p.line));
+  const pmNoLine = scoped ? pmInScope.filter(p => !p.line && !p.am).length : 0;
+  const pmRows = pmInScope.filter(p => !p.am);
+  const amPlans = pmInScope.filter(p => p.am);
   const overdue = pmRows.filter(p => p.bucket === 'overdue');
   const dueSoon = pmRows.filter(p => p.bucket === 'due_soon');
   const pmNever = pmRows.filter(p => p.bucket === 'never');
@@ -453,7 +490,7 @@ function MaintenanceView({ d, ctx }) {
         sub={`ใกล้ครบใน 14 วัน ${dueSoon.length}${pmNever.length ? ` · ไม่เคยตรวจ ${pmNever.length}` : ''}${pmNoCycle.length ? ` · ไม่ตั้งรอบ ${pmNoCycle.length}` : ''}`} />
       <Kpi label="🔻 DT เครื่องเสีย 30 วัน" value={fmtNum(unplannedMin)} unit="นาที" sub="downtime นอกแผนทุกสาเหตุ" />
       <Kpi label="⚠️ เครื่องหยุดซ้ำ ไม่มีใบซ่อม" value={gap.length} unit="เครื่อง" color={gap.length ? '#ef4444' : '#22c55e'} sub="หยุด ≥2 ครั้งใน 30 วัน" />
-      <Kpi label="📋 แผน PM ช่างที่ใช้งาน" value={pmRows.length} unit="แผน" sub={`มีวันครบกำหนด ${pmWithDue.length}${amPlans.length ? ` · AM ผลิตตรวจเอง ${amPlans.length} แผน (ดูจอ AM)` : ''}`} />
+      <Kpi label="📋 แผน PM ช่างที่ใช้งาน" value={pmRows.length} unit="แผน" sub={`มีวันครบกำหนด ${pmWithDue.length}${amPlans.length ? ` · AM ผลิตตรวจเอง ${amPlans.length} แผน (ดูจอ AM)` : ''}${pmNoLine ? ` · ไม่ระบุไลน์ ${pmNoLine} แผน (แสดงรวมทุกขอบเขต)` : ''}`} />
     </div>
 
     <Section title="⚠️ เครื่องที่หยุดซ้ำ แต่ยังไม่มีใบแจ้งซ่อม" tone="warn"

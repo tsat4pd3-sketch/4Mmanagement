@@ -19,7 +19,7 @@ import useImgBox from '../utils/useImgBox'
 import CalloutPin from '../components/CalloutPin'
 import { loadPmTeams, pmTeamsSync, teamKind, recordPermFor, isAmTeam } from '../utils/pmTeams'
 import { MTN_TEAMS, deptNameOf, teamKeyOf, teamForEquipmentKind } from '../utils/mtnTeams'
-import { checkWrite } from '../utils/dbWrite';
+import { checkWriteRows } from '../utils/dbWrite';
 import { getWorkDate } from '../utils/workDate'
 import { amShiftInfo } from '../lib/dailyAmBoard'
 import { DEFAULT_POINT_KINDS, pointDueStatus, pointPin, shimStack, deriveShimAction } from '../utils/fixturePoints'
@@ -562,7 +562,7 @@ function HistoryModal({ inspection, checkpoints, jig, onClose, userId, userRole 
     const categories = await fetchCategories({ includeInactive: true })
     // เลขฟอร์ม/Rev/Effective อ่านจาก Document Master กลาง (doc_control แก้ได้ที่ /doc-forms) · fallback ค่าเดิม
     const docForm = await getDocForm('pm_jig', { form_code: 'FM-JIG-003', rev: 'Rev.00', effective_date: '01/07/2020' })
-    checkWrite(await supabaseDR.from('inspections').update({ exported_by: userId, exported_at: new Date().toISOString() }).eq('id', insp.id), 'บันทึกว่า export แล้ว');
+    checkWriteRows(await supabaseDR.from('inspections').update({ exported_by: userId, exported_at: new Date().toISOString() }).eq('id', insp.id).select('id'), 'บันทึกว่า export แล้ว');
     return { jig, inspection: insp, checkpoints, results: resultMap, inspector, approver, exporter, categories, docForm }
   }
 

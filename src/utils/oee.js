@@ -61,6 +61,23 @@ export function orderProducedQty(o) {
     : Number(o.qty_actual ?? 0);
 }
 
+/* ═══ 6.0.1) ยอดผลิตของ "ทั้งกะ" — จุดเดียวที่รวมใบผลิตเป็นยอดกะ (2026-10-12) ════════════
+   เดิมสูตรนี้ถูกเขียนมือซ้ำ 2 ที่ (`computeSessionOee` และ `handleCloseSession`) ด้วยกติกา
+   `confirmed → o.qty` ขณะที่ `orderProducedQty()` ใช้ `qty_ok ?? qty` ⇒ 3 สำเนาของกฎเดียวกัน
+   (ตรวจฐานจริง 12/10: ใบ confirmed 17,584 ใบ ไม่มีสักใบที่ `qty_ok` ต่างจาก `qty` ⇒ ยุบรวมได้
+    โดยตัวเลขไม่ขยับ — แต่ถ้าวันหนึ่งต่างกันเมื่อไหร่ ต้องต่างกัน "ทุกจอพร้อมกัน" ไม่ใช่บางจอ)
+   🔴 จุดที่รวม "ยอดผลิตของกะ" ต้องเรียกตัวนี้ **ห้ามวน reduce ใบผลิตเองในหน้า**
+   `carryQtyActual` = ช่องยอดที่หัวหน้ากรอกตอนปิดกะ (ชนะค่าที่บันทึกไว้ · ว่าง/0 = ใช้ค่าในฐาน) */
+export function sessionProducedQty(orders = [], carryQtyActual = {}) {
+  return (orders || []).reduce((sum, o) => {
+    if (!o) return sum;
+    const base = Number(orderProducedQty(o)) || 0;
+    if (o.status === 'confirmed') return sum + base;
+    const typed = parseInt(carryQtyActual?.[o.id]);
+    return sum + (typed || base);
+  }, 0);
+}
+
 /* ═══ 6.1) "เป้า/แผน" ของใบผลิต 1 ใบ — คู่กับ orderProducedQty (QC audit 05/10 · roadshow) ═══
    เดิมแต่ละจอคิดเป้าเอง 3 แบบ: (ก) Σqty ทุกสถานะ (Obeya/FactoryMap/GroupOverview/DeptDashboard)
    ⇒ ใบยกยอดถูกนับเป้า 2 รอบ: ต้นทาง 35 + ปลายทาง 30 = 65 ทั้งที่งานจริง 35 (จอเดโมขึ้น 71% แทน 100%)
@@ -97,6 +114,9 @@ export function wavg(items, valFn, wFn) {
 }
 
 // น้ำหนักมาตรฐาน — row ต้องมี shift_min, plannedMin (นาที DT ในแผน), calcA/oee_a, actual_qty/qty_ng
+// 🔴 `plannedMin` ต้องเป็น "นาทีของไลน์" แล้ว ⇒ มาจาก `dtMinBySession(…, { lines })` เท่านั้น (§3.2)
+//    ส่งนาทีรวมรายเครื่องของไลน์ขนานเข้ามา = ตัวลบบวมจนทะลุความยาวกะ ⇒ น้ำหนักเหลือ 0
+//    = กะนั้นหายจากค่าเฉลี่ยโดยไม่มี error (เคสจริง LASER-345 ก.ย. 2026)
 export const wLoad = it => Math.max(0, (Number(it.shift_min ?? it.shiftMin) || 0) - (Number(it.plannedMin) || 0));
 export const wRun  = it => wLoad(it) * ((it.calcA != null ? it.calcA : (it.oee_a != null ? +it.oee_a : 100)) / 100);
 export const wProd = it => (Number(it.totalQty != null ? it.totalQty : it.actual_qty) || 0) + (Number(it.ngQty != null ? it.ngQty : it.qty_ng) || 0);
@@ -237,6 +257,36 @@ export function halfDayBreakIntervals({ policies = [], half, processType = null 
       (จุดที่ตอบคำถาม "เครื่องหยุดไปกี่นาที" เช่นพาเรโต/มูลค่า ยังใช้ `duration_min` เต็มเหมือนเดิม —
        เครื่องหยุดจริงเท่านั้นนาที แค่ไม่ใช่นาทีที่ "เสียโอกาสผลิต") */
 
+/* ═══ 3.2) ไลน์เครื่องขนาน — "1 เครื่องหยุด ≠ ทั้งไลน์หยุด" (2026-10-12) ═══════════════
+   ไลน์ที่มีหลายเครื่องทำงานขนานกัน (LASER-345/LASER-789 = 3 เครื่อง · SUB APRON = 6 สถานี)
+   บันทึก downtime **รายเครื่อง** ⇒ ผลรวม `duration_min` ของกะเดียวทะลุความยาวกะได้ตามปกติ
+   (วัดจริง ก.ย. 2026: LASER-345 วันที่ 09/09 กะเช้า บันทึก 1,025 นาที บนกะ 720 นาที = 1.42 เท่า)
+
+   🔴 แปลงเป็น "นาทีของไลน์" ต้องหารด้วยจำนวนเลนเสมอ — ใช้ `laneWeightFn()` ที่เดียว
+      `computeSessionOee` ทำถูกมาตั้งแต่แรก (%A ที่ stamp จึงถูก) แต่ `dtMinBySession`
+      ซึ่งเป็นตัวป้อน **น้ำหนัก `wLoad` ของค่าเฉลี่ยรายเดือน** ไม่เคยหาร ⇒ `plannedMin`
+      บวมเกินความยาวกะ ⇒ `wLoad` ถูก clamp เหลือ 0 = **กะนั้นถูกตัดออกจากค่าเฉลี่ยเงียบๆ**
+      (ก.ย. 2026: 11 กะน้ำหนักเป็น 0 · LASER-345 22 จาก 37 กะโดนลดน้ำหนักเกินครึ่ง
+       ⇒ OEE เดือนของไลน์นั้นเพี้ยนจาก 82.9% เหลือ 80.6% แล้วถูก export เป็นฟอร์มไปเซ็น)
+
+   ⚠️ หารเฉพาะแถวที่ **ระบุเครื่อง** (`machine_no`) — แถวที่ไม่ระบุเครื่องคือ "หยุดทั้งไลน์"
+      (ไฟดับ/ไม่มีแผนผลิต/เปลี่ยนรุ่นทั้งไลน์) หารแล้วจะ**ต่ำกว่าจริง** */
+export const laneWeightFn = (parallelN = 1) =>
+  (d) => (Number(parallelN) > 1 && d?.machine_no) ? 1 / Number(parallelN) : 1;
+
+/** ทะเบียนไลน์ → ฟังก์ชัน `(session) => จำนวนเลน` สำหรับส่งให้ `dtMinBySession`
+ *  รับได้ทั้ง **อาร์เรย์แถวไลน์** และ **แมป `{ [ชื่อไลน์]: แถว }`** (จอที่มีแต่แมปอยู่แล้วจะได้ไม่ต้องแปลง)
+ *  ไม่รู้จักชื่อไลน์ = 1 เลน (พฤติกรรมเดิมเป๊ะ — ไม่เดาว่าเป็นไลน์ขนาน) */
+export function parallelNBySession(lines = []) {
+  const by = {};
+  if (Array.isArray(lines)) {
+    for (const l of lines) if (l?.name) by[l.name] = parallelUnitsOf(l);
+  } else {
+    for (const [name, l] of Object.entries(lines || {})) by[name] = parallelUnitsOf(l);
+  }
+  return (s) => by[s?.line_name] || 1;
+}
+
 /** นาที downtime ดิบของ 1 แถว — แถวที่ยังเปิดค้างนับถึง nowMs (ไม่ส่ง nowMs = ไม่นับ) */
 export function dtRawMin(d, nowMs = null) {
   if (!d) return 0;
@@ -318,20 +368,26 @@ export function sessionDowntimeMin({
  *  → { [sessionId]: { planned, unplanned, breakMin } } · นาทีที่ทับช่วงพักถูกตัดออกแล้ว (§3.1)
  *  sessions ต้องมี id/work_date/shift/start_time/shift_min · downtimes ต้องมี session_id + join category
  *  ไม่ส่ง breakPolicies = ไม่ตัด (เท่าพฤติกรรมเดิม) — จอที่โชว์ค่าเฉลี่ยถ่วงน้ำหนักต้องส่งเสมอ
- *  ไม่งั้นน้ำหนักของกะที่มี PM คร่อมพักจะเบากว่าจอ /oee-analytics = ค่าเฉลี่ยคนละเลข */
-export function dtMinBySession(sessions = [], downtimes = [], breakPolicies = []) {
-  const ivBy = {};
+ *  ไม่งั้นน้ำหนักของกะที่มี PM คร่อมพักจะเบากว่าจอ /oee-analytics = ค่าเฉลี่ยคนละเลข
+ *  🔴 `opts.lines` = ทะเบียนไลน์ (`name`, `flow_mode`, `parallel_stations`) — **จอที่เอาผลไปถ่วง
+ *     `wLoad` ต้องส่งเสมอ** ไม่งั้นไลน์เครื่องขนานได้นาทีรวมของทุกเครื่องมาหักจากเวลากะเดียว (§3.2)
+ *     ไม่ส่ง = ไม่หารเลน (พฤติกรรมเดิมเป๊ะ สำหรับจอที่โชว์ "เครื่องหยุดกี่นาที" ล้วนๆ) */
+export function dtMinBySession(sessions = [], downtimes = [], breakPolicies = [], { lines = null } = {}) {
+  const laneOf = lines ? parallelNBySession(lines) : null;
+  const ivBy = {}, wBy = {};
   for (const s of sessions) {
     const win = sessionWindow(s);
     ivBy[s.id] = (win && breakPolicies.length)
       ? breakIntervalsIn({ policies: breakPolicies, startMs: win.startMs, endMs: win.endMs, workDate: win.workDate, shift: win.shift })
       : [];
+    if (laneOf) wBy[s.id] = laneWeightFn(laneOf(s));
   }
   const out = {};
   for (const d of downtimes) {
     const sid = d.session_id;
     const o = (out[sid] ||= { planned: 0, unplanned: 0, breakMin: 0 });
-    const eff = dtMinOutsideBreaks(d, ivBy[sid] || []);
+    // กะที่ไม่ได้ส่งมาใน sessions (ไม่รู้ไลน์) = น้ำหนัก 1 — ห้ามเดาว่าเป็นไลน์ขนาน
+    const eff = dtMinOutsideBreaks(d, ivBy[sid] || []) * (wBy[sid] ? wBy[sid](d) : 1);
     if ((d?.dr_downtime_types?.category ?? d?.dt_category) === 'planned') o.planned += eff;
     else o.unplanned += eff;
   }
@@ -1154,11 +1210,8 @@ export function computeSessionOee({
 }) {
   const dtl = downtimes;
   const workDate = session?.work_date;
-  const confirmedQty = orders.filter(o => o.status === 'confirmed').reduce((s, o) => s + o.qty, 0);
-  const carryActualQty = orders
-    .filter(o => ['open', 'carry_over', 'cancelled', 'imported'].includes(o.status))
-    .reduce((s, o) => s + (parseInt(carryQtyActual[o.id]) || Number(o.qty_actual) || 0), 0);
-  const totalProduced = confirmedQty + carryActualQty;
+  // ยอดผลิตของกะ = สูตรกลาง §6.0.1 (ห้ามวน reduce เอง — เคยเป็นสำเนาที่ 2 ของกฎเดียวกัน)
+  const totalProduced = sessionProducedQty(orders, carryQtyActual);
   const ngQty = ngQtyOverride !== null && ngQtyOverride !== undefined
     ? ngQtyOverride : sumDefectQty(defects, 'line');
 
@@ -1181,7 +1234,7 @@ export function computeSessionOee({
   const shiftFrame = openedAt ? { startMs: +openedAt, endMs: +closedAt } : null;
 
   const parallelN = parallelUnitsOf(lineFlow, machineCount);
-  const dtW = d => (parallelN > 1 && d.machine_no) ? 1 / parallelN : 1;
+  const dtW = laneWeightFn(parallelN);   // §3.2 — สูตรเดียวกับที่ dtMinBySession ใช้ ห้ามเขียนซ้ำ
   const sessionShift = session?.shift || 'day';
   const ctForMatNo = (matNo) => ctForMat(matNo, { kanbanStds, products });
   const pairOf = (mat) => products.find(p => p.mat_no === mat)?.pair_mat_no || null;

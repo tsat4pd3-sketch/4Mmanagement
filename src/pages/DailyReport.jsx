@@ -6,6 +6,9 @@ import { fmtDate, fmtDateTime, fmtDateTimeFull, fmtTime } from '../utils/dateFor
 import { buildMachineKeyMap, snapMachineNo } from '../utils/machineNo';
 import { dtBucketName, buildDtIndex } from '../utils/downtimeCategory';
 import { toast } from '../components/Toast';
+/* 📷 รูปหลักฐานของเสีย — ของกลางเดียวกับถังเหลือง/แดง (ด่าน quality-photo-via-helper · 2026-10-12) */
+import QualityPhotoField from '../components/QualityPhotoField';
+import { uploadQualityPhoto, removeQualityImg } from '../utils/qualityImage';
 import { uploadMoBeforeImg } from '../utils/mtnImage';
 import { buildProblemReport, dtNeedsFix, countPendingFix, PROBLEM_MIN_MINUTES } from '../lib/prodProblemReport';
 /* 📝 ทะเบียนใบรายงานปัญหาการผลิต FM-PD1-019 — ออกใบ = บันทึกก่อนแล้วค่อยพิมพ์ · พิมพ์ซ้ำ = ใบเดิมจาก snapshot
@@ -36,7 +39,7 @@ import StoreLotQueue from '../components/StoreLotQueue';
 import LineWipPanel from '../components/LineWipPanel';
 import LinePartCallPanel from '../components/LinePartCallPanel';
 import ProcessTypeSetup from '../components/ProcessTypeSetup';
-import { computeSessionOee, strictOee, strictGap, STRICT_WARN_SHARE_PCT, policyBreakOverlapMin, breakIntervalsIn, dtMinOutsideBreaks, overlapMinutesWith, buildCtMap, ctForMat, groupSameProductKeys, shiftFrameOf, shiftStartDate, clampWinToShift, unionIv, dtMinOutsideWork, SIX_BIG_LOSSES, EIGHT_WASTES, sumDefectQty, isTrialDefect, splitDefectQty, QBIN_EMBED, sumSuspectPending } from '../utils/oee';
+import { computeSessionOee, sessionProducedQty, strictOee, strictGap, STRICT_WARN_SHARE_PCT, policyBreakOverlapMin, breakIntervalsIn, dtMinOutsideBreaks, overlapMinutesWith, buildCtMap, ctForMat, groupSameProductKeys, shiftFrameOf, shiftStartDate, clampWinToShift, unionIv, dtMinOutsideWork, SIX_BIG_LOSSES, EIGHT_WASTES, sumDefectQty, isTrialDefect, splitDefectQty, QBIN_EMBED, sumSuspectPending } from '../utils/oee';
 import { resolveShiftTime, checkShiftTime, shiftWindow, windowLabel, fmtOffset, MAX_SHIFT_MIN, checkCloseTime } from '../utils/shiftWindow';
 import ScanModal from '../components/ScanModal';
 import SearchSelect from '../components/SearchSelect';
@@ -461,7 +464,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   const [defectTypes, setDefectTypes]   = useState([]);
   const [defectLogs, setDefectLogs]     = useState([]);
   const [showDefect, setShowDefect]     = useState(false);
-  const [defectForm, setDefectForm]     = useState({ id: null, mat_no: '', defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '', is_trial: false });
+  const [defectForm, setDefectForm]     = useState({ id: null, mat_no: '', defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '', is_trial: false, defect_img: '' });
+  /* ไฟล์รูปที่เพิ่งเลือก (ยังไม่อัปโหลด) — อัปตอนกดบันทึกเท่านั้น กดยกเลิกแล้วต้องไม่มีไฟล์ค้างในถัง */
+  const [defectFile, setDefectFile]     = useState(null);
   /* ใบสแกนใบไหนกางช่อง "ทำได้กี่ชิ้น" อยู่ — ค่าเริ่มต้นพับหมด
      เหตุผล: ระบบดึง (kanban) เปิดค้างทีละ 20-30 ใบได้ แต่ "ใบที่ทำค้างจริง" มีไม่กี่ใบ
      ที่เหลือคือยังไม่เริ่ม (ยกเต็มใบ) หรือเดี๋ยวสแกนปิดเต็มใบ → กางช่องทุกใบ = จอรก
@@ -1053,7 +1058,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
         if (ov.start) {
           const firstOrder = orders.reduce((a, b) => (!a.opened_at || (b.opened_at && new Date(b.opened_at) < new Date(a.opened_at))) ? b : a);
           const ms = new Date(`${selSession.work_date}T${ov.start.slice(0, 5)}:00`).getTime();
-          checkWrite(await supabaseDR.from('prod_orders').update({ opened_at: new Date(ms).toISOString() }).eq('id', firstOrder.id), 'บันทึกเวลาเริ่ม MAT');
+          /* นับแถว — เวลานี้เป็นฐานของ %A/%P ที่กำลังจะ stamp ลงกะ ถ้าเขียนไม่ติด
+             OEE จะถูกคิดจากเวลาที่ไม่เคยถูกบันทึก (จอกับฐานไม่ตรงกันถาวร · กฎเขียน DB ข้อ 2) */
+          checkWriteRows(await supabaseDR.from('prod_orders').update({ opened_at: new Date(ms).toISOString() }).eq('id', firstOrder.id).select('id'), 'บันทึกเวลาเริ่ม MAT');
         }
         if (ov.end) {
           const confirmedOds = orders.filter(o => o.status === 'confirmed' && o.confirmed_at);
@@ -1061,7 +1068,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
             const lastOrder = confirmedOds.reduce((a, b) => (new Date(b.confirmed_at) > new Date(a.confirmed_at)) ? b : a);
             let ms = new Date(`${selSession.work_date}T${ov.end.slice(0, 5)}:00`).getTime();
             if (lastOrder.opened_at && ms < new Date(lastOrder.opened_at).getTime()) ms += 86400000;
-            checkWrite(await supabaseDR.from('prod_orders').update({ confirmed_at: new Date(ms).toISOString() }).eq('id', lastOrder.id), 'บันทึกเวลาปิด MAT');
+            checkWriteRows(await supabaseDR.from('prod_orders').update({ confirmed_at: new Date(ms).toISOString() }).eq('id', lastOrder.id).select('id'), 'บันทึกเวลาปิด MAT');
           }
         }
       }
@@ -1072,8 +1079,20 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       const endChanged   = closeEndTime   && closeEndTime   !== selSession.end_time;
       // กะไม่มีผลผลิต → A/Q ไม่มีความหมาย (กันเลข 100/0 รั่วเข้าค่าเฉลี่ย %A/%Q — ดูหมายเหตุใน handleCloseSession)
       const noProduction = totalProduced === 0 && P == null;
+      /* 🔴 ยอดที่ stamp ต้อง re-stamp พร้อม A/P/Q เสมอ (2026-10-12)
+         `computeOEE` คิด %P/%Q จาก **ใบผลิตชุดปัจจุบัน** ⇒ ถ้าปล่อย actual_qty/qty_ok ค้างค่าเดิม
+         แถวเดียวกันจะขัดแย้งกันเอง: "ยอดผลิต 1,000" แต่ %P คิดจาก 1,100 (หลักเดียวกับที่
+         handleCloseSession ระวังไว้ตั้งแต่ 15/09) · วัดจริง ก.ย. 2026: 26 กะ · 885 ชิ้น
+         ที่ actual_qty ต่ำกว่าผลรวมใบผลิตจริง เพราะใบถูกแก้ยอดหลังปิดกะแล้วมีคนมากด "คำนวณ OEE ใหม่"
+         ⇒ รายงานรายเดือนนับยอดขาด แต่ %P ถูก = อธิบายให้ผู้บริหารไม่ได้ */
+      const reNg      = defectLogs.reduce((a, d) => a + (d.qty_ng      || 0), 0);
+      const reSuspect = defectLogs.reduce((a, d) => a + (d.qty_suspect || 0), 0);
+      const reRepair  = defectLogs.reduce((a, d) => a + (d.qty_repair  || 0), 0);
       const update = {
         shift_min: shiftMin,
+        // ยอดดี = ยอดผลิต (การ์ดที่สแกน = ของดีล้วน) — กติกาเดียวกับ handleCloseSession ห้ามแยกสูตร
+        actual_qty: totalProduced, qty_ok: totalProduced,
+        ng_qty: reNg, qty_ng: reNg, qty_suspect: reSuspect, qty_repair: reRepair,
         // CT ที่ใช้คิด %P รอบนี้ — ต้อง re-stamp ด้วย เพราะ %P ถูกคำนวณใหม่ทั้งก้อน (เฟส 0 Adaptive CT)
         ...(Object.keys(ctUsed || {}).length ? { ct_snapshot: ctUsed } : {}),
         oee_a: (noProduction || A == null) ? null : parseFloat((A * 100).toFixed(2)),
@@ -1085,7 +1104,12 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       };
       const { error: wErr769 } = await supabaseDR.from('production_sessions').update(update).eq('id', selSession.id);
       if (wErr769) { toast.error('บันทึกเวลา/OEE ของกะไม่สำเร็จ: ' + wErr769.message); return; }
-      toast.success('บันทึกเวลาและคำนวณ OEE ใหม่สำเร็จ');
+      /* ยอดเปลี่ยน = ต้องเห็น ห้ามแก้เงียบ — คนกดปุ่มนี้ตั้งใจแก้ "เวลา" ไม่ได้ตั้งใจแก้ "ยอด"
+         ถ้ายอดขยับด้วย แปลว่าใบผลิตถูกแก้หลังปิดกะ ซึ่งเขาควรรู้ก่อนเอาเลขไปรายงาน */
+      const qtyBefore = Number(selSession.actual_qty) || 0;
+      toast.success(qtyBefore !== totalProduced
+        ? `บันทึกเวลาและคำนวณ OEE ใหม่สำเร็จ · ยอดผลิตอัปเดตตามใบผลิตล่าสุด ${qtyBefore.toLocaleString()} → ${totalProduced.toLocaleString()} ชิ้น`
+        : 'บันทึกเวลาและคำนวณ OEE ใหม่สำเร็จ');
       setShowEditTimes(false);
       setMatTimeOverride({});
       load();
@@ -1688,21 +1712,23 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       // separate_order: นี่คือการสแกนคู่ RH/LH ใบที่สอง — ผูกกลับไปยังใบแรกที่รออยู่
       // sync opened_at ให้ตรงกับใบแรก เพราะผลิตพร้อมกันจริงแม้สแกนคนละเวลา
       const firstOrder = prodOrders.find(o => o.id === pendingPairId);
-      checkWrite(await supabaseDR.from('prod_orders').update({ paired_order_id: data.id }).eq('id', pendingPairId), 'ผูกคู่ RH/LH (ใบแรก)');
-      checkWrite(await supabaseDR.from('prod_orders').update({
+      /* 🔴 นับแถว — คู่ที่ผูกไม่ติดจะถูกนับเป็น 2 ใบแยกกัน ⇒ เวลามาตรฐานของ %P เบิ้ล
+         (กฎเหล็ก "ชิ้น ≠ shot" · collapsePairShots อ่าน paired_order_id เป็นตัวตัดสิน) */
+      checkWriteRows(await supabaseDR.from('prod_orders').update({ paired_order_id: data.id }).eq('id', pendingPairId).select('id'), 'ผูกคู่ RH/LH (ใบแรก)');
+      checkWriteRows(await supabaseDR.from('prod_orders').update({
         paired_order_id: pendingPairId,
         ...(firstOrder?.opened_at ? { opened_at: firstOrder.opened_at } : {}),
-      }).eq('id', data.id), 'ผูกคู่ RH/LH (ใบที่สอง)');
+      }).eq('id', data.id).select('id'), 'ผูกคู่ RH/LH (ใบที่สอง)');
       setPendingPairId(null);
       toast.success(`เปิด Order คู่ RH/LH พร้อมกัน ✓ (${prodNo})`);
     } else if (partnerMatNo) {
       const existingPartner = prodOrders.find(o => o.mat_no === partnerMatNo && o.status === 'open' && !o.paired_order_id);
       if (existingPartner) {
-        checkWrite(await supabaseDR.from('prod_orders').update({ paired_order_id: data.id }).eq('id', existingPartner.id), 'ผูกคู่ RH/LH (ใบที่เปิดค้าง)');
-        checkWrite(await supabaseDR.from('prod_orders').update({
+        checkWriteRows(await supabaseDR.from('prod_orders').update({ paired_order_id: data.id }).eq('id', existingPartner.id).select('id'), 'ผูกคู่ RH/LH (ใบที่เปิดค้าง)');
+        checkWriteRows(await supabaseDR.from('prod_orders').update({
           paired_order_id: existingPartner.id,
           ...(existingPartner.opened_at ? { opened_at: existingPartner.opened_at } : {}),
-        }).eq('id', data.id), 'ผูกคู่ RH/LH (ใบใหม่)');
+        }).eq('id', data.id).select('id'), 'ผูกคู่ RH/LH (ใบใหม่)');
         toast.success(`เปิด Order ${prodNo} ✓ และผูกคู่กับ ${existingPartner.prod_no} (RH/LH) อัตโนมัติ`);
       } else {
         setPendingPairId(data.id);
@@ -1962,7 +1988,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
         if (pe) {
           toast.error(`เปิดเป้าคู่ไม่สำเร็จ: ${pe.message}`);
         } else {
-          checkWrite(await supabaseDR.from('prod_orders').update({ paired_order_id: pairCreated.id }).eq('id', created.id), 'ผูกคู่ RH/LH');
+          checkWriteRows(await supabaseDR.from('prod_orders').update({ paired_order_id: pairCreated.id }).eq('id', created.id).select('id'), 'ผูกคู่ RH/LH');
           toast.success(`เปิดเป้าคู่ ${pairMat} · ${qty} ชิ้น ✓${pairSession.id !== selSession.id ? ` (ไลน์ ${pairLine} — ไปอัพเดทยอดที่หน้ากะของไลน์นั้น)` : ''}`);
         }
       }
@@ -2060,6 +2086,16 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       return;
     }
     setSavingDefect(true);
+    /* 📷 อัปโหลดรูป **ก่อน** เขียนแถว — ล้มแล้วเขียนต่อ = แถวบอกว่ามีรูปแต่เปิดไม่ขึ้น (ห้ามล้มเหลวเงียบ)
+       ⚠️ คีย์ชื่อไฟล์ใช้ `session_id` ไม่ใช่ id ของแถว (ตอน insert ยังไม่มี id) */
+    let defectImgUrl = defectForm.defect_img || null;
+    try {
+      if (defectFile) defectImgUrl = await uploadQualityPhoto(defectFile, 'defect', selSession.id);
+    } catch (e) {
+      setSavingDefect(false);
+      toast.error(`อัปโหลดรูปไม่สำเร็จ: ${e.message} — ยังไม่ได้บันทึกงานเสีย ลองกดบันทึกอีกครั้ง`);
+      return;
+    }
     const { data: { user } } = await supabase.auth.getUser();
     const matchedOrder = defectForm.mat_no
       ? (prodOrders.find(o => o.mat_no === defectForm.mat_no && o.status === 'open')
@@ -2073,6 +2109,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       qty_repair:       repair,
       description:      defectForm.description || null,
       is_trial:         !!defectForm.is_trial,
+      defect_img:       defectImgUrl,
     };
     const { error } = defectForm.id
       ? await supabaseDR.from('defect_logs').update(payload).eq('id', defectForm.id)
@@ -2084,6 +2121,10 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
         });
     setSavingDefect(false);
     if (error) { toast.error(error.message); return; }
+    /* 🔴 ลบไฟล์เก่าได้หลังเขียนแถวสำเร็จเท่านั้น (กฎเหล็ก db-write ข้อ 2) */
+    if (defectForm.id && defectForm.defect_img && defectForm.defect_img !== defectImgUrl) {
+      removeQualityImg(defectForm.defect_img);
+    }
     const label = [ng ? `NG ${ng}` : '', suspect ? `สงสัย ${suspect}` : '', repair ? `ซ่อม ${repair}` : ''].filter(Boolean).join(' · ');
     if (!defectForm.id) notifyEvent({
       event: 'defect_recorded', type: 'error', ref_table: 'defect_logs',
@@ -2097,7 +2138,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     });
     toast.success(defectForm.id ? `แก้ไขงานเสีย: ${label} ✓` : `บันทึกงานเสีย: ${label} ✓`);
     setShowDefect(false);
-    setDefectForm({ id: null, mat_no: '', defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '', is_trial: false });
+    setDefectForm({ id: null, mat_no: '', defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '', is_trial: false, defect_img: '' });
+    setDefectFile(null);
     loadDefectLogs(selSession.id);
   };
 
@@ -2132,15 +2174,21 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       const dup = prodOrders.find(p => p.prod_no === o.prod_no);
       if (dup) {
         // มีในกะนี้แล้ว — mark ต้นทางทุกใบ (รวมใบซ้ำในกะเก่าๆ) เป็น imported เพื่อให้ banner เคลียร์ออก
-        checkWrite(await supabaseDR.from('prod_orders').update({ status: 'imported' })
-          .eq('prod_no', o.prod_no).in('status', ['carry_over', 'open']).neq('session_id', selSession.id), 'ปิดใบต้นทางเป็น imported (ถ้าค้างจะถูกรับซ้ำรอบหน้า)');
+        /* นับแถว — ไม่ปิดต้นทาง = แบนเนอร์ยอดค้างไม่เคลียร์ แล้วใบเดิมถูกรับซ้ำรอบหน้า (เป้านับซ้ำ)
+           0 แถวอาจเป็นเพราะกะอื่นปิดไปแล้ว ⇒ ข้อความบอกทางออกไว้ ไม่ใช่แค่ "ล้มเหลว" */
+        checkWriteRows(await supabaseDR.from('prod_orders').update({ status: 'imported' })
+          .eq('prod_no', o.prod_no).in('status', ['carry_over', 'open']).neq('session_id', selSession.id).select('id'), 'ปิดใบต้นทาง',
+          { zeroMsg: `ไม่ได้ปิดใบต้นทาง ${o.prod_no} (0 แถว — อาจมีกะอื่นปิดไปแล้ว) · ถ้าแบนเนอร์ยอดค้างยังไม่หาย กดรับยอดอีกครั้ง` });
         continue;
       }
       const remainQty = o.qty - (o.qty_actual || 0);
       if (remainQty <= 0) {
         // ผลิตครบเป้าแล้ว ไม่ต้องยกยอด — แค่ปิดต้นทางไม่ให้ขึ้นเตือนค้างอีก
-        checkWrite(await supabaseDR.from('prod_orders').update({ status: 'imported' })
-          .eq('prod_no', o.prod_no).in('status', ['carry_over', 'open']).neq('session_id', selSession.id), 'ปิดใบต้นทางเป็น imported (ถ้าค้างจะถูกรับซ้ำรอบหน้า)');
+        /* นับแถว — ไม่ปิดต้นทาง = แบนเนอร์ยอดค้างไม่เคลียร์ แล้วใบเดิมถูกรับซ้ำรอบหน้า (เป้านับซ้ำ)
+           0 แถวอาจเป็นเพราะกะอื่นปิดไปแล้ว ⇒ ข้อความบอกทางออกไว้ ไม่ใช่แค่ "ล้มเหลว" */
+        checkWriteRows(await supabaseDR.from('prod_orders').update({ status: 'imported' })
+          .eq('prod_no', o.prod_no).in('status', ['carry_over', 'open']).neq('session_id', selSession.id).select('id'), 'ปิดใบต้นทาง',
+          { zeroMsg: `ไม่ได้ปิดใบต้นทาง ${o.prod_no} (0 แถว — อาจมีกะอื่นปิดไปแล้ว) · ถ้าแบนเนอร์ยอดค้างยังไม่หาย กดรับยอดอีกครั้ง` });
         continue;
       }
       const { error } = await supabaseDR.from('prod_orders').insert({
@@ -2165,8 +2213,11 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       if (!error) {
         imported++;
         // Mark original orders (ทุกใบที่ prod_no ตรงกันในกะเก่า) as 'imported'
-        checkWrite(await supabaseDR.from('prod_orders').update({ status: 'imported' })
-          .eq('prod_no', o.prod_no).in('status', ['carry_over', 'open']).neq('session_id', selSession.id), 'ปิดใบต้นทางเป็น imported (ถ้าค้างจะถูกรับซ้ำรอบหน้า)');
+        /* นับแถว — ไม่ปิดต้นทาง = แบนเนอร์ยอดค้างไม่เคลียร์ แล้วใบเดิมถูกรับซ้ำรอบหน้า (เป้านับซ้ำ)
+           0 แถวอาจเป็นเพราะกะอื่นปิดไปแล้ว ⇒ ข้อความบอกทางออกไว้ ไม่ใช่แค่ "ล้มเหลว" */
+        checkWriteRows(await supabaseDR.from('prod_orders').update({ status: 'imported' })
+          .eq('prod_no', o.prod_no).in('status', ['carry_over', 'open']).neq('session_id', selSession.id).select('id'), 'ปิดใบต้นทาง',
+          { zeroMsg: `ไม่ได้ปิดใบต้นทาง ${o.prod_no} (0 แถว — อาจมีกะอื่นปิดไปแล้ว) · ถ้าแบนเนอร์ยอดค้างยังไม่หาย กดรับยอดอีกครั้ง` });
       }
     }
     toast.success(`รับยอดค้างมาแล้ว ${imported} Order`);
@@ -2375,7 +2426,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       if (ov.start) {
         const firstOrder = orders.reduce((a, b) => (!a.opened_at || (b.opened_at && new Date(b.opened_at) < new Date(a.opened_at))) ? b : a);
         const ms = new Date(`${selSession.work_date}T${ov.start.slice(0,5)}:00`).getTime();
-        checkWrite(await supabaseDR.from('prod_orders').update({ opened_at: new Date(ms).toISOString() }).eq('id', firstOrder.id), 'บันทึกเวลาเริ่ม MAT');
+        checkWriteRows(await supabaseDR.from('prod_orders').update({ opened_at: new Date(ms).toISOString() }).eq('id', firstOrder.id).select('id'), 'บันทึกเวลาเริ่ม MAT');
       }
       if (ov.end) {
         const confirmedOrders = orders.filter(o => o.status === 'confirmed' && o.confirmed_at);
@@ -2383,7 +2434,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
           const lastOrder = confirmedOrders.reduce((a, b) => (new Date(b.confirmed_at) > new Date(a.confirmed_at)) ? b : a);
           let ms = new Date(`${selSession.work_date}T${ov.end.slice(0,5)}:00`).getTime();
           if (lastOrder.opened_at && ms < new Date(lastOrder.opened_at).getTime()) ms += 86400000;
-          checkWrite(await supabaseDR.from('prod_orders').update({ confirmed_at: new Date(ms).toISOString() }).eq('id', lastOrder.id), 'บันทึกเวลาปิด MAT');
+          checkWriteRows(await supabaseDR.from('prod_orders').update({ confirmed_at: new Date(ms).toISOString() }).eq('id', lastOrder.id).select('id'), 'บันทึกเวลาปิด MAT');
         }
       }
     }
@@ -2392,13 +2443,12 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     const totalQtyNg      = defectLogs.reduce((s, d) => s + (d.qty_ng      || 0), 0);
     const totalQtySuspect = defectLogs.reduce((s, d) => s + (d.qty_suspect || 0), 0);
     const totalQtyRepair  = defectLogs.reduce((s, d) => s + (d.qty_repair  || 0), 0);
-    const confirmed       = prodOrders.filter(o => o.status === 'confirmed');
     /* 🔴 ยอดที่ stamp ต้องนับใบ `carry_over`/`imported` ด้วย ให้ตรงกับ totalProduced ใน computeOEE
-       ไม่งั้นแถวเดียวกันขัดแย้งกันเอง — actual_qty นับ 384 แต่ %P คิดจาก 352 (เคส Assy LWR 15/09) */
-    const carryActual     = prodOrders
-      .filter(o => ['open', 'carry_over', 'cancelled', 'imported'].includes(o.status))
-      .reduce((s, o) => s + (parseInt(carryQtyActual[o.id]) || Number(o.qty_actual) || 0), 0);
-    const totalProducedFinal = confirmed.reduce((s, o) => s + o.qty, 0) + carryActual;
+       ไม่งั้นแถวเดียวกันขัดแย้งกันเอง — actual_qty นับ 384 แต่ %P คิดจาก 352 (เคส Assy LWR 15/09)
+       ⇒ ใช้สูตรกลาง `sessionProducedQty` (oee.js §6.0.1) ตัวเดียวกับ computeSessionOee
+          ห้ามวน reduce ใบผลิตเองที่นี่อีก (12/10 · เคยเป็นสำเนาที่ 3 ของกฎเดียวกัน) */
+    const totalProducedFinal = sessionProducedQty(prodOrders, carryQtyActual);
+    const confirmed       = prodOrders.filter(o => o.status === 'confirmed');   // ใช้สรุปรายการพาร์ทใน Telegram เท่านั้น (ไม่ใช่ตัวคิดยอด)
     // ยอดดี = ยอดผลิต (การ์ดที่สแกน = ของดีล้วน · NG/suspect/repair คือของที่ผลิตเพิ่มต่างหาก ไม่หักซ้ำ · 2026-08-02)
     const totalQtyOk      = totalProducedFinal;
 
@@ -2687,9 +2737,11 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   const handleCallMtn = async (d, team) => {
     if (d.call_mtn) return;
     const teamKey = teamKeyOf(team) || 'maintenance';   // ว่าง = ไม่กรองทีม → กลับไปเด้งทั้งโรงงาน ห้ามปล่อย
-    const ok = checkWrite(await supabaseDR.from('downtime_logs').update({
+    /* นับแถว — ถ้าเขียนไม่ติดแล้วยิงแจ้งเตือนต่อ ช่างจะมาโดยที่ใบไม่มีประวัติ "เรียกเมื่อไหร่/ใครเรียก"
+       และปุ่มยังกดซ้ำได้เรื่อยๆ (กฎเขียน DB ข้อ 2) */
+    const ok = checkWriteRows(await supabaseDR.from('downtime_logs').update({
       call_mtn: true, call_mtn_at: new Date().toISOString(), call_mtn_by: fullName, call_mtn_team: teamKey,
-    }).eq('id', d.id), 'เรียกช่าง');
+    }).eq('id', d.id).select('id'), 'เรียกช่าง');
     if (!ok) return;
     const dtType = dtTypes.find(t => t.id === d.downtime_type_id);
     const mcName = machines.find(m => m.machine_no === d.machine_no)?.machine_name || '';
@@ -3370,7 +3422,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                     <button onClick={() => {
                       const activeMatNos = Array.from(new Set(prodOrders.filter(o => o.status === 'open').map(o => o.mat_no))).filter(Boolean);
                       setShowDefect(true);
-                      setDefectForm({ id: null, mat_no: activeMatNos.length === 1 ? activeMatNos[0] : '', defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '', is_trial: false });
+                      setDefectForm({ id: null, mat_no: activeMatNos.length === 1 ? activeMatNos[0] : '', defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '', is_trial: false, defect_img: '' });
+                      setDefectFile(null);
                     }}
                       style={{ background: '#ef4444', color: '#fff', border: 'none', borderRadius: 7, padding: '7px 16px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
                       🔴 บันทึกงานเสีย
@@ -3815,7 +3868,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       })()}
                       {canEditRecords && (
                         <div style={{ display: 'flex', gap: 4 }}>
-                          <button className="tbtn" onClick={() => { setDefectForm({ id: d.id, mat_no: d.prod_orders?.mat_no || '', defect_type_id: d.defect_type_id || '', qty_ng: String(d.qty_ng||0), qty_suspect: String(d.qty_suspect||0), qty_repair: String(d.qty_repair||0), description: d.description || '', is_trial: d.is_trial === true }); setShowDefect(true); }}
+                          <button className="tbtn" onClick={() => { setDefectForm({ id: d.id, mat_no: d.prod_orders?.mat_no || '', defect_type_id: d.defect_type_id || '', qty_ng: String(d.qty_ng||0), qty_suspect: String(d.qty_suspect||0), qty_repair: String(d.qty_repair||0), description: d.description || '', is_trial: d.is_trial === true, defect_img: d.defect_img || '' }); setDefectFile(null); setShowDefect(true); }}
                             style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 13, padding: '0 4px' }}>✎</button>
                           <button className="tbtn" onClick={() => handleDeleteDefectLog(d.id)}
                             style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, padding: '0 4px' }}>✕</button>
@@ -5601,6 +5654,17 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 <Field label="รายละเอียด / สาเหตุ">
                   <input type="text" value={defectForm.description} onChange={e => setDefectForm(f => ({ ...f, description: e.target.value }))} placeholder="เช่น มิติไม่ได้เพราะแม่พิมพ์สึก..." style={inputStyle} />
                 </Field>
+
+                {/* 📷 รูปงานเสีย — **ทางเลือก ห้ามทำเป็นช่องบังคับ** (คำสั่ง user 12/10)
+                    หน้างานใส่ถุงมือ/รีบ บังคับถ่ายทุกใบ = คนเลิกลงข้อมูล
+                    รูปนี้ไหลต่อไปเป็น `found_img` ของใบถังเมื่อกดส่งลงถังเหลือง/แดง */}
+                <div style={{ marginTop: 10 }}>
+                  <QualityPhotoField
+                    label="📷 รูปงานเสีย" hint="ไม่บังคับ — ถ่ายไว้แล้วจะติดไปกับใบถังเหลือง/แดงด้วย"
+                    url={defectForm.defect_img || null} file={defectFile}
+                    onPick={(f) => { setDefectFile(f); if (!f) setDefectForm(fm => ({ ...fm, defect_img: '' })); }}
+                  />
+                </div>
 
                 {/* 🧪 งานทดลอง — ของเสียจากลองแม่พิมพ์/ลองงานใหม่ ไม่ควรลงโทษ %Q ของไลน์
                     แต่ยอดยังถูกเก็บครบเพื่อคิดมูลค่าของเสีย (2026-08-17 · คำสั่ง user) */}
@@ -7797,11 +7861,13 @@ function ProductSetup({ role }) {
       if (error) { setSaving(false); toast.error(error.message); return; }
       // Mark old product as superseded
       if (ecSource) {
-        checkWrite(await supabaseDR.from('dr_products').update({
+        /* นับแถว — ปิดเลขเดิมไม่ติด = พาร์ทเดียวมี 2 เลข active พร้อมกัน (CT/kanban/แผนหยิบผิดเลข) */
+        checkWriteRows(await supabaseDR.from('dr_products').update({
           is_active: false,
           superseded_at: form.effective_from || today(),
           superseded_by: inserted.id,
-        }).eq('id', ecSource.id), 'บันทึกข้อมูลสินค้า');
+        }).eq('id', ecSource.id).select('id'), 'ปิดใช้งานสินค้าเลขเดิม (EC)',
+          { zeroMsg: `บันทึกเลขใหม่แล้ว แต่ปิดเลขเดิม ${ecSource.mat_no || ''} ไม่ได้ (0 แถว) — ไปปิดเองที่ทะเบียนสินค้า ไม่งั้นมี 2 เลขใช้งานพร้อมกัน` });
       }
     } else {
       const { error } = await supabaseDR.from('dr_products').update(payload).eq('id', editing);

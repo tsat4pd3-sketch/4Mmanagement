@@ -5,7 +5,7 @@ import { RATE, LIVE } from '../utils/refreshRates'
 import { coalesce, makeIdleGate } from '../utils/liveRefresh'
 import { isAlarmingDT, isOverDtThreshold, loadDtAlertMin, DT_OPEN_ALERT_MIN_DEFAULT } from '../utils/downtimeAlarm'
 import { liveChannel } from '../utils/liveChannel'
-import { checkWrite } from '../utils/dbWrite';
+import { checkWriteRows } from '../utils/dbWrite';
 /* ทีมที่ถูกเรียกเก็บเป็น key — แปลงเป็นชื่อผ่านของกลางเท่านั้น (utils/mtnTeams.js) */
 import { teamKeyOf, deptNameOf } from '../utils/mtnTeams'
 
@@ -180,7 +180,9 @@ export default function DowntimeSiren({ mode = 'open_15min', team = null }) {
 
   const ack = async (a) => {
     setRaw(prev => prev.filter(x => x.id !== a.id))
-    checkWrite(await supabaseDR.from('downtime_logs').update({ [metaOf(a).ackField]: new Date().toISOString() }).eq('id', a.id), 'บันทึกรับทราบเสียงเตือน');
+    /* นับแถว — แถบ alert ถูกถอดจากจอไปแล้วบรรทัดบน ถ้าเขียนไม่ติดเสียงจะกลับมาดังรอบหน้า
+       โดยที่คนกดคิดว่ารับทราบแล้ว (กฎเขียน DB ข้อ 2) */
+    checkWriteRows(await supabaseDR.from('downtime_logs').update({ [metaOf(a).ackField]: new Date().toISOString() }).eq('id', a.id).select('id'), 'บันทึกรับทราบเสียงเตือน');
   }
 
   /* ยังไม่มีเหตุ แต่เสียงล็อกอยู่ = ต้องบอกตั้งแต่ตอนนี้ (จอห้องช่างที่เปิดทิ้งไว้)

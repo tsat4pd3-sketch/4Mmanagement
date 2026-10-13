@@ -297,7 +297,50 @@ test('แผน vs มาจริง: ที่นั่ง = การ์ด+�
   assert.equal(sum.fill, 10 / 14);
 });
 
-test('rosterOn: ตัดคนที่เริ่มงานหลังวันนั้น · ไม่มี start_date = นับ', () => {
-  const r = M.rosterOn([{ id: 'a', start_date: '2026-10-05' }, { id: 'b', start_date: null }, { id: 'c', start_date: '2026-10-01' }], '2026-10-03');
-  assert.deepEqual(r.map(e => e.id), ['b', 'c']);
+test('rosterOn: ตัดคนที่เริ่มงานหลังวันนั้น · ไม่มี start_date = นับ · ปี พ.ศ./ค่าอนาคต ไม่ใช้ตัด · เช็คชื่อแล้วชนะ', () => {
+  const E = [{ id: 'a', start_date: '2026-10-05' }, { id: 'b', start_date: null }, { id: 'c', start_date: '2026-10-01' },
+    { id: 'be', start_date: '2565-09-01' }, { id: 'came', start_date: '2026-10-06' }];
+  const r = M.rosterOn(E, '2026-10-03', { today: '2026-10-12', attendance: { came: { is_present: true } } });
+  assert.deepEqual(r.map(e => e.id), ['b', 'c', 'be', 'came'], 'a เริ่มหลังวันนั้นจริง = ตัด · ปี พ.ศ. (อยู่หลังวันนี้) = ค่าผิด ไม่ตัด · มาเช็คชื่อแล้ว = อยู่');
+});
+
+test('คนมาน้อย ↔ OEE: "ปกติ" = มัธยฐานของแผนกเอง · ถ่วงด้วยเวลา · ไม่ได้เช็คชื่อ/ไม่มีกะผลิต = ไม่เข้า · กะน้อย = thin', () => {
+  const sess = [
+    { work_date: '2026-10-01', shift: 'day', line_name: 'Line 60', oee: 80, oee_p: 90, oee_a: 100, shift_min: 480 },
+    { work_date: '2026-10-01', shift: 'day', line_name: 'SUB APRON', oee: 60, oee_p: 70, oee_a: 100, shift_min: 160 },
+    { work_date: '2026-10-02', shift: 'day', line_name: 'line 60 ', oee: 50, oee_p: 60, oee_a: 100, shift_min: 480 },
+    { work_date: '2026-10-03', shift: 'day', line_name: 'Line 60', oee: null, shift_min: 480 },
+  ];
+  const idx = M.indexSessions(sess);
+  const lines = [{ name: 'Line 60' }, { name: 'SUB APRON' }];
+  assert.equal(M.sessionsOfDeptShift(idx, lines, '2026-10-01', 'day').length, 2);
+  assert.equal(M.sessionsOfDeptShift(idx, lines, '2026-10-02', 'day').length, 1, 'ชื่อไลน์ต่างตัวพิมพ์/ช่องว่าง ยังจับคู่ได้');
+  assert.deepEqual(M.oeeOfSessions(M.sessionsOfDeptShift(idx, lines, '2026-10-01', 'day')), { oee: 75, p: 85, sessions: 2 }, 'ถ่วงด้วยเวลารับภาระ 480:160');
+  const mk = (date, onFloor, gap = 5) => ({ date, depts: [{ key: 'd', name: 'APRON', shifts: { day: { gap, onFloor }, night: { gap: null } },
+    sessions: { day: M.sessionsOfDeptShift(idx, lines, date, 'day'), night: [] } }] });
+  // ทุกกะ "ขาด" เทียบที่นั่ง (gap 5) — ยังเทียบได้ เพราะ "ปกติ" มาจากมัธยฐานของแผนกเอง
+  const r = M.compareOeeByStaffing([mk('2026-10-01', 12), mk('2026-10-02', 8), mk('2026-10-03', 4), mk('2026-10-01', 12, null)])[0];
+  assert.equal(r.normal, 10, 'มัธยฐานของ 12 กับ 8 (กะไม่มี OEE + กะไม่ได้เช็คชื่อ ไม่นับ)');
+  assert.equal(r.usual.shifts, 1); assert.equal(r.low.shifts, 1);
+  assert.equal(r.usual.oee, 75); assert.equal(r.low.oee, 50); assert.equal(r.diffOee, -25);
+  assert.equal(r.verdict, 'thin', 'กลุ่มละไม่ถึง 3 กะ = ห้ามสรุป');
+  assert.equal(M.compareOeeByStaffing([{ date: 'x', depts: [{ key: 'e', name: 'E', shifts: { day: { gap: null } }, sessions: {} }] }])[0].verdict, 'none');
+});
+
+test('stationSkillGaps: นับเฉพาะคนมาที่ยืนจริง · จุดไม่ตั้งทักษะไม่นับว่าผ่าน · ต่ำสุดก่อน · ย้ายมาชั่วคราวติดธง', () => {
+  const P = (id, attend, extra = {}) => ({ emp: { id, name: id }, attend, shift: 'day', ...extra });
+  const placed = [
+    { station: { id: 1, station_name: 'ST1' }, people: [P('ok', 'present'), P('half', 'present', { temp: true }), P('leave', 'leave'), P('away', 'present', { away: true })] },
+    { station: { id: 2, station_name: 'ST2' }, people: [P('zero', 'present')] },
+    { station: { id: 3, station_name: 'ST3' }, people: [P('x', 'present'), P('y', 'present')] },
+  ];
+  const r = M.stationSkillGaps(placed, {
+    skillsByEmp: { ok: [{ skill_name: 'w', score: 75 }, { skill_name: 'g', score: 50 }], half: [{ skill_name: 'w', score: 75 }] },
+    reqsByStation: { 1: [{ skill_name: 'w', min_score: 50 }, { skill_name: 'g', min_score: 50 }], 2: [{ skill_name: 'w', min_score: 25 }] },
+  });
+  assert.equal(r.checked, 3, 'ลา + ไปยืนจุดอื่น ไม่นับ');
+  assert.equal(r.ok, 1);
+  assert.deepEqual(r.gaps.map(g => [g.emp.id, g.fit.score, g.temp]), [['zero', 0, false], ['half', 50, true]]);
+  assert.deepEqual(r.gaps[1].missing.map(m => m.skill_name), ['g']);
+  assert.equal(r.noReqStations, 1); assert.equal(r.noReqPeople, 2, 'จุดไม่ตั้งทักษะ = ไม่รู้ ห้ามนับว่าผ่าน');
 });
