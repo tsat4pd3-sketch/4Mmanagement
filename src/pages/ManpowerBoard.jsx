@@ -166,7 +166,7 @@ export default function ManpowerBoard() {
     for (const r of attLogs) { const cur = m[r.employee_id]; if (!cur || (!cur.is_present && r.is_present)) m[r.employee_id] = r; }
     return m;
   }, [attLogs]);
-  const maps = useMemo(() => buildScheduleMaps(sched), [sched]);
+  const maps = useMemo(() => buildScheduleMaps(sched, lines), [sched, lines]);   // lines = ไลน์ลูกตกทอดกะจากไลน์แม่
   const board = useMemo(() => buildManpowerBoard({ section, nodes, employees, lines, maps, attendance, slotPlans, lineTechs, helpers, stations, stationPlans, homeByEmp }),
     [section, nodes, employees, lines, maps, attendance, slotPlans, lineTechs, helpers, stations, stationPlans, homeByEmp]);
   const depts = useMemo(() => (board?.depts || []).filter(d => !deptParam || d.key === deptParam), [board, deptParam]);
@@ -935,7 +935,7 @@ function StaffingTab({ section, deptParam, today, nodes, employees, lines, slotP
     const sIdx = indexSessions(raw.sessions);
     const out = [];
     for (let d = from; d && d <= to; d = addDaysStr(d, 1)) {
-      const board = buildManpowerBoard({ section, nodes, employees: rosterOn(employees, d, { today, attendance: att[d] }), lines, maps: buildScheduleMaps(sch[d] || []),
+      const board = buildManpowerBoard({ section, nodes, employees: rosterOn(employees, d, { today, attendance: att[d] }), lines, maps: buildScheduleMaps(sch[d] || [], lines),
         attendance: att[d] || {}, slotPlans, lineTechs, helpers: raw.borrowed.byDate?.[d] || [], stations, stationPlans, homeByEmp });
       out.push({ date: d, depts: (board?.depts || []).filter(x => !deptParam || x.key === deptParam)
         .map(x => ({ key: x.key, name: x.name, shifts: staffingOfDept(x),
