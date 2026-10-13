@@ -450,7 +450,14 @@ function PartHead({ part, board, shortAt, racks = null, raw = null }) {
   if (part.ct_sec) sub.push(`CT ${part.ct_sec}s`);
   if (part.pieces_per_shot > 1) sub.push(`${part.pieces_per_shot} ชิ้น/จังหวะ`);
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0, maxWidth: HEAD_W - 16 - 52 }}>
+    /* 🔴 หัวพาร์ทต้อง "ตัดบรรทัดเอง" — `tdBase` ตั้ง `whiteSpace:'nowrap'` ไว้สำหรับช่องตัวเลข
+       ⇒ ถ้าไม่ปลดที่นี่ บรรทัดรายละเอียด (รุ่น · LOT · บรรจุ · CT) จะ**ล้นออกนอกคอลัมน์หัว**
+       ไปทับช่องตัวเลขช่องแรก (วัดจริง 13/10 @390px: กล่อง 222 เนื้อหา 242 · mobilesweep "ล้นปัดไม่ได้")
+       `anywhere` เพราะเลข MAT/ชื่อพาร์ทเป็นคำยาวไม่มีช่องว่างให้เบรก */
+    <div style={{
+      display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0, maxWidth: HEAD_W - 16 - 52,
+      whiteSpace: 'normal', overflowWrap: 'anywhere',
+    }}>
       {/* 🔴 `matText(mat, index, row)` — อาร์กิวเมนต์แรกคือ "เลข MAT" ไม่ใช่ทั้งแถว
           เดิมส่ง `matText(part)` ⇒ หัวพาร์ททุกแถวขึ้น `MAT [object Object]` แทนเลขจริง (แก้ 05/10)
           ชื่อพาร์ทวาดเป็นบรรทัดของตัวเองข้างล่าง (clamp 2 บรรทัด) จึงไม่ส่ง `name` เข้ามาซ้ำ */}

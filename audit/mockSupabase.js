@@ -377,7 +377,14 @@ const TABLE_ROWS = {
     qa_skipped_at: null, purpose: i % 4 === 0 ? 'improve' : 'repair',
     report_at: '2026-08-04T09:30:00+07:00',
     mtn_head_at: i % 2 ? '2026-08-05T09:00:00+07:00' : null, approve_at: null,
-    reported_by_name: 'สมชาย ใจดี', assigned_to: 'ช่างเอก',
+    /* 🧑 ชื่อผู้แจ้ง — ลิสต์ MO โชว์เป็นคอลัมน์ตั้งแต่ 13/10 ⇒ ต้องมีทั้ง 3 เคสในด่าน
+       (วัดจากฐาน 13/10: 720 ใบ · reported_by_name 689 · reporter_prod 692 · ไม่มีทั้งคู่ 25)
+       · แถว NULLISH = ไม่มีทั้งคู่ ⇒ เส้นทาง '—' ถูกเรนเดอร์จริง
+       · บางแถวว่างช่องแรกแต่มีช่องสอง ⇒ เส้นทาง fallback `reported_by_name || reporter_prod` ถูกวิ่ง
+       🔴 ห้ามตั้งชื่อให้ทุกแถว (เดิมเป็นแบบนั้น) = 2 เส้นทางนั้นหลุดด่านทั้งคู่ */
+    reported_by_name: isNullish(r) ? null : (i % 4 === 1 ? null : 'สมชาย ใจดี'),
+    reporter_prod: isNullish(r) ? null : (i % 4 === 1 ? 'ผู้แจ้งฝ่ายผลิต' : null),
+    assigned_to: 'ช่างเอก',
   }),
   line_layouts: (r, i) => ({ ...r, line_id: `id-${i}`, line_name: LINE_NAME(i), image_url: FACTORY_MAP_IMG }),
   /* คิวรับเข้าคลัง (2026-10-02) — คละ รอรับ/ค้างเกินกำหนด/รับแล้ว(ยอดไม่ตรง) ให้ทุกโซนของ StockReceiptQueue ถูกรัน */
