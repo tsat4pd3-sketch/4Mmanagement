@@ -25,7 +25,7 @@
    (เลขขั้นคนละความหมายระหว่างฟอร์ม JIG/DIE กับ MTN — กฎเหล็กใน CLAUDE.md)
    ═══════════════════════════════════════════════════════════════════════════ */
 import { personKey, normPersonName } from './actorStamp.js';
-import { stepMeta, nextStepOf } from './mtnStepPerm.js';
+import { stepMeta, nextStepOf, canDoStep } from './mtnStepPerm.js';
 import { isMtnFormRow } from './mtnMoForm.js';
 import { bkkDateStr } from './workDate.js';
 
@@ -121,6 +121,30 @@ export function scopeStateOf(row, me) {
  *  ⚠️ พฤติกรรมเหมือนเดิมเป๊ะ (แถวไม่ระบุส่วนงาน = false) — แค่ยืมคำตอบจาก `scopeStateOf` จุดเดียว */
 export const inMyScope = (row, me) => scopeStateOf(row, me) === 'in';
 
+/* ── ขั้นที่ "ตำแหน่งเดียวเซ็นได้" — นับเป็นงานรอคุณ (2026-10-13 · คำสั่ง user) ──────────────
+   *"อย่างอนุมัติ MO สำหรับช่องที่คนเซ็นคือ ผู้จัดการฝ่ายผู้แจ้ง ต้องอนุมัติและอนุมัติได้คนเดียว
+     ก็ต้องเตือนแค่ user นั้น และสำคัญกว่าแจ้งเตือนอื่นๆ ของหน่วยงาน"*
+   ⇒ ขั้นที่ **ล็อกตำแหน่ง** (`meta.minRank` มีค่า · ไม่ใช่ขั้นผู้เปิดใบ) เช่น ผจก.ฝ่ายผู้แจ้งปิดใบ ·
+     ผจก.ซ่อมบำรุง = เข้าชั้น `mine` **เฉพาะคนที่เซ็นช่องนั้นได้จริง** (ติดธง `sign` + ขึ้นก่อนทุกรายการ)
+   · ตัดสินด้วย `canDoStep()` **ตัวเดียวกับปุ่มเซ็นในหน้า /mtn-repair** — ห้ามเขียนเกณฑ์ใหม่
+   · 🔴 **ต้องรู้ฝั่งและตำแหน่งจริง** (`actorSide`/`posRank` จากโปรไฟล์) — ไม่รู้ = ไม่นับ (ไม่รู้ ≠ ใช่)
+     และ **ไม่นับสิทธิ์ `manage_master`** (หัวหน้าระบบแก้ย้อนหลังได้ทุกขั้น ≠ คนที่ช่องนี้รอ)
+     ไม่งั้น admin จะได้ใบรออนุมัติทั้งโรงงานเป็น "รอคุณ" = badge เลขสูงค้างถาวร (ซ้ำรอยกระดิ่งเดิม)
+   · ขั้นที่หลายคนถือสิทธิ์ได้ (QA · จ่ายงาน — ไม่มี minRank) ยังเป็นคิวหน่วยงานตามเดิม */
+export function soleSignerFor(o, w, me = {}) {
+  const m = w?.meta;
+  if (!m || w.byName || m.minRank == null) return false;
+  if (!me.actorSide || me.actorSide === 'unknown' || me.actorSide !== m.side) return false;
+  if (me.posRank == null || me.posRank < m.minRank) return false;
+  const r = canDoStep(w.step, {
+    order: o, fullName: me.name || '', can: me.can || (() => false), seeded: me.seeded || (() => true),
+    inOrderTeam: typeof me.inTeam === 'function' ? !!me.inTeam(o) : false,
+    hasTeams: !!me.hasTeams, mtnForm: isMtnFormRow(o),
+    actorSide: me.actorSide, posRank: me.posRank,
+  });
+  return !!r.ok && (r.code === 'perm' || r.code === 'fallback');
+}
+
 /* ── ตัวแปลงแถวดิบ → รายการบนจอ ─────────────────────────────────────────────
    ทุกตัวคืนรูปเดียวกัน: { key, icon, title, detail, age, tier, tag, to }
    `to` = ลิงก์ที่**พาไปถึงใบนั้นจริง** (ไม่ใช่หน้ารวม) — คนกดแล้วต้องทำงานต่อได้ทันที */
@@ -142,7 +166,8 @@ function moItem(o, w, tier) {
  * ประกอบคิวจากแถวที่ผู้เรียกโหลดมา
  *
  * @param {object} src  แถวดิบ — ขาดก้อนไหนให้ส่ง `undefined` **ห้ามส่ง []** (ดู `missing`)
- * @param {object} me   { uid, name, sections }
+ * @param {object} me   { uid, name, sections, actorSide?, posRank?, can?, seeded?, inTeam?, hasTeams? }
+ *                      (4 ตัวหลัง = เกณฑ์ช่องเซ็นตามตำแหน่ง · ไม่ส่ง = ไม่มีใบรอเซ็นเข้า `mine` ตามเดิม)
  * @returns {{ mine, unit, floor, counts, missing, partial }}
  *
  * 🔴 `missing` = ก้อนที่โหลดไม่สำเร็จ ⇒ `partial === true` ⇒ **จอต้องเขียนว่าตัวเลขไม่ครบ**
@@ -179,6 +204,11 @@ export function buildQueue(src = {}, me = {}, now = new Date()) {
     const w = moWaitingOn(o);
     if (!w.meta) continue;                                  // ใบยังไม่เข้าลูป (ขั้น 1) — ไม่ใช่งานค้างของใคร
     if (w.byName && w.who && isMe(w.who, me)) { mine.push(moItem(o, w, TIER.MINE)); continue; }
+    // ขั้นล็อกตำแหน่งที่เราเซ็นได้คนเดียว (ในขอบเขตเรา) ⇒ รอคุณ + ขึ้นก่อน (soleSignerFor ข้างบน)
+    if (!w.byName && soleSignerFor(o, w, me) && scopeStateOf(o, me) === 'in') {
+      mine.push({ ...moItem(o, w, TIER.MINE), sign: true, tag: '✍️ รอคุณเซ็น' });
+      continue;
+    }
     if (!w.byName) {                                        // รอ "ตำแหน่ง" ⇒ สะสมไว้สรุปชั้น floor
       const sk = w.meta.stage || `step${w.step}`;           // ไม่รู้ stage = ยังแยกกองด้วยเลขขั้น ห้ามยุบรวม
       const cur = byPos.get(sk) || { stage: sk, step: w.step, meta: w.meta, count: 0, oldest: null };
@@ -258,7 +288,8 @@ export function buildQueue(src = {}, me = {}, now = new Date()) {
   }
 
   const byAge = (a, b) => (b.age ?? -1) - (a.age ?? -1);      // เก่าสุดขึ้นก่อน · ไม่รู้อายุไปท้าย
-  mine.sort(byAge); unit.sort(byAge);
+  // ✍️ ช่องที่รอเราเซ็นคนเดียวขึ้นก่อนทุกอย่าง (คำสั่ง user 13/10 "สำคัญกว่าแจ้งเตือนอื่นๆ")
+  mine.sort((a, b) => ((b.sign ? 1 : 0) - (a.sign ? 1 : 0)) || byAge(a, b)); unit.sort(byAge);
 
   return {
     mine, unit, floor,
