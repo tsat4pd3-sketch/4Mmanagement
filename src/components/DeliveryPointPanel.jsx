@@ -213,7 +213,7 @@ export default function DeliveryPointPanel({ lineName, lines = [] }) {
                     {!r.storage_location && (
                       <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 3, lineHeight: 1.45 }}>
                         ด่าน "ส่งถูกพื้นที่ไหม" ยังไม่ทำงานกับจุดนี้ — ลงทะเบียนพื้นที่ของไลน์ที่
-                        <Link to="/line-stock?tab=zones" style={{ color: '#f59e0b', fontWeight: 800 }}> 📦 Line Stock → 🏬 โซนคลัง</Link> แล้วกด ✏️ แก้ + บันทึกจุดนี้ซ้ำ
+                        <Link to="/line-stock?tab=zones" style={{ color: '#f59e0b', fontWeight: 800 }}> 📦 สต๊อกในไลน์ → 🏬 พื้นที่ SAP / โซนคลัง → “ทะเบียนรหัสคลัง”</Link> แล้วกด ✏️ แก้ + บันทึกจุดนี้ซ้ำ
                       </div>
                     )}
                     {others.length > 0 && (
@@ -283,7 +283,7 @@ export default function DeliveryPointPanel({ lineName, lines = [] }) {
                       : codes.length === 1
                         ? <>🏬 พื้นที่ SAP: <b style={{ fontFamily: 'monospace' }}>{codes[0]}</b>{info.find(i => i.s)?.s.via !== info.find(i => i.s)?.n ? ` (ตกทอดจาก ${info.find(i => i.s).s.via})` : ''}</>
                         : null}
-                    {unmapped.length > 0 && <span style={{ color: '#f59e0b' }}>{codes.length ? ' · ' : ''}⚠ {unmapped.join(', ')} ยังไม่ผูกรหัสคลัง SAP (ผูกที่ 📦 Line Stock → 🏬 โซนคลัง)</span>}
+                    {unmapped.length > 0 && <span style={{ color: '#f59e0b' }}>{codes.length ? ' · ' : ''}⚠ {unmapped.join(', ')} ยังไม่ผูกรหัสคลัง SAP (ผูกที่ 📦 สต๊อกในไลน์ → 🏬 พื้นที่ SAP / โซนคลัง → “ทะเบียนรหัสคลัง” กด ✏️ ที่รหัสแล้วติ๊กไลน์)</span>}
                   </div>
                 );
               })()}
