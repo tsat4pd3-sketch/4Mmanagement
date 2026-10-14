@@ -10,6 +10,9 @@ export const LINE_TYPES = [
   { value: 'laser',            label: '✂️ เลเซอร์' },
   { value: 'welding_assembly', label: '🔥 เชื่อมประกอบ' },
   { value: 'other',            label: '📦 อื่นๆ' },
+  /* 🧪 จ้างนอก (2026-10-13) — "ไลน์" ที่จริงคือร้านภายนอก (ชุบ/ทำสี) · สินค้าบนไลน์นี้ = สินค้าหลังชุบ
+     ที่สโตร์ส่งงานก่อนชุบออกไปแล้วรับคืน (แท็บ 🧪 งานชุบ ในตู้ Kanban รวม · `utils/plating.js`) */
+  { value: 'outsource',        label: '🧪 จ้างนอก (ชุบ/ทำสี)' },
 ];
 
 export const lineTypeLabel = (v) => LINE_TYPES.find(t => t.value === v)?.label || null;

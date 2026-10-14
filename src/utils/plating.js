@@ -1,12 +1,16 @@
 /* ═══ 🧪 งานชุบภายนอก (outsource plating) — กฎกลางของแท็บ "งานชุบ" ใน /heijunka (2026-10-13 · คำสั่ง user) ═══
 
-   หน้างาน: *"planner ส่งออกไปชุบโดยดูเลข MAT 2xx ก่อนชุบ · สโตร์รับกลับด้วยเลข 2xx หลังชุบ ·
-   ส่งเข้า W/H ระบบแปลงเป็น 1xx เอง"* + *"ให้ user เข้าไป set เอง อย่า hard code"*
+   หน้างาน (13/10): *"ผลิตคอนเฟิร์ม order เข้าสโตร์ → สโตร์กดรับยอด → สโตร์ส่งงานออกไปชุบ (เลือกงานหลังชุบ
+   ส่งกี่ออเดอร์กี่ชิ้นก็ใส่) → การ์ดเด้งไปรอรับงานหลังชุบกลับ · มอนิเตอร์ยอดที่ร้านได้ → งานกลับมา สโตร์กดรับ
+   ตามจำนวนจริง ไม่ครบใส่รายละเอียด ... ชุบทำหน้าที่คล้ายผลิต เปลี่ยน 2xx ก่อนชุบเป็น 2xx หลังชุบ
+   แต่ไม่มีการคอนเฟิร์มยอดของร้านชุบ"* + *"ให้ user เข้าไป set เอง อย่า hard code"*
 
-   🔴 เส้นทางชุบ = **Product Master + BOM เท่านั้น** (ไม่มีทะเบียนจับคู่แยก · ไม่มีชื่อร้าน/MAT ในโค้ด)
-      สินค้า "หลังชุบ" มี `dr_products.outsource_vendor` + ใน BOM มีลูก = "ก่อนชุบ"
-      ⇒ ส่ง = ลูก · รับคืน = ตัวแม่ · ส่งเข้า W/H = แม่ของ "หลังชุบ" ที่เป็น FG และ **มีลูกตัวเดียว**
+   🔴 "สินค้าหลังชุบ" = สินค้าบน **ไลน์ประเภทจ้างนอก** (`production_lines.line_type = 'outsource'` · user ตั้งที่ /line-setup)
+      หรือที่ตั้งร้านไว้ (`dr_products.outsource_vendor`) — **ไม่มีชื่อร้าน/MAT/คำว่า "หลังชุบ" ในโค้ด**
+      เลขก่อนชุบ = ลูกใน BOM (ตัวหลัก) · BOM ยังไม่ผูก = เสนอจาก P/N ตรงกัน แล้ว **ส่งครั้งแรกระบบผูก BOM ให้**
+      ⇒ ส่ง = ก่อนชุบ · รับคืน = หลังชุบ · ส่งเข้า W/H = แม่ของ "หลังชุบ" ที่เป็น FG และ **มีลูกตัวเดียว**
         (FG ที่มีชิ้นอื่นด้วย = ต้องประกอบที่ไลน์ → ไหลตามใบผลิตปกติ ห้ามแปลงตรงที่คลัง · RPC กันซ้ำอีกชั้น)
+   🔴 ร้านชุบ "ไม่ยืนยันยอด" — สโตร์หน้างานนับแล้วกดรับต่อใบ (เหมือนคิวรอรับเข้าของผลิต · ยอดไม่ครบต้องมีเหตุผล)
    🔴 ทุกปุ่มเขียนผ่าน RPC `plating_*` (DR · `20261013_plating_loop_dr.sql`) — ห้ามเขียน ledger เองจากจอ
    🔴 คลังต้นทาง/ปลายทางอ่านจากกฎรับเข้าคลัง (`inflowDestOf`) — ไม่มีกฎ = บอกบนจอ ห้ามเดา "STORE"
 
@@ -14,7 +18,7 @@
    ═══════════════════════════════════════════════════════════════════════════════════ */
 
 import { buildBomIndex, buildParentIndex } from './bomTree.js';
-import { isFgMat } from './matPrefix.js';
+import { isFgMat, matDigit } from './matPrefix.js';
 
 const norm = (s) => String(s ?? '').trim();
 const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
@@ -33,26 +37,116 @@ export const matOfProductMap = (products = []) => {
   return m;
 };
 
+/** ประเภทไลน์ "จ้างนอก" (production_lines.line_type · ทะเบียน `utils/lineTypes.js`) — user ตั้งเองที่ /line-setup */
+export const OUTSOURCE_LINE_TYPE = 'outsource';
+
+const pnoKey = (s) => norm(s).toUpperCase().replace(/[^A-Z0-9]/g, '');
+
 /**
- * เส้นทางชุบที่ตั้งไว้แล้ว — 1 แถวต่อ (หลังชุบ, ก่อนชุบ)
- * สินค้าที่มีร้านแต่ BOM ยังไม่มีลูก ⇒ แถว `before: null` + `problem` (ต้องโชว์ ห้ามกลืน)
- * @returns {Array<{ after, afterName, afterActive, vendor, before, beforeName, problem }>}
+ * สินค้า "หลังชุบ" = สินค้าที่อยู่บนไลน์ประเภทจ้างนอก **หรือ** ตั้งร้านไว้ (`outsource_vendor`)
+ * 🔴 ไม่เดาจากชื่อ ("หลังชุบ") — user ตั้งประเภทไลน์เอง (คำสั่ง user "อย่า hard code")
+ * @param {Array} products dr_products
+ * @param {Array} lines    production_lines (ต้องมี name, line_type)
  */
-export function platingRoutes(products = [], bomRows = []) {
+export function platingProducts(products = [], lines = []) {
+  const outLines = new Set((lines || []).filter(l => l?.line_type === OUTSOURCE_LINE_TYPE && l?.is_active !== false)
+    .map(l => norm(l.name).toLowerCase()));
+  return (products || [])
+    .filter(p => norm(p?.mat_no) && !p?.is_operation
+      && (norm(p.outsource_vendor) || outLines.has(norm(p.line_name).toLowerCase())))
+    .sort((a, b) => norm(a.mat_no).localeCompare(norm(b.mat_no)));
+}
+
+/**
+ * เลข "ก่อนชุบ" ของสินค้าหลังชุบ — เรียงจากน่าเชื่อสุด (ข้อเสนอ · คนเลือกได้เสมอ)
+ *   ① ลูกใน BOM ที่ P/N ตรงกัน  ② ลูกใน BOM เลข 2xx  ③ สินค้า 2xx ที่ P/N ตรงกันเป๊ะ (BOM ยังไม่ผูก)
+ * 🔴 "ลูกใน BOM" = **รวมทุกใบ** (ใบของสินค้าหลังชุบเอง + แถว `parent_mat` ในใบ FG) — นิยามเดียวกับ RPC
+ *    `plating_bom_has_child` · ห้ามใช้ `bomOf()` ที่เลือกใบเดียว: วัดจริง 13/10 ใบของสินค้าหลังชุบหลายตัว
+ *    (เช่น 20059852) ใส่ลูกของ "ก่อนชุบ" ตรงๆ ข้ามชั้น ส่วนใบ FG จัดชั้นถูก (20059852 → 20059853 ก่อนชุบ)
+ *    ⇒ ใช้ใบเดียว = เสนอ MOUNTING PLATE แทนตัวก่อนชุบจริง · มี P/N ตรงกัน = ใช้เฉพาะกลุ่มนั้น
+ * `linked` = มีขาใน BOM แล้ว (ส่งได้เลย) · false = ส่งครั้งแรกระบบจะผูก BOM ให้
+ * @returns {Array<{ mat, name, line, linked, why }>}
+ */
+export function beforeCandidatesOf(after, { products = [], bomRows = [], platingSet } = {}) {
+  const a = norm(after);
+  if (!a) return [];
   const byMat = new Map((products || []).map(p => [norm(p?.mat_no), p]));
-  const { bomOf } = buildBomIndex((bomRows || []).filter(r => r?.is_active !== false), matOfProductMap(products));
-  const out = [];
-  (products || []).forEach(p => {
-    const vendor = norm(p?.outsource_vendor);
-    const after = norm(p?.mat_no);
-    if (!vendor || !after) return;
-    const base = { after, afterName: p.name || '', afterActive: p.is_active !== false, vendor };
-    const kids = bomOf(after).map(r => norm(r?.mat_no)).filter(Boolean);
-    const uniq = [...new Set(kids)];
-    if (!uniq.length) { out.push({ ...base, before: null, beforeName: '', problem: 'BOM ของสินค้าหลังชุบยังไม่มีลูก (ก่อนชุบ)' }); return; }
-    uniq.forEach(b => out.push({ ...base, before: b, beforeName: byMat.get(b)?.name || '', problem: null }));
+  const mop = matOfProductMap(products);
+  const myPno = pnoKey(byMat.get(a)?.p_no);
+  const isPlating = (m) => (platingSet ? platingSet.has(m) : false);
+  const samePno = (p) => !!myPno && pnoKey(p?.p_no) === myPno;
+  const kids = new Map();
+  (bomRows || []).forEach(r => {
+    if (r?.is_active === false) return;
+    const parent = norm(r?.parent_mat) || norm(mop[r?.product_id]);
+    const m = norm(r?.mat_no);
+    if (parent !== a || !m || m === a || matDigit(m) !== '2' || kids.has(m)) return;
+    const p = byMat.get(m);
+    kids.set(m, { mat: m, name: p?.name || r.part_name || '', line: p?.line_name || '', linked: true, why: samePno(p) ? 'bom+pno' : 'bom' });
   });
-  return out.sort((a, b) => a.vendor.localeCompare(b.vendor, 'th') || a.after.localeCompare(b.after));
+  const kidList = [...kids.values()];
+  const pnoKids = kidList.filter(k => k.why === 'bom+pno');
+  const out = pnoKids.length ? pnoKids : kidList;
+  if (!pnoKids.length && myPno) {
+    (products || []).forEach(p => {
+      const m = norm(p?.mat_no);
+      if (!m || m === a || kids.has(m) || matDigit(m) !== '2' || p.is_operation || isPlating(m) || !samePno(p)) return;
+      out.push({ mat: m, name: p.name || '', line: p.line_name || '', linked: false, why: 'pno' });
+    });
+  }
+  // P/N ตรง (ยังไม่ผูก) มาก่อนลูก BOM ที่ P/N ไม่ตรง — เคสจริง 20059898: ลูก BOM = 20060001 (ชิ้นประกอบ)
+  // แต่ตัวก่อนชุบจริง = 20059899 (P/N เดียวกัน) ⇒ ห้ามเลือกให้อัตโนมัติ (ดู `autoBeforeOf`)
+  const rank = { 'bom+pno': 0, pno: 1, bom: 2 };
+  return out.sort((x, y) => rank[x.why] - rank[y.why] || x.mat.localeCompare(y.mat));
+}
+
+/** เลือกเลขก่อนชุบให้อัตโนมัติ **เฉพาะตอนไม่กำกวม** — ลูก BOM ที่ P/N ตรงตัวเดียว หรือมีตัวเลือกตัวเดียว
+ *  ไม่งั้นคืน null ⇒ จอให้คนเลือก (เลือกผิด = ตัดสต็อกผิดตัว + ผูก BOM ผิด) */
+export function autoBeforeOf(cands = []) {
+  const top = cands.filter(c => c.why === 'bom+pno');
+  if (top.length === 1) return top[0];
+  if (top.length > 1) return null;
+  return cands.length === 1 ? cands[0] : null;
+}
+
+/** เส้นทางชุบที่ใช้อยู่ (ไว้โชว์ในแผงตั้งค่า) — สินค้าหลังชุบ + เลขก่อนชุบตัวแรก (ไม่มี = problem) */
+export function platingRoutes(products = [], bomRows = [], lines = []) {
+  const list = platingProducts(products, lines);
+  const set = new Set(list.map(p => norm(p.mat_no)));
+  return list.map(p => {
+    const c = beforeCandidatesOf(p.mat_no, { products, bomRows, platingSet: set });
+    const auto = autoBeforeOf(c);
+    const linkedAuto = auto?.linked ? auto : null;
+    return {
+      after: norm(p.mat_no), afterName: p.name || '', afterActive: p.is_active !== false,
+      vendor: norm(p.outsource_vendor) || null, line: p.line_name || '',
+      before: linkedAuto ? linkedAuto.mat : null, candidates: c,
+      problem: linkedAuto ? null
+        : auto ? `BOM ยังไม่ผูก — ระบบเสนอ ${auto.mat} (P/N ตรง) ส่งครั้งแรกจะผูกให้`
+        : c.length > 1 ? `มีเลขที่น่าจะใช่ ${c.length} ตัว — เลือกตอนส่ง หรือผูก BOM ที่นี่`
+        : 'ยังไม่รู้เลขก่อนชุบ — เลือกเองตอนส่ง หรือผูก BOM ที่นี่',
+    };
+  });
+}
+
+/** ตรวจก่อนกดรับคืน (ต่อใบ) — null = ผ่าน
+ *  ยอดไม่ครบต้องมีเหตุผล (เหมือนคิวรอรับเข้าของผลิต) · ปิดใบได้แม้รับ 0 (ร้านทำของหาย/เสียหมด) */
+export function receiveBlockReason({ open, qty, reason, close }) {
+  const q = Number(qty);
+  if (qty === '' || qty == null || !Number.isFinite(q) || q < 0) return 'ใส่ยอดที่นับได้จริง';
+  if (q > num(open)) return `รับเกินยอดที่ค้างในใบนี้ (${num(open)})`;
+  if (q === 0 && !close) return 'ยอด 0 = ไม่มีอะไรเข้า — ถ้าของไม่กลับแล้วให้ติ๊ก "ปิดใบ"';
+  if (q < num(open) && !norm(reason)) return 'ยอดไม่ครบ — ใส่รายละเอียด (เช่น ร้านทยอยส่ง / NG ที่ร้าน 5)';
+  return null;
+}
+
+/** โซนของการ์ด: late = เกิน lead time · vendor = อยู่ที่ร้าน · closed = ปิดแล้ว */
+export function orderZone(o, { now, leadDays } = {}) {
+  if (o?.status !== 'open') return 'closed';
+  const t = Date.parse(o?.sent_at);
+  const nowMs = now instanceof Date ? now.getTime() : Date.now();
+  if (leadDays != null && Number.isFinite(t) && (nowMs - t) / 86400000 > leadDays) return 'late';
+  return 'vendor';
 }
 
 /**
