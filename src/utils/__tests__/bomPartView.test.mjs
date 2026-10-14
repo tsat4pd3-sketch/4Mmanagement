@@ -82,3 +82,32 @@ test('mat ที่ไม่มีใครกรอกลูกไว้ = ล�
   assert.deepEqual(ix.sheetsWithKidsOf(''), [])
   assert.deepEqual(ix.sheetsWithKidsOf(null), [])
 })
+
+/* ⬆️ แถบ "แม่" (user ขอ 14/10: *"ควรมีแถบโชว์ให้ดูแม่ได้ด้วยว่าแม่มีใครบ้าง กดเข้าไปที่แม่ได้เลย"*) */
+test('parentsOfMat: ตัวแม่ = parent_mat ถ้ามี · ไม่มี = เจ้าของใบ (ตรงกับ parentOf)', () => {
+  const ix = buildBomIndex(ROWS, MAT_OF)
+  assert.deepEqual(ix.parentsOfMat('20058498'), [{ mat: '20058495', sheetId: FG, qty: 1 }])
+  // 20058483 ไม่มี parent_mat → แม่คือเจ้าของใบ (20058498)
+  assert.deepEqual(ix.parentsOfMat('20058483'), [{ mat: '20058498', sheetId: SUB, qty: 1 }])
+  assert.deepEqual(ix.parentsOfMat('50027080'), [{ mat: '20058483', sheetId: SUB, qty: 0.076 }])
+})
+
+test('🔴 แม่ตัวเดียวกันแต่คนละใบ ต้องขึ้น 2 รายการ ห้ามยุบ (คนละการนิยาม)', () => {
+  const FG2 = 'p-10100814'
+  const rows = [...ROWS,
+    { id: 8, product_id: FG2, mat_no: '20058495', qty_per_unit: 1, uom: 'PC' },
+    { id: 9, product_id: FG2, mat_no: '20058498', parent_mat: '20058495', qty_per_unit: 2, uom: 'PC' }]
+  const ix = buildBomIndex(rows, { ...MAT_OF, [FG2]: '10100814' })
+  const ps = ix.parentsOfMat('20058498')
+  assert.equal(ps.length, 2)
+  assert.deepEqual(ps.map(x => x.sheetId).sort(), [FG, FG2].sort())
+})
+
+test('ตัวบนสุด / แถวกำพร้า = ลิสต์ว่าง (ห้ามเดาแม่)', () => {
+  const ix = buildBomIndex(ROWS, MAT_OF)
+  assert.deepEqual(ix.parentsOfMat('10086024'), [])
+  assert.deepEqual(ix.parentsOfMat(''), [])
+  const orphanIx = buildBomIndex([{ id: 99, product_id: 'ไม่รู้จัก', mat_no: '30099999', qty_per_unit: 1 }], MAT_OF)
+  assert.deepEqual(orphanIx.parentsOfMat('30099999'), [])
+  assert.equal(orphanIx.orphans.length, 1)
+})

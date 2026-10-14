@@ -864,10 +864,26 @@ const TABLE_FIXED = {
     { board_part_id: 'mp-6', row_key: 'to_vendor', period_key: '2026-10-01', qty: 398, txt: null },
   ],
 }
+/* ➕ แถวเพิ่มเฉพาะตาราง (ต่อท้ายผลของ TABLE_ROWS) — ใช้ตอนต้องการ "ทรงพิเศษ" ที่ ROWS กลางให้ไม่ได้
+   🔴 bom_items — **ห้ามถอด** (14/10) เดิม 2 สาขานี้ไม่เคยถูกเรนเดอร์ในฮาร์เนสเลย:
+     ① ใบของพาร์ท **ว่าง** แต่ลูกถูกกรอกไว้ในใบอื่น  → 10101003 (ใบ id-3 ว่าง · ลูกอยู่ในใบ id-1)
+     ② พาร์ท **ไม่มีใบของตัวเองเลย** แต่มีลูก        → 30047020 (ลูก 50027099 อยู่ในใบ id-1)
+   ทั้ง 2 ตัวไม่แตะทรง "ซ้ำ 2 ใบ" ของ 10101002 (ไม่มีใบของตัวเอง/ใบว่าง = ไม่เข้าเงื่อนไขคู่) */
+const TABLE_EXTRA = {
+  bom_items: [
+    { id: 'bx-1', product_id: 'id-1', parent_mat: null, mat_no: '10101003', part_name: 'ชิ้นงาน 3 (ใบตัวเองว่าง)',
+      qty_per_unit: 1, uom: 'PC', item_no: 70, is_active: true },
+    { id: 'bx-2', product_id: 'id-1', parent_mat: '10101003', mat_no: '30047020', part_name: 'ลูกที่ใบแม่กรอกให้',
+      qty_per_unit: 3, uom: 'PC', item_no: 80, is_active: true },
+    { id: 'bx-3', product_id: 'id-1', parent_mat: '30047020', mat_no: '50027099', part_name: 'คอยล์ของตัวที่ไม่มีใบ',
+      qty_per_unit: 0.45, uom: 'KG', item_no: 90, is_active: true },
+  ],
+}
 const rowsFor = (table) => {
   if (TABLE_FIXED[table]) return TABLE_FIXED[table]
   const fn = TABLE_ROWS[table]
-  return fn ? ROWS.map((r, idx) => fn(r, idx + 1)) : ROWS
+  const base = fn ? ROWS.map((r, idx) => fn(r, idx + 1)) : ROWS
+  return TABLE_EXTRA[table] ? [...base, ...TABLE_EXTRA[table]] : base
 }
 /* ── 📊 ตัวนับคิวรี (2026-10-08) — ใช้หาว่า "ใครโหลดซ้ำ" โดยไม่ต้องแตะโค้ดใน src/ ──────────
    ที่มา: log ของ Supabase บอกได้แค่ว่า *มี* คิวรีซ้ำ (เช่น StoreLotQueue ยิง
