@@ -16,6 +16,11 @@
         พร้อมป้าย ⏸ ปลดระวาง — ห้ามให้ค่าเดิมหายเงียบจากฟอร์ม)
      3. **scope** — leader = ครอบครัวไลน์ตัวเอง · role อื่น = ตาม sections
      4. **ค่าที่ไม่รู้จัก** — ยังโชว์เป็น option ⚠ (ข้อมูลเก่า/ไลน์ถูกลบ) ไม่หายเงียบ
+     5. **หน่วยสนับสนุน** (`unit_kind='support'` · สำนักงาน/งานแก้ไข) **ไม่โผล่โดย default**
+        — จอที่ต้องเห็นทุกหน่วย (เช็คชื่อ · จัดกะ · ผังองค์กร · ทะเบียนไลน์ · เพิ่มผู้ใช้)
+        ส่ง `includeSupport` · กติกาเดียวกับ `includeRetired` เป๊ะ รวมถึง
+        **ค่าที่เลือกไว้แล้วยังโชว์เสมอ** (ติดป้าย 🗂️ หน่วยสนับสนุน) ห้ามหายเงียบจากฟอร์ม
+        🔴 ห้ามกรองด้วยการเทียบชื่อไลน์ในหน้า — กฎอยู่ที่ `src/utils/unitKind.js` (มีด่าน)
 
    ⚠️ query ที่ดึง production_lines มาป้อน component นี้ ต้อง select ให้ครบ:
       `id, name, parent_line_name, section, is_active`
@@ -25,6 +30,7 @@
 import { useMemo } from 'react';
 import { toHierarchicalOptions, getLineFamilyNames } from '../utils/lineHierarchy';
 import { inSectionScope } from '../utils/sectionScope';
+import { isSupportUnit } from '../utils/unitKind';
 
 /** กรองไลน์ตาม scope มาตรฐาน — leader = ครอบครัวไลน์ตัวเอง · อื่น = ตาม sections
  *  คืน array เดิมเมื่อไม่ถูกจำกัด (admin / ไม่มี scope) */
@@ -54,9 +60,10 @@ export function scopeLines(lines, { role, lineId, sections } = {}) {
 
 /** ตัวเลือกไลน์แบบพร้อมใช้ — [{ value, label, depth, retired }] เรียงตามลำดับชั้น
  *  @param current ค่าที่เลือกอยู่ (ชื่อไลน์) — ถ้าไม่อยู่ในลิสต์จะถูกเติมกลับเข้าไป */
-export function lineOptions(lines, { role, lineId, sections, current, includeRetired = false, valueKey = 'name' } = {}) {
+export function lineOptions(lines, { role, lineId, sections, current, includeRetired = false, includeSupport = false, valueKey = 'name' } = {}) {
   const scoped = scopeLines(lines || [], { role, lineId, sections });
-  const usable = includeRetired ? scoped : scoped.filter(l => l.is_active !== false);
+  const live = includeRetired ? scoped : scoped.filter(l => l.is_active !== false);
+  const usable = includeSupport ? live : live.filter(l => !isSupportUnit(l));
   const out = toHierarchicalOptions(usable).map(({ line, depth, section }) => ({
     value: String(line[valueKey]), label: line.name, depth, retired: line.is_active === false, section,
   }));
@@ -65,9 +72,14 @@ export function lineOptions(lines, { role, lineId, sections, current, includeRet
     // ค่าที่เลือกไว้แล้วต้องไม่หายจาก dropdown — ไลน์อาจถูกปลดระวาง/นอก scope/ข้อมูลเก่า
     const known = (lines || []).find(l => String(l[valueKey]) === cur);
     const nm = known?.name || cur;
+    /* ค่าเดิมที่เป็นหน่วยสนับสนุนต้องบอกให้รู้ว่า "ไม่ใช่ไลน์ผลิต" ไม่ใช่ "นอกขอบเขตของคุณ"
+       (คนละเหตุผล — บอกผิดแล้วคนไปตามหาสิทธิ์ทั้งที่เป็นเรื่องชนิดหน่วย) */
+    const why = known
+      ? (known.is_active === false ? '⏸ ปลดระวาง' : isSupportUnit(known) ? '🗂️ หน่วยสนับสนุน' : '(นอกขอบเขตของคุณ)')
+      : '⚠ ไม่มีในทะเบียนไลน์';
     out.unshift({
       value: cur, depth: 0, retired: known?.is_active === false, pinned: true,
-      label: known ? `${nm} ${known.is_active === false ? '⏸ ปลดระวาง' : '(นอกขอบเขตของคุณ)'}` : `${nm} ⚠ ไม่มีในทะเบียนไลน์`,
+      label: `${nm} ${why}`,
     });
   }
   return out;
@@ -103,17 +115,18 @@ export function groupLineOptions(opts) {
  * @param {string} placeholder ข้อความ option แรก (null = ไม่มี option ว่าง)
  * @param {Array}  extraGroups กลุ่มพิเศษที่ไม่ใช่ไลน์ผลิต เช่นคลัง — [{ label, options: [{value,label}] }]
  * @param {'start'|'end'} extraAt ตำแหน่งกลุ่มพิเศษ — 'end' ใช้กับ "ตะกร้ารับท้าย" (ชื่อที่ไม่อยู่ในทะเบียน)
+ * @param {boolean} includeSupport  true = แสดงหน่วยสนับสนุนด้วย (จอคน/ทะเบียน) · default false (จอผลิต)
  */
 export default function LineSelect({
   lines, value = '', onChange, placeholder = '— เลือกไลน์ —',
-  role, lineId, sections, extraGroups = [], extraAt = 'start', includeRetired = false,
+  role, lineId, sections, extraGroups = [], extraAt = 'start', includeRetired = false, includeSupport = false,
   style, disabled, id, required, valueKey = 'name',
 }) {
   // ค่าที่เลือกอยู่ในกลุ่มพิเศษ (คลัง / ชื่อนอกทะเบียน) = มี option อยู่แล้ว ห้ามปักซ้ำเป็น "⚠ ไม่มีในทะเบียน"
   const inExtra = extraGroups.some(g => g.options?.some(o => String(o.value) === String(value)));
   const opts = useMemo(
-    () => lineOptions(lines, { role, lineId, sections, current: inExtra ? '' : value, includeRetired, valueKey }),
-    [lines, role, lineId, sections, value, inExtra, includeRetired, valueKey],
+    () => lineOptions(lines, { role, lineId, sections, current: inExtra ? '' : value, includeRetired, includeSupport, valueKey }),
+    [lines, role, lineId, sections, value, inExtra, includeRetired, includeSupport, valueKey],
   );
   const grouped = useMemo(() => groupLineOptions(opts), [opts]);
   const hasExtra = extraGroups.some(g => g.options?.length);

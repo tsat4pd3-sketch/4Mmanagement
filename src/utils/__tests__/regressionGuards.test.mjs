@@ -184,6 +184,19 @@ const RULES = [
     allow: {},
   },
   {
+    id: 'unit-kind-via-util',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* ตัดสิน "เป็นไลน์ผลิตไหม" ต้องผ่าน utils/unitKind.js — เทียบสตริงเองในหน้าคือจุดที่ drift */
+    re: /unit_kind\s*[=!]==\s*['"]/g,
+    why: 'ชนิดหน่วย (`production`/`support`) ตัดสินที่ `src/utils/unitKind.js` ที่เดียว '
+       + '— เทียบสตริงเองในหน้า = แต่ละจอตีความไม่เหมือนกัน และ**ลืมกฎ fail-open** '
+       + '(ค่าว่าง/ไม่รู้จัก = ไลน์ผลิต) ⇒ `l.unit_kind === "production"` จะทิ้งไลน์ผลิตที่ยังไม่มีค่า '
+       + 'ทั้งตารางออกจากจอเงียบๆ ซึ่งเป็นทิศที่อันตรายที่สุด',
+    fix: 'ใช้ `isProductionUnit(line)` / `isSupportUnit(line)` / `productionUnits(lines)` '
+       + '· ช่องเลือกไลน์ส่ง `includeSupport` แทนการกรองเอง',
+    allow: { 'src/utils/unitKind.js': true },
+  },
+  {
     id: 'am-open-lines-family-aware',
     scan: ['src/lib/dailyAmBoard.js'], ext: ['.js'],
     /* "ไลน์ไหนเดินอยู่" ต้องผ่าน openFamilyLines() — ประกอบ Set เองที่นี่ = กลับไปเทียบชื่อตรงตัว */
@@ -3975,6 +3988,27 @@ const RLS_KEYED_TABLES = {
   station_assignment_logs: ['management:assign_manpower', 'assign_manpower'],
   special_task_types:      ['ot_master:manage', 'ot_master'],
   leave_types:             ['ot_master:manage', 'ot_master'],
+  // รอบ 10 (14/10) — ปิดชั้น "เขียนได้ทุกคนที่ล็อกอิน" จบ
+  wip_replenish_requests:  ['wip_request:', 'wip_request', 'line_levels:manage', 'heijunka:operate'],
+  line_replenish_scan_blocks: ['heijunka:operate', 'wip_request:', 'wip_request'],
+  ojt_trainings:           ['ojt:record', 'ojt:delete', "'ojt'"],
+  ojt_training_attendees:  ['ojt:record', 'ojt:delete', "'ojt'"],
+  pokayoke_devices:        ['pokayoke:manage', 'pokayoke'],
+  pokayoke_checks:         ['pokayoke:record', 'pokayoke:manage', 'pokayoke'],
+  line_layouts:            ['line_setup:edit', 'line_setup', 'storage_maintain:run', 'storage_maintain'],
+  shift_overrides:         ['shift_schedule:edit', 'shift_schedule'],
+  qa_customer_claims:      ['canRecord', 'canManage', "'qa'"],
+  cqi15_event_logs:        ['event_log:', 'event_log'],
+  cqi15_event_approvals:   ['event_log:', 'event_log'],
+  cqi15_check_completions: ['event_log:', 'event_log'],
+};
+
+/* ยกเว้นได้เฉพาะ "util กลางที่ด่านอยู่ที่ผู้เรียก" — ต้องเขียนเหตุผล + ชี้ไฟล์ที่กันจริง
+   (ปล่อยเงียบไม่ได้ ไม่งั้นด่านนี้จะกลายเป็นด่านที่ใครก็ปิดได้ด้วยการย้ายโค้ดไป util) */
+const RLS_KEY_ALLOW = {
+  'src/utils/recompressLayouts.js':
+    'util บีบรูปผัง — ด่านอยู่ที่ผู้เรียก: StorageMaintenance.jsx:24 isActionSeeded(storage_maintain,run) '
+    + '→ prop canRun → ImageSqueezePanel.jsx (util ไม่รู้จัก role เลยโดยการออกแบบ)',
 };
 
 test('🛡️ rls-tightened-tables-need-key — ไฟล์ที่เขียนตารางที่ถูกรัด RLS ต้องอ้างคีย์สิทธิ์ของมันด้วย', () => {
@@ -3990,6 +4024,7 @@ test('🛡️ rls-tightened-tables-need-key — ไฟล์ที่เขี�
       const panelRe = new RegExp(`table=\\{?\\s*['"\`]${table}['"\`]`, 'g');
       if (!writeRe.test(code) && !panelRe.test(code)) continue;
       if (keys.some(k => code.includes(k))) continue;
+      if (RLS_KEY_ALLOW[relative(ROOT, file)]) continue;
       bad.push(`${relative(ROOT, file)} → เขียน ${table} แต่ไม่พบคีย์ ${keys.slice(0, 2).join(' / ')}`);
     }
   }
@@ -4190,4 +4225,167 @@ test('🛡️ no-shadow-candelete — ห้ามประกาศตัวแ
     + bad.map(b => '   • ' + b).join('\n')
     + '\n   แก้: ตั้งชื่อ `mayDelete` แล้วเรียก canDelete() ของกลาง\n'
     + '        import { canDelete as canDeleteUtil } from \'../utils/permissions\';\n');
+});
+
+/* ── 🔴 "ใบนี้ว่าง" ≠ "พาร์ทนี้ไม่มีลูก" (2026-10-14 · user ส่งภาพจอ 4 ใบ) ──────────
+   `items` = บรรทัดของ **ใบที่เปิดอยู่** เท่านั้น ⇒ ใบของพาร์ทที่เพิ่งเปิดยังว่าง
+   แต่ใบ FG กรอกลูกของมันไว้แล้ว ⇒ จอขึ้น "ยังไม่มีพาร์ทย่อยใน BOM นี้" = **จอโกหก**
+   เคสจริง: ใบ 20058495 ว่าง · ใบ FG 10086024 กรอก 20058498 ไว้ใต้มันแล้ว
+   ⇒ ต้องถามด้วย `sheetsWithKidsOf()` (buildBomIndex) ก่อนจะประกาศว่าไม่มีลูก          */
+test('🛡️ /products BOM: ใบว่างต้องเช็ค sheetsWithKidsOf ก่อนขึ้น "ยังไม่มีพาร์ทย่อย"', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/ProductMaster.jsx'), 'utf8'));
+  assert.ok(/sheetsWithKidsOf/.test(code),
+    '\n\n❌ ProductMaster ไม่ได้ถาม `sheetsWithKidsOf` แล้ว\n'
+    + '   ทำไมผิด: `items.length === 0` = ใบนี้ว่าง ไม่ได้แปลว่าพาร์ทนี้ไม่มีลูก\n'
+    + '   (ลูกอาจถูกกรอกไว้ในใบ FG — เคสจริง 20058495/10086024 · user แจ้ง 14/10)\n'
+    + '   แก้ยังไง: kidsElsewhere = bomIx.sheetsWithKidsOf(mat) แล้วกางให้ดูด้วย startSheet\n');
+  const i = code.indexOf('ยังไม่มีพาร์ทย่อยใน BOM นี้');
+  assert.ok(i > 0 && /kidsElsewhere/.test(code.slice(Math.max(0, i - 2500), i)),
+    '\n\n❌ ข้อความ "ยังไม่มีพาร์ทย่อยใน BOM นี้" ไม่ได้อยู่หลังด่าน `kidsElsewhere` แล้ว\n'
+    + '   = ประกาศว่าไม่มีลูก ทั้งที่ยังไม่ได้ถามว่าใบอื่นกรอกไว้ไหม\n');
+  const tree = stripComments(readFileSync(join(ROOT, 'src/utils/bomTree.js'), 'utf8'));
+  assert.ok(/opt\.startSheet\s*!==\s*undefined/.test(tree),
+    '\n\n❌ explodeBom ไม่รับ `startSheet` แล้ว — พาร์ทที่ลูกถูกกรอกไว้ในใบอื่นจะกางไม่ออกเลย\n'
+    + '   (sheetFor(mat, undefined) ตอบได้แค่ "ใบของ mat เอง" ซึ่งอาจว่างหรือไม่มี)\n');
+});
+
+/* ── 🏃 คนวิ่งข้ามแผนก = "อ้างอิง" ไม่ใช่การย้ายสังกัด (14/10 · feedback user "ใช่ คนวิ่งข้ามแผนก") ──
+   ทางที่ง่ายแต่ผิดคือ "ย้าย `employees.org_node_id` ให้เลย" หรือ "ยัด `line_id` ให้"
+   ⇒ cost center ของคนเปลี่ยนตามหน่วย (วัด 14/10: 11 จาก 12 แผนกมี cost_center ของตัวเอง)
+      แล้ว activity rate ใน `utils/costSaving.js` = ตัวคูณ "เงินที่ประหยัดได้" ทุกจอ เพี้ยนทั้งระบบ
+      และ Checkin/Report จะนับเขาเป็นคนของหน่วยใหม่ (คลาสเดียวกับที่ `line_technicians` แก้ไว้แล้ว)
+   ⇒ บอร์ดกำลังคน **ห้ามเขียนทะเบียนพนักงาน/ไลน์/cost center** — เขียนได้แค่ `employee_flex_units`
+   🔴 "ไปช่วย ≠ นับเป็นกำลังคน" คุมด้วยเทสพฤติกรรมใน `manpowerBoard.test.mjs` (ช่องว่าง/ตัวนับห้ามขยับ) */
+test('🛡️ manpower-flex-reference-only — จอบอร์ดกำลังคนห้ามย้ายสังกัด/แก้ cost center ของคน', () => {
+  for (const f of ['src/pages/ManpowerBoard.jsx', 'src/components/ManpowerBoardSetup.jsx']) {
+    const code = stripComments(readFileSync(join(ROOT, f), 'utf8'));
+    assert.ok(!/from\(\s*['"]employees['"]\s*\)\s*\.\s*(update|upsert|insert|delete)/.test(code),
+      `\n\n❌ ${f} เขียนทะเบียนพนักงาน — บอร์ดนี้อ่านอย่างเดียว\n`
+      + '   ย้ายสังกัด = cost center ของคนเปลี่ยน (11/12 แผนกมี cc ของตัวเอง) ⇒ activity rate ทุกจอเพี้ยน\n'
+      + '   แก้: ผูกผ่านตาราง employee_flex_units (อ้างอิง) — บ้านจริงไม่ขยับ\n');
+    assert.ok(!/cost_center\s*:/.test(code),
+      `\n\n❌ ${f} เขียนค่า cost_center — cost center เป็นของหน่วยต้นสังกัด ห้ามให้บอร์ดนี้แตะ\n`);
+  }
+  const util = stripComments(readFileSync(join(ROOT, 'src/utils/manpowerBoard.js'), 'utf8'));
+  assert.ok(/flexUnits\s*=\s*\[\]/.test(util),
+    '\n\n❌ buildManpowerBoard ไม่ได้ตั้ง flexUnits เป็น optional default [] — ไม่ส่งแล้วต้องได้พฤติกรรมเดิมเป๊ะ\n');
+  assert.ok(/flexFrom/.test(util),
+    '\n\n❌ การ์ดคนวิ่งข้ามแผนกไม่ติดธง flexFrom — จอจะแยกไม่ออกว่าใครเป็นคนของแผนกจริง\n');
+  const page = stripComments(readFileSync(join(ROOT, 'src/pages/ManpowerBoard.jsx'), 'utf8'));
+  assert.ok(/buildManpowerBoard\(\{[^}]*flexUnits/.test(page),
+    '\n\n❌ หน้าบอร์ดไม่ส่ง flexUnits เข้า buildManpowerBoard — ทะเบียนมีข้อมูลแต่จอไม่โชว์ (ตายเงียบ)\n');
+});
+
+/* ── 👯 คู่ RH/LH ต้องอยู่ไลน์เดียวกัน (14/10 · เคสจริง GOR 297) ──
+   ตั้ง pair_mat_no ก่อนชุบ↔หลังชุบ (คนละไลน์) ⇒ Daily Report เด้ง MAT คู่ให้ใบถัดไป → 12 ใบลงเป็นเลขหลังชุบทั้งกะ
+   ด่าน: จุดตั้งคู่ (Product Master) + จุดผูกคู่ตอนเปิดใบ (Daily Report) ต้องผ่าน pairBlockReason() */
+test('🛡️ pair-same-line — ตั้งคู่/ผูกคู่ RH/LH ต้องผ่าน pairBlockReason()', () => {
+  const pm = stripComments(readFileSync(join(ROOT, 'src/pages/ProductMaster.jsx'), 'utf8'));
+  const dr = stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'));
+  assert.match(pm, /pairBlockReason\(/, 'ProductMaster ต้องเช็ค pairBlockReason ก่อนบันทึก pair_mat_no');
+  assert.match(dr, /pairBlockReason\(/, 'DailyReport ต้องเช็ค pairBlockReason ก่อนผูกคู่/เด้ง MAT คู่');
+  assert.doesNotMatch(dr, /const partnerMatNo = products\.find\([^)]*\)\?\.pair_mat_no/, 'ห้ามอ่าน pair_mat_no ตรงๆ เป็น partnerMatNo โดยไม่ผ่านด่าน');
+});
+
+test('🛡️ pm-checkpoint-copy-via-util — คัดลอกจุดตรวจต้องผ่าน checkpointCopyRow() (ล้างหมุดเมื่อข้ามเครื่อง)', () => {
+  const rel = 'src/lib/pmChecklists.js';
+  const code = stripComments(readFileSync(join(ROOT, rel), 'utf8'));
+  const bad = [];
+  /* แตก cp ด้วยมือ (`({ id, created_at, ... checklist_id, ...rest })`) = ข้ามกฎล้างหมุด ⇒ หมุดผูกรูปเครื่องต้นทางกลับมา */
+  if (/\(\s*\{\s*id\s*,\s*created_at[^}]*\.\.\.rest\s*\}\s*\)/.test(code)) bad.push(rel + ' (แตกแถวจุดตรวจด้วยมือ)');
+  if (!/checkpointCopyRow\s*\(/.test(code)) bad.push(rel + ' (ไม่เรียก checkpointCopyRow)');
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n'
+    + '   ทำไม: x_pos/y_pos/label_dx/label_dy/image_id ผูกกับ "รูปของเครื่องต้นทาง" — ก๊อปข้ามเครื่องแล้วหมุดไปโผล่ผิดที่บนจอตั้งค่า\n'
+    + '         และหายไปเลยบนจอตรวจ (14/10 เจอจริง 9 จุด) · jig_id ต้องเป็นเครื่องปลายทาง\n'
+    + '   แก้: ใช้ checkpointCopyRow() จาก src/utils/pmCheckpointCopy.js · ข้ามแผนกบนเครื่องเดิมส่ง samePhotos:true\n');
+});
+
+/* ── 🔨 ชิ้น/จังหวะ ของแม่พิมพ์ — "ไม่รู้" ห้ามกลายเป็น 1 (14/10 · คำสั่ง user "ควรนับ shot ไม่ใช่นับชิ้น สำหรับงานคู่") ──
+   migration 20260810 ออกแบบ 2 ชั้นไว้แล้ว (equipment_die ว่าง = ใช้ค่าของ die_sets) แต่ไม่เคยถูกเขียนจริง
+   ⇒ จอ PM อ่านแค่ชั้น OP ที่ว่าง 264/264 = คิด shot ไม่ได้สักตัว · และชั้นชุดเป็น default 1 + จอบีบ `?? 1` ตอนเซฟ
+   = ระบบประกาศเองว่าแม่พิมพ์ทุกตัวปั๊มได้ 1 ชิ้น · งานคู่ LH/RH ปั๊มทีเดียว 2 ชิ้น ⇒ PM เด้งช้าไป 2 เท่า */
+test('🛡️ die-pps-no-guess-one — ชิ้น/จังหวะต้องผ่าน ppsOf() และห้ามเดาเป็น 1', () => {
+  const bad = [];
+  const util = stripComments(readFileSync(join(ROOT, 'src/utils/pmUsage.js'), 'utf8'));
+  if (!/export function ppsOf\s*\(/.test(util)) bad.push('src/utils/pmUsage.js (ไม่มี ppsOf แล้ว)');
+  /* ถอยชั้นต้องอยู่ในตัวมันเอง ไม่ใช่ให้หน้าไปทำเอง */
+  if (!/die\?\.pieces_per_stroke[\s\S]{0,80}set\?\.pieces_per_stroke/.test(util))
+    bad.push('src/utils/pmUsage.js (ppsOf ไม่ได้ถอยจากชั้น die ไปชั้นชุดแล้ว)');
+
+  const reg = stripComments(readFileSync(join(ROOT, 'src/pages/DieRegistry.jsx'), 'utf8'));
+  if (/pieces_per_stroke[^\n]*\?\?\s*1\b/.test(reg))
+    bad.push('src/pages/DieRegistry.jsx (บีบ pieces_per_stroke ว่าง → 1 ตอนเซฟ/ตอนโชว์)');
+
+  /* หน้าไหนจะคิด shot ต้องขอค่าผ่าน ppsOf ห้ามหยิบคอลัมน์ดิบไปหาร */
+  for (const rel of ['src/components/PmUsageBoard.jsx']) {
+    const code = stripComments(readFileSync(join(ROOT, rel), 'utf8'));
+    if (!/ppsOf\s*\(/.test(code)) bad.push(rel + ' (ไม่เรียก ppsOf)');
+    if (/piecesToShots\s*\([^)]*\.pieces_per_stroke/.test(code))
+      bad.push(rel + ' (ส่งคอลัมน์ดิบเข้า piecesToShots — ข้ามการถอยชั้น)');
+  }
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n'
+    + '   ทำไม: แม่พิมพ์สเปค "ทน 50,000 shot" ถ้าระบบคิด 1 ชิ้น = 1 shot กับงานคู่\n'
+    + '         PM จะเด้งตอนครบ 50,000 ชิ้น = 25,000 shot จริง = ช้าไป 2 เท่า แม่พิมพ์พังก่อนถึงคิว\n'
+    + '   แก้: ppsOf(die, set) ใน src/utils/pmUsage.js · ไม่รู้ = null จอต้องเขียนบอก ห้ามเดา 1\n');
+});
+
+/* ── 🔴 คำเตือน "5xx ปนกับ 2xx/3xx" ห้ามกลับมา (2026-10-14 · user แก้ให้เอง) ───────
+   *"เบอร์ 5 เป็นเบอร์ 1 เลยก็มีนะ มีบางงานเป็นแบบนั้น ไม่ต้องขึ้นโชว์แบบนี้ก็ได้
+     เราน่าจะบอกผิดไปครั้งก่อน"*
+   เดิมเตือนจาก **รูปแบบเลข** ไม่ใช่จากหลักฐาน ⇒ เตือนผิด 40 แถว
+   คำเตือนที่เตือนผิดบ่อย ทำให้คนเลิกเชื่อคำเตือนที่ถูกด้วย (raw_double_counted ที่พิสูจน์ได้)
+   ⇒ เหลือเตือนเฉพาะที่ไล่ถึงจริง · ห้ามเอา raw_in_assembly กลับมาโดยไม่ถาม user       */
+test('🛡️ BOM flow: ห้ามมีคำเตือน raw_in_assembly (5xx ใต้ 1xx = ปกติ)', () => {
+  const tree = stripComments(readFileSync(join(ROOT, 'src/utils/bomTree.js'), 'utf8'));
+  assert.ok(!/raw_in_assembly/.test(tree),
+    '\n\n❌ `raw_in_assembly` กลับมาใน bomTree.js\n'
+    + '   user สั่งถอดเอง 14/10: 5xx ไปเป็นลูกของ 1xx ตรงๆ เป็นของจริง ไม่ใช่ความผิด\n'
+    + '   จะเอากลับมาต้องถาม user ก่อน (เตือนผิด 40 แถว = คนเลิกเชื่อคำเตือนที่เหลือ)\n');
+  assert.ok(/raw_double_counted/.test(tree),
+    '\n\n❌ `raw_double_counted` หายไป — ตัวนี้พิสูจน์ได้ (5xx อยู่ใต้พี่น้อง 2xx จริง) ห้ามถอด\n');
+});
+
+/* ── 🔨 ชุดแม่พิมพ์ปั๊มออกคู่ = ผูกได้ 2 MAT (14/10 · คำสั่ง user "แม่พิมพ์ปั๊มออกคู่ ซ้ายขวา ก็ควรเลือก mat สองตัว") ──
+   เดิม `die_sets.mat_no` ช่องเดียว แล้วปลายทางเทียบ `d.mat_no === mat` ตรงๆ
+   ⇒ ล็อตของฝั่งที่ไม่ได้ลงเป็นช่องแรก **หาแม่พิมพ์ไม่เจอ** = ไม่รู้ die_height_mm
+     = pressSetup คืน unknown_height = คิดเวลาเปลี่ยนรุ่นไม่ได้ · ผังแม่พิมพ์ก็ไม่รู้ว่าชุดนั้นป้อนไลน์ไหน */
+test('🛡️ die-set-two-mats — หาแม่พิมพ์ของพาร์ทต้องผ่าน dieMakesMat()/dieSetMats()', () => {
+  const bad = [];
+  const util = stripComments(readFileSync(join(ROOT, 'src/utils/dieSetMats.js'), 'utf8'));
+  for (const fn of ['dieSetMats', 'dieMakesMat', 'dieSetPairState', 'suggestPps']) {
+    if (!new RegExp(`export function ${fn}\\s*\\(`).test(util)) bad.push(`src/utils/dieSetMats.js (ไม่มี ${fn})`);
+  }
+  /* suggestPps ต้องไม่เสนอ 1 — "ชุดทำพาร์ทเดียว" ไม่ได้แปลว่า 1 ชิ้น/จังหวะ (2-out ของพาร์ทเดียวก็มี) */
+  if (!/n >= 2 \? n : null/.test(util)) bad.push('src/utils/dieSetMats.js (suggestPps เสนอค่าต่ำกว่า 2 แล้ว = เดาแทนหน้างาน)');
+
+  for (const rel of ['src/components/ProdLotPlanner.jsx', 'src/components/DieLayout.jsx']) {
+    const code = stripComments(readFileSync(join(ROOT, rel), 'utf8'));
+    if (!/die(SetMats|MakesMat)\s*\(/.test(code)) bad.push(rel + ' (ไม่เรียกของกลาง)');
+    /* เทียบช่องแรกตรงๆ กับตัวแปรชุดแม่พิมพ์ = ตกฝั่งที่ลงช่อง 2 */
+    if (/\bd(ie(Set)?)?\.mat_no\s*===/.test(code)) bad.push(rel + ' (เทียบ die.mat_no === ตรงๆ)');
+  }
+  /* ช่องกรอกต้องมีให้ลงจริง ไม่งั้นคอลัมน์ว่างตลอด */
+  const reg = stripComments(readFileSync(join(ROOT, 'src/pages/DieRegistry.jsx'), 'utf8'));
+  if (!/mat_no_2/.test(reg)) bad.push('src/pages/DieRegistry.jsx (ไม่มีช่อง MAT ตัวที่ 2)');
+
+  /* 🔗 ปุ่ม "ตั้งคู่ให้เลย" = หน้าแม่พิมพ์ยืมมือเขียน dr_products ⇒ ต้องผ่านด่านครบเหมือน Product Master
+     ถอดด่านไหนออก: ข้ามไลน์ = คู่ผิด (เคสจริง GOR 297) · ไม่นับแถว = RLS ปฏิเสธแล้วขึ้น "สำเร็จ"
+     · เขียนทางเดียว = คู่ชี้ข้างเดียว = collapsePairShots ยุบไม่ครบ · ใช้สิทธิ์ผิดใบ = ใครก็แก้ทะเบียนสินค้าได้ */
+  if (/pair_mat_no/.test(reg)) {
+    if (!/pairBlockReason\s*\(/.test(reg)) bad.push('src/pages/DieRegistry.jsx (เขียน pair_mat_no โดยไม่ผ่าน pairBlockReason)');
+    if (!/checkWriteRows\s*\(/.test(reg)) bad.push('src/pages/DieRegistry.jsx (เขียน pair_mat_no โดยไม่นับแถว)');
+    if (!/can\(\s*'products'\s*,\s*'edit'/.test(reg)) bad.push("src/pages/DieRegistry.jsx (ตั้งคู่ต้องใช้สิทธิ์ products:edit ไม่ใช่ machines:edit)");
+    /* 2 ทาง = เขียน "ค่าจริง" 2 ครั้ง — ⚠️ ห้ามนับรวม `pair_mat_no: null` (= ปลดคู่เก่า ไม่ใช่การผูก)
+       นับรวมแล้วด่านจะหลวม: ถอดการผูกฝั่งหนึ่งออก ยอดก็ยังครบ 2 (เจอตอนยิงเทสด่านนี้เอง 14/10) */
+    /* ⚠️ lookahead ต้องอยู่ "ก่อน" \s* — เขียน `\s*(?!null)` จะถูก backtrack (\s* ยอมจับ 0 ตัว
+       แล้ว lookahead ไปมองที่ช่องว่าง = ผ่านเสมอ) ⇒ นับ `pair_mat_no: null` เข้ามาด้วย ด่านหลวมทันที */
+    const writes = (reg.match(/update\(\s*\{\s*pair_mat_no:(?!\s*null\b)/g) || []).length;
+    if (writes < 2) bad.push(`src/pages/DieRegistry.jsx (ผูกคู่ ${writes} ทาง — ต้อง 2 ทาง ไม่งั้นคู่ชี้ข้างเดียว)`);
+  }
+
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n'
+    + '   ทำไม: gang die ปั๊มทีเดียวได้ RH+LH — ทะเบียนลงได้ 2 MAT (mat_no + mat_no_2)\n'
+    + '         เทียบช่องแรกช่องเดียว = อีกฝั่งหาแม่พิมพ์ไม่เจอเงียบๆ\n'
+    + '   แก้: dieMakesMat(set, mat) / dieSetMats(set) จาก src/utils/dieSetMats.js\n'
+    + '   ⚠️ "ใครคู่กับใคร" ยังเป็นของ Product Master (pair_mat_no) — จอแม่พิมพ์เตือนได้ ห้ามเขียนทับ\n');
 });

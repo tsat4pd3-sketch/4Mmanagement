@@ -13,33 +13,42 @@
  *    เขียนไม่ครบ = กดแล้วแถบเตือนไม่หาย คนกดซ้ำไปเรื่อยๆ แล้วเลิกเชื่อปุ่ม
  * ═══════════════════════════════════════════════════════════════════════════════════════ */
 
-/* ── 🔴 "ช่องนี้ระบบใช้ค่าจากฝั่งไหน" (`uses`) ────────────────────────────  2026-10-13
-   **ไม่ใช่ทุกช่องที่ฐานพนักงานชนะ** — ตรวจของจริงใน `src/App.jsx` (ตอน login):
-     · `team` / `line_id` / `section` → merge `emp.<f> ?? profile.<f>` ⇒ **ฐานพนักงานชนะ** (บรรทัด ~2310)
-     · `position`    → `setUserPosition(data?.position)` = **อ่านจาก `profiles` ล้วน**
-                       ค่าในฐานพนักงาน*ไม่ถูกใช้เลย* · และค่านี้ไป `positionRank()` ซึ่งเป็นด่าน
-                       ช่องเซ็นขั้น 6/7/8 + คิว "รอคุณอนุมัติ" ⇒ **ทับทิ้ง = เปลี่ยนสิทธิ์จริง**
-     · `org_node_id` → **ไม่มีการ merge** · คนละจออ่านคนละตาราง
-                       (`profiles.org_node_id` 72 แถว · `employees.org_node_id` 308 แถว)
-   🔴 จอที่เขียนว่า "ค่าในบัญชีคือค่าเก่าที่ไม่ถูกใช้" **ใช้ได้เฉพาะ `uses: 'employee'`**
-      เขียนเหมาทุกช่อง = จอโกหก แล้วคนกดปุ่มล้างโดยไม่รู้ว่ากำลังเปลี่ยนสิทธิ์ตัวเอง */
-export const USES_EMP = 'employee';   // ฐานพนักงานชนะตอน login
-export const USES_ACCT = 'account';   // ระบบอ่านจากบัญชี — ค่าฝั่งพนักงานไม่ถูกใช้
-export const USES_SPLIT = 'split';    // ไม่มีตัวชนะ — คนละจออ่านคนละตาราง
+/* ══ 🔴 2 ชั้นที่ห้ามปนกัน (2026-10-13 · คำสั่ง user) ═══════════════════════════════
+   > *"6 คนนี้ ตำแหน่งจริงที่เค้าเป็นอยู่กับบริษัทคือตามฐานพนักงาน
+   >   แต่ตำแหน่งงานและงานที่ตัวเค้าทำ คือทำในตำแหน่งตรงกับบัญชี"*
 
-/** ช่องที่ถูกเก็บทั้งใน `profiles` และ `employees` — ชื่อคอลัมน์ตรงกันทั้ง 2 ฝั่ง */
+   ⇒ `position` **ไม่ใช่ค่าเดียวกันที่ถูกเก็บ 2 ที่** — มันคือ **2 คำถามคนละข้อ** ที่บังเอิญชื่อคอลัมน์ซ้ำกัน:
+     · `employees.position` = **ตำแหน่งตามบริษัท** (HR บรรจุ · ใช้จัดแถว Manpower Board · ใบรับรองทักษะ)
+     · `profiles.position`  = **ตำแหน่งที่ปฏิบัติงานจริง** (ใช้ตัดสินสิทธิ์ · `positionRank()` · ช่องเซ็น MO)
+   เคสจริง: สุวิทย์ชัย ดีทั่ว บริษัทบรรจุเป็นหัวหน้าไลน์ แต่**ทำงานในตำแหน่งหัวหน้าแผนก**
+   ⇒ ที่ `App.jsx` ใช้ `profiles.position` ตัดสินสิทธิ์ **ถูกแล้ว** (สิทธิ์ต้องตามงานที่ทำ ไม่ใช่ตามที่บรรจุ)
+
+   🔴 **ห้ามเอา 2 ชั้นนี้มารวมเป็น single source · ห้ามให้ปุ่มใดเขียนทับกัน**
+      ทับเมื่อไหร่ = ข้อมูลหนึ่งใน 2 ความหมายหายถาวร (กู้ไม่ได้ ไม่มี audit ของ UPDATE)
+   🔴 **ต่างกัน = เรื่องปกติ ห้ามนับเป็น "ข้อขัดแย้ง" ห้ามขึ้นแถบเตือน** — แสดงเป็น *ข้อมูล* ได้ (บอกว่าใครรักษาการ)
+   ════════════════════════════════════════════════════════════════════════════════ */
+
+/** ช่องที่ **ต้องตรงกัน** — ค่าเดียวกันแท้ๆ ที่ถูกเก็บ 2 ที่ ⇒ ต่างเมื่อไหร่ = ผิด
+ *  ระบบใช้ **ฐานพนักงานชนะ** ทั้ง 3 ช่อง (`emp.<f> ?? profile.<f>` ใน `src/App.jsx` ~2310)
+ *  🔴 เพิ่มช่องใหม่ที่นี่ได้เฉพาะช่องที่ "ค่าเดียวกันจริงๆ" — ช่องที่ 2 ฝั่งตอบคนละคำถาม
+ *     ต้องไปอยู่ `DUAL_MEANING_FIELDS` ข้างล่าง */
 export const IDENTITY_FIELDS = [
-  { key: 'team',        label: 'ทีม',        uses: USES_EMP },
-  { key: 'line_id',     label: 'ไลน์',       uses: USES_EMP },
-  { key: 'section',     label: 'ส่วนงาน',    uses: USES_EMP },
-  { key: 'position',    label: 'ตำแหน่ง',    uses: USES_ACCT,
-    note: 'ระบบใช้ค่าในบัญชี — ทับแล้วตำแหน่ง/ระดับสิทธิ์เปลี่ยนจริง' },
-  { key: 'org_node_id', label: 'หน่วยในผัง', uses: USES_SPLIT,
-    note: 'คนละจออ่านคนละตาราง — ยังไม่มีฝั่งไหนเป็นตัวจริง' },
+  { key: 'team',    label: 'ทีม' },
+  { key: 'line_id', label: 'ไลน์' },
+  { key: 'section', label: 'ส่วนงาน' },
+  /* 🧭 14/10 — ย้ายกลับมาชั้นนี้หลังดูข้อมูลจริง: **ไม่ใช่คนละความหมาย** แต่เป็น
+     "ชั้นหยาบ vs ชั้นละเอียดของต้นไม้เดียวกัน" — ทั้ง 3 เคสที่ต่าง หน่วยในฐานพนักงาน
+     เป็น **ลูกของ** หน่วยในบัญชี (Assembly Line D ⊂ PD2 · ทั่วไป ⊂ PD4) ⇒ ฐานพนักงานละเอียดกว่า
+     ตัวนับก่อนลบโหนด (`orgNodeRefs.js`) นับทั้ง 2 ตารางอยู่แล้ว ⇒ ย้ายแล้วไม่ทำให้ลบหน่วยที่ยังมีคนได้ */
+  { key: 'org_node_id', label: 'หน่วยในผัง' },
 ];
 
-/** ช่องที่ "ทับแล้วพฤติกรรมระบบเปลี่ยน" (ไม่ใช่แค่ล้างค่าที่ไม่ถูกใช้) */
-export const changesBehaviour = (diff = []) => diff.filter(d => d.uses !== USES_EMP);
+/** 🔴 ช่องที่ **ชื่อซ้ำกันแต่คนละความหมาย** — ต่างกันได้โดยถูกต้อง ห้าม sync ห้ามเตือน */
+export const DUAL_MEANING_FIELDS = [
+  { key: 'position', label: 'ตำแหน่ง',
+    empLabel: 'ตำแหน่งตามบริษัท', acctLabel: 'ตำแหน่งที่ปฏิบัติงาน',
+    note: 'สิทธิ์ตัดสินจากตำแหน่งที่ปฏิบัติงาน (ไม่ใช่ที่บรรจุ)' },
+];
 
 /** เทียบค่าแบบ "ว่างคือว่าง" — null / undefined / '' ถือว่าเท่ากัน (uuid/number แปลงเป็น string ก่อน) */
 const same = (a, b) => String(a ?? '') === String(b ?? '');
@@ -55,8 +64,7 @@ export function identityDiff(profile, employee) {
   if (!profile || !employee) return [];
   return IDENTITY_FIELDS
     .filter(f => !isBlank(employee[f.key]) && !same(profile[f.key], employee[f.key]))
-    .map(f => ({ key: f.key, label: f.label, uses: f.uses, note: f.note || null,
-                 acct: profile[f.key], emp: employee[f.key] }));
+    .map(f => ({ key: f.key, label: f.label, acct: profile[f.key], emp: employee[f.key] }));
 }
 
 /**
@@ -67,21 +75,43 @@ export function identityFallbacks(profile, employee) {
   if (!profile || !employee) return [];
   return IDENTITY_FIELDS
     .filter(f => isBlank(employee[f.key]) && !isBlank(profile[f.key]))
-    .map(f => ({ key: f.key, label: f.label, uses: f.uses, acct: profile[f.key] }));
+    .map(f => ({ key: f.key, label: f.label, acct: profile[f.key] }));
 }
 
 /**
  * ค่าที่จะเขียนลง `profiles` เพื่อให้ตรงกับฐานพนักงาน
- * 🔴 เขียน **ทุกช่องใน IDENTITY_FIELDS** รวมช่องที่ฐานพนักงานว่าง (เป็น null) —
- *    เขียนเฉพาะช่องที่ต่าง = ค่าขยะที่ค้างในบัญชีไม่เคยถูกล้าง แถบเตือนก็ไม่หาย
+ *
+ * 🔴🔴 **เขียนเฉพาะช่องที่ฐานพนักงาน "มีค่า" — ห้ามเขียน null ทับช่องที่ฐานพนักงานว่าง** (14/10)
+ *    เหตุผล: `App.jsx` resolve ด้วย **`emp.<f> ?? profile.<f>`** ⇒ ช่องที่ฐานพนักงานว่าง
+ *    **ค่าในบัญชีคือค่าที่ระบบใช้อยู่จริง** ไม่ใช่ค่าขยะ · เขียน null ทับ = คนนั้นเสีย
+ *    ทีม/ไลน์/ส่วนงาน ทันทีตอน login (วัดจริง 14/10: ส่วนงาน 8 · หน่วยผัง 2 · ทีม 1 = **11 ช่อง**)
+ *
+ *    ⚠️ กฎเดิมเขียนว่า "ต้องเขียนครบทุกช่องไม่งั้นแถบเตือนไม่หาย" — **ไม่จริง** เพราะ
+ *    `identityDiff()` นับเฉพาะช่องที่ฐานพนักงานมีค่าอยู่แล้ว ⇒ ไม่เขียนช่องว่างก็ไม่ค้าง
+ *    (ช่องที่ฐานพนักงานว่างมีที่อยู่ของมันคือ `identityFallbacks` = "ไปกรอกที่ทะเบียนพนักงาน")
  */
 export function syncPatch(employee) {
   if (!employee) return null;
   const patch = {};
-  for (const f of IDENTITY_FIELDS) patch[f.key] = isBlank(employee[f.key]) ? null : employee[f.key];
+  for (const f of IDENTITY_FIELDS) {
+    if (!isBlank(employee[f.key])) patch[f.key] = employee[f.key];
+  }
   return patch;
 }
 
 /** มีอะไรให้เตือนไหม (ใช้ตัดสินว่าจะวาดแถบหรือไม่) */
 export const hasIdentityIssue = (profile, employee) =>
   identityDiff(profile, employee).length > 0 || identityFallbacks(profile, employee).length > 0;
+
+/**
+ * ช่อง "คนละความหมาย" ที่ 2 ฝั่งมีค่าและไม่ตรงกัน — **ข้อมูล ไม่ใช่ข้อผิดพลาด**
+ * ใช้บอกบนจอว่า "บรรจุเป็น X · ปฏิบัติงานเป็น Y" (เช่น คนรักษาการ) — ห้ามเอาไปทำปุ่มล้างค่า
+ * @returns {{key,label,empLabel,acctLabel,note,undecided,acct,emp}[]}
+ */
+export function dualMeaningInfo(profile, employee) {
+  if (!profile || !employee) return [];
+  return DUAL_MEANING_FIELDS
+    .filter(f => !isBlank(profile[f.key]) && !isBlank(employee[f.key])
+                 && !same(profile[f.key], employee[f.key]))
+    .map(f => ({ ...f, acct: profile[f.key], emp: employee[f.key] }));
+}

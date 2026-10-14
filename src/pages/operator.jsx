@@ -2,7 +2,7 @@ import { useState, useEffect, useContext, useRef, useMemo, startTransition, lazy
 import { orgNodeCompare, naturalCompare, sortLike } from '../utils/listOrder';
 import { Link } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
-import { STAFF_SUPPORT, isShopfloorStaff } from '../utils/staffKind';   // 👥 หน้างาน vs สายสนับสนุน (แกนเช็คชื่อ)
+import { STAFF_SUPPORT, isShopfloorStaff, staffGroupOf } from '../utils/staffKind';   // 👥 3 กลุ่ม: หน้างาน / ช่าง / สนับสนุน
 import { normSearch } from '../components/SearchSelect';   // ค้นหาทนการสะกดไทย (ของกลาง)
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
@@ -875,6 +875,11 @@ export default function Operator() {
        ให้ครบทุกคนแล้ว แต่ทั้ง 35 คน `line_id` ยัง null ⇒ เช็คชื่อว่างเปล่า **โดยไม่มีอะไรบนจอบอกสักคำ**
        · สายสนับสนุน (staff_kind=support) ไม่เข้าเกณฑ์นี้ — ไม่ได้อยู่ไลน์อยู่แล้ว */
     if (isShopfloorStaff(emp) && !emp.line_id) r.push('ยังไม่ผูกไลน์ — จะไม่ขึ้นในหน้าเช็คชื่อ');
+    /* 🔧🗂️ ช่าง/สายสนับสนุน **เช็คชื่อได้แล้ว** (14/10) แต่คิวรีของคนที่ถูกจำกัดขอบเขต
+       กรองด้วย `section` ⇒ ไม่มีทั้งไลน์และส่วนงาน = เห็นได้แค่บัญชีที่ไม่จำกัดขอบเขต
+       (วัด 14/10: สายสนับสนุน 5 คน · 4 คนไม่มี section เลย) */
+    if (!isShopfloorStaff(emp) && !emp.line_id && !emp.section)
+      r.push('ยังไม่ผูกไลน์/ส่วนงาน — หัวหน้าที่ถูกจำกัดขอบเขตจะไม่เห็นในหน้าเช็คชื่อ');
     return r;
   }, [orgDeptNodes, orgLineNodes, orgDeptKeys, allOrgLineKeys]);
   // section ที่ผังยังไม่มีแผนกใต้มันเลย → พนักงาน section นั้น "แก้ผ่านฟอร์มไม่ได้" (ไม่มีตัวเลือกให้เลือก)
@@ -898,7 +903,7 @@ export default function Operator() {
     .filter(emp => !filterLabor   || empLabor(emp) === filterLabor)
     .filter(emp => !filterOffOrg  || offOrgReasons(emp).length > 0)
     .filter(emp => !filterNoPhoto || !emp.image_url)
-    .filter(emp => !filterStaffKind || (filterStaffKind === 'support' ? !isShopfloorStaff(emp) : isShopfloorStaff(emp)))
+    .filter(emp => !filterStaffKind || staffGroupOf(emp) === filterStaffKind)   // 3 กลุ่ม (14/10) — ห้ามกลับไปเทียบ 2 ขั้ว
     /* 🔎 ค้นท้ายสุด (หลังตัวกรองอื่น) — ใช้ normSearch ของกลาง: ทนช่องว่างซ้อน/ขีด และ
        **ทนการสะกดไทย** (ชื่อในฐานพิมพ์มือ ต่างกัน 1 ตัวเสมอ เช่น เจริญพันธ/เจริญพันธ์) */
     .filter(emp => {
@@ -1053,8 +1058,9 @@ export default function Operator() {
                 ส่วน Direct/Indirect ข้างล่าง = ประเภทแรงงานเชิงต้นทุน (derive จากแผนกในผังองค์กร) */}
             <span style={{ width: 1, height: 20, background: 'var(--border2)', margin: '0 2px' }} />
             {[
-              { k: 'shopfloor', icon: '🧑‍🏭', label: 'หน้างาน', color: '#22c55e', title: 'พนักงานหน้าไลน์ + ช่าง — เช็คชื่อ · นับเป็นกำลังคน' },
-              { k: 'support',   icon: '🗂️', label: 'สนับสนุน', color: '#a78bfa', title: 'QA · วิศวกรรม · ธุรการ · สโตร์ — ไม่เช็คชื่อ ไม่นับกำลังคนหน้าไลน์' },
+              { k: 'shopfloor',  icon: '🧑‍🏭', label: 'หน้างาน',  color: '#22c55e', title: 'พนักงานหน้าไลน์ — เช็คชื่อ · นับเป็นกำลังคนของไลน์' },
+              { k: 'technician', icon: '🔧', label: 'ช่าง',     color: '#38bdf8', title: 'ช่างซ่อมบำรุง/จิ๊ก/แม่พิมพ์ — เช็คชื่อได้ แต่ไม่นับเป็นกำลังคนของไลน์ (ซ่อมข้ามไลน์)' },
+              { k: 'support',    icon: '🗂️', label: 'สนับสนุน', color: '#a78bfa', title: 'QA · วิศวกรรม · ธุรการ · สโตร์ — เช็คชื่อได้ ไม่นับกำลังคนของไลน์' },
             ].map(t => {
               const active = filterStaffKind === t.k;
               return (
@@ -2042,7 +2048,7 @@ export default function Operator() {
                   // fallback: ผังยังไม่มีกลุ่มใต้แผนกนี้ → ใช้ production_lines เดิม (normalize + fail-open)
                   // 2026-09-07 อ่านทะเบียนไลน์ผ่าน <LineSelect> (ลำดับชั้น/ปลดระวาง/ค่าเดิมนอกลิสต์ไม่หายเงียบ) — คง pre-filter scope+แผนก เดิม
                   return (
-                    <LineSelect value={cur} disabled={!editingEmp.department}
+                    <LineSelect value={cur} includeSupport disabled={!editingEmp.department}
                       placeholder={editingEmp.department ? '— เลือก Line —' : 'เลือกแผนกก่อน'}
                       lines={filterLinesByDept(
                         (scopeSecs.length ? lines.filter(l => inSectionScope(scopeSecs, l.section)) : lines)

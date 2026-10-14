@@ -302,6 +302,13 @@ const TABLE_ROWS = {
      แผนก/ฝ่าย/กลุ่มไลน์ ไม่เคยถูกรันใน harness): 1 = ส่วนงาน PD1 · 2 = แผนกใต้ PD1 · 3-5 = ไลน์ในแผนก
      (ref_line_id ชี้ production_lines mock ที่ id เป็น 'id-N') · 6 = แผนกขึ้นตรงฝ่ายช่าง (ไม่มีไลน์) ·
      7 = org line node ไม่ผูก production line (สโตร์) · ที่เหลือ = ทีม · แถว NULLISH ยังคงว่างตามกติกา */
+  /* 🏭 ชนิดหน่วย — **ต้องมีแถว `support` อย่างน้อย 1 ตัวเสมอ ห้ามถอด** (2026-10-13)
+     ของจริงมี 3 หน่วย (Office PD4 · Coating · Rework - PD1) ที่ไม่ใช่ไลน์ผลิต
+     ไม่มีในmock = สาขา "กรองหน่วยสนับสนุนออก" + ป้าย "🗂️ หน่วยสนับสนุน" ของค่าที่เลือกไว้แล้ว
+     ไม่เคยถูกรันใน harness เลย · เลือกแถว 5 เพราะเป็นไลน์เดี่ยว (ไม่อยู่ใน PARENT_OF
+     และไม่ถูกอ้างโดย sessions/workstations ที่ผูก LINE_NAME(1..3)) */
+  production_lines: (r, i) => ({ ...r, unit_kind: i === 5 ? 'support' : 'production' }),
+
   org_nodes: (r, i) => ({
     ...r,
     kind: i === 1 ? 'section' : (i === 2 || i === 6) ? 'department' : i <= 5 || i === 7 ? 'line' : 'team',
@@ -346,7 +353,19 @@ const TABLE_ROWS = {
       old_data: act === 'INSERT' ? null : { ...data, slots: (data.slots ?? 0) + 2 }, new_data: act === 'DELETE' ? null : data,
       changed_at: `2026-${String(8 + (i % 3)).padStart(2, '0')}-1${i % 9}T03:00:00Z` };
   },
-  line_technicians: (r, i) => ({ ...r, employee_id: `id-${i}`, line_id: 'id-3' }),
+  /* 🔧 ช่างประจำไลน์ — id-3..id-15 (13 คน) · 🔴 **เว้น id-1/id-2 ไว้โดยเจตนา** (14/10)
+     เดิมผูก `id-${i}` ครบทุกคน ⇒ พนักงานทั้ง 15 คนเป็น "ช่างประจำไลน์" ของแผนก id-2 หมด
+     แล้วสาย **คนวิ่งข้ามแผนก** (employee_flex_units) ถูกกฎ "ไม่วาดซ้ำคนที่อยู่แผนกนี้แล้ว"
+     กรองออกทุกแถว ⇒ การ์ด flex ไม่เคยถูกรันใน harness เลย (วัดจริงด้วย console probe)
+     ⇒ ต้องมีคนที่ **ไม่ใช่** ทั้งคนในสังกัดและช่างของแผนก id-2 เหลืออยู่เสมอ */
+  line_technicians: (r, i) => ({ ...r, employee_id: `id-${(i % 13) + 3}`, line_id: 'id-3' }),
+  /* 🏃 คนวิ่งข้ามแผนก (14/10) — คนที่ผูกระดับ **ส่วนงาน** (employees 1-2 = org_node_id 'id-1')
+     ไปช่วยแผนก 'id-2' ⇒ สายการ์ด flex + ป้าย "↗ บ้าน" + ตัวนับ "วิ่งข้ามมาช่วย" ถูกรัน
+     🔴 ห้ามชี้หน่วยเดียวกับบ้านของคนนั้น — กฎกรองออก (ไม่วาดซ้ำ) แล้วสายนี้จะไม่เคยถูกรันเลย
+     🔴 แถวที่บ้านจริงสืบไม่ได้ (ผูกระดับส่วนงาน) = เคสที่ `flexFrom.nodeName` ต้องถอยไปใช้ชื่อแผนกใน
+        ทะเบียนพนักงาน — ห้ามเปลี่ยนให้ชี้แผนกตรงๆ ไม่งั้นสาขา fallback หายจาก harness */
+  employee_flex_units: (r, i) => ({ ...r, employee_id: `id-${(i % 2) + 1}`, org_node_id: 'id-2',
+    note: isNullish(r) ? null : 'ช่วยกะเช้าประจำ' }),
   line_helpers: (r, i) => ({ ...r, employee_id: `id-${(i % 4) + 7}`, to_line_id: 'id-9', shift: i % 2 ? 'day' : 'night',
     work_date: _recentDay(i % 20) }),
   /* 📊 แผน vs มาจริง (08/10) — เช็คชื่อกระจาย 20 วันล่าสุด · คนตรงกับทะเบียน (id-*) · คละ มา/ลา/ขาด
@@ -857,10 +876,26 @@ const TABLE_FIXED = {
     { board_part_id: 'mp-6', row_key: 'to_vendor', period_key: '2026-10-01', qty: 398, txt: null },
   ],
 }
+/* ➕ แถวเพิ่มเฉพาะตาราง (ต่อท้ายผลของ TABLE_ROWS) — ใช้ตอนต้องการ "ทรงพิเศษ" ที่ ROWS กลางให้ไม่ได้
+   🔴 bom_items — **ห้ามถอด** (14/10) เดิม 2 สาขานี้ไม่เคยถูกเรนเดอร์ในฮาร์เนสเลย:
+     ① ใบของพาร์ท **ว่าง** แต่ลูกถูกกรอกไว้ในใบอื่น  → 10101003 (ใบ id-3 ว่าง · ลูกอยู่ในใบ id-1)
+     ② พาร์ท **ไม่มีใบของตัวเองเลย** แต่มีลูก        → 30047020 (ลูก 50027099 อยู่ในใบ id-1)
+   ทั้ง 2 ตัวไม่แตะทรง "ซ้ำ 2 ใบ" ของ 10101002 (ไม่มีใบของตัวเอง/ใบว่าง = ไม่เข้าเงื่อนไขคู่) */
+const TABLE_EXTRA = {
+  bom_items: [
+    { id: 'bx-1', product_id: 'id-1', parent_mat: null, mat_no: '10101003', part_name: 'ชิ้นงาน 3 (ใบตัวเองว่าง)',
+      qty_per_unit: 1, uom: 'PC', item_no: 70, is_active: true },
+    { id: 'bx-2', product_id: 'id-1', parent_mat: '10101003', mat_no: '30047020', part_name: 'ลูกที่ใบแม่กรอกให้',
+      qty_per_unit: 3, uom: 'PC', item_no: 80, is_active: true },
+    { id: 'bx-3', product_id: 'id-1', parent_mat: '30047020', mat_no: '50027099', part_name: 'คอยล์ของตัวที่ไม่มีใบ',
+      qty_per_unit: 0.45, uom: 'KG', item_no: 90, is_active: true },
+  ],
+}
 const rowsFor = (table) => {
   if (TABLE_FIXED[table]) return TABLE_FIXED[table]
   const fn = TABLE_ROWS[table]
-  return fn ? ROWS.map((r, idx) => fn(r, idx + 1)) : ROWS
+  const base = fn ? ROWS.map((r, idx) => fn(r, idx + 1)) : ROWS
+  return TABLE_EXTRA[table] ? [...base, ...TABLE_EXTRA[table]] : base
 }
 /* ── 📊 ตัวนับคิวรี (2026-10-08) — ใช้หาว่า "ใครโหลดซ้ำ" โดยไม่ต้องแตะโค้ดใน src/ ──────────
    ที่มา: log ของ Supabase บอกได้แค่ว่า *มี* คิวรีซ้ำ (เช่น StoreLotQueue ยิง

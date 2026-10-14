@@ -179,7 +179,13 @@ export function explodeBom(root, bomOf, opt = {}) {
     });
   };
 
-  walk(rootMat, nextSheet(rootMat, undefined), 1, 1, [rootMat]);
+  /* 🔴 `startSheet` = บังคับ "ใบตั้งต้น" (ไม่ส่ง = หาเองเหมือนเดิมเป๊ะ)
+     ต้องมีเพราะ `sheetFor(mat, undefined)` ตอบได้แค่ "ใบของ mat เอง" ⇒ พาร์ทที่ **ลูกถูกกรอกไว้ในใบอื่น**
+     (ใบของตัวเองยังว่าง หรือไม่มีใบของตัวเองเลย) กางไม่ออกเลย = จอบอกว่า "ไม่มีลูก" ทั้งที่มี
+     เคสจริง 14/10: เปิดใบ 20058495 ขึ้น "ยังไม่มีพาร์ทย่อย" แต่ใบ FG 10086024 กรอกลูกของมันไว้แล้ว
+     · 20058483 ไม่มีใบของตัวเองเลย แต่ใบ 20058498 กรอกลูก (50027080) ไว้ให้ ⇒ กดดูเป็นตัวตั้งต้นไม่ได้
+     ⚠️ ยังคงกฎ "ชุดของใบที่กางอยู่ชนะทั้งชุด" — แค่เปลี่ยนว่า "ใบไหนคือใบที่กางอยู่" ไม่ได้รวม 2 ชุด */
+  walk(rootMat, opt.startSheet !== undefined ? opt.startSheet : nextSheet(rootMat, undefined), 1, 1, [rootMat]);
 
   /* ── ตรวจ "แบนมาจากหลายชั้น" ────────────────────────────────────────────────
      mat ที่โผล่ทั้งชั้น 1 และชั้นลึกกว่าในต้นเดียวกัน = ของก้อนเดียวถูกนับ 2 รอบ
@@ -287,8 +293,13 @@ export const isAssemblyLine = (lineType) =>
     งานปั๊มส่วนใหญ่จะมีลูกเบอร์ 5 แค่เลขเดียว
     ถ้างานประกอบ จะรวมหลายๆ เบอร์ มีโอกาสที่จะมีทั้ง 2 3 5 มารวมเป็น 1"
 
-   ⇒ **FG ที่มีลูกเป็น 5xx ล้วน = งานปั๊มแล้วขายเลย ถูกต้อง ห้ามเตือน** (มีจริง 21 FG)
-     เตือนเฉพาะ 5xx ที่ปนอยู่กับ 2xx/3xx (งานประกอบ) — มีจริง 22 FG
+   🔴 **แก้ 2026-10-14 (user แก้ให้เอง):** *"เบอร์ 5 เป็นเบอร์ 1 เลยก็มีนะ มีบางงานเป็นแบบนั้น
+      ไม่ต้องขึ้นโชว์แบบนี้ก็ได้ เราน่าจะบอกผิดไปครั้งก่อน"*
+   ⇒ **ถอดคำเตือน `raw_in_assembly` ออก** (5xx ปนกับ 2xx/3xx ใต้ FG = ของจริงมี ไม่ใช่ความผิด)
+     ห้ามเอากลับมาโดยไม่ถาม user · เตือนผิด 40 แถว = คนเลิกเชื่อคำเตือนที่เหลือ
+     ที่ยังเตือน = เฉพาะที่**พิสูจน์ได้** ไม่ใช่เดาจาก pattern:
+       · `raw_double_counted` — 5xx ตัวนั้นอยู่ใต้พี่น้อง 2xx อยู่แล้ว (ไล่ถึงจริง) = นับซ้ำแน่
+       · `fg_as_component`    — FG (1xx) ถูกใส่เป็นชิ้นส่วน
 
    "อย่านับซ้ำกัน ถ้าจาก 5 ผ่านไลน์ปั๊มกลายเป็น 2 แล้ว ไปอยู่เป็นลูกเบอร์ 1 ตัวไหน
     ต้องไม่นับ 5 แล้ว เพราะถูกตัดจ่ายเปลี่ยนสภาพจาก 5 เป็น 2 ไปแล้ว"
@@ -309,8 +320,6 @@ export function checkBomFlow(parentMat, children = [], bomOf) {
   const p = digitOf(parentMat);
   const kids = (children || []).map(k => norm(k?.mat_no)).filter(Boolean);
   const digits = kids.map(digitOf);
-  // งานปั๊มแล้วขายเลย = ไม่มีลูกที่เป็นชิ้นส่วน (2xx/3xx) เลย → 5xx ที่มีคือวัตถุดิบตรงตัว
-  const isStampOnly = !digits.some(d => d === '2' || d === '3');
 
   /* ของที่ไล่ผ่านพี่น้องถึงได้ (ลึกกี่ชั้นก็ได้) = ถูกแปรสภาพไปแล้ว ไม่ควรนับที่ชั้นนี้อีก */
   const reachable = new Set();
@@ -341,11 +350,8 @@ export function checkBomFlow(parentMat, children = [], bomOf) {
         text: 'วัตถุดิบตัวนี้อยู่ใต้ชิ้นส่วนพี่น้องอยู่แล้ว — ถูกแปรสภาพเป็นพาร์ทปั๊มไปแล้ว นับที่ชั้นนี้อีกคือนับซ้ำ' });
       return;
     }
-    if (p === '1' && !isStampOnly) {
-      out.set(m, { code: 'raw_in_assembly', level: 'warn',
-        text: 'วัตถุดิบ (5xx) ปนอยู่กับชิ้นส่วน (2xx/3xx) ในงานประกอบ — ตรวจว่าใช้ที่ไลน์ประกอบจริง หรือขาดขั้นกลาง 2xx' });
-    }
-    // งานปั๊มแล้วขายเลย (5xx ล้วน) = ไม่เตือน
+    /* 🔴 5xx ไปเป็นลูกของ 1xx ตรงๆ = **ปกติ ห้ามเตือน** (user 14/10) — ทั้งงานปั๊มแล้วขายเลย
+       และงานประกอบบางตัวที่กินวัตถุดิบตรงจริง · ที่เหลือเตือนเฉพาะที่ไล่ถึงจริงด้านบน */
   });
   return out;
 }
@@ -460,7 +466,46 @@ export function buildBomIndex(rows = [], matOfProduct = {}) {
    *  ⚠️ **ห้ามเอาไปใช้แทน `sheetFor`** (ตัวนั้นตอบว่าเดินลงชั้นต่อในใบไหน คนละคำถาม) */
   const ownSheetOf = (mat) => productIdOf[norm(mat)] ?? null;
 
-  return { bomOf, parentOf, orphans, sheetFor, productIdOf, ownSheetOf };
+  /** 📍 "ลูกของ mat ถูกกรอกไว้ในใบไหนบ้าง" — คำถามที่ `bomOf`/`sheetFor`/`ownSheetOf` ตอบไม่ได้
+   *  3 ตัวนั้นถามจาก "ใบที่กางอยู่" หรือ "ใบของ mat เอง" เท่านั้น ⇒ ของที่ลูกถูกกรอกไว้ใน**ใบอื่น**
+   *  จะหายไปเงียบๆ (จอขึ้น "ยังไม่มีพาร์ทย่อยใน BOM นี้" ทั้งที่มีคนกรอกไว้แล้ว — user แจ้ง 14/10)
+   *  @returns {{sheetId:string,count:number,isOwn:boolean}[]} ใบของตัวเองมาก่อน แล้วเรียงตามจำนวนลูก
+   *  ⚠️ ชี้ให้เห็นอย่างเดียว — **ห้ามเอาหลายใบมารวมเป็นชุดเดียว** (รวม = นับซ้ำ · ดูกติกาใน `bomOf`) */
+  const sheetsWithKidsOf = (mat) => {
+    const m = norm(mat);
+    if (!m) return [];
+    const ids = new Set((byParentMat[m] || []).map(r => r?.product_id).filter(id => id != null));
+    const ownId = productIdOf[m] ?? null;
+    if (ownId && (bySheetMat[m] || []).length) ids.add(ownId);
+    return [...ids]
+      .map(sheetId => ({ sheetId, count: (bomOf(m, sheetId) || []).length, isOwn: sheetId === ownId }))
+      .filter(x => x.count > 0)
+      .sort((a, b) => (b.isOwn ? 1 : 0) - (a.isOwn ? 1 : 0) || b.count - a.count
+        || String(a.sheetId).localeCompare(String(b.sheetId)));
+  };
+
+  /** ⬆️ "ของชิ้นนี้ถูกใช้เป็นลูกของใครบ้าง" (ย้อนขึ้น 1 ชั้น · user ขอ 14/10 "ควรมีแถบโชว์ให้ดูแม่ได้ด้วย")
+   *  ตัวแม่ = `parent_mat` ถ้ามี · ไม่มี = เจ้าของใบ (เหมือน `parentOf`) ⇒ ตรงกับต้นไม้ที่กางเป๊ะ
+   *  @returns {{mat:string,sheetId:string,qty:number}[]} เรียงตาม mat แม่ · ซ้ำ (แม่+ใบ) เดียวกันยุบแล้ว
+   *  ⚠️ แม่ตัวเดียวอาจโผล่หลายใบ — **ห้ามยุบข้ามใบ** (คนละใบ = คนละการนิยาม ต้องกดเข้าไปดูแยก) */
+  const parentsOfMat = (mat) => {
+    const m = key(mat);
+    if (!m) return [];
+    const seen = new Set();
+    const out = [];
+    (rows || []).forEach(r => {
+      if (key(r?.mat_no) !== m) return;
+      const pm = norm(r?.parent_mat) || norm(matOfProduct[r?.product_id]);
+      if (!pm) return;                       // แถวกำพร้า — มี orphans รับไว้แล้ว ห้ามเดาแม่
+      const k = `${key(pm)}|${r?.product_id}`;
+      if (seen.has(k)) return;
+      seen.add(k);
+      out.push({ mat: pm, sheetId: r?.product_id ?? null, qty: Number(r?.qty_per_unit) || 0 });
+    });
+    return out.sort((a, b) => a.mat.localeCompare(b.mat));
+  };
+
+  return { bomOf, parentOf, orphans, sheetFor, productIdOf, ownSheetOf, sheetsWithKidsOf, parentsOfMat };
 }
 
 /** ย้ายบรรทัดไปเป็นลูกของ mat อื่น — คืน patch ที่จะเขียนลง DB (null = ย้ายไม่ได้ + เหตุผล)
