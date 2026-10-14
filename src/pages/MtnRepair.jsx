@@ -21,7 +21,7 @@ import { MO_STATUS_META as STATUS_META, QA_NOT_RELATED, QA_RELATED, QA_SKIP_REAS
 import { positionRank } from '../utils/positions';
 import { findOpenOnMachine, dupLevel } from '../utils/mtnDuplicate';
 /* 🔢 เลข MO ออกยังไง — ต้องตรงกับ RPC `mtn_assign_mo_no` เป๊ะ (14/10 · ห้ามเดารูปแบบเองในหน้า) */
-import { moCodeOf, moFormatHint, moNoOf, moSeqKeyOf } from '../utils/moNumber';
+import { moFormatHint, moMonthKeyOf, moNoOf, moSeqKeyOf } from '../utils/moNumber';
 /* ⏳ ใบค้างขั้นเดิม — สูตร "ค้างกี่วัน/ขั้นไหน" อยู่ที่นี่ที่เดียว ห้ามนับวันในหน้า (13/10) */
 import { buildMoStaleBoard } from '../utils/mtnStale';
 import { inSectionScope } from '../utils/sectionScope';
@@ -3540,10 +3540,17 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
          เก็บตัวนับไว้ที่ `MTN:202610` ⇒ อ่าน `MTN` เฉยๆ ได้ 0 เสมอ แล้วจอก็โกหกว่าใบถัดไปคือ 0001
          (เกิดจริง 13/10 — ช่างถามว่า "จะ Skip เลขต้องกรอกตรงไหน" เพราะช่องที่มีกรอกแล้วไม่มีผล) */
       const byCode = {}; (seqs || []).forEach(s => { byCode[s.team_code] = s.last_seq; });
+      /* 🔴 `at` จับครั้งเดียวตอนโหลด ไม่ใช่ตอน render — `Date.now()` ใน render = impure
+         (ด่าน react-hooks/purity) และคีย์เดือนจะขยับเองกลางการแสดงผล */
       const at = Date.now();
       setMoRows((teams || []).map(t => {
-        const seqKey = moSeqKeyOf(t, at);
-        return { ...t, seqKey, last_seq: (seqKey ? byCode[seqKey] : null) ?? 0, hint: moFormatHint(t) };
+        const seqKey = moSeqKeyOf(t, at);          // ตัวนับหลัก (ตัวตนของใบ)
+        const monthKey = moMonthKeyOf(t, at);      // ตัวนับลำดับเดือน (หาง -M<n>) · null = ทีมนี้ไม่ต่อหาง
+        return {
+          ...t, at, seqKey, monthKey, hint: moFormatHint(t),
+          last_seq: (seqKey ? byCode[seqKey] : null) ?? 0,
+          month_seq: (monthKey ? byCode[monthKey] : null) ?? 0,
+        };
       })); setMoErr(false);
     } catch { setMoErr(true); }
   };
@@ -3588,11 +3595,13 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
               <label style={{ fontSize: 11.5, color: 'var(--muted)' }}>เลขล่าสุด <input type="number" min="0" defaultValue={t.last_seq} onBlur={e => Number(e.target.value) !== t.last_seq && saveMoSeq(t, e.target.value)} style={{ ...inp, width: 96, marginLeft: 4 }} /></label>
               {/* 🔴 เลขถัดไปคำนวณจาก moNoOf() ตัวเดียวกับที่ mirror RPC — คืน null = ตัดสินไม่ได้ ห้ามเดา */}
               {(() => {
-                const next = moNoOf(t, (t.last_seq || 0) + 1, { at: Date.now() });
+                const next = moNoOf(t, { seq: (t.last_seq || 0) + 1, monthSeq: t.monthKey ? (t.month_seq || 0) + 1 : null, at: t.at });
                 return next
                   ? <span style={{ fontSize: 11.5, color: 'var(--accent)' }}>ถัดไป: <b>{next}</b></span>
                   : <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>⚠️ ตัดสินเลขถัดไปไม่ได้</span>;
               })()}
+              {/* ลำดับเดือน = ตัวนับคนละตัว (รีเซ็ตเองทุกเดือน) — โชว์ให้เห็นว่าเดือนนี้ออกไปแล้วกี่ใบ */}
+              {t.monthKey && <span style={{ fontSize: 11, color: 'var(--muted)' }}>เดือนนี้ออกแล้ว <b>{t.month_seq}</b> ใบ</span>}
               {/* คีย์ตัวนับจริง — ไว้สอบกลับว่าช่องนี้ไปเขียนที่ไหน (ทีมรายเดือนคนละคีย์ทุกเดือน) */}
               <span style={{ fontSize: 11, color: 'var(--muted)' }}>ตัวนับ: <code>{t.seqKey || '—'}</code></span>
             </div>

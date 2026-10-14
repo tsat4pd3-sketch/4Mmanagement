@@ -1634,7 +1634,7 @@ test('🛡️ mo-stale-since-cols — MO_LIST_COLS ต้อง select ทุก
    ⇒ บังคับว่า migration ที่แตะ RPC ตัวนี้ ต้องแตะ `moNumber.js` ในคอมมิทเดียวกัน (และกลับกัน)
    🔴 ด่านนี้จับ "ลิสต์ทีมรายเดือน" ที่ต้องตรงกัน — เพิ่มทีมฝั่งเดียวแล้วลืมอีกฝั่ง = เลขคนละชุด */
 test('🛡️ mo-number-js-sql-parity — ลิสต์ทีม "เลขรีเซ็ตรายเดือน" ต้องตรงกันทั้ง JS และ SQL', async () => {
-  const { MONTHLY_TEAM_KEYS } = await import('../moNumber.js');
+  const { MONTHLY_TEAM_KEYS, TEAM_MO_FORMAT } = await import('../moNumber.js');
   const dir = join(ROOT, 'supabase/migrations');
   // migration ล่าสุดที่นิยาม mtn_assign_mo_no = ตัวที่รันอยู่จริง
   const owner = readdirSync(dir).filter(f => f.endsWith('.sql'))
@@ -1652,6 +1652,24 @@ test('🛡️ mo-number-js-sql-parity — ลิสต์ทีม "เลขร
     assert.ok(MONTHLY_TEAM_KEYS.includes(m[1]),
       `\n\n❌ SQL ${owner} แตกสาขาทีม '${m[1]}' แต่ MONTHLY_TEAM_KEYS ใน src/utils/moNumber.js ไม่มี\n`
       + '   ผล: DB ออกเลขรายเดือน แต่จอคิดว่าต่อเนื่อง = บอกเลขถัดไปผิด\n');
+  }
+  /* ตัวนำหน้า (`O-` = ออกจากระบบ · แยกจากเล่มเขียนมือของทีม MTN) — ถอดฝั่งเดียว = จอกับใบจริงคนละเลข
+     🔴 วันที่เลิกเล่มมือได้ ต้องถอดทั้ง 2 ฝั่งในคอมมิทเดียวกัน ด่านนี้จะบังคับให้ */
+  for (const [key, f] of Object.entries(TEAM_MO_FORMAT)) {
+    if (!f.mark) continue;
+    assert.ok(sql.includes(`'${f.mark}'`),
+      `\n\n❌ ทีม '${key}' ตั้งตัวนำหน้า '${f.mark}' ใน TEAM_MO_FORMAT แต่ SQL ${owner} ไม่มี\n`
+      + '   ผล: จอบอกว่าใบถัดไปขึ้นต้นด้วยตัวนี้ แต่ DB ออกเลขไม่มี = จอโกหก\n');
+  }
+  /* หาง `-M<n>` ต้องมีตัวนับของตัวเองใน SQL — ถ้า SQL นับแถวเอา (count) แทน จะได้เลขซ้ำตอนกดพร้อมกัน
+     และใบที่ถูกลบจะทำให้เลขของใบถัดไปย้อนไปทับของเก่า */
+  const anyTail = Object.values(TEAM_MO_FORMAT).some(f => f.monthTail) || true;  // ค่าตั้งต้นต่อหางอยู่แล้ว
+  if (anyTail) {
+    assert.ok(/':M'/.test(sql) && /'-M'/.test(sql),
+      `\n\n❌ JS ต่อหาง '-M<n>' แต่ SQL ${owner} ไม่มีตัวนับลำดับเดือน (คีย์ ':M' + หาง '-M')\n`
+      + '   ผล: DB ออกเลขไม่มีหาง แต่จอบอกว่ามี = จอโกหก\n');
+    assert.ok(!/count\(\*\)[^;]*\bv_mseq\b/s.test(sql),
+      '\n\n❌ ลำดับเดือนต้องมาจากตัวนับ (upsert) ห้ามนับแถวเอา — นับแถว = 2 ใบที่กดพร้อมกันได้เลขเดียวกัน\n');
   }
 });
 
