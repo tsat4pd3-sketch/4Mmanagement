@@ -12,7 +12,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import ReadOnlyNote from './ReadOnlyNote';
 import { supabaseDR } from '../supabaseClient';
 import { toast } from './Toast';
-import { can, canDelete } from '../utils/permissions';
+import { can, canDelete, isSharedAccount } from '../utils/permissions';
 import { pmTeamsSync } from '../utils/pmTeams';
 import { teamKeyOf, filterByTeam, teamRowOwner, teamRowLockNote } from '../utils/mtnTeams';
 import { loadSpareSections, spareSectionsSync, sectionOptions, inSectionScope, sectionLabel, sectionKeyOf, guessSectionFromCode, COMMON_SECTION_LABEL } from '../utils/spareSection';
@@ -96,19 +96,33 @@ export default function SparePartMaster({ parts = [], reload, fullName, role, my
   const [showCats, setShowCats] = useState(false);
   const [showImport, setShowImport] = useState(false);
 
-  const canEdit = can('mtn_repair', 'manage_master', role);
+  /* 🔩 `spare_master` = คีย์แยกเฉพาะ "ทะเบียนอะไหล่" (2026-10-14 · คำสั่ง user)
+     ที่มา: หัวหน้าแผนกผลิตอยากเพิ่มอะไหล่เองได้ แต่ `manage_master` พ่วงสิทธิ์หัวหน้าโมดูล MTN
+            (แก้ใบ MO ย้อนหลังได้ทุกขั้นทุกใบ · ข้ามด่านอนุมัติ · เซ็นแทน — `mtnStepPerm.js:325`)
+            และ `is_dept_admin` พ่วงคีย์ลบอีก 8 โมดูล ⇒ ทั้งสองทางกว้างเกินความต้องการ
+     ⇒ คีย์นี้ให้แค่ **ทะเบียนอะไหล่ + ผังคลัง + รับเข้า/เบิก** ไม่แตะใบ MO เลย
+     ⚠️ workflow ใบ MO ไม่เกี่ยวกับคีย์นี้ — แต่ละขั้นมีคีย์ของตัวเอง (report/approve/accept_work/
+        handover/close_cost/mtn_head) ที่ role นั้นถืออยู่แล้ว ⇒ เปิด/อนุมัติ/รับมอบ ยังทำได้ตามเดิม */
+  const canSpareMaster = can('mtn_repair', 'spare_master', role);
+  const canEdit = can('mtn_repair', 'manage_master', role) || canSpareMaster;
   const canMove = can('mtn_repair', 'service', role) || canEdit;
+  /* ผู้ถือ "เฉพาะ spare_master" = คีย์ใหม่ ไม่มีของเก่าให้พัง ⇒ บังคับ strict ตั้งแต่วันแรก
+     (ต้องตั้งทีมช่างก่อน ถึงจะแก้/ลบของเดิมได้ · ไม่งั้นด่านจะไม่ทำงานกับคนที่เราเพิ่งให้คีย์) */
+  const strictOwn = canSpareMaster && !can('mtn_repair', 'manage_master', role);
   /* 🔒 ด่าน "เจ้าของทีม" รายแถว (คำสั่ง user 2026-10-14) — ต่างจาก canEdit/canDelete ที่เป็นด่าน "สิทธิ์"
      ที่มา: หัวหน้าแผนกผลิตกำลังถูกตั้งเป็น dept_admin เพื่อให้เพิ่มอะไหล่เองได้
             แต่ bucket นั้นถือ `mtn_repair:delete` ติดมาด้วย ⇒ ลบของทีมอื่นได้
             user: *"ให้เพิ่มได้ แต่จะลบมั่วไม่ได้ … เห็นข้ามกันหมด แต่ลบข้ามกันไม่ได้"*
      ⇒ **เห็นทุกทีมเหมือนเดิม** (ตั้งใจ — ช่างต้องค้นของข้ามทีมได้) แต่ ✏️/🗑 เฉพาะของทีมตัวเอง
      กฎเดียวกับทะเบียนข้อมูลหลักใน `/mtn-repair?tab=master` เป๊ะ (`utils/mtnTeamOwn.js`) */
-  const ownOf = useCallback((p) => teamRowOwner(p, { myTeams, role }), [myTeams, role]);
+  const ownOf = useCallback((p) => teamRowOwner(p, { myTeams, role, strict: strictOwn }), [myTeams, role, strictOwn]);
   /* ทีมตั้งต้นตอน "เพิ่มอะไหล่" = ทีมของ user ถ้าสังกัดทีมเดียว · ไม่งั้นใช้ทีมที่กรองอยู่
      (เดิม default เป็น 'maintenance' เสมอ ⇒ หัวหน้าผลิตเพิ่มของแล้วไปโผล่คลัง MTN เงียบๆ) */
   const defTeam = (myTeams.length === 1 ? teamKeyOf(myTeams[0]) : '') || fTeam || 'maintenance';
-  const mayDeleteRow = (p) => canDelete('mtn_repair', 'manage_master', role) && ownOf(p).ok;
+  const mayDeleteRow = (p) =>
+    (canDelete('mtn_repair', 'manage_master', role)
+      || (canSpareMaster && !isSharedAccount()))   // บัญชีกลางลบไม่ได้ ไม่ว่าถือคีย์อะไร (กฎ 13/10)
+    && ownOf(p).ok;
   const teams = pmTeamsSync();
 
   // default ทีม = ทีมของ user ถ้าสังกัดทีมเดียว (เห็นคลังตัวเองก่อน) — เปลี่ยนเป็น "ทุกทีม" ได้
@@ -220,7 +234,7 @@ export default function SparePartMaster({ parts = [], reload, fullName, role, my
 
   const doDelete = async (p) => {
     // ด่านซ้ำอีกชั้น — ซ่อนปุ่มอย่างเดียวไม่พอ (ฝั่ง DR เป็น anon ไม่มีด่าน server · known gap)
-    if (!mayDeleteRow(p)) return toast.error(teamRowLockNote(p));
+    if (!mayDeleteRow(p)) return toast.error(teamRowLockNote(p, ownOf(p).code));
     if (!confirm(`ลบอะไหล่ "${p.name}" ออกจากคลัง?\n(ประวัติการเบิก-รับยังอยู่ ไม่ถูกลบ)`)) return;
     // ลบ = soft delete ⇒ RLS ปฏิเสธ UPDATE = "สำเร็จ 0 แถว ไม่มี error" ⇒ ต้องนับแถว (กฎเหล็ก DB ข้อ 2)
     const res = await supabaseDR.from('mtn_spare_parts').update({ is_active: false }).eq('id', p.id).select('id');
@@ -273,7 +287,7 @@ export default function SparePartMaster({ parts = [], reload, fullName, role, my
   return (
     <div>
       <ReadOnlyNote show={!canEdit && !canMove} role={role} what="แก้ทะเบียนอะไหล่/รับเข้า-เบิก"
-        permKey="mtn_repair:manage_master, mtn_repair:service"
+        permKey="mtn_repair:spare_master, mtn_repair:manage_master, mtn_repair:service"
         hint="ค้นหาอะไหล่/ดูตำแหน่งชั้นวางได้ตามปกติ (ตั้งใจให้ช่างทุกคนค้นของได้)" />
       {/* ── แถบเครื่องมือ ── มาตรฐาน FilterBar (UI-STANDARD 2026-09-24): ขอบเขต → ตัวกรอง → ค้นหา → ปุ่ม */}
       <FilterBar>
@@ -422,7 +436,7 @@ export default function SparePartMaster({ parts = [], reload, fullName, role, my
                     {canEdit && (ownOf(p).ok
                       ? <button className="tbtn" onClick={() => setEditPart(p)} title="แก้ไข" style={{ ...btnGhost, padding: '5px 9px', fontSize: 12, marginLeft: 4 }}>✏️</button>
                       /* ห้ามซ่อนเงียบ — ต้องบอกว่าทำไมกดไม่ได้ (กฎความซื่อสัตย์ของจอ) */
-                      : <span title={teamRowLockNote(p)} style={{ marginLeft: 6, fontSize: 12, color: 'var(--muted)', cursor: 'help' }}>🔒</span>)}
+                      : <span title={teamRowLockNote(p, ownOf(p).code)} style={{ marginLeft: 6, fontSize: 12, color: 'var(--muted)', cursor: 'help' }}>🔒</span>)}
                     {mayDeleteRow(p) && <DeleteButton style={{ marginLeft: 4 }} onClick={() => doDelete(p)} title="ลบ" />}
                   </td>
                 </tr>
@@ -451,8 +465,8 @@ export default function SparePartMaster({ parts = [], reload, fullName, role, my
         usageRows={editPart === 'new' ? [] : (usage[editPart.id] || [])} count={parts.length}
         onClose={() => setEditPart(null)} onSaved={reloadAll} />}
       {showCats && <CategoryModal cats={cats} teams={teams} onClose={() => setShowCats(false)} onSaved={loadAux} />}
-      {showImport && <ImportModal parts={parts} cats={cats} teams={teams} fullName={fullName}
-        secOpts={secOpts} orgSecs={orgSecs} defSection={fSection || mySection}
+      {showImport && <ImportModal parts={parts} cats={cats} teams={teams} fullName={fullName} ownOf={ownOf}
+        secOpts={secOpts} orgSecs={orgSecs} defSection={fSection || mySection} defTeam={defTeam}
         onClose={() => setShowImport(false)} onDone={reloadAll} />}
     </div>
   );
@@ -921,7 +935,7 @@ function HistoryModal({ part, usageRows, onClose }) {
 /* ══════════════════════════════════════════════════════════════════════════
    นำเข้า/อัพเดทจากไฟล์ Excel/CSV — อัพโหลดไฟล์เดิมซ้ำได้ ระบบอัพเดททับไม่สร้างซ้ำ
    ══════════════════════════════════════════════════════════════════════════ */
-function ImportModal({ parts, cats, teams, fullName, secOpts = [], orgSecs = [], defSection = '', onClose, onDone }) {
+function ImportModal({ parts, cats, teams, fullName, ownOf = () => ({ ok: true }), secOpts = [], orgSecs = [], defSection = '', defTeam = '', onClose, onDone }) {
   const [keyField, setKeyField] = useState('code');
   const [impSection, setImpSection] = useState(sectionKeyOf(defSection));   // หน่วยงานเจ้าของของทั้งไฟล์
   const [withStock, setWithStock] = useState(false);
@@ -978,8 +992,17 @@ function ImportModal({ parts, cats, teams, fullName, secOpts = [], orgSecs = [],
   };
 
   const apply = async () => {
-    const todo = matched.filter(r => r.action !== 'skip');
-    if (!todo.length) return toast.error('ไม่มีแถวที่นำเข้าได้');
+    /* 🔒 นำเข้าทับของทีมอื่นไม่ได้ (14/10) — ไฟล์ Excel อัพเดทได้ทีละหลายร้อยแถว
+       ถ้าไม่กันตรงนี้ ด่านรายแถวที่ปุ่ม ✏️/🗑 จะไร้ความหมาย (เลี่ยงผ่านไฟล์ได้)
+       แถวที่กันไว้ **ต้องนับให้เห็น** ห้ามข้ามเงียบ — คนนำเข้าต้องรู้ว่าทำไมยอดไม่ตรงไฟล์ */
+    const blocked = matched.filter(r => r.action === 'update' && r.existing && !ownOf(r.existing).ok);
+    const todo = matched.filter(r => r.action !== 'skip' && !blocked.includes(r));
+    if (blocked.length && !confirm(
+      `${blocked.length} แถวเป็นอะไหล่ของทีมอื่น — ข้ามไว้ ไม่อัพเดททับ\n`
+      + blocked.slice(0, 5).map(r => `· ${r.existing.name}`).join('\n')
+      + (blocked.length > 5 ? `\n· …อีก ${blocked.length - 5} แถว` : '')
+      + `\n\nนำเข้าส่วนที่เหลือ ${todo.length} แถวต่อไหม?`)) return;
+    if (!todo.length) return toast.error(blocked.length ? 'ทุกแถวเป็นของทีมอื่น — ไม่มีอะไรนำเข้าได้' : 'ไม่มีแถวที่นำเข้าได้');
     setBusy(true);
     let created = 0, updated = 0, failed = 0, stockDone = 0;
     for (let i = 0; i < todo.length; i++) {
@@ -996,7 +1019,9 @@ function ImportModal({ parts, cats, teams, fullName, secOpts = [], orgSecs = [],
           updated++;
         } else {
           const { data, error } = await supabaseDR.from('mtn_spare_parts')
-            .insert({ ...r.data, section: impSection || null, stock_qty: 0, sort_order: parts.length + i + 1 }).select('id').single();
+            /* ไฟล์ไม่ได้ระบุทีม = ลงเป็นของทีมคนนำเข้า ไม่ใช่ 🌐 ของกลาง
+               (ของกลางแก้ทีเดียวกระทบทุกทีม — ไม่ควรเกิดจากการนำเข้าไฟล์โดยไม่ตั้งใจ) */
+            .insert({ ...r.data, team: r.data.team || defTeam || null, section: impSection || null, stock_qty: 0, sort_order: parts.length + i + 1 }).select('id').single();
           if (error) throw error;
           pid = data.id; created++;
         }

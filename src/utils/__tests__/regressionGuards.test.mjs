@@ -4572,6 +4572,14 @@ test('🔒 คลังอะไหล่ — ปุ่มแก้/ลบต้
   const own = readFileSync(join(ROOT, 'src/utils/mtnTeamOwn.js'), 'utf8');
   if (!/code:\s*'unscoped'/.test(own)) bad.push("src/utils/mtnTeamOwn.js (ถอด fallback 'unscoped' ออก)");
 
+  /* 🔩 คีย์แยก spare_master ต้องไม่กลายเป็นประตูหลังของ manage_master
+     — ผู้ถือคีย์ใหม่ต้องเป็น strict (ไม่มีทีม = แก้ของเดิมไม่ได้) ไม่งั้นด่านแทบไม่ทำงาน */
+  if (/spare_master/.test(sp) && !/strict:\s*strictOwn/.test(sp))
+    bad.push('src/components/SparePartMaster.jsx (spare_master ไม่ได้บังคับ strict)');
+  /* นำเข้าไฟล์ Excel อัพเดททีละหลายร้อยแถว — ไม่กัน = ด่านรายแถวไร้ความหมาย */
+  if (/function ImportModal/.test(sp) && !/ownOf\(r\.existing\)/.test(sp))
+    bad.push('src/components/SparePartMaster.jsx (นำเข้าไฟล์ไม่ได้กันแถวของทีมอื่น)');
+
   assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n'
     + '   ทำไม: dept_admin/mtn ถือคีย์ลบ ⇒ ด่านสิทธิ์ผ่านหมด แต่ต้องลบได้เฉพาะของทีมตัวเอง\n'
     + '   แก้: teamRowOwner(row, { myTeams, role }) จาก src/utils/mtnTeams.js\n'

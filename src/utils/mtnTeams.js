@@ -123,15 +123,17 @@ export const teamOptions = () => teamRows().map(t => ({ key: t.key, name: t.dept
 /* ═══ "แถวนี้ใครแก้/ลบได้" — กฎเจ้าของทีม (2026-08-11 · ขยายคุมคลังอะไหล่ 2026-10-14) ═══
    📄 เหตุผล/กติกาเต็ม + fallback ที่ห้ามเปลี่ยน → `mtnTeamOwn.js` (ตรรกะจริงอยู่ที่นั่น pure)
    ที่นี่แค่ normalize ชื่อทีม→key ให้ก่อน (ข้อมูลเก่าบางแถวเก็บเป็นชื่อ ไม่ใช่ key) */
-export function teamRowOwner(row, { myTeams = [], role = '' } = {}) {
+export function teamRowOwner(row, { myTeams = [], role = '', strict = false } = {}) {
   return teamRowOwnerKeys(
     teamKeyOf(row?.team),
     (Array.isArray(myTeams) ? myTeams : []).map(teamKeyOf).filter(Boolean),
-    role)
+    role, { strict })
 }
 
-/** เหตุผลที่กดไม่ได้ — ต้องเขียนบนจอเสมอ ห้ามซ่อนปุ่มเงียบ (กฎความซื่อสัตย์ของจอ) */
-export function teamRowLockNote(row) {
+/** เหตุผลที่กดไม่ได้ — ต้องเขียนบนจอเสมอ ห้ามซ่อนปุ่มเงียบ (กฎความซื่อสัตย์ของจอ)
+ *  `code` จาก teamRowOwner — ส่งมาด้วยเมื่ออยากได้ข้อความตรงเคส (no_team ชี้ทางแก้ให้ด้วย) */
+export function teamRowLockNote(row, code = '') {
+  if (code === 'no_team') return 'บัญชีนี้ยังไม่ได้ตั้งทีมช่าง — เพิ่มของใหม่ได้ แต่แก้/ลบของเดิมไม่ได้ (ตั้งทีมที่ /add-user)'
   const t = teamKeyOf(row?.team)
   return t
     ? `รายการนี้เป็นของทีม ${deptNameOf(t)} — แก้/ลบได้เฉพาะทีมนั้นหรือหัวหน้า`
