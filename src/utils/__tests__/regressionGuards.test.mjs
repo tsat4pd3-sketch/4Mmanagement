@@ -4275,3 +4275,27 @@ test('🛡️ manpower-flex-reference-only — จอบอร์ดกำลั
   assert.ok(/buildManpowerBoard\(\{[^}]*flexUnits/.test(page),
     '\n\n❌ หน้าบอร์ดไม่ส่ง flexUnits เข้า buildManpowerBoard — ทะเบียนมีข้อมูลแต่จอไม่โชว์ (ตายเงียบ)\n');
 });
+
+/* ── 👯 คู่ RH/LH ต้องอยู่ไลน์เดียวกัน (14/10 · เคสจริง GOR 297) ──
+   ตั้ง pair_mat_no ก่อนชุบ↔หลังชุบ (คนละไลน์) ⇒ Daily Report เด้ง MAT คู่ให้ใบถัดไป → 12 ใบลงเป็นเลขหลังชุบทั้งกะ
+   ด่าน: จุดตั้งคู่ (Product Master) + จุดผูกคู่ตอนเปิดใบ (Daily Report) ต้องผ่าน pairBlockReason() */
+test('🛡️ pair-same-line — ตั้งคู่/ผูกคู่ RH/LH ต้องผ่าน pairBlockReason()', () => {
+  const pm = stripComments(readFileSync(join(ROOT, 'src/pages/ProductMaster.jsx'), 'utf8'));
+  const dr = stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'));
+  assert.match(pm, /pairBlockReason\(/, 'ProductMaster ต้องเช็ค pairBlockReason ก่อนบันทึก pair_mat_no');
+  assert.match(dr, /pairBlockReason\(/, 'DailyReport ต้องเช็ค pairBlockReason ก่อนผูกคู่/เด้ง MAT คู่');
+  assert.doesNotMatch(dr, /const partnerMatNo = products\.find\([^)]*\)\?\.pair_mat_no/, 'ห้ามอ่าน pair_mat_no ตรงๆ เป็น partnerMatNo โดยไม่ผ่านด่าน');
+});
+
+test('🛡️ pm-checkpoint-copy-via-util — คัดลอกจุดตรวจต้องผ่าน checkpointCopyRow() (ล้างหมุดเมื่อข้ามเครื่อง)', () => {
+  const rel = 'src/lib/pmChecklists.js';
+  const code = stripComments(readFileSync(join(ROOT, rel), 'utf8'));
+  const bad = [];
+  /* แตก cp ด้วยมือ (`({ id, created_at, ... checklist_id, ...rest })`) = ข้ามกฎล้างหมุด ⇒ หมุดผูกรูปเครื่องต้นทางกลับมา */
+  if (/\(\s*\{\s*id\s*,\s*created_at[^}]*\.\.\.rest\s*\}\s*\)/.test(code)) bad.push(rel + ' (แตกแถวจุดตรวจด้วยมือ)');
+  if (!/checkpointCopyRow\s*\(/.test(code)) bad.push(rel + ' (ไม่เรียก checkpointCopyRow)');
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n'
+    + '   ทำไม: x_pos/y_pos/label_dx/label_dy/image_id ผูกกับ "รูปของเครื่องต้นทาง" — ก๊อปข้ามเครื่องแล้วหมุดไปโผล่ผิดที่บนจอตั้งค่า\n'
+    + '         และหายไปเลยบนจอตรวจ (14/10 เจอจริง 9 จุด) · jig_id ต้องเป็นเครื่องปลายทาง\n'
+    + '   แก้: ใช้ checkpointCopyRow() จาก src/utils/pmCheckpointCopy.js · ข้ามแผนกบนเครื่องเดิมส่ง samePhotos:true\n');
+});

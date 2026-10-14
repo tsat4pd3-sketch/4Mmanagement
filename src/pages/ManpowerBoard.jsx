@@ -326,6 +326,20 @@ function PersonChip({ p }) {
   );
 }
 
+/** 🧭 ป้าย "ทำงานคนละตำแหน่งกับที่บริษัทบรรจุ" — 2026-10-14 · คำสั่ง user
+ *  บอร์ดจัดแถวด้วย**ตำแหน่งที่ปฏิบัติงาน** ⇒ คนที่ยืนคนละแถวกับที่บรรจุต้องอธิบายได้ว่าทำไม
+ *  (ไม่งั้นคนดูบอร์ดเทียบกับทะเบียน HR แล้วคิดว่าระบบจัดผิด) · ธงมาจาก `isActingPosition()`
+ *  ⚠️ ไม่ใช่ความผิดพลาด = **ห้ามใช้สีเตือน** · ฟอนต์ 11 = พื้นขั้นต่ำของจอ TV (ด่าน font-min-11) */
+function ActingTag({ p }) {
+  if (!p?.acting) return null;
+  return (
+    <span title={`ตำแหน่งตามบริษัท: ${positionLabel(p.company_position) || p.company_position || '—'}`}
+      style={{ fontSize: 11, color: 'var(--accent)', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+      🧭 ทำหน้าที่ {positionLabel(p.position) || p.position}
+    </span>
+  );
+}
+
 /** การ์ด skill พนักงาน (แทนการ์ด SKILL EVALUATION CARD บนบอร์ดกระดาษ) */
 /** 🎯 Top N ทักษะของคน — **ยุบชื่อทักษะซ้ำก่อนตัด** (14/10)
  *  ทะเบียน `employee_skills` ไม่มี unique(employee_id, skill_name) ⇒ คนเดียวมี 2 แถวชื่อทักษะเดียวกันได้
@@ -357,6 +371,7 @@ function SkillCard({ p, skills }) {
       <AttendDot p={p} />
       <HelperTag p={p} />
       <FlexTag p={p} />
+      <ActingTag p={p} />
       {p.unknownPos && <span style={{ fontSize: 11, color: '#f59e0b' }} title="ตำแหน่งนี้ไม่อยู่ในทะเบียนตำแหน่ง — แก้ที่ /operator">⚠️ {p.position}</span>}
       {top.length ? top.map(s => {
         const d = skills.defs[s.skill_name];

@@ -167,18 +167,31 @@ export default function DeliveryPointPanel({ lineName, lines = [] }) {
             <div style={{ fontSize: 12.5, color: 'var(--text2)', background: 'var(--bg3)', border: '1px dashed var(--border2)', borderRadius: 8, padding: '10px 12px' }}>
               🏢 <b>{lineName}</b> เป็นไลน์แม่ (มีไลน์ย่อย {kids.length} ไลน์) — ของถูกส่งเข้าไลน์ย่อยเสมอ
               จุดส่งจึงผูกกับ<b>ไลน์ย่อย</b>: <span>{kids.join(' · ')}</span>
-              {canManage && leafKids.length > 0 && (
-                <div style={{ marginTop: 10 }}>
-                  <button onClick={() => setForm({ ...emptyForm(null), line_names: leafKids })}
-                    style={btnSt('var(--accent)', 'var(--accent-ink)')}>
-                    + ตั้งจุดเดียวให้ไลน์ย่อยทั้ง {leafKids.length} ไลน์
-                  </button>
-                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6, lineHeight: 1.45 }}>
-                    ใช้เมื่อ<b>แร็ค/จุดวางเดียวรับของให้ทั้งพื้นที่</b> — ระบบจะติ๊กไลน์ย่อยให้ครบ แก้ออกได้
-                    · ถ้าแต่ละไลน์มีจุดของตัวเอง ให้ไปตั้งทีละไลน์แทน
+              {/* 🔴 14/10: ปุ่มนี้เคยเด่นค้างไว้แม้ไลน์ย่อยมีจุดครบแล้ว = จอชวนกดซ้ำ → ได้จุดซ้ำซ้อน
+                  (เกิดจริงที่ GOR: Assy GOR + Laser GOR มีจุดของตัวเองแล้ว แต่ปุ่มยังเชียร์ให้ตั้งจุดรวม)
+                  ⇒ ไลน์ย่อยที่ยังไม่มีจุด = ตัวตัดสินว่าจะเชียร์หรือแค่บอก · **ห้ามซ่อนปุ่มทิ้ง**
+                     (แร็ครวมของทั้งพื้นที่ "เพิ่มทีหลัง" มีจริง) ให้ลดระดับเป็นปุ่มรองแทน */}
+              {canManage && leafKids.length > 0 && (() => {
+                const covered = new Set(rows.flatMap(r => (Array.isArray(r.line_names) ? r.line_names : [])));
+                const todo = leafKids.filter(n => !covered.has(n));
+                const allSet = todo.length === 0;
+                return (
+                  <div style={{ marginTop: 10 }}>
+                    <button onClick={() => setForm({ ...emptyForm(null), line_names: leafKids })}
+                      style={allSet ? btnSt('var(--bg2)', 'var(--text2)', 'var(--border)') : btnSt('var(--accent)', 'var(--accent-ink)')}>
+                      + ตั้งจุดเดียวให้ไลน์ย่อยทั้ง {leafKids.length} ไลน์
+                    </button>
+                    <div style={{ fontSize: 11, color: allSet ? '#22c55e' : 'var(--muted)', marginTop: 6, lineHeight: 1.45 }}>
+                      {allSet
+                        ? <>✅ <b>ไลน์ย่อยมีจุดส่งครบทุกไลน์แล้ว</b> — จะเพิ่ม<b>จุดที่ 2</b> ของไลน์ไหน ให้เลือกไลน์นั้นข้างบนแล้วกด “+ เพิ่มจุดส่ง”
+                            · ปุ่มนี้ไว้ใช้ตอนมี<b>แร็ครวม</b>ที่รับของให้ทุกไลน์พร้อมกันเท่านั้น</>
+                        : <>ใช้เมื่อ<b>แร็ค/จุดวางเดียวรับของให้ทั้งพื้นที่</b> — ระบบจะติ๊กไลน์ย่อยให้ครบ แก้ออกได้
+                            · ถ้าแต่ละไลน์มีจุดของตัวเอง ให้ไปตั้งทีละไลน์แทน
+                            · <b>ยังไม่มีจุด {todo.length} ไลน์:</b> {todo.join(' · ')}</>}
+                    </div>
                   </div>
-                </div>
-              )}
+                );
+              })()}
             </div>
           )}
 
