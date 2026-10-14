@@ -1454,7 +1454,7 @@ export default function AddUser() {
                       ไลน์ผลิต / Group {form.role === 'leader' && !linked && <span style={{ color: 'var(--red)' }}>* จำเป็น</span>}
                       {linked && <span style={{ color: 'var(--muted)', fontWeight: 400 }}> · จากฐานพนักงาน</span>}
                     </label>
-                    <LineSelect lines={lines} value={effLine} valueKey="id"
+                    <LineSelect lines={lines} value={effLine} valueKey="id" includeSupport
                       disabled={linked} onChange={v => setF('lineId', v)} />
                     {fixHint}
                   </div>
