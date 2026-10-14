@@ -96,3 +96,11 @@
 - สวีปหลังแก้: `crashsweep` 81 หน้าพัง 0 · `mobilesweep` @390px ผ่าน (LineSetup อยู่ในลิสต์
   "ไม่รองรับมือถือโดยตั้งใจ" อยู่แล้ว) · `stdsweep` ไม่พบปัญหาใหม่
 - กติกาที่ถอดออกมาเป็นมาตรฐานกลาง → `docs/UI-CONVENTIONS.md` §6.24
+
+## ชั้นหมุด Machine | Jig/Fixture บนผังไลน์ `/management` (2026-10-14 · คำสั่ง user)
+robot ติดจิ๊กปลายแขน ⇒ หมุดทับกัน · rail ขวาเพิ่มปุ่ม 🗜️ JIG ต่อจาก ⚙️ MACHINE — โชว์ทีละชั้น (เปิดหนึ่งปิดอีก)
+· กฎ `src/utils/mapLayers.js` (`buildKindMap` · `splitPointLayers`) — ชนิดจาก `machines.equipment_kind` (DR) เทียบด้วย `machineKey()`
+  · jig = ชั้น JIG · machine/facility/die = ชั้น MACHINE · **ไม่อยู่ทะเบียน/ชนิดว่าง/คีย์กำกวม = ชั้น MACHINE กรอบประ + นับใน tooltip**
+· ข้อมูลจริงตอนทำ (14/10): Line 60/61/SUB APRON หมุดจิ๊ก `JHYD05-xx`/`JHYD06-xx` ติด `jig` ครบ ·
+  ที่ไม่อยู่ทะเบียน เช่น `PANASONIC-60`, `JIG SLIDE-1` → ไปตั้งที่ `/equipment` (ห้ามเดาจากชื่อ)
+· ไม่ต้องแก้ schema · ไม่เพิ่ม resource:action

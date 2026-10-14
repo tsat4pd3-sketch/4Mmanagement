@@ -115,6 +115,13 @@ const { MK, SUB, pillFont, subPillFont, pillMaxW, subPillMaxW, ... } =
 ทุกที่ที่แสดงชนิดจุดเรียงกัน (แท็บ LineSetup, ปุ่ม filter MAN/MACHINE/WIP บน Management, legend ฯลฯ)
 ต้องเรียง **คน/จุดงาน → เครื่องจักร → WIP** ตามลำดับ 4M (Man, Machine, Material) — ห้ามสลับ (เคยหลุด: แท็บ LineSetup เรียง จุดงาน→WIP→เครื่องจักร ขัดกับปุ่ม filter ที่ Management)
 
+### ชั้นหมุดอุปกรณ์ Machine | Jig/Fixture — โชว์ทีละชั้น (2026-10-14 · คำสั่ง user)
+robot ส่วนใหญ่ติดจิ๊กที่ปลายแขน ⇒ หมุดเครื่องกับหมุดจิ๊กวางทับกันจนอ่านไม่ออก · ผังไลน์ (`/management`) มีปุ่มบน rail ขวา
+⚙️ MACHINE (ทีม MTN) และ 🗜️ JIG (ทีม JIG MTN) ต่อจาก 👤 MAN — **เปิดชั้นหนึ่ง = ปิดอีกชั้น** (ปิดทั้งคู่ได้)
+· ชั้นตัดสินที่ `src/utils/mapLayers.js` จาก `machines.equipment_kind` เท่านั้น — **ห้ามเดาจากชื่อ ("JHYD…"/"JIG …")** ·
+  ไม่อยู่ในทะเบียน/ไม่ระบุชนิด = วาดในชั้น Machine **กรอบประ** + นับใน tooltip ปุ่ม (ไม่หายจากผัง) · แก้ชนิดที่ `/equipment`
+· จิ๊กใช้สีม่วง `#a78bfa` + ไอคอน 🗜️ · เครื่อง Downtime ยังโชว์เสมอแม้ปิดชั้น (alarm) · ความแน่น `markerScale` คิดจากชั้นที่วาดจริง
+
 ### กติกาที่ต้องมีเสมอ
 1. **Anchor = ศูนย์กลางวงกลมต้องตรงพิกัดจริงเป๊ะ** — wrapper ที่ใส่ `translate(-50%,-50%)` ต้องสูงเท่า*วงกลมเท่านั้น* และ**ป้าย/badge ทุกอันต้องเป็น `position:absolute; top:100%` ห้อยใต้** (ห้ามใส่ใน flex column ปกติ — จะทำให้จุดกึ่งกลางเลื่อนขึ้นครึ่งป้าย marker ลอยเหนือตำแหน่งจริง/ตกขอบบน — เคยพังที่ Management มาแล้ว) · pos_top/pos_left เป็น % ของรูปจริง ระวัง letterbox จาก object-fit: contain ต้องคูณ offset+rendered size
 2. **De-overlap**: marker ที่ทับกันให้ผลักออกจากกันในพิกเซลจริง + วาดเส้นประโยงกลับตำแหน่งจริง (ดู Dashboard modal / Management เป็นต้นแบบ) — ห้ามแก้ตำแหน่งใน DB
