@@ -83,6 +83,25 @@ export default function ProgramUpdate() {
      จะวาดทีเดียวเป็นพันแถวโดยที่ผู้ใช้ไม่ได้ขอ) */
   useEffect(() => { setCap(PAGE_ROWS); }, [from, to, kind, q]);
 
+  /* 📏 พับรายการเป็น "วัน" (2026-10-13 · ด่าน lengthsweep) — เดิมกางทุกวันพร้อมกัน
+     วัดจริง: ช่วง 60 วัน = 24 วัน × 29-51 รายการ ⇒ หน้ายาว 19,100px = **17.7 เท่าของจอ**
+     (ไม่ใช่ของ mock — เพดาน PAGE_ROWS 400 แถวเต็มพอดี · ของจริงก็ 400+ commit ต่อ 60 วัน)
+     🔴 กติกา: หัววันยังโชว์ "กี่รายการ" เสมอ + มีปุ่มกาง/พับทั้งหมด ⇒ **ไม่ได้ซ่อนความจริง**
+     · default กางวันล่าสุดวันเดียว · ถ้าที่กรองมาเหลือน้อย (≤ FEW_ITEMS) กางทั้งหมดเลย
+       (คนค้นคำแล้วเจอ 3 รายการ ต้องเห็นเลย ไม่ต้องไปกดเปิดทีละวัน) */
+  const FEW_ITEMS = 40;
+  const DAY_ROWS = 15;     // วันที่กางไว้ โชว์ก่อนกี่รายการ (ที่เหลือมีปุ่มดูต่อ — วันเดียวมีได้ถึง 50 รายการ)
+  const fewItems = shown <= FEW_ITEMS;
+  const [openDays, setOpenDays] = useState({});      // { 'YYYY-MM-DD': true/false } = ที่ user กดทับเอง
+  const [allOpen, setAllOpen] = useState(null);      // ปุ่มกาง/พับทั้งหมด (null = ยังไม่กด)
+  const [dayCap, setDayCap] = useState({});          // { date: จำนวนที่ขอดูเพิ่มของวันนั้น }
+  useEffect(() => { setOpenDays({}); setAllOpen(null); setDayCap({}); }, [from, to, kind, q]);
+  const dayOpen = (date, i) => {
+    if (openDays[date] != null) return openDays[date];
+    if (allOpen != null) return allOpen;
+    return fewItems || i === 0;
+  };
+
   const userN = USER_KINDS.reduce((n, k) => n + (counts[k] || 0), 0);
   const segOpts = [
     { value: 'user', label: `สำหรับผู้ใช้ ${userN}`, title: 'ฟีเจอร์ใหม่ · แก้ปัญหา · ปรับปรุง (ไม่รวมเอกสาร/งานระบบ)' },
@@ -157,14 +176,31 @@ export default function ProgramUpdate() {
                 ? 'ไม่มีรายการที่ตรงกับตัวกรอง — ลองเปลี่ยนชนิดหรือล้างคำค้น'
                 : 'ช่วงเวลานี้ไม่มีการเปลี่ยนแปลงระบบ (ไม่ใช่โหลดไม่ได้ — ข้อมูลโหลดครบแล้ว)'}
             </div>
-          ) : view.days.map(day => (
-            <div key={day.date} style={{ marginBottom: 14 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
+          ) : <>
+          {view.days.length > 1 && (
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 6 }}>
+              <button type="button" onClick={() => { setOpenDays({}); setAllOpen(a => !(a == null ? (fewItems || false) : a)); }}
+                title="กางทุกวันเพื่ออ่านต่อเนื่อง หรือพับให้เห็นเฉพาะหัววัน"
+                style={{ padding: '3px 10px', borderRadius: 7, fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
+                         border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)' }}>
+                {(allOpen == null ? fewItems : allOpen) ? '▴ พับทุกวัน' : '▾ กางทุกวัน'}
+              </button>
+            </div>
+          )}
+          {view.days.map((day, di) => {
+            const open = dayOpen(day.date, di);
+            return (
+            <div key={day.date} style={{ marginBottom: open ? 14 : 4 }}>
+              {/* หัววันกดพับได้ — จำนวนรายการโชว์เสมอแม้พับ (ห้ามซ่อนเงียบ) */}
+              <div onClick={() => setOpenDays(m => ({ ...m, [day.date]: !open }))}
+                title={open ? 'พับวันนี้' : 'กางดูรายการของวันนี้'}
+                style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5, cursor: 'pointer', userSelect: 'none' }}>
+                <span style={{ fontSize: 11, color: 'var(--muted)', width: 10 }}>{open ? '▾' : '▸'}</span>
                 <div style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--text)' }}>{fmtThaiDate(day.date)}</div>
                 <div style={{ height: 1, flex: 1, background: 'var(--border)' }} />
                 <div style={{ fontSize: 11, color: 'var(--muted)' }}>{day.items.length} รายการ</div>
               </div>
-              {day.items.map(c => {
+              {open && day.items.slice(0, dayCap[day.date] || DAY_ROWS).map(c => {
                 const k = kindOf(c.t);
                 return (
                   <div key={c.h} style={{
@@ -184,8 +220,18 @@ export default function ProgramUpdate() {
                   </div>
                 );
               })}
-            </div>
-          ))}
+              {/* 🔴 ตัดแล้วต้องบอกว่าเหลืออีกเท่าไหร่ + กดดูต่อได้ ห้ามตัดเงียบ */}
+              {open && day.items.length > (dayCap[day.date] || DAY_ROWS) && (
+                <button type="button"
+                  onClick={() => setDayCap(m => ({ ...m, [day.date]: day.items.length }))}
+                  style={{ margin: '2px 0 6px', padding: '3px 10px', borderRadius: 7, fontSize: 11.5, fontWeight: 700,
+                           cursor: 'pointer', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)' }}>
+                  ▾ ดูอีก {(day.items.length - (dayCap[day.date] || DAY_ROWS)).toLocaleString()} รายการของวันนี้
+                </button>
+              )}
+            </div>);
+          })}
+          </>}
 
           {view.hidden > 0 && (
             <div style={{ padding: '4px 2px 10px', fontSize: 12, color: 'var(--muted)' }}>

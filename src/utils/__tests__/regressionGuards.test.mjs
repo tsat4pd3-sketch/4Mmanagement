@@ -69,6 +69,19 @@ const RULES = [
     allow: {},
   },
   {
+    id: 'mo-wait-stage-via-mowaitmeta',
+    scan: ['src/utils/myQueue.js', 'src/pages/MtnRepair.jsx', 'src/utils/mtnStale.js'], ext: ['.js', '.jsx'],
+    /* จับการถาม "ใบนี้รอขั้นไหน" ด้วย nextStepOf() ตรงๆ ในตัวจัดกอง/ตัวกรอง */
+    re: /(const|let)\s+\w*[Ww]ait\w*\s*=[^\n]*nextStepOf\(/g,
+    why: '🔒 **ด่านอนุมัติก่อนเริ่มงานไม่มีเลขขั้น** — ใบ improve/build ที่ ผจก.ฝ่ายที่แจ้งยังไม่เซ็น '
+       + 'ช่างกดรับงานไม่ได้ แต่ `nextStepOf()` คืน 2 ⇒ ตัวกรอง "รอขั้นไหน" + คิวงานของฉัน + กระดิ่ง '
+       + 'เหมาไปกองเดียวกับ "รอช่างรับงาน" ⇒ **ไม่มีจอไหนบอกว่ารอใคร** คนต้องไปตามกันใน LINE '
+       + '(13/10/2026 · user: "มีงานรอเราอนุมัติ MO แต่เราหาไม่เจอ")',
+    fix: 'ใช้ `moWaitMeta(order)` จาก src/utils/mtnStepPerm.js — คืน { stage, step, meta } ที่ด่านอนุมัติ '
+       + "ชนะเลขขั้น (stage = 'approve_first' · step = null)",
+    allow: {},
+  },
+  {
     id: 'jigs-has-no-department-column',
     scan: ['src'], ext: ['.jsx', '.js'],
     /* select จากตาราง jigs (DR) ที่ขอคอลัมน์ department — ตารางนี้ไม่มีคอลัมน์นั้น */
@@ -156,6 +169,59 @@ const RULES = [
     fix: 'ห่อด้วย `mrows(await …)` จาก `src/utils/masterCache.js` — ตาราง/คอลัมน์ยังไม่มี (42P01/42703) '
        + 'ยังคืน [] เหมือนเดิม · error อื่นโยน ⇒ cache ไม่ถูกทับ + ขึ้น toast ให้คนเห็น',
     allow: {},   // ตัวอย่างใน masterCache.js อยู่ในคอมเมนต์ — ตัวสแกนตัดคอมเมนต์ก่อนตรวจอยู่แล้ว
+  },
+  {
+    id: 'daily-check-unknown-not-false',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* จับการบีบ "ไม่รู้ว่าวันนั้นผลิตไหม" ให้กลายเป็น "ไม่ได้ผลิต" */
+    re: /ranOn\([^)]*\)\s*(\?\?|\|\|)\s*false/g,
+    why: 'ตารางตรวจรายวันต้องแยก 3 อย่าง: **ไม่ได้ตรวจ / ไม่ได้ผลิต / ต้องตรวจวันนั้น** (คำสั่ง user 13/10) '
+       + '· `ranOn()` คืน `null` = "อ่านข้อมูลการเปิดกะไม่สำเร็จ" ⇒ บีบเป็น `false` = จอสรุปว่า '
+       + '"ไม่ได้ผลิต ไม่ต้องตรวจ" ⇒ **วันที่ขาดตรวจทั้งเดือนหายเกลี้ยงเพราะคิวรีล้มครั้งเดียว** '
+       + '— เป็นการโกหกที่อันตรายกว่าไม่เช็ค เพราะจอดูสะอาดขึ้นตอนระบบพัง',
+    fix: 'ส่ง `null` ต่อให้ `checkDayState()` (`src/utils/dailyCheckDay.js`) แล้วมันจะคืน `unknown` '
+       + '· จอวาด ❔ และเขียนจำนวนวันที่ไม่รู้ด้วย `checkDaysNote()` (ตัวหารของ % ไม่นับ unknown)',
+    allow: {},
+  },
+  {
+    id: 'unit-kind-via-util',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* ตัดสิน "เป็นไลน์ผลิตไหม" ต้องผ่าน utils/unitKind.js — เทียบสตริงเองในหน้าคือจุดที่ drift */
+    re: /unit_kind\s*[=!]==\s*['"]/g,
+    why: 'ชนิดหน่วย (`production`/`support`) ตัดสินที่ `src/utils/unitKind.js` ที่เดียว '
+       + '— เทียบสตริงเองในหน้า = แต่ละจอตีความไม่เหมือนกัน และ**ลืมกฎ fail-open** '
+       + '(ค่าว่าง/ไม่รู้จัก = ไลน์ผลิต) ⇒ `l.unit_kind === "production"` จะทิ้งไลน์ผลิตที่ยังไม่มีค่า '
+       + 'ทั้งตารางออกจากจอเงียบๆ ซึ่งเป็นทิศที่อันตรายที่สุด',
+    fix: 'ใช้ `isProductionUnit(line)` / `isSupportUnit(line)` / `productionUnits(lines)` '
+       + '· ช่องเลือกไลน์ส่ง `includeSupport` แทนการกรองเอง',
+    allow: { 'src/utils/unitKind.js': true },
+  },
+  {
+    id: 'am-open-lines-family-aware',
+    scan: ['src/lib/dailyAmBoard.js'], ext: ['.js'],
+    /* "ไลน์ไหนเดินอยู่" ต้องผ่าน openFamilyLines() — ประกอบ Set เองที่นี่ = กลับไปเทียบชื่อตรงตัว */
+    re: /openSessionLines:\s*new Set\(/g,
+    why: 'ไลน์แม่หลายตัวไม่เคยเปิดกะในชื่อตัวเอง (วัด 45 วัน: GOR · LWR BAR · HYDROFORM '
+       + '· LINE APRON ASSY = 0 ครั้ง · ลูกเดินทุกวันแทน) แต่ถือ **แผน LPA รวม 30 แผน** '
+       + '⇒ ชุด "ไลน์ที่เดินอยู่" ที่เทียบชื่อตรงตัวจะไม่มีชื่อไลน์แม่ ⇒ `pokayokeByLine`/`lpaByLine` '
+       + '(`utils/prodRoutine.js`) ใช้ชุดนี้เป็นประตู แล้ว**ข้ามงานตรวจของไลน์แม่ทั้งก้อนเงียบๆ** '
+       + '· จอ AM ก็เขียน "ยังไม่เปิดกะ" ให้ไลน์ที่ลูกเดินอยู่',
+    fix: 'คืน `openSessionLines: openFamilyLines(lines, openRaw)` (`src/lib/pmDailyStatus.js` · มีเทส) '
+       + '— family = ตัวเอง + แม่/ปู่ + ลูก/หลาน **ไม่รวมพี่น้อง**',
+    allow: {},
+  },
+  {
+    id: 'check-day-mark-not-answer',
+    scan: ['src/utils/dailyCheckDay.js'], ext: ['.js'],
+    /* สัญลักษณ์ "สถานะวัน" ห้ามยืมตัวอักษรจากพจนานุกรม "คำตอบของการตรวจ" */
+    re: /mark:\s*'(?:Y|N|T|NA|N\/A|✓|✗|×|x|X|–|—|-)'/g,
+    why: 'ใบตรวจรายวัน (LPA FM-QMR-008) ตอบด้วย `Y`/`N`/`T`/`N/A` ซึ่งทุกตัวหมายถึง '
+       + '**"ไปตรวจแล้ว เจอผลอย่างนี้"** ⇒ ถ้า `CHECK_DAY_META.mark` ใช้ตัวเดียวกัน (หรือ `✗`/`–` '
+       + 'ที่ตาอ่านเป็น `N`/`N/A`) คนอ่านจะนึกว่า **"ตรวจแล้วเจอผิดปกติ" ทั้งที่ยังไม่มีใครไปตรวจ** '
+       + '(คำสั่ง user 13/10 — ชนทั้งตัวอักษรและสี: ✗ แดง = N แดง · – เทา = N/A เทา · ? เหลือง = T เหลือง)',
+    fix: 'ใช้คำย่อที่ไม่อยู่ในพจนานุกรมคำตอบ — `ขาด` (ขาดตรวจ) · `NP` (Non-Production) · `?` (ไม่รู้) '
+       + '· `·` (ไม่มีแผน) · และกันอ่านสลับด้วย `tint` ทาทั้งคอลัมน์ + กรอบ chip (คำตอบไม่มีทั้งสองอย่าง)',
+    allow: {},
   },
   {
     id: 'shift-sched-no-raw-byline',
@@ -1539,6 +1605,26 @@ test('🛡️ open-shift-date-and-shift-together — ฟอร์มเปิด
    = กะเดินถึงเวลานั้นจริง ส่วนที่เหลือเป็น planned stop ที่ถูกกันออกจากฐานเวลาไปแล้ว)
    ไม่ส่ง `downtimes` เข้าไป = ฟังก์ชันถือว่าไม่มีอะไรรองรับ ⇒ **เตือนผิด/ติดป้ายผิด**
    วัดจริง 05/10: เกณฑ์ที่ดูแต่ `aheadMin` ติดป้ายผิด 5 ใบจาก 9 ใบที่เข้าเกณฑ์ (SP-72/74/88 · Line 60/61) */
+/* ── 🛡️ mo-stale-since-cols (2026-10-13) ──────────────────────────────────────────────
+   แผง "ใบค้างขั้นเดิม" นับวันจากเวลาที่ใบ**เข้าขั้นปัจจุบัน** (`STALE_SINCE_COLS` ใน utils/mtnStale.js)
+   แต่หน้าลิสต์ MO select แบบ **เลือกคอลัมน์** (`MO_LIST_COLS` — เพื่อ egress ห้ามกลับไป `select('*')`)
+   ⇒ เพิ่มคอลัมน์เวลาเข้าขั้นใหม่ในฝั่ง util แล้วลืมเติมใน MO_LIST_COLS = ค่านั้นเป็น `undefined`
+      ⇒ `stageSinceOf()` **ถอยไปนับจากวันแจ้งเงียบๆ** (ตัวเลขเก่ากว่าจริง แต่จอยังขึ้นเป็นปกติ)
+   คลาสเดียวกับที่เคยเกิดจริงมาแล้วหลายรอบในโมดูลนี้ (`mtn_head_at`/`approve_at` ที่ต้อง select
+   มาด้วยไม่งั้น `mtnCloseStage()` แยก 3 ขั้นปิดใบไม่ออก · `pair_mat_no` ที่ลืม select แล้วนับ 2 เท่า) */
+test('🛡️ mo-stale-since-cols — MO_LIST_COLS ต้อง select ทุกคอลัมน์ที่ mtnStale อ่าน', async () => {
+  const { STALE_SINCE_COLS } = await import('../mtnStale.js');
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8'));
+  const m = code.match(/const MO_LIST_COLS\s*=\s*\[([\s\S]*?)\]\.join/);
+  assert.ok(m, 'หา MO_LIST_COLS ใน MtnRepair.jsx ไม่เจอ — เปลี่ยนชื่อ/รูปแบบแล้วต้องมาแก้ด่านนี้ด้วย');
+  const picked = new Set([...m[1].matchAll(/'([a-z0-9_]+)'/g)].map(x => x[1]));
+  const missing = STALE_SINCE_COLS.filter(c => !picked.has(c));
+  assert.deepEqual(missing, [],
+    '\n\n❌ MO_LIST_COLS ไม่ได้ select คอลัมน์เวลาเข้าขั้นที่ utils/mtnStale.js อ่าน\n'
+    + '   ผล: ค่าเป็น undefined ⇒ แผงใบค้างถอยไปนับจากวันแจ้งเงียบๆ (ตัวเลขเก่ากว่าความจริง)\n'
+    + `   เติมใน MO_LIST_COLS: ${missing.join(' · ')}\n`);
+});
+
 test('🛡️ close-time-needs-downtimes — ทุกจุดที่เรียก checkCloseTime ต้องส่ง downtimes', () => {
   const bad = [];
   for (const file of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
@@ -3895,6 +3981,34 @@ const RLS_KEYED_TABLES = {
   station_requirements:    ['line_setup:edit', 'line_setup', 'skills:delete', 'skills'],
   shift_schedules:         ['shift_schedule:edit', 'shift_schedule'],
   daily_production_logs:   ['checkin:record', 'checkin', 'management:assign_manpower', 'assign_manpower'],
+  // รอบ 9 (13/10)
+  ot_night_bookings:       ['checkin:record', 'checkin'],
+  line_helpers:            ['checkin:record', 'checkin'],
+  operator_special_tasks:  ['management:assign_special_task', 'assign_special_task'],
+  station_assignment_logs: ['management:assign_manpower', 'assign_manpower'],
+  special_task_types:      ['ot_master:manage', 'ot_master'],
+  leave_types:             ['ot_master:manage', 'ot_master'],
+  // รอบ 10 (14/10) — ปิดชั้น "เขียนได้ทุกคนที่ล็อกอิน" จบ
+  wip_replenish_requests:  ['wip_request:', 'wip_request', 'line_levels:manage', 'heijunka:operate'],
+  line_replenish_scan_blocks: ['heijunka:operate', 'wip_request:', 'wip_request'],
+  ojt_trainings:           ['ojt:record', 'ojt:delete', "'ojt'"],
+  ojt_training_attendees:  ['ojt:record', 'ojt:delete', "'ojt'"],
+  pokayoke_devices:        ['pokayoke:manage', 'pokayoke'],
+  pokayoke_checks:         ['pokayoke:record', 'pokayoke:manage', 'pokayoke'],
+  line_layouts:            ['line_setup:edit', 'line_setup', 'storage_maintain:run', 'storage_maintain'],
+  shift_overrides:         ['shift_schedule:edit', 'shift_schedule'],
+  qa_customer_claims:      ['canRecord', 'canManage', "'qa'"],
+  cqi15_event_logs:        ['event_log:', 'event_log'],
+  cqi15_event_approvals:   ['event_log:', 'event_log'],
+  cqi15_check_completions: ['event_log:', 'event_log'],
+};
+
+/* ยกเว้นได้เฉพาะ "util กลางที่ด่านอยู่ที่ผู้เรียก" — ต้องเขียนเหตุผล + ชี้ไฟล์ที่กันจริง
+   (ปล่อยเงียบไม่ได้ ไม่งั้นด่านนี้จะกลายเป็นด่านที่ใครก็ปิดได้ด้วยการย้ายโค้ดไป util) */
+const RLS_KEY_ALLOW = {
+  'src/utils/recompressLayouts.js':
+    'util บีบรูปผัง — ด่านอยู่ที่ผู้เรียก: StorageMaintenance.jsx:24 isActionSeeded(storage_maintain,run) '
+    + '→ prop canRun → ImageSqueezePanel.jsx (util ไม่รู้จัก role เลยโดยการออกแบบ)',
 };
 
 test('🛡️ rls-tightened-tables-need-key — ไฟล์ที่เขียนตารางที่ถูกรัด RLS ต้องอ้างคีย์สิทธิ์ของมันด้วย', () => {
@@ -3904,8 +4018,13 @@ test('🛡️ rls-tightened-tables-need-key — ไฟล์ที่เขี�
     for (const [table, keys] of Object.entries(RLS_KEYED_TABLES)) {
       const writeRe = new RegExp(
         `from\\(\\s*['"\`]${table}['"\`]\\s*\\)[\\s\\S]{0,300}?\\.(insert|update|upsert|delete)\\s*\\(`, 'g');
-      if (!writeRe.test(code)) continue;
+      /* 🔴 แผง CRUD กลาง (<SimpleNameMaster table="x"> / <SimpleMasterPanel table="x">) รับ "ชื่อตาราง"
+         เป็น prop ⇒ ไฟล์ที่ใช้มันไม่มี `from('x').insert` ให้ grep เจอ แต่มันเขียนจริง
+         (เจอรอบ 9: special_task_types / leave_types เขียนจาก Report.jsx แบบนี้) */
+      const panelRe = new RegExp(`table=\\{?\\s*['"\`]${table}['"\`]`, 'g');
+      if (!writeRe.test(code) && !panelRe.test(code)) continue;
       if (keys.some(k => code.includes(k))) continue;
+      if (RLS_KEY_ALLOW[relative(ROOT, file)]) continue;
       bad.push(`${relative(ROOT, file)} → เขียน ${table} แต่ไม่พบคีย์ ${keys.slice(0, 2).join(' / ')}`);
     }
   }
@@ -3960,6 +4079,26 @@ test('🛡️ am-board-registries-cached — jigs/checklists/pm_daily_line_targe
     + '   ผล: จอ AM/ผังรวมโรงงานดึงทะเบียนใหม่ทุกรอบ refresh = 1,308 ครั้ง/วัน และโตตามจำนวนจอ\n'
     + '   แก้: cachedRows(\'<คีย์>\', () => supabaseDR.from(\'<ตาราง>\')...) + ลงทะเบียนคีย์ใน masterInvalidate.js\n'
     + '        และทุกจุดที่เขียนตารางนั้นต้องเรียก invalidateTable(\'<ตาราง>\') หลังบันทึกสำเร็จ\n');
+});
+
+/* ── 📝 รายละเอียดในใบแจ้งซ่อม MO ต้องชัดพอให้ช่างเตรียมตัว (13/10 · คำขอทีม MTN ผ่าน user) ──
+   วัดจากของจริง (DR `mtn_orders` 90 วัน 718 ใบ): ไม่กรอกเลย 10 ใบ (1.4%) · สั้น 1–15 ตัว
+   109 ใบ (15%) · เฉลี่ย 40 ตัว · ไม่เลือกกลุ่มอาการ 0 ใบ ⇒ ปัญหาคือ "สั้นจนเดาไม่ออก"
+   🔴 เตือนได้ ห้ามบล็อกความยาว — บังคับแล้วคนเลิกแจ้งในระบบ ไปบอกช่างปากเปล่า เสียทั้งสายข้อมูล
+      (บล็อกได้ชั้นเดียว: เลือกอาการ "อื่นๆ/ไม่ระบุ" แล้วไม่เขียนอะไรเลย = ไม่เหลือข้อมูลให้ใครเลย)
+   ⇒ เกณฑ์อยู่ใน `utils/moNoteQuality.js` ที่เดียว · หน้าแจ้งซ่อมต้องเรียกใช้ ห้ามคิดเกณฑ์เอง   */
+test('🛡️ mo-note-quality-gate — ฟอร์มแจ้งซ่อมต้องตรวจคุณภาพรายละเอียดผ่าน moNoteCheck', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8'));
+  assert.ok(/moNoteCheck\(/.test(code),
+    '\n\n❌ MtnRepair ไม่ได้เรียก moNoteCheck — ช่อง "ระบุรายละเอียดปัญหา" กลับไปเป็นช่องเปล่า\n'
+    + '   ผล: ใบที่เขียน 1–15 ตัวอักษร (15% ของใบ) ไม่มีใครเตือน ช่างต้องเดินไปถามเอง\n'
+    + '   แก้: moNoteCheck({ note, group, character }) จาก src/utils/moNoteQuality.js\n'
+    + '        → เตือนใต้ช่อง (level thin) + บล็อกตอน blocked (อื่นๆ + ไม่เขียนอะไรเลย)\n');
+  assert.ok(/noteCheck\.blocked/.test(code),
+    '\n\n❌ ผล moNoteCheck ไม่ได้ถูกใช้กันตอนกดบันทึก — เตือนบนจอแต่ส่งผ่านได้ทุกกรณี\n');
+  assert.ok(!/MO_NOTE_MIN\s*=/.test(code),
+    '\n\n❌ เกณฑ์ความยาวถูกประกาศซ้ำในหน้า — แก้ที่เดียวไม่พอ แล้วจอกับด่านจะตอบคนละเลข\n'
+    + '   แก้: import { MO_NOTE_MIN } from "../utils/moNoteQuality"\n');
 });
 
 /* ── ช่องแนบ "รูปหลักฐานของเสีย" ต้องเริ่มที่โหมด "ใช้ทั้งรูป" (2026-10-13 · คำสั่ง user) ──
@@ -4024,4 +4163,168 @@ test('🛡️ supabase-dedupe-fetch — ทั้ง supabase และ supabase
       + '   ผล: คำขอ GET ที่ซ้อนเวลากันกลับมายิงซ้ำทุกตัว (วัดได้ 70% ของคำขอทั้งหมด)\n'
       + '   แก้: createClient(url, key, { global: { fetch: dedupeFetch } })\n');
   });
+});
+
+/* ── 🧪 งานชุบภายนอก — ทุกการเขียนผ่าน RPC `plating_*` เท่านั้น (13/10 · คำสั่ง user) ──
+   ส่ง/รับ/ตัดยอด/ส่งเข้า W/H เขียน 2-3 ตารางพร้อมกัน (ใบ + ประวัติ + ledger ทั้งต้นทางและปลายทาง)
+   เขียนแยกจาก client = ล้มครึ่งทาง ⇒ ของหายจากคลังแต่ไม่ไปค้างร้าน (หรือรับคืนแล้วยอดค้างไม่ลด)
+   และชื่อที่เก็บเสมือนของร้านใน ledger ต้องตรงกันทั้ง JS และ SQL ไม่งั้นยอดค้างร้านแยก 2 ถัง */
+test('🛡️ plating-writes-via-rpc — ห้ามเขียน plating_orders/plating_moves ตรงจากจอ · ชื่อคลังร้านตรงกับ RPC', () => {
+  const bad = [];
+  for (const f of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const rel = relative(ROOT, f);
+    if (rel.includes('__tests__')) continue;
+    const code = stripComments(readFileSync(f, 'utf8'));
+    if (/from\(\s*['"]plating_(orders|moves)['"]\s*\)\s*\.\s*(insert|update|upsert|delete)\b/.test(code)) bad.push(rel);
+  }
+  assert.deepEqual(bad, [], '\n\n❌ เขียนตารางงานชุบตรงจากจอ — ใช้ supabaseDR.rpc(\'plating_*\') แทน:\n' + bad.map(b => '   • ' + b).join('\n'));
+  const js = readFileSync(join(ROOT, 'src/utils/plating.js'), 'utf8');
+  const sql = readFileSync(join(ROOT, 'supabase/migrations/20261013_plating_loop_dr.sql'), 'utf8');
+  const pre = (js.match(/VENDOR_LOC_PREFIX\s*=\s*'([^']+)'/) || [])[1];
+  assert.ok(pre, 'หา VENDOR_LOC_PREFIX ใน utils/plating.js ไม่เจอ');
+  assert.ok(sql.includes(`'${pre}' || btrim(p_vendor)`), `ชื่อคลังร้านใน RPC plating_send ต้องเป็น '${pre}' || vendor ให้ตรงกับ JS`);
+});
+
+/* ── 🖥️ บัญชีกลางห้ามลบ — ด่านต้องอยู่ "ก่อน" admin bypass (2026-10-13 · คำสั่ง user) ──
+   บัญชีกลาง = จอ TV / บัญชีประจำเครื่อง-กะ (`maintenance` · `toolingmaintenance` · TV-1..13)
+   ใช้ร่วมกันหลายคน ⇒ ลบแถวแล้วสอบกลับไม่ได้ว่าใครกด (audit เขียนได้แค่ชื่อบัญชี)
+   🔴 บัญชี `ADMIN` ในฐานจริงก็เป็นบัญชีกลาง ⇒ ถ้าเช็ค `_sharedAccount` **หลัง** `role === 'admin'`
+      ด่านนี้จะไร้ผลกับบัญชีที่อันตรายที่สุด (ลบได้ทุกตาราง) — เคยพลาดแบบเดียวกันที่ล็อกช่องเซ็น MO
+      ("ล็อกเต็ม manage_master ก็ข้ามไม่ได้")                                                   */
+test('🛡️ shared-account-no-delete — canDelete ต้องเช็คบัญชีกลางก่อน admin bypass', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/utils/permissions.js'), 'utf8'));
+  const fn = code.slice(code.indexOf('export function canDelete'));
+  const body = fn.slice(0, fn.indexOf('\n}'));
+  const iShared = body.indexOf('_sharedAccount');
+  const iAdmin = body.indexOf("role === 'admin'");
+  assert.ok(iShared >= 0,
+    '\n\n❌ canDelete ไม่มีด่านบัญชีกลาง (_sharedAccount) แล้ว\n'
+    + '   ผล: บัญชีกลาง (จอ TV / maintenance / toolingmaintenance) กดลบได้อีก\n'
+    + '        แล้ว audit สอบกลับไม่ได้ว่าใครกด (คำสั่ง user 13/10 "บัญชีกลาง ไม่ควรลบได้")\n');
+  assert.ok(iAdmin < 0 || iShared < iAdmin,
+    '\n\n❌ ด่านบัญชีกลางอยู่หลัง admin bypass — บัญชี ADMIN เองเป็นบัญชีกลาง\n'
+    + '   ⇒ ด่านไร้ผลกับบัญชีที่ลบได้ทุกตาราง · ย้าย `if (_sharedAccount) return false;` ขึ้นบนสุด\n');
+});
+
+
+/* ── 🖥️ ห้ามตั้งตัวแปรท้องถิ่นชื่อ `canDelete` ทับ util (ออดิท 13/10) ──────────────────
+   เจอจริง 5 หน้า: `const canDelete = can('products','delete', role)` ⇒ **อ่านโค้ดเหมือนมีด่าน
+   แต่เป็น `can()` เปล่าๆ** ⇒ ด่าน "บัญชีกลางห้ามลบ" (canDelete ของกลาง) ไม่ทำงานเลย
+   และ grep หา `canDelete(` ก็เจอ = หลงว่าครอบแล้ว · ตัวที่โดน: ลบสินค้า · ปิดเครื่องจักร ·
+   ลบใบ LPA · ลบ event log · ลบ OJT — ของที่ลบแล้วกู้ไม่ได้ทั้งนั้น
+   🔴 ถ้าจะมีตัวแปรสรุปสิทธิ์ลบในหน้า ให้ชื่ออื่น (เช่น `mayDelete`) แล้วค่าต้องมาจาก util    */
+test('🛡️ no-shadow-candelete — ห้ามประกาศตัวแปร/พารามิเตอร์ชื่อ canDelete ในหน้า', () => {
+  const bad = [];
+  for (const f of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const rel = relative(ROOT, f);
+    if (rel === 'src/utils/permissions.js' || rel.includes('__tests__')) continue;
+    const code = stripComments(readFileSync(f, 'utf8'));
+    if (/\b(?:const|let|var)\s+canDelete\s*=/.test(code)) bad.push(rel);
+  }
+  assert.deepEqual(bad, [], '\n\n❌ ประกาศ canDelete ทับ util (ด่านบัญชีกลางจะไม่ทำงาน):\n'
+    + bad.map(b => '   • ' + b).join('\n')
+    + '\n   แก้: ตั้งชื่อ `mayDelete` แล้วเรียก canDelete() ของกลาง\n'
+    + '        import { canDelete as canDeleteUtil } from \'../utils/permissions\';\n');
+});
+
+/* ── 🔴 "ใบนี้ว่าง" ≠ "พาร์ทนี้ไม่มีลูก" (2026-10-14 · user ส่งภาพจอ 4 ใบ) ──────────
+   `items` = บรรทัดของ **ใบที่เปิดอยู่** เท่านั้น ⇒ ใบของพาร์ทที่เพิ่งเปิดยังว่าง
+   แต่ใบ FG กรอกลูกของมันไว้แล้ว ⇒ จอขึ้น "ยังไม่มีพาร์ทย่อยใน BOM นี้" = **จอโกหก**
+   เคสจริง: ใบ 20058495 ว่าง · ใบ FG 10086024 กรอก 20058498 ไว้ใต้มันแล้ว
+   ⇒ ต้องถามด้วย `sheetsWithKidsOf()` (buildBomIndex) ก่อนจะประกาศว่าไม่มีลูก          */
+test('🛡️ /products BOM: ใบว่างต้องเช็ค sheetsWithKidsOf ก่อนขึ้น "ยังไม่มีพาร์ทย่อย"', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/ProductMaster.jsx'), 'utf8'));
+  assert.ok(/sheetsWithKidsOf/.test(code),
+    '\n\n❌ ProductMaster ไม่ได้ถาม `sheetsWithKidsOf` แล้ว\n'
+    + '   ทำไมผิด: `items.length === 0` = ใบนี้ว่าง ไม่ได้แปลว่าพาร์ทนี้ไม่มีลูก\n'
+    + '   (ลูกอาจถูกกรอกไว้ในใบ FG — เคสจริง 20058495/10086024 · user แจ้ง 14/10)\n'
+    + '   แก้ยังไง: kidsElsewhere = bomIx.sheetsWithKidsOf(mat) แล้วกางให้ดูด้วย startSheet\n');
+  const i = code.indexOf('ยังไม่มีพาร์ทย่อยใน BOM นี้');
+  assert.ok(i > 0 && /kidsElsewhere/.test(code.slice(Math.max(0, i - 2500), i)),
+    '\n\n❌ ข้อความ "ยังไม่มีพาร์ทย่อยใน BOM นี้" ไม่ได้อยู่หลังด่าน `kidsElsewhere` แล้ว\n'
+    + '   = ประกาศว่าไม่มีลูก ทั้งที่ยังไม่ได้ถามว่าใบอื่นกรอกไว้ไหม\n');
+  const tree = stripComments(readFileSync(join(ROOT, 'src/utils/bomTree.js'), 'utf8'));
+  assert.ok(/opt\.startSheet\s*!==\s*undefined/.test(tree),
+    '\n\n❌ explodeBom ไม่รับ `startSheet` แล้ว — พาร์ทที่ลูกถูกกรอกไว้ในใบอื่นจะกางไม่ออกเลย\n'
+    + '   (sheetFor(mat, undefined) ตอบได้แค่ "ใบของ mat เอง" ซึ่งอาจว่างหรือไม่มี)\n');
+});
+
+/* ── 🏃 คนวิ่งข้ามแผนก = "อ้างอิง" ไม่ใช่การย้ายสังกัด (14/10 · feedback user "ใช่ คนวิ่งข้ามแผนก") ──
+   ทางที่ง่ายแต่ผิดคือ "ย้าย `employees.org_node_id` ให้เลย" หรือ "ยัด `line_id` ให้"
+   ⇒ cost center ของคนเปลี่ยนตามหน่วย (วัด 14/10: 11 จาก 12 แผนกมี cost_center ของตัวเอง)
+      แล้ว activity rate ใน `utils/costSaving.js` = ตัวคูณ "เงินที่ประหยัดได้" ทุกจอ เพี้ยนทั้งระบบ
+      และ Checkin/Report จะนับเขาเป็นคนของหน่วยใหม่ (คลาสเดียวกับที่ `line_technicians` แก้ไว้แล้ว)
+   ⇒ บอร์ดกำลังคน **ห้ามเขียนทะเบียนพนักงาน/ไลน์/cost center** — เขียนได้แค่ `employee_flex_units`
+   🔴 "ไปช่วย ≠ นับเป็นกำลังคน" คุมด้วยเทสพฤติกรรมใน `manpowerBoard.test.mjs` (ช่องว่าง/ตัวนับห้ามขยับ) */
+test('🛡️ manpower-flex-reference-only — จอบอร์ดกำลังคนห้ามย้ายสังกัด/แก้ cost center ของคน', () => {
+  for (const f of ['src/pages/ManpowerBoard.jsx', 'src/components/ManpowerBoardSetup.jsx']) {
+    const code = stripComments(readFileSync(join(ROOT, f), 'utf8'));
+    assert.ok(!/from\(\s*['"]employees['"]\s*\)\s*\.\s*(update|upsert|insert|delete)/.test(code),
+      `\n\n❌ ${f} เขียนทะเบียนพนักงาน — บอร์ดนี้อ่านอย่างเดียว\n`
+      + '   ย้ายสังกัด = cost center ของคนเปลี่ยน (11/12 แผนกมี cc ของตัวเอง) ⇒ activity rate ทุกจอเพี้ยน\n'
+      + '   แก้: ผูกผ่านตาราง employee_flex_units (อ้างอิง) — บ้านจริงไม่ขยับ\n');
+    assert.ok(!/cost_center\s*:/.test(code),
+      `\n\n❌ ${f} เขียนค่า cost_center — cost center เป็นของหน่วยต้นสังกัด ห้ามให้บอร์ดนี้แตะ\n`);
+  }
+  const util = stripComments(readFileSync(join(ROOT, 'src/utils/manpowerBoard.js'), 'utf8'));
+  assert.ok(/flexUnits\s*=\s*\[\]/.test(util),
+    '\n\n❌ buildManpowerBoard ไม่ได้ตั้ง flexUnits เป็น optional default [] — ไม่ส่งแล้วต้องได้พฤติกรรมเดิมเป๊ะ\n');
+  assert.ok(/flexFrom/.test(util),
+    '\n\n❌ การ์ดคนวิ่งข้ามแผนกไม่ติดธง flexFrom — จอจะแยกไม่ออกว่าใครเป็นคนของแผนกจริง\n');
+  const page = stripComments(readFileSync(join(ROOT, 'src/pages/ManpowerBoard.jsx'), 'utf8'));
+  assert.ok(/buildManpowerBoard\(\{[^}]*flexUnits/.test(page),
+    '\n\n❌ หน้าบอร์ดไม่ส่ง flexUnits เข้า buildManpowerBoard — ทะเบียนมีข้อมูลแต่จอไม่โชว์ (ตายเงียบ)\n');
+});
+
+/* ── 👯 คู่ RH/LH ต้องอยู่ไลน์เดียวกัน (14/10 · เคสจริง GOR 297) ──
+   ตั้ง pair_mat_no ก่อนชุบ↔หลังชุบ (คนละไลน์) ⇒ Daily Report เด้ง MAT คู่ให้ใบถัดไป → 12 ใบลงเป็นเลขหลังชุบทั้งกะ
+   ด่าน: จุดตั้งคู่ (Product Master) + จุดผูกคู่ตอนเปิดใบ (Daily Report) ต้องผ่าน pairBlockReason() */
+test('🛡️ pair-same-line — ตั้งคู่/ผูกคู่ RH/LH ต้องผ่าน pairBlockReason()', () => {
+  const pm = stripComments(readFileSync(join(ROOT, 'src/pages/ProductMaster.jsx'), 'utf8'));
+  const dr = stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'));
+  assert.match(pm, /pairBlockReason\(/, 'ProductMaster ต้องเช็ค pairBlockReason ก่อนบันทึก pair_mat_no');
+  assert.match(dr, /pairBlockReason\(/, 'DailyReport ต้องเช็ค pairBlockReason ก่อนผูกคู่/เด้ง MAT คู่');
+  assert.doesNotMatch(dr, /const partnerMatNo = products\.find\([^)]*\)\?\.pair_mat_no/, 'ห้ามอ่าน pair_mat_no ตรงๆ เป็น partnerMatNo โดยไม่ผ่านด่าน');
+});
+
+test('🛡️ pm-checkpoint-copy-via-util — คัดลอกจุดตรวจต้องผ่าน checkpointCopyRow() (ล้างหมุดเมื่อข้ามเครื่อง)', () => {
+  const rel = 'src/lib/pmChecklists.js';
+  const code = stripComments(readFileSync(join(ROOT, rel), 'utf8'));
+  const bad = [];
+  /* แตก cp ด้วยมือ (`({ id, created_at, ... checklist_id, ...rest })`) = ข้ามกฎล้างหมุด ⇒ หมุดผูกรูปเครื่องต้นทางกลับมา */
+  if (/\(\s*\{\s*id\s*,\s*created_at[^}]*\.\.\.rest\s*\}\s*\)/.test(code)) bad.push(rel + ' (แตกแถวจุดตรวจด้วยมือ)');
+  if (!/checkpointCopyRow\s*\(/.test(code)) bad.push(rel + ' (ไม่เรียก checkpointCopyRow)');
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n'
+    + '   ทำไม: x_pos/y_pos/label_dx/label_dy/image_id ผูกกับ "รูปของเครื่องต้นทาง" — ก๊อปข้ามเครื่องแล้วหมุดไปโผล่ผิดที่บนจอตั้งค่า\n'
+    + '         และหายไปเลยบนจอตรวจ (14/10 เจอจริง 9 จุด) · jig_id ต้องเป็นเครื่องปลายทาง\n'
+    + '   แก้: ใช้ checkpointCopyRow() จาก src/utils/pmCheckpointCopy.js · ข้ามแผนกบนเครื่องเดิมส่ง samePhotos:true\n');
+});
+
+/* ── 🔨 ชิ้น/จังหวะ ของแม่พิมพ์ — "ไม่รู้" ห้ามกลายเป็น 1 (14/10 · คำสั่ง user "ควรนับ shot ไม่ใช่นับชิ้น สำหรับงานคู่") ──
+   migration 20260810 ออกแบบ 2 ชั้นไว้แล้ว (equipment_die ว่าง = ใช้ค่าของ die_sets) แต่ไม่เคยถูกเขียนจริง
+   ⇒ จอ PM อ่านแค่ชั้น OP ที่ว่าง 264/264 = คิด shot ไม่ได้สักตัว · และชั้นชุดเป็น default 1 + จอบีบ `?? 1` ตอนเซฟ
+   = ระบบประกาศเองว่าแม่พิมพ์ทุกตัวปั๊มได้ 1 ชิ้น · งานคู่ LH/RH ปั๊มทีเดียว 2 ชิ้น ⇒ PM เด้งช้าไป 2 เท่า */
+test('🛡️ die-pps-no-guess-one — ชิ้น/จังหวะต้องผ่าน ppsOf() และห้ามเดาเป็น 1', () => {
+  const bad = [];
+  const util = stripComments(readFileSync(join(ROOT, 'src/utils/pmUsage.js'), 'utf8'));
+  if (!/export function ppsOf\s*\(/.test(util)) bad.push('src/utils/pmUsage.js (ไม่มี ppsOf แล้ว)');
+  /* ถอยชั้นต้องอยู่ในตัวมันเอง ไม่ใช่ให้หน้าไปทำเอง */
+  if (!/die\?\.pieces_per_stroke[\s\S]{0,80}set\?\.pieces_per_stroke/.test(util))
+    bad.push('src/utils/pmUsage.js (ppsOf ไม่ได้ถอยจากชั้น die ไปชั้นชุดแล้ว)');
+
+  const reg = stripComments(readFileSync(join(ROOT, 'src/pages/DieRegistry.jsx'), 'utf8'));
+  if (/pieces_per_stroke[^\n]*\?\?\s*1\b/.test(reg))
+    bad.push('src/pages/DieRegistry.jsx (บีบ pieces_per_stroke ว่าง → 1 ตอนเซฟ/ตอนโชว์)');
+
+  /* หน้าไหนจะคิด shot ต้องขอค่าผ่าน ppsOf ห้ามหยิบคอลัมน์ดิบไปหาร */
+  for (const rel of ['src/components/PmUsageBoard.jsx']) {
+    const code = stripComments(readFileSync(join(ROOT, rel), 'utf8'));
+    if (!/ppsOf\s*\(/.test(code)) bad.push(rel + ' (ไม่เรียก ppsOf)');
+    if (/piecesToShots\s*\([^)]*\.pieces_per_stroke/.test(code))
+      bad.push(rel + ' (ส่งคอลัมน์ดิบเข้า piecesToShots — ข้ามการถอยชั้น)');
+  }
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n'
+    + '   ทำไม: แม่พิมพ์สเปค "ทน 50,000 shot" ถ้าระบบคิด 1 ชิ้น = 1 shot กับงานคู่\n'
+    + '         PM จะเด้งตอนครบ 50,000 ชิ้น = 25,000 shot จริง = ช้าไป 2 เท่า แม่พิมพ์พังก่อนถึงคิว\n'
+    + '   แก้: ppsOf(die, set) ใน src/utils/pmUsage.js · ไม่รู้ = null จอต้องเขียนบอก ห้ามเดา 1\n');
 });

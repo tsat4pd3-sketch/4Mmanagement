@@ -25,7 +25,9 @@
    (เลขขั้นคนละความหมายระหว่างฟอร์ม JIG/DIE กับ MTN — กฎเหล็กใน CLAUDE.md)
    ═══════════════════════════════════════════════════════════════════════════ */
 import { personKey, normPersonName } from './actorStamp.js';
-import { stepMeta, nextStepOf, canDoStep } from './mtnStepPerm.js';
+import {
+  canDoStep, moWaitMeta, approvalWaitsOnMe, STAGE_APPROVE_FIRST,
+} from './mtnStepPerm.js';
 import { isMtnFormRow } from './mtnMoForm.js';
 import { bkkDateStr } from './workDate.js';
 
@@ -79,10 +81,11 @@ export function isMe({ uid, name }, me) {
  *    ไปโผล่เป็น "ตรวจรับงาน" ที่ผู้แจ้งซึ่งเซ็นไปแล้ว · QA ไม่เห็นในคิวเลย)
  */
 export function moWaitingOn(o = {}) {
-  const mtnForm = isMtnFormRow(o);
-  const step = nextStepOf(o) ?? 0;
-  const meta = step ? stepMeta(step, { mtnForm }) : null;
-  if (!meta) return { step, meta: null, who: null, byName: false };
+  /* 🔴 "รออะไร" ถามที่ `moWaitMeta()` ที่เดียว — **ห้ามเรียก `nextStepOf()` เองที่นี่อีก**
+     ด่านอนุมัติก่อนเริ่มงานไม่มีเลขขั้น (step = null) ถ้าถามจากเลขขั้นจะได้ "รอช่างรับงาน"
+     ทั้งที่ช่างกดรับไม่ได้ ⇒ ใบหายเข้ากองของคนอื่น (13/10 · คำสั่ง user) */
+  const { step, meta } = moWaitMeta(o);
+  if (!meta) return { step: step ?? 0, meta: null, who: null, byName: false };
 
   if (meta.byReporter) {
     return {
@@ -134,6 +137,9 @@ export const inMyScope = (row, me) => scopeStateOf(row, me) === 'in';
 export function soleSignerFor(o, w, me = {}) {
   const m = w?.meta;
   if (!m || w.byName || m.minRank == null) return false;
+  /* 🔒 ด่านอนุมัติก่อนเริ่มงาน = ช่องลายเซ็นนอกลำดับขั้น (ไม่มี `step` ให้ `canDoStep` ตัดสิน)
+     ⇒ เกณฑ์ผู้เซ็นอยู่ที่ `approvalWaitsOnMe()` (mtnStepPerm.js) — กติกาเดียวกับข้างล่างทุกข้อ */
+  if (m.stage === STAGE_APPROVE_FIRST) return approvalWaitsOnMe(o, me);
   if (!me.actorSide || me.actorSide === 'unknown' || me.actorSide !== m.side) return false;
   if (me.posRank == null || me.posRank < m.minRank) return false;
   const r = canDoStep(w.step, {
@@ -259,6 +265,32 @@ export function buildQueue(src = {}, me = {}, now = new Date()) {
     };
     if (isMe({ uid: a.assignee_uid, name: a.assignee }, me)) mine.push(it);
     else if (keep(a)) unit.push({ ...it, tier: TIER.UNIT, tag: a.assignee || 'ยังไม่มีผู้รับผิดชอบ' });
+  }
+
+  // ── ⬆️ คำขอขึ้นขั้นทักษะรออนุมัติ (2026-10-13 · คำสั่ง user) ───────────────────────
+  //    ตรวจจริง 13/10: ค้าง 132 คำขอ เก่าสุด 24/08 — **ไม่เคยโผล่ในคิวของใครเลย** ⇒ คะแนนค้างใต้ขั้น (49/74/99)
+  //    แล้วจอ "ฝีมือตรงจุดไหม" (Manpower Board) ฟ้องว่าฝีมือไม่ถึงทั้งที่ได้ขั้นแล้ว
+  //    · โหลด/นับเฉพาะคนที่ **อนุมัติได้จริง** (`me.canLevelUp` < 100 · `me.canLevelUp100` ขั้น 100 — คีย์เดียวกับปุ่มใน /operator)
+  //    · ชั้น `unit` **บรรทัดเดียวต่อขอบเขต** ห้ามแตกรายคำขอ (132 แถวท่วมคิว = ไม่มีใครอ่าน · บทเรียนกระดิ่ง)
+  //    · ไม่ขึ้น badge (ไม่ใช่งานที่รอ "ตัวเรา" คนเดียว — หัวหน้าหลายคนกดได้)
+  if (me.canLevelUp || me.canLevelUp100) {
+    const lu = need('levelUps', src.levelUps).filter(r => (Number(r.to_level) >= 100 ? me.canLevelUp100 : me.canLevelUp) && keep(r));
+    if (lu.length) {
+      const byLv = {};
+      let oldest = null;
+      for (const r of lu) {
+        byLv[r.to_level] = (byLv[r.to_level] || 0) + 1;
+        const a = ageDays(r.requested_at, now);
+        if (a != null && (oldest == null || a > oldest)) oldest = a;
+      }
+      unit.push({
+        key: 'levelup', icon: '⬆️', tier: TIER.UNIT, count: lu.length,
+        title: `คำขอขึ้นขั้นทักษะรออนุมัติ ${lu.length.toLocaleString()} รายการ`,
+        detail: Object.keys(byLv).sort((a, b) => b - a).map(k => `ขั้น ${k}: ${byLv[k]}`).join(' · '),
+        age: oldest, tag: 'รอหัวหน้าอนุมัติ',
+        to: '/operator?tab=levelup',
+      });
+    }
   }
 
   // ── ชั้น 3: ของทั้งโรงงานที่ไม่มีเจ้าภาพ — **สรุปบรรทัดเดียว ห้ามแตกรายตัว** ──────

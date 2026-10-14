@@ -372,3 +372,24 @@ test('soleSigner — ไม่ส่งเกณฑ์ตำแหน่งม�
   assert.equal(q.mine.length, 0)
   assert.equal(q.unit.length, 1)
 })
+
+test('⬆️ คำขอขึ้นขั้น: เฉพาะคนอนุมัติได้ · บรรทัดเดียวชั้น unit · ขั้น 100 ต้องสิทธิ์แยก · ตัดตามส่วนงาน · ไม่ขึ้น badge', () => {
+  const now = new Date('2026-10-13T03:00:00Z');
+  const src = { mo: [], sessions: [], fourM: [], actions: [], levelUps: [
+    { id: 1, to_level: 50, requested_at: '2026-09-07T00:00:00Z', section: 'PD3' },
+    { id: 2, to_level: 100, requested_at: '2026-08-24T00:00:00Z', section: 'PD3' },
+    { id: 3, to_level: 75, requested_at: '2026-10-01T00:00:00Z', section: 'PD4' },
+  ] };
+  const none = buildQueue(src, { sections: ['PD3'] }, now);
+  assert.equal(none.unit.some(i => i.key === 'levelup'), false, 'ไม่มีสิทธิ์อนุมัติ = ไม่เห็น');
+  const q = buildQueue(src, { sections: ['PD3'], canLevelUp: true }, now);
+  const it = q.unit.find(i => i.key === 'levelup');
+  assert.equal(it.count, 1, 'ขั้น 100 ต้องสิทธิ์ approve_levelup_100 · PD4 อยู่นอกขอบเขต');
+  const q2 = buildQueue(src, { sections: [], canLevelUp: true, canLevelUp100: true }, now);
+  assert.equal(q2.unit.filter(i => i.key === 'levelup').length, 1, 'บรรทัดเดียว ไม่แตกรายคำขอ');
+  assert.equal(q2.unit.find(i => i.key === 'levelup').count, 3);
+  assert.equal(q2.unit.find(i => i.key === 'levelup').age, 50);
+  assert.equal(badgeCount(q2), 0, 'ไม่ขึ้น badge');
+  const miss = buildQueue({ ...src, levelUps: undefined }, { canLevelUp: true }, now);
+  assert.ok(miss.missing.includes('levelUps'), 'มีสิทธิ์แต่โหลดไม่ได้ = ต้องบอกว่าไม่ครบ');
+});

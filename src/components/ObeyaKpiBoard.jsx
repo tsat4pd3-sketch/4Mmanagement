@@ -27,7 +27,7 @@ import { groupChildDefs, rollupChildDefs, childGroupKeyFor, fillParentWithChildr
 import { pickBoardRows, normKpiRowName, moveBoardKey } from '../utils/kpiBoardRows';
 import { checkWriteRows } from '../utils/dbWrite';
 import { loadPmTeams, pmTeamsSync } from '../utils/pmTeams';
-import { mtnAutoSeries, autoKpiOfName, toRowUnit } from '../utils/kpiAuto';
+import { mtnAutoSeries, autoKpiOfName, toRowUnit, autoDetailText, HOURS_PER_MONTH } from '../utils/kpiAuto';
 import { GAP, useSheetGrid, StatusLamp, Sheet, WarnNote, EmptyChart, FocusAxisNote } from './ObeyaSheet';
 import BoardPager from './BoardPager';
 import useFitHeight from '../utils/useFitHeight';
@@ -137,6 +137,10 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
   const [err, setErr] = useState(null);
   const [showSafety, setShowSafety] = useState(null);   // null | {} | event
   const [board, setBoard] = useState(false);            // โหมดจอ TV = ซ่อนหัวเพจ เต็มจอ (pattern เดียวกับ SQDCM)
+  /* 👁 แผ่น Machine Break Down ดูได้ 2 หน่วย (user 13/10 "ไม่ต้องแก้ แต่เพิ่มให้ดูได้ทั้ง 2 หน่วย") — KPI ทางการยังเป็น % ·
+     มุมมอง "ชม." = ชั่วโมงเครื่องหยุด แปลงจาก % ด้วยฐานเดียวกับสูตร (730 × จำนวนเครื่อง ÷ 100) **ไม่แตะข้อมูล/เป้า** · สถานะไฟตัดสินจาก % เหมือนเดิม */
+  const [hrRows, setHrRows] = useState(() => new Set());
+  const toggleHr = (key) => setHrRows((prev) => { const n = new Set(prev); if (n.has(key)) n.delete(key); else n.add(key); return n; });
   const wrapRef = useRef(null);
   const reqRef = useRef(0);                             // กันผลโหลดเก่าทับผลใหม่
 
@@ -419,6 +423,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       const roll = r.rollup ? rollupOf(r.rollup) : null;   // แผ่นที่ค่ามาจากหน่วยลูกล้วน (แม่/บรรพบุรุษไม่มีนิยาม)
       let series = [], def = null, unit = r.unit || man?.unit || '', note = '', fromDept = !!man?.inherited, manual = !r.auto;
       let months = 0, sumKind = 'average', sumApprox = false;
+      let hrPerPct = null;   // แผ่น MBD: 1% = กี่ชั่วโมงหยุด (730 × เครื่อง ÷ 100) — เปิดปุ่มสลับ %/ชม.
 
       /* ⚡ ค่าที่ระบบคำนวณ = ค่าหลักของ **ทุกแถว auto** (user 09/10: "auto ชนะ manual · เดือนไหนไม่มี auto มี manual ก็โชว์ manual")
          ✍️ ค่าที่หน่วยกรอกมือลงนิยามของตัวเองใช้เติมเฉพาะเดือนที่ระบบไม่มีค่า (PD2 คีย์ OEE ม.ค.–ส.ค. = ช่วงก่อนเริ่มใช้ Daily Report
@@ -508,16 +513,19 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
             + (roll.targetNote ? ` · ${roll.targetNote} — อยากตัดสินด้วยเป้าของระดับนี้ ให้ตั้ง KPI นี้ที่ ⚙️ (แผ่นรวมจะเปลี่ยนเป็นของระดับนี้เอง)` : '');
         } else if (ak) {
           const autoMonths = {};
+          const autoDetail = {};   // 🔢 ตัวตั้ง/ตัวหารของเดือนนั้น (ชม.หยุด · ครั้ง · เครื่อง) — user 13/10 "อยากเห็น hrs. ด้วย" ทั้งที่ KPI เป็น %
           autoSeries.months.forEach((m, i) => {
             const v = toRowUnit(m[ak.key], ak.key, unitOf(man.def) || unit);
-            if (v != null) autoMonths[i + 1] = v;
+            if (v != null) { autoMonths[i + 1] = v; autoDetail[i + 1] = autoDetailText(m, ak.key); }
           });
           const fx = fillAutoWithManual({ autoMonths, manEntries, year, summary });
           mix = fx;
           const k = fx.series
             ? { series: fx.series, months: fx.months, effMode: fx.effMode, approx: fx.approx }
             : manualMonthSeries({ entries: autoMonths, year, summary });
-          series = k.series; months = k.months; def = man?.def || null;
+          series = k.series.map((p, i) => (i < 12 && !p.manualFill && autoDetail[i + 1] ? { ...p, detail: autoDetail[i + 1] } : p));
+          months = k.months; def = man?.def || null;
+          if (ak.key === 'mbd' && autoSeries.machines > 0 && /%/.test(unitOf(man.def) || unit || '%')) hrPerPct = HOURS_PER_MONTH * autoSeries.machines / 100;
           sumKind = k.effMode; sumApprox = k.approx;
           manual = fx.autoN === 0;   // มีค่าระบบสักเดือน = แถวนี้ค่าหลักมาจากระบบ
           note = `${mixNote(fx, 'ระบบคำนวณ')}${fx.autoN && !fx.fillN && !fx.overlapN ? `⚡ ระบบคำนวณ ${fx.autoN} เดือน` : ''} (ทีม ${mtnTeam.label} · สูตร KPI Guideline 2026 หน้า 10)`;
@@ -575,6 +583,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       }
       if (stale) why = `ค่าล่าสุด ${monthLabel(valueKey)} (${monthLabel(monthKey)} ยังไม่กรอก) · ${why}`;
       const curFilled = value != null && !!series.find(p => p.k === valueKey)?.manualFill;
+      const curDetail = value != null ? (series.find(p => p.k === valueKey)?.detail || null) : null;   // ที่มาของเลขเดือนที่โชว์ (แถว auto ช่าง)
       const curChild = value != null && !!series.find(p => p.k === valueKey)?.childFill;
       if (curChild) why = `⬆ เดือนนี้ระดับนี้ไม่ได้กรอก ใช้ค่ารวมจากหน่วยลูก · ${why}`;
       if (curFilled) why = `✍️ เดือนนี้ใช้ค่ากรอกมือ (ระบบไม่มีกะให้คำนวณ) · ${why}`;
@@ -602,7 +611,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
         hasTarget: !!(def && (target != null || bars?.commit_value != null)),
       };
       return {
-        ...r, def, unit, dir, series, value, valueKey, stale, target, st, why, note, manual, fromDept, months, sumKind, sumApprox, ytd, actualMonths, forecast, curFilled, curChild, childMix, mix, roll,
+        ...r, def, unit, dir, series, value, valueKey, stale, target, st, why, note, manual, fromDept, months, sumKind, sumApprox, ytd, actualMonths, forecast, curFilled, curChild, curDetail, hrPerPct, childMix, mix, roll,
         atLabel: man?.inherited && man.at ? org.labelOf(man.at.kind, man.at.value) : '',
         commit: bars?.commit_value ?? null, hasPlan: Object.keys(planMap).length > 0,
         dec: decimalsOf(def),
@@ -763,52 +772,69 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
     </>
   );
   /* `kk` = สเกลของแผ่นที่กำลังวาด (ปกติ = k ของกริด · ใน popup 🔍 ขยาย = ใหญ่กว่า) ⇒ ฟอนต์แกน/ป้ายโตตามแผ่น */
+  /* 👁 มุมมองหน่วยของแผ่น (ตอนนี้มีแค่ MBD: % ↔ ชม.) — แปลงตอนวาดเท่านั้น · ค่าในแถว/สถานะ/คาดปลายปียังเป็น % */
+  const hvR = (r) => !!(r.hrPerPct && hrRows.has(r.key));
+  const cvR = (r, v) => (v == null ? null : hvR(r) ? v * r.hrPerPct : v);
+  const unitR = (r) => (hvR(r) ? 'ชม.' : r.unit);
+  const decR = (r) => (hvR(r) ? 1 : r.dec);
   const rowChart = (r, kk = k, sheetW = cw) => {
     const fs = (n) => Math.max(11, Math.round(n * kk));
     const axisTick = { fontSize: fs(9.5), fill: 'var(--muted)' };
     const chartTip = tooltipProps(fs(11));   // สี/พื้น/cursor มาตรฐาน — utils/chartAxis.js
+    const hv = hvR(r); const cv = (v) => cvR(r, v); const unitL = unitR(r); const decL = decR(r);
+    const tgtL = cv(r.target); const cmtL = cv(r.commit);
     /* 🔢 ตัวเลขบนแท่ง (UI §กราฟ "ตัวเลขบนแท่งต้องมีเสมอ" · user 30/09 "มีตัวเลข above แต่ละแท่งจะดูง่ายขึ้นมั้ย")
        แน่นเกิน = เว้นแท่งเว้นเลข ห้ามลดฟอนต์ (แผ่นในกริดกว้าง ~300px / 13 แท่ง = ช่องละ ~20px) —
        เดือนที่เลือก + แท่งสรุป โชว์เสมอ · 📝 ต่อท้ายตัวเลข (เดิมเป็นป้ายแยก ซ้อนกันไม่ได้) */
     const slotW = Math.max(0, sheetW - 60) / 13;
-    const labelW = (v) => nf(v, r.dec).length * fs(9.5) * 0.62;
+    const labelW = (v) => nf(cv(v), decL).length * fs(9.5) * 0.62;
     const dense = r.series.some(p => p.v != null && labelW(p.v) > slotW);
     const data = r.series.map((p, i) => {
       const show = p.v != null && (!dense || p.summary || p.k === monthKey || i % 2 === 0);
-      return { ...p, label: p.summary ? 'สรุป' : String(Number(String(p.k).slice(5, 7))),
-        vLabel: `${show ? nf(p.v, r.dec) : ''}${p.noteMark || ''}` };
+      return { ...p, v: cv(p.v), vRaw: p.v, plan: cv(p.plan), label: p.summary ? 'สรุป' : String(Number(String(p.k).slice(5, 7))),
+        vLabel: `${show ? nf(cv(p.v), decL) : ''}${p.noteMark || ''}` };
     });
     if (!data.some(p => p.v != null)) return <EmptyChart k={kk} text={`ยังไม่มีค่าสักเดือนในปี ${year}`} />;   // เหตุผลอยู่ที่ไฟ/ท้ายแผ่นแล้ว ไม่พิมพ์ซ้ำ
     /* แกน % ตรึง 0–100 เฉพาะเมื่อค่า/เป้าอยู่ในสเกลนั้นจริง — DL+OH 1.3% บนแกน 0–100 = เส้นแบนอ่านไม่ออก (user ทัก 30/09) */
-    const peak = Math.max(...data.map(p => (p.v == null ? 0 : Number(p.v))), r.target == null ? 0 : Number(r.target));
-    const isPct = r.unit === '%' && peak > 25;
+    const peak = Math.max(...data.map(p => (p.v == null ? 0 : Number(p.v))), tgtL == null ? 0 : Number(tgtL));
+    const isPct = unitL === '%' && peak > 25;
     /* 🎯 โฟกัส: ทุกอย่างที่วาดต้องอยู่ในช่วง (แท่ง · T · C · แผน) — เส้นเป้าหลุดนอกกราฟเงียบๆ = จอโกหก */
-    const focus = yFocus ? focusDomain([...data.map(p => p.v), ...data.map(p => p.plan), r.target, r.commit], { max: r.unit === '%' ? 100 : null }) : null;
+    const focus = yFocus ? focusDomain([...data.map(p => p.v), ...data.map(p => p.plan), tgtL, cmtL], { max: unitL === '%' ? 100 : null }) : null;
     const yDomain = focus ? focus.domain : (isPct ? [0, 100] : undefined);
     return (
       <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       {/* 🔴 กติกาความซื่อสัตย์: แกนไม่เริ่ม 0 ต้องเขียนบนจอ — ตัวร่วมใน ObeyaSheet (SQDCM %Q ใช้ตัวเดียวกัน) */}
-      {focus && <FocusAxisNote k={kk} loText={nf(focus.domain[0], r.dec)} />}
+      {focus && <FocusAxisNote k={kk} loText={nf(focus.domain[0], decL)} />}
+      {r.hrPerPct && (
+        <div style={{ position: 'absolute', top: 0, right: 6, zIndex: 2, display: 'flex', gap: 2 }}>
+          {[['%', false], ['ชม.', true]].map(([lb, on]) => (
+            <button key={lb} type="button" onClick={(e) => { e.stopPropagation(); if (hv !== on) toggleHr(r.key); }}
+              title="สลับหน่วยที่ดู — ชม. = ชั่วโมงเครื่องหยุด แปลงจาก % ด้วยฐาน 730 ชม. × จำนวนเครื่อง (ตัวเลข KPI ทางการและไฟสถานะยังเป็น %)"
+              style={{ fontSize: fs(10), lineHeight: 1.3, padding: '1px 6px', borderRadius: 6, border: '1px solid var(--border)', cursor: 'pointer', fontWeight: 700,
+                background: hv === on ? 'var(--accent)' : 'var(--card)', color: hv === on ? 'var(--accent-ink)' : 'var(--muted)' }}>{lb}</button>
+          ))}
+        </div>
+      )}
       <ResponsiveContainer width="100%" height="100%">
-        <ComposedChart data={data} margin={{ top: r.unit ? axisUnitTop(fs(9.5), fs(6)) : fs(12), right: 6, left: 4, bottom: 0 }}>
+        <ComposedChart data={data} margin={{ top: unitL ? axisUnitTop(fs(9.5), fs(6)) : fs(12), right: 6, left: 4, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
           <XAxis dataKey="label" tick={axisTick} interval={0} />
           {/* 📏 หน่วยของแกน Y ต้องเขียนบนกราฟ (30/09 · user: "unit มันไม่มีบอก บาท/%/hrs") — ป้ายเหนือแกน ไม่ใช่ต่อท้ายทุก tick (8kPPM อ่านยาก) */}
           <YAxis domain={yDomain} ticks={focus ? focus.ticks : undefined} allowDataOverflow={!!focus} tick={axisTick} width="auto"
             tickFormatter={v => (Math.abs(v) >= 1000 ? `${Math.round(v / 1000)}k` : v)}
-            label={axisUnitLabel(r.unit, { fontSize: fs(9.5), lift: fs(6) })} />
-          <Tooltip {...chartTip} formatter={(v, name) => [`${nf(v, r.dec)}${r.unit ? ' ' + r.unit : ''}`, name === 'plan' ? '📅 แผน' : r.name]}
+            label={axisUnitLabel(unitL, { fontSize: fs(9.5), lift: fs(6) })} />
+          <Tooltip {...chartTip} formatter={(v, name, item) => [`${nf(v, decL)}${unitL ? ' ' + unitL : ''}${name !== 'plan' && item?.payload?.detail ? ` · ${item.payload.detail}` : ''}`, name === 'plan' ? '📅 แผน' : r.name]}
             labelFormatter={(l, pl) => (pl?.[0]?.payload?.summary
               ? `สรุปปี ${year} (${r.sumKind === 'sum' ? 'รวม' : 'เฉลี่ย'}${r.auto && !r.fromDept ? 'ถ่วงน้ำหนัก' : ''}ทั้งปี)`
               : `${monthLabel(pl?.[0]?.payload?.k || '')} ${year}${pl?.[0]?.payload?.notes?.length ? ` · 📝 ${pl[0].payload.notes.length} หมายเหตุ` : ''} · กดเพื่อดูเดือนนี้ + หมายเหตุ`)} />
           {/* เส้นเป้า (แดง) + เส้น Commitment (เหลือง) — user 30/09: "มาแต่เส้น target เส้น commitment ไม่เห็น" */}
-          {r.target != null && <ReferenceLine y={r.target} stroke="#ef4444" strokeDasharray="4 3" label={{ value: 'T', position: 'insideTopRight', fontSize: fs(9), fill: '#ef4444' }} />}
-          {r.commit != null && r.commit !== r.target && <ReferenceLine y={r.commit} stroke="#f59e0b" strokeDasharray="2 3" label={{ value: 'C', position: 'insideTopRight', fontSize: fs(9), fill: '#f59e0b' }} />}
+          {tgtL != null && <ReferenceLine y={tgtL} stroke="#ef4444" strokeDasharray="4 3" label={{ value: 'T', position: 'insideTopRight', fontSize: fs(9), fill: '#ef4444' }} />}
+          {cmtL != null && cmtL !== tgtL && <ReferenceLine y={cmtL} stroke="#f59e0b" strokeDasharray="2 3" label={{ value: 'C', position: 'insideTopRight', fontSize: fs(9), fill: '#f59e0b' }} />}
           {/* fill = สีตัวหนังสือใน tooltip เท่านั้น (Cell ทับสีแท่งจริง) — ไม่ใส่ = Recharts ใช้ #000 (user 30/09 "text ดำ") */}
-          <Bar dataKey="v" fill={CELL_BAR_FILL} radius={[2, 2, 0, 0]} onClick={(d) => openMonth(r, d?.payload ?? d)}>
+          <Bar dataKey="v" fill={CELL_BAR_FILL} radius={[2, 2, 0, 0]} onClick={(d) => { const pl = d?.payload ?? d; openMonth(r, pl && pl.vRaw !== undefined ? { ...pl, v: pl.vRaw } : pl); }}>
             <LabelList dataKey="vLabel" position="top" style={{ fontSize: fs(9.5), fontWeight: 700, fill: 'var(--text)' }} />
             {data.map((p, i) => (
-              <Cell key={i} fill={statusColor(r.def ? monthBarScore(p, r.def) : 'none')}
+              <Cell key={i} fill={statusColor(r.def ? monthBarScore({ ...p, v: p.vRaw }, r.def) : 'none')}
                 fillOpacity={p.summary ? 0.55 : (p.manualFill || p.childFill) ? 0.38 : (p.k === monthKey ? 1 : 0.8)}
                 stroke={p.summary || p.manualFill || p.childFill ? 'var(--text2)' : (p.k === monthKey ? 'var(--text)' : 'none')}
                 strokeDasharray={p.summary ? '3 2' : (p.manualFill || p.childFill) ? '2 2' : undefined} cursor={p.summary ? 'default' : 'pointer'} />
@@ -961,10 +987,10 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
                 <Sheet k={k} cw={cw} icon={r.icon} title={r.name}
                   /* 30/09 (user): เลขใหญ่ = ค่าเดือนที่เลือก · บรรทัดรอง = YTD บอกวิธีรวม+จำนวนเดือน · ท้ายแผ่น = คาดปลายปี */
                   sub={`${r.curChild ? '⬆ ค่ารวมจากหน่วยลูก (เดือนนี้ระดับนี้ไม่ได้กรอก)' : srcLabel(r)}${r.ytd != null
-                    ? ` · YTD ${nf(r.ytd, r.dec)}${r.unit ? ' ' + r.unit : ''} (${r.sumApprox ? '≈ เฉลี่ย' : summaryShort(r.sumKind)}${r.auto && !r.fromDept && !r.sumApprox && r.sumKind !== 'sum' ? 'ถ่วงน้ำหนัก' : ''} ${r.actualMonths} เดือน)`
+                    ? ` · YTD ${nf(cvR(r, r.ytd), decR(r))}${unitR(r) ? ' ' + unitR(r) : ''} (${r.sumApprox ? '≈ เฉลี่ย' : summaryShort(r.sumKind)}${r.auto && !r.fromDept && !r.sumApprox && r.sumKind !== 'sum' ? 'ถ่วงน้ำหนัก' : ''} ${r.actualMonths} เดือน)`
                     : ''}`}
-                  big={r.value == null ? '—' : nf(r.value, r.dec)}
-                  unit={r.value != null ? r.unit : ''} bigNote={r.value != null ? `เดือน ${monthLabel(r.valueKey)}${r.stale ? ' (ล่าสุด)' : ''}` : ''} delta={r.delta}
+                  big={r.value == null ? '—' : nf(cvR(r, r.value), decR(r))}
+                  unit={r.value != null ? unitR(r) : ''} bigNote={r.value != null ? `เดือน ${monthLabel(r.valueKey)}${r.stale ? ' (ล่าสุด)' : ''}${r.curDetail ? ` · ${r.curDetail}` : ''}` : ''} delta={r.delta}
                   stat={toLamp(r.st, r.note && !(r.st === ST.unknown) ? `${r.why} · ${r.note}` : r.why)}
                   /* 🧹 ท้ายแผ่น ≤ 1 บรรทัด (user 09/10 "note เยอะไป กราฟเล็กลง") — เหลือเฉพาะ (ก) คาดปลายปีที่คำนวณได้ หรือ (ข) เตือนที่ต้องเห็น
                      (ไฟเทา/ค่ากรอกมือถูกทับ/ขอบเขตโรงงานยังไม่มีนิยาม) · Target/Commit/ที่มาเต็มๆ ย้ายไป tooltip ของไฟ + popup 🔍 (`zoomFoot`) */

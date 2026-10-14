@@ -899,3 +899,145 @@ migration `20261012d_rls_round7_attendance_shift_main.sql` (**apply แล้ว
 📌 **รอ user ตัดสิน:** KPI เก่า 4 ตาราง (42/313/11/0 แถว) ควรย้ายเข้า schema `archive` หรือ drop
 
 migration `20261013_rls_round8_people_stations_kpi_legacy_main.sql` (**apply แล้ว 2026-10-13** · ROLLBACK + ลำดับย้อนครบ)
+
+
+## 🪪 แถบ "ตัวตนไม่ตรงกับฐานพนักงาน" — ช่องไหนระบบใช้ฝั่งไหน (2026-10-13)
+
+> user: *"เรื่องนี้เหมือนเคยแก้ไปแล้ว ตอนนี้ทำไมมีพนักงานหลายคนโชว์ขึ้นมา"*
+
+**ทำไมเลขกระโดด:** 08/10 ขยายการเทียบจาก **2 ช่อง (ทีม+ไลน์)** เป็น **5 ช่อง** (เพิ่ม ส่วนงาน · ตำแหน่ง ·
+หน่วยในผัง) ⇒ ของที่เพี้ยนเงียบมาตลอดโผล่ขึ้นมาพร้อมกัน **ไม่ใช่ของใหม่ ไม่ใช่อาการย้อนกลับ**
+วัดจริง 13/10 (บัญชีที่ผูกพนักงานแล้ว 43 ใบ): ทีม 1 · ไลน์ 2 · ส่วนงาน 6 · ตำแหน่ง 6 · หน่วยในผัง 5
+⇒ กติกาเดิมโชว์ **3 ใบ** · กติกาใหม่โชว์ **17 ใบ**
+
+### 🔴🔴 ตำแหน่งมี **2 ชั้น** — ชื่อคอลัมน์ซ้ำกันแต่คนละคำถาม (13/10 · คำสั่ง user)
+
+> *"6 คนนี้ ตำแหน่งจริงที่เค้าเป็นอยู่กับบริษัทคือตามฐานพนักงาน
+>  แต่ตำแหน่งงานและงานที่ตัวเค้าทำ คือทำในตำแหน่งตรงกับบัญชี"*
+
+| ช่อง | ความหมาย | ใครดูแล | ใครใช้ |
+|---|---|---|---|
+| `employees.position` | **ตำแหน่งตามบริษัท** (ที่ HR บรรจุ) | ฐานข้อมูลพนักงาน | จัดแถว Manpower Board · ใบรับรองทักษะ · ป้ายใน picker |
+| `profiles.position` | **ตำแหน่งที่ปฏิบัติงานจริง** | จอจัดการบัญชี | **ตัดสินสิทธิ์** — `positionRank()` → ช่องเซ็น MO ขั้น 6/7/8 · คิวรออนุมัติ |
+
+เคสจริง: **สุวิทย์ชัย ดีทั่ว** บริษัทบรรจุเป็นหัวหน้าไลน์ แต่**ทำงานในตำแหน่งหัวหน้าแผนก**
+⇒ ที่ `App.jsx` ตัดสินสิทธิ์จาก `profiles.position` **ถูกแล้ว** — สิทธิ์ต้องตามงานที่ทำ ไม่ใช่ตามที่บรรจุ
+
+🔴 **ห้ามรวม 2 ชั้นนี้เป็น single source · ห้ามให้ปุ่มใดเขียนทับกัน**
+   ทับเมื่อไหร่ = ข้อมูลหนึ่งใน 2 ความหมาย**หายถาวร** (ไม่มี audit ของ UPDATE ให้กู้)
+🔴 **ต่างกัน = เรื่องปกติ ห้ามนับเป็น "ข้อขัดแย้ง"** — `position`/`org_node_id` ถูกย้ายออกจาก
+   `IDENTITY_FIELDS` ไปอยู่ **`DUAL_MEANING_FIELDS`** แล้ว (`src/utils/identitySync.js` · มีเทส)
+   · `syncPatch()` **ไม่แตะ 2 ช่องนี้** (มีเทสกัน) · จอแสดงเป็น **ชั้นข้อมูล 🧭 "ทำงานคนละตำแหน่งกับที่บรรจุ"**
+     ไม่ใช่แถบเตือนสีส้ม และ**ไม่มีปุ่มล้างค่า**
+
+**ผลกับตัวเลขบนจอ (วัด 13/10 · 43 ใบที่ผูกแล้ว):**
+| ชั้น | กี่ใบ |
+|---|---|
+| ⚠️ แถบเตือนจริง (ทีม/ไลน์/ส่วนงาน — ต้องตรงกัน) | **10** |
+| 🧭 ชั้นข้อมูล (ตำแหน่ง 6 · หน่วยในผัง 3) | **9** |
+| ~~ตัวเลขเดิมที่เหมารวม~~ | ~~17~~ |
+
+**⏸️ `org_node_id` ยังไม่ตัดสิน** — ยังไม่รู้ว่าเป็น "ช่องเดียวกัน" หรือ "คนละความหมาย" แบบ `position`
+กันไว้ฝั่ง `DUAL_MEANING_FIELDS` + ธง `undecided` ก่อน (ไม่เตือน ไม่ sync — ปลอดภัยกว่าทับแล้วกู้ไม่ได้)
+ตัดสินแล้วค่อยย้าย · `profiles.org_node_id` 72 แถว · `employees.org_node_id` 308 แถว
+
+**งานค้าง:** ป้ายบนจอยังเขียนว่า "ตำแหน่ง" เฉยๆ ทั้ง 2 ที่ — ควรเปลี่ยนเป็น "ตำแหน่งตามบริษัท" /
+"ตำแหน่งที่ปฏิบัติงาน" ที่หน้าฐานพนักงานกับจอบัญชีด้วย · และ Manpower Board ใช้ `employees.position`
+จัดแถว (= ตามที่บรรจุ) ยังไม่ได้ถาม user ว่าควรใช้ตำแหน่งที่ปฏิบัติงานแทนไหม
+---
+## 🔒 RLS รอบ 9 — OT · งานนอกไลน์ · ประวัติย้ายจุดงาน · ทะเบียนเล็ก (2026-10-13)
+
+| ตาราง | แถว | predicate | ปุ่มเจ้าของ |
+|---|---|---|---|
+| `ot_night_bookings` | 3,561 | `checkin:record` | Checkin.jsx (จอง OT กะดึก) |
+| `line_helpers` | 41 | `checkin:record` | Checkin.jsx (ยืมคนช่วยไลน์) |
+| `operator_special_tasks` | 628 | `management:assign_special_task` | Management.jsx |
+| `station_assignment_logs` | 9,158 | `management:assign_manpower` | Management.jsx:620 (insert เท่านั้น) |
+| `special_task_types` · `leave_types` | 5 / 4 | `ot_master:manage` | Report.jsx `<SimpleNameMaster>` |
+
+· 🔴 **4 ใน 6 ตัวมีแต่ policy `FOR ALL`** ⇒ สร้าง policy อ่านก่อนแล้วค่อยรัด —
+  **รอบ 7 (`shift_schedules`) · รอบ 8 (`workstations` ฯลฯ) · รอบ 9 เจอแบบเดียวกันทุกรอบ
+  ⇒ ถือเป็นรูปแบบประจำของตารางยุคแรก ไม่ใช่เหตุบังเอิญ** เช็คก่อนรัดทุกครั้ง
+· `station_assignment_logs` = ประวัติ มีแต่ `insert` จากจอ ⇒ รัดด้วยคีย์ของคนที่ทำให้เกิดแถว
+
+### 🔎 กับดักการ grep ที่เจอรอบนี้ — แผง CRUD กลางรับ "ชื่อตาราง" เป็น prop
+
+`special_task_types` / `leave_types` ไม่มี `from('<table>').insert` ให้ grep เจอเลย เพราะเขียนผ่าน
+`<SimpleNameMaster table="leave_types">` ⇒ **grep หาแต่ `from('x')` จะสรุปว่า "ไม่มีใครเขียน" แล้วรัดผิด**
+⇒ เติมรูปแบบ `table={'x'}` เข้าด่าน `rls-tightened-tables-need-key` แล้ว (ตรวจย้อนแล้ว: วางไฟล์ที่ใช้แผงนี้
+โดยไม่มีคีย์ = เทสแดงทันที) · **ตารางใหม่ที่รัด ต้องเติมใน `RLS_KEYED_TABLES` ทุกครั้ง**
+
+### ผลตรวจกลับ (simulated JWT · rollback ทั้งก้อน)
+
+| role | ผล |
+|---|---|
+| `engineer` (ไม่ถือคีย์ไหนเลย) | อ่าน OT 3,561 · ประวัติย้ายจุด 9,158 · คนช่วยไลน์ 41 · ประเภทลา 4 แถว — **เขียน 0 ทั้ง 6 ตาราง** |
+| `leader` | OT 1 · คนช่วย 1 · งานพิเศษ 1 · **ประวัติย้ายจุด 0** (ไม่ถือ `assign_manpower`) · **ทะเบียนลา 0** (ไม่ถือ `ot_master`) |
+| `manager` | ประวัติ 1 · ทะเบียนลา 1 · ทะเบียนงานพิเศษ 1 |
+
+migration `20261013b_rls_round9_ot_specialtask_logs_main.sql` (**apply แล้ว 2026-10-13** · ROLLBACK ครบ)
+
+
+## 🏁 RLS รอบ 10 (รอบปิด) — ชั้น "เขียนได้ทุกคนที่ล็อกอิน" จบแล้ว (2026-10-14)
+
+| ตาราง | predicate | ปุ่มเจ้าของ |
+|---|---|---|
+| `wip_replenish_requests` | OR 5 คีย์ (`wip_request:decide`/`:receive`/`:override` · `line_levels:manage` · `heijunka:operate`) | LinePartCallPanel · HeijunkaKanban (3 บทบาท: ไลน์เรียก · สโตร์จ่าย · หัวหน้า override) |
+| `line_replenish_scan_blocks` | `heijunka:operate` **or** `wip_request:override`/`:receive` | HeijunkaKanban:1886 (ล็อกเหตุการณ์สแกนถูกบล็อก) |
+| `ojt_trainings` · `ojt_training_attendees` | `ojt:record` **or** `ojt:delete` | OjtTraining.jsx |
+| `pokayoke_devices` | `pokayoke:manage` | PokaYokeCheck.jsx (ทะเบียนอุปกรณ์) |
+| `pokayoke_checks` | `pokayoke:record` **or** `pokayoke:manage` | PokaYokeCheck.jsx (ผลตรวจรายกะ) |
+| `line_layouts` | `line_setup:edit` **or** `storage_maintain:run` | LineSetup · ImageSqueezePanel |
+| `shift_overrides` | `shift_schedule:edit` **or** `:edit_dept` | ShiftOrganize.jsx |
+| `qa_customer_claims` | `qa:record` **or** `qa:manage` | QaClaims.jsx |
+| `cqi15_event_logs` · `_event_approvals` · `_check_completions` | **INSERT** `event_log:create` · **UPDATE** `event_log:approve_{qt,me,jme,o}` | EventLog.jsx |
+
+· 🔴 **CQI-15: INSERT กับ UPDATE คนละความหมาย ห้ามใช้คีย์เดียว** — แถวอนุมัติ/จุดตรวจถูกสร้าง
+  *พร้อมใบ* (ตอน `event_log:create`) แต่การ **อนุมัติจริง** คือ UPDATE ⇒ ต้องใช้คีย์ `approve_*`
+  (จอเรียกแบบ dynamic `can('event_log', \`approve_${role}\`)` ที่ EventLog.jsx:1028 ⇒ policy OR ทั้ง 4 ตัว)
+· `pokayoke`: แยก **record (ลงผลตรวจ) vs manage (แก้ทะเบียน)** — เทสยืนยัน `leader` ลงผลตรวจได้แต่แก้ทะเบียนไม่ได้
+
+### 🔎 กับดักรอบนี้ — **ชื่อตารางไปตรงกับชื่อคีย์ cache**
+
+`part_registry` / `part_images` grep เจอในโค้ด แต่สิ่งที่เจอคือ **คีย์ cache** (`'part_registry:main'` ·
+`'part_images:v1'`) ตัวโหลดจริงอ่าน `pe_doc_sets`+`qa_parts` / `parts_master`+`dr_products`
+⇒ **grep เจอ ≠ มีคนใช้** ต้องเปิดดูว่า string นั้นถูกใช้เป็นชื่อตารางจริงไหม
+
+### 🏁 สถานะสุดท้ายของชั้น ข — เหลือ 11 ตาราง **ทุกตัวอยู่ในหมวดที่ตั้งใจ**
+
+**🔵 เปิดโดยเจตนา — ด่านจริงไม่ใช่ policy (3 · ห้ามรัดทับ)**
+- `notifications` INSERT (16,057 แถว) — เขียนจาก **8 edge function** (service role ข้าม RLS) + **5 จุดในจอ
+  ข้ามโมดูล** (FeedbackModal · EventComments · NpiTasks · App.jsx · `lib/pmNotify`) ⇒ **ไม่มีคีย์เดียวครอบได้**
+  · การแจ้งเตือนคนอื่นเป็นผลพลอยได้ของงานปกติ (คอมเมนต์ · มอบงาน) · OR คีย์ที่ไม่เกี่ยวกัน 5 ตัว =
+  ไม่แคบลงจริงแต่เสี่ยงพังทุก flow ⇒ **ตั้งใจไม่แตะ**
+- `four_m_logs` — ด่าน = trigger `protect_four_m_status` + restrictive delete guard (รอบ 6)
+- `profiles` — ด่าน = trigger `protect_profile_role` (รอบ 5 · **คุมเป็นคอลัมน์ ซึ่ง policy ทำไม่ได้**)
+
+**✅ ไม่มีโค้ดไหนอ้างถึงเลย (8) — user สั่งลบ 14/10 แล้ว** (พร้อม KPI รุ่นเก่า 4 ตัว = **12 ตาราง**)
+ว่าง 6 ตัว `drop` จริง · มีข้อมูล 6 ตัว (386 แถว) ย้ายเข้า schema `archive`
+⇒ 📄 `supabase/migrations/20261014b_drop_unused_tables_main.sql` (นิยามคอลัมน์ + วิธีย้อนครบ)
+🔴 **ชั้น ข ไม่มีตารางค้างแล้ว** — เหลือเฉพาะ 3 ตัวที่เปิดโดยเจตนาข้างบน
+
+### 📊 รวม 6 รอบ (5→10)
+
+| รอบ | ปิดอะไร |
+|---|---|
+| 5 | `anon` อ่าน KPI · `scope_depth` ใน trigger · ทะเบียนหลัก 3 ตาราง |
+| 6 | `four_m_logs` ข้ามคิวอนุมัติ (trigger) + เปิด `pending_doc` + กฎยืมใบ OJT |
+| 7 | ใบเช็คชื่อ · ตารางกะ |
+| 8 | ทะเบียนคน · จุดงาน · KPI รุ่นเก่า + **ปุ่มจัดกำลังคนที่ไม่มี `can()`** |
+| 9 | OT · งานนอกไลน์ · ประวัติย้ายจุดงาน · ทะเบียนเล็ก |
+| 10 | เรียกของหน้าไลน์ · OJT · โพกะโยเกะ · ผังไลน์ · สลับกะ · เคลม · CQI-15 |
+
+🔴 **บทเรียนที่ใช้ต่อได้ (เจอซ้ำทุกรอบ):**
+1. **ตารางยุคแรกมี policy `FOR ALL` ตัวเดียวที่ครอบ SELECT ด้วย** ⇒ ต้อง `create policy` อ่านก่อนรัด
+   (รอบ 7/8/9/10 เจอหมด — เช็คก่อนรัดทุกครั้ง ไม่ใช่เหตุบังเอิญ)
+2. **รายการค้างชี้ผิดตัวเสมอ** (รอบ 5 "12 ตาราง" จริง 231 policy · รอบ 8 ตาราง KPI ที่ชี้มาเลิกใช้แล้ว)
+   ⇒ **วัดสดก่อนลงมือทุกรอบ**
+3. **`role_permissions` มีแถว `allowed=false`** — คิวรีสรุปผู้ถือคีย์ต้องกรอง ไม่งั้นรายงานเกินจริง
+4. **ด่านที่ grep "ทั้งไฟล์" จับเคสที่ด่านอยู่ผิดที่ในไฟล์เดียวกันไม่ได้** ⇒ ต้องมีด่านเจาะจงคู่
+
+migration `20261014_rls_round10_tier_b_final_main.sql` (**apply แล้ว 2026-10-14** · ROLLBACK + ลำดับย้อนครบ)
+
+**เหลือชั้น ข. อีก 23 ตาราง** — ปิดครบในรอบ 10 (ดูหัวข้อถัดไป)
+· 🔵 `four_m_logs` / `profiles` **policy เปิดโดยเจตนา — ด่านจริงคือ trigger** (รอบ 5-6) ไม่ต้องรัด policy

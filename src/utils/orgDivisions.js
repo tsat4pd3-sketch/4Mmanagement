@@ -19,7 +19,8 @@ import { supabase } from '../supabaseClient'
 export const DEFAULT_DIVISIONS = [
   { code: 'production',  label: 'ฝ่ายผลิต',        icon: '🏭', color: '#22c55e', sort_order: 10 },
   { code: 'maintenance', label: 'ฝ่ายช่าง',        icon: '🔧', color: '#f97316', sort_order: 20 },
-  { code: 'quality',     label: 'ฝ่ายคุณภาพ',      icon: '✅', color: '#3b82f6', sort_order: 30 },
+  { code: 'engineering', label: 'ฝ่ายวิศวกรรม',    icon: '⚙️', color: '#0ea5e9', sort_order: 25 },  // 13/10 · ORG-016 PE
+  // 'quality' ฝ่ายคุณภาพ — ปิดใช้ 13/10 (ผังจริงไม่มีฝ่ายนี้ · QA อยู่ใต้ฝ่าย Engineering) · แถวใน DB ยังอยู่แต่ is_active=false
   { code: 'logistic',    label: 'ฝ่ายวางแผน-คลัง', icon: '📦', color: '#a855f7', sort_order: 40 },
   { code: 'office',      label: 'ฝ่ายสำนักงาน',    icon: '🗂️', color: '#94a3b8', sort_order: 50 },
 ]

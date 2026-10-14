@@ -15,6 +15,8 @@ import { acceptImageFile } from '../utils/acceptImageFile';
      pins     : [{ key, x, y, label, color }]  (0..1 coords, current frame only)
      arming   : boolean               a checkpoint is waiting for a position
      onPlace(x, y) / onRemovePin(key) / onLabelMove(key, dx, dy)
+     onPinClick(key) — ส่งมา = แตะหมุดแล้ว "ไปที่การ์ดจุดนั้น" แทนการลบ (PMSetup 13/10)
+                       ไม่ส่ง = พฤติกรรมเดิม แตะหมุด = ลบ (FixtureRegistry ยังใช้แบบนี้)
      onAddFrames(FileList) / onRemoveFrame(frameKey) / busy
 */
 export default function SpinAnnotator({
@@ -22,7 +24,7 @@ export default function SpinAnnotator({
        · selected = หมุดที่กำลังเลือก/กำลังวาง → วงไฮไลต์ (ห้ามสื่อด้วยสีอย่างเดียว)
        · hollow   = สถานะ "ยังไม่ทำ" → วงโปร่งเส้นประ (UI-CONVENTIONS §จอรูปอ้างอิง) */
   frames = [], frameIdx = 0, setFrameIdx, pins = [], arming,
-  onPlace, onRemovePin, onAddFrames, onRemoveFrame, busy,
+  onPlace, onRemovePin, onAddFrames, onRemoveFrame, busy, onPinClick,
   // ลากป้ายเลขหมุดเพื่อหลบไม่ให้ลูกศรทับกัน (2026-09-21) — ไม่ส่งมา = อ่านอย่างเดียว
   onLabelMove,
   // { pinKey: true } — จุดที่มี "รูปเจาะจุด" แล้ว (โชว์ 🔍 บนหมุด ให้คนตั้งค่าเห็นว่าจุดไหนยังไม่มี)
@@ -100,9 +102,9 @@ export default function SpinAnnotator({
                    ประเภทที่ตั้งเป็นเขียว (#3dd65c มีจริง) = หมุดธรรมดาหน้าตาเหมือนหมุดที่กำลังวางเป๊ะ
                    ⇒ ส่ง `selected` ต่อให้ CalloutPin เสมอ · `hollow` ส่งต่อไว้ให้จอที่มีสถานะ ยัง/แล้ว ใช้ */
                 selected={p.selected} hollow={p.hollow}
-                title={`${p.label} — คลิกเพื่อลบ${onLabelMove ? ' · ลากป้ายเลขเพื่อหลบไม่ให้ลูกศรทับกัน' : ''}${pinHasDetail[p.key] ? ' · จุดนี้มีรูปเจาะจุดแล้ว' : ' · ยังไม่มีรูปเจาะจุด (แนบได้ที่แถวจุดตรวจด้านล่าง)'}`}
+                title={`${p.label} — ${onPinClick ? 'คลิกเพื่อไปที่จุดนี้ในรายการ' : 'คลิกเพื่อลบ'}${onLabelMove ? ' · ลากป้ายเลขเพื่อหลบไม่ให้ลูกศรทับกัน' : ''}${pinHasDetail[p.key] ? ' · จุดนี้มีรูปเจาะจุดแล้ว' : ' · ยังไม่มีรูปเจาะจุด (แนบได้ที่แถวจุดตรวจด้านล่าง)'}`}
                 onLabelMove={onLabelMove ? ((dx, dy) => onLabelMove(p.key, dx, dy)) : undefined}
-                onClick={e => { e.stopPropagation(); onRemovePin?.(p.key) }} />
+                onClick={e => { e.stopPropagation(); if (onPinClick) onPinClick(p.key); else onRemovePin?.(p.key) }} />
             ))}
           </div>
         )}

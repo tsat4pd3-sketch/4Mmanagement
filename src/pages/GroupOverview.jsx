@@ -146,7 +146,7 @@ const ZONES = [
    ทำเครื่องหมาย extra:true (= ยังไม่มีใน master จริง ถ้าทำ multi-company ต้องไปเพิ่มใน LINE_TYPES) */
 const LTYPES = [
   { value: 'stamping', label: '🔩 ปั๊มขึ้นรูป / Metal Forming' },   // รวมไฮโดรฟอร์มไว้ด้วย (ดู LT_MERGE)
-  ...LINE_TYPES.filter(t => !['stamping', 'hydroform', 'other'].includes(t.value)),
+  ...LINE_TYPES.filter(t => !['stamping', 'hydroform', 'other', 'outsource'].includes(t.value)),
   { value: 'injection', label: '💉 ฉีด / Injection', extra: true },
   { value: 'painting', label: '🎨 พ่นสี / Painting', extra: true },
   { value: 'assembly', label: '🧰 ประกอบ / Assembly', extra: true },

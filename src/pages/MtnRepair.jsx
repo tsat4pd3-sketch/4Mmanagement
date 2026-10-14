@@ -16,10 +16,12 @@ import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { PURPOSES, CAUSE_CATS, needsPlantManager, needsApprovalFirst, laborAmount, partAmount, sumLabor, sumParts, grandTotal, satScore, mtnApprovalState, purposeOfPrint, qaAppliesTo, isMtnFormRow, QA_SKIP_REASON_PURPOSE, QA_SKIP_REASON_MTN_FORM, needsPlantMgrByCost, orderCostTotal, PLANT_MGR_COST_LIMIT } from '../utils/mtnMoForm';
 import AuditLogViewer from '../components/AuditLogViewer';
-import { can, canDelete, isActionSeeded } from '../utils/permissions';
-import { MO_STATUS_META as STATUS_META, QA_NOT_RELATED, QA_RELATED, QA_SKIP_REASON_STEP4, canBounceBack, canDoStep, canHandoff, canSignMtnApproval, canSkipQa, isMoOpen, isOrderReporter, isQaSkipped, isWaitingQa, lastStep, orderReporterText, nextStepOf, moQaState, mtnCloseStage, moStatusLabel, moStatusMeta, orderInReporterScope, stageOf, stepDenyHint, stepLabel, stepMeta, actorSideOf, stepAssumptions, assumptionHint } from '../utils/mtnStepPerm';
+import { can, canDelete, isActionSeeded, isSharedAccount } from '../utils/permissions';
+import { MO_STATUS_META as STATUS_META, QA_NOT_RELATED, QA_RELATED, QA_SKIP_REASON_STEP4, canBounceBack, canDoStep, canHandoff, canSignMtnApproval, canSkipQa, isMoOpen, isOrderReporter, isQaSkipped, isWaitingQa, lastStep, orderReporterText, nextStepOf, moQaState, mtnCloseStage, moStatusLabel, moStatusMeta, orderInReporterScope, stageOf, stepDenyHint, stepLabel, stepMeta, moWaitMeta, actorSideOf, stepAssumptions, assumptionHint } from '../utils/mtnStepPerm';
 import { positionRank } from '../utils/positions';
 import { findOpenOnMachine, dupLevel } from '../utils/mtnDuplicate';
+/* ⏳ ใบค้างขั้นเดิม — สูตร "ค้างกี่วัน/ขั้นไหน" อยู่ที่นี่ที่เดียว ห้ามนับวันในหน้า (13/10) */
+import { buildMoStaleBoard } from '../utils/mtnStale';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { teamsForUser, teamForSection, teamForItem, sameTeam, filterByTeam, visibleForTeam, seesEverything, teamKeyOf, deptNameOf, teamOptions } from '../utils/mtnTeams';
@@ -39,6 +41,7 @@ import ScanModal from '../components/ScanModal';
 import { resolveMachine } from '../utils/qrCode';
 import { isDie, dieItemTypeOf } from '../utils/equipmentKinds';
 import { useDieItemTypeMap } from '../utils/useDieSetKinds'; // เลขแม่พิมพ์ → ชนิดอุปกรณ์ จากทะเบียน (2026-10-05)
+import MoStalePanel from '../components/MoStalePanel';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
 import FilterBar from '../components/FilterBar';
@@ -51,6 +54,8 @@ import { shiftOfTime, workDateOfTime } from '../utils/workDate';
 import { ALL, SHIFT_OPTIONS, allOf } from '../utils/filterLabels';
 /* ป้ายถังขยะของ taxonomy — ของกลาง ห้ามเขียนสตริง "อื่นๆ" เองในหน้า (ดู unclassified.js) */
 import { isVague, UNGROUPED_LABEL } from '../utils/unclassified';
+/* 🔴 เกณฑ์ "รายละเอียดชัดพอไหม" ของใบแจ้งซ่อม — ห้าม hardcode ความยาว/ข้อความในหน้า */
+import { moNoteCheck, MO_NOTE_HINT } from '../utils/moNoteQuality';
 import useTabParam, { useMergeParams } from '../utils/useTabParam';
 
 import InfoMore from '../components/InfoMore';
@@ -152,8 +157,16 @@ const MO_LIST_COLS = [
   'reported_by_name', 'reporter_prod',
   'repair_done_at', 'accept_at', 'satisfaction',      // แท็บ KPI (first-response · ความพึงพอใจ)
   'quality_related', 'qa_skipped_at',                 // สถานะ QA บนป้าย
-  'dept_manager_at', 'purpose',                       // moStatusLabel() ใช้ตัดสินป้ายใบอนุมัติ
+  /* ด่านอนุมัติก่อนเริ่มงาน — `isApprovalBlocked()` ต้องเห็นทั้ง 3 ช่อง
+     🔴 ขาดช่องใดช่องหนึ่ง = undefined = "ไม่รู้" ⇒ ใบตกกลับไปอยู่กอง "รอช่างรับงาน" เงียบๆ */
+  'dept_manager_at', 'plant_manager_at', 'purpose',
   'mtn_head_at', 'approve_at',                        // แยก 3 ขั้นที่ค้างใน status handover (ขั้น 6/7/8)
+  /* ⏳ เวลา "เข้าขั้นปัจจุบัน" — ฐานนับของแผงใบค้าง (`STALE_SINCE_COLS` ใน utils/mtnStale.js · 13/10)
+     🔴 ขาดตัวใดตัวหนึ่ง = ค่าเป็น undefined ⇒ แผงถอยไปนับจากวันแจ้ง**เงียบๆ** (เลขเก่ากว่าจริง)
+        ⇒ มีด่าน `mo-stale-since-cols` เทียบ 2 ชุดนี้ให้ตรงกันตอน build
+     egress: 6 คอลัมน์เวลา (ส่วนใหญ่ null) ~25-50 ไบต์/ใบ ⇒ ≤ ~0.3 MB ที่เพดาน 1000 ใบ —
+     ยอมจ่ายเพราะไม่ต้องยิงคิวรีชุดที่ 2 และทุกตัวถูกใช้จริง (ห้ามเติมคอลัมน์ที่ไม่มีคนอ่าน) */
+  'repair_start_at', 'check_at', 'qa_at', 'ho_at', 'returned_at', 'vendor_sent_at',
 ].join(',');
 const SCOPE_OPTS = [{ v: 'in_line', t: 'ซ่อมในไลน์' }, { v: 'off_line', t: 'ซ่อมนอกไลน์' }];
 const CHECK_RESULTS = ['ตรวจสอบผ่าน', 'ตรวจสอบไม่ผ่าน'];
@@ -191,12 +204,9 @@ const STAGE_EVENT = {
 };
 const stepEventOf = (step, mtnForm) => STAGE_EVENT[stageOf(step, { mtnForm })] || null;
 
-/** ใบนี้รอ "จังหวะงาน" อะไรอยู่ — คืน `stage` (qa/assign/close/…) · `null` = จบแล้ว/ตัดสินไม่ได้
- *  🔴 ต้องผ่าน `stageOf()` เสมอ ห้ามเทียบเลขขั้น (เลขทับกัน 2 ฟอร์ม — กฎใน CLAUDE.md) */
-const waitStageOf = (o) => {
-  const step = nextStepOf(o);
-  return step ? stageOf(step, { mtnForm: isMtnFormRow(o) }) : null;
-};
+/** ใบนี้รอ "จังหวะงาน" อะไรอยู่ — คืน `stage` (qa/assign/approve_first/…) · `null` = จบแล้ว/ตัดสินไม่ได้
+ *  🔴 ต้องผ่าน `moWaitMeta()` เสมอ ห้ามเทียบเลขขั้น (เลขทับกัน 2 ฟอร์ม + ด่านอนุมัติไม่มีเลขขั้น) */
+const waitStageOf = (o) => moWaitMeta(o).stage;
 
 /* "ขั้นไหนใครทำ" ย้ายไป src/utils/mtnStepPerm.js (MTN_STEPS/canDoStep) แล้ว — 2026-09-02
    เดิมเป็น STEP_PERM ที่นี่ แล้วเกณฑ์ถูกเขียนซ้ำ 2 ก้อน (ตัวซ่อนปุ่ม + guard ตอนบันทึก)
@@ -476,12 +486,18 @@ export default function MtnRepair() {
      และใบเก่ากว่า 1000 ใบล่าสุดหายเงียบ (ตัวนับ "ตัวกรองวันที่ซ่อน" ก็นับไม่เห็น) */
   const ORDER_CAP = 1000;
   const [ordersErr, setOrdersErr] = useState('');
+  /* ⏱️ เวลาที่ชุดใบนี้ถูกโหลด — ฐานนับ "ค้างกี่วัน" ของแผงใบค้าง
+     🔴 ต้องจับเวลา **ตอนโหลด** ไม่ใช่ตอน render — `Date.now()` ใน useMemo/ตัวคำนวณ = impure
+        (เลขวันขยับเองระหว่าง render · ด่าน react-hooks/purity) · ตรึงไว้แล้วมันสดเองทุกครั้งที่
+        realtime พา reload มา ⇒ ไม่ต้องตั้ง timer เอง (กฎ "realtime ต้องมีเพดาน" ใน CLAUDE.md) */
+  const [ordersAt, setOrdersAt] = useState(() => Date.now());
   const loadOrders = useCallback(async () => {
     // ⚠️ คอลัมน์ย่อเท่านั้น — ดูเหตุผล (egress) ที่ MO_LIST_COLS ด้านบน ห้ามเปลี่ยนกลับเป็น '*'
     const { data, error } = await supabaseDR.from('mtn_orders').select(MO_LIST_COLS).order('report_at', { ascending: false }).limit(ORDER_CAP);
     if (error) { setOrdersErr(error.message); return; }   // คงรายการเดิมไว้ ดีกว่าล้างเป็น "ไม่มีรายการ"
     setOrdersErr('');
     setOrders(data || []);
+    setOrdersAt(Date.now());
   }, []);
 
   /* ใบเต็ม 116 คอลัมน์ — โหลดเฉพาะใบที่เปิดดูจริง (ไม่ใช่ทั้งพันใบทุกรอบ) */
@@ -552,10 +568,8 @@ export default function MtnRepair() {
   const waitOpts = useMemo(() => {
     const m = new Map();
     for (const o of beforeWait) {
-      const st = waitStageOf(o);
+      const { stage: st, meta } = moWaitMeta(o);
       if (!st) continue;
-      const step = nextStepOf(o);
-      const meta = stepMeta(step, { mtnForm: isMtnFormRow(o) });
       const cur = m.get(st) || { stage: st, title: meta?.title || st, icon: meta?.icon || '🔧', n: 0 };
       cur.n += 1; m.set(st, cur);
     }
@@ -620,7 +634,24 @@ export default function MtnRepair() {
     } finally { setExporting(false); }   // ล้มกลางทาง ปุ่มต้องปลดเสมอ
   }, [shown, tr.from, tr.to, fDept, fLine, fStatus, fShift, fRepairType, fText]);
 
-  const openCount = useMemo(() => orders.filter(o => isMoOpen(o) && (!scopeLines || !o.line_name || scopeLines.has(o.line_name))).length, [orders, scopeLines]);
+  /* ใบในขอบเขตของผู้ใช้ (ส่วนงาน/ครอบครัวไลน์) — **ไม่ผ่านตัวกรองบนจอ**
+     ⇒ ตัวนับหัวเพจ + แผงใบค้าง นับจากชุดเดียวกันเสมอ (เดิม openCount กรองเองซ้ำในบรรทัดเดียว) */
+  const scopedOrders = useMemo(
+    () => orders.filter(o => !scopeLines || !o.line_name || scopeLines.has(o.line_name)),
+    [orders, scopeLines]);
+  const openCount = useMemo(() => scopedOrders.filter(isMoOpen).length, [scopedOrders]);
+
+  /* ⏳ แผง "ใบค้างขั้นเดิมเกินเกณฑ์" (13/10 · user อนุมัติ 12/10) — วัดจริง 13/10: เปิดอยู่ 391 ใบ
+     ค้างขั้นเดิม ≥7 วัน 293 ใบ · ≥30 วัน 21 · เก่าสุด 47 วัน · **ไม่มีจอไหนบอกใครมาก่อน**
+     🔴 นับจาก `scopedOrders` ไม่ใช่ `shown` — ใบค้างคือใบเก่าโดยนิยาม ถ้าให้ตัวกรองวันที่/สถานะ
+        มากรองก่อนนับ ยอดจะหายไปตามตัวกรองที่คนไม่ได้ตั้งใจ (กฎเดียวกับ "ของค้างเกินอายุแท็ก" ใน QualityBins)
+     🔴 ฐานเวลา = `ordersAt` (จับตอนโหลด) — ห้ามเรียก `Date.now()` ในตัวคำนวณ/ใน memo
+     🔴 สูตรทั้งหมดอยู่ `utils/mtnStale.js` — ห้ามนับวัน/เทียบเลขขั้นในหน้านี้ */
+  const staleBoard = useMemo(() => buildMoStaleBoard(scopedOrders, {
+    now: ordersAt,
+    // ทีมของใบ = ค่าในใบก่อน ถอยไปเดาจากชนิดอุปกรณ์ (เกณฑ์เดียวกับตัวกรองทีมด้านบน)
+    teamOf: (o) => teamKeyOf(o.mtn_dept || deptForItem(o.item_type)) || '',
+  }), [scopedOrders, ordersAt]);
 
   /* 📊 first-response ของช่างฝ่ายผลิต — "เข้าไป action แล้วแก้เองได้กี่ครั้ง / ส่งต่อกี่ครั้ง"
      (คำสั่ง user 2026-09-14: "เก็บเป็นประวัติไว้ว่าเข้าไป action ก่อนแล้วกี่ครั้ง ทำเองได้/ไม่ได้กี่ครั้ง")
@@ -687,7 +718,7 @@ export default function MtnRepair() {
             {repairTypes.map(r => <option key={r.id} value={r.name}>{r.name}{r.prefix ? ` (${r.prefix})` : ''}</option>)}
           </select>
           {/* 🕰️ "รอขั้นไหน" — ตัวเลือกสร้างจากใบที่มีจริง (ขั้นที่ไม่มีใบค้างไม่ต้องโผล่)
-              ค่าเก็บเป็น `stage` ไม่ใช่เลขขั้น · ป้ายมาจาก `stepMeta()` ห้ามพิมพ์ชื่อขั้นซ้ำ */}
+              ค่าเก็บเป็น `stage` ไม่ใช่เลขขั้น · ป้ายมาจาก `moWaitMeta()` ห้ามพิมพ์ชื่อขั้นซ้ำ */}
           <select value={fWait} onChange={e => setFWait(e.target.value)} aria-label="รอขั้นไหน">
             <option value="">{allOf('ขั้น')}</option>
             {waitOpts.map(w => <option key={w.stage} value={w.stage}>{w.icon} รอ{w.title} ({w.n})</option>)}
@@ -732,6 +763,17 @@ export default function MtnRepair() {
             )}
           </div>
         )}
+        {/* ⏳ ใบค้างขั้นเดิมเกินเกณฑ์ — อยู่เหนือลิสต์ที่มันพูดถึง (13/10 · user อนุมัติ 12/10)
+            🔴 **ไม่ใช่แท็บใหม่** (หน้านี้มี 2 แท็บ ห้ามเพิ่ม) และ **ไม่ยิงคิวรีเพิ่ม** — นับจาก `orders`
+               ที่โหลดไว้แล้ว ⇒ egress 0 (กฎเดียวกับกล่องเตือนใบซ้ำ 30/09)
+            🔴 ว่างต้องเขียนว่า "ไม่มีใบค้าง" ห้ามซ่อนแผง · โหลดไม่ครบต้องเขียนบนจอ (ส่ง loadErr/partial เข้าไป)
+            กดชิป "ขั้น"/"ทีม" = ตั้งตัวกรองของแถบด้านบน (ไม่สร้างตัวกรองชุดที่ 2 — UI-STANDARD) */}
+        <MoStalePanel
+          board={staleBoard} loadErr={ordersErr} partial={orders.length >= ORDER_CAP}
+          onStage={(stage) => { setFStatus('open'); setFWait(stage); }}
+          onTeam={(dept) => { setFStatus('open'); setFDept(dept); }}
+          teamName={deptNameOf} statusLabel={moStatusLabel} onOpen={openDetail}
+        />
         {/* 📋 รายการ = ตาราง 1 ใบ 1 บรรทัด (05/10 · คำสั่ง user "ข้อมูล 100+ MO แล้ว การ์ดดูยากมาก")
             สแกนตาลงทีละคอลัมน์ได้ · เดิมการ์ด 5 ใบ/แถว = เห็นแค่ ~15 ใบต่อจอ */}
         <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'auto', maxHeight: 'calc(100vh - 170px)' }}>
@@ -1042,10 +1084,15 @@ function ReportModal({ lines, machines, orders = [], itemTypes, problemTypes, re
         เก็บไว้ในช่องเลือกได้ตามปกติ เพื่อให้ dropdown หัวข้อย่อยยังเปิดอยู่ */
   const groupForDb = (g) => (String(g || '').trim() === NO_GROUP ? '' : String(g || '').trim());
 
+  /* 📝 คุณภาพรายละเอียดที่คนแจ้งพิมพ์ (ทีม MTN ขอ 13/10) — เตือนใต้ช่อง + บล็อกเฉพาะ
+       "เลือกอื่นๆ แล้วไม่เขียนอะไรเลย" · กฎอยู่ใน utils/moNoteQuality.js ที่เดียว */
+  const noteCheck = moNoteCheck({ note: f.report_note, group: f.problem_group, character: f.problem_characteristic });
+
   const save = async () => {
     if (!f.line_name) return toast.error('เลือกไลน์การผลิต');
     if (!f.item_type) return toast.error('เลือกชนิดอุปกรณ์');
     if (!f.problem_characteristic) return toast.error('เลือกลักษณะปัญหา (เลือกกลุ่มแล้วเลือกหัวข้อย่อยด้วย)');
+    if (noteCheck.blocked) return toast.error(noteCheck.message);
     const occurredIso = f.occurred_at ? new Date(f.occurred_at).toISOString() : null;
     if (occurredIso && new Date(occurredIso) > new Date()) return toast.error('วันเวลาที่เกิดเหตุเป็นอนาคตไม่ได้');
     setSaving(true);
@@ -1255,7 +1302,15 @@ function ReportModal({ lines, machines, orders = [], itemTypes, problemTypes, re
             </div>
           )}
         </div>
-        <Field label="ระบุรายละเอียดปัญหา (พิมพ์เอง)"><textarea value={f.report_note} onChange={e => set('report_note', e.target.value)} style={{ ...inp, minHeight: 60 }} /></Field>
+        {/* 📝 ช่องนี้คือสิ่งเดียวที่ช่างใช้เตรียมตัวก่อนออกหน้างาน — โครงคำถามอยู่ใน placeholder
+            + เตือนเมื่อสั้นเกิน (ส่งได้) · บล็อกเฉพาะ "อื่นๆ แล้วไม่เขียนอะไรเลย" */}
+        <Field label="ระบุรายละเอียดปัญหา (พิมพ์เอง)" required={noteCheck.level === 'required'}>
+          <textarea value={f.report_note} onChange={e => set('report_note', e.target.value)}
+            placeholder={MO_NOTE_HINT} style={{ ...inp, minHeight: 72 }} />
+          <div style={{ fontSize: 11.5, marginTop: 3, color: noteCheck.message ? '#f59e0b' : 'var(--muted)' }}>
+            {noteCheck.message ? `⚠ ${noteCheck.message}` : `✓ รายละเอียดครบพอให้ช่างเตรียมตัว (${noteCheck.len} ตัวอักษร)`}
+          </div>
+        </Field>
         <ImgField label="รูปก่อนซ่อม" value={beforeUrl} onPick={pickBefore} />
         <Field label="วันเวลาที่เกิดเหตุ (กรอกเฉพาะแจ้งย้อนหลัง)">
           <input type="datetime-local" value={f.occurred_at} onChange={e => set('occurred_at', e.target.value)} max={localDtNow()} style={inp} />
@@ -1476,7 +1531,11 @@ function printMoReportMtn(o, dparts = [], logo0, dlabor = [], cmt = NO_CMT, cost
   const grid = (v, n = 11) => { const t = String(v || ''); let h = ''; for (let i = 0; i < n; i++) h += `<td class="gx">${esc(t[i] || '')}</td>`; return `<table class="gr"><tr>${h}</tr></table>`; };
   const line = (label, v, w = '') => `<span class="lb">${label}</span><span class="dot" style="${w ? `min-width:${w}` : ''}">${esc(v ?? '')}</span>`;
   // ลายเซ็น: รูปเซ็น (ถ้ามี) + ชื่อ + วันที่ __/__/__
-  const sg = (title, name, url, at, note = '') => `<div class="sgb"><div class="sgi">${url ? `<img src="${esc(url)}"/>` : ''}</div><div class="sgt">${esc(title)}</div><div class="sgn">${esc(name || '')}</div><div class="sgd">${at ? esc(beD(at)) : '....../....../......'}</div>${note ? `<div class="sgx">${esc(note)}</div>` : ''}</div>`;
+  /* ช่องเซ็น = ตัวคั่นความสูงขั้นต่ำ (sgsp) + บล็อกที่กางเต็มช่องแบบ absolute
+     🔴 ทำไมต้อง absolute: ใบนี้พิมพ์ลงกระดาษ ตารางไม่มีความสูงที่แน่นอนให้ % เทียบ ⇒ `height:100%`
+        ใน td ยุบเป็นสูงเท่าเนื้อหาทุกครั้ง (ลองแล้ว ไม่ขยับเลย) · absolute ใน td ที่ position:relative
+        ได้ความสูงจริงของช่องเสมอ · ชื่อ-วันที่อยู่ล่างสุด ที่ว่างที่เหลือทั้งหมด = ที่เซ็น */
+  const sg = (title, name, url, at, note = '') => `<div class="sgsp" style="height:${note ? 72 : 58}px"></div><div class="sgb"><div class="sgi">${url ? `<img src="${esc(url)}"/>` : ''}</div><div class="sgt">${esc(title)}</div><div class="sgn">${esc(name || '')}</div><div class="sgd">${at ? esc(beD(at)) : '....../....../......'}</div>${note ? `<div class="sgx">${esc(note)}</div>` : ''}</div>`;
 
   /* ── ตารางค่าแรง 5 แถวตามฟอร์ม (เกิน 5 ต่อท้ายได้ ไม่ตัดข้อมูลทิ้ง) ── */
   const laborList = (dlabor || []).filter(r => r && (r.worker_name || r.amount != null || r.rate_per_hour != null));
@@ -1525,13 +1584,22 @@ function printMoReportMtn(o, dparts = [], logo0, dlabor = [], cmt = NO_CMT, cost
     .hdco{font-size:11px;font-weight:700} .hden{font-size:9px}
     .mono{font-weight:700;letter-spacing:.3px}
     .tb th{border:1px solid #000;font-weight:700;padding:2px;font-size:9.5px;text-align:center}
-    .sgb{text-align:center;padding:1px 2px}
-    .sgi{height:26px;display:flex;align-items:flex-end;justify-content:center}
-    .sgi img{max-height:26px;max-width:95%}
-    .sgt{font-size:9px;border-top:1px dotted #555;padding-top:1px}
-    .sgn{font-size:9.5px;font-weight:700;min-height:12px}
-    .sgd{font-size:9px}
-    .sgx{font-size:8px;color:#333}
+    /* 🖊️ ช่องเซ็น (2026-10-13 · คำสั่ง user "ที่ว่างเหลือเยอะ ขยับชื่อลงมาเพื่อให้ลายเซ็นใหญ่ขึ้น")
+       เดิม .sgi ตรึง 26px แล้วชื่อ/วันที่ไปกองบนสุดของช่อง ⇒ ใต้ชื่อเหลือที่ว่าง ~70px ทิ้งเปล่า
+       และลายเซ็นจริงถูกบีบอยู่ในแถบ 26px · ตอนนี้บล็อกสูงเต็มช่อง (flex column) ·
+       **ที่เซ็นกินที่ที่เหลือทั้งหมด · ชื่อ-วันที่ปักไว้ล่างสุด** ⇒ เซ็นด้วยมือก็มีที่ · รูปเซ็นก็ใหญ่ขึ้น
+       🔴 ต้องมี height:100% ทั้ง td และตารางซ้อน ไม่งั้นเปอร์เซ็นต์ไม่มีฐานให้เทียบ แล้วกลับไปสูงเท่าเนื้อหา
+       (CSS นี้อยู่ใน template literal — ห้ามใส่ backtick ในคอมเมนต์ เคยทำพังมาแล้ว) */
+    .sgc{padding:0;position:relative}
+    .sgsp{height:58px}
+    .sgb{position:absolute;left:0;right:0;top:0;bottom:0;display:flex;flex-direction:column;justify-content:flex-end;text-align:center;padding:1px 2px}
+    .sgi{flex:1 1 auto;min-height:18px;display:flex;align-items:flex-end;justify-content:center;padding-bottom:1px}
+    .sgi img{max-height:100%;max-width:95%;object-fit:contain}
+    .sgt{font-size:9px;border-top:1px dotted #555;padding-top:1px;flex:0 0 auto}
+    .sgn{font-size:9.5px;font-weight:700;min-height:12px;flex:0 0 auto}
+    .sgd{font-size:9px;flex:0 0 auto}
+    .sgx{font-size:8px;color:#333;flex:0 0 auto}
+    .sgtab{height:100%}
     .note{min-height:34px}
     .ft{display:flex;justify-content:space-between;font-size:8.5px;margin-top:3px}
     .ph{page-break-before:always}
@@ -1576,12 +1644,14 @@ function printMoReportMtn(o, dparts = [], logo0, dlabor = [], cmt = NO_CMT, cost
         <div style="white-space:pre-wrap">${esc(o.report_note || o.problem_detail || '')}</div>
         ${cmtBlockHtml(cmt, esc, { fs: '9px' })}
       </td>
-      <td style="width:19%;padding:0">${sg('ผู้ออก M/O (ตัวบรรจง)', o.reported_by_name || o.reporter_prod, null, o.report_at)}</td>
-      <td style="width:19%;padding:0">${sg('ผู้จัดการต้นสังกัด', o.dept_manager_name, o.dept_manager_sign, o.dept_manager_at)}</td>
+      <td class="sgc" style="width:19%">${sg('ผู้ออก M/O (ตัวบรรจง)', o.reported_by_name || o.reporter_prod, null, o.report_at)}</td>
+      <td class="sgc" style="width:19%">${sg('ผู้จัดการต้นสังกัด', o.dept_manager_name, o.dept_manager_sign, o.dept_manager_at)}</td>
     </tr>
     <tr>
-      <td rowspan="2" style="border-top:none"></td>
-      <td colspan="2" style="padding:0">${sg('ผู้จัดการโรงงาน', o.plant_manager_name, o.plant_manager_sign, o.plant_manager_at, needsPlantMgrByCost(o) ? `งบเกิน ${PLANT_MGR_COST_LIMIT.toLocaleString()} — เซ็นแล้วส่งบัญชี` : 'MO. สร้าง ส่ง ผจก.โรงงานอนุมัติ')}</td>
+      <!-- ช่องซ้ายต่อจากกล่องรายละเอียดข้างบน (ไม่มีเส้นคั่น) = ที่เขียนด้วยมือต่อของผู้แจ้ง — ไม่ใช่ที่ว่างทิ้งเปล่า
+           🔴 เดิมเขียน rowspan="2" แต่ตารางนี้มีแค่ 2 แถว (กินแถวที่ไม่มีอยู่) ⇒ ตัดออก -->
+      <td style="border-top:none;height:56px"></td>
+      <td class="sgc" colspan="2">${sg('ผู้จัดการโรงงาน', o.plant_manager_name, o.plant_manager_sign, o.plant_manager_at, needsPlantMgrByCost(o) ? `งบเกิน ${PLANT_MGR_COST_LIMIT.toLocaleString()} — เซ็นแล้วส่งบัญชี` : 'MO. สร้าง ส่ง ผจก.โรงงานอนุมัติ')}</td>
     </tr>
   </table>
 
@@ -1601,12 +1671,15 @@ function printMoReportMtn(o, dparts = [], logo0, dlabor = [], cmt = NO_CMT, cost
         <div style="margin-top:4px">${line('วันที่เริ่ม', beD(o.repair_start_at), '75px')} ${line('เวลา', beTime(o.repair_start_at), '40px')}
           ${line('วันที่เสร็จ', beD(o.repair_done_at), '75px')} ${line('เวลา', beTime(o.repair_done_at), '40px')}</div>
       </td>
-      <td style="width:38%;padding:0">
-        <div style="padding:2px 4px;border-bottom:1px solid #000">${line('วันที่รับแจ้ง', beD(o.report_at), '85px')} ${line('เวลา', beTime(o.report_at), '40px')}</div>
-        <table class="nob" style="table-layout:fixed"><tr>
-          <td style="width:50%;border-right:1px solid #000">${sg('ผู้รับ MO (ซ่อมบำรุง)', o.accepted_by, null, o.accept_at)}</td>
-          <td style="width:50%">${sg('ผู้อนุมัติ (ผจก.ส่วนซ่อมบำรุง)', o.mo_approved_by, o.mo_approve_sign, o.mo_approved_at)}</td>
-        </tr></table>
+      <!-- คอลัมน์ขวาสูงตามคอลัมน์ซ้าย ⇒ แถบวันที่รับแจ้งคงที่ · ที่เหลือยกให้ 2 ช่องเซ็นทั้งหมด -->
+      <td style="width:38%;padding:0;height:100%">
+        <table class="nob sgtab" style="table-layout:fixed;height:100%">
+          <tr><td colspan="2" style="padding:2px 4px;border-bottom:1px solid #000;height:1px">${line('วันที่รับแจ้ง', beD(o.report_at), '85px')} ${line('เวลา', beTime(o.report_at), '40px')}</td></tr>
+          <tr>
+            <td class="sgc" style="width:50%;border-right:1px solid #000">${sg('ผู้รับ MO (ซ่อมบำรุง)', o.accepted_by, null, o.accept_at)}</td>
+            <td class="sgc" style="width:50%">${sg('ผู้อนุมัติ (ผจก.ส่วนซ่อมบำรุง)', o.mo_approved_by, o.mo_approve_sign, o.mo_approved_at)}</td>
+          </tr>
+        </table>
       </td>
     </tr>
   </table>
@@ -1644,16 +1717,21 @@ function printMoReportMtn(o, dparts = [], logo0, dlabor = [], cmt = NO_CMT, cost
       </table>
       <div style="margin-top:3px">${line('คะแนนรวม', ss.sum == null ? '' : `${ss.sum}/${ss.max}`, '60px')} ${line('คิดเป็น', ss.pct == null ? '' : `${ss.pct} %`, '55px')} ${line('ลงชื่อผู้ประเมิน', o.satisfaction_by, '85px')}</div>
     </td>
-    <td style="width:50%;padding:0">
-      <table class="nob" style="table-layout:fixed"><tr>
-        <td style="width:50%;border-right:1px solid #000;border-bottom:1px solid #000">${sg('ผู้ตรวจสอบ (หัวหน้าแผนก MTN)', o.mtn_head_name, o.mtn_head_sign, o.mtn_head_at)}</td>
-        <td style="width:50%;border-bottom:1px solid #000">${sg('รับรองโดย (ผจก.ส่วนซ่อมบำรุง)', o.approver_name, o.approve_sign, o.approve_at)}</td>
-      </tr></table>
-      <div style="padding:3px 5px">
-        <div>${line('ค่าใช้จ่ายทั้งหมดเป็นของหน่วยงาน', o.cost_owner_dept, '110px')}</div>
-        <div style="margin-top:2px">และได้รับมอบงานเรียบร้อยแล้ว</div>
-      </div>
-      <div style="padding:0">${sg('ผู้จัดการ', o.cost_mgr_name, o.cost_mgr_sign, o.cost_mgr_at)}</div>
+    <!-- คอลัมน์ขวาสูงตามตารางความพึงพอใจ ⇒ ยกที่ที่เหลือให้ช่องเซ็น 3 ช่อง (เดิมกองบนสุด เหลือที่ว่างใต้ชื่อ) -->
+    <td style="width:50%;padding:0;height:100%">
+      <table class="nob sgtab" style="table-layout:fixed;height:100%">
+        <tr>
+          <td class="sgc" style="width:50%;border-right:1px solid #000;border-bottom:1px solid #000">${sg('ผู้ตรวจสอบ (หัวหน้าแผนก MTN)', o.mtn_head_name, o.mtn_head_sign, o.mtn_head_at)}</td>
+          <td class="sgc" style="width:50%;border-bottom:1px solid #000">${sg('รับรองโดย (ผจก.ส่วนซ่อมบำรุง)', o.approver_name, o.approve_sign, o.approve_at)}</td>
+        </tr>
+        <tr>
+          <td colspan="2" style="padding:3px 5px;border:none;height:1px">
+            <div>${line('ค่าใช้จ่ายทั้งหมดเป็นของหน่วยงาน', o.cost_owner_dept, '110px')}</div>
+            <div style="margin-top:2px">และได้รับมอบงานเรียบร้อยแล้ว</div>
+          </td>
+        </tr>
+        <tr><td class="sgc" colspan="2" style="border:none">${sg('ผู้จัดการ', o.cost_mgr_name, o.cost_mgr_sign, o.cost_mgr_at)}</td></tr>
+      </table>
     </td>
   </tr></table>
 
@@ -2349,7 +2427,15 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, signatureUr
         🖨️ คอมเมนต์ข้างบนจะถูกพิมพ์ลงใบ MO ด้วย — <b>ต่อท้ายรายละเอียดที่ผู้แจ้งเขียนไว้</b> (ของเดิมไม่ถูกแก้ทับ) พร้อมชื่อผู้คอมเมนต์และเวลา
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
-        {canDelete('mtn_repair', 'manage_master', role) ? <button onClick={del} style={{ ...btnGhost, color: '#ef4444', borderColor: '#ef4444' }}>🗑 ลบใบนี้</button> : <span />}
+        {/* 🖥️ บัญชีกลางลบไม่ได้ — **ซ่อนปุ่มได้ แต่ห้ามซ่อนเหตุผล** (UI §6.9) ไม่งั้นช่างคิดว่าระบบพัง */}
+        {canDelete('mtn_repair', 'manage_master', role)
+          ? <button onClick={del} style={{ ...btnGhost, color: '#ef4444', borderColor: '#ef4444' }}>🗑 ลบใบนี้</button>
+          : isSharedAccount()
+            ? <span style={{ fontSize: 11.5, color: 'var(--muted)', alignSelf: 'center' }}
+                title="บัญชีกลางใช้ร่วมกันหลายคน ลบแล้วสอบกลับไม่ได้ว่าใครกด — ให้ล็อกอินด้วยบัญชีของตัวเองถ้าต้องลบจริง">
+                🔒 บัญชีกลางลบใบไม่ได้
+              </span>
+            : <span />}
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {can('improvements', 'manage', role) && <button onClick={() => onOpenImprovement(o)} style={{ ...btnGhost, ...(repeatIssue ? { color: '#a78bfa', borderColor: '#7c6cf0' } : {}) }}>💡 เปิดโปรเจคปรับปรุง</button>}
           <button onClick={async () => {
@@ -3156,6 +3242,12 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
   // ── ช่าง (มี dept) — ช่าง = พนักงานทีมช่าง (จากฐาน employees, แก้ที่หน้าพนักงาน) + ช่างเฉพาะกิจเดิม (mtn_technicians) ──
   const [ntech, setNtech] = useState({ name: '', dept: 'maintenance' });
   const legacyCount = techs.filter(t => !t.from_employee).length;
+  /* 📐 คอลัมน์ร่วมของลิสต์ช่าง — แถวเพิ่ม · แถวช่างจากฐานพนักงาน · แถวช่างเฉพาะกิจ ใช้ template เดียวกัน
+     (กติกาเต็ม UI-CONVENTIONS §6.28) เดิมแถวจากฐานพนักงานกับแถวเฉพาะกิจมีของท้ายแถวคนละอย่าง
+     ⇒ ช่องชื่อยืดคนละขนาด ชื่อช่างไม่ตรงเป็นคอลัมน์ · และแถว "+ เพิ่ม" ก็เยื้องจากการ์ด 11px */
+  const TECH_COLS = '260px 150px 150px 1fr 132px';
+  const techRowGrid = { display: 'grid', gridTemplateColumns: TECH_COLS, gap: 8, alignItems: 'center' };
+
   const TechList = () => (
     <div>
       <InfoMore style={{ marginBottom: 8 }} id="mtn_tech"
@@ -3163,27 +3255,37 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
         ช่าง = พนักงานที่ section เป็นทีมช่าง (MTN/JIG/DIE) · มีสกิลได้เหมือน operator
         <br />ด้านล่างเพิ่มได้เฉพาะ "ช่างเฉพาะกิจ" ที่ไม่ได้อยู่ในฐานพนักงาน
       </InfoMore>
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
-        <input value={ntech.name} onChange={e => setNtech(p => ({ ...p, name: e.target.value }))} placeholder="ชื่อช่างเฉพาะกิจ (นอกฐานพนักงาน)" style={{ ...inp, width: 260 }} />
-        <select value={ntech.dept} onChange={e => setNtech(p => ({ ...p, dept: e.target.value }))} style={{ ...inp, width: 150 }}><TeamOpts list={mtnDepts} /></select>
-        <button onClick={() => { if (!ntech.name) return; addRow('mtn_technicians', { name: ntech.name, dept: ntech.dept, sort_order: legacyCount + 1 }); setNtech({ name: '', dept: ntech.dept }); }} style={btnPri}>+ เพิ่มช่างเฉพาะกิจ</button>
+      <div style={{ overflowX: 'auto', paddingBottom: 2 }}>
+      <div style={{ width: 'max-content', minWidth: '100%' }}>
+      <div style={{ ...techRowGrid, marginBottom: 10, padding: '0 11px' }}>
+        <input value={ntech.name} onChange={e => setNtech(p => ({ ...p, name: e.target.value }))} placeholder="ชื่อช่างเฉพาะกิจ (นอกฐานพนักงาน)" style={{ ...inp, width: '100%', minWidth: 0 }} />
+        <select value={ntech.dept} onChange={e => setNtech(p => ({ ...p, dept: e.target.value }))} style={{ ...inp, width: '100%', minWidth: 0 }}><TeamOpts list={mtnDepts} /></select>
+        <div />
+        <div />
+        <button onClick={() => { if (!ntech.name) return; addRow('mtn_technicians', { name: ntech.name, dept: ntech.dept, sort_order: legacyCount + 1 }); setNtech({ name: '', dept: ntech.dept }); }} style={{ ...btnPri, width: '100%' }}>+ เพิ่ม</button>
       </div>
       {mtnDepts.map(dep => { const list = techs.filter(t => sameTeam(t.dept || 'maintenance', dep)); if (!list.length) return null; return (
         <div key={dep} style={{ marginBottom: 10 }}>
           <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--accent2)', marginBottom: 4 }}>🏢 {dep} ({list.length})</div>
           <div style={{ display: 'grid', gap: 6 }}>{list.map(it => it.from_employee ? (
-            <div key={it.id} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px', opacity: 0.9 }}>
-              <span style={{ flex: '2 1 180px', fontSize: 13 }}>{it.name}{it.emp_code ? <span style={{ color: 'var(--muted)', fontSize: 11 }}> · {it.emp_code}</span> : null}</span>
-              <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 4, background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.3)', fontWeight: 700, marginLeft: 'auto' }}>👤 จากฐานพนักงาน</span>
+            <div key={it.id} style={{ ...techRowGrid, background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px', opacity: 0.9 }}>
+              <span style={{ fontSize: 13, minWidth: 0 }}>{it.name}{it.emp_code ? <span style={{ color: 'var(--muted)', fontSize: 11 }}> · {it.emp_code}</span> : null}</span>
+              <span />
+              <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 4, background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.3)', fontWeight: 700, justifySelf: 'start' }}>👤 จากฐานพนักงาน</span>
+              <span />
+              <span />
             </div>
           ) : (
-            <div key={it.id} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px' }}>
-              <input defaultValue={it.name} onBlur={e => e.target.value !== it.name && updRow('mtn_technicians', it.id, { name: e.target.value })} style={{ ...inp, flex: '2 1 180px', width: 'auto' }} />
-              <select defaultValue={teamKeyOf(it.dept) || 'maintenance'} onChange={e => updRow('mtn_technicians', it.id, { dept: e.target.value })} style={{ ...inp, flex: '1 1 120px', width: 'auto' }}><TeamOpts list={mtnDepts} /></select>
+            <div key={it.id} style={{ ...techRowGrid, background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px' }}>
+              <input defaultValue={it.name} onBlur={e => e.target.value !== it.name && updRow('mtn_technicians', it.id, { name: e.target.value })} style={{ ...inp, width: '100%', minWidth: 0 }} />
+              <select defaultValue={teamKeyOf(it.dept) || 'maintenance'} onChange={e => updRow('mtn_technicians', it.id, { dept: e.target.value })} style={{ ...inp, width: '100%', minWidth: 0 }}><TeamOpts list={mtnDepts} /></select>
               <span style={{ fontSize: 11, color: 'var(--muted)' }}>เฉพาะกิจ</span>
-              <DeleteButton style={{ marginLeft: 'auto' }} onClick={() => delRow('mtn_technicians', it.id)} title="ลบ" />
+              <div />
+              <DeleteButton style={{ justifySelf: 'end' }} onClick={() => delRow('mtn_technicians', it.id)} title="ลบ" />
             </div>))}</div>
         </div>); })}
+      </div>
+      </div>
     </div>
   );
 
@@ -3192,26 +3294,37 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
 
   // ── ค่าแรงมาตรฐาน (standard price ค่าแรงซ่อม) ──
   const [nrate, setNrate] = useState({ name: '', unit: 'บาท/ชม.', price: '', dept: '' });
+  /* 📐 คอลัมน์ร่วมของลิสต์ค่าแรง (UI-CONVENTIONS §6.28) — แถวเพิ่มกับแถวข้อมูลต้องตรงกัน
+     เดิมแถวเพิ่มกว้างคงที่ 240/100/110/140 แต่แถวข้อมูลช่องชื่อ `flex: 2 1 200px` (ยืดได้) ⇒ ไม่ตรงกัน */
+  const LABOR_COLS = '240px 100px 110px 140px 1fr 132px';
+  const laborRowGrid = { display: 'grid', gridTemplateColumns: LABOR_COLS, gap: 8, alignItems: 'center' };
+
   const LaborList = () => (
     <div>
       <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>ราคามาตรฐานค่าแรงซ่อม — ช่างกรอกไว้ที่นี่ แล้วเลือกมาใส่ในใบ MO ขั้นซ่อม (พิมพ์ลงฟอร์ม FM-MTN-006 ช่องค่าซ่อม)</div>
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
-        <input value={nrate.name} onChange={e => setNrate(p => ({ ...p, name: e.target.value }))} placeholder="ประเภทงาน/ระดับช่าง" style={{ ...inp, width: 240 }} />
-        <input type="number" value={nrate.price} onChange={e => setNrate(p => ({ ...p, price: e.target.value }))} placeholder="ราคา" style={{ ...inp, width: 100 }} />
-        <input value={nrate.unit} onChange={e => setNrate(p => ({ ...p, unit: e.target.value }))} placeholder="หน่วย" style={{ ...inp, width: 110 }} />
-        <select value={nrate.dept} onChange={e => setNrate(p => ({ ...p, dept: e.target.value }))} style={{ ...inp, width: 140 }}><option value="">{ALL.team}</option><TeamOpts list={mtnDepts} /></select>
-        <button onClick={() => { if (!nrate.name) return; addRow('mtn_labor_rates', { name: nrate.name, price: Number(nrate.price) || 0, unit: nrate.unit, dept: nrate.dept || null, sort_order: laborRates.length + 1 }); setNrate({ name: '', unit: nrate.unit, price: '', dept: '' }); }} style={btnPri}>+ เพิ่มราคา</button>
+      <div style={{ overflowX: 'auto', paddingBottom: 2 }}>
+      <div style={{ width: 'max-content', minWidth: '100%' }}>
+      <div style={{ ...laborRowGrid, marginBottom: 10, padding: '0 11px' }}>
+        <input value={nrate.name} onChange={e => setNrate(p => ({ ...p, name: e.target.value }))} placeholder="ประเภทงาน/ระดับช่าง" style={{ ...inp, width: '100%', minWidth: 0 }} />
+        <input type="number" value={nrate.price} onChange={e => setNrate(p => ({ ...p, price: e.target.value }))} placeholder="ราคา" style={{ ...inp, width: '100%', minWidth: 0 }} />
+        <input value={nrate.unit} onChange={e => setNrate(p => ({ ...p, unit: e.target.value }))} placeholder="หน่วย" style={{ ...inp, width: '100%', minWidth: 0 }} />
+        <select value={nrate.dept} onChange={e => setNrate(p => ({ ...p, dept: e.target.value }))} style={{ ...inp, width: '100%', minWidth: 0 }}><option value="">{ALL.team}</option><TeamOpts list={mtnDepts} /></select>
+        <div />
+        <button onClick={() => { if (!nrate.name) return; addRow('mtn_labor_rates', { name: nrate.name, price: Number(nrate.price) || 0, unit: nrate.unit, dept: nrate.dept || null, sort_order: laborRates.length + 1 }); setNrate({ name: '', unit: nrate.unit, price: '', dept: '' }); }} style={{ ...btnPri, width: '100%' }}>+ เพิ่มราคา</button>
       </div>
       <div style={{ display: 'grid', gap: 6 }}>
         {laborRates.map(r => (
-          <div key={r.id} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px' }}>
-            <input defaultValue={r.name} onBlur={e => e.target.value !== r.name && updRow('mtn_labor_rates', r.id, { name: e.target.value })} style={{ ...inp, flex: '2 1 200px', width: 'auto' }} />
-            <input type="number" defaultValue={r.price} onBlur={e => Number(e.target.value) !== Number(r.price) && updRow('mtn_labor_rates', r.id, { price: Number(e.target.value) || 0 })} style={{ ...inp, width: 100 }} />
-            <input defaultValue={r.unit || ''} onBlur={e => e.target.value !== (r.unit || '') && updRow('mtn_labor_rates', r.id, { unit: e.target.value })} style={{ ...inp, width: 100 }} />
-            <select defaultValue={teamKeyOf(r.dept) || ''} onChange={e => updRow('mtn_labor_rates', r.id, { dept: e.target.value || null })} style={{ ...inp, width: 130 }}><option value="">{ALL.team}</option><TeamOpts list={mtnDepts} /></select>
-            <DeleteButton style={{ marginLeft: 'auto' }} onClick={() => delRow('mtn_labor_rates', r.id)} title="ลบ" />
+          <div key={r.id} style={{ ...laborRowGrid, background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px' }}>
+            <input defaultValue={r.name} onBlur={e => e.target.value !== r.name && updRow('mtn_labor_rates', r.id, { name: e.target.value })} style={{ ...inp, width: '100%', minWidth: 0 }} />
+            <input type="number" defaultValue={r.price} onBlur={e => Number(e.target.value) !== Number(r.price) && updRow('mtn_labor_rates', r.id, { price: Number(e.target.value) || 0 })} style={{ ...inp, width: '100%', minWidth: 0 }} />
+            <input defaultValue={r.unit || ''} onBlur={e => e.target.value !== (r.unit || '') && updRow('mtn_labor_rates', r.id, { unit: e.target.value })} style={{ ...inp, width: '100%', minWidth: 0 }} />
+            <select defaultValue={teamKeyOf(r.dept) || ''} onChange={e => updRow('mtn_labor_rates', r.id, { dept: e.target.value || null })} style={{ ...inp, width: '100%', minWidth: 0 }}><option value="">{ALL.team}</option><TeamOpts list={mtnDepts} /></select>
+            <div />
+            <DeleteButton style={{ justifySelf: 'end' }} onClick={() => delRow('mtn_labor_rates', r.id)} title="ลบ" />
           </div>))}
         {!laborRates.length && <div style={{ color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีราคามาตรฐาน — เพิ่มด้านบน</div>}
+      </div>
+      </div>
       </div>
     </div>
   );
@@ -3291,6 +3404,7 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
       ...fields.map(fl => `${fl.w || 200}px`),
       ...(teamed ? ['190px'] : []),                 // ทีมเจ้าของแถว
       ...(shared && teamed ? ['210px'] : []),       // ชิป 👁 ทีมที่เห็นด้วย (ชิปพับบรรทัดในช่องตัวเอง ไม่ดันคอลัมน์อื่น)
+      '1fr',                                        // รางยืด — ดันปุ่มท้ายแถวไปขวาสุดเมื่อจอกว้าง (แคบลงก็ยุบเป็น 0 แล้วเลื่อนแทน)
       '132px',                                      // ปุ่มลบ / 🔒 ดูอย่างเดียว / ปุ่ม + เพิ่ม
     ].join(' ');
     const rowGrid = { display: 'grid', gridTemplateColumns: GRID_COLS, gap: 8, alignItems: 'center' };
@@ -3339,6 +3453,7 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
             </select>
           )}
           {shared && teamed ? <div /> : null}
+          <div />
           <button onClick={() => {
             if (!nw[fields[0].k]) return;
             // ทีมของแถวใหม่: ที่เลือกในช่อง หรือ default = ทีมที่กำลังกรองอยู่ (เพิ่มของทีมตัวเองได้เลย)
@@ -3394,6 +3509,7 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
                   })}
                 </div>);
             })()}
+            <div />
             {ok
               ? <DeleteButton style={{ justifySelf: 'end' }} onClick={() => delRow(table, it.id)} title="ลบ" />
               : <span title={lockNote(it)} style={{ justifySelf: 'end', fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>🔒 ดูอย่างเดียว</span>}

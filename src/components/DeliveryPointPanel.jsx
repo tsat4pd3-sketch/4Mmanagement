@@ -61,11 +61,20 @@ export default function DeliveryPointPanel({ lineName, lines = [] }) {
   // จุดส่งผูกได้เฉพาะไลน์ leaf — dropdown เพิ่มไลน์ต้องกรองไลน์แม่ออกตั้งแต่ต้น (กรอง dropdown ด้วย ไม่ใช่แค่ข้อมูล)
   const leafLines = useMemo(() => lines.filter(l => isLeafLine(lines, l.name)), [lines]);
 
+  /* 🔴 ขอบเขตที่ "เห็น" ต้องกว้างกว่าขอบเขตที่ "ตั้งได้" (13/10 · feedback หน้างาน "ตั้งไปแล้วหายไปเลย")
+     จุดส่งผูกได้เฉพาะไลน์ลูก (leaf) แต่คนยืนดูที่ **ไลน์แม่** ได้ และแผงนี้เองก็ชวนให้ตั้ง
+     "จุดเดียวรับของให้ทั้งแผนก" ตอนอยู่ที่ไลน์แม่ ⇒ ถ้าลิสต์กรองด้วย `contains([lineName])` ตรงตัว
+     จุดที่เพิ่งบันทึก (line_names = ชื่อไลน์ลูก) จะหายจากจอทันทีที่กดบันทึก = ดูเหมือนบันทึกไม่ติด
+     (เกิดจริง: GOR → "ASSY GOR 297" · HYDROFORM → "Hydroform 1+2") ⇒ ใช้ `overlaps` กับ ไลน์เอง + ลูกทุกชั้น
+     ⚠️ deps ของ useCallback ห้ามเป็น array (กฎ DB ข้อ 9) ⇒ ส่งเป็นสตริงแล้วแตกข้างใน */
+  const scopeKey = useMemo(() => [...new Set([lineName, ...leafKids])].filter(Boolean).join('\u0001'),
+    [lineName, leafKids]);
+
   const load = useCallback(async () => {
     if (!lineName) return;
     setLoadErr('');
     const [{ data, error }, sl] = await Promise.all([
-      supabaseDR.from('line_delivery_points').select('*').contains('line_names', [lineName]).order('sort_order').order('name'),
+      supabaseDR.from('line_delivery_points').select('*').overlaps('line_names', scopeKey.split('\u0001')).order('sort_order').order('name'),
       loadStorageLocations(),   // master → cache กลาง (ห้ามยิงตรง · ดู utils/useStorageLocations.js)
     ]);
     setSlocs(sl || []);
@@ -75,7 +84,7 @@ export default function DeliveryPointPanel({ lineName, lines = [] }) {
     }
     setMissing(false);
     setRows(data || []);
-  }, [lineName]);
+  }, [lineName, scopeKey]);
 
   useEffect(() => { if (open) load(); }, [open, load]);
   useEffect(() => { setForm(null); }, [lineName]);
@@ -158,18 +167,31 @@ export default function DeliveryPointPanel({ lineName, lines = [] }) {
             <div style={{ fontSize: 12.5, color: 'var(--text2)', background: 'var(--bg3)', border: '1px dashed var(--border2)', borderRadius: 8, padding: '10px 12px' }}>
               🏢 <b>{lineName}</b> เป็นไลน์แม่ (มีไลน์ย่อย {kids.length} ไลน์) — ของถูกส่งเข้าไลน์ย่อยเสมอ
               จุดส่งจึงผูกกับ<b>ไลน์ย่อย</b>: <span>{kids.join(' · ')}</span>
-              {canManage && leafKids.length > 0 && (
-                <div style={{ marginTop: 10 }}>
-                  <button onClick={() => setForm({ ...emptyForm(null), line_names: leafKids })}
-                    style={btnSt('var(--accent)', 'var(--accent-ink)')}>
-                    + ตั้งจุดเดียวให้ไลน์ย่อยทั้ง {leafKids.length} ไลน์
-                  </button>
-                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6, lineHeight: 1.45 }}>
-                    ใช้เมื่อ<b>แร็ค/จุดวางเดียวรับของให้ทั้งพื้นที่</b> — ระบบจะติ๊กไลน์ย่อยให้ครบ แก้ออกได้
-                    · ถ้าแต่ละไลน์มีจุดของตัวเอง ให้ไปตั้งทีละไลน์แทน
+              {/* 🔴 14/10: ปุ่มนี้เคยเด่นค้างไว้แม้ไลน์ย่อยมีจุดครบแล้ว = จอชวนกดซ้ำ → ได้จุดซ้ำซ้อน
+                  (เกิดจริงที่ GOR: Assy GOR + Laser GOR มีจุดของตัวเองแล้ว แต่ปุ่มยังเชียร์ให้ตั้งจุดรวม)
+                  ⇒ ไลน์ย่อยที่ยังไม่มีจุด = ตัวตัดสินว่าจะเชียร์หรือแค่บอก · **ห้ามซ่อนปุ่มทิ้ง**
+                     (แร็ครวมของทั้งพื้นที่ "เพิ่มทีหลัง" มีจริง) ให้ลดระดับเป็นปุ่มรองแทน */}
+              {canManage && leafKids.length > 0 && (() => {
+                const covered = new Set(rows.flatMap(r => (Array.isArray(r.line_names) ? r.line_names : [])));
+                const todo = leafKids.filter(n => !covered.has(n));
+                const allSet = todo.length === 0;
+                return (
+                  <div style={{ marginTop: 10 }}>
+                    <button onClick={() => setForm({ ...emptyForm(null), line_names: leafKids })}
+                      style={allSet ? btnSt('var(--bg2)', 'var(--text2)', 'var(--border)') : btnSt('var(--accent)', 'var(--accent-ink)')}>
+                      + ตั้งจุดเดียวให้ไลน์ย่อยทั้ง {leafKids.length} ไลน์
+                    </button>
+                    <div style={{ fontSize: 11, color: allSet ? '#22c55e' : 'var(--muted)', marginTop: 6, lineHeight: 1.45 }}>
+                      {allSet
+                        ? <>✅ <b>ไลน์ย่อยมีจุดส่งครบทุกไลน์แล้ว</b> — จะเพิ่ม<b>จุดที่ 2</b> ของไลน์ไหน ให้เลือกไลน์นั้นข้างบนแล้วกด “+ เพิ่มจุดส่ง”
+                            · ปุ่มนี้ไว้ใช้ตอนมี<b>แร็ครวม</b>ที่รับของให้ทุกไลน์พร้อมกันเท่านั้น</>
+                        : <>ใช้เมื่อ<b>แร็ค/จุดวางเดียวรับของให้ทั้งพื้นที่</b> — ระบบจะติ๊กไลน์ย่อยให้ครบ แก้ออกได้
+                            · ถ้าแต่ละไลน์มีจุดของตัวเอง ให้ไปตั้งทีละไลน์แทน
+                            · <b>ยังไม่มีจุด {todo.length} ไลน์:</b> {todo.join(' · ')}</>}
+                    </div>
                   </div>
-                </div>
-              )}
+                );
+              })()}
             </div>
           )}
 
@@ -183,7 +205,10 @@ export default function DeliveryPointPanel({ lineName, lines = [] }) {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(260px,100%), 1fr))', gap: 8, alignContent: 'start', marginTop: 8 }}>
               {rows.map(r => {
                 const off = r.is_active === false;
-                const others = (Array.isArray(r.line_names) ? r.line_names : []).filter(n => n !== lineName);
+                const pLines = Array.isArray(r.line_names) ? r.line_names : [];
+                const others = pLines.filter(n => n !== lineName);
+                // ยืนที่ไลน์แม่ = จุดนี้เป็นของไลน์ลูก (ไม่ใช่ "ใช้ร่วมกับ") — เขียนให้ตรงว่าของไลน์ไหน
+                const viaChild = !pLines.includes(lineName);
                 return (
                   <div key={r.id} style={{ border: `1px solid ${off ? 'var(--border)' : 'rgba(34,197,94,0.35)'}`, borderRadius: 10, padding: '9px 12px', background: off ? 'var(--bg3)' : 'var(--bg2)', opacity: off ? 0.7 : 1 }}>
                     <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
@@ -201,10 +226,14 @@ export default function DeliveryPointPanel({ lineName, lines = [] }) {
                     {!r.storage_location && (
                       <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 3, lineHeight: 1.45 }}>
                         ด่าน "ส่งถูกพื้นที่ไหม" ยังไม่ทำงานกับจุดนี้ — ลงทะเบียนพื้นที่ของไลน์ที่
-                        <Link to="/line-stock?tab=zones" style={{ color: '#f59e0b', fontWeight: 800 }}> 📦 Line Stock → 🏬 โซนคลัง</Link> แล้วกด ✏️ แก้ + บันทึกจุดนี้ซ้ำ
+                        <Link to="/line-stock?tab=zones" style={{ color: '#f59e0b', fontWeight: 800 }}> 📦 สต๊อกในไลน์ → 🏬 พื้นที่ SAP / โซนคลัง → “ทะเบียนรหัสคลัง”</Link> แล้วกด ✏️ แก้ + บันทึกจุดนี้ซ้ำ
                       </div>
                     )}
-                    {others.length > 0 && <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>🔀 ใช้ร่วมกับ {others.join(' · ')}</div>}
+                    {others.length > 0 && (
+                      <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>
+                        {viaChild ? '📍 ของไลน์ย่อย: ' : '🔀 ใช้ร่วมกับ '}{others.join(' · ')}
+                      </div>
+                    )}
                     {r.note && <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>{r.note}</div>}
                     {canManage && (
                       <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
@@ -267,7 +296,7 @@ export default function DeliveryPointPanel({ lineName, lines = [] }) {
                       : codes.length === 1
                         ? <>🏬 พื้นที่ SAP: <b style={{ fontFamily: 'monospace' }}>{codes[0]}</b>{info.find(i => i.s)?.s.via !== info.find(i => i.s)?.n ? ` (ตกทอดจาก ${info.find(i => i.s).s.via})` : ''}</>
                         : null}
-                    {unmapped.length > 0 && <span style={{ color: '#f59e0b' }}>{codes.length ? ' · ' : ''}⚠ {unmapped.join(', ')} ยังไม่ผูกรหัสคลัง SAP (ผูกที่ 📦 Line Stock → 🏬 โซนคลัง)</span>}
+                    {unmapped.length > 0 && <span style={{ color: '#f59e0b' }}>{codes.length ? ' · ' : ''}⚠ {unmapped.join(', ')} ยังไม่ผูกรหัสคลัง SAP (ผูกที่ 📦 สต๊อกในไลน์ → 🏬 พื้นที่ SAP / โซนคลัง → “ทะเบียนรหัสคลัง” กด ✏️ ที่รหัสแล้วติ๊กไลน์)</span>}
                   </div>
                 );
               })()}

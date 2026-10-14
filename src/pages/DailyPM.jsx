@@ -231,12 +231,18 @@ export default function DailyPM() {
                     <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{row.line_name === '—' ? '⚠ ยังไม่ระบุไลน์' : row.line_name}</div>
                     <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: `${meta.color}18`, color: meta.color, border: `1px solid ${meta.color}40` }}
                       title={row.status === 'idle'
-                        ? (row.hasSession ? 'เปิดกะแล้ว แต่ยังไม่มีใบผลิตเปิด — นาฬิกาตรวจเริ่มนับตอนเปิดใบผลิตใบแรก'
-                                          : 'ยังไม่มีการเปิดกะของไลน์นี้ในกะปัจจุบัน')
+                        ? (row.hasSession === true ? 'เปิดกะแล้ว แต่ยังไม่มีใบผลิตเปิด — นาฬิกาตรวจเริ่มนับตอนเปิดใบผลิตใบแรก'
+                          : row.hasSession === false ? 'ยังไม่มีการเปิดกะของไลน์นี้ (นับไลน์ลูกด้วยแล้ว) ในกะปัจจุบัน'
+                          : 'อ่านข้อมูลการเปิดกะไม่ได้ — บอกไม่ได้ว่าไลน์นี้เดินอยู่หรือไม่')
                         : undefined}>
                       {row.status === 'red' && <span className="dt-alarm-icon" style={{ marginRight: 3 }}>🚨</span>}
-                      {/* idle 2 แบบ ต้องอ่านออกจากป้ายเลย ไม่ใช่ให้เดา (เคสจริง: กะเดินอยู่แต่จอบอกยังไม่เริ่มผลิต) */}
-                      {row.status === 'idle' ? (row.hasSession ? 'เปิดกะแล้ว · ยังไม่มีใบผลิต' : 'ยังไม่เปิดกะ') : meta.label}
+                      {/* 🔴 idle มี 3 แบบ ต้องอ่านออกจากป้ายเลย ไม่ใช่ให้เดา (เคสจริง: กะเดินอยู่แต่จอบอกยังไม่เริ่มผลิต)
+                          `hasSession === null` = "ไม่รู้" (ไม่ได้ส่ง openSessionLines มา) **ห้ามเขียนว่า "ยังไม่เปิดกะ"**
+                          — เป็นคำยืนยันที่สร้างจากข้อมูลที่ไม่มี (กฎ utils/dailyCheckDay.js ข้อ 1) */}
+                      {row.status === 'idle'
+                        ? (row.hasSession === true ? 'เปิดกะแล้ว · ยังไม่มีใบผลิต'
+                          : row.hasSession === false ? 'ยังไม่เปิดกะ' : '❔ ไม่รู้ว่าเปิดกะหรือไม่')
+                        : meta.label}
                     </span>
                   </div>
                   <div style={{ marginTop: 10, fontSize: 13, color: 'var(--text2)' }}>

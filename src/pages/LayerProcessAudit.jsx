@@ -2,7 +2,7 @@ import { useState, useEffect, useContext, useMemo, useRef } from 'react';
 import { LPA_LAYERS } from '../utils/prodRoutine';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
-import { can } from '../utils/permissions';
+import { can, canDelete as canDeleteUtil } from '../utils/permissions';
 import { toast } from '../components/Toast';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
@@ -26,6 +26,9 @@ import { DeleteButton } from '../components/IconButton';
 /* 🔴 ห้ามถอด — ด่านก่อนลบข้อในทะเบียน + ตัวกู้ข้อที่ถูกถอดออกจากเช็คลิสต์ให้ใบย้อนหลัง
    (เคส 12/10: ลบข้อ common 2 ข้อ = หายจากใบตรวจทุกไลน์ · ดู src/utils/lpaQuestionRefs.js) */
 import { loadLpaQuestionRefs, lpaQuestionBlockMessage, lpaDeleteConfirmText, savedOnlyAnswers } from '../utils/lpaQuestionRefs';
+/* 🔴 ช่องว่างในตารางตรวจรายวันต้องแยกได้ว่า "ไม่ได้ตรวจ / ไม่ได้ผลิต / ไม่มีแผนตรวจ" (13/10 · คำสั่ง user) */
+import { checkDayState, CHECK_DAY_META, CHECK_DAY_LEGEND, summarizeCheckDays, checkDaysNote } from '../utils/dailyCheckDay';
+import { loadRunDays, ranOn } from '../utils/runDays';
 
 /* ══════════════════════════════════════════════════════════════
    📋 Layer Process Audit (LPA) — paperless แทนฟอร์มกระดาษ 2 ใบ:
@@ -117,7 +120,11 @@ export default function LayerProcessAudit() {
   const { role, lineId: userLineId, sections: scopeSecs = [], fullName } = useContext(UserContext);
   const canRecord = can('lpa', 'record', role);
   const canManage = can('lpa', 'manage', role);
-  const canDelete = can('lpa', 'delete', role);
+  /* 🖥️🔴 ต้องผ่าน `canDelete()` ของกลาง (utils/permissions.js) — เดิมประกาศตัวแปรชื่อ `canDelete`
+     ทับ util แล้วเรียกแค่ `can(...)` ⇒ อ่านโค้ดเหมือนมีด่าน แต่ **ด่าน "บัญชีกลางห้ามลบ" ไม่ทำงาน**
+     (ออดิท 13/10 เจอแบบนี้ 5 หน้า) · เปลี่ยนชื่อตัวแปรเป็น `mayDelete` + เรียก util ผ่าน alias
+     ⚠️ ห้ามตั้งชื่อตัวแปรท้องถิ่นว่า `canDelete` อีก — มีด่าน `no-shadow-candelete` */
+  const mayDelete = canDeleteUtil('lpa', 'manage', role);
   // 📜 ชื่อที่เคยบันทึกไว้ (Main lpa_*) — ผู้ตรวจ/4 ชั้นที่ไม่มีใน profiles (ย้ายจากกระดาษ) ยังเลือกซ้ำได้ (2026-09-07)
   const auditorHist = useColumnHistory(supabase, 'lpa_audits', 'auditor_name');
   const layerHist = {
@@ -143,6 +150,8 @@ export default function LayerProcessAudit() {
   /* plan */
   const [plan, setPlan] = useState(null);           // แถว lpa_plans ของ (line, shift, month)
   const [planDays, setPlanDays] = useState({});     // { day: {station, plan_leader, ...} }
+  /* วันที่ไลน์นี้ "เปิดกะจริง" ในเดือนที่ดูอยู่ — `null` = อ่านไม่สำเร็จ (⇒ ช่องเป็น ❔ ห้ามเดาว่าไม่ผลิต) */
+  const [runs, setRuns] = useState(null);
   const [monthAudits, setMonthAudits] = useState([]); // audits+answers ของเดือนที่เลือก
   const [savingPlan, setSavingPlan] = useState(false);
   /* แท็บแผน = มองทีละไตรมาส (3 เดือน) — คำสั่ง user 2026-07-20 */
@@ -253,10 +262,13 @@ export default function LayerProcessAudit() {
     if (!selLine) return;
     const first = dateOf(selMonth, 1);
     const last = dateOf(selMonth, daysInMonth(selMonth));
-    const [{ data: pl }, { data: aud }] = await Promise.all([
+    const [{ data: pl }, { data: aud }, runRes] = await Promise.all([
       supabase.from('lpa_plans').select('*, lpa_plan_days(*)').eq('line_name', selLine).eq('shift', selShift).eq('month_key', selMonth).maybeSingle(),
       supabase.from('lpa_audits').select('*, lpa_audit_answers(*)').eq('line_name', selLine).eq('shift', selShift).gte('audit_date', first).lte('audit_date', last).order('audit_date'),
+      // ตารางกะอยู่ **คนละ project (DR)** — ล้มแล้วต้องเป็น "ไม่รู้" ไม่ใช่ "ไม่ได้ผลิต"
+      loadRunDays({ lineNames: [selLine], from: first, to: last }),
     ]);
+    setRuns(runRes);
     setPlan(pl || null);
     const dm = {};
     (pl?.lpa_plan_days || []).forEach(d => { dm[d.day] = d; });
@@ -598,7 +610,7 @@ export default function LayerProcessAudit() {
   };
 
   const deleteAudit = async () => {
-    if (!draft?.id || !canDelete) return;
+    if (!draft?.id || !mayDelete) return;
     if (!window.confirm(`ลบผลตรวจ ${thDate(auditDate)} ${SHIFT_META[selShift]} ชั้น ${LAYERS.find(l => l.key === auditLayer)?.label}?`)) return;
     const { error } = await supabase.from('lpa_audits').delete().eq('id', draft.id);
     if (error) { toast.error('ลบไม่สำเร็จ: ' + error.message); return; }
@@ -1052,7 +1064,7 @@ ${issuesHtml}
           {draft?.id && (
             <div style={{ fontSize: 12, color: '#22c55e', marginBottom: 8, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
               ✅ วันนี้บันทึกผลตรวจชั้นนี้ไว้แล้ว — แก้ไขแล้วกดบันทึกทับได้
-              {canDelete && <button onClick={deleteAudit} style={{ ...btnGray, color: '#ef4444', border: '1px solid rgba(239,68,68,0.4)', fontSize: 12, padding: '4px 10px' }}>🗑 ลบผลตรวจนี้</button>}
+              {mayDelete && <button onClick={deleteAudit} style={{ ...btnGray, color: '#ef4444', border: '1px solid rgba(239,68,68,0.4)', fontSize: 12, padding: '4px 10px' }}>🗑 ลบผลตรวจนี้</button>}
             </div>
           )}
 
@@ -1157,6 +1169,24 @@ ${issuesHtml}
           const m = a?.answer ? ansMeta(a.answer) : null;
           return <td key={key} style={{ ...cellStyle, color: m?.color || 'var(--muted)', fontWeight: a?.answer && a.answer !== 'Y' ? 800 : 500, ...extra }} title={a?.note || ''}>{a?.answer === 'NA' ? 'N/A' : a?.answer || ''}</td>;
         };
+        /* 🔴 ช่องว่างในตารางนี้เคยปน 4 ความหมาย — แยกให้ชัดตาม `utils/dailyCheckDay.js` (13/10)
+           · ชั้นที่ตรวจ "ทุกวัน" คือ leader ⇒ สถานะรายวันตัดสินจากใบของ leader
+           · ไม่มีแผนของเดือนนี้เลย = บอกไม่ได้ว่าวันไหนต้องตรวจ ⇒ ถือว่า `not_planned` ทั้งเดือน
+             แล้วขึ้นแถบบอก (เดาเป็น "ต้องตรวจทุกวัน" = ทาแดงทั้งเดือนให้ไลน์ที่ยังไม่ได้วางแผน) */
+        const todayStr = getWorkDate();
+        const dayStateOf = (d) => {
+          const ds = dateOf(selMonth, d);
+          return checkDayState({
+            hasResult: !!leaderAud[d],
+            isFuture:  ds > todayStr,
+            isOff:     isHoliday(ds),
+            planned:   plan ? !!planDays[d]?.plan_leader : false,
+            ran:       ranOn(runs, ds, selShift),
+          });
+        };
+        const dayStates = daysArr.map(dayStateOf);
+        const sum = summarizeCheckDays(dayStates);
+
         const issues = [];
         monthAudits.forEach(a => (a.lpa_audit_answers || []).forEach(x => { if (['N', 'T'].includes(x.answer)) issues.push({ date: a.audit_date, layer: a.layer, q: x.question_text, ans: x.answer, note: x.note }); }));
         issues.sort((a, b) => a.date.localeCompare(b.date));
@@ -1167,8 +1197,43 @@ ${issuesHtml}
                 ตรวจแล้วเดือนนี้: <b style={{ color: 'var(--text)' }}>{monthAudits.length}</b> ครั้ง
                 (Leader {monthAudits.filter(a => a.layer === 'leader').length} · SV {monthAudits.filter(a => a.layer === 'supervisor').length} · MGR {monthAudits.filter(a => a.layer === 'manager').length} · GM {monthAudits.filter(a => a.layer === 'gm').length})
                 {issues.length > 0 && <span style={{ color: '#ef4444', fontWeight: 700 }}> · พบปัญหา N/T {issues.length} รายการ</span>}
+                {/* 🔴 "ตรวจแล้ว N ครั้ง" ลอยๆ ตอบไม่ได้ว่าขาดกี่วัน — ต้องมีตัวหาร (ดู utils/dailyCheckDay.js) */}
+                <div style={{ marginTop: 3, fontSize: 12, color: sum.missed ? 'var(--red)' : 'var(--muted)' }}>
+                  {checkDaysNote(sum)}{sum.pct != null && <> · ความครบ <b>{sum.pct}%</b></>}
+                </div>
+                {!plan && (
+                  <div style={{ marginTop: 3, fontSize: 11.5, color: 'var(--amber)' }}>
+                    ⚠️ เดือนนี้ยังไม่มีแผนตรวจของ {selLine} ({SHIFT_META[selShift]}) — บอกไม่ได้ว่าวันไหนต้องตรวจ
+                    จึงยังไม่นับวันขาดตรวจ · ไปตั้งที่แท็บ <b>แผนตรวจ</b>
+                  </div>
+                )}
               </div>
               <button onClick={printReport} disabled={printing} style={btnBlue}>{printing ? '...' : `🖨️ พิมพ์รายงาน ${lpaFormCode}`}</button>
+            </div>
+            {/* 🔴 คำอธิบายสัญลักษณ์ 2 ชุด แยกให้เห็นว่าเป็นคนละชั้นข้อมูล (คำสั่ง user 13/10)
+                — "คำตอบ" = ไปตรวจแล้วเจออะไร · "สถานะวัน" = วันนั้นต้องตรวจไหม/มีใครไปตรวจไหม */}
+            <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center', fontSize: 11.5, color: 'var(--muted)', marginBottom: 8 }}>
+              <span>
+                <b style={{ color: 'var(--text2)' }}>คำตอบในช่อง:</b>{' '}
+                {ANSWERS.map(a => (
+                  <span key={a.key} style={{ marginRight: 8 }}>
+                    <b style={{ color: a.color }}>{a.label}</b> {a.desc.replace(/\s*\(.*\)$/, '')}
+                  </span>
+                ))}
+              </span>
+              <span style={{ borderLeft: '1px solid var(--border)', paddingLeft: 14 }}>
+                <b style={{ color: 'var(--text2)' }}>สถานะวัน (แถวบนสุด):</b>{' '}
+                {CHECK_DAY_LEGEND.map(k => {
+                  const m = CHECK_DAY_META[k];
+                  return (
+                    <span key={k} style={{ marginRight: 8 }}>
+                      <span style={{ display: 'inline-block', padding: '0 3px', borderRadius: 4, border: `1px solid ${m.color}`, background: m.tint || undefined, color: m.color, fontWeight: 700 }}>{m.mark}</span>{' '}
+                      {m.label}
+                    </span>
+                  );
+                })}
+                · <span style={{ display: 'inline-block', width: 11, height: 11, background: 'rgba(46,125,50,0.25)', border: '1px solid var(--border)', verticalAlign: -1 }} /> วันหยุดโรงงาน
+              </span>
             </div>
             <div style={{ overflowX: 'auto' }}>
               <table style={{ borderCollapse: 'collapse', minWidth: 1100 }}>
@@ -1181,6 +1246,34 @@ ${issuesHtml}
                     <th style={{ ...cellStyle, background: 'rgba(148,163,184,0.15)' }}>M</th>
                     <th style={{ ...cellStyle, background: 'rgba(245,158,11,0.15)' }}>Q</th>
                   </tr>
+                  {/* 🔴 แถว "สถานะวัน" — ตอบให้ได้ว่าช่องว่างข้างล่างแปลว่าอะไร
+                      (ขาด = ต้องตรวจแต่ไม่ได้ตรวจ · NP = ไม่ได้เปิดกะ/ไม่ได้ผลิต · ? = ไม่รู้ว่าผลิตไหม
+                       · · = ไม่มีแผนตรวจวันนั้น · ว่าง = ตรวจแล้ว ให้ดูคำตอบข้างล่าง)
+                      🔴 ห้ามใช้ ✗ / – / N/A — ชนพจนานุกรมคำตอบ (ดูกฎข้อ 4 ใน utils/dailyCheckDay.js)
+                      กันอ่านสลับ 3 ชั้น: คำย่อไม่ซ้ำคำตอบ + ใส่กรอบ chip (คำตอบไม่มีกรอบ)
+                      + ทา `tint` ทั้งคอลัมน์ (คำตอบไม่เคยทาทั้งคอลัมน์) */}
+                  <tr style={{ fontSize: 11 }}>
+                    <th style={{ ...cellStyle, minWidth: 40 }} />
+                    <th style={{ ...cellStyle, textAlign: 'left', position: 'sticky', left: 0, background: 'var(--card)', zIndex: 2, fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}>
+                      สถานะวัน
+                    </th>
+                    {daysArr.map((d, i) => {
+                      const st = dayStates[i];
+                      const meta = CHECK_DAY_META[st];
+                      return (
+                        <th key={d} title={meta.label}
+                          style={{ ...cellStyle, fontSize: 11, fontWeight: 700, color: meta.color,
+                            padding: '3px 1px', background: meta.tint || undefined }}>
+                          {meta.mark && (
+                            <span style={{ display: 'inline-block', padding: '0 3px', borderRadius: 4,
+                              border: `1px solid ${meta.color}`, lineHeight: '14px', fontSize: 11 }}>{meta.mark}</span>
+                          )}
+                        </th>
+                      );
+                    })}
+                    {[1, 2, 3, 4].map(w => <th key={w} style={cellStyle} />)}
+                    <th style={cellStyle} /><th style={cellStyle} />
+                  </tr>
                 </thead>
                 <tbody>
                   {CATEGORIES.map(cat => {
@@ -1192,9 +1285,9 @@ ${issuesHtml}
                         <tr key={q.id}>
                           <td style={cellStyle}>{q.seq}</td>
                           <td style={{ ...cellStyle, textAlign: 'left', fontSize: 12, color: cat.key === 'special' ? '#f87171' : 'var(--text2)', position: 'sticky', left: 0, background: 'var(--card)', zIndex: 1 }}>{q.question}</td>
-                          {daysArr.map(d => isHoliday(dateOf(selMonth, d))
+                          {daysArr.map((d, di) => isHoliday(dateOf(selMonth, d))
                             ? <td key={d} style={{ ...cellStyle, background: 'rgba(46,125,50,0.25)' }}></td>
-                            : ansTd(leaderAud[d], q.id, {}, d))}
+                            : ansTd(leaderAud[d], q.id, { background: CHECK_DAY_META[dayStates[di]].tint || undefined }, d))}
                           {svAud.map((a, i) => ansTd(a, q.id, { background: 'rgba(34,197,94,0.1)' }, 'w' + i))}
                           {ansTd(mgrAud, q.id, { background: 'rgba(148,163,184,0.1)' })}
                           {ansTd(gmAud, q.id, { background: 'rgba(245,158,11,0.1)' })}

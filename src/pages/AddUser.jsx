@@ -21,7 +21,7 @@ import InfoMore from '../components/InfoMore';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
 import FilterBar from '../components/FilterBar';
-import { identityDiff, identityFallbacks, syncPatch } from '../utils/identitySync';
+import { identityDiff, identityFallbacks, syncPatch, dualMeaningInfo } from '../utils/identitySync';
 import SearchInput from '../components/SearchInput';
 import { ALL } from '../utils/filterLabels';
 /* ทีมช่างซ่อม (profiles.mtn_teams) — เดิมมีหน้าที่เดียวคือ "แยกคิวใบแจ้งซ่อม MO ให้ถูกทีม"
@@ -270,7 +270,9 @@ export default function AddUser() {
     }
     return String(v);
   };
-  /** ดึงตัวตนจากฐานพนักงานมาทับบัญชี — ฐานพนักงานคือค่าจริง (หัวหน้าแผนกดูแล) */
+  /** ดึงตัวตนจากฐานพนักงานมาทับบัญชี — **เฉพาะช่องที่ต้องตรงกันจริง** (ทีม/ไลน์/ส่วนงาน)
+   *  🔴 `position` / `org_node_id` ไม่อยู่ใน `IDENTITY_FIELDS` แล้ว (13/10 · คำสั่ง user)
+   *     2 ฝั่งตอบคนละคำถาม — ตำแหน่งตามบริษัท vs ตำแหน่งที่ปฏิบัติงาน ⇒ **ทับ = ข้อมูลหาย** */
   const syncFromEmployee = async (u) => {
     const e = empById[u.employee_id];
     if (!e) return;
@@ -668,6 +670,8 @@ export default function AddUser() {
                 <div style={{ fontSize: 13, fontWeight: 700, color: '#f59e0b', marginBottom: 6 }}>
                   ⚠️ ตัวตนไม่ตรงกับฐานข้อมูลพนักงาน · {mism.length} บัญชี
                 </div>
+                {/* เหลือเฉพาะ ทีม/ไลน์/ส่วนงาน = ค่าเดียวกันแท้ๆ ที่เก็บ 2 ที่ ⇒ ต่าง = ผิดจริง
+                    ตำแหน่ง/หน่วยในผัง ย้ายไปชั้น "คนละความหมาย" แล้ว (ดู utils/identitySync.js) */}
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8, lineHeight: 1.5 }}>
                   ระบบ<b>ใช้ค่าจากฐานพนักงานแล้ว</b> (หัวหน้าแผนกเป็นคนดูแล) — ค่าในบัญชีที่ต่างอยู่คือค่าเก่าที่ไม่ถูกใช้
                   · กดปุ่มเพื่อล้างให้ตรงกัน จะได้ไม่สับสนตอนเปิดดู
@@ -709,6 +713,40 @@ export default function AddUser() {
                     {fb.map(({ u, miss }) => `${u.full_name} (${miss.map(m => m.label).join('/')})`).join(' · ')}
                     {' '}— ระบบใช้ค่าเดิมในบัญชีไปก่อน ควรไปกรอกช่องที่วงเล็บไว้ที่หน้าฐานข้อมูลพนักงาน
                     แล้วค่าจะมาจากที่นั่นที่เดียว
+                  </div>
+                </div>
+              );
+            })()}
+            {/* ── 🧭 รักษาการ / ทำงานคนละตำแหน่งกับที่บรรจุ — **ข้อมูล ไม่ใช่ข้อผิดพลาด** (13/10) ──
+                user: *"ตำแหน่งจริงที่เค้าเป็นอยู่กับบริษัทคือตามฐานพนักงาน แต่งานที่ตัวเค้าทำ
+                คือทำในตำแหน่งตรงกับบัญชี"* ⇒ ต่างกัน = ถูกต้อง · **ห้ามเตือน ห้ามมีปุ่มล้างค่า**
+                แต่ต้องเห็นบนจอ ไม่งั้นคนอ่านไม่รู้ว่าทำไมสิทธิ์ไม่ตรงกับตำแหน่งที่บรรจุ */}
+            {(() => {
+              const dual = users
+                .map(u => ({ u, info: dualMeaningInfo(u, u.employee_id ? empById[u.employee_id] : null) }))
+                .filter(x => x.info.length);
+              if (!dual.length) return null;
+              return (
+                <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: unset.length ? 10 : 0 }}>
+                  <b style={{ color: 'var(--accent)' }}>🧭 ทำงานคนละตำแหน่งกับที่บริษัทบรรจุ · {dual.length} บัญชี</b>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3, lineHeight: 1.6 }}>
+                    <b>ไม่ใช่ข้อผิดพลาด</b> — 2 ช่องนี้ตอบคนละคำถาม และระบบ<b>ตัดสินสิทธิ์จากตำแหน่งที่ปฏิบัติงาน</b>
+                    (ไม่ใช่ที่บรรจุ) จึงไม่มีปุ่มล้างค่า · แก้ตำแหน่งที่ปฏิบัติงานได้ที่ปุ่มแก้ไขบัญชี
+                    · แก้ตำแหน่งตามบริษัทที่หน้าฐานข้อมูลพนักงาน
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginTop: 5 }}>
+                    {dual.map(({ u, info }) => (
+                      <div key={u.id} style={{ display: 'flex', gap: 8, flexWrap: 'wrap', fontSize: 11 }}>
+                        <b style={{ minWidth: 150, color: 'var(--text2)' }}>{u.full_name}</b>
+                        {info.map(d => (
+                          <span key={d.key} style={{ color: 'var(--muted)' }}>
+                            {d.empLabel}: {idText(d.key, d.emp)} · <b style={{ color: 'var(--accent)' }}>
+                              {d.acctLabel}: {idText(d.key, d.acct)}</b>
+                            {d.undecided ? ' (ยังไม่ตัดสิน)' : ''}
+                          </span>
+                        ))}
+                      </div>
+                    ))}
                   </div>
                 </div>
               );
@@ -1416,7 +1454,7 @@ export default function AddUser() {
                       ไลน์ผลิต / Group {form.role === 'leader' && !linked && <span style={{ color: 'var(--red)' }}>* จำเป็น</span>}
                       {linked && <span style={{ color: 'var(--muted)', fontWeight: 400 }}> · จากฐานพนักงาน</span>}
                     </label>
-                    <LineSelect lines={lines} value={effLine} valueKey="id"
+                    <LineSelect lines={lines} value={effLine} valueKey="id" includeSupport
                       disabled={linked} onChange={v => setF('lineId', v)} />
                     {fixHint}
                   </div>

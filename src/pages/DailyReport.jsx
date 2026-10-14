@@ -17,7 +17,7 @@ import { issueProblemReport, reprintProblemReport, loadProblemDocs, docMatchesNo
 import { loadProcessTypes, activeProcessTypes, procDisplay, procColor } from '../utils/processTypes';
 loadProcessTypes(); // master กระบวนการ (data-driven) — dropdown/ป้ายในหน้านี้อ่านผ่าน sync cache
 import tsLogoUrl from '../assets/TS logo.png';
-import { can, canAccessPage } from '../utils/permissions';
+import { can, canAccessPage, isSharedAccount } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { fetchByIds } from '../utils/fetchByIds';
@@ -28,7 +28,7 @@ import { MTN_TEAMS, teamForItem, teamForMachine, teamKeyOf, deptNameOf } from '.
 import useIsMobile from '../utils/useIsMobile';
 import { cardGrid } from '../utils/cardGrid';
 import { pairAwareOpTotal, orderTotal, collapsePairShots } from '../utils/pairTotals';
-import { pairQtyPlan, pairOrderGaps } from '../utils/pairOrder';
+import { pairQtyPlan, pairOrderGaps, pairBlockReason } from '../utils/pairOrder';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { getDocForm, fullCode, loadDocForms } from '../utils/docForms';
 import { downloadCsvDoc, csvText } from '../utils/csvDoc';
@@ -47,6 +47,7 @@ import { resolveMachine, normCode } from '../utils/qrCode';
 import { pickUnusedColor } from '../utils/colorPick';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
+import CollapseCard from '../components/CollapseCard';
 import FilterBar from '../components/FilterBar';
 import SearchInput from '../components/SearchInput';
 import { ALL } from '../utils/filterLabels';
@@ -515,7 +516,10 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   const canRequestClose  = can('daily_report', 'request_close', role); // request or direct-close
   const canApproveClose  = can('daily_report', 'approve_close', role); // approve pending_close
   const canScan          = can('daily_report', 'record', role);        // scan open/close, defects, downtime
-  const canDeleteSession = can('daily_report', 'delete_session', role); // ลบกะ (seed: admin — ปรับที่ /permissions)
+  /* 🖥️ ลบกะ = การลบที่หนักสุดฝั่ง DR (ลากใบผลิต/downtime/ของเสียของกะไปด้วย)
+     ⇒ ต้องผ่านด่าน "บัญชีกลางห้ามลบ" ด้วย · คีย์นี้ไม่ลงท้าย `:delete` ⇒ ด่าน DB ฝั่ง Main
+     มองไม่เห็น และตารางอยู่ฝั่ง DR (anon) ⇒ **ด่านฝั่งจอคือด่านเดียวจริงๆ** */
+  const canDeleteSession = !isSharedAccount() && can('daily_report', 'delete_session', role); // ลบกะ (seed: admin — ปรับที่ /permissions)
   // leader แก้ไข/ลบ order, defect, downtime ได้เฉพาะตอนกะยังเปิดอยู่ (ยังไม่ส่งขออนุมัติปิดกะ) —
   // ถ้าส่งขอปิดกะแล้ว (pending_close) ต้องรอ SV อนุมัติ/ปฏิเสธก่อน ถ้าโดนปฏิเสธ สถานะจะกลับเป็น open ให้แก้ไขได้อีก
   const canEditRecords   = canManage || (canRequestClose && selSession?.status === 'open');
@@ -1705,7 +1709,13 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
 
     // ── RH/LH auto pairing ──────────────────────────────────────────
     // ทั้ง 2 ข้างมีเลข SAP order เป็นของตัวเองเสมอ ต้องสแกนคู่ 2 ครั้งจริง — ไม่มีกรณี order ข้างเดียวแล้ว
-    const partnerMatNo = products.find(p => p.mat_no === matNo)?.pair_mat_no || null;
+    /* 🔴 คู่ที่อยู่คนละไลน์ = ตั้งคู่ผิด (เคสจริง 13/10 GOR 297: ก่อนชุบ↔หลังชุบ ⇒ ใบถัดไปเด้งเป็นเลขหลังชุบ 12 ใบ)
+       ⇒ ไม่ผูกคู่ ไม่เด้ง MAT ให้ · บอกบนจอให้ไปแก้ Product Master (`pairBlockReason` · utils/pairOrder.js) */
+    const meProd = products.find(p => p.mat_no === matNo);
+    const rawPartner = meProd?.pair_mat_no || null;
+    const pairWhy = rawPartner ? pairBlockReason(meProd, products.find(p => p.mat_no === rawPartner) || { mat_no: rawPartner }) : null;
+    if (pairWhy) toast.error(`ไม่ผูกคู่ RH/LH ให้: ${pairWhy} — แก้ช่อง "MAT.NO คู่" ที่ Product Master`);
+    const partnerMatNo = pairWhy ? null : rawPartner;
     let nextMatNo = openProdForm.mat_no;
 
     if (pendingPairId) {
@@ -6076,7 +6086,7 @@ function StaleTab({ stale, onOpenSession, role }) {
         </div>
 
         {/* 🧹 กะเปล่า = เปิดผิด/เปิดทิ้งไว้ ลบทิ้งได้โดยไม่กระทบรายงาน — กะที่มีข้อมูลจริงยังต้องให้คนปิดเองเสมอ */}
-        {can('daily_report', 'delete_session', role) && rows.length > 0 && (
+        {!isSharedAccount() && can('daily_report', 'delete_session', role) && rows.length > 0 && (
           <div style={{ marginTop: 10, paddingTop: 9, borderTop: '1px dashed var(--border2)', display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
             {!emptyScan ? (
               <>
@@ -6204,7 +6214,7 @@ function HistoryTab({ role }) {
   const [histFix, setHistFix] = useState(null);      // { kind, row, title, sessionId }
   const [histBreaks, setHistBreaks] = useState([]); // break_policies — หักพักตามนโยบายจากช่วงวิ่งของพาร์ท
 
-  const canDeleteSession = can('daily_report', 'delete_session', role);
+  const canDeleteSession = !isSharedAccount() && can('daily_report', 'delete_session', role);  // 🖥️ บัญชีกลางลบกะไม่ได้ (ดูคอมเมนต์ตัวแรกของไฟล์)
 
   // ── %P รายชิ้นในประวัติ — สูตรเดียวกับ modal ตรวจสอบคำขอปิดกะ (หัก DT + พักนโยบายจาก window) ──
   // breakIv: ช่วงพักในหน้าต่างเดียวกัน — นาที DT ที่ตกในช่วงพักถูกหักไปแล้วรอบหนึ่ง ห้ามหักซ้ำ (utils/oee §3.1)
@@ -8291,13 +8301,17 @@ function DowntimeTypeSetup({ role }) {
         const upItems = pgItems.filter(i => i.category === 'unplanned');
         const plItems = pgItems.filter(i => i.category === 'planned');
         return (
-          <div key={pg.key} style={{ marginBottom: 24, border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
-            <div style={{ padding: '10px 16px', background: 'var(--bg2)', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{ width: 10, height: 10, borderRadius: '50%', background: pg.color }} />
-              <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{pg.label}</span>
-              <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 'auto' }}>{pgItems.length} รายการ</span>
-            </div>
-            <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          /* 📏 พับตามกระบวนการ (2026-10-13 · ด่าน lengthsweep) — ฐานจริง 13/10 มี **86 ประเภท**
+             กางหมดพร้อมกัน = แท็บตั้งค่ายาว ~5,000px (วัดบน mock ได้ 13,727px = 12.7 เท่าของจอ)
+             · หัวกลุ่มยังโชว์จุดสี + ชื่อกระบวนการ + จำนวนรายการเหมือนเดิม **พับก็ยังเห็นจำนวน**
+             · พับเป็น default: คนเข้ามาแก้ประเภทของกระบวนการเดียว ไม่ได้มาอ่าน 86 แถว */
+          <CollapseCard key={pg.key} id={`dt_${pg.key}`} storePrefix="dr" defaultOpen={false}
+            count={pgItems.length} style={{ marginBottom: 12 }}
+            title={<span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ width: 10, height: 10, borderRadius: '50%', background: pg.color, display: 'inline-block' }} />
+              {pg.label}
+            </span>}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {upItems.length > 0 && (
                 <div>
                   <div style={{ fontSize: 11, fontWeight: 700, color: '#ef4444', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.5px' }}>⚠ นอกแผน ({upItems.length})</div>
@@ -8311,7 +8325,7 @@ function DowntimeTypeSetup({ role }) {
                 </div>
               )}
             </div>
-          </div>
+          </CollapseCard>
         );
       })}
 

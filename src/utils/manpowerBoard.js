@@ -23,7 +23,7 @@ import { stdCapacityOf } from './stdManpower.js';
 import { getLineFamily } from './lineHierarchy.js';
 import { orgNodeCompare, naturalCompare } from './listOrder.js';
 import { wavg, wLoad, wRun } from './oee.js';
-import { skillFit, skillMapOf } from './skillFit.js';
+import { skillFit, skillMapOf, pendingMapOf } from './skillFit.js';
 
 /** แถว (row) ของผังที่คนแต่ละตำแหน่งไปอยู่ */
 export const ROW = Object.freeze({
@@ -137,13 +137,18 @@ export function planOf(familyLines, shift) {
  * @param {object[]} [p.lineTechs]   line_technicians { employee_id, line_id } — ช่างประจำไลน์ (ข้ามแผนกได้ เช่นช่าง MTN)
  * @param {object[]} [p.helpers]     ผลของ mergeBorrowedEmployees() (พนักงาน + _helperTo/_helperFrom/_helperShift)
  *                                   — คนยืมตัววันนี้ · **ห้ามคิวรี line_helpers เอง** (UI §6.13)
+ * @param {object[]} [p.flexUnits]   employee_flex_units { employee_id, org_node_id, note } — คนวิ่งข้ามแผนก
+ *                                   (ไปช่วยหน่วยอื่น**ประจำ** คนละตัวกับ `helpers` ที่เป็นรายวัน/รายกะ)
+ *                                   🔴 **ไม่นับเป็นกำลังคนของแผนกที่ไปช่วย** — บ้านจริงนับเขาอยู่แล้ว
+ *                                   นับ 2 ที่ = กำลังคนปลอม · ว่าง/ไม่ส่ง = พฤติกรรมเดิมเป๊ะ
  * @param {object[]} [p.stations]     workstations { id, line_id, line_name, station_name }
  * @param {object[]} [p.stationPlans] station_slot_plans { station_id, per_shift } — จุดงานต้องมีกี่คนต่อกะ
  * @param {object}   [p.homeByEmp]    { [employee_id]: station_id } (employee_home_positions)
  *  ลำดับที่มาของ "ช่องว่าง" ต่อกะ: ① ช่องต่อทีมที่ตั้งเอง ② ผลรวมช่องจุดงาน ③ std ของไลน์ — ตัวแรกที่มีชนะ
  */
 export function buildManpowerBoard({ section, nodes = [], employees = [], lines = [], maps = null, attendance = {},
-  slotPlans = [], lineTechs = [], helpers = [], stations = [], stationPlans = [], homeByEmp = {} }) {
+  slotPlans = [], lineTechs = [], helpers = [], stations = [], stationPlans = [], homeByEmp = {},
+  flexUnits = [] }) {
   if (!section) return null;
   const idx = indexNodes(nodes);
   const sub = descendants(idx, section.id);
@@ -220,11 +225,36 @@ export function buildManpowerBoard({ section, nodes = [], employees = [], lines 
       if (h && !famNames.has(String(h._helperTo || '').trim().toLowerCase())) p.lentTo = { to: h._helperTo || '', shift: h._helperShift || null };
     }
 
+    // 🏃 คนวิ่งข้ามแผนก (`employee_flex_units`) — บ้านจริงอยู่หน่วยอื่น แต่มาช่วยแผนกนี้ "ประจำ"
+    //    (คนละตัวกับ 🤝 ยืมตัวรายวัน · ยืม = วันนี้ · flex = ทะเบียนถาวร)
+    //    🔴 **ไม่นับเป็นกำลังคนของแผนกนี้** — ไม่เข้า cols/reg/opsTotal ⇒ ช่องว่างและตัวนับไม่ขยับ
+    //       (บ้านจริงนับเขาอยู่แล้ว · นับ 2 ที่ = กำลังคนปลอม แล้วเลิกเชื่อทั้งจอ) · หลักเดียวกับ
+    //       `external` ของช่างประจำไลน์ · 🔴 cost center ยังเป็นของบ้านจริง ห้ามย้าย
+    const flex = [];
+    if (b.node) {
+      const here = new Set([...b.heads, ...b.techs, ...b.people].map(p => p.id));
+      for (const fu of flexUnits) {
+        if (!fu?.employee_id || !fu.org_node_id) continue;
+        const to = deptOfNode(idx, fu.org_node_id);
+        if (!to || to.id !== b.node.id) continue;
+        if (here.has(fu.employee_id)) continue;      // คนในสังกัด/ช่างของแผนกนี้แล้ว — ไม่วาดซ้ำ
+        const e = empById.get(fu.employee_id);
+        if (!e) continue;                            // ลาออก/ปิดใช้งาน — ทะเบียนผูกไว้แต่คนไม่อยู่แล้ว
+        const home = e.org_node_id ? deptOfNode(idx, e.org_node_id) : null;
+        here.add(e.id);                              // ผูกไว้หลายหน่วยในแผนกเดียว = การ์ดใบเดียว
+        flex.push(cardOf(e, { flexFrom: {
+          nodeName: home?.name || String(e.department || '').trim() || null,
+          costCenter: home?.cost_center || null,
+          note: String(fu.note || '').trim(),
+        } }));
+      }
+    }
+
     // ช่องที่หัวหน้าตั้งเอง (manpower_slot_plans) ของแผนกนี้ — ทีม → จำนวนช่อง
     const planned = new Map(slotPlans.filter(sp => b.node && sp.org_node_id === b.node.id).map(sp => [normTeam(sp.team), Number(sp.slots) || 0]));
 
-    // แผนกเปล่า (ไม่มีหัวหน้า/ช่าง/คน/ช่องที่ตั้งไว้/คนยืม) = ไม่วาด · แต่นับไว้บอกบนจอ
-    if (!b.heads.length && !b.techs.length && !b.people.length && !planned.size && !borrowed.length) continue;
+    // แผนกเปล่า (ไม่มีหัวหน้า/ช่าง/คน/ช่องที่ตั้งไว้/คนยืม/คนวิ่งข้ามมา) = ไม่วาด · แต่นับไว้บอกบนจอ
+    if (!b.heads.length && !b.techs.length && !b.people.length && !planned.size && !borrowed.length && !flex.length) continue;
 
     // คอลัมน์ทีม — ทีมที่มีคน ∪ ทีมที่ตั้งช่องไว้ (ตั้งช่องแต่ยังไม่มีคน = คอลัมน์ช่องว่างล้วน)
     // ตั้ง 0 ช่องและไม่มีคน = ไม่ต้องมีคอลัมน์ (ตั้ง 0 = "ทีมนี้ไม่มีตำแหน่ง" ไม่ใช่คอลัมน์ว่าง)
@@ -293,6 +323,7 @@ export function buildManpowerBoard({ section, nodes = [], employees = [], lines 
       key: b.key, name: b.name, node: b.node,
       heads: b.heads.sort(byName), techs: b.techs.sort((x, y) => (!!x.external - !!y.external) || byName(x, y)), cols,
       borrowed: borrowed.sort(byName),
+      flex: flex.sort(byName),
       lines: family,
       plan, registered: reg,
       planTotal: plan.day == null && plan.night == null ? null : (plan.day || 0) + (plan.night || 0),
@@ -317,6 +348,8 @@ export function buildManpowerBoard({ section, nodes = [], employees = [], lines 
       ops: sum(d => d.opsTotal),
       present: sum(d => d.present),
       borrowed: sum(d => d.borrowed.length),
+      // 🏃 คนวิ่งข้ามแผนกที่โผล่ในส่วนงานนี้ — **ไม่รวมใน `ops`** (ไม่ใช่กำลังคนของที่นี่)
+      flex: sum(d => d.flex.length),
       members: members.length,
     },
   };
@@ -708,8 +741,9 @@ export function compareOeeByStaffing(days) {
      คนลา/ขาด/ยังไม่เช็คชื่อ = ไม่ได้ยืนอยู่ ⇒ ไม่นับ (ไม่ใช่ความเสี่ยงฝีมือ)
    - 🔴 จุดที่ยังไม่ตั้งทักษะที่ต้องการ = นับแยก `noReqPeople` ห้ามนับว่า "ผ่าน"
    - `temp` (ย้ายมาวันนี้) ติดธงไว้ — คนย้ายมาชั่วคราวคือกลุ่มเสี่ยงที่หัวหน้าต้องเห็นก่อน
-   คืน { gaps: [{ emp, station, shift, temp, fit, missing:[details ที่ไม่ผ่าน] }] (เรียงคะแนนต่ำก่อน),
-         checked, ok, noReqPeople, noReqStations }  */
+   คืน { gaps: [{ emp, station, shift, temp, fit, missing:[details ที่ไม่ผ่าน], onlyApproval }] (เรียงคะแนนต่ำก่อน),
+         checked, ok, noReqPeople, noReqStations, onlyApproval }
+   ⏳ `onlyApproval` = ทุกข้อที่ขาด ได้ขั้นแล้วแต่ค้างรอหัวหน้าอนุมัติ (pending_level ≥ เกณฑ์) — ค้างที่คน ไม่ใช่ฝีมือ  */
 export function stationSkillGaps(placed, { skillsByEmp = {}, reqsByStation = {} } = {}) {
   const gaps = [];
   let checked = 0, ok = 0, noReqPeople = 0, noReqStations = 0;
@@ -718,12 +752,16 @@ export function stationSkillGaps(placed, { skillsByEmp = {}, reqsByStation = {} 
     const standing = (x.people || []).filter(p => p.attend === 'present' && !p.away);
     if (!reqs.length) { noReqStations += 1; noReqPeople += standing.length; continue; }
     for (const p of standing) {
-      const fit = skillFit(reqs, skillMapOf(skillsByEmp[p.emp.id]));
+      const rows = skillsByEmp[p.emp.id];
+      const fit = skillFit(reqs, skillMapOf(rows), pendingMapOf(rows));
       checked += 1;
       if (fit.score >= 100) { ok += 1; continue; }
-      gaps.push({ emp: p.emp, station: x.station, shift: p.shift, temp: !!p.temp, fit, missing: fit.details.filter(d => !d.pass) });
+      const missing = fit.details.filter(d => !d.pass);
+      // ⏳ ทุกข้อที่ขาด "ได้ขั้นแล้ว รอแค่หัวหน้าอนุมัติ" = ค้างที่คนอนุมัติ ไม่ใช่ฝีมือ
+      gaps.push({ emp: p.emp, station: x.station, shift: p.shift, temp: !!p.temp, fit, missing,
+        onlyApproval: missing.length > 0 && missing.every(d => d.waitApproval) });
     }
   }
   gaps.sort((a, b) => a.fit.score - b.fit.score || (b.temp - a.temp) || naturalCompare(a.emp.name || '', b.emp.name || ''));
-  return { gaps, checked, ok, noReqPeople, noReqStations };
+  return { gaps, checked, ok, noReqPeople, noReqStations, onlyApproval: gaps.filter(g => g.onlyApproval).length };
 }

@@ -42,6 +42,11 @@ const MO_COLS = [
   'reporter_prod', 'reporter_prod_uid', 'reported_by_name', 'reported_by_uid',
   // nextStepOf() ต้องใช้ตัดสินขั้นถัดไป (รอ QA หรือข้ามแล้ว · ช่วงเซ็นปิดของใบ MTN) — 05/10
   'qa_skipped_at', 'purpose', 'mtn_head_at', 'approve_at',
+  /* 🔒 ด่านอนุมัติก่อนเริ่มงาน (`isApprovalBlocked`) — 13/10
+     🔴 ขาดช่องใดช่องหนึ่ง = undefined = "ไม่รู้" ⇒ ใบที่รอ ผจก.เซ็น ตกกลับไปนับเป็น
+        "รอช่างรับงาน" เงียบๆ แล้วไม่เข้าชั้น `mine` ของใครเลย (อาการที่ user เจอ)
+     `dept_manager_name` = เกณฑ์ "ชื่ออยู่ในใบ" ของ canSignMtnApproval() */
+  'dept_manager_at', 'plant_manager_at', 'dept_manager_name', 'plant_manager_name',
 ].join(', ');
 
 const DEAD = ['cancelled', 'rejected'];
@@ -51,7 +56,8 @@ export async function loadMyQueue(me) {
      แล้วมันจะติด `partial` ให้เอง (ห้ามกลืนเป็น [] = จอจะบอกว่า "ไม่มีงาน" ทั้งที่ไม่รู้) */
   const ok = (r) => (r.error ? undefined : (r.data || []));
 
-  const [moR, sesR, prR, fourR, actR, lines] = await Promise.all([
+  const canLu = !!(me.canLevelUp || me.canLevelUp100);
+  const [moR, sesR, prR, fourR, actR, lines, luR] = await Promise.all([
     /* กรองด้วยสถานะที่ยังมีคนต้องทำต่อ — เดิม `.gt('current_step', 1)` ตัดใบ "รอจ่ายงาน" (current_step = 1)
        ทิ้งทั้งหมด และ `.is('approve_at', null)` ตัดใบ MTN ที่อนุมัติแล้วแต่ยังรอปิดใบ (ขั้น 8) */
     supabaseDR.from('mtn_orders').select(MO_COLS)
@@ -66,7 +72,13 @@ export async function loadMyQueue(me) {
     supabase.from('meeting_action_items').select('id, problem, section, line_name, assignee, due_date, meeting_date, status')
       .in('status', ['open', 'doing']).order('due_date', { ascending: true, nullsFirst: false }).limit(100),
     loadProductionLines().catch(() => []),          // มี cache ร่วมกับ picker — ปกติไม่ยิงคิวรีเพิ่ม
+    /* ⬆️ คำขอขึ้นขั้นทักษะ — โหลดเฉพาะคนที่อนุมัติได้ (ไม่มีสิทธิ์ = ไม่ยิงคิวรีเลย) · ส่วนงานมาจากตัวพนักงาน */
+    canLu
+      ? supabase.from('skill_level_up_requests').select('id, to_level, requested_at, employees!inner(section, is_active)')
+        .eq('status', 'pending').eq('employees.is_active', true).limit(500)
+      : Promise.resolve({ data: null, error: null }),
   ]);
+  const levelUps = canLu ? ok(luR)?.map(r => ({ id: r.id, to_level: r.to_level, requested_at: r.requested_at, section: r.employees?.section })) : undefined;
 
   /* `four_m_logs` ไม่มีคอลัมน์ส่วนงาน — เทียบขอบเขตผ่านทะเบียนไลน์ (ไลน์ → ส่วนงาน)
      ไลน์ที่ไม่อยู่ในทะเบียน = ตอบไม่ได้ว่าส่วนงานไหน ⇒ ปล่อย undefined ให้ inMyScope ตัดออกเอง */
@@ -87,7 +99,7 @@ export async function loadMyQueue(me) {
     });
   }
 
-  return buildQueue({ mo, sessions: ok(sesR), fourM, actions: ok(actR), summaries }, me);
+  return buildQueue({ mo, sessions: ok(sesR), fourM, actions: ok(actR), summaries, levelUps }, me);
 }
 
 /* ── UI ชิ้นเล็ก ────────────────────────────────────────────────────────── */
@@ -198,6 +210,9 @@ export function useMyQueue(open = false) {
           seeded: (a) => isActionSeeded('mtn_repair', a),
           hasTeams: teams.length > 0,
           inTeam: (o) => myTeamKeys.has(teamKeyOf(o.mtn_dept)),
+          // ⬆️ คีย์เดียวกับปุ่มอนุมัติใน /operator?tab=levelup
+          canLevelUp: canPerm('skills', 'approve_levelup', role),
+          canLevelUp100: canPerm('skills', 'approve_levelup_100', role),
         });
       } catch {
         /* supabase-js คืน error ไม่ throw — มาถึงนี่ได้เฉพาะกรณีผิดปกติ ⇒ ถือว่าไม่ครบ ห้ามขึ้นว่าไม่มีงาน */

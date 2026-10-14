@@ -461,12 +461,19 @@ test('stepDenyHint: ติดด่านอนุมัติ ต้องบ�
 });
 
 test('ป้ายสถานะ: ใบรออนุมัติต้องไม่ขึ้น "รอรับงาน" · แถวที่ไม่ได้ select คอลัมน์ลายเซ็นห้ามเดา', () => {
-  const base = { status: 'pending', purpose: 'improve' };
+  /* 🔴 13/10: เกณฑ์ย้ายไป `isApprovalBlocked()` (mtnMoForm.js) ที่เดียว แล้ว**เพิ่มเงื่อนไข `isMtnFormRow`**
+     — ด่านที่บล็อกช่างจริงอยู่ที่ `approvalBlocked` ใน MtnRepair ซึ่งคิดเฉพาะใบฟอร์ม MTN
+     (`appr = mtnForm ? mtnApprovalState(o) : null`) ⇒ ใบทีมอื่นที่บังเอิญมี purpose ช่าง**กดรับได้**
+     ป้าย "รอผู้จัดการอนุมัติ" บนใบนั้นจึงเป็นคำโกหก · วัดจริง 13/10: ใบที่มี purpose ทั้ง 14 ใบ
+     เป็น mtn_dept='maintenance' ทั้งหมด ⇒ ไม่มีใบไหนเปลี่ยนป้ายจากการรัดเกณฑ์นี้ */
+  const base = { status: 'pending', purpose: 'improve', mtn_dept: 'maintenance' };
   assert.equal(moStatusLabel({ ...base, dept_manager_at: null }), MO_LABEL_WAIT_APPROVAL);
   assert.equal(moStatusLabel({ ...base, dept_manager_at: '2026-09-15T02:00:00Z' }), MO_STATUS_LABEL.pending);
   assert.equal(moStatusLabel(base), MO_STATUS_LABEL.pending, 'ไม่ได้ select dept_manager_at = ใช้ป้ายเดิม');
-  assert.equal(moStatusLabel({ status: 'pending', purpose: 'repair', dept_manager_at: null }), MO_STATUS_LABEL.pending, 'งานซ่อมไม่เคยติดด่าน');
+  assert.equal(moStatusLabel({ ...base, purpose: 'repair', dept_manager_at: null }), MO_STATUS_LABEL.pending, 'งานซ่อมไม่เคยติดด่าน');
   assert.equal(moStatusLabel({ status: 'pending' }), MO_STATUS_LABEL.pending, 'ใบทีมอื่น/ใบเก่าเหมือนเดิม');
+  assert.equal(moStatusLabel({ status: 'pending', purpose: 'improve', mtn_dept: 'jig', dept_manager_at: null }),
+    MO_STATUS_LABEL.pending, 'ไม่ใช่ฟอร์ม MTN = ช่างกดรับได้จริง ⇒ ห้ามติดป้ายว่ารออนุมัติ');
 });
 
 test('ป้ายสถานะ: `handover` ของฟอร์มอื่นห้ามไปขึ้นป้ายขั้นปิดใบของสาย MTN', () => {
@@ -516,7 +523,7 @@ test('moStatusMeta: สถานะแปลกปลอม/ว่าง ถอ�
   assert.equal(moStatusMeta({ status: 'ไม่รู้จัก' }).color, MO_STATUS_META.pending.color);
   assert.equal(moStatusMeta(null).color, MO_STATUS_META.pending.color);
   // ป้ายยังมาจาก moStatusLabel() เสมอ (ใบที่ติดด่านอนุมัติต้องไม่ขึ้น "รอรับงาน")
-  const blocked = { status: 'pending', purpose: 'improve', dept_manager_at: null, current_step: 1 };
+  const blocked = { status: 'pending', purpose: 'improve', mtn_dept: 'maintenance', dept_manager_at: null, current_step: 1 };
   assert.equal(moStatusMeta(blocked).label, MO_LABEL_WAIT_APPROVAL);
 });
 
