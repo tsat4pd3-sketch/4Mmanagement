@@ -20,12 +20,12 @@ import useMasterRows from './useMasterRows.js';
    **ต้องการคอลัมน์เพิ่ม → เติมที่นี่ + bump คีย์ อย่าแยกไปยิงเอง**
    (ไม่เอา description/capacity/head_name/created_at/updated_at — ไม่มี dropdown ไหนใช้) */
 export const LINE_COLUMNS =
-  'id, name, parent_line_name, section, is_active, cost_center, flow_mode, parallel_stations, line_type, std_day_shift, std_night_shift';
+  'id, name, parent_line_name, section, is_active, cost_center, flow_mode, parallel_stations, line_type, unit_kind, std_day_shift, std_night_shift';
 
 /* 🔴 เปลี่ยนชุดคอลัมน์เมื่อไหร่ **ต้องเปลี่ยนคีย์ด้วยเสมอ** — cache อยู่ localStorage อายุ 4 ชม.
    ใช้คีย์เดิม = เครื่องที่มีของเก่าค้างได้แถวที่**ขาดคอลัมน์ใหม่**ไปอีก 4 ชม. โดยไม่มี error
    (บทเรียนเดียวกับ storage_locations:v2 · `:v2` = รอบที่เพิ่ม 6 คอลัมน์นี้) */
-const KEY = 'production_lines:v2';
+const KEY = 'production_lines:v3';   // v3 = เพิ่ม unit_kind (13/10)
 
 /** โหลดครั้งเดียวแล้วแชร์ทั้งแอป — คืน [] จนกว่าจะโหลดเสร็จ */
 export async function loadProductionLines() {

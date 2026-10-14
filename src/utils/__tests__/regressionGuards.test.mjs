@@ -184,6 +184,19 @@ const RULES = [
     allow: {},
   },
   {
+    id: 'unit-kind-via-util',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* ตัดสิน "เป็นไลน์ผลิตไหม" ต้องผ่าน utils/unitKind.js — เทียบสตริงเองในหน้าคือจุดที่ drift */
+    re: /unit_kind\s*[=!]==\s*['"]/g,
+    why: 'ชนิดหน่วย (`production`/`support`) ตัดสินที่ `src/utils/unitKind.js` ที่เดียว '
+       + '— เทียบสตริงเองในหน้า = แต่ละจอตีความไม่เหมือนกัน และ**ลืมกฎ fail-open** '
+       + '(ค่าว่าง/ไม่รู้จัก = ไลน์ผลิต) ⇒ `l.unit_kind === "production"` จะทิ้งไลน์ผลิตที่ยังไม่มีค่า '
+       + 'ทั้งตารางออกจากจอเงียบๆ ซึ่งเป็นทิศที่อันตรายที่สุด',
+    fix: 'ใช้ `isProductionUnit(line)` / `isSupportUnit(line)` / `productionUnits(lines)` '
+       + '· ช่องเลือกไลน์ส่ง `includeSupport` แทนการกรองเอง',
+    allow: { 'src/utils/unitKind.js': true },
+  },
+  {
     id: 'am-open-lines-family-aware',
     scan: ['src/lib/dailyAmBoard.js'], ext: ['.js'],
     /* "ไลน์ไหนเดินอยู่" ต้องผ่าน openFamilyLines() — ประกอบ Set เองที่นี่ = กลับไปเทียบชื่อตรงตัว */

@@ -14,6 +14,7 @@ import { UserContext } from '../App';
 import OrgScopePicker from './OrgScopePicker';
 import useOrgScope from '../utils/useOrgScope';
 import { PLANT } from '../utils/orgScope';
+import { isProductionUnit } from '../utils/unitKind';
 
 const PICKABLE = ['section', 'line_group', 'line'];
 const PICKABLE_DEPT = ['section', 'department', 'line_group', 'line'];
@@ -28,11 +29,19 @@ const PICKABLE_DEPT = ['section', 'department', 'line_group', 'line'];
  *                  หน้าที่เปิด pickDept ต้องกรองด้วย **ชุดไลน์** `deptLines(index, unit)` ไม่ใช่ section/line เดี่ยว
  * @param index     ดัชนีผัง (`useOrgScope(lines).index`) — หน้าที่ต้องคิดชุดไลน์ของแผนกเองส่งมาให้ใช้ตัวเดียวกัน
  */
+/** @param {boolean} includeSupport  true = นับหน่วยสนับสนุน (สำนักงาน/งานแก้ไข) เข้ามาด้วย
+ *    default false = จอผลิต · กติกาเดียวกับ `<LineSelect includeSupport>` (📄 utils/unitKind.js) */
 export default function LineScopeSelect({
-  lines = [], section = '', line = '', unit = '', pickDept = false, index: givenIndex = null,
-  onChange, sections = [], valueKey = 'name', disabled, id, style, width = 260,
+  lines: allLines = [], section = '', line = '', unit = '', pickDept = false, index: givenIndex = null,
+  onChange, sections = [], valueKey = 'name', disabled, id, style, width = 260, includeSupport = false,
 }) {
   const ctx = useContext(UserContext) || {};
+  /* 🔴 หน่วยสนับสนุนไม่ใช่ "ขอบเขตของการผลิต" — ติดมาด้วยแล้วทุกตัวเลขที่กรองด้วยขอบเขตนี้
+     (OEE · ยอดผลิต · ของเสีย) จะมีหน่วยที่ไม่เคยเปิดกะปนเป็นตัวหาร */
+  const lines = useMemo(
+    () => (includeSupport ? allLines : (allLines || []).filter(isProductionUnit)),
+    [allLines, includeSupport],
+  );
   const scopeSecs = ctx.sections || [];
   const { index: ownIndex, failed: ownFailed } = useOrgScope(givenIndex ? [] : lines);
   const index = givenIndex || ownIndex;

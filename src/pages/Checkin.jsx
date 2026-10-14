@@ -1170,7 +1170,7 @@ export default function Checkin() {
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', whiteSpace: 'nowrap' }}>มาช่วยไลน์</span>
               {/* 2026-09-07 อ่านทะเบียนไลน์ผ่าน <LineSelect> (ลำดับชั้น/ปลดระวาง) — คง scope เดิม (scopedLines) */}
-              <LineSelect lines={scopedLines} value={borrowLineId} valueKey="id" placeholder="— เลือกไลน์ปลายทาง —"
+              <LineSelect lines={scopedLines} value={borrowLineId} valueKey="id" placeholder="— เลือกไลน์ปลายทาง —" includeSupport
                 style={{ padding: '7px 10px', borderRadius: 6, fontSize: 13, width: 'auto', minWidth: 200, flex: 1 }} onChange={setBorrowLineId} />
             </div>
             <SearchInput value={borrowSearch} onChange={setBorrowSearch} autoFocus grow={false}
@@ -1347,7 +1347,7 @@ export default function Checkin() {
           {/* ขอบเขต = ช่องเดียว ส่วนงาน → กลุ่มไลน์ → ไลน์ (<LineScopeSelect> · 2026-10-02 · เดิมปุ่มส่วนงาน 14 ปุ่ม + ช่องไลน์
               ที่โผล่หลังเลือกส่วนงาน = หน้าตาไม่เหมือนหน้าอื่น) · ส่วนงานที่ไม่มีไลน์ (คลัง/QA) ยังเลือกได้เพราะเช็คชื่อ "คน" */}
           <span className="filter-label">ขอบเขต</span>
-          <LineScopeSelect lines={scopedLines} sections={sections} section={selSection} line={selLine} valueKey="id"
+          <LineScopeSelect lines={scopedLines} sections={sections} section={selSection} line={selLine} valueKey="id" includeSupport
             onChange={(sec, ln) => { setSelSection(sec); setSelLine(ln); }} />
 
           <span className="spacer" />
@@ -1893,7 +1893,7 @@ export default function Checkin() {
               <div>
                 <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>ไลน์</label>
                 {/* 2026-09-07 อ่านทะเบียนไลน์ผ่าน <LineSelect> — คง pre-filter "ไลน์ที่มีพนักงาน" (otBookLineOptions) */}
-                <LineSelect lines={otBookLineOptions} value={otBookLineId} valueKey="id" placeholder="— เลือกไลน์ —"
+                <LineSelect lines={otBookLineOptions} value={otBookLineId} valueKey="id" placeholder="— เลือกไลน์ —" includeSupport
                   style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg)', color: 'var(--text)' }} onChange={setOtBookLineId} />
               </div>
               <div>

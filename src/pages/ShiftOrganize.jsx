@@ -923,7 +923,7 @@ export default function ShiftOrganize() {
                 <div>
                   <label style={labelSt}>ไลน์ผลิต</label>
                   {/* 2026-09-07 อ่านทะเบียนไลน์ผ่าน <LineSelect> (ลำดับชั้น/ปลดระวาง) — คง scope เดิม (scopedLines) */}
-                  <LineSelect lines={scopedLines} value={mrgLineId} valueKey="id" placeholder="— เลือกไลน์ —" onChange={setMrgLineId} />
+                  <LineSelect lines={scopedLines} value={mrgLineId} valueKey="id" placeholder="— เลือกไลน์ —" onChange={setMrgLineId} includeSupport />
                 </div>
               )}
               <div style={{ display: 'flex', gap: 10 }}>
