@@ -4344,3 +4344,33 @@ test('🛡️ BOM flow: ห้ามมีคำเตือน raw_in_assembly 
   assert.ok(/raw_double_counted/.test(tree),
     '\n\n❌ `raw_double_counted` หายไป — ตัวนี้พิสูจน์ได้ (5xx อยู่ใต้พี่น้อง 2xx จริง) ห้ามถอด\n');
 });
+
+/* ── 🔨 ชุดแม่พิมพ์ปั๊มออกคู่ = ผูกได้ 2 MAT (14/10 · คำสั่ง user "แม่พิมพ์ปั๊มออกคู่ ซ้ายขวา ก็ควรเลือก mat สองตัว") ──
+   เดิม `die_sets.mat_no` ช่องเดียว แล้วปลายทางเทียบ `d.mat_no === mat` ตรงๆ
+   ⇒ ล็อตของฝั่งที่ไม่ได้ลงเป็นช่องแรก **หาแม่พิมพ์ไม่เจอ** = ไม่รู้ die_height_mm
+     = pressSetup คืน unknown_height = คิดเวลาเปลี่ยนรุ่นไม่ได้ · ผังแม่พิมพ์ก็ไม่รู้ว่าชุดนั้นป้อนไลน์ไหน */
+test('🛡️ die-set-two-mats — หาแม่พิมพ์ของพาร์ทต้องผ่าน dieMakesMat()/dieSetMats()', () => {
+  const bad = [];
+  const util = stripComments(readFileSync(join(ROOT, 'src/utils/dieSetMats.js'), 'utf8'));
+  for (const fn of ['dieSetMats', 'dieMakesMat', 'dieSetPairState', 'suggestPps']) {
+    if (!new RegExp(`export function ${fn}\\s*\\(`).test(util)) bad.push(`src/utils/dieSetMats.js (ไม่มี ${fn})`);
+  }
+  /* suggestPps ต้องไม่เสนอ 1 — "ชุดทำพาร์ทเดียว" ไม่ได้แปลว่า 1 ชิ้น/จังหวะ (2-out ของพาร์ทเดียวก็มี) */
+  if (!/n >= 2 \? n : null/.test(util)) bad.push('src/utils/dieSetMats.js (suggestPps เสนอค่าต่ำกว่า 2 แล้ว = เดาแทนหน้างาน)');
+
+  for (const rel of ['src/components/ProdLotPlanner.jsx', 'src/components/DieLayout.jsx']) {
+    const code = stripComments(readFileSync(join(ROOT, rel), 'utf8'));
+    if (!/die(SetMats|MakesMat)\s*\(/.test(code)) bad.push(rel + ' (ไม่เรียกของกลาง)');
+    /* เทียบช่องแรกตรงๆ กับตัวแปรชุดแม่พิมพ์ = ตกฝั่งที่ลงช่อง 2 */
+    if (/\bd(ie(Set)?)?\.mat_no\s*===/.test(code)) bad.push(rel + ' (เทียบ die.mat_no === ตรงๆ)');
+  }
+  /* ช่องกรอกต้องมีให้ลงจริง ไม่งั้นคอลัมน์ว่างตลอด */
+  const reg = stripComments(readFileSync(join(ROOT, 'src/pages/DieRegistry.jsx'), 'utf8'));
+  if (!/mat_no_2/.test(reg)) bad.push('src/pages/DieRegistry.jsx (ไม่มีช่อง MAT ตัวที่ 2)');
+
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n'
+    + '   ทำไม: gang die ปั๊มทีเดียวได้ RH+LH — ทะเบียนลงได้ 2 MAT (mat_no + mat_no_2)\n'
+    + '         เทียบช่องแรกช่องเดียว = อีกฝั่งหาแม่พิมพ์ไม่เจอเงียบๆ\n'
+    + '   แก้: dieMakesMat(set, mat) / dieSetMats(set) จาก src/utils/dieSetMats.js\n'
+    + '   ⚠️ "ใครคู่กับใคร" ยังเป็นของ Product Master (pair_mat_no) — จอแม่พิมพ์เตือนได้ ห้ามเขียนทับ\n');
+});
