@@ -2042,7 +2042,7 @@ export default function Operator() {
                   // fallback: ผังยังไม่มีกลุ่มใต้แผนกนี้ → ใช้ production_lines เดิม (normalize + fail-open)
                   // 2026-09-07 อ่านทะเบียนไลน์ผ่าน <LineSelect> (ลำดับชั้น/ปลดระวาง/ค่าเดิมนอกลิสต์ไม่หายเงียบ) — คง pre-filter scope+แผนก เดิม
                   return (
-                    <LineSelect value={cur} disabled={!editingEmp.department}
+                    <LineSelect value={cur} includeSupport disabled={!editingEmp.department}
                       placeholder={editingEmp.department ? '— เลือก Line —' : 'เลือกแผนกก่อน'}
                       lines={filterLinesByDept(
                         (scopeSecs.length ? lines.filter(l => inSectionScope(scopeSecs, l.section)) : lines)

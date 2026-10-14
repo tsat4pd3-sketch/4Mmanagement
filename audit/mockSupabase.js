@@ -302,6 +302,13 @@ const TABLE_ROWS = {
      แผนก/ฝ่าย/กลุ่มไลน์ ไม่เคยถูกรันใน harness): 1 = ส่วนงาน PD1 · 2 = แผนกใต้ PD1 · 3-5 = ไลน์ในแผนก
      (ref_line_id ชี้ production_lines mock ที่ id เป็น 'id-N') · 6 = แผนกขึ้นตรงฝ่ายช่าง (ไม่มีไลน์) ·
      7 = org line node ไม่ผูก production line (สโตร์) · ที่เหลือ = ทีม · แถว NULLISH ยังคงว่างตามกติกา */
+  /* 🏭 ชนิดหน่วย — **ต้องมีแถว `support` อย่างน้อย 1 ตัวเสมอ ห้ามถอด** (2026-10-13)
+     ของจริงมี 3 หน่วย (Office PD4 · Coating · Rework - PD1) ที่ไม่ใช่ไลน์ผลิต
+     ไม่มีในmock = สาขา "กรองหน่วยสนับสนุนออก" + ป้าย "🗂️ หน่วยสนับสนุน" ของค่าที่เลือกไว้แล้ว
+     ไม่เคยถูกรันใน harness เลย · เลือกแถว 5 เพราะเป็นไลน์เดี่ยว (ไม่อยู่ใน PARENT_OF
+     และไม่ถูกอ้างโดย sessions/workstations ที่ผูก LINE_NAME(1..3)) */
+  production_lines: (r, i) => ({ ...r, unit_kind: i === 5 ? 'support' : 'production' }),
+
   org_nodes: (r, i) => ({
     ...r,
     kind: i === 1 ? 'section' : (i === 2 || i === 6) ? 'department' : i <= 5 || i === 7 ? 'line' : 'team',

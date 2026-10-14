@@ -977,6 +977,67 @@ migration `20261013_rls_round8_people_stations_kpi_legacy_main.sql` (**apply แ
 
 migration `20261013b_rls_round9_ot_specialtask_logs_main.sql` (**apply แล้ว 2026-10-13** · ROLLBACK ครบ)
 
-**เหลือชั้น ข. อีก 23 ตาราง** — ใช้งานจริง 14 · ว่าง 0 แถว 9 (`cqi15_*` 3 · `ppe_checks`/`ppe_requirements` ·
-`production_shots` · `qa_customer_claims` · `attendances` · `profile_org_access` — 2 ตัวท้ายเป็นตารางตาย เสนอลบ)
+
+## 🏁 RLS รอบ 10 (รอบปิด) — ชั้น "เขียนได้ทุกคนที่ล็อกอิน" จบแล้ว (2026-10-14)
+
+| ตาราง | predicate | ปุ่มเจ้าของ |
+|---|---|---|
+| `wip_replenish_requests` | OR 5 คีย์ (`wip_request:decide`/`:receive`/`:override` · `line_levels:manage` · `heijunka:operate`) | LinePartCallPanel · HeijunkaKanban (3 บทบาท: ไลน์เรียก · สโตร์จ่าย · หัวหน้า override) |
+| `line_replenish_scan_blocks` | `heijunka:operate` **or** `wip_request:override`/`:receive` | HeijunkaKanban:1886 (ล็อกเหตุการณ์สแกนถูกบล็อก) |
+| `ojt_trainings` · `ojt_training_attendees` | `ojt:record` **or** `ojt:delete` | OjtTraining.jsx |
+| `pokayoke_devices` | `pokayoke:manage` | PokaYokeCheck.jsx (ทะเบียนอุปกรณ์) |
+| `pokayoke_checks` | `pokayoke:record` **or** `pokayoke:manage` | PokaYokeCheck.jsx (ผลตรวจรายกะ) |
+| `line_layouts` | `line_setup:edit` **or** `storage_maintain:run` | LineSetup · ImageSqueezePanel |
+| `shift_overrides` | `shift_schedule:edit` **or** `:edit_dept` | ShiftOrganize.jsx |
+| `qa_customer_claims` | `qa:record` **or** `qa:manage` | QaClaims.jsx |
+| `cqi15_event_logs` · `_event_approvals` · `_check_completions` | **INSERT** `event_log:create` · **UPDATE** `event_log:approve_{qt,me,jme,o}` | EventLog.jsx |
+
+· 🔴 **CQI-15: INSERT กับ UPDATE คนละความหมาย ห้ามใช้คีย์เดียว** — แถวอนุมัติ/จุดตรวจถูกสร้าง
+  *พร้อมใบ* (ตอน `event_log:create`) แต่การ **อนุมัติจริง** คือ UPDATE ⇒ ต้องใช้คีย์ `approve_*`
+  (จอเรียกแบบ dynamic `can('event_log', \`approve_${role}\`)` ที่ EventLog.jsx:1028 ⇒ policy OR ทั้ง 4 ตัว)
+· `pokayoke`: แยก **record (ลงผลตรวจ) vs manage (แก้ทะเบียน)** — เทสยืนยัน `leader` ลงผลตรวจได้แต่แก้ทะเบียนไม่ได้
+
+### 🔎 กับดักรอบนี้ — **ชื่อตารางไปตรงกับชื่อคีย์ cache**
+
+`part_registry` / `part_images` grep เจอในโค้ด แต่สิ่งที่เจอคือ **คีย์ cache** (`'part_registry:main'` ·
+`'part_images:v1'`) ตัวโหลดจริงอ่าน `pe_doc_sets`+`qa_parts` / `parts_master`+`dr_products`
+⇒ **grep เจอ ≠ มีคนใช้** ต้องเปิดดูว่า string นั้นถูกใช้เป็นชื่อตารางจริงไหม
+
+### 🏁 สถานะสุดท้ายของชั้น ข — เหลือ 11 ตาราง **ทุกตัวอยู่ในหมวดที่ตั้งใจ**
+
+**🔵 เปิดโดยเจตนา — ด่านจริงไม่ใช่ policy (3 · ห้ามรัดทับ)**
+- `notifications` INSERT (16,057 แถว) — เขียนจาก **8 edge function** (service role ข้าม RLS) + **5 จุดในจอ
+  ข้ามโมดูล** (FeedbackModal · EventComments · NpiTasks · App.jsx · `lib/pmNotify`) ⇒ **ไม่มีคีย์เดียวครอบได้**
+  · การแจ้งเตือนคนอื่นเป็นผลพลอยได้ของงานปกติ (คอมเมนต์ · มอบงาน) · OR คีย์ที่ไม่เกี่ยวกัน 5 ตัว =
+  ไม่แคบลงจริงแต่เสี่ยงพังทุก flow ⇒ **ตั้งใจไม่แตะ**
+- `four_m_logs` — ด่าน = trigger `protect_four_m_status` + restrictive delete guard (รอบ 6)
+- `profiles` — ด่าน = trigger `protect_profile_role` (รอบ 5 · **คุมเป็นคอลัมน์ ซึ่ง policy ทำไม่ได้**)
+
+**✅ ไม่มีโค้ดไหนอ้างถึงเลย (8) — user สั่งลบ 14/10 แล้ว** (พร้อม KPI รุ่นเก่า 4 ตัว = **12 ตาราง**)
+ว่าง 6 ตัว `drop` จริง · มีข้อมูล 6 ตัว (386 แถว) ย้ายเข้า schema `archive`
+⇒ 📄 `supabase/migrations/20261014b_drop_unused_tables_main.sql` (นิยามคอลัมน์ + วิธีย้อนครบ)
+🔴 **ชั้น ข ไม่มีตารางค้างแล้ว** — เหลือเฉพาะ 3 ตัวที่เปิดโดยเจตนาข้างบน
+
+### 📊 รวม 6 รอบ (5→10)
+
+| รอบ | ปิดอะไร |
+|---|---|
+| 5 | `anon` อ่าน KPI · `scope_depth` ใน trigger · ทะเบียนหลัก 3 ตาราง |
+| 6 | `four_m_logs` ข้ามคิวอนุมัติ (trigger) + เปิด `pending_doc` + กฎยืมใบ OJT |
+| 7 | ใบเช็คชื่อ · ตารางกะ |
+| 8 | ทะเบียนคน · จุดงาน · KPI รุ่นเก่า + **ปุ่มจัดกำลังคนที่ไม่มี `can()`** |
+| 9 | OT · งานนอกไลน์ · ประวัติย้ายจุดงาน · ทะเบียนเล็ก |
+| 10 | เรียกของหน้าไลน์ · OJT · โพกะโยเกะ · ผังไลน์ · สลับกะ · เคลม · CQI-15 |
+
+🔴 **บทเรียนที่ใช้ต่อได้ (เจอซ้ำทุกรอบ):**
+1. **ตารางยุคแรกมี policy `FOR ALL` ตัวเดียวที่ครอบ SELECT ด้วย** ⇒ ต้อง `create policy` อ่านก่อนรัด
+   (รอบ 7/8/9/10 เจอหมด — เช็คก่อนรัดทุกครั้ง ไม่ใช่เหตุบังเอิญ)
+2. **รายการค้างชี้ผิดตัวเสมอ** (รอบ 5 "12 ตาราง" จริง 231 policy · รอบ 8 ตาราง KPI ที่ชี้มาเลิกใช้แล้ว)
+   ⇒ **วัดสดก่อนลงมือทุกรอบ**
+3. **`role_permissions` มีแถว `allowed=false`** — คิวรีสรุปผู้ถือคีย์ต้องกรอง ไม่งั้นรายงานเกินจริง
+4. **ด่านที่ grep "ทั้งไฟล์" จับเคสที่ด่านอยู่ผิดที่ในไฟล์เดียวกันไม่ได้** ⇒ ต้องมีด่านเจาะจงคู่
+
+migration `20261014_rls_round10_tier_b_final_main.sql` (**apply แล้ว 2026-10-14** · ROLLBACK + ลำดับย้อนครบ)
+
+**เหลือชั้น ข. อีก 23 ตาราง** — ปิดครบในรอบ 10 (ดูหัวข้อถัดไป)
 · 🔵 `four_m_logs` / `profiles` **policy เปิดโดยเจตนา — ด่านจริงคือ trigger** (รอบ 5-6) ไม่ต้องรัด policy

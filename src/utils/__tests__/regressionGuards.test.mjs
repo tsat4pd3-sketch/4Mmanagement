@@ -184,6 +184,19 @@ const RULES = [
     allow: {},
   },
   {
+    id: 'unit-kind-via-util',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* ตัดสิน "เป็นไลน์ผลิตไหม" ต้องผ่าน utils/unitKind.js — เทียบสตริงเองในหน้าคือจุดที่ drift */
+    re: /unit_kind\s*[=!]==\s*['"]/g,
+    why: 'ชนิดหน่วย (`production`/`support`) ตัดสินที่ `src/utils/unitKind.js` ที่เดียว '
+       + '— เทียบสตริงเองในหน้า = แต่ละจอตีความไม่เหมือนกัน และ**ลืมกฎ fail-open** '
+       + '(ค่าว่าง/ไม่รู้จัก = ไลน์ผลิต) ⇒ `l.unit_kind === "production"` จะทิ้งไลน์ผลิตที่ยังไม่มีค่า '
+       + 'ทั้งตารางออกจากจอเงียบๆ ซึ่งเป็นทิศที่อันตรายที่สุด',
+    fix: 'ใช้ `isProductionUnit(line)` / `isSupportUnit(line)` / `productionUnits(lines)` '
+       + '· ช่องเลือกไลน์ส่ง `includeSupport` แทนการกรองเอง',
+    allow: { 'src/utils/unitKind.js': true },
+  },
+  {
     id: 'am-open-lines-family-aware',
     scan: ['src/lib/dailyAmBoard.js'], ext: ['.js'],
     /* "ไลน์ไหนเดินอยู่" ต้องผ่าน openFamilyLines() — ประกอบ Set เองที่นี่ = กลับไปเทียบชื่อตรงตัว */
@@ -3975,6 +3988,27 @@ const RLS_KEYED_TABLES = {
   station_assignment_logs: ['management:assign_manpower', 'assign_manpower'],
   special_task_types:      ['ot_master:manage', 'ot_master'],
   leave_types:             ['ot_master:manage', 'ot_master'],
+  // รอบ 10 (14/10) — ปิดชั้น "เขียนได้ทุกคนที่ล็อกอิน" จบ
+  wip_replenish_requests:  ['wip_request:', 'wip_request', 'line_levels:manage', 'heijunka:operate'],
+  line_replenish_scan_blocks: ['heijunka:operate', 'wip_request:', 'wip_request'],
+  ojt_trainings:           ['ojt:record', 'ojt:delete', "'ojt'"],
+  ojt_training_attendees:  ['ojt:record', 'ojt:delete', "'ojt'"],
+  pokayoke_devices:        ['pokayoke:manage', 'pokayoke'],
+  pokayoke_checks:         ['pokayoke:record', 'pokayoke:manage', 'pokayoke'],
+  line_layouts:            ['line_setup:edit', 'line_setup', 'storage_maintain:run', 'storage_maintain'],
+  shift_overrides:         ['shift_schedule:edit', 'shift_schedule'],
+  qa_customer_claims:      ['canRecord', 'canManage', "'qa'"],
+  cqi15_event_logs:        ['event_log:', 'event_log'],
+  cqi15_event_approvals:   ['event_log:', 'event_log'],
+  cqi15_check_completions: ['event_log:', 'event_log'],
+};
+
+/* ยกเว้นได้เฉพาะ "util กลางที่ด่านอยู่ที่ผู้เรียก" — ต้องเขียนเหตุผล + ชี้ไฟล์ที่กันจริง
+   (ปล่อยเงียบไม่ได้ ไม่งั้นด่านนี้จะกลายเป็นด่านที่ใครก็ปิดได้ด้วยการย้ายโค้ดไป util) */
+const RLS_KEY_ALLOW = {
+  'src/utils/recompressLayouts.js':
+    'util บีบรูปผัง — ด่านอยู่ที่ผู้เรียก: StorageMaintenance.jsx:24 isActionSeeded(storage_maintain,run) '
+    + '→ prop canRun → ImageSqueezePanel.jsx (util ไม่รู้จัก role เลยโดยการออกแบบ)',
 };
 
 test('🛡️ rls-tightened-tables-need-key — ไฟล์ที่เขียนตารางที่ถูกรัด RLS ต้องอ้างคีย์สิทธิ์ของมันด้วย', () => {
@@ -3990,6 +4024,7 @@ test('🛡️ rls-tightened-tables-need-key — ไฟล์ที่เขี�
       const panelRe = new RegExp(`table=\\{?\\s*['"\`]${table}['"\`]`, 'g');
       if (!writeRe.test(code) && !panelRe.test(code)) continue;
       if (keys.some(k => code.includes(k))) continue;
+      if (RLS_KEY_ALLOW[relative(ROOT, file)]) continue;
       bad.push(`${relative(ROOT, file)} → เขียน ${table} แต่ไม่พบคีย์ ${keys.slice(0, 2).join(' / ')}`);
     }
   }
