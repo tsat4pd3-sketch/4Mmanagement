@@ -45,6 +45,7 @@ import Segmented from './Segmented';
 import MatLabel from './MatLabel';
 import MachineSelect from './MachineSelect';
 import TrialBookingModal from './TrialBookingModal';
+import { dieMakesMat } from '../utils/dieSetMats'; // 🔨 ชุดแม่พิมพ์ทำได้ 2 MAT — ห้ามเทียบ mat_no ตรงๆ
 
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: 12, boxShadow: 'var(--shadow-sm)' };
 const th = { padding: '5px 8px', borderBottom: '1px solid var(--border)', fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' };
@@ -110,7 +111,7 @@ export default function ProdLotPlanner({
       supabaseDR.from('production_plan_lots')
         .select('id, work_date, shift, line_name, seq, mat_no, part_name, qty_plan, machine_no, die_no, status, prod_order_id, due_date, source, setup_min_est, note, cancel_reason, planned_by')
         .gte('work_date', date).lte('work_date', lastDate).eq('line_name', lineName),
-      supabaseDR.from('die_sets').select('id, set_code, mat_no, part_name, line_name, equipment_die(die_height_mm)').eq('is_active', true),
+      supabaseDR.from('die_sets').select('id, set_code, mat_no, mat_no_2, part_name, line_name, equipment_die(die_height_mm)').eq('is_active', true),
       supabaseDR.from('press_setup_rules').select('*').eq('is_active', true),
       supabaseDR.from('production_sessions').select('id').gte('work_date', date).lte('work_date', lastDate).eq('line_name', lineName),
       supabaseDR.from('break_policies').select('*').eq('is_active', true),
@@ -157,7 +158,9 @@ export default function ProdLotPlanner({
     return m;
   }, [dies]);
   const dieOf = useCallback((lot) => (lot?.die_no ? dieByCode[lot.die_no] || null : null), [dieByCode]);
-  const dieOptsForMat = useCallback((mat) => dies.filter(d => !mat || d.mat_no === mat), [dies]);
+  /* 🔨 ชุดหนึ่งปั๊มได้ถึง 2 MAT (งานคู่ RH/LH) — เทียบ `d.mat_no === mat` ตรงๆ = ล็อตอีกฝั่งหาแม่พิมพ์ไม่เจอ
+     ⇒ ไม่รู้ die_height_mm ⇒ pressSetup คืน unknown_height = คิดเวลาเปลี่ยนรุ่นไม่ได้ (14/10 · มีด่าน) */
+  const dieOptsForMat = useCallback((mat) => dies.filter(d => dieMakesMat(d, mat)), [dies]);
   /* กฎเวลาเปลี่ยนรุ่น — เครื่อง ชนะ ไลน์ ชนะ global (ตัวเลือกกฎอยู่ที่ pressSetup ที่เดียว) */
   const rule = useMemo(() => resolveSetupRule(rules, { lineName }), [rules, lineName]);
 
@@ -215,7 +218,7 @@ export default function ProdLotPlanner({
   /* ── แก้แผนในหน่วยความจำก่อน แล้วค่อยกดบันทึกทีเดียว ────────────────────────── */
   const patch = (id, upd) => { setLots(ls => ls.map(l => (l.id === id ? { ...l, ...upd } : l))); setDirty(true); };
   const addLot = (mat, qty) => {
-    const die = dies.find(d => d.mat_no === mat);
+    const die = dies.find(d => dieMakesMat(d, mat));
     setLots(ls => resequence([...ls, {
       id: `new-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, _new: true,
       work_date: date, shift, line_name: lineName, seq: ls.length + 1,

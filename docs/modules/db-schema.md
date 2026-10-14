@@ -197,9 +197,14 @@ migration `20261014b_employees_staff_kind_technician_main.sql` (**apply แล�
 (อัตรามาทำงานของโรงงาน = รวมธุรการไหม — ทะเบียน KPI Online เป็นเจ้าของนิยาม ห้ามคิดเอง)
 📄 ตัวเลขที่วัดไว้ + ผล audit ก่อน backfill → `docs/modules/staff-kind-audit-14-10.md`
 
-### ⏳ backfill — ยังไม่ทำ (รอ user เคาะรายชื่อ)
-วัด 14/10: active 223 คน = `shopfloor` 218 + `support` 5 · **`technician` 0 คน**
-`position` เป็น enum แล้ว ⇒ ใช้จัดกลุ่มได้ตรง: `technician` 22 คน · สายสนับสนุน (clerk/officer/
-engineer/manager/dept_head/section_head) 28 คน · `operator`+`line_leader` 168 คน = หน้างาน
-🔴 **ห้าม backfill เหมาจาก `position` เอง** — 12 คนในนั้นเช็คชื่อ/ยืนจุดงานจริงอยู่ทุกวัน
-(Office PD4 6 คน เช็คชื่อ 28/28 วัน · ช่าง HYDROFORM 4 คนผูกไลน์ไว้) ⇒ ต้องให้ user ยืนยันรายชื่อ
+### backfill — **user สั่งเอาทั้ง 50 คน (14/10)**
+วัด 14/10 ก่อนย้าย: active 223 = `shopfloor` 218 + `support` 5 · `technician` 0
+จัดกลุ่มจาก `position` (enum ที่กรอกครบแล้ว): `technician` → ช่าง **22 คน** ·
+`clerk`/`officer`/`engineer`/`manager`/`dept_head`/`section_head` → สนับสนุน **28 คน** ·
+`operator`/`line_leader` → คงเป็นหน้างาน **168 คน**
+· SQL = `supabase/migrations/20261014c_employees_staff_kind_backfill_main.sql`
+  (สำรองค่าเดิมลง `archive.employees_staff_kind_20261014` ก่อน ⇒ **ย้อนได้ 100%**)
+· 🔴 **ขอบเขต `is_active` เท่านั้น** — คนที่ออกแล้วไม่ถูกนับที่ไหนอยู่แล้ว
+· ⚠️ **ช่าง HYDROFORM 4 คนผูก `line_id` ไว้** (ภัทรกร · ณัชพล · ชาตรี · วิริยะ) ⇒ หลังย้ายจะหายจาก
+  `/manpower-board` · อยากให้ยังเห็นเป็น "ช่างประจำไลน์" ต้องเพิ่มใน **`line_technicians`**
+  (กฎ CLAUDE.md §Manpower Board — ห้ามยัดกลับเข้า `employees.line_id`)
