@@ -1013,9 +1013,10 @@ migration `20261013b_rls_round9_ot_specialtask_logs_main.sql` (**apply แล้
 - `four_m_logs` — ด่าน = trigger `protect_four_m_status` + restrictive delete guard (รอบ 6)
 - `profiles` — ด่าน = trigger `protect_profile_role` (รอบ 5 · **คุมเป็นคอลัมน์ ซึ่ง policy ทำไม่ได้**)
 
-**📌 ไม่มีโค้ดไหนอ้างถึงเลย (8) — รอ user ตัดสิน ไม่เขียน policy ให้**
-`ppe_items` (10 แถว) · `ppe_requirements` · `ppe_checks` · `part_registry` (4) · `part_images` (4) ·
-`attendances` · `profile_org_access` · `production_shots` (เตรียม SCADA ยังไม่เปิดใช้)
+**✅ ไม่มีโค้ดไหนอ้างถึงเลย (8) — user สั่งลบ 14/10 แล้ว** (พร้อม KPI รุ่นเก่า 4 ตัว = **12 ตาราง**)
+ว่าง 6 ตัว `drop` จริง · มีข้อมูล 6 ตัว (386 แถว) ย้ายเข้า schema `archive`
+⇒ 📄 `supabase/migrations/20261014b_drop_unused_tables_main.sql` (นิยามคอลัมน์ + วิธีย้อนครบ)
+🔴 **ชั้น ข ไม่มีตารางค้างแล้ว** — เหลือเฉพาะ 3 ตัวที่เปิดโดยเจตนาข้างบน
 
 ### 📊 รวม 6 รอบ (5→10)
 
@@ -1038,6 +1039,5 @@ migration `20261013b_rls_round9_ot_specialtask_logs_main.sql` (**apply แล้
 
 migration `20261014_rls_round10_tier_b_final_main.sql` (**apply แล้ว 2026-10-14** · ROLLBACK + ลำดับย้อนครบ)
 
-**เหลือชั้น ข. อีก 23 ตาราง** — ใช้งานจริง 14 · ว่าง 0 แถว 9 (`cqi15_*` 3 · `ppe_checks`/`ppe_requirements` ·
-`production_shots` · `qa_customer_claims` · `attendances` · `profile_org_access` — 2 ตัวท้ายเป็นตารางตาย เสนอลบ)
+**เหลือชั้น ข. อีก 23 ตาราง** — ปิดครบในรอบ 10 (ดูหัวข้อถัดไป)
 · 🔵 `four_m_logs` / `profiles` **policy เปิดโดยเจตนา — ด่านจริงคือ trigger** (รอบ 5-6) ไม่ต้องรัด policy
