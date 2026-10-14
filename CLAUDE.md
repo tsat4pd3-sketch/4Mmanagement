@@ -657,6 +657,7 @@ Reject → status: "rejected" + reject_reason
 
 กฎ `utils/manpowerBoard.js` · แถว = **ตำแหน่ง** · กะทีม = `shiftFromTeam` **ห้าม A = Shift 01** · กะไม่ตั้ง = `null`
 · ช่องว่าง: ช่องต่อทีม `manpower_slot_plans` → จุดงาน `station_slot_plans` → std · 🔴 **ช่างประจำไลน์ = `line_technicians` ห้ามยัด `employees.line_id`** · คนยืม = `mergeBorrowedEmployees()`
+· 🔴 **คนวิ่งข้ามแผนก = `employee_flex_units` (อ้างอิง) — ห้ามย้าย `employees.org_node_id` ห้ามแตะ `cost_center`** · **"ไปช่วย ≠ นับเป็นกำลังคน"** (ไม่เข้าช่องว่าง/ตัวนับ) · มีด่าน `manpower-flex-reference-only`
 > 📄 `docs/modules/manpower-board.md`
 
 ---
