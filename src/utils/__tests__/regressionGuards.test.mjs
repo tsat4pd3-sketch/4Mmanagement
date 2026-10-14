@@ -2287,13 +2287,43 @@ test('🛡️ column-history-table-must-exist — ตารางของ useCo
    เจอจริง 06/10 ที่ `QAInspectionSetup.delPart` (ลบ `qa-drawings/parts/<id>` ทั้งโฟลเดอร์ ⇒
    ใบตรวจพาร์ทเสียถาวร) · `OjtTraining.handleDelete` (ลายเซ็นพนักงานทั้งใบ) · `PMSetup` (รูปจิ๊กทั้งชุด
    + โมเดล 3D) · `MtnMachineLayout` (รูปผังโซน) · `LineSetup` (รูปผังไลน์)
-   🔴 ลำดับที่ปลอดภัยมีทางเดียว: `.select(...)` → นับแถว > 0 → **ค่อย** ลบไฟล์ */
+   🔴 ลำดับที่ปลอดภัยมีทางเดียว: `.select(...)` → นับแถว > 0 → **ค่อย** ลบไฟล์
+
+   ── รอบ 2 (14/10 · เจอที่ `MtnRepair.del`) — ด่านเดิมมีรูรั่ว 2 ทาง ────────────────
+   (ก) **ตัวลบไฟล์เป็น helper** `removeMtnImg(u)` ไม่ใช่ `storage….remove(` ตรงๆ
+       ⇒ regex เดิมมองไม่เห็น ทั้งที่ข้างในเรียก `.remove()` จริง (`src/utils/mtnImage.js`)
+   (ข) **ลบไฟล์ "ก่อน" `.delete()`** — ด่านเดิมมองไปข้างหน้าเท่านั้น
+       ⇒ เคสนี้ **แย่กว่า** ที่ด่านจับได้ด้วยซ้ำ: ไฟล์หายแน่นอน ไม่ต้องรอ RLS ปฏิเสธ
+   ⇒ ด่านนี้สแกนทั้งหน้าต่าง **ก่อนและหลัง** และรู้จักชื่อ helper ทุกตัวที่ห่อ `.remove()` ไว้ */
+/* 🔴 ชื่อ helper ที่ "ลบไฟล์ใน storage จริง" — เพิ่ม helper ใหม่ที่ห่อ `.remove()` ต้องมาเติมที่นี่
+   (ด่าน `storage-remover-list-complete` ข้างล่างเช็คให้ว่าลิสต์นี้ยังครบ) */
+const STORAGE_REMOVERS = ['removeMtnImg', 'removeActionImg', 'removeQualityImg'];
+/* 🔑 ลายเซ็นต้องเป็นข้อความที่อยู่ **บรรทัดเดียวกับ `.delete()`** (ด่านนี้ไล่ทีละบรรทัด)
+   — chain ที่ขึ้นบรรทัดใหม่ `from(…)` จะอยู่คนละบรรทัดกับ `.delete()` ⇒ ใส่ชื่อตารางไม่ติด */
 const STORAGE_DEL_ALLOW = {
   /* delete นี้ลบ "คนที่ถูกเอาออกจากใบ" ซึ่งปกติ = 0 คน ⇒ 0 แถวเป็นเรื่องปกติ นับแถวไม่มีความหมาย
      และไฟล์ลายเซ็นที่ลบด้านล่างเป็นของ "รอบที่ถูกเซ็นทับ" (`_replacedSigPaths`) ไม่ใช่ของแถวที่ลบ
      = window ของด่านคาบเกี่ยวกันเท่านั้น ไม่ใช่คลาสบั๊กนี้ */
   'src/pages/OjtTraining.jsx': ["from('ojt_training_attendees').delete()"],
+  /* ไฟล์ที่ `removeMtnImg` ลบ = **รูปอะไหล่ตัวเก่าที่ถูกอัปโหลดทับ** (`oldImg !== img`)
+     ไม่ใช่ไฟล์ของแถว `mtn_spare_usage_monthly` ที่ลบ (ยอดใช้รายเดือน ไม่มีไฟล์แนบเลย)
+     + 0 แถวเป็นเรื่องปกติ (ล้างเดือนที่อาจไม่เคยมีค่า) ⇒ คาบเกี่ยวกันแค่ใน window ของด่าน */
+  'src/components/SparePartMaster.jsx': [".in('month_key', clear)"],
+  /* ไฟล์ผังถูกลบ **ก่อน** `production_lines.delete()` จริง แต่ไม่ใช่คลาสบั๊กนี้:
+     เจ้าของไฟล์คือแถว `line_layouts` ซึ่งถูกลบไปก่อนแล้วในลูปข้างบน และคิวรีนับผู้ใช้ร่วม
+     (`eq('image_url', …)`) จะเจอ **แถวของไลน์นี้เอง** ถ้า delete นั้นถูก RLS ปฏิเสธเงียบ
+     ⇒ shared.data มี 1 แถว ⇒ ไม่ลบไฟล์ · fail-closed ครบทั้ง 2 ทางอยู่แล้ว */
+  'src/pages/LineSetup.jsx': ["from('production_lines').delete()"],
 };
+/** ตำแหน่งแรกในข้อความที่ "ลบไฟล์ใน storage" — ทั้งเรียกตรงและผ่าน helper */
+const removeAt = (txt) => {
+  const hits = [txt.search(/storage[\s\S]{0,40}?\.remove\(/)]
+    .concat(STORAGE_REMOVERS.map(fn => txt.search(new RegExp(`\\b${fn}\\s*\\(`))))
+    .filter(k => k >= 0);
+  return hits.length ? Math.min(...hits) : -1;
+};
+const hasRemove = (txt) => removeAt(txt) >= 0;
+
 test('🛡️ storage-delete-after-row-count — ลบไฟล์ storage ต้องมาหลังนับแถวที่ลบได้จริง', () => {
   const bad = [];
   for (const f of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
@@ -2302,8 +2332,14 @@ test('🛡️ storage-delete-after-row-count — ลบไฟล์ storage ต�
     lines.forEach((ln, i) => {
       if (!/\.delete\(\)/.test(ln)) return;
       if ((STORAGE_DEL_ALLOW[rel] || []).some(sig => ln.includes(sig))) return;
+      /* ลบไฟล์ "ก่อน" delete = ไฟล์หายแน่นอน (ไม่ต้องรอ RLS ปฏิเสธ) ⇒ ต้องมองย้อนหลังด้วย */
+      const back = lines.slice(Math.max(0, i - 10), i).join('\n');
+      if (hasRemove(back)) {
+        bad.push(`${rel}:${i + 1}  (ลบไฟล์ก่อน delete) ${ln.trim().slice(0, 70)}`);
+        return;
+      }
       const win = lines.slice(i, i + 16).join('\n');
-      const k = win.search(/storage[\s\S]{0,40}?\.remove\(/);
+      const k = removeAt(win);
       if (k < 0) return;                       // ไม่มีการลบไฟล์ตามหลัง = ไม่เกี่ยว
       if (/\.select\(/.test(win.slice(0, k))) return;   // นับแถวแล้วก่อนแตะไฟล์ = ถูกต้อง
       bad.push(`${rel}:${i + 1}  ${ln.trim().slice(0, 90)}`);
@@ -2320,6 +2356,25 @@ test('🛡️ storage-delete-after-row-count — ลบไฟล์ storage ต�
     + '        // ← ลบไฟล์ storage ได้หลังบรรทัดนี้เท่านั้น\n'
     + '   ถ้า "0 แถว = เรื่องปกติ" จริง (เช่น ลบของที่อาจไม่มีอยู่แต่แรก) ให้เพิ่มใน STORAGE_DEL_ALLOW\n'
     + '   พร้อมเหตุผล — ห้ามใส่เพราะแก้ไม่ไหว\n');
+});
+
+/* ลิสต์ STORAGE_REMOVERS ข้างบนจะมีค่าก็ต่อเมื่อ **ครบ** — helper ใหม่ที่ไม่อยู่ในลิสต์
+   = ด่านข้างบนมองไม่เห็น = รูรั่วเดิมกลับมาเงียบๆ ⇒ ด่านนี้ไล่หา helper ที่ห่อ `.remove()` เอง */
+test('🛡️ storage-remover-list-complete — helper ที่ลบไฟล์ storage ต้องอยู่ใน STORAGE_REMOVERS', () => {
+  const missing = [];
+  for (const f of walk(join(ROOT, 'src/utils'), ['.js'])) {
+    const src = stripComments(readFileSync(f, 'utf8'));
+    if (!/storage\s*\n?\s*\.from\([\s\S]{0,80}?\.remove\(|\bstorage\.remove\(/.test(src)) continue;
+    /* ชื่อที่ export ออกไปแล้วขึ้นต้น remove/delete = ตัวที่หน้าอื่นเรียกไปลบไฟล์ */
+    for (const m of src.matchAll(/export\s+(?:const|async\s+function|function)\s+((?:remove|delete|del)\w*)/g)) {
+      if (!STORAGE_REMOVERS.includes(m[1])) missing.push(`${relative(ROOT, f)} → ${m[1]}()`);
+    }
+  }
+  assert.deepEqual(missing, [],
+    '\n\n❌ มี helper ที่ลบไฟล์ใน storage แต่ไม่อยู่ใน STORAGE_REMOVERS:\n'
+    + '   ' + missing.join('\n   ') + '\n'
+    + '   ⇒ ด่าน storage-delete-after-row-count มองหน้าที่เรียก helper นี้ไม่เห็น\n'
+    + '   แก้: เติมชื่อใน STORAGE_REMOVERS (ไฟล์นี้) — ห้ามปล่อยไว้\n');
 });
 
 

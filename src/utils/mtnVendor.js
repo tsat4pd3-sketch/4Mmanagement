@@ -17,6 +17,8 @@
       เทสตรึงค่าได้ ไม่ตกเองวันหลัง) · ไฟล์นี้ pure ไม่ import supabase ⇒ เทสเรียกตรงได้
    ═══════════════════════════════════════════════════════════════════════════ */
 
+import { MO_DONE_STATUSES } from './mtnStepPerm.js';
+
 /** สถานะใบที่ของอยู่กับ supplier — ใบยัง **เปิดอยู่** (ไม่ใช่สถานะจบ) */
 export const VENDOR_STATUS = 'waiting_vendor';
 
@@ -65,7 +67,10 @@ export function grossRepairMin(o) {
 /** ส่งออกนอกได้ไหม — ช่างต้องรับงานแล้ว (ขั้น 2-3) และใบยังไม่จบ · ส่งซ้ำระหว่างที่ยังไม่กลับไม่ได้ */
 export function canSendVendor(o) {
   const st = String(o?.status || '').trim();
-  if (['closed', 'rejected', 'transferred', 'returned'].includes(st)) return false;
+  /* 🔴 "ใบจบแล้ว" อ่านจาก MO_DONE_STATUSES (mtnStepPerm) — ลิสต์มือที่นี่เคยตกรุ่น
+     ทุกครั้งที่เพิ่มสถานะจบใหม่ · `returned` (ของกลับจาก supplier) ไม่ใช่สถานะจบ
+     แต่ส่งออกซ้ำไม่ได้จนช่างปิดงาน ⇒ ยังต้องเช็คแยก */
+  if (MO_DONE_STATUSES.includes(st) || st === 'returned') return false;
   if (st === VENDOR_STATUS) return false;                 // อยู่ข้างนอกอยู่แล้ว
   const step = Number(o?.current_step || 1);
   return step >= 2 && step <= 3;

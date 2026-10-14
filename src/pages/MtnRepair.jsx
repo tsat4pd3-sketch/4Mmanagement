@@ -17,7 +17,7 @@ import { toast } from '../components/Toast';
 import { PURPOSES, CAUSE_CATS, needsPlantManager, needsApprovalFirst, laborAmount, partAmount, sumLabor, sumParts, grandTotal, satScore, mtnApprovalState, purposeOfPrint, qaAppliesTo, isMtnFormRow, QA_SKIP_REASON_PURPOSE, QA_SKIP_REASON_MTN_FORM, needsPlantMgrByCost, orderCostTotal, PLANT_MGR_COST_LIMIT } from '../utils/mtnMoForm';
 import AuditLogViewer from '../components/AuditLogViewer';
 import { can, canDelete, isActionSeeded, isSharedAccount } from '../utils/permissions';
-import { MO_STATUS_META as STATUS_META, QA_NOT_RELATED, QA_RELATED, QA_SKIP_REASON_STEP4, canBounceBack, canDoStep, canHandoff, canSignMtnApproval, canSkipQa, isMoOpen, isOrderReporter, isQaSkipped, isWaitingQa, lastStep, orderReporterText, nextStepOf, moQaState, mtnCloseStage, moStatusLabel, moStatusMeta, orderInReporterScope, stageOf, stepDenyHint, stepLabel, stepMeta, moWaitMeta, actorSideOf, stepAssumptions, assumptionHint } from '../utils/mtnStepPerm';
+import { MO_STATUS_META as STATUS_META, QA_NOT_RELATED, QA_RELATED, QA_SKIP_REASON_STEP4, canBounceBack, canDoStep, canHandoff, canSignMtnApproval, canSkipQa, isMoOpen, isOrderReporter, isQaSkipped, isWaitingQa, lastStep, orderReporterText, nextStepOf, moQaState, mtnCloseStage, moStatusLabel, moStatusMeta, orderInReporterScope, stageOf, stepDenyHint, stepLabel, stepMeta, moWaitMeta, moRemoveMode, MO_REMOVE_BLOCKED, MO_REMOVE_CANCEL, MO_REMOVE_DELETE, actorSideOf, stepAssumptions, assumptionHint } from '../utils/mtnStepPerm';
 import { positionRank } from '../utils/positions';
 import { findOpenOnMachine, dupLevel } from '../utils/mtnDuplicate';
 /* 🔢 เลข MO ออกยังไง — ต้องตรงกับ RPC `mtn_assign_mo_no` เป๊ะ (14/10 · ห้ามเดารูปแบบเองในหน้า) */
@@ -2037,12 +2037,36 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, signatureUr
     }
   };
 
+  /* 🗑️→🚫 เลิกใบ — **ลบได้เฉพาะใบที่ยังไม่มีเลข** · ออกเลขแล้ว = ยกเลิก (เลข+ประวัติต้องอยู่)
+     เกณฑ์อยู่ `moRemoveMode()` ใน mtnStepPerm.js **ห้ามเขียน if (status === …) ที่นี่** */
+  const removal = moRemoveMode(o);
   const del = async () => {
-    if (!confirm('ลบใบแจ้งซ่อมนี้?')) return;
-    [o.before_img, o.after_img, o.qa_img, o.checker_sign, o.qa_sign, o.ho_sign, o.approve_sign].forEach(u => u && removeMtnImg(u));
-    const { error } = await supabaseDR.from('mtn_orders').delete().eq('id', o.id);
-    if (error) return toast.error(error.message);
-    toast.success('ลบแล้ว'); onClose();
+    if (removal.mode === MO_REMOVE_DELETE) {
+      if (!confirm(`ลบใบแจ้งซ่อมนี้?\n\n${removal.why}`)) return;
+      /* 🔴 นับแถวที่ลบได้ก่อน ค่อยลบรูปใน storage — เช็คแค่ `error` แล้วลบรูปไปก่อน
+         = RLS ปฏิเสธเงียบ (0 แถว ไม่มี error) แถวยังอยู่แต่รูปหายถาวร (กฎเหล็กข้อ 2) */
+      const rows = await checkWriteRows(await supabaseDR.from('mtn_orders').delete().eq('id', o.id).select('id'), 'ลบใบแจ้งซ่อม');
+      if (!rows) return;
+      [o.before_img, o.after_img, o.qa_img, o.checker_sign, o.qa_sign, o.ho_sign, o.approve_sign]
+        .forEach(u => u && removeMtnImg(u));
+      toast.success('ลบแล้ว'); onReload && onReload(); onClose();
+      return;
+    }
+    if (removal.mode !== MO_REMOVE_CANCEL) return toast.error(removal.why);
+    /* ยกเลิก = ต้องมีเหตุผลเสมอ — ไม่งั้นเดือนหน้ามีคนถามว่า "เลข M5 หายไปไหน" แล้วตอบไม่ได้
+       🔴 ไม่ลบรูป/ไม่ลบค่าแรง-อะไหล่ — ใบยังอยู่ให้สอบกลับ */
+    const why = (prompt(`ยกเลิกใบ ${o.mo_no}?\n\n${removal.why}\n\nเหตุผล (บังคับ):`) || '').trim();
+    if (!why) return;
+    const rows = await checkWriteRows(await supabaseDR.from('mtn_orders').update({
+      status: 'cancelled',
+      /* เขียนเหตุผลลงช่องเดิมของ reject — ใบพิมพ์/จอที่อ่าน reject_reason อยู่แล้วจึงเห็นเองทันที
+         (ไม่สร้างคอลัมน์ใหม่ที่ไม่มีใครอ่าน) · ติดป้ายไว้ว่ามาจากการยกเลิก ไม่ใช่ Reject */
+      reject_reason: `[ยกเลิกใบ] ${why} — โดย ${fullName || '(ไม่ทราบชื่อ)'}`,
+      updated_at: new Date().toISOString(),
+    }).eq('id', o.id).eq('status', o.status).select('id'), 'ยกเลิกใบแจ้งซ่อม');
+    if (!rows) return;
+    toast.success(`ยกเลิกใบ ${o.mo_no} แล้ว — เลขยังอยู่ในระบบ สอบกลับได้`);
+    onReload && onReload(); onClose();
   };
   const Row = ({ k, v }) => v ? <div style={{ display: 'flex', gap: 8, fontSize: 12.5, padding: '2px 0' }}><span style={{ color: 'var(--muted)', minWidth: 120 }}>{k}</span><span style={{ color: 'var(--text)', flex: 1 }}>{v}</span></div> : null;
   const Img = ({ label, url }) => url ? <div><div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 2 }}>{label}</div><img src={url} alt="" style={{ maxHeight: 130, borderRadius: 8, border: '1px solid var(--border)' }} /></div> : null;
@@ -2431,7 +2455,12 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, signatureUr
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
         {/* 🖥️ บัญชีกลางลบไม่ได้ — **ซ่อนปุ่มได้ แต่ห้ามซ่อนเหตุผล** (UI §6.9) ไม่งั้นช่างคิดว่าระบบพัง */}
         {canDelete('mtn_repair', 'manage_master', role)
-          ? <button onClick={del} style={{ ...btnGhost, color: '#ef4444', borderColor: '#ef4444' }}>🗑 ลบใบนี้</button>
+          ? (removal.mode === MO_REMOVE_BLOCKED
+            /* ซ่อนปุ่มได้ ห้ามซ่อนเหตุผล (UI §6.9) — ไม่งั้นคนคิดว่าระบบพัง */
+            ? <span style={{ fontSize: 11.5, color: 'var(--muted)', alignSelf: 'center' }} title={removal.why}>🔒 {removal.why}</span>
+            : <button onClick={del} title={removal.why} style={{ ...btnGhost, color: '#ef4444', borderColor: '#ef4444' }}>
+                {removal.mode === MO_REMOVE_DELETE ? '🗑 ลบใบนี้' : '🚫 ยกเลิกใบนี้'}
+              </button>)
           : isSharedAccount()
             ? <span style={{ fontSize: 11.5, color: 'var(--muted)', alignSelf: 'center' }}
                 title="บัญชีกลางใช้ร่วมกันหลายคน ลบแล้วสอบกลับไม่ได้ว่าใครกด — ให้ล็อกอินด้วยบัญชีของตัวเองถ้าต้องลบจริง">
