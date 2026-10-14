@@ -4448,3 +4448,28 @@ test('🔒 คลังอะไหล่ — ปุ่มแก้/ลบต้
     + '   แก้: teamRowOwner(row, { myTeams, role }) จาก src/utils/mtnTeams.js\n'
     + '        (ตรรกะจริง src/utils/mtnTeamOwn.js · แถวทีมอื่น = เห็นได้ แต่ต้องขึ้น 🔒 บอกเหตุผล ห้ามซ่อนเงียบ)\n');
 });
+
+/* ── 🔴 จอ "BOM ซ้ำ 2 ใบ" ต้องเทียบ qty ไม่ใช่แค่รายชื่อ MAT (2026-10-14) ──────────
+   เดิมเทียบเฉพาะชุด mat ⇒ คู่ที่ของตรงกันแต่ **จำนวนต่าง** ถูกตีเป็น `identical`
+   แล้วขึ้นจอว่า "ตรงกัน" (เทา) = จอโกหก · เคสจริง 20066663 : 0.171 ↔ 0.341 (ต่าง 2 เท่า)
+   และลายนิ้วมือต้องรวม qty ด้วย ไม่งั้นมีคนแก้แค่จำนวน คู่ที่ "ตรวจแล้ว" จะไม่กลับเข้าคิว */
+test('🛡️ bomDupAudit: qty ต้องอยู่ในกติกา + อยู่ในลายนิ้วมือ', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/utils/bomDupAudit.js'), 'utf8'));
+  assert.ok(/qty_diff/.test(code) && /pair_shot/.test(code),
+    '\n\n❌ หาย verdict ที่เกิดจากการเทียบ qty (`qty_diff` / `pair_shot`)\n'
+    + '   ถอดออก = คู่ที่จำนวนไม่ตรงจะกลับไปขึ้นว่า "ตรงกัน" อีก (จอโกหก)\n');
+  assert.ok(/fingerprint:\s*dupFingerprint\(\s*withQty\(/.test(code),
+    '\n\n❌ ลายนิ้วมือไม่ได้รวม qty แล้ว\n'
+    + '   ⇒ แก้แค่จำนวนแล้วคู่ที่ตรวจไปแล้วจะไม่กลับเข้าคิว = ตัวเลขเปลี่ยนโดยไม่มีใครรู้\n');
+  /* ชิ้น ≠ shot เป็นกฎเหล็กของโปรเจค — ห้ามยุบ 2 กรณีนี้เป็นอันเดียว
+     (qty ผิด = แก้ตัวเลข · ×2 = เคาะหน่วยทั้งโรงงาน — คนละทางแก้) */
+  const audit = require_like(code);
+  assert.ok(audit.qtyRank < audit.pairRank,
+    '\n\n❌ `qty_diff` ต้องร้อนกว่า `pair_shot` — ตัวเลขผิดจริงเร่งกว่าเรื่องหน่วย\n');
+  function require_like(src) {
+    const q = /qty_diff:\s*\{\s*rank:\s*(\d+)/.exec(src);
+    const p = /pair_shot:\s*\{\s*rank:\s*(\d+)/.exec(src);
+    assert.ok(q && p, '\n\n❌ อ่าน rank ของ qty_diff / pair_shot ไม่ได้ — เปลี่ยนรูปแบบแล้วต้องอัปเดตด่านนี้\n');
+    return { qtyRank: +q[1], pairRank: +p[1] };
+  }
+});
