@@ -17,6 +17,7 @@ import RoutingPanel from '../components/RoutingPanel';
 import useTabParam from '../utils/useTabParam';
 import CtReview from '../components/CtReview';
 import { MAT_CLASSES, matClassOf, matColor, matLabel, matMatches, isSapMat, rawAsOutputWarning } from '../utils/matPrefix';
+import { pairBlockReason } from '../utils/pairOrder';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import LineSelect from '../components/LineSelect';
 import CustomerSelect from '../components/CustomerSelect';
@@ -426,6 +427,13 @@ export default function ProductMaster() {
     if (!form.name) { toast.error('กรอกชื่อสินค้า'); return; }
     if (form.posting_mode === 'lot_accumulate' && !(Number(form.lot_accumulate_threshold) > 0)) {
       toast.error('กรอกจำนวนสะสมขั้นต่ำ (เช่น 800, 1000) สำหรับโหมดสะสม lot'); return;
+    }
+    // 🚫 คู่ RH/LH ต้องอยู่ไลน์เดียวกัน (เคสจริง 13/10 GOR 297 ก่อนชุบ↔หลังชุบ → Daily Report สลับ MAT ทั้งกะ · utils/pairOrder.js)
+    //    เช็คก่อนอัปโหลดรูป — ไม่งั้นบล็อกแล้วรูปค้างใน storage
+    if (form.pair_mat_no) {
+      const me = { mat_no: (form.mat_no || '').trim().toUpperCase(), line_name: form.line_name || null };
+      const pairWhy = pairBlockReason(me, items.find(i => i.mat_no === form.pair_mat_no) || { mat_no: form.pair_mat_no });
+      if (pairWhy) { toast.error(`ตั้งคู่ RH/LH ไม่ได้: ${pairWhy}`); return; }
     }
     setSaving(true);
     try {
@@ -1688,6 +1696,11 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
   const [slocs, setSlocs]           = useState([]);     // ทะเบียนรหัสคลัง (storage_locations)
   const [slocUsed, setSlocUsed]     = useState([]);     // รหัสที่ถูกใช้ใน BOM จริง (เผื่อมีที่ยังไม่ลงทะเบียน)
   const [showTree, setShowTree]     = useState(true);   // 🌳 กางโครงแบบ SAP
+  /* 🔍 "มุมมองพาร์ทนี้" — กดเลข MAT ที่ **ยังไม่มีใบ BOM ของตัวเอง** แล้วกางเป็นตัวตั้งต้น
+     ลูกของมันถูกกรอกไว้ในใบอื่น (เคสจริง 14/10: 20058483 ลูกอยู่ในใบ 20058498)
+     ⚠️ ไม่ใช่ "ใบ" — แก้ไม่ได้จากตรงนี้ ต้องไปแก้ที่ใบที่กรอกไว้ (จอต้องเขียนบอกให้ชัด) */
+  const [partView, setPartView]     = useState(null);   // { mat, sheetId, sheets:[{sheetId,count,isOwn}] }
+  const [borrowSheet, setBorrowSheet] = useState(null);  // ใบที่เลือกดู ตอน "ใบนี้ว่าง แต่ใบอื่นกรอกลูกไว้" 
   const [partsMaster, setPartsMaster] = useState([]);   // catalog กลาง
   const [search, setSearch]         = useState('');
   const [loading, setLoading]       = useState(false);
@@ -1784,6 +1797,8 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
 
   useEffect(() => { loadAll(); }, [loadAll]);
   useEffect(() => { loadItems(selProduct?.id); }, [selProduct, loadItems]);
+  // เปลี่ยนใบ = ปิด "มุมมองพาร์ท" เสมอ (ไม่งั้นค้างข้ามใบ แล้วคนอ่านว่าเป็นของใบใหม่)
+  useEffect(() => { setPartView(null); setBorrowSheet(null); }, [selProduct?.id]);
   /* เลือกแถวตาม ?mat= แล้วล้าง param ทิ้ง (กันค้าง — กดแถวอื่นแล้ว refresh จะเด้งกลับตัวเก่า)
      ⚠️ หาไม่เจอต้องบอก ห้ามเงียบ: mat ที่ปิด is_active อยู่จะไม่อยู่ในลิสต์นี้ (loadAll กรอง is_active) */
   useEffect(() => {
@@ -2057,10 +2072,39 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
        ⇒ `selProduct.id` กลายเป็น id ของบรรทัด BOM ⇒ โหลดใบด้วย product_id ที่ไม่มีจริง = **ใบเปล่า**
        (ไม่มี error ไม่มี toast — กดแล้วเจอใบว่าง เงียบๆ) */
     const target = products.find(p => upMat(p.mat_no) === k);
-    if (!target) { toast.info(`${mat} ยังไม่มีใบ BOM ของตัวเอง — กด "➕ เปิดใบ BOM ให้พาร์ทจากทะเบียน" ได้`); return; }
+    if (!target) {
+      /* 🔍 ไม่มีใบของตัวเอง — แต่ "ลูกของมัน" อาจถูกกรอกไว้ในใบอื่นแล้ว (ใบ FG / ใบ sub ที่กางอยู่)
+         เดิมจบที่ toast ⇒ ของอย่าง 20058483 ที่เห็นลูกอยู่ตรงหน้า กดดูเป็นตัวตั้งต้นไม่ได้เลย (user 14/10)
+         ⚠️ เปิดเป็น "มุมมอง" เท่านั้น ไม่ใช่ใบ — ห้ามสร้างใบให้เองเงียบๆ (ใบใหม่ = ของจริงในฐาน PE ตัดสิน) */
+      const where = bomIx.sheetsWithKidsOf(mat);
+      if (where.length) { setPartView({ mat: upMat(mat), sheetId: where[0].sheetId, sheets: where }); return; }
+      toast.info(`${mat} ยังไม่มีใบ BOM ของตัวเอง และยังไม่มีใบไหนกรอกลูกของมันไว้ — กด "➕ เปิดใบ BOM ให้พาร์ทจากทะเบียน" ได้`);
+      return;
+    }
+    setPartView(null);
     setBomBack(prev => (selProduct ? [...prev, { id: selProduct.id, mat_no: selProduct.mat_no, name: selProduct.name }] : prev));
     setSelProduct(target); setSearch(target.mat_no || '');
-  }, [products, selProduct]);
+  }, [products, selProduct, bomIx]);
+
+  /* ชื่อ/ป้ายของ mat และของ "ใบ" — ไม่รู้ = ปล่อยว่าง **ห้ามเอาเลข MAT มาแทนชื่อ** (ด่าน regressionGuards) */
+  const nameOfMat = useCallback((mat) => {
+    const k = upMat(mat);
+    return products.find(p => upMat(p.mat_no) === k)?.name
+      || partsMaster.find(p => upMat(p.mat_no) === k)?.part_name
+      || items.find(i => upMat(i.mat_no) === k)?.part_name || '';
+  }, [products, partsMaster, items]);
+  const sheetLabel = useCallback((sheetId) => {
+    const sh = products.find(p => p.id === sheetId);
+    return sh ? [sh.mat_no, sh.name].filter(Boolean).join(' — ') : 'ใบที่ไม่อยู่ในลิสต์';
+  }, [products]);
+
+  /* 📄 เปิดใบนี้แล้วว่าง — "ลูกของพาร์ทนี้" ถูกกรอกไว้ในใบอื่นหรือเปล่า
+     🔴 ต้องถามแยกจาก `items` — `items` = บรรทัดของ **ใบนี้** เท่านั้น ⇒ ว่าง ≠ ไม่มีลูก
+     (เคสจริง 14/10: ใบ 20058495 ว่าง แต่ใบ FG 10086024 กรอกลูกของมันไว้แล้ว → จอบอก "ยังไม่มีพาร์ทย่อย" = โกหก) */
+  const kidsElsewhere = useMemo(() => {
+    if (!selProduct?.mat_no) return [];
+    return bomIx.sheetsWithKidsOf(selProduct.mat_no).filter(x => x.sheetId !== selProduct.id);
+  }, [selProduct?.mat_no, selProduct?.id, bomIx]);
 
   /* ใบไหนเป็น "ขั้นงาน (OP)" — ใบขั้นงานตอบ "ขั้นนี้กินอะไร" คนละคำถามกับใบพาร์ท
      ⇒ ห้ามเอามาเทียบว่าชุดลูกต่างกัน (เตือนผิด 5 คู่จาก 19 · วัดจริง 06/10) */
@@ -2311,6 +2355,27 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
   }, [products, search, kind]);
   const opCount = useMemo(() => products.filter(p => p._op).length, [products]);
 
+  /* 🔎 ค้นแล้ว "ไม่พบ product" ≠ ของชิ้นนั้นไม่มีลูก — พาร์ทที่ยังไม่มีใบของตัวเอง
+     แต่ถูกกรอกลูกไว้ในใบอื่น ต้องหาเจอและกดดูได้ (user 14/10: ค้น 20058483 แล้วขึ้น "ไม่พบ product"
+     ทั้งที่ใบ 20058498 กรอกลูกของมันไว้แล้ว) · ตะกร้ารับท้ายลิสต์ ห้ามให้หายจากจอ */
+  const noSheetHits = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q || filtered.length > 0) return [];
+    const have = new Set(products.map(p => upMat(p.mat_no)));
+    const seen = new Set();
+    const out = [];
+    partsMaster.forEach(pm => {
+      const k = upMat(pm.mat_no);
+      if (!k || have.has(k) || seen.has(k)) return;
+      if (!k.toLowerCase().includes(q) && !(pm.part_name || '').toLowerCase().includes(q)) return;
+      const where = bomIx.sheetsWithKidsOf(pm.mat_no);
+      if (!where.length) return;
+      seen.add(k);
+      out.push({ mat: k, name: pm.part_name || '', sheets: where });
+    });
+    return out.slice(0, 20);
+  }, [search, filtered.length, partsMaster, products, bomIx]);
+
   return (
     <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(240px, 300px) 1fr', gap: 16, alignItems: 'start' }}>
       {/* left: product list */}
@@ -2360,14 +2425,71 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
               </div>
             );
           })}
-          {filtered.length === 0 && <div style={{ padding: 20, textAlign: 'center', fontSize: 13, color: 'var(--muted)' }}>ไม่พบ product</div>}
+          {filtered.length === 0 && (
+            <div style={{ padding: 20, textAlign: 'center', fontSize: 13, color: 'var(--muted)' }}>
+              ไม่พบ product
+              {noSheetHits.length > 0 && <div style={{ marginTop: 4, fontSize: 11.5 }}>แต่เจอพาร์ทที่ <b>ยังไม่มีใบของตัวเอง</b> ด้านล่าง</div>}
+            </div>
+          )}
+          {/* 🔍 พาร์ทที่ไม่มีใบของตัวเอง แต่มีคนกรอกลูกไว้ในใบอื่น — กดแล้วกางเป็นตัวตั้งต้น (อ่านอย่างเดียว) */}
+          {noSheetHits.map(h => (
+            <div key={h.mat} onClick={() => setPartView({ mat: h.mat, sheetId: h.sheets[0].sheetId, sheets: h.sheets })}
+              style={{ padding: '10px 12px', borderRadius: 8, cursor: 'pointer', background: 'var(--bg2)', border: '1px dashed rgba(14,165,233,0.5)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  🔍 {h.name || h.mat}
+                </span>
+                <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 7px', borderRadius: 10, flexShrink: 0, background: 'rgba(14,165,233,0.15)', color: '#0ea5e9' }}>
+                  {h.sheets.reduce((n, x) => n + x.count, 0)} ลูก
+                </span>
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
+                {h.mat} · ยังไม่มีใบของตัวเอง — ลูกถูกกรอกไว้ในใบ {h.sheets.length > 1 ? `${h.sheets.length} ใบ` : sheetLabel(h.sheets[0].sheetId)}
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 
       {/* right: BOM detail */}
       <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 16 }}>
+          {/* 🔍 มุมมองพาร์ทที่ "ยังไม่มีใบของตัวเอง" — กางจากใบที่กรอกลูกของมันไว้
+              ⚠️ อ่านอย่างเดียว (ไม่ส่ง onDeleteDupes) — ลบแถวของ *ใบอื่น* จากหน้าต่างนี้ = ลบผิดใบเงียบๆ */}
+          {partView && (
+            <div style={{ background: 'rgba(14,165,233,0.07)', border: '1px solid rgba(14,165,233,0.45)', borderRadius: 10, padding: '10px 12px', marginBottom: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 6 }}>
+                <span style={{ fontSize: 13, fontWeight: 800, color: '#0ea5e9' }}>🔍 มุมมองพาร์ท {partView.mat}</span>
+                <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{nameOfMat(partView.mat)}</span>
+                <button type="button" onClick={() => setPartView(null)}
+                  style={{ ...btnSecondary, padding: '3px 10px', fontSize: 11.5, marginLeft: 'auto' }}>✕ ปิดมุมมองนี้</button>
+              </div>
+              <div style={{ fontSize: 11.5, color: 'var(--text2)', lineHeight: 1.7, marginBottom: 8 }}>
+                พาร์ทนี้<b>ยังไม่มีใบ BOM ของตัวเอง</b> — ลูกที่เห็นด้านล่างถูกกรอกไว้ในใบ <b>{sheetLabel(partView.sheetId)}</b>
+                <br />เพิ่ม/แก้ลูกของพาร์ทนี้ ต้องไปแก้ที่ใบนั้น · อยากให้มันมีใบของตัวเอง กด <b>“➕ เปิดใบ BOM ให้พาร์ทจากทะเบียน”</b> ทางซ้าย
+                {partView.sheets?.length > 1 && (
+                  <div style={{ marginTop: 5 }}>
+                    ⚠️ <b>ลูกของพาร์ทนี้ถูกกรอกไว้ {partView.sheets.length} ใบ</b> — เลือกดูทีละใบ (ระบบไม่รวมให้ รวม = นับซ้ำ)
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
+                      {partView.sheets.map(x => (
+                        <button key={x.sheetId} type="button" onClick={() => setPartView(v => ({ ...v, sheetId: x.sheetId }))}
+                          style={{ ...btnSecondary, padding: '3px 9px', fontSize: 11,
+                            background: x.sheetId === partView.sheetId ? 'rgba(14,165,233,0.18)' : 'var(--bg2)',
+                            color: x.sheetId === partView.sheetId ? '#0ea5e9' : 'var(--text2)' }}>
+                          📄 {sheetLabel(x.sheetId)} ({x.count})
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+              <BomTreeView rootMat={partView.mat} rootName={nameOfMat(partView.mat)}
+                bomOf={bomIx.bomOf} sheetFor={bomIx.sheetFor} ownSheetOf={bomIx.ownSheetOf}
+                isOpSheet={isOpSheet} startSheet={partView.sheetId} onOpenSheet={openSheetOfMat} />
+            </div>
+          )}
+
         {!selProduct ? (
-          <div style={{ padding: '60px 20px', textAlign: 'center', color: 'var(--muted)', fontSize: 14 }}>← เลือก product เพื่อดู / แก้ไข BOM</div>
+          !partView && <div style={{ padding: '60px 20px', textAlign: 'center', color: 'var(--muted)', fontSize: 14 }}>← เลือก product เพื่อดู / แก้ไข BOM</div>
         ) : (
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
@@ -2429,9 +2551,43 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
             {loading ? (
               <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>กำลังโหลด...</div>
             ) : items.length === 0 ? (
-              <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--muted)', fontSize: 13, background: 'var(--bg2)', borderRadius: 8, border: '1px dashed var(--border)' }}>
-                ยังไม่มีพาร์ทย่อยใน BOM นี้{canCreate && ' — กด "+ เพิ่มพาร์ทย่อย" เพื่อเริ่ม'}
-              </div>
+              /* 🔴 ใบนี้ว่าง ≠ พาร์ทนี้ไม่มีลูก — ถ้ามีใบอื่นกรอกลูกของมันไว้ ต้องบอก ห้ามขึ้น "ยังไม่มีพาร์ทย่อย"
+                 (เคสจริง 14/10: ใบ 20058495 ว่าง ทั้งที่ใบ FG 10086024 กรอกลูกของมันไว้แล้ว — user เรียกว่า "มั่ว") */
+              kidsElsewhere.length > 0 ? (() => {
+                const showId = kidsElsewhere.some(x => x.sheetId === borrowSheet) ? borrowSheet : kidsElsewhere[0].sheetId;
+                return (
+                  <div style={{ background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.45)', borderRadius: 10, padding: '10px 12px' }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 800, color: '#f59e0b', marginBottom: 4 }}>
+                      ⚠️ ใบนี้ยังไม่มีพาร์ทย่อยของตัวเอง — แต่ลูกของ {selProduct.mat_no} ถูกกรอกไว้ในใบอื่นแล้ว
+                    </div>
+                    <div style={{ fontSize: 11.5, color: 'var(--text2)', lineHeight: 1.7 }}>
+                      ของที่เห็นด้านล่าง <b>ไม่ใช่ของใบนี้</b> — มาจากใบ <b>{sheetLabel(showId)}</b> ·
+                      ระบบ<b>ไม่ย้ายให้เอง</b> (ย้ายผิด = ความต้องการวัตถุดิบเพี้ยน PE/Planning ตัดสิน)
+                      {canCreate && ' · จะกรอกให้ใบนี้มีของตัวเอง กด "+ เพิ่มพาร์ทย่อย" ด้านบน'}
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', margin: '7px 0' }}>
+                      {kidsElsewhere.map(x => (
+                        <button key={x.sheetId} type="button" onClick={() => setBorrowSheet(x.sheetId)}
+                          style={{ ...btnSecondary, padding: '3px 9px', fontSize: 11,
+                            background: x.sheetId === showId ? 'rgba(245,158,11,0.18)' : 'var(--bg2)',
+                            color: x.sheetId === showId ? '#f59e0b' : 'var(--text2)' }}>
+                          📄 {sheetLabel(x.sheetId)} ({x.count})
+                        </button>
+                      ))}
+                      <button type="button" onClick={() => openSheetOfMat(products.find(pr => pr.id === showId)?.mat_no || '')}
+                        disabled={!products.find(pr => pr.id === showId)?.mat_no}
+                        style={{ ...btnSecondary, padding: '3px 9px', fontSize: 11 }}>↗ ไปเปิดใบนั้น</button>
+                    </div>
+                    <BomTreeView rootMat={selProduct.mat_no} rootName={selProduct.name}
+                      bomOf={bomIx.bomOf} sheetFor={bomIx.sheetFor} ownSheetOf={bomIx.ownSheetOf}
+                      isOpSheet={isOpSheet} startSheet={showId} onOpenSheet={openSheetOfMat} />
+                  </div>
+                );
+              })() : (
+                <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--muted)', fontSize: 13, background: 'var(--bg2)', borderRadius: 8, border: '1px dashed var(--border)' }}>
+                  ยังไม่มีพาร์ทย่อยใน BOM นี้{canCreate && ' — กด "+ เพิ่มพาร์ทย่อย" เพื่อเริ่ม'}
+                </div>
+              )
             ) : (
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>

@@ -61,3 +61,23 @@ export function pairOrderGaps(orders, pairOf) {
   });
   return { missing, unlinked };
 }
+
+/* ═══ 🚫 ตั้งคู่ RH/LH ผิดคู่ = Daily Report สลับ MAT ให้เองทุกใบ (2026-10-14 · เคสจริง GOR 297) ═══
+   13/10 15:00 ตั้ง `pair_mat_no` ให้ 20058498 (ก่อนชุบ · Assy GOR) ↔ 20058495 (หลังชุบ · ไลน์ Coating)
+   ⇒ คืนนั้นสแกนใบหนึ่งแล้วฟอร์มเด้ง MAT คู่ให้ใบถัดไป (handleScanOpen → nextMatNo) **12 ใบ 168 ชิ้นลงเป็นเลขหลังชุบ**
+   + ผูก `paired_order_id` ⇒ %P คิดเป็นงานคู่ (shot ครึ่งเดียว) · วัดทั้งทะเบียน 14/10: คู่ที่ถูกต้อง 52 ตัว **อยู่ไลน์เดียวกันหมด**
+   🔴 กติกา: คู่ RH/LH = ปั๊ม/เชื่อมพร้อมกันที่ไลน์เดียวกัน ⇒ **ไลน์ต่างกัน = ไม่ใช่คู่** (ห้ามบันทึก + ห้ามผูกตอนเปิดใบ)
+      · ไม่รู้ไลน์ข้างใดข้างหนึ่ง = ไม่บล็อก (ทะเบียนยังไม่ครบ ห้ามทำให้คู่จริงพัง) */
+const lineKey = (s) => (s ?? '').toString().trim().replace(/\s+/g, ' ').toLowerCase();
+
+/** null = เป็นคู่ได้ · ข้อความ = ห้ามเป็นคู่ (ใช้ทั้งตอนตั้งค่าใน Product Master และตอนเปิดใบใน Daily Report) */
+export function pairBlockReason(a, b) {
+  if (!a || !b) return null;
+  if (up(a.mat_no) && up(a.mat_no) === up(b.mat_no)) return 'MAT คู่ต้องเป็นคนละเลข';
+  const la = lineKey(a.line_name), lb = lineKey(b.line_name);
+  if (la && lb && la !== lb) {
+    return `${a.mat_no} อยู่ไลน์ ${a.line_name} แต่ ${b.mat_no} อยู่ไลน์ ${b.line_name} — งานคู่ RH/LH ต้องผลิตพร้อมกันที่ไลน์เดียวกัน `
+      + '(ถ้าเป็นก่อน/หลังชุบ หรือแม่-ลูก ให้ผูกด้วย BOM ไม่ใช่คู่ RH/LH)';
+  }
+  return null;
+}

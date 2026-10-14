@@ -567,6 +567,10 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
   const [copyQ, setCopyQ] = useState('')
   const [copyBusy, setCopyBusy] = useState(false)
   const [copyReport, setCopyReport] = useState(null) // ผลรายเครื่อง — ห้ามสรุปก้อนเดียว
+  /* 🧰 เครื่องมือคัดลอก/ย้าย "พับไว้เป็นค่าเริ่มต้น" (14/10 · user: "เปิดมาเจอแบบนี้คนไม่งงหรอ")
+     เดิมลิสต์ติ๊ก 177 เครื่องกางทันทีที่เปิดแก้ไข — ดันจุดตรวจ (งานหลักของโมดัล) ลงไปล่างสุด
+     ⇒ เหลือแค่ปุ่มบอกทิศชัดๆ กดแล้วค่อยกาง · null | 'equip' (ไปเครื่องอื่น) | 'dept' (ไปแผนกอื่น) */
+  const [toolOpen, setToolOpen] = useState(null)
   useEffect(() => {
     getCurrentUserId().then(setUserId)
     // equipment_kind/is_active มาด้วย — <MachineSelect> ใช้ติดป้ายชนิด/⏸ และ derive ประเภทอุปกรณ์ (2026-09-07)
@@ -1265,9 +1269,25 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
                   1 เครื่องมีรายการตรวจได้หลายแผนก (ผลิตเช็ครายวัน · ช่างเช็คตามรอบ) — เครื่องจะโผล่ในแท็บของแผนกที่มีรายการตรวจ
                 </p>
 
+                {/* 🧰 ปุ่มเปิดเครื่องมือ — พับไว้เป็นค่าเริ่มต้น (14/10) · บอก "ทิศ" ในป้ายเสมอ: ของเครื่องนี้ → ไปที่อื่น */}
                 {cur && cur.checkpointCount > 0 && (
+                  <div style={{ marginTop: 9, paddingTop: 9, borderTop: '1px dashed var(--border2)', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {[
+                      ['equip', `📋 คัดลอก ${cur.checkpointCount} จุดตรวจนี้ ไปเครื่องอื่น…`, 'เครื่องชนิดเดียวกัน จุด PM เหมือนกัน — ไม่ต้องพิมพ์ใหม่ทุกเครื่อง'],
+                      ['dept', '↔ ลงผิดแผนก? ย้าย/คัดลอกไปแผนกอื่น…', 'เปลี่ยนเจ้าของรายการตรวจ หรือทำสำเนาให้อีกแผนก'],
+                    ].map(([k, label, tip]) => (
+                      <button key={k} type="button" title={tip} aria-expanded={toolOpen === k}
+                        onClick={() => { setToolOpen(o => o === k ? null : k); setError('') }}
+                        style={{ ...S.jumpBtn, ...(toolOpen === k ? { borderColor: 'var(--accent)', color: 'var(--accent)', background: 'var(--accent-dim)' } : {}) }}>
+                        {label} {toolOpen === k ? '▲' : '▼'}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {cur && cur.checkpointCount > 0 && toolOpen === 'dept' && (
                   <div style={{ marginTop: 9, paddingTop: 9, borderTop: '1px dashed var(--border2)', display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                    <span style={{ fontSize: 11.5, color: 'var(--text2)' }}>ลงผิดแผนก? ย้าย/คัดลอก {cur.checkpointCount} จุดนี้ไป</span>
+                    <span style={{ fontSize: 11.5, color: 'var(--text2)' }}>ย้าย/คัดลอก {cur.checkpointCount} จุดนี้ไป</span>
                     <select value={moveTo} onChange={e => { setMoveTo(e.target.value); setError('') }} style={{ width: 'auto', minWidth: 150, fontSize: 12 }}>
                       <option value="">— เลือกแผนกปลายทาง —</option>
                       {allTeams.filter(t => t.key !== department).map(t => (
@@ -1286,7 +1306,7 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
                 )}
 
                 {/* ── 📋 คัดลอกจุดตรวจไป "เครื่องอื่น" (06/10 · ทีม MTN: เครื่อง 325 ตัว ชนิดซ้ำกัน จุด PM เหมือนกัน) ── */}
-                {cur && cur.checkpointCount > 0 && (() => {
+                {cur && cur.checkpointCount > 0 && toolOpen === 'equip' && (() => {
                   const curKind = equipTypeOfMachine(machineOptions.find(m => m.id === machineId))
                   const kindOfEquip = (e) => equipTypeOfMachine(machineOptions.find(m => m.id === e.machine_id))
                   const q = copyQ.trim().toLowerCase()
@@ -1298,7 +1318,7 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
                   return (
                     <div style={{ marginTop: 9, paddingTop: 9, borderTop: '1px dashed var(--border2)' }}>
                       <div style={{ fontSize: 11.5, color: 'var(--text2)', marginBottom: 6 }}>
-                        📋 <b>คัดลอก {cur.checkpointCount} จุดนี้ไปเครื่องอื่น</b> (ชนิดเดียวกัน จุด PM เหมือนกัน — ไม่ต้องพิมพ์ใหม่ทุกเครื่อง)
+                        ติ๊กเครื่อง<b>ปลายทาง</b>ที่จะได้รับ {cur.checkpointCount} จุดตรวจของเครื่องนี้ (ตั้งต้นแสดงเฉพาะชนิดเดียวกัน)
                       </div>
                       {/* 🔴 โหลดรายชื่อเครื่องล้ม = เขียนบนจอ ห้ามปล่อยให้ลิสต์ว่างแล้วอ่านว่า "ไม่มีเครื่อง" (08/10) */}
                       {allEquipErr && (

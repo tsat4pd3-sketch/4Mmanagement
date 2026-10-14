@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { pairQtyPlan, pairOrderGaps } from '../pairOrder.js';
+import { pairQtyPlan, pairOrderGaps, pairBlockReason } from '../pairOrder.js';
 
 const O = (id, mat, extra = {}) => ({ id, mat_no: mat, status: 'open', qty_ok: 0, ...extra });
 const PAIR = { '10076601': '10076602', '10076602': '10076601' };
@@ -56,4 +56,15 @@ test('ใบที่ยกเลิกแล้วไม่นับเป็�
 test('สินค้าไม่ใช่งานคู่ = ไม่ยุ่ง', () => {
   const g = pairOrderGaps([O(1, '99999999')], pairOf);
   assert.deepEqual([g.missing.length, g.unlinked.length], [0, 0]);
+});
+
+
+test('pairBlockReason — ไลน์ต่างกัน = ไม่ใช่คู่ RH/LH (เคสจริง GOR 297 ก่อน/หลังชุบ) · ไม่รู้ไลน์ = ไม่บล็อก', () => {
+  const before = { mat_no: '20058498', line_name: 'Assy GOR' };
+  const after = { mat_no: '20058495', line_name: 'Coating' };
+  assert.match(pairBlockReason(before, after), /ไลน์เดียวกัน/);
+  assert.equal(pairBlockReason({ mat_no: 'A', line_name: 'Line D4 ' }, { mat_no: 'B', line_name: 'line d4' }), null);
+  assert.equal(pairBlockReason({ mat_no: 'A', line_name: '' }, { mat_no: 'B', line_name: 'X' }), null);
+  assert.match(pairBlockReason({ mat_no: 'A' }, { mat_no: 'a' }), /คนละเลข/);
+  assert.equal(pairBlockReason(null, after), null);
 });

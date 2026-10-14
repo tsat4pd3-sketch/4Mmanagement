@@ -179,7 +179,13 @@ export function explodeBom(root, bomOf, opt = {}) {
     });
   };
 
-  walk(rootMat, nextSheet(rootMat, undefined), 1, 1, [rootMat]);
+  /* 🔴 `startSheet` = บังคับ "ใบตั้งต้น" (ไม่ส่ง = หาเองเหมือนเดิมเป๊ะ)
+     ต้องมีเพราะ `sheetFor(mat, undefined)` ตอบได้แค่ "ใบของ mat เอง" ⇒ พาร์ทที่ **ลูกถูกกรอกไว้ในใบอื่น**
+     (ใบของตัวเองยังว่าง หรือไม่มีใบของตัวเองเลย) กางไม่ออกเลย = จอบอกว่า "ไม่มีลูก" ทั้งที่มี
+     เคสจริง 14/10: เปิดใบ 20058495 ขึ้น "ยังไม่มีพาร์ทย่อย" แต่ใบ FG 10086024 กรอกลูกของมันไว้แล้ว
+     · 20058483 ไม่มีใบของตัวเองเลย แต่ใบ 20058498 กรอกลูก (50027080) ไว้ให้ ⇒ กดดูเป็นตัวตั้งต้นไม่ได้
+     ⚠️ ยังคงกฎ "ชุดของใบที่กางอยู่ชนะทั้งชุด" — แค่เปลี่ยนว่า "ใบไหนคือใบที่กางอยู่" ไม่ได้รวม 2 ชุด */
+  walk(rootMat, opt.startSheet !== undefined ? opt.startSheet : nextSheet(rootMat, undefined), 1, 1, [rootMat]);
 
   /* ── ตรวจ "แบนมาจากหลายชั้น" ────────────────────────────────────────────────
      mat ที่โผล่ทั้งชั้น 1 และชั้นลึกกว่าในต้นเดียวกัน = ของก้อนเดียวถูกนับ 2 รอบ
@@ -460,7 +466,25 @@ export function buildBomIndex(rows = [], matOfProduct = {}) {
    *  ⚠️ **ห้ามเอาไปใช้แทน `sheetFor`** (ตัวนั้นตอบว่าเดินลงชั้นต่อในใบไหน คนละคำถาม) */
   const ownSheetOf = (mat) => productIdOf[norm(mat)] ?? null;
 
-  return { bomOf, parentOf, orphans, sheetFor, productIdOf, ownSheetOf };
+  /** 📍 "ลูกของ mat ถูกกรอกไว้ในใบไหนบ้าง" — คำถามที่ `bomOf`/`sheetFor`/`ownSheetOf` ตอบไม่ได้
+   *  3 ตัวนั้นถามจาก "ใบที่กางอยู่" หรือ "ใบของ mat เอง" เท่านั้น ⇒ ของที่ลูกถูกกรอกไว้ใน**ใบอื่น**
+   *  จะหายไปเงียบๆ (จอขึ้น "ยังไม่มีพาร์ทย่อยใน BOM นี้" ทั้งที่มีคนกรอกไว้แล้ว — user แจ้ง 14/10)
+   *  @returns {{sheetId:string,count:number,isOwn:boolean}[]} ใบของตัวเองมาก่อน แล้วเรียงตามจำนวนลูก
+   *  ⚠️ ชี้ให้เห็นอย่างเดียว — **ห้ามเอาหลายใบมารวมเป็นชุดเดียว** (รวม = นับซ้ำ · ดูกติกาใน `bomOf`) */
+  const sheetsWithKidsOf = (mat) => {
+    const m = norm(mat);
+    if (!m) return [];
+    const ids = new Set((byParentMat[m] || []).map(r => r?.product_id).filter(id => id != null));
+    const ownId = productIdOf[m] ?? null;
+    if (ownId && (bySheetMat[m] || []).length) ids.add(ownId);
+    return [...ids]
+      .map(sheetId => ({ sheetId, count: (bomOf(m, sheetId) || []).length, isOwn: sheetId === ownId }))
+      .filter(x => x.count > 0)
+      .sort((a, b) => (b.isOwn ? 1 : 0) - (a.isOwn ? 1 : 0) || b.count - a.count
+        || String(a.sheetId).localeCompare(String(b.sheetId)));
+  };
+
+  return { bomOf, parentOf, orphans, sheetFor, productIdOf, ownSheetOf, sheetsWithKidsOf };
 }
 
 /** ย้ายบรรทัดไปเป็นลูกของ mat อื่น — คืน patch ที่จะเขียนลง DB (null = ย้ายไม่ได้ + เหตุผล)
