@@ -205,6 +205,9 @@ model: inherit
 - **[E-DEPS]** `useCallback`/`useEffect` ที่**ยิง DB** แล้วมี object/array/`Set`/`Map` อยู่ใน deps = 🔴
   พ่อ `setState(arr)` ใบใหม่เนื้อเดิม ⇒ ลูกยิงคิวรีซ้ำฟรีๆ (เกิดจริง `StoreLotQueue` 4 คิวรี × 705 ครั้ง/วัน)
   ให้แปลงเป็น string/primitive ก่อนใส่ deps · **บั๊กคลาสนี้ build/lint/เทส/หน้าจอผ่านหมด เห็นได้จาก log เท่านั้น**
+- **[E-PINCOPY]** (14/10) คัดลอกแถว `jig_checkpoints` ไปเครื่อง/แผนกอื่นต้องผ่าน **`checkpointCopyRow()`**
+  (`src/utils/pmCheckpointCopy.js`) · แตกแถวเองแล้ว insert = 🔴 — หมุด `x_pos/y_pos/label_dx/label_dy/image_id`
+  ผูกกับรูปเครื่องต้นทาง ⇒ ข้ามเครื่องต้องล้าง · `jig_id` ต้องเป็นเครื่องปลายทาง (มีด่าน `pm-checkpoint-copy-via-util`)
 
 ### หมวด F — UI Conventions (docs/UI-CONVENTIONS.md)
 - **[F-TVFIT]** จอบอร์ด fit-to-viewport (ผัง A4 / grid ที่ต้องเต็มจอไม่เลื่อน — ต้นแบบ `/obeya`, UI-CONVENTIONS §6.14 · 2026-09-15):

@@ -4259,3 +4259,16 @@ test('🛡️ pair-same-line — ตั้งคู่/ผูกคู่ RH/LH 
   assert.match(dr, /pairBlockReason\(/, 'DailyReport ต้องเช็ค pairBlockReason ก่อนผูกคู่/เด้ง MAT คู่');
   assert.doesNotMatch(dr, /const partnerMatNo = products\.find\([^)]*\)\?\.pair_mat_no/, 'ห้ามอ่าน pair_mat_no ตรงๆ เป็น partnerMatNo โดยไม่ผ่านด่าน');
 });
+
+test('🛡️ pm-checkpoint-copy-via-util — คัดลอกจุดตรวจต้องผ่าน checkpointCopyRow() (ล้างหมุดเมื่อข้ามเครื่อง)', () => {
+  const rel = 'src/lib/pmChecklists.js';
+  const code = stripComments(readFileSync(join(ROOT, rel), 'utf8'));
+  const bad = [];
+  /* แตก cp ด้วยมือ (`({ id, created_at, ... checklist_id, ...rest })`) = ข้ามกฎล้างหมุด ⇒ หมุดผูกรูปเครื่องต้นทางกลับมา */
+  if (/\(\s*\{\s*id\s*,\s*created_at[^}]*\.\.\.rest\s*\}\s*\)/.test(code)) bad.push(rel + ' (แตกแถวจุดตรวจด้วยมือ)');
+  if (!/checkpointCopyRow\s*\(/.test(code)) bad.push(rel + ' (ไม่เรียก checkpointCopyRow)');
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n'
+    + '   ทำไม: x_pos/y_pos/label_dx/label_dy/image_id ผูกกับ "รูปของเครื่องต้นทาง" — ก๊อปข้ามเครื่องแล้วหมุดไปโผล่ผิดที่บนจอตั้งค่า\n'
+    + '         และหายไปเลยบนจอตรวจ (14/10 เจอจริง 9 จุด) · jig_id ต้องเป็นเครื่องปลายทาง\n'
+    + '   แก้: ใช้ checkpointCopyRow() จาก src/utils/pmCheckpointCopy.js · ข้ามแผนกบนเครื่องเดิมส่ง samePhotos:true\n');
+});
