@@ -484,7 +484,28 @@ export function buildBomIndex(rows = [], matOfProduct = {}) {
         || String(a.sheetId).localeCompare(String(b.sheetId)));
   };
 
-  return { bomOf, parentOf, orphans, sheetFor, productIdOf, ownSheetOf, sheetsWithKidsOf };
+  /** ⬆️ "ของชิ้นนี้ถูกใช้เป็นลูกของใครบ้าง" (ย้อนขึ้น 1 ชั้น · user ขอ 14/10 "ควรมีแถบโชว์ให้ดูแม่ได้ด้วย")
+   *  ตัวแม่ = `parent_mat` ถ้ามี · ไม่มี = เจ้าของใบ (เหมือน `parentOf`) ⇒ ตรงกับต้นไม้ที่กางเป๊ะ
+   *  @returns {{mat:string,sheetId:string,qty:number}[]} เรียงตาม mat แม่ · ซ้ำ (แม่+ใบ) เดียวกันยุบแล้ว
+   *  ⚠️ แม่ตัวเดียวอาจโผล่หลายใบ — **ห้ามยุบข้ามใบ** (คนละใบ = คนละการนิยาม ต้องกดเข้าไปดูแยก) */
+  const parentsOfMat = (mat) => {
+    const m = key(mat);
+    if (!m) return [];
+    const seen = new Set();
+    const out = [];
+    (rows || []).forEach(r => {
+      if (key(r?.mat_no) !== m) return;
+      const pm = norm(r?.parent_mat) || norm(matOfProduct[r?.product_id]);
+      if (!pm) return;                       // แถวกำพร้า — มี orphans รับไว้แล้ว ห้ามเดาแม่
+      const k = `${key(pm)}|${r?.product_id}`;
+      if (seen.has(k)) return;
+      seen.add(k);
+      out.push({ mat: pm, sheetId: r?.product_id ?? null, qty: Number(r?.qty_per_unit) || 0 });
+    });
+    return out.sort((a, b) => a.mat.localeCompare(b.mat));
+  };
+
+  return { bomOf, parentOf, orphans, sheetFor, productIdOf, ownSheetOf, sheetsWithKidsOf, parentsOfMat };
 }
 
 /** ย้ายบรรทัดไปเป็นลูกของ mat อื่น — คืน patch ที่จะเขียนลง DB (null = ย้ายไม่ได้ + เหตุผล)
