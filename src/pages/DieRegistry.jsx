@@ -21,6 +21,7 @@ import { buildQrPayload, parseQrPayload, findDieByScan } from '../utils/qrCode';
 import DieLayout from '../components/DieLayout';
 import DieStatusBoard from '../components/DieStatusBoard';
 import ProductSelect from '../components/ProductSelect'; // MAT SAP = picker กลาง (single-source audit 2026-09-07)
+import { dieSetMats, dieSetPairState, suggestPps } from '../utils/dieSetMats'; // 🔨 ชุดหนึ่งทำได้ 2 MAT (งานคู่ RH/LH)
 import useColumnHistory from '../utils/useColumnHistory'; // 📜 MAT ที่เคยบันทึกใน die_sets — Product Master ไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
 import SelectOrFree from '../components/SelectOrFree';
 import SimpleMasterPanel from '../components/SimpleMasterPanel';
@@ -96,8 +97,26 @@ const emptySet = {
   kind: '', op_total: '',
   // 🔴 ว่าง = ยังไม่รู้ ห้าม default 1 (14/10 · คำสั่ง user "ควรนับ shot ไม่ใช่นับชิ้น สำหรับงานคู่")
   pieces_per_stroke: '',
-  mat_no: '', note: '', is_active: true,
+  mat_no: '', mat_no_2: '',   // ตัวที่ 2 = งานคู่ RH/LH (gang die ปั๊มทีเดียวได้ 2 พาร์ท)
+  note: '', is_active: true,
 };
+
+/* 🔗 ชุดที่ลง MAT ไว้ 2 ตัว ต้องสอดคล้องกับคู่ที่ตั้งไว้ใน Product Master
+   **จอชี้อย่างเดียว ห้ามเขียนทับให้เอง** — "ใครคู่กับใคร" เป็นของ Product Master (pairBlockReason คุมอยู่)
+   ไม่ตั้งคู่ = OEE ยังนับ shot ซ้ำอยู่ ⇒ ต้องบอก ไม่ใช่ปล่อยเงียบ */
+function SetPairNote({ set, products }) {
+  const pairOf = (m) => products.find(p => String(p.mat_no || '').trim().toUpperCase() === m)?.pair_mat_no || null;
+  const r = dieSetPairState(set, pairOf);
+  if (r.state === 'single' || r.state === 'ok') return null;
+  const msg = r.state === 'mismatch'
+    ? `Product Master บอกว่าคู่ของ ${r.mats[0]} คือ ${r.says} ไม่ใช่ ${r.mats[1]} — ตรวจก่อนบันทึก`
+    : `ยังไม่ได้ตั้งคู่ RH/LH ของ 2 ตัวนี้ที่ /products — OEE จะยังนับ shot ซ้ำ 2 เท่า`;
+  return (
+    <div style={{ marginTop: 4, fontSize: 11, color: r.state === 'mismatch' ? '#ef4444' : '#f59e0b' }}>
+      {r.state === 'mismatch' ? '⚠️ ' : 'ℹ️ '}{msg}
+    </div>
+  );
+}
 
 export default function DieRegistry() {
   const { role, lineId: userLineId, sections: scopeSecs, fullName } = useContext(UserContext);
@@ -285,7 +304,7 @@ export default function DieRegistry() {
       .filter(s => inScope(s.line_name))                                    // scope ก่อน filter อิสระเสมอ
       .filter(s => !filterLine || s.line_name === filterLine)
       .filter(s => !filterKind || (filterKind === KIND_NONE ? !s.kind : s.kind === filterKind))
-      .filter(s => !q || [s.part_no, s.part_name, s.model, s.set_code, s.mat_no]
+      .filter(s => !q || [s.part_no, s.part_name, s.model, s.set_code, s.mat_no, s.mat_no_2]
         .some(v => (v || '').toLowerCase().includes(q))
         || (diesBySet[s.id] || []).some(d => (d.machine_no || '').toLowerCase().includes(q)))
       .map(s => ({ ...s, members: diesBySet[s.id] || [], issues: issuesOf(s) }))
@@ -357,6 +376,7 @@ export default function DieRegistry() {
       op_total: numOrNull(f.op_total),
       pieces_per_stroke: numOrNull(f.pieces_per_stroke),   // null = ยังไม่รู้ (ห้าม ?? 1 — งานคู่ = 2)
       mat_no: f.mat_no?.trim() || null,
+      mat_no_2: f.mat_no_2?.trim() || null,   // null = ชุดนี้ทำพาร์ทเดียว
       note: f.note?.trim() || null,
       is_active: f.is_active !== false,
     };
@@ -575,7 +595,7 @@ export default function DieRegistry() {
                       </div>
                       <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 2 }}>
                         พาร์ท {s.part_no || <Blank />}
-                        {' · '}MAT {s.mat_no || <Blank />}
+                        {' · '}MAT {dieSetMats(s).join(' + ') || <Blank />}
                         {s.model && <> · รุ่น {s.model}</>}
                       </div>
                     </div>
@@ -748,6 +768,14 @@ export default function DieRegistry() {
                   ...(res.opt ? { part_name: res.name || f.part_name || '', part_no: res.p_no || f.part_no || '' } : null),
                 }))} inputStyle={{ background: 'var(--bg)' }} />
             </Field>
+            {/* 🔨 MAT ตัวที่ 2 — gang die ปั๊มทีเดียวได้ RH+LH (14/10 · คำสั่ง user)
+                เดิมช่องเดียว ⇒ ล็อตของอีกฝั่งหาแม่พิมพ์ไม่เจอ (ProdLotPlanner) = ไม่รู้ความสูง = คิดเวลาเปลี่ยนรุ่นไม่ได้
+                ⚠️ ช่องนี้ตอบ "แม่พิมพ์ชุดนี้ทำพาร์ทอะไร" — ไม่ใช่ที่ตั้งว่าใครคู่กับใคร (นั่นคือ Product Master) */}
+            <Field label="MAT ตัวที่ 2 (งานคู่ RH/LH)" hint="ว่าง = ชุดนี้ทำพาร์ทเดียว">
+              <ProductSelect value={editSet.mat_no_2 || ''} lines={editSet.line_name ? [editSet.line_name] : undefined} history={dieMatHist}
+                onChange={res => setEditSet(f => ({ ...f, mat_no_2: res.mat_no || '' }))} inputStyle={{ background: 'var(--bg)' }} />
+              <SetPairNote set={editSet} products={products} />
+            </Field>
             <Field label="รุ่น / Model">
               <input style={inputStyle} value={editSet.model || ''}
                 onChange={e => setEditSet(f => ({ ...f, model: e.target.value }))} />
@@ -779,6 +807,15 @@ export default function DieRegistry() {
             <Field label="ชิ้น / stroke" hint="งานคู่ LH+RH = 2 · ว่าง = ยังไม่รู้ ระบบจะไม่เดาให้">
               <input style={inputStyle} type="number" min="1" value={editSet.pieces_per_stroke ?? ''}
                 onChange={e => setEditSet(f => ({ ...f, pieces_per_stroke: e.target.value }))} />
+              {/* 🔴 ลง MAT ไว้ 2 ตัว = ปั๊มทีเดียวได้อย่างน้อย 2 ชิ้น — แต่ "เสนอ" เท่านั้น คนกดยืนยันเอง
+                  ห้ามเติมให้อัตโนมัติ: บางชุดเป็น 2-out ของทั้งคู่ = 4 ชิ้น/จังหวะ ระบบไม่มีทางรู้ */}
+              {suggestPps(editSet) != null && !String(editSet.pieces_per_stroke ?? '').trim() && (
+                <button type="button" onClick={() => setEditSet(f => ({ ...f, pieces_per_stroke: String(suggestPps(f)) }))}
+                  style={{ marginTop: 4, fontSize: 11, padding: '2px 8px', borderRadius: 6, cursor: 'pointer',
+                    background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border)' }}>
+                  ลง MAT ไว้ {suggestPps(editSet)} ตัว — ใช้ {suggestPps(editSet)} ชิ้น/stroke?
+                </button>
+              )}
             </Field>
           </div>
           <div style={{ marginTop: 10 }}>
