@@ -1,3 +1,4 @@
+import { checkpointCopyRow } from '../utils/pmCheckpointCopy'
 import { supabaseDR } from '../supabaseClient'
 import { invalidateTable } from '../utils/masterInvalidate'
 
@@ -131,7 +132,7 @@ export async function moveChecklistDept(checklistId, toDepartment, { replace = f
 /* ── ของกลางของการ "คัดลอกจุดตรวจ" — ใช้ทั้งข้ามแผนก และข้ามเครื่อง (06/10) ──────────
    🔴 ด่านกันพลาดทั้งหมดอยู่ที่นี่ที่เดียว **ห้ามก๊อปไปเขียนซ้ำในตัวเรียก**
    คืนเหตุผลเป็นค่า (ไม่ throw) เมื่อ "ไม่ควรทับ" — ตัวเรียกเอาไปบอกคนได้ว่าข้ามเพราะอะไร */
-async function copyCheckpointsInto(srcCps, target, replace) {
+async function copyCheckpointsInto(srcCps, target, replace, { targetEquipmentId = null, samePhotos = false } = {}) {
   // ⚠️ นับไม่สำเร็จ = "ไม่รู้" ห้าม `?? 0` — จะข้ามด่านไปลง insert ทับของเดิม
   //    ⇒ จุดตรวจปลายทาง "ซ้ำสองชุด" เงียบๆ (ผู้ตรวจเห็นทุกจุดสองครั้ง) โดยไม่มีใครกดยืนยันอะไรเลย
   const rCps = await supabaseDR
@@ -154,10 +155,9 @@ async function copyCheckpointsInto(srcCps, target, replace) {
     if (eDel) throw eDel
   }
 
-  // copy เฉพาะนิยามจุดตรวจ — ตัด id/created_at/audit ทิ้ง, รูปใช้ path เดิมร่วมกัน (ไม่ก๊อปไฟล์ storage)
-  const rows = srcCps.map(({ id, created_at, updated_at, updated_by_name, checklist_id, ...rest }) => ({
-    ...rest, checklist_id: target.id,
-  }))
+  // copy เฉพาะนิยามจุดตรวจ — ตัด id/audit ทิ้ง · รูปโคลสอัพใช้ path เดิมร่วมกัน (ไม่ก๊อปไฟล์ storage)
+  // 🔴 ข้ามเครื่อง = ล้างตำแหน่งหมุด (ผูกกับรูปเครื่องต้นทาง) + jig_id = เครื่องปลายทาง — กฎอยู่ `utils/pmCheckpointCopy.js`
+  const rows = srcCps.map(cp => checkpointCopyRow(cp, { targetChecklistId: target.id, targetEquipmentId, samePhotos }))
   const { error: e2 } = await supabaseDR.from('jig_checkpoints').insert(rows)
   if (e2) throw e2
   return { copied: true, count: rows.length, targetId: target.id }
@@ -212,7 +212,7 @@ export async function copyChecklistToDept(checklistId, toDepartment, userId, { r
   if (src.department === toDepartment) return { copied: false, reason: 'same' }
   if (!cps.length) return { copied: false, reason: 'empty' }
   const res = await withFreshChecklist(src.equipment_id, src.module, toDepartment, userId,
-    (target) => copyCheckpointsInto(cps, target, replace))
+    (target) => copyCheckpointsInto(cps, target, replace, { targetEquipmentId: src.equipment_id, samePhotos: true }))
   // เดิมเคส "ปลายทางมีประวัติ" โยน error — คงพฤติกรรมเดิมไว้สำหรับหน้าที่เรียกอยู่แล้ว
   if (res.reason === 'target_has_history')
     throw new Error(`แผนกปลายทางมีประวัติผลตรวจ ${res.history} รายการ — ทับไม่ได้ (ประวัติจะหายถาวร) แก้จุดตรวจที่หน้าตั้งค่าแทน`)
@@ -243,7 +243,7 @@ export async function copyChecklistToEquipment(checklistId, toEquipmentIds, user
     }
     try {
       const r = await withFreshChecklist(equipmentId, src.module, dept, userId,
-        (target) => copyCheckpointsInto(cps, target, replace))
+        (target) => copyCheckpointsInto(cps, target, replace, { targetEquipmentId: equipmentId, samePhotos: equipmentId === src.equipment_id }))
       results.push({ equipmentId, ...r })
     } catch (e) {
       // เครื่องเดียวล้ม ต้องไม่ทำให้ทั้งชุดหยุด — เก็บเหตุผลไว้รายงาน
