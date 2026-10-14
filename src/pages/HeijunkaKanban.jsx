@@ -16,6 +16,7 @@ import { MAT_CLASSES, matColor, matMatches } from '../utils/matPrefix';
 import ProdProgressStrip from '../components/ProdProgressStrip';
 import StoreTimeChart from '../components/StoreTimeChart';
 import PurchaseBulkModal from '../components/PurchaseBulkModal';
+import PlatingBoard from '../components/PlatingBoard';
 import DeliverScanModal from '../components/DeliverScanModal';
 import PickScanModal from '../components/PickScanModal';
 import { DELIVER_GATES, PICK_GATES } from '../utils/replenishGate';
@@ -1060,6 +1061,9 @@ const STORE_TABS = [
   { key: 'rack',     icon: '📦', label: 'ภาชนะ (ดูอย่างเดียว)', desc: 'ภาชนะ + Packaging → ทุกไลน์ · จัดการที่ ภาชนะ & Packaging' },
   // ชื่อต้องต่างจากแท็บ 'WIP ค้างระหว่างขั้น' ใน สต๊อกในไลน์ — คนละเรื่องกัน (คิวเติม vs ยอดค้าง)
   { key: 'wip',      icon: '🔄', label: 'คิวเติม WIP',   desc: 'ใบเบิกจากไลน์ · ใบส่งตามแผน · จุด WIP → ส่งเข้าไลน์' },
+  // 🧪 งานชุบภายนอก (13/10) — ร้านชุบทำหน้าที่เหมือนไลน์ผลิต (2xx ก่อนชุบ → 2xx หลังชุบ) แต่ไม่ยืนยันยอดเอง
+  //    สโตร์ส่งออก แล้วนับรับคืนต่อใบ · จอ/กฎ = components/PlatingBoard.jsx + utils/plating.js
+  { key: 'plating',  icon: '🧪', label: 'งานชุบ',        desc: 'ส่งงานก่อนชุบไปร้าน → รอรับงานหลังชุบกลับเข้าสโตร์' },
 ];
 // ของซื้อจาก supplier (300 child ซื้อ / 500 raw) — 2 สเต็ป: สั่งซื้อ → รับเข้า (เติม stock)
 const PURCHASE_STATUS = {
@@ -1404,6 +1408,9 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
           )}
         </>
       )}
+
+      {/* 🧪 งานชุบ — โหลดข้อมูลเอง (ใบส่งชุบ/ยอดคลัง) · ใช้คำค้น + "เฉพาะงานค้าง" ชุดเดียวกับแท็บอื่น */}
+      {store === 'plating' && <PlatingBoard q={q} showDone={showDone} />}
 
       {store === 'wip' && (<>
         {hiddenNote}

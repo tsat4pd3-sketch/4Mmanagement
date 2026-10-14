@@ -116,3 +116,37 @@ test('Daily Checker piggyback: เข้าได้ผ่านสิทธิ�
 test('pagination: แถวที่ถูกดันไปหน้าท้ายๆ (>2000 แถว) ต้องไม่หลุดจาก cache', () => {
   assert.equal(mod.canAccessPage('/shift-organize', 'supervisor'), true);
 });
+
+/* ── 🖥️ บัญชีกลาง (account_kind='shared') ห้ามลบ (2026-10-13 · คำสั่ง user) ───────── */
+
+test('บัญชีกลาง: canDelete เป็น false ทุก resource — แม้ role ถือคีย์ลบอยู่', () => {
+  mod.setSharedAccount(true);
+  assert.equal(mod.canDelete('shift_schedule', 'edit', 'mtn'), false);
+  assert.equal(mod.canDelete('mtn_repair', 'manage_master', 'mtn'), false);
+  mod.setSharedAccount(false);
+});
+
+test('🔴 บัญชีกลางที่ถือ role admin ก็ลบไม่ได้ (ด่านต้องอยู่ก่อน admin bypass)', () => {
+  mod.setSharedAccount(true);
+  assert.equal(mod.canDelete('shift_schedule', 'edit', 'admin'), false);
+  assert.equal(mod.isSharedAccount(), true);
+  // สิทธิ์อื่นของบัญชีกลางไม่ถูกแตะ — จอ TV ต้องอ่านได้ · บัญชีประจำเครื่องยังบันทึกงานได้
+  assert.equal(mod.can('shift_schedule', 'edit', 'admin'), true);
+  assert.equal(mod.canAccessPage('/shift-organize', 'admin'), true);
+  mod.setSharedAccount(false);
+});
+
+test('บัญชีของคน: สิทธิ์ลบเดิมไม่เปลี่ยน (ไม่ใช่การปิดทั้งระบบ)', () => {
+  mod.setSharedAccount(false);
+  assert.equal(mod.canDelete('shift_schedule', 'edit', 'admin'), true);
+  // mtn ลบกะได้ผ่าน bucket dept_admin (เหมือนเทสด้านบน) — เส้นทางนี้ต้องไม่ถูกแตะ
+  mod.setDeptAdmin(true);
+  assert.equal(mod.canDelete('shift_schedule', 'edit', 'mtn'), true);
+  mod.setDeptAdmin(false);
+});
+
+test('🖥️ บัญชีกลาง + แอดมินหน่วยงาน ก็ยังลบไม่ได้ (bucket ข้ามด่านนี้ไม่ได้)', () => {
+  mod.setSharedAccount(true); mod.setDeptAdmin(true);
+  assert.equal(mod.canDelete('shift_schedule', 'edit', 'mtn'), false);
+  mod.setSharedAccount(false); mod.setDeptAdmin(false);
+});

@@ -537,7 +537,7 @@ function MaintenanceView({ d, ctx }) {
     </Section>
 
     <Section title="🔗 ทางลัด">
-      <Links navigate={navigate} items={[['/tv?dept=maintenance', '📺 จอเฝ้าระวัง (แขวนทีวี)', callMtn.length || null], ['/mtn-repair', '🛠️ แจ้งซ่อม MO', scopedMo.length], ['/pm?tab=plan', '📅 แผน PM', overdue.length], ['/pm?tab=forecast', '🔧 PM ล่วงหน้า'], ['/daily-checker', '✅ Daily Checker'], ['/mtn-layout', '🗺️ ผังเครื่องจักร']]} />
+      <Links navigate={navigate} items={[['/tv?dept=maintenance', '📺 Andon Board (จอแขวน)', callMtn.length || null], ['/mtn-repair', '🛠️ แจ้งซ่อม MO', scopedMo.length], ['/pm?tab=plan', '📅 แผน PM', overdue.length], ['/pm?tab=forecast', '🔧 PM ล่วงหน้า'], ['/daily-checker', '✅ Daily Checker'], ['/mtn-layout', '🗺️ ผังเครื่องจักร']]} />
     </Section>
   </>);
 }
@@ -954,8 +954,8 @@ export default function DeptDashboard({ embedded = false, tabs, tab: hubTab, onT
             <span className="spacer" />
             {/* 📺 จอเฝ้าระวังย้ายไปหน้า `/tv` แล้ว (nav audit 2026-08-28) — ปุ่มนี้คงทางเข้าเดิมไว้ (ห้ามตัดทางออกของใคร) */}
             <button className="ctl-btn" onClick={() => navigate(`/tv?dept=${dept === 'store' ? 'store' : dept === 'production' ? 'production' : 'maintenance'}`)}
-              title="เปิดจอเฝ้าระวังสำหรับแขวนทีวี (ผัง + เครื่องหยุด + เสียงเตือน)"
-              style={tvBtn(false)}>📺 จอเฝ้าระวัง (แขวนทีวี)</button>
+              title="เปิด Andon Board สำหรับแขวนทีวี (ผัง + เครื่องหยุด + เสียงเตือน)"
+              style={tvBtn(false)}>📺 Andon Board (จอแขวน)</button>
           </>) : undefined}
         />
 

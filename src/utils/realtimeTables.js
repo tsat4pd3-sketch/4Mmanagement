@@ -38,6 +38,7 @@ export const REALTIME_TABLES = {
   prod_orders:             'dr',
   production_sessions:     'dr',
   rack_requests:           'dr',
+  plating_orders:          'dr',   // เพิ่ม 13/10 — แท็บ 🧪 งานชุบ · อยู่ใน publication DR แล้ว (20261013_plating_loop_dr.sql)
   stock_receipts:          'dr',
 
   /* ── Main — ชื่อในจอ Supabase "MAIN" · ewhdfqwfwofivojtsizn ── */

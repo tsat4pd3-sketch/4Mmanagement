@@ -12,7 +12,7 @@ import Login from './pages/Login';
 import SignatureModal from './components/SignatureModal';
 import ChangePasswordModal from './components/ChangePasswordModal';
 const FeedbackModal = lazy(() => import('./components/FeedbackModal'));
-import { loadPermissions, canAccessPage, setDeptAdmin } from './utils/permissions';
+import { loadPermissions, canAccessPage, setDeptAdmin, setSharedAccount } from './utils/permissions';
 import { LOGISTIC_GROUPS } from './utils/logisticSide';
 import { trackVisit, topPaths } from './utils/navRecent';
 import { effectiveSections } from './utils/sectionScope';
@@ -146,7 +146,7 @@ export const NAV_ITEMS = [
   { to: '/dashboard',   icon: '📊', label: 'ไทม์ไลน์ผลิตทุกไลน์ (TV)', group: 'จอแสดงผล' },
   /* 📺 จอเฝ้าระวัง (`?dept=` ช่าง/ผลิต/สโตร์) — เต็มจอ ไม่มี sidebar/กระดิ่ง
      render ที่ branch พิเศษใน ProtectedLayout (เหมือนหน้า Home) ไม่ได้อยู่ใน <Routes> ด้านล่าง */
-  { to: '/tv', icon: '📺', label: 'จอเฝ้าระวังแขวนห้อง (ช่าง/ผลิต/สโตร์)', group: 'จอแสดงผล' },
+  { to: '/tv', icon: '📺', label: 'Andon Board (จอแขวน)', group: 'จอแสดงผล' },
   // 📟 บอร์ด OEE ประจำไลน์ (จอ TV หน้าไลน์ · deep-link ?line=) — อ่านตารางเราเท่านั้น เตรียมรับ SCADA เป็น "เซ็นเซอร์"
   { to: '/line-oee', icon: '📟', label: 'OEE รายไลน์ (จอหน้าไลน์)', group: 'จอแสดงผล' },
   { to: '/morning-meeting', icon: '🌅', label: 'ประชุมแถวเช้า',   group: 'ฝ่ายผลิต' },
@@ -823,13 +823,13 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '14px 2px 10px', borderBottom: '1px solid var(--border)', marginBottom: 8, flexShrink: 0 }}>
               <span style={{ fontSize: 17, flexShrink: 0 }}>{panelMeta.icon}</span>
               <span style={{ fontSize: 13.5, fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text)', flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{panelMeta.title}</span>
-              <button onClick={onTogglePin} title={pinned ? 'เลิกปักหมุด — แผงจะปิดเองหลังเลือกเมนู' : 'ปักหมุดแผงค้างไว้ (เนื้อหาหลักจะแคบลง)'} style={{
+              {onTogglePin && <button onClick={onTogglePin} title={pinned ? 'เลิกปักหมุด — แผงจะปิดเองหลังเลือกเมนู' : 'ปักหมุดแผงค้างไว้ (เนื้อหาหลักจะแคบลง)'} style={{
                 width: 26, height: 26, borderRadius: 6, flexShrink: 0, cursor: 'pointer', outline: 'none',
                 border: `1px solid ${pinned ? 'var(--accent)' : 'var(--border2)'}`,
                 background: pinned ? 'var(--accent-dim)' : 'transparent',
                 color: pinned ? 'var(--accent)' : 'var(--muted)', fontSize: 12,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}>📌</button>
+              }}>📌</button>}
               {!pinned && (
                 <button onClick={() => setPanel(null)} title="ปิดแผง (Esc)" style={{
                   width: 26, height: 26, borderRadius: 6, flexShrink: 0, cursor: 'pointer', outline: 'none',
@@ -1698,12 +1698,16 @@ function AutoLogoutWarning({ secsLeft, onStay, onLogout }) {
 /* ─── Protected Layout ─────────────────────────────────────────────── */
 // permsVersion ไม่ได้ใช้ในฟังก์ชันโดยตรง — รับไว้เพื่อให้ prop เปลี่ยนแล้ว layout ทั้งต้น re-render
 // (RoleRoute/Sidebar อ่าน permission cache แบบ sync ผ่าน canAccessPage ระหว่าง render)
-function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, viewAs, onApplyViewAs, userLineId, userTeam, userSection, userSections, userMtnTeams, userIsDeptAdmin, userPosition, userEmail, userFullName, userNotifyEmail, userSignatureUrl, userAvatarUrl, onAvatarSaved, onSignatureSaved, permsVersion }) {
+function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, viewAs, onApplyViewAs, userLineId, userTeam, userSection, userSections, userMtnTeams, userIsDeptAdmin, userAccountKind, userPosition, userEmail, userFullName, userNotifyEmail, userSignatureUrl, userAvatarUrl, onAvatarSaved, onSignatureSaved, permsVersion }) {
   const isMobile = useIsMobile();
   const isTV     = !useIsMobile(1919);   // จอ ≥1920 (TV) — reactive แทน innerWidth ครั้งเดียว
   const [isOpen, setIsOpen] = useState(() => typeof window !== 'undefined' && window.innerWidth > 768);
+  /* 📺 เมนูบนจอ /tv (13/10 · feedback user "เข้ามาแล้วกลับออกไปหน้าอื่นไม่ได้") — state แยกจาก `isOpen`
+     ⇒ เปิดจอ TV มาต้องปิดเสมอ (ไม่รับค่าค้างจากหน้าก่อน) · ปิดเองเมื่อเปลี่ยนหน้า */
+  const [tvNavOpen, setTvNavOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
+  useEffect(() => { setTvNavOpen(false); }, [location.pathname]);
   const userId = session?.user?.id ?? null;
 
   useEffect(() => {
@@ -1722,6 +1726,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
     // เครื่องใดเครื่องหนึ่ง logout/auto-logout (สาเหตุหลักของ "เด้ง login บ่อย" 2026-07-14)
     setActor(null, null);   // ล้างตัวตนผู้ใช้ (ชื่อ+uid) ตอน logout
     setDeptAdmin(false);
+    setSharedAccount(false);
     await supabase.auth.signOut({ scope: 'local' });
     navigate('/login');
   };
@@ -1807,8 +1812,11 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
     position: userPosition, notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl,
     avatarUrl: userAvatarUrl, fullName: userFullName, isDeptAdmin: userIsDeptAdmin,
     realRole: realRole ?? userRole,
+    /* 🖥️ บัญชีกลาง = ลบไม่ได้ — จอต้องเอาไป**เขียนเหตุผล**ให้เห็น ไม่ใช่ซ่อนปุ่มเงียบ (UI §6.9) */
+    accountKind: userAccountKind, isSharedAccount: userAccountKind === 'shared',
   }), [userRole, userLineId, userTeam, userSection, userSections, userMtnTeams, userPosition,
-       userNotifyEmail, userSignatureUrl, userAvatarUrl, userFullName, userIsDeptAdmin, realRole]);
+       userNotifyEmail, userSignatureUrl, userAvatarUrl, userFullName, userIsDeptAdmin, realRole,
+       userAccountKind]);
   /* layout ปกติต้องรู้ว่า sidebar เปิดอยู่ไหมด้วย — แยก memo เพื่อไม่ให้ `isOpen` ไปสั่น context ของจอ /tv */
   const userCtxLayout = useMemo(() => ({ ...userCtx, sidebarOpen: isOpen }), [userCtx, isOpen]);
 
@@ -1846,8 +1854,32 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
     return (
       <UserContext.Provider value={userCtx}>
         <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', color: 'var(--muted)', fontSize: 14, background: 'var(--bg)' }}>กำลังโหลด...</div>}>
-          <TvBoard />
+          {/* บัญชีจอแขวน (role display) = ไม่มีคนกด ⇒ ไม่มีปุ่มเมนู (คงหน้าโล่งตามเดิม) */}
+          <TvBoard onOpenMenu={role === 'display' ? null : () => setTvNavOpen(true)} />
         </Suspense>
+        {role !== 'display' && (
+          <Sidebar
+            isOpen={tvNavOpen}
+            onClose={() => setTvNavOpen(false)}
+            onLogout={handleLogout}
+            theme={theme}
+            onToggleTheme={onToggleTheme}
+            userRole={role}
+            userLineId={userLineId}
+            userPosition={userPosition}
+            userEmail={userEmail}
+            userFullName={userFullName}
+            userSignatureUrl={userSignatureUrl}
+            userAvatarUrl={userAvatarUrl}
+            remoteCode={remoteCode}
+            onToggleRemote={onToggleRemote}
+            onOpenPalette={() => setPaletteOpen(true)}
+            pinned={false}
+            realRole={realRole}
+            onOpenViewAs={realRole === 'admin' ? () => setViewAsOpen(true) : undefined}
+            onAvatarSaved={onAvatarSaved}
+          />
+        )}
         {rotator}
         {viewAsBanner}
         {viewAsModal}
@@ -2205,6 +2237,7 @@ export default function App() {
   const [userAvatarUrl,    setUserAvatarUrl]    = useState(null); // รูปโปรไฟล์ user (profiles.avatar_url — 2026-07-14)
   const [userMtnTeams,     setUserMtnTeams]     = useState([]);   // ทีมช่างซ่อมที่ user สังกัด (profiles.mtn_teams — 2026-07-22) แยกคิว MO
   const [userIsDeptAdmin,  setUserIsDeptAdmin]  = useState(false); // แอดมินหน่วยงาน (profiles.is_dept_admin — 2026-08-03) ซ้อนบน role เดิม
+  const [userAccountKind,  setUserAccountKind]  = useState(null);  // 'person' | 'shared' (บัญชีกลาง = จอ TV/ประจำเครื่อง · ลบไม่ได้)
   const [showSplash,   setShowSplash]   = useState(true);
   const [theme, setTheme] = useState(() => localStorage.getItem('4m-theme') || 'dark');
   // ต้อง resolve ทั้ง profile (role จริง) และ permissions ก่อนค่อย render route tree —
@@ -2274,7 +2307,8 @@ export default function App() {
     //    mtn_teams + avatar_url แยกกันคนละ round trip) วัดจาก log จริง 11 ก.ย. 2026 = 6,760 req/วัน
     //    บนตาราง profiles ทั้งที่เป็นข้อมูลของ user คนเดียว ~188 ครั้ง/วัน/คน (ทุกครั้งที่เปิด/รีเฟรชแอป)
     //    คอลัมน์ mtn_teams (20260722) / avatar_url (20260714) apply ครบแล้วทั้งคู่ (ตรวจ 2026-09-11)
-    const COLS_FULL = COLS + ', employee_id, mtn_teams, avatar_url';
+    // account_kind (บัญชีของคน/บัญชีกลาง) — ใช้คุม "บัญชีกลางห้ามลบ" (utils/permissions.js)
+    const COLS_FULL = COLS + ', employee_id, mtn_teams, avatar_url, account_kind';
     let { data, error } = await supabase.from('profiles').select(COLS_FULL).eq('id', user.id).single();
     // คอลัมน์เสริมยังไม่ apply (42703) → ถอยไป select ชุดพื้นฐาน ห้ามให้ login พังทั้งระบบ
     // (ค่าที่หายไปจะเป็น null → ทีมช่าง/รูปโปรไฟล์ไม่ขึ้น แต่เข้าใช้งานได้ตามปกติ)
@@ -2348,6 +2382,12 @@ export default function App() {
       const v = data?.is_dept_admin === true;
       setUserIsDeptAdmin(v); setDeptAdmin(v);
     }
+    /* 🖥️ บัญชีกลาง (จอ TV / บัญชีประจำเครื่อง) ห้ามลบอะไรทั้งนั้น — ตั้ง flag **sync ก่อน render แรก**
+       เหมือน dept_admin (ถ้าตั้งช้า ปุ่มลบจะโผล่แวบหนึ่งก่อนหาย = คนกดทันจริง)
+       ⚠️ คอลัมน์อยู่ใน COLS_FULL ⇒ DB ที่ยังไม่มีคอลัมน์จะถอยไป COLS แล้วค่านี้เป็น undefined
+          = ไม่บล็อก (พฤติกรรมเดิม) · ฝั่ง DB ของ Main มีด่าน has_perm ซ้อนอีกชั้น */
+    setUserAccountKind(data?.account_kind ?? null);
+    setSharedAccount(data?.account_kind === 'shared');
     setProfileLoaded(true);
   };
 
@@ -2429,6 +2469,7 @@ export default function App() {
                 userSections={effSections}
                 userMtnTeams={effMtnTeams}
                 userIsDeptAdmin={effDeptAdmin}
+                userAccountKind={userAccountKind}
                 userPosition={userPosition}
                 userEmail={userEmail}
                 userFullName={userFullName}

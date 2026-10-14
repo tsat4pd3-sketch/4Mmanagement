@@ -16,7 +16,7 @@ import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { PURPOSES, CAUSE_CATS, needsPlantManager, needsApprovalFirst, laborAmount, partAmount, sumLabor, sumParts, grandTotal, satScore, mtnApprovalState, purposeOfPrint, qaAppliesTo, isMtnFormRow, QA_SKIP_REASON_PURPOSE, QA_SKIP_REASON_MTN_FORM, needsPlantMgrByCost, orderCostTotal, PLANT_MGR_COST_LIMIT } from '../utils/mtnMoForm';
 import AuditLogViewer from '../components/AuditLogViewer';
-import { can, canDelete, isActionSeeded } from '../utils/permissions';
+import { can, canDelete, isActionSeeded, isSharedAccount } from '../utils/permissions';
 import { MO_STATUS_META as STATUS_META, QA_NOT_RELATED, QA_RELATED, QA_SKIP_REASON_STEP4, canBounceBack, canDoStep, canHandoff, canSignMtnApproval, canSkipQa, isMoOpen, isOrderReporter, isQaSkipped, isWaitingQa, lastStep, orderReporterText, nextStepOf, moQaState, mtnCloseStage, moStatusLabel, moStatusMeta, orderInReporterScope, stageOf, stepDenyHint, stepLabel, stepMeta, moWaitMeta, actorSideOf, stepAssumptions, assumptionHint } from '../utils/mtnStepPerm';
 import { positionRank } from '../utils/positions';
 import { findOpenOnMachine, dupLevel } from '../utils/mtnDuplicate';
@@ -54,6 +54,8 @@ import { shiftOfTime, workDateOfTime } from '../utils/workDate';
 import { ALL, SHIFT_OPTIONS, allOf } from '../utils/filterLabels';
 /* ป้ายถังขยะของ taxonomy — ของกลาง ห้ามเขียนสตริง "อื่นๆ" เองในหน้า (ดู unclassified.js) */
 import { isVague, UNGROUPED_LABEL } from '../utils/unclassified';
+/* 🔴 เกณฑ์ "รายละเอียดชัดพอไหม" ของใบแจ้งซ่อม — ห้าม hardcode ความยาว/ข้อความในหน้า */
+import { moNoteCheck, MO_NOTE_HINT } from '../utils/moNoteQuality';
 import useTabParam, { useMergeParams } from '../utils/useTabParam';
 
 import InfoMore from '../components/InfoMore';
@@ -1082,10 +1084,15 @@ function ReportModal({ lines, machines, orders = [], itemTypes, problemTypes, re
         เก็บไว้ในช่องเลือกได้ตามปกติ เพื่อให้ dropdown หัวข้อย่อยยังเปิดอยู่ */
   const groupForDb = (g) => (String(g || '').trim() === NO_GROUP ? '' : String(g || '').trim());
 
+  /* 📝 คุณภาพรายละเอียดที่คนแจ้งพิมพ์ (ทีม MTN ขอ 13/10) — เตือนใต้ช่อง + บล็อกเฉพาะ
+       "เลือกอื่นๆ แล้วไม่เขียนอะไรเลย" · กฎอยู่ใน utils/moNoteQuality.js ที่เดียว */
+  const noteCheck = moNoteCheck({ note: f.report_note, group: f.problem_group, character: f.problem_characteristic });
+
   const save = async () => {
     if (!f.line_name) return toast.error('เลือกไลน์การผลิต');
     if (!f.item_type) return toast.error('เลือกชนิดอุปกรณ์');
     if (!f.problem_characteristic) return toast.error('เลือกลักษณะปัญหา (เลือกกลุ่มแล้วเลือกหัวข้อย่อยด้วย)');
+    if (noteCheck.blocked) return toast.error(noteCheck.message);
     const occurredIso = f.occurred_at ? new Date(f.occurred_at).toISOString() : null;
     if (occurredIso && new Date(occurredIso) > new Date()) return toast.error('วันเวลาที่เกิดเหตุเป็นอนาคตไม่ได้');
     setSaving(true);
@@ -1295,7 +1302,15 @@ function ReportModal({ lines, machines, orders = [], itemTypes, problemTypes, re
             </div>
           )}
         </div>
-        <Field label="ระบุรายละเอียดปัญหา (พิมพ์เอง)"><textarea value={f.report_note} onChange={e => set('report_note', e.target.value)} style={{ ...inp, minHeight: 60 }} /></Field>
+        {/* 📝 ช่องนี้คือสิ่งเดียวที่ช่างใช้เตรียมตัวก่อนออกหน้างาน — โครงคำถามอยู่ใน placeholder
+            + เตือนเมื่อสั้นเกิน (ส่งได้) · บล็อกเฉพาะ "อื่นๆ แล้วไม่เขียนอะไรเลย" */}
+        <Field label="ระบุรายละเอียดปัญหา (พิมพ์เอง)" required={noteCheck.level === 'required'}>
+          <textarea value={f.report_note} onChange={e => set('report_note', e.target.value)}
+            placeholder={MO_NOTE_HINT} style={{ ...inp, minHeight: 72 }} />
+          <div style={{ fontSize: 11.5, marginTop: 3, color: noteCheck.message ? '#f59e0b' : 'var(--muted)' }}>
+            {noteCheck.message ? `⚠ ${noteCheck.message}` : `✓ รายละเอียดครบพอให้ช่างเตรียมตัว (${noteCheck.len} ตัวอักษร)`}
+          </div>
+        </Field>
         <ImgField label="รูปก่อนซ่อม" value={beforeUrl} onPick={pickBefore} />
         <Field label="วันเวลาที่เกิดเหตุ (กรอกเฉพาะแจ้งย้อนหลัง)">
           <input type="datetime-local" value={f.occurred_at} onChange={e => set('occurred_at', e.target.value)} max={localDtNow()} style={inp} />
@@ -2412,7 +2427,15 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, signatureUr
         🖨️ คอมเมนต์ข้างบนจะถูกพิมพ์ลงใบ MO ด้วย — <b>ต่อท้ายรายละเอียดที่ผู้แจ้งเขียนไว้</b> (ของเดิมไม่ถูกแก้ทับ) พร้อมชื่อผู้คอมเมนต์และเวลา
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
-        {canDelete('mtn_repair', 'manage_master', role) ? <button onClick={del} style={{ ...btnGhost, color: '#ef4444', borderColor: '#ef4444' }}>🗑 ลบใบนี้</button> : <span />}
+        {/* 🖥️ บัญชีกลางลบไม่ได้ — **ซ่อนปุ่มได้ แต่ห้ามซ่อนเหตุผล** (UI §6.9) ไม่งั้นช่างคิดว่าระบบพัง */}
+        {canDelete('mtn_repair', 'manage_master', role)
+          ? <button onClick={del} style={{ ...btnGhost, color: '#ef4444', borderColor: '#ef4444' }}>🗑 ลบใบนี้</button>
+          : isSharedAccount()
+            ? <span style={{ fontSize: 11.5, color: 'var(--muted)', alignSelf: 'center' }}
+                title="บัญชีกลางใช้ร่วมกันหลายคน ลบแล้วสอบกลับไม่ได้ว่าใครกด — ให้ล็อกอินด้วยบัญชีของตัวเองถ้าต้องลบจริง">
+                🔒 บัญชีกลางลบใบไม่ได้
+              </span>
+            : <span />}
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {can('improvements', 'manage', role) && <button onClick={() => onOpenImprovement(o)} style={{ ...btnGhost, ...(repeatIssue ? { color: '#a78bfa', borderColor: '#7c6cf0' } : {}) }}>💡 เปิดโปรเจคปรับปรุง</button>}
           <button onClick={async () => {
