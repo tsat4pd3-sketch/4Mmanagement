@@ -4345,6 +4345,30 @@ test('🛡️ BOM flow: ห้ามมีคำเตือน raw_in_assembly 
     '\n\n❌ `raw_double_counted` หายไป — ตัวนี้พิสูจน์ได้ (5xx อยู่ใต้พี่น้อง 2xx จริง) ห้ามถอด\n');
 });
 
+/* ── 🧹 conflict marker ห้ามหลุดเข้า main (2026-10-14 · เจอตอนตรวจย้อนงานตัวเอง) ──────
+   คอมมิท `66bdd954` merge งาน 2 session ในไฟล์ `.md` เดียวกัน แล้ว marker 3 บรรทัด
+   (`<<<<<<<` / `=======` / `>>>>>>>`) ค้างอยู่ — **ผ่านทุกด่านเพราะ build ไม่คอมไพล์ `.md`**
+   เอกสารที่มี marker = คนอ่านไม่รู้ว่าฝั่งไหนจริง (เอกสารผิดแย่กว่าไม่มีเอกสาร)
+   · ถ้าหลุดเข้าไฟล์ `.js/.jsx` = จอขาวทั้งหน้า (syntax error)
+   🔴 ด่านนี้สแกนทั้งรีโป — เจอ = แปลว่า merge ยังไม่จบ ห้าม commit                     */
+test('🛡️ no-merge-conflict-markers — ไม่มี marker ค้างในรีโปทั้ง code และ docs', () => {
+  const files = [
+    ...walk(join(ROOT, 'src'), ['.js', '.jsx', '.mjs', '.css']),
+    ...walk(join(ROOT, 'docs'), ['.md']),
+    ...walk(join(ROOT, 'supabase'), ['.sql']),
+  ];
+  const bad = [];
+  for (const f of files) {
+    const txt = readFileSync(f, 'utf8');
+    // ต้นบรรทัดเท่านั้น — `=======` กลางตารางเอกสาร/เส้นคั่นไม่ใช่ marker
+    const hit = txt.split('\n').findIndex(l => /^<{7} |^>{7} |^={7}$/.test(l));
+    if (hit >= 0) bad.push(`${relative(ROOT, f)}:${hit + 1}`);
+  }
+  assert.deepEqual(bad, [], '\n\n❌ มี conflict marker ค้าง: ' + bad.join(', ') + '\n'
+    + '   แปลว่า merge ยังไม่จบ — ต้องตัดสินว่าเก็บฝั่งไหน (ส่วนใหญ่เก็บทั้ง 2 ฝั่งแล้วคั่นหัวข้อ)\n'
+    + '   ของจริงที่เคยหลุด: docs/modules/manpower-board.md (66bdd954) — build ไม่จับเพราะเป็น .md\n');
+});
+
 /* ── 🔨 ชุดแม่พิมพ์ปั๊มออกคู่ = ผูกได้ 2 MAT (14/10 · คำสั่ง user "แม่พิมพ์ปั๊มออกคู่ ซ้ายขวา ก็ควรเลือก mat สองตัว") ──
    เดิม `die_sets.mat_no` ช่องเดียว แล้วปลายทางเทียบ `d.mat_no === mat` ตรงๆ
    ⇒ ล็อตของฝั่งที่ไม่ได้ลงเป็นช่องแรก **หาแม่พิมพ์ไม่เจอ** = ไม่รู้ die_height_mm

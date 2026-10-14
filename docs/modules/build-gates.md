@@ -125,6 +125,7 @@ CLAUDE.md เหลือ "คำสั่งที่ต้องรัน + �
 | ด่าน | จับอะไร | บั๊กที่เคยเกิด |
 |---|---|---|
 | **ไฟล์ source ห้ามมีไบต์ NUL** | ไบต์ `\0` ในไฟล์ source ทั้งรีโป | `EventLog.jsx:149` มี `'\0__none__'` ⇒ grep ถือว่า binary **ข้ามทั้งไฟล์** ⇒ ไฟล์หลุดจาก regressionGuards · QC agent · audit sweep ทั้งชุด **โดยไม่มีสัญญาณเตือน** — อันตรายกว่าตัวบั๊กเอง เพราะมันปิดตาเครื่องมือตรวจ |
+| `no-merge-conflict-markers` | marker `<<<<<<<` / `=======` / `>>>>>>>` ต้นบรรทัด ทั้ง `src` · `docs` · `supabase` | merge 2 session ในไฟล์เดียว (`66bdd954`) แล้ว marker 3 บรรทัดค้างใน `docs/modules/manpower-board.md` — **ผ่านทุกด่านเพราะ build ไม่คอมไพล์ `.md`** · เอกสารที่มี marker = คนอ่านไม่รู้ว่าฝั่งไหนจริง · ถ้าหลุดเข้า `.jsx` = จอขาวทั้งหน้า |
 | `realtime-table-registered` | ชื่อตารางใน `tables:`/`table:` ที่ไม่อยู่ใน `src/utils/realtimeTables.js` | publication ขาดตาราง = subscribe **เงียบสนิท ไม่มี error** ⇒ จอช้าได้ถึง 2 ชม. · เกิดซ้ำ **3 รอบ** (19/08 · 15/09 · 06/10) เพราะลิสต์อยู่ในเอกสารที่เขียนมือ |
 | `checkwrite-rows-not-plain` | ต่อ `.select()` แล้วส่งเข้า `checkWrite` | 7 จุดเชื่อว่าตัวเองนับแถวแล้ว แต่ `checkWrite` ไม่เคยอ่าน `data` |
 | `checkwriterows-needs-select` | `checkWriteRows` ที่ไม่ต่อ `.select()` | เจตนา "นับแถว" หายเงียบ (helper ถอยไปเช็คแค่ error) |

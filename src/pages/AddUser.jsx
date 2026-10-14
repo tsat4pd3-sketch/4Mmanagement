@@ -276,8 +276,9 @@ export default function AddUser() {
   const syncFromEmployee = async (u) => {
     const e = empById[u.employee_id];
     if (!e) return;
-    /* 🔴 เขียนครบทุกช่องใน IDENTITY_FIELDS ผ่าน syncPatch() — เดิมเขียนแค่ team/line/section
-       ⇒ กดปุ่มแล้ว position/org_node ยังต่าง แถบเตือนไม่หาย คนกดซ้ำแล้วเลิกเชื่อปุ่ม */
+    /* 🔴 ค่าที่เขียนมาจาก `syncPatch()` ที่เดียว — **ช่องที่ฐานพนักงานว่าง ต้องไม่ถูกแตะ** (14/10)
+       สูตรจริงคือ `emp.<f> ?? profile.<f>` ⇒ ช่องที่ฐานพนักงานว่าง ระบบใช้ค่าในบัญชีอยู่
+       เขียน null ทับ = ค่าที่ใช้งานอยู่หายถาวร (ไม่มี audit ของ UPDATE) */
     const { data, error } = await supabase.from('profiles')
       .update(syncPatch(e))
       .eq('id', u.id).select('id');
