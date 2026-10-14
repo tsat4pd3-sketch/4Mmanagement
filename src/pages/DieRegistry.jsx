@@ -92,7 +92,11 @@ const KIND_NONE = '__none__';   // ตัวกรอง "ยังไม่ร�
 
 const emptySet = {
   id: null, set_code: '', part_no: '', part_name: '', model: '', line_name: '',
-  kind: '', op_total: '',   // ว่าง = "ยังไม่ระบุ" (06/10 · คำสั่ง user — เดิม default tandem = เดาแทนหน้างาน) pieces_per_stroke: 1, mat_no: '', note: '', is_active: true,
+  // ว่าง = "ยังไม่ระบุ" (06/10 · คำสั่ง user — เดิม default tandem = เดาแทนหน้างาน)
+  kind: '', op_total: '',
+  // 🔴 ว่าง = ยังไม่รู้ ห้าม default 1 (14/10 · คำสั่ง user "ควรนับ shot ไม่ใช่นับชิ้น สำหรับงานคู่")
+  pieces_per_stroke: '',
+  mat_no: '', note: '', is_active: true,
 };
 
 export default function DieRegistry() {
@@ -351,7 +355,7 @@ export default function DieRegistry() {
       line_name: f.line_name || null,
       kind: f.kind || null,   // null = ยังไม่ระบุ (ห้ามเดาเป็นค่าใดค่าหนึ่ง)
       op_total: numOrNull(f.op_total),
-      pieces_per_stroke: numOrNull(f.pieces_per_stroke) ?? 1,
+      pieces_per_stroke: numOrNull(f.pieces_per_stroke),   // null = ยังไม่รู้ (ห้าม ?? 1 — งานคู่ = 2)
       mat_no: f.mat_no?.trim() || null,
       note: f.note?.trim() || null,
       is_active: f.is_active !== false,
@@ -582,12 +586,19 @@ export default function DieRegistry() {
                     <span style={{ fontSize: 11.5, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
                       {s.members.length} ตัว{s.op_total ? ` / ${s.op_total} OP` : ''}
                     </span>
-                    {s.pieces_per_stroke > 1 && (
+                    {/* 🔴 "ยังไม่รู้" ต้องเห็นต่างจาก "1 ชิ้น" — เดิมโชว์เฉพาะ >1 ⇒ 2 กรณีนี้หน้าตาเหมือนกันเป๊ะ
+                           ทั้งที่กรณีแรกแปลว่า PM แม่พิมพ์ยังคิดเป็น shot ไม่ได้ */}
+                    {s.pieces_per_stroke == null ? (
+                      <span style={{ fontSize: 11, fontWeight: 700, color: '#f59e0b', whiteSpace: 'nowrap' }}
+                        title="ยังไม่รู้ว่า 1 stroke ได้กี่ชิ้น — PM แม่พิมพ์จะนับเป็น shot ไม่ได้จนกว่าจะกรอก">
+                        ยังไม่ระบุ ชิ้น/stroke
+                      </span>
+                    ) : s.pieces_per_stroke > 1 ? (
                       <span style={{ fontSize: 11, fontWeight: 700, color: '#22c55e', whiteSpace: 'nowrap' }}
                         title="1 stroke ได้กี่ชิ้น — งานคู่ LH/RH ปั๊มครั้งเดียวได้ 2 ชิ้น">
                         {s.pieces_per_stroke} ชิ้น/stroke
                       </span>
-                    )}
+                    ) : null}
                     {s.issues.length > 0 && (
                       <span style={{ fontSize: 11, fontWeight: 700, color: '#f59e0b', whiteSpace: 'nowrap' }}>
                         ⚠ {s.issues.length}
@@ -765,8 +776,8 @@ export default function DieRegistry() {
               <input style={inputStyle} type="number" min="1" value={editSet.op_total ?? ''}
                 onChange={e => setEditSet(f => ({ ...f, op_total: e.target.value }))} />
             </Field>
-            <Field label="ชิ้น / stroke" hint="งานคู่ LH+RH = 2">
-              <input style={inputStyle} type="number" min="1" value={editSet.pieces_per_stroke ?? 1}
+            <Field label="ชิ้น / stroke" hint="งานคู่ LH+RH = 2 · ว่าง = ยังไม่รู้ ระบบจะไม่เดาให้">
+              <input style={inputStyle} type="number" min="1" value={editSet.pieces_per_stroke ?? ''}
                 onChange={e => setEditSet(f => ({ ...f, pieces_per_stroke: e.target.value }))} />
             </Field>
           </div>

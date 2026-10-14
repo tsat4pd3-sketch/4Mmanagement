@@ -4299,3 +4299,32 @@ test('🛡️ pm-checkpoint-copy-via-util — คัดลอกจุดตร�
     + '         และหายไปเลยบนจอตรวจ (14/10 เจอจริง 9 จุด) · jig_id ต้องเป็นเครื่องปลายทาง\n'
     + '   แก้: ใช้ checkpointCopyRow() จาก src/utils/pmCheckpointCopy.js · ข้ามแผนกบนเครื่องเดิมส่ง samePhotos:true\n');
 });
+
+/* ── 🔨 ชิ้น/จังหวะ ของแม่พิมพ์ — "ไม่รู้" ห้ามกลายเป็น 1 (14/10 · คำสั่ง user "ควรนับ shot ไม่ใช่นับชิ้น สำหรับงานคู่") ──
+   migration 20260810 ออกแบบ 2 ชั้นไว้แล้ว (equipment_die ว่าง = ใช้ค่าของ die_sets) แต่ไม่เคยถูกเขียนจริง
+   ⇒ จอ PM อ่านแค่ชั้น OP ที่ว่าง 264/264 = คิด shot ไม่ได้สักตัว · และชั้นชุดเป็น default 1 + จอบีบ `?? 1` ตอนเซฟ
+   = ระบบประกาศเองว่าแม่พิมพ์ทุกตัวปั๊มได้ 1 ชิ้น · งานคู่ LH/RH ปั๊มทีเดียว 2 ชิ้น ⇒ PM เด้งช้าไป 2 เท่า */
+test('🛡️ die-pps-no-guess-one — ชิ้น/จังหวะต้องผ่าน ppsOf() และห้ามเดาเป็น 1', () => {
+  const bad = [];
+  const util = stripComments(readFileSync(join(ROOT, 'src/utils/pmUsage.js'), 'utf8'));
+  if (!/export function ppsOf\s*\(/.test(util)) bad.push('src/utils/pmUsage.js (ไม่มี ppsOf แล้ว)');
+  /* ถอยชั้นต้องอยู่ในตัวมันเอง ไม่ใช่ให้หน้าไปทำเอง */
+  if (!/die\?\.pieces_per_stroke[\s\S]{0,80}set\?\.pieces_per_stroke/.test(util))
+    bad.push('src/utils/pmUsage.js (ppsOf ไม่ได้ถอยจากชั้น die ไปชั้นชุดแล้ว)');
+
+  const reg = stripComments(readFileSync(join(ROOT, 'src/pages/DieRegistry.jsx'), 'utf8'));
+  if (/pieces_per_stroke[^\n]*\?\?\s*1\b/.test(reg))
+    bad.push('src/pages/DieRegistry.jsx (บีบ pieces_per_stroke ว่าง → 1 ตอนเซฟ/ตอนโชว์)');
+
+  /* หน้าไหนจะคิด shot ต้องขอค่าผ่าน ppsOf ห้ามหยิบคอลัมน์ดิบไปหาร */
+  for (const rel of ['src/components/PmUsageBoard.jsx']) {
+    const code = stripComments(readFileSync(join(ROOT, rel), 'utf8'));
+    if (!/ppsOf\s*\(/.test(code)) bad.push(rel + ' (ไม่เรียก ppsOf)');
+    if (/piecesToShots\s*\([^)]*\.pieces_per_stroke/.test(code))
+      bad.push(rel + ' (ส่งคอลัมน์ดิบเข้า piecesToShots — ข้ามการถอยชั้น)');
+  }
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n'
+    + '   ทำไม: แม่พิมพ์สเปค "ทน 50,000 shot" ถ้าระบบคิด 1 ชิ้น = 1 shot กับงานคู่\n'
+    + '         PM จะเด้งตอนครบ 50,000 ชิ้น = 25,000 shot จริง = ช้าไป 2 เท่า แม่พิมพ์พังก่อนถึงคิว\n'
+    + '   แก้: ppsOf(die, set) ใน src/utils/pmUsage.js · ไม่รู้ = null จอต้องเขียนบอก ห้ามเดา 1\n');
+});
