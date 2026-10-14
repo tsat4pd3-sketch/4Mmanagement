@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   vendorLocOf, openQtyOf, platingRoutes, outstandingByVendor, toWhTargets,
   afterCandidates, directUsesOfBefore, sendBlockReason, sendStockWarn,
+  platingProducts, beforeCandidatesOf, autoBeforeOf, receiveBlockReason, orderZone,
 } from '../plating.js';
 
 /* ข้อมูลจำลองตามโครงจริง (10092454 · 20059822 หลังชุบ · 20059851 ก่อนชุบ) — ชื่อร้านเป็นข้อมูล ไม่ใช่โค้ด */
@@ -31,16 +32,87 @@ test('openQtyOf — ส่ง − รับ − ตัดยอด · ไม่�
   assert.equal(openQtyOf({ qty_sent: 10, qty_received: 20 }), 0);
 });
 
-test('platingRoutes — เส้นทางจาก Product Master + BOM · ไม่มีลูก = โชว์ปัญหา ไม่กลืน', () => {
-  const r = platingRoutes(P, B);
+const L = [{ name: 'Coating', line_type: 'outsource', is_active: true }, { name: 'Line D4', line_type: 'welding_assembly' }];
+
+test('platingProducts — สินค้าบนไลน์ประเภทจ้างนอก หรือที่ตั้งร้าน · ไม่เดาจากชื่อ', () => {
+  const prods = [
+    ...P,
+    { id: 'c1', mat_no: '20066547', name: 'BAR หลังชุบ', p_no: 'R1WB-17K825-BAW', line_name: 'Coating', is_active: true },
+    { id: 'x1', mat_no: '20077777', name: 'ชื่อมีคำว่าหลังชุบ แต่อยู่ไลน์ผลิต', line_name: 'Line D4', is_active: true },
+  ];
+  const got = platingProducts(prods, L).map(p => p.mat_no);
+  assert.deepEqual(got, ['20000001', '20059822', '20066547']);   // ร้านตั้งไว้ 2 ตัว + ไลน์ Coating 1 ตัว
+  assert.ok(!got.includes('20077777'));
+  assert.deepEqual(platingProducts(prods, []).map(p => p.mat_no), ['20000001', '20059822']);
+});
+
+test('beforeCandidatesOf — BOM ก่อน · BOM ไม่มี = เสนอจาก P/N ตรงกันเป๊ะ (ยังไม่ผูก)', () => {
+  const prods = [
+    ...P,
+    { id: 'c1', mat_no: '20066547', name: 'BAR หลังชุบ', p_no: 'R1WB-17K825-BAW', line_name: 'Coating' },
+    { id: 'c2', mat_no: '20066546', name: 'BAR ก่อนชุบ', p_no: 'R1WB 17K825 BAW', line_name: 'Line D5' },
+    { id: 'c3', mat_no: '20062361', name: 'คนละรุ่น', p_no: 'P1WB-17K825-LAW', line_name: 'Coating' },
+    { id: 'c4', mat_no: '30011111', name: 'ของซื้อ P/N ตรง', p_no: 'R1WB-17K825-BAW' },
+  ];
+  const c = beforeCandidatesOf('20066547', { products: prods, bomRows: B, platingSet: new Set(['20066547', '20062361']) });
+  assert.deepEqual(c.map(x => [x.mat, x.linked, x.why]), [['20066546', false, 'pno']]);   // 3xx ไม่นับ · หลังชุบอีกตัวไม่นับ
+  const b = beforeCandidatesOf('20059822', { products: P, bomRows: B });
+  assert.deepEqual(b.map(x => [x.mat, x.linked]), [['20059851', true]]);
+});
+
+test('beforeCandidatesOf — ลูก BOM รวมทุกใบ · P/N ตรงชนะ · ใบของหลังชุบที่ข้ามชั้นไม่หลอก (เคสจริง 20059852/20059898)', () => {
+  const prods = [
+    { id: 'A', mat_no: '20059852', name: 'PLT หลังชุบ', p_no: 'N1WB-17B984-RA', line_name: 'Coating' },
+    { id: 'B', mat_no: '20059853', name: 'PLT ก่อนชุบ', p_no: 'N1WB-17B984-RA' },
+    { id: 'C', mat_no: '20059854', name: 'MOUNTING PLATE', p_no: 'N1WB-17B984-RB' },
+    { id: 'F', mat_no: '10092454', name: 'FG' },
+    { id: 'G', mat_no: '20059898', name: 'BAR หลังชุบ', p_no: 'N1WB-17G799-CA', line_name: 'Coating' },
+    { id: 'H', mat_no: '20060001', name: 'BAR UPR', p_no: 'N1WB-17G799-CPIA01' },
+    { id: 'I', mat_no: '20059899', name: 'BAR ก่อนชุบ', p_no: 'N1WB-17G799-CA' },
+  ];
+  const rows = [
+    { product_id: 'A', mat_no: '20059854', parent_mat: null },            // ใบของหลังชุบ ใส่ลูกข้ามชั้น
+    { product_id: 'F', mat_no: '20059852', parent_mat: null },
+    { product_id: 'F', mat_no: '20059853', parent_mat: '20059852' },      // ใบ FG จัดชั้นถูก
+    { product_id: 'G', mat_no: '20060001', parent_mat: null },
+  ];
+  const set = new Set(['20059852', '20059898']);
+  const a = beforeCandidatesOf('20059852', { products: prods, bomRows: rows, platingSet: set });
+  assert.deepEqual(a.map(x => x.mat), ['20059853']);
+  assert.equal(autoBeforeOf(a).mat, '20059853');
+  const g = beforeCandidatesOf('20059898', { products: prods, bomRows: rows, platingSet: set });
+  assert.deepEqual(g.map(x => [x.mat, x.why]), [['20059899', 'pno'], ['20060001', 'bom']]);
+  assert.equal(autoBeforeOf(g), null);                                  // กำกวม = ให้คนเลือก
+});
+
+test('platingRoutes — before รู้แล้ว / ยังไม่ผูก = problem ห้ามกลืน', () => {
+  const r = platingRoutes(P, B, L);
   const ok = r.find(x => x.after === '20059822');
   assert.equal(ok.before, '20059851');
   assert.equal(ok.vendor, 'ร้าน-ก');
-  assert.equal(ok.afterActive, false);            // ปิดไว้ในจอผลิตได้ ยังเป็นเส้นทางชุบ
+  assert.equal(ok.afterActive, false);
   const bad = r.find(x => x.after === '20000001');
   assert.equal(bad.before, null);
   assert.ok(bad.problem);
-  assert.equal(r.filter(x => x.vendor === '').length, 0);
+});
+
+test('receiveBlockReason — ไม่ครบต้องมีรายละเอียด · 0 ต้องปิดใบ · ห้ามเกินค้าง', () => {
+  assert.equal(receiveBlockReason({ open: 100, qty: 100 }), null);
+  assert.match(receiveBlockReason({ open: 100, qty: 60, reason: '' }), /รายละเอียด/);
+  assert.equal(receiveBlockReason({ open: 100, qty: 60, reason: 'ทยอยส่ง' }), null);
+  assert.match(receiveBlockReason({ open: 100, qty: 101 }), /เกิน/);
+  assert.match(receiveBlockReason({ open: 100, qty: 0, reason: 'หาย' }), /ปิดใบ/);
+  assert.equal(receiveBlockReason({ open: 100, qty: 0, reason: 'ร้านทำหาย', close: true }), null);
+  assert.match(receiveBlockReason({ open: 100, qty: '' }), /นับได้/);
+});
+
+test('orderZone — เกิน lead time = late · ไม่รู้ lead time = ไม่ตัดสิน · ปิดแล้ว = closed', () => {
+  const now = new Date('2026-10-13T05:00:00Z');
+  const o = { status: 'open', sent_at: '2026-10-01T03:00:00Z' };
+  assert.equal(orderZone(o, { now, leadDays: 7 }), 'late');
+  assert.equal(orderZone(o, { now, leadDays: 30 }), 'vendor');
+  assert.equal(orderZone(o, { now, leadDays: null }), 'vendor');
+  assert.equal(orderZone({ ...o, status: 'closed' }, { now, leadDays: 7 }), 'closed');
 });
 
 test('outstandingByVendor — รวมใบเปิดต่อร้าน/สินค้า · อายุจากใบเก่าสุด · lead time ไม่รู้ = null', () => {
