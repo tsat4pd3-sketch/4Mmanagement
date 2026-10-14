@@ -300,3 +300,8 @@ React จึง unmount กล่องเดิมทิ้งทุกคร�
 ### 🛠️ QC 05/10
 - RPC `pm_usage_daily` ล้ม = **แถบเตือนบนจอ** (เดิมแค่ `console.warn` แล้วยอดสะสม/buffer ทั้งหน้าเป็น 0 เงียบๆ)
 - `PMCheckData` บันทึกผลตรวจ: ผลรายจุด (`inspection_results`) เข้าไม่ได้ = ลบหัวใบ `inspections` ทิ้ง (ลบไม่ได้ต้องบอก) · `pm_plans.last_done_at` = `getWorkDate()` (เดิมวันปฏิทินเครื่อง — กะดึกตี 2 ได้วันถัดไป)
+
+> ### 🔨 PM แม่พิมพ์แบบนับ shot (2026-10-14)
+> `PmUsageBoard` แปลงยอดชิ้น → shot ด้วย `piecesToShots(accum, ppsOf(die, set))` · **ถอย 2 ชั้นใน `ppsOf()` ห้ามอ่านคอลัมน์ดิบ**
+> ไม่รู้ "ชิ้น/จังหวะ" = `null` ⇒ จอเขียนว่ายังนับ shot ไม่ได้ **ห้ามถอยไปโชว์ยอดชิ้นแล้วเรียกว่า shot** (งานคู่เพี้ยน 2 เท่า)
+> 📄 กฎเต็ม + 3 บั๊กที่เจอ → `docs/modules/die-maintenance.md` §ชิ้น / จังหวะ

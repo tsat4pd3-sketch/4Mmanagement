@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  usageQtyOf, sumUsage, piecesToShots, usageLevel, usageProgress, dailyRate, usageEta, addDays,
+  usageQtyOf, sumUsage, piecesToShots, ppsOf, usageLevel, usageProgress, dailyRate, usageEta, addDays,
 } from '../pmUsage.js';
 
 const ROWS = [
@@ -106,4 +106,18 @@ test('คาดวันครบเกณฑ์: เลยเกณฑ์แล
   assert.equal(usageEta({ accum: 100, threshold: 1000, rate: 0, todayStr: '2026-09-15' }).etaDate, null);
   assert.equal(usageEta({ accum: 100, threshold: null, rate: 500, todayStr: '2026-09-15' }).etaDate, null);
   assert.equal(usageEta({ accum: 100, threshold: 1000, rate: 500 }).etaDate, null, 'ไม่มี todayStr');
+});
+
+test('ppsOf — ชั้น OP ชนะชั้นชุด · ไม่รู้ = null ห้ามเดา 1', () => {
+  assert.equal(ppsOf({ pieces_per_stroke: 2 }, { pieces_per_stroke: 1 }), 2, 'ชั้น OP ต้องชนะ');
+  assert.equal(ppsOf({ pieces_per_stroke: null }, { pieces_per_stroke: 2 }), 2, 'OP ว่าง = ถอยไปใช้ค่าชุด');
+  assert.equal(ppsOf({ pieces_per_stroke: '' }, { pieces_per_stroke: 2 }), 2, 'สตริงว่างก็ต้องถอย');
+  assert.equal(ppsOf(null, { pieces_per_stroke: 4 }), 4, 'ไม่มีแถว OP เลยก็ยังใช้ค่าชุดได้');
+  assert.equal(ppsOf({ pieces_per_stroke: null }, { pieces_per_stroke: null }), null, '🔴 ทั้ง 2 ชั้นว่าง = null ห้ามเป็น 1');
+  assert.equal(ppsOf(null, null), null, 'ไม่รู้อะไรเลย = null');
+  assert.equal(ppsOf({ pieces_per_stroke: 0 }, { pieces_per_stroke: 2 }), 2, '0 ไม่ใช่คำตอบ — ต้องถอยไปชั้นถัดไป');
+  assert.equal(ppsOf({ pieces_per_stroke: -1 }, null), null, 'ค่าติดลบ = ไม่รู้');
+  // ต่อกับตัวแปลงจริง: ไม่รู้ ⇒ ต้องแปลง shot ไม่ได้ ไม่ใช่คืนยอดชิ้นดิบ
+  assert.equal(piecesToShots(1000, ppsOf(null, null)), null, '🔴 ไม่รู้ pps = คิด shot ไม่ได้');
+  assert.equal(piecesToShots(1000, ppsOf(null, { pieces_per_stroke: 2 })), 500, 'งานคู่ 1000 ชิ้น = 500 shot');
 });
