@@ -172,12 +172,71 @@ test('applyDupReviews — ไม่มีผลตรวจ / ผลตรวจ
 });
 
 test('dupProgress — นับเหลือ/เคลียร์แล้ว/ต้องตรวจซ้ำ/ของร้อนที่ยังไม่แตะ', () => {
+  /* "ของร้อน" = rank ≤ 4 (subset · qty_diff · conflict · pair_shot) — ขยับจาก ≤3 ตอน qty เข้ากติกา 14/10
+     ⚠️ ตัวเลข rank ที่นี่เป็นค่าสมมติ ไม่ใช่ verdict จริง — ตั้งใจให้คร่อมเส้นแบ่งพอดี */
   const pairs = [
-    { rank: 1, cleared: false, staleReview: false },
-    { rank: 2, cleared: true,  staleReview: false },
-    { rank: 4, cleared: false, staleReview: true },
-    { rank: 5, cleared: false, staleReview: false },
+    { rank: 1, cleared: false, staleReview: false },   // ร้อน · ยังไม่แตะ
+    { rank: 2, cleared: true,  staleReview: false },   // ร้อน แต่ตรวจแล้ว = ไม่นับ
+    { rank: 4, cleared: false, staleReview: true },    // ร้อน (เส้นแบ่งพอดี) · ต้องตรวจซ้ำ
+    { rank: 5, cleared: false, staleReview: false },   // ไม่ร้อน
   ];
-  assert.deepEqual(dupProgress(pairs), { total: 4, cleared: 1, stale: 1, open: 3, openHot: 1 });
+  assert.deepEqual(dupProgress(pairs), { total: 4, cleared: 1, stale: 1, open: 3, openHot: 2 });
   assert.deepEqual(dupProgress([]), { total: 0, cleared: 0, stale: 0, open: 0, openHot: 0 });
+});
+
+/* ── ⚖️ qty เข้าสู่กติกา (2026-10-14 · user ชี้เอง) ────────────────────────────────
+   *"0.171 มันคือน้ำหนักของเหล็กม้วน/coil ... อย่างนี้คือระยะ pitch shot นึงในการปั๊ม
+     ได้งานคู่แน่ๆ ถึงมีการหาร 2"*
+   เคสจริง: คอยล์ 50027083 "WSS-M1A367-A33 1.7X 350XC" · ทะเบียนเขียน "1:2" ไว้เองในช่อง part_no
+     ใบของ 20066663 เอง = 0.341 (ต่อ shot) · ใบ FG = 0.171 (ต่อชิ้น) · 0.341÷2 = 0.1705 → 0.171
+   🔴 เดิม util เทียบแค่ "รายชื่อ MAT" ⇒ คู่นี้ถูกตีเป็น identical ("ตรงกัน") = จอโกหก        */
+const QSHEET = { 'p-fg': '10100385', 'p-own': '20066663' };
+const qRows = (hereQty, ownQty) => ([
+  { product_id: 'p-fg', mat_no: '20066663', qty_per_unit: 1 },
+  { product_id: 'p-fg', mat_no: '50027083', parent_mat: '20066663', qty_per_unit: hereQty },
+  { product_id: 'p-own', mat_no: '50027083', qty_per_unit: ownQty },
+]);
+
+test('🔴 รายการตรงแต่ qty ต่าง ต้องไม่ใช่ "ตรงกัน" อีกต่อไป', () => {
+  const r = auditBomDupes(qRows(0.171, 0.341), QSHEET);
+  assert.equal(r.pairs.length, 1);
+  assert.notEqual(r.pairs[0].verdict, 'identical');
+});
+
+test('⚖️ ต่างกันพอดี 2 เท่า = pair_shot (ชิ้น vs shot) · ของจริงปัดเศษแล้ว 1.994 ก็ต้องจับได้', () => {
+  const p = auditBomDupes(qRows(0.171, 0.341), QSHEET).pairs[0];
+  assert.equal(p.verdict, 'pair_shot');
+  assert.deepEqual(p.qtyDiff, [{ mat: '50027083', here: 0.171, own: 0.341 }]);
+  // เป๊ะ 2.000 ก็ต้องเข้าเหมือนกัน
+  assert.equal(auditBomDupes(qRows(0.498, 0.996), QSHEET).pairs[0].verdict, 'pair_shot');
+});
+
+test('ต่างแบบอื่น (ไม่ใช่ 2 เท่า) = qty_diff — ตัวเลขผิดจริง ห้ามเหมารวมกับ ชิ้น/shot', () => {
+  const p = auditBomDupes(qRows(1, 4), QSHEET).pairs[0];
+  assert.equal(p.verdict, 'qty_diff');
+  assert.equal(DUP_VERDICTS.qty_diff.tone, 'bad');
+  assert.ok(DUP_VERDICTS.qty_diff.rank < DUP_VERDICTS.pair_shot.rank, 'ตัวเลขผิดต้องร้อนกว่าเรื่องหน่วย');
+});
+
+test('qty ตรงกัน = identical เหมือนเดิม (พฤติกรรมเดิมห้ามเปลี่ยน)', () => {
+  assert.equal(auditBomDupes(qRows(0.341, 0.341), QSHEET).pairs[0].verdict, 'identical');
+});
+
+test('🔴 ลายนิ้วมือต้องขยับเมื่อแก้แค่ qty (ไม่งั้นคู่ที่ตรวจแล้วไม่กลับเข้าคิว)', () => {
+  const a = auditBomDupes(qRows(0.341, 0.341), QSHEET).pairs[0].fingerprint;
+  const b = auditBomDupes(qRows(0.171, 0.341), QSHEET).pairs[0].fingerprint;
+  assert.notEqual(a, b);
+});
+
+test('แถวซ้ำของ mat เดียวกันในใบเดียวกัน = บวกกัน ไม่ใช่ทับกัน', () => {
+  // 0.171 + 0.17 = 0.341 → รวมแล้วเท่าใบของพาร์ทเอง ⇒ ไม่ใช่ qty ต่าง
+  const same = auditBomDupes([...qRows(0.171, 0.341),
+    { product_id: 'p-fg', mat_no: '50027083', parent_mat: '20066663', qty_per_unit: 0.17 }], QSHEET).pairs[0];
+  assert.deepEqual(same.qtyDiff, []);
+  assert.equal(same.verdict, 'identical');
+  // ถ้าไม่บวก (ทับกัน) จะได้ 0.1 แล้วตีเป็นตรงกัน — เทสนี้กันเคสนั้น
+  const diff = auditBomDupes([...qRows(0.171, 0.341),
+    { product_id: 'p-fg', mat_no: '50027083', parent_mat: '20066663', qty_per_unit: 0.1 }], QSHEET).pairs[0];
+  assert.equal(diff.qtyDiff[0].here, 0.271);
+  assert.equal(diff.verdict, 'qty_diff');
 });
