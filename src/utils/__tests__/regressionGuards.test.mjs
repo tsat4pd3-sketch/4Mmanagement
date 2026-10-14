@@ -4248,3 +4248,30 @@ test('🛡️ /products BOM: ใบว่างต้องเช็ค sheetsWi
     '\n\n❌ explodeBom ไม่รับ `startSheet` แล้ว — พาร์ทที่ลูกถูกกรอกไว้ในใบอื่นจะกางไม่ออกเลย\n'
     + '   (sheetFor(mat, undefined) ตอบได้แค่ "ใบของ mat เอง" ซึ่งอาจว่างหรือไม่มี)\n');
 });
+
+/* ── 🏃 คนวิ่งข้ามแผนก = "อ้างอิง" ไม่ใช่การย้ายสังกัด (14/10 · feedback user "ใช่ คนวิ่งข้ามแผนก") ──
+   ทางที่ง่ายแต่ผิดคือ "ย้าย `employees.org_node_id` ให้เลย" หรือ "ยัด `line_id` ให้"
+   ⇒ cost center ของคนเปลี่ยนตามหน่วย (วัด 14/10: 11 จาก 12 แผนกมี cost_center ของตัวเอง)
+      แล้ว activity rate ใน `utils/costSaving.js` = ตัวคูณ "เงินที่ประหยัดได้" ทุกจอ เพี้ยนทั้งระบบ
+      และ Checkin/Report จะนับเขาเป็นคนของหน่วยใหม่ (คลาสเดียวกับที่ `line_technicians` แก้ไว้แล้ว)
+   ⇒ บอร์ดกำลังคน **ห้ามเขียนทะเบียนพนักงาน/ไลน์/cost center** — เขียนได้แค่ `employee_flex_units`
+   🔴 "ไปช่วย ≠ นับเป็นกำลังคน" คุมด้วยเทสพฤติกรรมใน `manpowerBoard.test.mjs` (ช่องว่าง/ตัวนับห้ามขยับ) */
+test('🛡️ manpower-flex-reference-only — จอบอร์ดกำลังคนห้ามย้ายสังกัด/แก้ cost center ของคน', () => {
+  for (const f of ['src/pages/ManpowerBoard.jsx', 'src/components/ManpowerBoardSetup.jsx']) {
+    const code = stripComments(readFileSync(join(ROOT, f), 'utf8'));
+    assert.ok(!/from\(\s*['"]employees['"]\s*\)\s*\.\s*(update|upsert|insert|delete)/.test(code),
+      `\n\n❌ ${f} เขียนทะเบียนพนักงาน — บอร์ดนี้อ่านอย่างเดียว\n`
+      + '   ย้ายสังกัด = cost center ของคนเปลี่ยน (11/12 แผนกมี cc ของตัวเอง) ⇒ activity rate ทุกจอเพี้ยน\n'
+      + '   แก้: ผูกผ่านตาราง employee_flex_units (อ้างอิง) — บ้านจริงไม่ขยับ\n');
+    assert.ok(!/cost_center\s*:/.test(code),
+      `\n\n❌ ${f} เขียนค่า cost_center — cost center เป็นของหน่วยต้นสังกัด ห้ามให้บอร์ดนี้แตะ\n`);
+  }
+  const util = stripComments(readFileSync(join(ROOT, 'src/utils/manpowerBoard.js'), 'utf8'));
+  assert.ok(/flexUnits\s*=\s*\[\]/.test(util),
+    '\n\n❌ buildManpowerBoard ไม่ได้ตั้ง flexUnits เป็น optional default [] — ไม่ส่งแล้วต้องได้พฤติกรรมเดิมเป๊ะ\n');
+  assert.ok(/flexFrom/.test(util),
+    '\n\n❌ การ์ดคนวิ่งข้ามแผนกไม่ติดธง flexFrom — จอจะแยกไม่ออกว่าใครเป็นคนของแผนกจริง\n');
+  const page = stripComments(readFileSync(join(ROOT, 'src/pages/ManpowerBoard.jsx'), 'utf8'));
+  assert.ok(/buildManpowerBoard\(\{[^}]*flexUnits/.test(page),
+    '\n\n❌ หน้าบอร์ดไม่ส่ง flexUnits เข้า buildManpowerBoard — ทะเบียนมีข้อมูลแต่จอไม่โชว์ (ตายเงียบ)\n');
+});
