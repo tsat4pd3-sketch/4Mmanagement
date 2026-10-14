@@ -2281,6 +2281,32 @@ test('🛡️ column-history-table-must-exist — ตารางของ useCo
 });
 
 
+/* ═══ 🚫 `mtn_orders` ห้ามกรองสถานะด้วย `.neq()` (2026-10-14) ═════════════════════════
+   `.neq('status','rejected')` แปลว่า **"ไม่ใช่ rejected"** ไม่ใช่ "เป็นงานจริง"
+   ⇒ สถานะโมฆะที่เพิ่มทีหลังไหลเข้ามาเงียบๆ · เกิดจริง: เพิ่ม `cancelled` (14/10) แล้วใบที่ถูกยกเลิก
+     ไปโผล่เป็น **ค่าซ่อมจริง/แท่งพาเรโต** ใน /improvements ทั้งที่ไม่มีงานเกิดขึ้น
+   คลาสเดียวกับ `session-status-no-neq` (`production_sessions.status='void'`)
+   ⇒ ระบุสถานะรายตัว: `.in('status', OPEN_MO_STATUSES)` หรือ `.not('status','in', MO_VOID_NOT_IN)` */
+test('🛡️ mtn-status-no-neq — คิวรี mtn_orders ห้ามกรองสถานะด้วย .neq()', () => {
+  const bad = [];
+  for (const f of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
+    const src = stripComments(readFileSync(f, 'utf8'));
+    src.split('\n').forEach((ln, i) => {
+      if (!/from\(\s*['"]mtn_orders['"]\s*\)/.test(ln)) return;
+      if (!/\.neq\(\s*['"]status['"]/.test(ln)) return;
+      bad.push(`${relative(ROOT, f)}:${i + 1}  ${ln.trim().slice(0, 100)}`);
+    });
+  }
+  assert.deepEqual(bad, [],
+    '\n\n❌ กรองสถานะ `mtn_orders` ด้วย `.neq()`:\n'
+    + '   ' + bad.join('\n   ') + '\n'
+    + '   `.neq(\'status\',\'rejected\')` = "ไม่ใช่ rejected" **ไม่ใช่** "เป็นงานจริง"\n'
+    + '     ⇒ สถานะโมฆะที่เพิ่มทีหลัง (`cancelled`) ไหลเข้ามานับเป็นค่าซ่อม/พาเรโตเงียบๆ\n'
+    + '   แก้: `.in(\'status\', OPEN_MO_STATUSES)` (เอาใบที่ยังเดินอยู่)\n'
+    + '        `.not(\'status\', \'in\', MO_VOID_NOT_IN)` (ตัดใบที่ไม่เคยเป็นงานจริง)\n'
+    + '   ทั้ง 2 ตัวอยู่ใน src/utils/mtnStepPerm.js — ห้ามเขียนลิสต์สถานะด้วยมือในหน้า\n');
+});
+
 /* ═══ 🗑️ ลบไฟล์ใน storage ได้ ต่อเมื่อ "ยืนยันว่าแถวหายจริง" แล้ว (2026-10-06 · QC audit) ═══
    RLS ปฏิเสธ DELETE = **สำเร็จ 0 แถว ไม่มี error** (กฎเหล็ก DB ข้อ 2 — มีแต่ INSERT ที่โยน 42501)
    ⇒ โค้ดที่เช็คแค่ `error` แล้วเดินไปลบไฟล์ = **แถวยังอยู่ แต่ไฟล์หายถาวร** แล้วจอขึ้น "ลบแล้ว"

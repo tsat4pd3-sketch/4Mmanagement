@@ -612,6 +612,17 @@ export const moStatusMeta = (order) => {
        "ใบ MO ที่ปิดแล้ว = บันทึก" 12/10 · มี snapshot) · ผิดจริงต้องคุยกันเป็นเคส ไม่ใช่กดปุ่ม
    ⚠️ นี่เป็นกติกาของ **ตัวใบ** — สิทธิ์ว่า "คนนี้กดได้ไหม" ยังเป็นของ `canDelete()` เหมือนเดิม
       ผู้เรียกต้องผ่านทั้ง 2 ด่าน (ด่านนี้ไม่รู้จัก role โดยเจตนา — pure) */
+/* ── ใบที่ "ไม่เคยเกิดขึ้นเป็นงาน" ────────────────────────────────────────────────
+   `rejected` (แจ้งผิดแผนก/ไม่รับเรื่อง) และ `cancelled` (ออกเลขแล้วแต่ยกเลิก) ต่างจาก
+   `closed`/`transferred` ที่ **มีงานเกิดขึ้นจริง** ⇒ จอที่นับ "งานซ่อมที่เกิดขึ้น"
+   (ต้นทุน · พาเรโต · "เครื่องนี้มีใบซ่อมหรือยัง") ต้องกัน 2 ตัวนี้ออก
+   🔴 เขียนลิสต์นี้ด้วยมือในหน้า = ตกรุ่นทุกครั้งที่เพิ่มสถานะใหม่ (มีด่าน `mtn-status-no-neq`)
+   ⚠️ คนละชุดกับ `MO_DONE_STATUSES` ("จบแล้ว" ซึ่งรวม closed/transferred ที่เป็นงานจริง) */
+export const MO_VOID_STATUSES = ['rejected', 'cancelled'];
+export const isMoVoid = (order = {}) => MO_VOID_STATUSES.includes(String(order?.status || '').trim());
+/** ไว้ต่อท้าย `.not('status','in', …)` ฝั่งคิวรี — ให้ฝั่ง DB กรองตรงกับ `isMoVoid()` */
+export const MO_VOID_NOT_IN = `(${MO_VOID_STATUSES.join(',')})`;
+
 export const MO_REMOVE_DELETE = 'delete';
 export const MO_REMOVE_CANCEL = 'cancel';
 export const MO_REMOVE_BLOCKED = 'blocked';

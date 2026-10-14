@@ -1786,6 +1786,21 @@ user ส่งภาพ print preview มาขีดแดงไว้ 3 จุ
 5. 🔴 **ลิสต์ "สถานะจบ" ห้ามเขียนมือซ้ำ** — `canBounceBack()` / `canSendVendor()` เคยเขียน
    `['closed','rejected']` เองคนละที่ แล้วตกรุ่นทุกครั้งที่เพิ่มสถานะใหม่ ⇒ อ่านจาก
    `MO_DONE_STATUSES` ทั้งคู่แล้ว · edge `mtn-daily-summary` ต่อ `cancelled` ใน `status=not.in.(…)` ด้วย
+6. 🔴 **2 ชุดสถานะ คนละคำถาม ห้ามปน:**
+   · `MO_DONE_STATUSES` = **"ใบจบแล้ว"** (รวม `closed`/`transferred` ที่ **มีงานเกิดขึ้นจริง**) → `isMoOpen()`
+   · `MO_VOID_STATUSES` = **"ไม่เคยเป็นงานจริง"** (`rejected` + `cancelled`) → `isMoVoid()` / `MO_VOID_NOT_IN`
+   จอที่นับ *งานซ่อมที่เกิดขึ้น* (ต้นทุน · พาเรโต · "เครื่องนี้มีใบหรือยัง") ต้องใช้ชุดหลัง
+7. 🔴 **`mtn_orders` ห้ามกรองสถานะด้วย `.neq()`** (ด่าน `mtn-status-no-neq`) —
+   `.neq('status','rejected')` แปลว่า *"ไม่ใช่ rejected"* ไม่ใช่ *"เป็นงานจริง"* ⇒ สถานะโมฆะที่เพิ่ม
+   ทีหลังไหลเข้ามาเงียบๆ · คลาสเดียวกับ `production_sessions.status='void'` (`session-status-no-neq`)
+
+**2 จุดที่ไล่เจอตอนกวาด (แก้ในคอมมิทเดียวกัน · วันนี้ตัวเลขไม่ขยับเพราะยังไม่มีใบ `cancelled` — เป็นการกันไว้):**
+- `/improvements` — `.neq('status','rejected')` ⇒ ใบที่ยกเลิกจะถูกนับเป็น **ค่าซ่อมจริง (labor/parts →
+  cost saving) และแท่งพาเรโต** ทั้งที่ไม่มีงานเกิดขึ้น → เปลี่ยนเป็น `.not('status','in', MO_VOID_NOT_IN)`
+- `/dept-dashboard?dept=mtn` — แผง "เครื่องหยุดซ้ำแต่**ยังไม่มีใบซ่อม**" นับใบโมฆะว่า "มีใบแล้ว"
+  ⇒ **ซ่อนเครื่องที่ควรถูกชี้** (ผิดด้านที่อันตราย: จอดูสะอาดขึ้น) → กรองด้วย `isMoVoid()`
+- ตรวจแล้วไม่ต้องแก้: `/factory-map` ใช้ `.in('status', OPEN_MO_STATUSES)` (allow-list ⇒ กันเองอยู่แล้ว) ·
+  `/dept-dashboard` ตัวนับใบค้างใช้ `isMoOpen()` · export Excel รับ `isOpen` มาจากหน้า
 
 **backfill `O-` (14/10):** `20261014c_mtn_mo_backfill_o_prefix_dr.sql` (**apply แล้ว**) —
 user: *"backfill เลข mo เก่าของ mtn ด้วย ที่ออกจากระบบ เพิ่ม O- ให้หมด"* ⇒ **32 ใบ**
@@ -1822,6 +1837,7 @@ stamp เองแก้ไม่ได้ · `reporter_prod` = ชื่อผ�
 - `src/utils/__tests__/regressionGuards.test.mjs` — ด่าน `mo-number-js-sql-parity`
 - `src/utils/mtnStepPerm.js` — `cancelled` เข้า `MO_DONE_STATUSES`/ป้าย/สี · **`moRemoveMode()` ใหม่** · `canBounceBack` เลิกเขียนลิสต์มือ
 - `src/utils/mtnVendor.js` — `canSendVendor` อ่าน `MO_DONE_STATUSES` (เลิกลิสต์มือ)
+- `src/pages/Improvements.jsx` · `src/pages/DeptDashboard.jsx` — ใช้ `MO_VOID_NOT_IN` / `isMoVoid()`
 - `supabase/functions/mtn-daily-summary/index.ts` — ตัด `cancelled` ออกจากสรุปใบค้าง
 - `src/pages/MtnRepair.jsx` — ปุ่ม 🗑/🚫 ตาม `moRemoveMode()` + **นับแถวก่อนลบรูปใน storage**
 - `supabase/migrations/20261014c_mtn_mo_backfill_o_prefix_dr.sql` — **ใหม่ · apply แล้ว** (backfill `O-` 32 ใบ)
