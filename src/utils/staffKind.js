@@ -14,10 +14,26 @@
  *   ⇒ 23/09 เปลี่ยนชื่อค่าฝั่งนี้เป็น shopfloor/support เพื่อเลิกชนกัน (ความหมายเดิมทุกประการ)
  *   ⇒ **ห้ามเอา 2 แกนนี้มาแทนกัน · ห้าม sync หากัน · และห้ามใช้ตัดสินสิทธิ์/ผู้รับแจ้งเตือน**
  *
- * 🔴 **กฎเหล็ก: จอที่ "นับคน" ต้องกรอง support ออกผ่านไฟล์นี้เท่านั้น ห้ามพิมพ์ `staff_kind` เองในหน้า**
- *    (เช็คชื่อ · สกิล · กำลังคน · turnover · จัดกะ · ยืมคนข้ามไลน์)
- *    ไม่กรอง = ธุรการ/QA/เซลล์ โผล่ในลิสต์เช็คชื่อและถูกนับเป็นกำลังคนหน้าไลน์ **เงียบๆ**
+ * ── ⭐ 3 กลุ่ม + **2 แกน** (2026-10-14 · คำสั่ง user) ────────────────────────────────
+ * *"ช่าง วิศวกร ธุรการ หัวหน้าแผนก … มาขึ้นปนกับพนักงานหน้างานหมด อยากให้แยกออกจากกัน
+ *   ถ้าส่วนสนับสนุนอยากใช้ระบบเช็คชื่อ อยากให้แยกออกมา"*
+ *
+ * 🔴 **"เช็คชื่อไหม" กับ "นับเป็นกำลังคนของไลน์ผลิตไหม" เป็นคนละคำถาม — ห้ามใช้ฟังก์ชันเดียวตอบทั้งคู่**
+ *    (เดิมเป็นตัวเดียวกัน ⇒ จะให้สายสนับสนุนเช็คชื่อได้ ก็ต้องยอมให้ถูกนับเป็นกำลังคนไปด้วย)
+ *
+ * | กลุ่ม | ใคร | เช็คชื่อ | นับกำลังคนไลน์ผลิต |
+ * |---|---|---|---|
+ * | `shopfloor`  | operator · line_leader | ✅ | ✅ |
+ * | `technician` | ช่างซ่อมบำรุง          | ✅ | ❌ (ช่างประจำไลน์อยู่ที่ `line_technicians`) |
+ * | `support`    | ธุรการ · วิศวกร · หัวหน้าแผนก | ✅ | ❌ |
+ *
+ * 🔴 **กฎเหล็ก: จอที่ "นับกำลังคนไลน์ผลิต" ต้องกรองผ่านไฟล์นี้เท่านั้น ห้ามพิมพ์ `staff_kind` เองในหน้า**
+ *    (สกิล · กำลังคน · turnover · OEE manpower) — `isShopfloorStaff()` / `onlyShopfloorStaff()`
+ *    ไม่กรอง = ธุรการ/ช่าง ถูกนับเป็นกำลังคนหน้าไลน์ **เงียบๆ**
  *    มีด่าน `src/utils/__tests__/staffKindGuard.test.mjs` สแกนไว้แล้ว
+ *
+ * 🔴 **จอ "เช็คชื่อ / จัดกะ" ห้ามกรองใครออก — ต้องแสดงครบแล้ว *แยกกลุ่มให้เห็น*** (`staffGroupOf()`)
+ *    กรองทิ้ง = คนเช็คชื่อไม่ได้ / ไม่มีกะ ซึ่งเป็นความเสียหายที่หนักกว่า "โผล่มาแล้วดูรก" มาก
  *
  * ✅ **จอที่ "เลือกคน" ไม่ต้องกรอง** — ผู้แจ้งซ่อม · ผู้เข้าอบรม OJT · ผู้ถูกสังเกต BBS ·
  *    ผู้รับผิดชอบ action · คนขึ้นรถรับส่ง — คนสายสนับสนุนเป็นตัวเลือกที่ถูกต้องในบริบทพวกนี้
@@ -26,29 +42,62 @@
  *    (เกิดจริง 23/09) · ให้ผู้ใช้กรองเองด้วยชิป 🧑‍🏭 หน้างาน / 🗂️ สนับสนุน แทน
  */
 
-export const STAFF_SHOPFLOOR = 'shopfloor';
-export const STAFF_SUPPORT   = 'support';
+export const STAFF_SHOPFLOOR  = 'shopfloor';
+export const STAFF_TECHNICIAN = 'technician';   // 🔧 เพิ่ม 14/10 — ช่าง: เช็คชื่อได้ แต่ไม่ใช่กำลังคนไลน์
+export const STAFF_SUPPORT    = 'support';
 
 /* ค่าเก่าก่อน 23/09 — ยังอ่านเจอได้จากแถวที่แท็บเก่าเขียนช่วง deploy (check constraint ยังรับอยู่)
    ⇒ ตัวอ่านทุกตัวในไฟล์นี้ต้องเข้าใจทั้ง 2 ชุดเสมอ ห้ามเทียบ === ค่าเดียว */
 const LEGACY_SUPPORT = 'indirect';
 
-/** ค่าที่ถือว่า "ไม่นับเป็นกำลังคนหน้างาน" — ใหม่ + เก่า */
+/** ค่าที่ถือว่า "สายสนับสนุน" — ใหม่ + เก่า (ด่านเทสอ้างชื่อนี้ ห้ามเปลี่ยน) */
 export const SUPPORT_VALUES = [STAFF_SUPPORT, LEGACY_SUPPORT];
 
+/** 🔴 ค่าที่ **ไม่นับเป็นกำลังคนของไลน์ผลิต** = สายสนับสนุน + ช่าง */
+export const NON_LINE_VALUES = [STAFF_TECHNICIAN, ...SUPPORT_VALUES];
+
 export const STAFF_KINDS = [
-  { key: STAFF_SHOPFLOOR, label: '🧑‍🏭 หน้างาน / ช่าง', desc: 'เช็คชื่อ · มีสกิล · นับเป็นกำลังคน' },
-  { key: STAFF_SUPPORT,   label: '🗂️ สายสนับสนุน',      desc: 'QA · วิศวกรรม · ธุรการ · สโตร์ — ไม่เช็คชื่อ ไม่นับกำลังคน' },
+  { key: STAFF_SHOPFLOOR,  label: '🧑‍🏭 หน้างาน',      desc: 'เช็คชื่อ · มีสกิล · นับเป็นกำลังคนของไลน์ผลิต' },
+  { key: STAFF_TECHNICIAN, label: '🔧 ช่าง',           desc: 'เช็คชื่อ — แต่ไม่นับเป็นกำลังคนของไลน์ผลิต (ช่างประจำไลน์ดูที่ line_technicians)' },
+  { key: STAFF_SUPPORT,    label: '🗂️ สายสนับสนุน',    desc: 'QA · วิศวกรรม · ธุรการ · สโตร์ — เช็คชื่อได้ แต่ไม่นับกำลังคน' },
 ];
 
+/** กลุ่มของคนหนึ่งคน (normalize ค่าเก่า/ค่าว่างแล้ว) — ใช้ "จัดกลุ่ม" บนจอเช็คชื่อ/จัดกะ */
+export function staffGroupOf(emp) {
+  const v = emp?.staff_kind;
+  if (v === STAFF_TECHNICIAN) return STAFF_TECHNICIAN;
+  if (SUPPORT_VALUES.includes(v)) return STAFF_SUPPORT;
+  return STAFF_SHOPFLOOR;   // ว่าง/ไม่รู้จัก = หน้างาน (ตาม default ของคอลัมน์)
+}
+
 export const staffKindLabel = (k) =>
-  (k === STAFF_SUPPORT || k === LEGACY_SUPPORT) ? STAFF_KINDS[1].label : STAFF_KINDS[0].label;
+  (STAFF_KINDS.find(x => x.key === staffGroupOf({ staff_kind: k })) || STAFF_KINDS[0]).label;
 
-/** true = คนกลุ่มที่ต้องเช็คชื่อ/นับกำลังคน (ค่าว่าง/ไม่รู้จัก = นับเป็นหน้างาน ตาม default ของคอลัมน์) */
-export const isShopfloorStaff = (emp) => !SUPPORT_VALUES.includes(emp?.staff_kind || STAFF_SHOPFLOOR);
+/**
+ * 🧮 **แกนที่ 1 — "นับเป็นกำลังคนของไลน์ผลิตไหม"** (สกิล · กำลังคน · turnover · OEE manpower)
+ * ค่าว่าง/ไม่รู้จัก = นับเป็นหน้างาน (ตาม default ของคอลัมน์ · fail-open)
+ */
+export const isShopfloorStaff = (emp) => !NON_LINE_VALUES.includes(emp?.staff_kind || STAFF_SHOPFLOOR);
 
-/** กรองฝั่ง client — ใช้กับลิสต์ที่โหลดมาแล้ว */
-export const shopfloorOnly = (rows = []) => rows.filter(isShopfloorStaff);
+/**
+ * 🪪 **แกนที่ 2 — "ต้องเช็คชื่อ/มีกะไหม"** — **ทุกกลุ่มตอบใช่**
+ * มีไว้ให้จอเขียนเจตนาได้ชัด (และถ้าวันหน้ามีกลุ่มที่ไม่เช็คชื่อ จะแก้ที่นี่ที่เดียว)
+ * 🔴 จอเช็คชื่อ/จัดกะ **ห้ามใช้ `isShopfloorStaff` มากรอง** — ใช้ตัวนี้ + `staffGroupOf()` จัดกลุ่มแทน
+ */
+export const checksInStaff = () => true;
+
+/** กรองฝั่ง client — ใช้กับลิสต์ที่โหลดมาแล้ว (แกน "นับกำลังคน") */
+export const shopfloorOnly = (rows = []) => (Array.isArray(rows) ? rows : []).filter(isShopfloorStaff);
+
+/**
+ * แบ่งลิสต์เป็น 3 กลุ่มตามลำดับที่จอควรแสดง — สำหรับจอเช็คชื่อ/จัดกะ
+ * @returns {{ key, label, desc, rows }[]} · **คืนครบ 3 กลุ่มเสมอ** (กลุ่มว่างก็คืน — จอจะได้เลือกเองว่าจะซ่อนหัวข้อไหม)
+ */
+export function groupByStaffKind(rows) {
+  const by = { [STAFF_SHOPFLOOR]: [], [STAFF_TECHNICIAN]: [], [STAFF_SUPPORT]: [] };
+  for (const r of (Array.isArray(rows) ? rows : [])) by[staffGroupOf(r)].push(r);
+  return STAFF_KINDS.map(k => ({ ...k, rows: by[k.key] }));
+}
 
 /**
  * กรองฝั่ง server — ต่อท้าย query builder ของ supabase-js
