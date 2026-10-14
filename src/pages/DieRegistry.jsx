@@ -21,7 +21,9 @@ import { buildQrPayload, parseQrPayload, findDieByScan } from '../utils/qrCode';
 import DieLayout from '../components/DieLayout';
 import DieStatusBoard from '../components/DieStatusBoard';
 import ProductSelect from '../components/ProductSelect'; // MAT SAP = picker กลาง (single-source audit 2026-09-07)
-import { dieSetMats, dieSetPairState, suggestPps } from '../utils/dieSetMats'; // 🔨 ชุดหนึ่งทำได้ 2 MAT (งานคู่ RH/LH)
+import { dieSetMats, dieSetPairState, suggestPps } from '../utils/dieSetMats';
+import { pairBlockReason } from '../utils/pairOrder';   // 🔗 ด่านเดียวกับ Product Master — คู่ต้องอยู่ไลน์เดียวกัน
+import { checkWriteRows } from '../utils/dbWrite';      // RLS ปฏิเสธ UPDATE = 0 แถว ไม่มี error ⇒ ต้องนับแถว // 🔨 ชุดหนึ่งทำได้ 2 MAT (งานคู่ RH/LH)
 import useColumnHistory from '../utils/useColumnHistory'; // 📜 MAT ที่เคยบันทึกใน die_sets — Product Master ไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
 import SelectOrFree from '../components/SelectOrFree';
 import SimpleMasterPanel from '../components/SimpleMasterPanel';
@@ -102,18 +104,68 @@ const emptySet = {
 };
 
 /* 🔗 ชุดที่ลง MAT ไว้ 2 ตัว ต้องสอดคล้องกับคู่ที่ตั้งไว้ใน Product Master
-   **จอชี้อย่างเดียว ห้ามเขียนทับให้เอง** — "ใครคู่กับใคร" เป็นของ Product Master (pairBlockReason คุมอยู่)
-   ไม่ตั้งคู่ = OEE ยังนับ shot ซ้ำอยู่ ⇒ ต้องบอก ไม่ใช่ปล่อยเงียบ */
-function SetPairNote({ set, products }) {
-  const pairOf = (m) => products.find(p => String(p.mat_no || '').trim().toUpperCase() === m)?.pair_mat_no || null;
-  const r = dieSetPairState(set, pairOf);
+   เจ้าของข้อมูล "ใครคู่กับใคร" ยังเป็น Product Master — หน้านี้แค่**ยืมมือเขียน** ⇒ ต้องเหมือนกันทุกด่าน:
+     1) สิทธิ์ `products:edit` (ไม่ใช่ `machines:edit` ของหน้านี้) — ไม่มี = บอกเหตุผล ไม่ซ่อนปุ่มเงียบ
+     2) `pairBlockReason()` ตัวเดียวกับหน้า Product Master (คู่ RH/LH ต้องผลิตไลน์เดียวกัน)
+     3) เขียน **2 ทาง** + ปลดคู่เก่าที่ชี้ค้างก่อน ไม่งั้นคู่ชี้ข้างเดียว = `collapsePairShots` ยุบไม่ครบ
+     4) `checkWriteRows` ทุกครั้ง — RLS ปฏิเสธ UPDATE คืน 0 แถวโดยไม่มี error */
+function SetPairNote({ set, products, role, onDone }) {
+  const [busy, setBusy] = useState(false);
+  const canPair = can('products', 'edit', role);
+  const byMat = (m) => products.find(p => String(p.mat_no || '').trim().toUpperCase() === m) || null;
+  const r = dieSetPairState(set, (m) => byMat(m)?.pair_mat_no || null);
   if (r.state === 'single' || r.state === 'ok') return null;
+
+  const [a, b] = r.mats;
   const msg = r.state === 'mismatch'
-    ? `Product Master บอกว่าคู่ของ ${r.mats[0]} คือ ${r.says} ไม่ใช่ ${r.mats[1]} — ตรวจก่อนบันทึก`
-    : `ยังไม่ได้ตั้งคู่ RH/LH ของ 2 ตัวนี้ที่ /products — OEE จะยังนับ shot ซ้ำ 2 เท่า`;
+    ? `Product Master บอกว่าคู่ของ ${a} คือ ${r.says} ไม่ใช่ ${b} — ตรวจก่อนบันทึก`
+    : `ยังไม่ได้ตั้งคู่ RH/LH ของ 2 ตัวนี้ — OEE จะยังนับ shot ซ้ำ 2 เท่า`;
+
+  async function setPair() {
+    const pa = byMat(a), pb = byMat(b);
+    if (!pa || !pb) return toast.error(`${!pa ? a : b} ยังไม่มีในทะเบียนสินค้า — เพิ่มที่ /products ก่อน`);
+    const why = pairBlockReason(pa, pb);          // ด่านเดียวกับ Product Master ห้ามข้าม
+    if (why) return toast.error(why);
+    const olds = [pa.pair_mat_no, pb.pair_mat_no]   // คู่เก่าที่ชี้ไปที่อื่น ต้องปลดก่อน ไม่งั้นค้างชี้ข้างเดียว
+      .map(v => String(v || '').trim().toUpperCase())
+      .filter(v => v && v !== a && v !== b);
+    if (!window.confirm(
+      `ตั้งให้ ${a} ↔ ${b} เป็นคู่ RH/LH ในทะเบียนสินค้า?\n`
+      + (olds.length ? `\n⚠️ จะปลดคู่เดิมออกก่อน: ${olds.join(', ')}\n` : '')
+      + '\nมีผลกับการคำนวณ OEE ของทั้ง 2 พาร์ท (ยุบ shot งานคู่)')) return;
+
+    setBusy(true);
+    try {
+      for (const o of olds) {
+        if (!checkWriteRows(await supabaseDR.from('dr_products').update({ pair_mat_no: null })
+          .eq('mat_no', o).select('id'), `ปลดคู่เดิมของ ${o}`)) return;   // ปลดไม่ได้ = หยุด ห้ามเขียนทับต่อ
+      }
+      if (!checkWriteRows(await supabaseDR.from('dr_products').update({ pair_mat_no: b })
+        .eq('mat_no', pa.mat_no).select('id'), `ผูกคู่ฝั่ง ${a}`)) return;
+      if (!checkWriteRows(await supabaseDR.from('dr_products').update({ pair_mat_no: a })
+        .eq('mat_no', pb.mat_no).select('id'), `ผูกคู่ฝั่ง ${b}`)) {
+        toast.error(`⚠️ ${a} ผูกไปแล้วแต่ ${b} ไม่สำเร็จ — คู่ชี้ข้างเดียว ไปแก้ที่ /products`);
+        return;
+      }
+      toast.success(`ตั้งคู่ ${a} ↔ ${b} แล้ว`);
+      await onDone?.();
+    } finally { setBusy(false); }
+  }
+
+  const color = r.state === 'mismatch' ? '#ef4444' : '#f59e0b';
   return (
-    <div style={{ marginTop: 4, fontSize: 11, color: r.state === 'mismatch' ? '#ef4444' : '#f59e0b' }}>
+    <div style={{ marginTop: 4, fontSize: 11, color }}>
       {r.state === 'mismatch' ? '⚠️ ' : 'ℹ️ '}{msg}
+      {canPair ? (
+        <button type="button" onClick={setPair} disabled={busy}
+          style={{ marginLeft: 6, fontSize: 11, padding: '1px 8px', borderRadius: 6,
+            cursor: busy ? 'wait' : 'pointer', background: 'var(--bg3)', color: 'var(--text2)',
+            border: `1px solid ${color}` }}>
+          {busy ? 'กำลังตั้ง…' : r.state === 'mismatch' ? 'ตั้งคู่ใหม่เป็น ' + b : 'ตั้งคู่ให้เลย'}
+        </button>
+      ) : (
+        <span style={{ color: 'var(--muted)' }}> · บัญชีคุณไม่มีสิทธิ์แก้ทะเบียนสินค้า ตั้งคู่ที่ /products</span>
+      )}
     </div>
   );
 }
@@ -774,7 +826,7 @@ export default function DieRegistry() {
             <Field label="MAT ตัวที่ 2 (งานคู่ RH/LH)" hint="ว่าง = ชุดนี้ทำพาร์ทเดียว">
               <ProductSelect value={editSet.mat_no_2 || ''} lines={editSet.line_name ? [editSet.line_name] : undefined} history={dieMatHist}
                 onChange={res => setEditSet(f => ({ ...f, mat_no_2: res.mat_no || '' }))} inputStyle={{ background: 'var(--bg)' }} />
-              <SetPairNote set={editSet} products={products} />
+              <SetPairNote set={editSet} products={products} role={role} onDone={load} />
             </Field>
             <Field label="รุ่น / Model">
               <input style={inputStyle} value={editSet.model || ''}
