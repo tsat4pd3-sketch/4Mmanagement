@@ -17,13 +17,18 @@
       ไม่งั้นวันที่ deploy ช่างที่ยังไม่ถูกตั้งทีมจะแก้อะไรไม่ได้ทั้งระบบ — ห้ามเปลี่ยนเป็น false
    🔴 นี่คือด่าน "เจ้าของ" ล้วน **ไม่ได้แทนด่านสิทธิ์** — ต้องเช็ค can()/canDelete() คู่เสมอ */
 
-/** @param {string} rowTeamKey ทีมเจ้าของแถว (key ที่ normalize แล้ว · '' = ของกลาง)
- *  @param {string[]} myTeamKeys ทีมของ user (key ที่ normalize แล้ว · [] = ยังไม่ตั้งทีม)
- *  @returns {{ ok: boolean, code: 'boss'|'unscoped'|'own'|'other'|'common' }} */
-export function teamRowOwnerKeys(rowTeamKey, myTeamKeys, role) {
+/* 🔑 `strict` — สำหรับคีย์ที่ "เพิ่งเกิด" (`mtn_repair:spare_master` · 14/10)
+   `unscoped` มีไว้กันของเก่าพัง: ผู้ถือ `manage_master` มีมาก่อนระบบทีม ⇒ ล็อกย้อนหลัง = ช่างทำงานไม่ได้
+   แต่คีย์ใหม่ยัง**ไม่มีใครถือ** ⇒ ไม่มีของเก่าให้พัง ⇒ บังคับได้ตั้งแต่วันแรกว่า "ต้องมีทีมก่อน"
+   (ถ้าปล่อย unscoped ด้วย: supervisor 79% ยังไม่ได้ตั้ง mtn_teams = ด่านไม่ทำงานกับคนที่เราเพิ่งให้คีย์
+    ซึ่งแปลว่าด่านนี้แทบไม่มีผลเลย) · ไม่มีทีม = **เพิ่มของใหม่ได้ แต่ไปแก้/ลบของใครไม่ได้**
+ * @param {string} rowTeamKey ทีมเจ้าของแถว (key ที่ normalize แล้ว · '' = ของกลาง)
+ * @param {string[]} myTeamKeys ทีมของ user (key ที่ normalize แล้ว · [] = ยังไม่ตั้งทีม)
+ * @returns {{ ok: boolean, code: 'boss'|'unscoped'|'own'|'other'|'common'|'no_team' }} */
+export function teamRowOwnerKeys(rowTeamKey, myTeamKeys, role, { strict = false } = {}) {
   if (role === 'admin' || role === 'manager') return { ok: true, code: 'boss' }
   const mine = (Array.isArray(myTeamKeys) ? myTeamKeys : []).filter(Boolean)
-  if (!mine.length) return { ok: true, code: 'unscoped' }
+  if (!mine.length) return strict ? { ok: false, code: 'no_team' } : { ok: true, code: 'unscoped' }
   const t = String(rowTeamKey || '').trim()
   if (!t) return { ok: false, code: 'common' }
   return mine.includes(t) ? { ok: true, code: 'own' } : { ok: false, code: 'other' }

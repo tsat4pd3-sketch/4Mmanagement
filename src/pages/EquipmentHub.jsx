@@ -78,7 +78,8 @@ function SparePanel({ view }) {
 
   if (loading) return <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>⏳ กำลังโหลดทะเบียนอะไหล่…</div>;
   return view === 'rack'
-    ? <RackMap parts={parts} canEdit={can('mtn_repair', 'manage_master', role)} myTeams={userTeams} mySection={mySection} />
+    /* ผังคลัง = ส่วนหนึ่งของทะเบียนอะไหล่ ⇒ `spare_master` แก้ได้ด้วย (14/10) */
+    ? <RackMap parts={parts} canEdit={can('mtn_repair', 'manage_master', role) || can('mtn_repair', 'spare_master', role)} myTeams={userTeams} mySection={mySection} />
     : <SparePartMaster parts={parts} reload={load} fullName={fullName} role={role} myTeams={userTeams} mySection={mySection} />;
 }
 
