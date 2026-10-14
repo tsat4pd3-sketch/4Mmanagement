@@ -84,6 +84,30 @@ export function mtnAutoSeries(roll, year, team) {
   return { months: out, machines };
 }
 
+/** หน่วยที่ "สูตรทางการ" บังคับ — ตรวจว่าหน่วยที่คนตั้งในนิยาม/ทะเบียนขัดกับสูตรไหม (2026-10-13)
+ *  เคสจริง: ทีม MTN แก้ทะเบียนกลาง Machine Break Down จาก % เป็น "Hrs." แล้วคีย์ค่ากรอกมือเป็นชั่วโมง
+ *  ⇒ บอร์ดเอา "ชั่วโมง" (กรอกมือ) วางข้าง "%" (ระบบคำนวณ) ในแผ่นเดียวกัน · สูตรหน้า 10 คูณ 100 = % เท่านั้น
+ *  @returns null = ไม่ขัด/ไม่ใช่ KPI อัตโนมัติ/ยังไม่ตั้งหน่วย · { expect, got } = ขัด (จอเตือน ไม่บล็อก — ใบจริงบางใบใช้นาที) */
+export function autoUnitMismatch(name, unit) {
+  const ak = autoKpiOfName(name);
+  const u = String(unit || '').trim().toLowerCase();
+  if (!ak || !u) return null;
+  if (ak.unit === '%') return u.includes('%') ? null : { expect: '%', got: unit };
+  // MTBF/MTTR = หน่วยเวลา (ชม. หรือ นาที — toRowUnit แปลงให้) · อย่างอื่น เช่น % / ครั้ง = ขัด
+  return /ชม|hr|hour|นาที|min/.test(u) ? null : { expect: ak.unit, got: unit };
+}
+
+/** ข้อความ "ที่มาของเลข" ต่อเดือน สำหรับแถว auto — user 13/10 "อยากเห็น hrs. ด้วย" ทั้งที่ KPI เป็น %
+ *  ⇒ ตัวตั้ง/ตัวหารต้องโผล่บนจอคู่กับ % (tooltip + บรรทัดรองของแผ่น) ไม่ใช่เปลี่ยนหน่วย KPI */
+export function autoDetailText(m, autoKey) {
+  if (!m) return '';
+  const hr = (v) => (v == null ? '—' : Number(v).toLocaleString('th-TH', { maximumFractionDigits: 1 }));
+  if (autoKey === 'mo_on_target') return `ตรงเป้า ${m.on_target ?? 0}/${m.closed ?? 0} ใบ${m.no_target ? ` · ไม่ตั้งกำหนด ${m.no_target}` : ''}`;
+  if (autoKey === 'mbd' || autoKey === 'mtbf') return `หยุด ${hr(m.breakdown_hr)} ชม. · ${m.events ?? 0} ครั้ง · ${m.machines ?? 0} เครื่อง`;
+  if (autoKey === 'mttr') return `หยุด ${hr(m.breakdown_hr)} ชม. ÷ ${m.events ?? 0} ครั้ง`;
+  return '';
+}
+
 /** แปลงหน่วยให้ตรงกับที่แถวนิยามตั้งไว้ — MTBF/MTTR ใบ JIG ใช้ "นาที" เด็คใช้ "ชม." (docs §12.3) */
 export function toRowUnit(value, autoKey, rowUnit) {
   if (value == null) return null;

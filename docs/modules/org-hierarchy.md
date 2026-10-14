@@ -75,10 +75,10 @@
 > - **ยังไม่ทำ (ชั้น 3):** เพิ่ม 7 แผนกย่อยใต้ `Planning&Store` + ติดป้ายฝั่ง แล้วแยก scope/สิทธิ์จริง
 >   ตอนนี้ทุกคนยังเห็นทุกหน้าเหมือนเดิม — การแยกที่ทำแล้วเป็นชั้น **เมนู + เนื้อในหน้า** เท่านั้น
 > ### ⚠️ กฎเหล็ก — "ฝ่าย (Division)" เป็น **ป้ายที่ node** ไม่ใช่ชั้นใน tree (2026-08-18 · ย้ำอีกครั้ง 2026-08-19)
-> ระบบมีกลไกฝ่ายอยู่แล้ว: ตาราง **`org_divisions`** (production/maintenance/**engineering** (13/10)/quality/logistic/office)
+> ระบบมีกลไกฝ่ายอยู่แล้ว: ตาราง **`org_divisions`** (production/maintenance/**engineering** (13/10)/logistic/office · ~~quality~~ ปิดใช้ 13/10)
 > + คอลัมน์ **`org_nodes.division`** ติดป้ายที่ node ระดับบนสุด แล้ว**ลูกตกทอดขึ้นไปหา** (`divisionOfNode`)
 > — หลักเดียวกับ `cost_center`/`head_name` ที่ไลน์ลูกตกทอดจากไลน์แม่
-> - ติดป้ายแล้ว: PD1–PD4→production · Planning&Store→logistic · MTN/JIG MTN/DIE MTN→maintenance · QA→quality · **PE→engineering** (13/10)
+> - ติดป้ายแล้ว: PD1–PD4→production · Planning&Store→logistic · MTN/JIG MTN/DIE MTN→maintenance · **QA→engineering · PE→engineering** (13/10 — `quality` ปิดใช้แล้ว ผังจริงไม่มีฝ่ายนี้)
 > - ตั้งค่าที่ `/org-setup` (dropdown ฝ่ายในโมดัลแก้ไข section/department) · อ่านผ่าน **`src/utils/orgDivisions.js`**
 >   (`loadDivisions`/`divisionsSync`/`divisionMeta`/`divisionLabel`/`divisionOfNode`/`divisionOfEmployee`)
 > - **🔴 ห้ามเพิ่ม `kind='division'` เป็น node ชั้นใหม่ใน `org_nodes`** — จะพัง cascade section→department ทุกหน้า
@@ -750,9 +750,9 @@
 | `production` ฝ่ายผลิต | ✅ ฝ่าย Production |
 | `logistic` **"ฝ่ายวางแผน-คลัง"** | 🟡 ชื่อจริง **"Logistic and Sales"** |
 | `office` ฝ่ายสำนักงาน | 🟡 น่าจะ = Steel Auto Office Plant 4 หรือ สนับสนุนกลาง |
-| `quality` **ฝ่ายคุณภาพ** | 🔴 **ไม่มีฝ่ายนี้** — QA เป็น *ส่วน* ใต้ฝ่าย Engineering |
+| `quality` **ฝ่ายคุณภาพ** | ✅ **ปิดใช้แล้ว 13/10** (user สั่ง) — QA ย้ายไปป้าย `engineering` · migration `20261013_qa_under_engineering_main.sql` · ยังเหลือ: QA ในผังเป็น *ส่วน* Cost 2140441000 แต่ระบบเก็บเป็น department Cost `214055654` (รอเคาะ) |
 | `maintenance` **ฝ่ายช่าง** | 🔴 **ไม่มีฝ่ายนี้** — Maintenance / Tooling MTN เป็น *ส่วน* |
-| `engineering` ฝ่ายวิศวกรรม | ✅ **เพิ่มแล้ว 13/10** (ORG-016 · ติดป้ายที่ส่วน PE) — QA ยังอยู่ `quality` รอ user เคาะว่าจะย้ายมาใต้ Engineering ตามผังไหม |
+| `engineering` ฝ่ายวิศวกรรม | ✅ **เพิ่มแล้ว 13/10** (ORG-016) — ติดป้ายที่ส่วน PE **และ QA** (ย้ายตามคำสั่ง user วันเดียวกัน) |
 
 #### เทียบ PD1-PD4 กับส่วนจริง — **แก้ตรงกันครบแล้ว 24/09**
 
@@ -871,7 +871,7 @@ user ส่งผังทางการของส่วน PE มา (FM-HRM
   ⇒ รอรหัสจาก HR แล้วคีย์ที่ `/operator` (section=`PE` · department=`PE1`/`PE2` · `staff_kind='support'` · ไม่ต้องมีไลน์/ทีม)
 - `org_assignments.profile_id` ต้องเป็นบัญชีผู้ใช้ · หัวหน้า 3 ท่านยังไม่มีบัญชี (บัญชี role `engineer` ที่มีคือบัญชีกลาง
   `processengineering`) ⇒ สร้างบัญชีก่อน แล้วค่อยผูก 👔 รักษาการที่ `/org-setup` (ใส่ `ends_on` ด้วย — ผังไม่ได้บอก)
-- QA ในผังจริงอยู่ใต้ฝ่าย Engineering เหมือน PE แต่ระบบยังติดป้าย `quality` — **ไม่ย้ายให้เองในรอบนี้** (กระทบขอบเขต KPI/scrap report ที่กรองด้วยฝ่าย)
+- QA ย้ายมาป้าย `engineering` แล้ว (user สั่ง 13/10 · ตรวจก่อนย้าย: ไม่มี skill/KPI/profile/โค้ด ตัวไหนอ้าง `quality`) · ฝ่าย `quality` ปิดใช้ ไม่ลบ
 
 ---
 

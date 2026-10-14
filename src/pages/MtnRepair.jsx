@@ -54,6 +54,8 @@ import { shiftOfTime, workDateOfTime } from '../utils/workDate';
 import { ALL, SHIFT_OPTIONS, allOf } from '../utils/filterLabels';
 /* ป้ายถังขยะของ taxonomy — ของกลาง ห้ามเขียนสตริง "อื่นๆ" เองในหน้า (ดู unclassified.js) */
 import { isVague, UNGROUPED_LABEL } from '../utils/unclassified';
+/* 🔴 เกณฑ์ "รายละเอียดชัดพอไหม" ของใบแจ้งซ่อม — ห้าม hardcode ความยาว/ข้อความในหน้า */
+import { moNoteCheck, MO_NOTE_HINT } from '../utils/moNoteQuality';
 import useTabParam, { useMergeParams } from '../utils/useTabParam';
 
 import InfoMore from '../components/InfoMore';
@@ -1082,10 +1084,15 @@ function ReportModal({ lines, machines, orders = [], itemTypes, problemTypes, re
         เก็บไว้ในช่องเลือกได้ตามปกติ เพื่อให้ dropdown หัวข้อย่อยยังเปิดอยู่ */
   const groupForDb = (g) => (String(g || '').trim() === NO_GROUP ? '' : String(g || '').trim());
 
+  /* 📝 คุณภาพรายละเอียดที่คนแจ้งพิมพ์ (ทีม MTN ขอ 13/10) — เตือนใต้ช่อง + บล็อกเฉพาะ
+       "เลือกอื่นๆ แล้วไม่เขียนอะไรเลย" · กฎอยู่ใน utils/moNoteQuality.js ที่เดียว */
+  const noteCheck = moNoteCheck({ note: f.report_note, group: f.problem_group, character: f.problem_characteristic });
+
   const save = async () => {
     if (!f.line_name) return toast.error('เลือกไลน์การผลิต');
     if (!f.item_type) return toast.error('เลือกชนิดอุปกรณ์');
     if (!f.problem_characteristic) return toast.error('เลือกลักษณะปัญหา (เลือกกลุ่มแล้วเลือกหัวข้อย่อยด้วย)');
+    if (noteCheck.blocked) return toast.error(noteCheck.message);
     const occurredIso = f.occurred_at ? new Date(f.occurred_at).toISOString() : null;
     if (occurredIso && new Date(occurredIso) > new Date()) return toast.error('วันเวลาที่เกิดเหตุเป็นอนาคตไม่ได้');
     setSaving(true);
@@ -1295,7 +1302,15 @@ function ReportModal({ lines, machines, orders = [], itemTypes, problemTypes, re
             </div>
           )}
         </div>
-        <Field label="ระบุรายละเอียดปัญหา (พิมพ์เอง)"><textarea value={f.report_note} onChange={e => set('report_note', e.target.value)} style={{ ...inp, minHeight: 60 }} /></Field>
+        {/* 📝 ช่องนี้คือสิ่งเดียวที่ช่างใช้เตรียมตัวก่อนออกหน้างาน — โครงคำถามอยู่ใน placeholder
+            + เตือนเมื่อสั้นเกิน (ส่งได้) · บล็อกเฉพาะ "อื่นๆ แล้วไม่เขียนอะไรเลย" */}
+        <Field label="ระบุรายละเอียดปัญหา (พิมพ์เอง)" required={noteCheck.level === 'required'}>
+          <textarea value={f.report_note} onChange={e => set('report_note', e.target.value)}
+            placeholder={MO_NOTE_HINT} style={{ ...inp, minHeight: 72 }} />
+          <div style={{ fontSize: 11.5, marginTop: 3, color: noteCheck.message ? '#f59e0b' : 'var(--muted)' }}>
+            {noteCheck.message ? `⚠ ${noteCheck.message}` : `✓ รายละเอียดครบพอให้ช่างเตรียมตัว (${noteCheck.len} ตัวอักษร)`}
+          </div>
+        </Field>
         <ImgField label="รูปก่อนซ่อม" value={beforeUrl} onPick={pickBefore} />
         <Field label="วันเวลาที่เกิดเหตุ (กรอกเฉพาะแจ้งย้อนหลัง)">
           <input type="datetime-local" value={f.occurred_at} onChange={e => set('occurred_at', e.target.value)} max={localDtNow()} style={inp} />

@@ -15,6 +15,7 @@
 --   drop function if exists public.plating_bom_has_child(text,text);
 --   drop function if exists public.plating_send(text,text,text,numeric,text,text,text,text);
 --   drop function if exists public.plating_receive(text,text,numeric,text,text,text);
+--   drop function if exists public.plating_receive_order(uuid,numeric,text,text,boolean,text);
 --   drop function if exists public.plating_writeoff(text,uuid[],text,text);
 --   drop function if exists public.plating_to_wh(text,text,numeric,text,text,text,text);
 --   drop table if exists public.plating_moves; drop table if exists public.plating_orders;
@@ -222,7 +223,7 @@ begin
 end $$;
 
 -- ── ตั้งเส้นทางชุบ (คนตั้งเองที่จอ ⚙️ — ไม่มีอะไรฝังในโค้ด) ─────────────────────────────
---    สร้าง/อัปเดตสินค้าหลังชุบใน Product Master + ร้าน · ถ้า BOM ยังไม่มีขา "หลังชุบ ← ก่อนชุบ" ⇒ เพิ่มในใบ BOM ของสินค้าหลังชุบ
+--    สร้าง/อัปเดตสินค้าหลังชุบใน Product Master + ร้าน (ไม่บังคับ) · ถ้า BOM ยังไม่มีขา "หลังชุบ ← ก่อนชุบ" ⇒ เพิ่มในใบ BOM ของสินค้าหลังชุบ
 --    สินค้าหลังชุบที่มีอยู่แล้ว: แก้แค่ร้าน (ไม่แตะชื่อ/สถานะ/กระบวนการที่คนอื่นตั้งไว้)
 create or replace function public.plating_setup_route(
   p_before text, p_after text, p_after_name text, p_vendor text, p_process_type text, p_by text)
@@ -232,17 +233,16 @@ begin
   p_before := btrim(coalesce(p_before, '')); p_after := btrim(coalesce(p_after, ''));
   if p_before = '' or p_after = '' then raise exception 'ต้องระบุทั้งเลขก่อนชุบและหลังชุบ'; end if;
   if p_before = p_after then raise exception 'เลขหลังชุบต้องเป็นคนละเลขกับก่อนชุบ (ชุบแล้ว SAP เปลี่ยนเลขเสมอ)'; end if;
-  if coalesce(btrim(p_vendor), '') = '' then raise exception 'ยังไม่ได้ระบุร้านชุบ'; end if;
   select id, name, p_no, customer into v_b from dr_products where mat_no = p_before order by is_active desc limit 1;
   if v_b.id is null then raise exception 'ไม่พบ % (ก่อนชุบ) ในทะเบียนสินค้า', p_before; end if;
   select id into v_aid from dr_products where mat_no = p_after order by is_active desc limit 1;
   if v_aid is null then
     insert into dr_products (mat_no, name, p_no, customer, process_type, is_active, outsource_vendor)
     values (p_after, coalesce(nullif(btrim(p_after_name), ''), v_b.name), v_b.p_no, v_b.customer,
-            nullif(btrim(p_process_type), ''), true, btrim(p_vendor))
+            nullif(btrim(p_process_type), ''), true, nullif(btrim(p_vendor), ''))
     returning id into v_aid;
     v_new := true;
-  else
+  elsif coalesce(btrim(p_vendor), '') <> '' then   -- ไม่ส่งร้าน = ผูก BOM อย่างเดียว (ร้านเลือกรายใบตอนส่ง)
     update dr_products set outsource_vendor = btrim(p_vendor) where id = v_aid;
   end if;
   if not public.plating_bom_has_child(p_after, p_before) then
@@ -274,11 +274,55 @@ begin
   return v_id;
 end $$;
 
+-- ── รับคืน "ต่อใบ" (การ์ด) — สโตร์นับของจริงแล้วกดรับ · ร้านชุบไม่ยืนยันยอด (คำสั่ง user 13/10) ─────────
+--    ยอดไม่ครบ = ต้องมีรายละเอียด · ส่วนที่เหลือ: ค้างร้านต่อ (ทยอยมา) หรือ p_close = ปิดใบ ตัดส่วนที่ขาดออกจากร้าน
+create or replace function public.plating_receive_order(
+  p_order_id uuid, p_qty numeric, p_to_loc text, p_reason text, p_close boolean, p_by text)
+returns jsonb language plpgsql as $$
+declare r record; v_open numeric; v_left numeric; v_bname text;
+begin
+  select * into r from plating_orders where id = p_order_id for update;
+  if r.id is null then raise exception 'ไม่พบใบส่งชุบนี้'; end if;
+  if r.status <> 'open' then raise exception 'ใบนี้ปิดไปแล้ว (%) — โหลดใหม่', r.status; end if;
+  if coalesce(btrim(p_to_loc), '') = '' then raise exception 'ไม่รู้คลังปลายทาง'; end if;
+  v_open := r.qty_sent - r.qty_received - r.qty_written_off;
+  if p_qty is null or p_qty < 0 then raise exception 'ใส่ยอดที่นับได้จริง'; end if;
+  if p_qty > v_open then raise exception 'รับเกินยอดค้างในใบนี้: ค้าง % แต่รับ %', v_open, p_qty; end if;
+  if p_qty = 0 and not coalesce(p_close, false) then raise exception 'ยอด 0 ต้องเลือกปิดใบ'; end if;
+  if p_qty < v_open and coalesce(btrim(p_reason), '') = '' then raise exception 'ยอดไม่ครบ — ต้องใส่รายละเอียด'; end if;
+  v_bname := coalesce((select name from dr_products where mat_no = r.before_mat order by is_active desc limit 1), r.part_name);
+  v_left := v_open - p_qty;
+  if p_qty > 0 then
+    insert into plating_moves (order_id, kind, qty, to_loc, note, by_name) values (r.id, 'receive', p_qty, p_to_loc, nullif(btrim(p_reason), ''), p_by);
+    insert into line_stock_transactions (line_name, mat_no, part_name, qty, type, work_date, status, note, created_by, reviewed_by, reviewed_at)
+    values (r.vendor_loc, r.before_mat, v_bname, p_qty, 'consume', work_date_bangkok(), 'approved',
+            'ชุบ: ร้านส่งคืน เป็น ' || r.after_mat || ' (ใบ ' || left(r.id::text, 8) || ')', p_by, p_by, now()),
+           (p_to_loc, r.after_mat, r.part_name, p_qty, 'issue', work_date_bangkok(), 'approved',
+            'ชุบ: รับคืนจาก ' || r.vendor || ' (ใบ ' || left(r.id::text, 8) || ')' || coalesce(' · ' || nullif(btrim(p_reason), ''), ''), p_by, p_by, now());
+  end if;
+  if coalesce(p_close, false) and v_left > 0 then
+    insert into plating_moves (order_id, kind, qty, note, by_name) values (r.id, 'writeoff', v_left, 'รับไม่ครบ: ' || btrim(p_reason), p_by);
+    insert into line_stock_transactions (line_name, mat_no, part_name, qty, type, work_date, status, note, created_by, reviewed_by, reviewed_at)
+    values (r.vendor_loc, r.before_mat, v_bname, -v_left, 'adjust', work_date_bangkok(), 'approved',
+            'ชุบ: ปิดใบรับไม่ครบ — ' || btrim(p_reason) || ' (ใบ ' || left(r.id::text, 8) || ')', p_by, p_by, now());
+  end if;
+  update plating_orders set
+    qty_received = qty_received + p_qty,
+    qty_written_off = qty_written_off + case when coalesce(p_close, false) then v_left else 0 end,
+    status = case when v_left = 0 or coalesce(p_close, false) then 'closed' else 'open' end,
+    closed_at = case when v_left = 0 or coalesce(p_close, false) then now() else null end,
+    closed_reason = case when v_left = 0 then 'รับครบ' when coalesce(p_close, false) then 'รับไม่ครบ: ' || btrim(p_reason) else null end
+  where id = r.id;
+  return jsonb_build_object('received', p_qty, 'left_open', case when coalesce(p_close, false) then 0 else v_left end,
+                            'written_off', case when coalesce(p_close, false) then v_left else 0 end);
+end $$;
+
 grant execute on function public.plating_bom_has_child(text,text) to anon, authenticated;
 grant execute on function public.plating_setup_route(text,text,text,text,text,text) to anon, authenticated;
 grant execute on function public.plating_bom_insert_layer(uuid,text,text) to anon, authenticated;
 grant execute on function public.plating_send(text,text,text,numeric,text,text,text,text) to anon, authenticated;
 grant execute on function public.plating_receive(text,text,numeric,text,text,text) to anon, authenticated;
+grant execute on function public.plating_receive_order(uuid,numeric,text,text,boolean,text) to anon, authenticated;
 grant execute on function public.plating_writeoff(text,uuid[],text,text) to anon, authenticated;
 grant execute on function public.plating_to_wh(text,text,numeric,text,text,text,text) to anon, authenticated;
 

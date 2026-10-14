@@ -377,10 +377,32 @@ migration `20261012_mtn_sec_revoke_scan_and_email_oracle_main.sql` (**apply แ�
 **สอบกลับไม่ได้ว่าใครกด** (audit เขียนได้แค่ชื่อบัญชี) · บัญชีของคน (`person`) สิทธิ์เดิมไม่เปลี่ยน
 
 **ด่าน 2 ชั้น**
-| ชั้น | ที่อยู่ | ครอบอะไร |
+| ชั้น | ที่อยู่ | ครอบอะไร **จริง** (วัดจากการออดิท 13/10) |
 |---|---|---|
-| จอ | `canDelete()` ใน `src/utils/permissions.js` (flag module-level `_sharedAccount` ตั้งจาก `App.jsx` ตอน `fetchProfile`) | ทุกปุ่มลบที่เรียก `canDelete` อยู่แล้ว **ทั้งฝั่ง Main และ DR** |
-| DB | `has_perm()` ของ **Main** — `case when p.account_kind='shared' and perm_key like '%:delete' then false` (migration `20261013_has_perm_shared_no_delete_main.sql`) | ทุก RLS policy ฝั่ง Main |
+| จอ | `canDelete()` ใน `src/utils/permissions.js` (flag module-level `_sharedAccount` ตั้งจาก `App.jsx` ตอน `fetchProfile`) | เฉพาะปุ่มที่เรียก `canDelete()` ของกลาง — **ไม่ใช่ทุกปุ่มลบในระบบ** (ดูตารางความครอบคลุมข้างล่าง) |
+| DB | `has_perm()` ของ **Main** — `case when p.account_kind='shared' and perm_key like '%:delete' then false` (migration `20261013_has_perm_shared_no_delete_main.sql`) | 🔴 **เฉพาะ policy ที่ใช้คีย์ลงท้าย `:delete`** ซึ่งมีจริงแค่ ~4 resource (`line_setup` · `lpa` · `shift_schedule` · `skills`) · policy ส่วนใหญ่ใช้ `qa:manage` / `kpi:manage` / `org:manage` ⇒ **ด่านนี้มองไม่เห็น** |
+
+### 🔴 ความครอบคลุมจริง — อย่าเข้าใจผิดว่า "ปิดแล้วทั้งระบบ" (ออดิท 13/10)
+| สิ่งที่นับ | จำนวน |
+|---|---|
+| `.delete()` ต่อ Supabase ทั้ง repo | ~139 จุด / 66 ไฟล์ (ฝั่ง DR ~66 จุด = **ไม่มีด่าน DB เลย**) |
+| ปุ่มลบที่คนกดจริง (มี `confirm()`) | ~82 จุด |
+| "ลบ" ที่จริงเป็น `update({is_active:false})` / `status:'cancelled'` | ~30 จุด — 🔴 **ด่าน DB แบบ `%:delete` มองไม่เห็นเลย** |
+| จุดที่ผ่าน `canDelete()` ของกลาง (หลังแก้ 13/10) | 11 จุด |
+
+⇒ **ยังไม่ใช่ "บัญชีกลาง = view-only"** · ที่ปิดไปแล้วคือ "ปุ่มลบที่ผ่าน util" + คีย์ `:delete` ฝั่ง Main
+· การจะทำให้เป็น view-only จริงต้องตัดสินใจเป็น **ชั้น** (ลบ → อนุมัติ/เซ็น → master data →
+ธุรกรรมประจำวัน) เพราะบัญชีกลางหลายตัว**ทำงานจริง** (`maintenance` รับ-ลงผลใบ MO · `warehouse1`
+ยืนยันรอบส่ง · `planningstore` อัปโหลด forecast) — 📄 รายการที่จะติดถ้าปิดเหมา + ทางเลือก
+"ปิดที่จุดเดียว" (ห่อ client / `canWrite()` / restrictive policy) → `docs/modules/shared-account-audit.md`
+
+### 🚨 กับดักที่เจอจากการออดิท — ตัวแปรท้องถิ่นชื่อ `canDelete` ทับ util (แก้แล้ว 13/10)
+5 หน้าเขียน `const canDelete = can('<res>','delete', role)` ⇒ **อ่านโค้ด/grep เหมือนมีด่าน
+แต่เป็น `can()` เปล่าๆ** ด่านบัญชีกลางไม่ทำงาน: ลบสินค้า (`ProductMaster`) · ปิดเครื่องจักร
+(`MachineDatabase`) · ลบใบ LPA · ลบ event log · ลบ OJT — ของที่ลบแล้วกู้ไม่ได้ทั้งนั้น
+⇒ เปลี่ยนเป็น `mayDelete` + เรียก util · **มีด่าน `no-shadow-candelete` ห้ามกลับมา**
+· `DailyReport` ลบกะ (`delete_session`) ก็เติม `!isSharedAccount()` แล้ว (คีย์ไม่ลงท้าย `:delete`
+  + ตารางอยู่ DR ⇒ ด่านฝั่งจอเป็นด่านเดียว)
 
 🔴 **ด่านต้องอยู่ก่อน `role === 'admin'` ทั้ง 2 ชั้น** — บัญชี `ADMIN` ในฐานจริง**เป็นบัญชีกลาง**
 ⇒ เช็คหลัง admin = ด่านไร้ผลกับบัญชีที่ลบได้ทุกตาราง (มีด่าน `shared-account-no-delete` ใน regressionGuards)

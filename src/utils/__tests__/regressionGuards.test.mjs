@@ -3975,6 +3975,27 @@ const RLS_KEYED_TABLES = {
   station_assignment_logs: ['management:assign_manpower', 'assign_manpower'],
   special_task_types:      ['ot_master:manage', 'ot_master'],
   leave_types:             ['ot_master:manage', 'ot_master'],
+  // รอบ 10 (14/10) — ปิดชั้น "เขียนได้ทุกคนที่ล็อกอิน" จบ
+  wip_replenish_requests:  ['wip_request:', 'wip_request', 'line_levels:manage', 'heijunka:operate'],
+  line_replenish_scan_blocks: ['heijunka:operate', 'wip_request:', 'wip_request'],
+  ojt_trainings:           ['ojt:record', 'ojt:delete', "'ojt'"],
+  ojt_training_attendees:  ['ojt:record', 'ojt:delete', "'ojt'"],
+  pokayoke_devices:        ['pokayoke:manage', 'pokayoke'],
+  pokayoke_checks:         ['pokayoke:record', 'pokayoke:manage', 'pokayoke'],
+  line_layouts:            ['line_setup:edit', 'line_setup', 'storage_maintain:run', 'storage_maintain'],
+  shift_overrides:         ['shift_schedule:edit', 'shift_schedule'],
+  qa_customer_claims:      ['canRecord', 'canManage', "'qa'"],
+  cqi15_event_logs:        ['event_log:', 'event_log'],
+  cqi15_event_approvals:   ['event_log:', 'event_log'],
+  cqi15_check_completions: ['event_log:', 'event_log'],
+};
+
+/* ยกเว้นได้เฉพาะ "util กลางที่ด่านอยู่ที่ผู้เรียก" — ต้องเขียนเหตุผล + ชี้ไฟล์ที่กันจริง
+   (ปล่อยเงียบไม่ได้ ไม่งั้นด่านนี้จะกลายเป็นด่านที่ใครก็ปิดได้ด้วยการย้ายโค้ดไป util) */
+const RLS_KEY_ALLOW = {
+  'src/utils/recompressLayouts.js':
+    'util บีบรูปผัง — ด่านอยู่ที่ผู้เรียก: StorageMaintenance.jsx:24 isActionSeeded(storage_maintain,run) '
+    + '→ prop canRun → ImageSqueezePanel.jsx (util ไม่รู้จัก role เลยโดยการออกแบบ)',
 };
 
 test('🛡️ rls-tightened-tables-need-key — ไฟล์ที่เขียนตารางที่ถูกรัด RLS ต้องอ้างคีย์สิทธิ์ของมันด้วย', () => {
@@ -3990,6 +4011,7 @@ test('🛡️ rls-tightened-tables-need-key — ไฟล์ที่เขี�
       const panelRe = new RegExp(`table=\\{?\\s*['"\`]${table}['"\`]`, 'g');
       if (!writeRe.test(code) && !panelRe.test(code)) continue;
       if (keys.some(k => code.includes(k))) continue;
+      if (RLS_KEY_ALLOW[relative(ROOT, file)]) continue;
       bad.push(`${relative(ROOT, file)} → เขียน ${table} แต่ไม่พบคีย์ ${keys.slice(0, 2).join(' / ')}`);
     }
   }
@@ -4044,6 +4066,26 @@ test('🛡️ am-board-registries-cached — jigs/checklists/pm_daily_line_targe
     + '   ผล: จอ AM/ผังรวมโรงงานดึงทะเบียนใหม่ทุกรอบ refresh = 1,308 ครั้ง/วัน และโตตามจำนวนจอ\n'
     + '   แก้: cachedRows(\'<คีย์>\', () => supabaseDR.from(\'<ตาราง>\')...) + ลงทะเบียนคีย์ใน masterInvalidate.js\n'
     + '        และทุกจุดที่เขียนตารางนั้นต้องเรียก invalidateTable(\'<ตาราง>\') หลังบันทึกสำเร็จ\n');
+});
+
+/* ── 📝 รายละเอียดในใบแจ้งซ่อม MO ต้องชัดพอให้ช่างเตรียมตัว (13/10 · คำขอทีม MTN ผ่าน user) ──
+   วัดจากของจริง (DR `mtn_orders` 90 วัน 718 ใบ): ไม่กรอกเลย 10 ใบ (1.4%) · สั้น 1–15 ตัว
+   109 ใบ (15%) · เฉลี่ย 40 ตัว · ไม่เลือกกลุ่มอาการ 0 ใบ ⇒ ปัญหาคือ "สั้นจนเดาไม่ออก"
+   🔴 เตือนได้ ห้ามบล็อกความยาว — บังคับแล้วคนเลิกแจ้งในระบบ ไปบอกช่างปากเปล่า เสียทั้งสายข้อมูล
+      (บล็อกได้ชั้นเดียว: เลือกอาการ "อื่นๆ/ไม่ระบุ" แล้วไม่เขียนอะไรเลย = ไม่เหลือข้อมูลให้ใครเลย)
+   ⇒ เกณฑ์อยู่ใน `utils/moNoteQuality.js` ที่เดียว · หน้าแจ้งซ่อมต้องเรียกใช้ ห้ามคิดเกณฑ์เอง   */
+test('🛡️ mo-note-quality-gate — ฟอร์มแจ้งซ่อมต้องตรวจคุณภาพรายละเอียดผ่าน moNoteCheck', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8'));
+  assert.ok(/moNoteCheck\(/.test(code),
+    '\n\n❌ MtnRepair ไม่ได้เรียก moNoteCheck — ช่อง "ระบุรายละเอียดปัญหา" กลับไปเป็นช่องเปล่า\n'
+    + '   ผล: ใบที่เขียน 1–15 ตัวอักษร (15% ของใบ) ไม่มีใครเตือน ช่างต้องเดินไปถามเอง\n'
+    + '   แก้: moNoteCheck({ note, group, character }) จาก src/utils/moNoteQuality.js\n'
+    + '        → เตือนใต้ช่อง (level thin) + บล็อกตอน blocked (อื่นๆ + ไม่เขียนอะไรเลย)\n');
+  assert.ok(/noteCheck\.blocked/.test(code),
+    '\n\n❌ ผล moNoteCheck ไม่ได้ถูกใช้กันตอนกดบันทึก — เตือนบนจอแต่ส่งผ่านได้ทุกกรณี\n');
+  assert.ok(!/MO_NOTE_MIN\s*=/.test(code),
+    '\n\n❌ เกณฑ์ความยาวถูกประกาศซ้ำในหน้า — แก้ที่เดียวไม่พอ แล้วจอกับด่านจะตอบคนละเลข\n'
+    + '   แก้: import { MO_NOTE_MIN } from "../utils/moNoteQuality"\n');
 });
 
 /* ── ช่องแนบ "รูปหลักฐานของเสีย" ต้องเริ่มที่โหมด "ใช้ทั้งรูป" (2026-10-13 · คำสั่ง user) ──
@@ -4149,4 +4191,25 @@ test('🛡️ shared-account-no-delete — canDelete ต้องเช็คบ
   assert.ok(iAdmin < 0 || iShared < iAdmin,
     '\n\n❌ ด่านบัญชีกลางอยู่หลัง admin bypass — บัญชี ADMIN เองเป็นบัญชีกลาง\n'
     + '   ⇒ ด่านไร้ผลกับบัญชีที่ลบได้ทุกตาราง · ย้าย `if (_sharedAccount) return false;` ขึ้นบนสุด\n');
+});
+
+
+/* ── 🖥️ ห้ามตั้งตัวแปรท้องถิ่นชื่อ `canDelete` ทับ util (ออดิท 13/10) ──────────────────
+   เจอจริง 5 หน้า: `const canDelete = can('products','delete', role)` ⇒ **อ่านโค้ดเหมือนมีด่าน
+   แต่เป็น `can()` เปล่าๆ** ⇒ ด่าน "บัญชีกลางห้ามลบ" (canDelete ของกลาง) ไม่ทำงานเลย
+   และ grep หา `canDelete(` ก็เจอ = หลงว่าครอบแล้ว · ตัวที่โดน: ลบสินค้า · ปิดเครื่องจักร ·
+   ลบใบ LPA · ลบ event log · ลบ OJT — ของที่ลบแล้วกู้ไม่ได้ทั้งนั้น
+   🔴 ถ้าจะมีตัวแปรสรุปสิทธิ์ลบในหน้า ให้ชื่ออื่น (เช่น `mayDelete`) แล้วค่าต้องมาจาก util    */
+test('🛡️ no-shadow-candelete — ห้ามประกาศตัวแปร/พารามิเตอร์ชื่อ canDelete ในหน้า', () => {
+  const bad = [];
+  for (const f of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const rel = relative(ROOT, f);
+    if (rel === 'src/utils/permissions.js' || rel.includes('__tests__')) continue;
+    const code = stripComments(readFileSync(f, 'utf8'));
+    if (/\b(?:const|let|var)\s+canDelete\s*=/.test(code)) bad.push(rel);
+  }
+  assert.deepEqual(bad, [], '\n\n❌ ประกาศ canDelete ทับ util (ด่านบัญชีกลางจะไม่ทำงาน):\n'
+    + bad.map(b => '   • ' + b).join('\n')
+    + '\n   แก้: ตั้งชื่อ `mayDelete` แล้วเรียก canDelete() ของกลาง\n'
+    + '        import { canDelete as canDeleteUtil } from \'../utils/permissions\';\n');
 });

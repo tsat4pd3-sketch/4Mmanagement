@@ -4,7 +4,7 @@
  */
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mtnAutoSeries, autoKpiOfName, toRowUnit, HOURS_PER_MONTH } from '../kpiAuto.js';
+import { mtnAutoSeries, autoKpiOfName, toRowUnit, HOURS_PER_MONTH, autoUnitMismatch, autoDetailText } from '../kpiAuto.js';
 
 const roll = {
   machines: [{ kind: 'die', n: 266 }, { kind: 'jig', n: 172 }, { kind: 'machine', n: 216 }, { kind: 'facility', n: 38 }],
@@ -79,4 +79,23 @@ test('หน่วยของแถว: MTBF/MTTR เป็น "นาที" �
   assert.equal(toRowUnit(2, 'mtbf', 'ชม.'), 2);
   assert.equal(toRowUnit(2, 'mbd', 'นาที'), 2);
   assert.equal(toRowUnit(null, 'mtbf', 'นาที'), null);
+});
+
+test('หน่วยขัดสูตรทางการ — MBD/MO Closed ต้องเป็น % · MTBF/MTTR เป็นเวลา (ชม./นาที) · ไม่ตั้งหน่วย = ไม่เตือน', () => {
+  assert.deepEqual(autoUnitMismatch('Machine Break Down', 'Hrs.'), { expect: '%', got: 'Hrs.' });   // เคสจริง 13/10
+  assert.equal(autoUnitMismatch('Machine Break Down', '%'), null);
+  assert.equal(autoUnitMismatch('MO Closed on target', 'ครั้ง')?.expect, '%');
+  assert.equal(autoUnitMismatch('Mean Time To repair (MTTR)', 'Hr'), null);
+  assert.equal(autoUnitMismatch('MTBF', 'นาที'), null);
+  assert.equal(autoUnitMismatch('MTBF', '%')?.expect, 'ชม.');
+  assert.equal(autoUnitMismatch('Machine Break Down', ''), null);
+  assert.equal(autoUnitMismatch('OEE', 'Hrs.'), null);   // ไม่ใช่ KPI อัตโนมัติ
+});
+
+test('ข้อความที่มาของเลขรายเดือน — % ต้องมีชั่วโมง/ครั้ง/เครื่องกำกับ', () => {
+  const m = { breakdown_hr: 175.38, events: 337, machines: 216, closed: 8, on_target: 2, no_target: 0 };
+  assert.equal(autoDetailText(m, 'mbd'), 'หยุด 175.4 ชม. · 337 ครั้ง · 216 เครื่อง');
+  assert.equal(autoDetailText(m, 'mttr'), 'หยุด 175.4 ชม. ÷ 337 ครั้ง');
+  assert.equal(autoDetailText(m, 'mo_on_target'), 'ตรงเป้า 2/8 ใบ');
+  assert.equal(autoDetailText(null, 'mbd'), '');
 });

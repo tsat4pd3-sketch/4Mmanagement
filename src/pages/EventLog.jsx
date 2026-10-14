@@ -9,7 +9,7 @@ import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { fmtDate } from '../utils/dateFormat';
-import { can } from '../utils/permissions';
+import { can, canDelete as canDeleteUtil } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { loadDocForms, withDocFoot, docFormSync, fullCode } from '../utils/docForms';
 import { xlsxDocName } from '../utils/csvDoc';
@@ -1026,7 +1026,11 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
 
   // Action-level permission gates (role_permissions table via src/utils/permissions.js)
   const canActForCqiRole = (cqiRole) => can('event_log', `approve_${cqiRole.toLowerCase()}`, role);
-  const canDelete = can('event_log', 'delete', role);
+  /* 🖥️🔴 ต้องผ่าน `canDelete()` ของกลาง (utils/permissions.js) — เดิมประกาศตัวแปรชื่อ `canDelete`
+     ทับ util แล้วเรียกแค่ `can(...)` ⇒ อ่านโค้ดเหมือนมีด่าน แต่ **ด่าน "บัญชีกลางห้ามลบ" ไม่ทำงาน**
+     (ออดิท 13/10 เจอแบบนี้ 5 หน้า) · เปลี่ยนชื่อตัวแปรเป็น `mayDelete` + เรียก util ผ่าน alias
+     ⚠️ ห้ามตั้งชื่อตัวแปรท้องถิ่นว่า `canDelete` อีก — มีด่าน `no-shadow-candelete` */
+  const mayDelete = canDeleteUtil('event_log', 'create', role);
 
   useEffect(() => {
     const loadData = async () => {
@@ -1188,13 +1192,13 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
             })()}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {canDelete && !confirmDelete && (
+            {mayDelete && !confirmDelete && (
               <button onClick={() => setConfirmDelete(true)}
                 style={{ background: '#ef4444', color: '#fff', border: 'none', borderRadius: 7, padding: '5px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
                 🗑 ลบ
               </button>
             )}
-            {canDelete && confirmDelete && (
+            {mayDelete && confirmDelete && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <span style={{ fontSize: 12, color: '#ef4444', fontWeight: 700 }}>ยืนยันลบ?</span>
                 <button onClick={handleDelete} disabled={deleting}
