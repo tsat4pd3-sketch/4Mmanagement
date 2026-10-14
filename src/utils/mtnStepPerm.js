@@ -366,7 +366,10 @@ export function canDoStep(step, opts = {}) {
  * ⚠️ เกณฑ์นี้ต้องใช้ทั้งตอน "วาดกล่องเตือนบนฟอร์ม" และตอน "กดบันทึก" — ห้ามเขียนซ้ำในหน้า
  */
 export function canBounceBack(order = {}) {
-  if (['closed', 'rejected'].includes(order.status)) return false;
+  /* 🔴 อ่านชุด "สถานะจบ" จาก MO_DONE_STATUSES ห้ามเขียนลิสต์มือซ้ำ — เดิมเขียน
+     `['closed','rejected']` ที่นี่ แล้วตอนเพิ่ม `transferred`/`cancelled` ลิสต์นี้ไม่ถูกแก้ตาม
+     ⇒ ใบที่จบไปแล้วยังกดตีกลับได้ (สถานะถอยกลับขั้น 1 ทั้งที่มีใบรับช่วงต่อ/เลขถูกยกเลิกแล้ว) */
+  if (MO_DONE_STATUSES.includes(String(order?.status || '').trim())) return false;
   return Number(order.current_step || 1) <= 2;
 }
 
@@ -517,7 +520,11 @@ export function moQaState(order) {
       edge อีก 1) ⇒ เพิ่มสถานะจบใหม่ทีไร ใบจะไปโผล่ค้างในคิวของจอที่ลืมแก้ **ห้ามเขียนลิสต์ซ้ำอีก
       ให้ import `isMoOpen` / `MO_DONE_STATUSES` จากที่นี่เสมอ**
    · `OPEN_MO_STATUSES` ใน dieStatus.js เป็น allowlist (ตรงข้ามกัน) จึงกันสถานะใหม่ให้เองอยู่แล้ว */
-export const MO_DONE_STATUSES = ['closed', 'rejected', 'transferred'];
+/* 🔴 `cancelled` (2026-10-14) — ใบที่ออกเลขแล้วแต่ยกเลิก **แทนการ `delete`**
+   เลขไม่หาย · ประวัติค่าแรง/อะไหล่/ลายเซ็นไม่หาย · ตอบได้ว่าเลขที่ขาดไปเพราะอะไร
+   (วัด 14/10: ทีม MTN มีใบถูก delete 4 ใบ — 2 ใบลบตอน `repaired` ⇒ ประวัติซ่อมหายถาวร
+    และเลข 09-2 · 10-3 · 10-5 · 10-7 ขาดไปโดยไม่มีใครตอบได้ว่าทำไม) */
+export const MO_DONE_STATUSES = ['closed', 'rejected', 'transferred', 'cancelled'];
 export const isMoOpen = (order) => !MO_DONE_STATUSES.includes(String(order?.status || '').trim());
 
 export const MO_STATUS_LABEL = {
@@ -539,6 +546,9 @@ export const MO_STATUS_LABEL = {
      ต้องเป็นสถานะของตัวเอง ไม่ใช่ปล่อยค้าง `repairing` เพราะผู้แจ้งต้องเห็นว่า
      "ไม่ได้ดองอยู่ที่ช่าง แต่รอของจากข้างนอก" (คำสั่ง user 21/09) */
   waiting_vendor: '📤 ส่งซ่อมภายนอก (รอ supplier)',
+  /* ยกเลิกใบที่ออกเลขไปแล้ว (2026-10-14) — **ไม่ใช่ `rejected`** (ใบไม่ถูกต้อง/ผิดแผนก)
+     และไม่ใช่ `transferred` (ส่งต่อทีมอื่น) · นี่คือ "ใบนี้ไม่ต้องทำแล้ว แต่เลขถูกใช้ไปแล้ว" */
+  cancelled: '🚫 ยกเลิกใบ (เลขถูกใช้ไปแล้ว)',
 };
 
 /* สี + ลำดับขั้นของแต่ละสถานะ (การ์ด/ชิป/dropdown ฟิลเตอร์) — ย้ายมาจาก MtnRepair.jsx 2026-09-16
@@ -564,6 +574,8 @@ const MO_STATUS_STYLE = {
   transferred: { step: 0, color: '#a855f7' },   // ม่วง = จบแล้วแต่ไม่ใช่ผลงานซ่อม (คนละกลุ่มกับเขียว closed)
   // ฟ้า = ใบเปิดอยู่แต่ "ไม่ได้อยู่ในมือเรา" — ต่างจากส้ม (กำลังทำ) ชัดเจนบนกระดาน
   waiting_vendor: { step: 3, color: '#0ea5e9' },
+  // เทา ขั้น 0 = จบแล้วและไม่ใช่ผลงาน (กลุ่มเดียวกับ rejected) — ห้ามเขียว ห้ามแดง
+  cancelled:   { step: 0, color: '#8b8b96' },
 };
 /* สถานะที่ยังไม่ได้ตั้งสี = เทา ขั้น 0 — **ไม่ throw** (throw ตอน import = จอขาวทั้งหน้า)
    เทสเป็นด่านแทน: คีย์ใหม่ที่ลืมตั้งสีจะ build ไม่ผ่านตั้งแต่บนเครื่อง */
@@ -585,6 +597,55 @@ export const moStatusMeta = (order) => {
   const m = MO_STATUS_META[String(order?.status || '').trim()] || MO_STATUS_META.pending;
   return { ...m, label: moStatusLabel(order) };
 };
+
+/* ═══ 🗑️→🚫 เลิกใบ MO: `delete` ได้เฉพาะใบที่ยังไม่มีเลข ═════════════  2026-10-14
+   คำสั่ง user (ข้อ "ก" — ล็อกตามสถานะ) หลังเห็นของจริง:
+     วัด 14/10 จาก `audit_log` — ทีม MTN มีใบถูก **`delete`** ไป 4 ใบ
+     (`MTN.2026/09-2` · `10-3` · `10-5` · `10-7`) และ **2 ใบลบตอนสถานะ `repaired`**
+     ⇒ เลขหายจากลำดับโดยไม่มีใครตอบได้ว่าทำไม + ค่าแรง/อะไหล่/ลายเซ็นหายถาวร กู้ไม่ได้
+     ⇒ ยิ่งตอนนี้เลขมีหาง `-M<n>` (ใบที่เท่าไหร่ของเดือน) เลขขาดจะเห็นชัดทุกเดือน
+
+   กติกา 3 ทาง — **ตัดสินที่นี่ที่เดียว ห้ามเขียน `if (status === …)` ในหน้า**
+     · ยังไม่ออกเลข (`mo_no` ว่าง) → **`delete` ได้** (ใบเปิดผิด ยังไม่มีร่องรอยให้เสีย)
+     · ออกเลขแล้ว ยังไม่ปิด        → **`cancel` เท่านั้น + ต้องมีเหตุผล** (เลขอยู่ ประวัติอยู่)
+     · ปิดไปแล้ว / จบไปแล้ว        → **ห้ามทั้งคู่** — ใบที่ปิดแล้วคือ *บันทึก* (กฎเดิมของโมดูล
+       "ใบ MO ที่ปิดแล้ว = บันทึก" 12/10 · มี snapshot) · ผิดจริงต้องคุยกันเป็นเคส ไม่ใช่กดปุ่ม
+   ⚠️ นี่เป็นกติกาของ **ตัวใบ** — สิทธิ์ว่า "คนนี้กดได้ไหม" ยังเป็นของ `canDelete()` เหมือนเดิม
+      ผู้เรียกต้องผ่านทั้ง 2 ด่าน (ด่านนี้ไม่รู้จัก role โดยเจตนา — pure) */
+/* ── ใบที่ "ไม่เคยเกิดขึ้นเป็นงาน" ────────────────────────────────────────────────
+   `rejected` (แจ้งผิดแผนก/ไม่รับเรื่อง) และ `cancelled` (ออกเลขแล้วแต่ยกเลิก) ต่างจาก
+   `closed`/`transferred` ที่ **มีงานเกิดขึ้นจริง** ⇒ จอที่นับ "งานซ่อมที่เกิดขึ้น"
+   (ต้นทุน · พาเรโต · "เครื่องนี้มีใบซ่อมหรือยัง") ต้องกัน 2 ตัวนี้ออก
+   🔴 เขียนลิสต์นี้ด้วยมือในหน้า = ตกรุ่นทุกครั้งที่เพิ่มสถานะใหม่ (มีด่าน `mtn-status-no-neq`)
+   ⚠️ คนละชุดกับ `MO_DONE_STATUSES` ("จบแล้ว" ซึ่งรวม closed/transferred ที่เป็นงานจริง) */
+export const MO_VOID_STATUSES = ['rejected', 'cancelled'];
+export const isMoVoid = (order = {}) => MO_VOID_STATUSES.includes(String(order?.status || '').trim());
+/** ไว้ต่อท้าย `.not('status','in', …)` ฝั่งคิวรี — ให้ฝั่ง DB กรองตรงกับ `isMoVoid()` */
+export const MO_VOID_NOT_IN = `(${MO_VOID_STATUSES.join(',')})`;
+
+export const MO_REMOVE_DELETE = 'delete';
+export const MO_REMOVE_CANCEL = 'cancel';
+export const MO_REMOVE_BLOCKED = 'blocked';
+
+/**
+ * ใบนี้เลิกได้แบบไหน
+ * @returns {{ mode: 'delete'|'cancel'|'blocked', why: string }}
+ *   `why` = ข้อความที่ **ต้องขึ้นบนจอ** (ซ่อนปุ่มได้ ห้ามซ่อนเหตุผล · UI §6.9)
+ */
+export function moRemoveMode(order = {}) {
+  const st = String(order?.status || '').trim();
+  const hasNo = !!String(order?.mo_no || '').trim();
+  if (st === 'closed') {
+    return { mode: MO_REMOVE_BLOCKED, why: 'ใบที่ปิดแล้วเป็นบันทึก — ลบหรือยกเลิกไม่ได้' };
+  }
+  if (MO_DONE_STATUSES.includes(st)) {
+    return { mode: MO_REMOVE_BLOCKED, why: `ใบนี้จบไปแล้ว (${MO_STATUS_LABEL[st] || st}) — ไม่ต้องยกเลิกซ้ำ` };
+  }
+  if (!hasNo) {
+    return { mode: MO_REMOVE_DELETE, why: 'ยังไม่ออกเลข MO — ลบทิ้งได้ (ไม่มีเลขและประวัติให้เสีย)' };
+  }
+  return { mode: MO_REMOVE_CANCEL, why: 'ออกเลข MO ไปแล้ว — ยกเลิกได้ แต่ลบไม่ได้ (เลขและประวัติต้องอยู่)' };
+}
 
 /** ใบ MTN งานปรับปรุง/สร้างที่ยังไม่ได้อนุมัติ — ไม่ใช่ "รอรับงาน" (ช่างกดรับไม่ได้จนกว่าจะเซ็น) */
 export const MO_LABEL_WAIT_APPROVAL = '🔒 รอผู้จัดการอนุมัติ (ก่อนเริ่มงาน)';

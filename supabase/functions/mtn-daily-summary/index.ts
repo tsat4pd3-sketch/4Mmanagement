@@ -348,9 +348,11 @@ Deno.serve(async (req) => {
     /* qa_skipped_at = ตัวแยกกลุ่ม checked (รอ QA / รอรับมอบ) — ขาดคอลัมน์นี้ = สรุปบอกผิดว่าใครต้องกด
        ⚠️ `transferred` (2026-09-14) = ทีมนี้แก้ไม่ได้ ส่งต่อทีมอื่นแล้ว มีใบใหม่รับช่วงต่อ
           ต้องตัดออกเหมือน closed/rejected ไม่งั้นสรุปเช้านับ 1 ปัญหาเป็น 2 ใบค้าง
+       ⚠️ `cancelled` (2026-10-14) = ใบที่ออกเลข MO ไปแล้วแต่ถูกยกเลิก (เลขคงอยู่ให้สอบกลับ)
+          ไม่ตัดออก = สรุปเช้าเตือนใบที่ไม่มีใครต้องทำอะไรทุกวันจนคนเลิกอ่าน
        source of truth ของ "สถานะไหนถือว่าจบ" = `MO_DONE_STATUSES` ใน src/utils/mtnStepPerm.js */
     const q = `${DR_URL}/rest/v1/mtn_orders?select=mo_no,status,mtn_dept,item_type,machine_no,line_name,report_at,qa_skipped_at`
-      + `&status=not.in.(closed,rejected,transferred)&order=report_at.asc`;
+      + `&status=not.in.(closed,rejected,transferred,cancelled)&order=report_at.asc`;
     const res = await fetch(q, { headers: { apikey: DR_KEY, Authorization: `Bearer ${DR_KEY}` } });
     if (!res.ok) return json({ error: `DR fetch ${res.status}` }, 500);
     const rows: MO[] = await res.json();
