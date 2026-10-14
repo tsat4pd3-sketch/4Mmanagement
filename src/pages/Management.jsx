@@ -2,6 +2,8 @@ import { useState, useEffect, useLayoutEffect, useContext, useRef, useCallback, 
 import { halfDayBreakIntervals } from '../utils/oee';
 import { createPortal } from 'react-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { fetchAllPages } from '../utils/fetchByIds';
+import { buildKindMap, splitPointLayers } from '../utils/mapLayers';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import DowntimeSiren from '../components/DowntimeSiren';
@@ -207,6 +209,11 @@ export default function Management() {
   const [panelCollapsed,  setPanelCollapsed]  = useState(false);
   const [filterMan,       setFilterMan]       = useState(true);
   const [filterMachine,   setFilterMachine]   = useState(false);
+  // ชั้นหมุดอุปกรณ์: Machine (MTN) | Jig/Fixture (JIG MTN) — โชว์ทีละชั้น (robot ติดจิ๊กปลายแขน = หมุดทับกัน)
+  // ชนิดตัดสินจาก machines.equipment_kind เท่านั้น · กฎ src/utils/mapLayers.js
+  const [filterJig,       setFilterJig]       = useState(false);
+  const [kindMap,         setKindMap]         = useState(null);   // null = ยังโหลด/โหลดไม่ได้
+  const [kindErr,         setKindErr]         = useState('');
   // ป้ายชื่อบนผัง: โชว์/ซ่อน อย่างเดียว คุมทุกชนิดจุด (คน/เครื่องจักร — UI-CONVENTIONS §1)
   // ป้ายเตือน (เครื่อง Downtime / หมุดที่กำลังเลือก) โชว์เสมอแม้ซ่อนป้าย
   const [showPills,       setShowPills]       = useState(true);
@@ -252,6 +259,16 @@ export default function Management() {
      · บอร์ด unmount (สลับไปมุมมองผัง) = คงค่าล่าสุด ห้าม reset เป็น 0 ไม่งั้น squish หลุดกลับ false */
   const [boardSectionH, setBoardSectionH] = useState(0);
   const boardSectionRef = useRef(null);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const { rows, error, truncated } = await fetchAllPages(() => supabaseDR.from('machines').select('id, machine_no, equipment_kind').eq('is_active', true));
+      if (!alive) return;
+      if (error || truncated) { setKindErr(error || 'ทะเบียนเครื่องยาวเกินเพดาน'); setKindMap(null); return; }
+      setKindErr(''); setKindMap(buildKindMap(rows));
+    })();
+    return () => { alive = false; };
+  }, []);
   useEffect(() => {
     const el = boardSectionRef.current;
     if (el) setBoardSectionH(el.scrollHeight);
@@ -1154,11 +1171,17 @@ export default function Management() {
   const isOpenIssue = m => m.status !== 'approved' && m.status !== 'rejected';
 
   // ตัวเลข badge บนปุ่ม toggle ต้องสื่อความหมาย "ผิดปกติ" ไม่ใช่แค่จำนวนจุดทั้งหมด
+  // หมุดอุปกรณ์ที่อยู่บนผังใบนี้ แยกชั้น Machine | Jig (ไม่รู้ชนิด = ชั้น machine แต่นับให้เห็น)
+  const mcSplit = splitPointLayers(machinePoints.filter(p => belongsToShownMap(p.line_name)), kindMap);
   const vacantStationCount = dynamicStations.filter(st => !workers.some(w => String(w.assigned_line) === String(st.id))).length;
 
   const STATUS_FILTERS = [
     { key: 'man',     on: filterMan,     toggle: () => setFilterMan(v => !v),     label: 'MAN',     icon: '👤', color: '#4d9fff', count: vacantStationCount, title: 'แสดง/ซ่อนจุดงาน (คน) บนผัง — ตัวเลข = จุดที่ยังไม่มีคนประจำ' },
-    { key: 'machine', on: filterMachine, toggle: () => setFilterMachine(v => !v), label: 'MACHINE', icon: '⚙️', color: '#f59e0b', count: 0,                  title: 'แสดง/ซ่อนจุดเครื่องจักรบนผัง' },
+    // Machine กับ Jig/Fixture โชว์ทีละชั้น — เปิดชั้นหนึ่ง = ปิดอีกชั้น (robot ติดจิ๊กปลายแขน วาดพร้อมกันหมุดทับกันจนอ่านไม่ออก)
+    { key: 'machine', on: filterMachine, toggle: () => { setFilterMachine(v => !v); setFilterJig(false); }, label: 'MACHINE', icon: '⚙️', color: '#f59e0b', count: 0,
+      title: `ชั้นเครื่องจักร (ทีม MTN) — ${mcSplit.machine.length} จุด${mcSplit.unknown.length ? `\n⚠️ ${mcSplit.unknown.length} จุดไม่อยู่ในทะเบียนเครื่อง/ไม่ระบุชนิด → วาดในชั้นนี้ (กรอบประ)` : ''}${kindErr ? `\n⚠️ โหลดชนิดอุปกรณ์ไม่ได้ (${kindErr}) — แยกชั้นไม่ได้` : ''}\nเปิดชั้นนี้ = ปิดชั้น Jig/Fixture` },
+    { key: 'jig',     on: filterJig,     toggle: () => { setFilterJig(v => !v); setFilterMachine(false); },     label: 'JIG',     icon: '🗜️', color: '#a78bfa', count: 0,
+      title: `ชั้น Jig/Fixture (ทีม JIG MTN) — ${mcSplit.jig.length} จุด\nตัดสินจาก "ชนิดอุปกรณ์" ในทะเบียน (/equipment?tab=jig)\nเปิดชั้นนี้ = ปิดชั้นเครื่องจักร` },
   ];
 
   // ปุ่มกรอง MAN/MACHINE + โชว์/ซ่อนป้าย — ใช้ทั้ง rail แนวตั้ง (desktop) และแถบแนวนอน (มือถือ)
@@ -2170,10 +2193,12 @@ export default function Management() {
                 //   machinePoints โหลดมาทั้งครอบครัวไลน์ แต่ไลน์ลูกที่มีผังเป็นของตัวเอง
                 //   ใช้พิกัด % ที่อ้างอิงรูปคนละใบ — เอามาคิดระยะเพื่อนบ้านจะเพี้ยน (วงเล็กเกินจริง)
                 const shownMcPts = machinePoints.filter(p => belongsToShownMap(p.line_name));
+                // ความแน่นคิดจากชั้นที่วาดจริง (Machine หรือ Jig) — ไม่งั้นหมุดเล็กลงเพราะนับชั้นที่ซ่อนอยู่ด้วย
+                const layerPts = filterJig ? mcSplit.jig : filterMachine ? mcSplit.machine : shownMcPts;
                 const { MK, SUB, ring: RING, subRing: SUB_RING, pillFont: PILL_F, subPillFont: SUB_PILL_F, badgeFont: FIT_F, pillMaxW: PILL_MAXW, subPillMaxW: SUB_PILL_MAXW } =
                   markerScale(imgBox.rw, {
-                    machineCount: shownMcPts.length,
-                    points: shownMcPts,
+                    machineCount: layerPts.length,
+                    points: layerPts,
                     mapHeight: imgBox.rh,
                   });
                 // ป้ายชื่อทุกชนิดจุด: ปุ่ม 🏷️ โชว์/ซ่อน อย่างเดียว (ป้ายเตือน alarm/below-min โชว์เสมอ)
@@ -2419,8 +2444,12 @@ export default function Management() {
           })}
                     {shownMcPts.map(p => {
                       const alarms = dtAlarms.byMachine[p.machine_no];
-                      // เครื่องที่กำลัง Downtime ต้องโชว์เสมอแม้ปิด filter MACHINE — เป็น alarm ไม่ใช่แค่ข้อมูลผัง
-                      if (!filterMachine && !alarms) return null;
+                      // ชั้น Machine | Jig/Fixture — โชว์ชั้นที่เลือก · ไม่รู้ชนิด = ชั้น machine (กรอบประ)
+                      // เครื่องที่กำลัง Downtime ต้องโชว์เสมอแม้ปิดชั้นนั้น — เป็น alarm ไม่ใช่แค่ข้อมูลผัง
+                      const isJig = mcSplit.layerOf(p) === 'jig';
+                      const kindUnknown = !isJig && mcSplit.unknown.includes(p);
+                      if (!(isJig ? filterJig : filterMachine) && !alarms) return null;
+                      const ringC = isJig ? 'rgba(167,139,250,0.9)' : 'rgba(245,158,11,0.85)';
                       const mc = drMachines.find(m => m.machine_no === p.machine_no);
                       const mTop  = imgBox.offsetY + (parseFloat(p.pos_top) / 100) * imgBox.rh;
                       const mLeft = imgBox.offsetX + (parseFloat(p.pos_left) / 100) * imgBox.rw;
@@ -2431,7 +2460,7 @@ export default function Management() {
                       const ongoing = firstAlarm && !firstAlarm.ended_at && firstAlarm.duration_min == null;
                       const title = alarms
                         ? `🚨 ${p.machine_no} ${mc?.machine_name || ''} — DOWNTIME\n${alarms.map(d => `${d.dr_downtime_types?.name_th || 'Downtime'}${d.description ? ` — ${d.description}` : ''}`).join('\n')}`
-                        : `⚙️ ${p.machine_no} ${mc?.machine_name || ''}`;
+                        : `${isJig ? '🗜️' : '⚙️'} ${p.machine_no} ${mc?.machine_name || ''}${isJig ? '\nJig/Fixture · ทีม JIG MTN' : kindUnknown ? '\n⚠️ ไม่อยู่ในทะเบียนเครื่อง/ไม่ระบุชนิด — ตั้งชนิดที่ /equipment' : ''}`;
                       return (
                         <div key={`mc-${p.id}`} title={title}
                           onClick={(e) => { e.stopPropagation(); openMachineDetail(p); }}
@@ -2443,11 +2472,11 @@ export default function Management() {
                           <div className={alarms ? 'dt-alarm-blink' : undefined}
                             style={{
                               width: MKS, height: MKS, borderRadius: '50%',
-                              border: `${SUB_RING}px solid ${alarms ? '#ef4444' : 'rgba(245,158,11,0.85)'}`,
+                              border: `${SUB_RING}px ${kindUnknown && !alarms ? 'dashed' : 'solid'} ${alarms ? '#ef4444' : ringC}`,
                               backgroundColor: alarms ? 'rgba(239,68,68,0.25)' : 'rgba(0,0,0,0.78)',
                               display: 'flex', alignItems: 'center', justifyContent: 'center',
                               fontSize: Math.max(13, Math.round(MKS * 0.44)), lineHeight: 1,
-                            }}>{alarms ? '🚨' : '⚙️'}</div>
+                            }}>{alarms ? '🚨' : isJig ? '🗜️' : '⚙️'}</div>
                           {/* ป้าย: โชว์เมื่อเปิดป้าย (auto/บังคับ) หรือมี downtime ค้าง — alarm ต้องเห็นเสมอ */}
                           {(pillsOn || alarms) && (
                           <div style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)', display: 'flex', flexDirection: 'column', alignItems: 'center', zIndex: 2 }}>

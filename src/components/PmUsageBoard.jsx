@@ -1,7 +1,7 @@
 import { Fragment, useState, useEffect, useMemo } from 'react';
 import { supabaseDR } from '../supabaseClient';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
-import { sumUsage, dailyRate, usageEta, usageProgress, USAGE_LEVELS, piecesToShots } from '../utils/pmUsage';
+import { sumUsage, dailyRate, usageEta, usageProgress, USAGE_LEVELS, piecesToShots, ppsOf } from '../utils/pmUsage';
 
 /* ══ 📊 ยอดผลิตสะสมรายอุปกรณ์ — แท็บใน /pm-forecast ══════════════════  2026-09-15
    คำสั่ง user: *"ดูหน้าไหนได้บ้างว่าเครื่องไหนผ่านการผลิตไปแล้วกี่ชิ้นงาน"*
@@ -49,14 +49,20 @@ export default function PmUsageBoard({ daily = [], lines = [], plans = [], today
       if (!alive) return;
       if (error) console.warn('[pm-usage] โหลดทะเบียนอุปกรณ์ไม่สำเร็จ:', error.message);
       setEquip(data || []);
-      /* แม่พิมพ์: จำนวนชิ้นต่อ 1 stroke อยู่ตารางส่วนขยาย `equipment_die` (ผูกด้วย machine_id)
-         ⚠️ ฐาน 15/09: ยังเป็น null ทั้ง 262 ตัว ⇒ แปลง shot ไม่ได้ จอจะบอกให้ไปตั้งค่า **ห้ามเดาเป็น 1**
-            (1 stroke งานคู่ = 2 ชิ้น — เดาผิด shot เพี้ยน 2 เท่า แล้ว PM แม่พิมพ์คลาดทั้งโรงงาน) */
-      const { data: dies, error: dErr } = await supabaseDR.from('equipment_die').select('machine_id, pieces_per_stroke, shot_total');
+      /* แม่พิมพ์: "ชิ้นต่อ 1 stroke" มี 2 ชั้น — ชั้น OP (`equipment_die`) ว่าง = ใช้ค่าของชั้นชุด (`die_sets`)
+         ⚠️ ต้องโหลดชั้นชุดมาด้วย ไม่งั้นถอยชั้นไม่ได้ (ฐาน 14/10: ชั้น OP ว่าง 264/264 ⇒ เคยคิด shot ไม่ได้เลย)
+            ตัดสินที่ `ppsOf()` ที่เดียว **ห้ามเดาเป็น 1** — 1 stroke งานคู่ = 2 ชิ้น เดาผิด shot เพี้ยน 2 เท่า */
+      const [{ data: dies, error: dErr }, { data: sets, error: sErr }] = await Promise.all([
+        supabaseDR.from('equipment_die').select('machine_id, die_set_id, pieces_per_stroke, shot_total'),
+        supabaseDR.from('die_sets').select('id, pieces_per_stroke'),
+      ]);
       if (!alive) return;
       if (dErr) console.warn('[pm-usage] โหลดข้อมูลแม่พิมพ์ไม่สำเร็จ:', dErr.message);
+      if (sErr) console.warn('[pm-usage] โหลดชุดแม่พิมพ์ไม่สำเร็จ:', sErr.message);
+      const setPps = {};
+      for (const st of sets || []) if (st.id) setPps[st.id] = st;
       const m = {};
-      for (const d of dies || []) if (d.machine_id) m[d.machine_id] = d;
+      for (const d of dies || []) if (d.machine_id) m[d.machine_id] = { ...d, pps: ppsOf(d, setPps[d.die_set_id]) };
       setDieById(m);
       setEqLoading(false);
     })();
@@ -175,8 +181,8 @@ export default function PmUsageBoard({ daily = [], lines = [], plans = [], today
                                 const prog = usageProgress(accum, thr);
                                 // แม่พิมพ์: แปลงชิ้น → shot เมื่อรู้จำนวนชิ้นต่อ 1 stroke (ยังไม่มีในทะเบียน = ไม่โชว์ ห้ามเดา)
                                 const die = e.equipment_kind === 'die' ? dieById[e.id] : null;
-                                const shots = die ? piecesToShots(accum, die.pieces_per_stroke) : null;
-                                const needPps = !!die && die.pieces_per_stroke == null;
+                                const shots = die ? piecesToShots(accum, die.pps) : null;
+                                const needPps = !!die && die.pps == null;
                                 return (
                                   <tr key={e.id} style={{ borderTop: '1px solid var(--border)' }}>
                                     <td style={{ padding: '5px 8px', color: 'var(--text)' }}>{e.machine_no} <span style={{ color: 'var(--muted)' }}>{e.machine_name}</span></td>

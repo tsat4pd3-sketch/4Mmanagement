@@ -4249,6 +4249,33 @@ test('🛡️ /products BOM: ใบว่างต้องเช็ค sheetsWi
     + '   (sheetFor(mat, undefined) ตอบได้แค่ "ใบของ mat เอง" ซึ่งอาจว่างหรือไม่มี)\n');
 });
 
+/* ── 🏃 คนวิ่งข้ามแผนก = "อ้างอิง" ไม่ใช่การย้ายสังกัด (14/10 · feedback user "ใช่ คนวิ่งข้ามแผนก") ──
+   ทางที่ง่ายแต่ผิดคือ "ย้าย `employees.org_node_id` ให้เลย" หรือ "ยัด `line_id` ให้"
+   ⇒ cost center ของคนเปลี่ยนตามหน่วย (วัด 14/10: 11 จาก 12 แผนกมี cost_center ของตัวเอง)
+      แล้ว activity rate ใน `utils/costSaving.js` = ตัวคูณ "เงินที่ประหยัดได้" ทุกจอ เพี้ยนทั้งระบบ
+      และ Checkin/Report จะนับเขาเป็นคนของหน่วยใหม่ (คลาสเดียวกับที่ `line_technicians` แก้ไว้แล้ว)
+   ⇒ บอร์ดกำลังคน **ห้ามเขียนทะเบียนพนักงาน/ไลน์/cost center** — เขียนได้แค่ `employee_flex_units`
+   🔴 "ไปช่วย ≠ นับเป็นกำลังคน" คุมด้วยเทสพฤติกรรมใน `manpowerBoard.test.mjs` (ช่องว่าง/ตัวนับห้ามขยับ) */
+test('🛡️ manpower-flex-reference-only — จอบอร์ดกำลังคนห้ามย้ายสังกัด/แก้ cost center ของคน', () => {
+  for (const f of ['src/pages/ManpowerBoard.jsx', 'src/components/ManpowerBoardSetup.jsx']) {
+    const code = stripComments(readFileSync(join(ROOT, f), 'utf8'));
+    assert.ok(!/from\(\s*['"]employees['"]\s*\)\s*\.\s*(update|upsert|insert|delete)/.test(code),
+      `\n\n❌ ${f} เขียนทะเบียนพนักงาน — บอร์ดนี้อ่านอย่างเดียว\n`
+      + '   ย้ายสังกัด = cost center ของคนเปลี่ยน (11/12 แผนกมี cc ของตัวเอง) ⇒ activity rate ทุกจอเพี้ยน\n'
+      + '   แก้: ผูกผ่านตาราง employee_flex_units (อ้างอิง) — บ้านจริงไม่ขยับ\n');
+    assert.ok(!/cost_center\s*:/.test(code),
+      `\n\n❌ ${f} เขียนค่า cost_center — cost center เป็นของหน่วยต้นสังกัด ห้ามให้บอร์ดนี้แตะ\n`);
+  }
+  const util = stripComments(readFileSync(join(ROOT, 'src/utils/manpowerBoard.js'), 'utf8'));
+  assert.ok(/flexUnits\s*=\s*\[\]/.test(util),
+    '\n\n❌ buildManpowerBoard ไม่ได้ตั้ง flexUnits เป็น optional default [] — ไม่ส่งแล้วต้องได้พฤติกรรมเดิมเป๊ะ\n');
+  assert.ok(/flexFrom/.test(util),
+    '\n\n❌ การ์ดคนวิ่งข้ามแผนกไม่ติดธง flexFrom — จอจะแยกไม่ออกว่าใครเป็นคนของแผนกจริง\n');
+  const page = stripComments(readFileSync(join(ROOT, 'src/pages/ManpowerBoard.jsx'), 'utf8'));
+  assert.ok(/buildManpowerBoard\(\{[^}]*flexUnits/.test(page),
+    '\n\n❌ หน้าบอร์ดไม่ส่ง flexUnits เข้า buildManpowerBoard — ทะเบียนมีข้อมูลแต่จอไม่โชว์ (ตายเงียบ)\n');
+});
+
 /* ── 👯 คู่ RH/LH ต้องอยู่ไลน์เดียวกัน (14/10 · เคสจริง GOR 297) ──
    ตั้ง pair_mat_no ก่อนชุบ↔หลังชุบ (คนละไลน์) ⇒ Daily Report เด้ง MAT คู่ให้ใบถัดไป → 12 ใบลงเป็นเลขหลังชุบทั้งกะ
    ด่าน: จุดตั้งคู่ (Product Master) + จุดผูกคู่ตอนเปิดใบ (Daily Report) ต้องผ่าน pairBlockReason() */
@@ -4271,4 +4298,49 @@ test('🛡️ pm-checkpoint-copy-via-util — คัดลอกจุดตร�
     + '   ทำไม: x_pos/y_pos/label_dx/label_dy/image_id ผูกกับ "รูปของเครื่องต้นทาง" — ก๊อปข้ามเครื่องแล้วหมุดไปโผล่ผิดที่บนจอตั้งค่า\n'
     + '         และหายไปเลยบนจอตรวจ (14/10 เจอจริง 9 จุด) · jig_id ต้องเป็นเครื่องปลายทาง\n'
     + '   แก้: ใช้ checkpointCopyRow() จาก src/utils/pmCheckpointCopy.js · ข้ามแผนกบนเครื่องเดิมส่ง samePhotos:true\n');
+});
+
+/* ── 🔨 ชิ้น/จังหวะ ของแม่พิมพ์ — "ไม่รู้" ห้ามกลายเป็น 1 (14/10 · คำสั่ง user "ควรนับ shot ไม่ใช่นับชิ้น สำหรับงานคู่") ──
+   migration 20260810 ออกแบบ 2 ชั้นไว้แล้ว (equipment_die ว่าง = ใช้ค่าของ die_sets) แต่ไม่เคยถูกเขียนจริง
+   ⇒ จอ PM อ่านแค่ชั้น OP ที่ว่าง 264/264 = คิด shot ไม่ได้สักตัว · และชั้นชุดเป็น default 1 + จอบีบ `?? 1` ตอนเซฟ
+   = ระบบประกาศเองว่าแม่พิมพ์ทุกตัวปั๊มได้ 1 ชิ้น · งานคู่ LH/RH ปั๊มทีเดียว 2 ชิ้น ⇒ PM เด้งช้าไป 2 เท่า */
+test('🛡️ die-pps-no-guess-one — ชิ้น/จังหวะต้องผ่าน ppsOf() และห้ามเดาเป็น 1', () => {
+  const bad = [];
+  const util = stripComments(readFileSync(join(ROOT, 'src/utils/pmUsage.js'), 'utf8'));
+  if (!/export function ppsOf\s*\(/.test(util)) bad.push('src/utils/pmUsage.js (ไม่มี ppsOf แล้ว)');
+  /* ถอยชั้นต้องอยู่ในตัวมันเอง ไม่ใช่ให้หน้าไปทำเอง */
+  if (!/die\?\.pieces_per_stroke[\s\S]{0,80}set\?\.pieces_per_stroke/.test(util))
+    bad.push('src/utils/pmUsage.js (ppsOf ไม่ได้ถอยจากชั้น die ไปชั้นชุดแล้ว)');
+
+  const reg = stripComments(readFileSync(join(ROOT, 'src/pages/DieRegistry.jsx'), 'utf8'));
+  if (/pieces_per_stroke[^\n]*\?\?\s*1\b/.test(reg))
+    bad.push('src/pages/DieRegistry.jsx (บีบ pieces_per_stroke ว่าง → 1 ตอนเซฟ/ตอนโชว์)');
+
+  /* หน้าไหนจะคิด shot ต้องขอค่าผ่าน ppsOf ห้ามหยิบคอลัมน์ดิบไปหาร */
+  for (const rel of ['src/components/PmUsageBoard.jsx']) {
+    const code = stripComments(readFileSync(join(ROOT, rel), 'utf8'));
+    if (!/ppsOf\s*\(/.test(code)) bad.push(rel + ' (ไม่เรียก ppsOf)');
+    if (/piecesToShots\s*\([^)]*\.pieces_per_stroke/.test(code))
+      bad.push(rel + ' (ส่งคอลัมน์ดิบเข้า piecesToShots — ข้ามการถอยชั้น)');
+  }
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n'
+    + '   ทำไม: แม่พิมพ์สเปค "ทน 50,000 shot" ถ้าระบบคิด 1 ชิ้น = 1 shot กับงานคู่\n'
+    + '         PM จะเด้งตอนครบ 50,000 ชิ้น = 25,000 shot จริง = ช้าไป 2 เท่า แม่พิมพ์พังก่อนถึงคิว\n'
+    + '   แก้: ppsOf(die, set) ใน src/utils/pmUsage.js · ไม่รู้ = null จอต้องเขียนบอก ห้ามเดา 1\n');
+});
+
+/* ── 🔴 คำเตือน "5xx ปนกับ 2xx/3xx" ห้ามกลับมา (2026-10-14 · user แก้ให้เอง) ───────
+   *"เบอร์ 5 เป็นเบอร์ 1 เลยก็มีนะ มีบางงานเป็นแบบนั้น ไม่ต้องขึ้นโชว์แบบนี้ก็ได้
+     เราน่าจะบอกผิดไปครั้งก่อน"*
+   เดิมเตือนจาก **รูปแบบเลข** ไม่ใช่จากหลักฐาน ⇒ เตือนผิด 40 แถว
+   คำเตือนที่เตือนผิดบ่อย ทำให้คนเลิกเชื่อคำเตือนที่ถูกด้วย (raw_double_counted ที่พิสูจน์ได้)
+   ⇒ เหลือเตือนเฉพาะที่ไล่ถึงจริง · ห้ามเอา raw_in_assembly กลับมาโดยไม่ถาม user       */
+test('🛡️ BOM flow: ห้ามมีคำเตือน raw_in_assembly (5xx ใต้ 1xx = ปกติ)', () => {
+  const tree = stripComments(readFileSync(join(ROOT, 'src/utils/bomTree.js'), 'utf8'));
+  assert.ok(!/raw_in_assembly/.test(tree),
+    '\n\n❌ `raw_in_assembly` กลับมาใน bomTree.js\n'
+    + '   user สั่งถอดเอง 14/10: 5xx ไปเป็นลูกของ 1xx ตรงๆ เป็นของจริง ไม่ใช่ความผิด\n'
+    + '   จะเอากลับมาต้องถาม user ก่อน (เตือนผิด 40 แถว = คนเลิกเชื่อคำเตือนที่เหลือ)\n');
+  assert.ok(/raw_double_counted/.test(tree),
+    '\n\n❌ `raw_double_counted` หายไป — ตัวนี้พิสูจน์ได้ (5xx อยู่ใต้พี่น้อง 2xx จริง) ห้ามถอด\n');
 });

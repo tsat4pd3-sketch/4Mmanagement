@@ -15,6 +15,8 @@ import { DeleteButton } from './IconButton';
      1. ช่องตำแหน่งต่อ (แผนก × ทีม) → manpower_slot_plans · ช่องว่าง = ใช้ std ของไลน์เหมือนเดิม
      2. ช่างประจำไลน์ → line_technicians (ช่างแผนกไหนก็ได้ — ไม่แตะ employees.line_id ของเขา)
      3. คนต่อกะของแต่ละจุดงาน → station_slot_plans (migration 20261006c) · ช่องว่างบอกได้ว่าขาดที่จุดไหน
+     4. 🏃 คนวิ่งข้ามแผนก → employee_flex_units (migration 20261014 · 14/10 feedback user "ใช่ คนวิ่งข้ามแผนก")
+        **อ้างอิงเท่านั้น** — ไม่ย้ายสังกัด ไม่แตะ cost center และ **ไม่นับเป็นกำลังคน**ของแผนกที่ไปช่วย
    บันทึกทีละแถวทันที (ไม่มีปุ่มบันทึกรวม) ⇒ ไม่มีข้อมูลค้างให้หายเวลาปิดหน้าต่าง
    🔴 RLS ปฏิเสธ UPDATE/DELETE = "สำเร็จ 0 แถว" ⇒ ทุกการเขียน `.select('id')` แล้วนับแถว (กฎเหล็กข้อ 2)
    ═══════════════════════════════════════════════════════════════════════════════════════ */
@@ -22,7 +24,7 @@ import { DeleteButton } from './IconButton';
 const TEAMS = ['A', 'B', 'C', ''];          // '' = คอลัมน์ "ไม่ระบุทีม" บนบอร์ด
 const teamText = (t) => (t ? `ทีม ${t}` : 'ไม่ระบุทีม');
 
-export default function ManpowerBoardSetup({ section, nodes, lines, employees, slotPlans, lineTechs, stations = [], stationPlans = [], onChanged, onClose }) {
+export default function ManpowerBoardSetup({ section, nodes, lines, employees, slotPlans, lineTechs, stations = [], stationPlans = [], flexUnits = [], onChanged, onClose }) {
   const [busy, setBusy] = useState(false);
   const [draft, setDraft] = useState({});    // key `${node}|${team}` → ข้อความในช่อง (ยังไม่บันทึก)
 
@@ -126,6 +128,34 @@ export default function ManpowerBoardSetup({ section, nodes, lines, employees, s
     try {
       const res = await supabase.from('line_technicians').delete().eq('id', row.id).select('id');
       if (!checkWrite(res, 'เอาช่างออก')) return;
+      if (!res.data?.length) { toast.error('ลบไม่สำเร็จ — บัญชีนี้ไม่มีสิทธิ์ manpower_board:edit'); return; }
+      onChanged();
+    } finally { setBusy(false); }
+  };
+
+
+  /* 🏃 คนวิ่งข้ามแผนก — ผูก "คน × หน่วยที่ไปช่วย" · บ้านจริง (employees.org_node_id) ไม่ขยับ
+     🔴 ห้ามเสนอ/ทำการย้ายสังกัดให้แทน — cost center ผูกบ้านจริง ย้ายแล้วค่าแรงไปลงผิดหน่วย */
+  const addFlex = async (nodeId, emp) => {
+    if (!emp?.employee_id) return;
+    if (flexUnits.some(f => f.org_node_id === nodeId && f.employee_id === emp.employee_id)) { toast.info('ผูกไว้แล้ว'); return; }
+    const home = empById.get(emp.employee_id);
+    if (home?.org_node_id === nodeId) { toast.info('คนนี้สังกัดหน่วยนี้อยู่แล้ว ไม่ต้องผูก'); return; }
+    setBusy(true);
+    try {
+      const res = await supabase.from('employee_flex_units').insert({ employee_id: emp.employee_id, org_node_id: nodeId }).select('id');
+      if (!checkWrite(res, 'ผูกคนวิ่งข้ามแผนก')) return;
+      toast.success(`${emp.name} จะขึ้นบอร์ดแผนกนี้ด้วย (ไม่นับเป็นกำลังคน)`);
+      onChanged();
+    } finally { setBusy(false); }
+  };
+  const removeFlex = async (row) => {
+    const e = empById.get(row.employee_id);
+    if (!window.confirm(`เอา ${e?.name || 'คนนี้'} ออกจากคนวิ่งข้ามแผนก?\n(สังกัดจริงและ cost center ไม่เปลี่ยนอยู่แล้ว)`)) return;
+    setBusy(true);
+    try {
+      const res = await supabase.from('employee_flex_units').delete().eq('id', row.id).select('id');
+      if (!checkWrite(res, 'เอาคนวิ่งข้ามแผนกออก')) return;
       if (!res.data?.length) { toast.error('ลบไม่สำเร็จ — บัญชีนี้ไม่มีสิทธิ์ manpower_board:edit'); return; }
       onChanged();
     } finally { setBusy(false); }
@@ -256,6 +286,44 @@ export default function ManpowerBoardSetup({ section, nodes, lines, employees, s
                       <div style={{ minWidth: 220, flex: '1 1 220px', maxWidth: 360 }}>
                         <PersonSelect source="employees" allowFree={false} value="" disabled={busy}
                           placeholder="+ เพิ่มช่าง: ค้นชื่อ / รหัส…" onChange={(p) => addTech(l.id, p)} />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
+        <section style={{ marginTop: 18 }}>
+          <div style={{ fontWeight: 800, marginBottom: 4 }}>4. 🏃 คนวิ่งข้ามแผนก (ไปช่วยประจำ)</div>
+          <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>
+            คนที่สังกัดแผนกหนึ่งแต่ไปช่วยอีกแผนกเป็นประจำ — ผูกไว้แล้วการ์ดจะขึ้นบนบอร์ดของแผนกที่ไปช่วยด้วย ·
+            <b> ไม่ย้ายสังกัด · cost center ไม่เปลี่ยน · ไม่นับเป็นกำลังคน/ช่องว่างของแผนกที่ไปช่วย</b>
+            (บ้านจริงนับเขาอยู่แล้ว — นับ 2 ที่ = กำลังคนเกินจริง) · อยากยืมเฉพาะวันนี้ให้ใช้ "ยืมตัว" ที่หน้าเช็คชื่อแทน
+          </div>
+          {!depts.length ? <div style={{ fontSize: 13, color: 'var(--muted)' }}>ส่วนงานนี้ยังไม่มีแผนกในผังองค์กร (ตั้งที่ /org-setup)</div> : (
+            <div style={{ display: 'grid', gap: 8 }}>
+              {depts.map(d => {
+                const rows = flexUnits.filter(f => f.org_node_id === d.id);
+                return (
+                  <div key={d.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(140px, 220px) 1fr', gap: 8, alignItems: 'start', borderTop: '1px solid var(--border)', paddingTop: 8 }}>
+                    <div style={{ fontWeight: 700, overflowWrap: 'anywhere' }}>{d.name}
+                      {d.cost_center ? <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}>cost center {d.cost_center}</div> : null}</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+                      {rows.map(r => {
+                        const e = empById.get(r.employee_id);
+                        return (
+                          <span key={r.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '2px 4px 2px 10px', border: '1px solid var(--border2)', borderRadius: 999, background: 'var(--bg2)', fontSize: 13 }}>
+                            🏃 {e ? e.name : '(ไม่อยู่ในทะเบียน active)'}
+                            {e?.department && <span style={{ fontSize: 11, color: 'var(--muted)' }}>บ้าน {e.department}</span>}
+                            <DeleteButton disabled={busy} onClick={() => removeFlex(r)} title={`เอา ${e?.name || ''} ออก`} style={{ width: 26, height: 26 }} />
+                          </span>
+                        );
+                      })}
+                      <div style={{ minWidth: 220, flex: '1 1 220px', maxWidth: 360 }}>
+                        <PersonSelect source="employees" allowFree={false} value="" disabled={busy}
+                          placeholder="+ เพิ่มคนที่มาช่วยประจำ: ค้นชื่อ / รหัส…" onChange={(pp) => addFlex(d.id, pp)} />
                       </div>
                     </div>
                   </div>
