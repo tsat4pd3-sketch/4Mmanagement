@@ -75,7 +75,8 @@ Realtime + Edge Functions/Deno) · Telegram Bot API · deploy = Render.com (Stat
 > 📄 กฎ/เหตุผล/ประวัติรายตารางที่ pg_catalog บอกไม่ได้ (employees · production_lines · profiles · oee_targets · ot_night_bookings · workstations · employee_skills · shift_schedules · ppe_* · four_m_logs · notifications · meeting_action_items · event_comments) → **`docs/modules/db-schema.md`**
 
 **กฎเหล็กรายตารางที่ทุก session ต้องรู้ก่อนแตะ (ที่เหลืออ่านในไฟล์โมดูล):**
-- `production_lines` — กำลังคน `std_day_shift`/`std_night_shift` อ่านผ่าน **`src/utils/stdManpower.js` เท่านั้น** · `line_type` (source of truth `src/utils/lineTypes.js`) **คนละตัวกับ `process_type` ฝั่ง DR** · 🔴 **ชื่อไลน์ตัวเองชนะไลน์แม่เสมอ** · 🔴 **ไลน์ที่ `line_type` ว่างต้องมีตะกร้ารับท้ายลิสต์ ห้ามหายจาก dropdown** · 🔴 **อ่านทะเบียนไลน์ผ่าน `src/utils/useProductionLines.js` เท่านั้น ห้าม `from('production_lines').select()` เอง** (มีด่าน) · เพิ่มคอลัมน์ = เติมใน `LINE_COLUMNS` + bump คีย์ cache
+- `production_lines` — 🔴 **`unit_kind` = "เป็นไลน์ผลิตไหม"** (`production` default / `support` = สำนักงาน/งานสนับสนุน) — ตัดสินผ่าน **`src/utils/unitKind.js` เท่านั้น** (มีด่าน) · **ว่าง/ไม่รู้จัก = ไลน์ผลิต** · ช่องเลือกไลน์กรอง support ออกเป็น default · จอคน/ทะเบียน (เช็คชื่อ·จัดกะ·ผังองค์กร·ทะเบียนไลน์) ต้องส่ง `includeSupport` · **คนละแกนกับ `line_type`**
+  · กำลังคน `std_day_shift`/`std_night_shift` อ่านผ่าน **`src/utils/stdManpower.js` เท่านั้น** · `line_type` (source of truth `src/utils/lineTypes.js`) **คนละตัวกับ `process_type` ฝั่ง DR** · 🔴 **ชื่อไลน์ตัวเองชนะไลน์แม่เสมอ** · 🔴 **ไลน์ที่ `line_type` ว่างต้องมีตะกร้ารับท้ายลิสต์ ห้ามหายจาก dropdown** · 🔴 **อ่านทะเบียนไลน์ผ่าน `src/utils/useProductionLines.js` เท่านั้น ห้าม `from('production_lines').select()` เอง** (มีด่าน) · เพิ่มคอลัมน์ = เติมใน `LINE_COLUMNS` + bump คีย์ cache
 - `profiles` — **⚠️ ไม่มีคอลัมน์ `email`** (อีเมล login อยู่ที่ `auth.users` เท่านั้น — เอกสารเคยเขียนผิดจน `fn_audit` อ่าน `coalesce(full_name, email)` แล้ว**พังเงียบ ไม่บันทึกผู้แก้ทั้งระบบ**) · **ระบบไม่มีการส่งอีเมลเลย** (`notify_email` ไม่เคยถูกใช้ส่งอะไร)
 - `oee_targets` — **เป้า OEE ห้ามตั้งเอง คำนวณจาก A×P×Q เสมอ** · `target_oee` เป็นคอลัมน์ vestigial ห้ามใช้
 - `meeting_action_items` — ใช้ร่วมกัน `/morning-meeting` + `/obeya` แยกด้วย `source` · **ตารางเดียว ห้ามสร้างใหม่**
@@ -592,6 +593,9 @@ Reject → status: "rejected" + reject_reason
 > (มีด่านสแกนทั้งรีโป `regressionGuards` แล้ว) — `bom_items.parent_mat` (ใครก็เป็นแม่ได้ ไม่ต้องเป็น `dr_products`)
 > ชนะ `product_id` · `op_no` = ขั้นที่ชิ้นนี้ถูกใส่ตาม PFC · ย้ายชั้นผ่าน `moveBomLine()` (กันวนลูป)
 > migration `20260916_bom_level_parent_mat.sql` (**apply แล้ว** · แถวเดิม null ทั้ง 506 = ไม่มีจอไหนเปลี่ยน)
+> 🔴 **"ใบนี้ว่าง" ≠ "พาร์ทนี้ไม่มีลูก"** — ลูกอาจถูกกรอกไว้ในใบอื่น (วัด 14/10: **49 จาก 97 mat**)
+> ⇒ ก่อนประกาศว่าไม่มีลูก ต้องถาม **`sheetsWithKidsOf()`** ก่อน · กางด้วย `explodeBom(..., { startSheet })`
+> **ห้ามรวมหลายใบเป็นชุดเดียว** (รวม = นับซ้ำ) · มุมมองพาร์ท = อ่านอย่างเดียว ห้ามแก้/สร้างใบให้เอง (มีด่าน)
 > 🔴 **`bomOf(mat, sheet)` = "ชุดของใบที่กางอยู่ชนะทั้งชุด" ไม่ได้รวม 2 ชุด** ⇒ ของที่มีแต่ในใบของพาร์ทเอง
 > **ไม่ถูกระเบิดเลย** · คู่ที่นิยามไว้ 2 ใบไล่เคลียร์ที่ `/products?tab=bomdup` (กฎ `src/utils/bomDupAudit.js`)
 > — **จอชี้อย่างเดียว ห้ามยุบ/ลบ `bom_items` ให้เอง** (ต่างรุ่น/ลูกค้าได้จริง · PE ตัดสิน · มีด่าน)

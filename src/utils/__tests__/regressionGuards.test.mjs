@@ -184,6 +184,19 @@ const RULES = [
     allow: {},
   },
   {
+    id: 'unit-kind-via-util',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* ตัดสิน "เป็นไลน์ผลิตไหม" ต้องผ่าน utils/unitKind.js — เทียบสตริงเองในหน้าคือจุดที่ drift */
+    re: /unit_kind\s*[=!]==\s*['"]/g,
+    why: 'ชนิดหน่วย (`production`/`support`) ตัดสินที่ `src/utils/unitKind.js` ที่เดียว '
+       + '— เทียบสตริงเองในหน้า = แต่ละจอตีความไม่เหมือนกัน และ**ลืมกฎ fail-open** '
+       + '(ค่าว่าง/ไม่รู้จัก = ไลน์ผลิต) ⇒ `l.unit_kind === "production"` จะทิ้งไลน์ผลิตที่ยังไม่มีค่า '
+       + 'ทั้งตารางออกจากจอเงียบๆ ซึ่งเป็นทิศที่อันตรายที่สุด',
+    fix: 'ใช้ `isProductionUnit(line)` / `isSupportUnit(line)` / `productionUnits(lines)` '
+       + '· ช่องเลือกไลน์ส่ง `includeSupport` แทนการกรองเอง',
+    allow: { 'src/utils/unitKind.js': true },
+  },
+  {
     id: 'am-open-lines-family-aware',
     scan: ['src/lib/dailyAmBoard.js'], ext: ['.js'],
     /* "ไลน์ไหนเดินอยู่" ต้องผ่าน openFamilyLines() — ประกอบ Set เองที่นี่ = กลับไปเทียบชื่อตรงตัว */
@@ -4212,4 +4225,26 @@ test('🛡️ no-shadow-candelete — ห้ามประกาศตัวแ
     + bad.map(b => '   • ' + b).join('\n')
     + '\n   แก้: ตั้งชื่อ `mayDelete` แล้วเรียก canDelete() ของกลาง\n'
     + '        import { canDelete as canDeleteUtil } from \'../utils/permissions\';\n');
+});
+
+/* ── 🔴 "ใบนี้ว่าง" ≠ "พาร์ทนี้ไม่มีลูก" (2026-10-14 · user ส่งภาพจอ 4 ใบ) ──────────
+   `items` = บรรทัดของ **ใบที่เปิดอยู่** เท่านั้น ⇒ ใบของพาร์ทที่เพิ่งเปิดยังว่าง
+   แต่ใบ FG กรอกลูกของมันไว้แล้ว ⇒ จอขึ้น "ยังไม่มีพาร์ทย่อยใน BOM นี้" = **จอโกหก**
+   เคสจริง: ใบ 20058495 ว่าง · ใบ FG 10086024 กรอก 20058498 ไว้ใต้มันแล้ว
+   ⇒ ต้องถามด้วย `sheetsWithKidsOf()` (buildBomIndex) ก่อนจะประกาศว่าไม่มีลูก          */
+test('🛡️ /products BOM: ใบว่างต้องเช็ค sheetsWithKidsOf ก่อนขึ้น "ยังไม่มีพาร์ทย่อย"', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/ProductMaster.jsx'), 'utf8'));
+  assert.ok(/sheetsWithKidsOf/.test(code),
+    '\n\n❌ ProductMaster ไม่ได้ถาม `sheetsWithKidsOf` แล้ว\n'
+    + '   ทำไมผิด: `items.length === 0` = ใบนี้ว่าง ไม่ได้แปลว่าพาร์ทนี้ไม่มีลูก\n'
+    + '   (ลูกอาจถูกกรอกไว้ในใบ FG — เคสจริง 20058495/10086024 · user แจ้ง 14/10)\n'
+    + '   แก้ยังไง: kidsElsewhere = bomIx.sheetsWithKidsOf(mat) แล้วกางให้ดูด้วย startSheet\n');
+  const i = code.indexOf('ยังไม่มีพาร์ทย่อยใน BOM นี้');
+  assert.ok(i > 0 && /kidsElsewhere/.test(code.slice(Math.max(0, i - 2500), i)),
+    '\n\n❌ ข้อความ "ยังไม่มีพาร์ทย่อยใน BOM นี้" ไม่ได้อยู่หลังด่าน `kidsElsewhere` แล้ว\n'
+    + '   = ประกาศว่าไม่มีลูก ทั้งที่ยังไม่ได้ถามว่าใบอื่นกรอกไว้ไหม\n');
+  const tree = stripComments(readFileSync(join(ROOT, 'src/utils/bomTree.js'), 'utf8'));
+  assert.ok(/opt\.startSheet\s*!==\s*undefined/.test(tree),
+    '\n\n❌ explodeBom ไม่รับ `startSheet` แล้ว — พาร์ทที่ลูกถูกกรอกไว้ในใบอื่นจะกางไม่ออกเลย\n'
+    + '   (sheetFor(mat, undefined) ตอบได้แค่ "ใบของ mat เอง" ซึ่งอาจว่างหรือไม่มี)\n');
 });

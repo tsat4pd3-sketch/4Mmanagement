@@ -624,7 +624,7 @@ export default function OrgSetup() {
                 return (
                   <div>
                     <label style={labelSt}>ผูกกับไลน์ผลิตจริง (production_lines)</label>
-                    <LineSelect lines={lines} value={formRefLineId} valueKey="id"
+                    <LineSelect lines={lines} value={formRefLineId} valueKey="id" includeSupport
                       placeholder="— ไม่ผูก —" onChange={setFormRefLineId} />
                     {supportUnit && (
                       <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4 }}>

@@ -449,7 +449,7 @@ export default function BbsCheck() {
       <FilterBar style={{ marginBottom: 12 }}>
         <span className="filter-label">พื้นที่ / ไลน์</span>
         {/* <LineSelect valueKey="id"> — เก็บ line id เหมือนเดิม · scopedLines กรอง scope ไว้แล้ว (2026-09-07) */}
-        <LineSelect lines={scopedLines} value={selLine} valueKey="id" placeholder={null} onChange={setSelLine} />
+        <LineSelect lines={scopedLines} value={selLine} valueKey="id" placeholder={null} onChange={setSelLine} includeSupport />
         <span className="filter-label">เดือน</span>
         <input type="month" value={month} onChange={e => setMonth(e.target.value)} />
         {/* 🔴 ไม่มีปุ่มเลือกกะ — BBS ไม่แยกกะ (ดูหัวบล็อกไฟล์) ห้ามเติมกลับ */}
