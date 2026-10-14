@@ -41,14 +41,16 @@ const td = { padding: '5px 9px', fontSize: 11.5, color: 'var(--text)', borderTop
       ใบ OP = "ขั้นนี้กินอะไร" (เช่น ขั้นเชื่อมนัท M6 → นัท 30044771)
       ใบพาร์ท = "พาร์ทนี้ประกอบจากอะไร" (เช่น คอยล์ 50027969)
    วัดจริง 06/10: เทียบรวม OP = เตือนผิด 5 คู่จาก 19 (26%) — สัญญาณหลอกทำให้คนเลิกเชื่อคำเตือน */
-export default function BomTreeView({ rootMat, rootName, bomOf, sheetFor, ownSheetOf, isOpSheet, onDeleteDupes, onOpenSheet }) {
+/* `startSheet` = ใบตั้งต้นที่บังคับมา (ไม่ส่ง = ใบของ rootMat เอง เหมือนเดิม)
+   ใช้ตอนกาง "พาร์ทที่ลูกถูกกรอกไว้ในใบอื่น" — ใบของตัวเองว่าง/ไม่มีใบของตัวเอง แต่มีคนกรอกลูกไว้แล้ว */
+export default function BomTreeView({ rootMat, rootName, bomOf, sheetFor, ownSheetOf, isOpSheet, startSheet, onDeleteDupes, onOpenSheet }) {
   const [showAll, setShowAll] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const { rows, flatDupes, cycles, truncated, maxLevel, flowWarn, diffs } = useMemo(() => {
     /* ⚠️ ต้องส่ง sheetFor เสมอ — ไม่งั้น `parent_mat` ข้ามใบ ต้นไม้ระเบิด (บั๊กจริง 21/09:
        10101158 กางได้ 1,276 แถว ลึก 5 ชั้น ทั้งที่มี 22 พาร์ท) ดู buildBomIndex */
-    const r = explodeBom(rootMat, bomOf, { sheetFor, ownSheetOf });
+    const r = explodeBom(rootMat, bomOf, { sheetFor, ownSheetOf, startSheet });
     /* คำเตือน pattern การไหล — ตรวจ "ทั้งชุดพี่น้อง" ของแต่ละแม่ ไม่ใช่รายคู่
        (งานปั๊มแล้วขายเลยมีลูก 5xx ตัวเดียว = ถูกต้อง ห้ามเตือน) */
     const fw = new Map();
@@ -68,7 +70,7 @@ export default function BomTreeView({ rootMat, rootName, bomOf, sheetFor, ownShe
       diffs.set(x.mat_no, isOp(x.sheet) ? null : sheetChildDiff(x.mat_no, bomOf, x.sheet, x.ownSheet));
     });
     return { ...r, flowWarn: fw, diffs };
-  }, [rootMat, bomOf, sheetFor, ownSheetOf, isOpSheet]);
+  }, [rootMat, bomOf, sheetFor, ownSheetOf, isOpSheet, startSheet]);
 
   if (!rows.length) {
     return <div style={{ padding: 16, fontSize: 12, color: 'var(--muted)' }}>ยังไม่มี BOM ของ {rootMat}</div>;
@@ -165,6 +167,13 @@ export default function BomTreeView({ rootMat, rootName, bomOf, sheetFor, ownShe
             {shown.map((r, i) => {
               const w = flowWarn.get(`${r.parent || rootMat}|${r.mat_no}`);
               const bad = r.isDupeRow || w?.level === 'crit';
+              /* 🔑 กดเลข MAT ได้เมื่อไหร่ — 2 กรณี **คนละความหมาย ห้ามยุบเป็นอันเดียว**
+                 ① มีใบ BOM ของตัวเอง → พาไปเปิดใบนั้น (เทียบ 2 ใบได้)
+                 ② ไม่มีใบของตัวเอง แต่ใบนี้กรอกลูกให้มันไว้ → เปิด "มุมมองพาร์ทนี้" (กางจากใบที่กรอกไว้)
+                 เดิมมีแค่ ① ⇒ ของอย่าง 20058483 (ลูกถูกกรอกในใบ 20058498) กดดูเป็นตัวตั้งต้นไม่ได้เลย
+                 แม้จะเห็นลูกมันอยู่ในตารางตรงหน้า (user แจ้ง 14/10) */
+              const jumpOwn = r.ownSheet && onOpenSheet;
+              const canJump = jumpOwn || (onOpenSheet && r.hasChildren);
               return (
                 <tr key={`${r.path.join('>')}|${i}`} style={bad ? { background: 'rgba(239,68,68,0.06)' } : undefined}>
                   <td style={{ ...td, fontFamily: 'monospace', color: 'var(--muted)', whiteSpace: 'nowrap' }}>{r.tag}</td>
@@ -178,11 +187,13 @@ export default function BomTreeView({ rootMat, rootName, bomOf, sheetFor, ownShe
                     {/* 📄 แถวที่ลูกมาจาก "ใบของตัวมันเอง" — กดแล้วไปเปิดใบนั้นเลย
                         (user 06/10 เข้าใจว่าต้องสร้าง 2 ใบแยกกัน ที่จริงใบนั้นคือการนิยามครั้งเดียว
                          แล้วใบ FG ยืมมากางให้ — แต่จอไม่เคยบอก) */}
-                    {r.ownSheet && onOpenSheet ? (
+                    {canJump ? (
                       <button type="button" onClick={() => onOpenSheet(r.mat_no)}
-                        title={r.fromOtherSheet
-                          ? `เปิดใบ BOM ของ ${r.mat_no} — ชั้นที่ลึกกว่านี้ถูกนิยามไว้ในใบนั้น ไม่ได้กรอกซ้ำในใบนี้`
-                          : `เปิดใบ BOM ของ ${r.mat_no} — ของชิ้นนี้มีใบของตัวเองด้วย กดเข้าไปเทียบได้`}
+                        title={!jumpOwn
+                          ? `ดูโครงของ ${r.mat_no} เป็นตัวตั้งต้น — ของชิ้นนี้ยังไม่มีใบ BOM ของตัวเอง ลูกของมันถูกกรอกไว้ในใบที่เปิดอยู่`
+                          : r.fromOtherSheet
+                            ? `เปิดใบ BOM ของ ${r.mat_no} — ชั้นที่ลึกกว่านี้ถูกนิยามไว้ในใบนั้น ไม่ได้กรอกซ้ำในใบนี้`
+                            : `เปิดใบ BOM ของ ${r.mat_no} — ของชิ้นนี้มีใบของตัวเองด้วย กดเข้าไปเทียบได้`}
                         style={{ font: 'inherit', color: 'inherit', background: 'none', border: 'none', padding: 0,
                           cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: 3 }}>
                         {r.mat_no} ↗
