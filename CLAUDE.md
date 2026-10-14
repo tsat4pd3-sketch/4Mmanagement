@@ -76,7 +76,7 @@ Realtime + Edge Functions/Deno) · Telegram Bot API · deploy = Render.com (Stat
 
 **กฎเหล็กรายตารางที่ทุก session ต้องรู้ก่อนแตะ (ที่เหลืออ่านในไฟล์โมดูล):**
 - `production_lines` — กำลังคน `std_day_shift`/`std_night_shift` อ่านผ่าน **`src/utils/stdManpower.js` เท่านั้น** · `line_type` (source of truth `src/utils/lineTypes.js`) **คนละตัวกับ `process_type` ฝั่ง DR** · 🔴 **ชื่อไลน์ตัวเองชนะไลน์แม่เสมอ** · 🔴 **ไลน์ที่ `line_type` ว่างต้องมีตะกร้ารับท้ายลิสต์ ห้ามหายจาก dropdown** · 🔴 **อ่านทะเบียนไลน์ผ่าน `src/utils/useProductionLines.js` เท่านั้น ห้าม `from('production_lines').select()` เอง** (มีด่าน) · เพิ่มคอลัมน์ = เติมใน `LINE_COLUMNS` + bump คีย์ cache
-- `profiles` — **⚠️ ไม่มีคอลัมน์ `email`** (อีเมล login อยู่ที่ `auth.users` เท่านั้น — เอกสารเคยเขียนผิดจน `fn_audit` อ่าน `coalesce(full_name, email)` แล้ว**พังเงียบ ไม่บันทึกผู้แก้ทั้งระบบ**) · **ระบบไม่มีการส่งอีเมลเลย** (`notify_email` ไม่เคยถูกใช้ส่งอะไร)
+- `profiles` — **⚠️ ไม่มีคอลัมน์ `email`** (อีเมล login อยู่ที่ `auth.users` เท่านั้น) · **ระบบไม่มีการส่งอีเมลเลย**
 - `oee_targets` — **เป้า OEE ห้ามตั้งเอง คำนวณจาก A×P×Q เสมอ** · `target_oee` เป็นคอลัมน์ vestigial ห้ามใช้
 - `meeting_action_items` — ใช้ร่วมกัน `/morning-meeting` + `/obeya` แยกด้วย `source` · **ตารางเดียว ห้ามสร้างใหม่**
 - `production_sessions.status` — มี **`void` = "ไม่ใช่กะจริง"** (กะที่เปิดผิดแล้วปิดทิ้ง · เก็บประวัติไว้แทน `delete`)
@@ -518,7 +518,7 @@ Reject → status: "rejected" + reject_reason
 · โครงสร้างอ่าน**สด**จาก pg_catalog (RPC `esm_schema_overview` / `esm_schema_table` ทั้ง 2 project)
 · **ห้ามเขียนรายชื่อตาราง/คอลัมน์เป็นลิสต์มือที่ไหนอีก** — snapshot มือล้าสมัยทุกครั้ง
 · 🔴 **migration ที่ copy ข้อมูลกันพลาด ต้องสร้างใน schema `archive` ห้ามไว้ใน `public`**
-  (เคยค้าง 37 ตาราง · 35 ตัวไม่มี RLS = anon อ่านสำเนาข้อมูลจริงได้ · ย้ายแล้ว 22/09 + มีด่านใน build)
+  (มีด่านใน build)
 > 📄 `docs/modules/schema-map.md`
 
 ---
@@ -855,7 +855,12 @@ Reject → status: "rejected" + reject_reason
 ## Deploy
 
 Platform:    Render.com (Static Site)
-> 📄 รายละเอียดเต็ม → `docs/modules/deploy.md`
+> ### 🎯 คำสั่งถาวร user (2026-10-14): **เป้าหมายคือย้ายมา deploy บน server บริษัท**
+> ทุก session ที่แตะ deploy/โครงสร้างพื้นฐาน ให้**เลือกทางที่พาไปทางนั้น ห้ามผูกกับของเฉพาะ Render เพิ่ม**
+> 🔴 **ย้าย hosting ≠ ลด egress** (เบราว์เซอร์ยิงตรงไป `supabase.co` ไม่ผ่านตัว host) — ห้ามอ้างเหตุผลนี้
+> 🔴 **ห้าม self-host Supabase จนกว่าจะครบเงื่อนไขใน `docs/modules/deploy.md` §ย้ายเข้า server บริษัท**
+> (คนดูแล · backup/กู้คืน · ทางเข้าจากมือถือนอกโรงงาน) — ทั้งโรงงานพึ่งระบบนี้แล้ว ล่ม = เปิดกะไม่ได้
+> 📄 ขั้นตอน/ลำดับ/สิ่งที่ต้องมีก่อน → `docs/modules/deploy.md`
 
 ---
 
