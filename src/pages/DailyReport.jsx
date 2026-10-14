@@ -28,7 +28,7 @@ import { MTN_TEAMS, teamForItem, teamForMachine, teamKeyOf, deptNameOf } from '.
 import useIsMobile from '../utils/useIsMobile';
 import { cardGrid } from '../utils/cardGrid';
 import { pairAwareOpTotal, orderTotal, collapsePairShots } from '../utils/pairTotals';
-import { pairQtyPlan, pairOrderGaps } from '../utils/pairOrder';
+import { pairQtyPlan, pairOrderGaps, pairBlockReason } from '../utils/pairOrder';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { getDocForm, fullCode, loadDocForms } from '../utils/docForms';
 import { downloadCsvDoc, csvText } from '../utils/csvDoc';
@@ -1709,7 +1709,13 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
 
     // ── RH/LH auto pairing ──────────────────────────────────────────
     // ทั้ง 2 ข้างมีเลข SAP order เป็นของตัวเองเสมอ ต้องสแกนคู่ 2 ครั้งจริง — ไม่มีกรณี order ข้างเดียวแล้ว
-    const partnerMatNo = products.find(p => p.mat_no === matNo)?.pair_mat_no || null;
+    /* 🔴 คู่ที่อยู่คนละไลน์ = ตั้งคู่ผิด (เคสจริง 13/10 GOR 297: ก่อนชุบ↔หลังชุบ ⇒ ใบถัดไปเด้งเป็นเลขหลังชุบ 12 ใบ)
+       ⇒ ไม่ผูกคู่ ไม่เด้ง MAT ให้ · บอกบนจอให้ไปแก้ Product Master (`pairBlockReason` · utils/pairOrder.js) */
+    const meProd = products.find(p => p.mat_no === matNo);
+    const rawPartner = meProd?.pair_mat_no || null;
+    const pairWhy = rawPartner ? pairBlockReason(meProd, products.find(p => p.mat_no === rawPartner) || { mat_no: rawPartner }) : null;
+    if (pairWhy) toast.error(`ไม่ผูกคู่ RH/LH ให้: ${pairWhy} — แก้ช่อง "MAT.NO คู่" ที่ Product Master`);
+    const partnerMatNo = pairWhy ? null : rawPartner;
     let nextMatNo = openProdForm.mat_no;
 
     if (pendingPairId) {

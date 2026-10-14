@@ -4248,3 +4248,14 @@ test('🛡️ /products BOM: ใบว่างต้องเช็ค sheetsWi
     '\n\n❌ explodeBom ไม่รับ `startSheet` แล้ว — พาร์ทที่ลูกถูกกรอกไว้ในใบอื่นจะกางไม่ออกเลย\n'
     + '   (sheetFor(mat, undefined) ตอบได้แค่ "ใบของ mat เอง" ซึ่งอาจว่างหรือไม่มี)\n');
 });
+
+/* ── 👯 คู่ RH/LH ต้องอยู่ไลน์เดียวกัน (14/10 · เคสจริง GOR 297) ──
+   ตั้ง pair_mat_no ก่อนชุบ↔หลังชุบ (คนละไลน์) ⇒ Daily Report เด้ง MAT คู่ให้ใบถัดไป → 12 ใบลงเป็นเลขหลังชุบทั้งกะ
+   ด่าน: จุดตั้งคู่ (Product Master) + จุดผูกคู่ตอนเปิดใบ (Daily Report) ต้องผ่าน pairBlockReason() */
+test('🛡️ pair-same-line — ตั้งคู่/ผูกคู่ RH/LH ต้องผ่าน pairBlockReason()', () => {
+  const pm = stripComments(readFileSync(join(ROOT, 'src/pages/ProductMaster.jsx'), 'utf8'));
+  const dr = stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'));
+  assert.match(pm, /pairBlockReason\(/, 'ProductMaster ต้องเช็ค pairBlockReason ก่อนบันทึก pair_mat_no');
+  assert.match(dr, /pairBlockReason\(/, 'DailyReport ต้องเช็ค pairBlockReason ก่อนผูกคู่/เด้ง MAT คู่');
+  assert.doesNotMatch(dr, /const partnerMatNo = products\.find\([^)]*\)\?\.pair_mat_no/, 'ห้ามอ่าน pair_mat_no ตรงๆ เป็น partnerMatNo โดยไม่ผ่านด่าน');
+});
