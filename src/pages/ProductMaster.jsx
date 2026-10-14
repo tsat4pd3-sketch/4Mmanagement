@@ -17,6 +17,7 @@ import RoutingPanel from '../components/RoutingPanel';
 import useTabParam from '../utils/useTabParam';
 import CtReview from '../components/CtReview';
 import { MAT_CLASSES, matClassOf, matColor, matLabel, matMatches, isSapMat, rawAsOutputWarning } from '../utils/matPrefix';
+import { pairBlockReason } from '../utils/pairOrder';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import LineSelect from '../components/LineSelect';
 import CustomerSelect from '../components/CustomerSelect';
@@ -426,6 +427,13 @@ export default function ProductMaster() {
     if (!form.name) { toast.error('กรอกชื่อสินค้า'); return; }
     if (form.posting_mode === 'lot_accumulate' && !(Number(form.lot_accumulate_threshold) > 0)) {
       toast.error('กรอกจำนวนสะสมขั้นต่ำ (เช่น 800, 1000) สำหรับโหมดสะสม lot'); return;
+    }
+    // 🚫 คู่ RH/LH ต้องอยู่ไลน์เดียวกัน (เคสจริง 13/10 GOR 297 ก่อนชุบ↔หลังชุบ → Daily Report สลับ MAT ทั้งกะ · utils/pairOrder.js)
+    //    เช็คก่อนอัปโหลดรูป — ไม่งั้นบล็อกแล้วรูปค้างใน storage
+    if (form.pair_mat_no) {
+      const me = { mat_no: (form.mat_no || '').trim().toUpperCase(), line_name: form.line_name || null };
+      const pairWhy = pairBlockReason(me, items.find(i => i.mat_no === form.pair_mat_no) || { mat_no: form.pair_mat_no });
+      if (pairWhy) { toast.error(`ตั้งคู่ RH/LH ไม่ได้: ${pairWhy}`); return; }
     }
     setSaving(true);
     try {
