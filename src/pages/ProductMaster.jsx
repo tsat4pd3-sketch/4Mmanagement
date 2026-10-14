@@ -2090,6 +2090,32 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
     return sh ? [sh.mat_no, sh.name].filter(Boolean).join(' — ') : 'ใบที่ไม่อยู่ในลิสต์';
   }, [products]);
 
+  /* ⬆️ แถบ "ของชิ้นนี้ถูกใช้เป็นลูกของใครบ้าง" (user ขอ 14/10) — กดเข้าไปที่แม่ได้เลย
+     🔴 แม่ตัวเดียวที่อยู่หลายใบ ต้องขึ้นหลายปุ่ม **ห้ามยุบ** (คนละใบ = คนละการนิยาม)
+     · ไม่มีแม่เลย = เขียนบอกว่าเป็นตัวบนสุด **ห้ามซ่อนแถบเงียบ** (ซ่อน = คนอ่านไม่ออกว่า "ไม่มี" หรือ "จอไม่รู้") */
+  const parentsBar = useCallback((mat) => {
+    const m = upMat(mat);
+    if (!m) return null;
+    const ps = bomIx.parentsOfMat(m);
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+        <span style={{ fontSize: 11.5, color: 'var(--muted)', fontWeight: 700 }}>
+          ⬆ ถูกใช้เป็นลูกของ{ps.length ? ` ${ps.length} ที่:` : ':'}
+        </span>
+        {ps.length === 0 && (
+          <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>— ไม่มี (เป็นตัวบนสุดของสาย)</span>
+        )}
+        {ps.map((x, i) => (
+          <button key={`${x.mat}|${x.sheetId}|${i}`} type="button" onClick={() => openSheetOfMat(x.mat)}
+            title={`${x.mat} ใช้ ${m} ×${x.qty} · นิยามไว้ในใบ ${sheetLabel(x.sheetId)}`}
+            style={{ ...btnSecondary, padding: '2px 9px', fontSize: 11, fontFamily: 'monospace' }}>
+            {x.mat} ↗
+          </button>
+        ))}
+      </div>
+    );
+  }, [bomIx, openSheetOfMat, sheetLabel]);
+
   /* 📄 เปิดใบนี้แล้วว่าง — "ลูกของพาร์ทนี้" ถูกกรอกไว้ในใบอื่นหรือเปล่า
      🔴 ต้องถามแยกจาก `items` — `items` = บรรทัดของ **ใบนี้** เท่านั้น ⇒ ว่าง ≠ ไม่มีลูก
      (เคสจริง 14/10: ใบ 20058495 ว่าง แต่ใบ FG 10086024 กรอกลูกของมันไว้แล้ว → จอบอก "ยังไม่มีพาร์ทย่อย" = โกหก) */
@@ -2455,7 +2481,8 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
                 <button type="button" onClick={() => setPartView(null)}
                   style={{ ...btnSecondary, padding: '3px 10px', fontSize: 11.5, marginLeft: 'auto' }}>✕ ปิดมุมมองนี้</button>
               </div>
-              <div style={{ fontSize: 11.5, color: 'var(--text2)', lineHeight: 1.7, marginBottom: 8 }}>
+              {parentsBar(partView.mat)}
+              <div style={{ fontSize: 11.5, color: 'var(--text2)', lineHeight: 1.7, margin: '8px 0' }}>
                 พาร์ทนี้<b>ยังไม่มีใบ BOM ของตัวเอง</b> — ลูกที่เห็นด้านล่างถูกกรอกไว้ในใบ <b>{sheetLabel(partView.sheetId)}</b>
                 <br />เพิ่ม/แก้ลูกของพาร์ทนี้ ต้องไปแก้ที่ใบนั้น · อยากให้มันมีใบของตัวเอง กด <b>“➕ เปิดใบ BOM ให้พาร์ทจากทะเบียน”</b> ทางซ้าย
                 {partView.sheets?.length > 1 && (
@@ -2489,6 +2516,7 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
                 <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>{selProduct.name}</div>
                 <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>{[selProduct.p_no && `P/No: ${selProduct.p_no}`, selProduct.mat_no && `Mat: ${selProduct.mat_no}`, selProduct.line_name, selProduct.customer].filter(Boolean).join(' · ')}</div>
                 {/* ↩ เส้นทางที่กดเข้ามาจากต้นไม้ (ใบ FG → ใบ sub-assembly) — ย้อนกลับได้ทีละชั้น */}
+                {selProduct.mat_no && parentsBar(selProduct.mat_no)}
                 {bomBack.length > 0 && (
                   <button type="button"
                     onClick={() => { const prev = bomBack[bomBack.length - 1];
