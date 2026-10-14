@@ -834,7 +834,10 @@ function PerEmployeeTab() {
     // mandatory scope: leader → ทั้งครอบครัวไลน์ตัวเอง (ตัวเอง + แม่ + ลูก — ห้ามกรอง line_id
     // ตรงตัว ไม่งั้นคนที่ผูกไลน์ลูกหายจากสายตาหัวหน้าที่ผูกไลน์แม่) · sections → เฉพาะใน scope
     (async () => {
-      let empQ = onlyShopfloorStaff(supabase.from('employees').select('id, name, employee_id_code, section, department, team').eq('is_active', true));
+      /* 👥 แท็บ "รายบุคคล" = **ประวัติการมาทำงานของคนคนนั้น** ⇒ ห้ามกรอง staff_kind (14/10)
+         ใครเช็คชื่อได้ ต้องเปิดดูเดือนของเขาได้ · กรอง = ช่าง/ธุรการที่เช็คชื่อทุกวัน
+         **เปิดดูประวัติตัวเองไม่ได้เลย** (วัด 14/10: Office PD4 6 คน เช็คชื่อ 28/28 วัน) */
+      let empQ = supabase.from('employees').select('id, name, employee_id_code, section, department, team, staff_kind').eq('is_active', true);
       if (role === 'leader' && userLineId) {
         const { data: ls } = await loadLinesRes();
         const fam = getLineFamilyIds(ls || [], Number(userLineId));
@@ -3941,8 +3944,11 @@ function AttendanceFormTab() {
     // Step 1: get employees matching current filters from employees table (server-side)
     // เลือกไลน์ = ทั้งครอบครัวไลน์ (หลัก↔ย่อย) — พนักงานอาจผูกกับไลน์หลักแต่ทำงานไลน์ย่อย หรือกลับกัน
     const familyIds = line ? [...getLineFamilyIds(lines, line)] : [];
-    let empQ = onlyShopfloorStaff(supabase.from('employees')
-      .select('id, name, employee_id_code, section, department, team, line_id'));
+    /* 👥 รายงาน OT รายบุคคล = **ชั่วโมง OT ของคนคนนั้น** ⇒ ห้ามกรอง staff_kind (14/10)
+       OT ของช่าง/ธุรการเป็น OT จริงที่ต้องจ่ายเงิน — กรอง = หายจากรายงานเงียบๆ
+       (แกน "กำลังคนของไลน์" ยังกรองอยู่ที่แท็บสกิล/กำลังคน) */
+    let empQ = supabase.from('employees')
+      .select('id, name, employee_id_code, section, department, team, line_id, staff_kind');
     // mandatory scope ก่อน (leader → ครอบครัวไลน์ตัวเอง แบบเดียวกับแท็บอื่น, sections → เฉพาะส่วนงานใน scope) แล้วค่อย filter อิสระทับ
     if (role === 'leader' && userLineId) {
       const leaderFam = [...getLineFamilyIds(lines, Number(userLineId) || userLineId)];

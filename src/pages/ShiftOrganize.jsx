@@ -2,7 +2,10 @@ import { useState, useEffect, useContext, useMemo } from 'react';
 import { orgValues, sortLike } from '../utils/listOrder';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { supabase } from '../supabaseClient';
-import { onlyShopfloorStaff } from '../utils/staffKind';   // 👥 นับคน = เฉพาะพนักงานหน้างาน (กฎ staffKind.js)
+/* 👥 จอนี้ = **จัดกะ** ไม่ใช่ "นับกำลังคน" ⇒ ห้ามกรอง staff_kind (14/10 · กฎ staffKind.js 2 แกน)
+   ช่าง/สายสนับสนุนก็เข้ากะ A/B/C เหมือนกัน — กรองออก = **คนกลุ่มนั้นไม่มีกะเงียบๆ**
+   ซึ่งเป็นบั๊กคลาสเดียวกับที่เพิ่งแก้ไป 13/10 (ไลน์ลูกไม่ตกทอดกะจากไลน์แม่) */
+import { staffGroupOf, STAFF_KINDS, STAFF_SHOPFLOOR } from '../utils/staffKind';
 import { UserContext } from '../App';
 import { can, canDelete } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
@@ -111,9 +114,9 @@ export default function ShiftOrganize() {
   };
 
   const fetchEmployees = async () => {
-    let q = onlyShopfloorStaff(supabase.from('employees')
-      .select('id, name, employee_id_code, line_id, team, section, department, production_lines(section)')
-      .eq('is_active', true));
+    let q = supabase.from('employees')
+      .select('id, name, employee_id_code, line_id, team, section, department, staff_kind, production_lines(section)')
+      .eq('is_active', true);
     // mandatory scope: leader → ทั้งครอบครัวไลน์ตัวเอง (ตัวเอง + แม่ + ลูก — ห้ามกรอง line_id ตรงตัว
     // ไม่งั้นพนักงานที่ผูกกับไลน์ลูกจะหายจากสายตาหัวหน้าที่ผูกกับไลน์แม่) ·
     // role ที่ถูกจำกัด sections → กรองหลัง join ด้วย inSectionScope
@@ -999,7 +1002,12 @@ export default function ShiftOrganize() {
               <div>
                 <label style={labelSt}>พนักงาน</label>
                 <SearchSelect value={String(ovrEmpId ?? '')} placeholder="ค้นหาพนักงาน (รหัส/ชื่อ)…"
-                  options={employees.map(emp => ({ id: String(emp.id), label: `${emp.employee_id_code} — ${emp.name}`, keywords: emp.employee_id_code }))}
+                  options={employees.map(emp => {
+                    /* 🔧🗂️ ติดป้ายกลุ่มให้คนที่ไม่ใช่หน้างาน — จอนี้เห็นครบทุกกลุ่มแล้ว (ไม่กรอง) ⇒ ต้องแยกออกด้วยตา */
+                    const g = staffGroupOf(emp);
+                    const tag = g === STAFF_SHOPFLOOR ? '' : ` · ${STAFF_KINDS.find(k => k.key === g)?.label || ''}`;
+                    return { id: String(emp.id), label: `${emp.employee_id_code} — ${emp.name}${tag}`, keywords: emp.employee_id_code };
+                  })}
                   onChange={({ id }) => setOvrEmpId(id)} />
               </div>
               <div>

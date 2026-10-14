@@ -181,6 +181,16 @@ function ManpowerTab({ employees, empById, lines, sectionsList, secFilter, setSe
     return true;
   }), [rows, empById, inScope, secFilter, shift]);
 
+  /* 🔴 กฎความซื่อสัตย์ของจอ — จอนี้นับ "กำลังคนของไลน์" ⇒ ช่าง/สายสนับสนุนถูกตัดออก
+     (ไม่อยู่ใน `empById` เพราะคิวรีแม่ครอบ onlyShopfloorStaff) · **ต้องเขียนบนจอว่าตัดไปเท่าไหร่**
+     ไม่งั้นคนอ่านเทียบกับใบเช็คชื่อ (ซึ่งเห็นครบทุกกลุ่มตั้งแต่ 14/10) แล้วตัวเลขไม่ตรง หาสาเหตุไม่ได้ */
+  const offLine = useMemo(() => {
+    const ids = new Set();
+    let n = 0;
+    rows.forEach(r => { if (!empById[r.employee_id]) { ids.add(r.employee_id); n++; } });
+    return { people: ids.size, logs: n };
+  }, [rows, empById]);
+
   const daily = useMemo(() => {
     const m = {};
     filteredRows.forEach(r => {
@@ -268,6 +278,11 @@ function ManpowerTab({ employees, empById, lines, sectionsList, secFilter, setSe
           </ResponsiveContainer>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>
             นับจากการเช็คชื่อรายวัน (daily_production_logs){shift !== 'all' && stdTotal == null ? ' · ยังไม่ตั้งกำลังคนมาตรฐานของขอบเขตนี้ (ตั้งที่ LineSetup)' : ''}
+            {offLine.people > 0 && (
+              <> · <span style={{ color: 'var(--amber)', fontWeight: 700 }}>
+                ไม่นับช่าง/สายสนับสนุน {offLine.people} คน ({offLine.logs} แถวเช็คชื่อ)
+              </span> — จอนี้นับกำลังคนของไลน์เท่านั้น (ใบเช็คชื่อเห็นครบทุกกลุ่ม)</>
+            )}
           </div>
         </div>
       )}

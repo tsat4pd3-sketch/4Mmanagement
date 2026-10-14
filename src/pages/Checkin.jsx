@@ -1,7 +1,13 @@
-import { useState, useEffect, useContext, useMemo } from 'react';
+import { useState, useEffect, useContext, useMemo, Fragment } from 'react';
 import { orgValues, sortLike } from '../utils/listOrder';
 import { supabase } from '../supabaseClient';
-import { onlyShopfloorStaff } from '../utils/staffKind';   // 👥 นับคน = เฉพาะพนักงานหน้างาน (กฎ staffKind.js)
+/* 👥 แกนคน 2 แกน (14/10) — "เช็คชื่อไหม" คนละคำถามกับ "นับกำลังคนไลน์ไหม" (กฎ staffKind.js)
+   · จอนี้ = **เช็คชื่อ** ⇒ แสดงครบทุกกลุ่ม แล้ว *แยกหัวข้อให้เห็น* ห้ามกรองใครทิ้ง
+   · `onlyShopfloorStaff` เหลือใช้ที่เดียว = ช่องยืมคนข้ามไลน์ (ยืมไป "ช่วยไลน์ผลิต") */
+import { onlyShopfloorStaff, staffGroupOf, STAFF_KINDS, STAFF_SHOPFLOOR } from '../utils/staffKind';
+
+/* ลำดับกลุ่มคน (หน้างาน → ช่าง → สนับสนุน) — ใช้ทั้งบนจอและในใบ export ให้ตรงกัน */
+const GROUP_ORDER = STAFF_KINDS.map(k => k.key);
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
@@ -248,7 +254,8 @@ export default function Checkin() {
       String(a.section || '').localeCompare(String(b.section || ''))
       || String(a.name || '').localeCompare(String(b.name || ''))));
 
-    let empQ = onlyShopfloorStaff(supabase.from('employees').select('*').eq('is_active', true)).order('employee_id_code');
+    // 🔴 ไม่กรอง staff_kind — จอเช็คชื่อต้องเห็นครบทุกกลุ่ม (แยกหัวข้อตอนวาดแทน · 14/10)
+    let empQ = supabase.from('employees').select('*').eq('is_active', true).order('employee_id_code');
     if (role === 'leader') {
       if (lineId) {
         const famIdsQ = getLineFamilyIds(lineData || [], Number(lineId));
@@ -905,7 +912,8 @@ export default function Checkin() {
       const days = [];
       for (let d = dayFrom; d <= dayTo; d++) days.push(d);
 
-      let empQ = onlyShopfloorStaff(supabase.from('employees').select('id, employee_id_code, name, position, line_id, section').eq('is_active', true)).order('employee_id_code');
+      // 🔴 ไม่กรอง staff_kind — ใบ export ต้องตรงกับรายชื่อที่เช็คชื่อบนจอ (14/10)
+      let empQ = supabase.from('employees').select('id, employee_id_code, name, position, line_id, section, staff_kind').eq('is_active', true).order('employee_id_code');
       // mandatory scope filter ก่อน แล้วค่อยกรองตามส่วนงานที่เลือกใน modal (pattern เดียวกับ fetchData)
       if (role === 'leader') {
         if (lineId) {   // ทั้งครอบครัวไลน์ (ตัวเอง + แม่ + ลูก) — ห้ามกรอง line_id ตรงตัว
@@ -926,6 +934,10 @@ export default function Checkin() {
       const lineIds = exportSection ? lines.filter(l => l.section === exportSection).map(l => l.id) : null;
       const scopedEmp = (empData || []).filter(e => !lineIds || lineIds.includes(e.line_id));
       if (!scopedEmp.length) { toast.error('ไม่พบพนักงานในส่วนงานนี้'); setExporting(false); return; }
+      /* 🔴 เรียงกลุ่มให้ตรงกับลำดับบนจอ (หน้างาน → ช่าง → สนับสนุน · 14/10)
+         คนกาช่องตามลำดับแถวที่เห็นบนจอ ⇒ กระดาษสลับลำดับ = กาผิดคน */
+      scopedEmp.sort((a, b) => GROUP_ORDER.indexOf(staffGroupOf(a)) - GROUP_ORDER.indexOf(staffGroupOf(b))
+        || String(a.employee_id_code || '').localeCompare(String(b.employee_id_code || '')));
 
       /* 🔴 ใบนี้ถูกพิมพ์ไปเซ็น (บันทึกการมาทำงาน / ชดเชย-OT ที่ register ใน doc_forms)
          ⇒ ข้อมูลขาด = ช่องวันเข้างานว่าง = อ่านว่า "ขาดงาน" ทั้งที่มาทำงานจริง (audit 2026-09-02)
@@ -1139,6 +1151,13 @@ export default function Checkin() {
     if (selSection) return sectionFamilyIds.has(el) || (!el && emp.section === selSection);
     return true;
   });
+  /* 🔴 เรียงตามกลุ่มคน (หน้างาน → ช่าง → สนับสนุน) เพื่อให้แทรกหัวข้อกลุ่มได้ (14/10)
+     ใช้ sort ที่เสถียร ⇒ ภายในกลุ่มยังเรียงตามรหัสพนักงานเหมือนเดิมทุกประการ
+     🔴 ห้ามเปลี่ยน "ใครอยู่ใน displayed" — ตัวแปรนี้คือรายชื่อที่ถูก **บันทึก** ด้วย (บรรทัด ~601) */
+  displayed.sort((a, b) => GROUP_ORDER.indexOf(staffGroupOf(a)) - GROUP_ORDER.indexOf(staffGroupOf(b)));
+  const groupCounts = displayed.reduce((m, e) => { const g = staffGroupOf(e); m[g] = (m[g] || 0) + 1; return m; }, {});
+  const nonLineCount = displayed.length - (groupCounts[STAFF_SHOPFLOOR] || 0);
+
   // คนที่โชว์อยู่แต่ยังไม่ผูกไลน์ — ต้องบอกบนจอว่าทำไมถึงขึ้นมา และจะหายเมื่อกรองรายไลน์
   const noLineCount = displayed.filter(e => !effLineIdOf(e)).length;
 
@@ -1471,15 +1490,30 @@ export default function Checkin() {
             </tr>
           </thead>
           <tbody>
-            {displayed.map(emp => {
+            {displayed.map((emp, di) => {
               const rec = attendance[emp.id];
               if (!rec) return null;
               const status = getRowStatus(rec);
               const meta   = STATUS_META[status] || STATUS_META.absent;
               const hasLeave = !!rec.leave_type;
+              /* 🔴 หัวข้อกลุ่มคน — ขึ้นเมื่อกลุ่มเปลี่ยน และ**เฉพาะตอนที่จอมีมากกว่า 1 กลุ่ม**
+                 (ไลน์ผลิตที่มีแต่คนหน้างาน = ไม่มีหัวข้อโผล่มากวน เหมือนเดิมเป๊ะ)
+                 ⚠️ ห้ามเปลี่ยนเป็น "ซ่อนกลุ่มอื่น" — คนที่ไม่ขึ้นจอ = เช็คชื่อไม่ได้ */
+              const grp = staffGroupOf(emp);
+              const newGroup = nonLineCount > 0 && (di === 0 || staffGroupOf(displayed[di - 1]) !== grp);
+              const gMeta = STAFF_KINDS.find(k => k.key === grp);
 
               return (
-                <tr key={emp.id} style={{ background: meta.bg }}>
+                <Fragment key={emp.id}>
+                {newGroup && (
+                  <tr>
+                    <td colSpan={99} style={{ background: 'var(--bg3)', padding: '6px 10px', fontSize: 12, fontWeight: 800, color: 'var(--text2)' }}>
+                      {gMeta?.label} <span style={{ fontWeight: 600, color: 'var(--muted)' }}>· {groupCounts[grp]} คน
+                        {grp !== STAFF_SHOPFLOOR && ' — เช็คชื่อได้ แต่ไม่ถูกนับเป็นกำลังคนของไลน์ผลิต'}</span>
+                    </td>
+                  </tr>
+                )}
+                <tr style={{ background: meta.bg }}>
                   {/* Employee */}
                   <td>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -1797,6 +1831,7 @@ export default function Checkin() {
                     </div>
                   </td>
                 </tr>
+                </Fragment>
               );
             })}
 

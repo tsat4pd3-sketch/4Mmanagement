@@ -138,3 +138,16 @@
 · 🛡️ ด่าน `daily-am-single-loader` ใน regressionGuards: DailyPM/FactoryMap ต้อง import `lib/dailyAmBoard` · ห้าม `from('inspections')`/`getShiftInfo` เอง
 · ⚠️ harness: `audit/mockSupabase.js` แถวที่ไม่มีใน `AM_TARGET` (ROWS โตเป็น 15 แถวจากกะ void 08/10) = target `is_active:false`
   — เดิม `AM_TARGET[i][0]` โยน TypeError ทำ DailyPM + FactoryMap ค้าง "กำลังโหลด..." ใน harness เงียบๆ
+
+## 🧊 มุมมอง 3D (2.5D) — ทดลอง (2026-10-14 · mockup ตามคำขอ user)
+
+ปุ่ม `🧊 3D` / `🗺️ 2D` ในแถบเครื่องมือผัง (ข้างปุ่มซ่อนแผงขวา) — **ค่าเริ่ม = 2D เหมือนเดิม** · จำต่อเครื่องใน `localStorage` `fm_view3d`
+- เอียงรูปผัง + กรอบไลน์ด้วย **CSS 3D transform ล้วน** (`MAP_3D_TRANSFORM` ใน `src/components/MapPillars3D.jsx`) — ไม่ใช้ WebGL/three.js
+  ⇒ ผ่าน Chromium 94 (จอ TV) · **ไม่ต้องมีโมเดลอาคาร/เครื่อง** ใช้กรอบที่ตีไว้แล้ว
+- แต่ละกรอบไลน์มี **เสาตั้งขึ้น** ที่ `labelAnchor()` · สี = หมวดสถานะของ metric เดิม (`CAT`) · ฝาเสากระพริบเฉพาะ `down`
+- **ความสูง = `pillarHeight()` (`src/utils/mapPillar.js` · มีเทส)** — metric OEE = %OEE · metric อื่น = ความรุนแรงของหมวด ·
+  🔴 OEE ไม่มีค่า = เสาเตี้ยสุด ห้ามเดาค่ากลาง · จอเขียนเสมอว่า "ความสูงเสา = อะไร" (`pillarLegend()`)
+- 🔴 **โหมด 3D ต้อง `overflow: visible` บนกรอบผัง** — `overflow:hidden` บังคับ flatten ลูกที่ `preserve-3d` (เสาแบนติดพื้น)
+- โหมดแก้ผัง (`editing`) บังคับ 2D เสมอ — ลาก/คลิกจุดต้องตรงพิกัด (`pctFromEvent` ใช้ rect ของกรอบ)
+- โหมด 3D **ไม่วาดป้ายการ์ด/เส้นโยงแบบ 2D** (ป้ายอยู่บนหัวเสาแทน · หมุนกลับให้หันเข้าจอ) · คลิกเสา = `openLine()` เหมือนคลิกกรอบ
+- ยังไม่ทำ: เสาของกรอบแม่อัตโนมัติ (hull) · การกันป้ายหัวเสาทับกัน · หมุน/ซูมมุมกล้อง
