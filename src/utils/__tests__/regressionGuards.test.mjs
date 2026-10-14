@@ -4368,6 +4368,21 @@ test('🛡️ die-set-two-mats — หาแม่พิมพ์ของพา
   const reg = stripComments(readFileSync(join(ROOT, 'src/pages/DieRegistry.jsx'), 'utf8'));
   if (!/mat_no_2/.test(reg)) bad.push('src/pages/DieRegistry.jsx (ไม่มีช่อง MAT ตัวที่ 2)');
 
+  /* 🔗 ปุ่ม "ตั้งคู่ให้เลย" = หน้าแม่พิมพ์ยืมมือเขียน dr_products ⇒ ต้องผ่านด่านครบเหมือน Product Master
+     ถอดด่านไหนออก: ข้ามไลน์ = คู่ผิด (เคสจริง GOR 297) · ไม่นับแถว = RLS ปฏิเสธแล้วขึ้น "สำเร็จ"
+     · เขียนทางเดียว = คู่ชี้ข้างเดียว = collapsePairShots ยุบไม่ครบ · ใช้สิทธิ์ผิดใบ = ใครก็แก้ทะเบียนสินค้าได้ */
+  if (/pair_mat_no/.test(reg)) {
+    if (!/pairBlockReason\s*\(/.test(reg)) bad.push('src/pages/DieRegistry.jsx (เขียน pair_mat_no โดยไม่ผ่าน pairBlockReason)');
+    if (!/checkWriteRows\s*\(/.test(reg)) bad.push('src/pages/DieRegistry.jsx (เขียน pair_mat_no โดยไม่นับแถว)');
+    if (!/can\(\s*'products'\s*,\s*'edit'/.test(reg)) bad.push("src/pages/DieRegistry.jsx (ตั้งคู่ต้องใช้สิทธิ์ products:edit ไม่ใช่ machines:edit)");
+    /* 2 ทาง = เขียน "ค่าจริง" 2 ครั้ง — ⚠️ ห้ามนับรวม `pair_mat_no: null` (= ปลดคู่เก่า ไม่ใช่การผูก)
+       นับรวมแล้วด่านจะหลวม: ถอดการผูกฝั่งหนึ่งออก ยอดก็ยังครบ 2 (เจอตอนยิงเทสด่านนี้เอง 14/10) */
+    /* ⚠️ lookahead ต้องอยู่ "ก่อน" \s* — เขียน `\s*(?!null)` จะถูก backtrack (\s* ยอมจับ 0 ตัว
+       แล้ว lookahead ไปมองที่ช่องว่าง = ผ่านเสมอ) ⇒ นับ `pair_mat_no: null` เข้ามาด้วย ด่านหลวมทันที */
+    const writes = (reg.match(/update\(\s*\{\s*pair_mat_no:(?!\s*null\b)/g) || []).length;
+    if (writes < 2) bad.push(`src/pages/DieRegistry.jsx (ผูกคู่ ${writes} ทาง — ต้อง 2 ทาง ไม่งั้นคู่ชี้ข้างเดียว)`);
+  }
+
   assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n'
     + '   ทำไม: gang die ปั๊มทีเดียวได้ RH+LH — ทะเบียนลงได้ 2 MAT (mat_no + mat_no_2)\n'
     + '         เทียบช่องแรกช่องเดียว = อีกฝั่งหาแม่พิมพ์ไม่เจอเงียบๆ\n'
