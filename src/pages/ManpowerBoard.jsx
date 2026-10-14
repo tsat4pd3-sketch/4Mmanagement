@@ -19,7 +19,7 @@ import { fetchAllPages, fetchByIds } from '../utils/fetchByIds';
 import { onlyShopfloorStaff } from '../utils/staffKind';
 import { inSectionScope } from '../utils/sectionScope';
 import { orgNodeCompare, orgKey } from '../utils/listOrder';
-import { loadPositions, positionLabel } from '../utils/positions';
+import { loadPositions, positionLabel, loadWorkingPositions, workingPositionOf, isActingPosition } from '../utils/positions';
 import { buildScheduleMaps, shiftFromTeam, scheduleTeamFor } from '../utils/shiftAssign';
 import { getWorkDate, addDaysStr } from '../utils/workDate';
 import { ALL } from '../utils/filterLabels';
@@ -81,16 +81,26 @@ export default function ManpowerBoard() {
     let alive = true;
     (async () => {
       // รอทะเบียนตำแหน่งก่อนจัดแถว — ไม่งั้นรอบแรกจัดด้วยค่า default แล้วไม่จัดใหม่ (memo ไม่รู้ว่า cache เปลี่ยน)
-      const [nRes, eRes, dRes] = await Promise.all([
+      const [nRes, eRes, dRes, , actingMap] = await Promise.all([
         supabase.from('org_nodes').select('id, kind, name, code, parent_id, ref_line_id, sort_order').eq('is_active', true),
         fetchAllPages(() => onlyShopfloorStaff(supabase.from('employees').select(EMP_COLS).eq('is_active', true))),
         supabase.from('skill_definitions').select('name, label, color, sort_order'),
         loadPositions(),
+        /* 🧭 ตำแหน่ง "ที่ปฏิบัติงานจริง" จากบัญชี — บอร์ดนี้ตอบว่า *วันนี้ใครทำหน้าที่อะไร*
+           จึงต้องจัดแถวด้วยงานที่ทำ ไม่ใช่ตำแหน่งที่บริษัทบรรจุ (คำสั่ง user 14/10)
+           🔴 เป็น **fallback** — มีบัญชีแค่ 45 จาก 220 คน · อ่านไม่ได้ = Map ว่าง = พฤติกรรมเดิมเป๊ะ */
+        loadWorkingPositions(),
       ]);
       if (!alive) return;
       const errs = [nRes.error?.message, eRes.error, dRes.error?.message].filter(Boolean);
       setNodes(nRes.data || []);
-      setEmployees(eRes.rows || []);
+      /* ทับเฉพาะ `position` ที่ใช้จัดแถว — เก็บของเดิมไว้ที่ `company_position` ให้การ์ดเขียนบอกได้
+         ⚠️ ค่าที่คำนวณตอนแสดงผลเท่านั้น **ห้ามเขียนกลับฐาน** (ดู utils/positions.js §ตำแหน่ง 2 ชั้น) */
+      setEmployees((eRes.rows || []).map((e) => {
+        const acting = actingMap?.get?.(e.id) ?? null;
+        return { ...e, position: workingPositionOf(e, acting),
+          company_position: e.position ?? null, acting: isActingPosition(e, acting) };
+      }));
       const sk = await fetchByIds((eRes.rows || []).map(e => e.id),
         (ids) => supabase.from('employee_skills').select('id, employee_id, skill_name, score, pending_level').in('employee_id', ids));
       if (!alive) return;

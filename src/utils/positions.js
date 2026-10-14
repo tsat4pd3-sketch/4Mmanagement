@@ -133,3 +133,37 @@ export const positionOptionsWith = (current) => {
 
 // ── legacy: ลิสต์ชื่อไทยล้วน (โค้ดเก่าที่ยังไม่ย้ายมาใช้ key) ──
 export const POSITION_OPTIONS = DEFAULT_POSITIONS.map(p => p.label_th)
+
+/* ══ 🧭 ตำแหน่ง 2 ชั้น — "ตามบริษัท" vs "ที่ปฏิบัติงานจริง" ════════════  2026-10-14 · คำสั่ง user
+   > *"ตำแหน่งจริงที่เค้าเป็นอยู่กับบริษัทคือตามฐานพนักงาน
+   >   แต่ตำแหน่งงานและงานที่ตัวเค้าทำ คือทำในตำแหน่งตรงกับบัญชี"*
+
+   · `employees.position` = **ตำแหน่งตามบริษัท** (HR บรรจุ) — มีครบทุกคน
+   · `profiles.position`  = **ตำแหน่งที่ปฏิบัติงานจริง** — มีเฉพาะคนที่มีบัญชีใช้แอป
+
+   🔴 **ต้องเป็น fallback ห้ามสลับขาดตัว** — วัด 14/10: พนักงาน active 220 คน **มีบัญชีแค่ 45**
+      ⇒ อ่าน `profiles.position` อย่างเดียว = อีก 175 คนไม่มีค่า แล้ว `rowOfPosition(null)` ตกไป
+      แถวพนักงานฝ่ายผลิตหมด — ในนั้น **34 คนไม่ใช่ operator** (หัวหน้าไลน์/ช่าง) = ผิดแถวทันที
+   ⇒ `workingPositionOf()` = บัญชีชนะ **เมื่อมีค่า** · ไม่มีบัญชี/ไม่ได้กรอก = ตำแหน่งตามบริษัทตามเดิม
+      (กติกาเดียวกับ `emp.<f> ?? profile.<f>` ของ ทีม/ไลน์/ส่วนงาน ใน `App.jsx` — แค่กลับทิศ)
+   ⚠️ **ห้ามเอาไปเขียนทับคอลัมน์ใดในฐาน** — เป็นค่าที่คำนวณตอนแสดงผลเท่านั้น
+   ══════════════════════════════════════════════════════════════════════════════════════ */
+
+/** ตำแหน่งที่ปฏิบัติงานจริงของคนนี้ — `acting` (จากบัญชี) ชนะเมื่อมีค่า · ไม่มี = ตำแหน่งตามบริษัท */
+export const workingPositionOf = (employee, acting) =>
+  (acting != null && String(acting) !== '' ? acting : (employee?.position ?? null))
+
+/** ทำงานคนละตำแหน่งกับที่บริษัทบรรจุไหม (ไว้ติดป้ายบนจอ) — ไม่รู้ฝั่งใดฝั่งหนึ่ง = ไม่ใช่ */
+export const isActingPosition = (employee, acting) =>
+  !!acting && !!employee?.position && String(acting) !== String(employee.position)
+
+/** แผนที่ `employee_id → ตำแหน่งที่ปฏิบัติงาน` จาก `profiles` (บัญชีที่ผูกพนักงานแล้วเท่านั้น)
+ *  🔴 อ่านไม่ได้ = คืน Map ว่าง ⇒ ทุกจอถอยไปใช้ตำแหน่งตามบริษัท (พฤติกรรมเดิมเป๊ะ ไม่ใช่จอว่าง) */
+export async function loadWorkingPositions() {
+  try {
+    const { data, error } = await supabase.from('profiles')
+      .select('employee_id, position').not('employee_id', 'is', null)
+    if (error) return new Map()
+    return new Map((data || []).filter(r => r.position).map(r => [r.employee_id, r.position]))
+  } catch { return new Map() }
+}
