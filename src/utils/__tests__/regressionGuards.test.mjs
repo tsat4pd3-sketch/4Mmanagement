@@ -4413,3 +4413,38 @@ test('🛡️ die-set-two-mats — หาแม่พิมพ์ของพา
     + '   แก้: dieMakesMat(set, mat) / dieSetMats(set) จาก src/utils/dieSetMats.js\n'
     + '   ⚠️ "ใครคู่กับใคร" ยังเป็นของ Product Master (pair_mat_no) — จอแม่พิมพ์เตือนได้ ห้ามเขียนทับ\n');
 });
+
+/* ═══ 🔒 ลบข้ามทีมไม่ได้ — ทะเบียนของช่างต้องมีด่าน "เจ้าของทีม" (คำสั่ง user 2026-10-14) ═══
+   ที่มา: หัวหน้าแผนกผลิตถูกตั้งเป็น `is_dept_admin` เพื่อให้เพิ่มอะไหล่เองได้
+          bucket dept_admin ถือ `mtn_repair:delete` ติดมาด้วย ⇒ ลบอะไหล่ของทีม MTN/DIE ได้
+          user: *"ให้เพิ่มได้ แต่จะลบมั่วไม่ได้ … เห็นข้ามกันหมด แต่ลบข้ามกันไม่ได้"*
+   ด่านนี้จับ "ปุ่มลบหลุดกลับไปเช็คแค่สิทธิ์" ซึ่งเป็นการถอยที่มองไม่เห็นจากหน้าจอ
+   (ฝั่ง DR เป็น anon ไม่มี RLS ช่วย ⇒ ด่านหน้าจอคือด่านเดียวที่มี) */
+test('🔒 คลังอะไหล่ — ปุ่มแก้/ลบต้องผ่านด่านเจ้าของทีม (teamRowOwner) ไม่ใช่ด่านสิทธิ์ล้วน', () => {
+  const bad = [];
+  const sp = stripComments(readFileSync(join(ROOT, 'src/components/SparePartMaster.jsx'), 'utf8'));
+
+  if (!/teamRowOwner\s*\(/.test(sp)) bad.push('src/components/SparePartMaster.jsx (ไม่ได้เรียก teamRowOwner)');
+  /* ปุ่มลบต้องผูกกับตัวที่รวม 2 ด่านแล้ว — เขียน canDelete(...) ลอยๆ = ลบข้ามทีมได้ทันที */
+  if (/<DeleteButton[^>]*/.test(sp) && !/mayDeleteRow\s*\(/.test(sp))
+    bad.push('src/components/SparePartMaster.jsx (ปุ่มลบไม่ได้ผ่าน mayDeleteRow)');
+  /* ซ่อนปุ่มอย่างเดียวไม่พอ — ตัวเขียนจริงต้องกันซ้ำ (fail-closed) */
+  const del = sp.slice(sp.indexOf('const doDelete'), sp.indexOf('const doDelete') + 900);
+  if (!/mayDeleteRow\s*\(/.test(del)) bad.push('src/components/SparePartMaster.jsx (doDelete ไม่มีด่านซ้ำ)');
+  /* soft delete ผ่าน update ⇒ RLS ปฏิเสธ = 0 แถว ไม่มี error (กฎเหล็ก DB ข้อ 2) */
+  if (!/checkWriteRows\s*\(/.test(del)) bad.push('src/components/SparePartMaster.jsx (doDelete ไม่ได้นับแถว)');
+
+  /* กฎต้องมีที่เดียว — หน้าไหนก๊อปเงื่อนไขไปเขียนเองแปลว่าจะ drift */
+  const mr = stripComments(readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8'));
+  if (/canEditRow\s*=/.test(mr) && !/teamRowOwner\s*\(/.test(mr))
+    bad.push('src/pages/MtnRepair.jsx (canEditRow เขียนเงื่อนไขเอง ไม่ผ่าน teamRowOwner)');
+
+  /* fallback ที่ห้ามหาย — ยังไม่ตั้งทีม = ไม่ล็อก ไม่งั้นช่างทำอะไรไม่ได้ทั้งระบบวันที่ deploy */
+  const own = readFileSync(join(ROOT, 'src/utils/mtnTeamOwn.js'), 'utf8');
+  if (!/code:\s*'unscoped'/.test(own)) bad.push("src/utils/mtnTeamOwn.js (ถอด fallback 'unscoped' ออก)");
+
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n'
+    + '   ทำไม: dept_admin/mtn ถือคีย์ลบ ⇒ ด่านสิทธิ์ผ่านหมด แต่ต้องลบได้เฉพาะของทีมตัวเอง\n'
+    + '   แก้: teamRowOwner(row, { myTeams, role }) จาก src/utils/mtnTeams.js\n'
+    + '        (ตรรกะจริง src/utils/mtnTeamOwn.js · แถวทีมอื่น = เห็นได้ แต่ต้องขึ้น 🔒 บอกเหตุผล ห้ามซ่อนเงียบ)\n');
+});

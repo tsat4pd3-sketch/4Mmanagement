@@ -14,7 +14,7 @@ import { supabaseDR } from '../supabaseClient';
 import { toast } from './Toast';
 import { can, canDelete } from '../utils/permissions';
 import { pmTeamsSync } from '../utils/pmTeams';
-import { teamKeyOf, filterByTeam } from '../utils/mtnTeams';
+import { teamKeyOf, filterByTeam, teamRowOwner, teamRowLockNote } from '../utils/mtnTeams';
 import { loadSpareSections, spareSectionsSync, sectionOptions, inSectionScope, sectionLabel, sectionKeyOf, guessSectionFromCode, COMMON_SECTION_LABEL } from '../utils/spareSection';
 import { docFormSync, fullCode, withDocFoot } from '../utils/docForms';
 import { xlsxDocName } from '../utils/csvDoc';
@@ -22,7 +22,7 @@ import { computeSpareRank, safetyStockIssue, stockState, RANK_META, RANK_RULE, m
 import ImageCropModal from './ImageCropModal';
 import { parseSpareSheet, matchExisting, TEMPLATE_HEADERS } from '../utils/spareImport';
 import { pickUnusedColor } from '../utils/colorPick';
-import { checkWrite } from '../utils/dbWrite';
+import { checkWrite, checkWriteRows } from '../utils/dbWrite';
 // picker กลาง (single-source audit 2026-09-07) — ชั้นวางจากผังคลัง (mtn_rack_cells) · เครื่องจากทะเบียน
 import SearchSelect from './SearchSelect';
 import FilterBar from './FilterBar';
@@ -98,6 +98,17 @@ export default function SparePartMaster({ parts = [], reload, fullName, role, my
 
   const canEdit = can('mtn_repair', 'manage_master', role);
   const canMove = can('mtn_repair', 'service', role) || canEdit;
+  /* 🔒 ด่าน "เจ้าของทีม" รายแถว (คำสั่ง user 2026-10-14) — ต่างจาก canEdit/canDelete ที่เป็นด่าน "สิทธิ์"
+     ที่มา: หัวหน้าแผนกผลิตกำลังถูกตั้งเป็น dept_admin เพื่อให้เพิ่มอะไหล่เองได้
+            แต่ bucket นั้นถือ `mtn_repair:delete` ติดมาด้วย ⇒ ลบของทีมอื่นได้
+            user: *"ให้เพิ่มได้ แต่จะลบมั่วไม่ได้ … เห็นข้ามกันหมด แต่ลบข้ามกันไม่ได้"*
+     ⇒ **เห็นทุกทีมเหมือนเดิม** (ตั้งใจ — ช่างต้องค้นของข้ามทีมได้) แต่ ✏️/🗑 เฉพาะของทีมตัวเอง
+     กฎเดียวกับทะเบียนข้อมูลหลักใน `/mtn-repair?tab=master` เป๊ะ (`utils/mtnTeamOwn.js`) */
+  const ownOf = useCallback((p) => teamRowOwner(p, { myTeams, role }), [myTeams, role]);
+  /* ทีมตั้งต้นตอน "เพิ่มอะไหล่" = ทีมของ user ถ้าสังกัดทีมเดียว · ไม่งั้นใช้ทีมที่กรองอยู่
+     (เดิม default เป็น 'maintenance' เสมอ ⇒ หัวหน้าผลิตเพิ่มของแล้วไปโผล่คลัง MTN เงียบๆ) */
+  const defTeam = (myTeams.length === 1 ? teamKeyOf(myTeams[0]) : '') || fTeam || 'maintenance';
+  const mayDeleteRow = (p) => canDelete('mtn_repair', 'manage_master', role) && ownOf(p).ok;
   const teams = pmTeamsSync();
 
   // default ทีม = ทีมของ user ถ้าสังกัดทีมเดียว (เห็นคลังตัวเองก่อน) — เปลี่ยนเป็น "ทุกทีม" ได้
@@ -208,9 +219,12 @@ export default function SparePartMaster({ parts = [], reload, fullName, role, my
   }, [rows, q, fTeam, fSection, fCat, fRank, fState]);
 
   const doDelete = async (p) => {
+    // ด่านซ้ำอีกชั้น — ซ่อนปุ่มอย่างเดียวไม่พอ (ฝั่ง DR เป็น anon ไม่มีด่าน server · known gap)
+    if (!mayDeleteRow(p)) return toast.error(teamRowLockNote(p));
     if (!confirm(`ลบอะไหล่ "${p.name}" ออกจากคลัง?\n(ประวัติการเบิก-รับยังอยู่ ไม่ถูกลบ)`)) return;
-    const { error } = await supabaseDR.from('mtn_spare_parts').update({ is_active: false }).eq('id', p.id);
-    if (error) return toast.error(error.message);
+    // ลบ = soft delete ⇒ RLS ปฏิเสธ UPDATE = "สำเร็จ 0 แถว ไม่มี error" ⇒ ต้องนับแถว (กฎเหล็ก DB ข้อ 2)
+    const res = await supabaseDR.from('mtn_spare_parts').update({ is_active: false }).eq('id', p.id).select('id');
+    if (!checkWriteRows(res, 'ลบอะไหล่')) return;
     toast.success('ลบแล้ว'); reloadAll();
   };
 
@@ -405,8 +419,11 @@ export default function SparePartMaster({ parts = [], reload, fullName, role, my
                       <button className="tbtn" onClick={() => setMovePart({ part: p, type: 'adjust' })} title="ปรับยอด (นับจริง)" style={{ ...btnGhost, padding: '5px 9px', fontSize: 12, marginLeft: 4 }}>⚖</button>
                     </>}
                     <button className="tbtn" onClick={() => setHistPart(p)} title="ประวัติเคลื่อนไหว" style={{ ...btnGhost, padding: '5px 9px', fontSize: 12, marginLeft: 4 }}>📜</button>
-                    {canEdit && <button className="tbtn" onClick={() => setEditPart(p)} title="แก้ไข" style={{ ...btnGhost, padding: '5px 9px', fontSize: 12, marginLeft: 4 }}>✏️</button>}
-                    {canDelete('mtn_repair', 'manage_master', role) && <DeleteButton style={{ marginLeft: 4 }} onClick={() => doDelete(p)} title="ลบ" />}
+                    {canEdit && (ownOf(p).ok
+                      ? <button className="tbtn" onClick={() => setEditPart(p)} title="แก้ไข" style={{ ...btnGhost, padding: '5px 9px', fontSize: 12, marginLeft: 4 }}>✏️</button>
+                      /* ห้ามซ่อนเงียบ — ต้องบอกว่าทำไมกดไม่ได้ (กฎความซื่อสัตย์ของจอ) */
+                      : <span title={teamRowLockNote(p)} style={{ marginLeft: 6, fontSize: 12, color: 'var(--muted)', cursor: 'help' }}>🔒</span>)}
+                    {mayDeleteRow(p) && <DeleteButton style={{ marginLeft: 4 }} onClick={() => doDelete(p)} title="ลบ" />}
                   </td>
                 </tr>
               );
@@ -430,7 +447,7 @@ export default function SparePartMaster({ parts = [], reload, fullName, role, my
       {movePart && <StockMoveModal {...movePart} fullName={fullName} onClose={() => setMovePart(null)} onDone={reloadAll} />}
       {histPart && <HistoryModal part={histPart} usageRows={usage[histPart.id] || []} onClose={() => setHistPart(null)} />}
       {editPart && <PartEditModal part={editPart === 'new' ? null : editPart} cats={cats} teams={teams} shelfOpts={shelfOpts} rackCells={rackCells}
-        secOpts={secOpts} orgSecs={orgSecs} defSection={fSection || mySection}
+        secOpts={secOpts} orgSecs={orgSecs} defSection={fSection || mySection} defTeam={defTeam}
         usageRows={editPart === 'new' ? [] : (usage[editPart.id] || [])} count={parts.length}
         onClose={() => setEditPart(null)} onSaved={reloadAll} />}
       {showCats && <CategoryModal cats={cats} teams={teams} onClose={() => setShowCats(false)} onSaved={loadAux} />}
@@ -511,11 +528,11 @@ function StockMoveModal({ part, type, fullName, onClose, onDone }) {
 /* ══════════════════════════════════════════════════════════════════════════
    เพิ่ม / แก้ไขอะไหล่ (FM-JIG-009)
    ══════════════════════════════════════════════════════════════════════════ */
-function PartEditModal({ part, cats, teams, shelfOpts, rackCells = [], secOpts = [], orgSecs = [], defSection = '', usageRows, count, onClose, onSaved }) {
+function PartEditModal({ part, cats, teams, shelfOpts, rackCells = [], secOpts = [], orgSecs = [], defSection = '', defTeam = '', usageRows, count, onClose, onSaved }) {
   const isNew = !part;
   const [f, setF] = useState(() => ({
     code: part?.code || '', name: part?.name || '', unit: part?.unit || 'ชิ้น',
-    team: part?.team || 'maintenance', mat_no: part?.mat_no || '', part_no: part?.part_no || '',
+    team: part?.team || defTeam || 'maintenance', mat_no: part?.mat_no || '', part_no: part?.part_no || '',
     // หน่วยงานเจ้าของ — ของใหม่ตั้งต้นจากหน่วยงานที่กำลังกรอง/ของผู้ใช้เอง · ว่าง = ของกลาง
     section: part?.section || (part ? '' : sectionKeyOf(defSection)),
     supplier: part?.supplier || '', category: part?.category || '', shelf: part?.shelf || '',
