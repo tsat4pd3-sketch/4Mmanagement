@@ -20,6 +20,8 @@ import { can, canDelete, isActionSeeded, isSharedAccount } from '../utils/permis
 import { MO_STATUS_META as STATUS_META, QA_NOT_RELATED, QA_RELATED, QA_SKIP_REASON_STEP4, canBounceBack, canDoStep, canHandoff, canSignMtnApproval, canSkipQa, isMoOpen, isOrderReporter, isQaSkipped, isWaitingQa, lastStep, orderReporterText, nextStepOf, moQaState, mtnCloseStage, moStatusLabel, moStatusMeta, orderInReporterScope, stageOf, stepDenyHint, stepLabel, stepMeta, moWaitMeta, actorSideOf, stepAssumptions, assumptionHint } from '../utils/mtnStepPerm';
 import { positionRank } from '../utils/positions';
 import { findOpenOnMachine, dupLevel } from '../utils/mtnDuplicate';
+/* 🔢 เลข MO ออกยังไง — ต้องตรงกับ RPC `mtn_assign_mo_no` เป๊ะ (14/10 · ห้ามเดารูปแบบเองในหน้า) */
+import { moCodeOf, moFormatHint, moNoOf, moSeqKeyOf } from '../utils/moNumber';
 /* ⏳ ใบค้างขั้นเดิม — สูตร "ค้างกี่วัน/ขั้นไหน" อยู่ที่นี่ที่เดียว ห้ามนับวันในหน้า (13/10) */
 import { buildMoStaleBoard } from '../utils/mtnStale';
 import { inSectionScope } from '../utils/sectionScope';
@@ -3527,7 +3529,6 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
   // ── เลขรัน MO ต่อทีม (ตั้งรหัสทีม + เลขเริ่มต้น เพื่อต่อจากระบบเดิม) ──
   const [moRows, setMoRows] = useState([]);
   const [moErr, setMoErr] = useState(false);
-  const ymdToday = (() => { const p = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Bangkok', day: '2-digit', month: '2-digit', year: '2-digit' }).formatToParts(new Date()); const g = t => p.find(x => x.type === t).value; return `${g('day')}${g('month')}${g('year')}`; })();
   const loadMoSeq = async () => {
     try {
       const [{ data: teams, error: e1 }, { data: seqs }] = await Promise.all([
@@ -3535,27 +3536,65 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
         supabaseDR.from('mtn_mo_seq').select('team_code, last_seq'),
       ]);
       if (e1) throw e1;
+      /* 🔴 อ่านด้วย **คีย์จริงของทีมนั้น** ไม่ใช่ `mo_code` ดิบ — ทีมที่ใช้เลขรีเซ็ตรายเดือน
+         เก็บตัวนับไว้ที่ `MTN:202610` ⇒ อ่าน `MTN` เฉยๆ ได้ 0 เสมอ แล้วจอก็โกหกว่าใบถัดไปคือ 0001
+         (เกิดจริง 13/10 — ช่างถามว่า "จะ Skip เลขต้องกรอกตรงไหน" เพราะช่องที่มีกรอกแล้วไม่มีผล) */
       const byCode = {}; (seqs || []).forEach(s => { byCode[s.team_code] = s.last_seq; });
-      setMoRows((teams || []).map(t => ({ ...t, last_seq: byCode[t.mo_code] ?? 0 }))); setMoErr(false);
+      const at = Date.now();
+      setMoRows((teams || []).map(t => {
+        const seqKey = moSeqKeyOf(t, at);
+        return { ...t, seqKey, last_seq: (seqKey ? byCode[seqKey] : null) ?? 0, hint: moFormatHint(t) };
+      })); setMoErr(false);
     } catch { setMoErr(true); }
   };
   useEffect(() => { if (sub === 'mo') loadMoSeq(); }, [sub]); // eslint-disable-line react-hooks/exhaustive-deps
-  const saveMoCode = async (t, code) => { const c = (code || '').trim().toUpperCase(); if (!c) return; const { error } = await supabaseDR.from('mtn_teams').update({ mo_code: c }).eq('id', t.id); if (error) return toast.error(error.message); toast.success('บันทึกรหัสทีมแล้ว'); loadMoSeq(); };
-  const saveMoSeq = async (code, val) => { const n = Math.max(0, parseInt(val, 10) || 0); const { error } = await supabaseDR.from('mtn_mo_seq').upsert({ team_code: code, last_seq: n, updated_at: new Date().toISOString() }, { onConflict: 'team_code' }); if (error) return toast.error(error.message); toast.success('บันทึกเลขล่าสุดแล้ว'); loadMoSeq(); };
+  /* 🔴 เปลี่ยนรหัสทีม = เปลี่ยน**ตัวนับ** (คีย์ของ mtn_mo_seq ผูกกับรหัส) ⇒ เลขรีสตาร์ทจาก 1
+     ทั้งที่ออกไปแล้วเป็นร้อยใบ และไปซ้ำกับเลขเก่า — ต้องยืนยันก่อนเสมอ (เคสจริง: production
+     ทะเบียนเป็น PRD แต่ของจริงออก PRO มา 708 ใบ · 14/10) */
+  const saveMoCode = async (t, code) => {
+    const c = (code || '').trim().toUpperCase(); if (!c || c === (t.mo_code || '')) return;
+    if (!window.confirm(`เปลี่ยนรหัสทีม ${t.dept_name}: ${t.mo_code || '(ว่าง)'} → ${c}\n\n`
+      + `⚠️ ตัวนับเลขรันผูกกับรหัส — เปลี่ยนแล้วเลขจะ**เริ่มใหม่จาก 1** (ตอนนี้อยู่ที่ ${t.last_seq})\n`
+      + 'และเลขใหม่อาจซ้ำกับใบเก่าที่ออกไปแล้ว · ยืนยันหรือไม่?')) { loadMoSeq(); return; }
+    const { error } = await supabaseDR.from('mtn_teams').update({ mo_code: c }).eq('id', t.id);
+    if (error) return toast.error(error.message);
+    toast.success('บันทึกรหัสทีมแล้ว'); loadMoSeq();
+  };
+  /* เขียนลง **คีย์จริง** (`t.seqKey`) ไม่ใช่ `mo_code` ดิบ — ไม่งั้นทีมรายเดือนกรอกแล้วไม่มีผล */
+  const saveMoSeq = async (t, val) => {
+    if (!t.seqKey) return toast.error('ยังตัดสินคีย์ตัวนับของทีมนี้ไม่ได้ (อ่านเวลาไม่ออก) — ยังไม่บันทึก');
+    const n = Math.max(0, parseInt(val, 10) || 0);
+    const { error } = await supabaseDR.from('mtn_mo_seq').upsert({ team_code: t.seqKey, last_seq: n, updated_at: new Date().toISOString() }, { onConflict: 'team_code' });
+    if (error) return toast.error(error.message);
+    toast.success('บันทึกเลขล่าสุดแล้ว'); loadMoSeq();
+  };
   const MoSeqList = () => (
     <div>
       <div style={{ fontSize: 12.5, color: 'var(--muted)', marginBottom: 12, lineHeight: 1.7 }}>
-        เลข MO ออกตอน <b>รับงาน (ขั้น 2)</b> รูปแบบ <code>รหัสทีม-ประเภท-วันเดือนปี-เลขรัน</code> เช่น <b style={{ color: 'var(--accent)' }}>MTN-BM-{ymdToday}-0678</b><br />
-        เลขรัน<b>นับต่อเนื่องต่อทีม</b> (ไม่รีเซ็ตรายวัน) · ตั้ง "เลขล่าสุด" เพื่อ<b>ต่อจากระบบเดิม</b> — เช่น MTN เคยออกถึง 677 → ใส่ <b>677</b> ใบถัดไปจะเป็น 0678
+        เลข MO ออกตอน <b>รับงาน (ขั้น 2)</b> — ระบบออกให้ที่เดียว <b>ไม่ต้องจด/จองเลขเอง</b><br />
+        <b>แต่ละทีมใช้คนละรูปแบบ</b> ตามฟอร์มกระดาษของทีมนั้น (ดูเลขถัดไปจริงของแต่ละทีมด้านล่าง)
+        · ตั้ง "เลขล่าสุด" เพื่อ<b>ต่อจากระบบเดิม</b> — ใส่เลขที่ออกไปแล้วล่าสุด ใบถัดไปจะนับต่อจากนั้น
       </div>
       {moErr ? <div style={{ color: 'var(--muted)', padding: 16, background: 'var(--bg2)', borderRadius: 8 }}>⚠️ ยังไม่ได้ apply migration เลข MO ต่อทีม (<code>20260724_mtn_mo_per_team.sql</code>) — apply ก่อนถึงจะตั้งค่าได้</div> :
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {moRows.map(t => (
             <div key={t.id} style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px' }}>
-              <b style={{ flex: '1 1 120px', fontSize: 13 }}>{t.dept_name}</b>
-              <label style={{ fontSize: 11.5, color: 'var(--muted)' }}>รหัส <input defaultValue={t.mo_code || ''} onBlur={e => e.target.value.trim().toUpperCase() !== (t.mo_code || '') && saveMoCode(t, e.target.value)} style={{ ...inp, width: 74, marginLeft: 4, textTransform: 'uppercase', fontWeight: 700 }} /></label>
-              <label style={{ fontSize: 11.5, color: 'var(--muted)' }}>เลขล่าสุด <input type="number" min="0" defaultValue={t.last_seq} onBlur={e => Number(e.target.value) !== t.last_seq && saveMoSeq(t.mo_code, e.target.value)} style={{ ...inp, width: 96, marginLeft: 4 }} /></label>
-              <span style={{ fontSize: 11.5, color: 'var(--accent)' }}>ถัดไป: {t.mo_code}-BM-{ymdToday}-{String((t.last_seq || 0) + 1).padStart(4, '0')}</span>
+              <div style={{ flex: '1 1 150px', minWidth: 0 }}>
+                <b style={{ fontSize: 13 }}>{t.dept_name}</b>
+                {/* รูปแบบของทีมนี้มาจาก moFormatHint() — ห้ามพิมพ์รูปแบบซ้ำในหน้า */}
+                <div style={{ fontSize: 11, color: 'var(--muted)' }}>{t.hint?.title} · {t.hint?.detail}</div>
+              </div>
+              <label style={{ fontSize: 11.5, color: 'var(--muted)' }}>รหัส <input defaultValue={t.mo_code || ''} onBlur={e => saveMoCode(t, e.target.value)} style={{ ...inp, width: 74, marginLeft: 4, textTransform: 'uppercase', fontWeight: 700 }} /></label>
+              <label style={{ fontSize: 11.5, color: 'var(--muted)' }}>เลขล่าสุด <input type="number" min="0" defaultValue={t.last_seq} onBlur={e => Number(e.target.value) !== t.last_seq && saveMoSeq(t, e.target.value)} style={{ ...inp, width: 96, marginLeft: 4 }} /></label>
+              {/* 🔴 เลขถัดไปคำนวณจาก moNoOf() ตัวเดียวกับที่ mirror RPC — คืน null = ตัดสินไม่ได้ ห้ามเดา */}
+              {(() => {
+                const next = moNoOf(t, (t.last_seq || 0) + 1, { at: Date.now() });
+                return next
+                  ? <span style={{ fontSize: 11.5, color: 'var(--accent)' }}>ถัดไป: <b>{next}</b></span>
+                  : <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>⚠️ ตัดสินเลขถัดไปไม่ได้</span>;
+              })()}
+              {/* คีย์ตัวนับจริง — ไว้สอบกลับว่าช่องนี้ไปเขียนที่ไหน (ทีมรายเดือนคนละคีย์ทุกเดือน) */}
+              <span style={{ fontSize: 11, color: 'var(--muted)' }}>ตัวนับ: <code>{t.seqKey || '—'}</code></span>
             </div>
           ))}
           {!moRows.length && <div style={{ color: 'var(--muted)' }}>ยังไม่มีทีมในตาราง mtn_teams</div>}

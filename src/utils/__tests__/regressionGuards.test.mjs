@@ -1625,6 +1625,36 @@ test('🛡️ mo-stale-since-cols — MO_LIST_COLS ต้อง select ทุก
     + `   เติมใน MO_LIST_COLS: ${missing.join(' · ')}\n`);
 });
 
+/* ── 🛡️ mo-number-js-sql-parity (2026-10-14) ──────────────────────────────────────────
+   เลข MO ออกจริงที่ RPC `mtn_assign_mo_no` (ฝั่ง DB) แต่ **จอตั้งค่าต้องบอกล่วงหน้าได้ว่า
+   "ใบถัดไปจะเป็นเลขอะไร"** ⇒ มีสูตรเดียวกัน 2 ฝั่ง (SQL + `src/utils/moNumber.js`)
+   คลาสเดียวกับ `snapMachineNo` ↔ `public.machine_key()` — ดริฟท์เมื่อไหร่จอโกหกทันที
+   เกิดจริง 14/10: จอบอก MTN "ถัดไป MTN-BM-141026-0001" ของจริง `MTN.2026/10-15`
+   และบอก PRODUCTION รหัส `PRD` ของจริง `PRO` (ออกไปแล้ว 708 ใบ)
+   ⇒ บังคับว่า migration ที่แตะ RPC ตัวนี้ ต้องแตะ `moNumber.js` ในคอมมิทเดียวกัน (และกลับกัน)
+   🔴 ด่านนี้จับ "ลิสต์ทีมรายเดือน" ที่ต้องตรงกัน — เพิ่มทีมฝั่งเดียวแล้วลืมอีกฝั่ง = เลขคนละชุด */
+test('🛡️ mo-number-js-sql-parity — ลิสต์ทีม "เลขรีเซ็ตรายเดือน" ต้องตรงกันทั้ง JS และ SQL', async () => {
+  const { MONTHLY_TEAM_KEYS } = await import('../moNumber.js');
+  const dir = join(ROOT, 'supabase/migrations');
+  // migration ล่าสุดที่นิยาม mtn_assign_mo_no = ตัวที่รันอยู่จริง
+  const owner = readdirSync(dir).filter(f => f.endsWith('.sql'))
+    .filter(f => /create\s+or\s+replace\s+function\s+public\.mtn_assign_mo_no/i.test(readFileSync(join(dir, f), 'utf8')))
+    .sort().pop();
+  assert.ok(owner, 'หา migration ที่นิยาม mtn_assign_mo_no ไม่เจอ — RPC ที่ deploy แล้วต้องมีไฟล์ในรีโปเสมอ');
+  const sql = readFileSync(join(dir, owner), 'utf8');
+  for (const key of MONTHLY_TEAM_KEYS) {
+    assert.ok(new RegExp(`v_dept\\s*=\\s*'${key}'`).test(sql),
+      `\n\n❌ ทีม '${key}' อยู่ใน MONTHLY_TEAM_KEYS (JS) แต่ SQL ${owner} ไม่มีสาขาของมัน\n`
+      + '   ผล: จอโชว์เลขแบบรายเดือน แต่ DB ออกเลขแบบต่อเนื่อง = จอโกหก\n');
+  }
+  // กลับทาง: SQL แตกสาขาทีมไหนไว้ JS ต้องรู้จักด้วย
+  for (const m of sql.matchAll(/v_dept\s*=\s*'([a-z_]+)'/g)) {
+    assert.ok(MONTHLY_TEAM_KEYS.includes(m[1]),
+      `\n\n❌ SQL ${owner} แตกสาขาทีม '${m[1]}' แต่ MONTHLY_TEAM_KEYS ใน src/utils/moNumber.js ไม่มี\n`
+      + '   ผล: DB ออกเลขรายเดือน แต่จอคิดว่าต่อเนื่อง = บอกเลขถัดไปผิด\n');
+  }
+});
+
 test('🛡️ close-time-needs-downtimes — ทุกจุดที่เรียก checkCloseTime ต้องส่ง downtimes', () => {
   const bad = [];
   for (const file of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
