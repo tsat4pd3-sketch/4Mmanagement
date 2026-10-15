@@ -99,3 +99,14 @@ test('ข้อความที่มาของเลขรายเดื�
   assert.equal(autoDetailText(m, 'mo_on_target'), 'ตรงเป้า 2/8 ใบ');
   assert.equal(autoDetailText(null, 'mbd'), '');
 });
+
+test('MO Closed on target นับเฉพาะ BM — จอบอกว่าไม่นับงานประเภทอื่นกี่ใบ (14/10)', () => {
+  const roll = { mo: [{ m: '2026-09', team: 'maintenance', closed: 13, on_target: 4, no_target: 0, closed_all: 17 }], dt: [], machines: [], months: [] };
+  const s = mtnAutoSeries(roll, 2026, { key: 'maintenance' }).months[8];
+  assert.equal(s.closed_all, 17);
+  assert.ok(Math.abs(s.mo_on_target - (4 / 13) * 100) < 1e-9);
+  assert.match(autoDetailText(s, 'mo_on_target'), /ไม่นับงานประเภทอื่น 4 ใบ/);
+  // RPC รุ่นเก่า (ไม่มี closed_all) = ไม่รู้ ห้ามเดา
+  const old = mtnAutoSeries({ mo: [{ m: '2026-09', team: 'x', closed: 2, on_target: 1, no_target: 0 }] }, 2026, { key: 'x' }).months[8];
+  assert.equal(old.closed_all, null);
+});
