@@ -2285,11 +2285,14 @@ export default function FactoryMap({ setupMode = false }) {
   const is3d = view3d && !editing;
   /* 🧊 เสา 3D — คิดก่อน render เพื่อให้หัวผังบอกได้ว่าป้ายไหนแน่นจนวางไม่ได้ (ห้ามหายเงียบ) */
   const pillarMaxH = Math.max(60, wrapW * 0.2);
+  const BLOCK_K = 0.55;
   const pillarItems = !is3d ? [] : regions.filter(r => !facHidden(r.line_name)).map(r => {
                   const st = stOf(r.line_name); const cat = regCat(st); const meta = CAT[cat];
-                  const [x, y] = labelAnchor(r.points);
-                  return { key: r.id, name: r.line_name, x, y, color: meta.color, blink: !!meta.blink,
-                    h: pillarHeight(metric, cat, st.oee).h, text: shortText(st), dim: cat === 'idle' };
+                  /* 🏢 กรอบไลน์ = กล่องยกจากรูปทรงกรอบจริง (`pts`) · ป้ายกลางหลังคา (centroid)
+                     สูง × BLOCK_K — กล่องกินพื้นที่มากกว่าเสา สูงเต็มจะบังผังข้างหลังหมด */
+                  const [x, y] = centroid(r.points);
+                  return { key: r.id, name: r.line_name, x, y, pts: r.points, color: meta.color, blink: !!meta.blink,
+                    h: pillarHeight(metric, cat, st.oee).h * BLOCK_K, text: shortText(st), dim: cat === 'idle' };
                 }).concat(autoHulls.map(h => {
                   /* ▣ เสากลุ่ม = ยอดรวมทั้งครอบครัว (stOf รวมลูกให้แล้ว) · ตั้งที่ "ขอบล่างกลาง" ของกรอบแม่
                      เสาลูกตั้งที่ขอบบน (labelAnchor) ⇒ 2 ชั้นไม่ชนกันในจุดเดียว */
@@ -2457,8 +2460,8 @@ export default function FactoryMap({ setupMode = false }) {
           {is3d && (
             <div style={{ alignSelf: 'stretch', position: 'relative', zIndex: 3, background: 'var(--bg)', padding: '2px 4px', display: 'flex', flexWrap: 'wrap', gap: '2px 12px', fontSize: 11.5, color: 'var(--muted)', marginBottom: Math.round(wrapW * 0.1) }}>
               <span>🧊 มุมมอง 3D (ทดลอง) · {pillarLegend(metric)}</span>
-              <span>ป้ายที่ชนกันถูกยกขึ้นสูง มีเส้นโยงลงเสา · คลิกเสาเปิดไลน์</span>
-              {pillarCrowded > 0 && <b style={{ color: '#f59e0b' }}>ป้ายแน่นจนวางไม่ได้ {pillarCrowded} ใบ — ชี้/แตะเสาเพื่อดู</b>}
+              <span>กรอบไลน์ = กล่อง · ▣ เสา = ยอดรวมกลุ่ม · ป้ายที่ชนกันถูกยกขึ้นสูง มีเส้นโยงลง · คลิกกล่อง/เสาเปิดไลน์</span>
+              {pillarCrowded > 0 && <b style={{ color: '#f59e0b' }}>ป้ายแน่นจนวางไม่ได้ {pillarCrowded} ใบ — ชี้/แตะกล่องเพื่อดู</b>}
             </div>
           )}
           {/* 🧊 3D: overflow ต้อง visible — overflow:hidden บังคับ flatten ลูกที่ preserve-3d (เสาจะแบนติดพื้น) */}
@@ -2587,7 +2590,7 @@ export default function FactoryMap({ setupMode = false }) {
               <MapPillars3D maxH={pillarMaxH} size={Math.max(12, Math.round(wrapW * 0.024))}
                 onOpen={(n) => openLine(n)}
                 onHover={(n, e) => { if (n) { setHoverLine(n); setHoverXY({ x: e.clientX, y: e.clientY }); } else setHoverLine(null); }}
-                items={pillarItems} lifts={pillarLifts} />
+                items={pillarItems} lifts={pillarLifts} wPx={wrapW} hPx={aspect ? wrapW / aspect : 0} />
             )}
             {!is3d && regions.map(r => {
               if (facHidden(r.line_name)) return null;      // 🫥 โซนที่ซ่อนตาม metric — ป้ายก็ไม่วาด
