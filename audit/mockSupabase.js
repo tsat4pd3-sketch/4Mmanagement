@@ -746,8 +746,10 @@ const TABLE_FIXED = {
     { id: 't-4', key: 'production', label: 'AM (ผลิตตรวจเอง)', icon: '🏭', equip_type: null, dept_name: 'PRODUCTION', color: '#94a3b8', sort_order: 4, kind: 'am', is_active: true },
   ],
   factory_map: [{ id: 'fm-1', image_url: FACTORY_MAP_IMG, updated_at: '2026-09-01T00:00:00+07:00' }],
+  /* 🧩 กรอบตีที่ "ไลน์ลูก 2 + 3" ไม่ตีที่แม่ (1) — ตั้งใจ (15/10) ⇒ กรอบแม่อัตโนมัติ (autoHulls) ถูกวาดจริง
+     เดิมตีที่แม่ตรงๆ = สาย hull/ป้ายกลุ่ม/เสากลุ่มโหมด 3D ไม่เคยถูกรันใน harness เลย */
   factory_line_regions: [
-    { id: 'rg-1', line_name: LINE_NAME(1), points: [[6, 8], [44, 8], [44, 46], [6, 46]] },
+    { id: 'rg-1', line_name: LINE_NAME(3), points: [[6, 8], [44, 8], [44, 46], [6, 46]] },
     { id: 'rg-2', line_name: LINE_NAME(2), points: [[54, 8], [92, 8], [92, 46], [54, 46]] },
     { id: 'rg-3', line_name: 'ห้องคอมเพรสเซอร์', points: [[6, 56], [44, 56], [44, 92], [6, 92]] },
   ],

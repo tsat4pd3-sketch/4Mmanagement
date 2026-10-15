@@ -16,12 +16,14 @@ const shade = (hex, f) => {   // f < 1 = มืดลง (ด้านข้า�
 };
 
 /**
- * @param {{ items: Array<{key,name,x,y,color,h,blink,text,dim}>, maxH:number, size:number,
+ * @param {{ items: Array<{key,name,x,y,color,h,blink,text,dim,group?,kids?}>, maxH:number, size:number,
  *           onOpen:(name)=>void, onHover:(name|null, e?)=>void }} props
  */
 export default function MapPillars3D({ items, maxH, size, onOpen, onHover }) {
-  const W = size;
   return items.map(it => {
+    /* ▣ เสากลุ่ม (กรอบแม่อัตโนมัติ) = หอใหญ่กว่า + ป้ายขอบประ — แยกจากเสาไลน์ลูกให้ออกในตาเดียว
+       (กติกาเดียวกับป้ายกลุ่มบนผัง 2D: ▣ + ขอบประ + บอกจำนวนไลน์ย่อย) */
+    const W = it.group ? Math.round(size * 1.8) : size;
     const H = Math.max(4, Math.round(it.h * maxH));
     const faces = [0, 1, 2, 3].map(k => (
       <div key={k} style={{
@@ -47,9 +49,10 @@ export default function MapPillars3D({ items, maxH, size, onOpen, onHover }) {
           style={{ position: 'absolute', left: -W / 2, top: -W / 2, width: W, height: W, transform: `translateZ(${H}px)`, background: shade(it.color, 1.15), border: '1px solid rgba(255,255,255,0.35)', boxSizing: 'border-box' }} />
         {/* ป้ายหัวเสา — หมุนกลับให้หันหน้าเข้าจอ */}
         <div style={{ position: 'absolute', left: 0, top: 0, transform: `translateZ(${H + 6}px) rotateZ(${-MAP_ROT_Z}deg) rotateX(${-MAP_TILT_X}deg) translate(-50%, -100%)`, pointerEvents: 'auto' }}>
-          <div style={{ background: 'rgba(8,10,16,0.88)', border: `1px solid ${it.color}`, borderBottom: `3px solid ${it.color}`, borderRadius: 7, padding: '2px 8px 3px', textAlign: 'center', whiteSpace: 'nowrap', boxShadow: 'var(--shadow-float)' }}>
+          <div style={{ background: 'rgba(8,10,16,0.88)', border: `${it.group ? '2px dashed' : '1px solid'} ${it.color}`, borderBottom: `3px ${it.group ? 'dashed' : 'solid'} ${it.color}`, borderRadius: 7, padding: '2px 8px 3px', textAlign: 'center', whiteSpace: 'nowrap', boxShadow: 'var(--shadow-float)' }}>
             <div style={{ fontSize: 12, fontWeight: 800, color: '#fff', lineHeight: 1.25 }}>
-              {it.blink && <span className="dt-alarm-icon" style={{ color: '#ef4444' }}>🔴 </span>}{it.name}
+              {it.blink && <span className="dt-alarm-icon" style={{ color: '#ef4444' }}>🔴 </span>}{it.group ? '▣ ' : ''}{it.name}
+              {it.group && it.kids > 0 && <span style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.62)', marginLeft: 5 }}>{it.kids} ไลน์</span>}
             </div>
             {it.text && <div style={{ fontSize: 11, fontWeight: 800, color: it.color, lineHeight: 1.25, fontVariantNumeric: 'tabular-nums' }}>{it.text}</div>}
           </div>
