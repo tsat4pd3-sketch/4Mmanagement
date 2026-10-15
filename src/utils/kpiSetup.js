@@ -85,16 +85,20 @@ export function providerReaches(providerKey, scopeKind) {
    ⚠️ ตาราง `kpi_base_inputs.var_key` **ไม่มี check constraint โดยตั้งใจ** — เพิ่มตัวแปรใหม่
       แก้ที่ลิสต์นี้พอ ไม่ต้องทำ migration (กติกาเดียวกับ `meeting_action_items.kpi_key`) */
 export const KPI_BASE_VARS = [
-  { key: 'sale_product',   label: 'ยอดขายจากสินค้า (Sale from product)', unit: 'บาท' },
-  { key: 'sale_total',     label: 'ยอดขายรวม (Total Sale)',              unit: 'บาท' },
-  { key: 'dl',             label: 'ค่าแรงทางตรง (Direct Labour)',         unit: 'บาท' },
-  { key: 'oh',             label: 'ค่าโสหุ้ย (Overhead)',                 unit: 'บาท' },
-  { key: 'raw_material',   label: 'ต้นทุนวัตถุดิบ (Raw Material)',        unit: 'บาท' },
-  { key: 'cogs',           label: 'ต้นทุนขาย COGS (ตัวหารของ DSI)',        unit: 'บาท' },
-  { key: 'inventory_baht', label: 'มูลค่าสต็อกสิ้นเดือน (ตาม storage location)', unit: 'บาท' },
-  { key: 'manpower',       label: 'กำลังคน (หัว)',                        unit: 'คน' },
-  { key: 'cost_100p',      label: '100P + CR (มูลค่าที่ลดได้)',           unit: 'บาท' },
-  { key: 'days_in_month',  label: 'ตัวหารวัน (ใบจริงใช้ 30 คงที่)',        unit: 'วัน' },
+  /* `level` (15/10 · user: "ให้คนคนนึงกรอกค่าที่ใช้ร่วมกันทั้งโรงงาน · DL ของแต่ละส่วนงานกรอกยอดเงินอย่างเดียว ระบบหารให้")
+       'plant' = ตัวเลขกลางของโรงงาน กรอกครั้งเดียวที่ขอบเขต ทั้งโรงงาน ทุกสูตรของทุกหน่วยอ่านตัวเดียวกัน (ยอดขาย · COGS · ตัวหารวัน)
+       'unit'  = ยอดเงินของหน่วยเอง กรอกที่ขอบเขตของหน่วย (DL · OH · วัตถุดิบ · สต็อก · กำลังคน · 100P) — ที่ขอบเขต ทั้งโรงงาน = ยอดรวมโรงงาน */
+  { key: 'sale_total',     label: 'ยอดขายรวม (Total Sales)',                 unit: 'บาท', level: 'plant' },
+  { key: 'sale_product',   label: 'ยอดขายจากสินค้า (Sales from product)',     unit: 'บาท', level: 'plant' },
+  { key: 'sale_trading',   label: 'ยอดขายสินค้าซื้อมาขายไป (Sales from trading goods)', unit: 'บาท', level: 'plant' },
+  { key: 'cogs',           label: 'ต้นทุนขาย COGS (ตัวหารของ DSI)',           unit: 'บาท', level: 'plant' },
+  { key: 'days_in_month',  label: 'ตัวหารวัน (ใบจริงใช้ 30 คงที่)',           unit: 'วัน',  level: 'plant' },
+  { key: 'dl',             label: 'ค่าแรงทางตรง (Direct Labour)',            unit: 'บาท', level: 'unit' },
+  { key: 'oh',             label: 'ค่าโสหุ้ย (Overhead)',                    unit: 'บาท', level: 'unit' },
+  { key: 'raw_material',   label: 'ต้นทุนวัตถุดิบ (Raw Material)',           unit: 'บาท', level: 'unit' },
+  { key: 'inventory_baht', label: 'มูลค่าสต็อกสิ้นเดือน (ตาม storage location)', unit: 'บาท', level: 'unit' },
+  { key: 'manpower',       label: 'กำลังคนเฉลี่ย (หัว)',                      unit: 'คน',  level: 'unit' },
+  { key: 'cost_100p',      label: '100P + CR (มูลค่าที่ลดได้)',              unit: 'บาท', level: 'unit' },
 ];
 
 export const baseVarOf = (key) => KPI_BASE_VARS.find(v => v.key === key) || null;
