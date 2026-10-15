@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { canAccessPage } from '../utils/permissions';
 import {
   normalizeConfig, buildPlaylist, stepIndex, indexOfLocation, resolveIndex, shouldReload,
-  displayChannelName, parseDisplayCmd, ROT_NAV_STATE, fmtSec, SKIP_REASON_LABEL,
+  displayChannelName, parseDisplayCmd, ROT_NAV_STATE, fmtSec, SKIP_REASON_LABEL, markQuietReload,
 } from '../utils/displayRotation';
 
 /* ══ 📺 DisplayRotator — จอวนหน้าเอง ตามแผนของบัญชีที่ login ══════════════════════════
@@ -24,6 +24,40 @@ import {
    ════════════════════════════════════════════════════════════════════════════════════ */
 
 const PAUSE_EVENTS = ['pointerdown', 'keydown', 'touchstart', 'wheel', 'click'];
+
+/* 🎬 เปลี่ยนหน้าแบบ "กระพริบ" (15/10 · user "สำหรับ tv เป็นกระพริบเพื่อให้สมูทเลยได้มั้ย")
+   ม่านสีพื้นเฟดขึ้น → เปลี่ยนหน้าใต้ม่าน → ค้างไว้ให้ข้อมูล/ผังหน้าใหม่ขึ้น + ย่อพอดีจอเสร็จ → เฟดออก
+   ⇒ ไม่เห็น "กำลังโหลด..." / หน้ากระโดด / ตัวเลขว่างระหว่างโหลด
+   · ม่านเป็น DOM ที่ผูกกับ body (ไม่ใช่ state) — ตัววน remount ตอนข้าม branch (/tv ↔ หน้าอื่น) ม่านต้องไม่หาย
+   · pointer-events:none = ไม่บังการแตะ (แตะ = หยุดวน ยังทำงาน) · opacity transition ล้วน รองรับ Chromium 94 */
+const VEIL_ID = 'esm-rot-veil';
+const VEIL_FADE_MS = 280;
+const VEIL_HOLD_MS = 900;
+let veilTimer = null;
+function veilEl() {
+  let v = document.getElementById(VEIL_ID);
+  if (!v) {
+    v = document.createElement('div');
+    v.id = VEIL_ID;
+    v.setAttribute('aria-hidden', 'true');
+    Object.assign(v.style, {
+      position: 'fixed', top: '0', left: '0', right: '0', bottom: '0', background: 'var(--bg)',
+      opacity: '0', transition: `opacity ${VEIL_FADE_MS}ms ease`, pointerEvents: 'none', zIndex: '2147483000',
+    });
+    document.body.appendChild(v);
+  }
+  return v;
+}
+/** เฟดม่านขึ้น → `go()` → ค้าง → เฟดออก · `keep` = ไม่ต้องเฟดออก (กำลังรีโหลดทั้งหน้า) */
+function veilSwap(go, keep = false) {
+  const v = veilEl();
+  clearTimeout(veilTimer);
+  v.style.opacity = '1';
+  veilTimer = setTimeout(() => {
+    go();
+    if (!keep) veilTimer = setTimeout(() => { v.style.opacity = '0'; }, VEIL_HOLD_MS);
+  }, VEIL_FADE_MS);
+}
 
 export default function DisplayRotator({ userId, role, disabled }) {
   const navigate = useNavigate();
@@ -66,6 +100,18 @@ export default function DisplayRotator({ userId, role, disabled }) {
   const n = playable.length;
   const cur = active ? playable[Math.min(idx, n - 1)] : null;
 
+  /* 📺 โหมดจอ TV ทุกหน้า (15/10 · user "จอทีวี ให้เป็นโหมดจอ TV (ซ่อนหัวเพจ) ทุกหน้าเลย") — บัญชี role display
+     ไม่มีคนกด ⇒ หัวเพจ (ชื่อหน้า · แท็บ · แถบกรอง) = พื้นที่เปล่า · แท็บ/ตัวกรองตั้งจากลิงก์ที่ /display-rotation แทน
+     · ตัดสินที่ class บน <body> ที่เดียว → CSS `body.esm-tv-display .ph-chrome` (index.css) — PageHeader ติด class ให้ทุกส่วน
+       ยกเว้น `children` (เนื้อหาจริงที่บางหน้าห่อไว้ใน PageHeader ต้องยังเห็น)
+     · ไม่ผูกกับว่ามีแผนวนไหม — จอ display ที่ยังไม่ตั้งแผนก็ได้หน้าตาจอ TV · admin จำลองมุมมอง (viewAs) = ไม่ซ่อน */
+  const tvChrome = role === 'display' && !disabled;
+  useEffect(() => {
+    if (!tvChrome) return undefined;
+    document.body.classList.add('esm-tv-display');
+    return () => document.body.classList.remove('esm-tv-display');
+  }, [tvChrome]);
+
   /* ── หน้าเปลี่ยน (ทั้งจากเราและจากคน/รีโมท) → ตำแหน่งในรอบตาม + นับเวลาใหม่ ── */
   useEffect(() => {
     if (!active) return;
@@ -87,12 +133,16 @@ export default function DisplayRotator({ userId, role, disabled }) {
     const target = playable[nextIdx];
     if (!target) return;
     if (shouldReload(loadedAtRef.current, Date.now(), cfg.reloadMin)) {
-      window.location.assign(target.path);   // รีโหลดเต็มหน้าไปยังหน้าถัดไปเลย (ล้างหน่วยความจำ)
+      // รีโหลดเต็มหน้าไปยังหน้าถัดไปเลย (ล้างหน่วยความจำ) · ใต้ม่าน + ไม่ขึ้น splash ซ้ำ
+      veilSwap(() => { markQuietReload(); window.location.assign(target.path); }, true);
       return;
     }
     setIdx(nextIdx);
     setElapsed(0);
-    navigate(target.path, { state: { [ROT_NAV_STATE]: `${nextIdx}-${Date.now()}` } });
+    // startTransition = ระหว่างโหลดไฟล์หน้าใหม่ (lazy) ค้างหน้าเดิมไว้ ไม่โชว์ "กำลังโหลด..." ของ Suspense
+    veilSwap(() => startTransition(() => {
+      navigate(target.path, { state: { [ROT_NAV_STATE]: `${nextIdx}-${Date.now()}` } });
+    }));
     if (nextIdx === 0) setReloadTick(t => t + 1);   // ครบรอบ = อ่านแผนใหม่
   }, [active, playable, cfg, navigate]);
 

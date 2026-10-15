@@ -617,11 +617,33 @@ function PagePreview({ path }) {
     return () => ro.disconnect();
   }, []);
   const scale = w ? w / 1920 : 0.3;
+  /* 🔁 เปลี่ยนตัวอย่างแบบ crossfade (15/10 · user "ช่วงเปลี่ยนหน้า ต้องขึ้นโหลดใหม่เรื่อยๆหรอ")
+     iframe ตัวเก่าค้างไว้จนตัวใหม่โหลดเสร็จ + รอข้อมูลขึ้นอีกนิด แล้วค่อยสลับ · (หน้า splash ในกรอบตัวอย่างปิดใน App แล้ว) */
+  const [shown, setShown] = useState(path);
+  const [ready, setReady] = useState(false);
+  useEffect(() => { setReady(false); }, [path]);
+  useEffect(() => {
+    if (!ready || path === shown) return undefined;
+    const t = setTimeout(() => setShown(path), 900);
+    return () => clearTimeout(t);
+  }, [ready, path, shown]);
+  const frameSt = (top) => ({ position: 'absolute', left: 0, top: 0, width: 1920, height: 1080, border: 0,
+    transform: `scale(${scale})`, transformOrigin: '0 0', pointerEvents: 'none',
+    opacity: top ? 0 : 1, visibility: top ? 'hidden' : 'visible' });
   return (
     <div ref={boxRef} style={{ position: 'relative', width: '100%', height: Math.round(1080 * scale), overflow: 'hidden', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg)' }}>
       {path ? (
-        <iframe key={path} src={path} title="ตัวอย่างหน้า" loading="lazy"
-          style={{ width: 1920, height: 1080, border: 0, transform: `scale(${scale})`, transformOrigin: '0 0', pointerEvents: 'none' }} />
+        <>
+          {/* key ใน array เดียวกัน = ตอนสลับ React ย้าย iframe ตัวใหม่ขึ้นมาเฉยๆ ไม่สร้างใหม่ (ไม่โหลดซ้ำ) */}
+          {[shown, path].filter((p, i, a) => p && a.indexOf(p) === i).map(p => (
+            <iframe key={p} src={p} title={p === shown ? 'ตัวอย่างหน้า' : 'ตัวอย่างหน้า (กำลังโหลด)'}
+              onLoad={p === path ? () => setReady(true) : undefined} style={frameSt(p !== shown)} />
+          ))}
+          {path !== shown && (
+            <div style={{ position: 'absolute', right: 8, bottom: 8, padding: '3px 10px', borderRadius: 999, fontSize: 11,
+              background: 'var(--card)', border: '1px solid var(--border2)', color: 'var(--muted)' }}>⏳ กำลังโหลดตัวอย่าง…</div>
+          )}
+        </>
       ) : (
         <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, color: 'var(--muted)', padding: 12, textAlign: 'center' }}>
           เลือกหน้าในแถวทางซ้ายเพื่อดูตัวอย่าง

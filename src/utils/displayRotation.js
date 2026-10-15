@@ -17,6 +17,23 @@
  *  (หน้าเดิมที่เปลี่ยนแค่ query จะได้อ่านค่าตั้งต้นจากลิงก์ใหม่ · utils/urlInit.js) */
 export const ROT_NAV_STATE = 'rotNav';
 
+/* 🎬 ไม่ขึ้นหน้า splash (โลโก้ ENTERPRISE SHOPFLOOR …) ซ้ำบนจอ TV (15/10 · user "เปลี่ยนหน้าต้องขึ้นโหลดใหม่เรื่อยๆหรอ")
+   · ตัววนรีโหลดเต็มหน้าตามรอบ `reload_min` → ฝากธงไว้ใน sessionStorage ก่อนรีโหลด · App อ่านแล้วลบทิ้ง (ใช้ครั้งเดียว)
+   · หน้าที่ถูกฝังใน iframe (กรอบตัวอย่างในหน้าตั้งค่า) = ไม่ต้องมี splash
+   storage อาจโยน (โหมดส่วนตัว/บล็อก) ⇒ try/catch ทุกครั้ง · พังแล้วแค่เห็น splash เหมือนเดิม */
+const QUIET_KEY = 'esm-rot-quiet-reload';
+export function markQuietReload() {
+  try { sessionStorage.setItem(QUIET_KEY, '1'); } catch { /* ไม่มี storage = เห็น splash ตามปกติ */ }
+}
+export function skipSplash() {
+  try { if (window.self !== window.top) return true; } catch { return true; }   // cross-origin top = ถูกฝังแน่ๆ
+  try {
+    if (sessionStorage.getItem(QUIET_KEY) !== '1') return false;
+    sessionStorage.removeItem(QUIET_KEY);
+    return true;
+  } catch { return false; }
+}
+
 /** ขอบเขตตัวเลข — ต้องตรงกับ CHECK ใน migration 20261009_display_rotations_main.sql */
 export const ROT_LIMITS = Object.freeze({
   minSec: 10,         // ต่ำกว่านี้หน้ายังโหลดข้อมูลไม่ทันก็เปลี่ยนแล้ว
