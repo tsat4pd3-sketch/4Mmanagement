@@ -40,6 +40,7 @@ import { compareToMaster, CMP_META, improvementProposals, newItemProposals, sugg
 import { acceptImageFile } from '../utils/acceptImageFile';
 import { DeleteButton } from '../components/IconButton';
 import { isGifFile, GIF_MAX_BYTES, GIF_TOO_BIG_MSG } from '../utils/imageFileKind';   // ตัวตรวจชนิดไฟล์ + เพดาน GIF = จุดเดียว
+import { checkWriteRows } from '../utils/dbWrite';   // 🔴 ลบ/เปลี่ยนไฟล์ storage ได้หลัง "นับแถวที่โดนจริง" เท่านั้น
 
 /* ═══ PE Core Tools — Process Flow / PFMEA / Control Plan (2026-08-13) ═══
    โมดูลของทีม Process Engineering — โครงถอดจากเอกสารจริง TSAT (PFC/FMEA/CNP-P703-01):
@@ -258,9 +259,11 @@ export default function PEDocs() {
   const deleteRow = async (table, id, label, after, imgUrl) => {
     if (!setWrite.ok) { toast.info(writeBlockText(setWrite, { what: 'เอกสาร PE ของชุดนี้' })); return; }
     if (!window.confirm(`ลบ${label}?`)) return;
-    const { error } = await supabase.from(table).delete().eq('id', id);
-    if (error) { toast.error(error.message); return; }
-    if (imgUrl) removePeImage(imgUrl);   // ลบไฟล์หลัง DB สำเร็จ (กฎ storage — best-effort)
+    /* 🔴 RLS ปฏิเสธ DELETE = "0 แถว ไม่มี error" ⇒ เช็คแค่ error แล้วลบไฟล์ = แถวยังอยู่ แต่รูปหายถาวร
+       (กฎเหล็ก DB ข้อ 2) ⇒ ต้อง `.select()` นับแถวให้ได้ > 0 ก่อนแตะ storage */
+    const res = await supabase.from(table).delete().eq('id', id).select('id');
+    if (!checkWriteRows(res, `ลบ${label}`)) return;
+    if (imgUrl) removePeImage(imgUrl);   // ลบไฟล์หลังยืนยันว่าแถวหายจริงแล้วเท่านั้น (best-effort)
     toast.success('ลบแล้ว');
     after?.();
   };
@@ -286,8 +289,10 @@ export default function PEDocs() {
     if (!file || !row) return;
     const url = await uploadPeImage(pathPrefix, file);
     if (!url) return;
-    const { error } = await supabase.from(table).update({ image_url: url }).eq('id', row.id);
-    if (error) { toast.error(error.message); return; }
+    /* 🔴 UPDATE ที่ถูก RLS ปฏิเสธ = 0 แถว ไม่มี error ⇒ แถวยังชี้ไฟล์เก่า แต่เราลบไฟล์เก่าไปแล้ว
+       = รูปพังถาวร + ไฟล์ใหม่กลายเป็นขยะ ⇒ นับแถวก่อนแตะ storage */
+    const res = await supabase.from(table).update({ image_url: url }).eq('id', row.id).select('id');
+    if (!checkWriteRows(res, 'บันทึกรูปแนบ')) return;
     if (row.image_url) removePeImage(row.image_url);
   };
 

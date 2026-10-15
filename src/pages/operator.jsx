@@ -590,7 +590,7 @@ export default function Operator() {
         .select('id').eq('employee_id_code', newCode).neq('id', editingEmp.id).limit(1);
       if (dupCode?.length) throw new Error(`รหัส ${newCode} ถูกใช้โดยพนักงานคนอื่นแล้ว`);
 
-      const { error } = await supabase.from('employees').update({
+      const { data, error } = await supabase.from('employees').update({
         employee_id_code: newCode,
         name:       editingEmp.name,
         position:   editingEmp.position   || null,
@@ -613,8 +613,13 @@ export default function Operator() {
         bus_route_id: editingEmp.bus_route_id || null,
         image_url:  photoUrl,
         start_date: editingEmp.start_date || null,
-      }).eq('id', editingEmp.id);
+      /* 🔴 ต้องนับแถว ไม่ใช่ดูแค่ error — RLS ปฏิเสธ UPDATE = "0 แถว ไม่มี error" (กฎเหล็ก DB ข้อ 2)
+         ⇒ แถวยังชี้รูปเดิม แต่โค้ดข้างล่างลบไฟล์รูปเดิมไปแล้ว = รูปพนักงานหายถาวร */
+      }).eq('id', editingEmp.id).select('id');
       if (error) throw error;
+      if (!(data || []).length) throw new Error(
+        'บันทึกไม่สำเร็จ: ระบบไม่ได้แก้แถวไหนเลย (0 แถว) — มักเกิดจากสิทธิ์ไม่พอ '
+        + 'หรือพนักงานคนนี้ถูกลบไปแล้ว · รีเฟรชหน้าแล้วลองใหม่ (รูปเดิมยังอยู่ ไม่ถูกลบ)');
 
       /* 🔧 ทีมช่างซ่อม — เขียนแยก best-effort เพราะคอลัมน์อาจยังไม่ apply migration
          ⚠️ ห้ามยัดลง payload ก้อนบน: ไม่มีคอลัมน์ = 42703 = **บันทึกพนักงานพังทั้งใบ**

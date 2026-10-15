@@ -2925,11 +2925,16 @@ export default function Management() {
                     if (upErr) throw upErr;
                     publicUrl = supabase.storage.from('four-m-images').getPublicUrl(path).data.publicUrl;
                   }
-                  const { error: updErr } = await supabase.from('four_m_logs').update({
+                  /* 🔴 นับแถว ไม่ใช่ดูแค่ error — RLS ปฏิเสธ UPDATE = 0 แถว ไม่มี error
+                     ⇒ ใบยังชี้รูปเดิม แต่โค้ดข้างล่างลบไฟล์เดิมไปแล้ว = เอกสารแนบหายถาวร */
+                  const { data: updRows, error: updErr } = await supabase.from('four_m_logs').update({
                     status: 'pending',
                     ...(publicUrl ? { request_image_url: publicUrl } : {}),
-                  }).eq('id', pendingDocModal.log.id);
+                  }).eq('id', pendingDocModal.log.id).select('id');
                   if (updErr) throw updErr;
+                  if (!(updRows || []).length) throw new Error(
+                    'แนบเอกสารไม่สำเร็จ: ระบบไม่ได้แก้แถวไหนเลย (0 แถว) — มักเกิดจากสิทธิ์ไม่พอ '
+                    + 'หรือใบนี้ถูกแก้/ลบไปแล้ว · รีเฟรชแล้วลองใหม่ (ไฟล์เดิมยังอยู่)');
                   // แนบรูปใหม่ทับสำเร็จแล้ว ค่อยลบไฟล์เก่า (best-effort — กติกา CLAUDE.md กันไฟล์กำพร้า)
                   const oldReqUrl = pendingDocModal.log.request_image_url;
                   if (publicUrl && oldReqUrl && oldReqUrl !== publicUrl && oldReqUrl.includes('/four-m-images/')) {

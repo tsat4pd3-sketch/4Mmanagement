@@ -2344,7 +2344,15 @@ test('🛡️ mtn-status-no-neq — คิวรี mtn_orders ห้ามก�
    ⇒ ด่านนี้สแกนทั้งหน้าต่าง **ก่อนและหลัง** และรู้จักชื่อ helper ทุกตัวที่ห่อ `.remove()` ไว้ */
 /* 🔴 ชื่อ helper ที่ "ลบไฟล์ใน storage จริง" — เพิ่ม helper ใหม่ที่ห่อ `.remove()` ต้องมาเติมที่นี่
    (ด่าน `storage-remover-list-complete` ข้างล่างเช็คให้ว่าลิสต์นี้ยังครบ) */
-const STORAGE_REMOVERS = ['removeMtnImg', 'removeActionImg', 'removeQualityImg'];
+/* ── รอบ 3 (15/10 · QC audit) — ด่านเดิมยังมีรูอีก 2 ทาง ────────────────────────
+   (ค) **helper ที่ประกาศในหน้า** `const removePeImage = (url) => …storage.remove(…)`
+       ⇒ ด่าน `storage-remover-list-complete` เดิมสแกนแค่ `src/utils/**` + เฉพาะตัวที่ `export`
+       ⇒ ตัวที่อยู่ในไฟล์หน้าเองมองไม่เห็นเลย (เจอจริงที่ `PEDocs.jsx`)
+   (ง) **`.update()` ที่เขียน/ล้างคอลัมน์รูป** แล้วลบไฟล์เก่าตามหลัง — ด่านเดิมดูแค่ `.delete()`
+       RLS ปฏิเสธ UPDATE ก็ "0 แถว ไม่มี error" เหมือนกัน ⇒ **แถวยังชี้ไฟล์เก่า แต่ไฟล์หายแล้ว**
+       = รูปเสียถาวร กู้ไม่ได้ (เจอจริง 3 จุด: `PEDocs.attachImage` · `operator` รูปพนักงาน
+       · `Report` Reset ใบ 4M · `Management` แนบเอกสาร 4M) */
+const STORAGE_REMOVERS = ['removeMtnImg', 'removeActionImg', 'removeQualityImg', 'removePeImage', 'removeImg', 'removeRackImg'];
 /* 🔑 ลายเซ็นต้องเป็นข้อความที่อยู่ **บรรทัดเดียวกับ `.delete()`** (ด่านนี้ไล่ทีละบรรทัด)
    — chain ที่ขึ้นบรรทัดใหม่ `from(…)` จะอยู่คนละบรรทัดกับ `.delete()` ⇒ ใส่ชื่อตารางไม่ติด */
 const STORAGE_DEL_ALLOW = {
@@ -2409,19 +2417,77 @@ test('🛡️ storage-delete-after-row-count — ลบไฟล์ storage ต�
    = ด่านข้างบนมองไม่เห็น = รูรั่วเดิมกลับมาเงียบๆ ⇒ ด่านนี้ไล่หา helper ที่ห่อ `.remove()` เอง */
 test('🛡️ storage-remover-list-complete — helper ที่ลบไฟล์ storage ต้องอยู่ใน STORAGE_REMOVERS', () => {
   const missing = [];
-  for (const f of walk(join(ROOT, 'src/utils'), ['.js'])) {
-    const src = stripComments(readFileSync(f, 'utf8'));
-    if (!/storage\s*\n?\s*\.from\([\s\S]{0,80}?\.remove\(|\bstorage\.remove\(/.test(src)) continue;
-    /* ชื่อที่ export ออกไปแล้วขึ้นต้น remove/delete = ตัวที่หน้าอื่นเรียกไปลบไฟล์ */
-    for (const m of src.matchAll(/export\s+(?:const|async\s+function|function)\s+((?:remove|delete|del)\w*)/g)) {
-      if (!STORAGE_REMOVERS.includes(m[1])) missing.push(`${relative(ROOT, f)} → ${m[1]}()`);
-    }
+  /* 🔴 สแกน **ทั้ง src** ไม่ใช่แค่ utils — helper ที่ประกาศในไฟล์หน้าเองก็ซ่อนรูเท่ากัน (รอบ 3)
+     วิธี: เจอบรรทัดที่ลบไฟล์จริง → เดินย้อนขึ้นหา "ชื่อฟังก์ชันที่ห่อมันอยู่" ตัวใกล้สุด
+     แล้วถ้าชื่อนั้นเป็นแนว remove/del (= ถูกเรียกจากที่อื่นไปลบไฟล์) ต้องอยู่ในลิสต์ */
+  for (const f of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const rel = relative(ROOT, f);
+    if (rel.startsWith('src/utils/__tests__')) continue;
+    const lines = stripComments(readFileSync(f, 'utf8')).split('\n');
+    lines.forEach((ln, i) => {
+      if (!/storage[\s\S]{0,40}?\.remove\(|\bstorage\.remove\(/.test(ln)) return;
+      for (let k = i; k >= Math.max(0, i - 4); k--) {
+        const d = lines[k].match(/(?:export\s+)?(?:const|let|async\s+function|function)\s+(\w+)\s*(?:=|\()/);
+        if (!d) continue;
+        if (!/^(remove|delete|del)/i.test(d[1])) break;      // ไม่ใช่ helper ลบไฟล์ = ตัวเขียน inline ปล่อยได้
+        if (!STORAGE_REMOVERS.includes(d[1])) missing.push(`${rel}:${k + 1} → ${d[1]}()`);
+        break;
+      }
+    });
   }
-  assert.deepEqual(missing, [],
+  assert.deepEqual([...new Set(missing)], [],
     '\n\n❌ มี helper ที่ลบไฟล์ใน storage แต่ไม่อยู่ใน STORAGE_REMOVERS:\n'
-    + '   ' + missing.join('\n   ') + '\n'
-    + '   ⇒ ด่าน storage-delete-after-row-count มองหน้าที่เรียก helper นี้ไม่เห็น\n'
+    + '   ' + [...new Set(missing)].join('\n   ') + '\n'
+    + '   ⇒ ด่าน storage-delete-after-row-count / storage-remove-after-update มองที่เรียก helper นี้ไม่เห็น\n'
     + '   แก้: เติมชื่อใน STORAGE_REMOVERS (ไฟล์นี้) — ห้ามปล่อยไว้\n');
+});
+
+/* ═══ 🗑️ รอบ 3 — `.update()` ที่ตามด้วยการลบไฟล์ ก็ต้องนับแถวก่อน (2026-10-15 · QC audit) ═══
+   คลาสเดียวกับ `.delete()` แต่ **เจ็บกว่า**: แถวไม่ได้หายไปไหน มันยังชี้ URL เดิมอยู่
+   ⇒ RLS ปฏิเสธ (0 แถว ไม่มี error) แล้วเราลบไฟล์เก่า = ช่องรูปบนใบกลายเป็นรูปเสียถาวร
+   + ไฟล์ใหม่ที่อัปโหลดไว้กลายเป็นขยะที่ไม่มีแถวไหนอ้าง */
+const STORAGE_UPD_ALLOW = {
+  /* ไฟล์ที่ลบ = ของแถว `qa_part_drawings` ที่ `.delete().select('id')` นับแถวผ่านแล้วข้างบน
+     `.update()` ตัวนี้แค่ประทับเวลา `drawing_updated_at` ไม่ได้เป็นเจ้าของไฟล์ */
+  'src/components/QaPointsEditor.jsx': ["update({ drawing_updated_at:"],
+  /* ── 4 จุดข้างล่างอยู่ฝั่ง DR (`supabaseDR` = anon ตลอด · ไม่มี policy ที่ปฏิเสธรายคน)
+     ⇒ "0 แถว" เกิดได้ทางเดียวคือแถวถูกลบไปแล้วจริง — ไฟล์ของแถวที่ไม่มีอยู่ = ขยะ ลบถูกแล้ว
+     (ถ้าวันไหนฝั่ง DR มี Edge Function/RLS รายคน ต้องกลับมานับแถวทั้ง 4 จุดนี้) */
+  'src/components/QualityBins.jsx': ["from('quality_bin_records').update(payload)"],
+  'src/pages/DailyReport.jsx': ["from('defect_logs').update(payload)"],
+  'src/pages/MtnRepair.jsx': ["from('mtn_orders').update(upd)"],
+  'src/pages/MtnMachineLayout.jsx': ["from('pm_facility_areas').update({ image_path: path })"],
+  'src/components/DieLayout.jsx': ["from('die_storage_areas').update({ image_url: url })"],
+  'src/components/RackMap.jsx': ["from('mtn_rack_maps').update({ image_url: url })"],
+  /* ไฟล์ที่ลบคือรูปพนักงานเก่าของ `employees.update(...).select('id')` ที่นับแถวผ่านแล้วข้างบน
+     ตัวนี้เป็น best-effort เขียน `mtn_team` แยก (คอลัมน์อาจยังไม่ apply migration) ไม่ได้เป็นเจ้าของไฟล์
+     = คาบเกี่ยวกันแค่ใน window ของด่าน */
+  'src/pages/operator.jsx': [".update({ mtn_team: nextTeam })"],
+};
+test('🛡️ storage-remove-after-update — ลบไฟล์ตามหลัง .update() ต้องนับแถวก่อน', () => {
+  const bad = [];
+  for (const f of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
+    const rel = relative(ROOT, f);
+    if (rel.startsWith('src/utils/__tests__')) continue;
+    const lines = readFileSync(f, 'utf8').split('\n');
+    lines.forEach((ln, i) => {
+      if (!/\.update\(/.test(ln)) return;
+      if ((STORAGE_UPD_ALLOW[rel] || []).some(sig => ln.includes(sig))) return;
+      const win = lines.slice(i, i + 18).join('\n');
+      const k = removeAt(win);
+      if (k < 0) return;
+      if (/\.select\(/.test(win.slice(0, k))) return;   // นับแถวแล้วก่อนแตะไฟล์ = ถูกต้อง
+      bad.push(`${rel}:${i + 1}  ${ln.trim().slice(0, 90)}`);
+    });
+  }
+  assert.deepEqual(bad, [],
+    '\n\n❌ ลบไฟล์ใน storage ตามหลัง `.update()` ที่ไม่ได้ `.select()` นับแถว:\n'
+    + '   ' + bad.join('\n   ') + '\n'
+    + '   ทำไมอันตรายกว่า delete: แถวยังอยู่และยังชี้ URL เดิม ⇒ ไฟล์หาย = **รูปเสียถาวร**\n'
+    + '   แก้: const res = await supabase.from(t).update(x).eq(...).select(\'id\');\n'
+    + '        if (!checkWriteRows(res, \'…\')) return;   // ← ลบไฟล์ได้หลังบรรทัดนี้เท่านั้น\n'
+    + '   ถ้าไฟล์ที่ลบ "ไม่ใช่ของแถวนี้" หรือตารางอยู่ฝั่ง DR (anon · ไม่มีการปฏิเสธรายคน)\n'
+    + '   ให้เพิ่มใน STORAGE_UPD_ALLOW พร้อมเหตุผล — ห้ามใส่เพราะแก้ไม่ไหว\n');
 });
 
 
