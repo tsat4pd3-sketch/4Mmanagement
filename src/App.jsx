@@ -18,6 +18,7 @@ import { trackVisit, topPaths } from './utils/navRecent';
 import { effectiveSections } from './utils/sectionScope';
 import useIsMobile from './utils/useIsMobile';
 import ScrollHint from './components/ScrollHint';
+import MobileNavBar from './components/MobileNavBar';
 import { pushSupported, getPushState, subscribePush, unsubscribePush, onPushResubscribeRequest, handlePushResubscribe } from './utils/webpush';
 import { loadPositions, positionLabel } from './utils/positions';   // ตำแหน่งเก็บเป็น key — แสดงต้องแปลงเป็นชื่อ
 import { roleLabel } from './utils/roleMeta';                       // ป้ายชื่อ role (โหมดจำลองมุมมอง 🎭)
@@ -1749,7 +1750,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
   const [viewAsOpen, setViewAsOpen] = useState(false);
   const viewAsBanner = viewAs ? (
     <div style={{
-      position: 'fixed', bottom: 14, left: '50%', transform: 'translateX(-50%)', zIndex: 10000,
+      position: 'fixed', bottom: 'calc(14px + var(--mnav-h, 0px))', left: '50%', transform: 'translateX(-50%)', zIndex: 10000,
       display: 'flex', alignItems: 'center', gap: 10, padding: '8px 16px', borderRadius: 999,
       background: 'rgba(147,51,234,0.16)', border: '1.5px solid #a855f7', color: '#c084fc',
       fontSize: 12.5, fontWeight: 700, backdropFilter: 'blur(6px)', boxShadow: 'var(--shadow-float)',
@@ -1908,6 +1909,8 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
         <Suspense fallback={null}>
           <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} role={role} />
         </Suspense>
+        {/* 📱 แถบล่างมือถือ — หน้า Home ไม่มีช่อง ☰ (หน้านี้คือเมนูอยู่แล้ว) */}
+        <MobileNavBar role={role} onOpenSearch={() => setPaletteOpen(true)} />
         {/* 📺 จอตามต้องรับรีโมทได้แม้ค้างอยู่หน้า Hub (เดิม mount เฉพาะหน้าอื่น — จอ TV ที่เปิดหน้านี้ทิ้งไว้สั่งไม่ได้) */}
         {remoteCode && (
           <Suspense fallback={null}>
@@ -1927,8 +1930,10 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
         <AutoLogoutWarning secsLeft={warnSecsLeft} onStay={dismissWarning} onLogout={handleLogout} />
       )}
       <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg)' }}>
-        <ToggleBtn isOpen={isOpen} onClick={() => setIsOpen(true)} />
+        {/* มือถือ: ☰ ย้ายไปแถบล่าง (นิ้วโป้งถึง · ไม่ลอยทับเนื้อหา) — จอคอมเหมือนเดิม (docs/MOBILE-UX-STANDARD.md §3) */}
+        {!isMobile && <ToggleBtn isOpen={isOpen} onClick={() => setIsOpen(true)} />}
         <NotificationBell userId={userId} role={role} />
+        <MobileNavBar role={role} onOpenMenu={() => setIsOpen(true)} onOpenSearch={() => setPaletteOpen(true)} />
         {/* บอกว่า "ยังเลื่อนลงได้อีก" — มือถือไม่มี scrollbar ให้เห็น (ครอบทั้งหน้าเพจและ modal) */}
         <ScrollHint />
         <Suspense fallback={null}>

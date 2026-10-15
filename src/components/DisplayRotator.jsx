@@ -193,7 +193,7 @@ export default function DisplayRotator({ userId, role, disabled }) {
 }
 
 const chipStyle = {
-  position: 'fixed', right: 14, bottom: 14, zIndex: 9990,
+  position: 'fixed', right: 14, bottom: 'calc(14px + var(--mnav-h, 0px))', zIndex: 9990,
   display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', maxWidth: '92vw',
   padding: '6px 10px', borderRadius: 999, fontSize: 12,
   background: 'var(--card)', border: '1px solid var(--border2)', color: 'var(--text)',

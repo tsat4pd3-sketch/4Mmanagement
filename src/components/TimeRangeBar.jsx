@@ -1,4 +1,6 @@
 import { useMemo } from 'react';
+import useIsMobile from '../utils/useIsMobile';
+import MobileFilterFold, { splitFilterChildren } from './MobileFilterFold';
 import {
   TIME_SCALES, TIME_PERIODS, LOOKBACK_DAYS, scaleOf, matchPreset, matchPeriod,
   rangeDays, scaleWarning, periodRange, presetRange, nextBucket, stepBucket, capBucket,
@@ -92,8 +94,13 @@ export default function TimeRangeBar({
   const capped = capBucket(autoBucket(from, to), finest, coarsest) !== autoBucket(from, to);
   const finestLabel = scaleOf(finest)?.short;
 
-  return (
-    <div className="filter-bar trb" style={style}>
+  /* 📱 มือถือ: พับทั้งแถบ (ช่วงเวลา + ตัวกรองของหน้า) เหลือแถบเดียว "🔎 ตัวกรอง · 15/09–14/10 (30 วัน)"
+     ช่องค้นหา + ของหลัง spacer (จำนวน/ปุ่มหลัก) โชว์เสมอ · คำเตือนสเกลไม่พับ (กฎ: เตือนต้องเห็น)
+     จอคอม: `rows` ได้ children ครบ แล้ว render เหมือนเดิมเป๊ะ (docs/MOBILE-UX-STANDARD.md §2 ข้อ 3) */
+  const isMobile = useIsMobile();
+  const split = isMobile ? splitFilterChildren(children) : null;
+  const dm = (d) => (d ? `${d.slice(8, 10)}/${d.slice(5, 7)}` : '—');
+  const rows = (kids) => (<>
       <div className="trb-row">
         {periodList.length > 0 && (
           <div style={{ display: 'flex', gap: 4 }} role="group" aria-label="ช่วงที่ดู">
@@ -146,7 +153,7 @@ export default function TimeRangeBar({
           )}
         </div>
 
-        {children}
+        {kids}
 
         {onReload && (
           <button onClick={onReload} disabled={loading}
@@ -180,10 +187,26 @@ export default function TimeRangeBar({
       )}
 
       {/* เตือนเท่านั้น — ไม่บล็อก ไม่แก้สเกลให้เอง (ข้อ 2 ด้านบน) */}
-      {warn && (
+      {warn && !isMobile && (
         <div style={{ fontSize: 11.5, color: '#f59e0b', lineHeight: 1.6 }}>⚠️ {warn}</div>
       )}
       {note && <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.6 }}>{note}</div>}
+  </>);
+
+  if (isMobile) {
+    return (
+      <div className="filter-bar trb" style={style}>
+        <MobileFilterFold search={split.search} tail={split.tail}
+          summary={`${dm(from)}–${dm(to)}${days != null ? ` (${days.toLocaleString()} วัน)` : ''}`}>
+          {rows(split.fold)}
+        </MobileFilterFold>
+        {warn && <div style={{ fontSize: 11.5, color: '#f59e0b', lineHeight: 1.6 }}>⚠️ {warn}</div>}
+      </div>
+    );
+  }
+  return (
+    <div className="filter-bar trb" style={style}>
+      {rows(children)}
     </div>
   );
 }
