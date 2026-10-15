@@ -48,7 +48,7 @@ const cancelBtnStyle = {
   borderRadius: 8, padding: '8px 16px', fontSize: 13, cursor: 'pointer',
 };
 
-const emptyMachine = { id: null, line_name: '', machine_no: '', machine_name: '', machine_type_id: '', sort_order: 0, is_active: true, equipment_category: 'production', equipment_kind: 'machine', automation_level: '', operation_mode: '', gang_count: '', shut_height_min_mm: '', shut_height_max_mm: '' };
+const emptyMachine = { id: null, line_name: '', machine_no: '', machine_name: '', machine_type_id: '', sort_order: 0, is_active: true, equipment_category: 'production', equipment_kind: 'machine', automation_level: '', operation_mode: '', gang_count: '', shut_height_min_mm: '', shut_height_max_mm: '', io_no: '' };
 // หมวดอุปกรณ์ในฐานเครื่องจักร — Facility/Utility ไม่ผูกไลน์ผลิต (ระบบน้ำ/ลม/High Pressure ฯลฯ)
 // รวม Facility + Utility เป็นหมวดเดียว (ทีมช่างดูแลทีมเดียวกัน + แยกยาก · คำสั่ง user 2026-07-24)
 // ค่าใน DB ใช้ 'facility' เป็นตัวแทน · 'utility' เดิม migrate มาเป็น facility แล้ว (โค้ดที่เหลือเช็ค !== 'production' อยู่แล้ว)
@@ -222,7 +222,8 @@ export default function MachineDatabase() {
          ⇒ เปิดแก้แม่พิมพ์/จิ๊กแล้วกด save = ชนิดถูกเขียนทับเป็น "เครื่องจักร" เงียบๆ (audit 2026-09-08) */
       ? { id: item.id, equipment_kind: kindOf(item.equipment_kind), line_name: item.line_name, machine_no: item.machine_no, machine_name: item.machine_name || '', machine_type_id: item.machine_type_id || '', sort_order: item.sort_order ?? 0, is_active: item.is_active, equipment_category: item.equipment_category === 'utility' ? 'facility' : (item.equipment_category || 'production'), automation_level: item.automation_level || '', operation_mode: item.operation_mode || '', gang_count: item.gang_count != null ? String(item.gang_count) : '',
           shut_height_min_mm: item.shut_height_min_mm != null ? String(item.shut_height_min_mm) : '',
-          shut_height_max_mm: item.shut_height_max_mm != null ? String(item.shut_height_max_mm) : '' }
+          shut_height_max_mm: item.shut_height_max_mm != null ? String(item.shut_height_max_mm) : '',
+          io_no: item.io_no || '' }
       : { ...emptyMachine, line_name: filterLine || '', sort_order: machines.length + 1 });
   };
 
@@ -238,6 +239,8 @@ export default function MachineDatabase() {
       line_name:        editing.line_name,
       machine_no:        editing.machine_no.trim().toUpperCase(),
       machine_name:      editing.machine_name || null,
+      // 💳 เลข I/O ประจำเครื่อง (14/10 · MTN REQUEST) — ใบ MO เติมช่อง I/O ให้เองตอนเลือกเครื่อง
+      io_no:             (editing.io_no || '').trim().toUpperCase() || null,
       // แม่พิมพ์ไม่มี "ประเภทเครื่องจักร" (ประเภทของมันอยู่ที่ทะเบียนแม่พิมพ์ — ชุด/ลำดับ OP)
       machine_type_id:   kindOf(editing.equipment_kind) === 'die' ? null : (editing.machine_type_id || null),
       equipment_category: editing.equipment_category || 'production',
@@ -413,6 +416,7 @@ export default function MachineDatabase() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                     <span style={{ fontSize: 14, fontWeight: 800, fontFamily: 'monospace', color: 'var(--text)' }}>{item.machine_no}</span>
                     {item.machine_name && <span style={{ fontSize: 12, color: 'var(--muted)' }}>{item.machine_name}</span>}
+                    {item.io_no && <span style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'monospace' }}>I/O {item.io_no}</span>}
                     {item.machine_types && (
                       <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: `${item.machine_types.color}22`, color: item.machine_types.color, fontWeight: 700 }}>
                         {item.machine_types.icon || ''} {item.machine_types.label}
@@ -524,6 +528,9 @@ export default function MachineDatabase() {
                   <input value={editing.machine_name} onChange={e => setEditing(f => ({ ...f, machine_name: e.target.value }))} placeholder="เช่น CO2 Welder" style={inputStyle} />
                 </Field>
               </div>
+              <Field label="เลข I/O (Internal Order) — ใบแจ้งซ่อม MO เติมให้อัตโนมัติ">
+                <input value={editing.io_no} onChange={e => setEditing(f => ({ ...f, io_no: e.target.value.toUpperCase() }))} maxLength={20} placeholder="เช่น 11A1234567" style={{ ...inputStyle, fontFamily: 'monospace' }} />
+              </Field>
               {/* แม่พิมพ์ไม่มีประเภทเครื่องจักร — ประเภท/ชุด/ลำดับ OP ของแม่พิมพ์อยู่ที่ทะเบียนแม่พิมพ์ (user 2026-09-14) */}
               {kindOf(editing.equipment_kind) !== 'die' && (
               <Field label="ประเภทเครื่องจักร">

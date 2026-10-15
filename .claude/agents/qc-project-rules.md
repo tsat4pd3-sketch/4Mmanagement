@@ -92,6 +92,9 @@ model: inherit
   (CLAUDE.md "กฎเหล็ก — subscribe realtime ต้องผ่าน liveChannel")
   · grep: `\.channel\(` ใน `src/` — ทุกตัวที่ไม่ผ่าน `liveChannel` = ผิด
   · **ยกเว้น `broadcast`/`presence`** (`esm-remote-<code>` ใน RemoteReceiver/RemoteControl) — topic คือ "ห้อง" ต้องคงชื่อ
+- **B7** ใบขอซื้อช่าง `mtn_purchase_requests` (DR · 14/10): รับของต้องผ่าน RPC **`mtn_pr_receive`** (สถานะ + เข้าสต็อกทรานแซกชันเดียว)
+  ห้าม client ตั้ง `status: 'received'` เอง · ห้าม `.delete()` (ยกเลิก = `cancelled` + เหตุผล) · ช่างที่มอบหมายอ่านผ่าน `assignedTechsOf()`
+  · grep: `mtn_purchase_requests` แล้วดู `.delete(` / `status: 'received'` (มีด่าน `mtn-pr-receive-via-rpc`)
 
 ### หมวด C — Permissions (data-driven)
 

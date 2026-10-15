@@ -4543,6 +4543,24 @@ test('🛡️ die-set-two-mats — หาแม่พิมพ์ของพา
     + '   ⚠️ "ใครคู่กับใคร" ยังเป็นของ Product Master (pair_mat_no) — จอแม่พิมพ์เตือนได้ ห้ามเขียนทับ\n');
 });
 
+/* ── 🛒 ใบขอซื้อ (PR) งานช่าง — รับของต้องผ่าน RPC เดียว · ห้ามลบ (14/10 · MTN REQUEST) ──
+   รับของ = เปลี่ยนสถานะ + เข้าสต็อก ถ้าเขียน 2 คำสั่งแยกจาก client แล้วอันหลังล้ม
+   ⇒ PR ขึ้น "รับแล้ว" แต่สต็อกไม่เข้า (กฎเหล็ก DB ข้อ 6) · ประวัติขอซื้อห้ามหาย = ยกเลิกแทนลบ
+   📄 `docs/modules/mtn-work-order.md` §🛒 PR / GL / IO */
+test('🛡️ mtn-pr-receive-via-rpc — รับของ PR ผ่าน mtn_pr_receive · ห้าม delete PR', () => {
+  const bad = [];
+  for (const f of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const src = stripComments(readFileSync(f, 'utf8'));
+    if (!/mtn_purchase_requests/.test(src)) continue;
+    if (/from\(['"]mtn_purchase_requests['"]\)[\s\S]{0,200}?\.delete\(/.test(src)) bad.push(`${relative(ROOT, f)} (delete)`);
+    if (/status:\s*['"]received['"]/.test(src)) bad.push(`${relative(ROOT, f)} (เขียน status received เอง)`);
+  }
+  assert.deepEqual(bad, [],
+    '\n\n❌ ใบขอซื้อ (PR) ถูกลบ หรือถูกตั้ง "received" ตรงจาก client: ' + bad.join(', ') + '\n'
+    + '   ทำไมห้าม: รับของต้องเปลี่ยนสถานะ + เข้าสต็อกในทรานแซกชันเดียว → RPC `mtn_pr_receive`\n'
+    + '            ยกเลิก = status `cancelled` + เหตุผล (ประวัติขอซื้อห้ามหาย)\n');
+});
+
 /* ═══ 🔒 ลบข้ามทีมไม่ได้ — ทะเบียนของช่างต้องมีด่าน "เจ้าของทีม" (คำสั่ง user 2026-10-14) ═══
    ที่มา: หัวหน้าแผนกผลิตถูกตั้งเป็น `is_dept_admin` เพื่อให้เพิ่มอะไหล่เองได้
           bucket dept_admin ถือ `mtn_repair:delete` ติดมาด้วย ⇒ ลบอะไหล่ของทีม MTN/DIE ได้
