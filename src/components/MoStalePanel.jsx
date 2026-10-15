@@ -15,6 +15,7 @@
    · ตัวเลขทุกตัวต้องมีฐานเทียบ ("293 / 391 ใบที่ยังไม่ปิด") — เลขลอยๆ อ่านไม่ออกว่ามากหรือน้อย (§6.17 ข้อ 4)
    ═══════════════════════════════════════════════════════════════════════════ */
 import { useState } from 'react';
+import useIsMobile from '../utils/useIsMobile';
 import CollapseCard from './CollapseCard';
 import { statusColor, toneInk } from '../utils/statusTone';
 import { staleTone } from '../utils/mtnStale';
@@ -55,6 +56,7 @@ export default function MoStalePanel({
   statusLabel = () => '', onOpen,
 }) {
   const [all, setAll] = useState(false);
+  const isMobile = useIsMobile();
   if (!board) return null;    // ยังโหลดไม่เสร็จ — หน้าแม่โชว์ "กำลังโหลด…" อยู่แล้ว
 
   const { days, hardDays, open, stale, hard, approx, unknown, oldest, byStage, byTeam, rows } = board;
@@ -64,7 +66,9 @@ export default function MoStalePanel({
 
   return (
     <CollapseCard
-      id="mo-stale" storePrefix="mo" defaultOpen={stale > 0}
+      /* 📱 มือถือเริ่มแบบพับ (15/10) — หัวการ์ดบอกยอดค้าง/เกิน 30 วันอยู่แล้ว · กางแล้วกิน ~2 จอบน 360×640 ดันรายการ MO ตกจอ
+         กางเองครั้งหนึ่ง = CollapseCard จำต่อเครื่อง · จอคอมเหมือนเดิม */
+      id="mo-stale" storePrefix="mo" defaultOpen={stale > 0 && !isMobile}
       style={{ marginBottom: 10, padding: '10px 13px' }}
       title={<span style={{ fontSize: 13 }}>
         ⏳ ค้างขั้นเดิมเกิน {days} วัน{' '}

@@ -42,6 +42,7 @@ import { OBEYA_TITLE, OBEYA_ICON } from '../utils/obeyaPage';
 import { A4, GAP, useSheetGrid, StatusLamp, Sheet, WarnNote, EmptyChart, FocusAxisNote } from './ObeyaSheet';
 import BoardPager from './BoardPager';
 import useFitHeight from '../utils/useFitHeight';
+import useIsMobile from '../utils/useIsMobile';
 import { packPages, clampPage, pageLabels, cellsUsed } from '../utils/boardPager';
 import LineSelect from './LineSelect';
 import PersonSelect from './PersonSelect';
@@ -87,6 +88,9 @@ const getWorkDate = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 const dayLabel = (k) => { const [, m, d] = String(k).split('-'); return `${+d}/${+m}`; };
+/* แผ่นบนมือถือสูงคงที่ — เท่ากับแท็บบอร์ด KPI (ObeyaKpiBoard) ให้ 2 แท็บหน้าตาเดียวกัน */
+const MOBILE_SHEET_H = 330;
+
 export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
   const { role, lineId, sections, fullName, section: homeSection, allUnits } = useContext(UserContext);
   const canRecord = can('obeya', 'record', role) || can('morning_meeting', 'record', role);
@@ -536,8 +540,12 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
     window.addEventListener('resize', on);
     return () => window.removeEventListener('resize', on);
   }, []);
-  const shortScreen = !board && vh < SHORT_VH;
-  const fitOn = availH != null && !shortScreen;
+  /* 📱 มือถือ (15/10): ไม่ใช้ "จอเตี้ย" (กริดสูงตรึง 760px) และไม่ใช้โหมดพอดีจอ — จอ 360×640 เตี้ยกว่า 800 เสมอ
+     ⇒ เดิมแผ่น 10 ใบถูกบีบลงกล่อง 760px = **สูงใบละ 67px ตัวเลขใหญ่โดนตัดครึ่ง กราฟหาย** (วัดจริง 15/10)
+     ⇒ แผ่นเรียงลง 1 คอลัมน์ สูงคงที่ MOBILE_SHEET_H แล้วเลื่อนหน้าปกติ (แบบเดียวกับแท็บบอร์ด KPI) · จอคอม/TV เดิมเป๊ะ */
+  const isMobile = useIsMobile();
+  const shortScreen = !board && !isMobile && vh < SHORT_VH;
+  const fitOn = availH != null && !shortScreen && !isMobile;
 
   /* ช่องต่อหน้า = คอลัมน์ × **แถวที่ลงจอจริง** — จอเตี้ย/จอแคบใส่ได้น้อยแถว ก็แบ่งหน้าเพิ่ม
      ห้ามบีบแผ่นให้เล็กลงเพื่อยัดลงจอ (ฟอนต์จะต่ำกว่า 11px = ผิดกติกา UI จอ TV) */
@@ -700,6 +708,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
        ที่ว่างเป็นแถบใหญ่ใต้บอร์ด (เห็นชัดตอนแบ่งหน้าบนจอเตี้ย) · จอที่เต็มพอดีได้ผลเท่าเดิมเป๊ะ */
     gridTemplateRows: `repeat(${rowsUsed}, minmax(0, 1fr))`,
     height: '100%',
+    ...(isMobile ? { gridTemplateColumns: 'minmax(0, 1fr)', gridTemplateRows: 'none', gridAutoRows: `${MOBILE_SHEET_H}px`, height: 'auto' } : null),
   };
 
   const axisSheet = (key) => OBEYA_AXES.find(a => a.key === key);
