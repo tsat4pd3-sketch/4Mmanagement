@@ -17,10 +17,12 @@ const shade = (hex, f) => {   // f < 1 = มืดลง (ด้านข้า�
 
 /**
  * @param {{ items: Array<{key,name,x,y,color,h,blink,text,dim,group?,kids?}>, maxH:number, size:number,
- *           onOpen:(name)=>void, onHover:(name|null, e?)=>void }} props
+ *           lifts:Map, onOpen:(name)=>void, onHover:(name|null, e?)=>void }} props
+ * lifts = ผล `liftLabels()` (คิดที่หน้าแม่ เพื่อให้หัวผังนับป้ายที่วางไม่ได้) · ok:false = ไม่วาดป้าย/เส้นโยง (เสายังบอกสถานะ)
  */
-export default function MapPillars3D({ items, maxH, size, onOpen, onHover }) {
+export default function MapPillars3D({ items, maxH, size, lifts, onOpen, onHover }) {
   return items.map(it => {
+    const { lift = 0, ok = true } = lifts?.get(it.key) || {};
     /* ▣ เสากลุ่ม (กรอบแม่อัตโนมัติ) = หอใหญ่กว่า + ป้ายขอบประ — แยกจากเสาไลน์ลูกให้ออกในตาเดียว
        (กติกาเดียวกับป้ายกลุ่มบนผัง 2D: ▣ + ขอบประ + บอกจำนวนไลน์ย่อย) */
     const W = it.group ? Math.round(size * 1.8) : size;
@@ -47,8 +49,14 @@ export default function MapPillars3D({ items, maxH, size, onOpen, onHover }) {
         {/* ฝาบน */}
         <div className={it.blink ? 'dt-alarm-blink' : undefined}
           style={{ position: 'absolute', left: -W / 2, top: -W / 2, width: W, height: W, transform: `translateZ(${H}px)`, background: shade(it.color, 1.15), border: '1px solid rgba(255,255,255,0.35)', boxSizing: 'border-box' }} />
-        {/* ป้ายหัวเสา — หมุนกลับให้หันหน้าเข้าจอ */}
-        <div style={{ position: 'absolute', left: 0, top: 0, transform: `translateZ(${H + 6}px) rotateZ(${-MAP_ROT_Z}deg) rotateX(${-MAP_TILT_X}deg) translate(-50%, -100%)`, pointerEvents: 'auto' }}>
+        {/* เส้นตั้งโยงป้ายที่ถูกยกขึ้น กลับลงหัวเสา (ป้ายหลบกันในแกน Z) */}
+        {ok && lift > 0 && (
+          <div style={{ position: 'absolute', left: -1, top: -(lift + 6), width: 2, height: lift + 6, transformOrigin: 'bottom center',
+            transform: `translateZ(${H}px) rotateX(-90deg)`, background: it.color, opacity: 0.85 }} />
+        )}
+        {/* ป้ายหัวเสา — หมุนกลับให้หันหน้าเข้าจอ · ยกขึ้น `lift` px ถ้าตำแหน่งปกติทับป้ายอื่น
+            ยกจนเพดานแล้วยังทับ (ok=false) = ไม่วาดป้าย (หัวผังนับให้เห็น · ชี้/แตะเสาดูการ์ดได้) */}
+        {ok && <div style={{ position: 'absolute', left: 0, top: 0, transform: `translateZ(${H + 6 + lift}px) rotateZ(${-MAP_ROT_Z}deg) rotateX(${-MAP_TILT_X}deg) translate(-50%, -100%)`, pointerEvents: 'auto' }}>
           <div style={{ background: 'rgba(8,10,16,0.88)', border: `${it.group ? '2px dashed' : '1px solid'} ${it.color}`, borderBottom: `3px ${it.group ? 'dashed' : 'solid'} ${it.color}`, borderRadius: 7, padding: '2px 8px 3px', textAlign: 'center', whiteSpace: 'nowrap', boxShadow: 'var(--shadow-float)' }}>
             <div style={{ fontSize: 12, fontWeight: 800, color: '#fff', lineHeight: 1.25 }}>
               {it.blink && <span className="dt-alarm-icon" style={{ color: '#ef4444' }}>🔴 </span>}{it.group ? '▣ ' : ''}{it.name}
@@ -56,7 +64,7 @@ export default function MapPillars3D({ items, maxH, size, onOpen, onHover }) {
             </div>
             {it.text && <div style={{ fontSize: 11, fontWeight: 800, color: it.color, lineHeight: 1.25, fontVariantNumeric: 'tabular-nums' }}>{it.text}</div>}
           </div>
-        </div>
+        </div>}
       </div>
     );
   });
