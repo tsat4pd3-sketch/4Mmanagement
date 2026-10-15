@@ -338,7 +338,7 @@ const RULES = [
       'src/pages/PMSchedule.jsx': 1,           // DayModal — ดูรายการ PM ของวันนั้น
       'src/pages/RackCenter.jsx': 1,           // จอสแกน QR — กล้องอย่างเดียว
       'src/components/ObeyaSheet.jsx': 1,      // ขยายแผ่น A4 ของบอร์ด KPI/SQDCM — ดูอย่างเดียว
-      'src/pages/PMCheckData.jsx': 1,          // ขยายรูปจุดตรวจ PM (lightbox) — ดูอย่างเดียว
+      'src/components/inspect/PointZoom.jsx': 1,   // ขยายรูปโคลสอัพจุดตรวจ PM+QA (lightbox · ย้ายมาจาก PMCheckData 15/10) — ดูอย่างเดียว
     },
   },
   {
@@ -4677,6 +4677,10 @@ test('🛡️ inspection-setup-shared — จอตั้งค่าจุด�
   for (const [f, who] of Object.entries(files)) {
     const code = readFileSync(join(ROOT, f), 'utf8');
     for (const n of need) if (!new RegExp(`import\\s+${n}\\b`).test(code)) bad.push(`${who} (${f}) ไม่ได้ใช้ ${n}`);
+  }
+  // ฝั่งตรวจ: รูปโคลสอัพเปิดด้วยตัวกลางเดียวกันทั้ง PM/QA (15/10)
+  for (const f of ['src/pages/PMCheckData.jsx', 'src/components/QaCheckSheet.jsx', 'src/components/QaPieceStepper.jsx']) {
+    if (!/from '\.{1,2}\/(components\/)?inspect\/PointZoom'/.test(readFileSync(join(ROOT, f), 'utf8'))) bad.push(`${f} ไม่ได้ใช้ PointZoom/PointThumb (รูปจุดตอนตรวจ)`);
   }
   // หน้า QA ห้ามกลับไปแก้จุดตรวจเอง (เขียน qa_inspection_items ตรง) — ต้องผ่านโมดัลกลาง
   const qa = stripComments(readFileSync(join(ROOT, 'src/pages/QAInspectionSetup.jsx'), 'utf8'));

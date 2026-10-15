@@ -15,6 +15,7 @@ import { exportInspectionExcel } from '../lib/pmExportExcel'
 import { exportInspectionPDF, resolveSignatureDataUrl } from '../lib/pmExportPDF'
 import { getDocForm } from '../utils/docForms'
 import { fetchCategories, fetchCheckingMethods, categoryColor, indexByCode } from '../lib/pmTaxonomy'
+import PointZoom, { PointThumb } from '../components/inspect/PointZoom'
 import useImgBox from '../utils/useImgBox'
 import CalloutPin from '../components/CalloutPin'
 import { loadPmTeams, pmTeamsSync, teamKind, recordPermFor, isAmTeam } from '../utils/pmTeams'
@@ -294,45 +295,14 @@ function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick, sh
   )
 }
 
-/* 🔍 รูปซูมของจุดตรวจ — เปิดในแอป (ไม่เด้งออกแท็บใหม่แบบเดิม เพราะหน้างานใช้มือถือ)
-   ภาพรวม = แผนที่ว่าจุดอยู่ตรงไหน · ตัวนี้ = ซูมเข้าไปดูว่าต้องดูอะไรตรงนั้น */
+/* 🔍 รูปซูม/รูปย่อของจุดตรวจ = ของกลาง `components/inspect/PointZoom` (ใช้ร่วมกับจอตรวจ QA · 15/10) */
 function CpZoom({ cp, idx, onClose }) {
-  const url = getPublicUrl(cp.image_path)
-  useEffect(() => {
-    const esc = (e) => { if (e.key === 'Escape') onClose?.() }
-    window.addEventListener('keydown', esc)
-    return () => window.removeEventListener('keydown', esc)
-  }, [onClose])
-  return (
-    <div onClick={onClose} className="modal-scroll"
-      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.88)', zIndex: 3000, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 12, gap: 10 }}>
-      <div onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#fff', maxWidth: '100%' }}>
-        <span style={{ width: 26, height: 26, borderRadius: '50%', background: categoryColor(cp.category), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800, flexShrink: 0 }}>{(idx ?? 0) + 1}</span>
-        <span style={{ fontSize: 15, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis' }}>{cp.name}</span>
-      </div>
-      <img src={url} alt={cp.name} onClick={e => e.stopPropagation()}
-        style={{ maxWidth: '100%', maxHeight: '74vh', objectFit: 'contain', borderRadius: 10, border: '2px solid rgba(255,255,255,0.25)' }} />
-      {cp.description && (
-        <div onClick={e => e.stopPropagation()} style={{ color: '#e5e7eb', fontSize: 12.5, maxWidth: 'min(560px, 94vw)', textAlign: 'center', lineHeight: 1.6 }}>{cp.description}</div>
-      )}
-      <button onClick={onClose} style={{ padding: '9px 26px', borderRadius: 999, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 14, fontWeight: 800, cursor: 'pointer' }}>ปิด</button>
-    </div>
-  )
+  return <PointZoom url={getPublicUrl(cp.image_path)} label={(idx ?? 0) + 1} color={categoryColor(cp.category)}
+    name={cp.name} description={cp.description} onClose={onClose} />
 }
-
-// รูปอ้างอิงต่อจุด (คอลัมน์ Picture ของฟอร์ม) — คลิกเปิดเต็มจอ
 function CpImage({ cp }) {
-  const [zoom, setZoom] = useState(false)
-  if (!cp.image_path) return null
-  const url = getPublicUrl(cp.image_path)
-  return (
-    <>
-      {/* เปิดซูมในแอป — เดิม <a target="_blank"> ซึ่งบนมือถือ = เด้งออกจากใบตรวจที่กรอกค้างอยู่ */}
-      <img loading="lazy" src={url} alt="" title="แตะเพื่อดูรูปซูมของจุดนี้" onClick={() => setZoom(true)}
-        style={{ height: 52, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', display: 'block', cursor: 'zoom-in' }} />
-      {zoom && <CpZoom cp={cp} onClose={() => setZoom(false)} />}
-    </>
-  )
+  return <PointThumb url={cp.image_path ? getPublicUrl(cp.image_path) : null} label={null} color={categoryColor(cp.category)}
+    name={cp.name} description={cp.description} />
 }
 
 // ─── Variable Row ───────────────────────────────────────────────────────────
