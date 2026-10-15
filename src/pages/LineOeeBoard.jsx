@@ -444,7 +444,7 @@ export default function LineOeeBoard() {
                 </>
               )}
             </div>
-            <div style={{ ...card, flex: 1, minWidth: 380 }}>
+            <div style={{ ...card, flex: 1, minWidth: 'min(380px, 100%)' }}>
               <div style={capSt}>OEE Trend รายวัน ({DAYS_TREND} วัน · เฉลี่ยถ่วงเวลารับภาระ)</div>
               <ResponsiveContainer width="100%" height={168}>
                 <AreaChart data={C.trend} margin={{ top: 8, left: 4, right: 8, bottom: 0 }}>

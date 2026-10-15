@@ -69,3 +69,32 @@ test('ระดับของตำแหน่งที่ปฏิบัต�
   assert.equal(M.positionRank(M.workingPositionOf(emp, 'dept_head')), 50);
   assert.equal(M.positionRank(M.workingPositionOf(emp, null)), 40);
 });
+
+/* ══ applyWorkingPositions — ตัวกลางที่ทุก "ชุดแถวพนักงาน" ในจอเดียวกันต้องผ่าน (14/10) ══ */
+
+test('applyWorkingPositions: ทับทั้งชุด + เก็บตำแหน่งตามบริษัทไว้', () => {
+  const map = new Map([['a', 'dept_head']]);
+  const out = M.applyWorkingPositions([{ id: 'a', position: 'line_leader' }, { id: 'b', position: 'operator' }], map);
+  assert.equal(out[0].position, 'dept_head');
+  assert.equal(out[0].company_position, 'line_leader');
+  assert.equal(out[0].acting, true);
+  // คนที่ไม่มีบัญชี = ตำแหน่งตามบริษัทเดิม ไม่ติดป้ายรักษาการ
+  assert.equal(out[1].position, 'operator');
+  assert.equal(out[1].acting, false);
+});
+
+test('applyWorkingPositions: map ว่าง/ยังไม่โหลด = คืน array เดิม (พฤติกรรมเดิมเป๊ะ)', () => {
+  const rows = [{ id: 'a', position: 'line_leader' }];
+  assert.equal(M.applyWorkingPositions(rows, null), rows);       // ยังไม่โหลด
+  assert.equal(M.applyWorkingPositions(rows, new Map()), rows);   // โหลดแล้วแต่ไม่มีใครมีบัญชี
+  assert.deepEqual(M.applyWorkingPositions([], new Map([['a', 'x']])), []);
+});
+
+test('🔴 คนเดียวกันต้องได้ตำแหน่งเดียวกัน ไม่ว่าจะมาจากชุด "ในสังกัด" หรือชุด "คนยืมตัว"', () => {
+  // บอร์ดโหลดคน 2 รอบ (master + line_helpers) — ทับแค่ชุดเดียว = คนเดียวกันโชว์ 2 ตำแหน่งในบอร์ดเดียว
+  const map = new Map([['a', 'technician']]);
+  const own = M.applyWorkingPositions([{ id: 'a', position: 'operator' }], map);
+  const borrowed = M.applyWorkingPositions([{ id: 'a', position: 'operator' }], map);
+  assert.equal(own[0].position, borrowed[0].position);
+  assert.equal(borrowed[0].position, 'technician');
+});

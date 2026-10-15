@@ -1277,6 +1277,10 @@ md5 รายหน่วยงานของ**ไฟล์ migration ตรง
 **13/10 — หน่วย MBD = % เท่านั้น:** ทะเบียนถูกแก้เป็น Hrs. + กรอกมือเป็นชั่วโมง → คืนเป็น % แล้ว (`20261013_kpi_mbd_unit_percent_main.sql`) ·
 ด่าน `autoUnitMismatch()` ใน `kpiAuto.js` เตือนที่ ⚙️ · ชั่วโมงหยุด/ครั้ง/เครื่อง โชว์คู่ % ผ่าน `autoDetailText()` (📄 `docs/modules/obeya-kpi-board.md` §หน่วยของ KPI ช่างอัตโนมัติ)
 
+**14/10 — MO Closed on target นับเฉพาะใบ Breakdown (คำสั่ง user · ทุกทีมช่าง):** `kpi_mtn_rollup` กรอง `repair_type` ที่ prefix = `BM`
+(จาก `mtn_repair_types` — data-driven) · เพิ่ม `closed_all` ให้จอเขียน "ไม่นับงานประเภทอื่น N ใบ" · `20261014_mtn_pr_gl_io_dr.sql` **apply แล้ว**
+(📄 `docs/modules/mtn-work-order.md` §🛒 PR / GL / IO)
+
 **ผลจริง 24/09 (JIG MTN):** เครื่อง jig 172 ตัว · ก.ย. เสีย 421 ครั้ง 83.75 ชม. ⇒ MTBF 729.5 ชม. · MTTR 0.20 ชม. · MBD 0.067% · MO ตรงเป้า 0/4
 — ต่างจากค่าที่เด็ค H1 กรอกไว้ (MTBF 341 ชม.) มาก ⇒ **เด็คใช้ฐานเวลาอีกแบบ** ต้องให้ JIG MTN ชี้ว่าเลขทางการที่ส่ง KPI Online คำนวณจากอะไร (09/10: บอร์ดโชว์ค่าระบบ — ถ้าต่างกันต้องแก้ที่สูตร/ฐานเวลาใน `kpiAuto.js`)
 

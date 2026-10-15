@@ -167,3 +167,17 @@ export async function loadWorkingPositions() {
     return new Map((data || []).filter(r => r.position).map(r => [r.employee_id, r.position]))
   } catch { return new Map() }
 }
+
+/** ทับ `position` ของ "ชุดแถวพนักงาน" ด้วยตำแหน่งที่ปฏิบัติงาน — **ตัวกลางตัวเดียวของทุกจอ**
+ *  🔴 จอเดียวกันต้องส่งทั้ง *คนในสังกัด* และ *คนยืมตัว* ผ่านตัวนี้ให้ครบ (14/10)
+ *     ทับแค่ชุดเดียว = คนเดียวกันโชว์ 2 ตำแหน่งในบอร์ดเดียว (ยืมไปไลน์อื่นแล้วตำแหน่งเปลี่ยน)
+ *  · `actingMap` ว่าง/ยังไม่โหลด = คืน array เดิม (พฤติกรรมเดิมเป๊ะ · ไม่ clone ไม่เพิ่มช่อง) */
+export function applyWorkingPositions(rows, actingMap) {
+  if (!Array.isArray(rows) || !rows.length) return Array.isArray(rows) ? rows : []
+  if (!actingMap || typeof actingMap.get !== 'function' || !actingMap.size) return rows
+  return rows.map((e) => {
+    const acting = actingMap.get(e?.id) ?? null
+    return { ...e, position: workingPositionOf(e, acting),
+      company_position: e?.position ?? null, acting: isActingPosition(e, acting) }
+  })
+}

@@ -137,7 +137,8 @@ export default function BomTreeView({ rootMat, rootName, bomOf, sheetFor, ownShe
           padding: '9px 12px', fontSize: 11.5, color: 'var(--text2)', marginBottom: 8, lineHeight: 1.7 }}>
           ⚠️ <b style={{ color: TONE.warn }}>ผิด pattern การไหล {flowCount} รายการ</b> — ดูคำอธิบายในแถว
           <div style={{ marginTop: 2, color: 'var(--muted)', fontFamily: 'monospace', fontSize: 11 }}>
-            5xx coil ─ไลน์ปั๊ม→ 2xx ─สโตร์→ ไลน์ประกอบ → 1xx FG · (งานปั๊มแล้วขายเลย 5→1 ถือว่าปกติ)
+            เตือนเฉพาะที่พิสูจน์ได้ — 5xx ที่อยู่ใต้พี่น้อง 2xx อยู่แล้ว (นับซ้ำ) · FG ถูกใส่เป็นชิ้นส่วน
+            <br />(5xx ไปเป็นลูกของ 1xx ตรงๆ = ปกติ ไม่เตือน — มีงานแบบนั้นจริง)
           </div>
         </div>
       )}

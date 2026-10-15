@@ -23,7 +23,9 @@ import { fetchAllRows } from '../utils/fetchAllRows';
 import { loadBreakPolicies, loadCtProducts, loadCtKanban, fetchOeeTargets } from '../utils/oeeMasters';
 import { valueInk, statusOf } from '../utils/statusTone';
 import { useLatestRequest } from '../utils/useLatestRequest';
-import { polyArea, centroid, labelAnchor } from '../utils/regionGeom';
+import { polyArea, centroid, labelAnchor, bboxOf } from '../utils/regionGeom';
+import MapPillars3D, { MAP_3D_TRANSFORM } from '../components/MapPillars3D';
+import { pillarHeight, pillarLegend } from '../utils/mapPillar';
 import { loadPmTeams, isAmTeam } from '../utils/pmTeams';
 import { fetchByIds } from '../utils/fetchByIds';
 import { loadDailyAm, dailyAmLineStatus, amShiftInfo } from '../lib/dailyAmBoard';
@@ -564,6 +566,9 @@ export default function FactoryMap({ setupMode = false }) {
   };
   // ซ่อนแผงขวา (จอ TV เอาพื้นที่คืนให้ผัง — จำต่อเครื่อง) · ปุ่มอยู่แถบ metric
   const [panelHide, setPanelHide] = useState(() => { try { return localStorage.getItem('fm_panel_hide') === '1'; } catch { return false; } });
+  // 🧊 มุมมอง 3D (2.5D · mockup 14/10) — ความชอบรายเครื่อง · โหมดแก้ผังบังคับ 2D เสมอ (ลาก/คลิกจุดต้องตรงพิกัด)
+  const [view3d, setView3d] = useState(() => { try { return localStorage.getItem('fm_view3d') === '1'; } catch { return false; } });
+  const toggleView3d = () => setView3d(v => { const n = !v; try { localStorage.setItem('fm_view3d', n ? '1' : '0'); } catch { /* ignore */ } return n; });
   const togglePanelHide = () => setPanelHide(v => { const nv = !v; try { localStorage.setItem('fm_panel_hide', nv ? '1' : '0'); } catch { /* ignore */ } return nv; });
   const wrapRef = useRef(null);
   const hoverCardRef = useRef(null); // วัดความสูงจริงของการ์ด hover เพื่อกันตกขอบ
@@ -2277,6 +2282,7 @@ export default function FactoryMap({ setupMode = false }) {
     setWrapW(el.getBoundingClientRect().width);
     return () => ro.disconnect();
   }, [imageUrl, loading]);
+  const is3d = view3d && !editing;
   const wrapStyle = aspect ? { width: `min(100%, calc((100vh - 210px) * ${aspect}))` } : { width: '100%' };
   const ptsStr = (pts) => pts.map(p => `${p[0]},${p[1]}`).join(' ');
   const flashLine = (name) => { setHighlight(name); setTimeout(() => setHighlight(h => h === name ? null : h), 2000); };
@@ -2384,6 +2390,10 @@ export default function FactoryMap({ setupMode = false }) {
             </span>
             <button onClick={() => applyScale(lblScale + 0.1)} disabled={lblScale >= 1.6}
               style={{ ...miniTab(false), padding: '3px 8px', fontSize: 12, opacity: lblScale >= 1.6 ? 0.4 : 1 }}>A+</button>
+            <button onClick={toggleView3d} style={{ ...miniTab(view3d), padding: '3px 8px', fontSize: 11.5 }}
+              title={view3d ? 'กลับเป็นผังแบนแบบเดิม' : 'เอียงผังเป็นมุมเฉียง + เสาสถานะตั้งขึ้นจากแต่ละไลน์ (ทดลอง)'}>
+              {view3d ? '🗺️ 2D' : '🧊 3D'}
+            </button>
             <button onClick={togglePanelHide} style={{ ...miniTab(panelHide), padding: '3px 8px', fontSize: 11.5 }}
               title={panelHide ? 'แสดงแผงสรุปด้านขวา' : 'ซ่อนแผงขวา — คืนพื้นที่ให้ผัง (เหมาะกับจอ TV)'}>
               {panelHide ? '▶ แผงขวา' : '◀ ซ่อนแผงขวา'}
@@ -2423,9 +2433,13 @@ export default function FactoryMap({ setupMode = false }) {
       ) : (
         <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', flexWrap: 'wrap' }}>
           {/* ── ผัง ── */}
-          <div style={{ flex: '1 1 640px', minWidth: 0, display: 'flex', justifyContent: 'center' }}>
+          <div style={{ flex: '1 1 640px', minWidth: 0, display: 'flex', justifyContent: 'center', flexDirection: 'column', alignItems: 'center',
+            ...(is3d ? { perspective: 2600, perspectiveOrigin: '50% 20%' } : {}) }}>
+          {is3d && <div style={{ alignSelf: 'flex-start', fontSize: 11.5, color: 'var(--muted)', marginBottom: Math.round(wrapW * 0.06) }}>🧊 มุมมอง 3D (ทดลอง) · {pillarLegend(metric)} · คลิกเสาเปิดไลน์</div>}
+          {/* 🧊 3D: overflow ต้อง visible — overflow:hidden บังคับ flatten ลูกที่ preserve-3d (เสาจะแบนติดพื้น) */}
           <div ref={wrapRef} onClick={onMapClick} onPointerMove={onMapMove} onPointerUp={endDrag} onPointerCancel={endDrag}
-            style={{ position: 'relative', ...wrapStyle, maxHeight: 'calc(100vh - 200px)', borderRadius: 10, overflow: 'hidden', border: '1px solid var(--border)', cursor: drawing ? 'crosshair' : 'default', touchAction: 'none', background: '#0a0a0f' }}>
+            style={{ position: 'relative', ...wrapStyle, maxHeight: 'calc(100vh - 200px)', borderRadius: 10, overflow: is3d ? 'visible' : 'hidden', border: '1px solid var(--border)', cursor: drawing ? 'crosshair' : 'default', touchAction: 'none', background: '#0a0a0f',
+              transition: 'transform .45s ease', ...(is3d ? { transform: MAP_3D_TRANSFORM, transformStyle: 'preserve-3d', boxShadow: 'var(--shadow-float)' } : {}) }}>
             <img src={imageUrl} alt="ผังโรงงาน" onLoad={onImgLoad} style={{ display: 'block', width: '100%', height: 'auto', pointerEvents: 'none', userSelect: 'none' }} />
             {/* scrim บางๆ ให้กรอบเด่นแต่ยังเห็นผังชัด (ไม่หรี่จนภาพหม่น) */}
             <div style={{ position: 'absolute', inset: 0, background: 'rgba(6,8,14,0.14)', pointerEvents: 'none' }} />
@@ -2470,7 +2484,7 @@ export default function FactoryMap({ setupMode = false }) {
                   (user ทัก 2026-08-25 "เส้นไกด์ที่ชี้กลับไปที่ไลน์มองไม่เห็นเลย")
                   ⚠️ จุดปลายใช้ line ยาว 0 + linecap round (วาดเป็นวงกลมขนาด px คงที่) — ห้ามใช้ <circle r="%">
                   เพราะ viewBox ถูกยืด preserveAspectRatio=none วงกลมจะเบี้ยวเป็นวงรี */}
-              {!editing && [
+              {!editing && !is3d && [
                 ...regions.map(r => [labelLayout.region[r.id]?.link, CAT[regCat(stOf(r.line_name))].color, `lk-r-${r.id}`]),
                 ...autoHulls.map(h => [labelLayout.hull[h.name]?.link, CAT[regCat(stOf(h.name))].color, `lk-h-${h.name}`]),
               ].filter(([l]) => l).map(([l, color, key]) => (
@@ -2501,7 +2515,7 @@ export default function FactoryMap({ setupMode = false }) {
 
             {/* ป้ายกลุ่ม (กรอบแม่อัตโนมัติ) — ยอดรวมทั้ง family (รวมคนที่เช็คชื่อผูกไลน์แม่)
                 แยกจากป้ายไลน์ให้ชัด (2026-08-06): ▣ + ขอบประหนา + ตัวใหญ่กว่า + ชิปบอกจำนวนไลน์ย่อย */}
-            {!editing && autoHulls.map(h => {
+            {!editing && !is3d && autoHulls.map(h => {
               const box = labelLayout.hull[h.name];
               if (labelLayout.ready && !box) return null;   // จอแคบ ไม่มีที่ว่างจริง → นับไปบอกบนจอแทน (ห้ามวาดทับ)
               const st = stOf(h.name); const meta = CAT[regCat(st)];
@@ -2534,7 +2548,26 @@ export default function FactoryMap({ setupMode = false }) {
                 ตำแหน่งมาจาก labelLayout (กันทับกัน) — ยังไม่รู้ขนาดผัง = ถอยไปเกาะขอบบนแบบเดิม
                 ไลน์ที่เป็น "ลูก" ของกลุ่ม นำหน้าด้วย ↳ ให้อ่านออกว่าอยู่ใต้กลุ่มไหน (2026-08-06)
                 ข้อมูลครบทุกตัวเหมือนเดิม (คำสั่ง user 2026-08-04) */}
-            {regions.map(r => {
+            {is3d && (
+              <MapPillars3D maxH={Math.max(60, wrapW * 0.2)} size={Math.max(12, Math.round(wrapW * 0.024))}
+                onOpen={(n) => openLine(n)}
+                onHover={(n, e) => { if (n) { setHoverLine(n); setHoverXY({ x: e.clientX, y: e.clientY }); } else setHoverLine(null); }}
+                items={regions.filter(r => !facHidden(r.line_name)).map(r => {
+                  const st = stOf(r.line_name); const cat = regCat(st); const meta = CAT[cat];
+                  const [x, y] = labelAnchor(r.points);
+                  return { key: r.id, name: r.line_name, x, y, color: meta.color, blink: !!meta.blink,
+                    h: pillarHeight(metric, cat, st.oee).h, text: shortText(st), dim: cat === 'idle' };
+                }).concat(autoHulls.map(h => {
+                  /* ▣ เสากลุ่ม = ยอดรวมทั้งครอบครัว (stOf รวมลูกให้แล้ว) · ตั้งที่ "ขอบล่างกลาง" ของกรอบแม่
+                     เสาลูกตั้งที่ขอบบน (labelAnchor) ⇒ 2 ชั้นไม่ชนกันในจุดเดียว */
+                  const st = stOf(h.name); const cat = regCat(st); const meta = CAT[cat];
+                  const bb = bboxOf(h.hull);
+                  return { key: `hull-${h.name}`, name: h.name, x: (bb.x0 + bb.x1) / 2, y: bb.y1, color: meta.color, blink: !!meta.blink,
+                    h: pillarHeight(metric, cat, st.oee).h, text: shortText(st), dim: cat === 'idle',
+                    group: true, kids: (childrenOf[h.name] || []).length };
+                }))} />
+            )}
+            {!is3d && regions.map(r => {
               if (facHidden(r.line_name)) return null;      // 🫥 โซนที่ซ่อนตาม metric — ป้ายก็ไม่วาด
               const box = labelLayout.region[r.id];
               if (labelLayout.ready && !box) return null;   // จอแคบ ไม่มีที่ว่างจริง → กรอบสียังบอกสถานะ แตะดูรายละเอียดได้

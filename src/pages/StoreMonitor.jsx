@@ -137,7 +137,7 @@ export default function StoreMonitor() {
           { icon: '⏰', label: 'รอบส่งเลยเวลา', value: nLate, warn: nLate > 0, tone: '#ef4444' },
           { icon: '📊', label: 'รายการทั้งหมด', value: scoped.length, tone: 'var(--text)' },
         ].map(c => (
-          <div key={c.label} style={{ flex: '1 1 170px', background: 'var(--bg2)', border: `1px solid ${c.warn ? 'rgba(239,68,68,0.4)' : 'var(--border)'}`, borderRadius: 8, padding: '8px 12px' }}>
+          <div key={c.label} style={{ flex: '1 1 140px', background: 'var(--bg2)', border: `1px solid ${c.warn ? 'rgba(239,68,68,0.4)' : 'var(--border)'}`, borderRadius: 8, padding: '8px 12px' }}>
             <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{c.icon} {c.label}</div>
             <div style={{ fontSize: 22, fontWeight: 900, color: c.warn && c.value > 0 ? c.tone : 'var(--text)', fontFamily: 'var(--font-display)' }}>{c.value}</div>
           </div>

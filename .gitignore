@@ -9,3 +9,6 @@ dist/
 docs/__pycache__/
 __pycache__/
 supabase/.temp/
+
+# ผลสวีป handheld (สร้างใหม่ทุกรอบ)
+audit/handheld-report.json

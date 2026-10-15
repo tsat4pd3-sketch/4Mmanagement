@@ -502,7 +502,11 @@ test('🔴 MO_STATUS_META: ทุกสถานะใน MO_STATUS_LABEL ต้
     assert.ok(/^#[0-9a-f]{6}$/i.test(m.color), `สี "${k}" ต้องเป็น hex 6 หลัก (ได้ ${m.color})`);
     assert.ok(/^rgba\(\d+,\d+,\d+,0\.14\)$/.test(m.bg), `พื้นชิป "${k}" เพี้ยน (ได้ ${m.bg})`);
     assert.equal(typeof m.step, 'number');
-    if (k !== 'rejected') {
+    /* สถานะ "โมฆะ" ใช้เทากลางตัวเดียวกันโดยเจตนา — จบแล้วและไม่ใช่ผลงานซ่อม
+       🔴 เพิ่มชื่อเข้าลิสต์นี้ได้เฉพาะเมื่อ "ตั้งใจให้เทา" จริงๆ ห้ามใส่เพื่อให้เทสผ่าน
+          (ของที่ลืมตั้งสีจะได้เทาเหมือนกัน — ลิสต์นี้คือสิ่งเดียวที่แยก 2 กรณีออกจากกัน) */
+    const VOID_GREY = ['rejected', 'cancelled'];
+    if (!VOID_GREY.includes(k)) {
       assert.notEqual(m.color, FALLBACK,
         `สถานะ "${k}" ยังใช้สีถอย = ลืมตั้งใน MO_STATUS_STYLE ⇒ dropdown/การ์ดจะสื่อผิด`);
     }
@@ -550,4 +554,39 @@ test('orderReporterText: มีฟิลด์เดียว/ไม่มีเ
   assert.deepEqual(orderReporterText({ reporter_prod: 'สมหญิง' }), { main: 'สมหญิง', extra: null });
   assert.deepEqual(orderReporterText({ reporter_prod: '   ', reported_by_name: null }), { main: null, extra: null });
   assert.deepEqual(orderReporterText(null), { main: null, extra: null });
+});
+
+/* ── 🗑️→🚫 moRemoveMode — ลบได้เฉพาะใบที่ยังไม่มีเลข (2026-10-14 · คำสั่ง user) ────── */
+import { moRemoveMode, OPEN_MO_STATUSES } from '../mtnStepPerm.js';
+test('🔴 moRemoveMode: ใบที่ออกเลขแล้ว ลบไม่ได้ — ยกเลิกเท่านั้น', () => {
+  // เคสจริงที่ทำให้ต้องมีกฎนี้: ใบสถานะ repaired ถูก delete ไป ⇒ ค่าแรง/อะไหล่หายถาวร
+  const r = moRemoveMode({ status: 'repaired', mo_no: 'MTN.2026/10-5' });
+  assert.equal(r.mode, 'cancel');
+  assert.ok(r.why.includes('ยกเลิก'), 'ต้องมีเหตุผลให้จอเขียนบอก');
+  for (const st of ['pending', 'assigned', 'repairing', 'checked', 'qa', 'handover', 'returned', 'waiting_vendor']) {
+    assert.equal(moRemoveMode({ status: st, mo_no: 'JIG-BM-141026-0014-M8' }).mode, 'cancel', st);
+  }
+});
+
+test('ใบที่ยังไม่ออกเลข = ลบทิ้งได้ (ไม่มีเลข/ประวัติให้เสีย)', () => {
+  for (const mo of [null, undefined, '', '   ']) {
+    assert.equal(moRemoveMode({ status: 'pending', mo_no: mo }).mode, 'delete');
+  }
+});
+
+test('🔴 ใบที่ปิด/จบไปแล้ว ห้ามทั้งลบและยกเลิก — ใบที่ปิดแล้วคือบันทึก', () => {
+  assert.equal(moRemoveMode({ status: 'closed', mo_no: 'PRO-BM-141026-0712-M169' }).mode, 'blocked');
+  // ปิดแล้วต้องบล็อกแม้จะยังไม่มีเลข (ไม่งั้นใบปิดที่ออกเลขไม่ติดจะถูกลบทิ้งได้)
+  assert.equal(moRemoveMode({ status: 'closed', mo_no: null }).mode, 'blocked');
+  for (const st of ['rejected', 'transferred', 'cancelled']) {
+    const r = moRemoveMode({ status: st, mo_no: 'X-1' });
+    assert.equal(r.mode, 'blocked', st);
+    assert.ok(r.why, 'ต้องบอกเหตุผล ห้ามเงียบ');
+  }
+});
+
+test('cancelled เป็นสถานะจบ — ต้องหลุดจากคิวงานค้างเอง', () => {
+  assert.ok(MO_DONE_STATUSES.includes('cancelled'));
+  assert.equal(isMoOpen({ status: 'cancelled' }), false);
+  assert.ok(!OPEN_MO_STATUSES.includes('cancelled'), 'ห้ามอยู่ใน allowlist ของคิวงาน');
 });

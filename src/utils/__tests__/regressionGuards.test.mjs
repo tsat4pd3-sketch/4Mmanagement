@@ -1625,6 +1625,54 @@ test('🛡️ mo-stale-since-cols — MO_LIST_COLS ต้อง select ทุก
     + `   เติมใน MO_LIST_COLS: ${missing.join(' · ')}\n`);
 });
 
+/* ── 🛡️ mo-number-js-sql-parity (2026-10-14) ──────────────────────────────────────────
+   เลข MO ออกจริงที่ RPC `mtn_assign_mo_no` (ฝั่ง DB) แต่ **จอตั้งค่าต้องบอกล่วงหน้าได้ว่า
+   "ใบถัดไปจะเป็นเลขอะไร"** ⇒ มีสูตรเดียวกัน 2 ฝั่ง (SQL + `src/utils/moNumber.js`)
+   คลาสเดียวกับ `snapMachineNo` ↔ `public.machine_key()` — ดริฟท์เมื่อไหร่จอโกหกทันที
+   เกิดจริง 14/10: จอบอก MTN "ถัดไป MTN-BM-141026-0001" ของจริง `MTN.2026/10-15`
+   และบอก PRODUCTION รหัส `PRD` ของจริง `PRO` (ออกไปแล้ว 708 ใบ)
+   ⇒ บังคับว่า migration ที่แตะ RPC ตัวนี้ ต้องแตะ `moNumber.js` ในคอมมิทเดียวกัน (และกลับกัน)
+   🔴 ด่านนี้จับ "ลิสต์ทีมรายเดือน" ที่ต้องตรงกัน — เพิ่มทีมฝั่งเดียวแล้วลืมอีกฝั่ง = เลขคนละชุด */
+test('🛡️ mo-number-js-sql-parity — ลิสต์ทีม "เลขรีเซ็ตรายเดือน" ต้องตรงกันทั้ง JS และ SQL', async () => {
+  const { MONTHLY_TEAM_KEYS, TEAM_MO_FORMAT } = await import('../moNumber.js');
+  const dir = join(ROOT, 'supabase/migrations');
+  // migration ล่าสุดที่นิยาม mtn_assign_mo_no = ตัวที่รันอยู่จริง
+  const owner = readdirSync(dir).filter(f => f.endsWith('.sql'))
+    .filter(f => /create\s+or\s+replace\s+function\s+public\.mtn_assign_mo_no/i.test(readFileSync(join(dir, f), 'utf8')))
+    .sort().pop();
+  assert.ok(owner, 'หา migration ที่นิยาม mtn_assign_mo_no ไม่เจอ — RPC ที่ deploy แล้วต้องมีไฟล์ในรีโปเสมอ');
+  const sql = readFileSync(join(dir, owner), 'utf8');
+  for (const key of MONTHLY_TEAM_KEYS) {
+    assert.ok(new RegExp(`v_dept\\s*=\\s*'${key}'`).test(sql),
+      `\n\n❌ ทีม '${key}' อยู่ใน MONTHLY_TEAM_KEYS (JS) แต่ SQL ${owner} ไม่มีสาขาของมัน\n`
+      + '   ผล: จอโชว์เลขแบบรายเดือน แต่ DB ออกเลขแบบต่อเนื่อง = จอโกหก\n');
+  }
+  // กลับทาง: SQL แตกสาขาทีมไหนไว้ JS ต้องรู้จักด้วย
+  for (const m of sql.matchAll(/v_dept\s*=\s*'([a-z_]+)'/g)) {
+    assert.ok(MONTHLY_TEAM_KEYS.includes(m[1]),
+      `\n\n❌ SQL ${owner} แตกสาขาทีม '${m[1]}' แต่ MONTHLY_TEAM_KEYS ใน src/utils/moNumber.js ไม่มี\n`
+      + '   ผล: DB ออกเลขรายเดือน แต่จอคิดว่าต่อเนื่อง = บอกเลขถัดไปผิด\n');
+  }
+  /* ตัวนำหน้า (`O-` = ออกจากระบบ · แยกจากเล่มเขียนมือของทีม MTN) — ถอดฝั่งเดียว = จอกับใบจริงคนละเลข
+     🔴 วันที่เลิกเล่มมือได้ ต้องถอดทั้ง 2 ฝั่งในคอมมิทเดียวกัน ด่านนี้จะบังคับให้ */
+  for (const [key, f] of Object.entries(TEAM_MO_FORMAT)) {
+    if (!f.mark) continue;
+    assert.ok(sql.includes(`'${f.mark}'`),
+      `\n\n❌ ทีม '${key}' ตั้งตัวนำหน้า '${f.mark}' ใน TEAM_MO_FORMAT แต่ SQL ${owner} ไม่มี\n`
+      + '   ผล: จอบอกว่าใบถัดไปขึ้นต้นด้วยตัวนี้ แต่ DB ออกเลขไม่มี = จอโกหก\n');
+  }
+  /* หาง `-M<n>` ต้องมีตัวนับของตัวเองใน SQL — ถ้า SQL นับแถวเอา (count) แทน จะได้เลขซ้ำตอนกดพร้อมกัน
+     และใบที่ถูกลบจะทำให้เลขของใบถัดไปย้อนไปทับของเก่า */
+  const anyTail = Object.values(TEAM_MO_FORMAT).some(f => f.monthTail) || true;  // ค่าตั้งต้นต่อหางอยู่แล้ว
+  if (anyTail) {
+    assert.ok(/':M'/.test(sql) && /'-M'/.test(sql),
+      `\n\n❌ JS ต่อหาง '-M<n>' แต่ SQL ${owner} ไม่มีตัวนับลำดับเดือน (คีย์ ':M' + หาง '-M')\n`
+      + '   ผล: DB ออกเลขไม่มีหาง แต่จอบอกว่ามี = จอโกหก\n');
+    assert.ok(!/count\(\*\)[^;]*\bv_mseq\b/s.test(sql),
+      '\n\n❌ ลำดับเดือนต้องมาจากตัวนับ (upsert) ห้ามนับแถวเอา — นับแถว = 2 ใบที่กดพร้อมกันได้เลขเดียวกัน\n');
+  }
+});
+
 test('🛡️ close-time-needs-downtimes — ทุกจุดที่เรียก checkCloseTime ต้องส่ง downtimes', () => {
   const bad = [];
   for (const file of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
@@ -2233,19 +2281,75 @@ test('🛡️ column-history-table-must-exist — ตารางของ useCo
 });
 
 
+/* ═══ 🚫 `mtn_orders` ห้ามกรองสถานะด้วย `.neq()` (2026-10-14) ═════════════════════════
+   `.neq('status','rejected')` แปลว่า **"ไม่ใช่ rejected"** ไม่ใช่ "เป็นงานจริง"
+   ⇒ สถานะโมฆะที่เพิ่มทีหลังไหลเข้ามาเงียบๆ · เกิดจริง: เพิ่ม `cancelled` (14/10) แล้วใบที่ถูกยกเลิก
+     ไปโผล่เป็น **ค่าซ่อมจริง/แท่งพาเรโต** ใน /improvements ทั้งที่ไม่มีงานเกิดขึ้น
+   คลาสเดียวกับ `session-status-no-neq` (`production_sessions.status='void'`)
+   ⇒ ระบุสถานะรายตัว: `.in('status', OPEN_MO_STATUSES)` หรือ `.not('status','in', MO_VOID_NOT_IN)` */
+test('🛡️ mtn-status-no-neq — คิวรี mtn_orders ห้ามกรองสถานะด้วย .neq()', () => {
+  const bad = [];
+  for (const f of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
+    const src = stripComments(readFileSync(f, 'utf8'));
+    src.split('\n').forEach((ln, i) => {
+      if (!/from\(\s*['"]mtn_orders['"]\s*\)/.test(ln)) return;
+      if (!/\.neq\(\s*['"]status['"]/.test(ln)) return;
+      bad.push(`${relative(ROOT, f)}:${i + 1}  ${ln.trim().slice(0, 100)}`);
+    });
+  }
+  assert.deepEqual(bad, [],
+    '\n\n❌ กรองสถานะ `mtn_orders` ด้วย `.neq()`:\n'
+    + '   ' + bad.join('\n   ') + '\n'
+    + '   `.neq(\'status\',\'rejected\')` = "ไม่ใช่ rejected" **ไม่ใช่** "เป็นงานจริง"\n'
+    + '     ⇒ สถานะโมฆะที่เพิ่มทีหลัง (`cancelled`) ไหลเข้ามานับเป็นค่าซ่อม/พาเรโตเงียบๆ\n'
+    + '   แก้: `.in(\'status\', OPEN_MO_STATUSES)` (เอาใบที่ยังเดินอยู่)\n'
+    + '        `.not(\'status\', \'in\', MO_VOID_NOT_IN)` (ตัดใบที่ไม่เคยเป็นงานจริง)\n'
+    + '   ทั้ง 2 ตัวอยู่ใน src/utils/mtnStepPerm.js — ห้ามเขียนลิสต์สถานะด้วยมือในหน้า\n');
+});
+
 /* ═══ 🗑️ ลบไฟล์ใน storage ได้ ต่อเมื่อ "ยืนยันว่าแถวหายจริง" แล้ว (2026-10-06 · QC audit) ═══
    RLS ปฏิเสธ DELETE = **สำเร็จ 0 แถว ไม่มี error** (กฎเหล็ก DB ข้อ 2 — มีแต่ INSERT ที่โยน 42501)
    ⇒ โค้ดที่เช็คแค่ `error` แล้วเดินไปลบไฟล์ = **แถวยังอยู่ แต่ไฟล์หายถาวร** แล้วจอขึ้น "ลบแล้ว"
    เจอจริง 06/10 ที่ `QAInspectionSetup.delPart` (ลบ `qa-drawings/parts/<id>` ทั้งโฟลเดอร์ ⇒
    ใบตรวจพาร์ทเสียถาวร) · `OjtTraining.handleDelete` (ลายเซ็นพนักงานทั้งใบ) · `PMSetup` (รูปจิ๊กทั้งชุด
    + โมเดล 3D) · `MtnMachineLayout` (รูปผังโซน) · `LineSetup` (รูปผังไลน์)
-   🔴 ลำดับที่ปลอดภัยมีทางเดียว: `.select(...)` → นับแถว > 0 → **ค่อย** ลบไฟล์ */
+   🔴 ลำดับที่ปลอดภัยมีทางเดียว: `.select(...)` → นับแถว > 0 → **ค่อย** ลบไฟล์
+
+   ── รอบ 2 (14/10 · เจอที่ `MtnRepair.del`) — ด่านเดิมมีรูรั่ว 2 ทาง ────────────────
+   (ก) **ตัวลบไฟล์เป็น helper** `removeMtnImg(u)` ไม่ใช่ `storage….remove(` ตรงๆ
+       ⇒ regex เดิมมองไม่เห็น ทั้งที่ข้างในเรียก `.remove()` จริง (`src/utils/mtnImage.js`)
+   (ข) **ลบไฟล์ "ก่อน" `.delete()`** — ด่านเดิมมองไปข้างหน้าเท่านั้น
+       ⇒ เคสนี้ **แย่กว่า** ที่ด่านจับได้ด้วยซ้ำ: ไฟล์หายแน่นอน ไม่ต้องรอ RLS ปฏิเสธ
+   ⇒ ด่านนี้สแกนทั้งหน้าต่าง **ก่อนและหลัง** และรู้จักชื่อ helper ทุกตัวที่ห่อ `.remove()` ไว้ */
+/* 🔴 ชื่อ helper ที่ "ลบไฟล์ใน storage จริง" — เพิ่ม helper ใหม่ที่ห่อ `.remove()` ต้องมาเติมที่นี่
+   (ด่าน `storage-remover-list-complete` ข้างล่างเช็คให้ว่าลิสต์นี้ยังครบ) */
+const STORAGE_REMOVERS = ['removeMtnImg', 'removeActionImg', 'removeQualityImg'];
+/* 🔑 ลายเซ็นต้องเป็นข้อความที่อยู่ **บรรทัดเดียวกับ `.delete()`** (ด่านนี้ไล่ทีละบรรทัด)
+   — chain ที่ขึ้นบรรทัดใหม่ `from(…)` จะอยู่คนละบรรทัดกับ `.delete()` ⇒ ใส่ชื่อตารางไม่ติด */
 const STORAGE_DEL_ALLOW = {
   /* delete นี้ลบ "คนที่ถูกเอาออกจากใบ" ซึ่งปกติ = 0 คน ⇒ 0 แถวเป็นเรื่องปกติ นับแถวไม่มีความหมาย
      และไฟล์ลายเซ็นที่ลบด้านล่างเป็นของ "รอบที่ถูกเซ็นทับ" (`_replacedSigPaths`) ไม่ใช่ของแถวที่ลบ
      = window ของด่านคาบเกี่ยวกันเท่านั้น ไม่ใช่คลาสบั๊กนี้ */
   'src/pages/OjtTraining.jsx': ["from('ojt_training_attendees').delete()"],
+  /* ไฟล์ที่ `removeMtnImg` ลบ = **รูปอะไหล่ตัวเก่าที่ถูกอัปโหลดทับ** (`oldImg !== img`)
+     ไม่ใช่ไฟล์ของแถว `mtn_spare_usage_monthly` ที่ลบ (ยอดใช้รายเดือน ไม่มีไฟล์แนบเลย)
+     + 0 แถวเป็นเรื่องปกติ (ล้างเดือนที่อาจไม่เคยมีค่า) ⇒ คาบเกี่ยวกันแค่ใน window ของด่าน */
+  'src/components/SparePartMaster.jsx': [".in('month_key', clear)"],
+  /* ไฟล์ผังถูกลบ **ก่อน** `production_lines.delete()` จริง แต่ไม่ใช่คลาสบั๊กนี้:
+     เจ้าของไฟล์คือแถว `line_layouts` ซึ่งถูกลบไปก่อนแล้วในลูปข้างบน และคิวรีนับผู้ใช้ร่วม
+     (`eq('image_url', …)`) จะเจอ **แถวของไลน์นี้เอง** ถ้า delete นั้นถูก RLS ปฏิเสธเงียบ
+     ⇒ shared.data มี 1 แถว ⇒ ไม่ลบไฟล์ · fail-closed ครบทั้ง 2 ทางอยู่แล้ว */
+  'src/pages/LineSetup.jsx': ["from('production_lines').delete()"],
 };
+/** ตำแหน่งแรกในข้อความที่ "ลบไฟล์ใน storage" — ทั้งเรียกตรงและผ่าน helper */
+const removeAt = (txt) => {
+  const hits = [txt.search(/storage[\s\S]{0,40}?\.remove\(/)]
+    .concat(STORAGE_REMOVERS.map(fn => txt.search(new RegExp(`\\b${fn}\\s*\\(`))))
+    .filter(k => k >= 0);
+  return hits.length ? Math.min(...hits) : -1;
+};
+const hasRemove = (txt) => removeAt(txt) >= 0;
+
 test('🛡️ storage-delete-after-row-count — ลบไฟล์ storage ต้องมาหลังนับแถวที่ลบได้จริง', () => {
   const bad = [];
   for (const f of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
@@ -2254,8 +2358,14 @@ test('🛡️ storage-delete-after-row-count — ลบไฟล์ storage ต�
     lines.forEach((ln, i) => {
       if (!/\.delete\(\)/.test(ln)) return;
       if ((STORAGE_DEL_ALLOW[rel] || []).some(sig => ln.includes(sig))) return;
+      /* ลบไฟล์ "ก่อน" delete = ไฟล์หายแน่นอน (ไม่ต้องรอ RLS ปฏิเสธ) ⇒ ต้องมองย้อนหลังด้วย */
+      const back = lines.slice(Math.max(0, i - 10), i).join('\n');
+      if (hasRemove(back)) {
+        bad.push(`${rel}:${i + 1}  (ลบไฟล์ก่อน delete) ${ln.trim().slice(0, 70)}`);
+        return;
+      }
       const win = lines.slice(i, i + 16).join('\n');
-      const k = win.search(/storage[\s\S]{0,40}?\.remove\(/);
+      const k = removeAt(win);
       if (k < 0) return;                       // ไม่มีการลบไฟล์ตามหลัง = ไม่เกี่ยว
       if (/\.select\(/.test(win.slice(0, k))) return;   // นับแถวแล้วก่อนแตะไฟล์ = ถูกต้อง
       bad.push(`${rel}:${i + 1}  ${ln.trim().slice(0, 90)}`);
@@ -2272,6 +2382,25 @@ test('🛡️ storage-delete-after-row-count — ลบไฟล์ storage ต�
     + '        // ← ลบไฟล์ storage ได้หลังบรรทัดนี้เท่านั้น\n'
     + '   ถ้า "0 แถว = เรื่องปกติ" จริง (เช่น ลบของที่อาจไม่มีอยู่แต่แรก) ให้เพิ่มใน STORAGE_DEL_ALLOW\n'
     + '   พร้อมเหตุผล — ห้ามใส่เพราะแก้ไม่ไหว\n');
+});
+
+/* ลิสต์ STORAGE_REMOVERS ข้างบนจะมีค่าก็ต่อเมื่อ **ครบ** — helper ใหม่ที่ไม่อยู่ในลิสต์
+   = ด่านข้างบนมองไม่เห็น = รูรั่วเดิมกลับมาเงียบๆ ⇒ ด่านนี้ไล่หา helper ที่ห่อ `.remove()` เอง */
+test('🛡️ storage-remover-list-complete — helper ที่ลบไฟล์ storage ต้องอยู่ใน STORAGE_REMOVERS', () => {
+  const missing = [];
+  for (const f of walk(join(ROOT, 'src/utils'), ['.js'])) {
+    const src = stripComments(readFileSync(f, 'utf8'));
+    if (!/storage\s*\n?\s*\.from\([\s\S]{0,80}?\.remove\(|\bstorage\.remove\(/.test(src)) continue;
+    /* ชื่อที่ export ออกไปแล้วขึ้นต้น remove/delete = ตัวที่หน้าอื่นเรียกไปลบไฟล์ */
+    for (const m of src.matchAll(/export\s+(?:const|async\s+function|function)\s+((?:remove|delete|del)\w*)/g)) {
+      if (!STORAGE_REMOVERS.includes(m[1])) missing.push(`${relative(ROOT, f)} → ${m[1]}()`);
+    }
+  }
+  assert.deepEqual(missing, [],
+    '\n\n❌ มี helper ที่ลบไฟล์ใน storage แต่ไม่อยู่ใน STORAGE_REMOVERS:\n'
+    + '   ' + missing.join('\n   ') + '\n'
+    + '   ⇒ ด่าน storage-delete-after-row-count มองหน้าที่เรียก helper นี้ไม่เห็น\n'
+    + '   แก้: เติมชื่อใน STORAGE_REMOVERS (ไฟล์นี้) — ห้ามปล่อยไว้\n');
 });
 
 
@@ -4327,4 +4456,175 @@ test('🛡️ die-pps-no-guess-one — ชิ้น/จังหวะต้อ�
     + '   ทำไม: แม่พิมพ์สเปค "ทน 50,000 shot" ถ้าระบบคิด 1 ชิ้น = 1 shot กับงานคู่\n'
     + '         PM จะเด้งตอนครบ 50,000 ชิ้น = 25,000 shot จริง = ช้าไป 2 เท่า แม่พิมพ์พังก่อนถึงคิว\n'
     + '   แก้: ppsOf(die, set) ใน src/utils/pmUsage.js · ไม่รู้ = null จอต้องเขียนบอก ห้ามเดา 1\n');
+});
+
+/* ── 🔴 คำเตือน "5xx ปนกับ 2xx/3xx" ห้ามกลับมา (2026-10-14 · user แก้ให้เอง) ───────
+   *"เบอร์ 5 เป็นเบอร์ 1 เลยก็มีนะ มีบางงานเป็นแบบนั้น ไม่ต้องขึ้นโชว์แบบนี้ก็ได้
+     เราน่าจะบอกผิดไปครั้งก่อน"*
+   เดิมเตือนจาก **รูปแบบเลข** ไม่ใช่จากหลักฐาน ⇒ เตือนผิด 40 แถว
+   คำเตือนที่เตือนผิดบ่อย ทำให้คนเลิกเชื่อคำเตือนที่ถูกด้วย (raw_double_counted ที่พิสูจน์ได้)
+   ⇒ เหลือเตือนเฉพาะที่ไล่ถึงจริง · ห้ามเอา raw_in_assembly กลับมาโดยไม่ถาม user       */
+test('🛡️ BOM flow: ห้ามมีคำเตือน raw_in_assembly (5xx ใต้ 1xx = ปกติ)', () => {
+  const tree = stripComments(readFileSync(join(ROOT, 'src/utils/bomTree.js'), 'utf8'));
+  assert.ok(!/raw_in_assembly/.test(tree),
+    '\n\n❌ `raw_in_assembly` กลับมาใน bomTree.js\n'
+    + '   user สั่งถอดเอง 14/10: 5xx ไปเป็นลูกของ 1xx ตรงๆ เป็นของจริง ไม่ใช่ความผิด\n'
+    + '   จะเอากลับมาต้องถาม user ก่อน (เตือนผิด 40 แถว = คนเลิกเชื่อคำเตือนที่เหลือ)\n');
+  assert.ok(/raw_double_counted/.test(tree),
+    '\n\n❌ `raw_double_counted` หายไป — ตัวนี้พิสูจน์ได้ (5xx อยู่ใต้พี่น้อง 2xx จริง) ห้ามถอด\n');
+});
+
+/* ── 🧹 conflict marker ห้ามหลุดเข้า main (2026-10-14 · เจอตอนตรวจย้อนงานตัวเอง) ──────
+   คอมมิท `66bdd954` merge งาน 2 session ในไฟล์ `.md` เดียวกัน แล้ว marker 3 บรรทัด
+   (`<<<<<<<` / `=======` / `>>>>>>>`) ค้างอยู่ — **ผ่านทุกด่านเพราะ build ไม่คอมไพล์ `.md`**
+   เอกสารที่มี marker = คนอ่านไม่รู้ว่าฝั่งไหนจริง (เอกสารผิดแย่กว่าไม่มีเอกสาร)
+   · ถ้าหลุดเข้าไฟล์ `.js/.jsx` = จอขาวทั้งหน้า (syntax error)
+   🔴 ด่านนี้สแกนทั้งรีโป — เจอ = แปลว่า merge ยังไม่จบ ห้าม commit                     */
+test('🛡️ no-merge-conflict-markers — ไม่มี marker ค้างในรีโปทั้ง code และ docs', () => {
+  const files = [
+    ...walk(join(ROOT, 'src'), ['.js', '.jsx', '.mjs', '.css']),
+    ...walk(join(ROOT, 'docs'), ['.md']),
+    ...walk(join(ROOT, 'supabase'), ['.sql']),
+  ];
+  const bad = [];
+  for (const f of files) {
+    const txt = readFileSync(f, 'utf8');
+    // ต้นบรรทัดเท่านั้น — `=======` กลางตารางเอกสาร/เส้นคั่นไม่ใช่ marker
+    const hit = txt.split('\n').findIndex(l => /^<{7} |^>{7} |^={7}$/.test(l));
+    if (hit >= 0) bad.push(`${relative(ROOT, f)}:${hit + 1}`);
+  }
+  assert.deepEqual(bad, [], '\n\n❌ มี conflict marker ค้าง: ' + bad.join(', ') + '\n'
+    + '   แปลว่า merge ยังไม่จบ — ต้องตัดสินว่าเก็บฝั่งไหน (ส่วนใหญ่เก็บทั้ง 2 ฝั่งแล้วคั่นหัวข้อ)\n'
+    + '   ของจริงที่เคยหลุด: docs/modules/manpower-board.md (66bdd954) — build ไม่จับเพราะเป็น .md\n');
+});
+
+/* ── 🔨 ชุดแม่พิมพ์ปั๊มออกคู่ = ผูกได้ 2 MAT (14/10 · คำสั่ง user "แม่พิมพ์ปั๊มออกคู่ ซ้ายขวา ก็ควรเลือก mat สองตัว") ──
+   เดิม `die_sets.mat_no` ช่องเดียว แล้วปลายทางเทียบ `d.mat_no === mat` ตรงๆ
+   ⇒ ล็อตของฝั่งที่ไม่ได้ลงเป็นช่องแรก **หาแม่พิมพ์ไม่เจอ** = ไม่รู้ die_height_mm
+     = pressSetup คืน unknown_height = คิดเวลาเปลี่ยนรุ่นไม่ได้ · ผังแม่พิมพ์ก็ไม่รู้ว่าชุดนั้นป้อนไลน์ไหน */
+test('🛡️ die-set-two-mats — หาแม่พิมพ์ของพาร์ทต้องผ่าน dieMakesMat()/dieSetMats()', () => {
+  const bad = [];
+  const util = stripComments(readFileSync(join(ROOT, 'src/utils/dieSetMats.js'), 'utf8'));
+  for (const fn of ['dieSetMats', 'dieMakesMat', 'dieSetPairState', 'suggestPps']) {
+    if (!new RegExp(`export function ${fn}\\s*\\(`).test(util)) bad.push(`src/utils/dieSetMats.js (ไม่มี ${fn})`);
+  }
+  /* suggestPps ต้องไม่เสนอ 1 — "ชุดทำพาร์ทเดียว" ไม่ได้แปลว่า 1 ชิ้น/จังหวะ (2-out ของพาร์ทเดียวก็มี) */
+  if (!/n >= 2 \? n : null/.test(util)) bad.push('src/utils/dieSetMats.js (suggestPps เสนอค่าต่ำกว่า 2 แล้ว = เดาแทนหน้างาน)');
+
+  for (const rel of ['src/components/ProdLotPlanner.jsx', 'src/components/DieLayout.jsx']) {
+    const code = stripComments(readFileSync(join(ROOT, rel), 'utf8'));
+    if (!/die(SetMats|MakesMat)\s*\(/.test(code)) bad.push(rel + ' (ไม่เรียกของกลาง)');
+    /* เทียบช่องแรกตรงๆ กับตัวแปรชุดแม่พิมพ์ = ตกฝั่งที่ลงช่อง 2 */
+    if (/\bd(ie(Set)?)?\.mat_no\s*===/.test(code)) bad.push(rel + ' (เทียบ die.mat_no === ตรงๆ)');
+  }
+  /* ช่องกรอกต้องมีให้ลงจริง ไม่งั้นคอลัมน์ว่างตลอด */
+  const reg = stripComments(readFileSync(join(ROOT, 'src/pages/DieRegistry.jsx'), 'utf8'));
+  if (!/mat_no_2/.test(reg)) bad.push('src/pages/DieRegistry.jsx (ไม่มีช่อง MAT ตัวที่ 2)');
+
+  /* 🔗 ปุ่ม "ตั้งคู่ให้เลย" = หน้าแม่พิมพ์ยืมมือเขียน dr_products ⇒ ต้องผ่านด่านครบเหมือน Product Master
+     ถอดด่านไหนออก: ข้ามไลน์ = คู่ผิด (เคสจริง GOR 297) · ไม่นับแถว = RLS ปฏิเสธแล้วขึ้น "สำเร็จ"
+     · เขียนทางเดียว = คู่ชี้ข้างเดียว = collapsePairShots ยุบไม่ครบ · ใช้สิทธิ์ผิดใบ = ใครก็แก้ทะเบียนสินค้าได้ */
+  if (/pair_mat_no/.test(reg)) {
+    if (!/pairBlockReason\s*\(/.test(reg)) bad.push('src/pages/DieRegistry.jsx (เขียน pair_mat_no โดยไม่ผ่าน pairBlockReason)');
+    if (!/checkWriteRows\s*\(/.test(reg)) bad.push('src/pages/DieRegistry.jsx (เขียน pair_mat_no โดยไม่นับแถว)');
+    if (!/can\(\s*'products'\s*,\s*'edit'/.test(reg)) bad.push("src/pages/DieRegistry.jsx (ตั้งคู่ต้องใช้สิทธิ์ products:edit ไม่ใช่ machines:edit)");
+    /* 2 ทาง = เขียน "ค่าจริง" 2 ครั้ง — ⚠️ ห้ามนับรวม `pair_mat_no: null` (= ปลดคู่เก่า ไม่ใช่การผูก)
+       นับรวมแล้วด่านจะหลวม: ถอดการผูกฝั่งหนึ่งออก ยอดก็ยังครบ 2 (เจอตอนยิงเทสด่านนี้เอง 14/10) */
+    /* ⚠️ lookahead ต้องอยู่ "ก่อน" \s* — เขียน `\s*(?!null)` จะถูก backtrack (\s* ยอมจับ 0 ตัว
+       แล้ว lookahead ไปมองที่ช่องว่าง = ผ่านเสมอ) ⇒ นับ `pair_mat_no: null` เข้ามาด้วย ด่านหลวมทันที */
+    const writes = (reg.match(/update\(\s*\{\s*pair_mat_no:(?!\s*null\b)/g) || []).length;
+    if (writes < 2) bad.push(`src/pages/DieRegistry.jsx (ผูกคู่ ${writes} ทาง — ต้อง 2 ทาง ไม่งั้นคู่ชี้ข้างเดียว)`);
+  }
+
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n'
+    + '   ทำไม: gang die ปั๊มทีเดียวได้ RH+LH — ทะเบียนลงได้ 2 MAT (mat_no + mat_no_2)\n'
+    + '         เทียบช่องแรกช่องเดียว = อีกฝั่งหาแม่พิมพ์ไม่เจอเงียบๆ\n'
+    + '   แก้: dieMakesMat(set, mat) / dieSetMats(set) จาก src/utils/dieSetMats.js\n'
+    + '   ⚠️ "ใครคู่กับใคร" ยังเป็นของ Product Master (pair_mat_no) — จอแม่พิมพ์เตือนได้ ห้ามเขียนทับ\n');
+});
+
+/* ── 🛒 ใบขอซื้อ (PR) งานช่าง — รับของต้องผ่าน RPC เดียว · ห้ามลบ (14/10 · MTN REQUEST) ──
+   รับของ = เปลี่ยนสถานะ + เข้าสต็อก ถ้าเขียน 2 คำสั่งแยกจาก client แล้วอันหลังล้ม
+   ⇒ PR ขึ้น "รับแล้ว" แต่สต็อกไม่เข้า (กฎเหล็ก DB ข้อ 6) · ประวัติขอซื้อห้ามหาย = ยกเลิกแทนลบ
+   📄 `docs/modules/mtn-work-order.md` §🛒 PR / GL / IO */
+test('🛡️ mtn-pr-receive-via-rpc — รับของ PR ผ่าน mtn_pr_receive · ห้าม delete PR', () => {
+  const bad = [];
+  for (const f of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const src = stripComments(readFileSync(f, 'utf8'));
+    if (!/mtn_purchase_requests/.test(src)) continue;
+    if (/from\(['"]mtn_purchase_requests['"]\)[\s\S]{0,200}?\.delete\(/.test(src)) bad.push(`${relative(ROOT, f)} (delete)`);
+    if (/status:\s*['"]received['"]/.test(src)) bad.push(`${relative(ROOT, f)} (เขียน status received เอง)`);
+  }
+  assert.deepEqual(bad, [],
+    '\n\n❌ ใบขอซื้อ (PR) ถูกลบ หรือถูกตั้ง "received" ตรงจาก client: ' + bad.join(', ') + '\n'
+    + '   ทำไมห้าม: รับของต้องเปลี่ยนสถานะ + เข้าสต็อกในทรานแซกชันเดียว → RPC `mtn_pr_receive`\n'
+    + '            ยกเลิก = status `cancelled` + เหตุผล (ประวัติขอซื้อห้ามหาย)\n');
+});
+
+/* ═══ 🔒 ลบข้ามทีมไม่ได้ — ทะเบียนของช่างต้องมีด่าน "เจ้าของทีม" (คำสั่ง user 2026-10-14) ═══
+   ที่มา: หัวหน้าแผนกผลิตถูกตั้งเป็น `is_dept_admin` เพื่อให้เพิ่มอะไหล่เองได้
+          bucket dept_admin ถือ `mtn_repair:delete` ติดมาด้วย ⇒ ลบอะไหล่ของทีม MTN/DIE ได้
+          user: *"ให้เพิ่มได้ แต่จะลบมั่วไม่ได้ … เห็นข้ามกันหมด แต่ลบข้ามกันไม่ได้"*
+   ด่านนี้จับ "ปุ่มลบหลุดกลับไปเช็คแค่สิทธิ์" ซึ่งเป็นการถอยที่มองไม่เห็นจากหน้าจอ
+   (ฝั่ง DR เป็น anon ไม่มี RLS ช่วย ⇒ ด่านหน้าจอคือด่านเดียวที่มี) */
+test('🔒 คลังอะไหล่ — ปุ่มแก้/ลบต้องผ่านด่านเจ้าของทีม (teamRowOwner) ไม่ใช่ด่านสิทธิ์ล้วน', () => {
+  const bad = [];
+  const sp = stripComments(readFileSync(join(ROOT, 'src/components/SparePartMaster.jsx'), 'utf8'));
+
+  if (!/teamRowOwner\s*\(/.test(sp)) bad.push('src/components/SparePartMaster.jsx (ไม่ได้เรียก teamRowOwner)');
+  /* ปุ่มลบต้องผูกกับตัวที่รวม 2 ด่านแล้ว — เขียน canDelete(...) ลอยๆ = ลบข้ามทีมได้ทันที */
+  if (/<DeleteButton[^>]*/.test(sp) && !/mayDeleteRow\s*\(/.test(sp))
+    bad.push('src/components/SparePartMaster.jsx (ปุ่มลบไม่ได้ผ่าน mayDeleteRow)');
+  /* ซ่อนปุ่มอย่างเดียวไม่พอ — ตัวเขียนจริงต้องกันซ้ำ (fail-closed) */
+  const del = sp.slice(sp.indexOf('const doDelete'), sp.indexOf('const doDelete') + 900);
+  if (!/mayDeleteRow\s*\(/.test(del)) bad.push('src/components/SparePartMaster.jsx (doDelete ไม่มีด่านซ้ำ)');
+  /* soft delete ผ่าน update ⇒ RLS ปฏิเสธ = 0 แถว ไม่มี error (กฎเหล็ก DB ข้อ 2) */
+  if (!/checkWriteRows\s*\(/.test(del)) bad.push('src/components/SparePartMaster.jsx (doDelete ไม่ได้นับแถว)');
+
+  /* กฎต้องมีที่เดียว — หน้าไหนก๊อปเงื่อนไขไปเขียนเองแปลว่าจะ drift */
+  const mr = stripComments(readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8'));
+  if (/canEditRow\s*=/.test(mr) && !/teamRowOwner\s*\(/.test(mr))
+    bad.push('src/pages/MtnRepair.jsx (canEditRow เขียนเงื่อนไขเอง ไม่ผ่าน teamRowOwner)');
+
+  /* fallback ที่ห้ามหาย — ยังไม่ตั้งทีม = ไม่ล็อก ไม่งั้นช่างทำอะไรไม่ได้ทั้งระบบวันที่ deploy */
+  const own = readFileSync(join(ROOT, 'src/utils/mtnTeamOwn.js'), 'utf8');
+  if (!/code:\s*'unscoped'/.test(own)) bad.push("src/utils/mtnTeamOwn.js (ถอด fallback 'unscoped' ออก)");
+
+  /* 🔩 คีย์แยก spare_master ต้องไม่กลายเป็นประตูหลังของ manage_master
+     — ผู้ถือคีย์ใหม่ต้องเป็น strict (ไม่มีทีม = แก้ของเดิมไม่ได้) ไม่งั้นด่านแทบไม่ทำงาน */
+  if (/spare_master/.test(sp) && !/strict:\s*strictOwn/.test(sp))
+    bad.push('src/components/SparePartMaster.jsx (spare_master ไม่ได้บังคับ strict)');
+  /* นำเข้าไฟล์ Excel อัพเดททีละหลายร้อยแถว — ไม่กัน = ด่านรายแถวไร้ความหมาย */
+  if (/function ImportModal/.test(sp) && !/ownOf\(r\.existing\)/.test(sp))
+    bad.push('src/components/SparePartMaster.jsx (นำเข้าไฟล์ไม่ได้กันแถวของทีมอื่น)');
+
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n'
+    + '   ทำไม: dept_admin/mtn ถือคีย์ลบ ⇒ ด่านสิทธิ์ผ่านหมด แต่ต้องลบได้เฉพาะของทีมตัวเอง\n'
+    + '   แก้: teamRowOwner(row, { myTeams, role }) จาก src/utils/mtnTeams.js\n'
+    + '        (ตรรกะจริง src/utils/mtnTeamOwn.js · แถวทีมอื่น = เห็นได้ แต่ต้องขึ้น 🔒 บอกเหตุผล ห้ามซ่อนเงียบ)\n');
+});
+
+/* ── 🔴 จอ "BOM ซ้ำ 2 ใบ" ต้องเทียบ qty ไม่ใช่แค่รายชื่อ MAT (2026-10-14) ──────────
+   เดิมเทียบเฉพาะชุด mat ⇒ คู่ที่ของตรงกันแต่ **จำนวนต่าง** ถูกตีเป็น `identical`
+   แล้วขึ้นจอว่า "ตรงกัน" (เทา) = จอโกหก · เคสจริง 20066663 : 0.171 ↔ 0.341 (ต่าง 2 เท่า)
+   และลายนิ้วมือต้องรวม qty ด้วย ไม่งั้นมีคนแก้แค่จำนวน คู่ที่ "ตรวจแล้ว" จะไม่กลับเข้าคิว */
+test('🛡️ bomDupAudit: qty ต้องอยู่ในกติกา + อยู่ในลายนิ้วมือ', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/utils/bomDupAudit.js'), 'utf8'));
+  assert.ok(/qty_diff/.test(code) && /pair_shot/.test(code),
+    '\n\n❌ หาย verdict ที่เกิดจากการเทียบ qty (`qty_diff` / `pair_shot`)\n'
+    + '   ถอดออก = คู่ที่จำนวนไม่ตรงจะกลับไปขึ้นว่า "ตรงกัน" อีก (จอโกหก)\n');
+  assert.ok(/fingerprint:\s*dupFingerprint\(\s*withQty\(/.test(code),
+    '\n\n❌ ลายนิ้วมือไม่ได้รวม qty แล้ว\n'
+    + '   ⇒ แก้แค่จำนวนแล้วคู่ที่ตรวจไปแล้วจะไม่กลับเข้าคิว = ตัวเลขเปลี่ยนโดยไม่มีใครรู้\n');
+  /* ชิ้น ≠ shot เป็นกฎเหล็กของโปรเจค — ห้ามยุบ 2 กรณีนี้เป็นอันเดียว
+     (qty ผิด = แก้ตัวเลข · ×2 = เคาะหน่วยทั้งโรงงาน — คนละทางแก้) */
+  const audit = require_like(code);
+  assert.ok(audit.qtyRank < audit.pairRank,
+    '\n\n❌ `qty_diff` ต้องร้อนกว่า `pair_shot` — ตัวเลขผิดจริงเร่งกว่าเรื่องหน่วย\n');
+  function require_like(src) {
+    const q = /qty_diff:\s*\{\s*rank:\s*(\d+)/.exec(src);
+    const p = /pair_shot:\s*\{\s*rank:\s*(\d+)/.exec(src);
+    assert.ok(q && p, '\n\n❌ อ่าน rank ของ qty_diff / pair_shot ไม่ได้ — เปลี่ยนรูปแบบแล้วต้องอัปเดตด่านนี้\n');
+    return { qtyRank: +q[1], pairRank: +p[1] };
+  }
 });
