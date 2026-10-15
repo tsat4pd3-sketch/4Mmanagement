@@ -204,8 +204,10 @@ export default function PageHeader({
       }}>
         <div style={{ minWidth: 0 }}>
           {!inHub && (
-            <h2 style={{ margin: 0, fontSize: isMobile ? 19 : 23, display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
-              {icon && <span>{icon}</span>}{title}
+            /* nowrap (15/10 · handheld 360px): เดิม `wrap` ⇒ ชื่อยาวโดนดันทั้งก้อนลงบรรทัดใหม่ เหลือไอคอนลอยบรรทัดเดียว
+               (ScrapReport/AM) · nowrap = ชื่อตัดบรรทัด "ในตัวเอง" ข้างไอคอน · ชื่อสั้นหน้าตาเท่าเดิม */
+            <h2 style={{ margin: 0, fontSize: isMobile ? 19 : 23, display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'nowrap' }}>
+              {icon && <span style={{ flexShrink: 0 }}>{icon}</span>}<span style={{ minWidth: 0 }}>{title}</span>
             </h2>
           )}
           {sub && <div style={{ fontSize: 12.5, color: 'var(--muted)', marginTop: inHub ? 0 : 3 }}>{sub}</div>}

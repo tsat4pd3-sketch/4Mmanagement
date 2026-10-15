@@ -2,9 +2,12 @@
 -- Main project "MAIN" (ewhdfqwfwofivojtsizn) · 2026-10-14 · user สั่ง "เอาทั้ง 50 คนเลย"
 --
 -- ที่มาของการจัดกลุ่ม: `employees.position` เป็น enum ที่กรอกครบแล้ว (audit 14/10)
---   technician                                            → staff_kind = 'technician' (22 คน)
---   clerk · officer · engineer · manager · dept_head · section_head → 'support'       (28 คน)
---   operator · line_leader                                 → คงเดิม 'shopfloor'       (168 คน)
+--   technician                                            → staff_kind = 'technician'
+--   clerk · officer · engineer · manager · dept_head · section_head → 'support'
+--   operator · line_leader                                 → คงเดิม 'shopfloor'
+-- 🔴 **ห้ามเขียนจำนวนคนตรึงไว้ในไฟล์นี้** — ทะเบียนพนักงานขยับทุกวัน (15/10: คีย์สายสนับสนุน
+--    เข้าระบบ 23 คนในวันเดียว ⇒ ตัวเลขที่เขียนไว้เมื่อวานผิดทันที) · เช็คจำนวนจริงด้วยคิวรี preview
+--    ที่ท้ายไฟล์ก่อนรันเสมอ · สคริปต์นี้ย้าย "ทุกแถวที่เข้าเกณฑ์" ไม่ได้ผูกกับจำนวน
 -- 🔴 ขอบเขต = **พนักงานที่ยังทำงานอยู่ (is_active) เท่านั้น** — คนที่ออกไปแล้วไม่ถูกนับที่ไหนอยู่แล้ว
 --    และการแตะแถวเก่าโดยไม่จำเป็น = ประวัติ audit รกโดยเปล่าประโยชน์
 --
@@ -45,3 +48,10 @@ update public.employees
 -- ── 3) ย้อนกลับ (ถ้าต้องการ) ──
 -- update public.employees e set staff_kind = a.old_staff_kind
 --   from archive.employees_staff_kind_20261014 a where a.id = e.id;
+
+-- ── 4) preview / verify — รันก่อนและหลัง (ตัวเลขเปลี่ยนทุกวัน ให้ดูจากผลจริง) ──
+-- select case when position = 'technician' then 'technician'
+--             when position in ('clerk','officer','engineer','manager','dept_head','section_head') then 'support'
+--             else 'shopfloor' end as new_kind, count(*)
+--   from employees where is_active and staff_kind = 'shopfloor' group by 1 order by 1;
+-- select staff_kind, count(*) from employees where is_active group by 1 order by 1;
