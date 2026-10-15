@@ -106,7 +106,7 @@ export default function PageHeader({
     : 'none';
 
   const renderTabs = () => (
-        <div ref={scrollRef} style={{
+        <div ref={scrollRef} className="ph-chrome" style={{
           overflowX: isMobile ? 'auto' : 'visible',
           paddingTop: 7, paddingBottom: 4,   // เผื่อที่ให้ลำแสง/แสงเรืองไม่โดนกล่องที่เลื่อนตัดหัว
         }}>
@@ -182,7 +182,7 @@ export default function PageHeader({
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 'var(--ph-mb, 12px)' }}>
         {!!tabList.length && renderTabs()}
         {(filters || actions) && (
-          <div className="filter-bar" data-ph="filters" style={{ marginBottom: 0 }}>
+          <div className="filter-bar ph-chrome" data-ph="filters" style={{ marginBottom: 0 }}>
             {mobileFold(filters, actions && <span key="hub-actions" data-ph="hub-actions" style={{ display: 'contents' }}>{actions}</span>) || <>
             {filters}
             {actions && <><span className="spacer" /><span data-ph="hub-actions" style={{ display: 'contents' }}>{actions}</span></>}
@@ -197,7 +197,7 @@ export default function PageHeader({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 'var(--ph-mb, 12px)' }}>
       {breadcrumb && navItem && !inHub && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap', fontSize: 12, color: 'var(--muted)' }}>
+        <div className="ph-chrome" style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap', fontSize: 12, color: 'var(--muted)' }}>
           <button onClick={() => navigate('/')} style={{
             background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'var(--muted)', fontSize: 12,
           }}>🏠 หน้าหลัก</button>
@@ -210,7 +210,7 @@ export default function PageHeader({
       )}
 
       {(!inHub || sub || actions) && (
-      <div style={{
+      <div className="ph-chrome" style={{
         display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center',
         justifyContent: 'space-between', paddingRight: inHub ? 0 : 52,   // กัน 🔔 ทับ (UI §7) — ใน hub หัวของแม่กันให้แล้ว
       }}>
@@ -241,7 +241,7 @@ export default function PageHeader({
 
       {/* ── ลำดับแนวตั้งตายตัวทุกหน้า: breadcrumb → ชื่อหน้า|ปุ่มคำสั่ง → แท็บ → แถบกรอง → เนื้อหา ──
           (user 24/09: "ลำดับยังโดดไปมา เดี๋ยวแท็บมาก่อนช่องค้นหา บางหน้าค้นหาอยู่บนสุดก่อนแท็บ") */}
-      {filters && <div className="filter-bar" data-ph="filters" style={{ marginTop: 2, marginBottom: 0 }}>{mobileFold(filters) || filters}</div>}
+      {filters && <div className="filter-bar ph-chrome" data-ph="filters" style={{ marginTop: 2, marginBottom: 0 }}>{mobileFold(filters) || filters}</div>}
       {children}
     </div>
   );
