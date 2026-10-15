@@ -1228,11 +1228,19 @@ export default function AddUser() {
               </div>
 
               <div style={{ gridColumn: '1 / -1', fontSize: 12, fontWeight: 800, color: 'var(--accent2)', borderBottom: '1px solid var(--border)', paddingBottom: 5, marginTop: 4 }}>
-                🔐 สิทธิ์การใช้งานในระบบ — เข้าหน้าไหนได้ / เห็นข้อมูลส่วนงานไหน (ไม่เกี่ยวกับตำแหน่งงานข้างบน)
+                🔐 สิทธิ์การใช้งานในระบบ (ไม่เกี่ยวกับตำแหน่งงานข้างบน)
+              </div>
+              {/* 🧭 3 ช่องข้างล่างตอบคนละคำถาม — เขียนไว้ตรงนี้ที่เดียว (15/10 · คำสั่ง user
+                  "ตอนตั้งสิทธิ์ก็ดูจะคลุมเครือ สรุปช่องนี้คือสิทธิ์ หรือส่วนงาน") */}
+              <div style={{ gridColumn: '1 / -1', fontSize: 11.5, lineHeight: 1.75, color: 'var(--muted)',
+                background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, padding: '8px 10px' }}>
+                <div><b style={{ color: 'var(--text2)' }}>① ชุดสิทธิ์ (Role)</b> = <b>กดอะไรได้</b> — เปิดหน้า/ปุ่มไหนบ้าง · <u>ไม่ได้บอกว่าสังกัดหน่วยไหน</u></div>
+                <div><b style={{ color: 'var(--text2)' }}>② ขอบเขตการมองเห็น</b> = <b>เห็นข้อมูลของใคร</b> — กว้าง/แคบ</div>
+                <div><b style={{ color: 'var(--text2)' }}>③ ส่วนงาน + ขอบเขตส่วนงาน</b> = <b>แก้ข้อมูลของใครได้</b> (ใหม่ 15/10) — ไม่ใช่ของตัวเอง = ดูได้ แก้ไม่ได้</div>
               </div>
 
               <div>
-                <label style={labelSt}>ชุดสิทธิ์การใช้งาน (Role)</label>
+                <label style={labelSt}>① ชุดสิทธิ์การใช้งาน (Role) — <span style={{ fontWeight: 600, color: 'var(--muted)' }}>"กดอะไรได้" ไม่ใช่ "สังกัดหน่วยไหน"</span></label>
                 <select value={form.role} onChange={e => setF('role', e.target.value)}>
                   <RoleOptGroups withDesc />
                 </select>
@@ -1249,6 +1257,13 @@ export default function AddUser() {
                     </div>
                   );
                 })()}
+                {/* 🔐 ใบผ่านข้ามหน่วยงาน — แอดมินต้องเห็นว่า role นี้แก้ของส่วนงานอื่นได้ไหม (15/10) */}
+                <div style={{ fontSize: 11, marginTop: 4, lineHeight: 1.5,
+                  color: can('scope', 'all_units', form.role) ? '#f59e0b' : 'var(--muted)' }}>
+                  {can('scope', 'all_units', form.role)
+                    ? '🌐 role นี้ถือใบผ่าน scope:all_units — แก้ข้อมูลข้ามส่วนงานได้ทั้งโรงงาน'
+                    : '🔒 role นี้แก้ได้เฉพาะส่วนงานของตัวเอง (ข้อ ③ ข้างล่าง) — ของส่วนงานอื่นดูได้ แต่แก้ไม่ได้'}
+                </div>
               </div>
 
               {/* 🔭 ความกว้างของการมองเห็น — คนละแกนกับ role (role = ทำอะไรได้ · อันนี้ = เห็นกว้างแค่ไหน)
@@ -1261,7 +1276,7 @@ export default function AddUser() {
                   const suggested = depthForLevel(lvl);
                   return (
                     <>
-                      <label style={labelSt}>ขอบเขตการมองเห็น (เห็นกว้างแค่ไหน)</label>
+                      <label style={labelSt}>② ขอบเขตการมองเห็น — <span style={{ fontWeight: 600, color: 'var(--muted)' }}>"เห็นข้อมูลของใคร"</span></label>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                         {SCOPE_DEPTHS.map(d => {
                           const m = SCOPE_DEPTH_META[d];
@@ -1300,8 +1315,15 @@ export default function AddUser() {
 
               <div style={{ gridColumn: '1 / -1' }}>
                 <label style={labelSt}>
-                  ขอบเขตส่วนงาน (Section) {form.role === 'supervisor' && <span style={{ color: 'var(--red)' }}>* จำเป็นอย่างน้อย 1</span>}
+                  ③ ขอบเขตส่วนงาน (Section) — <span style={{ fontWeight: 600, color: 'var(--muted)' }}>"แก้ข้อมูลของใครได้"</span>
+                  {form.role === 'supervisor' && <span style={{ color: 'var(--red)' }}> * จำเป็นอย่างน้อย 1</span>}
                 </label>
+                {/* 🔐 15/10 — ช่องนี้ไม่ใช่แค่ตัวกรองการดูอีกแล้ว มันคือด่าน "แก้ของคนอื่นไม่ได้"
+                    ต้องเขียนบอกตรงนี้ ไม่งั้นแอดมินงงว่าทำไมคนนั้นกดบันทึกไม่ผ่าน */}
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 5, lineHeight: 1.6 }}>
+                  ไม่ติ๊กเลย = ใช้ช่อง “ส่วนงาน” ข้างบนเป็นบ้านจริง · ทั้งคู่ว่าง = <b>แก้อะไรไม่ได้เลย</b> (ดูได้อย่างเดียว)
+                  {' · '}คนที่งานเป็นงานทั้งโรงงานจริง (QA · สโตร์ · PE) ให้เปิดคีย์ <code>scope:all_units</code> ที่เมนู 🔐 จัดการสิทธิ์
+                </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '8px 10px', background: 'var(--bg3)', borderRadius: 8, border: '1px solid var(--border2)' }}>
                   {sectionOpts.length === 0 && <span style={{ fontSize: 12, color: 'var(--muted)' }}>ไม่มีข้อมูล Section</span>}
                   {/* ส่วนงานผลิต + แผนกขึ้นตรงฝ่าย + ค่าเก่าที่ไม่อยู่ในทะเบียน

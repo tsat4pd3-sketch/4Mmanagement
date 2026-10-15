@@ -2765,7 +2765,11 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
         const meta = stepMeta(step, { mtnForm: isMtnForm });
         // บอกให้ตรงเหตุ — "ไม่มีสิทธิ์" เฉยๆ ทำให้หน้างานเดาว่าต้องไปขออะไรกับใคร
         if (verdict.code === 'other_team')
-          return toast.error(`ขั้นปิดใบเป็นของผู้จัดการทีม ${deptNameOf(orderTeam)} — บัญชีนี้ถูกตั้งเป็นช่างทีมอื่น`);
+          /* 15/10: ด่านนี้ครอบขั้น 2-3 (รับงาน/ลงผลซ่อม) ด้วยแล้ว — ข้อความต้องตรงขั้นที่กด */
+          return toast.error(step === 2 || step === 3
+            ? `ใบนี้แจ้งถึงทีม ${deptNameOf(orderTeam)} โดยตรง — ให้ช่างทีมนั้นทำ`
+              + ' (ถ้าไม่ใช่งานของเขา ให้ตีกลับใบ หรือให้เขากด “➡️ ส่งต่องาน” มาที่ทีมคุณ)'
+            : `ขั้นปิดใบเป็นของผู้จัดการทีม ${deptNameOf(orderTeam)} — บัญชีนี้ถูกตั้งเป็นช่างทีมอื่น`);
         if (verdict.code === 'await_mgr_approval')
           return toast.error('ใบนี้เป็นงานปรับปรุง/สร้าง — ต้องให้ผู้จัดการเซ็นอนุมัติก่อนช่างเริ่มงาน (ปุ่ม “✍️ อนุมัติใบ MO” ในใบ)');
         if (meta?.ownTeam && can('mtn_repair', 'service_own_team', role) && !inOrderTeam)
