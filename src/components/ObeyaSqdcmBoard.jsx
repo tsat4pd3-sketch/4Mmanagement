@@ -1,4 +1,5 @@
 import { fmtAxis, tooltipProps, CELL_BAR_FILL, focusDomain, shortTick } from '../utils/chartAxis';
+import { urlPick, urlBool } from '../utils/urlInit';
 import { ALL } from '../utils/filterLabels';
 /* ══ 🏛️ OBEYA — ห้องบัญชาการโรงงาน (SQDCM + ลูปปิด countermeasure) ═══════════════════════
    ออกแบบ: docs/OBEYA-DESIGN.md · KPI ทั้งหมด: src/utils/obeyaKpi.js (ห้ามคำนวณซ้ำในไฟล์นี้)
@@ -90,7 +91,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
   const canRecord = can('obeya', 'record', role) || can('morning_meeting', 'record', role);
   const today = getWorkDate();
 
-  const [period, setPeriod] = useState('week');
+  const [period, setPeriod] = useState(() => urlPick('period', ['week', 'month', 'year'], 'week'));   // ?period= ค่าตั้งต้น (จอวนหน้า) — ยังเป็น "ดูช่วงไหน" ไม่ใช่วันที่ตายตัว
   /* ขอบเขต = ผังองค์กรทุกมิติ (23/09 · แทน select ส่วนงานจาก org_nodes kind='section') — รับ ?scope= / ?section= ตอนเปิด */
   const [scope, setScope] = useState(() => {
     try {
@@ -499,7 +500,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
   }, [health]);
 
   // ── ผังกระดาษ ──────────────────────────────────────────────────────────────────
-  const [board, setBoard] = useState(false);            // โหมดจอ TV = ซ่อนหัวเพจ เต็มจอ
+  const [board, setBoard] = useState(() => urlBool('board', false));   // โหมดจอ TV = ซ่อนหัวเพจ เต็มจอ · ?board=1
   const wrapRef = useRef(null);
   const grid = useSheetGrid(wrapRef, 10);
 

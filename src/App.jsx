@@ -12,12 +12,13 @@ import Login from './pages/Login';
 import SignatureModal from './components/SignatureModal';
 import ChangePasswordModal from './components/ChangePasswordModal';
 const FeedbackModal = lazy(() => import('./components/FeedbackModal'));
-import { loadPermissions, canAccessPage, setDeptAdmin, setSharedAccount } from './utils/permissions';
+import { loadPermissions, canAccessPage, setDeptAdmin, setSharedAccount, can } from './utils/permissions';
 import { LOGISTIC_GROUPS } from './utils/logisticSide';
 import { trackVisit, topPaths } from './utils/navRecent';
 import { effectiveSections } from './utils/sectionScope';
 import useIsMobile from './utils/useIsMobile';
 import ScrollHint from './components/ScrollHint';
+import MobileNavBar from './components/MobileNavBar';
 import { pushSupported, getPushState, subscribePush, unsubscribePush, onPushResubscribeRequest, handlePushResubscribe } from './utils/webpush';
 import { loadPositions, positionLabel } from './utils/positions';   // ตำแหน่งเก็บเป็น key — แสดงต้องแปลงเป็นชื่อ
 import { roleLabel } from './utils/roleMeta';                       // ป้ายชื่อ role (โหมดจำลองมุมมอง 🎭)
@@ -30,6 +31,7 @@ import { checkWrite } from './utils/dbWrite';
 import { notifTargetPath } from './utils/notifLink';   // ปลายทางของแจ้งเตือน (link ก่อน แล้วค่อย ref_table) — จุดเดียว
 import { FEEDBACK_EVENT } from './utils/feedbackPrefill';   // 💬 หน้าอื่นสั่งเปิดกล่องแจ้งปัญหา
 import { isKioskPath } from './utils/kioskRoutes';      // จอแขวนอ่านอย่างเดียว — ยกเว้น auto-logout
+import { ROT_NAV_STATE } from './utils/displayRotation'; // 🔁 key ของ <Routes> ตอนจอวนหน้าเปลี่ยนหน้า
 const ImageCropModal = lazy(() => import('./components/ImageCropModal'));
 const ViewAsModal = lazy(() => import('./components/ViewAsModal')); // 🎭 admin จำลองมุมมอง role อื่น
 
@@ -1696,7 +1698,7 @@ function AutoLogoutWarning({ secsLeft, onStay, onLogout }) {
 }
 
 /* ─── Protected Layout ─────────────────────────────────────────────── */
-// permsVersion ไม่ได้ใช้ในฟังก์ชันโดยตรง — รับไว้เพื่อให้ prop เปลี่ยนแล้ว layout ทั้งต้น re-render
+// permsVersion — ทำให้ layout re-render เมื่อสิทธิ์เปลี่ยน · และเป็น dep ของ `allUnits` ใน userCtx
 // (RoleRoute/Sidebar อ่าน permission cache แบบ sync ผ่าน canAccessPage ระหว่าง render)
 function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, viewAs, onApplyViewAs, userLineId, userTeam, userSection, userSections, userMtnTeams, userIsDeptAdmin, userAccountKind, userPosition, userEmail, userFullName, userNotifyEmail, userSignatureUrl, userAvatarUrl, onAvatarSaved, onSignatureSaved, permsVersion }) {
   const isMobile = useIsMobile();
@@ -1749,7 +1751,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
   const [viewAsOpen, setViewAsOpen] = useState(false);
   const viewAsBanner = viewAs ? (
     <div style={{
-      position: 'fixed', bottom: 14, left: '50%', transform: 'translateX(-50%)', zIndex: 10000,
+      position: 'fixed', bottom: 'calc(14px + var(--mnav-h, 0px))', left: '50%', transform: 'translateX(-50%)', zIndex: 10000,
       display: 'flex', alignItems: 'center', gap: 10, padding: '8px 16px', borderRadius: 999,
       background: 'rgba(147,51,234,0.16)', border: '1.5px solid #a855f7', color: '#c084fc',
       fontSize: 12.5, fontWeight: 700, backdropFilter: 'blur(6px)', boxShadow: 'var(--shadow-float)',
@@ -1814,9 +1816,13 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
     realRole: realRole ?? userRole,
     /* 🖥️ บัญชีกลาง = ลบไม่ได้ — จอต้องเอาไป**เขียนเหตุผล**ให้เห็น ไม่ใช่ซ่อนปุ่มเงียบ (UI §6.9) */
     accountKind: userAccountKind, isSharedAccount: userAccountKind === 'shared',
+    /* 🔐 ชั้นที่ 3 ของสิทธิ์ — "แก้ข้ามหน่วยงานได้ไหม" (15/10 · คำสั่ง user)
+       🔴 คนละแกนกับ `sections` (= ขอบเขตที่ **เห็น**) — ตัวตัดสินอยู่ที่ `utils/writeScope.js`
+       ⚠️ ต้องมี `permsVersion` ใน deps ไม่งั้นแก้สิทธิ์ที่ /permissions แล้วค่านี้ค้างทั้ง session */
+    allUnits: can('scope', 'all_units', userRole),
   }), [userRole, userLineId, userTeam, userSection, userSections, userMtnTeams, userPosition,
        userNotifyEmail, userSignatureUrl, userAvatarUrl, userFullName, userIsDeptAdmin, realRole,
-       userAccountKind]);
+       userAccountKind, permsVersion]);
   /* layout ปกติต้องรู้ว่า sidebar เปิดอยู่ไหมด้วย — แยก memo เพื่อไม่ให้ `isOpen` ไปสั่น context ของจอ /tv */
   const userCtxLayout = useMemo(() => ({ ...userCtx, sidebarOpen: isOpen }), [userCtx, isOpen]);
 
@@ -1904,6 +1910,8 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
         <Suspense fallback={null}>
           <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} role={role} />
         </Suspense>
+        {/* 📱 แถบล่างมือถือ — หน้า Home ไม่มีช่อง ☰ (หน้านี้คือเมนูอยู่แล้ว) */}
+        <MobileNavBar role={role} onOpenSearch={() => setPaletteOpen(true)} />
         {/* 📺 จอตามต้องรับรีโมทได้แม้ค้างอยู่หน้า Hub (เดิม mount เฉพาะหน้าอื่น — จอ TV ที่เปิดหน้านี้ทิ้งไว้สั่งไม่ได้) */}
         {remoteCode && (
           <Suspense fallback={null}>
@@ -1923,8 +1931,10 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
         <AutoLogoutWarning secsLeft={warnSecsLeft} onStay={dismissWarning} onLogout={handleLogout} />
       )}
       <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg)' }}>
-        <ToggleBtn isOpen={isOpen} onClick={() => setIsOpen(true)} />
+        {/* มือถือ: ☰ ย้ายไปแถบล่าง (นิ้วโป้งถึง · ไม่ลอยทับเนื้อหา) — จอคอมเหมือนเดิม (docs/MOBILE-UX-STANDARD.md §3) */}
+        {!isMobile && <ToggleBtn isOpen={isOpen} onClick={() => setIsOpen(true)} />}
         <NotificationBell userId={userId} role={role} />
+        <MobileNavBar role={role} onOpenMenu={() => setIsOpen(true)} onOpenSearch={() => setPaletteOpen(true)} />
         {/* บอกว่า "ยังเลื่อนลงได้อีก" — มือถือไม่มี scrollbar ให้เห็น (ครอบทั้งหน้าเพจและ modal) */}
         <ScrollHint />
         <Suspense fallback={null}>
@@ -1982,7 +1992,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
           minWidth: 0,
         }}>
           <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh', color: 'var(--muted)', fontSize: 14 }}>กำลังโหลด...</div>}>
-            <Routes>
+            {/* 🔁 key จากจอวนหน้า — หน้าเดิมที่เปลี่ยนแค่ ?query (เช่น ผังโรงงาน metric=oee → metric=ng) ต้อง remount
+                ไม่งั้นค่าตั้งต้นจากลิงก์ (utils/urlInit) ไม่ถูกอ่านใหม่ · ค่าว่าง = นำทางปกติ ไม่ remount */}
+            <Routes key={location.state?.[ROT_NAV_STATE] || 'r'}>
               <Route path="/dashboard"  element={
                 <RoleRoute path="/dashboard" userRole={role}><Dashboard /></RoleRoute>
               } />

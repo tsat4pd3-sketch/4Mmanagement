@@ -309,7 +309,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
         — เรียงก่อน join เพื่อให้ลำดับที่ต่างกันแต่เนื้อเดียวกัน ได้คีย์เดียวกัน
      ⚠️ ตัวแปรที่ body ใช้ยังเป็น `scopeSecs` เหมือนเดิม (คีย์กับเนื้อผูกกัน 1:1) */
   const scopeKey = useMemo(() => [...scopeSecs].sort().join('|'), [scopeSecs]);
-  const isMobile = useIsMobile(); // ≤768px: sidebar รายชื่อกะเป็นแถวบนสุด (สูงไม่เกิน 45vh เลื่อนในตัว) ไม่ sticky — desktop ไม่เปลี่ยน
+  const isMobile = useIsMobile(); // ≤768px: รายชื่อกะพับเป็นปุ่ม "กะที่เลือก" แตะแล้วกางเต็ม (ไม่เลื่อนซ้อน) — desktop ไม่เปลี่ยน
+  const [mPickOpen, setMPickOpen] = useState(false);   // 📱 มือถือ: ลิสต์กะกางอยู่ไหม (15/10)
   const wide1100 = !useIsMobile(1099); // ≥1100px → modal แผ่ 2 คอลัมน์ (reactive แทน innerWidth ครั้งเดียว)
   const navigate = useNavigate();
   /* 🔴 2026-10-08 — ref ของ `bumpSess` (ตัว coalesce ใน effect realtime ข้างล่าง)
@@ -2868,9 +2869,24 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
            · มือถือ = แถวปกติที่เลื่อนไปกับหน้า แต่จำกัดสูง 45vh ให้ลิสต์เลื่อนในตัวเอง
              (inner scroller `flex:1 · minHeight:0 · overflowY:auto` ด้านล่างทำงานเหมือนเดิม)
              ไม่งั้นกะ 28 ใบดันเนื้อหาตกจอ ต้องปัดยาวกว่าจะถึงของจริง */
+        /* 📱 มือถือ (15/10 · docs/MOBILE-UX-STANDARD.md §2 ข้อ 5 "ห้ามเลื่อนซ้อนเลื่อน"): เดิมกล่องสูง 45vh เลื่อนในตัว
+           ซ้อนในหน้าที่เลื่อนอยู่แล้ว ⇒ บน 360×640 เห็นกะ 2 ใบครึ่ง ปัดแล้วไม่รู้ว่าอะไรขยับ
+           ⇒ พับเหลือปุ่ม "กะที่เลือก · เปลี่ยนกะ (N)" · แตะ = กางเต็มไม่มีกล่องเลื่อน · เลือกกะแล้วพับเอง
+           ลิสต์ยัง mount อยู่ (display:none) ⇒ สถานะย่อ/กางกลุ่มไม่หาย */
+        <>
+        {isMobile && (
+          <button type="button" className="dr-mpick" aria-expanded={mPickOpen || !selSession} onClick={() => setMPickOpen(o => !o)}>
+            <span className="dr-mpick-main">
+              {selSession
+                ? <><b>{selSession.line_name}</b><span>{selSession.shift === 'day' ? '☀️ กะเช้า' : '🌙 กะดึก'} · {fmtDate(selSession.work_date)}</span></>
+                : <b>เลือกกะที่จะบันทึก</b>}
+            </span>
+            <span className="dr-mpick-act">เปลี่ยนกะ ({sessions.length}){staleSessions.length ? ` · ⏰${staleSessions.length}` : ''} {(mPickOpen || !selSession) ? '▴' : '▾'}</span>
+          </button>
+        )}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0,
           ...(isMobile
-            ? { maxHeight: '45vh' }
+            ? ((mPickOpen || !selSession) ? {} : { display: 'none' })
             : { position: 'sticky', top: 12, alignSelf: 'start', maxHeight: 'calc(100vh - 24px)' }) }}>
           {(() => {
             const groupNames = [...new Set(freshSessions.map(s => lineMap[s.line_name]?.parent_line_name || s.line_name))];
@@ -2926,7 +2942,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   <span style={{ fontWeight: 600 }}>{collapsed && hasSel ? `1/${groupSessions.length}` : groupSessions.length}</span>
                 </button>
                 {shownSessions.map(s => (
-                  <button key={s.id} onClick={() => setSelSession(s)}
+                  <button key={s.id} onClick={() => { setSelSession(s); if (isMobile) setMPickOpen(false); }}
                     style={{ display: 'block', width: '100%', marginBottom: 4, padding: lineMap[s.line_name]?.parent_line_name ? '8px 10px 8px 16px' : '10px 12px',
                       borderRadius: 8, border: `2px solid ${selSession?.id === s.id ? 'var(--accent)' : 'var(--border)'}`,
                       background: selSession?.id === s.id ? 'var(--accent-dim)' : 'var(--card)', cursor: 'pointer', textAlign: 'left' }}>
@@ -3014,6 +3030,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
           })()}
           </div>
         </div>
+        </>
       )}
 
       <div>

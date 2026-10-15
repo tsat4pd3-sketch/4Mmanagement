@@ -191,7 +191,7 @@ export default function DowntimeSiren({ mode = 'open_15min', team = null }) {
     /* อ่านรายการไม่ได้ ต้องขึ้นให้เห็น — "เงียบ" กับ "ไม่มีเครื่องหยุด" หน้าตาเหมือนกันจากข้างนอก
        จอ TV ไม่มีใครเฝ้า ถ้าไม่บอกก็จะเข้าใจว่าทุกอย่างปกติดี */
     if (loadErr) return (
-      <div style={{ position: 'fixed', bottom: 12, right: 12, zIndex: 4000,
+      <div style={{ position: 'fixed', bottom: 'calc(12px + var(--mnav-h, 0px))', right: 12, zIndex: 4000,
                     display: 'flex', alignItems: 'center', gap: 7, background: 'rgba(28,10,10,0.95)',
                     border: '1px solid rgba(239,68,68,0.6)', borderRadius: 10, padding: '7px 11px',
                     fontSize: 11.5, fontWeight: 800, color: '#f87171', boxShadow: 'var(--shadow-lg)' }}>
@@ -201,7 +201,7 @@ export default function DowntimeSiren({ mode = 'open_15min', team = null }) {
     if (!muted) return null
     return (
       <div onClick={unlockNow} title="เบราว์เซอร์บล็อกเสียงจนกว่าจะมีคนแตะจอ 1 ครั้ง — จอที่เปิดทิ้งไว้ต้องแตะทุกครั้งที่หน้าโหลดใหม่"
-        style={{ position: 'fixed', bottom: 12, right: 12, zIndex: 4000, cursor: 'pointer',
+        style={{ position: 'fixed', bottom: 'calc(12px + var(--mnav-h, 0px))', right: 12, zIndex: 4000, cursor: 'pointer',
                  display: 'flex', alignItems: 'center', gap: 7, background: 'rgba(20,16,6,0.94)',
                  border: '1px solid rgba(251,191,36,0.5)', borderRadius: 10, padding: '7px 11px',
                  fontSize: 11.5, fontWeight: 800, color: '#fbbf24', boxShadow: 'var(--shadow-lg)' }}>

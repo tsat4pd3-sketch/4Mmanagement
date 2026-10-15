@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef, useContext } from 'react';
+import { urlParam, urlPick } from '../utils/urlInit';
 import { lineNameCompare } from '../utils/lineHierarchy';
+import { canWriteUnit, writeBlockText } from '../utils/writeScope';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { Link, useNavigate } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
@@ -1464,13 +1466,13 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
 export default function HeijunkaKanban() {
   // ทะเบียนเอกสาร — ชื่อไฟล์ CSV อ่านเลขฟอร์มจาก cache นี้ (lazy chunk ต้องโหลดเอง)
   useEffect(() => { loadDocForms(); }, []);
-  const { fullName, role } = useContext(UserContext);
+  const { fullName, role, section: homeSection, sections: mySections, allUnits } = useContext(UserContext);
   const navigate = useNavigate();
   const canOperate = can('heijunka', 'operate', role);
   const canOverride = can('wip_request', 'override', role);   // ปลดบล็อกสแกนจุดส่ง — "ระดับหัวหน้า ไม่ใช่คนที่ถูกบล็อก" (§4.6 ข้อ 5)
   const [workDate, setWorkDate]   = useState(getWorkDate());
-  const [shiftFilter, setShiftFilter] = useState('all');
-  const [matFilter, setMatFilter] = useState('');            // '' | '200' | '300' | '500' — กรอง view เดียวกันทั้งฝั่งผลิต/store
+  const [shiftFilter, setShiftFilter] = useState(() => urlPick('shift', ['all', 'day', 'night'], 'all'));   // ?shift= ?mat= ?sec= ?fline= ?store= (จอวนหน้า · 15/10)
+  const [matFilter, setMatFilter] = useState(() => urlPick('mat', ['200', '300', '500'], ''));            // '' | '200' | '300' | '500' — กรอง view เดียวกันทั้งฝั่งผลิต/store
   /* ผูก `?view=` (ไม่ใช่ `?tab=` — หน้านี้อาจถูกฝังใต้หน้าแม่ที่ถือ ?tab= อยู่ · UI §6.8 ข้อ 2.4)
      ค่าที่ไม่รู้จักใน URL ตกกลับ 'unified' เอง (useTabParam จัดการให้) ห้ามจอว่าง */
   const [viewMode, setViewMode]   = useTabParam(Object.keys(VIEW_META), 'unified', 'view');
@@ -1503,10 +1505,28 @@ export default function HeijunkaKanban() {
      🔴 เป็น **ตัวกรองมุมมอง** ไม่ใช่การจำกัดสิทธิ์ — default = ทั้งหมด
      เหตุ: สโตร์/วางแผนป้อนของให้ทั้งโรงงาน และหน่วยงานสนับสนุนไม่มีไลน์ผลิตสังกัด
      ⇒ ถ้าบังคับด้วย profiles.sections จะเหลือ 0 แถวทันที (กับดักที่ operator.jsx เตือนไว้) */
-  const [scopeSec,  setScopeSec]      = useState('');
-  const [scopeLine, setScopeLine]     = useState('');
+  const [scopeSec,  setScopeSec]      = useState(() => urlParam('sec') || '');
+  const [scopeLine, setScopeLine]     = useState(() => urlParam('fline') || '');
   const [scopeSet,  setScopeSet]      = useState(null);   // null = ไม่กรอง
   const linesArr = useMemo(() => Object.values(lineMap), [lineMap]);   // รูป array สำหรับ helper ลำดับชั้น (slocOfLine ฯลฯ)
+  /* ══ 🔐 "ดูได้ทั้งโรงงาน แต่สั่งงานได้เฉพาะไลน์ของส่วนงานตัวเอง" (15/10 · คำสั่ง user) ══════
+     คิวบนจอ **ยังโชว์ทุกไลน์เหมือนเดิม** (สโตร์/วางแผนต้องเห็นภาพรวมทั้งโรงงาน — คอมเมนต์ข้างบน)
+     แต่ "ปุ่มเดินสถานะ/ยืนยันส่ง/รับของ" ที่ขยับยอดคงเหลือจริง ต้องเป็นไลน์ของเรา
+     🔴 สโตร์/วางแผน/คลัง ถือ `scope:all_units` ⇒ **งานจริงของเขาไม่กระทบเลย**
+        ที่ปิดคือ leader/supervisor/qa/document_control ที่บังเอิญถือ `heijunka:operate` ด้วย
+     🔴 ไลน์ที่ไม่อยู่ในทะเบียน = ตัดสินไม่ได้ ⇒ ไม่บล็อก (กติกาเดิมของหน้านี้) */
+  const opCtx = useMemo(() => ({ role, section: homeSection, sections: mySections, allUnits }),
+    [role, homeSection, mySections, allUnits]);
+  const lineWrite = useCallback(
+    (lineName) => canWriteUnit(opCtx, lineMap[lineName]?.section),
+    [opCtx, lineMap]);
+  /** ด่านของทุกปุ่มที่สั่งงานในคิว — คืน true = ผ่าน · false = เตือนแล้ว หยุดตรงนั้น */
+  const okToOperate = useCallback((lineName, what) => {
+    const w = lineWrite(lineName);
+    if (w.ok) return true;
+    toast.error(writeBlockText(w, { what: what || 'ใบของไลน์นี้' }));
+    return false;
+  }, [lineWrite]);
   const [parentChildrenMap, setParentChildrenMap] = useState({}); // parent → [children]
   // ── ตู้ Kanban รวม: Rack Center (ภาชนะ + packaging) ──
   const [rackRequests, setRackRequests] = useState([]);
@@ -1523,7 +1543,7 @@ export default function HeijunkaKanban() {
   const [purchaseErr, setPurchaseErr]           = useState('');
   const [bulkBuy, setBulkBuy]                   = useState(null);   // {g, next, label} — เลื่อนสถานะรวมทั้งพาร์ท
   // default = คิวเติม WIP (งานจริงของสโตร์) — เดิม 'fg' คือแท็บรอบส่งซึ่งว่างเปล่าตลอดเมื่อไม่มีรอบ (audit 2026-09-07)
-  const [unifiedStore, setUnifiedStore] = useState('wip'); // 'fg' | 'child' | 'purchase' | 'raw' | 'rack' | 'wip'
+  const [unifiedStore, setUnifiedStore] = useState(() => urlPick('store', ['fg', 'child', 'purchase', 'raw', 'rack', 'wip', 'plating'], 'wip')); // 'fg' | 'child' | 'purchase' | 'raw' | 'rack' | 'wip'
   const [showNoBom, setShowNoBom]       = useState(false); // รายชื่อ product ที่ไม่มี BOM — พับไว้ ตัวเลขยังเห็นบนแถบสรุป
   const [breakPolicies, setBreakPolicies] = useState([]);
   /* 🖼️ รูปชิ้นงาน (2026-09-25 · คำสั่ง user "ควรจะมีรูปภาพชิ้นงานด้วยนะ")
@@ -1680,6 +1700,7 @@ export default function HeijunkaKanban() {
 
   const advanceLot = async (lot, next) => {
     if (lot.status === next) return;
+    if (!okToOperate(lot?.line_name, 'ใบล็อตของไลน์นี้')) return;
     setPullBusy(lot.id);
     try {
       /* compare-and-swap: เดินหน้าได้เฉพาะจากสถานะที่เราเห็นตอนกดเท่านั้น
@@ -1770,6 +1791,7 @@ export default function HeijunkaKanban() {
         เดาจาก min/max แล้วโพสต์ stock = ยอดเข้าคลังผิด */
   const advancePurchase = async (g, next) => {
     if (!g?.first_id || g.status === next) return;
+    if (!okToOperate(g?.line_name, 'ใบขอซื้อของไลน์นี้')) return;
     setPullBusy(g.first_id);
     const { data: pr, error: eFetch } = await supabaseDR.from('purchase_requests')
       .select('*').eq('id', g.first_id).maybeSingle();
@@ -1837,6 +1859,7 @@ export default function HeijunkaKanban() {
   };
 
   const issueRaw = async (raw) => {
+    if (!okToOperate(raw?.line_name, 'ใบเบิกวัตถุดิบของไลน์นี้')) return;
     setPullBusy(raw.id);
     try {
       // นับแถวที่เขียนจริง — ใบที่ถูกจ่ายไปแล้ว/ถูกลบ จะได้ 0 แถวโดยไม่มี error (ห้ามขึ้นเขียวว่าสำเร็จ)
@@ -1995,6 +2018,7 @@ export default function HeijunkaKanban() {
   const advanceWip = async (w, gate) => {
     const next = { pending: 'preparing', preparing: 'delivered' }[w.status];
     if (!next) return;
+    if (!okToOperate(w?.line_name, 'คิวเติมของไลน์นี้')) return;
     /* เฟส 4 (ขั้น 7): ต้องสแกน QR จุดส่งก่อนมาร์กว่าถึงไลน์ — เปิดโมดัลแทนการเลื่อนสถานะทันที
        🔴 ทุกใบผ่านด่านนี้ (เลิกใบแบบ "เติมจุด WIP" ที่เคยข้ามด่านไปแล้ว — 2026-10-01) */
     if (next === 'delivered' && !gate) { setDeliverModal(w); return; }
@@ -2207,6 +2231,7 @@ export default function HeijunkaKanban() {
 
   const confirmRound = async (r, parts) => {
     if (confirming) return;
+    if (!okToOperate(r?.line_name, 'รอบส่งของไลน์นี้')) return;
     setConfirming(r.id);
     try {
       // กันยืนยันซ้ำแบบ atomic: insert แถวยืนยันด้วย ON CONFLICT DO NOTHING (ignoreDuplicates)
@@ -2249,6 +2274,7 @@ export default function HeijunkaKanban() {
 
   const submitReceive = async (actualQtyByMat) => {
     const { round, parts, mode } = receiveModal;
+    if (!okToOperate(round?.line_name, 'การรับของไลน์นี้')) return;
     setReceiving(true);
     try {
       let shortageNote = '';

@@ -897,3 +897,82 @@ table.rec-list tr.rec-row-alert td:first-child, table.mo-list tr.mo-row-alert td
 [data-perf="lite"] .nmb-card,
 [data-perf="lite"] .nmb-card[data-eva="R"] { box-shadow: none; transition: none; }
 [data-perf="lite"] .nmb-ring { box-shadow: none; }
+
+/* ─── 📱 แถบล่างมือถือ (MobileNavBar · 2026-10-15 · docs/MOBILE-UX-STANDARD.md §3) ───────────
+   class `has-mnav` ถูกใส่ที่ <body> เฉพาะตอนแถบโชว์ (มือถือ + คีย์บอร์ดปิด) ⇒ จอคอมไม่มี rule ไหนในบล็อกนี้ทำงาน
+   ของที่ลอยชิดล่างจอต้องบวก `var(--mnav-h, 0px)` (toast/ไซเรน/ชิปเลื่อน/ปุ่มลอย/sticky bottom) */
+body.has-mnav { --mnav-h: calc(56px + env(safe-area-inset-bottom, 0px)); padding-bottom: var(--mnav-h); }
+.mnav {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 900;
+  height: var(--mnav-h, 56px); padding-bottom: env(safe-area-inset-bottom, 0px);
+  display: flex; align-items: stretch;
+  background: var(--card); border-top: 1px solid var(--border2); box-shadow: var(--shadow-float);
+}
+.mnav > button {
+  flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  background: transparent; border: 0; border-radius: 0; padding: 4px 2px; cursor: pointer;
+  color: var(--text2); font-family: var(--font-body);
+}
+.mnav > button.on { color: var(--accent); box-shadow: inset 0 3px 0 var(--accent); background: var(--accent-dim); }
+.mnav .mnav-ico { font-size: 20px; line-height: 1; }
+.mnav .mnav-lbl { font-size: 11px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+
+/* ─── 🔎 พับแถบกรองบนมือถือ (MobileFilterFold · 2026-10-15) — class เหล่านี้ถูก render เฉพาะมือถือ ─── */
+.mfold-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; flex: 1 1 100%; min-width: 0; }
+.mfold-head > .search-input, .mfold-head > .seg { flex: 1 1 100%; min-width: 0; }
+.mfold-head > .search-input input { width: 100%; }
+.mfold-toggle {
+  flex: 1 1 auto; min-width: 0; min-height: 40px; display: flex; align-items: center; gap: 8px;
+  padding: 0 12px; border-radius: var(--ctl-r); cursor: pointer; text-align: left;
+  background: var(--bg3); border: 1px solid var(--border2); color: var(--text); font-size: 13px; font-family: var(--font-body);
+}
+.mfold-toggle[aria-expanded="true"] { border-color: var(--accent); }
+.mfold-txt { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mfold-sum { color: var(--muted); font-weight: 600; }
+.mfold-n { flex-shrink: 1; min-width: 0; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; font-weight: 800; padding: 2px 7px; border-radius: 99px; background: var(--accent-dim); color: var(--accent); }
+.mfold-car { flex-shrink: 0; color: var(--muted); }
+.mfold-tail { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-left: auto; }
+
+/* ─── 📱 เช็คชื่อ & PPE มุมมองการ์ด (Checkin · มือถือเท่านั้น · 2026-10-15) ─────────────────── */
+.ck-cards { display: flex; flex-direction: column; gap: 10px; }
+.ck-group { padding: 6px 10px; border-radius: 8px; background: var(--bg3); font-size: 12px; font-weight: 800; color: var(--text2); }
+.ck-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px 12px 16px; }
+.ck-top { display: flex; align-items: flex-start; gap: 8px; }
+.ck-status { flex-shrink: 0; font-size: 12px; font-weight: 800; text-align: right; max-width: 42%; }
+.ck-tgs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 10px; }
+.ck-tg {
+  min-height: 44px; padding: 4px 6px; border-radius: 8px; cursor: pointer;
+  background: var(--bg3); border: 1px solid var(--border2); color: var(--text2);
+  font-size: 13px; font-weight: 800; font-family: var(--font-body); line-height: 1.2;
+}
+.ck-tg.on { color: #fff; }
+.ck-tg:disabled { opacity: .4; cursor: not-allowed; }
+.ck-more { display: grid; gap: 8px; margin-top: 10px; }
+.ck-lbl { font-size: 11px; font-weight: 700; color: var(--muted); margin-bottom: 3px; }
+.ck-more select, .ck-more input[type=text], .ck-more input[type=number] { min-height: 40px; font-size: 16px !important; max-width: 100% !important; width: 100%; }
+.ck-book > div { align-items: stretch !important; }
+
+/* ─── 📱 แถบปุ่มบันทึกเกาะล่างจอ (มือถือ · ใช้ซ้ำได้ทุกหน้าที่เป็นฟอร์มยาว) ─────────────────── */
+.m-savebar {
+  position: sticky; bottom: 8px; z-index: 20; margin-top: 12px;   /* ไม่บวก --mnav-h: <body> (ตัวเลื่อน) มี padding-bottom เท่าแถบแล้ว sticky ถูกหดตามเอง (วัดจริง 15/10: บวก = ลอยสูงเกิน 56px) */
+  display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 14px;
+  background: var(--card); border: 1px solid var(--border2); border-radius: 12px; box-shadow: var(--shadow-float);
+}
+.m-savebar-sum { flex: 1; min-width: 0; font-size: 13px; font-weight: 700; color: var(--text2); }
+.m-savebar > button {
+  min-height: 46px; padding: 0 22px; border: 0; border-radius: 10px; cursor: pointer;
+  background: var(--accent); color: var(--accent-ink); font-size: 15px; font-weight: 800; font-family: var(--font-display);
+}
+.m-savebar > button:disabled { background: var(--muted); cursor: not-allowed; }
+.ck-tgs > .ck-tg:first-child { grid-column: 1 / -1; }   /* "มางาน" = คำถามแรก เต็มแถว → PPE 3 ปุ่ม → OT */
+
+/* ─── 📱 Daily Report: ปุ่ม "กะที่เลือก · เปลี่ยนกะ" (มือถือเท่านั้น · 2026-10-15) ───────────── */
+.dr-mpick {
+  display: flex; align-items: center; gap: 10px; width: 100%; min-height: 52px; padding: 8px 12px;
+  border-radius: 10px; border: 2px solid var(--accent); background: var(--accent-dim); cursor: pointer; text-align: left;
+  font-family: var(--font-body); color: var(--text);
+}
+.dr-mpick-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.dr-mpick-main b { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dr-mpick-main span { font-size: 12px; color: var(--muted); }
+.dr-mpick-act { flex-shrink: 0; font-size: 12px; font-weight: 800; color: var(--accent); }

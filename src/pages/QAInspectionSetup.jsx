@@ -9,8 +9,15 @@
  *
  * ตาราง: qa_parts, qa_part_drawings, qa_inspection_items (MAIN project) — เขียนได้เฉพาะ qa:manage
  */
+<<<<<<< HEAD
 import { useState, useEffect, useMemo, useCallback, useContext } from 'react';
 import { AnimatePresence } from 'framer-motion';
+=======
+import { useState, useEffect, useMemo, useCallback, useContext, useRef } from 'react';
+import { toDecodableImage } from '../utils/heicToJpeg';
+import { canWriteLine, writableRows, writeBlockText } from '../utils/writeScope';
+import imageCompression from 'browser-image-compression';
+>>>>>>> origin/main
 import { supabase, supabaseDR } from '../supabaseClient';
 import { toast } from '../components/Toast';
 import { UserContext } from '../App';
@@ -112,9 +119,13 @@ const EMPTY_PART = {
 };
 export default function QAInspectionSetup() {
   const isMobile = useIsMobile(); // ≤768px: two-pane ยุบเป็นคอลัมน์เดียว + ปิด sticky (desktop ไม่เปลี่ยน)
-  const { fullName } = useContext(UserContext);
+  const { fullName, role, section: homeSection, sections: mySections, allUnits } = useContext(UserContext);
   const { can } = usePerms();
   const canManage = can('qa', 'manage');
+  /* 🔐 พาร์ทผูกไลน์ (`qa_parts.line_name`) ⇒ แก้ spec/ลบพาร์ท+จุดตรวจ+แบบ ได้เฉพาะไลน์ส่วนงานตัวเอง
+     (audit 15/10 — ทั้งไฟล์เดิมไม่มีคำว่าขอบเขตเลย) · ขา QA ถือ `scope:all_units` จึงไม่กระทบ */
+  const wctx = useMemo(() => ({ role, section: homeSection, sections: mySections, allUnits }),
+    [role, homeSection, mySections, allUnits]);
   // 📜 ค่าที่เคยบันทึกไว้ (Main) — วิธีตรวจ (Visual/CF ที่ไม่ใช่เครื่องมือในทะเบียน) / ลูกค้า ยังเลือกซ้ำได้ ไม่หายเงียบ (2026-09-07)
   const methodHist = useColumnHistory(supabase, 'qa_inspection_items', 'method');
   const custHist = useColumnHistory(supabase, 'qa_parts', 'customer');
@@ -140,6 +151,10 @@ export default function QAInspectionSetup() {
     setParts(data || []);
     setSelId(prev => prev && (data || []).some(p => p.id === prev) ? prev : (data?.[0]?.id ?? null));
   }, []);
+  /* ดูได้ทั้งโรงงาน — ด่านอยู่ที่ "แก้" ⇒ คำนวณต่อพาร์ทตอนกดปุ่ม ไม่ซ่อนพาร์ทออกจากลิสต์
+     (ทะเบียนจุดตรวจเป็นข้อมูลอ้างอิงของทั้งโรงงาน ซ่อน = คนหาไม่เจอแล้วสร้างซ้ำ) */
+  const partWrite = useMemo(() => canWriteLine(wctx, (parts.find(p2 => p2.id === selId) || {}).line_name, lines),
+    [wctx, parts, selId, lines]);
   useEffect(() => { loadParts(); }, [loadParts]);
 
   useEffect(() => {
@@ -261,6 +276,9 @@ export default function QAInspectionSetup() {
       part_rank: f.part_rank || null, part_kind: f.part_kind || null,
       ...(f.id ? { is_active: f.is_active } : {}),
     };
+    /* 🔐 ด่านซ้ำตอนกดจริง — ไลน์ปลายทางมาจากฟอร์ม (เปลี่ยนไลน์ได้) จึงเช็คค่าที่จะเขียนจริง */
+    const w = canWriteLine(wctx, f.line_name, lines);
+    if (!w.ok) { toast.error(writeBlockText(w, { what: 'พาร์ทของไลน์นี้' })); return; }
     const { data, error } = f.id
       ? await supabase.from('qa_parts').update(payload).eq('id', f.id).select().single()
       : await supabase.from('qa_parts').insert({ ...payload, created_by: fullName || null }).select().single();
@@ -273,6 +291,7 @@ export default function QAInspectionSetup() {
 
   const delPart = async () => {
     if (!sel) return;
+    if (!partWrite.ok) { toast.error(writeBlockText(partWrite, { what: 'พาร์ทของไลน์นี้' })); return; }
     if (!window.confirm(`ลบ ${sel.part_no} พร้อมจุดตรวจทั้งหมด ${items.length} จุด?`)) return;
     const partId = sel.id;
     /* 🔴 ต้อง `.select('id')` แล้ว**นับแถว** ก่อนแตะ storage (QC audit 2026-10-06)
@@ -372,7 +391,13 @@ export default function QAInspectionSetup() {
                     .filter(Boolean).join(' · ') || '—'}
                 </div>
               </div>
-              {canManage && (
+              {/* 🔐 มีสิทธิ์ qa:manage แต่พาร์ทนี้เป็นของไลน์ส่วนงานอื่น — เขียนบอก ห้ามซ่อนปุ่มเงียบ */}
+              {canManage && !partWrite.ok && (
+                <div style={{ fontSize: 12, color: '#eab308', padding: '6px 0' }}>
+                  🔒 {writeBlockText(partWrite, { what: 'พาร์ทนี้' })}
+                </div>
+              )}
+              {canManage && partWrite.ok && (
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   <button style={btnSt()} onClick={() => setEditor({})}
                     title="แผ่น Drawing/รูปชิ้นงาน + ปักหมุด + สเปคทุกจุด — หน้าตาและวิธีใช้เดียวกับตั้งค่าจุดตรวจ PM">

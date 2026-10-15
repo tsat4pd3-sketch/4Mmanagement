@@ -9,6 +9,7 @@
  */
 import { useState, useEffect, useMemo, useCallback, useContext, useRef } from 'react';
 import ReadOnlyNote from '../components/ReadOnlyNote';
+import { urlParam, urlPick } from '../utils/urlInit';
 import { Link } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { loadLinesRes } from '../utils/useProductionLines';
@@ -79,9 +80,9 @@ export default function VSM() {
   const [savedMaps, setSavedMaps] = useState([]);
   const [peSets, setPeSets] = useState([]);           // ชุด PFC/FMEA/CP (Main) — worklist ใช้ชี้ "เสนอ routing จาก PFC"
 
-  const [matNo, setMatNo] = useState('');
+  const [matNo, setMatNo] = useState(() => urlParam('mat') || '');   // ?mat= ?state= (จอวนหน้า · 15/10) — เดือน = เดือนปัจจุบันเสมอ (จอแขวนห้ามค้างเดือนเก่า)
   const [monthKey, setMonthKey] = useState(monthKeyNow());
-  const [state, setState] = useState('current');
+  const [state, setState] = useState(() => urlPick('state', ['current', 'future'], 'current'));
 
   const [model, setModel] = useState(null);
   const [mapMeta, setMapMeta] = useState(null);       // แถว vsm_maps ที่กำลังแก้ (null = ยังไม่บันทึก)

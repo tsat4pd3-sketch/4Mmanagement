@@ -1,5 +1,6 @@
 import { useState, useEffect, useContext, useMemo, useRef } from 'react';
 import { LPA_LAYERS } from '../utils/prodRoutine';
+import useIsMobile from '../utils/useIsMobile';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can, canDelete as canDeleteUtil } from '../utils/permissions';
@@ -120,6 +121,7 @@ export default function LayerProcessAudit() {
   const { role, lineId: userLineId, sections: scopeSecs = [], fullName } = useContext(UserContext);
   const canRecord = can('lpa', 'record', role);
   const canManage = can('lpa', 'manage', role);
+  const isMobile = useIsMobile();   // 📱 ปุ่มตอบใหญ่เต็มแถว + ปุ่มบันทึกเกาะล่าง (15/10 · MOBILE-UX-STANDARD §4 ชนิด A)
   /* 🖥️🔴 ต้องผ่าน `canDelete()` ของกลาง (utils/permissions.js) — เดิมประกาศตัวแปรชื่อ `canDelete`
      ทับ util แล้วเรียกแค่ `can(...)` ⇒ อ่านโค้ดเหมือนมีด่าน แต่ **ด่าน "บัญชีกลางห้ามลบ" ไม่ทำงาน**
      (ออดิท 13/10 เจอแบบนี้ 5 หน้า) · เปลี่ยนชื่อตัวแปรเป็น `mayDelete` + เรียก util ผ่าน alias
@@ -1093,10 +1095,11 @@ ${issuesHtml}
                           <span style={{ fontSize: 11, color: 'var(--muted)' }}> (เฝ้าระวัง {thDate(q.issue_start)} - {thDate(q.issue_end)})</span>
                         )}
                       </div>
-                      <div style={{ display: 'flex', gap: 5 }}>
+                      <div style={{ display: 'flex', gap: 5, ...(isMobile ? { flex: '1 1 100%' } : null) }}>
                         {ANSWERS.map(an => (
                           <button key={an.key} disabled={!canRecord} onClick={() => setAnswer(q.id, an.key)}
                             style={{
+                              ...(isMobile ? { flex: 1, minHeight: 44 } : null),
                               minWidth: 40, padding: '6px 8px', borderRadius: 7, fontWeight: 800, fontSize: 13, cursor: canRecord ? 'pointer' : 'default',
                               border: '1.5px solid ' + (a?.answer === an.key ? an.color : 'var(--border2)'),
                               background: a?.answer === an.key ? an.color : 'var(--bg3)',
@@ -1145,11 +1148,18 @@ ${issuesHtml}
             </div>
           )}
 
-          {canRecord && (
+          {canRecord && !isMobile && (
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 6 }}>
               <button onClick={saveAudit} disabled={savingAudit} style={{ ...btnAccent, padding: '10px 26px' }}>
                 {savingAudit ? '⏳ กำลังบันทึก...' : '💾 บันทึกผลตรวจ'}
               </button>
+            </div>
+          )}
+          {/* 📱 มือถือ: ปุ่มบันทึกเกาะล่างจอ + บอกว่าตอบไปกี่ข้อ (ข้อเยอะ ปุ่มท้ายฟอร์มอยู่ไกลหลายจอ) */}
+          {canRecord && isMobile && (
+            <div className="m-savebar">
+              <span className="m-savebar-sum">ตอบแล้ว {auditQuestions.filter(q => draft?.answers[q.id]?.answer).length}/{auditQuestions.length} ข้อ</span>
+              <button type="button" onClick={saveAudit} disabled={savingAudit}>{savingAudit ? '⏳ กำลังบันทึก...' : '💾 บันทึกผลตรวจ'}</button>
             </div>
           )}
           {!canRecord && <div style={{ fontSize: 12, color: 'var(--muted)' }}>คุณมีสิทธิ์ดูอย่างเดียว (บันทึกผลได้เฉพาะ role ที่มีสิทธิ์ lpa:record)</div>}

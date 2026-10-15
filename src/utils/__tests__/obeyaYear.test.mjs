@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import {
   yearRange, monthRange, prevMonthRange, monthKeys, monthLabel, SUMMARY_KEY,
   axisOeeYear, axisQualityYear, axisSafetyYear, axisManYear, axisDeliveryYear, axisCostYear, paretoYear, monthBarStatus,
-  axisPpmYear, manualMonthSeries, monthBarScore, autoMonthsOf, fillAutoWithManual,
+  axisPpmYear, manualMonthSeries, monthBarScore, autoMonthsOf, fillAutoWithManual, attachManOverlay,
 } from '../obeyaYear.js';
 
 test('ช่วงเวลา: ปีปัจจุบันตัดที่ today · ปีย้อนหลังทั้งปี · เดือน drill-down ตัดที่ today', () => {
@@ -186,4 +186,16 @@ test('autoMonthsOf: เก็บเฉพาะ 12 เดือนที่ม�
   const ser = monthKeys(2026).map((k, i) => ({ k, v: i === 7 ? 88 : null })).concat([{ k: SUMMARY_KEY, v: 88, summary: true }]);
   assert.deepEqual(autoMonthsOf(ser), { 8: 88 });
   assert.deepEqual(autoMonthsOf([]), {});
+});
+
+test('fillAutoWithManual: เดือนที่ถูกทับต้องคืนค่ากรอกมือไว้ใน manOverlap (วาดซ้อนเทียบ ไม่หายเงียบ) · attachManOverlay ติดลงซีรีส์', () => {
+  const r = fillAutoWithManual({ autoMonths: { 8: 88, 9: 90 }, manEntries: { 8: '70', 9: 95, 1: 92 }, year: 2026 });
+  assert.deepEqual(r.manOverlap, { 8: 70, 9: 95 });
+  assert.equal(r.overlapN, 2);
+  const s = attachManOverlay(r.series, r.manOverlap);
+  assert.equal(s[7].v, 88); assert.equal(s[7].man, 70);      // ส.ค. แท่ง = ระบบ · ซ้อน = กรอกมือ
+  assert.equal(s[0].v, 92); assert.equal(s[0].man, undefined); // ม.ค. กรอกมือล้วน ไม่มีอะไรให้ซ้อน
+  const r0 = fillAutoWithManual({ autoMonths: { 8: 88 }, manEntries: { 8: 70 }, year: 2026 });
+  assert.equal(r0.series, null); assert.deepEqual(r0.manOverlap, { 8: 70 });   // ไม่มีเดือนให้เติม แต่ของซ้อนยังต้องส่งกลับ
+  assert.deepEqual(attachManOverlay([{ k: '2026-08', v: 88 }], r0.manOverlap)[0], { k: '2026-08', v: 88 });   // เดือน 1 ไม่ใช่ 8 — ไม่ติดผิดเดือน
 });

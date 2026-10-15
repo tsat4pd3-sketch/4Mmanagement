@@ -26,6 +26,7 @@ import { useLatestRequest } from '../utils/useLatestRequest';
 import { polyArea, centroid, labelAnchor, bboxOf } from '../utils/regionGeom';
 import MapPillars3D, { map3dTransform } from '../components/MapPillars3D';
 import useMapOrbit from '../components/useMapOrbit';
+import { urlPick, urlBool, urlNum } from '../utils/urlInit';
 import { pillarHeight, pillarLegend, liftLabels, orbitScale } from '../utils/mapPillar';
 import { loadPmTeams, isAmTeam } from '../utils/pmTeams';
 import { fetchByIds } from '../utils/fetchByIds';
@@ -516,10 +517,10 @@ export default function FactoryMap({ setupMode = false }) {
   const [editing, setEditing] = useState(canEdit); // setup mode + มีสิทธิ์ → เข้าโหมดแก้เลย
   const [uploading, setUploading] = useState(false);
   const [aspect, setAspect] = useState(null);
-  const [metric, setMetric] = useState('health'); // 🚦 default = ปกติ/ผิดปกติ (2026-08-26 คำสั่ง user) — เปิดมาตอบก่อนว่าทั้งโรงงานโอเคไหม
-  const [showFac, setShowFac] = useState(false); // 🫥 เปิดดูโซนสนับสนุนชั่วคราวบน metric ผลิต (กดจากชิป)
+  const [metric, setMetric] = useState(() => urlPick('metric', Object.keys(METRICS), 'health')); // ?metric= (จอวนหน้า · 15/10) // 🚦 default = ปกติ/ผิดปกติ (2026-08-26 คำสั่ง user) — เปิดมาตอบก่อนว่าทั้งโรงงานโอเคไหม
+  const [showFac, setShowFac] = useState(() => urlBool('support', false)); // 🫥 เปิดดูโซนสนับสนุนชั่วคราวบน metric ผลิต (กดจากชิป)
   // แผงขวา: 'review' = สรุปทบทวนทั้งวัน (default · ประชุมผู้จัดการ) · 'live' = จัดอันดับสดตาม metric (เดิม)
-  const [panelMode, setPanelMode] = useState('review');
+  const [panelMode, setPanelMode] = useState(() => urlPick('panel', ['review', 'obeya', 'live'], 'review'));
   // 🏛️ หัวข้อที่กดเจาะอยู่บนบอร์ด OBEYA (null = ยังไม่กด) — ดู obeyaBoard
   const [obeyaAxis, setObeyaAxis] = useState(null);
   const [reviewDate, setReviewDate] = useState(reviewDefaultDate);
@@ -557,6 +558,9 @@ export default function FactoryMap({ setupMode = false }) {
      ทางแก้ที่เลือก: ให้แต่ละเครื่องปรับขนาดป้ายเอง (A− / A+) จำใน localStorage — ตั้งครั้งเดียวต่อจอ
      (แก้จาก OS ก็ได้แต่หน้างานเข้า settings จอ TV ไม่ได้/ไม่กล้า) · คู่กับปุ่มซ่อนแผงขวาคืนพื้นที่ให้ผัง */
   const [lblScale, setLblScale] = useState(() => {
+    // ?lbl= จากลิงก์จอวนหน้าชนะค่าที่จำในเครื่อง (ไม่เขียนทับ localStorage จนกว่าจะกด A−/A+)
+    const fromUrl = urlNum('lbl', 0.6, 1.6, null);
+    if (fromUrl != null) return Math.round(fromUrl * 10) / 10;
     try { const v = parseFloat(localStorage.getItem('fm_lbl_scale')); return Number.isFinite(v) ? Math.min(1.6, Math.max(0.6, v)) : 1; }
     catch { return 1; }
   });
@@ -566,12 +570,17 @@ export default function FactoryMap({ setupMode = false }) {
     try { localStorage.setItem('fm_lbl_scale', String(nv)); } catch { /* per-device pref เท่านั้น */ }
   };
   // ซ่อนแผงขวา (จอ TV เอาพื้นที่คืนให้ผัง — จำต่อเครื่อง) · ปุ่มอยู่แถบ metric
-  const [panelHide, setPanelHide] = useState(() => { try { return localStorage.getItem('fm_panel_hide') === '1'; } catch { return false; } });
+  const [panelHide, setPanelHide] = useState(() => urlBool('nopanel', (() => { try { return localStorage.getItem('fm_panel_hide') === '1'; } catch { return false; } })()));
   // 🧊 มุมมอง 3D (2.5D · mockup 14/10) — ความชอบรายเครื่อง · โหมดแก้ผังบังคับ 2D เสมอ (ลาก/คลิกจุดต้องตรงพิกัด)
-  const [view3d, setView3d] = useState(() => { try { return localStorage.getItem('fm_view3d') === '1'; } catch { return false; } });
+  const [view3d, setView3d] = useState(() => { const u = urlPick('view', ['2d', '3d'], null); if (u) return u === '3d'; try { return localStorage.getItem('fm_view3d') === '1'; } catch { return false; } });
   const toggleView3d = () => setView3d(v => { const n = !v; try { localStorage.setItem('fm_view3d', n ? '1' : '0'); } catch { /* ignore */ } return n; });
   // 🔄 มุมกล้อง 3D — ลากหมุน/ปุ่ม/ทัวร์ (ทำงานเฉพาะ 3D ที่ไม่ได้แก้ผัง — editing ประกาศไว้ข้างบนแล้ว)
   const orbit = useMapOrbit(view3d && !editing);
+  // ?tour=1 — จอวนหน้าสั่งเปิดทัวร์หมุนกล้องเอง (เฉพาะ 3D) · ครั้งเดียวตอนเปิด
+  const tourFromUrl = useRef(urlBool('tour', false));
+  useEffect(() => {
+    if (tourFromUrl.current && view3d && !editing) { tourFromUrl.current = false; orbit.setAuto(true); }
+  }, [view3d, editing, orbit]);
   const togglePanelHide = () => setPanelHide(v => { const nv = !v; try { localStorage.setItem('fm_panel_hide', nv ? '1' : '0'); } catch { /* ignore */ } return nv; });
   const wrapRef = useRef(null);
   const hoverCardRef = useRef(null); // วัดความสูงจริงของการ์ด hover เพื่อกันตกขอบ

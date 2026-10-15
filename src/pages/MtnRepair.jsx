@@ -26,7 +26,7 @@ import { moFormatHint, moMonthKeyOf, moNoOf, moSeqKeyOf } from '../utils/moNumbe
 import { buildMoStaleBoard } from '../utils/mtnStale';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
-import { teamsForUser, teamForSection, teamForItem, sameTeam, filterByTeam, visibleForTeam, seesEverything, teamKeyOf, deptNameOf, teamOptions, teamRowOwner } from '../utils/mtnTeams';
+import { teamsForUser, teamForSection, teamForItem, sameTeam, filterByTeam, visibleForTeam, seesEverything, teamKeyOf, deptNameOf, teamOptions, teamRowOwner, teamRowLockNote, canWriteTeam, teamBlockText } from '../utils/mtnTeams';
 import { VENDOR_STATUS, canSendVendor, canReceiveVendor, techRepairMin, grossRepairMin, vendorHoldMin, vendorHoldLabel } from '../utils/mtnVendor';
 import { loadPmTeams, pmTeamsSync, DEFAULT_TEAMS } from '../utils/pmTeams';
 import { loadDocForms, docFormSync } from '../utils/docForms';
@@ -2049,6 +2049,10 @@ function DetailDrawer({ order, role, parts = [], mtnDepts = MTN_DEPTS, fullName,
      เกณฑ์อยู่ `moRemoveMode()` ใน mtnStepPerm.js **ห้ามเขียน if (status === …) ที่นี่** */
   const removal = moRemoveMode(o);
   const del = async () => {
+    /* 🔐 ลบใบของทีมอื่น = ไม่มีเหตุผลทางธุรกิจรองรับเลย (audit 15/10) — ต่างจากการ "แก้ย้อนหลัง"
+       ของหัวหน้า ที่ยังเป็นพฤติกรรมเดิม · ไม่ผูกทีม = ไม่บล็อก (ไม่รู้ ≠ ปฏิเสธ) */
+    const tw = canWriteTeam(userTeams, o.mtn_dept, { role });
+    if (!tw.ok) { toast.error(teamBlockText(tw, 'ใบแจ้งซ่อมของทีมนี้')); return; }
     if (removal.mode === MO_REMOVE_DELETE) {
       if (!confirm(`ลบใบแจ้งซ่อมนี้?\n\n${removal.why}`)) return;
       /* 🔴 นับแถวที่ลบได้ก่อน ค่อยลบรูปใน storage — เช็คแค่ `error` แล้วลบรูปไปก่อน
@@ -2761,7 +2765,11 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
         const meta = stepMeta(step, { mtnForm: isMtnForm });
         // บอกให้ตรงเหตุ — "ไม่มีสิทธิ์" เฉยๆ ทำให้หน้างานเดาว่าต้องไปขออะไรกับใคร
         if (verdict.code === 'other_team')
-          return toast.error(`ขั้นปิดใบเป็นของผู้จัดการทีม ${deptNameOf(orderTeam)} — บัญชีนี้ถูกตั้งเป็นช่างทีมอื่น`);
+          /* 15/10: ด่านนี้ครอบขั้น 2-3 (รับงาน/ลงผลซ่อม) ด้วยแล้ว — ข้อความต้องตรงขั้นที่กด */
+          return toast.error(step === 2 || step === 3
+            ? `ใบนี้แจ้งถึงทีม ${deptNameOf(orderTeam)} โดยตรง — ให้ช่างทีมนั้นทำ`
+              + ' (ถ้าไม่ใช่งานของเขา ให้ตีกลับใบ หรือให้เขากด “➡️ ส่งต่องาน” มาที่ทีมคุณ)'
+            : `ขั้นปิดใบเป็นของผู้จัดการทีม ${deptNameOf(orderTeam)} — บัญชีนี้ถูกตั้งเป็นช่างทีมอื่น`);
         if (verdict.code === 'await_mgr_approval')
           return toast.error('ใบนี้เป็นงานปรับปรุง/สร้าง — ต้องให้ผู้จัดการเซ็นอนุมัติก่อนช่างเริ่มงาน (ปุ่ม “✍️ อนุมัติใบ MO” ในใบ)');
         if (meta?.ownTeam && can('mtn_repair', 'service_own_team', role) && !inOrderTeam)
@@ -3294,7 +3302,22 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
   const [sub, setSub] = useState('tech');
   const reload = () => reloadMasters();
   const addRow = async (table, payload) => { const { error } = await supabaseDR.from(table).insert(payload); if (error) return toast.error(error.message); reload(); };
-  const updRow = async (table, id, payload) => { const { error } = await supabaseDR.from(table).update(payload).eq('id', id); if (error) return toast.error(error.message); reload(); };
+  /* 🔐 ทะเบียน "ช่าง" กับ "ค่าแรงมาตรฐาน" มีคอลัมน์เจ้าของเป็น `dept` (ไม่ใช่ `team`) ⇒ เดิมหลุด
+     จาก `canEditRow` ของ SimpleList ในไฟล์เดียวกัน (audit 15/10) ⇒ แก้ช่าง/ค่าแรงของทีมอื่นได้
+     🔴 ด่านอยู่ที่ `updRow` = ทางผ่านเดียวของทุกปุ่มในแท็บนี้ (กันลืมเวลามีปุ่มใหม่) */
+  const DEPT_OWNED = { mtn_technicians: '👷 ช่าง', mtn_labor_rates: '💰 ค่าแรงมาตรฐาน' };
+  const deptRowGuard = (table, id) => {
+    const label = DEPT_OWNED[table];
+    if (!label) return true;
+    const row = (table === 'mtn_technicians' ? techs : laborRates).find(x => x.id === id);
+    const own = teamRowOwner({ team: row?.dept }, { myTeams: userTeams, role });
+    if (own.ok) return true;
+    toast.error(teamRowLockNote({ team: row?.dept }, own.code));
+    return false;
+  };
+  const updRow = async (table, id, payload) => {
+    if (!deptRowGuard(table, id)) return;
+    const { error } = await supabaseDR.from(table).update(payload).eq('id', id); if (error) return toast.error(error.message); reload(); };
   // เปลี่ยนชื่อใน master → ถามว่าจะให้ใบซ่อมที่บันทึกชื่อเดิมไว้ตามไปด้วยไหม
   const cascadeRename = async (col, oldV, newV) => {
     if (!oldV || !newV || oldV === newV) return;
