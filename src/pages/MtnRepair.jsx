@@ -3659,6 +3659,10 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
      ทั้งที่ออกไปแล้วเป็นร้อยใบ และไปซ้ำกับเลขเก่า — ต้องยืนยันก่อนเสมอ (เคสจริง: production
      ทะเบียนเป็น PRD แต่ของจริงออก PRO มา 708 ใบ · 14/10) */
   const saveMoCode = async (t, code) => {
+    /* 🔐 เลขรันใบ MO = เอกสารควบคุมของทีมนั้น — แก้ข้ามทีม = เลขซ้ำ/กระโดดในใบที่ยื่นออกไปแล้ว
+       (audit 15/10) · ไม่ผูกทีม = ไม่บล็อก */
+    const tw = canWriteTeam(userTeams, t?.key || t?.dept_name, { role });
+    if (!tw.ok) { toast.error(teamBlockText(tw, 'เลขเอกสารของทีมนี้')); return; }
     const c = (code || '').trim().toUpperCase(); if (!c || c === (t.mo_code || '')) return;
     if (!window.confirm(`เปลี่ยนรหัสทีม ${t.dept_name}: ${t.mo_code || '(ว่าง)'} → ${c}\n\n`
       + `⚠️ ตัวนับเลขรันผูกกับรหัส — เปลี่ยนแล้วเลขจะ**เริ่มใหม่จาก 1** (ตอนนี้อยู่ที่ ${t.last_seq})\n`
@@ -3669,6 +3673,10 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
   };
   /* เขียนลง **คีย์จริง** (`t.seqKey`) ไม่ใช่ `mo_code` ดิบ — ไม่งั้นทีมรายเดือนกรอกแล้วไม่มีผล */
   const saveMoSeq = async (t, val) => {
+    /* 🔐 เลขรันใบ MO = เอกสารควบคุมของทีมนั้น — แก้ข้ามทีม = เลขซ้ำ/กระโดดในใบที่ยื่นออกไปแล้ว
+       (audit 15/10) · ไม่ผูกทีม = ไม่บล็อก */
+    const tw = canWriteTeam(userTeams, t?.key || t?.dept_name, { role });
+    if (!tw.ok) { toast.error(teamBlockText(tw, 'เลขเอกสารของทีมนี้')); return; }
     if (!t.seqKey) return toast.error('ยังตัดสินคีย์ตัวนับของทีมนี้ไม่ได้ (อ่านเวลาไม่ออก) — ยังไม่บันทึก');
     const n = Math.max(0, parseInt(val, 10) || 0);
     const { error } = await supabaseDR.from('mtn_mo_seq').upsert({ team_code: t.seqKey, last_seq: n, updated_at: new Date().toISOString() }, { onConflict: 'team_code' });

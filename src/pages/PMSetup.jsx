@@ -22,6 +22,7 @@ import useColumnHistory from '../utils/useColumnHistory' // 📜 เลขเค
 import { loadLinesRes, LINE_COLUMNS } from '../utils/useProductionLines'
 import { loadProcessTypes, activeProcessTypes } from '../utils/processTypes'
 import { teamsForUser } from '../utils/mtnTeams'
+import { canWriteTeam, teamBlockText } from '../utils/mtnTeams'
 import { findChecklist, getOrCreateChecklist, setChecklistFrequency, listChecklistsByDept, moveChecklistDept, copyChecklistToDept, copyChecklistToEquipment } from '../lib/pmChecklists'
 import { fetchCategories, fetchCheckingMethods, categoryColor } from '../lib/pmTaxonomy'
 import TaxonomyManagerModal from '../components/TaxonomyManagerModal'
@@ -285,7 +286,7 @@ function CheckpointCard({ cp, label, onChange, onDelete, onDuplicate, onCpImage,
 }
 
 // ─── EquipmentModal ───────────────────────────────────────────────────────────
-function EquipmentModal({ onClose, onSaved, editJig, department, categories, methods }) {
+function EquipmentModal({ onClose, onSaved, editJig, department, categories, methods, deptWrite }) {
   const isEdit = !!editJig
   const [userId, setUserId] = useState(null)
 
@@ -676,6 +677,8 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
   }
 
   const handleSave = async () => {
+    /* 🔐 ด่านซ้ำตอนกดบันทึก — เปิดโมดัลจาก `?dept=` ของทีมอื่นได้ */
+    if (deptWrite && !deptWrite.ok) { setError('อุปกรณ์/แผน PM ของทีมนี้เป็นของทีมช่างอื่น — ดูได้ แต่แก้ไม่ได้'); return }
     if (!name.trim()) { setError('กรุณาใส่ชื่ออุปกรณ์'); return }
     if (addMode === 'workstation' && !isEdit && !machineId) { setError('กรุณาเลือกเครื่องจักรจาก Floor Map'); return }
     {
@@ -1486,13 +1489,18 @@ function EquipmentTable({ groups, canSetup, onEdit, onDelete }) {
 
 // ─── PMSetup (main) ───────────────────────────────────────────────────────────
 export default function PMSetup() {
-  const { role, mtnTeams: userMtnTeams, sections: scopeSecs } = useContext(UserContext)
+  const { role, mtnTeams: userMtnTeams, sections: scopeSecs, allUnits } = useContext(UserContext)
   const canSetup = can('pm', 'setup', role)
   // ทีมช่างของ user — ใช้ล็อกไม่ให้แก้ master ของทีมอื่น (ดู CLAUDE.md "ใครเป็นเจ้าของ คนนั้นแก้")
   const pmUserTeams = useMemo(() => teamsForUser(userMtnTeams, scopeSecs), [userMtnTeams, scopeSecs])
   const [searchParams] = useSearchParams()
   const setParams = useMergeParams()
   const department = searchParams.get('dept') || 'maintenance'
+  /* 🔐 ชั้นที่ 3 ฝั่งช่าง — ทีมที่เปิดอยู่มาจาก `?dept=` ตรงๆ ⇒ เดิมสลับ URL แล้วแก้อุปกรณ์/
+     แผน PM/ชนิดทีม ของทีมอื่นได้ (audit 15/10) · `pmUserTeams` คำนวณไว้แล้วแต่ส่งเข้าแค่ modal taxonomy
+     🔴 ไม่ผูกทีม = ไม่บล็อก (ไม่รู้ ≠ ปฏิเสธ) */
+  const deptWrite = useMemo(() => canWriteTeam(pmUserTeams, department, { allUnits, role }),
+    [pmUserTeams, department, allUnits, role])
   const [jigs, setJigs] = useState([])
   const [cpCounts, setCpCounts] = useState({})
   const [pinFlags, setPinFlags] = useState({})
@@ -1509,6 +1517,8 @@ export default function PMSetup() {
      ผลทันที: สิทธิ์ที่ใช้บันทึกผลตรวจของทีมนี้สลับระหว่าง am:record / pm:record + คำอธิบายบนหน้าจอ
      ⚠️ mtn_teams อยู่ DR project → ต้องใช้ supabaseDR (กฎ 2 project ใน CLAUDE.md) */
   const toggleTeamKind = async () => {
+    /* 🔴 เปลี่ยน AM⇄PM = ย้ายว่า "ทีมนี้ใช้คีย์ไหนบันทึกผลตรวจ" — แตะสิทธิ์ของทีมอื่นโดยตรง */
+    if (!deptWrite.ok) { toast.error(teamBlockText(deptWrite, 'ชนิดงานของทีมนี้')); return }
     const cur = teamKindOf(department)
     const next = cur === 'am' ? 'pm' : 'am'
     const name = teams.find(t => t.key === department)?.label ?? department
@@ -1623,6 +1633,7 @@ export default function PMSetup() {
   ].filter(Boolean)
 
   const handleDelete = async (jig) => {
+    if (!deptWrite.ok) { toast.error(teamBlockText(deptWrite, 'อุปกรณ์ของทีมนี้')); return }
     if (!confirm(`ลบ "${jig.name}" ?`)) return
     /* 🔴 นับแถวก่อนแตะ storage (QC audit 06/10) — ไม่นับ = แถว jig ยังอยู่
        แต่รูปทั้งชุด (เฟรม + จุดตรวจ + โมเดล 3D) ถูกลบ ⇒ ทะเบียนจิ๊กเสียรูปถาวร */
@@ -1744,7 +1755,7 @@ export default function PMSetup() {
       )}
 
       <AnimatePresence>
-        {showModal && <EquipmentModal onClose={() => setShowModal(false)} onSaved={handleSaved} editJig={editJig} department={department} categories={categories} methods={methods} />}
+        {showModal && <EquipmentModal onClose={() => setShowModal(false)} onSaved={handleSaved} editJig={editJig} department={department} categories={categories} methods={methods} deptWrite={deptWrite} />}
         {taxModal === 'category' && (
           <TaxonomyManagerModal teams={pmTeamsSync()} role={role} myTeams={pmUserTeams} table="pm_checkpoint_categories" title="จัดการประเภทจุดตรวจ (Category)" extraField="color" withEquipTypes
             onClose={() => setTaxModal(null)} onChanged={loadTaxonomy} />
