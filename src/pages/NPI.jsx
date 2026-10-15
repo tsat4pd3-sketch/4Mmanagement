@@ -274,7 +274,7 @@ export default function NPI() {
     if (!project) return;
     /* 🔐 ด่านซ้ำตอนเขียนจริง — ไลน์ปลายทางมาจากฟอร์ม/ชุด PE ที่เลือก */
     const w = partWriteOf(m.line_name);
-    if (!w.ok) return toast.error(writeBlockText(w, { what: 'พาร์ทของไลน์นี้' }));
+    if (!w.ok) return toast.info(writeBlockText(w, { what: 'พาร์ทของไลน์นี้' }));
     setSaving(true);
     const row = {
       part_no: m.part_no.trim(), part_name: m.part_name?.trim() || null, mat_no: m.mat_no?.trim() || null,
@@ -304,7 +304,7 @@ export default function NPI() {
   };
   const delPart = async (p) => {
     const w = partWriteOf(p?.line_name);
-    if (!w.ok) return toast.error(writeBlockText(w, { what: 'พาร์ทของไลน์นี้' }));
+    if (!w.ok) return toast.info(writeBlockText(w, { what: 'พาร์ทของไลน์นี้' }));
     if (!window.confirm(`ลบพาร์ท ${p.part_no} พร้อมเอกสาร/แบบ/tooling ของพาร์ทนี้ทั้งหมด?`)) return;
     const { error } = await supabase.from('npi_parts').delete().eq('id', p.id);
     if (error) return toast.error(error.message);

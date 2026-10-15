@@ -243,7 +243,7 @@ export default function PEDocs() {
   /* ── save helpers (ทุกตัวเช็ค error ตามกฎ supabase-js คืน {error} ไม่ throw) — คืน row ที่บันทึก (null = fail) ── */
   const saveRow = async (table, form, patch, after) => {
     /* 🔐 ด่านซ้ำตอนเขียนจริง — ทุกตัวแก้เอกสารของชุดที่เปิดอยู่ (`?set=` เปิดตรงได้) */
-    if (!setWrite.ok) { toast.error(writeBlockText(setWrite, { what: 'เอกสาร PE ของชุดนี้' })); return null; }
+    if (!setWrite.ok) { toast.info(writeBlockText(setWrite, { what: 'เอกสาร PE ของชุดนี้' })); return null; }
     setSaving(true);
     const q = form.id
       ? supabase.from(table).update(patch).eq('id', form.id).select('*').single()
@@ -256,7 +256,7 @@ export default function PEDocs() {
     return data;
   };
   const deleteRow = async (table, id, label, after, imgUrl) => {
-    if (!setWrite.ok) { toast.error(writeBlockText(setWrite, { what: 'เอกสาร PE ของชุดนี้' })); return; }
+    if (!setWrite.ok) { toast.info(writeBlockText(setWrite, { what: 'เอกสาร PE ของชุดนี้' })); return; }
     if (!window.confirm(`ลบ${label}?`)) return;
     const { error } = await supabase.from(table).delete().eq('id', id);
     if (error) { toast.error(error.message); return; }

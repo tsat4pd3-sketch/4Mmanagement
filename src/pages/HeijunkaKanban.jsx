@@ -1524,7 +1524,7 @@ export default function HeijunkaKanban() {
   const okToOperate = useCallback((lineName, what) => {
     const w = lineWrite(lineName);
     if (w.ok) return true;
-    toast.error(writeBlockText(w, { what: what || 'ใบของไลน์นี้' }));
+    toast.info(writeBlockText(w, { what: what || 'ใบของไลน์นี้' }));
     return false;
   }, [lineWrite]);
   const [parentChildrenMap, setParentChildrenMap] = useState({}); // parent → [children]

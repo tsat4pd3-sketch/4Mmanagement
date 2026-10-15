@@ -29,8 +29,9 @@ import { uploadOpts } from '../utils/storageUpload';
 import { checkWrite, checkWriteRows } from '../utils/dbWrite';
 import { QA_RANK, balloonSort, nextBalloonOf } from '../utils/qaPoints';
 import { writeBlockText } from '../utils/writeScope';
+import { QA_BUCKET, qaFileUrl } from '../lib/qaImages';
 
-const BUCKET = 'qa-drawings';
+const BUCKET = QA_BUCKET;
 const PIN_DEFAULT = '#4d9fff';
 /* ชื่อ view มาตรฐานของแบบ 2D orthographic — ให้ทุกคนตั้งชื่อแผ่นสม่ำเสมอ */
 const STANDARD_VIEWS = [
@@ -42,7 +43,7 @@ const pathOfUrl = (url) => {
   const p = url?.split(`/${BUCKET}/`)[1];
   return p ? decodeURIComponent(p.split('?')[0]) : null;
 };
-const publicUrl = (path) => (path ? supabase.storage.from(BUCKET).getPublicUrl(path).data.publicUrl : null);
+const publicUrl = qaFileUrl;
 const isPdfUrl = (u) => /\.pdf($|\?)/i.test(u || '');
 let seq = 0;
 const newKey = () => `k${Date.now().toString(36)}${(seq++).toString(36)}`;

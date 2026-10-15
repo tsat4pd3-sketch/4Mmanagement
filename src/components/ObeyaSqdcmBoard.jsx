@@ -573,11 +573,15 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
   });
   const saveAction = async () => {
     if (!modal.problem.trim()) return toast.error('ระบุปัญหา/สิ่งที่ต้องทำก่อน');
-    if (!scopeWrite.ok) return toast.error(writeBlockText(scopeWrite, { what: 'ใบ Action ของขอบเขตนี้', unit: secFilter }));
+    /* 🔴 ต้องตรวจ "ค่าที่จะเขียนจริง" ไม่ใช่ขอบเขตที่กำลังดู (QC audit 15/10)
+       `sec` มาจากไลน์ที่เลือกในฟอร์ม ซึ่งอาจเป็นส่วนงานอื่นแม้ขอบเขตที่ดูจะเป็นของเรา
+       (`<LineSelect>` fail-open เมื่อ `sections` ว่าง) ⇒ คำนวณ `sec` ก่อน แล้วค่อยตรวจ */
+    const sec = modal.line_name ? (secOfLine[modal.line_name] || secFilter || null) : (secFilter || null);
+    const wSec = canWriteUnit({ role, section: homeSection, sections, allUnits }, sec, { unknownTarget: 'block' });
+    if (!wSec.ok) return toast.info(writeBlockText(wSec, { what: 'ใบ Action ของส่วนงานนี้', unit: sec }));
     setSaving(true);
     try {
       const { data: { user } = {} } = await supabase.auth.getUser();
-      const sec = modal.line_name ? (secOfLine[modal.line_name] || secFilter || null) : (secFilter || null);
       const ok = checkWrite(await supabase.from('meeting_action_items').insert({
         meeting_date: today, section: sec, line_name: modal.line_name || null,
         problem: modal.problem.trim(), root_cause: modal.root_cause?.trim() || null,
@@ -605,7 +609,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
   const setStatus = async (a, status, extra = null) => {
     /* 🔐 ปิด/เลื่อนใบของส่วนงานอื่นไม่ได้ — ตัดสินจาก section ของ "ใบนั้น" ไม่ใช่ขอบเขตที่กำลังดู */
     const w = canWriteUnit({ role, section: homeSection, sections, allUnits }, a?.section);
-    if (!w.ok) return toast.error(writeBlockText(w, { what: 'ใบ Action นี้', unit: a?.section }));
+    if (!w.ok) return toast.info(writeBlockText(w, { what: 'ใบ Action นี้', unit: a?.section }));
     const patch = { status, updated_at: new Date().toISOString(), ...(extra || {}) };
     if (status === 'done') patch.done_at = new Date().toISOString();
     // ⚠️ RLS ปฏิเสธ UPDATE = "สำเร็จ 0 แถว ไม่มี error" ⇒ ต้องนับแถวจริง ห้ามเชื่อ !error

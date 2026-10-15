@@ -542,7 +542,7 @@ export default function Monitoring() {
   const onEditCell = useCallback(async ({ partId, rowKey, periodKey, value }) => {
     /* 🔐 ด่านซ้ำตอนเขียนจริง — `editable` ที่ส่งให้ตารางเป็นแค่การซ่อนช่อง */
     if (!canEditPerm) return;
-    if (!boardWrite.ok) { toast.error(writeBlockText(boardWrite, { what: 'บอร์ดของไลน์นี้' })); return; }
+    if (!boardWrite.ok) { toast.info(writeBlockText(boardWrite, { what: 'บอร์ดของไลน์นี้' })); return; }
     const def = rowDefs(board).find(r => r.key === rowKey);
     const isText = def?.kind === 'date';
     const isRackOrder = board?.kind === 'rack' && rowKey === 'order';
