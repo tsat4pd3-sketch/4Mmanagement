@@ -1491,6 +1491,17 @@ const RULES = [
     allow: {},
   },
   {
+    id: 'mobile-fixed-bottom-needs-mnav',
+    scan: ['src'], ext: ['.jsx'],
+    /* ของ position:fixed ที่ชิดล่างด้วยตัวเลข (bottom: 12) — แถบล่างมือถือ (MobileNavBar 56px) จะทับ */
+    re: /position:\s*'fixed'[^\n]*\bbottom:\s*[1-9]\d*\s*[,}]/g,
+    why: 'มือถือมีแถบล่าง 4 ช่อง (MobileNavBar · 15/10) ⇒ toast/ไซเรน/ปุ่มลอยที่ตั้ง `bottom: 12` ตรงๆ ถูกแถบทับ กดไม่ได้ '
+       + '(docs/MOBILE-UX-STANDARD.md §3)',
+    fix: "ใช้ `bottom: 'calc(12px + var(--mnav-h, 0px))'` — จอคอมตัวแปรไม่มีค่า = 0 = ตำแหน่งเดิมเป๊ะ "
+       + '(⚠️ `position: sticky; bottom` ห้ามบวก — body มี padding เท่าแถบแล้ว)',
+    allow: {},
+  },
+  {
     id: 'daily-report-close-by-permission',
     scan: ['src/pages/DailyReport.jsx'], ext: ['.jsx'],
     /* ตัดสิน "ปิดตรง vs ส่งขอปิด" ด้วยชื่อ role */
