@@ -445,6 +445,12 @@ button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
   .seg { flex-wrap: wrap; height: auto; flex-shrink: 1; max-width: 100%; }
   .seg > button { min-height: var(--ctl-h); }
   .seg.seg-sm > button { min-height: 28px; }
+  /* ▦ ตอน wrap ให้ "เต็มแถว" เป็นตาราง (15/10 · handheld 360px) — เดิมแถวบนเหลือช่องว่างท้ายแถว
+     แถวล่างลอยตัวเดียว เส้นแบ่งหาย (Improvements / ถังเหลือง-แดง) · ปุ่มยืดเต็มแถว + เส้นล่างทุกปุ่ม
+     แล้วดึงขอบขวา/ล่างออก 1px ให้ `overflow:hidden` ของ .seg ตัดเส้นที่ชนกรอบทิ้ง (ไม่มีเส้นซ้อน 2px)
+     แถวเดียวไม่ wrap = หน้าตาเท่าเดิม (ปุ่มไม่ยืดเพราะ .seg กว้างตามเนื้อหา) */
+  .seg > button { flex: 1 1 auto; border-bottom: 1px solid var(--border2); margin: 0 -1px -1px 0; }
+  .seg > button:last-child { border-right: 1px solid var(--border2); }
 }
 
 /* ─── Overlay / Modal ────────────────────────────────────────────────────── */
@@ -608,6 +614,11 @@ button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
     transform: translate(-50%, -50%);
     width: 100%; height: 100%; min-width: 40px; min-height: 40px;
   }
+  /* ☑️ checkbox/radio ของเบราว์เซอร์ = 13×13px — handheld 360px วัดเจอ 7 หน้า (RackCenter · ตรวจนับ LineStock ·
+     Monitoring · PmForecast · ProductionPlan · EquipmentHub · FixtureRegistry) ใส่ถุงมือกดไม่โดน (15/10)
+     input ใส่ ::before ขยายพื้นที่กดแบบปุ่มไม่ได้ ⇒ ขยายตัวกล่องเอง · `min-*` ชนะ `width:15` ที่ตั้ง inline
+     20px = ใหญ่พอแตะ แต่ไม่ดันแถวตาราง/ชิปที่ตั้งใจให้แน่น · เมาส์ (desktop/TV) ไม่เปลี่ยน */
+  input[type="checkbox"], input[type="radio"] { min-width: 20px; min-height: 20px; }
   /* เซลล์วันในปฏิทินบริษัท (แตะเพื่อวนสถานะ) — สูงพอสำหรับนิ้ว */
   .cal-day { min-height: 34px; display: flex; align-items: center; justify-content: center; }
 }
