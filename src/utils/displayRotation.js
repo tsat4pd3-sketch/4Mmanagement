@@ -17,6 +17,23 @@
  *  (หน้าเดิมที่เปลี่ยนแค่ query จะได้อ่านค่าตั้งต้นจากลิงก์ใหม่ · utils/urlInit.js) */
 export const ROT_NAV_STATE = 'rotNav';
 
+/* 🎬 ไม่ขึ้นหน้า splash (โลโก้ ENTERPRISE SHOPFLOOR …) ซ้ำบนจอ TV (15/10 · user "เปลี่ยนหน้าต้องขึ้นโหลดใหม่เรื่อยๆหรอ")
+   · ตัววนรีโหลดเต็มหน้าตามรอบ `reload_min` → ฝากธงไว้ใน sessionStorage ก่อนรีโหลด · App อ่านแล้วลบทิ้ง (ใช้ครั้งเดียว)
+   · หน้าที่ถูกฝังใน iframe (กรอบตัวอย่างในหน้าตั้งค่า) = ไม่ต้องมี splash
+   storage อาจโยน (โหมดส่วนตัว/บล็อก) ⇒ try/catch ทุกครั้ง · พังแล้วแค่เห็น splash เหมือนเดิม */
+const QUIET_KEY = 'esm-rot-quiet-reload';
+export function markQuietReload() {
+  try { sessionStorage.setItem(QUIET_KEY, '1'); } catch { /* ไม่มี storage = เห็น splash ตามปกติ */ }
+}
+export function skipSplash() {
+  try { if (window.self !== window.top) return true; } catch { return true; }   // cross-origin top = ถูกฝังแน่ๆ
+  try {
+    if (sessionStorage.getItem(QUIET_KEY) !== '1') return false;
+    sessionStorage.removeItem(QUIET_KEY);
+    return true;
+  } catch { return false; }
+}
+
 /** ขอบเขตตัวเลข — ต้องตรงกับ CHECK ใน migration 20261009_display_rotations_main.sql */
 export const ROT_LIMITS = Object.freeze({
   minSec: 10,         // ต่ำกว่านี้หน้ายังโหลดข้อมูลไม่ทันก็เปลี่ยนแล้ว
@@ -51,6 +68,16 @@ export function isValidRotationPath(path) {
   const p = path.trim();
   if (!p.startsWith('/') || p.startsWith('//') || /\s/.test(p) || /^\/[a-z]+:/i.test(p)) return false;
   return !BLOCKED.has(pathOnly(p).toLowerCase());
+}
+
+/** หน้าที่วนมุมมองเองข้างใน (ผังโรงงาน ?cycle=) ต้องอยู่นานพอให้วนครบ 1 รอบ
+ *  ⇒ วินาทีขั้นต่ำ = จำนวนมุมมอง × วินาที/มุมมอง (ตั้งน้อยกว่านี้ = เห็นแค่ 1-2 เรื่องแล้วเปลี่ยนหน้า) */
+export function minSecForPath(path) {
+  const q = queryParamsOf(path);
+  if (pathOnly(path) !== '/factory-map' || !q.cycle) return 0;
+  const n = q.cycle === '1' ? 10 : q.cycle.split(',').filter(Boolean).length;
+  const per = Math.min(600, Math.max(5, Number(q.csec) || 15));
+  return n > 1 ? Math.min(ROT_LIMITS.maxSec, n * per) : 0;
 }
 
 /** วินาทีของหน้านี้ — ว่าง/อ่านไม่ออก = ค่าตั้งต้นของจอ (ไม่ใช่ 0) */
@@ -89,7 +116,7 @@ export function buildPlaylist(items, canAccess, defaultSec = ROT_LIMITS.defaultS
       skipped.push({ path, idx, reason: 'no_access' });
       return;
     }
-    playable.push({ path, sec: secOf(it, defaultSec), idx });
+    playable.push({ path, sec: Math.max(secOf(it, defaultSec), minSecForPath(path)), idx });
   });
   return { playable, skipped };
 }
@@ -225,6 +252,8 @@ export const DISPLAY_PAGE_PARAMS = Object.freeze({
       opt('health', '🚦 ปกติ/ผิดปกติ'), opt('energy', '⚡ พลังงาน'), opt('productivity', '📦 ยอดผลิต'), opt('oee', '⚙️ OEE'),
       opt('breakdown', '🔧 Downtime'), opt('ng', '🚫 ของเสีย'), opt('people', '👷 คน & จุดงาน'), opt('pm', '🛠️ PM ช่าง'),
       opt('am', '🏭 AM'), opt('supply', '🔗 Supply Route')] },
+    { key: 'cycle', label: '🔁 วนมุมมองเอง (เลือกเรื่องที่จะวน)', kind: 'multi', optionsFrom: 'metric' },
+    { key: 'csec', label: 'วินาที/มุมมอง', kind: 'select', showIf: { cycle: '*' }, options: ['10', '15', '20', '30', '45', '60'].map(v => opt(v, `${v} วิ`)) },
     { key: 'panel', label: 'แผงขวา', kind: 'select', options: [opt('review', '📅 ทบทวนรายวัน'), opt('obeya', '🏛️ OBEYA (สด)'), opt('live', '📊 อันดับ')] },
     { key: 'view', label: 'ผัง', kind: 'select', options: [opt('2d', '2D'), opt('3d', '🧊 3D')] },
     { key: 'tour', label: 'หมุนกล้องอัตโนมัติ (3D)', kind: 'bool', showIf: { view: ['3d'] } },
@@ -325,7 +354,7 @@ export const DISPLAY_PAGE_PARAMS = Object.freeze({
 /** ช่องนี้ควรโชว์ไหม ตามค่าที่ตั้งอยู่ (showIf: { key: [ค่าที่อนุญาต · '' = ยังไม่ตั้ง] }) */
 export function paramVisible(def, params) {
   if (!def?.showIf) return true;
-  return Object.entries(def.showIf).every(([k, vals]) => vals.includes(params?.[k] ?? ''));
+  return Object.entries(def.showIf).every(([k, vals]) => (vals === '*' ? !!params?.[k] : vals.includes(params?.[k] ?? '')));
 }
 
 /** ค่า query ของ path → object (เฉพาะ ?… ไม่รวม #) */

@@ -26,7 +26,7 @@ import { useLatestRequest } from '../utils/useLatestRequest';
 import { polyArea, centroid, labelAnchor, bboxOf } from '../utils/regionGeom';
 import MapPillars3D, { map3dTransform } from '../components/MapPillars3D';
 import useMapOrbit from '../components/useMapOrbit';
-import { urlPick, urlBool, urlNum } from '../utils/urlInit';
+import { urlParam, urlPick, urlBool, urlNum } from '../utils/urlInit';
 import { pillarHeight, pillarLegend, liftLabels, orbitScale } from '../utils/mapPillar';
 import { loadPmTeams, isAmTeam } from '../utils/pmTeams';
 import { fetchByIds } from '../utils/fetchByIds';
@@ -517,7 +517,7 @@ export default function FactoryMap({ setupMode = false }) {
   const [editing, setEditing] = useState(canEdit); // setup mode + มีสิทธิ์ → เข้าโหมดแก้เลย
   const [uploading, setUploading] = useState(false);
   const [aspect, setAspect] = useState(null);
-  const [metric, setMetric] = useState(() => urlPick('metric', Object.keys(METRICS), 'health')); // ?metric= (จอวนหน้า · 15/10) // 🚦 default = ปกติ/ผิดปกติ (2026-08-26 คำสั่ง user) — เปิดมาตอบก่อนว่าทั้งโรงงานโอเคไหม
+  const [metric, setMetric] = useState(() => { const c = urlParam('cycle'); const first = c && c !== '1' ? c.split(',')[0].trim() : null; return urlPick('metric', Object.keys(METRICS), Object.keys(METRICS).includes(first) ? first : 'health'); }); // ?metric= (จอวนหน้า · 15/10) // 🚦 default = ปกติ/ผิดปกติ (2026-08-26 คำสั่ง user) — เปิดมาตอบก่อนว่าทั้งโรงงานโอเคไหม
   const [showFac, setShowFac] = useState(() => urlBool('support', false)); // 🫥 เปิดดูโซนสนับสนุนชั่วคราวบน metric ผลิต (กดจากชิป)
   // แผงขวา: 'review' = สรุปทบทวนทั้งวัน (default · ประชุมผู้จัดการ) · 'live' = จัดอันดับสดตาม metric (เดิม)
   const [panelMode, setPanelMode] = useState(() => urlPick('panel', ['review', 'obeya', 'live'], 'review'));
@@ -576,6 +576,31 @@ export default function FactoryMap({ setupMode = false }) {
   const toggleView3d = () => setView3d(v => { const n = !v; try { localStorage.setItem('fm_view3d', n ? '1' : '0'); } catch { /* ignore */ } return n; });
   // 🔄 มุมกล้อง 3D — ลากหมุน/ปุ่ม/ทัวร์ (ทำงานเฉพาะ 3D ที่ไม่ได้แก้ผัง — editing ประกาศไว้ข้างบนแล้ว)
   const orbit = useMapOrbit(view3d && !editing);
+  /* 🔁 วนมุมมองเอง (จอวนหน้า · 15/10 · user: "อยากโชว์แบบนี้ และวน tab ไปทีละเรื่อง")
+     ?cycle=health,oee,breakdown (หรือ ?cycle=1 = ทุกมุมมอง) · ?csec= วินาทีต่อมุมมอง (ค่าตั้งต้น 15)
+     มีคนกด/แตะจอ = หยุดวน (คนกำลังดูมุมนั้นอยู่) · โหมดแก้ผังไม่วน */
+  const cycleList = useMemo(() => {
+    const raw = urlParam('cycle');
+    if (!raw) return [];
+    const all = Object.keys(METRICS);
+    return raw === '1' ? all : raw.split(',').map(x => x.trim()).filter(k => all.includes(k));
+  }, []);
+  const cycleMs = urlNum('csec', 5, 600, 15) * 1000;
+  const [cycleOn, setCycleOn] = useState(true);
+  useEffect(() => {
+    if (cycleList.length < 2 || !cycleOn || editing) return undefined;
+    const id = setInterval(() => {
+      setMetric(m => cycleList[(cycleList.indexOf(m) + 1) % cycleList.length]);
+    }, cycleMs);
+    return () => clearInterval(id);
+  }, [cycleList, cycleMs, cycleOn, editing]);
+  useEffect(() => {
+    if (cycleList.length < 2) return undefined;
+    const stop = () => setCycleOn(false);
+    window.addEventListener('pointerdown', stop, { passive: true });
+    window.addEventListener('keydown', stop);
+    return () => { window.removeEventListener('pointerdown', stop); window.removeEventListener('keydown', stop); };
+  }, [cycleList]);
   // ?tour=1 — จอวนหน้าสั่งเปิดทัวร์หมุนกล้องเอง (เฉพาะ 3D) · ครั้งเดียวตอนเปิด
   const tourFromUrl = useRef(urlBool('tour', false));
   useEffect(() => {
@@ -2337,6 +2362,12 @@ export default function FactoryMap({ setupMode = false }) {
         {Object.entries(METRICS).map(([k, m]) => (
           <button key={k} onClick={() => setMetric(k)} style={btn(metric === k)}>{m.label}</button>
         ))}
+        {cycleList.length > 1 && (
+          <button onPointerDown={e => e.stopPropagation()} onClick={() => setCycleOn(v => !v)} title="วนมุมมองอัตโนมัติ (ตั้งจากจอวนหน้า)"
+            style={{ ...btn(cycleOn), position: 'relative' }}>
+            🔁 {cycleOn ? `วนมุมมอง · ${cycleList.indexOf(metric) + 1}/${cycleList.length}` : 'วนมุมมอง (หยุด)'}<ToggleDot on={cycleOn} />
+          </button>
+        )}
         {/* ⚡ พลังงานเป็นข้อมูล "รายเดือน" ไม่ใช่ live เหมือน metric อื่นบนจอนี้ — ต้องประกาศเดือนเสมอ
             ไม่งั้นคนอ่านเป็นค่าปัจจุบัน (จอนี้ทุกอย่างสดหมด) */}
         {!editing && metric === 'energy' && (

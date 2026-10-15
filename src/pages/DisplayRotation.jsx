@@ -17,7 +17,7 @@ import {
   ROT_LIMITS, normalizeConfig, buildPlaylist, secOf, pathOnly, isValidRotationPath,
   cleanItemsForSave, fmtSec, SKIP_REASON_LABEL,
   sectionsOfProfile, canManageDisplay, displayChannelName,
-  DISPLAY_PAGE_PARAMS, queryParamsOf, withQueryParams, paramSummary, paramVisible,
+  DISPLAY_PAGE_PARAMS, queryParamsOf, withQueryParams, paramSummary, paramVisible, minSecForPath,
 } from '../utils/displayRotation';
 
 /* ══ 🔁 ตั้งค่าจอวนหน้า — /display-rotation ══════════════════════════════════════════
@@ -263,7 +263,7 @@ export default function DisplayRotation() {
             ยังไม่มีบัญชีจอ (role 📺 จอแสดงผล) ในส่วนงานของคุณ — สร้าง/ตั้งส่วนงานบัญชีจอที่ /add-user
           </div>
         )}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: 8, alignContent: 'start' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 6, alignContent: 'start' }}>
           {shown.map(a => {
             const plan = plans[a.id];
             const n = Array.isArray(plan?.items) ? plan.items.length : 0;
@@ -272,11 +272,11 @@ export default function DisplayRotation() {
             return (
               <button key={a.id} type="button" onClick={() => pick(a.id)} aria-current={on ? 'true' : undefined}
                 style={{
-                  textAlign: 'left', padding: '10px 12px', borderRadius: 10, display: 'grid', gap: 3,
+                  textAlign: 'left', padding: '7px 10px', borderRadius: 10, display: 'grid', gap: 2,
                   background: on ? 'var(--accent-dim)' : 'var(--bg2)', color: 'var(--text)',
                   border: `1.5px solid ${on ? 'var(--accent)' : 'var(--border2)'}`,
                 }}>
-                <span style={{ fontSize: 15, fontWeight: 800 }}>{a.full_name || emails[a.id] || a.id.slice(0, 8)}</span>
+                <span style={{ fontSize: 14, fontWeight: 800 }}>{a.full_name || emails[a.id] || a.id.slice(0, 8)}</span>
                 <span style={{ fontSize: 12, color: secs.length ? 'var(--text2)' : 'var(--amber)' }}>
                   📍 {secs.length ? secs.join(', ') : 'ยังไม่ตั้งส่วนงาน (เห็นทั้งโรงงาน)'}
                 </span>
@@ -460,6 +460,33 @@ function ItemRow({ i, it, n, canEdit, focused, onFocus, pageOptions, defaultSec,
   const rawQ = (String(it.path || '').match(/[?#].*$/) || [''])[0];
   const secOptions = tvSections.length ? tvSections : allSections;
 
+  /* แถวที่ไม่ได้เลือก = ยุบเหลือบรรทัดเดียว (15/10 · user: "หน้า setup ต้องซูมออกถึงเห็นทั้งหมด")
+     กางตัวกรองเฉพาะแถวที่กำลังแก้ · แถวที่จะถูกข้าม (⛔) กางเสมอ ให้เห็นเหตุผล */
+  if (!focused && !skip) {
+    const meta = NAV_ITEMS.find(x => x.to === base);
+    const summary = paramSummary(it.path);
+    const shownSec = Math.max(secOf(it, defaultSec), minSecForPath(it.path));
+    return (
+      <div onClick={onFocus} role="button" tabIndex={0} onKeyDown={e => { if (e.key === 'Enter') onFocus(); }}
+        style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', borderRadius: 10, cursor: 'pointer',
+          border: '1px solid var(--border2)', background: 'var(--bg2)', minWidth: 0 }}>
+        <b style={{ width: 22, textAlign: 'center', fontSize: 13 }}>{i + 1}</b>
+        <span style={{ fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap' }}>{meta ? `${meta.icon} ${meta.label}` : (it.path || '— ยังไม่เลือกหน้า —')}</span>
+        <span style={{ flex: 1, minWidth: 0, fontSize: 12, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {summary.join(' · ')}
+        </span>
+        <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', whiteSpace: 'nowrap' }}>{fmtSec(shownSec)}</span>
+        {canEdit && (
+          <>
+            <button type="button" onClick={(e) => { e.stopPropagation(); onMove(-1); }} disabled={i === 0} style={btnXs} title="เลื่อนขึ้น">▲</button>
+            <button type="button" onClick={(e) => { e.stopPropagation(); onMove(1); }} disabled={i === n - 1} style={btnXs} title="เลื่อนลง">▼</button>
+            <button type="button" onClick={(e) => { e.stopPropagation(); onRemove(); }} style={btnXs} title="เอาออก">✕</button>
+          </>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div onClick={onFocus} onFocusCapture={onFocus}
       style={{ display: 'grid', gridTemplateColumns: '28px minmax(0,1fr)', gap: 8, alignItems: 'start', padding: 10, borderRadius: 10, cursor: 'pointer',
@@ -487,6 +514,28 @@ function ItemRow({ i, it, n, canEdit, focused, onFocus, pageOptions, defaultSec,
                     {secOptions.map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
                 )}
+                {d.kind === 'multi' && (() => {
+                  const src = (defs.find(x => x.key === d.optionsFrom)?.options) || d.options || [];
+                  const cur = (params[d.key] || '').split(',').filter(Boolean);
+                  const toggle = (v) => {
+                    const next = cur.includes(v) ? cur.filter(x => x !== v) : [...cur, v];
+                    // คงลำดับตามทะเบียน = ลำดับที่จอวน
+                    setParam(d.key, src.map(o => o.value).filter(x => next.includes(x)).join(','));
+                  };
+                  return (
+                    <span style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxWidth: 560 }}>
+                      {src.map(o => (
+                        <button key={o.value} type="button" disabled={!canEdit} onClick={(e) => { e.stopPropagation(); toggle(o.value); }}
+                          style={{ padding: '4px 10px', borderRadius: 999, fontSize: 12, fontWeight: 700,
+                            background: cur.includes(o.value) ? 'var(--accent-dim)' : 'var(--card)',
+                            color: cur.includes(o.value) ? 'var(--accent)' : 'var(--text2)',
+                            border: `1px solid ${cur.includes(o.value) ? 'var(--accent)' : 'var(--border2)'}` }}>
+                          {cur.includes(o.value) ? `${cur.indexOf(o.value) + 1}. ` : ''}{o.label}
+                        </button>
+                      ))}
+                    </span>
+                  );
+                })()}
                 {d.kind === 'bool' && (
                   <span style={{ display: 'flex', alignItems: 'center', gap: 6, minHeight: 34, fontSize: 13, color: 'var(--text)' }}>
                     <input type="checkbox" checked={params[d.key] === '1'} disabled={!canEdit}
@@ -529,7 +578,7 @@ function ItemRow({ i, it, n, canEdit, focused, onFocus, pageOptions, defaultSec,
           )}
           {defs && <div style={{ flex: 1 }} />}
           <input type="number" min={ROT_LIMITS.minSec} max={ROT_LIMITS.maxSec} value={it.sec ?? ''} disabled={!canEdit}
-            placeholder={`${secOf({}, defaultSec)} วิ`} title="วินาทีของหน้านี้ (ว่าง = ค่าตั้งต้น)"
+            placeholder={`${Math.max(secOf({}, defaultSec), minSecForPath(it.path))} วิ`} title="วินาทีของหน้านี้ (ว่าง = ค่าตั้งต้น)"
             onChange={e => onChange({ sec: e.target.value === '' ? null : e.target.value })} style={{ width: 96 }} />
           {canEdit && (
             <>
@@ -539,6 +588,11 @@ function ItemRow({ i, it, n, canEdit, focused, onFocus, pageOptions, defaultSec,
             </>
           )}
         </div>
+        {minSecForPath(it.path) > secOf(it, defaultSec) && (
+          <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+            🔁 วนมุมมองครบรอบใช้ {fmtSec(minSecForPath(it.path))} — จอจะอยู่หน้านี้อย่างน้อยเท่านั้นเอง
+          </div>
+        )}
         {skip && (
           <div style={{ fontSize: 12, color: 'var(--red)', fontWeight: 700 }}>
             ⛔ <code>{skip.path}</code> — {SKIP_REASON_LABEL[skip.reason]} · จอจะข้ามหน้านี้
@@ -563,11 +617,33 @@ function PagePreview({ path }) {
     return () => ro.disconnect();
   }, []);
   const scale = w ? w / 1920 : 0.3;
+  /* 🔁 เปลี่ยนตัวอย่างแบบ crossfade (15/10 · user "ช่วงเปลี่ยนหน้า ต้องขึ้นโหลดใหม่เรื่อยๆหรอ")
+     iframe ตัวเก่าค้างไว้จนตัวใหม่โหลดเสร็จ + รอข้อมูลขึ้นอีกนิด แล้วค่อยสลับ · (หน้า splash ในกรอบตัวอย่างปิดใน App แล้ว) */
+  const [shown, setShown] = useState(path);
+  const [ready, setReady] = useState(false);
+  useEffect(() => { setReady(false); }, [path]);
+  useEffect(() => {
+    if (!ready || path === shown) return undefined;
+    const t = setTimeout(() => setShown(path), 900);
+    return () => clearTimeout(t);
+  }, [ready, path, shown]);
+  const frameSt = (top) => ({ position: 'absolute', left: 0, top: 0, width: 1920, height: 1080, border: 0,
+    transform: `scale(${scale})`, transformOrigin: '0 0', pointerEvents: 'none',
+    opacity: top ? 0 : 1, visibility: top ? 'hidden' : 'visible' });
   return (
     <div ref={boxRef} style={{ position: 'relative', width: '100%', height: Math.round(1080 * scale), overflow: 'hidden', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg)' }}>
       {path ? (
-        <iframe key={path} src={path} title="ตัวอย่างหน้า" loading="lazy"
-          style={{ width: 1920, height: 1080, border: 0, transform: `scale(${scale})`, transformOrigin: '0 0', pointerEvents: 'none' }} />
+        <>
+          {/* key ใน array เดียวกัน = ตอนสลับ React ย้าย iframe ตัวใหม่ขึ้นมาเฉยๆ ไม่สร้างใหม่ (ไม่โหลดซ้ำ) */}
+          {[shown, path].filter((p, i, a) => p && a.indexOf(p) === i).map(p => (
+            <iframe key={p} src={p} title={p === shown ? 'ตัวอย่างหน้า' : 'ตัวอย่างหน้า (กำลังโหลด)'}
+              onLoad={p === path ? () => setReady(true) : undefined} style={frameSt(p !== shown)} />
+          ))}
+          {path !== shown && (
+            <div style={{ position: 'absolute', right: 8, bottom: 8, padding: '3px 10px', borderRadius: 999, fontSize: 11,
+              background: 'var(--card)', border: '1px solid var(--border2)', color: 'var(--muted)' }}>⏳ กำลังโหลดตัวอย่าง…</div>
+          )}
+        </>
       ) : (
         <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, color: 'var(--muted)', padding: 12, textAlign: 'center' }}>
           เลือกหน้าในแถวทางซ้ายเพื่อดูตัวอย่าง
@@ -598,5 +674,7 @@ const btnPrimary = { padding: '8px 16px', borderRadius: 10, fontSize: 13, fontWe
   background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' };
 const btnGhost = { padding: '8px 14px', borderRadius: 10, fontSize: 13, fontWeight: 700,
   background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border2)' };
+const btnXs = { minWidth: 28, height: 28, borderRadius: 7, fontSize: 11, fontWeight: 800,
+  background: 'var(--card)', color: 'var(--text)', border: '1px solid var(--border2)' };
 const btnSm = { minWidth: 34, height: 34, borderRadius: 8, fontSize: 12, fontWeight: 800,
   background: 'var(--card)', color: 'var(--text)', border: '1px solid var(--border2)' };
