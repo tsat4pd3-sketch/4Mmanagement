@@ -326,7 +326,7 @@ const DateField = ({ label, value, onChange, required }) => (
 
 /* ═══════════════════════════════════════════════════════ */
 export default function MtnRepair() {
-  const { role, lineId, sections: scopeSecs, mtnTeams: userMtnTeams, fullName, signatureUrl } = useContext(UserContext);
+  const { role, lineId, sections: scopeSecs, mtnTeams: userMtnTeams, fullName, signatureUrl, allUnits } = useContext(UserContext);
   // แท็บผูก ?tab= (แชร์ลิงก์/refresh/Back อยู่แท็บเดิม) — ⚙️ ข้อมูลหลัก อยู่ท้ายสุดและโผล่ตามสิทธิ์
   const TAB_DEFS = [
     { key: 'list', label: '📋 รายการ MO' },
@@ -685,7 +685,7 @@ export default function MtnRepair() {
 
   if (loading) return <Page><div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>กำลังโหลด…</div></Page>;
 
-  const cp = { lines: scopedLineObjs, machines, orders, techs, parts, problemTypes, repairTypes, itemTypes, laborRates, mtnDepts, mtnTeams: mtnTeamRows, role, fullName, signatureUrl, improvements, supplyByMachineNo, userTeams, reporterScope, defaultDept: userTeams.length === 1 ? userTeams[0] : '', onOpenImprovement: openImprovementFromMo, onReload: reloadAll, reloadMasters: loadMasters };
+  const cp = { lines: scopedLineObjs, machines, orders, techs, parts, problemTypes, repairTypes, itemTypes, laborRates, mtnDepts, mtnTeams: mtnTeamRows, role, allUnits, fullName, signatureUrl, improvements, supplyByMachineNo, userTeams, reporterScope, defaultDept: userTeams.length === 1 ? userTeams[0] : '', onOpenImprovement: openImprovementFromMo, onReload: reloadAll, reloadMasters: loadMasters };
 
   return (
     <Page>
@@ -1763,7 +1763,7 @@ function printMoReportMtn(o, dparts = [], logo0, dlabor = [], cmt = NO_CMT, cost
 }
 
 /* ── Detail drawer ───────────────────────────────────── */
-function DetailDrawer({ order, role, parts = [], mtnDepts = MTN_DEPTS, fullName, signatureUrl, improvements, supplyByMachineNo, userTeams = [], reporterScope = null, onOpenImprovement, onClose, onStep, onReload }) {
+function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MTN_DEPTS, fullName, signatureUrl, improvements, supplyByMachineNo, userTeams = [], reporterScope = null, onOpenImprovement, onClose, onStep, onReload }) {
   /* 🔒 ฝั่ง + ระดับตำแหน่งของคนกด — ใช้ล็อกช่องเซ็นในลูป MO (2026-10-04 · คำสั่ง user)
      🔴 ตัดสินจากข้อมูลที่บันทึกไว้จริงเท่านั้น (mtn_teams / role / sections / position)
         ไม่รู้ = ไม่บล็อก แต่จอต้องเขียนบอก (stepAssumptions) — ห้ามเดาแทนคน */
@@ -2051,8 +2051,8 @@ function DetailDrawer({ order, role, parts = [], mtnDepts = MTN_DEPTS, fullName,
   const del = async () => {
     /* 🔐 ลบใบของทีมอื่น = ไม่มีเหตุผลทางธุรกิจรองรับเลย (audit 15/10) — ต่างจากการ "แก้ย้อนหลัง"
        ของหัวหน้า ที่ยังเป็นพฤติกรรมเดิม · ไม่ผูกทีม = ไม่บล็อก (ไม่รู้ ≠ ปฏิเสธ) */
-    const tw = canWriteTeam(userTeams, o.mtn_dept, { role });
-    if (!tw.ok) { toast.error(teamBlockText(tw, 'ใบแจ้งซ่อมของทีมนี้')); return; }
+    const tw = canWriteTeam(userTeams, o.mtn_dept, { role, allUnits });
+    if (!tw.ok) { toast.info(teamBlockText(tw, 'ใบแจ้งซ่อมของทีมนี้')); return; }
     if (removal.mode === MO_REMOVE_DELETE) {
       if (!confirm(`ลบใบแจ้งซ่อมนี้?\n\n${removal.why}`)) return;
       /* 🔴 นับแถวที่ลบได้ก่อน ค่อยลบรูปใน storage — เช็คแค่ `error` แล้วลบรูปไปก่อน
@@ -3298,7 +3298,7 @@ function MasterAuditLog({ teams = [] }) {
   );
 }
 
-function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], laborRates = [], mtnDepts = MTN_DEPTS, mtnTeams = [], fullName, role, userTeams = [], reloadMasters }) {
+function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], laborRates = [], mtnDepts = MTN_DEPTS, mtnTeams = [], fullName, role, allUnits = false, userTeams = [], reloadMasters }) {
   const [sub, setSub] = useState('tech');
   const reload = () => reloadMasters();
   const addRow = async (table, payload) => { const { error } = await supabaseDR.from(table).insert(payload); if (error) return toast.error(error.message); reload(); };
@@ -3312,7 +3312,7 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
     const row = (table === 'mtn_technicians' ? techs : laborRates).find(x => x.id === id);
     const own = teamRowOwner({ team: row?.dept }, { myTeams: userTeams, role });
     if (own.ok) return true;
-    toast.error(teamRowLockNote({ team: row?.dept }, own.code));
+    toast.info(teamRowLockNote({ team: row?.dept }, own.code));
     return false;
   };
   const updRow = async (table, id, payload) => {
@@ -3341,7 +3341,13 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
     if (error) toast.error(error.message); else toast.success(`อัปเดตใบซ่อม ${count} ใบตามชื่อใหม่แล้ว`);
   };
 
-  const delRow = async (table, id) => { if (!confirm('ลบรายการนี้?')) return; const { error } = await supabaseDR.from(table).update({ is_active: false }).eq('id', id); if (error) return toast.error(error.message); reload(); };
+  /* 🔴 ลบ = `is_active=false` (update) ⇒ ด่าน `%:delete` ฝั่ง DB มองไม่เห็น
+     ⇒ ต้องผ่าน `deptRowGuard` เหมือน `updRow` (QC audit 15/10 — คอมเมนต์เดิมบอกว่า updRow
+     เป็น "ทางผ่านเดียว" ซึ่งไม่จริง delRow เป็นอีกประตู) */
+  const delRow = async (table, id) => {
+    if (!deptRowGuard(table, id)) return;
+    if (!confirm('ลบรายการนี้?')) return;
+    const { error } = await supabaseDR.from(table).update({ is_active: false }).eq('id', id); if (error) return toast.error(error.message); reload(); };
 
   // ── ช่าง (มี dept) — ช่าง = พนักงานทีมช่าง (จากฐาน employees, แก้ที่หน้าพนักงาน) + ช่างเฉพาะกิจเดิม (mtn_technicians) ──
   const [ntech, setNtech] = useState({ name: '', dept: 'maintenance' });
@@ -3661,8 +3667,8 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
   const saveMoCode = async (t, code) => {
     /* 🔐 เลขรันใบ MO = เอกสารควบคุมของทีมนั้น — แก้ข้ามทีม = เลขซ้ำ/กระโดดในใบที่ยื่นออกไปแล้ว
        (audit 15/10) · ไม่ผูกทีม = ไม่บล็อก */
-    const tw = canWriteTeam(userTeams, t?.key || t?.dept_name, { role });
-    if (!tw.ok) { toast.error(teamBlockText(tw, 'เลขเอกสารของทีมนี้')); return; }
+    const tw = canWriteTeam(userTeams, t?.key || t?.dept_name, { role, allUnits });
+    if (!tw.ok) { toast.info(teamBlockText(tw, 'เลขเอกสารของทีมนี้')); return; }
     const c = (code || '').trim().toUpperCase(); if (!c || c === (t.mo_code || '')) return;
     if (!window.confirm(`เปลี่ยนรหัสทีม ${t.dept_name}: ${t.mo_code || '(ว่าง)'} → ${c}\n\n`
       + `⚠️ ตัวนับเลขรันผูกกับรหัส — เปลี่ยนแล้วเลขจะ**เริ่มใหม่จาก 1** (ตอนนี้อยู่ที่ ${t.last_seq})\n`
@@ -3675,8 +3681,8 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
   const saveMoSeq = async (t, val) => {
     /* 🔐 เลขรันใบ MO = เอกสารควบคุมของทีมนั้น — แก้ข้ามทีม = เลขซ้ำ/กระโดดในใบที่ยื่นออกไปแล้ว
        (audit 15/10) · ไม่ผูกทีม = ไม่บล็อก */
-    const tw = canWriteTeam(userTeams, t?.key || t?.dept_name, { role });
-    if (!tw.ok) { toast.error(teamBlockText(tw, 'เลขเอกสารของทีมนี้')); return; }
+    const tw = canWriteTeam(userTeams, t?.key || t?.dept_name, { role, allUnits });
+    if (!tw.ok) { toast.info(teamBlockText(tw, 'เลขเอกสารของทีมนี้')); return; }
     if (!t.seqKey) return toast.error('ยังตัดสินคีย์ตัวนับของทีมนี้ไม่ได้ (อ่านเวลาไม่ออก) — ยังไม่บันทึก');
     const n = Math.max(0, parseInt(val, 10) || 0);
     const { error } = await supabaseDR.from('mtn_mo_seq').upsert({ team_code: t.seqKey, last_seq: n, updated_at: new Date().toISOString() }, { onConflict: 'team_code' });

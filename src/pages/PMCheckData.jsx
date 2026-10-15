@@ -509,7 +509,7 @@ function HistoryModal({ inspection, checkpoints, jig, onClose, userId, userRole,
   const canApprove = can('pm', 'approve', userRole) && (deptWrite?.ok !== false)
 
   const handleApprove = async () => {
-    if (deptWrite && !deptWrite.ok) { toast.error(teamBlockText(deptWrite, 'ผลตรวจของทีมนี้')); return }
+    if (deptWrite && !deptWrite.ok) { toast.info(teamBlockText(deptWrite, 'ผลตรวจของทีมนี้')); return }
     setApproving(true)
     const { data, error } = await supabaseDR.from('inspections').update({
       approval_status: 'approved', approved_by: userId, approved_at: new Date().toISOString(), reject_reason: null,
@@ -525,7 +525,7 @@ function HistoryModal({ inspection, checkpoints, jig, onClose, userId, userRole,
 
   const handleReject = async () => {
     if (!rejectReason.trim()) return
-    if (deptWrite && !deptWrite.ok) { toast.error(teamBlockText(deptWrite, 'ผลตรวจของทีมนี้')); return }
+    if (deptWrite && !deptWrite.ok) { toast.info(teamBlockText(deptWrite, 'ผลตรวจของทีมนี้')); return }
     setApproving(true)
     const { data, error } = await supabaseDR.from('inspections').update({
       approval_status: 'rejected', approved_by: userId, approved_at: new Date().toISOString(), reject_reason: rejectReason.trim(),

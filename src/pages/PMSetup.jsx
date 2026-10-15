@@ -1518,7 +1518,7 @@ export default function PMSetup() {
      ⚠️ mtn_teams อยู่ DR project → ต้องใช้ supabaseDR (กฎ 2 project ใน CLAUDE.md) */
   const toggleTeamKind = async () => {
     /* 🔴 เปลี่ยน AM⇄PM = ย้ายว่า "ทีมนี้ใช้คีย์ไหนบันทึกผลตรวจ" — แตะสิทธิ์ของทีมอื่นโดยตรง */
-    if (!deptWrite.ok) { toast.error(teamBlockText(deptWrite, 'ชนิดงานของทีมนี้')); return }
+    if (!deptWrite.ok) { toast.info(teamBlockText(deptWrite, 'ชนิดงานของทีมนี้')); return }
     const cur = teamKindOf(department)
     const next = cur === 'am' ? 'pm' : 'am'
     const name = teams.find(t => t.key === department)?.label ?? department
@@ -1633,7 +1633,7 @@ export default function PMSetup() {
   ].filter(Boolean)
 
   const handleDelete = async (jig) => {
-    if (!deptWrite.ok) { toast.error(teamBlockText(deptWrite, 'อุปกรณ์ของทีมนี้')); return }
+    if (!deptWrite.ok) { toast.info(teamBlockText(deptWrite, 'อุปกรณ์ของทีมนี้')); return }
     if (!confirm(`ลบ "${jig.name}" ?`)) return
     /* 🔴 นับแถวก่อนแตะ storage (QC audit 06/10) — ไม่นับ = แถว jig ยังอยู่
        แต่รูปทั้งชุด (เฟรม + จุดตรวจ + โมเดล 3D) ถูกลบ ⇒ ทะเบียนจิ๊กเสียรูปถาวร */

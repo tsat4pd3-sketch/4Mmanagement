@@ -465,7 +465,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
 
   const saveCell = async (kpiId, month, raw) => {
     /* 🔐 ด่านชั้นที่ 3 ซ้ำตอนกดจริง — ซ่อนปุ่มอย่างเดียวไม่พอ (deep-link `?scope=` เปิดตรงได้) */
-    if (!scopeWrite.ok) { toast.error(writeBlockText(scopeWrite, { what: 'KPI ของขอบเขตนี้', unit: scopeOwner })); return; }
+    if (!scopeWrite.ok) { toast.info(writeBlockText(scopeWrite, { what: 'KPI ของขอบเขตนี้', unit: scopeOwner })); return; }
     const value = raw === '' ? null : Number(raw);
     if (raw !== '' && !Number.isFinite(value)) { toast.error('กรอกเป็นตัวเลขเท่านั้น'); return; }
     const prev = entries[kpiId]?.[month] ?? null;
@@ -484,7 +484,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
   /* บันทึกแผนรายเดือน — คนละตารางกับค่าจริง แต่กติกาเดียวกัน (อ่าน error เสมอ · ว่าง = ลบค่า) */
   const savePlanCell = async (kpiId, month, raw) => {
     /* 🔐 ด่านชั้นที่ 3 ซ้ำตอนกดจริง — ซ่อนปุ่มอย่างเดียวไม่พอ (deep-link `?scope=` เปิดตรงได้) */
-    if (!scopeWrite.ok) { toast.error(writeBlockText(scopeWrite, { what: 'KPI ของขอบเขตนี้', unit: scopeOwner })); return; }
+    if (!scopeWrite.ok) { toast.info(writeBlockText(scopeWrite, { what: 'KPI ของขอบเขตนี้', unit: scopeOwner })); return; }
     const value = raw === '' ? null : Number(raw);
     if (raw !== '' && !Number.isFinite(value)) { toast.error('กรอกเป็นตัวเลขเท่านั้น'); return; }
     const prev = plans[kpiId]?.[month] ?? null;
@@ -784,7 +784,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
   /* บันทึกนิยาม KPI (insert/update — update ต้องนับแถว กฎ RLS-เงียบ) */
   const saveDef = async form => {
     /* 🔐 ด่านชั้นที่ 3 ซ้ำตอนกดจริง — ซ่อนปุ่มอย่างเดียวไม่พอ (deep-link `?scope=` เปิดตรงได้) */
-    if (!scopeWrite.ok) { toast.error(writeBlockText(scopeWrite, { what: 'KPI ของขอบเขตนี้', unit: scopeOwner })); return; }
+    if (!scopeWrite.ok) { toast.info(writeBlockText(scopeWrite, { what: 'KPI ของขอบเขตนี้', unit: scopeOwner })); return; }
     /* ชื่อ KPI มาจากทะเบียน — เลือกตัวเดิม หรือ "ตั้งชื่อใหม่เข้าทะเบียน" (ตั้งใจเท่านั้น)
        เก็บ `name` เป็น snapshot ด้วย เพื่อให้แถวยังอ่านออกถ้าทะเบียนถูกลบ (FK = set null) */
     let catalogId = form.catalog_id || null;
@@ -898,7 +898,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
      ⚠️ upsert ด้วย source ไม่ใช่ catalog_id (แถวอัตโนมัติไม่จำเป็นต้องผูกทะเบียนชื่อ) */
   const saveAutoTarget = async f => {
     /* 🔐 ด่านชั้นที่ 3 ซ้ำตอนกดจริง — ซ่อนปุ่มอย่างเดียวไม่พอ (deep-link `?scope=` เปิดตรงได้) */
-    if (!scopeWrite.ok) { toast.error(writeBlockText(scopeWrite, { what: 'KPI ของขอบเขตนี้', unit: scopeOwner })); return; }
+    if (!scopeWrite.ok) { toast.info(writeBlockText(scopeWrite, { what: 'KPI ของขอบเขตนี้', unit: scopeOwner })); return; }
     const src = `auto:${f.src}`;
     const tv = f.target_value === '' || f.target_value == null ? null : Number(f.target_value);
     if (tv != null && !f.direction) { toast.error('ตั้งเป้าตัวเลขแล้วต้องเลือกทิศทาง (มากกว่าดี/น้อยกว่าดี) ไม่งั้นตัดสิน ○△✗ ไม่ได้'); return false; }
@@ -942,7 +942,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
   };
   const removeDef = async d2 => {
     /* 🔐 ด่านชั้นที่ 3 ซ้ำตอนกดจริง — ซ่อนปุ่มอย่างเดียวไม่พอ (deep-link `?scope=` เปิดตรงได้) */
-    if (!scopeWrite.ok) { toast.error(writeBlockText(scopeWrite, { what: 'KPI ของขอบเขตนี้', unit: scopeOwner })); return; }
+    if (!scopeWrite.ok) { toast.info(writeBlockText(scopeWrite, { what: 'KPI ของขอบเขตนี้', unit: scopeOwner })); return; }
     if (!window.confirm(`ปิดใช้งาน KPI "${defName(d2)}"?\nค่าที่กรอกไว้ยังอยู่ (soft delete) — เปิดคืนได้ที่แผง "🗄️ ปิดใช้งานอยู่" ใต้แถบปุ่มของตารางนี้`)) return;
     const { data: r, error } = await supabase.from('kpi_definitions').update({ is_active: false }).eq('id', d2.id).select('id');
     if (error || !r?.length) { toast.error('ปิดใช้งานไม่สำเร็จ' + (error ? ': ' + error.message : ' (ไม่มีสิทธิ์)')); return; }
