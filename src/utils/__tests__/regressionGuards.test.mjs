@@ -4665,6 +4665,28 @@ test('🛡️ bomDupAudit: qty ต้องอยู่ในกติกา + �
   }
 });
 
+/* ── 🎯 ตั้งค่าจุดตรวจ PM + QA = ชิ้นส่วนกลางชุดเดียว (2026-10-15 · คำสั่ง user) ─────────
+   *"ใช้หลักการเดียวกันในการสร้าง — ต่างแค่อุปกรณ์ vs ชิ้นงาน · user เรียนระบบเดียวแล้วทำเป็นทั้งคู่"*
+   เดิม 2 จอใช้หมุดตัวเดียวกันแต่วิธีทำคนละแบบ (PM บันทึกครั้งเดียว / QA เขียนทุกคลิก · QA ไม่มีรูปจุด ·
+   PM ไม่มีซูม) ⇒ ถ้าหน้าใดกลับไปวาดโมดัล/ผังรูป-การ์ดเอง 2 จอจะแยกทางกันอีกเงียบๆ
+   📄 docs/modules/inspection-point-setup.md */
+test('🛡️ inspection-setup-shared — จอตั้งค่าจุดตรวจ PM/QA ต้องใช้ชิ้นส่วนกลาง components/inspect/', () => {
+  const files = { 'src/pages/PMSetup.jsx': 'PM', 'src/components/QaPointsEditor.jsx': 'QA' };
+  const need = ['InspectEditorModal', 'PinWorkspace', 'PointCardShell', 'usePointJump', 'SpinAnnotator'];
+  const bad = [];
+  for (const [f, who] of Object.entries(files)) {
+    const code = readFileSync(join(ROOT, f), 'utf8');
+    for (const n of need) if (!new RegExp(`import\\s+${n}\\b`).test(code)) bad.push(`${who} (${f}) ไม่ได้ใช้ ${n}`);
+  }
+  // หน้า QA ห้ามกลับไปแก้จุดตรวจเอง (เขียน qa_inspection_items ตรง) — ต้องผ่านโมดัลกลาง
+  const qa = stripComments(readFileSync(join(ROOT, 'src/pages/QAInspectionSetup.jsx'), 'utf8'));
+  if (/from\('qa_inspection_items'\)\s*\.(insert|update|delete|upsert)/.test(qa)) bad.push('QAInspectionSetup.jsx เขียน qa_inspection_items เอง');
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n   ') + '\n'
+    + '   ทำไม: ตั้งค่าจุดตรวจ PM กับ QA ต้องเป็น "ระบบเดียว" (โมดัล · ผังรูปซ้าย/การ์ดขวา · ซูม · ปักหมุด ·\n'
+    + '         รูปโคลสอัพ · ไปที่จุด · บันทึกครั้งเดียว) ต่างกันได้แค่ช่องสเปคในการ์ด\n'
+    + '   แก้: ประกอบจาก src/components/inspect/* + SpinAnnotator · แก้พฤติกรรมที่ชิ้นกลางที่เดียว\n');
+});
+
 /* ── 🔐 ชั้นที่ 3 ของสิทธิ์ห้ามหายไป (2026-10-15 · คำสั่ง user) ─────────────────────
    *"user บาง role เข้าหน้าได้ทุกหน้า แต่ต้องไม่มีสิทธิ์ไปแก้ข้อมูลส่วนงานคนอื่น"*
    📄 ผลตรวจ 20 จุดรั่ว → docs/modules/permission-scope-audit.md
