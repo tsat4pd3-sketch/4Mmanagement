@@ -87,3 +87,10 @@
 
 ### 🛠️ QC 05/10
 - บันทึกอะไหล่: ล้างยอดใช้ย้อนหลังเดือนที่ลบออก (`mtn_spare_usage_monthly` source=manual) อ่าน error แล้ว — ล้มเดิมเงียบ ยอดเก่ายังถูกนับใน Rank
+
+### 🛒 อะไหล่ติด Min → ใบขอซื้อ (PR) → รับของเข้าสต็อก (2026-10-14)
+แผง `<MtnPrBoard>` (`src/components/MtnPurchase.jsx`) เหนือคลังอะไหล่ — ลูปเดียวกับสโตร์ purchase part:
+ติด Min → 🛒 เปิด PR (ระบบรันเลข) → 🚚 สั่งแล้ว (PO) → 📥 รับของ = RPC `mtn_pr_receive` เข้าสต็อกผ่าน `mtn_stock_move` ในทรานแซกชันเดียว
+· สูตรติด Min/จำนวนเสนอ = `src/utils/mtnPurchase.js` (`isBelowMin`/`suggestReorderQty` — หักยอด PR ค้าง) · Min ว่าง/0 = ไม่ตรวจ
+· รายละเอียด/กฎ PR + GL → `docs/modules/mtn-work-order.md` §🛒 PR / GL / IO
+
