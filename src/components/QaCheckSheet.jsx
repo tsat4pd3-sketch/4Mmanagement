@@ -25,6 +25,8 @@ import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { inSectionScope } from '../utils/sectionScope';
 import { nextDocNo } from '../utils/qaDocNo';
 import CalloutPin from './CalloutPin';
+import PointZoom from './inspect/PointZoom';
+import { qaFileUrl } from '../lib/qaImages';
 import QaFmeQueue from './QaFmeQueue';
 import { QA_STAGES, FME_SHEET_STAGE } from '../utils/qaStages';
 import { notifyEvent } from '../utils/notifyEvent';
@@ -106,6 +108,7 @@ export default function QaCheckSheet({ canRecord }) {
   const [recent, setRecent] = useState([]);          // ใบตรวจล่าสุดของพาร์ทนี้
   const [drafts, setDrafts] = useState({});          // item_id → { values[], note, qty_ng }
   const [selItemId, setSelItemId] = useState(null);  // จุดที่ไฮไลต์ (คลิกหมุด ↔ แถว)
+  const [zoomItem, setZoomItem] = useState(null);    // 🔍 จุดที่เปิดรูปโคลสอัพอยู่
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showDrawing, setShowDrawing] = useState(true);
@@ -547,8 +550,11 @@ export default function QaCheckSheet({ canRecord }) {
     return i.rank ? RANK[i.rank].color : '#4d9fff';   // ยังไม่ตรวจ = สีตาม rank (วงโปร่ง)
   };
 
+  /* 🔍 แตะหมุดที่มีรูปโคลสอัพ = เปิดซูมทันที — แบบเดียวกับจอตรวจ PM (ระบบเดียว เรียนครั้งเดียว · 15/10) */
   const focusItem = (id) => {
     setSelItemId(id);
+    const it = items.find(x => x.id === id);
+    if (it?.image_path) setZoomItem(it);
     // คลิกหมุด → เลื่อนไปแถวของจุดนั้น (จอเล็กจะได้ไม่ต้องไล่หา)
     rowRefs.current[id]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   };
@@ -696,8 +702,8 @@ export default function QaCheckSheet({ canRecord }) {
                             <CalloutPin key={i.id} xPct={i.pos_x} yPct={i.pos_y} layerW={imgBox.w} layerH={imgBox.h}
                               size={BK} label={i.balloon_no} color={pinColor(i)} selected={selItemId === i.id}
                               hollow={!pinJudged(i)}
-                              offX={i.label_dx} offY={i.label_dy}
-                              title={`#${i.balloon_no} ${i.characteristic}${i.rank ? ` · ${i.rank}` : ''} — ${pinJudged(i) ? (JUDGE[resById.get(i.id).judgement]?.label || '') : 'ยังไม่ตรวจ'}`}
+                              offX={i.label_dx} offY={i.label_dy} badge={i.image_path ? '🔍' : null}
+                              title={`#${i.balloon_no} ${i.characteristic}${i.rank ? ` · ${i.rank}` : ''} — ${pinJudged(i) ? (JUDGE[resById.get(i.id).judgement]?.label || '') : 'ยังไม่ตรวจ'}${i.image_path ? ' · แตะเพื่อดูรูปซูมจุดนี้' : ''}`}
                               onClick={() => focusItem(i.id)} />
                           ))}
                         </div>
@@ -710,6 +716,7 @@ export default function QaCheckSheet({ canRecord }) {
                         </span>
                         <span>🟢 ทึบเขียว = ผ่าน</span><span>🔴 ทึบแดง = ไม่ผ่าน</span><span>⚪ ทึบเทา = ข้าม</span>
                         <span>· แตะหมุดเพื่อไปที่จุดนั้น</span>
+                        {pinItems.some(i => i.image_path) && <span>· 🔍 = มีรูปซูมของจุด แตะหมุดเพื่อดู</span>}
                       </div>
                     </div>
                   )}
@@ -770,6 +777,11 @@ export default function QaCheckSheet({ canRecord }) {
             })}
           </div>
         </div>
+      )}
+      {zoomItem && (
+        <PointZoom url={qaFileUrl(zoomItem.image_path)} label={zoomItem.balloon_no} color={pinColor(zoomItem)}
+          name={zoomItem.characteristic} description={`สเปค: ${specLabel(zoomItem)}${zoomItem.method ? ` · ${zoomItem.method}` : ''}`}
+          onClose={() => setZoomItem(null)} />
       )}
     </div>
   );
