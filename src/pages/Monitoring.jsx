@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useMemo, useRef, useContext, lazy, Su
 import { supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can, canSeeded } from '../utils/permissions';
+import useProductionLines from '../utils/useProductionLines';
+import { canWriteLine, writableRows, writeBlockText } from '../utils/writeScope';
 import { checkWrite } from '../utils/dbWrite';
 import { fetchAllPages, fetchByIds } from '../utils/fetchByIds';
 import { useLiveBoard } from '../utils/useLiveBoard';
@@ -55,7 +57,11 @@ const card = { background: 'var(--card)', border: '1px solid var(--border)', bor
 const FS = 12;
 
 export default function Monitoring() {
-  const { role, fullName } = useContext(UserContext);
+  const { role, fullName, section: homeSection, sections: mySections, allUnits } = useContext(UserContext);
+  /* 🔐 บอร์ดผูก "ไลน์เจ้าของ" (`monitor_boards.line_name`) ⇒ กรอก/ลบช่องได้เฉพาะบอร์ดของส่วนงานตัวเอง
+     (audit 15/10 — เดิมโหลดทุกบอร์ด แล้ว syncRackOrder ยิงต่อเป็นใบส่งของจริง)
+     🔴 บอร์ดชนิด `fg` ผูก "ลูกค้า" ไม่ใช่ไลน์ ⇒ ไม่มีไลน์ให้เทียบ = ตัดสินไม่ได้ ⇒ ไม่บล็อก */
+  const lineRows = useProductionLines();
   const [tab, setTab] = useTabParam(BOARD_TABS.map(t => t.key), BOARD_TABS[0].key);
   /* แท็บซ้อนแท็บต้องคนละ query param (UI §6.8 ข้อ 2.4) — หน้าลูกของแท็บ FG ใช้ `?fgv=` */
   const [fgView, setFgView] = useTabParam(['rundown', 'board'], 'rundown', 'fgv');
@@ -85,7 +91,7 @@ export default function Monitoring() {
   const [showImport, setShowImport] = useState(false);
   const [showFgSync, setShowFgSync] = useState(false);
 
-  const canEdit = canSeeded('monitoring', 'manage', role);
+  const canEditPerm = canSeeded('monitoring', 'manage', role);
   /* ขอปรับยอดคลัง = สิทธิ์เดียวกับกรอกเคลื่อนไหวที่ /line-stock (ใบเข้าคิวอนุมัติ line_stock:approve) */
   const canRequestAdj = can('line_stock', 'issue', role);
   /* ชั้น FC/ออเดอร์/สต็อก ของไฟล์เดียวกันใช้สิทธิ์เดิมของจออัพโหลด (demand:upload) —
@@ -103,6 +109,8 @@ export default function Monitoring() {
     if (error) { setWarn(`โหลดทะเบียนบอร์ดไม่สำเร็จ: ${error.message}`); return; }
     setBoards(data || []);
   }, []);
+  const wctx = useMemo(() => ({ role, section: homeSection, sections: mySections, allUnits }),
+    [role, homeSection, mySections, allUnits]);
 
   useEffect(() => { loadBoards(); }, [loadBoards]);
 
@@ -111,6 +119,10 @@ export default function Monitoring() {
     () => tabBoards.find(b => b.id === boardId) || tabBoards[0] || null,
     [tabBoards, boardId],
   );
+
+  /* บอร์ดที่เปิดอยู่เป็นของส่วนงานเราไหม — ตัดสินตอนจะ "แก้" เท่านั้น **การดูไม่ถูกจำกัด** */
+  const boardWrite = useMemo(() => canWriteLine(wctx, board?.line_name, lineRows), [wctx, board, lineRows]);
+  const canEdit = canEditPerm && boardWrite.ok;
   /* สลับแท็บแล้วบอร์ดที่เลือกไว้ไม่ได้อยู่ในแท็บนี้ → ตกกลับตัวแรก (ห้ามจอว่าง) */
   useEffect(() => { if (board && board.id !== boardId) setBoardId(board.id); }, [board, boardId]);
 
@@ -528,7 +540,9 @@ export default function Monitoring() {
 
   /* ── บันทึกช่อง ───────────────────────────────────────────────────────────────── */
   const onEditCell = useCallback(async ({ partId, rowKey, periodKey, value }) => {
-    if (!canEdit) return;
+    /* 🔐 ด่านซ้ำตอนเขียนจริง — `editable` ที่ส่งให้ตารางเป็นแค่การซ่อนช่อง */
+    if (!canEditPerm) return;
+    if (!boardWrite.ok) { toast.error(writeBlockText(boardWrite, { what: 'บอร์ดของไลน์นี้' })); return; }
     const def = rowDefs(board).find(r => r.key === rowKey);
     const isText = def?.kind === 'date';
     const isRackOrder = board?.kind === 'rack' && rowKey === 'order';
@@ -674,7 +688,14 @@ export default function Monitoring() {
         </div>
       ) : loading && !parts.length ? (
         <div style={{ ...card, fontSize: FS + 1, color: 'var(--muted)' }}>กำลังโหลด…</div>
-      ) : (
+      ) : (<>
+        {/* 🔐 มีสิทธิ์จัดการบอร์ด แต่บอร์ดนี้เป็นของส่วนงานอื่น — เขียนบอก ห้ามให้ช่องเทาเฉยๆ */}
+        {canEditPerm && !boardWrite.ok && (
+          <div style={{ ...card, padding: '8px 10px', marginBottom: 8, fontSize: FS,
+            borderLeft: '4px solid #eab308' }}>
+            🔒 {writeBlockText(boardWrite, { what: `บอร์ด "${board?.name || ''}"` })}
+          </div>
+        )}
         <MonitorBoardGrid
           board={board} parts={partsWithFlag} periods={periods}
           manualMap={manualMap} systemMap={systemMap} anchorMap={anchorMap} lockMap={lockMap}
@@ -682,7 +703,7 @@ export default function Monitoring() {
           onEditCell={onEditCell} editable={canEdit} truncated={truncated}
           windowSize={board?.period_kind === 'week' ? 10 : 14}
         />
-      )}
+      </>)}
       {adjReq ? (
         <Suspense fallback={null}>
           <StockAdjustRequestModal req={adjReq} by={fullName} onClose={() => setAdjReq(null)} />

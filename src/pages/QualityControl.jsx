@@ -25,6 +25,7 @@ import { usePerms } from '../utils/usePerms';
 import { isTrialDefect, defectQty, isSuspectPending, orderProducedQty, QBIN_EMBED } from '../utils/oee';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { inSectionScope } from '../utils/sectionScope';
+import { canWriteLine, writableRows, writeBlockText } from '../utils/writeScope';
 import LineSelect from '../components/LineSelect';
 import PersonSelect from '../components/PersonSelect';
 import PartSelect from '../components/PartSelect';
@@ -1201,7 +1202,12 @@ const D_FIELDS = [
 ];
 
 function CAPATab({ canRecord, canManage, prefill, onPrefillDone, lineObjs = [], partOpts = [] }) {
-  const { fullName } = useContext(UserContext);
+  const { fullName, role, section: homeSection, sections: mySections, allUnits } = useContext(UserContext);
+  /* 🔐 ใบ 8D ผูกกับไลน์ ⇒ แก้/ปิดได้เฉพาะไลน์ในส่วนงานตัวเอง (audit 15/10 — เดิมลิสต์ทั้งโรงงาน)
+     ขา QA จริงถือคีย์ `scope:all_units` จึงไม่กระทบ · ที่ปิดคือคนนอกสายคุณภาพที่ถือ qa:record */
+  const wctx = useMemo(() => ({ role, section: homeSection, sections: mySections, allUnits }),
+    [role, homeSection, mySections, allUnits]);
+  const capaLineOf = useCallback((c) => c?.line_name || c?.qa_ncr?.line_name || '', []);
   // 📜 ค่าที่เคยบันทึกใน qa_capa (Main) — พาร์ท/ชื่อผู้รับผิดชอบที่ทะเบียนยังไม่มี ยังเลือกซ้ำได้ (2026-09-07)
   const partHist = useColumnHistory(supabase, 'qa_capa', 'part_no', { upper: true });
   const ownerHist = useColumnHistory(supabase, 'qa_capa', 'owner_name');
@@ -1221,6 +1227,13 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone, lineObjs = [], 
     setList(data || []);
   }, [filter]);
   useEffect(() => { load(); }, [load]);
+
+  /* 🔴 ซ่อนแล้วต้องบอกว่าซ่อนกี่ใบ — "ไม่มีใบ" กับ "ไม่ใช่ของเรา" คนละเรื่อง
+     ใบที่ไม่ระบุไลน์ = ตัดสินไม่ได้ ⇒ ไม่ซ่อน (ไม่งั้นใบเก่าที่ยังไม่ผูกไลน์หายทั้งหมด) */
+  const visible = useMemo(
+    () => writableRows(wctx, list, (c) => lineObjs.find(l => l.name === capaLineOf(c))?.section),
+    [wctx, list, lineObjs, capaLineOf]);
+  const hiddenCount = list.length - visible.length;
 
   // เปิดจากปุ่มใน NCR / เคลมลูกค้า
   useEffect(() => {
@@ -1258,6 +1271,9 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone, lineObjs = [], 
   const save = async (extra = {}, msg = 'บันทึกแล้ว ✓') => {
     const f = { ...detail, ...extra };
     if (!f.title?.trim()) { toast.error('กรอกหัวข้อ CAPA'); return; }
+    /* 🔐 ด่านซ้ำตอนกดจริง (ซ่อนปุ่มอย่างเดียวไม่พอ — เปิดใบตรงจาก NCR/เคลมได้) */
+    const w = canWriteLine(wctx, capaLineOf(f), lineObjs);
+    if (!w.ok) { toast.error(writeBlockText(w, { what: 'ใบ 8D ของไลน์นี้' })); return; }
     const payload = {
       ncr_id: f.ncr_id || null, title: f.title.trim(),
       owner_name: f.owner_name?.trim() || null, due_date: f.due_date || null,
@@ -1332,7 +1348,7 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone, lineObjs = [], 
             <th style={thSt}>ผู้รับผิดชอบ</th><th style={thSt}>กำหนดปิด</th><th style={thSt}>สถานะ</th>
           </tr></thead>
           <tbody>
-            {list.map(c => {
+            {visible.map(c => {
               const overdue = c.status !== 'closed' && c.due_date && c.due_date < today;
               return (
                 <tr key={c.id} onClick={() => setDetail({
@@ -1360,7 +1376,14 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone, lineObjs = [], 
                 </tr>
               );
             })}
-            {list.length === 0 && <tr><td style={tdSt} colSpan={6}><span style={{ color: 'var(--muted)' }}>ไม่มีรายการ</span></td></tr>}
+            {visible.length === 0 && <tr><td style={tdSt} colSpan={6}><span style={{ color: 'var(--muted)' }}>
+              {hiddenCount > 0 ? `ไม่มีใบ 8D ของส่วนงานคุณ (มี ${hiddenCount} ใบของส่วนงานอื่น — ดูได้ที่บอร์ดคุณภาพ)` : 'ไม่มีรายการ'}
+            </span></td></tr>}
+            {visible.length > 0 && hiddenCount > 0 && (
+              <tr><td style={{ ...tdSt, fontSize: 11.5, color: 'var(--muted)' }} colSpan={6}>
+                🔒 ซ่อน {hiddenCount} ใบของส่วนงานอื่น — ดูได้ แต่แก้/ปิดไม่ได้
+              </td></tr>
+            )}
           </tbody>
         </table>
       </div>
