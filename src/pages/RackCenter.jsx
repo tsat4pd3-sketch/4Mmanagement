@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useContext, useRef } from 'r
 import { lineNameCompare } from '../utils/lineHierarchy';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { useSearchParams } from 'react-router-dom';
+import { urlParam } from '../utils/urlInit';
 import useTabParam, { useMergeParams } from '../utils/useTabParam';
 import Page from '../components/Page';
 import PageHeader from '../components/PageHeader';
@@ -77,7 +78,7 @@ export default function RackCenter() {
   const [lines,          setLines]          = useState([]);
   const [containerTypes, setContainerTypes] = useState([]);
   const [requests,       setRequests]       = useState([]);
-  const [lineFilter,     setLineFilter]     = useState('');
+  const [lineFilter,     setLineFilter]     = useState(() => urlParam('fline') || '');   // ?fline= (จอวนหน้า · ?line= ถูกใช้กับ QR เรียกภาชนะแล้ว)
   const [showForm,       setShowForm]       = useState(false);
   const [form,           setForm]           = useState(EMPTY_FORM);
   const [saving,         setSaving]         = useState(false);

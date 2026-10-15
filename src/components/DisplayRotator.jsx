@@ -4,7 +4,7 @@ import { supabase } from '../supabaseClient';
 import { canAccessPage } from '../utils/permissions';
 import {
   normalizeConfig, buildPlaylist, stepIndex, indexOfLocation, resolveIndex, shouldReload,
-  displayChannelName, parseDisplayCmd, fmtSec, SKIP_REASON_LABEL,
+  displayChannelName, parseDisplayCmd, ROT_NAV_STATE, fmtSec, SKIP_REASON_LABEL,
 } from '../utils/displayRotation';
 
 /* ══ 📺 DisplayRotator — จอวนหน้าเอง ตามแผนของบัญชีที่ login ══════════════════════════
@@ -79,7 +79,7 @@ export default function DisplayRotator({ userId, role, disabled }) {
     if (!active) { startedRef.current = false; return; }
     if (startedRef.current) return;
     startedRef.current = true;
-    if (indexOfLocation(playable, location.pathname, location.search) < 0) navigate(playable[0].path, { replace: true });
+    if (indexOfLocation(playable, location.pathname, location.search) < 0) navigate(playable[0].path, { replace: true, state: { [ROT_NAV_STATE]: `0-${Date.now()}` } });
   }, [active, playable, location.pathname, location.search, navigate]);
 
   const goTo = useCallback((nextIdx) => {
@@ -92,7 +92,7 @@ export default function DisplayRotator({ userId, role, disabled }) {
     }
     setIdx(nextIdx);
     setElapsed(0);
-    navigate(target.path);
+    navigate(target.path, { state: { [ROT_NAV_STATE]: `${nextIdx}-${Date.now()}` } });
     if (nextIdx === 0) setReloadTick(t => t + 1);   // ครบรอบ = อ่านแผนใหม่
   }, [active, playable, cfg, navigate]);
 

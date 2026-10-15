@@ -83,6 +83,29 @@ apply แล้วบน Main — ตาราง + RLS 2 policy + trigger `trg_
 
 migration `20261014_display_rotation_scope_main.sql` (**apply แล้ว 14/10** ผ่าน execute_sql ทีละคำสั่ง — policy ใช้ `alter policy`)
 
+## รอบ 3 — ตัวกรองครบทุกหน้า (2026-10-15 · user: "ยังไม่ครอบคลุม เรื่องการตั้งค่าเจาะแต่ละหน้า ฟิลเตอร์ เลือก tab")
+
+ต้นเหตุ: หลายหน้าเก็บตัวกรองไว้ใน state ล้วน (ไม่อยู่ในลิงก์) ⇒ ตั้งจากหน้าตั้งค่าไม่ได้ · ไล่ครบ 21 หน้าที่ display เปิดได้ 15/10
+· **`src/utils/urlInit.js`** (`urlParam/urlPick/urlBool/urlNum`) = หน้าอ่าน "ค่าตั้งต้นจากลิงก์ครั้งเดียวตอนเปิด"
+  ไม่เปลี่ยนวิธีจำค่าเดิมของหน้า · ไม่เขียนกลับลงลิงก์ · ค่าผิด = ใช้ค่าเดิมของหน้า
+· หน้าที่เพิ่มการอ่านลิงก์รอบนี้:
+  | หน้า | คีย์ใหม่ |
+  |---|---|
+  | `/factory-map` | `metric` · `panel` · `view=2d|3d` · `tour=1` · `lbl` · `nopanel=1` · `support=1` (ลิงก์ชนะค่าที่จำในเครื่อง) |
+  | `/obeya` kpi / sqdcm | `board=1` (โหมดจอ TV) · sqdcm `period=week|month|year` (ยังเป็น "ดูช่วงไหน" ไม่ใช่วันที่ตายตัว) |
+  | `/oee-analytics` | `shift` · `team` (เดิมมี tab/section/dept/line แล้ว) |
+  | `/store-monitor` | `line` · `kind` · `side` |
+  | `/rack-center` | `fline` (**ไม่ใช่ `line`** — `?line=&ctype=` คือ QR เรียกภาชนะ เปิดฟอร์มทันที) |
+  | `/heijunka` | `store` · `sec` · `fline` · `shift` · `mat` (เดิมมี `view`) |
+  | `/vsm` | `mat` · `state` (เดือน = ปัจจุบันเสมอ) |
+· ทะเบียน `DISPLAY_PAGE_PARAMS` ครอบ 21 หน้า · ชนิดช่อง: select · bool · section · line · scope (`section:X`/`line_group:X`) · product · text
+  · `showIf` = ช่องผูกกับแท็บ (เช่น `period` โชว์เฉพาะ `tab=sqdcm`) · เปลี่ยนแท็บแล้วค่าที่ไม่เกี่ยวถูกตัดออกจากลิงก์เอง
+· 🔴 **หน้าเดิมที่เปลี่ยนแค่ query ต้อง remount** — ตัววนแนบ `state[ROT_NAV_STATE]` ตอน navigate · App ใช้เป็น `key` ของ `<Routes>`
+  (ไม่งั้น `/factory-map?metric=oee` → `?metric=ng` ค้างค่าเก่า เพราะค่าจากลิงก์ถูกอ่านแค่ตอน mount) · นำทางปกติ key = `'r'` ไม่ remount
+· ⚠️ ข้อจำกัดที่รู้: ช่วงวันที่ (`?from=&to=`) **ไม่ให้ตั้ง** — จอแขวนจะค้างช่วงเก่าตลอดไป ใช้ค่าตั้งต้นแบบ "ย้อนหลัง N วันจากวันนี้" ของหน้าแทน ·
+  `/dashboard` กะ ไม่ให้ตั้ง (หน้าสลับกะเองตอน 20:00) · `/flow-tower` ไม่มีตัวกรอง
+· เพิ่มหน้าใหม่ในทะเบียน = อ่านโค้ดหน้านั้นก่อน · ถ้าตัวกรองอยู่ใน state ล้วน ให้ใช้ `urlInit` ที่ `useState(() => …)` ของหน้านั้น
+
 ## 🔒 role display = ดูอย่างเดียว (2026-10-15 · คำสั่ง user "ปิดหน้าที่บันทึกข้อมูลได้ของ role display")
 
 บัญชีจอเปิดค้างบนทีวี + รหัสผ่านร่วม + ไม่โดน idle-logout ⇒ หน้าที่ display บันทึกได้ = ใครเดินผ่านก็บันทึกแทนได้

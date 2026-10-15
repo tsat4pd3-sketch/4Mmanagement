@@ -6,6 +6,7 @@ import PageHeader from '../components/PageHeader';
 import SearchSelect from '../components/SearchSelect';
 import SearchInput from '../components/SearchInput';
 import LineSelect from '../components/LineSelect';
+import ProductSelect from '../components/ProductSelect';
 import { toast } from '../components/Toast';
 import { canAccessPage, canSeeded } from '../utils/permissions';
 import { checkWriteRows } from '../utils/dbWrite';
@@ -16,7 +17,7 @@ import {
   ROT_LIMITS, normalizeConfig, buildPlaylist, secOf, pathOnly, isValidRotationPath,
   cleanItemsForSave, fmtSec, SKIP_REASON_LABEL,
   sectionsOfProfile, canManageDisplay, displayChannelName,
-  DISPLAY_PAGE_PARAMS, queryParamsOf, withQueryParams, paramSummary,
+  DISPLAY_PAGE_PARAMS, queryParamsOf, withQueryParams, paramSummary, paramVisible,
 } from '../utils/displayRotation';
 
 /* ══ 🔁 ตั้งค่าจอวนหน้า — /display-rotation ══════════════════════════════════════════
@@ -440,7 +441,22 @@ function ItemRow({ i, it, n, canEdit, focused, onFocus, pageOptions, defaultSec,
   const base = it.path ? pathOnly(it.path) : '';
   const params = queryParamsOf(it.path);
   const defs = DISPLAY_PAGE_PARAMS[base] || null;
-  const setParam = (k, v) => onChange({ path: withQueryParams(base, { ...params, [k]: v }) });
+  // ช่องที่ไม่เข้าเงื่อนไข showIf แล้ว (เช่น เปลี่ยนแท็บ) ถูกตัดออกจากลิงก์ — ไม่ทิ้งค่าค้างที่หน้าไม่ได้ใช้
+  const setParam = (k, v) => {
+    const next = { ...params, [k]: v };
+    (defs || []).forEach(d => { if (!paramVisible(d, next)) delete next[d.key]; });
+    onChange({ path: withQueryParams(base, next) });
+  };
+  const scopeOptions = useMemo(() => {
+    const secs = tvSections.length ? tvSections : allSections;
+    const parents = (lines || []).filter(l => !l.parent_line_name && (!tvSections.length || tvSections.includes(l.section)))
+      .map(l => l.name).filter(n => (lines || []).some(c => c.parent_line_name === n));
+    return [
+      ...(tvSections.length ? [] : [{ value: 'plant', label: '🏭 ทั้งโรงงาน' }]),
+      ...secs.map(x => ({ value: `section:${x}`, label: `📁 ส่วนงาน ${x}` })),
+      ...parents.map(x => ({ value: `line_group:${x}`, label: `🏭 กลุ่มไลน์ ${x}` })),
+    ];
+  }, [tvSections, allSections, lines]);
   const rawQ = (String(it.path || '').match(/[?#].*$/) || [''])[0];
   const secOptions = tvSections.length ? tvSections : allSections;
 
@@ -456,8 +472,8 @@ function ItemRow({ i, it, n, canEdit, focused, onFocus, pageOptions, defaultSec,
 
         {defs && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            {defs.map(d => (
-              <label key={d.key} style={{ display: 'grid', gap: 2, fontSize: 11, color: 'var(--muted)', minWidth: 0 }}>
+            {defs.filter(d => paramVisible(d, params)).map(d => (
+              <label key={d.key} style={{ display: 'grid', gap: 2, fontSize: 11, color: 'var(--muted)', minWidth: 0, alignContent: 'start' }}>
                 <span style={{ fontWeight: 700 }}>{d.label}</span>
                 {d.kind === 'select' && (
                   <select value={params[d.key] || ''} disabled={!canEdit} onChange={e => setParam(d.key, e.target.value)}>
@@ -470,6 +486,27 @@ function ItemRow({ i, it, n, canEdit, focused, onFocus, pageOptions, defaultSec,
                     <option value="">{ALL.section}</option>
                     {secOptions.map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
+                )}
+                {d.kind === 'bool' && (
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 6, minHeight: 34, fontSize: 13, color: 'var(--text)' }}>
+                    <input type="checkbox" checked={params[d.key] === '1'} disabled={!canEdit}
+                      onChange={e => setParam(d.key, e.target.checked ? '1' : '')} />
+                    {params[d.key] === '1' ? 'เปิด' : 'ปิด'}
+                  </span>
+                )}
+                {d.kind === 'scope' && (
+                  <select value={params[d.key] || ''} disabled={!canEdit} onChange={e => setParam(d.key, e.target.value)}>
+                    <option value="">— ค่าเริ่มต้นของหน้า (ส่วนงานของจอ) —</option>
+                    {scopeOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                )}
+                {d.kind === 'product' && (
+                  <ProductSelect value={params[d.key] || ''} disabled={!canEdit} style={{ minWidth: 240 }}
+                    onChange={({ mat_no }) => setParam(d.key, mat_no || '')} />
+                )}
+                {d.kind === 'text' && (
+                  <input type="text" value={params[d.key] || ''} disabled={!canEdit} maxLength={80}
+                    onChange={e => setParam(d.key, e.target.value)} style={{ width: 180 }} />
                 )}
                 {d.kind === 'line' && (
                   <LineSelect lines={lines} value={params[d.key] || ''} disabled={!canEdit}
