@@ -5,6 +5,7 @@
 -- additive ทั้งหมด (คอลัมน์ nullable · ตารางใหม่) ⇒ โค้ดเดิมไม่เห็นอะไรเปลี่ยน ยกเว้น KPI ข้อ 7 (ตั้งใจ)
 -- ตาราง DR ตาม convention = anon-open (supabaseDR ไม่เคย authenticate — CLAUDE.md §Supabase Projects)
 -- 📄 docs/modules/mtn-work-order.md §💳 PR / GL / IO (2026-10-14)
+-- ✅ apply แล้ว 15/10 ผ่าน MCP (แบ่ง 6 ก้อนเพราะทั้งไฟล์ timeout · ผลตรวจ: fns=2 · trg_audit=2 · mo มี closed_all)
 -- ═══════════════════════════════════════════════════════════════════════════
 
 -- 1) เลข IO ประจำเครื่องจักร — ใบ MO ดึงไปเติมช่อง I/O ให้เอง (แก้ทับในใบได้)
