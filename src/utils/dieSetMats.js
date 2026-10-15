@@ -55,3 +55,18 @@ export function suggestPps(set) {
   const n = dieSetMats(set).length;
   return n >= 2 ? n : null;
 }
+
+/** 🔎 หลักฐานใน "ชื่อ/เลขพาร์ท" ที่บอกใบ้ว่าชุดนี้น่าจะเป็นงานคู่ — **ท่าสุดท้าย ใช้ชี้เป้าให้คนไปกรอกเท่านั้น**
+
+    🔴 **ห้ามเอาผลนี้เขียนลงฐาน ห้ามเอาไปคิด shot** (กฎเดียวกับ §เดาหมวดจากคำ ใน CLAUDE.md)
+       — "ชุดนี้ทำ 2 พาร์ท" ≠ "1 จังหวะได้ 2 ชิ้น" · tandem 24 OP ตอกทีละตัว ก็ชื่อ RH/LH เหมือนกัน
+       คนที่ยืนหน้าเครื่องเท่านั้นที่ตอบได้ ⇒ จอมีหน้าที่บอกว่า "น่าสงสัย เพราะอะไร" แล้วให้เขากดยืนยัน
+    คืน null = ไม่มีหลักฐาน (ไม่ได้แปลว่าไม่ใช่งานคู่) */
+export function pairHint(set) {
+  const why = [];
+  const pn = String(set?.part_no ?? '');
+  const nm = String(set?.part_name ?? '').toUpperCase();
+  if (/[^/\s]\/[^/\s]/.test(pn)) why.push('เลขพาร์ทมี 2 ตัวคั่น /');
+  if (/(RH|LH)[^A-Z]{0,6}(RH|LH)/.test(nm)) why.push('ชื่อเอ่ยทั้ง RH และ LH');
+  return why.length ? { why: why.join(' + ') } : null;
+}

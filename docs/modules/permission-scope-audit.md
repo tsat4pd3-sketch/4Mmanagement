@@ -94,7 +94,48 @@
 
 ---
 
-## 5. แผนแก้ที่เสนอ (ยังไม่ลงมือ — รอ user เคาะข้อ 4)
+## 5. ✅ สิ่งที่ทำไปแล้ว (15/10 — หลัง user เคาะ)
+
+**กติกาที่ user ตัดสิน:** *"ดูได้ทั้งโรงงาน แต่แก้ได้เฉพาะของตัวเอง"* · ระดับ = **ส่วนงาน** · ลำดับ = **ปิดรูระดับ A ก่อน**
+
+### 🔑 แกนใหม่ — "ขอบเขตที่เห็น" ≠ "ขอบเขตที่แก้ได้"
+| | เห็น | แก้ |
+|---|---|---|
+| ของกลาง | `effectiveSections()` (`sectionScope.js`) | **`writeScope.js`** (ใหม่) · ฝั่งช่าง = **`canWriteTeam()`** (`mtnTeams.js`) |
+| อ่านจาก | `profiles.sections` — **ว่าง = เห็นทั้งโรงงาน** | **`profiles.section` (บ้านจริง)** — ว่าง = **บล็อก** + บอกทางแก้ |
+| ใบผ่าน | — | คีย์ **`scope:all_units`** (ปรับที่ `/permissions`) |
+
+🔴 **ห้ามเอา `sections` มาตัดสินการแก้** — 31/122 บัญชีว่างโดยตั้งใจ (ช่าง 16 คนต้องเห็นทุกไลน์)
+· คีย์ `scope:all_units` = true: admin·manager·qa·planner_store·engineer·engineer_nm·document_control·warehouse_delivery
+· = false: supervisor·leader·mtn·**dept_admin**·sale·display
+
+### ปิดครบ 10 จุดระดับ A
+| จุด | ทำอะไร |
+|---|---|
+| KpiMonthly | ด่านตามขอบเขต + ด่านซ้ำ 5 handler · ระดับโรงงาน/ฝ่าย = ต้องมีใบผ่าน |
+| LineStock คิวอนุมัติ | กรองคิว + ด่านใน `reviewTxn` + บอกว่าซ่อนกี่ใบ |
+| QualityControl 8D | กรองตามไลน์เจ้าของใบ + ด่านใน `save()` |
+| Monitoring | `canEdit` = สิทธิ์ ∧ บอร์ดของเรา + ด่านใน `onEditCell` |
+| QAInspectionSetup | ด่านต่อพาร์ท + `savePart`/`delPart` · **ไม่ซ่อนพาร์ท** (ทะเบียนอ้างอิง) |
+| PEDocs | ส่งขอบเขตให้ `<LineSelect>` + ด่านที่ `saveRow`/`deleteRow` |
+| NPI | ด่านตามไลน์ของพาร์ทใน `savePart`/`delPart` |
+| HeijunkaKanban | คิวยังโชว์ทุกไลน์ · **6 ปุ่มที่สั่งงานจริง** ต้องเป็นไลน์ของเรา |
+| PMCheckData | `?dept=` ต้องเป็นทีมของเรา + ด่านอนุมัติ/ตีกลับ + แถบบอกบนจอ |
+| MtnRepair | ลบใบข้ามทีมไม่ได้ · ทะเบียนช่าง/ค่าแรง (`dept`) เข้าด่านที่ `updRow` |
+
+**ด่าน build:** `regressionGuards` → `write-scope-layer` · เทส `writeScope` 8 + `teamWriteScope` 5
+
+### ⏸️ ค้างไว้ รอ user ตัดสิน
+**ใบ MO ขั้น 2-3 (รับงาน/จ่ายงาน/ลงผลซ่อม) ข้ามทีม** — `mtn_repair:manage_master` ถูกแจกให้
+role `mtn` **ทั้งก้อน** (ไม่ใช่แค่หัวหน้า) และใน `canDoStep()` คีย์นี้ข้ามด่านทีมโดยตั้งใจ
+("หัวหน้าแก้ย้อนหลังได้ทุกขั้น — ห้ามถอด") ⇒ ปิดรูนี้ = เปลี่ยนพฤติกรรมทั้งโมดูล
+และเสี่ยง**ใบซ่อมค้าง**ถ้าทีมเจ้าของไม่อยู่ · 2 ทางเลือก:
+(ก) แยกคีย์ `mtn_repair:head` ออกจาก `manage_master` แล้วให้เฉพาะหัวหน้าจริง
+(ข) ให้ด่านทีมชนะ `manage_master` เฉพาะขั้น 2-3
+
+---
+
+## 6. แผนแก้ส่วนที่เหลือ (ระดับ B/C + ชั้น DB)
 
 - **ชั้น 1 ของกลาง:** `assertScopeAllowed(index, scope, {scopeSet, sections})` + `canWriteUnit(row)` ใน
   `src/utils/orgScope.js` — **ต้องถูกเรียกใน handler ที่เขียนจริง ไม่ใช่แค่ซ่อนปุ่ม**

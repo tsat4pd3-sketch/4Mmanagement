@@ -30,6 +30,7 @@ const LEARNED_PX  = 80;
 export default function ScrollHint() {
   const isMobile = useIsMobile();
   const [show, setShow] = useState(false);
+  const [lift, setLift] = useState(0);   // หน้ามีแถบบันทึกเกาะล่าง (.m-savebar) ⇒ ยกชิปขึ้นพ้นแถบ ไม่ทับปุ่มบันทึก (15/10)
   const targetRef = useRef(null);
   const learnedRef = useRef(new WeakSet());
   const { pathname } = useLocation();
@@ -55,6 +56,8 @@ export default function ScrollHint() {
 
     const check = () => {
       const el = pickTarget();
+      const bar = document.querySelector('.m-savebar');
+      setLift(bar ? Math.round(bar.getBoundingClientRect().height) + 8 : 0);
       targetRef.current = el;
       if (!el) return setShow(false);
       if (el.scrollTop > LEARNED_PX) learnedRef.current.add(el);
@@ -90,7 +93,7 @@ export default function ScrollHint() {
 
   return (
     <button onClick={jump} aria-label="เลื่อนลงดูเนื้อหาต่อ" style={{
-        position: 'fixed', left: '50%', transform: 'translateX(-50%)', bottom: 10, zIndex: 10001,
+        position: 'fixed', left: '50%', transform: 'translateX(-50%)', bottom: `calc(${10 + lift}px + var(--mnav-h, 0px))`, zIndex: 10001,
         display: 'flex', alignItems: 'center', gap: 6,
         padding: '7px 14px', borderRadius: 999, cursor: 'pointer',
         fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)',

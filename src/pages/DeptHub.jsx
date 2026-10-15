@@ -157,6 +157,21 @@ const DEPT_CSS = `
      กันทับหัวข้อ (desktop ไม่เปลี่ยน: media ไม่ match) */
   @media (max-width: 768px) {
     .hub-topbar { position: static !important; align-self: flex-end; margin-bottom: 4px; }
+    /* 📱 มือถือ/handheld (15/10 · docs/MOBILE-UX-STANDARD.md §2 ข้อ 1 "งานของฉันมาก่อน ตกแต่งทีหลัง")
+       เดิมจอแรกของ 360×640 = แบนเนอร์ INDUSTRY 5.0 + ชื่อระบบตัวใหญ่ + นาฬิกา + วันที่ + ตัวเลข 4 ช่อง
+       ⇒ ปุ่มเข้าเมนูเริ่มที่จอ 2 · มือถือมีนาฬิกา/วันที่อยู่แล้ว · ชื่อระบบไม่ใช่สิ่งที่คนมาทำ
+       ลำดับมือถือ: ค้นหาเมนู + กะ → ⭐ ใช้บ่อย (ปุ่มใหญ่ 2 คอลัมน์) → ตัวเลขสด → หมวดเมนู · จอคอมไม่แตะ */
+    .hub-banner, .hub-title, .hub-sub, .hub-clock, .hub-date, .hub-foot { display: none !important; }
+    .hub-head { order: 1; margin-bottom: 14px !important; gap: 8px !important; }
+    .hub-head .hub-search { margin-top: 0 !important; min-height: 46px; font-size: 15px; }
+    .hub-fav { order: 2; margin-bottom: 16px !important; }
+    .hub-fav-list { display: grid !important; grid-template-columns: 1fr 1fr; }
+    .hub-fav-list .star-chip { min-height: 52px; justify-content: flex-start; text-align: left; white-space: normal; line-height: 1.3; }
+    .hub-tele { order: 3; margin-bottom: 18px !important; }
+    .hub-tele .tele-tile { flex: 1 1 140px; min-width: 140px; padding: 9px 12px; }
+    .hub-grid { order: 4; }
+    .hub-head .hub-search > span:last-child { display: none; }   /* "Ctrl K" — handheld ไม่มีคีย์บอร์ด */
+    .hub-tele > div:first-child > span:last-child { display: none; }   /* "refresh 60s" ดันหัวแถวพับ 3 บรรทัด */
   }
 `;
 
@@ -596,9 +611,9 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
       </div>
 
       {/* ── Header — แถวนอนเต็มความกว้าง: ชื่อระบบซ้าย · นาฬิกา/กะขวา (จอแคบ wrap) ── */}
-      <div style={{ width: '100%', maxWidth: 'min(97vw, 2400px)', display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', justifyContent: 'space-between', gap: '14px clamp(20px, 3vw, 48px)', marginBottom: 'clamp(18px, 2.5vw, 26px)', animation: 'hub-fade-up 0.55s ease both' }}>
+      <div className="hub-head" style={{ width: '100%', maxWidth: 'min(97vw, 2400px)', display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', justifyContent: 'space-between', gap: '14px clamp(20px, 3vw, 48px)', marginBottom: 'clamp(18px, 2.5vw, 26px)', animation: 'hub-fade-up 0.55s ease both' }}>
         <div style={{ minWidth: 'min(100%, 420px)' }}>
-        <div style={{
+        <div className="hub-banner" style={{
           display: 'inline-flex', alignItems: 'center', gap: 10,
           background: 'rgba(61,214,92,0.08)', border: '1px solid rgba(61,214,92,0.22)',
           borderRadius: 6, padding: '5px 14px', marginBottom: 18,
@@ -610,13 +625,13 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
           </span>
         </div>
 
-        <h1 style={{
+        <h1 className="hub-title" style={{
           margin: 0, fontSize: 'clamp(24px, 4.2vw, 40px)', fontWeight: 900,
           fontFamily: 'var(--font-display)', color: 'var(--text)', letterSpacing: '-0.02em', lineHeight: 1.15,
         }}>
           ESM Control Center
         </h1>
-        <p style={{ margin: '8px 0 0', fontSize: 'clamp(13px, 2vw, 15px)', color: 'var(--muted)', fontFamily: 'var(--font-body)' }}>
+        <p className="hub-sub" style={{ margin: '8px 0 0', fontSize: 'clamp(13px, 2vw, 15px)', color: 'var(--muted)', fontFamily: 'var(--font-body)' }}>
           ศูนย์ควบคุมโรงงานอัจฉริยะ · Thai Summit Group — เลือกส่วนงานเพื่อเริ่มทำงาน
         </p>
 
@@ -636,20 +651,20 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
 
         {/* นาฬิกา + กะ — readout สด (ชิดขวาบนจอกว้าง) */}
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-          <span style={{ fontFamily: MONO, fontSize: 14, fontWeight: 700, color: 'var(--text)', background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 6, padding: '4px 12px', fontVariantNumeric: 'tabular-nums' }}>
+          <span className="hub-clock" style={{ fontFamily: MONO, fontSize: 14, fontWeight: 700, color: 'var(--text)', background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 6, padding: '4px 12px', fontVariantNumeric: 'tabular-nums' }}>
             ⏱ {clock}
           </span>
           <span style={{ fontFamily: 'var(--font-body)', fontSize: 12, fontWeight: 700, color: isDayShift ? '#f59e0b' : '#4d9fff', background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 6, padding: '5px 12px' }}>
             {isDayShift ? '☀️ กะเช้า 08:00–20:00' : '🌙 กะดึก 20:00–08:00'}
           </span>
-          <span style={{ fontFamily: 'var(--font-body)', fontSize: 12, fontWeight: 600, color: 'var(--text2)', background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 6, padding: '5px 12px' }}>
+          <span className="hub-date" style={{ fontFamily: 'var(--font-body)', fontSize: 12, fontWeight: 600, color: 'var(--text2)', background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 6, padding: '5px 12px' }}>
             📅 {thaiDate}
           </span>
         </div>
       </div>
 
       {/* ── LIVE TELEMETRY ── */}
-      <div style={{ width: '100%', maxWidth: 'min(97vw, 2400px)', marginBottom: 'clamp(22px, 3vw, 32px)', animation: 'hub-fade-up 0.6s ease 0.08s both' }}>
+      <div className="hub-tele" style={{ width: '100%', maxWidth: 'min(97vw, 2400px)', marginBottom: 'clamp(22px, 3vw, 32px)', animation: 'hub-fade-up 0.6s ease 0.08s both' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
           <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.2em', color: 'var(--muted)', textTransform: 'uppercase', fontFamily: MONO }}>
             ● Live Telemetry
@@ -677,7 +692,7 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
       {/* ── ⭐ ใช้บ่อยของเครื่องนี้ — ไม่มีสถิติ (เครื่องใหม่) = ไม่โชว์บล็อกเปล่า
              หลักเดียวกับ ⭐ บน rail/drawer ของ sidebar (navRecent ชุดเดียวกัน) ── */}
       {favItems.length > 0 && (
-        <div style={{ width: '100%', maxWidth: 'min(97vw, 2400px)', marginBottom: 'clamp(18px, 2.4vw, 26px)', animation: 'hub-fade-up 0.6s ease 0.1s both' }}>
+        <div className="hub-fav" style={{ width: '100%', maxWidth: 'min(97vw, 2400px)', marginBottom: 'clamp(18px, 2.4vw, 26px)', animation: 'hub-fade-up 0.6s ease 0.1s both' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
             <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.2em', color: 'var(--muted)', textTransform: 'uppercase', fontFamily: MONO }}>
               ⭐ ใช้บ่อย
@@ -685,7 +700,7 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
             <span style={{ flex: 1, height: 1, background: 'var(--border)' }} />
             <span style={{ fontSize: 11, color: 'var(--muted2)', fontFamily: MONO }}>this device</span>
           </div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <div className="hub-fav-list" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {favItems.map(it => (
               <button key={it.to} type="button" className="star-chip" onClick={() => navigate(it.to)} title={it.group}>
                 <span style={{ fontSize: 15 }}>{it.icon}</span>{it.label}
@@ -799,7 +814,7 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
       )}
 
       {/* ── Footer ── */}
-      <div style={{
+      <div className="hub-foot" style={{
         marginTop: 'clamp(28px, 4vw, 44px)',
         fontSize: 11, color: 'var(--muted)', letterSpacing: '0.14em', textTransform: 'uppercase',
         fontFamily: MONO, animation: 'hub-fade-up 0.55s ease 0.55s both', textAlign: 'center',

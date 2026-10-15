@@ -1501,6 +1501,17 @@ const RULES = [
     allow: {},
   },
   {
+    id: 'mobile-fixed-bottom-needs-mnav',
+    scan: ['src'], ext: ['.jsx'],
+    /* ของ position:fixed ที่ชิดล่างด้วยตัวเลข (bottom: 12) — แถบล่างมือถือ (MobileNavBar 56px) จะทับ */
+    re: /position:\s*'fixed'[^\n]*\bbottom:\s*[1-9]\d*\s*[,}]/g,
+    why: 'มือถือมีแถบล่าง 4 ช่อง (MobileNavBar · 15/10) ⇒ toast/ไซเรน/ปุ่มลอยที่ตั้ง `bottom: 12` ตรงๆ ถูกแถบทับ กดไม่ได้ '
+       + '(docs/MOBILE-UX-STANDARD.md §3)',
+    fix: "ใช้ `bottom: 'calc(12px + var(--mnav-h, 0px))'` — จอคอมตัวแปรไม่มีค่า = 0 = ตำแหน่งเดิมเป๊ะ "
+       + '(⚠️ `position: sticky; bottom` ห้ามบวก — body มี padding เท่าแถบแล้ว)',
+    allow: {},
+  },
+  {
     id: 'daily-report-close-by-permission',
     scan: ['src/pages/DailyReport.jsx'], ext: ['.jsx'],
     /* ตัดสิน "ปิดตรง vs ส่งขอปิด" ด้วยชื่อ role */
@@ -4527,6 +4538,21 @@ test('🛡️ die-set-two-mats — หาแม่พิมพ์ของพา
     /* เทียบช่องแรกตรงๆ กับตัวแปรชุดแม่พิมพ์ = ตกฝั่งที่ลงช่อง 2 */
     if (/\bd(ie(Set)?)?\.mat_no\s*===/.test(code)) bad.push(rel + ' (เทียบ die.mat_no === ตรงๆ)');
   }
+  /* 🔎 pairHint = เดาจากชื่อ/เลขพาร์ท (ท่าสุดท้าย) — ใช้ชี้เป้าให้คนไปกรอกได้ แต่ **ห้ามเขียนกลับฐาน**
+     "ชุดนี้ทำ 2 พาร์ท" ≠ "1 จังหวะได้ 2 ชิ้น" · tandem 24 OP ตอกทีละตัวก็ชื่อ RH/LH เหมือนกัน */
+  /* ⚠️ ตรวจ "รายบรรทัด" ไม่ใช่ `update\([^)]*pairHint` — payload มักถูกประกอบไว้ก่อนแล้วส่งเป็นตัวแปร
+     (`update(payload)`) ⇒ ด่านแบบดูในวงเล็บจะหลุดทุกครั้ง (เจอตอนยิงทดสอบด่านนี้เอง 15/10) */
+  for (const rel of ['src/pages/DieRegistry.jsx', 'src/utils/dieSetMats.js']) {
+    const code = stripComments(readFileSync(join(ROOT, rel), 'utf8'));
+    for (const line of code.split('\n')) {
+      if (!/pairHint/.test(line)) continue;
+      if (/\b(pieces_per_stroke|pair_mat_no|shot_total)\b/.test(line))
+        bad.push(rel + ' (ผล pairHint ไปลงคอลัมน์จริง — เดาแล้วเขียนฐาน)');
+      if (/piecesToShots|ppsOf/.test(line))
+        bad.push(rel + ' (เอาผล pairHint ไปคิด shot)');
+    }
+  }
+
   /* ช่องกรอกต้องมีให้ลงจริง ไม่งั้นคอลัมน์ว่างตลอด */
   const reg = stripComments(readFileSync(join(ROOT, 'src/pages/DieRegistry.jsx'), 'utf8'));
   if (!/mat_no_2/.test(reg)) bad.push('src/pages/DieRegistry.jsx (ไม่มีช่อง MAT ตัวที่ 2)');
@@ -4551,6 +4577,24 @@ test('🛡️ die-set-two-mats — หาแม่พิมพ์ของพา
     + '         เทียบช่องแรกช่องเดียว = อีกฝั่งหาแม่พิมพ์ไม่เจอเงียบๆ\n'
     + '   แก้: dieMakesMat(set, mat) / dieSetMats(set) จาก src/utils/dieSetMats.js\n'
     + '   ⚠️ "ใครคู่กับใคร" ยังเป็นของ Product Master (pair_mat_no) — จอแม่พิมพ์เตือนได้ ห้ามเขียนทับ\n');
+});
+
+/* ── 🛒 ใบขอซื้อ (PR) งานช่าง — รับของต้องผ่าน RPC เดียว · ห้ามลบ (14/10 · MTN REQUEST) ──
+   รับของ = เปลี่ยนสถานะ + เข้าสต็อก ถ้าเขียน 2 คำสั่งแยกจาก client แล้วอันหลังล้ม
+   ⇒ PR ขึ้น "รับแล้ว" แต่สต็อกไม่เข้า (กฎเหล็ก DB ข้อ 6) · ประวัติขอซื้อห้ามหาย = ยกเลิกแทนลบ
+   📄 `docs/modules/mtn-work-order.md` §🛒 PR / GL / IO */
+test('🛡️ mtn-pr-receive-via-rpc — รับของ PR ผ่าน mtn_pr_receive · ห้าม delete PR', () => {
+  const bad = [];
+  for (const f of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const src = stripComments(readFileSync(f, 'utf8'));
+    if (!/mtn_purchase_requests/.test(src)) continue;
+    if (/from\(['"]mtn_purchase_requests['"]\)[\s\S]{0,200}?\.delete\(/.test(src)) bad.push(`${relative(ROOT, f)} (delete)`);
+    if (/status:\s*['"]received['"]/.test(src)) bad.push(`${relative(ROOT, f)} (เขียน status received เอง)`);
+  }
+  assert.deepEqual(bad, [],
+    '\n\n❌ ใบขอซื้อ (PR) ถูกลบ หรือถูกตั้ง "received" ตรงจาก client: ' + bad.join(', ') + '\n'
+    + '   ทำไมห้าม: รับของต้องเปลี่ยนสถานะ + เข้าสต็อกในทรานแซกชันเดียว → RPC `mtn_pr_receive`\n'
+    + '            ยกเลิก = status `cancelled` + เหตุผล (ประวัติขอซื้อห้ามหาย)\n');
 });
 
 /* ═══ 🔒 ลบข้ามทีมไม่ได้ — ทะเบียนของช่างต้องมีด่าน "เจ้าของทีม" (คำสั่ง user 2026-10-14) ═══
@@ -4619,4 +4663,41 @@ test('🛡️ bomDupAudit: qty ต้องอยู่ในกติกา + �
     assert.ok(q && p, '\n\n❌ อ่าน rank ของ qty_diff / pair_shot ไม่ได้ — เปลี่ยนรูปแบบแล้วต้องอัปเดตด่านนี้\n');
     return { qtyRank: +q[1], pairRank: +p[1] };
   }
+});
+
+/* ── 🔐 ชั้นที่ 3 ของสิทธิ์ห้ามหายไป (2026-10-15 · คำสั่ง user) ─────────────────────
+   *"user บาง role เข้าหน้าได้ทุกหน้า แต่ต้องไม่มีสิทธิ์ไปแก้ข้อมูลส่วนงานคนอื่น"*
+   📄 ผลตรวจ 20 จุดรั่ว → docs/modules/permission-scope-audit.md
+   ด่านนี้คุม 2 เรื่องที่พังเงียบได้ง่ายที่สุด:
+   ① `writeScope.js` ต้องไม่เอา `sections` (= ขอบเขตที่ **เห็น**) มาตัดสินการ **แก้**
+      — 31/122 บัญชีมี `sections` ว่างโดยตั้งใจ (ช่างต้องเห็นทุกไลน์) ⇒ ใช้ตัดสินการแก้ = เปิดทั้งโรงงาน
+   ② จอที่มีด่านแล้ว ต้องเช็ค **ซ้ำในฟังก์ชันที่เขียนจริง** ไม่ใช่แค่ซ่อนปุ่ม (deep-link เปิดตรงได้) */
+test('🛡️ write-scope-layer — ด่าน "แก้ข้ามหน่วยงาน" ยังอยู่ครบ', () => {
+  const bad = [];
+  const ws = stripComments(readFileSync(join(ROOT, 'src/utils/writeScope.js'), 'utf8'));
+  for (const fn of ['writeUnitsOf', 'hasAllUnits', 'canWriteUnit', 'canWriteLine', 'writeBlockText']) {
+    if (!new RegExp(`export (function|const) ${fn}\\b`).test(ws)) bad.push(`writeScope.js (ไม่มี ${fn})`);
+  }
+  /* บ้านจริงต้องชนะเมื่อ sections ว่าง — ถ้ามีใครกลับไปคืน [] (= ไม่จำกัด) ตอน sections ว่าง จะรั่วทันที */
+  if (!/const one = String\(section \|\| ''\)\.trim\(\);[\s\S]{0,60}return one \? \[one\] : \[\];/.test(ws))
+    bad.push('writeScope.js (writeUnitsOf ไม่ได้ถอยไปใช้ profiles.section)');
+  if (!/role === 'admin' \|\| allUnits === true/.test(ws))
+    bad.push("writeScope.js (เสีย fallback admin หรือคีย์ scope:all_units)");
+
+  /* ชั้น context — ถ้า `allUnits` หลุดจาก UserContext ทุกจอจะเห็นเป็น undefined = บล็อกหมด/เปิดหมดแล้วแต่จุด */
+  const app = stripComments(readFileSync(join(ROOT, 'src/App.jsx'), 'utf8'));
+  if (!/allUnits:\s*can\('scope',\s*'all_units'/.test(app))
+    bad.push("src/App.jsx (UserContext ไม่ได้ส่ง allUnits)");
+
+  /* จอที่ปิดรูแล้ว — ด่านต้องถูกเรียกในฟังก์ชันเขียนจริง ไม่ใช่แค่ตอน render ปุ่ม */
+  const kpi = stripComments(readFileSync(join(ROOT, 'src/components/KpiMonthly.jsx'), 'utf8'));
+  const guards = (kpi.match(/if \(!scopeWrite\.ok\)/g) || []).length;
+  if (guards < 5) bad.push(`KpiMonthly.jsx (ด่านใน handler เหลือ ${guards} จุด — ต้องมีทุกฟังก์ชันที่เขียน)`);
+  if (!/unknownTarget: 'block'/.test(kpi))
+    bad.push('KpiMonthly.jsx (ขอบเขตระดับโรงงาน/ฝ่ายต้องบังคับ unknownTarget:block)');
+
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n'
+    + '   ทำไม: ระบบมี "เข้าหน้าได้ไหม" + "กดปุ่มเป็นไหม" แต่ไม่มี "แถวนี้ของหน่วยงานเราไหม"\n'
+    + '         ⇒ แอดมินหน่วยงานฝ่ายช่างเปิด ?scope=department:<แผนกอื่น> แล้วแก้ KPI ของเขาได้\n'
+    + '   แก้: canWriteUnit()/canWriteLine() จาก src/utils/writeScope.js + เรียกซ้ำใน handler\n');
 });

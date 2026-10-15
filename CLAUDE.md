@@ -64,7 +64,7 @@ Realtime + Edge Functions/Deno) · Telegram Bot API · deploy = Render.com (Stat
 > ⚠️🔴 **กฎเหล็ก — `supabaseDR` ไม่เคย authenticate · ทุก query วิ่งด้วย role `anon` เสมอ**
 > (ไม่มี `auth` config ผูก session — ต่อให้ user login เข้าแอปแล้วก็ยังเป็น `anon`)
 > **ห้ามเปลี่ยน RLS ของตารางฝั่ง DR จาก `public`/`anon` เป็น `TO authenticated`** — client ไม่มี JWT ให้เช็ค
-> = พังทั้งระบบทันที (เคยทำพังจริง ต้อง revert ฉุกเฉิน · 📄 `docs/modules/db-schema.md` §RLS ฝั่ง DR)
+> = พังทั้งระบบทันที (📄 `docs/modules/db-schema.md` §RLS ฝั่ง DR)
 > · จะ secure ฝั่ง DR จริงต้องผ่าน Edge Function ที่ validate ฝั่ง server — **ยังไม่ได้ทำ เป็น known gap**
 
 ---
@@ -426,7 +426,7 @@ Reject → status: "rejected" + reject_reason
   บ้านจริง = `item.group` **หมวดเดียว** ได้ไฮไลต์เต็ม · แถวทางลัดวาดต่าง (จาง + `↗ <หมวดบ้าน>`) ·
   ตัดสินด้วย `isNavGuest(item, group)` · "โชว์ในหมวดนี้ไหม (นับทางลัด)" = `inNavGroup()` **คนละคำถาม ห้ามปน**
   · แถวเมนูวาดจาก `navRow()` ตัวเดียวทั้ง desktop/มือถือ · ด่านข้อ 6 ใน stdsweep + `nav-alsoin-*` (UI-STANDARD §4.5)
-· 📏 **แกนกราฟ: `YAxis width="auto"` · margin ซ้ายห้ามติดลบ** (เลข 100 เคยถูกตัดเหลือ "0") · `utils/chartAxis.js` · ตรวจ `node audit/chartsweep.mjs`
+· 📏 **แกนกราฟ: `YAxis width="auto"` · margin ซ้ายห้ามติดลบ** · `utils/chartAxis.js` · ตรวจ `node audit/chartsweep.mjs`
   · 🖤 **แท่งสีจาก `<Cell>` ต้องมี `fill={CELL_BAR_FILL}` + `<Tooltip {...tooltipProps(fs)}>`** (ไม่มี = tooltip ตัวดำบนการ์ดเข้ม · มีด่าน)
 · ตรวจ `node audit/stdsweep.mjs` · มีด่าน `regressionGuards`
 > 📄 `docs/UI-STANDARD.md` · ผลก่อน/หลัง → `docs/modules/ui-standard-sweep.md`
@@ -496,7 +496,7 @@ Reject → status: "rejected" + reject_reason
 > · **"กะนี้ AM ตรวจแล้วหรือยัง" มีที่เดียว = `lib/dailyAmBoard.js`** (ทะเบียน `pm_daily_line_targets` + inspections + opened_at) · ห้ามคิวรี inspections เอง (มีด่าน)
 >   · 🔴 **"ไลน์ไหนเดินอยู่" ต้องนับไลน์แม่-ลูก** ผ่าน `openFamilyLines()` (`lib/pmDailyStatus.js`) **ห้ามเทียบชื่อตรงตัว** (มีด่าน)
 >     — ไลน์แม่หลายตัวไม่เคยเปิดกะในชื่อตัวเอง ⇒ ชุดนี้เป็นประตูของงานตรวจ (`utils/prodRoutine.js`) = **งานตรวจหายเงียบ**
-> · **ทะเบียนรายวัน ⇒ แผน AM เป็น run_day อัตโนมัติที่ชั้น DB** (`pm_am_plan_follow_registry` · trigger บน `pm_daily_line_targets`) —
+> · **ทะเบียนรายวัน ⇒ แผน AM = run_day อัตโนมัติชั้น DB** (`pm_am_plan_follow_registry`) —
 >   **ห้ามเขียน `next_due_date` ลงแผน run_day** จากจอใด · เอาออกจากทะเบียน = `is_active=false` ห้าม delete · AM ไม่นับในชั้น Preventive ของช่าง
 
 ---
@@ -526,7 +526,7 @@ Reject → status: "rejected" + reject_reason
 · โครงสร้างอ่าน**สด**จาก pg_catalog (RPC `esm_schema_overview` / `esm_schema_table` ทั้ง 2 project)
 · **ห้ามเขียนรายชื่อตาราง/คอลัมน์เป็นลิสต์มือที่ไหนอีก** — snapshot มือล้าสมัยทุกครั้ง
 · 🔴 **migration ที่ copy ข้อมูลกันพลาด ต้องสร้างใน schema `archive` ห้ามไว้ใน `public`**
-  (เคยหลุดจน anon อ่านสำเนาข้อมูลจริงได้ · มีด่านใน build)
+  (มีด่านใน build)
 > 📄 `docs/modules/schema-map.md`
 
 ---
@@ -690,12 +690,11 @@ Reject → status: "rejected" + reject_reason
 ## Storage & รูปภาพ (กติกาสำคัญ — 2026-07-09)
 
 - อัปโหลดรูปทุกหน้าต้องผ่าน `ImageCropModal` (crop + บีบ JPEG 480px q0.85 อัตโนมัติ)
-- **🔴 ทุก `.upload()` ต้องส่ง options ผ่าน `uploadOpts()` (`src/utils/storageUpload.js` · มีด่าน)** — ไม่ส่ง `cacheControl` = โหลดซ้ำทุกชั่วโมง
-  (เคยทำ egress ทะลุโควต้าจนทั้ง organization ถูกล็อก) · path ที่ `upsert` ทับได้ต้องใส่ `mutable: true`
+- **🔴 ทุก `.upload()` ต้องส่ง options ผ่าน `uploadOpts()` (`src/utils/storageUpload.js` · มีด่าน)** — ไม่ส่ง `cacheControl` = โหลดซ้ำทุกชั่วโมง · path ที่ `upsert` ทับได้ต้องใส่ `mutable: true`
 - **🔴 ทุกช่อง `<input type="file" accept="image/*">` ต้องผ่าน `acceptImageFile()`** (`src/utils/acceptImageFile.js` · มีด่าน) — HEIC จาก iPhone
   เบราว์เซอร์อื่น decode ไม่ได้ · ที่เข้าหน้าครอปใช้ `<ImageCropModal>` (มีในตัวแล้ว)
 - **🚫 รูปพนักงานไม่รับ GIF** (`allowGif={false}` · ตัวตรวจชนิดไฟล์ = `src/utils/imageFileKind.js` จุดเดียว ดูนามสกุลด้วย) ·
-  **ปฏิเสธไฟล์ต้องขึ้น toast บอกเหตุผล+ทางแก้ ห้ามปิดเงียบ** (คำสั่ง user 2026-09-11)
+  **ปฏิเสธไฟล์ต้องขึ้น toast บอกเหตุผล+ทางแก้ ห้ามปิดเงียบ**
 > 📄 เหตุการณ์ egress · ตัวเลข GIF · กับดัก HEIC → `docs/modules/storage-images.md`
 
 ---
@@ -773,11 +772,10 @@ Reject → status: "rejected" + reject_reason
 📄 **ที่มาของทุกด่าน + เคสจริงที่ทำให้ต้องมี → `docs/modules/build-gates.md`** (อ่านก่อนจะแตะ/ถอดด่านใดๆ)
 - **`npm run build` = `check:context` → `lint:critical` → `npm test` → `vite build`** ·
      ตัวรันเทส = `scripts/run-tests.mjs` (เก็บ `src/**/__tests__/*.test.mjs` เอง — **วางไฟล์เทสใหม่แล้วถูกเก็บอัตโนมัติ**)
-  · **ห้ามเปลี่ยนเป็น `node --test '<glob>'`** (Render อาจใช้ node 20 ⇒ deploy ล่มทั้งที่โค้ดไม่ผิด)
+  · **ห้ามเปลี่ยนเป็น `node --test '<glob>'`** (เหตุผล → build-gates.md)
   · **⏱️ `npm test` รัน 2 รอบ: ปกติ + "นาฬิกา +400 วัน"** จับ**เทสระเบิดเวลา** ⇒ **ฟังก์ชันที่กินเวลาปัจจุบัน
   ต้องรับ `now` เป็นพารามิเตอร์ แล้วเทสตรึงค่า** · ตกรอบนี้ให้แก้เทส **ห้ามถอดรอบนี้ออก**
-- **🛡️ `src/utils/__tests__/regressionGuards.test.mjs` = ด่าน "บั๊กเก่าห้ามกลับมา"** (คำสั่ง user
-     *"ปัญหาที่เคยแก้เคยเกิด ไม่ควรเกิดซ้ำ"*) — **เจอบั๊กคลาสใหม่ที่คนถัดไปน่าจะพลาดซ้ำ → เพิ่มกฎที่ไฟล์นี้
+- **🛡️ `src/utils/__tests__/regressionGuards.test.mjs` = ด่าน "บั๊กเก่าห้ามกลับมา"** — **เจอบั๊กคลาสใหม่ที่คนถัดไปน่าจะพลาดซ้ำ → เพิ่มกฎที่ไฟล์นี้
      ในคอมมิทเดียวกับที่แก้บั๊ก** (ใส่เฉพาะกฎที่ grep ได้แม่น ห้ามใส่กฎจุกจิก)
 - **ด่าน lint กฎ crash** (`eslint.critical.config.js`) — เฉพาะกฎที่ทำแอปพังตอน runtime ที่ bundler ไม่จับ ·
   **ห้าม bypass ด้วย `vite build` ตรงๆ · ห้ามเพิ่มกฎ style จุกจิกในไฟล์นี้**
@@ -785,7 +783,7 @@ Reject → status: "rejected" + reject_reason
   **ห้าม disable กฎ** ให้ย้าย hook ขึ้น · `no-use-before-define` (05/10) จับอ่าน const ก่อนประกาศใน scope เดียวกัน (TDZ จอขาว)
 - **⚠️ build ผ่าน ≠ หน้าไม่พัง** — merge งานหลาย session ชนไฟล์เดียวกัน ให้รัน **`node audit/crashsweep.mjs`** เสมอ
      (ทุกหน้า @1500px + กดปุ่มหัวเพจ · ต้องเปิด `npx vite --config audit/vite.audit.mjs` ค้างไว้)
-  · 🔴 **แถวพิเศษใน mock ห้ามถอด** (`NULLISH` · ชั้น OP · ไลน์แม่-ลูก 3 ชั้น · KPI `manual`+`auto:` · เอกสารที่ออกเลขใบแล้ว)
+  · 🔴 **แถวพิเศษใน mock ห้ามถอด** (รายตัว → `audit/README.md`)
   · เพิ่มคอลัมน์ nullable ใน `ROW()` ต้องเติมใน `NULLISH()` ด้วย (เหตุผลรายตัว → `audit/README.md`)
 - **📱 `node audit/mobilesweep.mjs` (ทุกหน้า @390px)** — **แตะ layout ที่มี `isMobile` หรือ `position:sticky`
   ต้องรันก่อน merge** (จับ sticky ทับเนื้อหา · ของล้นแล้วปัดไม่ได้ · ข้อความถูกบีบกว้าง 0)
@@ -808,10 +806,16 @@ Reject → status: "rejected" + reject_reason
 > สิทธิ์ action ผ่าน `can()` **ห้าม hardcode role array**
 > **สร้าง/เปลี่ยน pattern ที่ใช้หลายหน้า = อัพเดท `docs/UI-CONVENTIONS.md` (พร้อมวันที่) ในคอมมิทเดียวกัน**
 
+### 📱 งานมือถือ/handheld — **ห้ามเปลี่ยนจอคอมแม้แต่พิกเซลเดียว** (2026-10-15 · คำสั่ง user)
+
+> ทุกอย่างอยู่หลัง `useIsMobile()` / `@media (max-width:768px)` / `pointer:coarse` · **พิสูจน์ด้วย `node audit/desktopdiff.mjs` (ต้องต่าง 0)**
+> · ของ `position:fixed` ชิดล่างต้องบวก `var(--mnav-h, 0px)` (แถบล่าง `MobileNavBar` · มีด่าน) — sticky ห้ามบวก
+> · แบบที่เหมาะกับแต่ละชนิดหน้า → 📄 **`docs/MOBILE-UX-STANDARD.md`** (อ่านก่อนแตะจอมือถือ)
+
 ### 📺 เพดานเบราว์เซอร์ = **จอ TV ไม่ใช่ PC** — ต้องผ่านบน **Chromium 94** (webOS 23 หน้างาน)
 
 > #### ⚠️ กฎเหล็ก — ห้ามใช้ CSS ที่ต้องการ Chromium > 94 กับค่าที่ "พังแล้วมองเห็น"
-> - **ห้ามใช้ `color-mix()` (Cr 111)** — parse ไม่ได้ = **ทิ้งทั้งบรรทัด declaration** (เคยหลุดจริง → พื้นการ์ดโปร่งบนจอ TV)
+> - **ห้ามใช้ `color-mix()` (Cr 111)** — parse ไม่ได้ = **ทิ้งทั้งบรรทัด declaration**
 >   แทนด้วย `background:'var(--card)'` + `backgroundImage: linear-gradient(${c}14, ${c}14)` หรือ alpha-hex `${color}14`
 > - ห้ามเช่นกัน: `@container` (105) · CSS nesting (112) · `text-wrap:balance` (114) · `dvh/svh/lvh` (108) ·
 >   `:has()` **ในที่ที่พังแล้วเสียการใช้งาน** (ตัวที่มีใน `index.css` ปล่อยไว้ได้ — เบราว์เซอร์เก่าทิ้งแค่ rule นั้น ไม่พัง)
