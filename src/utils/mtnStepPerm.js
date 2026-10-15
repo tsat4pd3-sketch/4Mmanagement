@@ -35,13 +35,13 @@ import {
 export const MTN_STEPS = {
   2: {
     stage: 'assign',
-    key: 'assign', fallback: 'service', ownTeam: true, byReporter: false, side: 'mtn',
+    key: 'assign', fallback: 'service', ownTeam: true, byReporter: false, side: 'mtn', teamSide: true,
     icon: '🔧', title: 'รับงาน / จ่ายงาน',
     who: 'หัวหน้าช่าง (คนจ่ายงานให้ทีม)', whoShort: 'หัวหน้าช่าง',
   },
   3: {
     stage: 'service',
-    key: 'service', fallback: null, ownTeam: true, byReporter: false, side: 'mtn',
+    key: 'service', fallback: null, ownTeam: true, byReporter: false, side: 'mtn', teamSide: true,
     icon: '🛠', title: 'ลงมือซ่อม / อัพเดทผล',
     who: 'ช่างที่ได้รับมอบหมาย', whoShort: 'ช่างที่รับงาน',
   },
@@ -319,6 +319,20 @@ export function canDoStep(step, opts = {}) {
     return { ok: false, code: sideBad ? 'wrong_side' : 'rank_too_low', need: meta.side, needRank: meta.minRank };
   }
 
+  /* 🔒 ด่าน "ทีมใครทีมมัน" (15/10 · คำสั่ง user) — ตรวจ**ก่อน** manage_master
+     > *"ไม่ควรทำข้ามกันได้ ต้องล็อกทีมใครทีมมัน เพราะผู้แจ้งจะแจ้งเจาะจงไปหาทีมที่ต้องการอยู่แล้ว
+     >  ในกรณีที่จะส่งงานไปทีมอื่น ก็คือให้เลือกส่งงานทีมอื่น ถึงจะถูก"*
+
+     เดิมบรรทัดนี้อยู่ **ใต้** `manage_master` ⇒ ไม่เคยกัดเลย เพราะ `mtn_repair:manage_master`
+     ถูกแจกให้ role `mtn` **ทั้งก้อน** (ไม่ใช่แค่หัวหน้า) ⇒ ช่างทุกคนข้ามทีมได้ (audit 15/10)
+
+     🔴 ทางที่ถูกสำหรับงานข้ามทีมมีอยู่แล้ว 2 ทาง **ห้ามถอด** — ล็อกนี้ปลอดภัยเพราะมีมันรองรับ:
+       · ใบมาผิดทีม → ตีกลับ (`returned`) แล้วผู้แจ้ง "แก้แผนก & ส่งใหม่"
+       · ทำเองไม่ได้ ต้องให้ทีมเฉพาะทาง → "➡️ ส่งต่องาน" (เปิดใบใหม่ของทีมนั้น ผูก handoff)
+     🔴 `hasTeams` เท็จ (ไม่ได้ตั้งทีม) = **ไม่บล็อก** — ไม่รู้ ≠ ปฏิเสธ · admin/ผจก. ไม่มีทีม
+        จึงผ่านตามเดิม (วัด 15/10: ช่าง 16/16 · หัวหน้ากลุ่ม 19/19 ตั้งทีมแล้ว ⇒ ด่านกัดจริง) */
+  if (meta.teamSide && hasTeams && !inOrderTeam) return { ok: false, code: 'other_team' };
+
   /* หัวหน้า (ผู้ถือ manage_master) แก้ย้อนหลังได้ทุกขั้น — พฤติกรรมเดิม ห้ามถอด
      ⚠️ ตกมาถึงตรงนี้แปลว่า "ฝั่งและตำแหน่งถูกต้องแล้ว" ⇒ คีย์นี้ปลดได้แค่เรื่อง *สิทธิ์/ลำดับขั้น*
         **ปลดด่านฝั่ง/ตำแหน่งไม่ได้อีกต่อไป** (ด่านอยู่ข้างบนแล้ว ห้ามย้ายบรรทัดนี้ขึ้นไปก่อนมัน) */
@@ -338,9 +352,6 @@ export function canDoStep(step, opts = {}) {
      inReporterScope: true = ใบอยู่ในขอบเขต · false = อยู่นอกขอบเขต (ล็อก) · null = ตัดสินไม่ได้
      (ผู้ใช้ไม่จำกัด scope / ใบไม่ระบุไลน์ / ไลน์ไม่อยู่ในทะเบียน) = ปล่อยผ่านตามเดิม
      ผู้เรียกคำนวณผ่าน orderInReporterScope() ด้านล่าง — util นี้ยัง pure ไม่แตะทะเบียนไลน์เอง */
-  /* ขั้นของฝั่งช่าง (ขั้น 8 ของใบ MTN) — คนที่ "รู้แน่ว่าสังกัดทีมช่างอื่น" ปิดใบทีมนี้ไม่ได้
-     hasTeams = ผู้ใช้มี profiles.mtn_teams ตั้งไว้ไหม (ผู้เรียกส่งมา) · ไม่ได้ตั้ง = ปล่อยผ่าน */
-  if (meta.teamSide && hasTeams && !inOrderTeam) return { ok: false, code: 'other_team' };
 
   const outOfScope = !!meta.reporterSide && inReporterScope === false;
   if (can(meta.key)) return outOfScope ? { ok: false, code: 'out_of_scope' } : { ok: true, code: 'perm' };
@@ -808,8 +819,17 @@ export function stepDenyHint(step, { teamName = '', reporterName = '', outOfScop
     return lines;
   }
   if (otherTeam) {
-    lines.push(`ใบนี้เป็นของทีม ${teamName || '—'} — ขั้นปิดใบเป็นของผู้จัดการฝั่งช่างทีมนั้น`);
-    lines.push('ถ้าคุณคือผู้จัดการของทีมนี้จริง ให้ admin ตั้ง “🔧 ทีมช่างซ่อม” ของบัญชีนี้ให้ตรงที่ /add-user');
+    /* 15/10: ด่านนี้ครอบขั้น 2-3 ด้วยแล้ว (รับงาน/จ่ายงาน/ลงผลซ่อม) ⇒ ข้อความต้องแยกตามขั้น
+       ไม่งั้นช่างอ่านว่า "ขั้นปิดใบ" ทั้งที่กำลังจะกดรับงาน = จอโกหก */
+    const isWork = Number(step) === 2 || Number(step) === 3;
+    lines.push(isWork
+      ? `ใบนี้แจ้งถึงทีม ${teamName || '—'} โดยตรง — งานซ่อมของทีมนั้นต้องให้ช่างทีมนั้นทำ`
+      : `ใบนี้เป็นของทีม ${teamName || '—'} — ขั้นปิดใบเป็นของผู้จัดการฝั่งช่างทีมนั้น`);
+    if (isWork) {
+      lines.push('ถ้าทีมนั้นทำไม่ได้/ไม่ใช่งานของเขา ให้ใช้ทางที่ถูก: ตีกลับใบ (ผู้แจ้งแก้แผนกแล้วส่งใหม่)'
+        + ' หรือให้ทีมเจ้าของกด “➡️ ส่งต่องาน” เปิดใบใหม่ให้ทีมคุณ (ประวัติผูกกันไว้)');
+    }
+    lines.push('ถ้าบัญชีนี้ถูกตั้งทีมผิด ให้ admin แก้ “🔧 ทีมช่างซ่อม” ที่ /add-user');
     return lines;
   }
   if (meta.byReporter) {

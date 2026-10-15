@@ -80,3 +80,42 @@ test('ขั้นที่ไม่ได้ผูกฝั่ง/ตำแห�
     'ขั้น 4 ผูกฝั่งไว้แต่ไม่ผูกตำแหน่ง ⇒ เดาเรื่องฝั่งอย่างเดียว');
   assert.deepEqual(stepAssumptions(3, { mtnForm: true, actorSide: 'mtn', posRank: 20 }), [], 'รู้ครบ = ไม่มีอะไรต้องเดา');
 });
+
+/* ── 🔒 "ทีมใครทีมมัน" ในขั้น 2-3 (2026-10-15 · คำสั่ง user) ──────────────────────────
+   > *"ไม่ควรทำข้ามกันได้ ต้องล็อกทีมใครทีมมัน เพราะผู้แจ้งจะแจ้งเจาะจงไปหาทีมที่ต้องการอยู่แล้ว
+   >  ในกรณีที่จะส่งงานไปทีมอื่น ก็คือให้เลือกส่งงานทีมอื่น ถึงจะถูก"*
+   🔴 ของเดิมมีบรรทัดด่านทีมอยู่แล้ว แต่อยู่ **ใต้** `manage_master` ⇒ ไม่เคยกัด เพราะคีย์นั้น
+      ถูกแจกให้ role `mtn` ทั้งก้อน ⇒ ช่างทุกคนข้ามทีมได้ · เทสนี้ตรึงลำดับไว้ ห้ามสลับกลับ */
+const JIG_ORDER = { id: 'j1', mtn_dept: 'jig_maintenance', reported_by_name: 'ผู้แจ้ง ก', line_name: 'HDF1' };
+
+test('🔒 ช่างทีม MTN ทำขั้น 2-3 ของใบทีม JIG ไม่ได้ — แม้ถือ manage_master', () => {
+  const mtnGuy = {
+    order: JIG_ORDER, fullName: 'ช่าง MTN', mtnForm: false, actorSide: 'mtn',
+    hasTeams: true, inOrderTeam: false,
+    can: () => true,                 // ถือคีย์ครบ รวม manage_master
+    seeded: () => true,
+  };
+  for (const step of [2, 3]) {
+    const r = canDoStep(step, mtnGuy);
+    assert.equal(r.ok, false, `ขั้น ${step} ต้องถูกล็อก`);
+    assert.equal(r.code, 'other_team', `ขั้น ${step} ต้องบอกเหตุว่าเป็นของทีมอื่น`);
+  }
+});
+
+test('ช่างทีมเดียวกับใบ ยังทำขั้น 2-3 ได้ตามปกติ', () => {
+  const own = {
+    order: JIG_ORDER, fullName: 'ช่าง JIG', mtnForm: false, actorSide: 'mtn',
+    hasTeams: true, inOrderTeam: true, can: () => true, seeded: () => true,
+  };
+  assert.equal(canDoStep(2, own).ok, true);
+  assert.equal(canDoStep(3, own).ok, true);
+});
+
+test('🔴 ไม่ได้ตั้งทีม = ไม่บล็อก (ไม่รู้ ≠ ปฏิเสธ) — admin/ผจก. ที่ไม่มีทีมต้องผ่าน', () => {
+  const noTeam = {
+    order: JIG_ORDER, fullName: 'ผจก.', mtnForm: false, actorSide: 'mtn',
+    hasTeams: false, inOrderTeam: false, can: () => true, seeded: () => true,
+  };
+  assert.equal(canDoStep(2, noTeam).ok, true);
+  assert.equal(canDoStep(3, noTeam).ok, true);
+});
