@@ -21,7 +21,7 @@ import { buildQrPayload, parseQrPayload, findDieByScan } from '../utils/qrCode';
 import DieLayout from '../components/DieLayout';
 import DieStatusBoard from '../components/DieStatusBoard';
 import ProductSelect from '../components/ProductSelect'; // MAT SAP = picker กลาง (single-source audit 2026-09-07)
-import { dieSetMats, dieSetPairState, suggestPps } from '../utils/dieSetMats';
+import { dieSetMats, dieSetPairState, suggestPps, pairHint } from '../utils/dieSetMats';
 import { pairBlockReason } from '../utils/pairOrder';   // 🔗 ด่านเดียวกับ Product Master — คู่ต้องอยู่ไลน์เดียวกัน
 import { checkWriteRows } from '../utils/dbWrite';      // RLS ปฏิเสธ UPDATE = 0 แถว ไม่มี error ⇒ ต้องนับแถว // 🔨 ชุดหนึ่งทำได้ 2 MAT (งานคู่ RH/LH)
 import useColumnHistory from '../utils/useColumnHistory'; // 📜 MAT ที่เคยบันทึกใน die_sets — Product Master ไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
@@ -345,6 +345,12 @@ export default function DieRegistry() {
     if (!s.kind)    out.push('ยังไม่ระบุรูปแบบชุด');
     if (!s.part_no) out.push('ยังไม่ระบุเลขพาร์ท');
     if (!s.mat_no)  out.push('ยังไม่ผูก MAT SAP');
+    /* 🔨 ไม่รู้ "ชิ้น/จังหวะ" = PM แม่พิมพ์คิดเป็น shot ไม่ได้ (14/10) — เข้าลิสต์ "ต้องแก้" ให้หน้างานไล่กรอก
+       แนบหลักฐานที่พบในชื่อ/เลขพาร์ทไปด้วยเพื่อให้ตัดสินเร็ว · 🔴 ระบบไม่กรอกให้เอง (pairHint ไม่เขียนฐาน) */
+    if (s.pieces_per_stroke == null) {
+      const h = pairHint(s);
+      out.push('ยังไม่ระบุ ชิ้น/stroke' + (h ? ` — น่าจะเป็นงานคู่ (${h.why}) รอยืนยัน` : ''));
+    }
     if (s.op_total && mem.length !== s.op_total && dup === 0)
       out.push(`จำนวนแม่พิมพ์ (${mem.length}) ไม่ตรงกับจำนวน OP ที่ระบุ (${s.op_total})`);
     return out;
