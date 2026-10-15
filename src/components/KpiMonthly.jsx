@@ -14,6 +14,7 @@ import { loadPmTeams, pmTeamsSync } from '../utils/pmTeams';
 import OrgScopePicker from './OrgScopePicker';
 import FilterBar from './FilterBar';
 import { PLANT, isPlant, parseScopeKey, scopeKey, scopeOfDef, scopeCovers, sameScope, defScopeColumns, scopeUnder, scopePathText } from '../utils/orgScope';
+import { canWriteUnit, writeBlockText } from '../utils/writeScope';
 import { groupChildDefs, rollupChildDefs, rollupGroupKey, childGroupKeyFor } from '../utils/kpiRollup';
 import { checkWriteRows } from '../utils/dbWrite';
 import { findClosedTwin, restoreQuestion } from '../utils/kpiClosed';
@@ -208,7 +209,7 @@ function CellInput({ value, onCommit, disabled }) {
 export default function KpiMonthly({ lines, scopeSet, isMobile }) {
   const nowYear = new Date().getFullYear();
   const { can, role } = usePerms();
-  const canManage = can('kpi', 'manage');
+  const canManageKpi = can('kpi', 'manage');
   const [year, setYear] = useState(nowYear);
   /* ⚠️ รับ ?section= จาก URL — /obeya ส่งมาตอนกดเซลล์บนบอร์ด (กฎ "ลิงก์ต้องพาไปถึงตัวงานนั้น")
      ไม่งั้นกดจากบอร์ด PD3 แล้วเปิดมาเจอส่วนงานอื่น ต้องไปเลือกเองซ้ำ */
@@ -223,7 +224,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
     return { ...PLANT };
   });
   const { index: org, ready: orgReady, failed: orgFailed } = useOrgScope(lines);
-  const { sections: userSections } = useContext(UserContext);   // สังกัดของ user — ตัดตัวเลือกขอบเขต (node ที่ไม่มีไลน์ใช้ตัวนี้ตัดสิน)
+  const { sections: userSections, section: homeSection, allUnits } = useContext(UserContext);   // สังกัดของ user — ตัดตัวเลือกขอบเขต (node ที่ไม่มีไลน์ใช้ตัวนี้ตัดสิน)
   const [loading, setLoading] = useState(false);
   const [prog, setProg] = useState('');
   const [err, setErr] = useState(null);
@@ -262,6 +263,20 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
   /* ไลน์ในขอบเขตที่เลือก ∩ ขอบเขตของ user — ขอบเขตที่ไม่มีไลน์ผลิตเลย (แผนกช่าง/สโตร์) = [] ⇒ ตัวเลขอัตโนมัติไม่มีให้คำนวณ
      (ต่างจาก "ทั้งโรงงาน" ที่ = ทุกไลน์ในขอบเขต user) */
   const scopeNoLines = !isPlant(scope) && orgReady && org.lineNamesOf(scope.kind, scope.value).length === 0;
+
+  /* ══ 🔐 ชั้นที่ 3 — "ขอบเขตนี้เป็นของหน่วยงานเราไหม" (15/10 · คำสั่ง user) ══════════════
+     เคสที่ user แจ้ง: แอดมินหน่วยงานฝ่ายช่างเปิด `?scope=department:<แผนกอื่น>` แล้วแก้ KPI
+     ของแผนกนั้นได้ — เพราะเดิมเช็คแค่ `can('kpi','manage')` + `org.has()` (= "มีในผังไหม")
+     🔴 **ขอบเขตระดับโรงงาน/ฝ่าย (หา section เจ้าของไม่ได้) = ของกลาง ⇒ ต้องมีใบผ่าน**
+        (`unknownTarget:'block'`) — ไม่งั้นตั้ง KPI ให้ทั้งโรงงานได้โดยไม่มีใครคุม
+     🔴 ระหว่างผังยังโหลดไม่เสร็จ = ปิดไว้ก่อน (fail-closed) ดีกว่าเปิดแล้วค่อยปิด */
+  const scopeOwner = (!orgReady || isPlant(scope)) ? '' : (org.sectionOf?.(scope.kind, scope.value) || '');
+  const scopeWrite = useMemo(
+    () => canWriteUnit({ role, section: homeSection, sections: userSections, allUnits },
+                       scopeOwner, { unknownTarget: 'block' }),
+    [role, homeSection, userSections, allUnits, scopeOwner],
+  );
+  const canManage = canManageKpi && scopeWrite.ok;
   const targetLineNames = useMemo(() => {
     const inUser = lines.filter(l => !scopeSet || scopeSet.has(l.name)).map(l => l.name);
     if (isPlant(scope)) return inUser;
@@ -442,6 +457,8 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
   useEffect(() => { loadDefs(); }, [loadDefs]);
 
   const saveCell = async (kpiId, month, raw) => {
+    /* 🔐 ด่านชั้นที่ 3 ซ้ำตอนกดจริง — ซ่อนปุ่มอย่างเดียวไม่พอ (deep-link `?scope=` เปิดตรงได้) */
+    if (!scopeWrite.ok) { toast.error(writeBlockText(scopeWrite, { what: 'KPI ของขอบเขตนี้', unit: scopeOwner })); return; }
     const value = raw === '' ? null : Number(raw);
     if (raw !== '' && !Number.isFinite(value)) { toast.error('กรอกเป็นตัวเลขเท่านั้น'); return; }
     const prev = entries[kpiId]?.[month] ?? null;
@@ -459,6 +476,8 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
 
   /* บันทึกแผนรายเดือน — คนละตารางกับค่าจริง แต่กติกาเดียวกัน (อ่าน error เสมอ · ว่าง = ลบค่า) */
   const savePlanCell = async (kpiId, month, raw) => {
+    /* 🔐 ด่านชั้นที่ 3 ซ้ำตอนกดจริง — ซ่อนปุ่มอย่างเดียวไม่พอ (deep-link `?scope=` เปิดตรงได้) */
+    if (!scopeWrite.ok) { toast.error(writeBlockText(scopeWrite, { what: 'KPI ของขอบเขตนี้', unit: scopeOwner })); return; }
     const value = raw === '' ? null : Number(raw);
     if (raw !== '' && !Number.isFinite(value)) { toast.error('กรอกเป็นตัวเลขเท่านั้น'); return; }
     const prev = plans[kpiId]?.[month] ?? null;
@@ -757,6 +776,8 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
 
   /* บันทึกนิยาม KPI (insert/update — update ต้องนับแถว กฎ RLS-เงียบ) */
   const saveDef = async form => {
+    /* 🔐 ด่านชั้นที่ 3 ซ้ำตอนกดจริง — ซ่อนปุ่มอย่างเดียวไม่พอ (deep-link `?scope=` เปิดตรงได้) */
+    if (!scopeWrite.ok) { toast.error(writeBlockText(scopeWrite, { what: 'KPI ของขอบเขตนี้', unit: scopeOwner })); return; }
     /* ชื่อ KPI มาจากทะเบียน — เลือกตัวเดิม หรือ "ตั้งชื่อใหม่เข้าทะเบียน" (ตั้งใจเท่านั้น)
        เก็บ `name` เป็น snapshot ด้วย เพื่อให้แถวยังอ่านออกถ้าทะเบียนถูกลบ (FK = set null) */
     let catalogId = form.catalog_id || null;
@@ -869,6 +890,8 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
   /* ตั้งเป้า/ทิศทาง/commitment ให้แถวที่ระบบคำนวณเอง — ค่าไม่ได้มาจากที่นี่ เก็บแค่เกณฑ์
      ⚠️ upsert ด้วย source ไม่ใช่ catalog_id (แถวอัตโนมัติไม่จำเป็นต้องผูกทะเบียนชื่อ) */
   const saveAutoTarget = async f => {
+    /* 🔐 ด่านชั้นที่ 3 ซ้ำตอนกดจริง — ซ่อนปุ่มอย่างเดียวไม่พอ (deep-link `?scope=` เปิดตรงได้) */
+    if (!scopeWrite.ok) { toast.error(writeBlockText(scopeWrite, { what: 'KPI ของขอบเขตนี้', unit: scopeOwner })); return; }
     const src = `auto:${f.src}`;
     const tv = f.target_value === '' || f.target_value == null ? null : Number(f.target_value);
     if (tv != null && !f.direction) { toast.error('ตั้งเป้าตัวเลขแล้วต้องเลือกทิศทาง (มากกว่าดี/น้อยกว่าดี) ไม่งั้นตัดสิน ○△✗ ไม่ได้'); return false; }
@@ -911,6 +934,8 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
     return true;
   };
   const removeDef = async d2 => {
+    /* 🔐 ด่านชั้นที่ 3 ซ้ำตอนกดจริง — ซ่อนปุ่มอย่างเดียวไม่พอ (deep-link `?scope=` เปิดตรงได้) */
+    if (!scopeWrite.ok) { toast.error(writeBlockText(scopeWrite, { what: 'KPI ของขอบเขตนี้', unit: scopeOwner })); return; }
     if (!window.confirm(`ปิดใช้งาน KPI "${defName(d2)}"?\nค่าที่กรอกไว้ยังอยู่ (soft delete) — เปิดคืนได้ที่แผง "🗄️ ปิดใช้งานอยู่" ใต้แถบปุ่มของตารางนี้`)) return;
     const { data: r, error } = await supabase.from('kpi_definitions').update({ is_active: false }).eq('id', d2.id).select('id');
     if (error || !r?.length) { toast.error('ปิดใช้งานไม่สำเร็จ' + (error ? ': ' + error.message : ' (ไม่มีสิทธิ์)')); return; }
@@ -1105,8 +1130,17 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
             ปีที่ยังไม่มีชุด KPI กด <b>📋 คัดลอกชุด KPI จากปีอื่น</b> จะได้รายการเดิมมาทั้งชุดโดยไม่ต้องพิมพ์ชื่อใหม่
             {!catMissing && ' · ชื่อ KPI ผูกกับทะเบียนกลาง ⇒ เทียบข้ามปีได้แม้เปลี่ยนชื่อทีหลัง'}
           </div>
-          <ReadOnlyNote show={!canManage} role={role} compact
+          <ReadOnlyNote show={!canManageKpi} role={role} compact
             what="กรอก/แก้ KPI นอกระบบ" permKey="kpi:manage" />
+          {/* 🔐 มีสิทธิ์ KPI แต่ขอบเขตที่เลือกไม่ใช่ของหน่วยงานเรา — ต้องเขียนบอก ห้ามซ่อนปุ่มเงียบ */}
+          {canManageKpi && !scopeWrite.ok && (
+            <div className="card" style={{ padding: '8px 10px', marginBottom: 8, fontSize: 12.5,
+              borderLeft: '4px solid #eab308', display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+              <span>🔒</span>
+              <span>{writeBlockText(scopeWrite, {
+                what: `KPI ของ "${scopePathText(org, scope)}"`, unit: scopeOwner })}</span>
+            </div>
+          )}
           {!defs.length ? (
             <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>
               ยังไม่มี KPI กรอกมือของปี {year + 543}{!isPlant(scope) ? ` (${org.labelOf(scope.kind, scope.value)} + ระดับแม่)` : ''}

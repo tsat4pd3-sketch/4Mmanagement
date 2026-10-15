@@ -4610,3 +4610,40 @@ test('🛡️ bomDupAudit: qty ต้องอยู่ในกติกา + �
     return { qtyRank: +q[1], pairRank: +p[1] };
   }
 });
+
+/* ── 🔐 ชั้นที่ 3 ของสิทธิ์ห้ามหายไป (2026-10-15 · คำสั่ง user) ─────────────────────
+   *"user บาง role เข้าหน้าได้ทุกหน้า แต่ต้องไม่มีสิทธิ์ไปแก้ข้อมูลส่วนงานคนอื่น"*
+   📄 ผลตรวจ 20 จุดรั่ว → docs/modules/permission-scope-audit.md
+   ด่านนี้คุม 2 เรื่องที่พังเงียบได้ง่ายที่สุด:
+   ① `writeScope.js` ต้องไม่เอา `sections` (= ขอบเขตที่ **เห็น**) มาตัดสินการ **แก้**
+      — 31/122 บัญชีมี `sections` ว่างโดยตั้งใจ (ช่างต้องเห็นทุกไลน์) ⇒ ใช้ตัดสินการแก้ = เปิดทั้งโรงงาน
+   ② จอที่มีด่านแล้ว ต้องเช็ค **ซ้ำในฟังก์ชันที่เขียนจริง** ไม่ใช่แค่ซ่อนปุ่ม (deep-link เปิดตรงได้) */
+test('🛡️ write-scope-layer — ด่าน "แก้ข้ามหน่วยงาน" ยังอยู่ครบ', () => {
+  const bad = [];
+  const ws = stripComments(readFileSync(join(ROOT, 'src/utils/writeScope.js'), 'utf8'));
+  for (const fn of ['writeUnitsOf', 'hasAllUnits', 'canWriteUnit', 'canWriteLine', 'writeBlockText']) {
+    if (!new RegExp(`export (function|const) ${fn}\\b`).test(ws)) bad.push(`writeScope.js (ไม่มี ${fn})`);
+  }
+  /* บ้านจริงต้องชนะเมื่อ sections ว่าง — ถ้ามีใครกลับไปคืน [] (= ไม่จำกัด) ตอน sections ว่าง จะรั่วทันที */
+  if (!/const one = String\(section \|\| ''\)\.trim\(\);[\s\S]{0,60}return one \? \[one\] : \[\];/.test(ws))
+    bad.push('writeScope.js (writeUnitsOf ไม่ได้ถอยไปใช้ profiles.section)');
+  if (!/role === 'admin' \|\| allUnits === true/.test(ws))
+    bad.push("writeScope.js (เสีย fallback admin หรือคีย์ scope:all_units)");
+
+  /* ชั้น context — ถ้า `allUnits` หลุดจาก UserContext ทุกจอจะเห็นเป็น undefined = บล็อกหมด/เปิดหมดแล้วแต่จุด */
+  const app = stripComments(readFileSync(join(ROOT, 'src/App.jsx'), 'utf8'));
+  if (!/allUnits:\s*can\('scope',\s*'all_units'/.test(app))
+    bad.push("src/App.jsx (UserContext ไม่ได้ส่ง allUnits)");
+
+  /* จอที่ปิดรูแล้ว — ด่านต้องถูกเรียกในฟังก์ชันเขียนจริง ไม่ใช่แค่ตอน render ปุ่ม */
+  const kpi = stripComments(readFileSync(join(ROOT, 'src/components/KpiMonthly.jsx'), 'utf8'));
+  const guards = (kpi.match(/if \(!scopeWrite\.ok\)/g) || []).length;
+  if (guards < 5) bad.push(`KpiMonthly.jsx (ด่านใน handler เหลือ ${guards} จุด — ต้องมีทุกฟังก์ชันที่เขียน)`);
+  if (!/unknownTarget: 'block'/.test(kpi))
+    bad.push('KpiMonthly.jsx (ขอบเขตระดับโรงงาน/ฝ่ายต้องบังคับ unknownTarget:block)');
+
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n'
+    + '   ทำไม: ระบบมี "เข้าหน้าได้ไหม" + "กดปุ่มเป็นไหม" แต่ไม่มี "แถวนี้ของหน่วยงานเราไหม"\n'
+    + '         ⇒ แอดมินหน่วยงานฝ่ายช่างเปิด ?scope=department:<แผนกอื่น> แล้วแก้ KPI ของเขาได้\n'
+    + '   แก้: canWriteUnit()/canWriteLine() จาก src/utils/writeScope.js + เรียกซ้ำใน handler\n');
+});
