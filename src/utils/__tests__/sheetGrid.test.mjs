@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { chooseSheetGrid, MIN_SHEET_W, A4 } from '../sheetGrid.js';
+import { chooseSheetGrid, balanceGrid, MIN_SHEET_W, A4, GAP } from '../sheetGrid.js';
 
 const cells = (g) => g.cols * g.rows;
 
@@ -78,4 +78,30 @@ test('จำนวนแผ่นน้อย — ไม่ต้องแบ่
   const few = chooseSheetGrid(1744, 705, 4);
   assert.equal(few.fit, true);
   assert.ok(few.cw >= chooseSheetGrid(1744, 705, 10).cw);
+});
+
+/* ── ⚖️ balanceGrid (15/10 · user: "เกลี่ยหน้าแรกเหลือ 8 การ์ด ที่เหลือไปหน้า 2") ── */
+test('balanceGrid: 14 แผ่นบน 5×2 → 4×2 (8 + 6) · แผ่นกว้างขึ้น · แถวเท่าเดิม', () => {
+  const g = chooseSheetGrid(1744, 705, 10);
+  assert.equal(g.cols * g.rows, 10);
+  const b = balanceGrid(g, 14);
+  assert.equal(b.cols, 4); assert.equal(b.rows, g.rows); assert.equal(b.balanced, true);
+  assert.ok(b.cw > g.cw, 'เกลี่ยแล้วแผ่นต้องกว้างขึ้น ไม่ใช่เล็กลง');
+  assert.ok(Math.abs(b.cw * 4 + GAP * 3 - g.bw) < 1, 'กว้างเต็มกล่องพอดี');
+  assert.ok(b.ch <= b.cw / A4 + 1e-6, 'สูงไม่เกินสัดส่วน A4');
+  assert.ok(b.k >= g.k);
+});
+test('balanceGrid: 11 แผ่น → 3 คอลัมน์ (6 + 5) · 20 แผ่น = 10+10 คอลัมน์เท่าเดิม (คืน object เดิม)', () => {
+  const g = chooseSheetGrid(1744, 705, 10);
+  assert.equal(balanceGrid(g, 11).cols, 3);
+  assert.equal(balanceGrid(g, 20), g);
+});
+test('balanceGrid: ใส่ครบหน้าเดียว / ผังไม่มีขนาด / total แปลก = คืนผังเดิมไม่แตะ', () => {
+  const g = chooseSheetGrid(1744, 705, 10);
+  assert.equal(balanceGrid(g, 10), g);
+  assert.equal(balanceGrid(g, 0), g);
+  assert.equal(balanceGrid(g, NaN), g);
+  const empty = chooseSheetGrid(0, 0, 10);
+  assert.equal(balanceGrid(empty, 14), empty);
+  assert.equal(balanceGrid(null, 14), null);
 });

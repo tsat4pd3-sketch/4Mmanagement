@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   ROT_LIMITS, pathOnly, isValidRotationPath, secOf, normalizeConfig, buildPlaylist,
   stepIndex, indexOfLocation, resolveIndex, shouldReload, fmtSec, cleanItemsForSave,
+  boardFlipSec, setActiveDwellSec, activeDwellSecOf, BOARD_FLIP_MIN_SEC,
 } from '../displayRotation.js';
 
 test('path ภายในแอปเท่านั้น — ห้ามพาจอออกนอกระบบ', () => {
@@ -134,4 +135,17 @@ test('ทะเบียนตัวกรอง — ทุกตัว select �
     assert.equal(new Set(keys).size, keys.length, p);
     defs.filter(d => d.kind === 'select').forEach(d => assert.ok(d.options?.length, `${p}:${d.key}`));
   }
+});
+
+/* ── 📖 สลับหน้าภายในบอร์ดตอนจอวน (15/10) ── */
+test('boardFlipSec: แบ่งเวลาค้างหน้าให้ครบทุกหน้าภายใน · หน้าเดียว = null · ไม่รู้ dwell = defaultSec · ต่ำสุด BOARD_FLIP_MIN_SEC', () => {
+  assert.equal(boardFlipSec(1, 120), null);
+  assert.equal(boardFlipSec(0, 120), null);
+  assert.equal(boardFlipSec(2, 120), 60);
+  assert.equal(boardFlipSec(3, 100), 33);
+  assert.equal(boardFlipSec(2, null), ROT_LIMITS.defaultSec / 2);
+  assert.equal(boardFlipSec(10, 30), BOARD_FLIP_MIN_SEC);
+  setActiveDwellSec(90); assert.equal(activeDwellSecOf(), 90); assert.equal(boardFlipSec(3), 30);
+  setActiveDwellSec(null); assert.equal(activeDwellSecOf(), null);
+  setActiveDwellSec('abc'); assert.equal(activeDwellSecOf(), null);
 });

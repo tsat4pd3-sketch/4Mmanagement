@@ -255,3 +255,20 @@ export function paramSummary(path) {
     return `${d?.label || k}: ${opt?.label || v}`;
   });
 }
+
+/* ── 📖 หน้าภายในของบอร์ด (บอร์ด KPI แบ่ง 2 หน้า) ต้องสลับเองตอนจอวน (15/10 · user: "โหมดจอก็ต้องสลับกลับไปมาได้") ──
+   ตัววน (DisplayRotator) บอกไว้ว่าหน้านี้ค้างกี่วินาที ⇒ บอร์ดแบ่งเวลานั้นให้ครบทุกหน้าภายในก่อนจอจะวนต่อ
+   · ไม่ได้อยู่ในรอบวน (เปิดโหมดจอเอง) = ใช้ defaultSec · ต่ำสุด BOARD_FLIP_MIN_SEC กันกระพริบ */
+export const BOARD_FLIP_MIN_SEC = 12;
+let activeDwellSec = null;
+export function setActiveDwellSec(sec) {
+  const n = Number(sec);
+  activeDwellSec = Number.isFinite(n) && n > 0 ? n : null;
+}
+export const activeDwellSecOf = () => activeDwellSec;
+export function boardFlipSec(pages, dwellSec = activeDwellSecOf()) {
+  const p = Math.floor(Number(pages) || 0);
+  if (p < 2) return null;
+  const d = Number.isFinite(Number(dwellSec)) && Number(dwellSec) > 0 ? Number(dwellSec) : ROT_LIMITS.defaultSec;
+  return Math.max(BOARD_FLIP_MIN_SEC, Math.floor(d / p));
+}
