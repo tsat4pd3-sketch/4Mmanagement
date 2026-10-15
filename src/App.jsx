@@ -31,6 +31,7 @@ import { checkWrite } from './utils/dbWrite';
 import { notifTargetPath } from './utils/notifLink';   // ปลายทางของแจ้งเตือน (link ก่อน แล้วค่อย ref_table) — จุดเดียว
 import { FEEDBACK_EVENT } from './utils/feedbackPrefill';   // 💬 หน้าอื่นสั่งเปิดกล่องแจ้งปัญหา
 import { isKioskPath } from './utils/kioskRoutes';      // จอแขวนอ่านอย่างเดียว — ยกเว้น auto-logout
+import { ROT_NAV_STATE, skipSplash } from './utils/displayRotation'; // 🔁 key ของ <Routes> ตอนจอวนหน้าเปลี่ยนหน้า
 const ImageCropModal = lazy(() => import('./components/ImageCropModal'));
 const ViewAsModal = lazy(() => import('./components/ViewAsModal')); // 🎭 admin จำลองมุมมอง role อื่น
 
@@ -1991,7 +1992,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
           minWidth: 0,
         }}>
           <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh', color: 'var(--muted)', fontSize: 14 }}>กำลังโหลด...</div>}>
-            <Routes>
+            {/* 🔁 key จากจอวนหน้า — หน้าเดิมที่เปลี่ยนแค่ ?query (เช่น ผังโรงงาน metric=oee → metric=ng) ต้อง remount
+                ไม่งั้นค่าตั้งต้นจากลิงก์ (utils/urlInit) ไม่ถูกอ่านใหม่ · ค่าว่าง = นำทางปกติ ไม่ remount */}
+            <Routes key={location.state?.[ROT_NAV_STATE] || 'r'}>
               <Route path="/dashboard"  element={
                 <RoleRoute path="/dashboard" userRole={role}><Dashboard /></RoleRoute>
               } />
@@ -2247,7 +2250,7 @@ export default function App() {
   const [userMtnTeams,     setUserMtnTeams]     = useState([]);   // ทีมช่างซ่อมที่ user สังกัด (profiles.mtn_teams — 2026-07-22) แยกคิว MO
   const [userIsDeptAdmin,  setUserIsDeptAdmin]  = useState(false); // แอดมินหน่วยงาน (profiles.is_dept_admin — 2026-08-03) ซ้อนบน role เดิม
   const [userAccountKind,  setUserAccountKind]  = useState(null);  // 'person' | 'shared' (บัญชีกลาง = จอ TV/ประจำเครื่อง · ลบไม่ได้)
-  const [showSplash,   setShowSplash]   = useState(true);
+  const [showSplash,   setShowSplash]   = useState(() => !skipSplash());   // จอวนรีโหลดตามรอบ / กรอบตัวอย่าง = ไม่ขึ้น splash
   const [theme, setTheme] = useState(() => localStorage.getItem('4m-theme') || 'dark');
   // ต้อง resolve ทั้ง profile (role จริง) และ permissions ก่อนค่อย render route tree —
   // ป้องกัน fail-open: ห้าม fallback เป็น 'admin' ระหว่างรอโหลด (เคยเป็นช่องโหว่)

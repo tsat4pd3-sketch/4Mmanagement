@@ -1,4 +1,5 @@
 import { fmtAxis, tooltipProps, CELL_BAR_FILL, focusDomain, shortTick } from '../utils/chartAxis';
+import { urlPick, urlBool } from '../utils/urlInit';
 import { ALL } from '../utils/filterLabels';
 /* ══ 🏛️ OBEYA — ห้องบัญชาการโรงงาน (SQDCM + ลูปปิด countermeasure) ═══════════════════════
    ออกแบบ: docs/OBEYA-DESIGN.md · KPI ทั้งหมด: src/utils/obeyaKpi.js (ห้ามคำนวณซ้ำในไฟล์นี้)
@@ -53,6 +54,7 @@ import { inSectionScope, scopedLineNames } from '../utils/sectionScope';
 import useOrgScope from '../utils/useOrgScope';
 import OrgScopePicker from './OrgScopePicker';
 import { PLANT, isPlant, parseScopeKey, drillParams, scopePathText } from '../utils/orgScope';
+import { canWriteUnit, writeBlockText } from '../utils/writeScope';
 import useColumnHistory from '../utils/useColumnHistory';
 import { useLiveBoard } from '../utils/useLiveBoard';
 import { LIVE, RATE } from '../utils/refreshRates';
@@ -86,11 +88,11 @@ const getWorkDate = () => {
 };
 const dayLabel = (k) => { const [, m, d] = String(k).split('-'); return `${+d}/${+m}`; };
 export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
-  const { role, lineId, sections, fullName } = useContext(UserContext);
+  const { role, lineId, sections, fullName, section: homeSection, allUnits } = useContext(UserContext);
   const canRecord = can('obeya', 'record', role) || can('morning_meeting', 'record', role);
   const today = getWorkDate();
 
-  const [period, setPeriod] = useState('week');
+  const [period, setPeriod] = useState(() => urlPick('period', ['week', 'month', 'year'], 'week'));   // ?period= ค่าตั้งต้น (จอวนหน้า) — ยังเป็น "ดูช่วงไหน" ไม่ใช่วันที่ตายตัว
   /* ขอบเขต = ผังองค์กรทุกมิติ (23/09 · แทน select ส่วนงานจาก org_nodes kind='section') — รับ ?scope= / ?section= ตอนเปิด */
   const [scope, setScope] = useState(() => {
     try {
@@ -156,6 +158,12 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
   const scopeLineSet = useMemo(() => (isPlant(scope) ? null : new Set(org.lineNamesOf(scope.kind, scope.value))), [scope, org]);
   // ส่วนงานที่ขอบเขตนี้สังกัด — ใช้ตอนตั้ง Action item / ส่งต่อ ?section= ให้หน้าที่ยังอ่านแค่ section
   const secFilter = isPlant(scope) ? '' : (org.sectionOf(scope.kind, scope.value) || '');
+  /* 🔐 ชั้นที่ 3 — ใบ Action ผูกส่วนงาน ⇒ เขียน/ปิดได้เฉพาะส่วนงานตัวเอง (audit 15/10)
+     เดิม `scope` มาจาก URL โดย **ไม่มีด่านเลยแม้แต่ `org.has()`** ⇒ เขียน Action ใส่ส่วนงานอื่นได้
+     🔴 ระดับโรงงาน/ฝ่าย (หา section ไม่ได้) = ของกลาง ⇒ ต้องมีใบผ่าน */
+  const scopeWrite = useMemo(
+    () => canWriteUnit({ role, section: homeSection, sections, allUnits }, secFilter, { unknownTarget: 'block' }),
+    [role, homeSection, sections, allUnits, secFilter]);
   /* ส่วนงานทั้งหมดที่อยู่ใต้ขอบเขตที่เลือก (ฝ่าย = หลายส่วนงาน) — ใช้กรองใบ Action ที่ระบุแค่ส่วนงาน · null = ทั้งโรงงาน */
   const scopeSecs = useMemo(() => (isPlant(scope) ? null : org.sectionsOf(scope.kind, scope.value)), [scope, org]);
   const scopeText = scopePathText(org, scope, 'ทุกส่วนงาน');   // CC = เส้นทางหน่วยเจ้าของ › 💰 รหัส (12/10)
@@ -499,7 +507,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
   }, [health]);
 
   // ── ผังกระดาษ ──────────────────────────────────────────────────────────────────
-  const [board, setBoard] = useState(false);            // โหมดจอ TV = ซ่อนหัวเพจ เต็มจอ
+  const [board, setBoard] = useState(() => urlBool('board', false));   // โหมดจอ TV = ซ่อนหัวเพจ เต็มจอ · ?board=1
   const wrapRef = useRef(null);
   const grid = useSheetGrid(wrapRef, 10);
 
@@ -557,6 +565,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
   });
   const saveAction = async () => {
     if (!modal.problem.trim()) return toast.error('ระบุปัญหา/สิ่งที่ต้องทำก่อน');
+    if (!scopeWrite.ok) return toast.error(writeBlockText(scopeWrite, { what: 'ใบ Action ของขอบเขตนี้', unit: secFilter }));
     setSaving(true);
     try {
       const { data: { user } = {} } = await supabase.auth.getUser();
@@ -586,6 +595,9 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
     } finally { setSaving(false); }
   };
   const setStatus = async (a, status, extra = null) => {
+    /* 🔐 ปิด/เลื่อนใบของส่วนงานอื่นไม่ได้ — ตัดสินจาก section ของ "ใบนั้น" ไม่ใช่ขอบเขตที่กำลังดู */
+    const w = canWriteUnit({ role, section: homeSection, sections, allUnits }, a?.section);
+    if (!w.ok) return toast.error(writeBlockText(w, { what: 'ใบ Action นี้', unit: a?.section }));
     const patch = { status, updated_at: new Date().toISOString(), ...(extra || {}) };
     if (status === 'done') patch.done_at = new Date().toISOString();
     // ⚠️ RLS ปฏิเสธ UPDATE = "สำเร็จ 0 แถว ไม่มี error" ⇒ ต้องนับแถวจริง ห้ามเชื่อ !error

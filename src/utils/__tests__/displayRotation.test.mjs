@@ -149,3 +149,33 @@ test('boardFlipSec: แบ่งเวลาค้างหน้าให้ค
   setActiveDwellSec(null); assert.equal(activeDwellSecOf(), null);
   setActiveDwellSec('abc'); assert.equal(activeDwellSecOf(), null);
 });
+
+import { paramVisible } from '../displayRotation.js';
+
+test('paramVisible — ช่องที่ผูกกับแท็บโชว์เฉพาะแท็บนั้น (ยังไม่เลือกแท็บ = "")', () => {
+  const d = { key: 'period', showIf: { tab: ['sqdcm'] } };
+  assert.equal(paramVisible(d, { tab: 'sqdcm' }), true);
+  assert.equal(paramVisible(d, { tab: 'kpi' }), false);
+  assert.equal(paramVisible(d, {}), false);
+  assert.equal(paramVisible({ key: 'x', showIf: { tab: ['', 'kpi'] } }, {}), true);
+  assert.equal(paramVisible({ key: 'x' }, {}), true);
+});
+
+test('ทะเบียนตัวกรอง — showIf ต้องอ้างคีย์ที่มีอยู่ในหน้าเดียวกัน', () => {
+  for (const [p, defs] of Object.entries(DISPLAY_PAGE_PARAMS)) {
+    const keys = new Set(defs.map(d => d.key));
+    defs.filter(d => d.showIf).forEach(d => Object.keys(d.showIf).forEach(k => assert.ok(keys.has(k), `${p}:${d.key} → ${k}`)));
+  }
+});
+
+import { minSecForPath } from '../displayRotation.js';
+
+test('minSecForPath — ผังโรงงานวนมุมมอง ต้องอยู่นานพอวนครบรอบ', () => {
+  assert.equal(minSecForPath('/factory-map?cycle=health,oee,ng&csec=20'), 60);
+  assert.equal(minSecForPath('/factory-map?cycle=health,oee'), 30);          // ค่าตั้งต้น 15 วิ/มุม
+  assert.equal(minSecForPath('/factory-map?cycle=health'), 0);              // มุมเดียว = ไม่วน
+  assert.equal(minSecForPath('/factory-map?cycle=1&csec=10'), 100);
+  assert.equal(minSecForPath('/tv?cycle=1'), 0);
+  const { playable } = buildPlaylist([{ path: '/factory-map?cycle=health,oee,ng', sec: 20 }], () => true);
+  assert.equal(playable[0].sec, 45);
+});

@@ -1,5 +1,6 @@
 import { useState, useEffect, useContext, useMemo, useRef } from 'react';
 import { LPA_LAYERS } from '../utils/prodRoutine';
+import { canWriteLine, writeBlockText } from '../utils/writeScope';
 import useIsMobile from '../utils/useIsMobile';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
@@ -118,7 +119,20 @@ function SignPadModal({ title, onCancel, onDone }) {
 }
 
 export default function LayerProcessAudit() {
-  const { role, lineId: userLineId, sections: scopeSecs = [], fullName } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs = [], fullName,
+          section: homeSection, allUnits } = useContext(UserContext);
+  /* 🔐 ทะเบียนคำถาม LPA — ข้อที่ `line_name` ว่าง = **ข้อกลางใช้ทุกไลน์ทั้งโรงงาน**
+     ⇒ แก้/ปิด/ลบ ต้องมีใบผ่าน `scope:all_units` (audit 15/10) · ข้อของไลน์ = ตามส่วนงานไลน์นั้น
+     เดิมมุมมอง "🌐 ทะเบียนกลาง" ให้ใครก็ได้ที่ถือ lpa:manage ลบข้อกลางทิ้งได้ = หายจากใบตรวจทุกไลน์ */
+  const qCtx = { role, section: homeSection, sections: scopeSecs, allUnits };
+  const qWrite = (q) => canWriteLine(qCtx, q?.line_name, lines, { unknownTarget: 'block' });
+  const qGuard = (q, what) => {
+    const w = qWrite(q);
+    if (w.ok) return true;
+    toast.error(q?.line_name ? writeBlockText(w, { what }) 
+      : 'ข้อนี้เป็น "ข้อกลาง" ใช้ทุกไลน์ทั้งโรงงาน — แก้/ลบได้เฉพาะผู้ที่มีสิทธิ์ข้ามหน่วยงาน (ขอจากแอดมิน)');
+    return false;
+  };
   const canRecord = can('lpa', 'record', role);
   const canManage = can('lpa', 'manage', role);
   const isMobile = useIsMobile();   // 📱 ปุ่มตอบใหญ่เต็มแถว + ปุ่มบันทึกเกาะล่าง (15/10 · MOBILE-UX-STANDARD §4 ชนิด A)
@@ -623,6 +637,7 @@ export default function LayerProcessAudit() {
 
   /* ═════════ TAB: คำถาม master ═════════ */
   const saveQuestion = async () => {
+    if (!qGuard(qEditing, 'คำถามของไลน์นี้')) return;
     if (!qEditing.question?.trim()) { toast.error('กรอกคำถาม'); return; }
     const row = {
       ...(qEditing.id ? { id: qEditing.id } : {}),
@@ -640,6 +655,7 @@ export default function LayerProcessAudit() {
     setQuestions(qs || []);
   };
   const toggleQuestion = async (q) => {
+    if (!qGuard(q, 'คำถามของไลน์นี้')) return;
     // ปิดใช้งานข้อ = ถอดออกจาก checklist ทุกใบตรวจถัดไป → ยืนยันก่อน (UI-CONVENTIONS §5.4) · เปิดกลับไม่ต้องถาม
     if (q.is_active && !window.confirm(`ปิดใช้งานข้อ "${q.question}" ?\n\nข้อนี้จะไม่ขึ้นในใบตรวจ LPA ครั้งถัดไป (เปิดกลับได้ภายหลัง)`)) return;
     const { error } = await supabase.from('lpa_questions').update({ is_active: !q.is_active }).eq('id', q.id);
@@ -648,6 +664,7 @@ export default function LayerProcessAudit() {
   };
   // ซ่อน/แสดงข้อ common เฉพาะไลน์ (เขียน hidden_for_lines[]) — ต้อง apply migration 20260723 ก่อน (best-effort)
   const toggleHideForLine = async (q, line) => {
+    if (!qGuard(q, 'คำถามของไลน์นี้')) return;
     const cur = Array.isArray(q.hidden_for_lines) ? q.hidden_for_lines : [];
     const next = cur.includes(line) ? cur.filter(x => x !== line) : [...cur, line];
     const { error } = await supabase.from('lpa_questions').update({ hidden_for_lines: next.length ? next : null }).eq('id', q.id);
@@ -656,6 +673,7 @@ export default function LayerProcessAudit() {
   };
   const [qBusy, setQBusy] = useState(false);
   const deleteQuestion = async (q) => {
+    if (!qGuard(q, 'คำถามของไลน์นี้')) return;
     /* 🔴 นับปลายทางก่อนถาม — ถามแล้วค่อยปฏิเสธ = คนกดยืนยันไปแล้วแต่ไม่เกิดอะไร
        นับไม่ได้/โยน = **ไม่ลบ** (fail-closed) · มีผลตรวจอ้างอยู่ = ให้ "⏸ ปิดใช้งาน" แทน */
     setQBusy(true);

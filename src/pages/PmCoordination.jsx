@@ -5,6 +5,7 @@ import { UserContext } from '../App';
 import { cachedMaster, mrows } from '../utils/masterCache';
 import { can } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
+import { canWriteLine, writeBlockText } from '../utils/writeScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 // picker กลาง (single-source audit 2026-09-07) — เครื่อง/ไลน์ อ่านจากทะเบียน ไม่พิมพ์เอง
 import LineSelect from '../components/LineSelect';
@@ -134,6 +135,8 @@ export default function PmCoordination() {
 
   const shown = useMemo(() => {
     return (plans || []).filter(p => {
+      /* 🔴 15/10: เดิมเขียน `p.line_name &&` ⇒ แผนที่ไม่ระบุไลน์ **หลุดตัวกรองทั้งหมด**
+         ทุกส่วนงานเห็น/แก้/ลบได้ · ตอนนี้แผนไม่ระบุไลน์ = ของกลาง (ยังเห็น) แต่ปุ่มแก้มีด่านของมันเอง */
       if (scopeLines && p.line_name && !scopeLines.has(p.line_name)) return false;
       if (fStatus === 'active') return !['done', 'cancelled'].includes(p.status);
       if (fStatus === 'all') return true;
@@ -201,7 +204,7 @@ export default function PmCoordination() {
         {shown.map(p => (
           <PlanCard key={p.id} plan={p} tasks={tasksByPlan[p.id] || []} canManage={canManage} teams={teams}
             pmPlan={p.pm_plan_id ? pmPlanById[p.pm_plan_id] : null}
-            fullName={fullName} onEdit={() => setEditing({ ...p, tasks: tasksByPlan[p.id] || [] })} onReload={load} />
+            fullName={fullName} lines={lines} onEdit={() => setEditing({ ...p, tasks: tasksByPlan[p.id] || [] })} onReload={load} />
         ))}
         {!shown.length && <div style={{ color: 'var(--muted)', padding: 24 }}>ไม่มีแผน</div>}
       </div>
@@ -212,7 +215,11 @@ export default function PmCoordination() {
 }
 
 /* ── การ์ดแผน ─────────────────────────────── */
-function PlanCard({ plan: p, tasks, canManage, pmPlan, fullName, onEdit, onReload }) {
+function PlanCard({ plan: p, tasks, canManage, pmPlan, fullName, onEdit, onReload, lines = [] }) {
+  /* 🔐 ชั้นที่ 3 — แผนผูกไลน์ ⇒ เปลี่ยนสถานะ/ลบ/stamp แผน PM ได้เฉพาะไลน์ส่วนงานตัวเอง (audit 15/10)
+     แผนที่ไม่ระบุไลน์ = ตัดสินไม่ได้ ⇒ ไม่บล็อก (แผนระดับโรงงานมีจริง) */
+  const { role, section: homeSection, sections: mySections, allUnits } = useContext(UserContext);
+  const planWrite = canWriteLine({ role, section: homeSection, sections: mySections, allUnits }, p?.line_name, lines);
   const m = STATUS_META[p.status] || STATUS_META.draft;
   const doneN = tasks.filter(t => t.done).length;
 
@@ -234,6 +241,7 @@ function PlanCard({ plan: p, tasks, canManage, pmPlan, fullName, onEdit, onReloa
     } catch (e) { toast.error('แจ้งไม่สำเร็จ: ' + (e.message || e)); }
   };
   const setStatus = async (status) => {
+    if (!planWrite.ok) { toast.error(writeBlockText(planWrite, { what: 'แผน PM ของไลน์นี้' })); return; }
     const { error: wErr215 } = await supabaseDR.from('pm_coordination_plans').update({ status, updated_at: new Date().toISOString() }).eq('id', p.id);
     if (wErr215) { toast.error('เปลี่ยนสถานะแผนไม่สำเร็จ: ' + wErr215.message); return; }
     // ผูกแผน PM เดิม + ปิดเป็น "เสร็จ" → ถามว่าจะ stamp วันทำล่าสุดในระบบแผน PM ด้วยไหม (เลื่อนรอบถัดไป)
@@ -262,6 +270,7 @@ function PlanCard({ plan: p, tasks, canManage, pmPlan, fullName, onEdit, onReloa
     onReload();
   };
   const del = async () => {
+    if (!planWrite.ok) { toast.error(writeBlockText(planWrite, { what: 'แผน PM ของไลน์นี้' })); return; }
     if (!confirm('ลบแผนนี้?')) return;
     // RLS DELETE ปฏิเสธ = 0 แถวไม่มี error ⇒ นับแถวก่อนขึ้น "ลบแล้ว" (กฎเขียน DB ข้อ 2)
     const res = await supabaseDR.from('pm_coordination_plans').delete().eq('id', p.id).select('id');
