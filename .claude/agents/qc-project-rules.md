@@ -92,6 +92,9 @@ model: inherit
   (CLAUDE.md "กฎเหล็ก — subscribe realtime ต้องผ่าน liveChannel")
   · grep: `\.channel\(` ใน `src/` — ทุกตัวที่ไม่ผ่าน `liveChannel` = ผิด
   · **ยกเว้น `broadcast`/`presence`** (`esm-remote-<code>` ใน RemoteReceiver/RemoteControl) — topic คือ "ห้อง" ต้องคงชื่อ
+- **B7** ใบขอซื้อช่าง `mtn_purchase_requests` (DR · 14/10): รับของต้องผ่าน RPC **`mtn_pr_receive`** (สถานะ + เข้าสต็อกทรานแซกชันเดียว)
+  ห้าม client ตั้ง `status: 'received'` เอง · ห้าม `.delete()` (ยกเลิก = `cancelled` + เหตุผล) · ช่างที่มอบหมายอ่านผ่าน `assignedTechsOf()`
+  · grep: `mtn_purchase_requests` แล้วดู `.delete(` / `status: 'received'` (มีด่าน `mtn-pr-receive-via-rpc`)
 
 ### หมวด C — Permissions (data-driven)
 
@@ -241,6 +244,11 @@ model: inherit
   บนมือถือ = ค้างทับเนื้อหา · (ข) `whiteSpace: 'nowrap'` ที่อยู่แถว flex เดียวกับข้อความยาว
   (`.description` / `.problem` / `.note`) โดยข้อความไม่มี `minWidth: 0` → ถูกบีบเหลือ 0 หายทั้งบรรทัด
   · (ค) `minWidth: <เลขตายตัว>` คู่กับ `overflowX: 'auto'` → เลขมักน้อยกว่าเนื้อหาจริง ของท้ายสุดโดนตัด
+- **F4.4 handheld / ห้ามแตะจอคอม (2026-10-15 · CLAUDE.md §งานมือถือ · docs/MOBILE-UX-STANDARD.md)**
+  งานมือถือต้องอยู่หลัง `useIsMobile()`/`@media` — โค้ดที่เปลี่ยน style ร่วม (ไม่มีเงื่อนไขมือถือ) ในงานที่ประกาศว่า "มือถือ" = ผิด ·
+  วัดจริง `node audit/desktopdiff.mjs` (ต้องต่าง 0) + `node audit/handheldsweep.mjs` (360×640 ทุกแท็บ+โมดัล) ·
+  grep: `position: 'fixed'` + `bottom: <เลข>` ไม่มี `--mnav-h` (มีด่าน `mobile-fixed-bottom-needs-mnav`) ·
+  `position: 'sticky'` + `bottom` ที่บวก `--mnav-h` = ลอยสูงเกิน · ฟอร์มยาวบนมือถือที่ปุ่มบันทึกอยู่ท้ายฟอร์มเท่านั้น → แนะนำ `.m-savebar`
 - **F5** input ใน flex row/toolbar ต้องกำหนด width เอง (index.css default width:100%)
 - **F6** hover card เฉพาะ `matchMedia('(hover: hover)')` · popup ทุกอันมีทางปิด
 - **F7** playhead ไทม์ไลน์ใช้ `.now-line`/`.now-chip` — ห้ามวาดเส้นเวลาปัจจุบันเองสีอื่น
@@ -359,6 +367,10 @@ model: inherit
 - **F-KPILEVEL** ช่องตัดสิน KPI (`yn`/`ynTotal`/สีจุดกราฟ) ต้องเป็นระดับ 1/0.5/0 จาก `scoreDef` — ห้าม `v >= target` / `v < target` เอง (2 สีไม่รู้จัก Commitment)
   · grep: `yn(Total)?:\s*[^,]*(>=|<=)` · `const \w*(miss|hit|pass)Target\w* =` · ด่าน `kpi-yn-boolean-compare`
 - **F-TDZ** อ่าน `const/let` ก่อนบรรทัดประกาศใน scope เดียวกัน (จอขาว "Cannot access before initialization") — lint `no-use-before-define` จับให้แล้ว แต่ถ้าเห็น `const a = b.x` เหนือ `const b` ให้รายงาน
+
+- **F-inspect (2026-10-15) จอตั้งค่าจุดตรวจ (รูป + ปักหมุด + การ์ดจุด) ต้องประกอบจาก `src/components/inspect/*` + `SpinAnnotator`**
+  — grep หน้าที่ใช้ `CalloutPin`/วาดโมดัลจุดตรวจเอง นอก `components/inspect/`, `SpinAnnotator`, จอตรวจ (`PMCheckData`/`QaCheckSheet`)
+  · ด่าน `inspection-setup-shared` ครอบ PMSetup + QaPointsEditor · 📄 `docs/modules/inspection-point-setup.md`
 
 ### หมวด G — Workflow & เอกสาร
 - **G1** pattern ใหม่ที่ใช้หลายหน้า ต้องมีบันทึกใน docs/UI-CONVENTIONS.md · schema/workflow ใหม่

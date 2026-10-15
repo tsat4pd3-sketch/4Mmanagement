@@ -1,4 +1,5 @@
 import { useContext, useState, useEffect, useCallback, useMemo, Suspense, lazy } from 'react';
+import { MtnPrBoard } from '../components/MtnPurchase';
 import { UserContext } from '../App';
 import { supabaseDR } from '../supabaseClient';
 import { can, canAccessPage } from '../utils/permissions';
@@ -78,8 +79,14 @@ function SparePanel({ view }) {
 
   if (loading) return <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>⏳ กำลังโหลดทะเบียนอะไหล่…</div>;
   return view === 'rack'
-    ? <RackMap parts={parts} canEdit={can('mtn_repair', 'manage_master', role)} myTeams={userTeams} mySection={mySection} />
-    : <SparePartMaster parts={parts} reload={load} fullName={fullName} role={role} myTeams={userTeams} mySection={mySection} />;
+    /* ผังคลัง = ส่วนหนึ่งของทะเบียนอะไหล่ ⇒ `spare_master` แก้ได้ด้วย (14/10) */
+    ? <RackMap parts={parts} canEdit={can('mtn_repair', 'manage_master', role) || can('mtn_repair', 'spare_master', role)} myTeams={userTeams} mySection={mySection} />
+    : (<>
+      {/* 🛒 อะไหล่ติด Min → เปิด PR → สั่ง → รับของเข้าสต็อก (14/10 · MTN REQUEST · utils/mtnPurchase.js)
+          สิทธิ์ = คนที่รับเข้า/เบิกคลังได้อยู่แล้ว (service หรือ spare_master) — ไม่มีคีย์ใหม่ */}
+      <MtnPrBoard parts={parts} fullName={fullName} canEdit={can('mtn_repair', 'service', role) || can('mtn_repair', 'spare_master', role)} onStockChanged={load} />
+      <SparePartMaster parts={parts} reload={load} fullName={fullName} role={role} myTeams={userTeams} mySection={mySection} />
+    </>);
 }
 
 export default function EquipmentHub() {

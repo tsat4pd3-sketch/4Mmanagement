@@ -23,7 +23,11 @@ import { fetchAllRows } from '../utils/fetchAllRows';
 import { loadBreakPolicies, loadCtProducts, loadCtKanban, fetchOeeTargets } from '../utils/oeeMasters';
 import { valueInk, statusOf } from '../utils/statusTone';
 import { useLatestRequest } from '../utils/useLatestRequest';
-import { polyArea, centroid, labelAnchor } from '../utils/regionGeom';
+import { polyArea, centroid, labelAnchor, bboxOf } from '../utils/regionGeom';
+import MapPillars3D, { map3dTransform } from '../components/MapPillars3D';
+import useMapOrbit from '../components/useMapOrbit';
+import { urlParam, urlPick, urlBool, urlNum } from '../utils/urlInit';
+import { pillarHeight, pillarLegend, liftLabels, orbitScale } from '../utils/mapPillar';
 import { loadPmTeams, isAmTeam } from '../utils/pmTeams';
 import { fetchByIds } from '../utils/fetchByIds';
 import { loadDailyAm, dailyAmLineStatus, amShiftInfo } from '../lib/dailyAmBoard';
@@ -513,10 +517,10 @@ export default function FactoryMap({ setupMode = false }) {
   const [editing, setEditing] = useState(canEdit); // setup mode + มีสิทธิ์ → เข้าโหมดแก้เลย
   const [uploading, setUploading] = useState(false);
   const [aspect, setAspect] = useState(null);
-  const [metric, setMetric] = useState('health'); // 🚦 default = ปกติ/ผิดปกติ (2026-08-26 คำสั่ง user) — เปิดมาตอบก่อนว่าทั้งโรงงานโอเคไหม
-  const [showFac, setShowFac] = useState(false); // 🫥 เปิดดูโซนสนับสนุนชั่วคราวบน metric ผลิต (กดจากชิป)
+  const [metric, setMetric] = useState(() => { const c = urlParam('cycle'); const first = c && c !== '1' ? c.split(',')[0].trim() : null; return urlPick('metric', Object.keys(METRICS), Object.keys(METRICS).includes(first) ? first : 'health'); }); // ?metric= (จอวนหน้า · 15/10) // 🚦 default = ปกติ/ผิดปกติ (2026-08-26 คำสั่ง user) — เปิดมาตอบก่อนว่าทั้งโรงงานโอเคไหม
+  const [showFac, setShowFac] = useState(() => urlBool('support', false)); // 🫥 เปิดดูโซนสนับสนุนชั่วคราวบน metric ผลิต (กดจากชิป)
   // แผงขวา: 'review' = สรุปทบทวนทั้งวัน (default · ประชุมผู้จัดการ) · 'live' = จัดอันดับสดตาม metric (เดิม)
-  const [panelMode, setPanelMode] = useState('review');
+  const [panelMode, setPanelMode] = useState(() => urlPick('panel', ['review', 'obeya', 'live'], 'review'));
   // 🏛️ หัวข้อที่กดเจาะอยู่บนบอร์ด OBEYA (null = ยังไม่กด) — ดู obeyaBoard
   const [obeyaAxis, setObeyaAxis] = useState(null);
   const [reviewDate, setReviewDate] = useState(reviewDefaultDate);
@@ -554,6 +558,9 @@ export default function FactoryMap({ setupMode = false }) {
      ทางแก้ที่เลือก: ให้แต่ละเครื่องปรับขนาดป้ายเอง (A− / A+) จำใน localStorage — ตั้งครั้งเดียวต่อจอ
      (แก้จาก OS ก็ได้แต่หน้างานเข้า settings จอ TV ไม่ได้/ไม่กล้า) · คู่กับปุ่มซ่อนแผงขวาคืนพื้นที่ให้ผัง */
   const [lblScale, setLblScale] = useState(() => {
+    // ?lbl= จากลิงก์จอวนหน้าชนะค่าที่จำในเครื่อง (ไม่เขียนทับ localStorage จนกว่าจะกด A−/A+)
+    const fromUrl = urlNum('lbl', 0.6, 1.6, null);
+    if (fromUrl != null) return Math.round(fromUrl * 10) / 10;
     try { const v = parseFloat(localStorage.getItem('fm_lbl_scale')); return Number.isFinite(v) ? Math.min(1.6, Math.max(0.6, v)) : 1; }
     catch { return 1; }
   });
@@ -563,7 +570,42 @@ export default function FactoryMap({ setupMode = false }) {
     try { localStorage.setItem('fm_lbl_scale', String(nv)); } catch { /* per-device pref เท่านั้น */ }
   };
   // ซ่อนแผงขวา (จอ TV เอาพื้นที่คืนให้ผัง — จำต่อเครื่อง) · ปุ่มอยู่แถบ metric
-  const [panelHide, setPanelHide] = useState(() => { try { return localStorage.getItem('fm_panel_hide') === '1'; } catch { return false; } });
+  const [panelHide, setPanelHide] = useState(() => urlBool('nopanel', (() => { try { return localStorage.getItem('fm_panel_hide') === '1'; } catch { return false; } })()));
+  // 🧊 มุมมอง 3D (2.5D · mockup 14/10) — ความชอบรายเครื่อง · โหมดแก้ผังบังคับ 2D เสมอ (ลาก/คลิกจุดต้องตรงพิกัด)
+  const [view3d, setView3d] = useState(() => { const u = urlPick('view', ['2d', '3d'], null); if (u) return u === '3d'; try { return localStorage.getItem('fm_view3d') === '1'; } catch { return false; } });
+  const toggleView3d = () => setView3d(v => { const n = !v; try { localStorage.setItem('fm_view3d', n ? '1' : '0'); } catch { /* ignore */ } return n; });
+  // 🔄 มุมกล้อง 3D — ลากหมุน/ปุ่ม/ทัวร์ (ทำงานเฉพาะ 3D ที่ไม่ได้แก้ผัง — editing ประกาศไว้ข้างบนแล้ว)
+  const orbit = useMapOrbit(view3d && !editing);
+  /* 🔁 วนมุมมองเอง (จอวนหน้า · 15/10 · user: "อยากโชว์แบบนี้ และวน tab ไปทีละเรื่อง")
+     ?cycle=health,oee,breakdown (หรือ ?cycle=1 = ทุกมุมมอง) · ?csec= วินาทีต่อมุมมอง (ค่าตั้งต้น 15)
+     มีคนกด/แตะจอ = หยุดวน (คนกำลังดูมุมนั้นอยู่) · โหมดแก้ผังไม่วน */
+  const cycleList = useMemo(() => {
+    const raw = urlParam('cycle');
+    if (!raw) return [];
+    const all = Object.keys(METRICS);
+    return raw === '1' ? all : raw.split(',').map(x => x.trim()).filter(k => all.includes(k));
+  }, []);
+  const cycleMs = urlNum('csec', 5, 600, 15) * 1000;
+  const [cycleOn, setCycleOn] = useState(true);
+  useEffect(() => {
+    if (cycleList.length < 2 || !cycleOn || editing) return undefined;
+    const id = setInterval(() => {
+      setMetric(m => cycleList[(cycleList.indexOf(m) + 1) % cycleList.length]);
+    }, cycleMs);
+    return () => clearInterval(id);
+  }, [cycleList, cycleMs, cycleOn, editing]);
+  useEffect(() => {
+    if (cycleList.length < 2) return undefined;
+    const stop = () => setCycleOn(false);
+    window.addEventListener('pointerdown', stop, { passive: true });
+    window.addEventListener('keydown', stop);
+    return () => { window.removeEventListener('pointerdown', stop); window.removeEventListener('keydown', stop); };
+  }, [cycleList]);
+  // ?tour=1 — จอวนหน้าสั่งเปิดทัวร์หมุนกล้องเอง (เฉพาะ 3D) · ครั้งเดียวตอนเปิด
+  const tourFromUrl = useRef(urlBool('tour', false));
+  useEffect(() => {
+    if (tourFromUrl.current && view3d && !editing) { tourFromUrl.current = false; orbit.setAuto(true); }
+  }, [view3d, editing, orbit]);
   const togglePanelHide = () => setPanelHide(v => { const nv = !v; try { localStorage.setItem('fm_panel_hide', nv ? '1' : '0'); } catch { /* ignore */ } return nv; });
   const wrapRef = useRef(null);
   const hoverCardRef = useRef(null); // วัดความสูงจริงของการ์ด hover เพื่อกันตกขอบ
@@ -2277,6 +2319,28 @@ export default function FactoryMap({ setupMode = false }) {
     setWrapW(el.getBoundingClientRect().width);
     return () => ro.disconnect();
   }, [imageUrl, loading]);
+  const is3d = view3d && !editing;
+  /* 🧊 เสา 3D — คิดก่อน render เพื่อให้หัวผังบอกได้ว่าป้ายไหนแน่นจนวางไม่ได้ (ห้ามหายเงียบ) */
+  const pillarMaxH = Math.max(60, wrapW * 0.2);
+  const BLOCK_K = 0.55;
+  const pillarItems = !is3d ? [] : regions.filter(r => !facHidden(r.line_name)).map(r => {
+                  const st = stOf(r.line_name); const cat = regCat(st); const meta = CAT[cat];
+                  /* 🏢 กรอบไลน์ = กล่องยกจากรูปทรงกรอบจริง (`pts`) · ป้ายกลางหลังคา (centroid)
+                     สูง × BLOCK_K — กล่องกินพื้นที่มากกว่าเสา สูงเต็มจะบังผังข้างหลังหมด */
+                  const [x, y] = centroid(r.points);
+                  return { key: r.id, name: r.line_name, x, y, pts: r.points, color: meta.color, blink: !!meta.blink,
+                    h: pillarHeight(metric, cat, st.oee).h * BLOCK_K, text: shortText(st), dim: cat === 'idle' };
+                }).concat(autoHulls.map(h => {
+                  /* ▣ เสากลุ่ม = ยอดรวมทั้งครอบครัว (stOf รวมลูกให้แล้ว) · ตั้งที่ "ขอบล่างกลาง" ของกรอบแม่
+                     เสาลูกตั้งที่ขอบบน (labelAnchor) ⇒ 2 ชั้นไม่ชนกันในจุดเดียว */
+                  const st = stOf(h.name); const cat = regCat(st); const meta = CAT[cat];
+                  const bb = bboxOf(h.hull);
+                  return { key: `hull-${h.name}`, name: h.name, x: (bb.x0 + bb.x1) / 2, y: bb.y1, color: meta.color, blink: !!meta.blink,
+                    h: pillarHeight(metric, cat, st.oee).h, text: shortText(st), dim: cat === 'idle',
+                    group: true, kids: (childrenOf[h.name] || []).length };
+                }));
+  const pillarLifts = is3d ? liftLabels(pillarItems, { Wpx: wrapW, Hpx: aspect ? wrapW / aspect : 0, tiltDeg: orbit.tilt, rotZDeg: orbit.rot, maxH: pillarMaxH }) : null;
+  const pillarCrowded = pillarLifts ? [...pillarLifts.values()].filter(v => !v.ok).length : 0;
   const wrapStyle = aspect ? { width: `min(100%, calc((100vh - 210px) * ${aspect}))` } : { width: '100%' };
   const ptsStr = (pts) => pts.map(p => `${p[0]},${p[1]}`).join(' ');
   const flashLine = (name) => { setHighlight(name); setTimeout(() => setHighlight(h => h === name ? null : h), 2000); };
@@ -2298,6 +2362,12 @@ export default function FactoryMap({ setupMode = false }) {
         {Object.entries(METRICS).map(([k, m]) => (
           <button key={k} onClick={() => setMetric(k)} style={btn(metric === k)}>{m.label}</button>
         ))}
+        {cycleList.length > 1 && (
+          <button onPointerDown={e => e.stopPropagation()} onClick={() => setCycleOn(v => !v)} title="วนมุมมองอัตโนมัติ (ตั้งจากจอวนหน้า)"
+            style={{ ...btn(cycleOn), position: 'relative' }}>
+            🔁 {cycleOn ? `วนมุมมอง · ${cycleList.indexOf(metric) + 1}/${cycleList.length}` : 'วนมุมมอง (หยุด)'}<ToggleDot on={cycleOn} />
+          </button>
+        )}
         {/* ⚡ พลังงานเป็นข้อมูล "รายเดือน" ไม่ใช่ live เหมือน metric อื่นบนจอนี้ — ต้องประกาศเดือนเสมอ
             ไม่งั้นคนอ่านเป็นค่าปัจจุบัน (จอนี้ทุกอย่างสดหมด) */}
         {!editing && metric === 'energy' && (
@@ -2384,6 +2454,10 @@ export default function FactoryMap({ setupMode = false }) {
             </span>
             <button onClick={() => applyScale(lblScale + 0.1)} disabled={lblScale >= 1.6}
               style={{ ...miniTab(false), padding: '3px 8px', fontSize: 12, opacity: lblScale >= 1.6 ? 0.4 : 1 }}>A+</button>
+            <button onClick={toggleView3d} style={{ ...miniTab(view3d), padding: '3px 8px', fontSize: 11.5 }}
+              title={view3d ? 'กลับเป็นผังแบนแบบเดิม' : 'เอียงผังเป็นมุมเฉียง + เสาสถานะตั้งขึ้นจากแต่ละไลน์ (ทดลอง)'}>
+              {view3d ? '🗺️ 2D' : '🧊 3D'}
+            </button>
             <button onClick={togglePanelHide} style={{ ...miniTab(panelHide), padding: '3px 8px', fontSize: 11.5 }}
               title={panelHide ? 'แสดงแผงสรุปด้านขวา' : 'ซ่อนแผงขวา — คืนพื้นที่ให้ผัง (เหมาะกับจอ TV)'}>
               {panelHide ? '▶ แผงขวา' : '◀ ซ่อนแผงขวา'}
@@ -2423,9 +2497,41 @@ export default function FactoryMap({ setupMode = false }) {
       ) : (
         <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', flexWrap: 'wrap' }}>
           {/* ── ผัง ── */}
-          <div style={{ flex: '1 1 640px', minWidth: 0, display: 'flex', justifyContent: 'center' }}>
+          <div {...orbit.handlers} style={{ flex: '1 1 640px', minWidth: 0, display: 'flex', justifyContent: 'center', flexDirection: 'column', alignItems: 'center',
+            ...(is3d ? { touchAction: 'none', cursor: orbit.dragging ? 'grabbing' : 'grab', userSelect: 'none' } : {}),
+            /* 🧊 คอลัมน์ผังตัดของล้น (พื้นกริดยื่นออกนอกรูป ห้ามไปทับแผงขวา) — overflow ที่ "ชั้นนอก" ของ preserve-3d ไม่ flatten เสา */
+            ...(is3d ? { perspective: 2600, perspectiveOrigin: '50% 20%', overflow: 'hidden', borderRadius: 12 } : {}) }}>
+          {is3d && (
+            <div style={{ alignSelf: 'stretch', position: 'relative', zIndex: 3, background: 'var(--bg)', padding: '2px 4px', display: 'flex', flexWrap: 'wrap', gap: '2px 12px', fontSize: 11.5, color: 'var(--muted)', marginBottom: Math.round(wrapW * 0.1) }}>
+              <span>🧊 มุมมอง 3D (ทดลอง) · {pillarLegend(metric)}</span>
+              <span>กรอบไลน์ = กล่อง · ▣ เสา = ยอดรวมกลุ่ม · ป้ายที่ชนกันถูกยกขึ้นสูง มีเส้นโยงลง · คลิกกล่อง/เสาเปิดไลน์</span>
+              {pillarCrowded > 0 && <b style={{ color: '#f59e0b' }}>ป้ายแน่นจนวางไม่ได้ {pillarCrowded} ใบ — ชี้/แตะกล่องเพื่อดู</b>}
+              {/* 🔄 มุมกล้อง — ลากบนผังก็หมุนได้ · ปุ่มไว้สำหรับจอ TV (ไม่มีเมาส์) · stopPropagation กันปุ่มเริ่ม "ลาก" */}
+              <span onPointerDown={e => e.stopPropagation()} style={{ marginLeft: 'auto', display: 'inline-flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
+                <span>ลากบนผังเพื่อหมุน/ก้มเงย</span>
+                <button onClick={() => orbit.step(-15)} title="หมุนซ้าย 15° (หมุนได้ไม่เกิน ±45° จากมุมเริ่ม)" style={{ ...miniTab(false), padding: '2px 8px', fontSize: 12 }}>⟲</button>
+                <button onClick={() => orbit.step(15)} title="หมุนขวา 15° (หมุนได้ไม่เกิน ±45° จากมุมเริ่ม)" style={{ ...miniTab(false), padding: '2px 8px', fontSize: 12 }}>⟳</button>
+                <button onClick={() => orbit.tiltBy(8)} title="ก้มลง (มองเฉียงขึ้น)" style={{ ...miniTab(false), padding: '2px 8px', fontSize: 12 }}>▼</button>
+                <button onClick={() => orbit.tiltBy(-8)} title="เงยขึ้น (มองจากบนมากขึ้น)" style={{ ...miniTab(false), padding: '2px 8px', fontSize: 12 }}>▲</button>
+                <button onClick={() => orbit.setAuto(a => !a)} title="แกว่งมุมมองไป-กลับเองช้าๆ (เหมาะกับจอแขวน)" style={{ ...miniTab(orbit.auto), padding: '2px 8px', fontSize: 11.5 }}>{orbit.auto ? '⏸ หยุดทัวร์' : '▶ ทัวร์'}</button>
+                <button onClick={orbit.reset} title="กลับมุมเริ่มต้น" style={{ ...miniTab(false), padding: '2px 8px', fontSize: 11.5 }}>↺ มุมเดิม</button>
+              </span>
+            </div>
+          )}
+          {/* 🧊 3D: overflow ต้อง visible — overflow:hidden บังคับ flatten ลูกที่ preserve-3d (เสาจะแบนติดพื้น) */}
           <div ref={wrapRef} onClick={onMapClick} onPointerMove={onMapMove} onPointerUp={endDrag} onPointerCancel={endDrag}
-            style={{ position: 'relative', ...wrapStyle, maxHeight: 'calc(100vh - 200px)', borderRadius: 10, overflow: 'hidden', border: '1px solid var(--border)', cursor: drawing ? 'crosshair' : 'default', touchAction: 'none', background: '#0a0a0f' }}>
+            style={{ position: 'relative', ...wrapStyle, maxHeight: 'calc(100vh - 200px)', borderRadius: 10, overflow: is3d ? 'visible' : 'hidden', border: '1px solid var(--border)', cursor: drawing ? 'crosshair' : 'default', touchAction: 'none', background: '#0a0a0f',
+              transition: orbit.transition, ...(is3d ? { transform: map3dTransform(orbit.tilt, orbit.rot, orbitScale(orbit.rot, orbit.tilt, aspect ? 1 / aspect : null)), transformStyle: 'preserve-3d', boxShadow: 'var(--shadow-float)' } : {}) }}>
+            {/* 🧊 พื้นโรงงานรอบผัง (3D) — ตารางกริดจางๆ ยื่นออกนอกรูป แล้วเฟดเข้าพื้นหลังหน้า
+                ให้ผังดู "วางอยู่บนพื้น" ไม่ใช่รูปแผ่นเดียวลอยกลางความมืด (user ทัก 15/10 "พื้นหลังโล่ง ดูเป็น 3D ปลอม") */}
+            {is3d && (
+              <div aria-hidden style={{ position: 'absolute', left: '-45%', right: '-45%', top: '-45%', bottom: '-45%', pointerEvents: 'none',
+                transform: 'translateZ(-2px)',
+                background: 'radial-gradient(ellipse at center, rgba(0,0,0,0) 30%, var(--bg) 70%), '
+                  + 'repeating-linear-gradient(0deg, rgba(148,163,184,0.16) 0 1px, rgba(0,0,0,0) 1px 48px), '
+                  + 'repeating-linear-gradient(90deg, rgba(148,163,184,0.16) 0 1px, rgba(0,0,0,0) 1px 48px), '
+                  + 'linear-gradient(rgba(30,41,59,0.55), rgba(30,41,59,0.55))' }} />
+            )}
             <img src={imageUrl} alt="ผังโรงงาน" onLoad={onImgLoad} style={{ display: 'block', width: '100%', height: 'auto', pointerEvents: 'none', userSelect: 'none' }} />
             {/* scrim บางๆ ให้กรอบเด่นแต่ยังเห็นผังชัด (ไม่หรี่จนภาพหม่น) */}
             <div style={{ position: 'absolute', inset: 0, background: 'rgba(6,8,14,0.14)', pointerEvents: 'none' }} />
@@ -2470,7 +2576,7 @@ export default function FactoryMap({ setupMode = false }) {
                   (user ทัก 2026-08-25 "เส้นไกด์ที่ชี้กลับไปที่ไลน์มองไม่เห็นเลย")
                   ⚠️ จุดปลายใช้ line ยาว 0 + linecap round (วาดเป็นวงกลมขนาด px คงที่) — ห้ามใช้ <circle r="%">
                   เพราะ viewBox ถูกยืด preserveAspectRatio=none วงกลมจะเบี้ยวเป็นวงรี */}
-              {!editing && [
+              {!editing && !is3d && [
                 ...regions.map(r => [labelLayout.region[r.id]?.link, CAT[regCat(stOf(r.line_name))].color, `lk-r-${r.id}`]),
                 ...autoHulls.map(h => [labelLayout.hull[h.name]?.link, CAT[regCat(stOf(h.name))].color, `lk-h-${h.name}`]),
               ].filter(([l]) => l).map(([l, color, key]) => (
@@ -2501,7 +2607,7 @@ export default function FactoryMap({ setupMode = false }) {
 
             {/* ป้ายกลุ่ม (กรอบแม่อัตโนมัติ) — ยอดรวมทั้ง family (รวมคนที่เช็คชื่อผูกไลน์แม่)
                 แยกจากป้ายไลน์ให้ชัด (2026-08-06): ▣ + ขอบประหนา + ตัวใหญ่กว่า + ชิปบอกจำนวนไลน์ย่อย */}
-            {!editing && autoHulls.map(h => {
+            {!editing && !is3d && autoHulls.map(h => {
               const box = labelLayout.hull[h.name];
               if (labelLayout.ready && !box) return null;   // จอแคบ ไม่มีที่ว่างจริง → นับไปบอกบนจอแทน (ห้ามวาดทับ)
               const st = stOf(h.name); const meta = CAT[regCat(st)];
@@ -2534,7 +2640,13 @@ export default function FactoryMap({ setupMode = false }) {
                 ตำแหน่งมาจาก labelLayout (กันทับกัน) — ยังไม่รู้ขนาดผัง = ถอยไปเกาะขอบบนแบบเดิม
                 ไลน์ที่เป็น "ลูก" ของกลุ่ม นำหน้าด้วย ↳ ให้อ่านออกว่าอยู่ใต้กลุ่มไหน (2026-08-06)
                 ข้อมูลครบทุกตัวเหมือนเดิม (คำสั่ง user 2026-08-04) */}
-            {regions.map(r => {
+            {is3d && (
+              <MapPillars3D maxH={pillarMaxH} size={Math.max(12, Math.round(wrapW * 0.024))}
+                onOpen={(n) => openLine(n)}
+                onHover={(n, e) => { if (n) { setHoverLine(n); setHoverXY({ x: e.clientX, y: e.clientY }); } else setHoverLine(null); }}
+                items={pillarItems} lifts={pillarLifts} wPx={wrapW} hPx={aspect ? wrapW / aspect : 0} cam={orbit} />
+            )}
+            {!is3d && regions.map(r => {
               if (facHidden(r.line_name)) return null;      // 🫥 โซนที่ซ่อนตาม metric — ป้ายก็ไม่วาด
               const box = labelLayout.region[r.id];
               if (labelLayout.ready && !box) return null;   // จอแคบ ไม่มีที่ว่างจริง → กรอบสียังบอกสถานะ แตะดูรายละเอียดได้

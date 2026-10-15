@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { NAV_ITEMS } from '../App';
 import useIsMobile from '../utils/useIsMobile';
 import { HubContext } from './Page';
+import MobileFilterFold, { splitFilterChildren } from './MobileFilterFold';
 
 /* ══ 🧭 PageHeader — หัวหน้าเพจมาตรฐาน (breadcrumb + ชื่อหน้า + ปุ่ม + แท็บ) ══════════════
    ทุกหน้าควรขึ้นด้วย component นี้ ห้ามวาดหัวเรื่อง/แถบแท็บเอง
@@ -105,7 +106,7 @@ export default function PageHeader({
     : 'none';
 
   const renderTabs = () => (
-        <div ref={scrollRef} style={{
+        <div ref={scrollRef} className="ph-chrome" style={{
           overflowX: isMobile ? 'auto' : 'visible',
           paddingTop: 7, paddingBottom: 4,   // เผื่อที่ให้ลำแสง/แสงเรืองไม่โดนกล่องที่เลื่อนตัดหัว
         }}>
@@ -161,6 +162,15 @@ export default function PageHeader({
         </div>
   );
 
+  /* 📱 มือถือ: แถบกรอง (`filters=`) ที่มีตัวกรอง ≥2 ตัว ⇒ พับเป็นแถบเดียว · ค้นหา/ของหลัง spacer/ปุ่ม hub โชว์เสมอ
+     คืน null = ไม่พับ (จอคอม หรือมีตัวกรองตัวเดียว) ⇒ ผู้เรียก render แบบเดิมเป๊ะ (docs/MOBILE-UX-STANDARD.md §2 ข้อ 3) */
+  const mobileFold = (f, extraTail) => {
+    if (!isMobile || !f) return null;
+    const { fold, search, tail } = splitFilterChildren(f);
+    if (fold.length < 2) return null;
+    return <MobileFilterFold search={search} tail={extraTail ? [...tail, extraTail] : tail}>{fold}</MobileFilterFold>;
+  };
+
   // ใน hub + ไม่มีอะไรให้โชว์ (ไม่มีคำอธิบาย/ปุ่ม/แท็บ) ⇒ ไม่วาดกล่องเปล่ากินที่ 12px
   if (inHub && !actions && !tabList.length && !filters) return children ?? null;
 
@@ -172,9 +182,11 @@ export default function PageHeader({
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 'var(--ph-mb, 12px)' }}>
         {!!tabList.length && renderTabs()}
         {(filters || actions) && (
-          <div className="filter-bar" data-ph="filters" style={{ marginBottom: 0 }}>
+          <div className="filter-bar ph-chrome" data-ph="filters" style={{ marginBottom: 0 }}>
+            {mobileFold(filters, actions && <span key="hub-actions" data-ph="hub-actions" style={{ display: 'contents' }}>{actions}</span>) || <>
             {filters}
             {actions && <><span className="spacer" /><span data-ph="hub-actions" style={{ display: 'contents' }}>{actions}</span></>}
+            </>}
           </div>
         )}
         {children}
@@ -185,7 +197,7 @@ export default function PageHeader({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 'var(--ph-mb, 12px)' }}>
       {breadcrumb && navItem && !inHub && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap', fontSize: 12, color: 'var(--muted)' }}>
+        <div className="ph-chrome" style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap', fontSize: 12, color: 'var(--muted)' }}>
           <button onClick={() => navigate('/')} style={{
             background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'var(--muted)', fontSize: 12,
           }}>🏠 หน้าหลัก</button>
@@ -198,15 +210,24 @@ export default function PageHeader({
       )}
 
       {(!inHub || sub || actions) && (
-      <div style={{
+      <div className="ph-chrome" style={{
         display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center',
         justifyContent: 'space-between', paddingRight: inHub ? 0 : 52,   // กัน 🔔 ทับ (UI §7) — ใน hub หัวของแม่กันให้แล้ว
       }}>
         <div style={{ minWidth: 0 }}>
           {!inHub && (
-            <h2 style={{ margin: 0, fontSize: isMobile ? 19 : 23, display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
+            /* 📱 มือถือ: nowrap (15/10 · handheld 360px) — `wrap` ⇒ ชื่อยาวโดนดันทั้งก้อนลงบรรทัดใหม่ เหลือไอคอนลอยบรรทัดเดียว
+               (ScrapReport/AM) · nowrap = ชื่อตัดบรรทัด "ในตัวเอง" ข้างไอคอน
+               🔴 จอคอม = แบบเดิมเป๊ะ (เคยใช้ทั้ง 2 จอ ⇒ ชิป MOCKUP ใน title ของ /group-overview ชิดชื่อขึ้น 9px · desktopdiff จับได้) */
+            isMobile ? (
+              <h2 style={{ margin: 0, fontSize: 19, display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'nowrap' }}>
+                {icon && <span style={{ flexShrink: 0 }}>{icon}</span>}<span style={{ minWidth: 0 }}>{title}</span>
+              </h2>
+            ) : (
+            <h2 style={{ margin: 0, fontSize: 23, display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
               {icon && <span>{icon}</span>}{title}
             </h2>
+            )
           )}
           {sub && <div style={{ fontSize: 12.5, color: 'var(--muted)', marginTop: inHub ? 0 : 3 }}>{sub}</div>}
         </div>
@@ -220,7 +241,7 @@ export default function PageHeader({
 
       {/* ── ลำดับแนวตั้งตายตัวทุกหน้า: breadcrumb → ชื่อหน้า|ปุ่มคำสั่ง → แท็บ → แถบกรอง → เนื้อหา ──
           (user 24/09: "ลำดับยังโดดไปมา เดี๋ยวแท็บมาก่อนช่องค้นหา บางหน้าค้นหาอยู่บนสุดก่อนแท็บ") */}
-      {filters && <div className="filter-bar" data-ph="filters" style={{ marginTop: 2, marginBottom: 0 }}>{filters}</div>}
+      {filters && <div className="filter-bar ph-chrome" data-ph="filters" style={{ marginTop: 2, marginBottom: 0 }}>{mobileFold(filters) || filters}</div>}
       {children}
     </div>
   );

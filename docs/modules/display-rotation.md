@@ -49,6 +49,101 @@ apply แล้วบน Main — ตาราง + RLS 2 policy + trigger `trg_
 สิทธิ์เข้าหน้าของ role `display` วัด 09/10: มี `/tv` `/dashboard` `/line-oee` `/factory-map` `/manpower-board` `/obeya`
 `/oee-analytics` ฯลฯ (45 หน้า) · **ไม่มี** `/machine-database` `/die-registry` → ใส่ในรอบได้แต่จะถูกข้าม
 
+## รอบ 2 — 2026-10-14 (feedback หลังติดทีวี 13 จอ `tv-1@tsat4`…`tv-13@tsat4`)
+
+1. **ลิสต์มีแต่บัญชีจอ** — โหลด `profiles` เฉพาะ `role = 'display'` · เลือกจอเป็นการ์ด (ชื่อ · 📍 ส่วนงาน · สถานะรอบ · หมายเหตุ)
+   · RLS ก็กันด้วย: `fn_can_manage_display()` คืน false ถ้าเป้าหมายไม่ใช่ role display
+2. **จอ 2 คอลัมน์** (`<Page>` กว้างมาตรฐาน) — ซ้าย = ตั้งค่า/ลำดับหน้า · ขวา (sticky) = 🎮 สั่งจอ + 👁 ตัวอย่างหน้า
+   · ตัวอย่าง = iframe 1920×1080 ย่อตามกล่อง · **โหลดเฉพาะแถวที่กดเลือก** (ทุกหน้ายิงข้อมูลจริง = egress)
+   · 🔴 ตัวอย่างเปิดด้วย **บัญชีของคนตั้ง** ไม่ใช่บัญชีจอ ⇒ ขอบเขตข้อมูลอาจกว้างกว่าจอจริง — จอเขียนบอกไว้แล้ว ห้ามถอดข้อความนั้น
+3. **ส่วนงานของจอดึงจากบัญชี** (`sectionsOfProfile()` · ตั้งที่ `/add-user`) โชว์เป็นชิป · ช่องหมายเหตุ = ตำแหน่งที่ติดจอ
+4. **แอดมินส่วนงานตั้ง/สั่งได้เฉพาะจอของส่วนงานตัวเอง**
+   · กฎ = `canManageDisplay(mySections, tvSections)` (JS) ↔ `fn_can_manage_display(user_id)` (SQL · policy เขียน) — **ตรรกะต้องตรงกัน**
+     ผู้ตั้งทั้งโรงงาน = ได้ทุกจอ · จอที่ไม่ได้ตั้งส่วนงาน = เฉพาะผู้ตั้งทั้งโรงงาน · จอหลายส่วนงาน = ผู้ตั้งต้องครอบทุกส่วนงาน
+   · สิทธิ์: bucket `dept_admin` ได้ `display_rotation:manage` · หน้า `/display-rotation` piggyback คีย์นี้ใน `canAccessPage()`
+     (bucket ห้ามแจก `page:*` — ไม่ต้องแจกหน้าให้ทุก supervisor)
+   · จอเขียน "ซ่อน N จอที่อยู่นอกส่วนงานของคุณ" (ห้ามหายเงียบ)
+   · **สั่งจอ** = Realtime broadcast ช่อง `esm-display-<user_id>` (ไม่มีตาราง) · จอส่ง presence `{idx, n, path, held}`
+     · คำสั่งที่จอยอมทำ = `DISPLAY_CMDS` (`goto` ลำดับในรอบ · next · prev · hold · resume · reload) ผ่าน `parseDisplayCmd()`
+     · 🔴 **ห้ามเพิ่มคำสั่ง "ไปที่ path ใดก็ได้"** — ช่อง broadcast ไม่มี RLS ใครรู้ id ก็ส่งได้ · จำกัดไว้ = สลับได้แค่หน้าที่ตั้งไว้แล้ว
+     · ปุ่มเลขหน้าใช้ **รอบที่บันทึกแล้ว** (ที่แก้ยังไม่บันทึก จอยังไม่รู้) · หลังบันทึกกด 🔄 รีโหลดจอ = ใช้รอบใหม่ทันที
+5. **ตัวกรองต่อหน้า** — ทะเบียน `DISPLAY_PAGE_PARAMS` (utils) = param ที่หน้านั้น**อ่านจริง** (ตรวจจากโค้ด 14/10):
+   | หน้า | ตัวกรอง |
+   |---|---|
+   | `/tv` | `dept` (ช่าง/ผลิต/สโตร์) · `sec` ส่วนงาน |
+   | `/oee-analytics` | `tab` · `section` · `line` (ไลน์แม่ = รวมลูก) |
+   | `/line-oee` | `line` |
+   | `/dashboard` | `line` (เปิดผังไลน์นั้น) |
+   | `/obeya` | `tab` · `section` |
+   | `/manpower-board` | `tab` |
+   · ตัวอย่าง: จอ 1 `/oee-analytics?tab=today&line=LINE APRON ASSY` · จอ 2 `…&line=HYDROFORM`
+   · ช่องไลน์ใช้ `<LineSelect sections={ส่วนงานของจอ}>` = เห็นเฉพาะไลน์ในส่วนงานของจอ
+   · 🔴 **ห้ามใส่ param ที่หน้าไม่อ่าน** (ตั้งแล้วไม่มีผล = คนเชื่อว่ากรองแล้ว) · หน้าที่ไม่อยู่ในทะเบียน = ช่อง "ต่อท้ายลิงก์ (ขั้นสูง)"
+   · เพิ่มหน้าในทะเบียน = อ่านโค้ดหน้านั้นก่อนว่าอ่าน `searchParams` ตัวไหน
+
+migration `20261014_display_rotation_scope_main.sql` (**apply แล้ว 14/10** ผ่าน execute_sql ทีละคำสั่ง — policy ใช้ `alter policy`)
+
+## รอบ 3 — ตัวกรองครบทุกหน้า (2026-10-15 · user: "ยังไม่ครอบคลุม เรื่องการตั้งค่าเจาะแต่ละหน้า ฟิลเตอร์ เลือก tab")
+
+ต้นเหตุ: หลายหน้าเก็บตัวกรองไว้ใน state ล้วน (ไม่อยู่ในลิงก์) ⇒ ตั้งจากหน้าตั้งค่าไม่ได้ · ไล่ครบ 21 หน้าที่ display เปิดได้ 15/10
+· **`src/utils/urlInit.js`** (`urlParam/urlPick/urlBool/urlNum`) = หน้าอ่าน "ค่าตั้งต้นจากลิงก์ครั้งเดียวตอนเปิด"
+  ไม่เปลี่ยนวิธีจำค่าเดิมของหน้า · ไม่เขียนกลับลงลิงก์ · ค่าผิด = ใช้ค่าเดิมของหน้า
+· หน้าที่เพิ่มการอ่านลิงก์รอบนี้:
+  | หน้า | คีย์ใหม่ |
+  |---|---|
+  | `/factory-map` | `metric` · `panel` · `view=2d|3d` · `tour=1` · `lbl` · `nopanel=1` · `support=1` (ลิงก์ชนะค่าที่จำในเครื่อง) |
+  | `/obeya` kpi / sqdcm | `board=1` (โหมดจอ TV) · sqdcm `period=week|month|year` (ยังเป็น "ดูช่วงไหน" ไม่ใช่วันที่ตายตัว) |
+  | `/oee-analytics` | `shift` · `team` (เดิมมี tab/section/dept/line แล้ว) |
+  | `/store-monitor` | `line` · `kind` · `side` |
+  | `/rack-center` | `fline` (**ไม่ใช่ `line`** — `?line=&ctype=` คือ QR เรียกภาชนะ เปิดฟอร์มทันที) |
+  | `/heijunka` | `store` · `sec` · `fline` · `shift` · `mat` (เดิมมี `view`) |
+  | `/vsm` | `mat` · `state` (เดือน = ปัจจุบันเสมอ) |
+· ทะเบียน `DISPLAY_PAGE_PARAMS` ครอบ 21 หน้า · ชนิดช่อง: select · bool · section · line · scope (`section:X`/`line_group:X`) · product · text
+  · `showIf` = ช่องผูกกับแท็บ (เช่น `period` โชว์เฉพาะ `tab=sqdcm`) · เปลี่ยนแท็บแล้วค่าที่ไม่เกี่ยวถูกตัดออกจากลิงก์เอง
+· 🔴 **หน้าเดิมที่เปลี่ยนแค่ query ต้อง remount** — ตัววนแนบ `state[ROT_NAV_STATE]` ตอน navigate · App ใช้เป็น `key` ของ `<Routes>`
+  (ไม่งั้น `/factory-map?metric=oee` → `?metric=ng` ค้างค่าเก่า เพราะค่าจากลิงก์ถูกอ่านแค่ตอน mount) · นำทางปกติ key = `'r'` ไม่ remount
+· ⚠️ ข้อจำกัดที่รู้: ช่วงวันที่ (`?from=&to=`) **ไม่ให้ตั้ง** — จอแขวนจะค้างช่วงเก่าตลอดไป ใช้ค่าตั้งต้นแบบ "ย้อนหลัง N วันจากวันนี้" ของหน้าแทน ·
+  `/dashboard` กะ ไม่ให้ตั้ง (หน้าสลับกะเองตอน 20:00) · `/flow-tower` ไม่มีตัวกรอง
+· เพิ่มหน้าใหม่ในทะเบียน = อ่านโค้ดหน้านั้นก่อน · ถ้าตัวกรองอยู่ใน state ล้วน ให้ใช้ `urlInit` ที่ `useState(() => …)` ของหน้านั้น
+
+## รอบ 4 — วนมุมมองในผังโรงงาน · พอดีจอ · หน้าตั้งค่ากระชับ (2026-10-15)
+
+- **ผังโรงงานวนมุมมองเอง** (user: "อยากโชว์แบบนี้ และวน tab ไปทีละเรื่อง") — `?cycle=health,oee,breakdown` (หรือ `1` = ทุกมุม) + `?csec=`
+  (วิ/มุม · ค่าตั้งต้น 15) · ปุ่ม 🔁 บนแถบ metric บอก n/N + กดหยุดได้ · มีคนแตะจอ = หยุดวน
+  · 🔴 **ตัววนหน้าให้หน้านี้อยู่ ≥ จำนวนมุม × วิ/มุม เสมอ** (`minSecForPath()`) — ตั้งสั้นกว่า = เห็นแค่ 1-2 เรื่องแล้วเปลี่ยนหน้า
+  · ช่องตั้งค่าชนิด `multi` (ชิปเลือกหลายตัว · ลำดับตามทะเบียน = ลำดับที่วน)
+- **🖥️ พอดีจอระหว่างวน** (user: "ไม่ควรมี overflow") — `DisplayRotator` ย่อ `<main>` ด้วย CSS `zoom` ให้สูงพอดีจอ
+  (วัดซ้ำทุก 1.5 วิ · ต่างน้อยกว่า 2% ไม่ขยับ · ย่อสุด 55%) + ปิด scrollbar ทั้งหน้า · ออกจากโหมดวน = คืนค่าเดิม
+  · ใช้ `zoom` ไม่ใช่ `transform` — layout คิดความกว้างใหม่ให้เต็มจอเอง · หน้า `/tv` ไม่มี `<main>` = ไม่แตะ
+  · ชิปมุมจอหดเหลือ `🔁 n/N · เวลา` หลังเปลี่ยนหน้า 6 วิ (ไม่บังเนื้อหา) · แตะจอ/หยุด/มีหน้าถูกข้าม = กางเต็ม
+- **หน้าตั้งค่า**: แถวที่ไม่ได้เลือกยุบเหลือบรรทัดเดียว (ชื่อหน้า · ตัวกรองที่ตั้ง · เวลา · ▲▼✕) กางเฉพาะแถวที่กดแก้ ·
+  แถวที่จะถูกข้าม ⛔ กางเสมอ (user: "หน้า setup ต้องซูมออกถึงเห็นทั้งหมด")
+
+## รอบ 5 — เปลี่ยนหน้าแบบกระพริบ · ซ่อนหัวเพจทุกหน้า (2026-10-15)
+
+- **🎬 กระพริบแทนโหลดใหม่** (user: "ช่วงเปลี่ยนหน้า จะต้องขึ้นโหลดใหม่เรื่อยๆหรอ … เป็นกระพริบเพื่อให้สมูท")
+  ม่านสีพื้น (`#esm-rot-veil` · DOM บน body ไม่ใช่ state — ตัววน remount ตอนข้าม branch `/tv` ↔ หน้าอื่น)
+  เฟดขึ้น 280ms → เปลี่ยนหน้าใน `startTransition` (ค้างหน้าเดิมระหว่างโหลด lazy chunk) → ค้าง 900ms ให้ข้อมูลขึ้น → เฟดออก
+  · รีโหลดเต็มหน้าตามรอบ `reload_min` = ใต้ม่าน + **ไม่ขึ้น splash** (`markQuietReload()` → `skipSplash()` ใน App · ใช้ครั้งเดียว)
+  · หน้าที่ถูกฝังใน iframe = ไม่มี splash · กรอบตัวอย่างในหน้าตั้งค่า = crossfade (iframe เก่าค้างจนตัวใหม่โหลดเสร็จ +0.9 วิ)
+- **📺 ซ่อนหัวเพจทุกหน้าบนบัญชี display** (user: "ให้เป็นโหมดจอ TV (ซ่อนหัวเพจ) ทุกหน้าเลย") — class `esm-tv-display` บน body
+  (ตั้งใน `DisplayRotator` · ไม่ผูกกับว่ามีแผนวน · viewAs ไม่ซ่อน) + `.ph-chrome` ใน `PageHeader` (breadcrumb · ชื่อ+ปุ่ม · แท็บ · แถบกรอง)
+  · 🔴 **ห้ามติด `.ph-chrome` ที่ `children` ของ PageHeader** (บางหน้าห่อเนื้อหาจริงไว้ข้างใน) · แท็บ/ตัวกรองของจอตั้งจากลิงก์แทน
+  · ตัวเลือก `board=1` ของ OBEYA ยังมีไว้ (โหมดนั้นเต็มจอแบบ fixed ของมันเอง ต่างจากการซ่อนหัวเพจ)
+
+## 🔒 role display = ดูอย่างเดียว (2026-10-15 · คำสั่ง user "ปิดหน้าที่บันทึกข้อมูลได้ของ role display")
+
+บัญชีจอเปิดค้างบนทีวี + รหัสผ่านร่วม + ไม่โดน idle-logout ⇒ หน้าที่ display บันทึกได้ = ใครเดินผ่านก็บันทึกแทนได้
+· migration `20261015_display_role_readonly_main.sql` (**apply แล้ว** · `allowed=false` 23 แถว ไม่ delete)
+· **ปิด**: checkin · daily-report · daily-pm · pm-check · bbs · lpa · pokayoke · morning-meeting · ojt-training · improvements ·
+  mtn-repair · pm-coordination · pm-schedule · management (สร้างใบ 4M ได้โดยไม่เช็คสิทธิ์) · line-stock · transport ·
+  doc-forms · qr-labels · fixture · npi · pe-docs · action `heijunka:operate` `rack_center:operate`
+· **เก็บ** (ปุ่มเขียนทุกปุ่มกันด้วย action ที่ display ไม่มี — ตรวจโค้ด 15/10): tv · dashboard · line-oee · factory-map · obeya ·
+  dept-dashboard · oee-analytics · manpower-board · mtn-analysis · mtn-layout · flow-tower · store-monitor · heijunka · rack-center ·
+  nm-board · pm-forecast · product-history · order-trace · report · skills-report · vsm · energy · remote · `report:export`
+· 🔴 **เปิดหน้าใหม่ให้ display = ต้องตรวจก่อนว่าทุกจุด insert/update/delete ในหน้านั้นกันด้วย `can()`** ที่ display ไม่มี
+  (`/management` เป็นตัวอย่างหน้าที่ดูเหมือนบอร์ดแต่สร้าง 4M ได้โดยไม่เช็คสิทธิ์)
+
 ## ยังไม่ทำ (เฟสถัดไป)
 
 - ตั้งรอบ "ต่อเครื่อง" (หลายจอใช้บัญชีเดียว แต่วนคนละชุด) — ต้องมีรหัสเครื่องในเบราว์เซอร์ ยังไม่มีคนขอ

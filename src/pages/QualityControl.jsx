@@ -25,6 +25,7 @@ import { usePerms } from '../utils/usePerms';
 import { isTrialDefect, defectQty, isSuspectPending, orderProducedQty, QBIN_EMBED } from '../utils/oee';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { inSectionScope } from '../utils/sectionScope';
+import { canWriteLine, writableRows, writeBlockText } from '../utils/writeScope';
 import LineSelect from '../components/LineSelect';
 import PersonSelect from '../components/PersonSelect';
 import PartSelect from '../components/PartSelect';
@@ -596,7 +597,12 @@ function QualityDashboard() {
 const EMPTY_CHAR = { part_no: '', part_name: '', line_name: '', characteristic: '', unit: 'mm', nominal: '', usl: '', lsl: '', subgroup_size: 5, gauge: '', control_method: '' };
 
 function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [] }) {
-  const { fullName } = useContext(UserContext);
+  const { fullName, role, section: homeSection, sections: mySections, allUnits } = useContext(UserContext);
+  /* 🔐 จุดควบคุม SPC ผูกไลน์ ⇒ ลงค่าวัด/ลบค่าวัด/แก้ spec ได้เฉพาะไลน์ส่วนงานตัวเอง (audit 15/10)
+     เดิม `loadChars()` ดึงทุกไลน์ ⇒ เลือกจุดของไลน์อื่นแล้วลงค่าทับ Cpk ของเขาได้
+     ขา QA ถือ `scope:all_units` จึงไม่กระทบ */
+  const wctx = useMemo(() => ({ role, section: homeSection, sections: mySections, allUnits }),
+    [role, homeSection, mySections, allUnits]);
   // 📜 ค่าที่เคยบันทึกใน qa_characteristics (Main) — พาร์ท/เกจที่ทะเบียนยังไม่มี ยังเลือกซ้ำได้ ไม่หายเงียบ (2026-09-07)
   const partHist = useColumnHistory(supabase, 'qa_characteristics', 'part_no', { upper: true });
   const gaugeHist = useColumnHistory(supabase, 'qa_characteristics', 'gauge');
@@ -609,6 +615,7 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
   const [loading, setLoading] = useState(false);
 
   const sel = chars.find(c => c.id === selId) || null;
+  const selWrite = canWriteLine(wctx, sel?.line_name, lineObjs);
 
   const loadChars = useCallback(async () => {
     const { data } = await supabase.from('qa_characteristics').select('*').order('part_no').order('characteristic');
@@ -659,6 +666,9 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
   const saveChar = async () => {
     const f = charModal;
     if (!f.part_no.trim() || !f.characteristic.trim()) { toast.error('กรอก Part No. และชื่อจุดควบคุม'); return; }
+    /* 🔐 ด่านซ้ำตอนเขียนจริง — ไลน์ปลายทางมาจากฟอร์ม (เปลี่ยนได้) */
+    const wc = canWriteLine(wctx, f.line_name, lineObjs);
+    if (!wc.ok) { toast.info(writeBlockText(wc, { what: 'จุดควบคุมของไลน์นี้' })); return; }
     if (f.usl !== '' && f.lsl !== '' && Number(f.usl) <= Number(f.lsl)) { toast.error('USL ต้องมากกว่า LSL'); return; }
     const payload = {
       part_no: f.part_no.trim(), part_name: f.part_name.trim() || null, line_name: f.line_name || null,
@@ -680,6 +690,7 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
 
   const saveMeasurement = async () => {
     if (!sel) return;
+    if (!selWrite.ok) { toast.info(writeBlockText(selWrite, { what: 'ผลวัดของไลน์นี้' })); return; }
     const vals = readings.map(v => Number(v));
     if (readings.some(v => v === '' || !Number.isFinite(Number(v)))) { toast.error(`กรอกค่าวัดให้ครบ ${sel.subgroup_size} ค่า`); return; }
     const { error } = await supabase.from('qa_measurements').insert({
@@ -693,6 +704,7 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
   };
 
   const delMeasurement = async (id) => {
+    if (!selWrite.ok) { toast.info(writeBlockText(selWrite, { what: 'ผลวัดของไลน์นี้' })); return; }
     if (!window.confirm('ลบผลวัดชุดนี้?')) return;
     const { error } = await supabase.from('qa_measurements').delete().eq('id', id);
     if (error) { toast.error(error.message); return; }
@@ -1201,7 +1213,12 @@ const D_FIELDS = [
 ];
 
 function CAPATab({ canRecord, canManage, prefill, onPrefillDone, lineObjs = [], partOpts = [] }) {
-  const { fullName } = useContext(UserContext);
+  const { fullName, role, section: homeSection, sections: mySections, allUnits } = useContext(UserContext);
+  /* 🔐 ใบ 8D ผูกกับไลน์ ⇒ แก้/ปิดได้เฉพาะไลน์ในส่วนงานตัวเอง (audit 15/10 — เดิมลิสต์ทั้งโรงงาน)
+     ขา QA จริงถือคีย์ `scope:all_units` จึงไม่กระทบ · ที่ปิดคือคนนอกสายคุณภาพที่ถือ qa:record */
+  const wctx = useMemo(() => ({ role, section: homeSection, sections: mySections, allUnits }),
+    [role, homeSection, mySections, allUnits]);
+  const capaLineOf = useCallback((c) => c?.line_name || c?.qa_ncr?.line_name || '', []);
   // 📜 ค่าที่เคยบันทึกใน qa_capa (Main) — พาร์ท/ชื่อผู้รับผิดชอบที่ทะเบียนยังไม่มี ยังเลือกซ้ำได้ (2026-09-07)
   const partHist = useColumnHistory(supabase, 'qa_capa', 'part_no', { upper: true });
   const ownerHist = useColumnHistory(supabase, 'qa_capa', 'owner_name');
@@ -1221,6 +1238,13 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone, lineObjs = [], 
     setList(data || []);
   }, [filter]);
   useEffect(() => { load(); }, [load]);
+
+  /* 🔴 ซ่อนแล้วต้องบอกว่าซ่อนกี่ใบ — "ไม่มีใบ" กับ "ไม่ใช่ของเรา" คนละเรื่อง
+     ใบที่ไม่ระบุไลน์ = ตัดสินไม่ได้ ⇒ ไม่ซ่อน (ไม่งั้นใบเก่าที่ยังไม่ผูกไลน์หายทั้งหมด) */
+  const visible = useMemo(
+    () => writableRows(wctx, list, (c) => lineObjs.find(l => l.name === capaLineOf(c))?.section),
+    [wctx, list, lineObjs, capaLineOf]);
+  const hiddenCount = list.length - visible.length;
 
   // เปิดจากปุ่มใน NCR / เคลมลูกค้า
   useEffect(() => {
@@ -1258,6 +1282,9 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone, lineObjs = [], 
   const save = async (extra = {}, msg = 'บันทึกแล้ว ✓') => {
     const f = { ...detail, ...extra };
     if (!f.title?.trim()) { toast.error('กรอกหัวข้อ CAPA'); return; }
+    /* 🔐 ด่านซ้ำตอนกดจริง (ซ่อนปุ่มอย่างเดียวไม่พอ — เปิดใบตรงจาก NCR/เคลมได้) */
+    const w = canWriteLine(wctx, capaLineOf(f), lineObjs);
+    if (!w.ok) { toast.info(writeBlockText(w, { what: 'ใบ 8D ของไลน์นี้' })); return; }
     const payload = {
       ncr_id: f.ncr_id || null, title: f.title.trim(),
       owner_name: f.owner_name?.trim() || null, due_date: f.due_date || null,
@@ -1317,6 +1344,13 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone, lineObjs = [], 
         {/* UI-STANDARD 2026-09-24: 3 ตัวเลือกเท่ากัน → Segmented · "ทุก…" ซ้ายสุด (state 'all' เดิม) */}
         <Segmented label="สถานะ" value={filter} onChange={setFilter} options={STATUS_SEG} />
         <span className="spacer" />
+        {/* 🔒 ตัวนับที่ถูกกรองออก — ต้องอยู่เหนือ fold (UI-STANDARD §3.1) ไม่ใช่ท้ายตาราง
+            และต้องบอกปลายทางที่ "ดูได้จริง" (ที่นี่กางกลับไม่ได้ ⇒ ชี้ไปบอร์ดคุณภาพ) */}
+        {hiddenCount > 0 && (
+          <span className="filter-count" title="ใบของส่วนงานอื่น — ดูรายละเอียดได้ที่บอร์ดคุณภาพ แต่แก้/ปิดไม่ได้">
+            🔒 ไม่แสดง {hiddenCount} ใบของส่วนงานอื่น
+          </span>
+        )}
         {canRecord && <button style={btnSt()} onClick={() => setDetail({
           id: null, capa_no: '', ncr_id: null, title: '', owner_name: fullName || '', due_date: '',
           part_no: '', line_name: '',
@@ -1332,7 +1366,7 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone, lineObjs = [], 
             <th style={thSt}>ผู้รับผิดชอบ</th><th style={thSt}>กำหนดปิด</th><th style={thSt}>สถานะ</th>
           </tr></thead>
           <tbody>
-            {list.map(c => {
+            {visible.map(c => {
               const overdue = c.status !== 'closed' && c.due_date && c.due_date < today;
               return (
                 <tr key={c.id} onClick={() => setDetail({
@@ -1360,7 +1394,10 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone, lineObjs = [], 
                 </tr>
               );
             })}
-            {list.length === 0 && <tr><td style={tdSt} colSpan={6}><span style={{ color: 'var(--muted)' }}>ไม่มีรายการ</span></td></tr>}
+            {visible.length === 0 && <tr><td style={tdSt} colSpan={6}><span style={{ color: 'var(--muted)' }}>
+              {hiddenCount > 0 ? `ไม่มีใบ 8D ของส่วนงานคุณ (มี ${hiddenCount} ใบของส่วนงานอื่น — ดูได้ที่บอร์ดคุณภาพ)` : 'ไม่มีรายการ'}
+            </span></td></tr>}
+
           </tbody>
         </table>
       </div>
@@ -1534,6 +1571,11 @@ function calState(inst) {
 }
 
 function InstrumentTab({ lineObjs, canManage }) {
+  /* 🔐 เครื่องมือวัดมี "ไลน์ประจำ" ⇒ แก้รอบ calibration/สถานะ ได้เฉพาะไลน์ส่วนงานตัวเอง (audit 15/10)
+     เครื่องมือที่ไม่ผูกไลน์ (ของกลาง/ห้อง cal) = ตัดสินไม่ได้ ⇒ ไม่บล็อก */
+  const { role, section: homeSection, sections: mySections, allUnits } = useContext(UserContext);
+  const instCtx = useMemo(() => ({ role, section: homeSection, sections: mySections, allUnits }),
+    [role, homeSection, mySections, allUnits]);
   // ตำแหน่ง/แผนกของเครื่องมือ = หน่วยงานในผังองค์กร (org_nodes) — เดิมพิมพ์เอง (2026-09-07)
   const orgSections = useOrgSections();
   const deptsOf = useOrgDepts();
@@ -1560,6 +1602,8 @@ function InstrumentTab({ lineObjs, canManage }) {
       last_calibrated: f.last_calibrated || null, cal_by: f.cal_by.trim() || null,
       cert_no: f.cert_no.trim() || null, status: f.status, remark: f.remark.trim() || null,
     };
+    const wi = canWriteLine(instCtx, f.line_name, lineObjs);
+    if (!wi.ok) { toast.info(writeBlockText(wi, { what: 'เครื่องมือวัดของไลน์นี้' })); return; }
     const { error } = f.id
       ? await supabase.from('qa_instruments').update(payload).eq('id', f.id)
       : await supabase.from('qa_instruments').insert(payload);

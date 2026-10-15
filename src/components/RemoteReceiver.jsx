@@ -105,7 +105,7 @@ export default function RemoteReceiver({ code, onStop }) {
       )}
       {/* ป้ายสถานะ + รหัสห้อง — ต้องเห็นเสมอว่าจอนี้เปิดรับรีโมทอยู่ */}
       <div style={{
-        position: 'fixed', left: 14, bottom: 14, zIndex: 9999,
+        position: 'fixed', left: 14, bottom: 'calc(14px + var(--mnav-h, 0px))', zIndex: 9999,
         display: 'flex', alignItems: 'center', gap: 10,
         background: 'var(--bg2)', border: `1px solid ${connected ? 'var(--accent)' : 'var(--border2)'}`,
         borderRadius: 12, padding: '8px 14px', boxShadow: 'var(--shadow-float)',

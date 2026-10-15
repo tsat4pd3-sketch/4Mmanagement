@@ -717,14 +717,14 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
               <div style={{ width: chartLeftW, flexShrink: 0, padding: '3px 10px', fontSize: 11, fontWeight: 700, color: 'var(--muted)', borderRight: '1px solid var(--border2)', ...(isMobile ? { position: 'sticky', left: 0, zIndex: 6, background: 'var(--bg2)' } : null) }}>ลูกค้า · คลิกชื่อเพื่อย่อ/ขยาย</div>
               <div style={{ flex: 1, position: 'relative', height: 22 }}>
                 {hourMarks.map((m, i) => (i % 2 === 0 &&
-                  <span key={m} style={{ position: 'absolute', left: `${((m - tStart) / span) * 100}%`, fontSize: 11, color: (m % 1440) === 480 || (m % 1440) === 1200 ? 'var(--text2)' : 'var(--muted)', fontWeight: (m % 1440) === 480 || (m % 1440) === 1200 ? 800 : 500, transform: m === tStart + span ? 'translateX(-100%)' : 'translateX(-50%)', top: 4, whiteSpace: 'nowrap' }}>
+                  <span key={m} style={{ position: 'absolute', left: `${((m - tStart) / span) * 100}%`, fontSize: 11, color: (m % 1440) === 480 || (m % 1440) === 1200 ? 'var(--text2)' : 'var(--muted)', fontWeight: (m % 1440) === 480 || (m % 1440) === 1200 ? 800 : 500, transform: (isMobile ? (m - tStart) / span > 0.97 : m === tStart + span) ? 'translateX(-100%)' : 'translateX(-50%)', top: 4, whiteSpace: 'nowrap' }}>
                     {String((m / 60) % 24 | 0).padStart(2, '0')}:00
                   </span>
                 ))}
               </div>
               {/* ป้ายเวลาปัจจุบัน — มาตรฐานเดียวกับบอร์ด Heijunka */}
               {isToday && nowW >= tStart && nowW <= tStart + span && (
-                <div className="now-chip" style={{ left: `calc(${chartLeftW}px + (100% - ${chartLeftW}px) * ${(nowW - tStart) / span})` }}>
+                <div className="now-chip" style={{ left: `calc(${chartLeftW}px + (100% - ${chartLeftW}px) * ${(nowW - tStart) / span})`, ...(isMobile && (nowW - tStart) / span > 0.95 ? { transform: 'translate(-100%, -50%)' } : null) }}>
                   ⏱ {String(Math.floor(nowW / 60) % 24).padStart(2, '0')}:{String(nowW % 60).padStart(2, '0')}
                 </div>
               )}

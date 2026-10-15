@@ -8,6 +8,7 @@ import { scopedLineNames } from '../utils/sectionScope';
 import { visibleInterval } from '../utils/usePolling';
 import { RATE } from '../utils/refreshRates';
 import { useLiveBoard } from '../utils/useLiveBoard';
+import { urlParam, urlPick } from '../utils/urlInit';
 import { splitBySide, sideMatches } from '../utils/logisticSide';
 import SideFilterChips from '../components/SideFilterChips';
 import PageHeader from '../components/PageHeader';
@@ -43,10 +44,10 @@ export default function StoreMonitor() {
   const [findings, setFindings] = useState([]);
   const [loadErr, setLoadErr] = useState('');
   const [cutMsg, setCutMsg] = useState('');   // ชนเพดานแถว — ข้อมูลมาแล้วแต่ไม่ครบ (คนละเรื่องกับโหลดพัง)
-  const [lineFilter, setLineFilter] = useState('');
-  const [kindFilter, setKindFilter] = useState('all');   // all | shortage | over
+  const [lineFilter, setLineFilter] = useState(() => urlParam('line') || '');   // ?line= / ?kind= / ?side= (จอวนหน้า · 15/10)
+  const [kindFilter, setKindFilter] = useState(() => urlPick('kind', ['all', 'shortage', 'over'], 'all'));   // all | shortage | over
   // ฝั่งงาน — '' ทั้งหมด (default: จอเฝ้าระวังต้องเห็นภาพรวมก่อน) · inbound Store · outbound Warehouse+Delivery
-  const [sideFilter, setSideFilter] = useState('');
+  const [sideFilter, setSideFilter] = useState(() => urlPick('side', ['inbound', 'outbound', 'unknown'], ''));
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
@@ -137,7 +138,7 @@ export default function StoreMonitor() {
           { icon: '⏰', label: 'รอบส่งเลยเวลา', value: nLate, warn: nLate > 0, tone: '#ef4444' },
           { icon: '📊', label: 'รายการทั้งหมด', value: scoped.length, tone: 'var(--text)' },
         ].map(c => (
-          <div key={c.label} style={{ flex: '1 1 170px', background: 'var(--bg2)', border: `1px solid ${c.warn ? 'rgba(239,68,68,0.4)' : 'var(--border)'}`, borderRadius: 8, padding: '8px 12px' }}>
+          <div key={c.label} style={{ flex: '1 1 140px', background: 'var(--bg2)', border: `1px solid ${c.warn ? 'rgba(239,68,68,0.4)' : 'var(--border)'}`, borderRadius: 8, padding: '8px 12px' }}>
             <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{c.icon} {c.label}</div>
             <div style={{ fontSize: 22, fontWeight: 900, color: c.warn && c.value > 0 ? c.tone : 'var(--text)', fontFamily: 'var(--font-display)' }}>{c.value}</div>
           </div>

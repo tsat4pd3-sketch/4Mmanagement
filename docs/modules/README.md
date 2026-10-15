@@ -44,6 +44,7 @@
 | PM Predictive & Planner Sync — เห็นวัน PM ล่วงหน้า + buffer (2026-07-16) · 🧭 3 ระดับ Preventive→Predictive→Prescriptive (2026-09-23) | `docs/modules/pm-predictive-planner-sync.md` | 22 KB |
 | PM Coordination — แผนประสานงาน PM ข้ามวัน (MTN แจ้ง Production · 2026-07-23) | `docs/modules/pm-coordination.md` | 7 KB |
 | 🔧 ศูนย์ PM — แท็บตรวจ PM + ตั้งค่าจุดตรวจ (ปุ่มบันทึกตรวจไม่ครบ · คัดลอกแผน PM ข้ามเครื่อง · 2026-10-07) | `docs/modules/pm-hub-check-setup.md` | 4 KB |
+| 🎯 ตั้งค่าจุดตรวจ — ระบบเดียว PM (อุปกรณ์) + QA (ชิ้นงาน) · ชิ้นส่วนกลาง `components/inspect/` (2026-10-15) | `docs/modules/inspection-point-setup.md` | 5 KB |
 | ตั้งค่าผัง/Floorplan — แยก display ออกจาก setup (2026-07-16) | `docs/modules/floorplan-setup.md` | 35 KB |
 | ⚫ ผังรวมโรงงาน — ผังภาพรวมทั้งโรงงานที่เดียว (ยุบรวมแล้ว 2026-07-16) | `docs/modules/_archived/factory-overview-merged.md` | 1 KB |
 | ⚫ PM Photo-Compare Inspection — ❌ ถอดออกแล้ว (2026-07-22) | `docs/modules/_archived/pm-photo-compare-removed.md` | 2 KB |

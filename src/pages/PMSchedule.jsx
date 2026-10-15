@@ -1,6 +1,7 @@
-import { useState, useEffect, useContext } from 'react'
+import { useState, useEffect, useContext, useMemo } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { useMergeParams } from '../utils/useTabParam'
+import { canWriteTeam, teamBlockText, teamsForUser } from '../utils/mtnTeams'
 import { supabaseDR } from '../supabaseClient'
 import { DEPT_LABEL, dueStatusDefer, deferActive, STATUS_META, computeNextDue, daysUntilDue, cycleLabel, cycleDaysOf, CYCLE_PRESETS, freqForCycle, ymdBangkok } from '../lib/pmSchedule'
 import { setChecklistFrequency } from '../lib/pmChecklists'
@@ -121,7 +122,17 @@ export default function PMSchedule() {
   const [teams, setTeams] = useState(pmTeamsSync()) // ทีมช่าง data-driven (mtn_teams)
   useEffect(() => { loadPmTeams().then(setTeams) }, [])
 
-  const { role, fullName, uid } = useContext(UserContext)
+  const { role, fullName, uid, mtnTeams: userMtnTeams, sections: scopeSecs, allUnits } = useContext(UserContext)
+  /* 🔐 ชั้นที่ 3 ฝั่งช่าง — หน้านี้เขียน `pm_plans` (ตารางเดียวกับ PMCheckData/PMSetup ที่ปิดไปแล้ว)
+     ด้วย `?dept=` ตรงๆ ⇒ เป็น "ประตูที่สาม" ของการเลื่อนรอบ PM ข้ามทีม (QC audit 15/10) */
+  const myTeams = useMemo(() => teamsForUser(userMtnTeams, scopeSecs), [userMtnTeams, scopeSecs])
+  const deptWrite = useMemo(() => canWriteTeam(myTeams, department, { allUnits, role }),
+    [myTeams, department, allUnits, role])
+  const deptGuard = (what) => {
+    if (deptWrite.ok) return true
+    toast.info(teamBlockText(deptWrite, what))
+    return false
+  }
   const canDefer = can('pm', 'setup', role)
   const canIssueSpare = can('mtn_repair', 'service', role)
 
@@ -131,6 +142,7 @@ export default function PMSchedule() {
   // ยกเลิกการเลื่อน (กลับไปใช้วันครบกำหนดเดิม)
   const cancelDefer = async (r) => {
     if (!r.plan?.id) return
+    if (!deptGuard('แผน PM ของทีมนี้')) return
     if (!confirm('ยกเลิกการเลื่อนแผน กลับไปวันครบกำหนดเดิม?')) return
     const { error } = await supabaseDR.from('pm_plans').update({ deferred_to: null, defer_reason: null, defer_agreed_with: null, deferred_by: null, deferred_at: null }).eq('id', r.plan.id)
     if (error) return toast.error(error.message)
@@ -483,8 +495,8 @@ export default function PMSchedule() {
 
       {spareFor && <PlanSparesModal row={spareFor} canEdit={canDefer} canIssue={canIssueSpare} byName={fullName} byUid={uid}
         onClose={() => setSpareFor(null)} onChanged={() => setSpareReload(k => k + 1)} />}
-      {cycleFor && <CycleModal rows={cycleFor} byName={fullName} byUid={uid} onClose={() => setCycleFor(null)} onSaved={() => { setCycleFor(null); fetchData() }} />}
-      {deferFor && <DeferModal row={deferFor} byName={fullName} byUid={uid} onClose={() => setDeferFor(null)} onSaved={() => { setDeferFor(null); fetchData() }} />}
+      {cycleFor && <CycleModal rows={cycleFor} byName={fullName} byUid={uid} deptWrite={deptWrite} onClose={() => setCycleFor(null)} onSaved={() => { setCycleFor(null); fetchData() }} />}
+      {deferFor && <DeferModal row={deferFor} byName={fullName} byUid={uid} deptWrite={deptWrite} onClose={() => setDeferFor(null)} onSaved={() => { setDeferFor(null); fetchData() }} />}
     </Page>
   )
 }
@@ -503,7 +515,7 @@ function addDaysYmd(ymdStr, n) {
   const x = new Date(y, m - 1, d); x.setDate(x.getDate() + n)
   return ymd(x)
 }
-function CycleModal({ rows, byName, byUid, onClose, onSaved }) {
+function CycleModal({ rows, byName, byUid, deptWrite, onClose, onSaved }) {
   const single = rows.length === 1 ? rows[0] : null
   const initDays = single?.cycle || ''
   const [days, setDays] = useState(initDays ? String(initDays) : '')
@@ -526,6 +538,8 @@ function CycleModal({ rows, byName, byUid, onClose, onSaved }) {
   const preview = nextDate || (valid && lastYmd ? addDaysYmd(lastYmd, n) : '')
 
   const save = async () => {
+    /* 🔐 ด่านซ้ำตอนเขียนจริง — เป็นตารางเดียวกับ PMCheckData/PMSetup (QC audit 15/10) */
+    if (deptWrite && !deptWrite.ok) { toast.info(teamBlockText(deptWrite, 'แผน PM ของทีมนี้')); return }
     if (!valid) return toast.error('ใส่รอบ PM เป็นจำนวนวัน 1-3650')
     if (!idleValid) return toast.error('เพดานวันจอด ใส่เป็นจำนวนวัน 1-3650 หรือเว้นว่าง')
     const targets = rows.filter(r => picked.has(r.cl.id))
@@ -649,7 +663,7 @@ function CycleModal({ rows, byName, byUid, onClose, onSaved }) {
 }
 
 // ── Modal เลื่อนแผน PM (คิวผลิตแน่น/ตัดไฟไม่ได้ ฯลฯ) ──
-function DeferModal({ row, byName, byUid, onClose, onSaved }) {
+function DeferModal({ row, byName, byUid, deptWrite, onClose, onSaved }) {
   const eqName = row.eq?.name ?? '—'
   const curDue = row.nextDue ? ymd(row.nextDue) : ''
   // ค่าเริ่มต้นวันเลื่อน = ครบกำหนดเดิม + 30 วัน
@@ -662,6 +676,8 @@ function DeferModal({ row, byName, byUid, onClose, onSaved }) {
   const agreedHist = useColumnHistory(supabaseDR, 'pm_plans', 'defer_agreed_with')
 
   const save = async () => {
+    /* 🔐 ด่านซ้ำตอนเขียนจริง — เป็นตารางเดียวกับ PMCheckData/PMSetup (QC audit 15/10) */
+    if (deptWrite && !deptWrite.ok) { toast.info(teamBlockText(deptWrite, 'แผน PM ของทีมนี้')); return }
     if (!toDue) return toast.error('เลือกวันที่เลื่อนไป')
     if (!reason.trim()) return toast.error('กรอกเหตุผลการเลื่อน')
     if (!row.plan?.id) return toast.error('ยังไม่มีแผน (pm_plans) ของรายการนี้')

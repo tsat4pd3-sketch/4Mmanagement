@@ -17,6 +17,7 @@ import useTabParam from '../utils/useTabParam';
 import LineFlowPanel from '../components/LineFlowPanel';
 import CollapseCard from '../components/CollapseCard';
 import DeliveryPointPanel from '../components/DeliveryPointPanel';
+import LinePartCallPanel from '../components/LinePartCallPanel';
 import SearchSelect from '../components/SearchSelect';
 import LineSelect from '../components/LineSelect';
 import { UNIT_KINDS, UNIT_PRODUCTION, UNIT_SUPPORT } from '../utils/unitKind';
@@ -1871,6 +1872,15 @@ export default function LineSetup({ embedded = false } = {}) {
 
           {/* 🎯 จุดส่งงานหน้าไลน์ — ป้าย QR ที่สโตร์สแกนตอนวางของถึงไลน์ (ลูปสโตร์เฟส 4 · 2026-09-03) */}
           <DeliveryPointPanel lineName={selectedLine} lines={lines} />
+
+          {/* 📦 จุดเรียกเติมชิ้นส่วน (min/max ต่อพาร์ท) — 15/10 feedback หน้างาน
+              เดิมตั้งได้ที่ Daily Report เท่านั้น ⇒ ต้อง "มีกะเปิด + มีของอยู่แล้ว" ถึงจะเห็นปุ่ม
+              = ตั้งค่าตอนเซ็ตอัพไลน์ใหม่ไม่ได้เลย (หน้างานถามตรงๆ ว่า "ตั้งจุดเรียกเติมยังไง")
+              ⇒ ยืมแผงเดิมทั้งใบ (โหลด/สูตรชุดเดียวกัน ห้ามก๊อป) + `alwaysShow` ให้โผล่แม้ยังว่าง */}
+          <CollapseCard id="partLevels" storePrefix="ls" defaultOpen={false}
+            title={<>📦 จุดเรียกเติมชิ้นส่วน <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 400 }}>· min/max ต่อพาร์ท — ถึง min แล้วระบบเสนอให้เบิกจากสโตร์</span></>}>
+            <LinePartCallPanel lineName={selectedLine} lines={lines} role={role} fullName={fullName} alwaysShow />
+          </CollapseCard>
 
           {/* ผู้เซ็นใบค่าฝีมือ ราย section ย้ายไปตั้งที่ผังองค์กร (OrgSetup) — เป็นข้อมูลราย section ไม่ใช่ราย line */}
           <div style={{ borderTop: '1px solid var(--border)', margin: '14px 0 12px' }} />

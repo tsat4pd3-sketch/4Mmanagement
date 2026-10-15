@@ -6,6 +6,7 @@ import { UserContext, Sidebar, NAV_ITEMS, NotificationBell } from '../src/App'
    (`alsoIn` = หน้าที่อยู่ 2 หมวดจริงๆ ต้องถูกไฮไลต์ทั้งคู่) */
 window.__NAV = NAV_ITEMS.map(i => ({ to: i.to, group: i.group, alsoIn: i.alsoIn || null }))
 import ScrollHint from '../src/components/ScrollHint'
+import MobileNavBar from '../src/components/MobileNavBar'
 import { ToastContainer } from '../src/components/Toast'
 import '../src/index.css'
 
@@ -88,6 +89,8 @@ function App(){
           {/* ToastContainer ต้องมีในหน้าปกติด้วย (05/10) — เดิมมีแค่ใน FeedbackLab ⇒ toast จากหน้าอื่น (เช่น "ขอบเขตนอกสังกัด" ของบอร์ด KPI) ไม่โผล่ ตรวจอัตโนมัติไม่ได้ */}
           <ToastContainer/>
         </main>
+        {/* 📱 แถบล่างมือถือเหมือนแอปจริง (15/10) — สวีปมือถือต้องเห็นว่าแถบบังอะไรไหม · จอคอม = null */}
+        <MobileNavBar role={ROLE} onOpenMenu={() => { window.__menu = (window.__menu || 0) + 1 }} onOpenSearch={() => { window.__palette = (window.__palette || 0) + 1 }} />
       </UserContext.Provider>
     </MemoryRouter>
   )

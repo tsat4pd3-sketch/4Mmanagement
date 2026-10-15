@@ -1,5 +1,7 @@
 import { useState, useEffect, useContext, useMemo, useRef } from 'react';
 import { LPA_LAYERS } from '../utils/prodRoutine';
+import { canWriteLine, writeBlockText } from '../utils/writeScope';
+import useIsMobile from '../utils/useIsMobile';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can, canDelete as canDeleteUtil } from '../utils/permissions';
@@ -117,9 +119,23 @@ function SignPadModal({ title, onCancel, onDone }) {
 }
 
 export default function LayerProcessAudit() {
-  const { role, lineId: userLineId, sections: scopeSecs = [], fullName } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs = [], fullName,
+          section: homeSection, allUnits } = useContext(UserContext);
+  /* 🔐 ทะเบียนคำถาม LPA — ข้อที่ `line_name` ว่าง = **ข้อกลางใช้ทุกไลน์ทั้งโรงงาน**
+     ⇒ แก้/ปิด/ลบ ต้องมีใบผ่าน `scope:all_units` (audit 15/10) · ข้อของไลน์ = ตามส่วนงานไลน์นั้น
+     เดิมมุมมอง "🌐 ทะเบียนกลาง" ให้ใครก็ได้ที่ถือ lpa:manage ลบข้อกลางทิ้งได้ = หายจากใบตรวจทุกไลน์ */
+  const qCtx = { role, section: homeSection, sections: scopeSecs, allUnits };
+  const qWrite = (q) => canWriteLine(qCtx, q?.line_name, lines, { unknownTarget: 'block' });
+  const qGuard = (q, what) => {
+    const w = qWrite(q);
+    if (w.ok) return true;
+    toast.error(q?.line_name ? writeBlockText(w, { what }) 
+      : 'ข้อนี้เป็น "ข้อกลาง" ใช้ทุกไลน์ทั้งโรงงาน — แก้/ลบได้เฉพาะผู้ที่มีสิทธิ์ข้ามหน่วยงาน (ขอจากแอดมิน)');
+    return false;
+  };
   const canRecord = can('lpa', 'record', role);
   const canManage = can('lpa', 'manage', role);
+  const isMobile = useIsMobile();   // 📱 ปุ่มตอบใหญ่เต็มแถว + ปุ่มบันทึกเกาะล่าง (15/10 · MOBILE-UX-STANDARD §4 ชนิด A)
   /* 🖥️🔴 ต้องผ่าน `canDelete()` ของกลาง (utils/permissions.js) — เดิมประกาศตัวแปรชื่อ `canDelete`
      ทับ util แล้วเรียกแค่ `can(...)` ⇒ อ่านโค้ดเหมือนมีด่าน แต่ **ด่าน "บัญชีกลางห้ามลบ" ไม่ทำงาน**
      (ออดิท 13/10 เจอแบบนี้ 5 หน้า) · เปลี่ยนชื่อตัวแปรเป็น `mayDelete` + เรียก util ผ่าน alias
@@ -621,6 +637,7 @@ export default function LayerProcessAudit() {
 
   /* ═════════ TAB: คำถาม master ═════════ */
   const saveQuestion = async () => {
+    if (!qGuard(qEditing, 'คำถามของไลน์นี้')) return;
     if (!qEditing.question?.trim()) { toast.error('กรอกคำถาม'); return; }
     const row = {
       ...(qEditing.id ? { id: qEditing.id } : {}),
@@ -638,6 +655,7 @@ export default function LayerProcessAudit() {
     setQuestions(qs || []);
   };
   const toggleQuestion = async (q) => {
+    if (!qGuard(q, 'คำถามของไลน์นี้')) return;
     // ปิดใช้งานข้อ = ถอดออกจาก checklist ทุกใบตรวจถัดไป → ยืนยันก่อน (UI-CONVENTIONS §5.4) · เปิดกลับไม่ต้องถาม
     if (q.is_active && !window.confirm(`ปิดใช้งานข้อ "${q.question}" ?\n\nข้อนี้จะไม่ขึ้นในใบตรวจ LPA ครั้งถัดไป (เปิดกลับได้ภายหลัง)`)) return;
     const { error } = await supabase.from('lpa_questions').update({ is_active: !q.is_active }).eq('id', q.id);
@@ -646,6 +664,7 @@ export default function LayerProcessAudit() {
   };
   // ซ่อน/แสดงข้อ common เฉพาะไลน์ (เขียน hidden_for_lines[]) — ต้อง apply migration 20260723 ก่อน (best-effort)
   const toggleHideForLine = async (q, line) => {
+    if (!qGuard(q, 'คำถามของไลน์นี้')) return;
     const cur = Array.isArray(q.hidden_for_lines) ? q.hidden_for_lines : [];
     const next = cur.includes(line) ? cur.filter(x => x !== line) : [...cur, line];
     const { error } = await supabase.from('lpa_questions').update({ hidden_for_lines: next.length ? next : null }).eq('id', q.id);
@@ -654,6 +673,7 @@ export default function LayerProcessAudit() {
   };
   const [qBusy, setQBusy] = useState(false);
   const deleteQuestion = async (q) => {
+    if (!qGuard(q, 'คำถามของไลน์นี้')) return;
     /* 🔴 นับปลายทางก่อนถาม — ถามแล้วค่อยปฏิเสธ = คนกดยืนยันไปแล้วแต่ไม่เกิดอะไร
        นับไม่ได้/โยน = **ไม่ลบ** (fail-closed) · มีผลตรวจอ้างอยู่ = ให้ "⏸ ปิดใช้งาน" แทน */
     setQBusy(true);
@@ -1093,10 +1113,11 @@ ${issuesHtml}
                           <span style={{ fontSize: 11, color: 'var(--muted)' }}> (เฝ้าระวัง {thDate(q.issue_start)} - {thDate(q.issue_end)})</span>
                         )}
                       </div>
-                      <div style={{ display: 'flex', gap: 5 }}>
+                      <div style={{ display: 'flex', gap: 5, ...(isMobile ? { flex: '1 1 100%' } : null) }}>
                         {ANSWERS.map(an => (
                           <button key={an.key} disabled={!canRecord} onClick={() => setAnswer(q.id, an.key)}
                             style={{
+                              ...(isMobile ? { flex: 1, minHeight: 44 } : null),
                               minWidth: 40, padding: '6px 8px', borderRadius: 7, fontWeight: 800, fontSize: 13, cursor: canRecord ? 'pointer' : 'default',
                               border: '1.5px solid ' + (a?.answer === an.key ? an.color : 'var(--border2)'),
                               background: a?.answer === an.key ? an.color : 'var(--bg3)',
@@ -1145,11 +1166,18 @@ ${issuesHtml}
             </div>
           )}
 
-          {canRecord && (
+          {canRecord && !isMobile && (
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 6 }}>
               <button onClick={saveAudit} disabled={savingAudit} style={{ ...btnAccent, padding: '10px 26px' }}>
                 {savingAudit ? '⏳ กำลังบันทึก...' : '💾 บันทึกผลตรวจ'}
               </button>
+            </div>
+          )}
+          {/* 📱 มือถือ: ปุ่มบันทึกเกาะล่างจอ + บอกว่าตอบไปกี่ข้อ (ข้อเยอะ ปุ่มท้ายฟอร์มอยู่ไกลหลายจอ) */}
+          {canRecord && isMobile && (
+            <div className="m-savebar">
+              <span className="m-savebar-sum">ตอบแล้ว {auditQuestions.filter(q => draft?.answers[q.id]?.answer).length}/{auditQuestions.length} ข้อ</span>
+              <button type="button" onClick={saveAudit} disabled={savingAudit}>{savingAudit ? '⏳ กำลังบันทึก...' : '💾 บันทึกผลตรวจ'}</button>
             </div>
           )}
           {!canRecord && <div style={{ fontSize: 12, color: 'var(--muted)' }}>คุณมีสิทธิ์ดูอย่างเดียว (บันทึกผลได้เฉพาะ role ที่มีสิทธิ์ lpa:record)</div>}

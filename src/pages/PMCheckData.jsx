@@ -15,10 +15,11 @@ import { exportInspectionExcel } from '../lib/pmExportExcel'
 import { exportInspectionPDF, resolveSignatureDataUrl } from '../lib/pmExportPDF'
 import { getDocForm } from '../utils/docForms'
 import { fetchCategories, fetchCheckingMethods, categoryColor, indexByCode } from '../lib/pmTaxonomy'
+import PointZoom, { PointThumb } from '../components/inspect/PointZoom'
 import useImgBox from '../utils/useImgBox'
 import CalloutPin from '../components/CalloutPin'
 import { loadPmTeams, pmTeamsSync, teamKind, recordPermFor, isAmTeam } from '../utils/pmTeams'
-import { MTN_TEAMS, deptNameOf, teamKeyOf, teamForEquipmentKind } from '../utils/mtnTeams'
+import { MTN_TEAMS, deptNameOf, teamKeyOf, teamForEquipmentKind, teamsForUser, canWriteTeam, teamBlockText } from '../utils/mtnTeams'
 import { checkWriteRows } from '../utils/dbWrite';
 import { getWorkDate } from '../utils/workDate'
 import { amShiftInfo } from '../lib/dailyAmBoard'
@@ -294,45 +295,14 @@ function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick, sh
   )
 }
 
-/* 🔍 รูปซูมของจุดตรวจ — เปิดในแอป (ไม่เด้งออกแท็บใหม่แบบเดิม เพราะหน้างานใช้มือถือ)
-   ภาพรวม = แผนที่ว่าจุดอยู่ตรงไหน · ตัวนี้ = ซูมเข้าไปดูว่าต้องดูอะไรตรงนั้น */
+/* 🔍 รูปซูม/รูปย่อของจุดตรวจ = ของกลาง `components/inspect/PointZoom` (ใช้ร่วมกับจอตรวจ QA · 15/10) */
 function CpZoom({ cp, idx, onClose }) {
-  const url = getPublicUrl(cp.image_path)
-  useEffect(() => {
-    const esc = (e) => { if (e.key === 'Escape') onClose?.() }
-    window.addEventListener('keydown', esc)
-    return () => window.removeEventListener('keydown', esc)
-  }, [onClose])
-  return (
-    <div onClick={onClose} className="modal-scroll"
-      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.88)', zIndex: 3000, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 12, gap: 10 }}>
-      <div onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#fff', maxWidth: '100%' }}>
-        <span style={{ width: 26, height: 26, borderRadius: '50%', background: categoryColor(cp.category), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800, flexShrink: 0 }}>{(idx ?? 0) + 1}</span>
-        <span style={{ fontSize: 15, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis' }}>{cp.name}</span>
-      </div>
-      <img src={url} alt={cp.name} onClick={e => e.stopPropagation()}
-        style={{ maxWidth: '100%', maxHeight: '74vh', objectFit: 'contain', borderRadius: 10, border: '2px solid rgba(255,255,255,0.25)' }} />
-      {cp.description && (
-        <div onClick={e => e.stopPropagation()} style={{ color: '#e5e7eb', fontSize: 12.5, maxWidth: 'min(560px, 94vw)', textAlign: 'center', lineHeight: 1.6 }}>{cp.description}</div>
-      )}
-      <button onClick={onClose} style={{ padding: '9px 26px', borderRadius: 999, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 14, fontWeight: 800, cursor: 'pointer' }}>ปิด</button>
-    </div>
-  )
+  return <PointZoom url={getPublicUrl(cp.image_path)} label={(idx ?? 0) + 1} color={categoryColor(cp.category)}
+    name={cp.name} description={cp.description} onClose={onClose} />
 }
-
-// รูปอ้างอิงต่อจุด (คอลัมน์ Picture ของฟอร์ม) — คลิกเปิดเต็มจอ
 function CpImage({ cp }) {
-  const [zoom, setZoom] = useState(false)
-  if (!cp.image_path) return null
-  const url = getPublicUrl(cp.image_path)
-  return (
-    <>
-      {/* เปิดซูมในแอป — เดิม <a target="_blank"> ซึ่งบนมือถือ = เด้งออกจากใบตรวจที่กรอกค้างอยู่ */}
-      <img loading="lazy" src={url} alt="" title="แตะเพื่อดูรูปซูมของจุดนี้" onClick={() => setZoom(true)}
-        style={{ height: 52, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', display: 'block', cursor: 'zoom-in' }} />
-      {zoom && <CpZoom cp={cp} onClose={() => setZoom(false)} />}
-    </>
-  )
+  return <PointThumb url={cp.image_path ? getPublicUrl(cp.image_path) : null} label={null} color={categoryColor(cp.category)}
+    name={cp.name} description={cp.description} />
 }
 
 // ─── Variable Row ───────────────────────────────────────────────────────────
@@ -493,7 +463,7 @@ function NgRecheckPanel({ result, cp, onSaved }) {
 }
 
 // ─── History Detail Modal ─────────────────────────────────────────────────────
-function HistoryModal({ inspection, checkpoints, jig, onClose, userId, userRole }) {
+function HistoryModal({ inspection, checkpoints, jig, onClose, userId, userRole, deptWrite }) {
   const [results, setResults] = useState([])
   const [approving, setApproving] = useState(false)
   const [exporting, setExporting] = useState(false)
@@ -505,9 +475,11 @@ function HistoryModal({ inspection, checkpoints, jig, onClose, userId, userRole 
   useEffect(() => { fetchResults() }, [inspection.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const cpMap = Object.fromEntries(checkpoints.map(c => [c.id, c]))
-  const canApprove = can('pm', 'approve', userRole)
+  /* 🔐 อนุมัติ/ตีกลับผลตรวจ = ตัดสินงานของทีมนั้น ⇒ ต้องเป็นทีมของเรา (ส่งมาจากหน้าแม่) */
+  const canApprove = can('pm', 'approve', userRole) && (deptWrite?.ok !== false)
 
   const handleApprove = async () => {
+    if (deptWrite && !deptWrite.ok) { toast.info(teamBlockText(deptWrite, 'ผลตรวจของทีมนี้')); return }
     setApproving(true)
     const { data, error } = await supabaseDR.from('inspections').update({
       approval_status: 'approved', approved_by: userId, approved_at: new Date().toISOString(), reject_reason: null,
@@ -523,6 +495,7 @@ function HistoryModal({ inspection, checkpoints, jig, onClose, userId, userRole 
 
   const handleReject = async () => {
     if (!rejectReason.trim()) return
+    if (deptWrite && !deptWrite.ok) { toast.info(teamBlockText(deptWrite, 'ผลตรวจของทีมนี้')); return }
     setApproving(true)
     const { data, error } = await supabaseDR.from('inspections').update({
       approval_status: 'rejected', approved_by: userId, approved_at: new Date().toISOString(), reject_reason: rejectReason.trim(),
@@ -683,7 +656,15 @@ export default function PMCheckData() {
            แต่ `can()` ที่นี่ยังอ่าน role จริงจากฐาน ⇒ เห็นปุ่มครบ แล้วสรุปผลทดสอบผิด
      🔴 `userId` ยังต้องเป็น **auth uid จริง** เสมอ (คนตรวจ/คนอนุมัติ/คนสั่ง export ในใบ)
         ห้ามเอา role ที่ถูกสวมไปปนกับตัวตนคนเซ็น */
-  const { role: userRole, fullName } = useContext(UserContext)
+  const { role: userRole, fullName, mtnTeams: myMtnTeams, sections: mySections, allUnits } = useContext(UserContext)
+  /* ══ 🔐 "ทีมที่เปิดอยู่ (?dept=) เป็นทีมของเราไหม" (15/10 · คำสั่ง user) ══════════════════
+     เดิมคีย์ที่ใช้ตัดสินมาจาก `?dept=` ตรงๆ ⇒ ช่างทีมหนึ่งสลับ URL ไปอีกทีม แล้วลงผลตรวจ /
+     อนุมัติ / **เลื่อนรอบ PM** ของอุปกรณ์ทีมนั้นได้ (audit 15/10 · ระดับ A)
+     🔴 ฝั่งช่างใช้ "ทีม" เป็นแกน ไม่ใช่ส่วนงาน — ช่างซ่อมข้ามไลน์เป็นงานปกติ
+     🔴 ไม่ผูกทีม = ไม่บล็อก (ไม่รู้ ≠ ปฏิเสธ) — วัด 15/10 ช่าง 16/16 ตั้งทีมแล้ว ด่านกัดจริง */
+  const myTeams = useMemo(() => teamsForUser(myMtnTeams, mySections), [myMtnTeams, mySections])
+  const deptWrite = useMemo(() => canWriteTeam(myTeams, department, { allUnits, role: userRole }),
+    [myTeams, department, allUnits, userRole])
   /* 🔧 เจอ NG → เปิดใบแจ้งซ่อม MO ต่อได้เลย (2026-09-02 · feedback หน้างาน)
      ⚠️ **ระบบเสนอ คนกดยืนยัน** ห้ามเปิดใบให้อัตโนมัติ (กฎเดิมทั้งโปรเจค) —
         ใบซ่อมเป็นงานที่มีคนต้องรับผิดชอบจริง ไม่ใช่ผลข้างเคียงของการกดบันทึก */
@@ -693,7 +674,10 @@ export default function PMCheckData() {
   const [moByInsp, setMoByInsp] = useState({})     // inspection_id → { id, mo_no } (กันเปิดซ้ำ + โชว์ในประวัติ)
   // สิทธิ์บันทึกแยกแกน AM (พนักงานหน้างาน) / PM (ช่าง) ตามชนิดงานของทีมที่เปิดอยู่
   //   ห้าม hardcode 'pm' — ทีมไหนเป็น AM อ่านจาก mtn_teams.kind (ดู utils/pmTeams.js)
-  const canRecord = useMemo(() => { const [res, act] = recordPermFor(department); return can(res, act, userRole) }, [department, userRole])
+  const canRecord = useMemo(() => {
+    const [res, act] = recordPermFor(department)
+    return can(res, act, userRole) && deptWrite.ok
+  }, [department, userRole, deptWrite])
   const [jigs, setJigs] = useState([])
   const [selectedJig, setSelectedJig] = useState(null)
   const [checklistId, setChecklistId] = useState(null)
@@ -1132,6 +1116,13 @@ export default function PMCheckData() {
     <Page width="full">
     {/* UI-STANDARD 2026-09-24 — หัวเพจมาตรฐาน (ใน PmHub ชื่อถูกซ่อน เหลือหัวของ hub ชั้นเดียว) */}
     <PageHeader title="บันทึกผลตรวจ PM" icon="✅" />
+    {/* 🔐 เปิดทีมอื่นอยู่ — ดูได้ แต่ลงผล/อนุมัติ/เลื่อนรอบไม่ได้ (ต้องเขียนบอก ห้ามปุ่มเทาเฉยๆ) */}
+    {!deptWrite.ok && (
+      <div style={{ margin: '0 0 10px', padding: '8px 10px', borderLeft: '4px solid #eab308',
+        background: 'var(--card)', borderRadius: 8, fontSize: 12.5 }}>
+        🔒 {teamBlockText(deptWrite, `งานตรวจของทีม "${deptNameOf(department) || department}"`)}
+      </div>
+    )}
     <div style={S.page}>
       {/* Sidebar (จอแคบ = เต็มความกว้าง) */}
       {showSidebar && (
@@ -1633,7 +1624,7 @@ export default function PMCheckData() {
       <AnimatePresence>
         {viewInspection && (
           <HistoryModal inspection={viewInspection} checkpoints={checkpoints} jig={selectedJig}
-            userId={userId} userRole={userRole}
+            userId={userId} userRole={userRole} deptWrite={deptWrite}
             onClose={() => { setViewInspection(null); if (selectedJig) fetchHistory(selectedJig.id) }} />
         )}
       </AnimatePresence>

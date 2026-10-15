@@ -4,6 +4,7 @@ import ReadOnlyNote from '../components/ReadOnlyNote';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { loadLinesRes } from '../utils/useProductionLines';
 import { scopedLineNames, filterRowsByLineScope } from '../utils/sectionScope';
+import { canWriteLine, writableRows, writeBlockText } from '../utils/writeScope';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { isFgMat } from '../utils/matPrefix';
@@ -87,7 +88,11 @@ const EMPTY_FORM = { line_name:'', mat_no:'', part_name:'', qty:'', type:'issue'
    TAB: STOCK (existing content)
    ───────────────────────────────────────────────────────────────────────────── */
 function StockTab({ role, scope }) {
-  const { fullName } = useContext(UserContext);
+  const { fullName, section: homeSection, sections: mySections, allUnits } = useContext(UserContext);
+  /* 🔐 ขอบเขต "ที่แก้ได้" — คนละตัวกับ scopeNames ที่เป็นขอบเขต "ที่เห็น" (ดู utils/writeScope.js)
+     คิวอนุมัติเดิมดึง pending ทั้งระบบ ⇒ แอดมินหน่วยงานอนุมัติยอดสต็อกของส่วนงานอื่นได้ (audit 15/10) */
+  const wctx = useMemo(() => ({ role, section: homeSection, sections: mySections, allUnits }),
+    [role, homeSection, mySections, allUnits]);
   const canIssue = can('line_stock', 'issue', role);
   const canApprove = can('line_stock', 'approve', role);
 
@@ -247,6 +252,9 @@ function StockTab({ role, scope }) {
   // อนุมัติ/ปฏิเสธ movement ที่ pending — .eq('status','pending') กันเขียนซ้ำ แต่ update ที่ match 0 แถว
   // "คืนสำเร็จไม่มี error" → ต้องนับแถวจริงเสมอ ไม่งั้นคนที่สองได้ toast อนุมัติทั้งที่อีกคนปฏิเสธไปแล้ว
   const reviewTxn = async (txn, decision, reason) => {
+    /* 🔐 ด่านซ้ำตอนกดจริง — ลิสต์กรองแล้วยังไม่พอ (แถวเก่าค้างในหน่วยความจำ/กดจาก 2 แท็บ) */
+    const w = canWriteLine(wctx, txn.line_name, lines);
+    if (!w.ok) { toast.info(writeBlockText(w, { what: 'ใบขอปรับยอดของไลน์นี้' })); return; }
     setReviewing(txn.id);
     const patch = decision === 'approved'
       ? { status:'approved', reviewed_by: fullName, reviewed_at: new Date().toISOString(), reject_reason: null }
@@ -266,6 +274,9 @@ function StockTab({ role, scope }) {
   };
 
   const handleSave = async () => {
+    /* 🔐 ลงรายการเข้า/ออกของไลน์อื่นไม่ได้ (ชั้นที่ 3 · 15/10) */
+    const wr = canWriteLine(wctx, form.line_name, lines);
+    if (!wr.ok) { toast.info(writeBlockText(wr, { what: 'สต็อกของไลน์นี้' })); return; }
     if (!form.line_name) { toast.error('เลือกไลน์ก่อน'); return; }
     if (!form.mat_no.trim()) { toast.error('กรอก Mat No.'); return; }
     const qty = parseFloat(form.qty);
@@ -339,6 +350,14 @@ function StockTab({ role, scope }) {
     () => filterRowsByLineScope(txns, { scopedNames: scopeNames, lineNames: lineNameList }),
     [txns, scopeNames, lineNameList]);
 
+  /* 🔐 คิวอนุมัติ = เรื่อง "แก้" ไม่ใช่ "ดู" ⇒ กรองด้วยขอบเขตที่แก้ได้ (ไม่ใช่ scopeNames)
+     🔴 ไลน์ที่ไม่อยู่ในทะเบียน (คลัง STORE/FG WAREHOUSE) = ตัดสินไม่ได้ ⇒ **ไม่ซ่อน** (กติกาเดิมของจอนี้)
+     🔴 ซ่อนแล้วต้องบอกว่าซ่อนกี่ใบ — "คิวว่าง" กับ "ไม่ใช่ของเรา" คนละเรื่อง (กฎความซื่อสัตย์ของจอ) */
+  const pendingMine = useMemo(
+    () => writableRows(wctx, pending, (t) => lines.find(l => l.name === t.line_name)?.section),
+    [wctx, pending, lines]);
+  const pendingHidden = pending.length - pendingMine.length;
+
   /* กรอง 2 ชั้น: ไลน์/คลัง → ฝั่งงาน (ขาเข้า Store 2xx/3xx/5xx · ขาออก Warehouse FG 1xx)
      ตัวนับบนชิปต้องนับ "หลังกรองไลน์แล้ว" เพื่อให้เลขตรงกับที่ตาข้างล่างเห็นจริง */
   const lineStock = useMemo(() => (
@@ -404,12 +423,12 @@ function StockTab({ role, scope }) {
         />
         <SideFilterChips value={sideFilter} onChange={setSideFilter} counts={sideCounts} unit="รายการ" />
         <span className="spacer" />
-        {(pending.length > 0 || canApprove) && (
+        {(pendingMine.length > 0 || canApprove) && (
           <button onClick={() => setShowPending(v => !v)}
             style={{ ...btn(showPending ? '#f59e0b' : 'var(--bg2)', showPending ? '#1a1206' : 'var(--text)'),
               position: 'relative',
-              border: pending.length > 0 ? '1px solid #f59e0b' : '1px solid var(--border)' }}>
-            ⏳ รออนุมัติ{pending.length > 0 ? ` (${pending.length})` : ''}
+              border: pendingMine.length > 0 ? '1px solid #f59e0b' : '1px solid var(--border)' }}>
+            ⏳ รออนุมัติ{pendingMine.length > 0 ? ` (${pendingMine.length})` : ''}
             <ToggleDot on={showPending} />
           </button>
         )}
@@ -432,7 +451,10 @@ function StockTab({ role, scope }) {
       {showPending && (
         <div style={{ ...card, padding:0, overflow:'hidden', marginBottom:16, borderColor:'rgba(245,158,11,0.4)' }}>
           <div style={{ padding:'12px 16px', background:'rgba(245,158,11,0.08)', borderBottom:'1px solid var(--border)', display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:8 }}>
-            <div style={{ fontWeight:800, fontSize:14, color:'#f59e0b' }}>⏳ รายการรออนุมัติ ({pending.length})</div>
+            <div style={{ fontWeight:800, fontSize:14, color:'#f59e0b' }}>⏳ รายการรออนุมัติ ({pendingMine.length})
+              {pendingHidden > 0 && <span style={{ fontWeight:600, fontSize:12, color:'var(--muted)' }}>
+                {' '}· ซ่อน {pendingHidden} ใบของส่วนงานอื่น (ดูได้ที่ประวัติ แต่อนุมัติไม่ได้)</span>}
+            </div>
             <div style={{ fontSize:11, color:'var(--muted)' }}>
               {canApprove ? 'อนุมัติแล้วจึงมีผลต่อ stock คงเหลือ' : 'เฉพาะผู้มีสิทธิ์ (admin/manager) อนุมัติได้'}
             </div>
@@ -447,10 +469,10 @@ function StockTab({ role, scope }) {
                 </tr>
               </thead>
               <tbody>
-                {pending.length === 0 && (
+                {pendingMine.length === 0 && (
                   <tr><td colSpan={8} style={{ padding:30, textAlign:'center', color:'var(--muted)', fontSize:13 }}>ไม่มีรายการรออนุมัติ</td></tr>
                 )}
-                {pending.map(t => (
+                {pendingMine.map(t => (
                   <tr key={t.id}>
                     <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)', fontSize:12, color:'var(--muted)', whiteSpace:'nowrap' }}>{t.work_date}</td>
                     <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)', fontSize:13, fontWeight:600 }}>{t.line_name}</td>
@@ -919,6 +941,11 @@ function addMins(timeStr, mins) {
 }
 
 function DeliveryRoundsTab({ canEdit, fullName, scope }) {
+  /* 🔐 รอบจัดส่งผูกไลน์ ⇒ แก้/ลบได้เฉพาะไลน์ส่วนงานตัวเอง (audit 15/10 — เดิม load ดึงทุกไลน์
+     แล้ว lineFilter เป็นแค่ตัวกรองมุมมองที่ default ว่าง) · สโตร์ถือ scope:all_units จึงไม่กระทบ */
+  const { section: homeSection, allUnits } = useContext(UserContext);
+  const rndCtx = useMemo(() => ({ role: scope?.role, section: homeSection, sections: scope?.sections, allUnits }),
+    [scope?.role, homeSection, scope?.sections, allUnits]);
   const [rounds,     setRounds]     = useState([]);
   const [lines,      setLines]      = useState([]);
   const [lineFilter, setLineFilter] = useState('');
@@ -983,6 +1010,9 @@ function DeliveryRoundsTab({ canEdit, fullName, scope }) {
   };
 
   const handleSave = async () => {
+    /* ด่านซ้ำตอนเขียนจริง — ไลน์ปลายทางมาจากฟอร์ม */
+    const wr = canWriteLine(rndCtx, form.line_name, lines);
+    if (!wr.ok) { toast.info(writeBlockText(wr, { what: 'รอบจัดส่งของไลน์นี้' })); return; }
     if (!form.line_name.trim()) { toast.error('กรอกชื่อไลน์'); return; }
     if (!form.round_no || parseInt(form.round_no) < 1) { toast.error('กรอก Round No.'); return; }
     if (!form.delivery_time) { toast.error('กรอกเวลาจัดส่ง'); return; }
@@ -1032,6 +1062,9 @@ function DeliveryRoundsTab({ canEdit, fullName, scope }) {
   };
 
   const handleDelete = async (id) => {
+    const row = rounds.find(r => r.id === id);
+    const wd = canWriteLine(rndCtx, row?.line_name, lines);
+    if (!wd.ok) { toast.info(writeBlockText(wd, { what: 'รอบจัดส่งของไลน์นี้' })); return; }
     if (!window.confirm('ยืนยันลบรอบจัดส่งนี้?')) return;
     const { error } = await supabaseDR.from('kanban_delivery_rounds').update({ is_active: false }).eq('id', id);
     if (error) { toast.error(error.message); return; }
