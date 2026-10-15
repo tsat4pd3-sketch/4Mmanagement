@@ -7,6 +7,9 @@
    2. เลขกลุ่ม (`2` → `2.1 2.2 …`) — พิมพ์เลข Item เดียวแล้วเห็นทั้งกลุ่ม
    3. ชื่อจุด / ชื่อกลุ่ม มีคำค้นอยู่ (`LP` · `Locate`)
    คำค้นว่าง = คืนทุกจุดตามลำดับเดิม (แถบชิปยังต้องโชว์ครบ ห้ามว่าง) */
+/* แถบ "ไปที่จุด" โชว์เมื่อจุด ≥ ค่านี้ (น้อยกว่านี้เห็นครบในจอเดียวอยู่แล้ว) */
+export const JUMP_MIN = 6
+
 export function cpJumpMatches(q, ordered, labels) {
   const list = Array.isArray(ordered) ? ordered : []
   const needle = String(q ?? '').trim().toLowerCase()
