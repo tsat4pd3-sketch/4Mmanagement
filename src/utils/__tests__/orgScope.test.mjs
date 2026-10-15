@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   buildOrgScope, scopeKey, parseScopeKey, scopeCovers, scopeOfDef, defScopeColumns, filterScopeOptions, PLANT, drillParams,
+  canonicalScope, sameUnit, scopeUnder,
 } from '../orgScope.js';
 
 const nodes = [
@@ -314,4 +315,33 @@ test('sectionOf/sectionsOf ของ CC = ของเจ้าของรห�
   assert.deepEqual([...idx.sectionsOf('cost_center', '2140662201')], ['PD3']);
   assert.equal(idx.sectionOf('cost_center', '2140563100'), null, 'แผนกขึ้นตรงฝ่าย ไม่มีส่วนงาน');
   assert.deepEqual([...idx.sectionsOf('cost_center', 'ไม่มี')], [], 'รหัสไม่มีเจ้าของ = ว่าง ไม่ใช่ทั้งโรงงาน');
+});
+
+/* ── 💰 15/10: CC ที่มีหน่วยเจ้าของ = หน่วยเจ้าของ (user: "filter 2 ช่องขัดกันไปมา ทำให้ค่าที่กรอกไว้รวน") ── */
+test('canonicalScope: CC ของส่วนงาน → section · CC ของแผนก → department · CC ของไลน์ล้วน/กำพร้า/ขอบเขตอื่น → คงเดิม', () => {
+  const ix = buildOrgScope({ nodes, lines, divisions });
+  assert.deepEqual(canonicalScope(ix, { kind: 'cost_center', value: '2140462000' }), { kind: 'section', value: 'PD3' });
+  assert.deepEqual(canonicalScope(ix, { kind: 'cost_center', value: '2140563100' }), { kind: 'department', value: 'JIG MTN' });
+  assert.deepEqual(canonicalScope(ix, { kind: 'cost_center', value: '2140562100' }), { kind: 'department', value: 'HYDROFORM' });
+  assert.deepEqual(canonicalScope(ix, { kind: 'cost_center', value: '2140524100' }), { kind: 'cost_center', value: '2140524100' });  // เจ้าของเป็น org line node — ไม่เดา
+  assert.deepEqual(canonicalScope(ix, { kind: 'cost_center', value: '999' }), { kind: 'cost_center', value: '999' });
+  assert.deepEqual(canonicalScope(ix, { kind: 'section', value: 'PD3' }), { kind: 'section', value: 'PD3' });
+  assert.equal(canonicalScope(ix, PLANT), PLANT);
+  assert.equal(canonicalScope(null, { kind: 'cost_center', value: '2140462000' }).kind, 'cost_center');   // ไม่มี index = ไม่แปลง
+  assert.equal(sameUnit(ix, { kind: 'cost_center', value: '2140462000' }, { kind: 'section', value: 'PD3' }), true);
+});
+
+test('นิยามที่เคยเก็บที่ CC ของ PD3 = นิยามของ PD3 เอง: เลือก PD3 เห็น (covers) และไม่ใช่ลูก (under=false) · เขียนลงหน่วยเจ้าของ', () => {
+  const ix = buildOrgScope({ nodes, lines, divisions });
+  const PD3 = { kind: 'section', value: 'PD3' }, CC = { kind: 'cost_center', value: '2140462000' };
+  assert.equal(scopeCovers(ix, CC, PD3), true);
+  assert.equal(scopeCovers(ix, PD3, CC), true);
+  assert.equal(scopeUnder(ix, CC, PD3), false);        // เดิม true ⇒ บอร์ด PD1 เขียน "ค่ารวมจากหน่วยลูก: CC ของตัวเอง"
+  assert.equal(scopeUnder(ix, PD3, CC), false);
+  assert.equal(scopeUnder(ix, CC, PLANT), true);        // แต่ยังอยู่ใต้โรงงาน
+  assert.equal(scopeUnder(ix, { kind: 'cost_center', value: '2140562100' }, PD3), true);   // CC ของแผนก HYDROFORM = ลูกของ PD3 จริง
+  assert.equal(scopeUnder(ix, { kind: 'cost_center', value: '2140562100' }, { kind: 'department', value: 'HYDROFORM' }), false);
+  assert.deepEqual(defScopeColumns(ix, CC), { scope_kind: 'section', scope_value: 'PD3', section: 'PD3', line_group: null });
+  assert.deepEqual(defScopeColumns(ix, { kind: 'cost_center', value: '2140563100' }), { scope_kind: 'department', scope_value: 'JIG MTN', section: null, line_group: null });
+  assert.equal(defScopeColumns(ix, { kind: 'cost_center', value: '999' }).scope_kind, 'cost_center');   // กำพร้า = เก็บเป็นรหัสได้
 });

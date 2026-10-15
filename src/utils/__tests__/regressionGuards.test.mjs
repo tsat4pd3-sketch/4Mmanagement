@@ -963,6 +963,16 @@ const RULES = [
     allow: {},
   },
   {
+    id: 'kpi-scope-write-raw',
+    scan: ['src/pages', 'src/components'], ext: ['.jsx'],
+    /* เขียน/คิวรีคีย์ขอบเขตของตาราง kpi_* ด้วย scope ที่เลือกบนจอตรงๆ (scope.kind / sel.kind) — ต้องผ่าน canonicalScope() ก่อน
+       (15/10 · PD1 กับ CC 2140461000 เก็บเป็น 2 คีย์ ⇒ นิยาม 9 ตัว + โน้ต 10 แถว + layout แยกกัน สลับช่องกรองแล้วค่าหาย) */
+    re: /scope_kind(?::\s*|',\s*)\b(?:scope|sel|sc|form\.scope)\.kind\b/g,
+    why: 'ขอบเขต KPI ของ "รหัส cost center ที่มีหน่วยเจ้าของ" ต้องเก็บ/เทียบที่หน่วยเจ้าของ — เขียน scope ดิบ = คีย์แยก 2 ชุดของหน่วยเดียวกัน',
+    fix: "ส่งผ่าน canonicalScope(org, scope) (utils/orgScope.js) หรือ defScopeColumns(org, scope) ก่อนเขียน/คิวรี scope_kind",
+    allow: {},
+  },
+  {
     id: 'icon-only-trash-emoji',
     scan: ['src/pages', 'src/components'], ext: ['.jsx'],
     re: />\s*🗑️?\s*<\/button>/g,

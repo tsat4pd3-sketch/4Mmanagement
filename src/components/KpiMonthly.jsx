@@ -13,7 +13,7 @@ import { mtnAutoSeries, autoKpiOfName, toRowUnit, HOURS_PER_MONTH, autoUnitMisma
 import { loadPmTeams, pmTeamsSync } from '../utils/pmTeams';
 import OrgScopePicker from './OrgScopePicker';
 import FilterBar from './FilterBar';
-import { PLANT, isPlant, parseScopeKey, scopeKey, scopeOfDef, scopeCovers, sameScope, defScopeColumns, scopeUnder, scopePathText } from '../utils/orgScope';
+import { PLANT, isPlant, parseScopeKey, scopeKey, scopeOfDef, scopeCovers, sameScope, defScopeColumns, scopeUnder, scopePathText, canonicalScope } from '../utils/orgScope';
 import { canWriteUnit, writeBlockText } from '../utils/writeScope';
 import { groupChildDefs, rollupChildDefs, rollupGroupKey, childGroupKeyFor } from '../utils/kpiRollup';
 import { checkWriteRows } from '../utils/dbWrite';
@@ -224,6 +224,10 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
     return { ...PLANT };
   });
   const { index: org, ready: orgReady, failed: orgFailed } = useOrgScope(lines);
+  /* 💰 15/10: ช่องกรอง 2 ช่อง (หน่วยงาน / Cost Center) เคยขัดกัน — PD1 กับ CC 2140461000 คือหน่วยเดียวกันแต่เก็บคนละคีย์
+     ⇒ ทุกการ "เทียบ/เขียน" ขอบเขต KPI ใช้ `kpiScope` (= หน่วยเจ้าของรหัส) · `scope` เหลือไว้แค่เป็นป้ายบนจอ/URL */
+  const kpiScope = useMemo(() => canonicalScope(org, scope), [org, scope]);
+  const ccAsUnit = scope.kind === 'cost_center' && kpiScope.kind !== 'cost_center';
   const { sections: userSections, section: homeSection, allUnits } = useContext(UserContext);   // สังกัดของ user — ตัดตัวเลือกขอบเขต (node ที่ไม่มีไลน์ใช้ตัวนี้ตัดสิน)
   const [loading, setLoading] = useState(false);
   const [prog, setProg] = useState('');
@@ -422,10 +426,13 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
     setKpiMissing(false);
     /* เห็นนิยามของ "ขอบเขตที่เลือก + บรรพบุรุษ" — นิยามระดับแม่ตกทอดถึงลูก (23/09 ขยายจาก "section null = ทุกส่วนงาน")
        ดูทั้งโรงงาน = เห็นเฉพาะระดับโรงงาน (ไม่ใช่รวมทุกแผนกปนกัน — ใบ KPI เป็นของหน่วยงาน) */
-    const rows = (d || []).filter(x => scopeCovers(org, scopeOfDef(x), scope));
+    /* 💰 15/10: นิยามที่ยังค้างที่รหัส CC (ก่อน trigger / รหัสเพิ่งผูกหน่วย) = นิยามของหน่วยเจ้าของ — ทำให้ตรงก่อนกรอง ไม่งั้นโผล่เป็น "ตกทอด/ลูก" ของตัวเอง */
+    const canonDef = (x) => { const sc = scopeOfDef(x); const c = canonicalScope(org, sc); return c === sc ? x : { ...x, scope_kind: c.kind, scope_value: c.value }; };
+    const dAll = (d || []).map(canonDef);
+    const rows = dAll.filter(x => scopeCovers(org, scopeOfDef(x), scope));
     setAllDefs(rows);
     /* ⬆ นิยามของหน่วยลูก (12/10 · กติกาเดียวกับบอร์ด: แม่ชนะรายเดือน · เดือนที่แม่ว่างบอร์ดเติมค่ารวมจากลูก) — ตารางนี้ต้องเห็นเลขชุดเดียวกับบอร์ด */
-    const below = (d || []).filter(x => scopeUnder(org, scopeOfDef(x), scope));
+    const below = dAll.filter(x => scopeUnder(org, scopeOfDef(x), scope));
     setBelowDefs(below);
     /* 🗄️ แถวที่ปิดใช้งานอยู่ — ยังครองคีย์ unique อยู่ ⇒ ต้องมีที่ให้ "เปิดคืน" บนจอ (07/10 · feedback: ปิดหัวข้อแล้ว add ใหม่ไม่ได้)
        โหลดล้ม = ถือว่าไม่มี (ไม่ทำทั้งแท็บล่ม) · กรองขอบเขตแบบเดียวกับตารางหลัก */
@@ -593,7 +600,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
         ⇒ `!d.source` เป็นเท็จเสมอ = ตารางนี้ว่างตลอดกาลไม่ว่าจะตั้ง KPI ไว้กี่ข้อ (บั๊กจริง แก้ 23/09)
         คอมเมนต์ใน migration 20260901 เขียนว่า "null = กรอกมือ" ซึ่งไม่เคยเป็นจริง — อย่าเชื่อ ให้ดู default
         แถวเก่าก่อนมี default อาจเป็น null จริง ⇒ เช็คจากฝั่ง `auto:` เสมอ (ครอบทั้ง null และ 'manual') */
-  const isInherited = useCallback(d => !sameScope(scopeOfDef(d), scope), [scope]);
+  const isInherited = useCallback(d => !sameScope(canonicalScope(org, scopeOfDef(d)), kpiScope), [org, kpiScope]);
   /* 🏭 30/09: KPI ตัวเดียวกัน (catalog เดียวกัน) ที่มีทั้งนิยามของขอบเขตนี้และนิยามแม่ที่ตกทอดมา → โชว์แถวเดียว (ของขอบเขตนี้)
      ไม่งั้น KPI แบบ "ค่าโรงงาน" จะขึ้น 2 แถว (ของหน่วย + ของโรงงาน) ทั้งที่เป็นตัวเลขชุดเดียวกัน · กติกาเดียวกับ nearest() ของบอร์ด */
   const defs = useMemo(() => {
@@ -622,7 +629,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
   /* ชุดที่ใช้เทียบกับ "ทะเบียนมาตรฐานของกลุ่ม" = **ทุกแถวในขอบเขตนี้ รวมแถวอัตโนมัติด้วย**
      ใบ KPI ทางการถ่วงน้ำหนักรวม 50 จาก KPI ทั้งใบ ไม่ได้แยกว่าใครเป็นคนกรอก ⇒ ส่งแต่ `defs`
      (เฉพาะกรอกมือ) จะนับน้ำหนักขาด และฟ้องว่าข้อบังคับที่ ESM คำนวณให้อยู่แล้ว (OEE/PPM) "ยังไม่ได้หยิบ" */
-  const defsForStd = useMemo(() => (allDefs || []).filter(d => sameScope(scopeOfDef(d), scope)), [allDefs, scope]);
+  const defsForStd = useMemo(() => (allDefs || []).filter(d => sameScope(canonicalScope(org, scopeOfDef(d)), kpiScope)), [allDefs, org, kpiScope]);
 
   /* นิยามของแถวอัตโนมัติ — เก็บ "เป้า/ทิศทาง/commitment" ไว้ที่ kpi_definitions (source='auto:<key>')
      ⚠️ ค่าไม่ได้มาจากที่นี่ (ระบบคำนวณเอง) แถวนิยามเก็บแค่เกณฑ์ตัดสิน                       */
@@ -630,11 +637,11 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
     const m = {};
     (allDefs || []).forEach(d => {
       if (!d.source?.startsWith('auto:')) return;
-      if (!sameScope(scopeOfDef(d), scope)) return;   // เป้าผูกกับขอบเขตที่กำลังดูเป๊ะ (ไม่ตกทอด — เป้า OEE ของแผนก ≠ เป้าของไลน์)
+      if (!sameScope(canonicalScope(org, scopeOfDef(d)), kpiScope)) return;   // เป้าผูกกับขอบเขตที่กำลังดูเป๊ะ (ไม่ตกทอด — เป้า OEE ของแผนก ≠ เป้าของไลน์)
       m[d.source.slice(5)] = d;
     });
     return m;
-  }, [allDefs, scope]);
+  }, [allDefs, org, kpiScope]);
 
   /* แถวของตาราง — เพิ่ม KPI ใหม่ = เพิ่ม entry ตรงนี้
      kind: bar = ปริมาณต่อเดือน · line = อัตรา/% (มินิกราฟ+กราฟใหญ่เลือกทรงตามนี้)
@@ -858,7 +865,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
       const { data: srcAll, error } = await supabase.from('kpi_definitions').select('*').eq('year', src).eq('is_active', true);
       if (error) { toast.error('อ่านชุดปี ' + be + ' ไม่สำเร็จ: ' + error.message); return; }
       // คัดลอกเฉพาะชุดของ "ขอบเขตนี้เป๊ะ" — ไม่ลากนิยามระดับแม่มาสร้างซ้ำในระดับลูก
-      const srcRows = (srcAll || []).filter(r => sameScope(scopeOfDef(r), scope));
+      const srcRows = (srcAll || []).filter(r => sameScope(canonicalScope(org, scopeOfDef(r)), kpiScope));
       if (!srcRows.length) { toast.error(`ปี ${be} ไม่มีชุด KPI ของ ${scopeLabel}`); return; }
       // ตัดตัวที่ปีนี้มีแล้ว (เทียบด้วย catalog_id ก่อน — ตกมาที่ชื่อเมื่อแถวเก่าไม่ผูกทะเบียน)
       const haveCat = new Set(defs.map(d2 => d2.catalog_id).filter(Boolean));
@@ -967,6 +974,12 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
         )}
       </FilterBar>
 
+      {ccAsUnit && (
+        <div style={{ ...card, fontSize: 12.5, color: 'var(--text2)', lineHeight: 1.6 }}>
+          💰 รหัส <b>{org.ccLabel ? org.ccLabel(scope.value) : scope.value}</b> = หน่วย <b>{org.labelOf(kpiScope.kind, kpiScope.value)}</b> —
+          KPI เก็บและแสดงที่หน่วยเจ้าของรหัส (ชุดเดียวกับเลือก {org.labelOf(kpiScope.kind, kpiScope.value)} ที่ช่องหน่วยงาน) · ตั้ง/แก้ที่นี่ = ตั้งให้หน่วยนั้น
+        </div>
+      )}
       <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.6 }}>
         นับเฉพาะ<b>กะที่ปิดแล้ว</b> — กะที่เปิดค้างยังไม่ถูกนับ · OEE = ค่า stamp ถ่วงน้ำหนักเวลารับภาระ ·
         PPM = ของเสีย ÷ ยอดที่ผลิตทั้งหมด (สแกนดี + เสีย) × 10⁶ ไม่รวมงานทดลอง (สูตรเดียวกับใบ KPI ของบริษัท — ยืนยัน 2026-09-07) ·
@@ -1650,7 +1663,7 @@ function DefModal({ init, year, scope, org, orgFailed = '', scopeSet, userSectio
   const [f, setF] = useState(() => ({
     id: init.id || null,
     catalog_id: init.catalog_id || '',
-    scope: init.id ? scopeOfDef(init) : { ...scope },   // แก้ = ขอบเขตเดิมของแถว · ใหม่ = ขอบเขตที่กำลังดู
+    scope: init.id ? canonicalScope(org, scopeOfDef(init)) : canonicalScope(org, scope),   // แก้ = ขอบเขตเดิมของแถว · ใหม่ = ขอบเขตที่กำลังดู · CC → หน่วยเจ้าของรหัส (15/10)
     category: init.category || 'internal',
     seq: init.seq ?? 0,
     name: init.kpi_catalog?.name || init.name || '',
@@ -1792,6 +1805,11 @@ function DefModal({ init, year, scope, org, orgFailed = '', scopeSet, userSectio
             <div style={lbl}>ขอบเขต (ตามผังองค์กร · โรงงาน = ทุกหน่วยงาน)</div>
             <OrgScopePicker index={org} value={f.scope} onChange={v => set('scope', v)} scopeSet={scopeSet} sections={userSections} failed={orgFailed}
               width="100%" inputStyle={inp} />
+            {f.scope?.kind === 'cost_center' && canonicalScope(org, f.scope).kind !== 'cost_center' && (
+              <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>
+                ↳ รหัสนี้เป็นของหน่วย <b>{org.labelOf(canonicalScope(org, f.scope).kind, canonicalScope(org, f.scope).value)}</b> — บันทึกที่หน่วยนั้น (เลือกหน่วยหรือรหัสก็เห็นแถวเดียวกัน)
+              </div>
+            )}
           </div>
           <div>
             <div style={lbl}>Commitment (ข้อความ เช่น ≤ 1.452%)</div>
