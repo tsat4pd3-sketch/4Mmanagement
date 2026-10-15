@@ -83,6 +83,19 @@ apply แล้วบน Main — ตาราง + RLS 2 policy + trigger `trg_
 
 migration `20261014_display_rotation_scope_main.sql` (**apply แล้ว 14/10** ผ่าน execute_sql ทีละคำสั่ง — policy ใช้ `alter policy`)
 
+## 🔒 role display = ดูอย่างเดียว (2026-10-15 · คำสั่ง user "ปิดหน้าที่บันทึกข้อมูลได้ของ role display")
+
+บัญชีจอเปิดค้างบนทีวี + รหัสผ่านร่วม + ไม่โดน idle-logout ⇒ หน้าที่ display บันทึกได้ = ใครเดินผ่านก็บันทึกแทนได้
+· migration `20261015_display_role_readonly_main.sql` (**apply แล้ว** · `allowed=false` 23 แถว ไม่ delete)
+· **ปิด**: checkin · daily-report · daily-pm · pm-check · bbs · lpa · pokayoke · morning-meeting · ojt-training · improvements ·
+  mtn-repair · pm-coordination · pm-schedule · management (สร้างใบ 4M ได้โดยไม่เช็คสิทธิ์) · line-stock · transport ·
+  doc-forms · qr-labels · fixture · npi · pe-docs · action `heijunka:operate` `rack_center:operate`
+· **เก็บ** (ปุ่มเขียนทุกปุ่มกันด้วย action ที่ display ไม่มี — ตรวจโค้ด 15/10): tv · dashboard · line-oee · factory-map · obeya ·
+  dept-dashboard · oee-analytics · manpower-board · mtn-analysis · mtn-layout · flow-tower · store-monitor · heijunka · rack-center ·
+  nm-board · pm-forecast · product-history · order-trace · report · skills-report · vsm · energy · remote · `report:export`
+· 🔴 **เปิดหน้าใหม่ให้ display = ต้องตรวจก่อนว่าทุกจุด insert/update/delete ในหน้านั้นกันด้วย `can()`** ที่ display ไม่มี
+  (`/management` เป็นตัวอย่างหน้าที่ดูเหมือนบอร์ดแต่สร้าง 4M ได้โดยไม่เช็คสิทธิ์)
+
 ## ยังไม่ทำ (เฟสถัดไป)
 
 - ตั้งรอบ "ต่อเครื่อง" (หลายจอใช้บัญชีเดียว แต่วนคนละชุด) — ต้องมีรหัสเครื่องในเบราว์เซอร์ ยังไม่มีคนขอ
