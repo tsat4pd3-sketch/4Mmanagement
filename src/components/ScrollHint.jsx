@@ -49,14 +49,15 @@ export default function ScrollHint() {
 
     // ตัวที่กำลังเลื่อนอยู่จริง: modal ที่เปิดล่าสุด (ถ้ามี) ไม่งั้นเป็นทั้งหน้า
     const pickTarget = () => {
-      const modals = document.querySelectorAll('.overlay, .modal-scroll');
+      // .m-scroll-host = กล่องเลื่อนข้างใน modal ที่ทำเอง (ติดเฉพาะมือถือ — จอคอมไม่มีคลาสนี้ ⇒ พฤติกรรมเดิม · 15/10)
+      const modals = document.querySelectorAll('.overlay, .modal-scroll, .m-scroll-host');
       const top = modals.length ? modals[modals.length - 1] : null;
       return top && top.scrollHeight > top.clientHeight + 1 ? top : pageScroller();
     };
 
     const check = () => {
       const el = pickTarget();
-      const bar = document.querySelector('.m-savebar');
+      const bar = document.querySelector('.m-savebar, .m-stickfoot');
       setLift(bar ? Math.round(bar.getBoundingClientRect().height) + 8 : 0);
       targetRef.current = el;
       if (!el) return setShow(false);
