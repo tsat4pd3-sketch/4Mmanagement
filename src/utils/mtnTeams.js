@@ -139,3 +139,26 @@ export function teamRowLockNote(row, code = '') {
     ? `รายการนี้เป็นของทีม ${deptNameOf(t)} — แก้/ลบได้เฉพาะทีมนั้นหรือหัวหน้า`
     : 'รายการนี้ทุกทีมใช้ร่วมกัน — แก้/ลบได้เฉพาะหัวหน้า (แก้ทีเดียวกระทบทุกทีม)'
 }
+
+/* ══ 🔐 "ทีมนี้เป็นของเราไหม" — ด่านชั้นที่ 3 ฝั่งช่าง (2026-10-15 · คำสั่ง user) ═══════════
+ * ฝั่งช่างใช้ **ทีม** เป็นแกน ไม่ใช่ส่วนงาน — เพราะช่างซ่อมข้ามไลน์เป็นงานปกติ
+ * (ใช้ `profiles.section` ตัดสินเหมือนจอผลิต = ช่าง JIG ซ่อมเครื่องของ PD3 ไม่ได้ = พังงานจริง)
+ * 🔴 **ไม่ผูกทีม = ไม่บล็อก** (`no_team_anchor`) — หลักเดียวกับ `canDoStep`: ไม่รู้ ≠ ปฏิเสธ
+ *    วัดจริง 15/10: role mtn 16/16 · leader 19/19 · supervisor 24/33 ตั้งทีมแล้ว ⇒ ด่านกัดจริง
+ *    (คอมเมนต์เก่าใน mtnStepPerm ที่ว่า "79% ยังไม่ตั้ง" ล้าสมัยแล้ว — วัดใหม่ 15/10)
+ * ══════════════════════════════════════════════════════════════════════════════════════ */
+export function canWriteTeam(myTeams, targetTeam, { allUnits = false, role } = {}) {
+  if (role === 'admin' || allUnits) return { ok: true, code: 'all_units' }
+  const mine = (Array.isArray(myTeams) ? myTeams : []).map(teamKeyOf).filter(Boolean)
+  if (!mine.length) return { ok: true, code: 'no_team_anchor' }   // ไม่รู้ทีมของคนกด = ไม่บล็อก
+  const t = teamKeyOf(targetTeam)
+  if (!t) return { ok: true, code: 'unknown_target' }             // แถวไม่ระบุทีม = ของกลาง
+  return mine.includes(t) ? { ok: true, code: 'own_team' } : { ok: false, code: 'other_team' }
+}
+
+/** ข้อความบอกคนกด — ต้องบอกทางแก้ ห้ามขึ้นแค่ "ไม่มีสิทธิ์" */
+export function teamBlockText(res, what = 'งานของทีมนี้') {
+  if (!res || res.ok) return ''
+  return `${what}เป็นของทีมช่างอื่น — ดูได้ แต่แก้ไม่ได้`
+    + ' (ให้ช่างทีมนั้นทำ หรือขอสิทธิ์ข้ามหน่วยงานจากแอดมิน)'
+}
