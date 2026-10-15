@@ -287,14 +287,50 @@ test('แผน vs มาจริง: ที่นั่ง = การ์ด+�
   assert.equal(s.night.noPlan, true);
   assert.equal(s.unknown.registered, 1); assert.equal(s.unknown.gap, null);
 
+  /* 🔴 15/10 — ขาด 2 ชนิดต้องแยก: คนขาด (absentGap) vs ช่องว่างอัตรากำลัง (structGap) */
+  assert.equal(D.absentGap, 3, 'ลา 1 + ขาด 1 + ยังไม่เช็ค 1 + ถูกยืมออก 1 − ยืมเข้า 1');
+  assert.equal(D.structGap, 2, 'ช่องว่างล้วน ไม่ใช่คนขาด');
+  assert.equal(D.gap, D.absentGap + D.structGap, 'รวมกันต้องเท่ากับขาดทั้งหมด');
+
   const sum = M.summarizeStaffing([
     { date: '2026-10-01', depts: [{ key: 'd', name: 'D', shifts: s }] },
-    { date: '2026-10-02', depts: [{ key: 'd', name: 'D', shifts: { ...s, day: { ...s.day, gap: -1, onFloor: 8 } } }] },
+    { date: '2026-10-02', depts: [{ key: 'd', name: 'D', shifts: { ...s, day: { ...s.day, gap: -1, absentGap: -1, onFloor: 8 } } }] },
   ])[0];
   assert.equal(sum.shifts, 2); assert.equal(sum.notChecked, 2);
-  assert.equal(sum.shortShifts, 1); assert.equal(sum.overShifts, 1); assert.equal(sum.short, 5);
-  assert.deepEqual(sum.worst, { date: '2026-10-01', shift: 'day', gap: 5 });
-  assert.equal(sum.fill, 10 / 14);
+  assert.equal(sum.shortShifts, 1, 'กะที่ "ขาดคน" นับจาก absentGap เท่านั้น — ช่องว่างไม่ใช่วันนี้ขาดคน');
+  assert.equal(sum.overShifts, 1); assert.equal(sum.short, 5);
+  assert.equal(sum.absentShort, 3); assert.equal(sum.structShort, 4, 'ช่องว่าง 2 × 2 กะ');
+  assert.deepEqual(sum.worst, { date: '2026-10-01', shift: 'day', gap: 3 }, 'ขาดหนักสุด = คนขาด ไม่ใช่ช่องว่าง');
+  assert.equal(sum.fill, 10 / 10, 'มาจริง ÷ คนในทะเบียน (ไม่ใช่ ÷ ที่นั่ง)');
+});
+
+test('แผน vs มาจริง: ② กะที่ยืนยันไม่ได้ว่าไลน์เดิน = ไม่คิดช่องว่าง · ③ ช่องว่างห้ามเกิน std − คนที่มาจริง', () => {
+  const op = (id, attend) => ({ id, attend, log: attend === 'unchecked' ? null : { is_present: attend === 'present' } });
+  /* จำลองเคสจริงที่ user แจ้ง 15/10: จุดงาน 15 จุด แต่กำลังคนตามผัง (std) = 10 และมาจริง 8
+     ⇒ ช่องว่างดิบ 7 (จากจุดงาน) ต้องถูกตัดเหลือ 2 = std 10 − มาจริง 8 */
+  const dept = (slots, plan) => ({
+    plan,
+    cols: [{ team: 'A', shift: 'day', slots, slotSource: 'station', ops: Array.from({ length: 8 }, (_, i) => op(`p${i}`, 'present')) }],
+  });
+
+  const capped = M.staffingOfDept(dept(7, { day: 10, night: null }));
+  assert.equal(capped.day.emptyRaw, 7, 'ค่าดิบจากจุดงานต้องเก็บไว้ให้ตรวจสอบได้');
+  assert.equal(capped.day.structGap, 2, 'เพดาน = std − คนที่มาจริง');
+  assert.equal(capped.day.capped, 5, 'ส่วนที่ตัดต้องนับไว้บอกบนจอ');
+  assert.equal(capped.day.seats, 10, 'ที่นั่ง = คนในทะเบียน 8 + ช่องว่างหลังตัด 2');
+
+  const noStd = M.staffingOfDept(dept(7, { day: null, night: null }));
+  assert.equal(noStd.day.structGap, 7, 'ไม่รู้ std = ไม่ตัดเพดาน (ห้ามเดา)');
+  assert.equal(noStd.day.capped, 0);
+
+  const notRun = M.staffingOfDept(dept(7, { day: 10, night: null }), { ran: { day: false, night: false } });
+  assert.equal(notRun.day.structGap, null, 'ยืนยันไม่ได้ว่าไลน์เดิน = null ห้ามเป็น 0');
+  assert.equal(notRun.day.ranKnown, false);
+  assert.equal(notRun.day.seats, 8, 'ที่นั่งเหลือเท่าคนในทะเบียน');
+
+  const sum = M.summarizeStaffing([{ date: '2026-10-01', depts: [{ key: 'd', name: 'D', shifts: notRun }] }])[0];
+  assert.equal(sum.structUnknownShifts, 1, 'ต้องนับกะที่คิดช่องว่างไม่ได้ ไว้เขียนบนจอ');
+  assert.equal(sum.structShort, 0);
 });
 
 test('rosterOn: ตัดคนที่เริ่มงานหลังวันนั้น · ไม่มี start_date = นับ · ปี พ.ศ./ค่าอนาคต ไม่ใช้ตัด · เช็คชื่อแล้วชนะ', () => {
