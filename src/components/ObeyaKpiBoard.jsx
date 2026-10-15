@@ -33,6 +33,7 @@ import { GAP, useSheetGrid, StatusLamp, Sheet, WarnNote, EmptyChart, FocusAxisNo
 import BoardPager from './BoardPager';
 import useFitHeight from '../utils/useFitHeight';
 import { packPages, clampPage, pageLabels, cellsUsed } from '../utils/boardPager';
+import useIsMobile from '../utils/useIsMobile';
 import { statusColor, gapToTarget } from '../utils/obeyaKpi';
 import {
   yearOf, monthKeys, monthLabel, lastDayOf, SUMMARY_KEY,
@@ -118,6 +119,9 @@ const monthEnd = (k, today) => {
 /** ป้ายสถานะ (คำ + เหตุผล) ให้ StatusLamp — คำชุดเดียวกับจอ SQDCM */
 const LAMP_LABEL = { good: 'ตามเป้า', warn: 'ถึง Commitment', bad: 'หลุดเป้า', none: 'ตัดสินไม่ได้' };
 const toLamp = (st, why) => ({ status: st === ST.unknown ? 'none' : st, label: st === ST.unknown ? (why?.startsWith('ยังไม่มี') || why?.startsWith('ยังไม่กรอก') ? 'ยังไม่มีข้อมูล' : 'ไม่มีเป้า') : LAMP_LABEL[st], why: why || '' });
+
+/* แผ่น KPI บนมือถือ: หัว (ชื่อ·ตัวเลขใหญ่·ไฟ) ~90px + กราฟ ~200px + ท้าย — อ่านออก ไม่ต้องเลื่อนในแผ่น */
+const MOBILE_SHEET_H = 330;
 
 export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
   const navigate = useNavigate();
@@ -675,7 +679,11 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
      ⚠️ ต้องประกาศ **ก่อน** คำนวณจำนวนหน้า เพราะจำนวนหน้าขึ้นกับความสูงที่วัดได้
      `null` = ที่ไม่พอจริง (มือถือหัวเพจสูง) ⇒ ถอยไปโหมดเลื่อนแบบเดิม */
   const [fitRef, availH] = useFitHeight(12, 120);
-  const fitOn = availH != null;
+  /* 📱 มือถือ (15/10 · MOBILE-UX-STANDARD §4 ชนิด D): ไม่ใช้โหมดพอดีจอ/แบ่งหน้า — แผ่นเรียงลงทีละใบ สูงคงที่
+     `MOBILE_SHEET_H` แล้วเลื่อนหน้าปกติ · เดิมแผ่นทรง A4 สูง 875px/ใบบนจอ 360×640 (1.4 จอต่อ KPI 1 ตัว · หน้ารวม ~7,000px)
+     จอคอม/TV = เหมือนเดิมเป๊ะ (desktopdiff) */
+  const isMobile = useIsMobile();
+  const fitOn = !isMobile && availH != null;
 
   /* ช่องต่อหน้า = คอลัมน์ × **แถวที่ลงจอจริง** — จอเตี้ย/จอแคบใส่ได้น้อยแถว ก็แบ่งหน้าเพิ่ม
      ห้ามบีบแผ่นให้เล็กลงเพื่อยัดลงจอ (ฟอนต์จะต่ำกว่า 11px = ผิดกติกา UI จอ TV) */
@@ -895,6 +903,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
        ที่ว่างเป็นแถบใหญ่ใต้บอร์ด (เห็นชัดตอนแบ่งหน้าบนจอเตี้ย) · จอที่เต็มพอดีได้ผลเท่าเดิมเป๊ะ */
     gridTemplateRows: `repeat(${rowsUsed}, minmax(0, 1fr))`,
     height: '100%',
+    ...(isMobile ? { gridTemplateColumns: 'minmax(0, 1fr)', gridTemplateRows: 'none', gridAutoRows: `${MOBILE_SHEET_H}px`, height: 'auto' } : null),
   };
   const noPlanN = rows.filter(r => r.forecast && r.forecast.value == null && r.forecast.reason === 'no_plan' && r.forecast.hasTarget).length;
   const warnLines = [
