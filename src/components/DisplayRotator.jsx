@@ -156,6 +156,44 @@ export default function DisplayRotator({ userId, role, disabled }) {
     chanRef.current?.track(presenceRef.current).catch(() => {});
   }, [idx, n, curPath, held]);
 
+  /* ── 🖥️ พอดีจอ (15/10 · user: "พอเปิดจอวน tv ไม่ควรมี overflow") ──
+     จอแขวนไม่มีใครเลื่อน ⇒ ของที่ล้นลงล่าง = ไม่มีใครเห็น · ย่อทั้งหน้า (CSS zoom ที่ <main>) ให้สูงพอดีจอ
+     · zoom (ไม่ใช่ transform) = layout คิดความกว้างใหม่ให้เต็มจอเอง ไม่เหลือขอบว่างด้านขวา · Chromium 94 รองรับ
+     · วัดซ้ำทุก 1.5 วิ (ข้อมูลโหลดทีหลัง/สลับมุมมอง) · เปลี่ยน < 2% ไม่ขยับ (กันจอสั่น) · ย่อสุด 55%
+     · ปิด scrollbar ของทั้งหน้าระหว่างวน · ออกจากโหมดวน = คืนค่าเดิมทั้งหมด
+     · หน้า /tv ไม่มี <main> (เต็มจออยู่แล้ว) = ไม่แตะ */
+  const pathKey = `${location.pathname}${location.search}`;
+  useEffect(() => {
+    if (!active) return undefined;
+    const html = document.documentElement;
+    const prev = { h: html.style.overflow, b: document.body.style.overflow };
+    html.style.overflow = 'hidden';
+    document.body.style.overflow = 'hidden';
+    let zoom = 1;
+    const fit = () => {
+      const m = document.querySelector('main');
+      if (!m) return;
+      const visual = m.getBoundingClientRect().height + 2;   // ความสูงที่เห็นจริง (คูณ zoom แล้ว)
+      const target = Math.max(0.55, Math.min(1, (zoom * window.innerHeight) / Math.max(1, visual)));
+      if (Math.abs(target - zoom) < 0.02) return;
+      zoom = Math.round(target * 100) / 100;
+      m.style.zoom = zoom >= 0.995 ? '' : String(zoom);
+    };
+    const t0 = setTimeout(fit, 300);
+    const id = setInterval(fit, 1500);
+    return () => {
+      clearTimeout(t0); clearInterval(id);
+      const m = document.querySelector('main');
+      if (m) m.style.zoom = '';
+      html.style.overflow = prev.h;
+      document.body.style.overflow = prev.b;
+    };
+  }, [active, pathKey]);
+
+  /* ชิปหดเล็กหลังเปลี่ยนหน้า 6 วิ (ไม่บังเนื้อหาจอ) · มีคนแตะ/หยุด/ข้ามหน้า = กางเต็ม */
+  const [changedAt, setChangedAt] = useState(() => Date.now());
+  useEffect(() => { setChangedAt(Date.now()); }, [pathKey]);
+
   if (loadErr) {
     return (
       <div style={chipStyle} title={loadErr}>⚠ โหลดรอบจอวนหน้าไม่สำเร็จ — จอจะค้างหน้านี้</div>
@@ -175,6 +213,16 @@ export default function DisplayRotator({ userId, role, disabled }) {
       onClick={() => { onClick(); setPausedUntil(0); }}
       style={btnStyle}>{label}</button>
   );
+
+  const compact = !held && pausedLeft === 0 && skipped.length === 0 && now - changedAt > 6000;
+  if (compact) {
+    return (
+      <div style={{ ...chipStyle, padding: '3px 9px', opacity: 0.55, gap: 6 }} role="status" aria-live="off"
+        title="แตะจอเพื่อหยุดวน / ดูปุ่มควบคุม">
+        🔁 {Math.min(idx, n - 1) + 1}/{n} · {fmtSec(Math.max(0, cur.sec - elapsed))}
+      </div>
+    );
+  }
 
   return (
     <div style={chipStyle} role="status" aria-live="off">

@@ -153,3 +153,15 @@ test('ทะเบียนตัวกรอง — showIf ต้องอ้�
     defs.filter(d => d.showIf).forEach(d => Object.keys(d.showIf).forEach(k => assert.ok(keys.has(k), `${p}:${d.key} → ${k}`)));
   }
 });
+
+import { minSecForPath } from '../displayRotation.js';
+
+test('minSecForPath — ผังโรงงานวนมุมมอง ต้องอยู่นานพอวนครบรอบ', () => {
+  assert.equal(minSecForPath('/factory-map?cycle=health,oee,ng&csec=20'), 60);
+  assert.equal(minSecForPath('/factory-map?cycle=health,oee'), 30);          // ค่าตั้งต้น 15 วิ/มุม
+  assert.equal(minSecForPath('/factory-map?cycle=health'), 0);              // มุมเดียว = ไม่วน
+  assert.equal(minSecForPath('/factory-map?cycle=1&csec=10'), 100);
+  assert.equal(minSecForPath('/tv?cycle=1'), 0);
+  const { playable } = buildPlaylist([{ path: '/factory-map?cycle=health,oee,ng', sec: 20 }], () => true);
+  assert.equal(playable[0].sec, 45);
+});
