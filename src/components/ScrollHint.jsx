@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import useIsMobile from '../utils/useIsMobile';
 
 /* ─── ScrollHint — บอก user ว่า "ยังมีเนื้อหาข้างล่าง เลื่อนต่อได้" ──────────────
@@ -20,14 +21,22 @@ import useIsMobile from '../utils/useIsMobile';
 
 const NEAR_BOTTOM = 24;   // เหลือไม่ถึงเท่านี้ = ถือว่าถึงล่างสุดแล้ว
 const MIN_SCROLL  = 40;   // เลื่อนได้น้อยกว่านี้ ไม่ต้องขึ้นชิป (กันขึ้นๆ หายๆ กวนตา)
+/* 👆 เลื่อนเองแล้วเกินเท่านี้ = รู้แล้วว่าเลื่อนได้ ⇒ ซ่อนชิปของตัวเลื่อนนั้นจนกว่าจะเปลี่ยนหน้า (2026-10-15 · handheld)
+   เดิมชิปค้างกลางล่างจอตลอดการเลื่อน ⇒ ทับปุ่มเขียวท้ายการ์ด ("✔ จ่าย Packaging" /RackCenter · ปุ่มผ่าน/ไม่ผ่าน Poka-Yoke)
+   คนใส่ถุงมือกดโดนชิปแทนปุ่ม · ชิปมีไว้บอก "ยังเลื่อนได้" — เลื่อนเป็นแล้ว หน้าที่ของมันจบ
+   โมดัลใหม่ = ตัวเลื่อนใหม่ ⇒ ขึ้นชิปใหม่ได้ (เก็บเป็น WeakSet ของ element ไม่ใช่ flag เดียวทั้งแอป) */
+const LEARNED_PX  = 80;
 
 export default function ScrollHint() {
   const isMobile = useIsMobile();
   const [show, setShow] = useState(false);
   const targetRef = useRef(null);
+  const learnedRef = useRef(new WeakSet());
+  const { pathname } = useLocation();
 
   useEffect(() => {
     if (!isMobile) { setShow(false); return; }
+    learnedRef.current = new WeakSet();   // เปลี่ยนหน้า = เริ่มนับใหม่ (body ตัวเดิม แต่เนื้อหาใหม่)
 
     // ⚠️ ตัวที่เลื่อนจริงของ "ทั้งหน้า" คือ <body> ไม่ใช่ <html>
     //   เพราะ index.css ตั้ง `html,body{height:100%}` + `overflow-x:hidden` ที่ body
@@ -48,6 +57,8 @@ export default function ScrollHint() {
       const el = pickTarget();
       targetRef.current = el;
       if (!el) return setShow(false);
+      if (el.scrollTop > LEARNED_PX) learnedRef.current.add(el);
+      if (learnedRef.current.has(el)) return setShow(false);
       const rest = el.scrollHeight - el.clientHeight - el.scrollTop;
       const scrollable = el.scrollHeight - el.clientHeight;
       setShow(scrollable > MIN_SCROLL && rest > NEAR_BOTTOM);
@@ -67,7 +78,7 @@ export default function ScrollHint() {
       window.removeEventListener('resize', check);
       mo.disconnect(); ro.disconnect();
     };
-  }, [isMobile]);
+  }, [isMobile, pathname]);
 
   if (!isMobile || !show) return null;
 
