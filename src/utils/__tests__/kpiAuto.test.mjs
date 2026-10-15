@@ -96,7 +96,7 @@ test('ข้อความที่มาของเลขรายเดื�
   const m = { breakdown_hr: 175.38, events: 337, machines: 216, closed: 8, on_target: 2, no_target: 0 };
   assert.equal(autoDetailText(m, 'mbd'), 'หยุด 175.4 ชม. · 337 ครั้ง · 216 เครื่อง');
   assert.equal(autoDetailText(m, 'mttr'), 'หยุด 175.4 ชม. ÷ 337 ครั้ง');
-  assert.equal(autoDetailText(m, 'mo_on_target'), 'ตรงเป้า 2/8 ใบ');
+  assert.equal(autoDetailText(m, 'mo_on_target'), 'ตรงเป้า 2/8 ใบ BM');
   assert.equal(autoDetailText(null, 'mbd'), '');
 });
 
