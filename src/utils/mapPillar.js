@@ -78,8 +78,21 @@ export const TILT_MIN = 25, TILT_MAX = 70;   // ต่ำกว่า 25 = แ�
 export const clampTilt = (t) => Math.max(TILT_MIN, Math.min(TILT_MAX, Number.isFinite(+t) ? +t : ORBIT_DEFAULT.tilt));
 /** มุมหมุน → ช่วง (-180, 180] — กันเลขบวมไม่สิ้นสุดตอนหมุนอัตโนมัติทั้งวันบนจอ TV */
 export const normDeg = (d) => { const x = ((Number(d) || 0) % 360 + 360) % 360; return x > 180 ? x - 360 : x; };
-/** ลากเมาส์/นิ้ว → มุมใหม่ (ซ้าย-ขวา = หมุน · ขึ้น-ลง = ก้ม/เงย) */
-export const orbitFromDrag = (start, dx, dy) => ({ rot: normDeg(start.rot + dx * 0.35), tilt: clampTilt(start.tilt - dy * 0.25) });
+/** 🔴 หมุนได้แค่รอบแกนตั้ง (Z) และ **ไม่ครบรอบ** — ±ROT_SPAN จากมุมเริ่มต้น (คำสั่ง user 15/10 "อย่าให้หมุน 360 องศา")
+ *  หมุนเลยครึ่งรอบ = ผังกลับหัว ซ้าย-ขวาสลับกับที่คนหน้างานคุ้น ⇒ หลงทิศ */
+export const ROT_SPAN = 45;
+export const ROT_MIN = ORBIT_DEFAULT.rot - ROT_SPAN, ROT_MAX = ORBIT_DEFAULT.rot + ROT_SPAN;
+/* ⚠️ ห้าม normDeg ก่อนบีบ — ลากไกลๆ แล้ววนเลข (1722° → -78°) จะเด้งไปขอบตรงข้าม */
+export const clampRot = (r) => Math.max(ROT_MIN, Math.min(ROT_MAX, Number.isFinite(+r) ? +r : ORBIT_DEFAULT.rot));
+/** ลากเมาส์/นิ้ว → มุมใหม่ (ซ้าย-ขวา = หมุน · ขึ้น-ลง = ก้ม/เงย) — บีบทั้ง 2 แกนในช่วงที่อนุญาต */
+export const orbitFromDrag = (start, dx, dy) => ({ rot: clampRot(start.rot + dx * 0.35), tilt: clampTilt(start.tilt - dy * 0.25) });
+/** ก้าวถัดไปของทัวร์ — แกว่งไป-กลับในช่วง (ไม่วนรอบ) · คืน { rot, dir } */
+export function tourNext(rot, dir, stepDeg = 22.5) {
+  let d = dir >= 0 ? 1 : -1;
+  let next = rot + d * stepDeg;
+  if (next > ROT_MAX + 0.01 || next < ROT_MIN - 0.01) { d = -d; next = rot + d * stepDeg; }
+  return { rot: clampRot(next), dir: d };
+}
 /** ขยับเกินกี่ px ถึงนับเป็น "ลากหมุน" ไม่ใช่ "คลิกเปิดไลน์" */
 export const DRAG_SLOP = 6;
 

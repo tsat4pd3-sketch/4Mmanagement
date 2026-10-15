@@ -2469,11 +2469,11 @@ export default function FactoryMap({ setupMode = false }) {
               {/* 🔄 มุมกล้อง — ลากบนผังก็หมุนได้ · ปุ่มไว้สำหรับจอ TV (ไม่มีเมาส์) · stopPropagation กันปุ่มเริ่ม "ลาก" */}
               <span onPointerDown={e => e.stopPropagation()} style={{ marginLeft: 'auto', display: 'inline-flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
                 <span>ลากบนผังเพื่อหมุน/ก้มเงย</span>
-                <button onClick={() => orbit.step(-45)} title="หมุนซ้าย 45°" style={{ ...miniTab(false), padding: '2px 8px', fontSize: 12 }}>⟲</button>
-                <button onClick={() => orbit.step(45)} title="หมุนขวา 45°" style={{ ...miniTab(false), padding: '2px 8px', fontSize: 12 }}>⟳</button>
+                <button onClick={() => orbit.step(-15)} title="หมุนซ้าย 15° (หมุนได้ไม่เกิน ±45° จากมุมเริ่ม)" style={{ ...miniTab(false), padding: '2px 8px', fontSize: 12 }}>⟲</button>
+                <button onClick={() => orbit.step(15)} title="หมุนขวา 15° (หมุนได้ไม่เกิน ±45° จากมุมเริ่ม)" style={{ ...miniTab(false), padding: '2px 8px', fontSize: 12 }}>⟳</button>
                 <button onClick={() => orbit.tiltBy(8)} title="ก้มลง (มองเฉียงขึ้น)" style={{ ...miniTab(false), padding: '2px 8px', fontSize: 12 }}>▼</button>
                 <button onClick={() => orbit.tiltBy(-8)} title="เงยขึ้น (มองจากบนมากขึ้น)" style={{ ...miniTab(false), padding: '2px 8px', fontSize: 12 }}>▲</button>
-                <button onClick={() => orbit.setAuto(a => !a)} title="หมุนรอบโรงงานเองช้าๆ ทีละ 45° (เหมาะกับจอแขวน)" style={{ ...miniTab(orbit.auto), padding: '2px 8px', fontSize: 11.5 }}>{orbit.auto ? '⏸ หยุดทัวร์' : '▶ ทัวร์'}</button>
+                <button onClick={() => orbit.setAuto(a => !a)} title="แกว่งมุมมองไป-กลับเองช้าๆ (เหมาะกับจอแขวน)" style={{ ...miniTab(orbit.auto), padding: '2px 8px', fontSize: 11.5 }}>{orbit.auto ? '⏸ หยุดทัวร์' : '▶ ทัวร์'}</button>
                 <button onClick={orbit.reset} title="กลับมุมเริ่มต้น" style={{ ...miniTab(false), padding: '2px 8px', fontSize: 11.5 }}>↺ มุมเดิม</button>
               </span>
             </div>

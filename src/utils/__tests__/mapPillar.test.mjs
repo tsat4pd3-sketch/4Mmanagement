@@ -73,3 +73,18 @@ test('orbitScale: มุมเริ่มต้น = 0.72 · หมุนจน
   assert.ok(orbitScale(62, 48, 0.56) < 0.72);
   assert.ok(orbitScale(0, 48, 0.56) <= 0.72 * 1.15);
 });
+
+import { clampRot, tourNext, ROT_MIN, ROT_MAX } from '../mapPillar.js';
+test('หมุนไม่ครบรอบ: บีบ ±45° จากมุมเริ่ม · ลากไกลแค่ไหนก็ไม่เลยขอบ', () => {
+  assert.equal(clampRot(500), ROT_MAX);
+  assert.equal(clampRot(-500), ROT_MIN);
+  assert.equal(clampRot(-28), -28);
+  assert.equal(orbitFromDrag({ rot: -28, tilt: 48 }, 5000, 0).rot, ROT_MAX);
+  assert.equal(orbitFromDrag({ rot: -28, tilt: 48 }, -5000, 0).rot, ROT_MIN);
+});
+test('ทัวร์แกว่งไป-กลับ ไม่วนรอบ', () => {
+  let st = { rot: -28, dir: 1 }; const seen = [];
+  for (let i = 0; i < 12; i++) { st = tourNext(st.rot, st.dir); seen.push(st.rot); }
+  assert.ok(seen.every(r => r >= ROT_MIN && r <= ROT_MAX));
+  assert.ok(seen.includes(ROT_MAX) && seen.includes(ROT_MIN));
+});
