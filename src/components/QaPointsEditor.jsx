@@ -28,6 +28,7 @@ import { specLabel } from '../utils/qaSpec';
 import { uploadOpts } from '../utils/storageUpload';
 import { checkWrite, checkWriteRows } from '../utils/dbWrite';
 import { QA_RANK, balloonSort, nextBalloonOf } from '../utils/qaPoints';
+import { writeBlockText } from '../utils/writeScope';
 
 const BUCKET = 'qa-drawings';
 const PIN_DEFAULT = '#4d9fff';
@@ -173,7 +174,7 @@ function TitlePicker({ current, used, onPick, onClose }) {
   );
 }
 
-export default function QaPointsEditor({ part, focusItemId, methodHist, onClose, onSaved }) {
+export default function QaPointsEditor({ part, focusItemId, methodHist, writeCheck, onClose, onSaved }) {
   const wide = useWideModal();
   const [loading, setLoading] = useState(true);
   const [loadErr, setLoadErr] = useState('');
@@ -308,6 +309,8 @@ export default function QaPointsEditor({ part, focusItemId, methodHist, onClose,
 
   const handleSave = async () => {
     setError('');
+    /* 🔐 ด่านซ้ำตอนกดจริง (audit สิทธิ์ 15/10) — หน้าแม่ซ่อนปุ่มแล้ว แต่ห้ามพึ่งการซ่อนปุ่มอย่างเดียว */
+    if (writeCheck && !writeCheck.ok) { setError(writeBlockText(writeCheck, { what: 'พาร์ทของไลน์นี้' })); return; }
     const blank = points.find(p => !p.characteristic.trim());
     if (blank) { jumpTo(blank._key); setError(`ใส่ชื่อจุดตรวจให้ครบ — ยังว่าง ${points.filter(p => !p.characteristic.trim()).length} จุด`); return; }
     const badSpec = points.find(p => p.item_type === 'variable' && p.usl !== '' && p.lsl !== '' && Number(p.usl) <= Number(p.lsl));

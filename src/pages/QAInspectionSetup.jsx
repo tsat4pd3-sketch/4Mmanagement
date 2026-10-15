@@ -9,15 +9,9 @@
  *
  * ตาราง: qa_parts, qa_part_drawings, qa_inspection_items (MAIN project) — เขียนได้เฉพาะ qa:manage
  */
-<<<<<<< HEAD
 import { useState, useEffect, useMemo, useCallback, useContext } from 'react';
 import { AnimatePresence } from 'framer-motion';
-=======
-import { useState, useEffect, useMemo, useCallback, useContext, useRef } from 'react';
-import { toDecodableImage } from '../utils/heicToJpeg';
-import { canWriteLine, writableRows, writeBlockText } from '../utils/writeScope';
-import imageCompression from 'browser-image-compression';
->>>>>>> origin/main
+import { canWriteLine, writeBlockText } from '../utils/writeScope';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { toast } from '../components/Toast';
 import { UserContext } from '../App';
@@ -155,6 +149,8 @@ export default function QAInspectionSetup() {
      (ทะเบียนจุดตรวจเป็นข้อมูลอ้างอิงของทั้งโรงงาน ซ่อน = คนหาไม่เจอแล้วสร้างซ้ำ) */
   const partWrite = useMemo(() => canWriteLine(wctx, (parts.find(p2 => p2.id === selId) || {}).line_name, lines),
     [wctx, parts, selId, lines]);
+  // แก้จุดตรวจ/แบบของพาร์ทนี้ได้ไหม = มีสิทธิ์ qa:manage และพาร์ทอยู่ในไลน์ส่วนงานตัวเอง
+  const canEdit = canManage && partWrite.ok;
   useEffect(() => { loadParts(); }, [loadParts]);
 
   useEffect(() => {
@@ -418,11 +414,11 @@ export default function QAInspectionSetup() {
             <div style={cardSt}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
                 <div style={{ fontWeight: 800, fontSize: 13.5 }}>🖼 Drawings ({drawings.length} แผ่น){sel.drawing_rev ? ` · Rev ${sel.drawing_rev}` : ''}</div>
-                {canManage && drawings.length > 0 && <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>แตะหมุด = ไปแก้จุดนั้น</div>}
+                {canEdit && drawings.length > 0 && <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>แตะหมุด = ไปแก้จุดนั้น</div>}
               </div>
               {drawings.length === 0 ? (
                 <div style={{ padding: 46, textAlign: 'center', color: 'var(--muted)', fontSize: 13, border: '2px dashed var(--border2)', borderRadius: 10 }}>
-                  ยังไม่มี drawing — {canManage ? 'กด "🎯 ตั้งค่าจุดตรวจ & Drawing" เพื่อเพิ่มแผ่น (รูปภาพหรือ PDF ≤20MB) แล้วปักหมุด' : 'รอ QA อัพโหลด'}
+                  ยังไม่มี drawing — {canEdit ? 'กด "🎯 ตั้งค่าจุดตรวจ & Drawing" เพื่อเพิ่มแผ่น (รูปภาพหรือ PDF ≤20MB) แล้วปักหมุด' : 'รอ QA อัพโหลด'}
                 </div>
               ) : (() => {
                 const frames = drawings.map(d => ({ _key: d.id, _preview: d.drawing_url, title: d.title, isPdf: /\.pdf($|\?)/i.test(d.drawing_url || '') }));
@@ -437,7 +433,7 @@ export default function QAInspectionSetup() {
                       label_dx: i.label_dx, label_dy: i.label_dy,
                       color: i.rank ? QA_RANK[i.rank]?.color : '#4d9fff' }))}
                     pinHasDetail={Object.fromEntries(items.map(i => [i.id, !!i.image_path]))}
-                    onPinClick={key => { if (canManage) setEditor({ focusItemId: key }); }} />
+                    onPinClick={key => { if (canEdit) setEditor({ focusItemId: key }); }} />
                 );
               })()}
             </div>
@@ -449,7 +445,7 @@ export default function QAInspectionSetup() {
                   📋 มาตรฐานการตรวจ ({items.length} จุด
                   {items.some(i => i.rank) ? ` · Rank M ${items.filter(i => i.rank === 'M').length} / SC ${items.filter(i => i.rank === 'SC').length}` : ''})
                 </div>
-                {canManage && (
+                {canEdit && (
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                     <button style={btnSt()} onClick={() => setEditor({})}>🎯 แก้ไข / เพิ่มจุดตรวจ</button>
                   </div>
@@ -488,7 +484,7 @@ export default function QAInspectionSetup() {
                         <td style={tdSt}>{[it.frequency, it.sample_size != null ? `n=${it.sample_size}` : null].filter(Boolean).join(' · ') || '—'}</td>
                         {canManage && (
                           <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>
-                            <button className="tbtn" title="แก้ไขจุดนี้ (เปิดตั้งค่าจุดตรวจที่การ์ดของจุดนี้)" onClick={() => setEditor({ focusItemId: it.id })} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}>✏️</button>
+                            {canEdit && <button className="tbtn" title="แก้ไขจุดนี้ (เปิดตั้งค่าจุดตรวจที่การ์ดของจุดนี้)" onClick={() => setEditor({ focusItemId: it.id })} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}>✏️</button>}
                             {it.item_type === 'variable' && (
                               <button className="tbtn" title="สร้างจุดควบคุม SPC จากจุดตรวจนี้" onClick={() => sendToSPC(it)}
                                 style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: 'var(--accent)', fontWeight: 800 }}>→SPC</button>
@@ -499,7 +495,7 @@ export default function QAInspectionSetup() {
                     ))}
                     {items.length === 0 && (
                       <tr><td style={tdSt} colSpan={9}>
-                        <span style={{ color: 'var(--muted)' }}>ยังไม่มีจุดตรวจ{canManage ? ' — กด "🎯 แก้ไข / เพิ่มจุดตรวจ"' : ''}</span>
+                        <span style={{ color: 'var(--muted)' }}>ยังไม่มีจุดตรวจ{canEdit ? ' — กด "🎯 แก้ไข / เพิ่มจุดตรวจ"' : ''}</span>
                       </td></tr>
                     )}
                   </tbody>
@@ -584,8 +580,8 @@ export default function QAInspectionSetup() {
 
       {/* ── 🎯 ตั้งค่าจุดตรวจ + Drawing — โมดัลเดียวกับ PM (ระบบเดียว เรียนครั้งเดียว · 15/10) ── */}
       <AnimatePresence>
-        {editor && sel && canManage && (
-          <QaPointsEditor part={sel} focusItemId={editor.focusItemId} methodHist={methodHist}
+        {editor && sel && canEdit && (
+          <QaPointsEditor part={sel} focusItemId={editor.focusItemId} methodHist={methodHist} writeCheck={partWrite}
             onClose={() => setEditor(null)}
             onSaved={() => { setEditor(null); loadItems(sel.id); loadDrawings(sel.id); loadParts(); }} />
         )}
