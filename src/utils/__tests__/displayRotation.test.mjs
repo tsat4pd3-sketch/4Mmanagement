@@ -135,3 +135,21 @@ test('ทะเบียนตัวกรอง — ทุกตัว select �
     defs.filter(d => d.kind === 'select').forEach(d => assert.ok(d.options?.length, `${p}:${d.key}`));
   }
 });
+
+import { paramVisible } from '../displayRotation.js';
+
+test('paramVisible — ช่องที่ผูกกับแท็บโชว์เฉพาะแท็บนั้น (ยังไม่เลือกแท็บ = "")', () => {
+  const d = { key: 'period', showIf: { tab: ['sqdcm'] } };
+  assert.equal(paramVisible(d, { tab: 'sqdcm' }), true);
+  assert.equal(paramVisible(d, { tab: 'kpi' }), false);
+  assert.equal(paramVisible(d, {}), false);
+  assert.equal(paramVisible({ key: 'x', showIf: { tab: ['', 'kpi'] } }, {}), true);
+  assert.equal(paramVisible({ key: 'x' }, {}), true);
+});
+
+test('ทะเบียนตัวกรอง — showIf ต้องอ้างคีย์ที่มีอยู่ในหน้าเดียวกัน', () => {
+  for (const [p, defs] of Object.entries(DISPLAY_PAGE_PARAMS)) {
+    const keys = new Set(defs.map(d => d.key));
+    defs.filter(d => d.showIf).forEach(d => Object.keys(d.showIf).forEach(k => assert.ok(keys.has(k), `${p}:${d.key} → ${k}`)));
+  }
+});

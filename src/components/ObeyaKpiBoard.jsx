@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useContext, useRef } from 'react';
+import { urlBool } from '../utils/urlInit';
 import { lineNameCompare } from '../utils/lineHierarchy';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Cell, LabelList } from 'recharts';
@@ -136,7 +137,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
   const [showSafety, setShowSafety] = useState(null);   // null | {} | event
-  const [board, setBoard] = useState(false);            // โหมดจอ TV = ซ่อนหัวเพจ เต็มจอ (pattern เดียวกับ SQDCM)
+  const [board, setBoard] = useState(() => urlBool('board', false)); // โหมดจอ TV = ซ่อนหัวเพจ เต็มจอ · ?board=1 จากจอวนหน้า
   /* 👁 แผ่น Machine Break Down ดูได้ 2 หน่วย (user 13/10 "ไม่ต้องแก้ แต่เพิ่มให้ดูได้ทั้ง 2 หน่วย") — KPI ทางการยังเป็น % ·
      มุมมอง "ชม." = ชั่วโมงเครื่องหยุด แปลงจาก % ด้วยฐานเดียวกับสูตร (730 × จำนวนเครื่อง ÷ 100) **ไม่แตะข้อมูล/เป้า** · สถานะไฟตัดสินจาก % เหมือนเดิม */
   const [hrRows, setHrRows] = useState(() => new Set());
