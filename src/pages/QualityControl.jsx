@@ -597,7 +597,12 @@ function QualityDashboard() {
 const EMPTY_CHAR = { part_no: '', part_name: '', line_name: '', characteristic: '', unit: 'mm', nominal: '', usl: '', lsl: '', subgroup_size: 5, gauge: '', control_method: '' };
 
 function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [] }) {
-  const { fullName } = useContext(UserContext);
+  const { fullName, role, section: homeSection, sections: mySections, allUnits } = useContext(UserContext);
+  /* 🔐 จุดควบคุม SPC ผูกไลน์ ⇒ ลงค่าวัด/ลบค่าวัด/แก้ spec ได้เฉพาะไลน์ส่วนงานตัวเอง (audit 15/10)
+     เดิม `loadChars()` ดึงทุกไลน์ ⇒ เลือกจุดของไลน์อื่นแล้วลงค่าทับ Cpk ของเขาได้
+     ขา QA ถือ `scope:all_units` จึงไม่กระทบ */
+  const wctx = useMemo(() => ({ role, section: homeSection, sections: mySections, allUnits }),
+    [role, homeSection, mySections, allUnits]);
   // 📜 ค่าที่เคยบันทึกใน qa_characteristics (Main) — พาร์ท/เกจที่ทะเบียนยังไม่มี ยังเลือกซ้ำได้ ไม่หายเงียบ (2026-09-07)
   const partHist = useColumnHistory(supabase, 'qa_characteristics', 'part_no', { upper: true });
   const gaugeHist = useColumnHistory(supabase, 'qa_characteristics', 'gauge');
@@ -610,6 +615,7 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
   const [loading, setLoading] = useState(false);
 
   const sel = chars.find(c => c.id === selId) || null;
+  const selWrite = canWriteLine(wctx, sel?.line_name, lineObjs);
 
   const loadChars = useCallback(async () => {
     const { data } = await supabase.from('qa_characteristics').select('*').order('part_no').order('characteristic');
@@ -660,6 +666,9 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
   const saveChar = async () => {
     const f = charModal;
     if (!f.part_no.trim() || !f.characteristic.trim()) { toast.error('กรอก Part No. และชื่อจุดควบคุม'); return; }
+    /* 🔐 ด่านซ้ำตอนเขียนจริง — ไลน์ปลายทางมาจากฟอร์ม (เปลี่ยนได้) */
+    const wc = canWriteLine(wctx, f.line_name, lineObjs);
+    if (!wc.ok) { toast.error(writeBlockText(wc, { what: 'จุดควบคุมของไลน์นี้' })); return; }
     if (f.usl !== '' && f.lsl !== '' && Number(f.usl) <= Number(f.lsl)) { toast.error('USL ต้องมากกว่า LSL'); return; }
     const payload = {
       part_no: f.part_no.trim(), part_name: f.part_name.trim() || null, line_name: f.line_name || null,
@@ -681,6 +690,7 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
 
   const saveMeasurement = async () => {
     if (!sel) return;
+    if (!selWrite.ok) { toast.error(writeBlockText(selWrite, { what: 'ผลวัดของไลน์นี้' })); return; }
     const vals = readings.map(v => Number(v));
     if (readings.some(v => v === '' || !Number.isFinite(Number(v)))) { toast.error(`กรอกค่าวัดให้ครบ ${sel.subgroup_size} ค่า`); return; }
     const { error } = await supabase.from('qa_measurements').insert({
@@ -694,6 +704,7 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
   };
 
   const delMeasurement = async (id) => {
+    if (!selWrite.ok) { toast.error(writeBlockText(selWrite, { what: 'ผลวัดของไลน์นี้' })); return; }
     if (!window.confirm('ลบผลวัดชุดนี้?')) return;
     const { error } = await supabase.from('qa_measurements').delete().eq('id', id);
     if (error) { toast.error(error.message); return; }
@@ -1557,6 +1568,11 @@ function calState(inst) {
 }
 
 function InstrumentTab({ lineObjs, canManage }) {
+  /* 🔐 เครื่องมือวัดมี "ไลน์ประจำ" ⇒ แก้รอบ calibration/สถานะ ได้เฉพาะไลน์ส่วนงานตัวเอง (audit 15/10)
+     เครื่องมือที่ไม่ผูกไลน์ (ของกลาง/ห้อง cal) = ตัดสินไม่ได้ ⇒ ไม่บล็อก */
+  const { role, section: homeSection, sections: mySections, allUnits } = useContext(UserContext);
+  const instCtx = useMemo(() => ({ role, section: homeSection, sections: mySections, allUnits }),
+    [role, homeSection, mySections, allUnits]);
   // ตำแหน่ง/แผนกของเครื่องมือ = หน่วยงานในผังองค์กร (org_nodes) — เดิมพิมพ์เอง (2026-09-07)
   const orgSections = useOrgSections();
   const deptsOf = useOrgDepts();
@@ -1583,6 +1599,8 @@ function InstrumentTab({ lineObjs, canManage }) {
       last_calibrated: f.last_calibrated || null, cal_by: f.cal_by.trim() || null,
       cert_no: f.cert_no.trim() || null, status: f.status, remark: f.remark.trim() || null,
     };
+    const wi = canWriteLine(instCtx, f.line_name, lineObjs);
+    if (!wi.ok) { toast.error(writeBlockText(wi, { what: 'เครื่องมือวัดของไลน์นี้' })); return; }
     const { error } = f.id
       ? await supabase.from('qa_instruments').update(payload).eq('id', f.id)
       : await supabase.from('qa_instruments').insert(payload);

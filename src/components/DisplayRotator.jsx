@@ -5,6 +5,7 @@ import { canAccessPage } from '../utils/permissions';
 import {
   normalizeConfig, buildPlaylist, stepIndex, indexOfLocation, resolveIndex, shouldReload,
   displayChannelName, parseDisplayCmd, ROT_NAV_STATE, fmtSec, SKIP_REASON_LABEL, markQuietReload,
+  setActiveDwellSec,
 } from '../utils/displayRotation';
 
 /* ══ 📺 DisplayRotator — จอวนหน้าเอง ตามแผนของบัญชีที่ login ══════════════════════════
@@ -99,6 +100,8 @@ export default function DisplayRotator({ userId, role, disabled }) {
   const active = !!cfg && cfg.enabled && playable.length > 0 && !disabled;
   const n = playable.length;
   const cur = active ? playable[Math.min(idx, n - 1)] : null;
+  /* บอกบอร์ดที่แบ่งหน้าภายในว่าหน้านี้ค้างกี่วิ (boardFlipSec) — ออกจากรอบ = ล้าง */
+  useEffect(() => { setActiveDwellSec(active && cur ? cur.sec : null); return () => setActiveDwellSec(null); }, [active, cur]);
 
   /* 📺 โหมดจอ TV ทุกหน้า (15/10 · user "จอทีวี ให้เป็นโหมดจอ TV (ซ่อนหัวเพจ) ทุกหน้าเลย") — บัญชี role display
      ไม่มีคนกด ⇒ หัวเพจ (ชื่อหน้า · แท็บ · แถบกรอง) = พื้นที่เปล่า · แท็บ/ตัวกรองตั้งจากลิงก์ที่ /display-rotation แทน

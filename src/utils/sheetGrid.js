@@ -65,3 +65,25 @@ export function chooseSheetGrid(w, h, sheets = 10) {
     fit: best.cells >= want, k: clamp(best.cw / 330, 0.72, 2.4), bw: w, bh: h,
   };
 }
+
+/**
+ * ⚖️ เกลี่ยแผ่นให้เท่ากันทุกหน้า (15/10 · user: "เกลี่ยหน้าแรกเหลือ 8 การ์ด ที่เหลือไปหน้า 2")
+ * ผัง 5×2 ใส่ได้ 10 · มี 14 แผ่น ⇒ เดิม 10 + 4 (หน้า 2 โหรงเหรง) · ใหม่: จำนวนหน้าเท่าเดิม (2) แต่ลดคอลัมน์
+ * ให้ต่อหน้า = ⌈14/2⌉ = 7 → ⌈7/2 แถว⌉ = 4 คอลัมน์ ⇒ 8 + 6 · แผ่นกว้างขึ้น (ไม่เคยเล็กลง = ไม่ผิดกติกาจอ TV)
+ * · ใส่ครบหน้าเดียวอยู่แล้ว / คอลัมน์ไม่ลด = คืนผังเดิม (อ้างอิงเดิม ไม่สร้าง object ใหม่)
+ * · จำนวนแถวคงเดิมเสมอ (ความสูงแผ่นมาจากที่วัดจริง) · กว้าง = เต็มคอลัมน์ · สูง ≤ สัดส่วน A4 (กติกาเดียวกับ chooseSheetGrid)
+ */
+export function balanceGrid(grid, total) {
+  const n = Math.max(0, Math.floor(Number(total) || 0));
+  if (!grid || !(grid.cols > 0) || !(grid.rows > 0) || !(grid.bw > 0) || !(grid.bh > 0)) return grid;
+  const cells = grid.cols * grid.rows;
+  if (n <= cells) return grid;
+  const pagesN = Math.ceil(n / cells);
+  const perPage = Math.ceil(n / pagesN);
+  const cols = Math.max(1, Math.ceil(perPage / grid.rows));
+  if (cols >= grid.cols) return grid;
+  const cw = (grid.bw - GAP * (cols - 1)) / cols;
+  const chRow = (grid.bh - GAP * (grid.rows - 1)) / grid.rows;
+  const ch = Math.min(chRow, cw / A4);
+  return { ...grid, cols, cw, ch, k: clamp(cw / 330, 0.72, 2.4), balanced: true };
+}

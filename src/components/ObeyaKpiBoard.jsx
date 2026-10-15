@@ -30,6 +30,8 @@ import { checkWriteRows } from '../utils/dbWrite';
 import { loadPmTeams, pmTeamsSync } from '../utils/pmTeams';
 import { mtnAutoSeries, autoKpiOfName, toRowUnit, autoDetailText, HOURS_PER_MONTH } from '../utils/kpiAuto';
 import { GAP, useSheetGrid, StatusLamp, Sheet, WarnNote, EmptyChart, FocusAxisNote } from './ObeyaSheet';
+import { balanceGrid } from '../utils/sheetGrid';
+import { boardFlipSec } from '../utils/displayRotation';
 import BoardPager from './BoardPager';
 import useFitHeight from '../utils/useFitHeight';
 import { packPages, clampPage, pageLabels, cellsUsed } from '../utils/boardPager';
@@ -668,7 +670,16 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
   const overdue = todo.filter(x => x.due && x.due < date).length;
 
   // ── ผังกระดาษ (ชุดเดียวกับจอ SQDCM) ──────────────────────────────────────────────
-  const grid = useSheetGrid(wrapRef, 10);
+  /* ⚠️ ต้องนับ **ทุกแผ่นบนกริด** ไม่ใช่แค่แถว KPI — ท้ายบอร์ดมีแผ่นประจำอีก 1 ใบ
+     (🚨 งานที่ต้องตามแก้ · เดิมมี 📌 Key Performance ด้วย — 05/10 แตกเป็นแผ่นรายตัวแล้ว) ถ้าลืมนับ พอ KPI เพิ่มจนเต็มหน้า
+     ใบนี้จะถูกวาดทับทุกหน้า = ล้นเหมือนเดิม */
+  const sheetItems = useMemo(() => [
+    ...rows.map((r) => ({ kind: 'kpi', key: r.key, row: r, title: r.name })),
+    { kind: 'todo', key: '__todo', title: '🚨 งานที่ต้องตามแก้' },
+  ], [rows]);
+  /* ⚖️ 15/10 (user: "เกลี่ยหน้าแรกเหลือ 8 การ์ด ที่เหลือไปหน้า 2") — เกินหน้าเดียวเมื่อไหร่ เกลี่ยให้ทุกหน้าใกล้เคียงกัน
+     โดยลดคอลัมน์ (แผ่นกว้างขึ้น ไม่เคยเล็กลง) · `balanceGrid` pure มีเทส */
+  const grid = balanceGrid(useSheetGrid(wrapRef, 10), sheetItems.length);
   const { cols, cw, ch, fit, k } = grid;
 
   /* ── 📖 แบ่งหน้าแทนการเลื่อน (25/09 · คำสั่ง user "ดูจบได้ในหน้าเดียว … กดเปลี่ยนหน้า") ──
@@ -691,18 +702,20 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
     ? (grid.rows || 1)
     : Math.max(1, Math.floor(((grid.bh || 0) + GAP) / ((grid.ch || 1) + GAP)));
   const perPage = Math.max(1, (grid.cols || 1) * rowsFit);
-  /* ⚠️ ต้องนับ **ทุกแผ่นบนกริด** ไม่ใช่แค่แถว KPI — ท้ายบอร์ดมีแผ่นประจำอีก 2 ใบ
-     (🚨 งานที่ต้องตามแก้ · เดิมมี 📌 Key Performance ด้วย — 05/10 แตกเป็นแผ่นรายตัวแล้ว) ถ้าลืมนับ พอ KPI เพิ่มจนเต็มหน้า
-     2 ใบนี้จะถูกวาดทับทุกหน้า = หน้าละ 12 ช่องบนกริด 10 ช่อง ⇒ กลับไปล้นเหมือนเดิม */
-  const sheetItems = useMemo(() => [
-    ...rows.map((r) => ({ kind: 'kpi', key: r.key, row: r, title: r.name })),
-    { kind: 'todo', key: '__todo', title: '🚨 งานที่ต้องตามแก้' },
-  ], [rows]);
   const pages = useMemo(() => (fitOn ? packPages(sheetItems, perPage) : [sheetItems]),
     [sheetItems, perPage, fitOn]);
   const [pgRaw, setPg] = useState(0);
   const pg = clampPage(pgRaw, pages.length);          // เปลี่ยนขอบเขต/เดือนแล้วหน้าหาย ⇒ เด้งกลับ ห้ามจอว่าง
   const pageItems = pages[pg] || [];
+  /* 📺 โหมดจอ + มีหลายหน้า = สลับหน้าเองให้ครบก่อนจอวนต่อ (15/10 · user) — จังหวะ = เวลาที่จอวนค้างหน้านี้ ÷ จำนวนหน้า
+     (`boardFlipSec` · ไม่ได้อยู่ในรอบวน = ค่าตั้งต้นของจอวน) · `pg` ใน deps = คนกด ◀▶ เอง → นับเวลาใหม่จากหน้านั้น */
+  useEffect(() => {
+    if (!board || pages.length < 2) return undefined;
+    const sec = boardFlipSec(pages.length);
+    if (!sec) return undefined;
+    const id = setInterval(() => setPg((pg + 1) % pages.length), sec * 1000);
+    return () => clearInterval(id);
+  }, [board, pages.length, pg]);
   const has = (kind) => pageItems.some((x) => x.kind === kind);
   const pgLabels = useMemo(() => pageLabels(pages, (x) => x?.title), [pages]);
 
