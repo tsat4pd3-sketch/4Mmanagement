@@ -182,7 +182,8 @@ export default function WipBetweenSteps() {
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
               <b style={{ fontSize: 14 }}>🎯 {pm}</b>
               <span style={{ color: 'var(--text2)', fontSize: 12.5 }}>{chainView.parentName || ''}</span>
-              {chainView.parentLine && <span style={chip('rgba(61,214,92,0.1)', 'var(--accent)')}>🏭 {chainView.parentLine}</span>}
+              {/* ชื่อไลน์ยาวได้ ⇒ ยอมตัดบรรทัด ไม่งั้นชิป nowrap ล้นขอบจอ handheld 360px (15/10) */}
+              {chainView.parentLine && <span style={{ ...chip('rgba(61,214,92,0.1)', 'var(--accent)'), whiteSpace: 'normal', maxWidth: '100%' }}>🏭 {chainView.parentLine}</span>}
               {chainView.parentIsProduced
                 ? <span style={chip('rgba(61,214,92,0.1)', 'var(--accent)')}>ปลายทางผลิตสะสม {parentCum.toLocaleString()}</span>
                 : <span style={chip('rgba(107,114,128,0.1)', 'var(--muted)')} title="parent เป็นพาร์ทซื้อนอก/ยังไม่มีใบผลิต — แสดงเฉพาะยอดสะสมของขั้น">ปลายทางไม่มีใบผลิต</span>}

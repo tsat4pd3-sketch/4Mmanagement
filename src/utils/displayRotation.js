@@ -147,3 +147,111 @@ export function cleanItemsForSave(items) {
     .filter(it => it.path)
     .slice(0, ROT_LIMITS.maxItems);
 }
+
+/* ══ ขอบเขตส่วนงาน — ใครตั้ง/สั่งจอไหนได้ (2026-10-14 · คำสั่ง user) ══════════════════════
+   "admin ของแต่ละส่วนงาน setup จอของส่วนงานตัวเองได้ ห้าม setup ข้ามกันมั่ว"
+   🔴 ฝั่ง DB ตัดสินด้วย `fn_can_manage_display()` (migration 20261014_display_rotation_scope_main.sql)
+      **ตรรกะต้องตรงกับฟังก์ชันนี้** — จอนี้มีไว้กรองลิสต์/ปิดปุ่ม ด่านจริงคือ RLS                         */
+const normSec = (s) => String(s ?? '').trim().toLowerCase();
+
+/** ส่วนงานของบัญชีจอ (profiles) — sections ก่อน แล้วค่อย section เดี่ยว */
+export function sectionsOfProfile(p) {
+  const arr = Array.isArray(p?.sections) ? p.sections.filter(Boolean) : [];
+  if (arr.length) return arr;
+  return p?.section ? [p.section] : [];
+}
+
+/**
+ * ผู้ตั้งค่าที่มีขอบเขต `managerSections` (ผลของ effectiveSections · `[]` = ทั้งโรงงาน)
+ * ตั้ง/สั่งจอที่อยู่ส่วนงาน `targetSections` ได้ไหม
+ * · ผู้ตั้งทั้งโรงงาน = ได้ทุกจอ
+ * · จอที่ไม่ได้ตั้งส่วนงาน (= เห็นทั้งโรงงาน) = **เฉพาะผู้ตั้งทั้งโรงงาน** (ไม่งั้นแอดมิน PD3 ตั้งจอที่เห็น PD1 ได้)
+ * · จอหลายส่วนงาน = ผู้ตั้งต้องครอบ **ทุก** ส่วนงานของจอ
+ */
+export function canManageDisplay(managerSections, targetSections) {
+  const mine = (Array.isArray(managerSections) ? managerSections : []).map(normSec).filter(Boolean);
+  if (!mine.length) return true;
+  const tgt = (Array.isArray(targetSections) ? targetSections : []).map(normSec).filter(Boolean);
+  if (!tgt.length) return false;
+  return tgt.every(s => mine.includes(s));
+}
+
+/* ══ สั่งจอจากหน้าตั้งค่า (Realtime broadcast · ไม่มีตาราง) ════════════════════════════════
+   จอ (DisplayRotator) เปิดช่อง `esm-display-<user_id>` · ส่ง presence = ตอนนี้อยู่หน้าไหน
+   คำสั่งที่จอยอมทำ (ห้ามเพิ่ม "ไปที่ path ใดก็ได้" — ใครรู้ id ก็ส่งได้ จึงจำกัดให้สลับได้แค่หน้าในรอบ):
+     goto {idx} · next · prev · hold · resume · reload                                            */
+export const displayChannelName = (userId) => `esm-display-${userId}`;
+export const DISPLAY_CMDS = Object.freeze(['goto', 'next', 'prev', 'hold', 'resume', 'reload']);
+
+/** คำสั่งที่รับมา → การกระทำที่ปลอดภัย (null = ไม่ทำ) */
+export function parseDisplayCmd(p, n) {
+  const type = p?.type;
+  if (!DISPLAY_CMDS.includes(type)) return null;
+  if (type === 'goto') {
+    const i = Number(p.idx);
+    if (!Number.isInteger(i) || i < 0 || i >= n) return null;
+    return { type, idx: i };
+  }
+  return { type };
+}
+
+/* ══ ตัวกรองต่อหน้า (แท็บ/ไลน์/ส่วนงานผ่าน ?query) ═════════════════════════════════════════
+   "จอ 1 เปิด OEE ของ Apron Assy · จอ 2 ของ Hydroform ทำยังไง" ⇒ แต่ละหน้ารับตัวกรองทาง URL ไม่เหมือนกัน
+   ทะเบียนนี้ = **ชุดที่หน้านั้นอ่านจริง** (ตรวจจากโค้ดหน้านั้น 14/10) ห้ามใส่ param ที่หน้าไม่อ่าน
+   (ใส่แล้วไม่มีผล = คนตั้งเชื่อว่ากรองแล้ว แต่จอยังโชว์ทั้งส่วนงาน)
+   · หน้าที่ไม่อยู่ในทะเบียน = ยังพิมพ์ต่อท้ายลิงก์เองได้ (ช่อง "ขั้นสูง") · เพิ่มหน้า = อ่านโค้ดหน้านั้นก่อน
+   kind: 'select' (options) · 'line' (ชื่อไลน์ · LineSelect) · 'section' (ชื่อส่วนงาน)             */
+export const DISPLAY_PAGE_PARAMS = Object.freeze({
+  '/tv': [
+    { key: 'dept', label: 'มุมมอง', kind: 'select', options: [
+      { value: 'maintenance', label: '🔧 ช่างซ่อมบำรุง' }, { value: 'production', label: '🏭 ฝ่ายผลิต' }, { value: 'store', label: '📦 สโตร์' }] },
+    { key: 'sec', label: 'ส่วนงาน', kind: 'section' },
+  ],
+  '/oee-analytics': [
+    { key: 'tab', label: 'แท็บ', kind: 'select', options: [
+      { value: 'today', label: '⚡ ภาพรวมวันนี้' }, { value: 'trend', label: '📊 แนวโน้ม/ประวัติ' }, { value: 'insight', label: '🧠 วิเคราะห์สาเหตุ' }] },
+    { key: 'section', label: 'ส่วนงาน', kind: 'section' },
+    { key: 'line', label: 'ไลน์ (แม่ = รวมลูก)', kind: 'line' },
+  ],
+  '/line-oee': [
+    { key: 'line', label: 'ไลน์', kind: 'line' },
+  ],
+  '/dashboard': [
+    { key: 'line', label: 'เปิดผังไลน์', kind: 'line' },
+  ],
+  '/obeya': [
+    { key: 'tab', label: 'แท็บ', kind: 'select', options: [
+      { value: 'kpi', label: '📋 บอร์ด KPI' }, { value: 'sqdcm', label: '🖥️ จอ SQDCM' }, { value: 'todo', label: '📌 งานค้าง' }] },
+    { key: 'section', label: 'ส่วนงาน', kind: 'section' },
+  ],
+  '/manpower-board': [
+    { key: 'tab', label: 'แท็บ', kind: 'select', options: [
+      { value: 'org', label: 'ผังคน' }, { value: 'layout', label: 'ผัง LAYOUT' }, { value: 'fourm', label: 'ป้าย 4M' },
+      { value: 'staffing', label: 'กำลังคน' }, { value: 'history', label: 'ประวัติ' }] },
+  ],
+});
+
+/** ค่า query ของ path → object (เฉพาะ ?… ไม่รวม #) */
+export function queryParamsOf(path) {
+  const m = String(path ?? '').match(/\?([^#]*)/);
+  return Object.fromEntries(new URLSearchParams(m ? m[1] : ''));
+}
+
+/** ประกอบ path ใหม่จาก base + params (ค่าว่างถูกตัดทิ้ง · คงลำดับคีย์ตามที่ส่ง) */
+export function withQueryParams(base, params) {
+  const sp = new URLSearchParams();
+  Object.entries(params || {}).forEach(([k, v]) => { if (v != null && String(v).trim() !== '') sp.set(k, String(v).trim()); });
+  const q = sp.toString();
+  return q ? `${base}?${q}` : base;
+}
+
+/** ป้ายสั้นของตัวกรองที่ตั้งไว้ (ใช้บนรายการ/ชิป) — คีย์ที่ไม่อยู่ในทะเบียนโชว์ดิบ */
+export function paramSummary(path) {
+  const base = pathOnly(path);
+  const defs = DISPLAY_PAGE_PARAMS[base] || [];
+  return Object.entries(queryParamsOf(path)).map(([k, v]) => {
+    const d = defs.find(x => x.key === k);
+    const opt = d?.options?.find(o => o.value === v);
+    return `${d?.label || k}: ${opt?.label || v}`;
+  });
+}

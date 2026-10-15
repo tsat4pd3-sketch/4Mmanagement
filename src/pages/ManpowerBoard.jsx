@@ -19,7 +19,7 @@ import { fetchAllPages, fetchByIds } from '../utils/fetchByIds';
 import { onlyShopfloorStaff } from '../utils/staffKind';
 import { inSectionScope } from '../utils/sectionScope';
 import { orgNodeCompare, orgKey } from '../utils/listOrder';
-import { loadPositions, positionLabel, loadWorkingPositions, workingPositionOf, isActingPosition } from '../utils/positions';
+import { loadPositions, positionLabel, loadWorkingPositions, applyWorkingPositions } from '../utils/positions';
 import { buildScheduleMaps, shiftFromTeam, scheduleTeamFor } from '../utils/shiftAssign';
 import { getWorkDate, addDaysStr } from '../utils/workDate';
 import { ALL } from '../utils/filterLabels';
@@ -70,6 +70,7 @@ export default function ManpowerBoard() {
   const [stationPlans, setStationPlans] = useState([]);
   const [homeByEmp, setHomeByEmp] = useState({});
   const [helpers, setHelpers] = useState([]);
+  const [actingPos, setActingPos] = useState(null);   // 🧭 employee_id → ตำแหน่งที่ปฏิบัติงาน (null = ยังไม่โหลด)
   const [flexUnits, setFlexUnits] = useState([]);   // 🏃 คนวิ่งข้ามแผนก (employee_flex_units)
   const [setupOpen, setSetupOpen] = useState(false);
   const canSetup = canSeeded('manpower_board', 'edit', role);
@@ -96,12 +97,11 @@ export default function ManpowerBoard() {
       const errs = [nRes.error?.message, eRes.error, dRes.error?.message].filter(Boolean);
       setNodes(nRes.data || []);
       /* ทับเฉพาะ `position` ที่ใช้จัดแถว — เก็บของเดิมไว้ที่ `company_position` ให้การ์ดเขียนบอกได้
-         ⚠️ ค่าที่คำนวณตอนแสดงผลเท่านั้น **ห้ามเขียนกลับฐาน** (ดู utils/positions.js §ตำแหน่ง 2 ชั้น) */
-      setEmployees((eRes.rows || []).map((e) => {
-        const acting = actingMap?.get?.(e.id) ?? null;
-        return { ...e, position: workingPositionOf(e, acting),
-          company_position: e.position ?? null, acting: isActingPosition(e, acting) };
-      }));
+         ⚠️ ค่าที่คำนวณตอนแสดงผลเท่านั้น **ห้ามเขียนกลับฐาน** (ดู utils/positions.js §ตำแหน่ง 2 ชั้น)
+         🔴 เก็บ map ไว้ด้วย — **คนยืมตัวโหลดคนละรอบ ต้องทับด้วยชุดเดียวกัน** ไม่งั้นคนเดียวกัน
+            โชว์ "ตำแหน่งที่ทำ" ตอนอยู่ไลน์ตัวเอง แต่โชว์ "ตำแหน่งที่บรรจุ" ตอนถูกยืมไปไลน์อื่น */
+      setActingPos(actingMap || null);
+      setEmployees(applyWorkingPositions(eRes.rows || [], actingMap));
       const sk = await fetchByIds((eRes.rows || []).map(e => e.id),
         (ids) => supabase.from('employee_skills').select('id, employee_id, skill_name, score, pending_level').in('employee_id', ids));
       if (!alive) return;
@@ -180,8 +180,10 @@ export default function ManpowerBoard() {
     return m;
   }, [attLogs]);
   const maps = useMemo(() => buildScheduleMaps(sched, lines), [sched, lines]);   // lines = ไลน์ลูกตกทอดกะจากไลน์แม่
-  const board = useMemo(() => buildManpowerBoard({ section, nodes, employees, lines, maps, attendance, slotPlans, lineTechs, helpers, stations, stationPlans, homeByEmp, flexUnits }),
-    [section, nodes, employees, lines, maps, attendance, slotPlans, lineTechs, helpers, stations, stationPlans, homeByEmp, flexUnits]);
+  // 🧭 คนยืมตัวโหลดคนละรอบกับ master ⇒ ทับตำแหน่งที่นี่ (memo คิดใหม่เองเมื่อ map มาถึง)
+  const helpersPos = useMemo(() => applyWorkingPositions(helpers, actingPos), [helpers, actingPos]);
+  const board = useMemo(() => buildManpowerBoard({ section, nodes, employees, lines, maps, attendance, slotPlans, lineTechs, helpers: helpersPos, stations, stationPlans, homeByEmp, flexUnits }),
+    [section, nodes, employees, lines, maps, attendance, slotPlans, lineTechs, helpersPos, stations, stationPlans, homeByEmp, flexUnits]);
   const depts = useMemo(() => (board?.depts || []).filter(d => !deptParam || d.key === deptParam), [board, deptParam]);
 
   const filters = (
@@ -234,7 +236,7 @@ export default function ManpowerBoard() {
         : tab === 'org' ? (tv ? <OrgTv board={board} depts={depts} skills={skills} /> : <OrgTab board={board} depts={depts} skills={skills} />)
         : tab === 'layout' ? <LayoutTab board={board} depts={depts} lines={lines} attendance={attendance} maps={maps} tv={tv} stationPlans={stationPlans} skills={skills} />
         : tab === 'staffing' ? <StaffingTab section={section} deptParam={deptParam} today={workDate} nodes={nodes} employees={employees} lines={lines}
-            slotPlans={slotPlans} lineTechs={lineTechs} stations={stations} stationPlans={stationPlans} homeByEmp={homeByEmp} />
+            slotPlans={slotPlans} lineTechs={lineTechs} stations={stations} stationPlans={stationPlans} homeByEmp={homeByEmp} actingPos={actingPos} />
         : tab === 'history' ? <HistoryTab section={section} dept={deptParam ? (board?.depts || []).find(d => d.key === deptParam) || null : null} deptParam={deptParam} nodes={nodes} lines={lines} stations={stations} employees={employees} />
         : <FourMTab depts={depts} logs={fourM} tv={tv} />}
       {setupOpen && section && (
@@ -972,7 +974,7 @@ function OrgTv({ board, depts, skills }) {
    เพดาน 62 วัน (~7,500 แถวเช็คชื่อ) — เลือกยาวกว่านั้น = ตัดให้เหลือ 62 วันล่าสุดแล้วเขียนบอก ไม่บล็อก */
 const STAFFING_MAX_DAYS = 62;
 
-function StaffingTab({ section, deptParam, today, nodes, employees, lines, slotPlans, lineTechs, stations, stationPlans, homeByEmp }) {
+function StaffingTab({ section, deptParam, today, nodes, employees, lines, slotPlans, lineTechs, stations, stationPlans, homeByEmp, actingPos }) {
   const tr = useTimeRange({ defaultDays: 30 });
   const to = tr.to > today ? today : tr.to;
   const capFrom = addDaysStr(to, -(STAFFING_MAX_DAYS - 1));
@@ -1021,13 +1023,14 @@ function StaffingTab({ section, deptParam, today, nodes, employees, lines, slotP
          แผนก **ไม่ใช่กำลังคนของที่นี่** (บ้านจริงนับเขาอยู่แล้ว) ⇒ ส่งเข้ามาก็ไม่ควรขยับตัวเลขใดๆ
          🔴 อย่าเติมเพราะ "ให้ครบพารามิเตอร์" — ทะเบียนนี้เป็นของวันนี้ ไม่มีประวัติย้อนหลังด้วย */
       const board = buildManpowerBoard({ section, nodes, employees: rosterOn(employees, d, { today, attendance: att[d] }), lines, maps: buildScheduleMaps(sch[d] || [], lines),
-        attendance: att[d] || {}, slotPlans, lineTechs, helpers: raw.borrowed.byDate?.[d] || [], stations, stationPlans, homeByEmp });
+        // 🧭 คนยืมตัวย้อนหลังก็ต้องทับตำแหน่งด้วยชุดเดียวกับ `employees` (ส่งมาแล้วทับจากหน้าแม่)
+        attendance: att[d] || {}, slotPlans, lineTechs, helpers: applyWorkingPositions(raw.borrowed.byDate?.[d] || [], actingPos), stations, stationPlans, homeByEmp });
       out.push({ date: d, depts: (board?.depts || []).filter(x => !deptParam || x.key === deptParam)
         .map(x => ({ key: x.key, name: x.name, shifts: staffingOfDept(x),
           sessions: { day: sessionsOfDeptShift(sIdx, x.lines, d, 'day'), night: sessionsOfDeptShift(sIdx, x.lines, d, 'night') } })) });
     }
     return out;
-  }, [raw, from, to, today, section, deptParam, nodes, employees, lines, slotPlans, lineTechs, stations, stationPlans, homeByEmp]);
+  }, [raw, from, to, today, section, deptParam, nodes, employees, lines, slotPlans, lineTechs, stations, stationPlans, homeByEmp, actingPos]);
   const summary = useMemo(() => summarizeStaffing(days), [days]);
   const oeeCmp = useMemo(() => compareOeeByStaffing(days), [days]);
   const rowsOf = useMemo(() => summary.flatMap(sm => ['day', 'night'].map(sh => ({ key: sm.key, name: sm.name, sh }))), [summary]);

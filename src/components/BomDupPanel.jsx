@@ -10,7 +10,7 @@ import Segmented from './Segmented';
 import { matColor, matLabel } from '../utils/matPrefix';
 import {
   auditBomDupes, applyDupReviews, dupProgress,
-  DUP_VERDICTS, DUP_DECISIONS, decisionLabel,
+  DUP_VERDICTS, DUP_DECISIONS, decisionLabel, isPairRatio,
 } from '../utils/bomDupAudit';
 import { statusColor } from '../utils/statusTone';
 
@@ -32,6 +32,11 @@ import { statusColor } from '../utils/statusTone';
    (มีด่าน `status-palette-single-source` · เคยมีแดง 4 เฉดปนกันทั้งระบบ) */
 const BAD = statusColor('bad'), WARN = statusColor('warn'), OK = statusColor('good');
 const toneOf = (v) => statusColor(DUP_VERDICTS[v]?.tone || 'warn');
+/* qty เป็นได้ทั้งจำนวนเต็ม (นัท) และทศนิยม (คอยล์ KG) — ห้ามปัดจนเลขจริงหาย */
+const fmtQty = (n) => {
+  const v = Number(n) || 0;
+  return Number.isInteger(v) ? String(v) : v.toLocaleString(undefined, { maximumFractionDigits: 4 });
+};
 
 const th = { padding: '7px 9px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left', whiteSpace: 'nowrap' };
 const td = { padding: '7px 9px', fontSize: 11.5, color: 'var(--text)', borderTop: '1px solid var(--border)', verticalAlign: 'top' };
@@ -120,7 +125,8 @@ export default function BomDupPanel({ onOpenSheet }) {
       if (!q) return true;
       return p.sheetMat.toUpperCase().includes(q) || p.mat.includes(q)
         || (p.sheetName || '').toUpperCase().includes(q) || (p.matName || '').toUpperCase().includes(q)
-        || p.onlyHere.some(m => m.includes(q)) || p.onlyOwn.some(m => m.includes(q));
+        || p.onlyHere.some(m => m.includes(q)) || p.onlyOwn.some(m => m.includes(q))
+        || (p.qtyDiff || []).some(d => d.mat.includes(q));
     });
   }, [pairs, vFilter, search]);
 
@@ -234,6 +240,7 @@ export default function BomDupPanel({ onOpenSheet }) {
                 <th style={th}>ใบ</th>
                 <th style={th}>พาร์ทที่ถูกนิยาม 2 ที่</th>
                 <th style={{ ...th, textAlign: 'right' }}>ตรงกัน</th>
+                <th style={th}>จำนวนไม่ตรง (ใบนี้ ↔ ใบนั้น)</th>
                 <th style={th}>ใบนี้มี แต่ใบนั้นไม่มี</th>
                 <th style={th}>ใบนั้นมี แต่ใบนี้ไม่มี (ไม่ถูกระเบิด)</th>
                 <th style={th}>การตัดสิน</th>
@@ -278,6 +285,22 @@ export default function BomDupPanel({ onOpenSheet }) {
                       <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}>
                         {p.kidsHere.length} / {p.kidsOwn.length}
                       </div>
+                    </td>
+                    {/* 🔢 qty ไม่ตรง — โชว์ทุก verdict (subset/conflict ก็มีได้) · ×2 พอดี = ติดป้าย ชิ้น/shot
+                        🔴 เขียนค่าทั้ง 2 ฝั่งเสมอ ห้ามบอกแค่ "ไม่ตรง" — คนตัดสินต้องเห็นเลขจริง */}
+                    <td style={{ ...td, maxWidth: 220 }}>
+                      {p.qtyDiff?.length ? p.qtyDiff.map(d => (
+                        <div key={d.mat} style={{ fontFamily: 'monospace', fontSize: 11, lineHeight: 1.6,
+                          color: isPairRatio(d.here, d.own) ? WARN : BAD }}>
+                          {d.mat} <b>{fmtQty(d.here)}</b> ↔ <b>{fmtQty(d.own)}</b>
+                          {isPairRatio(d.here, d.own) && <span style={{ color: 'var(--muted)' }}> ×2</span>}
+                        </div>
+                      )) : <span style={{ color: 'var(--muted)' }}>—</span>}
+                      {p.verdict === 'pair_shot' && (
+                        <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2, lineHeight: 1.5 }}>
+                          งานคู่ปั๊มทีเดียวได้ 2 ชิ้น — ใบหนึ่งน่าจะกรอกต่อ shot อีกใบต่อชิ้น
+                        </div>
+                      )}
                     </td>
                     <td style={{ ...td, maxWidth: 230 }}><MatList mats={p.onlyHere} color={WARN} /></td>
                     <td style={{ ...td, maxWidth: 230 }}>

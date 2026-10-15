@@ -32,6 +32,7 @@ import Segmented from '../components/Segmented';
 import { ALL } from '../utils/filterLabels';
 import { acceptImageFile } from '../utils/acceptImageFile';
 import { DeleteButton } from '../components/IconButton';
+import { MO_VOID_NOT_IN } from '../utils/mtnStepPerm';
 
 /* ── เฟส PDCA ของขั้นงาน (คำสั่ง user 2026-08-19: แผนงานต้องเห็นชัดว่าขั้นไหนคือ P-D-C-A) ──
    เก็บเป็นคอลัมน์ `improvement_milestones.phase` (migration 20260819_improvement_milestone_phase_dr)
@@ -205,8 +206,11 @@ export default function Improvements() {
       supabaseDR.from('dr_products').select('id, name, mat_no, line_name, cycle_time_sec').eq('is_active', true).order('name'),
       supabaseDR.from('improvement_milestones').select('*').order('sort_order').order('created_at'),
       supabaseDR.from('mtn_problem_types').select('characteristic').eq('is_active', true).order('sort_order'),
-      // ใบซ่อม MO (ไม่รวมที่ถูก reject) — ใช้วัดผล/พาเรโต้/cross-ref · labor_cost/parts_cost = ค่าซ่อมจริง → cost saving
-      supabaseDR.from('mtn_orders').select('id, line_name, machine_no, item_type, problem_characteristic, report_at, repair_done_at, work_date, status, labor_cost, parts_cost, source_downtime_id').neq('status', 'rejected').limit(4000),
+      /* ใบซ่อม MO — ใช้วัดผล/พาเรโต้/cross-ref · labor_cost/parts_cost = ค่าซ่อมจริง → cost saving
+         🔴 กัน "ใบที่ไม่เคยเป็นงานจริง" ออกด้วย `MO_VOID_NOT_IN` **ห้ามกลับไป `.neq('status','rejected')`**
+            (มีด่าน) — `neq` ตัวเดียวแปลว่า "ไม่ใช่ rejected" ⇒ สถานะโมฆะที่เพิ่มทีหลัง (`cancelled` 14/10)
+            ไหลเข้ามานับเป็นค่าซ่อมจริง/แท่งพาเรโตเงียบๆ คลาสเดียวกับ `production_sessions.status = 'void'` */
+      supabaseDR.from('mtn_orders').select('id, line_name, machine_no, item_type, problem_characteristic, report_at, repair_done_at, work_date, status, labor_cost, parts_cost, source_downtime_id').not('status', 'in', MO_VOID_NOT_IN).limit(4000),
       // 2 ตัวล่างเป็น best-effort (migration cost saving ยังไม่ apply = แผง 💰 ขึ้น "ยังตั้งต้นทุนไม่ครบ" — หน้าหลักไม่พัง)
       supabase.from('cost_center_rates').select('*'),
       supabaseDR.from('parts_master').select('mat_no, material_cost, standard_cost').eq('is_active', true),

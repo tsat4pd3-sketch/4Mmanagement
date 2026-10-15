@@ -3,7 +3,8 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { canAccessPage } from '../utils/permissions';
 import {
-  normalizeConfig, buildPlaylist, stepIndex, indexOfLocation, resolveIndex, shouldReload, fmtSec, SKIP_REASON_LABEL,
+  normalizeConfig, buildPlaylist, stepIndex, indexOfLocation, resolveIndex, shouldReload,
+  displayChannelName, parseDisplayCmd, fmtSec, SKIP_REASON_LABEL,
 } from '../utils/displayRotation';
 
 /* ══ 📺 DisplayRotator — จอวนหน้าเอง ตามแผนของบัญชีที่ login ══════════════════════════
@@ -119,6 +120,41 @@ export default function DisplayRotator({ userId, role, disabled }) {
     PAUSE_EVENTS.forEach(e => window.addEventListener(e, onInput, { passive: true, capture: true }));
     return () => PAUSE_EVENTS.forEach(e => window.removeEventListener(e, onInput, { capture: true }));
   }, [active, pauseMs]);
+
+  /* ── 📡 สั่งจอจากหน้าตั้งค่า (14/10 · คำสั่ง user "สั่งจอหน้างานเปลี่ยนหน้าได้จาก user admin") ──
+     ช่อง broadcast `esm-display-<user_id>` · presence = บอกว่าตอนนี้อยู่หน้าไหน (หน้าตั้งค่าโชว์ 🟢 ออนไลน์)
+     🔴 รับเฉพาะคำสั่งใน DISPLAY_CMDS · goto ได้แค่ "ลำดับในรอบ" — ห้ามเพิ่มคำสั่งพาไป path ใดก็ได้
+        (ใครรู้ id ก็ส่งได้ · จำกัดไว้ = ทำได้แค่สลับหน้าที่ admin ส่วนงานตั้งไว้แล้ว) */
+  const cmdRef = useRef(null);
+  cmdRef.current = (p) => {
+    const c = parseDisplayCmd(p, n);
+    if (!c) return;
+    setPausedUntil(0);
+    if (c.type === 'goto') goTo(c.idx);
+    else if (c.type === 'next') goTo(stepIndex(idx, n, 1));
+    else if (c.type === 'prev') goTo(stepIndex(idx, n, -1));
+    else if (c.type === 'hold') setHeld(true);
+    else if (c.type === 'resume') setHeld(false);
+    else if (c.type === 'reload') window.location.reload();
+  };
+  const chanRef = useRef(null);
+  const presenceRef = useRef(null);
+  useEffect(() => {
+    if (!active || !userId) return undefined;
+    const ch = supabase.channel(displayChannelName(userId), { config: { broadcast: { self: false }, presence: { key: 'screen' } } });
+    ch.on('broadcast', { event: 'cmd' }, ({ payload }) => cmdRef.current?.(payload));
+    ch.subscribe((st) => {
+      if (st !== 'SUBSCRIBED') return;
+      chanRef.current = ch;
+      ch.track(presenceRef.current).catch(() => {});   // สถานะแรก (effect ข้างล่างอาจยิงก่อนต่อติด)
+    });
+    return () => { chanRef.current = null; supabase.removeChannel(ch); };
+  }, [active, userId]);
+  const curPath = cur?.path || '';
+  presenceRef.current = { idx: Math.min(idx, Math.max(0, n - 1)), n, path: curPath, held, at: Date.now() };
+  useEffect(() => {
+    chanRef.current?.track(presenceRef.current).catch(() => {});
+  }, [idx, n, curPath, held]);
 
   if (loadErr) {
     return (

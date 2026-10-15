@@ -135,6 +135,12 @@ export function canAccessPage(path, role) {
         || hasPermission('page:/pm-setup', role)
         || hasPermission('page:/order-trace', role);
   }
+  /* 🔁 ตั้งค่าจอวนหน้า — แอดมินหน่วยงาน (bucket dept_admin) ตั้งจอของส่วนงานตัวเองได้ (14/10 · คำสั่ง user)
+     bucket แจกได้แค่ action ห้ามแจก page:* ⇒ piggyback คีย์ action แทนการแจก page:/display-rotation ให้ทุก role
+     ขอบเขตว่าตั้งจอไหนได้ = canManageDisplay() + RLS fn_can_manage_display() */
+  if (path === '/display-rotation') {
+    return hasPermission('page:/display-rotation', role) || hasPermission('display_rotation:manage', role);
+  }
   return hasPermission(`page:${path}`, role);
 }
 
