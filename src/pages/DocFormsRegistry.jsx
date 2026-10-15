@@ -118,7 +118,7 @@ export default function DocFormsRegistry() {
   const saveScope = async () => {
     if (!scopeEdit.section) { toast.error('เลือกส่วนงานก่อน'); return; }
     const w = canWriteUnit(docCtx, scopeEdit.section);
-    if (!w.ok) { toast.error(writeBlockText(w, { what: 'ชุดเอกสารของส่วนงานนี้', unit: scopeEdit.section })); return; }
+    if (!w.ok) { toast.info(writeBlockText(w, { what: 'ชุดเอกสารของส่วนงานนี้', unit: scopeEdit.section })); return; }
     const payload = {
       doc_key: scopeEdit.doc_key, section: scopeEdit.section,
       // ป้ายที่ไม่ได้แก้จากฐาน = ไม่ต้องเก็บ (ฐานเปลี่ยนแล้วตามเอง)
@@ -144,7 +144,7 @@ export default function DocFormsRegistry() {
   };
   const removeScope = async (sc) => {
     const w = canWriteUnit(docCtx, sc?.section);
-    if (!w.ok) { toast.error(writeBlockText(w, { what: 'ชุดเอกสารของส่วนงานนี้', unit: sc?.section })); return; }
+    if (!w.ok) { toast.info(writeBlockText(w, { what: 'ชุดเอกสารของส่วนงานนี้', unit: sc?.section })); return; }
     if (!window.confirm(`ลบชุดของส่วนงาน "${sc.section}"? (กลับไปใช้ชุดกลาง)`)) return;
     checkWriteRows(await supabase.from('doc_form_scopes').delete().eq('id', sc.id).select('id'), 'ลบขอบเขต');
     loadScopes(sc.doc_key); loadDocForms(true);

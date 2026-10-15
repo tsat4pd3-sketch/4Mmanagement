@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useContext } from 'react';
+import useIsMobile from '../utils/useIsMobile';
 import { lineNameCompare } from '../utils/lineHierarchy';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { loadLinesRes } from '../utils/useProductionLines';
@@ -42,6 +43,7 @@ const numIn = { width:110, padding:'6px 8px', borderRadius:6, border:'1px solid 
 const n0 = (v) => (Number(v) || 0).toLocaleString();
 
 export default function StockCountSheet({ role, scope }) {
+  const isMobile = useIsMobile();   // 📱 การ์ดต่อพาร์ท + ปุ่มบันทึกเกาะล่าง (15/10)
   const { fullName } = useContext(UserContext);
   const canCount   = can('line_stock', 'issue', role);
   const canApprove = can('line_stock', 'approve', role);
@@ -206,7 +208,7 @@ export default function StockCountSheet({ role, scope }) {
           <LineSelect
             lines={lines} value={lineFilter} onChange={setLineFilter} {...scope}
             placeholder="— เลือกไลน์/คลังที่จะนับ —"
-            style={{ width:260, padding:'6px 8px', borderRadius:6, border:'1px solid var(--border)', background:'var(--bg2)', color:'var(--text)', fontSize:13 }}
+            style={{ width: isMobile ? '100%' : 260, padding:'6px 8px', borderRadius:6, border:'1px solid var(--border)', background:'var(--bg2)', color:'var(--text)', fontSize: isMobile ? 16 : 13 }}
             extraGroups={[{ label: '🏬 คลัง', options: warehouseNames.map(n => ({ value: n })) }]}
           />
           <label style={{ fontSize:12, color:'var(--muted)' }}>
@@ -219,7 +221,7 @@ export default function StockCountSheet({ role, scope }) {
             ซ่อนพาร์ทที่ยอดเป็น 0
           </label>
           <input value={note} onChange={e => setNote(e.target.value)} placeholder="หมายเหตุรอบนับ (ไม่บังคับ)"
-            style={{ width:220, padding:'6px 8px', borderRadius:6, border:'1px solid var(--border)', background:'var(--bg2)', color:'var(--text)', fontSize:13 }} />
+            style={{ width: isMobile ? '100%' : 220, padding:'6px 8px', borderRadius:6, border:'1px solid var(--border)', background:'var(--bg2)', color:'var(--text)', fontSize:13 }} />
         </div>
 
         {!lineFilter ? (
@@ -228,6 +230,31 @@ export default function StockCountSheet({ role, scope }) {
           <div style={{ fontSize:13, color:'var(--muted)' }}>ไม่มีพาร์ทในคลังนี้{hideZero && ' (ที่ยอดไม่เป็น 0)'}</div>
         ) : (
           <>
+            {/* 📱 มือถือ (15/10 · MOBILE-UX-STANDARD §4 ชนิด A): การ์ดต่อพาร์ท — ตารางกว้าง 620px ในกล่องที่ไม่มี minWidth:0
+                ดันการ์ดเกินจอแล้วโดนตัด ⇒ **คอลัมน์ "นับได้จริง" มองไม่เห็นเลย** บน 360px (วัดจริง) + กล่องเลื่อน 60vh ซ้อนในหน้า
+                ช่องกรอก/ค่าที่คิด = ตัวเดียวกับตาราง (counts · countDelta) ตรรกะไม่แตก 2 ชุด */}
+            {isMobile ? (
+              <div className="sc-cards">
+                {rows.map(r => {
+                  const d = countDelta(r.qty_on_hand, counts[r.mat_no]);
+                  const typed = counts[r.mat_no] !== undefined && counts[r.mat_no] !== '';
+                  return (
+                    <div key={r.mat_no} className={`sc-card${typed ? ' sc-typed' : ''}`}>
+                      <MatLabel mat={r.mat_no} name={r.part_name} />
+                      <div className="sc-row">
+                        <div className="sc-sys"><span>ในระบบ</span><b>{n0(r.qty_on_hand)}</b></div>
+                        <input type="number" inputMode="numeric" min="0" placeholder="นับได้" aria-label={`นับได้จริง ${r.mat_no}`}
+                          value={counts[r.mat_no] ?? ''}
+                          onChange={e => setCounts(c => ({ ...c, [r.mat_no]: e.target.value }))} />
+                        <div className="sc-diff" style={{ color: !d ? (typed ? 'var(--accent)' : 'var(--muted)') : d.dir === 'up' ? '#22c55e' : '#ef4444' }}>
+                          {!d ? (typed ? 'ตรง' : '—') : `${d.delta > 0 ? '+' : ''}${n0(d.delta)}`}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
             <div style={{ overflowX:'auto', maxHeight:'60vh', overflowY:'auto' }}>
               <table style={{ width:'100%', borderCollapse:'collapse', minWidth:620 }}>
                 <thead><tr>
@@ -260,6 +287,7 @@ export default function StockCountSheet({ role, scope }) {
                 </tbody>
               </table>
             </div>
+            )}
 
             {/* 🧹 ตัวช่วยกรอก — ตรวจนับทั้งคลังทีละแถวไม่ไหว (154 แถวตอนตั้งต้นใหม่ 01/10)
                 🔴 ปุ่มนี้แค่ "เติมค่าในช่อง" ไม่ได้บันทึกเอง — ยังต้องกดบันทึก + ผ่านคิวอนุมัติเหมือนเดิม
@@ -286,7 +314,9 @@ export default function StockCountSheet({ role, scope }) {
               </div>
             )}
 
-            <div style={{ display:'flex', flexWrap:'wrap', gap:12, alignItems:'center', marginTop:12 }}>
+            {/* 📱 มือถือ: แถวสรุป+ปุ่มบันทึก เกาะล่างจอ (ปุ่ม/handler เดียวกับจอคอม) */}
+            <div className={isMobile ? 'm-savebar sc-savebar' : undefined}
+              style={isMobile ? undefined : { display:'flex', flexWrap:'wrap', gap:12, alignItems:'center', marginTop:12 }}>
               <div style={{ fontSize:12, color:'var(--muted)' }}>
                 นับแล้ว <b style={{ color:'var(--text)' }}>{summary.counted}</b>/{rows.length} พาร์ท ·
                 ตรง {summary.same} · 📈 เพิ่ม {summary.up} ({n0(summary.upQty)}) · 📉 ลด {summary.down} ({n0(summary.downQty)})

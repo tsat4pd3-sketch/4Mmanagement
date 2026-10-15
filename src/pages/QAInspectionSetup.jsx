@@ -274,7 +274,7 @@ export default function QAInspectionSetup() {
     };
     /* 🔐 ด่านซ้ำตอนกดจริง — ไลน์ปลายทางมาจากฟอร์ม (เปลี่ยนไลน์ได้) จึงเช็คค่าที่จะเขียนจริง */
     const w = canWriteLine(wctx, f.line_name, lines);
-    if (!w.ok) { toast.error(writeBlockText(w, { what: 'พาร์ทของไลน์นี้' })); return; }
+    if (!w.ok) { toast.info(writeBlockText(w, { what: 'พาร์ทของไลน์นี้' })); return; }
     const { data, error } = f.id
       ? await supabase.from('qa_parts').update(payload).eq('id', f.id).select().single()
       : await supabase.from('qa_parts').insert({ ...payload, created_by: fullName || null }).select().single();
@@ -287,7 +287,7 @@ export default function QAInspectionSetup() {
 
   const delPart = async () => {
     if (!sel) return;
-    if (!partWrite.ok) { toast.error(writeBlockText(partWrite, { what: 'พาร์ทของไลน์นี้' })); return; }
+    if (!partWrite.ok) { toast.info(writeBlockText(partWrite, { what: 'พาร์ทของไลน์นี้' })); return; }
     if (!window.confirm(`ลบ ${sel.part_no} พร้อมจุดตรวจทั้งหมด ${items.length} จุด?`)) return;
     const partId = sel.id;
     /* 🔴 ต้อง `.select('id')` แล้ว**นับแถว** ก่อนแตะ storage (QC audit 2026-10-06)
@@ -313,6 +313,9 @@ export default function QAInspectionSetup() {
 
   /* สร้างจุดควบคุม SPC จาก item ชนิด variable → ไปวัด/ดู Cp-Cpk ที่หน้า /qa */
   const sendToSPC = async (it) => {
+    /* 🔐 `qa_characteristics` = ตารางเดียวกับแท็บ SPC ที่ปิดไปแล้ว ⇒ ต้องมีด่านเดียวกัน
+       (QC audit 15/10 "ประตูที่สอง" — เดิมปุ่มนี้เปิดด้วย canManage ล้วน) */
+    if (!partWrite.ok) { toast.info(writeBlockText(partWrite, { what: 'จุดควบคุมของไลน์นี้' })); return; }
     const { error } = await supabase.from('qa_characteristics').insert({
       part_no: sel.part_no, part_name: sel.part_name || null, line_name: sel.line_name || null,
       characteristic: it.characteristic, unit: it.unit || null,

@@ -51,6 +51,7 @@ import TimeRangeBar from '../components/TimeRangeBar';
 import Segmented from '../components/Segmented';
 import SearchInput from '../components/SearchInput';
 import useTimeRange from '../utils/useTimeRange';
+import useIsMobile from '../utils/useIsMobile';
 /* วันทำงาน/กะ ของ "เวลาที่แจ้ง" — ของกลาง ห้ามเขียนกฎ 08:00/20:00 เองในหน้า */
 import { shiftOfTime, workDateOfTime } from '../utils/workDate';
 import { ALL, SHIFT_OPTIONS, allOf } from '../utils/filterLabels';
@@ -326,7 +327,8 @@ const DateField = ({ label, value, onChange, required }) => (
 
 /* ═══════════════════════════════════════════════════════ */
 export default function MtnRepair() {
-  const { role, lineId, sections: scopeSecs, mtnTeams: userMtnTeams, fullName, signatureUrl } = useContext(UserContext);
+  const { role, lineId, sections: scopeSecs, mtnTeams: userMtnTeams, fullName, signatureUrl, allUnits } = useContext(UserContext);
+  const isMobile = useIsMobile();   // 📱 รายการ = การ์ดต่อใบ (15/10 · docs/MOBILE-UX-STANDARD.md §4 ชนิด B)
   // แท็บผูก ?tab= (แชร์ลิงก์/refresh/Back อยู่แท็บเดิม) — ⚙️ ข้อมูลหลัก อยู่ท้ายสุดและโผล่ตามสิทธิ์
   const TAB_DEFS = [
     { key: 'list', label: '📋 รายการ MO' },
@@ -685,7 +687,7 @@ export default function MtnRepair() {
 
   if (loading) return <Page><div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>กำลังโหลด…</div></Page>;
 
-  const cp = { lines: scopedLineObjs, machines, orders, techs, parts, problemTypes, repairTypes, itemTypes, laborRates, mtnDepts, mtnTeams: mtnTeamRows, role, fullName, signatureUrl, improvements, supplyByMachineNo, userTeams, reporterScope, defaultDept: userTeams.length === 1 ? userTeams[0] : '', onOpenImprovement: openImprovementFromMo, onReload: reloadAll, reloadMasters: loadMasters };
+  const cp = { lines: scopedLineObjs, machines, orders, techs, parts, problemTypes, repairTypes, itemTypes, laborRates, mtnDepts, mtnTeams: mtnTeamRows, role, allUnits, fullName, signatureUrl, improvements, supplyByMachineNo, userTeams, reporterScope, defaultDept: userTeams.length === 1 ? userTeams[0] : '', onOpenImprovement: openImprovementFromMo, onReload: reloadAll, reloadMasters: loadMasters };
 
   return (
     <Page>
@@ -780,6 +782,14 @@ export default function MtnRepair() {
         />
         {/* 📋 รายการ = ตาราง 1 ใบ 1 บรรทัด (05/10 · คำสั่ง user "ข้อมูล 100+ MO แล้ว การ์ดดูยากมาก")
             สแกนตาลงทีละคอลัมน์ได้ · เดิมการ์ด 5 ใบ/แถว = เห็นแค่ ~15 ใบต่อจอ */}
+        {/* 📱 มือถือ: การ์ดต่อใบในโฟลว์ปกติ — ตาราง 10 คอลัมน์ในกล่องเลื่อนสูง (100vh-170) = ปัดข้าง + เลื่อนซ้อนเลื่อน
+            บนจอ 360×640 (MOBILE-UX-STANDARD §2 ข้อ 4–5) · จอคอมยังเป็นตาราง (คำสั่ง user 05/10 เดิม) */}
+        {isMobile ? (
+          <div className="mo-cards">
+            {shown.map(o => <MoCard key={o.id} o={o} onOpen={() => openDetail(o)} />)}
+            {!shown.length && <div style={{ color: 'var(--muted)', padding: 24, textAlign: 'center' }}>ไม่มีรายการ</div>}
+          </div>
+        ) : (
         <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'auto', maxHeight: 'calc(100vh - 170px)' }}>
           {/* กรอบเลื่อนเอง (สูงไม่เกินจอ) ⇒ หัวตาราง sticky ค้างอยู่ตอนเลื่อนลง 300 ใบ */}
           <table className="mo-list">
@@ -793,6 +803,7 @@ export default function MtnRepair() {
             </tbody>
           </table>
         </div>
+        )}
       </>}
 
       {tab === 'master' && can('mtn_repair', 'manage_master', role) && <MasterTab {...cp} fullName={fullName} />}
@@ -805,6 +816,36 @@ export default function MtnRepair() {
       {stepModal && <StepModal {...cp} step={stepModal.step} order={stepModal.order} editMode={stepModal.editMode} skipQa={!!stepModal.skipQa}
         onClose={() => setStepModal(null)} onSaved={() => { setStepModal(null); reloadAll(); }} />}
     </Page>
+  );
+}
+
+/* 📱 การ์ด 1 ใบ (มือถือเท่านั้น) — ข้อมูลชุดเดียวกับ MoRow · ลำดับตามคำถามคนหน้างาน:
+   "ใบไหน · ถึงไหนแล้ว" → "ที่ไหน เครื่องอะไร" → "เป็นอะไร" → "ใคร/เมื่อไหร่" · ใบรอรับงาน = รางแดงซ้าย (Andon) */
+function MoCard({ o, onOpen }) {
+  const m = statusMetaOf(o);
+  const last = lastStep({ mtnForm: isMtnFormOrder(o) });
+  const pct = o.status === 'closed' ? 100 : Math.round((o.current_step / last) * 100);
+  const dept = o.mtn_dept || deptForItem(o.item_type);
+  const { main, extra } = orderReporterText(o);
+  return (
+    <button type="button" onClick={onOpen} className={`mo-card${o.status === 'pending' ? ' mo-card-alert-rail' : ''}`}>
+      <div className="mo-card-top">
+        <b>{o.mo_no || <span style={{ color: 'var(--muted)', fontWeight: 600 }}>(ยังไม่ออกเลข)</span>}</b>
+        <span style={{ fontSize: 11.5, fontWeight: 700, color: m.color, background: m.bg, borderRadius: 20, padding: '3px 9px', whiteSpace: 'nowrap' }}>{m.label}</span>
+      </div>
+      <div className="mo-card-where"><b>{o.line_name || '—'}</b>{(o.item_type || o.machine_no) && <> · {o.item_type || ''}{o.machine_no ? <> <b>{o.machine_no}</b></> : ''}</>}</div>
+      <div className="mo-card-what">{o.problem_characteristic || '—'}{o.report_note ? <span> — {o.report_note}</span> : null}</div>
+      <div className="mo-card-meta">
+        <span>{fmtDateTime(o.report_at)}</span><span>{deptNameOf(dept)}</span>
+        {main && <span>👤 {main}{extra ? ` · เปิดโดย ${extra}` : ''}</span>}
+      </div>
+      {o.status !== 'rejected' && (
+        <div className="mo-card-prog">
+          <div><div style={{ width: `${pct}%`, background: o.status === 'closed' ? 'var(--green)' : 'var(--amber)' }} /></div>
+          <span>ขั้น {o.current_step}/{last}</span>
+        </div>
+      )}
+    </button>
   );
 }
 
@@ -1763,7 +1804,8 @@ function printMoReportMtn(o, dparts = [], logo0, dlabor = [], cmt = NO_CMT, cost
 }
 
 /* ── Detail drawer ───────────────────────────────────── */
-function DetailDrawer({ order, role, parts = [], mtnDepts = MTN_DEPTS, fullName, signatureUrl, improvements, supplyByMachineNo, userTeams = [], reporterScope = null, onOpenImprovement, onClose, onStep, onReload }) {
+function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MTN_DEPTS, fullName, signatureUrl, improvements, supplyByMachineNo, userTeams = [], reporterScope = null, onOpenImprovement, onClose, onStep, onReload }) {
+  const isMobile = useIsMobile();   // 📱 ปุ่ม "ขั้นถัดไป" เกาะล่างของใบ (15/10)
   /* 🔒 ฝั่ง + ระดับตำแหน่งของคนกด — ใช้ล็อกช่องเซ็นในลูป MO (2026-10-04 · คำสั่ง user)
      🔴 ตัดสินจากข้อมูลที่บันทึกไว้จริงเท่านั้น (mtn_teams / role / sections / position)
         ไม่รู้ = ไม่บล็อก แต่จอต้องเขียนบอก (stepAssumptions) — ห้ามเดาแทนคน */
@@ -2051,8 +2093,8 @@ function DetailDrawer({ order, role, parts = [], mtnDepts = MTN_DEPTS, fullName,
   const del = async () => {
     /* 🔐 ลบใบของทีมอื่น = ไม่มีเหตุผลทางธุรกิจรองรับเลย (audit 15/10) — ต่างจากการ "แก้ย้อนหลัง"
        ของหัวหน้า ที่ยังเป็นพฤติกรรมเดิม · ไม่ผูกทีม = ไม่บล็อก (ไม่รู้ ≠ ปฏิเสธ) */
-    const tw = canWriteTeam(userTeams, o.mtn_dept, { role });
-    if (!tw.ok) { toast.error(teamBlockText(tw, 'ใบแจ้งซ่อมของทีมนี้')); return; }
+    const tw = canWriteTeam(userTeams, o.mtn_dept, { role, allUnits });
+    if (!tw.ok) { toast.info(teamBlockText(tw, 'ใบแจ้งซ่อมของทีมนี้')); return; }
     if (removal.mode === MO_REMOVE_DELETE) {
       if (!confirm(`ลบใบแจ้งซ่อมนี้?\n\n${removal.why}`)) return;
       /* 🔴 นับแถวที่ลบได้ก่อน ค่อยลบรูปใน storage — เช็คแค่ `error` แล้วลบรูปไปก่อน
@@ -2519,10 +2561,19 @@ function DetailDrawer({ order, role, parts = [], mtnDepts = MTN_DEPTS, fullName,
             );
           }} style={btnGhost}>🖨️ พิมพ์ / บันทึก PDF</button>
           <button onClick={onClose} style={btnGhost}>ปิด</button>
-          {skipQa.ok && <button onClick={() => onStep(5, false, { skipQa: true })} style={{ ...btnGhost, color: '#f59e0b', borderColor: '#f59e0b' }} title="QA ตัดสินว่างานนี้ไม่เกี่ยวกับคุณภาพชิ้นงาน — ไม่ต้องตรวจ ส่งไปรับมอบ/ติดตามผลเลย (เฉพาะ QA กดได้)">⏭ QA ระบุว่าไม่เกี่ยวกับคุณภาพ — ไปขั้น 6</button>}
-          {next && canEditStep(next.step) && <button onClick={() => onStep(next.step, false)} style={btnPri}>{next.label}</button>}
+          {!isMobile && skipQa.ok && <button onClick={() => onStep(5, false, { skipQa: true })} style={{ ...btnGhost, color: '#f59e0b', borderColor: '#f59e0b' }} title="QA ตัดสินว่างานนี้ไม่เกี่ยวกับคุณภาพชิ้นงาน — ไม่ต้องตรวจ ส่งไปรับมอบ/ติดตามผลเลย (เฉพาะ QA กดได้)">⏭ QA ระบุว่าไม่เกี่ยวกับคุณภาพ — ไปขั้น 6</button>}
+          {!isMobile && next && canEditStep(next.step) && <button onClick={() => onStep(next.step, false)} style={btnPri}>{next.label}</button>}
         </div>
       </div>
+      {/* 📱 มือถือ: ปุ่ม "ขั้นถัดไป" เกาะล่างของใบ (15/10 · MOBILE-UX-STANDARD §2 ข้อ 2)
+          เดิมอยู่ท้ายสุดหลังคอมเมนต์/ยกเลิก/พิมพ์ — วัดบน 360×640 ปุ่ม "รับงาน" อยู่ y≈1613 จากใบสูง 1643
+          = ช่างต้องเลื่อน ~3 จอก่อนจะรับงานได้ · ย้ายมาเกาะล่าง (ปุ่มเดียวกัน onStep เดียวกัน ไม่แยกตรรกะ) */}
+      {isMobile && ((next && canEditStep(next.step)) || skipQa.ok) && (
+        <div className="m-savebar m-actbar">
+          {skipQa.ok && <button type="button" className="m-actbar-alt" onClick={() => onStep(5, false, { skipQa: true })}>⏭ ไม่เกี่ยวกับคุณภาพ — ไปขั้น 6</button>}
+          {next && canEditStep(next.step) && <button type="button" onClick={() => onStep(next.step, false)}>{next.label}</button>}
+        </div>
+      )}
     </ModalShell>
   );
 }
@@ -2566,6 +2617,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
      🔴 ตัดสินจากข้อมูลที่บันทึกไว้จริงเท่านั้น (mtn_teams / role / sections / position)
         ไม่รู้ = ไม่บล็อก แต่จอต้องเขียนบอก (stepAssumptions) — ห้ามเดาแทนคน */
   const { mtnTeams: myTeams, sections: mySections, position: myPosition } = useContext(UserContext);
+  const isMobile = useIsMobile();   // 📱 ปุ่มบันทึกเกาะล่างของฟอร์มขั้น (15/10)
   const actorSide = actorSideOf({ mtnTeams: myTeams, role, sections: mySections });
   const posRank = positionRank(myPosition);
 
@@ -3257,9 +3309,12 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
         </>}
         {needSign && <Field label="ลายเซ็น" required><SignField signatureUrl={signatureUrl} existing={o[SIGN_COL[modalStage]]} onChange={v => { touch(); setSig(v); }} /></Field>}
       </div>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
-        <button onClick={tryClose} style={btnGhost}>ยกเลิก</button>
-        <button onClick={save} disabled={saving} style={btnPri}>{saving ? 'บันทึก…' : skipQa ? '⏭ ยืนยันข้าม QA ไปขั้น 6' : (editMode ? 'บันทึกการแก้ไข' : 'บันทึก')}</button>
+      {/* 📱 มือถือ: แถว ยกเลิก/บันทึก เกาะล่างของฟอร์ม (15/10) — ฟอร์มขั้น 3 "ลงมือซ่อม" สูง ~3 จอบน 360×640
+          ปุ่มบันทึกเดิมอยู่ท้ายสุด · ปุ่ม/handler เดิมทุกตัว เปลี่ยนแค่ที่วาง · จอคอม = แถวเดิมเป๊ะ */}
+      <div className={isMobile ? 'm-savebar m-stepbar' : undefined}
+        style={isMobile ? undefined : { display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+        <button onClick={tryClose} style={isMobile ? undefined : btnGhost}>ยกเลิก</button>
+        <button onClick={save} disabled={saving} style={isMobile ? undefined : btnPri}>{saving ? 'บันทึก…' : skipQa ? '⏭ ยืนยันข้าม QA ไปขั้น 6' : (editMode ? 'บันทึกการแก้ไข' : 'บันทึก')}</button>
       </div>
     </ModalShell>
   );
@@ -3298,7 +3353,7 @@ function MasterAuditLog({ teams = [] }) {
   );
 }
 
-function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], laborRates = [], mtnDepts = MTN_DEPTS, mtnTeams = [], fullName, role, userTeams = [], reloadMasters }) {
+function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], laborRates = [], mtnDepts = MTN_DEPTS, mtnTeams = [], fullName, role, allUnits = false, userTeams = [], reloadMasters }) {
   const [sub, setSub] = useState('tech');
   const reload = () => reloadMasters();
   const addRow = async (table, payload) => { const { error } = await supabaseDR.from(table).insert(payload); if (error) return toast.error(error.message); reload(); };
@@ -3312,7 +3367,7 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
     const row = (table === 'mtn_technicians' ? techs : laborRates).find(x => x.id === id);
     const own = teamRowOwner({ team: row?.dept }, { myTeams: userTeams, role });
     if (own.ok) return true;
-    toast.error(teamRowLockNote({ team: row?.dept }, own.code));
+    toast.info(teamRowLockNote({ team: row?.dept }, own.code));
     return false;
   };
   const updRow = async (table, id, payload) => {
@@ -3341,7 +3396,13 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
     if (error) toast.error(error.message); else toast.success(`อัปเดตใบซ่อม ${count} ใบตามชื่อใหม่แล้ว`);
   };
 
-  const delRow = async (table, id) => { if (!confirm('ลบรายการนี้?')) return; const { error } = await supabaseDR.from(table).update({ is_active: false }).eq('id', id); if (error) return toast.error(error.message); reload(); };
+  /* 🔴 ลบ = `is_active=false` (update) ⇒ ด่าน `%:delete` ฝั่ง DB มองไม่เห็น
+     ⇒ ต้องผ่าน `deptRowGuard` เหมือน `updRow` (QC audit 15/10 — คอมเมนต์เดิมบอกว่า updRow
+     เป็น "ทางผ่านเดียว" ซึ่งไม่จริง delRow เป็นอีกประตู) */
+  const delRow = async (table, id) => {
+    if (!deptRowGuard(table, id)) return;
+    if (!confirm('ลบรายการนี้?')) return;
+    const { error } = await supabaseDR.from(table).update({ is_active: false }).eq('id', id); if (error) return toast.error(error.message); reload(); };
 
   // ── ช่าง (มี dept) — ช่าง = พนักงานทีมช่าง (จากฐาน employees, แก้ที่หน้าพนักงาน) + ช่างเฉพาะกิจเดิม (mtn_technicians) ──
   const [ntech, setNtech] = useState({ name: '', dept: 'maintenance' });
@@ -3661,8 +3722,8 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
   const saveMoCode = async (t, code) => {
     /* 🔐 เลขรันใบ MO = เอกสารควบคุมของทีมนั้น — แก้ข้ามทีม = เลขซ้ำ/กระโดดในใบที่ยื่นออกไปแล้ว
        (audit 15/10) · ไม่ผูกทีม = ไม่บล็อก */
-    const tw = canWriteTeam(userTeams, t?.key || t?.dept_name, { role });
-    if (!tw.ok) { toast.error(teamBlockText(tw, 'เลขเอกสารของทีมนี้')); return; }
+    const tw = canWriteTeam(userTeams, t?.key || t?.dept_name, { role, allUnits });
+    if (!tw.ok) { toast.info(teamBlockText(tw, 'เลขเอกสารของทีมนี้')); return; }
     const c = (code || '').trim().toUpperCase(); if (!c || c === (t.mo_code || '')) return;
     if (!window.confirm(`เปลี่ยนรหัสทีม ${t.dept_name}: ${t.mo_code || '(ว่าง)'} → ${c}\n\n`
       + `⚠️ ตัวนับเลขรันผูกกับรหัส — เปลี่ยนแล้วเลขจะ**เริ่มใหม่จาก 1** (ตอนนี้อยู่ที่ ${t.last_seq})\n`
@@ -3675,8 +3736,8 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
   const saveMoSeq = async (t, val) => {
     /* 🔐 เลขรันใบ MO = เอกสารควบคุมของทีมนั้น — แก้ข้ามทีม = เลขซ้ำ/กระโดดในใบที่ยื่นออกไปแล้ว
        (audit 15/10) · ไม่ผูกทีม = ไม่บล็อก */
-    const tw = canWriteTeam(userTeams, t?.key || t?.dept_name, { role });
-    if (!tw.ok) { toast.error(teamBlockText(tw, 'เลขเอกสารของทีมนี้')); return; }
+    const tw = canWriteTeam(userTeams, t?.key || t?.dept_name, { role, allUnits });
+    if (!tw.ok) { toast.info(teamBlockText(tw, 'เลขเอกสารของทีมนี้')); return; }
     if (!t.seqKey) return toast.error('ยังตัดสินคีย์ตัวนับของทีมนี้ไม่ได้ (อ่านเวลาไม่ออก) — ยังไม่บันทึก');
     const n = Math.max(0, parseInt(val, 10) || 0);
     const { error } = await supabaseDR.from('mtn_mo_seq').upsert({ team_code: t.seqKey, last_seq: n, updated_at: new Date().toISOString() }, { onConflict: 'team_code' });

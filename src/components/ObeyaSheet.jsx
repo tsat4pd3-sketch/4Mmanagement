@@ -8,6 +8,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { statusColor } from '../utils/obeyaKpi';
 import { A4, GAP, chooseSheetGrid } from '../utils/sheetGrid';
+import useIsMobile from '../utils/useIsMobile';
 
 /* คณิตของผัง (A4 · GAP · ตัวเลือกผัง) ย้ายไป `src/utils/sheetGrid.js` แล้ว (pure + มีเทส)
    re-export ไว้เพื่อไม่ต้องไล่แก้ import ของหน้าที่ใช้อยู่ */
@@ -133,6 +134,10 @@ const SheetIconBtn = ({ fs, title, onClick, children }) => (
 export function Sheet({ k, cw = 0, span = 1, icon, title, sub, big, unit, bigNote, delta, stat, foot, link, onLink, zoom = true, onClose, children }) {
   const fs = (n) => Math.max(11, Math.round(n * k));
   const status = stat?.status;
+  /* 📱 มือถือ: กริดเหลือ 1 คอลัมน์ ⇒ แผ่นกว้าง 2 ช่อง (OEE · ACTION BOARD) ต้องเป็น 1 ช่อง
+     ไม่งั้นเกิดคอลัมน์แฝงที่ 2 กว้าง ~0 = ที่ว่างประหลาด + แผ่นถัดไปเบียด (15/10) · จอคอมเดิม */
+  const isMobile = useIsMobile();
+  if (isMobile) span = 1;
   const sheetW = cw * span + GAP * (span - 1);          // ความกว้างจริงของแผ่นใบนี้
   const [zoomed, setZoomed] = useState(false);
   const zk = useMemo(() => (zoomed ? zoomScale() : 1), [zoomed]);
@@ -161,12 +166,14 @@ export function Sheet({ k, cw = 0, span = 1, icon, title, sub, big, unit, bigNot
             : (zoom && <SheetIconBtn fs={fs} title="ขยายดูใหญ่" onClick={() => setZoomed(true)}>🔍</SheetIconBtn>)}
         </div>
         {sub && <div style={{ fontSize: fs(10.5), color: 'var(--muted)', marginTop: 1 }}>{sub}</div>}
+        {/* 📱 มือถือ: ขึ้นบรรทัดใหม่ได้ — "14.1 พันบาท เดือน มี.ค. (ล่าสุด) ▲ 35.9 ตามเป้า" กว้าง 371px ในแผ่น 346px (mobilesweep 15/10) */}
         <div style={{
           display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'space-between',
           marginTop: Math.round(3 * k), minHeight: Math.round(22 * k),
+          ...(isMobile ? { flexWrap: 'wrap', rowGap: 4 } : null),
         }}>
           {big !== undefined ? (
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 5, flexShrink: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 5, flexShrink: 0, ...(isMobile ? { flexWrap: 'wrap', flexShrink: 1, minWidth: 0 } : null) }}>
               <div style={{ fontSize: fs(34), fontWeight: 900, lineHeight: 1, color: status ? statusColor(status) : 'var(--text)' }}>
                 {big}
               </div>

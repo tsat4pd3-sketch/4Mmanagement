@@ -668,7 +668,7 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
     if (!f.part_no.trim() || !f.characteristic.trim()) { toast.error('กรอก Part No. และชื่อจุดควบคุม'); return; }
     /* 🔐 ด่านซ้ำตอนเขียนจริง — ไลน์ปลายทางมาจากฟอร์ม (เปลี่ยนได้) */
     const wc = canWriteLine(wctx, f.line_name, lineObjs);
-    if (!wc.ok) { toast.error(writeBlockText(wc, { what: 'จุดควบคุมของไลน์นี้' })); return; }
+    if (!wc.ok) { toast.info(writeBlockText(wc, { what: 'จุดควบคุมของไลน์นี้' })); return; }
     if (f.usl !== '' && f.lsl !== '' && Number(f.usl) <= Number(f.lsl)) { toast.error('USL ต้องมากกว่า LSL'); return; }
     const payload = {
       part_no: f.part_no.trim(), part_name: f.part_name.trim() || null, line_name: f.line_name || null,
@@ -690,7 +690,7 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
 
   const saveMeasurement = async () => {
     if (!sel) return;
-    if (!selWrite.ok) { toast.error(writeBlockText(selWrite, { what: 'ผลวัดของไลน์นี้' })); return; }
+    if (!selWrite.ok) { toast.info(writeBlockText(selWrite, { what: 'ผลวัดของไลน์นี้' })); return; }
     const vals = readings.map(v => Number(v));
     if (readings.some(v => v === '' || !Number.isFinite(Number(v)))) { toast.error(`กรอกค่าวัดให้ครบ ${sel.subgroup_size} ค่า`); return; }
     const { error } = await supabase.from('qa_measurements').insert({
@@ -704,7 +704,7 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
   };
 
   const delMeasurement = async (id) => {
-    if (!selWrite.ok) { toast.error(writeBlockText(selWrite, { what: 'ผลวัดของไลน์นี้' })); return; }
+    if (!selWrite.ok) { toast.info(writeBlockText(selWrite, { what: 'ผลวัดของไลน์นี้' })); return; }
     if (!window.confirm('ลบผลวัดชุดนี้?')) return;
     const { error } = await supabase.from('qa_measurements').delete().eq('id', id);
     if (error) { toast.error(error.message); return; }
@@ -1284,7 +1284,7 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone, lineObjs = [], 
     if (!f.title?.trim()) { toast.error('กรอกหัวข้อ CAPA'); return; }
     /* 🔐 ด่านซ้ำตอนกดจริง (ซ่อนปุ่มอย่างเดียวไม่พอ — เปิดใบตรงจาก NCR/เคลมได้) */
     const w = canWriteLine(wctx, capaLineOf(f), lineObjs);
-    if (!w.ok) { toast.error(writeBlockText(w, { what: 'ใบ 8D ของไลน์นี้' })); return; }
+    if (!w.ok) { toast.info(writeBlockText(w, { what: 'ใบ 8D ของไลน์นี้' })); return; }
     const payload = {
       ncr_id: f.ncr_id || null, title: f.title.trim(),
       owner_name: f.owner_name?.trim() || null, due_date: f.due_date || null,
@@ -1344,6 +1344,13 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone, lineObjs = [], 
         {/* UI-STANDARD 2026-09-24: 3 ตัวเลือกเท่ากัน → Segmented · "ทุก…" ซ้ายสุด (state 'all' เดิม) */}
         <Segmented label="สถานะ" value={filter} onChange={setFilter} options={STATUS_SEG} />
         <span className="spacer" />
+        {/* 🔒 ตัวนับที่ถูกกรองออก — ต้องอยู่เหนือ fold (UI-STANDARD §3.1) ไม่ใช่ท้ายตาราง
+            และต้องบอกปลายทางที่ "ดูได้จริง" (ที่นี่กางกลับไม่ได้ ⇒ ชี้ไปบอร์ดคุณภาพ) */}
+        {hiddenCount > 0 && (
+          <span className="filter-count" title="ใบของส่วนงานอื่น — ดูรายละเอียดได้ที่บอร์ดคุณภาพ แต่แก้/ปิดไม่ได้">
+            🔒 ไม่แสดง {hiddenCount} ใบของส่วนงานอื่น
+          </span>
+        )}
         {canRecord && <button style={btnSt()} onClick={() => setDetail({
           id: null, capa_no: '', ncr_id: null, title: '', owner_name: fullName || '', due_date: '',
           part_no: '', line_name: '',
@@ -1390,11 +1397,7 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone, lineObjs = [], 
             {visible.length === 0 && <tr><td style={tdSt} colSpan={6}><span style={{ color: 'var(--muted)' }}>
               {hiddenCount > 0 ? `ไม่มีใบ 8D ของส่วนงานคุณ (มี ${hiddenCount} ใบของส่วนงานอื่น — ดูได้ที่บอร์ดคุณภาพ)` : 'ไม่มีรายการ'}
             </span></td></tr>}
-            {visible.length > 0 && hiddenCount > 0 && (
-              <tr><td style={{ ...tdSt, fontSize: 11.5, color: 'var(--muted)' }} colSpan={6}>
-                🔒 ซ่อน {hiddenCount} ใบของส่วนงานอื่น — ดูได้ แต่แก้/ปิดไม่ได้
-              </td></tr>
-            )}
+
           </tbody>
         </table>
       </div>
@@ -1600,7 +1603,7 @@ function InstrumentTab({ lineObjs, canManage }) {
       cert_no: f.cert_no.trim() || null, status: f.status, remark: f.remark.trim() || null,
     };
     const wi = canWriteLine(instCtx, f.line_name, lineObjs);
-    if (!wi.ok) { toast.error(writeBlockText(wi, { what: 'เครื่องมือวัดของไลน์นี้' })); return; }
+    if (!wi.ok) { toast.info(writeBlockText(wi, { what: 'เครื่องมือวัดของไลน์นี้' })); return; }
     const { error } = f.id
       ? await supabase.from('qa_instruments').update(payload).eq('id', f.id)
       : await supabase.from('qa_instruments').insert(payload);

@@ -241,7 +241,7 @@ function PlanCard({ plan: p, tasks, canManage, pmPlan, fullName, onEdit, onReloa
     } catch (e) { toast.error('แจ้งไม่สำเร็จ: ' + (e.message || e)); }
   };
   const setStatus = async (status) => {
-    if (!planWrite.ok) { toast.error(writeBlockText(planWrite, { what: 'แผน PM ของไลน์นี้' })); return; }
+    if (!planWrite.ok) { toast.info(writeBlockText(planWrite, { what: 'แผน PM ของไลน์นี้' })); return; }
     const { error: wErr215 } = await supabaseDR.from('pm_coordination_plans').update({ status, updated_at: new Date().toISOString() }).eq('id', p.id);
     if (wErr215) { toast.error('เปลี่ยนสถานะแผนไม่สำเร็จ: ' + wErr215.message); return; }
     // ผูกแผน PM เดิม + ปิดเป็น "เสร็จ" → ถามว่าจะ stamp วันทำล่าสุดในระบบแผน PM ด้วยไหม (เลื่อนรอบถัดไป)
@@ -270,7 +270,7 @@ function PlanCard({ plan: p, tasks, canManage, pmPlan, fullName, onEdit, onReloa
     onReload();
   };
   const del = async () => {
-    if (!planWrite.ok) { toast.error(writeBlockText(planWrite, { what: 'แผน PM ของไลน์นี้' })); return; }
+    if (!planWrite.ok) { toast.info(writeBlockText(planWrite, { what: 'แผน PM ของไลน์นี้' })); return; }
     if (!confirm('ลบแผนนี้?')) return;
     // RLS DELETE ปฏิเสธ = 0 แถวไม่มี error ⇒ นับแถวก่อนขึ้น "ลบแล้ว" (กฎเขียน DB ข้อ 2)
     const res = await supabaseDR.from('pm_coordination_plans').delete().eq('id', p.id).select('id');

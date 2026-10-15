@@ -28,11 +28,15 @@ export function splitFilterChildren(children) {
   const tail = at < 0 ? [] : arr.slice(at + 1);
   /* โชว์เสมอ: ช่องค้นหา + <Segmented> (2–5 ตัวเลือกสั้นๆ ที่มักเป็น "มุมมอง" เช่น 🟡 ถังเหลือง / 🔴 ถังแดง · กะ —
      พับทิ้ง = คนไม่รู้ว่ากำลังดูถังไหน · วัดจริง /qa ถังเหลือง-แดง 15/10) */
-  const search = head.filter(c => isValidElement(c) && (c.type === SearchInput || c.type === Segmented));
+  /* ช่องค้นหาที่ห่อใน <div> คู่กับปุ่ม "ค้นหา" (เช่น /order-trace — ช่องสแกน PROD.NO คือหัวใจของหน้า) ก็นับเป็นช่องค้นหา
+     ไม่งั้นถูกพับหาย ทั้งที่ข้อความบนจอบอก "สแกนบาร์โค้ด…" (วัดจริง 15/10) · ลึก 2 ชั้นพอ ไม่ไล่ทั้งต้นไม้ */
+  const isSearchy = (c, depth = 0) => isValidElement(c) && (c.type === SearchInput || c.type === Segmented
+    || (depth < 2 && typeof c.type === 'string' && Children.toArray(c.props?.children).some(k => isSearchy(k, depth + 1))));
+  const search = head.filter(c => isSearchy(c));
   /* ปุ่ม <button> ตรงๆ ในแถบ = "คำสั่ง" (โหลด/บันทึก/เพิ่ม) ไม่ใช่ตัวกรอง ⇒ ไม่พับ (บางหน้าไม่ได้ใส่ spacer คั่น
      แล้ววางปุ่มหลักปนกับตัวกรอง — พับทิ้ง = ปุ่มหลักหายจากจอ ซึ่งคือปัญหาที่ทำตัวนี้มาแก้) */
   const isCmd = c => isValidElement(c) && c.type === 'button';
-  const fold = head.filter(c => !(isValidElement(c) && (c.type === SearchInput || c.type === Segmented)) && !isCmd(c));
+  const fold = head.filter(c => !isSearchy(c) && !isCmd(c));
   return { fold, search, tail: [...head.filter(isCmd), ...tail] };
 }
 

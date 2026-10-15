@@ -17,6 +17,8 @@ import { toast } from './Toast';
 import { specLabel, judgeVariable } from '../utils/qaSpec';
 import { pieceResult, seqLabel, SEQ_RULE } from '../utils/qaSequential';
 import PersonSelect from './PersonSelect';
+import { PointThumb } from './inspect/PointZoom';
+import { qaFileUrl } from '../lib/qaImages';
 
 const JUDGE = {
   ok: { label: 'ผ่าน', color: '#22c55e' },
@@ -211,6 +213,9 @@ export default function QaPieceStepper({
                   borderRadius: 8, background: 'var(--bg3)', borderLeft: `4px solid ${color}` }}>
                   <span style={{ minWidth: 34, height: 22, padding: '0 8px', borderRadius: 999, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                     fontWeight: 800, fontSize: 12, color: '#fff', background: j ? JUDGE[j].color : '#4d9fff' }}>{i.balloon_no}</span>
+                  {/* 🔍 รูปโคลสอัพของจุด (ตั้งที่ /qa-setup) — แตะซูม · แบบเดียวกับใบตรวจ PM */}
+                  {i.image_path && <PointThumb url={qaFileUrl(i.image_path)} height={40} label={i.balloon_no}
+                    name={i.characteristic} description={`สเปค: ${specLabel(i)}${i.method ? ` · ${i.method}` : ''}`} />}
                   <div style={{ flex: '1 1 180px', minWidth: 160 }}>
                     <div style={{ fontSize: 13, fontWeight: 700 }}>{i.characteristic}</div>
                     <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>สเปค: {specLabel(i)}{i.method ? ` · ${i.method}` : ''}</div>

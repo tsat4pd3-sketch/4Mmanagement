@@ -254,7 +254,7 @@ function StockTab({ role, scope }) {
   const reviewTxn = async (txn, decision, reason) => {
     /* 🔐 ด่านซ้ำตอนกดจริง — ลิสต์กรองแล้วยังไม่พอ (แถวเก่าค้างในหน่วยความจำ/กดจาก 2 แท็บ) */
     const w = canWriteLine(wctx, txn.line_name, lines);
-    if (!w.ok) { toast.error(writeBlockText(w, { what: 'ใบขอปรับยอดของไลน์นี้' })); return; }
+    if (!w.ok) { toast.info(writeBlockText(w, { what: 'ใบขอปรับยอดของไลน์นี้' })); return; }
     setReviewing(txn.id);
     const patch = decision === 'approved'
       ? { status:'approved', reviewed_by: fullName, reviewed_at: new Date().toISOString(), reject_reason: null }
@@ -276,7 +276,7 @@ function StockTab({ role, scope }) {
   const handleSave = async () => {
     /* 🔐 ลงรายการเข้า/ออกของไลน์อื่นไม่ได้ (ชั้นที่ 3 · 15/10) */
     const wr = canWriteLine(wctx, form.line_name, lines);
-    if (!wr.ok) { toast.error(writeBlockText(wr, { what: 'สต็อกของไลน์นี้' })); return; }
+    if (!wr.ok) { toast.info(writeBlockText(wr, { what: 'สต็อกของไลน์นี้' })); return; }
     if (!form.line_name) { toast.error('เลือกไลน์ก่อน'); return; }
     if (!form.mat_no.trim()) { toast.error('กรอก Mat No.'); return; }
     const qty = parseFloat(form.qty);
@@ -1012,7 +1012,7 @@ function DeliveryRoundsTab({ canEdit, fullName, scope }) {
   const handleSave = async () => {
     /* ด่านซ้ำตอนเขียนจริง — ไลน์ปลายทางมาจากฟอร์ม */
     const wr = canWriteLine(rndCtx, form.line_name, lines);
-    if (!wr.ok) { toast.error(writeBlockText(wr, { what: 'รอบจัดส่งของไลน์นี้' })); return; }
+    if (!wr.ok) { toast.info(writeBlockText(wr, { what: 'รอบจัดส่งของไลน์นี้' })); return; }
     if (!form.line_name.trim()) { toast.error('กรอกชื่อไลน์'); return; }
     if (!form.round_no || parseInt(form.round_no) < 1) { toast.error('กรอก Round No.'); return; }
     if (!form.delivery_time) { toast.error('กรอกเวลาจัดส่ง'); return; }
@@ -1064,7 +1064,7 @@ function DeliveryRoundsTab({ canEdit, fullName, scope }) {
   const handleDelete = async (id) => {
     const row = rounds.find(r => r.id === id);
     const wd = canWriteLine(rndCtx, row?.line_name, lines);
-    if (!wd.ok) { toast.error(writeBlockText(wd, { what: 'รอบจัดส่งของไลน์นี้' })); return; }
+    if (!wd.ok) { toast.info(writeBlockText(wd, { what: 'รอบจัดส่งของไลน์นี้' })); return; }
     if (!window.confirm('ยืนยันลบรอบจัดส่งนี้?')) return;
     const { error } = await supabaseDR.from('kanban_delivery_rounds').update({ is_active: false }).eq('id', id);
     if (error) { toast.error(error.message); return; }

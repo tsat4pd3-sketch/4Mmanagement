@@ -56,14 +56,18 @@ const ST = {
 };
 
 const fmtQty = (v) => (v == null ? '—' : Number(v).toLocaleString());
+/* เวลาแจ้ง/เปิดใบ — **ข้ามวันต้องบอกวันด้วย** (15/10 feedback: ใบค้าง 37 วันโชว์แค่ "เปิด 11:01"
+   คู่กับ "รอมาแล้ว 53,476 นาที" ⇒ อ่านแล้วนึกว่าเพิ่งเปิดเช้านี้) */
 const hhmm = (iso) => {
   if (!iso) return '—';
   const d = new Date(iso);
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  const t = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  const sameDay = d.toDateString() === new Date().toDateString();
+  return sameDay ? t : `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')} ${t}`;
 };
 const agoMin = (iso) => (iso ? Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000)) : null);
 
-export default function LinePartCallPanel({ lineName, lines = [], role, fullName }) {
+export default function LinePartCallPanel({ lineName, lines = [], role, fullName, alwaysShow = false }) {
   const [levels, setLevels] = useState([]);
   const [stock, setStock]   = useState([]);
   const [reqs, setReqs]     = useState([]);
@@ -393,7 +397,12 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
 
   const nothing = !err && !whErr && !suggest.length && !holds.length && !inFlight.length && !noLevel.length && !stuckUp.length
     && !split.produceDue.length && !split.produceUnknown.length;   // produceNoStd ตัวเดียวไม่เปิดแผง (ไม่งั้นทุกไลน์ที่ผลิตของขึ้นแผงหมด)
-  if (nothing) return null;         // ไลน์ที่ยังไม่ตั้งอะไรเลย + ไม่มีของ = ไม่ต้องรก
+  /* 🔴 15/10 feedback หน้างาน ("ไม่มีปุ่ม เรียก Part จาก Store ครับ แล้วตั้งจุดเรียกเติมยังไงครับ"):
+     ไลน์ที่ยังไม่มีของ + ยังไม่ตั้ง min = `nothing` ⇒ แผงหายทั้งใบ ⇒ **ปุ่ม ⚙️ ตั้งจุดเรียกเติม ก็หายไปด้วย**
+     = ไก่กับไข่ (ต้องมีของก่อนถึงจะตั้งจุดเฝ้าได้ ทั้งที่จุดเฝ้าคือสิ่งที่ต้องตั้ง "ก่อน" ของจะหมด)
+     ⇒ หน้าจอผลิตยังซ่อนเหมือนเดิม (ไม่รกตอนไม่มีอะไรต้องทำ) · หน้า**ตั้งค่าไลน์**ส่ง `alwaysShow`
+        เพื่อให้มีทางเข้าถึงการตั้งค่าเสมอ */
+  if (nothing && !alwaysShow) return null;
 
   const card = { background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 12, padding: '14px 16px', marginBottom: 16 };
   const btn = (bg, fg, bd) => ({ fontSize: 11.5, fontWeight: 800, padding: '5px 11px', borderRadius: 7,
@@ -558,7 +567,9 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
                 {/* เฟส 4 — ของถูกวางที่ไหน/ผ่านด่านทางไหน: สแกนจุด · ไลน์ยังไม่ตั้งจุด · หัวหน้าปลดบล็อก (override ต้องเห็น ห้ามซ่อน) */}
                 {r.status === 'delivered' && r.delivered_gate && DELIVER_GATES[r.delivered_gate] && (
                   <span title={r.delivered_override_reason || ''} style={{ fontSize: 11, fontWeight: 700, color: DELIVER_GATES[r.delivered_gate].color }}>
-                    {DELIVER_GATES[r.delivered_gate].icon} {r.delivered_gate === 'scanned' ? (r.delivered_point_name || DELIVER_GATES.scanned.label) : DELIVER_GATES[r.delivered_gate].label}
+                    {/* 🔴 ป้ายนี้คือ "ตอนส่งผ่านด่านทางไหน" (ประวัติ) ไม่ใช่สถานะทะเบียนวันนี้ —
+                        ไลน์ที่เพิ่งตั้งจุดส่งทีหลัง ใบเก่ายังขึ้น "ยังไม่ตั้งจุดส่ง" ตลอดไป ต้องเขียนให้ชัด */}
+                    {DELIVER_GATES[r.delivered_gate].icon} {r.delivered_gate === 'scanned' ? (r.delivered_point_name || DELIVER_GATES.scanned.label) : `${DELIVER_GATES[r.delivered_gate].label} ตอนส่ง`}
                   </span>
                 )}
                 {r.status === 'delivered' && canReceive && (

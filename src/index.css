@@ -981,3 +981,115 @@ body.has-mnav { --mnav-h: calc(56px + env(safe-area-inset-bottom, 0px)); padding
 .dr-mpick-main b { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dr-mpick-main span { font-size: 12px; color: var(--muted); }
 .dr-mpick-act { flex-shrink: 0; font-size: 12px; font-weight: 800; color: var(--accent); }
+
+/* ─── 📱 รายการ MO แบบการ์ด (MtnRepair · มือถือเท่านั้น · 2026-10-15) ───────────────────── */
+.mo-cards { display: flex; flex-direction: column; gap: 8px; }
+.mo-card {
+  display: flex; flex-direction: column; gap: 4px; width: 100%; text-align: left; cursor: pointer;
+  padding: 10px 12px 10px 14px; border-radius: 10px; background: var(--card); border: 1px solid var(--border);
+  color: var(--text); font-family: var(--font-body);
+}
+.mo-card-alert-rail { box-shadow: inset 4px 0 0 #ef4444; animation: moRowBar 1.1s ease-in-out infinite; background: rgba(239, 68, 68, 0.06); }
+.mo-card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 14px; }
+.mo-card-where { font-size: 13px; color: var(--text2); }
+.mo-card-where b { color: var(--text); }
+.mo-card-what { font-size: 14px; font-weight: 700; color: var(--text); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.mo-card-what span { font-weight: 400; color: var(--muted); }
+.mo-card-meta { display: flex; flex-wrap: wrap; gap: 2px 10px; font-size: 11.5px; color: var(--muted); }
+.mo-card-prog { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--text2); }
+.mo-card-prog > div { flex: 1; height: 4px; background: var(--bg3); border-radius: 3px; overflow: hidden; }
+.mo-card-prog > div > div { height: 100%; }
+/* แถบ "ขั้นถัดไป" ในใบ MO (มือถือ) — ปุ่มหลักเต็มกว้าง · ปุ่มทางเลือก (ข้าม QA) เป็นปุ่มขอบเหลือง */
+.m-actbar { flex-direction: column; align-items: stretch; padding: 8px; }
+.m-actbar > button { width: 100%; padding: 0 12px; white-space: normal; line-height: 1.25; }
+.m-actbar > button.m-actbar-alt { background: transparent; color: #f59e0b; border: 1px solid #f59e0b; min-height: 40px; font-size: 13px; }
+/* แถว ยกเลิก/บันทึก ของฟอร์มขั้น MO (มือถือ) — ยกเลิก = ปุ่มขอบ · บันทึก = ปุ่มหลักกว้าง */
+.m-stepbar { padding: 8px; }
+.m-stepbar > button:first-child { background: transparent; color: var(--text2); border: 1px solid var(--border2); padding: 0 16px; }
+.m-stepbar > button:last-child { flex: 1; }
+
+/* ─── 📱 ตรวจนับ/เฟิร์มยอด แบบการ์ด (StockCountSheet · มือถือเท่านั้น · 2026-10-15) ───────── */
+.sc-cards { display: flex; flex-direction: column; gap: 8px; }
+.sc-card { padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg2); }
+.sc-card.sc-typed { border-color: var(--accent); }
+.sc-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+.sc-sys { display: flex; flex-direction: column; min-width: 64px; }
+.sc-sys span { font-size: 11px; color: var(--muted); }
+.sc-sys b { font-size: 16px; }
+.sc-row input { flex: 1; min-width: 0; min-height: 44px; font-size: 18px !important; font-weight: 800; text-align: right; padding: 0 12px; border-radius: 8px; }
+.sc-diff { min-width: 56px; text-align: right; font-size: 15px; font-weight: 800; }
+.sc-savebar { flex-wrap: wrap; }
+.sc-savebar > div { flex: 1 1 100%; }
+.sc-savebar { row-gap: 6px; padding: 8px 10px; }
+.sc-savebar > div { font-size: 11.5px !important; line-height: 1.4; }
+.sc-savebar > label { flex: 1 1 120px; font-size: 12px !important; line-height: 1.3; }
+.sc-savebar > button { flex: 1 1 150px; min-height: 44px; white-space: normal; line-height: 1.2; }
+
+/* 📱 คิวเรียกตรวจ FME (/qa?tab=check) — มือถือ: ป้ายขั้นอยู่บรรทัดบน · ข้อความเต็มบรรทัด · เวลา+ปุ่มบรรทัดล่าง ปุ่มนิ้วกดถึง
+   (เดิมป้าย "1️⃣ ชิ้นแรก" ยึดคอลัมน์ซ้าย ข้อความถูกบีบเหลือ ~200px ตัดคำทุก 3 คำ · 15/10) */
+@media (max-width: 768px) {
+  .fme-row .fme-txt { flex-basis: 100% !important; }
+  .fme-row > button { min-height: 40px; padding-left: 14px !important; padding-right: 14px !important; }
+  .fme-row > button:first-of-type { margin-left: auto; }
+}
+
+/* 📱 ใบรายงานของเสีย /scrap-report — การ์ดต่อใบบนมือถือ (แทนตาราง 7 คอลัมน์ที่ปุ่ม ✏️ ตกขอบขวา · 15/10) */
+.sr-cards { display: flex; flex-direction: column; gap: 8px; }
+.sr-card { background: var(--card); border: 1px solid var(--border2); border-radius: 12px; padding: 11px 12px; }
+.sr-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 14px; }
+.sr-line { font-size: 13px; color: var(--text2); margin-top: 4px; }
+.sr-sum { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+.sr-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; align-items: center; }
+.sr-acts > button { min-height: 40px; padding: 0 12px; border-radius: 9px; font-size: 13px; font-weight: 700; cursor: pointer;
+  background: var(--bg3); color: var(--text2); border: 1px solid var(--border2); font-family: var(--font-body); }
+.sr-acts > button.sr-main { flex: 1 1 140px; background: rgba(61,214,92,0.14); color: var(--accent); border-color: rgba(61,214,92,0.5); }
+@media (max-width: 768px) {
+  /* ฟอร์มในใบ: หัวใบ 4 คอลัมน์ → 2 (ไลน์ขึ้นก่อน เต็มแถว — ชื่อไลน์ยาว) · ผู้ลงนาม 3 → 2 · ปุ่มบันทึกเกาะล่างกล่อง */
+  .sr-hgrid, .sr-sgrid { grid-template-columns: 1fr 1fr !important; }
+  .sr-hgrid > * { grid-column: auto !important; }              /* ล้าง span 3 ของหัว 4 คอลัมน์ (ใน 2 คอลัมน์ = สร้างคอลัมน์ผี) */
+  .sr-hgrid > :nth-child(2) { grid-column: 1 / -1 !important; order: -1; }   /* ไลน์ */
+  .sr-hgrid > :nth-child(6) { grid-column: 1 / -1 !important; }              /* ประเภทชิ้นงาน (checkbox 5 ตัว) */
+  .sr-foot { position: sticky; bottom: -18px; z-index: 5; margin: 16px -18px -18px !important; padding: 10px 14px;
+    background: var(--card); border-top: 1px solid var(--border2); }
+  .sr-foot > button { min-height: 44px; padding-left: 18px !important; padding-right: 18px !important; font-size: 14px !important; }
+  .sr-foot > button:last-child { flex: 1 1 auto; }
+}
+/* 📱 รายการของเสียในใบ (/scrap-report) — ตาราง → การ์ดต่อรายการบนมือถือ (CSS ล้วน · ป้ายช่องจาก data-l) */
+@media (max-width: 768px) {
+  .sr-items-box { overflow: visible !important; border: 0 !important; }
+  .sr-items { min-width: 0 !important; display: block; }
+  .sr-items thead { display: none; }
+  .sr-items tbody, .sr-items tfoot { display: block; }
+  .sr-items tbody tr { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px 8px; padding: 10px; margin-bottom: 8px;
+    border: 1px solid var(--border2); border-radius: 10px; background: var(--bg3); }
+  .sr-items tbody td { display: block; padding: 0 !important; border: 0 !important; min-width: 0; }
+  .sr-items tbody td.sr-c::before { content: attr(data-l); display: block; font-size: 11px; font-weight: 700; color: var(--muted); margin-bottom: 2px; }
+  .sr-items tbody td.sr-no::before, .sr-items tbody td.sr-src::before, .sr-items tbody td.sr-del::before { content: none; }
+  .sr-items tbody td.sr-no { grid-column: 1 / 3; font-weight: 800; font-size: 14px; display: flex; align-items: center; gap: 6px; }
+  .sr-items tbody td.sr-src { grid-column: 3; grid-row: 1; justify-self: end; }
+  .sr-items tbody td.sr-full { grid-column: 1 / -1; }
+  .sr-items tbody td { order: 20; background: transparent !important; }
+  /* ลำดับบนมือถือ: ที่ใช้บ่อยขึ้นก่อน — MAT → PART → จำนวน/ยืนยัน/สาเหตุ → ช่วง/รหัสงานเสีย → MODEL/CODE/BOM (ไม่ค่อยแตะ) → รูป/ลบ */
+  .sr-items tbody td.sr-no, .sr-items tbody td.sr-src { order: 0; }
+  .sr-items tbody td[data-l="MAT SAP"] { order: 1; }
+  .sr-items tbody td[data-l="PART NO."] { order: 2; }
+  .sr-items tbody td.sr-pname { order: 3; grid-column: span 2; }
+  .sr-items tbody td[data-l="Q'TY"] { order: 4; }
+  .sr-items tbody td[data-l="ยืนยัน"] { order: 5; }
+  .sr-items tbody td[data-l="สาเหตุ"] { order: 6; }
+  .sr-items tbody td[data-l="ช่วง"] { order: 7; }
+  .sr-items tbody td.sr-dcode { order: 8; grid-column: span 2; }
+  .sr-items tbody td.sr-dcode > button { width: 100%; }
+  .sr-items tbody td.sr-pic { order: 30; }
+  .sr-items tbody td.sr-del { order: 31; grid-column: 3; }
+  .sr-items tbody td.sr-del { justify-self: end; align-self: end; }
+  .sr-items tbody td input, .sr-items tbody td select { width: 100% !important; min-height: 40px; font-size: 14px !important; }
+  .sr-items tbody td.sr-big input { min-height: 44px; font-size: 17px !important; font-weight: 800; text-align: center; }
+  .sr-items tbody td > div { width: 100%; }
+  .sr-items tbody td > div > :first-child { flex: 1 1 auto; min-width: 0; width: auto !important; }
+  .sr-items tbody td button { min-height: 40px; max-width: none !important; }
+  .sr-items tbody td.sr-full > button { width: 100%; }
+  .sr-items tbody tr:only-child > td[colspan] { grid-column: 1 / -1; }
+  .sr-items tfoot tr { display: flex; gap: 12px; padding: 8px 10px; border-radius: 10px; background: var(--bg2); font-size: 13px; }
+  .sr-items tfoot td { padding: 0 !important; border: 0 !important; }
+}

@@ -56,7 +56,16 @@
   — migration `20261015_qa_inspection_items_closeup_main.sql` (**MAIN · apply แล้ว 2026-10-15**) · nullable · RLS เดิมครอบ
 - ไฟล์ใหม่ทั้ง drawing และรูปจุดใช้ path ไม่ซ้ำ (`Date.now()+rand`) ⇒ `uploadOpts()` แบบ immutable
 
+## 🔍 ฝั่งตรวจ — รูปโคลสอัพเปิดแบบเดียวกัน (2026-10-15)
+
+`components/inspect/PointZoom.jsx` — `PointZoom` (เต็มจอในแอป · Esc/แตะพื้นปิด) + `PointThumb` (รูปย่อในแถว แตะ = ซูม)
+| | PM `PMCheckData` | QA `QaCheckSheet` + `QaPieceStepper` |
+|---|---|---|
+| หมุดมีรูปจุด | ขึ้น 🔍 · แตะ = ไปที่จุด + เปิดซูม | ขึ้น 🔍 · แตะ = ไปที่แถว + เปิดซูม |
+| แถวรายการตรวจ | รูปย่อ แตะ = ซูม | รูปย่อในฟอร์มชิ้นที่ N แตะ = ซูม (เห็นสเปค+เครื่องมือใต้รูป) |
+- URL รูป QA ผ่าน `qaFileUrl()` (`src/lib/qaImages.js`) ที่เดียว (bucket `qa-drawings`)
+- 🔴 จอตรวจระบบใหม่ที่มีรูปจุด ใช้ `PointZoom`/`PointThumb` — ห้ามเปิดรูปด้วย `<a target="_blank">` (มือถือเด้งออกจากใบที่กรอกค้าง)
+
 ## ยังไม่ทำ (เฟสถัดไป)
 
-- **จอตรวจ QA (`QaCheckSheet`) ยังไม่โชว์รูปโคลสอัพ** ตอนแตะหมุด (ฝั่ง PM `PMCheckData` มีแล้ว) — ให้ทำด้วยหลักเดียวกันเพื่อให้ "ฝั่งตรวจ" เรียนครั้งเดียวด้วย
 - QA คัดลอกจุดตรวจไปพาร์ทอื่น (pattern `copyCheckpointsInto` ฝั่ง PM)
