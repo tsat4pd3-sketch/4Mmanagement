@@ -23,7 +23,7 @@ import { fetchAllRows } from '../utils/fetchAllRows';
 import { loadBreakPolicies, loadCtProducts, loadCtKanban, fetchOeeTargets } from '../utils/oeeMasters';
 import { valueInk, statusOf } from '../utils/statusTone';
 import { useLatestRequest } from '../utils/useLatestRequest';
-import { polyArea, centroid, labelAnchor } from '../utils/regionGeom';
+import { polyArea, centroid, labelAnchor, bboxOf } from '../utils/regionGeom';
 import MapPillars3D, { MAP_3D_TRANSFORM } from '../components/MapPillars3D';
 import { pillarHeight, pillarLegend } from '../utils/mapPillar';
 import { loadPmTeams, isAmTeam } from '../utils/pmTeams';
@@ -2557,7 +2557,15 @@ export default function FactoryMap({ setupMode = false }) {
                   const [x, y] = labelAnchor(r.points);
                   return { key: r.id, name: r.line_name, x, y, color: meta.color, blink: !!meta.blink,
                     h: pillarHeight(metric, cat, st.oee).h, text: shortText(st), dim: cat === 'idle' };
-                })} />
+                }).concat(autoHulls.map(h => {
+                  /* ▣ เสากลุ่ม = ยอดรวมทั้งครอบครัว (stOf รวมลูกให้แล้ว) · ตั้งที่ "ขอบล่างกลาง" ของกรอบแม่
+                     เสาลูกตั้งที่ขอบบน (labelAnchor) ⇒ 2 ชั้นไม่ชนกันในจุดเดียว */
+                  const st = stOf(h.name); const cat = regCat(st); const meta = CAT[cat];
+                  const bb = bboxOf(h.hull);
+                  return { key: `hull-${h.name}`, name: h.name, x: (bb.x0 + bb.x1) / 2, y: bb.y1, color: meta.color, blink: !!meta.blink,
+                    h: pillarHeight(metric, cat, st.oee).h, text: shortText(st), dim: cat === 'idle',
+                    group: true, kids: (childrenOf[h.name] || []).length };
+                }))} />
             )}
             {!is3d && regions.map(r => {
               if (facHidden(r.line_name)) return null;      // 🫥 โซนที่ซ่อนตาม metric — ป้ายก็ไม่วาด
