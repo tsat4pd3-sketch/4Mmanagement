@@ -12,7 +12,7 @@ import { scoreDef, defBars, unitOf, decimalsOf, summaryModeOf, summaryShort, fmt
 import { scopedLineNames } from '../utils/sectionScope';
 import useOrgScope from '../utils/useOrgScope';
 import OrgScopePicker from './OrgScopePicker';
-import { PLANT, isPlant, scopeKey, parseScopeKey, scopeOfDef, scopeCovers, sameScope, filterScopeOptions, drillParams, scopeUnder, scopePathText } from '../utils/orgScope';
+import { PLANT, isPlant, scopeKey, parseScopeKey, scopeOfDef, scopeCovers, sameScope, filterScopeOptions, drillParams, scopeUnder, scopePathText, canonicalScope } from '../utils/orgScope';
 import { canAccessPage } from '../utils/permissions';
 import { useLiveBoard } from '../utils/useLiveBoard';
 import { LIVE, RATE } from '../utils/refreshRates';
@@ -176,6 +176,8 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
     return null;
   }, [scope, org, pmTeams]);
   const mtnTeamKey = mtnTeam?.key || '';
+  /* 💰 ขอบเขตที่ใช้ "เขียน" (โน้ตรายเดือน · ลำดับแผ่น) = หน่วยเจ้าของรหัส (15/10) — ป้ายบนจอยังเป็นรหัสที่เลือก */
+  const kscope = useMemo(() => canonicalScope(org, scope || PLANT), [org, scope]);
   const monthNo = Number(date.slice(5, 7));
   const setParam = useCallback((k, v) => {
     setSp(prev => {
@@ -298,9 +300,13 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       if (kdRes.error && !kpiMissing) warn.push('นิยาม KPI');
       // นิยามของ "ขอบเขตที่เลือก + บรรพบุรุษ" — นิยามระดับแม่ตกทอดถึงลูก (ตกลงรุ่นเดียวกับแท็บ ⚙️)
       const sel = parseScopeKey(scopeKeyStr);
-      const kdefs = (kdRes.data || []).filter(d => scopeCovers(org, scopeOfDef(d), sel));
+      const kSel = canonicalScope(org, sel);   // 💰 15/10: โน้ต/ลำดับแผ่นของรหัส CC = ของหน่วยเจ้าของรหัส (คีย์เดียว ไม่แยก 2 ชุด)
+      /* นิยามที่ยังค้างอยู่ที่รหัส CC (แถวเก่าก่อน trigger / รหัสที่เพิ่งถูกผูกหน่วยในผัง) = นิยามของหน่วยเจ้าของ — ทำให้ตรงก่อนทุกตัวกรองของบอร์ด */
+      const canonDef = (d) => { const sc = scopeOfDef(d); const c = canonicalScope(org, sc); return c === sc ? d : { ...d, scope_kind: c.kind, scope_value: c.value }; };
+      const kdAll = (kdRes.data || []).map(canonDef);
+      const kdefs = kdAll.filter(d => scopeCovers(org, scopeOfDef(d), sel));
       /* ⬆ นิยามของ "หน่วยลูก" (12/10 · user: ลูกมี แม่ไม่มี ต้องโชว์ที่แม่ด้วย) — เก็บแยกจาก kdefs เพื่อไม่ให้ไปปนกับการตกทอดขาลง */
-      const kdefsBelow = (kdRes.data || []).filter(d => scopeUnder(org, scopeOfDef(d), sel));
+      const kdefsBelow = kdAll.filter(d => scopeUnder(org, scopeOfDef(d), sel));
       let kentries = [], kplans = [];
       if (kdefs.length || kdefsBelow.length) {
         const ke = await fetchByIds([...kdefs, ...kdefsBelow].map(d => d.id), part => supabase
@@ -316,13 +322,13 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       /* 📝 หมายเหตุรายเดือนของขอบเขตที่ดู (remark/action/note) — ตารางยังไม่มี = ไม่มีโน้ต ไม่ใช่บอร์ดล่ม */
       const kn = await supabase.from('kpi_month_notes')
         .select('id, month, row_key, kind, text, created_by_name, created_at')
-        .eq('year', year).eq('scope_kind', sel.kind || 'plant').eq('scope_value', sel.value || '').eq('is_active', true)
+        .eq('year', year).eq('scope_kind', kSel.kind || 'plant').eq('scope_value', kSel.value || '').eq('is_active', true)
         .order('created_at', { ascending: true }).limit(1000);
       if (kn.error && (kn.error.code || '') !== '42P01') warn.push('หมายเหตุรายเดือน');
       const knotes = kn.data || [];
       /* 🧩 ลำดับแผ่นที่หน่วยนี้จัดเอง (09/10 · user PD2 "อยากจัดตำแหน่ง card เอง") — ไม่มีแถว/ตารางยังไม่มี = ลำดับ template */
       const kl = await supabase.from('kpi_board_layouts').select('row_keys')
-        .eq('year', year).eq('scope_kind', sel.kind || 'plant').eq('scope_value', sel.value || '').maybeSingle();
+        .eq('year', year).eq('scope_kind', kSel.kind || 'plant').eq('scope_value', kSel.value || '').maybeSingle();
       if (kl.error && (kl.error.code || '') !== '42P01') warn.push('ลำดับแผ่น');
       const layoutKeys = Array.isArray(kl.data?.row_keys) ? kl.data.row_keys : [];
       /* ⚡ KPI ช่าง — RPC คืน Σ รายเดือน (mo/dt/machines) แล้ว utils/kpiAuto คำนวณ (RPC ห้ามคำนวณ KPI) · ไม่มีทีมช่าง = ไม่ยิง */
@@ -907,7 +913,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
     const prev = layoutOverride;
     setLayoutOverride(next);
     const ok = checkWriteRows(await supabase.from('kpi_board_layouts').upsert(
-      { year, scope_kind: scope.kind || 'plant', scope_value: scope.value || '', row_keys: next },
+      { year, scope_kind: kscope.kind || 'plant', scope_value: kscope.value || '', row_keys: next },
       { onConflict: 'year,scope_kind,scope_value' }).select('id'), 'บันทึกลำดับแผ่น KPI');
     if (!ok) setLayoutOverride(prev);
   };
@@ -1076,7 +1082,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
           title={noteFor.title} icon={noteFor.icon} monthText={`${monthLabel(noteFor.monthKey)} ${year}`} valueText={noteFor.valueText}
           notes={rows.find(x => x.key === noteFor.rowKey)?.series?.find(p => p.k === noteFor.monthKey)?.notes || []}
           canEdit={canNote}
-          ctx={{ year, month: Number(noteFor.monthKey.slice(5, 7)), scopeKind: isPlant(scope) ? 'plant' : scope.kind, scopeValue: isPlant(scope) ? '' : scope.value, scopeText, rowKey: noteFor.rowKey, fullName }}
+          ctx={{ year, month: Number(noteFor.monthKey.slice(5, 7)), scopeKind: isPlant(kscope) ? 'plant' : kscope.kind, scopeValue: isPlant(kscope) ? '' : kscope.value, scopeText, rowKey: noteFor.rowKey, fullName }}
           onClose={() => setNoteFor(null)} onChanged={() => load()} />
       )}
       {showSafety && (
