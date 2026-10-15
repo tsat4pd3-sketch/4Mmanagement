@@ -132,7 +132,8 @@ export default function TimeRangeBar({
           </div>
         )}
 
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+        {/* flexWrap: วันที่ 2 ช่อง (150px) + ป้าย + "(30 วัน)" ≈ 388px > จอ handheld 360px ⇒ ตัวนับวันโดนตัดขอบ (15/10) */}
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
           <input type="date" value={from || ''} max={to || undefined}
             onChange={e => applyRange(e.target.value, to)} aria-label="ตั้งแต่วันที่" />
           <span className="filter-label">ถึง</span>

@@ -49,6 +49,53 @@ apply แล้วบน Main — ตาราง + RLS 2 policy + trigger `trg_
 สิทธิ์เข้าหน้าของ role `display` วัด 09/10: มี `/tv` `/dashboard` `/line-oee` `/factory-map` `/manpower-board` `/obeya`
 `/oee-analytics` ฯลฯ (45 หน้า) · **ไม่มี** `/machine-database` `/die-registry` → ใส่ในรอบได้แต่จะถูกข้าม
 
+## รอบ 2 — 2026-10-14 (feedback หลังติดทีวี 13 จอ `tv-1@tsat4`…`tv-13@tsat4`)
+
+1. **ลิสต์มีแต่บัญชีจอ** — โหลด `profiles` เฉพาะ `role = 'display'` · เลือกจอเป็นการ์ด (ชื่อ · 📍 ส่วนงาน · สถานะรอบ · หมายเหตุ)
+   · RLS ก็กันด้วย: `fn_can_manage_display()` คืน false ถ้าเป้าหมายไม่ใช่ role display
+2. **จอ 2 คอลัมน์** (`<Page>` กว้างมาตรฐาน) — ซ้าย = ตั้งค่า/ลำดับหน้า · ขวา (sticky) = 🎮 สั่งจอ + 👁 ตัวอย่างหน้า
+   · ตัวอย่าง = iframe 1920×1080 ย่อตามกล่อง · **โหลดเฉพาะแถวที่กดเลือก** (ทุกหน้ายิงข้อมูลจริง = egress)
+   · 🔴 ตัวอย่างเปิดด้วย **บัญชีของคนตั้ง** ไม่ใช่บัญชีจอ ⇒ ขอบเขตข้อมูลอาจกว้างกว่าจอจริง — จอเขียนบอกไว้แล้ว ห้ามถอดข้อความนั้น
+3. **ส่วนงานของจอดึงจากบัญชี** (`sectionsOfProfile()` · ตั้งที่ `/add-user`) โชว์เป็นชิป · ช่องหมายเหตุ = ตำแหน่งที่ติดจอ
+4. **แอดมินส่วนงานตั้ง/สั่งได้เฉพาะจอของส่วนงานตัวเอง**
+   · กฎ = `canManageDisplay(mySections, tvSections)` (JS) ↔ `fn_can_manage_display(user_id)` (SQL · policy เขียน) — **ตรรกะต้องตรงกัน**
+     ผู้ตั้งทั้งโรงงาน = ได้ทุกจอ · จอที่ไม่ได้ตั้งส่วนงาน = เฉพาะผู้ตั้งทั้งโรงงาน · จอหลายส่วนงาน = ผู้ตั้งต้องครอบทุกส่วนงาน
+   · สิทธิ์: bucket `dept_admin` ได้ `display_rotation:manage` · หน้า `/display-rotation` piggyback คีย์นี้ใน `canAccessPage()`
+     (bucket ห้ามแจก `page:*` — ไม่ต้องแจกหน้าให้ทุก supervisor)
+   · จอเขียน "ซ่อน N จอที่อยู่นอกส่วนงานของคุณ" (ห้ามหายเงียบ)
+   · **สั่งจอ** = Realtime broadcast ช่อง `esm-display-<user_id>` (ไม่มีตาราง) · จอส่ง presence `{idx, n, path, held}`
+     · คำสั่งที่จอยอมทำ = `DISPLAY_CMDS` (`goto` ลำดับในรอบ · next · prev · hold · resume · reload) ผ่าน `parseDisplayCmd()`
+     · 🔴 **ห้ามเพิ่มคำสั่ง "ไปที่ path ใดก็ได้"** — ช่อง broadcast ไม่มี RLS ใครรู้ id ก็ส่งได้ · จำกัดไว้ = สลับได้แค่หน้าที่ตั้งไว้แล้ว
+     · ปุ่มเลขหน้าใช้ **รอบที่บันทึกแล้ว** (ที่แก้ยังไม่บันทึก จอยังไม่รู้) · หลังบันทึกกด 🔄 รีโหลดจอ = ใช้รอบใหม่ทันที
+5. **ตัวกรองต่อหน้า** — ทะเบียน `DISPLAY_PAGE_PARAMS` (utils) = param ที่หน้านั้น**อ่านจริง** (ตรวจจากโค้ด 14/10):
+   | หน้า | ตัวกรอง |
+   |---|---|
+   | `/tv` | `dept` (ช่าง/ผลิต/สโตร์) · `sec` ส่วนงาน |
+   | `/oee-analytics` | `tab` · `section` · `line` (ไลน์แม่ = รวมลูก) |
+   | `/line-oee` | `line` |
+   | `/dashboard` | `line` (เปิดผังไลน์นั้น) |
+   | `/obeya` | `tab` · `section` |
+   | `/manpower-board` | `tab` |
+   · ตัวอย่าง: จอ 1 `/oee-analytics?tab=today&line=LINE APRON ASSY` · จอ 2 `…&line=HYDROFORM`
+   · ช่องไลน์ใช้ `<LineSelect sections={ส่วนงานของจอ}>` = เห็นเฉพาะไลน์ในส่วนงานของจอ
+   · 🔴 **ห้ามใส่ param ที่หน้าไม่อ่าน** (ตั้งแล้วไม่มีผล = คนเชื่อว่ากรองแล้ว) · หน้าที่ไม่อยู่ในทะเบียน = ช่อง "ต่อท้ายลิงก์ (ขั้นสูง)"
+   · เพิ่มหน้าในทะเบียน = อ่านโค้ดหน้านั้นก่อนว่าอ่าน `searchParams` ตัวไหน
+
+migration `20261014_display_rotation_scope_main.sql` (**apply แล้ว 14/10** ผ่าน execute_sql ทีละคำสั่ง — policy ใช้ `alter policy`)
+
+## 🔒 role display = ดูอย่างเดียว (2026-10-15 · คำสั่ง user "ปิดหน้าที่บันทึกข้อมูลได้ของ role display")
+
+บัญชีจอเปิดค้างบนทีวี + รหัสผ่านร่วม + ไม่โดน idle-logout ⇒ หน้าที่ display บันทึกได้ = ใครเดินผ่านก็บันทึกแทนได้
+· migration `20261015_display_role_readonly_main.sql` (**apply แล้ว** · `allowed=false` 23 แถว ไม่ delete)
+· **ปิด**: checkin · daily-report · daily-pm · pm-check · bbs · lpa · pokayoke · morning-meeting · ojt-training · improvements ·
+  mtn-repair · pm-coordination · pm-schedule · management (สร้างใบ 4M ได้โดยไม่เช็คสิทธิ์) · line-stock · transport ·
+  doc-forms · qr-labels · fixture · npi · pe-docs · action `heijunka:operate` `rack_center:operate`
+· **เก็บ** (ปุ่มเขียนทุกปุ่มกันด้วย action ที่ display ไม่มี — ตรวจโค้ด 15/10): tv · dashboard · line-oee · factory-map · obeya ·
+  dept-dashboard · oee-analytics · manpower-board · mtn-analysis · mtn-layout · flow-tower · store-monitor · heijunka · rack-center ·
+  nm-board · pm-forecast · product-history · order-trace · report · skills-report · vsm · energy · remote · `report:export`
+· 🔴 **เปิดหน้าใหม่ให้ display = ต้องตรวจก่อนว่าทุกจุด insert/update/delete ในหน้านั้นกันด้วย `can()`** ที่ display ไม่มี
+  (`/management` เป็นตัวอย่างหน้าที่ดูเหมือนบอร์ดแต่สร้าง 4M ได้โดยไม่เช็คสิทธิ์)
+
 ## ยังไม่ทำ (เฟสถัดไป)
 
 - ตั้งรอบ "ต่อเครื่อง" (หลายจอใช้บัญชีเดียว แต่วนคนละชุด) — ต้องมีรหัสเครื่องในเบราว์เซอร์ ยังไม่มีคนขอ
