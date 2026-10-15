@@ -24,8 +24,9 @@ import { loadBreakPolicies, loadCtProducts, loadCtKanban, fetchOeeTargets } from
 import { valueInk, statusOf } from '../utils/statusTone';
 import { useLatestRequest } from '../utils/useLatestRequest';
 import { polyArea, centroid, labelAnchor, bboxOf } from '../utils/regionGeom';
-import MapPillars3D, { MAP_3D_TRANSFORM, MAP_TILT_X, MAP_ROT_Z } from '../components/MapPillars3D';
-import { pillarHeight, pillarLegend, liftLabels } from '../utils/mapPillar';
+import MapPillars3D, { map3dTransform } from '../components/MapPillars3D';
+import useMapOrbit from '../components/useMapOrbit';
+import { pillarHeight, pillarLegend, liftLabels, orbitScale } from '../utils/mapPillar';
 import { loadPmTeams, isAmTeam } from '../utils/pmTeams';
 import { fetchByIds } from '../utils/fetchByIds';
 import { loadDailyAm, dailyAmLineStatus, amShiftInfo } from '../lib/dailyAmBoard';
@@ -569,6 +570,8 @@ export default function FactoryMap({ setupMode = false }) {
   // 🧊 มุมมอง 3D (2.5D · mockup 14/10) — ความชอบรายเครื่อง · โหมดแก้ผังบังคับ 2D เสมอ (ลาก/คลิกจุดต้องตรงพิกัด)
   const [view3d, setView3d] = useState(() => { try { return localStorage.getItem('fm_view3d') === '1'; } catch { return false; } });
   const toggleView3d = () => setView3d(v => { const n = !v; try { localStorage.setItem('fm_view3d', n ? '1' : '0'); } catch { /* ignore */ } return n; });
+  // 🔄 มุมกล้อง 3D — ลากหมุน/ปุ่ม/ทัวร์ (ทำงานเฉพาะ 3D ที่ไม่ได้แก้ผัง — editing ประกาศไว้ข้างบนแล้ว)
+  const orbit = useMapOrbit(view3d && !editing);
   const togglePanelHide = () => setPanelHide(v => { const nv = !v; try { localStorage.setItem('fm_panel_hide', nv ? '1' : '0'); } catch { /* ignore */ } return nv; });
   const wrapRef = useRef(null);
   const hoverCardRef = useRef(null); // วัดความสูงจริงของการ์ด hover เพื่อกันตกขอบ
@@ -2302,7 +2305,7 @@ export default function FactoryMap({ setupMode = false }) {
                     h: pillarHeight(metric, cat, st.oee).h, text: shortText(st), dim: cat === 'idle',
                     group: true, kids: (childrenOf[h.name] || []).length };
                 }));
-  const pillarLifts = is3d ? liftLabels(pillarItems, { Wpx: wrapW, Hpx: aspect ? wrapW / aspect : 0, tiltDeg: MAP_TILT_X, rotZDeg: MAP_ROT_Z, maxH: pillarMaxH }) : null;
+  const pillarLifts = is3d ? liftLabels(pillarItems, { Wpx: wrapW, Hpx: aspect ? wrapW / aspect : 0, tiltDeg: orbit.tilt, rotZDeg: orbit.rot, maxH: pillarMaxH }) : null;
   const pillarCrowded = pillarLifts ? [...pillarLifts.values()].filter(v => !v.ok).length : 0;
   const wrapStyle = aspect ? { width: `min(100%, calc((100vh - 210px) * ${aspect}))` } : { width: '100%' };
   const ptsStr = (pts) => pts.map(p => `${p[0]},${p[1]}`).join(' ');
@@ -2454,7 +2457,8 @@ export default function FactoryMap({ setupMode = false }) {
       ) : (
         <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', flexWrap: 'wrap' }}>
           {/* ── ผัง ── */}
-          <div style={{ flex: '1 1 640px', minWidth: 0, display: 'flex', justifyContent: 'center', flexDirection: 'column', alignItems: 'center',
+          <div {...orbit.handlers} style={{ flex: '1 1 640px', minWidth: 0, display: 'flex', justifyContent: 'center', flexDirection: 'column', alignItems: 'center',
+            ...(is3d ? { touchAction: 'none', cursor: orbit.dragging ? 'grabbing' : 'grab', userSelect: 'none' } : {}),
             /* 🧊 คอลัมน์ผังตัดของล้น (พื้นกริดยื่นออกนอกรูป ห้ามไปทับแผงขวา) — overflow ที่ "ชั้นนอก" ของ preserve-3d ไม่ flatten เสา */
             ...(is3d ? { perspective: 2600, perspectiveOrigin: '50% 20%', overflow: 'hidden', borderRadius: 12 } : {}) }}>
           {is3d && (
@@ -2462,12 +2466,22 @@ export default function FactoryMap({ setupMode = false }) {
               <span>🧊 มุมมอง 3D (ทดลอง) · {pillarLegend(metric)}</span>
               <span>กรอบไลน์ = กล่อง · ▣ เสา = ยอดรวมกลุ่ม · ป้ายที่ชนกันถูกยกขึ้นสูง มีเส้นโยงลง · คลิกกล่อง/เสาเปิดไลน์</span>
               {pillarCrowded > 0 && <b style={{ color: '#f59e0b' }}>ป้ายแน่นจนวางไม่ได้ {pillarCrowded} ใบ — ชี้/แตะกล่องเพื่อดู</b>}
+              {/* 🔄 มุมกล้อง — ลากบนผังก็หมุนได้ · ปุ่มไว้สำหรับจอ TV (ไม่มีเมาส์) · stopPropagation กันปุ่มเริ่ม "ลาก" */}
+              <span onPointerDown={e => e.stopPropagation()} style={{ marginLeft: 'auto', display: 'inline-flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
+                <span>ลากบนผังเพื่อหมุน/ก้มเงย</span>
+                <button onClick={() => orbit.step(-45)} title="หมุนซ้าย 45°" style={{ ...miniTab(false), padding: '2px 8px', fontSize: 12 }}>⟲</button>
+                <button onClick={() => orbit.step(45)} title="หมุนขวา 45°" style={{ ...miniTab(false), padding: '2px 8px', fontSize: 12 }}>⟳</button>
+                <button onClick={() => orbit.tiltBy(8)} title="ก้มลง (มองเฉียงขึ้น)" style={{ ...miniTab(false), padding: '2px 8px', fontSize: 12 }}>▼</button>
+                <button onClick={() => orbit.tiltBy(-8)} title="เงยขึ้น (มองจากบนมากขึ้น)" style={{ ...miniTab(false), padding: '2px 8px', fontSize: 12 }}>▲</button>
+                <button onClick={() => orbit.setAuto(a => !a)} title="หมุนรอบโรงงานเองช้าๆ ทีละ 45° (เหมาะกับจอแขวน)" style={{ ...miniTab(orbit.auto), padding: '2px 8px', fontSize: 11.5 }}>{orbit.auto ? '⏸ หยุดทัวร์' : '▶ ทัวร์'}</button>
+                <button onClick={orbit.reset} title="กลับมุมเริ่มต้น" style={{ ...miniTab(false), padding: '2px 8px', fontSize: 11.5 }}>↺ มุมเดิม</button>
+              </span>
             </div>
           )}
           {/* 🧊 3D: overflow ต้อง visible — overflow:hidden บังคับ flatten ลูกที่ preserve-3d (เสาจะแบนติดพื้น) */}
           <div ref={wrapRef} onClick={onMapClick} onPointerMove={onMapMove} onPointerUp={endDrag} onPointerCancel={endDrag}
             style={{ position: 'relative', ...wrapStyle, maxHeight: 'calc(100vh - 200px)', borderRadius: 10, overflow: is3d ? 'visible' : 'hidden', border: '1px solid var(--border)', cursor: drawing ? 'crosshair' : 'default', touchAction: 'none', background: '#0a0a0f',
-              transition: 'transform .45s ease', ...(is3d ? { transform: MAP_3D_TRANSFORM, transformStyle: 'preserve-3d', boxShadow: 'var(--shadow-float)' } : {}) }}>
+              transition: orbit.transition, ...(is3d ? { transform: map3dTransform(orbit.tilt, orbit.rot, orbitScale(orbit.rot, orbit.tilt, aspect ? 1 / aspect : null)), transformStyle: 'preserve-3d', boxShadow: 'var(--shadow-float)' } : {}) }}>
             {/* 🧊 พื้นโรงงานรอบผัง (3D) — ตารางกริดจางๆ ยื่นออกนอกรูป แล้วเฟดเข้าพื้นหลังหน้า
                 ให้ผังดู "วางอยู่บนพื้น" ไม่ใช่รูปแผ่นเดียวลอยกลางความมืด (user ทัก 15/10 "พื้นหลังโล่ง ดูเป็น 3D ปลอม") */}
             {is3d && (
@@ -2590,7 +2604,7 @@ export default function FactoryMap({ setupMode = false }) {
               <MapPillars3D maxH={pillarMaxH} size={Math.max(12, Math.round(wrapW * 0.024))}
                 onOpen={(n) => openLine(n)}
                 onHover={(n, e) => { if (n) { setHoverLine(n); setHoverXY({ x: e.clientX, y: e.clientY }); } else setHoverLine(null); }}
-                items={pillarItems} lifts={pillarLifts} wPx={wrapW} hPx={aspect ? wrapW / aspect : 0} />
+                items={pillarItems} lifts={pillarLifts} wPx={wrapW} hPx={aspect ? wrapW / aspect : 0} cam={orbit} />
             )}
             {!is3d && regions.map(r => {
               if (facHidden(r.line_name)) return null;      // 🫥 โซนที่ซ่อนตาม metric — ป้ายก็ไม่วาด

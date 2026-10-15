@@ -71,3 +71,26 @@ export function liftLabels(items = [], { Wpx = 0, Hpx = 0, tiltDeg = 48, rotZDeg
   }
   return out;
 }
+
+/* ── 🔄 มุมกล้องผัง 3D (15/10 · คำสั่ง user "หมุนภาพได้มั้ย") ──────────────────────────────────── */
+export const ORBIT_DEFAULT = { rot: -28, tilt: 48 };
+export const TILT_MIN = 25, TILT_MAX = 70;   // ต่ำกว่า 25 = แทบมองจากบนลงล่าง (กล่องหาย) · เกิน 70 = เกือบนอนราบ ผังด้านหลังหลุดจอ
+export const clampTilt = (t) => Math.max(TILT_MIN, Math.min(TILT_MAX, Number.isFinite(+t) ? +t : ORBIT_DEFAULT.tilt));
+/** มุมหมุน → ช่วง (-180, 180] — กันเลขบวมไม่สิ้นสุดตอนหมุนอัตโนมัติทั้งวันบนจอ TV */
+export const normDeg = (d) => { const x = ((Number(d) || 0) % 360 + 360) % 360; return x > 180 ? x - 360 : x; };
+/** ลากเมาส์/นิ้ว → มุมใหม่ (ซ้าย-ขวา = หมุน · ขึ้น-ลง = ก้ม/เงย) */
+export const orbitFromDrag = (start, dx, dy) => ({ rot: normDeg(start.rot + dx * 0.35), tilt: clampTilt(start.tilt - dy * 0.25) });
+/** ขยับเกินกี่ px ถึงนับเป็น "ลากหมุน" ไม่ใช่ "คลิกเปิดไลน์" */
+export const DRAG_SLOP = 6;
+
+/** สเกลให้ผังที่หมุนแล้ว "พอดีกรอบเท่ามุมเริ่มต้น" — หมุนไป 90° ผังกว้างกลายเป็นยาว ถ้าสเกลคงที่จะหลุดจอ
+ *  hw = สูง/กว้างของรูปผัง · เทียบขนาดที่ฉายลงจอ (แกน X / แกน Y) กับมุมเริ่มต้น แล้วเอาตัวที่ต้องย่อมากกว่า */
+export function orbitScale(rot, tilt, hw, base = 0.72) {
+  const a = Number.isFinite(hw) && hw > 0 ? hw : 0.6;
+  const proj = (r, t) => {
+    const c = Math.abs(Math.cos(rad(r))), s = Math.abs(Math.sin(rad(r)));
+    return { x: c + a * s, y: (s + a * c) * Math.cos(rad(t)) };
+  };
+  const p0 = proj(ORBIT_DEFAULT.rot, ORBIT_DEFAULT.tilt), p = proj(rot, tilt);
+  return +(base * Math.min(p0.x / p.x, p0.y / p.y, 1.15)).toFixed(3);
+}

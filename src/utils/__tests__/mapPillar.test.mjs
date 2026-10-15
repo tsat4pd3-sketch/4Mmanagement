@@ -50,3 +50,26 @@ test('liftLabels: แน่นเกินเพดาน = ok:false ห้า�
   assert.ok(bad.length > 0);
   assert.ok([...m.values()].every(v => v.lift <= 160));
 });
+
+import { clampTilt, normDeg, orbitFromDrag, TILT_MIN, TILT_MAX } from '../mapPillar.js';
+
+test('มุมกล้อง: tilt ถูกบีบในช่วง · rot วนอยู่ใน (-180,180]', () => {
+  assert.equal(clampTilt(5), TILT_MIN);
+  assert.equal(clampTilt(99), TILT_MAX);
+  assert.equal(clampTilt('x'), 48);
+  assert.equal(normDeg(190), -170);
+  assert.equal(normDeg(-28 + 360 * 50), -28);
+  assert.equal(normDeg(180), 180);
+});
+test('ลากขวา = หมุนเพิ่ม · ลากขึ้น = เอียงมากขึ้น (ก้มลง)', () => {
+  const o = orbitFromDrag({ rot: 0, tilt: 48 }, 100, -40);
+  assert.ok(o.rot > 0);
+  assert.ok(o.tilt > 48);
+});
+
+import { orbitScale } from '../mapPillar.js';
+test('orbitScale: มุมเริ่มต้น = 0.72 · หมุนจนผังกว้างตั้งขวาง = ย่อลง', () => {
+  assert.equal(orbitScale(-28, 48, 0.56), 0.72);
+  assert.ok(orbitScale(62, 48, 0.56) < 0.72);
+  assert.ok(orbitScale(0, 48, 0.56) <= 0.72 * 1.15);
+});
