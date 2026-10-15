@@ -23,9 +23,9 @@ import { fetchAllRows } from '../utils/fetchAllRows';
 import { loadBreakPolicies, loadCtProducts, loadCtKanban, fetchOeeTargets } from '../utils/oeeMasters';
 import { valueInk, statusOf } from '../utils/statusTone';
 import { useLatestRequest } from '../utils/useLatestRequest';
-import { polyArea, centroid, labelAnchor } from '../utils/regionGeom';
-import MapPillars3D, { MAP_3D_TRANSFORM } from '../components/MapPillars3D';
-import { pillarHeight, pillarLegend } from '../utils/mapPillar';
+import { polyArea, centroid, labelAnchor, bboxOf } from '../utils/regionGeom';
+import MapPillars3D, { MAP_3D_TRANSFORM, MAP_TILT_X, MAP_ROT_Z } from '../components/MapPillars3D';
+import { pillarHeight, pillarLegend, liftLabels } from '../utils/mapPillar';
 import { loadPmTeams, isAmTeam } from '../utils/pmTeams';
 import { fetchByIds } from '../utils/fetchByIds';
 import { loadDailyAm, dailyAmLineStatus, amShiftInfo } from '../lib/dailyAmBoard';
@@ -2283,6 +2283,27 @@ export default function FactoryMap({ setupMode = false }) {
     return () => ro.disconnect();
   }, [imageUrl, loading]);
   const is3d = view3d && !editing;
+  /* 🧊 เสา 3D — คิดก่อน render เพื่อให้หัวผังบอกได้ว่าป้ายไหนแน่นจนวางไม่ได้ (ห้ามหายเงียบ) */
+  const pillarMaxH = Math.max(60, wrapW * 0.2);
+  const BLOCK_K = 0.55;
+  const pillarItems = !is3d ? [] : regions.filter(r => !facHidden(r.line_name)).map(r => {
+                  const st = stOf(r.line_name); const cat = regCat(st); const meta = CAT[cat];
+                  /* 🏢 กรอบไลน์ = กล่องยกจากรูปทรงกรอบจริง (`pts`) · ป้ายกลางหลังคา (centroid)
+                     สูง × BLOCK_K — กล่องกินพื้นที่มากกว่าเสา สูงเต็มจะบังผังข้างหลังหมด */
+                  const [x, y] = centroid(r.points);
+                  return { key: r.id, name: r.line_name, x, y, pts: r.points, color: meta.color, blink: !!meta.blink,
+                    h: pillarHeight(metric, cat, st.oee).h * BLOCK_K, text: shortText(st), dim: cat === 'idle' };
+                }).concat(autoHulls.map(h => {
+                  /* ▣ เสากลุ่ม = ยอดรวมทั้งครอบครัว (stOf รวมลูกให้แล้ว) · ตั้งที่ "ขอบล่างกลาง" ของกรอบแม่
+                     เสาลูกตั้งที่ขอบบน (labelAnchor) ⇒ 2 ชั้นไม่ชนกันในจุดเดียว */
+                  const st = stOf(h.name); const cat = regCat(st); const meta = CAT[cat];
+                  const bb = bboxOf(h.hull);
+                  return { key: `hull-${h.name}`, name: h.name, x: (bb.x0 + bb.x1) / 2, y: bb.y1, color: meta.color, blink: !!meta.blink,
+                    h: pillarHeight(metric, cat, st.oee).h, text: shortText(st), dim: cat === 'idle',
+                    group: true, kids: (childrenOf[h.name] || []).length };
+                }));
+  const pillarLifts = is3d ? liftLabels(pillarItems, { Wpx: wrapW, Hpx: aspect ? wrapW / aspect : 0, tiltDeg: MAP_TILT_X, rotZDeg: MAP_ROT_Z, maxH: pillarMaxH }) : null;
+  const pillarCrowded = pillarLifts ? [...pillarLifts.values()].filter(v => !v.ok).length : 0;
   const wrapStyle = aspect ? { width: `min(100%, calc((100vh - 210px) * ${aspect}))` } : { width: '100%' };
   const ptsStr = (pts) => pts.map(p => `${p[0]},${p[1]}`).join(' ');
   const flashLine = (name) => { setHighlight(name); setTimeout(() => setHighlight(h => h === name ? null : h), 2000); };
@@ -2434,12 +2455,29 @@ export default function FactoryMap({ setupMode = false }) {
         <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', flexWrap: 'wrap' }}>
           {/* ── ผัง ── */}
           <div style={{ flex: '1 1 640px', minWidth: 0, display: 'flex', justifyContent: 'center', flexDirection: 'column', alignItems: 'center',
-            ...(is3d ? { perspective: 2600, perspectiveOrigin: '50% 20%' } : {}) }}>
-          {is3d && <div style={{ alignSelf: 'flex-start', fontSize: 11.5, color: 'var(--muted)', marginBottom: Math.round(wrapW * 0.06) }}>🧊 มุมมอง 3D (ทดลอง) · {pillarLegend(metric)} · คลิกเสาเปิดไลน์</div>}
+            /* 🧊 คอลัมน์ผังตัดของล้น (พื้นกริดยื่นออกนอกรูป ห้ามไปทับแผงขวา) — overflow ที่ "ชั้นนอก" ของ preserve-3d ไม่ flatten เสา */
+            ...(is3d ? { perspective: 2600, perspectiveOrigin: '50% 20%', overflow: 'hidden', borderRadius: 12 } : {}) }}>
+          {is3d && (
+            <div style={{ alignSelf: 'stretch', position: 'relative', zIndex: 3, background: 'var(--bg)', padding: '2px 4px', display: 'flex', flexWrap: 'wrap', gap: '2px 12px', fontSize: 11.5, color: 'var(--muted)', marginBottom: Math.round(wrapW * 0.1) }}>
+              <span>🧊 มุมมอง 3D (ทดลอง) · {pillarLegend(metric)}</span>
+              <span>กรอบไลน์ = กล่อง · ▣ เสา = ยอดรวมกลุ่ม · ป้ายที่ชนกันถูกยกขึ้นสูง มีเส้นโยงลง · คลิกกล่อง/เสาเปิดไลน์</span>
+              {pillarCrowded > 0 && <b style={{ color: '#f59e0b' }}>ป้ายแน่นจนวางไม่ได้ {pillarCrowded} ใบ — ชี้/แตะกล่องเพื่อดู</b>}
+            </div>
+          )}
           {/* 🧊 3D: overflow ต้อง visible — overflow:hidden บังคับ flatten ลูกที่ preserve-3d (เสาจะแบนติดพื้น) */}
           <div ref={wrapRef} onClick={onMapClick} onPointerMove={onMapMove} onPointerUp={endDrag} onPointerCancel={endDrag}
             style={{ position: 'relative', ...wrapStyle, maxHeight: 'calc(100vh - 200px)', borderRadius: 10, overflow: is3d ? 'visible' : 'hidden', border: '1px solid var(--border)', cursor: drawing ? 'crosshair' : 'default', touchAction: 'none', background: '#0a0a0f',
               transition: 'transform .45s ease', ...(is3d ? { transform: MAP_3D_TRANSFORM, transformStyle: 'preserve-3d', boxShadow: 'var(--shadow-float)' } : {}) }}>
+            {/* 🧊 พื้นโรงงานรอบผัง (3D) — ตารางกริดจางๆ ยื่นออกนอกรูป แล้วเฟดเข้าพื้นหลังหน้า
+                ให้ผังดู "วางอยู่บนพื้น" ไม่ใช่รูปแผ่นเดียวลอยกลางความมืด (user ทัก 15/10 "พื้นหลังโล่ง ดูเป็น 3D ปลอม") */}
+            {is3d && (
+              <div aria-hidden style={{ position: 'absolute', left: '-45%', right: '-45%', top: '-45%', bottom: '-45%', pointerEvents: 'none',
+                transform: 'translateZ(-2px)',
+                background: 'radial-gradient(ellipse at center, rgba(0,0,0,0) 30%, var(--bg) 70%), '
+                  + 'repeating-linear-gradient(0deg, rgba(148,163,184,0.16) 0 1px, rgba(0,0,0,0) 1px 48px), '
+                  + 'repeating-linear-gradient(90deg, rgba(148,163,184,0.16) 0 1px, rgba(0,0,0,0) 1px 48px), '
+                  + 'linear-gradient(rgba(30,41,59,0.55), rgba(30,41,59,0.55))' }} />
+            )}
             <img src={imageUrl} alt="ผังโรงงาน" onLoad={onImgLoad} style={{ display: 'block', width: '100%', height: 'auto', pointerEvents: 'none', userSelect: 'none' }} />
             {/* scrim บางๆ ให้กรอบเด่นแต่ยังเห็นผังชัด (ไม่หรี่จนภาพหม่น) */}
             <div style={{ position: 'absolute', inset: 0, background: 'rgba(6,8,14,0.14)', pointerEvents: 'none' }} />
@@ -2549,15 +2587,10 @@ export default function FactoryMap({ setupMode = false }) {
                 ไลน์ที่เป็น "ลูก" ของกลุ่ม นำหน้าด้วย ↳ ให้อ่านออกว่าอยู่ใต้กลุ่มไหน (2026-08-06)
                 ข้อมูลครบทุกตัวเหมือนเดิม (คำสั่ง user 2026-08-04) */}
             {is3d && (
-              <MapPillars3D maxH={Math.max(60, wrapW * 0.2)} size={Math.max(12, Math.round(wrapW * 0.024))}
+              <MapPillars3D maxH={pillarMaxH} size={Math.max(12, Math.round(wrapW * 0.024))}
                 onOpen={(n) => openLine(n)}
                 onHover={(n, e) => { if (n) { setHoverLine(n); setHoverXY({ x: e.clientX, y: e.clientY }); } else setHoverLine(null); }}
-                items={regions.filter(r => !facHidden(r.line_name)).map(r => {
-                  const st = stOf(r.line_name); const cat = regCat(st); const meta = CAT[cat];
-                  const [x, y] = labelAnchor(r.points);
-                  return { key: r.id, name: r.line_name, x, y, color: meta.color, blink: !!meta.blink,
-                    h: pillarHeight(metric, cat, st.oee).h, text: shortText(st), dim: cat === 'idle' };
-                })} />
+                items={pillarItems} lifts={pillarLifts} wPx={wrapW} hPx={aspect ? wrapW / aspect : 0} />
             )}
             {!is3d && regions.map(r => {
               if (facHidden(r.line_name)) return null;      // 🫥 โซนที่ซ่อนตาม metric — ป้ายก็ไม่วาด

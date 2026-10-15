@@ -1,7 +1,7 @@
 // เทส "ชุดแม่พิมพ์ทำพาร์ทอะไรบ้าง" — src/utils/dieSetMats.js (pure)
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { dieSetMats, dieMakesMat, dieSetPairState, suggestPps } from '../dieSetMats.js';
+import { dieSetMats, dieMakesMat, dieSetPairState, suggestPps, pairHint } from '../dieSetMats.js';
 
 test('dieSetMats — รวม 2 ช่อง · ตัดว่าง/ซ้ำ · normalize ตัวพิมพ์-ช่องว่าง', () => {
   assert.deepEqual(dieSetMats({ mat_no: 'A', mat_no_2: 'B' }), ['A', 'B']);
@@ -41,4 +41,15 @@ test('suggestPps — เสนอเท่านั้น · ตัวเดี�
   assert.equal(suggestPps({ mat_no: 'A', mat_no_2: 'B' }), 2);
   assert.equal(suggestPps({ mat_no: 'A' }), null, '🔴 ชุดพาร์ทเดียว ห้ามเสนอ 1 (ไม่รู้ ≠ 1)');
   assert.equal(suggestPps({}), null);
+});
+
+test('pairHint — ชี้เป้าเท่านั้น · ไม่มีหลักฐาน = null', () => {
+  assert.equal(pairHint({ part_no: 'BHS08555/BHS07706' })?.why, 'เลขพาร์ทมี 2 ตัวคั่น /');
+  assert.equal(pairHint({ part_name: 'BRKT RH/LH' })?.why, 'ชื่อเอ่ยทั้ง RH และ LH');
+  assert.match(pairHint({ part_no: 'A/B', part_name: 'PANEL RH/LH' }).why, /\+/, 'เจอ 2 อย่างต้องบอกทั้งคู่');
+  assert.equal(pairHint({ part_no: 'DA6T-60-A31', part_name: 'BRKT' }), null, 'ไม่มีหลักฐาน = null');
+  assert.equal(pairHint({ part_name: 'BRKT RH' }), null, '🔴 ข้างเดียว = ไม่ใช่หลักฐานงานคู่');
+  assert.equal(pairHint({ part_no: 'N1WB17E850-R-PIA07/PIA08' })?.why, 'เลขพาร์ทมี 2 ตัวคั่น /', 'ขีดกลางในเลขพาร์ทต้องไม่กวน');
+  assert.equal(pairHint({}), null);
+  assert.equal(pairHint(null), null, 'ไม่มีแถว = ไม่พัง');
 });

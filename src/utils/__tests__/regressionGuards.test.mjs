@@ -4528,6 +4528,21 @@ test('🛡️ die-set-two-mats — หาแม่พิมพ์ของพา
     /* เทียบช่องแรกตรงๆ กับตัวแปรชุดแม่พิมพ์ = ตกฝั่งที่ลงช่อง 2 */
     if (/\bd(ie(Set)?)?\.mat_no\s*===/.test(code)) bad.push(rel + ' (เทียบ die.mat_no === ตรงๆ)');
   }
+  /* 🔎 pairHint = เดาจากชื่อ/เลขพาร์ท (ท่าสุดท้าย) — ใช้ชี้เป้าให้คนไปกรอกได้ แต่ **ห้ามเขียนกลับฐาน**
+     "ชุดนี้ทำ 2 พาร์ท" ≠ "1 จังหวะได้ 2 ชิ้น" · tandem 24 OP ตอกทีละตัวก็ชื่อ RH/LH เหมือนกัน */
+  /* ⚠️ ตรวจ "รายบรรทัด" ไม่ใช่ `update\([^)]*pairHint` — payload มักถูกประกอบไว้ก่อนแล้วส่งเป็นตัวแปร
+     (`update(payload)`) ⇒ ด่านแบบดูในวงเล็บจะหลุดทุกครั้ง (เจอตอนยิงทดสอบด่านนี้เอง 15/10) */
+  for (const rel of ['src/pages/DieRegistry.jsx', 'src/utils/dieSetMats.js']) {
+    const code = stripComments(readFileSync(join(ROOT, rel), 'utf8'));
+    for (const line of code.split('\n')) {
+      if (!/pairHint/.test(line)) continue;
+      if (/\b(pieces_per_stroke|pair_mat_no|shot_total)\b/.test(line))
+        bad.push(rel + ' (ผล pairHint ไปลงคอลัมน์จริง — เดาแล้วเขียนฐาน)');
+      if (/piecesToShots|ppsOf/.test(line))
+        bad.push(rel + ' (เอาผล pairHint ไปคิด shot)');
+    }
+  }
+
   /* ช่องกรอกต้องมีให้ลงจริง ไม่งั้นคอลัมน์ว่างตลอด */
   const reg = stripComments(readFileSync(join(ROOT, 'src/pages/DieRegistry.jsx'), 'utf8'));
   if (!/mat_no_2/.test(reg)) bad.push('src/pages/DieRegistry.jsx (ไม่มีช่อง MAT ตัวที่ 2)');
@@ -4552,6 +4567,24 @@ test('🛡️ die-set-two-mats — หาแม่พิมพ์ของพา
     + '         เทียบช่องแรกช่องเดียว = อีกฝั่งหาแม่พิมพ์ไม่เจอเงียบๆ\n'
     + '   แก้: dieMakesMat(set, mat) / dieSetMats(set) จาก src/utils/dieSetMats.js\n'
     + '   ⚠️ "ใครคู่กับใคร" ยังเป็นของ Product Master (pair_mat_no) — จอแม่พิมพ์เตือนได้ ห้ามเขียนทับ\n');
+});
+
+/* ── 🛒 ใบขอซื้อ (PR) งานช่าง — รับของต้องผ่าน RPC เดียว · ห้ามลบ (14/10 · MTN REQUEST) ──
+   รับของ = เปลี่ยนสถานะ + เข้าสต็อก ถ้าเขียน 2 คำสั่งแยกจาก client แล้วอันหลังล้ม
+   ⇒ PR ขึ้น "รับแล้ว" แต่สต็อกไม่เข้า (กฎเหล็ก DB ข้อ 6) · ประวัติขอซื้อห้ามหาย = ยกเลิกแทนลบ
+   📄 `docs/modules/mtn-work-order.md` §🛒 PR / GL / IO */
+test('🛡️ mtn-pr-receive-via-rpc — รับของ PR ผ่าน mtn_pr_receive · ห้าม delete PR', () => {
+  const bad = [];
+  for (const f of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const src = stripComments(readFileSync(f, 'utf8'));
+    if (!/mtn_purchase_requests/.test(src)) continue;
+    if (/from\(['"]mtn_purchase_requests['"]\)[\s\S]{0,200}?\.delete\(/.test(src)) bad.push(`${relative(ROOT, f)} (delete)`);
+    if (/status:\s*['"]received['"]/.test(src)) bad.push(`${relative(ROOT, f)} (เขียน status received เอง)`);
+  }
+  assert.deepEqual(bad, [],
+    '\n\n❌ ใบขอซื้อ (PR) ถูกลบ หรือถูกตั้ง "received" ตรงจาก client: ' + bad.join(', ') + '\n'
+    + '   ทำไมห้าม: รับของต้องเปลี่ยนสถานะ + เข้าสต็อกในทรานแซกชันเดียว → RPC `mtn_pr_receive`\n'
+    + '            ยกเลิก = status `cancelled` + เหตุผล (ประวัติขอซื้อห้ามหาย)\n');
 });
 
 /* ═══ 🔒 ลบข้ามทีมไม่ได้ — ทะเบียนของช่างต้องมีด่าน "เจ้าของทีม" (คำสั่ง user 2026-10-14) ═══
