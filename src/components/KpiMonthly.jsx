@@ -943,7 +943,12 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
   const removeDef = async d2 => {
     /* 🔐 ด่านชั้นที่ 3 ซ้ำตอนกดจริง — ซ่อนปุ่มอย่างเดียวไม่พอ (deep-link `?scope=` เปิดตรงได้) */
     if (!scopeWrite.ok) { toast.info(writeBlockText(scopeWrite, { what: 'KPI ของขอบเขตนี้', unit: scopeOwner })); return; }
-    if (!window.confirm(`ปิดใช้งาน KPI "${defName(d2)}"?\nค่าที่กรอกไว้ยังอยู่ (soft delete) — เปิดคืนได้ที่แผง "🗄️ ปิดใช้งานอยู่" ใต้แถบปุ่มของตารางนี้`)) return;
+    /* 🔴 15/10: แถวที่ตกทอดมาจากขอบเขตอื่น (โรงงาน/แม่) ห้ามปิดจากที่นี่ — เหตุจริง 14–15/10: นิยามระดับโรงงานของ %RM /
+       Customer Satisfaction / DL+OH (ที่เก็บ "ค่าโรงงาน" ให้ทุกหน่วย) ถูกกด 🗑 จากหน้า PD ⇒ ค่าหายทุกหน่วยพร้อมกัน */
+    if (isInherited(d2)) { toast.error(`"${defName(d2)}" ตกทอดมาจาก ${defScopeTag(d2)} — ปิดใช้งานได้ที่ขอบเขตนั้นเท่านั้น (ถ้าไม่อยากให้โชว์ที่นี่ ให้ตั้งแถวของระดับนี้เอง)`); return; }
+    const sharedWarn = valueScopeOf(d2) === 'plant' && isPlant(scope)
+      ? '\n\n⚠️ KPI นี้เป็น "ค่าโรงงาน" — ทุกหน่วยที่ถือ KPI นี้จะไม่มีตัวเลขโชว์ทันทีที่ปิด' : '';
+    if (!window.confirm(`ปิดใช้งาน KPI "${defName(d2)}"?\nค่าที่กรอกไว้ยังอยู่ (soft delete) — เปิดคืนได้ที่แผง "🗄️ ปิดใช้งานอยู่" ใต้แถบปุ่มของตารางนี้${sharedWarn}`)) return;
     const { data: r, error } = await supabase.from('kpi_definitions').update({ is_active: false }).eq('id', d2.id).select('id');
     if (error || !r?.length) { toast.error('ปิดใช้งานไม่สำเร็จ' + (error ? ': ' + error.message : ' (ไม่มีสิทธิ์)')); return; }
     loadDefs();
@@ -1254,7 +1259,9 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
                           {canManage && (
                             <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>
                               <button onClick={() => setEditDef(d2)} title="แก้นิยาม KPI" style={{ cursor: 'pointer', background: 'none', border: 'none', fontSize: 13 }}>✏️</button>
-                              <DeleteButton onClick={() => removeDef(d2)} title="ปิดใช้งาน" />
+                              {isInherited(d2)
+                                ? <DeleteButton disabled title={`ตกทอดจาก ${defScopeTag(d2)} — ปิดใช้งานได้ที่ขอบเขตนั้นเท่านั้น`} style={{ opacity: 0.35, cursor: 'not-allowed' }} />
+                                : <DeleteButton onClick={() => removeDef(d2)} title="ปิดใช้งาน" />}
                             </td>
                           )}
                         </tr>
