@@ -241,6 +241,11 @@ model: inherit
   บนมือถือ = ค้างทับเนื้อหา · (ข) `whiteSpace: 'nowrap'` ที่อยู่แถว flex เดียวกับข้อความยาว
   (`.description` / `.problem` / `.note`) โดยข้อความไม่มี `minWidth: 0` → ถูกบีบเหลือ 0 หายทั้งบรรทัด
   · (ค) `minWidth: <เลขตายตัว>` คู่กับ `overflowX: 'auto'` → เลขมักน้อยกว่าเนื้อหาจริง ของท้ายสุดโดนตัด
+- **F4.4 handheld / ห้ามแตะจอคอม (2026-10-15 · CLAUDE.md §งานมือถือ · docs/MOBILE-UX-STANDARD.md)**
+  งานมือถือต้องอยู่หลัง `useIsMobile()`/`@media` — โค้ดที่เปลี่ยน style ร่วม (ไม่มีเงื่อนไขมือถือ) ในงานที่ประกาศว่า "มือถือ" = ผิด ·
+  วัดจริง `node audit/desktopdiff.mjs` (ต้องต่าง 0) + `node audit/handheldsweep.mjs` (360×640 ทุกแท็บ+โมดัล) ·
+  grep: `position: 'fixed'` + `bottom: <เลข>` ไม่มี `--mnav-h` (มีด่าน `mobile-fixed-bottom-needs-mnav`) ·
+  `position: 'sticky'` + `bottom` ที่บวก `--mnav-h` = ลอยสูงเกิน · ฟอร์มยาวบนมือถือที่ปุ่มบันทึกอยู่ท้ายฟอร์มเท่านั้น → แนะนำ `.m-savebar`
 - **F5** input ใน flex row/toolbar ต้องกำหนด width เอง (index.css default width:100%)
 - **F6** hover card เฉพาะ `matchMedia('(hover: hover)')` · popup ทุกอันมีทางปิด
 - **F7** playhead ไทม์ไลน์ใช้ `.now-line`/`.now-chip` — ห้ามวาดเส้นเวลาปัจจุบันเองสีอื่น

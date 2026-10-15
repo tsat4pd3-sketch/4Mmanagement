@@ -2570,7 +2570,7 @@ export default function Management() {
         <button
           onClick={() => { setShow4MModal({ lineName: selectedLine }); setLog4MForm({ category: 'Man', description: '' }); }}
           style={{
-            position: 'fixed', bottom: 20, right: 20, zIndex: 500,
+            position: 'fixed', bottom: 'calc(20px + var(--mnav-h, 0px))', right: 20, zIndex: 500,
             width: 54, height: 54, borderRadius: '50%',
             background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none',
             fontSize: 22, fontWeight: 900, cursor: 'pointer',
@@ -3230,7 +3230,7 @@ function WorkerHoverCard({ card, skillDefs }) {
 function FitPopup({ fitPopup, onClose }) {
   const fc = fitColor(fitPopup.fit.score);
   return (
-    <div style={{ position: 'fixed', bottom: 24, right: 24, background: 'rgba(10,10,18,0.97)', border: `1px solid ${fc}66`, borderLeft: `4px solid ${fc}`, borderRadius: 12, padding: '14px 16px', boxShadow: 'var(--shadow-lg)', zIndex: 1000, width: 264, animation: 'fmSlideIn 0.35s cubic-bezier(0.34,1.56,0.64,1)' }}>
+    <div style={{ position: 'fixed', bottom: 'calc(24px + var(--mnav-h, 0px))', right: 24, background: 'rgba(10,10,18,0.97)', border: `1px solid ${fc}66`, borderLeft: `4px solid ${fc}`, borderRadius: 12, padding: '14px 16px', boxShadow: 'var(--shadow-lg)', zIndex: 1000, width: 264, animation: 'fmSlideIn 0.35s cubic-bezier(0.34,1.56,0.64,1)' }}>
       <style>{`@keyframes fmSlideIn { from { opacity:0; transform: translateX(28px) scale(0.94); } to { opacity:1; transform:translateX(0) scale(1); } }`}</style>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
         <img loading="lazy" src={fitPopup.worker.employees?.image_url || ''} style={{ width: 42, height: 42, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: `2.5px solid ${fc}`, flexShrink: 0 }} />
