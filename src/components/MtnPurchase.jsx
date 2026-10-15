@@ -13,7 +13,7 @@
    สิทธิ์: เปิด/สั่ง/รับ PR = `mtn_repair:service` · ทะเบียน GL/เลขรัน = `mtn_repair:manage_master` (ไม่มีคีย์ใหม่)
    ══════════════════════════════════════════════════════════════════════════════════════ */
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { supabaseDR } from '../supabaseClient';
+import { supabase, supabaseDR } from '../supabaseClient';
 import { toast } from './Toast';
 import { checkWrite, checkWriteRows } from '../utils/dbWrite';
 import { fetchAllRows } from '../utils/fetchAllRows';
@@ -137,7 +137,7 @@ function PrRow({ pr, canEdit, fullName, onChanged, showSource }) {
 }
 
 /* ── ฟอร์มเปิด PR ใหม่ ─────────────────────────────────────────────────────────────── */
-function NewPrForm({ parts = [], glCodes = [], defaults = {}, fullName, uid, onDone, onCancel }) {
+function NewPrForm({ parts = [], glCodes = [], defaults = {}, fullName, onDone, onCancel }) {
   const [f, setF] = useState(() => ({
     part_id: defaults.part_id || '', item_name: defaults.item_name || '', qty: defaults.qty ?? '', unit: defaults.unit || '',
     unit_price: defaults.unit_price ?? '', supplier: defaults.supplier || '', note: '',
@@ -162,13 +162,15 @@ function NewPrForm({ parts = [], glCodes = [], defaults = {}, fullName, uid, onD
     setBusy(true);
     try {
       const price = f.unit_price === '' ? null : Number(f.unit_price);
+      // uid ของคนเปิดใบ (Main auth) — best-effort: ไม่ได้ = null ไม่ล้มทั้งใบ
+      const uid = await supabase.auth.getUser().then(r => r?.data?.user?.id || null).catch(() => null);
       const row = {
         source: defaults.source || 'mo', order_id: defaults.order_id || null, part_id: f.part_id || null,
         item_name: f.item_name.trim(), qty, unit: f.unit || null, unit_price: price,
         amount: price != null && Number.isFinite(price) ? price * qty : null,
         gl_category: f.gl_category || null, gl_code: f.gl_code || null, supplier: f.supplier || null,
         team: defaults.team || null, section: defaults.section || null, note: f.note.trim() || null,
-        requested_by: fullName || null, requested_by_uid: uid || null,
+        requested_by: fullName || null, requested_by_uid: uid,
       };
       const { data, error } = await supabaseDR.from('mtn_purchase_requests').insert(row).select('id').single();
       if (error) return toast.error(`เปิด PR ไม่สำเร็จ: ${error.message}`);
@@ -217,7 +219,7 @@ function NewPrForm({ parts = [], glCodes = [], defaults = {}, fullName, uid, onD
 }
 
 /* ══ แผงในใบ MO ════════════════════════════════════════════════════════════════════════ */
-export function MtnPrPanel({ order, parts = [], fullName, uid, canEdit = false, teamKey = null, onOrderChanged }) {
+export function MtnPrPanel({ order, parts = [], fullName, canEdit = false, teamKey = null, onOrderChanged }) {
   const [prs, setPrs] = useState([]);
   const [glCodes, setGlCodes] = useState([]);
   const [loadErr, setLoadErr] = useState(null);
@@ -273,7 +275,7 @@ export function MtnPrPanel({ order, parts = [], fullName, uid, canEdit = false, 
       {prs.map(pr => <PrRow key={pr.id} pr={pr} canEdit={canEdit} fullName={fullName} onChanged={load} />)}
       {prs.length > 1 && <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>📝 ใบพิมพ์: มีหลายเลข PR ⇒ ช่อง PR.No. ข้างบนเว้นว่าง และพิมพ์ทุกเลขในช่องรายละเอียด</div>}
       {canEdit && (adding
-        ? <NewPrForm parts={parts} glCodes={glCodes} fullName={fullName} uid={uid}
+        ? <NewPrForm parts={parts} glCodes={glCodes} fullName={fullName}
             defaults={{ source: 'mo', order_id: orderId, team: teamKey, repairPath: path, supplier: path === 'outsource' ? order?.supplier : '' }}
             onCancel={() => setAdding(false)} onDone={() => { setAdding(false); load(); }} />
         : <button onClick={() => setAdding(true)} style={{ ...btnGhost, color: 'var(--accent)', borderColor: 'var(--accent)' }}>+ เปิด PR</button>)}
@@ -282,7 +284,7 @@ export function MtnPrPanel({ order, parts = [], fullName, uid, canEdit = false, 
 }
 
 /* ══ บอร์ดในคลังอะไหล่ — ติด Min → เปิด PR · คิว PR ค้าง ══════════════════════════════ */
-export function MtnPrBoard({ parts = [], fullName, uid, canEdit = false, onStockChanged }) {
+export function MtnPrBoard({ parts = [], fullName, canEdit = false, onStockChanged }) {
   const [prs, setPrs] = useState([]);
   const [glCodes, setGlCodes] = useState([]);
   const [err, setErr] = useState(null);
@@ -325,7 +327,7 @@ export function MtnPrBoard({ parts = [], fullName, uid, canEdit = false, onStock
         · จำนวนเสนอ = เติมถึง Max (ไม่ตั้ง Max = 2×Min) หักยอดที่เปิด PR ค้างไว้แล้ว · Min ว่าง/0 = ไม่ตรวจ
       </div>
       {err && <div style={{ fontSize: 11, color: '#ef4444', marginBottom: 6 }}>⚠ โหลดใบขอซื้อไม่สำเร็จ: {err} — ตัวนับข้างบนอาจไม่ครบ</div>}
-      {freeForm && canEdit && <NewPrForm parts={parts} glCodes={glCodes} fullName={fullName} uid={uid}
+      {freeForm && canEdit && <NewPrForm parts={parts} glCodes={glCodes} fullName={fullName}
         defaults={{ source: 'manual' }} onCancel={() => setFreeForm(false)} onDone={() => { setFreeForm(false); reload(); }} />}
 
       {below.length > 0 && (
@@ -342,7 +344,7 @@ export function MtnPrBoard({ parts = [], fullName, uid, canEdit = false, onStock
                   ? (canEdit && <button onClick={() => setOpenFor(openFor === p.id ? null : p.id)} style={{ ...btnGhost, color: 'var(--accent)', borderColor: 'var(--accent)' }}>🛒 เปิด PR {need} {p.unit || ''}</button>)
                   : <span style={{ fontSize: 11, color: '#22c55e' }}>✓ PR ค้างครอบแล้ว</span>}
               </div>
-              {openFor === p.id && <NewPrForm parts={parts} glCodes={glCodes} fullName={fullName} uid={uid}
+              {openFor === p.id && <NewPrForm parts={parts} glCodes={glCodes} fullName={fullName}
                 defaults={{ source: 'spare_min', part_id: p.id, item_name: p.name, qty: need, unit: p.unit, unit_price: p.unit_price, supplier: p.supplier, team: p.team, section: p.section, gl_category: 'spare_part' }}
                 onCancel={() => setOpenFor(null)} onDone={() => { setOpenFor(null); reload(); }} />}
             </div>
