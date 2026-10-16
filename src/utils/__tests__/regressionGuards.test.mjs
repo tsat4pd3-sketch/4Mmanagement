@@ -4748,3 +4748,37 @@ test('🛡️ ship-due-date-calendar — ใบส่งลูกค้าลง
   assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n'
     + '   แก้: วันงาน + รอบส่ง → shipDueDate() (src/utils/pullSignal.js) · เวลาจริงของใบ → orderShipAt(due_date, ship_time) ไม่บวกวัน\n');
 });
+
+/* ═══ 🔒 ด่านฝั่งงาน — ห้ามเทียบ actorSide ตรงๆ · ทุก call site ต้องส่ง isAm (2026-10-16) ═══
+   ที่มา: ผจก.ฝ่ายผลิตที่อยู่ทีม AM (`mtn_teams={production}`) ถูกตีเป็น "ฝั่งช่าง" ถาวร
+          ⇒ เซ็นช่อง "อนุมัติปิดใบ" ของหน่วยตัวเองไม่ได้ และใบหายจากคิว "รอคุณ"
+   AM = ฝ่ายผลิตซ่อมเครื่องตัวเอง ⇒ ช่าง = ผู้แจ้ง = หน่วยเดียวกัน ⇒ side 'both'
+   ด่านนี้กันการถอยกลับ 2 ทาง: เขียนเงื่อนไขฝั่งเองในหน้า · ลืมส่ง isAm แล้ว 'both' ไม่เคยเกิด */
+test('🔒 ฝั่งงาน (actorSide) — เทียบผ่าน sideAllows เท่านั้น · call site ต้องส่ง isAm', () => {
+  const bad = [];
+  const perm = stripComments(readFileSync(join(ROOT, 'src/utils/mtnStepPerm.js'), 'utf8'));
+
+  if (!/export function sideAllows/.test(perm)) bad.push('src/utils/mtnStepPerm.js (ไม่มี sideAllows)');
+  if (!/code:\s*'both'|return\s+teams\.every/.test(perm) && !/'both'/.test(perm))
+    bad.push("src/utils/mtnStepPerm.js (actorSideOf ไม่คืน 'both' ให้ทีม AM แล้ว)");
+  /* ไฟล์นี้ pure — เดาชื่อทีมเองแปลว่า hardcode taxonomy (กฎ AM↔PM: ห้าม hardcode 'production') */
+  if (/'production'/.test(perm)) bad.push("src/utils/mtnStepPerm.js (hardcode 'production' — ต้องรับ isAm เข้ามา)");
+
+  /* ทุกที่ที่ถามฝั่ง ต้องบอกด้วยว่าทีมไหนเป็น AM ไม่งั้น 'both' ไม่มีทางเกิด = แก้แล้วเหมือนไม่ได้แก้ */
+  for (const f of ['src/components/MyQueuePanel.jsx', 'src/pages/MtnRepair.jsx']) {
+    const src = stripComments(readFileSync(join(ROOT, f), 'utf8'));
+    const calls = src.match(/actorSideOf\(\{[^}]*\}\)/g) || [];
+    for (const c of calls) if (!/isAm\s*:/.test(c)) bad.push(`${f} (actorSideOf ไม่ได้ส่ง isAm)`);
+  }
+
+  /* คิว "รอคุณ" ต้องถามโดยปิดคีย์หัวหน้า ไม่ใช่ถามแล้วทิ้งคำตอบ
+     (ทิ้งคำตอบ = ผจก.ตัวจริงถูกตัดออกจากคิวตัวเองไปด้วย — บั๊กเดิม) */
+  const q = stripComments(readFileSync(join(ROOT, 'src/utils/myQueue.js'), 'utf8'));
+  if (!/can:\s*canNoBoss/.test(q)) bad.push('src/utils/myQueue.js (soleSignerFor ไม่ได้ปิด manage_master ตอนถาม)');
+  if (/me\.actorSide\s*!==\s*m\.side/.test(q)) bad.push('src/utils/myQueue.js (เทียบฝั่งตรงๆ ไม่ผ่าน sideAllows)');
+
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n'
+    + '   ทำไม: ทีม AM = ฝ่ายผลิตซ่อมเอง ⇒ คนกลุ่มนี้เป็นทั้งช่างและผู้แจ้งของหน่วยตัวเอง\n'
+    + '   แก้: actorSideOf({ …, isAm: isAmTeam }) · เทียบด้วย sideAllows(actorSide, meta.side)\n'
+    + '   ⚠️ ล็อกฝั่ง/ตำแหน่ง 04/10 ยังอยู่ครบ — ฝั่งช่างจริงยังเซ็นช่องของฝ่ายผู้แจ้งไม่ได้\n');
+});

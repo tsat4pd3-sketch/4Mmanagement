@@ -261,12 +261,32 @@ export function orderReporterText(order) {
    ⚠️ ไฟล์นี้ pure — ผู้เรียกคำนวณ `actorSide`/`posRank` มาให้ (ดู actorSideOf ด้านล่าง) */
 
 /** ฝั่งของคนกด — ตัดสินจาก "ข้อมูลที่บันทึกไว้จริง" เท่านั้น ห้ามเดาจากชื่อ/ตำแหน่ง
- *  คืน 'mtn' | 'reporter' | 'unknown'  —  🔴 unknown ไม่ใช่ "ผ่าน" แต่คือ "ระบบไม่รู้ ต้องเขียนบนจอ" */
-export function actorSideOf({ mtnTeams = [], role = '', sections = [] } = {}) {
-  if (Array.isArray(mtnTeams) && mtnTeams.length > 0) return 'mtn';
-  if (String(role || '').trim() === 'mtn') return 'mtn';
+ *  คืน 'mtn' | 'reporter' | 'both' | 'unknown'
+ *   — 🔴 unknown ไม่ใช่ "ผ่าน" แต่คือ "ระบบไม่รู้ ต้องเขียนบนจอ"
+ *
+ *  🔴 **'both' = ทีม AM (ผลิตซ่อมเอง)** — เพิ่ม 2026-10-16 หลังเจอเคสจริง:
+ *     ผอ.ฝ่ายผลิตที่อยู่ทีม AM (`mtn_teams = {production}`) ถูกตีเป็น "ฝั่งช่าง" ถาวร
+ *     ⇒ เซ็นขั้น 7 (อนุมัติปิดใบ · ช่องของ**ฝ่ายผู้แจ้ง**) ไม่ได้ ทั้งที่ตัวเองคือเจ้าของค่าใช้จ่าย
+ *     และใบก็หายจากคิว "รอคุณ" ด้วย (`soleSignerFor` เทียบฝั่งตรงๆ)
+ *     เหตุผลเชิงโมเดล: **AM คือฝ่ายผลิตซ่อมเครื่องตัวเอง ⇒ ช่าง = ผู้แจ้ง = หน่วยงานเดียวกัน**
+ *     ไม่มี "อีกฝั่ง" ให้กัน · ส่วนทีมช่างจริง (MTN/DIE/JIG) ยังเป็น 'mtn' เหมือนเดิมทุกประการ
+ *
+ *  ⚠️ ไฟล์นี้ pure — ผู้เรียกต้องส่ง `isAm` (= `isAmTeam` จาก `utils/pmTeams.js`) เข้ามาเอง
+ *     **ห้าม hardcode `'production'` ที่นี่** (ชนิดทีมอ่านจาก `mtn_teams.kind` · กฎ AM↔PM ใน CLAUDE.md)
+ *     ไม่ส่ง = พฤติกรรมเดิมเป๊ะ (fail-safe) — มีด่านบังคับให้ทุก call site ส่ง */
+export function actorSideOf({ mtnTeams = [], role = '', sections = [], isAm = () => false } = {}) {
+  const teams = (Array.isArray(mtnTeams) ? mtnTeams : []).filter(Boolean);
+  if (String(role || '').trim() === 'mtn') return 'mtn';        // ช่างเต็มตัว — ไม่ว่าอยู่ทีมไหน
+  if (teams.length) return teams.every(t => isAm(t)) ? 'both' : 'mtn';
   if (Array.isArray(sections) && sections.length > 0) return 'reporter';
   return 'unknown';
+}
+
+/** ฝั่งนี้ทำช่องที่เป็นของฝั่ง `need` ได้ไหม — 'both' ผ่านทั้งสองฝั่ง · 'unknown' ไม่บล็อก (เขียนบนจอแทน)
+ *  🔴 ที่เดียวที่เทียบฝั่ง — ห้ามเขียน `actorSide !== meta.side` เองในหน้า/ในคิว (มีด่าน) */
+export function sideAllows(actorSide, need) {
+  if (!need) return true;
+  return actorSide === 'unknown' || actorSide === 'both' || actorSide === need;
 }
 
 /** ข้อความเตือนตอนระบบ "ปล่อยผ่านเพราะไม่รู้" — คืน null เมื่อไม่มีอะไรต้องเตือน
@@ -305,7 +325,7 @@ export function canDoStep(step, opts = {}) {
 
   /* 🔒 ด่านฝั่ง + ตำแหน่ง (2026-10-02) — ตรวจ**ก่อน** manage_master เพื่อให้รู้ว่า
      "ถ้าไม่ใช่ผู้ถือคีย์หัวหน้า คนนี้จะกดได้ไหม" ⇒ ตอบได้ว่านี่คือการ "เซ็นแทน" หรือไม่ */
-  const sideBad = meta.side && actorSide !== 'unknown' && actorSide !== meta.side;
+  const sideBad = !sideAllows(actorSide, meta.side);
   const rankBad = meta.minRank != null && posRank != null && posRank < meta.minRank;
   // ผู้เปิดใบทำขั้นของตัวเองได้เสมอ (เช็คก่อนด่านฝั่ง/ตำแหน่ง — เจ้าของใบต้องไม่ถูกล็อกออก)
   const isReporterSelf = meta.byReporter && isOrderReporter(order, fullName);
