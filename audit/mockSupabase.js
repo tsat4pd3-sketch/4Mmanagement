@@ -381,6 +381,11 @@ const TABLE_ROWS = {
   employee_skills: (r, i) => ({ ...r, employee_id: `id-${(i % 14) + 1}`, skill_name: i % 2 ? 'SPOT' : 'GAUGE', score: [25, 50, 75, 100][i % 4] }),
   daily_production_logs: (r, i) => ({ ...r, employee_id: `id-${(i % 14) + 1}`, work_date: _recentDay(i % 20),
     shift: i % 3 ? 'day' : 'night', is_present: i % 6 !== 0, leave_type: i % 12 === 0 ? 'ลาป่วย' : null }),
+  /* ⚙️ หมุดเครื่องบนผังไลน์ — ต้องมีพิกัด "xx%" (รูปแบบเดียวกับของจริง) และกระจุกอยู่โซนกลาง (2026-10-16 · ห้ามถอด)
+     เดิมไม่มี pos_top/pos_left ⇒ หมุดทุกตัวกองที่มุมซ้ายบน · โหมด "ครอปเฉพาะโซนที่มีหมุด" (MachineFloorMap autoCrop)
+     ไม่เคยถูกรันใน harness · แถว NULLISH = พิกัดว่าง ⇒ ต้องไม่ทำให้กรอบครอปพัง (cropBox ข้ามจุดที่ไม่มีพิกัด) */
+  machine_points: (r, i) => ({ ...r, machine_no: `SP-${i}`, line_name: LINE_NAME((i % 3) + 1),
+    pos_top: isNullish(r) ? null : `${(40 + (i * 7) % 22).toFixed(2)}%`, pos_left: isNullish(r) ? null : `${(35 + (i * 11) % 30).toFixed(2)}%` }),
   /* จุดงาน + จุดประจำ + รูปผัง — ให้สาย "รูปคนบนผัง LAYOUT" ถูกรัน (เดิมไม่มีพิกัด = ไม่มีจุดถูกวาด) */
   workstations: (r, i) => ({ ...r, station_name: `ST-${i} SPOT WELD`, line_id: 'id-3', line_name: LINE_NAME(3),
     /* 🎯 (12/10) ทักษะที่จุดต้องการ — 2 ใน 3 จุดตั้งไว้ ⇒ แผง "ยืนจุดที่ทักษะยังไม่ถึง" + "ยังไม่ตั้งทักษะ" ถูกรันทั้งคู่ */

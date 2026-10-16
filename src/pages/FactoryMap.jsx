@@ -45,7 +45,7 @@ import { checkWriteRows } from '../utils/dbWrite';
 import { uploadOpts } from '../utils/storageUpload';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
-import LineLensMap from '../components/LineLensMap';
+import LineLensMap, { MachineDetailCard } from '../components/LineLensMap';
 import Segmented from '../components/Segmented';   // 🗺️ ผังเครื่องจักรคู่กล่องรายละเอียดไลน์ (2026-10-16)
 import useIsMobile from '../utils/useIsMobile';
 import { storySectionsFor, mapLensOf } from '../utils/lineLens';
@@ -544,7 +544,8 @@ export default function FactoryMap({ setupMode = false }) {
   const [reviewDetail, setReviewDetail] = useState(null); // ไลน์แม่ที่คลิกดู breakdown ไลน์ย่อย (โหมด review)
   const [storyLine, setStoryLine] = useState(null);   // ไลน์ที่คลิกดู "สรุปเรื่องราวทั้งวัน" (modal หลัก)
   const [story, setStory] = useState(null);           // ข้อมูลสรุปของ storyLine
-  const [storyAll, setStoryAll] = useState(false);    // กล่องรายละเอียด: true = ทุกเรื่อง · false = เฉพาะเรื่องของแท็บ (2026-10-16)
+  const [storyAll, setStoryAll] = useState(false);
+  const [lensSel, setLensSel] = useState(null);       // เครื่องที่คลิกบนผังคู่ — การ์ดอยู่คอลัมน์ขวา (ผังไม่ดันตัวเองขึ้นลง · 16/10)    // กล่องรายละเอียด: true = ทุกเรื่อง · false = เฉพาะเรื่องของแท็บ (2026-10-16)
   const isMobile = useIsMobile();
   const [storyLoading, setStoryLoading] = useState(false);
   const [oeeExplain, setOeeExplain] = useState(null); // { title, rows } — กางวิธีคิด OEE เฉลี่ยถ่วงน้ำหนัก
@@ -1727,7 +1728,7 @@ export default function FactoryMap({ setupMode = false }) {
     const sz = storeZoneOf(name);
     if (sz) { setHoverLine(null); setStoreZoneModal(sz); return; }
     if (isFac(name)) { setHoverLine(null); navigate(`/mtn-layout?view=facility&zone=${encodeURIComponent(name)}&from=factory-map`); return; }
-    setHoverLine(null); setStoryDate(date || (isReview ? reviewDate : getWorkDate())); setStoryAll(false); setStoryLine(name);
+    setHoverLine(null); setStoryDate(date || (isReview ? reviewDate : getWorkDate())); setStoryAll(false); setLensSel(null); setStoryLine(name);
   };
   // เปิดผังไลน์ + พนักงาน (Dashboard) — จากปุ่มใน modal สรุป
   const openFloorMap = (name) => {
@@ -3399,10 +3400,18 @@ export default function FactoryMap({ setupMode = false }) {
               {showMap && (
                 <div style={{ minWidth: 0, overflowY: isMobile ? 'visible' : 'auto', marginBottom: isMobile ? 16 : 0 }}>
                   <LineLensMap lineName={storyLine} family={familyNames(storyLine)} parentName={parentOf[storyLine] || null}
-                    lens={lens} dtRows={story?.dtUnplanned || null} height={isMobile ? '360px' : 'clamp(300px, calc(92vh - 360px), 760px)'} />
+                    lens={lens} dtRows={story?.dtUnplanned || null} height={isMobile ? '360px' : 'clamp(300px, calc(92vh - 360px), 760px)'}
+                    onSelectMachine={isMobile ? undefined : setLensSel} />
                 </div>
               )}
               <div style={showMap && !isMobile ? { minWidth: 0, overflowY: 'auto' } : undefined}>
+                {/* เครื่องที่คลิกบนผัง — ติดหัวคอลัมน์ขวา (sticky) · มือถือการ์ดอยู่ใต้ผังใน LineLensMap เอง */}
+                {showMap && !isMobile && lensSel && (
+                  <div style={{ position: 'sticky', top: 0, zIndex: 2, background: 'var(--card)', paddingBottom: 10, marginBottom: 6 }}>
+                    <MachineDetailCard m={lensSel} lens={lens} />
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>คลิกหมุดเดิมอีกครั้งเพื่อปิด</div>
+                  </div>
+                )}
                 {storyLoading ? (
                   <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>กำลังโหลด...</div>
                 ) : !s ? (
