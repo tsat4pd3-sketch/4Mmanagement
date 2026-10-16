@@ -28,13 +28,15 @@ const LEGEND = {
  *           dtRows:object[]|null, height?:string }} p
  *   family = ไลน์นี้ + ไลน์ลูกทั้งหมด · dtRows = DT นอกแผนของวันที่เปิดดู ({machine, mins, open})
  */
-export default function LineLensMap({ lineName, family, parentName, lens, dtRows, height }) {
+export default function LineLensMap({ lineName, family, parentName, lens, dtRows, height, onSelectMachine }) {
   const [pick, setPick] = useState(null);          // ไลน์ลูกที่เลือกดูผัง (กรณีไลน์นี้ไม่มีผังของตัวเอง)
   const [state, setState] = useState({ loading: true });
   const [selId, setSelId] = useState(null);
+  const [crop, setCrop] = useState(true);        // ✂️ ครอปเฉพาะโซนที่มีหมุด (default) · กดดูทั้งผังได้
   const famKey = (family || []).join('|');
 
   useEffect(() => { setPick(null); setSelId(null); }, [lineName]);
+  useEffect(() => { setSelId(null); }, [pick]);
 
   useEffect(() => {
     let alive = true;
@@ -67,7 +69,7 @@ export default function LineLensMap({ lineName, family, parentName, lens, dtRows
     const inf = state.info?.[p.machine_no] || { name: '', checklists: [] };
     const m = markerFor(lens, { checklists: inf.checklists, dt: dtMap.get(machineKey(p.machine_no)) || null, statusMeta: STATUS_META });
     return { id: p.id, pos_top: p.pos_top, pos_left: p.pos_left, label: p.machine_no, sub: m.sub, color: m.color,
-      alwaysLabel: m.alwaysLabel, blink: m.blink, _state: m.state, _name: inf.name, _cls: inf.checklists, _no: p.machine_no };
+      /* ป้ายโผล่เฉพาะหมุดที่เลือก — สถานะดูจากสีหมุด */ alwaysLabel: false, blink: m.blink, _state: m.state, _name: inf.name, _cls: inf.checklists, _no: p.machine_no };
   }), [state.points, state.info, lens, dtMap]);
 
   const counts = useMemo(() => {
@@ -81,6 +83,8 @@ export default function LineLensMap({ lineName, family, parentName, lens, dtRows
   }, [lens, markers, dtRows, dtMap]);
 
   const sel = markers.find(m => m.id === selId) || null;
+  // หน้าแม่วางการ์ดเอง (คอลัมน์ขวา) — ส่งเครื่องที่เลือกขึ้นไปทุกครั้งที่เปลี่ยน/สีเปลี่ยน
+  useEffect(() => { onSelectMachine?.(sel); }, [sel?.id, sel?.color, lens]); // eslint-disable-line react-hooks/exhaustive-deps
   const box = { background: 'var(--bg3)', border: '1px dashed var(--border2)', borderRadius: 10, padding: '14px 12px', fontSize: 12.5, color: 'var(--text2)' };
 
   return (
@@ -104,8 +108,15 @@ export default function LineLensMap({ lineName, family, parentName, lens, dtRows
           ไลน์นี้ยังไม่มีผังเลย์เอาต์{state.choices?.length ? ' — เลือกไลน์ย่อยด้านบนเพื่อดูผังของมัน' : ' — อัปโหลดผังที่หน้า ตั้งค่าไลน์ (/linesetup)'}
         </div>
       ) : (<>
+        {/* ป้ายชื่อปิดเป็นค่าเริ่มต้น — หมุดถี่แล้วป้ายทับกันจนอ่านไม่ออก (user 16/10) · ชื่อโผล่เมื่อคลิกหมุด */}
         <MachineFloorMap imageUrl={state.image} points={markers} selectedId={selId} onSelect={p => setSelId(p.id === selId ? null : p.id)}
-          height={height || 'clamp(320px, 58vh, 720px)'} />
+          height={height || 'clamp(320px, 58vh, 720px)'} defaultPills={false} autoCrop={crop} />
+        {markers.length > 0 && (
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', fontSize: 11.5, color: 'var(--muted)' }}>
+            <button onClick={() => setCrop(v => !v)} style={chip(crop)}>{crop ? '✂️ ครอปเฉพาะโซนที่มีหมุด' : '🗺️ ทั้งผัง'}</button>
+            <span>คลิกหมุดเพื่อดูชื่อ + รายละเอียดเครื่อง</span>
+          </div>
+        )}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px', fontSize: 11.5 }}>
           {(LEGEND[lens] || []).map(([k, m]) => (
             <span key={k} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: counts[k] ? 'var(--text)' : 'var(--muted)', fontWeight: counts[k] ? 800 : 500 }}>
@@ -115,11 +126,20 @@ export default function LineLensMap({ lineName, family, parentName, lens, dtRows
         </div>
         {!markers.length && <div style={{ fontSize: 11.5, color: '#f59e0b' }}>⚠ ยังไม่ได้วางหมุดเครื่องบนผังนี้ — วางที่หน้า ตั้งค่าไลน์ (/linesetup)</div>}
         {dtOffMap > 0 && <div style={{ fontSize: 11.5, color: '#f59e0b' }}>⚠ Downtime {dtOffMap} รายการวางบนผังไม่ได้ (ไม่ระบุเครื่อง หรือเครื่องนั้นไม่มีหมุด) — ดูในรายการด้านข้าง</div>}
-        {sel && (
-          <div style={{ background: 'var(--bg3)', border: `1px solid ${sel.color}66`, borderLeft: `4px solid ${sel.color}`, borderRadius: 9, padding: '8px 10px', fontSize: 12 }}>
-            <div style={{ fontWeight: 800, color: 'var(--text)' }}>⚙️ {sel._no}{sel._name ? ` · ${sel._name}` : ''} — <span style={{ color: sel.color }}>{sel.sub}</span></div>
+        {sel && !onSelectMachine && <MachineDetailCard m={sel} lens={lens} />}
+      </>)}
+    </div>
+  );
+}
+
+/** การ์ดรายละเอียดเครื่องที่คลิก — แยกออกมาให้หน้าแม่วางในคอลัมน์ขวาได้ (กดหมุดแล้วผังไม่ดันตัวเองขึ้นลง · 16/10) */
+export function MachineDetailCard({ m, lens, onClose }) {
+  if (!m) return null;
+  return (
+          <div style={{ background: 'var(--bg3)', border: `1px solid ${m.color}66`, borderLeft: `4px solid ${m.color}`, borderRadius: 9, padding: '8px 10px', fontSize: 12 }}>
+            <div style={{ fontWeight: 800, color: 'var(--text)', display: 'flex', gap: 8, alignItems: 'flex-start' }}><span style={{ flex: 1, minWidth: 0 }}>⚙️ {m._no}{m._name ? ` · ${m._name}` : ''} — <span style={{ color: m.color }}>{m.sub}</span></span>{onClose && <button onClick={onClose} title="ปิด" style={{ background: 'transparent', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, lineHeight: 1 }}>✕</button>}</div>
             {(lens === 'pm' || lens === 'am' || lens === 'health') && (() => {
-              const cls = (sel._cls || []).filter(c => (lens === 'am' ? c.am : !c.am));
+              const cls = (m._cls || []).filter(c => (lens === 'am' ? c.am : !c.am));
               if (!cls.length) return <div style={{ color: 'var(--muted)', marginTop: 3 }}>ไม่มีแผน{lens === 'am' ? ' AM' : ' PM'} ของเครื่องนี้</div>;
               return (
                 <div style={{ display: 'grid', gap: 2, marginTop: 4 }}>
@@ -136,9 +156,6 @@ export default function LineLensMap({ lineName, family, parentName, lens, dtRows
               );
             })()}
           </div>
-        )}
-      </>)}
-    </div>
   );
 }
 

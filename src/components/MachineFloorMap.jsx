@@ -1,5 +1,6 @@
 import { useRef, useState, useEffect } from 'react'
 import { markerScale } from '../utils/markerScale'
+import { cropBox } from '../utils/mapCrop'
 
 /* Factory floor-map with equipment markers.
    Reuses the object-fit:contain letterbox math from LineSetup so markers (stored
@@ -23,21 +24,40 @@ import { markerScale } from '../utils/markerScale'
    props:
      imageUrl, points:[{id,pos_top,pos_left,label,sub,color,dim}], selectedId, onSelect
      editable, armed, onImageClick, onMarkerDragEnd, onMarkerRemove
+     defaultPills (true) — false = เปิดมาไม่มีป้าย โชว์เฉพาะหมุดที่เลือก (ผังที่หมุดถี่ ป้ายทับกันจนอ่านไม่ออก · 16/10)
+     autoCrop (false)    — true = ซูมเฉพาะกรอบที่มีหมุด (+ขอบ) แทนการโชว์ทั้งรูป · ใช้ได้เฉพาะโหมดดู (ไม่ editable)
+                           คำนวณที่ cropBox() · ไม่มีหมุด = ทั้งรูปเหมือนเดิม
 */
 export default function MachineFloorMap({
   imageUrl, points = [], selectedId, onSelect,
   editable = false, armed = false, onImageClick, onMarkerDragEnd, onMarkerRemove,
   height, // จำกัดความสูงผังให้ fit จอเดียว (เช่น 'calc(100vh - 260px)') — ไม่ส่ง = สูงตามรูปแบบเดิม
+  defaultPills = true, autoCrop = false,
 }) {
   const imgRef = useRef(null)
   const overlayRef = useRef(null)
+  const wrapRef = useRef(null)
   const [imgBox, setImgBox] = useState(null)
   const [drag, setDrag] = useState(null) // { id, top, left }
-  const [showPills, setShowPills] = useState(true) // 🏷️ โชว์/ซ่อนป้ายชื่อทุกหมุด (behavior เดียวกับ Management/LineSetup — UI-CONVENTIONS §1)
+  const [showPills, setShowPills] = useState(defaultPills) // 🏷️ โชว์/ซ่อนป้ายชื่อทุกหมุด (behavior เดียวกับ Management/LineSetup — UI-CONVENTIONS §1)
+  const crop = autoCrop && !editable
+  const cb = crop ? cropBox(points) : null
+  const cbKey = cb ? `${cb.x0.toFixed(1)},${cb.y0.toFixed(1)},${cb.x1.toFixed(1)},${cb.y1.toFixed(1)}` : ''
 
   const recalc = () => {
     const img = imgRef.current
     if (!img || !img.naturalWidth) { setImgBox(null); return }
+    if (crop) {
+      // วางรูปทั้งรูปให้ "กรอบที่มีหมุด" พอดีกล่อง — ส่วนเกินถูกตัดด้วย overflow:hidden ของกล่อง
+      const wrap = wrapRef.current; if (!wrap) return
+      const cw = wrap.clientWidth, ch = wrap.clientHeight
+      const nW = img.naturalWidth, nH = img.naturalHeight
+      const rgW = (cb.x1 - cb.x0) / 100 * nW, rgH = (cb.y1 - cb.y0) / 100 * nH
+      const sc = Math.min(cw / rgW, ch / rgH)
+      const rw = nW * sc, rh = nH * sc
+      setImgBox({ ox: (cw - rgW * sc) / 2 - cb.x0 / 100 * rw, oy: (ch - rgH * sc) / 2 - cb.y0 / 100 * rh, rw, rh, vw: cw })
+      return
+    }
     const rect = img.getBoundingClientRect()
     const nW = img.naturalWidth, nH = img.naturalHeight
     const scale = Math.min(rect.width / nW, rect.height / nH)
@@ -47,12 +67,14 @@ export default function MachineFloorMap({
 
   useEffect(() => {
     setImgBox(null)
-    const img = imgRef.current
-    if (!img) return
+    const el = crop ? wrapRef.current : imgRef.current
+    if (!el) return
     const ro = new ResizeObserver(() => requestAnimationFrame(recalc))
-    ro.observe(img)
+    ro.observe(el)
+    if (imgRef.current?.complete) requestAnimationFrame(recalc)
     return () => ro.disconnect()
-  }, [imageUrl])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- cbKey แทน points (array)
+  }, [imageUrl, crop, cbKey])
 
   // clientX/Y → % of the real image (clamped to the image box)
   const toPct = (e) => {
@@ -101,7 +123,8 @@ export default function MachineFloorMap({
 
   // ขนาดจาก util กลาง (docs/UI-CONVENTIONS.md §1) — density-aware: ผังที่เครื่องเยอะ หมุดย่อลง
   const { SUB, subRing, subPillFont, subPillMaxW } =
-    markerScale(imgBox?.rw, { machineCount: points.length, points, mapHeight: imgBox?.rh })
+    // โหมดครอป: ขนาดหมุดอิงความกว้างที่เห็นจริง (ไม่งั้นซูมแล้วหมุดโตตาม)
+    markerScale(imgBox?.vw ?? imgBox?.rw, { machineCount: points.length, points, mapHeight: imgBox?.rh })
   const size = SUB
   const borderW = subRing
   const pillFont = subPillFont
@@ -125,10 +148,12 @@ export default function MachineFloorMap({
 
   return (
     // height prop ต้องปิด flex-grow ด้วย — flex:1 (basis 0%) ใน column จะชนะ height ทำให้ผังสูงตามรูปจนล้นจอ
-    <div style={{ position: 'relative', flex: height ? '0 0 auto' : 1, minHeight: 320, height: height || undefined, background: '#0a0f0b', borderRadius: 14, overflow: 'hidden', border: '1px solid var(--border)' }}>
+    <div ref={wrapRef} style={{ position: 'relative', flex: height ? '0 0 auto' : 1, minHeight: 320, height: height || undefined, background: '#0a0f0b', borderRadius: 14, overflow: 'hidden', border: '1px solid var(--border)' }}>
       <img ref={imgRef} src={imageUrl} onLoad={recalc} draggable={false}
         onClick={(e) => { if (editable && armed) { const pct = toPct(e); if (pct) onImageClick?.(pct) } }}
-        style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block', cursor: editable && armed ? 'crosshair' : 'default' }} />
+        style={crop
+          ? { position: 'absolute', left: imgBox?.ox ?? 0, top: imgBox?.oy ?? 0, width: imgBox?.rw ?? '100%', height: imgBox?.rh ?? '100%', maxWidth: 'none', display: 'block', visibility: imgBox ? 'visible' : 'hidden' }
+          : { width: '100%', height: '100%', objectFit: 'contain', display: 'block', cursor: editable && armed ? 'crosshair' : 'default' }} />
       {imgBox && (
         <div ref={overlayRef} style={{ position: 'absolute', left: imgBox.ox, top: imgBox.oy, width: imgBox.rw, height: imgBox.rh, pointerEvents: 'none' }}>
           {points.map(p => {
