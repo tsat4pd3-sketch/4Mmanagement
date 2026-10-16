@@ -18,6 +18,7 @@ import {
   cleanItemsForSave, fmtSec, SKIP_REASON_LABEL,
   sectionsOfProfile, canManageDisplay, displayChannelName,
   DISPLAY_PAGE_PARAMS, queryParamsOf, withQueryParams, paramSummary, paramVisible, minSecForPath,
+  TV_SHELL_PARAM,
 } from '../utils/displayRotation';
 
 /* ══ 🔁 ตั้งค่าจอวนหน้า — /display-rotation ══════════════════════════════════════════
@@ -636,7 +637,8 @@ function PagePreview({ path }) {
         <>
           {/* key ใน array เดียวกัน = ตอนสลับ React ย้าย iframe ตัวใหม่ขึ้นมาเฉยๆ ไม่สร้างใหม่ (ไม่โหลดซ้ำ) */}
           {[shown, path].filter((p, i, a) => p && a.indexOf(p) === i).map(p => (
-            <iframe key={p} src={p} title={p === shown ? 'ตัวอย่างหน้า' : 'ตัวอย่างหน้า (กำลังโหลด)'}
+            // ?tvshell=1 = เห็นกรอบจอ TV เหมือนบนทีวีจริง (ไม่มีเมนู/หัวเพจ · แถบบนชุดเดียว)
+            <iframe key={p} src={`${p}${p.includes('?') ? '&' : '?'}${TV_SHELL_PARAM}=1`} title={p === shown ? 'ตัวอย่างหน้า' : 'ตัวอย่างหน้า (กำลังโหลด)'}
               onLoad={p === path ? () => setReady(true) : undefined} style={frameSt(p !== shown)} />
           ))}
           {path !== shown && (

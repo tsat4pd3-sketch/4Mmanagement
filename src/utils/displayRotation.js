@@ -21,6 +21,16 @@ export const ROT_NAV_STATE = 'rotNav';
    · ตัววนรีโหลดเต็มหน้าตามรอบ `reload_min` → ฝากธงไว้ใน sessionStorage ก่อนรีโหลด · App อ่านแล้วลบทิ้ง (ใช้ครั้งเดียว)
    · หน้าที่ถูกฝังใน iframe (กรอบตัวอย่างในหน้าตั้งค่า) = ไม่ต้องมี splash
    storage อาจโยน (โหมดส่วนตัว/บล็อก) ⇒ try/catch ทุกครั้ง · พังแล้วแค่เห็น splash เหมือนเดิม */
+/* 📺 กรอบจอ TV ชุดเดียวทุกหน้า (16/10 · user "โหมดจอทีวีตอนนี้หลากหลาย UX มาก คนใช้จะงง")
+   บัญชี role display (รวม admin จำลองมุมมองเป็น display) หรือลิงก์ที่มี `?tvshell=1` (กรอบตัวอย่างหน้าตั้งค่า)
+   ⇒ ไม่มี sidebar/กระดิ่ง/หัวเพจของแต่ละหน้า · มีแถบบนแถบเดียว (ชื่อหน้า · ตัวกรอง · ส่วนงาน · กะ/เวลา · ความคืบหน้ารอบวน)
+   ผู้ตัดสินมีที่เดียว = ฟังก์ชันนี้ (App ซ่อน chrome · DisplayRotator วาดแถบ · index.css ซ่อน `.ph-chrome`) */
+export const TV_SHELL_PARAM = 'tvshell';
+export function isTvShell(role, search = '') {
+  if (role === 'display') return true;
+  try { return new URLSearchParams(search || '').get(TV_SHELL_PARAM) === '1'; } catch { return false; }
+}
+
 const QUIET_KEY = 'esm-rot-quiet-reload';
 export function markQuietReload() {
   try { sessionStorage.setItem(QUIET_KEY, '1'); } catch { /* ไม่มี storage = เห็น splash ตามปกติ */ }
@@ -379,6 +389,21 @@ export function paramSummary(path) {
     const d = defs.find(x => x.key === k);
     const opt = d?.options?.find(o => o.value === v);
     return `${d?.label || k}: ${opt?.label || v}`;
+  });
+}
+
+/** ชิปบนแถบบนของกรอบจอ TV — บอก "จอนี้กำลังโชว์ข้อมูลชุดไหน" เท่านั้น (แท็บ · ไลน์ · ส่วนงาน · ขอบเขต · สินค้า)
+    ค่าปรับหน้าตา (มุม 2D/3D · แผงขวา · ขนาดป้าย · วินาที · โหมดบอร์ด · bool) ไม่โชว์ · คีย์นอกทะเบียน (เช่น tvshell) ไม่โชว์
+    แกนขอบเขต `section:PD3` / `line_group:X` → โชว์แค่ชื่อ */
+const BAR_SKIP_KEYS = new Set(['view', 'panel', 'lbl', 'csec', 'cycle', 'tv', 'board', 'tour', 'nopanel', 'support']);
+const BAR_KINDS = new Set(['select', 'line', 'section', 'product', 'scope', 'text']);
+export function barChips(path) {
+  const defs = DISPLAY_PAGE_PARAMS[pathOnly(path)] || [];
+  return Object.entries(queryParamsOf(path)).flatMap(([k, v]) => {
+    const d = defs.find(x => x.key === k);
+    if (!d || BAR_SKIP_KEYS.has(k) || !BAR_KINDS.has(d.kind) || !String(v).trim()) return [];
+    const opt = d.options?.find(o => o.value === v);
+    return [opt?.label || String(v).replace(/^(section|line_group|line|dept):/, '')];
   });
 }
 

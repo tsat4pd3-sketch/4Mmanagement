@@ -72,6 +72,12 @@ function SidebarLab(){
   )
 }
 
+const TV_SHELL = new URLSearchParams(location.search).get('tvshell') === '1'
+const DisplayRotatorLazy = React.lazy(() => import('../src/components/DisplayRotator'))
+function TvShellHarness(){
+  useEffect(() => { document.body.classList.add('esm-tv-shell'); return () => document.body.classList.remove('esm-tv-shell') }, [])
+  return <DisplayRotatorLazy userId="x" role="display" shell />
+}
 function App(){
   const [name, setName] = useState(new URLSearchParams(location.search).get('p') || NAMES[0])
   const [C, setC] = useState(null)
@@ -89,6 +95,8 @@ function App(){
           {/* ToastContainer ต้องมีในหน้าปกติด้วย (05/10) — เดิมมีแค่ใน FeedbackLab ⇒ toast จากหน้าอื่น (เช่น "ขอบเขตนอกสังกัด" ของบอร์ด KPI) ไม่โผล่ ตรวจอัตโนมัติไม่ได้ */}
           <ToastContainer/>
         </main>
+        {/* 📺 ?tvshell=1 — กรอบจอ TV (16/10) · แถบบน + body.esm-tv-shell เหมือนบัญชี display ในแอปจริง */}
+        {TV_SHELL && <Suspense fallback={null}><TvShellHarness/></Suspense>}
         {/* 📱 แถบล่างมือถือเหมือนแอปจริง (15/10) — สวีปมือถือต้องเห็นว่าแถบบังอะไรไหม · จอคอม = null */}
         <MobileNavBar role={ROLE} onOpenMenu={() => { window.__menu = (window.__menu || 0) + 1 }} onOpenSearch={() => { window.__palette = (window.__palette || 0) + 1 }} />
       </UserContext.Provider>

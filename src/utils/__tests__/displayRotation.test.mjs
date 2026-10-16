@@ -179,3 +179,23 @@ test('minSecForPath — ผังโรงงานวนมุมมอง ต�
   const { playable } = buildPlaylist([{ path: '/factory-map?cycle=health,oee,ng', sec: 20 }], () => true);
   assert.equal(playable[0].sec, 45);
 });
+
+import { isTvShell } from '../displayRotation.js';
+
+test('isTvShell — บัญชี display หรือลิงก์ ?tvshell=1 เท่านั้น', () => {
+  assert.equal(isTvShell('display', ''), true);
+  assert.equal(isTvShell('admin', '?tvshell=1'), true);
+  assert.equal(isTvShell('admin', '?x=1&tvshell=1'), true);
+  assert.equal(isTvShell('admin', '?tvshell=0'), false);
+  assert.equal(isTvShell('admin', ''), false);
+  assert.equal(isTvShell('supervisor', undefined), false);
+});
+
+import { barChips } from '../displayRotation.js';
+
+test('barChips — โชว์เฉพาะ "ข้อมูลชุดไหน" ไม่โชว์ค่าปรับหน้าตา/คีย์นอกทะเบียน', () => {
+  assert.deepEqual(barChips('/factory-map?view=3d&panel=obeya&lbl=60&tvshell=1'), []);
+  assert.deepEqual(barChips('/line-oee?line=LINE%20APRON%20ASSY'), ['LINE APRON ASSY']);
+  assert.deepEqual(barChips('/tv?dept=production&sec=PD3'), ['🏭 ฝ่ายผลิต', 'PD3']);
+  assert.deepEqual(barChips('/obeya?tab=kpi&board=1&scope=section:PD3'), ['📋 บอร์ด KPI', 'PD3']);
+});

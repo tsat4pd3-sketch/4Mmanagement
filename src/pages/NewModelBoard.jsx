@@ -1191,7 +1191,7 @@ function TvView({ projects, index, onIndex, onExit, openPanelKey, onPick, onClos
 
   return (
     <div style={{
-      position: 'fixed', inset: 0, zIndex: 900, background: 'var(--bg)', color: 'var(--text)',
+      position: 'fixed', top: 'var(--tvbar-h, 0px)', left: 0, right: 0, bottom: 0, zIndex: 900, background: 'var(--bg)', color: 'var(--text)',   // top = ใต้แถบบนของกรอบจอ TV
       display: 'flex', flexDirection: 'column', padding: '1.1vh 1vw', gap: '1vh', overflow: 'clip',
     }}>
       {/* ══ หัวบอร์ด ══ ป้าย MODEL เป็น eyebrow · ชื่อรุ่นเป็น hero เดียวของจอ

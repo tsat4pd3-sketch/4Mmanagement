@@ -160,10 +160,13 @@ html, body {
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4'/><feColorMatrix type='saturate' values='0'/></filter><rect width='200' height='200' filter='url(%23n)'/></svg>");
 }
 
-/* ─── 📺 โหมดจอ TV ทุกหน้า (15/10) — บัญชี role display: ซ่อนหัวเพจ (ชื่อหน้า · แท็บ · แถบกรอง) ───
-   class บน body ตั้งที่ components/DisplayRotator.jsx · `.ph-chrome` ติดใน components/PageHeader.jsx
-   (ไม่ติดที่ children ของ PageHeader — เนื้อหาจริงต้องยังเห็น) · แท็บ/ตัวกรองของจอตั้งจากลิงก์ที่ /display-rotation */
-body.esm-tv-display .ph-chrome { display: none !important; }
+/* ─── 📺 กรอบจอ TV ชุดเดียวทุกหน้า (15–16/10) — บัญชี role display / ลิงก์ ?tvshell=1 ───
+   class บน body ตั้งใน App.jsx จาก isTvShell() (utils/displayRotation.js) · แถบบนวาดใน components/DisplayRotator.jsx
+   · `.ph-chrome` = หัวเพจ/breadcrumb/แท็บ/แถบกรองใน PageHeader + หัวที่บางบอร์ดวาดเอง (Dashboard · LineOeeBoard · TvBoard)
+     🔴 ห้ามติดที่ children ของ PageHeader (เนื้อหาจริง) · หน้าที่วาดหัวเองใหม่ต้องติด `ph-chrome` ด้วย ไม่งั้นจอ TV ซ้ำ 2 หัว
+   · บอร์ดเต็มจอแบบ position:fixed ต้องเริ่มที่ top: var(--tvbar-h, 0px) ไม่งั้นแถบบนทับ */
+body.esm-tv-shell { --tvbar-h: 46px; padding-top: var(--tvbar-h); }
+body.esm-tv-shell .ph-chrome { display: none !important; }
 
 /* ─── Splash Screen ──────────────────────────────────────────── */
 #splash {

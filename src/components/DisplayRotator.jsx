@@ -1,12 +1,14 @@
-import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { startTransition, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { canAccessPage } from '../utils/permissions';
 import {
   normalizeConfig, buildPlaylist, stepIndex, indexOfLocation, resolveIndex, shouldReload,
   displayChannelName, parseDisplayCmd, ROT_NAV_STATE, fmtSec, SKIP_REASON_LABEL, markQuietReload,
-  setActiveDwellSec,
+  setActiveDwellSec, barChips,
 } from '../utils/displayRotation';
+import { NAV_ITEMS, UserContext } from '../App';
+import { getCurrentShift, getWorkDate } from '../utils/workDate';
 
 /* ══ 📺 DisplayRotator — จอวนหน้าเอง ตามแผนของบัญชีที่ login ══════════════════════════
    2026-10-09 · คำสั่ง user: "ตั้งว่าจอ user นี้จะเปิดอะไรวนบ้าง" · ตั้งค่าที่ /display-rotation
@@ -60,7 +62,7 @@ function veilSwap(go, keep = false) {
   }, VEIL_FADE_MS);
 }
 
-export default function DisplayRotator({ userId, role, disabled }) {
+export default function DisplayRotator({ userId, role, disabled, shell = false }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [cfgRow, setCfgRow] = useState(null);   // null = ไม่มีแผน / ยังไม่โหลด
@@ -103,18 +105,6 @@ export default function DisplayRotator({ userId, role, disabled }) {
   /* บอกบอร์ดที่แบ่งหน้าภายในว่าหน้านี้ค้างกี่วิ (boardFlipSec) — ออกจากรอบ = ล้าง */
   useEffect(() => { setActiveDwellSec(active && cur ? cur.sec : null); return () => setActiveDwellSec(null); }, [active, cur]);
 
-  /* 📺 โหมดจอ TV ทุกหน้า (15/10 · user "จอทีวี ให้เป็นโหมดจอ TV (ซ่อนหัวเพจ) ทุกหน้าเลย") — บัญชี role display
-     ไม่มีคนกด ⇒ หัวเพจ (ชื่อหน้า · แท็บ · แถบกรอง) = พื้นที่เปล่า · แท็บ/ตัวกรองตั้งจากลิงก์ที่ /display-rotation แทน
-     · ตัดสินที่ class บน <body> ที่เดียว → CSS `body.esm-tv-display .ph-chrome` (index.css) — PageHeader ติด class ให้ทุกส่วน
-       ยกเว้น `children` (เนื้อหาจริงที่บางหน้าห่อไว้ใน PageHeader ต้องยังเห็น)
-     · ไม่ผูกกับว่ามีแผนวนไหม — จอ display ที่ยังไม่ตั้งแผนก็ได้หน้าตาจอ TV · admin จำลองมุมมอง (viewAs) = ไม่ซ่อน */
-  const tvChrome = role === 'display' && !disabled;
-  useEffect(() => {
-    if (!tvChrome) return undefined;
-    document.body.classList.add('esm-tv-display');
-    return () => document.body.classList.remove('esm-tv-display');
-  }, [tvChrome]);
-
   /* ── หน้าเปลี่ยน (ทั้งจากเราและจากคน/รีโมท) → ตำแหน่งในรอบตาม + นับเวลาใหม่ ── */
   useEffect(() => {
     if (!active) return;
@@ -151,15 +141,15 @@ export default function DisplayRotator({ userId, role, disabled }) {
 
   /* ── นาฬิกา 1 วิ ── */
   useEffect(() => {
-    if (!active) return undefined;
+    if (!active && !shell) return undefined;   // กรอบจอ TV ต้องมีนาฬิกาแม้ไม่ได้ตั้งรอบวน
     const id = setInterval(() => {
       const t = Date.now();
       setNow(t);
-      if (held || t < pausedUntil) return;
+      if (!active || held || t < pausedUntil) return;
       setElapsed(e => e + 1);
     }, 1000);
     return () => clearInterval(id);
-  }, [active, held, pausedUntil]);
+  }, [active, shell, held, pausedUntil]);
 
   useEffect(() => {
     if (active && cur && elapsed >= cur.sec) goTo(stepIndex(idx, n, 1));
@@ -227,7 +217,8 @@ export default function DisplayRotator({ userId, role, disabled }) {
       const m = document.querySelector('main');
       if (!m) return;
       const visual = m.getBoundingClientRect().height + 2;   // ความสูงที่เห็นจริง (คูณ zoom แล้ว)
-      const target = Math.max(0.55, Math.min(1, (zoom * window.innerHeight) / Math.max(1, visual)));
+      const barH = parseFloat(getComputedStyle(document.body).paddingTop) || 0;   // แถบบนของกรอบจอ TV
+      const target = Math.max(0.55, Math.min(1, (zoom * (window.innerHeight - barH)) / Math.max(1, visual)));
       if (Math.abs(target - zoom) < 0.02) return;
       zoom = Math.round(target * 100) / 100;
       m.style.zoom = zoom >= 0.995 ? '' : String(zoom);
@@ -247,6 +238,33 @@ export default function DisplayRotator({ userId, role, disabled }) {
   const [changedAt, setChangedAt] = useState(() => Date.now());
   useEffect(() => { setChangedAt(Date.now()); }, [pathKey]);
 
+  const pausedLeft = Math.max(0, Math.ceil((pausedUntil - now) / 1000));
+  const skipTitle = skipped.map(s => `${s.path || '(ว่าง)'} — ${SKIP_REASON_LABEL[s.reason]}`).join('\n');
+  // ปุ่มไม่นับเป็น "มีคนใช้จอ" — ตัวฟัง (capture ที่ window) ตั้งหยุดชั่วคราวไปก่อน แล้ว onClick ล้างทิ้ง
+  const btn = (label, onClick, title, st = btnStyle) => (
+    <button type="button" title={title}
+      onClick={() => { onClick(); setPausedUntil(0); }}
+      style={st}>{label}</button>
+  );
+
+  if (shell) {
+    return (
+      <TvShellBar
+        pathname={location.pathname} search={location.search} now={now}
+        loadErr={loadErr} active={active && !!cur}
+        idx={Math.min(idx, Math.max(0, n - 1))} n={n} sec={cur?.sec || 0} elapsed={elapsed}
+        held={held} pausedLeft={pausedLeft} skipped={skipped} skipTitle={skipTitle}
+        controls={active && cur ? (
+          <>
+            {btn('◀', () => goTo(stepIndex(idx, n, -1)), 'หน้าก่อนหน้า', barBtn)}
+            {btn(held ? '▶' : '⏸', () => setHeld(h => !h), held ? 'วนต่อ' : 'หยุดค้างหน้านี้', barBtn)}
+            {btn('▶▶', () => goTo(stepIndex(idx, n, 1)), 'หน้าถัดไป', barBtn)}
+          </>
+        ) : null}
+      />
+    );
+  }
+
   if (loadErr) {
     return (
       <div style={chipStyle} title={loadErr}>⚠ โหลดรอบจอวนหน้าไม่สำเร็จ — จอจะค้างหน้านี้</div>
@@ -254,18 +272,9 @@ export default function DisplayRotator({ userId, role, disabled }) {
   }
   if (!active || !cur) return null;
 
-  const pausedLeft = Math.max(0, Math.ceil((pausedUntil - now) / 1000));
   const status = held ? '⏸ หยุดอยู่'
     : pausedLeft > 0 ? `⏸ มีคนใช้จอ · วนต่อใน ${fmtSec(pausedLeft)}`
       : `ถัดไปใน ${fmtSec(Math.max(0, cur.sec - elapsed))}`;
-  const skipTitle = skipped.map(s => `${s.path || '(ว่าง)'} — ${SKIP_REASON_LABEL[s.reason]}`).join('\n');
-
-  // ปุ่มบนชิปไม่นับเป็น "มีคนใช้จอ" — ตัวฟัง (capture ที่ window) ตั้งหยุดชั่วคราวไปก่อน แล้ว onClick ล้างทิ้ง
-  const btn = (label, onClick, title) => (
-    <button type="button" title={title}
-      onClick={() => { onClick(); setPausedUntil(0); }}
-      style={btnStyle}>{label}</button>
-  );
 
   const compact = !held && pausedLeft === 0 && skipped.length === 0 && now - changedAt > 6000;
   if (compact) {
@@ -293,12 +302,88 @@ export default function DisplayRotator({ userId, role, disabled }) {
   );
 }
 
+/* ══ 📺 แถบบนของกรอบจอ TV — หน้าตาเดียวทุกหน้า (16/10 · user "โหมดจอทีวีหลากหลาย UX มาก คนใช้จะงง") ══
+   ซ้าย = จอนี้กำลังโชว์อะไร (ชื่อหน้า + ตัวกรองที่ตั้งจากลิงก์) · ขวา = ส่วนงานของจอ · วันงาน/กะ · นาฬิกา
+   ล่างสุดของแถบ = ความคืบหน้ารอบวน (1 ขีด = 1 หน้า · ขีดปัจจุบันเติมตามเวลา)
+   แทนที่: หัวเพจ/breadcrumb/แท็บ/แถบกรองของทุกหน้า · ชิปมุมจอ · นาฬิกาที่บางบอร์ดวาดเอง
+   ความสูงอยู่ที่ `--tvbar-h` (index.css) — บอร์ดที่เต็มจอแบบ fixed ต้องเริ่มที่ top: var(--tvbar-h, 0px) */
+function TvShellBar({ pathname, search, now, loadErr, active, idx, n, sec, elapsed, held, pausedLeft, skipped, skipTitle, controls }) {
+  const { sections, section } = useContext(UserContext) || {};
+  const secs = (sections?.length ? sections : (section ? [section] : [])).filter(Boolean);
+  const nav = pathname === '/tv'
+    ? { icon: '📺', label: 'Andon Board' }
+    : NAV_ITEMS.find(x => x.to === pathname) || { icon: '🖥️', label: pathname };
+  const chips = barChips(`${pathname}${search || ''}`);
+  const d = new Date(now);
+  const shift = getCurrentShift(d) === 'day' ? '☀️ กะเช้า' : '🌙 กะดึก';
+  const hhmm = d.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Bangkok' });
+  const wd = getWorkDate(d);
+  const status = !active ? null
+    : held ? '⏸ หยุดค้าง'
+      : pausedLeft > 0 ? `⏸ มีคนใช้จอ · วนต่อใน ${fmtSec(pausedLeft)}`
+        : `ถัดไปใน ${fmtSec(Math.max(0, sec - elapsed))}`;
+  return (
+    <div role="banner" style={barStyle}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1, overflow: 'hidden' }}>
+        <span style={{ fontSize: 20, lineHeight: 1 }}>{nav.icon}</span>
+        <span style={{ fontSize: 17, fontWeight: 900, fontFamily: 'var(--font-display)', whiteSpace: 'nowrap' }}>{nav.label}</span>
+        {chips.map(c => (
+          <span key={c} style={barChip}>{c}</span>
+        ))}
+      </div>
+      {loadErr && (
+        <span title={loadErr} style={{ fontSize: 12, fontWeight: 700, color: 'var(--amber)', whiteSpace: 'nowrap' }}>⚠ โหลดรอบวนไม่สำเร็จ — ค้างหน้านี้</span>
+      )}
+      {active && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          <span style={{ fontSize: 12, color: 'var(--muted)', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+            🔁 {idx + 1}/{n} · {status}
+          </span>
+          {skipped.length > 0 && (
+            <span title={skipTitle} style={{ fontSize: 12, color: 'var(--amber)', fontWeight: 700, whiteSpace: 'nowrap' }}>⚠ ข้าม {skipped.length} หน้า</span>
+          )}
+          {controls}
+        </div>
+      )}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
+        {secs.length > 0 && <span style={{ ...barChip, fontWeight: 800, color: 'var(--text)' }}>🏭 {secs.join(' · ')}</span>}
+        <span style={{ fontSize: 12, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{shift} · วันงาน {wd}</span>
+        <span style={{ fontSize: 20, fontWeight: 900, minWidth: 58, textAlign: 'right' }}>{hhmm}</span>
+      </div>
+      {active && n > 1 && (
+        <div aria-hidden="true" style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 3, display: 'flex', gap: 3 }}>
+          {Array.from({ length: n }, (_, i) => (
+            <div key={i} style={{ flex: 1, background: 'var(--border2)', overflow: 'hidden' }}>
+              <div style={{ height: '100%', background: 'var(--accent)',
+                width: i < idx ? '100%' : i > idx ? '0%' : `${Math.min(100, (elapsed / Math.max(1, sec)) * 100)}%`,
+                transition: i === idx ? 'width 1s linear' : 'none' }} />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const chipStyle = {
   position: 'fixed', right: 14, bottom: 'calc(14px + var(--mnav-h, 0px))', zIndex: 9990,
   display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', maxWidth: '92vw',
   padding: '6px 10px', borderRadius: 999, fontSize: 12,
   background: 'var(--card)', border: '1px solid var(--border2)', color: 'var(--text)',
   boxShadow: 'var(--shadow-float)', opacity: 0.85,
+};
+const barStyle = {
+  position: 'fixed', top: 0, left: 0, right: 0, height: 'var(--tvbar-h, 46px)', zIndex: 9990,
+  display: 'flex', alignItems: 'center', gap: 14, padding: '0 16px',
+  background: 'var(--card)', borderBottom: '1px solid var(--border2)', color: 'var(--text)',
+};
+const barChip = {
+  padding: '2px 10px', borderRadius: 999, fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap',
+  background: 'var(--bg2)', border: '1px solid var(--border2)', color: 'var(--text2)',
+};
+const barBtn = {
+  minWidth: 28, height: 24, padding: '0 7px', borderRadius: 999, fontSize: 11, fontWeight: 800, opacity: 0.6,
+  cursor: 'pointer', background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border2)',
 };
 const btnStyle = {
   minWidth: 30, height: 26, padding: '0 8px', borderRadius: 999, fontSize: 12, fontWeight: 800,
