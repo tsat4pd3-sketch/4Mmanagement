@@ -917,7 +917,8 @@ export default function Dashboard() {
       )}
 
       {/* ── Header ─────────────────────────────────────── */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 28, gap: 16, flexWrap: 'wrap' }}>
+      {/* ph-chrome = หัวเพจ — กรอบจอ TV ซ่อน (แถบบนของกรอบบอกชื่อหน้า/กะ/เวลาแทน · index.css) */}
+      <div className="ph-chrome" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 28, gap: 16, flexWrap: 'wrap' }}>
         <motion.div {...stagger(0)}>
           <div style={{ fontSize: 'clamp(18px,3vw,24px)', fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text)', letterSpacing: '-0.5px' }}>
             Production Overview

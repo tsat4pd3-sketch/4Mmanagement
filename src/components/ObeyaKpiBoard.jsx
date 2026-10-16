@@ -911,7 +911,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
   const monthText = `${monthLabel(monthKey)} ${year}`;
   const shell = board
     /* zIndex ต้องสูงกว่ารางเมนู (App.jsx rail = 1000) — เดิม 800 ⇒ รางทับบอร์ดโหมดจอไป ~60px ซ้าย (user ส่งรูป 30/09) · ต่ำกว่าโมดัล 1100+ */
-    ? { position: 'fixed', inset: 0, zIndex: 1010, background: 'var(--bg)', display: 'flex', flexDirection: 'column' }
+    ? { position: 'fixed', top: 'var(--tvbar-h, 0px)', left: 0, right: 0, bottom: 0, zIndex: 1010, background: 'var(--bg)', display: 'flex', flexDirection: 'column' }   // top = ใต้แถบบนของกรอบจอ TV
     : { display: 'flex', flexDirection: 'column' };
   const pill = (active) => ({
     fontSize: 13, fontWeight: 700, padding: '6px 12px', borderRadius: 999, cursor: 'pointer',
