@@ -33,6 +33,7 @@ export default function MachineFloorMap({
   editable = false, armed = false, onImageClick, onMarkerDragEnd, onMarkerRemove,
   height, // จำกัดความสูงผังให้ fit จอเดียว (เช่น 'calc(100vh - 260px)') — ไม่ส่ง = สูงตามรูปแบบเดิม
   defaultPills = true, autoCrop = false,
+  vivid = false, // true = วงทึบสีสถานะ + ขอบขาว (เด่นจากผัง CAD ที่ลายเยอะ) · false = วงพื้นเข้มขอบสี (ค่าเดิม)
 }) {
   const imgRef = useRef(null)
   const overlayRef = useRef(null)
@@ -123,8 +124,9 @@ export default function MachineFloorMap({
 
   // ขนาดจาก util กลาง (docs/UI-CONVENTIONS.md §1) — density-aware: ผังที่เครื่องเยอะ หมุดย่อลง
   const { SUB, subRing, subPillFont, subPillMaxW } =
-    // โหมดครอป: ขนาดหมุดอิงความกว้างที่เห็นจริง (ไม่งั้นซูมแล้วหมุดโตตาม)
-    markerScale(imgBox?.vw ?? imgBox?.rw, { machineCount: points.length, points, mapHeight: imgBox?.rh })
+    // โหมดครอป: หมุด "ซูมตามรูป" — คิดจากขนาดรูปที่ขยายแล้ว (rw/rh) ทั้งความกว้างและระยะห่างหมุด
+    //   ⚠️ เดิม (16/10 รอบแรก) อิงความกว้างกล่อง แต่ระยะห่างวัดบนรูปเต็ม ⇒ ผังแน่นหมุดหดเหลือ ~16px หาไม่เจอ (user ทัก)
+    markerScale(imgBox?.rw, { machineCount: points.length, points, mapHeight: imgBox?.rh })
   const size = SUB
   const borderW = subRing
   const pillFont = subPillFont
@@ -170,11 +172,15 @@ export default function MachineFloorMap({
                 onClick={(e) => { e.stopPropagation(); onSelect?.(p) }}
                 title={p.label}
                 style={{
-                  position: 'absolute', top: pos.top, left: pos.left, transform: 'translate(-50%, -50%)',
+                  position: 'absolute', top: pos.top, left: pos.left, transform: sel ? 'translate(-50%, -50%) scale(1.18)' : 'translate(-50%, -50%)',   // ⚠️ ห้ามใช้ CSS `scale:` (Cr104 > จอ TV Cr94)
                   width: size, height: size, borderRadius: '50%',
-                  border: `${borderW}px solid ${sel ? 'var(--accent)' : color}`,
-                  background: sel ? 'rgba(34,197,94,0.20)' : 'rgba(10,15,11,0.82)',
-                  boxShadow: d ? '0 0 12px rgba(61,214,92,0.8)' : sel ? '0 0 10px rgba(61,214,92,0.6)' : `0 0 8px ${color}66`,
+                  /* 🔴 หมุดที่เลือก "คงสีสถานะเดิม" — เดิมเปลี่ยนขอบเป็นเขียว accent ⇒ หมุดแดงคลิกแล้วกลายเป็นเขียว
+                     คนอ่านว่าสถานะเปลี่ยน (user ทัก 16/10) · บอกว่า "เลือกอยู่" ด้วยวงแหวนขาว + ขยายแทน */
+                  border: `${borderW}px solid ${vivid ? '#fff' : color}`,
+                  background: vivid ? color : 'rgba(10,15,11,0.82)',
+                  boxShadow: d ? '0 0 12px rgba(61,214,92,0.8)'
+                    : sel ? `0 0 0 3px #fff, 0 0 0 6px rgba(0,0,0,0.55), 0 0 14px ${color}`
+                    : vivid ? `0 0 0 2px rgba(0,0,0,0.55), 0 0 10px ${color}aa` : `0 0 8px ${color}66`,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   pointerEvents: 'auto', cursor: editable ? (d ? 'grabbing' : 'grab') : 'pointer',
                   touchAction: editable ? 'none' : undefined, // โหมดแก้ไข: กันหน้าจอ scroll ระหว่างลากหมุดบนจอทัช
@@ -192,7 +198,7 @@ export default function MachineFloorMap({
                 {/* name pill(s) underneath the circle — ซ่อนเมื่อผังแน่น ยกเว้นถูกเลือก/ลาก/จุดที่ caller บังคับ (เช่น PM เกินกำหนด) */}
                 {!p.dim && (pillsOn || sel || d || p.alwaysLabel) && (
                 <div style={{ position: 'absolute', top: 'calc(100% + 3px)', left: '50%', transform: 'translateX(-50%)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                  <div style={{ maxWidth: subPillMaxW, background: sel ? 'rgba(34,197,94,0.9)' : 'rgba(0,0,0,0.78)', color: '#fff', fontSize: pillFont, fontWeight: 800, lineHeight: 1.2, padding: '1px 6px', borderRadius: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  <div style={{ maxWidth: subPillMaxW, background: 'rgba(0,0,0,0.82)', outline: sel ? `2px solid ${color}` : undefined, color: '#fff', fontSize: pillFont, fontWeight: 800, lineHeight: 1.2, padding: '1px 6px', borderRadius: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {p.label}
                   </div>
                   {p.sub && (
