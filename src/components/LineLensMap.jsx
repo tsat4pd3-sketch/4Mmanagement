@@ -110,7 +110,7 @@ export default function LineLensMap({ lineName, family, parentName, lens, dtRows
       ) : (<>
         {/* ป้ายชื่อปิดเป็นค่าเริ่มต้น — หมุดถี่แล้วป้ายทับกันจนอ่านไม่ออก (user 16/10) · ชื่อโผล่เมื่อคลิกหมุด */}
         <MachineFloorMap imageUrl={state.image} points={markers} selectedId={selId} onSelect={p => setSelId(p.id === selId ? null : p.id)}
-          height={height || 'clamp(320px, 58vh, 720px)'} defaultPills={false} autoCrop={crop} />
+          height={height || 'clamp(320px, 58vh, 720px)'} defaultPills={false} autoCrop={crop} vivid />
         {markers.length > 0 && (
           <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', fontSize: 11.5, color: 'var(--muted)' }}>
             <button onClick={() => setCrop(v => !v)} style={chip(crop)}>{crop ? '✂️ ครอปเฉพาะโซนที่มีหมุด' : '🗺️ ทั้งผัง'}</button>
