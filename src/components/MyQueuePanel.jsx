@@ -22,6 +22,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { getActor } from '../utils/actorStamp';
 import { loadProductionLines } from '../utils/useProductionLines';
 import { OPEN_MO_STATUSES, actorSideOf } from '../utils/mtnStepPerm';
+import { isAmTeam } from '../utils/pmTeams';
 import { positionRank } from '../utils/positions';
 import { can as canPerm, isActionSeeded } from '../utils/permissions';
 import { teamKeyOf } from '../utils/mtnTeams';
@@ -204,7 +205,7 @@ export function useMyQueue(open = false) {
           sections: secs,
           /* ✍️ เกณฑ์ "ช่องเซ็นที่ตำแหน่งเราเซ็นได้คนเดียว" (13/10) — ชุดเดียวกับ DetailDrawer ใน /mtn-repair
              (actorSideOf + positionRank + สิทธิ์ mtn_repair) ⇒ ใบที่ขึ้นว่า "รอคุณเซ็น" = ใบที่กดเซ็นได้จริง */
-          actorSide: actorSideOf({ mtnTeams: teams, role, sections: secs }),
+          actorSide: actorSideOf({ mtnTeams: teams, role, sections: secs, isAm: isAmTeam }),
           posRank: positionRank(position),
           can: (a) => canPerm('mtn_repair', a, role),
           seeded: (a) => isActionSeeded('mtn_repair', a),

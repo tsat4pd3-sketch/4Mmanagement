@@ -28,7 +28,7 @@ import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { teamsForUser, teamForSection, teamForItem, sameTeam, filterByTeam, visibleForTeam, seesEverything, teamKeyOf, deptNameOf, teamOptions, teamRowOwner, teamRowLockNote, canWriteTeam, teamBlockText } from '../utils/mtnTeams';
 import { VENDOR_STATUS, canSendVendor, canReceiveVendor, techRepairMin, grossRepairMin, vendorHoldMin, vendorHoldLabel } from '../utils/mtnVendor';
-import { loadPmTeams, pmTeamsSync, DEFAULT_TEAMS } from '../utils/pmTeams';
+import { isAmTeam, loadPmTeams, pmTeamsSync, DEFAULT_TEAMS } from '../utils/pmTeams';
 import { loadDocForms, docFormSync } from '../utils/docForms';
 loadDocForms(); // ทะเบียนเอกสาร — printMoReport (sync) อ่านผ่าน docFormSync
 import { fmtDateTime } from '../utils/dateFormat';
@@ -1810,7 +1810,7 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
      🔴 ตัดสินจากข้อมูลที่บันทึกไว้จริงเท่านั้น (mtn_teams / role / sections / position)
         ไม่รู้ = ไม่บล็อก แต่จอต้องเขียนบอก (stepAssumptions) — ห้ามเดาแทนคน */
   const { mtnTeams: myTeams, sections: mySections, position: myPosition } = useContext(UserContext);
-  const actorSide = actorSideOf({ mtnTeams: myTeams, role, sections: mySections });
+  const actorSide = actorSideOf({ mtnTeams: myTeams, role, sections: mySections, isAm: isAmTeam });
   const posRank = positionRank(myPosition);
 
   const o = order;
@@ -2618,7 +2618,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
         ไม่รู้ = ไม่บล็อก แต่จอต้องเขียนบอก (stepAssumptions) — ห้ามเดาแทนคน */
   const { mtnTeams: myTeams, sections: mySections, position: myPosition } = useContext(UserContext);
   const isMobile = useIsMobile();   // 📱 ปุ่มบันทึกเกาะล่างของฟอร์มขั้น (15/10)
-  const actorSide = actorSideOf({ mtnTeams: myTeams, role, sections: mySections });
+  const actorSide = actorSideOf({ mtnTeams: myTeams, role, sections: mySections, isAm: isAmTeam });
   const posRank = positionRank(myPosition);
 
   // ประเภทงานซ่อม = มุมมองทีม → กรองตามทีมของใบ (แถวไม่ตั้งทีม = 🌐 ใช้ร่วม ติดมาเสมอ)

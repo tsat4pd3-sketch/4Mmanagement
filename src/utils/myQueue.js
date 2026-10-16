@@ -26,7 +26,7 @@
    ═══════════════════════════════════════════════════════════════════════════ */
 import { personKey, normPersonName } from './actorStamp.js';
 import {
-  canDoStep, moWaitMeta, approvalWaitsOnMe, STAGE_APPROVE_FIRST,
+  canDoStep, moWaitMeta, approvalWaitsOnMe, sideAllows, STAGE_APPROVE_FIRST,
 } from './mtnStepPerm.js';
 import { isMtnFormRow } from './mtnMoForm.js';
 import { bkkDateStr } from './workDate.js';
@@ -140,10 +140,19 @@ export function soleSignerFor(o, w, me = {}) {
   /* 🔒 ด่านอนุมัติก่อนเริ่มงาน = ช่องลายเซ็นนอกลำดับขั้น (ไม่มี `step` ให้ `canDoStep` ตัดสิน)
      ⇒ เกณฑ์ผู้เซ็นอยู่ที่ `approvalWaitsOnMe()` (mtnStepPerm.js) — กติกาเดียวกับข้างล่างทุกข้อ */
   if (m.stage === STAGE_APPROVE_FIRST) return approvalWaitsOnMe(o, me);
-  if (!me.actorSide || me.actorSide === 'unknown' || me.actorSide !== m.side) return false;
+  /* 🔴 ไม่รู้ฝั่ง = ไม่นับ (ต่างจาก canDoStep ที่ "ไม่รู้ = ไม่บล็อก" โดยตั้งใจ — ที่นั่นตอบว่า
+     "กดได้ไหม" ที่นี่ตอบว่า "ใบนี้รอคุณอยู่จริงไหม" ซึ่งต้องแน่ใจกว่า) · 'both' = ทีม AM ผ่านได้ */
+  if (!me.actorSide || me.actorSide === 'unknown' || !sideAllows(me.actorSide, m.side)) return false;
   if (me.posRank == null || me.posRank < m.minRank) return false;
+  /* 🔴 ตัด `manage_master` ออกจาก can() ตอนถาม — **ไม่ใช่** ตอนอ่านคำตอบ (แก้ 2026-10-16)
+     เดิมอ่านคำตอบแล้วทิ้ง code 'manage_master' ⇒ ผจก.ที่เป็น "คนที่ช่องนี้รออยู่จริง" ถูกตัดทิ้งไปด้วย
+     เพราะ canDoStep คืน 'manage_master' ตั้งแต่บรรทัดแรกก่อนจะไปถึงด่านสิทธิ์ของขั้นนั้น
+     (วัดจริง 16/10: ผจก.ฝ่ายผลิตทั้ง 4 คน ไม่เคยเห็นใบ "รออนุมัติปิด" ในคิวตัวเองเลย)
+     ⇒ ถามใหม่โดยปิดคีย์หัวหน้า = ได้คำตอบว่า "ถ้าไม่มีคีย์หัวหน้า คนนี้ยังเซ็นช่องนี้ได้ไหม"
+     เจตนาเดิมยังอยู่ครบ: คนที่ถือ **แค่** `manage_master` (admin) ยังไม่เข้าคิว */
+  const canNoBoss = (a) => a !== 'manage_master' && !!(me.can || (() => false))(a);
   const r = canDoStep(w.step, {
-    order: o, fullName: me.name || '', can: me.can || (() => false), seeded: me.seeded || (() => true),
+    order: o, fullName: me.name || '', can: canNoBoss, seeded: me.seeded || (() => true),
     inOrderTeam: typeof me.inTeam === 'function' ? !!me.inTeam(o) : false,
     hasTeams: !!me.hasTeams, mtnForm: isMtnFormRow(o),
     actorSide: me.actorSide, posRank: me.posRank,
