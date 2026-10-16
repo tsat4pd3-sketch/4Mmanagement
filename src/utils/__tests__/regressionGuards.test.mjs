@@ -4727,3 +4727,24 @@ test('🛡️ write-scope-layer — ด่าน "แก้ข้ามหน่
     + '         ⇒ แอดมินหน่วยงานฝ่ายช่างเปิด ?scope=department:<แผนกอื่น> แล้วแก้ KPI ของเขาได้\n'
     + '   แก้: canWriteUnit()/canWriteLine() จาก src/utils/writeScope.js + เรียกซ้ำใน handler\n');
 });
+
+/* 🛡️ ship-due-date-calendar (2026-10-16) — `customer_shipping_orders.due_date` = วันที่ตามปฏิทิน
+   ใบ 862 ลงวันที่ตามไฟล์ลูกค้า · Shipping Time Chart วางกรอบวันงาน D = (D ≥08:00) + (D+1 <08:00)
+   แต่ e-SMART เขียน `due_date: workDate` ⇒ รอบกะดึกคืนแรก (4 ไฟล์) ไปอยู่วันงานก่อนหน้า ไม่ขึ้นชาร์ต
+   + ไปทับยอดใบ 862 ของเมื่อวาน · คีย์มือ 04:00 ก็ตกหลุมเดียวกันจนคีย์ซ้ำ */
+test('🛡️ ship-due-date-calendar — ใบส่งลูกค้าลง due_date ตามปฏิทิน (วันงานต้องผ่าน shipDueDate)', () => {
+  const bad = [];
+  const ps = stripComments(readFileSync(join(ROOT, 'src/utils/pullSignal.js'), 'utf8'));
+  const em = stripComments(readFileSync(join(ROOT, 'src/utils/ediMerge.js'), 'utf8'));
+  const fnBody = (src, name) => (src.match(new RegExp(`export function ${name}\\([^)]*\\)\\s*\\{[\\s\\S]*?\\n\\}`)) || [''])[0];
+  if (/getDate\(\) \+ 1/.test(fnBody(ps, 'orderShipAt'))) bad.push('pullSignal.js orderShipAt (กลับไปบวกวันให้ใบก่อน 08:00)');
+  if (/getDate\(\) \+ 1/.test(fnBody(em, 'shipAtMs'))) bad.push('ediMerge.js shipAtMs (กลับไปบวกวันให้ใบก่อน 08:00)');
+  const up = stripComments(readFileSync(join(ROOT, 'src/components/PullSignalUpload.jsx'), 'utf8'));
+  if (/due_date:\s*workDate\b/.test(up)) bad.push('PullSignalUpload.jsx (due_date: workDate — ต้อง shipDueDate(workDate, shipTime))');
+  if (/orderShipAt\(workDate,/.test(up)) bad.push('PullSignalUpload.jsx (orderShipAt(workDate, …) — ต้องแปลงด้วย shipDueDate ก่อน)');
+  if (/\.eq\('due_date',\s*workDate\)/.test(up)) bad.push("PullSignalUpload.jsx (.eq('due_date', workDate) — รอบกะดึกต้องเห็นใบของวัน D+1)");
+  const cd = stripComments(readFileSync(join(ROOT, 'src/pages/CustomerDemand.jsx'), 'utf8'));
+  if (!/due_date:\s*shipDueDate\(addForm\.due_date/.test(cd)) bad.push('CustomerDemand.jsx (คีย์ order ด่วนไม่ได้แปลงวันงาน → ปฏิทิน)');
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n'
+    + '   แก้: วันงาน + รอบส่ง → shipDueDate() (src/utils/pullSignal.js) · เวลาจริงของใบ → orderShipAt(due_date, ship_time) ไม่บวกวัน\n');
+});
