@@ -23,6 +23,8 @@ import { scoreDef, KPI_LEVELS, KPI_PERSPECTIVES, perspectiveLabel, KPI_SUMMARY_M
   KPI_FORMULAS, formulaOf, baseVarOf } from '../utils/kpiSetup';
 import { applyFormulaEntries, buildBaseIndex, formulaNoteText, formulaSummaryText, formulaOfDef } from '../utils/kpiFormula';
 import KpiBaseInputsPanel from './KpiBaseInputsPanel';
+import { headcountAuto, headcountAutoVar } from '../utils/kpiHeadcount';
+import { getWorkDate } from '../utils/workDate';
 import { getDocForm, withDocFoot, loadDocForms, fullCode } from '../utils/docForms';
 import { usePerms } from '../utils/usePerms';
 import ReadOnlyNote from './ReadOnlyNote';
@@ -242,6 +244,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
   const [closedDefs, setClosedDefs] = useState([]);      // 🗄️ นิยามที่ปิดใช้งานอยู่ (is_active=false) ในขอบเขตที่ดู — ให้เปิดคืนได้จากจอ (07/10)
   const [entries, setEntries] = useState({});      // kpi_id -> { month: value }
   const [baseRows, setBaseRows] = useState([]);    // 💰 kpi_base_inputs ของปีนี้ทุกขอบเขต — KPI สูตรคำนวณจากตรงนี้ (15/10)
+  const [empRows, setEmpRows] = useState([]);      // 👥 ทะเบียนพนักงาน active — ตัวหาร manpower อัตโนมัติ (ค่ากรอกมือชนะ)
   /* แผนรายเดือน (kpi_month_plans) — คนละตารางกับค่าจริงโดยตั้งใจ (unique(kpi_id,month) ของค่าจริงจะพังถ้ายัด kind เข้าไป) */
   const [plans, setPlans] = useState({});          // kpi_id -> { month: plan_value }
   const [showPlan, setShowPlan] = useState(false); // ปิดไว้ก่อน — เปิดแล้วตารางสูงเท่าตัว
@@ -449,6 +452,11 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
     if (!alive()) return;
     if (kb.error && (kb.error.code || '') !== '42P01') toast.error('โหลดตัวเลขฐาน KPI ไม่สำเร็จ: ' + kb.error.message);
     setBaseRows(kb.error ? [] : (kb.data || []));
+    /* 👥 กำลังคนจากทะเบียน (ตัวหาร "ยอดขาย/หัว") — โหลดไม่ได้ = ไม่เติมอัตโนมัติ ไม่ใช่ล่ม */
+    const em = await supabase.from('employees').select('id, section, department, is_active, start_date').eq('is_active', true).limit(5000);
+    if (!alive()) return;
+    if (em.error) toast.error('โหลดทะเบียนพนักงาน (ตัวหารยอดขาย/หัว) ไม่สำเร็จ: ' + em.error.message);
+    setEmpRows(em.error ? [] : (em.data || []));
     if (!rows.length && !below.length) { setEntries({}); setPlans({}); return; }
     // KPI 1 ตัว × 12 เดือน — นิยามเยอะขึ้นเมื่อไหร่ก็เกิน 1000 แถวได้ (fetchByIds ทำครบทั้งก้อนและหน้า)
     const map = {};
@@ -513,7 +521,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
   const monthsOf = (src, id) => Array.from({ length: 12 }, (_, i) => src[id]?.[i + 1] ?? null);
   /* 🔴 "ตามแผนไหม" ≠ คะแนน — คะแนนทางการยังเป็นของ scoreDef() เท่านั้น (ห้ามเอาไปเปลี่ยนสี ○△✗) */
   /* 🧮 นิยาม provider='formula' = ค่ารายเดือนคำนวณจากตัวเลขฐาน (utils/kpiFormula.js) — ทุกจุดที่ "อ่านค่า" ใช้ `entriesFx` · `entries` ดิบเหลือไว้ให้ saveCell/เทียบค่ากรอกมือ */
-  const baseIndex = useMemo(() => buildBaseIndex(baseRows), [baseRows]);
+  const baseIndex = useMemo(() => buildBaseIndex(baseRows, { auto: headcountAutoVar(headcountAuto(empRows, { year, today: getWorkDate() })) }), [baseRows, empRows, year]);
   const fx = useMemo(() => applyFormulaEntries([...(allDefs || []), ...(belowDefs || [])], entries, baseIndex, org), [allDefs, belowDefs, entries, baseIndex, org]);
   const entriesFx = fx.entries;
   const fInfo = fx.info;
@@ -1101,7 +1109,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
       )}
       {/* 💰 ตัวเลขฐานจากบัญชี/SAP (15/10) — คนกลางกรอกค่ากลางที่ ทั้งโรงงาน · หน่วยกรอกยอดเงินของตัวเอง · KPI สูตรคำนวณเอง */}
       {!kpiMissing && allDefs && (
-        <KpiBaseInputsPanel year={year} scope={kpiScope} org={org} rows={baseRows} canManage={canManage} onChanged={reloadBase}
+        <KpiBaseInputsPanel year={year} scope={kpiScope} org={org} rows={baseRows} base={baseIndex} canManage={canManage} onChanged={reloadBase}
           onGoPlant={() => setScope({ ...PLANT })} blockText={canManageKpi && !scopeWrite.ok ? writeBlockText(scopeWrite, { what: 'ตัวเลขฐานของขอบเขตนี้', unit: scopeOwner }) : ''}
           defaultOpen={isPlant(kpiScope) || (allDefs || []).some(d => formulaOfDef(d))} />
       )}
