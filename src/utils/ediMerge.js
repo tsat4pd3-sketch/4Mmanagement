@@ -32,15 +32,14 @@ export const DONE_STATUSES = ['confirmed', 'prepared', 'loaded', 'shipped'];
 export const FWD_MS  = 150 * 60000;   // 862 08:00 → e-SMART 09:00/10:30 ยังนับเป็นเที่ยวเดียวกัน
 export const BACK_MS =  45 * 60000;   // เผื่อกรณี 862 มาช้ากว่านิดหน่อย (15:30 ↔ 15:00)
 
-/** เวลาส่งจริงเป็น ms — ก่อน 08:00 = กะดึกของวันงานนั้น ⇒ ตกวันถัดไปตามปฏิทิน
+/** เวลาส่งจริงเป็น ms — `due_date` = **วันที่ตามปฏิทิน** (ใบ 862 ลงตามไฟล์ลูกค้า · 2026-10-16)
+ *  ห้ามบวกวันให้เวลาก่อน 08:00 (เดิมบวก = ใบข้ามเที่ยงคืนห่างกันเพี้ยน 24 ชม.)
  *  (กติกาเดียวกับ `orderShipAt` ใน pullSignal.js — ห้ามเทียบเป็น "นาทีบนหน้าปัด") */
 export function shipAtMs(dueDate, shipTime) {
   const d = String(dueDate || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
   const t = String(shipTime || '').match(/^(\d{1,2}):(\d{2})/);
   if (!d || !t) return null;
-  const at = new Date(+d[1], +d[2] - 1, +d[3], +t[1], +t[2]);
-  if (+t[1] < 8) at.setDate(at.getDate() + 1);
-  return at.getTime();
+  return new Date(+d[1], +d[2] - 1, +d[3], +t[1], +t[2]).getTime();
 }
 
 /**

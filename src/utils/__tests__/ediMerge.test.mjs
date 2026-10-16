@@ -53,8 +53,11 @@ test('ใบ pending ไม่นับว่า "ทำไปแล้ว" — 
   assert.deepEqual(DONE_STATUSES, ['confirmed', 'prepared', 'loaded', 'shipped']);
 });
 
-test('เวลาก่อน 08:00 = กะดึกของวันงาน ⇒ ตกวันถัดไป (ห้ามเทียบเป็นนาทีบนหน้าปัด)', () => {
-  assert.ok(shipAtMs(D, '00:30') > shipAtMs(D, '22:00'), '00:30 ต้องอยู่หลัง 22:00 ของวันงานเดียวกัน');
+test('🔴 due_date = วันที่ตามปฏิทิน — 00:30 ของวันเดียวกันมาก่อน 22:00 · ข้ามเที่ยงคืนห่าง 2.5 ชม. ไม่ใช่ 26.5 (16/10)', () => {
+  assert.ok(shipAtMs(D, '00:30') < shipAtMs(D, '22:00'), 'วันที่เดียวกัน = ตามปฏิทิน');
+  const next = new Date(new Date(`${D}T12:00:00`).getTime() + 86400000);
+  const D2 = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}-${String(next.getDate()).padStart(2, '0')}`;
+  assert.equal(shipAtMs(D2, '00:30') - shipAtMs(D, '22:00'), 150 * 60000);
   // 862 06:00 (กะดึก) ต้องไม่ไปจับกับใบ 09:00 ของเช้าวันเดียวกัน
   assert.equal(findDoneCover(rec('06:00', 'M1'), [done('09:00', 'M1')]), null);
 });
