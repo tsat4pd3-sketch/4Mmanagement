@@ -2497,7 +2497,10 @@ export default function FactoryMap({ setupMode = false }) {
       ) : (
         <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', flexWrap: 'wrap' }}>
           {/* ── ผัง ── */}
-          <div {...orbit.handlers} style={{ flex: '1 1 640px', minWidth: 0, display: 'flex', justifyContent: 'center', flexDirection: 'column', alignItems: 'center',
+          {/* data-tv-nofit (16/10 · จอ TV ส่งรูปมา ผัง 3D ยุบไปมุมซ้ายบน): ตัววนหน้าย่อทั้งหน้าด้วย CSS zoom
+              แต่ Chromium 94 (webOS) คิด perspective/origin ของ 3D ใต้ zoom ผิด ⇒ เจอแอตทริบิวต์นี้ = ไม่ย่อ
+              (ผังคุมความสูงเองอยู่แล้ว maxHeight calc(100vh - 200px)) · ดู DisplayRotator fit() */}
+          <div {...orbit.handlers} data-tv-nofit={is3d ? '1' : undefined} style={{ flex: '1 1 640px', minWidth: 0, display: 'flex', justifyContent: 'center', flexDirection: 'column', alignItems: 'center',
             ...(is3d ? { touchAction: 'none', cursor: orbit.dragging ? 'grabbing' : 'grab', userSelect: 'none' } : {}),
             /* 🧊 คอลัมน์ผังตัดของล้น (พื้นกริดยื่นออกนอกรูป ห้ามไปทับแผงขวา) — overflow ที่ "ชั้นนอก" ของ preserve-3d ไม่ flatten เสา */
             ...(is3d ? { perspective: 2600, perspectiveOrigin: '50% 20%', overflow: 'hidden', borderRadius: 12 } : {}) }}>

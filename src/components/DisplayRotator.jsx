@@ -216,6 +216,12 @@ export default function DisplayRotator({ userId, role, disabled, shell = false }
     const fit = () => {
       const m = document.querySelector('main');
       if (!m) return;
+      /* หน้าที่มี 3D (CSS perspective/preserve-3d) หรือ canvas — Chromium 94 คิดพิกัดใต้ zoom ผิด
+         (ผัง 3D ยุบไปมุมซ้ายบน · รูปจากจอจริง 16/10) ⇒ ไม่ย่อ · หน้าพวกนี้คุมความสูงเอง */
+      if (m.querySelector('[data-tv-nofit], canvas')) {
+        if (zoom !== 1) { zoom = 1; m.style.zoom = ''; }
+        return;
+      }
       const visual = m.getBoundingClientRect().height + 2;   // ความสูงที่เห็นจริง (คูณ zoom แล้ว)
       const barH = parseFloat(getComputedStyle(document.body).paddingTop) || 0;   // แถบบนของกรอบจอ TV
       const target = Math.max(0.55, Math.min(1, (zoom * (window.innerHeight - barH)) / Math.max(1, visual)));
