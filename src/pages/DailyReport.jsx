@@ -75,6 +75,8 @@ import { checkWrite, checkWriteRows } from '../utils/dbWrite';
 import { SESSION_VOID, isVoidSession, voidBadge, voidBlockReason, cleanVoidReason } from '../utils/sessionStatus';
 import MachineSelect from '../components/MachineSelect';
 import { acceptImageFile } from '../utils/acceptImageFile';
+import { loadFamilyQtyTotals, familyQtyChip } from '../utils/familyTotals';
+import { statusColor as toneColor } from '../utils/statusTone';   // สีสถานะชุดเดียวทั้งระบบ (ห้ามตั้ง hex เอง · ชื่อ statusColor ชนกับตัวแปรในหน้า)
 
 /* ทะเบียนเอกสาร — ชื่อไฟล์ CSV ของแท็บรายงานอ่านผ่าน `docFormSync` (sync) ⇒ ต้อง warm cache เอง
    ไม่เรียก = ได้ชื่อไฟล์เดิม (fallback) ไม่ล้ม แต่ doc_control ตั้งเลขฟอร์มแล้วไม่มีผล */
@@ -7811,6 +7813,8 @@ function ProductSetup({ role }) {
   const [saving, setSaving]   = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [familyTotals, setFamilyTotals] = useState({});
+  /* 🔴 "อ่านยอดสะสมไม่ได้" ≠ "ยังไม่เคยผลิต" — ต้องเขียนบนจอ (utils/familyTotals.js) */
+  const [famTotalsFail, setFamTotalsFail] = useState(false);
   // kanban state
   const [kanbanStds, setKanbanStds]       = useState([]);   // all kanban_standards
   const [kanbanEditing, setKanbanEditing] = useState(null); // std id | 'new'
@@ -7832,19 +7836,13 @@ function ProductSetup({ role }) {
     setLines(ln || []);
     setKanbanStds(stds || []);
 
-    // cumulative qty_ok per family across all sessions
-    const { data: sessions } = await supabaseDR
-      .from('production_sessions')
-      .select('product_id, qty_ok, dr_products(family_id)');
-    if (sessions) {
-      const totals = {};
-      sessions.forEach(s => {
-        const fid = s.dr_products?.family_id;
-        if (!fid) return;
-        totals[fid] = (totals[fid] || 0) + (s.qty_ok || 0);
-      });
-      setFamilyTotals(totals);
-    }
+    /* 📦 ยอดผลิตสะสมต่อ family — รวมฝั่ง DB ผ่าน RPC (utils/familyTotals.js)
+       เดิมลาก `production_sessions` ทั้งตารางมาบวกที่นี่ ซึ่งผิด 2 ชั้น: ติดเพดาน 1,000 แถว
+       (วัด 15/10 = 1,675 แถว) **และ** join ด้วย `product_id` ที่ NULL ทั้งตาราง ⇒ ยอดเป็น {} ตลอด
+       · อ่านไม่ได้ = ตั้งธงให้จอเขียนบอก ห้ามปล่อยให้ดูเหมือน "ยังไม่เคยผลิต" */
+    const famRes = await loadFamilyQtyTotals();
+    setFamilyTotals(famRes.totals);
+    setFamTotalsFail(famRes.fail);
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -7993,7 +7991,7 @@ function ProductSetup({ role }) {
         {visibleFamilies.map(({ family_id, members }) => {
           const active   = members.find(m => m.is_active && !m.superseded_by);
           const archived = members.filter(m => !m.is_active || m.superseded_by);
-          const totalQty = familyTotals[family_id] || 0;
+          const qtyChip  = familyQtyChip(familyTotals, family_id, famTotalsFail);
           const item = active || members[0];
           return (
             <div key={family_id} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
@@ -8029,12 +8027,10 @@ function ProductSetup({ role }) {
                     {item.effective_from && ` · ใช้ตั้งแต่ ${item.effective_from}`}
                   </div>
 
-                  {/* Family cumulative total */}
-                  {totalQty > 0 && (
-                    <div style={{ marginTop: 6, fontSize: 12, color: '#22c55e', fontWeight: 700 }}>
-                      📦 ยอดสะสมทั้ง family: {totalQty.toLocaleString()} ชิ้น
-                    </div>
-                  )}
+                  {/* Family cumulative total — 3 สถานะ ห้ามยุบ (เดิม `totalQty > 0 &&` ซ่อน "ยังไม่เคยผลิต" กับ "อ่านไม่ได้" ทิ้งเหมือนกัน) */}
+                  <div style={{ marginTop: 6, fontSize: 12, color: toneColor(qtyChip.tone), fontWeight: qtyChip.tone === 'good' ? 700 : 600 }}>
+                    {qtyChip.tone === 'good' ? qtyChip.text.replace('ยอดสะสม', 'ยอดสะสมทั้ง family:') : qtyChip.text}
+                  </div>
                 </div>
 
                 {canEdit && (

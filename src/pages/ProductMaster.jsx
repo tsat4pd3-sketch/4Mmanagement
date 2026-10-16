@@ -55,6 +55,10 @@ import { ALL } from '../utils/filterLabels';
 import { loadDocForms } from '../utils/docForms';
 import { downloadCsvDoc, csvText } from '../utils/csvDoc';
 import { DeleteButton } from '../components/IconButton';
+import { loadFamilyQtyTotals, familyQtyChip } from '../utils/familyTotals';
+import { statusColor } from '../utils/statusTone';   // สีสถานะชุดเดียวทั้งระบบ (ห้ามตั้ง hex เอง)
+import { fetchAllRows } from '../utils/fetchAllRows';          // ทะเบียนที่โตได้ ห้าม select() เปล่า (เพดาน 1000 แถว)
+import { fetchAllPages } from '../utils/fetchByIds';            // คิวรีที่ต้องการ shape เอง (bom_items)
 // วันที่ local (ห้าม toISOString — UTC เพี้ยนก่อน 07:00 ไทย)
 const localDateStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 
@@ -291,6 +295,8 @@ export default function ProductMaster() {
   // 📜 MAT ที่เคยบันทึกใน kanban_standards (DR) — แถวจาก Kanban Auto-Calc (product_id null) ยังเลือกแก้ qty ซ้ำได้ (2026-09-07)
   const kanbanMatHist = useColumnHistory(supabaseDR, 'kanban_standards', 'mat_no', { upper: true });
   const [familyTotals, setFamilyTotals] = useState({});
+  /* 🔴 "อ่านยอดสะสมไม่ได้" ≠ "ยังไม่เคยผลิต" — ต้องเขียนบนจอ ห้ามซ่อนชิป (utils/familyTotals.js) */
+  const [famTotalsFail, setFamTotalsFail] = useState(false);
   const [bomCounts, setBomCounts] = useState({});          // product_id → bom count
   const [bomRows, setBomRows] = useState([]);              // {product_id, mat_no} — ใช้จัดอันดับตัวเลือก parent ของ OP ตาม BOM ของไลน์
   /* ✅ ความครบของข้อมูลต่อสินค้า (2026-09-22) — ดึงแค่คีย์ 2 ตาราง (ตัวเล็กมาก) ไม่ใช่ทั้งแถว (กฎเหล็ก 11 egress)
@@ -335,15 +341,20 @@ export default function ProductMaster() {
        (ไล่แปะทีละจุดคือวิธีที่ทำให้ `invalidateProducts()` เดิมตกหล่นจนไม่มีใครเรียกเลยสักหน้า)
        ดูทะเบียน "ตาราง → คีย์" ที่ src/utils/masterInvalidate.js */
     invalidateTable('dr_products', 'kanban_standards');   // ทะเบียนสินค้า + kanban อยู่หน้าเดียวกัน
-    const [{ data: pr }, { data: ln }, { data: stds }, { data: boms }, { data: sessions }, { data: pm }, { data: rt }, { data: pkg }] = await Promise.all([
+    const [{ data: pr }, { data: ln }, { data: stds }, { data: boms }, famRes, { data: pm }, { data: rt }, { data: pkg }] = await Promise.all([
       supabaseDR.from('dr_products').select('*').order('name').order('effective_from', { ascending: false }),
       // 2026-09-07: ต้องครบ LINE_COLUMNS (section/is_active) — <LineSelect> ใช้กรอง scope + ตัดไลน์ปลดระวาง
       loadLinesRes(),
-      supabaseDR.from('kanban_standards').select('*').order('mat_no'),
+      /* 457 / 430 แถว — ยังไม่ทะลุ แต่เป็นทะเบียนที่โตตามพาร์ทใหม่ ⇒ แบ่งหน้าไว้ก่อน (กฎเหล็ก DB ข้อ 5) */
+      fetchAllRows(supabaseDR, 'kanban_standards', '*', q => q.order('mat_no')),
       supabaseDR.from('bom_items').select('product_id, mat_no').eq('is_active', true),
-      supabaseDR.from('production_sessions').select('product_id, qty_ok, dr_products(family_id)'),
+      /* 📦 ยอดผลิตสะสมต่อ family — รวมฝั่ง DB ผ่าน RPC (utils/familyTotals.js)
+         เดิมลาก `production_sessions` ทั้งตารางมาบวกในหน้า ซึ่งผิด 2 ชั้น:
+         ติดเพดาน 1,000 แถว (วัด 15/10 = 1,675 แถว) **และ** join ด้วย `product_id`
+         ที่เป็น NULL ทั้งตาราง ⇒ ยอดเป็น {} ตลอด แล้วชิปถูกซ่อนเงียบ */
+      loadFamilyQtyTotals(),
       // ทะเบียนกลาง Parts Master (material master) — ใช้เป็น picker + เช็คเลขหลุดทะเบียนในฟอร์มสินค้า/kanban
-      supabaseDR.from('parts_master').select('id, mat_no, part_name, part_no, uom, qty_per_pkg, supplier, image_url').eq('is_active', true).order('mat_no'),
+      fetchAllRows(supabaseDR, 'parts_master', 'id, mat_no, part_name, part_no, uom, qty_per_pkg, supplier, image_url', q => q.eq('is_active', true).order('mat_no')),
       // ✅ แถบความครบ — เอาแค่คีย์พอ (มี/ไม่มี) ไม่ดึงรายละเอียดขั้นตอน/กล่อง
       supabaseDR.from('part_routings').select('mat_no').eq('is_active', true),
       supabaseDR.from('product_packaging').select('product_id').eq('is_active', true),
@@ -360,13 +371,8 @@ export default function ProductMaster() {
     setBomRows(boms || []);
     setBomCounts(bc);
 
-    const totals = {};
-    (sessions || []).forEach(s => {
-      const fid = s.dr_products?.family_id;
-      if (!fid) return;
-      totals[fid] = (totals[fid] || 0) + (s.qty_ok || 0);
-    });
-    setFamilyTotals(totals);
+    setFamilyTotals(famRes?.totals || {});
+    setFamTotalsFail(!!famRes?.fail);
   }, []);
 
   useEffect(() => { load(); }, [load, partsReloadKey]); // เพิ่มพาร์ทใน tab Parts Master แล้ว picker เห็นทันที
@@ -1001,7 +1007,7 @@ export default function ProductMaster() {
             const active   = members.find(m => m.is_active && !m.superseded_by);
             const archived = members.filter(m => !m.is_active || m.superseded_by);
             const item     = active || members[0];
-            const totalQty = familyTotals[family_id] || 0;
+            const qtyChip  = familyQtyChip(familyTotals, family_id, famTotalsFail);
             const isExpandedKanban = expandedFamilies[family_id] !== false;
             const familyProductIds = new Set(members.map(m => m.id));
             const stds = kanbanStds.filter(s => s.product_id && familyProductIds.has(s.product_id));
@@ -1050,7 +1056,8 @@ export default function ProductMaster() {
                       {[item.line_name && `📍 ${item.line_name}`, item.cycle_time_sec && `CT ${item.cycle_time_sec}s`, item.target_per_shift && `Target ${item.target_per_shift}/กะ`, !indented && item.effective_from && `ใช้ตั้งแต่ ${item.effective_from}`].filter(Boolean).join(' · ')}
                     </div>
                     <div style={{ display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                      {totalQty > 0 && <span style={{ fontSize: 11, color: '#22c55e', fontWeight: 700 }}>📦 ยอดสะสม {totalQty.toLocaleString()} ชิ้น</span>}
+                      {/* 3 สถานะ ห้ามยุบ: ผลิตแล้ว N / ยังไม่เคยผลิต / อ่านไม่ได้ (เดิม `totalQty > 0 &&` ซ่อน 2 อันหลัง) */}
+                      <span style={{ fontSize: 11, color: statusColor(qtyChip.tone), fontWeight: qtyChip.tone === 'good' ? 700 : 600 }}>{qtyChip.text}</span>
                       {/* ✅ แถบความครบ — แทนชิป BOM/Kanban เดิม (เดิมบอกแค่ 2 ขั้น คนยังต้องไล่เปิดแท็บอื่นเอง) */}
                       <ReadyChips ready={readyOf(item)} onGo={goFixStep(item)} />
                       {totalBom > 0 && <span style={{ fontSize: 11, color: 'var(--muted)' }}>({totalBom} พาร์ทใน BOM)</span>}
@@ -1745,11 +1752,14 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
     // ⚠️ ต้องมี `id` — ปุ่มลบ "แถวนับซ้ำ" ในจอต้นไม้ลบด้วย id ของบรรทัด (ไม่มี id = ปุ่มหายเงียบ)
     const BOM_FULL = 'id, product_id, mat_no, part_name, qty_per_unit, uom, item_no, storage_location, parent_mat, op_no';
     const BOM_SLIM = 'id, product_id, mat_no, part_name, qty_per_unit, uom';
+    /* 🔴 ต้องแบ่งหน้า — วัดจริง 15/10: bom_items = **653 แถว** (ก.ย. 506) โตเข้าใกล้เพดาน 1,000
+       ทะลุแล้ว = ต้นไม้ BOM ขาดแถวเงียบๆ แล้วจอ "แถวนับซ้ำ"/ชิปจำนวนพาร์ทตอบผิดตามกัน */
+    const bomPaged = (cols) => fetchAllPages(() => supabaseDR.from('bom_items').select(cols).eq('is_active', true));
     const fetchBom = async () => {
-      const r = await supabaseDR.from('bom_items').select(BOM_FULL).eq('is_active', true);
-      return r.error?.code === '42703'
-        ? supabaseDR.from('bom_items').select(BOM_SLIM).eq('is_active', true)
-        : r;
+      const r = await bomPaged(BOM_FULL);
+      /* คอลัมน์ใหม่ยังไม่ apply migration = 42703 ⇒ ถอยไปชุดคอลัมน์พื้นฐาน (พฤติกรรมเดิม) */
+      const r2 = /column .* does not exist|42703/.test(r.error || '') ? await bomPaged(BOM_SLIM) : r;
+      return { data: r2.rows, error: r2.error ? { message: r2.error } : null };
     };
     const [{ data: prods }, { data: boms }, { data: parts }, opMap, { data: locs }] = await Promise.all([
       // is_operation = ต้องรู้ว่า "ใบนี้เป็นขั้นงานไหม" (ใบขั้นงานห้ามเอาไปเทียบกับใบพาร์ท)

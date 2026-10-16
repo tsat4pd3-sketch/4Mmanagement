@@ -45,8 +45,11 @@ export default function StorageLocPanel() {
 
   const [rows, setRows]     = useState([]);
   /* รหัสที่ถูกใช้จริงที่ปลายทาง · 🔴 `null` = **นับไม่ได้** ไม่ใช่ "ไม่มีใครใช้" (QC audit 06/10)
-     เดิม `r2.error ? []` ⇒ คิวรีนับล้ม = ด่านลบเปิดโล่ง = ลบรหัสที่ยังมีคนผูกได้ (ขัด fail-closed
-     ใน CLAUDE.md §Database Schema "นับไม่ครบ = ห้ามลบ") */
+     คิวรีนับล้ม = ด่านลบเปิดโล่ง = ลบรหัสที่ยังมีคนผูกได้ (ขัด fail-closed
+     ใน CLAUDE.md §Database Schema "นับไม่ครบ = ห้ามลบ")
+     🔴 รอบ 2 (15/10): "นับได้" ยังไม่พอ ต้อง **นับครบ** ด้วย — ของเดิมอ่าน ledger แค่
+     `.limit(1000)` จาก 22,651 แถว ⇒ นับไม่ครบแบบไม่มี error ⇒ ด่านเชื่อว่าปลอดภัย
+     ⇒ ย้ายไปนับฝั่ง DB ด้วย RPC `dr_sloc_usage()` (ไม่มีเพดาน + payload เล็ก) */
   const [used, setUsed]     = useState([]);
   const [lines, setLines]   = useState([]);      // production_lines (Main) — ลำดับชั้นสำหรับตกทอด
   const [missing, setMissing] = useState(false); // ตารางยังไม่ apply (42P01) — ห้ามเงียบ
@@ -58,15 +61,17 @@ export default function StorageLocPanel() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [r1, r2, r3, r4, r5, r6] = await Promise.all([
+    const [r1, r3, r4, rUse] = await Promise.all([
       supabaseDR.from('storage_locations').select('*').order('sort_order').order('code'),
-      supabaseDR.from('bom_items').select('storage_location').eq('is_active', true),
       loadLinesRes(),
       supabaseDR.from('line_stock_transactions').select('id', { count: 'exact', head: true }).is('storage_location', null).eq('status', 'approved'),
-      /* ปลายทางที่ถือรหัสนี้เหมือนกัน — `backfill()` ข้างล่างเขียนลง 2 ตารางนี้เอง
-         นับแค่ bom_items = ลบรหัสที่ ledger ย้อนหลังยังอ้างอยู่ได้ (รหัสกำพร้าในประวัติ) */
-      supabaseDR.from('line_stock_transactions').select('storage_location').not('storage_location', 'is', null).limit(1000),
-      supabaseDR.from('line_delivery_points').select('storage_location').not('storage_location', 'is', null),
+      /* 🔴 "รหัสนี้ถูกใช้ที่ไหนบ้าง" นับฝั่ง DB (RPC `dr_sloc_usage` · migration 20261015d)
+         เดิมลาก 3 ตารางมานับในหน้า โดย `line_stock_transactions` ใส่ `.limit(1000)` ไว้ —
+         วัดจริง 15/10: ตารางนั้น **23,195 แถว (ติดรหัสแล้ว 22,651)** ⇒ เห็นแค่ 1,000 แถวแรก
+         และไม่มี `.order()` ⇒ รหัสที่ใช้แต่ในใบเก่าๆ หายจากชุดที่นับได้ (เช่น `P409` = 27 แถว)
+         ⇒ ด่าน fail-closed เชื่อว่านับครบ แล้ว**ปล่อยให้ลบรหัสที่ ledger ยังอ้างอยู่**
+         · RPC คืนเฉพาะรหัส + จำนวนต่อปลายทาง ⇒ นับครบทุกแถว + payload เล็ก (egress ข้อ 11) */
+      supabaseDR.rpc('dr_sloc_usage'),
     ]);
     setLoading(false);
     if (r1.error?.code === '42P01') { setMissing(true); setRows([]); return; }
@@ -76,14 +81,14 @@ export default function StorageLocPanel() {
     // ตารางมีแต่ยังไม่มีคอลัมน์ line_names = ยังไม่ apply 20260908 → ชั้นบัญชียังไม่ทำงาน ต้องบอก ห้ามให้ดูเหมือน "ยังไม่มีใครผูก"
     setNoLineMap((r1.data || []).length > 0 && !('line_names' in r1.data[0]));
     /* 🔴 นับไม่ได้ = `null` ห้ามแปลว่า "ไม่มีใครใช้" — ด่านลบต้องปิดไว้ก่อน (fail-closed)
-       `42P01`/`42703` = ยังไม่ apply migration ของปลายทางนั้น ⇒ ปลายทางนั้นยังไม่มีข้อมูลจริง
-       ถือว่าว่างได้ · error อื่น (เน็ต/RLS/timeout) = ไม่รู้ ⇒ null */
-    const SCHEMA_GAP = ['42P01', '42703'];
-    const codesOf = (res) => (SCHEMA_GAP.includes(res.error?.code) ? []
-      : res.error ? null
-      : (res.data || []).map(x => slocLabel(x.storage_location)).filter(Boolean));
-    const parts = [codesOf(r2), codesOf(r5), codesOf(r6)];
-    setUsed(parts.some(x => x === null) ? null : [...new Set(parts.flat())]);
+       `42883`/`42P01` = ยังไม่ apply migration ของ RPC ⇒ **ยังถือว่านับไม่ได้** (ห้ามเปิดให้ลบ)
+       — ต่างจากเดิมที่ยอมให้ "ปลายทางยังไม่มีตาราง = ว่าง" เพราะตอนนี้ RPC รวม 3 ปลายทางไว้ก้อนเดียว
+       ถ้ามันไม่มา เราไม่รู้อะไรเลยเกี่ยวกับการใช้งาน */
+    setUsed(rUse.error ? null
+      : [...new Set((rUse.data || [])
+          .filter(r => (Number(r.in_bom) || 0) + (Number(r.in_ledger) || 0) + (Number(r.in_delivery) || 0) > 0)
+          .map(r => slocLabel(r.code))
+          .filter(Boolean))]);
     if (r3.error) toast.error('โหลดทะเบียนไลน์ (Main) ไม่ได้: ' + r3.error.message);
     setLines(r3.data || []);
     setUntagged(r4.error ? null : (r4.count ?? 0));

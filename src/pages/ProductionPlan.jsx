@@ -158,7 +158,10 @@ export default function ProductionPlan() {
            (กฎเหล็ก "ชิ้น ≠ shot" ใน CLAUDE.md · บั๊กที่ audit 22/09 จับได้) */
         supabaseDR.from('dr_products').select('id, mat_no, name, line_name, cycle_time_sec, p_no, pair_mat_no, customer').eq('is_active', true).not('mat_no', 'is', null),
         // 🌳 BOM ทุกแถว (ฐานจริง ~600 แถว) — ใช้ระเบิดความต้องการลงพาร์ทลูก ดู utils/demandExplode.js
-        supabaseDR.from('bom_items').select('id, product_id, parent_mat, mat_no, qty_per_unit, uom, item_no'),
+        /* 🔴 ต้องแบ่งหน้า — วัดจริง 15/10: bom_items = **653 แถว** (ก.ย. 506) โตเข้าใกล้เพดาน 1,000
+           ทะลุแล้ว = BOM ระเบิดไม่ครบ ⇒ ความต้องการพาร์ทลูกขาด ⇒ **สั่งผลิตขาดเงียบๆ** */
+        fetchAllPages(() => supabaseDR.from('bom_items').select('id, product_id, parent_mat, mat_no, qty_per_unit, uom, item_no'))
+          .then(r => ({ data: r.rows, error: r.error ? { message: r.error } : null })),
         /* 📦 buffer stock ของพาร์ทลูกที่ **STORE** — เอาไปหักความต้องการก่อนสั่งผลิตซ้ำ
            🔴 หักเฉพาะแถว STORE เท่านั้น **ห้ามหักยอดที่ไลน์ (mini-store)** — กฎเหล็ก demand-flow-tower:
               backflush ไม่ทำงาน (issue 5,908 : consume 40) ⇒ ยอดคงเหลือที่ไลน์ **สูงกว่าความจริงเสมอ**
