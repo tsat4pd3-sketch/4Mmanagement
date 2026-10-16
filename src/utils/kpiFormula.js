@@ -17,16 +17,20 @@ export const baseScopeKeyOf = (sc) => (isPlant(sc) ? PLANT_BASE_KEY : scopeKey(s
 export const baseScopeColumns = (sc) => (isPlant(sc) ? { scope_kind: 'plant', scope_value: '' } : { scope_kind: sc.kind, scope_value: sc.value });
 const rowScopeKey = (r) => (!r.scope_kind || r.scope_kind === 'plant' || !r.scope_value ? PLANT_BASE_KEY : `${r.scope_kind}:${r.scope_value}`);
 
-/** ดัชนีตัวเลขฐาน — `get(scopeKey, varKey, month)` คืนตัวเลขหรือ null · `row(...)` คืนแถวเดิม (ใช้หา id ตอนแก้) */
-export function buildBaseIndex(rows = []) {
+/** ดัชนีตัวเลขฐาน — `get(scopeKey, varKey, month)` คืนตัวเลขหรือ null · `row(...)` คืนแถวเดิม (ใช้หา id ตอนแก้) ·
+ *  `auto(sk, vk, m)` = ตัวเติมอัตโนมัติเมื่อไม่มีแถวกรอกมือ (15/10: กำลังคนจากทะเบียนพนักงาน) · `src(...)` = 'manual' | 'auto' | null */
+export function buildBaseIndex(rows = [], { auto = null } = {}) {
   const m = new Map();
   for (const r of rows || []) {
     if (!r || !r.var_key || !r.month) continue;
     m.set(`${rowScopeKey(r)}|${r.var_key}|${Number(r.month)}`, r);
   }
   const row = (sk, vk, month) => m.get(`${sk}|${vk}|${Number(month)}`) || null;
-  const get = (sk, vk, month) => { const r = row(sk, vk, month); const v = r?.value; return v == null || v === '' || Number.isNaN(Number(v)) ? null : Number(v); };
-  return { get, row, size: m.size };
+  const manual = (sk, vk, month) => { const r = row(sk, vk, month); const v = r?.value; return v == null || v === '' || Number.isNaN(Number(v)) ? null : Number(v); };
+  const autoVal = (sk, vk, month) => { if (!auto) return null; const v = auto(sk, vk, month); return v == null || Number.isNaN(Number(v)) ? null : Number(v); };
+  const get = (sk, vk, month) => { const v = manual(sk, vk, month); return v != null ? v : autoVal(sk, vk, month); };
+  const src = (sk, vk, month) => (manual(sk, vk, month) != null ? 'manual' : autoVal(sk, vk, month) != null ? 'auto' : null);
+  return { get, row, src, size: m.size };
 }
 
 /** ตัวแปรนี้อ่านจากขอบเขตไหน — plant var = 'plant' เสมอ · unit var = ขอบเขตของนิยาม */
@@ -50,12 +54,12 @@ export function formulaMonths({ def, scope, base }) {
   const f = key ? formulaOf(key) : null;
   if (!f || !base) return null;
   const varScopes = Object.fromEntries(f.vars.map(v => [v, baseScopeForVar(v, scope)]));
-  const months = {}, inputs = {}, missing = {};
+  const months = {}, inputs = {}, missing = {}, inputSrc = {};
   for (let m = 1; m <= 12; m++) {
-    const vars = {};
-    f.vars.forEach(v => { vars[v] = base.get(varScopes[v], v, m); });
+    const vars = {}, srcs = {};
+    f.vars.forEach(v => { vars[v] = base.get(varScopes[v], v, m); srcs[v] = base.src ? base.src(varScopes[v], v, m) : (vars[v] != null ? 'manual' : null); });
     const r = evalFormula(key, vars);
-    inputs[m] = vars;
+    inputs[m] = vars; inputSrc[m] = srcs;
     if (r.value != null) months[m] = r.value;
     else {
       months[m] = null;
@@ -63,7 +67,7 @@ export function formulaMonths({ def, scope, base }) {
       if (miss.length || r.error) missing[m] = miss.length ? miss : [{ key: '_', label: r.error, scope: null }];
     }
   }
-  return { key, formula: f, months, inputs, missing, varScopes };
+  return { key, formula: f, months, inputs, missing, varScopes, inputSrc };
 }
 
 /**
@@ -88,7 +92,7 @@ export function applyFormulaEntries(defs, entries, base, orgIndex) {
     }
     out[d.id] = merged;
     info[d.id] = { key: r.key, label: r.formula.label, expr: r.formula.expr, unit: r.formula.unit, months: r.months, inputs: r.inputs,
-      missing: r.missing, usedManual, computed, varScopes: r.varScopes, manual };
+      inputSrc: r.inputSrc, missing: r.missing, usedManual, computed, varScopes: r.varScopes, manual };
   }
   return { entries: out, info };
 }
@@ -105,7 +109,7 @@ export function formulaNoteText(info, month, { labelOf = null, def = null } = {}
     const txt = miss.map(x => (x.scope ? `${x.label} (${scopeText(x.scope, labelOf)})` : x.label)).join(' · ');
     return info.usedManual?.includes(m) ? `✍️ ใช้ค่ากรอกมือ — สูตรยังขาด ${txt}` : `ขาดตัวเลขฐาน: ${txt}`;
   }
-  const parts = (info.formula?.vars || Object.keys(info.inputs?.[m] || {})).map(v => `${baseVarOf(v)?.label?.split(' (')[0] || v} ${fmtBaht(info.inputs?.[m]?.[v])} (${scopeText(info.varScopes?.[v], labelOf)})`);
+  const parts = (info.formula?.vars || Object.keys(info.inputs?.[m] || {})).map(v => `${baseVarOf(v)?.label?.split(' (')[0] || v} ${fmtBaht(info.inputs?.[m]?.[v])} (${scopeText(info.varScopes?.[v], labelOf)}${info.inputSrc?.[m]?.[v] === 'auto' ? ' · ≈ทะเบียนพนักงาน' : ''})`);
   const val = info.months?.[m];
   return `🧮 ${info.label} = ${info.expr} → ${parts.join(' · ')}${val != null && def ? ` = ${fmtKpi(val, def)}` : ''}`;
 }
