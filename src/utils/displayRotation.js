@@ -264,7 +264,9 @@ export const DISPLAY_PAGE_PARAMS = Object.freeze({
       opt('am', '🏭 AM'), opt('supply', '🔗 Supply Route')] },
     { key: 'cycle', label: '🔁 วนมุมมองเอง (เลือกเรื่องที่จะวน)', kind: 'multi', optionsFrom: 'metric' },
     { key: 'csec', label: 'วินาที/มุมมอง', kind: 'select', showIf: { cycle: '*' }, options: ['10', '15', '20', '30', '45', '60'].map(v => opt(v, `${v} วิ`)) },
-    { key: 'panel', label: 'แผงขวา', kind: 'select', options: [opt('review', '📅 ทบทวนรายวัน'), opt('obeya', '🏛️ OBEYA (สด)'), opt('live', '📊 อันดับ')] },
+    // ⚡/📅 สวิตช์เดียวคุมผัง + แผงขวา + กล่องที่คลิก (16/10) · ไม่ตั้ง + panel=review = ทบทวน (ลิงก์เดิมไม่เปลี่ยนความหมาย)
+    { key: 'mode', label: 'ช่วงเวลาทั้งหน้า', kind: 'select', options: [opt('live', '⚡ Live (วันนี้สด)'), opt('review', '📅 ทบทวนรายวัน')] },
+    { key: 'panel', label: 'แผงขวา (โหมด Live)', kind: 'select', options: [opt('review', '⚡ สรุปวันนี้'), opt('obeya', '🏛️ OBEYA (สด)'), opt('live', '📊 อันดับ')] },
     { key: 'view', label: 'ผัง', kind: 'select', options: [opt('2d', '2D'), opt('3d', '🧊 3D')] },
     { key: 'tour', label: 'หมุนกล้องอัตโนมัติ (3D)', kind: 'bool', showIf: { view: ['3d'] } },
     { key: 'lbl', label: 'ขนาดป้าย', kind: 'select', options: ['0.6', '0.8', '1', '1.2', '1.4', '1.6'].map(v => opt(v, `${Math.round(v * 100)}%`)) },
