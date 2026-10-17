@@ -41,7 +41,8 @@ export function storySectionsFor(metric) {
 
 /** แท็บนี้ต้องมีผังเครื่องจักรคู่ไหม → ชื่อเลนส์ของหมุด หรือ null (ไม่มีผัง — เรื่องนี้ไม่ได้ผูกกับตัวเครื่อง) */
 export function mapLensOf(metric) {
-  if (metric === 'pm' || metric === 'am' || metric === 'breakdown') return metric;
+  /* 👷 คน = ผังจุดงาน + คนประจำจุด · 📦 ยอดผลิต = บอร์ด Heijunka ของไลน์ (ไม่ใช่ผัง — user 16/10) */
+  if (metric === 'pm' || metric === 'am' || metric === 'breakdown' || metric === 'people' || metric === 'productivity') return metric;
   if (metric === 'health') return 'health';
   return null;
 }
@@ -51,7 +52,39 @@ export const LENS_LABEL = {
   am: 'สถานะ AM (ผลิตตรวจเอง)',
   breakdown: 'เครื่องหยุดวันนี้',
   health: 'ปกติ/ผิดปกติ (เครื่องหยุด + PM)',
+  people: 'จุดงาน + คนประจำจุด',
+  productivity: 'Heijunka ของไลน์',
 };
+
+/* 👷 สีจุดงาน — ตอบ "จุดนี้มีคนที่ทำได้ยืนอยู่ไหม" · ตัดสินจากคนที่มาแล้วตัวที่อ่อนที่สุด */
+export const STATION_META = {
+  empty: { label: 'ว่าง (ไม่มีคนมา)', color: '#ef4444' },
+  low: { label: 'ทักษะไม่ถึง (<50%)', color: '#f97316' },
+  partial: { label: 'ทักษะผ่านบางข้อ', color: '#f59e0b' },
+  fit: { label: 'ทักษะผ่านครบ', color: '#22c55e' },
+  no_req: { label: 'มีคน · จุดยังไม่ตั้งทักษะ', color: '#3b82f6' },
+  not_checked: { label: 'ยังไม่เช็คชื่อ', color: '#6b7280' },   // = NO_DATA_COLOR (ประกาศทีหลัง)
+  no_one: { label: 'ยังไม่กำหนดคนประจำ', color: '#374151' },
+};
+
+/**
+ * สถานะจุดงาน 1 จุดจากคนที่ประจำ ({ is_present: true|false|null, fit: {score}|null })
+ * 🔴 ไม่ตั้งทักษะ = `no_req` (ไม่ใช่ "ผ่าน") · ยังไม่เช็คชื่อ (null) ≠ ขาด (false)
+ */
+export function stationMarker(people = []) {
+  const list = Array.isArray(people) ? people : [];
+  if (!list.length) return { state: 'no_one', ...STATION_META.no_one };
+  const present = list.filter(p => p.is_present === true);
+  if (!present.length) {
+    const st = list.some(p => p.is_present === false) ? 'empty' : 'not_checked';
+    return { state: st, ...STATION_META[st] };
+  }
+  const scores = present.map(p => p.fit?.score).filter(v => v != null);
+  if (!scores.length) return { state: 'no_req', ...STATION_META.no_req };
+  const worst = Math.min(...scores);
+  const st = worst >= 100 ? 'fit' : worst >= 50 ? 'partial' : 'low';
+  return { state: st, ...STATION_META[st], worst };
+}
 
 export const DT_COLOR = { open: '#ef4444', had: '#f59e0b', none: '#22c55e' };
 export const NO_DATA_COLOR = '#6b7280';
