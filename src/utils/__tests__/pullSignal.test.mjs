@@ -4,7 +4,7 @@ import {
   FALLBACK_PROFILE, pickProfile, findHeaderRow, colIndexMap, readMeta,
   parseTs, dateStr, timeStr, shipSlotOf, joinPartNo, parsePullFile,
   signalKey, aggregateSignals, planOrderUpdates, LOCKED_STATUSES,
-  toCeYear, looksBuddhist, findDuplicateUploads, orderShipAt, pickPullRound, pullRoundOptions, PULL_PATTERNS, detectDateOrder, fileNameStamp,
+  toCeYear, looksBuddhist, findDuplicateUploads, orderShipAt, shipDueDate, pickPullRound, pullRoundOptions, PULL_PATTERNS, detectDateOrder, fileNameStamp,
 } from '../pullSignal.js';
 
 /* ── ไฟล์จริงที่ user ส่งมา 2026-09-08 (Detailed_SMART.csv รอบ 12:00–14:00) ──────────────
@@ -409,9 +409,9 @@ const SLOT = (ws, t) => ({ windowStart: parseTs(ws), targetAt: parseTs(t) });
 const G1 = [{ customer_part_no: 'RB3B-16E060-BA', qty: 30, pulls: 3, part_name: 'x', dock_code: 'B5' }];
 const RES1 = () => ({ mat: '10100385', status: 'mapped', candidates: ['10100385'] });
 
-test('orderShipAt — ship_time ก่อน 08:00 = กะดึก ตกวันถัดไปตามปฏิทิน', () => {
+test('🔴 orderShipAt — due_date = วันที่ตามปฏิทิน ห้ามบวกวันให้ใบก่อน 08:00 (16/10)', () => {
   assert.equal(dateStr(orderShipAt(D, '10:00')), '2026-09-09');
-  assert.equal(dateStr(orderShipAt(D, '00:30')), '2026-09-10');
+  assert.equal(dateStr(orderShipAt(D, '00:30')), '2026-09-09', 'ใบ 862 ลงวันที่ตามไฟล์ลูกค้า');
   assert.equal(timeStr(orderShipAt(D, '00:30')), '00:30');
   assert.equal(orderShipAt(D, null), null);
   assert.equal(orderShipAt(null, '10:00'), null);
@@ -740,4 +740,23 @@ test('🔴 ไฟล์ที่ช่วงเวลาเลยเวลาอ
     FALLBACK_PROFILE, null,
     { now: new Date(2026, 11, 1), fileName: 'Detailed SMART - 2026-09-10T080411.100.csv' });
   assert.equal(r.ok, false, 'เทียบกับเวลาออกไฟล์ ไม่ใช่เวลาเครื่อง');
+});
+
+test('🔴 shipDueDate — วันงาน + รอบกะดึก (<08:00) = วันถัดไปตามปฏิทิน (เคสจริง 16/10)', () => {
+  assert.equal(shipDueDate('2026-10-15', '05:00'), '2026-10-16');
+  assert.equal(shipDueDate('2026-10-15', '07:59'), '2026-10-16');
+  assert.equal(shipDueDate('2026-10-15', '08:00'), '2026-10-15');
+  assert.equal(shipDueDate('2026-10-15', '23:00'), '2026-10-15');
+  assert.equal(shipDueDate('2026-10-31', '01:00'), '2026-11-01', 'ข้ามเดือน');
+  assert.equal(shipDueDate('2026-10-15', null), '2026-10-15', 'ไม่รู้เวลา = วันงานเดิม');
+  assert.equal(shipDueDate(null, '05:00'), null);
+});
+
+test('🔴 ไฟล์ 22:00-00:00 (รอบ 01:00 วันงาน 15/10) ต้องจับใบ 862 16/10 00:01 ไม่ใช่ใบ 15/10 00:01 ของเมื่อวาน', () => {
+  const O = (id, due, time) => ({ id, customer_part_no: 'RB3B 16E060 BA', mat_no: '10100385', qty: 200, due_date: due, ship_time: time, status: 'pending', source: 'edi_862', dock_code: 'B5' });
+  const orders = [O('yesterday', '2026-10-15', '00:01'), O('today', '2026-10-16', '00:01')];
+  const slot = { windowStart: parseTs('2026-10-15T22:00:00'), targetAt: orderShipAt(shipDueDate('2026-10-15', '01:00'), '01:00'), dock: 'B5' };
+  const [row] = planOrderUpdates(G1, orders, RES1, slot);
+  assert.equal(row.action, 'update');
+  assert.equal(row.order.id, 'today');
 });

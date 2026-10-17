@@ -21,6 +21,7 @@ const OrderIntakeLog = lazy(() => import('../components/OrderIntakeLog'));      
 const PullRoundsPanel = lazy(() => import('../components/PullRoundsPanel'));
 import { openOnly, isOpenOrder, isClosedOrder, isCancelled, CANCELLED } from '../utils/shipStatus';
 import useColumnHistory from '../utils/useColumnHistory'; // 📜 MAT ที่เคยบันทึกในใบส่ง — Product Master ไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
+import { shipDueDate } from '../utils/pullSignal'; // วันงาน + รอบ → due_date ตามปฏิทิน (16/10)
 
 /* ─── DELIVERY — Shipping Time Chart + Ship-to Config (Logistic) ──────────
    ติดตามรอบส่งงานลูกค้ารายวัน (walkback 4 activity, FG stock, ranking ดิว)
@@ -114,7 +115,9 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
       mat_no: mat,
       part_name: addForm.part_name.trim() || prodNames[mat] || null,
       qty,
-      due_date: addForm.due_date,
+      /* ช่องวันที่ = "วันงาน" (กรอบเดียวกับชาร์ต) · รอบก่อน 08:00 = กะดึก ⇒ ลงวันถัดไปตามปฏิทิน
+         (16/10: คีย์ 04:00 ด้วยวันงาน 15/10 → ใบไปอยู่วันงาน 14/10 ไม่ขึ้นชาร์ต แล้วคีย์ซ้ำ) */
+      due_date: shipDueDate(addForm.due_date, addForm.ship_time),
       ship_time: addForm.ship_time || null,
       order_no: addForm.order_no.trim() || null,
       dock_code: addForm.dock_code.trim() || null,
@@ -674,8 +677,11 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
                   <input value={addForm.part_name} readOnly={!!prodNames[addForm.mat_no.trim()]} onChange={e => setAddForm(f => ({ ...f, part_name: e.target.value }))}
                     style={{ ...inputSt, opacity: prodNames[addForm.mat_no.trim()] ? 0.75 : 1 }} />
                 </label>
-                <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>วันที่ส่ง *
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>วันงาน (08:00 → 07:59) *
                   <input type="date" value={addForm.due_date} onChange={e => setAddForm(f => ({ ...f, due_date: e.target.value }))} style={inputSt} />
+                  {addForm.ship_time && addForm.ship_time < '08:00' && addForm.due_date && (
+                    <span style={{ fontSize: 11, fontWeight: 700, color: '#f59e0b' }}>🌙 รอบกะดึก → ส่งจริง {shipDueDate(addForm.due_date, addForm.ship_time)} {addForm.ship_time}</span>
+                  )}
                 </label>
                 <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>รอบเวลาส่ง (เว้นว่าง = ⏳ ไม่ระบุ)
                   <input type="time" value={addForm.ship_time} onChange={e => setAddForm(f => ({ ...f, ship_time: e.target.value }))} style={inputSt} />

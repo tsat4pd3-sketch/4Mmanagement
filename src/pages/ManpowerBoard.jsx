@@ -1026,8 +1026,13 @@ function StaffingTab({ section, deptParam, today, nodes, employees, lines, slotP
         // 🧭 คนยืมตัวย้อนหลังก็ต้องทับตำแหน่งด้วยชุดเดียวกับ `employees` (ส่งมาแล้วทับจากหน้าแม่)
         attendance: att[d] || {}, slotPlans, lineTechs, helpers: applyWorkingPositions(raw.borrowed.byDate?.[d] || [], actingPos), stations, stationPlans, homeByEmp });
       out.push({ date: d, depts: (board?.depts || []).filter(x => !deptParam || x.key === deptParam)
-        .map(x => ({ key: x.key, name: x.name, shifts: staffingOfDept(x),
-          sessions: { day: sessionsOfDeptShift(sIdx, x.lines, d, 'day'), night: sessionsOfDeptShift(sIdx, x.lines, d, 'night') } })) });
+        .map(x => {
+          /* 🔴 กะผลิตที่ปิดแล้ว = หลักฐานว่า "ไลน์เดินในกะนี้จริง" — ไม่มี = ยืนยันไม่ได้
+             ⇒ ไม่คิดช่องว่างของกะนั้น (จุดงานที่ไม่ได้เดินวันนั้น ไม่ใช่ "ขาดคน" · user 15/10) */
+          const sessions = { day: sessionsOfDeptShift(sIdx, x.lines, d, 'day'), night: sessionsOfDeptShift(sIdx, x.lines, d, 'night') };
+          const ran = { day: sessions.day.length > 0, night: sessions.night.length > 0 };
+          return { key: x.key, name: x.name, shifts: staffingOfDept(x, { ran }), sessions };
+        }) });
     }
     return out;
   }, [raw, from, to, today, section, deptParam, nodes, employees, lines, slotPlans, lineTechs, stations, stationPlans, homeByEmp, actingPos]);
@@ -1044,7 +1049,10 @@ function StaffingTab({ section, deptParam, today, nodes, employees, lines, slotP
   const cellOf = (key, date, sh) => deptOf(key, date)?.shifts[sh] || null;
   const tip = (s, sess) => {
     const o = oeeOfSessions(sess);
-    return `ที่นั่ง ${s.seats} · ยืนจริง ${s.onFloor}\nช่องว่าง ${s.empty} · ลา ${s.leave} · ขาดงาน ${s.absent} · ยังไม่เช็ค ${s.unchecked} · ถูกยืมออก ${s.lentOut} · ยืมเข้า ${s.borrowedIn}`
+    return `ในทะเบียน ${s.registered} · ยืนจริง ${s.onFloor}`
+      + `\nคนขาด ${s.absentGap ?? '–'} = ลา ${s.leave} + ขาดงาน ${s.absent} + ยังไม่เช็ค ${s.unchecked} + ถูกยืมออก ${s.lentOut} − ยืมเข้า ${s.borrowedIn}`
+      + `\nช่องว่างอัตรากำลัง ${s.structGap == null ? 'คิดไม่ได้ (ยืนยันไม่ได้ว่าไลน์เดินกะนี้)' : s.structGap}`
+      + (s.capped ? ` (ตัดจาก ${s.emptyRaw} ตามกำลังคนผัง ${s.std})` : '')
       + `\n${o ? `OEE ${o.oee}%${o.p != null ? ` · %P ${o.p}%` : ''} (${o.sessions} กะผลิต)` : 'ไม่มีกะผลิตที่ปิดแล้ว'}`
       + (s.noPlan ? '\n⚠️ บางทีมไม่มีแผนช่อง — ใช้จำนวนคนในทะเบียนเป็นที่นั่ง' : '');
   };
@@ -1055,7 +1063,9 @@ function StaffingTab({ section, deptParam, today, nodes, employees, lines, slotP
         onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset}
         note={`ส่วนงาน ${section?.name || '–'}${deptParam ? ` · แผนก ${summary[0]?.name || '(ไม่มีข้อมูลในช่วงนี้)'}` : ''} · แท่งละ 1 วัน × กะ · ดูได้ครั้งละไม่เกิน ${STAFFING_MAX_DAYS} วัน`} />
       <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.6 }}>
-        ℹ️ <b>ที่นั่ง</b> = การ์ดคนในทะเบียน + ช่องว่าง ของกะนั้น (กฎเดียวกับบอร์ด) · <b>ขาด</b> = ที่นั่ง − คนยืนจริง (มา + ยืมเข้า − ถูกยืมออก) ·
+        ℹ️ <b>ขาด 2 ชนิด แยกกันคนละคอลัมน์</b> — <b>ขาดคน</b> = ลา + ขาดงาน + ยังไม่เช็ค + ถูกยืมออก − ยืมเข้า (เรื่องรายวัน หัวหน้าจัดการได้) ·
+        <b>ช่องว่างอัตรากำลัง</b> = ตำแหน่งที่ยังไม่มีคน (เรื่องอัตรากำลัง/รับคน) · <b>มาจริง %</b> หารด้วย<b>คนในทะเบียนของกะนั้น</b> ไม่ใช่ที่นั่ง ·
+        ช่องว่างคิดเฉพาะกะที่<b>ยืนยันได้ว่าไลน์เดิน</b> (มีกะผลิตปิดแล้ว) และ<b>ไม่เกินกำลังคนตามผัง − คนที่มาจริง</b> ·
         คิดจาก<b>ค่าตั้งบอร์ด/std และทะเบียนพนักงานปัจจุบัน</b> (ตัดคนที่เริ่มงานหลังวันนั้น — คนที่ลาออกไปแล้วไม่อยู่ในตัวเลขย้อนหลัง) ·
         กะที่ไม่มีใครในแผนกถูกเช็คชื่อเลย = <b>ไม่ได้เช็คชื่อ</b> ไม่นับเป็นขาด
       </div>
@@ -1072,8 +1082,8 @@ function StaffingTab({ section, deptParam, today, nodes, employees, lines, slotP
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead><tr>
                 <th style={th}>แผนก</th><th style={{ ...th, textAlign: 'right' }}>กะที่เช็คแล้ว</th><th style={{ ...th, textAlign: 'right' }}>กะที่ขาดคน</th>
-                <th style={{ ...th, textAlign: 'right' }}>ยืนจริง / ที่นั่ง</th><th style={{ ...th, textAlign: 'right' }}>ขาดรวม (คน-กะ)</th>
-                <th style={{ ...th, textAlign: 'right' }}>ช่องว่าง</th><th style={{ ...th, textAlign: 'right' }}>ลา</th><th style={{ ...th, textAlign: 'right' }}>ขาดงาน</th>
+                <th style={{ ...th, textAlign: 'right' }}>ยืนจริง / ในทะเบียน</th><th style={{ ...th, textAlign: 'right' }}>🧑 ขาดคน (คน-กะ)</th>
+                <th style={{ ...th, textAlign: 'right' }}>🪑 ช่องว่างอัตรากำลัง</th><th style={{ ...th, textAlign: 'right' }}>ลา</th><th style={{ ...th, textAlign: 'right' }}>ขาดงาน</th>
                 <th style={{ ...th, textAlign: 'right' }}>ยังไม่เช็ค</th><th style={{ ...th, textAlign: 'right' }}>ถูกยืมออก</th><th style={{ ...th, textAlign: 'right' }}>ยืมเข้า</th>
                 <th style={th}>ขาดหนักสุด</th><th style={{ ...th, textAlign: 'right' }}>กะไม่ได้เช็คชื่อ</th>
               </tr></thead>
@@ -1083,9 +1093,20 @@ function StaffingTab({ section, deptParam, today, nodes, employees, lines, slotP
                     <td style={{ ...td, fontWeight: 700, whiteSpace: 'normal', minWidth: 140 }}>{sm.name}{sm.noPlanShifts > 0 && <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 400 }}>⚠️ {sm.noPlanShifts} กะมีทีมที่ไม่มีแผนช่อง</div>}</td>
                     <td style={num}>{sm.shifts}</td>
                     <td style={num}>{sm.shifts ? `${sm.shortShifts} (${pct(sm.shortShifts / sm.shifts)})` : '–'}</td>
-                    <td style={num}>{sm.shifts ? `${sm.onFloor} / ${sm.seats} (${pct(sm.fill)})` : '–'}</td>
-                    <td style={{ ...num, fontWeight: 800 }}>{sm.shifts ? sm.short : '–'}</td>
-                    <td style={num}>{sm.empty}</td><td style={num}>{sm.leave}</td><td style={num}>{sm.absent}</td>
+                    <td style={num}>{sm.shifts ? `${sm.onFloor} / ${sm.registered} (${pct(sm.fill)})` : '–'}</td>
+                    <td style={{ ...num, fontWeight: 800 }}>{sm.shifts ? sm.absentShort : '–'}</td>
+                    <td style={num}>
+                      {sm.structUnknownShifts >= sm.shifts && sm.shifts ? '–' : sm.structShort}
+                      {sm.structUnknownShifts > 0 && (
+                        <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}>คิดไม่ได้ {sm.structUnknownShifts} กะ</div>
+                      )}
+                      {sm.capped > 0 && (
+                        <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}>ตัดตามผัง {sm.capped}</div>
+                      )}
+                      {sm.stdUnknownShifts > 0 && (
+                        <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 400 }}>⚠️ ไม่รู้กำลังคนผัง {sm.stdUnknownShifts} กะ</div>
+                      )}
+                    </td><td style={num}>{sm.leave}</td><td style={num}>{sm.absent}</td>
                     <td style={num}>{sm.unchecked}</td><td style={num}>{sm.lentOut}</td><td style={num}>{sm.borrowedIn}</td>
                     <td style={td}>{sm.worst ? `${dShort(sm.worst.date)} ${SHIFT_TH[sm.worst.shift]} ขาด ${sm.worst.gap}` : '–'}</td>
                     <td style={num}>{sm.notChecked}</td>
@@ -1094,7 +1115,11 @@ function StaffingTab({ section, deptParam, today, nodes, employees, lines, slotP
               </tbody>
             </table>
             <div style={{ padding: '8px 12px', fontSize: 12, color: 'var(--muted)' }}>
-              ช่องว่าง + ลา + ขาดงาน + ยังไม่เช็ค + ถูกยืมออก − ยืมเข้า = ขาด (นับทุกกะ ทั้งกะที่ขาดและกะที่เกิน) · "ขาดรวม" นับเฉพาะกะที่ขาด
+              🧑 <b>ขาดคน</b> = ลา + ขาดงาน + ยังไม่เช็ค + ถูกยืมออก − ยืมเข้า (นับเฉพาะกะที่ขาด) · <b>"กะที่ขาดคน" นับจากช่องนี้เท่านั้น</b> ·
+              🪑 <b>ช่องว่างอัตรากำลัง</b> คนละเรื่องกัน — ไม่ใช่ "วันนี้มีคนไม่มา" แต่คือตำแหน่งที่ยังไม่มีคนประจำ ·
+              "คิดไม่ได้ N กะ" = ยืนยันไม่ได้ว่าไลน์เดินกะนั้น (ไม่มีกะผลิตที่ปิดแล้ว) จึงไม่นับช่องว่าง — <b>ไม่รู้ ≠ ไม่ขาด</b> ·
+              "ตัดตามผัง N" = ช่องว่างดิบจากจุดงานเกินกำลังคนตามผัง (std − คนที่มาจริง) จึงถูกตัด — จุดที่ใช้คนวนๆ ไม่ใช่ช่องว่างถาวร ·
+              "⚠️ ไม่รู้กำลังคนผัง N กะ" = ไลน์ของแผนกนี้ยังไม่ได้ตั้ง std (ตั้งที่ /line-setup) ⇒ <b>ไม่ได้ตัดเพดาน</b> ช่องว่างอาจสูงกว่าจริง
             </div>
           </div>
 
@@ -1136,7 +1161,7 @@ function StaffingTab({ section, deptParam, today, nodes, employees, lines, slotP
           </div>
 
           <div className="card" style={{ padding: 0, overflowX: 'auto' }}>
-            <div style={{ padding: '10px 12px', fontWeight: 800 }}>รายวัน — ขาดกี่คน <span style={{ fontWeight: 400, fontSize: 12, color: 'var(--muted)' }}>(ตัวเลข = ขาด · +n = เกิน · ✓ = ครบ · · = ไม่ได้เช็คชื่อ · ชี้ที่ช่องเพื่อดูสาเหตุ)</span></div>
+            <div style={{ padding: '10px 12px', fontWeight: 800 }}>รายวัน — คนขาดกี่คน <span style={{ fontWeight: 400, fontSize: 12, color: 'var(--muted)' }}>(ตัวเลข = คนขาด (ลา/ขาดงาน/ยังไม่เช็ค/ถูกยืมออก) · +n = คนเกิน · ✓ = มากันครบ · · = ไม่ได้เช็คชื่อ · ชี้ที่ช่องเพื่อดูสาเหตุ + ช่องว่างอัตรากำลัง)</span></div>
             <table style={{ borderCollapse: 'collapse' }}>
               <thead><tr>
                 <th style={{ ...th, position: 'sticky', left: 0, background: 'var(--card)', zIndex: 1 }}>แผนก · กะ</th>
@@ -1153,8 +1178,10 @@ function StaffingTab({ section, deptParam, today, nodes, employees, lines, slotP
                       const base = { ...td, textAlign: 'center', padding: '6px 4px', minWidth: 34, fontSize: 12 };
                       if (!s || (!s.seats && !s.evaluated)) return <td key={d.date} style={{ ...base, color: 'var(--muted)' }} />;
                       if (!s.evaluated) return <td key={d.date} style={{ ...base, color: 'var(--muted)' }} title="ไม่มีใครในแผนกถูกเช็คชื่อกะนี้ — ไม่รู้ว่ามาครบไหม">·</td>;
-                      if (s.gap > 0) return <td key={d.date} title={tip(s, deptOf(r.key, d.date)?.sessions?.[r.sh])} style={{ ...base, fontWeight: 800, color: 'var(--text)', background: `rgba(239,68,68,${Math.min(0.15 + s.gap * 0.08, 0.6).toFixed(2)})` }}>{s.gap}</td>;
-                      if (s.gap < 0) return <td key={d.date} title={tip(s, deptOf(r.key, d.date)?.sessions?.[r.sh])} style={{ ...base, color: '#0ea5e9' }}>+{-s.gap}</td>;
+                      /* 🔴 ช่องสีแดง = "คนขาดจริง" เท่านั้น — ช่องว่างอัตรากำลังไม่ใช่เหตุการณ์ของวันนั้น
+                         (เดิมใช้ gap รวม ⇒ ทั้งตารางแดงหมดทุกวันจนดูไม่ออกว่าวันไหนมีปัญหาจริง · 15/10) */
+                      if (s.absentGap > 0) return <td key={d.date} title={tip(s, deptOf(r.key, d.date)?.sessions?.[r.sh])} style={{ ...base, fontWeight: 800, color: 'var(--text)', background: `rgba(239,68,68,${Math.min(0.15 + s.absentGap * 0.08, 0.6).toFixed(2)})` }}>{s.absentGap}</td>;
+                      if (s.absentGap < 0) return <td key={d.date} title={tip(s, deptOf(r.key, d.date)?.sessions?.[r.sh])} style={{ ...base, color: '#0ea5e9' }}>+{-s.absentGap}</td>;
                       return <td key={d.date} title={tip(s, deptOf(r.key, d.date)?.sessions?.[r.sh])} style={{ ...base, color: 'var(--muted)' }}>✓</td>;
                     })}
                   </tr>

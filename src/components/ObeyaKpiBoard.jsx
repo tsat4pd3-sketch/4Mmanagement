@@ -31,6 +31,8 @@ import { loadPmTeams, pmTeamsSync } from '../utils/pmTeams';
 import { mtnAutoSeries, autoKpiOfName, toRowUnit, autoDetailText, HOURS_PER_MONTH } from '../utils/kpiAuto';
 import { GAP, useSheetGrid, StatusLamp, Sheet, WarnNote, EmptyChart, FocusAxisNote } from './ObeyaSheet';
 import { balanceGrid } from '../utils/sheetGrid';
+import { applyFormulaEntries, buildBaseIndex, formulaNoteText } from '../utils/kpiFormula';
+import { headcountAuto, headcountAutoVar } from '../utils/kpiHeadcount';
 import { boardFlipSec } from '../utils/displayRotation';
 import BoardPager from './BoardPager';
 import useFitHeight from '../utils/useFitHeight';
@@ -326,6 +328,14 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
         if (kp.error && !/42P01/.test(String(kp.error))) warn.push('แผนรายเดือน');
         kplans = kp.rows || [];
       }
+      /* 💰 ตัวเลขฐาน (ยอดขายกลางของโรงงาน + ยอดเงินของหน่วย) — นิยาม provider='formula' คำนวณค่ารายเดือนจากตรงนี้ (15/10) · ตารางยังไม่มี = ไม่มีสูตร */
+      const kb = await supabase.from('kpi_base_inputs').select('id, month, scope_kind, scope_value, var_key, value').eq('year', year).limit(5000);
+      if (kb.error && (kb.error.code || '') !== '42P01') warn.push('ตัวเลขฐาน KPI');
+      const kbase = kb.data || [];
+      /* 👥 ทะเบียนพนักงาน active — ตัวหาร manpower ของ "ยอดขาย/หัว" เมื่อไม่มีใครกรอก (ค่ากรอกมือชนะ) */
+      const em = await supabase.from('employees').select('id, section, department, is_active, start_date').eq('is_active', true).limit(5000);
+      if (em.error) warn.push('ทะเบียนพนักงาน');
+      const kemps = em.data || [];
       /* 📝 หมายเหตุรายเดือนของขอบเขตที่ดู (remark/action/note) — ตารางยังไม่มี = ไม่มีโน้ต ไม่ใช่บอร์ดล่ม */
       const kn = await supabase.from('kpi_month_notes')
         .select('id, month, row_key, kind, text, created_by_name, created_at')
@@ -348,7 +358,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       setData({
         sessions: roll.sessions || [], defects: roll.defects || [],
         openSess: (op.rows || []).length, targets: tg.data || [],
-        safety, safetyMissing, actions, actsMissing, kdefs, kdefsBelow, kentries, kplans, knotes, kpiMissing, warn, mtnRoll, layoutKeys,
+        safety, safetyMissing, actions, actsMissing, kdefs, kdefsBelow, kentries, kplans, knotes, kbase, kemps, kpiMissing, warn, mtnRoll, layoutKeys,
       });
     } catch (e) {
       if (seq === reqRef.current) { setErr(e?.message || 'โหลดข้อมูลไม่สำเร็จ'); setData(null); }
@@ -363,7 +373,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
   /* ── แถว KPI 8 หัวข้อของกลุ่มที่เลือก — ทุกแถวมี series 12 เดือน + แท่งสรุป ──────────────────── */
   const rows = useMemo(() => {
     if (!data || !scope) return [];
-    const { sessions, defects, targets, safety, kdefs, kdefsBelow, kentries, kplans, knotes, mtnRoll } = data;
+    const { sessions, defects, targets, safety, kdefs, kdefsBelow, kentries, kplans, knotes, kbase, kemps, mtnRoll } = data;
     const autoSeries = mtnTeam && mtnRoll ? mtnAutoSeries(mtnRoll, year, mtnTeam) : null;
     const planByKpi = {};
     (kplans || []).forEach(e => (planByKpi[e.kpi_id] = planByKpi[e.kpi_id] || {})[e.month] = e.plan_value);
@@ -376,6 +386,12 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
 
     const entByKpi = {};
     (kentries || []).forEach(e => (entByKpi[e.kpi_id] = entByKpi[e.kpi_id] || {})[e.month] = e.value);
+    /* 🧮 นิยามสูตร: ค่ารายเดือน = ยอดเงินของหน่วย ÷ ยอดขายกลาง (utils/kpiFormula.js) — ทับค่ากรอกมือ · คำนวณไม่ได้ = ใช้ค่ากรอกมือ + ป้าย ✍️ */
+    const fxB = applyFormulaEntries([...(kdefs || []), ...(kdefsBelow || [])], entByKpi,
+      buildBaseIndex(kbase || [], { auto: headcountAutoVar(headcountAuto(kemps || [], { year, today })) }), org);
+    Object.assign(entByKpi, fxB.entries);
+    const fInfoB = fxB.info;
+    const skLabelB = (sk) => { const i = String(sk).indexOf(':'); return i < 0 ? 'ทั้งโรงงาน' : org.labelOf(sk.slice(0, i), sk.slice(i + 1)); };
     /* เป้า/นิยาม = ของขอบเขตที่เลือกก่อน ไม่มีค่อยไต่ขึ้นบรรพบุรุษทีละชั้น (แผนก → ส่วนงาน → ฝ่าย → โรงงาน)
        แหล่งเดียวกับแท็บ ⚙️ ห้ามตั้งคนละที่ · `inherited` = เอามาจากระดับแม่ (จอต้องบอก) */
     const chain = org.chainOf(scope.kind, scope.value);   // CC → เจ้าของรหัส → แม่ … → โรงงาน (06/10)
@@ -567,6 +583,8 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
         }
       }
 
+      const fiB = man?.def ? fInfoB[(man.sharedDef || man.def).id] : null;
+      if (fiB && !r.auto) note = note || formulaNoteText(fiB, monthNo, { labelOf: skLabelB, def: man.def });
       if (man?.shared === 'ok' && !r.auto) note = note || (isPlant(scope) ? 'ค่าโรงงาน — ทุกหน่วยที่ถือ KPI นี้ใช้ตัวเลขเดียวกัน' : 'ค่าโรงงาน (ทุกหน่วยใช้ตัวเลขเดียวกัน) · กรอกที่แท็บ ⚙️ ขอบเขต ทั้งโรงงาน');
       else if (man?.shared === 'missing' && !r.auto) note = note || `KPI นี้ใช้ค่าโรงงาน แต่ยังไม่มีนิยามระดับ ทั้งโรงงาน ปี ${year} — สร้างที่แท็บ ⚙️ ขอบเขต ทั้งโรงงาน แล้วกรอกที่นั่น`;
       else if (man?.inherited && !r.auto) note = note || `ค่าระดับ ${org.labelOf(man.at.kind, man.at.value)} (ยังไม่ตั้งแยกที่ขอบเขตนี้)`;
@@ -899,7 +917,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
   const monthText = `${monthLabel(monthKey)} ${year}`;
   const shell = board
     /* zIndex ต้องสูงกว่ารางเมนู (App.jsx rail = 1000) — เดิม 800 ⇒ รางทับบอร์ดโหมดจอไป ~60px ซ้าย (user ส่งรูป 30/09) · ต่ำกว่าโมดัล 1100+ */
-    ? { position: 'fixed', inset: 0, zIndex: 1010, background: 'var(--bg)', display: 'flex', flexDirection: 'column' }
+    ? { position: 'fixed', top: 'var(--tvbar-h, 0px)', left: 0, right: 0, bottom: 0, zIndex: 1010, background: 'var(--bg)', display: 'flex', flexDirection: 'column' }   // top = ใต้แถบบนของกรอบจอ TV
     : { display: 'flex', flexDirection: 'column' };
   const pill = (active) => ({
     fontSize: 13, fontWeight: 700, padding: '6px 12px', borderRadius: 999, cursor: 'pointer',

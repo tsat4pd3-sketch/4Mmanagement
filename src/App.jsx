@@ -31,7 +31,7 @@ import { checkWrite } from './utils/dbWrite';
 import { notifTargetPath } from './utils/notifLink';   // ปลายทางของแจ้งเตือน (link ก่อน แล้วค่อย ref_table) — จุดเดียว
 import { FEEDBACK_EVENT } from './utils/feedbackPrefill';   // 💬 หน้าอื่นสั่งเปิดกล่องแจ้งปัญหา
 import { isKioskPath } from './utils/kioskRoutes';      // จอแขวนอ่านอย่างเดียว — ยกเว้น auto-logout
-import { ROT_NAV_STATE, skipSplash } from './utils/displayRotation'; // 🔁 key ของ <Routes> ตอนจอวนหน้าเปลี่ยนหน้า
+import { ROT_NAV_STATE, skipSplash, isTvShell } from './utils/displayRotation'; // 🔁 key ของ <Routes> ตอนจอวนหน้าเปลี่ยนหน้า
 const ImageCropModal = lazy(() => import('./components/ImageCropModal'));
 const ViewAsModal = lazy(() => import('./components/ViewAsModal')); // 🎭 admin จำลองมุมมอง role อื่น
 
@@ -107,6 +107,8 @@ const FactoryMap = lazy(() => import('./pages/FactoryMap'));
 const LineOeeBoard = lazy(() => import('./pages/LineOeeBoard'));
 const RemoteControl = lazy(() => import('./pages/RemoteControl'));
 const RemoteReceiver = lazy(() => import('./components/RemoteReceiver'));
+// หน้าที่ถูกฝังใน iframe (กรอบตัวอย่างที่ /display-rotation) — ห้ามวนหน้าเองซ้อนในกรอบ
+const IN_FRAME = (() => { try { return window.self !== window.top; } catch { return true; } })();
 const DisplayRotator = lazy(() => import('./components/DisplayRotator')); // 📺 จอวนหน้าตามแผนของบัญชี (/display-rotation)
 const DisplayRotation = lazy(() => import('./pages/DisplayRotation'));
 
@@ -1710,6 +1712,14 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
   const navigate = useNavigate();
   const location = useLocation();
   useEffect(() => { setTvNavOpen(false); }, [location.pathname]);
+  /* 📺 กรอบจอ TV ชุดเดียวทุกหน้า (16/10) — ตัดสินที่ isTvShell() (utils/displayRotation.js) ที่เดียว
+     ⇒ ไม่มี sidebar/rail/กระดิ่ง/ปุ่มเมนู · แถบบนวาดโดย DisplayRotator · หัวเพจทุกหน้าซ่อนด้วย body.esm-tv-shell .ph-chrome */
+  const tvShell = isTvShell(userRole, location.search);
+  useEffect(() => {
+    if (!tvShell) return undefined;
+    document.body.classList.add('esm-tv-shell');
+    return () => document.body.classList.remove('esm-tv-shell');
+  }, [tvShell]);
   const userId = session?.user?.id ?? null;
 
   useEffect(() => {
@@ -1839,7 +1849,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
 
   // sidebar แบบ D (2026-08-18): desktop เนื้อหาเสียแค่ rail 64px — แผงหมวดลอยทับ ไม่ดันเนื้อหา
   // ยกเว้นปักหมุด 📌 (opt-in) = rail + แผง (var(--rail-w) + var(--sidebar-w))
-  const marginLeft = (!isMobile && isOpen)
+  const marginLeft = (!isMobile && isOpen && !tvShell)
     ? (railPinned ? 'calc(var(--rail-w) + var(--sidebar-w))' : 'var(--rail-w)')
     : 0;
   /* 📺 จอวนหน้า — บัญชีที่มีแผนใน `display_rotations` จะวนหน้าเอง (ตั้งที่ /display-rotation)
@@ -1847,7 +1857,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
      ปิดตอน admin จำลองมุมมอง (viewAs) — ไม่งั้นจอ admin วนตามแผนของตัวเอง */
   const rotator = (
     <Suspense fallback={null}>
-      <DisplayRotator userId={userId} role={userRole} disabled={!!viewAs} />
+      <DisplayRotator userId={userId} role={userRole} disabled={!!viewAs || IN_FRAME} shell={tvShell} />
     </Suspense>
   );
   const role       = userRole; // ไม่ fallback เป็น 'admin' อีกต่อไป — profileLoaded gate ด้านบนรับประกันว่า role ถูก resolve แล้วก่อนถึงจุดนี้
@@ -1861,9 +1871,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
       <UserContext.Provider value={userCtx}>
         <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', color: 'var(--muted)', fontSize: 14, background: 'var(--bg)' }}>กำลังโหลด...</div>}>
           {/* บัญชีจอแขวน (role display) = ไม่มีคนกด ⇒ ไม่มีปุ่มเมนู (คงหน้าโล่งตามเดิม) */}
-          <TvBoard onOpenMenu={role === 'display' ? null : () => setTvNavOpen(true)} />
+          <TvBoard onOpenMenu={tvShell ? null : () => setTvNavOpen(true)} />
         </Suspense>
-        {role !== 'display' && (
+        {!tvShell && (
           <Sidebar
             isOpen={tvNavOpen}
             onClose={() => setTvNavOpen(false)}
@@ -1932,9 +1942,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
       )}
       <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg)' }}>
         {/* มือถือ: ☰ ย้ายไปแถบล่าง (นิ้วโป้งถึง · ไม่ลอยทับเนื้อหา) — จอคอมเหมือนเดิม (docs/MOBILE-UX-STANDARD.md §3) */}
-        {!isMobile && <ToggleBtn isOpen={isOpen} onClick={() => setIsOpen(true)} />}
-        <NotificationBell userId={userId} role={role} />
-        <MobileNavBar role={role} onOpenMenu={() => setIsOpen(true)} onOpenSearch={() => setPaletteOpen(true)} />
+        {!isMobile && !tvShell && <ToggleBtn isOpen={isOpen} onClick={() => setIsOpen(true)} />}
+        {!tvShell && <NotificationBell userId={userId} role={role} />}
+        {!tvShell && <MobileNavBar role={role} onOpenMenu={() => setIsOpen(true)} onOpenSearch={() => setPaletteOpen(true)} />}
         {/* บอกว่า "ยังเลื่อนลงได้อีก" — มือถือไม่มี scrollbar ให้เห็น (ครอบทั้งหน้าเพจและ modal) */}
         <ScrollHint />
         <Suspense fallback={null}>
@@ -1947,35 +1957,37 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
           </Suspense>
         )}
         {rotator}
+        {!tvShell && (
         <Sidebar
-          isOpen={isOpen}
-          onClose={() => setIsOpen(false)}
-          onLogout={handleLogout}
-          theme={theme}
-          onToggleTheme={onToggleTheme}
-          userRole={role}
-          userLineId={userLineId}
-          userPosition={userPosition}
-          userEmail={userEmail}
-          userFullName={userFullName}
-          userSignatureUrl={userSignatureUrl}
-          userAvatarUrl={userAvatarUrl}
-          remoteCode={remoteCode}
-          onToggleRemote={onToggleRemote}
-          onOpenPalette={() => setPaletteOpen(true)}
-          pinned={railPinned}
-          onTogglePin={toggleRailPin}
-          realRole={realRole}
-          onOpenViewAs={realRole === 'admin' ? () => setViewAsOpen(true) : undefined}
-          onAvatarSaved={onAvatarSaved}
-        />
+            isOpen={isOpen}
+            onClose={() => setIsOpen(false)}
+            onLogout={handleLogout}
+            theme={theme}
+            onToggleTheme={onToggleTheme}
+            userRole={role}
+            userLineId={userLineId}
+            userPosition={userPosition}
+            userEmail={userEmail}
+            userFullName={userFullName}
+            userSignatureUrl={userSignatureUrl}
+            userAvatarUrl={userAvatarUrl}
+            remoteCode={remoteCode}
+            onToggleRemote={onToggleRemote}
+            onOpenPalette={() => setPaletteOpen(true)}
+            pinned={railPinned}
+            onTogglePin={toggleRailPin}
+            realRole={realRole}
+            onOpenViewAs={realRole === 'admin' ? () => setViewAsOpen(true) : undefined}
+            onAvatarSaved={onAvatarSaved}
+          />
+        )}
         {viewAsBanner}
         {viewAsModal}
 
         <main style={{
           flex: 1,
           marginLeft,
-          minHeight: '100vh',
+          minHeight: 'calc(100vh - var(--tvbar-h, 0px))',   // กรอบจอ TV: แถบบนกินที่ไปแล้ว (body padding-top)
           paddingTop: 14,
           background: 'var(--bg)',
           transition: 'margin-left 0.3s cubic-bezier(0.4,0,0.2,1)',
