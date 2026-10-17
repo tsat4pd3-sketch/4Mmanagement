@@ -176,7 +176,7 @@ export default function MachineFloorMap({
                   width: size, height: size, borderRadius: '50%',
                   /* 🔴 หมุดที่เลือก "คงสีสถานะเดิม" — เดิมเปลี่ยนขอบเป็นเขียว accent ⇒ หมุดแดงคลิกแล้วกลายเป็นเขียว
                      คนอ่านว่าสถานะเปลี่ยน (user ทัก 16/10) · บอกว่า "เลือกอยู่" ด้วยวงแหวนขาว + ขยายแทน */
-                  border: `${borderW}px solid ${vivid ? '#fff' : color}`,
+                  border: `${p.photo ? borderW + 1 : borderW}px solid ${vivid && !p.photo ? '#fff' : color}`,
                   background: vivid ? color : 'rgba(10,15,11,0.82)',
                   boxShadow: d ? '0 0 12px rgba(61,214,92,0.8)'
                     : sel ? `0 0 0 3px #fff, 0 0 0 6px rgba(0,0,0,0.55), 0 0 14px ${color}`
@@ -187,7 +187,13 @@ export default function MachineFloorMap({
                   // dim (ไม่เข้าฟิลเตอร์แผนก) ต้องจางจนเห็นชัดว่าถูกกรองออก — 0.28 เดิมแยกไม่ออกจากจุดปกติ
                   opacity: p.dim ? 0.1 : (d ? 0.92 : 1), zIndex: (sel || d) ? 15 : 5,
                 }}>
-                <span style={{ fontSize: iconFont, lineHeight: 1 }}>{p.icon || '⚙️'}</span>
+                {/* 👷 รูปคน (แท็บคนบนผังรวม · 16/10) — สถานะอยู่ที่ขอบวง (border สีสถานะ) แทนพื้นวง */}
+                {p.photo
+                  ? <img src={p.photo} alt="" loading="lazy" style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover', display: 'block', pointerEvents: 'none' }} />
+                  : <span style={{ fontSize: iconFont, lineHeight: 1 }}>{p.icon || '⚙️'}</span>}
+                {p.badge != null && (
+                  <span style={{ position: 'absolute', bottom: -5, right: -7, minWidth: 16, height: 16, padding: '0 4px', borderRadius: 8, background: '#111', border: `1.5px solid ${color}`, color: '#fff', fontSize: 11, fontWeight: 800, lineHeight: '13px', textAlign: 'center', pointerEvents: 'none' }}>{p.badge}</span>
+                )}
 
                 {editable && (
                   <div onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onMarkerRemove?.(p.id) }}

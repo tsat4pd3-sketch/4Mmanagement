@@ -1,7 +1,7 @@
 // เทส lineLens — แท็บบนผังรวม = เลนส์มองไลน์ (2026-10-16)
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { storySectionsFor, mapLensOf, markerFor, dtByMachine, dtWithoutMachine, STORY_SECTIONS, NO_DATA_COLOR, DT_COLOR } from '../lineLens.js'
+import { storySectionsFor, mapLensOf, markerFor, dtByMachine, dtWithoutMachine, STORY_SECTIONS, NO_DATA_COLOR, DT_COLOR, stationMarker } from '../lineLens.js'
 
 const META = {
   overdue: { label: 'เกินกำหนด', color: '#e05c4a', order: 0 },
@@ -23,7 +23,9 @@ test('ผังเครื่องคู่เฉพาะแท็บที�
   assert.equal(mapLensOf('breakdown'), 'breakdown')
   assert.equal(mapLensOf('health'), 'health')
   assert.equal(mapLensOf('energy'), null)
-  assert.equal(mapLensOf('people'), null)
+  assert.equal(mapLensOf('people'), 'people')
+  assert.equal(mapLensOf('productivity'), 'productivity')
+  assert.equal(mapLensOf('oee'), null)
 })
 
 test('หมุด PM = สถานะ PM ไม่ใช่ breakdown · AM แยกจากช่าง · ไม่มีแผน = เทา', () => {
@@ -54,4 +56,14 @@ test('dtByMachine ยุบรูปแบบเลขเครื่อง · �
   const g = [...m.values()][0]
   assert.equal(g.mins, 47); assert.equal(g.open, true); assert.equal(g.count, 2)
   assert.equal(dtWithoutMachine(rows), 1)
+})
+
+test('จุดงาน: ไม่มีคนประจำ / ยังไม่เช็คชื่อ ≠ ขาด · ไม่ตั้งทักษะ ≠ ผ่าน · ตัดสินจากคนที่อ่อนสุด', () => {
+  assert.equal(stationMarker([]).state, 'no_one')
+  assert.equal(stationMarker([{ is_present: null }]).state, 'not_checked')
+  assert.equal(stationMarker([{ is_present: false }, { is_present: null }]).state, 'empty')
+  assert.equal(stationMarker([{ is_present: true, fit: null }]).state, 'no_req')
+  assert.equal(stationMarker([{ is_present: true, fit: { score: 100 } }]).state, 'fit')
+  assert.equal(stationMarker([{ is_present: true, fit: { score: 100 } }, { is_present: true, fit: { score: 40 } }]).state, 'low')
+  assert.equal(stationMarker([{ is_present: true, fit: { score: 67 } }, { is_present: false, fit: { score: 0 } }]).state, 'partial')
 })

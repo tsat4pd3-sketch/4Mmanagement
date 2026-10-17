@@ -46,6 +46,7 @@ import { uploadOpts } from '../utils/storageUpload';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
 import LineLensMap, { MachineDetailCard } from '../components/LineLensMap';
+import LineOrderBoard, { OrderDetailCard } from '../components/LineOrderBoard';
 import Segmented from '../components/Segmented';   // 🗺️ ผังเครื่องจักรคู่กล่องรายละเอียดไลน์ (2026-10-16)
 import useIsMobile from '../utils/useIsMobile';
 import { storySectionsFor, mapLensOf } from '../utils/lineLens';
@@ -3144,7 +3145,6 @@ export default function FactoryMap({ setupMode = false }) {
       {/* ── การ์ดพรีวิวลอยตามเม้าส์ (hover) — สรุปทุกมุมมองแบบย่อ, เฉพาะ mouse ── */}
       {hoverLine && !editing && !detailLine && (() => {
         const st = stOf(hoverLine); const kids = childrenOf[hoverLine] || []; const meta = CAT[M.cat(st)];
-        const hasFloor = !!floorMapTarget(hoverLine);
         const W = 264, OFF = 18;
         const vw = typeof window !== 'undefined' ? window.innerWidth : 1280;
         const vh = typeof window !== 'undefined' ? window.innerHeight : 800;
@@ -3270,7 +3270,7 @@ export default function FactoryMap({ setupMode = false }) {
               </div>
             )}
             <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 9, textAlign: 'center', fontWeight: 700 }}>
-              {hasFloor ? '🏭 คลิกเพื่อเปิดผังไลน์ + พนักงาน' : 'คลิกเพื่อดูรายละเอียด + แยกไลน์ย่อย'}
+              คลิกเพื่อดูรายละเอียด{M?.label && metric !== 'health' ? ` เรื่อง ${M.label}` : ''} + ผังของไลน์
             </div>
           </div>
         );
@@ -3389,7 +3389,6 @@ export default function FactoryMap({ setupMode = false }) {
                   )}
                 </div>
                 <div style={{ display: 'flex', gap: 7, flexShrink: 0 }}>
-                  <button onClick={() => openFloorMap(storyLine)} style={{ ...miniTab(false), whiteSpace: 'nowrap' }}>🏭 ผังไลน์ + พนักงาน</button>
                   <button onClick={() => setStoryLine(null)} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, width: 32, height: 32, cursor: 'pointer', color: 'var(--text2)', fontSize: 15 }}>✕</button>
                 </div>
               </div>
@@ -3399,17 +3398,27 @@ export default function FactoryMap({ setupMode = false }) {
                 : { overflowY: 'auto', padding: '16px 20px 20px' }}>
               {showMap && (
                 <div style={{ minWidth: 0, overflowY: isMobile ? 'visible' : 'auto', marginBottom: isMobile ? 16 : 0 }}>
-                  <LineLensMap lineName={storyLine} family={familyNames(storyLine)} parentName={parentOf[storyLine] || null}
-                    lens={lens} dtRows={story?.dtUnplanned || null} height={isMobile ? '360px' : 'clamp(300px, calc(92vh - 360px), 760px)'}
-                    onSelectMachine={isMobile ? undefined : setLensSel} />
+                  {/* 📦 ยอดผลิต = บอร์ด Heijunka ของไลน์ · 👷 คน = ผังจุดงาน+คนประจำ (user 16/10 — ปุ่ม "ผังไลน์+พนักงาน" ไม่จำเป็นแล้ว) */}
+                  {lens === 'productivity' ? (
+                    <LineOrderBoard lineName={storyLine} family={familyNames(storyLine)} date={storyDate} lines={lines}
+                      height={isMobile ? undefined : 'calc(92vh - 300px)'} onSelectCard={isMobile ? undefined : setLensSel} />
+                  ) : (
+                    <LineLensMap lineName={storyLine} family={familyNames(storyLine)} parentName={parentOf[storyLine] || null}
+                      lens={lens} dtRows={story?.dtUnplanned || null} height={isMobile ? '360px' : 'clamp(300px, calc(92vh - 360px), 760px)'}
+                      date={storyDate} lineIds={lens === 'people' ? lines.filter(l => familyNames(storyLine).includes(l.name)).map(l => l.id) : undefined}
+                      onSelectMachine={isMobile ? undefined : setLensSel} />
+                  )}
+                  {lens === 'people' && floorMapTarget(storyLine) && (
+                    <button onClick={() => openFloorMap(storyLine)} style={{ ...miniTab(false), fontSize: 11.5, padding: '3px 10px', marginTop: 8 }}>↗ เปิดผังคนเต็มจอ (OT · PPE · กะ)</button>
+                  )}
                 </div>
               )}
               <div style={showMap && !isMobile ? { minWidth: 0, overflowY: 'auto' } : undefined}>
                 {/* เครื่องที่คลิกบนผัง — ติดหัวคอลัมน์ขวา (sticky) · มือถือการ์ดอยู่ใต้ผังใน LineLensMap เอง */}
                 {showMap && !isMobile && lensSel && (
                   <div style={{ position: 'sticky', top: 0, zIndex: 2, background: 'var(--card)', paddingBottom: 10, marginBottom: 6 }}>
-                    <MachineDetailCard m={lensSel} lens={lens} />
-                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>คลิกหมุดเดิมอีกครั้งเพื่อปิด</div>
+                    {lens === 'productivity' ? <OrderDetailCard c={lensSel} /> : <MachineDetailCard m={lensSel} lens={lens} />}
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>{lens === 'productivity' ? 'คลิกใบเดิมอีกครั้งเพื่อปิด' : 'คลิกหมุดเดิมอีกครั้งเพื่อปิด'}</div>
                   </div>
                 )}
                 {storyLoading ? (

@@ -12,23 +12,28 @@ import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../supabaseClient';
 import MachineFloorMap from './MachineFloorMap';
 import { loadLineMachines } from '../lib/lineMachineMap';
+import { loadLinePeople } from '../lib/linePeopleMap';
 import { STATUS_META } from '../lib/pmSchedule';
 import { machineKey } from '../utils/machineNo';
-import { markerFor, dtByMachine, dtWithoutMachine, LENS_LABEL, DT_COLOR, NO_DATA_COLOR } from '../utils/lineLens';
+import { markerFor, dtByMachine, dtWithoutMachine, stationMarker, STATION_META, LENS_LABEL, DT_COLOR, NO_DATA_COLOR } from '../utils/lineLens';
 
 const LEGEND = {
   pm: [['overdue', STATUS_META.overdue], ['due_soon', STATUS_META.due_soon], ['ok', STATUS_META.ok], ['never', STATUS_META.never], ['no_plan', { label: 'ไม่มีแผน PM', color: NO_DATA_COLOR }]],
   am: [['overdue', STATUS_META.overdue], ['due_soon', STATUS_META.due_soon], ['ok', STATUS_META.ok], ['no_plan', { label: 'ไม่มีแผน AM', color: NO_DATA_COLOR }]],
   breakdown: [['open', { label: 'กำลังหยุด', color: DT_COLOR.open }], ['had', { label: 'หยุดในวันนั้น', color: DT_COLOR.had }], ['none', { label: 'ไม่มีหยุดนอกแผน', color: DT_COLOR.none }]],
+  people: Object.entries(STATION_META),
   health: [['open', { label: 'กำลังหยุด', color: DT_COLOR.open }], ['overdue', { label: 'PM เกินกำหนด', color: STATUS_META.overdue.color }], ['had', { label: 'หยุดในวันนั้น', color: DT_COLOR.had }], ['due_soon', { label: 'PM ใกล้ครบ', color: STATUS_META.due_soon.color }], ['ok', { label: 'ปกติ', color: DT_COLOR.none }]],
 };
 
 /**
  * @param {{ lineName:string, family:string[], parentName:string|null, lens:'pm'|'am'|'breakdown'|'health',
- *           dtRows:object[]|null, height?:string }} p
+ *           dtRows:object[]|null, height?:string, date?:string, lineIds?:string[] }} p
  *   family = ไลน์นี้ + ไลน์ลูกทั้งหมด · dtRows = DT นอกแผนของวันที่เปิดดู ({machine, mins, open})
+ *   เลนส์ `people` = หมุดจุดงาน + รูปคนประจำจุดของวัน `date` (`lib/linePeopleMap.js`) · lineIds = id ไลน์ในครอบครัว
  */
-export default function LineLensMap({ lineName, family, parentName, lens, dtRows, height, onSelectMachine }) {
+export default function LineLensMap({ lineName, family, parentName, lens, dtRows, height, onSelectMachine, date, lineIds }) {
+  const isPeople = lens === 'people';
+  const lineIdKey = (lineIds || []).join('|');
   const [pick, setPick] = useState(null);          // ไลน์ลูกที่เลือกดูผัง (กรณีไลน์นี้ไม่มีผังของตัวเอง)
   const [state, setState] = useState({ loading: true });
   const [selId, setSelId] = useState(null);
@@ -36,7 +41,7 @@ export default function LineLensMap({ lineName, family, parentName, lens, dtRows
   const famKey = (family || []).join('|');
 
   useEffect(() => { setPick(null); setSelId(null); }, [lineName]);
-  useEffect(() => { setSelId(null); }, [pick]);
+  useEffect(() => { setSelId(null); }, [pick, isPeople]);
 
   useEffect(() => {
     let alive = true;
@@ -55,6 +60,11 @@ export default function LineLensMap({ lineName, family, parentName, lens, dtRows
         if (!image) { if (alive) setState({ loading: false, image: null, choices }); return; }
         // หมุดที่อยู่บนรูปนี้ = ไลน์ฐาน + ไลน์ลูกที่ไม่มีผังของตัวเอง (ลูกที่มีผังเองพิกัดอ้างรูปของมัน)
         const pointLines = pick ? [pick] : fam.filter(n => n === lineName || !imgOf[n]);
+        if (isPeople) {
+          const { stations, unplaced } = await loadLinePeople(pointLines, date, lineIdKey ? lineIdKey.split('|') : []);
+          if (alive) setState({ loading: false, image, choices, stations, unplaced });
+          return;
+        }
         const { points, info } = await loadLineMachines(pointLines);
         if (alive) setState({ loading: false, image, choices, points, info });
       } catch (e) {
@@ -62,15 +72,23 @@ export default function LineLensMap({ lineName, family, parentName, lens, dtRows
       }
     })();
     return () => { alive = false; };
-  }, [lineName, famKey, parentName, pick]);
+  }, [lineName, famKey, parentName, pick, isPeople, date, lineIdKey]);
 
   const dtMap = useMemo(() => dtByMachine(dtRows || []), [dtRows]);
-  const markers = useMemo(() => (state.points || []).map(p => {
+  const markers = useMemo(() => isPeople ? (state.stations || []).map(st => {
+    const m = stationMarker(st.people);
+    const here = st.people.filter(p => p.is_present === true);
+    const face = (here.find(p => p.image_url) || (!here.length && st.people.find(p => p.image_url)))?.image_url || null;
+    return { id: st.id, pos_top: st.pos_top, pos_left: st.pos_left, label: st.station_name,
+      sub: here.length ? `${here.map(p => p.name).slice(0, 2).join(', ')}${here.length > 2 ? ` +${here.length - 2}` : ''}` : m.label,
+      color: m.color, photo: face, icon: here.length ? '👷' : '⚪', badge: here.length > 1 ? here.length : null,
+      alwaysLabel: false, blink: false, _state: m.state, _sub: m.label, _station: st, _no: st.station_name };
+  }) : (state.points || []).map(p => {
     const inf = state.info?.[p.machine_no] || { name: '', checklists: [] };
     const m = markerFor(lens, { checklists: inf.checklists, dt: dtMap.get(machineKey(p.machine_no)) || null, statusMeta: STATUS_META });
     return { id: p.id, pos_top: p.pos_top, pos_left: p.pos_left, label: p.machine_no, sub: m.sub, color: m.color,
       /* ป้ายโผล่เฉพาะหมุดที่เลือก — สถานะดูจากสีหมุด */ alwaysLabel: false, blink: m.blink, _state: m.state, _name: inf.name, _cls: inf.checklists, _no: p.machine_no };
-  }), [state.points, state.info, lens, dtMap]);
+  }), [isPeople, state.stations, state.points, state.info, lens, dtMap]);
 
   const counts = useMemo(() => {
     const c = {}; markers.forEach(m => { c[m._state] = (c[m._state] || 0) + 1; }); return c;
@@ -90,7 +108,7 @@ export default function LineLensMap({ lineName, family, parentName, lens, dtRows
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)' }}>🗺️ ผังเครื่องจักร · {LENS_LABEL[lens]}</span>
+        <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)' }}>🗺️ {isPeople ? 'ผังจุดงาน' : 'ผังเครื่องจักร'} · {LENS_LABEL[lens]}</span>
         {pick && <span style={{ fontSize: 11, color: 'var(--muted)' }}>ผังของ {pick}</span>}
       </div>
       {state.choices?.length > 0 && (
@@ -100,9 +118,9 @@ export default function LineLensMap({ lineName, family, parentName, lens, dtRows
         </div>
       )}
       {state.loading ? (
-        <div style={box}>กำลังโหลดผังเครื่องจักร…</div>
+        <div style={box}>กำลังโหลดผัง{isPeople ? 'จุดงาน' : 'เครื่องจักร'}…</div>
       ) : state.error ? (
-        <div style={{ ...box, borderColor: '#ef4444', color: '#ef4444' }}>⚠ โหลดผังเครื่องจักรไม่สำเร็จ — {state.error}</div>
+        <div style={{ ...box, borderColor: '#ef4444', color: '#ef4444' }}>⚠ โหลดผัง{isPeople ? 'จุดงาน/คน' : 'เครื่องจักร'}ไม่สำเร็จ — {state.error}</div>
       ) : !state.image ? (
         <div style={box}>
           ไลน์นี้ยังไม่มีผังเลย์เอาต์{state.choices?.length ? ' — เลือกไลน์ย่อยด้านบนเพื่อดูผังของมัน' : ' — อัปโหลดผังที่หน้า ตั้งค่าไลน์ (/linesetup)'}
@@ -114,7 +132,7 @@ export default function LineLensMap({ lineName, family, parentName, lens, dtRows
         {markers.length > 0 && (
           <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', fontSize: 11.5, color: 'var(--muted)' }}>
             <button onClick={() => setCrop(v => !v)} style={chip(crop)}>{crop ? '✂️ ครอปเฉพาะโซนที่มีหมุด' : '🗺️ ทั้งผัง'}</button>
-            <span>คลิกหมุดเพื่อดูชื่อ + รายละเอียดเครื่อง</span>
+            <span>{isPeople ? 'คลิกจุดงานเพื่อดูคน + ทักษะ' : 'คลิกหมุดเพื่อดูชื่อ + รายละเอียดเครื่อง'}</span>
           </div>
         )}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px', fontSize: 11.5 }}>
@@ -124,7 +142,10 @@ export default function LineLensMap({ lineName, family, parentName, lens, dtRows
             </span>
           ))}
         </div>
-        {!markers.length && <div style={{ fontSize: 11.5, color: '#f59e0b' }}>⚠ ยังไม่ได้วางหมุดเครื่องบนผังนี้ — วางที่หน้า ตั้งค่าไลน์ (/linesetup)</div>}
+        {!markers.length && <div style={{ fontSize: 11.5, color: '#f59e0b' }}>⚠ ยังไม่ได้วาง{isPeople ? 'จุดงาน' : 'หมุดเครื่อง'}บนผังนี้ — วางที่หน้า ตั้งค่าไลน์ (/linesetup)</div>}
+        {isPeople && state.unplaced?.length > 0 && (
+          <div style={{ fontSize: 11.5, color: '#f59e0b' }}>⚠ มาทำงานแต่ยังไม่ถูกวางจุด {state.unplaced.length} คน: {state.unplaced.slice(0, 6).map(u => u.name).join(', ')}{state.unplaced.length > 6 ? ' …' : ''} — ไม่อยู่บนผัง</div>
+        )}
         {dtOffMap > 0 && <div style={{ fontSize: 11.5, color: '#f59e0b' }}>⚠ Downtime {dtOffMap} รายการวางบนผังไม่ได้ (ไม่ระบุเครื่อง หรือเครื่องนั้นไม่มีหมุด) — ดูในรายการด้านข้าง</div>}
         {sel && !onSelectMachine && <MachineDetailCard m={sel} lens={lens} />}
       </>)}
@@ -135,6 +156,7 @@ export default function LineLensMap({ lineName, family, parentName, lens, dtRows
 /** การ์ดรายละเอียดเครื่องที่คลิก — แยกออกมาให้หน้าแม่วางในคอลัมน์ขวาได้ (กดหมุดแล้วผังไม่ดันตัวเองขึ้นลง · 16/10) */
 export function MachineDetailCard({ m, lens, onClose }) {
   if (!m) return null;
+  if (m._station) return <StationDetailCard m={m} onClose={onClose} />;
   return (
           <div style={{ background: 'var(--bg3)', border: `1px solid ${m.color}66`, borderLeft: `4px solid ${m.color}`, borderRadius: 9, padding: '8px 10px', fontSize: 12 }}>
             <div style={{ fontWeight: 800, color: 'var(--text)', display: 'flex', gap: 8, alignItems: 'flex-start' }}><span style={{ flex: 1, minWidth: 0 }}>⚙️ {m._no}{m._name ? ` · ${m._name}` : ''} — <span style={{ color: m.color }}>{m.sub}</span></span>{onClose && <button onClick={onClose} title="ปิด" style={{ background: 'transparent', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, lineHeight: 1 }}>✕</button>}</div>
@@ -156,6 +178,48 @@ export function MachineDetailCard({ m, lens, onClose }) {
               );
             })()}
           </div>
+  );
+}
+
+/** 👷 จุดงานที่คลิก — คนประจำจุด (วันนี้ถูกวาง / จุดประจำ) + ทักษะที่จุดต้องการ ผ่าน-ไม่ผ่าน */
+function StationDetailCard({ m, onClose }) {
+  const st = m._station;
+  const shTxt = (v) => v === 'day' ? '☀️' : v === 'night' ? '🌙' : '';
+  const attTxt = (p) => p.is_present === true ? 'มา' : p.is_present === false ? 'ขาด' : 'ยังไม่เช็คชื่อ';
+  return (
+    <div style={{ background: 'var(--bg3)', border: `1px solid ${m.color}66`, borderLeft: `4px solid ${m.color}`, borderRadius: 9, padding: '8px 10px', fontSize: 12, display: 'grid', gap: 6 }}>
+      <div style={{ fontWeight: 800, color: 'var(--text)', display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+        <span style={{ flex: 1, minWidth: 0 }}>📍 {st.station_name}{st.line_name ? ` · ${st.line_name}` : ''} — <span style={{ color: m.color }}>{m._sub}</span></span>
+        {onClose && <button onClick={onClose} title="ปิด" style={{ background: 'transparent', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, lineHeight: 1 }}>✕</button>}
+      </div>
+      <div style={{ color: 'var(--muted)' }}>
+        ทักษะที่จุดต้องการ: {st.reqs.length ? st.reqs.map(r => `${r.skill_name} ≥${r.min_score}`).join(' · ') : 'ยังไม่ตั้ง (ตั้งที่ ตั้งค่าไลน์)'}
+      </div>
+      {!st.people.length && <div style={{ color: 'var(--muted)' }}>ยังไม่มีคนประจำจุดนี้ และวันนี้ไม่มีใครถูกวางที่จุดนี้</div>}
+      {st.people.map(p => {
+        const lv = p.fit ? (p.fit.score >= 100 ? '#22c55e' : p.fit.score >= 50 ? '#f59e0b' : '#f97316') : 'var(--muted)';
+        return (
+          <div key={`${p.source}-${p.id}`} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', opacity: p.is_present === false ? 0.6 : 1 }}>
+            {p.image_url
+              ? <img src={p.image_url} alt="" loading="lazy" style={{ width: 34, height: 34, borderRadius: '50%', objectFit: 'cover', flexShrink: 0, border: `2px solid ${lv}` }} />
+              : <span style={{ width: 34, height: 34, borderRadius: '50%', background: 'var(--bg2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>👤</span>}
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={{ fontWeight: 700, color: 'var(--text)' }}>{p.name} <span style={{ fontWeight: 500, color: 'var(--muted)' }}>{shTxt(p.shift)} {attTxt(p)} · {p.source === 'today' ? 'วางจุดวันนี้' : 'จุดประจำ'}</span>{p.ppeBad && <span style={{ color: '#ef4444' }}> · ⚠PPE</span>}</div>
+              {p.fit ? (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 8px', marginTop: 2 }}>
+                  <b style={{ color: lv }}>ผ่าน {p.fit.passed}/{p.fit.total}</b>
+                  {p.fit.details.map(d => (
+                    <span key={d.skill_name} style={{ color: d.pass ? 'var(--text2)' : '#f97316' }}>
+                      {d.pass ? '✓' : '✗'} {d.skill_name} {d.assessed ? d.actual : 'ยังไม่ประเมิน'}/{d.required}
+                    </span>
+                  ))}
+                </div>
+              ) : <div style={{ color: 'var(--muted)' }}>จุดยังไม่ตั้งทักษะ — ประเมินความเหมาะไม่ได้</div>}
+            </div>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
