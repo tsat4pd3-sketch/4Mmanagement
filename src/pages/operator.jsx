@@ -23,7 +23,7 @@ import { positionOptionsWith, gradeCodesOfPosition } from '../utils/positions';
 import { loadGrades, gradesSync, gradeFitsPosition, gradeRow } from '../utils/grades';   // 🎓 เกรดตามผังองค์กรทางการ
 import { buildLaborMap, laborTypeOf, laborMeta, LABOR_META } from '../utils/laborType';
 import { SKILL_LEVELS, SKILL_GATES, getLevel, getBandCeiling, SKILL_CAT_META_FULL, SKILL_EDIT_CAP } from '../utils/skillLevels';
-import { loadDivisions, divisionsSync, divisionOfEmployee, skillInScope, skillScopeLabel, scopeUnitsForDivision } from '../utils/orgDivisions';
+import { loadDivisions, divisionsSync, divisionOfEmployee, skillInScope, skillScopeLabel, scopeUnitsForDivision, costCenterOfNode } from '../utils/orgDivisions';
 import { pickUnusedColor } from '../utils/colorPick';
 import { teamLabel } from '../utils/shiftAssign';
 import PageHeader from '../components/PageHeader';
@@ -248,12 +248,12 @@ export default function Operator() {
     // ⚠️ ต้อง select `division` ด้วย — ใช้ไล่หา "ฝ่าย" ของพนักงานแบบตกทอดจาก node แม่
     //    (คอลัมน์ใหม่ 2026-08-18 · ถ้ายังไม่ apply migration จะได้ undefined = ทุกสกิลเป็นของทุกฝ่าย
     //     ซึ่งคือพฤติกรรมเดิมเป๊ะ ไม่พัง)
-    supabase.from('org_nodes').select('id, code, name, kind, parent_id, labor_type, ref_line_id, division, sort_order').eq('is_active', true)
+    supabase.from('org_nodes').select('id, code, name, kind, parent_id, labor_type, ref_line_id, division, cost_center, sort_order').eq('is_active', true)
       .then(({ data, error }) => {
         if (!alive) return;
         // คอลัมน์ division ยังไม่มี (42703) → ถอยไป select ชุดเดิม อย่าให้ทั้งหน้าพัง
         if (error) {
-          supabase.from('org_nodes').select('id, code, name, kind, parent_id, labor_type, ref_line_id, sort_order').eq('is_active', true)
+          supabase.from('org_nodes').select('id, code, name, kind, parent_id, labor_type, ref_line_id, cost_center, sort_order').eq('is_active', true)
             .then(({ data: d2 }) => { if (alive) applyOrgNodes([...(d2 || [])].sort(orgNodeCompare)); });
           return;
         }
@@ -865,6 +865,10 @@ export default function Operator() {
     orgLineNodes.forEach(g => [g.name, g.code].filter(Boolean).forEach(v => s.add(String(v).trim().toLowerCase())));
     return s;
   }, [orgLineNodes]);
+  /** ชื่อไลน์ที่มีจริงในทะเบียน `production_lines` — กลุ่มที่ตรงกับตัวนี้ = ของจริง ไม่ใช่ข้อมูลผิด */
+  const lineNameKeys = useMemo(
+    () => new Set((lines || []).map(l => String(l?.name || '').trim().toLowerCase()).filter(Boolean)),
+    [lines]);
   // คืนเหตุผลที่ไม่ตรงผัง ([] = ตรงผัง) — ยังไม่โหลดผัง (ลิสต์ว่าง) ถือว่าตรงหมด กันเตือนผิดตอนเปิดหน้า
   const offOrgReasons = useMemo(() => (emp) => {
     if (!orgDeptNodes.length) return [];
@@ -873,7 +877,13 @@ export default function Operator() {
     if (!dep) r.push('ยังไม่ระบุแผนก');
     else if (!orgDeptKeys.has(dep.toLowerCase())) r.push(`แผนก "${dep}" ไม่มีในผัง`);
     const grp = String(emp.group_name || '').trim();
-    if (grp && orgLineNodes.length && !allOrgLineKeys.has(grp.toLowerCase())) r.push(`กลุ่ม "${grp}" ไม่มีในผัง`);
+    /* 🔴 กลุ่มที่ "มีอยู่จริงในทะเบียนไลน์" ไม่ใช่ข้อมูลผิด แม้ไม่อยู่ใต้แผนกตัวเอง (16/10 · user "group ก็มั่ว")
+       เคสจริง: QC ของแผนก QA ไปประจำไลน์ HYDROFORM ⇒ group=HYDROFORM ถูกต้องแล้ว
+       (สังกัด = QA · ที่ไปยืนทำงาน = HYDROFORM — คนละแกน หลักเดียวกับ staff_kind)
+       เดิมเช็คกับ `org_nodes kind='line'` อย่างเดียว ⇒ ขึ้น ⚠️ "ไม่มีในผัง" ทั้งที่ไลน์มีจริง
+       = worklist เต็มไปด้วยของที่ไม่ต้องแก้ แล้วคนเลิกเชื่อทั้งแถบ */
+    if (grp && orgLineNodes.length && !allOrgLineKeys.has(grp.toLowerCase())
+        && !lineNameKeys.has(grp.toLowerCase())) r.push(`กลุ่ม "${grp}" ไม่มีในผัง`);
     /* 🔴 คนหน้างานที่ไม่มี `line_id` = **หายจากหน้าเช็คชื่อ/ผังกำลังคนทั้งหมด** (จอพวกนั้นลิสต์คนด้วย line_id)
        ตั้ง "แผนก" อย่างเดียวไม่พอ — `line_id` มาจาก **กลุ่ม** (org_nodes kind='line' → `ref_line_id`)
        เคสจริง 05/10 (หัวหน้า PD2 แจ้งทาง LINE "เช็คชื่อพนักงานผมหายหมดเลย"): ตั้งแผนก Assembly Line D
@@ -886,7 +896,7 @@ export default function Operator() {
     if (!isShopfloorStaff(emp) && !emp.line_id && !emp.section)
       r.push('ยังไม่ผูกไลน์/ส่วนงาน — หัวหน้าที่ถูกจำกัดขอบเขตจะไม่เห็นในหน้าเช็คชื่อ');
     return r;
-  }, [orgDeptNodes, orgLineNodes, orgDeptKeys, allOrgLineKeys]);
+  }, [orgDeptNodes, orgLineNodes, orgDeptKeys, allOrgLineKeys, lineNameKeys]);
   // section ที่ผังยังไม่มีแผนกใต้มันเลย → พนักงาน section นั้น "แก้ผ่านฟอร์มไม่ได้" (ไม่มีตัวเลือกให้เลือก)
   // ต้องไปเพิ่มแผนก/กลุ่มที่ผังองค์กร (/org-setup) ก่อน — ต้องแยกให้เห็น ไม่งั้นสั่งให้ไปแก้แล้วแก้ไม่ได้
   const secWithoutDept = useMemo(() => {
@@ -1951,6 +1961,27 @@ export default function Operator() {
                   })()}
                 </div>
               </div>
+              {/* 💰 สังกัดทางบัญชี — Cost Center **เป็นของหน่วยงาน ไม่ใช่ของคน** (16/10 · คำขอ user)
+                  อ่านจากผังองค์กร (ตกทอดจากหน่วยแม่) · แก้ที่ /org-setup ที่เดียว
+                  🔴 ห้ามทำช่องให้พิมพ์ CC ลงตัวพนักงาน — คนย้ายหน่วย/ไปช่วยหน่วยอื่น CC จะไม่ตามเงียบๆ
+                     (กฎเดียวกับ Manpower Board: คนวิ่งข้ามแผนก cost center ยังเป็นของบ้านจริง) */}
+              {(() => {
+                const cc = costCenterOfNode(editingEmp.org_node_id, orgAllNodes);
+                const home = orgAllNodes.find(n => n.id === editingEmp.org_node_id);
+                return (
+                  <div style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--muted)', lineHeight: 1.6,
+                    background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 7, padding: '6px 9px' }}>
+                    💰 <b>สังกัดทางบัญชี</b> — หน่วยงาน{' '}
+                    <b style={{ color: 'var(--text)' }}>{home?.code || home?.name || '(ยังไม่ผูกหน่วยในผัง)'}</b>
+                    {' · '}Cost Center{' '}
+                    {cc.code
+                      ? <><b style={{ color: 'var(--text)', fontFamily: 'var(--font-display)' }}>{cc.code}</b>
+                          {cc.from && home && (cc.from !== (home.code || home.name)) && <span> (ตกทอดจาก {cc.from})</span>}</>
+                      : <span style={{ color: '#f59e0b' }}>ยังไม่ได้ตั้ง — ตั้งที่ /org-setup</span>}
+                    <div>แก้ที่ <b>ผังองค์กร (/org-setup)</b> — CC เป็นของหน่วยงาน คนที่สังกัดหน่วยนี้ได้รหัสเดียวกันทั้งหมด</div>
+                  </div>
+                );
+              })()}
               <div>
                 <label style={labelSt}>วันเริ่มงาน</label>
                 <input type="date" value={editingEmp.start_date || ''}
@@ -2110,6 +2141,16 @@ export default function Operator() {
                     ? skillDefs
                     : skillDefs.filter(sd => skillInScope(sd, { division: empDiv, section: empSec, department: editingEmp.department }) || isOwned(sd));
                   const hiddenCount = skillDefs.length - visibleSkillDefs.length;
+                  /* 🔴 ฝ่ายที่ยัง "ไม่มีสกิลของตัวเองเลย" ต้องเขียนบนจอ (16/10 · user "QC/QA แต่โชว์สกิลมั่ว")
+                     เคสจริง: QC แผนก QA (ฝ่ายวิศวกรรม) — ฝ่ายนี้มีสกิลของตัวเอง 0 ตัว
+                     ⇒ ที่ขึ้นมาคือ "สกิลกลาง" ล้วน ซึ่งบางตัวเป็นสกิลเครื่องจักรที่ยังไม่ได้ติดป้ายฝ่าย
+                     เดิมจอไม่บอกอะไรเลย คนอ่านนึกว่าระบบจับคู่สกิลให้ผิด · ไม่รู้ ≠ ไม่มี — ต้องบอกว่าทำไม */
+                  const ownDivCount = empDiv
+                    ? skillDefs.filter(sd => String(sd.scope_division || '').trim()
+                        && skillInScope(sd, { division: empDiv, section: empSec, department: editingEmp.department })).length
+                    : 0;
+                  const centralCount = skillDefs.filter(sd => !String(sd.scope_division || '').trim()
+                    && !String(sd.scope_section || '').trim()).length;
                   const empDivLabel = empDiv
                     ? (divisionsSync().find(d => d.code === empDiv)?.label || empDiv)
                     : null;
@@ -2128,6 +2169,12 @@ export default function Operator() {
                       {!empDiv && !showAllSkills && (
                         <span style={{ color: '#f59e0b' }} title="ไปติดป้ายฝ่ายให้ส่วนงาน/แผนกนี้ที่หน้าผังองค์กร">
                           ⚠️ ส่วนงานนี้ยังไม่ได้ติดป้ายฝ่าย — เห็นเฉพาะสกิลกลาง
+                        </span>
+                      )}
+                      {empDiv && ownDivCount === 0 && !showAllSkills && (
+                        <span style={{ color: '#f59e0b' }}
+                          title="ทะเบียนสกิลยังไม่มีตัวไหนติดป้ายฝ่ายนี้ไว้ — ตั้งที่หน้าทะเบียนสกิล (ช่อง 'ฝ่าย')">
+                          ⚠️ ฝ่าย{empDivLabel}ยังไม่มีสกิลของตัวเองเลย — ที่เห็นคือ<b>สกิลกลาง {centralCount} ตัว</b> (ใช้ร่วมทุกฝ่าย)
                         </span>
                       )}
                       {hiddenCount > 0 && !showAllSkills && (
