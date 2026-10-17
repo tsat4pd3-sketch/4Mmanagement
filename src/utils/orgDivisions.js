@@ -63,6 +63,25 @@ export function divisionOfNode(nodeId, orgNodes) {
   return null
 }
 
+/**
+ * Cost center ของ node หนึ่ง — ไม่ได้ตั้งเอง = **ตกทอดจากแม่** (กฎเดียวกับ `division`)
+ * คืน `{ code, from }` · `from` = ชื่อหน่วยที่เป็นเจ้าของรหัส (ตัวเอง หรือหน่วยแม่ที่ตกทอดมา)
+ * 🔴 ไม่เจอ = `{ code: null, from: null }` — "ไม่รู้" ไม่ใช่ "ไม่มี" ⇒ จอต้องเขียนว่ายังไม่ได้ตั้ง
+ * 🔴 **CC เป็นของ "หน่วยงาน" ไม่ใช่ของ "คน"** — ห้ามเพิ่มคอลัมน์ cost_center ที่ `employees`
+ *    (กฎเดียวกับ Manpower Board: คนไปช่วยหน่วยอื่น cost center ยังเป็นของบ้านจริง)
+ */
+export function costCenterOfNode(nodeId, orgNodes) {
+  if (!nodeId || !orgNodes?.length) return { code: null, from: null }
+  const byId = new Map(orgNodes.map(n => [n.id, n]))
+  let cur = byId.get(nodeId)
+  for (let i = 0; cur && i < 10; i++) {
+    const cc = String(cur.cost_center || '').trim()
+    if (cc) return { code: cc, from: cur.code || cur.name || null }
+    cur = cur.parent_id ? byId.get(cur.parent_id) : null
+  }
+  return { code: null, from: null }
+}
+
 /** ฝ่ายของพนักงาน 1 คน — ยึด section ก่อน ไม่มีค่อยดู department
  *  (ช่าง MTN/JIG/DIE และ QA อยู่แผนก "ขึ้นตรงฝ่าย" → section เป็น null โดยตั้งใจ) */
 export function divisionOfEmployee(emp, orgNodes) {
