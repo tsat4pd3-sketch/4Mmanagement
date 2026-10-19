@@ -26,6 +26,7 @@ import ProductSelect from '../components/ProductSelect';
 import useColumnHistory from '../utils/useColumnHistory'; // 📜 MAT ที่เคยบันทึกใน kanban_standards — Product Master ไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
 import useProductionLines, { loadLinesRes, LINE_COLUMNS } from '../utils/useProductionLines';
 // ทะเบียนลูกค้า/Supplier (DR customers · suppliers — 2026-09-08 single-source audit): แผง CRUD กลาง + picker กลาง
+import { masterDeleteGuard } from '../utils/masterRefs'; // ด่านนับปลายทางก่อนลบทะเบียนที่จับคู่ด้วยข้อความ — 2026-10-18
 import SimpleMasterPanel from '../components/SimpleMasterPanel';
 import SupplierSelect from '../components/SupplierSelect';
 import { invalidateCustomers } from '../utils/useCustomers';
@@ -1547,6 +1548,8 @@ export default function ProductMaster() {
           — ทะเบียนนี้เป็นเจ้าของ "สะกดหลัก" ให้ picker กลาง (CustomerSelect/SupplierSelect) · code สร้างจากชื่อ normalize อัตโนมัติ */}
       {mainTab === 'customers' && (
         <SimpleMasterPanel client={supabaseDR} table="customers" keyCol="code" canManage={canEdit}
+          /* ด่านนับปลายทางก่อนลบ (fail-closed) — ใบผลิต/ใบซ่อม/สินค้า/คัมบัง ฯลฯ เก็บชื่อนี้เป็น text ไม่ผูก FK */
+          onBeforeDelete={masterDeleteGuard(supabaseDR, 'customers')}
           stampCol="updated_by_name" stampName={fullName} onChanged={invalidateCustomers}
           title="🏷️ ทะเบียนลูกค้า"
           help="คอลัมน์ customer ของสินค้า/เอกสารเก็บชื่อนี้เป็น text · alias ใช้แม็ปสะกดเก่าเข้าชื่อหลัก · ปิดใช้ = ไม่โผล่ให้เลือกใหม่"
@@ -1559,6 +1562,7 @@ export default function ProductMaster() {
       )}
       {mainTab === 'suppliers' && (
         <SimpleMasterPanel client={supabaseDR} table="suppliers" keyCol="code" canManage={canEdit}
+          onBeforeDelete={masterDeleteGuard(supabaseDR, 'suppliers')}
           stampCol="updated_by_name" stampName={fullName} onChanged={invalidateSuppliers}
           title="🏭 ทะเบียน Supplier / ผู้รับจ้าง"
           help="ใช้กับช่อง Supplier ใน Parts Master · Packaging · Routing (จ้างนอก) · คลังอะไหล่ · NPI Tooling — คอลัมน์ปลายทางเก็บชื่อเป็น text · ชนิด (kind) ช่วยจัดลำดับตัวเลือกให้ตรงงาน · ปิดใช้ = ไม่โผล่ให้เลือกใหม่"
