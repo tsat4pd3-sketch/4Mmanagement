@@ -124,7 +124,9 @@ export const KPI_FORMULAS = [
   { key: 'rm_pct',        label: '%RM',         expr: 'raw_material ÷ sale_product × 100',        vars: ['raw_material', 'sale_product'],   unit: '%' },
   { key: 'p100_pct',      label: '100P %',      expr: 'cost_100p ÷ sale_product × 100',           vars: ['cost_100p', 'sale_product'],      unit: '%' },
   { key: 'inventory_day', label: 'DSI (วัน)',   expr: '(inventory_baht ÷ cogs) × days_in_month',      vars: ['inventory_baht', 'cogs', 'days_in_month'], unit: 'วัน' },
-  { key: 'sale_per_head', label: 'ยอดขาย/หัว (MB)', expr: 'sale_total ÷ manpower ÷ 1,000,000',    vars: ['sale_total', 'manpower'],         unit: 'MB' },
+  /* 19/10 ใบจริง "5.Manpower" แถว "Sale All / Head (All)" = **Accumulate Total Sale (ม.ค.→เดือนนี้) ÷ Total Head count (All) ของเดือนนั้น**
+     (เม.ย. 706.43 ÷ 392 = 1.802 · พ.ค. 887.45 ÷ 384 = 2.311 · ทั้งปี 2,118.70 ÷ 386 = 5.489 = เป้า) ⇒ ตัวตั้งสะสม YTD ไม่ใช่ยอดเดือนเดียว (`cum`) */
+  { key: 'sale_per_head', label: 'ยอดขาย/หัว (MB)', expr: 'Σ sale_total (ม.ค.→เดือนนี้) ÷ manpower ÷ 1,000,000', vars: ['sale_total', 'manpower'], cum: ['sale_total'], unit: 'MB' },
 ];
 
 export const formulaOf = (key) => KPI_FORMULAS.find(f => f.key === key) || null;
