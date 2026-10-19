@@ -25,6 +25,7 @@ import { DELIVER_GATES, PICK_GATES } from '../utils/replenishGate';
 import { slocCodeOfLine } from '../utils/storageLoc';
 import { buildReceiptRows, RECEIPT_LINE } from '../utils/stockReceipt';
 import { rawSourceLocOf, splitRawConsume } from '../utils/partRefStock';   // 📤 ตัดวัตถุดิบล็อตจากคลังที่ของอยู่จริง (2026-10-12)   // 📥 ของซื้อเข้าคลัง ไม่ใช่เข้าไลน์ (2026-10-01)   // 🏬 ชั้นบัญชี SAP — tag ใบ/ledger ตอนเขียน (2026-09-08)
+import { lotMatsOf } from '../utils/stockReceipts';   // 🔧 พาร์ทที่ยอดเข้าทางปิดล็อต = กฎรับเข้าโหมด lot (19/10)
 import { notifyEvent } from '../utils/notifyEvent';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
@@ -1673,17 +1674,17 @@ export default function HeijunkaKanban() {
   const loadRawLocOf = async (mats, consumingLine) => {
     const list = [...new Set((mats || []).map(m => String(m || '').trim()).filter(Boolean))];
     if (!list.length) return (m, qty) => [{ loc: consumingLine, qty: Number(qty) || 0 }];
-    const [pr, rr, lr, sr] = await Promise.all([
+    const [pr, rr, sr] = await Promise.all([
       supabaseDR.from('dr_products').select('mat_no, line_name, is_active, is_operation').in('mat_no', list),
-      supabaseDR.from('stock_inflow_rules').select('match_type, match_value, dest_line_name, is_active').eq('is_active', true),
-      supabaseDR.from('child_lot_requests').select('child_mat_no').in('child_mat_no', list).neq('status', 'cancelled').limit(1000),
+      supabaseDR.from('stock_inflow_rules').select('match_type, match_value, dest_line_name, is_active, mode').eq('is_active', true),
       supabaseDR.from('line_stock_summary').select('mat_no, qty_on_hand').eq('line_name', consumingLine).in('mat_no', list),
     ]);
-    const err = pr.error || rr.error || lr.error || sr.error;
+    const err = pr.error || rr.error || sr.error;
     if (err) throw new Error(`อ่านทะเบียนคลังของวัตถุดิบไม่ได้ (${err.message})`);
     const ctx = {
       consumingLine, products: pr.data || [], rules: rr.data || [], receiptLine: RECEIPT_LINE,
-      lotMats: new Set((lr.data || []).map(r => String(r.child_mat_no || '').trim())),
+      // ยอดเข้าทางปิดล็อต = กฎ MAT โหมด 🔧 (ตัวเดียวกับ trigger) ไม่ใช่ "เคยมีใบล็อต" (19/10)
+      lotMats: lotMatsOf(rr.data),
     };
     /* ของที่จ่ายเข้าไลน์ที่ใช้แล้ว (ยอดบวก) ใช้ก่อน — หักออกระหว่างแบ่งหลายใบในล็อตเดียว */
     const have = new Map((sr.data || []).map(r => [String(r.mat_no || '').trim(), parseFloat(r.qty_on_hand) || 0]));
