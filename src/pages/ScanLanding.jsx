@@ -15,6 +15,10 @@
    3. **หาไม่เจอต้องบอกว่าทำไม** (ป้ายชนิดไหน · รหัสอะไร) + ให้สแกนใหม่ได้ทันที
       ห้ามเด้งกลับหน้าแรกเงียบๆ — คนยืนอยู่หน้าเครื่อง ถือมือถือ ต้องรู้ว่าต้องทำอะไรต่อ
    4. **อ่านอย่างเดียว ไม่เขียนอะไรลง DB** — เป็นแค่ทางแยก ไม่ใช่หน้าทำงาน
+   5. **ทางเข้ากลาง "สแกนอะไรก็ได้"** (2026-10-19 · คำสั่ง user — QA ตรวจชิ้นงาน · AM · PM · อุปกรณ์)
+      ไม่ใช่เครื่อง/จิ๊ก/จุดส่ง ⇒ ลองเป็น **ใบผลิต (`prod_no`)** แล้ว **MAT/พาร์ท** (บาร์โค้ดคัมบัง/กล่อง)
+      → ปุ่ม ✅ ตรวจชิ้นงาน QA (`/qa?tab=sheet&part=`) · 🔎 สอบกลับ · ปุ่ม AM/PM แยกป้ายตาม `isAmTeam`
+      · ตัวแปลง/ตัดสินอยู่ `qrCode.js` ที่เดียว (`resolveProduct`/`findQaPartByScan`) ห้ามเทียบเองในหน้านี้
    ══════════════════════════════════════════════════════════════════════════ */
 import { useContext, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
@@ -25,8 +29,10 @@ import ScanModal from '../components/ScanModal';
 import { supabaseDR } from '../supabaseClient';
 import useMachines from '../utils/useMachines';
 import { canAccessPage } from '../utils/permissions';
-import { DEFAULT_TEAMS } from '../utils/pmTeams';
-import { parseQrPayload, resolveMachine, resolveJig, resolveDeliveryPoint, QR_KINDS } from '../utils/qrCode';
+import { DEFAULT_TEAMS, loadPmTeams } from '../utils/pmTeams';
+import { supabase } from '../supabaseClient';
+import MachineRepairHistory from '../components/MachineRepairHistory';
+import { parseQrPayload, resolveMachine, resolveJig, resolveDeliveryPoint, resolveProduct, QR_KINDS } from '../utils/qrCode';
 
 const card = {
   background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)',
@@ -58,7 +64,8 @@ export default function ScanLanding() {
   const { machines, loading: mLoading, failed: mFailed } = useMachines();
   const [jigs, setJigs] = useState(null);      // null = ยังไม่โหลด · [] = โหลดแล้วไม่มี
   const [jigErr, setJigErr] = useState(false);
-  const [rescan, setRescan] = useState(false);
+  // เปิดจากแถบล่าง 📷 (ยังไม่มีรหัส) = เปิดกล้องให้เลย ไม่ต้องแตะปุ่มซ้ำอีกที (2026-10-19)
+  const [rescan, setRescan] = useState(() => !(sp.get('c') || sp.get('code')));
 
   useEffect(() => {
     let alive = true;   // stale-response guard (กฎเขียน DB ข้อ 4)
@@ -130,13 +137,51 @@ export default function ScanLanding() {
       });
     return () => { alive = false; };
   }, [jigId]);
-  const teamLabel = (k) => DEFAULT_TEAMS.find(t => t.key === k)?.label || k;
+  /* ทีมจาก mtn_teams (data-driven) — ป้ายปุ่มต้องแยก AM (ผลิตตรวจเอง) กับ PM (ช่าง) ให้ขาด ด้วย `kind` ห้าม hardcode 'production' */
+  const [teams, setTeams] = useState(DEFAULT_TEAMS);
+  useEffect(() => { let alive = true; loadPmTeams().then(t => { if (alive && t?.length) setTeams(t); }); return () => { alive = false; }; }, []);
+  const teamOf = (k) => teams.find(t => t.key === k);
+  const teamLabel = (k) => teamOf(k)?.label || k;
+  const isAm = (k) => teamOf(k)?.kind === 'am';
+  const [showHist, setShowHist] = useState(false);
+
+  /* 📦 ไม่ใช่อุปกรณ์ ⇒ ลองเป็นใบผลิต / MAT (บาร์โค้ดคัมบัง-กล่อง) — ยิงเฉพาะตอนจำเป็น (กฎ egress)
+     null = ยังไม่ลอง/กำลังโหลด · { order, product, qaPart, err } */
+  const tryProduct = !!(scan && !loading && !(hit?.machine || hit?.jig || hit?.point)
+    && (scan.kind === null || scan.kind === 'product'));
+  const code = scan?.id || '';
+  const [prodHit, setProdHit] = useState(null);
+  useEffect(() => {
+    if (!tryProduct || !code) { setProdHit(null); return undefined; }
+    let alive = true;
+    setProdHit(null);
+    // ค่าใน .eq() ปลอดภัยต่อ comma/วงเล็บ (ไม่ได้ประกอบเป็นสตริง filter เอง)
+    Promise.all([
+      scan.kind === 'product' ? Promise.resolve({ data: [] })
+        : supabaseDR.from('prod_orders').select('prod_no, mat_no, part_name, status, production_sessions!inner(line_name, work_date, shift)')
+          .eq('prod_no', code).limit(1),
+      supabaseDR.from('dr_products').select('mat_no, p_no, part_name').eq('mat_no', code).limit(1),
+      supabase.from('qa_parts').select('id, mat_no, part_no, part_name, line_name').eq('is_active', true),
+    ]).then(([o, p, q]) => {
+      if (!alive) return;
+      const order = o.data?.[0] || null;
+      const matNo = order?.mat_no || p.data?.[0]?.mat_no || code;
+      const qaPart = q.error ? null : resolveProduct({ kind: 'product', id: matNo }, q.data || [])
+        || (order ? null : resolveProduct({ kind: 'product', id: code }, q.data || []));
+      setProdHit({
+        order, product: p.data?.[0] || null, qaPart,
+        err: [o.error && 'ใบผลิต', p.error && 'ทะเบียนสินค้า', q.error && 'มาตรฐานตรวจ QA'].filter(Boolean),
+      });
+    });
+    return () => { alive = false; };
+  }, [tryProduct, code, scan?.kind]);
+  const prodFound = !!(prodHit && (prodHit.order || prodHit.product || prodHit.qaPart));
   const pointHit = !found ? hit?.point : null;
 
   return (
     <Page>
-      <PageHeader icon="📷" title="สแกนป้ายอุปกรณ์"
-        subtitle="ส่อง QR ที่ติดเครื่อง แล้วเลือกได้เลยว่าจะทำอะไรกับเครื่องตัวนั้น" />
+      <PageHeader icon="📷" title="สแกนเข้างาน"
+        sub="ส่อง QR ที่ติดเครื่อง หรือบาร์โค้ดคัมบัง/ใบผลิต แล้วเลือกได้เลยว่าจะทำอะไร" />
 
       {!raw && (
         <div style={{ ...card, textAlign: 'center' }}>
@@ -176,13 +221,54 @@ export default function ScanLanding() {
         </div>
       )}
 
-      {raw && !loading && !found && !pointHit && (
+      {raw && !loading && !found && !pointHit && tryProduct && !prodHit && (
+        <div style={{ ...card, color: 'var(--muted)', fontSize: 13 }}>ไม่ใช่ป้ายอุปกรณ์ — กำลังค้นเป็นใบผลิต / MAT…</div>
+      )}
+
+      {raw && !loading && !found && !pointHit && prodFound && (() => {
+        const { order, product, qaPart } = prodHit;
+        const mat = order?.mat_no || product?.mat_no || qaPart?.mat_no || code;
+        const name = order?.part_name || product?.part_name || qaPart?.part_name || '';
+        const sess = order?.production_sessions;
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={card}>
+              <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 2 }}>
+                {order ? '📄 ใบผลิต' : '📦 สินค้า / พาร์ท'}
+              </div>
+              <div style={{ fontSize: 24, fontWeight: 900, lineHeight: 1.2, wordBreak: 'break-all' }}>{order ? order.prod_no : mat}</div>
+              <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 2 }}>
+                {[order && `MAT ${mat}`, name, sess && `${sess.line_name} · ${sess.work_date} ${sess.shift === 'night' ? 'กะดึก' : 'กะเช้า'}`].filter(Boolean).join(' · ')}
+              </div>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {canAccessPage('/qa', role) && (qaPart
+                ? <ActionLink to={`/qa?tab=sheet&part=${encodeURIComponent(qaPart.mat_no || qaPart.part_no)}`} icon="✅"
+                    label="ตรวจชิ้นงาน (ใบตรวจ QA)" sub={`เปิดใบตรวจของ ${qaPart.part_no || qaPart.mat_no} — วันงาน/กะปัจจุบัน`} tone="#22c55e" />
+                : <ActionLink to="/qa-setup" icon="📐" label="ยังไม่มีมาตรฐานการตรวจของพาร์ทนี้"
+                    sub="ตั้งจุดตรวจที่ มาตรฐานการตรวจ & Drawing ก่อน จึงจะเปิดใบตรวจได้" tone="var(--muted)" />)}
+              {canAccessPage('/order-trace', role) && (order
+                ? <ActionLink to={`/order-trace?prod=${encodeURIComponent(order.prod_no)}`} icon="🔎" label="สอบกลับใบผลิตนี้" sub="ทุกเหตุการณ์ของใบ — คน/เครื่อง/ของเสีย/4M" tone="#60a5fa" />
+                : <ActionLink to={`/order-trace?q=${encodeURIComponent(mat)}`} icon="🔎" label="ดูใบผลิตของพาร์ทนี้" sub="ค้นใบผลิตในช่วงวันล่าสุด" tone="#60a5fa" />)}
+            </div>
+            {prodHit.err.length > 0 && (
+              <div style={{ fontSize: 12, color: 'var(--red, #ef4444)' }}>⚠️ โหลด{prodHit.err.join(' · ')}ไม่สำเร็จ — ปุ่มบางอันอาจหายไปเพราะอ่านไม่ได้ ไม่ใช่เพราะไม่มี</div>
+            )}
+            <button onClick={() => setRescan(true)}
+              style={{ minHeight: 44, background: 'var(--bg3)', border: '1px solid var(--border2)', fontSize: 13 }}>
+              📷 สแกนป้ายอื่น
+            </button>
+          </div>
+        );
+      })()}
+
+      {raw && !loading && !found && !pointHit && (!tryProduct || (prodHit && !prodFound)) && (
         <div style={{ ...card, borderColor: 'var(--amber, #f59e0b)' }}>
-          <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 6 }}>⚠️ ไม่พบอุปกรณ์ของป้ายนี้</div>
+          <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 6 }}>⚠️ ไม่พบอุปกรณ์ / ใบผลิต / พาร์ทของป้ายนี้</div>
           <div style={{ fontSize: 12.5, color: 'var(--text2)', lineHeight: 1.8 }}>
             รหัสที่อ่านได้: <code style={{ background: 'var(--bg3)', padding: '1px 6px', borderRadius: 4 }}>{scan?.raw || raw}</code><br />
             ชนิดป้าย: {scan?.typed ? `${QR_KINDS[scan.kind]?.icon ?? ''} ${QR_KINDS[scan.kind]?.label ?? scan.kind}` : 'เลขเปล่า (ไม่ใช่ป้ายของระบบ)'}
-            {(mFailed || jigErr || pointErr) && <><br /><b style={{ color: 'var(--red, #ef4444)' }}>⚠️ โหลดทะเบียนไม่ครบ — อาจไม่ใช่ว่าไม่มีเครื่องนี้จริง ลองใหม่อีกครั้ง</b></>}
+            {(mFailed || jigErr || pointErr || prodHit?.err?.length > 0) && <><br /><b style={{ color: 'var(--red, #ef4444)' }}>⚠️ โหลดทะเบียนไม่ครบ — อาจไม่ใช่ว่าไม่มีเครื่องนี้จริง ลองใหม่อีกครั้ง</b></>}
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
             <button onClick={() => setRescan(true)} style={{ minHeight: 44, padding: '0 16px', fontWeight: 700 }}>📷 สแกนใหม่</button>
@@ -209,9 +295,10 @@ export default function ScanLanding() {
             )}
             {hit.jig && canAccessPage('/pm-check', role) && (pmDepts?.length
               ? pmDepts.map(d => (
-                  <ActionLink key={d} to={`/pm?tab=check&equip=${hit.jig.id}&dept=${encodeURIComponent(d)}`} icon="✅"
-                    label={pmDepts.length > 1 ? `ตรวจ PM เครื่องนี้ — ${teamLabel(d)}` : 'ตรวจ PM เครื่องนี้'}
-                    sub="เปิดใบตรวจตามจุดที่ตั้งไว้" />
+                  <ActionLink key={d} to={`/pm?tab=check&equip=${hit.jig.id}&dept=${encodeURIComponent(d)}`} icon={isAm(d) ? '🏭' : '✅'}
+                    label={isAm(d) ? `ตรวจ AM (ผลิตตรวจเอง)${pmDepts.filter(isAm).length > 1 ? ` — ${teamLabel(d)}` : ''}`
+                      : `ตรวจ PM (ช่าง)${pmDepts.filter(x => !isAm(x)).length > 1 ? ` — ${teamLabel(d)}` : ''}`}
+                    sub={`${teamLabel(d)} · เปิดใบตรวจตามจุดที่ตั้งไว้`} tone={isAm(d) ? '#22c55e' : 'var(--accent)'} />
                 ))
               : (
                 <ActionLink to={`/pm?tab=check&equip=${hit.jig.id}`} icon="✅" label="ตรวจ PM เครื่องนี้"
@@ -225,8 +312,19 @@ export default function ScanLanding() {
               <ActionLink to={`/pm?tab=setup`} icon="⚙️" label="ยังไม่มีแผน PM — ไปตั้งจุดตรวจ"
                 sub="เครื่องนี้ยังไม่มีทะเบียนตรวจ PM" tone="var(--muted)" />
             )}
-            {hit.machine && canAccessPage('/order-trace', role) && (
-              <ActionLink to={`/order-trace?tab=symptom`} icon="📋" label="สอบกลับ / ดูประวัติเหตุการณ์" tone="#60a5fa" />
+            {hit.machine?.machine_no && canAccessPage('/mtn-repair', role) && (
+              <button onClick={() => setShowHist(true)} style={{
+                display: 'flex', alignItems: 'center', gap: 12, minHeight: 56, padding: '10px 14px', textAlign: 'left',
+                borderRadius: 10, border: '1px solid #f59e0b', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer',
+              }}>
+                <span style={{ fontSize: 22 }}>📜</span>
+                <span><div style={{ fontSize: 15, fontWeight: 800, color: '#f59e0b' }}>ประวัติซ่อมเครื่องนี้</div>
+                  <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>ใบ MO ทั้งหมด · เวลาซ่อม · ค่าใช้จ่าย</div></span>
+              </button>
+            )}
+            {hit.machine?.machine_no && canAccessPage('/order-trace', role) && (
+              <ActionLink to={`/order-trace?tab=symptom&machine=${encodeURIComponent(hit.machine.machine_no)}`} icon="📋"
+                label="สอบกลับ / ประวัติเหตุการณ์ของเครื่องนี้" sub="เครื่องหยุด + ของเสียที่ผูกเครื่องนี้ ในช่วงวันที่เลือก" tone="#60a5fa" />
             )}
           </div>
 
@@ -235,6 +333,11 @@ export default function ScanLanding() {
             📷 สแกนป้ายอื่น
           </button>
         </div>
+      )}
+
+      {showHist && hit?.machine?.machine_no && (
+        <MachineRepairHistory machineNo={hit.machine.machine_no} onClose={() => setShowHist(false)}
+          onOpenOrder={(o) => { setShowHist(false); navigate(`/mtn-repair?mo=${o.id}`); }} />
       )}
 
       {rescan && (

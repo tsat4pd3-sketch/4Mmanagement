@@ -5239,3 +5239,20 @@ test('🛡️ lot-mats-from-rules — lotMats มาจาก lotMatsOf(rules) �
   if (!/mode === 'lot'\) continue/.test(pr)) bad.push('partRefStock.js inflowDestOf (กฎโหมด lot ต้องไม่ร่วมตัดสินคลัง)');
   assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n   แก้: ใช้ lotMatsOf(rules) จาก src/utils/stockReceipts.js (select ต้องมีคอลัมน์ mode)\n');
 });
+
+/* ── 🛡️ map3d-switch-no-transition (2026-10-19 · user "จอค่อยๆ วูมเอ้าตอนสลับ 3D/2D") ─────────────
+   ทรานสิชันของกรอบผัง 3D ต้องปิดใน render ที่สลับโหมด — ไม่งั้น transform เอียง+ย่อทั้งก้อนเล่น .45s เป็นภาพซูมออก/เข้า */
+test('🛡️ map3d-switch-no-transition — useMapOrbit ปิด transition ตอนสลับ 2D/3D', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/components/useMapOrbit.js'), 'utf8'));
+  assert.match(code, /transition:\s*[^\n]*switching[^\n]*\?\s*'none'/, 'transition ของ useMapOrbit ต้องเป็น none ระหว่าง switching');
+});
+
+/* ── 📮 ทะเบียนเคลมลูกค้าว่าง ทั้งที่บันทึกแล้ว (2026-10-19 · หน้างานแจ้ง "กดไป 2 อัน ไม่โชว์สักอัน") ──
+   `QaClaims` รับ `lines` = แถว production_lines (object) ตั้งแต่ 07/09 แต่ตัวกรองขอบเขตยังเป็น
+   `lines.includes(c.line_name)` (string vs object = false เสมอ) ⇒ เคลมที่ระบุไลน์ถูกซ่อนทุกใบ */
+test('🛡️ qa-claims-scope-by-name — ตัวกรองขอบเขตเคลมต้องเทียบชื่อไลน์ ไม่ใช่ object', () => {
+  const src = stripComments(readFileSync(join(ROOT, 'src/components/QaClaims.jsx'), 'utf8'));
+  assert.ok(!/\blines\.includes\(/.test(src),
+    '\n\n❌ QaClaims.jsx ใช้ lines.includes(ชื่อไลน์) — lines เป็นแถว object ⇒ ไม่ตรงเลย เคลมหายจากทะเบียน\n'
+    + '   แก้: เทียบกับชุดชื่อ (lines.map(l => l.name)) และกรองเฉพาะเมื่อผู้ดูมีขอบเขตจริง (แบบแท็บ NCR)\n');
+});
