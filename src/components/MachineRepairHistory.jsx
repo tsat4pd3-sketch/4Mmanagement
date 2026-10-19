@@ -13,6 +13,7 @@ import { fetchByIds } from '../utils/fetchByIds';
 import { summarizeMachineHistory } from '../utils/machineRepairHistory';
 import { moStatusMeta } from '../utils/mtnStepPerm';
 import { fmtDateTime } from '../utils/dateFormat';
+import { machineKey } from '../utils/machineNo';
 
 const fmtMin = (m) => (m == null ? '—' : m >= 60 ? `${(m / 60).toFixed(1)} ชม.` : `${Math.round(m)} นาที`);
 const fmtBaht = (v) => (v == null ? '—' : `${Number(v).toLocaleString('th-TH', { maximumFractionDigits: 0 })} บาท`);
@@ -36,7 +37,9 @@ export default function MachineRepairHistory({ machineNo, onClose, onOpenOrder }
       const { data, error } = await supabaseDR.rpc('mtn_orders_by_machine', { p_machine_no: machineNo, p_limit: 500 });
       if (!alive) return;
       if (error) { setState(s => ({ ...s, loading: false, err: error.message })); return; }
-      const orders = data || [];
+      // ด่านชั้นสอง: กรองซ้ำด้วย machineKey ตัวเดียวกับ SQL machine_key() — RPC เปลี่ยน/คืนเกิน = ใบเครื่องอื่นห้ามปนเข้าประวัติ
+      const k = machineKey(machineNo);
+      const orders = (data || []).filter(o => machineKey(o.machine_no) === k);
       const ids = orders.map(o => o.id);
       const [pr, lb, pt] = await Promise.all([
         fetchByIds(ids, c => supabaseDR.from('mtn_purchase_requests').select('id, order_id, pr_no, status').in('order_id', c)),
