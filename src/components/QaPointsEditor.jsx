@@ -29,7 +29,7 @@ import { uploadOpts } from '../utils/storageUpload';
 import { checkWrite, checkWriteRows } from '../utils/dbWrite';
 import { QA_RANK, balloonSort, nextBalloonOf } from '../utils/qaPoints';
 import { writeBlockText } from '../utils/writeScope';
-import { QA_BUCKET, qaFileUrl } from '../lib/qaImages';
+import { QA_BUCKET, qaFileUrl, qaPathOfUrl } from '../lib/qaImages';
 
 const BUCKET = QA_BUCKET;
 const PIN_DEFAULT = '#4d9fff';
@@ -39,10 +39,7 @@ const STANDARD_VIEWS = [
   'Side View (LH)', 'Side View (RH)', 'Isometric', 'Section A-A', 'Section B-B', 'Detail',
 ];
 
-const pathOfUrl = (url) => {
-  const p = url?.split(`/${BUCKET}/`)[1];
-  return p ? decodeURIComponent(p.split('?')[0]) : null;
-};
+const pathOfUrl = qaPathOfUrl;
 const publicUrl = qaFileUrl;
 const isPdfUrl = (u) => /\.pdf($|\?)/i.test(u || '');
 let seq = 0;
