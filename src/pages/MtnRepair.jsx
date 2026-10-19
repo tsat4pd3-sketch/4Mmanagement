@@ -81,6 +81,7 @@ import { uploadOpts } from '../utils/storageUpload';
 import { acceptImageFile } from '../utils/acceptImageFile';
 import { DeleteButton } from '../components/IconButton';
 import { MtnPrPanel, MtnGlMaster, MtnPrSeqMaster } from '../components/MtnPurchase';
+import MachineRepairHistory from '../components/MachineRepairHistory';
 import { prPlacement, assignedTechsOf, joinTechs } from '../utils/mtnPurchase';
 /* ── helpers ─────────────────────────────────────────────── */
 // แปลง URL โลโก้ (รวมโลโก้ที่ admin อัปโหลดใน /doc-forms) เป็น dataURL เพื่อฝังในหน้าพิมพ์
@@ -1819,6 +1820,8 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
   const { mtnTeams: myTeams, sections: mySections, position: myPosition } = useContext(UserContext);
   const actorSide = actorSideOf({ mtnTeams: myTeams, role, sections: mySections, isAm: isAmTeam });
   const posRank = positionRank(myPosition);
+  const [showHist, setShowHist] = useState(false);   // 📜 ประวัติการซ่อมของเครื่องในใบนี้ (19/10)
+  const navHist = useNavigate();
 
   const o = order;
   const m = statusMetaOf(o);
@@ -2535,6 +2538,7 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
               </span>
             : <span />}
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {o.machine_no && <button onClick={() => setShowHist(true)} style={btnGhost} title="ใบแจ้งซ่อมทุกใบของเครื่องนี้ · ค่าใช้จ่าย · PR · เวลาซ่อม">📜 ประวัติเครื่องนี้</button>}
           {can('improvements', 'manage', role) && <button onClick={() => onOpenImprovement(o)} style={{ ...btnGhost, ...(repeatIssue ? { color: '#a78bfa', borderColor: '#7c6cf0' } : {}) }}>💡 เปิดโปรเจคปรับปรุง</button>}
           <button onClick={async () => {
             const dept = o.mtn_dept || deptForItem(o.item_type);
@@ -2581,6 +2585,8 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
           {next && canEditStep(next.step) && <button type="button" onClick={() => onStep(next.step, false)}>{next.label}</button>}
         </div>
       )}
+      {showHist && <MachineRepairHistory machineNo={o.machine_no} onClose={() => setShowHist(false)}
+        onOpenOrder={(x) => { if (x.id === o.id) { setShowHist(false); return; } setShowHist(false); onClose(); navHist(`/mtn-repair?mo=${x.id}`); }} />}
     </ModalShell>
   );
 }
