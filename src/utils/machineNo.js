@@ -60,3 +60,17 @@ export function snapMachineNo(text, keyMap) {
   const hit = keyMap.get(machineKey(t));
   return hit && hit !== t ? hit : null;
 }
+
+/**
+ * 🔎 รูปแบบ `ilike` ที่ "ครอบ" ทุกสะกดของเครื่องนี้ — ใช้กรองหยาบฝั่ง server เท่านั้น (2026-10-19)
+ * `SW-10` → `%SW%10%` จับ `SW10` · `sw 10` · `SW-010` ได้ แต่ก็จับ `SW-100` ด้วย
+ * ⇒ 🔴 **ผลที่ได้ต้องกรองซ้ำด้วย `machineKey()` เสมอ** (ด่านชั้นสองแบบเดียวกับ MachineRepairHistory)
+ * คีย์มีแต่ A-Z/0-9/ไทย ⇒ ไม่มี `% _ , ( )` หลุดไปทำ filter ของ PostgREST เพี้ยน
+ * @returns {string|null} null = ไม่มีอะไรให้ค้น
+ */
+export function machineNoLikePattern(s) {
+  const k = machineKey(s);
+  if (!k) return null;
+  const runs = k.match(/[0-9]+|[^0-9]+/g) || [];
+  return `%${runs.join('%')}%`;
+}
