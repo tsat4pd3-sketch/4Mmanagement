@@ -107,3 +107,22 @@ export function orbitScale(rot, tilt, hw, base = 0.72) {
   const p0 = proj(ORBIT_DEFAULT.rot, ORBIT_DEFAULT.tilt), p = proj(rot, tilt);
   return +(base * Math.min(p0.x / p.x, p0.y / p.y, 1.15)).toFixed(3);
 }
+
+/* 🔍 ซูม + เลื่อนผัง 3D (19/10) — ทำใน "ระนาบจอ" ก่อนเอียง: transform = translate(pan) scale(zoom) rotateX rotateZ scale(fit)
+   ⇒ จุดบนจอ = origin + pan + zoom·g(x) · ซูมเข้าหาจุดที่ชี้ได้ด้วยสูตรเชิงเส้น (perspective อ่อนมาก ⇒ เพี้ยนเล็กน้อย ยอมรับได้)
+   · 🔴 ห้ามย่อต่ำกว่า 1 — `orbitScale` คุมให้พอดีกรอบอยู่แล้ว ย่อเพิ่ม = ฟอนต์ป้ายต่ำกว่า 11px บนจอ TV */
+export const ZOOM_MIN = 1, ZOOM_MAX = 3;
+export const VIEW_DEFAULT = { zoom: 1, px: 0, py: 0 };
+export const clampZoom = (z) => Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, Number.isFinite(+z) ? +z : 1));
+/** เลื่อนได้ไม่เกินส่วนที่ขยายเกินกรอบ — ซูม 1 = ล็อกกลาง (ผังหลุดจอไม่ได้) · W/H = ขนาดกรอบผังก่อนแปลง (px) */
+export function clampPan(v, W, H) {
+  const z = clampZoom(v.zoom);
+  const lx = Math.max(0, (z - 1) * (W || 0) / 2), ly = Math.max(0, (z - 1) * (H || 0) / 2);
+  const c = (n, l) => Math.max(-l, Math.min(l, Number.isFinite(n) ? n : 0)) || 0;
+  return { zoom: z, px: c(v.px, lx), py: c(v.py, ly) };
+}
+/** ซูมคูณ k โดยให้จุด (x,y) — วัดจากจุดกลางกรอบผังบนจอ — อยู่ที่เดิม */
+export function zoomAt(v, k, x = 0, y = 0, W = 0, H = 0) {
+  const z = clampZoom(v.zoom * k), kk = z / clampZoom(v.zoom);
+  return clampPan({ zoom: z, px: x - kk * (x - v.px), py: y - kk * (y - v.py) }, W, H);
+}
