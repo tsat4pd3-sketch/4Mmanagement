@@ -2978,14 +2978,156 @@ test('🛡️ /org-setup: ทุกชั้นที่มีปุ่มเพ
   const missing = kinds.filter(k => !new RegExp(`\\b${k}\\s*:`).test(label));
   assert.deepEqual(missing, [], `\n\n❌ KIND_LABEL ขาดชั้น: ${missing.join(', ')}\n`
     + '   ผลที่เกิด: หัวโมดัลขึ้น "เพิ่ม undefined" (เกิดจริง 05/10/2026 ตอนเพิ่มชั้นทีม)\n');
-  const map = code.match(/const\s+CAN_ADD_HERE\s*=\s*\{[^}]*\}/)?.[0] || '';
+  const rule = stripComments(readFileSync(join(ROOT, 'src/utils/orgNodeEdit.js'), 'utf8'));
+  const map = rule.match(/const\s+ORG_PARENT_KIND\s*=\s*\{[^}]*\}/)?.[0] || '';
   assert.ok(/department\s*:/.test(map) && /line\s*:/.test(map) && /team\s*:/.test(map),
-    '\n\n❌ OrgSetup.jsx ไม่มี CAN_ADD_HERE ครบ department/line/team\n'
+    '\n\n❌ orgNodeEdit.js ไม่มี ORG_PARENT_KIND ครบ department/line/team\n'
     + '   ทำไมห้ามเขียนเป็นเชน ternary: ลงท้าย `: false` ⇒ ชั้นที่ลืมต่อสาขาถูกบล็อกเงียบ\n'
     + '              ปุ่ม ➕ โชว์ (เช็คคนละที่) แต่กดบันทึกไม่ผ่าน = ผู้ใช้ไม่รู้ว่าทำอะไรผิด\n'
-    + '   แก้ยังไง: `const CAN_ADD_HERE = { department: canAddDeptHere, line: canAddLineHere, team: canAddTeamHere }`\n');
-  assert.ok(/CAN_ADD_HERE\[modal\.kind\]/.test(code),
-    '\n\n❌ handleSave ไม่ได้ใช้ CAN_ADD_HERE ตัดสินสิทธิ์เพิ่ม — ดูเหตุผลด้านบน\n');
+    + '   แก้ยังไง: เติมชั้นใหม่ใน `ORG_PARENT_KIND = { department: \'section\', line: \'department\', team: \'line\' }`\n');
+  assert.ok(/orgSaveBlockReason\s*\(/.test(code),
+    '\n\n❌ handleSave ไม่ได้ใช้ orgSaveBlockReason ตัดสินสิทธิ์ — ดูเหตุผลด้านบน\n');
+});
+
+/* ── 🔴 "ซ่อนปุ่ม" ไม่ใช่ด่าน — ฟังก์ชันที่เขียน DB ต้องเช็คคีย์เดียวกับปุ่ม (QC audit ข้อ 5 · 19/10) ──
+   4 จอรอบสุดท้ายของ audit ข้อ 5: ปุ่มถูกซ่อนด้วย can()/canEdit อยู่แล้ว แต่ handler ไม่เช็คอะไรเลย
+   ⇒ สิทธิ์เปลี่ยนระหว่างเปิดจอ / โมดัลเปิดค้าง / เรียกตรง = เขียนได้จริง (กฎเขียน DB ข้อ 10) */
+test('🛡️ handler ที่เขียน DB ต้องเช็คสิทธิ์เอง ไม่ใช่พึ่งการซ่อนปุ่ม', () => {
+  const cases = [
+    ['src/pages/RackCenter.jsx', ['const issuePkg', 'const advance', 'const cancel'], /canOperate/, 'rack_center:operate'],
+    ['src/components/QualityBins.jsx', ['const save', 'const remove', 'const toRed'], /canRecord|canManage/, 'scrap:record / scrap:manage'],
+    ['src/pages/LineStock.jsx', ['const addRule', 'const setRuleMode', 'const deleteRule'], /noPerm\(\)|canEdit/, 'line_stock:manage_rounds'],
+    ['src/pages/QualityControl.jsx', ['const createNCR', 'const cancelNCR', 'const updateNCR'], /canRecord|canManage/, 'qa:record / qa:manage'],
+  ];
+  for (const [file, fns, need, key] of cases) {
+    const code = stripComments(readFileSync(join(ROOT, file), 'utf8'));
+    for (const fn of fns) {
+      const at = code.indexOf(fn);
+      assert.ok(at > -1, `${file}: หา ${fn} ไม่เจอ — ด่านนี้ต้องแก้ตามโครงไฟล์ใหม่`);
+      const head = code.slice(at, at + 420);
+      assert.ok(need.test(head),
+        `\n\n❌ ${file} → ${fn.replace('const ', '')}() ไม่ได้เช็คสิทธิ์ (${key}) ในฟังก์ชันเอง\n`
+        + '   ทำไม: ซ่อนปุ่มไม่ใช่ด่าน — สิทธิ์เปลี่ยนระหว่างเปิดจอ / โมดัลเปิดค้าง / เรียกตรงได้\n'
+        + '   (ฝั่ง DR ไม่มี RLS ให้พึ่งเลย = จอเป็นด่านเดียว)\n');
+    }
+  }
+  /* KpiMonthly: เขียน kpi_definitions ต้องผ่านชั้นที่ 3 ทุกทาง — เดิมมีแต่ removeDef */
+  const kpi = stripComments(readFileSync(join(ROOT, 'src/components/KpiMonthly.jsx'), 'utf8'));
+  for (const fn of ['const copyFromYear', 'const restoreDef', 'const removeDef']) {
+    const at = kpi.indexOf(fn);
+    assert.ok(at > -1, `KpiMonthly: หา ${fn} ไม่เจอ`);
+    assert.ok(/scopeWrite\.ok|rowWrite\.ok/.test(kpi.slice(at, at + 900)),
+      `\n\n❌ KpiMonthly ${fn.replace('const ', '')}() ไม่ได้เช็คขอบเขต (ชั้นที่ 3) ก่อนเขียน kpi_definitions\n`
+      + '   deep-link ?scope= เปิดขอบเขตของหน่วยอื่นได้ ⇒ คัดลอก/เปิดคืนนิยามของเขาได้\n');
+  }
+  // restoreDef ต้องตัดสินด้วย "ขอบเขตของแถว" ไม่ใช่ขอบเขตที่เปิดอยู่ (ถูกเรียกด้วยแถวแฝดจากขอบเขตอื่น)
+  const rd = kpi.slice(kpi.indexOf('const restoreDef'), kpi.indexOf('const removeDef'));
+  assert.ok(/scopeOfDef\(d2\)/.test(rd) && /rowWrite/.test(rd),
+    '\n\n❌ restoreDef ต้องคิดขอบเขตจากแถว (scopeOfDef(d2)) — ใช้ scopeWrite ของหน้าจะตัดสินผิดแถว\n');
+});
+
+/* ── 🔴 /npi: แผงลูกเขียนของพาร์ทไลน์อื่นได้ (QC audit ข้อ 5 · 19/10/2026) ───────────────────
+   หน้าแม่มี `partWriteOf` (canWriteLine ของไลน์พาร์ท) แต่ส่งเข้าแผงลูกแค่ `canEdit`
+   ⇒ 4 แผง (พาร์ท · แบบ/ECI · tooling · งาน) เขียน/ลบแถวของพาร์ทไลน์อื่นได้ทั้งหมด
+   และ `delProject` ลบโปรเจค (cascade ทั้งพาร์ท/เอกสาร/ECI/tooling) โดยไม่ถามขอบเขตเลย
+   ⇒ กฎรวมที่ `src/utils/npiScope.js` · แผงลูกห้ามคิดกฎเอง · ลบโปรเจคต้องนับพาร์ทได้ก่อน */
+test('🛡️ /npi: แผงลูกต้องรับกฎขอบเขต + ลบโปรเจคต้องนับพาร์ทครบก่อน', () => {
+  const npi = stripComments(readFileSync(join(ROOT, 'src/pages/NPI.jsx'), 'utf8'));
+  for (const c of ['NpiPartPanel', 'NpiDrawingsEci', 'NpiTooling', 'NpiTasks']) {
+    const at = npi.indexOf(`<${c} `);
+    const tag = npi.slice(at, at + npi.slice(at).indexOf('/>') + 2);   // ตัดที่ปลาย tag เท่านั้น
+    assert.ok(at > -1 && tag.length > 10, `หา <${c}> ใน NPI.jsx ไม่เจอ — ด่านนี้ต้องแก้ตามโครงใหม่`);
+    assert.ok(/partWriteOf=\{partWriteOf\}/.test(tag),
+      `\n\n❌ NPI.jsx ไม่ได้ส่ง partWriteOf เข้า <${c}> — แผงนั้นเขียนของพาร์ทไลน์อื่นได้\n`
+      + '   (หน้าแม่คือที่เดียวที่รู้ ctx + ทะเบียนไลน์ ⇒ ต้องส่งตัวตัดสินลงไป ไม่ให้แผงลูกคิดเอง)\n');
+  }
+  const del = npi.slice(npi.indexOf('const delProject'));
+  const guard = del.indexOf('npiProjectDeleteBlock');
+  const write = del.search(/from\('npi_projects'\)[\s\S]{0,80}\.delete\(/);
+  assert.ok(guard > -1 && write > -1 && guard < write,
+    '\n\n❌ NPI.delProject ไม่ได้ผ่าน npiProjectDeleteBlock ก่อนลบ\n'
+    + '   ลบโปรเจค = cascade ลบพาร์ท/เอกสาร/ECI/tooling ทั้งก้อน ⇒ ต้องแก้ได้ทุกพาร์ท\n'
+    + '   และ "นับพาร์ทไม่ได้ = ห้ามลบ" (fail-closed · กฎเขียน DB ข้อ 2)\n');
+  assert.ok(/countable:\s*!ePart/.test(del.slice(0, 1200)),
+    '\n\n❌ delProject ต้องส่ง countable จากผลอ่าน npi_parts (อ่านไม่สำเร็จ = ห้ามลบ)\n');
+
+  // แผงลูกต้องเรียกกฎจาก utils (ไม่ใช่เขียนเงื่อนไขสิทธิ์เอง) และต้องเช็คก่อนเขียน
+  const files = {
+    'src/components/NpiPartPanel.jsx': [/npiBlock\(/, /blocked\(\)/],
+    'src/components/NpiDrawingsEci.jsx': [/npiBlockForPart\(/, /rowBlocked\(/],
+    'src/components/NpiTooling.jsx': [/npiBlockForPart\(/, /rowBlocked\(/],
+    'src/components/NpiTasks.jsx': [/npiBlockForPart\(/, /rowBlocked\(/],
+  };
+  for (const [f, pats] of Object.entries(files)) {
+    const code = stripComments(readFileSync(join(ROOT, f), 'utf8'));
+    for (const re of pats) {
+      assert.ok(re.test(code), `\n\n❌ ${f} ไม่ได้ใช้กฎขอบเขตจาก utils/npiScope.js (${re})\n`
+        + '   ทุกฟังก์ชันที่เขียน DB ในแผงนี้ต้องเช็คขอบเขตของพาร์ทก่อน\n');
+    }
+    const writes = [...code.matchAll(/from\('npi_[a-z_]+'\)[\s\S]{0,160}?\.(update|insert|delete)\(/g)];
+    assert.ok(writes.length > 0, `${f}: ไม่เจอ write เลย — ด่านนี้ต้องแก้ตามโครงไฟล์ใหม่`);
+  }
+});
+
+/* ── 🔴 ทางเขียนที่ยังไม่มีด่านชั้น 3 เลย + "ย้ายของ" ที่ไม่เช็คปลายทาง (QC audit ข้อ 5 · 19/10) ──
+   3 จุดที่ปิดรอบนี้ — คลาสเดียวกับ /org-setup ข้างล่าง แต่คนละหน้า:
+   · PMCheckData `NgRecheckPanel` เขียน action/ค่าวัดใหม่ลง inspection_results โดย**ไม่มีด่านเลย**
+   · PmCoordination `notify`/`toggleTask` เขียนสถานะ/ติ๊กงานของแผนไลน์อื่น · `PlanModal.save` ย้ายไลน์ได้
+   · PMSetup `handleTransfer` ย้าย/คัดลอกรายการตรวจ + ประวัติ เข้า **ทีมปลายทาง** โดยเช็คแต่ทีมต้นทาง */
+test('🛡️ PM/แผนประสาน: ทางเขียนต้องมีด่านชั้น 3 · ย้ายของต้องเช็คปลายทาง', () => {
+  const pmc = stripComments(readFileSync(join(ROOT, 'src/pages/PMCheckData.jsx'), 'utf8'));
+  const panel = pmc.slice(pmc.indexOf('function NgRecheckPanel'));
+  const body = panel.slice(0, panel.indexOf('\nfunction '));
+  const sub = body.slice(body.indexOf('const submit'));   // ต้องอยู่ "ในฟังก์ชันที่เขียน" ไม่ใช่แค่โผล่ในไฟล์
+  const gIdx = sub.indexOf('!canRecord');
+  const wIdx = sub.search(/from\('inspection_results'\)[\s\S]{0,140}\.update\(/);
+  assert.ok(gIdx > -1 && wIdx > -1 && gIdx < wIdx,
+    '\n\n❌ NgRecheckPanel เขียน inspection_results โดยไม่ผ่านด่าน canRecord (สิทธิ์ลงผลตรวจ + แกนทีม)\n'
+    + '   ผลที่เกิด: ใครเปิดประวัติของทีมอื่นได้ ก็เขียน action/ค่าวัดใหม่ทับผลตรวจของทีมนั้นได้\n');
+
+  const coord = stripComments(readFileSync(join(ROOT, 'src/pages/PmCoordination.jsx'), 'utf8'));
+  for (const fn of ['const notify =', 'const toggleTask =']) {
+    const part = coord.slice(coord.indexOf(fn), coord.indexOf(fn) + 700);
+    assert.ok(/planWrite\.ok/.test(part),
+      `\n\n❌ PmCoordination ${fn.replace('const ', '').replace(' =', '')} ไม่ได้เช็ค planWrite\n`
+      + '   ผลที่เกิด: แจ้ง Production / ติ๊กงาน ของแผนไลน์ส่วนงานอื่นได้ (notify ยิง Telegram ออกข้างนอกด้วย)\n');
+  }
+  const save = coord.slice(coord.indexOf('const save = async'));
+  const dst = save.search(/canWriteLine\([^)]*f\.line_name/);
+  const ins = save.search(/from\('pm_coordination_plans'\)/);
+  assert.ok(dst > -1 && ins > -1 && dst < ins,
+    '\n\n❌ PmCoordination PlanModal.save ไม่ได้เช็ค "ไลน์ปลายทาง" (f.line_name) ก่อนเขียน\n'
+    + '   ผลที่เกิด: แก้แผนของไลน์เรา แล้วเปลี่ยนไลน์เป็นของส่วนงานอื่น = ย้ายแผนข้ามส่วนงานเงียบๆ\n');
+
+  const setup = stripComments(readFileSync(join(ROOT, 'src/pages/PMSetup.jsx'), 'utf8'));
+  const tr = setup.slice(setup.indexOf('const handleTransfer'));
+  const dstT = tr.indexOf('teamWriteOf');
+  const run = tr.search(/moveChecklistDept|copyChecklistToDept/);
+  assert.ok(dstT > -1 && run > -1 && dstT < run,
+    '\n\n❌ PMSetup.handleTransfer ไม่ได้เช็ค "ทีมปลายทาง" ก่อนย้าย/คัดลอกรายการตรวจ\n'
+    + '   ผลที่เกิด: ย้ายรายการตรวจ + ประวัติการตรวจทั้งก้อนเข้าไปในทีมช่างอื่นได้ (ของเขาถูกทับด้วย)\n');
+});
+
+/* ── 🔴 ย้ายโหนดผัง = เขียนลง "แม่ใหม่" ⇒ เช็คแต่ต้นทางไม่พอ (QC audit ข้อ 5 · 19/10/2026) ─────
+   เคสจริงที่ปิดไป: ผู้ถือ org:manage_own_unit เปิดแก้กลุ่มของตัวเอง (ต้นทางผ่าน) แล้วเปลี่ยนช่อง
+   "อยู่ภายใต้" เป็นแผนกของส่วนงานอื่น — payload เขียน parent_id ใหม่ ส่วน guard มองแถวเดิม
+   = ย้ายหน่วยงานเข้าไปแขวนใต้ส่วนงานที่ไม่ใช่ของตัวเองได้ (ลิสต์ก็โชว์ทั้งโรงงาน)
+   ⇒ ด่านตอนบันทึกต้องถามปลายทางด้วย (orgSaveBlockReason) และกฎต้องอยู่ใน utils ที่เดียว */
+test('🛡️ /org-setup: ด่านตอนบันทึกต้องเช็ค "ปลายทาง" ของการย้าย ไม่ใช่แค่แถวเดิม', () => {
+  const rule = stripComments(readFileSync(join(ROOT, 'src/utils/orgNodeEdit.js'), 'utf8'));
+  assert.ok(/export\s+function\s+orgSaveBlockReason/.test(rule)
+    && /moved[\s\S]{0,200}canAddOrgNodeUnder/.test(rule),
+    '\n\n❌ orgNodeEdit.orgSaveBlockReason ไม่ได้เทียบแม่เดิมกับแม่ใหม่แล้วเช็คปลายทาง\n'
+    + '   ผลที่เกิด: ย้ายหน่วยงานข้ามส่วนงานได้ทั้งที่ไม่มีสิทธิ์ (เขียนของหน่วยงานอื่น)\n');
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/OrgSetup.jsx'), 'utf8'));
+  const save = code.slice(code.indexOf('const handleSave'));
+  const guard = save.indexOf('orgSaveBlockReason');
+  const write = save.search(/from\('org_nodes'\)/);
+  assert.ok(guard > -1 && write > -1 && guard < write,
+    '\n\n❌ handleSave เขียน org_nodes ก่อนผ่าน orgSaveBlockReason (ด่านต้องมาก่อนการเขียน)\n');
+  /* กฎห้ามถูกก๊อปกลับมาไล่สายในหน้า — เคยมี canEditNode/canAddLineHere ไล่ parent_id เองทีละชั้น */
+  assert.ok(!/allDepts\.find\([^)]*\)[\s\S]{0,80}parent_id\s*===\s*mySecId/.test(code),
+    '\n\n❌ OrgSetup.jsx ไล่สายผัง/เทียบ mySecId เองในหน้า — ใช้ utils/orgNodeEdit.js ที่เดียว\n');
 });
 
 /* ── สำเนาชื่อของผัง: กลุ่มเก็บ "ชื่อ" · ที่เหลือเก็บ code||name — ห้ามเดาเป็น name หมด ───── */
@@ -4866,6 +5008,47 @@ test('🛡️ write-scope-layer — ด่าน "แก้ข้ามหน่
     + '   แก้: canWriteUnit()/canWriteLine() จาก src/utils/writeScope.js + เรียกซ้ำใน handler\n');
 });
 
+/* ── 🔴 LPA: คำตอบห้ามข้ามไลน์ — stale-response race (2026-10-19 · QC audit ข้อ ④) ───────────
+   `/lpa` โหลดใบร่าง/แผนด้วย `await` แล้ว `setState` **โดยไม่มี guard** ⇒ สลับไลน์เร็วๆ แล้ว
+   คำตอบของคิวรีเก่ามาทับจอ · ที่ร้ายคือคำถามชั้น `common` (`line_name = null`)
+   **ใช้ `question_id` ร่วมกันทุกไลน์** ⇒ กดบันทึกต่อ = **คำตอบของไลน์ A ไปลงเป็นของไลน์ B ไม่มี error**
+   (ข้อเฉพาะไลน์จะชน PK แล้วเด้ง error งงๆ · และใบร่างที่มาช้ายัง**ทับคำตอบที่คนกำลังติ๊กอยู่**)
+   LPA = บันทึก audit ตามระบบคุณภาพ ⇒ เขียนผิดใบแล้วย้อนไม่ได้ และคนตรวจไม่รู้ตัว
+   ⇒ ต้องมี 2 ชั้น: ① ทิ้งคำตอบที่มาช้า ② ตอนกดบันทึก เช็คว่าของบนจอเป็นของที่เลือกอยู่ (fail-closed) */
+test('🛡️ lpa-stale-draft-guard — ใบตรวจ/แผน LPA ต้องกันคำตอบที่มาช้า + ห้ามเขียนข้ามไลน์', () => {
+  const bad = [];
+  const sv = stripComments(readFileSync(join(ROOT, 'src/utils/staleView.js'), 'utf8'));
+  for (const fn of ['viewKey', 'isStale', 'staleBlockText']) {
+    if (!new RegExp(`export (?:const|function) ${fn}\\b`).test(sv)) bad.push(`staleView.js (ไม่มี ${fn})`);
+  }
+  /* คีย์ว่าง = ยังไม่โหลด ≠ ของไลน์อื่น — ถ้าเผลอตีเป็น stale จอที่ยังไม่มีข้อมูลจะกดบันทึกไม่ได้เลย */
+  if (!/!!loadedKey && loadedKey !== currentKey/.test(sv))
+    bad.push('staleView.js (isStale ไม่ได้ยกเว้น "ยังไม่เคยโหลด")');
+
+  const lpa = stripComments(readFileSync(join(ROOT, 'src/pages/LayerProcessAudit.jsx'), 'utf8'));
+  // ชั้น ① — ทิ้งคำตอบที่มาช้า (loadMonth · loadQuarter 2 จุด · ใบร่าง)
+  const drops = (lpa.match(/(?:monthKeyRef|draftKeyRef)\.current !== key/g) || []).length;
+  if (drops < 4) bad.push(`LayerProcessAudit.jsx (ด่านทิ้งคำตอบที่มาช้าเหลือ ${drops} จุด — ต้องมีทุก loader ที่ setState หลัง await)`);
+  if (!/setDraft\(\{ key, id: existing\.id/.test(lpa) || !/setDraft\(\{ key, id: null/.test(lpa))
+    bad.push('LayerProcessAudit.jsx (ใบร่างไม่ได้พก key ของตัวเอง ⇒ ด่านชั้น 2 เช็คไม่ได้)');
+  // ชั้น ② — ห้ามเขียนเมื่อของบนจอไม่ใช่ของที่เลือกอยู่
+  if (!/const draftMismatch = \(\) =>/.test(lpa)) bad.push('LayerProcessAudit.jsx (ไม่มี draftMismatch)');
+  if (!/const monthMismatch = \(loadedKey\) =>/.test(lpa)) bad.push('LayerProcessAudit.jsx (ไม่มี monthMismatch)');
+  for (const [fn, re] of [
+    ['saveAudit', /const saveAudit = async \(\) => \{[\s\S]{0,200}?draftMismatch\(\)/],
+    ['deleteAudit', /const deleteAudit = async \(\) => \{[\s\S]{0,200}?draftMismatch\(\)/],
+    ['savePlan', /const savePlan = async \(\) => \{[\s\S]{0,200}?monthMismatch\(/],
+    ['saveQuarter', /const saveQuarter = async \(\) => \{[\s\S]{0,200}?monthMismatch\(/],
+  ]) {
+    if (!re.test(lpa)) bad.push(`LayerProcessAudit.jsx (${fn} ไม่ได้เช็คว่าของบนจอเป็นของที่เลือกอยู่ก่อนเขียน)`);
+  }
+
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n   ') + '\n'
+    + '   ทำไม: คำถาม LPA ชั้น common ใช้ question_id ร่วมกันทุกไลน์ ⇒ ใบร่างที่มาช้าทับจอแล้วกดบันทึก\n'
+    + '         = คำตอบไปลงผิดไลน์ **โดยไม่มี error** · เป็นบันทึก audit ⇒ ย้อนไม่ได้\n'
+    + '   แก้: viewKey/isStale จาก src/utils/staleView.js — ทิ้งคำตอบที่มาช้า + เช็คคีย์ก่อนเขียนทุกปุ่ม\n');
+});
+
 /* ── 🪪 คิว "บัญชีที่ยังไม่รู้ว่าเป็นใคร" ห้ามกลับไปเป็นข้อความเปล่า (2026-10-19 · คำสั่ง user) ──
    เดิมจอ `/add-user` บอกแค่ "ยังไม่ระบุประเภทบัญชี · N บัญชี" **ไม่มีชื่อ ไม่มีปุ่ม**
    ⇒ ต้องไปไล่หาเองใน 122 แถว ⇒ ไม่มีใครทำ ค้างมาตลอด (18 ใบ)
@@ -5213,4 +5396,81 @@ test('🛡️ asset-url-data-inline — ห้ามต่อ location.origin �
   }
   assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n   ') + '\n'
     + '   แก้: เช็ค /^(https?:|data:|blob:)/ ก่อน ค่อยต่อ origin เฉพาะ path สัมพัทธ์ (ดู absAssetUrl ใน MtnRepair.jsx)\n');
+});
+
+/* ── 🛡️ map3d-switch-no-transition (2026-10-19 · user "จอค่อยๆ วูมเอ้าตอนสลับ 3D/2D") ─────────────
+   ทรานสิชันของกรอบผัง 3D ต้องปิดใน render ที่สลับโหมด — ไม่งั้น transform เอียง+ย่อทั้งก้อนเล่น .45s เป็นภาพซูมออก/เข้า */
+test('🛡️ map3d-switch-no-transition — useMapOrbit ปิด transition ตอนสลับ 2D/3D', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/components/useMapOrbit.js'), 'utf8'));
+  assert.match(code, /transition:\s*[^\n]*switching[^\n]*\?\s*'none'/, 'transition ของ useMapOrbit ต้องเป็น none ระหว่าง switching');
+});
+
+/* ── 📮 ทะเบียนเคลมลูกค้าว่าง ทั้งที่บันทึกแล้ว (2026-10-19 · หน้างานแจ้ง "กดไป 2 อัน ไม่โชว์สักอัน") ──
+   `QaClaims` รับ `lines` = แถว production_lines (object) ตั้งแต่ 07/09 แต่ตัวกรองขอบเขตยังเป็น
+   `lines.includes(c.line_name)` (string vs object = false เสมอ) ⇒ เคลมที่ระบุไลน์ถูกซ่อนทุกใบ */
+test('🛡️ qa-claims-scope-by-name — ตัวกรองขอบเขตเคลมต้องเทียบชื่อไลน์ ไม่ใช่ object', () => {
+  const src = stripComments(readFileSync(join(ROOT, 'src/components/QaClaims.jsx'), 'utf8'));
+  assert.ok(!/\blines\.includes\(/.test(src),
+    '\n\n❌ QaClaims.jsx ใช้ lines.includes(ชื่อไลน์) — lines เป็นแถว object ⇒ ไม่ตรงเลย เคลมหายจากทะเบียน\n'
+    + '   แก้: เทียบกับชุดชื่อ (lines.map(l => l.name)) และกรองเฉพาะเมื่อผู้ดูมีขอบเขตจริง (แบบแท็บ NCR)\n');
+});
+
+/* ── ❌ ใบ NCR/เคลมที่ "ยกเลิก (เปิดผิด)" ห้ามนับเป็นงานค้าง (2026-10-19) ──
+   เพิ่มสถานะ `cancelled` แล้ว ⇒ ตัวนับเดิม `status !== 'closed'` / `.neq('status','closed')` จะนับใบยกเลิกเป็นงานค้างปลอม
+   ตัวตัดสินอยู่ `utils/qaDocStatus.js` ที่เดียว */
+test('🛡️ qa-doc-cancelled-not-open — ตัวนับ NCR/เคลมค้างต้องผ่าน qaDocStatus', () => {
+  const bad = [];
+  for (const f of ['src/components/QaClaims.jsx', 'src/pages/DeptDashboard.jsx']) {
+    const src = stripComments(readFileSync(join(ROOT, f), 'utf8'));
+    if (/\.status\s*!==\s*'closed'/.test(src) && f.endsWith('QaClaims.jsx')) bad.push(`${f}: status !== 'closed'`);
+    if (/claims\.filter\(\s*c\s*=>\s*c\.status\s*!==\s*'closed'/.test(src)) bad.push(`${f}: claims.filter(status !== 'closed')`);
+  }
+  const qc = stripComments(readFileSync(join(ROOT, 'src/pages/QualityControl.jsx'), 'utf8'));
+  if (/from\('qa_ncr'\)[^;]*\.neq\('status',\s*'closed'\)/.test(qc)) bad.push("QualityControl.jsx: qa_ncr .neq('status','closed')");
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n   ') + '\n   ใช้ isOpenQaDoc() / QA_DONE_IN จาก utils/qaDocStatus.js\n');
+});
+
+/* ── 👁 หน้า /qa ห้ามเขียนกฎขอบเขตที่เห็นเอง (2026-10-19) — ใช้ qaViewScope() (ห่อ scopedLineNames) ──
+   เดิมเขียนเอง 3 ชุด ⇒ ส่วนงานที่ไม่มีไลน์ผลิต (QA) ได้ 0 ไลน์ = ทุกแท็บว่าง */
+test('🛡️ qa-view-scope-shared — QualityControl ใช้ qaViewScope ไม่กรอง inSectionScope เอง', () => {
+  const qc = stripComments(readFileSync(join(ROOT, 'src/pages/QualityControl.jsx'), 'utf8'));
+  assert.ok(!/inSectionScope\(/.test(qc), 'QualityControl.jsx กรองขอบเขตเองด้วย inSectionScope — ใช้ qaViewScope()');
+  assert.ok(/qaViewScope\(/.test(qc), 'QualityControl.jsx ต้องใช้ qaViewScope()');
+});
+
+/* ── 🗑️ ลบพาร์ท QA ที่มีใบตรวจแล้ว = ประวัติตรวจหายถาวร (FK cascade · audit 19/10) ── */
+test('🛡️ qa-part-delete-needs-sheet-count — delPart ต้องนับใบตรวจก่อนลบ', () => {
+  const src = stripComments(readFileSync(join(ROOT, 'src/pages/QAInspectionSetup.jsx'), 'utf8'));
+  const i = src.indexOf('const delPart');
+  const body = src.slice(i, src.indexOf("from('qa_parts').delete()", i));
+  assert.ok(i >= 0 && /qa_inspection_sheets/.test(body),
+    '\n\n❌ delPart ลบ qa_parts โดยไม่นับ qa_inspection_sheets ก่อน — ON DELETE CASCADE ลบประวัติตรวจทั้งพาร์ท\n');
+});
+
+/* ── 🛡️ tv-fit-no-compound-zoom (2026-10-19 · จอ TV จริง "ค่อยๆ วูมเอ้า") ─────────────────────────────
+   Chromium 94 คืน rect ของตัวที่ตั้ง zoom เป็นขนาดก่อนย่อ ⇒ สูตร `zoom × จอ ÷ rect` ย่อซ้อนทบทุกรอบจนชนพื้น
+   ตัวพอดีจอต้องวัดความสูงตอนถอด zoom แล้วคิด target จากค่านั้นตรงๆ ห้ามคูณ zoom ปัจจุบัน */
+test('🛡️ tv-fit-no-compound-zoom — DisplayRotator ห้ามคิด target จาก zoom × จอ ÷ rect', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/components/DisplayRotator.jsx'), 'utf8'));
+  assert.doesNotMatch(code, /zoom\s*\*\s*\(\s*window\.innerHeight/, 'สูตรย่อซ้อนทบกลับมา — วัดความสูงตอนไม่ย่อแทน');
+  assert.match(code, /m\.style\.zoom\s*=\s*'';\s*\n\s*const natural/, 'ต้องถอด zoom ก่อนวัดความสูงจริง');
+});
+
+/* ═══ 🔕 แถว "เรียกช่าง" ต้องระบุทีมเสมอ — ไม่ระบุ = ไซเรนดังทุกห้อง (2026-10-19) ═══
+   `DowntimeSiren`/`MtnAndonBoard` ตีความ `call_mtn_team` ว่าง = "ดังทุกห้อง" (เจตนา: ไม่เดาทีม)
+   ⇒ ทุกจุดที่เขียน `call_mtn: true` ต้องเติมทีมไปด้วยถ้ารู้
+   วัดจริง ต.ค. 2026: 80 จาก 175 ครั้ง (46%) ไม่ระบุทีม — มาจาก syncDowntimeTimes ที่เติมแต่เวลา */
+test('🔕 เขียน call_mtn = true ต้องเติม call_mtn_team ด้วย (ไม่งั้นไซเรนดังข้ามทีม)', () => {
+  const bad = [];
+  for (const f of ['src/pages/DailyReport.jsx', 'src/pages/MtnRepair.jsx']) {
+    const src = stripComments(readFileSync(join(ROOT, f), 'utf8'));
+    /* ดูทีละ update ที่ตั้ง call_mtn เป็น true — ต้องมี call_mtn_team อยู่ใน object เดียวกัน */
+    for (const m of src.match(/\{[^{}]*call_mtn:\s*true[^{}]*\}/g) || []) {
+      if (!/call_mtn_team/.test(m)) bad.push(`${f} (${m.replace(/\s+/g, ' ').slice(0, 70)}…)`);
+    }
+  }
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n'
+    + '   ทำไม: call_mtn_team ว่าง = จอ Andon/ไซเรนถือว่า "ไม่รู้ทีม" แล้วดังให้ทุกทีม\n'
+    + '   แก้: เติม call_mtn_team จากทีมที่รู้ (ปุ่มเรียกช่าง = ทีมที่เลือก · ใบ MO = mtn_dept)\n'
+    + '   ⚠️ ไม่รู้ทีมจริงๆ ให้ปล่อยว่าง (ดังทุกห้องดีกว่าเงียบผิดทีม) แต่ห้ามลืมเติมตอนที่รู้\n');
 });

@@ -21,8 +21,7 @@ import { loadProductionLines } from '../utils/useProductionLines';
 import { toast } from './Toast';
 import { UserContext } from '../App';
 import useIsMobile from '../utils/useIsMobile';
-import { getLineFamilyNames } from '../utils/lineHierarchy';
-import { inSectionScope } from '../utils/sectionScope';
+import { qaViewScope } from '../utils/qaViewScope';
 import { nextDocNo } from '../utils/qaDocNo';
 import CalloutPin from './CalloutPin';
 import PointZoom from './inspect/PointZoom';
@@ -35,6 +34,10 @@ import { specLabel, judgeVariable } from '../utils/qaSpec';
 import { evalSequence } from '../utils/qaSequential';
 import { can } from '../utils/permissions';
 import QaPieceStepper from './QaPieceStepper';
+import ScanModal from './ScanModal';
+import { useSearchParams } from 'react-router-dom';
+import { useMergeParams } from '../utils/useTabParam';
+import { parseQrPayload, findQaPartByScan } from '../utils/qrCode';
 
 /* ── helpers เวลา/วันงาน (กฎเดียวกับทั้งระบบ) ───────────────────────────── */
 const getWorkDate = () => {
@@ -134,13 +137,11 @@ export default function QaCheckSheet({ canRecord }) {
   useEffect(() => {
     loadProductionLines().then(d => setAllLines(d || []));   // cache กลาง (25/09)
   }, []);
+  // 👁 ตัวกลางเดียวกับทั้งหน้า /qa (utils/qaViewScope) — ส่วนงานที่ไม่มีไลน์ผลิต (QA) = ทั้งโรงงาน
+  //    เดิมเขียนเอง ⇒ ฝ่าย QA ที่ขอบเขต "QA" เห็นแค่พาร์ทที่ไม่ผูกไลน์ (audit 19/10)
   const scopedLineNames = useMemo(() => {
-    if (role === 'leader' && lineId) {
-      const my = allLines.find(l => String(l.id) === String(lineId));
-      return my ? getLineFamilyNames(allLines, my.name) : [];
-    }
-    if (sections && sections.length) return allLines.filter(l => inSectionScope(sections, l.section)).map(l => l.name);
-    return null; // ไม่จำกัด
+    const v = qaViewScope(allLines, { role, lineId, sections });
+    return v.names ? [...v.names] : null; // null = ไม่จำกัด
   }, [role, lineId, sections, allLines]);
 
   useEffect(() => {
@@ -158,6 +159,28 @@ export default function QaCheckSheet({ canRecord }) {
   useEffect(() => {
     setPartId(prev => (prev && scopedParts.some(p => p.id === prev)) ? prev : (scopedParts[0]?.id ?? null));
   }, [scopedParts]);
+
+  /* 📷 สแกนบาร์โค้ด MAT บนกล่อง/คัมบัง → เลือกพาร์ทให้เลย (2026-10-19 · คำสั่ง user "สแกนแล้ว direct เข้าไปทำงาน")
+     + deep link `?part=<mat_no|part_no>` จากหน้า /scan · ตัวตัดสิน = findQaPartByScan (qrCode.js · มีเทส)
+     🔴 หาไม่เจอ/นอกขอบเขต ต้องบอกเหตุ — ห้ามคงพาร์ทเดิมไว้เงียบๆ (คนจะตรวจผิดพาร์ทโดยไม่รู้ตัว) */
+  const [scanOpen, setScanOpen] = useState(false);
+  const [searchParams] = useSearchParams();
+  const setParams = useMergeParams();
+  const pickByScan = useCallback((parsed) => {
+    const r = findQaPartByScan(parsed, parts, scopedLineNames ? scopedParts : null);
+    if (r.error) return r.error;
+    setPartId(r.part.id);
+    toast.success(`เลือกพาร์ท ${r.part.part_no || r.part.mat_no}`);
+    return undefined;
+  }, [parts, scopedParts, scopedLineNames]);
+  const partParam = searchParams.get('part');
+  useEffect(() => {
+    if (!partParam || !parts.length) return;
+    const err = pickByScan(parseQrPayload(partParam));
+    if (err) toast.error(err);
+    setParams({ part: null }, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [partParam, parts.length]);
 
   const part = useMemo(() => scopedParts.find(p => p.id === partId) || null, [scopedParts, partId]);
 
@@ -277,7 +300,8 @@ export default function QaCheckSheet({ canRecord }) {
     // ⚠️ ด่านสุดท้ายของขาเขียน — ต้องตรวจว่าใบใน state เป็นของคีย์ที่แสดงอยู่จริง
     //    เช็คแค่ `sheet?.id` ไม่พอ: ใบของรอบก่อนก็มี id เหมือนกัน แล้วผลตรวจจะลงผิดใบ
     if (matchesKey(sheet)) return sheet;
-    if (!part) return null;
+    // ห้ามล้มเงียบ (audit 19/10): พาร์ทถูกปิดใช้งาน/อยู่นอกขอบเขต ⇒ เดิมกดบันทึกแล้วไม่เกิดอะไรเลย
+    if (!part) { toast.error('เปิดใบตรวจไม่ได้ — พาร์ทนี้ถูกปิดใช้งานหรืออยู่นอกขอบเขตของคุณ (ตรวจที่ /qa-setup)'); return null; }
     const { data, error } = await supabase.from('qa_inspection_sheets').insert({
       part_id: part.id, part_no: part.part_no, part_name: part.part_name || null,
       line_name: part.line_name || null,
@@ -349,7 +373,24 @@ export default function QaCheckSheet({ canRecord }) {
     const pieceNo = seq.nextPiece, roundNo = seq.round;
     const now = new Date().toISOString();
 
-    // 1) ผลต่อจุด — merge ค่าของชิ้นนี้เข้า array เดิม · judgement รวม: มี ng ชิ้นไหน = ng
+    /* 🔴 ลำดับ: จองแถว "ชิ้น" ก่อน แล้วค่อยบวกผลต่อจุด (audit 19/10)
+       เดิมเขียนผลต่อจุด (qty_checked/qty_ng +1) ก่อน แล้วแถวชิ้นล้ม ⇒ กดซ้ำ = นับ NG ซ้ำ (ไหลไปถึง qty_ng ของ NCR)
+       และ 2 เครื่องตรวจใบเดียวกัน = เครื่องหลังเขียนค่าทับ · ตอนนี้ unique (sheet_id,piece_no) กันชนให้ก่อนแตะผล */
+
+    // 1) ผลต่อชิ้น (จองเลขชิ้น)
+    const { data: pc, error: pcErr } = await supabase.from('qa_inspection_pieces').insert({
+      sheet_id: sh.id, round_no: roundNo, piece_no: pieceNo, result: p.result,
+      failed_items: p.failedItems?.length ? p.failedItems : null,
+      disposition: p.result === 'fail' ? (p.disposition || null) : null,
+      remark: p.remark || null, recorded_by: fullName || null,
+    }).select().single();
+    if (pcErr) {
+      setBusy(false);
+      // อีกเครื่องบันทึกชิ้นเลขนี้ไปก่อน (unique sheet_id+piece_no) ⇒ โหลดใบใหม่ ไม่เขียนผลทับของเครื่องนั้น
+      if (pcErr.code === '23505') { toast.error(`ชิ้นที่ ${pieceNo} ถูกบันทึกจากอีกเครื่องแล้ว — โหลดใบล่าสุดให้ (ค่าที่กรอกยังอยู่ ตรวจแล้วบันทึกเป็นชิ้นถัดไป)`); loadSheet(); return; }
+      toast.error(`บันทึกชิ้นที่ ${pieceNo} ไม่สำเร็จ: ${pcErr.message}`); return;
+    }
+    // 2) ผลต่อจุด — merge ค่าของชิ้นนี้เข้า array เดิม · judgement รวม: มี ng ชิ้นไหน = ng
     const rows = items.map(i => {
       const prev = resById.get(i.id);
       const j = p.judgements[i.id] || { judge: 'na', value: '', note: '' };
@@ -368,16 +409,12 @@ export default function QaCheckSheet({ canRecord }) {
         recorded_by: fullName || null, recorded_at: now,
       };
     });
-    if (!checkWrite(await supabase.from('qa_inspection_results').upsert(rows, { onConflict: 'sheet_id,item_id' }), 'ผลต่อจุด')) { setBusy(false); return; }
-
-    // 2) ผลต่อชิ้น
-    const { data: pc, error: pcErr } = await supabase.from('qa_inspection_pieces').insert({
-      sheet_id: sh.id, round_no: roundNo, piece_no: pieceNo, result: p.result,
-      failed_items: p.failedItems?.length ? p.failedItems : null,
-      disposition: p.result === 'fail' ? (p.disposition || null) : null,
-      remark: p.remark || null, recorded_by: fullName || null,
-    }).select().single();
-    if (pcErr) { setBusy(false); toast.error(`บันทึกชิ้นที่ ${pieceNo} ไม่สำเร็จ: ${pcErr.message}`); return; }
+    if (!checkWrite(await supabase.from('qa_inspection_results').upsert(rows, { onConflict: 'sheet_id,item_id' }), 'ผลต่อจุด')) {
+      // ผลต่อจุดล้ม ⇒ ถอนแถวชิ้นที่เพิ่งจอง (นับแถว) ให้กดบันทึกซ้ำได้โดยไม่ข้ามเลขชิ้น
+      const undo = await supabase.from('qa_inspection_pieces').delete().eq('id', pc.id).select('id');
+      if (undo.error || !(undo.data || []).length) toast.error(`ถอนชิ้นที่ ${pieceNo} คืนไม่สำเร็จ — แจ้ง QA manager ลบชิ้นนี้ (ผลต่อจุดยังไม่ถูกบันทึก)`);
+      setBusy(false); loadSheet(); return;
+    }
 
     // 3) scrap → ลงถังแดง (DR) ผูกกลับ — ล้มเหลวต้องบอก ไม่เงียบ (ชิ้นถูกทิ้งแต่ไม่มีบันทึก = สืบไม่ได้)
     if (p.disposition === 'scrap') {
@@ -581,16 +618,36 @@ export default function QaCheckSheet({ canRecord }) {
       )}
 
       {/* คิว "ฝ่ายผลิตเรียกตรวจ" — กดแล้วตั้งพาร์ท/วัน/กะ/ช่วงตรวจให้ตรงกับรุ่นที่ถูกเรียก */}
-      <QaFmeQueue scopedLineNames={scopedLineNames} onOpen={(ob) => {
+      <QaFmeQueue scopedLineNames={scopedLineNames} onOpen={async (ob) => {
+        /* 🔴 เลือกรอบให้ถูก (audit 19/10) — เดิมตั้งรอบ 1 เสมอ ⇒ คิวรอบกลาง/ท้ายเปิดใบรอบ 1 ที่ "ยอมรับ/ปิดแล้ว"
+           จากชิ้นแรก → บันทึกไม่ได้ + คิวไม่ถูกปิด เตือนซ้ำไม่จบ
+           ผูกใบไว้แล้ว = เปิดใบนั้น · ยังไม่ผูก = รอบแรกที่ยังไม่ปิด · ปิดหมด = รอบใหม่ต่อท้าย */
+        if (!scopedParts.some(p => p.id === ob.part_id)) {
+          toast.error('เปิดใบตรวจไม่ได้ — พาร์ทของงานนี้ถูกปิดใช้งานหรืออยู่นอกขอบเขตของคุณ (ตรวจที่ /qa-setup)');
+          return;
+        }
+        const { data: shs, error: eSh } = await supabase.from('qa_inspection_sheets').select('id, round_no, status')
+          .eq('part_id', ob.part_id).eq('work_date', ob.work_date).eq('shift', ob.shift).order('round_no');
+        if (eSh) { toast.error(`อ่านใบตรวจของงานนี้ไม่สำเร็จ: ${eSh.message}`); return; }
+        const linked = ob.sheet_id && (shs || []).find(x => x.id === ob.sheet_id);
+        const open = (shs || []).find(x => x.status !== 'done');
+        const nextRound = linked ? linked.round_no
+          : open ? open.round_no
+            : Math.min(20, ((shs || []).reduce((m, x) => Math.max(m, x.round_no || 0), 0)) + 1);
         setPartId(ob.part_id);
         setWorkDate(ob.work_date);
         setShift(ob.shift);
-        setRoundNo(1);
+        setRoundNo(nextRound);
         setSheetStage(FME_SHEET_STAGE[ob.stage] || null);
         setFmeObId(ob.id);
         fmeKeyRef.current = `${ob.part_id}|${ob.work_date}|${ob.shift}`;
         toast.info(`เปิดใบตรวจ: ${ob.line_name} · ${ob.mat_no} · ${ob.stage === 'end' ? 'ชิ้นสุดท้าย' : ob.stage === 'middle' ? 'ระหว่างผลิต' : 'ชิ้นแรก'}`);
       }} />
+
+      {scanOpen && (
+        <ScanModal title="สแกนชิ้นงาน → เลือกพาร์ท" hint="ส่องบาร์โค้ด MAT บนกล่อง/บัตรคัมบัง หรือพิมพ์เลขพาร์ท"
+          onScan={pickByScan} onClose={() => setScanOpen(false)} />
+      )}
 
       {/* แถบเลือกใบ */}
       <div style={{ ...cardSt, marginBottom: 12 }}>
@@ -601,14 +658,18 @@ export default function QaCheckSheet({ canRecord }) {
         }}>
           <div>
             <label style={{ fontSize: 11.5, color: 'var(--muted)', fontWeight: 700 }}>พาร์ทที่ตรวจ</label>
-            <select style={inputSt} value={partId || ''} onChange={e => setPartId(e.target.value || null)}>
-              {scopedParts.length === 0 && <option value="">— ยังไม่มีพาร์ทในขอบเขตของคุณ —</option>}
-              {scopedParts.map(p => (
-                <option key={p.id} value={p.id}>
-                  {p.part_no}{p.part_name ? ` · ${p.part_name}` : ''}{p.line_name ? ` (${p.line_name})` : ''}
-                </option>
-              ))}
-            </select>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <select style={{ ...inputSt, flex: 1, minWidth: 0 }} value={partId || ''} onChange={e => setPartId(e.target.value || null)}>
+                {scopedParts.length === 0 && <option value="">— ยังไม่มีพาร์ทในขอบเขตของคุณ —</option>}
+                {scopedParts.map(p => (
+                  <option key={p.id} value={p.id}>
+                    {p.part_no}{p.part_name ? ` · ${p.part_name}` : ''}{p.line_name ? ` (${p.line_name})` : ''}
+                  </option>
+                ))}
+              </select>
+              <button type="button" onClick={() => setScanOpen(true)} title="สแกนบาร์โค้ด MAT บนกล่อง/คัมบัง"
+                style={{ flexShrink: 0, minWidth: 44, padding: '0 10px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', fontWeight: 700, cursor: 'pointer' }}>📷</button>
+            </div>
           </div>
           <div>
             <label style={{ fontSize: 11.5, color: 'var(--muted)', fontWeight: 700 }}>วันงาน</label>

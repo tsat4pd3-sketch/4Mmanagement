@@ -19,7 +19,7 @@ import { groupChildDefs, rollupChildDefs, rollupGroupKey, childGroupKeyFor } fro
 import { checkWriteRows } from '../utils/dbWrite';
 import { findClosedTwin, restoreQuestion } from '../utils/kpiClosed';
 import { scoreDef, KPI_LEVELS, KPI_PERSPECTIVES, perspectiveLabel, KPI_SUMMARY_MODES,
-  unitOf, decimalsOf, summaryModeOf, summaryShort, summaryModeLabel, fmtKpi, summaryOf, planProgress, valueScopeOf, sharedValueDef, KPI_VALUE_SCOPES, KPI_BOARD_SLOTS, boardSlotOf,
+  unitOf, decimalsOf, summaryModeOf, summaryShort, summaryModeLabel, fmtKpi, summaryOf, planProgress, valueScopeOf, sharedValueDef, KPI_VALUE_SCOPES, KPI_BOARD_SLOTS, boardSlotOf, missingPlantValueDefs, plantDefPayloadFrom,
   KPI_FORMULAS, formulaOf, baseVarOf } from '../utils/kpiSetup';
 import { applyFormulaEntries, buildBaseIndex, formulaNoteText, formulaSummaryText, formulaOfDef, formulaMonthMode } from '../utils/kpiFormula';
 import KpiBaseInputsPanel from './KpiBaseInputsPanel';
@@ -638,6 +638,19 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
   }, [allDefs, isInherited]);
   /* นิยามที่ "ถือค่า" ของแถว — KPI แบบ plant = นิยามโรงงาน (อาจเป็นตัวเดียวกับแถวเมื่อดูขอบเขต ทั้งโรงงาน) · แบบ own = ตัวเอง */
   const valueDefOf = useCallback(d => (valueScopeOf(d) === 'plant' ? sharedValueDef(allDefs, d) : d), [allDefs]);
+  /* 🏭 KPI ค่าโรงงาน "ต้องมี" นิยามระดับโรงงาน (19/10 · Customer Satisfaction ถูกตั้งเป็นค่าโรงงาน 30/09 โดยไม่มีนิยาม plant
+     ⇒ ทุกหน่วยขึ้นว่าง + ค่าที่ PD4 กรอกไว้ 8 เดือนหายจากจอ 3 สัปดาห์) — รายการที่ยังขาด + ตัวสร้างจากนิยามของหน่วย (ไม่ก๊อปค่า) */
+  const missingPlant = useMemo(() => missingPlantValueDefs(allDefs || [], entries), [allDefs, entries]);
+  const createPlantDef = async (m) => {
+    const src = m.unitDefs[0];
+    if (!src) return false;
+    const payload = plantDefPayloadFrom(src, { year, note: `ค่าโรงงาน — สร้างจากนิยามของ ${src.scope_value || src.section || 'หน่วยงาน'} (ทะเบียนตั้งเป็นค่าโรงงาน) · กรอกค่าที่แถวนี้` });
+    const { data, error } = await supabase.from('kpi_definitions').insert(payload).select('id');
+    if (error || !data?.length) { toast.error(`สร้างนิยามโรงงาน "${m.name}" ไม่สำเร็จ` + (error ? ': ' + error.message : ' (ไม่มีสิทธิ์)')); return false; }
+    toast.success(`สร้างนิยามโรงงาน "${m.name}" แล้ว — กรอกค่าที่ขอบเขต ทั้งโรงงาน${m.hiddenEntries ? ` · ค่าที่หน่วยเคยกรอกไว้ ${m.hiddenEntries} ช่องยังอยู่ที่แถวของหน่วย (ย้ายให้ไม่ได้เอง — บอกแอดมิน)` : ''}`);
+    await loadDefs();
+    return true;
+  };
   const defScopeTag = useCallback(d => (isInherited(d) ? org.labelOf(scopeOfDef(d).kind, scopeOfDef(d).value) : ''), [isInherited, org]);
   /* ⬆ ค่าจากหน่วยลูก (utils/kpiRollup · 12/10): แถวของระดับนี้เอง — เดือนที่ยังไม่กรอก บอร์ดใช้ค่ารวมจากลูก ⇒ โชว์เป็นคำใบ้ใต้ช่อง (ไม่ใช่ค่าที่บันทึก)
      · กลุ่มที่ลูกถือแต่ระดับนี้ (และระดับแม่) ไม่มี = บล็อก "⬆ KPI ที่หน่วยลูกถือ" อ่านอย่างเดียว + ปุ่มตั้งที่ระดับนี้ */
@@ -886,6 +899,9 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
   /* คัดลอกชุด KPI จากปีอื่นมาปีนี้ — ลงข้อมูลย้อนหลังโดยไม่ต้องพิมพ์ชื่อใหม่ (ต้นตอของการพิมพ์ผิด)
      ⚠️ คัดลอกเฉพาะ "นิยาม" ไม่คัดลอกค่ารายเดือน (ค่าคือข้อเท็จจริงของปีนั้น ห้ามลอก) */
   const copyFromYear = async () => {
+    /* 🔐 ด่านชั้นที่ 3 ซ้ำตอนกดจริง — สร้างนิยามใหม่ "ในขอบเขตที่เปิดอยู่" (deep-link `?scope=` เปิดตรงได้)
+       เดิมมีแต่ removeDef ที่เช็ค ⇒ คัดลอกชุดปีก่อนเข้าไปในขอบเขตของหน่วยอื่นได้ทั้งชุด */
+    if (!scopeWrite.ok) { toast.info(writeBlockText(scopeWrite, { what: 'KPI ของขอบเขตนี้', unit: scopeOwner })); return; }
     const raw = window.prompt(`คัดลอกชุด KPI จากปีไหนมาปี ${year + 543}?\n(ใส่ปี พ.ศ. เช่น ${year + 542})`, String(year + 542));
     if (raw == null) return;
     const be = Number(String(raw).trim());
@@ -964,6 +980,15 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
 
   /* 🗄️ เปิดคืนนิยามที่ปิดใช้งาน — นับแถว (RLS ปฏิเสธ UPDATE = 0 แถวไม่มี error · กฎ DB ข้อ 2) · ค่าเดิมผูก id เดิมกลับมาเอง */
   const restoreDef = async (d2, { silentConfirm = false } = {}) => {
+    /* 🔐 ด่านชั้นที่ 3 — เปิดคืนนิยาม = เขียน KPI ของขอบเขตนั้น (เดิมไม่เช็คเลย)
+       🔴 ตัดสินด้วย "ขอบเขตของแถวนั้น" ไม่ใช่ขอบเขตที่เปิดอยู่ — restoreDef ถูกเรียกจาก saveDef
+          ด้วยแถวแฝด (twin) ที่อาจเป็นของขอบเขตอื่น (ผ่าน canonicalScope แล้ว) */
+    const rowOwner = (() => {
+      const sc = canonicalScope(org, scopeOfDef(d2));
+      return (!orgReady || isPlant(sc)) ? '' : (org.sectionOf?.(sc.kind, sc.value) || '');
+    })();
+    const rowWrite = canWriteUnit({ role, section: homeSection, sections: userSections, allUnits, respCostCenters, scopeIdx }, rowOwner, { unknownTarget: 'block' });
+    if (!rowWrite.ok) { toast.info(writeBlockText(rowWrite, { what: `KPI "${defName(d2)}"`, unit: rowOwner })); return false; }
     if (!silentConfirm && !window.confirm(`เปิดคืน KPI "${defName(d2)}"?\nค่ารายเดือน/แผน/หมายเหตุที่เคยกรอกไว้จะกลับมาด้วย`)) return false;
     const ok = checkWriteRows(await supabase.from('kpi_definitions').update({ is_active: true }).eq('id', d2.id).select('id'),
       `เปิดคืน KPI "${defName(d2)}"`, { zeroMsg: 'ไม่มีสิทธิ์ kpi:manage หรือแถวถูกลบไปแล้ว' });
@@ -1112,6 +1137,23 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
         <KpiBaseInputsPanel year={year} scope={kpiScope} org={org} rows={baseRows} base={baseIndex} canManage={canManage} onChanged={reloadBase}
           onGoPlant={() => setScope({ ...PLANT })} blockText={canManageKpi && !scopeWrite.ok ? writeBlockText(scopeWrite, { what: 'ตัวเลขฐานของขอบเขตนี้', unit: scopeOwner }) : ''}
           defaultOpen={isPlant(kpiScope) || (allDefs || []).some(d => formulaOfDef(d))} />
+      )}
+      {!kpiMissing && missingPlant.length > 0 && (
+        <div style={{ ...card, borderColor: '#f59e0b', fontSize: 12.5 }}>
+          <b style={{ color: '#f59e0b' }}>⚠ KPI ค่าโรงงานที่ปี {year + 543} ยังไม่มีนิยามระดับ ทั้งโรงงาน</b>
+          <span style={{ color: 'var(--muted)' }}> — ทุกหน่วยที่ถือ KPI นี้จะขึ้นว่างจนกว่าจะสร้าง (กฎ: ค่ารายเดือนอยู่ที่นิยามโรงงานตัวเดียว)</span>
+          <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+            {missingPlant.map(m => (
+              <li key={m.key} style={{ marginBottom: 3 }}>
+                <b>{m.name}</b> · หน่วยที่ถือ {m.unitDefs.map(d2 => d2.scope_value || d2.section).filter(Boolean).join(' · ')}
+                {m.hiddenEntries > 0 && <span style={{ color: '#ef4444' }}> · ✍️ มีค่าที่หน่วยกรอกไว้ {m.hiddenEntries} ช่อง ถูกซ่อนอยู่</span>}
+                {canManage && isPlant(kpiScope)
+                  ? <button onClick={() => createPlantDef(m)} style={{ ...btnSt, marginLeft: 8, padding: '2px 8px', fontSize: 11.5 }}>＋ สร้างนิยามโรงงานจากของ {m.unitDefs[0]?.scope_value || m.unitDefs[0]?.section}</button>
+                  : <span style={{ marginLeft: 8, color: 'var(--muted)' }}>→ สร้างที่ขอบเขต <b style={{ cursor: 'pointer', textDecoration: 'underline' }} onClick={() => setScope({ ...PLANT })}>ทั้งโรงงาน</b>{canManageKpi ? '' : ' (ต้องมีสิทธิ์ kpi:manage)'}</span>}
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
       {/* allDefs === null = ยังโหลดอยู่ (defs เป็น array เสมอหลัง filter จึงเช็คไม่ได้) */}
       {!kpiMissing && allDefs && (
@@ -1262,6 +1304,13 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
                               <span title="KPI นี้ตั้งไว้ว่าใช้ค่าโรงงาน แต่ปีนี้ยังไม่มีนิยามระดับ ทั้งโรงงาน — สร้าง KPI ตัวนี้ที่ขอบเขต ทั้งโรงงาน แล้วกรอกที่นั่น (ช่องกรอกของหน่วยงานปิดไว้ กันแต่ละหน่วยตัวเลขไม่ตรงกัน)"
                                 style={{ marginLeft: 5, fontSize: 11, color: '#f59e0b', cursor: 'pointer' }} onClick={() => setScope({ ...PLANT })}>
                                 ⚠ ยังไม่มีนิยามระดับโรงงาน → สร้างที่ ทั้งโรงงาน
+                              </span>
+                            )}
+                            {/* ✍️ ค่าที่หน่วยนี้เคยกรอกตอนยังเป็น "ของหน่วยงานเอง" — ตอนนี้เป็นค่าโรงงานแล้ว จอต้องบอกว่าซ่อนอยู่ ไม่ใช่หายเงียบ (19/10) */}
+                            {plantKpi && (!vDef || vDef.id !== d2.id) && Object.values(entries[d2.id] || {}).filter(v => v != null).length > 0 && (
+                              <span title="ค่าเหล่านี้ถูกกรอกไว้ที่แถวของหน่วยก่อนทะเบียนเปลี่ยนเป็นค่าโรงงาน — บอร์ดไม่ใช้ค่าชุดนี้ · ถ้าเป็นตัวเลขโรงงานจริง ให้แอดมินย้ายไปแถวระดับ ทั้งโรงงาน"
+                                style={{ marginLeft: 5, fontSize: 11, color: '#ef4444' }}>
+                                ✍️ หน่วยนี้เคยกรอกไว้ {Object.values(entries[d2.id] || {}).filter(v => v != null).length} เดือน (ซ่อนอยู่ — ไม่ใช่ค่าโรงงาน)
                               </span>
                             )}
                             <div style={{ fontSize: 11, color: 'var(--muted)' }}>
@@ -1461,6 +1510,11 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
           rows={catalog} canManage={canManage} usedNames={defs.map(d2 => d2.catalog_id).filter(Boolean)}
           onClose={() => setShowCat(false)}
           onChanged={() => { loadCatalog(); loadDefs(); }}
+          onPlantScope={async (r) => {   /* ตั้งเป็นค่าโรงงาน → ต้องมีนิยามโรงงานทันที ไม่งั้นทุกหน่วยขึ้นว่าง (เคส CSat 30/09) */
+            const units = (allDefs || []).filter(d2 => d2.is_active !== false && (d2.catalog_id === r.id) && Number(d2.year) === Number(year));
+            if (!units.length || units.some(d2 => d2.scope_kind === 'plant')) return;
+            await createPlantDef({ name: r.name, unitDefs: units.filter(d2 => d2.scope_kind !== 'plant'), hiddenEntries: units.reduce((a, d2) => a + Object.values(entries[d2.id] || {}).filter(v => v != null).length, 0) });
+          }}
         />
       )}
 
@@ -1559,7 +1613,7 @@ function AutoTargetModal({ row, def, year, scopeText, deep, onClose, onSave }) {
 /* ── โมดัลทะเบียนชื่อ KPI ──
    แก้ชื่อที่นี่ = เปลี่ยนพร้อมกันทุกปี/ทุกส่วนงาน (แถวอ้าง catalog_id ไม่ได้ก๊อปชื่อไป)
    ⚠️ ปิดใช้งาน (soft delete) ไม่ลบจริง — นิยามปีเก่ายังอ้างอยู่ ต้องอ่านออกเสมอ */
-function CatalogModal({ rows, canManage, usedNames = [], onClose, onChanged }) {
+function CatalogModal({ rows, canManage, usedNames = [], onClose, onChanged, onPlantScope = null }) {
   const [q, setQ] = useState('');
   const [busy, setBusy] = useState('');
   const used = useMemo(() => new Set(usedNames), [usedNames]);
@@ -1596,6 +1650,7 @@ function CatalogModal({ rows, canManage, usedNames = [], onClose, onChanged }) {
         toast.error(`แก้ "${label}" ไม่สำเร็จ` + (error ? ': ' + error.message : ' (ไม่มีสิทธิ์ kpi:manage)'));
         return;
       }
+      if (col === 'value_scope' && value === 'plant') await onPlantScope?.(r);   // สร้างนิยามโรงงานให้ทันที (ถ้ายังไม่มี)
       onChanged?.();
     } finally { setBusy(''); }
   };

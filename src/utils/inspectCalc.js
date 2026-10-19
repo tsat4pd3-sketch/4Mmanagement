@@ -74,14 +74,26 @@ export function remapCalc(calc, idMap) {
   return a && b ? { ...c, a, b } : null;
 }
 
-/* ── PM: ค่า 3 ครั้ง (v1–v3) → ผลต่างรายครั้ง · ค่าเฉลี่ยของผลต่าง = ผลต่างของค่าเฉลี่ย ── */
+/* ── PM: ค่า 3 ครั้ง (v1–v3) → ผลต่างรายครั้ง · ค่าเฉลี่ยของผลต่าง = ผลต่างของค่าเฉลี่ย ──
+   จุด A/B เป็นได้ทั้ง Variable (อ่าน 3 ครั้ง) และ "ค่าวัด" (`measure` อ่านครั้งเดียว `mval`)
+   🔴 ค่าวัดอ่านครั้งเดียว ⇒ ใช้ค่าเดิมทั้ง ①②③ (ค่าที่วัดได้จริงมีค่าเดียว — Avg ถูกต้อง แต่ช่วง R ของ SPC = 0
+      เพราะไม่ได้วัดซ้ำ · **ห้ามสร้างค่าใหม่มาเติม**) */
+export const PM_CALC_REF_TYPES = ['variable', 'measure'];
+
+function pmReading(cp, r, k) {
+  if (!r) return '';
+  return cp?.type === 'measure' ? r.mval : r[k];
+}
+
 export function pmCalcResults(checkpoints, results) {
   let out = results;
+  const byId = new Map((checkpoints || []).map(cp => [cp.id, cp]));
   for (const cp of checkpoints || []) {
     const c = calcOf(cp);
     if (!c) continue;
-    const ra = results?.[c.a] || {}, rb = results?.[c.b] || {};
-    const v = (k) => { const n = calcNumber(c, ra[k], rb[k]); return n == null ? '' : String(n); };
+    const ra = results?.[c.a], rb = results?.[c.b];
+    const ca = byId.get(c.a), cb = byId.get(c.b);
+    const v = (k) => { const n = calcNumber(c, pmReading(ca, ra, k), pmReading(cb, rb, k)); return n == null ? '' : String(n); };
     if (out === results) out = { ...results };
     out[cp.id] = { ...(results?.[cp.id] || {}), v1: v('v1'), v2: v('v2'), v3: v('v3') };
   }

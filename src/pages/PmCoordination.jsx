@@ -224,6 +224,9 @@ function PlanCard({ plan: p, tasks, canManage, pmPlan, fullName, onEdit, onReloa
   const doneN = tasks.filter(t => t.done).length;
 
   const notify = async () => {
+    /* 🔐 แจ้ง Production = ส่งข้อความออกไปข้างนอก + เขียนสถานะของแผน ⇒ ต้องเป็นไลน์ในขอบเขตเรา
+       (เดิมไม่มีด่าน: เห็นแผนของส่วนงานอื่น = กดแจ้งแทนเขาได้ แล้วสถานะเปลี่ยนด้วย) */
+    if (!planWrite.ok) { toast.info(writeBlockText(planWrite, { what: 'แผน PM ของไลน์นี้' })); return; }
     try {
       /* functions.invoke ไม่ throw — คืน { error } (QC 05/10 · เดิมกลืน แล้วขึ้น "แจ้งแล้ว" ทั้งที่ไม่มีใครได้รับ) */
       const { error: eFn } = await supabase.functions.invoke('send-notification', {
@@ -266,6 +269,8 @@ function PlanCard({ plan: p, tasks, canManage, pmPlan, fullName, onEdit, onReloa
     onReload();
   };
   const toggleTask = async (t) => {
+    // 🔐 ติ๊ก/ปลดติ๊กงานในแผน = เขียนแถวของแผนนั้น ⇒ ด่านเดียวกับเปลี่ยนสถานะแผน
+    if (!planWrite.ok) { toast.info(writeBlockText(planWrite, { what: 'งานในแผน PM ของไลน์นี้' })); return; }
     checkWriteRows(await supabaseDR.from('pm_coordination_tasks').update({ done: !t.done }).eq('id', t.id).select('id'), 'ติ๊กงาน');
     onReload();
   };
@@ -330,6 +335,12 @@ function PlanCard({ plan: p, tasks, canManage, pmPlan, fullName, onEdit, onReloa
 /* ── modal สร้าง/แก้แผน ─────────────────────── */
 function PlanModal({ plan, lines, machines, teams, pmPlans = [], scopeLines, fullName, onClose, onSaved }) {
   const createdIdRef = useRef(null);   // id หัวแผนที่สร้างไปแล้วในหน้าต่างนี้ (แผนใหม่)
+  /* 🔐 ชั้นที่ 3 — แผนผูกไลน์ ⇒ สร้าง/แก้ได้เฉพาะไลน์ในขอบเขตเรา
+     🔴 แก้แผน = เขียนลง "ไลน์ที่เลือกใหม่" ⇒ ต้องผ่านทั้งไลน์เดิมและไลน์ปลายทาง
+        (เช็คแต่ไลน์เดิม = ย้ายแผนของเราไปแขวนไลน์ส่วนงานอื่นได้ · คลาสเดียวกับ /org-setup)
+     แผนที่ไม่ระบุไลน์ = ตัดสินไม่ได้ ⇒ ไม่บล็อก (แผนระดับโรงงานมีจริง — ตรงกับการ์ดแผน) */
+  const uctx = useContext(UserContext);
+  const wctx = { role: uctx.role, section: uctx.section, sections: uctx.sections, allUnits: uctx.allUnits, respCostCenters: uctx.respCostCenters, scopeIdx: uctx.scopeIdx };
   const [f, setF] = useState({
     title: plan.title || '', machine_id: plan.machine_id || '', machine_no: plan.machine_no || '',
     machine_name: plan.machine_name || '', line_name: plan.line_name || '', remark: plan.remark || '',
@@ -378,6 +389,13 @@ function PlanModal({ plan, lines, machines, teams, pmPlans = [], scopeLines, ful
 
   const save = async () => {
     if (!f.title.trim()) return toast.error('กรอกหัวเรื่องงาน');
+    // ด่านชั้น 2 ก่อนเขียน — ต้นทาง (แผนเดิม) และปลายทาง (ไลน์ที่เลือกอยู่ตอนนี้)
+    if (!plan._new) {
+      const srcWrite = canWriteLine(wctx, plan?.line_name, lines);
+      if (!srcWrite.ok) return toast.info(writeBlockText(srcWrite, { what: 'แผน PM ของไลน์นี้' }));
+    }
+    const dstWrite = canWriteLine(wctx, f.line_name, lines);
+    if (!dstWrite.ok) return toast.info(writeBlockText(dstWrite, { what: `แผน PM ของไลน์ "${f.line_name}"` }));
     // เลขเครื่องที่ไม่ผูกทะเบียน = ผังเครื่อง/Andon หาไม่เจอ — ถามเฉพาะแผนใหม่หรือเมื่อเพิ่งเปลี่ยนเลข (แผนเก่าที่ค้างมาก่อนยังแก้ส่วนอื่นได้)
     // 2026-09-07 เปลี่ยนจากบล็อกแข็งเป็นยืนยัน — เก็บเป็น text (machine_id null) ไม่ทำข้อมูลอื่นเสีย
     if (f.machine_no && !f.machine_id && (plan._new || f.machine_no !== (plan.machine_no || ''))

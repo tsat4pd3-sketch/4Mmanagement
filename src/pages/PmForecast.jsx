@@ -14,6 +14,10 @@ import { fetchAllPages, fetchByIds } from '../utils/fetchByIds'   // 🔴 เพ
 import PageHeader from '../components/PageHeader'
 import Page from '../components/Page'
 import FilterBar from '../components/FilterBar'
+import LineScopeSelect from '../components/LineScopeSelect'
+import SearchInput from '../components/SearchInput'
+import { lineKnownSet } from '../utils/pmEquipList'
+import { filterPlanRows } from '../utils/pmPlanFilter'
 import useTabParam from '../utils/useTabParam'
 import PmUsageBoard from '../components/PmUsageBoard'
 
@@ -44,7 +48,7 @@ export default function PmForecast() {
   }
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
-  const [onlyWindow, setOnlyWindow] = useState(false)
+  const [onlyWindow, setOnlyWindow] = useState('')   // ตัวกรองสถานะ: '' | overdue | window | later
   const [daily, setDaily] = useState([])      // ยอดผลิตรายไลน์รายวัน (RPC pm_usage_daily)
   const [lineObjs, setLineObjs] = useState([])
   /* ยอดผลิตโหลดไม่ได้ = ยอดสะสม/อัตรา/buffer ทั้งหน้าเป็น 0 ⇒ ต้องเขียนบนจอ ห้ามแค่ console.warn (QC 05/10) */
@@ -166,8 +170,24 @@ export default function PmForecast() {
     toast.success('บันทึกแล้ว')
   }
 
-  const shown = useMemo(() => onlyWindow ? rows.filter(r => r.inWindow) : rows, [rows, onlyWindow])
+  /* 🗂️ ตัวกรอง (19/10 audit หน้า PM) — ขอบเขตไลน์ (รวมไลน์ลูก) · สถานะ · ค้นหา · กติกา `utils/pmPlanFilter.js`
+     แทน checkbox "เฉพาะที่เข้า window" เดิม (เป็นตัวเลือกหนึ่งของสถานะแล้ว) */
+  const [fScope, setFScope] = useState({ section: '', line: '', names: null })
+  const [fQ, setFQ] = useState('')
+  const scopeLines = useMemo(() => {   // ชื่อไลน์ซ้ำในทะเบียน = key ซ้ำในตัวเลือก ⇒ ยุบด้วยชื่อ
+    const seen = new Set()
+    return (lineObjs || []).filter(l => l?.name && !seen.has(l.name) && seen.add(l.name))
+  }, [lineObjs])
+  const known = useMemo(() => lineKnownSet(scopeLines), [scopeLines])
+  const STATUS_KEEP = { overdue: r => r.overdue, window: r => r.inWindow, later: r => !r.overdue && !r.inWindow }
+  const { rows: shown, droppedNoLine } = useMemo(() => filterPlanRows(rows, {
+    q: fQ, scopeNames: fScope.names, known, keep: STATUS_KEEP[onlyWindow] || null,
+    getLine: r => r.line, getText: r => [r.line, r.eqName],
+  }), [rows, fQ, fScope, known, onlyWindow]) // eslint-disable-line react-hooks/exhaustive-deps
+  const filtered = !!(fQ.trim() || fScope.names?.length || onlyWindow)
+  const clearFilters = () => { setFQ(''); setFScope({ section: '', line: '', names: null }); setOnlyWindow('') }
   const windowCount = rows.filter(r => r.inWindow).length
+  const overdueCount = rows.filter(r => r.overdue).length
   const totalBuffer = shown.reduce((s, r) => s + (r.inWindow ? r.buffer : 0), 0)
 
   const inp = { width: 64, padding: '4px 6px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', fontSize: 12, textAlign: 'center' }
@@ -204,15 +224,25 @@ export default function PmForecast() {
         <PmUsageBoard daily={daily} lines={lineObjs} plans={rows} todayStr={todayStr} loading={loading} />
       ) : (<>
       <FilterBar>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--text2)', cursor: 'pointer' }}>
-          <input type="checkbox" checked={onlyWindow} onChange={e => setOnlyWindow(e.target.checked)} />เฉพาะที่เข้า window แล้ว ({windowCount})
-        </label>
+        <LineScopeSelect lines={scopeLines} section={fScope.section} line={fScope.line}
+          onChange={(section, line, info) => setFScope({ section, line, names: info?.lines?.length ? info.lines : (section || line ? [line || section] : null) })} />
+        <select value={onlyWindow} onChange={e => setOnlyWindow(e.target.value)} aria-label="สถานะ">
+          <option value="">ทุกสถานะ ({rows.length})</option>
+          <option value="overdue">เลยกำหนด ({overdueCount})</option>
+          <option value="window">เข้า window แล้ว ({windowCount})</option>
+          <option value="later">ยังไม่ถึง window ({rows.filter(STATUS_KEEP.later).length})</option>
+        </select>
+        <SearchInput value={fQ} onChange={setFQ} fields="ไลน์ / อุปกรณ์" />
+        <span className="filter-count">แสดง {shown.length} จาก {rows.length}</span>
+        {droppedNoLine > 0 && <span className="filter-count" style={{ color: '#f59a3f' }} title="ชื่อไลน์ของแผนไม่ตรงทะเบียนไลน์ผลิต — กรองตามไลน์ไม่ได้">⚠ อีก {droppedNoLine} แผนไลน์ไม่ตรงทะเบียน</span>}
+        {filtered && <button type="button" onClick={clearFilters} style={{ background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 8, padding: '4px 10px', fontSize: 12, cursor: 'pointer' }}>✕ ล้างตัวกรอง</button>}
         <span className="spacer" />
         {noLineN > 0 && <span className="filter-count" title="แผนที่ทั้งตัวแผน (usage_source_line) และเครื่อง (line_name) ไม่มีไลน์ — คิดยอดผลิต/วัน PM ไม่ได้ ไปตั้งไลน์ให้เครื่องที่ทะเบียนอุปกรณ์" style={{ color: '#f59a3f', fontWeight: 700 }}>⚠ {noLineN} แผนไม่มีไลน์ — ไม่แสดง</span>}
         {totalBuffer > 0 && <span className="filter-count" style={{ color: 'var(--accent2)', fontWeight: 700 }}>Σ buffer ที่ต้องเตรียม ≈ {totalBuffer.toLocaleString()} ชิ้น</span>}
       </FilterBar>
 
       {loading ? <div style={{ color: 'var(--muted)', padding: 40, textAlign: 'center' }}>กำลังคำนวณ...</div>
+        : (!shown.length && rows.length) ? <div style={{ color: 'var(--muted)', padding: 40, textAlign: 'center' }}>ไม่มีแผนที่ตรงกับตัวกรอง{droppedNoLine ? ` · อีก ${droppedNoLine} แผนไลน์ไม่ตรงทะเบียน กรองตามไลน์ไม่ได้` : ''}</div>
         : loadErr ? <div style={{ color: 'var(--muted)', padding: 40, textAlign: 'center' }}>อ่านข้อมูลไม่ได้ — ดูแถบแดงด้านบน</div>
         : !shown.length ? <div style={{ color: 'var(--muted)', padding: 40, textAlign: 'center' }}>ยังไม่มีแผน PM ที่คำนวณได้ (ต้องตั้ง usage_threshold หรือรอบเวลา + มียอดผลิต/forecast)</div>
         : (

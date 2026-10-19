@@ -105,3 +105,25 @@ export function markerScale(renderedMapWidth, { machineCount = 0, points = null,
     subPillMaxW: Math.max(Math.round(SUB * 2), 88),
   };
 }
+
+/* ── ป้ายใต้หมุดต้องไม่ตกขอบผัง (19/10 · clipsweep: หมุดใกล้ขอบซ้าย ป้าย "ST-1 SPOT WELD" ถูกขอบผังตัดครึ่ง) ──
+   ป้ายปกติจัดกึ่งกลางใต้หมุด (left:50% translateX(-50%)) ⇒ หมุดที่อยู่ห่างขอบน้อยกว่าครึ่งความกว้างป้าย โดนตัดเงียบ
+   · `pillEdgeAlign(leftPct, { pillW, mapW })` → 'center' | 'start' (ชิดขอบซ้ายของหมุด) | 'end' (ชิดขอบขวา)
+   · ตัดสินจาก "ระยะถึงขอบเป็น px" (pct × mapW) เทียบครึ่งป้าย — ไม่รู้ความกว้างผัง = ใช้เกณฑ์ 8% · พิกัดอ่านไม่ออก = center */
+export function pillEdgeAlign(leftPct, { pillW = 0, mapW = 0 } = {}) {
+  const pct = Number.parseFloat(leftPct);
+  if (!Number.isFinite(pct)) return 'center';
+  if (pillW > 0 && mapW > 0) {
+    const x = (pct / 100) * mapW;
+    if (x < pillW / 2) return 'start';
+    if (mapW - x < pillW / 2) return 'end';
+    return 'center';
+  }
+  return pct < 8 ? 'start' : pct > 92 ? 'end' : 'center';
+}
+/** style ของกล่องป้าย (ทับ left/transform/alignItems ของ pillStackSt) — ป้ายเริ่มจากขอบหมุด ไม่ใช่กลางหมุด */
+export function pillEdgeStyle(align) {
+  if (align === 'start') return { left: 0, right: 'auto', transform: 'none', alignItems: 'flex-start' };
+  if (align === 'end') return { left: 'auto', right: 0, transform: 'none', alignItems: 'flex-end' };
+  return {};
+}

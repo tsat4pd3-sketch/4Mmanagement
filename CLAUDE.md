@@ -113,22 +113,25 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 > ### 🔴🔴 สิทธิ์มี **3 ชั้น** — "เข้าหน้าได้ ≠ แก้ของหน่วยงานอื่นได้" (2026-10-15 · คำสั่ง user)
 > ① เข้าหน้าได้ไหม `page:/x` · ② กดปุ่มเป็นไหม `can()` · ③ **แถวนี้เป็นของหน่วยงานเราไหม**
 > 🔴 **ชั้น ③ = `src/utils/writeScope.js`** (`canWriteUnit`/`canWriteLine`/`writableRows`) ·
->   **ฝั่งช่างใช้แกน "ทีม"** = `canWriteTeam()` (`utils/mtnTeams.js`) เพราะช่างซ่อมข้ามไลน์เป็นงานปกติ
+>   **ฝั่งช่างใช้แกน "ทีม"** = `canWriteTeam()` (`utils/mtnTeams.js`) — ช่างซ่อมข้ามไลน์เป็นงานปกติ
 > 🔴 **"ขอบเขตที่เห็น" ≠ "ขอบเขตที่แก้ได้"** — เห็น = `sections` (**ว่าง = เห็นทั้งโรงงาน**) ·
 >   แก้ = **`profiles.section` บ้านจริง** · ใบผ่านข้ามหน่วย = คีย์ **`scope:all_units`** (`UserContext.allUnits`)
 >   **ห้ามเอา `sections` มาตัดสินการแก้** (มีด่าน `write-scope-layer`)
 > 🔴 **แกนที่ 2 ของชั้น ③ = Cost Center (`src/utils/ccScope.js` · `canWriteScope`)** — ตั้งที่ `/add-user` ช่อง ④
 >   (`profiles.resp_cost_centers` · `UserContext.respCostCenters`) · **ว่าง = ถอยไปใช้ `section` เหมือนเดิม**
->   🔴 **ลำดับชั้นมาจาก `org_nodes.parent_id` เท่านั้น — เลขรหัสไม่ได้บอกชั้น** (ลูกของ `2140461000` คือ `2140561001`)
+>   🔴 **ลำดับชั้นมาจาก `org_nodes.parent_id` เท่านั้น — เลขรหัสไม่ได้บอกชั้น**
 >   · ทีมไม่มีรหัส = **ตกทอดจากแม่** · ไล่ขึ้นไม่เจอ = fail-closed · กฎ "CC ของโหนด" **ห้ามเขียนชุดที่ 2**
 >   (`costCenterOfNode()` อยู่ไฟล์นี้ที่เดียว · มีด่าน `cc-scope-layer`)
 >   🔑 **จอไม่ต้องรู้เรื่อง 2 แกน** — `canWriteUnit`/`canWriteLine` สลับให้เองเมื่อ ctx มี `respCostCenters`
 >     **+ `scopeIdx`** ⇒ **ctx ของด่านทุกจอต้องส่ง 2 ช่องนี้** (ด่านตรวจรายบรรทัดใน `write-scope-layer`) ·
->     ไลน์ตัดสินที่ตัวไลน์ก่อนถอยไปส่วนงาน · **ตั้ง CC แล้วอ่านผังไม่ได้ = บล็อก** (`scope_unreadable`)
+>     ไลน์ตัดสินที่ตัวไลน์ก่อนถอยไปส่วนงาน · อ่านผังไม่ได้ = บล็อก (`scope_unreadable`)
 > 🔴 **ช่องเลือกขอบเขต/ทีม = ตัวกรองการดู ไม่ใช่ด่าน** ⇒ ต้องเช็คซ้ำ**ในฟังก์ชันที่เขียน DB จริง**
 >   ไม่ใช่แค่ซ่อนปุ่ม (`?scope=`/`?dept=`/`?mo=` เปิดตรงได้) · ของกลาง = `unknownTarget:'block'`
 > 🔴 **กรองแถวออกแล้วต้องเขียนบนจอว่าซ่อนกี่รายการ** — "ไม่มีรายการ" ทั้งที่มีแต่ไม่ใช่ของเรา = จอโกหก
-> 📄 20 จุดที่ปิด + ที่ยังเหลือ (RLS 68 policy ฝั่ง Main · DR = known gap) → `docs/modules/permission-scope-audit.md`
+> 🔴 **"ย้ายของ" ต้องเช็ค 2 ฝั่ง: ต้นทาง (แถวเดิม) + ปลายทาง (ค่าที่กำลังจะเขียน)** (19/10 · เจอ 4 หน้ารอบเดียว)
+>   ย้ายโหนดผัง/แผน/รายการตรวจ/แถวข้ามพาร์ท = เขียนลงหน่วยใหม่ · ด่านที่มองแถวเดิมอย่างเดียว **ปล่อยการย้ายออกนอกขอบเขตเสมอ**
+> 🔴 **หน้าแม่ที่มีกฎแล้ว ต้องส่งกฎลงแผงลูก** (ส่งแค่ `canEdit` = แผงลูกเขียนข้ามหน่วยได้) — ด่านต้องตรวจ "prop ที่ส่งจริง"
+> 📄 37 จุดที่ปิด + ที่ยังเหลือ (RLS 68 policy ฝั่ง Main · DR = known gap) → `docs/modules/permission-scope-audit.md`
 
 > 📄 `docs/modules/org-hierarchy.md` · `docs/modules/role-system.md`
 
@@ -670,27 +673,28 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 
 ### Date/Time Utilities — 📄 ตัวอย่างโค้ด + ฝั่ง SQL → `docs/modules/date-time-rules.md`
 
-> ⚠️ **ห้ามใช้ `new Date().toISOString()` เพื่อหาวันที่งาน** — คืน UTC ต่างจากไทย (UTC+7) วันที่คลาดเคลื่อน
+> ⚠️ **ห้ามใช้ `new Date().toISOString()` เพื่อหาวันที่งาน** — UTC ≠ ไทย (UTC+7) = คลาดวัน
 > · **วันที่งาน = `getWorkDate()`** (`src/utils/workDate.js` · ก่อน 08:00 = วันก่อนหน้า — กะดึกข้ามวัน)
-> · **บวก/ลบวันจากสตริงวันที่ = `addDaysStr()`** (ไฟล์เดียวกัน · UTC ล้วน ไม่พึ่ง timezone เครื่อง · แกะไม่ออก = `null`)
+> · **บวก/ลบวันจากสตริงวันที่ = `addDaysStr()`** (ไฟล์เดียวกัน · UTC ล้วน · แกะไม่ออก = `null`)
 >   🔴 **ตัวที่คืน "สตริงวันที่" ห้ามปิดท้ายด้วย `.toISOString().slice(0,10)`** — ผสม 2 ระบบเวลา = คลาดวันเงียบ (มีด่าน `no-utc-workdate`)
-> · กะปัจจุบัน = `getCurrentShift()` (day 08:00–19:59 / night 20:00–07:59) · `getShiftInfo()` คืน `{ shift, label }`
+> · กะปัจจุบัน = `getCurrentShift()` · `getShiftInfo()` คืน `{ shift, label }`
 > · **แสดงผล**เวลาใช้ `toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })` (ไม่ใช่สำหรับ query)
 > · **ฝั่ง SQL (DR) ใช้ `work_date_bangkok()` ห้ามใช้ `current_date`** (= UTC · เพี้ยน 07:00-07:59 ไทย)
 
 > ⚠️ **"วันทำงาน" ต้องอ้างอิงปฏิทินบริษัทก่อน ห้ามใช้ค่าคงที่ 22/26 วัน** (คำสั่ง user 2026-07-21) —
 > `countWorkingDaysInMonth(monthKey, fallback)` ใน `src/utils/companyCalendar.js` (เรียก `loadCompanyCalendar()` ก่อน)
-> จ-ศ ไม่มาร์ค = ทำงาน · มาร์คหยุดทุกชนิด (ot15/ot2/shutdown75) = หยุด · ส-อา มาร์ค working = ทำงาน
-> 📄 จุดที่ใช้แล้ว + 2 บั๊กที่เคยเจอ → `docs/modules/shift-ot.md`
+> 📄 กติกาการมาร์ควัน (จ-ศ/ส-อา/ot15/ot2/shutdown75) + จุดที่ใช้แล้ว + 2 บั๊กที่เคยเจอ → `docs/modules/shift-ot.md`
 
 ### 🔴 กฎเหล็กการเขียน DB จาก client (full QC audit 2026-09-03..04 — คลาสบั๊กที่เจอซ้ำทุกรอบ)
 
 > 📄 **คำอธิบายเต็ม + ตัวเลข/เคสจริงของทุกข้อ → `docs/modules/db-write-rules.md`** (ห้ามตัดข้อไหนออกจากลิสต์นี้)
 
 1. **supabase-js ไม่ throw** (`const { data } = await …` = กลืน error 100%) ⇒ **ทุก insert/update/delete อ่าน `error` ผ่าน `checkWrite(await …, 'ป้ายงาน')`** (`src/utils/dbWrite.js`) · delete-then-insert: delete ล้ม = หยุด ห้าม insert ต่อ
-2. **RLS ปฏิเสธ UPDATE/DELETE = "สำเร็จ 0 แถว ไม่มี error"** (มีแต่ INSERT ที่โยน 42501) ⇒ ปุ่มที่ผลลัพธ์สำคัญต้อง **`checkWriteRows(await ….select('id'), 'ป้ายงาน')`** — `checkWrite` **ไม่นับแถว** ⇒ ต่อ `.select()` แล้วส่งเข้า `checkWrite` = เสียเปล่า (2 ด่าน) · 🔴 **ลบไฟล์ใน storage ได้หลังนับแถว > 0 เท่านั้น** (เช็คแค่ `error` = แถวยังอยู่แต่ไฟล์หายถาวร · มีด่าน) · 🔴 **ทะเบียนที่จับคู่ด้วยข้อความ ลบได้หลังนับปลายทางครบ — นับไม่ได้ = ห้ามลบ** (`utils/orgNodeRefs.js` · `utils/processTypeRefs.js` · **ทะเบียนบน `SimpleMasterPanel` ต้องส่ง `onBeforeDelete={masterDeleteGuard(…)}` ทุกตัว** `utils/masterRefs.js` · มีด่าน)
+2. **RLS ปฏิเสธ UPDATE/DELETE = "สำเร็จ 0 แถว ไม่มี error"** (มีแต่ INSERT ที่โยน 42501) ⇒ ปุ่มที่ผลลัพธ์สำคัญต้อง **`checkWriteRows(await ….select('id'), 'ป้ายงาน')`** · ⚠️ **`checkWrite` ไม่นับแถว** (2 ด่าน) · 🔴 **ลบไฟล์ใน storage ได้หลังนับแถว > 0 เท่านั้น** (ไฟล์หายถาวรแต่แถวยังอยู่ · มีด่าน) · 🔴 **ทะเบียนที่จับคู่ด้วยข้อความ ลบได้หลังนับปลายทางครบ — นับไม่ได้ = ห้ามลบ** (`utils/orgNodeRefs.js` · `utils/processTypeRefs.js` · **ทะเบียนบน `SimpleMasterPanel` ต้องส่ง `onBeforeDelete={masterDeleteGuard(…)}` ทุกตัว** `utils/masterRefs.js` · มีด่าน)
 3. **policy RLS ต้อง `has_perm('<คีย์เดียวกับปุ่มบนจอ>')` ห้าม hardcode role array** (**จอที่คุมสิทธิ์เองก็ต้องเช็คสิทธิ์ผู้ดู** — มีด่าน) · **ตารางใหม่ต้องมี policy ครบทุก cmd ที่ client ใช้ — `upsert` ต้องมี UPDATE** · 🔑 **คีย์ของ `upsert` ต้องเป็น unique index คอลัมน์ล้วน ห้าม expression/partial** (`42P10` = ไม่เขียนเลยทั้งก้อน · มีด่าน)
 4. **stale-response race** — ทุก effect ที่ await แล้ว set state ต้องมี guard (`let alive = true` + cleanup / request id / ref ปัจจุบัน)
+    · 🔴 **จอที่ payload ผสม "id ที่โหลดมา" กับ "ตัวเลือกที่เลือกอยู่" ต้องมีด่านชั้น 2 ตอนกดบันทึกด้วย**
+      (`viewKey`/`isStale`/`staleBlockText` · `src/utils/staleView.js`) — ชั้นแรกกันจอเพี้ยน **ไม่ได้กันการเขียนผิดแถว**
 5. **`.in(ids)` ยาว = URL เกินเพดาน proxy → คืนค่าว่างเงียบ** ⇒ ผ่าน `fetchByIds` (chunk) · **เพดาน 1000 แถว/คิวรี** ⇒ ตารางที่โตได้ห้าม `select()` เปล่า
 6. **claim สถานะ (compare-and-swap) ก่อนเขียน ledger ⇒ ledger ล้มต้องคืนสถานะ**
 7. **realtime ต้องมี "เพดาน" ไม่ใช่ debounce · และต้องกรองว่า "เรื่องนี้ของฉันไหม"** — **`coalesce(fn, LIVE.x)` (`src/utils/liveRefresh.js`) เท่านั้น ห้าม debounce/`setTimeout` เอง** · ระดับใน `src/utils/refreshRates.js` **ห้ามใส่ ms ดิบ** · **subscribe ต้องมี `filter:` เมื่อรู้ขอบเขต** — ⚠️ **DELETE กรองด้วยคอลัมน์ที่ไม่ใช่ pk ไม่ได้** ให้แยก subscribe DELETE ไม่กรอง **ห้ามแก้ด้วย `REPLICA IDENTITY FULL`** · 🔴 **ตารางที่ subscribe ต้องอยู่ในทะเบียน `src/utils/realtimeTables.js` + publication จริง** (ไม่อยู่ = เงียบสนิท · มีด่าน)

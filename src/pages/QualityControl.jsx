@@ -23,8 +23,9 @@ import { toast } from '../components/Toast';
 import { UserContext } from '../App';
 import { usePerms } from '../utils/usePerms';
 import { isTrialDefect, defectQty, isSuspectPending, orderProducedQty, QBIN_EMBED } from '../utils/oee';
-import { getLineFamilyNames } from '../utils/lineHierarchy';
-import { inSectionScope } from '../utils/sectionScope';
+import { qaViewScope, qaWriteCtx } from '../utils/qaViewScope';
+import { checkWriteRows } from '../utils/dbWrite';
+import { isOpenQaDoc, QA_DONE_IN, qaDocInFilter } from '../utils/qaDocStatus';
 import { canWriteLine, writableRows, writeBlockText } from '../utils/writeScope';
 import LineSelect from '../components/LineSelect';
 import PersonSelect from '../components/PersonSelect';
@@ -67,6 +68,8 @@ const STATUS_SEG = [
   { value: 'active', label: 'ค้างดำเนินการ' },
   { value: 'closed', label: 'ปิดแล้ว' },
 ];
+// NCR มีสถานะ "ยกเลิก (เปิดผิด)" เพิ่ม (19/10 · utils/qaDocStatus) — CAPA ไม่มี จึงแยกชุด
+const NCR_STATUS_SEG = [...STATUS_SEG, { value: 'cancelled', label: 'ยกเลิก' }];
 
 /* ── Date helpers (ห้ามใช้ toISOString() หา work date — ดู CLAUDE.md) ─────── */
 function localDateStr(d = new Date()) {
@@ -292,13 +295,10 @@ function QualityDashboard() {
   const [allLines, setAllLines] = useState([]);
   // ขอบเขตไลน์ของภาพรวมผลิต/ของเสีย: leader → เฉพาะครอบครัวไลน์ตัวเอง (ไม่ให้เห็นทั้งโรงงานจนงง) ·
   // role ที่ถูกจำกัด sections → เฉพาะส่วนงาน · qa/manager/admin (sections ว่าง) → ทั้งโรงงานเหมือนเดิม
+  // 👁 utils/qaViewScope — ส่วนงานที่ไม่มีไลน์ผลิต (QA) = ทั้งโรงงาน (เดิม 0 ไลน์ = แผงว่าง · 19/10)
   const scopedLineNames = useMemo(() => {
-    if (role === 'leader' && lineId) {
-      const myLine = allLines.find(l => String(l.id) === String(lineId));
-      return myLine ? getLineFamilyNames(allLines, myLine.name) : [];
-    }
-    if (sections && sections.length) return allLines.filter(l => inSectionScope(sections, l.section)).map(l => l.name);
-    return null; // ไม่จำกัด
+    const v = qaViewScope(allLines, { role, lineId, sections });
+    return v.names ? [...v.names] : null; // null = ไม่จำกัด
   }, [role, lineId, sections, allLines]);
   useEffect(() => { loadLinesRes().then(({ data }) => setAllLines(data || [])); }, []);
   /* ⏱️ ช่วงข้อมูล = แถบกลาง `<TimeRangeBar>` (UI §6.16)
@@ -376,7 +376,7 @@ function QualityDashboard() {
       ]);
       const oo = ooRes.rows, dd = ddRes.rows;
       // นับ NCR ค้างให้ตรงกับ scope ของ leader (ตัวเลข KPI จะได้ตรงกับรายการในแท็บ NCR)
-      let ncrCountQ = supabase.from('qa_ncr').select('id', { count: 'exact', head: true }).neq('status', 'closed');
+      let ncrCountQ = supabase.from('qa_ncr').select('id', { count: 'exact', head: true }).not('status', 'in', QA_DONE_IN);
       if (scopedLineNames) ncrCountQ = ncrCountQ.in('line_name', scopedLineNames);
       const [{ count: nOpen, error: ncrErr }, { data: capas, error: capaErr }] = await Promise.all([
         ncrCountQ,
@@ -601,8 +601,9 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
   /* 🔐 จุดควบคุม SPC ผูกไลน์ ⇒ ลงค่าวัด/ลบค่าวัด/แก้ spec ได้เฉพาะไลน์ส่วนงานตัวเอง (audit 15/10)
      เดิม `loadChars()` ดึงทุกไลน์ ⇒ เลือกจุดของไลน์อื่นแล้วลงค่าทับ Cpk ของเขาได้
      ขา QA ถือ `scope:all_units` จึงไม่กระทบ */
-  const wctx = useMemo(() => ({ role, section: homeSection, sections: mySections, allUnits, respCostCenters, scopeIdx }),
-    [role, homeSection, mySections, allUnits, respCostCenters, scopeIdx]);
+  // ✍️ QA ใหญ่สุด — คนฝ่ายคุณภาพแก้ได้ทุกไลน์ (utils/qaViewScope.qaWriteCtx · 19/10)
+  const wctx = useMemo(() => qaWriteCtx({ role, section: homeSection, sections: mySections, allUnits, respCostCenters, scopeIdx }, lineObjs),
+    [role, homeSection, mySections, allUnits, respCostCenters, scopeIdx, lineObjs]);
   // 📜 ค่าที่เคยบันทึกใน qa_characteristics (Main) — พาร์ท/เกจที่ทะเบียนยังไม่มี ยังเลือกซ้ำได้ ไม่หายเงียบ (2026-09-07)
   const partHist = useColumnHistory(supabase, 'qa_characteristics', 'part_no', { upper: true });
   const gaugeHist = useColumnHistory(supabase, 'qa_characteristics', 'gauge');
@@ -678,6 +679,8 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
       lsl: f.lsl === '' ? null : Number(f.lsl),
       subgroup_size: Number(f.subgroup_size) || 1,
       gauge: f.gauge.trim() || null, control_method: f.control_method.trim() || null,
+      // สวิตช์ ใช้งาน/ปิดใช้งาน ในโมดัล — เดิมไม่ได้ส่งค่า ⇒ กดบันทึกแล้วไม่เปลี่ยนจริง (audit 19/10)
+      ...(f.id ? { is_active: !!f.is_active } : {}),
     };
     const { error } = f.id
       ? await supabase.from('qa_characteristics').update(payload).eq('id', f.id)
@@ -954,6 +957,7 @@ const NCR_STATUS = {
   containment: { label: 'กักกันแล้ว',      color: '#f59e0b' },
   disposition: { label: 'ตัดสินแล้ว',      color: '#4d9fff' },
   closed:      { label: 'ปิดรายการ',       color: '#22c55e' },
+  cancelled:   { label: 'ยกเลิก (เปิดผิด)', color: '#6b7280' },
 };
 const NCR_SOURCE = { incoming: 'รับเข้า (Incoming)', inprocess: 'ในกระบวนการ', final: 'ตรวจสุดท้าย (Final)', customer: 'ลูกค้าเคลม' };
 const NCR_SEV = { minor: { label: 'Minor', color: '#4d9fff' }, major: { label: 'Major', color: '#f59e0b' }, critical: { label: 'Critical', color: '#ef4444' } };
@@ -972,40 +976,57 @@ function NCRTab({ lineObjs, canRecord, canManage, onOpenCapa, partOpts = [] }) {
   const [allLines, setAllLines] = useState([]);
 
   // leader → เห็น NCR เฉพาะครอบครัวไลน์ตัวเอง · role จำกัด sections → เฉพาะส่วนงาน · qa/mgr/admin → ทั้งหมด
+  // 👁 ขอบเขตที่เห็น — ตัวเดียวทุกแท็บ (utils/qaViewScope · ส่วนงานที่ไม่มีไลน์ผลิต เช่น QA = ทั้งโรงงาน)
   const scopedLineNames = useMemo(() => {
-    if (role === 'leader' && lineId) {
-      const myLine = allLines.find(l => String(l.id) === String(lineId));
-      return myLine ? getLineFamilyNames(allLines, myLine.name) : [];
-    }
-    if (sections && sections.length) return allLines.filter(l => inSectionScope(sections, l.section)).map(l => l.name);
-    return null;
+    const v = qaViewScope(allLines, { role, lineId, sections });
+    return v.names ? [...v.names] : null;
   }, [role, lineId, sections, allLines]);
   useEffect(() => { loadLinesRes().then(({ data }) => setAllLines(data || [])); }, []);
 
   const load = useCallback(async () => {
     if (scopedLineNames && scopedLineNames.length === 0) { setList([]); return; }
     let q = supabase.from('qa_ncr').select('*').order('created_at', { ascending: false }).limit(300);
-    if (filter === 'active') q = q.neq('status', 'closed');
+    if (filter === 'active') q = q.not('status', 'in', QA_DONE_IN);   // ยกเลิก (เปิดผิด) ไม่ใช่งานค้าง
     if (filter === 'closed') q = q.eq('status', 'closed');
-    if (scopedLineNames) q = q.in('line_name', scopedLineNames);   // จำกัดตามไลน์ของ leader
+    if (filter === 'cancelled') q = q.eq('status', 'cancelled');
+    // จำกัดตามไลน์ — 🔴 ใบที่ไม่ระบุไลน์ต้องเห็นด้วย (`IN` ไม่จับ NULL ⇒ เปิดแล้วหายจากรายการ · audit 19/10)
+    if (scopedLineNames) q = q.or(`line_name.is.null,line_name.in.(${scopedLineNames.map(n => `"${n.replace(/"/g, '\\"')}"`).join(',')})`);
     const { data } = await q;
     setList(data || []);
   }, [filter, scopedLineNames]);
   useEffect(() => { load(); }, [load]);
 
   const createNCR = async () => {
+    /* ด่านชั้น 2 — ซ่อนปุ่มไม่ใช่ด่าน (โมดัลเปิดค้างตอนสิทธิ์เปลี่ยน / ยิงตรง) · NCR = บันทึกคุณภาพมีเลขที่ */
+    if (!canRecord) { toast.error('เปิด/แก้ NCR ต้องมีสิทธิ์ qa:record'); return; }
     const f = createModal;
     if (!f.defect_desc.trim()) { toast.error('กรอกรายละเอียดของเสีย'); return; }
+    /* ✏️ แก้หัวใบที่เปิดผิด (19/10 · หน้างานแจ้ง "เปิดผิดแก้ไม่ได้") — ฟอร์มเดียวกับตอนเปิด ไม่ออกเลขใหม่ */
+    if (f.id) {
+      const ok = checkWriteRows(await supabase.from('qa_ncr').update({
+        report_date: f.report_date || getWorkDate(),
+        line_name: f.line_name || null, part_no: (f.part_no || '').trim() || null, part_name: (f.part_name || '').trim() || null,
+        source: f.source, severity: f.severity, defect_desc: f.defect_desc.trim(),
+        qty_found: parseInt(f.qty_found) || 0, qty_ng: parseInt(f.qty_ng) || 0,
+      }).eq('id', f.id).select('id'), `แก้ ${f.ncr_no}`);
+      if (!ok) return;
+      toast.success(`แก้ ${f.ncr_no} แล้ว ✓`);
+      setCreateModal(null);
+      await load();
+      const { data } = await supabase.from('qa_ncr').select('*').eq('id', f.id).single();
+      if (data) setDetail(data);
+      return;
+    }
     const ncr_no = await nextDocNo('qa_ncr', 'ncr_no', 'NCR');
     if (!ncr_no) { toast.error('ออกเลขที่ NCR ไม่สำเร็จ — ยังไม่ได้บันทึก ลองใหม่อีกครั้ง'); return; }
-    const { error } = await supabase.from('qa_ncr').insert({
+    const ins = await supabase.from('qa_ncr').insert({
       ncr_no, report_date: f.report_date || getWorkDate(),
       line_name: f.line_name || null, part_no: f.part_no.trim() || null, part_name: f.part_name.trim() || null,
       source: f.source, severity: f.severity, defect_desc: f.defect_desc.trim(),
       qty_found: parseInt(f.qty_found) || 0, qty_ng: parseInt(f.qty_ng) || 0,
       created_by: fullName || null,
-    });
-    if (error) { toast.error(`สร้าง NCR ไม่สำเร็จ: ${error.message}`); return; }
+    }).select('id');
+    if (!checkWriteRows(ins, `สร้าง ${ncr_no}`)) return;
     notifyEvent({
       event: 'qa_ncr_opened', type: 'error', ref_table: 'qa_ncr',
       line_name: f.line_name || null, actor: fullName,
@@ -1021,9 +1042,27 @@ function NCRTab({ lineObjs, canRecord, canManage, onOpenCapa, partOpts = [] }) {
     load();
   };
 
+  /* ❌ ยกเลิก NCR ที่เปิดผิด/ใบซ้ำ — ไม่ลบ (เลขที่ต้องสอบย้อนได้) · เหตุผลบังคับ (DB check) · ผูก 8D แล้ว = ห้าม */
+  const cancelNCR = async (n) => {
+    if (!canManage) { toast.error('ยกเลิกใบ NCR ต้องมีสิทธิ์ qa:manage'); return; }
+    const { count, error: eC } = await supabase.from('qa_capa').select('id', { count: 'exact', head: true }).eq('ncr_id', n.id);
+    if (eC || count == null) { toast.error('ตรวจใบ 8D ที่ผูกอยู่ไม่สำเร็จ — ยังยกเลิกไม่ได้'); return; }
+    if (count > 0) { toast.error(`${n.ncr_no} มีใบ 8D ผูกอยู่ ${count} ใบ — ยกเลิกไม่ได้ (ปิดผ่านขั้นตอนปกติแทน)`); return; }
+    const reason = window.prompt(`ยกเลิก ${n.ncr_no} — เหตุผล (เช่น เปิดซ้ำกับ NCR-xxx / ควรเป็นเคลมลูกค้า):`);
+    if (reason == null) return;
+    if (!reason.trim()) { toast.error('ต้องใส่เหตุผลการยกเลิก'); return; }
+    const ok = checkWriteRows(await supabase.from('qa_ncr').update({
+      status: 'cancelled', cancel_reason: reason.trim(), cancelled_by: fullName || null, cancelled_at: new Date().toISOString(),
+    }).eq('id', n.id).select('id'), `ยกเลิก ${n.ncr_no}`);
+    if (!ok) return;
+    toast.success(`ยกเลิก ${n.ncr_no} แล้ว (ดูได้ที่ตัวกรอง "ยกเลิก")`);
+    setDetail(null); load();
+  };
+
   const updateNCR = async (id, patch, msg) => {
-    const { error } = await supabase.from('qa_ncr').update(patch).eq('id', id);
-    if (error) { toast.error(error.message); return false; }
+    if (!canRecord) { toast.error('แก้ใบ NCR ต้องมีสิทธิ์ qa:record'); return false; }
+    // นับแถวที่เขียนจริง (กฎเขียน DB ข้อ 2) — RLS ปฏิเสธ UPDATE = 0 แถวไม่มี error
+    if (!checkWriteRows(await supabase.from('qa_ncr').update(patch).eq('id', id).select('id'), msg || 'บันทึกใบ NCR')) return false;
     toast.success(msg);
     await load();
     const { data } = await supabase.from('qa_ncr').select('*').eq('id', id).single();
@@ -1040,7 +1079,7 @@ function NCRTab({ lineObjs, canRecord, canManage, onOpenCapa, partOpts = [] }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <FilterBar>
         {/* UI-STANDARD 2026-09-24: 3 ตัวเลือกเท่ากัน → Segmented · "ทุก…" ซ้ายสุด (state 'all' เดิม) */}
-        <Segmented label="สถานะ" value={filter} onChange={setFilter} options={STATUS_SEG} />
+        <Segmented label="สถานะ" value={filter} onChange={setFilter} options={NCR_STATUS_SEG} />
         <span className="spacer" />
         {canRecord && <button style={btnSt('#ef4444')} onClick={() => setCreateModal({ ...EMPTY_NCR, report_date: getWorkDate() })}>🚨 เปิด NCR ใหม่</button>}
       </FilterBar>
@@ -1073,7 +1112,7 @@ function NCRTab({ lineObjs, canRecord, canManage, onOpenCapa, partOpts = [] }) {
       </div>
 
       {createModal && (
-        <Modal title="🚨 เปิด NCR ใหม่" onClose={() => setCreateModal(null)} width={960}>
+        <Modal title={createModal.id ? `✏️ แก้ข้อมูล ${createModal.ncr_no}` : '🚨 เปิด NCR ใหม่'} onClose={() => setCreateModal(null)} width={960}>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <Field label="วันที่พบ"><input type="date" style={inputSt} value={createModal.report_date} onChange={e => setCreateModal(f => ({ ...f, report_date: e.target.value }))} /></Field>
             <Field label="ไลน์ผลิต">
@@ -1106,7 +1145,7 @@ function NCRTab({ lineObjs, canRecord, canManage, onOpenCapa, partOpts = [] }) {
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
             <button style={ghostBtn} onClick={() => setCreateModal(null)}>ยกเลิก</button>
-            <button style={btnSt('#ef4444')} onClick={createNCR}>เปิด NCR</button>
+            <button style={btnSt('#ef4444')} onClick={createNCR}>{createModal.id ? '💾 บันทึกการแก้ไข' : 'เปิด NCR'}</button>
           </div>
         </Modal>
       )}
@@ -1125,9 +1164,19 @@ function NCRTab({ lineObjs, canRecord, canManage, onOpenCapa, partOpts = [] }) {
             <div><b>พบ/NG:</b> {detail.qty_found} / <span style={{ color: '#ef4444', fontWeight: 700 }}>{detail.qty_ng}</span> ชิ้น</div>
             <div style={{ gridColumn: '1 / -1' }}><b>ปัญหา:</b> {detail.defect_desc}</div>
             <div style={{ gridColumn: '1 / -1', color: 'var(--muted)', fontSize: 11.5 }}>เปิดโดย {detail.created_by || '—'}{detail.closed_at ? ` · ปิดเมื่อ ${fmtD(detail.closed_at.slice(0, 10))} โดย ${detail.closed_by || '—'}` : ''}</div>
+            {detail.status === 'cancelled' && (
+              <div style={{ gridColumn: '1 / -1', color: '#6b7280', fontSize: 12.5 }}>❌ ยกเลิกโดย {detail.cancelled_by || '—'} — {detail.cancel_reason}</div>
+            )}
           </div>
+          {/* ✏️ / ❌ ใบที่เปิดผิด — แก้หัวใบได้จนกว่าจะปิด · ยกเลิกได้ถ้ายังไม่ผูก 8D (เลขที่คงอยู่ ไม่ลบเอกสาร) */}
+          {isOpenQaDoc(detail) && canRecord && (
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+              <button style={ghostBtn} onClick={() => setCreateModal({ ...EMPTY_NCR, ...detail, part_no: detail.part_no || '', part_name: detail.part_name || '' })}>✏️ แก้ข้อมูลใบ (ไลน์/พาร์ท/อาการ/จำนวน)</button>
+              <button style={ghostBtn} onClick={() => cancelNCR(detail)}>❌ ยกเลิกใบนี้ (เปิดผิด)</button>
+            </div>
+          )}
 
-          {detail.status !== 'closed' && canRecord ? (
+          {isOpenQaDoc(detail) && canRecord ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <Field label="1) มาตรการกักกันชั่วคราว (Containment)">
                 <textarea rows={2} style={{ ...inputSt, resize: 'vertical' }} value={edit.containment} onChange={e => setEdit(x => ({ ...x, containment: e.target.value }))} />
@@ -1216,8 +1265,9 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone, lineObjs = [], 
   const { fullName, role, section: homeSection, sections: mySections, allUnits, respCostCenters, scopeIdx } = useContext(UserContext);
   /* 🔐 ใบ 8D ผูกกับไลน์ ⇒ แก้/ปิดได้เฉพาะไลน์ในส่วนงานตัวเอง (audit 15/10 — เดิมลิสต์ทั้งโรงงาน)
      ขา QA จริงถือคีย์ `scope:all_units` จึงไม่กระทบ · ที่ปิดคือคนนอกสายคุณภาพที่ถือ qa:record */
-  const wctx = useMemo(() => ({ role, section: homeSection, sections: mySections, allUnits, respCostCenters, scopeIdx }),
-    [role, homeSection, mySections, allUnits, respCostCenters, scopeIdx]);
+  // ✍️ QA ใหญ่สุด — คนฝ่ายคุณภาพแก้ได้ทุกไลน์ (utils/qaViewScope.qaWriteCtx · 19/10)
+  const wctx = useMemo(() => qaWriteCtx({ role, section: homeSection, sections: mySections, allUnits, respCostCenters, scopeIdx }, lineObjs),
+    [role, homeSection, mySections, allUnits, respCostCenters, scopeIdx, lineObjs]);
   const capaLineOf = useCallback((c) => c?.line_name || c?.qa_ncr?.line_name || '', []);
   // 📜 ค่าที่เคยบันทึกใน qa_capa (Main) — พาร์ท/ชื่อผู้รับผิดชอบที่ทะเบียนยังไม่มี ยังเลือกซ้ำได้ (2026-09-07)
   const partHist = useColumnHistory(supabase, 'qa_capa', 'part_no', { upper: true });
@@ -1574,8 +1624,8 @@ function InstrumentTab({ lineObjs, canManage }) {
   /* 🔐 เครื่องมือวัดมี "ไลน์ประจำ" ⇒ แก้รอบ calibration/สถานะ ได้เฉพาะไลน์ส่วนงานตัวเอง (audit 15/10)
      เครื่องมือที่ไม่ผูกไลน์ (ของกลาง/ห้อง cal) = ตัดสินไม่ได้ ⇒ ไม่บล็อก */
   const { role, section: homeSection, sections: mySections, allUnits, respCostCenters, scopeIdx } = useContext(UserContext);
-  const instCtx = useMemo(() => ({ role, section: homeSection, sections: mySections, allUnits, respCostCenters, scopeIdx }),
-    [role, homeSection, mySections, allUnits, respCostCenters, scopeIdx]);
+  const instCtx = useMemo(() => qaWriteCtx({ role, section: homeSection, sections: mySections, allUnits, respCostCenters, scopeIdx }, lineObjs),
+    [role, homeSection, mySections, allUnits, respCostCenters, scopeIdx, lineObjs]);
   // ตำแหน่ง/แผนกของเครื่องมือ = หน่วยงานในผังองค์กร (org_nodes) — เดิมพิมพ์เอง (2026-09-07)
   const orgSections = useOrgSections();
   const deptsOf = useOrgDepts();
@@ -1766,15 +1816,9 @@ export default function QualityControl() {
   // เลือกไลน์นอกส่วนงานแล้วสร้าง NCR/characteristic ข้ามส่วนงานได้ (กฎ dropdown-scope · QC audit 2026-08-03)
   // lineObjs = object array (id/name/parent_line_name) สำหรับ render dropdown แบบจัดชั้น (§5.3 ข้อ 8)
   // (QaClaims รับ lineObjs เต็มแถวแล้ว — 2026-09-07 — ให้ <LineSelect> จัดลำดับชั้น/ปลดระวางเหมือนแท็บอื่น)
-  const lineObjs = useMemo(() => {
-    if (role === 'leader' && lineId) {
-      const myLine = allLines.find(l => String(l.id) === String(lineId));
-      const fam = myLine ? getLineFamilyNames(allLines, myLine.name) : [];
-      return allLines.filter(l => fam.includes(l.name));
-    }
-    if (sections?.length) return allLines.filter(l => inSectionScope(sections, l.section));
-    return allLines;
-  }, [allLines, role, lineId, sections]);
+  // 👁 utils/qaViewScope — ส่วนงานที่ไม่มีไลน์ผลิต (QA/Planning) เห็นทั้งโรงงาน (เดิมได้ 0 ไลน์ = ทุกแท็บว่าง · 19/10)
+  const viewScope = useMemo(() => qaViewScope(allLines, { role, lineId, sections }), [allLines, role, lineId, sections]);
+  const lineObjs = viewScope.lines;
 
   const openCapaFromNcr = useCallback((ncr) => {
     setCapaPrefill(ncr);
@@ -1794,9 +1838,11 @@ export default function QualityControl() {
       {tab === 'spc' && <SPCTab lineObjs={lineObjs} canRecord={canRecord} canManage={canManage} partOpts={partOpts} instruments={instruments} />}
       {tab === 'ncr' && <NCRTab lineObjs={lineObjs} canRecord={canRecord} canManage={canManage} onOpenCapa={openCapaFromNcr} partOpts={partOpts} />}
       {tab === 'capa' && <CAPATab canRecord={canRecord} canManage={canManage} prefill={capaPrefill} onPrefillDone={() => setCapaPrefill(null)} lineObjs={lineObjs} partOpts={partOpts} />}
+      {/* 🗑️ ชิ้นเดียวกับแท็บถังเหลือง/แดงใน /scrap-report (ฝ่ายผลิต) — ข้อมูลชุดเดียว ไม่ได้ก๊อป
+          user 19/10: ผลิตเป็นคนลงบันทึก (ไหลมาจาก Daily Report) · QA เป็นคนพิจารณาผล */}
       {tab === 'bins' && <QualityBins />}
       {tab === 'matreq' && <MaterialRequests />}
-      {tab === 'claims' && <QaClaims lines={lineObjs} role={role} lineId={lineId} sections={sections} partOpts={partOpts} canRecord={canRecord} canManage={canManage} onOpenCapa={openCapaFromNcr} />}
+      {tab === 'claims' && <QaClaims lines={lineObjs} scopeNames={viewScope.names} role={role} lineId={lineId} sections={sections} partOpts={partOpts} canRecord={canRecord} canManage={canManage} onOpenCapa={openCapaFromNcr} />}
       {tab === 'instruments' && <InstrumentTab lineObjs={lineObjs} canManage={canManage} />}
     </Page>
   );

@@ -4,13 +4,21 @@
 import { useState, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
 import { toast } from './Toast';
+import { npiBlockForPart } from '../utils/npiScope';
 import { fmtDate } from '../utils/dateFormat';
 import { TASK_STATUS } from '../utils/npi';
 import SearchSelect from './SearchSelect';
 import { inp, card, btn, ghost, thSt, tdSt, Field, Pill, LightDot, MetaSelect, Modal } from './NpiUi';
 import { DeleteButton } from './IconButton';
 
-export default function NpiTasks({ project, parts, tplPhases, delivs, tasks, users, canEdit, fullName, today, onChanged }) {
+export default function NpiTasks({ project, parts, tplPhases, delivs, tasks, users, canEdit, fullName, today, onChanged, partWriteOf }) {
+  /* 🔐 ชั้นที่ 3 — งานที่ผูกพาร์ท ตัดสินจากไลน์ของพาร์ทนั้น (utils/npiScope.js)
+     งานระดับโปรเจค (ไม่ผูกพาร์ท) = ตัดสินไม่ได้ ⇒ ไม่บล็อก · ย้ายงานข้ามพาร์ท = เช็ค 2 ฝั่ง */
+  const rowBlocked = (ref, what = 'งานของพาร์ทนี้') => {
+    const msg = npiBlockForPart(partWriteOf, parts, ref, what);
+    if (msg) { toast.info(msg); return true; }
+    return false;
+  };
   const [modal, setModal] = useState(null);
   const [saving, setSaving] = useState(false);
   const [showDone, setShowDone] = useState(false);
@@ -24,6 +32,8 @@ export default function NpiTasks({ project, parts, tplPhases, delivs, tasks, use
   const save = async () => {
     const m = modal;
     if (!m.title?.trim()) return toast.error('กรอกชื่องาน');
+    if (rowBlocked({ part_id: m.part_id })) return;
+    if (m.id && rowBlocked(tasks.find(t => t.id === m.id))) return;
     setSaving(true);
     const row = { title: m.title.trim(), detail: m.detail?.trim() || null, part_id: m.part_id || null, phase_code: m.phase_code || null, deliverable_id: m.deliverable_id || null,
       assignee_name: m.assignee_name?.trim() || null, assignee_uid: m.assignee_uid || null, due_date: m.due_date || null, status: m.status,
@@ -48,11 +58,13 @@ export default function NpiTasks({ project, parts, tplPhases, delivs, tasks, use
     toast.success('บันทึกงานแล้ว'); setModal(null); onChanged();
   };
   const quick = async (t, status) => {
+    if (rowBlocked(t)) return;
     const { error } = await supabase.from('npi_tasks').update({ status, done_at: status === 'done' ? new Date().toISOString() : null }).eq('id', t.id);
     if (error) return toast.error(error.message);
     onChanged();
   };
   const del = async (t) => {
+    if (rowBlocked(t)) return;
     if (!window.confirm(`ลบงาน "${t.title}"?`)) return;
     const { error } = await supabase.from('npi_tasks').delete().eq('id', t.id);
     if (error) return toast.error(error.message);

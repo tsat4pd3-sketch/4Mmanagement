@@ -109,6 +109,13 @@
   A/B หมุนกะ | C กะเช้าตลอด
 ```
 
+**🔴 "แก้/ย้ายโหนดในผังได้ไหม" = `src/utils/orgNodeEdit.js` ที่เดียว (19/10)** — ปุ่มบนจอ · ลิสต์ "อยู่ภายใต้" ·
+ด่านตอนกดบันทึกของ `/org-setup` ต้องถามไฟล์นี้ ห้ามไล่ `parent_id` เทียบ `mySecId` เองในหน้า (มีด่าน)
+· **ย้ายโหนด = เขียนลงแม่ใหม่ ⇒ ต้องผ่านทั้งต้นทาง (`canEditOrgNode`) และปลายทาง (`canAddOrgNodeUnder`)**
+  — `orgSaveBlockReason()` รวมให้แล้ว · ไล่สายไม่ครบ/ชั้นแม่ผิด/ไม่มีแม่ = บล็อก (fail-closed · section +
+  "ขึ้นตรงฝ่าย" = admin เท่านั้น) · ลิสต์แม่กรองด้วยกฎเดียวกัน **แล้วต้องเขียนบนจอว่าซ่อนกี่รายการ**
+  📄 เคส + สิ่งที่ปิดไป → `docs/modules/permission-scope-audit.md` §10
+
 **กฎการ link ข้ามระดับ:**
 - **แผนกที่ไม่ขึ้นกับ Section ใด (ขึ้นตรงฝ่าย) รองรับแล้ว (2026-07-13):** `org_nodes.kind='department'` ที่ `parent_id IS NULL` — สร้าง/ย้ายได้จาก OrgSetup (ตัวเลือก "🏛️ ขึ้นตรงฝ่าย" ในฟอร์ม + กลุ่ม "ขึ้นตรงฝ่าย" ในคอลัมน์ Section) · **ลงทะเบียนพนักงานในแผนกขึ้นตรงฝ่ายได้แล้ว (2026-08-06):** เดิม dropdown แผนกใน Register/operator เป็น cascade `d.parent_id === sectionNode.id` ตรงๆ → แผนกที่ `parent_id IS NULL` ไม่มีวันโผล่ = **ลงทะเบียนช่าง MTN/JIG MTN/DIE MTN ไม่ได้เลย** (เจอจริง: ผังมี 4 แผนกขึ้นตรงฝ่าย แต่ฟอร์มบังคับเลือก Section ก่อนถึงปลดล็อกแผนก) · แก้ด้วย **sentinel `ORPHAN_SECTION` ในช่อง Section** (helper รวมที่ `src/utils/sectionScope.js`: `ORPHAN_SECTION`/`ORPHAN_SECTION_LABEL`/`sectionValueForSave`/`sectionValueForEdit`/`orphanDepts`/`deptOptionsFor`/`deptNodeFor`) — เลือก "🏛️ ขึ้นตรงฝ่าย (ไม่มี Section)" → ช่องแผนกโชว์แผนก `parent_id IS NULL` · **บันทึกลง `employees.section` เป็น `null`** (ตรงผังจริง — **ห้ามยัดชื่อแผนกลง section เพื่อให้ cascade ผ่าน** จะกลายเป็น section ปลอมที่ไม่มีในผัง) · ตัวเลือกนี้เห็นเฉพาะ user ที่ไม่ถูกจำกัด scope (หัวหน้าราย section ลงทะเบียนคนนอกส่วนงานตัวเองไม่ได้) · **ผลข้างเคียงที่ตั้งใจ:** พนักงานกลุ่มนี้ section ว่าง → ไม่เข้า scope ของหัวหน้าที่จำกัดราย section (ถูกต้อง — ช่างไม่สังกัดส่วนงานผลิต) · การจับทีมช่าง/labor type ไม่กระทบเพราะ `teamForSection()` (mtnTeams.js) และ `laborTypeOf()` (laborType.js) เช็ค **department ก่อน** section อยู่แล้ว · **ข้อมูลเก่าที่กรอกชื่อแผนกซ้ำลง section** (ช่าง 14 คนที่ย้ายเข้าฐาน 2026-07-22 มี `section='MTN'` ทั้งที่ MTN เป็นแผนกไม่ใช่ส่วนงาน) → `sectionValueForEdit` โชว์เป็น sentinel ให้แก้ต่อได้ (เดิมช่องแผนกล็อกตาย) และ normalize เป็น null เมื่อเซฟทับ · **พนักงานฝ่ายผลิตยังต้องมี section เสมอเพื่อ scoping** (มีตัวเลือก Section ปกติให้เลือกเหมือนเดิม)
 - `production_lines.section` = `org_nodes.code` ของ section
