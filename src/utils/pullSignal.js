@@ -343,7 +343,8 @@ export function pullRoundOptions(rounds, { shipTo, dock, windowStart, windowEnd 
 
 /** รอบส่งของไฟล์นี้ — ใช้ตารางรอบรับก่อน ถ้าไม่มีค่อยใช้ lead_min
  *  @returns {{at, ship_time, work_date, from: 'schedule'|'lead', round}}
- *  ⚠️ `work_date` ตัดที่ 08:00 ตามกรอบวันงานไทย (ก่อน 08:00 = วันก่อนหน้า) */
+ *  ⚠️ `work_date` ตัดที่ 08:00 ตามกรอบวันงานไทย (ก่อน 08:00 = วันก่อนหน้า)
+ *  🔴 `work_date` ≠ `due_date` ของใบ — ลงใบต้องแปลงด้วย `shipDueDate(work_date, ship_time)` */
 export function shipSlotOf(windowEnd, leadMin = 60, round = null) {
   if (!(windowEnd instanceof Date) || isNaN(windowEnd.getTime())) return null;
   let at, from = 'lead';
@@ -633,7 +634,10 @@ export function aggregateSignals(rows) {
 }
 
 /**
- * เวลาส่งจริงของใบ (absolute) — `ship_time` ก่อน 08:00 = กะดึกของวันงานนั้น ⇒ ตกวันถัดไปตามปฏิทิน
+ * เวลาส่งจริงของใบ (absolute) — 🔴 `customer_shipping_orders.due_date` = **วันที่ตามปฏิทิน** (2026-10-16)
+ * ใบ 862 ลงวันที่ตามไฟล์ลูกค้า (วัดจริง: ใบ 16/10 02:00 ถูกกดส่ง 16/10 04:13) และ Shipping Time Chart
+ * วางกรอบวันงาน D = (D ≥08:00) + (D+1 <08:00) ⇒ ห้ามบวกวันให้ใบก่อน 08:00 ที่นี่อีก
+ * (เดิมบวก ⇒ ใบ 862 ข้ามเที่ยงคืนเพี้ยนไป 24 ชม. + ใบ e-SMART รอบกะดึกลงผิดวัน → ไม่ขึ้นชาร์ต)
  * ⚠️ ต้องเทียบเป็น Date จริง ห้ามเทียบ "นาทีบนกรอบ 08:00→08:00" — ช่วงเวลาในไฟล์ (เช่น 06:00–08:00)
  * คร่อมขอบกรอบได้ แล้วเลขนาทีจะกลับด้าน (06:00 ดูเหมือน "หลัง" 09:00 ทั้งที่มาก่อน)
  */
@@ -641,9 +645,21 @@ export function orderShipAt(dueDate, shipTime) {
   const d = String(dueDate || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
   const t = String(shipTime || '').match(/^(\d{1,2}):(\d{2})/);
   if (!d || !t) return null;
-  const at = new Date(+d[1], +d[2] - 1, +d[3], +t[1], +t[2]);
-  if (+t[1] < 8) at.setDate(at.getDate() + 1);   // กะดึกของวันงาน = วันถัดไปตามปฏิทิน
-  return at;
+  return new Date(+d[1], +d[2] - 1, +d[3], +t[1], +t[2]);
+}
+
+/**
+ * แปลง "วันงาน + รอบส่ง" (กรอบ 08:00→08:00) → `due_date` ตามปฏิทินที่ต้องลงในใบ
+ * รอบก่อน 08:00 = กะดึกของวันงานนั้น ⇒ วันถัดไปตามปฏิทิน · ไม่รู้เวลา = วันงานเดิม
+ * 🔴 ทุกจุดที่เขียน `customer_shipping_orders.due_date` จาก "วันงาน" ต้องผ่านตัวนี้ (มีด่าน)
+ */
+export function shipDueDate(workDate, shipTime) {
+  const d = String(workDate || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!d) return null;
+  const t = String(shipTime || '').match(/^(\d{1,2}):(\d{2})/);
+  if (!t || +t[1] >= 8) return `${d[1]}-${d[2]}-${d[3]}`;
+  const x = new Date(Date.UTC(+d[1], +d[2] - 1, +d[3] + 1));
+  return `${x.getUTCFullYear()}-${pad2(x.getUTCMonth() + 1)}-${pad2(x.getUTCDate())}`;
 }
 
 /** สถานะที่ "ทำไปแล้ว" — ห้ามแก้ยอด (สต็อกอาจถูกหักไปแล้ว · user เคาะ 2026-09-08: ไม่แตะ แต่รายงานส่วนต่าง) */

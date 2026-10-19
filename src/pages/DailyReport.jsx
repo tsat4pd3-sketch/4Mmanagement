@@ -72,9 +72,11 @@ import { cachedMaster, mrows } from '../utils/masterCache';
 import { loadBreakPolicies } from '../utils/oeeMasters';
 import { invalidateTable } from '../utils/masterInvalidate';
 import { checkWrite, checkWriteRows } from '../utils/dbWrite';
-import { SESSION_VOID, isVoidSession, voidBadge, voidBlockReason, cleanVoidReason } from '../utils/sessionStatus';
+import { SESSION_VOID, SESSION_STATUSES_LIVE, SESSION_STATUSES_REAL, isVoidSession, voidBadge, voidBlockReason, cleanVoidReason } from '../utils/sessionStatus';
 import MachineSelect from '../components/MachineSelect';
 import { acceptImageFile } from '../utils/acceptImageFile';
+import { loadFamilyQtyTotals, familyQtyChip } from '../utils/familyTotals';
+import { statusColor as toneColor } from '../utils/statusTone';   // สีสถานะชุดเดียวทั้งระบบ (ห้ามตั้ง hex เอง · ชื่อ statusColor ชนกับตัวแปรในหน้า)
 
 /* ทะเบียนเอกสาร — ชื่อไฟล์ CSV ของแท็บรายงานอ่านผ่าน `docFormSync` (sync) ⇒ ต้อง warm cache เอง
    ไม่เรียก = ได้ชื่อไฟล์เดิม (fallback) ไม่ล้ม แต่ doc_control ตั้งเลขฟอร์มแล้วไม่มีผล */
@@ -309,7 +311,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
         — เรียงก่อน join เพื่อให้ลำดับที่ต่างกันแต่เนื้อเดียวกัน ได้คีย์เดียวกัน
      ⚠️ ตัวแปรที่ body ใช้ยังเป็น `scopeSecs` เหมือนเดิม (คีย์กับเนื้อผูกกัน 1:1) */
   const scopeKey = useMemo(() => [...scopeSecs].sort().join('|'), [scopeSecs]);
-  const isMobile = useIsMobile(); // ≤768px: sidebar รายชื่อกะเป็นแถวบนสุด (สูงไม่เกิน 45vh เลื่อนในตัว) ไม่ sticky — desktop ไม่เปลี่ยน
+  const isMobile = useIsMobile(); // ≤768px: รายชื่อกะพับเป็นปุ่ม "กะที่เลือก" แตะแล้วกางเต็ม (ไม่เลื่อนซ้อน) — desktop ไม่เปลี่ยน
+  const [mPickOpen, setMPickOpen] = useState(false);   // 📱 มือถือ: ลิสต์กะกางอยู่ไหม (15/10)
   const wide1100 = !useIsMobile(1099); // ≥1100px → modal แผ่ 2 คอลัมน์ (reactive แทน innerWidth ครั้งเดียว)
   const navigate = useNavigate();
   /* 🔴 2026-10-08 — ref ของ `bumpSess` (ตัว coalesce ใน effect realtime ข้างล่าง)
@@ -2711,18 +2714,33 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       close_reject_reason: reason, close_reject_by_name: fullName }));
   };
 
-  // ลบกะที่เปิดผิด (เปล่า — ไม่มี Order/Downtime/Defect) ได้จากจอ Live เลย ไม่ต้องปิดกะแล้วไปลบที่ประวัติ
-  const handleDeleteEmptySession = async () => {
+  /* 🚫 กะที่เปิดผิดจากจอ Live = **ทำโมฆะ ไม่ใช่ลบ** (19/10 · QC audit ข้อ ③)
+     เดิมปุ่มนี้ `delete` แถวทิ้ง ⇒ ไม่เหลือร่องรอยว่าเคยเปิดผิดกี่ครั้ง ใครเปิด เพราะอะไร
+     (หลักเดียวกับ 4M ที่ใช้ `rejected` ห้าม delete · แผนล็อตใช้ `cancelled` ห้าม delete)
+     `void` ไม่อยู่ใน unique index `one_open_per_line_shift` ⇒ ช่องกะว่างให้เปิดใบใหม่ได้ทันที
+     🔴 **อ่านลูกจาก DB สดก่อนตัดสิน** — ลิสต์บนจอว่างได้ 2 ความหมาย ("ไม่มี" กับ "โหลดพลาด")
+        ด่านจริงคือ trigger `trg_session_void_guard` ฝั่ง DB · ฝั่งจอเช็คเพื่อ**บอกเหตุผล**เท่านั้น */
+  const handleVoidEmptySession = async () => {
     if (!selSession) return;
-    // กันเหนียว: ลบได้เฉพาะกะที่ไม่มีข้อมูลจริง (กันลบกะที่มีการผลิต/บันทึกไปแล้ว)
-    if (prodOrders.length > 0 || dtLogs.length > 0 || defectLogs.length > 0) {
-      toast.error('กะนี้มีข้อมูลแล้ว (Order/Downtime/Defect) — ลบไม่ได้ ต้องปิดกะแล้วลบที่แท็บประวัติ');
-      return;
-    }
-    if (!window.confirm(`ลบกะ ${selSession.line_name} ${selSession.shift === 'day' ? 'กะเช้า' : 'กะดึก'} ${fmtDate(selSession.work_date)} ?\n(กะเปล่าที่เปิดผิด — ไม่มีข้อมูลการผลิต)`)) return;
-    const { error } = await supabaseDR.from('production_sessions').delete().eq('id', selSession.id);
-    if (error) { toast.error('ลบไม่สำเร็จ: ' + error.message); return; }
-    toast.success('ลบกะที่เปิดผิดเรียบร้อย');
+    const [o, d, f] = await Promise.all([
+      supabaseDR.from('prod_orders').select('id').eq('session_id', selSession.id).limit(1),
+      supabaseDR.from('downtime_logs').select('id').eq('session_id', selSession.id).limit(1),
+      supabaseDR.from('defect_logs').select('id').eq('session_id', selSession.id).limit(1),
+    ]);
+    const block = voidBlockReason({
+      session: selSession, orders: o.data || [], downtimes: d.data || [], defects: f.data || [],
+      loadError: !!(o.error || d.error || f.error),
+    });
+    if (block) { toast.error(`${block} — ถ้าเป็นกะซ้ำ ต้องย้าย/ลบข้อมูลไปใบที่ถูกก่อน`); return; }
+    const reason = cleanVoidReason(window.prompt(
+      `ทำกะ ${selSession.line_name} ${selSession.shift === 'day' ? 'กะเช้า' : 'กะดึก'} ${fmtDate(selSession.work_date)} เป็นโมฆะ\n`
+      + 'ระบุเหตุผล (บังคับ — จะถูกเก็บไว้กับใบนี้):', 'เปิดกะผิด/ซ้ำ'));
+    if (!reason) { toast.info('ยกเลิก — ใบโมฆะต้องมีเหตุผล'); return; }
+    const r = checkWriteRows(await supabaseDR.from('production_sessions')
+      .update({ status: SESSION_VOID, void_reason: reason, voided_by_name: fullName })
+      .eq('id', selSession.id).in('status', SESSION_STATUSES_LIVE).select('id'), 'ทำกะเป็นโมฆะ');
+    if (!r) return;
+    toast.success('ทำเป็นโมฆะเรียบร้อย — ช่องกะนี้ว่างให้เปิดใบใหม่ได้ และยังสืบย้อนได้ว่าเคยเปิดผิด');
     setSelSession(null);
     load();
   };
@@ -2868,9 +2886,24 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
            · มือถือ = แถวปกติที่เลื่อนไปกับหน้า แต่จำกัดสูง 45vh ให้ลิสต์เลื่อนในตัวเอง
              (inner scroller `flex:1 · minHeight:0 · overflowY:auto` ด้านล่างทำงานเหมือนเดิม)
              ไม่งั้นกะ 28 ใบดันเนื้อหาตกจอ ต้องปัดยาวกว่าจะถึงของจริง */
+        /* 📱 มือถือ (15/10 · docs/MOBILE-UX-STANDARD.md §2 ข้อ 5 "ห้ามเลื่อนซ้อนเลื่อน"): เดิมกล่องสูง 45vh เลื่อนในตัว
+           ซ้อนในหน้าที่เลื่อนอยู่แล้ว ⇒ บน 360×640 เห็นกะ 2 ใบครึ่ง ปัดแล้วไม่รู้ว่าอะไรขยับ
+           ⇒ พับเหลือปุ่ม "กะที่เลือก · เปลี่ยนกะ (N)" · แตะ = กางเต็มไม่มีกล่องเลื่อน · เลือกกะแล้วพับเอง
+           ลิสต์ยัง mount อยู่ (display:none) ⇒ สถานะย่อ/กางกลุ่มไม่หาย */
+        <>
+        {isMobile && (
+          <button type="button" className="dr-mpick" aria-expanded={mPickOpen || !selSession} onClick={() => setMPickOpen(o => !o)}>
+            <span className="dr-mpick-main">
+              {selSession
+                ? <><b>{selSession.line_name}</b><span>{selSession.shift === 'day' ? '☀️ กะเช้า' : '🌙 กะดึก'} · {fmtDate(selSession.work_date)}</span></>
+                : <b>เลือกกะที่จะบันทึก</b>}
+            </span>
+            <span className="dr-mpick-act">เปลี่ยนกะ ({sessions.length}){staleSessions.length ? ` · ⏰${staleSessions.length}` : ''} {(mPickOpen || !selSession) ? '▴' : '▾'}</span>
+          </button>
+        )}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0,
           ...(isMobile
-            ? { maxHeight: '45vh' }
+            ? ((mPickOpen || !selSession) ? {} : { display: 'none' })
             : { position: 'sticky', top: 12, alignSelf: 'start', maxHeight: 'calc(100vh - 24px)' }) }}>
           {(() => {
             const groupNames = [...new Set(freshSessions.map(s => lineMap[s.line_name]?.parent_line_name || s.line_name))];
@@ -2926,7 +2959,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   <span style={{ fontWeight: 600 }}>{collapsed && hasSel ? `1/${groupSessions.length}` : groupSessions.length}</span>
                 </button>
                 {shownSessions.map(s => (
-                  <button key={s.id} onClick={() => setSelSession(s)}
+                  <button key={s.id} onClick={() => { setSelSession(s); if (isMobile) setMPickOpen(false); }}
                     style={{ display: 'block', width: '100%', marginBottom: 4, padding: lineMap[s.line_name]?.parent_line_name ? '8px 10px 8px 16px' : '10px 12px',
                       borderRadius: 8, border: `2px solid ${selSession?.id === s.id ? 'var(--accent)' : 'var(--border)'}`,
                       background: selSession?.id === s.id ? 'var(--accent-dim)' : 'var(--card)', cursor: 'pointer', textAlign: 'left' }}>
@@ -3014,6 +3047,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
           })()}
           </div>
         </div>
+        </>
       )}
 
       <div>
@@ -3175,15 +3209,17 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                     );
                   })()}
 
-                  {/* กะเปิดผิด (เปล่า ไม่มี Order/Downtime/Defect) — ลบได้จากจอ Live เลย ไม่ต้องปิดกะแล้วไปลบที่ประวัติ
-                      🔴 sessLoadErrList: โหลดพลาด = ทั้ง 3 ลิสต์ว่างเหมือนกะเปล่าเป๊ะ → ปุ่มลบจะโผล่กับ
-                         กะที่มีข้อมูลจริง (audit 2026-09-02) · "อ่านไม่ได้" ≠ "ไม่มี" ห้ามให้ลบตอนไม่รู้ */}
-                  {canDeleteSession && ['open', 'pending_close'].includes(selSession.status)
+                  {/* กะเปิดผิด (เปล่า ไม่มี Order/Downtime/Defect) — จัดการจากจอ Live เลย ไม่ต้องปิดกะก่อน
+                      🔴 19/10 เปลี่ยนจาก "ลบ" เป็น **โมฆะ** (เก็บประวัติ · กฎ `production_sessions.status`)
+                      🔴 sessLoadErrList: โหลดพลาด = ทั้ง 3 ลิสต์ว่างเหมือนกะเปล่าเป๊ะ → ปุ่มจะโผล่กับ
+                         กะที่มีข้อมูลจริง (audit 2026-09-02) · "อ่านไม่ได้" ≠ "ไม่มี" ห้ามให้แตะตอนไม่รู้ */}
+                  {canDeleteSession && SESSION_STATUSES_LIVE.includes(selSession.status)
                     && sessLoadErrList.length === 0
                     && prodOrders.length === 0 && dtLogs.length === 0 && defectLogs.length === 0 && (
-                    <button onClick={handleDeleteEmptySession}
-                      style={{ ...cancelBtnStyle, borderColor: '#ef4444', color: '#ef4444', fontWeight: 700 }}>
-                      🗑 ลบกะเปล่า
+                    <button onClick={handleVoidEmptySession}
+                      title="กะเปล่าที่เปิดผิด — ทำเป็นโมฆะ (เก็บแถวไว้ ไม่ถูกนับเป็นกะจริง) แทนการลบ"
+                      style={{ ...cancelBtnStyle, borderColor: '#94a3b8', color: '#94a3b8', fontWeight: 700 }}>
+                      🚫 ทำกะเปล่าเป็นโมฆะ
                     </button>
                   )}
                 </div>
@@ -6006,13 +6042,16 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       ปิดกะต้องยืนยันยอดผลิต/OEE รายกะ (modal ปิดกะ) · กดรวบ = stamp ตัวเลขที่ไม่มีคนดู
 ═══════════════════════════════════════════════════════════════ */
 function StaleTab({ stale, onOpenSession, role }) {
+  const { fullName } = useContext(UserContext);   // ชื่อคนที่ทำโมฆะ — เก็บไว้กับใบ (voided_by_name)
   const rows = stale?.rows || [];
   const [q, setQ] = useState('');
   const [side, setSide] = useState('all');   // all | sv (รอ SV อนุมัติ) | leader (ยังไม่ขอปิด)
 
   /* 🧹 เคลียร์ "กะเปล่า" ทีเดียว — ส่วนหนึ่งของกะค้างคือกะที่เปิดผิด/เปิดทิ้งไว้ ไม่มีข้อมูลเลย
-     แล้วไม่มีใครกล้าแตะเพราะต้องเข้าไปกดลบทีละกะ
-     ⚠️ ลบได้เฉพาะกะที่ "ไม่มี Order/Downtime/ของเสีย เลย" — ลบกะเปล่าไม่ได้สร้างข้อมูลเท็จอะไร
+     แล้วไม่มีใครกล้าแตะเพราะต้องเข้าไปกดทีละกะ
+     🔴 19/10 (QC audit ข้อ ③): เปลี่ยนจาก `delete` เป็น **โมฆะ** — เก็บแถวไว้ ประกาศว่าไม่ใช่กะจริง
+        ⇒ ยังตอบได้ว่าไลน์ไหนเปิดผิดบ่อย (ซึ่งคือต้นเหตุที่ควรแก้) · กฎ §production_sessions.status
+     ⚠️ ทำได้เฉพาะกะที่ "ไม่มี Order/Downtime/ของเสีย เลย" — กะเปล่าไม่ได้สร้างข้อมูลเท็จอะไร
         ต่างจาก auto-close ที่ต้อง stamp OEE จากยอดที่ไม่มีคนยืนยัน (ยังห้ามทำตามกฎเดิม)
      ⚠️ ยิงคิวรีเฉพาะตอนกดปุ่ม ไม่ใช่ตอนเปิดแท็บ (กฎ egress)
      ⚠️ ผ่าน fetchByIds เสมอ · error/truncated ห้ามกลืน — โหลดไม่ครบแล้วเดาว่า "เปล่า" = ลบกะที่มีข้อมูลทิ้ง */
@@ -6030,16 +6069,28 @@ function StaleTab({ stale, onOpenSession, role }) {
     }
     setEmptyScan({ busy: false, ids: ids.filter(id => !has.has(id)), err: null });
   };
-  const deleteEmpty = async () => {
+  const voidEmpty = async () => {
     const ids = emptyScan?.ids || [];
     if (!ids.length) return;
     const names = rows.filter(o => ids.includes(o.id))
       .map(o => `• ${o.line_name} · ${o.shift === 'day' ? 'กะเช้า' : 'กะดึก'} · ${fmtDate(o.work_date)}`);
-    if (!window.confirm(`ลบกะเปล่า ${ids.length} กะ ?\n(ไม่มี Order / Downtime / ของเสีย เลยสักรายการ)\n\n${names.slice(0, 15).join('\n')}${names.length > 15 ? `\n… และอีก ${names.length - 15} กะ` : ''}`)) return;
+    const reason = cleanVoidReason(window.prompt(
+      `ทำกะเปล่าที่ค้าง ${ids.length} กะเป็นโมฆะ\n(ไม่มี Order / Downtime / ของเสีย เลยสักรายการ)\n\n`
+      + `${names.slice(0, 12).join('\n')}${names.length > 12 ? `\n… และอีก ${names.length - 12} กะ` : ''}\n\n`
+      + 'ระบุเหตุผล (บังคับ — จะถูกเก็บไว้กับทุกใบที่ทำโมฆะรอบนี้):', 'เปิดกะผิด/เปิดทิ้งไว้ ไม่มีการผลิต'));
+    if (!reason) { toast.info('ยกเลิก — ใบโมฆะต้องมีเหตุผล'); return; }
     setEmptyScan(e => ({ ...e, busy: true }));
-    const { error } = await supabaseDR.from('production_sessions').delete().in('id', ids);
-    if (error) { toast.error('ลบไม่สำเร็จ: ' + error.message); setEmptyScan(e => ({ ...e, busy: false })); return; }
-    toast.success(`ลบกะเปล่าที่ค้าง ${ids.length} กะเรียบร้อย`);
+    /* 🔴 นับแถวที่เขียนจริง — RLS/trigger ปฏิเสธ = "สำเร็จ 0 แถว ไม่มี error" (กฎเหล็ก DB ข้อ 2)
+       และถ้าเขียนได้ไม่ครบ ต้องบอกว่าได้กี่กะจากกี่กะ ห้ามขึ้นเขียวว่าครบ */
+    const res = await supabaseDR.from('production_sessions')
+      .update({ status: SESSION_VOID, void_reason: reason, voided_by_name: fullName })
+      .in('id', ids).in('status', SESSION_STATUSES_REAL).select('id');
+    const done = (res.data || []).length;
+    setEmptyScan(e => ({ ...e, busy: false }));
+    if (res.error) { toast.error('ทำโมฆะไม่สำเร็จ: ' + res.error.message); return; }
+    if (!done) { toast.error('ทำโมฆะไม่สำเร็จ — ไม่มีแถวถูกแก้เลย (ไม่มีสิทธิ์ หรือกะมีข้อมูลแล้ว)'); return; }
+    if (done < ids.length) toast.warn(`ทำโมฆะได้ ${done} จาก ${ids.length} กะ — ที่เหลือมีข้อมูลแล้วหรือไม่มีสิทธิ์ (กดตรวจใหม่อีกครั้ง)`);
+    else toast.success(`ทำกะเปล่าที่ค้าง ${done} กะเป็นโมฆะเรียบร้อย — ยังสืบย้อนได้ว่าเคยเปิดผิด`);
     setEmptyScan(null);
     stale.reload?.();
   };
@@ -6095,7 +6146,7 @@ function StaleTab({ stale, onOpenSession, role }) {
                   🔎 ตรวจหากะเปล่า
                 </button>
                 <span style={{ fontSize: 11, color: 'var(--muted)' }}>
-                  กะที่ไม่มี Order / Downtime / ของเสีย เลย = เปิดผิดหรือเปิดทิ้งไว้ — ลบทีเดียวได้ ไม่ต้องไล่ทีละกะ
+                  กะที่ไม่มี Order / Downtime / ของเสีย เลย = เปิดผิดหรือเปิดทิ้งไว้ — ทำโมฆะทีเดียวได้ ไม่ต้องไล่ทีละกะ (เก็บประวัติไว้ ไม่ได้ลบ)
                 </span>
               </>
             ) : emptyScan.busy ? (
@@ -6103,7 +6154,7 @@ function StaleTab({ stale, onOpenSession, role }) {
             ) : emptyScan.err ? (
               /* โหลดไม่ครบ = ห้ามบอกว่า "ไม่มีกะเปล่า" (จะกลายเป็นตีกะที่มีข้อมูลว่าเปล่าแล้วลบทิ้ง) */
               <span style={{ fontSize: 12, color: '#f59e0b' }}>
-                ⚠ ตรวจไม่สำเร็จ — {emptyScan.err} · ยังลบไม่ได้
+                ⚠ ตรวจไม่สำเร็จ — {emptyScan.err} · ยังทำโมฆะไม่ได้
                 <button onClick={() => setEmptyScan(null)} style={{ marginLeft: 8, fontSize: 11.5, padding: '3px 9px', borderRadius: 7, cursor: 'pointer', background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)' }}>ลองใหม่</button>
               </span>
             ) : emptyScan.ids.length === 0 ? (
@@ -6112,9 +6163,10 @@ function StaleTab({ stale, onOpenSession, role }) {
               </span>
             ) : (
               <>
-                <button onClick={deleteEmpty}
-                  style={{ fontSize: 12, fontWeight: 800, padding: '5px 12px', borderRadius: 8, cursor: 'pointer', background: 'rgba(239,68,68,0.9)', border: '1px solid #ef4444', color: '#fff' }}>
-                  🗑 ลบกะเปล่า {emptyScan.ids.length} กะ
+                <button onClick={voidEmpty}
+                  title="ทำเป็นโมฆะ = เก็บแถวไว้แต่ไม่ถูกนับเป็นกะจริง (ไม่ได้ลบ) — ช่องกะว่างให้เปิดใบใหม่ได้"
+                  style={{ fontSize: 12, fontWeight: 800, padding: '5px 12px', borderRadius: 8, cursor: 'pointer', background: 'var(--bg3)', border: '1px solid #94a3b8', color: '#94a3b8' }}>
+                  🚫 ทำโมฆะ {emptyScan.ids.length} กะ
                 </button>
                 <span style={{ fontSize: 11, color: 'var(--muted)' }}>
                   อีก {rows.length - emptyScan.ids.length} กะมีข้อมูลจริง — ต้องปิด/อนุมัติเอง (ระบบไม่ปิดให้)
@@ -6269,15 +6321,13 @@ function HistoryTab({ role }) {
       ? { ...x, status: SESSION_VOID, void_reason: reason, voided_by_name: fullName } : x));
   };
 
-  const handleDelete = async (s) => {
-    if (!window.confirm(`ลบกะ ${s.line_name} ${s.shift === 'day' ? 'กะเช้า' : 'กะดึก'} วันที่ ${fmtDate(s.work_date)} ?\n(ข้อมูล Order, Downtime, Defect จะถูกลบทั้งหมด)`)) return;
-    setDeleting(s.id);
-    const { error } = await supabaseDR.from('production_sessions').delete().eq('id', s.id);
-    setDeleting(null);
-    if (error) { toast.error('ลบไม่สำเร็จ: ' + error.message); return; }
-    toast.success('ลบกะเรียบร้อย');
-    setSessions(prev => prev.filter(x => x.id !== s.id));
-  };
+  /* ⛔ ปุ่ม "ลบกะ" ถูกถอดออก 19/10 (QC audit ข้อ ③) — **อย่าเอากลับมา**
+     ของเดิม `delete` ใบที่ปิดแล้ว แล้ว FK cascade ลบ `prod_orders` · `downtime_logs` ·
+     `defect_logs` ของกะนั้นตามไปหมด = ยอดผลิต/ของเสีย/เวลาหยุดของวันนั้นหายถาวร กู้ไม่ได้
+     และ OEE ย้อนหลังเปลี่ยนโดยไม่มีร่องรอยว่าใครลบ เพราะอะไร
+     ⇒ กะเปล่าที่เปิดผิด = ปุ่ม 🚫 โมฆะ (เก็บแถว + บังคับเหตุผล + บันทึกชื่อคนทำ)
+     ⇒ กะที่มีข้อมูลแล้ว = **ไม่มีทางลบ** ตัวเลขผิดต้องไปแก้ที่ใบผลิต/Downtime/ของเสียรายรายการ
+        (trigger `trg_session_void_guard` ฝั่ง DB ก็ไม่ให้ทำโมฆะใบที่มีข้อมูลอยู่แล้ว) */
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -6494,13 +6544,14 @@ function HistoryTab({ role }) {
                       🚫 โมฆะ
                     </button>
                   )}
-                  {canDeleteSession && (
-                    <button
-                      onClick={e => { e.stopPropagation(); handleDelete(s); }}
-                      disabled={deleting === s.id}
-                      style={{ background: 'transparent', border: '1px solid #ef4444', color: '#ef4444', borderRadius: 6, padding: '3px 10px', fontSize: 11, cursor: 'pointer', fontWeight: 700, opacity: deleting === s.id ? 0.5 : 1 }}>
-                      {deleting === s.id ? '...' : 'ลบ'}
-                    </button>
+                  {/* 🔴 กะที่มีข้อมูลแล้วทำอะไรไม่ได้ — ต้องเขียนบอกว่าทำไม ไม่ใช่ปล่อยให้ที่ว่างเงียบๆ
+                      (เดิมที่ตำแหน่งนี้คือปุ่ม "ลบ" ที่ลบ Order/Downtime/ของเสีย ตามไปทั้งหมด) */}
+                  {canDeleteSession && !isVoidSession(s) && Number(s.actual_qty) > 0 && (
+                    <span title="กะที่มียอดผลิตแล้วลบหรือทำโมฆะไม่ได้ — ตัวเลขผิดให้แก้ที่ใบผลิต / Downtime / ของเสีย รายรายการ"
+                      style={{ border: '1px dashed var(--border2)', color: 'var(--muted)', borderRadius: 6,
+                        padding: '3px 9px', fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap', cursor: 'help' }}>
+                      🔒 มียอดผลิต — แก้รายรายการ
+                    </span>
                   )}
                 </div>
               </div>
@@ -7794,6 +7845,8 @@ function ProductSetup({ role }) {
   const [saving, setSaving]   = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [familyTotals, setFamilyTotals] = useState({});
+  /* 🔴 "อ่านยอดสะสมไม่ได้" ≠ "ยังไม่เคยผลิต" — ต้องเขียนบนจอ (utils/familyTotals.js) */
+  const [famTotalsFail, setFamTotalsFail] = useState(false);
   // kanban state
   const [kanbanStds, setKanbanStds]       = useState([]);   // all kanban_standards
   const [kanbanEditing, setKanbanEditing] = useState(null); // std id | 'new'
@@ -7815,19 +7868,13 @@ function ProductSetup({ role }) {
     setLines(ln || []);
     setKanbanStds(stds || []);
 
-    // cumulative qty_ok per family across all sessions
-    const { data: sessions } = await supabaseDR
-      .from('production_sessions')
-      .select('product_id, qty_ok, dr_products(family_id)');
-    if (sessions) {
-      const totals = {};
-      sessions.forEach(s => {
-        const fid = s.dr_products?.family_id;
-        if (!fid) return;
-        totals[fid] = (totals[fid] || 0) + (s.qty_ok || 0);
-      });
-      setFamilyTotals(totals);
-    }
+    /* 📦 ยอดผลิตสะสมต่อ family — รวมฝั่ง DB ผ่าน RPC (utils/familyTotals.js)
+       เดิมลาก `production_sessions` ทั้งตารางมาบวกที่นี่ ซึ่งผิด 2 ชั้น: ติดเพดาน 1,000 แถว
+       (วัด 15/10 = 1,675 แถว) **และ** join ด้วย `product_id` ที่ NULL ทั้งตาราง ⇒ ยอดเป็น {} ตลอด
+       · อ่านไม่ได้ = ตั้งธงให้จอเขียนบอก ห้ามปล่อยให้ดูเหมือน "ยังไม่เคยผลิต" */
+    const famRes = await loadFamilyQtyTotals();
+    setFamilyTotals(famRes.totals);
+    setFamTotalsFail(famRes.fail);
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -7976,7 +8023,7 @@ function ProductSetup({ role }) {
         {visibleFamilies.map(({ family_id, members }) => {
           const active   = members.find(m => m.is_active && !m.superseded_by);
           const archived = members.filter(m => !m.is_active || m.superseded_by);
-          const totalQty = familyTotals[family_id] || 0;
+          const qtyChip  = familyQtyChip(familyTotals, family_id, famTotalsFail);
           const item = active || members[0];
           return (
             <div key={family_id} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
@@ -8012,12 +8059,10 @@ function ProductSetup({ role }) {
                     {item.effective_from && ` · ใช้ตั้งแต่ ${item.effective_from}`}
                   </div>
 
-                  {/* Family cumulative total */}
-                  {totalQty > 0 && (
-                    <div style={{ marginTop: 6, fontSize: 12, color: '#22c55e', fontWeight: 700 }}>
-                      📦 ยอดสะสมทั้ง family: {totalQty.toLocaleString()} ชิ้น
-                    </div>
-                  )}
+                  {/* Family cumulative total — 3 สถานะ ห้ามยุบ (เดิม `totalQty > 0 &&` ซ่อน "ยังไม่เคยผลิต" กับ "อ่านไม่ได้" ทิ้งเหมือนกัน) */}
+                  <div style={{ marginTop: 6, fontSize: 12, color: toneColor(qtyChip.tone), fontWeight: qtyChip.tone === 'good' ? 700 : 600 }}>
+                    {qtyChip.tone === 'good' ? qtyChip.text.replace('ยอดสะสม', 'ยอดสะสมทั้ง family:') : qtyChip.text}
+                  </div>
                 </div>
 
                 {canEdit && (

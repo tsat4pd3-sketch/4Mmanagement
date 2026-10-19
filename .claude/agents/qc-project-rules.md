@@ -211,6 +211,9 @@ model: inherit
 - **[E-PINCOPY]** (14/10) คัดลอกแถว `jig_checkpoints` ไปเครื่อง/แผนกอื่นต้องผ่าน **`checkpointCopyRow()`**
   (`src/utils/pmCheckpointCopy.js`) · แตกแถวเองแล้ว insert = 🔴 — หมุด `x_pos/y_pos/label_dx/label_dy/image_id`
   ผูกกับรูปเครื่องต้นทาง ⇒ ข้ามเครื่องต้องล้าง · `jig_id` ต้องเป็นเครื่องปลายทาง (มีด่าน `pm-checkpoint-copy-via-util`)
+- **[E-PMSTALE]** (19/10) `PMCheckData.jsx` — เอฟเฟกต์โหลดเครื่องทุก callback เทียบ `loadReqRef` · `handleSave` เช็ค
+  `cpLoad.status === 'ok'` + `cpLoad.key` = เครื่อง|แผนกที่เปิดอยู่ (มีด่าน `pm-check-stale-guard`) · โหลดล้มต้องเขียน
+  "โหลดไม่สำเร็จ" ห้ามขึ้น "ยังไม่มีรายการตรวจ" · PMSchedule/PmForecast ห้าม `.in()` ดิบ + ต้องอ่าน error (แถบแดง)
 
 ### หมวด F — UI Conventions (docs/UI-CONVENTIONS.md)
 - **[F-TVFIT]** จอบอร์ด fit-to-viewport (ผัง A4 / grid ที่ต้องเต็มจอไม่เลื่อน — ต้นแบบ `/obeya`, UI-CONVENTIONS §6.14 · 2026-09-15):
@@ -244,6 +247,11 @@ model: inherit
   บนมือถือ = ค้างทับเนื้อหา · (ข) `whiteSpace: 'nowrap'` ที่อยู่แถว flex เดียวกับข้อความยาว
   (`.description` / `.problem` / `.note`) โดยข้อความไม่มี `minWidth: 0` → ถูกบีบเหลือ 0 หายทั้งบรรทัด
   · (ค) `minWidth: <เลขตายตัว>` คู่กับ `overflowX: 'auto'` → เลขมักน้อยกว่าเนื้อหาจริง ของท้ายสุดโดนตัด
+- **F4.4 handheld / ห้ามแตะจอคอม (2026-10-15 · CLAUDE.md §งานมือถือ · docs/MOBILE-UX-STANDARD.md)**
+  งานมือถือต้องอยู่หลัง `useIsMobile()`/`@media` — โค้ดที่เปลี่ยน style ร่วม (ไม่มีเงื่อนไขมือถือ) ในงานที่ประกาศว่า "มือถือ" = ผิด ·
+  วัดจริง `node audit/desktopdiff.mjs` (ต้องต่าง 0) + `node audit/handheldsweep.mjs` (360×640 ทุกแท็บ+โมดัล) ·
+  grep: `position: 'fixed'` + `bottom: <เลข>` ไม่มี `--mnav-h` (มีด่าน `mobile-fixed-bottom-needs-mnav`) ·
+  `position: 'sticky'` + `bottom` ที่บวก `--mnav-h` = ลอยสูงเกิน · ฟอร์มยาวบนมือถือที่ปุ่มบันทึกอยู่ท้ายฟอร์มเท่านั้น → แนะนำ `.m-savebar`
 - **F5** input ใน flex row/toolbar ต้องกำหนด width เอง (index.css default width:100%)
 - **F6** hover card เฉพาะ `matchMedia('(hover: hover)')` · popup ทุกอันมีทางปิด
 - **F7** playhead ไทม์ไลน์ใช้ `.now-line`/`.now-chip` — ห้ามวาดเส้นเวลาปัจจุบันเองสีอื่น
@@ -362,6 +370,11 @@ model: inherit
 - **F-KPILEVEL** ช่องตัดสิน KPI (`yn`/`ynTotal`/สีจุดกราฟ) ต้องเป็นระดับ 1/0.5/0 จาก `scoreDef` — ห้าม `v >= target` / `v < target` เอง (2 สีไม่รู้จัก Commitment)
   · grep: `yn(Total)?:\s*[^,]*(>=|<=)` · `const \w*(miss|hit|pass)Target\w* =` · ด่าน `kpi-yn-boolean-compare`
 - **F-TDZ** อ่าน `const/let` ก่อนบรรทัดประกาศใน scope เดียวกัน (จอขาว "Cannot access before initialization") — lint `no-use-before-define` จับให้แล้ว แต่ถ้าเห็น `const a = b.x` เหนือ `const b` ให้รายงาน
+
+- **F-inspect (2026-10-15) จอตั้งค่าจุดตรวจ (รูป + ปักหมุด + การ์ดจุด) ต้องประกอบจาก `src/components/inspect/*` + `SpinAnnotator`**
+  — grep หน้าที่ใช้ `CalloutPin`/วาดโมดัลจุดตรวจเอง นอก `components/inspect/`, `SpinAnnotator`, จอตรวจ (`PMCheckData`/`QaCheckSheet`)
+  · ด่าน `inspection-setup-shared` ครอบ PMSetup + QaPointsEditor · 📄 `docs/modules/inspection-point-setup.md`
+  · QA คัดลอกจุดตรวจข้ามพาร์ท: แถวผ่าน `qaItemCopyRow()` · ไฟล์ต้อง `storage.copy` เข้า `parts/<ปลายทาง>/` — grep insert `image_path`/`drawing_url` ของพาร์ทอื่นตรงๆ = ผิด
 
 ### หมวด G — Workflow & เอกสาร
 - **G1** pattern ใหม่ที่ใช้หลายหน้า ต้องมีบันทึกใน docs/UI-CONVENTIONS.md · schema/workflow ใหม่

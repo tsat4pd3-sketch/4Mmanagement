@@ -168,8 +168,9 @@ export default function TvBoard({ onOpenMenu = null }) {
     <div style={{ minHeight: '100vh', background: 'var(--bg)', padding: 'clamp(8px, 1vw, 14px)', display: 'flex', flexDirection: 'column', gap: 10 }}>
       {/* ── แถบบนสุด: บางที่สุดเท่าที่ยังบอกได้ว่า "จอนี้ของแผนกไหน" ──
           ทุกพิกเซลแนวตั้งที่แถบนี้กิน = พื้นที่ที่ผังเสียไป (บทเรียน 2026-08-26 "ยังสเกลแย่อยู่เลย")
-          → ตัวเลือกทั้งหมดพับหลังปุ่ม ⚙️ · เปิดมาเจอเนื้อหาเลย */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          → ตัวเลือกทั้งหมดพับหลังปุ่ม ⚙️ · เปิดมาเจอเนื้อหาเลย
+          ph-chrome = กรอบจอ TV ซ่อน (แถบบนของกรอบบอกชื่อ/มุมมอง/วันงานแทน · index.css) */}
+      <div className="ph-chrome" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <span style={{ fontSize: 16, fontWeight: 900, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
           {cur.icon} Andon Board · {cur.label}
         </span>

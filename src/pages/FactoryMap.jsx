@@ -24,8 +24,10 @@ import { loadBreakPolicies, loadCtProducts, loadCtKanban, fetchOeeTargets } from
 import { valueInk, statusOf } from '../utils/statusTone';
 import { useLatestRequest } from '../utils/useLatestRequest';
 import { polyArea, centroid, labelAnchor, bboxOf } from '../utils/regionGeom';
-import MapPillars3D, { MAP_3D_TRANSFORM } from '../components/MapPillars3D';
-import { pillarHeight, pillarLegend } from '../utils/mapPillar';
+import MapPillars3D, { map3dTransform } from '../components/MapPillars3D';
+import useMapOrbit from '../components/useMapOrbit';
+import { urlParam, urlPick, urlBool, urlNum } from '../utils/urlInit';
+import { pillarHeight, pillarLegend, liftLabels, orbitScale } from '../utils/mapPillar';
 import { loadPmTeams, isAmTeam } from '../utils/pmTeams';
 import { fetchByIds } from '../utils/fetchByIds';
 import { loadDailyAm, dailyAmLineStatus, amShiftInfo } from '../lib/dailyAmBoard';
@@ -43,6 +45,11 @@ import { checkWriteRows } from '../utils/dbWrite';
 import { uploadOpts } from '../utils/storageUpload';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
+import LineLensMap, { MachineDetailCard } from '../components/LineLensMap';
+import LineOrderBoard, { OrderDetailCard } from '../components/LineOrderBoard';
+import Segmented from '../components/Segmented';   // 🗺️ ผังเครื่องจักรคู่กล่องรายละเอียดไลน์ (2026-10-16)
+import useIsMobile from '../utils/useIsMobile';
+import { storySectionsFor, mapLensOf } from '../utils/lineLens';
 import { isGifFile, GIF_MAX_BYTES, GIF_TOO_BIG_MSG } from '../utils/imageFileKind';   // ตัวตรวจชนิดไฟล์ + เพดาน GIF = จุดเดียว
 
 /* ── ผังรวมโรงงาน (Factory Master Map) — polygon อิสระ + เลือก metric, 2026-07-16 ──────
@@ -239,7 +246,9 @@ const METRICS = {
     // แยกให้เห็นชัด: มี order → ทำได้/เป้า ณ เวลานี้/เต็มกะ · เปิดกะแต่ยังไม่มี order · ยังไม่เปิดกะ
     // ป้ายบนผังไม่โชว์ % (2026-08-06 · คำสั่ง user "คนจะงง ชนกับ OEE") — เอาแค่ ได้/ควรได้/เป้า
     // สีของกรอบยังบอกว่าทันจังหวะไหม (cat) · % เต็มๆ ดูได้ที่ popup รายละเอียด
-    text: s => s.target > 0 ? `${s.actual}/${Math.round(s.onTimeTarget)}/${s.target}` : (s.hasOpen ? '🔵 เปิดกะ · ยังไม่มี order' : '⏸ ยังไม่เปิดกะ'),
+    text: s => s.reviewMode
+      ? (s.target > 0 ? `${s.actual}/${s.target} · ${Math.round(s.actual / s.target * 100)}%` : (s.hasOpen ? 'ไม่มี order' : 'ไม่มีกะ'))   // ทบทวน = ทั้งวัน ไม่มี "ควรได้ ณ ตอนนี้"
+      : s.target > 0 ? `${s.actual}/${Math.round(s.onTimeTarget)}/${s.target}` : (s.hasOpen ? '🔵 เปิดกะ · ยังไม่มี order' : '⏸ ยังไม่เปิดกะ'),
     cat: s => s.target > 0 ? (s.onTimeTarget < 1 ? 'ok' : (() => { const p = s.actual / s.onTimeTarget * 100; return p >= 95 ? 'good' : p >= 80 ? 'ok' : 'bad'; })()) : (s.hasOpen ? 'waiting' : 'idle'),
     short: s => s.target > 0 ? (s.onTimeTarget >= 1 ? `${Math.round(s.actual / s.onTimeTarget * 100)}%` : `${s.actual}`) : '',
   },
@@ -267,8 +276,9 @@ const METRICS = {
     cat: s => s.dtActive ? 'down' : !s.hasOpen && s.dtMin === 0 ? 'idle' : s.dtMin === 0 ? 'good' : s.dtMin < 30 ? 'ok' : 'bad',
     // สีบนแผนที่ = downtime "สะสมเฉพาะชั่วโมงปัจจุบัน" (รีเซ็ตทุกต้นชั่วโมง) — ≤5น.เขียว · ≤15น.เหลือง · >15น.แดง
     //   กำลังหยุดอยู่ (ยังไม่กลับมารัน) = แดงต่อเนื่อง · เพิ่งกลับมารัน = คิดตามนาทีที่หยุดในชั่วโมงนี้
-    mapCat: s => s.dtActive ? 'down' : !s.hasOpen && s.dtMinHour === 0 ? 'idle' : s.dtMinHour <= 5 ? 'good' : s.dtMinHour <= 15 ? 'ok' : 'bad',
-    mapText: s => s.dtActive ? `🔴 หยุด ${fmtDtElapsed(s.dtOpenMin)}` : s.dtMinHour > 0 ? `${s.dtMinHour} น./ชม.นี้` : (s.hasOpen ? '✓ ปกติ' : ''),
+    //   📅 โหมดทบทวน = ทั้งวัน ⇒ ใช้เกณฑ์ cat/text ของทั้งวัน (เกณฑ์รายชั่วโมงใช้กับยอดทั้งวันไม่ได้)
+    mapCat: s => s.reviewMode ? METRICS.breakdown.cat(s) : s.dtActive ? 'down' : !s.hasOpen && s.dtMinHour === 0 ? 'idle' : s.dtMinHour <= 5 ? 'good' : s.dtMinHour <= 15 ? 'ok' : 'bad',
+    mapText: s => s.reviewMode ? METRICS.breakdown.text(s) : s.dtActive ? `🔴 หยุด ${fmtDtElapsed(s.dtOpenMin)}` : s.dtMinHour > 0 ? `${s.dtMinHour} น./ชม.นี้` : (s.hasOpen ? '✓ ปกติ' : ''),
     short: s => s.dtActive ? `🔴 ${fmtDtElapsed(s.dtOpenMin)}` : s.dtMinHour > 0 ? `${s.dtMinHour}น.` : '',
   },
   ng: {
@@ -515,10 +525,17 @@ export default function FactoryMap({ setupMode = false }) {
   const [editing, setEditing] = useState(canEdit); // setup mode + มีสิทธิ์ → เข้าโหมดแก้เลย
   const [uploading, setUploading] = useState(false);
   const [aspect, setAspect] = useState(null);
-  const [metric, setMetric] = useState('health'); // 🚦 default = ปกติ/ผิดปกติ (2026-08-26 คำสั่ง user) — เปิดมาตอบก่อนว่าทั้งโรงงานโอเคไหม
-  const [showFac, setShowFac] = useState(false); // 🫥 เปิดดูโซนสนับสนุนชั่วคราวบน metric ผลิต (กดจากชิป)
+  const [metric, setMetric] = useState(() => { const c = urlParam('cycle'); const first = c && c !== '1' ? c.split(',')[0].trim() : null; return urlPick('metric', Object.keys(METRICS), Object.keys(METRICS).includes(first) ? first : 'health'); }); // ?metric= (จอวนหน้า · 15/10) // 🚦 default = ปกติ/ผิดปกติ (2026-08-26 คำสั่ง user) — เปิดมาตอบก่อนว่าทั้งโรงงานโอเคไหม
+  const [showFac, setShowFac] = useState(() => urlBool('support', false)); // 🫥 เปิดดูโซนสนับสนุนชั่วคราวบน metric ผลิต (กดจากชิป)
   // แผงขวา: 'review' = สรุปทบทวนทั้งวัน (default · ประชุมผู้จัดการ) · 'live' = จัดอันดับสดตาม metric (เดิม)
-  const [panelMode, setPanelMode] = useState('review');
+  const [panelMode, setPanelMode] = useState(() => urlPick('panel', ['review', 'obeya', 'live'], 'review'));
+  /* ⚡/📅 สวิตช์เดียวคุมทั้งหน้า (2026-10-16 · user เลือก "สวิตช์เดียวคุมทั้งหน้า"):
+     'live' = ผัง + แผงขวา + กล่องรายละเอียดที่คลิก เป็นของวันนี้สด
+     'review' = ทั้งหน้าเป็นยอดทั้งวันของ reviewDate — เดิมแผงขวาโชว์ 15/10 แต่คลิกไลน์บนผังได้ 16/10 สด (คนงง)
+     panelMode 'review' ในโหมด live = "สรุปวันนี้ (สด)" (กล่องหน้าตาเดียวกับทบทวน แต่ตัวเลขสด) */
+  // ลิงก์จอ TV เดิมที่ตั้ง ?panel=review (ไม่มี ?mode=) = ตั้งใจดูทบทวนรายวัน ⇒ เปิดเป็นโหมดทบทวน (ลิงก์เก่าไม่เปลี่ยนความหมาย)
+  const [viewMode, setViewMode] = useState(() => urlPick('mode', ['live', 'review'], urlParam('panel') === 'review' ? 'review' : 'live'));
+  const isReview = viewMode === 'review';
   // 🏛️ หัวข้อที่กดเจาะอยู่บนบอร์ด OBEYA (null = ยังไม่กด) — ดู obeyaBoard
   const [obeyaAxis, setObeyaAxis] = useState(null);
   const [reviewDate, setReviewDate] = useState(reviewDefaultDate);
@@ -528,6 +545,9 @@ export default function FactoryMap({ setupMode = false }) {
   const [reviewDetail, setReviewDetail] = useState(null); // ไลน์แม่ที่คลิกดู breakdown ไลน์ย่อย (โหมด review)
   const [storyLine, setStoryLine] = useState(null);   // ไลน์ที่คลิกดู "สรุปเรื่องราวทั้งวัน" (modal หลัก)
   const [story, setStory] = useState(null);           // ข้อมูลสรุปของ storyLine
+  const [storyAll, setStoryAll] = useState(false);
+  const [lensSel, setLensSel] = useState(null);       // เครื่องที่คลิกบนผังคู่ — การ์ดอยู่คอลัมน์ขวา (ผังไม่ดันตัวเองขึ้นลง · 16/10)    // กล่องรายละเอียด: true = ทุกเรื่อง · false = เฉพาะเรื่องของแท็บ (2026-10-16)
+  const isMobile = useIsMobile();
   const [storyLoading, setStoryLoading] = useState(false);
   const [oeeExplain, setOeeExplain] = useState(null); // { title, rows } — กางวิธีคิด OEE เฉลี่ยถ่วงน้ำหนัก
   // วันที่ของ modal สรุปเรื่องราว — ตั้งตอนเปิด: คลิกจากผัง (live) = วันงานปัจจุบัน · คลิกจากแถบขวา = วันที่ในกรอบ
@@ -556,6 +576,9 @@ export default function FactoryMap({ setupMode = false }) {
      ทางแก้ที่เลือก: ให้แต่ละเครื่องปรับขนาดป้ายเอง (A− / A+) จำใน localStorage — ตั้งครั้งเดียวต่อจอ
      (แก้จาก OS ก็ได้แต่หน้างานเข้า settings จอ TV ไม่ได้/ไม่กล้า) · คู่กับปุ่มซ่อนแผงขวาคืนพื้นที่ให้ผัง */
   const [lblScale, setLblScale] = useState(() => {
+    // ?lbl= จากลิงก์จอวนหน้าชนะค่าที่จำในเครื่อง (ไม่เขียนทับ localStorage จนกว่าจะกด A−/A+)
+    const fromUrl = urlNum('lbl', 0.6, 1.6, null);
+    if (fromUrl != null) return Math.round(fromUrl * 10) / 10;
     try { const v = parseFloat(localStorage.getItem('fm_lbl_scale')); return Number.isFinite(v) ? Math.min(1.6, Math.max(0.6, v)) : 1; }
     catch { return 1; }
   });
@@ -565,12 +588,44 @@ export default function FactoryMap({ setupMode = false }) {
     try { localStorage.setItem('fm_lbl_scale', String(nv)); } catch { /* per-device pref เท่านั้น */ }
   };
   // ซ่อนแผงขวา (จอ TV เอาพื้นที่คืนให้ผัง — จำต่อเครื่อง) · ปุ่มอยู่แถบ metric
-  const [panelHide, setPanelHide] = useState(() => { try { return localStorage.getItem('fm_panel_hide') === '1'; } catch { return false; } });
+  const [panelHide, setPanelHide] = useState(() => urlBool('nopanel', (() => { try { return localStorage.getItem('fm_panel_hide') === '1'; } catch { return false; } })()));
   // 🧊 มุมมอง 3D (2.5D · mockup 14/10) — ความชอบรายเครื่อง · โหมดแก้ผังบังคับ 2D เสมอ (ลาก/คลิกจุดต้องตรงพิกัด)
-  const [view3d, setView3d] = useState(() => { try { return localStorage.getItem('fm_view3d') === '1'; } catch { return false; } });
+  const [view3d, setView3d] = useState(() => { const u = urlPick('view', ['2d', '3d'], null); if (u) return u === '3d'; try { return localStorage.getItem('fm_view3d') === '1'; } catch { return false; } });
   const toggleView3d = () => setView3d(v => { const n = !v; try { localStorage.setItem('fm_view3d', n ? '1' : '0'); } catch { /* ignore */ } return n; });
-  const togglePanelHide = () => setPanelHide(v => { const nv = !v; try { localStorage.setItem('fm_panel_hide', nv ? '1' : '0'); } catch { /* ignore */ } return nv; });
+  // 🔄 มุมกล้อง 3D — ลากหมุน/ปุ่ม/ทัวร์ (ทำงานเฉพาะ 3D ที่ไม่ได้แก้ผัง — editing ประกาศไว้ข้างบนแล้ว)
   const wrapRef = useRef(null);
+  const orbit = useMapOrbit(view3d && !editing, wrapRef);
+  /* 🔁 วนมุมมองเอง (จอวนหน้า · 15/10 · user: "อยากโชว์แบบนี้ และวน tab ไปทีละเรื่อง")
+     ?cycle=health,oee,breakdown (หรือ ?cycle=1 = ทุกมุมมอง) · ?csec= วินาทีต่อมุมมอง (ค่าตั้งต้น 15)
+     มีคนกด/แตะจอ = หยุดวน (คนกำลังดูมุมนั้นอยู่) · โหมดแก้ผังไม่วน */
+  const cycleList = useMemo(() => {
+    const raw = urlParam('cycle');
+    if (!raw) return [];
+    const all = Object.keys(METRICS);
+    return raw === '1' ? all : raw.split(',').map(x => x.trim()).filter(k => all.includes(k));
+  }, []);
+  const cycleMs = urlNum('csec', 5, 600, 15) * 1000;
+  const [cycleOn, setCycleOn] = useState(true);
+  useEffect(() => {
+    if (cycleList.length < 2 || !cycleOn || editing) return undefined;
+    const id = setInterval(() => {
+      setMetric(m => cycleList[(cycleList.indexOf(m) + 1) % cycleList.length]);
+    }, cycleMs);
+    return () => clearInterval(id);
+  }, [cycleList, cycleMs, cycleOn, editing]);
+  useEffect(() => {
+    if (cycleList.length < 2) return undefined;
+    const stop = () => setCycleOn(false);
+    window.addEventListener('pointerdown', stop, { passive: true });
+    window.addEventListener('keydown', stop);
+    return () => { window.removeEventListener('pointerdown', stop); window.removeEventListener('keydown', stop); };
+  }, [cycleList]);
+  // ?tour=1 — จอวนหน้าสั่งเปิดทัวร์หมุนกล้องเอง (เฉพาะ 3D) · ครั้งเดียวตอนเปิด
+  const tourFromUrl = useRef(urlBool('tour', false));
+  useEffect(() => {
+    if (tourFromUrl.current && view3d && !editing) { tourFromUrl.current = false; orbit.setAuto(true); }
+  }, [view3d, editing, orbit]);
+  const togglePanelHide = () => setPanelHide(v => { const nv = !v; try { localStorage.setItem('fm_panel_hide', nv ? '1' : '0'); } catch { /* ignore */ } return nv; });
   const hoverCardRef = useRef(null); // วัดความสูงจริงของการ์ด hover เพื่อกันตกขอบ
   const dragRef = useRef(null);
   const regionsRef = useRef([]);
@@ -1454,7 +1509,7 @@ export default function FactoryMap({ setupMode = false }) {
     } catch (e) { console.error('[loadReview]', e); if (!live()) return; setReviewStatus({}); setReviewError(e?.message || String(e)); }
     finally { if (live()) setReviewLoading(false); }
   }, [reviewDate, beginReview]);
-  useEffect(() => { if (panelMode === 'review' && !editing) loadReview(); }, [loadReview, panelMode, editing]);
+  useEffect(() => { if (isReview && !editing) loadReview(); }, [loadReview, isReview, editing]);
 
   /* ── สรุปเรื่องราวทั้งวันของไลน์ที่คลิก (modal) — ผลิตรายพาร์ท · Downtime+เหตุผล · ของเสีย · 4M · คน ──
      วันที่ = วันที่ของแผงทบทวน (โหมด review) หรือวันงานปัจจุบัน (โหมดสด) · โหลดเมื่อเปิด modal เท่านั้น */
@@ -1674,12 +1729,12 @@ export default function FactoryMap({ setupMode = false }) {
     const sz = storeZoneOf(name);
     if (sz) { setHoverLine(null); setStoreZoneModal(sz); return; }
     if (isFac(name)) { setHoverLine(null); navigate(`/mtn-layout?view=facility&zone=${encodeURIComponent(name)}&from=factory-map`); return; }
-    setHoverLine(null); setStoryDate(date || getWorkDate()); setStoryLine(name);
+    setHoverLine(null); setStoryDate(date || (isReview ? reviewDate : getWorkDate())); setStoryAll(false); setLensSel(null); setStoryLine(name);
   };
   // เปิดผังไลน์ + พนักงาน (Dashboard) — จากปุ่มใน modal สรุป
   const openFloorMap = (name) => {
     const t = floorMapTarget(name);
-    if (t) navigate(`/dashboard?line=${encodeURIComponent(t)}&from=factory-map`);
+    if (t) navigate(`/people-board?line=${encodeURIComponent(t)}&from=factory-map`);
     else { setStoryLine(null); setDetailLine(name); }
   };
   // ตีกรอบเฉพาะ "ไลน์บนสุด (top-level)" = parent_line_name IS NULL — 1 กรอบ/กลุ่ม (รวมยอดลูกด้วย stOf)
@@ -1687,6 +1742,18 @@ export default function FactoryMap({ setupMode = false }) {
   // ชื่อไลน์ผลิตทั้งหมด (แม่+ลูก) — กรอบที่ line_name ไม่ตรงไลน์ผลิตใดเลย = โซน MTN/facility
   const allProdNames = useMemo(() => new Set(lines.map(l => l.name)), [lines]);
   const isFac = (name) => !allProdNames.has(name);
+  const reviewOf = (name) => {
+    const agg = { actual: 0, target: 0, oee: null, oeeWSum: 0, oeeWLoad: 0, oeeSum: 0, oeeN: 0, dtMin: 0, ng: 0, present: 0, headTotal: 0, oeeRows: [] };
+    familyNames(name).forEach(n => {
+      const r = reviewStatus[n]; if (!r) return;
+      agg.actual += r.actual || 0; agg.target += r.target || 0;
+      agg.oeeWSum += r.oeeWSum || 0; agg.oeeWLoad += r.oeeWLoad || 0; agg.oeeSum += r.oeeSum || 0; agg.oeeN += r.oeeN || 0;
+      agg.dtMin += r.dtMin || 0; agg.ng += r.ng || 0; agg.present += r.present || 0; agg.headTotal += r.headTotal || 0;
+      if (r.oeeRows?.length) agg.oeeRows.push(...r.oeeRows);
+    });
+    agg.oee = agg.oeeWLoad > 0 ? Math.round(agg.oeeWSum / agg.oeeWLoad) : (agg.oeeN ? Math.round(agg.oeeSum / agg.oeeN) : null);
+    return agg;
+  };
   const stOf = (name) => {
     const agg = { ...EMPTY_ST, supList: [], oeeRows: [] };
     familyNames(name).forEach(n => {
@@ -1735,6 +1802,18 @@ export default function FactoryMap({ setupMode = false }) {
     agg.oeeTarget = oeeTargetForLines(familyNames(name), lines, oeeTargets)?.oee ?? null;
     // 🌱 คาร์บอน (C1) — คำนวณจาก kWh × EF ของเดือนที่ผังโชว์ · ไม่มี EF = null (ห้ามเดา)
     agg.kwhCo2 = co2eKg(agg.kwh ?? null, energyEf);
+    /* 📅 โหมดทบทวน: เรื่องที่ผูกกับวัน (ยอดผลิต/OEE/DT/ของเสีย/คน) = ยอดทั้งวันของ reviewDate จาก reviewOf()
+       เรื่องที่เป็น "สถานะตอนนี้" (PM/AM/พลังงาน/Supply) คงค่าเดิม — แถบบนผังเขียนกำกับไว้ (ห้ามทำเหมือนเป็นของวันนั้น) */
+    if (isReview && !agg.isFac) {
+      const r = reviewOf(name);
+      Object.assign(agg, {
+        reviewMode: true, actual: r.actual, target: r.target, onTimeTarget: r.target, runN: 0, capN: 0,
+        hasOpen: r.target > 0 || r.actual > 0 || r.oeeN > 0 || r.dtMin > 0 || r.ng > 0,
+        dtMin: r.dtMin, dtMinHour: r.dtMin, dtActive: false, dtOpenMin: null, dtOpenUnknown: false, ng: r.ng,
+        oee: r.oee, oeeRows: [], oeeLive: false, oeeNoCt: false, oeeCtPartial: false, oeePOver: false, oeeA: null, oeeP: null, oeeQ: null,
+        present: r.present, headTotal: r.headTotal, stationTotal: 0, stationFilled: 0, ppeBad: 0,
+      });
+    }
     return agg;
   };
   const catColor = (name) => CAT[M.cat(stOf(name))];
@@ -1898,18 +1977,6 @@ export default function FactoryMap({ setupMode = false }) {
 
   // ── สรุปทบทวนรายวัน: rollup ทั้งครอบครัว (แม่+ลูก) เหมือน stOf แต่อ่านจาก reviewStatus ──
   //    OEE ถ่วงน้ำหนักด้วยเวลารับภาระ (oeeWSum/oeeWLoad) — ห้าม mean-of-percentages · fallback = เฉลี่ยธรรมดา
-  const reviewOf = (name) => {
-    const agg = { actual: 0, target: 0, oee: null, oeeWSum: 0, oeeWLoad: 0, oeeSum: 0, oeeN: 0, dtMin: 0, ng: 0, present: 0, headTotal: 0, oeeRows: [] };
-    familyNames(name).forEach(n => {
-      const r = reviewStatus[n]; if (!r) return;
-      agg.actual += r.actual || 0; agg.target += r.target || 0;
-      agg.oeeWSum += r.oeeWSum || 0; agg.oeeWLoad += r.oeeWLoad || 0; agg.oeeSum += r.oeeSum || 0; agg.oeeN += r.oeeN || 0;
-      agg.dtMin += r.dtMin || 0; agg.ng += r.ng || 0; agg.present += r.present || 0; agg.headTotal += r.headTotal || 0;
-      if (r.oeeRows?.length) agg.oeeRows.push(...r.oeeRows);
-    });
-    agg.oee = agg.oeeWLoad > 0 ? Math.round(agg.oeeWSum / agg.oeeWLoad) : (agg.oeeN ? Math.round(agg.oeeSum / agg.oeeN) : null);
-    return agg;
-  };
   // เรียงไลน์ที่ทำได้ต่ำสุดขึ้นบน (ปัญหาก่อน) · ไม่มีเป้าไปท้าย
   // ⚠️ ลิสต์เฉพาะ "กลุ่มไลน์บนสุด" (1 แถว/กลุ่ม รวมยอดลูกด้วย reviewOf) — ไม่ลิสต์ไลน์ลูกซ้ำ
   //    (แม้ลูกจะถูกตีกรอบไว้ก็ตาม เช่น LWR BAR + Laser LWR/Assy LWR → เห็นแค่ LWR BAR ยอดรวม กันนับซ้ำในสายตา · ดูแยกลูกได้ที่ drill-down)
@@ -1932,6 +1999,29 @@ export default function FactoryMap({ setupMode = false }) {
     t.oee = t.oeeWLoad > 0 ? Math.round(t.oeeWSum / t.oeeWLoad) : (t.oeeN ? Math.round(t.oeeSum / t.oeeN) : null);
     return t;
   }, [reviewStatus, topNames]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* ⚡ สรุปวันนี้ (สด) — กล่องหน้าตาเดียวกับทบทวนรายวัน แต่ตัวเลขจาก stOf() สด (2026-10-16)
+     ไลน์บนสุดเท่านั้น (1 แถว/กลุ่ม รวมลูก) กันนับซ้ำ · OEE รวมถ่วงน้ำหนักด้วยกติกาเดียวกับ stOf (wavg + wLoad) */
+  const liveSummary = (() => {
+    if (isReview) return null;
+    const names = [...new Set([...topNames, ...regions.map(r => r.line_name).filter(n => !parentOf[n] && !isFac(n))])];
+    const ranked = names.map(name => ({ name, r: stOf(name) })).filter(x => !x.r.isFac);
+    ranked.sort((a, b) => {
+      const ap = a.r.target > 0 ? a.r.actual / a.r.target : null, bp = b.r.target > 0 ? b.r.actual / b.r.target : null;
+      if (ap == null && bp == null) return a.name.localeCompare(b.name);
+      if (ap == null) return 1; if (bp == null) return -1;
+      return ap - bp;
+    });
+    const t = { actual: 0, target: 0, dtMin: 0, ng: 0, present: 0, headTotal: 0, oee: null };
+    const rows = [];
+    topNames.forEach(n => { const r = stOf(n); if (r.isFac) return; t.actual += r.actual; t.target += r.target; t.dtMin += r.dtMin; t.ng += r.ng; t.present += r.present; t.headTotal += r.headTotal; rows.push(...(r.oeeRows || [])); });
+    const o = wavg(rows, r => r.oee, wLoad); t.oee = o != null ? Math.round(o) : null;
+    return { totals: t, ranked, names };
+  })();
+  const sumBox = isReview
+    ? { totals: reviewTotals, ranked: reviewRanked, rowOf: (n) => reviewStatus[n], names: Object.keys(reviewStatus || {}), loading: reviewLoading, error: reviewError, date: reviewDate }
+    : { totals: liveSummary.totals, ranked: liveSummary.ranked, rowOf: (n) => { const p = lineStatus[n]; return p ? { target: p.target, dtMin: p.dtMin, ng: p.ng, oeeN: (p.oeeRows || []).length } : null; },
+        names: liveSummary.names, loading: false, error: '', date: getWorkDate() };
 
   /* ── อัปโหลดรูปผัง (บีบเบา 2560/2.5MB/q0.9) ── */
   const handleUpload = async (e) => {
@@ -2283,6 +2373,27 @@ export default function FactoryMap({ setupMode = false }) {
     return () => ro.disconnect();
   }, [imageUrl, loading]);
   const is3d = view3d && !editing;
+  /* 🧊 เสา 3D — คิดก่อน render เพื่อให้หัวผังบอกได้ว่าป้ายไหนแน่นจนวางไม่ได้ (ห้ามหายเงียบ) */
+  const pillarMaxH = Math.max(60, wrapW * 0.2);
+  const BLOCK_K = 0.55;
+  const pillarItems = !is3d ? [] : regions.filter(r => !facHidden(r.line_name)).map(r => {
+                  const st = stOf(r.line_name); const cat = regCat(st); const meta = CAT[cat];
+                  /* 🏢 กรอบไลน์ = กล่องยกจากรูปทรงกรอบจริง (`pts`) · ป้ายกลางหลังคา (centroid)
+                     สูง × BLOCK_K — กล่องกินพื้นที่มากกว่าเสา สูงเต็มจะบังผังข้างหลังหมด */
+                  const [x, y] = centroid(r.points);
+                  return { key: r.id, name: r.line_name, x, y, pts: r.points, color: meta.color, blink: !!meta.blink,
+                    h: pillarHeight(metric, cat, st.oee).h * BLOCK_K, text: shortText(st), dim: cat === 'idle' };
+                }).concat(autoHulls.map(h => {
+                  /* ▣ เสากลุ่ม = ยอดรวมทั้งครอบครัว (stOf รวมลูกให้แล้ว) · ตั้งที่ "ขอบล่างกลาง" ของกรอบแม่
+                     เสาลูกตั้งที่ขอบบน (labelAnchor) ⇒ 2 ชั้นไม่ชนกันในจุดเดียว */
+                  const st = stOf(h.name); const cat = regCat(st); const meta = CAT[cat];
+                  const bb = bboxOf(h.hull);
+                  return { key: `hull-${h.name}`, name: h.name, x: (bb.x0 + bb.x1) / 2, y: bb.y1, color: meta.color, blink: !!meta.blink,
+                    h: pillarHeight(metric, cat, st.oee).h, text: shortText(st), dim: cat === 'idle',
+                    group: true, kids: (childrenOf[h.name] || []).length };
+                }));
+  const pillarLifts = is3d ? liftLabels(pillarItems, { Wpx: wrapW, Hpx: aspect ? wrapW / aspect : 0, tiltDeg: orbit.tilt, rotZDeg: orbit.rot, maxH: pillarMaxH }) : null;
+  const pillarCrowded = pillarLifts ? [...pillarLifts.values()].filter(v => !v.ok).length : 0;
   const wrapStyle = aspect ? { width: `min(100%, calc((100vh - 210px) * ${aspect}))` } : { width: '100%' };
   const ptsStr = (pts) => pts.map(p => `${p[0]},${p[1]}`).join(' ');
   const flashLine = (name) => { setHighlight(name); setTimeout(() => setHighlight(h => h === name ? null : h), 2000); };
@@ -2290,7 +2401,7 @@ export default function FactoryMap({ setupMode = false }) {
   return (
     <Page width="full">
       <PageHeader title="ผังรวมโรงงาน" icon="🗺️"
-        sub={<>ทุกไลน์บนผังเดียว — เลือกดูได้หลายมุมมอง · <b>วางเม้าส์ดูสรุป · คลิกเปิดผังไลน์พร้อมพนักงาน</b> · อัปเดตสดอัตโนมัติ · <b>แผงขวา = ทบทวนรายวัน · 🏛️ สถานะ OBEYA สด · จัดอันดับ</b></>}
+        sub={<>ทุกไลน์บนผังเดียว — เลือกดูได้หลายมุมมอง · <b>วางเม้าส์ดูสรุป · คลิกเปิดผังไลน์พร้อมพนักงาน</b> · อัปเดตสดอัตโนมัติ · <b>สวิตช์ ⚡ Live / 📅 ทบทวนรายวัน คุมทั้งผัง แผงขวา และรายละเอียดที่คลิก</b> · hover/คลิก = เฉพาะเรื่องของแท็บที่เลือก</>}
         actions={canEdit && <button onClick={() => { setEditing(v => !v); cancelDraw(); }} style={{ ...btn(editing), position: 'relative' }}>{editing ? '✓ เสร็จ' : '✏️ แก้ผัง'}<ToggleDot on={editing} /></button>} />
       {partial && (
         <div style={{ marginBottom: 10, padding: '8px 12px', borderRadius: 8, fontSize: 12.5, fontWeight: 700,
@@ -2299,11 +2410,42 @@ export default function FactoryMap({ setupMode = false }) {
         </div>
       )}
 
+      {/* ⚡/📅 สวิตช์เดียวคุมทั้งหน้า — ผัง + แผงขวา + กล่องรายละเอียดที่คลิก ใช้ช่วงเวลาเดียวกันเสมอ (2026-10-16) */}
+      {!editing && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+          <Segmented label="ช่วงเวลาของทั้งหน้า" value={viewMode} onChange={setViewMode} options={[
+            { value: 'live', label: '⚡ Live (วันนี้สด)', title: 'ผัง แผงขวา และรายละเอียดที่คลิก = ข้อมูลสดของวันนี้' },
+            { value: 'review', label: '📅 ทบทวนรายวัน', title: 'ผัง แผงขวา และรายละเอียดที่คลิก = ยอดทั้งวันของวันที่เลือก' },
+          ]} />
+          {isReview && (<>
+            <button onClick={() => setReviewDate(d => shiftDate(d, -1))} style={navBtn}>◀</button>
+            <input type="date" value={reviewDate} max={getWorkDate()} onChange={e => e.target.value && setReviewDate(e.target.value)}
+              style={{ width: 150, padding: '6px 8px', borderRadius: 8, fontSize: 13, textAlign: 'center' }} />
+            <button onClick={() => setReviewDate(d => (d < getWorkDate() ? shiftDate(d, 1) : d))} disabled={reviewDate >= getWorkDate()} style={{ ...navBtn, opacity: reviewDate >= getWorkDate() ? 0.4 : 1 }}>▶</button>
+            <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text2)' }}>{fmtThaiDate(reviewDate)}</span>
+            {reviewLoading && <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>กำลังโหลด…</span>}
+            {reviewError && <span style={{ fontSize: 11.5, color: '#ef4444', fontWeight: 700 }}>⚠ โหลดยอดของวันนี้ไม่สำเร็จ — ผังเป็น 0 ไม่ใช่ "ไม่มีการผลิต"</span>}
+          </>)}
+        </div>
+      )}
+      {!editing && isReview && (
+        <div style={{ marginBottom: 10, padding: '7px 12px', borderRadius: 8, fontSize: 12, background: 'var(--accent-dim)', border: '1px solid var(--accent)', color: 'var(--text2)' }}>
+          📅 <b style={{ color: 'var(--text)' }}>โหมดทบทวน {fmtThaiDate(reviewDate)}</b> — ยอดผลิต / OEE / Downtime / ของเสีย / คน บนผังเป็นยอดทั้งวันของวันนั้น ·
+          <b> แท็บ PM / AM / พลังงาน / Supply Route ยังเป็นสถานะปัจจุบัน</b> (ไม่มีประวัติย้อนหลังรายวัน)
+        </div>
+      )}
+
       {/* เลือก metric */}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
         {Object.entries(METRICS).map(([k, m]) => (
           <button key={k} onClick={() => setMetric(k)} style={btn(metric === k)}>{m.label}</button>
         ))}
+        {cycleList.length > 1 && (
+          <button onPointerDown={e => e.stopPropagation()} onClick={() => setCycleOn(v => !v)} title="วนมุมมองอัตโนมัติ (ตั้งจากจอวนหน้า)"
+            style={{ ...btn(cycleOn), position: 'relative' }}>
+            🔁 {cycleOn ? `วนมุมมอง · ${cycleList.indexOf(metric) + 1}/${cycleList.length}` : 'วนมุมมอง (หยุด)'}<ToggleDot on={cycleOn} />
+          </button>
+        )}
         {/* ⚡ พลังงานเป็นข้อมูล "รายเดือน" ไม่ใช่ live เหมือน metric อื่นบนจอนี้ — ต้องประกาศเดือนเสมอ
             ไม่งั้นคนอ่านเป็นค่าปัจจุบัน (จอนี้ทุกอย่างสดหมด) */}
         {!editing && metric === 'energy' && (
@@ -2433,13 +2575,47 @@ export default function FactoryMap({ setupMode = false }) {
       ) : (
         <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', flexWrap: 'wrap' }}>
           {/* ── ผัง ── */}
-          <div style={{ flex: '1 1 640px', minWidth: 0, display: 'flex', justifyContent: 'center', flexDirection: 'column', alignItems: 'center',
-            ...(is3d ? { perspective: 2600, perspectiveOrigin: '50% 20%' } : {}) }}>
-          {is3d && <div style={{ alignSelf: 'flex-start', fontSize: 11.5, color: 'var(--muted)', marginBottom: Math.round(wrapW * 0.06) }}>🧊 มุมมอง 3D (ทดลอง) · {pillarLegend(metric)} · คลิกเสาเปิดไลน์</div>}
+          {/* data-tv-nofit (16/10 · จอ TV ส่งรูปมา ผัง 3D ยุบไปมุมซ้ายบน): ตัววนหน้าย่อทั้งหน้าด้วย CSS zoom
+              แต่ Chromium 94 (webOS) คิด perspective/origin ของ 3D ใต้ zoom ผิด ⇒ เจอแอตทริบิวต์นี้ = ไม่ย่อ
+              (ผังคุมความสูงเองอยู่แล้ว maxHeight calc(100vh - 200px)) · ดู DisplayRotator fit() */}
+          <div {...orbit.handlers} ref={orbit.rootRef} data-tv-nofit={is3d ? '1' : undefined} style={{ flex: '1 1 640px', minWidth: 0, display: 'flex', justifyContent: 'center', flexDirection: 'column', alignItems: 'center',
+            ...(is3d ? { touchAction: 'none', cursor: orbit.dragging ? 'grabbing' : 'grab', userSelect: 'none' } : {}),
+            /* 🧊 คอลัมน์ผังตัดของล้น (พื้นกริดยื่นออกนอกรูป ห้ามไปทับแผงขวา) — overflow ที่ "ชั้นนอก" ของ preserve-3d ไม่ flatten เสา */
+            ...(is3d ? { perspective: 2600, perspectiveOrigin: '50% 20%', overflow: 'hidden', borderRadius: 12 } : {}) }}>
+          {is3d && (
+            <div style={{ alignSelf: 'stretch', position: 'relative', zIndex: 3, background: 'var(--bg)', padding: '2px 4px', display: 'flex', flexWrap: 'wrap', gap: '2px 12px', fontSize: 11.5, color: 'var(--muted)', marginBottom: Math.round(wrapW * 0.1) }}>
+              <span>🧊 มุมมอง 3D (ทดลอง) · {pillarLegend(metric)}</span>
+              <span>กรอบไลน์ = กล่อง · ▣ เสา = ยอดรวมกลุ่ม · ป้ายที่ชนกันถูกยกขึ้นสูง มีเส้นโยงลง · คลิกกล่อง/เสาเปิดไลน์</span>
+              {pillarCrowded > 0 && <b style={{ color: '#f59e0b' }}>ป้ายแน่นจนวางไม่ได้ {pillarCrowded} ใบ — ชี้/แตะกล่องเพื่อดู</b>}
+              {/* 🔄 มุมกล้อง — ลากบนผังก็หมุนได้ · ปุ่มไว้สำหรับจอ TV (ไม่มีเมาส์) · stopPropagation กันปุ่มเริ่ม "ลาก" */}
+              <span onPointerDown={e => e.stopPropagation()} style={{ marginLeft: 'auto', display: 'inline-flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
+                <span>ลาก = หมุน/ก้มเงย · ล้อเมาส์/2 นิ้ว = ซูม · Shift+ลาก = เลื่อน</span>
+                <button onClick={() => orbit.zoomBy(1 / 1.3)} disabled={orbit.zoom <= 1} title="ซูมออก" style={{ ...miniTab(false), padding: '2px 8px', fontSize: 12, opacity: orbit.zoom <= 1 ? 0.45 : 1 }}>－</button>
+                <span style={{ minWidth: 34, textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}>{Math.round(orbit.zoom * 100)}%</span>
+                <button onClick={() => orbit.zoomBy(1.3)} disabled={orbit.zoom >= 3} title="ซูมเข้า (กลางผัง)" style={{ ...miniTab(false), padding: '2px 8px', fontSize: 12, opacity: orbit.zoom >= 3 ? 0.45 : 1 }}>＋</button>
+                <button onClick={() => orbit.step(-15)} title="หมุนซ้าย 15° (หมุนได้ไม่เกิน ±45° จากมุมเริ่ม)" style={{ ...miniTab(false), padding: '2px 8px', fontSize: 12 }}>⟲</button>
+                <button onClick={() => orbit.step(15)} title="หมุนขวา 15° (หมุนได้ไม่เกิน ±45° จากมุมเริ่ม)" style={{ ...miniTab(false), padding: '2px 8px', fontSize: 12 }}>⟳</button>
+                <button onClick={() => orbit.tiltBy(8)} title="ก้มลง (มองเฉียงขึ้น)" style={{ ...miniTab(false), padding: '2px 8px', fontSize: 12 }}>▼</button>
+                <button onClick={() => orbit.tiltBy(-8)} title="เงยขึ้น (มองจากบนมากขึ้น)" style={{ ...miniTab(false), padding: '2px 8px', fontSize: 12 }}>▲</button>
+                <button onClick={() => orbit.setAuto(a => !a)} title="แกว่งมุมมองไป-กลับเองช้าๆ (เหมาะกับจอแขวน)" style={{ ...miniTab(orbit.auto), padding: '2px 8px', fontSize: 11.5 }}>{orbit.auto ? '⏸ หยุดทัวร์' : '▶ ทัวร์'}</button>
+                <button onClick={orbit.reset} title="กลับมุมเริ่มต้น + ซูมพอดีกรอบ" style={{ ...miniTab(false), padding: '2px 8px', fontSize: 11.5 }}>↺ มุมเดิม</button>
+              </span>
+            </div>
+          )}
           {/* 🧊 3D: overflow ต้อง visible — overflow:hidden บังคับ flatten ลูกที่ preserve-3d (เสาจะแบนติดพื้น) */}
           <div ref={wrapRef} onClick={onMapClick} onPointerMove={onMapMove} onPointerUp={endDrag} onPointerCancel={endDrag}
             style={{ position: 'relative', ...wrapStyle, maxHeight: 'calc(100vh - 200px)', borderRadius: 10, overflow: is3d ? 'visible' : 'hidden', border: '1px solid var(--border)', cursor: drawing ? 'crosshair' : 'default', touchAction: 'none', background: '#0a0a0f',
-              transition: 'transform .45s ease', ...(is3d ? { transform: MAP_3D_TRANSFORM, transformStyle: 'preserve-3d', boxShadow: 'var(--shadow-float)' } : {}) }}>
+              transition: orbit.transition, ...(is3d ? { transform: `translate(${orbit.px}px, ${orbit.py}px) scale(${orbit.zoom}) ` + map3dTransform(orbit.tilt, orbit.rot, orbitScale(orbit.rot, orbit.tilt, aspect ? 1 / aspect : null)), transformStyle: 'preserve-3d', boxShadow: 'var(--shadow-float)' } : {}) }}>
+            {/* 🧊 พื้นโรงงานรอบผัง (3D) — ตารางกริดจางๆ ยื่นออกนอกรูป แล้วเฟดเข้าพื้นหลังหน้า
+                ให้ผังดู "วางอยู่บนพื้น" ไม่ใช่รูปแผ่นเดียวลอยกลางความมืด (user ทัก 15/10 "พื้นหลังโล่ง ดูเป็น 3D ปลอม") */}
+            {is3d && (
+              <div aria-hidden style={{ position: 'absolute', left: '-45%', right: '-45%', top: '-45%', bottom: '-45%', pointerEvents: 'none',
+                transform: 'translateZ(-2px)',
+                background: 'radial-gradient(ellipse at center, rgba(0,0,0,0) 30%, var(--bg) 70%), '
+                  + 'repeating-linear-gradient(0deg, rgba(148,163,184,0.16) 0 1px, rgba(0,0,0,0) 1px 48px), '
+                  + 'repeating-linear-gradient(90deg, rgba(148,163,184,0.16) 0 1px, rgba(0,0,0,0) 1px 48px), '
+                  + 'linear-gradient(rgba(30,41,59,0.55), rgba(30,41,59,0.55))' }} />
+            )}
             <img src={imageUrl} alt="ผังโรงงาน" onLoad={onImgLoad} style={{ display: 'block', width: '100%', height: 'auto', pointerEvents: 'none', userSelect: 'none' }} />
             {/* scrim บางๆ ให้กรอบเด่นแต่ยังเห็นผังชัด (ไม่หรี่จนภาพหม่น) */}
             <div style={{ position: 'absolute', inset: 0, background: 'rgba(6,8,14,0.14)', pointerEvents: 'none' }} />
@@ -2549,23 +2725,10 @@ export default function FactoryMap({ setupMode = false }) {
                 ไลน์ที่เป็น "ลูก" ของกลุ่ม นำหน้าด้วย ↳ ให้อ่านออกว่าอยู่ใต้กลุ่มไหน (2026-08-06)
                 ข้อมูลครบทุกตัวเหมือนเดิม (คำสั่ง user 2026-08-04) */}
             {is3d && (
-              <MapPillars3D maxH={Math.max(60, wrapW * 0.2)} size={Math.max(12, Math.round(wrapW * 0.024))}
+              <MapPillars3D maxH={pillarMaxH} size={Math.max(12, Math.round(wrapW * 0.024))}
                 onOpen={(n) => openLine(n)}
                 onHover={(n, e) => { if (n) { setHoverLine(n); setHoverXY({ x: e.clientX, y: e.clientY }); } else setHoverLine(null); }}
-                items={regions.filter(r => !facHidden(r.line_name)).map(r => {
-                  const st = stOf(r.line_name); const cat = regCat(st); const meta = CAT[cat];
-                  const [x, y] = labelAnchor(r.points);
-                  return { key: r.id, name: r.line_name, x, y, color: meta.color, blink: !!meta.blink,
-                    h: pillarHeight(metric, cat, st.oee).h, text: shortText(st), dim: cat === 'idle' };
-                }).concat(autoHulls.map(h => {
-                  /* ▣ เสากลุ่ม = ยอดรวมทั้งครอบครัว (stOf รวมลูกให้แล้ว) · ตั้งที่ "ขอบล่างกลาง" ของกรอบแม่
-                     เสาลูกตั้งที่ขอบบน (labelAnchor) ⇒ 2 ชั้นไม่ชนกันในจุดเดียว */
-                  const st = stOf(h.name); const cat = regCat(st); const meta = CAT[cat];
-                  const bb = bboxOf(h.hull);
-                  return { key: `hull-${h.name}`, name: h.name, x: (bb.x0 + bb.x1) / 2, y: bb.y1, color: meta.color, blink: !!meta.blink,
-                    h: pillarHeight(metric, cat, st.oee).h, text: shortText(st), dim: cat === 'idle',
-                    group: true, kids: (childrenOf[h.name] || []).length };
-                }))} />
+                items={pillarItems} lifts={pillarLifts} wPx={wrapW} hPx={aspect ? wrapW / aspect : 0} cam={orbit} />
             )}
             {!is3d && regions.map(r => {
               if (facHidden(r.line_name)) return null;      // 🫥 โซนที่ซ่อนตาม metric — ป้ายก็ไม่วาด
@@ -2724,36 +2887,36 @@ export default function FactoryMap({ setupMode = false }) {
           {!editing && !panelHide && (
             <aside style={{ flex: '0 0 360px', maxWidth: '100%', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 16px', maxHeight: 'calc(100vh - 200px)', overflowY: 'auto' }}>
               {/* สลับโหมดแผง */}
-              <div style={{ display: 'flex', gap: 5, marginBottom: 12 }}>
-                <button onClick={() => setPanelMode('review')} style={{ ...miniTab(panelMode === 'review'), flex: 1, fontSize: 11.5, padding: '5px 4px' }}>📅 ทบทวนรายวัน</button>
+              {/* โหมดทบทวน = แผงเป็นสรุปของวันที่เลือกอย่างเดียว (OBEYA/อันดับ เป็นของสด) */}
+              {!isReview && <div style={{ display: 'flex', gap: 5, marginBottom: 12 }}>
+                <button onClick={() => setPanelMode('review')} style={{ ...miniTab(panelMode === 'review'), flex: 1, fontSize: 11.5, padding: '5px 4px' }}>⚡ สรุปวันนี้</button>
                 <button onClick={() => setPanelMode('obeya')} style={{ ...miniTab(panelMode === 'obeya'), flex: 1, fontSize: 11.5, padding: '5px 4px' }}
                   title="สถานะรายหัวข้อแบบห้อง OBEYA (SQDCM) จากข้อมูลสดของวันนี้ — กดหัวข้อเพื่อเจาะหาไลน์ที่มีปัญหา">🏛️ OBEYA (สด)</button>
                 <button onClick={() => setPanelMode('live')} style={{ ...miniTab(panelMode === 'live'), flex: 1, fontSize: 11.5, padding: '5px 4px' }}
                   title="จัดอันดับไลน์ตามแท็บ metric ที่เลือกด้านบน (พลังงาน / PM / Supply Route ดูได้ที่นี่เท่านั้น)">📊 อันดับ</button>
-              </div>
+              </div>}
 
-              {panelMode === 'review' ? (
+              {(isReview || panelMode === 'review') ? (
                 <>
-                  {/* ตัวเลือกวันที่ */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-                    <button onClick={() => setReviewDate(d => shiftDate(d, -1))} style={navBtn}>◀</button>
-                    <input type="date" value={reviewDate} max={getWorkDate()} onChange={e => e.target.value && setReviewDate(e.target.value)}
-                      style={{ width: 150, padding: '6px 8px', borderRadius: 8, fontSize: 13, textAlign: 'center' }} />
-                    <button onClick={() => setReviewDate(d => (d < getWorkDate() ? shiftDate(d, 1) : d))} disabled={reviewDate >= getWorkDate()} style={{ ...navBtn, opacity: reviewDate >= getWorkDate() ? 0.4 : 1 }}>▶</button>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
-                    <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text2)' }}>{fmtThaiDate(reviewDate)}</div>
-                    {reviewDate !== reviewDefaultDate() && <button onClick={() => setReviewDate(reviewDefaultDate())} style={{ ...miniTab(false), padding: '2px 8px', fontSize: 11 }}>↺ วันล่าสุด</button>}
-                  </div>
-                  <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>ภาพรวมทั้งวัน (กะเช้า+ดึก) สำหรับประชุมผู้จัดการ · เรียงไลน์ที่ทำได้ต่ำสุดขึ้นบน · คลิกแถวเปิดผังไลน์</div>
+                  {isReview ? (<>
+                    <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text2)', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      📅 {fmtThaiDate(reviewDate)}
+                      {reviewDate !== reviewDefaultDate() && <button onClick={() => setReviewDate(reviewDefaultDate())} style={{ ...miniTab(false), padding: '2px 8px', fontSize: 11 }}>↺ วันล่าสุด</button>}
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>ภาพรวมทั้งวัน (กะเช้า+ดึก) สำหรับประชุมผู้จัดการ · เปลี่ยนวันที่ที่สวิตช์เหนือผัง · เรียงไลน์ที่ทำได้ต่ำสุดขึ้นบน · คลิกแถวเปิดรายละเอียดไลน์</div>
+                  </>) : (
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>
+                      <b style={{ color: 'var(--accent)' }}>⚡ วันนี้ {fmtThaiDate(getWorkDate())} (สด)</b> — ยอดถึงตอนนี้ ไม่ใช่ยอดทั้งวัน · เรียงไลน์ที่ทำได้ต่ำสุดขึ้นบน · คลิกแถวเปิดรายละเอียดไลน์
+                    </div>
+                  )}
 
                   {/* สรุปทั้งโรงงาน */}
                   {(() => {
-                    const t = reviewTotals; const pct = t.target > 0 ? Math.round(t.actual / t.target * 100) : null;
+                    const t = sumBox.totals; const pct = t.target > 0 ? Math.round(t.actual / t.target * 100) : null;
                     const stats = [
                       { label: 'ผลิตได้รวม / เป้า', val: `${fmtNum(t.actual)}/${fmtNum(t.target)}${pct != null ? ` · ${pct}%` : ''}`, color: pctCol(pct) },
-                      { label: 'OEE เฉลี่ย', val: t.oee != null ? `${t.oee}%` : '—', color: oeeCol(t.oee, Object.keys(reviewStatus || {})),
-                        explain: t.oeeRows?.length ? { title: 'OEE เฉลี่ยทั้งโรงงาน', rows: t.oeeRows } : null },
+                      { label: 'OEE เฉลี่ย', val: t.oee != null ? `${t.oee}%` : '—', color: oeeCol(t.oee, sumBox.names),
+                        explain: isReview && t.oeeRows?.length ? { title: 'OEE เฉลี่ยทั้งโรงงาน', rows: t.oeeRows } : null },
                       { label: 'Downtime รวม', val: `${fmtNum(t.dtMin)} น.`, color: t.dtMin > 0 ? '#f59e0b' : 'var(--text)' },
                       { label: 'ของเสียรวม', val: fmtNum(t.ng), color: t.ng > 0 ? '#ef4444' : 'var(--text)' },
                       { label: 'คนเข้างาน', val: t.headTotal > 0 ? `${t.present}/${t.headTotal}` : '—', color: 'var(--text)' },
@@ -2775,26 +2938,26 @@ export default function FactoryMap({ setupMode = false }) {
                     );
                   })()}
 
-                  {reviewLoading ? (
+                  {sumBox.loading ? (
                     <div style={{ fontSize: 12, color: 'var(--muted)', padding: 16, textAlign: 'center' }}>กำลังโหลด...</div>
-                  ) : reviewError ? (
+                  ) : sumBox.error ? (
                     <div style={{ fontSize: 12, color: '#ef4444', padding: 14, textAlign: 'center', border: '1px solid #ef444455', borderRadius: 8 }}>
                       ⚠️ โหลดสรุปวันนี้ไม่สำเร็จ — ตัวเลขด้านบนจึงเป็น 0 <b>ไม่ใช่ "ไม่มีการผลิต"</b>
-                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, wordBreak: 'break-all' }}>{reviewError}</div>
+                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, wordBreak: 'break-all' }}>{sumBox.error}</div>
                       <button onClick={loadReview} style={{ ...miniTab(false), marginTop: 8, padding: '3px 10px', fontSize: 11.5 }}>↻ ลองใหม่</button>
                     </div>
-                  ) : reviewRanked.every(x => !x.r.target && !x.r.dtMin && !x.r.ng && x.r.oee == null) ? (
-                    <div style={{ fontSize: 12, color: 'var(--muted)', padding: 20, textAlign: 'center' }}>ไม่มีข้อมูลการผลิตของวันที่เลือก</div>
-                  ) : reviewRanked.map(({ name, r }, i) => {
+                  ) : sumBox.ranked.every(x => !x.r.target && !x.r.dtMin && !x.r.ng && x.r.oee == null) ? (
+                    <div style={{ fontSize: 12, color: 'var(--muted)', padding: 20, textAlign: 'center' }}>{isReview ? 'ไม่มีข้อมูลการผลิตของวันที่เลือก' : 'ยังไม่มีไลน์ไหนลงยอดวันนี้'}</div>
+                  ) : sumBox.ranked.map(({ name, r }, i) => {
                     const noData = !r.target && !r.dtMin && !r.ng && r.oee == null;
                     if (noData) return null;
                     const hasRegion = regions.some(rg => rg.line_name === name);
-                    const kids = (childrenOf[name] || []).filter(k => { const kr = reviewStatus[k]; return kr && (kr.target || kr.dtMin || kr.ng || kr.oeeN); });
+                    const kids = (childrenOf[name] || []).filter(k => { const kr = sumBox.rowOf(k); return kr && (kr.target || kr.dtMin || kr.ng || kr.oeeN); });
                     const hasKids = kids.length > 0;
                     const pct = r.target > 0 ? Math.round(r.actual / r.target * 100) : null;
                     return (
                       // ไลน์แม่ที่มีลูก → คลิกเปิด breakdown ไลน์ย่อย · ไลน์เดี่ยว → เปิดผังไลน์พร้อมพนักงาน
-                      <div key={name} onClick={() => { if (hasKids) { setReviewDetail(name); } else { if (hasRegion) flashLine(name); openLine(name, reviewDate); } }}
+                      <div key={name} onClick={() => { if (hasKids && isReview) { setReviewDetail(name); } else { if (hasRegion) flashLine(name); openLine(name, sumBox.date); } }}
                         style={{ padding: '8px 10px', borderRadius: 9, marginBottom: 5, cursor: 'pointer', background: highlight === name ? 'var(--bg2)' : 'var(--bg3)', border: `1px solid ${highlight === name ? pctCol(pct) : 'var(--border2)'}` }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 5 }}>
                           <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--muted)', width: 18, textAlign: 'right', flexShrink: 0 }}>{i + 1}</span>
@@ -2985,7 +3148,6 @@ export default function FactoryMap({ setupMode = false }) {
       {/* ── การ์ดพรีวิวลอยตามเม้าส์ (hover) — สรุปทุกมุมมองแบบย่อ, เฉพาะ mouse ── */}
       {hoverLine && !editing && !detailLine && (() => {
         const st = stOf(hoverLine); const kids = childrenOf[hoverLine] || []; const meta = CAT[M.cat(st)];
-        const hasFloor = !!floorMapTarget(hoverLine);
         const W = 264, OFF = 18;
         const vw = typeof window !== 'undefined' ? window.innerWidth : 1280;
         const vh = typeof window !== 'undefined' ? window.innerHeight : 800;
@@ -3062,7 +3224,9 @@ export default function FactoryMap({ setupMode = false }) {
                   ของเดิมโชว์ครบ 7 แถวโดย 5 แถวเขียนว่า "🔧 Facility" เฉยๆ = การ์ดยาวแต่ไม่มีข้อมูล
                   (user ทัก 2026-08-20 "box card จุดที่เป็นระบบ utility มันโชว์หลาย")
                   → ตัดแถวที่ N/A ออก แล้ว **บอกด้วยบรรทัดเดียวว่าตัดอะไรไป** (ห้ามหายเงียบ) */}
-              {Object.entries(METRICS).filter(([, m]) => !(st.isFac && m.facilityNA)).map(([k, m]) => {
+              {/* 🎯 การ์ด hover ตอบเฉพาะเรื่องของแท็บที่เลือก (2026-10-16 · user "hover ควรโชว์เรื่องที่เกี่ยวกับ tab
+                  ไม่ใช่โชว์ทั้งหมด จะโชว์ทั้งหมดก็คือ tab ปกติ/ผิดปกติ") — แท็บ health = รวมทุกเรื่อง */}
+              {Object.entries(METRICS).filter(([k, m]) => !(st.isFac && m.facilityNA) && (metric === 'health' || k === metric)).map(([k, m]) => {
                 const c = CAT[m.cat(st)]; const t = m.text(st); const isCur = k === metric;
                 return (
                   <div key={k} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
@@ -3092,14 +3256,24 @@ export default function FactoryMap({ setupMode = false }) {
                 );
               })}
             </div>
-            {st.isFac && (
+            {metric !== 'health' && st.isFac && M.facilityNA && (
+              <div style={{ fontSize: 12, color: 'var(--text2)', fontWeight: 700 }}>
+                {st.die ? '🔨 โซนคลังแม่พิมพ์' : '🔧 โซนระบบสนับสนุน'} — ไม่ใช่ไลน์ผลิต จึงไม่มีเรื่อง {M.label}
+              </div>
+            )}
+            {metric !== 'health' && (
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6, lineHeight: 1.4 }}>
+                แสดงเฉพาะเรื่อง {M.label} · ดูทุกเรื่องที่แท็บ {METRICS.health.label}
+              </div>
+            )}
+            {st.isFac && metric === 'health' && (
               <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6, lineHeight: 1.4 }}>
                 {st.die ? '🔨 โซนคลังแม่พิมพ์' : '🔧 โซนระบบสนับสนุน (utility)'} — ไม่ใช่ไลน์ผลิต
                 จึงไม่มี {Object.values(METRICS).filter(m => m.facilityNA).map(m => m.label.replace(/^\S+\s/, '')).join(' / ')}
               </div>
             )}
             <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 9, textAlign: 'center', fontWeight: 700 }}>
-              {hasFloor ? '🏭 คลิกเพื่อเปิดผังไลน์ + พนักงาน' : 'คลิกเพื่อดูรายละเอียด + แยกไลน์ย่อย'}
+              คลิกเพื่อดูรายละเอียด{M?.label && metric !== 'health' ? ` เรื่อง ${M.label}` : ''} + ผังของไลน์
             </div>
           </div>
         );
@@ -3190,9 +3364,15 @@ export default function FactoryMap({ setupMode = false }) {
         const pct = s && s.totTarget > 0 ? Math.round(s.totProduced / s.totTarget * 100) : null;
         const kids = childrenOf[storyLine] || [];
         const sh = (v) => v === 'day' ? '☀️ กะเช้า' : v === 'night' ? '🌙 กะดึก' : (v || '—');
+        /* 🔎 แท็บที่เลือก = เลนส์ (2026-10-16 · user "คลิกไลน์ ควรโชว์เรื่องที่เกี่ยวกับ tab ที่เลือก + คู่กับผังเลย์เอาต์")
+           หัวข้อ/เลนส์ผังตัดสินที่ utils/lineLens.js · ซ่อนแล้วต้องบอกบนหัว + ปุ่มดูทุกเรื่อง (ห้ามหายเงียบ) */
+        const sections = storySectionsFor(metric);
+        const sec = (k) => storyAll || sections.has(k);
+        const lens = mapLensOf(metric);
+        const showMap = !!lens && !stOf(storyLine).isFac;
         return (
           <div onClick={() => setStoryLine(null)} style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(0,0,0,0.66)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-            <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, width: '100%', maxWidth: 860, maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
+            <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, width: '100%', maxWidth: showMap ? 1440 : 860, maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
               {/* หัว */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, padding: '18px 20px 12px', borderBottom: '1px solid var(--border)' }}>
                 <div style={{ minWidth: 0 }}>
@@ -3202,14 +3382,48 @@ export default function FactoryMap({ setupMode = false }) {
                       ? <span style={{ color: 'var(--accent)', fontWeight: 700 }}>⚡ วันนี้ (สด)</span>
                       : 'สรุปทั้งวัน'} · {fmtThaiDate(storyDate)}{kids.length ? ` · รวม ${kids.length} ไลน์ย่อย` : ''}{s?.sessionCount ? ` · ${s.sessionCount} กะ` : ''}
                   </div>
+                  {metric !== 'health' && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 6, fontSize: 12 }}>
+                      <span style={{ color: 'var(--text2)', fontWeight: 700 }}>🔎 {storyAll ? 'แสดงทุกเรื่อง' : `แสดงเฉพาะเรื่อง ${M.label}`}</span>
+                      <button onClick={() => setStoryAll(v => !v)} style={{ ...miniTab(storyAll), fontSize: 11.5, padding: '3px 10px' }}>
+                        {storyAll ? `กลับไปเฉพาะ ${M.label}` : 'ดูทุกเรื่องของไลน์'}
+                      </button>
+                    </div>
+                  )}
                 </div>
                 <div style={{ display: 'flex', gap: 7, flexShrink: 0 }}>
-                  <button onClick={() => openFloorMap(storyLine)} style={{ ...miniTab(false), whiteSpace: 'nowrap' }}>🏭 ผังไลน์ + พนักงาน</button>
                   <button onClick={() => setStoryLine(null)} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, width: 32, height: 32, cursor: 'pointer', color: 'var(--text2)', fontSize: 15 }}>✕</button>
                 </div>
               </div>
 
-              <div style={{ overflowY: 'auto', padding: '16px 20px 20px' }}>
+              <div style={showMap && !isMobile
+                ? { display: 'grid', gridTemplateColumns: 'minmax(0, 1.5fr) minmax(360px, 1fr)', gap: 16, padding: '16px 20px 20px', minHeight: 0, flex: 1, overflow: 'hidden' }
+                : { overflowY: 'auto', padding: '16px 20px 20px' }}>
+              {showMap && (
+                <div style={{ minWidth: 0, overflowY: isMobile ? 'visible' : 'auto', marginBottom: isMobile ? 16 : 0 }}>
+                  {/* 📦 ยอดผลิต = บอร์ด Heijunka ของไลน์ · 👷 คน = ผังจุดงาน+คนประจำ (user 16/10 — ปุ่ม "ผังไลน์+พนักงาน" ไม่จำเป็นแล้ว) */}
+                  {lens === 'productivity' ? (
+                    <LineOrderBoard lineName={storyLine} family={familyNames(storyLine)} date={storyDate} lines={lines}
+                      height={isMobile ? undefined : 'calc(92vh - 300px)'} onSelectCard={isMobile ? undefined : setLensSel} />
+                  ) : (
+                    <LineLensMap lineName={storyLine} family={familyNames(storyLine)} parentName={parentOf[storyLine] || null}
+                      lens={lens} dtRows={story?.dtUnplanned || null} height={isMobile ? '360px' : 'clamp(300px, calc(92vh - 360px), 760px)'}
+                      date={storyDate} lineIds={lens === 'people' ? lines.filter(l => familyNames(storyLine).includes(l.name)).map(l => l.id) : undefined}
+                      onSelectMachine={isMobile ? undefined : setLensSel} />
+                  )}
+                  {lens === 'people' && floorMapTarget(storyLine) && (
+                    <button onClick={() => openFloorMap(storyLine)} style={{ ...miniTab(false), fontSize: 11.5, padding: '3px 10px', marginTop: 8 }}>↗ เปิดผังคนเต็มจอ (OT · PPE · กะ)</button>
+                  )}
+                </div>
+              )}
+              <div style={showMap && !isMobile ? { minWidth: 0, overflowY: 'auto' } : undefined}>
+                {/* เครื่องที่คลิกบนผัง — ติดหัวคอลัมน์ขวา (sticky) · มือถือการ์ดอยู่ใต้ผังใน LineLensMap เอง */}
+                {showMap && !isMobile && lensSel && (
+                  <div style={{ position: 'sticky', top: 0, zIndex: 2, background: 'var(--card)', paddingBottom: 10, marginBottom: 6 }}>
+                    {lens === 'productivity' ? <OrderDetailCard c={lensSel} /> : <MachineDetailCard m={lensSel} lens={lens} />}
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>{lens === 'productivity' ? 'คลิกใบเดิมอีกครั้งเพื่อปิด' : 'คลิกหมุดเดิมอีกครั้งเพื่อปิด'}</div>
+                  </div>
+                )}
                 {storyLoading ? (
                   <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>กำลังโหลด...</div>
                 ) : !s ? (
@@ -3217,14 +3431,14 @@ export default function FactoryMap({ setupMode = false }) {
                 ) : (<>
                   {/* ไม่ได้เปิดกะ = บอกแล้วไปต่อ ห้ามจบแค่บรรทัดเดียว — PM/ใบซ่อม/คน/ไฟ ยังมีเรื่องให้ดู
                       (2026-08-26 · user ทัก "คลิกมาไม่เจอข้อมูลอะไรเลย ทั้งที่บอก PM ค้าง") */}
-                  {!s.sessionCount && (
+                  {!s.sessionCount && ['summary', 'shifts', 'parts', 'dt', 'ng'].some(sec) && (
                     <div style={{ background: 'var(--bg3)', border: '1px dashed var(--border2)', borderRadius: 9, padding: '10px 12px', marginBottom: 16, fontSize: 12.5, color: 'var(--text2)' }}>
                       ⏸ <b>ไม่มีการเปิดกะของไลน์นี้ใน{fmtThaiDate(storyDate)}</b> — ไม่มียอดผลิต/OEE/Downtime ของวันนี้
                       <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 2 }}>ด้านล่างคือสถานะปัจจุบันของไลน์ (PM · ใบซ่อม · คน · ไฟฟ้า) ซึ่งไม่ผูกกับวันที่เลือก</div>
                     </div>
                   )}
                   {/* สรุปหัวเรื่อง */}
-                  {s.sessionCount > 0 && (
+                  {sec('summary') && s.sessionCount > 0 && (
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px,1fr))', gap: 8, marginBottom: 18 }}>
                     {[
                       { k: 'ผลิตได้ / เป้า', v: `${fmtNum(s.totProduced)}/${fmtNum(s.totTarget)}`, sub: pct != null ? `${pct}%` : '', c: pctCol(pct) },
@@ -3243,7 +3457,7 @@ export default function FactoryMap({ setupMode = false }) {
                   )}
 
                   {/* รายกะ */}
-                  {s.sessionCount > 0 && (
+                  {sec('shifts') && s.sessionCount > 0 && (
                   <StorySection title="🕐 แยกตามกะ">
                     <div style={{ display: 'grid', gap: 6 }}>
                       {s.shifts.map(x => {
@@ -3272,7 +3486,7 @@ export default function FactoryMap({ setupMode = false }) {
                   )}
 
                   {/* ผลิตรายพาร์ท */}
-                  {s.parts.length > 0 && (
+                  {sec('parts') && s.parts.length > 0 && (
                     <StorySection title={`📦 ผลิตรายชิ้นงาน (${s.parts.length})`}>
                       <div style={{ overflowX: 'auto' }}>
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 420, fontVariantNumeric: 'tabular-nums' }}>
@@ -3306,7 +3520,7 @@ export default function FactoryMap({ setupMode = false }) {
                   {/* 🔗 สายการไหล — "หยุดที่นี่ กระทบใคร / ของมาจากไหน" (2026-08-19)
                       ⚠️ ยังไม่ผูกกับเวลาหยุดจริง (ต้องรู้ buffer ครบก่อนถึงบอกได้ว่ากระทบเมื่อไหร่)
                          ตอนนี้บอกแค่ "เชื่อมกับใคร" ซึ่งก็ยังดีกว่าไม่มีอะไรเลย — ห้ามเขียนให้ดูเหมือนคำตอบสำเร็จรูป */}
-                  {(s.flowDown?.length > 0 || s.flowUp?.length > 0) && (
+                  {sec('flow') && (s.flowDown?.length > 0 || s.flowUp?.length > 0) && (
                     <StorySection title="🔗 สายการไหลระหว่างไลน์">
                       <div style={{ display: 'grid', gap: 6 }}>
                         {s.flowDown?.length > 0 && (
@@ -3345,7 +3559,7 @@ export default function FactoryMap({ setupMode = false }) {
 
                   {/* Downtime + เหตุผล */}
                   {s.sessionCount > 0 && (<>
-                  <StorySection title={`🔧 Downtime นอกแผน (${s.dtUnplanned.length} ครั้ง · ${fmtNum(s.dtUnplannedMin)} นาที)`}>
+                  {sec('dt') && <StorySection title={`🔧 Downtime นอกแผน (${s.dtUnplanned.length} ครั้ง · ${fmtNum(s.dtUnplannedMin)} นาที)`}>
                     {s.dtUnplanned.length === 0 ? <div style={{ fontSize: 12, color: 'var(--muted)' }}>ไม่มี — ไม่มีเครื่องหยุดนอกแผน 👍</div> : (
                       <div style={{ display: 'grid', gap: 5 }}>
                         {s.dtUnplanned.map(d => (
@@ -3367,10 +3581,10 @@ export default function FactoryMap({ setupMode = false }) {
                         ในแผน (ไม่นับเป็น loss): {s.dtPlanned.map(d => `${d.type} ${d.mins}น.`).join(' · ')}
                       </div>
                     )}
-                  </StorySection>
+                  </StorySection>}
 
                   {/* ของเสีย */}
-                  <StorySection title={`🚫 ของเสีย (${fmtNum(s.ngTotal)} ชิ้น)`}>
+                  {sec('ng') && <StorySection title={`🚫 ของเสีย (${fmtNum(s.ngTotal)} ชิ้น)`}>
                     {s.defects.length === 0 ? <div style={{ fontSize: 12, color: 'var(--muted)' }}>ไม่มีของเสีย 👍</div> : (
                       <div style={{ display: 'grid', gap: 5 }}>
                         {s.defects.map(d => (
@@ -3388,11 +3602,11 @@ export default function FactoryMap({ setupMode = false }) {
                         ))}
                       </div>
                     )}
-                  </StorySection>
+                  </StorySection>}
                   </>)}
 
                   {/* 4M */}
-                  {s.fourM.length > 0 && (
+                  {sec('fourm') && s.fourM.length > 0 && (
                     <StorySection title={`🔄 4M วันนี้ (${s.fourM.length})`}>
                       <div style={{ display: 'grid', gap: 5 }}>
                         {s.fourM.map(f => (
@@ -3415,13 +3629,15 @@ export default function FactoryMap({ setupMode = false }) {
                          ไม่งั้นคนอ่านเข้าใจว่าเป็นข้อมูลย้อนหลังของวันนั้น */}
                   {(() => {
                     const st = stOf(storyLine);
-                    const pmDue = (s.pmRows || []).filter(r => r.bucket !== 'ok');   // เกิน/ใกล้ครบ/ไม่เคยตรวจ/ไม่ตั้งรอบ
+                    if (!['pm', 'mo', 'people', 'energy', 'supply'].some(sec)) return null;
+                    // แท็บ PM = งานช่าง · แท็บ AM = ผลิตตรวจเอง — รายการแยกตามแท็บ (ตัวนับรวมด้านบนยังเป็นของทั้งคู่)
+                    const pmDue = (s.pmRows || []).filter(r => r.bucket !== 'ok' && (storyAll || (metric !== 'pm' && metric !== 'am') || (metric === 'am' ? r.am : !r.am)));   // เกิน/ใกล้ครบ/ไม่เคยตรวจ/ไม่ตั้งรอบ
                     const eDelta = st.kwhPrev ? deltaPct(st.kwh, st.kwhPrev) : null;
                     return (
                       <StorySection title="🧭 สถานะปัจจุบันของไลน์ (ไม่ขึ้นกับวันที่เลือก)">
                         <div style={{ display: 'grid', gap: 9 }}>
                           {/* 🛠️ PM — ตัวที่ผังโชว์บนป้าย ต้องกดเข้ามาแล้วเห็นว่า "เครื่องไหน" */}
-                          <div>
+                          {sec('pm') && <div>
                             <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted)' }}>
                               🛠️ PM เครื่องจักร{st.pmTotal ? ` · ${st.pmTotal} แผน` : ''}
                             </div>
@@ -3454,10 +3670,10 @@ export default function FactoryMap({ setupMode = false }) {
                               )}
                               <Link to="/pm?tab=plan" style={{ fontSize: 11, color: 'var(--accent)', textDecoration: 'none', display: 'inline-block', marginTop: 4 }}>→ ดูแผน PM ทั้งหมด</Link>
                             </>)}
-                          </div>
+                          </div>}
 
                           {/* 🔧 ใบซ่อม MO ค้าง */}
-                          <div style={{ borderTop: '1px dashed var(--border)', paddingTop: 8 }}>
+                          {sec('mo') && <div style={{ borderTop: '1px dashed var(--border)', paddingTop: 8 }}>
                             <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted)' }}>🔧 ใบซ่อม MO ที่ยังไม่ปิด</div>
                             {s.moRows == null ? (
                               <div style={{ fontSize: 11.5, color: '#f59e0b', marginTop: 3 }}>⚠ ดึงใบซ่อมไม่สำเร็จ</div>
@@ -3477,11 +3693,11 @@ export default function FactoryMap({ setupMode = false }) {
                                 {s.moRows.length > 5 && <div style={{ fontSize: 11, color: 'var(--muted)' }}>+ อีก {s.moRows.length - 5} ใบ</div>}
                               </div>
                             </>)}
-                          </div>
+                          </div>}
 
                           {/* 👷 คน & จุดงาน · ⚡ ไฟฟ้า · 🔗 Supply route — ตัวเลขชุดเดียวกับแท็บบนผัง */}
-                          <div style={{ borderTop: '1px dashed var(--border)', paddingTop: 8, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px,1fr))', gap: 8 }}>
-                            <div>
+                          {(sec('people') || sec('energy') || sec('supply')) && <div style={{ borderTop: '1px dashed var(--border)', paddingTop: 8, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px,1fr))', gap: 8 }}>
+                            {sec('people') && <div>
                               <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted)' }}>👷 คน & จุดงาน (ตอนนี้)</div>
                               {st.headTotal || st.stationTotal ? (
                                 <div style={{ fontSize: 12.5, color: 'var(--text)', marginTop: 3, fontWeight: 700 }}>
@@ -3490,8 +3706,8 @@ export default function FactoryMap({ setupMode = false }) {
                                   {st.ppeBad > 0 && <span style={{ color: '#ef4444' }}> · ⚠PPE {fmtNum(st.ppeBad)}</span>}
                                 </div>
                               ) : <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>ยังไม่มีข้อมูลเช็คชื่อ</div>}
-                            </div>
-                            <div>
+                            </div>}
+                            {sec('energy') && <div>
                               <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted)' }}>⚡ ไฟฟ้า{energyMonth ? ` · ${monthLabel(energyMonth)}` : ''}</div>
                               {st.kwh != null ? (
                                 <div style={{ fontSize: 12.5, color: 'var(--text)', marginTop: 3, fontWeight: 700 }}>
@@ -3500,8 +3716,8 @@ export default function FactoryMap({ setupMode = false }) {
                                   {st.kwhCost > 0 && <span style={{ color: 'var(--muted)', fontWeight: 500 }}> · {fmtBaht(st.kwhCost)} บาท</span>}
                                 </div>
                               ) : <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>ยังไม่กรอกของไลน์นี้</div>}
-                            </div>
-                            {st.supList?.length > 0 && (
+                            </div>}
+                            {sec('supply') && (st.supList?.length > 0 ? (
                               <div>
                                 <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted)' }}>🔗 ระบบสนับสนุนที่จ่ายให้</div>
                                 <div style={{ fontSize: 12, color: st.supAtRisk ? '#ef4444' : 'var(--text2)', marginTop: 3, fontWeight: st.supAtRisk ? 800 : 500 }}>
@@ -3509,13 +3725,16 @@ export default function FactoryMap({ setupMode = false }) {
                                   {[...new Set(st.supList.filter(x => !st.supAtRisk || x.atRisk).map(x => x.name || x.no))].slice(0, 4).join(' · ')}
                                 </div>
                               </div>
-                            )}
-                          </div>
+                            ) : metric === 'supply' ? (
+                              <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>🔗 ไลน์นี้ยังไม่ได้ผูกระบบสนับสนุน (supply route)</div>
+                            ) : null)}
+                          </div>}
                         </div>
                       </StorySection>
                     );
                   })()}
                 </>)}
+              </div>
               </div>
             </div>
           </div>
@@ -3603,7 +3822,9 @@ export default function FactoryMap({ setupMode = false }) {
               {/* การ์ดทุก metric */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 8, marginBottom: kids.length ? 18 : 0 }}>
                 {/* โซน utility ตัด metric ผลิตออกเหมือนการ์ด hover — ไม่โชว์ช่อง "Facility" เปล่าๆ 5 ใบ */}
-                {Object.entries(METRICS).filter(([, m]) => !(st.isFac && m.facilityNA)).map(([k, m]) => {
+                {/* 🎯 การ์ด hover ตอบเฉพาะเรื่องของแท็บที่เลือก (2026-10-16 · user "hover ควรโชว์เรื่องที่เกี่ยวกับ tab
+                  ไม่ใช่โชว์ทั้งหมด จะโชว์ทั้งหมดก็คือ tab ปกติ/ผิดปกติ") — แท็บ health = รวมทุกเรื่อง */}
+              {Object.entries(METRICS).filter(([k, m]) => !(st.isFac && m.facilityNA) && (metric === 'health' || k === metric)).map(([k, m]) => {
                   const cat = m.cat(st); const meta = CAT[cat]; const txt = m.text(st);
                   return (
                     <div key={k} style={{ background: 'var(--bg3)', border: `1px solid ${meta.color}55`, borderLeft: `3px solid ${meta.color}`, borderRadius: 8, padding: '9px 11px' }}>

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useContext, useMemo, Fragment } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useMergeParams } from '../utils/useTabParam'
-import { motion, AnimatePresence } from 'framer-motion'
+import { AnimatePresence } from 'framer-motion'
 import { toDecodableImage } from '../utils/heicToJpeg'
 import imageCompression from 'browser-image-compression'
 import { compressPhotoImage } from '../utils/layoutImage'
@@ -22,19 +22,23 @@ import useColumnHistory from '../utils/useColumnHistory' // 📜 เลขเค
 import { loadLinesRes, LINE_COLUMNS } from '../utils/useProductionLines'
 import { loadProcessTypes, activeProcessTypes } from '../utils/processTypes'
 import { teamsForUser } from '../utils/mtnTeams'
+import { canWriteTeam, teamBlockText } from '../utils/mtnTeams'
 import { findChecklist, getOrCreateChecklist, setChecklistFrequency, listChecklistsByDept, moveChecklistDept, copyChecklistToDept, copyChecklistToEquipment } from '../lib/pmChecklists'
 import { fetchCategories, fetchCheckingMethods, categoryColor } from '../lib/pmTaxonomy'
 import TaxonomyManagerModal from '../components/TaxonomyManagerModal'
 import SpinAnnotator from '../components/SpinAnnotator'
 import ImageCropModal from '../components/ImageCropModal'
-import useImgBox from '../utils/useImgBox'
-import CalloutPin from '../components/CalloutPin'
 import { checkWrite } from '../utils/dbWrite';
 import { uploadOpts } from '../utils/storageUpload';
 import { orphanImagePaths } from '../utils/jigImageRefs';   // 🖼️ นับผู้อ้างรูปก่อนลบ (รูปจุดตรวจถูกแชร์ตอนคัดลอกแผน PM)
 import { fetchAllPages } from '../utils/fetchByIds';   // 🔴 เพดาน 1000 แถว (กฎเหล็ก DB ข้อ 5)
 import SearchInput from '../components/SearchInput';   // ช่องกรองลิสต์ = ของกลาง (UI-STANDARD §4)
-import { cpJumpMatches } from '../utils/cpJump';   // 🎯 ทางลัดไปที่จุดตรวจ (13/10)
+// 🧩 ชิ้นส่วนกลางของ "ตั้งค่าจุดตรวจ" — ใช้ร่วมกับ QA /qa-setup (ระบบเดียว เรียนครั้งเดียว · 15/10)
+import PointCardShell from '../components/inspect/PointCardShell'
+import PinWorkspace from '../components/inspect/PinWorkspace'
+import InspectEditorModal from '../components/inspect/InspectEditorModal'
+import useWideModal from '../components/inspect/useWideModal'
+import usePointJump from '../components/inspect/usePointJump'
 import { fetchByIds } from '../utils/fetchByIds';
 import { equipStatusOf, filterEquipRows, groupEquipRowsByLine, lineKnownSet, EQUIP_STATUS_META } from '../utils/pmEquipList';   // 🗂️ ตาราง+ตัวกรองอุปกรณ์ (13/10)
 import { useProductionLinesState } from '../utils/useProductionLines';
@@ -132,19 +136,6 @@ const S = {
     padding: '60px 24px', textAlign: 'center',
     background: 'var(--card)', border: '1px dashed var(--border2)', borderRadius: 'var(--radius-lg)',
   },
-  overlay: {
-    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)',
-    zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
-  },
-  modal: {
-    background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 12,
-    width: '100%', maxWidth: 1000, maxHeight: '92vh', display: 'flex', flexDirection: 'column',
-    boxShadow: 'var(--shadow-lg)',
-  },
-  modalHead: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 24px', borderBottom: '1px solid var(--border)' },
-  modalTitle: { fontSize: 17, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', margin: 0 },
-  modalBody: { flex: 1, overflowY: 'auto', padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 16 },
-  modalFoot: { padding: '14px 24px', borderTop: '1px solid var(--border)', display: 'flex', gap: 10 },
   label: { fontSize: 11, fontWeight: 700, color: 'var(--muted)', letterSpacing: '0.06em', textTransform: 'uppercase', display: 'block', marginBottom: 6 },
   inputRow: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 },
   freqBtns: { display: 'flex', gap: 6, flexWrap: 'wrap' },
@@ -160,137 +151,12 @@ const S = {
     background: active ? `${color}15` : 'var(--bg3)',
     color: active ? color : 'var(--muted)',
   }),
-  cpCard: { background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, padding: 14 },
-  cancelBtn: { flex: 1, padding: '9px 0', borderRadius: 'var(--radius)', fontSize: 14, fontWeight: 600, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)', cursor: 'pointer' },
-  saveBtn: { flex: 1, padding: '9px 0', borderRadius: 'var(--radius)', fontSize: 14, fontWeight: 700, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', cursor: 'pointer' },
   modeBtn: (active) => ({
     flex: 1, padding: '8px 12px', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer',
     border: `1.5px solid ${active ? 'var(--accent)' : 'var(--border2)'}`,
     background: active ? 'var(--accent-dim)' : 'var(--bg3)',
     color: active ? 'var(--accent)' : 'var(--muted)',
   }),
-}
-
-// ความสูงกรอบดูรูปในหน้าตั้งค่า ≈ 46% ของจอ — เหลือที่ให้ลิสต์จุดตรวจเห็นในจอเดียว (UI-CONVENTIONS §5.1)
-const calcAnnoViewH = () => Math.round(Math.min(620, Math.max(260, (typeof window === 'undefined' ? 900 : window.innerHeight) * 0.46)))
-
-// ─── ImageAnnotator (upload + click-to-pin) ────────────────────────────────────
-function ImageAnnotator({ imageUrl, checkpoints, labels, activePinKey, onImageClick, onPinRemove, onPinLabelMove }) {
-  const layerRef = useRef(null)
-  // pin สเกล/clamp/วางตำแหน่ง อิง "กล่องรูปจริง" หัก letterbox ของ objectFit:contain
-  // (docs/UI-CONVENTIONS.md §5.1 — pattern เดียวกับ MachineFloorMap)
-  const { imgRef, imgBox, recalc } = useImgBox([imageUrl])
-  // ซูม: 1 = พอดีกรอบทั้ง 2 แกน (contain) ไม่ใช่ขนาดไฟล์/เต็มความกว้าง — สูตรเดียวกับ QAInspectionSetup
-  // (UI-CONVENTIONS §5.1 · รูป PM ถูกครอปเป็นแนวตั้ง 3:4 ถ้าเต็มความกว้างจะสูงจนเช็คลิสต์ตกจอ)
-  const boxRef = useRef(null)
-  const [boxW, setBoxW] = useState(0)
-  const [natSize, setNatSize] = useState({ w: 0, h: 0 })
-  const [viewH, setViewH] = useState(() => calcAnnoViewH())
-  const [zoom, setZoom] = useState(1)
-  useEffect(() => { setZoom(1); setNatSize({ w: 0, h: 0 }) }, [imageUrl])   // เปลี่ยนรูป → รีเซ็ตซูม/ขนาดไฟล์
-  useEffect(() => {
-    const on = () => setViewH(calcAnnoViewH())
-    window.addEventListener('resize', on)
-    return () => window.removeEventListener('resize', on)
-  }, [])
-  // วัดความกว้างจาก div นอกที่ไม่ scroll — วัดจากกรอบ scroll เองจะหดตอน scrollbar โผล่ = ขนาดรูปแกว่ง
-  useEffect(() => {
-    const el = boxRef.current
-    if (!el) { setBoxW(0); return }
-    const measure = () => setBoxW(el.clientWidth || 0)
-    const ro = new ResizeObserver(measure)
-    ro.observe(el); measure()
-    return () => ro.disconnect()
-  }, [imageUrl])
-  const fitScale = (natSize.w && natSize.h && boxW) ? Math.min(boxW / natSize.w, viewH / natSize.h) : 0
-  const imgW = fitScale ? Math.round(natSize.w * fitScale * zoom) : 0
-  const PK = Math.round(Math.max(20, Math.min(36, (imgBox?.rw || 500) * 0.04)))
-  const pkFont = Math.max(11, Math.round(PK * 0.45))
-  const padX = imgBox ? (PK * 0.7 / imgBox.rw) * 100 : 0
-  const padTop = imgBox ? ((PK + 4) / imgBox.rh) * 100 : 0 // anchor ห้อยลง (translate -100%) เผื่อหัวบน
-  const clampPct = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
-
-  // แปลงตำแหน่งคลิก → 0..1 ของ "รูปจริง" (หัก letterbox) — วัดจาก layer เดียวกับที่วาด pin
-  const handleClick = (e) => {
-    if (!activePinKey || !layerRef.current) return
-    const rect = layerRef.current.getBoundingClientRect()
-    if (!rect.width || !rect.height) return
-    const x = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width))
-    const y = Math.min(1, Math.max(0, (e.clientY - rect.top) / rect.height))
-    onImageClick(x, y)
-  }
-  const zBtn = {
-    padding: '3px 9px', borderRadius: 6, border: '1px solid var(--border2)',
-    background: 'var(--bg3)', color: 'var(--text)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
-  }
-  return (
-    <div>
-      {/* ซูมสำหรับวางจุดแม่นๆ — 100% = พอดีกรอบทั้ง 2 แกน (UI-CONVENTIONS §5.1) */}
-      <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginBottom: 6 }}>
-        <button type="button" style={zBtn} onClick={() => setZoom(z => Math.max(1, +(z - 0.5).toFixed(2)))} disabled={zoom <= 1} title="ซูมออก">➖</button>
-        <span style={{ fontSize: 12, fontWeight: 800, minWidth: 46, textAlign: 'center', color: 'var(--text)' }}>{Math.round(zoom * 100)}%</span>
-        <button type="button" style={zBtn} onClick={() => setZoom(z => Math.min(4, +(z + 0.5).toFixed(2)))} disabled={zoom >= 4} title="ซูมเข้า">➕</button>
-        {zoom > 1 && <button type="button" style={zBtn} onClick={() => setZoom(1)}>↺ พอดีกรอบ</button>}
-        <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{zoom > 1 ? 'เลื่อนดูส่วนอื่นของรูปได้ในกรอบ' : 'เห็นรูปเต็มพอดีกรอบ — ซูมเข้าเพื่อวางจุดละเอียดขึ้น'}</span>
-      </div>
-      {/* div นอก = ตัววัดความกว้างที่ใช้ได้ (ไม่ scroll) · div ใน = กรอบดู สูงไม่เกิน viewH
-          · wrapper รูป width:fit-content + margin auto = จัดกลางโดยไม่โดนตัดขอบซ้ายตอนซูมเกินกรอบ */}
-      <div ref={boxRef}>
-      <div style={{
-        maxHeight: viewH, overflow: 'auto', borderRadius: 8,
-        border: `2px solid ${activePinKey ? 'var(--accent)' : 'var(--border)'}`, background: 'var(--bg2)',
-      }}>
-        <div onClick={handleClick} style={{
-          position: 'relative', userSelect: 'none', width: 'fit-content', margin: '0 auto',
-          cursor: activePinKey ? 'crosshair' : 'default',
-        }}>
-          <img src={imageUrl} alt="JIG"
-            // รูปจาก cache บางที onLoad ไม่ยิง → ref อ่าน naturalWidth ให้ด้วย (ไม่งั้น render ที่ขนาดไฟล์ = ล้นกรอบ)
-            // ref เดียวกันต้องส่งต่อให้ useImgBox (imgRef) เพื่อวัดกล่องรูปจริงของ layer หมุด
-            ref={el => {
-              imgRef.current = el
-              if (el?.complete && el.naturalWidth && !natSize.w) setNatSize({ w: el.naturalWidth, h: el.naturalHeight })
-            }}
-            onLoad={e => {
-              const el = e.currentTarget
-              setNatSize({ w: el.naturalWidth || 0, h: el.naturalHeight || 0 })
-              recalc()
-            }}
-            style={{
-              display: 'block', height: 'auto',
-              // fallback ระหว่างยังไม่รู้ขนาดไฟล์: contain ในกรอบไว้ก่อน (px ไม่ใช้ % — wrapper เป็น fit-content)
-              width: imgW ? `${imgW}px` : 'auto',
-              maxWidth: imgW ? 'none' : (boxW ? `${boxW}px` : '100%'),
-              maxHeight: imgW ? 'none' : viewH,
-            }} />
-          {/* layer = กล่องรูปจริง (หัก letterbox) — pin ใช้ % ของ layer นี้ ไม่ใช่ % ของ container */}
-          {imgBox && (
-            <div ref={layerRef} style={{ position: 'absolute', left: imgBox.ox, top: imgBox.oy, width: imgBox.rw, height: imgBox.rh, pointerEvents: 'none' }}>
-              {checkpoints.map((cp, i) => {
-                if (cp.x_pos == null || cp.y_pos == null) return null
-                const isActive = activePinKey === cp._key
-                const col = isActive ? 'var(--accent)' : categoryColor(cp.category)
-                return (
-                  <CalloutPin key={cp._key} xPct={cp.x_pos * 100} yPct={cp.y_pos * 100} layerW={imgBox.rw} layerH={imgBox.rh} size={PK}
-                    offX={cp.label_dx} offY={cp.label_dy}
-                    label={labels?.[i] ?? i + 1} color={col} selected={isActive}
-                    title={`${cp.name || `จุด ${i + 1}`} — คลิกเพื่อลบ${onPinLabelMove ? ' · ลากป้ายเลขเพื่อหลบไม่ให้ลูกศรทับกัน' : ''}`}
-                    onLabelMove={onPinLabelMove ? ((dx, dy) => onPinLabelMove(cp._key, dx, dy)) : undefined}
-                    onClick={e => { e.stopPropagation(); onPinRemove(cp._key) }} />
-                )
-              })}
-            </div>
-          )}
-          {activePinKey && (
-            <div style={{ position: 'sticky', bottom: 8, display: 'flex', justifyContent: 'center', pointerEvents: 'none' }}>
-              <span style={{ padding: '5px 12px', borderRadius: 20, background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 11, fontWeight: 700 }}>📍 คลิกที่รูปเพื่อวางตำแหน่ง</span>
-            </div>
-          )}
-        </div>
-      </div>
-      </div>
-    </div>
-  )
 }
 
 // ─── CheckpointCard ───────────────────────────────────────────────────────────
@@ -301,38 +167,15 @@ function CheckpointCard({ cp, label, onChange, onDelete, onDuplicate, onCpImage,
     ? [...(categories ?? []), (allCategories ?? []).find(c => c.code === cp.category)].filter(Boolean)
     : (categories ?? [])
   return (
-    <div style={{ ...S.cpCard, borderColor: isPinning ? 'var(--accent)' : 'var(--border)' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ minWidth: 20, height: 20, padding: '0 4px', borderRadius: 10, background: 'var(--bg3)', color: 'var(--muted)', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{label}</span>
-          <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>จุดตรวจสอบ</span>
-        </div>
-        <div style={{ display: 'flex', gap: 6 }}>
-          {isVar && (
-            <button onClick={onDuplicate} title="ทำสำเนาจุดนี้เป็นอีกแกน (X↔Y) — copy ชื่อ/tool ให้ กรอกแค่ spec"
-              style={{ padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--muted)' }}>
-              ⧉ อีกแกน
-            </button>
-          )}
-          {hasImage && (
-            <button onClick={onPinToggle} style={{
-              padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer',
-              border: `1px solid ${isPinning ? 'var(--accent)' : cp.x_pos != null ? 'var(--accent)' : 'var(--border2)'}`,
-              background: isPinning ? 'var(--accent)' : cp.x_pos != null ? 'var(--accent-dim)' : 'var(--bg3)',
-              color: isPinning ? '#071008' : cp.x_pos != null ? 'var(--accent)' : 'var(--muted)',
-            }}>{cp.x_pos != null ? '📍 วางแล้ว' : '🔘 วางตำแหน่ง'}</button>
-          )}
-          {/* ถอดหมุด — เดิมทำด้วยการแตะหมุดบนรูป แต่ตอนนี้แตะหมุด = ไปที่การ์ด (13/10) */}
-          {hasImage && cp.x_pos != null && onUnpin && (
-            <button onClick={onUnpin} title="เอาหมุดของจุดนี้ออกจากรูป"
-              style={{ padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--muted)' }}>
-              ✕ ถอดหมุด
-            </button>
-          )}
-          <button className="tbtn" onClick={onDelete} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 16, lineHeight: 1, padding: '0 2px', cursor: 'pointer' }}>×</button>
-        </div>
-      </div>
-
+    <PointCardShell label={label} pinned={cp.x_pos != null} isPinning={isPinning} canPin={hasImage}
+      onPinToggle={onPinToggle} onUnpin={onUnpin} onDelete={onDelete}
+      closeup={{ preview: cp._imgPreview, onPick: onCpImage, onClear: () => onChange({ _imgFile: null, _imgPreview: null, image_path: null }) }}
+      extra={isVar && (
+        <button type="button" onClick={onDuplicate} title="ทำสำเนาจุดนี้เป็นอีกแกน (X↔Y) — copy ชื่อ/tool ให้ กรอกแค่ spec"
+          style={{ padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--muted)' }}>
+          ⧉ อีกแกน
+        </button>
+      )}>
       <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
         <input value={cp.name} onChange={e => onChange({ name: e.target.value })} placeholder="ชื่อจุดตรวจสอบ เช่น LP1" />
         {/* 🔴 ช่องนี้ = ตัวจัดกลุ่มการ์ด (groupCheckpoints + <div key={g.name}>) ⇒ ถ้าส่งค่าออกทุก
@@ -438,33 +281,12 @@ function CheckpointCard({ cp, label, onChange, onDelete, onDuplicate, onCpImage,
         </div>
       )}
 
-      {/* 📷 รูปโคลสอัพของจุดนี้ (คอลัมน์ Picture ของฟอร์ม)
-          = ตัวที่คนตรวจแตะหมุดบนภาพรวมแล้วซูมเข้ามาเห็น — ตั้งชื่อให้สื่อ ไม่งั้นไม่มีใครใช้
-          (feedback 2026-08-21: หน้างานไปอัปรูปโคลสอัพเป็น "เฟรม" แยกแทน แล้วดูไม่ออกว่าอยู่ตรงไหน) */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
-        {cp._imgPreview ? (
-          <>
-            <img src={cp._imgPreview} alt="" style={{ height: 44, borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg2)' }} />
-            <span style={{ fontSize: 11, color: 'var(--accent)', fontWeight: 700 }}>🔍 รูปเจาะจุดนี้</span>
-            <label style={{ fontSize: 11, color: 'var(--accent)', cursor: 'pointer' }}>
-              <input type="file" accept="image/*" onChange={onCpImage} style={{ display: 'none' }} />เปลี่ยนรูป
-            </label>
-            <button onClick={() => onChange({ _imgFile: null, _imgPreview: null, image_path: null })}
-              style={{ fontSize: 11, color: 'var(--red)', background: 'none', border: 'none', cursor: 'pointer' }}>ลบรูป</button>
-          </>
-        ) : (
-          <label style={{ fontSize: 11, color: 'var(--muted)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-            <input type="file" accept="image/*" onChange={onCpImage} style={{ display: 'none' }} />
-            📷 แนบรูปจุดนี้ (โคลสอัพ) — คนตรวจแตะหมุด 🔍 แล้วซูมดู
-          </label>
-        )}
-      </div>
-    </div>
+    </PointCardShell>
   )
 }
 
 // ─── EquipmentModal ───────────────────────────────────────────────────────────
-function EquipmentModal({ onClose, onSaved, editJig, department, categories, methods }) {
+function EquipmentModal({ onClose, onSaved, editJig, department, categories, methods, deptWrite }) {
   const isEdit = !!editJig
   const [userId, setUserId] = useState(null)
 
@@ -519,13 +341,7 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
   /* 📌 จอกว้าง = แยก 2 คอลัมน์ "รูปค้างไว้ซ้าย · รายการจุดตรวจเลื่อนขวา" (user 23/09
      "จอที่ต้องใช้รูปอ้างอิงตอนตรวจ ควรตรึงรูปไว้") — จอแคบตรึงรูปไว้บนหัวแทน
      ⚠️ sticky ในนี้เกาะกับ `modalBody` (ตัวที่ overflowY:auto) ไม่ใช่ viewport */
-  const [wideModal, setWideModal] = useState(() => typeof window !== 'undefined' && window.matchMedia('(min-width: 1180px)').matches)
-  useEffect(() => {
-    const mq = window.matchMedia('(min-width: 1180px)')
-    const on = e => setWideModal(e.matches)
-    mq.addEventListener('change', on)
-    return () => mq.removeEventListener('change', on)
-  }, [])
+  const wideModal = useWideModal()
   /* 🔴 ต้องประกาศ **หลัง** `wideModal` — เคยวางไว้ก่อนแล้วโมดัลพังทั้งใบด้วย
      "Cannot access 'wideModal' before initialization" (TDZ ของ const)
      ⚠️ ด่านที่มีอยู่จับไม่ได้สักตัว: `no-undef` ไม่ฟ้องเพราะตัวแปร**มีจริงในสโคป** แค่ยังไม่ถูกสร้าง ·
@@ -536,12 +352,15 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
   /* 🎯 ทางลัด "ไปที่จุดตรวจ" (13/10 · ทีม MTN: "จุดเยอะ ต้อง scroll จนเมื่อยนิ้ว")
      เลื่อน **เฉพาะ `modalBody`** ด้วย scrollTo — ห้าม scrollIntoView (เลื่อนหน้าข้างหลังโมดัลไปด้วย = จอกระโดด)
      · เผื่อความสูงของแถบที่ตรึงอยู่ (`jumpStickyRef`) ไม่งั้นการ์ดไปจมใต้แถบ · เรืองกรอบ ~2.5 วิ (UI §6.23 ข้อ 3) */
-  const bodyRef = useRef(null)
-  const jumpStickyRef = useRef(null)
-  const cardRefs = useRef({})
-  const [flashKey, setFlashKey] = useState(null)
-  const [jumpQ, setJumpQ] = useState('')
-  const [pendingJump, setPendingJump] = useState(null)   // จุดที่เพิ่งเพิ่ม — รอ render เสร็จค่อยเลื่อนไป
+  const { bodyRef, stickyRef: jumpStickyRef, flashKey, jumpTo, jumpLater, cardRef, scrollTop } = usePointJump({
+    // จุดที่ปักหมุดบนเฟรมอื่น → หมุนรูปไปเฟรมนั้นด้วย ให้เห็นหมุดที่เรืองคู่กับการ์ด
+    onReveal: (key) => {
+      const cp = checkpoints.find(c => c._key === key)
+      if (cp?.x_pos == null) return
+      const fi = frames.findIndex(f => f._key === (cp._frameKey ?? frames[0]?._key))
+      if (fi >= 0 && fi !== frameIdx) setFrameIdx(fi)
+    },
+  })
 
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -781,39 +600,13 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
   }
 
   const updateCp = (key, patch) => setCheckpoints(prev => prev.map(c => c._key === key ? { ...c, ...patch } : c))
-  const jumpToCp = (key) => {
-    const box = bodyRef.current, el = cardRefs.current[key]
-    if (!box || !el) return
-    // ขอบล่างของแถบที่ตรึง = padding บนของ modalBody + ค่า `top` ของแถบ + ความสูงแถบ (แถบหัวคอลัมน์ใช้ top:-20 · รูปจอแคบใช้ top:0)
-    const st = jumpStickyRef.current
-    const stickyH = st ? (parseFloat(getComputedStyle(box).paddingTop) || 0) + (parseFloat(getComputedStyle(st).top) || 0) + st.offsetHeight : 0
-    const top = el.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop - stickyH - 8
-    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-    box.scrollTo({ top: Math.max(0, top), behavior: reduce ? 'auto' : 'smooth' })
-    setFlashKey(key)
-    // จุดที่ปักหมุดบนเฟรมอื่น → หมุนรูปไปเฟรมนั้นด้วย ให้เห็นหมุดที่เรืองอยู่คู่กับการ์ด
-    const cp = checkpoints.find(c => c._key === key)
-    if (cp?.x_pos != null) {
-      const fi = frames.findIndex(f => f._key === (cp._frameKey ?? frames[0]?._key))
-      if (fi >= 0 && fi !== frameIdx) setFrameIdx(fi)
-    }
-  }
-  // จุดใหม่ต่อท้ายลิสต์ — จุดเยอะแล้วกดเพิ่มจะไม่เห็นการ์ดที่เพิ่งเกิด ⇒ พาไปให้เลย
+  const jumpToCp = jumpTo
+  // จุดใหม่ต่อท้ายลิสต์ — จุดเยอะแล้วกดเพิ่มจะไม่เห็นการ์ดที่เพิ่งเกิด ⇒ เลื่อนไปให้เอง
   const addCp = () => {
     const cp = newCheckpoint()
     setCheckpoints(prev => [...prev, cp])
-    setPendingJump(cp._key)
+    jumpLater(cp._key)
   }
-  useEffect(() => {
-    if (!pendingJump) return
-    jumpToCp(pendingJump)
-    setPendingJump(null)
-  }, [pendingJump]) // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    if (!flashKey) return
-    const t = setTimeout(() => setFlashKey(null), 2500)
-    return () => clearTimeout(t)
-  }, [flashKey])
   const deleteCp = (key) => {
     setCheckpoints(prev => prev.filter(c => c._key !== key))
     if (activePinKey === key) setActivePinKey(null)
@@ -838,12 +631,8 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
      ⚠️ ไม่ crop โดยตั้งใจ (ข้อยกเว้นในกติกา: รูปที่ต้องเห็นทั้งใบ/คมชัด ให้ "บีบ" ไม่ใช่ "ครอบ")
      ขยายจาก 900px/0.2MB → 1280px/0.3MB เพราะตอนนี้มันเป็นรูป "ซูมเข้าไปดูให้ชัด" ของหน้างานจริง
      (เล็กเกินไปแล้วซูมดูไม่ออก = เสียประโยชน์ของฟีเจอร์) */
-  const handleCpImage = async (key, e) => {
-    let file = e.target.files[0]
-    if (!file) return
-    // ช่างถ่ายจุดตรวจด้วยมือถือ → HEIC/HEIF ต้องแปลงก่อน ไม่งั้น imageCompression decode ไม่ออก
-    try { file = await toDecodableImage(file) }
-    catch (err) { toast.error(err?.message || 'อ่านไฟล์รูปไม่ได้'); return }
+  const handleCpImage = async (key, file) => {
+    // file ผ่านด่านรับรูปมาแล้วที่ PointCardShell (HEIC→JPEG · ไม่ใช่รูป = toast แล้วไม่ถึงตรงนี้)
     const compressed = await imageCompression(file, { maxSizeMB: 0.3, maxWidthOrHeight: 1280 })
     updateCp(key, { _imgFile: compressed, _imgPreview: URL.createObjectURL(compressed) })
   }
@@ -888,6 +677,8 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
   }
 
   const handleSave = async () => {
+    /* 🔐 ด่านซ้ำตอนกดบันทึก — เปิดโมดัลจาก `?dept=` ของทีมอื่นได้ */
+    if (deptWrite && !deptWrite.ok) { setError('อุปกรณ์/แผน PM ของทีมนี้เป็นของทีมช่างอื่น — ดูได้ แต่แก้ไม่ได้'); return }
     if (!name.trim()) { setError('กรุณาใส่ชื่ออุปกรณ์'); return }
     if (addMode === 'workstation' && !isEdit && !machineId) { setError('กรุณาเลือกเครื่องจักรจาก Floor Map'); return }
     {
@@ -1156,77 +947,21 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
   const catScopeKey = (equipCategory === 'facility' || equipCategory === 'utility') ? 'facility' : equipType
   const scopedCategories = (categories ?? []).filter(c => !c.equip_types?.length || c.equip_types.includes(catScopeKey))
   const renderCard = (cp) => (
-    <div key={cp._key} ref={el => { if (el) cardRefs.current[cp._key] = el; else delete cardRefs.current[cp._key] }}
+    <div key={cp._key} ref={cardRef(cp._key)}
       style={{ borderRadius: 8, transition: 'box-shadow .3s',
         boxShadow: flashKey === cp._key ? '0 0 0 2px var(--accent), 0 0 14px var(--accent-glow)' : 'none' }}>
       <CheckpointCard cp={cp} label={cpLabels[cp._key]}
         onChange={patch => updateCp(cp._key, patch)} onDelete={() => deleteCp(cp._key)}
-        onDuplicate={() => duplicateCp(cp._key)} onCpImage={e => handleCpImage(cp._key, e)}
+        onDuplicate={() => duplicateCp(cp._key)} onCpImage={f => handleCpImage(cp._key, f)}
         isPinning={activePinKey === cp._key} onPinToggle={() => togglePin(cp._key)} hasImage={frames.length > 0}
         onUnpin={() => { updateCp(cp._key, { x_pos: null, y_pos: null }); if (activePinKey === cp._key) setActivePinKey(null) }}
         categories={scopedCategories} allCategories={categories} methods={methods} />
     </div>
   )
 
-  /* 🎯 แถบ "ไปที่จุด" — โชว์เมื่อจุดเยอะพอจะต้องเลื่อนหา (≥ JUMP_MIN)
-     จอกว้าง/โหมดรายการ: ตรึงบนหัวคอลัมน์จุดตรวจ · จอแคบ+รูป: แถวเดียวเลื่อนแนวนอนอยู่ใต้รูปที่ตรึงไว้
-     (รูปกินหัวจอมือถืออยู่แล้ว — แถบหลายแถวจะเหลือที่ให้การ์ดไม่กี่บรรทัด) */
-  const JUMP_MIN = 6
-  const showJump = checkpoints.length >= JUMP_MIN
-  const jumpCompact = layoutType === 'image_pin' && !twoColSetup
-  const jumpHits = showJump ? cpJumpMatches(jumpQ, grouped.ordered, cpLabels) : []
-  const jumpBar = showJump && (
-    <div style={{ display: 'flex', flexDirection: jumpCompact ? 'row' : 'column', gap: 6, marginTop: 8, alignItems: jumpCompact ? 'center' : 'stretch' }}>
-      <div style={{ display: 'flex', gap: 6, alignItems: 'center', flex: jumpCompact ? '0 0 150px' : undefined }}>
-        <SearchInput value={jumpQ} onChange={setJumpQ} placeholder={jumpCompact ? 'ไปที่จุด…' : 'ไปที่จุด — พิมพ์เลข (1.3) / ชื่อ / กลุ่ม แล้วกด Enter'}
-          ariaLabel="ไปที่จุดตรวจ"
-          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); if (jumpHits[0]) jumpToCp(jumpHits[0]._key) } }} />
-        {!jumpCompact && (
-          <>
-            <button type="button" onClick={() => bodyRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
-              title="กลับขึ้นบนสุด" style={S.jumpBtn}>⤒ บนสุด</button>
-            <button type="button" onClick={() => { const last = grouped.ordered[grouped.ordered.length - 1]; if (last) jumpToCp(last._key) }}
-              title="ไปจุดสุดท้าย" style={S.jumpBtn}>⤓ ท้ายสุด</button>
-          </>
-        )}
-      </div>
-      <div style={jumpCompact
-        ? { display: 'flex', gap: 4, overflowX: 'auto', flex: 1, minWidth: 0, paddingBottom: 2 }
-        : { display: 'flex', gap: 4, flexWrap: 'wrap', maxHeight: 74, overflowY: 'auto', alignContent: 'start' }}>
-        {jumpHits.map(c => {
-          const blank = !c.name.trim()
-          return (
-            <button key={c._key} type="button" onClick={() => jumpToCp(c._key)}
-              title={`${cpLabels[c._key]} · ${blank ? '(ยังไม่ตั้งชื่อ)' : c.name}${c.group_name ? ` — ${c.group_name}` : ''}`}
-              style={{ flex: '0 0 auto', padding: '3px 8px', borderRadius: 12, fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
-                maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                border: `1px ${blank ? 'dashed' : 'solid'} ${blank ? 'var(--red)' : flashKey === c._key ? 'var(--accent)' : 'var(--border2)'}`,
-                background: flashKey === c._key ? 'var(--accent-dim)' : 'var(--bg3)',
-                color: blank ? 'var(--red)' : 'var(--text)' }}>
-              {cpLabels[c._key]}<span style={{ fontWeight: 500, color: blank ? 'var(--red)' : 'var(--muted)' }}> {blank ? 'ไม่มีชื่อ' : c.name}</span>
-            </button>
-          )
-        })}
-        {jumpHits.length === 0 && <span style={{ fontSize: 12, color: 'var(--muted)', padding: '3px 0' }}>ไม่พบจุดที่ตรงกับ "{jumpQ}"</span>}
-      </div>
-    </div>
-  )
-
   return (
-    <div style={S.overlay}>
-      {/* โหมด "รูป + จุดตรวจ" ต้องการที่ 2 คอลัมน์ → กว้างขึ้น (โหมดรายการใช้ 1000 เท่าเดิม) */}
-      <motion.div style={{ ...S.modal, maxWidth: twoColSetup ? 1340 : 1000 }} onClick={e => e.stopPropagation()}
-        initial={{ opacity: 0, scale: 0.96, y: 16 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.96, y: 16 }} transition={{ duration: 0.18 }}>
-        {/* Header */}
-        <div style={S.modalHead}>
-          <div>
-            <h2 style={S.modalTitle}>{isEdit ? 'แก้ไขอุปกรณ์' : 'เพิ่มอุปกรณ์ใหม่'}</h2>
-            <span style={{ fontSize: 12, color: deptColor }}>{deptLabel}</span>
-          </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer', lineHeight: 1 }}>×</button>
-        </div>
-
-        <div ref={bodyRef} style={S.modalBody}>
+    <InspectEditorModal wide={twoColSetup} bodyRef={bodyRef} onClose={onClose} onSave={handleSave} saving={saving}
+      title={isEdit ? 'แก้ไขอุปกรณ์' : 'เพิ่มอุปกรณ์ใหม่'} subtitle={deptLabel} subColor={deptColor}>
           {isEdit && (() => {
             // 1 เครื่อง = หลายรายการตรวจแยกตามแผนก — ให้เห็นภาพรวมและย้าย/คัดลอกได้โดยไม่ต้องพิมพ์ใหม่
             const allTeams = pmTeamsSync()
@@ -1619,41 +1354,35 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
             </div>
           </div>
 
-          {/* ── 📌 รูปอ้างอิงต้อง "ค้างอยู่" ตอนไล่กรอกจุดตรวจ (user 23/09) ──────────────
-              จอกว้าง: grid 2 คอลัมน์ · รูปซ้าย `position:sticky` · รายการจุดตรวจเลื่อนขวา
-              จอแคบ: คอลัมน์เดียว · รูปตรึงบนหัว (พื้นหลังทึบ full-bleed กันรายการเลื่อนทะลุใต้รูป)
-              🔴 sticky เกาะ `modalBody` ที่เป็น overflowY:auto — ห้ามใส่ overflow ให้กล่อง grid นี้
-                 ไม่งั้นจะกลายเป็น scroll container ซ้อนแล้ว "ขัง" sticky ไว้ข้างใน (กับดักใน CLAUDE.md) */}
-          <div style={twoColSetup
-            ? { display: 'grid', gridTemplateColumns: 'minmax(360px, 1fr) minmax(380px, 560px)', gap: 20, alignItems: 'start' }
-            : { display: 'flex', flexDirection: 'column', gap: 16 }}>
-          {layoutType === 'image_pin' && (
-            <div ref={twoColSetup ? undefined : jumpStickyRef} style={twoColSetup
-              ? { position: 'sticky', top: 0, alignSelf: 'start' }
-              : { position: 'sticky', top: 0, zIndex: 5, background: 'var(--bg2)',
-                  margin: '0 -24px', padding: '0 24px 8px', borderBottom: '1px solid var(--border)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                <label style={{ ...S.label, marginBottom: 0 }}>รูปอุปกรณ์ (หลายมุม) + จุดตรวจ</label>
-                {frames.length > 0 && pinnedCount > 0 && <span style={{ fontSize: 11, color: 'var(--accent)' }}>📍 {pinnedCount}/{checkpoints.length} จุดวางแล้ว</span>}
-              </div>
-              <SpinAnnotator
-                frames={frames} frameIdx={frameIdx} setFrameIdx={setFrameIdx}
-                arming={!!activePinKey} busy={imgBusy}
-                pins={grouped.ordered
-                  .filter(c => c.x_pos != null && ((c._frameKey ?? frames[0]?._key) === frames[frameIdx]?._key))
-                  .map(c => ({ key: c._key, x: c.x_pos, y: c.y_pos, label: cpLabels[c._key],
-                    label_dx: c.label_dx, label_dy: c.label_dy,
-                    selected: activePinKey === c._key || flashKey === c._key,
-                    color: activePinKey === c._key ? 'var(--accent)' : categoryColor(c.category) }))}
-                onPlace={(x, y) => { updateCp(activePinKey, { x_pos: x, y_pos: y, _frameKey: frames[frameIdx]?._key ?? null }); setActivePinKey(null) }}
-                /* 🎯 แตะหมุด = ไปที่การ์ดจุดนั้น (13/10 · เดิมแตะ = ลบหมุด) — ถอดหมุดย้ายไปปุ่ม "✕ ถอดหมุด" บนการ์ด */
-                onPinClick={jumpToCp}
-                onRemovePin={(key) => { updateCp(key, { x_pos: null, y_pos: null }); if (activePinKey === key) setActivePinKey(null) }}
-                onLabelMove={(key, dx, dy) => updateCp(key, { label_dx: dx, label_dy: dy })}
-                onAddFrames={addFrames} onRemoveFrame={removeFrame}
-                pinHasDetail={Object.fromEntries(checkpoints.map(c => [c._key, !!(c._imgPreview || c.image_path)]))} />
-              {activePinKey && <p style={{ fontSize: 11, color: 'var(--muted)', margin: '4px 0 0' }}>✦ หมุนไปเฟรมที่เห็นจุดชัด แล้วคลิกวางตำแหน่ง</p>}
-              {jumpCompact && jumpBar}
+          {/* ── 📌 รูปอ้างอิง + การ์ดจุดตรวจ — ผังเดียวกับ QA /qa-setup (`PinWorkspace` · 15/10)
+              จอกว้าง: รูปซ้าย sticky · การ์ดขวา · จอแคบ: รูปตรึงบนหัว (user 23/09) */}
+          <datalist id="cp-group-options">
+            {[...new Set(checkpoints.map(c => (c.group_name || '').trim()).filter(Boolean))].map(g => <option key={g} value={g} />)}
+          </datalist>
+          <PinWorkspace twoCol={twoColSetup} stickyRef={jumpStickyRef}
+            boardTitle="รูปอุปกรณ์ (หลายมุม) + จุดตรวจ"
+            boardBadge={frames.length > 0 && pinnedCount > 0 ? `📍 ${pinnedCount}/${checkpoints.length} จุดวางแล้ว` : null}
+            board={layoutType === 'image_pin' && (
+                <SpinAnnotator
+                  frames={frames} frameIdx={frameIdx} setFrameIdx={setFrameIdx}
+                  arming={!!activePinKey} busy={imgBusy}
+                  pins={grouped.ordered
+                    .filter(c => c.x_pos != null && ((c._frameKey ?? frames[0]?._key) === frames[frameIdx]?._key))
+                    .map(c => ({ key: c._key, x: c.x_pos, y: c.y_pos, label: cpLabels[c._key],
+                      label_dx: c.label_dx, label_dy: c.label_dy,
+                      selected: activePinKey === c._key || flashKey === c._key,
+                      color: activePinKey === c._key ? 'var(--accent)' : categoryColor(c.category) }))}
+                  onPlace={(x, y) => { updateCp(activePinKey, { x_pos: x, y_pos: y, _frameKey: frames[frameIdx]?._key ?? null }); setActivePinKey(null) }}
+                  /* 🎯 แตะหมุด = ไปที่การ์ดจุดนั้น (13/10 · เดิมแตะ = ลบหมุด) — ถอดหมุดย้ายไปปุ่ม "✕ ถอดหมุด" บนการ์ด */
+                  onPinClick={jumpToCp}
+                  onRemovePin={(key) => { updateCp(key, { x_pos: null, y_pos: null }); if (activePinKey === key) setActivePinKey(null) }}
+                  onLabelMove={(key, dx, dy) => updateCp(key, { label_dx: dx, label_dy: dy })}
+                  onAddFrames={addFrames} onRemoveFrame={removeFrame}
+                  pinHasDetail={Object.fromEntries(checkpoints.map(c => [c._key, !!(c._imgPreview || c.image_path)]))} />
+            )}
+            boardFooter={layoutType === 'image_pin' && (
+              <>
+                {activePinKey && <p style={{ fontSize: 11, color: 'var(--muted)', margin: '4px 0 0' }}>✦ หมุนไปเฟรมที่เห็นจุดชัด แล้วคลิกวางตำแหน่ง</p>}
               {/* คิวครอบรูป — เลือกหลายไฟล์ = ครอบทีละใบ (ผู้ใช้เลือกกรอบเอง ไม่ auto-crop) */}
               {cropQueue[0] && (
                 <ImageCropModal
@@ -1669,26 +1398,10 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
                   onCancel={() => setCropQueue(q => q.slice(1))}
                   onConfirm={pushFrame} />
               )}
-            </div>
-          )}
-
-          <div>
-            {/* หัวคอลัมน์จุดตรวจ — ตรึงไว้เมื่อมีแถบ "ไปที่จุด" (ยกเว้นจอแคบ+รูป ที่แถบไปอยู่ใต้รูปแล้ว) */}
-            <div ref={showJump && !jumpCompact ? jumpStickyRef : undefined}
-              style={showJump && !jumpCompact
-                /* top:-20 = ทับ padding บนของ modalBody ด้วย — top:0 เหลือช่อง 20px ให้การ์ดเลื่อนโผล่เหนือแถบ */
-                ? { position: 'sticky', top: -20, zIndex: 4, background: 'var(--bg2)', margin: '0 0 10px', padding: '20px 0 8px', borderBottom: '1px solid var(--border)' }
-                : { marginBottom: 10 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <label style={{ ...S.label, marginBottom: 0 }}>จุดตรวจสอบ ({checkpoints.length})</label>
-                <button onClick={addCp} style={{ ...S.btnSm('var(--accent)'), fontSize: 12 }}>+ เพิ่มจุดตรวจ</button>
-              </div>
-              {!jumpCompact && jumpBar}
-            </div>
-            <datalist id="cp-group-options">
-              {[...new Set(checkpoints.map(c => (c.group_name || '').trim()).filter(Boolean))].map(g => <option key={g} value={g} />)}
-            </datalist>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              </>
+            )}
+            listTitle={`จุดตรวจสอบ (${checkpoints.length})`} onAdd={addCp}
+            jump={{ points: grouped.ordered, labels: cpLabels, onJump: jumpToCp, flashKey, onTop: scrollTop }}>
               {grouped.named.map((g, gi) => (
                 <div key={g.name} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   <div style={groupHeaderStyle}>Item {gi + 1} — {g.name} <span style={{ fontWeight: 600, color: 'var(--muted)' }}>({g.items.length} จุด)</span></div>
@@ -1699,19 +1412,10 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
                 <div style={{ ...groupHeaderStyle, background: 'var(--bg3)', color: 'var(--muted)' }}>ไม่ระบุกลุ่ม</div>
               )}
               {grouped.ungrouped.map(renderCard)}
-            </div>
-          </div>
-          </div>
+          </PinWorkspace>
 
           {error && <p style={{ color: 'var(--red)', fontSize: 13 }}>{error}</p>}
-        </div>
-
-        <div style={S.modalFoot}>
-          <button onClick={onClose} style={S.cancelBtn}>ยกเลิก</button>
-          <button onClick={handleSave} disabled={saving} style={{ ...S.saveBtn, opacity: saving ? 0.6 : 1 }}>{saving ? 'กำลังบันทึก...' : 'บันทึก'}</button>
-        </div>
-      </motion.div>
-    </div>
+    </InspectEditorModal>
   )
 }
 
@@ -1785,13 +1489,18 @@ function EquipmentTable({ groups, canSetup, onEdit, onDelete }) {
 
 // ─── PMSetup (main) ───────────────────────────────────────────────────────────
 export default function PMSetup() {
-  const { role, mtnTeams: userMtnTeams, sections: scopeSecs } = useContext(UserContext)
+  const { role, mtnTeams: userMtnTeams, sections: scopeSecs, allUnits } = useContext(UserContext)
   const canSetup = can('pm', 'setup', role)
   // ทีมช่างของ user — ใช้ล็อกไม่ให้แก้ master ของทีมอื่น (ดู CLAUDE.md "ใครเป็นเจ้าของ คนนั้นแก้")
   const pmUserTeams = useMemo(() => teamsForUser(userMtnTeams, scopeSecs), [userMtnTeams, scopeSecs])
   const [searchParams] = useSearchParams()
   const setParams = useMergeParams()
   const department = searchParams.get('dept') || 'maintenance'
+  /* 🔐 ชั้นที่ 3 ฝั่งช่าง — ทีมที่เปิดอยู่มาจาก `?dept=` ตรงๆ ⇒ เดิมสลับ URL แล้วแก้อุปกรณ์/
+     แผน PM/ชนิดทีม ของทีมอื่นได้ (audit 15/10) · `pmUserTeams` คำนวณไว้แล้วแต่ส่งเข้าแค่ modal taxonomy
+     🔴 ไม่ผูกทีม = ไม่บล็อก (ไม่รู้ ≠ ปฏิเสธ) */
+  const deptWrite = useMemo(() => canWriteTeam(pmUserTeams, department, { allUnits, role }),
+    [pmUserTeams, department, allUnits, role])
   const [jigs, setJigs] = useState([])
   const [cpCounts, setCpCounts] = useState({})
   const [pinFlags, setPinFlags] = useState({})
@@ -1808,6 +1517,8 @@ export default function PMSetup() {
      ผลทันที: สิทธิ์ที่ใช้บันทึกผลตรวจของทีมนี้สลับระหว่าง am:record / pm:record + คำอธิบายบนหน้าจอ
      ⚠️ mtn_teams อยู่ DR project → ต้องใช้ supabaseDR (กฎ 2 project ใน CLAUDE.md) */
   const toggleTeamKind = async () => {
+    /* 🔴 เปลี่ยน AM⇄PM = ย้ายว่า "ทีมนี้ใช้คีย์ไหนบันทึกผลตรวจ" — แตะสิทธิ์ของทีมอื่นโดยตรง */
+    if (!deptWrite.ok) { toast.info(teamBlockText(deptWrite, 'ชนิดงานของทีมนี้')); return }
     const cur = teamKindOf(department)
     const next = cur === 'am' ? 'pm' : 'am'
     const name = teams.find(t => t.key === department)?.label ?? department
@@ -1922,6 +1633,7 @@ export default function PMSetup() {
   ].filter(Boolean)
 
   const handleDelete = async (jig) => {
+    if (!deptWrite.ok) { toast.info(teamBlockText(deptWrite, 'อุปกรณ์ของทีมนี้')); return }
     if (!confirm(`ลบ "${jig.name}" ?`)) return
     /* 🔴 นับแถวก่อนแตะ storage (QC audit 06/10) — ไม่นับ = แถว jig ยังอยู่
        แต่รูปทั้งชุด (เฟรม + จุดตรวจ + โมเดล 3D) ถูกลบ ⇒ ทะเบียนจิ๊กเสียรูปถาวร */
@@ -2043,7 +1755,7 @@ export default function PMSetup() {
       )}
 
       <AnimatePresence>
-        {showModal && <EquipmentModal onClose={() => setShowModal(false)} onSaved={handleSaved} editJig={editJig} department={department} categories={categories} methods={methods} />}
+        {showModal && <EquipmentModal onClose={() => setShowModal(false)} onSaved={handleSaved} editJig={editJig} department={department} categories={categories} methods={methods} deptWrite={deptWrite} />}
         {taxModal === 'category' && (
           <TaxonomyManagerModal teams={pmTeamsSync()} role={role} myTeams={pmUserTeams} table="pm_checkpoint_categories" title="จัดการประเภทจุดตรวจ (Category)" extraField="color" withEquipTypes
             onClose={() => setTaxModal(null)} onChanged={loadTaxonomy} />

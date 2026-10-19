@@ -1,6 +1,7 @@
-import { useState, useEffect, useContext } from 'react'
+import { useState, useEffect, useContext, useMemo, useRef } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { useMergeParams } from '../utils/useTabParam'
+import { canWriteTeam, teamBlockText, teamsForUser } from '../utils/mtnTeams'
 import { supabaseDR } from '../supabaseClient'
 import { DEPT_LABEL, dueStatusDefer, deferActive, STATUS_META, computeNextDue, daysUntilDue, cycleLabel, cycleDaysOf, CYCLE_PRESETS, freqForCycle, ymdBangkok } from '../lib/pmSchedule'
 import { setChecklistFrequency } from '../lib/pmChecklists'
@@ -117,11 +118,22 @@ export default function PMSchedule() {
   const [spareCount, setSpareCount] = useState(() => new Map())
   const [spareErr, setSpareErr] = useState(null)   // 🔴 นับอะไหล่ไม่ได้ = ปุ่มต้องเขียน "?" ไม่ใช่ "ยังไม่ผูก"
   const [loadErr, setLoadErr] = useState(null)     // 🔴 โหลดแผนล้ม ≠ แผนกนี้ไม่มีแผน (ห้ามใช้ข้อความเดียวกัน)
+  const reqRef = useRef(0)                          // กันคำตอบเก่าทับ (สลับทีมเร็วๆ)
   const [spareReload, setSpareReload] = useState(0)
   const [teams, setTeams] = useState(pmTeamsSync()) // ทีมช่าง data-driven (mtn_teams)
   useEffect(() => { loadPmTeams().then(setTeams) }, [])
 
-  const { role, fullName, uid } = useContext(UserContext)
+  const { role, fullName, uid, mtnTeams: userMtnTeams, sections: scopeSecs, allUnits } = useContext(UserContext)
+  /* 🔐 ชั้นที่ 3 ฝั่งช่าง — หน้านี้เขียน `pm_plans` (ตารางเดียวกับ PMCheckData/PMSetup ที่ปิดไปแล้ว)
+     ด้วย `?dept=` ตรงๆ ⇒ เป็น "ประตูที่สาม" ของการเลื่อนรอบ PM ข้ามทีม (QC audit 15/10) */
+  const myTeams = useMemo(() => teamsForUser(userMtnTeams, scopeSecs), [userMtnTeams, scopeSecs])
+  const deptWrite = useMemo(() => canWriteTeam(myTeams, department, { allUnits, role }),
+    [myTeams, department, allUnits, role])
+  const deptGuard = (what) => {
+    if (deptWrite.ok) return true
+    toast.info(teamBlockText(deptWrite, what))
+    return false
+  }
   const canDefer = can('pm', 'setup', role)
   const canIssueSpare = can('mtn_repair', 'service', role)
 
@@ -131,6 +143,7 @@ export default function PMSchedule() {
   // ยกเลิกการเลื่อน (กลับไปใช้วันครบกำหนดเดิม)
   const cancelDefer = async (r) => {
     if (!r.plan?.id) return
+    if (!deptGuard('แผน PM ของทีมนี้')) return
     if (!confirm('ยกเลิกการเลื่อนแผน กลับไปวันครบกำหนดเดิม?')) return
     const { error } = await supabaseDR.from('pm_plans').update({ deferred_to: null, defer_reason: null, defer_agreed_with: null, deferred_by: null, deferred_at: null }).eq('id', r.plan.id)
     if (error) return toast.error(error.message)
@@ -138,6 +151,9 @@ export default function PMSchedule() {
   }
 
   const fetchData = async () => {
+    // 🔴 สลับทีมเร็วๆ = คำตอบของทีมก่อนมาถึงทีหลังแล้วทับตาราง (กฎเหล็ก DB ข้อ 4) — ทุก set ต้องผ่าน live()
+    const req = ++reqRef.current
+    const live = () => req === reqRef.current
     setLoading(true)
 
     /* 🔴 คิวรีหลักของหน้านี้ (QC audit 08/10) — เดิมไม่อ่าน error เลย ⇒ RLS/เน็ต/42703 ล้ม
@@ -147,6 +163,7 @@ export default function PMSchedule() {
       () => supabaseDR.from('checklists').select('id, equipment_id, frequency, name')
         .eq('module', 'mtn').eq('department', department),
     )
+    if (!live()) return
     const clLoadErr = eCl || (trCl ? 'รายการตรวจเยอะเกินเพดาน — โหลดได้ไม่ครบ' : null)
     setLoadErr(clLoadErr)
     if (clLoadErr) { setRows([]); setLoading(false); return }   // ว่างเพราะล้ม ≠ ว่างเพราะไม่มีแผน
@@ -155,17 +172,26 @@ export default function PMSchedule() {
     const clIds = checklists.map(c => c.id)
     const eqIds = [...new Set(checklists.map(c => c.equipment_id))]
 
-    const [{ data: jigs }, { data: inspections }, { data: plans }, prodRes, lineList] = await Promise.all([
-      supabaseDR.from('jigs').select('id, name, jig_no, line_name, machine_no, equipment_type').in('id', eqIds),
-      supabaseDR.from('inspections').select('id, checklist_id, inspected_at, status').in('checklist_id', clIds).neq('approval_status', 'rejected').order('inspected_at', { ascending: false }),
-      // Server-materialized plan (pm_plans, Phase 1). If the table isn't there yet
-      // the query just returns null and we fall back to computing due dates live.
-      supabaseDR.from('pm_plans').select('id, checklist_id, interval_days, next_due_date, next_due_reason, last_done_at, health_score, plan_type, cycle_basis, max_idle_days, deferred_to, defer_reason, defer_agreed_with, deferred_by, deferred_at, defer_count').in('checklist_id', clIds),
+    /* 🔴 ผ่าน fetchByIds (19/10 audit PM) — เดิม `.in()` ดิบกับ ~165 uuid ต่อคิวรี + ไม่อ่าน error
+          ⇒ URL ยาว/RLS ล้ม = เครื่องไม่มีชื่อ · แผนหายแล้วถอยไปคิดสดเงียบๆ · ผลตรวจหาย = "ยังไม่ตรวจ"
+       inspections ไม่ตัดช่วงวัน: ต้องรู้ "ตรวจล่าสุดเมื่อไหร่" ของเครื่องที่ไม่ได้ตรวจนาน · fetchByIds แบ่งหน้าให้แล้ว */
+    const [jigsRes, inspRes, planRes, prodRes, lineList] = await Promise.all([
+      fetchByIds(eqIds, ids => supabaseDR.from('jigs').select('id, name, jig_no, line_name, machine_no, equipment_type').in('id', ids)),
+      fetchByIds(clIds, ids => supabaseDR.from('inspections').select('id, checklist_id, inspected_at, status').in('checklist_id', ids).neq('approval_status', 'rejected')),
+      // แผนที่ server คำนวณไว้ (pm_plans) — อ่านไม่ได้ต้องฟ้อง ห้ามถอยไปคิดสดเงียบๆ (วันครบกำหนดจะคนละเลขกับจออื่น)
+      fetchByIds(clIds, ids => supabaseDR.from('pm_plans').select('id, checklist_id, interval_days, next_due_date, next_due_reason, last_done_at, health_score, plan_type, cycle_basis, max_idle_days, deferred_to, defer_reason, defer_agreed_with, deferred_by, deferred_at, defer_count').in('checklist_id', ids)),
       /* ยอดผลิตรายไลน์รายวัน — ใช้ตอบ "วันไหนเครื่องเดินจริง" ของแผน cycle_basis='run_day'
          ⚠️ ต้องผ่าน RPC เท่านั้น ห้ามดึงใบผลิตดิบ (120 วัน = 13,073 ใบ ชนเพดาน 1000 แถวเงียบๆ) */
       supabaseDR.rpc('pm_usage_daily', { p_days: USAGE_WINDOW_DAYS }),
       loadProductionLines(),
     ])
+
+    if (!live()) return
+    const subErr = [['ทะเบียนเครื่อง', jigsRes], ['ผลตรวจ', inspRes], ['แผน PM', planRes]]
+      .map(([lb, r]) => r.error ? `${lb}: ${r.error}` : r.truncated ? `${lb}: อ่านได้ไม่ครบ` : null).filter(Boolean)
+    if (subErr.length) { setLoadErr(subErr.join(' · ')); setRows([]); setInsps([]); setLoading(false); return }
+    const jigs = jigsRes.rows, plans = planRes.rows
+    const inspections = [...inspRes.rows].sort((a, b) => String(b.inspected_at || '').localeCompare(String(a.inspected_at || '')))
 
     /* 🔴 "โหลดยอดผลิตไม่ได้" ≠ "ไม่ได้ผลิต" — เดาผิดทางนี้ = ข้ามการตรวจที่จำเป็นเงียบๆ
        ⇒ ส่ง null ต่อให้ resolveRunDayDue แล้วมันจะถอยไปใช้รอบปฏิทิน + ติดธงให้จอเขียนบอก */
@@ -239,13 +265,14 @@ export default function PMSchedule() {
     const { rows: spLines, error: spErr, truncated: spTr } = await fetchByIds(
       clIds, (ids) => supabaseDR.from('pm_plan_spares').select('checklist_id').in('checklist_id', ids),
     )
+    if (!live()) return
     const spFail = spErr || (spTr ? 'อ่านได้ไม่ครบ' : null)
     setSpareErr(spFail)
     setSpareCount(spFail ? new Map() : sparesCountByChecklist(spLines || []))
     setLoading(false)
   }
 
-  useEffect(() => { fetchData() }, [department]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { fetchData(); return () => { reqRef.current++ } }, [department]) // eslint-disable-line react-hooks/exhaustive-deps
 
   /* แก้อะไหล่ในโมดัลแล้ว → โหลดเฉพาะจำนวนบนปุ่ม (ไม่โหลดทั้งหน้า — fetchData ขึ้นสปินเนอร์ทับตาราง)
      deps = สตริง id (ไม่ใช่ array rows — กฎเหล็ก DB ข้อ 9 กันยิงคิวรีซ้ำเมื่อ setRows ใบใหม่) */
@@ -483,8 +510,8 @@ export default function PMSchedule() {
 
       {spareFor && <PlanSparesModal row={spareFor} canEdit={canDefer} canIssue={canIssueSpare} byName={fullName} byUid={uid}
         onClose={() => setSpareFor(null)} onChanged={() => setSpareReload(k => k + 1)} />}
-      {cycleFor && <CycleModal rows={cycleFor} byName={fullName} byUid={uid} onClose={() => setCycleFor(null)} onSaved={() => { setCycleFor(null); fetchData() }} />}
-      {deferFor && <DeferModal row={deferFor} byName={fullName} byUid={uid} onClose={() => setDeferFor(null)} onSaved={() => { setDeferFor(null); fetchData() }} />}
+      {cycleFor && <CycleModal rows={cycleFor} byName={fullName} byUid={uid} deptWrite={deptWrite} onClose={() => setCycleFor(null)} onSaved={() => { setCycleFor(null); fetchData() }} />}
+      {deferFor && <DeferModal row={deferFor} byName={fullName} byUid={uid} deptWrite={deptWrite} onClose={() => setDeferFor(null)} onSaved={() => { setDeferFor(null); fetchData() }} />}
     </Page>
   )
 }
@@ -503,7 +530,7 @@ function addDaysYmd(ymdStr, n) {
   const x = new Date(y, m - 1, d); x.setDate(x.getDate() + n)
   return ymd(x)
 }
-function CycleModal({ rows, byName, byUid, onClose, onSaved }) {
+function CycleModal({ rows, byName, byUid, deptWrite, onClose, onSaved }) {
   const single = rows.length === 1 ? rows[0] : null
   const initDays = single?.cycle || ''
   const [days, setDays] = useState(initDays ? String(initDays) : '')
@@ -526,6 +553,8 @@ function CycleModal({ rows, byName, byUid, onClose, onSaved }) {
   const preview = nextDate || (valid && lastYmd ? addDaysYmd(lastYmd, n) : '')
 
   const save = async () => {
+    /* 🔐 ด่านซ้ำตอนเขียนจริง — เป็นตารางเดียวกับ PMCheckData/PMSetup (QC audit 15/10) */
+    if (deptWrite && !deptWrite.ok) { toast.info(teamBlockText(deptWrite, 'แผน PM ของทีมนี้')); return }
     if (!valid) return toast.error('ใส่รอบ PM เป็นจำนวนวัน 1-3650')
     if (!idleValid) return toast.error('เพดานวันจอด ใส่เป็นจำนวนวัน 1-3650 หรือเว้นว่าง')
     const targets = rows.filter(r => picked.has(r.cl.id))
@@ -649,7 +678,7 @@ function CycleModal({ rows, byName, byUid, onClose, onSaved }) {
 }
 
 // ── Modal เลื่อนแผน PM (คิวผลิตแน่น/ตัดไฟไม่ได้ ฯลฯ) ──
-function DeferModal({ row, byName, byUid, onClose, onSaved }) {
+function DeferModal({ row, byName, byUid, deptWrite, onClose, onSaved }) {
   const eqName = row.eq?.name ?? '—'
   const curDue = row.nextDue ? ymd(row.nextDue) : ''
   // ค่าเริ่มต้นวันเลื่อน = ครบกำหนดเดิม + 30 วัน
@@ -662,6 +691,8 @@ function DeferModal({ row, byName, byUid, onClose, onSaved }) {
   const agreedHist = useColumnHistory(supabaseDR, 'pm_plans', 'defer_agreed_with')
 
   const save = async () => {
+    /* 🔐 ด่านซ้ำตอนเขียนจริง — เป็นตารางเดียวกับ PMCheckData/PMSetup (QC audit 15/10) */
+    if (deptWrite && !deptWrite.ok) { toast.info(teamBlockText(deptWrite, 'แผน PM ของทีมนี้')); return }
     if (!toDue) return toast.error('เลือกวันที่เลื่อนไป')
     if (!reason.trim()) return toast.error('กรอกเหตุผลการเลื่อน')
     if (!row.plan?.id) return toast.error('ยังไม่มีแผน (pm_plans) ของรายการนี้')

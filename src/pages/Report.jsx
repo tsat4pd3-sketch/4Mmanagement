@@ -2098,11 +2098,13 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
                           <button onClick={async () => {
                             // Reset = status change → ต้องเคลียร์รูป QA เดิม (ลบไฟล์ด้วย) + แจ้ง Telegram + เช็ค error
                             const oldQaUrl = l.qa_image_url;
-                            const { error } = await supabase.from('four_m_logs').update({
+                            /* 🔴 นับแถว ไม่ใช่ดูแค่ error — RLS ปฏิเสธ UPDATE = 0 แถว ไม่มี error
+                               ⇒ ใบยังชี้รูป QA เดิม แต่โค้ดข้างล่างลบไฟล์นั้นไปแล้ว = รูปเสียถาวร */
+                            const res = await supabase.from('four_m_logs').update({
                               status: 'pending', sv_approved_by: null, sv_approved_at: null,
                               approved_by: null, approved_at: null, reject_reason: null, qa_image_url: null,
-                            }).eq('id', l.id);
-                            if (error) { toast.error('Reset ไม่สำเร็จ: ' + error.message); return; }
+                            }).eq('id', l.id).select('id');
+                            if (!checkWriteRows(res, 'Reset ใบ 4M')) return;
                             if (oldQaUrl?.includes('/four-m-images/')) {
                               const oldPath = decodeURIComponent(oldQaUrl.split('/four-m-images/')[1] || '').split('?')[0];
                               if (oldPath) supabase.storage.from('four-m-images').remove([oldPath]).catch(() => {});
@@ -2428,6 +2430,11 @@ function SkillMatrixTab() {
         <EmpScopeFilters lines={lines} filterSection={filterSection} setFilterSection={setFilterSection} filterLine={filterLine} setFilterLine={setFilterLine} filterTeam={filterTeam} setFilterTeam={setFilterTeam} filterDept={filterDept} setFilterDept={setFilterDept} />
         <span className="spacer" />
         <span className="filter-count">{employees.length} คน · {skillDefs.length} สกิล</span>
+        {/* 🔴 กฎความซื่อสัตย์ของจอ — จอนี้กรองช่าง/สายสนับสนุนออก (กำลังคนของไลน์เท่านั้น)
+            ต้องเขียนไว้ ไม่งั้นคนเทียบกับใบเช็คชื่อ (เห็นครบทุกกลุ่มตั้งแต่ 14/10) แล้วงงว่าทำไมหัวไม่ตรง */}
+        <span className="filter-count" title="สกิล/กำลังคน นับเฉพาะพนักงานหน้างาน — ช่างและสายสนับสนุนไม่เข้าสูตร (กฎ staffKind.js)">
+          · ไม่รวม 🔧 ช่าง / 🗂️ สายสนับสนุน
+        </span>
         <span className="filter-count">· คลิกที่พนักงานเพื่อดู Radar Chart</span>
         {canExport && (
         <button onClick={() => {
@@ -3011,6 +3018,10 @@ function MultiSkillFormTab() {
       {/* Filters (UI-STANDARD 2026-09-24 — แถบกรองมาตรฐาน · gap ของ column แทน marginBottom) */}
       <FilterBar style={{ marginBottom: 0 }}>
         <EmpScopeFilters lines={lines} filterSection={filterSection} setFilterSection={setFilterSection} filterLine={filterLine} setFilterLine={setFilterLine} filterTeam={filterTeam} setFilterTeam={setFilterTeam} filterDept={filterDept} setFilterDept={setFilterDept} />
+        {/* กรองช่าง/สายสนับสนุนออกเหมือนแท็บสกิล — ต้องเขียนบนจอ (กฎความซื่อสัตย์ของจอ) */}
+        <span className="filter-count" title="ใบประเมินทักษะออกให้พนักงานหน้างาน — ช่างและสายสนับสนุนไม่เข้าสูตร (กฎ staffKind.js)">
+          ไม่รวม 🔧 ช่าง / 🗂️ สายสนับสนุน
+        </span>
         <span className="spacer" />
         <button onClick={load} disabled={loading}
           style={{ padding: '0 20px', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer', opacity: loading ? 0.6 : 1 }}>

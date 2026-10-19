@@ -574,12 +574,33 @@ export function summarizeSlotChanges(list) {
    - ขาด (gap) = ที่นั่ง − คนยืนจริง · แตกได้ลงตัวเป๊ะ:
        gap = ช่องว่าง + ลา + ขาดงาน + ยังไม่เช็ค + ถูกยืมออก − ยืมเข้า   (ติดลบ = เกิน)
      "ยังไม่เช็ค" ในกะที่เช็คแล้ว = ไม่ยืนยันว่ามา ⇒ นับในช่องขาดแต่แยกคอลัมน์ให้เห็นว่าเป็น "ไม่รู้"
-   - กะไม่รู้ (ตารางกะไม่ตั้ง) = ถัง `unknown` นับคน ไม่คิดที่นั่ง  */
-const emptyShift = () => ({ seats: 0, registered: 0, empty: 0, present: 0, leave: 0, absent: 0, unchecked: 0,
-  lentOut: 0, borrowedIn: 0, checked: 0, noPlan: false, onFloor: 0, gap: null, evaluated: false });
+   - กะไม่รู้ (ตารางกะไม่ตั้ง) = ถัง `unknown` นับคน ไม่คิดที่นั่ง
 
-/** ผลของแผนก 1 แผนก (จาก `buildManpowerBoard().depts[i]` ที่สร้างด้วยเช็คชื่อ/ตารางกะ/คนยืมของวันนั้น) */
-export function staffingOfDept(d) {
+   ══ 🔴 "ขาด" มี 2 ชนิด ห้ามบวกรวมเป็นเลขเดียว (15/10 · คำสั่ง user) ══════════════════════
+   เดิมพาดหัว "ขาดรวม" เอาทั้ง 2 ชนิดมารวมกัน แล้ว**กะที่ขาดคนขึ้น 100% ทุกแผนก** —
+   ตัวชี้วัดที่เข้าเงื่อนไขทุกกะ = ไม่มีข้อมูลอยู่ในนั้น (วัด 15/10: APRON ขาดรวม 562 ของจริง
+   เป็น "ช่องว่าง" 470 = 84% · HYDROFORM 443 เป็นคนขาดจริง 249 = 56% — คนละโรคแต่จอบอกเลขใกล้กัน)
+     · `absentGap` = **คนขาด** (ลา + ขาดงาน + ยังไม่เช็ค + ถูกยืมออก − ยืมเข้า) → เรื่องรายวัน หัวหน้าทำได้
+     · `structGap` = **ช่องว่างอัตรากำลัง** (ที่นั่งที่ยังไม่มีคน) → เรื่องอัตรากำลัง/รับคน คนละ action
+   🔴 `shortShifts`/`worst` นับจาก `absentGap` เท่านั้น — ช่องว่างไม่ใช่ "วันนี้ขาดคน"
+
+   ══ 🔴 ตัวหารต้องเป็น "ความต้องการของกะนั้นจริง" ไม่ใช่จำนวนจุดงานทั้งแผนก ══════════════
+   ที่มา (user 15/10): *"PD3 มีคนเต็มออแกไนซ์ 10 แต่มีจุด 15 จะมีบางจุดที่ใช้คนวนๆ และไม่ได้ผลิตงานทุกวัน"*
+   ⇒ ช่องจากจุดงานเฟ้อ 2 ทาง: จุดที่ไม่เคยตั้งใจมีคนประจำ + กะที่ไลน์ไม่ได้เดิน
+     ② **ยืนยันไม่ได้ว่าไลน์เดินในกะนั้น ⇒ `structGap = null` ไม่ใช่ 0** (`ranKnown:false`)
+        — ไม่รู้ ≠ ไม่ขาด · จอต้องเขียนว่ามีกี่กะที่คิดช่องว่างไม่ได้
+     ③ **เพดาน: ช่องว่าง ≤ กำลังคนตามผัง(std) − คนที่มาจริง** · ส่วนที่เกิน = `capped` ให้จอบอก
+        (คนวนจุด/ไม่มีจุดประจำ ทำให้ช่องว่างเฟ้อ แม้เขามาทำงานจริง) · **std ไม่รู้ = ไม่ตัดเพดาน**  */
+const emptyShift = () => ({ seats: 0, registered: 0, empty: 0, emptyRaw: 0, present: 0, leave: 0, absent: 0, unchecked: 0,
+  lentOut: 0, borrowedIn: 0, checked: 0, noPlan: false, onFloor: 0, gap: null, absentGap: null, structGap: null,
+  std: null, capped: 0, ranKnown: true, evaluated: false });
+
+/**
+ * ผลของแผนก 1 แผนก (จาก `buildManpowerBoard().depts[i]` ที่สร้างด้วยเช็คชื่อ/ตารางกะ/คนยืมของวันนั้น)
+ * @param {object} [opt.ran]  { day, night } = ยืนยันได้ไหมว่าไลน์ของแผนกเดินในกะนั้น (จากกะผลิตที่ปิดแล้ว)
+ *        ไม่ส่ง = ถือว่ายืนยันได้ทุกกะ (พฤติกรรมเดิม) · `false` = ไม่คิดช่องว่างของกะนั้น
+ */
+export function staffingOfDept(d, { ran = null } = {}) {
   const out = { day: emptyShift(), night: emptyShift(), unknown: emptyShift() };
   for (const c of d.cols || []) {
     const s = out[c.shift === 'day' || c.shift === 'night' ? c.shift : 'unknown'];
@@ -605,8 +626,22 @@ export function staffingOfDept(d) {
     const s = out[k];
     s.onFloor = s.present + s.borrowedIn;
     if (k === 'unknown') continue;
-    s.seats = s.registered + s.empty;
     s.evaluated = s.checked > 0 || s.borrowedIn > 0;
+    s.emptyRaw = s.empty;
+    s.std = d.plan?.[k] ?? null;
+
+    // ③ เพดาน — ช่องว่างห้ามเกิน "กำลังคนตามผัง − คนที่มาจริง" (std ไม่รู้ = ไม่ตัด)
+    if (s.std != null) {
+      const cap = Math.max(0, s.std - s.onFloor);
+      if (s.empty > cap) { s.capped = s.empty - cap; s.empty = cap; }
+    }
+    // ② ยืนยันไม่ได้ว่าไลน์เดินในกะนี้ ⇒ ไม่คิดช่องว่าง (null ไม่ใช่ 0)
+    s.ranKnown = ran ? !!ran[k] : true;
+    if (!s.ranKnown) { s.empty = 0; s.capped = 0; }
+
+    s.structGap = s.ranKnown ? s.empty : null;
+    s.absentGap = s.evaluated ? s.leave + s.absent + s.unchecked + s.lentOut - s.borrowedIn : null;
+    s.seats = s.registered + (s.structGap || 0);
     s.gap = s.evaluated ? s.seats - s.onFloor : null;
   }
   return out;
@@ -618,22 +653,30 @@ export function summarizeStaffing(days) {
   for (const day of days || []) {
     for (const d of day.depts || []) {
       if (!by.has(d.key)) by.set(d.key, { key: d.key, name: d.name, shifts: 0, notChecked: 0, shortShifts: 0, overShifts: 0,
-        seats: 0, onFloor: 0, short: 0, empty: 0, leave: 0, absent: 0, unchecked: 0, lentOut: 0, borrowedIn: 0, noPlanShifts: 0,
+        seats: 0, registered: 0, onFloor: 0, short: 0, absentShort: 0, structShort: 0, empty: 0, leave: 0, absent: 0,
+        unchecked: 0, lentOut: 0, borrowedIn: 0, noPlanShifts: 0, structUnknownShifts: 0, capped: 0, stdUnknownShifts: 0,
         worst: null });
       const a = by.get(d.key);
       for (const sh of ['day', 'night']) {
         const s = d.shifts[sh];
         if (!s.seats && !s.evaluated) continue;            // กะนี้แผนกไม่มีที่นั่งและไม่มีใครมา = ไม่ใช่กะของแผนก
         if (!s.evaluated) { a.notChecked += 1; continue; }
-        a.shifts += 1; a.seats += s.seats; a.onFloor += s.onFloor;
-        for (const k of ['empty', 'leave', 'absent', 'unchecked', 'lentOut', 'borrowedIn']) a[k] += s[k];
+        a.shifts += 1; a.seats += s.seats; a.registered += s.registered; a.onFloor += s.onFloor;
+        for (const k of ['empty', 'leave', 'absent', 'unchecked', 'lentOut', 'borrowedIn', 'capped']) a[k] += s[k];
         if (s.noPlan) a.noPlanShifts += 1;
-        if (s.gap > 0) { a.shortShifts += 1; a.short += s.gap; } else if (s.gap < 0) a.overShifts += 1;
-        if (s.gap > 0 && (!a.worst || s.gap > a.worst.gap)) a.worst = { date: day.date, shift: sh, gap: s.gap };
+        if (!s.ranKnown) a.structUnknownShifts += 1;       // คิดช่องว่างของกะนี้ไม่ได้ — ต้องเขียนบนจอ
+        if (s.std == null) a.stdUnknownShifts += 1;        // ไม่รู้กำลังคนตามผัง = ไม่ได้ตัดเพดาน
+        if (s.structGap > 0) a.structShort += s.structGap;
+        /* 🔴 "กะที่ขาดคน" = กะที่คนขาดจริง ไม่ใช่กะที่มีช่องว่าง (ไม่งั้นขึ้น 100% ทุกแผนก · 15/10) */
+        if (s.absentGap > 0) { a.shortShifts += 1; a.absentShort += s.absentGap; }
+        if (s.gap > 0) a.short += s.gap; else if (s.gap < 0) a.overShifts += 1;
+        if (s.absentGap > 0 && (!a.worst || s.absentGap > a.worst.gap)) a.worst = { date: day.date, shift: sh, gap: s.absentGap };
       }
     }
   }
-  return [...by.values()].map(a => ({ ...a, fill: a.seats ? a.onFloor / a.seats : null }));
+  /* `fill` = มาจริง ÷ **คนในทะเบียนของกะนั้น** — ไม่ใช่ ÷ ที่นั่ง
+     (หารด้วยที่นั่ง = เอาช่องว่างอัตรากำลังมาปนกับการมาทำงาน แล้วทุกแผนกดูเหมือนมากันครึ่งเดียว) */
+  return [...by.values()].map(a => ({ ...a, fill: a.registered ? a.onFloor / a.registered : null }));
 }
 
 /** คนในทะเบียน "ณ วันนั้น" — ตัดคนที่เริ่มงานหลังวันนั้น (start_date)

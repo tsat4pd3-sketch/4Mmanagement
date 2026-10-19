@@ -13,12 +13,18 @@ import { mtnAutoSeries, autoKpiOfName, toRowUnit, HOURS_PER_MONTH, autoUnitMisma
 import { loadPmTeams, pmTeamsSync } from '../utils/pmTeams';
 import OrgScopePicker from './OrgScopePicker';
 import FilterBar from './FilterBar';
-import { PLANT, isPlant, parseScopeKey, scopeKey, scopeOfDef, scopeCovers, sameScope, defScopeColumns, scopeUnder, scopePathText } from '../utils/orgScope';
+import { PLANT, isPlant, parseScopeKey, scopeKey, scopeOfDef, scopeCovers, sameScope, defScopeColumns, scopeUnder, scopePathText, canonicalScope } from '../utils/orgScope';
+import { canWriteUnit, writeBlockText } from '../utils/writeScope';
 import { groupChildDefs, rollupChildDefs, rollupGroupKey, childGroupKeyFor } from '../utils/kpiRollup';
 import { checkWriteRows } from '../utils/dbWrite';
 import { findClosedTwin, restoreQuestion } from '../utils/kpiClosed';
 import { scoreDef, KPI_LEVELS, KPI_PERSPECTIVES, perspectiveLabel, KPI_SUMMARY_MODES,
-  unitOf, decimalsOf, summaryModeOf, summaryShort, summaryModeLabel, fmtKpi, summaryOf, planProgress, valueScopeOf, sharedValueDef, KPI_VALUE_SCOPES, KPI_BOARD_SLOTS, boardSlotOf } from '../utils/kpiSetup';
+  unitOf, decimalsOf, summaryModeOf, summaryShort, summaryModeLabel, fmtKpi, summaryOf, planProgress, valueScopeOf, sharedValueDef, KPI_VALUE_SCOPES, KPI_BOARD_SLOTS, boardSlotOf,
+  KPI_FORMULAS, formulaOf, baseVarOf } from '../utils/kpiSetup';
+import { applyFormulaEntries, buildBaseIndex, formulaNoteText, formulaSummaryText, formulaOfDef, formulaMonthMode } from '../utils/kpiFormula';
+import KpiBaseInputsPanel from './KpiBaseInputsPanel';
+import { headcountAuto, headcountAutoVar } from '../utils/kpiHeadcount';
+import { getWorkDate } from '../utils/workDate';
 import { getDocForm, withDocFoot, loadDocForms, fullCode } from '../utils/docForms';
 import { usePerms } from '../utils/usePerms';
 import ReadOnlyNote from './ReadOnlyNote';
@@ -208,7 +214,7 @@ function CellInput({ value, onCommit, disabled }) {
 export default function KpiMonthly({ lines, scopeSet, isMobile }) {
   const nowYear = new Date().getFullYear();
   const { can, role } = usePerms();
-  const canManage = can('kpi', 'manage');
+  const canManageKpi = can('kpi', 'manage');
   const [year, setYear] = useState(nowYear);
   /* ⚠️ รับ ?section= จาก URL — /obeya ส่งมาตอนกดเซลล์บนบอร์ด (กฎ "ลิงก์ต้องพาไปถึงตัวงานนั้น")
      ไม่งั้นกดจากบอร์ด PD3 แล้วเปิดมาเจอส่วนงานอื่น ต้องไปเลือกเองซ้ำ */
@@ -223,7 +229,11 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
     return { ...PLANT };
   });
   const { index: org, ready: orgReady, failed: orgFailed } = useOrgScope(lines);
-  const { sections: userSections } = useContext(UserContext);   // สังกัดของ user — ตัดตัวเลือกขอบเขต (node ที่ไม่มีไลน์ใช้ตัวนี้ตัดสิน)
+  /* 💰 15/10: ช่องกรอง 2 ช่อง (หน่วยงาน / Cost Center) เคยขัดกัน — PD1 กับ CC 2140461000 คือหน่วยเดียวกันแต่เก็บคนละคีย์
+     ⇒ ทุกการ "เทียบ/เขียน" ขอบเขต KPI ใช้ `kpiScope` (= หน่วยเจ้าของรหัส) · `scope` เหลือไว้แค่เป็นป้ายบนจอ/URL */
+  const kpiScope = useMemo(() => canonicalScope(org, scope), [org, scope]);
+  const ccAsUnit = scope.kind === 'cost_center' && kpiScope.kind !== 'cost_center';
+  const { sections: userSections, section: homeSection, allUnits } = useContext(UserContext);   // สังกัดของ user — ตัดตัวเลือกขอบเขต (node ที่ไม่มีไลน์ใช้ตัวนี้ตัดสิน)
   const [loading, setLoading] = useState(false);
   const [prog, setProg] = useState('');
   const [err, setErr] = useState(null);
@@ -233,6 +243,8 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
   const [belowDefs, setBelowDefs] = useState([]);         // ⬆ นิยามของหน่วยลูก (12/10) — ไว้โชว์ค่าที่บอร์ดเติมจากลูก · ไม่แก้ที่นี่
   const [closedDefs, setClosedDefs] = useState([]);      // 🗄️ นิยามที่ปิดใช้งานอยู่ (is_active=false) ในขอบเขตที่ดู — ให้เปิดคืนได้จากจอ (07/10)
   const [entries, setEntries] = useState({});      // kpi_id -> { month: value }
+  const [baseRows, setBaseRows] = useState([]);    // 💰 kpi_base_inputs ของปีนี้ทุกขอบเขต — KPI สูตรคำนวณจากตรงนี้ (15/10)
+  const [empRows, setEmpRows] = useState([]);      // 👥 ทะเบียนพนักงาน active — ตัวหาร manpower อัตโนมัติ (ค่ากรอกมือชนะ)
   /* แผนรายเดือน (kpi_month_plans) — คนละตารางกับค่าจริงโดยตั้งใจ (unique(kpi_id,month) ของค่าจริงจะพังถ้ายัด kind เข้าไป) */
   const [plans, setPlans] = useState({});          // kpi_id -> { month: plan_value }
   const [showPlan, setShowPlan] = useState(false); // ปิดไว้ก่อน — เปิดแล้วตารางสูงเท่าตัว
@@ -262,6 +274,20 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
   /* ไลน์ในขอบเขตที่เลือก ∩ ขอบเขตของ user — ขอบเขตที่ไม่มีไลน์ผลิตเลย (แผนกช่าง/สโตร์) = [] ⇒ ตัวเลขอัตโนมัติไม่มีให้คำนวณ
      (ต่างจาก "ทั้งโรงงาน" ที่ = ทุกไลน์ในขอบเขต user) */
   const scopeNoLines = !isPlant(scope) && orgReady && org.lineNamesOf(scope.kind, scope.value).length === 0;
+
+  /* ══ 🔐 ชั้นที่ 3 — "ขอบเขตนี้เป็นของหน่วยงานเราไหม" (15/10 · คำสั่ง user) ══════════════
+     เคสที่ user แจ้ง: แอดมินหน่วยงานฝ่ายช่างเปิด `?scope=department:<แผนกอื่น>` แล้วแก้ KPI
+     ของแผนกนั้นได้ — เพราะเดิมเช็คแค่ `can('kpi','manage')` + `org.has()` (= "มีในผังไหม")
+     🔴 **ขอบเขตระดับโรงงาน/ฝ่าย (หา section เจ้าของไม่ได้) = ของกลาง ⇒ ต้องมีใบผ่าน**
+        (`unknownTarget:'block'`) — ไม่งั้นตั้ง KPI ให้ทั้งโรงงานได้โดยไม่มีใครคุม
+     🔴 ระหว่างผังยังโหลดไม่เสร็จ = ปิดไว้ก่อน (fail-closed) ดีกว่าเปิดแล้วค่อยปิด */
+  const scopeOwner = (!orgReady || isPlant(scope)) ? '' : (org.sectionOf?.(scope.kind, scope.value) || '');
+  const scopeWrite = useMemo(
+    () => canWriteUnit({ role, section: homeSection, sections: userSections, allUnits },
+                       scopeOwner, { unknownTarget: 'block' }),
+    [role, homeSection, userSections, allUnits, scopeOwner],
+  );
+  const canManage = canManageKpi && scopeWrite.ok;
   const targetLineNames = useMemo(() => {
     const inUser = lines.filter(l => !scopeSet || scopeSet.has(l.name)).map(l => l.name);
     if (isPlant(scope)) return inUser;
@@ -407,10 +433,13 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
     setKpiMissing(false);
     /* เห็นนิยามของ "ขอบเขตที่เลือก + บรรพบุรุษ" — นิยามระดับแม่ตกทอดถึงลูก (23/09 ขยายจาก "section null = ทุกส่วนงาน")
        ดูทั้งโรงงาน = เห็นเฉพาะระดับโรงงาน (ไม่ใช่รวมทุกแผนกปนกัน — ใบ KPI เป็นของหน่วยงาน) */
-    const rows = (d || []).filter(x => scopeCovers(org, scopeOfDef(x), scope));
+    /* 💰 15/10: นิยามที่ยังค้างที่รหัส CC (ก่อน trigger / รหัสเพิ่งผูกหน่วย) = นิยามของหน่วยเจ้าของ — ทำให้ตรงก่อนกรอง ไม่งั้นโผล่เป็น "ตกทอด/ลูก" ของตัวเอง */
+    const canonDef = (x) => { const sc = scopeOfDef(x); const c = canonicalScope(org, sc); return c === sc ? x : { ...x, scope_kind: c.kind, scope_value: c.value }; };
+    const dAll = (d || []).map(canonDef);
+    const rows = dAll.filter(x => scopeCovers(org, scopeOfDef(x), scope));
     setAllDefs(rows);
     /* ⬆ นิยามของหน่วยลูก (12/10 · กติกาเดียวกับบอร์ด: แม่ชนะรายเดือน · เดือนที่แม่ว่างบอร์ดเติมค่ารวมจากลูก) — ตารางนี้ต้องเห็นเลขชุดเดียวกับบอร์ด */
-    const below = (d || []).filter(x => scopeUnder(org, scopeOfDef(x), scope));
+    const below = dAll.filter(x => scopeUnder(org, scopeOfDef(x), scope));
     setBelowDefs(below);
     /* 🗄️ แถวที่ปิดใช้งานอยู่ — ยังครองคีย์ unique อยู่ ⇒ ต้องมีที่ให้ "เปิดคืน" บนจอ (07/10 · feedback: ปิดหัวข้อแล้ว add ใหม่ไม่ได้)
        โหลดล้ม = ถือว่าไม่มี (ไม่ทำทั้งแท็บล่ม) · กรองขอบเขตแบบเดียวกับตารางหลัก */
@@ -418,6 +447,16 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
       .order('category').order('seq');
     if (!alive()) return;
     setClosedDefs(cl.error ? [] : (cl.data || []).filter(x => x.is_active === false && scopeCovers(org, scopeOfDef(x), scope)));
+    /* 💰 ตัวเลขฐาน (ยอดขายกลาง + ยอดเงินของหน่วย) — โหลดทุกขอบเขตของปี (สูตรของหน่วยอ่านยอดขายจาก ทั้งโรงงาน) · ตารางยังไม่มี = ว่าง ไม่ใช่แท็บล่ม */
+    const kb = await supabase.from('kpi_base_inputs').select('id, year, month, scope_kind, scope_value, var_key, value').eq('year', year).limit(5000);
+    if (!alive()) return;
+    if (kb.error && (kb.error.code || '') !== '42P01') toast.error('โหลดตัวเลขฐาน KPI ไม่สำเร็จ: ' + kb.error.message);
+    setBaseRows(kb.error ? [] : (kb.data || []));
+    /* 👥 กำลังคนจากทะเบียน (ตัวหาร "ยอดขาย/หัว") — โหลดไม่ได้ = ไม่เติมอัตโนมัติ ไม่ใช่ล่ม */
+    const em = await supabase.from('employees').select('id, section, department, is_active, start_date').eq('is_active', true).limit(5000);
+    if (!alive()) return;
+    if (em.error) toast.error('โหลดทะเบียนพนักงาน (ตัวหารยอดขาย/หัว) ไม่สำเร็จ: ' + em.error.message);
+    setEmpRows(em.error ? [] : (em.data || []));
     if (!rows.length && !below.length) { setEntries({}); setPlans({}); return; }
     // KPI 1 ตัว × 12 เดือน — นิยามเยอะขึ้นเมื่อไหร่ก็เกิน 1000 แถวได้ (fetchByIds ทำครบทั้งก้อนและหน้า)
     const map = {};
@@ -442,6 +481,8 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
   useEffect(() => { loadDefs(); }, [loadDefs]);
 
   const saveCell = async (kpiId, month, raw) => {
+    /* 🔐 ด่านชั้นที่ 3 ซ้ำตอนกดจริง — ซ่อนปุ่มอย่างเดียวไม่พอ (deep-link `?scope=` เปิดตรงได้) */
+    if (!scopeWrite.ok) { toast.info(writeBlockText(scopeWrite, { what: 'KPI ของขอบเขตนี้', unit: scopeOwner })); return; }
     const value = raw === '' ? null : Number(raw);
     if (raw !== '' && !Number.isFinite(value)) { toast.error('กรอกเป็นตัวเลขเท่านั้น'); return; }
     const prev = entries[kpiId]?.[month] ?? null;
@@ -459,6 +500,8 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
 
   /* บันทึกแผนรายเดือน — คนละตารางกับค่าจริง แต่กติกาเดียวกัน (อ่าน error เสมอ · ว่าง = ลบค่า) */
   const savePlanCell = async (kpiId, month, raw) => {
+    /* 🔐 ด่านชั้นที่ 3 ซ้ำตอนกดจริง — ซ่อนปุ่มอย่างเดียวไม่พอ (deep-link `?scope=` เปิดตรงได้) */
+    if (!scopeWrite.ok) { toast.info(writeBlockText(scopeWrite, { what: 'KPI ของขอบเขตนี้', unit: scopeOwner })); return; }
     const value = raw === '' ? null : Number(raw);
     if (raw !== '' && !Number.isFinite(value)) { toast.error('กรอกเป็นตัวเลขเท่านั้น'); return; }
     const prev = plans[kpiId]?.[month] ?? null;
@@ -477,7 +520,18 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
 
   const monthsOf = (src, id) => Array.from({ length: 12 }, (_, i) => src[id]?.[i + 1] ?? null);
   /* 🔴 "ตามแผนไหม" ≠ คะแนน — คะแนนทางการยังเป็นของ scoreDef() เท่านั้น (ห้ามเอาไปเปลี่ยนสี ○△✗) */
-  const planOf = def => planProgress({ actual: monthsOf(entries, def.id), plan: monthsOf(plans, def.id), def });
+  /* 🧮 นิยาม provider='formula' = ค่ารายเดือนคำนวณจากตัวเลขฐาน (utils/kpiFormula.js) — ทุกจุดที่ "อ่านค่า" ใช้ `entriesFx` · `entries` ดิบเหลือไว้ให้ saveCell/เทียบค่ากรอกมือ */
+  const baseIndex = useMemo(() => buildBaseIndex(baseRows, { auto: headcountAutoVar(headcountAuto(empRows, { year, today: getWorkDate() })) }), [baseRows, empRows, year]);
+  const fx = useMemo(() => applyFormulaEntries([...(allDefs || []), ...(belowDefs || [])], entries, baseIndex, org), [allDefs, belowDefs, entries, baseIndex, org]);
+  const entriesFx = fx.entries;
+  const fInfo = fx.info;
+  const skLabel = useCallback((sk) => { const i = String(sk).indexOf(':'); return i < 0 ? 'ทั้งโรงงาน' : org.labelOf(sk.slice(0, i), sk.slice(i + 1)); }, [org]);
+  const reloadBase = useCallback(async () => {
+    const kb = await supabase.from('kpi_base_inputs').select('id, year, month, scope_kind, scope_value, var_key, value').eq('year', year).limit(5000);
+    if (kb.error) { toast.error('โหลดตัวเลขฐาน KPI ไม่สำเร็จ: ' + kb.error.message); return; }
+    setBaseRows(kb.data || []);
+  }, [year]);
+  const planOf = def => planProgress({ actual: monthsOf(entriesFx, def.id), plan: monthsOf(plans, def.id), def });
 
   /* 🔴 เกณฑ์ทางการ 1 / 0.5 / 0 ผ่าน `scoreDef()` เท่านั้น (17/09 · ประกาศ QSM-R2 001/2569)
      เดิมเป็น Y/N ล้วน — ไม่มีขั้น 0.5 และ `commitment` ที่กรอกไว้เป็นข้อความไม่เคยถูกเอามาตัดสินเลย
@@ -496,7 +550,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
      เดิมเฉลี่ยทุกแถว ⇒ Scrap ที่ต้องรวมทั้งปีโชว์ 271.4 แทน 1,628 (เทียบเด็ค H1 FY2026)
      วิธีรวมอยู่ที่ `kpi_catalog.summary_mode` — ของตัวตน KPI ห้าม override รายแถว */
   /* 🏭 ค่าของแถว = ของนิยามที่ "ถือค่า" (KPI แบบ plant → นิยามโรงงาน · ไม่มี = ว่างทั้งแถว ไม่ถอยไปใช้ค่าของหน่วย) */
-  const valuesOf = def => { const vd = valueDefOf(def); return Array.from({ length: 12 }, (_, i) => (vd ? entries[vd.id]?.[i + 1] : null) ?? null); };
+  const valuesOf = def => { const vd = valueDefOf(def); return Array.from({ length: 12 }, (_, i) => (vd ? entriesFx[vd.id]?.[i + 1] : null) ?? null); };
   const manualSum = def => summaryOf(valuesOf(def), def);
   const manualAvg = def => manualSum(def).value;
 
@@ -574,7 +628,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
         ⇒ `!d.source` เป็นเท็จเสมอ = ตารางนี้ว่างตลอดกาลไม่ว่าจะตั้ง KPI ไว้กี่ข้อ (บั๊กจริง แก้ 23/09)
         คอมเมนต์ใน migration 20260901 เขียนว่า "null = กรอกมือ" ซึ่งไม่เคยเป็นจริง — อย่าเชื่อ ให้ดู default
         แถวเก่าก่อนมี default อาจเป็น null จริง ⇒ เช็คจากฝั่ง `auto:` เสมอ (ครอบทั้ง null และ 'manual') */
-  const isInherited = useCallback(d => !sameScope(scopeOfDef(d), scope), [scope]);
+  const isInherited = useCallback(d => !sameScope(canonicalScope(org, scopeOfDef(d)), kpiScope), [org, kpiScope]);
   /* 🏭 30/09: KPI ตัวเดียวกัน (catalog เดียวกัน) ที่มีทั้งนิยามของขอบเขตนี้และนิยามแม่ที่ตกทอดมา → โชว์แถวเดียว (ของขอบเขตนี้)
      ไม่งั้น KPI แบบ "ค่าโรงงาน" จะขึ้น 2 แถว (ของหน่วย + ของโรงงาน) ทั้งที่เป็นตัวเลขชุดเดียวกัน · กติกาเดียวกับ nearest() ของบอร์ด */
   const defs = useMemo(() => {
@@ -591,19 +645,19 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
   const childRollOf = useCallback((d2) => {
     if (!childGroups.size || isInherited(d2) || valueScopeOf(d2) === 'plant') return null;
     const gk = childGroupKeyFor(childGroups, { key: null, name: defName(d2), defId: d2.id }, d2);
-    return gk ? rollupChildDefs(childGroups.get(gk), entries, { labelOf: org.labelOf }) : null;
-  }, [childGroups, isInherited, entries, org]);
+    return gk ? rollupChildDefs(childGroups.get(gk), entriesFx, { labelOf: org.labelOf }) : null;
+  }, [childGroups, isInherited, entriesFx, org]);
   const childOnly = useMemo(() => {
     if (!childGroups.size) return [];
     const held = new Set((allDefs || []).map(rollupGroupKey));
     return [...childGroups.entries()].filter(([gk]) => !held.has(gk))
-      .map(([gk, ds]) => ({ gk, lead: ds[0], roll: rollupChildDefs(ds, entries, { labelOf: org.labelOf }) }));
-  }, [childGroups, allDefs, entries, org]);
+      .map(([gk, ds]) => ({ gk, lead: ds[0], roll: rollupChildDefs(ds, entriesFx, { labelOf: org.labelOf }) }));
+  }, [childGroups, allDefs, entriesFx, org]);
 
   /* ชุดที่ใช้เทียบกับ "ทะเบียนมาตรฐานของกลุ่ม" = **ทุกแถวในขอบเขตนี้ รวมแถวอัตโนมัติด้วย**
      ใบ KPI ทางการถ่วงน้ำหนักรวม 50 จาก KPI ทั้งใบ ไม่ได้แยกว่าใครเป็นคนกรอก ⇒ ส่งแต่ `defs`
      (เฉพาะกรอกมือ) จะนับน้ำหนักขาด และฟ้องว่าข้อบังคับที่ ESM คำนวณให้อยู่แล้ว (OEE/PPM) "ยังไม่ได้หยิบ" */
-  const defsForStd = useMemo(() => (allDefs || []).filter(d => sameScope(scopeOfDef(d), scope)), [allDefs, scope]);
+  const defsForStd = useMemo(() => (allDefs || []).filter(d => sameScope(canonicalScope(org, scopeOfDef(d)), kpiScope)), [allDefs, org, kpiScope]);
 
   /* นิยามของแถวอัตโนมัติ — เก็บ "เป้า/ทิศทาง/commitment" ไว้ที่ kpi_definitions (source='auto:<key>')
      ⚠️ ค่าไม่ได้มาจากที่นี่ (ระบบคำนวณเอง) แถวนิยามเก็บแค่เกณฑ์ตัดสิน                       */
@@ -611,11 +665,11 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
     const m = {};
     (allDefs || []).forEach(d => {
       if (!d.source?.startsWith('auto:')) return;
-      if (!sameScope(scopeOfDef(d), scope)) return;   // เป้าผูกกับขอบเขตที่กำลังดูเป๊ะ (ไม่ตกทอด — เป้า OEE ของแผนก ≠ เป้าของไลน์)
+      if (!sameScope(canonicalScope(org, scopeOfDef(d)), kpiScope)) return;   // เป้าผูกกับขอบเขตที่กำลังดูเป๊ะ (ไม่ตกทอด — เป้า OEE ของแผนก ≠ เป้าของไลน์)
       m[d.source.slice(5)] = d;
     });
     return m;
-  }, [allDefs, scope]);
+  }, [allDefs, org, kpiScope]);
 
   /* แถวของตาราง — เพิ่ม KPI ใหม่ = เพิ่ม entry ตรงนี้
      kind: bar = ปริมาณต่อเดือน · line = อัตรา/% (มินิกราฟ+กราฟใหญ่เลือกทรงตามนี้)
@@ -661,7 +715,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
   const openRowChart = r => setChart({ title: r.label, vals: months.out.map(r.val), kind: r.kind, target: r.target ?? null, dir: r.dir ?? null, dec: r.dec });
   const openDefChart = d2 => setChart({
     title: defName(d2) + (d2.commitment ? ` (เป้า ${d2.commitment})` : ''), kind: 'line', dec: 2,
-    vals: Array.from({ length: 12 }, (_, i) => entries[d2.id]?.[i + 1] ?? null),
+    vals: Array.from({ length: 12 }, (_, i) => entriesFx[d2.id]?.[i + 1] ?? null),
     target: d2.target_value != null ? Number(d2.target_value) : null, dir: d2.direction || null,
     def: d2,   // ให้สีจุดรู้จัก Commitment ด้วย (scoreDef 3 ระดับ)
   });
@@ -680,7 +734,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
     }<td style="${td};font-weight:bold">${r.get(months.tot)}</td></tr>`).join('');
     const manRows = (defs || []).map(d2 => {
       const cells = Array.from({ length: 12 }, (_, i) => {
-        const v = entries[d2.id]?.[i + 1];
+        const v = entriesFx[d2.id]?.[i + 1];
         return `<td style="${td}">${fmtKpi(v, d2)}</td>`;
       }).join('');
       const sm = manualSum(d2);
@@ -732,7 +786,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
         weight: null, actionPlan: '', actionOwner: '', sectionTag: '',
       }));
       const manualRows = (defs || []).map(d2 => {
-        const monthVals = Array.from({ length: 12 }, (_, i) => entries[d2.id]?.[i + 1] ?? null);
+        const monthVals = Array.from({ length: 12 }, (_, i) => entriesFx[d2.id]?.[i + 1] ?? null);
         const avg = manualAvg(d2);
         return {
           category: d2.category, name: defName(d2), formula: d2.formula_text || d2.kpi_catalog?.formula_text || '',
@@ -757,6 +811,8 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
 
   /* บันทึกนิยาม KPI (insert/update — update ต้องนับแถว กฎ RLS-เงียบ) */
   const saveDef = async form => {
+    /* 🔐 ด่านชั้นที่ 3 ซ้ำตอนกดจริง — ซ่อนปุ่มอย่างเดียวไม่พอ (deep-link `?scope=` เปิดตรงได้) */
+    if (!scopeWrite.ok) { toast.info(writeBlockText(scopeWrite, { what: 'KPI ของขอบเขตนี้', unit: scopeOwner })); return; }
     /* ชื่อ KPI มาจากทะเบียน — เลือกตัวเดิม หรือ "ตั้งชื่อใหม่เข้าทะเบียน" (ตั้งใจเท่านั้น)
        เก็บ `name` เป็น snapshot ด้วย เพื่อให้แถวยังอ่านออกถ้าทะเบียนถูกลบ (FK = set null) */
     let catalogId = form.catalog_id || null;
@@ -796,8 +852,12 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
       target_value: form.target_value === '' || form.target_value == null ? null : Number(form.target_value),
       direction: form.direction || null, weight: form.weight === '' || form.weight == null ? null : Number(form.weight),
       action_plan: form.action_plan || null, action_owner: form.action_owner || null,
+      /* 🧮 ที่มาของตัวเลข (15/10): formula = ค่ารายเดือนคำนวณจากตัวเลขฐาน · provider_config.formula = คีย์ใน KPI_FORMULAS */
+      provider: form.provider === 'formula' ? 'formula' : 'manual',
+      provider_config: form.provider === 'formula' ? { formula: form.formula } : null,
     };
     if (!payload.name) { toast.error('กรอกชื่อ KPI ก่อน'); return false; }
+    if (form.provider === 'formula' && !formulaOf(form.formula)) { toast.error('เลือกสูตรที่จะใช้คำนวณก่อน'); return false; }
     if (payload.target_value != null && !payload.direction) { toast.error('ตั้งค่าเป้าตัวเลขแล้วต้องเลือกทิศทาง (≥/≤) ด้วย ไม่งั้นตัดสิน ○△✗ ไม่ได้'); return false; }
     /* 🔴 ขอบเขตของแถวมาจากช่อง "ขอบเขต" ในโมดัล (default = ขอบเขตที่กำลังดู) — เขียน scope_kind/scope_value ตรง
        บทเรียน 23/09 (ก่อนมี picker): เพิ่มแถวโดยไม่ผูกขอบเขตที่กำลังดู ⇒ แถวใหม่ตกตัวกรองของตารางทันที
@@ -837,7 +897,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
       const { data: srcAll, error } = await supabase.from('kpi_definitions').select('*').eq('year', src).eq('is_active', true);
       if (error) { toast.error('อ่านชุดปี ' + be + ' ไม่สำเร็จ: ' + error.message); return; }
       // คัดลอกเฉพาะชุดของ "ขอบเขตนี้เป๊ะ" — ไม่ลากนิยามระดับแม่มาสร้างซ้ำในระดับลูก
-      const srcRows = (srcAll || []).filter(r => sameScope(scopeOfDef(r), scope));
+      const srcRows = (srcAll || []).filter(r => sameScope(canonicalScope(org, scopeOfDef(r)), kpiScope));
       if (!srcRows.length) { toast.error(`ปี ${be} ไม่มีชุด KPI ของ ${scopeLabel}`); return; }
       // ตัดตัวที่ปีนี้มีแล้ว (เทียบด้วย catalog_id ก่อน — ตกมาที่ชื่อเมื่อแถวเก่าไม่ผูกทะเบียน)
       const haveCat = new Set(defs.map(d2 => d2.catalog_id).filter(Boolean));
@@ -869,6 +929,8 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
   /* ตั้งเป้า/ทิศทาง/commitment ให้แถวที่ระบบคำนวณเอง — ค่าไม่ได้มาจากที่นี่ เก็บแค่เกณฑ์
      ⚠️ upsert ด้วย source ไม่ใช่ catalog_id (แถวอัตโนมัติไม่จำเป็นต้องผูกทะเบียนชื่อ) */
   const saveAutoTarget = async f => {
+    /* 🔐 ด่านชั้นที่ 3 ซ้ำตอนกดจริง — ซ่อนปุ่มอย่างเดียวไม่พอ (deep-link `?scope=` เปิดตรงได้) */
+    if (!scopeWrite.ok) { toast.info(writeBlockText(scopeWrite, { what: 'KPI ของขอบเขตนี้', unit: scopeOwner })); return; }
     const src = `auto:${f.src}`;
     const tv = f.target_value === '' || f.target_value == null ? null : Number(f.target_value);
     if (tv != null && !f.direction) { toast.error('ตั้งเป้าตัวเลขแล้วต้องเลือกทิศทาง (มากกว่าดี/น้อยกว่าดี) ไม่งั้นตัดสิน ○△✗ ไม่ได้'); return false; }
@@ -911,7 +973,14 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
     return true;
   };
   const removeDef = async d2 => {
-    if (!window.confirm(`ปิดใช้งาน KPI "${defName(d2)}"?\nค่าที่กรอกไว้ยังอยู่ (soft delete) — เปิดคืนได้ที่แผง "🗄️ ปิดใช้งานอยู่" ใต้แถบปุ่มของตารางนี้`)) return;
+    /* 🔐 ด่านชั้นที่ 3 ซ้ำตอนกดจริง — ซ่อนปุ่มอย่างเดียวไม่พอ (deep-link `?scope=` เปิดตรงได้) */
+    if (!scopeWrite.ok) { toast.info(writeBlockText(scopeWrite, { what: 'KPI ของขอบเขตนี้', unit: scopeOwner })); return; }
+    /* 🔴 15/10: แถวที่ตกทอดมาจากขอบเขตอื่น (โรงงาน/แม่) ห้ามปิดจากที่นี่ — เหตุจริง 14–15/10: นิยามระดับโรงงานของ %RM /
+       Customer Satisfaction / DL+OH (ที่เก็บ "ค่าโรงงาน" ให้ทุกหน่วย) ถูกกด 🗑 จากหน้า PD ⇒ ค่าหายทุกหน่วยพร้อมกัน */
+    if (isInherited(d2)) { toast.error(`"${defName(d2)}" ตกทอดมาจาก ${defScopeTag(d2)} — ปิดใช้งานได้ที่ขอบเขตนั้นเท่านั้น (ถ้าไม่อยากให้โชว์ที่นี่ ให้ตั้งแถวของระดับนี้เอง)`); return; }
+    const sharedWarn = valueScopeOf(d2) === 'plant' && isPlant(scope)
+      ? '\n\n⚠️ KPI นี้เป็น "ค่าโรงงาน" — ทุกหน่วยที่ถือ KPI นี้จะไม่มีตัวเลขโชว์ทันทีที่ปิด' : '';
+    if (!window.confirm(`ปิดใช้งาน KPI "${defName(d2)}"?\nค่าที่กรอกไว้ยังอยู่ (soft delete) — เปิดคืนได้ที่แผง "🗄️ ปิดใช้งานอยู่" ใต้แถบปุ่มของตารางนี้${sharedWarn}`)) return;
     const { data: r, error } = await supabase.from('kpi_definitions').update({ is_active: false }).eq('id', d2.id).select('id');
     if (error || !r?.length) { toast.error('ปิดใช้งานไม่สำเร็จ' + (error ? ': ' + error.message : ' (ไม่มีสิทธิ์)')); return; }
     loadDefs();
@@ -942,6 +1011,12 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
         )}
       </FilterBar>
 
+      {ccAsUnit && (
+        <div style={{ ...card, fontSize: 12.5, color: 'var(--text2)', lineHeight: 1.6 }}>
+          💰 รหัส <b>{org.ccLabel ? org.ccLabel(scope.value) : scope.value}</b> = หน่วย <b>{org.labelOf(kpiScope.kind, kpiScope.value)}</b> —
+          KPI เก็บและแสดงที่หน่วยเจ้าของรหัส (ชุดเดียวกับเลือก {org.labelOf(kpiScope.kind, kpiScope.value)} ที่ช่องหน่วยงาน) · ตั้ง/แก้ที่นี่ = ตั้งให้หน่วยนั้น
+        </div>
+      )}
       <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.6 }}>
         นับเฉพาะ<b>กะที่ปิดแล้ว</b> — กะที่เปิดค้างยังไม่ถูกนับ · OEE = ค่า stamp ถ่วงน้ำหนักเวลารับภาระ ·
         PPM = ของเสีย ÷ ยอดที่ผลิตทั้งหมด (สแกนดี + เสีย) × 10⁶ ไม่รวมงานทดลอง (สูตรเดียวกับใบ KPI ของบริษัท — ยืนยัน 2026-09-07) ·
@@ -1032,6 +1107,12 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
           ⚠ KPI กรอกมือยังใช้ไม่ได้ — ยังไม่ได้ apply migration <code>20260824_kpi_definitions_main.sql</code> (Main) · แจ้ง admin
         </div>
       )}
+      {/* 💰 ตัวเลขฐานจากบัญชี/SAP (15/10) — คนกลางกรอกค่ากลางที่ ทั้งโรงงาน · หน่วยกรอกยอดเงินของตัวเอง · KPI สูตรคำนวณเอง */}
+      {!kpiMissing && allDefs && (
+        <KpiBaseInputsPanel year={year} scope={kpiScope} org={org} rows={baseRows} base={baseIndex} canManage={canManage} onChanged={reloadBase}
+          onGoPlant={() => setScope({ ...PLANT })} blockText={canManageKpi && !scopeWrite.ok ? writeBlockText(scopeWrite, { what: 'ตัวเลขฐานของขอบเขตนี้', unit: scopeOwner }) : ''}
+          defaultOpen={isPlant(kpiScope) || (allDefs || []).some(d => formulaOfDef(d))} />
+      )}
       {/* allDefs === null = ยังโหลดอยู่ (defs เป็น array เสมอหลัง filter จึงเช็คไม่ได้) */}
       {!kpiMissing && allDefs && (
         <div style={{ ...card, overflowX: 'auto' }}>
@@ -1105,8 +1186,17 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
             ปีที่ยังไม่มีชุด KPI กด <b>📋 คัดลอกชุด KPI จากปีอื่น</b> จะได้รายการเดิมมาทั้งชุดโดยไม่ต้องพิมพ์ชื่อใหม่
             {!catMissing && ' · ชื่อ KPI ผูกกับทะเบียนกลาง ⇒ เทียบข้ามปีได้แม้เปลี่ยนชื่อทีหลัง'}
           </div>
-          <ReadOnlyNote show={!canManage} role={role} compact
+          <ReadOnlyNote show={!canManageKpi} role={role} compact
             what="กรอก/แก้ KPI นอกระบบ" permKey="kpi:manage" />
+          {/* 🔐 มีสิทธิ์ KPI แต่ขอบเขตที่เลือกไม่ใช่ของหน่วยงานเรา — ต้องเขียนบอก ห้ามซ่อนปุ่มเงียบ */}
+          {canManageKpi && !scopeWrite.ok && (
+            <div className="card" style={{ padding: '8px 10px', marginBottom: 8, fontSize: 12.5,
+              borderLeft: '4px solid #eab308', display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+              <span>🔒</span>
+              <span>{writeBlockText(scopeWrite, {
+                what: `KPI ของ "${scopePathText(org, scope)}"`, unit: scopeOwner })}</span>
+            </div>
+          )}
           {!defs.length ? (
             <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>
               ยังไม่มี KPI กรอกมือของปี {year + 543}{!isPlant(scope) ? ` (${org.labelOf(scope.kind, scope.value)} + ระดับแม่)` : ''}
@@ -1156,6 +1246,10 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
                               <span title="ยังไม่ได้ผูกกับทะเบียนชื่อ KPI — เปิดแก้ไขแล้วเลือกชื่อจากทะเบียนเพื่อให้เทียบข้ามปีได้"
                                 style={{ marginLeft: 5, fontSize: 11, color: '#f59e0b' }}>⚠ ไม่ผูกทะเบียน</span>
                             )}
+                            {fInfo[(valueDefOf(d2) || d2).id] && (() => { const fi = fInfo[(valueDefOf(d2) || d2).id]; const missN = Object.keys(fi.missing).filter(m => !fi.usedManual.includes(Number(m))).length; return (
+                              <span title={formulaSummaryText(fi)} style={{ marginLeft: 5, fontSize: 11, color: missN ? '#f59e0b' : '#38bdf8' }}>
+                                🧮 คำนวณจากตัวเลขฐาน{missN ? ` · ขาดตัวเลขฐาน ${missN} เดือน` : ''}{fi.usedManual.length ? ` · ✍️ ${fi.usedManual.length} เดือนยังใช้ค่ากรอกมือ` : ''}
+                              </span>); })()}
                             {defScopeTag(d2) && <span title="นิยามระดับแม่ที่ตกทอดมา — แก้ไขที่ขอบเขตนั้น" style={{ marginLeft: 5, fontSize: 11, color: 'var(--muted)' }}>({defScopeTag(d2)})</span>}
                             {plantKpi && vDef && (
                               <span title={sharedRO ? 'ค่าโรงงาน — ทุกหน่วยที่ถือ KPI นี้ใช้ตัวเลขเดียวกัน · กรอกที่ขอบเขต ทั้งโรงงาน (เป้า/น้ำหนักของแถวนี้ยังเป็นของหน่วยงาน)' : 'ค่าโรงงาน — ทุกหน่วยที่ถือ KPI นี้อ่านตัวเลขจากแถวนี้'}
@@ -1180,7 +1274,16 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
                             const cv = v == null ? childRoll?.entries?.[i + 1] : undefined;   // ⬆ เดือนที่ระดับนี้ว่าง แต่ลูกมี = บอร์ดใช้ค่านี้
                             return (
                               <td key={i} style={{ ...tdSt, padding: '3px 4px' }} title={sharedRO ? 'ค่าโรงงาน — กรอกที่ขอบเขต ทั้งโรงงาน' : (plantKpi && !vDef ? 'ยังไม่มีนิยามระดับโรงงาน' : undefined)}>
-                                <CellInput value={v} disabled={!canManage || sharedRO || (plantKpi && !vDef)} onCommit={raw => saveCell((vDef || d2).id, i + 1, raw)} />
+                                {fInfo[(vDef || d2).id] && formulaMonthMode(fInfo[(vDef || d2).id], i + 1) === 'computed' ? (() => { const fi = fInfo[(vDef || d2).id]; return (
+                                  <div title={formulaNoteText(fi, i + 1, { labelOf: skLabel, def: d2 })}
+                                    style={{ width: 64, padding: '3px 5px', fontSize: 12, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: v == null ? 'var(--muted)' : 'var(--text)', display: 'inline-block' }}>
+                                    {v == null ? '–' : fmtKpi(v, d2)}<span style={{ fontSize: 11, marginLeft: 2, color: '#38bdf8' }}>🧮</span>
+                                  </div>); })()
+                                  : (() => { const fi = fInfo[(vDef || d2).id]; return (   /* ✍️ นิยามสูตรแต่เดือนนี้ตัวเลขฐานยังไม่ครบ ⇒ ยังกรอกมือได้ (ช่วงเปลี่ยนผ่าน · formulaMonthMode) */
+                                  <span title={fi ? `${formulaNoteText(fi, i + 1, { labelOf: skLabel, def: d2 })} · กรอกมือไปก่อนได้ เมื่อตัวเลขฐานครบ ระบบจะใช้สูตรแทนค่านี้` : undefined} style={{ display: 'inline-flex', alignItems: 'center' }}>
+                                    <CellInput value={v} disabled={!canManage || sharedRO || (plantKpi && !vDef)} onCommit={raw => saveCell((vDef || d2).id, i + 1, raw)} />
+                                    {fi && <span style={{ fontSize: 11, marginLeft: 2, color: '#f59e0b' }}>✍️</span>}
+                                  </span>); })()}
                                 {cv != null
                                   ? <div title={`บอร์ดใช้ค่า${childRoll.combine === 'sum' ? 'รวม' : 'เฉลี่ย'}จาก ${childRoll.n} หน่วยลูก (${childRoll.children.map(c => c.label).join(' · ')}) เพราะระดับนี้ยังไม่กรอกเดือนนี้ · กรอกเองเมื่อไหร่ ค่าของระดับนี้ชนะ ไม่บวกซ้ำ`}
                                       style={{ fontSize: 11, color: '#38bdf8', fontWeight: 700, lineHeight: 1.2 }}>⬆ {fmtKpi(cv, d2)}</div>
@@ -1207,7 +1310,9 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
                           {canManage && (
                             <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>
                               <button onClick={() => setEditDef(d2)} title="แก้นิยาม KPI" style={{ cursor: 'pointer', background: 'none', border: 'none', fontSize: 13 }}>✏️</button>
-                              <DeleteButton onClick={() => removeDef(d2)} title="ปิดใช้งาน" />
+                              {isInherited(d2)
+                                ? <DeleteButton disabled title={`ตกทอดจาก ${defScopeTag(d2)} — ปิดใช้งานได้ที่ขอบเขตนั้นเท่านั้น`} style={{ opacity: 0.35, cursor: 'not-allowed' }} />
+                                : <DeleteButton onClick={() => removeDef(d2)} title="ปิดใช้งาน" />}
                             </td>
                           )}
                         </tr>
@@ -1616,7 +1721,7 @@ function DefModal({ init, year, scope, org, orgFailed = '', scopeSet, userSectio
   const [f, setF] = useState(() => ({
     id: init.id || null,
     catalog_id: init.catalog_id || '',
-    scope: init.id ? scopeOfDef(init) : { ...scope },   // แก้ = ขอบเขตเดิมของแถว · ใหม่ = ขอบเขตที่กำลังดู
+    scope: init.id ? canonicalScope(org, scopeOfDef(init)) : canonicalScope(org, scope),   // แก้ = ขอบเขตเดิมของแถว · ใหม่ = ขอบเขตที่กำลังดู · CC → หน่วยเจ้าของรหัส (15/10)
     category: init.category || 'internal',
     seq: init.seq ?? 0,
     name: init.kpi_catalog?.name || init.name || '',
@@ -1624,6 +1729,8 @@ function DefModal({ init, year, scope, org, orgFailed = '', scopeSet, userSectio
        ไม่งั้นเปิดโมดัลแล้วกดบันทึกเฉยๆ = แถวถูกตรึงหน่วยไว้ ตัดสายจากทะเบียนถาวร) */
     unit: init.unit || '',
     decimals: init.decimals ?? '',
+    provider: formulaOfDef(init) ? 'formula' : 'manual',
+    formula: formulaOfDef(init) || '',
     formula_text: init.formula_text || '',
     scope_text: init.scope_text || '',
     commitment: init.commitment || '',
@@ -1739,6 +1846,27 @@ function DefModal({ init, year, scope, org, orgFailed = '', scopeSet, userSectio
                 <input style={inp} type="number" min="0" max="6" step="1" value={f.decimals}
                   onChange={e => set('decimals', e.target.value)} placeholder={String(catDec)} />
               </div>
+              <div style={{ gridColumn: '1 / -1' }}>
+                <div style={lbl}>ที่มาของตัวเลขรายเดือน</div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <select style={{ ...inp, width: 'auto' }} value={f.provider} onChange={e => set('provider', e.target.value)}>
+                    <option value="manual">✍️ กรอกมือรายเดือน</option>
+                    <option value="formula">🧮 คำนวณจากตัวเลขฐาน (บัญชี/SAP กรอกยอดเงิน ระบบหารให้)</option>
+                  </select>
+                  {f.provider === 'formula' && (
+                    <select style={{ ...inp, width: 'auto' }} value={f.formula} onChange={e => set('formula', e.target.value)}>
+                      <option value="">— เลือกสูตร —</option>
+                      {KPI_FORMULAS.map(x => <option key={x.key} value={x.key}>{x.label} = {x.expr}</option>)}
+                    </select>
+                  )}
+                </div>
+                {f.provider === 'formula' && formulaOf(f.formula) && (
+                  <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3, lineHeight: 1.5 }}>
+                    ตัวแปร: {formulaOf(f.formula).vars.map(v => `${(baseVarOf(v)?.label || v).split(' (')[0]} (${baseVarOf(v)?.level === 'plant' ? 'ค่ากลางทั้งโรงงาน' : 'ของหน่วยนี้'})`).join(' · ')}
+                    {' '}— กรอกที่แผง 💰 ตัวเลขฐาน · ช่องรายเดือนของแถวนี้จะเป็นค่าคำนวณ (แก้มือไม่ได้ · เดือนที่ขาดตัวแปรจะเขียนบอก)
+                  </div>
+                )}
+              </div>
               <div>
                 <div style={lbl}>วิธีรวม 12 เดือน</div>
                 <div style={{ ...inp, display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text2)' }}>
@@ -1758,6 +1886,11 @@ function DefModal({ init, year, scope, org, orgFailed = '', scopeSet, userSectio
             <div style={lbl}>ขอบเขต (ตามผังองค์กร · โรงงาน = ทุกหน่วยงาน)</div>
             <OrgScopePicker index={org} value={f.scope} onChange={v => set('scope', v)} scopeSet={scopeSet} sections={userSections} failed={orgFailed}
               width="100%" inputStyle={inp} />
+            {f.scope?.kind === 'cost_center' && canonicalScope(org, f.scope).kind !== 'cost_center' && (
+              <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>
+                ↳ รหัสนี้เป็นของหน่วย <b>{org.labelOf(canonicalScope(org, f.scope).kind, canonicalScope(org, f.scope).value)}</b> — บันทึกที่หน่วยนั้น (เลือกหน่วยหรือรหัสก็เห็นแถวเดียวกัน)
+              </div>
+            )}
           </div>
           <div>
             <div style={lbl}>Commitment (ข้อความ เช่น ≤ 1.452%)</div>

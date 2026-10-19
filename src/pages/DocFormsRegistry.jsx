@@ -1,6 +1,7 @@
-import { useState, useEffect, useContext } from 'react';
+import { useState, useEffect, useContext, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
+import { canWriteUnit, writeBlockText } from '../utils/writeScope';
 import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
 import { loadDocForms, docFormSync, docFormScopes } from '../utils/docForms';
@@ -22,7 +23,12 @@ import { DeleteButton } from '../components/IconButton';
    ══════════════════════════════════════════════════════════════ */
 
 export default function DocFormsRegistry() {
-  const { role } = useContext(UserContext);
+  const { role, section: homeSection, sections: mySections, allUnits } = useContext(UserContext);
+  /* 🔐 ชุดช่องเซ็น/footer ต่อส่วนงาน (`doc_form_scopes.section`) ⇒ ตั้งได้เฉพาะส่วนงานตัวเอง
+     (audit 15/10 — เดิม dropdown ลิสต์ org_nodes ทั้งผัง มีผลกับใบพิมพ์จริงของส่วนงานอื่น)
+     🔴 ทีม document control ถือ `scope:all_units` จึงยังตั้งให้ทุกส่วนงานได้ */
+  const docCtx = useMemo(() => ({ role, section: homeSection, sections: mySections, allUnits }),
+    [role, homeSection, mySections, allUnits]);
   const canManage = can('doc_forms', 'manage', role);
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -111,6 +117,8 @@ export default function DocFormsRegistry() {
   });
   const saveScope = async () => {
     if (!scopeEdit.section) { toast.error('เลือกส่วนงานก่อน'); return; }
+    const w = canWriteUnit(docCtx, scopeEdit.section);
+    if (!w.ok) { toast.info(writeBlockText(w, { what: 'ชุดเอกสารของส่วนงานนี้', unit: scopeEdit.section })); return; }
     const payload = {
       doc_key: scopeEdit.doc_key, section: scopeEdit.section,
       // ป้ายที่ไม่ได้แก้จากฐาน = ไม่ต้องเก็บ (ฐานเปลี่ยนแล้วตามเอง)
@@ -135,6 +143,8 @@ export default function DocFormsRegistry() {
     setScopeEdit(null); loadScopes(scopeEdit.doc_key); loadDocForms(true);
   };
   const removeScope = async (sc) => {
+    const w = canWriteUnit(docCtx, sc?.section);
+    if (!w.ok) { toast.info(writeBlockText(w, { what: 'ชุดเอกสารของส่วนงานนี้', unit: sc?.section })); return; }
     if (!window.confirm(`ลบชุดของส่วนงาน "${sc.section}"? (กลับไปใช้ชุดกลาง)`)) return;
     checkWriteRows(await supabase.from('doc_form_scopes').delete().eq('id', sc.id).select('id'), 'ลบขอบเขต');
     loadScopes(sc.doc_key); loadDocForms(true);

@@ -281,7 +281,7 @@ export default function QaFmeQueue({ scopedLineNames, onOpen }) {
             const isLate = o.status === 'pending' && new Date(o.due_at).getTime() < now;
             const lateMin = Math.round((now - new Date(o.due_at).getTime()) / 60000);
             return (
-              <div key={o.id} style={{
+              <div key={o.id} className="fme-row" style={{
                 display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap',
                 background: isLate ? 'rgba(239,68,68,0.08)' : 'var(--bg3)',
                 border: `1px solid ${isLate ? 'rgba(239,68,68,0.45)' : 'var(--border2)'}`,
@@ -289,7 +289,7 @@ export default function QaFmeQueue({ scopedLineNames, onOpen }) {
               }}>
                 <span style={{ fontSize: 13, fontWeight: 700, color: sm.color, whiteSpace: 'nowrap' }}>{sm.icon} {sm.label}</span>
                 {/* basis 220: จอแคบข้อความกินทั้งแถว ปุ่ม/เวลาตกบรรทัดใหม่ (เดิม flex:1 ถูกบีบจนคำละบรรทัด การ์ดสูง 500px+ วัดจริง 390px · 2026-09-07) */}
-                <span style={{ fontSize: 13, minWidth: 0, flex: '1 1 220px' }}>
+                <span className="fme-txt" style={{ fontSize: 13, minWidth: 0, flex: '1 1 220px' }}>
                   <b>{o.line_name}</b> · {o.shift === 'night' ? 'กะดึก' : 'กะเช้า'} ·{' '}
                   <b>{o.mat_no}</b>{o.product_name ? <span style={{ color: 'var(--muted)' }}> {o.product_name}</span> : null}
                   <span style={{ color: 'var(--muted)' }}> · {REASON_LABEL[o.trigger_reason] || o.trigger_reason}</span>

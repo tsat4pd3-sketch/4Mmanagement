@@ -425,9 +425,23 @@ export function drillParams(index, sc) {
   return out;
 }
 
+/** 💰 ขอบเขต "ตามจริง" ของ scope — รหัส cost center ที่มีหน่วยเจ้าของในผัง (ส่วนงาน/แผนก) = หน่วยเจ้าของแคบสุด (15/10)
+ *  user: "filter มี 2 ช่องขัดกันไปมา ทำให้ค่าที่กรอกไว้รวน" — PD1 กับ CC 2140461000 คือหน่วยเดียวกัน แต่เคยเก็บนิยาม/โน้ต/
+ *  layout แยก 2 คีย์ ⇒ สลับช่องกรองแล้ว KPI หาย/กลายเป็น "ค่ารวมจากหน่วยลูก" ของตัวเอง
+ *  · **ทุกจุดที่เขียนหรือเทียบ scope ของ KPI ต้องผ่านตัวนี้** (`defScopeColumns`/`scopeCovers`/`scopeUnder` เรียกให้แล้ว) ·
+ *    ฝั่ง DB มี trigger `fn_kpi_scope_canon` ทำแบบเดียวกัน (migration 20261015)
+ *  · เจ้าของเป็นไลน์/กลุ่มไลน์ล้วน หรือไม่มีเจ้าของ = คงเป็น cost_center (ไม่เดา) · ขอบเขตอื่นคืนตัวเดิม */
+export function canonicalScope(index, sc) {
+  if (!sc || sc.kind !== 'cost_center' || !index?.unitsOf) return sc;
+  const owner = index.unitsOf(sc.kind, sc.value).filter(u => u.kind === 'section' || u.kind === 'department').slice(-1)[0];
+  return owner ? { kind: owner.kind, value: owner.value } : sc;
+}
+export const sameUnit = (index, a, b) => sameScope(canonicalScope(index, a), canonicalScope(index, b));
+
 export function scopeCovers(index, defScope, selected) {
   if (isPlant(defScope)) return true;
   if (isPlant(selected)) return false;
+  defScope = canonicalScope(index, defScope);   // นิยามที่เคยเก็บไว้ที่รหัส = นิยามของหน่วยเจ้าของ
   const same = (a) => a.kind === defScope.kind && a.value === defScope.value;
   /* เลือก CC = เลือกหน่วยเจ้าของรหัส (06/10) — นิยามของ แผนก MTN ต้องเห็นเมื่อเลือก CC ของ MTN ด้วย */
   const units = [selected, ...(index.unitsOf ? index.unitsOf(selected.kind, selected.value) : [])];
@@ -439,14 +453,15 @@ export const sameScope = (a, b) => (isPlant(a) && isPlant(b)) || (!!a && !!b && 
 /** นิยามนี้อยู่ "ใต้" ขอบเขตที่เลือกไหม (ลูก/หลาน — ไม่รวมตัวเอง · ไม่รวมระดับโรงงาน) — 12/10 user: "ลูกมี แม่ไม่มี ต้องโชว์ที่แม่ด้วย"
  *  CC = ดูจากหน่วยเจ้าของรหัส (รหัสที่เจ้าของคือหน่วยที่เลือก = อยู่ใต้) · เลือกทั้งโรงงาน = ทุกนิยามที่ไม่ใช่ระดับโรงงานอยู่ใต้ */
 export function scopeUnder(index, defScope, selected) {
+  defScope = canonicalScope(index, defScope); selected = canonicalScope(index, selected);
+  /* 15/10: รหัสที่เจ้าของ = หน่วยที่เลือก คือ "ตัวเอง" ไม่ใช่ลูก (เดิมนับเป็นลูก ⇒ บอร์ด PD1 เขียน "ค่ารวมจากหน่วยลูก: CC ของ PD1 เอง") */
   if (isPlant(defScope) || sameScope(defScope, selected)) return false;
   const units = defScope.kind === 'cost_center' && index.unitsOf ? index.unitsOf(defScope.kind, defScope.value) : [defScope];
   if (!units.length) return false;
   if (isPlant(selected)) return true;
   const selUnits = [selected, ...(index.unitsOf ? index.unitsOf(selected.kind, selected.value) : [])];
   const same = (a, b) => a.kind === b.kind && a.value === b.value;
-  return units.some(u => selUnits.some(s => (defScope.kind === 'cost_center' && same(u, s))
-    || index.ancestorsOf(u.kind, u.value).some(a => same(a, s))));
+  return units.some(u => selUnits.some(s => index.ancestorsOf(u.kind, u.value).some(a => same(a, s))));
 }
 
 /** ชื่อขอบเขตแบบ "เส้นทาง" สำหรับหัวจอ — CC = "เส้นทางหน่วยเจ้าของ › 💰 รหัส · ชื่อ" (12/10 · เดิมหัวบอร์ดขึ้นแค่เลขรหัส) · plant = ป้ายที่ส่งมา */
@@ -472,6 +487,7 @@ export function scopeOfDef(d) {
  *  (trigger `fn_kpi_def_scope_sync` เติม line_group ให้เองเมื่อ kind = line_group) */
 export function defScopeColumns(index, sc) {
   if (isPlant(sc)) return { scope_kind: 'plant', scope_value: null, section: null, line_group: null };
+  sc = canonicalScope(index, sc);   // 15/10: เขียนที่หน่วยเจ้าของรหัสเสมอ — ห้ามเขียน scope_kind='cost_center' ให้รหัสที่มีเจ้าของ
   return {
     scope_kind: sc.kind, scope_value: sc.value,
     section: index ? index.sectionOf(sc.kind, sc.value) : (sc.kind === 'section' ? sc.value : null),

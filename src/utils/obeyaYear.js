@@ -267,17 +267,24 @@ export function autoMonthsOf(series = []) {
  *  · ไม่เขียนลงฐาน — เป็นแค่วิธี "โชว์" */
 export function fillAutoWithManual({ autoMonths = {}, manEntries = {}, year, summary = 'average' } = {}) {
   const fill = {};
-  let overlapN = 0;
+  /* ✍️ เดือนที่มีทั้งค่าระบบและค่ากรอกมือ — ค่าระบบชนะ แต่**ค่ากรอกมือห้ามหาย** (user 14/10 "อยากให้ขึ้นซ้อนกันเพื่อให้เห็นความต่าง")
+     ⇒ คืน `manOverlap` {เดือน: ค่ากรอกมือ} ให้จอวาดซ้อนเทียบ (ช่วงเปลี่ยนผ่านจากที่ทีมคิดเอง → ระบบคำนวณ) */
+  const manOverlap = {};
   for (const [m, v] of Object.entries(manEntries || {})) {
     if (v == null || v === '') continue;
-    if (autoMonths[m] != null) overlapN++; else fill[m] = v;
+    if (autoMonths[m] != null) manOverlap[m] = Number(v); else fill[m] = v;
   }
+  const overlapN = Object.keys(manOverlap).length;
   const autoN = Object.keys(autoMonths).length, fillN = Object.keys(fill).length;
-  if (!fillN) return { series: null, months: autoN, autoN, fillN: 0, overlapN };
+  if (!fillN) return { series: null, months: autoN, autoN, fillN: 0, overlapN, manOverlap };
   const merged = manualMonthSeries({ entries: { ...autoMonths, ...fill }, year, summary });
   const series = merged.series.map((p, i) => (i < 12 && fill[i + 1] != null ? { ...p, manualFill: true } : p));
-  return { series, months: merged.months, autoN, fillN, overlapN, effMode: merged.effMode, approx: merged.approx };
+  return { series, months: merged.months, autoN, fillN, overlapN, manOverlap, effMode: merged.effMode, approx: merged.approx };
 }
+
+/** ติดค่ากรอกมือที่ถูกค่าระบบทับ (`man`) ลงจุดซีรีส์ 12 เดือน — ใช้กับซีรีส์ที่ผู้เรียกเลือกใช้จริง (OEE ถ่วงน้ำหนัก/PPM/ช่าง) */
+export const attachManOverlay = (series, manOverlap) =>
+  (series || []).map((p, i) => (i < 12 && manOverlap && manOverlap[i + 1] != null ? { ...p, man: manOverlap[i + 1] } : p));
 
 /** สถานะแท่งรายเดือนตาม **เกณฑ์ทางการ 1/0.5/0** (`scoreDef`) — ใช้กับแถว KPI บนบอร์ด KPI ส่วนงาน
  *  (จอ SQDCM ยังใช้ `monthBarStatus`/`statusOf` เพราะแกน SQDCM ไม่ใช่ "แถว KPI" ที่มี Commitment) */

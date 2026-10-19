@@ -13,6 +13,37 @@
    3. path ต้องเป็นเส้นทางภายในแอปเท่านั้น (`/…` · ห้าม `//host` / `http:` — ไม่ให้จอถูกพาออกนอกระบบ)
    ════════════════════════════════════════════════════════════════════════════════════ */
 
+/** คีย์ใน location.state ที่ตัววนแนบตอนเปลี่ยนหน้า — App ใช้เป็น key ของ <Routes> ให้หน้า remount
+ *  (หน้าเดิมที่เปลี่ยนแค่ query จะได้อ่านค่าตั้งต้นจากลิงก์ใหม่ · utils/urlInit.js) */
+export const ROT_NAV_STATE = 'rotNav';
+
+/* 🎬 ไม่ขึ้นหน้า splash (โลโก้ ENTERPRISE SHOPFLOOR …) ซ้ำบนจอ TV (15/10 · user "เปลี่ยนหน้าต้องขึ้นโหลดใหม่เรื่อยๆหรอ")
+   · ตัววนรีโหลดเต็มหน้าตามรอบ `reload_min` → ฝากธงไว้ใน sessionStorage ก่อนรีโหลด · App อ่านแล้วลบทิ้ง (ใช้ครั้งเดียว)
+   · หน้าที่ถูกฝังใน iframe (กรอบตัวอย่างในหน้าตั้งค่า) = ไม่ต้องมี splash
+   storage อาจโยน (โหมดส่วนตัว/บล็อก) ⇒ try/catch ทุกครั้ง · พังแล้วแค่เห็น splash เหมือนเดิม */
+/* 📺 กรอบจอ TV ชุดเดียวทุกหน้า (16/10 · user "โหมดจอทีวีตอนนี้หลากหลาย UX มาก คนใช้จะงง")
+   บัญชี role display (รวม admin จำลองมุมมองเป็น display) หรือลิงก์ที่มี `?tvshell=1` (กรอบตัวอย่างหน้าตั้งค่า)
+   ⇒ ไม่มี sidebar/กระดิ่ง/หัวเพจของแต่ละหน้า · มีแถบบนแถบเดียว (ชื่อหน้า · ตัวกรอง · ส่วนงาน · กะ/เวลา · ความคืบหน้ารอบวน)
+   ผู้ตัดสินมีที่เดียว = ฟังก์ชันนี้ (App ซ่อน chrome · DisplayRotator วาดแถบ · index.css ซ่อน `.ph-chrome`) */
+export const TV_SHELL_PARAM = 'tvshell';
+export function isTvShell(role, search = '') {
+  if (role === 'display') return true;
+  try { return new URLSearchParams(search || '').get(TV_SHELL_PARAM) === '1'; } catch { return false; }
+}
+
+const QUIET_KEY = 'esm-rot-quiet-reload';
+export function markQuietReload() {
+  try { sessionStorage.setItem(QUIET_KEY, '1'); } catch { /* ไม่มี storage = เห็น splash ตามปกติ */ }
+}
+export function skipSplash() {
+  try { if (window.self !== window.top) return true; } catch { return true; }   // cross-origin top = ถูกฝังแน่ๆ
+  try {
+    if (sessionStorage.getItem(QUIET_KEY) !== '1') return false;
+    sessionStorage.removeItem(QUIET_KEY);
+    return true;
+  } catch { return false; }
+}
+
 /** ขอบเขตตัวเลข — ต้องตรงกับ CHECK ใน migration 20261009_display_rotations_main.sql */
 export const ROT_LIMITS = Object.freeze({
   minSec: 10,         // ต่ำกว่านี้หน้ายังโหลดข้อมูลไม่ทันก็เปลี่ยนแล้ว
@@ -47,6 +78,16 @@ export function isValidRotationPath(path) {
   const p = path.trim();
   if (!p.startsWith('/') || p.startsWith('//') || /\s/.test(p) || /^\/[a-z]+:/i.test(p)) return false;
   return !BLOCKED.has(pathOnly(p).toLowerCase());
+}
+
+/** หน้าที่วนมุมมองเองข้างใน (ผังโรงงาน ?cycle=) ต้องอยู่นานพอให้วนครบ 1 รอบ
+ *  ⇒ วินาทีขั้นต่ำ = จำนวนมุมมอง × วินาที/มุมมอง (ตั้งน้อยกว่านี้ = เห็นแค่ 1-2 เรื่องแล้วเปลี่ยนหน้า) */
+export function minSecForPath(path) {
+  const q = queryParamsOf(path);
+  if (pathOnly(path) !== '/factory-map' || !q.cycle) return 0;
+  const n = q.cycle === '1' ? 10 : q.cycle.split(',').filter(Boolean).length;
+  const per = Math.min(600, Math.max(5, Number(q.csec) || 15));
+  return n > 1 ? Math.min(ROT_LIMITS.maxSec, n * per) : 0;
 }
 
 /** วินาทีของหน้านี้ — ว่าง/อ่านไม่ออก = ค่าตั้งต้นของจอ (ไม่ใช่ 0) */
@@ -85,7 +126,7 @@ export function buildPlaylist(items, canAccess, defaultSec = ROT_LIMITS.defaultS
       skipped.push({ path, idx, reason: 'no_access' });
       return;
     }
-    playable.push({ path, sec: secOf(it, defaultSec), idx });
+    playable.push({ path, sec: Math.max(secOf(it, defaultSec), minSecForPath(path)), idx });
   });
   return { playable, skipped };
 }
@@ -201,35 +242,136 @@ export function parseDisplayCmd(p, n) {
    (ใส่แล้วไม่มีผล = คนตั้งเชื่อว่ากรองแล้ว แต่จอยังโชว์ทั้งส่วนงาน)
    · หน้าที่ไม่อยู่ในทะเบียน = ยังพิมพ์ต่อท้ายลิงก์เองได้ (ช่อง "ขั้นสูง") · เพิ่มหน้า = อ่านโค้ดหน้านั้นก่อน
    kind: 'select' (options) · 'line' (ชื่อไลน์ · LineSelect) · 'section' (ชื่อส่วนงาน)             */
+const opt = (value, label) => ({ value, label });
+const SHIFT = { key: 'shift', label: 'กะ', kind: 'select', options: [opt('day', '☀️ กะเช้า'), opt('night', '🌙 กะดึก')] };
+const BOARD = { key: 'board', label: 'โหมดจอ TV (ซ่อนหัวเพจ)', kind: 'bool' };
+/* 🔴 คีย์ทุกตัวตรวจจากโค้ดหน้านั้นแล้ว (15/10) — อ่านผ่าน useSearchParams / useTabParam หรือ utils/urlInit
+   kind: select · bool · section (ชื่อส่วนงาน) · line (ชื่อไลน์) · scope (คีย์ขอบเขตผังองค์กร `section:PD3`/`line_group:…`)
+         · product (MAT ผ่าน ProductSelect) · `showIf` = โชว์ช่องนี้เฉพาะเมื่อคีย์อื่นมีค่าที่กำหนด */
 export const DISPLAY_PAGE_PARAMS = Object.freeze({
   '/tv': [
     { key: 'dept', label: 'มุมมอง', kind: 'select', options: [
-      { value: 'maintenance', label: '🔧 ช่างซ่อมบำรุง' }, { value: 'production', label: '🏭 ฝ่ายผลิต' }, { value: 'store', label: '📦 สโตร์' }] },
+      opt('maintenance', '🔧 ช่างซ่อมบำรุง'), opt('production', '🏭 ฝ่ายผลิต'), opt('store', '📦 สโตร์')] },
     { key: 'sec', label: 'ส่วนงาน', kind: 'section' },
+    { key: 'team', label: 'ทีมช่าง', kind: 'select', showIf: { dept: ['', 'maintenance'] }, options: [
+      opt('all', 'ทุกทีม'), opt('maintenance', 'ช่างซ่อมบำรุง'), opt('die_maintenance', 'ซ่อมแม่พิมพ์'), opt('jig_maintenance', 'ซ่อม JIG')] },
+    { key: 'sound', label: 'เสียงเตือน', kind: 'select', options: [opt('all', '🔊 ทุกเครื่องหยุด')] },
   ],
-  '/oee-analytics': [
-    { key: 'tab', label: 'แท็บ', kind: 'select', options: [
-      { value: 'today', label: '⚡ ภาพรวมวันนี้' }, { value: 'trend', label: '📊 แนวโน้ม/ประวัติ' }, { value: 'insight', label: '🧠 วิเคราะห์สาเหตุ' }] },
+  '/factory-map': [
+    { key: 'metric', label: 'มุมมอง (metric)', kind: 'select', options: [
+      opt('health', '🚦 ปกติ/ผิดปกติ'), opt('energy', '⚡ พลังงาน'), opt('productivity', '📦 ยอดผลิต'), opt('oee', '⚙️ OEE'),
+      opt('breakdown', '🔧 Downtime'), opt('ng', '🚫 ของเสีย'), opt('people', '👷 คน & จุดงาน'), opt('pm', '🛠️ PM ช่าง'),
+      opt('am', '🏭 AM'), opt('supply', '🔗 Supply Route')] },
+    { key: 'cycle', label: '🔁 วนมุมมองเอง (เลือกเรื่องที่จะวน)', kind: 'multi', optionsFrom: 'metric' },
+    { key: 'csec', label: 'วินาที/มุมมอง', kind: 'select', showIf: { cycle: '*' }, options: ['10', '15', '20', '30', '45', '60'].map(v => opt(v, `${v} วิ`)) },
+    // ⚡/📅 สวิตช์เดียวคุมผัง + แผงขวา + กล่องที่คลิก (16/10) · ไม่ตั้ง + panel=review = ทบทวน (ลิงก์เดิมไม่เปลี่ยนความหมาย)
+    { key: 'mode', label: 'ช่วงเวลาทั้งหน้า', kind: 'select', options: [opt('live', '⚡ Live (วันนี้สด)'), opt('review', '📅 ทบทวนรายวัน')] },
+    { key: 'panel', label: 'แผงขวา (โหมด Live)', kind: 'select', options: [opt('review', '⚡ สรุปวันนี้'), opt('obeya', '🏛️ OBEYA (สด)'), opt('live', '📊 อันดับ')] },
+    { key: 'view', label: 'ผัง', kind: 'select', options: [opt('2d', '2D'), opt('3d', '🧊 3D')] },
+    { key: 'tour', label: 'หมุนกล้องอัตโนมัติ (3D)', kind: 'bool', showIf: { view: ['3d'] } },
+    { key: 'lbl', label: 'ขนาดป้าย', kind: 'select', options: ['0.6', '0.8', '1', '1.2', '1.4', '1.6'].map(v => opt(v, `${Math.round(v * 100)}%`)) },
+    { key: 'nopanel', label: 'ซ่อนแผงขวา', kind: 'bool' },
+    { key: 'support', label: 'โชว์โซนสนับสนุน', kind: 'bool' },
+  ],
+  '/dashboard': [
     { key: 'section', label: 'ส่วนงาน', kind: 'section' },
-    { key: 'line', label: 'ไลน์ (แม่ = รวมลูก)', kind: 'line' },
+  ],
+  // จอคนแยกจาก /dashboard (19/10) · ?line= เปิดผังไลน์+คน (ลิงก์เก่า /dashboard?line= ถูกส่งต่อมาที่นี่)
+  '/people-board': [
+    { key: 'section', label: 'ส่วนงาน', kind: 'section' },
+    { key: 'line', label: 'เปิดผังไลน์', kind: 'line' },
   ],
   '/line-oee': [
     { key: 'line', label: 'ไลน์', kind: 'line' },
   ],
-  '/dashboard': [
-    { key: 'line', label: 'เปิดผังไลน์', kind: 'line' },
+  '/oee-analytics': [
+    { key: 'tab', label: 'แท็บ', kind: 'select', options: [opt('today', '⚡ ภาพรวมวันนี้'), opt('trend', '📊 แนวโน้ม/ประวัติ'), opt('insight', '🧠 วิเคราะห์สาเหตุ')] },
+    { key: 'section', label: 'ส่วนงาน', kind: 'section' },
+    { key: 'dept', label: 'กลุ่มไลน์ (ไลน์แม่)', kind: 'line' },
+    { key: 'line', label: 'ไลน์ย่อย', kind: 'line' },
+    SHIFT,
+    { key: 'team', label: 'ทีม', kind: 'select', showIf: { tab: ['', 'today'] }, options: [opt('A', 'ทีม A'), opt('B', 'ทีม B'), opt('C', 'ทีม C')] },
+    { key: 'scale', label: 'แท่งละ', kind: 'select', showIf: { tab: ['trend', 'insight'] }, options: [opt('day', 'วัน'), opt('week', 'สัปดาห์'), opt('month', 'เดือน')] },
   ],
   '/obeya': [
-    { key: 'tab', label: 'แท็บ', kind: 'select', options: [
-      { value: 'kpi', label: '📋 บอร์ด KPI' }, { value: 'sqdcm', label: '🖥️ จอ SQDCM' }, { value: 'todo', label: '📌 งานค้าง' }] },
-    { key: 'section', label: 'ส่วนงาน', kind: 'section' },
+    { key: 'tab', label: 'แท็บ', kind: 'select', options: [opt('kpi', '📋 บอร์ด KPI'), opt('sqdcm', '🖥️ จอ SQDCM'), opt('todo', '📌 งานค้าง')] },
+    { key: 'scope', label: 'ขอบเขต', kind: 'scope', showIf: { tab: ['', 'kpi', 'sqdcm'] } },
+    { key: 'period', label: 'ช่วง', kind: 'select', showIf: { tab: ['sqdcm'] }, options: [opt('week', 'สัปดาห์นี้'), opt('month', 'เดือนนี้'), opt('year', 'ปีนี้')] },
+    { ...BOARD, showIf: { tab: ['', 'kpi', 'sqdcm'] } },
+    { key: 'yfocus', label: 'โฟกัสช่วงค่าแกน Y', kind: 'bool', showIf: { tab: ['', 'kpi'] } },
+    { key: 'dept', label: 'งานค้างของ', kind: 'select', showIf: { tab: ['todo'] }, options: [
+      opt('production', '🏭 ฝ่ายผลิต'), opt('maintenance', '🔧 ซ่อมบำรุง'), opt('store', '📦 สโตร์'), opt('qa', '✅ QA')] },
   ],
   '/manpower-board': [
     { key: 'tab', label: 'แท็บ', kind: 'select', options: [
-      { value: 'org', label: 'ผังคน' }, { value: 'layout', label: 'ผัง LAYOUT' }, { value: 'fourm', label: 'ป้าย 4M' },
-      { value: 'staffing', label: 'กำลังคน' }, { value: 'history', label: 'ประวัติ' }] },
+      opt('org', '🧑‍🤝‍🧑 ผังกำลังคน'), opt('layout', '🗺️ ผัง LAYOUT'), opt('fourm', '🚦 ป้าย 4M'), opt('staffing', '📊 แผน vs มาจริง'), opt('history', '📜 ประวัติ')] },
+    { key: 'tv', label: 'โหมดจอ TV (แบ่งหน้า วนเอง)', kind: 'select', options: [opt('1', 'เปิด'), opt('0', 'ปิด')] },
+  ],
+  '/store-monitor': [
+    { key: 'line', label: 'ไลน์', kind: 'line' },
+    { key: 'kind', label: 'แสดง', kind: 'select', options: [opt('shortage', '🟥 จะขาด'), opt('over', '🟧 ล้น')] },
+    { key: 'side', label: 'ฝั่ง', kind: 'select', options: [opt('inbound', 'Store (ขาเข้า)'), opt('outbound', 'Warehouse & Delivery (ขาออก)')] },
+  ],
+  '/heijunka': [
+    { key: 'view', label: 'มุมมอง', kind: 'select', options: [
+      opt('unified', '🗄️ ตู้ Kanban รวม'), opt('chart', '🕐 Store Time Chart'), opt('board', '🏪 Store Board'),
+      opt('timeline', '📊 Heijunka Board'), opt('pull', '🔄 Pull / ใบสั่งผลิต'), opt('demand', '📋 ความต้องการวันนี้')] },
+    { key: 'store', label: 'สโตร์', kind: 'select', showIf: { view: ['', 'unified'] }, options: [
+      opt('fg', '🏭 Store FG'), opt('child', '🔧 Store Child'), opt('purchase', '🛒 จัดซื้อ'), opt('raw', 'Raw Mat'),
+      opt('rack', '📦 Rack Center'), opt('wip', 'WIP'), opt('plating', 'ชุบ')] },
+    { key: 'sec', label: 'ส่วนงาน', kind: 'section' },
+    { key: 'fline', label: 'ไลน์', kind: 'line' },
+    { key: 'shift', label: 'กะ', kind: 'select', options: [opt('day', '☀️ กะเช้า'), opt('night', '🌙 กะดึก')] },
+    { key: 'mat', label: 'กลุ่มพาร์ท', kind: 'select', options: [opt('200', '200 ผลิตเอง'), opt('300', '300 ซื้อ'), opt('500', '500 ซื้อ')] },
+  ],
+  '/rack-center': [
+    { key: 'tab', label: 'แท็บ', kind: 'select', options: [opt('board', '📋 บอร์ดสถานะ'), opt('time', '🕐 บอร์ดเวลา'), opt('sla', '⚙️ SLA')] },
+    { key: 'fline', label: 'ไลน์', kind: 'line' },
+  ],
+  '/mtn-layout': [
+    { key: 'view', label: 'มุมมอง', kind: 'select', options: [opt('overview', 'ผังรวม'), opt('production', 'ผังไลน์ผลิต'), opt('facility', 'โซน facility')] },
+    { key: 'zone', label: 'โซน (ชื่อ)', kind: 'text', showIf: { view: ['facility'] } },
+    { key: 'metric', label: 'มุมมองผังรวม', kind: 'select', showIf: { view: ['', 'overview'] }, options: [
+      opt('health', '🚦 ปกติ/ผิดปกติ'), opt('energy', '⚡ พลังงาน'), opt('productivity', '📦 ยอดผลิต')] },
+  ],
+  '/mtn-analysis': [
+    { key: 'tab', label: 'แท็บ', kind: 'select', options: [opt('kpi', '📊 KPI ช่าง'), opt('qc7', '🧪 QC 7 Tools')] },
+    { key: 'asset', label: 'ชนิดอุปกรณ์', kind: 'select', showIf: { tab: ['qc7'] }, options: [
+      opt('machine', '🏭 เครื่องจักร'), opt('die', '🔨 แม่พิมพ์'), opt('jig', '📐 JIG / Fixture'), opt('other', '❓ ยังแยกไม่ได้')] },
+    { key: 'scale', label: 'แท่งละ', kind: 'select', options: [opt('day', 'วัน'), opt('week', 'สัปดาห์'), opt('month', 'เดือน')] },
+  ],
+  '/nm-board': [
+    { key: 'tv', label: 'โหมดจอ TV (วนโปรเจคเอง)', kind: 'select', options: [opt('1', 'เปิด')] },
+    { key: 'cust', label: 'ลูกค้า', kind: 'select', options: ['toyota', 'isuzu', 'mitsubishi', 'nissan', 'ford', 'honda', 'mg', 'byd', 'gwm', 'mazda', 'bmw', 'shonan'].map(v => opt(v, v.toUpperCase())) },
+  ],
+  '/pm': [
+    { key: 'tab', label: 'แท็บ', kind: 'select', options: [opt('forecast', '🔮 ล่วงหน้า (Planner)')] },
+    { key: 'fc', label: 'มุมมอง', kind: 'select', options: [opt('due', '🗓 PM ที่จะครบกำหนด'), opt('usage', '📊 ยอดผลิตสะสม')] },
+  ],
+  '/vsm': [
+    { key: 'tab', label: 'แท็บ', kind: 'select', options: [opt('doc', '📋 เอกสาร VSM'), opt('live', '⚡ สายธารสด')] },
+    { key: 'mat', label: 'สินค้า FG', kind: 'product' },
+    { key: 'state', label: 'สถานะ', kind: 'select', options: [opt('current', 'Current state'), opt('future', '🎯 Future state')] },
+  ],
+  '/energy': [
+    { key: 'tab', label: 'แท็บ', kind: 'select', options: [opt('summary', '📊 สรุป & วิเคราะห์'), opt('mqtt', '📡 มิเตอร์ / MQTT')] },
+  ],
+  '/report': [
+    { key: 'tab', label: 'แท็บ', kind: 'select', options: [opt('0', 'รายวัน'), opt('1', 'รายพนักงาน'), opt('2', '📍 Log จุดงาน'), opt('3', 'สรุปช่วงเวลา'), opt('4', '🚨 4M Changes')] },
+  ],
+  '/skills-report': [
+    { key: 'tab', label: 'แท็บ', kind: 'select', options: [opt('5', '📊 Skill Matrix'), opt('6', '💰 ค่าฝีมือ'), opt('8', '🏅 Multi-Skill Form')] },
+  ],
+  '/order-trace': [
+    { key: 'tab', label: 'แท็บ', kind: 'select', options: [opt('order', '🔎 จากเลขใบผลิต'), opt('symptom', '🩺 จากอาการ')] },
   ],
 });
+
+/** ช่องนี้ควรโชว์ไหม ตามค่าที่ตั้งอยู่ (showIf: { key: [ค่าที่อนุญาต · '' = ยังไม่ตั้ง] }) */
+export function paramVisible(def, params) {
+  if (!def?.showIf) return true;
+  return Object.entries(def.showIf).every(([k, vals]) => (vals === '*' ? !!params?.[k] : vals.includes(params?.[k] ?? '')));
+}
 
 /** ค่า query ของ path → object (เฉพาะ ?… ไม่รวม #) */
 export function queryParamsOf(path) {
@@ -254,4 +396,36 @@ export function paramSummary(path) {
     const opt = d?.options?.find(o => o.value === v);
     return `${d?.label || k}: ${opt?.label || v}`;
   });
+}
+
+/** ชิปบนแถบบนของกรอบจอ TV — บอก "จอนี้กำลังโชว์ข้อมูลชุดไหน" เท่านั้น (แท็บ · ไลน์ · ส่วนงาน · ขอบเขต · สินค้า)
+    ค่าปรับหน้าตา (มุม 2D/3D · แผงขวา · ขนาดป้าย · วินาที · โหมดบอร์ด · bool) ไม่โชว์ · คีย์นอกทะเบียน (เช่น tvshell) ไม่โชว์
+    แกนขอบเขต `section:PD3` / `line_group:X` → โชว์แค่ชื่อ */
+const BAR_SKIP_KEYS = new Set(['view', 'panel', 'lbl', 'csec', 'cycle', 'tv', 'board', 'tour', 'nopanel', 'support']);
+const BAR_KINDS = new Set(['select', 'line', 'section', 'product', 'scope', 'text']);
+export function barChips(path) {
+  const defs = DISPLAY_PAGE_PARAMS[pathOnly(path)] || [];
+  return Object.entries(queryParamsOf(path)).flatMap(([k, v]) => {
+    const d = defs.find(x => x.key === k);
+    if (!d || BAR_SKIP_KEYS.has(k) || !BAR_KINDS.has(d.kind) || !String(v).trim()) return [];
+    const opt = d.options?.find(o => o.value === v);
+    return [opt?.label || String(v).replace(/^(section|line_group|line|dept):/, '')];
+  });
+}
+
+/* ── 📖 หน้าภายในของบอร์ด (บอร์ด KPI แบ่ง 2 หน้า) ต้องสลับเองตอนจอวน (15/10 · user: "โหมดจอก็ต้องสลับกลับไปมาได้") ──
+   ตัววน (DisplayRotator) บอกไว้ว่าหน้านี้ค้างกี่วินาที ⇒ บอร์ดแบ่งเวลานั้นให้ครบทุกหน้าภายในก่อนจอจะวนต่อ
+   · ไม่ได้อยู่ในรอบวน (เปิดโหมดจอเอง) = ใช้ defaultSec · ต่ำสุด BOARD_FLIP_MIN_SEC กันกระพริบ */
+export const BOARD_FLIP_MIN_SEC = 12;
+let activeDwellSec = null;
+export function setActiveDwellSec(sec) {
+  const n = Number(sec);
+  activeDwellSec = Number.isFinite(n) && n > 0 ? n : null;
+}
+export const activeDwellSecOf = () => activeDwellSec;
+export function boardFlipSec(pages, dwellSec = activeDwellSecOf()) {
+  const p = Math.floor(Number(pages) || 0);
+  if (p < 2) return null;
+  const d = Number.isFinite(Number(dwellSec)) && Number(dwellSec) > 0 ? Number(dwellSec) : ROT_LIMITS.defaultSec;
+  return Math.max(BOARD_FLIP_MIN_SEC, Math.floor(d / p));
 }

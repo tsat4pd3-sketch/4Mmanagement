@@ -6,11 +6,16 @@ import { UserContext, Sidebar, NAV_ITEMS, NotificationBell } from '../src/App'
    (`alsoIn` = หน้าที่อยู่ 2 หมวดจริงๆ ต้องถูกไฮไลต์ทั้งคู่) */
 window.__NAV = NAV_ITEMS.map(i => ({ to: i.to, group: i.group, alsoIn: i.alsoIn || null }))
 import ScrollHint from '../src/components/ScrollHint'
+import MobileNavBar from '../src/components/MobileNavBar'
 import { ToastContainer } from '../src/components/Toast'
 import '../src/index.css'
 
 const mods = import.meta.glob('../src/pages/*.jsx')
 const NAMES = Object.keys(mods).map(p => p.split('/').pop().replace('.jsx',''))
+/* หน้าที่เป็น "คอมโพเนนต์เดียว หลาย route" (prop ต่างกัน) — `ไฟล์@ค่า` = เปิดไฟล์นั้นด้วย view=ค่า (19/10)
+   /people-board = Dashboard view="people" · ไม่ใส่ไว้ = สวีปทุกตัวไม่เคยเห็นจอคนเลย */
+const VARIANTS = { 'Dashboard@people': { view: 'people' } }
+NAMES.push(...Object.keys(VARIANTS))
 
 class EB extends React.Component {
   constructor(p){ super(p); this.state={e:null} }
@@ -71,11 +76,17 @@ function SidebarLab(){
   )
 }
 
+const TV_SHELL = new URLSearchParams(location.search).get('tvshell') === '1'
+const DisplayRotatorLazy = React.lazy(() => import('../src/components/DisplayRotator'))
+function TvShellHarness(){
+  useEffect(() => { document.body.classList.add('esm-tv-shell'); return () => document.body.classList.remove('esm-tv-shell') }, [])
+  return <DisplayRotatorLazy userId="x" role="display" shell />
+}
 function App(){
   const [name, setName] = useState(new URLSearchParams(location.search).get('p') || NAMES[0])
   const [C, setC] = useState(null)
   useEffect(()=>{ window.__crash=false; setC(null)
-    const key = `../src/pages/${name}.jsx`
+    const key = `../src/pages/${name.split('@')[0]}.jsx`
     mods[key]().then(m => setC(()=>m.default)).catch(e => { window.__crash=true; console.error(e) })
   },[name])
   return (
@@ -84,10 +95,14 @@ function App(){
         {/* จำลองโครงเดียวกับ App จริง: main เลื่อนแนวตั้งอย่างเดียว */}
         <main id="mainbox" style={{ flex:1, minHeight:'100vh', paddingTop:14, background:'var(--bg)',
           overflowY:'auto', overflowX:'hidden', minWidth:0 }}>
-          <ScrollHint/><EB><Suspense fallback={<div>loading</div>}>{C ? <C/> : null}</Suspense></EB>
+          <ScrollHint/><EB><Suspense fallback={<div>loading</div>}>{C ? <C {...(VARIANTS[name] || {})}/> : null}</Suspense></EB>
           {/* ToastContainer ต้องมีในหน้าปกติด้วย (05/10) — เดิมมีแค่ใน FeedbackLab ⇒ toast จากหน้าอื่น (เช่น "ขอบเขตนอกสังกัด" ของบอร์ด KPI) ไม่โผล่ ตรวจอัตโนมัติไม่ได้ */}
           <ToastContainer/>
         </main>
+        {/* 📺 ?tvshell=1 — กรอบจอ TV (16/10) · แถบบน + body.esm-tv-shell เหมือนบัญชี display ในแอปจริง */}
+        {TV_SHELL && <Suspense fallback={null}><TvShellHarness/></Suspense>}
+        {/* 📱 แถบล่างมือถือเหมือนแอปจริง (15/10) — สวีปมือถือต้องเห็นว่าแถบบังอะไรไหม · จอคอม = null */}
+        <MobileNavBar role={ROLE} onOpenMenu={() => { window.__menu = (window.__menu || 0) + 1 }} onOpenSearch={() => { window.__palette = (window.__palette || 0) + 1 }} />
       </UserContext.Provider>
     </MemoryRouter>
   )

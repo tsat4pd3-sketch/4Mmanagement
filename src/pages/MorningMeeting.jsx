@@ -1,5 +1,6 @@
 import { useState, useEffect, useContext, useCallback, useMemo, useRef, Fragment, lazy, Suspense } from 'react';
 import { orgValues, sortLike } from '../utils/listOrder';
+import { canWriteUnit, writeBlockText } from '../utils/writeScope';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
@@ -71,7 +72,17 @@ const achieveColor = (pct) => (pct >= 100 ? '#22c55e' : pct >= 85 ? '#f59e0b' : 
 const pctStr = (num, den) => (den > 0 ? Math.round((num / den) * 100) : 0);
 
 export default function MorningMeeting() {
-  const { role, lineId: userLineId, sections: scopeSecs = [], fullName } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs = [], fullName,
+          section: homeSection, allUnits } = useContext(UserContext);
+  /* 🔐 ชั้นที่ 3 — `meeting_action_items` เป็น **ตารางเดียวกับ /obeya** (CLAUDE.md §Database Schema)
+     ⇒ ต้องใช้ด่านเดียวกัน ไม่งั้นคนที่ถูกบล็อกที่ /obeya เดินมาทำที่นี่ได้ (QC audit 15/10 "ประตูที่สอง") */
+  const actCtx = { role, section: homeSection, sections: scopeSecs, allUnits };
+  const actGuard = (sec, what) => {
+    const w = canWriteUnit(actCtx, sec, { unknownTarget: 'block' });
+    if (w.ok) return true;
+    toast.info(writeBlockText(w, { what, unit: sec }));
+    return false;
+  };
   const isMobile = useIsMobile();
   const canRecord = can('morning_meeting', 'record', role);
   // 📜 ผู้รับผิดชอบที่เคยบันทึกใน meeting_action_items (Main) — คนนอกทะเบียน (ช่าง/ผู้รับเหมา) ยังเลือกซ้ำได้ (2026-09-07)
@@ -461,12 +472,15 @@ export default function MorningMeeting() {
   });
   const saveAction = async () => {
     if (!actModal.problem.trim()) return toast.error('กรุณาระบุปัญหา/สิ่งที่ต้องทำ');
+    /* 🔐 ตรวจ "ค่าที่จะเขียนจริง" (ไลน์ที่เลือกอาจเป็นของส่วนงานอื่น) ไม่ใช่ขอบเขตที่กำลังดู */
+    const actSec = actModal.line_name ? (secByLine[actModal.line_name] || secFilter || null) : (secFilter || null);
+    if (!actGuard(actSec, 'ใบ Action ของส่วนงานนี้')) return;
     setSavingAct(true);
     try {
       const { data: { user } = {} } = await supabase.auth.getUser();
       const { error } = await supabase.from('meeting_action_items').insert({
         meeting_date: meetingDate,
-        section: actModal.line_name ? (secByLine[actModal.line_name] || secFilter || null) : (secFilter || null),
+        section: actSec,
         line_name: actModal.line_name || null,
         problem: actModal.problem.trim(),
         root_cause: actModal.root_cause?.trim() || null,
@@ -499,6 +513,8 @@ export default function MorningMeeting() {
     }
   };
   const setActStatus = async (a, status) => {
+    /* ปิด/เลื่อนใบ = ตัดสินจาก section ของ "ใบนั้น" ไม่ใช่ขอบเขตที่กำลังดู */
+    if (!actGuard(a?.section, 'ใบ Action นี้')) return;
     const patch = { status, updated_at: new Date().toISOString() };
     if (status === 'done') patch.done_at = new Date().toISOString();
     /* ⚠️ นับแถวก่อนอัพเดทจอ — RLS ของตารางนี้เปลี่ยนเป็น

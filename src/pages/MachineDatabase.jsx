@@ -20,6 +20,8 @@ import FilterBar from '../components/FilterBar';
 import SearchInput from '../components/SearchInput';
 import { ALL, allOf } from '../utils/filterLabels';
 import { DeleteButton } from '../components/IconButton';
+import MachineRepairHistory from '../components/MachineRepairHistory';
+import { useNavigate } from 'react-router-dom';
 
 /* ─── shared little UI bits ─────────────────────────────────── */
 function Field({ label, hint, children }) {
@@ -99,6 +101,8 @@ export default function MachineDatabase() {
   });
 
   const [editing, setEditing]       = useState(null); // machine form object, or null
+  const [histNo, setHistNo]         = useState(null); // 📜 ประวัติการซ่อมของเครื่อง (19/10)
+  const navigate = useNavigate();
   const [saving, setSaving]         = useState(false);
   const [facilityAreas, setFacilityAreas] = useState([]); // ชื่อโซน facility (จาก pm_facility_areas) — ตัวเลือก/suggest
   const [newArea, setNewArea] = useState(null);           // null = ปิดช่อง · string = กำลังพิมพ์ชื่อโซนใหม่ (2026-09-07)
@@ -432,6 +436,7 @@ export default function MachineDatabase() {
                 </div>
                 {(canEdit || mayDelete) && (
                   <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                    <button className="tbtn" onClick={() => setHistNo(item.machine_no)} title="ใบแจ้งซ่อมทุกใบของเครื่องนี้" style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 10px', fontSize: 12, cursor: 'pointer', color: 'var(--text)' }}>📜 ประวัติซ่อม</button>
                     {canEdit && <button className="tbtn" onClick={() => openEdit(item)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 12px', fontSize: 12, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>}
                     {mayDelete && <button className="tbtn" onClick={() => handleDelete(item)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 15 }}>✕</button>}
                   </div>
@@ -624,6 +629,8 @@ export default function MachineDatabase() {
           onChange={load}
         />
       )}
+      {histNo && <MachineRepairHistory machineNo={histNo} onClose={() => setHistNo(null)}
+        onOpenOrder={(o) => navigate(`/mtn-repair?mo=${o.id}`)} />}
     </Page>
   );
 }

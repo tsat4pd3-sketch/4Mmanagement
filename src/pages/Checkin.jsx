@@ -10,6 +10,7 @@ import { onlyShopfloorStaff, staffGroupOf, STAFF_KINDS, STAFF_SHOPFLOOR } from '
 const GROUP_ORDER = STAFF_KINDS.map(k => k.key);
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
+import useIsMobile from '../utils/useIsMobile';
 import { toast } from '../components/Toast';
 import { fetchByIds } from '../utils/fetchByIds';
 import ToggleDot from '../components/ToggleDot';
@@ -20,7 +21,7 @@ import LineSelect from '../components/LineSelect';
 import LineScopeSelect from '../components/LineScopeSelect';
 import { loadLinesRes } from '../utils/useProductionLines';
 import { useOrgTeams } from '../utils/useOrgSections';
-import { inSectionScope } from '../utils/sectionScope';
+import { inSectionScope, scopeAnchorless } from '../utils/sectionScope';
 import { buildScheduleMaps, resolveAssignedShift, teamsVisibleToLeader } from '../utils/shiftAssign';
 import { roleLabel } from '../utils/roleMeta';
 import { getDocForm, fullCode } from '../utils/docForms';
@@ -126,6 +127,7 @@ export default function Checkin() {
   const [exporting,      setExporting]      = useState(false);
   const [previewNight,   setPreviewNight]   = useState(false);
   const [calLoaded,      setCalLoaded]      = useState(false);
+  const isMobile = useIsMobile();   // 📱 มือถือ = การ์ดต่อคน (docs/MOBILE-UX-STANDARD.md §4 ชนิด A)
 
   /* 🔴 "ใครกะไม่ขึ้นบ้าง" — จัดกลุ่มตามไลน์ ให้แถบเตือนบอกเป็นรายไลน์ได้ (13/10)
      คนที่ถูกยืมมาช่วยกะนี้ถูกตรึง `assignedShift` ไว้แล้ว จึงไม่เข้าเงื่อนไขนี้โดยอัตโนมัติ */
@@ -256,11 +258,18 @@ export default function Checkin() {
 
     // 🔴 ไม่กรอง staff_kind — จอเช็คชื่อต้องเห็นครบทุกกลุ่ม (แยกหัวข้อตอนวาดแทน · 14/10)
     let empQ = supabase.from('employees').select('*').eq('is_active', true).order('employee_id_code');
+    /* 🔴 ด่านขอบเขต 2 แกน — **แกนไลน์กับแกนส่วนงานต้องเป็นลำดับ ห้ามเป็น else-if** (19/10)
+       เดิมเขียน `if (leader) {…} else if (sections)` ⇒ leader ที่บัญชีไม่มี `line_id`
+       หลุดทั้งสองด่าน = เห็นพนักงานทั้งโรงงานเงียบๆ (ดู scopeAnchorless ใน sectionScope.js) */
+    const famIdsQ = (role === 'leader' && lineId) ? getLineFamilyIds(lineData || [], Number(lineId)) : null;
+    if (famIdsQ) {
+      empQ = famIdsQ.size ? empQ.in('line_id', [...famIdsQ]) : empQ.eq('line_id', lineId);
+    } else if (scopeSecs.length) {
+      // ทุก role ที่ถูกจำกัดขอบเขตส่วนงาน (supervisor เดิม + manager/qa ที่กำหนด sections)
+      // · รวม leader ที่ยังไม่ผูกไลน์ (เช่นรักษาการหลายหน่วย) — ถอยมาใช้แกนนี้แทน
+      empQ = empQ.in('section', scopeSecs);
+    }
     if (role === 'leader') {
-      if (lineId) {
-        const famIdsQ = getLineFamilyIds(lineData || [], Number(lineId));
-        empQ = famIdsQ.size ? empQ.in('line_id', [...famIdsQ]) : empQ.eq('line_id', lineId);
-      }
       // ⚠️ ทีมที่ไม่หมุนกะ (C) = หัวหน้าที่ไม่ได้ยืนหน้างาน → เห็นคนทั้งไลน์ทุกทีม
       //    (ขอบเขตไลน์ยังคุมอยู่ · ปลดเฉพาะแกนทีม — ดู seesAllTeams ใน shiftAssign.js)
       // 🔴 ทีมตัวเอง + ทีมที่ไม่หมุนกะ (C) — พนักงานทีม C = กะเช้าตลอด ยืนหน้างานกับทีมที่เข้าเช้า
@@ -268,9 +277,6 @@ export default function Checkin() {
       //    (2 คนไม่เคยถูกเช็คชื่อเลย — ดูเหตุผลเต็มที่ teamsVisibleToLeader ใน shiftAssign.js)
       const teamsSeen = teamsVisibleToLeader(team);
       if (teamsSeen) empQ = empQ.in('team', teamsSeen);
-    } else if (scopeSecs.length) {
-      // ทุก role ที่ถูกจำกัดขอบเขตส่วนงาน (supervisor เดิม + manager/qa ที่กำหนด sections)
-      empQ = empQ.in('section', scopeSecs);
     }
 
     const [
@@ -321,8 +327,7 @@ export default function Checkin() {
 
     const lineById = Object.fromEntries((lineData || []).map(l => [l.id, l]));
     const inMyScope = (toLineId) => {
-      if (role === 'leader') {
-        if (!lineId) return false;
+      if (role === 'leader' && lineId) {   // ไม่มีไลน์ = ตกไปใช้แกนส่วนงานข้างล่าง (19/10)
         const fam = getLineFamilyIds(lineData || [], Number(lineId));
         return fam.size ? fam.has(toLineId) : toLineId === Number(lineId);
       }
@@ -518,7 +523,10 @@ export default function Checkin() {
   const myScopeLabel = (() => {
     if (role === 'leader') {
       const ln = lines.find(l => l.id === lineId)?.name;
-      return [ln && `ไลน์ ${ln}`, team && `ทีม ${team}`].filter(Boolean).join(' · ') || 'ยังไม่กำหนดไลน์/ทีม';
+      if (ln) return [`ไลน์ ${ln}`, team && `ทีม ${team}`].filter(Boolean).join(' · ');
+      // ไม่ผูกไลน์ → ขอบเขตจริงคือส่วนงาน (เช่นรักษาการหลายหน่วย) · ไม่มีเลย = ทั้งโรงงาน
+      if (scopeSecs.length) return [`ส่วนงาน ${scopeSecs.join(', ')} (ยังไม่ผูกไลน์)`, team && `ทีม ${team}`].filter(Boolean).join(' · ');
+      return 'ยังไม่กำหนดไลน์/ส่วนงาน';
     }
     if (scopeSecs.length) return `ส่วนงาน ${scopeSecs.join(', ')}`;
     return 'ทุกส่วนงาน';
@@ -915,20 +923,21 @@ export default function Checkin() {
       // 🔴 ไม่กรอง staff_kind — ใบ export ต้องตรงกับรายชื่อที่เช็คชื่อบนจอ (14/10)
       let empQ = supabase.from('employees').select('id, employee_id_code, name, position, line_id, section, staff_kind').eq('is_active', true).order('employee_id_code');
       // mandatory scope filter ก่อน แล้วค่อยกรองตามส่วนงานที่เลือกใน modal (pattern เดียวกับ fetchData)
-      if (role === 'leader') {
-        if (lineId) {   // ทั้งครอบครัวไลน์ (ตัวเอง + แม่ + ลูก) — ห้ามกรอง line_id ตรงตัว
-          const famIdsQ = getLineFamilyIds(lines, Number(lineId));
-          empQ = famIdsQ.size ? empQ.in('line_id', [...famIdsQ]) : empQ.eq('line_id', lineId);
-        }
-        // ⚠️ ทีมที่ไม่หมุนกะ (C) = หัวหน้าที่ไม่ได้ยืนหน้างาน → เห็นคนทั้งไลน์ทุกทีม
-      //    (ขอบเขตไลน์ยังคุมอยู่ · ปลดเฉพาะแกนทีม — ดู seesAllTeams ใน shiftAssign.js)
-      // 🔴 ทีมตัวเอง + ทีมที่ไม่หมุนกะ (C) — พนักงานทีม C = กะเช้าตลอด ยืนหน้างานกับทีมที่เข้าเช้า
-      //    เดิม `.eq('team', team)` ทำให้คนทีม C หายจากใบเช็คชื่อของหัวหน้าทีม A/B ทั้งคู่
-      //    (2 คนไม่เคยถูกเช็คชื่อเลย — ดูเหตุผลเต็มที่ teamsVisibleToLeader ใน shiftAssign.js)
-      const teamsSeen = teamsVisibleToLeader(team);
-      if (teamsSeen) empQ = empQ.in('team', teamsSeen);
+      // 🔴 ลำดับเดียวกับ fetchData — ห้าม else-if (leader ไม่มีไลน์ต้องถอยมาใช้ส่วนงาน · 19/10)
+      const famIdsX = (role === 'leader' && lineId) ? getLineFamilyIds(lines, Number(lineId)) : null;
+      if (famIdsX) {   // ทั้งครอบครัวไลน์ (ตัวเอง + แม่ + ลูก) — ห้ามกรอง line_id ตรงตัว
+        empQ = famIdsX.size ? empQ.in('line_id', [...famIdsX]) : empQ.eq('line_id', lineId);
       } else if (scopeSecs.length) {
         empQ = empQ.in('section', scopeSecs);
+      }
+      if (role === 'leader') {
+        // ⚠️ ทีมที่ไม่หมุนกะ (C) = หัวหน้าที่ไม่ได้ยืนหน้างาน → เห็นคนทั้งไลน์ทุกทีม
+        //    (ขอบเขตไลน์ยังคุมอยู่ · ปลดเฉพาะแกนทีม — ดู seesAllTeams ใน shiftAssign.js)
+        // 🔴 ทีมตัวเอง + ทีมที่ไม่หมุนกะ (C) — พนักงานทีม C = กะเช้าตลอด ยืนหน้างานกับทีมที่เข้าเช้า
+        //    เดิม `.eq('team', team)` ทำให้คนทีม C หายจากใบเช็คชื่อของหัวหน้าทีม A/B ทั้งคู่
+        //    (2 คนไม่เคยถูกเช็คชื่อเลย — ดูเหตุผลเต็มที่ teamsVisibleToLeader ใน shiftAssign.js)
+        const teamsSeen = teamsVisibleToLeader(team);
+        if (teamsSeen) empQ = empQ.in('team', teamsSeen);
       }
       const { data: empData } = await empQ;
       const lineIds = exportSection ? lines.filter(l => l.section === exportSection).map(l => l.id) : null;
@@ -1168,6 +1177,414 @@ export default function Checkin() {
     return acc;
   }, {});
 
+  /* ติ๊ก OT — ใช้ร่วมตาราง + การ์ดมือถือ (ห้ามก๊อปตรรกะไปไว้ 2 ที่) */
+  const toggleOt = (emp, rec) => {
+    const turningOn = !rec.has_ot;
+    toggle(emp.id, 'has_ot');
+    // กะเช้าวันหยุด: จองหลักใช้ has_ot → default ช่วงเวลา 8 ชม. ให้เห็นและแก้ได้ก่อนบันทึก
+    if (turningOn && shiftInfo.shift === 'day' && isHolidayDate(shiftInfo.workDateStr)) {
+      setOtPeriods(prev => ({ ...prev, [emp.id]: prev[emp.id] || defaultHolidayPeriod('day') }));
+    }
+  };
+
+  /* 📱 การ์ดต่อคน (มือถือ/handheld · 15/10 · docs/MOBILE-UX-STANDARD.md §4 ชนิด A)
+     เดิมเป็นตาราง 11 คอลัมน์กว้าง 820px บนจอ 360px ⇒ ติ๊กหมวก/ถุงมือต้องปัดขวาไปหาคอลัมน์ ชื่อคนหลุดจอ
+     การ์ด: ชื่อ+สถานะบนสุด → ปุ่มใหญ่ (≥44px ถุงมือกดได้) มางาน · หมวก · รองเท้า · ถุงมือ · OT → การลา/หมายเหตุ/จองรถ
+     ช่องลา/หมายเหตุ/จองรถใช้ "ชิ้นเดียวกับตาราง" (cLeave/cRemark/cBooking) ⇒ ตรรกะไม่แตก 2 ชุด */
+  const renderCheckinCard = ({ emp, rec, meta, hasLeave, newGroup, gMeta, grp, cEmp, cLeave, cRemark, cBooking }) => {
+    const tg = (on, label, onClick, disabled, color = 'var(--green)') => (
+      <button type="button" className={`ck-tg${on ? ' on' : ''}`} aria-pressed={!!on} disabled={disabled} onClick={onClick}
+        style={on ? { background: color, borderColor: color } : undefined}>{label}</button>
+    );
+    const needBooking = shiftInfo.shift === 'night' || rec.has_ot || extraAdvanceDates.length > 0;
+    return (
+      <Fragment key={emp.id}>
+        {newGroup && (
+          <div className="ck-group">
+            {gMeta?.label} <span style={{ fontWeight: 600, color: 'var(--muted)' }}>· {groupCounts[grp]} คน
+              {grp !== STAFF_SHOPFLOOR && ' — เช็คชื่อได้ แต่ไม่ถูกนับเป็นกำลังคนของไลน์ผลิต'}</span>
+          </div>
+        )}
+        <div className="ck-card" style={{ boxShadow: `inset 4px 0 0 ${meta.color}` }}>
+          <div className="ck-top">
+            <div style={{ flex: 1, minWidth: 0 }}>{cEmp}</div>
+            <div className="ck-status" style={{ color: meta.color }}>
+              {emp.assignedShift ? (emp.assignedShift === 'day' ? '☀️ ' : '🌙 ') : ''}{meta.label}
+              {hasLeave && rec.leave_type && <div style={{ fontSize: 11, opacity: 0.85 }}>{rec.leave_type}</div>}
+            </div>
+          </div>
+          <div className="ck-tgs">
+            {tg(rec.is_present, rec.is_present ? '✅ มางาน' : '⬜ มางาน', () => toggle(emp.id, 'is_present'), false, 'var(--accent)')}
+            {tg(rec.has_helmet, '⛑️ หมวก', () => toggle(emp.id, 'has_helmet'), !rec.is_present)}
+            {tg(rec.has_boots, '🥾 รองเท้า', () => toggle(emp.id, 'has_boots'), !rec.is_present)}
+            {tg(rec.has_gloves, '🧤 ถุงมือ', () => toggle(emp.id, 'has_gloves'), !rec.is_present)}
+            {tg(rec.has_ot, '⏰ OT', () => toggleOt(emp, rec), !rec.is_present, '#f59e0b')}
+            {(emp.assignedShift === 'day' || shiftInfo.shift === 'day') && rec.has_ot
+              && tg(rec.has_extended_ot, 'OT+23', () => toggle(emp.id, 'has_extended_ot'), false, '#ef4444')}
+          </div>
+          <div className="ck-more">
+            <div><div className="ck-lbl">🏖️ การลา</div>{cLeave}</div>
+            <div><div className="ck-lbl">หมายเหตุ</div>{cRemark}</div>
+            {needBooking && <div><div className="ck-lbl">🚐 จองรถ OT / งานที่ทำ</div><div className="ck-book">{cBooking}</div></div>}
+          </div>
+        </div>
+      </Fragment>
+    );
+  };
+
+  /* แถวพนักงาน 1 คน — ใช้ร่วม 2 มุมมอง: ตาราง (จอคอม · DOM เหมือนเดิมเป๊ะ) / การ์ด (มือถือ · renderCheckinCard)
+     ย้ายออกมาจาก displayed.map(...) + แยกเนื้อในช่องเป็นตัวแปร (15/10) — ไม่ได้แก้ตรรกะ */
+  const renderCheckinRow = (emp, di) => {
+              const rec = attendance[emp.id];
+              if (!rec) return null;
+              const status = getRowStatus(rec);
+              const meta   = STATUS_META[status] || STATUS_META.absent;
+              const hasLeave = !!rec.leave_type;
+              /* 🔴 หัวข้อกลุ่มคน — ขึ้นเมื่อกลุ่มเปลี่ยน และ**เฉพาะตอนที่จอมีมากกว่า 1 กลุ่ม**
+                 (ไลน์ผลิตที่มีแต่คนหน้างาน = ไม่มีหัวข้อโผล่มากวน เหมือนเดิมเป๊ะ)
+                 ⚠️ ห้ามเปลี่ยนเป็น "ซ่อนกลุ่มอื่น" — คนที่ไม่ขึ้นจอ = เช็คชื่อไม่ได้ */
+              const grp = staffGroupOf(emp);
+              const newGroup = nonLineCount > 0 && (di === 0 || staffGroupOf(displayed[di - 1]) !== grp);
+              const gMeta = STAFF_KINDS.find(k => k.key === grp);
+
+              const cEmp = (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      {emp.image_url
+                        ? <img loading="lazy" src={emp.image_url} alt="" style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--border2)', flexShrink: 0 }} />
+                        : <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--bg3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>👤</div>
+                      }
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: 14 }}>{emp.name}</div>
+                        <div style={{ fontSize: 12, color: 'var(--muted)' }}>{emp.employee_id_code}</div>
+                        {emp._helperRowId && (
+                          <div style={{ fontSize: 11, color: '#06b6d4', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                            <span>🤝 ยืมตัวจาก {emp._helperFrom}</span>
+                            {canRecord && (
+                              <button
+                                onClick={() => unborrowEmployee(emp)}
+                                title="ยกเลิกยืมตัว — คืนกลับไลน์เดิม"
+                                style={{ padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'rgba(6,182,212,0.12)', color: '#06b6d4', border: '1px solid rgba(6,182,212,0.4)' }}
+                              >✕ คืน</button>
+                            )}
+                          </div>
+                        )}
+                        {emp._helperOutTo && (
+                          <div style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 700, marginTop: 2 }}>
+                            → ไปช่วยไลน์ {emp._helperOutTo} (กะนี้)
+                          </div>
+                        )}
+                      </div>
+                    </div>
+              );
+              const cLeave = (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      {/* Leave type */}
+                      <select
+                        value={rec.leave_type || ''}
+                        onChange={e => setLeaveType(emp.id, e.target.value)}
+                        style={{
+                          padding: '5px 8px', borderRadius: 6, fontSize: 12,
+                          border: `1px solid ${hasLeave ? '#a855f744' : 'var(--border2)'}`,
+                          background: hasLeave ? 'rgba(168,85,247,0.08)' : 'var(--bg3)',
+                          color: hasLeave ? '#a855f7' : 'var(--text2)',
+                          width: '100%',
+                        }}
+                      >
+                        <option value="">— ไม่ลา —</option>
+                        {leaveTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
+
+                      {/* หมายเหตุ (แสดงเมื่อเลือก อื่นๆ) */}
+                      {rec.leave_type === 'อื่นๆ' && (
+                        <input
+                          type="text"
+                          placeholder="ระบุเหตุผล..."
+                          value={rec.remark || ''}
+                          onChange={e => setAttendance(prev => ({ ...prev, [emp.id]: { ...prev[emp.id], remark: e.target.value } }))}
+                          style={{
+                            padding: '4px 8px', borderRadius: 6, fontSize: 11,
+                            border: '1px solid rgba(168,85,247,0.4)',
+                            background: 'rgba(168,85,247,0.06)', color: 'var(--text)',
+                            width: '100%',
+                          }}
+                        />
+                      )}
+
+                      {/* Duration (shown only when leave_type is set) */}
+                      {hasLeave && (
+                        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                          {LEAVE_DURATION_OPTS.map(opt => (
+                            <button
+                              key={opt.value}
+                              onClick={() => setLeaveDuration(emp.id, opt.value)}
+                              style={{
+                                flex: 1, padding: '3px 0', fontSize: 11, fontWeight: 700,
+                                borderRadius: 5, border: 'none', cursor: 'pointer',
+                                background: rec.leave_duration === opt.value ? '#a855f7' : 'var(--bg2)',
+                                color: rec.leave_duration === opt.value ? '#fff' : 'var(--text2)',
+                                transition: 'all 0.15s',
+                              }}
+                            >
+                              {opt.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Period selector — half day only */}
+                      {hasLeave && rec.leave_duration === 'half' && (
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          {LEAVE_PERIOD_OPTS.map(opt => (
+                            <button
+                              key={opt.value}
+                              onClick={() => setField(emp.id, 'leave_period', opt.value)}
+                              title={opt.sub}
+                              style={{
+                                flex: 1, padding: '3px 4px', fontSize: 11, fontWeight: 700,
+                                borderRadius: 5, border: 'none', cursor: 'pointer',
+                                background: rec.leave_period === opt.value ? '#0ea5e9' : 'var(--bg2)',
+                                color: rec.leave_period === opt.value ? '#fff' : 'var(--text2)',
+                                transition: 'all 0.15s', lineHeight: 1.3,
+                              }}
+                            >
+                              {opt.label}
+                              <div style={{ fontSize: 11, opacity: 0.8, fontWeight: 400 }}>{opt.sub}</div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Hours input */}
+                      {hasLeave && rec.leave_duration === 'hours' && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <input
+                            type="number"
+                            min={0.5} max={8} step={0.5}
+                            value={rec.leave_hours || ''}
+                            onChange={e => setField(emp.id, 'leave_hours', e.target.value)}
+                            placeholder="จำนวนชั่วโมง"
+                            style={{ padding: '4px 8px', borderRadius: 5, fontSize: 12, width: '100%' }}
+                          />
+                          <span style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>ชม.</span>
+                        </div>
+                      )}
+                    </div>
+              );
+              const cRemark = (
+                    <input
+                      type="text"
+                      placeholder="หมายเหตุ..."
+                      value={rec.remark || ''}
+                      onChange={e => setField(emp.id, 'remark', e.target.value)}
+                      style={{ fontSize: 12, padding: '5px 8px' }}
+                    />
+              );
+              const cBooking = (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+                      {shiftInfo.shift === 'night' ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                          <span style={{ fontSize: 11, color: 'var(--muted)' }}>{shortDateLabel(addDaysToDateStr(shiftInfo.workDateStr, 1))}</span>
+                          <input
+                            type="checkbox"
+                            style={{ transform: 'scale(1.4)', accentColor: '#06b6d4', width: 'auto' }}
+                            checked={!!otBookings[emp.id]}
+                            onChange={() => toggleOtBooking(emp.id)}
+                          />
+                          {otBookings[emp.id] && (
+                            <>
+                              {isHolidayDate(addDaysToDateStr(shiftInfo.workDateStr, 1)) && (
+                                <select
+                                  value={otPeriods[emp.id] || ''}
+                                  onChange={e => setOtPeriod(emp.id, e.target.value)}
+                                  title="วันหยุด — เลือกช่วงเวลา OT"
+                                  style={{ fontSize: 11, padding: '2px 4px', maxWidth: 130, color: '#f59e0b', fontWeight: 700 }}
+                                >
+                                  <option value="">— ช่วงเวลา OT —</option>
+                                  {holidayPeriodsForShift('night').map(p => (
+                                    <option key={p.value} value={p.value}>{p.hours} ชม. · {p.time}</option>
+                                  ))}
+                                </select>
+                              )}
+                              <select
+                                value={otTasks[emp.id] || ''}
+                                onChange={e => setOtTask(emp.id, e.target.value || null)}
+                                style={{ fontSize: 11, padding: '2px 4px', maxWidth: 130 }}
+                              >
+                                <option value="">— งานที่ทำ —</option>
+                                {taskTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                              </select>
+                            </>
+                          )}
+                        </div>
+                      ) : rec.has_ot ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                          {isHolidayDate(shiftInfo.workDateStr) && (
+                            <select
+                              value={otPeriods[emp.id] || ''}
+                              onChange={e => setOtPeriod(emp.id, e.target.value)}
+                              title="วันหยุด — เลือกช่วงเวลา OT"
+                              style={{ fontSize: 11, padding: '2px 4px', maxWidth: 140, color: '#f59e0b', fontWeight: 700 }}
+                            >
+                              <option value="">— ช่วงเวลา OT —</option>
+                              {holidayPeriodsForShift('day').map(p => (
+                                <option key={p.value} value={p.value}>{p.hours} ชม. · {p.time}</option>
+                              ))}
+                            </select>
+                          )}
+                          <select
+                            value={otTasks[emp.id] || ''}
+                            onChange={e => setOtTask(emp.id, e.target.value || null)}
+                            style={{ fontSize: 11, padding: '2px 4px', maxWidth: 140 }}
+                          >
+                            <option value="">— งานที่ทำ —</option>
+                            {taskTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                          </select>
+                        </div>
+                      ) : (
+                        <span style={{ fontSize: 11, color: 'var(--muted)' }}>—</span>
+                      )}
+
+                      {/* จองรถล่วงหน้าเพิ่ม — วันหยุดต่อเนื่อง */}
+                      {extraAdvanceDates.map(d => (
+                        <div key={d} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, paddingTop: 4, borderTop: '1px dashed var(--border)' }}>
+                          <span style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700 }}>{shortDateLabel(d)} 🔶</span>
+                          <input
+                            type="checkbox"
+                            style={{ transform: 'scale(1.3)', accentColor: '#f59e0b', width: 'auto' }}
+                            checked={!!otExtraBookings[emp.id]?.[d]}
+                            onChange={() => toggleOtExtraBooking(emp.id, d)}
+                          />
+                          {otExtraBookings[emp.id]?.[d] && (
+                            <>
+                              <select
+                                value={otExtraPeriods[emp.id]?.[d] || ''}
+                                onChange={e => setOtExtraPeriod(emp.id, d, e.target.value)}
+                                title="วันหยุด — เลือกช่วงเวลา OT"
+                                style={{ fontSize: 11, padding: '2px 4px', maxWidth: 130, color: '#f59e0b', fontWeight: 700 }}
+                              >
+                                <option value="">— ช่วงเวลา OT —</option>
+                                {holidayPeriodsForShift(shiftInfo.shift).map(p => (
+                                  <option key={p.value} value={p.value}>{p.hours} ชม. · {p.time}</option>
+                                ))}
+                              </select>
+                              <select
+                                value={otExtraTasks[emp.id]?.[d] || ''}
+                                onChange={e => setOtExtraTask(emp.id, d, e.target.value || null)}
+                                style={{ fontSize: 11, padding: '2px 4px', maxWidth: 130 }}
+                              >
+                                <option value="">— งานที่ทำ —</option>
+                                {taskTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                              </select>
+                            </>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+              );
+              if (isMobile) return renderCheckinCard({ emp, rec, meta, hasLeave, newGroup, gMeta, grp, cEmp, cLeave, cRemark, cBooking });
+              return (
+                <Fragment key={emp.id}>
+                {newGroup && (
+                  <tr>
+                    <td colSpan={99} style={{ background: 'var(--bg3)', padding: '6px 10px', fontSize: 12, fontWeight: 800, color: 'var(--text2)' }}>
+                      {gMeta?.label} <span style={{ fontWeight: 600, color: 'var(--muted)' }}>· {groupCounts[grp]} คน
+                        {grp !== STAFF_SHOPFLOOR && ' — เช็คชื่อได้ แต่ไม่ถูกนับเป็นกำลังคนของไลน์ผลิต'}</span>
+                    </td>
+                  </tr>
+                )}
+                <tr style={{ background: meta.bg }}>
+                  {/* Employee */}
+                  <td>
+                    {cEmp}
+                  </td>
+
+                  {/* Shift */}
+                  <td style={{ textAlign: 'center' }}>
+                    {emp.assignedShift
+                      ? <span style={{ fontSize: 15 }}>{emp.assignedShift === 'day' ? '☀️' : '🌙'}</span>
+                      : <span style={{ fontSize: 11, color: 'var(--muted)' }}>—</span>
+                    }
+                  </td>
+
+                  {/* มางาน */}
+                  <td style={{ textAlign: 'center' }}>
+                    <input
+                      type="checkbox"
+                      style={{ transform: 'scale(1.4)', accentColor: 'var(--accent)', width: 'auto' }}
+                      checked={rec.is_present}
+                      onChange={() => toggle(emp.id, 'is_present')}
+                    />
+                  </td>
+
+                  {/* PPE */}
+                  <td style={{ textAlign: 'center' }}>
+                    <input type="checkbox" style={{ transform: 'scale(1.4)', accentColor: 'var(--green)', width: 'auto' }} checked={rec.has_helmet} onChange={() => toggle(emp.id, 'has_helmet')} disabled={!rec.is_present} />
+                  </td>
+                  <td style={{ textAlign: 'center' }}>
+                    <input type="checkbox" style={{ transform: 'scale(1.4)', accentColor: 'var(--green)', width: 'auto' }} checked={rec.has_boots} onChange={() => toggle(emp.id, 'has_boots')} disabled={!rec.is_present} />
+                  </td>
+                  <td style={{ textAlign: 'center' }}>
+                    <input type="checkbox" style={{ transform: 'scale(1.4)', accentColor: 'var(--green)', width: 'auto' }} checked={rec.has_gloves} onChange={() => toggle(emp.id, 'has_gloves')} disabled={!rec.is_present} />
+                  </td>
+
+                  {/* OT */}
+                  <td style={{ textAlign: 'center' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                      <input type="checkbox" style={{ transform: 'scale(1.4)', accentColor: '#f59e0b', width: 'auto' }} checked={rec.has_ot} onChange={() => toggleOt(emp, rec)} disabled={!rec.is_present} />
+                      {/* Special extended OT (day shift 20:00–23:00) — rare case */}
+                      {(emp.assignedShift === 'day' || shiftInfo.shift === 'day') && rec.has_ot && (
+                        <div
+                          title="OT พิเศษ กะเช้า ต่อถึง 23:00"
+                          style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, cursor: 'pointer' }}
+                          onClick={() => toggle(emp.id, 'has_extended_ot')}
+                        >
+                          <div style={{
+                            fontSize: 11, fontWeight: 700, letterSpacing: '0.05em',
+                            padding: '2px 5px', borderRadius: 4,
+                            background: rec.has_extended_ot ? 'rgba(239,68,68,0.15)' : 'var(--bg2)',
+                            color: rec.has_extended_ot ? '#ef4444' : 'var(--muted)',
+                            border: `1px solid ${rec.has_extended_ot ? 'rgba(239,68,68,0.4)' : 'var(--border)'}`,
+                            transition: 'all 0.15s',
+                          }}>
+                            {rec.has_extended_ot ? '🔴 OT+23' : '○ OT+23'}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </td>
+
+                  {/* Leave column */}
+                  <td style={{ padding: '6px 8px' }}>
+                    {cLeave}
+                  </td>
+
+                  {/* Remark */}
+                  <td style={{ padding: '6px 8px' }}>
+                    {cRemark}
+                  </td>
+
+                  {/* Status */}
+                  <td style={{ textAlign: 'center', fontWeight: 700, color: meta.color, whiteSpace: 'nowrap', fontSize: 12 }}>
+                    {meta.label}
+                    {hasLeave && rec.leave_type && (
+                      <div style={{ fontSize: 11, fontWeight: 600, color: meta.color, marginTop: 1, opacity: 0.8 }}>
+                        {rec.leave_type}
+                      </div>
+                    )}
+                    {hasLeave && rec.leave_duration === 'hours' && rec.leave_hours && (
+                      <div style={{ fontSize: 11, fontWeight: 400, color: 'var(--muted)', marginTop: 1 }}>
+                        {rec.leave_hours} ชม.
+                      </div>
+                    )}
+                  </td>
+                  <td style={{ textAlign: 'center' }}>
+                    {cBooking}
+                  </td>
+                </tr>
+                </Fragment>
+              );
+  };
+
   return (
     <Page>
       {/* 🤝 Modal ยืมพนักงานข้ามไลน์ */}
@@ -1360,6 +1777,24 @@ export default function Checkin() {
         </button>
       </div>
 
+      {/* 🚩 หัวหน้ากลุ่มที่บัญชียังไม่ผูกไลน์และไม่ได้ตั้งขอบเขตส่วนงาน = ด่านทั้งสองแกนไม่ทำงาน
+          ⇒ เขียนบนจอตรงๆ ว่ากำลังเห็นทั้งโรงงาน (กฎความซื่อสัตย์ของจอ — ไม่บล็อก เพราะบล็อก
+          = เช็คชื่อไม่ได้ทั้งกะ) · Andon เหลือง = นิ่ง ไม่กระพริบ */}
+      {scopeAnchorless({ role, lineId, sections: scopeSecs }) && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+          background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)',
+          borderRadius: 10, padding: '8px 13px', marginBottom: 14, fontSize: 12, color: 'var(--text)',
+        }}>
+          <span style={{ fontSize: 15 }}>⚠️</span>
+          <span>
+            บัญชีนี้เป็น<b>หัวหน้ากลุ่ม</b>แต่<b>ยังไม่ได้ผูกไลน์ และไม่ได้ตั้งขอบเขตส่วนงาน</b> —
+            รายชื่อข้างล่างจึงเป็น<b>พนักงานทั้งโรงงาน</b> ไม่ใช่เฉพาะไลน์ที่ดูแล
+            <span style={{ color: 'var(--muted)' }}> · ให้แอดมินตั้งไลน์หรือขอบเขตส่วนงานที่ทะเบียนผู้ใช้</span>
+          </span>
+        </div>
+      )}
+
       {/* Section & Line filter bar — supervisor only */}
       {role !== 'leader' && lines.length > 0 && (
         <FilterBar style={{ marginBottom: 14 }}>
@@ -1421,7 +1856,9 @@ export default function Checkin() {
         </div>
       )}
 
-      <div style={{
+      {/* มือถือไม่โชว์ — อธิบาย "คอลัมน์" ของตาราง ซึ่งมุมมองการ์ดไม่มี (การ์ดเขียนป้าย 🚐 จองรถ OT ในตัวแล้ว)
+          เดิมกล่องนี้ + คำเตือนดันรายชื่อลงจอที่ 2 บน handheld 360×640 */}
+      {!isMobile && <div style={{
         padding: '10px 14px', borderRadius: 8, marginBottom: 14,
         background: 'rgba(6,182,212,0.08)', border: '1px solid rgba(6,182,212,0.25)',
         fontSize: 13, color: '#06b6d4', display: 'flex', alignItems: 'center', gap: 8,
@@ -1434,7 +1871,7 @@ export default function Checkin() {
             <> · 🔶 พบวันหยุดต่อเนื่อง <strong>{extraAdvanceDates.map(shortDateLabel).join(', ')}</strong> — เพิ่มช่องจองรถล่วงหน้าให้แล้ว (วันหยุดเลือกช่วงเวลา OT ได้: 8 ชม. หรือ 10 ชม.)</>
           )}
         </span>
-      </div>
+      </div>}
 
       {noSchedule && (
         <div style={{
@@ -1472,6 +1909,14 @@ export default function Checkin() {
         </div>
       )}
 
+      {isMobile ? (
+        <div className="ck-cards">
+          {displayed.map(renderCheckinRow)}
+          {displayed.length === 0 && (
+            <div style={{ textAlign: 'center', color: 'var(--muted)', padding: 24, fontSize: 13 }}>ไม่มีพนักงานในกะนี้ — ลองกด 👥 ทุกคน</div>
+          )}
+        </div>
+      ) : (
       <div className="card table-sticky">
         <table style={{ minWidth: 820 }}>
           <thead>
@@ -1490,350 +1935,7 @@ export default function Checkin() {
             </tr>
           </thead>
           <tbody>
-            {displayed.map((emp, di) => {
-              const rec = attendance[emp.id];
-              if (!rec) return null;
-              const status = getRowStatus(rec);
-              const meta   = STATUS_META[status] || STATUS_META.absent;
-              const hasLeave = !!rec.leave_type;
-              /* 🔴 หัวข้อกลุ่มคน — ขึ้นเมื่อกลุ่มเปลี่ยน และ**เฉพาะตอนที่จอมีมากกว่า 1 กลุ่ม**
-                 (ไลน์ผลิตที่มีแต่คนหน้างาน = ไม่มีหัวข้อโผล่มากวน เหมือนเดิมเป๊ะ)
-                 ⚠️ ห้ามเปลี่ยนเป็น "ซ่อนกลุ่มอื่น" — คนที่ไม่ขึ้นจอ = เช็คชื่อไม่ได้ */
-              const grp = staffGroupOf(emp);
-              const newGroup = nonLineCount > 0 && (di === 0 || staffGroupOf(displayed[di - 1]) !== grp);
-              const gMeta = STAFF_KINDS.find(k => k.key === grp);
-
-              return (
-                <Fragment key={emp.id}>
-                {newGroup && (
-                  <tr>
-                    <td colSpan={99} style={{ background: 'var(--bg3)', padding: '6px 10px', fontSize: 12, fontWeight: 800, color: 'var(--text2)' }}>
-                      {gMeta?.label} <span style={{ fontWeight: 600, color: 'var(--muted)' }}>· {groupCounts[grp]} คน
-                        {grp !== STAFF_SHOPFLOOR && ' — เช็คชื่อได้ แต่ไม่ถูกนับเป็นกำลังคนของไลน์ผลิต'}</span>
-                    </td>
-                  </tr>
-                )}
-                <tr style={{ background: meta.bg }}>
-                  {/* Employee */}
-                  <td>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      {emp.image_url
-                        ? <img loading="lazy" src={emp.image_url} alt="" style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--border2)', flexShrink: 0 }} />
-                        : <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--bg3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>👤</div>
-                      }
-                      <div>
-                        <div style={{ fontWeight: 600, fontSize: 14 }}>{emp.name}</div>
-                        <div style={{ fontSize: 12, color: 'var(--muted)' }}>{emp.employee_id_code}</div>
-                        {emp._helperRowId && (
-                          <div style={{ fontSize: 11, color: '#06b6d4', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
-                            <span>🤝 ยืมตัวจาก {emp._helperFrom}</span>
-                            {canRecord && (
-                              <button
-                                onClick={() => unborrowEmployee(emp)}
-                                title="ยกเลิกยืมตัว — คืนกลับไลน์เดิม"
-                                style={{ padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'rgba(6,182,212,0.12)', color: '#06b6d4', border: '1px solid rgba(6,182,212,0.4)' }}
-                              >✕ คืน</button>
-                            )}
-                          </div>
-                        )}
-                        {emp._helperOutTo && (
-                          <div style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 700, marginTop: 2 }}>
-                            → ไปช่วยไลน์ {emp._helperOutTo} (กะนี้)
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </td>
-
-                  {/* Shift */}
-                  <td style={{ textAlign: 'center' }}>
-                    {emp.assignedShift
-                      ? <span style={{ fontSize: 15 }}>{emp.assignedShift === 'day' ? '☀️' : '🌙'}</span>
-                      : <span style={{ fontSize: 11, color: 'var(--muted)' }}>—</span>
-                    }
-                  </td>
-
-                  {/* มางาน */}
-                  <td style={{ textAlign: 'center' }}>
-                    <input
-                      type="checkbox"
-                      style={{ transform: 'scale(1.4)', accentColor: 'var(--accent)', width: 'auto' }}
-                      checked={rec.is_present}
-                      onChange={() => toggle(emp.id, 'is_present')}
-                    />
-                  </td>
-
-                  {/* PPE */}
-                  <td style={{ textAlign: 'center' }}>
-                    <input type="checkbox" style={{ transform: 'scale(1.4)', accentColor: 'var(--green)', width: 'auto' }} checked={rec.has_helmet} onChange={() => toggle(emp.id, 'has_helmet')} disabled={!rec.is_present} />
-                  </td>
-                  <td style={{ textAlign: 'center' }}>
-                    <input type="checkbox" style={{ transform: 'scale(1.4)', accentColor: 'var(--green)', width: 'auto' }} checked={rec.has_boots} onChange={() => toggle(emp.id, 'has_boots')} disabled={!rec.is_present} />
-                  </td>
-                  <td style={{ textAlign: 'center' }}>
-                    <input type="checkbox" style={{ transform: 'scale(1.4)', accentColor: 'var(--green)', width: 'auto' }} checked={rec.has_gloves} onChange={() => toggle(emp.id, 'has_gloves')} disabled={!rec.is_present} />
-                  </td>
-
-                  {/* OT */}
-                  <td style={{ textAlign: 'center' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                      <input type="checkbox" style={{ transform: 'scale(1.4)', accentColor: '#f59e0b', width: 'auto' }} checked={rec.has_ot} onChange={() => {
-                        const turningOn = !rec.has_ot;
-                        toggle(emp.id, 'has_ot');
-                        // กะเช้าวันหยุด: จองหลักใช้ has_ot → default ช่วงเวลา 8 ชม. ให้เห็นและแก้ได้ก่อนบันทึก
-                        if (turningOn && shiftInfo.shift === 'day' && isHolidayDate(shiftInfo.workDateStr)) {
-                          setOtPeriods(prev => ({ ...prev, [emp.id]: prev[emp.id] || defaultHolidayPeriod('day') }));
-                        }
-                      }} disabled={!rec.is_present} />
-                      {/* Special extended OT (day shift 20:00–23:00) — rare case */}
-                      {(emp.assignedShift === 'day' || shiftInfo.shift === 'day') && rec.has_ot && (
-                        <div
-                          title="OT พิเศษ กะเช้า ต่อถึง 23:00"
-                          style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, cursor: 'pointer' }}
-                          onClick={() => toggle(emp.id, 'has_extended_ot')}
-                        >
-                          <div style={{
-                            fontSize: 11, fontWeight: 700, letterSpacing: '0.05em',
-                            padding: '2px 5px', borderRadius: 4,
-                            background: rec.has_extended_ot ? 'rgba(239,68,68,0.15)' : 'var(--bg2)',
-                            color: rec.has_extended_ot ? '#ef4444' : 'var(--muted)',
-                            border: `1px solid ${rec.has_extended_ot ? 'rgba(239,68,68,0.4)' : 'var(--border)'}`,
-                            transition: 'all 0.15s',
-                          }}>
-                            {rec.has_extended_ot ? '🔴 OT+23' : '○ OT+23'}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </td>
-
-                  {/* Leave column */}
-                  <td style={{ padding: '6px 8px' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                      {/* Leave type */}
-                      <select
-                        value={rec.leave_type || ''}
-                        onChange={e => setLeaveType(emp.id, e.target.value)}
-                        style={{
-                          padding: '5px 8px', borderRadius: 6, fontSize: 12,
-                          border: `1px solid ${hasLeave ? '#a855f744' : 'var(--border2)'}`,
-                          background: hasLeave ? 'rgba(168,85,247,0.08)' : 'var(--bg3)',
-                          color: hasLeave ? '#a855f7' : 'var(--text2)',
-                          width: '100%',
-                        }}
-                      >
-                        <option value="">— ไม่ลา —</option>
-                        {leaveTypes.map(t => <option key={t} value={t}>{t}</option>)}
-                      </select>
-
-                      {/* หมายเหตุ (แสดงเมื่อเลือก อื่นๆ) */}
-                      {rec.leave_type === 'อื่นๆ' && (
-                        <input
-                          type="text"
-                          placeholder="ระบุเหตุผล..."
-                          value={rec.remark || ''}
-                          onChange={e => setAttendance(prev => ({ ...prev, [emp.id]: { ...prev[emp.id], remark: e.target.value } }))}
-                          style={{
-                            padding: '4px 8px', borderRadius: 6, fontSize: 11,
-                            border: '1px solid rgba(168,85,247,0.4)',
-                            background: 'rgba(168,85,247,0.06)', color: 'var(--text)',
-                            width: '100%',
-                          }}
-                        />
-                      )}
-
-                      {/* Duration (shown only when leave_type is set) */}
-                      {hasLeave && (
-                        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                          {LEAVE_DURATION_OPTS.map(opt => (
-                            <button
-                              key={opt.value}
-                              onClick={() => setLeaveDuration(emp.id, opt.value)}
-                              style={{
-                                flex: 1, padding: '3px 0', fontSize: 11, fontWeight: 700,
-                                borderRadius: 5, border: 'none', cursor: 'pointer',
-                                background: rec.leave_duration === opt.value ? '#a855f7' : 'var(--bg2)',
-                                color: rec.leave_duration === opt.value ? '#fff' : 'var(--text2)',
-                                transition: 'all 0.15s',
-                              }}
-                            >
-                              {opt.label}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-
-                      {/* Period selector — half day only */}
-                      {hasLeave && rec.leave_duration === 'half' && (
-                        <div style={{ display: 'flex', gap: 4 }}>
-                          {LEAVE_PERIOD_OPTS.map(opt => (
-                            <button
-                              key={opt.value}
-                              onClick={() => setField(emp.id, 'leave_period', opt.value)}
-                              title={opt.sub}
-                              style={{
-                                flex: 1, padding: '3px 4px', fontSize: 11, fontWeight: 700,
-                                borderRadius: 5, border: 'none', cursor: 'pointer',
-                                background: rec.leave_period === opt.value ? '#0ea5e9' : 'var(--bg2)',
-                                color: rec.leave_period === opt.value ? '#fff' : 'var(--text2)',
-                                transition: 'all 0.15s', lineHeight: 1.3,
-                              }}
-                            >
-                              {opt.label}
-                              <div style={{ fontSize: 11, opacity: 0.8, fontWeight: 400 }}>{opt.sub}</div>
-                            </button>
-                          ))}
-                        </div>
-                      )}
-
-                      {/* Hours input */}
-                      {hasLeave && rec.leave_duration === 'hours' && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                          <input
-                            type="number"
-                            min={0.5} max={8} step={0.5}
-                            value={rec.leave_hours || ''}
-                            onChange={e => setField(emp.id, 'leave_hours', e.target.value)}
-                            placeholder="จำนวนชั่วโมง"
-                            style={{ padding: '4px 8px', borderRadius: 5, fontSize: 12, width: '100%' }}
-                          />
-                          <span style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>ชม.</span>
-                        </div>
-                      )}
-                    </div>
-                  </td>
-
-                  {/* Remark */}
-                  <td style={{ padding: '6px 8px' }}>
-                    <input
-                      type="text"
-                      placeholder="หมายเหตุ..."
-                      value={rec.remark || ''}
-                      onChange={e => setField(emp.id, 'remark', e.target.value)}
-                      style={{ fontSize: 12, padding: '5px 8px' }}
-                    />
-                  </td>
-
-                  {/* Status */}
-                  <td style={{ textAlign: 'center', fontWeight: 700, color: meta.color, whiteSpace: 'nowrap', fontSize: 12 }}>
-                    {meta.label}
-                    {hasLeave && rec.leave_type && (
-                      <div style={{ fontSize: 11, fontWeight: 600, color: meta.color, marginTop: 1, opacity: 0.8 }}>
-                        {rec.leave_type}
-                      </div>
-                    )}
-                    {hasLeave && rec.leave_duration === 'hours' && rec.leave_hours && (
-                      <div style={{ fontSize: 11, fontWeight: 400, color: 'var(--muted)', marginTop: 1 }}>
-                        {rec.leave_hours} ชม.
-                      </div>
-                    )}
-                  </td>
-                  <td style={{ textAlign: 'center' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
-                      {shiftInfo.shift === 'night' ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                          <span style={{ fontSize: 11, color: 'var(--muted)' }}>{shortDateLabel(addDaysToDateStr(shiftInfo.workDateStr, 1))}</span>
-                          <input
-                            type="checkbox"
-                            style={{ transform: 'scale(1.4)', accentColor: '#06b6d4', width: 'auto' }}
-                            checked={!!otBookings[emp.id]}
-                            onChange={() => toggleOtBooking(emp.id)}
-                          />
-                          {otBookings[emp.id] && (
-                            <>
-                              {isHolidayDate(addDaysToDateStr(shiftInfo.workDateStr, 1)) && (
-                                <select
-                                  value={otPeriods[emp.id] || ''}
-                                  onChange={e => setOtPeriod(emp.id, e.target.value)}
-                                  title="วันหยุด — เลือกช่วงเวลา OT"
-                                  style={{ fontSize: 11, padding: '2px 4px', maxWidth: 130, color: '#f59e0b', fontWeight: 700 }}
-                                >
-                                  <option value="">— ช่วงเวลา OT —</option>
-                                  {holidayPeriodsForShift('night').map(p => (
-                                    <option key={p.value} value={p.value}>{p.hours} ชม. · {p.time}</option>
-                                  ))}
-                                </select>
-                              )}
-                              <select
-                                value={otTasks[emp.id] || ''}
-                                onChange={e => setOtTask(emp.id, e.target.value || null)}
-                                style={{ fontSize: 11, padding: '2px 4px', maxWidth: 130 }}
-                              >
-                                <option value="">— งานที่ทำ —</option>
-                                {taskTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                              </select>
-                            </>
-                          )}
-                        </div>
-                      ) : rec.has_ot ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                          {isHolidayDate(shiftInfo.workDateStr) && (
-                            <select
-                              value={otPeriods[emp.id] || ''}
-                              onChange={e => setOtPeriod(emp.id, e.target.value)}
-                              title="วันหยุด — เลือกช่วงเวลา OT"
-                              style={{ fontSize: 11, padding: '2px 4px', maxWidth: 140, color: '#f59e0b', fontWeight: 700 }}
-                            >
-                              <option value="">— ช่วงเวลา OT —</option>
-                              {holidayPeriodsForShift('day').map(p => (
-                                <option key={p.value} value={p.value}>{p.hours} ชม. · {p.time}</option>
-                              ))}
-                            </select>
-                          )}
-                          <select
-                            value={otTasks[emp.id] || ''}
-                            onChange={e => setOtTask(emp.id, e.target.value || null)}
-                            style={{ fontSize: 11, padding: '2px 4px', maxWidth: 140 }}
-                          >
-                            <option value="">— งานที่ทำ —</option>
-                            {taskTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                          </select>
-                        </div>
-                      ) : (
-                        <span style={{ fontSize: 11, color: 'var(--muted)' }}>—</span>
-                      )}
-
-                      {/* จองรถล่วงหน้าเพิ่ม — วันหยุดต่อเนื่อง */}
-                      {extraAdvanceDates.map(d => (
-                        <div key={d} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, paddingTop: 4, borderTop: '1px dashed var(--border)' }}>
-                          <span style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700 }}>{shortDateLabel(d)} 🔶</span>
-                          <input
-                            type="checkbox"
-                            style={{ transform: 'scale(1.3)', accentColor: '#f59e0b', width: 'auto' }}
-                            checked={!!otExtraBookings[emp.id]?.[d]}
-                            onChange={() => toggleOtExtraBooking(emp.id, d)}
-                          />
-                          {otExtraBookings[emp.id]?.[d] && (
-                            <>
-                              <select
-                                value={otExtraPeriods[emp.id]?.[d] || ''}
-                                onChange={e => setOtExtraPeriod(emp.id, d, e.target.value)}
-                                title="วันหยุด — เลือกช่วงเวลา OT"
-                                style={{ fontSize: 11, padding: '2px 4px', maxWidth: 130, color: '#f59e0b', fontWeight: 700 }}
-                              >
-                                <option value="">— ช่วงเวลา OT —</option>
-                                {holidayPeriodsForShift(shiftInfo.shift).map(p => (
-                                  <option key={p.value} value={p.value}>{p.hours} ชม. · {p.time}</option>
-                                ))}
-                              </select>
-                              <select
-                                value={otExtraTasks[emp.id]?.[d] || ''}
-                                onChange={e => setOtExtraTask(emp.id, d, e.target.value || null)}
-                                style={{ fontSize: 11, padding: '2px 4px', maxWidth: 130 }}
-                              >
-                                <option value="">— งานที่ทำ —</option>
-                                {taskTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                              </select>
-                            </>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </td>
-                </tr>
-                </Fragment>
-              );
-            })}
+            {displayed.map(renderCheckinRow)}
 
             {displayed.length === 0 && (
               <tr>
@@ -1845,6 +1947,18 @@ export default function Checkin() {
           </tbody>
         </table>
       </div>
+      )}
+
+      {/* 📱 ปุ่มบันทึกเกาะล่างจอ (มือถือ) — เช็ค 20 คนแล้วไม่ต้องเลื่อนกลับขึ้นไปหาปุ่มบนหัวหน้า
+          เรียก setConfirmSave(true) ตัวเดียวกับปุ่มบนหัว ⇒ ผ่าน popup ยืนยัน "บันทึกในนามใคร" เหมือนเดิม */}
+      {isMobile && displayed.length > 0 && (
+        <div className="m-savebar">
+          <span className="m-savebar-sum">มา {displayed.filter(e => attendance[e.id]?.is_present).length}/{displayed.length} คน</span>
+          <button type="button" onClick={() => setConfirmSave(true)} disabled={isSaving || previewNight || !canRecord}>
+            {isSaving ? '⏳ กำลังบันทึก...' : previewNight ? '🔒 ปิด Preview ก่อน' : !canRecord ? '🔒 ไม่มีสิทธิ์บันทึก' : '💾 บันทึก'}
+          </button>
+        </div>
+      )}
 
       {/* จองรถ OT แบบอิสระ modal */}
       {/* ยืนยัน "บันทึกในนามใคร" ก่อนเซฟจริง — จุด checkpoint บังคับให้เห็นชื่อ กันเช็คผิด session

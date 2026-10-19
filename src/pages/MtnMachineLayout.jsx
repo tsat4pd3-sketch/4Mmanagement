@@ -2,17 +2,17 @@ import { useState, useEffect, useMemo, useRef, useContext } from 'react'
 import { useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { toDecodableImage } from '../utils/heicToJpeg'
 import { compressLayoutImage } from '../utils/layoutImage'
-import { supabase, supabaseDR } from '../supabaseClient'
+import { supabaseDR } from '../supabaseClient'
 import { invalidateTable } from '../utils/masterInvalidate'
 import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App'
 import { can } from '../utils/permissions'
-import { dueStatus, STATUS_META, DEPT_LABEL, computeNextDue, daysUntilDue, resolvePlanDue } from '../lib/pmSchedule'
-import { loadPmTeams, pmTeamsSync, isAmTeam } from '../utils/pmTeams'
-import { getWorkDate } from '../utils/workDate'
+import { STATUS_META, DEPT_LABEL, daysUntilDue } from '../lib/pmSchedule'
+import { loadPmTeams, pmTeamsSync } from '../utils/pmTeams'
 import { toast } from '../components/Toast'
 import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory'
 import MachineFloorMap from '../components/MachineFloorMap'
+import { loadPmForJigs, loadLineLayoutImage, loadLineMachines } from '../lib/lineMachineMap'
 import DowntimeSiren from '../components/DowntimeSiren'
 import FactoryMap from './FactoryMap'
 import { jigEquipTypeOf } from '../utils/equipmentKinds'
@@ -24,13 +24,6 @@ import Page, { Hub } from '../components/Page';
 import PageHeader from '../components/PageHeader';
 import { ALL } from '../utils/filterLabels';
 
-// 'YYYY-MM-DD' (from pm_plans.next_due_date) → local-midnight Date, so day math
-// stays aligned with the Asia/Bangkok calendar (not UTC).
-function parseLocalDate(s) {
-  if (!s) return null
-  const [y, m, d] = s.split('-').map(Number)
-  return new Date(y, m - 1, d)
-}
 function publicUrl(path) {
   if (!path) return null
   return supabaseDR.storage.from('jig-images').getPublicUrl(path).data.publicUrl
@@ -46,29 +39,7 @@ function worstStatus(statuses) {
   return best
 }
 
-// per-jig PM checklist statuses (module mtn) — shared by both views
-async function loadPmForJigs(jigIds) {
-  const out = {}
-  jigIds.forEach(id => { out[id] = [] })
-  if (!jigIds.length) return out
-  const { data: cls } = await supabaseDR.from('checklists').select('id, equipment_id, department, frequency, name').eq('module', 'mtn').in('equipment_id', jigIds)
-  const clIds = (cls || []).map(c => c.id)
-  let plans = []
-  // ⚠️ เฉพาะแผน active (เดิมไม่กรอง = แผนที่ปิดไปแล้วยังระบายสีหมุด) · select ครบให้ resolvePlanDue รู้ cycle_basis
-  if (clIds.length) { const { data } = await supabaseDR.from('pm_plans').select('checklist_id, interval_days, next_due_date, last_done_at, cycle_basis, is_active, deferred_to, deferred_at').in('checklist_id', clIds).eq('is_active', true); plans = data || [] }
-  const planBy = Object.fromEntries(plans.map(p => [p.checklist_id, p]))
-  const todayStr = getWorkDate()
-  for (const cl of (cls || [])) {
-    const plan = planBy[cl.id]
-    /* 🔴 สูตรกลาง resolvePlanDue (lib/pmSchedule.js) — รู้จัก run_day แล้ว (audit 08/10)
-       เดิมคิดเอง `last_done + interval` ⇒ AM รายวันขึ้นหมุดแดง "เกินกำหนด" ทุกวันจันทร์ (ไม่ได้ผลิตเสาร์-อาทิตย์)
-       และ AM ทับสถานะ PM ช่างบนเครื่องเดียวกันตอน dept='all' */
-    const due = resolvePlanDue({ frequency: cl.frequency, plan: plan || null, todayStr })
-    ;(out[cl.equipment_id] ||= []).push({ dept: cl.department, am: isAmTeam(cl.department), status: due.status,
-      nextDue: due.dueYmd ? parseLocalDate(due.dueYmd) : null, freq: cl.frequency, clName: cl.name })
-  }
-  return out
-}
+// สถานะ PM ต่ออุปกรณ์ + หมุดเครื่องของไลน์ → lib/lineMachineMap.js (ใช้ร่วมกับผังรวมโรงงาน · 2026-10-16)
 
 const S = {
   page: { minHeight: '100%', background: 'var(--bg)', display: 'flex', flexDirection: 'column', gap: 14 },   // ขอบ/ความกว้างมาจาก <Page> (UI-STANDARD 2026-09-24)
@@ -202,35 +173,15 @@ export default function MtnMachineLayout({ setupMode = false }) {
   const loadProduction = async () => {
     setLoading(true); setSelId(null)
     const lineObj = lines.find(l => l.name === selectedLine)
-    const { data: lay } = await supabase.from('line_layouts').select('image_url').eq('line_name', selectedLine).maybeSingle()
-    let img = lay?.image_url ?? null
-    if (!img && lineObj?.parent_line_name) {
-      const { data: pl } = await supabase.from('line_layouts').select('image_url').eq('line_name', lineObj.parent_line_name).maybeSingle()
-      img = pl?.image_url ?? null
-    }
-    setProdImage(img)
-    const { data: mp } = await supabase.from('machine_points').select('id, machine_no, pos_top, pos_left').eq('line_name', selectedLine)
-    const mpoints = mp || []; setProdPoints(mpoints)
-    const machineNos = [...new Set(mpoints.map(p => p.machine_no).filter(Boolean))]
-    if (!machineNos.length) { setMachineInfo({}); setLoading(false); return }
-
-    // จับด้วย machine_no ที่อยู่บนผังจริง (ไม่ผูก line ตรงเป๊ะ) — ไลน์ใหญ่ที่วางเครื่องของลูกบนผัง parent
-    // จะได้ชื่อ/รายละเอียดครบ ไม่มีหมุดไร้ชื่อ
-    const { data: machines } = await supabaseDR.from('machines').select('id, machine_no, machine_name').in('machine_no', machineNos)
-    const nameByNo = {}, noById = {}
-    ;(machines || []).forEach(m => { if (m.machine_no) nameByNo[m.machine_no] = m.machine_name; if (m.id) noById[m.id] = m.machine_no })
-    const { data: jigs } = await supabaseDR.from('jigs').select('id, name, machine_no, machine_id').eq('module', 'mtn')
-    const jigOnMachine = (jigs || []).map(j => ({ ...j, _mno: j.machine_no || noById[j.machine_id] || null })).filter(j => j._mno && machineNos.includes(j._mno))
-    const jigById = Object.fromEntries(jigOnMachine.map(j => [j.id, j]))
-    const pm = await loadPmForJigs(jigOnMachine.map(j => j.id))
-
-    const info = {}
-    machineNos.forEach(no => { info[no] = { name: nameByNo[no] || '', checklists: [] } })
-    for (const [jid, cls] of Object.entries(pm)) {
-      const jig = jigById[jid]; if (!jig || !info[jig._mno]) continue
-      cls.forEach(c => info[jig._mno].checklists.push({ ...c, eqName: jig.name || '-' }))
-    }
-    setMachineInfo(info); setLoading(false)
+    try {
+      const { image } = await loadLineLayoutImage(selectedLine, lineObj?.parent_line_name)
+      setProdImage(image)
+      const { points, info } = await loadLineMachines([selectedLine])
+      setProdPoints(points); setMachineInfo(info)
+    } catch (e) {
+      // เดิมกลืน error แล้วโชว์ผังว่าง = จอโกหกว่า "ไม่มีเครื่อง" — บอกตรงๆ
+      toast.error('โหลดผังเครื่องจักรไม่สำเร็จ: ' + (e?.message || e))
+    } finally { setLoading(false) }
   }
 
   /* ── facility (MTN-owned zones + placement) ── */

@@ -19,6 +19,7 @@ import PeFlowChart, { FlowLegend } from '../components/PeFlowChart';
 import PeChangeRequests from '../components/PeChangeRequests';
 import PeRoutingSuggest from '../components/PeRoutingSuggest';
 import LineSelect from '../components/LineSelect';
+import { canWriteLine, writeBlockText } from '../utils/writeScope';
 import SearchSelect from '../components/SearchSelect';
 import MachineSelect from '../components/MachineSelect';
 import ProductSelect from '../components/ProductSelect';
@@ -39,6 +40,7 @@ import { compareToMaster, CMP_META, improvementProposals, newItemProposals, sugg
 import { acceptImageFile } from '../utils/acceptImageFile';
 import { DeleteButton } from '../components/IconButton';
 import { isGifFile, GIF_MAX_BYTES, GIF_TOO_BIG_MSG } from '../utils/imageFileKind';   // ตัวตรวจชนิดไฟล์ + เพดาน GIF = จุดเดียว
+import { checkWriteRows } from '../utils/dbWrite';   // 🔴 ลบ/เปลี่ยนไฟล์ storage ได้หลัง "นับแถวที่โดนจริง" เท่านั้น
 
 /* ═══ PE Core Tools — Process Flow / PFMEA / Control Plan (2026-08-13) ═══
    โมดูลของทีม Process Engineering — โครงถอดจากเอกสารจริง TSAT (PFC/FMEA/CNP-P703-01):
@@ -86,7 +88,12 @@ const btnPrim = { padding: '7px 16px', borderRadius: 8, border: 'none', backgrou
 const multiline = (t) => (t || '').split('\n').filter(Boolean).map((l, i) => <div key={i}>{l}</div>);
 
 export default function PEDocs() {
-  const { role, fullName, lineId: userLineId, sections: userSections } = useContext(UserContext);
+  const { role, fullName, lineId: userLineId, sections: userSections,
+          section: homeSection, allUnits } = useContext(UserContext);
+  /* 🔐 เอกสาร PE ผูกไลน์ (`pe_doc_sets.line_name`) ⇒ แก้/ลบได้เฉพาะไลน์ของส่วนงานตัวเอง
+     (audit 15/10) · ทีม PE จริง (role engineer) ถือ `scope:all_units` จึงไม่กระทบ */
+  const wctx = useMemo(() => ({ role, section: homeSection, sections: userSections, allUnits }),
+    [role, homeSection, userSections, allUnits]);
   const canEdit = can('pe', 'edit', role);
   const canApprove = can('pe', 'approve', role);
   const canRouting = can('routing', 'manage', role);   // เขียน part_routings (ฝั่ง VSM) — คนละ key กับ pe:edit
@@ -190,6 +197,8 @@ export default function PEDocs() {
   useEffect(() => { loadDetail(setId); }, [setId, loadDetail]);
 
   const curSet = sets.find(s => s.id === setId) || null;
+  /* ชุดที่เปิดอยู่เป็นของส่วนงานเราไหม — ชุดที่ไม่ระบุไลน์ = ตัดสินไม่ได้ ⇒ ไม่บล็อก (เอกสารเก่า) */
+  const setWrite = canWriteLine(wctx, curSet?.line_name, lines);
 
   /* ⬇️ ดาวน์โหลดเป็น .xlsx ตามฟอร์มเดิม (เฉพาะแท็บ PFMEA / Control Plan — PFC เป็นผังวาด ทำไม่ได้)
      exceljs + ตัวสร้างไฟล์โหลดแบบ dynamic ตอนกดเท่านั้น ไม่ถ่วงตอนเปิดหน้า */
@@ -234,6 +243,8 @@ export default function PEDocs() {
 
   /* ── save helpers (ทุกตัวเช็ค error ตามกฎ supabase-js คืน {error} ไม่ throw) — คืน row ที่บันทึก (null = fail) ── */
   const saveRow = async (table, form, patch, after) => {
+    /* 🔐 ด่านซ้ำตอนเขียนจริง — ทุกตัวแก้เอกสารของชุดที่เปิดอยู่ (`?set=` เปิดตรงได้) */
+    if (!setWrite.ok) { toast.info(writeBlockText(setWrite, { what: 'เอกสาร PE ของชุดนี้' })); return null; }
     setSaving(true);
     const q = form.id
       ? supabase.from(table).update(patch).eq('id', form.id).select('*').single()
@@ -246,10 +257,13 @@ export default function PEDocs() {
     return data;
   };
   const deleteRow = async (table, id, label, after, imgUrl) => {
+    if (!setWrite.ok) { toast.info(writeBlockText(setWrite, { what: 'เอกสาร PE ของชุดนี้' })); return; }
     if (!window.confirm(`ลบ${label}?`)) return;
-    const { error } = await supabase.from(table).delete().eq('id', id);
-    if (error) { toast.error(error.message); return; }
-    if (imgUrl) removePeImage(imgUrl);   // ลบไฟล์หลัง DB สำเร็จ (กฎ storage — best-effort)
+    /* 🔴 RLS ปฏิเสธ DELETE = "0 แถว ไม่มี error" ⇒ เช็คแค่ error แล้วลบไฟล์ = แถวยังอยู่ แต่รูปหายถาวร
+       (กฎเหล็ก DB ข้อ 2) ⇒ ต้อง `.select()` นับแถวให้ได้ > 0 ก่อนแตะ storage */
+    const res = await supabase.from(table).delete().eq('id', id).select('id');
+    if (!checkWriteRows(res, `ลบ${label}`)) return;
+    if (imgUrl) removePeImage(imgUrl);   // ลบไฟล์หลังยืนยันว่าแถวหายจริงแล้วเท่านั้น (best-effort)
     toast.success('ลบแล้ว');
     after?.();
   };
@@ -275,8 +289,10 @@ export default function PEDocs() {
     if (!file || !row) return;
     const url = await uploadPeImage(pathPrefix, file);
     if (!url) return;
-    const { error } = await supabase.from(table).update({ image_url: url }).eq('id', row.id);
-    if (error) { toast.error(error.message); return; }
+    /* 🔴 UPDATE ที่ถูก RLS ปฏิเสธ = 0 แถว ไม่มี error ⇒ แถวยังชี้ไฟล์เก่า แต่เราลบไฟล์เก่าไปแล้ว
+       = รูปพังถาวร + ไฟล์ใหม่กลายเป็นขยะ ⇒ นับแถวก่อนแตะ storage */
+    const res = await supabase.from(table).update({ image_url: url }).eq('id', row.id).select('id');
+    if (!checkWriteRows(res, 'บันทึกรูปแนบ')) return;
     if (row.image_url) removePeImage(row.image_url);
   };
 
@@ -724,7 +740,8 @@ export default function PEDocs() {
             {/* ลูกค้า — จากรายชื่อใน Product Master (CustomerSelect) กันสะกดต่างข้ามโมดูล (2026-09-07) */}
             <div style={lbl}>Customer<CustomerSelect value={setModal.customer || ''} history={custHist} placeholder="FORD" style={{ marginTop: 4 }} onChange={({ customer }) => setSetModal({ ...setModal, customer })} /></div>
             <label style={lbl}>ไลน์หลักที่ผลิต
-              <LineSelect lines={lineOpts} value={setModal.line_name || ''} placeholder="— ไม่ระบุ —"
+              <LineSelect lines={lineOpts} role={role} lineId={userLineId} sections={userSections}
+                value={setModal.line_name || ''} placeholder="— ไม่ระบุ —"
                 style={{ marginTop: 4 }} onChange={v => setSetModal({ ...setModal, line_name: v })} />
             </label>
             <label style={lbl}>สถานะ
@@ -823,7 +840,8 @@ export default function PEDocs() {
                 placeholder="SP-82" style={{ marginTop: 4 }} onChange={r => setProcModal({ ...procModal, machine_no: r.machine_no })} />
             </div>
             <label style={lbl}>ไลน์/พื้นที่
-              <LineSelect lines={lineOpts} value={procModal.line_name || ''} placeholder="— ไม่ระบุ —"
+              <LineSelect lines={lineOpts} role={role} lineId={userLineId} sections={userSections}
+                value={procModal.line_name || ''} placeholder="— ไม่ระบุ —"
                 style={{ marginTop: 4 }} onChange={v => setProcModal({ ...procModal, line_name: v })} />
             </label>
             <label style={lbl}>ตัวเชื่อมผัง (A-G)<input value={procModal.connector || ''} onChange={e => setProcModal({ ...procModal, connector: e.target.value })} style={{ marginTop: 4 }} /></label>

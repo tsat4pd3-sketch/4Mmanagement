@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   ROT_LIMITS, pathOnly, isValidRotationPath, secOf, normalizeConfig, buildPlaylist,
   stepIndex, indexOfLocation, resolveIndex, shouldReload, fmtSec, cleanItemsForSave,
+  boardFlipSec, setActiveDwellSec, activeDwellSecOf, BOARD_FLIP_MIN_SEC,
 } from '../displayRotation.js';
 
 test('path ภายในแอปเท่านั้น — ห้ามพาจอออกนอกระบบ', () => {
@@ -134,4 +135,67 @@ test('ทะเบียนตัวกรอง — ทุกตัว select �
     assert.equal(new Set(keys).size, keys.length, p);
     defs.filter(d => d.kind === 'select').forEach(d => assert.ok(d.options?.length, `${p}:${d.key}`));
   }
+});
+
+/* ── 📖 สลับหน้าภายในบอร์ดตอนจอวน (15/10) ── */
+test('boardFlipSec: แบ่งเวลาค้างหน้าให้ครบทุกหน้าภายใน · หน้าเดียว = null · ไม่รู้ dwell = defaultSec · ต่ำสุด BOARD_FLIP_MIN_SEC', () => {
+  assert.equal(boardFlipSec(1, 120), null);
+  assert.equal(boardFlipSec(0, 120), null);
+  assert.equal(boardFlipSec(2, 120), 60);
+  assert.equal(boardFlipSec(3, 100), 33);
+  assert.equal(boardFlipSec(2, null), ROT_LIMITS.defaultSec / 2);
+  assert.equal(boardFlipSec(10, 30), BOARD_FLIP_MIN_SEC);
+  setActiveDwellSec(90); assert.equal(activeDwellSecOf(), 90); assert.equal(boardFlipSec(3), 30);
+  setActiveDwellSec(null); assert.equal(activeDwellSecOf(), null);
+  setActiveDwellSec('abc'); assert.equal(activeDwellSecOf(), null);
+});
+
+import { paramVisible } from '../displayRotation.js';
+
+test('paramVisible — ช่องที่ผูกกับแท็บโชว์เฉพาะแท็บนั้น (ยังไม่เลือกแท็บ = "")', () => {
+  const d = { key: 'period', showIf: { tab: ['sqdcm'] } };
+  assert.equal(paramVisible(d, { tab: 'sqdcm' }), true);
+  assert.equal(paramVisible(d, { tab: 'kpi' }), false);
+  assert.equal(paramVisible(d, {}), false);
+  assert.equal(paramVisible({ key: 'x', showIf: { tab: ['', 'kpi'] } }, {}), true);
+  assert.equal(paramVisible({ key: 'x' }, {}), true);
+});
+
+test('ทะเบียนตัวกรอง — showIf ต้องอ้างคีย์ที่มีอยู่ในหน้าเดียวกัน', () => {
+  for (const [p, defs] of Object.entries(DISPLAY_PAGE_PARAMS)) {
+    const keys = new Set(defs.map(d => d.key));
+    defs.filter(d => d.showIf).forEach(d => Object.keys(d.showIf).forEach(k => assert.ok(keys.has(k), `${p}:${d.key} → ${k}`)));
+  }
+});
+
+import { minSecForPath } from '../displayRotation.js';
+
+test('minSecForPath — ผังโรงงานวนมุมมอง ต้องอยู่นานพอวนครบรอบ', () => {
+  assert.equal(minSecForPath('/factory-map?cycle=health,oee,ng&csec=20'), 60);
+  assert.equal(minSecForPath('/factory-map?cycle=health,oee'), 30);          // ค่าตั้งต้น 15 วิ/มุม
+  assert.equal(minSecForPath('/factory-map?cycle=health'), 0);              // มุมเดียว = ไม่วน
+  assert.equal(minSecForPath('/factory-map?cycle=1&csec=10'), 100);
+  assert.equal(minSecForPath('/tv?cycle=1'), 0);
+  const { playable } = buildPlaylist([{ path: '/factory-map?cycle=health,oee,ng', sec: 20 }], () => true);
+  assert.equal(playable[0].sec, 45);
+});
+
+import { isTvShell } from '../displayRotation.js';
+
+test('isTvShell — บัญชี display หรือลิงก์ ?tvshell=1 เท่านั้น', () => {
+  assert.equal(isTvShell('display', ''), true);
+  assert.equal(isTvShell('admin', '?tvshell=1'), true);
+  assert.equal(isTvShell('admin', '?x=1&tvshell=1'), true);
+  assert.equal(isTvShell('admin', '?tvshell=0'), false);
+  assert.equal(isTvShell('admin', ''), false);
+  assert.equal(isTvShell('supervisor', undefined), false);
+});
+
+import { barChips } from '../displayRotation.js';
+
+test('barChips — โชว์เฉพาะ "ข้อมูลชุดไหน" ไม่โชว์ค่าปรับหน้าตา/คีย์นอกทะเบียน', () => {
+  assert.deepEqual(barChips('/factory-map?view=3d&panel=obeya&lbl=60&tvshell=1'), []);
+  assert.deepEqual(barChips('/line-oee?line=LINE%20APRON%20ASSY'), ['LINE APRON ASSY']);
+  assert.deepEqual(barChips('/tv?dept=production&sec=PD3'), ['🏭 ฝ่ายผลิต', 'PD3']);
+  assert.deepEqual(barChips('/obeya?tab=kpi&board=1&scope=section:PD3'), ['📋 บอร์ด KPI', 'PD3']);
 });

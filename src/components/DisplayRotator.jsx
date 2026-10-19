@@ -1,11 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { startTransition, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { canAccessPage } from '../utils/permissions';
 import {
   normalizeConfig, buildPlaylist, stepIndex, indexOfLocation, resolveIndex, shouldReload,
-  displayChannelName, parseDisplayCmd, fmtSec, SKIP_REASON_LABEL,
+  displayChannelName, parseDisplayCmd, ROT_NAV_STATE, fmtSec, SKIP_REASON_LABEL, markQuietReload,
+  setActiveDwellSec, barChips,
 } from '../utils/displayRotation';
+import { NAV_ITEMS, UserContext } from '../App';
+import { getCurrentShift, getWorkDate } from '../utils/workDate';
 
 /* ══ 📺 DisplayRotator — จอวนหน้าเอง ตามแผนของบัญชีที่ login ══════════════════════════
    2026-10-09 · คำสั่ง user: "ตั้งว่าจอ user นี้จะเปิดอะไรวนบ้าง" · ตั้งค่าที่ /display-rotation
@@ -25,7 +28,41 @@ import {
 
 const PAUSE_EVENTS = ['pointerdown', 'keydown', 'touchstart', 'wheel', 'click'];
 
-export default function DisplayRotator({ userId, role, disabled }) {
+/* 🎬 เปลี่ยนหน้าแบบ "กระพริบ" (15/10 · user "สำหรับ tv เป็นกระพริบเพื่อให้สมูทเลยได้มั้ย")
+   ม่านสีพื้นเฟดขึ้น → เปลี่ยนหน้าใต้ม่าน → ค้างไว้ให้ข้อมูล/ผังหน้าใหม่ขึ้น + ย่อพอดีจอเสร็จ → เฟดออก
+   ⇒ ไม่เห็น "กำลังโหลด..." / หน้ากระโดด / ตัวเลขว่างระหว่างโหลด
+   · ม่านเป็น DOM ที่ผูกกับ body (ไม่ใช่ state) — ตัววน remount ตอนข้าม branch (/tv ↔ หน้าอื่น) ม่านต้องไม่หาย
+   · pointer-events:none = ไม่บังการแตะ (แตะ = หยุดวน ยังทำงาน) · opacity transition ล้วน รองรับ Chromium 94 */
+const VEIL_ID = 'esm-rot-veil';
+const VEIL_FADE_MS = 280;
+const VEIL_HOLD_MS = 900;
+let veilTimer = null;
+function veilEl() {
+  let v = document.getElementById(VEIL_ID);
+  if (!v) {
+    v = document.createElement('div');
+    v.id = VEIL_ID;
+    v.setAttribute('aria-hidden', 'true');
+    Object.assign(v.style, {
+      position: 'fixed', top: '0', left: '0', right: '0', bottom: '0', background: 'var(--bg)',
+      opacity: '0', transition: `opacity ${VEIL_FADE_MS}ms ease`, pointerEvents: 'none', zIndex: '2147483000',
+    });
+    document.body.appendChild(v);
+  }
+  return v;
+}
+/** เฟดม่านขึ้น → `go()` → ค้าง → เฟดออก · `keep` = ไม่ต้องเฟดออก (กำลังรีโหลดทั้งหน้า) */
+function veilSwap(go, keep = false) {
+  const v = veilEl();
+  clearTimeout(veilTimer);
+  v.style.opacity = '1';
+  veilTimer = setTimeout(() => {
+    go();
+    if (!keep) veilTimer = setTimeout(() => { v.style.opacity = '0'; }, VEIL_HOLD_MS);
+  }, VEIL_FADE_MS);
+}
+
+export default function DisplayRotator({ userId, role, disabled, shell = false }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [cfgRow, setCfgRow] = useState(null);   // null = ไม่มีแผน / ยังไม่โหลด
@@ -65,6 +102,8 @@ export default function DisplayRotator({ userId, role, disabled }) {
   const active = !!cfg && cfg.enabled && playable.length > 0 && !disabled;
   const n = playable.length;
   const cur = active ? playable[Math.min(idx, n - 1)] : null;
+  /* บอกบอร์ดที่แบ่งหน้าภายในว่าหน้านี้ค้างกี่วิ (boardFlipSec) — ออกจากรอบ = ล้าง */
+  useEffect(() => { setActiveDwellSec(active && cur ? cur.sec : null); return () => setActiveDwellSec(null); }, [active, cur]);
 
   /* ── หน้าเปลี่ยน (ทั้งจากเราและจากคน/รีโมท) → ตำแหน่งในรอบตาม + นับเวลาใหม่ ── */
   useEffect(() => {
@@ -79,7 +118,7 @@ export default function DisplayRotator({ userId, role, disabled }) {
     if (!active) { startedRef.current = false; return; }
     if (startedRef.current) return;
     startedRef.current = true;
-    if (indexOfLocation(playable, location.pathname, location.search) < 0) navigate(playable[0].path, { replace: true });
+    if (indexOfLocation(playable, location.pathname, location.search) < 0) navigate(playable[0].path, { replace: true, state: { [ROT_NAV_STATE]: `0-${Date.now()}` } });
   }, [active, playable, location.pathname, location.search, navigate]);
 
   const goTo = useCallback((nextIdx) => {
@@ -87,26 +126,30 @@ export default function DisplayRotator({ userId, role, disabled }) {
     const target = playable[nextIdx];
     if (!target) return;
     if (shouldReload(loadedAtRef.current, Date.now(), cfg.reloadMin)) {
-      window.location.assign(target.path);   // รีโหลดเต็มหน้าไปยังหน้าถัดไปเลย (ล้างหน่วยความจำ)
+      // รีโหลดเต็มหน้าไปยังหน้าถัดไปเลย (ล้างหน่วยความจำ) · ใต้ม่าน + ไม่ขึ้น splash ซ้ำ
+      veilSwap(() => { markQuietReload(); window.location.assign(target.path); }, true);
       return;
     }
     setIdx(nextIdx);
     setElapsed(0);
-    navigate(target.path);
+    // startTransition = ระหว่างโหลดไฟล์หน้าใหม่ (lazy) ค้างหน้าเดิมไว้ ไม่โชว์ "กำลังโหลด..." ของ Suspense
+    veilSwap(() => startTransition(() => {
+      navigate(target.path, { state: { [ROT_NAV_STATE]: `${nextIdx}-${Date.now()}` } });
+    }));
     if (nextIdx === 0) setReloadTick(t => t + 1);   // ครบรอบ = อ่านแผนใหม่
   }, [active, playable, cfg, navigate]);
 
   /* ── นาฬิกา 1 วิ ── */
   useEffect(() => {
-    if (!active) return undefined;
+    if (!active && !shell) return undefined;   // กรอบจอ TV ต้องมีนาฬิกาแม้ไม่ได้ตั้งรอบวน
     const id = setInterval(() => {
       const t = Date.now();
       setNow(t);
-      if (held || t < pausedUntil) return;
+      if (!active || held || t < pausedUntil) return;
       setElapsed(e => e + 1);
     }, 1000);
     return () => clearInterval(id);
-  }, [active, held, pausedUntil]);
+  }, [active, shell, held, pausedUntil]);
 
   useEffect(() => {
     if (active && cur && elapsed >= cur.sec) goTo(stepIndex(idx, n, 1));
@@ -156,6 +199,78 @@ export default function DisplayRotator({ userId, role, disabled }) {
     chanRef.current?.track(presenceRef.current).catch(() => {});
   }, [idx, n, curPath, held]);
 
+  /* ── 🖥️ พอดีจอ (15/10 · user: "พอเปิดจอวน tv ไม่ควรมี overflow") ──
+     จอแขวนไม่มีใครเลื่อน ⇒ ของที่ล้นลงล่าง = ไม่มีใครเห็น · ย่อทั้งหน้า (CSS zoom ที่ <main>) ให้สูงพอดีจอ
+     · zoom (ไม่ใช่ transform) = layout คิดความกว้างใหม่ให้เต็มจอเอง ไม่เหลือขอบว่างด้านขวา · Chromium 94 รองรับ
+     · วัดซ้ำทุก 1.5 วิ (ข้อมูลโหลดทีหลัง/สลับมุมมอง) · เปลี่ยน < 2% ไม่ขยับ (กันจอสั่น) · ย่อสุด 55%
+     · ปิด scrollbar ของทั้งหน้าระหว่างวน · ออกจากโหมดวน = คืนค่าเดิมทั้งหมด
+     · หน้า /tv ไม่มี <main> (เต็มจออยู่แล้ว) = ไม่แตะ */
+  const pathKey = `${location.pathname}${location.search}`;
+  useEffect(() => {
+    if (!active) return undefined;
+    const html = document.documentElement;
+    const prev = { h: html.style.overflow, b: document.body.style.overflow };
+    html.style.overflow = 'hidden';
+    document.body.style.overflow = 'hidden';
+    let zoom = 1;
+    const fit = () => {
+      const m = document.querySelector('main');
+      if (!m) return;
+      /* หน้าที่มี 3D (CSS perspective/preserve-3d) หรือ canvas — Chromium 94 คิดพิกัดใต้ zoom ผิด
+         (ผัง 3D ยุบไปมุมซ้ายบน · รูปจากจอจริง 16/10) ⇒ ไม่ย่อ · หน้าพวกนี้คุมความสูงเอง */
+      if (m.querySelector('[data-tv-nofit], canvas')) {
+        if (zoom !== 1) { zoom = 1; m.style.zoom = ''; }
+        return;
+      }
+      const visual = m.getBoundingClientRect().height + 2;   // ความสูงที่เห็นจริง (คูณ zoom แล้ว)
+      const barH = parseFloat(getComputedStyle(document.body).paddingTop) || 0;   // แถบบนของกรอบจอ TV
+      const target = Math.max(0.55, Math.min(1, (zoom * (window.innerHeight - barH)) / Math.max(1, visual)));
+      if (Math.abs(target - zoom) < 0.02) return;
+      zoom = Math.round(target * 100) / 100;
+      m.style.zoom = zoom >= 0.995 ? '' : String(zoom);
+    };
+    const t0 = setTimeout(fit, 300);
+    const id = setInterval(fit, 1500);
+    return () => {
+      clearTimeout(t0); clearInterval(id);
+      const m = document.querySelector('main');
+      if (m) m.style.zoom = '';
+      html.style.overflow = prev.h;
+      document.body.style.overflow = prev.b;
+    };
+  }, [active, pathKey]);
+
+  /* ชิปหดเล็กหลังเปลี่ยนหน้า 6 วิ (ไม่บังเนื้อหาจอ) · มีคนแตะ/หยุด/ข้ามหน้า = กางเต็ม */
+  const [changedAt, setChangedAt] = useState(() => Date.now());
+  useEffect(() => { setChangedAt(Date.now()); }, [pathKey]);
+
+  const pausedLeft = Math.max(0, Math.ceil((pausedUntil - now) / 1000));
+  const skipTitle = skipped.map(s => `${s.path || '(ว่าง)'} — ${SKIP_REASON_LABEL[s.reason]}`).join('\n');
+  // ปุ่มไม่นับเป็น "มีคนใช้จอ" — ตัวฟัง (capture ที่ window) ตั้งหยุดชั่วคราวไปก่อน แล้ว onClick ล้างทิ้ง
+  const btn = (label, onClick, title, st = btnStyle) => (
+    <button type="button" title={title}
+      onClick={() => { onClick(); setPausedUntil(0); }}
+      style={st}>{label}</button>
+  );
+
+  if (shell) {
+    return (
+      <TvShellBar
+        pathname={location.pathname} search={location.search} now={now}
+        loadErr={loadErr} active={active && !!cur}
+        idx={Math.min(idx, Math.max(0, n - 1))} n={n} sec={cur?.sec || 0} elapsed={elapsed}
+        held={held} pausedLeft={pausedLeft} skipped={skipped} skipTitle={skipTitle}
+        controls={active && cur ? (
+          <>
+            {btn('◀', () => goTo(stepIndex(idx, n, -1)), 'หน้าก่อนหน้า', barBtn)}
+            {btn(held ? '▶' : '⏸', () => setHeld(h => !h), held ? 'วนต่อ' : 'หยุดค้างหน้านี้', barBtn)}
+            {btn('▶▶', () => goTo(stepIndex(idx, n, 1)), 'หน้าถัดไป', barBtn)}
+          </>
+        ) : null}
+      />
+    );
+  }
+
   if (loadErr) {
     return (
       <div style={chipStyle} title={loadErr}>⚠ โหลดรอบจอวนหน้าไม่สำเร็จ — จอจะค้างหน้านี้</div>
@@ -163,18 +278,19 @@ export default function DisplayRotator({ userId, role, disabled }) {
   }
   if (!active || !cur) return null;
 
-  const pausedLeft = Math.max(0, Math.ceil((pausedUntil - now) / 1000));
   const status = held ? '⏸ หยุดอยู่'
     : pausedLeft > 0 ? `⏸ มีคนใช้จอ · วนต่อใน ${fmtSec(pausedLeft)}`
       : `ถัดไปใน ${fmtSec(Math.max(0, cur.sec - elapsed))}`;
-  const skipTitle = skipped.map(s => `${s.path || '(ว่าง)'} — ${SKIP_REASON_LABEL[s.reason]}`).join('\n');
 
-  // ปุ่มบนชิปไม่นับเป็น "มีคนใช้จอ" — ตัวฟัง (capture ที่ window) ตั้งหยุดชั่วคราวไปก่อน แล้ว onClick ล้างทิ้ง
-  const btn = (label, onClick, title) => (
-    <button type="button" title={title}
-      onClick={() => { onClick(); setPausedUntil(0); }}
-      style={btnStyle}>{label}</button>
-  );
+  const compact = !held && pausedLeft === 0 && skipped.length === 0 && now - changedAt > 6000;
+  if (compact) {
+    return (
+      <div style={{ ...chipStyle, padding: '3px 9px', opacity: 0.55, gap: 6 }} role="status" aria-live="off"
+        title="แตะจอเพื่อหยุดวน / ดูปุ่มควบคุม">
+        🔁 {Math.min(idx, n - 1) + 1}/{n} · {fmtSec(Math.max(0, cur.sec - elapsed))}
+      </div>
+    );
+  }
 
   return (
     <div style={chipStyle} role="status" aria-live="off">
@@ -192,12 +308,88 @@ export default function DisplayRotator({ userId, role, disabled }) {
   );
 }
 
+/* ══ 📺 แถบบนของกรอบจอ TV — หน้าตาเดียวทุกหน้า (16/10 · user "โหมดจอทีวีหลากหลาย UX มาก คนใช้จะงง") ══
+   ซ้าย = จอนี้กำลังโชว์อะไร (ชื่อหน้า + ตัวกรองที่ตั้งจากลิงก์) · ขวา = ส่วนงานของจอ · วันงาน/กะ · นาฬิกา
+   ล่างสุดของแถบ = ความคืบหน้ารอบวน (1 ขีด = 1 หน้า · ขีดปัจจุบันเติมตามเวลา)
+   แทนที่: หัวเพจ/breadcrumb/แท็บ/แถบกรองของทุกหน้า · ชิปมุมจอ · นาฬิกาที่บางบอร์ดวาดเอง
+   ความสูงอยู่ที่ `--tvbar-h` (index.css) — บอร์ดที่เต็มจอแบบ fixed ต้องเริ่มที่ top: var(--tvbar-h, 0px) */
+function TvShellBar({ pathname, search, now, loadErr, active, idx, n, sec, elapsed, held, pausedLeft, skipped, skipTitle, controls }) {
+  const { sections, section } = useContext(UserContext) || {};
+  const secs = (sections?.length ? sections : (section ? [section] : [])).filter(Boolean);
+  const nav = pathname === '/tv'
+    ? { icon: '📺', label: 'Andon Board' }
+    : NAV_ITEMS.find(x => x.to === pathname) || { icon: '🖥️', label: pathname };
+  const chips = barChips(`${pathname}${search || ''}`);
+  const d = new Date(now);
+  const shift = getCurrentShift(d) === 'day' ? '☀️ กะเช้า' : '🌙 กะดึก';
+  const hhmm = d.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Bangkok' });
+  const wd = getWorkDate(d);
+  const status = !active ? null
+    : held ? '⏸ หยุดค้าง'
+      : pausedLeft > 0 ? `⏸ มีคนใช้จอ · วนต่อใน ${fmtSec(pausedLeft)}`
+        : `ถัดไปใน ${fmtSec(Math.max(0, sec - elapsed))}`;
+  return (
+    <div role="banner" style={barStyle}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1, overflow: 'hidden' }}>
+        <span style={{ fontSize: 20, lineHeight: 1 }}>{nav.icon}</span>
+        <span style={{ fontSize: 17, fontWeight: 900, fontFamily: 'var(--font-display)', whiteSpace: 'nowrap' }}>{nav.label}</span>
+        {chips.map(c => (
+          <span key={c} style={barChip}>{c}</span>
+        ))}
+      </div>
+      {loadErr && (
+        <span title={loadErr} style={{ fontSize: 12, fontWeight: 700, color: 'var(--amber)', whiteSpace: 'nowrap' }}>⚠ โหลดรอบวนไม่สำเร็จ — ค้างหน้านี้</span>
+      )}
+      {active && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          <span style={{ fontSize: 12, color: 'var(--muted)', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+            🔁 {idx + 1}/{n} · {status}
+          </span>
+          {skipped.length > 0 && (
+            <span title={skipTitle} style={{ fontSize: 12, color: 'var(--amber)', fontWeight: 700, whiteSpace: 'nowrap' }}>⚠ ข้าม {skipped.length} หน้า</span>
+          )}
+          {controls}
+        </div>
+      )}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
+        {secs.length > 0 && <span style={{ ...barChip, fontWeight: 800, color: 'var(--text)' }}>🏭 {secs.join(' · ')}</span>}
+        <span style={{ fontSize: 12, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{shift} · วันงาน {wd}</span>
+        <span style={{ fontSize: 20, fontWeight: 900, minWidth: 58, textAlign: 'right' }}>{hhmm}</span>
+      </div>
+      {active && n > 1 && (
+        <div aria-hidden="true" style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 3, display: 'flex', gap: 3 }}>
+          {Array.from({ length: n }, (_, i) => (
+            <div key={i} style={{ flex: 1, background: 'var(--border2)', overflow: 'hidden' }}>
+              <div style={{ height: '100%', background: 'var(--accent)',
+                width: i < idx ? '100%' : i > idx ? '0%' : `${Math.min(100, (elapsed / Math.max(1, sec)) * 100)}%`,
+                transition: i === idx ? 'width 1s linear' : 'none' }} />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const chipStyle = {
-  position: 'fixed', right: 14, bottom: 14, zIndex: 9990,
+  position: 'fixed', right: 14, bottom: 'calc(14px + var(--mnav-h, 0px))', zIndex: 9990,
   display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', maxWidth: '92vw',
   padding: '6px 10px', borderRadius: 999, fontSize: 12,
   background: 'var(--card)', border: '1px solid var(--border2)', color: 'var(--text)',
   boxShadow: 'var(--shadow-float)', opacity: 0.85,
+};
+const barStyle = {
+  position: 'fixed', top: 0, left: 0, right: 0, height: 'var(--tvbar-h, 46px)', zIndex: 9990,
+  display: 'flex', alignItems: 'center', gap: 14, padding: '0 16px',
+  background: 'var(--card)', borderBottom: '1px solid var(--border2)', color: 'var(--text)',
+};
+const barChip = {
+  padding: '2px 10px', borderRadius: 999, fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap',
+  background: 'var(--bg2)', border: '1px solid var(--border2)', color: 'var(--text2)',
+};
+const barBtn = {
+  minWidth: 28, height: 24, padding: '0 7px', borderRadius: 999, fontSize: 11, fontWeight: 800, opacity: 0.6,
+  cursor: 'pointer', background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border2)',
 };
 const btnStyle = {
   minWidth: 30, height: 26, padding: '0 8px', borderRadius: 999, fontSize: 12, fontWeight: 800,

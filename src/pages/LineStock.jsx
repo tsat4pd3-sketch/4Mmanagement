@@ -4,6 +4,7 @@ import ReadOnlyNote from '../components/ReadOnlyNote';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { loadLinesRes } from '../utils/useProductionLines';
 import { scopedLineNames, filterRowsByLineScope } from '../utils/sectionScope';
+import { canWriteLine, writableRows, writeBlockText } from '../utils/writeScope';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { isFgMat } from '../utils/matPrefix';
@@ -42,7 +43,7 @@ import PartThumb from '../components/PartThumb';
 import usePartImages from '../utils/usePartImages';
 import { useStorageLocationsState } from '../utils/useStorageLocations';
 import { groupStockBySloc, slocGroupTitle } from '../utils/slocStockView';
-import { INFLOW_MODES, inflowModeOf, inflowPatchFor } from '../utils/stockReceipts';
+import { INFLOW_MODES, inflowModeOf, inflowPatchFor, inflowModesFor } from '../utils/stockReceipts';
 import { IconButton, DeleteButton } from '../components/IconButton';
 
 /* ─── LINE STOCK — Stock พาร์ทย่อยคงเหลือในแต่ละไลน์ผลิต ─────────────────
@@ -87,7 +88,11 @@ const EMPTY_FORM = { line_name:'', mat_no:'', part_name:'', qty:'', type:'issue'
    TAB: STOCK (existing content)
    ───────────────────────────────────────────────────────────────────────────── */
 function StockTab({ role, scope }) {
-  const { fullName } = useContext(UserContext);
+  const { fullName, section: homeSection, sections: mySections, allUnits } = useContext(UserContext);
+  /* 🔐 ขอบเขต "ที่แก้ได้" — คนละตัวกับ scopeNames ที่เป็นขอบเขต "ที่เห็น" (ดู utils/writeScope.js)
+     คิวอนุมัติเดิมดึง pending ทั้งระบบ ⇒ แอดมินหน่วยงานอนุมัติยอดสต็อกของส่วนงานอื่นได้ (audit 15/10) */
+  const wctx = useMemo(() => ({ role, section: homeSection, sections: mySections, allUnits }),
+    [role, homeSection, mySections, allUnits]);
   const canIssue = can('line_stock', 'issue', role);
   const canApprove = can('line_stock', 'approve', role);
 
@@ -247,6 +252,9 @@ function StockTab({ role, scope }) {
   // อนุมัติ/ปฏิเสธ movement ที่ pending — .eq('status','pending') กันเขียนซ้ำ แต่ update ที่ match 0 แถว
   // "คืนสำเร็จไม่มี error" → ต้องนับแถวจริงเสมอ ไม่งั้นคนที่สองได้ toast อนุมัติทั้งที่อีกคนปฏิเสธไปแล้ว
   const reviewTxn = async (txn, decision, reason) => {
+    /* 🔐 ด่านซ้ำตอนกดจริง — ลิสต์กรองแล้วยังไม่พอ (แถวเก่าค้างในหน่วยความจำ/กดจาก 2 แท็บ) */
+    const w = canWriteLine(wctx, txn.line_name, lines);
+    if (!w.ok) { toast.info(writeBlockText(w, { what: 'ใบขอปรับยอดของไลน์นี้' })); return; }
     setReviewing(txn.id);
     const patch = decision === 'approved'
       ? { status:'approved', reviewed_by: fullName, reviewed_at: new Date().toISOString(), reject_reason: null }
@@ -266,6 +274,9 @@ function StockTab({ role, scope }) {
   };
 
   const handleSave = async () => {
+    /* 🔐 ลงรายการเข้า/ออกของไลน์อื่นไม่ได้ (ชั้นที่ 3 · 15/10) */
+    const wr = canWriteLine(wctx, form.line_name, lines);
+    if (!wr.ok) { toast.info(writeBlockText(wr, { what: 'สต็อกของไลน์นี้' })); return; }
     if (!form.line_name) { toast.error('เลือกไลน์ก่อน'); return; }
     if (!form.mat_no.trim()) { toast.error('กรอก Mat No.'); return; }
     const qty = parseFloat(form.qty);
@@ -339,6 +350,14 @@ function StockTab({ role, scope }) {
     () => filterRowsByLineScope(txns, { scopedNames: scopeNames, lineNames: lineNameList }),
     [txns, scopeNames, lineNameList]);
 
+  /* 🔐 คิวอนุมัติ = เรื่อง "แก้" ไม่ใช่ "ดู" ⇒ กรองด้วยขอบเขตที่แก้ได้ (ไม่ใช่ scopeNames)
+     🔴 ไลน์ที่ไม่อยู่ในทะเบียน (คลัง STORE/FG WAREHOUSE) = ตัดสินไม่ได้ ⇒ **ไม่ซ่อน** (กติกาเดิมของจอนี้)
+     🔴 ซ่อนแล้วต้องบอกว่าซ่อนกี่ใบ — "คิวว่าง" กับ "ไม่ใช่ของเรา" คนละเรื่อง (กฎความซื่อสัตย์ของจอ) */
+  const pendingMine = useMemo(
+    () => writableRows(wctx, pending, (t) => lines.find(l => l.name === t.line_name)?.section),
+    [wctx, pending, lines]);
+  const pendingHidden = pending.length - pendingMine.length;
+
   /* กรอง 2 ชั้น: ไลน์/คลัง → ฝั่งงาน (ขาเข้า Store 2xx/3xx/5xx · ขาออก Warehouse FG 1xx)
      ตัวนับบนชิปต้องนับ "หลังกรองไลน์แล้ว" เพื่อให้เลขตรงกับที่ตาข้างล่างเห็นจริง */
   const lineStock = useMemo(() => (
@@ -404,12 +423,12 @@ function StockTab({ role, scope }) {
         />
         <SideFilterChips value={sideFilter} onChange={setSideFilter} counts={sideCounts} unit="รายการ" />
         <span className="spacer" />
-        {(pending.length > 0 || canApprove) && (
+        {(pendingMine.length > 0 || canApprove) && (
           <button onClick={() => setShowPending(v => !v)}
             style={{ ...btn(showPending ? '#f59e0b' : 'var(--bg2)', showPending ? '#1a1206' : 'var(--text)'),
               position: 'relative',
-              border: pending.length > 0 ? '1px solid #f59e0b' : '1px solid var(--border)' }}>
-            ⏳ รออนุมัติ{pending.length > 0 ? ` (${pending.length})` : ''}
+              border: pendingMine.length > 0 ? '1px solid #f59e0b' : '1px solid var(--border)' }}>
+            ⏳ รออนุมัติ{pendingMine.length > 0 ? ` (${pendingMine.length})` : ''}
             <ToggleDot on={showPending} />
           </button>
         )}
@@ -432,7 +451,10 @@ function StockTab({ role, scope }) {
       {showPending && (
         <div style={{ ...card, padding:0, overflow:'hidden', marginBottom:16, borderColor:'rgba(245,158,11,0.4)' }}>
           <div style={{ padding:'12px 16px', background:'rgba(245,158,11,0.08)', borderBottom:'1px solid var(--border)', display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:8 }}>
-            <div style={{ fontWeight:800, fontSize:14, color:'#f59e0b' }}>⏳ รายการรออนุมัติ ({pending.length})</div>
+            <div style={{ fontWeight:800, fontSize:14, color:'#f59e0b' }}>⏳ รายการรออนุมัติ ({pendingMine.length})
+              {pendingHidden > 0 && <span style={{ fontWeight:600, fontSize:12, color:'var(--muted)' }}>
+                {' '}· ซ่อน {pendingHidden} ใบของส่วนงานอื่น (ดูได้ที่ประวัติ แต่อนุมัติไม่ได้)</span>}
+            </div>
             <div style={{ fontSize:11, color:'var(--muted)' }}>
               {canApprove ? 'อนุมัติแล้วจึงมีผลต่อ stock คงเหลือ' : 'เฉพาะผู้มีสิทธิ์ (admin/manager) อนุมัติได้'}
             </div>
@@ -447,10 +469,10 @@ function StockTab({ role, scope }) {
                 </tr>
               </thead>
               <tbody>
-                {pending.length === 0 && (
+                {pendingMine.length === 0 && (
                   <tr><td colSpan={8} style={{ padding:30, textAlign:'center', color:'var(--muted)', fontSize:13 }}>ไม่มีรายการรออนุมัติ</td></tr>
                 )}
-                {pending.map(t => (
+                {pendingMine.map(t => (
                   <tr key={t.id}>
                     <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)', fontSize:12, color:'var(--muted)', whiteSpace:'nowrap' }}>{t.work_date}</td>
                     <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)', fontSize:13, fontWeight:600 }}>{t.line_name}</td>
@@ -575,6 +597,10 @@ function StockTab({ role, scope }) {
           ) : (
             groups.map(g => {
               const lowParts = g.parts.filter(p => p.qty <= 0);
+              /* 🧾 ใบ Monitor Stock ของทีมวางแผนตัดสินด้วย MIN/MAX — พาร์ทที่ยังไม่ตั้งจะขึ้น "—" ทั้งแถว
+                 แล้วสถานะถอยไปใช้เกณฑ์สำรอง (< 10 ชิ้น) ⇒ ต้องเขียนบนจอว่ามีกี่รายการที่ยังตัดสินไม่ได้จริง
+                 (กฎความซื่อสัตย์ของจอ: ข้อมูลไม่พอ ต้องบอก ห้ามปล่อยให้ดูเหมือนตั้งครบ) */
+              const noLvParts = g.parts.filter(p => ksMap[p.mat_no]?.min == null || ksMap[p.mat_no]?.max == null);
               const folded  = collapsedGroups.has(g.key);
               return (
                 <div key={g.key} style={{ ...card, padding:0, overflow:'hidden' }}>
@@ -590,6 +616,12 @@ function StockTab({ role, scope }) {
                         <span style={{ fontSize:11, color:'var(--muted)' }}>📍 {g.lineNames.join(' · ')}</span>
                       )}
                       {lowParts.length > 0 && <span style={{ fontSize:11, padding:'2px 9px', borderRadius:10, background:'rgba(239,68,68,0.12)', color:'#ef4444', fontWeight:700 }}>⚠️ {lowParts.length} รายการหมด</span>}
+                      {noLvParts.length > 0 && (
+                        <span title={`ยังไม่ได้ตั้ง MIN/MAX ${noLvParts.length} พาร์ท — แถวนั้นขึ้น "—" และสถานะใช้เกณฑ์สำรอง (เหลือน้อยเมื่อต่ำกว่า 10 ชิ้น) · ตั้งค่าจริงที่ /products → แท็บ 🎴 Kanban Std`}
+                          style={{ fontSize:11, padding:'2px 9px', borderRadius:10, background:'rgba(245,158,11,0.12)', color:'#f59e0b', fontWeight:700 }}>
+                          📐 {noLvParts.length} พาร์ทยังไม่ตั้ง MIN/MAX
+                        </span>
+                      )}
                       <span style={{ fontSize:11, color:'var(--muted)' }}>{g.parts.length} พาร์ท</span>
                     </div>
                   </div>
@@ -919,6 +951,11 @@ function addMins(timeStr, mins) {
 }
 
 function DeliveryRoundsTab({ canEdit, fullName, scope }) {
+  /* 🔐 รอบจัดส่งผูกไลน์ ⇒ แก้/ลบได้เฉพาะไลน์ส่วนงานตัวเอง (audit 15/10 — เดิม load ดึงทุกไลน์
+     แล้ว lineFilter เป็นแค่ตัวกรองมุมมองที่ default ว่าง) · สโตร์ถือ scope:all_units จึงไม่กระทบ */
+  const { section: homeSection, allUnits } = useContext(UserContext);
+  const rndCtx = useMemo(() => ({ role: scope?.role, section: homeSection, sections: scope?.sections, allUnits }),
+    [scope?.role, homeSection, scope?.sections, allUnits]);
   const [rounds,     setRounds]     = useState([]);
   const [lines,      setLines]      = useState([]);
   const [lineFilter, setLineFilter] = useState('');
@@ -983,6 +1020,9 @@ function DeliveryRoundsTab({ canEdit, fullName, scope }) {
   };
 
   const handleSave = async () => {
+    /* ด่านซ้ำตอนเขียนจริง — ไลน์ปลายทางมาจากฟอร์ม */
+    const wr = canWriteLine(rndCtx, form.line_name, lines);
+    if (!wr.ok) { toast.info(writeBlockText(wr, { what: 'รอบจัดส่งของไลน์นี้' })); return; }
     if (!form.line_name.trim()) { toast.error('กรอกชื่อไลน์'); return; }
     if (!form.round_no || parseInt(form.round_no) < 1) { toast.error('กรอก Round No.'); return; }
     if (!form.delivery_time) { toast.error('กรอกเวลาจัดส่ง'); return; }
@@ -1032,6 +1072,9 @@ function DeliveryRoundsTab({ canEdit, fullName, scope }) {
   };
 
   const handleDelete = async (id) => {
+    const row = rounds.find(r => r.id === id);
+    const wd = canWriteLine(rndCtx, row?.line_name, lines);
+    if (!wd.ok) { toast.info(writeBlockText(wd, { what: 'รอบจัดส่งของไลน์นี้' })); return; }
     if (!window.confirm('ยืนยันลบรอบจัดส่งนี้?')) return;
     const { error } = await supabaseDR.from('kanban_delivery_rounds').update({ is_active: false }).eq('id', id);
     if (error) { toast.error(error.message); return; }
@@ -1464,9 +1507,11 @@ function InflowRulesTab({ canEdit }) {
         <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>⚙️ รับงานเข้า stock เมื่อปิดออเดอร์</div>
         <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4, lineHeight: 1.7 }}>
           สแกนปิดออเดอร์ (confirm) แล้วของไปเข้าคลังปลายทางตามกฎ — FG (เบอร์ 1xxx) เข้า warehouse · พาร์ทลูก (เบอร์ 2xxx) เข้าสโตร์
-          <br />แต่ละกฎเลือกได้ 3 แบบ: <b>{INFLOW_MODES.auto.label}</b> = {INFLOW_MODES.auto.hint} ·
+          <br />แต่ละกฎเลือกได้: <b>{INFLOW_MODES.auto.label}</b> = {INFLOW_MODES.auto.hint} ·
           {' '}<b>{INFLOW_MODES.confirm.label}</b> = {INFLOW_MODES.confirm.hint} (แท็บ 📥 รอรับเข้า) ·
           {' '}<b style={{ color: '#ef4444' }}>{INFLOW_MODES.off.label}</b> = {INFLOW_MODES.off.hint}
+          <br /><b style={{ color: INFLOW_MODES.lot.color }}>{INFLOW_MODES.lot.label}</b> (เฉพาะกฎ MAT ตรงตัว) = {INFLOW_MODES.lot.hint}
+          · ระบบตั้งให้เองเมื่อสโตร์เปิดล็อตพาร์ทใหม่ — พาร์ทที่เลิกใช้ล็อตแล้ว เปลี่ยนเป็น 🟡/🟢 ที่นี่
           <br />กฎแบบ <strong>MAT ตรงตัว</strong> ชนะแบบ <strong>ขึ้นต้นด้วย</strong> · รายการที่เข้าแล้วดูได้ที่แท็บ 📦 Stock (ผู้บันทึก = auto)
         </div>
       </div>
@@ -1490,11 +1535,16 @@ function InflowRulesTab({ canEdit }) {
                     ? <>ขึ้นต้นด้วย <span style={{ fontFamily: 'monospace', color: '#0ea5e9', fontSize: 14 }}>{r.match_value}</span></>
                     : <span style={{ fontFamily: 'monospace', color: '#0ea5e9', fontSize: 14 }}>{r.match_value}</span>}
                 </td>
-                <td style={{ padding: '8px 14px', fontSize: 13, fontWeight: 700, color: '#f59e0b' }}>📍 {r.dest_line_name}</td>
+                <td style={{ padding: '8px 14px', fontSize: 13, fontWeight: 700, color: '#f59e0b' }}>
+                  {/* 🔧 โหมดปิดล็อต: ยอดลงที่ไลน์ผลิตของล็อต — คลังในแถวไม่ถูกใช้ ห้ามโชว์เหมือนเป็นปลายทางจริง */}
+                  {inflowModeOf(r) === 'lot'
+                    ? <span style={{ color: INFLOW_MODES.lot.color, fontSize: 12 }}>📍 ไลน์ผลิตของล็อต (ตอนปิดล็อต)</span>
+                    : <>📍 {r.dest_line_name}</>}
+                </td>
                 <td style={{ padding: '8px 14px' }}>
                   {canEdit
                     ? <Segmented value={inflowModeOf(r)} onChange={v => setRuleMode(r, v)} label="วิธีรับเข้า"
-                        options={Object.values(INFLOW_MODES).map(m => ({ value: m.key, label: m.label }))} />
+                        options={inflowModesFor(r).map(m => ({ value: m.key, label: m.label }))} />
                     : <span style={{ fontSize: 12, fontWeight: 800, color: INFLOW_MODES[inflowModeOf(r)].color }}>{INFLOW_MODES[inflowModeOf(r)].label}</span>}
                 </td>
                 <td style={{ padding: '8px 14px', textAlign: 'right' }}>

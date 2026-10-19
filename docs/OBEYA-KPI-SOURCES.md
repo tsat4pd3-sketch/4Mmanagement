@@ -913,7 +913,7 @@ migration `20260923_kpi_seed_h1_fy2026_main.sql` (**apply แล้ว**) · ก
 | จุด | ของเรา (`kpiSetup.js`) | ใบทางการ | ผล |
 |---|---|---|---|
 | **DSI / Inventory** | `inventory_baht ÷ (sale_product ÷ days)` | `(Stock value end of month ÷ **COGS**) × Day` | **ตัวหารคนละตัว** — ของเราใช้ยอดขาย ทางการใช้ **ต้นทุนขาย (COGS)** · แผ่นบอร์ด PD3 ที่เทสล็อกไว้ (0.3817) คำนวณจากยอดขาย ⇒ อาจเป็นคนละนิยามระหว่างแผนก **ห้ามแก้เงียบๆ** ต้องถามก่อน + ถ้าแก้ต้องเพิ่มตัวแปรฐาน `cogs` |
-| **Annual Sale Per Head** | `sale_total ÷ manpower` | `Total Sales ÷ **Average** manpower` | ทางการระบุ "ค่าเฉลี่ยกำลังคน" ไม่ใช่กำลังคน ณ จุดใดจุดหนึ่ง ⇒ ควรนิยาม `manpower` ให้ชัดว่าเป็นค่าเฉลี่ยของช่วง |
+| **Annual Sale Per Head** | `Σ sale_total (ม.ค.→เดือนนี้) ÷ manpower` | `Total Sales ÷ **Average** manpower` | **19/10 ปิดจากใบจริง** "5.Manpower" แถว Sale All / Head (All): ตัวตั้ง = Accumulate Total Sale (YTD) · ตัวหาร = Total Head count (All) ของเดือนนั้น (เม.ย. 706.43 ÷ 392 = 1.802 · ทั้งปี 2,118.70 ÷ 386 = 5.489 = เป้า Commit) ⇒ ระบบใช้ `cum` แล้ว |
 | **วิธีรวม (Summary)** | `average · sum · max · as_of · rate` | `Manual · Sum · Average · Calculate · As of · Actual · Actual+Plan` | ตรงกัน 3 (`sum`/`average`/`as_of`) · **เราขาด 4** (Manual · Calculate · Actual · Actual+Plan) · **เราคิดเอง 2** (`max`, `rate`) — `rate` ใช้กับ PPM ซึ่งถูกทางคณิตศาสตร์ แต่**ไม่ใช่ชื่อ/โหมดของบริษัท** ⇒ ถ้าจะ export เข้าใบทางการต้อง map ให้ได้ |
 
 ### 13.4 🧩 สิ่งที่โมเดลเรา **ยังไม่มี** (พบจากหน้าจอจริง)

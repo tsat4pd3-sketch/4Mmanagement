@@ -21,7 +21,7 @@ import { buildQrPayload, parseQrPayload, findDieByScan } from '../utils/qrCode';
 import DieLayout from '../components/DieLayout';
 import DieStatusBoard from '../components/DieStatusBoard';
 import ProductSelect from '../components/ProductSelect'; // MAT SAP = picker กลาง (single-source audit 2026-09-07)
-import { dieSetMats, dieSetPairState, suggestPps } from '../utils/dieSetMats';
+import { dieSetMats, dieSetPairState, suggestPps, pairHint } from '../utils/dieSetMats';
 import { pairBlockReason } from '../utils/pairOrder';   // 🔗 ด่านเดียวกับ Product Master — คู่ต้องอยู่ไลน์เดียวกัน
 import { checkWriteRows } from '../utils/dbWrite';      // RLS ปฏิเสธ UPDATE = 0 แถว ไม่มี error ⇒ ต้องนับแถว // 🔨 ชุดหนึ่งทำได้ 2 MAT (งานคู่ RH/LH)
 import useColumnHistory from '../utils/useColumnHistory'; // 📜 MAT ที่เคยบันทึกใน die_sets — Product Master ไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
@@ -30,6 +30,7 @@ import SimpleMasterPanel from '../components/SimpleMasterPanel';
 import CollapseCard from '../components/CollapseCard';
 import PressSetupRules from '../components/PressSetupRules';   // ⏱️ กฎเวลาเปลี่ยนรุ่นงานปั๊ม (2026-09-25)
 import useDiePressLines, { invalidateDiePressLines } from '../utils/useDiePressLines'; // ทะเบียนกลุ่มเครื่องปั๊ม (DR die_press_lines) — 2026-09-08
+import { masterDeleteGuard } from '../utils/masterRefs'; // ด่านนับปลายทางก่อนลบทะเบียนที่จับคู่ด้วยข้อความ — 2026-10-18
 
 /* ═══════════════════════════════════════════════════════════════
    ทะเบียนแม่พิมพ์ & DIE MAINTENANCE — /die-registry
@@ -345,6 +346,12 @@ export default function DieRegistry() {
     if (!s.kind)    out.push('ยังไม่ระบุรูปแบบชุด');
     if (!s.part_no) out.push('ยังไม่ระบุเลขพาร์ท');
     if (!s.mat_no)  out.push('ยังไม่ผูก MAT SAP');
+    /* 🔨 ไม่รู้ "ชิ้น/จังหวะ" = PM แม่พิมพ์คิดเป็น shot ไม่ได้ (14/10) — เข้าลิสต์ "ต้องแก้" ให้หน้างานไล่กรอก
+       แนบหลักฐานที่พบในชื่อ/เลขพาร์ทไปด้วยเพื่อให้ตัดสินเร็ว · 🔴 ระบบไม่กรอกให้เอง (pairHint ไม่เขียนฐาน) */
+    if (s.pieces_per_stroke == null) {
+      const h = pairHint(s);
+      out.push('ยังไม่ระบุ ชิ้น/stroke' + (h ? ` — น่าจะเป็นงานคู่ (${h.why}) รอยืนยัน` : ''));
+    }
     if (s.op_total && mem.length !== s.op_total && dup === 0)
       out.push(`จำนวนแม่พิมพ์ (${mem.length}) ไม่ตรงกับจำนวน OP ที่ระบุ (${s.op_total})`);
     return out;
@@ -749,6 +756,8 @@ export default function DieRegistry() {
           SimpleMasterPanel ยืนยันก่อนปิดใช้/ลบเอง (UI-CONVENTIONS §5.4) */}
       <CollapseCard id="die_press_lines" title="⚙️ กลุ่มเครื่องปั๊ม / ไลน์ของแม่พิมพ์ (ทะเบียน)" count={pressLines.length} defaultOpen={false} storePrefix="die_registry">
         <SimpleMasterPanel client={supabaseDR} table="die_press_lines" keyCol="code" canManage={canEdit}
+          /* ด่านนับปลายทางก่อนลบ — die_sets.line_name + machines.line_name (เฉพาะ equipment_kind=die) */
+          onBeforeDelete={masterDeleteGuard(supabaseDR, 'die_press_lines')}
           stampCol="updated_by_name" stampName={fullName} onChanged={invalidateDiePressLines}
           help="ชื่อในทะเบียนนี้คือค่าที่เก็บใน die_sets.line_name / machines.line_name (text) — แยกจากทะเบียนไลน์ผลิต (production_lines) ตั้งใจไม่ให้ชื่อเครื่องปั๊มโผล่ใน dropdown ไลน์ผลิตทุกหน้า · ปิดใช้ = ไม่โผล่ให้เลือกใหม่ (ชุดเก่ายังอ่านออก)"
           fields={[
@@ -766,6 +775,7 @@ export default function DieRegistry() {
           mo_item_type = ชนิดอุปกรณ์ในใบแจ้งซ่อม **ชนะรูปแบบชุด** (HDF: ชุดเดียวมี HYDRO/BENDING/PREFORM — คอมเมนต์ทีม DIE 06/10) */}
       <CollapseCard id="die_op_types" title="⚙️ ประเภท OP ของแม่พิมพ์ (ทะเบียน)" count={opTypes.length} defaultOpen={false} storePrefix="die_registry">
         <SimpleMasterPanel client={supabaseDR} table="die_op_types" keyCol="key" canManage={canEdit}
+          onBeforeDelete={masterDeleteGuard(supabaseDR, 'die_op_types', r => r?.label)}
           keyFrom={dieSetKindKey}
           stampCol="updated_by_name" stampName={fullName}
           onChanged={() => { invalidateDieSetKinds(); load(); }}
@@ -778,6 +788,7 @@ export default function DieRegistry() {
 
       <CollapseCard id="die_set_kinds" title="⚙️ รูปแบบชุดแม่พิมพ์ (ทะเบียน)" count={setKinds.filter(k => k.is_active).length} defaultOpen={false} storePrefix="die_registry">
         <SimpleMasterPanel client={supabaseDR} table="die_set_kinds" keyCol="key" canManage={canEdit}
+          onBeforeDelete={masterDeleteGuard(supabaseDR, 'die_set_kinds', r => r?.label)}
           keyFrom={dieSetKindKey}
           stampCol="updated_by_name" stampName={fullName}
           onChanged={() => { invalidateDieSetKinds(); setKindsVer(v => v + 1); }}

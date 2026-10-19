@@ -25,6 +25,7 @@ import { visibleInterval } from '../utils/usePolling';
 import { RATE, LIVE } from '../utils/refreshRates';
 import { coalesce, makeIdleGate } from '../utils/liveRefresh';
 import { positionAllCards, delayedCountOf, orderKeyOf, projectedFinishMs, planStatusOf, pushChainOf, dayDelaySummaryOf } from '../utils/heijunkaQueue';
+import { buildBoardCards } from '../utils/boardCards';
 import PlanSlipBar from '../components/PlanSlipBar';   // 📋 แถบ "หลุดแผนไปแค่ไหน" (เวลา+ยอด · 2026-09-30)
 import DelayBlameBar from '../components/DelayBlameBar';   // 🔗 สรุปดีเลย์ของวัน + ต้นเหตุ/ผู้ถูกพาล (ทีมปั๊ม 2026-09-30)
 import { liveChannel } from '../utils/liveChannel';
@@ -1594,34 +1595,8 @@ export default function Management() {
             return { o: item.o, leftPct, widthPct, tailLeftPct, tailWidthPct, realEndMs: item.endMs, isDelayed: item.isDelayed, isLateDone: item.isLateDone, startMs: item.startMs, occupiedEndMs: item.occupiedEndMs, planLeftPct, planWidthPct, planStartMs: item.planStartMs, plannedEndMs: item.plannedEndMs, planSlipped };
           };
 
-          const buildCards = (sessList) => {
-            const cards = [];
-            sessList.forEach(s => {
-              const sessionCtSec = s.dr_products?.cycle_time_sec || 0;
-              // ใบที่ status = carry_over คือใบเดิมที่ถูกยกยอดไปต่อในกะถัดไปแล้ว (มีใบใหม่ status='open'
-              // พร้อม carry_over_from_session_id ชี้กลับมา) — ถ้าแสดงทั้งสองใบจะเห็นเป็นกัมบังซ้อนทับกัน
-              // ข้ามกะเช้า/กะดึก ทั้งที่เป็นงานเดียวกัน จึงตัดใบเดิม (carry_over) ออกจาก timeline
-              const sorted = [...s.orders].filter(o => o.status !== 'carry_over').sort((a, b) => new Date(a.opened_at || 0) - new Date(b.opened_at || 0));
-              sorted.forEach(o => {
-                const ctSec = ctByMatNo[o.mat_no] || sessionCtSec || 0;
-                // ใช้ opened_at เป็น start จริง — ไม่ accumulate จาก session start
-                // เพื่อไม่ให้ order ที่ยิงตอนบ่ายกลายเป็น delay ทันที
-                const orderStartMs = o.opened_at ? new Date(o.opened_at).getTime() : null;
-                let orderEndMs   = orderStartMs && ctSec > 0 ? orderStartMs + (o.qty || 0) * ctSec * 1000 : null;
-                if (orderStartMs && !orderEndMs) orderEndMs = orderStartMs + 5 * 60000;
-                const isDone    = o.status === 'confirmed';
-                const isCarry   = o.status === 'carry_over';
-                const isDelayed = !isDone && !isCarry && !o.is_backfill && !!orderEndMs && nowMs > orderEndMs;
-                const productKey = (nameByMatNo[o.mat_no] || s.dr_products?.name || '').trim().toUpperCase() || o.mat_no || 'unknown';
-                const productLabel = nameByMatNo[o.mat_no] || s.dr_products?.name || o.mat_no || 'ไม่ทราบ P/N';
-                const productImg = imgByMatNo[o.mat_no] || '';
-                cards.push({ ...o, orderStartMs, orderEndMs, isDone, isCarry, isDelayed, productKey, productLabel, productImg, shift: s.shift, sessionOpen: s.status === 'open', line_name: s.line_name });
-              });
-            });
-            return cards;
-          };
-
-          const allCards = buildCards(sessions);
+          // การ์ด = `buildBoardCards()` (utils/boardCards.js) ที่เดียว — ห้ามเขียน buildCards ในหน้าอีก (2026-10-19)
+          const allCards = buildBoardCards(sessions, { ctByMat: ctByMatNo, nameByMat: nameByMatNo, imgByMat: imgByMatNo, nowMs });
 
           // ── Downtime ของไลน์นี้ — แถบ ⛔ บนไทม์ไลน์ + สาเหตุใน tooltip ของใบที่ดีเลย์/ปิดช้า ──
           // บอร์ดนี้รวมหลาย sub-line (เช่น Line 60 + Line 61) — ต้องจำว่า downtime เป็นของ sub-line ไหน
@@ -2570,7 +2545,7 @@ export default function Management() {
         <button
           onClick={() => { setShow4MModal({ lineName: selectedLine }); setLog4MForm({ category: 'Man', description: '' }); }}
           style={{
-            position: 'fixed', bottom: 20, right: 20, zIndex: 500,
+            position: 'fixed', bottom: 'calc(20px + var(--mnav-h, 0px))', right: 20, zIndex: 500,
             width: 54, height: 54, borderRadius: '50%',
             background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none',
             fontSize: 22, fontWeight: 900, cursor: 'pointer',
@@ -2925,11 +2900,16 @@ export default function Management() {
                     if (upErr) throw upErr;
                     publicUrl = supabase.storage.from('four-m-images').getPublicUrl(path).data.publicUrl;
                   }
-                  const { error: updErr } = await supabase.from('four_m_logs').update({
+                  /* 🔴 นับแถว ไม่ใช่ดูแค่ error — RLS ปฏิเสธ UPDATE = 0 แถว ไม่มี error
+                     ⇒ ใบยังชี้รูปเดิม แต่โค้ดข้างล่างลบไฟล์เดิมไปแล้ว = เอกสารแนบหายถาวร */
+                  const { data: updRows, error: updErr } = await supabase.from('four_m_logs').update({
                     status: 'pending',
                     ...(publicUrl ? { request_image_url: publicUrl } : {}),
-                  }).eq('id', pendingDocModal.log.id);
+                  }).eq('id', pendingDocModal.log.id).select('id');
                   if (updErr) throw updErr;
+                  if (!(updRows || []).length) throw new Error(
+                    'แนบเอกสารไม่สำเร็จ: ระบบไม่ได้แก้แถวไหนเลย (0 แถว) — มักเกิดจากสิทธิ์ไม่พอ '
+                    + 'หรือใบนี้ถูกแก้/ลบไปแล้ว · รีเฟรชแล้วลองใหม่ (ไฟล์เดิมยังอยู่)');
                   // แนบรูปใหม่ทับสำเร็จแล้ว ค่อยลบไฟล์เก่า (best-effort — กติกา CLAUDE.md กันไฟล์กำพร้า)
                   const oldReqUrl = pendingDocModal.log.request_image_url;
                   if (publicUrl && oldReqUrl && oldReqUrl !== publicUrl && oldReqUrl.includes('/four-m-images/')) {
@@ -3230,7 +3210,7 @@ function WorkerHoverCard({ card, skillDefs }) {
 function FitPopup({ fitPopup, onClose }) {
   const fc = fitColor(fitPopup.fit.score);
   return (
-    <div style={{ position: 'fixed', bottom: 24, right: 24, background: 'rgba(10,10,18,0.97)', border: `1px solid ${fc}66`, borderLeft: `4px solid ${fc}`, borderRadius: 12, padding: '14px 16px', boxShadow: 'var(--shadow-lg)', zIndex: 1000, width: 264, animation: 'fmSlideIn 0.35s cubic-bezier(0.34,1.56,0.64,1)' }}>
+    <div style={{ position: 'fixed', bottom: 'calc(24px + var(--mnav-h, 0px))', right: 24, background: 'rgba(10,10,18,0.97)', border: `1px solid ${fc}66`, borderLeft: `4px solid ${fc}`, borderRadius: 12, padding: '14px 16px', boxShadow: 'var(--shadow-lg)', zIndex: 1000, width: 264, animation: 'fmSlideIn 0.35s cubic-bezier(0.34,1.56,0.64,1)' }}>
       <style>{`@keyframes fmSlideIn { from { opacity:0; transform: translateX(28px) scale(0.94); } to { opacity:1; transform:translateX(0) scale(1); } }`}</style>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
         <img loading="lazy" src={fitPopup.worker.employees?.image_url || ''} style={{ width: 42, height: 42, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: `2.5px solid ${fc}`, flexShrink: 0 }} />

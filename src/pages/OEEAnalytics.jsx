@@ -381,7 +381,7 @@ export default function OEEAnalytics() {
      ⇒ ทั้ง 3 แท็บต้องเริ่มที่ขอบเขตเดียวกัน: วันนี้ (section→dept→line) · แนวโน้ม/วิเคราะห์ (ไลน์ = line ∥ dept) */
   const [urlParams] = useSearchParams();
   const [tdDate,   setTdDate]   = useState(() => urlParams.get('date') || getWorkDateStr());
-  const [tdShift,  setTdShift]  = useState('');
+  const [tdShift,  setTdShift]  = useState(() => (['day', 'night'].includes(urlParams.get('shift')) ? urlParams.get('shift') : ''));   // ?shift= (จอวนหน้า · 15/10)
   const [tdSection,setTdSection]= useState(() => urlParams.get('section') || '');
   const [tdDept,   setTdDept]   = useState(() => urlParams.get('dept') || '');
   // แผนกตามผังองค์กร (BIG PRESS ฯลฯ · 2026-10-02) — กรองด้วย "ชุดไลน์ของแผนก" จากดัชนีผังตัวเดียวกับช่องขอบเขต
@@ -389,7 +389,7 @@ export default function OEEAnalytics() {
   const [tdLine,   setTdLine]   = useState(() => urlParams.get('line') || '');
   /* ไลน์ของแท็บแนวโน้ม (ประกาศตรงนี้เพราะ effect ตรวจสิทธิ์ด้านล่างต้องเคลียร์มันด้วย) = ที่เจาะมา (`?line=` ละเอียดกว่า `?dept=`) */
   const [selLine,    setSelLine]    = useState(() => urlParams.get('line') || urlParams.get('dept') || '');
-  const [tdTeam,   setTdTeam]   = useState('');
+  const [tdTeam,   setTdTeam]   = useState(() => (['A', 'B', 'C'].includes(urlParams.get('team')) ? urlParams.get('team') : ''));
   // แถบ "วันนี้เทียบค่าเฉลี่ย" พับเป็นค่าเริ่มต้น — หน้านี้คือภาพวันเดียว การเทียบย้อนหลังอยู่แท็บแนวโน้ม
   const [tdCmpOpen, setTdCmpOpen] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
@@ -940,7 +940,7 @@ export default function OEEAnalytics() {
         ⇒ %P รายชั่วโมงจะเป็นตัวเลขที่เดาเอา · จอนี้จึงไม่มีปุ่ม "วันนี้" โดยตั้งใจ */
   const tr = useTimeRange({ defaultScale: 'week', defaultDays: 90, finest: 'day' });
   const { scale: period, from: dateFrom, to: dateTo } = tr;
-  const [selShift,   setSelShift]   = useState('');
+  const [selShift,   setSelShift]   = useState(() => (['day', 'night'].includes(new URLSearchParams(window.location.search).get('shift')) ? new URLSearchParams(window.location.search).get('shift') : ''));
   // ชื่อไลน์ใน sessions ที่ไม่ตรงทะเบียน (ไลน์ถูก rename/ลบ) — แยก optgroup ใน dropdown ห้ามซ่อน (2026-09-07)
   const trOrphanLines = useMemo(() => {
     const reg = new Set(linesFull.map(l => String(l.name).trim().toLowerCase()));

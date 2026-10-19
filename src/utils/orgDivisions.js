@@ -63,6 +63,11 @@ export function divisionOfNode(nodeId, orgNodes) {
   return null
 }
 
+/* 💰 `costCenterOfNode()` ย้ายไปอยู่ `src/utils/ccScope.js` แล้ว (19/10)
+   — ที่นั่นเป็นเจ้าของกฎ "CC ของโหนด = ตัวเอง → แม่ → ปู่" ซึ่งใช้ตัดสิน**สิทธิ์**ด้วย
+   ⇒ มี 2 ชุดไม่ได้: แก้กฎตกทอดที่เดียวแล้วอีกจอตัดสินคนละแบบ = สิทธิ์เพี้ยนเงียบ
+   (มีด่าน `cc-of-node-single-source` ใน regressionGuards) */
+
 /** ฝ่ายของพนักงาน 1 คน — ยึด section ก่อน ไม่มีค่อยดู department
  *  (ช่าง MTN/JIG/DIE และ QA อยู่แผนก "ขึ้นตรงฝ่าย" → section เป็น null โดยตั้งใจ) */
 export function divisionOfEmployee(emp, orgNodes) {

@@ -14,7 +14,7 @@
    กติกา (pure · เทส `__tests__/partRefStock.test.mjs`):
    · พาร์ทที่ Product Master บอกว่าไลน์นี้ผลิต + มีกฎรับเข้าคลัง ⇒ `produce` · อ้างยอดคลังปลายทางของกฎ
      (ตรรกะเลือกกฎ = ตัวเดียวกับ trigger: กฎ MAT ชนะ prefix · prefix ยาวชนะสั้น)
-     · 🔴 **ยกเว้นพาร์ทที่สโตร์คุมเป็นล็อต** (`child_lot_requests` ไม่นับ cancelled · ส่งมาเป็น `lotMats`) — ยอดเข้าทาง
+     · 🔴 **ยกเว้นพาร์ทที่สโตร์คุมเป็นล็อต** (กฎ MAT โหมด 🔧 ปิดล็อต · `lotMatsOf(rules)` · ส่งมาเป็น `lotMats`) — ยอดเข้าทาง
        "ปิดล็อตที่บอร์ดสโตร์" ทางเดียว ซึ่งลงที่ **ชื่อไลน์ผลิต** (`advanceLot` · trigger ข้าม MAT พวกนี้ตั้งแต่ 06/10)
        ⇒ อ้างยอดที่ไลน์ตัวเอง (ยังเป็น `produce` = ผลิตเติม ไม่ใช่เบิก) · เทียบ STORE = ไม่มียอดตลอดกาล
    · นอกนั้น (ของที่ไลน์ใช้ / ชั้น OP ซึ่งไม่เข้าคลังเลย / ไม่มีกฎ) ⇒ `consume` · อ้างยอดหน้าไลน์เหมือนเดิม
@@ -30,6 +30,9 @@ export function inflowDestOf(mat, rules = []) {
   let best = null;
   for (const r of rules || []) {
     if (r?.is_active === false) continue;
+    /* 🔧 กฎโหมด "ปิดล็อตที่สโตร์" ไม่ได้บอกคลัง (ยอดลงที่ไลน์ผลิตของล็อต) ⇒ ไม่ร่วมตัดสินปลายทาง
+       — ถอยไปกฎ prefix เหมือนก่อนมีโหมดนี้เป๊ะ (19/10) */
+    if (r?.mode === 'lot') continue;
     const v = key(r?.match_value);
     if (!v || !r?.dest_line_name) continue;
     const hit = r.match_type === 'mat' ? v === m : (r.match_type === 'prefix' && m.startsWith(v));

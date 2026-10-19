@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { loadLinesRes } from '../utils/useProductionLines';
+import { canWriteLine, writeBlockText } from '../utils/writeScope';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
@@ -80,7 +81,7 @@ const emptyProject = { project_code: '', name: '', customer: '', model: '', temp
 const emptyPart = { part_no: '', part_name: '', mat_no: '', line_name: '', pe_set_id: '', qa_part_id: '', ppap_level: 3, owner_name: '', remark: '' };
 
 export default function NPI() {
-  const { role, fullName, lineId, sections } = useContext(UserContext);
+  const { role, fullName, lineId, sections, section: homeSection, allUnits } = useContext(UserContext);
   const canEdit = can('npi', 'edit', role);
   const canApprove = can('npi', 'approve', role);
   const canTemplates = can('npi', 'manage_templates', role);
@@ -102,6 +103,11 @@ export default function NPI() {
   const [peSets, setPeSets] = useState([]);
   const [qaParts, setQaParts] = useState([]);
   const [lines, setLines] = useState([]);
+  /* 🔐 พาร์ท NPI ผูกไลน์ (`npi_parts.line_name`) ⇒ แก้/ลบ/ปล่อยแบบ/ตัดสิน ECI ได้เฉพาะไลน์ส่วนงานตัวเอง
+     (audit 15/10) · ทีม PE/NM (engineer · engineer_nm) ถือ `scope:all_units` จึงไม่กระทบ */
+  const wctx = useMemo(() => ({ role, section: homeSection, sections, allUnits }),
+    [role, homeSection, sections, allUnits]);
+  const partWriteOf = useCallback((lineName) => canWriteLine(wctx, lineName, lines), [wctx, lines]);
   const [users, setUsers] = useState([]);
   const [stepTemplates, setStepTemplates] = useState([]);
   const [dieSets, setDieSets] = useState([]);
@@ -266,6 +272,9 @@ export default function NPI() {
     const m = partModal;
     if (!m.part_no.trim()) return toast.error('กรอก Part No.');
     if (!project) return;
+    /* 🔐 ด่านซ้ำตอนเขียนจริง — ไลน์ปลายทางมาจากฟอร์ม/ชุด PE ที่เลือก */
+    const w = partWriteOf(m.line_name);
+    if (!w.ok) return toast.info(writeBlockText(w, { what: 'พาร์ทของไลน์นี้' }));
     setSaving(true);
     const row = {
       part_no: m.part_no.trim(), part_name: m.part_name?.trim() || null, mat_no: m.mat_no?.trim() || null,
@@ -294,6 +303,8 @@ export default function NPI() {
     if (!m.id) setPartId(res.data.id);
   };
   const delPart = async (p) => {
+    const w = partWriteOf(p?.line_name);
+    if (!w.ok) return toast.info(writeBlockText(w, { what: 'พาร์ทของไลน์นี้' }));
     if (!window.confirm(`ลบพาร์ท ${p.part_no} พร้อมเอกสาร/แบบ/tooling ของพาร์ทนี้ทั้งหมด?`)) return;
     const { error } = await supabase.from('npi_parts').delete().eq('id', p.id);
     if (error) return toast.error(error.message);
