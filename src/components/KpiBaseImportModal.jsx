@@ -6,7 +6,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from './Toast';
 import { KPI_BASE_VARS, baseVarOf } from '../utils/kpiSetup';
-import { detectMonthColumns, detectVarRows, extractValues, rowLabels, IMPORT_MULTIPLIERS, limitMonths, rollingMonths, bestSheet, magnitudeWarning } from '../utils/kpiBaseImport';
+import { detectMonthColumns, detectVarRows, extractValues, rowLabels, IMPORT_MULTIPLIERS, limitMonths, rollingMonths, bestSheet, magnitudeWarning, monthFromFileName, sheetKind, lastClosedMonth } from '../utils/kpiBaseImport';
 import { getWorkDate } from '../utils/workDate';
 import { PLANT_BASE_KEY } from '../utils/kpiFormula';
 
@@ -33,6 +33,7 @@ export default function KpiBaseImportModal({ year, unitLabel, unitSk, base, canP
   const [mult, setMult] = useState(1);
   /* เดือนล่าสุดที่ปิดแล้ว — คอลัมน์ Rolling/Plan ของเดือนถัดไปมีตัวเลข (= แผน) ห้ามนำเข้าเป็นจริง · ปีปัจจุบัน = เดือนก่อนหน้าวันทำงาน (รายงานเดือน m ออกต้นเดือน m+1) · ปีย้อนหลัง = 12 */
   const [maxMonth, setMaxMonth] = useState(() => { const wd = getWorkDate(); const [y, m] = wd.split('-').map(Number); return Number(year) < y ? 12 : (Number(year) > y ? 0 : Math.max(1, m - 1)); });
+  const [fileMonth, setFileMonth] = useState(null);   // เดือนจากชื่อไฟล์ ("… Jan-2026 …") — บัญชีส่งเดือนละครั้งช่วงวันที่ 10-20 ของเดือนถัดไป ⇒ ชื่อไฟล์แม่นกว่าวันนี้
   const [on, setOn] = useState({});
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
@@ -49,6 +50,10 @@ export default function KpiBaseImportModal({ year, unitLabel, unitSk, base, canP
   const rollingM = useMemo(() => rollingMonths(monthInfo?.how || {}).filter(m => m <= maxMonth), [monthInfo, maxMonth]);
   const values = useMemo(() => (grid ? extractValues(grid, { varRows, monthCols, multiplier: mult }) : {}), [grid, varRows, monthCols, mult]);
   const magWarn = useMemo(() => magnitudeWarning(values, mult), [values, mult]);
+  /* เดือนที่ยังไม่ปิดในไฟล์บัญชีเป็น 0 (ไม่ใช่ว่าง) — ถ้า "ถึงเดือน" เลยเดือนสุดท้ายที่มียอดขาย/กำลังคน > 0 จะนำเข้า 0 เป็นค่าจริง ⇒ เตือน */
+  const allVals = useMemo(() => (grid ? extractValues(grid, { varRows, monthCols: monthInfo?.cols || {}, multiplier: mult }) : {}), [grid, varRows, monthInfo, mult]);
+  const closedM = useMemo(() => lastClosedMonth(allVals), [allVals]);
+  const zeroWarn = closedM != null && maxMonth > closedM ? `⚠ ในไฟล์นี้เดือนหลัง ${MONTH_TH[closedM - 1]} ยอดขาย/กำลังคนเป็น 0 (ยังไม่ปิดเดือน) — ตั้ง "ถึงเดือน" = ${MONTH_TH[closedM - 1]} ไม่งั้นจะบันทึก 0 เป็นค่าจริง` : '';
 
   const pick = async (f) => {
     setFile(f); setErr(''); setWb(null); setSheet('');
@@ -60,8 +65,15 @@ export default function KpiBaseImportModal({ year, unitLabel, unitSk, base, canP
       book.SheetNames.forEach((name) => { sheets[name] = XLSX.utils.sheet_to_json(book.Sheets[name], { header: 1, raw: true, defval: null, blankrows: false }); });
       setWb({ sheets, names: book.SheetNames });
       setSheet(bestSheet(sheets) || book.SheetNames[0] || '');   // ไฟล์บัญชีมี 10+ ชีท — เลือกชีทที่จับตัวแปรได้มากสุดก่อน (เปลี่ยนเองได้)
+      /* เดือนจากชื่อไฟล์ ("… Jan-2026 …") ชนะการเดาจากวันนี้ — เดือนถัดไปในไฟล์เป็น 0/แผน ไม่ใช่ค่าจริง */
+      const fm = monthFromFileName(f.name);
+      setFileMonth(fm);
+      if (fm) setMaxMonth(fm);
     } catch (e) {
-      setErr('อ่านไฟล์ไม่ได้: ' + (e?.message || e));
+      /* 19/10 ไฟล์จริงของบัญชีเป็น .xlsb — ตัวอ่าน (xlsx 0.18) ล้มที่ defined name ("Bad SerAr") ⇒ บอกทางแก้ตรงๆ ไม่ใช่โค้ด error เปล่า */
+      const xlsb = /\.xlsb$/i.test(f.name || '');
+      setErr((xlsb ? 'ไฟล์ .xlsb ตัวนี้อ่านไม่ได้ในเบราว์เซอร์ — เปิดใน Excel แล้ว File → Save As → เลือก "Excel Workbook (.xlsx)" แล้วอัพไฟล์ .xlsx แทน (ข้อมูลเหมือนเดิมทุกชีท) · ' : 'อ่านไฟล์ไม่ได้: ')
+        + (e?.message || e));
     }
   };
 
@@ -69,16 +81,19 @@ export default function KpiBaseImportModal({ year, unitLabel, unitSk, base, canP
   useEffect(() => {
     if (!grid) return;
     const mem = loadMem(sheet);
-    const auto = detectVarRows(grid);
+    const mc = detectMonthColumns(grid);
+    const auto = detectVarRows(grid, { sheetName: sheet, monthCols: mc?.cols || null });
     const next = { ...auto };
     if (mem?.labels) {
       Object.entries(mem.labels).forEach(([k, lab]) => { const hit = labels.find(x => x.label === lab); if (hit) next[k] = hit.row; });
     }
     setVarRows(next);
     setMult(mem?.mult || 1);
-    setMonthRow(detectMonthColumns(grid)?.row ?? null);
+    setMonthRow(mc?.row ?? null);
+    /* ชื่อไฟล์ไม่บอกเดือน ⇒ ใช้เดือนสุดท้ายที่ไฟล์มียอดขาย/กำลังคน > 0 (เดือนที่ยังไม่ปิดเป็น 0) แทนการเดาจากวันนี้ */
+    if (fileMonth == null && mc) { const lc = lastClosedMonth(extractValues(grid, { varRows: next, monthCols: mc.cols, multiplier: 1 })); if (lc) setMaxMonth(lc); }
     setOn(Object.fromEntries(Object.keys(next).map(k => [k, true])));
-  }, [grid, sheet, labels]);
+  }, [grid, sheet, labels, fileMonth]);
 
   const writable = (v) => (v.level === 'plant' ? canPlant : canUnit);
   const targetOf = (v) => (v.level === 'plant' ? 'ทั้งโรงงาน' : unitLabel);
@@ -143,6 +158,10 @@ export default function KpiBaseImportModal({ year, unitLabel, unitSk, base, canP
           <div style={{ marginTop: 6, fontSize: 12.5, color: '#f59e0b' }}>⚠ เดือน {rollingM.map(m => MONTH_TH[m - 1]).join(' · ')} ไม่มีคอลัมน์ ACTUAL — ใช้ <b>Rolling</b> แทน (เดือนที่ยังไม่ปิด Rolling = แผน) · ลด "ถึงเดือน" ถ้าไม่ใช่ตัวเลขจริง</div>
         )}
         {wb && magWarn && <div style={{ marginTop: 6, fontSize: 12.5, color: '#f59e0b' }}>{magWarn}</div>}
+        {wb && zeroWarn && <div style={{ marginTop: 6, fontSize: 12.5, color: '#ef4444', fontWeight: 700 }}>{zeroWarn} <button type="button" onClick={() => setMaxMonth(closedM)} style={{ ...inp, cursor: 'pointer', marginLeft: 6 }}>ตั้งเป็น {MONTH_TH[closedM - 1]}</button></div>}
+        {wb && grid && sheetKind(grid, sheet) === 'inventory' && (
+          <div style={{ marginTop: 6, fontSize: 12, color: 'var(--muted)' }}>ℹ️ ชีทสต็อก — จับให้เฉพาะ "มูลค่าสินค้าคงคลัง" (แถว Inventory Balance All) · COGS/RM/ยอดขายในชีทนี้เป็นคนละฐานกับ PL Summary จึงไม่จับอัตโนมัติ (เลือกเองได้ถ้าบัญชียืนยัน)</div>
+        )}
         {wb && !Object.keys(monthInfo?.cols || {}).length && (
           <div style={{ marginTop: 8, fontSize: 12.5, color: '#f59e0b' }}>⚠ ยังหาแถวหัวเดือนไม่เจอ (ต้องมีช่อง Jan/Feb… หรือ ม.ค./ก.พ.… หรือเลข 1–12 อย่างน้อย 6 ช่อง) — เลือกแถวเองจากช่อง "แถวหัวเดือน"</div>
         )}

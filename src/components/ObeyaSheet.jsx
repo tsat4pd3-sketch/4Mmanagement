@@ -4,7 +4,7 @@
    แผ่น (`Sheet`) · ไฟสถานะ (`StatusLamp`) · หมายเหตุเตือน (`WarnNote`) · ช่องว่าง (`EmptyChart`)
    🔴 แก้หน้าตาแผ่นที่นี่ที่เดียว ห้าม copy ไปแก้ในหน้าใดหน้าหนึ่ง (ไม่งั้น 2 แท็บจะค่อยๆ หน้าตาต่างกันอีก)
    กติกาของผัง (คณิต A4 · ฟอนต์ขั้นต่ำ 11px · ไฟไม่กระพริบ · เทาต้องบอกว่าเทาเพราะอะไร) → docs/modules/obeya.md §2 */
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { statusColor } from '../utils/obeyaKpi';
 import { A4, GAP, chooseSheetGrid } from '../utils/sheetGrid';
@@ -47,7 +47,23 @@ export function useSheetGrid(ref, sheets = 10) {
    **ไม่กระพริบแม้สีแดง** — Andon §2 สงวนการกระพริบให้ "เหตุที่ยังค้างอยู่ตอนนี้" (เครื่องหยุดจริง)
    KPI หลุดเป้าเป็นสภาพของทั้งงวด ไม่ใช่เหตุการณ์สด · 5-9 ดวงกระพริบพร้อมกันทั้งวันบนจอ TV
    = คนเลิกมอง + รีเพนต์หนักตาม §6 ⇒ แดงใช้ "นิ่ง + เรืองแสง" แทน */
-export function StatusLamp({ k, w, stat, onGo }) {
+/* 📏 แถวตัวเลขใหญ่ต้องไม่ตกกรอบแผ่น (19/10 · user ส่งภาพชิป "● หลุดเป้า" ถูกขอบแผ่นตัดครึ่ง หลังเลข 1,105,886)
+   เดิมตัดสินจาก "ความกว้างแผ่น" อย่างเดียว ⇒ เลขยาว 7-9 หลัก + หน่วย + ป้ายเดือน + เดลต้า + ไฟสถานะ ล้นแล้วโดน overflow:clip ตัดเงียบ
+   ⇒ วัดจริงหลังวาด (scrollWidth > clientWidth) แล้วไล่ลดทีละขั้นจนพอดี · เปลี่ยนเนื้อหา/ความกว้างเมื่อไหร่เริ่มวัดใหม่จาก 0
+   ขั้น: 0 ปกติ · 1 ไฟสถานะเหลือดวงเดียว (tooltip ยังบอกครบ) · 2 ตัวเลขย่อ 0.8 · 3 ตัวเลขย่อ 0.65 + ซ่อนป้ายเดือน (ย้ายไป title) */
+export const HEAD_FIT_MAX = 3;
+export function useHeadFit(ref, key) {
+  const [lvl, setLvl] = useState(0);
+  useLayoutEffect(() => { setLvl(0); }, [key]);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (el && el.scrollWidth > el.clientWidth + 1 && lvl < HEAD_FIT_MAX) setLvl(lvl + 1);
+  });
+  return lvl;
+}
+export const headFitBigScale = (lvl) => (lvl >= 3 ? 0.65 : lvl >= 2 ? 0.8 : 1);
+
+export function StatusLamp({ k, w, stat, onGo, forceCompact = false }) {
   if (!stat) return null;
   const fs = (n) => Math.max(11, Math.round(n * k));
   const c = statusColor(stat.status);
@@ -57,7 +73,7 @@ export function StatusLamp({ k, w, stat, onGo }) {
      วัดจริง 21/09: ป้ายเต็มกินที่จน **ตัวเลขใหญ่** ถูก clip (98.4% เหลือ 34px) — พาดหัวห้ามโดนตัด
      ⚠️ ตัดสินด้วย **ความกว้างจริงของแผ่น** ห้ามใช้ `k` — `k` ถูก clamp ที่ 0.72
         ⇒ แผ่น 172px กับ 217px ได้ k เท่ากัน แยกไม่ออก (เคยเขียนผิดมาแล้วในรอบเดียวกันนี้) */
-  const compact = w > 0 && w < 200;
+  const compact = forceCompact || (w > 0 && w < 200);
   return (
     <button
       type="button" onClick={go || undefined} disabled={!go}
@@ -141,6 +157,9 @@ export function Sheet({ k, cw = 0, span = 1, icon, title, sub, big, unit, bigNot
   const sheetW = cw * span + GAP * (span - 1);          // ความกว้างจริงของแผ่นใบนี้
   const [zoomed, setZoomed] = useState(false);
   const zk = useMemo(() => (zoomed ? zoomScale() : 1), [zoomed]);
+  const headRef = useRef(null);
+  const fit = useHeadFit(headRef, `${big}|${unit}|${bigNote}|${delta}|${stat?.label}|${sheetW}|${k}`);
+  const bigScale = headFitBigScale(fit);
   const body = typeof children === 'function' ? children(k, cw) : children;   // cw = ความกว้างแผ่น (popup = 1200) ให้กราฟตัดสินความหนาแน่นของป้าย
   const footNode = typeof foot === 'function' ? foot(k) : foot;     // foot ก็รับ `(k) => node` ได้ (ให้บรรทัดท้ายโตตามใน popup)
   return (<>
@@ -167,18 +186,19 @@ export function Sheet({ k, cw = 0, span = 1, icon, title, sub, big, unit, bigNot
         </div>
         {sub && <div style={{ fontSize: fs(10.5), color: 'var(--muted)', marginTop: 1 }}>{sub}</div>}
         {/* 📱 มือถือ: ขึ้นบรรทัดใหม่ได้ — "14.1 พันบาท เดือน มี.ค. (ล่าสุด) ▲ 35.9 ตามเป้า" กว้าง 371px ในแผ่น 346px (mobilesweep 15/10) */}
-        <div style={{
+        <div ref={headRef} style={{
           display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'space-between',
           marginTop: Math.round(3 * k), minHeight: Math.round(22 * k),
           ...(isMobile ? { flexWrap: 'wrap', rowGap: 4 } : null),
         }}>
           {big !== undefined ? (
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 5, flexShrink: 0, ...(isMobile ? { flexWrap: 'wrap', flexShrink: 1, minWidth: 0 } : null) }}>
-              <div style={{ fontSize: fs(34), fontWeight: 900, lineHeight: 1, color: status ? statusColor(status) : 'var(--text)' }}>
+            <div title={fit >= 3 && bigNote ? bigNote : undefined}
+              style={{ display: 'flex', alignItems: 'baseline', gap: 5, flexShrink: 0, ...(isMobile ? { flexWrap: 'wrap', flexShrink: 1, minWidth: 0 } : null) }}>
+              <div style={{ fontSize: Math.max(11, Math.round(fs(34) * bigScale)), fontWeight: 900, lineHeight: 1, color: status ? statusColor(status) : 'var(--text)' }}>
                 {big}
               </div>
               {unit && <div style={{ fontSize: fs(13), fontWeight: 700, color: 'var(--muted)' }}>{unit}</div>}
-              {bigNote && <div style={{ fontSize: fs(10.5), fontWeight: 600, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{bigNote}</div>}
+              {bigNote && fit < 3 && <div style={{ fontSize: fs(10.5), fontWeight: 600, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{bigNote}</div>}
             </div>
           ) : <span />}
           <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
@@ -187,7 +207,7 @@ export function Sheet({ k, cw = 0, span = 1, icon, title, sub, big, unit, bigNot
                 {delta >= 0 ? '▲' : '▼'} {Math.abs(delta)}
               </div>
             )}
-            <StatusLamp k={k} w={sheetW} stat={stat} onGo={onLink} />
+            <StatusLamp k={k} w={sheetW} stat={stat} onGo={onLink} forceCompact={fit >= 1} />
           </div>
         </div>
       </div>
