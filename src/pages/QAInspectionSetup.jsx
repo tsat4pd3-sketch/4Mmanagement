@@ -12,6 +12,7 @@
 import { useState, useEffect, useMemo, useCallback, useContext } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { canWriteLine, writeBlockText } from '../utils/writeScope';
+import { qaWriteCtx } from '../utils/qaViewScope';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { toast } from '../components/Toast';
 import { UserContext } from '../App';
@@ -119,14 +120,15 @@ export default function QAInspectionSetup() {
   const canManage = can('qa', 'manage');
   /* 🔐 พาร์ทผูกไลน์ (`qa_parts.line_name`) ⇒ แก้ spec/ลบพาร์ท+จุดตรวจ+แบบ ได้เฉพาะไลน์ส่วนงานตัวเอง
      (audit 15/10 — ทั้งไฟล์เดิมไม่มีคำว่าขอบเขตเลย) · ขา QA ถือ `scope:all_units` จึงไม่กระทบ */
-  const wctx = useMemo(() => ({ role, section: homeSection, sections: mySections, allUnits, respCostCenters, scopeIdx }),
-    [role, homeSection, mySections, allUnits, respCostCenters, scopeIdx]);
   // 📜 ค่าที่เคยบันทึกไว้ (Main) — วิธีตรวจ (Visual/CF ที่ไม่ใช่เครื่องมือในทะเบียน) / ลูกค้า ยังเลือกซ้ำได้ ไม่หายเงียบ (2026-09-07)
   const methodHist = useColumnHistory(supabase, 'qa_inspection_items', 'method');
   const custHist = useColumnHistory(supabase, 'qa_parts', 'customer');
 
   const [parts, setParts] = useState([]);
   const [lines, setLines] = useState([]);
+  // ✍️ QA ใหญ่สุด — คนฝ่ายคุณภาพแก้พาร์ท/จุดตรวจได้ทุกไลน์ (utils/qaViewScope.qaWriteCtx · 19/10)
+  const wctx = useMemo(() => qaWriteCtx({ role, section: homeSection, sections: mySections, allUnits, respCostCenters, scopeIdx }, lines),
+    [role, homeSection, mySections, allUnits, respCostCenters, scopeIdx, lines]);
   const [selId, setSelId] = useState(null);
   const [items, setItems] = useState([]);
   const [search, setSearch] = useState('');

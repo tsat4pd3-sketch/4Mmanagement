@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
+import { isOpenQaDoc } from '../utils/qaDocStatus';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { loadLinesRes } from '../utils/useProductionLines';
@@ -751,7 +752,7 @@ function QaView({ d, ctx }) {
 
   /* ── เคลมลูกค้า — ของเสียที่หลุดออกไปถึงลูกค้าแล้ว (ระดับความเร่งด่วนสูงสุดของ QA) ── */
   const claims = d.claims || [];
-  const claimOpen = claims.filter(c => c.status !== 'closed');
+  const claimOpen = claims.filter(isOpenQaDoc);   // ใบยกเลิก (เปิดผิด) ไม่ใช่งานค้าง — utils/qaDocStatus
   const claimLate = claimOpen.filter(c => c.due_reply_date && c.due_reply_date < workDate && !c.replied_at);
   const claimNo8D = claimOpen.filter(c => !c.capa_id);
 
