@@ -597,12 +597,12 @@ function QualityDashboard() {
 const EMPTY_CHAR = { part_no: '', part_name: '', line_name: '', characteristic: '', unit: 'mm', nominal: '', usl: '', lsl: '', subgroup_size: 5, gauge: '', control_method: '' };
 
 function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [] }) {
-  const { fullName, role, section: homeSection, sections: mySections, allUnits } = useContext(UserContext);
+  const { fullName, role, section: homeSection, sections: mySections, allUnits, respCostCenters, scopeIdx } = useContext(UserContext);
   /* 🔐 จุดควบคุม SPC ผูกไลน์ ⇒ ลงค่าวัด/ลบค่าวัด/แก้ spec ได้เฉพาะไลน์ส่วนงานตัวเอง (audit 15/10)
      เดิม `loadChars()` ดึงทุกไลน์ ⇒ เลือกจุดของไลน์อื่นแล้วลงค่าทับ Cpk ของเขาได้
      ขา QA ถือ `scope:all_units` จึงไม่กระทบ */
-  const wctx = useMemo(() => ({ role, section: homeSection, sections: mySections, allUnits }),
-    [role, homeSection, mySections, allUnits]);
+  const wctx = useMemo(() => ({ role, section: homeSection, sections: mySections, allUnits, respCostCenters, scopeIdx }),
+    [role, homeSection, mySections, allUnits, respCostCenters, scopeIdx]);
   // 📜 ค่าที่เคยบันทึกใน qa_characteristics (Main) — พาร์ท/เกจที่ทะเบียนยังไม่มี ยังเลือกซ้ำได้ ไม่หายเงียบ (2026-09-07)
   const partHist = useColumnHistory(supabase, 'qa_characteristics', 'part_no', { upper: true });
   const gaugeHist = useColumnHistory(supabase, 'qa_characteristics', 'gauge');
@@ -1213,11 +1213,11 @@ const D_FIELDS = [
 ];
 
 function CAPATab({ canRecord, canManage, prefill, onPrefillDone, lineObjs = [], partOpts = [] }) {
-  const { fullName, role, section: homeSection, sections: mySections, allUnits } = useContext(UserContext);
+  const { fullName, role, section: homeSection, sections: mySections, allUnits, respCostCenters, scopeIdx } = useContext(UserContext);
   /* 🔐 ใบ 8D ผูกกับไลน์ ⇒ แก้/ปิดได้เฉพาะไลน์ในส่วนงานตัวเอง (audit 15/10 — เดิมลิสต์ทั้งโรงงาน)
      ขา QA จริงถือคีย์ `scope:all_units` จึงไม่กระทบ · ที่ปิดคือคนนอกสายคุณภาพที่ถือ qa:record */
-  const wctx = useMemo(() => ({ role, section: homeSection, sections: mySections, allUnits }),
-    [role, homeSection, mySections, allUnits]);
+  const wctx = useMemo(() => ({ role, section: homeSection, sections: mySections, allUnits, respCostCenters, scopeIdx }),
+    [role, homeSection, mySections, allUnits, respCostCenters, scopeIdx]);
   const capaLineOf = useCallback((c) => c?.line_name || c?.qa_ncr?.line_name || '', []);
   // 📜 ค่าที่เคยบันทึกใน qa_capa (Main) — พาร์ท/ชื่อผู้รับผิดชอบที่ทะเบียนยังไม่มี ยังเลือกซ้ำได้ (2026-09-07)
   const partHist = useColumnHistory(supabase, 'qa_capa', 'part_no', { upper: true });
@@ -1573,9 +1573,9 @@ function calState(inst) {
 function InstrumentTab({ lineObjs, canManage }) {
   /* 🔐 เครื่องมือวัดมี "ไลน์ประจำ" ⇒ แก้รอบ calibration/สถานะ ได้เฉพาะไลน์ส่วนงานตัวเอง (audit 15/10)
      เครื่องมือที่ไม่ผูกไลน์ (ของกลาง/ห้อง cal) = ตัดสินไม่ได้ ⇒ ไม่บล็อก */
-  const { role, section: homeSection, sections: mySections, allUnits } = useContext(UserContext);
-  const instCtx = useMemo(() => ({ role, section: homeSection, sections: mySections, allUnits }),
-    [role, homeSection, mySections, allUnits]);
+  const { role, section: homeSection, sections: mySections, allUnits, respCostCenters, scopeIdx } = useContext(UserContext);
+  const instCtx = useMemo(() => ({ role, section: homeSection, sections: mySections, allUnits, respCostCenters, scopeIdx }),
+    [role, homeSection, mySections, allUnits, respCostCenters, scopeIdx]);
   // ตำแหน่ง/แผนกของเครื่องมือ = หน่วยงานในผังองค์กร (org_nodes) — เดิมพิมพ์เอง (2026-09-07)
   const orgSections = useOrgSections();
   const deptsOf = useOrgDepts();

@@ -233,7 +233,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
      ⇒ ทุกการ "เทียบ/เขียน" ขอบเขต KPI ใช้ `kpiScope` (= หน่วยเจ้าของรหัส) · `scope` เหลือไว้แค่เป็นป้ายบนจอ/URL */
   const kpiScope = useMemo(() => canonicalScope(org, scope), [org, scope]);
   const ccAsUnit = scope.kind === 'cost_center' && kpiScope.kind !== 'cost_center';
-  const { sections: userSections, section: homeSection, allUnits } = useContext(UserContext);   // สังกัดของ user — ตัดตัวเลือกขอบเขต (node ที่ไม่มีไลน์ใช้ตัวนี้ตัดสิน)
+  const { sections: userSections, section: homeSection, allUnits, respCostCenters, scopeIdx } = useContext(UserContext);   // สังกัดของ user — ตัดตัวเลือกขอบเขต (node ที่ไม่มีไลน์ใช้ตัวนี้ตัดสิน)
   const [loading, setLoading] = useState(false);
   const [prog, setProg] = useState('');
   const [err, setErr] = useState(null);
@@ -283,9 +283,9 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
      🔴 ระหว่างผังยังโหลดไม่เสร็จ = ปิดไว้ก่อน (fail-closed) ดีกว่าเปิดแล้วค่อยปิด */
   const scopeOwner = (!orgReady || isPlant(scope)) ? '' : (org.sectionOf?.(scope.kind, scope.value) || '');
   const scopeWrite = useMemo(
-    () => canWriteUnit({ role, section: homeSection, sections: userSections, allUnits },
+    () => canWriteUnit({ role, section: homeSection, sections: userSections, allUnits, respCostCenters, scopeIdx },
                        scopeOwner, { unknownTarget: 'block' }),
-    [role, homeSection, userSections, allUnits, scopeOwner],
+    [role, homeSection, userSections, allUnits, respCostCenters, scopeIdx, scopeOwner],
   );
   const canManage = canManageKpi && scopeWrite.ok;
   const targetLineNames = useMemo(() => {

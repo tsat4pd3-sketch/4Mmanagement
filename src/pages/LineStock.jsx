@@ -88,11 +88,11 @@ const EMPTY_FORM = { line_name:'', mat_no:'', part_name:'', qty:'', type:'issue'
    TAB: STOCK (existing content)
    ───────────────────────────────────────────────────────────────────────────── */
 function StockTab({ role, scope }) {
-  const { fullName, section: homeSection, sections: mySections, allUnits } = useContext(UserContext);
+  const { fullName, section: homeSection, sections: mySections, allUnits, respCostCenters, scopeIdx } = useContext(UserContext);
   /* 🔐 ขอบเขต "ที่แก้ได้" — คนละตัวกับ scopeNames ที่เป็นขอบเขต "ที่เห็น" (ดู utils/writeScope.js)
      คิวอนุมัติเดิมดึง pending ทั้งระบบ ⇒ แอดมินหน่วยงานอนุมัติยอดสต็อกของส่วนงานอื่นได้ (audit 15/10) */
-  const wctx = useMemo(() => ({ role, section: homeSection, sections: mySections, allUnits }),
-    [role, homeSection, mySections, allUnits]);
+  const wctx = useMemo(() => ({ role, section: homeSection, sections: mySections, allUnits, respCostCenters, scopeIdx }),
+    [role, homeSection, mySections, allUnits, respCostCenters, scopeIdx]);
   const canIssue = can('line_stock', 'issue', role);
   const canApprove = can('line_stock', 'approve', role);
 
@@ -953,9 +953,9 @@ function addMins(timeStr, mins) {
 function DeliveryRoundsTab({ canEdit, fullName, scope }) {
   /* 🔐 รอบจัดส่งผูกไลน์ ⇒ แก้/ลบได้เฉพาะไลน์ส่วนงานตัวเอง (audit 15/10 — เดิม load ดึงทุกไลน์
      แล้ว lineFilter เป็นแค่ตัวกรองมุมมองที่ default ว่าง) · สโตร์ถือ scope:all_units จึงไม่กระทบ */
-  const { section: homeSection, allUnits } = useContext(UserContext);
-  const rndCtx = useMemo(() => ({ role: scope?.role, section: homeSection, sections: scope?.sections, allUnits }),
-    [scope?.role, homeSection, scope?.sections, allUnits]);
+  const { section: homeSection, allUnits, respCostCenters, scopeIdx } = useContext(UserContext);
+  const rndCtx = useMemo(() => ({ role: scope?.role, section: homeSection, sections: scope?.sections, allUnits, respCostCenters, scopeIdx }),
+    [scope?.role, homeSection, scope?.sections, allUnits, respCostCenters, scopeIdx]);
   const [rounds,     setRounds]     = useState([]);
   const [lines,      setLines]      = useState([]);
   const [lineFilter, setLineFilter] = useState('');

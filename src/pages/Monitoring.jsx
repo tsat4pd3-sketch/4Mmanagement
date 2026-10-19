@@ -57,7 +57,7 @@ const card = { background: 'var(--card)', border: '1px solid var(--border)', bor
 const FS = 12;
 
 export default function Monitoring() {
-  const { role, fullName, section: homeSection, sections: mySections, allUnits } = useContext(UserContext);
+  const { role, fullName, section: homeSection, sections: mySections, allUnits, respCostCenters, scopeIdx } = useContext(UserContext);
   /* 🔐 บอร์ดผูก "ไลน์เจ้าของ" (`monitor_boards.line_name`) ⇒ กรอก/ลบช่องได้เฉพาะบอร์ดของส่วนงานตัวเอง
      (audit 15/10 — เดิมโหลดทุกบอร์ด แล้ว syncRackOrder ยิงต่อเป็นใบส่งของจริง)
      🔴 บอร์ดชนิด `fg` ผูก "ลูกค้า" ไม่ใช่ไลน์ ⇒ ไม่มีไลน์ให้เทียบ = ตัดสินไม่ได้ ⇒ ไม่บล็อก */
@@ -109,8 +109,8 @@ export default function Monitoring() {
     if (error) { setWarn(`โหลดทะเบียนบอร์ดไม่สำเร็จ: ${error.message}`); return; }
     setBoards(data || []);
   }, []);
-  const wctx = useMemo(() => ({ role, section: homeSection, sections: mySections, allUnits }),
-    [role, homeSection, mySections, allUnits]);
+  const wctx = useMemo(() => ({ role, section: homeSection, sections: mySections, allUnits, respCostCenters, scopeIdx }),
+    [role, homeSection, mySections, allUnits, respCostCenters, scopeIdx]);
 
   useEffect(() => { loadBoards(); }, [loadBoards]);
 

@@ -92,7 +92,7 @@ const dayLabel = (k) => { const [, m, d] = String(k).split('-'); return `${+d}/$
 const MOBILE_SHEET_H = 330;
 
 export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
-  const { role, lineId, sections, fullName, section: homeSection, allUnits } = useContext(UserContext);
+  const { role, lineId, sections, fullName, section: homeSection, allUnits, respCostCenters, scopeIdx } = useContext(UserContext);
   const canRecord = can('obeya', 'record', role) || can('morning_meeting', 'record', role);
   const today = getWorkDate();
 
@@ -166,8 +166,8 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
      เดิม `scope` มาจาก URL โดย **ไม่มีด่านเลยแม้แต่ `org.has()`** ⇒ เขียน Action ใส่ส่วนงานอื่นได้
      🔴 ระดับโรงงาน/ฝ่าย (หา section ไม่ได้) = ของกลาง ⇒ ต้องมีใบผ่าน */
   const scopeWrite = useMemo(
-    () => canWriteUnit({ role, section: homeSection, sections, allUnits }, secFilter, { unknownTarget: 'block' }),
-    [role, homeSection, sections, allUnits, secFilter]);
+    () => canWriteUnit({ role, section: homeSection, sections, allUnits, respCostCenters, scopeIdx }, secFilter, { unknownTarget: 'block' }),
+    [role, homeSection, sections, allUnits, respCostCenters, scopeIdx, secFilter]);
   /* ส่วนงานทั้งหมดที่อยู่ใต้ขอบเขตที่เลือก (ฝ่าย = หลายส่วนงาน) — ใช้กรองใบ Action ที่ระบุแค่ส่วนงาน · null = ทั้งโรงงาน */
   const scopeSecs = useMemo(() => (isPlant(scope) ? null : org.sectionsOf(scope.kind, scope.value)), [scope, org]);
   const scopeText = scopePathText(org, scope, 'ทุกส่วนงาน');   // CC = เส้นทางหน่วยเจ้าของ › 💰 รหัส (12/10)
@@ -577,7 +577,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
        `sec` มาจากไลน์ที่เลือกในฟอร์ม ซึ่งอาจเป็นส่วนงานอื่นแม้ขอบเขตที่ดูจะเป็นของเรา
        (`<LineSelect>` fail-open เมื่อ `sections` ว่าง) ⇒ คำนวณ `sec` ก่อน แล้วค่อยตรวจ */
     const sec = modal.line_name ? (secOfLine[modal.line_name] || secFilter || null) : (secFilter || null);
-    const wSec = canWriteUnit({ role, section: homeSection, sections, allUnits }, sec, { unknownTarget: 'block' });
+    const wSec = canWriteUnit({ role, section: homeSection, sections, allUnits, respCostCenters, scopeIdx }, sec, { unknownTarget: 'block' });
     if (!wSec.ok) return toast.info(writeBlockText(wSec, { what: 'ใบ Action ของส่วนงานนี้', unit: sec }));
     setSaving(true);
     try {
@@ -608,7 +608,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
   };
   const setStatus = async (a, status, extra = null) => {
     /* 🔐 ปิด/เลื่อนใบของส่วนงานอื่นไม่ได้ — ตัดสินจาก section ของ "ใบนั้น" ไม่ใช่ขอบเขตที่กำลังดู */
-    const w = canWriteUnit({ role, section: homeSection, sections, allUnits }, a?.section);
+    const w = canWriteUnit({ role, section: homeSection, sections, allUnits, respCostCenters, scopeIdx }, a?.section);
     if (!w.ok) return toast.info(writeBlockText(w, { what: 'ใบ Action นี้', unit: a?.section }));
     const patch = { status, updated_at: new Date().toISOString(), ...(extra || {}) };
     if (status === 'done') patch.done_at = new Date().toISOString();

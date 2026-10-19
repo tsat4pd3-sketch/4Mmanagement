@@ -89,11 +89,11 @@ const multiline = (t) => (t || '').split('\n').filter(Boolean).map((l, i) => <di
 
 export default function PEDocs() {
   const { role, fullName, lineId: userLineId, sections: userSections,
-          section: homeSection, allUnits } = useContext(UserContext);
+          section: homeSection, allUnits, respCostCenters, scopeIdx } = useContext(UserContext);
   /* 🔐 เอกสาร PE ผูกไลน์ (`pe_doc_sets.line_name`) ⇒ แก้/ลบได้เฉพาะไลน์ของส่วนงานตัวเอง
      (audit 15/10) · ทีม PE จริง (role engineer) ถือ `scope:all_units` จึงไม่กระทบ */
-  const wctx = useMemo(() => ({ role, section: homeSection, sections: userSections, allUnits }),
-    [role, homeSection, userSections, allUnits]);
+  const wctx = useMemo(() => ({ role, section: homeSection, sections: userSections, allUnits, respCostCenters, scopeIdx }),
+    [role, homeSection, userSections, allUnits, respCostCenters, scopeIdx]);
   const canEdit = can('pe', 'edit', role);
   const canApprove = can('pe', 'approve', role);
   const canRouting = can('routing', 'manage', role);   // เขียน part_routings (ฝั่ง VSM) — คนละ key กับ pe:edit

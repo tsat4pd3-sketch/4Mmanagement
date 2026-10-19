@@ -81,7 +81,7 @@ const emptyProject = { project_code: '', name: '', customer: '', model: '', temp
 const emptyPart = { part_no: '', part_name: '', mat_no: '', line_name: '', pe_set_id: '', qa_part_id: '', ppap_level: 3, owner_name: '', remark: '' };
 
 export default function NPI() {
-  const { role, fullName, lineId, sections, section: homeSection, allUnits } = useContext(UserContext);
+  const { role, fullName, lineId, sections, section: homeSection, allUnits, respCostCenters, scopeIdx } = useContext(UserContext);
   const canEdit = can('npi', 'edit', role);
   const canApprove = can('npi', 'approve', role);
   const canTemplates = can('npi', 'manage_templates', role);
@@ -105,8 +105,8 @@ export default function NPI() {
   const [lines, setLines] = useState([]);
   /* 🔐 พาร์ท NPI ผูกไลน์ (`npi_parts.line_name`) ⇒ แก้/ลบ/ปล่อยแบบ/ตัดสิน ECI ได้เฉพาะไลน์ส่วนงานตัวเอง
      (audit 15/10) · ทีม PE/NM (engineer · engineer_nm) ถือ `scope:all_units` จึงไม่กระทบ */
-  const wctx = useMemo(() => ({ role, section: homeSection, sections, allUnits }),
-    [role, homeSection, sections, allUnits]);
+  const wctx = useMemo(() => ({ role, section: homeSection, sections, allUnits, respCostCenters, scopeIdx }),
+    [role, homeSection, sections, allUnits, respCostCenters, scopeIdx]);
   const partWriteOf = useCallback((lineName) => canWriteLine(wctx, lineName, lines), [wctx, lines]);
   const [users, setUsers] = useState([]);
   const [stepTemplates, setStepTemplates] = useState([]);

@@ -4799,6 +4799,33 @@ test('🛡️ write-scope-layer — ด่าน "แก้ข้ามหน่
   if (!/allUnits:\s*can\('scope',\s*'all_units'/.test(app))
     bad.push("src/App.jsx (UserContext ไม่ได้ส่ง allUnits)");
 
+  /* 💰 19/10 — สลับ 20 จอมาใช้แกน Cost Center: สลับที่ `writeScope.js` ที่เดียว
+     ⇒ จอที่เรียกด่านต้อง **ส่ง `respCostCenters` + `scopeIdx` มาใน ctx** ไม่งั้นจอนั้นค้างอยู่
+     แกนข้อความเดิมแบบเงียบ (แอดมินติ๊ก CC แล้วไม่มีผลที่จอนั้น = สิทธิ์ไม่ตรงที่ตั้ง) */
+  if (!/from '\.\/ccScope\.js'/.test(ws)) bad.push('writeScope.js (ไม่ได้ import canWriteScope — แกน CC หลุด)');
+  if (!/const ccLine = ccDecide\(/.test(ws)) bad.push('writeScope.js (canWriteLine ไม่ได้ลองแกน CC ที่ตัวไลน์ก่อน)');
+  if (!/if \(idx\?\.failed\) return \{ ok: false, code: 'scope_unreadable' \}/.test(ws))
+    bad.push('writeScope.js (เสีย fail-closed ตอนอ่านผังไม่ได้ — จะถอยไปใช้ sections ที่กว้างกว่า)');
+  if (!/scopeIdx:\s*userScopeIdx/.test(app)) bad.push('src/App.jsx (UserContext ไม่ได้ส่ง scopeIdx)');
+  const CTX_PROP_OK = {
+    // รับ ctx เป็น prop จากหน้าแม่ (หน้าแม่เป็นคนประกอบ ctx) — ไม่ต้องมี scopeIdx ของตัวเอง
+    'src/components/QaCopyPointsModal.jsx': 1,
+  };
+  for (const f of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const rel = relative(ROOT, f);
+    if (rel === 'src/utils/writeScope.js' || CTX_PROP_OK[rel]) continue;
+    const src = stripComments(readFileSync(f, 'utf8'));
+    if (!/\b(?:canWriteUnit|canWriteLine|writableRows)\s*\(/.test(src)) continue;
+    /* เช็ครายบรรทัด: ทุกที่ที่เอ่ย `allUnits` (ctx ของด่าน · deps · บรรทัด destructure)
+       ต้องมี `scopeIdx` + `respCostCenters` ด้วย — ประกอบ ctx ใหม่โดยลืม 2 ช่องนี้ = จอนั้น
+       ค้างแกนเดิมแบบเงียบ (ไฟล์มีคำนี้อยู่ที่อื่นแล้วก็ยังจับได้) */
+    src.split('\n').forEach((ln, i) => {
+      if (!/\ballUnits\b/.test(ln)) return;
+      if (!/\bscopeIdx\b/.test(ln) || !/\brespCostCenters\b/.test(ln))
+        bad.push(`${rel}:${i + 1} (บรรทัดนี้มี allUnits แต่ไม่มี respCostCenters/scopeIdx ⇒ ด่านค้างที่แกนข้อความเดิม)`);
+    });
+  }
+
   /* จอที่ปิดรูแล้ว — ด่านต้องถูกเรียกในฟังก์ชันเขียนจริง ไม่ใช่แค่ตอน render ปุ่ม */
   const kpi = stripComments(readFileSync(join(ROOT, 'src/components/KpiMonthly.jsx'), 'utf8'));
   const guards = (kpi.match(/if \(!scopeWrite\.ok\)/g) || []).length;

@@ -120,11 +120,11 @@ function SignPadModal({ title, onCancel, onDone }) {
 
 export default function LayerProcessAudit() {
   const { role, lineId: userLineId, sections: scopeSecs = [], fullName,
-          section: homeSection, allUnits } = useContext(UserContext);
+          section: homeSection, allUnits, respCostCenters, scopeIdx } = useContext(UserContext);
   /* 🔐 ทะเบียนคำถาม LPA — ข้อที่ `line_name` ว่าง = **ข้อกลางใช้ทุกไลน์ทั้งโรงงาน**
      ⇒ แก้/ปิด/ลบ ต้องมีใบผ่าน `scope:all_units` (audit 15/10) · ข้อของไลน์ = ตามส่วนงานไลน์นั้น
      เดิมมุมมอง "🌐 ทะเบียนกลาง" ให้ใครก็ได้ที่ถือ lpa:manage ลบข้อกลางทิ้งได้ = หายจากใบตรวจทุกไลน์ */
-  const qCtx = { role, section: homeSection, sections: scopeSecs, allUnits };
+  const qCtx = { role, section: homeSection, sections: scopeSecs, allUnits, respCostCenters, scopeIdx };
   const qWrite = (q) => canWriteLine(qCtx, q?.line_name, lines, { unknownTarget: 'block' });
   const qGuard = (q, what) => {
     const w = qWrite(q);

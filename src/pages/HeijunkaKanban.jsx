@@ -1466,7 +1466,7 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
 export default function HeijunkaKanban() {
   // ทะเบียนเอกสาร — ชื่อไฟล์ CSV อ่านเลขฟอร์มจาก cache นี้ (lazy chunk ต้องโหลดเอง)
   useEffect(() => { loadDocForms(); }, []);
-  const { fullName, role, section: homeSection, sections: mySections, allUnits } = useContext(UserContext);
+  const { fullName, role, section: homeSection, sections: mySections, allUnits, respCostCenters, scopeIdx } = useContext(UserContext);
   const navigate = useNavigate();
   const canOperate = can('heijunka', 'operate', role);
   const canOverride = can('wip_request', 'override', role);   // ปลดบล็อกสแกนจุดส่ง — "ระดับหัวหน้า ไม่ใช่คนที่ถูกบล็อก" (§4.6 ข้อ 5)
@@ -1515,8 +1515,8 @@ export default function HeijunkaKanban() {
      🔴 สโตร์/วางแผน/คลัง ถือ `scope:all_units` ⇒ **งานจริงของเขาไม่กระทบเลย**
         ที่ปิดคือ leader/supervisor/qa/document_control ที่บังเอิญถือ `heijunka:operate` ด้วย
      🔴 ไลน์ที่ไม่อยู่ในทะเบียน = ตัดสินไม่ได้ ⇒ ไม่บล็อก (กติกาเดิมของหน้านี้) */
-  const opCtx = useMemo(() => ({ role, section: homeSection, sections: mySections, allUnits }),
-    [role, homeSection, mySections, allUnits]);
+  const opCtx = useMemo(() => ({ role, section: homeSection, sections: mySections, allUnits, respCostCenters, scopeIdx }),
+    [role, homeSection, mySections, allUnits, respCostCenters, scopeIdx]);
   const lineWrite = useCallback(
     (lineName) => canWriteUnit(opCtx, lineMap[lineName]?.section),
     [opCtx, lineMap]);
