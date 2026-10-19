@@ -4848,3 +4848,45 @@ test('🔒 ฝั่งงาน (actorSide) — เทียบผ่าน sid
     + '   แก้: actorSideOf({ …, isAm: isAmTeam }) · เทียบด้วย sideAllows(actorSide, meta.side)\n'
     + '   ⚠️ ล็อกฝั่ง/ตำแหน่ง 04/10 ยังอยู่ครบ — ฝั่งช่างจริงยังเซ็นช่องของฝ่ายผู้แจ้งไม่ได้\n');
 });
+
+/* ── 🔁 จอ BOM ซ้ำ: หลุม 3 อย่างที่เคยทำยอดเปลี่ยนเงียบ (2026-10-19) ──────────────────
+   ① ตารางคู่เทียบได้แค่ 2 ใบ ⇒ พาร์ทที่ **ไม่มีใบของตัวเอง** ไม่เคยขึ้นจอ (วัด 19/10: 17/40 mat)
+   ② **ใบที่ 3** เขียนคนละค่า ⇒ ยุบคู่ที่ตรงกันเป๊ะแล้วยอดเปลี่ยน (เคสนัท 20059851 ×4 → ×1)
+   ③ เส้นแบ่ง "ของร้อน" เขียนซ้ำ 2 ที่ ⇒ ตัวนับหัวจอกับตัวกรองตารางไม่ตรงกัน                    */
+test('🛡️ จอ BOM ซ้ำ: ต้องมีมุมมองกลุ่ม + ธงใบที่ 3 + เส้นแบ่งของร้อนที่เดียว', () => {
+  const util = stripComments(readFileSync(join(ROOT, 'src/utils/bomDupAudit.js'), 'utf8'));
+  const panel = stripComments(readFileSync(join(ROOT, 'src/components/BomDupPanel.jsx'), 'utf8'));
+  const groupView = stripComments(readFileSync(join(ROOT, 'src/components/BomSheetGroups.jsx'), 'utf8'));
+
+  // ① มุมมองกลุ่มต้องยังอยู่ และต้องถูกวาดจริงในจอ (ไม่ใช่มีฟังก์ชันลอยๆ)
+  assert.ok(/export function auditBomSheetGroups/.test(util),
+    '\n\n❌ หาย `auditBomSheetGroups` — พาร์ทที่ "ไม่มีใบ BOM ของตัวเอง แต่ถูกนิยามไว้หลายใบ"\n'
+    + '   จะกลับไปไม่มีที่โผล่บนจอเลย (ตารางคู่ `continue` ทิ้งทั้งหมด · วัด 19/10 = 17 จาก 40 mat)\n');
+  assert.ok(/<BomSheetGroups/.test(panel),
+    '\n\n❌ จอ /products?tab=bomdup ไม่วาดตารางกลุ่มแล้ว — ตารางคู่ไม่ครอบ 2 คลาสนั้น ห้ามถอด\n');
+
+  // ② ธง "ใบที่ 3" ต้องคิดจาก sheetsWithKidsOf และต้องขึ้นบนจอ
+  assert.ok(/sheetsWithKidsOf/.test(util) && /hasThirdSheet/.test(util),
+    '\n\n❌ ไม่ได้ถาม `sheetsWithKidsOf` เพื่อหา "ใบที่ 3" แล้ว\n'
+    + '   ⇒ คู่ที่ 2 ใบตรงกันเป๊ะจะดูเหมือนยุบได้ ทั้งที่ใบที่ 3 เขียนคนละค่า (ยอดเปลี่ยนเงียบ)\n');
+  assert.ok(/hasThirdSheet/.test(panel),
+    '\n\n❌ จอไม่เตือน "มีใบที่ 3" แล้ว — PE จะตัดสินยุบจากการเทียบ 2 ใบ เหมือนที่เคยพลาด 14/10\n');
+
+  // ③ เส้นแบ่งของร้อนมีที่เดียว — ห้ามเขียนเลข rank ซ้ำในหน้า
+  assert.ok(/isHotPair/.test(panel),
+    '\n\n❌ จอไม่ได้ใช้ `isHotPair` — ต้องใช้เส้นแบ่งเดียวกับตัวนับหัวจอ\n');
+  assert.ok(!/\brank\s*[<>]=?\s*\d/.test(panel),
+    '\n\n❌ มีการเทียบเลข `rank` ตรงๆ ในจอ BOM ซ้ำ\n'
+    + '   ⇒ เพิ่ม verdict ใหม่แล้วตัวนับกับตัวกรองจะไม่ตรงกัน (เคยเพี้ยนจริงตอนเพิ่ม pair_shot)\n'
+    + '   ใช้ `isHotPair` / `HOT_RANK_MAX` จาก utils/bomDupAudit.js แทน\n');
+
+  // ④ ตารางกลุ่ม = อ่านอย่างเดียว · ห้ามเขียน/ลบ bom_items จากจอ (กฎโมดูล: จอชี้ PE ตัดสิน)
+  assert.ok(!/supabaseDR|\.upsert\(|\.delete\(/.test(groupView),
+    '\n\n❌ ตารางกลุ่มเริ่มเขียน DB แล้ว — มุมมองนี้ต้องอ่านอย่างเดียว\n'
+    + '   การตัดสินอยู่ที่ตารางคู่ (คีย์ ใบ+พาร์ท) และห้ามยุบ/ลบ bom_items ให้เอง\n');
+
+  // ⑤ "ใบนั้นไม่มีของตัวนี้" = null ห้ามกลายเป็น 0 บนจอ
+  assert.ok(/==\s*null/.test(groupView),
+    '\n\n❌ ตารางกลุ่มไม่ได้แยก `null` (ใบนั้นไม่มีของตัวนี้) ออกจากเลข 0 แล้ว\n'
+    + '   โชว์ 0 = คนอ่านว่า "ใบนั้นเขียนว่าไม่ใช้" ซึ่งคนละเรื่องกับ "ใบนั้นไม่ได้พูดถึงเลย"\n');
+});

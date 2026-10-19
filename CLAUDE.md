@@ -408,7 +408,7 @@ Realtime + Edge Functions/Deno) · Telegram Bot API · deploy = Render.com (Stat
   **ออโต้ แต่กดทับได้ แล้วออโต้ห้ามทับซ้ำ** · จอต้องเขียน "แท่งละ 1 …" เสมอ · 🔴 **เพดานเป็นของข้อมูล
   ไม่ใช่ของจอ** (`finest` — OEE ละเอียดสุด = **วัน**) · 🔴 **"24 ชม. โรงงาน" = 08:00→07:59 วันถัดไป**
   (`bkkHourKey` **ห้ามพึ่ง timezone เครื่อง**) · 🔴 **ปุ่ม "หลายปี" เปิดเฉพาะจอที่มี RPC rollup**
-· 🔴 **วันทำงานใช้ `getWorkDate()` จาก `src/utils/workDate.js`** (ของกลางใหม่ — เดิมก๊อปซ้ำ 27 ไฟล์ ยังไม่กวาด)
+· 🔴 **วันทำงานใช้ `getWorkDate()` จาก `src/utils/workDate.js`** (ยังก๊อปซ้ำหลายไฟล์ ยังไม่กวาด)
 · 🔴 **SQDCM ยกเว้น** (ปุ่มของมัน = "ดูช่วงไหน") · **หน้าที่ไม่มีตัวกรองเวลาจริง ห้ามยัดแถบลงไป** — เหตุผลรายหน้าดูในเอกสาร
 > 📄 `docs/modules/time-range-filter.md` · UI §6.16
 
@@ -552,7 +552,7 @@ Realtime + Edge Functions/Deno) · Telegram Bot API · deploy = Render.com (Stat
 ## PE Core Tools — Process Flow / PFMEA / Control Plan (2026-08-13)
 
 หน้า `/pe-docs` (`PEDocs.jsx`, หมวด คุณภาพ & วิศวกรรม) — โมดูลทีม Process Engineering: Process Flow / PFMEA / Control Plan ถอดโครงจากเอกสารจริง TSAT
-· **📚 คลัง PFMEA กลาง (2026-09-15):** พาร์ทถือ*สำเนา* ของ master (ไม่ใช่ pointer) · ไหลกลับ = **ระบบเสนอ คนตัดสิน** (`pe_master_proposals` · ห้าม auto-update master) · RPN คำนวณใน `src/utils/peMaster.js` เท่านั้น · migration `20260915_pe_fmea_master_main.sql` (**apply แล้ว 2026-09-24** · seed 43 กระบวนการ รอ PE ยืนยันทั้งหมด)
+· **📚 คลัง PFMEA กลาง (2026-09-15):** พาร์ทถือ*สำเนา* ของ master (ไม่ใช่ pointer) · ไหลกลับ = **ระบบเสนอ คนตัดสิน** (`pe_master_proposals` · ห้าม auto-update master) · RPN คำนวณใน `src/utils/peMaster.js` เท่านั้น · migration `20260915_pe_fmea_master_main.sql` (**apply แล้ว**)
 > 📄 รายละเอียดเต็ม → `docs/modules/pe-core-tools.md`
 
 ---
@@ -590,16 +590,18 @@ Realtime + Edge Functions/Deno) · Telegram Bot API · deploy = Render.com (Stat
 ## 🌳 ชั้น BOM ที่แก้ได้ + ผูกขั้นตอน (PFC/OP) — `/products` แท็บ BOM (2026-09-16)
 
 > **🔴 ต้นไม้ BOM ต้องผ่าน `buildBomIndex()` (`src/utils/bomTree.js`) เท่านั้น · ห้ามเขียน `matOf[b.product_id]` เองอีก**
-> (มีด่านสแกนทั้งรีโป `regressionGuards` แล้ว) — `bom_items.parent_mat` (ใครก็เป็นแม่ได้ ไม่ต้องเป็น `dr_products`)
+> (มีด่าน) — `bom_items.parent_mat` (ใครก็เป็นแม่ได้ ไม่ต้องเป็น `dr_products`)
 > ชนะ `product_id` · `op_no` = ขั้นที่ชิ้นนี้ถูกใส่ตาม PFC · ย้ายชั้นผ่าน `moveBomLine()` (กันวนลูป)
-> migration `20260916_bom_level_parent_mat.sql` (**apply แล้ว** · แถวเดิม null ทั้ง 506 = ไม่มีจอไหนเปลี่ยน)
-> 🔴 **"ใบนี้ว่าง" ≠ "พาร์ทนี้ไม่มีลูก"** — ลูกอาจถูกกรอกไว้ในใบอื่น (วัด 14/10: **49 จาก 97 mat**)
+> migration `20260916_bom_level_parent_mat.sql` (**apply แล้ว**)
+> 🔴 **"ใบนี้ว่าง" ≠ "พาร์ทนี้ไม่มีลูก"** — ลูกอาจถูกกรอกไว้ในใบอื่น
 > ⇒ ก่อนประกาศว่าไม่มีลูก ต้องถาม **`sheetsWithKidsOf()`** ก่อน · กางด้วย `explodeBom(..., { startSheet })`
 > **ห้ามรวมหลายใบเป็นชุดเดียว** (รวม = นับซ้ำ) · มุมมองพาร์ท = อ่านอย่างเดียว ห้ามแก้/สร้างใบให้เอง (มีด่าน)
 > 🔴 **`bomOf(mat, sheet)` = "ชุดของใบที่กางอยู่ชนะทั้งชุด" ไม่ได้รวม 2 ชุด** ⇒ ของที่มีแต่ในใบของพาร์ทเอง
 > **ไม่ถูกระเบิดเลย** · คู่ที่นิยามไว้ 2 ใบไล่เคลียร์ที่ `/products?tab=bomdup` (กฎ `src/utils/bomDupAudit.js`)
-> — **จอชี้อย่างเดียว ห้ามยุบ/ลบ `bom_items` ให้เอง** (ต่างรุ่น/ลูกค้าได้จริง · PE ตัดสิน · มีด่าน)
-> 📄 `docs/modules/bom-levels.md` (ทำไมเดิมตรึงชั้นเดียว · ทำไมเหนือ SAP · งานค้าง PFC↔MAT)
+> — **จอชี้อย่างเดียว ห้ามยุบ/ลบ `bom_items` ให้เอง** (PE ตัดสิน · มีด่าน)
+> 🔴 **ตัดสินว่า "ยุบได้" ต้องดูทุกใบที่นิยามพาร์ทนั้น ไม่ใช่ 2 ใบ** (`auditBomSheetGroups()` ไฟล์เดียวกัน)
+>   — ใบที่ 3 เขียนคนละค่า = ยุบแล้วยอดเปลี่ยนเงียบ · พาร์ทที่**ไม่มีใบของตัวเอง**ไม่โผล่ในตารางคู่
+> 📄 `docs/modules/bom-levels.md`
 
 ---
 
