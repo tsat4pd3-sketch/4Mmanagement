@@ -406,8 +406,13 @@ function MeasureRow({ cp, idx, r, onChange, methodIndex }) {
   )
 }
 
-// ─── NG Recheck Panel ─────────────────────────────────────────────────────────
-function NgRecheckPanel({ result, cp, onSaved }) {
+/* ─── NG Recheck Panel ────────────────────────────────────────────────────────
+   🔐 แผงนี้เขียน `inspection_results` (action ที่แก้ไข + ค่าวัดใหม่ + final_status)
+      = ผลตรวจของ **ทีมนั้น** ⇒ ต้องผ่านด่านเดียวกับการลงผลตรวจ (`canRecord` จากหน้าแม่
+      = สิทธิ์ตามชนิดงาน AM/PM **และ** แกนทีม `canWriteTeam`) — เดิมไม่มีด่านเลย
+      ใครเปิดประวัติของทีมอื่นได้ ก็เขียน action ทับได้ (audit ข้อ 5 · 19/10)
+   🔴 ซ่อนฟอร์มได้ ห้ามซ่อนความจริงว่า "ใบนี้ NG และยังไม่มี action" (UI §6.9) */
+function NgRecheckPanel({ result, cp, onSaved, canRecord = false, deptWrite = null }) {
   const [action, setAction] = useState(result.action_text ?? '')
   const [rv1, setRv1] = useState(result.recheck_value_1 ?? '')
   const [rv2, setRv2] = useState(result.recheck_value_2 ?? '')
@@ -418,6 +423,12 @@ function NgRecheckPanel({ result, cp, onSaved }) {
   const finalStatus = recheckAvg != null ? (getSpcStatus(recheckAvg, cp) ?? 'pass') : null
 
   const submit = async () => {
+    // ด่านชั้น 2 — ปุ่มถูกซ่อนอยู่แล้ว แต่โมดัลอาจเปิดค้างไว้ตอนสลับทีม/สิทธิ์เปลี่ยน (fail-closed)
+    if (!canRecord) {
+      return toast.info(deptWrite && !deptWrite.ok
+        ? teamBlockText(deptWrite, 'ผลตรวจของทีมนี้')
+        : 'ไม่มีสิทธิ์บันทึก action / ค่าวัดใหม่ของผลตรวจนี้')
+    }
     setSaving(true)
     try {
       const patch = { action_text: action.trim() || null, recheck_at: new Date().toISOString() }
@@ -425,8 +436,9 @@ function NgRecheckPanel({ result, cp, onSaved }) {
         patch.recheck_value_1 = Number(rv1); patch.recheck_value_2 = Number(rv2); patch.recheck_value_3 = Number(rv3)
         patch.recheck_avg = recheckAvg; patch.final_status = finalStatus
       }
-      const { error: wErr396 } = await supabaseDR.from('inspection_results').update(patch).eq('id', result.id);
-      if (wErr396) throw wErr396;   // บันทึก recheck — supabase-js ไม่ throw ต้องโยนเองให้ catch เดิมเห็น
+      // นับแถวที่เขียนจริง (กฎเขียน DB ข้อ 2) — เขียน 0 แถวแล้วขึ้นสำเร็จ = action หายทั้งที่คนกรอกแล้ว
+      const ok = checkWriteRows(await supabaseDR.from('inspection_results').update(patch).eq('id', result.id).select('id'), 'บันทึก action / ค่าวัดใหม่')
+      if (!ok) return
       onSaved()
     } catch (err) { toast.error(err.message) }
     finally { setSaving(false) }
@@ -443,6 +455,19 @@ function NgRecheckPanel({ result, cp, onSaved }) {
             <span style={{ color: result.final_status === 'pass' ? 'var(--accent)' : '#e05c4a', fontWeight: 700 }}>{result.final_status?.toUpperCase()}</span>
           </p>
         )}
+      </div>
+    )
+  }
+
+  if (!canRecord) {
+    return (
+      <div style={{ marginTop: 6, borderRadius: 8, background: 'rgba(224,92,74,0.06)', border: '1px solid rgba(224,92,74,0.25)', padding: '8px 12px' }}>
+        <p style={{ fontSize: 11, color: '#e05c4a', fontWeight: 700, textTransform: 'uppercase', margin: 0 }}>NG — ยังไม่มี action</p>
+        <p style={{ fontSize: 11.5, color: 'var(--muted)', margin: '2px 0 0', lineHeight: 1.45 }}>
+          🔒 {deptWrite && !deptWrite.ok
+            ? teamBlockText(deptWrite, 'ผลตรวจของทีมนี้')
+            : 'บันทึก action / ค่าวัดใหม่ได้เฉพาะผู้มีสิทธิ์ลงผลตรวจของทีมนี้'}
+        </p>
       </div>
     )
   }
@@ -472,7 +497,7 @@ function NgRecheckPanel({ result, cp, onSaved }) {
 }
 
 // ─── History Detail Modal ─────────────────────────────────────────────────────
-function HistoryModal({ inspection, checkpoints, jig, onClose, userId, userRole, deptWrite }) {
+function HistoryModal({ inspection, checkpoints, jig, onClose, userId, userRole, deptWrite, canRecord = false }) {
   const [results, setResults] = useState([])
   const [approving, setApproving] = useState(false)
   const [exporting, setExporting] = useState(false)
@@ -616,7 +641,7 @@ function HistoryModal({ inspection, checkpoints, jig, onClose, userId, userRole,
                     </a>
                   )}
                 </div>
-                {isNG && <NgRecheckPanel result={r} cp={cp} onSaved={fetchResults} />}
+                {isNG && <NgRecheckPanel result={r} cp={cp} onSaved={fetchResults} canRecord={canRecord} deptWrite={deptWrite} />}
               </div>
             )
           })}
@@ -1698,7 +1723,7 @@ export default function PMCheckData() {
       <AnimatePresence>
         {viewInspection && (
           <HistoryModal inspection={viewInspection} checkpoints={checkpoints} jig={selectedJig}
-            userId={userId} userRole={userRole} deptWrite={deptWrite}
+            userId={userId} userRole={userRole} deptWrite={deptWrite} canRecord={canRecord}
             onClose={() => { setViewInspection(null); if (selectedJig) fetchHistory(selectedJig.id) }} />
         )}
       </AnimatePresence>

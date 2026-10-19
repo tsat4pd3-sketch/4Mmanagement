@@ -2989,6 +2989,45 @@ test('🛡️ /org-setup: ทุกชั้นที่มีปุ่มเพ
     '\n\n❌ handleSave ไม่ได้ใช้ orgSaveBlockReason ตัดสินสิทธิ์ — ดูเหตุผลด้านบน\n');
 });
 
+/* ── 🔴 ทางเขียนที่ยังไม่มีด่านชั้น 3 เลย + "ย้ายของ" ที่ไม่เช็คปลายทาง (QC audit ข้อ 5 · 19/10) ──
+   3 จุดที่ปิดรอบนี้ — คลาสเดียวกับ /org-setup ข้างล่าง แต่คนละหน้า:
+   · PMCheckData `NgRecheckPanel` เขียน action/ค่าวัดใหม่ลง inspection_results โดย**ไม่มีด่านเลย**
+   · PmCoordination `notify`/`toggleTask` เขียนสถานะ/ติ๊กงานของแผนไลน์อื่น · `PlanModal.save` ย้ายไลน์ได้
+   · PMSetup `handleTransfer` ย้าย/คัดลอกรายการตรวจ + ประวัติ เข้า **ทีมปลายทาง** โดยเช็คแต่ทีมต้นทาง */
+test('🛡️ PM/แผนประสาน: ทางเขียนต้องมีด่านชั้น 3 · ย้ายของต้องเช็คปลายทาง', () => {
+  const pmc = stripComments(readFileSync(join(ROOT, 'src/pages/PMCheckData.jsx'), 'utf8'));
+  const panel = pmc.slice(pmc.indexOf('function NgRecheckPanel'));
+  const body = panel.slice(0, panel.indexOf('\nfunction '));
+  const sub = body.slice(body.indexOf('const submit'));   // ต้องอยู่ "ในฟังก์ชันที่เขียน" ไม่ใช่แค่โผล่ในไฟล์
+  const gIdx = sub.indexOf('!canRecord');
+  const wIdx = sub.search(/from\('inspection_results'\)[\s\S]{0,140}\.update\(/);
+  assert.ok(gIdx > -1 && wIdx > -1 && gIdx < wIdx,
+    '\n\n❌ NgRecheckPanel เขียน inspection_results โดยไม่ผ่านด่าน canRecord (สิทธิ์ลงผลตรวจ + แกนทีม)\n'
+    + '   ผลที่เกิด: ใครเปิดประวัติของทีมอื่นได้ ก็เขียน action/ค่าวัดใหม่ทับผลตรวจของทีมนั้นได้\n');
+
+  const coord = stripComments(readFileSync(join(ROOT, 'src/pages/PmCoordination.jsx'), 'utf8'));
+  for (const fn of ['const notify =', 'const toggleTask =']) {
+    const part = coord.slice(coord.indexOf(fn), coord.indexOf(fn) + 700);
+    assert.ok(/planWrite\.ok/.test(part),
+      `\n\n❌ PmCoordination ${fn.replace('const ', '').replace(' =', '')} ไม่ได้เช็ค planWrite\n`
+      + '   ผลที่เกิด: แจ้ง Production / ติ๊กงาน ของแผนไลน์ส่วนงานอื่นได้ (notify ยิง Telegram ออกข้างนอกด้วย)\n');
+  }
+  const save = coord.slice(coord.indexOf('const save = async'));
+  const dst = save.search(/canWriteLine\([^)]*f\.line_name/);
+  const ins = save.search(/from\('pm_coordination_plans'\)/);
+  assert.ok(dst > -1 && ins > -1 && dst < ins,
+    '\n\n❌ PmCoordination PlanModal.save ไม่ได้เช็ค "ไลน์ปลายทาง" (f.line_name) ก่อนเขียน\n'
+    + '   ผลที่เกิด: แก้แผนของไลน์เรา แล้วเปลี่ยนไลน์เป็นของส่วนงานอื่น = ย้ายแผนข้ามส่วนงานเงียบๆ\n');
+
+  const setup = stripComments(readFileSync(join(ROOT, 'src/pages/PMSetup.jsx'), 'utf8'));
+  const tr = setup.slice(setup.indexOf('const handleTransfer'));
+  const dstT = tr.indexOf('teamWriteOf');
+  const run = tr.search(/moveChecklistDept|copyChecklistToDept/);
+  assert.ok(dstT > -1 && run > -1 && dstT < run,
+    '\n\n❌ PMSetup.handleTransfer ไม่ได้เช็ค "ทีมปลายทาง" ก่อนย้าย/คัดลอกรายการตรวจ\n'
+    + '   ผลที่เกิด: ย้ายรายการตรวจ + ประวัติการตรวจทั้งก้อนเข้าไปในทีมช่างอื่นได้ (ของเขาถูกทับด้วย)\n');
+});
+
 /* ── 🔴 ย้ายโหนดผัง = เขียนลง "แม่ใหม่" ⇒ เช็คแต่ต้นทางไม่พอ (QC audit ข้อ 5 · 19/10/2026) ─────
    เคสจริงที่ปิดไป: ผู้ถือ org:manage_own_unit เปิดแก้กลุ่มของตัวเอง (ต้นทางผ่าน) แล้วเปลี่ยนช่อง
    "อยู่ภายใต้" เป็นแผนกของส่วนงานอื่น — payload เขียน parent_id ใหม่ ส่วน guard มองแถวเดิม

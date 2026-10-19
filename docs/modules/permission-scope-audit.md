@@ -370,8 +370,21 @@ if (role === 'leader') {          // ← ไม่มี && lineId
 **ไม่เปลี่ยนพฤติกรรมของ admin** (ทุกฟังก์ชันคืน true ทันทีถ้า `isAdmin`) · ของผู้ถือ `manage_own_unit`
 ที่ทำงานในส่วนงานตัวเองก็เหมือนเดิมเป๊ะ — ต่างเฉพาะ "ย้ายออกนอกส่วนงาน" ที่เดิมทำได้เงียบๆ
 
+### ✅ สายงาน PM — 3 จุด (ปิด 19/10)
+
+| จุด | เดิม | ที่แก้ |
+|---|---|---|
+| `PMCheckData` → `NgRecheckPanel` | **ไม่มีด่านเลย** — ใครเปิดประวัติผลตรวจของทีมอื่นได้ ก็เขียน action ที่แก้ไข + ค่าวัดใหม่ + `final_status` ทับได้ | รับ `canRecord` (สิทธิ์ตามชนิดงาน AM/PM **และ** แกนทีม) จากหน้าแม่ · ไม่มีสิทธิ์ = **โชว์ว่า "NG — ยังไม่มี action" + เหตุผล** (ไม่ซ่อนความจริง) · ด่านชั้น 2 ใน `submit` + `checkWriteRows` |
+| `PmCoordination` → `notify` | ไม่มีด่าน — **ยิง Telegram ออกข้างนอก** แทนส่วนงานอื่น + เขียนสถานะ `notified` | `planWrite.ok` ก่อนเรียก edge function |
+| `PmCoordination` → `toggleTask` | ไม่มีด่าน — ติ๊ก/ปลดติ๊กงานในแผนของไลน์อื่น | `planWrite.ok` ก่อนเขียน |
+| `PmCoordination` → `PlanModal.save` | เช็คแต่ไลน์เดิม (ที่การ์ด) — ในโมดัลเปลี่ยน `line_name` ได้ ⇒ **ย้ายแผนข้ามส่วนงาน** | ด่าน **ต้นทาง (แผนเดิม) + ปลายทาง (`f.line_name`)** ก่อน insert/update · ไม่ระบุไลน์ = ไม่บล็อก (แผนระดับโรงงานมีจริง) |
+| `PMSetup` → `handleTransfer` | เช็คแต่ทีมต้นทาง — ย้าย/คัดลอก **รายการตรวจ + ประวัติการตรวจทั้งก้อน** เข้าไปในทีมช่างอื่นได้ (และทับของเขา) | `teamWriteOf(moveTo)` = ด่านของ**ทีมปลายทาง** เสมอ · ต้นทางเพิ่มเมื่อ `mode === 'move'` · ลิสต์ปลายทางกรองด้วยกฎเดียวกัน + เขียนว่าซ่อนกี่ทีม |
+
+· ด่าน `regressionGuards` 1 ตัว 4 assert — ถอดด่านจุดไหนออกก็แดง (พิสูจน์ทีละจุดแล้วทั้ง 4)
+· 🔴 **บทเรียนซ้ำของรอบนี้: "ย้ายของ" ทุกที่ต้องเช็ค 2 ฝั่ง** — ด่านที่มองแถวเดิมอย่างเดียวจะปล่อยการย้ายออกไปข้างนอกขอบเขตเสมอ
+  (เจอ 3 หน้าในรอบเดียว: `/org-setup` · `PmCoordination` · `PMSetup` — คลาสเดียวกับ `PMSetup.handleTransfer` ที่ตั้งข้อสังเกตไว้ตอน audit)
+
 ### ที่เหลือในรอบนี้ (ยังไม่แก้)
 
-`PMCheckData.NgRecheckPanel` (ไม่มีด่านเลย) · `PmCoordination` (edit/notify/toggle/PlanModal.save) ·
-`PMSetup.handleTransfer` (ปลายทางไม่ถูกเช็ค) · `NPI.delProject` + 4 ลูก · `RackCenter` · `QualityBins` ·
-`LineStock.stock_inflow_rules` · `QualityControl` NCR · `KpiMonthly.copyFromYear`/`restoreDef`
+`NPI.delProject` + 4 ลูก · `RackCenter` · `QualityBins` · `LineStock.stock_inflow_rules` ·
+`QualityControl` NCR · `KpiMonthly.copyFromYear`/`restoreDef`
