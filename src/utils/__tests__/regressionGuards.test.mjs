@@ -5215,3 +5215,26 @@ test('🛡️ qa-claims-scope-by-name — ตัวกรองขอบเข�
     '\n\n❌ QaClaims.jsx ใช้ lines.includes(ชื่อไลน์) — lines เป็นแถว object ⇒ ไม่ตรงเลย เคลมหายจากทะเบียน\n'
     + '   แก้: เทียบกับชุดชื่อ (lines.map(l => l.name)) และกรองเฉพาะเมื่อผู้ดูมีขอบเขตจริง (แบบแท็บ NCR)\n');
 });
+
+/* ── ❌ ใบ NCR/เคลมที่ "ยกเลิก (เปิดผิด)" ห้ามนับเป็นงานค้าง (2026-10-19) ──
+   เพิ่มสถานะ `cancelled` แล้ว ⇒ ตัวนับเดิม `status !== 'closed'` / `.neq('status','closed')` จะนับใบยกเลิกเป็นงานค้างปลอม
+   ตัวตัดสินอยู่ `utils/qaDocStatus.js` ที่เดียว */
+test('🛡️ qa-doc-cancelled-not-open — ตัวนับ NCR/เคลมค้างต้องผ่าน qaDocStatus', () => {
+  const bad = [];
+  for (const f of ['src/components/QaClaims.jsx', 'src/pages/DeptDashboard.jsx']) {
+    const src = stripComments(readFileSync(join(ROOT, f), 'utf8'));
+    if (/\.status\s*!==\s*'closed'/.test(src) && f.endsWith('QaClaims.jsx')) bad.push(`${f}: status !== 'closed'`);
+    if (/claims\.filter\(\s*c\s*=>\s*c\.status\s*!==\s*'closed'/.test(src)) bad.push(`${f}: claims.filter(status !== 'closed')`);
+  }
+  const qc = stripComments(readFileSync(join(ROOT, 'src/pages/QualityControl.jsx'), 'utf8'));
+  if (/from\('qa_ncr'\)[^;]*\.neq\('status',\s*'closed'\)/.test(qc)) bad.push("QualityControl.jsx: qa_ncr .neq('status','closed')");
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n   ') + '\n   ใช้ isOpenQaDoc() / QA_DONE_IN จาก utils/qaDocStatus.js\n');
+});
+
+/* ── 👁 หน้า /qa ห้ามเขียนกฎขอบเขตที่เห็นเอง (2026-10-19) — ใช้ qaViewScope() (ห่อ scopedLineNames) ──
+   เดิมเขียนเอง 3 ชุด ⇒ ส่วนงานที่ไม่มีไลน์ผลิต (QA) ได้ 0 ไลน์ = ทุกแท็บว่าง */
+test('🛡️ qa-view-scope-shared — QualityControl ใช้ qaViewScope ไม่กรอง inSectionScope เอง', () => {
+  const qc = stripComments(readFileSync(join(ROOT, 'src/pages/QualityControl.jsx'), 'utf8'));
+  assert.ok(!/inSectionScope\(/.test(qc), 'QualityControl.jsx กรองขอบเขตเองด้วย inSectionScope — ใช้ qaViewScope()');
+  assert.ok(/qaViewScope\(/.test(qc), 'QualityControl.jsx ต้องใช้ qaViewScope()');
+});
