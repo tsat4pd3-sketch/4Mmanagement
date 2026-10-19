@@ -293,6 +293,15 @@ export default function QAInspectionSetup() {
   const delPart = async () => {
     if (!sel) return;
     if (!partWrite.ok) { toast.info(writeBlockText(partWrite, { what: 'พาร์ทของไลน์นี้' })); return; }
+    /* 🔴 FK ใบตรวจ → พาร์ท = ON DELETE CASCADE (ผลรายจุด/รายชิ้น/action ตามไปด้วย) ⇒ ลบพาร์ทที่เคยตรวจ
+       = **ประวัติตรวจทั้งหมดหายถาวร** (audit 19/10) ⇒ เคยตรวจแล้วห้ามลบ ให้ปิดใช้งานแทน · นับไม่ได้ = ห้ามลบ */
+    const { count: nSheets, error: eCnt } = await supabase.from('qa_inspection_sheets')
+      .select('id', { count: 'exact', head: true }).eq('part_id', sel.id);
+    if (eCnt || nSheets == null) { toast.error('ตรวจประวัติใบตรวจของพาร์ทนี้ไม่สำเร็จ — ยังลบไม่ได้'); return; }
+    if (nSheets > 0) {
+      toast.error(`${sel.part_no} มีใบตรวจแล้ว ${nSheets} ใบ — ลบไม่ได้ (ประวัติตรวจจะหายถาวร) ให้แก้พาร์ทเป็น "ปิดใช้งาน" แทน`);
+      return;
+    }
     if (!window.confirm(`ลบ ${sel.part_no} พร้อมจุดตรวจทั้งหมด ${items.length} จุด?`)) return;
     const partId = sel.id;
     /* 🔴 ต้อง `.select('id')` แล้ว**นับแถว** ก่อนแตะ storage (QC audit 2026-10-06)
