@@ -4812,6 +4812,33 @@ test('🛡️ write-scope-layer — ด่าน "แก้ข้ามหน่
     + '   แก้: canWriteUnit()/canWriteLine() จาก src/utils/writeScope.js + เรียกซ้ำใน handler\n');
 });
 
+/* ── 🚫 กะผลิตห้ามถูก hard delete (2026-10-19 · QC audit ข้อ ③) ───────────────────────
+   `production_sessions` มี FK cascade ไปที่ `prod_orders` · `downtime_logs` · `defect_logs`
+   ⇒ `delete` ใบเดียว = ยอดผลิต/เวลาหยุด/ของเสียของกะนั้นหายถาวร และ OEE ย้อนหลังเปลี่ยน
+     โดยไม่เหลือร่องรอยว่าใครลบ เพราะอะไร (กู้ไม่ได้ — ฝั่ง DR ไม่มี audit log)
+   กฎในหัวไฟล์ `utils/sessionStatus.js` เขียนไว้แล้วว่า "เก็บประวัติไว้แทน delete" แต่ตัวจอ
+   ยังมีปุ่มลบอยู่ 3 จุด (Live · กะค้าง · ประวัติ) ⇒ ด่านนี้กันไม่ให้กลับมา
+   ✅ ทางที่ถูก: `status = 'void'` + `void_reason` (บังคับ) + `voided_by_name`
+      · ด่านจริงฝั่ง DB = trigger `trg_session_void_guard` (ทำโมฆะได้เฉพาะกะเปล่า) */
+test('🛡️ session-no-hard-delete — ห้ามจอไหน delete production_sessions (ต้องใช้ void)', () => {
+  const bad = [];
+  for (const f of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const src = stripComments(readFileSync(f, 'utf8'));
+    if (/from\('production_sessions'\)[\s\S]{0,200}?\.delete\(/.test(src))
+      bad.push(`${relative(ROOT, f)} (delete production_sessions)`);
+  }
+  /* ฝั่งจอต้องยังมีทางทำโมฆะอยู่จริง — ถอดปุ่มลบแล้วไม่เหลืออะไรให้ทำ = กะค้างเต็มจอ */
+  const dr = stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'));
+  for (const fn of ['handleVoidSession', 'handleVoidEmptySession', 'voidEmpty']) {
+    if (!new RegExp(`const ${fn} = async`).test(dr)) bad.push(`DailyReport.jsx (ไม่มี ${fn} — ทางทำโมฆะหายไป)`);
+  }
+  if (!/void_reason: reason/.test(dr)) bad.push('DailyReport.jsx (ทำโมฆะโดยไม่เก็บเหตุผล — DB มี CHECK บังคับ)');
+
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n   ') + '\n'
+    + '   ทำไม: ลบกะ = ลบ prod_orders/downtime_logs/defect_logs ตาม cascade ⇒ ยอดของวันนั้นหายถาวร\n'
+    + '   แก้: update status = SESSION_VOID + void_reason + voided_by_name (src/utils/sessionStatus.js)\n');
+});
+
 /* ── 💰 ชั้นที่ 3 แกน Cost Center (2026-10-16..19 · คำสั่ง user) ──────────────────────
    *"ใช้ cost center เป็น key หลัก … เซ็ตได้ว่า user ไหน response กับ cost center ไหน **ตามลำดับชั้น**
      ถ้า response ชั้นส่วน 46 ก็ response ได้ทั้งหมดลงไป"*
