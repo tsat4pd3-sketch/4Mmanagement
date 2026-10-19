@@ -4605,7 +4605,7 @@ test('🛡️ no-merge-conflict-markers — ไม่มี marker ค้าง�
 test('🛡️ die-set-two-mats — หาแม่พิมพ์ของพาร์ทต้องผ่าน dieMakesMat()/dieSetMats()', () => {
   const bad = [];
   const util = stripComments(readFileSync(join(ROOT, 'src/utils/dieSetMats.js'), 'utf8'));
-  for (const fn of ['dieSetMats', 'dieMakesMat', 'dieSetPairState', 'suggestPps']) {
+  for (const fn of ['dieSetMats', 'dieMakesMat', 'dieSetPairState', 'suggestPps', 'dieSetsForMat', 'matSlotFor']) {
     if (!new RegExp(`export function ${fn}\\s*\\(`).test(util)) bad.push(`src/utils/dieSetMats.js (ไม่มี ${fn})`);
   }
   /* suggestPps ต้องไม่เสนอ 1 — "ชุดทำพาร์ทเดียว" ไม่ได้แปลว่า 1 ชิ้น/จังหวะ (2-out ของพาร์ทเดียวก็มี) */
@@ -4613,7 +4613,7 @@ test('🛡️ die-set-two-mats — หาแม่พิมพ์ของพา
 
   for (const rel of ['src/components/ProdLotPlanner.jsx', 'src/components/DieLayout.jsx']) {
     const code = stripComments(readFileSync(join(ROOT, rel), 'utf8'));
-    if (!/die(SetMats|MakesMat)\s*\(/.test(code)) bad.push(rel + ' (ไม่เรียกของกลาง)');
+    if (!/die(SetMats|MakesMat|SetsForMat)\s*\(/.test(code)) bad.push(rel + ' (ไม่เรียกของกลาง)');
     /* เทียบช่องแรกตรงๆ กับตัวแปรชุดแม่พิมพ์ = ตกฝั่งที่ลงช่อง 2 */
     if (/\bd(ie(Set)?)?\.mat_no\s*===/.test(code)) bad.push(rel + ' (เทียบ die.mat_no === ตรงๆ)');
   }
@@ -4649,6 +4649,25 @@ test('🛡️ die-set-two-mats — หาแม่พิมพ์ของพา
        แล้ว lookahead ไปมองที่ช่องว่าง = ผ่านเสมอ) ⇒ นับ `pair_mat_no: null` เข้ามาด้วย ด่านหลวมทันที */
     const writes = (reg.match(/update\(\s*\{\s*pair_mat_no:(?!\s*null\b)/g) || []).length;
     if (writes < 2) bad.push(`src/pages/DieRegistry.jsx (ผูกคู่ ${writes} ทาง — ต้อง 2 ทาง ไม่งั้นคู่ชี้ข้างเดียว)`);
+  }
+
+  /* 🔗 ช่องเลือกแม่พิมพ์ของล็อต (19/10) — `die_sets.mat_no` ผูกไว้ 1/92 ชุด
+     ⇒ ยื่นแต่ชุดที่ "ทะเบียนยืนยันแล้ว" = ลิสต์ว่างแทบทุกพาร์ท **คนที่รู้ก็เลือกไม่ได้ = ทางตัน**
+     (die_no ว่าง ⇒ ไม่รู้ความสูง ⇒ เวลาเปลี่ยนรุ่นคิดไม่ได้ · วัดจริง 0/8 ใบมี die_no)
+     แต่กอง "ยังไม่ผูก" ห้ามให้ระบบหยิบเอง — ยังไม่มีใครยืนยันว่าชุดนั้นทำพาร์ทนี้ */
+  const pl = stripComments(readFileSync(join(ROOT, 'src/components/ProdLotPlanner.jsx'), 'utf8'));
+  if (!/unlinked/.test(pl)) bad.push('src/components/ProdLotPlanner.jsx (ช่องเลือกแม่พิมพ์ไม่ยื่นกองที่ยังไม่ผูก MAT = ทางตัน)');
+  /* เลือกให้เองได้เฉพาะตอนทะเบียนชี้ชัด "ตัวเดียว" — 2 ชุดทำ MAT เดียวกันมีจริง (10 กลุ่ม) */
+  if (!/\.linked\b/.test(pl) || !/linked\.length === 1/.test(pl))
+    bad.push('src/components/ProdLotPlanner.jsx (auto-เลือกแม่พิมพ์ไม่ได้จำกัดที่ linked ตัวเดียว = เดาความสูงผิด)');
+  /* ผูก MAT จากหน้าแผน = ยืมมือเขียนทะเบียนแม่พิมพ์ ⇒ ต้องใช้สิทธิ์ของทะเบียน + นับแถว */
+  if (/from\('die_sets'\)\s*\n?\s*\.update|from\('die_sets'\)\.update/.test(pl)) {
+    if (!/can\(\s*'machines'\s*,\s*'edit'/.test(pl))
+      bad.push("src/components/ProdLotPlanner.jsx (ผูก MAT ต้องใช้สิทธิ์ machines:edit ไม่ใช่ production_plan:write)");
+    if (!/checkWriteRows\s*\(/.test(pl))
+      bad.push('src/components/ProdLotPlanner.jsx (เขียน die_sets โดยไม่นับแถว — RLS ปฏิเสธ = 0 แถว ไม่มี error)');
+    if (!/matSlotFor\s*\(/.test(pl))
+      bad.push('src/components/ProdLotPlanner.jsx (เขียน die_sets โดยไม่ผ่าน matSlotFor = ทับ MAT ที่คนกรอกไว้)');
   }
 
   assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n'
