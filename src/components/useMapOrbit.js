@@ -81,6 +81,19 @@ export default function useMapOrbit(enabled, wrapRef) {
     return () => clearInterval(t);
   }, [enabled, auto]);
 
+  /* 🔁 สลับ 2D ⇄ 3D = เปลี่ยนภาพทันที ห้ามมี transition (19/10 · user "จอค่อยๆ วูมเอ้าตอนสลับ 3D/2D")
+     ทรานสิชันมีไว้ให้ "กล้องขยับใน 3D" ลื่น · แต่ตอนสลับโหมด transform ทั้งก้อน (เอียง+ย่อพอดีกรอบ) โผล่/หายในเฟรมเดียว
+     ⇒ .45s ease เล่นเป็นภาพ "ค่อยๆ ซูมออก" (เข้า 3D) / "ค่อยๆ ซูมเข้า" (กลับ 2D) ทุกครั้งที่กด
+     `switching` = render ที่ enabled เพิ่งเปลี่ยน → transition:none · 2 เฟรมถัดไปค่อยคืนค่า (transform ไม่เปลี่ยนแล้ว = ไม่มีอะไรเล่น) */
+  const [settledFor, setSettledFor] = useState(enabled);
+  const switching = settledFor !== enabled;
+  useEffect(() => {
+    if (!switching) return undefined;
+    let id2 = 0;
+    const id1 = requestAnimationFrame(() => { id2 = requestAnimationFrame(() => setSettledFor(enabled)); });
+    return () => { cancelAnimationFrame(id1); cancelAnimationFrame(id2); };
+  }, [switching, enabled]);
+
   useEffect(() => () => cancelAnimationFrame(raf.current), []);
   useEffect(() => { if (!enabled) { setView(VIEW_DEFAULT); pts.current.clear(); pinch.current = null; } }, [enabled]);
 
@@ -174,7 +187,7 @@ export default function useMapOrbit(enabled, wrapRef) {
   return {
     rot: cam.rot, tilt: cam.tilt, dragging, auto, setAuto, step, tiltBy, reset,
     zoom: view.zoom, px: view.px, py: view.py, zoomBy, rootRef,
-    transition: dragging ? 'none' : animSlow ? 'transform 2.4s ease-in-out' : fast ? 'transform .12s ease-out' : 'transform .45s ease',
+    transition: dragging || switching ? 'none' : animSlow ? 'transform 2.4s ease-in-out' : fast ? 'transform .12s ease-out' : 'transform .45s ease',
     handlers: enabled ? { onPointerDown, onPointerMove, onPointerUp: endDrag, onPointerCancel: endDrag, onClickCapture, onContextMenu } : {},
   };
 }

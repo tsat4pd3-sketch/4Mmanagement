@@ -333,4 +333,13 @@ if (role === 'leader') {          // ← ไม่มี && lineId
 
 1. ชั้น DB (ข้อ 7.1) ยังไม่มีด่านขอบเขต — ฝั่ง DR ต้องผ่าน Edge Function
 2. ฝั่ง DB ยังไม่รู้จัก `resp_cost_centers` ⇒ คนยิง API ตรงยังข้ามด่านจอได้ (เหมือนแกนเดิม)
-3. 3 บัญชีทดสอบในคิว (`leader test` · `leader pd3 test` · `qa test`) — **ให้ user ตัดสิน** ว่าลบหรือเก็บ
+3. **3 บัญชีทดสอบ — user สั่ง "ลบไป" แล้ว (19/10) · ยังลบไม่ได้เพราะเครื่องมือ ไม่ใช่เพราะข้อมูล**
+   `test@test` (leader pd3 test) · `test@leader` (leader test) · `test@qa` (qa test)
+   · ✅ **ตรวจปลายทางครบแล้วว่าว่างจริง** (กฎ fail-closed ก่อนลบ): FK ที่ชี้มาที่ `auth.users`/`profiles`
+     **ทุกตัวที่เป็น NO ACTION = 0 แถว** (four_m_logs · cqi15_* · document_controls · employees.created_by ·
+     shift_schedules · skill_level_up_requests ฯลฯ) · เหลือแค่ `notifications` 243 แถว ที่ FK เป็น cascade
+   · ✅ ฝั่ง DR สแกน **ทุกคอลัมน์ `*_by_uid` + `actor_uid` 125 ช่อง** (`query_to_xml` วนทั้ง schema) = **0 แถว**
+   · ❌ `delete from auth.users` ผ่าน MCP **timeout ทุกรอบ** (เช่นเดียวกับ `drop function` ของ `org_cc_catalog`
+     — รอบนี้ MCP อ่านได้ปกติ แต่คำสั่งเขียน/DDL timeout หมด) ⇒ ยืนยันแล้วว่า **ไม่มีอะไรถูกลบ**
+   ⇒ ลบได้ 2 ทาง: **ปุ่ม 🗑 ลบผู้ใช้ ในโมดัลแก้ไขบัญชี** (ผ่าน edge function `delete-user` — ทางที่ถูกของระบบ)
+     หรือ SQL Editor ของ project "MAIN" (`delete from auth.users where id in (…)` · cascade เก็บลูกให้เอง)
