@@ -17,6 +17,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { toast } from './Toast';
 import { checkWrite, checkWriteRows } from '../utils/dbWrite';
 import { fetchAllRows } from '../utils/fetchAllRows';
+import { fetchByIds } from '../utils/fetchByIds';
 import SearchSelect from './SearchSelect';
 import SupplierSelect from './SupplierSelect';
 import { fmtDateTime } from '../utils/dateFormat';
@@ -39,6 +40,17 @@ export async function loadGlCodes() {
     .select('id, category, gl_code, name, note, is_default, is_active, sort_order')
     .eq('is_active', true).order('category').order('sort_order').order('gl_code');
   return { rows: data || [], error };
+}
+
+/** PR ของหลายใบ MO (export Excel) — chunk ผ่าน fetchByIds · คืน { byOrder, error } ห้ามกลืน error */
+export async function loadPrsForOrders(orderIds) {
+  const ids = [...new Set((orderIds || []).filter(Boolean))];
+  if (!ids.length) return { byOrder: {}, error: null };
+  const { rows, error, truncated } = await fetchByIds(ids,
+    (chunk) => supabaseDR.from('mtn_purchase_requests').select('order_id, pr_no, status').in('order_id', chunk));
+  const byOrder = {};
+  (rows || []).forEach(r => { (byOrder[r.order_id] || (byOrder[r.order_id] = [])).push(r); });
+  return { byOrder, error: error ? (error.message || String(error)) : (truncated ? 'เลข PR เยอะเกินเพดาน — โหลดได้ไม่ครบ' : null) };
 }
 
 /** ออกเลข PR ให้ใบที่เพิ่ง insert — ล้ม = ใบยังอยู่ (เลขว่าง) + toast บอก ห้ามเงียบ */

@@ -172,6 +172,8 @@ const MO_LIST_COLS = [
      egress: 6 คอลัมน์เวลา (ส่วนใหญ่ null) ~25-50 ไบต์/ใบ ⇒ ≤ ~0.3 MB ที่เพดาน 1000 ใบ —
      ยอมจ่ายเพราะไม่ต้องยิงคิวรีชุดที่ 2 และทุกตัวถูกใช้จริง (ห้ามเติมคอลัมน์ที่ไม่มีคนอ่าน) */
   'repair_start_at', 'check_at', 'qa_at', 'ho_at', 'returned_at', 'vendor_sent_at',
+  // 🛒 Excel export (14/10): ช่างที่มอบหมาย (หลายคน) · เส้นทางงานซ่อม · เลข PR ที่กรอกมือ — ข้อความสั้น ส่วนใหญ่ว่าง
+  'assigned_to', 'assigned_techs', 'repair_path', 'pr_no',
 ].join(',');
 const SCOPE_OPTS = [{ v: 'in_line', t: 'ซ่อมในไลน์' }, { v: 'off_line', t: 'ซ่อมนอกไลน์' }];
 const CHECK_RESULTS = ['ตรวจสอบผ่าน', 'ตรวจสอบไม่ผ่าน'];
@@ -626,12 +628,17 @@ export default function MtnRepair() {
          ผ่าน loadMoCommentsFor (chunk .in() ให้เอง) · 🔴 error ไม่กลืน ส่งต่อให้ไฟล์เขียนกำกับ */
       const { loadMoCommentsFor } = await import('../lib/moComments');
       const cmt = await loadMoCommentsFor(shown.map(o => o.id));
+      // 🛒 เลข PR ของทุกใบ (14/10) — error ไม่กลืน ส่งต่อให้ไฟล์เขียนกำกับ
+      const { loadPrsForOrders } = await import('../components/MtnPurchase');
+      const prs = await loadPrsForOrders(shown.map(o => o.id));
       const r = await exportMoExcel({
         rows: shown, from: tr.from, to: tr.to,
         dateOf: (o) => o.work_date || workDateOfTime(o.report_at),
         isOpen: isMoOpen, teamName: deptNameOf, statusLabel: moStatusLabel, filterNote: note,
         commentsBy: cmt.byOrder, commentsError: cmt.error,
+        prsBy: prs.byOrder, prsError: prs.error,
       });
+      if (prs.error) toast.error('โหลดเลข PR ไม่ครบ — คอลัมน์เลข PR ในไฟล์เขียนกำกับไว้แล้ว');
       if (cmt.error) toast.error('โหลดคอมเมนต์ไม่ครบ — คอลัมน์คอมเมนต์ในไฟล์ใช้อ้างอิงไม่ได้ (เขียนกำกับไว้ในไฟล์แล้ว)');
       /* 🔴 บอกความครบถ้วนตอนโหลดเสร็จด้วย — คนมักเอาไฟล์ไปใช้เลยโดยไม่อ่านหัวชีท */
       toast.success(`ออกไฟล์แล้ว ${r.rows} ใบ${r.vague ? ` · ในนั้นชี้เป้าไม่ได้ ${r.vague} ใบ (ดูชีทพาเรโต)` : ''}`);
