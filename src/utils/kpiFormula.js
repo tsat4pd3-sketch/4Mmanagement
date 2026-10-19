@@ -55,9 +55,17 @@ export function formulaMonths({ def, scope, base }) {
   if (!f || !base) return null;
   const varScopes = Object.fromEntries(f.vars.map(v => [v, baseScopeForVar(v, scope)]));
   const months = {}, inputs = {}, missing = {}, inputSrc = {};
+  const cum = new Set(f.cum || []);
+  const srcOf = (v, mm) => (base.src ? base.src(varScopes[v], v, mm) : (base.get(varScopes[v], v, mm) != null ? 'manual' : null));
   for (let m = 1; m <= 12; m++) {
     const vars = {}, srcs = {};
-    f.vars.forEach(v => { vars[v] = base.get(varScopes[v], v, m); srcs[v] = base.src ? base.src(varScopes[v], v, m) : (vars[v] != null ? 'manual' : null); });
+    f.vars.forEach(v => {
+      if (!cum.has(v)) { vars[v] = base.get(varScopes[v], v, m); srcs[v] = srcOf(v, m); return; }
+      /* ตัวแปรสะสม YTD (ยอดขาย/หัว): รวม ม.ค.→m · ขาดเดือนใดเดือนหนึ่งก่อนหน้า = คำนวณไม่ได้ (ห้ามรวมเฉพาะที่มี = ยอดต่ำกว่าจริงเงียบ) */
+      let sum = 0, ok = true, src = null;
+      for (let j = 1; j <= m; j++) { const x = base.get(varScopes[v], v, j); if (x == null) { ok = false; break; } sum += Number(x); const sj = srcOf(v, j); if (sj === 'auto' || (src == null && sj)) src = sj === 'auto' ? 'auto' : src || sj; }
+      vars[v] = ok ? sum : null; srcs[v] = ok ? src : null;
+    });
     const r = evalFormula(key, vars);
     inputs[m] = vars; inputSrc[m] = srcs;
     if (r.value != null) months[m] = r.value;
@@ -86,16 +94,28 @@ export function applyFormulaEntries(defs, entries, base, orgIndex) {
     const manual = (entries || {})[d.id] || {};
     const merged = {};
     const usedManual = [], computed = [];
+    const approx = [];
     for (let m = 1; m <= 12; m++) {
-      if (r.months[m] != null) { merged[m] = r.months[m]; computed.push(m); }
+      /* 🔴 สูตรที่มีตัวแปร "ประมาณจากทะเบียน" (auto) ห้ามทับค่าที่คนกรอกไว้ — ค่าประมาณเติมได้แค่ช่องว่าง (ทะเบียน PD1 มี 32 คน ของจริง ~300) */
+      const est = Object.values(r.inputSrc?.[m] || {}).includes('auto');
+      if (r.months[m] != null && !(est && manual[m] != null)) { merged[m] = r.months[m]; computed.push(m); if (est) approx.push(m); }
       else if (manual[m] != null) { merged[m] = Number(manual[m]); usedManual.push(m); }
     }
     out[d.id] = merged;
     info[d.id] = { key: r.key, label: r.formula.label, expr: r.formula.expr, unit: r.formula.unit, months: r.months, inputs: r.inputs,
-      inputSrc: r.inputSrc, missing: r.missing, usedManual, computed, varScopes: r.varScopes, manual };
+      inputSrc: r.inputSrc, missing: r.missing, usedManual, computed, approx, varScopes: r.varScopes, manual };
   }
   return { entries: out, info };
 }
+
+/** ช่องเดือนของนิยามสูตร: `computed` = สูตรคำนวณได้ (อ่านอย่างเดียว 🧮) · `manual` = ตัวเลขฐานยังไม่ครบ ⇒ ยังกรอกมือได้ (✍️)
+ *  — ช่วงเปลี่ยนผ่าน ห้ามล็อกช่องจนกว่าสูตรจะคำนวณได้จริง ไม่งั้นหน่วยที่ยังไม่มีตัวเลขฐานกรอกอะไรไม่ได้เลย */
+export const formulaMonthMode = (info, month) => {
+  const m = Number(month);
+  if (!info) return 'manual';
+  if (info.usedManual?.includes(m)) return 'manual';          // รวมเดือนที่สูตรคำนวณได้แต่ใช้ค่าประมาณ ⇒ ค่ากรอกมือชนะ ยังแก้ได้
+  return info.months?.[m] != null ? 'computed' : 'manual';
+};
 
 const fmtBaht = (v) => (v == null ? '–' : Number(v).toLocaleString('th-TH', { maximumFractionDigits: 2 }));
 const scopeText = (sk, labelOf) => (sk === PLANT_BASE_KEY ? 'ทั้งโรงงาน' : (labelOf ? labelOf(sk) : sk));
@@ -108,6 +128,9 @@ export function formulaNoteText(info, month, { labelOf = null, def = null } = {}
   if (miss?.length) {
     const txt = miss.map(x => (x.scope ? `${x.label} (${scopeText(x.scope, labelOf)})` : x.label)).join(' · ');
     return info.usedManual?.includes(m) ? `✍️ ใช้ค่ากรอกมือ — สูตรยังขาด ${txt}` : `ขาดตัวเลขฐาน: ${txt}`;
+  }
+  if (info.usedManual?.includes(m) && info.months?.[m] != null) {
+    return `✍️ ใช้ค่ากรอกมือ — สูตรคำนวณได้ ${def ? fmtKpi(info.months[m], def) : fmtBaht(info.months[m])} แต่ใช้กำลังคนประมาณจากทะเบียนพนักงาน จึงไม่ทับค่าที่กรอกไว้`;
   }
   const parts = (info.formula?.vars || Object.keys(info.inputs?.[m] || {})).map(v => `${baseVarOf(v)?.label?.split(' (')[0] || v} ${fmtBaht(info.inputs?.[m]?.[v])} (${scopeText(info.varScopes?.[v], labelOf)}${info.inputSrc?.[m]?.[v] === 'auto' ? ' · ≈ทะเบียนพนักงาน' : ''})`);
   const val = info.months?.[m];
