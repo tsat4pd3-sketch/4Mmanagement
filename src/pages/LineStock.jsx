@@ -5,6 +5,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { loadLinesRes } from '../utils/useProductionLines';
 import { scopedLineNames, filterRowsByLineScope } from '../utils/sectionScope';
 import { canWriteLine, writableRows, writeBlockText } from '../utils/writeScope';
+import { checkWriteRows } from '../utils/dbWrite';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { isFgMat } from '../utils/matPrefix';
@@ -1459,7 +1460,12 @@ function InflowRulesTab({ canEdit }) {
   }, []);
   useEffect(() => { load(); }, [load]);
 
+  /* ด่านชั้น 2 ของทั้งแท็บ — กฎพวกนี้ตัดสินว่า "ของเข้าคลังไหม" ทั้งโรงงาน (ปิดผิด = ของหายเงียบทั้งกะ)
+     ⇒ ซ่อนปุ่มไม่พอ ต้องเช็คคีย์เดียวกับปุ่มในทุกฟังก์ชันที่เขียน (สิทธิ์เปลี่ยนระหว่างเปิดจอ / ยิงตรง) */
+  const noPerm = () => { if (!canEdit) { toast.error('แก้กฎรับงานเข้าคลังต้องมีสิทธิ์ line_stock:manage_rounds'); return true; } return false; };
+
   const addRule = async () => {
+    if (noPerm()) return;
     const mv = form.match_value.trim().toUpperCase();
     const dest = form.dest_line_name.trim();
     if (!mv) { toast.error(form.match_type === 'prefix' ? 'กรอกเลขขึ้นต้น MAT เช่น 1 หรือ 2' : 'กรอก MAT No.'); return; }
@@ -1468,10 +1474,9 @@ function InflowRulesTab({ canEdit }) {
       && !window.confirm(`MAT ${mv} ไม่มีใน Product Master — กฎจะ match เฉพาะเลขนี้ตรงตัว · ใช้ค่านี้ต่อหรือไม่?`)) return;
     if (!dest) { toast.error('เลือกปลายทาง เช่น FG WAREHOUSE / STORE'); return; }
     setSaving(true);
-    const { error } = await supabaseDR.from('stock_inflow_rules')
-      .upsert({ match_type: form.match_type, match_value: mv, dest_line_name: dest, is_active: true, updated_at: new Date().toISOString() }, { onConflict: 'match_type,match_value' });
+    const ok = checkWriteRows(await supabaseDR.from('stock_inflow_rules').upsert({ match_type: form.match_type, match_value: mv, dest_line_name: dest, is_active: true, updated_at: new Date().toISOString() }, { onConflict: 'match_type,match_value' }).select('id'), 'บันทึกกฎ');
     setSaving(false);
-    if (error) { toast.error(error.message); return; }
+    if (!ok) return;
     toast.success(`✓ ${form.match_type === 'prefix' ? `MAT ขึ้นต้น ${mv}` : mv} → ${dest}`);
     setForm(f => ({ ...f, match_value: '', dest_line_name: '' }));
     load();
@@ -1480,6 +1485,7 @@ function InflowRulesTab({ canEdit }) {
   /* 🔴 3 ทาง ไม่ใช่เปิด/ปิด (2026-10-02) — เดิม "ปิด" ถูกเข้าใจว่า "ให้คนยืนยันรับ" แต่จริงๆ คือ
      **ของไม่เข้าคลังเลย** (เกิดจริง ~120 ใบหายเงียบทั้งกะ) · ปิดต้องถามยืนยันพร้อมบอกผลตรงๆ */
   const setRuleMode = async (r, modeKey) => {
+    if (noPerm()) return;
     if (modeKey === inflowModeOf(r)) return;
     if (modeKey === 'off' && !window.confirm(
       `ปิดกฎ "${r.match_type === 'prefix' ? `MAT ขึ้นต้น ${r.match_value}` : r.match_value} → ${r.dest_line_name}"?\n\n`
@@ -1494,9 +1500,9 @@ function InflowRulesTab({ canEdit }) {
   };
 
   const deleteRule = async (r) => {
+    if (noPerm()) return;
     if (!window.confirm(`ลบกฎ "${r.match_type === 'prefix' ? `MAT ขึ้นต้น ${r.match_value}` : r.match_value} → ${r.dest_line_name}"?`)) return;
-    const { error } = await supabaseDR.from('stock_inflow_rules').delete().eq('id', r.id);
-    if (error) { toast.error(error.message); return; }
+    if (!checkWriteRows(await supabaseDR.from('stock_inflow_rules').delete().eq('id', r.id).select('id'), 'ลบกฎ')) return;
     toast.success('ลบกฎแล้ว');
     load();
   };

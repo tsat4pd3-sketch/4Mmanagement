@@ -407,7 +407,41 @@ if (role === 'leader') {          // ← ไม่มี && lineId
   ด่านผ่านทั้งที่ถอดออกแล้ว) · `delProject` ต้องผ่าน `npiProjectDeleteBlock` ก่อน `.delete()` + ต้องส่ง
   `countable` จากผลอ่านพาร์ท · แผงลูกต้องเรียกกฎจาก utils ไม่ใช่เขียนเงื่อนไขเอง (พิสูจน์ด้วย mutation 2 แบบ)
 
-### ที่เหลือในรอบนี้ (ยังไม่แก้)
+### ✅ "ซ่อนปุ่มไม่ใช่ด่าน" — 5 จอสุดท้ายของข้อ 5 (ปิด 19/10)
 
-`RackCenter` · `QualityBins` · `LineStock.stock_inflow_rules` · `QualityControl` NCR ·
-`KpiMonthly.copyFromYear`/`restoreDef`
+ปุ่มถูกซ่อนด้วย `can()`/`canEdit` อยู่แล้ว แต่ **ฟังก์ชันที่เขียน DB ไม่เช็คอะไรเลย** ⇒ สิทธิ์เปลี่ยนระหว่าง
+เปิดจอ · โมดัลเปิดค้าง · เรียกตรง = เขียนได้จริง (กฎเขียน DB ข้อ 10 · ฝั่ง DR ไม่มี RLS ให้พึ่ง = จอเป็นด่านเดียว)
+
+| จอ | ฟังก์ชัน | คีย์ที่เติม |
+|---|---|---|
+| `RackCenter` | `issuePkg` · `advance` · `cancel` · ปุ่มบันทึก SLA | `rack_center:operate` |
+| `QualityBins` (ถังเหลือง/แดง) | `save` · `toRed` (record) · `remove` (manage) | `scrap:record` / `scrap:manage` + นับแถวตอน soft delete |
+| `LineStock` แท็บ ⚙️ รับงานเข้าคลัง | `addRule` · `setRuleMode` · `deleteRule` | `line_stock:manage_rounds` + นับแถว (upsert/delete) |
+| `QualityControl` NCR | `createNCR` · `cancelNCR` · `updateNCR` | `qa:record` / `qa:manage` + นับแถว (insert/update) |
+| `KpiMonthly` | `copyFromYear` · `restoreDef` | ชั้นที่ 3 (`scopeWrite` / **`rowWrite` ของแถว**) |
+
+· 🔴 **`restoreDef` ต้องตัดสินด้วย "ขอบเขตของแถว" ไม่ใช่ขอบเขตที่เปิดอยู่** — `saveDef` เรียกมันด้วย
+  **แถวแฝด (twin)** ที่อาจเป็นของขอบเขตอื่น (เจอตอนไล่โค้ด ไม่ใช่ตอนเทส) · `copyFromYear` สร้างนิยาม
+  ทั้งชุดลงขอบเขตที่เปิดอยู่ ⇒ deep-link `?scope=` ของหน่วยอื่น = คัดลอกเข้าไปในขอบเขตเขาได้
+· `stock_inflow_rules` = กฎระดับโรงงาน (ไม่ใช่ของหน่วยใด) ⇒ **ด่านคือคีย์สิทธิ์ ไม่ใช่ขอบเขตหน่วยงาน** —
+  ปิดกฎผิดตัวเคยทำของ ~120 ใบไม่เข้าคลังทั้งกะ จึงต้องมีด่านจริงในทุกฟังก์ชัน
+· ด่าน `regressionGuards` 1 ตัว (4 จอ × 3 ฟังก์ชัน + KpiMonthly 3 ฟังก์ชัน + กฎ "ตัดสินด้วยแถว") —
+  พิสูจน์ด้วย mutation 2 จุด
+
+### 🏁 สรุปรอบ 6 — ข้อ 5 ปิดครบ
+
+`/org-setup` · สายงาน PM 5 จุด · `/npi` แผงลูก 4 ตัว + ลบโปรเจค · 5 จอ "ซ่อนปุ่มไม่ใช่ด่าน"
+= **17 จุด/จอ · ด่านใหม่ 4 ตัว (11 assert) · util กฎใหม่ 2 ไฟล์ (`orgNodeEdit.js` · `npiScope.js`) 10 เทส**
+
+🔴 **2 บทเรียนข้ามโมดูลของรอบนี้** (เขียนไว้ที่ `CLAUDE.md` §Organizational Hierarchy ด้วย):
+1. **"ย้ายของ" ต้องเช็ค 2 ฝั่ง** — ต้นทาง (แถวเดิม) + ปลายทาง (ค่าที่กำลังจะเขียน) ·
+   เจอ 4 หน้าในรอบเดียว: `/org-setup` (parent ใหม่) · `PmCoordination` (ไลน์ใหม่) · `PMSetup` (ทีมปลายทาง) ·
+   `/npi` (พาร์ทใหม่) — ด่านที่มองแถวเดิมอย่างเดียวปล่อยการย้ายออกนอกขอบเขตเสมอ
+2. **หน้าแม่ที่มีกฎแล้ว ต้องส่งกฎลงแผงลูก** — `/npi` มี `partWriteOf` ตั้งแต่ 15/10 แต่ส่งแค่ `canEdit`
+   ⇒ แผงลูก 4 ตัวยังเขียนข้ามไลน์ได้อีก 4 วัน · **ด่านต้องเช็คที่ "prop ที่ส่งจริง" ไม่ใช่แค่ว่าหน้าแม่มีกฎ**
+
+### ที่ยังเหลือ (นอกข้อ 5)
+
+1. ชั้น DB (ข้อ 7.1) — RLS ฝั่ง Main 68 policy ยังไม่มี predicate ของหน่วยงาน · ฝั่ง DR ไม่มีด่านเลย (anon)
+2. ฝั่ง DB ยังไม่รู้จัก `resp_cost_centers` ⇒ คนยิง API ตรงยังข้ามด่านจอได้ทุกจอ
+3. `manage_master` ให้ทั้ง role `mtn` · `dept_admin` ถือ 101 คีย์ (ตรวจค้างจาก audit 15/10)

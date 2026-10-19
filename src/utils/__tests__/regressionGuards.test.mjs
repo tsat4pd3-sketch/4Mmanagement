@@ -2989,6 +2989,43 @@ test('🛡️ /org-setup: ทุกชั้นที่มีปุ่มเพ
     '\n\n❌ handleSave ไม่ได้ใช้ orgSaveBlockReason ตัดสินสิทธิ์ — ดูเหตุผลด้านบน\n');
 });
 
+/* ── 🔴 "ซ่อนปุ่ม" ไม่ใช่ด่าน — ฟังก์ชันที่เขียน DB ต้องเช็คคีย์เดียวกับปุ่ม (QC audit ข้อ 5 · 19/10) ──
+   4 จอรอบสุดท้ายของ audit ข้อ 5: ปุ่มถูกซ่อนด้วย can()/canEdit อยู่แล้ว แต่ handler ไม่เช็คอะไรเลย
+   ⇒ สิทธิ์เปลี่ยนระหว่างเปิดจอ / โมดัลเปิดค้าง / เรียกตรง = เขียนได้จริง (กฎเขียน DB ข้อ 10) */
+test('🛡️ handler ที่เขียน DB ต้องเช็คสิทธิ์เอง ไม่ใช่พึ่งการซ่อนปุ่ม', () => {
+  const cases = [
+    ['src/pages/RackCenter.jsx', ['const issuePkg', 'const advance', 'const cancel'], /canOperate/, 'rack_center:operate'],
+    ['src/components/QualityBins.jsx', ['const save', 'const remove', 'const toRed'], /canRecord|canManage/, 'scrap:record / scrap:manage'],
+    ['src/pages/LineStock.jsx', ['const addRule', 'const setRuleMode', 'const deleteRule'], /noPerm\(\)|canEdit/, 'line_stock:manage_rounds'],
+    ['src/pages/QualityControl.jsx', ['const createNCR', 'const cancelNCR', 'const updateNCR'], /canRecord|canManage/, 'qa:record / qa:manage'],
+  ];
+  for (const [file, fns, need, key] of cases) {
+    const code = stripComments(readFileSync(join(ROOT, file), 'utf8'));
+    for (const fn of fns) {
+      const at = code.indexOf(fn);
+      assert.ok(at > -1, `${file}: หา ${fn} ไม่เจอ — ด่านนี้ต้องแก้ตามโครงไฟล์ใหม่`);
+      const head = code.slice(at, at + 420);
+      assert.ok(need.test(head),
+        `\n\n❌ ${file} → ${fn.replace('const ', '')}() ไม่ได้เช็คสิทธิ์ (${key}) ในฟังก์ชันเอง\n`
+        + '   ทำไม: ซ่อนปุ่มไม่ใช่ด่าน — สิทธิ์เปลี่ยนระหว่างเปิดจอ / โมดัลเปิดค้าง / เรียกตรงได้\n'
+        + '   (ฝั่ง DR ไม่มี RLS ให้พึ่งเลย = จอเป็นด่านเดียว)\n');
+    }
+  }
+  /* KpiMonthly: เขียน kpi_definitions ต้องผ่านชั้นที่ 3 ทุกทาง — เดิมมีแต่ removeDef */
+  const kpi = stripComments(readFileSync(join(ROOT, 'src/components/KpiMonthly.jsx'), 'utf8'));
+  for (const fn of ['const copyFromYear', 'const restoreDef', 'const removeDef']) {
+    const at = kpi.indexOf(fn);
+    assert.ok(at > -1, `KpiMonthly: หา ${fn} ไม่เจอ`);
+    assert.ok(/scopeWrite\.ok|rowWrite\.ok/.test(kpi.slice(at, at + 900)),
+      `\n\n❌ KpiMonthly ${fn.replace('const ', '')}() ไม่ได้เช็คขอบเขต (ชั้นที่ 3) ก่อนเขียน kpi_definitions\n`
+      + '   deep-link ?scope= เปิดขอบเขตของหน่วยอื่นได้ ⇒ คัดลอก/เปิดคืนนิยามของเขาได้\n');
+  }
+  // restoreDef ต้องตัดสินด้วย "ขอบเขตของแถว" ไม่ใช่ขอบเขตที่เปิดอยู่ (ถูกเรียกด้วยแถวแฝดจากขอบเขตอื่น)
+  const rd = kpi.slice(kpi.indexOf('const restoreDef'), kpi.indexOf('const removeDef'));
+  assert.ok(/scopeOfDef\(d2\)/.test(rd) && /rowWrite/.test(rd),
+    '\n\n❌ restoreDef ต้องคิดขอบเขตจากแถว (scopeOfDef(d2)) — ใช้ scopeWrite ของหน้าจะตัดสินผิดแถว\n');
+});
+
 /* ── 🔴 /npi: แผงลูกเขียนของพาร์ทไลน์อื่นได้ (QC audit ข้อ 5 · 19/10/2026) ───────────────────
    หน้าแม่มี `partWriteOf` (canWriteLine ของไลน์พาร์ท) แต่ส่งเข้าแผงลูกแค่ `canEdit`
    ⇒ 4 แผง (พาร์ท · แบบ/ECI · tooling · งาน) เขียน/ลบแถวของพาร์ทไลน์อื่นได้ทั้งหมด
