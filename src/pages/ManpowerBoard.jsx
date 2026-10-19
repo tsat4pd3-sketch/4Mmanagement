@@ -16,7 +16,10 @@ import useProductionLines from '../utils/useProductionLines';
 import { useLiveBoard } from '../utils/useLiveBoard';
 import { LIVE } from '../utils/refreshRates';
 import { fetchAllPages, fetchByIds } from '../utils/fetchByIds';
-import { onlyShopfloorStaff } from '../utils/staffKind';
+/* 👥 จอนี้ตัดเฉพาะ**สายสนับสนุน** — 🔧 ช่าง ต้องอยู่ เพราะบอร์ดวาด "แถวช่าง" แยกไว้ต่างหาก
+      และ `staffingOfDept()` นับแค่คอลัมน์ทีม (leader+operator) ⇒ ช่างไม่เคยถูกนับเป็นกำลังคนไลน์
+      🔴 ห้ามสลับเป็น onlyShopfloorStaff — ช่างจะหายจากบอร์ดทั้งแถว (กฎใน staffKind.js) */
+import { withoutSupportStaff } from '../utils/staffKind';
 import { inSectionScope } from '../utils/sectionScope';
 import { orgNodeCompare, orgKey } from '../utils/listOrder';
 import { loadPositions, positionLabel, loadWorkingPositions, applyWorkingPositions } from '../utils/positions';
@@ -85,7 +88,7 @@ export default function ManpowerBoard() {
       // รอทะเบียนตำแหน่งก่อนจัดแถว — ไม่งั้นรอบแรกจัดด้วยค่า default แล้วไม่จัดใหม่ (memo ไม่รู้ว่า cache เปลี่ยน)
       const [nRes, eRes, dRes, , actingMap] = await Promise.all([
         supabase.from('org_nodes').select('id, kind, name, code, parent_id, ref_line_id, sort_order, cost_center').eq('is_active', true),
-        fetchAllPages(() => onlyShopfloorStaff(supabase.from('employees').select(EMP_COLS).eq('is_active', true))),
+        fetchAllPages(() => withoutSupportStaff(supabase.from('employees').select(EMP_COLS).eq('is_active', true))),
         supabase.from('skill_definitions').select('name, label, color, sort_order'),
         loadPositions(),
         /* 🧭 ตำแหน่ง "ที่ปฏิบัติงานจริง" จากบัญชี — บอร์ดนี้ตอบว่า *วันนี้ใครทำหน้าที่อะไร*

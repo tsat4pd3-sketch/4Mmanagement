@@ -211,6 +211,9 @@ model: inherit
 - **[E-PINCOPY]** (14/10) คัดลอกแถว `jig_checkpoints` ไปเครื่อง/แผนกอื่นต้องผ่าน **`checkpointCopyRow()`**
   (`src/utils/pmCheckpointCopy.js`) · แตกแถวเองแล้ว insert = 🔴 — หมุด `x_pos/y_pos/label_dx/label_dy/image_id`
   ผูกกับรูปเครื่องต้นทาง ⇒ ข้ามเครื่องต้องล้าง · `jig_id` ต้องเป็นเครื่องปลายทาง (มีด่าน `pm-checkpoint-copy-via-util`)
+- **[E-PMSTALE]** (19/10) `PMCheckData.jsx` — เอฟเฟกต์โหลดเครื่องทุก callback เทียบ `loadReqRef` · `handleSave` เช็ค
+  `cpLoad.status === 'ok'` + `cpLoad.key` = เครื่อง|แผนกที่เปิดอยู่ (มีด่าน `pm-check-stale-guard`) · โหลดล้มต้องเขียน
+  "โหลดไม่สำเร็จ" ห้ามขึ้น "ยังไม่มีรายการตรวจ" · PMSchedule/PmForecast ห้าม `.in()` ดิบ + ต้องอ่าน error (แถบแดง)
 
 ### หมวด F — UI Conventions (docs/UI-CONVENTIONS.md)
 - **[F-TVFIT]** จอบอร์ด fit-to-viewport (ผัง A4 / grid ที่ต้องเต็มจอไม่เลื่อน — ต้นแบบ `/obeya`, UI-CONVENTIONS §6.14 · 2026-09-15):
@@ -371,6 +374,7 @@ model: inherit
 - **F-inspect (2026-10-15) จอตั้งค่าจุดตรวจ (รูป + ปักหมุด + การ์ดจุด) ต้องประกอบจาก `src/components/inspect/*` + `SpinAnnotator`**
   — grep หน้าที่ใช้ `CalloutPin`/วาดโมดัลจุดตรวจเอง นอก `components/inspect/`, `SpinAnnotator`, จอตรวจ (`PMCheckData`/`QaCheckSheet`)
   · ด่าน `inspection-setup-shared` ครอบ PMSetup + QaPointsEditor · 📄 `docs/modules/inspection-point-setup.md`
+  · QA คัดลอกจุดตรวจข้ามพาร์ท: แถวผ่าน `qaItemCopyRow()` · ไฟล์ต้อง `storage.copy` เข้า `parts/<ปลายทาง>/` — grep insert `image_path`/`drawing_url` ของพาร์ทอื่นตรงๆ = ผิด
 
 ### หมวด G — Workflow & เอกสาร
 - **G1** pattern ใหม่ที่ใช้หลายหน้า ต้องมีบันทึกใน docs/UI-CONVENTIONS.md · schema/workflow ใหม่

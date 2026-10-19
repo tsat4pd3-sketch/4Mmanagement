@@ -17,6 +17,8 @@ import { buildScheduleMaps, resolveAssignedShift, shiftFromTeam, lineScheduleTea
 import { getLineFamilyNames, sortLineNames } from '../utils/lineHierarchy';
 import useIsMobile from '../utils/useIsMobile';
 import { toneOf, toneInk, statusColor } from '../utils/statusTone';
+import useTvPager from '../utils/useTvPager';
+import TvPagerBar from '../components/TvPagerBar';
 import { pairAwareTotal, collapseOps } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
@@ -36,6 +38,10 @@ import { useLatestRequest } from '../utils/useLatestRequest';
 import { loadBreakPolicies } from '../utils/oeeMasters';
 import { fetchAllRows } from '../utils/fetchAllRows';
 import SearchInput from '../components/SearchInput';
+
+/* เกณฑ์ "อัตราการมาทำงาน" ของจอนี้ — การ์ดบนสุดกับการ์ดรายไลน์ต้องใช้ชุดเดียวกัน (2026-10-19)
+   เดิมการ์ดไลน์ตัดที่ 80% และเอา 4M มาปนสีมาทำงาน ⇒ ไลน์มา 91% ขึ้น "⚠ Risk" · มา 82% ขึ้น "✓ Normal" */
+const attendTone = (rate) => (rate == null ? 'none' : rate >= 90 ? 'good' : rate >= 75 ? 'warn' : 'bad');
 
 const FADE_UP = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 } };
 const stagger = (i) => ({ ...FADE_UP, transition: { delay: i * 0.06, duration: 0.35 } });
@@ -170,7 +176,13 @@ function getWorkDateStr(date) {
   return `${y}-${m}-${day}`;
 }
 
-export default function Dashboard() {
+/* 📺 2026-10-19 (user "ไทม์ไลน์ที่ไม่เห็นไทม์ไลน์" · "จอภาพรวมเปิดโชว์ไม่ควรต้อง scroll" · "แยก heijunka ออกมาเลย")
+   หน้าเดียวเดิมแยกเป็น 2 จอ — คอมโพเนนต์เดียว (โหลดข้อมูลชุดเดียว ไม่ก๊อปโค้ด) สลับด้วย `view`:
+   · `timeline` = /dashboard "ไทม์ไลน์ผลิตทุกไลน์" — แถบเครื่องหยุด + บอร์ด Heijunka (+ ไซเรน)
+   · `people`   = /people-board "ภาพรวมกำลังคน" — KPI คน + การ์ดสถานะไลน์ + ผังไลน์/4M (+ deep-link ?line= เปิดผังไลน์)
+   เนื้อหายาวเกินจอ = แบ่งหน้าหมุนเอง (`useTvPager` · ตัดตาม `data-tv-item`) ห้ามให้จอ TV ต้องเลื่อน */
+export default function Dashboard({ view = 'timeline' }) {
+  const isPeople = view === 'people';
   const now = useNow();
   // scope ตาม user (คำสั่ง user 2026-07-12: "filter ได้ก็ไม่มีปัญหา ถ้าไม่ใช้ก็เหมือนไม่ filter")
   // — leader เห็นเฉพาะ family ไลน์ตัวเอง · role ที่มี sections เห็นเฉพาะ section ตัวเอง · ที่เหลือเห็นหมดเหมือนเดิม
@@ -784,8 +796,14 @@ export default function Dashboard() {
     return names;
   }, [parentChildrenMap, layouts]);
 
+  // ลิงก์เก่า /dashboard?line=… (ผังไลน์+คน) ย้ายไปจอคนแล้ว — ส่งต่อพร้อม param เดิม (จอวนหน้าที่ตั้งไว้ไม่พัง)
+  useEffect(() => {
+    if (!isPeople && searchParams.get('line')) navigate(`/people-board?${searchParams.toString()}`, { replace: true });
+  }, [isPeople, searchParams, navigate]);
+
   // deep-link จากผังรวมโรงงาน: ?line=NAME → เปิดผังไลน์ที่ครอบชื่อนี้ (ตรงชื่อ หรือเป็นลูกในการ์ดของ layout)
   useEffect(() => {
+    if (!isPeople) return;
     const wanted = searchParams.get('line');
     if (!wanted || !layouts.length) return;
     const hit = layouts.find(l => l.line_name === wanted)
@@ -793,7 +811,7 @@ export default function Dashboard() {
     if (hit) { setExpandedLine(hit.line_name); cameFromFactoryMap.current = searchParams.get('from') === 'factory-map'; }
     searchParams.delete('line'); searchParams.delete('from'); // ล้าง param กันเปิดซ้ำตอน re-render/ปิด modal
     setSearchParams(searchParams, { replace: true });
-  }, [layouts, searchParams, layoutLineNamesForCard, setSearchParams]);
+  }, [isPeople, layouts, searchParams, layoutLineNamesForCard, setSearchParams]);
 
   // ปิดผังไลน์: ถ้าเปิดมาจากผังรวมโรงงาน → เด้งกลับหน้านั้น (ไม่ค้างที่ Dashboard)
   const closeExpandedLine = useCallback(() => {
@@ -854,7 +872,7 @@ export default function Dashboard() {
     const lineTotal = stdTotal > 0 ? stdTotal : (empCounts[line.id]?.[shiftKey] ?? lineLogs.length);
     const lineAlerts = fourMLogs.filter(f => f.line_name === line.name).length;
     const rate = lineTotal > 0 ? Math.round((linePresent / lineTotal) * 100) : 0;
-    return { ...line, linePresent, lineTotal, lineAlerts, rate };
+    return { ...line, linePresent, lineTotal, lineAlerts, rate, lineChecked: lineLogs.length };
   }), [visibleLines, shiftLogs, selectedShift, empCounts, shiftKey, fourMLogs]);
 
   const totalCapacity = useMemo(() => lineStats.reduce((s, l) => s + l.lineTotal, 0) || shiftLogs.length, [lineStats, shiftLogs]);
@@ -862,7 +880,8 @@ export default function Dashboard() {
      เดิมคืน 0 ⇒ ตอนเช้าก่อนใครเช็คชื่อ (และทุกวันที่ยังไม่มีข้อมูล) การ์ด "อัตราการมาทำงาน"
      ขึ้น **0% ตัวแดงเต็มจอ** ซึ่งแปลว่า "วันนี้ไม่มีใครมาทำงานเลย" — เป็นคำกล่าวอ้างเท็จ
      ความจริงคือ "ยังไม่รู้" · เห็นชัดตอนทำใบนี้เป็นการ์ดพระเอก 62px (ตอนเป็นวงแหวน 19px ไม่มีใครทันสังเกต) */
-  const attendRate    = useMemo(() => totalCapacity > 0 ? Math.round((present.length / totalCapacity) * 100) : null, [totalCapacity, present]);
+  // 19/10: ยังไม่มีใครเช็คชื่อในกะ/ขอบเขตนี้ (มา+ขาด = 0) = "ยังไม่รู้" เหมือนกัน — เดิมขึ้น 0% แดง ทั้งที่การ์ดไลน์บอก "ยังไม่มีใครเช็คชื่อ"
+  const attendRate    = useMemo(() => totalCapacity > 0 && present.length + absent.length > 0 ? Math.round((present.length / totalCapacity) * 100) : null, [totalCapacity, present, absent]);
   const ppeRate       = useMemo(() => present.length > 0 ? Math.round((ppeReady.length / present.length) * 100) : null, [present, ppeReady]);
 
   // ── การ์ดผังไลน์ (Line Floor Maps): นับ "ตามจุดงาน" (คนที่ถูกวางบนสถานีของผังนี้) = ตรงกับหมุดบนรูป ──
@@ -908,9 +927,19 @@ export default function Dashboard() {
 
   const isToday = selectedDate === workDateStr;
 
+  // 📺 แบ่งหน้า+หมุนเองเมื่อยาวเกินจอ · มือถือ/ผู้ใช้กด "เลื่อนเอง" = ปิด (จำต่อเครื่อง · storage พังได้ = ค่าเริ่มต้น)
+  const tvBoxRef = useRef(null);
+  const scrollKey = `esm.dash.scroll.${view}`;
+  const [tvScroll, setTvScroll] = useState(() => { try { return localStorage.getItem(scrollKey) === '1'; } catch { return false; } });
+  const setScrollMode = (on) => { setTvScroll(on); try { localStorage.setItem(scrollKey, on ? '1' : '0'); } catch { /* ไม่มี storage = ไม่จำ */ } };
+  const tvPager = useTvPager(tvBoxRef, {
+    enabled: !isMobile && !tvScroll,
+    dataKey: `${view}|${visibleProdStatus.length}|${lineStats.length}|${boardLineSel}|${boardQuery}|${selectedShift}|${selectedSection}|${selectedDate}|${loading}|${expandedLines.size}|${dtAlarmList.length}`,
+  });
+
   return (
     <div className="page-content" style={{ maxWidth: '100%' }}>
-      <DowntimeSiren mode="open_15min" />
+      {!isPeople && <DowntimeSiren mode="open_15min" />}
       {prodErr && (
         <div role="alert" style={{ margin: '0 0 12px', padding: '10px 14px', borderRadius: 10, border: '1px solid #ef444488', background: '#ef444414', color: '#ef4444', fontSize: 14, fontWeight: 700 }}>
           {prodErr}
@@ -921,9 +950,9 @@ export default function Dashboard() {
       {/* ph-chrome = หัวเพจ — กรอบจอ TV ซ่อน (แถบบนของกรอบบอกชื่อหน้า/กะ/เวลาแทน · index.css) */}
       <div className="ph-chrome" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 28, gap: 16, flexWrap: 'wrap' }}>
         <motion.div {...stagger(0)}>
-          <div style={{ fontSize: 'clamp(18px,3vw,24px)', fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text)', letterSpacing: '-0.5px' }}>
-            Production Overview
-          </div>
+          <h1 style={{ margin: 0, fontSize: 'clamp(18px,3vw,24px)', fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text)', letterSpacing: '-0.5px' }}>
+            {isPeople ? 'ภาพรวมกำลังคน' : 'ไทม์ไลน์ผลิตทุกไลน์'}
+          </h1>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 6, flexWrap: 'wrap' }}>
             {selectedShift !== 'all' && (
               <span style={{
@@ -990,9 +1019,20 @@ export default function Dashboard() {
             <input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)}
               style={{ border: 'none', background: 'transparent', color: 'var(--accent)', fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 16, outline: 'none', padding: 0, width: 'auto' }} />
           </div>
+          {tvScroll && !isMobile && (
+            <button type="button" onClick={() => setScrollMode(false)}
+              style={{ padding: '7px 12px', borderRadius: 10, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+              📺 กลับเป็นหมุนหน้า
+            </button>
+          )}
         </motion.div>
       </div>
 
+      {/* 📺 กล่องเนื้อหาที่แบ่งหน้าได้ (useTvPager) — modal อยู่นอกกล่องนี้
+          data-tv-nofit = บอกตัววนจอ (DisplayRotator) ว่าหน้านี้คุมความสูงเอง ห้ามย่อด้วย zoom ซ้อน
+          (zoom ทำให้หน่วยวัดของ pager เพี้ยน แล้วสองตัวแย่งกันปรับ) · โหมด "เลื่อนเอง" = ให้ตัววนย่อตามเดิม */}
+      <div ref={tvBoxRef} data-tv-nofit={!isMobile && !tvScroll ? '' : undefined}>
+      {isPeople && (<>
       {/* คนที่ยังจัดเข้ากะไม่ได้ — ห้ามปล่อยให้ KPI โชว์ 0 เฉยๆ (งานค้าง = ป้ายนิ่ง ไม่กระพริบ) */}
       {selectedShift !== 'all' && noShiftLogs.length > 0 && (
         <div style={{
@@ -1023,7 +1063,7 @@ export default function Dashboard() {
       )}
 
       {/* ── KPI Row ─────────────────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: isWide ? 'repeat(6, 1fr)' : 'repeat(auto-fit, minmax(175px, 1fr))', gap: isMobile ? 10 : 14, marginBottom: 24 }}>
+      <div data-tv-item style={{ display: 'grid', gridTemplateColumns: isWide ? 'repeat(6, 1fr)' : 'repeat(auto-fit, minmax(175px, 1fr))', gap: isMobile ? 10 : 14, marginBottom: 24 }}>
         {[
           /* 🚦 สีบนการ์ด = **สถานะเทียบเป้าเท่านั้น** (`utils/statusTone.js`) — 23/09 จาก brief De-AI UI
              เดิมแถวนี้ปนกัน 3 แบบในบรรทัดเดียวกัน: น้ำเงิน = สีประจำใบ · ส้ม = สีประจำใบ ·
@@ -1051,11 +1091,11 @@ export default function Dashboard() {
           {
             label: 'อัตราการมาทำงาน', value: attendRate, unit: '%', primary: true,
             sub: attendRate == null ? 'ยังไม่มีใครเช็คชื่อ — ตัวเลขยังตัดสินไม่ได้'
-              : `มา ${present.length} · ขาด ${absent.length} · จาก ${totalCapacity} คน`,
+              : `มา ${present.length} · ขาด ${absent.length}${totalCapacity - present.length - absent.length > 0 ? ` · ยังไม่เช็ค ${totalCapacity - present.length - absent.length}` : ''} · จาก ${totalCapacity} คน`,
             // เกณฑ์เดิมของหน้านี้ (90 / 75) — คงพฤติกรรมไว้ แต่ให้ "สี" มาจากชุดกลาง + เขียนบนจอ
             tone: attendRate == null ? 'none'
-              : attendRate >= 90 ? 'good' : attendRate >= 75 ? 'warn' : 'bad',
-            basis: attendRate == null ? null : 'เกณฑ์จอนี้: เขียว ≥ 90% · เหลือง ≥ 75%',
+              : attendTone(attendRate),
+            basis: attendRate == null ? null : 'เกณฑ์จอนี้ (ใช้กับการ์ดรายไลน์ด้วย): เขียว ≥ 90% · เหลือง ≥ 75%',
             icon: '✅',
           },
           {
@@ -1126,6 +1166,9 @@ export default function Dashboard() {
         })}
       </div>
 
+      </>)}
+
+      {!isPeople && (<>
       {/* ── Downtime Alarm Banner — เครื่องจักรหยุด กระพริบเตือนทั้งแถบ ── */}
       {dtAlarmList.length > 0 && (
         <motion.div {...stagger(6)} className="dt-alarm-banner"
@@ -1157,6 +1200,9 @@ export default function Dashboard() {
         </motion.div>
       )}
 
+      </>)}
+
+      {isPeople && (<>
       {/* ── Line Status Grid ─────────────────────────────── */}
       {(() => {
         // ไลน์หลักที่มีไลน์ย่อย → รวมยอดคนของไลน์หลัก+ย่อยเข้าเป็นการ์ดเดียว (กันเลข "0/14" ซ้ำกันทุกไลน์ย่อย)
@@ -1173,6 +1219,7 @@ export default function Dashboard() {
               linePresent: ls.linePresent + childStats.reduce((s, c) => s + c.linePresent, 0),
               lineTotal:   ls.lineTotal   + childStats.reduce((s, c) => s + c.lineTotal, 0),
               lineAlerts:  ls.lineAlerts  + childStats.reduce((s, c) => s + c.lineAlerts, 0),
+              lineChecked: ls.lineChecked + childStats.reduce((s, c) => s + c.lineChecked, 0),
             };
             combined.rate = combined.lineTotal > 0 ? Math.round((combined.linePresent / combined.lineTotal) * 100) : 0;
             renderOrder.push({ ...combined, _isChild: false, _hasChildren: true, _children: childStats });
@@ -1192,9 +1239,14 @@ export default function Dashboard() {
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: isUltra ? 'repeat(auto-fill, minmax(250px, 1fr))' : isWide ? 'repeat(auto-fill, minmax(230px, 1fr))' : 'repeat(auto-fill, minmax(200px, 1fr))', gap: isMobile ? 10 : 14 }}>
               {renderOrder.flatMap((line, i) => {
-                const healthy = line.rate >= 80 && line.lineAlerts === 0;
-                const warn    = line.lineAlerts > 0 || (line.rate > 0 && line.rate < 80);
-                const color   = healthy ? '#22c55e' : warn ? '#f59e0b' : '#555';
+                /* สี = อัตรามาทำงานเทียบเกณฑ์เดียวกับการ์ดบนสุด เท่านั้น · 4M มีป้ายของมันเอง (มุมขวาบน) ห้ามปนสี
+                   ไม่มีกำลังคนมาตรฐาน / ยังไม่มีใครเช็คชื่อ = เทา (ตัดสินไม่ได้ — ห้ามขึ้น 0% เหมือนไม่มีใครมา) */
+                const judgeable = line.lineTotal > 0 && line.lineChecked > 0;
+                const color   = statusColor(judgeable ? attendTone(line.rate) : 'none');
+                const over    = line.linePresent - line.lineTotal;
+                const attendText = line.lineTotal === 0 ? 'ไม่ได้ตั้งกำลังคนมาตรฐาน'
+                  : line.lineChecked === 0 ? 'ยังไม่มีใครเช็คชื่อ'
+                  : `มาทำงาน ${Math.min(line.rate, 100)}%${over > 0 ? ` · เกินมาตรฐาน ${over} คน` : ''}`;
                 const isExpanded = line._hasChildren && expandedLines.has(line.name);
                 // downtime alarm ของไลน์นี้ + ไลน์ย่อยที่ถูกรวมเข้าการ์ดเดียวกัน
                 const cardNames = [line.name, ...(line._children?.map(c => c.name) || [])];
@@ -1202,7 +1254,7 @@ export default function Dashboard() {
                 // ป้าย 4M: แดงเมื่อยังมีรายการรออนุมัติ · เหลืองเมื่ออนุมัติครบแล้ว (เป็นแค่ประวัติวันนี้)
                 const cardFMPending = fourMLogs.some(f => cardNames.includes(f.line_name) && f.status !== 'approved' && f.status !== 'rejected');
                 const card = (
-                  <motion.div key={line.id} {...stagger(8 + i)} style={{ height: '100%' }}>
+                  <motion.div key={line.id} data-tv-item {...stagger(8 + i)} style={{ height: '100%' }}>
                     <div
                       style={{
                         background: 'var(--card)',
@@ -1258,7 +1310,7 @@ export default function Dashboard() {
                       <MiniBar value={line.linePresent} max={line.lineTotal} color={color} />
                       <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
                         <span style={{ fontSize: isWide ? 15 : 14, fontWeight: 700, color }}>
-                          {line.lineTotal === 0 ? 'ไม่มีข้อมูล' : `${line.rate}% Attendance ${healthy ? '· ✓ Normal' : line.lineAlerts > 0 ? '· ⚠ Risk' : ''}`}
+                          {attendText}
                         </span>
                         {line._hasChildren && (
                           <button onClick={() => toggleExpand(line.name)}
@@ -1283,7 +1335,7 @@ export default function Dashboard() {
                   .map(cs => ({ cs, pl: placementForLine(cs.name) }))
                   .filter(({ cs, pl }) => pl.people > 0 || (dtAlarmByLine[cs.name] || []).length > 0 || cs.lineAlerts > 0);
                 const nested = (
-                  <motion.div key={`${line.id}-children`} {...stagger(8 + i)} style={{ gridColumn: '1 / -1' }}>
+                  <motion.div key={`${line.id}-children`} data-tv-item {...stagger(8 + i)} style={{ gridColumn: '1 / -1' }}>
                     <div style={{
                       background: 'var(--bg2)',
                       border: '1px dashed var(--border2)',
@@ -1359,6 +1411,9 @@ export default function Dashboard() {
         );
       })()}
 
+      </>)}
+
+      {!isPeople && (<>
       {/* ── Heijunka Timeline Board ───────────────────── */}
       {visibleProdStatus.length > 0 && (() => {
         const HOURS   = [8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,0,1,2,3,4,5,6,7];
@@ -1530,7 +1585,7 @@ export default function Dashboard() {
               });
 
               return (
-                <div key={lineName} style={{
+                <div key={lineName} data-tv-item style={{
                   marginBottom: 16,
                   background: 'var(--card)',
                   border: `1px solid ${totalDelayed > 0 ? 'rgba(239,68,68,0.45)' : hasOpen ? 'rgba(34,197,94,0.35)' : 'var(--border2)'}`,
@@ -2260,9 +2315,19 @@ export default function Dashboard() {
         );
       })()}
 
+      {/* จอชื่อ "ไทม์ไลน์" ห้ามว่างเงียบ — ไม่มีกะของวันนั้น = เขียนบอก */}
+      {visibleProdStatus.length === 0 && !loading && (
+        <div style={{ marginBottom: 24, padding: '18px 20px', borderRadius: 12, border: '1px dashed var(--border2)',
+          background: 'var(--card)', color: 'var(--muted)', fontSize: 15, fontWeight: 600 }}>
+          🗓️ ยังไม่มีไลน์ไหนเปิดกะของวันที่ {boardDate}{!passAll ? ' (ในขอบเขต/ส่วนงานที่เลือก)' : ''}
+        </div>
+      )}
+      </>)}
+
+      {isPeople && (<>
       {/* ── Bottom Grid ─────────────────────────────────── */}
       {/* floorBig (หัวหน้า/scope แคบ) → ผังไลน์ตัวเองเต็มความกว้าง, 4M feed ไปอยู่ล่าง · ภาพรวม → 2 คอลัมน์เหมือนเดิม */}
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile || floorBig ? '1fr' : isUltra ? 'minmax(0,3fr) minmax(0,1fr)' : 'minmax(0,2fr) minmax(0,1fr)', gap: isWide ? 20 : 16 }}>
+      <div data-tv-item style={{ display: 'grid', gridTemplateColumns: isMobile || floorBig ? '1fr' : isUltra ? 'minmax(0,3fr) minmax(0,1fr)' : 'minmax(0,2fr) minmax(0,1fr)', gap: isWide ? 20 : 16 }}>
 
         {/* Line Floor Maps */}
         <motion.div {...stagger(12)}>
@@ -2392,6 +2457,10 @@ export default function Dashboard() {
           </div>
         </motion.div>
       </div>
+
+      </>)}
+      </div>
+      <TvPagerBar pager={tvPager} onScrollMode={() => setScrollMode(true)} />
 
       {/* ── Andon Alarm Panel — เจาะรายละเอียดว่า alarm ของไลน์มาจากอะไร ── */}
       {andonLine && (() => {

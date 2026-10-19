@@ -28,6 +28,7 @@ import { checkWrite } from '../utils/dbWrite';
 // 🧩 ตั้งค่าจุดตรวจ = ตัวกลางชุดเดียวกับ PM (15/10 · docs/modules/inspection-point-setup.md)
 import SpinAnnotator from '../components/SpinAnnotator';
 import QaPointsEditor from '../components/QaPointsEditor';
+import QaCopyPointsModal from '../components/QaCopyPointsModal';
 import { QA_RANK, balloonSort } from '../utils/qaPoints';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
@@ -138,6 +139,8 @@ export default function QAInspectionSetup() {
   /* 🎯 โมดัลตั้งค่าจุดตรวจ + Drawing — หลักเดียวกับ PM (`QaPointsEditor` · 15/10)
      { focusItemId? } = เปิดแล้วเลื่อนไปการ์ดจุดนั้น */
   const [editor, setEditor] = useState(null);
+  /* 📋 คัดลอกจุดตรวจไปพาร์ทอื่น — คู่กับ PM "คัดลอกไปเครื่องอื่น" (19/10) */
+  const [copyOpen, setCopyOpen] = useState(false);
 
   const sel = parts.find(p => p.id === selId) || null;
   const loadParts = useCallback(async () => {
@@ -448,9 +451,13 @@ export default function QAInspectionSetup() {
                   📋 มาตรฐานการตรวจ ({items.length} จุด
                   {items.some(i => i.rank) ? ` · Rank M ${items.filter(i => i.rank === 'M').length} / SC ${items.filter(i => i.rank === 'SC').length}` : ''})
                 </div>
-                {canEdit && (
+                {(canEdit || (canManage && items.length > 0)) && (
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <button style={btnSt()} onClick={() => setEditor({})}>🎯 แก้ไข / เพิ่มจุดตรวจ</button>
+                    {/* คัดลอก "ออกจาก" พาร์ทนี้ไม่ได้แก้พาร์ทนี้ ⇒ ไม่ต้องผ่าน partWrite · ปลายทางเช็คขอบเขตในโมดัล */}
+                    {canManage && items.length > 0 && (
+                      <button style={ghostBtn} onClick={() => setCopyOpen(true)} title="คัดลอกจุดตรวจชุดนี้ไปพาร์ทอื่นที่ยังไม่มีจุดตรวจ">📋 คัดลอกไปพาร์ทอื่น</button>
+                    )}
+                    {canEdit && <button style={btnSt()} onClick={() => setEditor({})}>🎯 แก้ไข / เพิ่มจุดตรวจ</button>}
                   </div>
                 )}
               </div>
@@ -584,9 +591,15 @@ export default function QAInspectionSetup() {
       {/* ── 🎯 ตั้งค่าจุดตรวจ + Drawing — โมดัลเดียวกับ PM (ระบบเดียว เรียนครั้งเดียว · 15/10) ── */}
       <AnimatePresence>
         {editor && sel && canEdit && (
-          <QaPointsEditor part={sel} focusItemId={editor.focusItemId} methodHist={methodHist} writeCheck={partWrite}
+          <QaPointsEditor key="editor" part={sel} focusItemId={editor.focusItemId} methodHist={methodHist} writeCheck={partWrite}
             onClose={() => setEditor(null)}
             onSaved={() => { setEditor(null); loadItems(sel.id); loadDrawings(sel.id); loadParts(); }} />
+        )}
+        {copyOpen && sel && canManage && (
+          <QaCopyPointsModal key="copy" part={sel} itemCount={items.length} parts={parts} lines={lines} wctx={wctx}
+            onClose={() => setCopyOpen(false)}
+            onDone={() => loadParts()}
+            onOpenPart={id => { setCopyOpen(false); setSelId(id); }} />
         )}
       </AnimatePresence>
     </Page>

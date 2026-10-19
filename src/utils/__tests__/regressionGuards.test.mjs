@@ -4516,6 +4516,19 @@ test('🛡️ pm-checkpoint-copy-via-util — คัดลอกจุดตร�
     + '   แก้: ใช้ checkpointCopyRow() จาก src/utils/pmCheckpointCopy.js · ข้ามแผนกบนเครื่องเดิมส่ง samePhotos:true\n');
 });
 
+test('🛡️ pm-check-stale-guard — ใบตรวจ PM บันทึกได้เฉพาะเมื่อจุดตรวจเป็นของเครื่องที่เปิดอยู่', () => {
+  const rel = 'src/pages/PMCheckData.jsx';
+  const code = stripComments(readFileSync(join(ROOT, rel), 'utf8'));
+  const bad = [];
+  if (!/loadReqRef\.current/.test(code)) bad.push('ไม่มี loadReqRef (request id ของการโหลดเครื่อง)');
+  const save = code.slice(code.indexOf('const handleSave'), code.indexOf('const handleSave') + 900);
+  if (!/cpLoad\.status\s*!==\s*'ok'/.test(save) || !/cpLoad\.key/.test(save)) bad.push('handleSave ไม่เช็ค cpLoad (status + key เครื่อง|แผนก)');
+  assert.deepEqual(bad, [], '\n\n❌ ' + rel + ': ' + bad.join(', ') + '\n'
+    + '   ทำไม: สลับเครื่องเร็วๆ คำตอบของเครื่องก่อนมาถึงทีหลังแล้วเขียน checklistId/จุดตรวจทับ ⇒ ผลตรวจลง jig_id\n'
+    + '         เครื่องใหม่ + checklist_id เครื่องเก่า (audit PM 19/10)\n'
+    + '   แก้: ทุก callback ในเอฟเฟกต์โหลดเครื่องเทียบ loadReqRef · handleSave เช็ค cpLoad.status === ok และ key ตรงเครื่อง|แผนก\n');
+});
+
 /* ── 🔨 ชิ้น/จังหวะ ของแม่พิมพ์ — "ไม่รู้" ห้ามกลายเป็น 1 (14/10 · คำสั่ง user "ควรนับ shot ไม่ใช่นับชิ้น สำหรับงานคู่") ──
    migration 20260810 ออกแบบ 2 ชั้นไว้แล้ว (equipment_die ว่าง = ใช้ค่าของ die_sets) แต่ไม่เคยถูกเขียนจริง
    ⇒ จอ PM อ่านแค่ชั้น OP ที่ว่าง 264/264 = คิด shot ไม่ได้สักตัว · และชั้นชุดเป็น default 1 + จอบีบ `?? 1` ตอนเซฟ
@@ -4751,6 +4764,11 @@ test('🛡️ inspection-setup-shared — จอตั้งค่าจุด�
   // หน้า QA ห้ามกลับไปแก้จุดตรวจเอง (เขียน qa_inspection_items ตรง) — ต้องผ่านโมดัลกลาง
   const qa = stripComments(readFileSync(join(ROOT, 'src/pages/QAInspectionSetup.jsx'), 'utf8'));
   if (/from\('qa_inspection_items'\)\s*\.(insert|update|delete|upsert)/.test(qa)) bad.push('QAInspectionSetup.jsx เขียน qa_inspection_items เอง');
+  /* คัดลอกจุดตรวจ QA ข้ามพาร์ท (19/10): แถวผ่าน qaItemCopyRow · ไฟล์ต้องคัดลอกจริง ห้ามแชร์ path
+     (delPart ลบทั้งโฟลเดอร์ parts/<id> ⇒ แชร์ = รูปของพาร์ทปลายทางหายตาม) */
+  const cp = stripComments(readFileSync(join(ROOT, 'src/lib/qaPointsCopy.js'), 'utf8'));
+  if (!/qaItemCopyRow\(/.test(cp)) bad.push('lib/qaPointsCopy.js ไม่ได้สร้างแถวผ่าน qaItemCopyRow()');
+  if (!/\.copy\(/.test(cp)) bad.push('lib/qaPointsCopy.js ไม่ได้ storage.copy ไฟล์เข้าโฟลเดอร์ปลายทาง (แชร์ path = รูปหายเมื่อลบต้นทาง)');
   assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n   ') + '\n'
     + '   ทำไม: ตั้งค่าจุดตรวจ PM กับ QA ต้องเป็น "ระบบเดียว" (โมดัล · ผังรูปซ้าย/การ์ดขวา · ซูม · ปักหมุด ·\n'
     + '         รูปโคลสอัพ · ไปที่จุด · บันทึกครั้งเดียว) ต่างกันได้แค่ช่องสเปคในการ์ด\n'
@@ -4859,4 +4877,76 @@ test('🛡️ board-cards-single-source — ห้ามเขียน buildCar
     if (/\b(?:const|function)\s+buildCards\b/.test(code)) bad.push(relative(ROOT, file));
   }
   assert.deepEqual(bad, [], `สร้างการ์ดบอร์ดเองในหน้า — ใช้ buildBoardCards() จาก utils/boardCards.js:\n  ${bad.join('\n  ')}`);
+});
+
+/* ═══ 🔭 ด่านขอบเขต 2 แกน — แกนไลน์กับแกนส่วนงานห้ามเป็น else-if กัน (2026-10-19) ═══
+   ที่มา: `/checkin` เขียน `if (role === 'leader') { if (lineId) {…} } else if (scopeSecs.length)`
+          ⇒ leader ที่บัญชี**ไม่มี `line_id`** หลุดทั้งสองด่าน = **เห็นพนักงานทั้งโรงงานเงียบๆ**
+   ทำไมสำคัญขึ้นเรื่อยๆ: การตั้ง "รักษาการหลายหน่วย" ทำด้วย `profiles.sections`
+          ⇒ บัญชีหัวหน้าที่ไม่ผูกไลน์จะมีจริงตั้งแต่ตอนนั้น (ดู docs/modules/org-hierarchy.md)
+   กติกา: ด่านไลน์ต้องมีเงื่อนไข `role === 'leader' && lineId` อยู่ใน if เดียวกัน
+          แล้วค่อย `else if (scopeSecs…)` — ห้ามซ่อน lineId ไว้ชั้นใน */
+test('🔭 leader-scope-no-fallthrough — leader ที่ไม่มี line_id ต้องถอยไปใช้ขอบเขตส่วนงาน', () => {
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
+    if (/__tests__/.test(file)) continue;
+    const lines = stripComments(readFileSync(file, 'utf8')).split('\n');
+    lines.forEach((ln, i) => {
+      // ด่านที่เปิดด้วย leader ลอยๆ (ไม่มี && lineId/userLineId ในบรรทัดเดียวกัน)
+      if (!/if\s*\(\s*role\s*===\s*'leader'\s*\)\s*\{/.test(ln)) return;
+      const tail = lines.slice(i + 1, i + 22).join('\n');
+      // ...แล้วมี else-if แกนส่วนงานเป็นพี่น้อง = แกนไลน์ถูกข้ามได้เงียบๆ
+      if (/\}\s*else\s+if\s*\(\s*(scopeSecs|sections|scopeSections)\b/.test(tail)) {
+        bad.push(`${file.replace(ROOT, '')}:${i + 1}`);
+      }
+    });
+  }
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n'
+    + '   ทำไม: leader ที่ไม่มี line_id จะไม่โดนทั้งด่านไลน์และด่านส่วนงาน = เห็นทั้งโรงงาน\n'
+    + "   แก้: const fam = (role === 'leader' && lineId) ? getLineFamilyIds(...) : null;\n"
+    + '        if (fam) { …แกนไลน์… } else if (scopeSecs.length) { …แกนส่วนงาน… }\n'
+    + "        แล้วแยกแกนทีม (teamsVisibleToLeader) ออกเป็น if (role === 'leader') ของตัวเอง\n"
+    + '   · ไม่มีสมอทั้ง 2 แกน = scopeAnchorless() → **ต้องเขียนบนจอว่ากำลังเห็นทั้งโรงงาน**\n');
+});
+
+/* ── 🔁 จอ BOM ซ้ำ: หลุม 3 อย่างที่เคยทำยอดเปลี่ยนเงียบ (2026-10-19) ──────────────────
+   ① ตารางคู่เทียบได้แค่ 2 ใบ ⇒ พาร์ทที่ **ไม่มีใบของตัวเอง** ไม่เคยขึ้นจอ (วัด 19/10: 17/40 mat)
+   ② **ใบที่ 3** เขียนคนละค่า ⇒ ยุบคู่ที่ตรงกันเป๊ะแล้วยอดเปลี่ยน (เคสนัท 20059851 ×4 → ×1)
+   ③ เส้นแบ่ง "ของร้อน" เขียนซ้ำ 2 ที่ ⇒ ตัวนับหัวจอกับตัวกรองตารางไม่ตรงกัน                    */
+test('🛡️ จอ BOM ซ้ำ: ต้องมีมุมมองกลุ่ม + ธงใบที่ 3 + เส้นแบ่งของร้อนที่เดียว', () => {
+  const util = stripComments(readFileSync(join(ROOT, 'src/utils/bomDupAudit.js'), 'utf8'));
+  const panel = stripComments(readFileSync(join(ROOT, 'src/components/BomDupPanel.jsx'), 'utf8'));
+  const groupView = stripComments(readFileSync(join(ROOT, 'src/components/BomSheetGroups.jsx'), 'utf8'));
+
+  // ① มุมมองกลุ่มต้องยังอยู่ และต้องถูกวาดจริงในจอ (ไม่ใช่มีฟังก์ชันลอยๆ)
+  assert.ok(/export function auditBomSheetGroups/.test(util),
+    '\n\n❌ หาย `auditBomSheetGroups` — พาร์ทที่ "ไม่มีใบ BOM ของตัวเอง แต่ถูกนิยามไว้หลายใบ"\n'
+    + '   จะกลับไปไม่มีที่โผล่บนจอเลย (ตารางคู่ `continue` ทิ้งทั้งหมด · วัด 19/10 = 17 จาก 40 mat)\n');
+  assert.ok(/<BomSheetGroups/.test(panel),
+    '\n\n❌ จอ /products?tab=bomdup ไม่วาดตารางกลุ่มแล้ว — ตารางคู่ไม่ครอบ 2 คลาสนั้น ห้ามถอด\n');
+
+  // ② ธง "ใบที่ 3" ต้องคิดจาก sheetsWithKidsOf และต้องขึ้นบนจอ
+  assert.ok(/sheetsWithKidsOf/.test(util) && /hasThirdSheet/.test(util),
+    '\n\n❌ ไม่ได้ถาม `sheetsWithKidsOf` เพื่อหา "ใบที่ 3" แล้ว\n'
+    + '   ⇒ คู่ที่ 2 ใบตรงกันเป๊ะจะดูเหมือนยุบได้ ทั้งที่ใบที่ 3 เขียนคนละค่า (ยอดเปลี่ยนเงียบ)\n');
+  assert.ok(/hasThirdSheet/.test(panel),
+    '\n\n❌ จอไม่เตือน "มีใบที่ 3" แล้ว — PE จะตัดสินยุบจากการเทียบ 2 ใบ เหมือนที่เคยพลาด 14/10\n');
+
+  // ③ เส้นแบ่งของร้อนมีที่เดียว — ห้ามเขียนเลข rank ซ้ำในหน้า
+  assert.ok(/isHotPair/.test(panel),
+    '\n\n❌ จอไม่ได้ใช้ `isHotPair` — ต้องใช้เส้นแบ่งเดียวกับตัวนับหัวจอ\n');
+  assert.ok(!/\brank\s*[<>]=?\s*\d/.test(panel),
+    '\n\n❌ มีการเทียบเลข `rank` ตรงๆ ในจอ BOM ซ้ำ\n'
+    + '   ⇒ เพิ่ม verdict ใหม่แล้วตัวนับกับตัวกรองจะไม่ตรงกัน (เคยเพี้ยนจริงตอนเพิ่ม pair_shot)\n'
+    + '   ใช้ `isHotPair` / `HOT_RANK_MAX` จาก utils/bomDupAudit.js แทน\n');
+
+  // ④ ตารางกลุ่ม = อ่านอย่างเดียว · ห้ามเขียน/ลบ bom_items จากจอ (กฎโมดูล: จอชี้ PE ตัดสิน)
+  assert.ok(!/supabaseDR|\.upsert\(|\.delete\(/.test(groupView),
+    '\n\n❌ ตารางกลุ่มเริ่มเขียน DB แล้ว — มุมมองนี้ต้องอ่านอย่างเดียว\n'
+    + '   การตัดสินอยู่ที่ตารางคู่ (คีย์ ใบ+พาร์ท) และห้ามยุบ/ลบ bom_items ให้เอง\n');
+
+  // ⑤ "ใบนั้นไม่มีของตัวนี้" = null ห้ามกลายเป็น 0 บนจอ
+  assert.ok(/==\s*null/.test(groupView),
+    '\n\n❌ ตารางกลุ่มไม่ได้แยก `null` (ใบนั้นไม่มีของตัวนี้) ออกจากเลข 0 แล้ว\n'
+    + '   โชว์ 0 = คนอ่านว่า "ใบนั้นเขียนว่าไม่ใช้" ซึ่งคนละเรื่องกับ "ใบนั้นไม่ได้พูดถึงเลย"\n');
 });
