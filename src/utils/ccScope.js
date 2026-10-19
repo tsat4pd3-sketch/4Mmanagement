@@ -81,13 +81,55 @@ export function buildCcIndex(nodes = []) {
       };
     });
 
+  /** ทะเบียนเรียงแบบต้นไม้ — แม่มาก่อนลูกของตัวเอง · ลำดับในแต่ละชั้น = ลำดับที่ส่ง `nodes` เข้ามา
+      (คนเรียกเรียง `orgNodeCompare` มาก่อนแล้ว = ตาม `sort_order` ที่ตั้งใน /org-setup)
+      🔴 `orgNodeCompare` เรียง "แบน" ⇒ เอามาวาดช่องติ๊กตรงๆ ลูกจะไม่ไปอยู่ใต้แม่ แล้วคนตั้งค่า
+         อ่านไม่ออกว่า "ติ๊กแม่แล้วได้ลูกตัวไหน" — ซึ่งเป็นใจความทั้งหมดของกฎตามลำดับชั้น
+      🔴 ปิดท้ายด้วยการต่อแถวที่เดินไม่ถึง (ผังวนลูป/แม่หาย) — **ห้ามให้รหัสหายจากจอเงียบๆ** */
+  const catalogTree = () => {
+    const rows = new Map(catalog().map(r => [r.nodeId, r]));
+    const kids = new Map();
+    live.forEach((n) => {
+      const p = n.parent_id == null || !byId.has(String(n.parent_id)) ? '' : String(n.parent_id);
+      if (!kids.has(p)) kids.set(p, []);
+      kids.get(p).push(String(n.id));
+    });
+    const out = [], seen = new Set();
+    const walk = (pid, hops) => {
+      if (hops > 12) return;
+      (kids.get(pid) || []).forEach((id) => {
+        if (seen.has(id)) return;
+        seen.add(id);
+        const r = rows.get(id);
+        if (r) out.push(r);
+        walk(id, hops + 1);
+      });
+    };
+    walk('', 0);
+    rows.forEach((r, id) => { if (!seen.has(id)) out.push(r); });
+    return out;
+  };
+
   /** โหนดที่ถือรหัสนี้ (รหัสไม่ซ้ำ แต่คืน array เผื่อข้อมูลซ้ำในอนาคต) */
   const nodesOfCc = (cc) => {
     const k = norm(cc);
     return k ? live.filter(n => norm(n.cost_center) === k) : [];
   };
 
-  return { ccOfNode, pathOfNode, catalog, nodesOfCc, size: live.length };
+  return { ccOfNode, pathOfNode, catalog, catalogTree, nodesOfCc, size: live.length };
+}
+
+/**
+ * CC ของโหนดเดียว แบบเรียกครั้งเดียวจบ (ย้ายมาจาก `orgDivisions.js` 19/10 — กฎตกทอดต้องมีชุดเดียว)
+ * คืน `{ code, from }` · `from` = ชื่อหน่วยที่เป็นเจ้าของรหัส (ตัวเอง หรือหน่วยแม่ที่ตกทอดมา)
+ * 🔴 ไม่เจอ = `{ code: null, from: null }` — "ไม่รู้" ไม่ใช่ "ไม่มี" ⇒ จอต้องเขียนว่ายังไม่ได้ตั้ง
+ * 🔴 **CC เป็นของ "หน่วยงาน" ไม่ใช่ของ "คน"** — ห้ามเพิ่มคอลัมน์ cost_center ที่ `employees`
+ *    (กฎเดียวกับ Manpower Board: คนไปช่วยหน่วยอื่น cost center ยังเป็นของบ้านจริง)
+ * ⚠️ วนหลายโหนดในจอเดียว ให้สร้าง `buildCcIndex()` ครั้งเดียวแล้วเรียก `ccOfNode()` (ตัวนี้สร้างดัชนีใหม่ทุกครั้ง)
+ */
+export function costCenterOfNode(nodeId, orgNodes) {
+  const r = buildCcIndex(orgNodes || []).ccOfNode(nodeId);
+  return { code: r.cc, from: r.from ? (r.from.code || r.from.name || null) : null };
 }
 
 /* ── "ขอบเขตที่แก้ได้" ของบัญชีหนึ่ง ───────────────────────────────────────────
@@ -112,11 +154,47 @@ export function respScopesOf(index, { respCostCenters, section, allUnits, role }
   return sec ? [{ kind: 'section', value: sec }] : [];
 }
 
-/** รหัสที่กรอกไว้แต่ผังไม่รู้จัก — จอตั้งสิทธิ์ต้องเขียนบอก ห้ามกลืนเงียบ */
+/* ── 🔴 กับดักตัวแปร: ไฟล์นี้เคยมี "ดัชนี" 2 ตัวที่สลับกันแล้วเงียบ (19/10) ──────────────
+     · ดัชนีผังของ `buildOrgScope()` — มี `canonicalScope`/`scopeCovers`/`unitsOf`
+     · ดัชนี CC ของ `buildCcIndex()` — มี `ccOfNode`/`catalog`
+   คนละ property กันหมด ⇒ ส่งผิดตัวไม่มีใคร throw แค่ได้ `undefined` แล้วถูกตีเป็น "ไม่มี"
+   ⇒ รวมเป็นก้อนเดียวด้วย `attachCc()` แล้วส่งก้อนนั้นให้ทุกฟังก์ชันในไฟล์นี้ตัวเดียว */
+export function attachCc(orgIndex, nodes = []) {
+  return { ...(orgIndex || {}), cc: buildCcIndex(nodes) };
+}
+/** ดึงดัชนี CC ออกจากก้อน — รับทั้งก้อนรวม (`index.cc`) และดัชนี CC เปล่าๆ (ของเดิม) */
+const ccIndexOf = (idx) => (typeof idx?.cc?.catalog === 'function' ? idx.cc
+  : (typeof idx?.catalog === 'function' ? idx : null));
+
+/** รหัสที่กรอกไว้แต่ผังไม่รู้จัก — จอตั้งสิทธิ์ต้องเขียนบอก ห้ามกลืนเงียบ
+ *  🔴 **ผังยังโหลดไม่เสร็จ (nodes ว่าง) = ทะเบียนว่าง = รหัสทุกตัวจะดู "ไม่รู้จัก"**
+ *     ⇒ จอต้องเรียกตัวนี้เฉพาะเมื่อผังโหลดแล้วจริง (`ready`) ไม่งั้นจอจะตะโกนผิด */
 export function unknownRespCcs(index, respCostCenters = []) {
-  const known = new Set((index?.catalog?.() || []).map(r => r.cc));
+  const known = new Set((ccIndexOf(index)?.catalog?.() || []).map(r => r.cc));
   return (Array.isArray(respCostCenters) ? respCostCenters : [])
     .map(norm).filter(cc => cc && !known.has(cc));
+}
+
+/* ── ติ๊กแล้วครอบอะไร · ติ๊กซ้ำซ้อนไหม (สำหรับ "จอตั้งสิทธิ์" เท่านั้น) ──────────────
+   โจทย์ user: "ถ้า response ชั้นส่วน 46 ก็ response ได้ทั้งหมดลงไป" ⇒ คนตั้งค่าต้อง**เห็น**
+   ว่าติ๊กรหัสเดียวแล้วได้อะไรตามมา ไม่งั้นจะติ๊กทุกบรรทัดเพราะไม่มั่นใจ (= ให้สิทธิ์เกิน)
+   🔴 ตัวนี้ไม่ใช่ด่าน — ด่านจริงคือ `canWriteScope()` เท่านั้น */
+export function ccCoverage(index, respCostCenters = []) {
+  const picked = (Array.isArray(respCostCenters) ? respCostCenters : []).map(norm).filter(Boolean);
+  const rows = ccIndexOf(index)?.catalog?.() || [];
+  const covers = {}, redundant = {};
+  picked.forEach((cc) => {
+    const mine = canonicalScope(index, { kind: 'cost_center', value: cc });
+    covers[cc] = rows
+      .filter(r => r.cc !== cc && scopeCovers(index, mine, { kind: 'cost_center', value: r.cc }))
+      .map(r => r.cc);
+  });
+  /* ติ๊กลูกไว้ทั้งที่ติ๊กแม่แล้ว = ไม่ผิด แต่ต้องบอกว่าซ้ำซ้อน (คนตั้งค่าจะได้รู้ว่าถอดได้) */
+  picked.forEach((cc) => {
+    const by = picked.find(o => o !== cc && (covers[o] || []).includes(cc));
+    if (by) redundant[cc] = by;
+  });
+  return { covers, redundant };
 }
 
 /**

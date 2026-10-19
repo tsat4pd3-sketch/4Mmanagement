@@ -4812,6 +4812,62 @@ test('🛡️ write-scope-layer — ด่าน "แก้ข้ามหน่
     + '   แก้: canWriteUnit()/canWriteLine() จาก src/utils/writeScope.js + เรียกซ้ำใน handler\n');
 });
 
+/* ── 💰 ชั้นที่ 3 แกน Cost Center (2026-10-16..19 · คำสั่ง user) ──────────────────────
+   *"ใช้ cost center เป็น key หลัก … เซ็ตได้ว่า user ไหน response กับ cost center ไหน **ตามลำดับชั้น**
+     ถ้า response ชั้นส่วน 46 ก็ response ได้ทั้งหมดลงไป"*
+   ด่านนี้คุม 4 อย่างที่พังเงียบ (ไม่มี error ให้เห็น แค่สิทธิ์ผิด):
+   ① กฎ "CC ของโหนด = ตัวเอง → แม่ → ปู่" ต้องมีชุดเดียว — เคยมี 2 ชุด (orgDivisions.js + ccScope.js)
+      จาก 2 session ขนานกัน ⇒ แก้กฎที่เดียวแล้วอีกจอตัดสินคนละแบบ
+   ② 🔴 **ห้ามไล่ลำดับชั้นด้วยตัวเลขรหัส** — ลูกของ PD1 `2140461000` คือ `2140561001` (หลักที่ 5
+      เปลี่ยน 4→5) ⇒ `like '21404%'`/`slice(0,5)` ได้ชุดผิดแบบดูเหมือนถูก
+   ③ ว่าง = ถอยไปใช้ `profiles.section` (122 บัญชีเดิมต้องไม่เปลี่ยนพฤติกรรมวันที่ลง)
+   ④ ค่าต้องเดินถึงจอ: UserContext ส่ง `respCostCenters` · /add-user เขียน `resp_cost_centers`
+      และรายงานรหัสที่ผังไม่รู้จัก */
+test('🛡️ cc-scope-layer — ชั้นสิทธิ์แกน Cost Center ยังอยู่ครบ + ห้ามไล่ชั้นด้วยเลขรหัส', () => {
+  const bad = [];
+  const cc = stripComments(readFileSync(join(ROOT, 'src/utils/ccScope.js'), 'utf8'));
+  for (const fn of ['buildCcIndex', 'respScopesOf', 'canWriteScope', 'ccBlockText', 'writableByScope',
+    'unknownRespCcs', 'attachCc', 'ccCoverage', 'costCenterOfNode']) {
+    if (!new RegExp(`export function ${fn}\\b`).test(cc)) bad.push(`ccScope.js (ไม่มี ${fn})`);
+  }
+  /* ① ลำดับชั้นต้องมาจากผัง ไม่ใช่เลข ⇒ ต้องยืมของ orgScope ไม่ใช่เขียนต้นไม้ใหม่ */
+  if (!/canonicalScope|scopeCovers/.test(cc)) bad.push('ccScope.js (ไม่ได้ใช้ canonicalScope/scopeCovers ของ orgScope — แปลว่าไปสร้างกฎลำดับชั้นเองใหม่)');
+  /* ③ fallback section + ใบผ่าน all_units */
+  if (!/role === 'admin' \|\| allUnits === true/.test(cc)) bad.push('ccScope.js (เสีย fallback admin / คีย์ scope:all_units)');
+  if (!/const sec = norm\(section\);[\s\S]{0,120}kind: 'section'/.test(cc)) bad.push('ccScope.js (respScopesOf ไม่ได้ถอยไปใช้ profiles.section เมื่อยังไม่ตั้ง CC)');
+
+  /* ① กฎตกทอดชุดเดียว — ห้ามมีไฟล์อื่นประกาศ costCenterOfNode หรือเขียนลูปไล่แม่หา cost_center เอง */
+  for (const f of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const rel = relative(ROOT, f);
+    if (rel === 'src/utils/ccScope.js') continue;
+    const src = stripComments(readFileSync(f, 'utf8'));
+    if (/(?:export )?function costCenterOfNode\b/.test(src)) bad.push(`${rel} (ประกาศ costCenterOfNode เอง — ต้อง import จาก utils/ccScope.js)`);
+    if (/\bcur\.cost_center\b/.test(src)) bad.push(`${rel} (ไล่แม่หา cost_center เอง — ใช้ buildCcIndex().ccOfNode())`);
+    /* ② ห้ามตัด/เทียบ prefix ของรหัสเพื่อเดาลำดับชั้น */
+    if (/cost_center[^\n]{0,60}?(?:\.startsWith\(|\.slice\(0|\.substring\(0)/.test(src)
+      || /(?:startsWith|slice\(0|substring\(0)[^\n]{0,40}?cost_center/.test(src))
+      bad.push(`${rel} (เดาลำดับชั้นจากตัวเลข cost_center — ลำดับชั้นมาจาก org_nodes.parent_id เท่านั้น)`);
+  }
+  /* ② ฝั่ง SQL ก็ห้าม like '<เลข>%' บน cost_center */
+  for (const f of walk(join(ROOT, 'supabase/migrations'), ['.sql'])) {
+    const sql = readFileSync(f, 'utf8').replace(/--[^\n]*/g, '');
+    if (/cost_center\s+(?:i?like)\s+'\d/i.test(sql)) bad.push(`${relative(ROOT, f)} (cost_center LIKE '<เลข>%' — ไล่ลำดับชั้นด้วยเลขรหัส)`);
+  }
+
+  /* ④ ค่าต้องเดินถึงจอ */
+  const app = stripComments(readFileSync(join(ROOT, 'src/App.jsx'), 'utf8'));
+  if (!/respCostCenters:/.test(app)) bad.push('src/App.jsx (UserContext ไม่ได้ส่ง respCostCenters)');
+  if (!/resp_cost_centers/.test(app)) bad.push('src/App.jsx (ไม่ได้ select resp_cost_centers ตอนโหลดโปรไฟล์)');
+  const au = stripComments(readFileSync(join(ROOT, 'src/pages/AddUser.jsx'), 'utf8'));
+  if (!/resp_cost_centers:\s*form\.respCcs/.test(au)) bad.push('src/pages/AddUser.jsx (ไม่ได้บันทึก resp_cost_centers)');
+  if (!/unknownRespCcs/.test(au)) bad.push('src/pages/AddUser.jsx (ไม่ได้รายงานรหัสที่ผังไม่รู้จัก — ค่าที่ตั้งไว้แล้วใช้ไม่ได้แบบเงียบ)');
+
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n   ') + '\n'
+    + '   ทำไม: รหัส CC **ไม่ได้เข้ารหัสลำดับชั้น** (PD1 2140461000 → ลูก 2140561001) และทีม 24 โหนด\n'
+    + '         ไม่มีรหัสเลย ⇒ ต้องตกทอดจากแม่ผ่านผัง · มีกฎ 2 ชุด = สิทธิ์เพี้ยนแบบไม่มีใครเห็น\n'
+    + '   แก้: ทุกอย่างผ่าน src/utils/ccScope.js (buildCcIndex/canWriteScope) · ลำดับชั้นจาก org_nodes.parent_id\n');
+});
+
 /* 🛡️ ship-due-date-calendar (2026-10-16) — `customer_shipping_orders.due_date` = วันที่ตามปฏิทิน
    ใบ 862 ลงวันที่ตามไฟล์ลูกค้า · Shipping Time Chart วางกรอบวันงาน D = (D ≥08:00) + (D+1 <08:00)
    แต่ e-SMART เขียน `due_date: workDate` ⇒ รอบกะดึกคืนแรก (4 ไฟล์) ไปอยู่วันงานก่อนหน้า ไม่ขึ้นชาร์ต

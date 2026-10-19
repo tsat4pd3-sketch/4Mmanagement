@@ -91,12 +91,21 @@ Realtime + Edge Functions/Deno) · Telegram Bot API · deploy = Render.com (Stat
 
 ---
 
-## Pages & Routes · สายธารความต้องการ (`/flow-tower`)
+## 📄 โมดูลที่รายละเอียดอยู่ในไฟล์โมดูลล้วน (ไม่มีกฎข้าม session)
 
-> 📄 `docs/modules/pages-routes.md` · `docs/modules/demand-flow-tower.md`
+ยุบจาก 15 หัวข้อที่เคยมีแค่บรรทัด pointer (19/10 — ไฟล์นี้ชน 110 KB แล้ว · ดัชนีเต็ม `docs/modules/README.md`)
+เปิดอ่าน **เฉพาะโมดูลที่งานนี้แตะ** · กฎของโมดูลพวกนี้อยู่ในไฟล์ของมัน **ไม่ใช่ที่นี่**
+
+หน้า/route ทั้งระบบ `pages-routes.md` · สายธารความต้องการ `/flow-tower` `demand-flow-tower.md` ·
+คำนวณ Kanban จาก forecast `kanban-auto-calc.md` · ออเดอร์ manual (ไลน์ไม่มีคัมบัง) `daily-report.md` ·
+QR/บาร์โค้ดอุปกรณ์ `qr-equipment-scan.md` · กระบวนการผลิต (process types) `process-types.md` ·
+ไลน์ผสมหลาย process `daily-report-mixed-process.md` · Kaizen `improvements-kaizen.md` ·
+ประชุมแถวเช้า `morning-meeting.md` · ผังรวมโรงงาน `factory-master-map.md` ·
+Adoption Outlook `adoption-outlook.md` · ภาพรวมกลุ่ม TSG (mockup) `group-overview.md` ·
+จอตาม-มือถือคุม `remote-control.md` · แผนประสานงาน PM ข้ามวัน `pm-coordination.md` ·
+Audit log ใครแก้อะไร `traceability-audit-log.md` · ของที่ยกไปโปรเจคหน้าได้ `reusable-pm-checker.md`
 
 ---
-
 ## Organizational Hierarchy · Role System
 
 **ห้ามเพิ่มฟีเจอร์ที่ขัดลำดับชั้นองค์กร** · **role = "ชุดสิทธิ์ใช้ระบบ" ไม่ใช่ตำแหน่งงาน**
@@ -108,6 +117,11 @@ Realtime + Edge Functions/Deno) · Telegram Bot API · deploy = Render.com (Stat
 > 🔴 **"ขอบเขตที่เห็น" ≠ "ขอบเขตที่แก้ได้"** — เห็น = `sections` (**ว่าง = เห็นทั้งโรงงาน**) ·
 >   แก้ = **`profiles.section` บ้านจริง** · ใบผ่านข้ามหน่วย = คีย์ **`scope:all_units`** (`UserContext.allUnits`)
 >   **ห้ามเอา `sections` มาตัดสินการแก้** (มีด่าน `write-scope-layer`)
+> 🔴 **แกนที่ 2 ของชั้น ③ = Cost Center (`src/utils/ccScope.js` · `canWriteScope`)** — ตั้งที่ `/add-user` ช่อง ④
+>   (`profiles.resp_cost_centers` · `UserContext.respCostCenters`) · **ว่าง = ถอยไปใช้ `section` เหมือนเดิม**
+>   🔴 **ลำดับชั้นมาจาก `org_nodes.parent_id` เท่านั้น — เลขรหัสไม่ได้บอกชั้น** (ลูกของ `2140461000` คือ `2140561001`)
+>   · ทีมไม่มีรหัส = **ตกทอดจากแม่** · ไล่ขึ้นไม่เจอ = fail-closed · กฎ "CC ของโหนด" **ห้ามเขียนชุดที่ 2**
+>   (`costCenterOfNode()` อยู่ไฟล์นี้ที่เดียว · มีด่าน `cc-scope-layer`)
 > 🔴 **ช่องเลือกขอบเขต/ทีม = ตัวกรองการดู ไม่ใช่ด่าน** ⇒ ต้องเช็คซ้ำ**ในฟังก์ชันที่เขียน DB จริง**
 >   ไม่ใช่แค่ซ่อนปุ่ม (`?scope=`/`?dept=`/`?mo=` เปิดตรงได้) · ของกลาง = `unknownTarget:'block'`
 > 🔴 **กรองแถวออกแล้วต้องเขียนบนจอว่าซ่อนกี่รายการ** — "ไม่มีรายการ" ทั้งที่มีแต่ไม่ใช่ของเรา = จอโกหก
@@ -133,36 +147,6 @@ Realtime + Edge Functions/Deno) · Telegram Bot API · deploy = Render.com (Stat
 
 โมดูลติดตามการส่งงานลูกค้า (ตารางทั้งหมดอยู่ DR project) — 3 หน้า:
 > 📄 รายละเอียดเต็ม → `docs/modules/logistic-planner-sales.md`
-
----
-
-## Kanban Auto-Calc — คำนวณ kanban จาก forecast (แท็บ 🎴 คำนวณ Kanban ใน /planner-sales · 2026-07-16..17)
-
-> 📄 รายละเอียดเต็ม → `docs/modules/kanban-auto-calc.md`
-
----
-
-## Daily Report — ออเดอร์ manual สำหรับไลน์ไม่มี kanban card (2026-07-12)
-
-> 📄 รายละเอียดเต็ม → `docs/modules/daily-report.md`
-
----
-
-## QR / บาร์โค้ดอุปกรณ์ — สแกนเลือกเครื่อง/จิ๊ก/สินค้า (2026-08-03 · คำสั่ง user)
-
-> 📄 รายละเอียดเต็ม → `docs/modules/qr-equipment-scan.md`
-
----
-
-## กระบวนการผลิต (process types) — master data-driven (2026-07-23)
-
-> 📄 รายละเอียดเต็ม → `docs/modules/process-types.md`
-
----
-
-## Daily Report — ไลน์ผสมหลาย process (welding + metal forming ในไลน์เดียว · 2026-07-22)
-
-> 📄 รายละเอียดเต็ม → `docs/modules/daily-report-mixed-process.md`
 
 ---
 
@@ -216,18 +200,6 @@ Realtime + Edge Functions/Deno) · Telegram Bot API · deploy = Render.com (Stat
 >   🔴 กะที่ QA ยังไม่ตัดสิน = **ค่าชั่วคราว** ตัดสินทีหลังว่า `scrap` ต้องคิด %Q กะนั้นใหม่
 
 > 📄 รายละเอียดเต็ม (เคส · ตัวเลขที่วัดมา · คำพูด user · ผล backfill) → `docs/modules/oee.md`
-
----
-
-## Improvements — โปรเจคปรับปรุง Kaizen (2026-07-12)
-
-> 📄 รายละเอียดเต็ม → `docs/modules/improvements-kaizen.md`
-
----
-
-## Morning Meeting — ประชุมแถวเช้า (2026-07-13)
-
-> 📄 รายละเอียดเต็ม → `docs/modules/morning-meeting.md`
 
 ---
 
@@ -286,28 +258,10 @@ Realtime + Edge Functions/Deno) · Telegram Bot API · deploy = Render.com (Stat
 
 ---
 
-## Factory Master Map — ผังรวมโรงงานผังเดียว (2026-07-16)
-
-> 📄 รายละเอียดเต็ม → `docs/modules/factory-master-map.md`
-
----
-
 ## Dashboard ส่วนงาน — 📋 `/dept-dashboard` (2026-08-06)
 
 หน้าเดียวสลับส่วนงานด้วย `?dept=` — เฟส 1: ฝ่ายผลิต · ซ่อมบำรุง · สโตร์ · QA (ออกแบบเต็ม + ส่วนงานที่ยังไม่ทำ ดู `docs/DASHBOARD-DESIGN.md`)
 > 📄 รายละเอียดเต็ม → `docs/modules/dept-dashboard-tv.md`
-
----
-
-## Adoption Outlook — 🔮 ภาพเมื่อข้อมูลเชื่อมกันทั้งองค์กร (`/adoption-outlook` · 2026-08-13)
-
-> 📄 รายละเอียดเต็ม → `docs/modules/adoption-outlook.md`
-
----
-
-## Group Overview — 🏢 ภาพรวมกลุ่มบริษัท TSG (MOCKUP หลายบริษัท · 2026-08-05)
-
-> 📄 รายละเอียดเต็ม → `docs/modules/group-overview.md`
 
 ---
 
@@ -332,12 +286,6 @@ Realtime + Edge Functions/Deno) · Telegram Bot API · deploy = Render.com (Stat
 - 🔑 สิทธิ์ฟีเจอร์ใหม่ใช้ `canSeeded()` · ⛔ ถอดแล้วอย่ารื้อกลับ: ปุ่ม "เริ่มล็อตนี้" · `reconcilePlan()` · `production_plan:start`
 > 📄 **รายละเอียด (ปันยอดข้ามกะ · ไทม์ไลน์ลากจัดแผน · ยืดข้ามเบรค · จองเครื่องทดลอง `source='trial'`
 > · เวลาเปลี่ยนรุ่น/ความสูงแม่พิมพ์ที่ยังกรอกไม่ครบ)** → `docs/modules/production-plan.md`
-
-## Remote Control — จอตาม-มือถือคุม (2026-07-15)
-
-> 📄 รายละเอียดเต็ม → `docs/modules/remote-control.md`
-
----
 
 ## MTN Work-Order — ใบแจ้งซ่อม MO (`/mtn-repair`) · JIG/DIE/PD 7 ขั้น · **ทีม MTN 8 ขั้น ไม่มี QA**
 
@@ -501,12 +449,6 @@ Realtime + Edge Functions/Deno) · Telegram Bot API · deploy = Render.com (Stat
 
 ---
 
-## PM Coordination — แผนประสานงาน PM ข้ามวัน (MTN แจ้ง Production · 2026-07-23)
-
-> 📄 รายละเอียดเต็ม → `docs/modules/pm-coordination.md`
-
----
-
 ## ตั้งค่าผัง/Floorplan — แยก display ออกจาก setup (2026-07-16)
 
 หลักการ: หน้า display (ผังรวมโรงงาน/Dashboard) = ดู + popup เท่านั้น · การตั้งค่าผังทั้งหมดรวมที่ `/layout-setup` "🗺️ ตั้งค่าผัง/Floorplan" (หมวดตั้งค่าโปรแกรม) แยกแท็บตาม POV — เตรียมรับ Store/AMR ในอนาคต
@@ -602,12 +544,6 @@ Realtime + Edge Functions/Deno) · Telegram Bot API · deploy = Render.com (Stat
 > 🔴 **ตัดสินว่า "ยุบได้" ต้องดูทุกใบที่นิยามพาร์ทนั้น ไม่ใช่ 2 ใบ** (`auditBomSheetGroups()` ไฟล์เดียวกัน)
 >   — ใบที่ 3 เขียนคนละค่า = ยุบแล้วยอดเปลี่ยนเงียบ · พาร์ทที่**ไม่มีใบของตัวเอง**ไม่โผล่ในตารางคู่
 > 📄 `docs/modules/bom-levels.md`
-
----
-
-## Traceability / Audit Log — ใครแก้อะไรเมื่อไหร่ (2026-07-24)
-
-> 📄 รายละเอียดเต็ม → `docs/modules/traceability-audit-log.md`
 
 ---
 
@@ -895,12 +831,6 @@ Platform:    Render.com (Static Site)
 - ถ้า development branch ที่กำหนดมา merge เข้า main ไปแล้ว (ไม่มี commit ใหม่ค้าง) ให้ restart จาก main ล่าสุด: `git checkout -B <branch> origin/main` ก่อนทำงานต่อ ห้าม stack งานใหม่บน history ที่ merge ไปแล้ว
 - **ห้ามแก้ RLS policy / schema migration แบบ blanket** (loop เปลี่ยน policy หลายตารางพร้อมกัน) โดยไม่รู้ว่าตารางอยู่ project ไหนและ client ฝั่งไหนอ่าน — ดู §Supabase Projects
 - เปลี่ยน DB schema ทุกครั้ง ให้เขียนเป็น migration file ใน `supabase/migrations/` เพื่อให้ session อื่นเห็นประวัติ ไม่ใช่แก้ตรงผ่าน MCP เฉยๆ
-
----
-
-## Reusable สำหรับโปรเจคถัดไป (PM Checker)
-
-> 📄 ตารางของที่ยกไปใช้ต่อได้เลย (Auth/Toast/Telegram/4M workflow/SignatureModal ฯลฯ) → `docs/modules/reusable-pm-checker.md`
 
 ---
 
