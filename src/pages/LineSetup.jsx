@@ -9,7 +9,7 @@ import { can, canDelete } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { LINE_TYPES, FLOW_MODES } from '../utils/lineTypes';
 import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory';
-import { markerScale } from '../utils/markerScale';
+import { markerScale, pillEdgeAlign, pillEdgeStyle } from '../utils/markerScale';
 import useIsMobile from '../utils/useIsMobile';
 import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
@@ -1109,7 +1109,7 @@ export default function LineSetup({ embedded = false } = {}) {
                   >
                     <span style={{ fontSize: pinIconSz, lineHeight: 1 }}>📍</span>
                     {(stationPillsOn || isSelected) && (
-                    <div style={pillStackSt}>
+                    <div style={{ ...pillStackSt, ...pillEdgeStyle(pillEdgeAlign(left, { pillW: pillMaxW, mapW: imgBox?.rw || 0 })) }}>   {/* หมุดใกล้ขอบ: ป้ายชิดขอบหมุด ไม่ตกกรอบผัง */}
                       <div style={{ ...pillSt, color: isSelected ? 'var(--green)' : '#fff' }}>
                         {st.station_name}
                       </div>
@@ -1179,7 +1179,7 @@ export default function LineSetup({ embedded = false } = {}) {
                   >
                     <span style={{ fontSize: subPinIconSz, lineHeight: 1 }}>⚙️</span>
                     {(pillsOn || isSelected || isConnectSource) && (
-                      <div style={pillStackSt}>
+                      <div style={{ ...pillStackSt, ...pillEdgeStyle(pillEdgeAlign(left, { pillW: subPillMaxW, mapW: imgBox?.rw || 0 })) }}>
                         <div style={{ ...subPillSt, color: isConnectSource ? '#f97316' : isSelected ? 'var(--green)' : '#fff' }}>
                           {p.machine_no}
                         </div>

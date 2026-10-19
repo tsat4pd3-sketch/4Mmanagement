@@ -26,6 +26,11 @@ import PageHeader from '../components/PageHeader'
 import Segmented from '../components/Segmented'
 import { PlanSparesModal, SpareDemandBanner, sparesCountByChecklist } from '../components/PmSpares'
 import ScanModal from '../components/ScanModal'
+import LineScopeSelect from '../components/LineScopeSelect'
+import SearchInput from '../components/SearchInput'
+import { useProductionLinesState } from '../utils/useProductionLines'
+import { lineKnownSet } from '../utils/pmEquipList'
+import { filterPlanRows } from '../utils/pmPlanFilter'
 import { resolveJig } from '../utils/qrCode'
 // role ที่ควรขึ้นก่อนตอนเลือก "ผู้ที่ตกลงเลื่อนด้วย" (prefer ไม่ restrict — ตกลงทางโทรศัพท์กับใครก็พิมพ์ได้)
 const AGREE_ROLES = ['planner_store', 'supervisor', 'manager']
@@ -69,13 +74,6 @@ const S = {
   page: { minHeight: '100%', background: 'var(--bg)' },   // ขอบ/ความกว้างมาจาก <Page> (UI-STANDARD 2026-09-24)
   h1: { fontSize: 22, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', margin: 0 },
   sub: { fontSize: 13, color: 'var(--muted)', marginTop: 4, marginBottom: 20 },
-  deptBar: { display: 'flex', gap: 8, marginBottom: 24, flexWrap: 'wrap' },
-  deptBtn: (active, color) => ({
-    padding: '6px 14px', borderRadius: 20, fontSize: 12, fontWeight: 700, cursor: 'pointer',
-    border: `1.5px solid ${active ? color : 'var(--border2)'}`,
-    background: active ? `${color}18` : 'var(--bg3)',
-    color: active ? color : 'var(--muted)',
-  }),
   summaryBar: { display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap' },
   summaryCard: (color) => ({
     background: 'var(--card)', border: `1px solid ${color}30`,
@@ -244,7 +242,12 @@ export default function PMSchedule() {
         status = runDay.status
       }
 
-      return { cl, eq, lastDone, nextDue, status, cycle: cycleDaysOf(cl.frequency, iv), cycleText: cycleLabel(cl.frequency, iv), reason: plan?.next_due_reason ?? 'time',
+      /* 🔴 แผน run_day (ไม่ได้เลื่อน) **ไม่มีวันปฏิทิน** — origDue ข้างบนคิดจาก last_done + รอบ ซึ่งเป็นวันปลอม
+         (CLAUDE.md AM↔PM: ห้ามถอยไป last_done+interval) · เดิมมุมมองการ์ด/ปฏิทินเอาวันปลอมนี้ไปจัดถัง/วางวัน
+         ⇒ ทุกมุมมองตัดสินแถวนี้จาก `runDay.status` + เขียนเงื่อนไขด้วย `runDayText()` */
+      const shownDue = runDay ? null : nextDue
+
+      return { cl, eq, lastDone, nextDue: shownDue, status, cycle: cycleDaysOf(cl.frequency, iv), cycleText: cycleLabel(cl.frequency, iv), reason: plan?.next_due_reason ?? 'time',
                planType: plan?.plan_type ?? 'time', health: plan?.health_score ?? null, basis, runDay,
                plan, isDeferred, deferReason: plan?.defer_reason, deferBy: plan?.deferred_by, deferCount: plan?.defer_count ?? 0 }
     })
@@ -304,10 +307,6 @@ export default function PMSchedule() {
   // ตัดสินด้วย helper กลาง ไม่เทียบสตริง 'idle_skip' เองในหน้า (เพิ่มสถานะใหม่ทีหลังจะได้ไม่ตกหล่น)
   const idleRows = runDayRows.filter(r => !countsForCompliance(r.status))
   const unknownUsageRows = runDayRows.filter(r => r.runDay?.unknownUsage)
-  const counts = rows.reduce((acc, r) => {
-    acc[r.status] = (acc[r.status] ?? 0) + 1
-    return acc
-  }, {})
 
   // สี/ป้ายทีม — data-driven จาก mtn_teams (teams) ก่อน แล้ว fallback map เดิม
   const teamMeta = teams.find(t => t.key === department)
@@ -319,7 +318,33 @@ export default function PMSchedule() {
      ป้ายเครื่อง (ESM:M) เด้งไปแถวเงาใน jigs ผ่าน resolveJig ตัวเดิม · ตัวกรองนี้ = มุมมอง ไม่แตะตัวนับสรุปด้านบน */
   const [scanOpen, setScanOpen] = useState(false)
   const focusEq = searchParams.get('focus') || null
-  const shownRows = focusEq ? rows.filter(r => r.cl.equipment_id === focusEq) : rows
+  const focusRows = focusEq ? rows.filter(r => r.cl.equipment_id === focusEq) : rows
+
+  /* 🗂️ ตัวกรอง (19/10 audit หน้า PM — เดิมไม่มีเลย ช่างหาเครื่องของไลน์ตัวเองไม่เจอ) · กติกา `utils/pmPlanFilter.js`
+     ตัวนับสรุปบนหัว = ผลหลังกรองไลน์/คำค้น (ยังไม่กรองสถานะ) — กดการ์ดสรุป = กรองสถานะนั้น */
+  const { rows: lineRows } = useProductionLinesState()
+  const lines = useMemo(() => {   // ชื่อไลน์ซ้ำในทะเบียน = key ซ้ำในตัวเลือก ⇒ ยุบด้วยชื่อ
+    const seen = new Set()
+    return (lineRows || []).filter(l => l?.name && !seen.has(l.name) && seen.add(l.name))
+  }, [lineRows])
+  const known = useMemo(() => lineKnownSet(lines), [lines])
+  const [fScope, setFScope] = useState({ section: '', line: '', names: null })
+  const [fStatus, setFStatus] = useState('')
+  const [fQ, setFQ] = useState('')
+  const planOpt = { q: fQ, scopeNames: fScope.names, known,
+    getLine: r => r.eq?.line_name, getText: r => [r.eq?.name, r.eq?.jig_no, r.eq?.machine_no, r.eq?.line_name, r.cl?.name] }
+  const { rows: baseRows, droppedNoLine } = filterPlanRows(focusRows, planOpt)
+  const shownRows = fStatus ? baseRows.filter(r => r.status === fStatus) : baseRows
+  const filtered = !!(fQ.trim() || fScope.names?.length || fStatus)
+  const clearFilters = () => { setFQ(''); setFScope({ section: '', line: '', names: null }); setFStatus('') }
+  const counts = baseRows.reduce((acc, r) => {
+    acc[r.status] = (acc[r.status] ?? 0) + 1
+    return acc
+  }, {})
+  const statusOptions = [
+    { value: '', label: `ทุกสถานะ (${baseRows.length})` },
+    ...Object.entries(STATUS_META).filter(([k]) => counts[k]).map(([k, m]) => ({ value: k, label: `${m.label} (${counts[k]})` })),
+  ]
   const focusName = focusEq ? (rows.find(r => r.cl.equipment_id === focusEq)?.eq?.name ?? null) : null
   const onScanEquip = (parsed) => {
     const eqs = [...new Map(rows.map(r => [r.cl.equipment_id, { ...r.eq, id: r.cl.equipment_id }])).values()]
@@ -332,24 +357,42 @@ export default function PMSchedule() {
   return (
     <Page style={S.page}>
       <PageHeader title="ปฏิทินแผน PM" icon="📅"
-        sub={`ตารางการตรวจสอบ · ${teamMeta?.label ?? DEPT_LABEL[department] ?? department}`} />
+        sub={`ตารางการตรวจสอบ · ${teamMeta?.label ?? DEPT_LABEL[department] ?? department}`}
+        filters={<>
+          {/* ทีม = ตัวเลือกแรกของแถบกรอง (UI-STANDARD: ชื่อ → แท็บ → แถบกรอง → เนื้อหา · เดิมเป็นแถวปุ่มใต้หัวเพจ) */}
+          <Segmented label="ทีม" value={department} onChange={setDept}
+            options={teams.map(d => ({ value: d.key, label: `${d.icon ? `${d.icon} ` : ''}${d.label}` }))} />
+          <LineScopeSelect lines={lines} section={fScope.section} line={fScope.line}
+            onChange={(section, line, info) => setFScope({ section, line, names: info?.lines?.length ? info.lines : (section || line ? [line || section] : null) })} />
+          <select value={fStatus} onChange={e => setFStatus(e.target.value)} aria-label="สถานะ">
+            {statusOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+          <SearchInput value={fQ} onChange={setFQ} fields="อุปกรณ์ / No. / เลขเครื่อง / ไลน์" />
+          {!loading && rows.length > 0 && (
+            <span style={{ fontSize: 12, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
+              แสดง <b style={{ color: 'var(--text)' }}>{shownRows.length}</b> จาก {rows.length} แผน
+            </span>
+          )}
+          {filtered && <button type="button" onClick={clearFilters} style={S.actionBtn('#8b8b96')}>✕ ล้างตัวกรอง</button>}
+        </>} />
 
-      <div style={S.deptBar}>
-        {teams.map(d => (
-          <button key={d.key} onClick={() => setDept(d.key)}
-            style={S.deptBtn(department === d.key, d.color || DEPT_COLORS[d.key] || '#3dd65c')}>
-            {d.icon ? `${d.icon} ` : ''}{d.label}
-          </button>
-        ))}
-      </div>
+      {/* ไลน์ว่าง/ไม่อยู่ทะเบียน หลุดจากตัวกรองไลน์ — ต้องบอก ห้ามหายเงียบ (ตะกร้ารับท้ายลิสต์) */}
+      {droppedNoLine > 0 && (
+        <div style={{ fontSize: 12.5, color: '#f59a3f', marginBottom: 12 }}>
+          ⚠️ อีก {droppedNoLine} แผนไม่แสดงเพราะอุปกรณ์ไม่ได้ระบุไลน์ หรือชื่อไลน์ไม่ตรงทะเบียน — กรองตามไลน์ไม่ได้ (ล้างตัวกรองไลน์เพื่อดู)
+        </div>
+      )}
 
       {!loading && rows.length > 0 && (
         <div style={S.summaryBar}>
           {Object.entries(STATUS_META).map(([key, meta]) => {
             const cnt = counts[key] ?? 0
             if (cnt === 0) return null
+            const on = fStatus === key
             return (
-              <div key={key} style={S.summaryCard(meta.color)}>
+              <div key={key} role="button" tabIndex={0} title={on ? 'กดอีกครั้งเพื่อดูทุกสถานะ' : `ดูเฉพาะ "${meta.label}"`}
+                onClick={() => setFStatus(on ? '' : key)} onKeyDown={e => { if (e.key === 'Enter') setFStatus(on ? '' : key) }}
+                style={{ ...S.summaryCard(meta.color), cursor: 'pointer', ...(on ? { boxShadow: `inset 0 0 0 2px ${meta.color}` } : null) }}>
                 <div style={{ fontSize: 22, fontWeight: 900, color: meta.color, fontFamily: 'var(--font-display)' }}>{cnt}</div>
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{meta.label}</div>
               </div>
@@ -434,6 +477,12 @@ export default function PMSchedule() {
           <p style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)', marginBottom: 8 }}>ยังไม่มีแผน PM</p>
           <p style={{ fontSize: 13, color: 'var(--muted)' }}>ตั้งค่าอุปกรณ์ใน PM Setup ก่อน</p>
         </div>
+      ) : shownRows.length === 0 ? (
+        <div style={{ background: 'var(--card)', border: '1px dashed var(--border2)', borderRadius: 'var(--radius-lg)', padding: '40px 24px', textAlign: 'center' }}>
+          <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)', marginBottom: 8 }}>ไม่มีแผนที่ตรงกับตัวกรอง</p>
+          <p style={{ fontSize: 13, color: 'var(--muted)' }}>ทีมนี้มีทั้งหมด {rows.length} แผน{droppedNoLine ? ` (ไม่ระบุไลน์ ${droppedNoLine})` : ''}</p>
+          {filtered && <button type="button" onClick={clearFilters} style={{ ...S.actionBtn(deptColor), marginTop: 10 }}>✕ ล้างตัวกรอง</button>}
+        </div>
       ) : view === 'table' ? (
         <div className="table-sticky" style={{ overflowX: 'auto' }}>
           <table style={S.table}>
@@ -512,7 +561,7 @@ export default function PMSchedule() {
                     <td style={{ textAlign: 'right' }}>
                       <div style={{ display: 'inline-flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                         <button onClick={() => setSpareFor(r)} title={spareErr ? `นับจำนวนอะไหล่ที่ผูกไว้ไม่ได้ (${spareErr}) — เปิดดูในโมดัลได้` : "อะไหล่ที่ใช้ใน PM รอบหนึ่ง + เบิกตามแผน"} style={{ ...S.actionBtn(spareErr ? '#f59e0b' : spareCount.get(cl.id) ? '#4a90e0' : '#8b8b96') }}>🔩 {spareErr ? 'อะไหล่ ?' : spareCount.get(cl.id) ? `อะไหล่ ${spareCount.get(cl.id)}` : 'อะไหล่'}</button>
-                        {canDefer && <button onClick={() => setCycleFor([r])} style={{ ...S.actionBtn(nextDue ? '#8b8b96' : '#f59a3f') }} title="ตั้งรอบ PM / วัน PM ครั้งถัดไป">📅 {nextDue ? 'รอบ/วัน' : 'ตั้งวัน PM'}</button>}
+                        {canDefer && <button onClick={() => setCycleFor([r])} style={{ ...S.actionBtn((nextDue || runDay) ? '#8b8b96' : '#f59a3f') }} title="ตั้งรอบ PM / วัน PM ครั้งถัดไป">📅 {(nextDue || runDay) ? 'รอบ/วัน' : 'ตั้งวัน PM'}</button>}
                         {canDefer && r.plan?.id && (isDeferred
                           ? <button onClick={() => cancelDefer(r)} style={{ ...S.actionBtn('#8b8b96') }} title="ยกเลิกการเลื่อน">✕ ยกเลิกเลื่อน</button>
                           : <button onClick={() => setDeferFor(r)} style={{ ...S.actionBtn('#4a90e0') }} title="เลื่อนแผน PM (คิวผลิตแน่น ฯลฯ)">⏭ เลื่อนแผน</button>)}
@@ -896,7 +945,9 @@ function CalendarView({ rows, insps = [], today, onCheck }) {
     const k = dayKey(new Date(i.inspected_at))
     ;(doneByDay[k] ||= []).push({ ...i, meta: inspMeta(i.status) })
   })
-  const overdue = rows.filter(r => r.nextDue && daysBetween(today, r.nextDue) < 0)
+  // run_day ไม่มีวันปฏิทิน ⇒ ไม่วางลงช่องวัน แต่ที่ค้างอยู่ต้องเข้ากล่อง "เกินกำหนด" ด้วย (ห้ามหายจากปฏิทินเงียบๆ)
+  const overdue = rows.filter(r => r.runDay ? r.status === 'overdue' : (r.nextDue && daysBetween(today, r.nextDue) < 0))
+  const runN = rows.filter(r => r.runDay).length
   const y = cursor.getFullYear(), mo = cursor.getMonth()
   const startPad = new Date(y, mo, 1).getDay()
   const daysInMonth = new Date(y, mo + 1, 0).getDate()
@@ -913,6 +964,11 @@ function CalendarView({ rows, insps = [], today, onCheck }) {
           <span style={{ fontSize: 15 }}>🔴</span>
           <span style={{ fontSize: 12.5, fontWeight: 700, color: '#e05c4a' }}>เกินกำหนดแล้ว {overdue.length} รายการ</span>
           <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 'auto' }}>คลิกดูรายการ →</span>
+        </div>
+      )}
+      {runN > 0 && (
+        <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>
+          🏃 {runN} แผนนับรอบจากวันเดินเครื่อง — ไม่มีวันปฏิทินจึงไม่อยู่ในช่องวัน (ดูสถานะที่มุมมองตาราง/Timeline)
         </div>
       )}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
@@ -1027,8 +1083,14 @@ function DayModal({ sel, onClose, onCheck }) {
 
 // ── การ์ดจัดกลุ่มตามช่วงเวลา (Kanban by due window) ──
 function BucketView({ rows, today, onCheck }) {
-  const b = { overdue: [], week: [], month: [], later: [], none: [] }
+  const b = { overdue: [], week: [], month: [], later: [], run: [], none: [] }
   rows.forEach(r => {
+    /* 🏃 run_day ไม่มีวันปฏิทิน — จัดถังจากสถานะวันนี้ (เดิมตกถัง "ไม่มีรอบ/ยังไม่ตรวจ" ทั้งที่ตั้งรอบครบแล้ว) */
+    if (r.runDay) {
+      if (r.status === 'overdue') return b.overdue.push(r)
+      if (r.status === 'due_soon') return b.week.push(r)
+      return b.run.push(r)
+    }
     if (!r.nextDue) return b.none.push(r)
     const d = daysBetween(today, r.nextDue)
     if (d < 0) b.overdue.push(r)
@@ -1041,7 +1103,8 @@ function BucketView({ rows, today, onCheck }) {
     { key: 'week', label: '🟠 ครบใน 7 วัน', color: '#f59a3f' },
     { key: 'month', label: '🟡 ครบในเดือนนี้', color: '#e0b34a' },
     { key: 'later', label: '🟢 ถัดไป', color: '#3dd65c' },
-    { key: 'none', label: '⚪ ไม่มีรอบ/ยังไม่ตรวจ', color: '#9b8de8' },
+    { key: 'run', label: '🏃 ตามวันเดินเครื่อง', color: '#527855' },
+    { key: 'none', label: '⚪ ยังไม่มีวัน PM ครั้งถัดไป', color: '#9b8de8' },
   ]
   return (
     <div style={{ display: 'flex', gap: 12, overflowX: 'auto', alignItems: 'stretch', paddingBottom: 8 }}>
@@ -1061,9 +1124,9 @@ function BucketView({ rows, today, onCheck }) {
                   <div key={r.cl.id} onClick={() => onCheck(r.cl.equipment_id)}
                     style={{ borderLeft: `3px solid ${meta.color}`, background: 'var(--bg3)', borderRadius: 8, padding: '8px 10px', cursor: 'pointer' }}>
                     <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.eq.name ?? '—'}</div>
-                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{r.eq.line_name ?? '—'} · {r.cycleText}</div>
-                    <div style={{ fontSize: 11, color: meta.color, fontWeight: 700, marginTop: 3 }}>
-                      {d == null ? meta.label : d < 0 ? `เกิน ${Math.abs(d)} วัน` : d === 0 ? 'ครบวันนี้' : `อีก ${d} วัน · ${fmtDay(r.nextDue)}`}
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{r.eq.line_name ?? '—'} · {r.runDay ? `🏃 ทุก ${r.cycle || '—'} วันเดิน` : r.cycleText}</div>
+                    <div style={{ fontSize: 11, color: r.status === 'idle_skip' ? 'var(--muted)' : meta.color, fontWeight: 700, marginTop: 3 }}>
+                      {r.runDay ? runDayText(r.runDay) : d == null ? (r.cycle ? 'มีรอบแต่ยังไม่เคยตรวจ' : 'ยังไม่ตั้งรอบ') : d < 0 ? `เกิน ${Math.abs(d)} วัน` : d === 0 ? 'ครบวันนี้' : `อีก ${d} วัน · ${fmtDay(r.nextDue)}`}
                     </div>
                   </div>
                 )

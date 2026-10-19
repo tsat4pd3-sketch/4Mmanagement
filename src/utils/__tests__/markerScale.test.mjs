@@ -6,7 +6,7 @@
  */
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { markerScale } from '../markerScale.js';
+import { markerScale, pillEdgeAlign, pillEdgeStyle } from '../markerScale.js';
 
 /** สร้างหมุด n ตัวกระจายเป็นตาราง ภายในกรอบ % ที่กำหนด (เลียนผังจริง) */
 function grid(n, { x0 = 5, y0 = 5, x1 = 95, y1 = 95 } = {}) {
@@ -92,4 +92,17 @@ test('ป้ายชื่อยังต้องอ่านออกเส�
   assert.ok(mk.subPillFont >= 11, 'ฟอนต์ป้ายห้ามต่ำกว่า 11px (UI-CONVENTIONS จอ TV)');
   // ห้ามเอา "ระยะเพื่อนบ้าน" มาบีบความกว้างป้าย — ผังแน่นจะได้ป้าย ~10px อ่านไม่ออก
   assert.ok(mk.subPillMaxW >= 88, `ป้ายต้องกว้างพออ่านชื่อเครื่อง ~8-10 ตัวอักษร (ได้ ${mk.subPillMaxW}px)`);
+});
+
+test('pillEdgeAlign: หมุดใกล้ขอบ → ป้ายชิดขอบหมุดแทนกึ่งกลาง (ไม่ตกกรอบผัง) · กลางผัง = center · พิกัดอ่านไม่ออก = center', () => {
+  assert.equal(pillEdgeAlign('0%', { pillW: 120, mapW: 1300 }), 'start');
+  assert.equal(pillEdgeAlign('4%', { pillW: 120, mapW: 1300 }), 'start', '52px จากขอบ < ครึ่งป้าย 60px');
+  assert.equal(pillEdgeAlign('5%', { pillW: 120, mapW: 1300 }), 'center', '65px ≥ 60px พอดี');
+  assert.equal(pillEdgeAlign('97%', { pillW: 120, mapW: 1300 }), 'end');
+  assert.equal(pillEdgeAlign(50, { pillW: 120, mapW: 1300 }), 'center');
+  assert.equal(pillEdgeAlign('3%'), 'start'); assert.equal(pillEdgeAlign('95%'), 'end'); assert.equal(pillEdgeAlign('50%'), 'center', 'ไม่รู้ขนาด = เกณฑ์ 8%');
+  assert.equal(pillEdgeAlign(null), 'center'); assert.equal(pillEdgeAlign('abc'), 'center');
+  assert.deepEqual(pillEdgeStyle('center'), {});
+  assert.equal(pillEdgeStyle('start').transform, 'none'); assert.equal(pillEdgeStyle('start').left, 0);
+  assert.equal(pillEdgeStyle('end').right, 0); assert.equal(pillEdgeStyle('end').alignItems, 'flex-end');
 });
