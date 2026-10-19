@@ -1,6 +1,8 @@
 import { useState, useEffect, useContext, useMemo, useRef } from 'react';
 import { LPA_LAYERS } from '../utils/prodRoutine';
 import { canWriteLine, writeBlockText } from '../utils/writeScope';
+/* 🔴 ด่านชั้น 2 ของ stale-response race — กฎ+ข้อความอยู่ใน utils/staleView.js (pure · มีเทส) */
+import { viewKey, isStale, staleBlockText } from '../utils/staleView';
 import useIsMobile from '../utils/useIsMobile';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
@@ -184,6 +186,30 @@ export default function LayerProcessAudit() {
   const [savingAudit, setSavingAudit] = useState(false);
   const [showSignPad, setShowSignPad] = useState(false);
 
+  /* ══ 🔴 กันคำตอบของคิวรีเก่ามาทับจอ — stale-response race (QC audit ข้อ ④ · 2026-10-19) ══════
+     คิวรีที่ยิงไปแล้ว **ยกเลิกไม่ได้** ⇒ ต้อง "ทิ้งคำตอบที่มาช้า" ทีหลัง ไม่ใช่หวังว่ามันจะมาตามลำดับ
+     (กฎเหล็กการเขียน DB ข้อ 4 · ของเดิมใน `fetchStationNames` ทำถูกอยู่แล้ว — ที่เหลือไม่มีด่าน)
+
+     🔴 ทำไมหน้านี้ร้ายกว่าจออื่น: คำถาม `common` (`line_name = null`) **ใช้ `question_id` ร่วมกันทุกไลน์**
+        ⇒ ใบร่างของไลน์ A ที่มาช้าทับจอที่กำลังเลือกไลน์ B แล้วกดบันทึก = **คำตอบของไลน์ A ไปลงเป็นของไลน์ B
+        แบบไม่มี error** (ส่วนข้อเฉพาะไลน์จะชน PK แล้วเด้ง error งงๆ) · LPA เป็นบันทึก audit ตามระบบคุณภาพ
+        ⇒ เขียนผิดใบ = แก้ไม่ได้ และคนตรวจไม่รู้ตัว
+     🔴 อีกอาการที่เงียบกว่า: ใบร่างที่มาช้า **ทับคำตอบที่คนกำลังติ๊กอยู่** (กดไปแล้ว 10 ข้อ หายหมด)
+
+     กันเป็น 2 ชั้น (ชั้นเดียวไม่พอ — ชั้นแรกกันไม่ให้เพี้ยน ชั้นสองกันไม่ให้ "เพี้ยนแล้วเขียนลง DB"):
+       ① ทุกจุดที่ `setState` หลัง `await` เทียบ "คีย์ที่ยิงไป" กับ "คีย์ที่จออยู่ตอนนี้" — ไม่ตรง = ทิ้ง
+       ② `draft` พก `key` ของตัวเองมาด้วย · `saveAudit`/`deleteAudit` **ปฏิเสธถ้าคีย์ไม่ตรงจอ** (fail-closed) */
+  const monthKey = viewKey(selLine, selShift, selMonth);
+  const draftKey = viewKey(selLine, selShift, auditDate, auditLayer);
+  const monthKeyRef = useRef(monthKey);
+  const draftKeyRef = useRef(draftKey);
+  /* คีย์ของ "ข้อมูลที่โหลดมาแล้วและกำลังแก้อยู่" — แผนเดือน (`plan`/`planDays`) และแผนไตรมาส (`qData`)
+     ก็ผสม "id ที่โหลดมา" กับ "ไลน์ที่เลือกอยู่" เวลา upsert เหมือนใบตรวจ ⇒ ต้องมีด่านชั้น 2 เหมือนกัน */
+  const [monthLoadedKey, setMonthLoadedKey] = useState('');
+  const [qLoadedKey, setQLoadedKey] = useState('');
+  monthKeyRef.current = monthKey;   // เขียนทุก render โดยตั้งใจ = "คีย์ที่จอกำลังแสดงอยู่ตอนนี้"
+  draftKeyRef.current = draftKey;
+
   /* questions master */
   const [qEditing, setQEditing] = useState(null);
   const [qScope, setQScope] = useState(''); // หน้า ⚙️ คำถาม: '' = ทะเบียนกลาง (common) · ชื่อไลน์ = จัดการเฉพาะไลน์นั้น
@@ -266,7 +292,9 @@ export default function LayerProcessAudit() {
     return () => { alive = false; };
   }, [selLine, lines]); // eslint-disable-line react-hooks/exhaustive-deps
   const fillStationsFromWorkstations = async () => {
+    const key = monthKeyRef.current;
     const { list, error } = await fetchStationNames();
+    if (monthKeyRef.current !== key) return;   // เปลี่ยนไลน์ระหว่างรอ = จุดงานของไลน์เก่า ห้ามเททับหัวแผนใหม่
     if (error) { toast.error('ดึงจุดงานไม่สำเร็จ: ' + error.message); return; }
     if (!list.length) { toast.info('ไลน์นี้ยังไม่มีจุดงานในผัง — ตั้งจุดงานที่หน้า Line Setup ก่อน'); return; }
     setQHeader(prev => ({ ...prev, stations: list.join('\n') }));
@@ -276,6 +304,7 @@ export default function LayerProcessAudit() {
   /* ── โหลดแผน + ผลตรวจของเดือน เมื่อเปลี่ยน line/shift/month ── */
   const loadMonth = async () => {
     if (!selLine) return;
+    const key = monthKey;   // คีย์ที่ "คิวรีชุดนี้" ถามไป — เทียบกับจอตอนคำตอบกลับมา
     const first = dateOf(selMonth, 1);
     const last = dateOf(selMonth, daysInMonth(selMonth));
     const [{ data: pl }, { data: aud }, runRes] = await Promise.all([
@@ -284,6 +313,8 @@ export default function LayerProcessAudit() {
       // ตารางกะอยู่ **คนละ project (DR)** — ล้มแล้วต้องเป็น "ไม่รู้" ไม่ใช่ "ไม่ได้ผลิต"
       loadRunDays({ lineNames: [selLine], from: first, to: last }),
     ]);
+    if (monthKeyRef.current !== key) return;   // 🔴 เปลี่ยนไลน์/กะ/เดือนไปแล้ว = ทิ้งคำตอบชุดนี้
+    setMonthLoadedKey(key);
     setRuns(runRes);
     setPlan(pl || null);
     const dm = {};
@@ -353,8 +384,17 @@ export default function LayerProcessAudit() {
     toast.success(`เติมแผนอัตโนมัติแล้ว: Leader ${working.length} วัน · SV ${svDays.length} ครั้ง · MGR วันที่ ${mgrDay}`);
   };
 
+  /** 🔴 ชั้นที่ 2 ของแผน — ข้อมูลที่กำลังแก้เป็นของ (ไลน์/กะ/เดือน) ที่เลือกอยู่จริงไหม
+   *  ไม่ตรง = **ห้ามเขียน** (เพราะ `row` ผสม `id` ที่โหลดมา กับ `line_name: selLine` ที่เลือกอยู่
+   *  ⇒ เขียนทับแผนของไลน์อื่น หรือชน PK แล้วเด้ง error งงๆ) */
+  const monthMismatch = (loadedKey) => (isStale(loadedKey, monthKey)
+    ? staleBlockText({ what: 'แผนที่แสดงอยู่', unitWord: 'ไลน์/กะ/เดือน' })
+    : null);
+
   const savePlan = async () => {
     if (!canManage) return;
+    const mis = monthMismatch(monthLoadedKey);
+    if (mis) { toast.error(mis); return; }
     setSavingPlan(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -398,6 +438,7 @@ export default function LayerProcessAudit() {
   const qMonths = useMemo(() => quarterMonths(selMonth), [selMonth]);
   const loadQuarter = async () => {
     if (!selLine) return;
+    const key = monthKey;
     const mks = quarterMonths(selMonth);
     const first = dateOf(mks[0], 1), last = dateOf(mks[2], daysInMonth(mks[2]));
     const [{ data: pls }, { data: auds }] = await Promise.all([
@@ -411,11 +452,14 @@ export default function LayerProcessAudit() {
       (pl?.lpa_plan_days || []).forEach(d => { days[d.day] = d; });
       map[mk] = { plan: pl, days };
     });
+    if (monthKeyRef.current !== key) return;   // 🔴 ทิ้งคำตอบที่มาช้า (ไม่งั้นแผนไตรมาสของไลน์เก่าค้างบนจอไลน์ใหม่)
+    setQLoadedKey(key);
     setQData(map);
     setQAudits(auds || []);
     const firstPl = mks.map(mk => map[mk].plan).find(Boolean);
     let stations = firstPl?.stations || '';
     if (!stations && canManage) { const { list } = await fetchStationNames(); stations = list.join('\n'); }
+    if (monthKeyRef.current !== key) return;   // await รอบที่ 2 (ดึงจุดงาน) ⇒ ต้องเทียบอีกครั้ง
     setQHeader({
       leader_name: firstPl?.leader_name || '', supervisor_name: firstPl?.supervisor_name || '',
       manager_name: firstPl?.manager_name || '', gm_name: firstPl?.gm_name || '', stations,
@@ -475,6 +519,8 @@ export default function LayerProcessAudit() {
   };
 
   const saveQuarter = async () => {
+    const misQ = monthMismatch(qLoadedKey);
+    if (misQ) { toast.error(misQ); return; }
     if (!canManage) return;
     setSavingPlan(true);
     try {
@@ -525,11 +571,15 @@ export default function LayerProcessAudit() {
 
   useEffect(() => {
     if (!selLine || tab !== 'audit') return;
+    const key = draftKey;   // ใบร่างนี้เป็นของ line|shift|date|layer ชุดไหน
     (async () => {
       const [{ data: existing }, { data: pl }] = await Promise.all([
         supabase.from('lpa_audits').select('*, lpa_audit_answers(*)').eq('line_name', selLine).eq('shift', selShift).eq('audit_date', auditDate).eq('layer', auditLayer).maybeSingle(),
         supabase.from('lpa_plans').select('id, lpa_plan_days(day, station)').eq('line_name', selLine).eq('shift', selShift).eq('month_key', auditDate.slice(0, 7)).maybeSingle(),
       ]);
+      /* 🔴 ทิ้งคำตอบที่มาช้า — ไม่งั้นใบร่างของไลน์ก่อนหน้าทับจอ แล้วคำตอบข้อ common ไปลงผิดไลน์เงียบๆ
+         (และทับคำตอบที่คนกำลังติ๊กอยู่ด้วย) */
+      if (draftKeyRef.current !== key) return;
       const planStation = pl?.lpa_plan_days?.find(d => d.day === Number(auditDate.slice(8, 10)))?.station || '';
       setAuditPlanStations([...new Set((pl?.lpa_plan_days || []).map(d => (d.station || '').trim()).filter(Boolean))]);
       if (existing) {
@@ -537,12 +587,22 @@ export default function LayerProcessAudit() {
         /* เก็บ `question_text` ที่ snapshot ไว้ตอนตรวจด้วย — ข้อที่ถูกลบ/ปิดใช้ทีหลังจะไม่มีคำถาม
            ให้ดูอีกแล้ว ถ้าไม่พกข้อความมา ใบเก่าจะหายไปเงียบๆ (ดู savedOnlyAnswers) */
         (existing.lpa_audit_answers || []).forEach(a => { if (a.question_id) ans[a.question_id] = { answer: a.answer, note: a.note || '', text: a.question_text || '' }; });
-        setDraft({ id: existing.id, station: existing.station || planStation, auditor_name: existing.auditor_name || fullName || '', auditor_sig_url: existing.auditor_sig_url || null, answers: ans });
+        setDraft({ key, id: existing.id, station: existing.station || planStation, auditor_name: existing.auditor_name || fullName || '', auditor_sig_url: existing.auditor_sig_url || null, answers: ans });
       } else {
-        setDraft({ id: null, station: planStation, auditor_name: fullName || '', auditor_sig_url: myProfile?.signature_url || null, answers: {} });
+        setDraft({ key, id: null, station: planStation, auditor_name: fullName || '', auditor_sig_url: myProfile?.signature_url || null, answers: {} });
       }
     })();
-  }, [selLine, selShift, auditDate, auditLayer, tab, myProfile, fullName]);
+  }, [selLine, selShift, auditDate, auditLayer, tab, myProfile, fullName]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** 🔴 ชั้นที่ 2 — ใบร่างบนจอเป็นของ "ที่เลือกอยู่ตอนนี้" จริงไหม (ยังโหลด = ยังไม่ให้เขียน)
+   *  คืนข้อความเหตุผล หรือ `null` เมื่อตรงกัน · **ห้ามเขียน DB ตอนไม่ตรง** (fail-closed)
+   *  ป้องกันกรณีที่ใบร่างเพี้ยนมาแล้วก่อนด่านชั้นแรก (เช่นเปิดจอทิ้งไว้แล้วเน็ตสะดุด) */
+  const draftMismatch = () => {
+    if (!draft) return 'ใบตรวจยังโหลดไม่เสร็จ — รอสักครู่แล้วลองอีกครั้ง';
+    return isStale(draft.key, draftKey)
+      ? staleBlockText({ what: 'ใบที่แสดงอยู่', unitWord: 'ไลน์/กะ/วันที่/ชั้น' })
+      : null;
+  };
 
   const setAnswer = (qid, answer) => setDraft(prev => ({ ...prev, answers: { ...prev.answers, [qid]: { ...(prev.answers[qid] || {}), answer } } }));
   const setAnsNote = (qid, note) => setDraft(prev => ({ ...prev, answers: { ...prev.answers, [qid]: { ...(prev.answers[qid] || {}), note } } }));
@@ -553,6 +613,7 @@ export default function LayerProcessAudit() {
   });
 
   const handleSignDone = async (blob) => {
+    const keyAtSign = draftKeyRef.current;
     setShowSignPad(false);
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -567,6 +628,8 @@ export default function LayerProcessAudit() {
         const oldPath = decodeURIComponent(old.split('/signatures/')[1] || '').split('?')[0];
         if (oldPath.startsWith(`${user.id}/`)) supabase.storage.from('signatures').remove([oldPath]).catch(() => {});
       }
+      /* ใบร่างเปลี่ยนไปแล้วระหว่างอัปโหลด = ลายเซ็นนี้ไม่ใช่ของใบที่เห็นอยู่ ห้ามแปะทับ */
+      if (draftKeyRef.current !== keyAtSign) { toast.info('เปลี่ยนใบตรวจระหว่างบันทึกลายเซ็น — เซ็นใหม่ในใบที่ต้องการ'); return; }
       setDraft(prev => ({ ...prev, auditor_sig_url: url }));
       toast.success('บันทึกลายเซ็นแล้ว');
     } catch (e) { toast.error('เกิดข้อผิดพลาด: ' + e.message); }
@@ -574,6 +637,8 @@ export default function LayerProcessAudit() {
 
   const saveAudit = async () => {
     if (!canRecord) return;
+    const mis = draftMismatch();
+    if (mis) { toast.error(mis); return; }
     const unanswered = auditQuestions.filter(q => !draft.answers[q.id]?.answer);
     if (unanswered.length) { toast.error(`ยังตอบไม่ครบ ${unanswered.length} ข้อ (ข้อแรก: ${unanswered[0].seq}. ${unanswered[0].question.slice(0, 40)}...)`); return; }
     const needNote = auditQuestions.filter(q => ['N', 'T'].includes(draft.answers[q.id]?.answer) && !draft.answers[q.id]?.note?.trim());
@@ -627,6 +692,8 @@ export default function LayerProcessAudit() {
 
   const deleteAudit = async () => {
     if (!draft?.id || !mayDelete) return;
+    const mis = draftMismatch();
+    if (mis) { toast.error(mis); return; }
     if (!window.confirm(`ลบผลตรวจ ${thDate(auditDate)} ${SHIFT_META[selShift]} ชั้น ${LAYERS.find(l => l.key === auditLayer)?.label}?`)) return;
     const { error } = await supabase.from('lpa_audits').delete().eq('id', draft.id);
     if (error) { toast.error('ลบไม่สำเร็จ: ' + error.message); return; }
