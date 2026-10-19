@@ -275,6 +275,10 @@ export const DISPLAY_PAGE_PARAMS = Object.freeze({
   ],
   '/dashboard': [
     { key: 'section', label: 'ส่วนงาน', kind: 'section' },
+  ],
+  // จอคนแยกจาก /dashboard (19/10) · ?line= เปิดผังไลน์+คน (ลิงก์เก่า /dashboard?line= ถูกส่งต่อมาที่นี่)
+  '/people-board': [
+    { key: 'section', label: 'ส่วนงาน', kind: 'section' },
     { key: 'line', label: 'เปิดผังไลน์', kind: 'line' },
   ],
   '/line-oee': [

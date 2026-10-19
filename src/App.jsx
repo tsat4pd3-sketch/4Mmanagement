@@ -148,6 +148,8 @@ export const NAV_ITEMS = [
      ⚠️ ชื่อต้องบอกว่า "จอนี้ตอบคำถามอะไร" — เดิม "จอผลิตรวม (TV)" กับ "จอ TV แขวนห้อง"
         มีคำว่า TV/จอ ทั้งคู่ คนเลือกไม่ถูกว่าอันไหนควรแขวน (ผิดกฎชื่อเมนูของเราเอง) */
   { to: '/dashboard',   icon: '📊', label: 'ไทม์ไลน์ผลิตทุกไลน์ (TV)', group: 'จอแสดงผล' },
+  // 19/10 แยกจาก /dashboard (จอเดียวเดิมยาวจนไทม์ไลน์ตกจอ) · สิทธิ์ piggyback page:/dashboard (permissions.js)
+  { to: '/people-board', icon: '👷', label: 'ภาพรวมกำลังคน (TV)', group: 'จอแสดงผล' },
   /* 📺 จอเฝ้าระวัง (`?dept=` ช่าง/ผลิต/สโตร์) — เต็มจอ ไม่มี sidebar/กระดิ่ง
      render ที่ branch พิเศษใน ProtectedLayout (เหมือนหน้า Home) ไม่ได้อยู่ใน <Routes> ด้านล่าง */
   { to: '/tv', icon: '📺', label: 'Andon Board (จอแขวน)', group: 'จอแสดงผล' },
@@ -2008,7 +2010,11 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
                 ไม่งั้นค่าตั้งต้นจากลิงก์ (utils/urlInit) ไม่ถูกอ่านใหม่ · ค่าว่าง = นำทางปกติ ไม่ remount */}
             <Routes key={location.state?.[ROT_NAV_STATE] || 'r'}>
               <Route path="/dashboard"  element={
-                <RoleRoute path="/dashboard" userRole={role}><Dashboard /></RoleRoute>
+                <RoleRoute path="/dashboard" userRole={role}><Dashboard key="timeline" /></RoleRoute>
+              } />
+              {/* 👷 จอคน — คอมโพเนนต์เดียวกับ /dashboard (view="people") · key ต่างกัน = ไม่ใช้ state ข้ามจอ */}
+              <Route path="/people-board" element={
+                <RoleRoute path="/people-board" userRole={role}><Dashboard key="people" view="people" /></RoleRoute>
               } />
               <Route path="/factory-map" element={
                 <RoleRoute path="/factory-map" userRole={role}><FactoryMap /></RoleRoute>
