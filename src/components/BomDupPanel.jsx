@@ -9,9 +9,10 @@ import SearchInput from './SearchInput';
 import Segmented from './Segmented';
 import { matColor, matLabel } from '../utils/matPrefix';
 import {
-  auditBomDupes, applyDupReviews, dupProgress,
-  DUP_VERDICTS, DUP_DECISIONS, decisionLabel, isPairRatio,
+  auditBomDupes, applyDupReviews, dupProgress, auditBomSheetGroups,
+  DUP_VERDICTS, DUP_DECISIONS, decisionLabel, isPairRatio, isHotPair,
 } from '../utils/bomDupAudit';
+import BomSheetGroups from './BomSheetGroups';
 import { statusColor } from '../utils/statusTone';
 
 /* ═══ 🔁 คู่ที่ "ของชิ้นเดียวถูกนิยามไว้ 2 ใบ" — จอให้ PE ไล่เคลียร์ ════════════════════
@@ -105,22 +106,28 @@ export default function BomDupPanel({ onOpenSheet }) {
   }, [load]);
 
   /* ── ตัวลิสต์: คำนวณสดจากข้อมูล แล้วผูกผลตรวจที่คนบันทึกไว้ ── */
-  const { pairs, counts, prog } = useMemo(() => {
+  const { pairs, counts, prog, groups, gCounts } = useMemo(() => {
     const matOf = {}, opOf = {}, nameOf = {};
     for (const p of prods) { matOf[p.id] = p.mat_no; opOf[p.id] = !!p.is_operation; nameOf[p.id] = p.name || ''; }
-    const r = auditBomDupes(rows, matOf, {
+    const opt = {
       isOpSheet: (id) => !!opOf[id],
       infoOfSheet: (id) => ({ mat: matOf[id], name: nameOf[id] }),
-    });
+    };
+    const r = auditBomDupes(rows, matOf, opt);
+    /* 📋 มุมมองกลุ่ม — ข้อมูลชุดเดียวกัน ไม่โหลดซ้ำ (ตารางคู่เทียบได้แค่ 2 ใบ ดู BomSheetGroups) */
+    const gr = auditBomSheetGroups(rows, matOf, opt);
     const withRev = applyDupReviews(r.pairs, reviews);
-    return { pairs: withRev, counts: r.counts, prog: dupProgress(withRev) };
+    return { pairs: withRev, counts: r.counts, prog: dupProgress(withRev),
+      groups: gr.groups, gCounts: gr.counts };
   }, [rows, prods, reviews]);
 
   const shown = useMemo(() => {
     const q = search.trim().toUpperCase();
     return pairs.filter(p => {
       if (vFilter === 'open' && p.cleared) return false;
-      if (vFilter === 'hot' && (p.cleared || p.rank > 3)) return false;
+      /* 🔴 ใช้ `isHotPair` ตัวเดียวกับตัวนับหัวจอ — ห้ามเขียนเลข rank ซ้ำที่นี่
+         (เคยเพี้ยนจริง: ตัวนับเป็น rank ≤ 4 แต่ตัวกรองยังเป็น rank > 3 = ชิปกับตารางไม่ตรงกัน) */
+      if (vFilter === 'hot' && !isHotPair(p)) return false;
       if (vFilter === 'cleared' && !p.cleared) return false;
       if (!q) return true;
       return p.sheetMat.toUpperCase().includes(q) || p.mat.includes(q)
@@ -198,6 +205,7 @@ export default function BomDupPanel({ onOpenSheet }) {
           { k: 'เหลือต้องตรวจ', v: prog.open, c: prog.open ? WARN : OK, sub: `จากทั้งหมด ${prog.total} คู่` },
           { k: '🔥 ของร้อนที่ยังไม่แตะ', v: prog.openHot, c: prog.openHot ? BAD : OK, sub: 'ขาดของ / ขัดกัน / มีเกิน' },
           { k: 'MAT ที่หายจากการระเบิด', v: counts.missingMats, c: counts.missingMats ? BAD : OK, sub: 'ความต้องการเป็น 0 ทั้งที่ใช้จริง' },
+          { k: '⚠️ มีใบที่ 3 ด้วย', v: counts.thirdSheet, c: counts.thirdSheet ? BAD : OK, sub: 'เทียบ 2 ใบแล้วตัดสินไม่ได้' },
           { k: 'ตรวจแล้ว', v: prog.cleared, c: OK, sub: prog.stale ? `⚠️ ${prog.stale} คู่ต้องตรวจซ้ำ (BOM เปลี่ยน)` : 'ข้อมูลยังเหมือนตอนตรวจ' },
         ].map(s => (
           <div key={s.k} style={{ padding: '9px 12px', borderRadius: 10, background: 'var(--card)',
@@ -259,6 +267,14 @@ export default function BomDupPanel({ onOpenSheet }) {
                       {p.missingFromExplode.length > 0 && (
                         <div style={{ fontSize: 11, color: BAD, fontWeight: 800, marginTop: 3 }}>
                           หาย {p.missingFromExplode.length} รายการ
+                        </div>
+                      )}
+                      {/* 🔴 มีใบที่ 3 นิยามไว้ด้วย ⇒ "2 ใบนี้ตรงกัน" ไม่พอที่จะยุบ
+                          (เคสจริง 14/10: ยุบคู่ที่ตรงกันเป๊ะ แล้วเส้นทางไปอ่านใบที่ 3 ยอดนัทเปลี่ยน 4→1) */}
+                      {p.hasThirdSheet && (
+                        <div style={{ fontSize: 11, color: BAD, fontWeight: 800, marginTop: 3, lineHeight: 1.5 }}>
+                          ⚠️ มีใบที่ 3: {p.otherSheets.map(o => o.sheetMat || o.sheetId).join(', ')}
+                          <div style={{ fontWeight: 400, color: 'var(--muted)' }}>ดูตารางกลุ่มด้านล่างก่อนตัดสิน</div>
                         </div>
                       )}
                     </td>
@@ -384,6 +400,9 @@ export default function BomDupPanel({ onOpenSheet }) {
             </div>
           ))}
       </div>
+
+      {/* 📋 ตารางกลุ่ม — ปิดหลุมของตารางคู่ (ไม่มีใบของตัวเอง / ใบที่ 3) · อ่านอย่างเดียว */}
+      <BomSheetGroups groups={groups} counts={gCounts} search={search} onOpenSheet={onOpenSheet} />
     </>
   );
 }
