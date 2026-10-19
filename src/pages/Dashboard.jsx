@@ -37,6 +37,10 @@ import { loadBreakPolicies } from '../utils/oeeMasters';
 import { fetchAllRows } from '../utils/fetchAllRows';
 import SearchInput from '../components/SearchInput';
 
+/* เกณฑ์ "อัตราการมาทำงาน" ของจอนี้ — การ์ดบนสุดกับการ์ดรายไลน์ต้องใช้ชุดเดียวกัน (2026-10-19)
+   เดิมการ์ดไลน์ตัดที่ 80% และเอา 4M มาปนสีมาทำงาน ⇒ ไลน์มา 91% ขึ้น "⚠ Risk" · มา 82% ขึ้น "✓ Normal" */
+const attendTone = (rate) => (rate == null ? 'none' : rate >= 90 ? 'good' : rate >= 75 ? 'warn' : 'bad');
+
 const FADE_UP = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 } };
 const stagger = (i) => ({ ...FADE_UP, transition: { delay: i * 0.06, duration: 0.35 } });
 
@@ -854,7 +858,7 @@ export default function Dashboard() {
     const lineTotal = stdTotal > 0 ? stdTotal : (empCounts[line.id]?.[shiftKey] ?? lineLogs.length);
     const lineAlerts = fourMLogs.filter(f => f.line_name === line.name).length;
     const rate = lineTotal > 0 ? Math.round((linePresent / lineTotal) * 100) : 0;
-    return { ...line, linePresent, lineTotal, lineAlerts, rate };
+    return { ...line, linePresent, lineTotal, lineAlerts, rate, lineChecked: lineLogs.length };
   }), [visibleLines, shiftLogs, selectedShift, empCounts, shiftKey, fourMLogs]);
 
   const totalCapacity = useMemo(() => lineStats.reduce((s, l) => s + l.lineTotal, 0) || shiftLogs.length, [lineStats, shiftLogs]);
@@ -1051,11 +1055,11 @@ export default function Dashboard() {
           {
             label: 'อัตราการมาทำงาน', value: attendRate, unit: '%', primary: true,
             sub: attendRate == null ? 'ยังไม่มีใครเช็คชื่อ — ตัวเลขยังตัดสินไม่ได้'
-              : `มา ${present.length} · ขาด ${absent.length} · จาก ${totalCapacity} คน`,
+              : `มา ${present.length} · ขาด ${absent.length}${totalCapacity - present.length - absent.length > 0 ? ` · ยังไม่เช็ค ${totalCapacity - present.length - absent.length}` : ''} · จาก ${totalCapacity} คน`,
             // เกณฑ์เดิมของหน้านี้ (90 / 75) — คงพฤติกรรมไว้ แต่ให้ "สี" มาจากชุดกลาง + เขียนบนจอ
             tone: attendRate == null ? 'none'
-              : attendRate >= 90 ? 'good' : attendRate >= 75 ? 'warn' : 'bad',
-            basis: attendRate == null ? null : 'เกณฑ์จอนี้: เขียว ≥ 90% · เหลือง ≥ 75%',
+              : attendTone(attendRate),
+            basis: attendRate == null ? null : 'เกณฑ์จอนี้ (ใช้กับการ์ดรายไลน์ด้วย): เขียว ≥ 90% · เหลือง ≥ 75%',
             icon: '✅',
           },
           {
@@ -1173,6 +1177,7 @@ export default function Dashboard() {
               linePresent: ls.linePresent + childStats.reduce((s, c) => s + c.linePresent, 0),
               lineTotal:   ls.lineTotal   + childStats.reduce((s, c) => s + c.lineTotal, 0),
               lineAlerts:  ls.lineAlerts  + childStats.reduce((s, c) => s + c.lineAlerts, 0),
+              lineChecked: ls.lineChecked + childStats.reduce((s, c) => s + c.lineChecked, 0),
             };
             combined.rate = combined.lineTotal > 0 ? Math.round((combined.linePresent / combined.lineTotal) * 100) : 0;
             renderOrder.push({ ...combined, _isChild: false, _hasChildren: true, _children: childStats });
@@ -1192,9 +1197,14 @@ export default function Dashboard() {
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: isUltra ? 'repeat(auto-fill, minmax(250px, 1fr))' : isWide ? 'repeat(auto-fill, minmax(230px, 1fr))' : 'repeat(auto-fill, minmax(200px, 1fr))', gap: isMobile ? 10 : 14 }}>
               {renderOrder.flatMap((line, i) => {
-                const healthy = line.rate >= 80 && line.lineAlerts === 0;
-                const warn    = line.lineAlerts > 0 || (line.rate > 0 && line.rate < 80);
-                const color   = healthy ? '#22c55e' : warn ? '#f59e0b' : '#555';
+                /* สี = อัตรามาทำงานเทียบเกณฑ์เดียวกับการ์ดบนสุด เท่านั้น · 4M มีป้ายของมันเอง (มุมขวาบน) ห้ามปนสี
+                   ไม่มีกำลังคนมาตรฐาน / ยังไม่มีใครเช็คชื่อ = เทา (ตัดสินไม่ได้ — ห้ามขึ้น 0% เหมือนไม่มีใครมา) */
+                const judgeable = line.lineTotal > 0 && line.lineChecked > 0;
+                const color   = statusColor(judgeable ? attendTone(line.rate) : 'none');
+                const over    = line.linePresent - line.lineTotal;
+                const attendText = line.lineTotal === 0 ? 'ไม่ได้ตั้งกำลังคนมาตรฐาน'
+                  : line.lineChecked === 0 ? 'ยังไม่มีใครเช็คชื่อ'
+                  : `มาทำงาน ${Math.min(line.rate, 100)}%${over > 0 ? ` · เกินมาตรฐาน ${over} คน` : ''}`;
                 const isExpanded = line._hasChildren && expandedLines.has(line.name);
                 // downtime alarm ของไลน์นี้ + ไลน์ย่อยที่ถูกรวมเข้าการ์ดเดียวกัน
                 const cardNames = [line.name, ...(line._children?.map(c => c.name) || [])];
@@ -1258,7 +1268,7 @@ export default function Dashboard() {
                       <MiniBar value={line.linePresent} max={line.lineTotal} color={color} />
                       <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
                         <span style={{ fontSize: isWide ? 15 : 14, fontWeight: 700, color }}>
-                          {line.lineTotal === 0 ? 'ไม่มีข้อมูล' : `${line.rate}% Attendance ${healthy ? '· ✓ Normal' : line.lineAlerts > 0 ? '· ⚠ Risk' : ''}`}
+                          {attendText}
                         </span>
                         {line._hasChildren && (
                           <button onClick={() => toggleExpand(line.name)}
