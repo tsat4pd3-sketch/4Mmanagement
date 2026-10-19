@@ -25,6 +25,8 @@ import Page from '../components/Page'
 import PageHeader from '../components/PageHeader'
 import Segmented from '../components/Segmented'
 import { PlanSparesModal, SpareDemandBanner, sparesCountByChecklist } from '../components/PmSpares'
+import ScanModal from '../components/ScanModal'
+import { resolveJig } from '../utils/qrCode'
 // role ที่ควรขึ้นก่อนตอนเลือก "ผู้ที่ตกลงเลื่อนด้วย" (prefer ไม่ restrict — ตกลงทางโทรศัพท์กับใครก็พิมพ์ได้)
 const AGREE_ROLES = ['planner_store', 'supervisor', 'manager']
 
@@ -176,7 +178,7 @@ export default function PMSchedule() {
           ⇒ URL ยาว/RLS ล้ม = เครื่องไม่มีชื่อ · แผนหายแล้วถอยไปคิดสดเงียบๆ · ผลตรวจหาย = "ยังไม่ตรวจ"
        inspections ไม่ตัดช่วงวัน: ต้องรู้ "ตรวจล่าสุดเมื่อไหร่" ของเครื่องที่ไม่ได้ตรวจนาน · fetchByIds แบ่งหน้าให้แล้ว */
     const [jigsRes, inspRes, planRes, prodRes, lineList] = await Promise.all([
-      fetchByIds(eqIds, ids => supabaseDR.from('jigs').select('id, name, jig_no, line_name, machine_no, equipment_type').in('id', ids)),
+      fetchByIds(eqIds, ids => supabaseDR.from('jigs').select('id, name, jig_no, line_name, machine_no, machine_id, equipment_type').in('id', ids)),
       fetchByIds(clIds, ids => supabaseDR.from('inspections').select('id, checklist_id, inspected_at, status').in('checklist_id', ids).neq('approval_status', 'rejected')),
       // แผนที่ server คำนวณไว้ (pm_plans) — อ่านไม่ได้ต้องฟ้อง ห้ามถอยไปคิดสดเงียบๆ (วันครบกำหนดจะคนละเลขกับจออื่น)
       fetchByIds(clIds, ids => supabaseDR.from('pm_plans').select('id, checklist_id, interval_days, next_due_date, next_due_reason, last_done_at, health_score, plan_type, cycle_basis, max_idle_days, deferred_to, defer_reason, defer_agreed_with, deferred_by, deferred_at, defer_count').in('checklist_id', ids)),
@@ -313,6 +315,20 @@ export default function PMSchedule() {
   const today = atMidnight(new Date())
   const goCheck = (equipId) => navigate(`/pm?tab=check&dept=${department}&equip=${equipId}`)
 
+  /* 📷 สแกนป้ายเครื่อง → แสดงเฉพาะแผนของเครื่องนั้น (`?focus=<jigs.id>` · 2026-10-19 · งานค้างใน qr-equipment-scan.md)
+     ป้ายเครื่อง (ESM:M) เด้งไปแถวเงาใน jigs ผ่าน resolveJig ตัวเดิม · ตัวกรองนี้ = มุมมอง ไม่แตะตัวนับสรุปด้านบน */
+  const [scanOpen, setScanOpen] = useState(false)
+  const focusEq = searchParams.get('focus') || null
+  const shownRows = focusEq ? rows.filter(r => r.cl.equipment_id === focusEq) : rows
+  const focusName = focusEq ? (rows.find(r => r.cl.equipment_id === focusEq)?.eq?.name ?? null) : null
+  const onScanEquip = (parsed) => {
+    const eqs = [...new Map(rows.map(r => [r.cl.equipment_id, { ...r.eq, id: r.cl.equipment_id }])).values()]
+    const j = resolveJig(parsed, eqs)
+    if (!j) return `ไม่พบแผน PM ของอุปกรณ์นี้ในทีม ${teamMeta?.label ?? department} — ถ้าอยู่ทีมอื่นให้สลับทีมด้านบน`
+    setParams({ focus: j.id })
+    return undefined
+  }
+
   return (
     <Page style={S.page}>
       <PageHeader title="ปฏิทินแผน PM" icon="📅"
@@ -378,8 +394,22 @@ export default function PMSchedule() {
       )}
 
       {!loading && rows.length > 0 && (
-        <Segmented value={view} onChange={setView} label="มุมมอง" style={{ marginBottom: 16 }}
-          options={VIEW_OPTIONS.map(v => ({ value: v.key, label: v.label }))} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>
+          <Segmented value={view} onChange={setView} label="มุมมอง"
+            options={VIEW_OPTIONS.map(v => ({ value: v.key, label: v.label }))} />
+          <button onClick={() => setScanOpen(true)} title="สแกนป้าย QR ที่เครื่อง → ดูเฉพาะแผนของเครื่องนั้น"
+            style={{ ...S.actionBtn(deptColor), fontSize: 13, fontWeight: 800, minHeight: 36 }}>📷 สแกนเครื่อง</button>
+          {focusEq && (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 12.5, padding: '4px 6px 4px 12px', borderRadius: 999, border: '1px solid var(--accent)', background: 'var(--bg3)' }}>
+              🎯 {focusName ? <>เฉพาะ <b>{focusName}</b> ({shownRows.length} แผน)</> : <b style={{ color: '#f59a3f' }}>ไม่พบแผนของอุปกรณ์นี้ในทีมนี้</b>}
+              <button onClick={() => setParams({ focus: null })} style={{ fontSize: 12, padding: '2px 10px', borderRadius: 999, border: '1px solid var(--border2)', background: 'var(--card)', color: 'var(--text2)', cursor: 'pointer' }}>✕ ทั้งหมด</button>
+            </span>
+          )}
+        </div>
+      )}
+      {scanOpen && (
+        <ScanModal title="สแกนป้ายเครื่อง" hint="ส่องป้าย QR ที่ติดเครื่อง หรือยิงด้วยเครื่องสแกน"
+          onScan={onScanEquip} onClose={() => setScanOpen(false)} />
       )}
 
       {loading ? (
@@ -419,7 +449,7 @@ export default function PMSchedule() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => {
+              {shownRows.map((r) => {
                 const { cl, eq, lastDone, nextDue, status, reason, planType, health, isDeferred, deferReason, deferBy, deferCount, runDay } = r
                 const meta = STATUS_META[status] ?? STATUS_META.ok
                 const isOverdue = status === 'overdue'
@@ -501,11 +531,11 @@ export default function PMSchedule() {
           </table>
         </div>
       ) : view === 'timeline' ? (
-        <TimelineView rows={rows} today={today} onCheck={goCheck} />
+        <TimelineView rows={shownRows} today={today} onCheck={goCheck} />
       ) : view === 'calendar' ? (
-        <CalendarView rows={rows} insps={insps} today={today} onCheck={goCheck} />
+        <CalendarView rows={shownRows} insps={insps} today={today} onCheck={goCheck} />
       ) : (
-        <BucketView rows={rows} today={today} onCheck={goCheck} />
+        <BucketView rows={shownRows} today={today} onCheck={goCheck} />
       )}
 
       {spareFor && <PlanSparesModal row={spareFor} canEdit={canDefer} canIssue={canIssueSpare} byName={fullName} byUid={uid}

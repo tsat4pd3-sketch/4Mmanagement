@@ -81,9 +81,17 @@ export default function QaClaims({ lines = [], role, lineId, sections, partOpts 
   useEffect(() => { load(); }, [load]);
 
   const today = localDate();
-  /* scope ตาม pattern มาตรฐาน — `lines` ที่ส่งมาถูกกรองตามสิทธิ์แล้ว (ไม่มี scope = ครบทุกไลน์ = no-op)
-     เคลมที่ยังไม่ระบุไลน์ให้เห็นได้ทุกคน (เพิ่งรับเรื่อง ยังไม่รู้ว่าไลน์ไหนผลิต) */
-  const scoped = useMemo(() => list.filter((c) => !c.line_name || lines.includes(c.line_name)), [list, lines]);
+  /* scope ตาม pattern เดียวกับแท็บ NCR — กรองเฉพาะเมื่อผู้ดูมีขอบเขตจริง (leader+ไลน์ / sections)
+     · ไม่มีขอบเขต = เห็นทุกใบ (รวมใบที่ชื่อไลน์ไม่อยู่ในทะเบียนแล้ว) · ใบที่ยังไม่ระบุไลน์ = ทุกคนเห็น
+     🔴 `lines` = **แถว** production_lines (object) ⇒ ต้องเทียบด้วย `.name` · บั๊ก 19/10: เดิม `lines.includes(ชื่อ)`
+        เทียบ string กับ object = ไม่ตรงเลย ⇒ เคลมที่ระบุไลน์ถูกซ่อนทุกใบ (บันทึกได้ แต่ทะเบียนว่าง) */
+  const scopeNames = useMemo(() => (
+    (role === 'leader' && lineId) || sections?.length
+      ? new Set(lines.map((l) => (typeof l === 'string' ? l : l?.name)).filter(Boolean))
+      : null
+  ), [lines, role, lineId, sections]);
+  const scoped = useMemo(() => list.filter((c) => !scopeNames || !c.line_name || scopeNames.has(c.line_name)), [list, scopeNames]);
+  const hiddenN = list.length - scoped.length;
   const shown = useMemo(() => scoped.filter((c) => (
     filter === 'all' ? true : filter === 'closed' ? c.status === 'closed' : c.status !== 'closed'
   )), [scoped, filter]);
@@ -223,6 +231,10 @@ export default function QaClaims({ lines = [], role, lineId, sections, partOpts 
         <span className="spacer" />
         {canRecord && <button style={btnSt()} onClick={() => setDetail(EMPTY())}>📮 รับเคลมใหม่</button>}
       </FilterBar>
+      {/* กรองตามขอบเขตแล้วต้องบอกว่าซ่อนกี่ใบ — "ไม่มีรายการ" ทั้งที่มี = จอโกหก (CLAUDE.md §สิทธิ์ 3 ชั้น) */}
+      {hiddenN > 0 && (
+        <div style={{ fontSize: 11.5, color: 'var(--muted)', margin: '-4px 0 8px' }}>🔒 ซ่อน {hiddenN} ใบของไลน์นอกขอบเขตของคุณ</div>
+      )}
 
       <div className="table-sticky" style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 12 }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
@@ -260,7 +272,7 @@ export default function QaClaims({ lines = [], role, lineId, sections, partOpts 
                 </tr>
               );
             })}
-            {!shown.length && <tr><td colSpan={9} style={{ ...tdSt, textAlign: 'center', color: 'var(--muted)', padding: 26 }}>ยังไม่มีเคลมในช่วงนี้</td></tr>}
+            {!shown.length && <tr><td colSpan={9} style={{ ...tdSt, textAlign: 'center', color: 'var(--muted)', padding: 26 }}>ยังไม่มีเคลมในช่วงนี้{hiddenN > 0 ? ` (ซ่อน ${hiddenN} ใบของไลน์นอกขอบเขตคุณ)` : ''}</td></tr>}
           </tbody>
         </table>
       </div>

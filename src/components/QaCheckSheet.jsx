@@ -35,6 +35,10 @@ import { specLabel, judgeVariable } from '../utils/qaSpec';
 import { evalSequence } from '../utils/qaSequential';
 import { can } from '../utils/permissions';
 import QaPieceStepper from './QaPieceStepper';
+import ScanModal from './ScanModal';
+import { useSearchParams } from 'react-router-dom';
+import { useMergeParams } from '../utils/useTabParam';
+import { parseQrPayload, findQaPartByScan } from '../utils/qrCode';
 
 /* ── helpers เวลา/วันงาน (กฎเดียวกับทั้งระบบ) ───────────────────────────── */
 const getWorkDate = () => {
@@ -158,6 +162,28 @@ export default function QaCheckSheet({ canRecord }) {
   useEffect(() => {
     setPartId(prev => (prev && scopedParts.some(p => p.id === prev)) ? prev : (scopedParts[0]?.id ?? null));
   }, [scopedParts]);
+
+  /* 📷 สแกนบาร์โค้ด MAT บนกล่อง/คัมบัง → เลือกพาร์ทให้เลย (2026-10-19 · คำสั่ง user "สแกนแล้ว direct เข้าไปทำงาน")
+     + deep link `?part=<mat_no|part_no>` จากหน้า /scan · ตัวตัดสิน = findQaPartByScan (qrCode.js · มีเทส)
+     🔴 หาไม่เจอ/นอกขอบเขต ต้องบอกเหตุ — ห้ามคงพาร์ทเดิมไว้เงียบๆ (คนจะตรวจผิดพาร์ทโดยไม่รู้ตัว) */
+  const [scanOpen, setScanOpen] = useState(false);
+  const [searchParams] = useSearchParams();
+  const setParams = useMergeParams();
+  const pickByScan = useCallback((parsed) => {
+    const r = findQaPartByScan(parsed, parts, scopedLineNames ? scopedParts : null);
+    if (r.error) return r.error;
+    setPartId(r.part.id);
+    toast.success(`เลือกพาร์ท ${r.part.part_no || r.part.mat_no}`);
+    return undefined;
+  }, [parts, scopedParts, scopedLineNames]);
+  const partParam = searchParams.get('part');
+  useEffect(() => {
+    if (!partParam || !parts.length) return;
+    const err = pickByScan(parseQrPayload(partParam));
+    if (err) toast.error(err);
+    setParams({ part: null }, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [partParam, parts.length]);
 
   const part = useMemo(() => scopedParts.find(p => p.id === partId) || null, [scopedParts, partId]);
 
@@ -592,6 +618,11 @@ export default function QaCheckSheet({ canRecord }) {
         toast.info(`เปิดใบตรวจ: ${ob.line_name} · ${ob.mat_no} · ${ob.stage === 'end' ? 'ชิ้นสุดท้าย' : ob.stage === 'middle' ? 'ระหว่างผลิต' : 'ชิ้นแรก'}`);
       }} />
 
+      {scanOpen && (
+        <ScanModal title="สแกนชิ้นงาน → เลือกพาร์ท" hint="ส่องบาร์โค้ด MAT บนกล่อง/บัตรคัมบัง หรือพิมพ์เลขพาร์ท"
+          onScan={pickByScan} onClose={() => setScanOpen(false)} />
+      )}
+
       {/* แถบเลือกใบ */}
       <div style={{ ...cardSt, marginBottom: 12 }}>
         <div className="mgrid" style={{
@@ -601,14 +632,18 @@ export default function QaCheckSheet({ canRecord }) {
         }}>
           <div>
             <label style={{ fontSize: 11.5, color: 'var(--muted)', fontWeight: 700 }}>พาร์ทที่ตรวจ</label>
-            <select style={inputSt} value={partId || ''} onChange={e => setPartId(e.target.value || null)}>
-              {scopedParts.length === 0 && <option value="">— ยังไม่มีพาร์ทในขอบเขตของคุณ —</option>}
-              {scopedParts.map(p => (
-                <option key={p.id} value={p.id}>
-                  {p.part_no}{p.part_name ? ` · ${p.part_name}` : ''}{p.line_name ? ` (${p.line_name})` : ''}
-                </option>
-              ))}
-            </select>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <select style={{ ...inputSt, flex: 1, minWidth: 0 }} value={partId || ''} onChange={e => setPartId(e.target.value || null)}>
+                {scopedParts.length === 0 && <option value="">— ยังไม่มีพาร์ทในขอบเขตของคุณ —</option>}
+                {scopedParts.map(p => (
+                  <option key={p.id} value={p.id}>
+                    {p.part_no}{p.part_name ? ` · ${p.part_name}` : ''}{p.line_name ? ` (${p.line_name})` : ''}
+                  </option>
+                ))}
+              </select>
+              <button type="button" onClick={() => setScanOpen(true)} title="สแกนบาร์โค้ด MAT บนกล่อง/คัมบัง"
+                style={{ flexShrink: 0, minWidth: 44, padding: '0 10px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', fontWeight: 700, cursor: 'pointer' }}>📷</button>
+            </div>
           </div>
           <div>
             <label style={{ fontSize: 11.5, color: 'var(--muted)', fontWeight: 700 }}>วันงาน</label>

@@ -4866,6 +4866,47 @@ test('🛡️ write-scope-layer — ด่าน "แก้ข้ามหน่
     + '   แก้: canWriteUnit()/canWriteLine() จาก src/utils/writeScope.js + เรียกซ้ำใน handler\n');
 });
 
+/* ── 🔴 LPA: คำตอบห้ามข้ามไลน์ — stale-response race (2026-10-19 · QC audit ข้อ ④) ───────────
+   `/lpa` โหลดใบร่าง/แผนด้วย `await` แล้ว `setState` **โดยไม่มี guard** ⇒ สลับไลน์เร็วๆ แล้ว
+   คำตอบของคิวรีเก่ามาทับจอ · ที่ร้ายคือคำถามชั้น `common` (`line_name = null`)
+   **ใช้ `question_id` ร่วมกันทุกไลน์** ⇒ กดบันทึกต่อ = **คำตอบของไลน์ A ไปลงเป็นของไลน์ B ไม่มี error**
+   (ข้อเฉพาะไลน์จะชน PK แล้วเด้ง error งงๆ · และใบร่างที่มาช้ายัง**ทับคำตอบที่คนกำลังติ๊กอยู่**)
+   LPA = บันทึก audit ตามระบบคุณภาพ ⇒ เขียนผิดใบแล้วย้อนไม่ได้ และคนตรวจไม่รู้ตัว
+   ⇒ ต้องมี 2 ชั้น: ① ทิ้งคำตอบที่มาช้า ② ตอนกดบันทึก เช็คว่าของบนจอเป็นของที่เลือกอยู่ (fail-closed) */
+test('🛡️ lpa-stale-draft-guard — ใบตรวจ/แผน LPA ต้องกันคำตอบที่มาช้า + ห้ามเขียนข้ามไลน์', () => {
+  const bad = [];
+  const sv = stripComments(readFileSync(join(ROOT, 'src/utils/staleView.js'), 'utf8'));
+  for (const fn of ['viewKey', 'isStale', 'staleBlockText']) {
+    if (!new RegExp(`export (?:const|function) ${fn}\\b`).test(sv)) bad.push(`staleView.js (ไม่มี ${fn})`);
+  }
+  /* คีย์ว่าง = ยังไม่โหลด ≠ ของไลน์อื่น — ถ้าเผลอตีเป็น stale จอที่ยังไม่มีข้อมูลจะกดบันทึกไม่ได้เลย */
+  if (!/!!loadedKey && loadedKey !== currentKey/.test(sv))
+    bad.push('staleView.js (isStale ไม่ได้ยกเว้น "ยังไม่เคยโหลด")');
+
+  const lpa = stripComments(readFileSync(join(ROOT, 'src/pages/LayerProcessAudit.jsx'), 'utf8'));
+  // ชั้น ① — ทิ้งคำตอบที่มาช้า (loadMonth · loadQuarter 2 จุด · ใบร่าง)
+  const drops = (lpa.match(/(?:monthKeyRef|draftKeyRef)\.current !== key/g) || []).length;
+  if (drops < 4) bad.push(`LayerProcessAudit.jsx (ด่านทิ้งคำตอบที่มาช้าเหลือ ${drops} จุด — ต้องมีทุก loader ที่ setState หลัง await)`);
+  if (!/setDraft\(\{ key, id: existing\.id/.test(lpa) || !/setDraft\(\{ key, id: null/.test(lpa))
+    bad.push('LayerProcessAudit.jsx (ใบร่างไม่ได้พก key ของตัวเอง ⇒ ด่านชั้น 2 เช็คไม่ได้)');
+  // ชั้น ② — ห้ามเขียนเมื่อของบนจอไม่ใช่ของที่เลือกอยู่
+  if (!/const draftMismatch = \(\) =>/.test(lpa)) bad.push('LayerProcessAudit.jsx (ไม่มี draftMismatch)');
+  if (!/const monthMismatch = \(loadedKey\) =>/.test(lpa)) bad.push('LayerProcessAudit.jsx (ไม่มี monthMismatch)');
+  for (const [fn, re] of [
+    ['saveAudit', /const saveAudit = async \(\) => \{[\s\S]{0,200}?draftMismatch\(\)/],
+    ['deleteAudit', /const deleteAudit = async \(\) => \{[\s\S]{0,200}?draftMismatch\(\)/],
+    ['savePlan', /const savePlan = async \(\) => \{[\s\S]{0,200}?monthMismatch\(/],
+    ['saveQuarter', /const saveQuarter = async \(\) => \{[\s\S]{0,200}?monthMismatch\(/],
+  ]) {
+    if (!re.test(lpa)) bad.push(`LayerProcessAudit.jsx (${fn} ไม่ได้เช็คว่าของบนจอเป็นของที่เลือกอยู่ก่อนเขียน)`);
+  }
+
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n   ') + '\n'
+    + '   ทำไม: คำถาม LPA ชั้น common ใช้ question_id ร่วมกันทุกไลน์ ⇒ ใบร่างที่มาช้าทับจอแล้วกดบันทึก\n'
+    + '         = คำตอบไปลงผิดไลน์ **โดยไม่มี error** · เป็นบันทึก audit ⇒ ย้อนไม่ได้\n'
+    + '   แก้: viewKey/isStale จาก src/utils/staleView.js — ทิ้งคำตอบที่มาช้า + เช็คคีย์ก่อนเขียนทุกปุ่ม\n');
+});
+
 /* ── 🪪 คิว "บัญชีที่ยังไม่รู้ว่าเป็นใคร" ห้ามกลับไปเป็นข้อความเปล่า (2026-10-19 · คำสั่ง user) ──
    เดิมจอ `/add-user` บอกแค่ "ยังไม่ระบุประเภทบัญชี · N บัญชี" **ไม่มีชื่อ ไม่มีปุ่ม**
    ⇒ ต้องไปไล่หาเองใน 122 แถว ⇒ ไม่มีใครทำ ค้างมาตลอด (18 ใบ)
@@ -5197,4 +5238,21 @@ test('🛡️ lot-mats-from-rules — lotMats มาจาก lotMatsOf(rules) �
   const pr = stripComments(readFileSync(join(ROOT, 'src/utils/partRefStock.js'), 'utf8'));
   if (!/mode === 'lot'\) continue/.test(pr)) bad.push('partRefStock.js inflowDestOf (กฎโหมด lot ต้องไม่ร่วมตัดสินคลัง)');
   assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n   แก้: ใช้ lotMatsOf(rules) จาก src/utils/stockReceipts.js (select ต้องมีคอลัมน์ mode)\n');
+});
+
+/* ── 🛡️ map3d-switch-no-transition (2026-10-19 · user "จอค่อยๆ วูมเอ้าตอนสลับ 3D/2D") ─────────────
+   ทรานสิชันของกรอบผัง 3D ต้องปิดใน render ที่สลับโหมด — ไม่งั้น transform เอียง+ย่อทั้งก้อนเล่น .45s เป็นภาพซูมออก/เข้า */
+test('🛡️ map3d-switch-no-transition — useMapOrbit ปิด transition ตอนสลับ 2D/3D', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/components/useMapOrbit.js'), 'utf8'));
+  assert.match(code, /transition:\s*[^\n]*switching[^\n]*\?\s*'none'/, 'transition ของ useMapOrbit ต้องเป็น none ระหว่าง switching');
+});
+
+/* ── 📮 ทะเบียนเคลมลูกค้าว่าง ทั้งที่บันทึกแล้ว (2026-10-19 · หน้างานแจ้ง "กดไป 2 อัน ไม่โชว์สักอัน") ──
+   `QaClaims` รับ `lines` = แถว production_lines (object) ตั้งแต่ 07/09 แต่ตัวกรองขอบเขตยังเป็น
+   `lines.includes(c.line_name)` (string vs object = false เสมอ) ⇒ เคลมที่ระบุไลน์ถูกซ่อนทุกใบ */
+test('🛡️ qa-claims-scope-by-name — ตัวกรองขอบเขตเคลมต้องเทียบชื่อไลน์ ไม่ใช่ object', () => {
+  const src = stripComments(readFileSync(join(ROOT, 'src/components/QaClaims.jsx'), 'utf8'));
+  assert.ok(!/\blines\.includes\(/.test(src),
+    '\n\n❌ QaClaims.jsx ใช้ lines.includes(ชื่อไลน์) — lines เป็นแถว object ⇒ ไม่ตรงเลย เคลมหายจากทะเบียน\n'
+    + '   แก้: เทียบกับชุดชื่อ (lines.map(l => l.name)) และกรองเฉพาะเมื่อผู้ดูมีขอบเขตจริง (แบบแท็บ NCR)\n');
 });
