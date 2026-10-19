@@ -4605,7 +4605,7 @@ test('🛡️ no-merge-conflict-markers — ไม่มี marker ค้าง�
 test('🛡️ die-set-two-mats — หาแม่พิมพ์ของพาร์ทต้องผ่าน dieMakesMat()/dieSetMats()', () => {
   const bad = [];
   const util = stripComments(readFileSync(join(ROOT, 'src/utils/dieSetMats.js'), 'utf8'));
-  for (const fn of ['dieSetMats', 'dieMakesMat', 'dieSetPairState', 'suggestPps']) {
+  for (const fn of ['dieSetMats', 'dieMakesMat', 'dieSetPairState', 'suggestPps', 'dieSetsForMat', 'matSlotFor']) {
     if (!new RegExp(`export function ${fn}\\s*\\(`).test(util)) bad.push(`src/utils/dieSetMats.js (ไม่มี ${fn})`);
   }
   /* suggestPps ต้องไม่เสนอ 1 — "ชุดทำพาร์ทเดียว" ไม่ได้แปลว่า 1 ชิ้น/จังหวะ (2-out ของพาร์ทเดียวก็มี) */
@@ -4613,7 +4613,7 @@ test('🛡️ die-set-two-mats — หาแม่พิมพ์ของพา
 
   for (const rel of ['src/components/ProdLotPlanner.jsx', 'src/components/DieLayout.jsx']) {
     const code = stripComments(readFileSync(join(ROOT, rel), 'utf8'));
-    if (!/die(SetMats|MakesMat)\s*\(/.test(code)) bad.push(rel + ' (ไม่เรียกของกลาง)');
+    if (!/die(SetMats|MakesMat|SetsForMat)\s*\(/.test(code)) bad.push(rel + ' (ไม่เรียกของกลาง)');
     /* เทียบช่องแรกตรงๆ กับตัวแปรชุดแม่พิมพ์ = ตกฝั่งที่ลงช่อง 2 */
     if (/\bd(ie(Set)?)?\.mat_no\s*===/.test(code)) bad.push(rel + ' (เทียบ die.mat_no === ตรงๆ)');
   }
@@ -4649,6 +4649,25 @@ test('🛡️ die-set-two-mats — หาแม่พิมพ์ของพา
        แล้ว lookahead ไปมองที่ช่องว่าง = ผ่านเสมอ) ⇒ นับ `pair_mat_no: null` เข้ามาด้วย ด่านหลวมทันที */
     const writes = (reg.match(/update\(\s*\{\s*pair_mat_no:(?!\s*null\b)/g) || []).length;
     if (writes < 2) bad.push(`src/pages/DieRegistry.jsx (ผูกคู่ ${writes} ทาง — ต้อง 2 ทาง ไม่งั้นคู่ชี้ข้างเดียว)`);
+  }
+
+  /* 🔗 ช่องเลือกแม่พิมพ์ของล็อต (19/10) — `die_sets.mat_no` ผูกไว้ 1/92 ชุด
+     ⇒ ยื่นแต่ชุดที่ "ทะเบียนยืนยันแล้ว" = ลิสต์ว่างแทบทุกพาร์ท **คนที่รู้ก็เลือกไม่ได้ = ทางตัน**
+     (die_no ว่าง ⇒ ไม่รู้ความสูง ⇒ เวลาเปลี่ยนรุ่นคิดไม่ได้ · วัดจริง 0/8 ใบมี die_no)
+     แต่กอง "ยังไม่ผูก" ห้ามให้ระบบหยิบเอง — ยังไม่มีใครยืนยันว่าชุดนั้นทำพาร์ทนี้ */
+  const pl = stripComments(readFileSync(join(ROOT, 'src/components/ProdLotPlanner.jsx'), 'utf8'));
+  if (!/unlinked/.test(pl)) bad.push('src/components/ProdLotPlanner.jsx (ช่องเลือกแม่พิมพ์ไม่ยื่นกองที่ยังไม่ผูก MAT = ทางตัน)');
+  /* เลือกให้เองได้เฉพาะตอนทะเบียนชี้ชัด "ตัวเดียว" — 2 ชุดทำ MAT เดียวกันมีจริง (10 กลุ่ม) */
+  if (!/\.linked\b/.test(pl) || !/linked\.length === 1/.test(pl))
+    bad.push('src/components/ProdLotPlanner.jsx (auto-เลือกแม่พิมพ์ไม่ได้จำกัดที่ linked ตัวเดียว = เดาความสูงผิด)');
+  /* ผูก MAT จากหน้าแผน = ยืมมือเขียนทะเบียนแม่พิมพ์ ⇒ ต้องใช้สิทธิ์ของทะเบียน + นับแถว */
+  if (/from\('die_sets'\)\s*\n?\s*\.update|from\('die_sets'\)\.update/.test(pl)) {
+    if (!/can\(\s*'machines'\s*,\s*'edit'/.test(pl))
+      bad.push("src/components/ProdLotPlanner.jsx (ผูก MAT ต้องใช้สิทธิ์ machines:edit ไม่ใช่ production_plan:write)");
+    if (!/checkWriteRows\s*\(/.test(pl))
+      bad.push('src/components/ProdLotPlanner.jsx (เขียน die_sets โดยไม่นับแถว — RLS ปฏิเสธ = 0 แถว ไม่มี error)');
+    if (!/matSlotFor\s*\(/.test(pl))
+      bad.push('src/components/ProdLotPlanner.jsx (เขียน die_sets โดยไม่ผ่าน matSlotFor = ทับ MAT ที่คนกรอกไว้)');
   }
 
   assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n'
@@ -4766,6 +4785,14 @@ test('🛡️ inspection-setup-shared — จอตั้งค่าจุด�
   if (/from\('qa_inspection_items'\)\s*\.(insert|update|delete|upsert)/.test(qa)) bad.push('QAInspectionSetup.jsx เขียน qa_inspection_items เอง');
   /* คัดลอกจุดตรวจ QA ข้ามพาร์ท (19/10): แถวผ่าน qaItemCopyRow · ไฟล์ต้องคัดลอกจริง ห้ามแชร์ path
      (delPart ลบทั้งโฟลเดอร์ parts/<id> ⇒ แชร์ = รูปของพาร์ทปลายทางหายตาม) */
+  /* 🧮 จุดคำนวณ A − B (19/10): ใบตรวจต้องเติมค่าผ่านตัวกลาง · ตั้งค่าใช้ช่องกลางเดียวกัน
+     (คิดเองในหน้า = PM/QA คิดคนละแบบ · ไม่เติม = คนตรวจต้องพิมพ์ผลต่างเอง หรือใบค้างกรอกไม่ครบ) */
+  for (const [f, fn] of [['src/pages/PMCheckData.jsx', 'pmCalcResults'], ['src/components/QaPieceStepper.jsx', 'qaCalcDraft']]) {
+    if (!new RegExp(`\\b${fn}\\(`).test(readFileSync(join(ROOT, f), 'utf8'))) bad.push(`${f} ไม่ได้เติมค่าจุดคำนวณผ่าน ${fn}()`);
+  }
+  for (const f of ['src/pages/PMSetup.jsx', 'src/components/QaPointsEditor.jsx']) {
+    if (!/import\s+CalcFormulaField\b/.test(readFileSync(join(ROOT, f), 'utf8'))) bad.push(`${f} ไม่ได้ใช้ CalcFormulaField (ช่องตั้งสูตรกลาง)`);
+  }
   const cp = stripComments(readFileSync(join(ROOT, 'src/lib/qaPointsCopy.js'), 'utf8'));
   if (!/qaItemCopyRow\(/.test(cp)) bad.push('lib/qaPointsCopy.js ไม่ได้สร้างแถวผ่าน qaItemCopyRow()');
   if (!/\.copy\(/.test(cp)) bad.push('lib/qaPointsCopy.js ไม่ได้ storage.copy ไฟล์เข้าโฟลเดอร์ปลายทาง (แชร์ path = รูปหายเมื่อลบต้นทาง)');
@@ -5059,4 +5086,68 @@ test('🛡️ จอ BOM ซ้ำ: ต้องมีมุมมองกล�
   assert.ok(/==\s*null/.test(groupView),
     '\n\n❌ ตารางกลุ่มไม่ได้แยก `null` (ใบนั้นไม่มีของตัวนี้) ออกจากเลข 0 แล้ว\n'
     + '   โชว์ 0 = คนอ่านว่า "ใบนั้นเขียนว่าไม่ใช้" ซึ่งคนละเรื่องกับ "ใบนั้นไม่ได้พูดถึงเลย"\n');
+});
+
+/* ── 🗑️ ทะเบียนที่จับคู่ด้วย "ข้อความ" ต้องมีด่านนับปลายทางก่อนลบ (2026-10-18) ─────────────
+   CLAUDE.md §Database Schema: *"ลบ/เปลี่ยนชื่อแถวทะเบียน ต้องไล่เช็คและไล่แก้ปลายทางในคราวเดียว
+   · นับไม่ครบ = ห้ามลบ (fail-closed)"* — `<SimpleMasterPanel>` มี `onBeforeDelete` ให้แล้ว
+   แต่ 18/10 พบว่าใช้จริงแค่ `cost_centers` ตัวเดียว · อีก 6 ทะเบียนลบได้ทันทีโดยไม่นับใครเลย
+   (ลูกค้า 1,974 ใบผลิต · supplier 16,552 ใบขอซื้อ · กลุ่มเครื่องปั๊ม 268 แม่พิมพ์ … กลายเป็นกำพร้าเงียบ)
+
+   ด่านนี้กัน 3 ทาง: ถอด onBeforeDelete ออกจากแผงเดิม · เพิ่มทะเบียนใหม่แล้วลืมใส่ด่าน ·
+   แก้ `masterRefs.js` ให้ตอบ 0 เมื่อนับไม่ได้ (ต้อง partial เสมอ) หรือเอา label มาจับคู่ซ้ำกับ key */
+test('🗑️ ทะเบียนข้อความ (SimpleMasterPanel) ต้องส่ง onBeforeDelete + masterRefs ต้อง fail-closed', () => {
+  const bad = [];
+
+  /* ทะเบียนที่ปลายทางเก็บเป็น "ข้อความ" ไม่ผูก FK ⇒ ลบแล้วไม่มีใครเตือน — ต้องมีด่านทุกตัว
+     (cost_centers ใช้ util เฉพาะของตัวเอง `costCenterRefs.js` ตั้งแต่ 06/10) */
+  const MUST_GUARD = ['customers', 'suppliers', 'die_press_lines', 'die_op_types',
+                      'die_set_kinds', 'repair_wi_registry', 'cost_centers'];
+
+  for (const f of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
+    const src = stripComments(readFileSync(f, 'utf8'));
+    if (!src.includes('<SimpleMasterPanel')) continue;
+    const rel = relative(ROOT, f);
+    /* ตัดเป็นก้อนต่อ 1 element แล้วดูว่าก้อนที่ประกาศ table="<ทะเบียน>" มีด่านอยู่ในก้อนเดียวกันไหม */
+    for (const chunk of src.split('<SimpleMasterPanel').slice(1)) {
+      const el = chunk.split(/\/>|<\/SimpleMasterPanel>/)[0];
+      const m = el.match(/table=["']([a-z_]+)["']/);
+      if (!m || !MUST_GUARD.includes(m[1])) continue;
+      if (!/onBeforeDelete=/.test(el)) bad.push(`${rel} → table="${m[1]}" ไม่มี onBeforeDelete`);
+    }
+  }
+
+  const refs = stripComments(readFileSync(join(ROOT, 'src/utils/masterRefs.js'), 'utf8'));
+  /* นับไม่ได้ต้องเป็น partial — ด่านนี้ตายทันทีถ้ามีใครเปลี่ยน default เป็น false */
+  if (!/partial:\s*true/.test(refs)) bad.push('src/utils/masterRefs.js (ไม่มีทาง fail-closed แล้ว)');
+  /* 🔴 die_op_types / die_set_kinds ห้ามเอา label ไปจับคู่ — ป้ายเป็นคำไทยกลาง ("อื่นๆ") ชนกับ
+     mtn_orders.problem_characteristic 328 แถว ⇒ จะบล็อกการลบทั้งที่ไม่มีใครใช้จริง */
+  for (const reg of ['die_op_types', 'die_set_kinds']) {
+    const blk = refs.split(`${reg}: {`)[1]?.split('},')[0] || '';
+    if (/r\?\.label/.test(blk)) bad.push(`src/utils/masterRefs.js → ${reg} เอา label ไปจับคู่ปลายทาง`);
+  }
+  /* machines.line_name ใช้ร่วมกับไลน์ผลิต ⇒ ต้องกรอง equipment_kind ไม่งั้นนับเกินแล้วบล็อกผิด */
+  if (refs.includes("['machines', 'line_name'") && !/equipment_kind:\s*'die'/.test(refs))
+    bad.push("src/utils/masterRefs.js (machines.line_name ไม่กรอง equipment_kind='die')");
+
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n   ') + '\n'
+    + '   ทำไม: ทะเบียนพวกนี้ปลายทางเก็บเป็นข้อความ ไม่ผูก FK ⇒ ลบแถวแล้วใบ/ทะเบียนที่อ้างอยู่\n'
+    + '         กลายเป็นค่ากำพร้าเงียบๆ (วัด 18/10: ลูกค้า 1 ราย = 1,974 ใบผลิต)\n'
+    + '   แก้: onBeforeDelete={masterDeleteGuard(supabaseDR, \'<ทะเบียน>\')} (src/utils/masterRefs.js)\n'
+    + '        ทะเบียนใหม่ = เพิ่ม spec ใน MASTER_REF_SPECS โดย**วัดปลายทางจากฐานจริง** ห้ามเขียนจากความจำ\n');
+});
+
+/* 🛡️ lot-mats-from-rules (2026-10-19) — "พาร์ทนี้ยอดเข้าคลังทางปิดล็อตไหม" ต้องถามกฎรับเข้า (โหมด 🔧 lot)
+   ตัวเดียวกับที่ trigger fn_post_confirmed_output ใช้ข้าม · เดิมถาม child_lot_requests "เคยมีล็อต" ⇒
+   GOR 20058498 เลิกเปิดล็อตแล้ว แต่ระบบยังถือว่าเป็นพาร์ทล็อต → ยอดผลิตไม่เข้าคลัง 323 ใบ และจอเทียบคลังผิดที่ */
+test('🛡️ lot-mats-from-rules — lotMats มาจาก lotMatsOf(rules) ไม่ใช่ child_lot_requests', () => {
+  const bad = [];
+  for (const f of ['src/components/LinePartCallPanel.jsx', 'src/pages/HeijunkaKanban.jsx']) {
+    const src = stripComments(readFileSync(join(ROOT, f), 'utf8'));
+    if (/from\('child_lot_requests'\)\.select\('child_mat_no'\)/.test(src)) bad.push(`${f} (ถาม child_lot_requests หา lotMats)`);
+    if (!/lotMats:\s*lotMatsOf\(/.test(src)) bad.push(`${f} (lotMats ไม่ได้มาจาก lotMatsOf)`);
+  }
+  const pr = stripComments(readFileSync(join(ROOT, 'src/utils/partRefStock.js'), 'utf8'));
+  if (!/mode === 'lot'\) continue/.test(pr)) bad.push('partRefStock.js inflowDestOf (กฎโหมด lot ต้องไม่ร่วมตัดสินคลัง)');
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n   แก้: ใช้ lotMatsOf(rules) จาก src/utils/stockReceipts.js (select ต้องมีคอลัมน์ mode)\n');
 });

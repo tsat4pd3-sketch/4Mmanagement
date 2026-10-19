@@ -30,6 +30,8 @@ import { checkWrite, checkWriteRows } from '../utils/dbWrite';
 import { QA_RANK, balloonSort, nextBalloonOf } from '../utils/qaPoints';
 import { writeBlockText } from '../utils/writeScope';
 import { QA_BUCKET, qaFileUrl, qaPathOfUrl } from '../lib/qaImages';
+import CalcFormulaField from './inspect/CalcFormulaField';
+import { calcOf, calcProblems } from '../utils/inspectCalc';
 
 const BUCKET = QA_BUCKET;
 const PIN_DEFAULT = '#4d9fff';
@@ -45,8 +47,10 @@ const isPdfUrl = (u) => /\.pdf($|\?)/i.test(u || '');
 let seq = 0;
 const newKey = () => `k${Date.now().toString(36)}${(seq++).toString(36)}`;
 
+/* _key ของจุดใหม่ = uuid ที่จะใช้เป็น id ตอน insert (19/10) — จุดคำนวณอ้าง "จุด A/B" ด้วย id
+   ได้ตั้งแต่ยังไม่บันทึก · จุดเดิม _key = id อยู่แล้ว */
 const emptyPoint = (extra = {}) => ({
-  _key: newKey(), id: null, balloon_no: '', item_type: 'variable', characteristic: '', spec_text: '',
+  _key: crypto.randomUUID(), id: null, calc: null, balloon_no: '', item_type: 'variable', characteristic: '', spec_text: '',
   nominal: '', usl: '', lsl: '', unit: 'mm', method: '', stage: 'inprocess',
   frequency: '', sample_size: '5', rank: '', remark: '', is_active: true,
   pos_x: null, pos_y: null, _frameKey: null, label_dx: null, label_dy: null,
@@ -65,7 +69,7 @@ const S = {
 };
 
 /* ── การ์ดจุดตรวจของชิ้นงาน — เปลือกเดียวกับ PM · ข้างในเป็นสเปคแบบ QA ── */
-function QaPointCard({ p, onChange, onDelete, isPinning, onPinToggle, onUnpin, hasImage, methodHist }) {
+function QaPointCard({ p, onChange, onDelete, isPinning, onPinToggle, onUnpin, hasImage, methodHist, calcOptions, calcIssues }) {
   const isVar = p.item_type === 'variable';
   return (
     <PointCardShell label={p.balloon_no || '?'} caption="จุดตรวจชิ้นงาน" pinned={p.pos_x != null}
@@ -79,9 +83,11 @@ function QaPointCard({ p, onChange, onDelete, isPinning, onPinToggle, onUnpin, h
 
       <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
         <button type="button" onClick={() => onChange({ item_type: 'variable' })} style={S.typeBtn(isVar, '#4d9fff')}>📏 Variable (ค่าตัวเลข)</button>
-        <button type="button" onClick={() => onChange({ item_type: 'attribute' })} style={S.typeBtn(!isVar, '#9b8de8')}>✅ Attribute (OK/NG)</button>
+        <button type="button" onClick={() => onChange({ item_type: 'attribute', calc: null })} style={S.typeBtn(!isVar, '#9b8de8')}>✅ Attribute (OK/NG)</button>
       </div>
 
+      {/* 🧮 จุดคำนวณ (A − B) — ช่องกลางเดียวกับ PM */}
+      {isVar && <CalcFormulaField calc={p.calc} onChange={calc => onChange({ calc })} options={calcOptions} problems={calcIssues} />}
       {isVar && (
         <>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 80px', gap: 8, marginBottom: 6 }}>
@@ -218,6 +224,7 @@ export default function QaPointsEditor({ part, focusItemId, methodHist, writeChe
         _frameKey: i.pos_x != null ? (fr.some(f => f.id === i.drawing_id) ? i.drawing_id : firstKey) : null,
         label_dx: i.label_dx ?? null, label_dy: i.label_dy ?? null,
         image_path: i.image_path || null, _imgPreview: publicUrl(i.image_path),
+        calc: i.calc ?? null,
       }));
       setFrames(fr);
       setPoints(pts);
@@ -235,6 +242,14 @@ export default function QaPointsEditor({ part, focusItemId, methodHist, writeChe
   const update = (key, patch) => setPoints(prev => prev.map(p => (p._key === key ? { ...p, ...patch } : p)));
   const labels = useMemo(() => Object.fromEntries(points.map(p => [p._key, p.balloon_no || '?'])), [points]);
   const pinnedCount = points.filter(p => p.pos_x != null).length;
+  /* 🧮 จุดคำนวณ: อ้างได้เฉพาะจุด variable ที่ไม่ใช่จุดคำนวณ · ปัญหาสูตรขึ้นในการ์ด + กันบันทึก */
+  const calcIssueList = useMemo(() => calcProblems(points, {
+    keyOf: p => p._key, isNumeric: p => p.item_type === 'variable' && !!p.is_active,   // ใบตรวจโหลดเฉพาะจุดที่ใช้งาน
+    hasLimit: p => p.lsl !== '' || p.usl !== '',
+  }), [points]);
+  const calcOptionsFor = (selfKey) => points
+    .filter(p => p._key !== selfKey && p.item_type === 'variable' && !p.calc)
+    .map(p => ({ key: p._key, label: `#${p.balloon_no || '?'} ${p.characteristic || ''}`.trim() }));
 
   /* ── จุดตรวจ ── */
   const addPoint = () => {
@@ -313,6 +328,8 @@ export default function QaPointsEditor({ part, focusItemId, methodHist, writeChe
     if (blank) { jumpTo(blank._key); setError(`ใส่ชื่อจุดตรวจให้ครบ — ยังว่าง ${points.filter(p => !p.characteristic.trim()).length} จุด`); return; }
     const badSpec = points.find(p => p.item_type === 'variable' && p.usl !== '' && p.lsl !== '' && Number(p.usl) <= Number(p.lsl));
     if (badSpec) { jumpTo(badSpec._key); setError(`จุด ${badSpec.balloon_no || '?'}: USL ต้องมากกว่า LSL`); return; }
+    const calcBad = calcIssueList[0];
+    if (calcBad) { jumpTo(calcBad.key); setError(`จุด ${labels[calcBad.key] || '?'} (คำนวณ): ${calcBad.msg}`); return; }
 
     setSaving(true);
     let fr = frames, pts = points;
@@ -374,12 +391,14 @@ export default function QaPointsEditor({ part, focusItemId, methodHist, writeChe
           drawing_id: pinned ? keyToId[p._frameKey ?? fr[0]?._key] : null,
           label_dx: pinned ? (p.label_dx ?? null) : null, label_dy: pinned ? (p.label_dy ?? null) : null,
           image_path: imagePath || null,
+          // 🧮 อ้าง id ของจุด A/B (_key จุดใหม่ = id ที่ insert ด้านล่าง) · attribute = ไม่มีสูตร
+          calc: isVar ? calcOf(p) : null,
         };
         if (p.id) {
           if (!checkWriteRows(await supabase.from('qa_inspection_items').update(payload).eq('id', p.id).select('id'), `บันทึกจุด ${payload.balloon_no}`)) throw new Error(`บันทึกจุด ${payload.balloon_no} ไม่สำเร็จ`);
           pts[i] = { ...p, image_path: imagePath, _imgFile: null };
         } else {
-          const res = await supabase.from('qa_inspection_items').insert(payload).select('id').single();
+          const res = await supabase.from('qa_inspection_items').insert({ ...payload, id: p._key }).select('id').single();
           if (!checkWrite(res, `เพิ่มจุด ${payload.balloon_no}`)) throw new Error(`เพิ่มจุด ${payload.balloon_no} ไม่สำเร็จ`);
           pts[i] = { ...p, id: res.data.id, image_path: imagePath, _imgFile: null };
         }
@@ -457,6 +476,7 @@ export default function QaPointsEditor({ part, focusItemId, methodHist, writeChe
             <div key={p._key} ref={cardRef(p._key)} style={{ borderRadius: 8, transition: 'box-shadow .3s',
               boxShadow: flashKey === p._key ? '0 0 0 2px var(--accent), 0 0 14px var(--accent-glow)' : 'none' }}>
               <QaPointCard p={p} methodHist={methodHist}
+                calcOptions={calcOptionsFor(p._key)} calcIssues={calcIssueList.filter(x => x.key === p._key).map(x => x.msg)}
                 onChange={patch => (patch._imgFile ? pickCloseup(p._key, patch._imgFile) : update(p._key, patch))}
                 onDelete={() => deletePoint(p._key)}
                 isPinning={activePinKey === p._key} hasImage={frames.some(f => !f.isPdf)}

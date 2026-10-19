@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  inflowModeOf, inflowPatchFor, receiptAgeMin, isStaleReceipt, ageText,
+  inflowModeOf, inflowPatchFor, inflowModesFor, lotMatsOf, receiptAgeMin, isStaleReceipt, ageText,
   validateReceive, receiptZoneStatus, sortReceipts, DEFAULT_STALE_MIN,
 } from '../stockReceipts.js';
 
@@ -57,4 +57,20 @@ test('โซน: ใบรอรับที่ค้างเกินเกณ
   assert.equal(receiptZoneStatus(a, () => 240, NOW), 'pending');
   assert.equal(receiptZoneStatus(b, () => 240, NOW), 'stale');
   assert.deepEqual(sortReceipts([a, b]).map(r => r.id), ['b', 'a']);
+});
+
+test('🔧 โหมดปิดล็อต (19/10) — เฉพาะกฎ MAT · ปิดแล้วเปิดกลับได้โหมดเดิม · lotMatsOf อ่านจากกฎ', () => {
+  assert.equal(inflowModeOf({ is_active: true, mode: 'lot' }), 'lot');
+  assert.equal(inflowModeOf({ is_active: false, mode: 'lot' }), 'off');
+  assert.deepEqual(inflowPatchFor('lot', {}), { is_active: true, mode: 'lot' });
+  assert.deepEqual(inflowPatchFor('off', { mode: 'lot' }), { is_active: false, mode: 'lot' });
+  assert.ok(inflowModesFor({ match_type: 'mat' }).some(m => m.key === 'lot'));
+  assert.ok(!inflowModesFor({ match_type: 'prefix' }).some(m => m.key === 'lot'), 'prefix ห้ามเป็นโหมดล็อต (ทั้งตระกูลหายเงียบ)');
+  const lots = lotMatsOf([
+    { match_type: 'mat', match_value: '20066660', mode: 'lot', is_active: true },
+    { match_type: 'mat', match_value: '20058498', mode: 'confirm', is_active: true },
+    { match_type: 'mat', match_value: '20059344', mode: 'lot', is_active: false },
+    { match_type: 'prefix', match_value: '2', mode: 'lot', is_active: true },
+  ]);
+  assert.deepEqual([...lots], ['20066660']);
 });
