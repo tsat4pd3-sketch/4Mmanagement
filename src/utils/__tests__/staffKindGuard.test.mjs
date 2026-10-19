@@ -16,7 +16,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 const ROOT = new URL('../../../', import.meta.url).pathname;
@@ -198,4 +198,52 @@ test('🛡️ staff_kind = 3 กลุ่ม และ 2 แกนต้อง�
   assert.deepEqual(g.map(x => x.key), ['shopfloor', 'technician', 'support'],
     'groupByStaffKind ต้องคืนครบ 3 กลุ่มเสมอ (กลุ่มว่าง = rows:[] ไม่ใช่หายไป — จอต้องเขียน "ไม่มี")');
   assert.deepEqual(g.map(x => x.rows.length), [0, 1, 0]);
+});
+
+/* ═══ 🔴 แกนเดียวกันต้องตอบเหมือนกันทั้ง client และ server (19/10) ═══════════════════
+   เจอ 19/10: `isShopfloorStaff()` (client) ตัด `NON_LINE_VALUES` = ช่าง + สนับสนุน
+              แต่ `onlyShopfloorStaff()` (server) ตัดแค่ `SUPPORT_VALUES` = สนับสนุนอย่างเดียว
+   ⇒ **ชื่อเดียวกัน เจตนาเดียวกัน แต่ให้คำตอบคนละอย่างกับ "ช่าง"** — จอนับกำลังคน/สกิล/turnover
+     ยังนับช่างเป็นคนหน้าไลน์เงียบๆ ทั้งที่คอมเมนต์ในจอเขียนไว้ว่าตัดแล้ว (WorkforceInsight.jsx)
+   เพิ่มกลุ่มใหม่ครั้งหน้าแล้วลืมแก้ฝั่ง server = บั๊กเดิมซ้ำ ⇒ ด่านนี้เทียบ "ของจริง" ไม่ใช่เทียบข้อความ */
+test('🛡️ onlyShopfloorStaff (server) ต้องตัดชุดเดียวกับ isShopfloorStaff (client) เป๊ะ', async () => {
+  const m = await import('../staffKind.js');
+  /* query builder ปลอม — จับว่าตัวกรองส่งค่าอะไรไปจริง */
+  const spy = () => { const c = {}; c.not = (col, op, val) => { Object.assign(c, { col, op, val }); return c; }; return c; };
+
+  const sf = m.onlyShopfloorStaff(spy());
+  assert.equal(sf.col, 'staff_kind');
+  assert.equal(sf.op, 'in');
+  const cut = sf.val.replace(/[()]/g, '').split(',').map(s => s.trim()).filter(Boolean);
+  assert.deepEqual([...cut].sort(), [...m.NON_LINE_VALUES].sort(),
+    'onlyShopfloorStaff ต้องตัด NON_LINE_VALUES (ช่าง + สนับสนุน + ค่าเก่า) ไม่ใช่แค่ SUPPORT_VALUES');
+  /* ทุกค่าที่ server ตัด client ก็ต้องตอบ false และกลับกัน — ไม่มีคนกลุ่มไหนตกร่องระหว่าง 2 ฝั่ง */
+  for (const v of ['shopfloor', 'technician', 'support', 'indirect'])
+    assert.equal(m.isShopfloorStaff({ staff_kind: v }), !cut.includes(v), `ค่า ${v}: 2 ฝั่งตอบไม่ตรงกัน`);
+
+  /* ตัวแยกของบอร์ดกำลังคน — ตัดเฉพาะสายสนับสนุน **ช่างต้องผ่าน** */
+  const ws = m.withoutSupportStaff(spy());
+  const cut2 = ws.val.replace(/[()]/g, '').split(',').map(s => s.trim()).filter(Boolean);
+  assert.deepEqual([...cut2].sort(), [...m.SUPPORT_VALUES].sort());
+  assert.ok(!cut2.includes('technician'), 'withoutSupportStaff ต้องปล่อยช่างผ่าน (บอร์ดวาดแถวช่างแยก)');
+});
+
+/* ── บอร์ดกำลังคนเป็นจอเดียวที่ตั้งใจเห็นช่าง — ห้ามให้จออื่นหยิบ withoutSupportStaff ไปใช้มั่ว ── */
+test('🛡️ withoutSupportStaff ใช้ได้เฉพาะ /manpower-board (จอที่วาดแถวช่างแยก)', () => {
+  const bad = [];
+  const stack = [join(ROOT, 'src')];
+  while (stack.length) {
+    const dir = stack.pop();
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, e.name);
+      if (e.isDirectory()) { if (e.name !== '__tests__') stack.push(full); continue; }
+      if (!/\.(jsx?|mjs)$/.test(e.name)) continue;
+      const rel = full.replace(ROOT, '');
+      if (rel === 'src/utils/staffKind.js' || rel === 'src/pages/ManpowerBoard.jsx') continue;
+      if (/withoutSupportStaff\s*\(/.test(readFileSync(full, 'utf8'))) bad.push(rel);
+    }
+  }
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n'
+    + '   จอที่นับกำลังคนต้องใช้ onlyShopfloorStaff() — withoutSupportStaff ปล่อยช่างผ่าน\n'
+    + '   จะใช้ที่จอใหม่จริงๆ ต้องพิสูจน์ก่อนว่า "ช่างไม่ถูกนับรวมเป็นกำลังคนของไลน์" แล้วแก้ด่านนี้\n');
 });

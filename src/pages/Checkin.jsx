@@ -21,7 +21,7 @@ import LineSelect from '../components/LineSelect';
 import LineScopeSelect from '../components/LineScopeSelect';
 import { loadLinesRes } from '../utils/useProductionLines';
 import { useOrgTeams } from '../utils/useOrgSections';
-import { inSectionScope } from '../utils/sectionScope';
+import { inSectionScope, scopeAnchorless } from '../utils/sectionScope';
 import { buildScheduleMaps, resolveAssignedShift, teamsVisibleToLeader } from '../utils/shiftAssign';
 import { roleLabel } from '../utils/roleMeta';
 import { getDocForm, fullCode } from '../utils/docForms';
@@ -258,11 +258,18 @@ export default function Checkin() {
 
     // 🔴 ไม่กรอง staff_kind — จอเช็คชื่อต้องเห็นครบทุกกลุ่ม (แยกหัวข้อตอนวาดแทน · 14/10)
     let empQ = supabase.from('employees').select('*').eq('is_active', true).order('employee_id_code');
+    /* 🔴 ด่านขอบเขต 2 แกน — **แกนไลน์กับแกนส่วนงานต้องเป็นลำดับ ห้ามเป็น else-if** (19/10)
+       เดิมเขียน `if (leader) {…} else if (sections)` ⇒ leader ที่บัญชีไม่มี `line_id`
+       หลุดทั้งสองด่าน = เห็นพนักงานทั้งโรงงานเงียบๆ (ดู scopeAnchorless ใน sectionScope.js) */
+    const famIdsQ = (role === 'leader' && lineId) ? getLineFamilyIds(lineData || [], Number(lineId)) : null;
+    if (famIdsQ) {
+      empQ = famIdsQ.size ? empQ.in('line_id', [...famIdsQ]) : empQ.eq('line_id', lineId);
+    } else if (scopeSecs.length) {
+      // ทุก role ที่ถูกจำกัดขอบเขตส่วนงาน (supervisor เดิม + manager/qa ที่กำหนด sections)
+      // · รวม leader ที่ยังไม่ผูกไลน์ (เช่นรักษาการหลายหน่วย) — ถอยมาใช้แกนนี้แทน
+      empQ = empQ.in('section', scopeSecs);
+    }
     if (role === 'leader') {
-      if (lineId) {
-        const famIdsQ = getLineFamilyIds(lineData || [], Number(lineId));
-        empQ = famIdsQ.size ? empQ.in('line_id', [...famIdsQ]) : empQ.eq('line_id', lineId);
-      }
       // ⚠️ ทีมที่ไม่หมุนกะ (C) = หัวหน้าที่ไม่ได้ยืนหน้างาน → เห็นคนทั้งไลน์ทุกทีม
       //    (ขอบเขตไลน์ยังคุมอยู่ · ปลดเฉพาะแกนทีม — ดู seesAllTeams ใน shiftAssign.js)
       // 🔴 ทีมตัวเอง + ทีมที่ไม่หมุนกะ (C) — พนักงานทีม C = กะเช้าตลอด ยืนหน้างานกับทีมที่เข้าเช้า
@@ -270,9 +277,6 @@ export default function Checkin() {
       //    (2 คนไม่เคยถูกเช็คชื่อเลย — ดูเหตุผลเต็มที่ teamsVisibleToLeader ใน shiftAssign.js)
       const teamsSeen = teamsVisibleToLeader(team);
       if (teamsSeen) empQ = empQ.in('team', teamsSeen);
-    } else if (scopeSecs.length) {
-      // ทุก role ที่ถูกจำกัดขอบเขตส่วนงาน (supervisor เดิม + manager/qa ที่กำหนด sections)
-      empQ = empQ.in('section', scopeSecs);
     }
 
     const [
@@ -323,8 +327,7 @@ export default function Checkin() {
 
     const lineById = Object.fromEntries((lineData || []).map(l => [l.id, l]));
     const inMyScope = (toLineId) => {
-      if (role === 'leader') {
-        if (!lineId) return false;
+      if (role === 'leader' && lineId) {   // ไม่มีไลน์ = ตกไปใช้แกนส่วนงานข้างล่าง (19/10)
         const fam = getLineFamilyIds(lineData || [], Number(lineId));
         return fam.size ? fam.has(toLineId) : toLineId === Number(lineId);
       }
@@ -520,7 +523,10 @@ export default function Checkin() {
   const myScopeLabel = (() => {
     if (role === 'leader') {
       const ln = lines.find(l => l.id === lineId)?.name;
-      return [ln && `ไลน์ ${ln}`, team && `ทีม ${team}`].filter(Boolean).join(' · ') || 'ยังไม่กำหนดไลน์/ทีม';
+      if (ln) return [`ไลน์ ${ln}`, team && `ทีม ${team}`].filter(Boolean).join(' · ');
+      // ไม่ผูกไลน์ → ขอบเขตจริงคือส่วนงาน (เช่นรักษาการหลายหน่วย) · ไม่มีเลย = ทั้งโรงงาน
+      if (scopeSecs.length) return [`ส่วนงาน ${scopeSecs.join(', ')} (ยังไม่ผูกไลน์)`, team && `ทีม ${team}`].filter(Boolean).join(' · ');
+      return 'ยังไม่กำหนดไลน์/ส่วนงาน';
     }
     if (scopeSecs.length) return `ส่วนงาน ${scopeSecs.join(', ')}`;
     return 'ทุกส่วนงาน';
@@ -917,20 +923,21 @@ export default function Checkin() {
       // 🔴 ไม่กรอง staff_kind — ใบ export ต้องตรงกับรายชื่อที่เช็คชื่อบนจอ (14/10)
       let empQ = supabase.from('employees').select('id, employee_id_code, name, position, line_id, section, staff_kind').eq('is_active', true).order('employee_id_code');
       // mandatory scope filter ก่อน แล้วค่อยกรองตามส่วนงานที่เลือกใน modal (pattern เดียวกับ fetchData)
-      if (role === 'leader') {
-        if (lineId) {   // ทั้งครอบครัวไลน์ (ตัวเอง + แม่ + ลูก) — ห้ามกรอง line_id ตรงตัว
-          const famIdsQ = getLineFamilyIds(lines, Number(lineId));
-          empQ = famIdsQ.size ? empQ.in('line_id', [...famIdsQ]) : empQ.eq('line_id', lineId);
-        }
-        // ⚠️ ทีมที่ไม่หมุนกะ (C) = หัวหน้าที่ไม่ได้ยืนหน้างาน → เห็นคนทั้งไลน์ทุกทีม
-      //    (ขอบเขตไลน์ยังคุมอยู่ · ปลดเฉพาะแกนทีม — ดู seesAllTeams ใน shiftAssign.js)
-      // 🔴 ทีมตัวเอง + ทีมที่ไม่หมุนกะ (C) — พนักงานทีม C = กะเช้าตลอด ยืนหน้างานกับทีมที่เข้าเช้า
-      //    เดิม `.eq('team', team)` ทำให้คนทีม C หายจากใบเช็คชื่อของหัวหน้าทีม A/B ทั้งคู่
-      //    (2 คนไม่เคยถูกเช็คชื่อเลย — ดูเหตุผลเต็มที่ teamsVisibleToLeader ใน shiftAssign.js)
-      const teamsSeen = teamsVisibleToLeader(team);
-      if (teamsSeen) empQ = empQ.in('team', teamsSeen);
+      // 🔴 ลำดับเดียวกับ fetchData — ห้าม else-if (leader ไม่มีไลน์ต้องถอยมาใช้ส่วนงาน · 19/10)
+      const famIdsX = (role === 'leader' && lineId) ? getLineFamilyIds(lines, Number(lineId)) : null;
+      if (famIdsX) {   // ทั้งครอบครัวไลน์ (ตัวเอง + แม่ + ลูก) — ห้ามกรอง line_id ตรงตัว
+        empQ = famIdsX.size ? empQ.in('line_id', [...famIdsX]) : empQ.eq('line_id', lineId);
       } else if (scopeSecs.length) {
         empQ = empQ.in('section', scopeSecs);
+      }
+      if (role === 'leader') {
+        // ⚠️ ทีมที่ไม่หมุนกะ (C) = หัวหน้าที่ไม่ได้ยืนหน้างาน → เห็นคนทั้งไลน์ทุกทีม
+        //    (ขอบเขตไลน์ยังคุมอยู่ · ปลดเฉพาะแกนทีม — ดู seesAllTeams ใน shiftAssign.js)
+        // 🔴 ทีมตัวเอง + ทีมที่ไม่หมุนกะ (C) — พนักงานทีม C = กะเช้าตลอด ยืนหน้างานกับทีมที่เข้าเช้า
+        //    เดิม `.eq('team', team)` ทำให้คนทีม C หายจากใบเช็คชื่อของหัวหน้าทีม A/B ทั้งคู่
+        //    (2 คนไม่เคยถูกเช็คชื่อเลย — ดูเหตุผลเต็มที่ teamsVisibleToLeader ใน shiftAssign.js)
+        const teamsSeen = teamsVisibleToLeader(team);
+        if (teamsSeen) empQ = empQ.in('team', teamsSeen);
       }
       const { data: empData } = await empQ;
       const lineIds = exportSection ? lines.filter(l => l.section === exportSection).map(l => l.id) : null;
@@ -1769,6 +1776,24 @@ export default function Checkin() {
           🔄 ไม่ใช่ฉัน — สลับผู้ใช้
         </button>
       </div>
+
+      {/* 🚩 หัวหน้ากลุ่มที่บัญชียังไม่ผูกไลน์และไม่ได้ตั้งขอบเขตส่วนงาน = ด่านทั้งสองแกนไม่ทำงาน
+          ⇒ เขียนบนจอตรงๆ ว่ากำลังเห็นทั้งโรงงาน (กฎความซื่อสัตย์ของจอ — ไม่บล็อก เพราะบล็อก
+          = เช็คชื่อไม่ได้ทั้งกะ) · Andon เหลือง = นิ่ง ไม่กระพริบ */}
+      {scopeAnchorless({ role, lineId, sections: scopeSecs }) && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+          background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)',
+          borderRadius: 10, padding: '8px 13px', marginBottom: 14, fontSize: 12, color: 'var(--text)',
+        }}>
+          <span style={{ fontSize: 15 }}>⚠️</span>
+          <span>
+            บัญชีนี้เป็น<b>หัวหน้ากลุ่ม</b>แต่<b>ยังไม่ได้ผูกไลน์ และไม่ได้ตั้งขอบเขตส่วนงาน</b> —
+            รายชื่อข้างล่างจึงเป็น<b>พนักงานทั้งโรงงาน</b> ไม่ใช่เฉพาะไลน์ที่ดูแล
+            <span style={{ color: 'var(--muted)' }}> · ให้แอดมินตั้งไลน์หรือขอบเขตส่วนงานที่ทะเบียนผู้ใช้</span>
+          </span>
+        </div>
+      )}
 
       {/* Section & Line filter bar — supervisor only */}
       {role !== 'leader' && lines.length > 0 && (

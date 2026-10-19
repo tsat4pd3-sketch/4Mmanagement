@@ -53,7 +53,12 @@
   - **(เดิม) คลิกกรอบ/แถว panel → เปิดผังไลน์พร้อมพนักงานแบบ Dashboard** (`openFloorMap` — ตอนนี้เรียกจากปุ่มใน modal): ไลน์ที่มี `line_layouts` → `navigate('/dashboard?line=NAME&from=factory-map')` ให้ Dashboard เปิด Expanded Line Map (deep-link) — ใช้ผังจริงตัวเดียวกัน ไม่ duplicate · ไลน์ที่**ไม่มีผังพื้น** → fallback popup สรุป metric + ตารางแยกไลน์ย่อย (`detailLine`)
   - **⚠️ ผังไลน์แม่-ลูกคนละรูป (คนอยู่บนผังลูก):** `floorMapTarget` เลือกผังที่**มีคนจริง** — ไลน์แม่มีผัง+คนของตัวเอง=โชว์ตัวเอง · ไลน์แม่ว่าง (คนอยู่ไลน์ลูก เช่น GOR→Assy GOR/Laser GOR) = เด้งไปโชว์**ผังลูกที่มีคนมากสุด** (จาก `manpower[n].present`) · ยังไม่มีใครเข้างาน = ผังตัวเอง/ตัวแรก · (การทาบ-สเกลพิกัดลูกลงผังแม่ผังเดียว = future enhancement ยังไม่ทำ)
   - **Dashboard รับ deep-link:** `useSearchParams` อ่าน `?line=NAME` ตอน `layouts` โหลดเสร็จ → หา layout ที่ตรงชื่อ/ครอบชื่อ (`layoutLineNamesForCard`) แล้ว `setExpandedLine` + ล้าง param (`replace:true`) กันเปิดซ้ำ · `from=factory-map` → ปิด modal แล้ว `navigate('/factory-map')` (ไม่ค้างที่ Dashboard) ผ่าน `closeExpandedLine` — backward-compatible (ไม่มี param = ไม่เปลี่ยนพฤติกรรม)
-- **/dashboard การ์ดสถานะไลน์ (2026-10-19):**
+- **/dashboard แยก 2 จอ (2026-10-19 · user "ไทม์ไลน์ที่ไม่เห็นไทม์ไลน์" · "จอภาพรวมไม่ควรต้อง scroll" · "แยก heijunka ออกมาเลย"):**
+  `Dashboard.jsx` ตัวเดียว prop `view` — `/dashboard` = แถบเครื่องหยุด + Heijunka (+ไซเรน) · `/people-board` = KPI คน + การ์ดไลน์ + ผังไลน์/4M + deep-link `?line=`
+  · ไม่ก๊อปโค้ด (โหลดข้อมูลชุดเดียว) · route ใส่ `key` ต่างกัน · `openFloorMap` บนผังรวมชี้ `/people-board?line=` · ลิงก์เก่า `/dashboard?line=` ถูก redirect (จอวนหน้าที่ตั้งไว้ไม่พัง)
+  · ยาวเกินจอ = **แบ่งหน้าหมุนเอง 20 วิ** (`useTvPager` · UI-CONVENTIONS §6.31) ไม่ต้อง scroll · ⚠️ ตั้งจอวน `/display-rotation` ให้อยู่หน้านี้ ≥ จำนวนหน้า × 20 วิ ไม่งั้นเห็นแค่หน้าแรก
+  · ไม่มีกะของวัน = กล่องเขียนบอก · ยังไม่มีใครเช็คชื่อ = การ์ด "อัตราการมาทำงาน" เป็น "—" ไม่ใช่ 0% แดง
+- **/people-board การ์ดสถานะไลน์ (2026-10-19):**
   · การ์ดไลน์ใช้เกณฑ์ **`attendTone()` ชุดเดียวกับการ์ด "อัตราการมาทำงาน"** (เขียว ≥ 90 · เหลือง ≥ 75 · แดง) — เดิมตัด 80% และเอา 4M มาปนสี (มา 91% ขึ้น "⚠ Risk" · 82% ขึ้น "✓ Normal") · 4M อยู่ที่ป้ายมุมขวาบนเท่านั้น
   · ไม่ตั้งกำลังคนมาตรฐาน / ยังไม่มีใครเช็คชื่อ = เทา + เขียนบอก (ห้ามขึ้น 0%) · มาเกินมาตรฐาน = "มาทำงาน 100% · เกินมาตรฐาน N คน" (ไม่ขึ้น 125%)
 - **Dashboard "Line Floor Maps" — โหมดใหญ่สำหรับหัวหน้า (2026-07-21):** `floorBig = scopeActive && visibleLayouts.length ≤ 3` → หัวหน้า/ผู้ใช้ scope แคบ เห็นผังไลน์ตัวเอง**ใหญ่เต็มความกว้าง** (bottom grid stack 1 คอลัมน์ + floor grid `auto-fit minmax(480px,1fr)`) แตกไลน์ลูกเป็นการ์ดใหญ่แยกกัน · ภาพรวมทั้งโรงงาน (passAll/หลายผัง) คงกริดย่อ 2-3 คอลัมน์เหมือนเดิม (เหมาะจอ TV ดูรวม)
