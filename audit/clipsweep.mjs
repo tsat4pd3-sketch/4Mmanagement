@@ -20,14 +20,19 @@ if (ONLY) PAGES = PAGES.filter(n => ONLY.includes(n));
 
 const MEASURE = () => {
   const out = [];
+  /* ไล่บรรพบุรุษที่ "ตัดของล้น" — หยุดทันทีที่เจอกล่องเลื่อนได้ (overflow auto/scroll): ของที่ยื่นพ้น main แต่ปัดดูได้ในตารางกว้าง ไม่ใช่ตกกรอบ
+     (รอบแรก 19/10 จับ BbsCheck/DailyChecker ผิด: หัวคอลัมน์ "หมายเหตุ" อยู่ในตาราง overflowX:auto) */
   const clipAnc = (el) => {
     const r = [];
     for (let a = el.parentElement; a && a !== document.body; a = a.parentElement) {
       const cs = getComputedStyle(a);
+      if (/(auto|scroll)/.test(cs.overflowX) || /(auto|scroll)/.test(cs.overflow)) break;
       if (/(hidden|clip)/.test(cs.overflowX) || /(hidden|clip)/.test(cs.overflow)) r.push(a);
     }
     return r;
   };
+  /* ตัดโดยตั้งใจและมี … บอก = ไม่นับ: text-overflow:ellipsis หรือ -webkit-line-clamp (ป้าย 2 บรรทัดบนบอร์ด Heijunka) */
+  const intentional = (a) => { const cs = getComputedStyle(a); return cs.textOverflow === 'ellipsis' || (cs.webkitLineClamp && cs.webkitLineClamp !== 'none'); };
   const ownText = (el) => Array.from(el.childNodes).filter(n => n.nodeType === 3).map(n => n.textContent).join('').trim();
   for (const el of document.querySelectorAll('body *')) {
     const txt = ownText(el);
@@ -36,9 +41,9 @@ const MEASURE = () => {
     if (r.width < 4 || r.height < 6 || r.bottom < 0 || r.top > innerHeight || r.right < 0 || r.left > innerWidth) continue;
     const cs = getComputedStyle(el);
     if (cs.visibility === 'hidden' || cs.display === 'none') continue;
+    if (intentional(el)) continue;
     for (const a of clipAnc(el)) {
-      const acs = getComputedStyle(a);
-      if (acs.textOverflow === 'ellipsis' && a === el.parentElement) break;
+      if (intentional(a) && (a === el.parentElement || a === el.parentElement?.parentElement)) break;
       const ar = a.getBoundingClientRect();
       const over = Math.max(r.right - ar.right, ar.left - r.left);
       if (over > 2) {
