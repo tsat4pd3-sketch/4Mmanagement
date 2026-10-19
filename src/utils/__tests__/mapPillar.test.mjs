@@ -88,3 +88,20 @@ test('ทัวร์แกว่งไป-กลับ ไม่วนรอบ
   assert.ok(seen.every(r => r >= ROT_MIN && r <= ROT_MAX));
   assert.ok(seen.includes(ROT_MAX) && seen.includes(ROT_MIN));
 });
+
+import { zoomAt, clampPan, ZOOM_MIN, ZOOM_MAX } from '../mapPillar.js';
+test('ซูม: จุดที่ชี้อยู่ที่เดิม · บีบในช่วง · ไม่ย่อต่ำกว่าพอดีกรอบ', () => {
+  const v = zoomAt({ zoom: 1, px: 0, py: 0 }, 2, 100, 50, 1000, 600);
+  assert.equal(v.zoom, 2);
+  // จุดบนจอ = pan + zoom·g · จุดที่ชี้ g=100 ⇒ หลังซูม px + 2·100 ต้องยังเป็น 100 ⇒ px = -100
+  assert.equal(v.px, -100);
+  assert.equal(v.py, -50);
+  assert.equal(zoomAt({ zoom: 1, px: 0, py: 0 }, 0.3).zoom, ZOOM_MIN);
+  assert.equal(zoomAt({ zoom: 2.5, px: 0, py: 0 }, 9, 0, 0, 1000, 600).zoom, ZOOM_MAX);
+});
+test('เลื่อนผัง: ซูม 1 = ล็อกกลาง · ซูมแล้วเลื่อนได้ไม่เกินส่วนที่ล้น', () => {
+  assert.deepEqual(clampPan({ zoom: 1, px: 300, py: -80 }, 1000, 600), { zoom: 1, px: 0, py: 0 });
+  assert.deepEqual(clampPan({ zoom: 2, px: 9999, py: -9999 }, 1000, 600), { zoom: 2, px: 500, py: -300 });
+  // ซูมออกกลับมา 1 = pan ถูกดึงกลับกลาง
+  assert.deepEqual(zoomAt({ zoom: 2, px: 400, py: 200 }, 0.5, 0, 0, 1000, 600), { zoom: 1, px: 0, py: 0 });
+});

@@ -593,7 +593,8 @@ export default function FactoryMap({ setupMode = false }) {
   const [view3d, setView3d] = useState(() => { const u = urlPick('view', ['2d', '3d'], null); if (u) return u === '3d'; try { return localStorage.getItem('fm_view3d') === '1'; } catch { return false; } });
   const toggleView3d = () => setView3d(v => { const n = !v; try { localStorage.setItem('fm_view3d', n ? '1' : '0'); } catch { /* ignore */ } return n; });
   // 🔄 มุมกล้อง 3D — ลากหมุน/ปุ่ม/ทัวร์ (ทำงานเฉพาะ 3D ที่ไม่ได้แก้ผัง — editing ประกาศไว้ข้างบนแล้ว)
-  const orbit = useMapOrbit(view3d && !editing);
+  const wrapRef = useRef(null);
+  const orbit = useMapOrbit(view3d && !editing, wrapRef);
   /* 🔁 วนมุมมองเอง (จอวนหน้า · 15/10 · user: "อยากโชว์แบบนี้ และวน tab ไปทีละเรื่อง")
      ?cycle=health,oee,breakdown (หรือ ?cycle=1 = ทุกมุมมอง) · ?csec= วินาทีต่อมุมมอง (ค่าตั้งต้น 15)
      มีคนกด/แตะจอ = หยุดวน (คนกำลังดูมุมนั้นอยู่) · โหมดแก้ผังไม่วน */
@@ -625,7 +626,6 @@ export default function FactoryMap({ setupMode = false }) {
     if (tourFromUrl.current && view3d && !editing) { tourFromUrl.current = false; orbit.setAuto(true); }
   }, [view3d, editing, orbit]);
   const togglePanelHide = () => setPanelHide(v => { const nv = !v; try { localStorage.setItem('fm_panel_hide', nv ? '1' : '0'); } catch { /* ignore */ } return nv; });
-  const wrapRef = useRef(null);
   const hoverCardRef = useRef(null); // วัดความสูงจริงของการ์ด hover เพื่อกันตกขอบ
   const dragRef = useRef(null);
   const regionsRef = useRef([]);
@@ -2578,7 +2578,7 @@ export default function FactoryMap({ setupMode = false }) {
           {/* data-tv-nofit (16/10 · จอ TV ส่งรูปมา ผัง 3D ยุบไปมุมซ้ายบน): ตัววนหน้าย่อทั้งหน้าด้วย CSS zoom
               แต่ Chromium 94 (webOS) คิด perspective/origin ของ 3D ใต้ zoom ผิด ⇒ เจอแอตทริบิวต์นี้ = ไม่ย่อ
               (ผังคุมความสูงเองอยู่แล้ว maxHeight calc(100vh - 200px)) · ดู DisplayRotator fit() */}
-          <div {...orbit.handlers} data-tv-nofit={is3d ? '1' : undefined} style={{ flex: '1 1 640px', minWidth: 0, display: 'flex', justifyContent: 'center', flexDirection: 'column', alignItems: 'center',
+          <div {...orbit.handlers} ref={orbit.rootRef} data-tv-nofit={is3d ? '1' : undefined} style={{ flex: '1 1 640px', minWidth: 0, display: 'flex', justifyContent: 'center', flexDirection: 'column', alignItems: 'center',
             ...(is3d ? { touchAction: 'none', cursor: orbit.dragging ? 'grabbing' : 'grab', userSelect: 'none' } : {}),
             /* 🧊 คอลัมน์ผังตัดของล้น (พื้นกริดยื่นออกนอกรูป ห้ามไปทับแผงขวา) — overflow ที่ "ชั้นนอก" ของ preserve-3d ไม่ flatten เสา */
             ...(is3d ? { perspective: 2600, perspectiveOrigin: '50% 20%', overflow: 'hidden', borderRadius: 12 } : {}) }}>
@@ -2589,20 +2589,23 @@ export default function FactoryMap({ setupMode = false }) {
               {pillarCrowded > 0 && <b style={{ color: '#f59e0b' }}>ป้ายแน่นจนวางไม่ได้ {pillarCrowded} ใบ — ชี้/แตะกล่องเพื่อดู</b>}
               {/* 🔄 มุมกล้อง — ลากบนผังก็หมุนได้ · ปุ่มไว้สำหรับจอ TV (ไม่มีเมาส์) · stopPropagation กันปุ่มเริ่ม "ลาก" */}
               <span onPointerDown={e => e.stopPropagation()} style={{ marginLeft: 'auto', display: 'inline-flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
-                <span>ลากบนผังเพื่อหมุน/ก้มเงย</span>
+                <span>ลาก = หมุน/ก้มเงย · ล้อเมาส์/2 นิ้ว = ซูม · Shift+ลาก = เลื่อน</span>
+                <button onClick={() => orbit.zoomBy(1 / 1.3)} disabled={orbit.zoom <= 1} title="ซูมออก" style={{ ...miniTab(false), padding: '2px 8px', fontSize: 12, opacity: orbit.zoom <= 1 ? 0.45 : 1 }}>－</button>
+                <span style={{ minWidth: 34, textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}>{Math.round(orbit.zoom * 100)}%</span>
+                <button onClick={() => orbit.zoomBy(1.3)} disabled={orbit.zoom >= 3} title="ซูมเข้า (กลางผัง)" style={{ ...miniTab(false), padding: '2px 8px', fontSize: 12, opacity: orbit.zoom >= 3 ? 0.45 : 1 }}>＋</button>
                 <button onClick={() => orbit.step(-15)} title="หมุนซ้าย 15° (หมุนได้ไม่เกิน ±45° จากมุมเริ่ม)" style={{ ...miniTab(false), padding: '2px 8px', fontSize: 12 }}>⟲</button>
                 <button onClick={() => orbit.step(15)} title="หมุนขวา 15° (หมุนได้ไม่เกิน ±45° จากมุมเริ่ม)" style={{ ...miniTab(false), padding: '2px 8px', fontSize: 12 }}>⟳</button>
                 <button onClick={() => orbit.tiltBy(8)} title="ก้มลง (มองเฉียงขึ้น)" style={{ ...miniTab(false), padding: '2px 8px', fontSize: 12 }}>▼</button>
                 <button onClick={() => orbit.tiltBy(-8)} title="เงยขึ้น (มองจากบนมากขึ้น)" style={{ ...miniTab(false), padding: '2px 8px', fontSize: 12 }}>▲</button>
                 <button onClick={() => orbit.setAuto(a => !a)} title="แกว่งมุมมองไป-กลับเองช้าๆ (เหมาะกับจอแขวน)" style={{ ...miniTab(orbit.auto), padding: '2px 8px', fontSize: 11.5 }}>{orbit.auto ? '⏸ หยุดทัวร์' : '▶ ทัวร์'}</button>
-                <button onClick={orbit.reset} title="กลับมุมเริ่มต้น" style={{ ...miniTab(false), padding: '2px 8px', fontSize: 11.5 }}>↺ มุมเดิม</button>
+                <button onClick={orbit.reset} title="กลับมุมเริ่มต้น + ซูมพอดีกรอบ" style={{ ...miniTab(false), padding: '2px 8px', fontSize: 11.5 }}>↺ มุมเดิม</button>
               </span>
             </div>
           )}
           {/* 🧊 3D: overflow ต้อง visible — overflow:hidden บังคับ flatten ลูกที่ preserve-3d (เสาจะแบนติดพื้น) */}
           <div ref={wrapRef} onClick={onMapClick} onPointerMove={onMapMove} onPointerUp={endDrag} onPointerCancel={endDrag}
             style={{ position: 'relative', ...wrapStyle, maxHeight: 'calc(100vh - 200px)', borderRadius: 10, overflow: is3d ? 'visible' : 'hidden', border: '1px solid var(--border)', cursor: drawing ? 'crosshair' : 'default', touchAction: 'none', background: '#0a0a0f',
-              transition: orbit.transition, ...(is3d ? { transform: map3dTransform(orbit.tilt, orbit.rot, orbitScale(orbit.rot, orbit.tilt, aspect ? 1 / aspect : null)), transformStyle: 'preserve-3d', boxShadow: 'var(--shadow-float)' } : {}) }}>
+              transition: orbit.transition, ...(is3d ? { transform: `translate(${orbit.px}px, ${orbit.py}px) scale(${orbit.zoom}) ` + map3dTransform(orbit.tilt, orbit.rot, orbitScale(orbit.rot, orbit.tilt, aspect ? 1 / aspect : null)), transformStyle: 'preserve-3d', boxShadow: 'var(--shadow-float)' } : {}) }}>
             {/* 🧊 พื้นโรงงานรอบผัง (3D) — ตารางกริดจางๆ ยื่นออกนอกรูป แล้วเฟดเข้าพื้นหลังหน้า
                 ให้ผังดู "วางอยู่บนพื้น" ไม่ใช่รูปแผ่นเดียวลอยกลางความมืด (user ทัก 15/10 "พื้นหลังโล่ง ดูเป็น 3D ปลอม") */}
             {is3d && (
