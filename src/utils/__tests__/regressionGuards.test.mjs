@@ -4848,3 +4848,15 @@ test('🔒 ฝั่งงาน (actorSide) — เทียบผ่าน sid
     + '   แก้: actorSideOf({ …, isAm: isAmTeam }) · เทียบด้วย sideAllows(actorSide, meta.side)\n'
     + '   ⚠️ ล็อกฝั่ง/ตำแหน่ง 04/10 ยังอยู่ครบ — ฝั่งช่างจริงยังเซ็นช่องของฝ่ายผู้แจ้งไม่ได้\n');
 });
+
+/* ── 🛡️ board-cards-single-source (2026-10-19) ─────────────────────────────────────────
+   การ์ดบอร์ด Heijunka เคยถูกสร้าง 3 ที่ (/management · /dashboard · กล่องไลน์บนผังรวม) สูตรต่างกันเล็กน้อย
+   ⇒ บอร์ดเดียวกันโชว์ใบคนละสถานะได้ · ตอนนี้ทุกจอเรียก `buildBoardCards()` (`utils/boardCards.js`) ที่เดียว */
+test('🛡️ board-cards-single-source — ห้ามเขียน buildCards สร้างการ์ดบอร์ดเองในหน้า', () => {
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.jsx'])) {
+    const code = stripComments(readFileSync(file, 'utf8'));
+    if (/\b(?:const|function)\s+buildCards\b/.test(code)) bad.push(relative(ROOT, file));
+  }
+  assert.deepEqual(bad, [], `สร้างการ์ดบอร์ดเองในหน้า — ใช้ buildBoardCards() จาก utils/boardCards.js:\n  ${bad.join('\n  ')}`);
+});

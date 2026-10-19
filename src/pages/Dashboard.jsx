@@ -26,6 +26,7 @@ import { RATE, LIVE } from '../utils/refreshRates';
 import { coalesce } from '../utils/liveRefresh';
 import { visibleInterval } from '../utils/usePolling';
 import { positionAllCards, delayedCountOf, orderKeyOf, projectedFinishMs, planStatusOf, pushChainOf, dayDelaySummaryOf } from '../utils/heijunkaQueue';
+import { buildBoardCards } from '../utils/boardCards';
 import PlanSlipBar from '../components/PlanSlipBar';   // 📋 แถบ "หลุดแผนไปแค่ไหน" (เวลา+ยอด · 2026-09-30)
 import DelayBlameBar from '../components/DelayBlameBar';   // 🔗 สรุปดีเลย์ของวัน + ต้นเหตุ/ผู้ถูกพาล (ทีมปั๊ม 2026-09-30)
 import { liveChannel } from '../utils/liveChannel';
@@ -1492,46 +1493,9 @@ export default function Dashboard() {
               .map(([lineName, sessions]) => {
               const hasOpen = sessions.some(s => s.status === 'open');
 
-              // flatten ทุกออเดอร์ของทุก session ในไลน์ พร้อม timing + product key
-              const buildCards = (sessList) => {
-                const cards = [];
-                sessList.forEach(s => {
-                  const sessionCtSec = s.dr_products?.cycle_time_sec || 0;
-                  const sessionStartMs = s.created_at ? new Date(s.created_at).getTime() : null;
-                  // ใบที่ status = carry_over คือใบเดิมที่ถูกยกยอดไปต่อในกะถัดไปแล้ว (มีใบใหม่ status='open'
-                  // พร้อม carry_over_from_session_id ชี้กลับมา) — ถ้าแสดงทั้งสองใบจะเห็นเป็นกัมบังซ้ำกัน
-                  // ข้ามกะเช้า/กะดึก ทั้งที่เป็นงานเดียวกัน จึงตัดใบเดิม (carry_over) ออกจาก timeline
-                  const sorted = [...s.orders].filter(o => o.status !== 'carry_over').sort((a, b) => new Date(a.opened_at || 0) - new Date(b.opened_at || 0));
-                  let cumSec = 0;
-                  sorted.forEach(o => {
-                    // session.dr_products มาจาก product_id ที่อาจไม่ถูกตั้งค่า (กะนึงมีได้หลาย mat_no)
-                    // จึง fallback ไปหา cycle_time_sec ตรงจาก mat_no ของออเดอร์เอง
-                    const ctSec = ctByMatNo[o.mat_no] || sessionCtSec || 0;
-                    // ถ้ามี opened_at ใช้เวลาจริงเป็น start แทนการสะสมจาก session start
-                    const openedMs = o.opened_at ? new Date(o.opened_at).getTime() : null;
-                    const startSec = cumSec;
-                    cumSec += (o.qty || 0) * ctSec;
-                    let orderStartMs = openedMs || (sessionStartMs && ctSec > 0 ? sessionStartMs + startSec * 1000 : null);
-                    let orderEndMs   = orderStartMs && ctSec > 0 ? orderStartMs + (o.qty || 0) * ctSec * 1000 : null;
-                    if (orderStartMs && !orderEndMs) {
-                      // ไม่รู้ cycle time จริง ๆ — ให้แสดงเป็นแท่งบาง ๆ แทนการซ่อนไปเลย
-                      orderEndMs = orderStartMs + 5 * 60000;
-                    }
-                    const isDone    = o.status === 'confirmed';
-                    const isCarry   = o.status === 'carry_over';
-                    /* ⚠️ ตัด `is_backfill` เหมือน Management + heijunkaQueue (2026-09-16) — ใบเปิดย้อนหลัง
-                             คนกรอกเวลาเอง เวลาเปิดไม่ใช่เวลาเริ่มผลิตจริง ตัดสินดีเลย์จากมันไม่ได้ */
-                          const isDelayed = !isDone && !isCarry && !o.is_backfill && !!orderEndMs && nowMs > orderEndMs;
-                    const productKey = (nameByMatNo[o.mat_no] || s.dr_products?.name || '').trim().toUpperCase() || o.mat_no || 'unknown';
-                    const productLabel = nameByMatNo[o.mat_no] || s.dr_products?.name || o.mat_no || 'ไม่ทราบ P/N';
-                    const productImg = imgByMatNo[o.mat_no] || '';
-                    cards.push({ ...o, orderStartMs, orderEndMs, isDone, isCarry, isDelayed, productKey, productLabel, productImg, shift: s.shift, sessionOpen: s.status === 'open', line_name: s.line_name });
-                  });
-                });
-                return cards;
-              };
-
-              const allCards = buildCards(sessions);
+              // การ์ด = `buildBoardCards()` (utils/boardCards.js) ที่เดียว (2026-10-19) · หน้านี้เดาเวลาเริ่มจาก
+              // เวลาเปิดกะ + CT สะสม เมื่อใบไม่มี opened_at (`guessStartFromSession` — พฤติกรรมเดิมของบอร์ดนี้)
+              const allCards = buildBoardCards(sessions, { ctByMat: ctByMatNo, nameByMat: nameByMatNo, imgByMat: imgByMatNo, nowMs, guessStartFromSession: true });
 
               /* ── คิวการ์ดของทั้งกลุ่มไลน์ — คำนวณ "ครั้งเดียว" ตรงนี้ แล้วใช้ร่วมกันทั้งหัวการ์ดและบอร์ด ──
                  🔴 บั๊กที่แก้ (2026-09-16): เดิมหัวการ์ดนับดีเลย์ด้วยสูตรของตัวเอง (สะสม CT ระดับ session

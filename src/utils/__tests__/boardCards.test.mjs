@@ -51,3 +51,23 @@ test('กรอบวันงาน 24 ชม. แบ่งรอบละ 2 �
   assert.equal(f.roundIndexOf(f.gridStartMs + 3 * 3600000), 1)
   assert.equal(f.roundStartOf(2) - f.gridStartMs, 4 * 3600000)
 })
+
+test('คีย์แถว: มีชื่อ = ชื่อตัวใหญ่ · ไม่มีชื่อ = mat_no ตามตัว · ไม่มีอะไรเลย = unknown (คีย์เดิมของบอร์ดหลัก)', () => {
+  const cards = buildBoardCards([{ shift: 'day', status: 'open', line_name: 'L1', orders: [
+    { id: 1, status: 'open', mat_no: 'a-1', qty: 1 }, { id: 2, status: 'open', mat_no: 'B', qty: 1 }, { id: 3, status: 'open', qty: 1 }] }],
+    { nameByMat: { B: ' Part b ' }, nowMs: NOW })
+  const by = Object.fromEntries(cards.map(c => [c.id, c.productKey]))
+  assert.deepEqual(by, { 1: 'a-1', 2: 'PART B', 3: 'unknown' })
+})
+
+test('guessStartFromSession (/dashboard): ใบไม่มี opened_at เดาเริ่มจากเวลาเปิดกะ + CT สะสม · ไม่ส่ง = ยังไม่เปิดใบ', () => {
+  const sess = [{ shift: 'day', status: 'open', line_name: 'L1', created_at: '2026-10-16T01:00:00Z', orders: [
+    { id: 1, status: 'open', mat_no: 'A', qty: 60, opened_at: '2026-10-16T01:00:00Z' },
+    { id: 2, status: 'open', mat_no: 'A', qty: 30 }] }]
+  const g = buildBoardCards(sess, { ctByMat: { A: 10 }, nowMs: NOW, guessStartFromSession: true }).find(c => c.id === 2)
+  // ใบไม่มี opened_at เรียงขึ้นก่อน (opened_at ว่าง = 0) ⇒ เริ่มที่เวลาเปิดกะ · ใบถัดไปสะสมต่อจากมัน
+  assert.equal(g.orderStartMs, Date.parse('2026-10-16T01:00:00Z'))
+  assert.equal(g.orderEndMs, Date.parse('2026-10-16T01:05:00Z'))
+  const n = buildBoardCards(sess, { ctByMat: { A: 10 }, nowMs: NOW }).find(c => c.id === 2)
+  assert.equal(n.orderStartMs, null)
+})
