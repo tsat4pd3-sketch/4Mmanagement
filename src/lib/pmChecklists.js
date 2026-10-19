@@ -157,7 +157,9 @@ async function copyCheckpointsInto(srcCps, target, replace, { targetEquipmentId 
 
   // copy เฉพาะนิยามจุดตรวจ — ตัด id/audit ทิ้ง · รูปโคลสอัพใช้ path เดิมร่วมกัน (ไม่ก๊อปไฟล์ storage)
   // 🔴 ข้ามเครื่อง = ล้างตำแหน่งหมุด (ผูกกับรูปเครื่องต้นทาง) + jig_id = เครื่องปลายทาง — กฎอยู่ `utils/pmCheckpointCopy.js`
-  const rows = srcCps.map(cp => checkpointCopyRow(cp, { targetChecklistId: target.id, targetEquipmentId, samePhotos }))
+  // 🧮 id ใหม่ตั้งก่อน insert ⇒ จุดคำนวณ (A − B) ชี้จุดของปลายทางได้ในรอบเดียว
+  const idMap = Object.fromEntries(srcCps.map(cp => [cp.id, crypto.randomUUID()]))
+  const rows = srcCps.map(cp => checkpointCopyRow(cp, { targetChecklistId: target.id, targetEquipmentId, samePhotos, idMap }))
   const { error: e2 } = await supabaseDR.from('jig_checkpoints').insert(rows)
   if (e2) throw e2
   return { copied: true, count: rows.length, targetId: target.id }

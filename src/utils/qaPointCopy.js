@@ -9,12 +9,18 @@
    · รูปโคลสอัพ: ตัวเรียกคัดลอกไฟล์เข้าโฟลเดอร์ของพาร์ทปลายทางแล้วส่ง path ใหม่มา
      **ห้ามแชร์ path ข้ามพาร์ท** — ลบพาร์ทต้นทาง = ลบทั้งโฟลเดอร์ `parts/<id>` (`QAInspectionSetup.delPart`)
      และโมดัลแก้ไขลบไฟล์ของจุดที่ถูกเอาออก ⇒ แชร์ = รูปของอีกพาร์ทหายตาม */
+import { remapCalc } from './inspectCalc.js'
+
 export const QA_PIN_FIELDS = ['pos_x', 'pos_y', 'label_dx', 'label_dy', 'drawing_id']
 
-export function qaItemCopyRow(item, { targetPartId, drawingMap = null, imagePath = null } = {}) {
+/* 🧮 `idMap` (id ต้นทาง → id ใหม่ที่ตั้งไว้ก่อน insert) — จุดคำนวณ A − B ต้องชี้จุดของปลายทาง
+   ไม่ส่ง = ไม่ตั้ง id และตัดสูตรทิ้ง (ห้ามชี้ id ของพาร์ทต้นทาง) */
+export function qaItemCopyRow(item, { targetPartId, drawingMap = null, imagePath = null, idMap = null } = {}) {
   // eslint-disable-next-line no-unused-vars
   const { id, created_at, part_id, image_path, ...rest } = item || {}
   const row = { ...rest, part_id: targetPartId, image_path: imagePath || null }
+  if (idMap?.[id]) row.id = idMap[id]
+  if ('calc' in row) row.calc = remapCalc(row.calc, idMap)
   const keepPins = !!drawingMap && (row.drawing_id == null || drawingMap[row.drawing_id] != null)
   if (keepPins) {
     if (row.drawing_id != null) row.drawing_id = drawingMap[row.drawing_id]

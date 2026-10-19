@@ -59,7 +59,9 @@ async function copyIntoPart(src, targetPartId, { withDrawings }) {
       await copyFile(it.image_path, to, madeFiles);
       imgMap[it.image_path] = to;
     }
-    const rows = src.items.map(it => qaItemCopyRow(it, { targetPartId, drawingMap, imagePath: imgMap[it.image_path] }));
+    // id ใหม่ตั้งก่อน insert ⇒ จุดคำนวณ (A − B) ชี้จุดของพาร์ทปลายทางได้ในรอบเดียว
+    const idMap = Object.fromEntries(src.items.map(it => [it.id, crypto.randomUUID()]));
+    const rows = src.items.map(it => qaItemCopyRow(it, { targetPartId, drawingMap, imagePath: imgMap[it.image_path], idMap }));
     const { error } = await supabase.from('qa_inspection_items').insert(rows);
     if (error) throw new Error(`เพิ่มจุดตรวจไม่สำเร็จ: ${error.message}`);
     if (madeDwgs.length) {

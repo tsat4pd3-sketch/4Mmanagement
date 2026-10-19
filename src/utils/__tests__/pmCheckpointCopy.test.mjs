@@ -25,3 +25,10 @@ test('ข้ามแผนกบนเครื่องเดิม (รูป
 test('ต้นทางไม่ส่ง = ไม่โยน error', () => {
   assert.deepEqual(checkpointCopyRow(null, { targetChecklistId: 'c' }), { checklist_id: 'c' })
 })
+
+test('จุดคำนวณ: idMap ⇒ id ใหม่ + สูตรชี้จุดของปลายทาง · ไม่ส่ง idMap = ตัดสูตร', () => {
+  const cp = { ...src, id: 'D', calc: { op: 'diff', a: 'cp1', b: 'cp2', abs: true } }
+  const r = checkpointCopyRow(cp, { targetChecklistId: 'clB', idMap: { D: 'D2', cp1: 'n1', cp2: 'n2' } })
+  assert.equal(r.id, 'D2'); assert.deepEqual(r.calc, { op: 'diff', a: 'n1', b: 'n2', abs: true })
+  assert.equal(checkpointCopyRow(cp, { targetChecklistId: 'clB' }).calc, null)
+})

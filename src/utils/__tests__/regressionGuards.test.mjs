@@ -4766,6 +4766,14 @@ test('🛡️ inspection-setup-shared — จอตั้งค่าจุด�
   if (/from\('qa_inspection_items'\)\s*\.(insert|update|delete|upsert)/.test(qa)) bad.push('QAInspectionSetup.jsx เขียน qa_inspection_items เอง');
   /* คัดลอกจุดตรวจ QA ข้ามพาร์ท (19/10): แถวผ่าน qaItemCopyRow · ไฟล์ต้องคัดลอกจริง ห้ามแชร์ path
      (delPart ลบทั้งโฟลเดอร์ parts/<id> ⇒ แชร์ = รูปของพาร์ทปลายทางหายตาม) */
+  /* 🧮 จุดคำนวณ A − B (19/10): ใบตรวจต้องเติมค่าผ่านตัวกลาง · ตั้งค่าใช้ช่องกลางเดียวกัน
+     (คิดเองในหน้า = PM/QA คิดคนละแบบ · ไม่เติม = คนตรวจต้องพิมพ์ผลต่างเอง หรือใบค้างกรอกไม่ครบ) */
+  for (const [f, fn] of [['src/pages/PMCheckData.jsx', 'pmCalcResults'], ['src/components/QaPieceStepper.jsx', 'qaCalcDraft']]) {
+    if (!new RegExp(`\\b${fn}\\(`).test(readFileSync(join(ROOT, f), 'utf8'))) bad.push(`${f} ไม่ได้เติมค่าจุดคำนวณผ่าน ${fn}()`);
+  }
+  for (const f of ['src/pages/PMSetup.jsx', 'src/components/QaPointsEditor.jsx']) {
+    if (!/import\s+CalcFormulaField\b/.test(readFileSync(join(ROOT, f), 'utf8'))) bad.push(`${f} ไม่ได้ใช้ CalcFormulaField (ช่องตั้งสูตรกลาง)`);
+  }
   const cp = stripComments(readFileSync(join(ROOT, 'src/lib/qaPointsCopy.js'), 'utf8'));
   if (!/qaItemCopyRow\(/.test(cp)) bad.push('lib/qaPointsCopy.js ไม่ได้สร้างแถวผ่าน qaItemCopyRow()');
   if (!/\.copy\(/.test(cp)) bad.push('lib/qaPointsCopy.js ไม่ได้ storage.copy ไฟล์เข้าโฟลเดอร์ปลายทาง (แชร์ path = รูปหายเมื่อลบต้นทาง)');
