@@ -584,3 +584,37 @@ test('boardSlotOf: อ่านจากทะเบียน · คีย์แ
   assert.equal(boardSlotOf({ kpi_catalog: { board_slot: 'bogus' } }), null);
   assert.equal(new Set(KPI_BOARD_SLOTS.map(s => s.key)).size, KPI_BOARD_SLOTS.length);
 });
+
+/* ── 19/10 KPI ค่าโรงงานต้องมีนิยามระดับโรงงาน (เคส Customer Satisfaction หาย 3 สัปดาห์) ── */
+import { missingPlantValueDefs, plantDefPayloadFrom } from '../kpiSetup.js';
+
+test('missingPlantValueDefs: ทะเบียน plant ที่ไม่มีนิยามโรงงาน → รายงานพร้อมจำนวนค่าที่หน่วยกรอกไว้แต่ถูกซ่อน · มีนิยามโรงงานแล้วไม่รายงาน · own ไม่เกี่ยว', () => {
+  const cat = { id: 'c1', name: 'Customer Satisfaction', value_scope: 'plant' };
+  const pd4 = { id: 'd4', name: 'Customer Satisfaction', year: 2026, scope_kind: 'section', scope_value: 'PD4', catalog_id: 'c1', kpi_catalog: cat, is_active: true };
+  const pd1 = { ...pd4, id: 'd1', scope_value: 'PD1' };
+  const own = { id: 'o1', name: 'OEE', year: 2026, scope_kind: 'section', scope_value: 'PD1', catalog_id: 'c2', kpi_catalog: { id: 'c2', name: 'OEE', value_scope: 'own' }, is_active: true };
+  const entries = { d4: { 1: 100, 2: 91.67, 3: null }, d1: {} };
+  const miss = missingPlantValueDefs([pd4, pd1, own], entries);
+  assert.equal(miss.length, 1);
+  assert.equal(miss[0].name, 'Customer Satisfaction'); assert.equal(miss[0].catalogId, 'c1');
+  assert.deepEqual(miss[0].unitDefs.map(d => d.scope_value), ['PD4', 'PD1']);
+  assert.equal(miss[0].hiddenEntries, 2, 'นับเฉพาะค่าที่ไม่ว่าง');
+  const plant = { id: 'p1', name: 'Customer Satisfaction', year: 2026, scope_kind: 'plant', scope_value: null, catalog_id: 'c1', kpi_catalog: cat, is_active: true };
+  assert.deepEqual(missingPlantValueDefs([pd4, pd1, own, plant], entries), []);
+  assert.equal(sharedValueDef([pd4, pd1, plant], pd4).id, 'p1');
+  assert.deepEqual(missingPlantValueDefs([pd4, pd1, { ...plant, is_active: false }], entries).length, 1, 'นิยามโรงงานที่ปิดไว้ = ไม่นับ');
+  assert.deepEqual(missingPlantValueDefs([], {}), []);
+});
+
+test('plantDefPayloadFrom: โคลนเป้า/หน่วย/ทะเบียน · ขอบเขต = ทั้งโรงงาน · ไม่มี id/entries · สูตรตามต้นทาง', () => {
+  const u = { id: 'd4', name: 'Customer Satisfaction', year: 2026, scope_kind: 'section', scope_value: 'PD4', section: 'PD4', category: 'customer', seq: 21,
+    unit: '%', commitment: '≥95%', target: '100%', target_value: 100, commit_value: 95, commit_compare: '>=', target_compare: '>=', direction: 'up',
+    catalog_id: 'c1', std_item_id: 's1', provider: 'manual', provider_config: null, is_active: true };
+  const p = plantDefPayloadFrom(u);
+  assert.equal(p.scope_kind, 'plant'); assert.equal(p.scope_value, null); assert.equal(p.section, null); assert.equal(p.year, 2026);
+  assert.equal(p.id, undefined); assert.equal(p.catalog_id, 'c1'); assert.equal(p.target_value, 100); assert.equal(p.commit_value, 95);
+  assert.equal(p.provider, 'manual'); assert.equal(p.is_active, true); assert.match(p.scope_text, /PD4/);
+  const f = plantDefPayloadFrom({ ...u, provider: 'formula', provider_config: { formula: 'rm_pct' } }, { year: 2027, note: 'x' });
+  assert.equal(f.year, 2027); assert.deepEqual(f.provider_config, { formula: 'rm_pct' }); assert.equal(f.scope_text, 'x');
+  assert.equal(plantDefPayloadFrom(null), null);
+});
