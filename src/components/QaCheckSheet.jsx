@@ -303,7 +303,8 @@ export default function QaCheckSheet({ canRecord }) {
     // ⚠️ ด่านสุดท้ายของขาเขียน — ต้องตรวจว่าใบใน state เป็นของคีย์ที่แสดงอยู่จริง
     //    เช็คแค่ `sheet?.id` ไม่พอ: ใบของรอบก่อนก็มี id เหมือนกัน แล้วผลตรวจจะลงผิดใบ
     if (matchesKey(sheet)) return sheet;
-    if (!part) return null;
+    // ห้ามล้มเงียบ (audit 19/10): พาร์ทถูกปิดใช้งาน/อยู่นอกขอบเขต ⇒ เดิมกดบันทึกแล้วไม่เกิดอะไรเลย
+    if (!part) { toast.error('เปิดใบตรวจไม่ได้ — พาร์ทนี้ถูกปิดใช้งานหรืออยู่นอกขอบเขตของคุณ (ตรวจที่ /qa-setup)'); return null; }
     const { data, error } = await supabase.from('qa_inspection_sheets').insert({
       part_id: part.id, part_no: part.part_no, part_name: part.part_name || null,
       line_name: part.line_name || null,
@@ -375,7 +376,24 @@ export default function QaCheckSheet({ canRecord }) {
     const pieceNo = seq.nextPiece, roundNo = seq.round;
     const now = new Date().toISOString();
 
-    // 1) ผลต่อจุด — merge ค่าของชิ้นนี้เข้า array เดิม · judgement รวม: มี ng ชิ้นไหน = ng
+    /* 🔴 ลำดับ: จองแถว "ชิ้น" ก่อน แล้วค่อยบวกผลต่อจุด (audit 19/10)
+       เดิมเขียนผลต่อจุด (qty_checked/qty_ng +1) ก่อน แล้วแถวชิ้นล้ม ⇒ กดซ้ำ = นับ NG ซ้ำ (ไหลไปถึง qty_ng ของ NCR)
+       และ 2 เครื่องตรวจใบเดียวกัน = เครื่องหลังเขียนค่าทับ · ตอนนี้ unique (sheet_id,piece_no) กันชนให้ก่อนแตะผล */
+
+    // 1) ผลต่อชิ้น (จองเลขชิ้น)
+    const { data: pc, error: pcErr } = await supabase.from('qa_inspection_pieces').insert({
+      sheet_id: sh.id, round_no: roundNo, piece_no: pieceNo, result: p.result,
+      failed_items: p.failedItems?.length ? p.failedItems : null,
+      disposition: p.result === 'fail' ? (p.disposition || null) : null,
+      remark: p.remark || null, recorded_by: fullName || null,
+    }).select().single();
+    if (pcErr) {
+      setBusy(false);
+      // อีกเครื่องบันทึกชิ้นเลขนี้ไปก่อน (unique sheet_id+piece_no) ⇒ โหลดใบใหม่ ไม่เขียนผลทับของเครื่องนั้น
+      if (pcErr.code === '23505') { toast.error(`ชิ้นที่ ${pieceNo} ถูกบันทึกจากอีกเครื่องแล้ว — โหลดใบล่าสุดให้ (ค่าที่กรอกยังอยู่ ตรวจแล้วบันทึกเป็นชิ้นถัดไป)`); loadSheet(); return; }
+      toast.error(`บันทึกชิ้นที่ ${pieceNo} ไม่สำเร็จ: ${pcErr.message}`); return;
+    }
+    // 2) ผลต่อจุด — merge ค่าของชิ้นนี้เข้า array เดิม · judgement รวม: มี ng ชิ้นไหน = ng
     const rows = items.map(i => {
       const prev = resById.get(i.id);
       const j = p.judgements[i.id] || { judge: 'na', value: '', note: '' };
@@ -394,16 +412,12 @@ export default function QaCheckSheet({ canRecord }) {
         recorded_by: fullName || null, recorded_at: now,
       };
     });
-    if (!checkWrite(await supabase.from('qa_inspection_results').upsert(rows, { onConflict: 'sheet_id,item_id' }), 'ผลต่อจุด')) { setBusy(false); return; }
-
-    // 2) ผลต่อชิ้น
-    const { data: pc, error: pcErr } = await supabase.from('qa_inspection_pieces').insert({
-      sheet_id: sh.id, round_no: roundNo, piece_no: pieceNo, result: p.result,
-      failed_items: p.failedItems?.length ? p.failedItems : null,
-      disposition: p.result === 'fail' ? (p.disposition || null) : null,
-      remark: p.remark || null, recorded_by: fullName || null,
-    }).select().single();
-    if (pcErr) { setBusy(false); toast.error(`บันทึกชิ้นที่ ${pieceNo} ไม่สำเร็จ: ${pcErr.message}`); return; }
+    if (!checkWrite(await supabase.from('qa_inspection_results').upsert(rows, { onConflict: 'sheet_id,item_id' }), 'ผลต่อจุด')) {
+      // ผลต่อจุดล้ม ⇒ ถอนแถวชิ้นที่เพิ่งจอง (นับแถว) ให้กดบันทึกซ้ำได้โดยไม่ข้ามเลขชิ้น
+      const undo = await supabase.from('qa_inspection_pieces').delete().eq('id', pc.id).select('id');
+      if (undo.error || !(undo.data || []).length) toast.error(`ถอนชิ้นที่ ${pieceNo} คืนไม่สำเร็จ — แจ้ง QA manager ลบชิ้นนี้ (ผลต่อจุดยังไม่ถูกบันทึก)`);
+      setBusy(false); loadSheet(); return;
+    }
 
     // 3) scrap → ลงถังแดง (DR) ผูกกลับ — ล้มเหลวต้องบอก ไม่เงียบ (ชิ้นถูกทิ้งแต่ไม่มีบันทึก = สืบไม่ได้)
     if (p.disposition === 'scrap') {

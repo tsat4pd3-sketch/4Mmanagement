@@ -5302,3 +5302,12 @@ test('🛡️ qa-view-scope-shared — QualityControl ใช้ qaViewScope ไ�
   assert.ok(!/inSectionScope\(/.test(qc), 'QualityControl.jsx กรองขอบเขตเองด้วย inSectionScope — ใช้ qaViewScope()');
   assert.ok(/qaViewScope\(/.test(qc), 'QualityControl.jsx ต้องใช้ qaViewScope()');
 });
+
+/* ── 🗑️ ลบพาร์ท QA ที่มีใบตรวจแล้ว = ประวัติตรวจหายถาวร (FK cascade · audit 19/10) ── */
+test('🛡️ qa-part-delete-needs-sheet-count — delPart ต้องนับใบตรวจก่อนลบ', () => {
+  const src = stripComments(readFileSync(join(ROOT, 'src/pages/QAInspectionSetup.jsx'), 'utf8'));
+  const i = src.indexOf('const delPart');
+  const body = src.slice(i, src.indexOf("from('qa_parts').delete()", i));
+  assert.ok(i >= 0 && /qa_inspection_sheets/.test(body),
+    '\n\n❌ delPart ลบ qa_parts โดยไม่นับ qa_inspection_sheets ก่อน — ON DELETE CASCADE ลบประวัติตรวจทั้งพาร์ท\n');
+});

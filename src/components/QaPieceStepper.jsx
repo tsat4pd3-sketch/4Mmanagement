@@ -12,7 +12,7 @@
  *
  * ค่าที่ตัดสินอัตโนมัติมาจาก utils/qaSpec (judgeVariable) — จุดเดียวกับ label สเปค ห้ามเขียนซ้ำ
  */
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { toast } from './Toast';
 import { specLabel, judgeVariable } from '../utils/qaSpec';
 import { pieceResult, seqLabel, SEQ_RULE } from '../utils/qaSequential';
@@ -68,7 +68,16 @@ export default function QaPieceStepper({
   const labelById = useMemo(() => Object.fromEntries(items.map(i => [i.id, `#${i.balloon_no}`])), [items]);
   const [dispo, setDispo] = useState(null);          // modal disposition ของชิ้นที่ตก
   const [act, setAct] = useState({ text: '', by: fullName || '', fourM: false, category: 'Machine' });
-  useEffect(() => { setDraft({}); }, [sheet?.id, seq?.nextPiece]);   // เปลี่ยนใบ/ชิ้น → เริ่มกรอกใหม่
+  /* เปลี่ยนใบ/ชิ้น → เริ่มกรอกใหม่ · 🔴 ยกเว้น "ใบเพิ่งถูกสร้าง" (id: ว่าง → มี) ตอนกดบันทึกชิ้นแรก
+     — เดิมล้างทันทีที่ใบเกิด ถ้าบันทึกผลล้มต่อจากนั้น ค่าที่กรอกทั้งใบ (สูงสุด 130 จุด) หายหมด (audit 19/10) */
+  const prevSheetId = useRef(sheet?.id ?? null);
+  useEffect(() => {
+    const was = prevSheetId.current, now = sheet?.id ?? null;
+    prevSheetId.current = now;
+    if (was == null && now != null) return;   // ใบเพิ่งเกิดจากการกดบันทึก — คงค่าที่กรอกไว้
+    setDraft({});
+  }, [sheet?.id]);
+  useEffect(() => { setDraft({}); }, [seq?.nextPiece]);   // บันทึกชิ้นสำเร็จ → ชิ้นถัดไปเริ่มใหม่
   useEffect(() => { setAct(a => ({ ...a, by: a.by || fullName || '' })); }, [fullName]);
 
   const fs = isMobile ? 16 : 13;                     // 16px กัน iOS ซูมตอนโฟกัส
