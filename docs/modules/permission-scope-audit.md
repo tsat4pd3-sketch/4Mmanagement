@@ -333,13 +333,45 @@ if (role === 'leader') {          // ← ไม่มี && lineId
 
 1. ชั้น DB (ข้อ 7.1) ยังไม่มีด่านขอบเขต — ฝั่ง DR ต้องผ่าน Edge Function
 2. ฝั่ง DB ยังไม่รู้จัก `resp_cost_centers` ⇒ คนยิง API ตรงยังข้ามด่านจอได้ (เหมือนแกนเดิม)
-3. **3 บัญชีทดสอบ — user สั่ง "ลบไป" แล้ว (19/10) · ยังลบไม่ได้เพราะเครื่องมือ ไม่ใช่เพราะข้อมูล**
-   `test@test` (leader pd3 test) · `test@leader` (leader test) · `test@qa` (qa test)
-   · ✅ **ตรวจปลายทางครบแล้วว่าว่างจริง** (กฎ fail-closed ก่อนลบ): FK ที่ชี้มาที่ `auth.users`/`profiles`
-     **ทุกตัวที่เป็น NO ACTION = 0 แถว** (four_m_logs · cqi15_* · document_controls · employees.created_by ·
-     shift_schedules · skill_level_up_requests ฯลฯ) · เหลือแค่ `notifications` 243 แถว ที่ FK เป็น cascade
-   · ✅ ฝั่ง DR สแกน **ทุกคอลัมน์ `*_by_uid` + `actor_uid` 125 ช่อง** (`query_to_xml` วนทั้ง schema) = **0 แถว**
-   · ❌ `delete from auth.users` ผ่าน MCP **timeout ทุกรอบ** (เช่นเดียวกับ `drop function` ของ `org_cc_catalog`
-     — รอบนี้ MCP อ่านได้ปกติ แต่คำสั่งเขียน/DDL timeout หมด) ⇒ ยืนยันแล้วว่า **ไม่มีอะไรถูกลบ**
-   ⇒ ลบได้ 2 ทาง: **ปุ่ม 🗑 ลบผู้ใช้ ในโมดัลแก้ไขบัญชี** (ผ่าน edge function `delete-user` — ทางที่ถูกของระบบ)
-     หรือ SQL Editor ของ project "MAIN" (`delete from auth.users where id in (…)` · cascade เก็บลูกให้เอง)
+3. ✅ **3 บัญชีทดสอบ — ลบแล้ว (19/10)** `test@test` · `test@leader` · `test@qa`
+   · ก่อนลบตรวจปลายทางครบแบบ fail-closed: FK ที่ชี้ `auth.users`/`profiles` **ทุกตัวที่เป็น NO ACTION = 0 แถว**
+     (four_m_logs · cqi15_* · document_controls · employees.created_by · shift_schedules · skill_level_up_requests ฯลฯ)
+     · ฝั่ง DR สแกน **ทุกคอลัมน์ `*_by_uid` + `actor_uid` 125 ช่อง** (`query_to_xml` วนทั้ง schema) = **0 แถว**
+     · เหลือแค่ `notifications` 243 แถวที่ FK เป็น cascade
+   · ⚠️ **คำสั่งเขียน/DDL ผ่าน MCP timeout ทุกรอบรอบนั้น** (อ่านได้ปกติ) ⇒ user รัน SQL เองใน SQL Editor
+     project **"MAIN"** (`ewhdfqwfwofivojtsizn`) · ตรวจกลับแล้ว: 0 บัญชีทดสอบ · profiles 119 แถว · `org_cc_catalog` ถูก drop แล้ว
+   ⇒ บทเรียน: ทางลบที่ถูกของระบบ = **ปุ่ม 🗑 ลบผู้ใช้ ในโมดัลแก้ไขบัญชี** (edge function `delete-user`)
+
+---
+
+## 10. 🕳️ รอบ 6 — ทางเขียนที่ "ไม่มีด่านเลย / ด่านมองผิดแถว" (19/10 · ต่อจาก QC audit ข้อ 5)
+
+ชั้นที่ 3 รอบก่อนไล่ปิด "จอที่มีด่านแล้วแต่ใช้แกนเดิม" — รอบนี้ไล่ **จอที่กดเขียนได้โดยไม่ผ่านชั้นที่ 3 เลย**
+หรือที่ **เช็คแถวเดิมแต่เขียนลงปลายทางใหม่** (คลาสเดียวกับ `PMSetup.handleTransfer`)
+
+### ✅ `/org-setup` — ย้ายโหนดผังข้ามส่วนงานได้ (ปิด 19/10)
+
+**อาการ:** ผู้ถือ `org:manage_own_unit` เปิดแก้กลุ่ม/แผนก/ทีม**ของตัวเอง** (ด่านต้นทางผ่าน) แล้วเปลี่ยนช่อง
+"อยู่ภายใต้" เป็นแผนกของ**ส่วนงานอื่น** — `payload.parent_id` เขียนตัวใหม่ แต่ `handleSave` เช็คแค่
+`canEditNode(modal.editing)` ซึ่งไต่สายของ**แถวเดิม** ⇒ ย้ายหน่วยงานเข้าไปแขวนใต้ส่วนงานที่ไม่ใช่ของตัวเองได้
+(ลิสต์ "อยู่ภายใต้" ก็โชว์ทั้งโรงงานโดยไม่กรอง)
+
+**ที่แก้:**
+- 🔴 กฎย้ายไปอยู่ที่ **`src/utils/orgNodeEdit.js`** ที่เดียว — `sectionOfOrgNode` (ไต่ขึ้นหา section ·
+  แม่หาไม่เจอ = `null` ไม่เดา) · `canEditOrgNode` (ต้นทาง) · `canAddOrgNodeUnder` (**ปลายทาง** · ชั้นแม่ผิด =
+  บล็อก) · `orgSaveBlockReason` (รวม 2 ขา + เทียบว่า "ย้ายจริงไหม") · `filterParentOptions`
+- หน้าเลิกไล่ `parent_id` เองทีละชั้น (เดิม `canEditNode`/`canAddLineHere`/`canAddTeamHere` ไล่เอง 3 ชุด)
+- ลิสต์ "อยู่ภายใต้" กรองด้วย**กฎเดียวกับด่าน** + **เขียนบนจอว่าซ่อนกี่รายการ** ("🔒 ซ่อน N รายการที่อยู่นอกส่วนงานของคุณ")
+  — ตัวกรองไม่ใช่ด่าน ด่านจริงยังอยู่ที่ `orgSaveBlockReason` ก่อน `from('org_nodes')`
+- `ORG_PARENT_KIND` = ชุดชั้นที่ตัดสินได้ (section/ไม่รู้จัก = admin เท่านั้น) — แทน `CAN_ADD_HERE` เดิมในหน้า
+- ด่าน: เทส `orgNodeEdit.test.mjs` 6 เคส + `regressionGuards` 2 ตัว (ป้าย/ชั้นครบ · **ปลายทางต้องถูกเช็ค
+  และต้องเช็คก่อนเขียน** + ห้ามก๊อปการไล่สายกลับมาไว้ในหน้า) — พิสูจน์แล้วว่าถอดเช็คปลายทางออก = เทสแดง 2 ตัว
+
+**ไม่เปลี่ยนพฤติกรรมของ admin** (ทุกฟังก์ชันคืน true ทันทีถ้า `isAdmin`) · ของผู้ถือ `manage_own_unit`
+ที่ทำงานในส่วนงานตัวเองก็เหมือนเดิมเป๊ะ — ต่างเฉพาะ "ย้ายออกนอกส่วนงาน" ที่เดิมทำได้เงียบๆ
+
+### ที่เหลือในรอบนี้ (ยังไม่แก้)
+
+`PMCheckData.NgRecheckPanel` (ไม่มีด่านเลย) · `PmCoordination` (edit/notify/toggle/PlanModal.save) ·
+`PMSetup.handleTransfer` (ปลายทางไม่ถูกเช็ค) · `NPI.delProject` + 4 ลูก · `RackCenter` · `QualityBins` ·
+`LineStock.stock_inflow_rules` · `QualityControl` NCR · `KpiMonthly.copyFromYear`/`restoreDef`

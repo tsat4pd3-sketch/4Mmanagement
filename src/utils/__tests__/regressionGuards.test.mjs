@@ -2978,14 +2978,37 @@ test('🛡️ /org-setup: ทุกชั้นที่มีปุ่มเพ
   const missing = kinds.filter(k => !new RegExp(`\\b${k}\\s*:`).test(label));
   assert.deepEqual(missing, [], `\n\n❌ KIND_LABEL ขาดชั้น: ${missing.join(', ')}\n`
     + '   ผลที่เกิด: หัวโมดัลขึ้น "เพิ่ม undefined" (เกิดจริง 05/10/2026 ตอนเพิ่มชั้นทีม)\n');
-  const map = code.match(/const\s+CAN_ADD_HERE\s*=\s*\{[^}]*\}/)?.[0] || '';
+  const rule = stripComments(readFileSync(join(ROOT, 'src/utils/orgNodeEdit.js'), 'utf8'));
+  const map = rule.match(/const\s+ORG_PARENT_KIND\s*=\s*\{[^}]*\}/)?.[0] || '';
   assert.ok(/department\s*:/.test(map) && /line\s*:/.test(map) && /team\s*:/.test(map),
-    '\n\n❌ OrgSetup.jsx ไม่มี CAN_ADD_HERE ครบ department/line/team\n'
+    '\n\n❌ orgNodeEdit.js ไม่มี ORG_PARENT_KIND ครบ department/line/team\n'
     + '   ทำไมห้ามเขียนเป็นเชน ternary: ลงท้าย `: false` ⇒ ชั้นที่ลืมต่อสาขาถูกบล็อกเงียบ\n'
     + '              ปุ่ม ➕ โชว์ (เช็คคนละที่) แต่กดบันทึกไม่ผ่าน = ผู้ใช้ไม่รู้ว่าทำอะไรผิด\n'
-    + '   แก้ยังไง: `const CAN_ADD_HERE = { department: canAddDeptHere, line: canAddLineHere, team: canAddTeamHere }`\n');
-  assert.ok(/CAN_ADD_HERE\[modal\.kind\]/.test(code),
-    '\n\n❌ handleSave ไม่ได้ใช้ CAN_ADD_HERE ตัดสินสิทธิ์เพิ่ม — ดูเหตุผลด้านบน\n');
+    + '   แก้ยังไง: เติมชั้นใหม่ใน `ORG_PARENT_KIND = { department: \'section\', line: \'department\', team: \'line\' }`\n');
+  assert.ok(/orgSaveBlockReason\s*\(/.test(code),
+    '\n\n❌ handleSave ไม่ได้ใช้ orgSaveBlockReason ตัดสินสิทธิ์ — ดูเหตุผลด้านบน\n');
+});
+
+/* ── 🔴 ย้ายโหนดผัง = เขียนลง "แม่ใหม่" ⇒ เช็คแต่ต้นทางไม่พอ (QC audit ข้อ 5 · 19/10/2026) ─────
+   เคสจริงที่ปิดไป: ผู้ถือ org:manage_own_unit เปิดแก้กลุ่มของตัวเอง (ต้นทางผ่าน) แล้วเปลี่ยนช่อง
+   "อยู่ภายใต้" เป็นแผนกของส่วนงานอื่น — payload เขียน parent_id ใหม่ ส่วน guard มองแถวเดิม
+   = ย้ายหน่วยงานเข้าไปแขวนใต้ส่วนงานที่ไม่ใช่ของตัวเองได้ (ลิสต์ก็โชว์ทั้งโรงงาน)
+   ⇒ ด่านตอนบันทึกต้องถามปลายทางด้วย (orgSaveBlockReason) และกฎต้องอยู่ใน utils ที่เดียว */
+test('🛡️ /org-setup: ด่านตอนบันทึกต้องเช็ค "ปลายทาง" ของการย้าย ไม่ใช่แค่แถวเดิม', () => {
+  const rule = stripComments(readFileSync(join(ROOT, 'src/utils/orgNodeEdit.js'), 'utf8'));
+  assert.ok(/export\s+function\s+orgSaveBlockReason/.test(rule)
+    && /moved[\s\S]{0,200}canAddOrgNodeUnder/.test(rule),
+    '\n\n❌ orgNodeEdit.orgSaveBlockReason ไม่ได้เทียบแม่เดิมกับแม่ใหม่แล้วเช็คปลายทาง\n'
+    + '   ผลที่เกิด: ย้ายหน่วยงานข้ามส่วนงานได้ทั้งที่ไม่มีสิทธิ์ (เขียนของหน่วยงานอื่น)\n');
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/OrgSetup.jsx'), 'utf8'));
+  const save = code.slice(code.indexOf('const handleSave'));
+  const guard = save.indexOf('orgSaveBlockReason');
+  const write = save.search(/from\('org_nodes'\)/);
+  assert.ok(guard > -1 && write > -1 && guard < write,
+    '\n\n❌ handleSave เขียน org_nodes ก่อนผ่าน orgSaveBlockReason (ด่านต้องมาก่อนการเขียน)\n');
+  /* กฎห้ามถูกก๊อปกลับมาไล่สายในหน้า — เคยมี canEditNode/canAddLineHere ไล่ parent_id เองทีละชั้น */
+  assert.ok(!/allDepts\.find\([^)]*\)[\s\S]{0,80}parent_id\s*===\s*mySecId/.test(code),
+    '\n\n❌ OrgSetup.jsx ไล่สายผัง/เทียบ mySecId เองในหน้า — ใช้ utils/orgNodeEdit.js ที่เดียว\n');
 });
 
 /* ── สำเนาชื่อของผัง: กลุ่มเก็บ "ชื่อ" · ที่เหลือเก็บ code||name — ห้ามเดาเป็น name หมด ───── */
