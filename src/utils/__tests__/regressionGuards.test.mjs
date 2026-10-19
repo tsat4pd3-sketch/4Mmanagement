@@ -4764,6 +4764,11 @@ test('🛡️ inspection-setup-shared — จอตั้งค่าจุด�
   // หน้า QA ห้ามกลับไปแก้จุดตรวจเอง (เขียน qa_inspection_items ตรง) — ต้องผ่านโมดัลกลาง
   const qa = stripComments(readFileSync(join(ROOT, 'src/pages/QAInspectionSetup.jsx'), 'utf8'));
   if (/from\('qa_inspection_items'\)\s*\.(insert|update|delete|upsert)/.test(qa)) bad.push('QAInspectionSetup.jsx เขียน qa_inspection_items เอง');
+  /* คัดลอกจุดตรวจ QA ข้ามพาร์ท (19/10): แถวผ่าน qaItemCopyRow · ไฟล์ต้องคัดลอกจริง ห้ามแชร์ path
+     (delPart ลบทั้งโฟลเดอร์ parts/<id> ⇒ แชร์ = รูปของพาร์ทปลายทางหายตาม) */
+  const cp = stripComments(readFileSync(join(ROOT, 'src/lib/qaPointsCopy.js'), 'utf8'));
+  if (!/qaItemCopyRow\(/.test(cp)) bad.push('lib/qaPointsCopy.js ไม่ได้สร้างแถวผ่าน qaItemCopyRow()');
+  if (!/\.copy\(/.test(cp)) bad.push('lib/qaPointsCopy.js ไม่ได้ storage.copy ไฟล์เข้าโฟลเดอร์ปลายทาง (แชร์ path = รูปหายเมื่อลบต้นทาง)');
   assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n   ') + '\n'
     + '   ทำไม: ตั้งค่าจุดตรวจ PM กับ QA ต้องเป็น "ระบบเดียว" (โมดัล · ผังรูปซ้าย/การ์ดขวา · ซูม · ปักหมุด ·\n'
     + '         รูปโคลสอัพ · ไปที่จุด · บันทึกครั้งเดียว) ต่างกันได้แค่ช่องสเปคในการ์ด\n'

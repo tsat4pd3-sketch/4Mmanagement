@@ -374,6 +374,7 @@ model: inherit
 - **F-inspect (2026-10-15) จอตั้งค่าจุดตรวจ (รูป + ปักหมุด + การ์ดจุด) ต้องประกอบจาก `src/components/inspect/*` + `SpinAnnotator`**
   — grep หน้าที่ใช้ `CalloutPin`/วาดโมดัลจุดตรวจเอง นอก `components/inspect/`, `SpinAnnotator`, จอตรวจ (`PMCheckData`/`QaCheckSheet`)
   · ด่าน `inspection-setup-shared` ครอบ PMSetup + QaPointsEditor · 📄 `docs/modules/inspection-point-setup.md`
+  · QA คัดลอกจุดตรวจข้ามพาร์ท: แถวผ่าน `qaItemCopyRow()` · ไฟล์ต้อง `storage.copy` เข้า `parts/<ปลายทาง>/` — grep insert `image_path`/`drawing_url` ของพาร์ทอื่นตรงๆ = ผิด
 
 ### หมวด G — Workflow & เอกสาร
 - **G1** pattern ใหม่ที่ใช้หลายหน้า ต้องมีบันทึกใน docs/UI-CONVENTIONS.md · schema/workflow ใหม่
