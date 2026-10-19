@@ -4866,6 +4866,53 @@ test('🛡️ write-scope-layer — ด่าน "แก้ข้ามหน่
     + '   แก้: canWriteUnit()/canWriteLine() จาก src/utils/writeScope.js + เรียกซ้ำใน handler\n');
 });
 
+/* ── 🪪 คิว "บัญชีที่ยังไม่รู้ว่าเป็นใคร" ห้ามกลับไปเป็นข้อความเปล่า (2026-10-19 · คำสั่ง user) ──
+   เดิมจอ `/add-user` บอกแค่ "ยังไม่ระบุประเภทบัญชี · N บัญชี" **ไม่มีชื่อ ไม่มีปุ่ม**
+   ⇒ ต้องไปไล่หาเองใน 122 แถว ⇒ ไม่มีใครทำ ค้างมาตลอด (18 ใบ)
+   🔴 ตัวเลขต้องพูดให้ตรง: `shared` 31 ใบที่ไม่ผูกตัวตน **ถูกต้องแล้ว ไม่ใช่งานค้าง**
+      ⇒ ห้ามรวมเป็นเลขเดียว ("49 ไม่ผูกพนักงาน") ⇒ ต้องผ่าน `unlinkedTriage()` ที่แยก 3 กอง
+   🔴 `normSearch` ต้องมีบ้านเดียว (`utils/thaiText.js`) — ตัวเทียบชื่อของ `identityMatch` ต้องเป็น
+      ตัวเดียวกับที่ picker ใช้ค้น ไม่งั้น "จอบอกว่าไม่มีชื่อนี้" กับ "ค้นแล้วเจอ" ขัดกันเอง */
+test('🛡️ unlinked-account-queue — คิวบัญชีไม่ผูกตัวตนต้องมีชื่อ + ปุ่ม + แยกบัญชีกลางออก', () => {
+  const bad = [];
+  const im = stripComments(readFileSync(join(ROOT, 'src/utils/identityMatch.js'), 'utf8'));
+  for (const fn of ['employeeCandidates', 'unlinkedTriage', 'routeHint']) {
+    if (!new RegExp(`export function ${fn}\\b`).test(im)) bad.push(`identityMatch.js (ไม่มี ${fn})`);
+  }
+  /* ชื่อซ้ำ/ชื่อต้นตรง ต้องไม่ถูกผูกให้เอง — `confident` ต้องผูกกับ "เจอคนเดียว" เท่านั้น */
+  if (!/confident: same\.length === 1/.test(im))
+    bad.push('identityMatch.js (confident ไม่ได้ผูกกับ "ชื่อตรงและเจอคนเดียว" — เสี่ยงผูกผิดคน)');
+  if (!/tier: 'first', rows: first\.slice\(0, limit\), confident: false/.test(im))
+    bad.push('identityMatch.js (ชั้น "ชื่อต้นตรง" ต้อง confident=false เสมอ)');
+  if (!/e\.is_active !== false/.test(im)) bad.push('identityMatch.js (เสนอคนที่ลาออกแล้วได้)');
+
+  const au = stripComments(readFileSync(join(ROOT, 'src/pages/AddUser.jsx'), 'utf8'));
+  if (!/unlinkedTriage\(users, emps\)/.test(au)) bad.push('AddUser.jsx (ไม่ได้แยก 3 กองผ่าน unlinkedTriage)');
+  if (!/tri\.queue\.map\(/.test(au)) bad.push('AddUser.jsx (คิวไม่ได้ลิสต์รายชื่อ — กลับไปเป็นข้อความเปล่า)');
+  if (!/linkEmployee\(u, e\)/.test(au)) bad.push('AddUser.jsx (ไม่มีปุ่มผูกกับพนักงานในคิว)');
+  if (!/markShared\(u\)/.test(au)) bad.push('AddUser.jsx (ไม่มีปุ่ม "เป็นบัญชีกลาง" ในคิว)');
+  if (!/tri\.sharedOk\.length/.test(au))
+    bad.push('AddUser.jsx (ไม่ได้เขียนว่าบัญชีกลางที่ไม่ผูกตัวตน = ถูกต้องแล้ว)');
+  /* 2 ปุ่มนั้นเขียน DB ⇒ ต้องนับแถว (RLS ปฏิเสธ UPDATE = 0 แถว ไม่มี error) */
+  if ((au.match(/checkWriteRows\(await supabase\.from\('profiles'\)/g) || []).length < 2)
+    bad.push('AddUser.jsx (ปุ่มในคิวไม่ได้นับแถวที่เขียนจริงด้วย checkWriteRows)');
+
+  /* บ้านเดียวของ normSearch */
+  const tt = stripComments(readFileSync(join(ROOT, 'src/utils/thaiText.js'), 'utf8'));
+  if (!/export const normSearch/.test(tt)) bad.push('utils/thaiText.js (normSearch ไม่ได้อยู่ที่นี่)');
+  for (const f of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const rel = relative(ROOT, f);
+    if (rel === 'src/utils/thaiText.js') continue;
+    const src = stripComments(readFileSync(f, 'utf8'));
+    if (/export const normSearch\s*=/.test(src)) bad.push(`${rel} (ประกาศ normSearch ชุดที่ 2)`);
+  }
+
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n   ') + '\n'
+    + '   ทำไม: ตัวตน (ทีม/ไลน์/ส่วนงาน) อ่านจากฐานพนักงานเมื่อผูกแล้ว — ยังไม่ผูก = ใช้ค่าที่แอดมิน\n'
+    + '         กรอกเองซึ่งเพี้ยนเงียบ · และ "จับคู่ชื่ออัตโนมัติ" แก้ไม่ได้ (วัด 19/10: ชื่อตรง 1/18)\n'
+    + '   แก้: จัดคิวผ่าน src/utils/identityMatch.js + ลิสต์รายชื่อ/ปุ่ม 3 ทางที่ /add-user\n');
+});
+
 /* ── 🚫 กะผลิตห้ามถูก hard delete (2026-10-19 · QC audit ข้อ ③) ───────────────────────
    `production_sessions` มี FK cascade ไปที่ `prod_orders` · `downtime_logs` · `defect_logs`
    ⇒ `delete` ใบเดียว = ยอดผลิต/เวลาหยุด/ของเสียของกะนั้นหายถาวร และ OEE ย้อนหลังเปลี่ยน

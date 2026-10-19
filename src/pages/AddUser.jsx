@@ -9,7 +9,7 @@ import { positionOptions, positionOptionsWith, positionLabel, loadPositions, cle
 import { can, loadPermissions } from '../utils/permissions';   // เช็คสิทธิ์ของ role ที่เลือก เพื่อเตือนเมื่อไม่ตรงกับระดับงาน
 import { deptNameOf, teamKeyOf } from '../utils/mtnTeams';
 import { pmTeamsSync, loadPmTeams } from '../utils/pmTeams';   // ทีมช่างซ่อมจากตาราง mtn_teams (data-driven) — เลิกวน MTN_TEAMS hardcode (2026-09-07)
-import { checkWrite } from '../utils/dbWrite';
+import { checkWrite, checkWriteRows } from '../utils/dbWrite';
 import LineSelect from '../components/LineSelect';
 import { STAFF_KINDS, STAFF_SHOPFLOOR, STAFF_SUPPORT } from '../utils/staffKind';   // 👥 หน้าไลน์ vs สายสนับสนุน
 import { normSearch } from '../components/SearchSelect';   // ตัว normalize คำค้นกลาง (ทนการสะกดไทย)
@@ -26,6 +26,9 @@ import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
 import FilterBar from '../components/FilterBar';
 import { identityDiff, identityFallbacks, syncPatch, dualMeaningInfo } from '../utils/identitySync';
+/* 🪪 "บัญชีไหนยังไม่รู้ว่าเป็นใคร" + ตัวเสนอคนในทะเบียน — กฎอยู่ใน utils/identityMatch.js (pure · มีเทส)
+   🔴 ระบบ**ไม่เดา**ประเภทบัญชีให้ · ไฟล์นั้นแค่จัดคิว + เสนอตัวเลือก คนกดตัดสิน */
+import { unlinkedTriage, routeHint } from '../utils/identityMatch';
 import SearchInput from '../components/SearchInput';
 import { ALL } from '../utils/filterLabels';
 /* ทีมช่างซ่อม (profiles.mtn_teams) — เดิมมีหน้าที่เดียวคือ "แยกคิวใบแจ้งซ่อม MO ให้ถูกทีม"
@@ -387,6 +390,35 @@ export default function AddUser() {
     const res = await supabase.from('profiles').update({ is_dept_admin: val }).eq('id', id).select('id');
     return subStepErr('แอดมินหน่วยงาน', res);
   };
+  /* ── 🪪 คิว "บัญชีที่ยังไม่รู้ว่าเป็นใคร" — ปุ่มลัด 2 ทางจากในแถบ worklist (19/10) ────────
+     ทางที่ 3 (ยังไม่มีชื่อในทะเบียนพนักงาน) ใช้ปุ่ม "แก้ไข" เปิดโมดัลเดิมที่มีปุ่มเพิ่มคนเข้าฐานอยู่แล้ว
+     🔴 ทั้ง 2 ปุ่มนับแถวที่เขียนจริง — RLS ปฏิเสธ UPDATE = "สำเร็จ 0 แถว ไม่มี error" (กฎเหล็ก DB ข้อ 2) */
+  const [triBusy, setTriBusy] = useState(null);   // id ที่กำลังเขียน (กันกดซ้ำ)
+  const linkEmployee = async (u, emp) => {
+    if (!u?.id || !emp?.id) return;
+    setTriBusy(u.id);
+    const ok = checkWriteRows(await supabase.from('profiles')
+      .update({ employee_id: emp.id, account_kind: 'person' })
+      .eq('id', u.id).select('id'), 'ผูกบัญชีกับพนักงาน');
+    setTriBusy(null);
+    if (!ok) return;
+    toast.success(`ผูก "${u.full_name || u.email}" กับ ${emp.name} แล้ว — ทีม/ไลน์/ส่วนงานจะอ่านจากฐานพนักงานต่อไป`);
+    fetchUsers();
+  };
+  /** ติดป้าย "บัญชีกลาง" — ใช้ได้เฉพาะใบที่**ยังไม่ผูกตัวตน** (ผูกแล้วแปลว่าเป็นคน ต้องไปแก้ในโมดัล) */
+  const markShared = async (u) => {
+    if (!u?.id || u.employee_id) return;
+    if (!window.confirm(`ตั้ง "${u.full_name || u.email}" เป็นบัญชีกลาง (จอ TV / ประจำเครื่อง) ?\n`
+      + 'บัญชีกลางไม่ผูกตัวตนพนักงาน และจะไม่ขึ้นในคิวนี้อีก')) return;
+    setTriBusy(u.id);
+    const ok = checkWriteRows(await supabase.from('profiles')
+      .update({ account_kind: 'shared' }).eq('id', u.id).select('id'), 'ตั้งเป็นบัญชีกลาง');
+    setTriBusy(null);
+    if (!ok) return;
+    toast.success('ตั้งเป็นบัญชีกลางแล้ว');
+    fetchUsers();
+  };
+
   /** ผลรวมขั้นย่อย → ข้อความเขียวเฉพาะเมื่อครบทุกขั้น · ขาดขั้นไหน = toast แดงบอกรายขั้น (modal ปิดแล้วก็ยังเห็น) */
   const reportSubSteps = (okMsg, errs) => {
     const bad = errs.filter(Boolean);
@@ -711,8 +743,10 @@ export default function AddUser() {
           .map(u => ({ u, e: u.employee_id ? empById[u.employee_id] : null }))
           .map(x => ({ ...x, diff: identityDiff(x.u, x.e) }))
           .filter(x => x.diff.length);
-        const unset = users.filter(u => !u.account_kind);
-        if (!mism.length && !unset.length) return null;
+        /* 🪪 แยก 3 กองผ่านของกลาง — "บัญชีกลางไม่ผูกตัวตน = ถูกต้องแล้ว" ห้ามนับเป็นงานค้าง */
+        const tri = unlinkedTriage(users, emps);
+        const unset = tri.queue;
+        if (!mism.length && !tri.queue.length && !tri.personUnlinked.length) return null;
         return (
           <div className="card" style={{ marginBottom: 12, padding: 12, borderLeft: '3px solid #f59e0b' }}>
             {mism.length > 0 && (
@@ -801,12 +835,85 @@ export default function AddUser() {
                 </div>
               );
             })()}
-            {unset.length > 0 && (
+            {/* ── 🪪 คิว "ยังไม่รู้ว่าบัญชีนี้เป็นใคร" (19/10 · คำสั่ง user) ───────────────────
+                เดิมบรรทัดนี้บอกแค่ "ยังไม่ระบุประเภทบัญชี · 18 บัญชี" **ไม่มีชื่อ ไม่มีปุ่ม**
+                ⇒ แอดมินต้องไปไล่หาเองใน 122 แถว ⇒ ไม่มีใครทำ ค้างมาตลอด
+                🔴 วัดแล้ว: จับคู่ชื่ออัตโนมัติแก้ไม่ได้ (ชื่อตรง 1/18) — ปลายทางมี 3 ทาง
+                   ⇒ จอต้องเสนอ "ทางไปต่อ" รายใบ ไม่ใช่ปุ่ม "ผูกให้หมด" */}
+            {tri.queue.length > 0 && (
               <div style={{ fontSize: 12, color: 'var(--text2)' }}>
-                <b style={{ color: '#f59e0b' }}>ยังไม่ระบุประเภทบัญชี · {unset.length} บัญชี</b>
-                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3, lineHeight: 1.5 }}>
-                  ระบบไม่เดาให้ว่าบัญชีไหนเป็นของคนหรือของหน่วยงาน — เปิดแก้ไขแล้วเลือกประเภท
-                  บัญชีของคนจะได้ผูกตัวตนกับฐานพนักงาน ส่วนบัญชีหน่วยงาน/อุปกรณ์ไม่ต้องผูก
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#f59e0b', marginBottom: 4 }}>
+                  🪪 ยังไม่รู้ว่าบัญชีนี้เป็นใคร · {tri.queue.length} บัญชี
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 7, lineHeight: 1.6 }}>
+                  ตัวตน (<b>ทีม / ไลน์ / ส่วนงาน</b>) อ่านจาก<b>ฐานพนักงาน</b>เมื่อผูกแล้ว —
+                  ยังไม่ผูก = ใช้ค่าที่แอดมินกรอกไว้ในบัญชี ซึ่งเพี้ยนได้โดยไม่มีใครรู้
+                  (เคสจริง: หัวหน้า 2 คนทีมสลับกัน แล้วเปิดจอเช็คชื่อไม่เห็นกะตัวเอง)
+                  <br />🔴 <b>ระบบไม่เดาให้</b> ว่าใบไหนเป็นของคนหรือของหน่วยงาน — เสนอตัวเลือกให้ คนกดตัดสิน
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {tri.queue.map(({ u, tier, rows, confident }) => {
+                    const hint = routeHint({ tier, rows, confident });
+                    const busy = triBusy === u.id;
+                    return (
+                      <div key={u.id} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap',
+                        fontSize: 12, background: 'var(--bg3)', borderRadius: 6, padding: '6px 9px', opacity: busy ? 0.55 : 1 }}>
+                        <div style={{ minWidth: 150, flex: '0 1 190px' }}>
+                          <b>{u.full_name || <span style={{ color: 'var(--muted)', fontWeight: 400 }}>ไม่ระบุชื่อ</span>}</b>
+                          <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+                            {roleLabel(u.role)}{u.position ? ` · ${positionLabel(u.position)}` : ''}
+                            {u.section ? ` · ${u.section}` : ''}
+                          </div>
+                        </div>
+                        <div style={{ flex: '1 1 260px', minWidth: 0 }}>
+                          <div style={{ fontSize: 11, color: tier ? 'var(--text2)' : '#f59e0b', marginBottom: 3 }}>
+                            {hint.text}
+                          </div>
+                          {/* ชื่อที่เจอในทะเบียน — โชว์ "รหัสพนักงาน + ส่วนงาน" ให้แยกคนชื่อซ้ำออกจากกันได้ */}
+                          <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                            {rows.map(e => (
+                              <button key={e.id} type="button" disabled={busy}
+                                onClick={() => linkEmployee(u, e)}
+                                title={`ผูกบัญชีนี้กับ ${e.name} (${e.employee_id_code || 'ไม่มีรหัส'})`}
+                                style={{ width: 'auto', fontSize: 11, padding: '3px 9px', cursor: busy ? 'default' : 'pointer',
+                                  borderRadius: 6, border: `1px solid ${confident ? 'rgba(34,197,94,0.55)' : 'var(--border2)'}`,
+                                  background: confident ? 'rgba(34,197,94,0.12)' : 'var(--bg2)',
+                                  color: confident ? '#22c55e' : 'var(--text2)', fontWeight: 700 }}>
+                                🔗 {e.employee_id_code || '—'} · {e.name}
+                                {e.section ? <span style={{ fontWeight: 400, opacity: 0.8 }}> · {e.section}</span> : null}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: 5, marginLeft: 'auto', flexWrap: 'wrap' }}>
+                          {/* ทาง 2: ยังไม่มีชื่อในทะเบียน → โมดัลเดิมมีปุ่ม "＋ เพิ่มคนนี้เข้าฐาน" อยู่แล้ว */}
+                          <button type="button" disabled={busy} onClick={() => openEdit(u)}
+                            title="เปิดแก้ไขบัญชี — ในโมดัลมีปุ่มเพิ่มคนเข้าฐานพนักงาน ถ้ายังไม่มีชื่อเขา"
+                            style={{ width: 'auto', fontSize: 11, padding: '3px 9px', cursor: busy ? 'default' : 'pointer' }}>
+                            ✏️ เปิดแก้ไข / เพิ่มเข้าฐาน
+                          </button>
+                          {/* ทาง 3: ไม่ใช่คน (จอ TV / ประจำเครื่อง / บัญชีทดสอบ) */}
+                          <button type="button" disabled={busy} onClick={() => markShared(u)}
+                            title="จอ TV หรือบัญชีประจำเครื่อง = บัญชีกลาง ไม่ต้องผูกตัวตน"
+                            style={{ width: 'auto', fontSize: 11, padding: '3px 9px', cursor: busy ? 'default' : 'pointer',
+                              background: 'var(--bg2)', border: '1px solid var(--border2)', color: 'var(--text2)' }}>
+                            🖥️ เป็นบัญชีกลาง
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                {/* 🔴 ตัวเลขต้องพูดให้ตรง — บัญชีกลางที่ไม่ผูกตัวตน **ถูกต้องแล้ว** ห้ามนับเป็นงานค้าง */}
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 7, lineHeight: 1.6,
+                  borderTop: '1px dashed var(--border)', paddingTop: 6 }}>
+                  นอกคิวนี้: <b>{tri.sharedOk.length}</b> บัญชีกลาง (จอ TV / ประจำเครื่อง) —
+                  <b> ไม่ผูกตัวตนถูกต้องแล้ว ไม่ใช่งานค้าง</b>
+                  {tri.personUnlinked.length > 0 && (
+                    <> · <b style={{ color: '#ef4444' }}>⚠ {tri.personUnlinked.length} บัญชีติดป้ายว่าเป็นของคนแต่ยังไม่ผูกตัวตน</b>
+                      {' '}({tri.personUnlinked.map(x => x.u.full_name || x.u.email).join(' · ')})
+                      {' '}— เปิดแก้ไขแล้วเลือกคนให้ครบ</>
+                  )}
                 </div>
               </div>
             )}

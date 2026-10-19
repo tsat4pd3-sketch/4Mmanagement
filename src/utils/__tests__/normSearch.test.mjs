@@ -7,25 +7,14 @@
  *
  * **ชื่อคนไทยในฐานพิมพ์มือ สะกดต่างกัน 1 ตัวเสมอ — ตัวค้นต้องทน ไม่ใช่ให้คนพิมพ์ให้เป๊ะ**
  *
- * ไฟล์นี้อ่านซอร์สแล้วประเมินฟังก์ชันตรงๆ (SearchSelect.jsx เป็น .jsx + import react
- * จึง import เข้าเทสไม่ได้ — ดึงเฉพาะบรรทัดนิยามมารันแทน)
+ * 🔴 19/10: `normSearch` ย้ายจาก `components/SearchSelect.jsx` ไป **`utils/thaiText.js`** (ชั้นภาษาไทย)
+ *    เพราะ util ที่ pure (`utils/identityMatch.js`) ต้องใช้ตัวเดียวกับที่ picker ใช้ค้น
+ *    ⇒ เทสนี้เลิกอ่านซอร์สมา eval แล้ว **import ตรง** (แข็งกว่า + ไม่พังเวลาจัดรูปโค้ดใหม่)
+ *    SearchSelect re-export ต่อ ⇒ ที่เรียกจากที่นั่นยังใช้ได้เหมือนเดิม (มีด่านใน regressionGuards)
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-
-const SRC = readFileSync(new URL('../../components/SearchSelect.jsx', import.meta.url), 'utf8');
-
-/** ดึงนิยาม THAI_MARKS + normSearch ออกมาประกอบเป็นฟังก์ชันจริง (ไม่ mock ไม่เขียนซ้ำ) */
-function loadNormSearch() {
-  const marks = SRC.match(/const THAI_MARKS = (\/\[[^\n]*?\/g);/);
-  const body  = SRC.match(/export const normSearch = ([\s\S]*?);\n/);
-  assert.ok(marks, 'หา THAI_MARKS ในซอร์สไม่เจอ — ถ้าเปลี่ยนชื่อ/ย้ายที่ ให้แก้เทสนี้ด้วย');
-  assert.ok(body,  'หา normSearch ในซอร์สไม่เจอ — ถ้าเปลี่ยนชื่อ/ย้ายที่ ให้แก้เทสนี้ด้วย');
-  // eslint-disable-next-line no-new-func
-  return new Function(`const THAI_MARKS = ${marks[1]}; return (${body[1]});`)();
-}
-const normSearch = loadNormSearch();
+import { normSearch } from '../thaiText.js';
 
 test('🔴 ทัณฑฆาต (์) ต่างกัน ต้องยังค้นเจอ — เคสจริง เจนนิภา เจริญพันธ(์)', () => {
   assert.equal(normSearch('เจนนิภา เจริญพันธ์'), normSearch('เจนนิภา เจริญพันธ'));
