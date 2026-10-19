@@ -2779,9 +2779,15 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
     const { error } = await supabaseDR.from('downtime_logs').update(patch).eq('id', order.source_downtime_id);
     if (error) { toast.error('บันทึกใบ MO แล้ว แต่ส่งเวลากลับไปที่รายการเครื่องหยุดไม่สำเร็จ — ' + error.message); return; }
     if (fillCallAt) {
+      /* 🔴 ต้องเติม `call_mtn_team` ด้วย (แก้ 2026-10-19 · คำสั่ง user "แยกแผนกช่างให้ชัด")
+         เดิมเติมแค่ `call_mtn`+เวลา ⇒ แถวนั้น **ไม่ระบุทีม** (วัด ต.ค.: 80 จาก 175 ครั้ง = 46%)
+         แล้ว `DowntimeSiren` ตีความ "ไม่ระบุ = ดังทุกห้อง" ⇒ **ไซเรนดังข้ามทีมทั้งโรงงาน**
+         ใบ MO รู้ทีมอยู่แล้ว (`mtn_dept`) ⇒ ส่งต่อไปเลย ไม่ต้องให้ใครมากรอกซ้ำ
+         ⚠️ ไม่รู้ทีม = ปล่อยว่างตามเดิม (ดังทุกห้อง ดีกว่าเงียบผิดทีม) ห้ามเดา */
+      const callTeam = teamKeyOf(order?.mtn_dept) || null;
       // 0 แถว = มีเวลาเรียกช่างอยู่แล้ว (ตั้งใจไม่ทับ) — แต่ error ต้องบอก (QC 05/10 · เดิมไม่อ่านผล)
       checkWrite(await supabaseDR.from('downtime_logs')
-        .update({ call_mtn: true, call_mtn_at: fillCallAt })
+        .update({ call_mtn: true, call_mtn_at: fillCallAt, ...(callTeam ? { call_mtn_team: callTeam } : {}) })
         .eq('id', order.source_downtime_id).is('call_mtn_at', null), 'บันทึกใบ MO แล้ว แต่ส่งเวลาเรียกช่างกลับไปที่รายการเครื่องหยุด');
     }
   };
