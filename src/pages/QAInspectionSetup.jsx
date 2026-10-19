@@ -22,6 +22,7 @@ import useIsMobile from '../utils/useIsMobile';
 import { QA_STAGES } from '../utils/qaStages';
 import LineSelect from '../components/LineSelect';
 import CustomerSelect from '../components/CustomerSelect';
+import ProductSelect from '../components/ProductSelect';
 import useColumnHistory from '../utils/useColumnHistory';
 import { loadLinesRes, LINE_COLUMNS } from '../utils/useProductionLines';
 import { specLabel } from '../utils/qaSpec';
@@ -111,7 +112,7 @@ function Field({ label, children, span }) {
 
 const EMPTY_PART = {
   part_no: '', part_name: '', customer: '', model: '', line_name: '',
-  dwg_no: '', drawing_rev: '', concern_no: '', part_rank: '', part_kind: '',
+  dwg_no: '', drawing_rev: '', concern_no: '', part_rank: '', part_kind: '', mat_no: '',
 };
 export default function QAInspectionSetup() {
   const isMobile = useIsMobile(); // ≤768px: two-pane ยุบเป็นคอลัมน์เดียว + ปิด sticky (desktop ไม่เปลี่ยน)
@@ -220,7 +221,7 @@ export default function QAInspectionSetup() {
       const opts = [
         ...(prods || []).map(p => ({
           key: `p-${p.id}`, tag: 'Product',
-          part_no: p.p_no || p.mat_no || p.code || '', part_name: p.name || '',
+          part_no: p.p_no || p.mat_no || p.code || '', part_name: p.name || '', mat_no: p.mat_no || '',
           customer: p.customer || '', line_name: p.line_name || '',
           sub: [p.mat_no, p.line_name].filter(Boolean).join(' · '),
         })),
@@ -252,6 +253,7 @@ export default function QAInspectionSetup() {
       ...f,
       part_no: o.part_no || f.part_no,
       part_name: o.part_name || f.part_name,
+      mat_no: o.mat_no || f.mat_no,
       customer: o.customer || f.customer,
       line_name: lines.some(l => l.name === o.line_name) ? o.line_name : f.line_name,
     }));
@@ -273,6 +275,7 @@ export default function QAInspectionSetup() {
       customer: f.customer.trim() || null, model: f.model.trim() || null,
       line_name: f.line_name || null,
       dwg_no: f.dwg_no.trim() || null, drawing_rev: f.drawing_rev.trim() || null,
+      mat_no: String(f.mat_no || '').trim() || null,   // ผูกงานเรียกตรวจ FME ↔ ใบผลิต (19/10)
       concern_no: f.concern_no.trim() || null,
       part_rank: f.part_rank || null, part_kind: f.part_kind || null,
       ...(f.id ? { is_active: f.is_active } : {}),
@@ -280,6 +283,14 @@ export default function QAInspectionSetup() {
     /* 🔐 ด่านซ้ำตอนกดจริง — ไลน์ปลายทางมาจากฟอร์ม (เปลี่ยนไลน์ได้) จึงเช็คค่าที่จะเขียนจริง */
     const w = canWriteLine(wctx, f.line_name, lines);
     if (!w.ok) { toast.info(writeBlockText(w, { what: 'พาร์ทของไลน์นี้' })); return; }
+    /* MAT 1 ตัว = พาร์ท QA 1 ตัว — ซ้ำ = งานเรียกตรวจไม่รู้จะเปิดใบของพาร์ทไหน (อ่านไม่ได้ = ไม่บันทึก) */
+    if (payload.mat_no) {
+      let dq = supabase.from('qa_parts').select('part_no').eq('mat_no', payload.mat_no).limit(1);
+      if (f.id) dq = dq.neq('id', f.id);
+      const { data: dup, error: eDup } = await dq;
+      if (eDup) { toast.error(`ตรวจ MAT ซ้ำไม่สำเร็จ: ${eDup.message}`); return; }
+      if (dup?.length) { toast.error(`พาร์ท ${dup[0].part_no} ใช้ MAT ${payload.mat_no} นี้อยู่แล้ว — 1 MAT ผูกได้พาร์ทเดียว`); return; }
+    }
     const { data, error } = f.id
       ? await supabase.from('qa_parts').update(payload).eq('id', f.id).select().single()
       : await supabase.from('qa_parts').insert({ ...payload, created_by: fullName || null }).select().single();
@@ -421,6 +432,7 @@ export default function QAInspectionSetup() {
                     part_name: sel.part_name || '', customer: sel.customer || '', model: sel.model || '',
                     line_name: sel.line_name || '', dwg_no: sel.dwg_no || '', drawing_rev: sel.drawing_rev || '',
                     concern_no: sel.concern_no || '', part_rank: sel.part_rank || '', part_kind: sel.part_kind || '',
+                    mat_no: sel.mat_no || '',
                   })}>✏️ แก้ไข Part</button>
                   <button style={{ ...ghostBtn, color: '#ef4444', borderColor: 'rgba(239,68,68,0.4)' }} onClick={delPart}>🗑 ลบ</button>
                 </div>
@@ -561,6 +573,15 @@ export default function QAInspectionSetup() {
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <Field label="Part No. *"><input style={inputSt} value={partModal.part_no} onChange={e => setPartModal(f => ({ ...f, part_no: e.target.value }))} /></Field>
             <Field label="Part Name"><input style={inputSt} value={partModal.part_name} onChange={e => setPartModal(f => ({ ...f, part_name: e.target.value }))} /></Field>
+            {/* 🔗 MAT (SAP) — กุญแจผูก "ฝ่ายผลิตเรียกตรวจ (FME)" กับพาร์ทนี้ · ไม่ตั้ง = งานเรียกตรวจหาพาร์ทไม่เจอ (19/10) */}
+            <Field label="MAT (SAP) — ใช้ผูกงานเรียกตรวจ FME" span>
+              <ProductSelect value={partModal.mat_no || ''} allowFree
+                onChange={({ mat_no, name, customer, line_name }) => setPartModal(f => ({
+                  ...f, mat_no: mat_no || '',
+                  part_name: f.part_name || name || '', customer: f.customer || customer || '',
+                  line_name: f.line_name || (lines.some(l => l.name === line_name) ? line_name : ''),
+                }))} />
+            </Field>
             {/* ลูกค้า — เลือกจากรายชื่อใน Product Master (CustomerSelect) กันสะกดต่างข้ามโมดูล (2026-09-07) */}
             <Field label="ลูกค้า"><CustomerSelect value={partModal.customer || ''} history={custHist} onChange={({ customer }) => setPartModal(f => ({ ...f, customer }))} /></Field>
             <Field label="Model"><input style={inputSt} value={partModal.model} onChange={e => setPartModal(f => ({ ...f, model: e.target.value }))} /></Field>

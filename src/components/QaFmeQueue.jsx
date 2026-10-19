@@ -44,7 +44,10 @@ const fmtTime = (iso) => {
   try { return new Date(iso).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }); } catch { return '-'; }
 };
 
+const FME_QUEUE_LIMIT = 300;   // ถึงเพดาน = เขียนบนจอว่าอาจไม่ครบ (ไม่ตัดเงียบ)
+
 export default function QaFmeQueue({ scopedLineNames, onOpen }) {
+  const [loadErr, setLoadErr] = useState(null);
   const { role } = useContext(UserContext);
   const canManage = can('qa', 'manage', role);
   const [rows, setRows] = useState([]);
@@ -66,8 +69,11 @@ export default function QaFmeQueue({ scopedLineNames, onOpen }) {
 
   const load = useCallback(async () => {
     const [{ data: obs, error }, { data: c }] = await Promise.all([
-      supabase.from('qa_fme_obligations').select('*')
-        .in('status', ['pending', 'acked']).order('due_at').limit(60),
+      /* 🔴 กรองขอบเขตที่ server (audit 19/10) — เดิมดึง 60 แถวทั้งโรงงานแล้วค่อยกรองใน JS
+         ⇒ หัวหน้าที่มีขอบเขตเห็น "ไม่มีคิว" ทั้งที่ไลน์ตัวเองมีงานเรียกตรวจ (โดนแถวไลน์อื่นกินโควต้า) */
+      (scopedLineNames ? supabase.from('qa_fme_obligations').select('*').in('line_name', scopedLineNames)
+        : supabase.from('qa_fme_obligations').select('*'))
+        .in('status', ['pending', 'acked']).order('due_at').limit(FME_QUEUE_LIMIT),
       supabase.from('qa_fme_config').select('*').eq('id', 1).maybeSingle(),
     ]);
     // 42P01 = ตารางยังไม่มี → บอกให้ชัดแทน error งงๆ (pattern เดียวกับ needMigration ในใบตรวจ)
@@ -75,6 +81,8 @@ export default function QaFmeQueue({ scopedLineNames, onOpen }) {
     setMissing(false);
     setCfg(c || null);
     const ok = scopedLineNames ? new Set(scopedLineNames) : null;
+    if (error) { setLoadErr(error.message); return; }
+    setLoadErr(null);
     setRows((obs || []).filter(o => !ok || ok.has(o.line_name)));
   }, [scopedLineNames]);
 
@@ -272,10 +280,15 @@ export default function QaFmeQueue({ scopedLineNames, onOpen }) {
 
       {view === 'board' ? (
         <QaFmeBoard scopedLineNames={scopedLineNames} onOpen={onOpen} />
+      ) : loadErr ? (
+        <div style={{ fontSize: 13, color: '#ef4444' }}>⚠️ โหลดคิวเรียกตรวจไม่สำเร็จ — {loadErr} (ห้ามถือว่าไม่มีคิว)</div>
       ) : !rows.length ? (
         <div style={{ fontSize: 13, color: '#22c55e' }}>✅ ไม่มีคิวรอตรวจ</div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {rows.length >= FME_QUEUE_LIMIT && (
+            <div style={{ fontSize: 12, color: '#f59e0b' }}>⚠️ คิวค้างถึงเพดาน {FME_QUEUE_LIMIT} รายการ — อาจแสดงไม่ครบ เคลียร์งานเก่าก่อน</div>
+          )}
           {rows.map(o => {
             const sm = STAGE_META[o.stage] || STAGE_META.first;
             const isLate = o.status === 'pending' && new Date(o.due_at).getTime() < now;
