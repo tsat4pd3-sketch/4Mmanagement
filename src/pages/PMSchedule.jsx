@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext, useMemo } from 'react'
+import { useState, useEffect, useContext, useMemo, useRef } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { useMergeParams } from '../utils/useTabParam'
 import { canWriteTeam, teamBlockText, teamsForUser } from '../utils/mtnTeams'
@@ -118,6 +118,7 @@ export default function PMSchedule() {
   const [spareCount, setSpareCount] = useState(() => new Map())
   const [spareErr, setSpareErr] = useState(null)   // 🔴 นับอะไหล่ไม่ได้ = ปุ่มต้องเขียน "?" ไม่ใช่ "ยังไม่ผูก"
   const [loadErr, setLoadErr] = useState(null)     // 🔴 โหลดแผนล้ม ≠ แผนกนี้ไม่มีแผน (ห้ามใช้ข้อความเดียวกัน)
+  const reqRef = useRef(0)                          // กันคำตอบเก่าทับ (สลับทีมเร็วๆ)
   const [spareReload, setSpareReload] = useState(0)
   const [teams, setTeams] = useState(pmTeamsSync()) // ทีมช่าง data-driven (mtn_teams)
   useEffect(() => { loadPmTeams().then(setTeams) }, [])
@@ -150,6 +151,9 @@ export default function PMSchedule() {
   }
 
   const fetchData = async () => {
+    // 🔴 สลับทีมเร็วๆ = คำตอบของทีมก่อนมาถึงทีหลังแล้วทับตาราง (กฎเหล็ก DB ข้อ 4) — ทุก set ต้องผ่าน live()
+    const req = ++reqRef.current
+    const live = () => req === reqRef.current
     setLoading(true)
 
     /* 🔴 คิวรีหลักของหน้านี้ (QC audit 08/10) — เดิมไม่อ่าน error เลย ⇒ RLS/เน็ต/42703 ล้ม
@@ -159,6 +163,7 @@ export default function PMSchedule() {
       () => supabaseDR.from('checklists').select('id, equipment_id, frequency, name')
         .eq('module', 'mtn').eq('department', department),
     )
+    if (!live()) return
     const clLoadErr = eCl || (trCl ? 'รายการตรวจเยอะเกินเพดาน — โหลดได้ไม่ครบ' : null)
     setLoadErr(clLoadErr)
     if (clLoadErr) { setRows([]); setLoading(false); return }   // ว่างเพราะล้ม ≠ ว่างเพราะไม่มีแผน
@@ -167,17 +172,26 @@ export default function PMSchedule() {
     const clIds = checklists.map(c => c.id)
     const eqIds = [...new Set(checklists.map(c => c.equipment_id))]
 
-    const [{ data: jigs }, { data: inspections }, { data: plans }, prodRes, lineList] = await Promise.all([
-      supabaseDR.from('jigs').select('id, name, jig_no, line_name, machine_no, equipment_type').in('id', eqIds),
-      supabaseDR.from('inspections').select('id, checklist_id, inspected_at, status').in('checklist_id', clIds).neq('approval_status', 'rejected').order('inspected_at', { ascending: false }),
-      // Server-materialized plan (pm_plans, Phase 1). If the table isn't there yet
-      // the query just returns null and we fall back to computing due dates live.
-      supabaseDR.from('pm_plans').select('id, checklist_id, interval_days, next_due_date, next_due_reason, last_done_at, health_score, plan_type, cycle_basis, max_idle_days, deferred_to, defer_reason, defer_agreed_with, deferred_by, deferred_at, defer_count').in('checklist_id', clIds),
+    /* 🔴 ผ่าน fetchByIds (19/10 audit PM) — เดิม `.in()` ดิบกับ ~165 uuid ต่อคิวรี + ไม่อ่าน error
+          ⇒ URL ยาว/RLS ล้ม = เครื่องไม่มีชื่อ · แผนหายแล้วถอยไปคิดสดเงียบๆ · ผลตรวจหาย = "ยังไม่ตรวจ"
+       inspections ไม่ตัดช่วงวัน: ต้องรู้ "ตรวจล่าสุดเมื่อไหร่" ของเครื่องที่ไม่ได้ตรวจนาน · fetchByIds แบ่งหน้าให้แล้ว */
+    const [jigsRes, inspRes, planRes, prodRes, lineList] = await Promise.all([
+      fetchByIds(eqIds, ids => supabaseDR.from('jigs').select('id, name, jig_no, line_name, machine_no, equipment_type').in('id', ids)),
+      fetchByIds(clIds, ids => supabaseDR.from('inspections').select('id, checklist_id, inspected_at, status').in('checklist_id', ids).neq('approval_status', 'rejected')),
+      // แผนที่ server คำนวณไว้ (pm_plans) — อ่านไม่ได้ต้องฟ้อง ห้ามถอยไปคิดสดเงียบๆ (วันครบกำหนดจะคนละเลขกับจออื่น)
+      fetchByIds(clIds, ids => supabaseDR.from('pm_plans').select('id, checklist_id, interval_days, next_due_date, next_due_reason, last_done_at, health_score, plan_type, cycle_basis, max_idle_days, deferred_to, defer_reason, defer_agreed_with, deferred_by, deferred_at, defer_count').in('checklist_id', ids)),
       /* ยอดผลิตรายไลน์รายวัน — ใช้ตอบ "วันไหนเครื่องเดินจริง" ของแผน cycle_basis='run_day'
          ⚠️ ต้องผ่าน RPC เท่านั้น ห้ามดึงใบผลิตดิบ (120 วัน = 13,073 ใบ ชนเพดาน 1000 แถวเงียบๆ) */
       supabaseDR.rpc('pm_usage_daily', { p_days: USAGE_WINDOW_DAYS }),
       loadProductionLines(),
     ])
+
+    if (!live()) return
+    const subErr = [['ทะเบียนเครื่อง', jigsRes], ['ผลตรวจ', inspRes], ['แผน PM', planRes]]
+      .map(([lb, r]) => r.error ? `${lb}: ${r.error}` : r.truncated ? `${lb}: อ่านได้ไม่ครบ` : null).filter(Boolean)
+    if (subErr.length) { setLoadErr(subErr.join(' · ')); setRows([]); setInsps([]); setLoading(false); return }
+    const jigs = jigsRes.rows, plans = planRes.rows
+    const inspections = [...inspRes.rows].sort((a, b) => String(b.inspected_at || '').localeCompare(String(a.inspected_at || '')))
 
     /* 🔴 "โหลดยอดผลิตไม่ได้" ≠ "ไม่ได้ผลิต" — เดาผิดทางนี้ = ข้ามการตรวจที่จำเป็นเงียบๆ
        ⇒ ส่ง null ต่อให้ resolveRunDayDue แล้วมันจะถอยไปใช้รอบปฏิทิน + ติดธงให้จอเขียนบอก */
@@ -251,13 +265,14 @@ export default function PMSchedule() {
     const { rows: spLines, error: spErr, truncated: spTr } = await fetchByIds(
       clIds, (ids) => supabaseDR.from('pm_plan_spares').select('checklist_id').in('checklist_id', ids),
     )
+    if (!live()) return
     const spFail = spErr || (spTr ? 'อ่านได้ไม่ครบ' : null)
     setSpareErr(spFail)
     setSpareCount(spFail ? new Map() : sparesCountByChecklist(spLines || []))
     setLoading(false)
   }
 
-  useEffect(() => { fetchData() }, [department]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { fetchData(); return () => { reqRef.current++ } }, [department]) // eslint-disable-line react-hooks/exhaustive-deps
 
   /* แก้อะไหล่ในโมดัลแล้ว → โหลดเฉพาะจำนวนบนปุ่ม (ไม่โหลดทั้งหน้า — fetchData ขึ้นสปินเนอร์ทับตาราง)
      deps = สตริง id (ไม่ใช่ array rows — กฎเหล็ก DB ข้อ 9 กันยิงคิวรีซ้ำเมื่อ setRows ใบใหม่) */
