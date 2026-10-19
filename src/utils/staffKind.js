@@ -104,8 +104,22 @@ export function groupByStaffKind(rows) {
  *   `let q = supabase.from('employees').select(...); q = onlyShopfloorStaff(q)`
  * ใช้ `not in` (ไม่ใช่ `eq`) โดยตั้งใจ: แถวที่ค่าเพี้ยน/ค่าใหม่ในอนาคตยังถูกนับเป็นคนหน้างาน
  * ⇒ พลาดแล้ว "นับเกิน" (เห็นแล้วรู้) ดีกว่า "หายเงียบ" (ไม่มีใครรู้)
+ *
+ * 🔴 **ต้องตัดชุดเดียวกับ `isShopfloorStaff()` เป๊ะ (`NON_LINE_VALUES`)** — แก้ 19/10
+ * เดิมตัดแค่ `SUPPORT_VALUES` ⇒ ตอนเพิ่มกลุ่ม `technician` (14/10) ฝั่ง client ตัดช่างออกแล้ว
+ * แต่ฝั่ง server ยังปล่อยผ่าน ⇒ **ชื่อฟังก์ชันเดียวกันให้คำตอบคนละอย่างกับช่าง 22 คน**
+ * (จอนับกำลังคน/สกิล/turnover ยังนับช่างเป็นคนหน้าไลน์เงียบๆ ทั้งที่คอมเมนต์ในจอบอกว่าตัดแล้ว)
+ * ⚠️ จอที่ **ตั้งใจ** จะเห็นช่าง (เช่นแถว 🔧 ช่าง ของ `/manpower-board`) ใช้ `withoutSupportStaff()`
  */
-export const onlyShopfloorStaff = (q) => q.not('staff_kind', 'in', `(${SUPPORT_VALUES.join(',')})`);
+export const onlyShopfloorStaff = (q) => q.not('staff_kind', 'in', `(${NON_LINE_VALUES.join(',')})`);
+
+/**
+ * กรองฝั่ง server แบบ "ตัดเฉพาะสายสนับสนุน" — **ช่างยังอยู่**
+ * สำหรับจอที่วาด**แถวช่างแยกต่างหาก** และไม่ได้เอาช่างไปรวมเป็นกำลังคนของไลน์
+ * (วันนี้มีที่เดียว: `/manpower-board` — `staffingOfDept()` นับแค่คอลัมน์ทีม ไม่นับแถวช่าง)
+ * 🔴 **ห้ามใช้แทน `onlyShopfloorStaff` ในจอที่นับกำลังคน** — มีด่าน `staffKindGuard.test.mjs`
+ */
+export const withoutSupportStaff = (q) => q.not('staff_kind', 'in', `(${SUPPORT_VALUES.join(',')})`);
 
 /* ── ชื่อเดิม (ก่อน 23/09) — คงไว้ให้โค้ดที่ยังไม่ได้ไล่แก้เรียกได้ ไม่ให้พังกลางทาง ──────
    ห้ามใช้ในโค้ดใหม่ · มีด่านเทสจับว่าจอที่นับคนต้องเรียกตัวใดตัวหนึ่งของไฟล์นี้ */

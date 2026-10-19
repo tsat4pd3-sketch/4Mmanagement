@@ -2430,6 +2430,11 @@ function SkillMatrixTab() {
         <EmpScopeFilters lines={lines} filterSection={filterSection} setFilterSection={setFilterSection} filterLine={filterLine} setFilterLine={setFilterLine} filterTeam={filterTeam} setFilterTeam={setFilterTeam} filterDept={filterDept} setFilterDept={setFilterDept} />
         <span className="spacer" />
         <span className="filter-count">{employees.length} คน · {skillDefs.length} สกิล</span>
+        {/* 🔴 กฎความซื่อสัตย์ของจอ — จอนี้กรองช่าง/สายสนับสนุนออก (กำลังคนของไลน์เท่านั้น)
+            ต้องเขียนไว้ ไม่งั้นคนเทียบกับใบเช็คชื่อ (เห็นครบทุกกลุ่มตั้งแต่ 14/10) แล้วงงว่าทำไมหัวไม่ตรง */}
+        <span className="filter-count" title="สกิล/กำลังคน นับเฉพาะพนักงานหน้างาน — ช่างและสายสนับสนุนไม่เข้าสูตร (กฎ staffKind.js)">
+          · ไม่รวม 🔧 ช่าง / 🗂️ สายสนับสนุน
+        </span>
         <span className="filter-count">· คลิกที่พนักงานเพื่อดู Radar Chart</span>
         {canExport && (
         <button onClick={() => {
@@ -3013,6 +3018,10 @@ function MultiSkillFormTab() {
       {/* Filters (UI-STANDARD 2026-09-24 — แถบกรองมาตรฐาน · gap ของ column แทน marginBottom) */}
       <FilterBar style={{ marginBottom: 0 }}>
         <EmpScopeFilters lines={lines} filterSection={filterSection} setFilterSection={setFilterSection} filterLine={filterLine} setFilterLine={setFilterLine} filterTeam={filterTeam} setFilterTeam={setFilterTeam} filterDept={filterDept} setFilterDept={setFilterDept} />
+        {/* กรองช่าง/สายสนับสนุนออกเหมือนแท็บสกิล — ต้องเขียนบนจอ (กฎความซื่อสัตย์ของจอ) */}
+        <span className="filter-count" title="ใบประเมินทักษะออกให้พนักงานหน้างาน — ช่างและสายสนับสนุนไม่เข้าสูตร (กฎ staffKind.js)">
+          ไม่รวม 🔧 ช่าง / 🗂️ สายสนับสนุน
+        </span>
         <span className="spacer" />
         <button onClick={load} disabled={loading}
           style={{ padding: '0 20px', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer', opacity: loading ? 0.6 : 1 }}>

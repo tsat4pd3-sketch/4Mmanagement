@@ -4848,3 +4848,33 @@ test('🔒 ฝั่งงาน (actorSide) — เทียบผ่าน sid
     + '   แก้: actorSideOf({ …, isAm: isAmTeam }) · เทียบด้วย sideAllows(actorSide, meta.side)\n'
     + '   ⚠️ ล็อกฝั่ง/ตำแหน่ง 04/10 ยังอยู่ครบ — ฝั่งช่างจริงยังเซ็นช่องของฝ่ายผู้แจ้งไม่ได้\n');
 });
+
+/* ═══ 🔭 ด่านขอบเขต 2 แกน — แกนไลน์กับแกนส่วนงานห้ามเป็น else-if กัน (2026-10-19) ═══
+   ที่มา: `/checkin` เขียน `if (role === 'leader') { if (lineId) {…} } else if (scopeSecs.length)`
+          ⇒ leader ที่บัญชี**ไม่มี `line_id`** หลุดทั้งสองด่าน = **เห็นพนักงานทั้งโรงงานเงียบๆ**
+   ทำไมสำคัญขึ้นเรื่อยๆ: การตั้ง "รักษาการหลายหน่วย" ทำด้วย `profiles.sections`
+          ⇒ บัญชีหัวหน้าที่ไม่ผูกไลน์จะมีจริงตั้งแต่ตอนนั้น (ดู docs/modules/org-hierarchy.md)
+   กติกา: ด่านไลน์ต้องมีเงื่อนไข `role === 'leader' && lineId` อยู่ใน if เดียวกัน
+          แล้วค่อย `else if (scopeSecs…)` — ห้ามซ่อน lineId ไว้ชั้นใน */
+test('🔭 leader-scope-no-fallthrough — leader ที่ไม่มี line_id ต้องถอยไปใช้ขอบเขตส่วนงาน', () => {
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
+    if (/__tests__/.test(file)) continue;
+    const lines = stripComments(readFileSync(file, 'utf8')).split('\n');
+    lines.forEach((ln, i) => {
+      // ด่านที่เปิดด้วย leader ลอยๆ (ไม่มี && lineId/userLineId ในบรรทัดเดียวกัน)
+      if (!/if\s*\(\s*role\s*===\s*'leader'\s*\)\s*\{/.test(ln)) return;
+      const tail = lines.slice(i + 1, i + 22).join('\n');
+      // ...แล้วมี else-if แกนส่วนงานเป็นพี่น้อง = แกนไลน์ถูกข้ามได้เงียบๆ
+      if (/\}\s*else\s+if\s*\(\s*(scopeSecs|sections|scopeSections)\b/.test(tail)) {
+        bad.push(`${file.replace(ROOT, '')}:${i + 1}`);
+      }
+    });
+  }
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n'
+    + '   ทำไม: leader ที่ไม่มี line_id จะไม่โดนทั้งด่านไลน์และด่านส่วนงาน = เห็นทั้งโรงงาน\n'
+    + "   แก้: const fam = (role === 'leader' && lineId) ? getLineFamilyIds(...) : null;\n"
+    + '        if (fam) { …แกนไลน์… } else if (scopeSecs.length) { …แกนส่วนงาน… }\n'
+    + "        แล้วแยกแกนทีม (teamsVisibleToLeader) ออกเป็น if (role === 'leader') ของตัวเอง\n"
+    + '   · ไม่มีสมอทั้ง 2 แกน = scopeAnchorless() → **ต้องเขียนบนจอว่ากำลังเห็นทั้งโรงงาน**\n');
+});
