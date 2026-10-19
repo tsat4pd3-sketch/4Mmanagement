@@ -597,6 +597,10 @@ function StockTab({ role, scope }) {
           ) : (
             groups.map(g => {
               const lowParts = g.parts.filter(p => p.qty <= 0);
+              /* 🧾 ใบ Monitor Stock ของทีมวางแผนตัดสินด้วย MIN/MAX — พาร์ทที่ยังไม่ตั้งจะขึ้น "—" ทั้งแถว
+                 แล้วสถานะถอยไปใช้เกณฑ์สำรอง (< 10 ชิ้น) ⇒ ต้องเขียนบนจอว่ามีกี่รายการที่ยังตัดสินไม่ได้จริง
+                 (กฎความซื่อสัตย์ของจอ: ข้อมูลไม่พอ ต้องบอก ห้ามปล่อยให้ดูเหมือนตั้งครบ) */
+              const noLvParts = g.parts.filter(p => ksMap[p.mat_no]?.min == null || ksMap[p.mat_no]?.max == null);
               const folded  = collapsedGroups.has(g.key);
               return (
                 <div key={g.key} style={{ ...card, padding:0, overflow:'hidden' }}>
@@ -612,6 +616,12 @@ function StockTab({ role, scope }) {
                         <span style={{ fontSize:11, color:'var(--muted)' }}>📍 {g.lineNames.join(' · ')}</span>
                       )}
                       {lowParts.length > 0 && <span style={{ fontSize:11, padding:'2px 9px', borderRadius:10, background:'rgba(239,68,68,0.12)', color:'#ef4444', fontWeight:700 }}>⚠️ {lowParts.length} รายการหมด</span>}
+                      {noLvParts.length > 0 && (
+                        <span title={`ยังไม่ได้ตั้ง MIN/MAX ${noLvParts.length} พาร์ท — แถวนั้นขึ้น "—" และสถานะใช้เกณฑ์สำรอง (เหลือน้อยเมื่อต่ำกว่า 10 ชิ้น) · ตั้งค่าจริงที่ /products → แท็บ 🎴 Kanban Std`}
+                          style={{ fontSize:11, padding:'2px 9px', borderRadius:10, background:'rgba(245,158,11,0.12)', color:'#f59e0b', fontWeight:700 }}>
+                          📐 {noLvParts.length} พาร์ทยังไม่ตั้ง MIN/MAX
+                        </span>
+                      )}
                       <span style={{ fontSize:11, color:'var(--muted)' }}>{g.parts.length} พาร์ท</span>
                     </div>
                   </div>
