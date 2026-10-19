@@ -309,6 +309,38 @@ export function sharedValueDef(defs, d) {
     && ((cid && x.catalog_id === cid) || normKpiName(x.kpi_catalog?.name || x.name) === nm)) || null;   // แถวเก่าไม่มี catalog_id = เทียบชื่อ (ชื่อคือตัวตนของทะเบียนอยู่แล้ว · unique index)
 }
 
+/** 5.3) นิยามระดับโรงงานที่ "ต้องมี" สำหรับ KPI แบบ plant (19/10 · เคสจริง: Customer Satisfaction ถูกตั้งเป็นค่าโรงงาน 30/09
+ *  โดยไม่มีนิยาม scope plant ⇒ ทุกหน่วยขึ้นว่าง + ค่าที่ PD4 กรอกไว้ 8 เดือนถูกซ่อน 3 สัปดาห์)
+ *  → รายการทะเบียน plant ที่ปีนี้ยังไม่มีนิยามโรงงาน พร้อมจำนวนค่าที่หน่วยกรอกไว้แล้วแต่ไม่แสดง (จอต้องเขียนบอก) */
+export function missingPlantValueDefs(defs = [], entries = {}) {
+  const out = new Map();
+  for (const d of defs || []) {
+    if (!d || d.is_active === false || valueScopeOf(d) !== 'plant' || isPlantDef(d)) continue;
+    if (sharedValueDef(defs, d)) continue;
+    const key = d.catalog_id || d.kpi_catalog?.id || normKpiName(d.kpi_catalog?.name || d.name);
+    const cur = out.get(key) || { key, catalogId: d.catalog_id || d.kpi_catalog?.id || null, name: d.kpi_catalog?.name || d.name, year: d.year ?? null, unitDefs: [], hiddenEntries: 0 };
+    cur.unitDefs.push(d);
+    cur.hiddenEntries += Object.values(entries?.[d.id] || {}).filter(v => v != null).length;
+    out.set(key, cur);
+  }
+  return [...out.values()];
+}
+
+/** payload สร้างนิยามระดับโรงงานจากนิยามของหน่วย (โคลนเป้า/หน่วย/ทิศทาง/ทะเบียน · ขอบเขต = ทั้งโรงงาน · ไม่ก๊อป entries) */
+export function plantDefPayloadFrom(u, { year = null, note = '' } = {}) {
+  if (!u) return null;
+  const pick = (k) => (u[k] === undefined ? null : u[k]);
+  return {
+    year: year ?? u.year ?? null, section: null, line_group: null, scope_kind: 'plant', scope_value: null,
+    category: pick('category') || 'internal', seq: Number(u.seq) || 0, name: u.kpi_catalog?.name || u.name,
+    formula_text: pick('formula_text'), scope_text: note || `ค่าโรงงาน — สร้างอัตโนมัติจากนิยามของ ${u.scope_value || u.section || 'หน่วยงาน'}`,
+    unit: pick('unit'), decimals: pick('decimals'), commitment: pick('commitment'), target: pick('target'), target_value: pick('target_value'),
+    direction: pick('direction'), commit_compare: pick('commit_compare'), commit_value: pick('commit_value'), target_compare: pick('target_compare'),
+    weight: null, source: 'manual', is_active: true, catalog_id: u.catalog_id || u.kpi_catalog?.id || null, std_item_id: pick('std_item_id'),
+    provider: u.provider === 'formula' ? 'formula' : 'manual', provider_config: u.provider === 'formula' ? (u.provider_config ?? null) : null,
+  };
+}
+
 /* ── 5.4) ช่องบนบอร์ด OBEYA (30/09 · user: "inventory balance กับ DSI คือเรื่องเดียวกัน · training กับ TS Academy คือสกอเดียวกัน") ──
    บอร์ด 8 แผ่นหลักเคยจับคู่ด้วย "ชื่อตรงตัว" ⇒ ชื่อทางการในทะเบียน (Day Sales of Inventory (DSI) / TS Academy training)
    ไม่ตรงชื่อบนบอร์ดกระดาษ (Inventory Balance / Training) ⇒ แผ่นขึ้น "ยังไม่ได้ตั้ง KPI" ทั้งที่กรอกครบ
