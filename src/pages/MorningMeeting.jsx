@@ -73,10 +73,10 @@ const pctStr = (num, den) => (den > 0 ? Math.round((num / den) * 100) : 0);
 
 export default function MorningMeeting() {
   const { role, lineId: userLineId, sections: scopeSecs = [], fullName,
-          section: homeSection, allUnits } = useContext(UserContext);
+          section: homeSection, allUnits, respCostCenters, scopeIdx } = useContext(UserContext);
   /* 🔐 ชั้นที่ 3 — `meeting_action_items` เป็น **ตารางเดียวกับ /obeya** (CLAUDE.md §Database Schema)
      ⇒ ต้องใช้ด่านเดียวกัน ไม่งั้นคนที่ถูกบล็อกที่ /obeya เดินมาทำที่นี่ได้ (QC audit 15/10 "ประตูที่สอง") */
-  const actCtx = { role, section: homeSection, sections: scopeSecs, allUnits };
+  const actCtx = { role, section: homeSection, sections: scopeSecs, allUnits, respCostCenters, scopeIdx };
   const actGuard = (sec, what) => {
     const w = canWriteUnit(actCtx, sec, { unknownTarget: 'block' });
     if (w.ok) return true;

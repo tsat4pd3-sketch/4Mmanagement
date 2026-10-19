@@ -72,7 +72,7 @@ import { cachedMaster, mrows } from '../utils/masterCache';
 import { loadBreakPolicies } from '../utils/oeeMasters';
 import { invalidateTable } from '../utils/masterInvalidate';
 import { checkWrite, checkWriteRows } from '../utils/dbWrite';
-import { SESSION_VOID, isVoidSession, voidBadge, voidBlockReason, cleanVoidReason } from '../utils/sessionStatus';
+import { SESSION_VOID, SESSION_STATUSES_LIVE, SESSION_STATUSES_REAL, isVoidSession, voidBadge, voidBlockReason, cleanVoidReason } from '../utils/sessionStatus';
 import MachineSelect from '../components/MachineSelect';
 import { acceptImageFile } from '../utils/acceptImageFile';
 import { loadFamilyQtyTotals, familyQtyChip } from '../utils/familyTotals';
@@ -394,6 +394,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   const [moImg, setMoImg] = useState(null);        // ไฟล์รูปก่อนซ่อม (ตอนเปิดใบจากดาวน์ไทม์)
   const [moSaving, setMoSaving] = useState(false);
   const [dtForm, setDtForm]   = useState({ id: null, downtime_type_id: '', mode: 'start_end', start_time: '', end_time: '', duration_min: '', machine_no: '', mat_no: '', description: '' });
+  // ช่องเครื่องจักรในฟอร์ม Downtime: ค่าเริ่ม = เฉพาะครอบครัวไลน์ · กดขยายค้นทั้งโรงงานได้ (19/10 · หน้างานทัก "เห็นทุกเครื่องในโรงงาน")
+  const [dtMachineAll, setDtMachineAll] = useState(false);
+  useEffect(() => { if (showDT) setDtMachineAll(false); }, [showDT]);
   const [dtScanOpen, setDtScanOpen] = useState(false);   // สแกน QR เลือกเครื่องในฟอร์ม Downtime
   const [savingDT, setSavingDT] = useState(false);
 
@@ -2714,18 +2717,33 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       close_reject_reason: reason, close_reject_by_name: fullName }));
   };
 
-  // ลบกะที่เปิดผิด (เปล่า — ไม่มี Order/Downtime/Defect) ได้จากจอ Live เลย ไม่ต้องปิดกะแล้วไปลบที่ประวัติ
-  const handleDeleteEmptySession = async () => {
+  /* 🚫 กะที่เปิดผิดจากจอ Live = **ทำโมฆะ ไม่ใช่ลบ** (19/10 · QC audit ข้อ ③)
+     เดิมปุ่มนี้ `delete` แถวทิ้ง ⇒ ไม่เหลือร่องรอยว่าเคยเปิดผิดกี่ครั้ง ใครเปิด เพราะอะไร
+     (หลักเดียวกับ 4M ที่ใช้ `rejected` ห้าม delete · แผนล็อตใช้ `cancelled` ห้าม delete)
+     `void` ไม่อยู่ใน unique index `one_open_per_line_shift` ⇒ ช่องกะว่างให้เปิดใบใหม่ได้ทันที
+     🔴 **อ่านลูกจาก DB สดก่อนตัดสิน** — ลิสต์บนจอว่างได้ 2 ความหมาย ("ไม่มี" กับ "โหลดพลาด")
+        ด่านจริงคือ trigger `trg_session_void_guard` ฝั่ง DB · ฝั่งจอเช็คเพื่อ**บอกเหตุผล**เท่านั้น */
+  const handleVoidEmptySession = async () => {
     if (!selSession) return;
-    // กันเหนียว: ลบได้เฉพาะกะที่ไม่มีข้อมูลจริง (กันลบกะที่มีการผลิต/บันทึกไปแล้ว)
-    if (prodOrders.length > 0 || dtLogs.length > 0 || defectLogs.length > 0) {
-      toast.error('กะนี้มีข้อมูลแล้ว (Order/Downtime/Defect) — ลบไม่ได้ ต้องปิดกะแล้วลบที่แท็บประวัติ');
-      return;
-    }
-    if (!window.confirm(`ลบกะ ${selSession.line_name} ${selSession.shift === 'day' ? 'กะเช้า' : 'กะดึก'} ${fmtDate(selSession.work_date)} ?\n(กะเปล่าที่เปิดผิด — ไม่มีข้อมูลการผลิต)`)) return;
-    const { error } = await supabaseDR.from('production_sessions').delete().eq('id', selSession.id);
-    if (error) { toast.error('ลบไม่สำเร็จ: ' + error.message); return; }
-    toast.success('ลบกะที่เปิดผิดเรียบร้อย');
+    const [o, d, f] = await Promise.all([
+      supabaseDR.from('prod_orders').select('id').eq('session_id', selSession.id).limit(1),
+      supabaseDR.from('downtime_logs').select('id').eq('session_id', selSession.id).limit(1),
+      supabaseDR.from('defect_logs').select('id').eq('session_id', selSession.id).limit(1),
+    ]);
+    const block = voidBlockReason({
+      session: selSession, orders: o.data || [], downtimes: d.data || [], defects: f.data || [],
+      loadError: !!(o.error || d.error || f.error),
+    });
+    if (block) { toast.error(`${block} — ถ้าเป็นกะซ้ำ ต้องย้าย/ลบข้อมูลไปใบที่ถูกก่อน`); return; }
+    const reason = cleanVoidReason(window.prompt(
+      `ทำกะ ${selSession.line_name} ${selSession.shift === 'day' ? 'กะเช้า' : 'กะดึก'} ${fmtDate(selSession.work_date)} เป็นโมฆะ\n`
+      + 'ระบุเหตุผล (บังคับ — จะถูกเก็บไว้กับใบนี้):', 'เปิดกะผิด/ซ้ำ'));
+    if (!reason) { toast.info('ยกเลิก — ใบโมฆะต้องมีเหตุผล'); return; }
+    const r = checkWriteRows(await supabaseDR.from('production_sessions')
+      .update({ status: SESSION_VOID, void_reason: reason, voided_by_name: fullName })
+      .eq('id', selSession.id).in('status', SESSION_STATUSES_LIVE).select('id'), 'ทำกะเป็นโมฆะ');
+    if (!r) return;
+    toast.success('ทำเป็นโมฆะเรียบร้อย — ช่องกะนี้ว่างให้เปิดใบใหม่ได้ และยังสืบย้อนได้ว่าเคยเปิดผิด');
     setSelSession(null);
     load();
   };
@@ -3194,15 +3212,17 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                     );
                   })()}
 
-                  {/* กะเปิดผิด (เปล่า ไม่มี Order/Downtime/Defect) — ลบได้จากจอ Live เลย ไม่ต้องปิดกะแล้วไปลบที่ประวัติ
-                      🔴 sessLoadErrList: โหลดพลาด = ทั้ง 3 ลิสต์ว่างเหมือนกะเปล่าเป๊ะ → ปุ่มลบจะโผล่กับ
-                         กะที่มีข้อมูลจริง (audit 2026-09-02) · "อ่านไม่ได้" ≠ "ไม่มี" ห้ามให้ลบตอนไม่รู้ */}
-                  {canDeleteSession && ['open', 'pending_close'].includes(selSession.status)
+                  {/* กะเปิดผิด (เปล่า ไม่มี Order/Downtime/Defect) — จัดการจากจอ Live เลย ไม่ต้องปิดกะก่อน
+                      🔴 19/10 เปลี่ยนจาก "ลบ" เป็น **โมฆะ** (เก็บประวัติ · กฎ `production_sessions.status`)
+                      🔴 sessLoadErrList: โหลดพลาด = ทั้ง 3 ลิสต์ว่างเหมือนกะเปล่าเป๊ะ → ปุ่มจะโผล่กับ
+                         กะที่มีข้อมูลจริง (audit 2026-09-02) · "อ่านไม่ได้" ≠ "ไม่มี" ห้ามให้แตะตอนไม่รู้ */}
+                  {canDeleteSession && SESSION_STATUSES_LIVE.includes(selSession.status)
                     && sessLoadErrList.length === 0
                     && prodOrders.length === 0 && dtLogs.length === 0 && defectLogs.length === 0 && (
-                    <button onClick={handleDeleteEmptySession}
-                      style={{ ...cancelBtnStyle, borderColor: '#ef4444', color: '#ef4444', fontWeight: 700 }}>
-                      🗑 ลบกะเปล่า
+                    <button onClick={handleVoidEmptySession}
+                      title="กะเปล่าที่เปิดผิด — ทำเป็นโมฆะ (เก็บแถวไว้ ไม่ถูกนับเป็นกะจริง) แทนการลบ"
+                      style={{ ...cancelBtnStyle, borderColor: '#94a3b8', color: '#94a3b8', fontWeight: 700 }}>
+                      🚫 ทำกะเปล่าเป็นโมฆะ
                     </button>
                   )}
                 </div>
@@ -5764,13 +5784,17 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   แล้ว `machine_no` เป็น null → จอห้องช่างจัดเป็น "ไม่ระบุเครื่อง" ต่อทีมไม่ได้
                   (เจอจริง 2026-08-26: Assy LWR ลง "Robot 103 …" ในหมายเหตุ · กฎเดียวกับ
                    machineOpts ของ /improvements ที่แก้ไปแล้ว 2026-08-19)
-             กติกา: ไลน์นี้ก่อน → ครอบครัวไลน์ → เครื่องอื่นทั้งโรงงาน → แม่พิมพ์ท้ายสุด
-                    **ไม่ตัดอะไรทิ้ง** (ค้นเจอได้หมด) แต่เรียงให้ตัวที่น่าจะใช่อยู่บนสุด */
+             กติกา: ไลน์นี้ก่อน → ครอบครัวไลน์ → (กดขยาย) เครื่องอื่นทั้งโรงงาน → แม่พิมพ์ท้ายสุด
+             🔒 19/10 (หน้างานทัก "พิมพ์ LS แล้วขึ้นเครื่องเลเซอร์ของไลน์อื่นทั้งโรงงาน"): **ค่าเริ่ม = เฉพาะครอบครัวไลน์**
+                ทั้งโรงงานยังค้นได้ด้วยปุ่ม "ค้นทั้งโรงงาน" (เครื่องกลาง/utility มีจริง — ห้ามตัดทางนี้ทิ้ง)
+                · ครอบครัวไม่มีเครื่องลงทะเบียนเลย = เปิดทั้งโรงงานให้เอง + เขียนบอกบนจอ (ไม่งั้นเลือกอะไรไม่ได้) */
           const machineKeyMap = buildMachineKeyMap(machines);   // ไม่ใช้ useMemo — บล็อกนี้อยู่ใน callback (rules-of-hooks)
+          let famCount = 0;   // เครื่อง (รวมแม่พิมพ์) ที่ลงทะเบียนในครอบครัวไลน์นี้ — คิดใน IIFE ข้างล่าง
           const dtMachineOptions = (() => {
             const line = (selSession?.line_name || '').trim().toLowerCase();
             const fam = new Set(getLineFamilyNames(lines, selSession?.line_name || '').map(n => (n || '').trim().toLowerCase()));
             const G = ['🏭 เครื่องในไลน์นี้', '🔗 เครื่องในกลุ่มไลน์', '🏢 เครื่องอื่นในโรงงาน', '🔨 แม่พิมพ์'];
+            const inFam = (m) => { const s = (m.line_name || '').trim().toLowerCase(); return !!s && (s === line || fam.has(s)); };
             const rank = (m) => {
               if (m.equipment_kind === 'die') return 3;      // แม่พิมพ์ผูกชื่อกลุ่มเครื่องปั๊ม ไม่ใช่ไลน์ผลิต
               const s = (m.line_name || '').trim().toLowerCase();
@@ -5778,7 +5802,10 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
               if (s && fam.has(s)) return 1;
               return 2;
             };
+            famCount = (machines || []).filter(m => m.machine_no && inFam(m)).length;
+            const showAll = dtMachineAll || famCount === 0;
             return (machines || [])
+              .filter(m => showAll || inFam(m))
               .map((m, i) => {
                 const r = rank(m);
                 return {
@@ -5934,8 +5961,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                           text={dtForm.machine_no}
                           options={dtMachineOptions}
                           allowFree
-                          placeholder="ค้นหาเครื่อง — เลขเครื่อง / ชื่อ / ไลน์"
-                          emptyText="ไม่พบเครื่องนี้ในทะเบียน"
+                          placeholder={dtMachineAll || !famCount ? 'ค้นหาเครื่อง — ทั้งโรงงาน' : 'ค้นหาเครื่อง — ในไลน์นี้'}
+                          emptyText={dtMachineAll || !famCount ? 'ไม่พบเครื่องนี้ในทะเบียน' : 'ไม่พบในไลน์นี้ — กด "ค้นทั้งโรงงาน" ใต้ช่อง'}
                           freeHint="ไม่ได้อยู่ในทะเบียน — ต่อใบซ่อม/ประวัติเครื่องไม่ได้"
                           inputStyle={inputStyle}
                           /* พิมพ์เองแล้วต่างจากทะเบียนแค่รูปแบบ (LS10 → LS-10) = เก็บเลขตามทะเบียน
@@ -5947,6 +5974,20 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                         {/* สแกน QR ที่ติดเครื่อง — เครื่องเสียต้องรีบ ไม่ต้องไล่หาในลิสต์ */}
                         <button type="button" className="tbtn" onClick={() => setDtScanOpen(true)} title="สแกน QR บนเครื่อง"
                           style={{ flexShrink: 0, padding: '0 12px', borderRadius: 8, border: '1.5px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', fontSize: 16, cursor: 'pointer' }}>📷</button>
+                      </div>
+                      {/* ขอบเขตลิสต์ต้องเขียนบนจอเสมอ — ลิสต์ที่ถูกกรองโดยไม่บอก = คนคิดว่าเครื่องไม่มีในระบบ */}
+                      <div style={{ marginTop: 4, fontSize: 11, color: 'var(--muted)', display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                        {!famCount ? (
+                          <span style={{ color: '#f59e0b' }}>⚠ ไลน์นี้ยังไม่มีเครื่องลงทะเบียน — แสดงทั้งโรงงาน</span>
+                        ) : (
+                          <>
+                            <span>{dtMachineAll ? 'แสดงทั้งโรงงาน' : `เฉพาะไลน์นี้ + กลุ่มไลน์ (${famCount})`}</span>
+                            <button type="button" onClick={() => setDtMachineAll(v => !v)}
+                              style={{ background: 'none', border: 'none', padding: 0, color: 'var(--accent)', fontSize: 11, fontWeight: 700, cursor: 'pointer', textDecoration: 'underline' }}>
+                              {dtMachineAll ? '↩ เฉพาะไลน์นี้' : '🏢 ค้นทั้งโรงงาน'}
+                            </button>
+                          </>
+                        )}
                       </div>
                     </Field>
                     <Field label={`ชิ้นงาน (แยก OEE/Downtime ตามชิ้นงาน) ${dtMachineOptional ? '(ถ้ามี)' : '*'}`}>
@@ -6025,13 +6066,16 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       ปิดกะต้องยืนยันยอดผลิต/OEE รายกะ (modal ปิดกะ) · กดรวบ = stamp ตัวเลขที่ไม่มีคนดู
 ═══════════════════════════════════════════════════════════════ */
 function StaleTab({ stale, onOpenSession, role }) {
+  const { fullName } = useContext(UserContext);   // ชื่อคนที่ทำโมฆะ — เก็บไว้กับใบ (voided_by_name)
   const rows = stale?.rows || [];
   const [q, setQ] = useState('');
   const [side, setSide] = useState('all');   // all | sv (รอ SV อนุมัติ) | leader (ยังไม่ขอปิด)
 
   /* 🧹 เคลียร์ "กะเปล่า" ทีเดียว — ส่วนหนึ่งของกะค้างคือกะที่เปิดผิด/เปิดทิ้งไว้ ไม่มีข้อมูลเลย
-     แล้วไม่มีใครกล้าแตะเพราะต้องเข้าไปกดลบทีละกะ
-     ⚠️ ลบได้เฉพาะกะที่ "ไม่มี Order/Downtime/ของเสีย เลย" — ลบกะเปล่าไม่ได้สร้างข้อมูลเท็จอะไร
+     แล้วไม่มีใครกล้าแตะเพราะต้องเข้าไปกดทีละกะ
+     🔴 19/10 (QC audit ข้อ ③): เปลี่ยนจาก `delete` เป็น **โมฆะ** — เก็บแถวไว้ ประกาศว่าไม่ใช่กะจริง
+        ⇒ ยังตอบได้ว่าไลน์ไหนเปิดผิดบ่อย (ซึ่งคือต้นเหตุที่ควรแก้) · กฎ §production_sessions.status
+     ⚠️ ทำได้เฉพาะกะที่ "ไม่มี Order/Downtime/ของเสีย เลย" — กะเปล่าไม่ได้สร้างข้อมูลเท็จอะไร
         ต่างจาก auto-close ที่ต้อง stamp OEE จากยอดที่ไม่มีคนยืนยัน (ยังห้ามทำตามกฎเดิม)
      ⚠️ ยิงคิวรีเฉพาะตอนกดปุ่ม ไม่ใช่ตอนเปิดแท็บ (กฎ egress)
      ⚠️ ผ่าน fetchByIds เสมอ · error/truncated ห้ามกลืน — โหลดไม่ครบแล้วเดาว่า "เปล่า" = ลบกะที่มีข้อมูลทิ้ง */
@@ -6049,16 +6093,28 @@ function StaleTab({ stale, onOpenSession, role }) {
     }
     setEmptyScan({ busy: false, ids: ids.filter(id => !has.has(id)), err: null });
   };
-  const deleteEmpty = async () => {
+  const voidEmpty = async () => {
     const ids = emptyScan?.ids || [];
     if (!ids.length) return;
     const names = rows.filter(o => ids.includes(o.id))
       .map(o => `• ${o.line_name} · ${o.shift === 'day' ? 'กะเช้า' : 'กะดึก'} · ${fmtDate(o.work_date)}`);
-    if (!window.confirm(`ลบกะเปล่า ${ids.length} กะ ?\n(ไม่มี Order / Downtime / ของเสีย เลยสักรายการ)\n\n${names.slice(0, 15).join('\n')}${names.length > 15 ? `\n… และอีก ${names.length - 15} กะ` : ''}`)) return;
+    const reason = cleanVoidReason(window.prompt(
+      `ทำกะเปล่าที่ค้าง ${ids.length} กะเป็นโมฆะ\n(ไม่มี Order / Downtime / ของเสีย เลยสักรายการ)\n\n`
+      + `${names.slice(0, 12).join('\n')}${names.length > 12 ? `\n… และอีก ${names.length - 12} กะ` : ''}\n\n`
+      + 'ระบุเหตุผล (บังคับ — จะถูกเก็บไว้กับทุกใบที่ทำโมฆะรอบนี้):', 'เปิดกะผิด/เปิดทิ้งไว้ ไม่มีการผลิต'));
+    if (!reason) { toast.info('ยกเลิก — ใบโมฆะต้องมีเหตุผล'); return; }
     setEmptyScan(e => ({ ...e, busy: true }));
-    const { error } = await supabaseDR.from('production_sessions').delete().in('id', ids);
-    if (error) { toast.error('ลบไม่สำเร็จ: ' + error.message); setEmptyScan(e => ({ ...e, busy: false })); return; }
-    toast.success(`ลบกะเปล่าที่ค้าง ${ids.length} กะเรียบร้อย`);
+    /* 🔴 นับแถวที่เขียนจริง — RLS/trigger ปฏิเสธ = "สำเร็จ 0 แถว ไม่มี error" (กฎเหล็ก DB ข้อ 2)
+       และถ้าเขียนได้ไม่ครบ ต้องบอกว่าได้กี่กะจากกี่กะ ห้ามขึ้นเขียวว่าครบ */
+    const res = await supabaseDR.from('production_sessions')
+      .update({ status: SESSION_VOID, void_reason: reason, voided_by_name: fullName })
+      .in('id', ids).in('status', SESSION_STATUSES_REAL).select('id');
+    const done = (res.data || []).length;
+    setEmptyScan(e => ({ ...e, busy: false }));
+    if (res.error) { toast.error('ทำโมฆะไม่สำเร็จ: ' + res.error.message); return; }
+    if (!done) { toast.error('ทำโมฆะไม่สำเร็จ — ไม่มีแถวถูกแก้เลย (ไม่มีสิทธิ์ หรือกะมีข้อมูลแล้ว)'); return; }
+    if (done < ids.length) toast.warn(`ทำโมฆะได้ ${done} จาก ${ids.length} กะ — ที่เหลือมีข้อมูลแล้วหรือไม่มีสิทธิ์ (กดตรวจใหม่อีกครั้ง)`);
+    else toast.success(`ทำกะเปล่าที่ค้าง ${done} กะเป็นโมฆะเรียบร้อย — ยังสืบย้อนได้ว่าเคยเปิดผิด`);
     setEmptyScan(null);
     stale.reload?.();
   };
@@ -6114,7 +6170,7 @@ function StaleTab({ stale, onOpenSession, role }) {
                   🔎 ตรวจหากะเปล่า
                 </button>
                 <span style={{ fontSize: 11, color: 'var(--muted)' }}>
-                  กะที่ไม่มี Order / Downtime / ของเสีย เลย = เปิดผิดหรือเปิดทิ้งไว้ — ลบทีเดียวได้ ไม่ต้องไล่ทีละกะ
+                  กะที่ไม่มี Order / Downtime / ของเสีย เลย = เปิดผิดหรือเปิดทิ้งไว้ — ทำโมฆะทีเดียวได้ ไม่ต้องไล่ทีละกะ (เก็บประวัติไว้ ไม่ได้ลบ)
                 </span>
               </>
             ) : emptyScan.busy ? (
@@ -6122,7 +6178,7 @@ function StaleTab({ stale, onOpenSession, role }) {
             ) : emptyScan.err ? (
               /* โหลดไม่ครบ = ห้ามบอกว่า "ไม่มีกะเปล่า" (จะกลายเป็นตีกะที่มีข้อมูลว่าเปล่าแล้วลบทิ้ง) */
               <span style={{ fontSize: 12, color: '#f59e0b' }}>
-                ⚠ ตรวจไม่สำเร็จ — {emptyScan.err} · ยังลบไม่ได้
+                ⚠ ตรวจไม่สำเร็จ — {emptyScan.err} · ยังทำโมฆะไม่ได้
                 <button onClick={() => setEmptyScan(null)} style={{ marginLeft: 8, fontSize: 11.5, padding: '3px 9px', borderRadius: 7, cursor: 'pointer', background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)' }}>ลองใหม่</button>
               </span>
             ) : emptyScan.ids.length === 0 ? (
@@ -6131,9 +6187,10 @@ function StaleTab({ stale, onOpenSession, role }) {
               </span>
             ) : (
               <>
-                <button onClick={deleteEmpty}
-                  style={{ fontSize: 12, fontWeight: 800, padding: '5px 12px', borderRadius: 8, cursor: 'pointer', background: 'rgba(239,68,68,0.9)', border: '1px solid #ef4444', color: '#fff' }}>
-                  🗑 ลบกะเปล่า {emptyScan.ids.length} กะ
+                <button onClick={voidEmpty}
+                  title="ทำเป็นโมฆะ = เก็บแถวไว้แต่ไม่ถูกนับเป็นกะจริง (ไม่ได้ลบ) — ช่องกะว่างให้เปิดใบใหม่ได้"
+                  style={{ fontSize: 12, fontWeight: 800, padding: '5px 12px', borderRadius: 8, cursor: 'pointer', background: 'var(--bg3)', border: '1px solid #94a3b8', color: '#94a3b8' }}>
+                  🚫 ทำโมฆะ {emptyScan.ids.length} กะ
                 </button>
                 <span style={{ fontSize: 11, color: 'var(--muted)' }}>
                   อีก {rows.length - emptyScan.ids.length} กะมีข้อมูลจริง — ต้องปิด/อนุมัติเอง (ระบบไม่ปิดให้)
@@ -6288,15 +6345,13 @@ function HistoryTab({ role }) {
       ? { ...x, status: SESSION_VOID, void_reason: reason, voided_by_name: fullName } : x));
   };
 
-  const handleDelete = async (s) => {
-    if (!window.confirm(`ลบกะ ${s.line_name} ${s.shift === 'day' ? 'กะเช้า' : 'กะดึก'} วันที่ ${fmtDate(s.work_date)} ?\n(ข้อมูล Order, Downtime, Defect จะถูกลบทั้งหมด)`)) return;
-    setDeleting(s.id);
-    const { error } = await supabaseDR.from('production_sessions').delete().eq('id', s.id);
-    setDeleting(null);
-    if (error) { toast.error('ลบไม่สำเร็จ: ' + error.message); return; }
-    toast.success('ลบกะเรียบร้อย');
-    setSessions(prev => prev.filter(x => x.id !== s.id));
-  };
+  /* ⛔ ปุ่ม "ลบกะ" ถูกถอดออก 19/10 (QC audit ข้อ ③) — **อย่าเอากลับมา**
+     ของเดิม `delete` ใบที่ปิดแล้ว แล้ว FK cascade ลบ `prod_orders` · `downtime_logs` ·
+     `defect_logs` ของกะนั้นตามไปหมด = ยอดผลิต/ของเสีย/เวลาหยุดของวันนั้นหายถาวร กู้ไม่ได้
+     และ OEE ย้อนหลังเปลี่ยนโดยไม่มีร่องรอยว่าใครลบ เพราะอะไร
+     ⇒ กะเปล่าที่เปิดผิด = ปุ่ม 🚫 โมฆะ (เก็บแถว + บังคับเหตุผล + บันทึกชื่อคนทำ)
+     ⇒ กะที่มีข้อมูลแล้ว = **ไม่มีทางลบ** ตัวเลขผิดต้องไปแก้ที่ใบผลิต/Downtime/ของเสียรายรายการ
+        (trigger `trg_session_void_guard` ฝั่ง DB ก็ไม่ให้ทำโมฆะใบที่มีข้อมูลอยู่แล้ว) */
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -6513,13 +6568,14 @@ function HistoryTab({ role }) {
                       🚫 โมฆะ
                     </button>
                   )}
-                  {canDeleteSession && (
-                    <button
-                      onClick={e => { e.stopPropagation(); handleDelete(s); }}
-                      disabled={deleting === s.id}
-                      style={{ background: 'transparent', border: '1px solid #ef4444', color: '#ef4444', borderRadius: 6, padding: '3px 10px', fontSize: 11, cursor: 'pointer', fontWeight: 700, opacity: deleting === s.id ? 0.5 : 1 }}>
-                      {deleting === s.id ? '...' : 'ลบ'}
-                    </button>
+                  {/* 🔴 กะที่มีข้อมูลแล้วทำอะไรไม่ได้ — ต้องเขียนบอกว่าทำไม ไม่ใช่ปล่อยให้ที่ว่างเงียบๆ
+                      (เดิมที่ตำแหน่งนี้คือปุ่ม "ลบ" ที่ลบ Order/Downtime/ของเสีย ตามไปทั้งหมด) */}
+                  {canDeleteSession && !isVoidSession(s) && Number(s.actual_qty) > 0 && (
+                    <span title="กะที่มียอดผลิตแล้วลบหรือทำโมฆะไม่ได้ — ตัวเลขผิดให้แก้ที่ใบผลิต / Downtime / ของเสีย รายรายการ"
+                      style={{ border: '1px dashed var(--border2)', color: 'var(--muted)', borderRadius: 6,
+                        padding: '3px 9px', fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap', cursor: 'help' }}>
+                      🔒 มียอดผลิต — แก้รายรายการ
+                    </span>
                   )}
                 </div>
               </div>

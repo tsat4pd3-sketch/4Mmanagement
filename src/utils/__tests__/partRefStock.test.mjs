@@ -61,3 +61,9 @@ test('พาร์ทที่สโตร์คุมเป็นล็อต �
   assert.deepEqual(refStockOf('20059076', c), { kind: 'produce', loc: 'LINE A ( 800 Ton )' });
   assert.deepEqual(refStockOf('20063136', { ...c, lotMats: ['20063136'] }), { kind: 'consume', loc: 'LINE A ( 800 Ton )' });  // ไลน์อื่นผลิต = ไม่เกี่ยว
 });
+
+test('🔧 กฎโหมดปิดล็อตไม่ร่วมตัดสินคลังปลายทาง — ถอยไป prefix เหมือนเดิม (19/10)', () => {
+  const rules = [{ match_type: 'prefix', match_value: '2', dest_line_name: 'STORE' },
+                 { match_type: 'mat', match_value: '20066660', dest_line_name: 'STORE X', mode: 'lot' }];
+  assert.equal(inflowDestOf('20066660', rules), 'STORE');
+});

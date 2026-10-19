@@ -34,6 +34,7 @@ import { printQualityBin } from '../lib/qualityBinPrint';
    ⚠️ ห้าม hardcode 5/1 วัน หรือรายชื่อผลพิจารณาซ้ำในหน้านี้ (2026-09-25) */
 import { TAG_MAX_DAYS, QA_DECISIONS, decisionOf, binTagAge, binClosed, overdueBins, SPECIAL_USE_FORM } from '../utils/qualityBin';
 import SimpleMasterPanel from './SimpleMasterPanel';
+import { masterDeleteGuard } from '../utils/masterRefs'; // ด่านนับปลายทางก่อนลบทะเบียนที่จับคู่ด้วยข้อความ — 2026-10-18
 /* 📷 รูปหลักฐานของเสีย — ช่องแนบ + ตัวบีบ/อัปโหลด เป็นของกลาง ห้ามเขียนเองในหน้า (2026-10-12) */
 import QualityPhotoField from './QualityPhotoField';
 import { uploadQualityPhoto, removeQualityImg } from '../utils/qualityImage';
@@ -558,6 +559,9 @@ export default function QualityBins() {
         <div style={{ marginBottom: 14 }}>
           <SimpleMasterPanel
             client={supabaseDR} table="repair_wi_registry" keyCol="code"
+            /* ด่านนับปลายทางก่อนลบ — เลข WI ถูก "พิมพ์ลงใน fix_action" ของใบของเสีย/ใบเครื่องหยุด
+               (ไม่ใช่คอลัมน์อ้างอิง) ⇒ นับแบบ substring · ดู utils/masterRefs.js */
+            onBeforeDelete={masterDeleteGuard(supabaseDR, 'repair_wi_registry', r => r?.wi_no)}
             canManage={canManage} stampCol="updated_by_name" stampName={fullName}
             title="📕 ทะเบียน QRs ↔ WI การซ่อม"
             help="จาก WI-PD3-069 Rev.02 §6 — อาการที่ซ่อมได้ต้องอ้าง WI เล่มที่กำหนด · หัวหน้ากลุ่มจะเห็นชิปแนะนำ WI ตอนลงวิธีแก้ไขในหน้า Daily Report"

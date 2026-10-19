@@ -16,6 +16,11 @@ import { loadPermissions, canAccessPage, setDeptAdmin, setSharedAccount, can } f
 import { LOGISTIC_GROUPS } from './utils/logisticSide';
 import { trackVisit, topPaths } from './utils/navRecent';
 import { effectiveSections } from './utils/sectionScope';
+/* 💰 ชั้นสิทธิ์ที่ 3 แกน Cost Center — ดัชนีผังสร้างที่นี่ที่เดียว แล้วส่งผ่าน UserContext
+   (จอ 20 จออ่านผ่าน `canWriteUnit`/`canWriteLine` เหมือนเดิม ไม่ต้องรู้ว่ามีแกนที่ 2) */
+import { buildOrgScope } from './utils/orgScope';
+import { attachCc } from './utils/ccScope';
+import { loadLinesRes } from './utils/useProductionLines';
 import useIsMobile from './utils/useIsMobile';
 import ScrollHint from './components/ScrollHint';
 import MobileNavBar from './components/MobileNavBar';
@@ -321,6 +326,10 @@ export function accessSummaryForRole(role) {
    สิทธิ์เข้าถึงแต่ละหน้าเก็บอยู่ใน role_permissions (ตาราง) ไม่ใช่ array ในโค้ดอีกต่อไป
    จัดการได้จากหน้า "จัดการสิทธิ์" (admin เท่านั้น) — ดู src/utils/permissions.js
    admin bypass เสมอ กันกรณี config ผิดจนตัวเองเข้าไม่ได้ ── */
+/* array ว่างตัวเดียวใช้ร่วมทั้งไฟล์ — ค่าของ UserContext ต้องเป็น "ตัวเดิม" เมื่อค่าไม่เปลี่ยน
+   (เขียน `[]` สดทุกครั้ง = context ตัวใหม่ทุก render ⇒ ทุกหน้ายิง DB ซ้ำ · กฎเหล็ก DB ข้อ 9) */
+const EMPTY_ARR = Object.freeze([]);
+
 function RoleRoute({ children, path, userRole }) {
   if (!canAccessPage(path, userRole)) return <Navigate to="/" replace />;
   return children;
@@ -1704,7 +1713,7 @@ function AutoLogoutWarning({ secsLeft, onStay, onLogout }) {
 /* ─── Protected Layout ─────────────────────────────────────────────── */
 // permsVersion — ทำให้ layout re-render เมื่อสิทธิ์เปลี่ยน · และเป็น dep ของ `allUnits` ใน userCtx
 // (RoleRoute/Sidebar อ่าน permission cache แบบ sync ผ่าน canAccessPage ระหว่าง render)
-function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, viewAs, onApplyViewAs, userLineId, userTeam, userSection, userSections, userMtnTeams, userIsDeptAdmin, userAccountKind, userPosition, userEmail, userFullName, userNotifyEmail, userSignatureUrl, userAvatarUrl, onAvatarSaved, onSignatureSaved, permsVersion }) {
+function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, viewAs, onApplyViewAs, userLineId, userTeam, userSection, userSections, userRespCcs, userScopeIdx, userMtnTeams, userIsDeptAdmin, userAccountKind, userPosition, userEmail, userFullName, userNotifyEmail, userSignatureUrl, userAvatarUrl, onAvatarSaved, onSignatureSaved, permsVersion }) {
   const isMobile = useIsMobile();
   const isTV     = !useIsMobile(1919);   // จอ ≥1920 (TV) — reactive แทน innerWidth ครั้งเดียว
   const [isOpen, setIsOpen] = useState(() => typeof window !== 'undefined' && window.innerWidth > 768);
@@ -1832,7 +1841,13 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
        🔴 คนละแกนกับ `sections` (= ขอบเขตที่ **เห็น**) — ตัวตัดสินอยู่ที่ `utils/writeScope.js`
        ⚠️ ต้องมี `permsVersion` ใน deps ไม่งั้นแก้สิทธิ์ที่ /permissions แล้วค่านี้ค้างทั้ง session */
     allUnits: can('scope', 'all_units', userRole),
-  }), [userRole, userLineId, userTeam, userSection, userSections, userMtnTeams, userPosition,
+    /* 💰 แกน Cost Center ของชั้นที่ 3 (16/10 · คำสั่ง user "response กับ cost center ไหน ตามลำดับชั้น")
+       ตัวตัดสิน = `canWriteScope()` (`utils/ccScope.js`) · ตั้งค่าที่ /add-user ช่อง ④
+       🔴 ว่าง = ถอยไปใช้ `section` เหมือนเดิม **ไม่ใช่** "แก้อะไรไม่ได้" */
+    respCostCenters: userRespCcs || EMPTY_ARR,
+    /* ดัชนีผังที่ `canWriteUnit`/`canWriteLine` ใช้ตัดสินแกน CC — จอแค่ส่งต่อใน ctx ไม่ต้องรู้ข้างใน */
+    scopeIdx: userScopeIdx,
+  }), [userRole, userLineId, userTeam, userSection, userSections, userRespCcs, userScopeIdx, userMtnTeams, userPosition,
        userNotifyEmail, userSignatureUrl, userAvatarUrl, userFullName, userIsDeptAdmin, realRole,
        userAccountKind, permsVersion]);
   /* layout ปกติต้องรู้ว่า sidebar เปิดอยู่ไหมด้วย — แยก memo เพื่อไม่ให้ `isOpen` ไปสั่น context ของจอ /tv */
@@ -2260,6 +2275,14 @@ export default function App() {
   const [userPosition, setUserPosition] = useState(null); // ตำแหน่งงานจริง (แสดงผลเท่านั้น ไม่เกี่ยวกับสิทธิ์)
   // ขอบเขตหลายส่วนงาน (จาก profiles.sections + fallback section เดี่ยวของ supervisor) — [] = ไม่จำกัด
   const [userSections, setUserSections] = useState([]);
+  /* 💰 Cost Center ที่บัญชีนี้รับผิดชอบ (`profiles.resp_cost_centers` · migration 20261016)
+     🔴 ต้องเป็น array ตัวเดิมตราบใดที่ค่าไม่เปลี่ยน — ไม่งั้น UserContext เป็นตัวใหม่ทุก render
+        แล้วทุกหน้าที่มี effect ผูกกับ context ยิง DB ซ้ำ (กฎเหล็กการเขียน DB ข้อ 9) */
+  const [userRespCcs, setUserRespCcs] = useState(EMPTY_ARR);
+  /* 💰 ดัชนีผังของแกน CC — `null` = ไม่ได้ใช้แกนนี้ · `{ failed:true }` = ตั้ง CC ไว้แต่อ่านผังไม่ได้
+     🔴 `failed` ต้องแยกจาก `null` ให้ได้ — "อ่านไม่ได้" ต้อง fail-closed ไม่ใช่ถอยไปใช้ส่วนงาน
+        (ถอย = คนที่ขอบเขต `sections` เคยกว้างกว่า CC จะได้สิทธิ์คืนมาเงียบๆ) */
+  const [userScopeIdx, setUserScopeIdx] = useState(null);
   const [userEmail,        setUserEmail]        = useState(null);
   const [userFullName,     setUserFullName]     = useState(null);
   const [userNotifyEmail,  setUserNotifyEmail]  = useState(null);
@@ -2332,7 +2355,7 @@ export default function App() {
 
   const fetchProfile = async (user) => {
     setUserEmail(user.email ?? null);
-    const COLS = 'role, line_id, full_name, team, section, sections, position, notify_email, signature_url, is_dept_admin, scope_depth';
+    const COLS = 'role, line_id, full_name, team, section, sections, resp_cost_centers, position, notify_email, signature_url, is_dept_admin, scope_depth';
     // ⚠️ egress: **คิวรีเดียวต่อการโหลดโปรไฟล์** — เดิมยิง 3 ครั้งไปที่แถวเดียวกัน (ชุดหลัก +
     //    mtn_teams + avatar_url แยกกันคนละ round trip) วัดจาก log จริง 11 ก.ย. 2026 = 6,760 req/วัน
     //    บนตาราง profiles ทั้งที่เป็นข้อมูลของ user คนเดียว ~188 ครั้ง/วัน/คน (ทุกครั้งที่เปิด/รีเฟรชแอป)
@@ -2400,6 +2423,33 @@ export default function App() {
     /* 🔭 ขอบเขตการมองเห็นตัดสินจาก `scope_depth` แล้ว (25/09) ไม่ใช่เดาจาก role/ช่องว่าง
        พิสูจน์ก่อนสลับว่าผลเท่าของเดิมครบทั้ง 97 บัญชี — ดู docs/ORG-AXES-DECISION.md §7.6 */
     setUserSections(effectiveSections(data?.role, data?.sections, ident.section, data?.scope_depth));
+    /* ว่าง/ไม่มีคอลัมน์ = คง `EMPTY_ARR` ตัวเดิม (อย่าสร้าง [] ใหม่ — ดูหมายเหตุที่ state) */
+    const ccList = Array.isArray(data?.resp_cost_centers) ? data.resp_cost_centers.filter(Boolean) : [];
+    setUserRespCcs(prev => {
+      if (!ccList.length) return EMPTY_ARR;
+      return prev.length === ccList.length && prev.every((v, i) => v === ccList[i]) ? prev : ccList;
+    });
+    /* 💰 ดัชนีผังสำหรับชั้นสิทธิ์แกน CC — โหลด **เฉพาะบัญชีที่ตั้ง CC ไว้**
+       ⇒ 19/10 ยังไม่มีใครตั้ง (0/122 บัญชี) = ไม่มีคิวรีเพิ่มเลยสำหรับทุกบัญชีวันนี้ (กฎ egress ข้อ 11)
+       🔴 ผังอ่าน**สด** ไม่ผ่าน cache — ขอบเขตสิทธิ์ของตัวเองต้องตรงกับผังวันนี้ (แก้ที่ /org-setup แล้วต้องมีผลทันที)
+       🔴 ต้องส่ง `lines` ด้วย ไม่งั้นดัชนีไม่มีตัวเลือก `line` แล้วด่านรายไลน์จะถอยไปตัดสินที่ชั้น
+          ส่วนงาน (หยาบกว่าที่แอดมินตั้งไว้) — ทะเบียนไลน์ผ่าน loader กลางที่ cache อยู่แล้ว ไม่เพิ่มไบต์ */
+    if (!ccList.length) setUserScopeIdx(null);
+    else {
+      const [nodesRes, linesRes] = await Promise.all([
+        supabase.from('org_nodes')
+          .select('id, kind, code, name, parent_id, ref_line_id, cost_center, division, sort_order, is_active')
+          .eq('is_active', true),
+        loadLinesRes(),
+      ]);
+      if (nodesRes.error) {
+        console.warn('[profile] โหลดผังองค์กรไม่สำเร็จ — ชั้นสิทธิ์แกน CC บล็อกไว้ก่อน (fail-closed)', nodesRes.error);
+        setUserScopeIdx({ failed: true });
+      } else {
+        const nodes = nodesRes.data || [];
+        setUserScopeIdx(attachCc(buildOrgScope({ nodes, lines: linesRes.data || [] }), nodes));
+      }
+    }
     setUserNotifyEmail(data?.notify_email ?? null);
     setUserSignatureUrl(data?.signature_url ?? null);
     // mtn_teams / avatar_url มาพร้อม select หลักแล้ว (ไม่ต้องยิงเพิ่มอีก 2 คิวรี — ดูหมายเหตุ egress ข้างบน)
@@ -2441,7 +2491,7 @@ export default function App() {
         loadPermissions().then(() => setPermsLoaded(true));
       } else {
         try { localStorage.removeItem(SESSION_START_KEY); } catch { /* private mode */ }
-        setUserRole(null); setUserLineId(null); setUserTeam(null); setUserSection(null); setUserSections([]); setUserPosition(null); setUserEmail(null); setUserFullName(null); setUserNotifyEmail(null); setUserSignatureUrl(null); setUserAvatarUrl(null);
+        setUserRole(null); setUserLineId(null); setUserTeam(null); setUserSection(null); setUserSections([]); setUserRespCcs(EMPTY_ARR); setUserScopeIdx(null); setUserPosition(null); setUserEmail(null); setUserFullName(null); setUserNotifyEmail(null); setUserSignatureUrl(null); setUserAvatarUrl(null);
         setProfileLoaded(false); setPermsLoaded(false);
       }
     });
@@ -2497,6 +2547,8 @@ export default function App() {
                 userTeam={effTeam}
                 userSection={effSection}
                 userSections={effSections}
+                userRespCcs={userRespCcs}
+                userScopeIdx={userScopeIdx}
                 userMtnTeams={effMtnTeams}
                 userIsDeptAdmin={effDeptAdmin}
                 userAccountKind={userAccountKind}

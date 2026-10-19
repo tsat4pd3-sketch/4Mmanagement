@@ -218,8 +218,8 @@ export default function PmCoordination() {
 function PlanCard({ plan: p, tasks, canManage, pmPlan, fullName, onEdit, onReload, lines = [] }) {
   /* 🔐 ชั้นที่ 3 — แผนผูกไลน์ ⇒ เปลี่ยนสถานะ/ลบ/stamp แผน PM ได้เฉพาะไลน์ส่วนงานตัวเอง (audit 15/10)
      แผนที่ไม่ระบุไลน์ = ตัดสินไม่ได้ ⇒ ไม่บล็อก (แผนระดับโรงงานมีจริง) */
-  const { role, section: homeSection, sections: mySections, allUnits } = useContext(UserContext);
-  const planWrite = canWriteLine({ role, section: homeSection, sections: mySections, allUnits }, p?.line_name, lines);
+  const { role, section: homeSection, sections: mySections, allUnits, respCostCenters, scopeIdx } = useContext(UserContext);
+  const planWrite = canWriteLine({ role, section: homeSection, sections: mySections, allUnits, respCostCenters, scopeIdx }, p?.line_name, lines);
   const m = STATUS_META[p.status] || STATUS_META.draft;
   const doneN = tasks.filter(t => t.done).length;
 

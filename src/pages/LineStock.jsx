@@ -43,7 +43,7 @@ import PartThumb from '../components/PartThumb';
 import usePartImages from '../utils/usePartImages';
 import { useStorageLocationsState } from '../utils/useStorageLocations';
 import { groupStockBySloc, slocGroupTitle } from '../utils/slocStockView';
-import { INFLOW_MODES, inflowModeOf, inflowPatchFor } from '../utils/stockReceipts';
+import { INFLOW_MODES, inflowModeOf, inflowPatchFor, inflowModesFor } from '../utils/stockReceipts';
 import { IconButton, DeleteButton } from '../components/IconButton';
 
 /* ─── LINE STOCK — Stock พาร์ทย่อยคงเหลือในแต่ละไลน์ผลิต ─────────────────
@@ -88,11 +88,11 @@ const EMPTY_FORM = { line_name:'', mat_no:'', part_name:'', qty:'', type:'issue'
    TAB: STOCK (existing content)
    ───────────────────────────────────────────────────────────────────────────── */
 function StockTab({ role, scope }) {
-  const { fullName, section: homeSection, sections: mySections, allUnits } = useContext(UserContext);
+  const { fullName, section: homeSection, sections: mySections, allUnits, respCostCenters, scopeIdx } = useContext(UserContext);
   /* 🔐 ขอบเขต "ที่แก้ได้" — คนละตัวกับ scopeNames ที่เป็นขอบเขต "ที่เห็น" (ดู utils/writeScope.js)
      คิวอนุมัติเดิมดึง pending ทั้งระบบ ⇒ แอดมินหน่วยงานอนุมัติยอดสต็อกของส่วนงานอื่นได้ (audit 15/10) */
-  const wctx = useMemo(() => ({ role, section: homeSection, sections: mySections, allUnits }),
-    [role, homeSection, mySections, allUnits]);
+  const wctx = useMemo(() => ({ role, section: homeSection, sections: mySections, allUnits, respCostCenters, scopeIdx }),
+    [role, homeSection, mySections, allUnits, respCostCenters, scopeIdx]);
   const canIssue = can('line_stock', 'issue', role);
   const canApprove = can('line_stock', 'approve', role);
 
@@ -953,9 +953,9 @@ function addMins(timeStr, mins) {
 function DeliveryRoundsTab({ canEdit, fullName, scope }) {
   /* 🔐 รอบจัดส่งผูกไลน์ ⇒ แก้/ลบได้เฉพาะไลน์ส่วนงานตัวเอง (audit 15/10 — เดิม load ดึงทุกไลน์
      แล้ว lineFilter เป็นแค่ตัวกรองมุมมองที่ default ว่าง) · สโตร์ถือ scope:all_units จึงไม่กระทบ */
-  const { section: homeSection, allUnits } = useContext(UserContext);
-  const rndCtx = useMemo(() => ({ role: scope?.role, section: homeSection, sections: scope?.sections, allUnits }),
-    [scope?.role, homeSection, scope?.sections, allUnits]);
+  const { section: homeSection, allUnits, respCostCenters, scopeIdx } = useContext(UserContext);
+  const rndCtx = useMemo(() => ({ role: scope?.role, section: homeSection, sections: scope?.sections, allUnits, respCostCenters, scopeIdx }),
+    [scope?.role, homeSection, scope?.sections, allUnits, respCostCenters, scopeIdx]);
   const [rounds,     setRounds]     = useState([]);
   const [lines,      setLines]      = useState([]);
   const [lineFilter, setLineFilter] = useState('');
@@ -1507,9 +1507,11 @@ function InflowRulesTab({ canEdit }) {
         <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>⚙️ รับงานเข้า stock เมื่อปิดออเดอร์</div>
         <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4, lineHeight: 1.7 }}>
           สแกนปิดออเดอร์ (confirm) แล้วของไปเข้าคลังปลายทางตามกฎ — FG (เบอร์ 1xxx) เข้า warehouse · พาร์ทลูก (เบอร์ 2xxx) เข้าสโตร์
-          <br />แต่ละกฎเลือกได้ 3 แบบ: <b>{INFLOW_MODES.auto.label}</b> = {INFLOW_MODES.auto.hint} ·
+          <br />แต่ละกฎเลือกได้: <b>{INFLOW_MODES.auto.label}</b> = {INFLOW_MODES.auto.hint} ·
           {' '}<b>{INFLOW_MODES.confirm.label}</b> = {INFLOW_MODES.confirm.hint} (แท็บ 📥 รอรับเข้า) ·
           {' '}<b style={{ color: '#ef4444' }}>{INFLOW_MODES.off.label}</b> = {INFLOW_MODES.off.hint}
+          <br /><b style={{ color: INFLOW_MODES.lot.color }}>{INFLOW_MODES.lot.label}</b> (เฉพาะกฎ MAT ตรงตัว) = {INFLOW_MODES.lot.hint}
+          · ระบบตั้งให้เองเมื่อสโตร์เปิดล็อตพาร์ทใหม่ — พาร์ทที่เลิกใช้ล็อตแล้ว เปลี่ยนเป็น 🟡/🟢 ที่นี่
           <br />กฎแบบ <strong>MAT ตรงตัว</strong> ชนะแบบ <strong>ขึ้นต้นด้วย</strong> · รายการที่เข้าแล้วดูได้ที่แท็บ 📦 Stock (ผู้บันทึก = auto)
         </div>
       </div>
@@ -1533,11 +1535,16 @@ function InflowRulesTab({ canEdit }) {
                     ? <>ขึ้นต้นด้วย <span style={{ fontFamily: 'monospace', color: '#0ea5e9', fontSize: 14 }}>{r.match_value}</span></>
                     : <span style={{ fontFamily: 'monospace', color: '#0ea5e9', fontSize: 14 }}>{r.match_value}</span>}
                 </td>
-                <td style={{ padding: '8px 14px', fontSize: 13, fontWeight: 700, color: '#f59e0b' }}>📍 {r.dest_line_name}</td>
+                <td style={{ padding: '8px 14px', fontSize: 13, fontWeight: 700, color: '#f59e0b' }}>
+                  {/* 🔧 โหมดปิดล็อต: ยอดลงที่ไลน์ผลิตของล็อต — คลังในแถวไม่ถูกใช้ ห้ามโชว์เหมือนเป็นปลายทางจริง */}
+                  {inflowModeOf(r) === 'lot'
+                    ? <span style={{ color: INFLOW_MODES.lot.color, fontSize: 12 }}>📍 ไลน์ผลิตของล็อต (ตอนปิดล็อต)</span>
+                    : <>📍 {r.dest_line_name}</>}
+                </td>
                 <td style={{ padding: '8px 14px' }}>
                   {canEdit
                     ? <Segmented value={inflowModeOf(r)} onChange={v => setRuleMode(r, v)} label="วิธีรับเข้า"
-                        options={Object.values(INFLOW_MODES).map(m => ({ value: m.key, label: m.label }))} />
+                        options={inflowModesFor(r).map(m => ({ value: m.key, label: m.label }))} />
                     : <span style={{ fontSize: 12, fontWeight: 800, color: INFLOW_MODES[inflowModeOf(r)].color }}>{INFLOW_MODES[inflowModeOf(r)].label}</span>}
                 </td>
                 <td style={{ padding: '8px 14px', textAlign: 'right' }}>

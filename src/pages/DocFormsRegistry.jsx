@@ -23,12 +23,12 @@ import { DeleteButton } from '../components/IconButton';
    ══════════════════════════════════════════════════════════════ */
 
 export default function DocFormsRegistry() {
-  const { role, section: homeSection, sections: mySections, allUnits } = useContext(UserContext);
+  const { role, section: homeSection, sections: mySections, allUnits, respCostCenters, scopeIdx } = useContext(UserContext);
   /* 🔐 ชุดช่องเซ็น/footer ต่อส่วนงาน (`doc_form_scopes.section`) ⇒ ตั้งได้เฉพาะส่วนงานตัวเอง
      (audit 15/10 — เดิม dropdown ลิสต์ org_nodes ทั้งผัง มีผลกับใบพิมพ์จริงของส่วนงานอื่น)
      🔴 ทีม document control ถือ `scope:all_units` จึงยังตั้งให้ทุกส่วนงานได้ */
-  const docCtx = useMemo(() => ({ role, section: homeSection, sections: mySections, allUnits }),
-    [role, homeSection, mySections, allUnits]);
+  const docCtx = useMemo(() => ({ role, section: homeSection, sections: mySections, allUnits, respCostCenters, scopeIdx }),
+    [role, homeSection, mySections, allUnits, respCostCenters, scopeIdx]);
   const canManage = can('doc_forms', 'manage', role);
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);

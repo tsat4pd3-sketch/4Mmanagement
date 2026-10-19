@@ -114,13 +114,13 @@ const EMPTY_PART = {
 };
 export default function QAInspectionSetup() {
   const isMobile = useIsMobile(); // ≤768px: two-pane ยุบเป็นคอลัมน์เดียว + ปิด sticky (desktop ไม่เปลี่ยน)
-  const { fullName, role, section: homeSection, sections: mySections, allUnits } = useContext(UserContext);
+  const { fullName, role, section: homeSection, sections: mySections, allUnits, respCostCenters, scopeIdx } = useContext(UserContext);
   const { can } = usePerms();
   const canManage = can('qa', 'manage');
   /* 🔐 พาร์ทผูกไลน์ (`qa_parts.line_name`) ⇒ แก้ spec/ลบพาร์ท+จุดตรวจ+แบบ ได้เฉพาะไลน์ส่วนงานตัวเอง
      (audit 15/10 — ทั้งไฟล์เดิมไม่มีคำว่าขอบเขตเลย) · ขา QA ถือ `scope:all_units` จึงไม่กระทบ */
-  const wctx = useMemo(() => ({ role, section: homeSection, sections: mySections, allUnits }),
-    [role, homeSection, mySections, allUnits]);
+  const wctx = useMemo(() => ({ role, section: homeSection, sections: mySections, allUnits, respCostCenters, scopeIdx }),
+    [role, homeSection, mySections, allUnits, respCostCenters, scopeIdx]);
   // 📜 ค่าที่เคยบันทึกไว้ (Main) — วิธีตรวจ (Visual/CF ที่ไม่ใช่เครื่องมือในทะเบียน) / ลูกค้า ยังเลือกซ้ำได้ ไม่หายเงียบ (2026-09-07)
   const methodHist = useColumnHistory(supabase, 'qa_inspection_items', 'method');
   const custHist = useColumnHistory(supabase, 'qa_parts', 'customer');

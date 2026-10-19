@@ -4605,7 +4605,7 @@ test('🛡️ no-merge-conflict-markers — ไม่มี marker ค้าง�
 test('🛡️ die-set-two-mats — หาแม่พิมพ์ของพาร์ทต้องผ่าน dieMakesMat()/dieSetMats()', () => {
   const bad = [];
   const util = stripComments(readFileSync(join(ROOT, 'src/utils/dieSetMats.js'), 'utf8'));
-  for (const fn of ['dieSetMats', 'dieMakesMat', 'dieSetPairState', 'suggestPps']) {
+  for (const fn of ['dieSetMats', 'dieMakesMat', 'dieSetPairState', 'suggestPps', 'dieSetsForMat', 'matSlotFor']) {
     if (!new RegExp(`export function ${fn}\\s*\\(`).test(util)) bad.push(`src/utils/dieSetMats.js (ไม่มี ${fn})`);
   }
   /* suggestPps ต้องไม่เสนอ 1 — "ชุดทำพาร์ทเดียว" ไม่ได้แปลว่า 1 ชิ้น/จังหวะ (2-out ของพาร์ทเดียวก็มี) */
@@ -4613,7 +4613,7 @@ test('🛡️ die-set-two-mats — หาแม่พิมพ์ของพา
 
   for (const rel of ['src/components/ProdLotPlanner.jsx', 'src/components/DieLayout.jsx']) {
     const code = stripComments(readFileSync(join(ROOT, rel), 'utf8'));
-    if (!/die(SetMats|MakesMat)\s*\(/.test(code)) bad.push(rel + ' (ไม่เรียกของกลาง)');
+    if (!/die(SetMats|MakesMat|SetsForMat)\s*\(/.test(code)) bad.push(rel + ' (ไม่เรียกของกลาง)');
     /* เทียบช่องแรกตรงๆ กับตัวแปรชุดแม่พิมพ์ = ตกฝั่งที่ลงช่อง 2 */
     if (/\bd(ie(Set)?)?\.mat_no\s*===/.test(code)) bad.push(rel + ' (เทียบ die.mat_no === ตรงๆ)');
   }
@@ -4649,6 +4649,25 @@ test('🛡️ die-set-two-mats — หาแม่พิมพ์ของพา
        แล้ว lookahead ไปมองที่ช่องว่าง = ผ่านเสมอ) ⇒ นับ `pair_mat_no: null` เข้ามาด้วย ด่านหลวมทันที */
     const writes = (reg.match(/update\(\s*\{\s*pair_mat_no:(?!\s*null\b)/g) || []).length;
     if (writes < 2) bad.push(`src/pages/DieRegistry.jsx (ผูกคู่ ${writes} ทาง — ต้อง 2 ทาง ไม่งั้นคู่ชี้ข้างเดียว)`);
+  }
+
+  /* 🔗 ช่องเลือกแม่พิมพ์ของล็อต (19/10) — `die_sets.mat_no` ผูกไว้ 1/92 ชุด
+     ⇒ ยื่นแต่ชุดที่ "ทะเบียนยืนยันแล้ว" = ลิสต์ว่างแทบทุกพาร์ท **คนที่รู้ก็เลือกไม่ได้ = ทางตัน**
+     (die_no ว่าง ⇒ ไม่รู้ความสูง ⇒ เวลาเปลี่ยนรุ่นคิดไม่ได้ · วัดจริง 0/8 ใบมี die_no)
+     แต่กอง "ยังไม่ผูก" ห้ามให้ระบบหยิบเอง — ยังไม่มีใครยืนยันว่าชุดนั้นทำพาร์ทนี้ */
+  const pl = stripComments(readFileSync(join(ROOT, 'src/components/ProdLotPlanner.jsx'), 'utf8'));
+  if (!/unlinked/.test(pl)) bad.push('src/components/ProdLotPlanner.jsx (ช่องเลือกแม่พิมพ์ไม่ยื่นกองที่ยังไม่ผูก MAT = ทางตัน)');
+  /* เลือกให้เองได้เฉพาะตอนทะเบียนชี้ชัด "ตัวเดียว" — 2 ชุดทำ MAT เดียวกันมีจริง (10 กลุ่ม) */
+  if (!/\.linked\b/.test(pl) || !/linked\.length === 1/.test(pl))
+    bad.push('src/components/ProdLotPlanner.jsx (auto-เลือกแม่พิมพ์ไม่ได้จำกัดที่ linked ตัวเดียว = เดาความสูงผิด)');
+  /* ผูก MAT จากหน้าแผน = ยืมมือเขียนทะเบียนแม่พิมพ์ ⇒ ต้องใช้สิทธิ์ของทะเบียน + นับแถว */
+  if (/from\('die_sets'\)\s*\n?\s*\.update|from\('die_sets'\)\.update/.test(pl)) {
+    if (!/can\(\s*'machines'\s*,\s*'edit'/.test(pl))
+      bad.push("src/components/ProdLotPlanner.jsx (ผูก MAT ต้องใช้สิทธิ์ machines:edit ไม่ใช่ production_plan:write)");
+    if (!/checkWriteRows\s*\(/.test(pl))
+      bad.push('src/components/ProdLotPlanner.jsx (เขียน die_sets โดยไม่นับแถว — RLS ปฏิเสธ = 0 แถว ไม่มี error)');
+    if (!/matSlotFor\s*\(/.test(pl))
+      bad.push('src/components/ProdLotPlanner.jsx (เขียน die_sets โดยไม่ผ่าน matSlotFor = ทับ MAT ที่คนกรอกไว้)');
   }
 
   assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n'
@@ -4766,6 +4785,14 @@ test('🛡️ inspection-setup-shared — จอตั้งค่าจุด�
   if (/from\('qa_inspection_items'\)\s*\.(insert|update|delete|upsert)/.test(qa)) bad.push('QAInspectionSetup.jsx เขียน qa_inspection_items เอง');
   /* คัดลอกจุดตรวจ QA ข้ามพาร์ท (19/10): แถวผ่าน qaItemCopyRow · ไฟล์ต้องคัดลอกจริง ห้ามแชร์ path
      (delPart ลบทั้งโฟลเดอร์ parts/<id> ⇒ แชร์ = รูปของพาร์ทปลายทางหายตาม) */
+  /* 🧮 จุดคำนวณ A − B (19/10): ใบตรวจต้องเติมค่าผ่านตัวกลาง · ตั้งค่าใช้ช่องกลางเดียวกัน
+     (คิดเองในหน้า = PM/QA คิดคนละแบบ · ไม่เติม = คนตรวจต้องพิมพ์ผลต่างเอง หรือใบค้างกรอกไม่ครบ) */
+  for (const [f, fn] of [['src/pages/PMCheckData.jsx', 'pmCalcResults'], ['src/components/QaPieceStepper.jsx', 'qaCalcDraft']]) {
+    if (!new RegExp(`\\b${fn}\\(`).test(readFileSync(join(ROOT, f), 'utf8'))) bad.push(`${f} ไม่ได้เติมค่าจุดคำนวณผ่าน ${fn}()`);
+  }
+  for (const f of ['src/pages/PMSetup.jsx', 'src/components/QaPointsEditor.jsx']) {
+    if (!/import\s+CalcFormulaField\b/.test(readFileSync(join(ROOT, f), 'utf8'))) bad.push(`${f} ไม่ได้ใช้ CalcFormulaField (ช่องตั้งสูตรกลาง)`);
+  }
   const cp = stripComments(readFileSync(join(ROOT, 'src/lib/qaPointsCopy.js'), 'utf8'));
   if (!/qaItemCopyRow\(/.test(cp)) bad.push('lib/qaPointsCopy.js ไม่ได้สร้างแถวผ่าน qaItemCopyRow()');
   if (!/\.copy\(/.test(cp)) bad.push('lib/qaPointsCopy.js ไม่ได้ storage.copy ไฟล์เข้าโฟลเดอร์ปลายทาง (แชร์ path = รูปหายเมื่อลบต้นทาง)');
@@ -4799,6 +4826,33 @@ test('🛡️ write-scope-layer — ด่าน "แก้ข้ามหน่
   if (!/allUnits:\s*can\('scope',\s*'all_units'/.test(app))
     bad.push("src/App.jsx (UserContext ไม่ได้ส่ง allUnits)");
 
+  /* 💰 19/10 — สลับ 20 จอมาใช้แกน Cost Center: สลับที่ `writeScope.js` ที่เดียว
+     ⇒ จอที่เรียกด่านต้อง **ส่ง `respCostCenters` + `scopeIdx` มาใน ctx** ไม่งั้นจอนั้นค้างอยู่
+     แกนข้อความเดิมแบบเงียบ (แอดมินติ๊ก CC แล้วไม่มีผลที่จอนั้น = สิทธิ์ไม่ตรงที่ตั้ง) */
+  if (!/from '\.\/ccScope\.js'/.test(ws)) bad.push('writeScope.js (ไม่ได้ import canWriteScope — แกน CC หลุด)');
+  if (!/const ccLine = ccDecide\(/.test(ws)) bad.push('writeScope.js (canWriteLine ไม่ได้ลองแกน CC ที่ตัวไลน์ก่อน)');
+  if (!/if \(idx\?\.failed\) return \{ ok: false, code: 'scope_unreadable' \}/.test(ws))
+    bad.push('writeScope.js (เสีย fail-closed ตอนอ่านผังไม่ได้ — จะถอยไปใช้ sections ที่กว้างกว่า)');
+  if (!/scopeIdx:\s*userScopeIdx/.test(app)) bad.push('src/App.jsx (UserContext ไม่ได้ส่ง scopeIdx)');
+  const CTX_PROP_OK = {
+    // รับ ctx เป็น prop จากหน้าแม่ (หน้าแม่เป็นคนประกอบ ctx) — ไม่ต้องมี scopeIdx ของตัวเอง
+    'src/components/QaCopyPointsModal.jsx': 1,
+  };
+  for (const f of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const rel = relative(ROOT, f);
+    if (rel === 'src/utils/writeScope.js' || CTX_PROP_OK[rel]) continue;
+    const src = stripComments(readFileSync(f, 'utf8'));
+    if (!/\b(?:canWriteUnit|canWriteLine|writableRows)\s*\(/.test(src)) continue;
+    /* เช็ครายบรรทัด: ทุกที่ที่เอ่ย `allUnits` (ctx ของด่าน · deps · บรรทัด destructure)
+       ต้องมี `scopeIdx` + `respCostCenters` ด้วย — ประกอบ ctx ใหม่โดยลืม 2 ช่องนี้ = จอนั้น
+       ค้างแกนเดิมแบบเงียบ (ไฟล์มีคำนี้อยู่ที่อื่นแล้วก็ยังจับได้) */
+    src.split('\n').forEach((ln, i) => {
+      if (!/\ballUnits\b/.test(ln)) return;
+      if (!/\bscopeIdx\b/.test(ln) || !/\brespCostCenters\b/.test(ln))
+        bad.push(`${rel}:${i + 1} (บรรทัดนี้มี allUnits แต่ไม่มี respCostCenters/scopeIdx ⇒ ด่านค้างที่แกนข้อความเดิม)`);
+    });
+  }
+
   /* จอที่ปิดรูแล้ว — ด่านต้องถูกเรียกในฟังก์ชันเขียนจริง ไม่ใช่แค่ตอน render ปุ่ม */
   const kpi = stripComments(readFileSync(join(ROOT, 'src/components/KpiMonthly.jsx'), 'utf8'));
   const guards = (kpi.match(/if \(!scopeWrite\.ok\)/g) || []).length;
@@ -4810,6 +4864,136 @@ test('🛡️ write-scope-layer — ด่าน "แก้ข้ามหน่
     + '   ทำไม: ระบบมี "เข้าหน้าได้ไหม" + "กดปุ่มเป็นไหม" แต่ไม่มี "แถวนี้ของหน่วยงานเราไหม"\n'
     + '         ⇒ แอดมินหน่วยงานฝ่ายช่างเปิด ?scope=department:<แผนกอื่น> แล้วแก้ KPI ของเขาได้\n'
     + '   แก้: canWriteUnit()/canWriteLine() จาก src/utils/writeScope.js + เรียกซ้ำใน handler\n');
+});
+
+/* ── 🪪 คิว "บัญชีที่ยังไม่รู้ว่าเป็นใคร" ห้ามกลับไปเป็นข้อความเปล่า (2026-10-19 · คำสั่ง user) ──
+   เดิมจอ `/add-user` บอกแค่ "ยังไม่ระบุประเภทบัญชี · N บัญชี" **ไม่มีชื่อ ไม่มีปุ่ม**
+   ⇒ ต้องไปไล่หาเองใน 122 แถว ⇒ ไม่มีใครทำ ค้างมาตลอด (18 ใบ)
+   🔴 ตัวเลขต้องพูดให้ตรง: `shared` 31 ใบที่ไม่ผูกตัวตน **ถูกต้องแล้ว ไม่ใช่งานค้าง**
+      ⇒ ห้ามรวมเป็นเลขเดียว ("49 ไม่ผูกพนักงาน") ⇒ ต้องผ่าน `unlinkedTriage()` ที่แยก 3 กอง
+   🔴 `normSearch` ต้องมีบ้านเดียว (`utils/thaiText.js`) — ตัวเทียบชื่อของ `identityMatch` ต้องเป็น
+      ตัวเดียวกับที่ picker ใช้ค้น ไม่งั้น "จอบอกว่าไม่มีชื่อนี้" กับ "ค้นแล้วเจอ" ขัดกันเอง */
+test('🛡️ unlinked-account-queue — คิวบัญชีไม่ผูกตัวตนต้องมีชื่อ + ปุ่ม + แยกบัญชีกลางออก', () => {
+  const bad = [];
+  const im = stripComments(readFileSync(join(ROOT, 'src/utils/identityMatch.js'), 'utf8'));
+  for (const fn of ['employeeCandidates', 'unlinkedTriage', 'routeHint']) {
+    if (!new RegExp(`export function ${fn}\\b`).test(im)) bad.push(`identityMatch.js (ไม่มี ${fn})`);
+  }
+  /* ชื่อซ้ำ/ชื่อต้นตรง ต้องไม่ถูกผูกให้เอง — `confident` ต้องผูกกับ "เจอคนเดียว" เท่านั้น */
+  if (!/confident: same\.length === 1/.test(im))
+    bad.push('identityMatch.js (confident ไม่ได้ผูกกับ "ชื่อตรงและเจอคนเดียว" — เสี่ยงผูกผิดคน)');
+  if (!/tier: 'first', rows: first\.slice\(0, limit\), confident: false/.test(im))
+    bad.push('identityMatch.js (ชั้น "ชื่อต้นตรง" ต้อง confident=false เสมอ)');
+  if (!/e\.is_active !== false/.test(im)) bad.push('identityMatch.js (เสนอคนที่ลาออกแล้วได้)');
+
+  const au = stripComments(readFileSync(join(ROOT, 'src/pages/AddUser.jsx'), 'utf8'));
+  if (!/unlinkedTriage\(users, emps\)/.test(au)) bad.push('AddUser.jsx (ไม่ได้แยก 3 กองผ่าน unlinkedTriage)');
+  if (!/tri\.queue\.map\(/.test(au)) bad.push('AddUser.jsx (คิวไม่ได้ลิสต์รายชื่อ — กลับไปเป็นข้อความเปล่า)');
+  if (!/linkEmployee\(u, e\)/.test(au)) bad.push('AddUser.jsx (ไม่มีปุ่มผูกกับพนักงานในคิว)');
+  if (!/markShared\(u\)/.test(au)) bad.push('AddUser.jsx (ไม่มีปุ่ม "เป็นบัญชีกลาง" ในคิว)');
+  if (!/tri\.sharedOk\.length/.test(au))
+    bad.push('AddUser.jsx (ไม่ได้เขียนว่าบัญชีกลางที่ไม่ผูกตัวตน = ถูกต้องแล้ว)');
+  /* 2 ปุ่มนั้นเขียน DB ⇒ ต้องนับแถว (RLS ปฏิเสธ UPDATE = 0 แถว ไม่มี error) */
+  if ((au.match(/checkWriteRows\(await supabase\.from\('profiles'\)/g) || []).length < 2)
+    bad.push('AddUser.jsx (ปุ่มในคิวไม่ได้นับแถวที่เขียนจริงด้วย checkWriteRows)');
+
+  /* บ้านเดียวของ normSearch */
+  const tt = stripComments(readFileSync(join(ROOT, 'src/utils/thaiText.js'), 'utf8'));
+  if (!/export const normSearch/.test(tt)) bad.push('utils/thaiText.js (normSearch ไม่ได้อยู่ที่นี่)');
+  for (const f of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const rel = relative(ROOT, f);
+    if (rel === 'src/utils/thaiText.js') continue;
+    const src = stripComments(readFileSync(f, 'utf8'));
+    if (/export const normSearch\s*=/.test(src)) bad.push(`${rel} (ประกาศ normSearch ชุดที่ 2)`);
+  }
+
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n   ') + '\n'
+    + '   ทำไม: ตัวตน (ทีม/ไลน์/ส่วนงาน) อ่านจากฐานพนักงานเมื่อผูกแล้ว — ยังไม่ผูก = ใช้ค่าที่แอดมิน\n'
+    + '         กรอกเองซึ่งเพี้ยนเงียบ · และ "จับคู่ชื่ออัตโนมัติ" แก้ไม่ได้ (วัด 19/10: ชื่อตรง 1/18)\n'
+    + '   แก้: จัดคิวผ่าน src/utils/identityMatch.js + ลิสต์รายชื่อ/ปุ่ม 3 ทางที่ /add-user\n');
+});
+
+/* ── 🚫 กะผลิตห้ามถูก hard delete (2026-10-19 · QC audit ข้อ ③) ───────────────────────
+   `production_sessions` มี FK cascade ไปที่ `prod_orders` · `downtime_logs` · `defect_logs`
+   ⇒ `delete` ใบเดียว = ยอดผลิต/เวลาหยุด/ของเสียของกะนั้นหายถาวร และ OEE ย้อนหลังเปลี่ยน
+     โดยไม่เหลือร่องรอยว่าใครลบ เพราะอะไร (กู้ไม่ได้ — ฝั่ง DR ไม่มี audit log)
+   กฎในหัวไฟล์ `utils/sessionStatus.js` เขียนไว้แล้วว่า "เก็บประวัติไว้แทน delete" แต่ตัวจอ
+   ยังมีปุ่มลบอยู่ 3 จุด (Live · กะค้าง · ประวัติ) ⇒ ด่านนี้กันไม่ให้กลับมา
+   ✅ ทางที่ถูก: `status = 'void'` + `void_reason` (บังคับ) + `voided_by_name`
+      · ด่านจริงฝั่ง DB = trigger `trg_session_void_guard` (ทำโมฆะได้เฉพาะกะเปล่า) */
+test('🛡️ session-no-hard-delete — ห้ามจอไหน delete production_sessions (ต้องใช้ void)', () => {
+  const bad = [];
+  for (const f of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const src = stripComments(readFileSync(f, 'utf8'));
+    if (/from\('production_sessions'\)[\s\S]{0,200}?\.delete\(/.test(src))
+      bad.push(`${relative(ROOT, f)} (delete production_sessions)`);
+  }
+  /* ฝั่งจอต้องยังมีทางทำโมฆะอยู่จริง — ถอดปุ่มลบแล้วไม่เหลืออะไรให้ทำ = กะค้างเต็มจอ */
+  const dr = stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'));
+  for (const fn of ['handleVoidSession', 'handleVoidEmptySession', 'voidEmpty']) {
+    if (!new RegExp(`const ${fn} = async`).test(dr)) bad.push(`DailyReport.jsx (ไม่มี ${fn} — ทางทำโมฆะหายไป)`);
+  }
+  if (!/void_reason: reason/.test(dr)) bad.push('DailyReport.jsx (ทำโมฆะโดยไม่เก็บเหตุผล — DB มี CHECK บังคับ)');
+
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n   ') + '\n'
+    + '   ทำไม: ลบกะ = ลบ prod_orders/downtime_logs/defect_logs ตาม cascade ⇒ ยอดของวันนั้นหายถาวร\n'
+    + '   แก้: update status = SESSION_VOID + void_reason + voided_by_name (src/utils/sessionStatus.js)\n');
+});
+
+/* ── 💰 ชั้นที่ 3 แกน Cost Center (2026-10-16..19 · คำสั่ง user) ──────────────────────
+   *"ใช้ cost center เป็น key หลัก … เซ็ตได้ว่า user ไหน response กับ cost center ไหน **ตามลำดับชั้น**
+     ถ้า response ชั้นส่วน 46 ก็ response ได้ทั้งหมดลงไป"*
+   ด่านนี้คุม 4 อย่างที่พังเงียบ (ไม่มี error ให้เห็น แค่สิทธิ์ผิด):
+   ① กฎ "CC ของโหนด = ตัวเอง → แม่ → ปู่" ต้องมีชุดเดียว — เคยมี 2 ชุด (orgDivisions.js + ccScope.js)
+      จาก 2 session ขนานกัน ⇒ แก้กฎที่เดียวแล้วอีกจอตัดสินคนละแบบ
+   ② 🔴 **ห้ามไล่ลำดับชั้นด้วยตัวเลขรหัส** — ลูกของ PD1 `2140461000` คือ `2140561001` (หลักที่ 5
+      เปลี่ยน 4→5) ⇒ `like '21404%'`/`slice(0,5)` ได้ชุดผิดแบบดูเหมือนถูก
+   ③ ว่าง = ถอยไปใช้ `profiles.section` (122 บัญชีเดิมต้องไม่เปลี่ยนพฤติกรรมวันที่ลง)
+   ④ ค่าต้องเดินถึงจอ: UserContext ส่ง `respCostCenters` · /add-user เขียน `resp_cost_centers`
+      และรายงานรหัสที่ผังไม่รู้จัก */
+test('🛡️ cc-scope-layer — ชั้นสิทธิ์แกน Cost Center ยังอยู่ครบ + ห้ามไล่ชั้นด้วยเลขรหัส', () => {
+  const bad = [];
+  const cc = stripComments(readFileSync(join(ROOT, 'src/utils/ccScope.js'), 'utf8'));
+  for (const fn of ['buildCcIndex', 'respScopesOf', 'canWriteScope', 'ccBlockText', 'writableByScope',
+    'unknownRespCcs', 'attachCc', 'ccCoverage', 'costCenterOfNode']) {
+    if (!new RegExp(`export function ${fn}\\b`).test(cc)) bad.push(`ccScope.js (ไม่มี ${fn})`);
+  }
+  /* ① ลำดับชั้นต้องมาจากผัง ไม่ใช่เลข ⇒ ต้องยืมของ orgScope ไม่ใช่เขียนต้นไม้ใหม่ */
+  if (!/canonicalScope|scopeCovers/.test(cc)) bad.push('ccScope.js (ไม่ได้ใช้ canonicalScope/scopeCovers ของ orgScope — แปลว่าไปสร้างกฎลำดับชั้นเองใหม่)');
+  /* ③ fallback section + ใบผ่าน all_units */
+  if (!/role === 'admin' \|\| allUnits === true/.test(cc)) bad.push('ccScope.js (เสีย fallback admin / คีย์ scope:all_units)');
+  if (!/const sec = norm\(section\);[\s\S]{0,120}kind: 'section'/.test(cc)) bad.push('ccScope.js (respScopesOf ไม่ได้ถอยไปใช้ profiles.section เมื่อยังไม่ตั้ง CC)');
+
+  /* ① กฎตกทอดชุดเดียว — ห้ามมีไฟล์อื่นประกาศ costCenterOfNode หรือเขียนลูปไล่แม่หา cost_center เอง */
+  for (const f of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const rel = relative(ROOT, f);
+    if (rel === 'src/utils/ccScope.js') continue;
+    const src = stripComments(readFileSync(f, 'utf8'));
+    if (/(?:export )?function costCenterOfNode\b/.test(src)) bad.push(`${rel} (ประกาศ costCenterOfNode เอง — ต้อง import จาก utils/ccScope.js)`);
+    if (/\bcur\.cost_center\b/.test(src)) bad.push(`${rel} (ไล่แม่หา cost_center เอง — ใช้ buildCcIndex().ccOfNode())`);
+    /* ② ห้ามตัด/เทียบ prefix ของรหัสเพื่อเดาลำดับชั้น */
+    if (/cost_center[^\n]{0,60}?(?:\.startsWith\(|\.slice\(0|\.substring\(0)/.test(src)
+      || /(?:startsWith|slice\(0|substring\(0)[^\n]{0,40}?cost_center/.test(src))
+      bad.push(`${rel} (เดาลำดับชั้นจากตัวเลข cost_center — ลำดับชั้นมาจาก org_nodes.parent_id เท่านั้น)`);
+  }
+  /* ② ฝั่ง SQL ก็ห้าม like '<เลข>%' บน cost_center */
+  for (const f of walk(join(ROOT, 'supabase/migrations'), ['.sql'])) {
+    const sql = readFileSync(f, 'utf8').replace(/--[^\n]*/g, '');
+    if (/cost_center\s+(?:i?like)\s+'\d/i.test(sql)) bad.push(`${relative(ROOT, f)} (cost_center LIKE '<เลข>%' — ไล่ลำดับชั้นด้วยเลขรหัส)`);
+  }
+
+  /* ④ ค่าต้องเดินถึงจอ */
+  const app = stripComments(readFileSync(join(ROOT, 'src/App.jsx'), 'utf8'));
+  if (!/respCostCenters:/.test(app)) bad.push('src/App.jsx (UserContext ไม่ได้ส่ง respCostCenters)');
+  if (!/resp_cost_centers/.test(app)) bad.push('src/App.jsx (ไม่ได้ select resp_cost_centers ตอนโหลดโปรไฟล์)');
+  const au = stripComments(readFileSync(join(ROOT, 'src/pages/AddUser.jsx'), 'utf8'));
+  if (!/resp_cost_centers:\s*form\.respCcs/.test(au)) bad.push('src/pages/AddUser.jsx (ไม่ได้บันทึก resp_cost_centers)');
+  if (!/unknownRespCcs/.test(au)) bad.push('src/pages/AddUser.jsx (ไม่ได้รายงานรหัสที่ผังไม่รู้จัก — ค่าที่ตั้งไว้แล้วใช้ไม่ได้แบบเงียบ)');
+
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n   ') + '\n'
+    + '   ทำไม: รหัส CC **ไม่ได้เข้ารหัสลำดับชั้น** (PD1 2140461000 → ลูก 2140561001) และทีม 24 โหนด\n'
+    + '         ไม่มีรหัสเลย ⇒ ต้องตกทอดจากแม่ผ่านผัง · มีกฎ 2 ชุด = สิทธิ์เพี้ยนแบบไม่มีใครเห็น\n'
+    + '   แก้: ทุกอย่างผ่าน src/utils/ccScope.js (buildCcIndex/canWriteScope) · ลำดับชั้นจาก org_nodes.parent_id\n');
 });
 
 /* 🛡️ ship-due-date-calendar (2026-10-16) — `customer_shipping_orders.due_date` = วันที่ตามปฏิทิน
@@ -4949,4 +5133,68 @@ test('🛡️ จอ BOM ซ้ำ: ต้องมีมุมมองกล�
   assert.ok(/==\s*null/.test(groupView),
     '\n\n❌ ตารางกลุ่มไม่ได้แยก `null` (ใบนั้นไม่มีของตัวนี้) ออกจากเลข 0 แล้ว\n'
     + '   โชว์ 0 = คนอ่านว่า "ใบนั้นเขียนว่าไม่ใช้" ซึ่งคนละเรื่องกับ "ใบนั้นไม่ได้พูดถึงเลย"\n');
+});
+
+/* ── 🗑️ ทะเบียนที่จับคู่ด้วย "ข้อความ" ต้องมีด่านนับปลายทางก่อนลบ (2026-10-18) ─────────────
+   CLAUDE.md §Database Schema: *"ลบ/เปลี่ยนชื่อแถวทะเบียน ต้องไล่เช็คและไล่แก้ปลายทางในคราวเดียว
+   · นับไม่ครบ = ห้ามลบ (fail-closed)"* — `<SimpleMasterPanel>` มี `onBeforeDelete` ให้แล้ว
+   แต่ 18/10 พบว่าใช้จริงแค่ `cost_centers` ตัวเดียว · อีก 6 ทะเบียนลบได้ทันทีโดยไม่นับใครเลย
+   (ลูกค้า 1,974 ใบผลิต · supplier 16,552 ใบขอซื้อ · กลุ่มเครื่องปั๊ม 268 แม่พิมพ์ … กลายเป็นกำพร้าเงียบ)
+
+   ด่านนี้กัน 3 ทาง: ถอด onBeforeDelete ออกจากแผงเดิม · เพิ่มทะเบียนใหม่แล้วลืมใส่ด่าน ·
+   แก้ `masterRefs.js` ให้ตอบ 0 เมื่อนับไม่ได้ (ต้อง partial เสมอ) หรือเอา label มาจับคู่ซ้ำกับ key */
+test('🗑️ ทะเบียนข้อความ (SimpleMasterPanel) ต้องส่ง onBeforeDelete + masterRefs ต้อง fail-closed', () => {
+  const bad = [];
+
+  /* ทะเบียนที่ปลายทางเก็บเป็น "ข้อความ" ไม่ผูก FK ⇒ ลบแล้วไม่มีใครเตือน — ต้องมีด่านทุกตัว
+     (cost_centers ใช้ util เฉพาะของตัวเอง `costCenterRefs.js` ตั้งแต่ 06/10) */
+  const MUST_GUARD = ['customers', 'suppliers', 'die_press_lines', 'die_op_types',
+                      'die_set_kinds', 'repair_wi_registry', 'cost_centers'];
+
+  for (const f of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
+    const src = stripComments(readFileSync(f, 'utf8'));
+    if (!src.includes('<SimpleMasterPanel')) continue;
+    const rel = relative(ROOT, f);
+    /* ตัดเป็นก้อนต่อ 1 element แล้วดูว่าก้อนที่ประกาศ table="<ทะเบียน>" มีด่านอยู่ในก้อนเดียวกันไหม */
+    for (const chunk of src.split('<SimpleMasterPanel').slice(1)) {
+      const el = chunk.split(/\/>|<\/SimpleMasterPanel>/)[0];
+      const m = el.match(/table=["']([a-z_]+)["']/);
+      if (!m || !MUST_GUARD.includes(m[1])) continue;
+      if (!/onBeforeDelete=/.test(el)) bad.push(`${rel} → table="${m[1]}" ไม่มี onBeforeDelete`);
+    }
+  }
+
+  const refs = stripComments(readFileSync(join(ROOT, 'src/utils/masterRefs.js'), 'utf8'));
+  /* นับไม่ได้ต้องเป็น partial — ด่านนี้ตายทันทีถ้ามีใครเปลี่ยน default เป็น false */
+  if (!/partial:\s*true/.test(refs)) bad.push('src/utils/masterRefs.js (ไม่มีทาง fail-closed แล้ว)');
+  /* 🔴 die_op_types / die_set_kinds ห้ามเอา label ไปจับคู่ — ป้ายเป็นคำไทยกลาง ("อื่นๆ") ชนกับ
+     mtn_orders.problem_characteristic 328 แถว ⇒ จะบล็อกการลบทั้งที่ไม่มีใครใช้จริง */
+  for (const reg of ['die_op_types', 'die_set_kinds']) {
+    const blk = refs.split(`${reg}: {`)[1]?.split('},')[0] || '';
+    if (/r\?\.label/.test(blk)) bad.push(`src/utils/masterRefs.js → ${reg} เอา label ไปจับคู่ปลายทาง`);
+  }
+  /* machines.line_name ใช้ร่วมกับไลน์ผลิต ⇒ ต้องกรอง equipment_kind ไม่งั้นนับเกินแล้วบล็อกผิด */
+  if (refs.includes("['machines', 'line_name'") && !/equipment_kind:\s*'die'/.test(refs))
+    bad.push("src/utils/masterRefs.js (machines.line_name ไม่กรอง equipment_kind='die')");
+
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n   ') + '\n'
+    + '   ทำไม: ทะเบียนพวกนี้ปลายทางเก็บเป็นข้อความ ไม่ผูก FK ⇒ ลบแถวแล้วใบ/ทะเบียนที่อ้างอยู่\n'
+    + '         กลายเป็นค่ากำพร้าเงียบๆ (วัด 18/10: ลูกค้า 1 ราย = 1,974 ใบผลิต)\n'
+    + '   แก้: onBeforeDelete={masterDeleteGuard(supabaseDR, \'<ทะเบียน>\')} (src/utils/masterRefs.js)\n'
+    + '        ทะเบียนใหม่ = เพิ่ม spec ใน MASTER_REF_SPECS โดย**วัดปลายทางจากฐานจริง** ห้ามเขียนจากความจำ\n');
+});
+
+/* 🛡️ lot-mats-from-rules (2026-10-19) — "พาร์ทนี้ยอดเข้าคลังทางปิดล็อตไหม" ต้องถามกฎรับเข้า (โหมด 🔧 lot)
+   ตัวเดียวกับที่ trigger fn_post_confirmed_output ใช้ข้าม · เดิมถาม child_lot_requests "เคยมีล็อต" ⇒
+   GOR 20058498 เลิกเปิดล็อตแล้ว แต่ระบบยังถือว่าเป็นพาร์ทล็อต → ยอดผลิตไม่เข้าคลัง 323 ใบ และจอเทียบคลังผิดที่ */
+test('🛡️ lot-mats-from-rules — lotMats มาจาก lotMatsOf(rules) ไม่ใช่ child_lot_requests', () => {
+  const bad = [];
+  for (const f of ['src/components/LinePartCallPanel.jsx', 'src/pages/HeijunkaKanban.jsx']) {
+    const src = stripComments(readFileSync(join(ROOT, f), 'utf8'));
+    if (/from\('child_lot_requests'\)\.select\('child_mat_no'\)/.test(src)) bad.push(`${f} (ถาม child_lot_requests หา lotMats)`);
+    if (!/lotMats:\s*lotMatsOf\(/.test(src)) bad.push(`${f} (lotMats ไม่ได้มาจาก lotMatsOf)`);
+  }
+  const pr = stripComments(readFileSync(join(ROOT, 'src/utils/partRefStock.js'), 'utf8'));
+  if (!/mode === 'lot'\) continue/.test(pr)) bad.push('partRefStock.js inflowDestOf (กฎโหมด lot ต้องไม่ร่วมตัดสินคลัง)');
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n   แก้: ใช้ lotMatsOf(rules) จาก src/utils/stockReceipts.js (select ต้องมีคอลัมน์ mode)\n');
 });

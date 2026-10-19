@@ -70,3 +70,39 @@ export function pairHint(set) {
   if (/(RH|LH)[^A-Z]{0,6}(RH|LH)/.test(nm)) why.push('ชื่อเอ่ยทั้ง RH และ LH');
   return why.length ? { why: why.join(' + ') } : null;
 }
+
+/** ชุดแม่พิมพ์ที่ "ช่องเลือกแม่พิมพ์ของล็อต MAT นี้" ควรยื่นให้ — **2 กอง ห้ามยุบรวม**
+      · `linked`   ทะเบียนบอกไว้แล้วว่าชุดนี้ทำพาร์ทนี้ (คนกรอก = ความจริง) → ระบบยืนยันได้
+      · `unlinked` ยังไม่ผูก MAT เลยสักช่อง = **"ยังไม่รู้" ไม่ใช่ "ไม่ใช่"** → ต้องให้คนเลือกได้
+
+    🔴 ชุดที่ผูก MAT อื่นไว้แล้ว = **ตัดออก** (เสนอผิดแย่กว่าไม่เสนอ — ความสูงผิด = เวลาเปลี่ยนรุ่นผิด)
+    🔴 ไม่ระบุ mat = คืนทุกชุดเป็น `linked` (เท่า `dieMakesMat(set, null)` — ไม่กรอง)
+
+    ทำไมต้องมีกอง `unlinked`: วัด 19/10 — `die_sets.mat_no` กรอกไว้ **1 จาก 92 ชุด**
+    ⇒ ลิสต์ที่ยื่นแต่ `linked` จะว่างเปล่าแทบทุกพาร์ท **คนที่รู้ว่าใช้ชุดไหนก็เลือกไม่ได้** = ทางตัน
+    (บทเรียนเดียวกับโมดัลตั้ง min/max ที่เปิดมาเจอลิสต์ว่าง · `demand-flow-tower.md`)
+    ⇒ ยื่นให้เลือก + ป้ายบอกว่าระบบไม่ได้ยืนยัน แล้วให้ "การเลือกของคน" กลายเป็นตัวผูกทะเบียน */
+export function dieSetsForMat(sets, mat) {
+  const m = norm(mat);
+  const linked = [], unlinked = [];
+  for (const s of sets || []) {
+    if (!m) { linked.push(s); continue; }
+    const mats = dieSetMats(s);
+    if (mats.includes(m)) linked.push(s);
+    else if (!mats.length) unlinked.push(s);   // ว่างทั้ง 2 ช่อง = ยังไม่มีใครผูก (ไม่ใช่ "ไม่ใช่ตัวนี้")
+  }
+  return { linked, unlinked };
+}
+
+/** ช่องที่ควรเขียน MAT ลงไปเมื่อคนยืนยันว่า "ชุดนี้ทำพาร์ทนี้" — คืน `null` = เขียนไม่ได้/ไม่ต้องเขียน
+    🔴 **ห้ามทับค่าที่คนกรอกไว้** — เต็มทั้ง 2 ช่องแล้ว = คืน null ให้จอบอกให้ไปแก้ที่ทะเบียนเอง
+       (ชุดที่ปั๊มได้เกิน 2 พาร์ทมีจริง แต่ทะเบียนมี 2 ช่อง ⇒ ตัวที่ 3 เป็นการตัดสินใจของคน) */
+export function matSlotFor(set, mat) {
+  const m = norm(mat);
+  if (!m) return null;
+  const mats = dieSetMats(set);
+  if (mats.includes(m)) return null;           // ผูกอยู่แล้ว ไม่ต้องเขียนซ้ำ
+  if (!norm(set?.mat_no)) return 'mat_no';
+  if (!norm(set?.mat_no_2)) return 'mat_no_2';
+  return null;                                  // เต็มแล้ว — คนตัดสินที่ /equipment?tab=die
+}

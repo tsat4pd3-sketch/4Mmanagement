@@ -8,6 +8,7 @@ import { UserContext } from '../App'
 import { can } from '../utils/permissions'
 import { toast } from '../components/Toast'
 import { getSpcStatus, STATUS_COLOR } from '../lib/spc'
+import { calcOf, calcFormula, pmCalcResults } from '../utils/inspectCalc'
 import { findChecklist, listChecklistsByDept } from '../lib/pmChecklists'
 import { notifyDepartment, createNotification } from '../lib/pmNotify'
 import { handleDailyPmSave } from '../lib/pmDailyAlarm'
@@ -308,7 +309,7 @@ function CpImage({ cp }) {
 }
 
 // ─── Variable Row ───────────────────────────────────────────────────────────
-function VariableRow({ cp, idx, r, onChange, methodIndex }) {
+function VariableRow({ cp, idx, r, onChange, methodIndex, calcText }) {
   const avg = computeAvg(r.v1, r.v2, r.v3)
   const status = getSpcStatus(avg, cp)
   const c = status ? STATUS_COLOR[status] : null
@@ -322,11 +323,17 @@ function VariableRow({ cp, idx, r, onChange, methodIndex }) {
         <CpImage cp={cp} />
         {c && <span style={{ fontSize: 11, fontWeight: 700, color: c.text }}>{status === 'pass' ? '●' : status === 'warning' ? '⚠' : '✕'}</span>}
       </div>
+      {calcText && (
+        <div style={{ fontSize: 11.5, color: '#4d9fff', fontWeight: 700 }}>🧮 ค่า = {calcText} · ระบบคิดให้จากค่าที่วัด ไม่ต้องกรอก</div>
+      )}
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
         {['v1', 'v2', 'v3'].map((k, i) => (
           <div key={k}>
             <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', marginBottom: 2 }}>{['①', '②', '③'][i]}</div>
-            <input type="number" value={r[k]} onChange={e => onChange({ ...r, [k]: e.target.value })} placeholder="—" style={S.input} />
+            {/* จุดคำนวณ = อ่านอย่างเดียว (ค่ามาจากจุด A − B) */}
+            <input type="number" value={r[k]} readOnly={!!calcText} tabIndex={calcText ? -1 : undefined}
+              onChange={e => { if (!calcText) onChange({ ...r, [k]: e.target.value }) }} placeholder={calcText ? '…' : '—'}
+              style={calcText ? { ...S.input, borderStyle: 'dashed', color: 'var(--text2)' } : S.input} />
           </div>
         ))}
         <div>
@@ -734,7 +741,9 @@ export default function PMCheckData() {
   // 🔎 ค้นในลิสต์เครื่อง (feedback 2026-09-08: JIG MTN มี 60+ เครื่อง ไล่เลื่อนหาเอง) — เทียบเลขเครื่อง/ชื่อ/ไลน์
   const [jigQuery, setJigQuery] = useState('')
   const [scanOpen, setScanOpen] = useState(false)   // 📷 สแกนป้ายเครื่อง → เลือกอุปกรณ์
-  const [results, setResults] = useState({})
+  const [rawResults, setResults] = useState({})   // ที่คนกรอก
+  /* 🧮 จุดคำนวณ (A − B) เติมค่า ①②③ จากจุด A/B ให้เอง — ทุกที่ที่อ่าน `results` (ตัดสิน/นับครบ/บันทึก) เห็นค่าชุดเดียวกัน */
+  const results = useMemo(() => pmCalcResults(checkpoints, rawResults), [checkpoints, rawResults])
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
   const [inspections, setInspections] = useState([])
@@ -1488,7 +1497,8 @@ export default function PMCheckData() {
                             </div>
                           ) : null))
                           const row = cp.type === 'variable' ? (
-                            <VariableRow cp={cp} idx={idx} r={results[cp.id] ?? { v1: '', v2: '', v3: '' }} onChange={v => setResults(prev => ({ ...prev, [cp.id]: v }))} methodIndex={methodIndex} />
+                            <VariableRow cp={cp} idx={idx} r={results[cp.id] ?? { v1: '', v2: '', v3: '' }} onChange={v => setResults(prev => ({ ...prev, [cp.id]: v }))} methodIndex={methodIndex}
+                              calcText={calcOf(cp) ? calcFormula(calcOf(cp), id => { const k = checkpoints.findIndex(c => c.id === id); return k < 0 ? '?' : `ข้อ ${k + 1}` }) : null} />
                           ) : cp.type === 'measure' ? (
                             <MeasureRow cp={cp} idx={idx} r={results[cp.id] ?? { mval: '' }} onChange={v => setResults(prev => ({ ...prev, [cp.id]: v }))} methodIndex={methodIndex} />
                           ) : (

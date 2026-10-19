@@ -35,6 +35,8 @@ import { fetchAllPages } from '../utils/fetchByIds';   // 🔴 เพดาน 1
 import SearchInput from '../components/SearchInput';   // ช่องกรองลิสต์ = ของกลาง (UI-STANDARD §4)
 // 🧩 ชิ้นส่วนกลางของ "ตั้งค่าจุดตรวจ" — ใช้ร่วมกับ QA /qa-setup (ระบบเดียว เรียนครั้งเดียว · 15/10)
 import PointCardShell from '../components/inspect/PointCardShell'
+import CalcFormulaField from '../components/inspect/CalcFormulaField'
+import { calcOf, calcProblems, PM_CALC_REF_TYPES } from '../utils/inspectCalc'
 import PinWorkspace from '../components/inspect/PinWorkspace'
 import InspectEditorModal from '../components/inspect/InspectEditorModal'
 import useWideModal from '../components/inspect/useWideModal'
@@ -80,7 +82,7 @@ function equipTypeOfMachine(m) {
 
 function newCheckpoint(extra = {}) {
   return {
-    _key: crypto.randomUUID(), name: '', type: 'variable',
+    _key: crypto.randomUUID(), name: '', type: 'variable', calc: null,   // _key จุดใหม่ = id ตอน insert (จุดคำนวณอ้างได้ก่อนบันทึก)
     axis: null, category: null, checking_method: null, unit: '', nominal: '', lsl: '', usl: '', lcl: '', ucl: '',
     // โหมดเกณฑ์ของจุดชนิด "ค่าวัด" — client-only (ขึ้นต้น _ = ไม่ลง DB) เพราะ DB มีแค่ lsl/usl
     // ⚠️ ต้องเป็น state จริง ห้าม derive จาก lsl/usl (ดู mMode ด้านล่าง — เคยทำแล้วกดปุ่มไม่ติด)
@@ -160,7 +162,7 @@ const S = {
 }
 
 // ─── CheckpointCard ───────────────────────────────────────────────────────────
-function CheckpointCard({ cp, label, onChange, onDelete, onDuplicate, onCpImage, isPinning, onPinToggle, onUnpin, hasImage, categories, allCategories, methods }) {
+function CheckpointCard({ cp, label, onChange, onDelete, onDuplicate, onCpImage, isPinning, onPinToggle, onUnpin, hasImage, categories, allCategories, methods, calcOptions, calcIssues }) {
   const isVar = cp.type === 'variable'
   // ถ้าหมวดที่เลือกไว้เดิมไม่อยู่ในลิสต์ที่กรองแล้ว (เช่น jig เก่า) ยังต้องโชว์ไม่ให้หาย
   const catOpts = cp.category && !(categories ?? []).some(c => c.code === cp.category)
@@ -207,7 +209,7 @@ function CheckpointCard({ cp, label, onChange, onDelete, onDuplicate, onCpImage,
           const colors = { variable: '#4d9fff', measure: '#22c55e', attribute: '#9b8de8', note: '#f59a3f' }
           const lbl = { variable: '📏 Variable', measure: '📊 ค่าวัด', attribute: '✅ OK/NG', note: '📝 Note' }
           return (
-            <button key={t} onClick={() => onChange({ type: t })} style={S.typeBtn(cp.type === t, colors[t])}>{lbl[t]}</button>
+            <button key={t} onClick={() => onChange(t === 'variable' ? { type: t } : { type: t, calc: null })} style={S.typeBtn(cp.type === t, colors[t])}>{lbl[t]}</button>
           )
         })}
       </div>
@@ -238,6 +240,8 @@ function CheckpointCard({ cp, label, onChange, onDelete, onDuplicate, onCpImage,
         )
       })()}
 
+      {/* 🧮 จุดคำนวณ (A − B) — ช่องกลางเดียวกับ QA · ตอนตรวจคิดผลต่างรายครั้ง ①②③ ให้เอง */}
+      {isVar && <CalcFormulaField calc={cp.calc} onChange={calc => onChange({ calc })} options={calcOptions} problems={calcIssues} />}
       {isVar && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
@@ -689,6 +693,10 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
         return
       }
     }
+    {
+      const bad = calcIssueList[0]
+      if (bad) { setError(`จุดตรวจ ${cpLabels[bad.key] || ''} (คำนวณ): ${bad.msg}`); jumpToCp(bad.key); return }
+    }
     /* จุดชนิด "ค่าวัด" ต้องมีเกณฑ์ — ไม่มีเกณฑ์ = measureStatus ไม่มีอะไรให้ fail → **ผ่านตลอดกาล**
        (จุดตรวจที่ตัดสินอะไรไม่ได้เลย แต่หน้าจอขึ้นเขียวว่าตรวจแล้ว = หลอกคนอ่านผลตรวจ) */
     const num = v => (v !== '' && v != null ? Number(v) : null)
@@ -863,11 +871,15 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
             group_order: groupOrderMap[(c.group_name || '').trim()] ?? null,
             description: (c.description || '').trim() || null,
             image_path: cpImagePaths[c._key] ?? c.image_path ?? null,
+            // 🧮 อ้าง id จุด A/B (_key จุดใหม่ = id ที่ insert ด้านล่าง)
+            calc: c.type === 'variable' ? calcOf(c) : null,
       })
       const { data: curCps, error: eCurCp } = await supabaseDR.from('jig_checkpoints').select('id, name').eq('checklist_id', cl.id)
       if (eCurCp) throw eCurCp
       const curIds = new Set((curCps ?? []).map(r => r.id))
-      const keepCp = new Set(ordered.map(c => c.id).filter(id => id && curIds.has(id)))
+      /* จุดใหม่ insert ด้วย id = _key (uuid) ⇒ บันทึกซ้ำหลังล้มกลางทาง = update ไม่ insert ซ้ำ */
+      const rowIdOf = (c) => c.id || c._key
+      const keepCp = new Set(ordered.map(rowIdOf).filter(id => id && curIds.has(id)))
       const dropCp = (curCps ?? []).filter(r => !keepCp.has(r.id))
       if (dropCp.length) {
         const { count: histN, error: eHist } = await supabaseDR.from('inspection_results')
@@ -881,12 +893,12 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
       }
       for (let i = 0; i < ordered.length; i++) {
         const c = ordered[i]
-        if (c.id && keepCp.has(c.id)) {
-          const { error: eU } = await supabaseDR.from('jig_checkpoints').update(cpRow(c, i)).eq('id', c.id)
+        if (keepCp.has(rowIdOf(c))) {
+          const { error: eU } = await supabaseDR.from('jig_checkpoints').update(cpRow(c, i)).eq('id', rowIdOf(c))
           if (eU) throw eU
         }
       }
-      const fresh = ordered.map((c, i) => [c, i]).filter(([c]) => !(c.id && keepCp.has(c.id))).map(([c, i]) => cpRow(c, i))
+      const fresh = ordered.map((c, i) => [c, i]).filter(([c]) => !keepCp.has(rowIdOf(c))).map(([c, i]) => ({ ...cpRow(c, i), id: rowIdOf(c) }))
       if (fresh.length) {
         const { error: cpErr } = await supabaseDR.from('jig_checkpoints').insert(fresh)
         if (cpErr) throw cpErr
@@ -937,6 +949,14 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
     const namedCount = grouped.named.reduce((s, g) => s + g.items.length, 0)
     grouped.ungrouped.forEach((c, k) => { cpLabels[c._key] = String(namedCount + k + 1) })
   }
+  /* 🧮 จุดคำนวณ: อ้างได้เฉพาะจุด Variable/ค่าวัด ที่ไม่ใช่จุดคำนวณ · ปัญหาสูตรขึ้นในการ์ด + กันบันทึก (utils/inspectCalc) */
+  const calcIssueList = calcProblems(checkpoints, {
+    keyOf: c => c._key, isNumeric: c => PM_CALC_REF_TYPES.includes(c.type),   // Variable + ค่าวัด
+    hasLimit: c => (c.lsl !== '' && c.lsl != null) || (c.usl !== '' && c.usl != null),
+  })
+  const calcOptionsFor = (selfKey) => checkpoints
+    .filter(c => c._key !== selfKey && PM_CALC_REF_TYPES.includes(c.type) && !c.calc)
+    .map(c => ({ key: c._key, label: `${cpLabels[c._key] || '?'} ${c.name || ''}${c.axis ? ` (${c.axis})` : ''}${c.type === 'measure' ? ' · ค่าวัด' : ''}`.trim() }))
   const groupHeaderStyle = {
     display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderRadius: 6,
     background: 'var(--accent-dim)', border: '1px solid var(--border2)',
@@ -951,6 +971,7 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
       style={{ borderRadius: 8, transition: 'box-shadow .3s',
         boxShadow: flashKey === cp._key ? '0 0 0 2px var(--accent), 0 0 14px var(--accent-glow)' : 'none' }}>
       <CheckpointCard cp={cp} label={cpLabels[cp._key]}
+        calcOptions={calcOptionsFor(cp._key)} calcIssues={calcIssueList.filter(x => x.key === cp._key).map(x => x.msg)}
         onChange={patch => updateCp(cp._key, patch)} onDelete={() => deleteCp(cp._key)}
         onDuplicate={() => duplicateCp(cp._key)} onCpImage={f => handleCpImage(cp._key, f)}
         isPinning={activePinKey === cp._key} onPinToggle={() => togglePin(cp._key)} hasImage={frames.length > 0}

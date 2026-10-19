@@ -4,7 +4,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildOrgScope } from '../orgScope.js';
-import { buildCcIndex, respScopesOf, canWriteScope, ccBlockText, writableByScope, unknownRespCcs } from '../ccScope.js';
+import { buildCcIndex, respScopesOf, canWriteScope, ccBlockText, writableByScope, unknownRespCcs,
+  attachCc, ccCoverage, costCenterOfNode } from '../ccScope.js';
 
 /* ผังจริงย่อ: PD1(ส่วนงาน) → BIG PRESS(แผนก) → ทีม(ไม่มีรหัส) · PD2(ส่วนงาน) → Assy A-GM(แผนก) */
 const NODES = [
@@ -127,4 +128,54 @@ test('กรองแถวแล้วต้องบอกว่าซ่อ�
   const out = writableByScope(index, { respCostCenters: ['2140461000'] }, rows, r => ({ kind: 'section', value: r.sec }));
   assert.equal(out.rows.length, 1);
   assert.equal(out.hiddenCount, 2);
+});
+
+
+/* ═══ ⑤ จอตั้งสิทธิ์ — ทะเบียนต้องอ่านออกว่า "ติ๊กแม่แล้วได้ลูกตัวไหน" (19/10) ═══ */
+const idx = attachCc(index, NODES);
+
+test('ก้อนรวม attachCc() ใช้แทนดัชนีผังได้ทุกฟังก์ชัน — กันการสลับดัชนี 2 ตัวแล้วเงียบ', () => {
+  assert.deepEqual(respScopesOf(idx, { respCostCenters: ['2140461000'] }), [{ kind: 'section', value: 'PD1' }]);
+  assert.deepEqual(unknownRespCcs(idx, ['9999999999']), ['9999999999']);
+  assert.equal(canWriteScope(idx, { respCostCenters: ['2140461000'] }, { kind: 'section', value: 'PD1' }).ok, true);
+});
+
+test('🔴 ทะเบียนเรียงแบบต้นไม้ — ลูกต้องอยู่ "หลังแม่ของตัวเอง" ไม่ใช่เรียงแบนตาม sort_order', () => {
+  const t = idx.cc.catalogTree().map(r => r.cc);
+  assert.ok(t.indexOf('2140461000') < t.indexOf('2140561001'), 'PD1 ต้องมาก่อน BIG PRESS ที่เป็นลูก');
+  assert.ok(t.indexOf('2140470000') < t.indexOf('2140571000'), 'PD2 ต้องมาก่อน Assy A-GM');
+  assert.equal(t.length, idx.cc.catalog().length, 'ต้นไม้ต้องไม่ทำรหัสหายไปแถวหนึ่ง');
+  assert.ok(t.includes('2140599999'), 'โหนดกำพร้าต้องยังโผล่ (ห้ามหายเงียบ)');
+});
+
+test('🔴 ผังวนลูป (a↔b) รหัสต้องไม่หายจากทะเบียน', () => {
+  const loop = buildCcIndex([
+    { id: 'a', kind: 'department', name: 'A', parent_id: 'b', cost_center: '1000000001', is_active: true },
+    { id: 'b', kind: 'department', name: 'B', parent_id: 'a', cost_center: '1000000002', is_active: true },
+  ]);
+  assert.equal(loop.catalogTree().length, 2);
+});
+
+test('ติ๊กส่วนงาน → จอบอกได้ว่าครอบลูกตัวไหน (ข้ามส่วนงานอื่นเสมอ)', () => {
+  const { covers } = ccCoverage(idx, ['2140461000']);
+  assert.deepEqual(covers['2140461000'], ['2140561001'], 'PD1 ครอบ BIG PRESS เท่านั้น ไม่ลาก Assy A-GM ของ PD2 มา');
+});
+
+test('ติ๊กลูกทั้งที่ติ๊กแม่แล้ว = ไม่ผิด แต่ต้องบอกว่าซ้ำซ้อน', () => {
+  const { redundant } = ccCoverage(idx, ['2140461000', '2140561001']);
+  assert.equal(redundant['2140561001'], '2140461000');
+  assert.equal(redundant['2140461000'], undefined, 'ตัวแม่ต้องไม่ถูกตีว่าซ้ำซ้อน');
+});
+
+test('ผังยังโหลดไม่เสร็จ (ทะเบียนว่าง) — ccCoverage ต้องไม่พังและไม่เดา', () => {
+  const empty = attachCc(index, []);
+  const { covers, redundant } = ccCoverage(empty, ['2140461000']);
+  assert.deepEqual(covers['2140461000'], []);
+  assert.deepEqual(redundant, {});
+});
+
+test('costCenterOfNode() — ตัวเดียวจบ ต้องให้ผลเท่ากับดัชนี (กฎตกทอดชุดเดียวทั้งระบบ)', () => {
+  assert.deepEqual(costCenterOfNode('t1', NODES), { code: '2140561001', from: 'BIG PRESS' });
+  assert.deepEqual(costCenterOfNode('ไม่มีจริง', NODES), { code: null, from: null });
+  assert.deepEqual(costCenterOfNode(null, NODES), { code: null, from: null });
 });

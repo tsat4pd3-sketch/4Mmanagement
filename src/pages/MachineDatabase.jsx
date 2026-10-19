@@ -21,6 +21,7 @@ import SearchInput from '../components/SearchInput';
 import { ALL, allOf } from '../utils/filterLabels';
 import { DeleteButton } from '../components/IconButton';
 import MachineRepairHistory from '../components/MachineRepairHistory';
+import { showsShutHeight } from '../utils/pressMachine';
 import { useNavigate } from 'react-router-dom';
 
 /* ─── shared little UI bits ─────────────────────────────────── */
@@ -130,7 +131,8 @@ export default function MachineDatabase() {
        ดูทะเบียน "ตาราง → คีย์" ที่ src/utils/masterInvalidate.js */
     invalidateTable('machines');
     const [{ data: mc }, { data: ln }, { data: mt }, fa] = await Promise.all([
-      supabaseDR.from('machines').select('*, machine_types(id, label, color, icon)').order('line_name').order('sort_order'),
+      // equipment_die(die_height_mm) — แม่พิมพ์กรอกความสูงได้จากฟอร์มนี้ด้วย (19/10 · ตัวจริงเก็บ 1:1 ที่ equipment_die)
+      supabaseDR.from('machines').select('*, machine_types(id, label, color, icon), equipment_die(die_height_mm)').order('line_name').order('sort_order'),
       loadLinesRes(),
       supabaseDR.from('machine_types').select('*').order('sort_order'),
       supabaseDR.from('pm_facility_areas').select('name').order('sort_order').then(r => r).catch(() => ({ data: [] })),
@@ -227,7 +229,11 @@ export default function MachineDatabase() {
       ? { id: item.id, equipment_kind: kindOf(item.equipment_kind), line_name: item.line_name, machine_no: item.machine_no, machine_name: item.machine_name || '', machine_type_id: item.machine_type_id || '', sort_order: item.sort_order ?? 0, is_active: item.is_active, equipment_category: item.equipment_category === 'utility' ? 'facility' : (item.equipment_category || 'production'), automation_level: item.automation_level || '', operation_mode: item.operation_mode || '', gang_count: item.gang_count != null ? String(item.gang_count) : '',
           shut_height_min_mm: item.shut_height_min_mm != null ? String(item.shut_height_min_mm) : '',
           shut_height_max_mm: item.shut_height_max_mm != null ? String(item.shut_height_max_mm) : '',
-          io_no: item.io_no || '' }
+          io_no: item.io_no || '',
+          // equipment_die เป็น 1:1 → PostgREST คืน object (บางกรณี array) — อ่านได้ทั้ง 2 แบบ
+          die_height_mm: (() => { const e = Array.isArray(item.equipment_die) ? item.equipment_die[0] : item.equipment_die; return e?.die_height_mm != null ? String(e.die_height_mm) : ''; })(),
+          _die_height_orig: (() => { const e = Array.isArray(item.equipment_die) ? item.equipment_die[0] : item.equipment_die; return e?.die_height_mm ?? null; })(),
+          _show_shut: false }
       : { ...emptyMachine, line_name: filterLine || '', sort_order: machines.length + 1 });
   };
 
@@ -266,9 +272,9 @@ export default function MachineDatabase() {
       updated_at:        new Date().toISOString(),
     };
     const doSave = (p) => editing.id
-      ? supabaseDR.from('machines').update(p).eq('id', editing.id)
-      : supabaseDR.from('machines').insert(p);
-    let { error } = await doSave(payload);
+      ? supabaseDR.from('machines').update(p).eq('id', editing.id).select('id')
+      : supabaseDR.from('machines').insert(p).select('id');
+    let { data: savedRows, error } = await doSave(payload);
     // ทน migration ยังไม่ apply: ถ้าไม่มีคอลัมน์ใหม่ → ตัดออกแล้วบันทึกแบบเดิม
     let strippedCat = false;
     let strippedKind = false;
@@ -279,7 +285,7 @@ export default function MachineDatabase() {
         shut_height_min_mm, shut_height_max_mm, ...rest } = payload;
       void equipment_category; void equipment_kind; void automation_level; void operation_mode; void gang_count;
       void shut_height_min_mm; void shut_height_max_mm;
-      ({ error } = await doSave(rest));
+      ({ data: savedRows, error } = await doSave(rest));
     }
     if (error) { setSaving(false); toast.error(error.message); return; }
     // ⚠️ ชนิดอุปกรณ์บันทึกไม่ติด (migration ยังไม่ apply) → เตือน ห้ามเงียบ (บทเรียนจาก equipment_category)
@@ -293,6 +299,17 @@ export default function MachineDatabase() {
       setSaving(false);
       toast.error('⚠️ ยังไม่ได้ apply migration "machines_equipment_category" — เครื่องถูกบันทึกเป็น "ไลน์ผลิต" ชั่วคราว · apply migration แล้วแก้หมวดเป็น Facility อีกครั้ง');
       setEditing(null); load(); return;
+    }
+    /* 🔨 ความสูงแม่พิมพ์ (die height) — เก็บที่ equipment_die (1:1 · ตัวเดียวกับ /equipment?tab=die) (19/10)
+       upsert เฉพาะคอลัมน์ die_height_mm ⇒ OP/ตัน/shot/regrind ของแถวเดิมไม่ถูกแตะ · ไม่เปลี่ยนค่า = ไม่เขียน
+       ล้ม = เครื่องถูกบันทึกแล้ว แต่ต้องบอกว่าความสูงไม่ติด (ห้ามเงียบ) */
+    const mid = editing.id || savedRows?.[0]?.id;
+    if (kindOf(editing.equipment_kind) === 'die' && mid) {
+      const h = numOrNull(editing.die_height_mm);
+      if (h !== (editing._die_height_orig ?? null)) {
+        const ok = checkWrite(await supabaseDR.from('equipment_die').upsert({ machine_id: mid, die_height_mm: h }, { onConflict: 'machine_id' }), 'บันทึกความสูงแม่พิมพ์');
+        if (!ok) { setSaving(false); setEditing(null); load(); return; }
+      }
     }
     // Supply route: sync ไลน์ที่ facility/utility นี้จ่าย (เฉพาะเครื่องที่มี id แล้ว) — best-effort
     if (editing.id && (editing.equipment_category || 'production') !== 'production') {
@@ -536,6 +553,12 @@ export default function MachineDatabase() {
               <Field label="เลข I/O (Internal Order) — ใบแจ้งซ่อม MO เติมให้อัตโนมัติ">
                 <input value={editing.io_no} onChange={e => setEditing(f => ({ ...f, io_no: e.target.value.toUpperCase() }))} maxLength={20} placeholder="เช่น 11A1234567" style={{ ...inputStyle, fontFamily: 'monospace' }} />
               </Field>
+              {kindOf(editing.equipment_kind) === 'die' && (
+                <Field label="ความสูงแม่พิมพ์ — Die height (มม.)" hint="ว่าง = ยังไม่รู้ · ใช้คิดเวลาเปลี่ยนรุ่น + เช็คว่าขึ้นเครื่องปั๊มไหนได้">
+                  <input type="number" step="0.1" min={0} value={editing.die_height_mm ?? ''}
+                    onChange={e => setEditing(f => ({ ...f, die_height_mm: e.target.value }))} placeholder="เช่น 350" style={inputStyle} />
+                </Field>
+              )}
               {/* แม่พิมพ์ไม่มีประเภทเครื่องจักร — ประเภท/ชุด/ลำดับ OP ของแม่พิมพ์อยู่ที่ทะเบียนแม่พิมพ์ (user 2026-09-14) */}
               {kindOf(editing.equipment_kind) !== 'die' && (
               <Field label="ประเภทเครื่องจักร">
@@ -570,7 +593,17 @@ export default function MachineDatabase() {
                       </select>
                     </Field>
                     {/* ⏱️ ช่วง shut height — ตัวแปรเวลาเปลี่ยนรุ่นงานปั๊ม (user 2026-09-24)
-                        ว่างไว้ได้ = "ยังไม่รู้" ระบบจะไม่สรุปว่าแม่พิมพ์ขึ้นเครื่องนี้ไม่ได้ */}
+                        ว่างไว้ได้ = "ยังไม่รู้" ระบบจะไม่สรุปว่าแม่พิมพ์ขึ้นเครื่องนี้ไม่ได้
+                        🔨 19/10: โชว์เฉพาะเครื่องปั๊ม (showsShutHeight — utils/pressMachine.js) · หุ่นยนต์/เชื่อมไม่มีค่านี้
+                           มีค่ากรอกไว้แล้วโชว์เสมอ · ประเภทชื่ออื่นกดปุ่มเปิดเองได้ */}
+                    {!(editing._show_shut || showsShutHeight({ typeLabel: types.find(t => t.id === editing.machine_type_id)?.label, min: editing.shut_height_min_mm, max: editing.shut_height_max_mm })) ? (
+                      <div style={{ gridColumn: '1 / -1', fontSize: 11.5, color: 'var(--muted)' }}>
+                        Shut height ใช้เฉพาะเครื่องปั๊ม (ประเภท Metal Forming / Press) ·{' '}
+                        <button type="button" onClick={() => setEditing(f => ({ ...f, _show_shut: true }))}
+                          style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: 11.5, padding: 0, textDecoration: 'underline' }}>
+                          เครื่องนี้เป็นเครื่องปั๊ม — กรอก shut height</button>
+                      </div>
+                    ) : (<>
                     <Field label="Shut height ต่ำสุด (มม.)" hint="ว่าง = ยังไม่รู้">
                       <input type="number" step="0.1" min={0} value={editing.shut_height_min_mm ?? ''}
                         onChange={e => setEditing(f => ({ ...f, shut_height_min_mm: e.target.value }))} placeholder="เช่น 200" style={inputStyle} />
@@ -579,6 +612,7 @@ export default function MachineDatabase() {
                       <input type="number" step="0.1" min={0} value={editing.shut_height_max_mm ?? ''}
                         onChange={e => setEditing(f => ({ ...f, shut_height_max_mm: e.target.value }))} placeholder="เช่น 450" style={inputStyle} />
                     </Field>
+                    </>)}
                     {editing.operation_mode === 'gang' && (
                       <Field label="Gang count (pieces / stroke)">
                         <input type="number" min={1} value={editing.gang_count} onChange={e => setEditing(f => ({ ...f, gang_count: e.target.value }))} placeholder="e.g. 4" style={inputStyle} />
