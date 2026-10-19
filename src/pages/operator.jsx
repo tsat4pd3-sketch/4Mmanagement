@@ -23,7 +23,8 @@ import { positionOptionsWith, gradeCodesOfPosition } from '../utils/positions';
 import { loadGrades, gradesSync, gradeFitsPosition, gradeRow } from '../utils/grades';   // 🎓 เกรดตามผังองค์กรทางการ
 import { buildLaborMap, laborTypeOf, laborMeta, LABOR_META } from '../utils/laborType';
 import { SKILL_LEVELS, SKILL_GATES, getLevel, getBandCeiling, SKILL_CAT_META_FULL, SKILL_EDIT_CAP } from '../utils/skillLevels';
-import { loadDivisions, divisionsSync, divisionOfEmployee, skillInScope, skillScopeLabel, scopeUnitsForDivision, costCenterOfNode } from '../utils/orgDivisions';
+import { loadDivisions, divisionsSync, divisionOfEmployee, skillInScope, skillScopeLabel, scopeUnitsForDivision } from '../utils/orgDivisions';
+import { costCenterOfNode } from '../utils/ccScope';   // กฎ "CC ของโหนด = ตัวเอง → แม่ → ปู่" อยู่ที่ชั้นสิทธิ์ ห้ามมี 2 ชุด (19/10)
 import { pickUnusedColor } from '../utils/colorPick';
 import { teamLabel } from '../utils/shiftAssign';
 import PageHeader from '../components/PageHeader';
