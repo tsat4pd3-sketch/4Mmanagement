@@ -39,6 +39,7 @@ import { slocCodeOfLine } from '../utils/storageLoc';   // 🏬 มุม SAP �
 import ProductSelect from './ProductSelect';
 import useColumnHistory from '../utils/useColumnHistory';
 import { splitLevels, refStockOf, madeHereMats } from '../utils/partRefStock';   // 🏭 ของที่ไลน์ผลิตเอง อ้างยอดคลัง (2026-10-08) // 📜 MAT ที่เคยตั้งระดับไว้ — ทะเบียนไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
+import { lotMatsOf } from '../utils/stockReceipts';   // 🔧 พาร์ทที่ยอดเข้าทางปิดล็อต = กฎรับเข้าโหมด lot (19/10)
 
 const norm = (s) => String(s ?? '').trim().toLowerCase();
 const num = (v) => (v == null || v === '' ? null : Number(v));
@@ -137,19 +138,17 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
       /* ตัวตั้ง = พาร์ทที่ไลน์นี้ผลิตเอง (Product Master) · ขั้นต่ำ/สูงสุด = kanban_standards (แท็บ 🎴 คำนวณ Kanban) ชุดเดียว */
       const [products, rulesRes] = await Promise.all([
         loadProductsMaster(),
-        supabaseDR.from('stock_inflow_rules').select('match_type, match_value, dest_line_name, is_active').eq('is_active', true),
+        supabaseDR.from('stock_inflow_rules').select('match_type, match_value, dest_line_name, is_active, mode').eq('is_active', true),
       ]);
       if (rulesRes.error) throw rulesRes.error;
       const made = madeHereMats(lineName, products || []);
-      const [lotRes, stdRes] = made.length ? await Promise.all([
-        // พาร์ทที่สโตร์คุมเป็นล็อต = ยอดลงที่ไลน์ผลิต ไม่ใช่ STORE (utils/partRefStock.js)
-        supabaseDR.from('child_lot_requests').select('child_mat_no').in('child_mat_no', made).neq('status', 'cancelled').limit(1000),
-        supabaseDR.from('kanban_standards').select('mat_no, min_qty, max_qty').eq('is_active', true).in('mat_no', made),
-      ]) : [{ data: [] }, { data: [] }];
-      if (lotRes.error) throw lotRes.error;
+      const stdRes = made.length
+        ? await supabaseDR.from('kanban_standards').select('mat_no, min_qty, max_qty').eq('is_active', true).in('mat_no', made)
+        : { data: [] };
       if (stdRes.error) throw stdRes.error;
+      // พาร์ทที่ยอดเข้าทางปิดล็อต = ลงที่ไลน์ผลิต ไม่ใช่ STORE — ตัดสินจากกฎ (ตัวเดียวกับ trigger · 19/10)
       const ctx = { lineName, products: products || [], rules: rulesRes.data || [],
-                    lotMats: [...new Set((lotRes.data || []).map(r => r.child_mat_no))],
+                    lotMats: lotMatsOf(rulesRes.data),
                     stds: new Map((stdRes.data || []).map(k => [k.mat_no, k])) };
       const refs = made.map(m => ({ mat: m, ...refStockOf(m, ctx) })).filter(r => r.kind === 'produce');
       let wh = [];

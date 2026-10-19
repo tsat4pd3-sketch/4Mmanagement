@@ -5082,3 +5082,18 @@ test('🗑️ ทะเบียนข้อความ (SimpleMasterPanel) ต
     + '   แก้: onBeforeDelete={masterDeleteGuard(supabaseDR, \'<ทะเบียน>\')} (src/utils/masterRefs.js)\n'
     + '        ทะเบียนใหม่ = เพิ่ม spec ใน MASTER_REF_SPECS โดย**วัดปลายทางจากฐานจริง** ห้ามเขียนจากความจำ\n');
 });
+
+/* 🛡️ lot-mats-from-rules (2026-10-19) — "พาร์ทนี้ยอดเข้าคลังทางปิดล็อตไหม" ต้องถามกฎรับเข้า (โหมด 🔧 lot)
+   ตัวเดียวกับที่ trigger fn_post_confirmed_output ใช้ข้าม · เดิมถาม child_lot_requests "เคยมีล็อต" ⇒
+   GOR 20058498 เลิกเปิดล็อตแล้ว แต่ระบบยังถือว่าเป็นพาร์ทล็อต → ยอดผลิตไม่เข้าคลัง 323 ใบ และจอเทียบคลังผิดที่ */
+test('🛡️ lot-mats-from-rules — lotMats มาจาก lotMatsOf(rules) ไม่ใช่ child_lot_requests', () => {
+  const bad = [];
+  for (const f of ['src/components/LinePartCallPanel.jsx', 'src/pages/HeijunkaKanban.jsx']) {
+    const src = stripComments(readFileSync(join(ROOT, f), 'utf8'));
+    if (/from\('child_lot_requests'\)\.select\('child_mat_no'\)/.test(src)) bad.push(`${f} (ถาม child_lot_requests หา lotMats)`);
+    if (!/lotMats:\s*lotMatsOf\(/.test(src)) bad.push(`${f} (lotMats ไม่ได้มาจาก lotMatsOf)`);
+  }
+  const pr = stripComments(readFileSync(join(ROOT, 'src/utils/partRefStock.js'), 'utf8'));
+  if (!/mode === 'lot'\) continue/.test(pr)) bad.push('partRefStock.js inflowDestOf (กฎโหมด lot ต้องไม่ร่วมตัดสินคลัง)');
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n   แก้: ใช้ lotMatsOf(rules) จาก src/utils/stockReceipts.js (select ต้องมีคอลัมน์ mode)\n');
+});
