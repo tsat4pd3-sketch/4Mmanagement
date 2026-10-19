@@ -30,6 +30,7 @@ import SimpleMasterPanel from '../components/SimpleMasterPanel';
 import CollapseCard from '../components/CollapseCard';
 import PressSetupRules from '../components/PressSetupRules';   // ⏱️ กฎเวลาเปลี่ยนรุ่นงานปั๊ม (2026-09-25)
 import useDiePressLines, { invalidateDiePressLines } from '../utils/useDiePressLines'; // ทะเบียนกลุ่มเครื่องปั๊ม (DR die_press_lines) — 2026-09-08
+import { masterDeleteGuard } from '../utils/masterRefs'; // ด่านนับปลายทางก่อนลบทะเบียนที่จับคู่ด้วยข้อความ — 2026-10-18
 
 /* ═══════════════════════════════════════════════════════════════
    ทะเบียนแม่พิมพ์ & DIE MAINTENANCE — /die-registry
@@ -755,6 +756,8 @@ export default function DieRegistry() {
           SimpleMasterPanel ยืนยันก่อนปิดใช้/ลบเอง (UI-CONVENTIONS §5.4) */}
       <CollapseCard id="die_press_lines" title="⚙️ กลุ่มเครื่องปั๊ม / ไลน์ของแม่พิมพ์ (ทะเบียน)" count={pressLines.length} defaultOpen={false} storePrefix="die_registry">
         <SimpleMasterPanel client={supabaseDR} table="die_press_lines" keyCol="code" canManage={canEdit}
+          /* ด่านนับปลายทางก่อนลบ — die_sets.line_name + machines.line_name (เฉพาะ equipment_kind=die) */
+          onBeforeDelete={masterDeleteGuard(supabaseDR, 'die_press_lines')}
           stampCol="updated_by_name" stampName={fullName} onChanged={invalidateDiePressLines}
           help="ชื่อในทะเบียนนี้คือค่าที่เก็บใน die_sets.line_name / machines.line_name (text) — แยกจากทะเบียนไลน์ผลิต (production_lines) ตั้งใจไม่ให้ชื่อเครื่องปั๊มโผล่ใน dropdown ไลน์ผลิตทุกหน้า · ปิดใช้ = ไม่โผล่ให้เลือกใหม่ (ชุดเก่ายังอ่านออก)"
           fields={[
@@ -772,6 +775,7 @@ export default function DieRegistry() {
           mo_item_type = ชนิดอุปกรณ์ในใบแจ้งซ่อม **ชนะรูปแบบชุด** (HDF: ชุดเดียวมี HYDRO/BENDING/PREFORM — คอมเมนต์ทีม DIE 06/10) */}
       <CollapseCard id="die_op_types" title="⚙️ ประเภท OP ของแม่พิมพ์ (ทะเบียน)" count={opTypes.length} defaultOpen={false} storePrefix="die_registry">
         <SimpleMasterPanel client={supabaseDR} table="die_op_types" keyCol="key" canManage={canEdit}
+          onBeforeDelete={masterDeleteGuard(supabaseDR, 'die_op_types', r => r?.label)}
           keyFrom={dieSetKindKey}
           stampCol="updated_by_name" stampName={fullName}
           onChanged={() => { invalidateDieSetKinds(); load(); }}
@@ -784,6 +788,7 @@ export default function DieRegistry() {
 
       <CollapseCard id="die_set_kinds" title="⚙️ รูปแบบชุดแม่พิมพ์ (ทะเบียน)" count={setKinds.filter(k => k.is_active).length} defaultOpen={false} storePrefix="die_registry">
         <SimpleMasterPanel client={supabaseDR} table="die_set_kinds" keyCol="key" canManage={canEdit}
+          onBeforeDelete={masterDeleteGuard(supabaseDR, 'die_set_kinds', r => r?.label)}
           keyFrom={dieSetKindKey}
           stampCol="updated_by_name" stampName={fullName}
           onChanged={() => { invalidateDieSetKinds(); setKindsVer(v => v + 1); }}

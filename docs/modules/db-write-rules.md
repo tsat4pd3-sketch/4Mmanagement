@@ -326,3 +326,59 @@ const delLink = async (it) => { if (!confirm(…)) return; await supabaseDR…; 
 ⚠️ **ตั้งใจไม่ทำทั้งรีโป** — นอก `src/utils` มีอีก 9 จุด (`loadPmTeams` 5 หน้า · `loadProfilesPeople`
 · `loadProcessTypes` · `loadCompanyCalendar`) ที่ยังไม่ได้แก้ ⇒ ทำทั้งรีโปต้องใส่ `allow` 9 รายการ
 = ด่านที่มีข้อยกเว้นเยอะจนคนอยากปิด · **งานค้าง: ไล่ 9 จุดนั้นแล้วขยายด่านเป็น `src`**
+
+---
+
+## 🗑️ ด่านนับปลายทางก่อนลบ "ทะเบียนที่จับคู่ด้วยข้อความ" — ปิดครบ 7/7 (2026-10-18)
+
+`src/components/SimpleMasterPanel.jsx` มี prop `onBeforeDelete` (fail-closed) มาตั้งแต่ 06/10
+แต่ไล่ดู 18/10 แล้วพบว่า **ใช้จริงแค่ `cost_centers` ตัวเดียว** — อีก 6 ทะเบียนกดลบได้ทันที
+โดยไม่เคยนับปลายทางเลย ทั้งที่ปลายทางเก็บเป็น **text ไม่ผูก FK** ⇒ ลบแล้วไม่มีใครเตือน
+
+ของใหม่: **`src/utils/masterRefs.js`** (`MASTER_REF_SPECS` · `loadMasterRefs` ·
+`masterBlockMessage` · `masterDeleteGuard`) + ด่าน `regressionGuards` ข้อ
+"🗑️ ทะเบียนข้อความ (SimpleMasterPanel) ต้องส่ง onBeforeDelete"
+
+| ทะเบียน (DR) | จอ | จับคู่ด้วย | ปลายทางที่นับ (วัด 18/10) |
+|---|---|---|---|
+| `customers` | `/products?tab=customers` | code · name · **ทุก alias** | prod_orders **1,974** · mtn_orders 600 · dr_products 378 · kanban_calc_params 153 · ship_to_plants 18 · monitor_boards 4 · customer_forecasts 2 |
+| `suppliers` | `/products?tab=suppliers` | code · name | purchase_requests **16,552** · bom_items 1,052 · parts_master 516 · mtn_spare_parts 118 · part_routings 2 · container_types 0 |
+| `die_press_lines` | `/equipment?tab=die` | code · name | machines (`equipment_kind='die'`) **268** · die_sets 96 |
+| `die_op_types` | `/equipment?tab=die` | **`key` เท่านั้น** | equipment_die 186 |
+| `die_set_kinds` | `/equipment?tab=die` | **`key` เท่านั้น** | die_sets 2 |
+| `repair_wi_registry` | `/qa` แท็บถังแดง | **substring ของ `wi_no` ทุกเล่ม** | defect_logs.fix_action 0 · downtime_logs.fix_action 0 |
+| `cost_centers` (Main) | `/mtn-analysis` แผงเรต | code | — (`utils/costCenterRefs.js` ตัวเดิม ไม่แตะ) |
+
+### 🔴 วิธีวัด และ **ทำไมผลสแกนดิบใช้ตรงๆ ไม่ได้**
+
+วัดด้วยการไล่ **ทุกคอลัมน์ text ของทุกตารางใน schema `public` ฝั่ง DR (147 ตาราง ·
+1,020 คอลัมน์)** แล้วนับแถวที่ค่าเท่ากับคีย์ของทะเบียนพอดี (`to_jsonb(row)` +
+`jsonb_each_text` join ชุดคีย์ — สแกนตารางละรอบเดียว) **ห้ามเขียนลิสต์จากความจำ**
+(กฎเดียวกับ `orgNodeRefs.js`) · ⚠️ MCP timeout 60 วิ ⇒ ต้องแบ่งก้อนเรียงตามจำนวนแถว
+และตารางกว้าง-ยาว (`prod_orders` 21k) ต้องสแกนด้วยลิสต์คอลัมน์ตรงๆ แทน `to_jsonb`
+
+**แต่ทะเบียนหลายตัวพูดภาษาเดียวกัน** ⇒ สแกนดิบให้ false positive เป็นพัน:
+
+| ที่สแกนเจอ | ทำไม**ไม่**นับ |
+|---|---|
+| production_sessions.line_name 586 · stock_receipts.source_line 758 · line_stock_transactions 623 · pm_daily_alerts 216 · mtn_orders.line_name 186 · purchase_requests.dest_line 106 … | เป็น **ชื่อไลน์ผลิต** (`production_lines`) ที่ชนกับชื่อกลุ่มเครื่องปั๊ม ไม่ใช่การอ้างทะเบียนนี้ |
+| machines.line_name 438 (ทั้งตาราง) | กรองเหลือ `equipment_kind='die'` → 268 · วัดแล้ว die **268/268 = 100%** ถือชื่อจากทะเบียนนี้ · machine 78/270 · jig 23/184 = ไลน์ผลิตชนชื่อ |
+| purchase_requests.supplier แมตช์ `customers.code` 1,342 · parts_master.supplier 50 · bom_items.supplier 54 | บริษัทเดียวเป็นได้ทั้งลูกค้าและผู้ขาย ⇒ ช่อง supplier **นับให้ `suppliers` เท่านั้น** (และกลับกัน dr_products.customer ไม่นับให้ suppliers) |
+| monitoring_shipments.sheet **1,231** | เป็น **ชื่อชีทบอร์ด** ที่ตั้งตามลูกค้า ไม่ใช่ช่องอ้างลูกค้า |
+| mtn_orders.problem_characteristic 328 · problem_group 12 · dr_defect_types.name_th · improvements.problem_label · jig_checkpoints.group_name · fixture_point_kinds.* | ชนกับ **`label`** ของ `die_op_types`/`die_set_kinds` ซึ่งเป็นคำไทยกลาง ("อื่นๆ" ฯลฯ) ⇒ 2 ทะเบียนนี้จับคู่ด้วย **`key` เท่านั้น** (มีด่าน) |
+| `audit_log` 69k แถว | ประวัติ ไม่ใช่การอ้างอิงที่ยังมีผล — ลบทะเบียนไม่ทำให้ประวัติผิด |
+
+### 🔴 `repair_wi_registry` — ปลายทางเป็น "ข้อความในใบ" ไม่ใช่คอลัมน์อ้างอิง
+
+สแกนทั้งฐานแล้ว **ไม่มีคอลัมน์ไหนเก็บเลข WI เลย (0)** เพราะชิปใน `ProblemFixModal`
+เติมเป็นประโยค `"ซ่อมตาม WI-PD3-018"` ลงใน `fix_action` ของ `defect_logs`/`downtime_logs`
+⇒ ต้องนับแบบ **substring** และ `wi_no` ใส่หลายเล่มคั่น `,` ได้ ⇒ `splitWiNos()` แยกก่อนค้นทุกเล่ม
+· วัด 18/10 ยังไม่มีใครใช้ชิปนี้ (ทุกเล่ม 0) — ด่านจึงยังไม่เคยบล็อกจริง **แต่ต้องมีไว้ก่อน**
+เพราะวันที่มีคนใช้แล้วมาลบทะเบียน จะไม่มีใครรู้ว่าใบไหนอ้างเล่มที่หายไป
+
+### กติกาสำหรับทะเบียนใหม่
+
+1. เพิ่ม spec ใน `MASTER_REF_SPECS` โดย**วัดปลายทางจากฐานจริง** (วิธีข้างบน) ห้ามเขียนจากความจำ
+2. ส่ง `onBeforeDelete={masterDeleteGuard(supabaseDR, '<ทะเบียน>')}` ที่แผง (ด่าน build เช็คให้)
+3. ชื่อที่โชว์ในข้อความอยู่คอลัมน์อื่น → ส่ง `nameOf` เป็นอาร์กิวเมนต์ที่ 3 (เช่น `r => r?.label`)
+4. **นับไม่ได้ = `partial: true` ห้ามตอบ 0** · `42P01`/`42703` = ปลายทางยังไม่ apply migration ⇒ นับ 0 ได้จริง
