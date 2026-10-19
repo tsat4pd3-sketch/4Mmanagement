@@ -36,7 +36,7 @@ import SearchInput from '../components/SearchInput';   // ช่องกรอ�
 // 🧩 ชิ้นส่วนกลางของ "ตั้งค่าจุดตรวจ" — ใช้ร่วมกับ QA /qa-setup (ระบบเดียว เรียนครั้งเดียว · 15/10)
 import PointCardShell from '../components/inspect/PointCardShell'
 import CalcFormulaField from '../components/inspect/CalcFormulaField'
-import { calcOf, calcProblems } from '../utils/inspectCalc'
+import { calcOf, calcProblems, PM_CALC_REF_TYPES } from '../utils/inspectCalc'
 import PinWorkspace from '../components/inspect/PinWorkspace'
 import InspectEditorModal from '../components/inspect/InspectEditorModal'
 import useWideModal from '../components/inspect/useWideModal'
@@ -949,14 +949,14 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
     const namedCount = grouped.named.reduce((s, g) => s + g.items.length, 0)
     grouped.ungrouped.forEach((c, k) => { cpLabels[c._key] = String(namedCount + k + 1) })
   }
-  /* 🧮 จุดคำนวณ: อ้างได้เฉพาะจุด variable ที่ไม่ใช่จุดคำนวณ · ปัญหาสูตรขึ้นในการ์ด + กันบันทึก (utils/inspectCalc) */
+  /* 🧮 จุดคำนวณ: อ้างได้เฉพาะจุด Variable/ค่าวัด ที่ไม่ใช่จุดคำนวณ · ปัญหาสูตรขึ้นในการ์ด + กันบันทึก (utils/inspectCalc) */
   const calcIssueList = calcProblems(checkpoints, {
-    keyOf: c => c._key, isNumeric: c => c.type === 'variable',
+    keyOf: c => c._key, isNumeric: c => PM_CALC_REF_TYPES.includes(c.type),   // Variable + ค่าวัด
     hasLimit: c => (c.lsl !== '' && c.lsl != null) || (c.usl !== '' && c.usl != null),
   })
   const calcOptionsFor = (selfKey) => checkpoints
-    .filter(c => c._key !== selfKey && c.type === 'variable' && !c.calc)
-    .map(c => ({ key: c._key, label: `${cpLabels[c._key] || '?'} ${c.name || ''}${c.axis ? ` (${c.axis})` : ''}`.trim() }))
+    .filter(c => c._key !== selfKey && PM_CALC_REF_TYPES.includes(c.type) && !c.calc)
+    .map(c => ({ key: c._key, label: `${cpLabels[c._key] || '?'} ${c.name || ''}${c.axis ? ` (${c.axis})` : ''}${c.type === 'measure' ? ' · ค่าวัด' : ''}`.trim() }))
   const groupHeaderStyle = {
     display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderRadius: 6,
     background: 'var(--accent-dim)', border: '1px solid var(--border2)',

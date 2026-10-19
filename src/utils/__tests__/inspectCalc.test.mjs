@@ -64,3 +64,12 @@ test('qaCalcDraft: ค่า = A − B · ต้นทางข้าม = ข�
   assert.equal(qaCalcDraft(items, { A: { value: '5' } }).D.value, '')
   assert.equal(qaCalcDraft(items, { A: { value: '5' }, B: { value: '9' }, D: { note: 'แคบ' } }).D.note, 'แคบ')
 })
+
+test('pmCalcResults: จุด A/B เป็น "ค่าวัด" (อ่านครั้งเดียว) ได้ — ใช้ค่าเดียวกันทั้ง ①②③', () => {
+  const cps = [{ id: 'A', type: 'measure' }, { id: 'B', type: 'variable' }, { id: 'M', type: 'measure' }, { id: 'D', type: 'variable', calc: C }, { id: 'E', type: 'variable', calc: { op: 'diff', a: 'A', b: 'M', abs: false } }]
+  const res = { A: { mval: '10' }, B: { v1: '9', v2: '9.5', v3: '' }, M: { mval: '4' } }
+  const out = pmCalcResults(cps, res)
+  assert.deepEqual(out.D, { v1: '1', v2: '0.5', v3: '' })
+  assert.deepEqual(out.E, { v1: '6', v2: '6', v3: '6' })
+  assert.deepEqual(pmCalcResults(cps, {}).E, { v1: '', v2: '', v3: '' })
+})
