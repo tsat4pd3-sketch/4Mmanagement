@@ -40,3 +40,10 @@ test('qaCopyPath: ไปโฟลเดอร์ปลายทาง คงช�
   assert.equal(qaCopyPath('parts/P61/cp-1.jpg', 'P60', 'k1'), 'parts/P60/ck1-cp-1.jpg')
   assert.equal(qaCopyPath(null, 'P60', 'k1'), null)
 })
+
+test('จุดคำนวณ: idMap ⇒ id ใหม่ + สูตรชี้จุดของปลายทาง · ไม่ส่ง idMap = ตัดสูตร (ห้ามชี้ต้นทาง)', () => {
+  const calcItem = { ...src, id: 'D', calc: { op: 'diff', a: 'it1', b: 'it2', abs: false } }
+  const r = qaItemCopyRow(calcItem, { targetPartId: 'P60', idMap: { D: 'D2', it1: 'n1', it2: 'n2' } })
+  assert.equal(r.id, 'D2'); assert.deepEqual(r.calc, { op: 'diff', a: 'n1', b: 'n2', abs: false })
+  assert.equal(qaItemCopyRow(calcItem, { targetPartId: 'P60' }).calc, null)
+})

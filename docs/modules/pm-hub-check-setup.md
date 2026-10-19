@@ -10,6 +10,7 @@
 
 > 🎯 **2026-10-15 — จอตั้งค่าจุดตรวจ PM กับ QA ใช้ชิ้นส่วนกลางชุดเดียวกันแล้ว** (โมดัล · ผังรูป+การ์ด · ซูม · ปักหมุด · รูปโคลสอัพ · ไปที่จุด)
 > แก้พฤติกรรมพวกนี้ที่ `src/components/inspect/` + `SpinAnnotator` ที่เดียว → 📄 `docs/modules/inspection-point-setup.md`
+> 🧮 **จุดคำนวณ A − B** (19/10) — `jig_checkpoints.calc` (DR) · ใบตรวจคิดผลต่างรายครั้ง ①②③ ให้เอง (`pmCalcResults`) → 📄 `inspection-point-setup.md` §จุดคำนวณ
 
 ---
 

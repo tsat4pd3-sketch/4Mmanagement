@@ -19,6 +19,7 @@ import { pieceResult, seqLabel, SEQ_RULE } from '../utils/qaSequential';
 import PersonSelect from './PersonSelect';
 import { PointThumb } from './inspect/PointZoom';
 import { qaFileUrl } from '../lib/qaImages';
+import { calcOf, calcFormula, qaCalcDraft } from '../utils/inspectCalc';
 
 const JUDGE = {
   ok: { label: 'ผ่าน', color: '#22c55e' },
@@ -61,7 +62,10 @@ export default function QaPieceStepper({
   items, results, pieces, actions, seq, sheet, part, workDate, shift,
   canRecord, canAction, busy, isMobile, fullName, onSavePiece, onSaveAction,
 }) {
-  const [draft, setDraft] = useState({});            // item_id → { value, judge, note }
+  const [rawDraft, setDraft] = useState({});         // item_id → { value, judge, note } — ที่คนกรอก
+  /* 🧮 จุดคำนวณ (A − B) เติมค่าจากจุด A/B ของชิ้นนี้ — คนตรวจไม่ต้องพิมพ์ (utils/inspectCalc) */
+  const draft = useMemo(() => qaCalcDraft(items, rawDraft), [items, rawDraft]);
+  const labelById = useMemo(() => Object.fromEntries(items.map(i => [i.id, `#${i.balloon_no}`])), [items]);
   const [dispo, setDispo] = useState(null);          // modal disposition ของชิ้นที่ตก
   const [act, setAct] = useState({ text: '', by: fullName || '', fourM: false, category: 'Machine' });
   useEffect(() => { setDraft({}); }, [sheet?.id, seq?.nextPiece]);   // เปลี่ยนใบ/ชิ้น → เริ่มกรอกใหม่
@@ -220,7 +224,13 @@ export default function QaPieceStepper({
                     <div style={{ fontSize: 13, fontWeight: 700 }}>{i.characteristic}</div>
                     <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>สเปค: {specLabel(i)}{i.method ? ` · ${i.method}` : ''}</div>
                   </div>
-                  {i.item_type === 'variable' && (
+                  {i.item_type === 'variable' && calcOf(i) && (
+                    <span title="จุดคำนวณ — ระบบคิดจากจุดที่วัดของชิ้นนี้" style={{ ...inputSt, width: 'auto', minWidth: isMobile ? 110 : 96, padding: '6px 8px', display: 'inline-flex', gap: 6, alignItems: 'baseline', whiteSpace: 'nowrap', borderStyle: 'dashed' }}>
+                      <span style={{ fontSize: 11, color: '#4d9fff', fontWeight: 700 }}>🧮 {calcFormula(calcOf(i), id => labelById[id])} =</span>
+                      <b>{d.value !== '' && d.value != null ? d.value : '…'}</b>
+                    </span>
+                  )}
+                  {i.item_type === 'variable' && !calcOf(i) && (
                     <input type="number" step="any" inputMode="decimal" placeholder="ค่าที่วัด" value={d.value ?? ''}
                       onChange={e => setD(i.id, { value: e.target.value, judge: d.judge === 'na' ? null : d.judge })}
                       style={{ ...inputSt, width: isMobile ? 110 : 96, padding: '6px 8px' }} />
@@ -238,8 +248,9 @@ export default function QaPieceStepper({
                   {needValue && j && (
                     <span style={{ fontSize: 12, fontWeight: 700, color: JUDGE[j].color, whiteSpace: 'nowrap' }}>{j === 'na' ? 'ข้าม' : `อัตโนมัติ: ${JUDGE[j].label}`}</span>
                   )}
-                  <button className="tbtn" title="ไม่ได้ตรวจจุดนี้ในชิ้นนี้" onClick={() => setD(i.id, { judge: d.judge === 'na' ? null : 'na', value: d.judge === 'na' ? d.value : '' })}
-                    style={btn(d.judge === 'na' ? JUDGE.na.color : 'var(--bg2)', d.judge === 'na' ? '#fff' : 'var(--muted)', { padding: isMobile ? '9px 10px' : '6px 9px', borderColor: 'var(--border2)' })}>ข้าม</button>
+                  {/* จุดคำนวณข้ามเองเมื่อจุด A/B ถูกข้าม — ไม่มีปุ่มข้ามของตัวเอง */}
+                  {!calcOf(i) && (<button className="tbtn" title="ไม่ได้ตรวจจุดนี้ในชิ้นนี้" onClick={() => setD(i.id, { judge: d.judge === 'na' ? null : 'na', value: d.judge === 'na' ? d.value : '' })}
+                    style={btn(d.judge === 'na' ? JUDGE.na.color : 'var(--bg2)', d.judge === 'na' ? '#fff' : 'var(--muted)', { padding: isMobile ? '9px 10px' : '6px 9px', borderColor: 'var(--border2)' })}>ข้าม</button>)}
                   {j === 'ng' && (
                     <input style={{ ...inputSt, flex: '1 1 100%', border: '1px solid rgba(239,68,68,0.5)' }} placeholder="เสียอย่างไร / เจอที่ไหน (บังคับกรอก)"
                       value={d.note ?? ''} onChange={e => setD(i.id, { note: e.target.value })} />
