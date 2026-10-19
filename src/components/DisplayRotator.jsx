@@ -222,9 +222,18 @@ export default function DisplayRotator({ userId, role, disabled, shell = false }
         if (zoom !== 1) { zoom = 1; m.style.zoom = ''; }
         return;
       }
-      const visual = m.getBoundingClientRect().height + 2;   // ความสูงที่เห็นจริง (คูณ zoom แล้ว)
+      /* 🔴 19/10 (จอ TV จริง: "จอค่อยๆ วูมเอ้า" หลังสลับ 3D→2D): เดิมคิด target = zoom × จอ ÷ rect.height
+         โดยเชื่อว่า rect "คูณ zoom แล้ว" — จริงบน Chromium 128+ เท่านั้น · **Chromium 94 (webOS) คืน rect
+         ของตัวที่ตั้ง zoom เป็นขนาดก่อนย่อ** ⇒ ทุก 1.5 วิ target = zoom × ค่าคงที่ = ย่อซ้อนทบไปเรื่อยๆ จนชน 55%
+         (เครื่อง dev เป็น Chromium ใหม่ = ย่อครั้งเดียวแล้วนิ่ง ⇒ จำลองไม่เจอ)
+         ⇒ วัด "ความสูงตอนไม่ย่อ" ตรงๆ: ถอด zoom → อ่าน rect → ใส่คืน ในจังหวะเดียว (ไม่มี paint คั่น = จอไม่กระพริบ)
+           แล้ว target = จอ ÷ ความสูงนั้น — ไม่คูณ zoom ปัจจุบัน ⇒ ทุกเบราว์เซอร์ได้คำตอบเดียวกัน · ไม่สะสม */
+      const prevZoom = m.style.zoom;
+      m.style.zoom = '';
+      const natural = m.getBoundingClientRect().height + 2;
+      m.style.zoom = prevZoom;
       const barH = parseFloat(getComputedStyle(document.body).paddingTop) || 0;   // แถบบนของกรอบจอ TV
-      const target = Math.max(0.55, Math.min(1, (zoom * (window.innerHeight - barH)) / Math.max(1, visual)));
+      const target = Math.max(0.55, Math.min(1, (window.innerHeight - barH) / Math.max(1, natural)));
       if (Math.abs(target - zoom) < 0.02) return;
       zoom = Math.round(target * 100) / 100;
       m.style.zoom = zoom >= 0.995 ? '' : String(zoom);
