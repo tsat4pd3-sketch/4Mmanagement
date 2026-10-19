@@ -5198,3 +5198,10 @@ test('🛡️ lot-mats-from-rules — lotMats มาจาก lotMatsOf(rules) �
   if (!/mode === 'lot'\) continue/.test(pr)) bad.push('partRefStock.js inflowDestOf (กฎโหมด lot ต้องไม่ร่วมตัดสินคลัง)');
   assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n   แก้: ใช้ lotMatsOf(rules) จาก src/utils/stockReceipts.js (select ต้องมีคอลัมน์ mode)\n');
 });
+
+/* ── 🛡️ map3d-switch-no-transition (2026-10-19 · user "จอค่อยๆ วูมเอ้าตอนสลับ 3D/2D") ─────────────
+   ทรานสิชันของกรอบผัง 3D ต้องปิดใน render ที่สลับโหมด — ไม่งั้น transform เอียง+ย่อทั้งก้อนเล่น .45s เป็นภาพซูมออก/เข้า */
+test('🛡️ map3d-switch-no-transition — useMapOrbit ปิด transition ตอนสลับ 2D/3D', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/components/useMapOrbit.js'), 'utf8'));
+  assert.match(code, /transition:\s*[^\n]*switching[^\n]*\?\s*'none'/, 'transition ของ useMapOrbit ต้องเป็น none ระหว่าง switching');
+});
