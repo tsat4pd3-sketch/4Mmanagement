@@ -2989,6 +2989,49 @@ test('🛡️ /org-setup: ทุกชั้นที่มีปุ่มเพ
     '\n\n❌ handleSave ไม่ได้ใช้ orgSaveBlockReason ตัดสินสิทธิ์ — ดูเหตุผลด้านบน\n');
 });
 
+/* ── 🔴 /npi: แผงลูกเขียนของพาร์ทไลน์อื่นได้ (QC audit ข้อ 5 · 19/10/2026) ───────────────────
+   หน้าแม่มี `partWriteOf` (canWriteLine ของไลน์พาร์ท) แต่ส่งเข้าแผงลูกแค่ `canEdit`
+   ⇒ 4 แผง (พาร์ท · แบบ/ECI · tooling · งาน) เขียน/ลบแถวของพาร์ทไลน์อื่นได้ทั้งหมด
+   และ `delProject` ลบโปรเจค (cascade ทั้งพาร์ท/เอกสาร/ECI/tooling) โดยไม่ถามขอบเขตเลย
+   ⇒ กฎรวมที่ `src/utils/npiScope.js` · แผงลูกห้ามคิดกฎเอง · ลบโปรเจคต้องนับพาร์ทได้ก่อน */
+test('🛡️ /npi: แผงลูกต้องรับกฎขอบเขต + ลบโปรเจคต้องนับพาร์ทครบก่อน', () => {
+  const npi = stripComments(readFileSync(join(ROOT, 'src/pages/NPI.jsx'), 'utf8'));
+  for (const c of ['NpiPartPanel', 'NpiDrawingsEci', 'NpiTooling', 'NpiTasks']) {
+    const at = npi.indexOf(`<${c} `);
+    const tag = npi.slice(at, at + npi.slice(at).indexOf('/>') + 2);   // ตัดที่ปลาย tag เท่านั้น
+    assert.ok(at > -1 && tag.length > 10, `หา <${c}> ใน NPI.jsx ไม่เจอ — ด่านนี้ต้องแก้ตามโครงใหม่`);
+    assert.ok(/partWriteOf=\{partWriteOf\}/.test(tag),
+      `\n\n❌ NPI.jsx ไม่ได้ส่ง partWriteOf เข้า <${c}> — แผงนั้นเขียนของพาร์ทไลน์อื่นได้\n`
+      + '   (หน้าแม่คือที่เดียวที่รู้ ctx + ทะเบียนไลน์ ⇒ ต้องส่งตัวตัดสินลงไป ไม่ให้แผงลูกคิดเอง)\n');
+  }
+  const del = npi.slice(npi.indexOf('const delProject'));
+  const guard = del.indexOf('npiProjectDeleteBlock');
+  const write = del.search(/from\('npi_projects'\)[\s\S]{0,80}\.delete\(/);
+  assert.ok(guard > -1 && write > -1 && guard < write,
+    '\n\n❌ NPI.delProject ไม่ได้ผ่าน npiProjectDeleteBlock ก่อนลบ\n'
+    + '   ลบโปรเจค = cascade ลบพาร์ท/เอกสาร/ECI/tooling ทั้งก้อน ⇒ ต้องแก้ได้ทุกพาร์ท\n'
+    + '   และ "นับพาร์ทไม่ได้ = ห้ามลบ" (fail-closed · กฎเขียน DB ข้อ 2)\n');
+  assert.ok(/countable:\s*!ePart/.test(del.slice(0, 1200)),
+    '\n\n❌ delProject ต้องส่ง countable จากผลอ่าน npi_parts (อ่านไม่สำเร็จ = ห้ามลบ)\n');
+
+  // แผงลูกต้องเรียกกฎจาก utils (ไม่ใช่เขียนเงื่อนไขสิทธิ์เอง) และต้องเช็คก่อนเขียน
+  const files = {
+    'src/components/NpiPartPanel.jsx': [/npiBlock\(/, /blocked\(\)/],
+    'src/components/NpiDrawingsEci.jsx': [/npiBlockForPart\(/, /rowBlocked\(/],
+    'src/components/NpiTooling.jsx': [/npiBlockForPart\(/, /rowBlocked\(/],
+    'src/components/NpiTasks.jsx': [/npiBlockForPart\(/, /rowBlocked\(/],
+  };
+  for (const [f, pats] of Object.entries(files)) {
+    const code = stripComments(readFileSync(join(ROOT, f), 'utf8'));
+    for (const re of pats) {
+      assert.ok(re.test(code), `\n\n❌ ${f} ไม่ได้ใช้กฎขอบเขตจาก utils/npiScope.js (${re})\n`
+        + '   ทุกฟังก์ชันที่เขียน DB ในแผงนี้ต้องเช็คขอบเขตของพาร์ทก่อน\n');
+    }
+    const writes = [...code.matchAll(/from\('npi_[a-z_]+'\)[\s\S]{0,160}?\.(update|insert|delete)\(/g)];
+    assert.ok(writes.length > 0, `${f}: ไม่เจอ write เลย — ด่านนี้ต้องแก้ตามโครงไฟล์ใหม่`);
+  }
+});
+
 /* ── 🔴 ทางเขียนที่ยังไม่มีด่านชั้น 3 เลย + "ย้ายของ" ที่ไม่เช็คปลายทาง (QC audit ข้อ 5 · 19/10) ──
    3 จุดที่ปิดรอบนี้ — คลาสเดียวกับ /org-setup ข้างล่าง แต่คนละหน้า:
    · PMCheckData `NgRecheckPanel` เขียน action/ค่าวัดใหม่ลง inspection_results โดย**ไม่มีด่านเลย**

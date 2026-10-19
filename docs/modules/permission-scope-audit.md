@@ -384,7 +384,30 @@ if (role === 'leader') {          // ← ไม่มี && lineId
 · 🔴 **บทเรียนซ้ำของรอบนี้: "ย้ายของ" ทุกที่ต้องเช็ค 2 ฝั่ง** — ด่านที่มองแถวเดิมอย่างเดียวจะปล่อยการย้ายออกไปข้างนอกขอบเขตเสมอ
   (เจอ 3 หน้าในรอบเดียว: `/org-setup` · `PmCoordination` · `PMSetup` — คลาสเดียวกับ `PMSetup.handleTransfer` ที่ตั้งข้อสังเกตไว้ตอน audit)
 
+### ✅ `/npi` — แผงลูก 4 ตัว + ลบโปรเจค (ปิด 19/10)
+
+หน้าแม่มี `partWriteOf` (= `canWriteLine` ของไลน์พาร์ท) อยู่แล้วตั้งแต่ 15/10 **แต่ส่งเข้าแผงลูกแค่ `canEdit`**
+⇒ แผง **พาร์ท · แบบ/ECI · tooling · งาน** เขียน/ลบแถวของพาร์ทไลน์อื่นได้ครบทุกปุ่ม (17 ฟังก์ชันเขียน)
+และ `delProject` ลบโปรเจค (FK cascade = พาร์ท/เอกสาร/ECI/tooling/แบบ หายทั้งก้อน) **โดยไม่ถามขอบเขตเลย**
+
+- 🔴 กฎรวมที่ **`src/utils/npiScope.js`** (4 เทส) — `npiLineOfPart` · `npiBlock` · `npiBlockForPart`
+  (ไล่จาก `part_id` ของแถวลูก) · `npiProjectDeleteBlock`
+- **ลบโปรเจค = ต้องแก้ได้ทุกพาร์ทใต้โปรเจค** · อ่าน `npi_parts` สดจาก DB (โมดัลเปิดโปรเจคอื่นที่ไม่ใช่
+  ตัวที่เลือกอยู่ได้) · 🔴 **อ่านพาร์ทไม่สำเร็จ = ห้ามลบ** (`countable:false` · fail-closed) ·
+  confirm บอกจำนวนพาร์ทที่จะหาย · นับแถวที่ลบจริงด้วย `checkWriteRows` (เดิมเช็คแค่ `error`)
+- แผงลูกทั้ง 4 รับ `partWriteOf` แล้วถามกฎ **ก่อนทุกฟังก์ชันที่เขียน DB** (รวมก่อน **อัปโหลดไฟล์** ใน
+  `attach` — ไม่งั้นไฟล์ขึ้น storage ทิ้งไว้ทั้งที่เขียนแถวไม่ได้)
+  · NpiPartPanel ถามครั้งเดียว (ทุกแถวเป็นของพาร์ทเดียว) → `mayEdit` คุมปุ่ม/ช่องกรอก +
+    **เขียนเหตุผลบนจอ** ("🔒 …เป็นของส่วนงานอื่น") ตาม UI §6.9
+  · 🔴 **ย้ายแถวข้ามพาร์ทได้** (ช่อง "พาร์ท" ในโมดัลแบบ/ECI/tooling/งาน) ⇒ เช็ค **ทั้งพาร์ทเดิมและพาร์ทที่เลือกใหม่**
+    (บทเรียน "ย้ายของต้องเช็ค 2 ฝั่ง" ของรอบนี้)
+  · แถวที่ไม่ผูกพาร์ท (ECI/งานระดับโปรเจค) และพาร์ทที่ยังไม่ระบุไลน์ = **ตัดสินไม่ได้ ⇒ ไม่บล็อก** (พฤติกรรมเดิม)
+- `NpiTemplates` ไม่แตะ — แม่แบบเฟส/เอกสารเป็นทะเบียนระดับโรงงาน คุมด้วย `npi:manage_templates`
+- ด่าน `regressionGuards`: ต้องส่ง `partWriteOf` เข้าแผงลูกทั้ง 4 (ตัดที่ปลาย tag — slice กว้างเกินเคยทำให้
+  ด่านผ่านทั้งที่ถอดออกแล้ว) · `delProject` ต้องผ่าน `npiProjectDeleteBlock` ก่อน `.delete()` + ต้องส่ง
+  `countable` จากผลอ่านพาร์ท · แผงลูกต้องเรียกกฎจาก utils ไม่ใช่เขียนเงื่อนไขเอง (พิสูจน์ด้วย mutation 2 แบบ)
+
 ### ที่เหลือในรอบนี้ (ยังไม่แก้)
 
-`NPI.delProject` + 4 ลูก · `RackCenter` · `QualityBins` · `LineStock.stock_inflow_rules` ·
-`QualityControl` NCR · `KpiMonthly.copyFromYear`/`restoreDef`
+`RackCenter` · `QualityBins` · `LineStock.stock_inflow_rules` · `QualityControl` NCR ·
+`KpiMonthly.copyFromYear`/`restoreDef`

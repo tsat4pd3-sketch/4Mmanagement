@@ -6,6 +6,7 @@ import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { toast } from './Toast';
+import { npiBlockForPart } from '../utils/npiScope';
 import { fmtDate } from '../utils/dateFormat';
 import { TOOL_KIND, TOOL_STATUS, STEP_STATUS, LIGHT, toolingRollup, stepLight, ganttRange, barPos, proposeSteps } from '../utils/npi';
 import { inp, card, btn, ghost, Field, Pill, LightDot, MetaSelect, Modal } from './NpiUi';
@@ -17,7 +18,15 @@ import { appendHistoryOptions } from '../utils/pickerOptions';
 import { ALL } from '../utils/filterLabels';
 import { DeleteButton } from './IconButton';
 
-export default function NpiTooling({ parts, tooling, steps, stepTemplates, dieSets, canEdit, today, onChanged }) {
+export default function NpiTooling({ parts, tooling, steps, stepTemplates, dieSets, canEdit, today, onChanged, partWriteOf }) {
+  /* 🔐 ชั้นที่ 3 — แผน tooling ผูกพาร์ท · ขั้นงานผูกแผน ⇒ ไล่หาไลน์ของพาร์ทแล้วตัดสิน (utils/npiScope.js)
+     🔴 ย้ายแผนข้ามพาร์ทได้ (ช่อง "พาร์ท" ในโมดัล) ⇒ เช็คทั้งพาร์ทเดิมและพาร์ทที่เลือกใหม่ */
+  const planOf = (id) => (tooling || []).find(t => String(t.id) === String(id));
+  const rowBlocked = (ref, what = 'แผน tooling ของพาร์ทนี้') => {
+    const msg = npiBlockForPart(partWriteOf, parts, ref, what);
+    if (msg) { toast.info(msg); return true; }
+    return false;
+  };
   // ตัวเลือกชุดแม่พิมพ์ (DR die_sets) สำหรับ SearchSelect — die_set_code เป็น join key กับ /die-registry ห้ามพิมพ์เอง (2026-09-07)
   const dieBase = useMemo(() => (dieSets || []).map(d => ({
     id: d.set_code, label: d.set_code, sub: [d.part_no, d.model].filter(Boolean).join(' · '), keywords: `${d.part_no || ''} ${d.model || ''}`,
@@ -44,6 +53,8 @@ export default function NpiTooling({ parts, tooling, steps, stepTemplates, dieSe
     const m = planModal;
     if (!m.part_id) return toast.error('เลือกพาร์ท');
     if (!m.tool_name?.trim()) return toast.error('กรอกชื่อเครื่องมือ');
+    if (rowBlocked({ part_id: m.part_id })) return;
+    if (m.id && rowBlocked(planOf(m.id))) return;
     setSaving(true);
     const row = { part_id: m.part_id, tool_name: m.tool_name.trim(), tool_kind: m.tool_kind, maker_name: m.maker_name?.trim() || null, maker_kind: m.maker_kind,
       po_no: m.po_no?.trim() || null, die_set_code: m.die_set_code?.trim() || null, plan_start: m.plan_start || null, plan_end: m.plan_end || null,
@@ -74,6 +85,7 @@ export default function NpiTooling({ parts, tooling, steps, stepTemplates, dieSe
     onChanged();
   };
   const delPlan = async (t) => {
+    if (rowBlocked(t)) return;
     if (!window.confirm(`ลบแผน "${t.tool_name}" พร้อมขั้นงานทั้งหมด?`)) return;
     const { error } = await supabase.from('npi_tooling_plans').delete().eq('id', t.id);
     if (error) return toast.error(error.message);
@@ -82,6 +94,7 @@ export default function NpiTooling({ parts, tooling, steps, stepTemplates, dieSe
   const saveStep = async () => {
     const m = stepModal;
     if (!m.name?.trim()) return toast.error('กรอกชื่อขั้นงาน');
+    if (rowBlocked(planOf(m.tooling_id), 'ขั้นงานของแผนนี้')) return;
     setSaving(true);
     const pct = Math.max(0, Math.min(100, Number(m.progress_pct) || 0));
     const status = pct >= 100 ? 'completed' : m.status === 'completed' ? 'in_progress' : m.status;
@@ -96,6 +109,7 @@ export default function NpiTooling({ parts, tooling, steps, stepTemplates, dieSe
     setStepModal(null); onChanged();
   };
   const delStep = async (s) => {
+    if (rowBlocked(planOf(s?.tooling_id), 'ขั้นงานของแผนนี้')) return;
     if (!window.confirm(`ลบขั้น "${s.name}"?`)) return;
     const { error } = await supabase.from('npi_tooling_steps').delete().eq('id', s.id);
     if (error) return toast.error(error.message);
