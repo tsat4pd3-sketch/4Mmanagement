@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useContext, useMemo, Fragment } from 'react'
+import { useState, useEffect, useRef, useContext, useMemo, Fragment, useCallback } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useMergeParams } from '../utils/useTabParam'
 import { AnimatePresence } from 'framer-motion'
@@ -290,7 +290,7 @@ function CheckpointCard({ cp, label, onChange, onDelete, onDuplicate, onCpImage,
 }
 
 // ─── EquipmentModal ───────────────────────────────────────────────────────────
-function EquipmentModal({ onClose, onSaved, editJig, department, categories, methods, deptWrite }) {
+function EquipmentModal({ onClose, onSaved, editJig, department, categories, methods, deptWrite, teamWriteOf }) {
   const isEdit = !!editJig
   const [userId, setUserId] = useState(null)
 
@@ -510,6 +510,13 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
     if (!cur) { setError('แผนกนี้ยังไม่มีรายการตรวจให้ย้าย — บันทึกจุดตรวจก่อน'); return }
     if (!moveTo || moveTo === department) { setError('เลือกแผนกปลายทางก่อน'); return }
     const toLabel = pmTeamsSync().find(t => t.key === moveTo)?.label ?? moveTo
+    /* 🔐 ด่านชั้น 2 ก่อนเขียน — **ปลายทางเสมอ** (สร้าง/ทับของทีมนั้น) + **ต้นทางเมื่อย้าย**
+       (ย้าย = ยกรายการตรวจ + ประวัติการตรวจของทีมที่เปิดอยู่ออกไปทั้งก้อน) */
+    const dstWrite = teamWriteOf?.(moveTo)
+    if (dstWrite && !dstWrite.ok) { setError(teamBlockText(dstWrite, `รายการตรวจของทีม "${toLabel}"`)); return }
+    if (mode === 'move' && deptWrite && !deptWrite.ok) {
+      setError(teamBlockText(deptWrite, 'รายการตรวจของทีมนี้')); return
+    }
     setMoveBusy(true); setError('')
     try {
       const run = (replace) => mode === 'move'
@@ -1044,12 +1051,25 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
                 {cur && cur.checkpointCount > 0 && toolOpen === 'dept' && (
                   <div style={{ marginTop: 9, paddingTop: 9, borderTop: '1px dashed var(--border2)', display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                     <span style={{ fontSize: 11.5, color: 'var(--text2)' }}>ย้าย/คัดลอก {cur.checkpointCount} จุดนี้ไป</span>
-                    <select value={moveTo} onChange={e => { setMoveTo(e.target.value); setError('') }} style={{ width: 'auto', minWidth: 150, fontSize: 12 }}>
-                      <option value="">— เลือกแผนกปลายทาง —</option>
-                      {allTeams.filter(t => t.key !== department).map(t => (
-                        <option key={t.key} value={t.key}>{t.icon ? `${t.icon} ` : ''}{t.label}</option>
-                      ))}
-                    </select>
+                    {(() => {
+                      const cands = allTeams.filter(t => t.key !== department)
+                      const okRows = cands.filter(t => (teamWriteOf?.(t.key)?.ok) !== false)
+                      const hidden = cands.length - okRows.length
+                      return (
+                        <>
+                          <select value={moveTo} onChange={e => { setMoveTo(e.target.value); setError('') }} style={{ width: 'auto', minWidth: 150, fontSize: 12 }}>
+                            <option value="">— เลือกแผนกปลายทาง —</option>
+                            {okRows.map(t => (
+                              <option key={t.key} value={t.key}>{t.icon ? `${t.icon} ` : ''}{t.label}</option>
+                            ))}
+                          </select>
+                          {/* กรองออกแล้วต้องบอก — ไม่งั้นดูเหมือนระบบมีแค่ไม่กี่ทีม */}
+                          {hidden > 0 && (
+                            <span style={{ fontSize: 11, color: 'var(--muted)' }}>🔒 ซ่อน {hidden} ทีมที่ไม่ใช่ทีมของคุณ</span>
+                          )}
+                        </>
+                      )
+                    })()}
                     <button type="button" disabled={!moveTo || moveBusy} onClick={() => handleTransfer('move')}
                       style={{ ...S.btnSm(deptColor), opacity: (!moveTo || moveBusy) ? 0.5 : 1 }} title="เปลี่ยนเจ้าของรายการตรวจ — ประวัติการตรวจย้ายตามไปด้วย">
                       {moveBusy ? '…' : '➡️ ย้าย'}
@@ -1522,6 +1542,10 @@ export default function PMSetup() {
      🔴 ไม่ผูกทีม = ไม่บล็อก (ไม่รู้ ≠ ปฏิเสธ) */
   const deptWrite = useMemo(() => canWriteTeam(pmUserTeams, department, { allUnits, role }),
     [pmUserTeams, department, allUnits, role])
+  /* 🔴 ย้าย/คัดลอกรายการตรวจ = **เขียนลงทีมปลายทาง** ⇒ ต้องถามด่านของทีมนั้นด้วย ไม่ใช่แค่ทีมที่เปิดอยู่
+     (เดิมเช็คแค่ต้นทาง: ช่างทีมเราย้ายรายการตรวจ + ประวัติการตรวจทั้งก้อนเข้าไปในทีมอื่นได้) */
+  const teamWriteOf = useCallback((key) => canWriteTeam(pmUserTeams, key, { allUnits, role }),
+    [pmUserTeams, allUnits, role])
   const [jigs, setJigs] = useState([])
   const [cpCounts, setCpCounts] = useState({})
   const [pinFlags, setPinFlags] = useState({})
@@ -1776,7 +1800,7 @@ export default function PMSetup() {
       )}
 
       <AnimatePresence>
-        {showModal && <EquipmentModal onClose={() => setShowModal(false)} onSaved={handleSaved} editJig={editJig} department={department} categories={categories} methods={methods} deptWrite={deptWrite} />}
+        {showModal && <EquipmentModal onClose={() => setShowModal(false)} onSaved={handleSaved} editJig={editJig} department={department} categories={categories} methods={methods} deptWrite={deptWrite} teamWriteOf={teamWriteOf} />}
         {taxModal === 'category' && (
           <TaxonomyManagerModal teams={pmTeamsSync()} role={role} myTeams={pmUserTeams} table="pm_checkpoint_categories" title="จัดการประเภทจุดตรวจ (Category)" extraField="color" withEquipTypes
             onClose={() => setTaxModal(null)} onChanged={loadTaxonomy} />

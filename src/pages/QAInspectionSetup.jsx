@@ -12,6 +12,7 @@
 import { useState, useEffect, useMemo, useCallback, useContext } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { canWriteLine, writeBlockText } from '../utils/writeScope';
+import { qaWriteCtx } from '../utils/qaViewScope';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { toast } from '../components/Toast';
 import { UserContext } from '../App';
@@ -119,14 +120,15 @@ export default function QAInspectionSetup() {
   const canManage = can('qa', 'manage');
   /* 🔐 พาร์ทผูกไลน์ (`qa_parts.line_name`) ⇒ แก้ spec/ลบพาร์ท+จุดตรวจ+แบบ ได้เฉพาะไลน์ส่วนงานตัวเอง
      (audit 15/10 — ทั้งไฟล์เดิมไม่มีคำว่าขอบเขตเลย) · ขา QA ถือ `scope:all_units` จึงไม่กระทบ */
-  const wctx = useMemo(() => ({ role, section: homeSection, sections: mySections, allUnits, respCostCenters, scopeIdx }),
-    [role, homeSection, mySections, allUnits, respCostCenters, scopeIdx]);
   // 📜 ค่าที่เคยบันทึกไว้ (Main) — วิธีตรวจ (Visual/CF ที่ไม่ใช่เครื่องมือในทะเบียน) / ลูกค้า ยังเลือกซ้ำได้ ไม่หายเงียบ (2026-09-07)
   const methodHist = useColumnHistory(supabase, 'qa_inspection_items', 'method');
   const custHist = useColumnHistory(supabase, 'qa_parts', 'customer');
 
   const [parts, setParts] = useState([]);
   const [lines, setLines] = useState([]);
+  // ✍️ QA ใหญ่สุด — คนฝ่ายคุณภาพแก้พาร์ท/จุดตรวจได้ทุกไลน์ (utils/qaViewScope.qaWriteCtx · 19/10)
+  const wctx = useMemo(() => qaWriteCtx({ role, section: homeSection, sections: mySections, allUnits, respCostCenters, scopeIdx }, lines),
+    [role, homeSection, mySections, allUnits, respCostCenters, scopeIdx, lines]);
   const [selId, setSelId] = useState(null);
   const [items, setItems] = useState([]);
   const [search, setSearch] = useState('');
@@ -291,6 +293,15 @@ export default function QAInspectionSetup() {
   const delPart = async () => {
     if (!sel) return;
     if (!partWrite.ok) { toast.info(writeBlockText(partWrite, { what: 'พาร์ทของไลน์นี้' })); return; }
+    /* 🔴 FK ใบตรวจ → พาร์ท = ON DELETE CASCADE (ผลรายจุด/รายชิ้น/action ตามไปด้วย) ⇒ ลบพาร์ทที่เคยตรวจ
+       = **ประวัติตรวจทั้งหมดหายถาวร** (audit 19/10) ⇒ เคยตรวจแล้วห้ามลบ ให้ปิดใช้งานแทน · นับไม่ได้ = ห้ามลบ */
+    const { count: nSheets, error: eCnt } = await supabase.from('qa_inspection_sheets')
+      .select('id', { count: 'exact', head: true }).eq('part_id', sel.id);
+    if (eCnt || nSheets == null) { toast.error('ตรวจประวัติใบตรวจของพาร์ทนี้ไม่สำเร็จ — ยังลบไม่ได้'); return; }
+    if (nSheets > 0) {
+      toast.error(`${sel.part_no} มีใบตรวจแล้ว ${nSheets} ใบ — ลบไม่ได้ (ประวัติตรวจจะหายถาวร) ให้แก้พาร์ทเป็น "ปิดใช้งาน" แทน`);
+      return;
+    }
     if (!window.confirm(`ลบ ${sel.part_no} พร้อมจุดตรวจทั้งหมด ${items.length} จุด?`)) return;
     const partId = sel.id;
     /* 🔴 ต้อง `.select('id')` แล้ว**นับแถว** ก่อนแตะ storage (QC audit 2026-10-06)

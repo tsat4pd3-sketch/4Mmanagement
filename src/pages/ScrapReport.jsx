@@ -41,6 +41,13 @@ import Page from '../components/Page';
 import FilterBar from '../components/FilterBar';
 import { DeleteButton } from '../components/IconButton';
 import useIsMobile from '../utils/useIsMobile';
+/* 🗑️ ถังเหลือง/แดง — **ชิ้นเดียวกับที่ /qa ใช้** embed ทั้งดุ้น ไม่แก้ของเดิม (pattern เดียวกับ /equipment)
+   user 19/10: *"feature ถังเหลือง/แดง ควรจะอยู่กับผลิตนะ หลักๆ ผลิตจะเป็นคน input data มาจาก daily report
+   และ QA มีหน้าที่ตรวจสอบ … มาอยู่กะ QA ผลิตจะหาไม่เจอ"*
+   🔴 สิทธิ์ของมันคือ `scrap:record` / `scrap:manage` อยู่แล้ว (ไม่ใช่ `qa:*`) — อยู่หน้าฝ่ายผลิตจึงตรงกว่า
+   ⚠️ แท็บที่ /qa ยังอยู่เหมือนเดิม (QA = คนพิจารณา) — ข้อมูลชุดเดียวกัน ไม่ได้ก๊อป */
+import QualityBins from '../components/QualityBins';
+import useTabParam from '../utils/useTabParam';
 
 /* ── date helpers (ห้าม toISOString หา work date — ดู CLAUDE.md) ── */
 function localDateStr(d = new Date()) {
@@ -98,9 +105,17 @@ function Modal({ title, onClose, children, width = 560 }) {
   );
 }
 
+/* 📋 ใบรายงานของเสีย (งานเอกสารรายวัน) · 🗑️ ถังเหลือง/แดง (บันทึกหน้ากล่องก่อนถึง NCR/Scrap)
+   = ของเสียชุดเดียวกัน คนละขั้นของเรื่อง ⇒ อยู่หน้าเดียวกันแต่คนละแท็บ (UI §6.8) */
+const TABS = [
+  { key: 'scrap', label: '♻️ ใบรายงานของเสีย' },
+  { key: 'bins',  label: '🗑️ ถังเหลือง / ถังแดง' },
+];
+
 export default function ScrapReport() {
   const { fullName, role, lineId, sections } = useContext(UserContext);
   const { can } = usePerms();
+  const [tab, setTab] = useTabParam(TABS.map(t => t.key), 'scrap');
   const canRecord = can('scrap', 'record');
   const canManage = can('scrap', 'manage');
   const canDel    = canDelete('scrap', 'manage', role);  // สิทธิ์ลบใบ แยกจากอนุมัติ (fallback = manage)
@@ -620,8 +635,14 @@ export default function ScrapReport() {
     <Page>
       <ReadOnlyNote show={!canRecord} role={role} what="สร้าง/แก้ใบรายงานของเสีย"
         permKey="scrap:record" hint="ยังเปิดดูใบเดิม พิมพ์ และ export Excel ได้ตามปกติ" />
-      <PageHeader title="ใบรายงานของเสีย (Scrap Report)" icon="♻️"
-        sub={`${scrapFormNo} — ลงยอดของเสียต่อไลน์/วัน · ดึงตั้งต้นจาก Daily Report + เพิ่มพาร์ทย่อย · export ตรงฟอร์ม`} />
+      <PageHeader title="ของเสีย — ใบรายงาน & ถังเหลือง/แดง" icon="♻️"
+        sub={tab === 'bins'
+          ? 'ชิ้นงานต้องสงสัย (ถังเหลือง) / ชิ้นงานเสีย (ถังแดง) — ผลิตลงบันทึก · QA เป็นคนพิจารณาผล'
+          : `${scrapFormNo} — ลงยอดของเสียต่อไลน์/วัน · ดึงตั้งต้นจาก Daily Report + เพิ่มพาร์ทย่อย · export ตรงฟอร์ม`}
+        tabs={TABS} tab={tab} onTab={setTab} />
+
+      {/* 🗑️ ถังเหลือง/แดง = คอมโพเนนต์เดียวกับที่ /qa ใช้ (ข้อมูลชุดเดียว ไม่ได้ก๊อป) */}
+      {tab === 'bins' ? <QualityBins /> : (<>
 
       {/* UI-STANDARD 2026-09-24: แถบกรองมาตรฐาน (ไม่ใส่ขนาด inline ในช่อง) */}
       <FilterBar style={{ marginBottom: 14 }}>
@@ -1033,6 +1054,7 @@ export default function ScrapReport() {
           </Modal>
         );
       })()}
+      </>)}
     </Page>
   );
 }

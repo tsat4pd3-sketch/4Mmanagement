@@ -133,7 +133,9 @@ export default function QualityBins() {
       .gte('work_date', from).lte('work_date', to)
       .order('work_date', { ascending: false }).order('created_at', { ascending: false })
       .limit(500);
-    if (scopeNames) q = q.in('line_name', scopeNames);
+    /* 🔴 แท็กที่ไม่ระบุไลน์ต้องเห็นด้วย — `IN` ไม่จับ NULL ⇒ ลงถังแล้วหายจากรายการ (audit 19/10) */
+    const inScope = scopeNames ? `line_name.is.null,line_name.in.(${scopeNames.map(n => `"${String(n).replace(/"/g, '\\"')}"`).join(',')})` : null;
+    if (inScope) q = q.or(inScope);
     /* ⏱️ ของค้างเกินอายุแท็ก — คิวรีแยก ไม่ผูกช่วงวันที่ (ลงถังก่อน "วันนี้ − อายุแท็ก" และยังไม่ปิด)
        กรองฝั่ง server แค่เงื่อนไขปิดที่ชัด (แดง: ยังไม่มีใบ scrap · เหลือง: ยังไม่กลับเข้ากระบวนการ)
        ที่เหลือ (QA ว่างานดี/ขอใช้มีเลขใบ/ย้ายลงแดงแล้ว) ตัดสินด้วย binClosed() ตัวเดียวกับตาราง */
@@ -143,7 +145,7 @@ export default function QualityBins() {
       .order('work_date', { ascending: true })
       .limit(500);
     oq = bin === 'red' ? oq.is('scrap_report_id', null) : oq.is('return_date', null);
-    if (scopeNames) oq = oq.in('line_name', scopeNames);
+    if (inScope) oq = oq.or(inScope);
     const [{ data, error }, ores] = await Promise.all([q, oq]);
     if (stale()) return;
     setLoading(false);

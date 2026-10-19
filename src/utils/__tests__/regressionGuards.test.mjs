@@ -2978,14 +2978,119 @@ test('🛡️ /org-setup: ทุกชั้นที่มีปุ่มเพ
   const missing = kinds.filter(k => !new RegExp(`\\b${k}\\s*:`).test(label));
   assert.deepEqual(missing, [], `\n\n❌ KIND_LABEL ขาดชั้น: ${missing.join(', ')}\n`
     + '   ผลที่เกิด: หัวโมดัลขึ้น "เพิ่ม undefined" (เกิดจริง 05/10/2026 ตอนเพิ่มชั้นทีม)\n');
-  const map = code.match(/const\s+CAN_ADD_HERE\s*=\s*\{[^}]*\}/)?.[0] || '';
+  const rule = stripComments(readFileSync(join(ROOT, 'src/utils/orgNodeEdit.js'), 'utf8'));
+  const map = rule.match(/const\s+ORG_PARENT_KIND\s*=\s*\{[^}]*\}/)?.[0] || '';
   assert.ok(/department\s*:/.test(map) && /line\s*:/.test(map) && /team\s*:/.test(map),
-    '\n\n❌ OrgSetup.jsx ไม่มี CAN_ADD_HERE ครบ department/line/team\n'
+    '\n\n❌ orgNodeEdit.js ไม่มี ORG_PARENT_KIND ครบ department/line/team\n'
     + '   ทำไมห้ามเขียนเป็นเชน ternary: ลงท้าย `: false` ⇒ ชั้นที่ลืมต่อสาขาถูกบล็อกเงียบ\n'
     + '              ปุ่ม ➕ โชว์ (เช็คคนละที่) แต่กดบันทึกไม่ผ่าน = ผู้ใช้ไม่รู้ว่าทำอะไรผิด\n'
-    + '   แก้ยังไง: `const CAN_ADD_HERE = { department: canAddDeptHere, line: canAddLineHere, team: canAddTeamHere }`\n');
-  assert.ok(/CAN_ADD_HERE\[modal\.kind\]/.test(code),
-    '\n\n❌ handleSave ไม่ได้ใช้ CAN_ADD_HERE ตัดสินสิทธิ์เพิ่ม — ดูเหตุผลด้านบน\n');
+    + '   แก้ยังไง: เติมชั้นใหม่ใน `ORG_PARENT_KIND = { department: \'section\', line: \'department\', team: \'line\' }`\n');
+  assert.ok(/orgSaveBlockReason\s*\(/.test(code),
+    '\n\n❌ handleSave ไม่ได้ใช้ orgSaveBlockReason ตัดสินสิทธิ์ — ดูเหตุผลด้านบน\n');
+});
+
+/* ── 🔴 /npi: แผงลูกเขียนของพาร์ทไลน์อื่นได้ (QC audit ข้อ 5 · 19/10/2026) ───────────────────
+   หน้าแม่มี `partWriteOf` (canWriteLine ของไลน์พาร์ท) แต่ส่งเข้าแผงลูกแค่ `canEdit`
+   ⇒ 4 แผง (พาร์ท · แบบ/ECI · tooling · งาน) เขียน/ลบแถวของพาร์ทไลน์อื่นได้ทั้งหมด
+   และ `delProject` ลบโปรเจค (cascade ทั้งพาร์ท/เอกสาร/ECI/tooling) โดยไม่ถามขอบเขตเลย
+   ⇒ กฎรวมที่ `src/utils/npiScope.js` · แผงลูกห้ามคิดกฎเอง · ลบโปรเจคต้องนับพาร์ทได้ก่อน */
+test('🛡️ /npi: แผงลูกต้องรับกฎขอบเขต + ลบโปรเจคต้องนับพาร์ทครบก่อน', () => {
+  const npi = stripComments(readFileSync(join(ROOT, 'src/pages/NPI.jsx'), 'utf8'));
+  for (const c of ['NpiPartPanel', 'NpiDrawingsEci', 'NpiTooling', 'NpiTasks']) {
+    const at = npi.indexOf(`<${c} `);
+    const tag = npi.slice(at, at + npi.slice(at).indexOf('/>') + 2);   // ตัดที่ปลาย tag เท่านั้น
+    assert.ok(at > -1 && tag.length > 10, `หา <${c}> ใน NPI.jsx ไม่เจอ — ด่านนี้ต้องแก้ตามโครงใหม่`);
+    assert.ok(/partWriteOf=\{partWriteOf\}/.test(tag),
+      `\n\n❌ NPI.jsx ไม่ได้ส่ง partWriteOf เข้า <${c}> — แผงนั้นเขียนของพาร์ทไลน์อื่นได้\n`
+      + '   (หน้าแม่คือที่เดียวที่รู้ ctx + ทะเบียนไลน์ ⇒ ต้องส่งตัวตัดสินลงไป ไม่ให้แผงลูกคิดเอง)\n');
+  }
+  const del = npi.slice(npi.indexOf('const delProject'));
+  const guard = del.indexOf('npiProjectDeleteBlock');
+  const write = del.search(/from\('npi_projects'\)[\s\S]{0,80}\.delete\(/);
+  assert.ok(guard > -1 && write > -1 && guard < write,
+    '\n\n❌ NPI.delProject ไม่ได้ผ่าน npiProjectDeleteBlock ก่อนลบ\n'
+    + '   ลบโปรเจค = cascade ลบพาร์ท/เอกสาร/ECI/tooling ทั้งก้อน ⇒ ต้องแก้ได้ทุกพาร์ท\n'
+    + '   และ "นับพาร์ทไม่ได้ = ห้ามลบ" (fail-closed · กฎเขียน DB ข้อ 2)\n');
+  assert.ok(/countable:\s*!ePart/.test(del.slice(0, 1200)),
+    '\n\n❌ delProject ต้องส่ง countable จากผลอ่าน npi_parts (อ่านไม่สำเร็จ = ห้ามลบ)\n');
+
+  // แผงลูกต้องเรียกกฎจาก utils (ไม่ใช่เขียนเงื่อนไขสิทธิ์เอง) และต้องเช็คก่อนเขียน
+  const files = {
+    'src/components/NpiPartPanel.jsx': [/npiBlock\(/, /blocked\(\)/],
+    'src/components/NpiDrawingsEci.jsx': [/npiBlockForPart\(/, /rowBlocked\(/],
+    'src/components/NpiTooling.jsx': [/npiBlockForPart\(/, /rowBlocked\(/],
+    'src/components/NpiTasks.jsx': [/npiBlockForPart\(/, /rowBlocked\(/],
+  };
+  for (const [f, pats] of Object.entries(files)) {
+    const code = stripComments(readFileSync(join(ROOT, f), 'utf8'));
+    for (const re of pats) {
+      assert.ok(re.test(code), `\n\n❌ ${f} ไม่ได้ใช้กฎขอบเขตจาก utils/npiScope.js (${re})\n`
+        + '   ทุกฟังก์ชันที่เขียน DB ในแผงนี้ต้องเช็คขอบเขตของพาร์ทก่อน\n');
+    }
+    const writes = [...code.matchAll(/from\('npi_[a-z_]+'\)[\s\S]{0,160}?\.(update|insert|delete)\(/g)];
+    assert.ok(writes.length > 0, `${f}: ไม่เจอ write เลย — ด่านนี้ต้องแก้ตามโครงไฟล์ใหม่`);
+  }
+});
+
+/* ── 🔴 ทางเขียนที่ยังไม่มีด่านชั้น 3 เลย + "ย้ายของ" ที่ไม่เช็คปลายทาง (QC audit ข้อ 5 · 19/10) ──
+   3 จุดที่ปิดรอบนี้ — คลาสเดียวกับ /org-setup ข้างล่าง แต่คนละหน้า:
+   · PMCheckData `NgRecheckPanel` เขียน action/ค่าวัดใหม่ลง inspection_results โดย**ไม่มีด่านเลย**
+   · PmCoordination `notify`/`toggleTask` เขียนสถานะ/ติ๊กงานของแผนไลน์อื่น · `PlanModal.save` ย้ายไลน์ได้
+   · PMSetup `handleTransfer` ย้าย/คัดลอกรายการตรวจ + ประวัติ เข้า **ทีมปลายทาง** โดยเช็คแต่ทีมต้นทาง */
+test('🛡️ PM/แผนประสาน: ทางเขียนต้องมีด่านชั้น 3 · ย้ายของต้องเช็คปลายทาง', () => {
+  const pmc = stripComments(readFileSync(join(ROOT, 'src/pages/PMCheckData.jsx'), 'utf8'));
+  const panel = pmc.slice(pmc.indexOf('function NgRecheckPanel'));
+  const body = panel.slice(0, panel.indexOf('\nfunction '));
+  const sub = body.slice(body.indexOf('const submit'));   // ต้องอยู่ "ในฟังก์ชันที่เขียน" ไม่ใช่แค่โผล่ในไฟล์
+  const gIdx = sub.indexOf('!canRecord');
+  const wIdx = sub.search(/from\('inspection_results'\)[\s\S]{0,140}\.update\(/);
+  assert.ok(gIdx > -1 && wIdx > -1 && gIdx < wIdx,
+    '\n\n❌ NgRecheckPanel เขียน inspection_results โดยไม่ผ่านด่าน canRecord (สิทธิ์ลงผลตรวจ + แกนทีม)\n'
+    + '   ผลที่เกิด: ใครเปิดประวัติของทีมอื่นได้ ก็เขียน action/ค่าวัดใหม่ทับผลตรวจของทีมนั้นได้\n');
+
+  const coord = stripComments(readFileSync(join(ROOT, 'src/pages/PmCoordination.jsx'), 'utf8'));
+  for (const fn of ['const notify =', 'const toggleTask =']) {
+    const part = coord.slice(coord.indexOf(fn), coord.indexOf(fn) + 700);
+    assert.ok(/planWrite\.ok/.test(part),
+      `\n\n❌ PmCoordination ${fn.replace('const ', '').replace(' =', '')} ไม่ได้เช็ค planWrite\n`
+      + '   ผลที่เกิด: แจ้ง Production / ติ๊กงาน ของแผนไลน์ส่วนงานอื่นได้ (notify ยิง Telegram ออกข้างนอกด้วย)\n');
+  }
+  const save = coord.slice(coord.indexOf('const save = async'));
+  const dst = save.search(/canWriteLine\([^)]*f\.line_name/);
+  const ins = save.search(/from\('pm_coordination_plans'\)/);
+  assert.ok(dst > -1 && ins > -1 && dst < ins,
+    '\n\n❌ PmCoordination PlanModal.save ไม่ได้เช็ค "ไลน์ปลายทาง" (f.line_name) ก่อนเขียน\n'
+    + '   ผลที่เกิด: แก้แผนของไลน์เรา แล้วเปลี่ยนไลน์เป็นของส่วนงานอื่น = ย้ายแผนข้ามส่วนงานเงียบๆ\n');
+
+  const setup = stripComments(readFileSync(join(ROOT, 'src/pages/PMSetup.jsx'), 'utf8'));
+  const tr = setup.slice(setup.indexOf('const handleTransfer'));
+  const dstT = tr.indexOf('teamWriteOf');
+  const run = tr.search(/moveChecklistDept|copyChecklistToDept/);
+  assert.ok(dstT > -1 && run > -1 && dstT < run,
+    '\n\n❌ PMSetup.handleTransfer ไม่ได้เช็ค "ทีมปลายทาง" ก่อนย้าย/คัดลอกรายการตรวจ\n'
+    + '   ผลที่เกิด: ย้ายรายการตรวจ + ประวัติการตรวจทั้งก้อนเข้าไปในทีมช่างอื่นได้ (ของเขาถูกทับด้วย)\n');
+});
+
+/* ── 🔴 ย้ายโหนดผัง = เขียนลง "แม่ใหม่" ⇒ เช็คแต่ต้นทางไม่พอ (QC audit ข้อ 5 · 19/10/2026) ─────
+   เคสจริงที่ปิดไป: ผู้ถือ org:manage_own_unit เปิดแก้กลุ่มของตัวเอง (ต้นทางผ่าน) แล้วเปลี่ยนช่อง
+   "อยู่ภายใต้" เป็นแผนกของส่วนงานอื่น — payload เขียน parent_id ใหม่ ส่วน guard มองแถวเดิม
+   = ย้ายหน่วยงานเข้าไปแขวนใต้ส่วนงานที่ไม่ใช่ของตัวเองได้ (ลิสต์ก็โชว์ทั้งโรงงาน)
+   ⇒ ด่านตอนบันทึกต้องถามปลายทางด้วย (orgSaveBlockReason) และกฎต้องอยู่ใน utils ที่เดียว */
+test('🛡️ /org-setup: ด่านตอนบันทึกต้องเช็ค "ปลายทาง" ของการย้าย ไม่ใช่แค่แถวเดิม', () => {
+  const rule = stripComments(readFileSync(join(ROOT, 'src/utils/orgNodeEdit.js'), 'utf8'));
+  assert.ok(/export\s+function\s+orgSaveBlockReason/.test(rule)
+    && /moved[\s\S]{0,200}canAddOrgNodeUnder/.test(rule),
+    '\n\n❌ orgNodeEdit.orgSaveBlockReason ไม่ได้เทียบแม่เดิมกับแม่ใหม่แล้วเช็คปลายทาง\n'
+    + '   ผลที่เกิด: ย้ายหน่วยงานข้ามส่วนงานได้ทั้งที่ไม่มีสิทธิ์ (เขียนของหน่วยงานอื่น)\n');
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/OrgSetup.jsx'), 'utf8'));
+  const save = code.slice(code.indexOf('const handleSave'));
+  const guard = save.indexOf('orgSaveBlockReason');
+  const write = save.search(/from\('org_nodes'\)/);
+  assert.ok(guard > -1 && write > -1 && guard < write,
+    '\n\n❌ handleSave เขียน org_nodes ก่อนผ่าน orgSaveBlockReason (ด่านต้องมาก่อนการเขียน)\n');
+  /* กฎห้ามถูกก๊อปกลับมาไล่สายในหน้า — เคยมี canEditNode/canAddLineHere ไล่ parent_id เองทีละชั้น */
+  assert.ok(!/allDepts\.find\([^)]*\)[\s\S]{0,80}parent_id\s*===\s*mySecId/.test(code),
+    '\n\n❌ OrgSetup.jsx ไล่สายผัง/เทียบ mySecId เองในหน้า — ใช้ utils/orgNodeEdit.js ที่เดียว\n');
 });
 
 /* ── สำเนาชื่อของผัง: กลุ่มเก็บ "ชื่อ" · ที่เหลือเก็บ code||name — ห้ามเดาเป็น name หมด ───── */
@@ -5255,4 +5360,36 @@ test('🛡️ qa-claims-scope-by-name — ตัวกรองขอบเข�
   assert.ok(!/\blines\.includes\(/.test(src),
     '\n\n❌ QaClaims.jsx ใช้ lines.includes(ชื่อไลน์) — lines เป็นแถว object ⇒ ไม่ตรงเลย เคลมหายจากทะเบียน\n'
     + '   แก้: เทียบกับชุดชื่อ (lines.map(l => l.name)) และกรองเฉพาะเมื่อผู้ดูมีขอบเขตจริง (แบบแท็บ NCR)\n');
+});
+
+/* ── ❌ ใบ NCR/เคลมที่ "ยกเลิก (เปิดผิด)" ห้ามนับเป็นงานค้าง (2026-10-19) ──
+   เพิ่มสถานะ `cancelled` แล้ว ⇒ ตัวนับเดิม `status !== 'closed'` / `.neq('status','closed')` จะนับใบยกเลิกเป็นงานค้างปลอม
+   ตัวตัดสินอยู่ `utils/qaDocStatus.js` ที่เดียว */
+test('🛡️ qa-doc-cancelled-not-open — ตัวนับ NCR/เคลมค้างต้องผ่าน qaDocStatus', () => {
+  const bad = [];
+  for (const f of ['src/components/QaClaims.jsx', 'src/pages/DeptDashboard.jsx']) {
+    const src = stripComments(readFileSync(join(ROOT, f), 'utf8'));
+    if (/\.status\s*!==\s*'closed'/.test(src) && f.endsWith('QaClaims.jsx')) bad.push(`${f}: status !== 'closed'`);
+    if (/claims\.filter\(\s*c\s*=>\s*c\.status\s*!==\s*'closed'/.test(src)) bad.push(`${f}: claims.filter(status !== 'closed')`);
+  }
+  const qc = stripComments(readFileSync(join(ROOT, 'src/pages/QualityControl.jsx'), 'utf8'));
+  if (/from\('qa_ncr'\)[^;]*\.neq\('status',\s*'closed'\)/.test(qc)) bad.push("QualityControl.jsx: qa_ncr .neq('status','closed')");
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n   ') + '\n   ใช้ isOpenQaDoc() / QA_DONE_IN จาก utils/qaDocStatus.js\n');
+});
+
+/* ── 👁 หน้า /qa ห้ามเขียนกฎขอบเขตที่เห็นเอง (2026-10-19) — ใช้ qaViewScope() (ห่อ scopedLineNames) ──
+   เดิมเขียนเอง 3 ชุด ⇒ ส่วนงานที่ไม่มีไลน์ผลิต (QA) ได้ 0 ไลน์ = ทุกแท็บว่าง */
+test('🛡️ qa-view-scope-shared — QualityControl ใช้ qaViewScope ไม่กรอง inSectionScope เอง', () => {
+  const qc = stripComments(readFileSync(join(ROOT, 'src/pages/QualityControl.jsx'), 'utf8'));
+  assert.ok(!/inSectionScope\(/.test(qc), 'QualityControl.jsx กรองขอบเขตเองด้วย inSectionScope — ใช้ qaViewScope()');
+  assert.ok(/qaViewScope\(/.test(qc), 'QualityControl.jsx ต้องใช้ qaViewScope()');
+});
+
+/* ── 🗑️ ลบพาร์ท QA ที่มีใบตรวจแล้ว = ประวัติตรวจหายถาวร (FK cascade · audit 19/10) ── */
+test('🛡️ qa-part-delete-needs-sheet-count — delPart ต้องนับใบตรวจก่อนลบ', () => {
+  const src = stripComments(readFileSync(join(ROOT, 'src/pages/QAInspectionSetup.jsx'), 'utf8'));
+  const i = src.indexOf('const delPart');
+  const body = src.slice(i, src.indexOf("from('qa_parts').delete()", i));
+  assert.ok(i >= 0 && /qa_inspection_sheets/.test(body),
+    '\n\n❌ delPart ลบ qa_parts โดยไม่นับ qa_inspection_sheets ก่อน — ON DELETE CASCADE ลบประวัติตรวจทั้งพาร์ท\n');
 });
