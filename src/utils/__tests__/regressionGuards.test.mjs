@@ -5439,3 +5439,22 @@ test('🛡️ tv-fit-no-compound-zoom — DisplayRotator ห้ามคิด t
   assert.doesNotMatch(code, /zoom\s*\*\s*\(\s*window\.innerHeight/, 'สูตรย่อซ้อนทบกลับมา — วัดความสูงตอนไม่ย่อแทน');
   assert.match(code, /m\.style\.zoom\s*=\s*'';\s*\n\s*const natural/, 'ต้องถอด zoom ก่อนวัดความสูงจริง');
 });
+
+/* ═══ 🔕 แถว "เรียกช่าง" ต้องระบุทีมเสมอ — ไม่ระบุ = ไซเรนดังทุกห้อง (2026-10-19) ═══
+   `DowntimeSiren`/`MtnAndonBoard` ตีความ `call_mtn_team` ว่าง = "ดังทุกห้อง" (เจตนา: ไม่เดาทีม)
+   ⇒ ทุกจุดที่เขียน `call_mtn: true` ต้องเติมทีมไปด้วยถ้ารู้
+   วัดจริง ต.ค. 2026: 80 จาก 175 ครั้ง (46%) ไม่ระบุทีม — มาจาก syncDowntimeTimes ที่เติมแต่เวลา */
+test('🔕 เขียน call_mtn = true ต้องเติม call_mtn_team ด้วย (ไม่งั้นไซเรนดังข้ามทีม)', () => {
+  const bad = [];
+  for (const f of ['src/pages/DailyReport.jsx', 'src/pages/MtnRepair.jsx']) {
+    const src = stripComments(readFileSync(join(ROOT, f), 'utf8'));
+    /* ดูทีละ update ที่ตั้ง call_mtn เป็น true — ต้องมี call_mtn_team อยู่ใน object เดียวกัน */
+    for (const m of src.match(/\{[^{}]*call_mtn:\s*true[^{}]*\}/g) || []) {
+      if (!/call_mtn_team/.test(m)) bad.push(`${f} (${m.replace(/\s+/g, ' ').slice(0, 70)}…)`);
+    }
+  }
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n'
+    + '   ทำไม: call_mtn_team ว่าง = จอ Andon/ไซเรนถือว่า "ไม่รู้ทีม" แล้วดังให้ทุกทีม\n'
+    + '   แก้: เติม call_mtn_team จากทีมที่รู้ (ปุ่มเรียกช่าง = ทีมที่เลือก · ใบ MO = mtn_dept)\n'
+    + '   ⚠️ ไม่รู้ทีมจริงๆ ให้ปล่อยว่าง (ดังทุกห้องดีกว่าเงียบผิดทีม) แต่ห้ามลืมเติมตอนที่รู้\n');
+});
