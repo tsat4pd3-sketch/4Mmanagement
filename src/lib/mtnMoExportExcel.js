@@ -21,6 +21,7 @@
  *   doc_key = 'mtn_mo_monthly_export' (seed migration 20261006_doc_form_mtn_mo_monthly_main.sql)
  *   ห้าม hardcode เลขฟอร์ม/Rev ในไฟล์นี้ — อ่านผ่าน getDocForm + fallback เสมอ
  */
+import { assignedTechsOf, joinTechs, prNumbersOf, repairPathMeta } from '../utils/mtnPurchase';
 import { getDocForm, fullCode } from '../utils/docForms';
 import { isVague, isPlannedWork, PLANNED_GROUP } from '../utils/unclassified';
 import { moCommentText } from './moComments';   // 💬 รูปแบบบรรทัดคอมเมนต์ = ตัวเดียวกับใบพิมพ์
@@ -92,6 +93,8 @@ export async function exportMoExcel({
   /* 💬 คอมเมนต์ใต้ใบ (event_comments) — map id ใบ → แถวคอมเมนต์ · โหลดจาก loadMoCommentsFor()
      🔴 `commentsError` ไม่กลืน: โหลดไม่ครบต้องเขียนบนหัวชีท ไม่ใช่ปล่อยช่องว่างเหมือนไม่มีคอมเมนต์ */
   commentsBy = {}, commentsError = null,
+  /* 🛒 ใบขอซื้อ (14/10) — map id ใบ → [{pr_no,status}] · ใบที่ยกเลิกไม่นับ (กฎ prNumbersOf) */
+  prsBy = {}, prsError = null,
 }) {
   const df = await getDocForm('mtn_mo_monthly_export', { title: 'สรุปใบแจ้งซ่อม MO รายเดือน' });
   const ExcelJS = (await import('exceljs')).default;   // lazy — ก้อน ~960KB ใช้ร่วมกับ export ตัวอื่น
@@ -146,7 +149,7 @@ export async function exportMoExcel({
     'ประเภทงานซ่อม', 'กลุ่มปัญหา', 'อาการ (หัวข้อย่อย)', 'รายละเอียดที่คนแจ้งพิมพ์',
     'คอมเมนต์เพิ่มเติม (ใครพูด · เมื่อไหร่)', 'จำนวนคอมเมนต์',
     'เวลาแจ้ง', 'เวลารับงาน', 'เวลาซ่อมเสร็จ', 'ตอบสนอง (นาที)', 'เวลาซ่อม (นาที)',
-    'เกี่ยวคุณภาพ', 'ชี้เป้าได้?'];
+    'เกี่ยวคุณภาพ', 'ชี้เป้าได้?', 'ช่างที่มอบหมาย', 'เส้นทางงานซ่อม', 'เลข PR'];
   const C = (label) => colRef(H1.indexOf(label));   // คอลัมน์อ้างด้วย "ชื่อหัว" — เพิ่มคอลัมน์แล้วไม่ต้องไล่ขยับตัวอักษร
   mergeSafe(ws1, `A1:${colRef(H1.length - 1)}1`);
   put(ws1, 'A1', `${df.title || 'สรุปใบแจ้งซ่อม MO รายเดือน'} · ช่วง ${from} → ${to} · ${total} ใบ`,
@@ -157,7 +160,7 @@ export async function exportMoExcel({
     mergeSafe(ws1, `A3:${colRef(H1.length - 1)}3`);
     put(ws1, 'A3', `ตัวกรองที่เปิดอยู่ตอน export: ${filterNote}`, { size: 9, align: 'center', border: false, color: 'FF808080' });
   }
-  head(ws1, 4, H1, [11, 21, 17, 9, 15, 16, 13, 16, 15, 22, 26, 34, 42, 10, 16, 16, 16, 13, 13, 11, 10]);
+  head(ws1, 4, H1, [11, 21, 17, 9, 15, 16, 13, 16, 15, 22, 26, 34, 42, 10, 16, 16, 16, 13, 13, 11, 10, 22, 22, 26]);
 
   enriched.forEach((r, i) => {
     const n = 5 + i;
@@ -190,6 +193,9 @@ export async function exportMoExcel({
     put(ws1, `${C('ชี้เป้าได้?')}${n}`, r.planned ? 'ตามแผน' : r.vague ? 'ไม่ได้' : 'ได้', {
       align: 'center', size: 9.5, fill: r.vague ? 'FFFFF2CC' : undefined,
     });
+    put(ws1, `${C('ช่างที่มอบหมาย')}${n}`, joinTechs(assignedTechsOf(o)) || DASH, { size: 9, wrap: true });
+    put(ws1, `${C('เส้นทางงานซ่อม')}${n}`, repairPathMeta(o.repair_path)?.label || DASH, { size: 9 });
+    put(ws1, `${C('เลข PR')}${n}`, prsError ? '⚠ โหลดเลข PR ไม่สำเร็จ' : (prNumbersOf(o, prsBy[o.id] || []).join(', ') || ''), { size: 9, wrap: true });
   });
   if (!total) {
     mergeSafe(ws1, `A5:${colRef(H1.length - 1)}5`);

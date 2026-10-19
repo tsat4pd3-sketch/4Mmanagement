@@ -81,6 +81,7 @@ import { uploadOpts } from '../utils/storageUpload';
 import { acceptImageFile } from '../utils/acceptImageFile';
 import { DeleteButton } from '../components/IconButton';
 import { MtnPrPanel, MtnGlMaster, MtnPrSeqMaster } from '../components/MtnPurchase';
+import MachineRepairHistory from '../components/MachineRepairHistory';
 import { prPlacement, assignedTechsOf, joinTechs } from '../utils/mtnPurchase';
 /* ── helpers ─────────────────────────────────────────────── */
 // แปลง URL โลโก้ (รวมโลโก้ที่ admin อัปโหลดใน /doc-forms) เป็น dataURL เพื่อฝังในหน้าพิมพ์
@@ -172,6 +173,8 @@ const MO_LIST_COLS = [
      egress: 6 คอลัมน์เวลา (ส่วนใหญ่ null) ~25-50 ไบต์/ใบ ⇒ ≤ ~0.3 MB ที่เพดาน 1000 ใบ —
      ยอมจ่ายเพราะไม่ต้องยิงคิวรีชุดที่ 2 และทุกตัวถูกใช้จริง (ห้ามเติมคอลัมน์ที่ไม่มีคนอ่าน) */
   'repair_start_at', 'check_at', 'qa_at', 'ho_at', 'returned_at', 'vendor_sent_at',
+  // 🛒 Excel export (14/10): ช่างที่มอบหมาย (หลายคน) · เส้นทางงานซ่อม · เลข PR ที่กรอกมือ — ข้อความสั้น ส่วนใหญ่ว่าง
+  'assigned_to', 'assigned_techs', 'repair_path', 'pr_no',
 ].join(',');
 const SCOPE_OPTS = [{ v: 'in_line', t: 'ซ่อมในไลน์' }, { v: 'off_line', t: 'ซ่อมนอกไลน์' }];
 const CHECK_RESULTS = ['ตรวจสอบผ่าน', 'ตรวจสอบไม่ผ่าน'];
@@ -626,12 +629,17 @@ export default function MtnRepair() {
          ผ่าน loadMoCommentsFor (chunk .in() ให้เอง) · 🔴 error ไม่กลืน ส่งต่อให้ไฟล์เขียนกำกับ */
       const { loadMoCommentsFor } = await import('../lib/moComments');
       const cmt = await loadMoCommentsFor(shown.map(o => o.id));
+      // 🛒 เลข PR ของทุกใบ (14/10) — error ไม่กลืน ส่งต่อให้ไฟล์เขียนกำกับ
+      const { loadPrsForOrders } = await import('../components/MtnPurchase');
+      const prs = await loadPrsForOrders(shown.map(o => o.id));
       const r = await exportMoExcel({
         rows: shown, from: tr.from, to: tr.to,
         dateOf: (o) => o.work_date || workDateOfTime(o.report_at),
         isOpen: isMoOpen, teamName: deptNameOf, statusLabel: moStatusLabel, filterNote: note,
         commentsBy: cmt.byOrder, commentsError: cmt.error,
+        prsBy: prs.byOrder, prsError: prs.error,
       });
+      if (prs.error) toast.error('โหลดเลข PR ไม่ครบ — คอลัมน์เลข PR ในไฟล์เขียนกำกับไว้แล้ว');
       if (cmt.error) toast.error('โหลดคอมเมนต์ไม่ครบ — คอลัมน์คอมเมนต์ในไฟล์ใช้อ้างอิงไม่ได้ (เขียนกำกับไว้ในไฟล์แล้ว)');
       /* 🔴 บอกความครบถ้วนตอนโหลดเสร็จด้วย — คนมักเอาไฟล์ไปใช้เลยโดยไม่อ่านหัวชีท */
       toast.success(`ออกไฟล์แล้ว ${r.rows} ใบ${r.vague ? ` · ในนั้นชี้เป้าไม่ได้ ${r.vague} ใบ (ดูชีทพาเรโต)` : ''}`);
@@ -1812,6 +1820,8 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
   const { mtnTeams: myTeams, sections: mySections, position: myPosition } = useContext(UserContext);
   const actorSide = actorSideOf({ mtnTeams: myTeams, role, sections: mySections, isAm: isAmTeam });
   const posRank = positionRank(myPosition);
+  const [showHist, setShowHist] = useState(false);   // 📜 ประวัติการซ่อมของเครื่องในใบนี้ (19/10)
+  const navHist = useNavigate();
 
   const o = order;
   const m = statusMetaOf(o);
@@ -2528,6 +2538,7 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
               </span>
             : <span />}
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {o.machine_no && <button onClick={() => setShowHist(true)} style={btnGhost} title="ใบแจ้งซ่อมทุกใบของเครื่องนี้ · ค่าใช้จ่าย · PR · เวลาซ่อม">📜 ประวัติเครื่องนี้</button>}
           {can('improvements', 'manage', role) && <button onClick={() => onOpenImprovement(o)} style={{ ...btnGhost, ...(repeatIssue ? { color: '#a78bfa', borderColor: '#7c6cf0' } : {}) }}>💡 เปิดโปรเจคปรับปรุง</button>}
           <button onClick={async () => {
             const dept = o.mtn_dept || deptForItem(o.item_type);
@@ -2574,6 +2585,8 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
           {next && canEditStep(next.step) && <button type="button" onClick={() => onStep(next.step, false)}>{next.label}</button>}
         </div>
       )}
+      {showHist && <MachineRepairHistory machineNo={o.machine_no} onClose={() => setShowHist(false)}
+        onOpenOrder={(x) => { if (x.id === o.id) { setShowHist(false); return; } setShowHist(false); onClose(); navHist(`/mtn-repair?mo=${x.id}`); }} />}
     </ModalShell>
   );
 }
