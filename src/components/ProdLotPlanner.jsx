@@ -25,8 +25,8 @@
 import { useState, useEffect, useMemo, useCallback, useContext, useRef } from 'react';
 import { supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
-import { canSeeded } from '../utils/permissions';
-import { checkWrite } from '../utils/dbWrite';
+import { can, canSeeded } from '../utils/permissions';
+import { checkWrite, checkWriteRows } from '../utils/dbWrite';
 import { toast } from '../components/Toast';
 import { fetchByIds } from '../utils/fetchByIds';
 import { snapMachineNo } from '../utils/machineNo';
@@ -45,7 +45,8 @@ import Segmented from './Segmented';
 import MatLabel from './MatLabel';
 import MachineSelect from './MachineSelect';
 import TrialBookingModal from './TrialBookingModal';
-import { dieMakesMat } from '../utils/dieSetMats'; // 🔨 ชุดแม่พิมพ์ทำได้ 2 MAT — ห้ามเทียบ mat_no ตรงๆ
+/* 🔨 ชุดแม่พิมพ์ทำได้ 2 MAT — ห้ามเทียบ mat_no ตรงๆ · กอง "ยังไม่ผูก MAT" ต้องเลือกได้ (เหตุผลในไฟล์นั้น) */
+import { dieSetMats, dieSetsForMat, matSlotFor } from '../utils/dieSetMats';
 
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: 12, boxShadow: 'var(--shadow-sm)' };
 const th = { padding: '5px 8px', borderBottom: '1px solid var(--border)', fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' };
@@ -57,6 +58,60 @@ const fmtDayTime = (ms) => {
   return `${d.getDate()}/${d.getMonth() + 1} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 };
 const todayStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+
+/* 🔗 "ชุดนี้ยังไม่ผูก MAT — ผูกให้เลย" (2026-10-19) ─────────────────────────────────────────
+   ปัญหาจริงที่วัดได้: `die_sets.mat_no` ผูกไว้ **1 จาก 92 ชุด** และ 5 วันหลังชุดที่ขาดขึ้นลิสต์
+   "ต้องแก้" ที่หน้าทะเบียนแล้ว **ยังไม่มีใครกรอกเพิ่มสักชุด** — เพราะคนที่รู้ว่า "ล็อตนี้ใช้ชุดไหน"
+   คือคนวางแผนที่กำลังจัดคิวอยู่หน้านี้ ไม่ใช่คนที่เปิดหน้าทะเบียน
+   ⇒ ให้ผูกได้จากจุดที่เขา**เพิ่งตัดสินใจไปแล้ว** แล้วทะเบียนจะเต็มเองจากการใช้งานจริง
+
+   🔴 **คนกด ระบบไม่กดให้** (`addLot` เลือกเองได้เฉพาะตอนทะเบียนชี้ชัดตัวเดียว · ห้ามแตะกอง unlinked)
+   🔴 ผูกได้เฉพาะชุดที่ **ยังไม่มี MAT เลย** — ทะเบียนบอกว่าทำพาร์ทอื่นอยู่ = เขียนเตือน ห้ามเติมเป็น
+      `mat_no_2` ให้เอง (ช่องที่ 2 = "ปั๊มทีเดียวได้ 2 พาร์ท" = งานคู่ ⇒ ต้องผ่านตาคนที่ทะเบียน)
+   🔴 สิทธิ์ = `machines:edit` (เจ้าของทะเบียนแม่พิมพ์) **ไม่ใช่** `production_plan:write` ของหน้านี้
+   🔴 เขียนแบบ compare-and-swap (คาดค่าช่องเดิม) + **นับแถว** — RLS ปฏิเสธ UPDATE = 0 แถว ไม่มี error */
+function DieMatLinkNote({ lot, dies, role, mayWrite, onDone }) {
+  const [busy, setBusy] = useState(false);
+  const set = lot?.die_no ? (dies || []).find(d => d.set_code === lot.die_no) : null;
+  const mats = set ? dieSetMats(set) : [];
+  const slot = set ? matSlotFor(set, lot?.mat_no) : null;
+  if (!set || !lot?.mat_no) return null;
+  if (mats.includes(String(lot.mat_no).trim().toUpperCase())) return null;   // ผูกไว้แล้ว
+  /* ทะเบียนบอกว่าชุดนี้ทำพาร์ทอื่น — อาจเป็นเรื่องจริง (gang die) หรือเลือกผิดชุด · คนตัดสิน */
+  if (mats.length) return (
+    <div style={{ fontSize: 11, color: '#f59e0b' }}>
+      ⚠ ทะเบียนบอกว่าชุดนี้ทำ {mats.join(' + ')} — ถ้าปั๊มคู่กับพาร์ทนี้จริง เพิ่มช่องที่ 2 ที่ /equipment?tab=die
+    </div>
+  );
+  if (slot !== 'mat_no' || !mayWrite) return null;
+
+  async function link() {
+    if (!window.confirm(`ผูก MAT ${lot.mat_no} เข้ากับชุดแม่พิมพ์ ${set.set_code}?\n\n`
+      + 'ทะเบียนแม่พิมพ์จะจำว่าชุดนี้ทำพาร์ทนี้ ⇒ ล็อตถัดไปของพาร์ทนี้ระบบเลือกชุดให้เอง\n'
+      + 'แก้ได้ภายหลังที่ /equipment?tab=die')) return;
+    setBusy(true);
+    try {
+      /* คาดค่าเดิมไว้ด้วย — ระหว่างนี้มีคนกรอกช่องนี้ไปแล้ว = 0 แถว ไม่ทับของเขา */
+      const q = supabaseDR.from('die_sets').update({ mat_no: String(lot.mat_no).trim() }).eq('id', set.id);
+      const cas = set.mat_no == null ? q.is('mat_no', null) : q.eq('mat_no', set.mat_no);
+      if (!checkWriteRows(await cas.select('id'), `ผูก MAT กับชุด ${set.set_code}`,
+        { zeroMsg: `ช่อง MAT ของชุด ${set.set_code} ถูกกรอกไปแล้ว หรือบัญชีคุณไม่มีสิทธิ์ — โหลดใหม่แล้วดูอีกครั้ง` })) return;
+      toast.success(`ผูก ${lot.mat_no} → ${set.set_code} แล้ว`);
+      await onDone?.();
+    } finally { setBusy(false); }
+  }
+
+  if (!can('machines', 'edit', role)) return (
+    <div style={{ fontSize: 11, color: 'var(--muted)' }}>ยังไม่ผูก MAT — ผูกได้ที่ /equipment?tab=die</div>
+  );
+  return (
+    <button type="button" onClick={link} disabled={busy}
+      style={{ marginTop: 2, fontSize: 11, padding: '1px 6px', borderRadius: 6, cursor: busy ? 'default' : 'pointer',
+        background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--accent)' }}>
+      {busy ? 'กำลังผูก…' : `🔗 ผูก MAT นี้กับ ${set.set_code}`}
+    </button>
+  );
+}
 
 export default function ProdLotPlanner({
   lines = [], demandByDate = {}, carry = {}, ctOf = () => 0, pairOf = () => null,
@@ -160,7 +215,11 @@ export default function ProdLotPlanner({
   const dieOf = useCallback((lot) => (lot?.die_no ? dieByCode[lot.die_no] || null : null), [dieByCode]);
   /* 🔨 ชุดหนึ่งปั๊มได้ถึง 2 MAT (งานคู่ RH/LH) — เทียบ `d.mat_no === mat` ตรงๆ = ล็อตอีกฝั่งหาแม่พิมพ์ไม่เจอ
      ⇒ ไม่รู้ die_height_mm ⇒ pressSetup คืน unknown_height = คิดเวลาเปลี่ยนรุ่นไม่ได้ (14/10 · มีด่าน) */
-  const dieOptsForMat = useCallback((mat) => dies.filter(d => dieMakesMat(d, mat)), [dies]);
+  /* 🔴 **2 กอง ห้ามยุบรวม** — `linked` ทะเบียนยืนยันแล้ว · `unlinked` ยังไม่ผูก MAT (ให้คนเลือกได้)
+     วัด 19/10: `die_sets.mat_no` ผูกไว้ **1 จาก 92 ชุด** ⇒ ยื่นแต่ `linked` = ลิสต์ว่างแทบทุกพาร์ท
+     คนที่รู้ว่าใช้ชุดไหนก็เลือกไม่ได้ = ทางตัน ⇒ `die_no` ว่างทุกใบ (วัดจริง **0 จาก 8 ใบ**)
+     ⇒ ไม่รู้ `die_height_mm` ⇒ `pressSetup` คืน unknown = **เวลาเปลี่ยนรุ่นคิดไม่ได้ทั้งแผน** */
+  const dieOptsForMat = useCallback((mat) => dieSetsForMat(dies, mat), [dies]);
   /* กฎเวลาเปลี่ยนรุ่น — เครื่อง ชนะ ไลน์ ชนะ global (ตัวเลือกกฎอยู่ที่ pressSetup ที่เดียว) */
   const rule = useMemo(() => resolveSetupRule(rules, { lineName }), [rules, lineName]);
 
@@ -218,7 +277,11 @@ export default function ProdLotPlanner({
   /* ── แก้แผนในหน่วยความจำก่อน แล้วค่อยกดบันทึกทีเดียว ────────────────────────── */
   const patch = (id, upd) => { setLots(ls => ls.map(l => (l.id === id ? { ...l, ...upd } : l))); setDirty(true); };
   const addLot = (mat, qty) => {
-    const die = dies.find(d => dieMakesMat(d, mat));
+    /* 🔴 เลือกให้เองได้เฉพาะตอน "ทะเบียนชี้ชัดตัวเดียว" — 2 ชุดขึ้นไปทำ MAT เดียวกันมีจริง
+       (พาร์ทเดียวลงทะเบียนแยกตามเครื่องปั๊ม วัด 14/10 เจอ 10 กลุ่ม) ⇒ หยิบตัวแรก = เดาความสูงผิด
+       🔴 และ **ห้ามหยิบจากกอง unlinked ให้เอง** — ยังไม่มีใครยืนยันว่าชุดนั้นทำพาร์ทนี้ */
+    const linked = dieSetsForMat(dies, mat).linked;
+    const die = linked.length === 1 ? linked[0] : null;
     setLots(ls => resequence([...ls, {
       id: `new-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, _new: true,
       work_date: date, shift, line_name: lineName, seq: ls.length + 1,
@@ -539,14 +602,30 @@ export default function ProdLotPlanner({
                       ) : (l.machine_no || <span style={{ color: 'var(--muted)' }}>—</span>)}
                     </td>
                     <td style={td}>
-                      {mayWrite && l.status === 'planned' ? (
-                        <select value={l.die_no || ''} onChange={e => patch(l.id, { die_no: e.target.value || null })} style={{ fontSize: 12, maxWidth: 170 }}>
-                          <option value="">— ไม่ระบุ —</option>
-                          {dieOptsForMat(l.mat_no).map(d => <option key={d.id} value={d.set_code}>{d.set_code}</option>)}
-                        </select>
-                      ) : (l.die_no || <span style={{ color: 'var(--muted)' }}>—</span>)}
+                      {mayWrite && l.status === 'planned' ? (() => {
+                        const opt = dieOptsForMat(l.mat_no);
+                        return (
+                          <select value={l.die_no || ''} onChange={e => patch(l.id, { die_no: e.target.value || null })} style={{ fontSize: 12, maxWidth: 170 }}>
+                            <option value="">— ไม่ระบุ —</option>
+                            {opt.linked.length > 0 && (
+                              <optgroup label={`ทะเบียนบอกว่าทำพาร์ทนี้ (${opt.linked.length})`}>
+                                {opt.linked.map(d => <option key={d.id} value={d.set_code}>{d.set_code}</option>)}
+                              </optgroup>
+                            )}
+                            {/* 🔴 "ยังไม่ผูก MAT" = ยังไม่รู้ **ไม่ใช่ "ไม่ใช่ตัวนี้"** — ซ่อนกองนี้ = คนที่รู้ก็เลือกไม่ได้ */}
+                            {opt.unlinked.length > 0 && (
+                              <optgroup label={`ยังไม่ผูก MAT — ระบบไม่ได้ยืนยัน (${opt.unlinked.length})`}>
+                                {opt.unlinked.map(d => (
+                                  <option key={d.id} value={d.set_code}>{d.set_code}{d.part_name ? ` · ${d.part_name}` : ''}</option>
+                                ))}
+                              </optgroup>
+                            )}
+                          </select>
+                        );
+                      })() : (l.die_no || <span style={{ color: 'var(--muted)' }}>—</span>)}
                       {die && <div style={{ fontSize: 11, color: die.die_height_mm == null ? '#f59e0b' : 'var(--muted)' }}>
                         {die.die_height_mm == null ? '⚠ ไม่รู้ความสูง' : `สูง ${die.die_height_mm} มม.`}</div>}
+                      <DieMatLinkNote lot={l} dies={dies} role={role} mayWrite={mayWrite} onDone={load} />
                     </td>
                     <td style={td}>
                       {l.status === 'cancelled' ? <span style={{ color: '#ef4444' }}>✕ ยกเลิก</span>
