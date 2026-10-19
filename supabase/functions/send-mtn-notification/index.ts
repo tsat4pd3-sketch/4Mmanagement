@@ -194,11 +194,38 @@ async function usersByRule(event: string, roles: string[], lineName?: string | n
     const section = await sectionOfLine(lineName);
     const ids = await recipientsRpc(event, section, team, line);
     if (ids.length || !team) return ids;
-    return await recipientsRpc(event, section, null, line);   // กรองด้วยทีมแล้วเหลือ 0 คน → ถอยไปชุดไม่กรองทีม
+    /* 🔴 กรองด้วยทีมแล้วเหลือ 0 คน → ยังต้องถอย (ห้ามล้มเหลวเงียบ) **แต่ห้ามถอยไปทั้งโรงงาน**
+       ที่มา (คำสั่ง user 2026-10-18 · *"ยังเห็นข้ามแผนกช่าง … อยากให้แยกชัดเจนไปเลย"*):
+       ทางถอยเดิมเรียก RPC ใหม่โดยไม่ส่ง p_team = **ปลดแกนทีมทิ้งทั้งก้อน** ⇒ ช่าง JIG/DIE
+       ได้ใบของทีม MTN เต็มๆ · เคสจริงที่วัดได้: ใบ O-MAI-PM-070926-0005 (ทีม maintenance ·
+       ไม่ระบุส่วนงาน) เด้งถึง ผอ.ฝ่ายผลิตที่อยู่ทีม production
+       ⇒ ถอยได้ แต่ **ตัดช่างทีมอื่นออกเสมอ** — คนที่ไม่ใช่ช่าง (ผลิต/QA/ผจก.) ยังได้ตามเดิม */
+    return await dropOtherTeamTechs(await recipientsRpc(event, section, null, line), team);
   } catch (e) {
     console.error('notify_recipients', e);
-    return await usersByRole(roles);   // RPC ล่ม = ถอยไปตาม role ห้ามเงียบ
+    return await dropOtherTeamTechs(await usersByRole(roles), team);   // RPC ล่ม = ถอยตาม role แต่ยังแยกทีม
   }
+}
+
+/* ตัด "ช่างของทีมอื่น" ออกจากรายชื่อผู้รับ — ใช้กับทุกทางถอยที่ไม่ได้กรองทีมมาจาก SQL
+   กติกา: มี `mtn_teams` และไม่มีทีมที่รับผิดชอบใบนี้ = ช่างทีมอื่น → ตัด
+          ไม่มี `mtn_teams` เลย = ไม่ใช่ช่าง (ผลิต/QA/ธุรการ/ผจก.) → **คงไว้** (กติกาเดียวกับ SQL)
+   🔴 โหลดทั้งตาราง (94 แถว) แทน `.in(ids)` — ids ยาว = URL เกินเพดาน proxy แล้วคืนค่าว่างเงียบ
+      (กฎเหล็ก DB ข้อ 5) · อ่านไม่ได้ = คืนรายชื่อเดิม ดีกว่าไม่มีใครได้รับ */
+async function dropOtherTeamTechs(ids: string[], team: string | null): Promise<string[]> {
+  const want = teamKey(team);
+  if (!ids.length || !want) return ids;
+  try {
+    const { data, error } = await supabase.from('profiles').select('id, mtn_teams');
+    if (error || !data) return ids;
+    const otherTeam = new Set(data.filter((p) => {
+      const t = (p.mtn_teams as string[] | null) ?? [];
+      return t.length > 0 && !t.some((x) => teamKey(x) === want);
+    }).map((p) => p.id as string));
+    const kept = ids.filter((id) => !otherTeam.has(id));
+    if (kept.length !== ids.length) console.log(`[team-split] ${want} ตัดช่างทีมอื่น ${ids.length - kept.length} คน`);
+    return kept;
+  } catch { return ids; }
 }
 async function usersInTeam(dept?: string | null): Promise<string[]> {
   const want = teamKey(dept);
@@ -297,7 +324,11 @@ async function notifyMoInApp(routes: Record<string, Route>, event: string, v: Re
        ⇒ ใบเดินไปโดยไม่มีใครรู้ · ถอยไปยิงตามทะเบียนเหมือนพฤติกรรมเดิม */
     let ids = owners;
     if (castAlways || !owners.length) {
-      const byRole = await usersByRule(event, roles, v.line_name, aud.team ? dept : null);
+      /* 🔴 ส่ง `dept` **ทุกขั้น** ไม่ใช่เฉพาะขั้นที่ `aud.team` (แก้ 2026-10-18 · คำสั่ง user)
+         `aud.team` = "ยิงหาช่างทั้งทีมด้วยไหม" (ตัว *เพิ่ม*) — คนละคำถามกับ
+         "ตัดช่างทีมอื่นออกไหม" (ตัว *ตัด*) · เดิมผูกไว้ด้วยกัน ⇒ ขั้น 2-8 (aud.team=false)
+         ไม่เคยกรองทีมเลย ช่าง JIG/DIE จึงได้ใบของทีม MTN ครบทุกขั้นตามแกน role×ส่วนงาน */
+      const byRole = await usersByRule(event, roles, v.line_name, dept);
       ids = [...new Set([...owners, ...byRole])].filter(Boolean);
       if (!castAlways) console.log(`[mo-audience] ${event} ใบไม่มี uid -> ถอยไปยิงตามทะเบียน ${ids.length} คน`);
     }
