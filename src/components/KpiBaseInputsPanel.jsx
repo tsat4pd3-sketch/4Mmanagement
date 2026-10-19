@@ -136,6 +136,14 @@ export default function KpiBaseInputsPanel({ year, scope, org, rows = [], base: 
         <span style={{ marginLeft: 8, fontSize: 11.5, fontWeight: 500, color: 'var(--muted)' }}>
           ขอบเขต: {label} · {rows.length} ค่าในปี {year + 543}
         </span>
+        {/* 📥 อยู่บนหัวแผง (19/10 · user: "หาที่อัพไฟล์ไม่เจอ") — แผงพับอยู่ก็ยังเห็น · กันไม่ให้คลิกไปสลับพับ/กาง */}
+        {canManage && (
+          <button type="button" onClick={e => { e.preventDefault(); e.stopPropagation(); setImporting(true); }}
+            title="อัพโหลด monthly report ของบัญชี (.xlsx/.xlsb) แล้วให้ระบบอ่านแถว/เดือนให้ ตรวจก่อนบันทึก"
+            style={{ marginLeft: 10, padding: '4px 12px', borderRadius: 8, border: '1px solid var(--accent)', background: 'var(--accent)', color: 'var(--accent-ink)', cursor: 'pointer', fontSize: 12, fontWeight: 700, verticalAlign: 'middle' }}>
+            📥 นำเข้าจาก Excel บัญชี
+          </button>
+        )}
       </summary>
       <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap', marginTop: 6 }}>
         <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.6, flex: 1, minWidth: 280 }}>
@@ -143,12 +151,6 @@ export default function KpiBaseInputsPanel({ year, scope, org, rows = [], base: 
           ช่องว่าง = ยังไม่มีตัวเลข (ไม่ใช่ 0) · เดือนที่ขาดตัวแปรใดตัวแปรหนึ่ง แถว KPI จะเขียนบอกว่าขาดอะไร ·
           <b>≈ จาง = กำลังคนจากทะเบียนพนักงาน</b> (ยังไม่มีใครกรอก · ทะเบียนอาจไม่ครบ กรอกทับได้)
         </div>
-        {canManage && (
-          <button onClick={() => setImporting(true)} title="อัพโหลด monthly report ของบัญชี (.xlsx) แล้วให้ระบบอ่านแถว/เดือนให้ ตรวจก่อนบันทึก"
-            style={{ padding: '5px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', fontSize: 12, fontWeight: 700 }}>
-            📥 นำเข้าจาก Excel บัญชี
-          </button>
-        )}
       </div>
       {importing && (
         <KpiBaseImportModal year={year} unitLabel={label} unitSk={mySk} base={base} canPlant={plant && canManage} canUnit={canManage}
