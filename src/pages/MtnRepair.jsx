@@ -57,6 +57,8 @@ import { shiftOfTime, workDateOfTime } from '../utils/workDate';
 import { ALL, SHIFT_OPTIONS, allOf } from '../utils/filterLabels';
 /* ป้ายถังขยะของ taxonomy — ของกลาง ห้ามเขียนสตริง "อื่นๆ" เองในหน้า (ดู unclassified.js) */
 import { isVague, UNGROUPED_LABEL } from '../utils/unclassified';
+import { suggestItemTypeFromHistory } from '../utils/mtnItemSuggest';
+import { machineKey } from '../utils/machineNo';
 /* 🔴 เกณฑ์ "รายละเอียดชัดพอไหม" ของใบแจ้งซ่อม — ห้าม hardcode ความยาว/ข้อความในหน้า */
 import { moNoteCheck, MO_NOTE_HINT } from '../utils/moNoteQuality';
 import useTabParam, { useMergeParams } from '../utils/useTabParam';
@@ -1095,6 +1097,48 @@ function ReportModal({ lines, machines, orders = [], itemTypes, problemTypes, re
   const teamItemTypes = useMemo(() => visibleForTeam(itemTypes, f.mtn_dept), [itemTypes, f.mtn_dept]);
   const teamProblemTypes = useMemo(() => visibleForTeam(problemTypes, f.mtn_dept), [problemTypes, f.mtn_dept]);
 
+  /* 🔗 เลือกเครื่องแล้ว → เติม "ชนิดอุปกรณ์" จากประวัติใบ MO ของเครื่องนั้น (2026-10-19 · คำสั่ง user)
+     กฎตัดสินอยู่ `utils/mtnItemSuggest.js` (ชนะขาดเท่านั้น · ตัด "อื่นๆ" · เฉพาะชื่อที่ทีมนี้เลือกได้)
+     · เติมเฉพาะช่องว่าง / ค่าที่ระบบเติมเอง (autoHistRef) — ค่าที่คนเลือกไม่แตะ
+     · แม่พิมพ์ไม่ผ่านทางนี้ (มีทะเบียนชี้ชนิดอยู่แล้ว — dieDerived) · เลขเครื่องที่ไม่อยู่ในทะเบียน = ไม่ค้น
+     · โหลดไม่ได้ = ไม่เติม (ช่องยังเลือกเองได้ตามเดิม) แต่ขึ้นบรรทัดบอก ไม่เงียบ */
+  const [histSug, setHistSug] = useState({ key: '', rows: null, error: false });
+  const histKey = !wantDie && f.machine_no && machines.some(m => m.machine_no === f.machine_no) ? f.machine_no : '';
+  useEffect(() => {
+    if (!histKey) return undefined;
+    let alive = true;
+    (async () => {
+      const { data, error } = await supabaseDR.rpc('mtn_orders_by_machine', { p_machine_no: histKey, p_limit: 300 })
+        .select('machine_no, item_type, status');
+      if (!alive) return;
+      const k = machineKey(histKey);
+      setHistSug({ key: histKey, rows: error ? null : (data || []).filter(o => machineKey(o.machine_no) === k), error: !!error });
+    })();
+    return () => { alive = false; };
+  }, [histKey]);
+  const histItem = useMemo(() => {
+    if (!histKey || histSug.key !== histKey || !histSug.rows) return null;
+    const allowed = teamItemTypes.map(t => t.name).filter(n => !/^DIE\b/i.test(n || ''));
+    return suggestItemTypeFromHistory(histSug.rows, { allowed });
+  }, [histKey, histSug, teamItemTypes]);
+  const autoHistRef = useRef('');
+  useEffect(() => {
+    if (histKey && histSug.key !== histKey) return;      // ยังโหลดไม่เสร็จ — อย่าล้างค่าทิ้งระหว่างรอ
+    const it = histItem?.itemType || '';
+    setF(p => {
+      if (it) {
+        if (p.item_type === it) return p;
+        if (p.item_type && p.item_type !== autoHistRef.current) return p;   // คนเลือกเองแล้ว — ไม่ทับ
+        autoHistRef.current = it;
+        return { ...p, item_type: it, mtn_dept: p.mtn_dept || deptForItem(it, itemTypes) };
+      }
+      if (autoHistRef.current && p.item_type === autoHistRef.current) { autoHistRef.current = ''; return { ...p, item_type: '' }; }
+      return p;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [histItem?.itemType, histKey, histSug.key]);
+  const histItemAuto = !!histItem?.itemType && f.item_type === histItem.itemType && autoHistRef.current === histItem.itemType;
+
   /* ── ลักษณะปัญหา 2 ชั้น: กลุ่มใหญ่ → หัวข้อย่อย (feedback ทีมงาน 2026-08-11) ──
      เดิม dropdown เดียว 29 ตัว "พนักงานเลือกค่อนข้างลำบาก"
      ⚠️ ต้องมีช่องค้นหาข้ามชั้นด้วย — ช่างที่แจ้งทุกวันรู้อยู่แล้วว่าจะเลือกอะไร
@@ -1249,6 +1293,12 @@ function ReportModal({ lines, machines, orders = [], itemTypes, problemTypes, re
               return [...g.entries()].sort((a, b) => (a[0].startsWith('🌐') ? 1 : b[0].startsWith('🌐') ? -1 : a[0].localeCompare(b[0], 'th')))
                 .map(([label, items]) => <optgroup key={label} label={label}>{items.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}</optgroup>);
             })()}</select>
+          {histItemAuto && (
+            <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>🔗 เติมจากประวัติเครื่อง {f.machine_no} — ใบ MO ที่ผ่านมาเลือกชนิดนี้ {histItem.votes}/{histItem.counted} ใบ · ไม่ใช่? เลือกใหม่ได้เลย</div>
+          )}
+          {histKey && histSug.key === histKey && histSug.error && !f.item_type && (
+            <div style={{ fontSize: 11.5, color: '#f59e0b', marginTop: 3 }}>⚠ โหลดประวัติเครื่อง {f.machine_no} ไม่ได้ — ระบบเติมชนิดให้ไม่ได้ เลือกเองไปก่อน</div>
+          )}
           {wantDie && !f.machine_no && (
             <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>🔨 งานแม่พิมพ์: เลือกหมายเลขแม่พิมพ์ด้านล่างก่อนได้เลย — ระบบเติมชนิดจากทะเบียนให้เอง</div>
           )}
