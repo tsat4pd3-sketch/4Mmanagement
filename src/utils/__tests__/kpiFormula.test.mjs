@@ -68,3 +68,44 @@ test('formulaOfDef: provider ไม่ใช่ formula / สูตรไม่�
   assert.equal(formulaOfDef(null), null);
   assert.equal(applyFormulaEntries([dlohDef('section', 'PD1')], { x: { 1: 1 } }, null, org).entries.x[1], 1);
 });
+
+/* ── 19/10 ไฟล์บัญชีจริง + ช่วงเปลี่ยนผ่าน ─────────────────────────────────────────────────────────────── */
+import { formulaMonthMode } from '../kpiFormula.js';
+
+test('sale_per_head = Σ Total Sales ม.ค.→เดือนนี้ ÷ กำลังคน ÷ 1e6 (ใบ 5.Manpower: เม.ย. 706.43 ÷ 392 = 1.802) · ขาดเดือนก่อนหน้า = คำนวณไม่ได้', () => {
+  const mb = (x) => x * 1_000_000;
+  const r = [row('plant', '', 'sale_total', 1, mb(165.71)), row('plant', '', 'sale_total', 2, mb(181.02)), row('plant', '', 'sale_total', 3, mb(227.12)), row('plant', '', 'sale_total', 4, mb(132.58)),
+    row('plant', '', 'manpower', 1, 384), row('plant', '', 'manpower', 4, 392),
+    row('plant', '', 'sale_total', 6, mb(100)), row('plant', '', 'manpower', 6, 390)];   // พ.ค. ไม่มียอดขาย ⇒ มิ.ย. สะสมไม่ได้
+  const base = buildBaseIndex(r);
+  const def = { id: 'sph', name: 'Annual Sale Per Head', provider: 'formula', provider_config: { formula: 'sale_per_head' }, scope_kind: 'plant', scope_value: null, unit: 'MB/Head', decimals: 3 };
+  const fm = formulaMonths({ def, scope: PLANT, base });
+  assert.ok(Math.abs(fm.months[1] - 165.71 / 384) < 1e-6);
+  assert.ok(Math.abs(fm.months[4] - 706.43 / 392) < 1e-6, 'ตัวตั้งสะสม 4 เดือน = 706.43 MB');
+  assert.equal(fm.inputs[4].sale_total, mb(706.43));
+  assert.equal(fm.months[2], null, 'ไม่มีกำลังคน ก.พ.');
+  assert.equal(fm.months[6], null, 'พ.ค. ไม่มียอดขาย ⇒ ยอดสะสม มิ.ย. ไม่ครบ ห้ามรวมเฉพาะที่มี');
+  assert.deepEqual(fm.missing[6].map(x => x.key), ['sale_total']);
+});
+
+test('ตัวแปรประมาณจากทะเบียน (auto) ไม่ทับค่าที่กรอกไว้ — เติมได้แค่ช่องว่าง · formulaMonthMode บอกว่าช่องไหนยังกรอกมือได้', () => {
+  const r = [row('plant', '', 'sale_total', 1, 160_000_000), row('plant', '', 'sale_total', 2, 160_000_000)];
+  const auto = (sk, v, m) => (v === 'manpower' && sk === 'section:PD1' ? 32 : null);   // ทะเบียน PD1 มี 32 คน (ของจริง ~300)
+  const base = buildBaseIndex(r, { auto });
+  const def = { id: 'sph1', name: 'Annual Sale Per Head', provider: 'formula', provider_config: { formula: 'sale_per_head' }, scope_kind: 'section', scope_value: 'PD1', unit: 'MB/Head', decimals: 3 };
+  const entries = { sph1: { 1: 0.52 } };   // ม.ค. ทีมกรอกค่าจริงไว้ · ก.พ. ว่าง
+  const { entries: e2, info } = applyFormulaEntries([def], entries, base, org);
+  assert.equal(e2.sph1[1], 0.52, 'ม.ค. ค่ากรอกมือชนะสูตรที่ใช้กำลังคนประมาณ');
+  assert.ok(Math.abs(e2.sph1[2] - 320 / 32) < 1e-6, 'ก.พ. ว่าง ⇒ เติมด้วยค่าประมาณ (320 MB สะสม ÷ 32)');
+  assert.deepEqual(info.sph1.usedManual, [1]); assert.deepEqual(info.sph1.computed, [2]); assert.deepEqual(info.sph1.approx, [2]);
+  assert.equal(formulaMonthMode(info.sph1, 1), 'manual', 'ช่อง ม.ค. ยังกรอกมือได้');
+  assert.equal(formulaMonthMode(info.sph1, 2), 'computed');
+  assert.equal(formulaMonthMode(info.sph1, 3), 'manual', 'ไม่มีอะไรเลย = กรอกมือได้');
+  assert.equal(formulaMonthMode(null, 1), 'manual');
+  assert.match(formulaNoteText(info.sph1, 1, { def }), /✍️ ใช้ค่ากรอกมือ — สูตรคำนวณได้ .* แต่ใช้กำลังคนประมาณจากทะเบียน/);
+  assert.match(formulaNoteText(info.sph1, 2, { def }), /≈ทะเบียนพนักงาน/);
+  // ตัวเลขฐานกรอกมือครบ ⇒ สูตรชนะตามกฎเดิม
+  const base2 = buildBaseIndex([...r, row('section', 'PD1', 'manpower', 1, 300)], { auto });
+  const o2 = applyFormulaEntries([def], entries, base2, org);
+  assert.ok(Math.abs(o2.entries.sph1[1] - 160 / 300) < 1e-6); assert.equal(formulaMonthMode(o2.info.sph1, 1), 'computed');
+});
