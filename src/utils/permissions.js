@@ -138,6 +138,11 @@ export function canAccessPage(path, role) {
   /* 🔁 ตั้งค่าจอวนหน้า — แอดมินหน่วยงาน (bucket dept_admin) ตั้งจอของส่วนงานตัวเองได้ (14/10 · คำสั่ง user)
      bucket แจกได้แค่ action ห้ามแจก page:* ⇒ piggyback คีย์ action แทนการแจก page:/display-rotation ให้ทุก role
      ขอบเขตว่าตั้งจอไหนได้ = canManageDisplay() + RLS fn_can_manage_display() */
+  /* 👷 /people-board = ครึ่งหนึ่งของ /dashboard เดิม (แยกจอ 19/10) — ข้อมูลชุดเดียวกัน ⇒ piggyback page:/dashboard
+     ไม่ต้อง seed คีย์ใหม่ (ใครเคยเห็นการ์ดคนบน /dashboard ก็ยังเห็นเหมือนเดิม) */
+  if (path === '/people-board') {
+    return hasPermission('page:/people-board', role) || hasPermission('page:/dashboard', role);
+  }
   if (path === '/display-rotation') {
     return hasPermission('page:/display-rotation', role) || hasPermission('display_rotation:manage', role);
   }

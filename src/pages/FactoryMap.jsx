@@ -1734,7 +1734,7 @@ export default function FactoryMap({ setupMode = false }) {
   // เปิดผังไลน์ + พนักงาน (Dashboard) — จากปุ่มใน modal สรุป
   const openFloorMap = (name) => {
     const t = floorMapTarget(name);
-    if (t) navigate(`/dashboard?line=${encodeURIComponent(t)}&from=factory-map`);
+    if (t) navigate(`/people-board?line=${encodeURIComponent(t)}&from=factory-map`);
     else { setStoryLine(null); setDetailLine(name); }
   };
   // ตีกรอบเฉพาะ "ไลน์บนสุด (top-level)" = parent_line_name IS NULL — 1 กรอบ/กลุ่ม (รวมยอดลูกด้วย stOf)
