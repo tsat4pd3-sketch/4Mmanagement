@@ -140,7 +140,7 @@
    · **ยอดผลิต:** `<LineOrderBoard>` (`components/LineOrderBoard.jsx` · อ่านอย่างเดียว) — การ์ด = `buildBoardCards()` (`utils/boardCards.js`
      สูตรเดียวกับ buildCards ใน /management) · คิว/ดีเลย์ = `positionAllCards` · หลุดแผน = `planStatusOf` + `<PlanSlipBar>` · แถวต่อพาร์ท
      (หลายไลน์ลูก = แยกแถว) · สถานะใบ `cardState()`: กำลังผลิต / ตกแผน / เสร็จตามแผน / เสร็จช้ากว่าแผน / ยังไม่เปิดใบ · คลิกใบ = การ์ดขวา
-     · โหลดพักล้ม = error (ไม่มีพัก = ตีดีเลย์ผิด) · ⚠️ /management + /dashboard ยังมี buildCards ในหน้าตัวเอง (งานค้าง: ยุบมาใช้ `boardCards.js`)
+     · โหลดพักล้ม = error (ไม่มีพัก = ตีดีเลย์ผิด) · **2026-10-19 ยุบแล้ว:** /management + /dashboard สร้างการ์ดผ่าน `buildBoardCards()` ตัวเดียวกัน (/dashboard ส่ง `guessStartFromSession` = พฤติกรรมเดิม · ด่าน `board-cards-single-source`)
 4. **⚡ Live / 📅 ทบทวนรายวัน (`viewMode` · `?mode=live|review`)** — สวิตช์เหนือแท็บ คุม **ผัง + แผงขวา + กล่องที่คลิก** พร้อมกัน
    (เดิมแผงขวาโชว์ 15/10 แต่คลิกไลน์บนผังได้ 16/10 สด = คนงง)
    · ทบทวน: `stOf()` แทนค่าเรื่องที่ผูกกับวัน (ยอดผลิต/OEE/DT/ของเสีย/คน) ด้วย `reviewOf()` (`reviewMode:true`) ·

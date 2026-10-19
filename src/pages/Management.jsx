@@ -25,6 +25,7 @@ import { visibleInterval } from '../utils/usePolling';
 import { RATE, LIVE } from '../utils/refreshRates';
 import { coalesce, makeIdleGate } from '../utils/liveRefresh';
 import { positionAllCards, delayedCountOf, orderKeyOf, projectedFinishMs, planStatusOf, pushChainOf, dayDelaySummaryOf } from '../utils/heijunkaQueue';
+import { buildBoardCards } from '../utils/boardCards';
 import PlanSlipBar from '../components/PlanSlipBar';   // 📋 แถบ "หลุดแผนไปแค่ไหน" (เวลา+ยอด · 2026-09-30)
 import DelayBlameBar from '../components/DelayBlameBar';   // 🔗 สรุปดีเลย์ของวัน + ต้นเหตุ/ผู้ถูกพาล (ทีมปั๊ม 2026-09-30)
 import { liveChannel } from '../utils/liveChannel';
@@ -1594,34 +1595,8 @@ export default function Management() {
             return { o: item.o, leftPct, widthPct, tailLeftPct, tailWidthPct, realEndMs: item.endMs, isDelayed: item.isDelayed, isLateDone: item.isLateDone, startMs: item.startMs, occupiedEndMs: item.occupiedEndMs, planLeftPct, planWidthPct, planStartMs: item.planStartMs, plannedEndMs: item.plannedEndMs, planSlipped };
           };
 
-          const buildCards = (sessList) => {
-            const cards = [];
-            sessList.forEach(s => {
-              const sessionCtSec = s.dr_products?.cycle_time_sec || 0;
-              // ใบที่ status = carry_over คือใบเดิมที่ถูกยกยอดไปต่อในกะถัดไปแล้ว (มีใบใหม่ status='open'
-              // พร้อม carry_over_from_session_id ชี้กลับมา) — ถ้าแสดงทั้งสองใบจะเห็นเป็นกัมบังซ้อนทับกัน
-              // ข้ามกะเช้า/กะดึก ทั้งที่เป็นงานเดียวกัน จึงตัดใบเดิม (carry_over) ออกจาก timeline
-              const sorted = [...s.orders].filter(o => o.status !== 'carry_over').sort((a, b) => new Date(a.opened_at || 0) - new Date(b.opened_at || 0));
-              sorted.forEach(o => {
-                const ctSec = ctByMatNo[o.mat_no] || sessionCtSec || 0;
-                // ใช้ opened_at เป็น start จริง — ไม่ accumulate จาก session start
-                // เพื่อไม่ให้ order ที่ยิงตอนบ่ายกลายเป็น delay ทันที
-                const orderStartMs = o.opened_at ? new Date(o.opened_at).getTime() : null;
-                let orderEndMs   = orderStartMs && ctSec > 0 ? orderStartMs + (o.qty || 0) * ctSec * 1000 : null;
-                if (orderStartMs && !orderEndMs) orderEndMs = orderStartMs + 5 * 60000;
-                const isDone    = o.status === 'confirmed';
-                const isCarry   = o.status === 'carry_over';
-                const isDelayed = !isDone && !isCarry && !o.is_backfill && !!orderEndMs && nowMs > orderEndMs;
-                const productKey = (nameByMatNo[o.mat_no] || s.dr_products?.name || '').trim().toUpperCase() || o.mat_no || 'unknown';
-                const productLabel = nameByMatNo[o.mat_no] || s.dr_products?.name || o.mat_no || 'ไม่ทราบ P/N';
-                const productImg = imgByMatNo[o.mat_no] || '';
-                cards.push({ ...o, orderStartMs, orderEndMs, isDone, isCarry, isDelayed, productKey, productLabel, productImg, shift: s.shift, sessionOpen: s.status === 'open', line_name: s.line_name });
-              });
-            });
-            return cards;
-          };
-
-          const allCards = buildCards(sessions);
+          // การ์ด = `buildBoardCards()` (utils/boardCards.js) ที่เดียว — ห้ามเขียน buildCards ในหน้าอีก (2026-10-19)
+          const allCards = buildBoardCards(sessions, { ctByMat: ctByMatNo, nameByMat: nameByMatNo, imgByMat: imgByMatNo, nowMs });
 
           // ── Downtime ของไลน์นี้ — แถบ ⛔ บนไทม์ไลน์ + สาเหตุใน tooltip ของใบที่ดีเลย์/ปิดช้า ──
           // บอร์ดนี้รวมหลาย sub-line (เช่น Line 60 + Line 61) — ต้องจำว่า downtime เป็นของ sub-line ไหน
