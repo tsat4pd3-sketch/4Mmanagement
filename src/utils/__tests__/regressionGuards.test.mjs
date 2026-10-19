@@ -4516,6 +4516,19 @@ test('🛡️ pm-checkpoint-copy-via-util — คัดลอกจุดตร�
     + '   แก้: ใช้ checkpointCopyRow() จาก src/utils/pmCheckpointCopy.js · ข้ามแผนกบนเครื่องเดิมส่ง samePhotos:true\n');
 });
 
+test('🛡️ pm-check-stale-guard — ใบตรวจ PM บันทึกได้เฉพาะเมื่อจุดตรวจเป็นของเครื่องที่เปิดอยู่', () => {
+  const rel = 'src/pages/PMCheckData.jsx';
+  const code = stripComments(readFileSync(join(ROOT, rel), 'utf8'));
+  const bad = [];
+  if (!/loadReqRef\.current/.test(code)) bad.push('ไม่มี loadReqRef (request id ของการโหลดเครื่อง)');
+  const save = code.slice(code.indexOf('const handleSave'), code.indexOf('const handleSave') + 900);
+  if (!/cpLoad\.status\s*!==\s*'ok'/.test(save) || !/cpLoad\.key/.test(save)) bad.push('handleSave ไม่เช็ค cpLoad (status + key เครื่อง|แผนก)');
+  assert.deepEqual(bad, [], '\n\n❌ ' + rel + ': ' + bad.join(', ') + '\n'
+    + '   ทำไม: สลับเครื่องเร็วๆ คำตอบของเครื่องก่อนมาถึงทีหลังแล้วเขียน checklistId/จุดตรวจทับ ⇒ ผลตรวจลง jig_id\n'
+    + '         เครื่องใหม่ + checklist_id เครื่องเก่า (audit PM 19/10)\n'
+    + '   แก้: ทุก callback ในเอฟเฟกต์โหลดเครื่องเทียบ loadReqRef · handleSave เช็ค cpLoad.status === ok และ key ตรงเครื่อง|แผนก\n');
+});
+
 /* ── 🔨 ชิ้น/จังหวะ ของแม่พิมพ์ — "ไม่รู้" ห้ามกลายเป็น 1 (14/10 · คำสั่ง user "ควรนับ shot ไม่ใช่นับชิ้น สำหรับงานคู่") ──
    migration 20260810 ออกแบบ 2 ชั้นไว้แล้ว (equipment_die ว่าง = ใช้ค่าของ die_sets) แต่ไม่เคยถูกเขียนจริง
    ⇒ จอ PM อ่านแค่ชั้น OP ที่ว่าง 264/264 = คิด shot ไม่ได้สักตัว · และชั้นชุดเป็น default 1 + จอบีบ `?? 1` ตอนเซฟ
