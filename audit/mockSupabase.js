@@ -618,6 +618,43 @@ const MOCK_DAY = (n) => {
 }
 
 const TABLE_FIXED = {
+  /* ☕ ทะเบียนเวลาพัก — **ห้ามถอด** (2026-10-20)
+     เดิมตารางนี้ตกไปใช้ ROWS กลาง ⇒ ได้แถวขยะ (ไม่มีชื่อ · process "undefined" · เริ่ม 08:00 ทุกแถว)
+     ⇒ จอ "☕ นโยบายหยุดพัก" ไม่เคยถูกสวีปด้วยข้อมูลทรงจริงเลย และที่สำคัญกว่า:
+     **ทุกจอที่คิด %A/%P ในฮาร์เนสหักเวลาพักผิด** เพราะนโยบายที่ป้อนเข้าไปไม่ใช่ของจริง
+     🔴 ต้องมีครบ 3 ทรงที่เปิด "คนละสาขาโค้ด" ของ breakIntervalsIn():
+       ① `ot_scope: 'always'`    พักปกติ
+       ② `ot_scope: 'ot'`        เปิดสาขา isOt (ทิ้งแถว no_ot ทั้งหมด)
+       ③ `anchor: 'shift_end'`   เปิดสาขาพักท้ายกะ (ยึดเวลาเลิกกะ · offset_min)
+          — ถอดแถวนี้ = สาขาที่เพิ่งแก้ 20/10 ไม่ถูกรันในสวีปใดเลย */
+  break_policies: [
+    { id: 'bp-1', name_th: 'ประชุมแถวกะเช้า', name_en: 'Morning Line Meeting', shift: 'day',
+      start_time: '08:00:00', duration_min: 10, process_type: 'common', ot_scope: 'always',
+      anchor: 'clock', offset_min: null, is_active: true, sort_order: 1 },
+    { id: 'bp-2', name_th: 'พักกลางวัน', name_en: 'Lunch Break', shift: 'day',
+      start_time: '11:50:00', duration_min: 50, process_type: 'common', ot_scope: 'always',
+      anchor: 'clock', offset_min: null, is_active: true, sort_order: 2 },
+    { id: 'bp-3', name_th: 'พักเบรคบ่าย', name_en: 'Afternoon Break', shift: 'day',
+      start_time: '15:00:00', duration_min: 10, process_type: 'common', ot_scope: 'always',
+      anchor: 'clock', offset_min: null, is_active: true, sort_order: 3 },
+    { id: 'bp-4', name_th: 'พักเบรค OT กะเช้า', name_en: '1st OT Brake 30 minute', shift: 'day',
+      start_time: '17:30:00', duration_min: 30, process_type: 'common', ot_scope: 'ot',
+      anchor: 'clock', offset_min: null, is_active: true, sort_order: 4 },
+    { id: 'bp-5', name_th: 'ประชุมแถวกะดึก', name_en: 'Night Line Meeting', shift: 'night',
+      start_time: '20:00:00', duration_min: 10, process_type: 'common', ot_scope: 'always',
+      anchor: 'clock', offset_min: null, is_active: true, sort_order: 5 },
+    { id: 'bp-6', name_th: 'พักดึก', name_en: 'Night Break', shift: 'night',
+      start_time: '02:30:00', duration_min: 50, process_type: 'common', ot_scope: 'always',
+      anchor: 'clock', offset_min: null, is_active: true, sort_order: 6 },
+    /* ③ พักท้ายกะ — เลื่อนตามเวลาเลิกกะของวันนั้น (17:30 / 20:00 / 17:00 วันหยุด / 08:00 กะดึก) */
+    { id: 'bp-7', name_th: '5ส. ท้ายกะ', name_en: '5S (end of shift)', shift: 'both',
+      start_time: null, duration_min: 20, process_type: 'common', ot_scope: 'always',
+      anchor: 'shift_end', offset_min: 20, is_active: true, sort_order: 7 },
+    /* แถวปิดใช้ — จอต้องวาดจางพร้อมป้าย "(ปิดใช้)" และสูตรต้องไม่หยิบไปคิด */
+    { id: 'bp-8', name_th: '5ส.(ทำโอ) — แทนด้วยแถวท้ายกะแล้ว', name_en: '5S (OT)', shift: 'day',
+      start_time: '19:40:00', duration_min: 20, process_type: 'common', ot_scope: 'ot',
+      anchor: 'clock', offset_min: null, is_active: false, sort_order: 8 },
+  ],
   /* 🔁 ผลตรวจคู่ "BOM ซ้ำ 2 ใบ" — **ห้ามถอด** (2026-10-08)
      ตั้ง `fingerprint` ให้ **ไม่ตรง** ของจริงโดยตั้งใจ ⇒ สาขา `staleReview`
      ("⚠️ BOM เปลี่ยนหลังตรวจ — ต้องตรวจซ้ำ") ถูกวาดทุกรอบ

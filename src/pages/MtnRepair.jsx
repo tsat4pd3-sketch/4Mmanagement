@@ -27,7 +27,7 @@ import { buildMoStaleBoard } from '../utils/mtnStale';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { teamsForUser, teamForSection, teamForItem, sameTeam, filterByTeam, visibleForTeam, seesEverything, teamKeyOf, deptNameOf, teamOptions, teamRowOwner, teamRowLockNote, canWriteTeam, teamBlockText } from '../utils/mtnTeams';
-import { VENDOR_STATUS, canSendVendor, canReceiveVendor, techRepairMin, grossRepairMin, vendorHoldMin, vendorHoldLabel } from '../utils/mtnVendor';
+import { VENDOR_STATUS, canSendVendor, canReceiveVendor, techRepairMin, grossRepairMin, mttrHoldMin, vendorHoldLabel } from '../utils/mtnVendor';
 import { isAmTeam, loadPmTeams, pmTeamsSync, DEFAULT_TEAMS } from '../utils/pmTeams';
 import { loadDocForms, docFormSync } from '../utils/docForms';
 loadDocForms(); // ทะเบียนเอกสาร — printMoReport (sync) อ่านผ่าน docFormSync
@@ -1905,7 +1905,8 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
         ส่วน Breakdown (หยุดรวม) **ไม่หัก** — ไลน์หยุดจริงตลอดช่วงนั้น
         สูตรอยู่ `src/utils/mtnVendor.js` ที่เดียว ห้ามลบเองในหน้า */
   const resp = minutesBetween(o.report_at, o.accept_at);
-  const ttr = techRepairMin(o), ttrGross = grossRepairMin(o), venHold = vendorHoldMin(o);
+  // หยุดนับ MTTR = รออะไหล่ PR / อยู่กับ supplier หลัง MTN ตัดสินเส้นทาง (20/10) ∪ ช่วงส่งภายนอก — union ไม่หักซ้ำ
+  const ttr = techRepairMin(o), ttrGross = grossRepairMin(o), venHold = mttrHoldMin(o);
   const bd = minutesBetween(o.report_at, o.repair_done_at);
   const [dparts, setDparts] = useState([]);
   const [dlabor, setDlabor] = useState([]);   // ค่าแรงรายคน (ตาราง 5 แถวบนฟอร์ม MTN)
@@ -2095,6 +2096,9 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
     setVenBusy(false);
     if (error) return toast.error('บันทึกไม่สำเร็จ: ' + error.message);
     if (!data?.length) return toast.error('ใบนี้ถูกคนอื่นเปลี่ยนสถานะไปแล้ว — รีเฟรชแล้วลองใหม่');
+    // ⏸️ ของกลับมาอยู่ในมือช่าง = จบช่วงหยุด MTTR ที่เริ่มตอน MTN ตัดสินเส้นทาง (20/10) · ล้ม = บอก ไม่กลืน
+    if (o.mttr_hold_from && !o.mttr_hold_to)
+      checkWrite(await supabaseDR.from('mtn_orders').update({ mttr_hold_to: nowIso }).eq('id', o.id).is('mttr_hold_to', null), 'จบช่วงหยุด MTTR');
     notifyVendor('mtn_vendor_back', data[0], [
       `🔧 ใบ ${o.mo_no || '(ยังไม่ออกเลข)'} · ${o.line_name || '-'}${o.machine_no ? ` · ${o.machine_no}` : ''}`,
       `📥 ของกลับจาก ${data[0].supplier || 'supplier'} แล้ว — รวมอยู่ข้างนอก ${vendorHoldLabel(data[0])}`,
@@ -2543,7 +2547,7 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
           <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 10, fontSize: 12.5 }}>
             <div style={{ fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>⏱ KPI</div>
             <Row k="เข้าดำเนินการ (Response)" v={fmtMin(resp)} /><Row k="เวลาซ่อม (TTR)" v={venHold > 0 && ttr != null
-              ? `${fmtMin(ttr)} (รวมรอ supplier ${fmtMin(ttrGross)})`
+              ? `${fmtMin(ttr)} (หักหยุด MTTR ${fmtMin(venHold)} · รวมทั้งหมด ${fmtMin(ttrGross)})`
               : fmtMin(ttr)} /><Row k="หยุดรวม (Breakdown)" v={fmtMin(bd)} />
           </div>
         </div>

@@ -24,6 +24,8 @@ function rad(d) { return d * Math.PI / 180; }
 /** ป้ายลอยบนยอด (กล่อง/เสา) + เส้นโยงลงเมื่อถูกยกหลบ — หมุนกลับให้หันหน้าเข้าจอ */
 function TopLabel({ it, H, lift, ok, x = 0, y = 0, cam }) {
   if (!ok) return null;   // ยกจนเพดานแล้วยังทับ = ไม่วาด (หัวผังนับให้เห็น · ชี้/แตะดูการ์ดได้)
+  // ขนาดป้าย = cam.lblScale (จอประชุมขยาย · 20/10) — คูณที่ฟอนต์ ไม่ใช้ CSS zoom (Cr94 คิด zoom ใต้ preserve-3d ผิด)
+  const k = cam.lblScale || 1;
   return (
     <>
       {lift > 0 && (
@@ -32,12 +34,12 @@ function TopLabel({ it, H, lift, ok, x = 0, y = 0, cam }) {
       )}
       <div style={{ position: 'absolute', left: x, top: y, transform: `translateZ(${H + 6 + lift}px) rotateZ(${-cam.rot}deg) rotateX(${-cam.tilt}deg) translate(-50%, -100%)`,
         transition: cam.transition, pointerEvents: 'auto' }}>
-        <div style={{ background: 'rgba(8,10,16,0.88)', border: `${it.group ? '2px dashed' : '1px solid'} ${it.color}`, borderBottom: `3px ${it.group ? 'dashed' : 'solid'} ${it.color}`, borderRadius: 7, padding: '2px 8px 3px', textAlign: 'center', whiteSpace: 'nowrap', boxShadow: 'var(--shadow-float)' }}>
-          <div style={{ fontSize: 12, fontWeight: 800, color: '#fff', lineHeight: 1.25 }}>
+        <div style={{ background: 'rgba(8,10,16,0.88)', border: `${it.group ? '2px dashed' : '1px solid'} ${it.color}`, borderBottom: `3px ${it.group ? 'dashed' : 'solid'} ${it.color}`, borderRadius: 7, padding: `${Math.round(2 * k)}px ${Math.round(8 * k)}px ${Math.round(3 * k)}px`, textAlign: 'center', whiteSpace: 'nowrap', boxShadow: 'var(--shadow-float)' }}>
+          <div style={{ fontSize: Math.round(12 * k), fontWeight: 800, color: '#fff', lineHeight: 1.25 }}>
             {it.blink && <span className="dt-alarm-icon" style={{ color: '#ef4444' }}>🔴 </span>}{it.group ? '▣ ' : ''}{it.name}
-            {it.group && it.kids > 0 && <span style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.62)', marginLeft: 5 }}>{it.kids} ไลน์</span>}
+            {it.group && it.kids > 0 && <span style={{ fontSize: Math.round(11 * k), fontWeight: 700, color: 'rgba(255,255,255,0.62)', marginLeft: 5 }}>{it.kids} ไลน์</span>}
           </div>
-          {it.text && <div style={{ fontSize: 11, fontWeight: 800, color: it.color, lineHeight: 1.25, fontVariantNumeric: 'tabular-nums' }}>{it.text}</div>}
+          {it.text && <div style={{ fontSize: Math.round(11 * k), fontWeight: 800, color: it.color, lineHeight: 1.25, fontVariantNumeric: 'tabular-nums' }}>{it.text}</div>}
         </div>
       </div>
     </>

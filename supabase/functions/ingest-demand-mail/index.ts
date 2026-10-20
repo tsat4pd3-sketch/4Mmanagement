@@ -6,8 +6,10 @@
    🔴 ฟังก์ชันนี้ **ไม่แกะไฟล์** — แค่เก็บเข้าคิว (ตัวอ่าน 830/862 มีที่เดียวคือ PlannerSales.jsx)
 
    auth: header `x-ingest-token` → sha256 → ต้องตรงแถว `demand_mail_tokens` ที่ is_active
-   body: { action?: 'ping', message_id, subject, sender, received_at, host,
+   body: { action?: 'ping', message_id, subject, sender, received_at, host, kind?: 'demand'|'acct',
            files: [{ name, content_b64 }] }
+   · kind (20/10): 'demand' = EDI 830/862 (default · จอ planner-sales) · 'acct' = monthly report ของบัญชี
+     (GitHub Actions `acct-import` หยิบไปเขียน kpi_base_inputs ฝั่ง MAIN · ไม่ขึ้นจอ planner-sales)
    ตอบ:  { ok, saved: [..ชื่อไฟล์], duplicate: [..], rejected: [{name, reason}] }
    secrets: SUPABASE_URL · SUPABASE_SERVICE_ROLE_KEY (มีให้อัตโนมัติ) — ไม่ต้องตั้งเพิ่ม */
 import { createClient } from 'jsr:@supabase/supabase-js@2';
@@ -70,6 +72,7 @@ Deno.serve(async (req) => {
   }
 
   const messageId = String(body?.message_id || '').trim();
+  const kind = body?.kind === 'acct' ? 'acct' : 'demand';   // ชนิดอื่น/ไม่ส่ง = demand (พฤติกรรมเดิม)
   const files: any[] = Array.isArray(body?.files) ? body.files : [];
   if (!messageId) return json({ error: 'message_id required' }, 400);
   if (!files.length) return json({ ok: true, saved: [], duplicate: [], rejected: [] });
@@ -99,7 +102,7 @@ Deno.serve(async (req) => {
     const { error: insErr } = await sb.from('demand_mail_inbox').insert({
       message_id: messageId, file_name: name, storage_path: path, size_bytes: bytes.length,
       subject: body.subject ?? null, sender: body.sender ?? null,
-      received_at: body.received_at || null, source_host: body.host ?? null,
+      received_at: body.received_at || null, source_host: body.host ?? null, kind,
     });
     if (insErr) {
       await sb.storage.from('demand-mail').remove([path]);      // ไม่ทิ้งไฟล์กำพร้า
