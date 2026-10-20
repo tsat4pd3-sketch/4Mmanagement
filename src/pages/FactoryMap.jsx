@@ -876,6 +876,7 @@ export default function FactoryMap({ setupMode = false }) {
         const brkIvWin = breakIntervalsIn({
           policies: breaks || [], startMs: anchor, endMs: Math.min(nowMs, capMs),
           workDate, shift: s.shift, processType: procOfSess,
+          shiftEndMs: capMs,   // 🔚 กรอบจบที่ "ตอนนี้" ระหว่างกะ — พักท้ายกะต้องยึด capMs ไม่ใช่ปลายกรอบ
         });
         availMin -= brkIvWin.reduce((a, [x, y]) => a + (y - x) / 60000, 0);
         /* หักหยุดตามแผน — ⚠️ ต้อง clamp กับหน้าต่าง [anchor, min(now, capMs)] ก่อน

@@ -6309,10 +6309,12 @@ function HistoryTab({ role }) {
   // เวลาพักตามนโยบายในช่วงที่สนใจ — ใช้ util กลาง (src/utils/oee.js) ตัวเดียวกับตอนปิดกะ/OEE Analytics
   // เดิมสูตรนี้ไม่กรอง process_type (query ก็ไม่ได้ select มา) → นับพักเกินจริงในไลน์ที่มีนโยบายเฉพาะ process
   // ทำให้ %P รายชิ้น + OEE จริง ในแท็บประวัติ ไม่ตรงกับหน้าอื่น (รวมเป็นตัวเดียว 2026-08-05)
-  const histBreakIv = (startMs, endMs, workDateStr, shift, processType = null) =>
-    breakIntervalsIn({ policies: histBreaks, startMs, endMs, workDate: workDateStr, shift, processType });
-  const histBreakOverlapMin = (startMs, endMs, workDateStr, shift, processType = null) =>
-    histBreakIv(startMs, endMs, workDateStr, shift, processType).reduce((s2, [a, b]) => s2 + (b - a) / 60000, 0);
+  /* 🔚 `shiftEndMs` = ปลายกะจริง — จำเป็นเพราะกรอบที่ส่งเข้ามาบ่อยครั้งคือ "ช่วงที่พาร์ทวิ่ง"
+     ไม่ใช่ทั้งกะ ⇒ พักที่ผูกปลายกะ (5ส.) จะไปเกาะปลายช่วงของแต่ละพาร์ท = หักพักซ้ำ */
+  const histBreakIv = (startMs, endMs, workDateStr, shift, processType = null, shiftEndMs = null) =>
+    breakIntervalsIn({ policies: histBreaks, startMs, endMs, workDate: workDateStr, shift, processType, shiftEndMs });
+  const histBreakOverlapMin = (startMs, endMs, workDateStr, shift, processType = null, shiftEndMs = null) =>
+    histBreakIv(startMs, endMs, workDateStr, shift, processType, shiftEndMs).reduce((s2, [a, b]) => s2 + (b - a) / 60000, 0);
 
 
   /* 🚫 ทำกะเป็นโมฆะ — ทางเลือกที่ไม่ทำลายประวัติ แทนการ `delete` (คำสั่ง user 08/10)
@@ -6655,7 +6657,7 @@ function HistoryTab({ role }) {
                     const shiftStartMs = s.start_time ? new Date(`${shiftStartDate(s.work_date, s.start_time.slice(0, 5), s.shift)}T${s.start_time.slice(0, 5)}:00`).getTime() : null;
                     let shiftEndMs = s.end_time ? new Date(`${s.work_date}T${s.end_time.slice(0, 5)}:00`).getTime() : null;
                     if (shiftStartMs && shiftEndMs && shiftEndMs <= shiftStartMs) shiftEndMs += 86400000;
-                    const brkIvS = shiftStartMs && shiftEndMs ? histBreakIv(shiftStartMs, shiftEndMs, s.work_date, s.shift) : [];
+                    const brkIvS = shiftStartMs && shiftEndMs ? histBreakIv(shiftStartMs, shiftEndMs, s.work_date, s.shift, null, shiftEndMs) : [];
                     const breakMin = brkIvS.reduce((a, [x, y]) => a + (y - x) / 60000, 0);
                     // หยุดในแผนที่ทับช่วงพัก ถูกกันออกจากฐานไปแล้วรอบหนึ่ง — ห้ามหักซ้ำ (utils/oee §3.1)
                     const plannedDtMin = dts.filter(d => d.dr_downtime_types?.category === 'planned')
@@ -6711,17 +6713,19 @@ function HistoryTab({ role }) {
                       const openedTimes = matOrders.map(o => o.opened_at).filter(Boolean).map(t => new Date(t).getTime());
                       const closedTimes = matOrders.map(o => o.confirmed_at || o.stopped_at).filter(Boolean).map(t => new Date(t).getTime());
                       // 🔴 รัดช่วงของพาร์ทให้อยู่ในกะ — ใบที่ยืนยันย้อนหลังข้ามวันเคยทำ "ควรได้" พองเป็นพัน (utils/oee §7)
+                      const sFrame = shiftFrameOf(s);
                       const { startMs: winStart, endMs: winEnd } = clampWinToShift(
                         openedTimes.length ? Math.min(...openedTimes) : null,
                         closedTimes.length ? Math.max(...closedTimes) : null,
-                        shiftFrameOf(s));
+                        sFrame);
                       const ctSec = ctByMat[matNo] || 0;
                       let achievable = null, pPct = null, winLabel = null;
                       if (winStart && winEnd && winEnd > winStart) {
                         const fmtT = ms => { const d = new Date(ms); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
                         winLabel = `${fmtT(winStart)}–${fmtT(winEnd)}`;
                         if (ctSec > 0) {
-                          const brkIvP = histBreakIv(winStart, winEnd, s.work_date, s.shift);
+                          // 🔚 กรอบคือช่วงที่พาร์ทวิ่ง — พักท้ายกะต้องยึด "ปลายกะ" ไม่ใช่ปลายช่วงของพาร์ท
+                          const brkIvP = histBreakIv(winStart, winEnd, s.work_date, s.shift, null, sFrame?.endMs ?? null);
                           const runMin = Math.max(0, (winEnd - winStart) / 60000
                             - histDtOverlapMin(winStart, winEnd, dts, brkIvP)
                             - brkIvP.reduce((a2, [x, y]) => a2 + (y - x) / 60000, 0));
@@ -7713,7 +7717,7 @@ function BreakPolicySetup({ role }) {
   const [items, setItems]   = useState([]);
   const [editing, setEditing] = useState(null);
   const [saving, setSaving] = useState(false);
-  const emptyForm = { name_th: '', name_en: '', shift: 'both', start_time: '08:00', duration_min: 10, process_type: 'common', ot_scope: 'always', sort_order: 0, is_active: true };
+  const emptyForm = { name_th: '', name_en: '', shift: 'both', start_time: '08:00', duration_min: 10, process_type: 'common', ot_scope: 'always', anchor: 'clock', offset_min: 20, sort_order: 0, is_active: true };
   const [form, setForm] = useState(emptyForm);
 
   const load = useCallback(async () => {
@@ -7725,21 +7729,36 @@ function BreakPolicySetup({ role }) {
   const openEdit = (item = null) => {
     setEditing(item?.id || 'new');
     setForm(item
-      ? { name_th: item.name_th, name_en: item.name_en || '', shift: item.shift, start_time: (item.start_time || '08:00').slice(0,5), duration_min: item.duration_min, process_type: item.process_type, ot_scope: item.ot_scope || 'always', sort_order: item.sort_order, is_active: item.is_active }
+      ? { name_th: item.name_th, name_en: item.name_en || '', shift: item.shift, start_time: (item.start_time || '08:00').slice(0,5), duration_min: item.duration_min, process_type: item.process_type, ot_scope: item.ot_scope || 'always', anchor: item.anchor || 'clock', offset_min: item.offset_min ?? item.duration_min ?? 20, sort_order: item.sort_order, is_active: item.is_active }
       : { ...emptyForm, sort_order: items.length + 1 });
   };
 
   const handleSave = async () => {
     if (!form.name_th) { toast.error('กรอกชื่อ'); return; }
-    if (!form.duration_min || form.duration_min < 1) { toast.error('ระยะเวลาต้องมากกว่า 0'); return; }
+    const dur = parseInt(form.duration_min);
+    if (!(dur > 0)) { toast.error('ระยะเวลาต้องมากกว่า 0'); return; }
+    const byEnd = form.anchor === 'shift_end';
+    const off = parseInt(form.offset_min);
+    /* 🔴 พักท้ายกะต้องจบไม่เกินเวลาเลิกกะ ⇒ "เริ่มก่อนเลิกกะ" ต้องไม่น้อยกว่าความยาวพัก
+       ตั้งผิด = พักล้นออกนอกกะ แล้วถูกตัดทิ้งเงียบๆ (ฐานเวลา %A/%P เพี้ยนโดยไม่มีใครเห็น)
+       — มี CHECK ฝั่ง DB กันอีกชั้น แต่ต้องบอกเหตุผลที่จอด้วย ไม่ใช่ปล่อยให้เด้ง error ดิบ */
+    if (byEnd && !(off > 0)) { toast.error('กรอก "เริ่มก่อนเลิกกะ (นาที)" ให้มากกว่า 0'); return; }
+    if (byEnd && off < dur) { toast.error(`พักยาว ${dur} นาที แต่เริ่มก่อนเลิกกะแค่ ${off} นาที — พักจะล้นเลยเวลาเลิกกะ`); return; }
     setSaving(true);
-    const payload = { ...form, duration_min: parseInt(form.duration_min), sort_order: parseInt(form.sort_order) || 0, updated_at: new Date().toISOString() };
-    const { error } = editing === 'new'
+    /* เก็บเฉพาะช่องที่ "โหมดนั้นใช้จริง" — อีกช่องต้องเป็น null ไม่ใช่ค่าค้างจากโหมดก่อน
+       (ค่าค้าง = คนอ่านทะเบียนแล้วเข้าใจผิดว่าพักเริ่มกี่โมง) */
+    const payload = {
+      ...form, duration_min: dur, sort_order: parseInt(form.sort_order) || 0,
+      start_time: byEnd ? null : form.start_time,
+      offset_min: byEnd ? off : null,
+      updated_at: new Date().toISOString(),
+    };
+    const ok = checkWrite(editing === 'new'
       ? await supabaseDR.from('break_policies').insert(payload)
-      : await supabaseDR.from('break_policies').update(payload).eq('id', editing);
-    if (!error) invalidateTable('break_policies');   // ล้าง cache master ทุกคีย์ของตารางนี้ (2026-09-15)
+      : await supabaseDR.from('break_policies').update(payload).eq('id', editing), 'บันทึกนโยบายหยุดพัก');
+    if (ok) invalidateTable('break_policies');   // ล้าง cache master ทุกคีย์ของตารางนี้ (2026-09-15)
     setSaving(false);
-    if (error) { toast.error(error.message); return; }
+    if (!ok) return;
     toast.success('บันทึกสำเร็จ');
     setEditing(null);
     load();
@@ -7754,8 +7773,10 @@ function BreakPolicySetup({ role }) {
   };
 
   const SHIFT_LABEL = { day: '☀️ กะเช้า', night: '🌙 กะดึก', both: '⏰ ทั้งสองกะ' };
-  /* ⚠️ พักบางรายการเกิด "อย่างใดอย่างหนึ่ง" ระหว่างวันทำโอ/ไม่ทำโอ (เช่น 5ส. 17:10 vs 19:40)
-     ตั้งผิด = หักพักซ้ำ → %A ของทุกจอเพี้ยน (เคสจริง 2026-09-14) · ดู migration 20260914_break_policies_ot_scope */
+  /* ⚠️ พักบางรายการเกิด "อย่างใดอย่างหนึ่ง" ระหว่างวันทำโอ/ไม่ทำโอ (เช่น พักเบรค OT)
+     ตั้งผิด = หักพักซ้ำ → %A ของทุกจอเพี้ยน (เคสจริง 2026-09-14) · ดู migration 20260914_break_policies_ot_scope
+     🔚 20/10 — พักที่ "เลื่อนตามเวลาเลิกกะ" (5ส.) ใช้ anchor='shift_end' แทนการแตกแถวตาม ot_scope
+        (แตกแถวไม่ครอบวันหยุดมาโอ 8 ชม. · ดู migration 20261020_break_policies_shift_end_anchor_dr) */
   const OT_LABEL = { always: '', ot: '🕕 เฉพาะวันทำโอ', no_ot: '🚫 เฉพาะวันไม่ทำโอ' };
   const PROC_LABEL = new Proxy({}, { get: (_, k) => procDisplay(k) }); // data-driven — master กระบวนการ
 
@@ -7783,10 +7804,16 @@ function BreakPolicySetup({ role }) {
                 {OT_LABEL[item.ot_scope] && (
                   <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: 'rgba(59,130,246,0.15)', color: '#60a5fa', fontWeight: 700 }}>{OT_LABEL[item.ot_scope]}</span>
                 )}
+                {item.anchor === 'shift_end' && (
+                  <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: 'rgba(34,197,94,0.15)', color: '#4ade80', fontWeight: 700 }}>🔚 ท้ายกะ</span>
+                )}
                 {!item.is_active && <span style={{ fontSize: 11, color: '#ef4444' }}>(ปิดใช้)</span>}
               </div>
               <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 3 }}>
-                เริ่ม {(item.start_time || '').slice(0,5)} น. · <strong style={{ color: '#22c55e' }}>{item.duration_min} นาที</strong>
+                {item.anchor === 'shift_end'
+                  ? <>เริ่ม <strong style={{ color: 'var(--text2)' }}>{item.offset_min} นาทีก่อนเลิกกะ</strong> · </>
+                  : <>เริ่ม {(item.start_time || '').slice(0,5)} น. · </>}
+                <strong style={{ color: '#22c55e' }}>{item.duration_min} นาที</strong>
               </div>
             </div>
             {canEdit && (
@@ -7808,14 +7835,38 @@ function BreakPolicySetup({ role }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <Field label="ชื่อภาษาไทย *"><input autoFocus value={form.name_th} onChange={e => setForm(f => ({ ...f, name_th: e.target.value }))} placeholder="เช่น พักกินข้าว" style={inputStyle} /></Field>
               <Field label="ชื่อภาษาอังกฤษ"><input value={form.name_en} onChange={e => setForm(f => ({ ...f, name_en: e.target.value }))} placeholder="เช่น Lunch Break" style={inputStyle} /></Field>
+              {/* 🔚 พักบางตัว (5ส.) เป็น "ท้ายกะ" — เวลาเลื่อนตามว่าวันนั้นเลิกกี่โมง
+                  (เลิก 17:30 / 20:00 เมื่อทำโอ / 17:00 วันหยุดมาโอ 8 ชม. / 08:00 กะดึก)
+                  ตั้งแบบนี้แถวเดียวครอบทุกรูปแบบวัน ไม่ต้องแตกแถวตาม ot_scope อีก */}
+              <Field label="ยึดเวลาจาก">
+                <select value={form.anchor} onChange={e => setForm(f => ({ ...f, anchor: e.target.value }))} style={inputStyle}>
+                  <option value="clock">🕐 เวลานาฬิกา (เริ่มเวลาเดิมทุกวัน)</option>
+                  <option value="shift_end">🔚 ท้ายกะ (เลื่อนตามเวลาเลิกกะของวันนั้น)</option>
+                </select>
+              </Field>
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <Field label="เวลาเริ่ม (HH:MM)">
-                  <TimeInput24 value={form.start_time} onChange={e => setForm(f => ({ ...f, start_time: e.target.value }))} style={{ fontSize: 16 }} />
-                </Field>
+                {form.anchor === 'shift_end' ? (
+                  <Field label="เริ่มก่อนเลิกกะ (นาที)">
+                    <input type="number" min="1" value={form.offset_min}
+                      onChange={e => setForm(f => ({ ...f, offset_min: e.target.value }))}
+                      style={{ ...inputStyle, fontWeight: 800, fontSize: 16, textAlign: 'center' }} />
+                  </Field>
+                ) : (
+                  <Field label="เวลาเริ่ม (HH:MM)">
+                    <TimeInput24 value={form.start_time} onChange={e => setForm(f => ({ ...f, start_time: e.target.value }))} style={{ fontSize: 16 }} />
+                  </Field>
+                )}
                 <Field label="ระยะเวลา (นาที)">
                   <input type="number" min="1" value={form.duration_min} onChange={e => setForm(f => ({ ...f, duration_min: e.target.value }))} style={{ ...inputStyle, fontWeight: 800, fontSize: 16, textAlign: 'center' }} />
                 </Field>
               </div>
+              {form.anchor === 'shift_end' && (
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: -4, lineHeight: 1.55 }}>
+                  เช่น 5ส. ตั้ง <strong style={{ color: 'var(--text2)' }}>เริ่มก่อนเลิกกะ 20 · ยาว 20</strong> →
+                  กะเลิก 17:30 ได้ 17:10–17:30 · เลิก 20:00 ได้ 19:40–20:00 · วันหยุดเลิก 17:00 ได้ 16:40–17:00
+                  <br />⚠️ กะที่<strong style={{ color: 'var(--text2)' }}>ยังเปิดอยู่</strong>ยังไม่รู้เวลาเลิก ⇒ ค่าสดจะยังไม่หักพักนี้ แล้วตรงกันเองตอนปิดกะ
+                </div>
+              )}
               <Field label="ใช้กับกะ">
                 <select value={form.shift} onChange={e => setForm(f => ({ ...f, shift: e.target.value }))} style={inputStyle}>
                   <option value="both">⏰ ทั้งสองกะ</option>
@@ -7830,8 +7881,10 @@ function BreakPolicySetup({ role }) {
                   <option value="no_ot">🚫 เฉพาะวันที่ไม่ทำโอ</option>
                 </select>
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.5 }}>
-                  ใช้กับพักที่มี 2 รอบสลับกัน เช่น 5ส. 17:10 (ไม่ทำโอ) / 19:40 (ทำโอ) —
+                  ใช้กับพักที่มี 2 รอบสลับกันระหว่างวันทำโอ/ไม่ทำโอ เช่น พักเบรค OT —
                   ตั้งไว้แล้วระบบจะหักแค่รอบที่เกิดจริง ไม่นับซ้ำ
+                  <br />💡 ถ้าพักนั้น<strong style={{ color: 'var(--text2)' }}>เลื่อนตามเวลาเลิกกะ</strong> (เช่น 5ส.)
+                  ให้ใช้ "ยึดเวลาจาก → ท้ายกะ" แทน จะได้ไม่ต้องแตกหลายแถว และครอบวันหยุดด้วย
                 </div>
               </Field>
               <Field label="ใช้กับกระบวนการ">
