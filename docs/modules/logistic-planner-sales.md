@@ -27,6 +27,10 @@
 - 🔴 **เฟสนี้ยังให้คนกดยืนยัน** (กลไก A แก้แล้ว 01/10 — เหลือเหตุผลเรื่องความไว้ใจก่อนเปิดนำเข้าเองทั้งหมด) · จะให้นำเข้าเองทั้งหมด
   ต้องย้ายตรรกะ `doImportEdi` เป็นโมดูลกลางที่ Deno ใช้ร่วมได้ก่อน **ห้ามก๊อปไปเขียนใหม่**
 - กันซ้ำ 2 ชั้น: `state.json` ฝั่งเครื่อง + unique `(message_id, file_name)` ฝั่ง DB (Message-ID จาก `PR_INTERNET_MESSAGE_ID`)
+- **📊 คิวนี้รับไฟล์ 2 ชนิดแล้ว (20/10):** คอลัมน์ `demand_mail_inbox.kind` = `demand` (EDI · default · จอนี้) | `acct` (รายงานบัญชีรายเดือน → GitHub Actions `acct-import`
+  เขียน `kpi_base_inputs` ฝั่ง MAIN เอง · ดู `docs/modules/obeya-kpi-board.md` §ท่อนำเข้านอกเบราว์เซอร์) · สถานะเพิ่ม `failed` (ตัวอัตโนมัติอ่านไฟล์ไม่ได้ · ต้องไม่ค้าง pending เงียบ)
+  · 🔴 **ทุกคิวรีของ `DemandMailInbox.jsx` ต้อง `.eq('kind','demand')`** — ไม่กรอง = ไฟล์บัญชี (ยอดขาย/ต้นทุน) โผล่ให้ Sales กด "เปิดเพื่อนำเข้า" แล้วตัวอ่าน EDI พัง
+  · สคริปต์ Outlook รองรับหลายกฎ: `[mail]` + `[mail.<ชื่อ>]` (ต้องมี `kind`) · กฎแรกที่ผ่านชนะ · migration `20261020_demand_mail_inbox_kind_acct_dr.sql` (apply แล้ว) · function deploy v3
 - token: `demand_mail_tokens` เก็บแค่ sha256 · ไม่มี policy (service role เท่านั้น) · ออกใหม่ = insert hash ใหม่ · ปิด = `is_active=false`
   · token ตัวจริงอยู่ใน `config.ini` บนเครื่อง user เท่านั้น (gitignore)
 - ค้างเกิน 24 ชม. แผงขึ้นแดง · ว่าง = เขียน "ไม่มีไฟล์ค้าง" · กด "ข้าม" ต้องใส่เหตุผล (status `skipped`)

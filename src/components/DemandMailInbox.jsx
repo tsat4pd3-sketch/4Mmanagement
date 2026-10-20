@@ -50,7 +50,7 @@ export default function DemandMailInbox({ refreshKey, onOpen, fullName }) {
   const load = useCallback(async () => {
     const { data, error } = await supabaseDR.from('demand_mail_inbox')
       .select('id, file_name, subject, sender, received_at, size_bytes, storage_path, created_at')
-      .eq('status', 'pending').order('received_at', { ascending: false }).limit(30);
+      .eq('kind', 'demand').eq('status', 'pending').order('received_at', { ascending: false }).limit(30);   // kind acct = ไฟล์บัญชี ไปคิวของ GitHub Actions ไม่ขึ้นจอนี้
     setErr(error ? error.message : null);
     setRows(data || []);
     /* 🔴 ฉบับเก่ากว่าที่นำเข้าไปแล้ว = ห้ามนำเข้าทับ — 862 แทนที่ใบ pending ทั้งช่วง
@@ -59,7 +59,7 @@ export default function DemandMailInbox({ refreshKey, onOpen, fullName }) {
        ⇒ กลืน error = ด่านเปิดโล่งเงียบ นำเข้าฉบับเก่าทับใหม่ได้โดยไม่มีอะไรฟ้อง (QC audit 08/10)
        fail-closed: ตรวจไม่ได้ ⇒ ยังต้อง confirm ทุกใบ + เขียนบนแผงว่าตรวจไม่ได้ */
     const { data: done, error: eDone } = await supabaseDR.from('demand_mail_inbox')
-      .select('file_name, received_at, created_at').eq('status', 'imported')
+      .select('file_name, received_at, created_at').eq('kind', 'demand').eq('status', 'imported')
       .order('received_at', { ascending: false }).limit(20);
     setDoneErr(eDone ? eDone.message : null);
     const latest = {};
@@ -69,7 +69,7 @@ export default function DemandMailInbox({ refreshKey, onOpen, fullName }) {
        ดู 7 วันล่าสุดทุกสถานะ ⇒ เมลที่นำเข้าไปแล้วก็ยังเตือนได้ว่าขาดอีกไฟล์ */
     const since = new Date(Date.now() - 15 * 86400000).toISOString();   // เผื่อรอบ 830 (ทั้งสัปดาห์) ของเมลเก่าสุดในจอ
     const { data: recent, error: eRecent } = await supabaseDR.from('demand_mail_inbox')
-      .select('message_id, subject, file_name, received_at').gte('received_at', since).limit(200);
+      .select('message_id, subject, file_name, received_at').eq('kind', 'demand').gte('received_at', since).limit(200);
     /* นำเข้าเอง (ลากไฟล์) ก็นับว่าได้ของแล้ว — 862 = kind 'orders' · 830 = 'forecast' */
     const { data: batches, error: eB } = await supabaseDR.from('demand_upload_batches')
       .select('kind, file_name, uploaded_at').gte('uploaded_at', new Date(Date.now() - 15 * 86400000).toISOString()).limit(200);

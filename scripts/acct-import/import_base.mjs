@@ -23,7 +23,8 @@ const file = args.find(a => !a.startsWith('--'));
 const opt = (k) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : null; };
 const WRITE = args.includes('--write');
 const NO_INV = args.includes('--no-inventory');
-if (!file) { console.error('usage: import_base.mjs <report.xlsb|.xlsx|grids.json> [--year 2026] [--month N] [--write] [--no-inventory]'); process.exit(2); }
+const IS_CLI = Boolean(process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]);
+if (IS_CLI && !file) { console.error('usage: import_base.mjs <report.xlsb|.xlsx|grids.json> [--year 2026] [--month N] [--write] [--no-inventory]'); process.exit(2); }
 
 /* ── 1) อ่านไฟล์เป็นตาราง ── */
 async function loadGrids(path) {
@@ -83,25 +84,32 @@ export function collectPlantValues(book, { maxMonth = null, includeInventory = t
 
 const label = (k) => KPI_BASE_VARS.find(v => v.key === k)?.label || k;
 const fmt = (v) => (v == null ? '–' : Number(v).toLocaleString('en-US', { maximumFractionDigits: 2 }));
+/** ปีจากชื่อไฟล์ "… Jan-2026 …" → 2026 (พ.ศ. 2569 → 2026) · ไม่เจอ = null */
+export function yearFromFileName(name = '') {
+  const m = String(name).match(/\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*[\s_\-.]*((?:20|25)\d\d)\b/i);
+  if (!m) return null;
+  const y = Number(m[1]);
+  return y > 2400 ? y - 543 : y;
+}
 
-async function main() {
-  const book = await loadGrids(file);
-  const year = Number(opt('--year') || new Date().getFullYear());
-  const fm = opt('--month') ? Number(opt('--month')) : monthFromFileName(basename(file));
-  const { values, src, upTo, closed, notes } = collectPlantValues(book, { maxMonth: fm, includeInventory: !NO_INV });
-  console.log(`ไฟล์: ${basename(file)} · ปี ${year} · ถึงเดือน ${upTo || '-'} (${opt('--month') ? 'จาก --month' : fm ? 'จากชื่อไฟล์' : `จากเดือนสุดท้ายที่มียอด = ${closed}`})`);
-  notes.forEach(n => console.log('⚠ ' + n));
-  if (!Object.keys(values).length) { console.log('ไม่พบตัวแปรที่นำเข้าได้'); process.exit(1); }
+/** นำเข้า 1 ไฟล์ — ใช้ทั้ง CLI และ run_queue (GitHub Actions) · คืน { year, upTo, plan, written, failed, notes, lines }
+ *  sb = client ฝั่ง MAIN (service role) · ไม่มี = dry-run จากไฟล์อย่างเดียว · write=false = ไม่เขียน */
+export async function importBook(book, { fileName = '', year = null, month = null, write = false, sb = null, includeInventory = true, log = console.log } = {}) {
+  const y = Number(year || yearFromFileName(fileName) || new Date().getFullYear());
+  const fm = month != null ? Number(month) : monthFromFileName(fileName);
+  const { values, src, upTo, closed, notes } = collectPlantValues(book, { maxMonth: fm, includeInventory });
+  const lines = [];
+  const say = (t) => { lines.push(t); log(t); };
+  say(`ไฟล์: ${fileName} · ปี ${y} · ถึงเดือน ${upTo || '-'} (${month != null ? 'กำหนดเอง' : fm ? 'จากชื่อไฟล์' : `จากเดือนสุดท้ายที่มียอด = ${closed}`})`);
+  notes.forEach(n => say('⚠ ' + n));
+  if (!Object.keys(values).length) { say('ไม่พบตัวแปรที่นำเข้าได้'); return { year: y, upTo, plan: [], written: 0, failed: 0, notes, lines, empty: true }; }
 
-  let existing = {};
-  let sb = null;
-  if (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_KEY) {
-    const { createClient } = await import('@supabase/supabase-js');
-    sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
-    const { data, error } = await sb.from('kpi_base_inputs').select('id, month, var_key, value').eq('year', year).eq('scope_kind', 'plant');
-    if (error) { console.error('อ่าน kpi_base_inputs ไม่ได้:', error.message); process.exit(1); }
+  const existing = {};
+  if (sb) {
+    const { data, error } = await sb.from('kpi_base_inputs').select('id, month, var_key, value').eq('year', y).eq('scope_kind', 'plant');
+    if (error) throw new Error('อ่าน kpi_base_inputs ไม่ได้: ' + error.message);
     for (const r of data || []) existing[`${r.var_key}|${r.month}`] = r;
-  } else console.log('(ไม่มี SUPABASE_URL/SUPABASE_SERVICE_KEY — เทียบกับฐานไม่ได้ · dry-run จากไฟล์อย่างเดียว)');
+  } else say('(ไม่มี client ฝั่ง MAIN — เทียบกับฐานไม่ได้ · dry-run จากไฟล์อย่างเดียว)');
 
   const plan = [];
   for (const [k, months] of Object.entries(values)) {
@@ -112,21 +120,36 @@ async function main() {
     }
   }
   plan.sort((a, b) => a.k.localeCompare(b.k) || a.m - b.m);
-  for (const p of plan) console.log(`${p.state.padEnd(8)} ${label(p.k).padEnd(44)} ด.${String(p.m).padStart(2)}  ไฟล์ ${fmt(p.v).padStart(18)}  ฐาน ${fmt(p.ex).padStart(18)}   [${p.sheet}]`);
+  for (const p of plan) say(`${p.state.padEnd(8)} ${label(p.k).padEnd(44)} ด.${String(p.m).padStart(2)}  ไฟล์ ${fmt(p.v).padStart(18)}  ฐาน ${fmt(p.ex).padStart(18)}   [${p.sheet}]`);
   const todo = plan.filter(p => p.state !== 'เท่าเดิม');
-  console.log(`\nรวม ${plan.length} ค่า · ใหม่ ${plan.filter(p => p.state === 'ใหม่').length} · เปลี่ยน ${plan.filter(p => p.state === 'เปลี่ยน').length} · เท่าเดิม ${plan.length - todo.length}`);
-  if (!WRITE) { console.log('dry-run — ใส่ --write เพื่อเขียน (ต้องมี SUPABASE_URL + SUPABASE_SERVICE_KEY)'); return; }
-  if (!sb) { console.error('--write ต้องมี SUPABASE_URL + SUPABASE_SERVICE_KEY'); process.exit(1); }
-  let ok = 0, fail = 0;
+  say(`รวม ${plan.length} ค่า · ใหม่ ${plan.filter(p => p.state === 'ใหม่').length} · เปลี่ยน ${plan.filter(p => p.state === 'เปลี่ยน').length} · เท่าเดิม ${plan.length - todo.length}`);
+  if (!write) { say('dry-run — ไม่เขียน'); return { year: y, upTo, plan, written: 0, failed: 0, notes, lines }; }
+  if (!sb) throw new Error('write ต้องมี client ฝั่ง MAIN (SUPABASE_URL + SUPABASE_SERVICE_KEY)');
+  let written = 0, failed = 0;
   for (const p of todo) {
-    const row = { year, month: p.m, scope_kind: 'plant', scope_value: '', var_key: p.k, value: p.v, note: `acct-import ${basename(file)}`, created_by_name: 'acct-import' };
+    const row = { year: y, month: p.m, scope_kind: 'plant', scope_value: '', var_key: p.k, value: p.v, note: `acct-import ${fileName}`, created_by_name: 'acct-import' };
     const r = p.id
       ? await sb.from('kpi_base_inputs').update({ value: p.v, note: row.note }).eq('id', p.id).select('id')
       : await sb.from('kpi_base_inputs').insert(row).select('id');
-    if (r.error || !r.data?.length) { fail++; console.error(`✗ ${p.k} ด.${p.m}: ${r.error?.message || 'ไม่มีแถวถูกเขียน'}`); } else ok++;
+    if (r.error || !r.data?.length) { failed++; say(`✗ ${p.k} ด.${p.m}: ${r.error?.message || 'ไม่มีแถวถูกเขียน'}`); } else written++;
   }
-  console.log(`เขียนแล้ว ${ok} · ล้ม ${fail}`);
-  if (fail) process.exit(1);
+  say(`เขียนแล้ว ${written} · ล้ม ${failed}`);
+  return { year: y, upTo, plan, written, failed, notes, lines };
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) main().catch(e => { console.error(e); process.exit(1); });
+export async function mainClient() {
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_KEY) return null;
+  const { createClient } = await import('@supabase/supabase-js');
+  return createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+}
+
+async function main() {
+  const book = await loadGrids(file);
+  const sb = await mainClient();
+  const r = await importBook(book, { fileName: basename(file), year: opt('--year'), month: opt('--month'), write: WRITE, sb, includeInventory: !NO_INV });
+  if (r.empty) process.exit(1);
+  if (WRITE && r.failed) process.exit(1);
+}
+
+export { loadGrids };
+if (IS_CLI) main().catch(e => { console.error(e); process.exit(1); });

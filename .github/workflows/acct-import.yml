@@ -1,0 +1,56 @@
+# 📊 นำเข้าตัวเลขฐาน KPI จาก monthly report ของบัญชีที่มาทางเมล (2026-10-20 · user: "ใช้ GitHub Actions ไปก่อน · เมลเป็น M365 เหมือน 830/862")
+# ครึ่งแรก (เมล → คิว) = สคริปต์ Outlook บนเครื่อง user ตัวเดียวกับ EDI (`tools/outlook-mail-ingest` กฎ [mail.acct])
+# ครึ่งหลัง (คิว → kpi_base_inputs) = งานนี้: ทุกวัน 09:17 ไทย เฉพาะวันที่ 10-21 (บัญชีส่งช่วงนั้น) + กดเองได้ทุกเมื่อ
+# 📄 docs/modules/obeya-kpi-board.md §ท่อนำเข้านอกเบราว์เซอร์ · secrets ที่ต้องตั้งใน repo:
+#   DR_SUPABASE_URL · DR_SUPABASE_SERVICE_KEY (project "Product DB" eyhclzkifitbhbljgoav — คิว+ไฟล์)
+#   MAIN_SUPABASE_URL · MAIN_SUPABASE_SERVICE_KEY (project "MAIN" ewhdfqwfwofivojtsizn — kpi_base_inputs)
+name: Accounting import
+
+on:
+  schedule:
+    - cron: '17 2 10-21 * *'   # 02:17 UTC = 09:17 ไทย
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'ทดสอบ: อ่านคิว+ไฟล์ แต่ไม่เขียน ไม่ปิดคิว'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: acct-import
+  cancel-in-progress: false
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install
+        run: |
+          npm ci --ignore-scripts
+          python3 -m pip install --quiet pyxlsb
+      - name: Import queued accounting files
+        env:
+          DR_SUPABASE_URL: ${{ secrets.DR_SUPABASE_URL }}
+          DR_SUPABASE_SERVICE_KEY: ${{ secrets.DR_SUPABASE_SERVICE_KEY }}
+          SUPABASE_URL: ${{ secrets.MAIN_SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.MAIN_SUPABASE_SERVICE_KEY }}
+          DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DR_SUPABASE_URL:-}" ] || [ -z "${SUPABASE_URL:-}" ]; then
+            echo "::warning::ยังไม่ได้ตั้ง secrets (DR_SUPABASE_URL / MAIN_SUPABASE_URL …) — ข้ามรอบนี้ (ดู docs/modules/obeya-kpi-board.md)"
+            exit 0
+          fi
+          node scripts/acct-import/run_queue.mjs
