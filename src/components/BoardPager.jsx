@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import useTvShell from '../utils/useTvShell';
+import { boardFlipSec, SUBPAGE_ATTR } from '../utils/displayRotation';
 
 /* ══ 📖 BoardPager — แถบ "กดเปลี่ยนหน้า" ของบอร์ดที่ห้ามเลื่อน (2026-09-25 · คำสั่ง user) ══
    *"ต้องไม่เป็น overflow ดูจบได้ในหน้าเดียว … ให้ใช้หลักการกดเปลี่ยนหน้า คล้ายๆ ตัวประชุมแถวเช้า"*
@@ -33,6 +34,16 @@ export default function BoardPager({ page, count, onPage, labels = [], compact =
     return () => window.removeEventListener('keydown', onKey);
   }, [page, count, onPage]);
 
+  /* 📺 จอ TV กดไม่ได้ (20/10 · UI §6.33) ⇒ หมุนหน้าย่อยเองทุกบอร์ด (เดิมบางบอร์ดหมุนเอง บางบอร์ดไม่ เช่น SQDCM)
+     จังหวะ = boardFlipSec · บอร์ดที่หมุนเองอยู่แล้วด้วยจังหวะเดียวกัน = ตั้งค่าเดียวกัน ไม่เด้งซ้อน · ตัววนจอรอจนครบ (subpageGate) */
+  useEffect(() => {
+    if (!tv || !(count > 1)) return undefined;
+    const sec = boardFlipSec(count);
+    if (!sec) return undefined;
+    const t = setTimeout(() => onPage((page + 1) % count), sec * 1000);
+    return () => clearTimeout(t);
+  }, [tv, page, count, onPage]);
+
   // สูงคงที่เสมอ — ดูเหตุผลเรื่องวงจรป้อนกลับในหัวไฟล์
   if (!(count > 1)) return <div style={{ height: barH(compact, tv), flexShrink: 0 }} />;
 
@@ -47,7 +58,7 @@ export default function BoardPager({ page, count, onPage, labels = [], compact =
      (เลข n/N บอกครบอยู่แล้ว) · `nowrap` + `clip` กันแตกบรรทัดทุกกรณี */
   const showDots = count <= 12;
   return (
-    <div style={{
+    <div {...{ [SUBPAGE_ATTR]: `${page + 1}/${count}` }} style={{
       display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9,
       flexWrap: 'nowrap', flexShrink: 0, overflow: 'clip', height: barH(compact, tv),
     }}>
