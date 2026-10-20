@@ -77,8 +77,13 @@ const measure = () => {
     }
   }
   out.order = [...new Set(out.order)];
-  /* 7. `gapFB` ระยะ แถบแท็บ → แถบกรองแรก (px) — ต้องเท่ากันทุกหน้า (ค่ามาตรฐาน = ค่าที่พบมากสุด) */
-  if (ind) {
+  /* 7. `gapFB` ระยะ แถบแท็บ → แถบกรองแรก (px) — ต้องเท่ากันทุกหน้า (ค่ามาตรฐาน = ค่าที่พบมากสุด)
+     🕳️ 2 รูที่ปิด 20/10 (QC audit — การ์ดสถิติแทรกเหนือแถบกรอง 3 หน้าแล้วตัวตรวจไม่เห็น):
+       ① เดิมคร่อมด้วย `if (ind)` ⇒ **หน้าที่ไม่มีแถบแท็บไม่เคยถูกวัดลำดับเลย**
+          ⇒ ไม่มีแท็บ = วัดจากก้นหัวเพจแทน (สิ่งที่ตาเห็นเหนือแถบกรองก็คือหัวเพจ)
+       ② เดิมบันทึกเฉพาะ `< 80px` ⇒ **ยิ่งผิดมาก ยิ่งมองไม่เห็น** (การ์ด+แถบเตือนซ้อน = ห่างเกิน 80)
+          ⇒ เกินเพดานแล้วรายงานเป็นเหตุผลคนละข้อ (`gapBig`) ไม่ใช่ทิ้งเงียบ */
+  {
     /* วัดจากแถวแท็บที่อยู่ "ใกล้ที่สุดเหนือแถบกรอง" — หน้าลูกใน hub มีแท็บย่อยของตัวเอง (แท็บ → แท็บย่อย → แถบกรอง = ถูก) */
     const rows = [...main.querySelectorAll('[data-tab-ind]')].map(i => i.parentElement.getBoundingClientRect());
     /* แถบแบบ `bare` อยู่ในการ์ดที่ทำหน้าที่เป็นแถบ ⇒ วัดกรอบการ์ดนั้น (สิ่งที่ตาเห็น) ไม่ใช่ตัวแถบที่ถูก padding ดันลง */
@@ -86,9 +91,22 @@ const measure = () => {
       for (let a = e.parentElement, d = 0; a && a !== main && d < 3; a = a.parentElement, d++) { const c = getComputedStyle(a); if (parseFloat(c.borderTopWidth) >= 1 && c.borderTopStyle !== 'none') return a.getBoundingClientRect(); }
       return e.getBoundingClientRect(); };
     const fbs = [...main.querySelectorAll('.filter-bar')].filter(e => vis(e) && !inOv(e)).map(boxOf);
-    const tb = rows.filter(r => fbs.some(f => f.top >= r.bottom - 1)).sort((a, b) => b.bottom - a.bottom)[0] || ind.parentElement.getBoundingClientRect();
+    const head = main.querySelector('h1, h2');
+    const anchor = ind ? ind.parentElement.getBoundingClientRect() : head?.getBoundingClientRect();
+    if (!anchor) return out;                                   // ไม่มีทั้งแท็บและหัวเพจ = วัดไม่ได้ (มีเหตุผลอื่นรายงานอยู่แล้ว)
+    const tb = rows.filter(r => fbs.some(f => f.top >= r.bottom - 1)).sort((a, b) => b.bottom - a.bottom)[0] || anchor;
     const fb = fbs.filter(r => r.top >= tb.bottom - 1).sort((a, b) => a.top - b.top)[0];
-    if (fb && fb.top - tb.bottom < 80) out.gapFB = Math.round(fb.top - tb.bottom);
+    if (fb) {
+      const g = Math.round(fb.top - tb.bottom);
+      /* ของที่อนุญาตให้คั่นได้ (UI-STANDARD §2.1): <ReadOnlyNote> และแถบยืนยันตัวตน/คำเตือนสิทธิ์ของทั้งหน้า */
+      const okNote = [...main.querySelectorAll('[data-ro-note]')]
+        .some(e => vis(e) && e.getBoundingClientRect().top >= tb.bottom - 1 && e.getBoundingClientRect().bottom <= fb.top + 1);
+      /* ⚠️ หน้าที่ "ไม่มีแท็บ" วัดจากหัวเพจ ⇒ ระยะมาตรฐานคนละชุดกับหน้าที่วัดจากแถบแท็บ
+         (เอามาเทียบชุดเดียวกัน = รายงานผิดเป็นกอง — apples/oranges) */
+      out.gapFrom = ind ? 'tab' : 'head';
+      if (g < 80) out.gapFB = g;
+      else if (!okNote) out.gapBig = g;                        // มีของแทรก = ลำดับผิด ห้ามทิ้งเงียบ
+    }
   }
   return out;
 };
@@ -157,9 +175,13 @@ const navBad = [];
 const xs = rows.filter(r => r.x != null).map(r => r.x);
 const freq = xs.reduce((m, x) => (m[x] = (m[x] || 0) + 1, m), {});
 const STD_X = Number(Object.entries(freq).sort((a, b) => b[1] - a[1])[0]?.[0] ?? 0);
-const gf = rows.filter(r => r.gapFB != null).map(r => r.gapFB);
-const gfreq = gf.reduce((m, x) => (m[x] = (m[x] || 0) + 1, m), {});
-const STD_GAP = Number(Object.entries(gfreq).sort((a, b) => b[1] - a[1])[0]?.[0] ?? 16);
+/* ระยะมาตรฐาน **แยก 2 ชุด** ตามจุดอ้างอิง (แถบแท็บ / หัวเพจ) — ดูเหตุผลที่ `gapFrom` */
+const stdGapOf = (from) => {
+  const g = rows.filter(r => r.gapFB != null && (r.gapFrom || 'tab') === from).map(r => r.gapFB);
+  const f = g.reduce((m, x) => (m[x] = (m[x] || 0) + 1, m), {});
+  return Number(Object.entries(f).sort((a, b) => b[1] - a[1])[0]?.[0] ?? 16);
+};
+const STD_GAP = stdGapOf('tab'), STD_GAP_HEAD = stdGapOf('head');
 const bad = [];
 for (const r of rows) {
   const why = [];
@@ -169,12 +191,17 @@ for (const r of rows) {
   if (r.dup > 1) why.push(`หัวซ้อน ${r.dup} ตัว`);
   if (r.wide?.length) why.push(`select ยืด ${r.wide.join(', ')}`);
   if (r.ctl?.length) why.push(`ช่องกรองผิด token ${[...new Set(r.ctl)].slice(0, 3).join(', ')}${r.ctl.length > 3 ? ` +${r.ctl.length - 3}` : ''}`);
-  if (r.gapFB != null && Math.abs(r.gapFB - STD_GAP) > 3) why.push(`ระยะแท็บ→แถบกรอง ${r.gapFB}px (มาตรฐาน ${STD_GAP})`);
+  if (r.gapFB != null) {
+    const from = r.gapFrom || 'tab';
+    const std = from === 'head' ? STD_GAP_HEAD : STD_GAP;
+    if (Math.abs(r.gapFB - std) > 3) why.push(`ระยะ${from === 'head' ? 'หัวเพจ' : 'แท็บ'}→แถบกรอง ${r.gapFB}px (มาตรฐาน ${std})`);
+  }
+  if (r.gapBig != null) why.push(`มีของแทรกระหว่างหัวเพจ/แท็บ กับแถบกรอง ~${r.gapBig}px — การ์ดสรุป/แถบเตือนต้องอยู่ "ใต้" แถบกรอง (UI-STANDARD §2.1)`);
   if (r.order?.length) why.push(`ลำดับผิด: ${r.order.join(', ')}`);
   if (r.all?.length) why.push(`ป้ายทั้งหมดนอกทะเบียน ${[...new Set(r.all)].join(', ')}`);
   if (why.length) bad.push(`🔴 ${r.name} [แท็บ ${r.tab}] ${r.title ? `"${r.title}" ` : ''}— ${why.join(' · ')}`);
 }
-console.log(`ตรวจ ${PAGES.length} หน้า / ${rows.length} มุมมอง @${VIEW.width}px · ตำแหน่งชื่อหน้ามาตรฐาน x=${STD_X} · ระยะแท็บ→แถบกรอง ${STD_GAP}px · ผิด ${bad.length} มุมมอง`);
+console.log(`ตรวจ ${PAGES.length} หน้า / ${rows.length} มุมมอง @${VIEW.width}px · ตำแหน่งชื่อหน้ามาตรฐาน x=${STD_X} · ระยะแท็บ→แถบกรอง ${STD_GAP}px · หัวเพจ→แถบกรอง ${STD_GAP_HEAD}px · ผิด ${bad.length} มุมมอง`);
 bad.forEach(l => console.log(l));
 if (!ONLY.length) console.log(`🧭 "คุณอยู่ตรงนี้" บนรางไอคอน — ผิด ${navBad.length} route`);
 navBad.forEach(l => console.log(l));
