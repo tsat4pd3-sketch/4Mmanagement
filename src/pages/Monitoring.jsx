@@ -654,7 +654,8 @@ export default function Monitoring() {
              "แถวที่เก็บไว้" เพื่อให้พิมพ์ทับได้ · ยุบ = เสียอย่างใดอย่างหนึ่ง
              (เหตุผลเต็ม + ทางที่ลองแล้วไม่ได้ → docs/modules/monitoring-boards.md §6.6) */}
       {tab === 'fg' ? (
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+        /* data-subtab = แถวนี้ทำหน้าที่ "แท็บย่อย" ⇒ ลำดับ แท็บ → แท็บย่อย → แถบกรอง (UI-STANDARD §2.1) */
+        <div data-subtab="1" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
           {[
             { k: 'rundown', t: '📉 ของจะขาดวันไหน', s: 'อัตโนมัติล้วน · เรียงตัวที่จะขาดก่อน · ครอบ FG ทุกตัวที่มีออเดอร์' },
             { k: 'board', t: '✏️ บอร์ดแก้มือ (ต่อลูกค้า)', s: 'พิมพ์ทับยอดได้ · เห็นผลิตเข้า/ขั้นต่ำในตารางเดียว' },

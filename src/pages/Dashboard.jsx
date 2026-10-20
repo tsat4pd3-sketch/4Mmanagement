@@ -1336,7 +1336,7 @@ export default function Dashboard({ view = 'timeline' }) {
                           {attendText}
                         </span>
                         {line._hasChildren && (
-                          <button onClick={() => toggleExpand(line.name)}
+                          <button className="tv-hide" onClick={() => toggleExpand(line.name)}
                             style={{
                               fontSize: 13, fontWeight: 800, color: 'var(--accent)', whiteSpace: 'nowrap',
                               display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer',
@@ -1731,7 +1731,10 @@ export default function Dashboard({ view = 'timeline' }) {
                     /* ⚠️ ยุบ "การแสดงผล" เท่านั้น — ห้ามกรองก่อนคำนวณคิว/ตำแหน่งการ์ด
                        (ตำแหน่งใบและเวลาคาดเสร็จผูกกับคิวทั้งไลน์ ตัดใบออกก่อน = เวลาเพี้ยนทั้งแถว) */
                     const manualRows = qRows.filter(isManualRow);
-                    const visRows = showManualRows ? qRows : qRows.filter(r => !isManualRow(r));
+                    /* 📺 จอ TV กดกางไม่ได้ (20/10 user "ทำไมไม่เห็นกัมบังของแต่ละพาร์ท" — ไลน์ HYDROFORM เป็นใบเปิดเองทั้งไลน์
+                       ⇒ ยุบหมดเหลือแถบ ▶ ที่ไม่มีใครกด) ⇒ บนจอ TV กางเสมอ · UI §6.33 */
+                    const manualOpen = showManualRows || tv;
+                    const visRows = manualOpen ? qRows : qRows.filter(r => !isManualRow(r));
 
 
 
@@ -2161,7 +2164,7 @@ export default function Dashboard({ view = 'timeline' }) {
                         )}
                         {/* ✍️ ใบเปิดเอง — ยุบไว้ แต่ **ห้ามซ่อนเงียบ** ต้องบอกจำนวน + กดกางได้เสมอ
                             (ยอดผลิต/pace บนหัวการ์ดยังนับใบพวกนี้ครบตามจริง — ยุบแค่การแสดงผลรายแถว) */}
-                        {manualRows.length > 0 && (
+                        {manualRows.length > 0 && !tv && (
                           <div onClick={() => setShowManualRows(v => !v)}
                             style={{
                               padding: '6px 12px', fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8,

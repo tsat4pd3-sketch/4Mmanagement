@@ -3,6 +3,7 @@
    · บอร์ดเดียวยาวเกินจอ = เลื่อนต่อในบอร์ดเดิม ⇒ เขียน "บอร์ดนี้ต่อ 2/3" ให้รู้ว่ายังไม่ใช่บอร์ดถัดไป
    · อยู่กลางล่าง — มุมขวาล่างเป็นที่ของชิปไซเรน (DowntimeSiren) */
 import useTvShell from '../utils/useTvShell';
+import { SUBPAGE_ATTR } from '../utils/displayRotation';
 
 export default function TvPagerBar({ pager, intervalSec = 20, onScrollMode }) {
   const tv = useTvShell();   // 📺 จอประชุม: ตัวใหญ่ให้อ่านจากระยะ 2–3 ม. ว่าอยู่หน้าไหน (UI §6.32)
@@ -13,7 +14,7 @@ export default function TvPagerBar({ pager, intervalSec = 20, onScrollMode }) {
     padding: tv ? '4px 12px' : '3px 9px', fontSize: fz, fontWeight: 700, cursor: 'pointer', lineHeight: 1.3,
   };
   return (
-    <div style={{
+    <div {...{ [SUBPAGE_ATTR]: `${pager.page + 1}/${pager.pageCount}` }} style={{
       position: 'fixed', left: '50%', transform: 'translateX(-50%)', bottom: 'calc(12px + var(--mnav-h, 0px))', zIndex: 900,
       display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderRadius: 12,
       background: 'var(--card)', border: '1px solid var(--border2)', boxShadow: 'var(--shadow-float)',
