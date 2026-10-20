@@ -25,6 +25,9 @@ import { visibleInterval } from '../utils/usePolling';
 import { RATE, LIVE } from '../utils/refreshRates';
 import { coalesce, makeIdleGate } from '../utils/liveRefresh';
 import { positionAllCards, delayedCountOf, orderKeyOf, projectedFinishMs, planStatusOf, pushChainOf, dayDelaySummaryOf } from '../utils/heijunkaQueue';
+import { matchPlanToActual } from '../utils/planLots';
+import PlanFrameBar from '../components/PlanFrameBar';
+import PlanFrameRow from '../components/PlanFrameRow';
 import { buildBoardCards } from '../utils/boardCards';
 import PlanSlipBar from '../components/PlanSlipBar';   // 📋 แถบ "หลุดแผนไปแค่ไหน" (เวลา+ยอด · 2026-09-30)
 import DelayBlameBar from '../components/DelayBlameBar';   // 🔗 สรุปดีเลย์ของวัน + ต้นเหตุ/ผู้ถูกพาล (ทีมปั๊ม 2026-09-30)
@@ -402,7 +405,17 @@ export default function Management() {
     if (ordErr) ({ data: orders } = await supabaseDR.from('prod_orders').select(ordCols.replace(', machine_no', '')).in('session_id', sessionIds));
     // production_sessions.product_id ไม่ได้ตั้งค่าเสมอ (กะนึงมีได้หลาย mat_no)
     // จึง fallback ไปหา cycle_time_sec ตรงจาก mat_no ของออเดอร์เอง
-    const matNos = [...new Set((orders || []).map(o => o.mat_no).filter(Boolean))];
+    /* 🧾 กรอบแผนของวัน (Layer 1) — โหลดก่อนหา CT เพราะพาร์ทในกรอบที่ "ยังไม่เปิดใบ"
+       ไม่มีใน `orders` ⇒ ถ้าไม่รวม mat ของกรอบเข้าไปด้วย จะไม่มี CT = กล่องกรอบวางเวลาไม่ได้ทุกใบ
+       (ซึ่งคือเคสที่แถวกรอบตั้งใจจะโชว์พอดี) · 🔴 error = `null` ≠ "ไม่มีกรอบ" (จอแยก 2 ความหมาย) */
+    const planRes = await supabaseDR.from('production_plan_lots')
+      .select('id, work_date, shift, line_name, seq, mat_no, part_name, qty_plan, est_min, status, source')
+      .eq('work_date', dateStr).in('line_name', lineNames);
+    const planLots = planRes.error ? null : (planRes.data || []);
+    const matNos = [...new Set([
+      ...(orders || []).map(o => o.mat_no),
+      ...(planLots || []).map(l => l.mat_no),
+    ].filter(Boolean))];
     const ctMap = {};
     const nameMap = {};
     const imgMap = {};
@@ -424,7 +437,7 @@ export default function Management() {
     (dtLogs || []).forEach(d => { (dtBySession[d.session_id] ||= []).push(d); });
     const enriched = sessions.map(s => ({ ...s, orders: ordersBySession[s.id] || [], dtLogs: dtBySession[s.id] || [] }));
     const { data: breakPolicies } = await supabaseDR.from('break_policies').select('*').eq('is_active', true);
-    setLineProdData({ boardLine, sessions: enriched, workDate: dateStr, ctByMatNo: ctMap, nameByMatNo: nameMap, imgByMatNo: imgMap, pairMatByMat: pairMap, breakPolicies: breakPolicies || [] });
+    setLineProdData({ boardLine, sessions: enriched, workDate: dateStr, ctByMatNo: ctMap, nameByMatNo: nameMap, imgByMatNo: imgMap, pairMatByMat: pairMap, breakPolicies: breakPolicies || [], planLots });
   }, [boardDate]);
 
   useEffect(() => {
@@ -1671,6 +1684,21 @@ export default function Management() {
             ctByMat: ctByMatNo, nowMs, frameEndMs: gridEndMs, shiftEndMs,
           });
 
+          /* ── 🧾 กรอบแผน (Layer 1) เทียบของจริง (Layer 2) ─────────────────────────────
+             🔴 สูตรกลาง `matchPlanToActual` เท่านั้น — ปันยอดรวมต่อพาร์ทตามลำดับล็อต
+                **ห้ามนับ "กี่ใบถูกเปิด" ในหน้า** (ใบเดียวอาจคลุมหลายล็อต และกลับกัน)
+             ที่มา 20/10: หน้างานไม่สแกนคัมบัง ⇒ บอร์ดว่าง ⇒ ถูกอ่านว่า "ไม่มีออเดอร์"
+                กรอบทำให้ช่องว่างนั้น **มีตัวเลข** ให้ cross-function เช็คได้ */
+          const planLots = lineProdData.planLots;
+          const planRec  = planLots?.length
+            ? matchPlanToActual(planLots, sessions.flatMap(sx => sx.orders || []))
+            : null;
+          /* แถว "กรอบแผน" บนไทม์ไลน์ — แยกตามกะ (แถบบน = กะเช้า · แถบล่าง = กะดึก เหมือนแถวพาร์ท)
+             สถานะรายล็อตมาจาก planRec เท่านั้น (ห้ามนับใบเองในหน้า) */
+          const planLotsByShift = { day: [], night: [] };
+          (planLots || []).forEach(l => { (planLotsByShift[l.shift === 'night' ? 'night' : 'day']).push(l); });
+          const planStateById = new Map((planRec?.rows || []).map(r => [r.lot.id, r.state]));
+
           const openByMatNo = {};
           sessions.forEach(s => s.orders.forEach(o => {
             if (o.status === 'open') openByMatNo[o.mat_no] = (openByMatNo[o.mat_no] || 0) + 1;
@@ -1796,6 +1824,10 @@ export default function Management() {
                   {/* ⚠️ ชิป "ดีเลย์ N ใบ" ถอดออก 30/09 — ซ้ำกับ "ยังค้าง N" ในสรุปวัน (`totalDelayed` ยังคุมสีขอบ) */}
                   {/* 📋 ขนาดของการหลุดแผน (นาที + ชิ้น + คาดจบ) — "กี่ใบ" อย่างเดียวตอบหน้างานไม่ได้ */}
                   <PlanSlipBar st={boardPlan} fmtMs={fmtMs} size={12} />
+                  {/* 🧾 กรอบแผนของทีมวางแผน — ต้องเห็นแม้ไม่มีใบคัมบังสักใบ (ว่าง ≠ ไม่มีงาน) */}
+                  <div style={{ flexBasis: '100%', minWidth: 0 }}>
+                    <PlanFrameBar rec={planRec} lots={planLots} size={12} />
+                  </div>
                   {/* 🔗 สรุปวัน + ต้นเหตุ/ผู้ถูกพาล (ทีมปั๊ม) */}
                   <div style={{ flexBasis: '100%', minWidth: 0 }}>
                     <DelayBlameBar day={dayDelay} chains={blameChain} />
@@ -2057,6 +2089,14 @@ export default function Management() {
                         );
                       })}
                     </div>
+                    {/* 🧾 แถวกรอบแผน — อยู่บนสุด: อ่านจากบนลงล่าง = "วางไว้แบบนี้ → ทำได้แบบนี้"
+                        🔴 ต้องวาดแม้ไม่มีใบคัมบังสักใบ (นั่นคือทั้งเหตุผลที่มีแถวนี้) */}
+                    <PlanFrameRow
+                      lotsByShift={planLotsByShift} stateOf={(id) => planStateById.get(id) || null}
+                      halves={HALVES} breaksOf={getBreakIntervals} lineName={boardLine}
+                      ctOf={(mat) => ctByMatNo[mat] || null} pairOf={(mat) => pairMatByMat[mat] || null}
+                      leftW={LEFT_W} isMobile={isMobile}
+                    />
                     {/* Rows ต่อ product — ป้าย+รูปใหญ่ 1 อันครอบทั้ง 2 แถบเวลา */}
                     {productRows.map((row) => {
                       const rowActual = row.cards.reduce((a, c) => a + (c.isDone ? (c.qty_ok ?? c.qty ?? 0) : (c.qty_actual ?? 0)), 0);
