@@ -2989,6 +2989,28 @@ test('🛡️ /org-setup: ทุกชั้นที่มีปุ่มเพ
     '\n\n❌ handleSave ไม่ได้ใช้ orgSaveBlockReason ตัดสินสิทธิ์ — ดูเหตุผลด้านบน\n');
 });
 
+/* ── 🔴 /lpa: ใบตรวจ + แผนเดือน/ไตรมาส ไม่เคยมีด่านชั้น 3 (QC audit §7 · 20/10/2026) ──────────
+   หน้านี้มี `qWrite/qGuard` อยู่แล้ว แต่คุมแค่ **ทะเบียนคำถาม** (`lpa_questions`)
+   ส่วน `lpa_audits`/`lpa_plans` ซึ่งเป็นเอกสาร ISO ของไลน์ เขียนได้โดยไม่ถามขอบเขตเลย
+   ⇒ เปิด `?line=` ของส่วนงานอื่นแล้วบันทึก/ลบใบตรวจของเขาทับได้
+   (วัดจริง 843 ใบ: ทุกใบคนเขียนอยู่ส่วนงานเดียวกับไลน์ หรือถือ scope:all_units ⇒ ด่านนี้ไม่กระทบงานจริง) */
+test('🛡️ /lpa: ทุกฟังก์ชันที่เขียนใบตรวจ/แผน ต้องผ่านด่านไลน์ (lineGuard) ก่อน', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/LayerProcessAudit.jsx'), 'utf8'));
+  assert.ok(/const\s+lineWrite\s*=\s*canWriteLine\(/.test(code),
+    '\n\n❌ LayerProcessAudit ไม่มี lineWrite = canWriteLine(...) — ด่านชั้น 3 ของไลน์ที่เลือกอยู่\n');
+  for (const fn of ['const savePlan', 'const saveQuarter', 'const saveAudit', 'const deleteAudit',
+                    'const handleSignDone', 'const fillStationsFromWorkstations']) {
+    const at = code.indexOf(fn);
+    assert.ok(at > -1, `LayerProcessAudit: หา ${fn} ไม่เจอ — ด่านนี้ต้องแก้ตามโครงไฟล์ใหม่`);
+    assert.ok(/lineGuard\(/.test(code.slice(at, at + 320)),
+      `\n\n❌ LPA ${fn.replace('const ', '')}() เขียนใบตรวจ/แผนโดยไม่ผ่าน lineGuard()\n`
+      + '   ผลที่เกิด: เปิด ?line= ของส่วนงานอื่น แล้วบันทึก/ลบเอกสาร ISO ของไลน์เขาได้\n');
+  }
+  // ต้องเขียนเหตุผลบนจอด้วย ไม่ใช่เด้ง toast ตอนกดอย่างเดียว
+  assert.ok(/!lineWrite\.ok[\s\S]{0,400}writeBlockText\(lineWrite/.test(code),
+    '\n\n❌ LPA ไม่ได้เขียนบนจอว่าไลน์นี้แก้ไม่ได้ (ซ่อนปุ่มได้ ห้ามซ่อนเหตุผล · UI §6.9)\n');
+});
+
 /* ── 🔴 "ซ่อนปุ่ม" ไม่ใช่ด่าน — ฟังก์ชันที่เขียน DB ต้องเช็คคีย์เดียวกับปุ่ม (QC audit ข้อ 5 · 19/10) ──
    4 จอรอบสุดท้ายของ audit ข้อ 5: ปุ่มถูกซ่อนด้วย can()/canEdit อยู่แล้ว แต่ handler ไม่เช็คอะไรเลย
    ⇒ สิทธิ์เปลี่ยนระหว่างเปิดจอ / โมดัลเปิดค้าง / เรียกตรง = เขียนได้จริง (กฎเขียน DB ข้อ 10) */
@@ -4830,6 +4852,8 @@ test('🛡️ mtn-pr-receive-via-rpc — รับของ PR ผ่าน mtn_
     if (!/mtn_purchase_requests/.test(src)) continue;
     if (/from\(['"]mtn_purchase_requests['"]\)[\s\S]{0,200}?\.delete\(/.test(src)) bad.push(`${relative(ROOT, f)} (delete)`);
     if (/status:\s*['"]received['"]/.test(src)) bad.push(`${relative(ROOT, f)} (เขียน status received เอง)`);
+    /* 19/10 คำสั่ง user: "เลข PR มาจาก SAP แอดมินช่างกรอก" ⇒ ระบบห้ามออกเลขเอง */
+    if (/mtn_assign_pr_no|from\(['"]mtn_pr_seq['"]\)/.test(src)) bad.push(`${relative(ROOT, f)} (ระบบออกเลข PR เอง — เลขต้องมาจาก SAP)`);
   }
   assert.deepEqual(bad, [],
     '\n\n❌ ใบขอซื้อ (PR) ถูกลบ หรือถูกตั้ง "received" ตรงจาก client: ' + bad.join(', ') + '\n'
@@ -5380,6 +5404,22 @@ test('🛡️ lot-mats-from-rules — lotMats มาจาก lotMatsOf(rules) �
   const pr = stripComments(readFileSync(join(ROOT, 'src/utils/partRefStock.js'), 'utf8'));
   if (!/mode === 'lot'\) continue/.test(pr)) bad.push('partRefStock.js inflowDestOf (กฎโหมด lot ต้องไม่ร่วมตัดสินคลัง)');
   assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n   แก้: ใช้ lotMatsOf(rules) จาก src/utils/stockReceipts.js (select ต้องมีคอลัมน์ mode)\n');
+});
+
+/* 🛡️ asset-url-data-inline (2026-10-19) — รูปที่ import ใน src/assets เล็กกว่า 4 KB ถูก Vite ฝังเป็น `data:` URL
+   เดิมใบพิมพ์ MO เช็คแค่ `https?:` แล้วต่อ `location.origin` หน้า ⇒ "https://…data:image/png…" = รูปพัง
+   (โลโก้ TS 2.4 KB ไม่ขึ้นมุมซ้ายใบแจ้งซ่อม · user แจ้ง 19/10) */
+test('🛡️ asset-url-data-inline — ห้ามต่อ location.origin หน้า URL ของ asset ที่ import มาตรงๆ', () => {
+  const bad = [];
+  for (const f of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const src = stripComments(readFileSync(f, 'utf8'));
+    const assets = [...src.matchAll(/^import\s+(\w+)\s+from\s+['"][^'"]*\.(?:png|jpe?g|svg|gif|webp)['"]/gm)].map(m => m[1]);
+    for (const a of assets) {
+      if (new RegExp(`location\\.origin\\s*\\+\\s*${a}\\b`).test(src)) bad.push(`${relative(ROOT, f)} (location.origin + ${a})`);
+    }
+  }
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n   ') + '\n'
+    + '   แก้: เช็ค /^(https?:|data:|blob:)/ ก่อน ค่อยต่อ origin เฉพาะ path สัมพัทธ์ (ดู absAssetUrl ใน MtnRepair.jsx)\n');
 });
 
 /* ── 🛡️ map3d-switch-no-transition (2026-10-19 · user "จอค่อยๆ วูมเอ้าตอนสลับ 3D/2D") ─────────────
