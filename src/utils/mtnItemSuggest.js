@@ -39,3 +39,22 @@ export function suggestItemTypeFromHistory(rows = [], { allowed = null } = {}) {
   if (votes < ITEM_SUGGEST_MIN_VOTES || votes / counted < ITEM_SUGGEST_MIN_SHARE) return null;
   return { itemType, votes, counted };
 }
+
+/* ═══ ชั้น 1 — จากทะเบียน: MC No. → ประเภทเครื่อง → `machine_types.mo_item_type` (2026-10-20) ═══
+   คำสั่ง user (ข้อ 6): ชนิดอุปกรณ์ในใบ MO ต้องมาจากเครื่อง ไม่ใช่ให้แต่ละทีมพิมพ์ชื่อเอง
+   · ทะเบียนชนะประวัติ (ประวัติ = ชั้น 2 ใช้เมื่อประเภทเครื่องยังไม่ตั้งชื่อในใบแจ้งซ่อม)
+   · ชื่อที่ตั้งไว้แต่ทีมที่แจ้งถึงเลือกไม่ได้ (`allowed`) = ไม่เติม ถอยไปชั้น 2 — ห้ามเติมชื่อที่ไม่มีใน dropdown */
+export function registryItemTypeOf(machine, typesById = {}, { allowed = null } = {}) {
+  const t = machine?.machine_type_id ? typesById?.[machine.machine_type_id] : null;
+  const it = String(t?.mo_item_type ?? '').trim();
+  if (!it) return null;
+  if (allowed && ![...allowed].map(s => String(s).trim()).includes(it)) return null;
+  return { itemType: it, typeLabel: t.label || '' };
+}
+
+/** รวม 2 ชั้น — ทะเบียน > ประวัติ · คืน { itemType, source: 'registry'|'history', ... } | null */
+export function pickMoItemType({ registry = null, history = null } = {}) {
+  if (registry?.itemType) return { ...registry, source: 'registry' };
+  if (history?.itemType) return { ...history, source: 'history' };
+  return null;
+}

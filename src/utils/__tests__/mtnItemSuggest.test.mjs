@@ -27,3 +27,16 @@ test('กรองด้วยลิสต์ที่ทีมเลือก�
   assert.equal(sug(rows, { allowed: ['Robot Handling [ ABB ]', 'Robot Handling [ Yaskawa ]'] }).itemType, 'Robot Handling [ ABB ]');
   assert.equal(sug(rows, { allowed: new Set(['JIG']) }), null);
 });
+
+test('ชั้นทะเบียน — ประเภทเครื่องชี้ชื่อ · ทะเบียนชนะประวัติ · ทีมเลือกไม่ได้ = ถอยไปประวัติ', async () => {
+  const { registryItemTypeOf, pickMoItemType } = await import('../mtnItemSuggest.js');
+  const types = { t1: { label: 'Robot - Handling', mo_item_type: 'ROBOT HANDLING' }, t2: { label: 'Metal Forming', mo_item_type: null } };
+  assert.deepEqual(registryItemTypeOf({ machine_type_id: 't1' }, types), { itemType: 'ROBOT HANDLING', typeLabel: 'Robot - Handling' });
+  assert.equal(registryItemTypeOf({ machine_type_id: 't2' }, types), null);           // ยังไม่ตั้ง
+  assert.equal(registryItemTypeOf({ machine_type_id: null }, types), null);
+  assert.equal(registryItemTypeOf({ machine_type_id: 't1' }, types, { allowed: ['JIG'] }), null);
+  const hist = { itemType: 'Robot Spot [ ABB ]', votes: 4, counted: 5 };
+  assert.equal(pickMoItemType({ registry: registryItemTypeOf({ machine_type_id: 't1' }, types), history: hist }).source, 'registry');
+  assert.equal(pickMoItemType({ registry: null, history: hist }).source, 'history');
+  assert.equal(pickMoItemType({}), null);
+});
