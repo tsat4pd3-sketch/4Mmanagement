@@ -80,7 +80,8 @@ const TV_SHELL = new URLSearchParams(location.search).get('tvshell') === '1'
 const DisplayRotatorLazy = React.lazy(() => import('../src/components/DisplayRotator'))
 function TvShellHarness(){
   useEffect(() => { document.body.classList.add('esm-tv-shell'); return () => document.body.classList.remove('esm-tv-shell') }, [])
-  return <DisplayRotatorLazy userId="x" role="display" shell />
+  /* role ตาม ?role= (admin = ผ่านสิทธิ์ทุกหน้า — ใช้คู่ ?rot= เพราะ harness ไม่ได้โหลดตารางสิทธิ์ของ display) */
+  return <DisplayRotatorLazy userId="x" role={ROLE} shell />
 }
 function App(){
   const [name, setName] = useState(new URLSearchParams(location.search).get('p') || NAMES[0])
@@ -93,8 +94,9 @@ function App(){
     <MemoryRouter initialEntries={[ENTRY]}>
       <UserContext.Provider value={CTX}>
         {/* จำลองโครงเดียวกับ App จริง: main เลื่อนแนวตั้งอย่างเดียว */}
+        {/* 📺 ?tvshell=1: main ไม่เลื่อนเอง (ทั้งเอกสารเลื่อน) เหมือน App จริง — ตัววนจอแบ่งส่วนด้วย window.scrollTo */}
         <main id="mainbox" style={{ flex:1, minHeight:'100vh', paddingTop:14, background:'var(--bg)',
-          overflowY:'auto', overflowX:'hidden', minWidth:0 }}>
+          ...(TV_SHELL ? { overflowX:'clip' } : { overflowY:'auto', overflowX:'hidden' }), minWidth:0 }}>
           <ScrollHint/><EB><Suspense fallback={<div>loading</div>}>{C ? <C {...(VARIANTS[name] || {})}/> : null}</Suspense></EB>
           {/* ToastContainer ต้องมีในหน้าปกติด้วย (05/10) — เดิมมีแค่ใน FeedbackLab ⇒ toast จากหน้าอื่น (เช่น "ขอบเขตนอกสังกัด" ของบอร์ด KPI) ไม่โผล่ ตรวจอัตโนมัติไม่ได้ */}
           <ToastContainer/>
