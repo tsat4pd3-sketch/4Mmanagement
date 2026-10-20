@@ -2,6 +2,7 @@ import { useState, useEffect, useContext, useCallback, useRef, useMemo } from 'r
 import { Link, useNavigate } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
+import { canWriteLine, writeBlockText } from '../utils/writeScope';   // 🔐 ชั้นที่ 3 — ทะเบียนสินค้าของไลน์ส่วนงานอื่น (20/10)
 import { fmtDate, fmtDateTime, fmtDateTimeFull, fmtTime } from '../utils/dateFormat';
 import { buildMachineKeyMap, snapMachineNo } from '../utils/machineNo';
 import { dtBucketName, buildDtIndex } from '../utils/downtimeCategory';
@@ -23,6 +24,8 @@ import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { fetchByIds } from '../utils/fetchByIds';
 import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
 import { checkShiftCapacity } from '../utils/shiftCapacity';
+import { splitCloseOrders, autoCarryPatch, autoCarryText } from '../utils/closeShiftOrders';   // 🔁 ปิดกะ: ใบที่ยังไม่แตะ = ยกเอง (20/10)
+import { carryOffers, debtByPart, debtPcs, debtAgeDays, PENDING_STATUSES, TAKEABLE_SESSION_STATUSES } from '../utils/carryDebt';   // 📥 ของค้าง "ต้องไล่เก็บอีกเท่าไหร่" (20/10)
 import { canShortClose, shortCloseError, shortClosePatch, isShortClosed } from '../utils/shortClose';   // ✂️ ปิดใบด้วยยอดเศษ (งานปั๊ม 2xx · 2026-10-02)   // ⏱️ ด่าน "เปิดใบนี้แล้วเกินกะไหม" (ไลน์เครื่องขนานนับเป็นเลน · 2026-10-02)
 import { MTN_TEAMS, teamForItem, teamForMachine, teamKeyOf, deptNameOf } from '../utils/mtnTeams';
 import useIsMobile from '../utils/useIsMobile';
@@ -406,6 +409,12 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   // Prod Orders
   const [prodOrders, setProdOrders]       = useState([]);
   const [carryOrders, setCarryOrders]     = useState([]); // pending carry-over from prev session
+  /* 🔴 "รับยอดต่อ" ต้องเลือกใบได้ (20/10 · feedback หน้างาน: "297 เหลือ tag เยอะ
+     มันก็ไม่อยากมาส่งต่อกะทุกใบที่เหลือ") — เดิมเป็นเอาทั้งหมดอย่างเดียว
+     ⇒ หัวหน้าที่ไม่อยากลากของพาร์ทอื่นเข้ากะ เลยไม่กดเลย แล้วของค้างก็ไม่ขยับ
+     ค่าเริ่มต้น = ติ๊กครบทุกใบ (พฤติกรรมเดิมเป๊ะ) · ติ๊กออกได้ = ทางหนีที่หายไป */
+  const [carryPick, setCarryPick]         = useState(() => new Set());
+  const [carryListOpen, setCarryListOpen] = useState(false);
   const [kanbanStds, setKanbanStds]       = useState([]);
   // minimize/expand แต่ละ section ใหญ่บนแท็บ Live — จำสถานะใน localStorage (dr_live_collapse_<section>)
   // ค่า default = กางเหมือนเดิม ยกเว้น section ที่ว่างเปล่าเริ่มแบบพับ (autoCollapsed)
@@ -743,76 +752,65 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
          → กะที่รับไปแล้วแต่ยังไม่กดปิด สถานะยังเป็น `open` ⇒ ถ้าไม่ดึงมาด้วย จะมองไม่เห็นใบ confirmed ของมัน
            แล้วใบเก่าที่ค้างในกะก่อนหน้านั้นจะกลายเป็น "ใบล่าสุด" แล้วถูกเสนอซ้ำ
          ดึง 8 กะ (ไม่ใช่ 5) เพราะตอนนี้มีกะ `open` ปนอยู่ในโควตาด้วย */
-      const { data: prevSessions } = await supabaseDR.from('production_sessions')
-        .select('id, status')
-        .eq('line_name', lineName)
-        .neq('id', sessionId)
-        .order('created_at', { ascending: false })
-        .limit(8);
+      /* 📥 ของค้างของไลน์นี้ที่ยังไม่มีใครรับ — **ถามด้วย "สถานะ" ไม่ใช่ "กี่กะล่าสุด"** (20/10)
+         🕳️ ของเดิมดึง "ใบของ 8 กะล่าสุด" ⇒ ไลน์เดิน 2 กะ/วัน = หน้าต่างแค่ ~4 วัน
+            ของที่ค้างเกินนั้น **หลุดหน้าต่างแล้วหายถาวร** — วัดจริง 20/10: Assembly Line D 4 ใบ (8 วัน) ·
+            LASER E50 (28) · Line 60 3 ใบ (33) · LWR BAR (97) · ตรงกับที่หน้างานพูดว่า "มันหาย"
+            และเป็นเหตุผลที่เขาเลือก "ทยอยปริ้น" จนบอร์ดดูเหมือนไม่มีออเดอร์
+         🔑 ถามด้วยสถานะแล้ว**ถูกกว่าเดิม**: เดิมดึง "ทุกสถานะของ 8 กะ" · ตอนนี้ดึงเฉพาะใบที่ค้างจริง
+            (ทั้งระบบมี ~46 ใบ) แล้วค่อยถามประวัติเฉพาะ prod_no เท่าที่ค้าง
+         🔴 คอลัมน์ต้องเลือกเท่าที่ใช้ (egress วัดจริง 25/09: `select=*` = 61% ของ traffic ตารางนี้)
+            **เพิ่มฟิลด์ที่ handleImportCarryOrders ส่งต่อ = ต้องเติมที่นี่ด้วย** ไม่งั้นค่าหายเงียบ */
+      const CARRY_COLS = 'id, session_id, prod_no, mat_no, part_name, p_no, customer, qty, qty_actual, status, is_manual, carry_over_note, opened_at';
+      const SESS_EMBED = ', production_sessions!inner(id, status, line_name, work_date, shift, created_at)';
+      const { data: pending, error: pendErr } = await supabaseDR.from('prod_orders')
+        .select(CARRY_COLS + SESS_EMBED)
+        .in('status', PENDING_STATUSES)
+        .eq('production_sessions.line_name', lineName)
+        .neq('session_id', sessionId);
       if (isStaleSess(sessionId)) return;
-      if (prevSessions?.length) {
-        const prevIds = prevSessions.map(s => s.id);
-        // กะที่ "ยอดค้างของมัน" หยิบมาได้จริง — กะที่ยังเปิดอยู่ห้ามหยิบ (เจ้าของกะยังทำงานอยู่)
-        const takeableSess = new Set(prevSessions.filter(sx => ['closed', 'pending_close'].includes(sx.status)).map(sx => sx.id));
-        /* ⚠️ ต้องดึง **ทุกสถานะ** ไม่ใช่แค่ carry_over/open (แก้ 2026-09-09 · feedback หน้างาน
-           "งานยกยอดที่กะเมื่อคืนเคลียร์จากกะเช้าเมื่อวานไปแล้ว ยังมาเด้งโชว์ต่อกะเช้าวันนี้")
-           เพราะต้องรู้ด้วยว่า prod_no นั้น **มีใบที่ใหม่กว่าซึ่งถูกรับ/ปิดไปแล้วหรือยัง**
-           ถ้าดึงแค่ open/carry_over จะมองไม่เห็นใบ confirmed/imported ของกะที่ใหม่กว่า
-           → ใบที่ค้างอยู่ในกะเก่า (ซึ่ง `pending_close` ก็เข้าเงื่อนไข) ถูกเสนอซ้ำทุกกะไปเรื่อยๆ */
-        /* 🔴 ห้ามกลับไป `select('*')` — คิวรีนี้ดึงใบของ **8 กะก่อนหน้า** และวิ่งใหม่ทุกครั้งที่มี
-           realtime event หรือมีใครบันทึกในกะนี้ · `prod_orders` มี 33 คอลัมน์ และวัดจริง 25/09:
-           shape `select=*` = 8,625 ครั้ง/วัน = 61% ของ traffic ทั้งตาราง
-           คอลัมน์ด้านล่าง = ทุกตัวที่ตรรกะยกยอด + ปุ่ม "รับยอดค้างเข้ากะ" + แบนเนอร์ใช้จริง
-           **เพิ่มฟิลด์ที่ handleImportCarryOrders ส่งต่อ = ต้องเติมที่นี่ด้วย** ไม่งั้นค่าหายเงียบ */
-        const CARRY_COLS = 'id, session_id, prod_no, mat_no, part_name, p_no, customer, qty, qty_actual, status, is_manual, carry_over_note, opened_at';
-        const { data: carried } = await supabaseDR.from('prod_orders')
-          .select(CARRY_COLS)
-          .in('session_id', prevIds)
-          .order('opened_at', { ascending: false });
-        if (isStaleSess(sessionId)) return;
-        // ลำดับความใหม่ของกะ (prevSessions เรียง created_at desc อยู่แล้ว) → 0 = ใหม่สุด
-        const sessRank = {};
-        prevSessions.forEach((sx, i) => { sessRank[sx.id] = i; });
-        /* ใบล่าสุดจริงๆ ของแต่ละ prod_no = กะใหม่สุดก่อน ถ้ากะเดียวกันค่อยดู opened_at
-           (เรียงมาแล้ว desc → ตัวแรกที่เจอในกะ rank ต่ำสุดคือใบล่าสุด) */
-        /* ⭐ `imported` ห้ามเป็น "ใบล่าสุด" ที่ตัดสินว่างานจบ (2026-09-10 · feedback หน้างาน
-             "กะกลางคืนส่งยอดต่อกะ เข้านี้ 25 ตัว · ตอนเข้าเปิดกะมาไม่โชว์ขึ้น")
-           imported แปลว่า "ใบนี้ถูกกะอื่นรับไปแล้ว" = **มีใบต่อจากมันเสมอ** ไม่ใช่จุดจบของงาน
-           (ต่างจาก confirmed/cancelled ที่จบจริง) · เคสจริง 09/09 Assy LWR: กะดึกถูกเปิดซ้ำ 2 กะ
-           ใบ 25/35 ถูกรับเข้ากะซ้ำ ⇒ ต้นทางกลายเป็น imported อยู่ในกะที่ created_at ใหม่กว่า
-           ⇒ ชนะ rank แล้วถูกตีว่า "จบแล้ว" ทับใบ carry_over 10 ชิ้นตัวจริงที่อยู่ในกะซ้ำ
-           ⇒ กะเช้าวันถัดมาไม่เห็นยอดค้าง 10 ชิ้นเลย
-           แก้: เรียงด้วย (ไม่ใช่ imported ก่อน, แล้วค่อยดูความใหม่ของกะ) — ใบต่อของ imported
-           อยู่ในกะที่ใหม่กว่าเสมอหรือไม่ก็กะปัจจุบัน (ซึ่งถูกกรองด้วย currentProdNos อยู่แล้ว) */
-        const latest = {};
-        (carried || []).forEach(o => {
-          const cur = latest[o.prod_no];
-          const r = sessRank[o.session_id] ?? 99;
-          const sup = o.status === 'imported' ? 1 : 0;   // 0 = ใบที่ยังพูดแทนงานนี้ได้ · 1 = ถูกรับไปแล้ว
-          if (!cur || sup < cur.sup || (sup === cur.sup && r < cur.rank)) latest[o.prod_no] = { row: o, rank: r, sup };
-        });
-        const currentProdNos = new Set((data || []).map(o => o.prod_no));
-        const deduped = Object.values(latest).map(x => x.row).filter(o => {
-          if (currentProdNos.has(o.prod_no)) return false;      // รับเข้ากะนี้แล้ว
-          /* ⭐ ด่านใหม่: เสนอเฉพาะเมื่อ **ใบล่าสุด** ของ prod_no นั้นยังค้างจริง
-             ใบล่าสุดเป็น confirmed = กะหลังทำจนจบแล้ว · imported = ถูกรับไปแล้ว · cancelled = ยกเลิกแล้ว
-             → ทั้ง 3 กรณีงานจบไปแล้ว ห้ามปลุกใบเก่าที่ค้างในกะที่ยังไม่ปิดขึ้นมาเสนอซ้ำ
-             (ครอบถึงกะที่ "คอนเฟิมยอดแล้วแต่ยังไม่กดปิดกะ" ด้วย เพราะ prevSessions รวมกะ `open` แล้ว) */
-          if (!['carry_over', 'open'].includes(o.status)) return false;
-          /* ใบล่าสุดอยู่ในกะที่ยัง `open` = กะนั้นกำลังทำงานกับใบนี้อยู่ ห้ามแย่งมา
-             (ต่างจาก `pending_close` ที่หัวหน้ากะตัดสินใจยกยอดไปแล้ว) */
-          if (!takeableSess.has(o.session_id)) return false;
-          // ออเดอร์ที่ผลิตครบเป้าแล้ว (qty_actual >= qty) ไม่ถือเป็นยอดค้าง — ถ้ายังยกมาจะกลายเป็น
-          // "ผีค้าง 1 ชิ้น" ไปเรื่อยๆ ทุกกะเพราะโค้ดเก่าบังคับขั้นต่ำ 1 ชิ้นแม้ผลิตครบแล้ว
-          if ((o.qty_actual || 0) >= o.qty) return false;
-          return true;
+      /* 🔴 อ่านไม่สำเร็จ = "ตอบไม่ได้" ไม่ใช่ "ไม่มีของค้าง" — ล้างลิสต์แล้วเงียบ = จอโกหก */
+      if (pendErr) { setCarryOrders([]); setSessLoadErr(e => ({ ...e, 'ยอดค้างกะก่อน': pendErr.message })); return; }
+      setSessLoadErr(e => (e['ยอดค้างกะก่อน'] ? { ...e, 'ยอดค้างกะก่อน': null } : e));
+
+      const prodNos = [...new Set((pending || []).map(o => o.prod_no).filter(Boolean))];
+      if (!prodNos.length) { setCarryOrders([]); return; }
+      /* ประวัติของเฉพาะ prod_no ที่ค้าง — ต้องรู้ว่ามีใบ "ใหม่กว่า" ที่จบไปแล้วหรือยัง
+         (กฎข้อ ① และ ② ใน utils/carryDebt.js) · `.in()` ยาวได้ ⇒ ผ่าน fetchByIds กันคืนค่าว่างเงียบ */
+      const histRes = await fetchByIds(prodNos, (part) => supabaseDR.from('prod_orders')
+        .select(CARRY_COLS + SESS_EMBED)
+        .eq('production_sessions.line_name', lineName)
+        .in('prod_no', part));
+      if (isStaleSess(sessionId)) return;
+      /* 🔴 โหลดไม่ครบ = ตอบไม่ได้ ⇒ บอกบนจอ ห้ามโชว์ลิสต์ที่ขาดเป็น "ของค้างทั้งหมด" */
+      if (histRes.failed || histRes.truncated) {
+        setCarryOrders([]);
+        setSessLoadErr(e => ({ ...e, 'ยอดค้างกะก่อน': histRes.error || 'โหลดประวัติใบไม่ครบ' }));
+        return;
+      }
+      {
+        const rows = histRes.rows || [];
+        /* rank = ความใหม่ของกะ (0 = ใหม่สุด) — เดิมได้จากลำดับ prevSessions · ตอนนี้จาก created_at ของกะ */
+        const order = [...new Set(rows.map(o => o.production_sessions?.created_at).filter(Boolean))]
+          .sort((a, b) => (a < b ? 1 : a > b ? -1 : 0));
+        const rankByTime = new Map(order.map((t, i) => [t, i]));
+        const takeable = new Set(TAKEABLE_SESSION_STATUSES);
+        const deduped = carryOffers({
+          rows,
+          rankOf: (o) => rankByTime.get(o.production_sessions?.created_at) ?? 99,
+          currentProdNos: new Set((data || []).map(o => o.prod_no)),
+          isTakeable: (o) => takeable.has(o.production_sessions?.status),
         });
         setCarryOrders(deduped);
-      } else {
-        setCarryOrders([]);
       }
     }
   }, [isStaleSess]);
+
+  /* ของค้างเปลี่ยนชุด = เริ่มใหม่ด้วย "ติ๊กครบ" · deps เป็น string ตามกฎข้อ 9 (ห้าม array ใน deps) */
+  const carryIdsKey = carryOrders.map(o => o.id).join('|');
+  useEffect(() => {
+    setCarryPick(new Set(carryIdsKey ? carryIdsKey.split('|') : []));
+  }, [carryIdsKey]);
 
   const loadDefectLogs = useCallback(async (sessionId) => {
     if (!sessionId) return;
@@ -2222,10 +2220,13 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
 
   // Import carry-over orders into current session
   const handleImportCarryOrders = async () => {
-    if (!selSession || !carryOrders.length) return;
+    /* 🔴 รับเฉพาะใบที่ติ๊ก — ใบที่ไม่ติ๊ก **ยังค้างต่อ ไม่ถูกแตะ** (ส่งต่อไปเรื่อยๆ ตามคำสั่ง user)
+       ไม่ใช่ "ไม่รับ = ทิ้ง" · เดิมเป็นเอาทั้งหมดอย่างเดียว ⇒ คนที่ไม่อยากลากพาร์ทอื่นเข้ากะเลยไม่กดเลย */
+    const picked = carryOrders.filter(o => carryPick.has(o.id));
+    if (!selSession || !picked.length) return;
     let imported = 0;
     const opened_at = carryImportOpenedAt();
-    for (const o of carryOrders) {
+    for (const o of picked) {
       const dup = prodOrders.find(p => p.prod_no === o.prod_no);
       if (dup) {
         // มีในกะนี้แล้ว — mark ต้นทางทุกใบ (รวมใบซ้ำในกะเก่าๆ) เป็น imported เพื่อให้ banner เคลียร์ออก
@@ -2339,21 +2340,25 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       return;
     }
 
-    // Check open orders that haven't been decided yet
+    /* 🔁 แยก 2 กองก่อน (กฎกลาง `utils/closeShiftOrders.js` · คำสั่ง user 20/10
+       "ยกยอดแค่ใบที่ทำไม่จบครึ่งๆกลางๆ ที่เหลือออโต้ยกไปเลย")
+       · ยังไม่แตะเลย → ระบบยกให้เอง **ไม่ต้องกด ไม่มีปุ่มยกเลิก** (ห้ามลบความต้องการทิ้ง)
+       · แตะแล้ว     → คนตัดสินเหมือนเดิม (ต้องยืนยันยอดจริง ระบบเดาแทนไม่ได้) */
     const openOrders = prodOrders.filter(o => o.status === 'open');
-    const undecided  = openOrders.filter(o => !carryOverDecisions[o.id]);
+    const { autoCarry: autoCarryOrders, needDecision } = splitCloseOrders(openOrders, carryQtyActual);
+    const undecided  = needDecision.filter(o => !carryOverDecisions[o.id]);
     if (undecided.length > 0) {
-      toast.error(`มี ${undecided.length} Order ที่ยังไม่ได้ตัดสินใจ (ผลิตครบแล้ว / ยกยอดต่อ / ปิดด้วยยอดเศษ / ยกเลิก)`);
+      toast.error(`มี ${undecided.length} Order ที่ทำไปบางส่วนแล้ว — ต้องตัดสินใจก่อนปิดกะ (ผลิตครบแล้ว / ยกยอดต่อ / ปิดด้วยยอดเศษ / ยกเลิก)`);
       return;
     }
     // ครบเป้าแล้วแต่ยังเลือก "ยกยอดต่อ" — ไม่มีอะไรเหลือให้ยก ต้องใช้ "ผลิตครบแล้ว" แทน
-    const invalidCarry = openOrders.filter(o => carryOverDecisions[o.id] === 'carry' && (parseInt(carryQtyActual[o.id]) || 0) >= o.qty);
+    const invalidCarry = needDecision.filter(o => carryOverDecisions[o.id] === 'carry' && (parseInt(carryQtyActual[o.id]) || 0) >= o.qty);
     if (invalidCarry.length > 0) {
       toast.error(`มี ${invalidCarry.length} Order ที่ผลิตครบเป้าแล้วแต่เลือก "ยกยอดต่อ" — กรุณาเปลี่ยนเป็น "ผลิตครบแล้ว"`);
       return;
     }
     // ✂️ ปิดด้วยยอดเศษ — ยอดต้องเข้าเกณฑ์ (>0 · ไม่เกิน/ไม่เท่าเป้า) และของต้องส่งเศษได้ (ไม่ใช่ FG)
-    const badShort = openOrders.find(o => carryOverDecisions[o.id] === 'short'
+    const badShort = needDecision.find(o => carryOverDecisions[o.id] === 'short'
       && (!canShortClose(o.mat_no).ok || shortCloseError(parseInt(carryQtyActual[o.id]) || 0, o.qty_target ?? o.qty)));
     if (badShort) {
       const g = canShortClose(badShort.mat_no);
@@ -2414,7 +2419,20 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
 
     // Process carry-over decisions
     const { data: { user } } = await supabase.auth.getUser();
-    for (const order of openOrders) {
+    /* 🔁 ยกอัตโนมัติ (ใบที่ยังไม่ได้ผลิตเลย) — ⚠️ เขียนแล้วต้องเช็ค error เหมือนกองที่คนตัดสิน
+       ล้มแล้วปล่อยผ่าน = กะปิดแต่ใบยัง `open` ค้างในกะที่ปิดไปแล้ว = หายจากทุกจอ */
+    for (const order of autoCarryOrders) {
+      const stopAuto = closeEndTime && selSession.work_date
+        ? new Date(`${selSession.work_date}T${closeEndTime.slice(0, 5)}:00`).toISOString() : null;
+      const { error: acErr } = await supabaseDR.from('prod_orders')
+        .update(autoCarryPatch(order, {
+          shiftLabel: selSession.shift === 'day' ? 'กะเช้า' : 'กะดึก',
+          dateLabel: fmtDate(selSession.work_date), stoppedAt: stopAuto,
+        })).eq('id', order.id);
+      if (acErr) { toast.error(`ยกยอดใบ ${order.prod_no || order.mat_no} อัตโนมัติไม่สำเร็จ — ยังไม่ปิดกะ ลองใหม่: ` + acErr.message); setSavingClose(false); return; }
+    }
+
+    for (const order of needDecision) {
       const decision  = carryOverDecisions[order.id];
       const qActual   = parseInt(carryQtyActual[order.id]) || 0;
       // เวลาหยุดผลิตจริงของออเดอร์นี้ — ใช้ที่กรอกไว้ ถ้าไม่ได้แก้ก็ใช้เวลาปิดกะรวมเป็น default
@@ -2614,9 +2632,12 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       oee_q:        Q != null ? parseFloat((Q * 100).toFixed(1)) : null,
       parts: summarizeParts([
         ...confirmed.map(o => ({ mat_no: o.mat_no, part_name: o.part_name, qty: o.qty })),
-        ...openOrders.map(o => carryOverDecisions[o.id] === 'confirm'
+        ...needDecision.map(o => carryOverDecisions[o.id] === 'confirm'
           ? { mat_no: o.mat_no, part_name: o.part_name, qty: o.qty }
           : { mat_no: o.mat_no, part_name: o.part_name, qty: parseInt(carryQtyActual[o.id]) || 0, carry: true }),
+        /* ใบที่ยกอัตโนมัติ = ยังไม่ได้ผลิตเลย ⇒ ยอด 0 แต่ **ต้องอยู่ในสรุป** ไม่งั้นแจ้งเตือนปิดกะ
+           จะเหมือนไม่มีของค้าง ทั้งที่ยกไป N ใบ */
+        ...autoCarryOrders.map(o => ({ mat_no: o.mat_no, part_name: o.part_name, qty: 0, carry: true })),
       ]),
       downtimes:    summarizeDowntimes(updatedDtLogs),
       dt_total_min: Math.round(updatedDtLogs.reduce((s, d) => s + (d.duration_min || 0), 0)),
@@ -3548,15 +3569,84 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
               {carryOrders.length > 0 && canScan && (
                 <div style={{ marginBottom: 10, padding: '10px 14px', background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.4)', borderRadius: 9 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                    <div>
-                      <div style={{ fontSize: 12, fontWeight: 700, color: '#a78bfa' }}>➡ มียอดค้างจากกะก่อน {carryOrders.length} Order (เหลือ {carryOrders.reduce((s,o) => s + Math.max(0, o.qty - (o.qty_actual || 0)), 0)} ชิ้น)</div>
-                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{carryOrders.map(o => o.prod_no).join(', ')}</div>
+                    {/* 📥 user 20/10: "ตามหลักต้องเปิดให้เห็นว่า **ต้องไล่เก็บอีกแค่ไหน**"
+                        ⇒ บอกเป็น ชิ้น + อายุค้าง ไม่ใช่แค่ "กี่ใบ" · เรียงหนี้มากก่อน */}
+                    {(() => {
+                      const parts = debtByPart(carryOrders, selSession?.work_date, (o) => o.production_sessions?.work_date);
+                      const pcs   = carryOrders.reduce((a, o) => a + debtPcs(o), 0);
+                      const ages  = carryOrders.map(o => debtAgeDays(o.production_sessions?.work_date, selSession?.work_date)).filter(a => a != null);
+                      const oldest = ages.length ? Math.max(...ages) : null;
+                      return (
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: '#a78bfa' }}>
+                            ➡ ต้องไล่เก็บอีก {pcs.toLocaleString()} ชิ้น · {carryOrders.length} ใบ จากกะก่อน
+                            {/* 🔴 อายุที่คำนวณไม่ได้ = ไม่เขียน ห้ามเขียน "0 วัน" (0 แปลว่าของวันนี้) */}
+                            {oldest != null && oldest > 0 && (
+                              <span style={{ color: oldest >= 7 ? '#ef4444' : '#f59e0b', marginLeft: 6 }}>
+                                · เก่าสุดค้างมา {oldest} วัน
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2, lineHeight: 1.6 }}>
+                            {parts.slice(0, 6).map(x => (
+                              <span key={x.mat_no} style={{ marginRight: 10, whiteSpace: 'nowrap' }}>
+                                <MatLabel mat={x.mat_no} name={x.part_name} size={11} />
+                                <b style={{ color: 'var(--text2)' }}> {x.pcs.toLocaleString()}</b> ชิ้น
+                                {x.oldestDays != null && x.oldestDays > 0 ? ` (${x.oldestDays} วัน)` : ''}
+                              </span>
+                            ))}
+                            {parts.length > 6 ? `+${parts.length - 6} พาร์ท` : ''}
+                          </div>
+                        </div>
+                      );
+                    })()}
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <button onClick={() => setCarryListOpen(v => !v)}
+                        style={{ background: 'var(--bg2)', color: 'var(--text2)', border: '1px solid var(--border)', borderRadius: 7, padding: '6px 11px', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                        {carryListOpen ? '▾' : '▸'} เลือกใบ ({carryPick.size}/{carryOrders.length})
+                      </button>
+                      <button onClick={handleImportCarryOrders} disabled={carryPick.size === 0}
+                        title={carryPick.size === 0 ? 'ยังไม่ได้เลือกใบไหนเลย' : 'ใบที่ไม่ได้เลือกยังค้างต่อ ไม่ถูกลบ'}
+                        style={{ background: carryPick.size ? '#a78bfa' : 'var(--bg3)', color: carryPick.size ? '#fff' : 'var(--muted)', border: 'none', borderRadius: 7, padding: '6px 14px', fontSize: 12, fontWeight: 700, cursor: carryPick.size ? 'pointer' : 'default', whiteSpace: 'nowrap' }}>
+                        📥 รับยอดต่อ {carryPick.size < carryOrders.length ? `(${carryPick.size} ใบ)` : ''}
+                      </button>
                     </div>
-                    <button onClick={handleImportCarryOrders}
-                      style={{ background: '#a78bfa', color: '#fff', border: 'none', borderRadius: 7, padding: '6px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                      📥 รับยอดต่อ
-                    </button>
                   </div>
+
+                  {/* 🔴 เลือกได้ว่าจะรับใบไหน — ใบที่ไม่ติ๊ก **ยังค้างต่อ ไม่ถูกลบ**
+                      (feedback: "ไม่อยากมาส่งต่อกะทุกใบที่เหลือ" ⇒ เดิมไม่มีทางเลือกเลยไม่กด) */}
+                  {carryListOpen && (
+                    <div style={{ marginTop: 8, borderTop: '1px solid rgba(167,139,250,0.3)', paddingTop: 8, maxHeight: 220, overflowY: 'auto' }}>
+                      <div style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
+                        <button onClick={() => setCarryPick(new Set(carryOrders.map(o => o.id)))}
+                          style={{ fontSize: 11, padding: '3px 9px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text2)', cursor: 'pointer', fontWeight: 700 }}>เลือกทั้งหมด</button>
+                        <button onClick={() => setCarryPick(new Set())}
+                          style={{ fontSize: 11, padding: '3px 9px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text2)', cursor: 'pointer', fontWeight: 700 }}>ไม่เลือกเลย</button>
+                      </div>
+                      {carryOrders.map(o => {
+                        const age = debtAgeDays(o.production_sessions?.work_date, selSession?.work_date);
+                        const on  = carryPick.has(o.id);
+                        return (
+                          <label key={o.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 4px', cursor: 'pointer', borderBottom: '1px solid var(--border2)' }}>
+                            <input type="checkbox" checked={on} onChange={() => setCarryPick(prev => {
+                              const n = new Set(prev); if (n.has(o.id)) n.delete(o.id); else n.add(o.id); return n;
+                            })} />
+                            <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--muted)', flexShrink: 0 }}>{o.prod_no}</span>
+                            <MatLabel mat={o.mat_no} name={o.part_name} size={11} style={{ flexWrap: 'nowrap', overflow: 'hidden', minWidth: 0 }} />
+                            <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 800, color: 'var(--text2)', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                              {debtPcs(o).toLocaleString()} ชิ้น
+                              {age != null && age > 0 && (
+                                <span style={{ color: age >= 7 ? '#ef4444' : '#f59e0b', fontWeight: 700 }}> · {age} วัน</span>
+                              )}
+                            </span>
+                          </label>
+                        );
+                      })}
+                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6, lineHeight: 1.6 }}>
+                        🔁 ใบที่ไม่ได้เลือก <b style={{ color: 'var(--text2)' }}>ยังค้างต่อ ไม่ถูกลบ</b> — กะถัดไปเห็นเหมือนเดิม
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -5045,8 +5135,13 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 <div style={{ minWidth: 0 }}>
                 {/* Carry-over: handle open orders */}
                 {(() => {
-                  const openOrders = prodOrders.filter(o => o.status === 'open');
-                  if (!openOrders.length) return null;
+                  const openAll = prodOrders.filter(o => o.status === 'open');
+                  if (!openAll.length) return null;
+                  /* 🔁 กฎกลาง `utils/closeShiftOrders.js` — ใบที่ยังไม่แตะเลย ระบบยกให้เอง
+                     ⇒ รายการที่ต้องกดเหลือเฉพาะใบที่ "ทำไปบางส่วน" (ลดภาระตอนปิดกะ
+                        และไม่มีปุ่มยกเลิกให้ใบที่ยังไม่ได้ทำ — ห้ามลบความต้องการทิ้ง) */
+                  const { autoCarry, needDecision: openOrders } = splitCloseOrders(openAll, carryQtyActual);
+                  const autoPcs = autoCarry.reduce((a, o) => a + (Number(o.qty) || 0), 0);
                   // ยอดยกต้องมาจากของจริงที่ leader กรอกเองเท่านั้น ห้ามให้ระบบประมาณเวลาที่ "น่าจะ" ผลิตได้มาเติมให้
                   // (ของเดิมเคยเดาจากเวลาที่เหลือ ทำให้ดูเหมือนผลิตครบทั้งที่ยังไม่ได้ทำ)
                   // ข้อยกเว้นเดียว: ยอดที่ "คนกรอกเอง" ไว้ระหว่างกะ (qty_actual) ถูกเติมให้ตอนเปิด modal — แก้ทับได้
@@ -5062,9 +5157,25 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   const allDecided = openOrders.every(o => carryOverDecisions[o.id]) && invalidCarry.length === 0;
                   return (
                     <div style={{ marginBottom: 14, padding: '12px 14px', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 10 }}>
+                      {/* 🔁 ยกอัตโนมัติ — ต้องเขียนบนจอว่าระบบกำลังจะทำอะไรให้ **ห้ามยกเงียบ** */}
+                      {autoCarry.length > 0 && (
+                        <div style={{ marginBottom: 10, padding: '9px 12px', borderRadius: 8, fontSize: 12, lineHeight: 1.65,
+                          background: 'var(--card)', backgroundImage: 'linear-gradient(rgba(34,197,94,0.10), rgba(34,197,94,0.10))',
+                          border: '1px solid rgba(34,197,94,0.4)', color: 'var(--text2)' }}>
+                          <div style={{ fontWeight: 800, color: '#22c55e' }}>{autoCarryText(autoCarry.length, autoPcs)}</div>
+                          <div style={{ marginTop: 3, fontFamily: 'monospace', fontSize: 11, color: 'var(--muted)' }}>
+                            {autoCarry.slice(0, 8).map(o => o.prod_no || o.mat_no).join(' · ')}
+                            {autoCarry.length > 8 ? ` · +${autoCarry.length - 8} ใบ` : ''}
+                          </div>
+                          <div style={{ marginTop: 3, fontSize: 11, color: 'var(--muted)' }}>
+                            ใบที่ออกผิดจริงๆ ให้ลบ<b>ระหว่างกะ</b>ที่รายการใบนั้น — ตอนปิดกะไม่มีปุ่มยกเลิกให้ใบที่ยังไม่ได้ผลิต
+                          </div>
+                        </div>
+                      )}
+                      {openOrders.length === 0 ? null : (
                       <div style={{ fontSize: 12, fontWeight: 700, color: '#f59e0b', marginBottom: 10 }}>
-                        ⚠ มี {openOrders.length} Order ที่ยังไม่ปิด — ต้องตัดสินใจก่อนปิดกะ
-                      </div>
+                        ⚠ มี {openOrders.length} Order ที่ทำไปบางส่วน — ต้องตัดสินใจก่อนปิดกะ
+                      </div>)}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                         {openOrders.map(o => {
                           const dec     = carryOverDecisions[o.id];
@@ -5214,7 +5325,10 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
 
                 <div style={{ display: 'flex', gap: 10, marginTop: 16, justifyContent: 'flex-end' }}>
                   <button onClick={() => { setShowCloseShift(false); setCarryOverDecisions({}); }} style={cancelBtnStyle}>ยกเลิก</button>
-                  <button onClick={handleCloseSession} disabled={savingClose || prodOrders.filter(o => o.status === 'open').some(o => !carryOverDecisions[o.id])}
+                  {/* 🔁 ปุ่มปิดกะรอเฉพาะ "ใบที่ทำไปบางส่วน" — ใบที่ยังไม่แตะระบบยกให้เอง (closeShiftOrders.js)
+                      เดิมรอทุกใบ ⇒ เปิดคัมบังไว้ 20 ใบแล้วทำไม่ทัน = ต้องกด 20 ครั้งก่อนปิดกะได้
+                      (นี่คือเหตุผลที่หน้างานเลือก "ทยอยเปิด" จนบอร์ดดูเหมือนไม่มีออเดอร์) */}
+                  <button onClick={handleCloseSession} disabled={savingClose || splitCloseOrders(prodOrders.filter(o => o.status === 'open'), carryQtyActual).needDecision.some(o => !carryOverDecisions[o.id])}
                     style={{ ...saveBtnStyle, background: '#ef4444',
                       opacity: (savingClose || prodOrders.filter(o => o.status === 'open').some(o => !carryOverDecisions[o.id])) ? 0.5 : 1 }}>
                     {savingClose ? '...' : closeIsRequest ? '📋 ส่งขอปิดกะ' : '🔒 ยืนยันปิดกะ'}
@@ -8136,6 +8250,17 @@ function BreakPolicySetup({ role }) {
 function ProductSetup({ role }) {
   const [items, setItems]     = useState([]);
   const [lines, setLines]     = useState([]);
+  /* 🔐 ชั้นที่ 3 — แผงนี้แก้ `dr_products` ชุดเดียวกับ /products (CT · โหมดลงยอด · ลบทิ้ง)
+     ⇒ ต้องมีด่านเดียวกัน ไม่งั้นปิดทาง /products แล้วยังเข้าทางนี้ได้ (audit §14 · 20/10)
+     🔴 สินค้าที่ยังไม่ผูกไลน์ = ของกลาง ยังแก้ได้ตาม default (เพิ่มสินค้าใหม่ที่ยังไม่รู้ไลน์) */
+  const { section: homeSection, sections: scopeSecs, allUnits, respCostCenters, scopeIdx } = useContext(UserContext);
+  const pCtx = { role, section: homeSection, sections: scopeSecs, allUnits, respCostCenters, scopeIdx };
+  const pGuard = (lineName, what) => {
+    const w = canWriteLine(pCtx, lineName, lines);
+    if (w.ok) return true;
+    toast.error(writeBlockText(w, { what, unit: lineName || '' }));
+    return false;
+  };
   const [editing, setEditing] = useState(null);   // product id | 'new'
   const [ecSource, setEcSource] = useState(null); // product being EC'd
   const [form, setForm]       = useState({});
@@ -8193,6 +8318,13 @@ function ProductSetup({ role }) {
 
   const handleSave = async () => {
     if (!form.name) { toast.error('กรอกชื่อสินค้า'); return; }
+    /* ชั้นที่ 3 — เช็ค 2 ฝั่ง: แถวเดิม/ต้นฉบับ EC + ไลน์ปลายทางที่กำลังจะเขียนลง (กฎ "ย้ายของ") */
+    {
+      const orig = editing !== 'new' ? items.find(i => i.id === editing) : null;
+      if (orig && !pGuard(orig.line_name, `สินค้า ${orig.mat_no || orig.name}`)) return;
+      if (ecSource && !pGuard(ecSource.line_name, `สินค้าต้นฉบับ ${ecSource.mat_no || ecSource.name}`)) return;
+      if (!pGuard(form.line_name, 'สินค้าของไลน์นี้')) return;
+    }
     setSaving(true);
     const payload = {
       name: form.name.trim(),
@@ -8237,6 +8369,8 @@ function ProductSetup({ role }) {
   };
 
   const handleDelete = async (id) => {
+    const row = items.find(i => i.id === id);
+    if (!pGuard(row?.line_name, `สินค้า ${row?.mat_no || row?.name || ''}`)) return;   // ชั้นที่ 3
     if (!window.confirm('ลบสินค้านี้?')) return;
     const { error } = await supabaseDR.from('dr_products').delete().eq('id', id);
     if (error) { toast.error(error.message); return; }

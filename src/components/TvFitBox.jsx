@@ -64,9 +64,12 @@ export default function TvFitBox({ enabled, style, tvStyle, innerStyle, maxScale
   return (
     <aside ref={boxRef} data-tv-fit-scale={fit.s.toFixed(2)} data-tv-fit-over={fit.over || undefined}
       style={{ ...tvStyle, position: 'relative', overflow: 'hidden', height: fit.h ?? undefined }}>
-      <div ref={innerRef} style={{ ...innerStyle, width: fit.w ? fit.w / fit.s : undefined, transformOrigin: '0 0',
-        transform: `translateY(${off}px) scale(${fit.s})`, transition: travelMs ? `transform ${travelMs}ms linear` : undefined }}>
-        {children}
+      {/* 2 ชั้น: ชั้นนอก = ย่อ (ไม่มี transition — ค่าที่วัดต้องนิ่งทันที) · ชั้นใน = เลื่อนขึ้นลงช้าๆ (มี transition)
+          เดิมรวมใน transform เดียว ⇒ transition ของการเลื่อน (หลายวินาที) ลากการย่อไปด้วย = ย่อค้างกลางทาง การ์ดล้นขอบขวา (20/10) */}
+      <div ref={innerRef} style={{ width: fit.w ? fit.w / fit.s : undefined, transformOrigin: '0 0', transform: `scale(${fit.s})` }}>
+        <div style={{ ...innerStyle, transform: `translateY(${off / fit.s}px)`, transition: travelMs ? `transform ${travelMs}ms linear` : undefined }}>
+          {children}
+        </div>
       </div>
     </aside>
   );

@@ -6,6 +6,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { loadStorageLocations } from '../utils/useStorageLocations';
 import { UserContext } from '../App';
+import { canWriteLine, writeBlockText } from '../utils/writeScope';   // 🔐 ชั้นที่ 3 — สินค้าของไลน์ส่วนงานอื่น (20/10)
 import { invalidateTable } from '../utils/masterInvalidate';
 import { toast } from '../components/Toast';
 import { loadProcessTypes, activeProcessTypes, procDisplay, procColor } from '../utils/processTypes';
@@ -263,7 +264,8 @@ function ReadyChips({ ready, onGo, compact }) {
 export default function ProductMaster() {
   // ทะเบียนเอกสาร — ชื่อไฟล์ CSV อ่านเลขฟอร์มจาก cache นี้ (lazy chunk ต้องโหลดเอง)
   useEffect(() => { loadDocForms(); }, []);
-  const { role, fullName, isDeptAdmin } = useContext(UserContext);
+  const { role, fullName, isDeptAdmin, section: homeSection, sections: scopeSecs,
+          allUnits, respCostCenters, scopeIdx } = useContext(UserContext);
   // อ้าง isDeptAdmin เพื่อผูก re-render — can() อ่าน flag จาก module var (_deptAdmin) ที่โหลด async
   // ถ้าไม่ consume ค่านี้จาก context ปุ่มแก้ไขจะไม่โผล่จนกว่าจะ re-render ด้วยเหตุอื่น (แอดมินหน่วยงานติ๊กแล้วแต่แก้ไม่ได้)
   void isDeptAdmin;
@@ -292,6 +294,21 @@ export default function ProductMaster() {
   /* ── state ── */
   const [items,   setItems]   = useState([]);
   const [lines,   setLines]   = useState([]);
+  /* 🔐 ชั้นที่ 3 ของทะเบียนสินค้า (`dr_products.line_name`) — audit §14 · 20/10
+     เดิมมีแค่ชั้น ② (`products:edit`) ⇒ หัวหน้าส่วนงานหนึ่งแก้ CT / โหมดลงยอด / ปิดใช้งาน
+     สินค้าของไลน์อีกส่วนงานได้ (CT = ฐานของ %P ทุกกะ · ปิดใช้งาน = ไลน์เขาเปิดงานไม่ได้)
+     · วัดจากข้อมูลจริง 20/10: 166 แถวที่มีผู้แก้ ทุกคนแก้เฉพาะไลน์ส่วนงานตัวเอง
+       (หัวหน้า PD1-PD4 คนละ 4-6 ไลน์ · ที่เหลือถือใบผ่านข้ามหน่วย) ⇒ ด่านนี้ไม่กระทบงานจริงเลย
+     🔴 สินค้าที่ยังไม่ผูกไลน์ (`line_name` ว่าง · วัดได้ 5 แถว) = ของกลาง ยังแก้ได้ตาม default
+        — ถ้าบล็อกจะเพิ่มสินค้าใหม่ที่ยังไม่รู้ไลน์ไม่ได้เลย */
+  const pCtx = { role, section: homeSection, sections: scopeSecs, allUnits, respCostCenters, scopeIdx };
+  const pWrite = (lineName) => canWriteLine(pCtx, lineName, lines);
+  const pGuard = (lineName, what) => {
+    const w = pWrite(lineName);
+    if (w.ok) return true;
+    toast.error(writeBlockText(w, { what, unit: lineName || '' }));
+    return false;
+  };
   const [kanbanStds, setKanbanStds] = useState([]);
   // 📜 MAT ที่เคยบันทึกใน kanban_standards (DR) — แถวจาก Kanban Auto-Calc (product_id null) ยังเลือกแก้ qty ซ้ำได้ (2026-09-07)
   const kanbanMatHist = useColumnHistory(supabaseDR, 'kanban_standards', 'mat_no', { upper: true });
@@ -432,6 +449,14 @@ export default function ProductMaster() {
 
   const handleSave = async () => {
     if (!form.name) { toast.error('กรอกชื่อสินค้า'); return; }
+    /* 🔐 ชั้นที่ 3 — เช็ค **2 ฝั่ง** (กฎ "ย้ายของ" 19/10): แถวเดิม/ต้นฉบับ EC + ไลน์ที่กำลังจะเขียนลง
+       เช็คฝั่งเดียว = ย้ายสินค้าของไลน์เราไปให้ส่วนงานอื่น หรือดึงสินค้าเขามาเป็นของเรา ยังทำได้ */
+    {
+      const orig = editing !== 'new' ? items.find(i => i.id === editing) : null;
+      if (orig && !pGuard(orig.line_name, `สินค้า ${orig.mat_no || orig.name}`)) return;
+      if (ecSource && !pGuard(ecSource.line_name, `สินค้าต้นฉบับ ${ecSource.mat_no || ecSource.name}`)) return;
+      if (!pGuard(form.line_name, 'สินค้าของไลน์นี้')) return;
+    }
     if (form.posting_mode === 'lot_accumulate' && !(Number(form.lot_accumulate_threshold) > 0)) {
       toast.error('กรอกจำนวนสะสมขั้นต่ำ (เช่น 800, 1000) สำหรับโหมดสะสม lot'); return;
     }
@@ -605,6 +630,8 @@ export default function ProductMaster() {
   // (production_sessions/prod_orders/kanban_standards/bom_items) ถ้าลบจริงประวัติจะกำพร้า/ดึงชื่อ-รูปไม่ได้
   // ปิดใช้งานแล้วซ่อนจากรายการ (โผล่เมื่อกด "แสดงประวัติ") + เปิดกลับได้ · เก็บรูปไว้ (สินค้ายังอยู่)
   const handleDelete = async (id) => {
+    const row = items.find(i => i.id === id);
+    if (!pGuard(row?.line_name, `สินค้า ${row?.mat_no || row?.name || ''}`)) return;   // ชั้นที่ 3
     if (!window.confirm('ปิดใช้งานสินค้านี้?\n\nสินค้าจะถูกซ่อนจากรายการ แต่เก็บประวัติไว้ (เปิดกลับได้จากปุ่ม "แสดงประวัติ")')) return;
     const { error } = await supabaseDR.from('dr_products').update({ is_active: false }).eq('id', id);
     if (error) { toast.error(error.message); return; }
@@ -613,6 +640,8 @@ export default function ProductMaster() {
   };
 
   const handleReactivate = async (id) => {
+    const row = items.find(i => i.id === id);
+    if (!pGuard(row?.line_name, `สินค้า ${row?.mat_no || row?.name || ''}`)) return;   // ชั้นที่ 3
     const { error } = await supabaseDR.from('dr_products').update({ is_active: true }).eq('id', id);
     if (error) { toast.error(error.message); return; }
     toast.success('เปิดใช้งานสินค้าแล้ว');
@@ -778,7 +807,14 @@ export default function ProductMaster() {
     if (!toImport.length) { toast.error('ไม่มีรายการที่จะนำเข้า'); return; }
 
     if (type === 'products') {
-      const payload = toImport.map(r => ({
+      /* 🔐 ชั้นที่ 3 — CSV คือทางเขียนทะเบียนสินค้าที่ "เร็วและเงียบที่สุด" (ทีละหลายสิบแถว)
+         ⇒ ต้องกรองแถวที่ไลน์อยู่นอกขอบเขตออก **แล้วเขียนบนจอว่าข้ามกี่แถว** (ห้ามข้ามเงียบ)
+         🔴 กรองก่อนทำ payload — ไม่งั้น kanban_standards ยังถูกเขียนตามแถวที่ถูกตัดไปแล้ว */
+      const inScope = toImport.filter(r => pWrite(r.line_name).ok);
+      const outRows = toImport.length - inScope.length;
+      if (outRows) toast.error(`ข้าม ${outRows} แถวที่ไลน์อยู่นอกขอบเขตของคุณ (นำเข้าได้เฉพาะไลน์ที่คุณดูแล)`);
+      if (!inScope.length) return;
+      const payload = inScope.map(r => ({
         name: r.name, code: r.code || null, mat_no: r.mat_no || null,
         p_no: r.p_no || null, customer: r.customer || null, line_name: r.line_name || null,
         cycle_time_sec: r.cycle_time_sec ? Number(r.cycle_time_sec) : null,
@@ -789,7 +825,7 @@ export default function ProductMaster() {
         .upsert(payload, { onConflict: 'mat_no', ignoreDuplicates: false }).select('id, mat_no');
       if (error) { toast.error(error.message); return; }
 
-      const kanbanRows = toImport.filter(r => r.qty_per_kanban && Number(r.qty_per_kanban) > 0);
+      const kanbanRows = inScope.filter(r => r.qty_per_kanban && Number(r.qty_per_kanban) > 0);
       if (kanbanRows.length) {
         const idByMatNo = new Map((savedProducts || []).map(p => [p.mat_no, p.id]));
         const kanbanPayload = kanbanRows.map(r => ({

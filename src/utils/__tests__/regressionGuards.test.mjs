@@ -5762,12 +5762,33 @@ test('🛡️ break-line-rules-single-entry — ข้อยกเว้นเ�
   if (!/primeBreakRuleIndex\(\)/.test(app))
     bad.push('src/App.jsx — ต้องปลุก primeBreakRuleIndex() (จอ OEE บางจอคิวรี break_policies ตรงๆ)');
 
+  /* ⑥ 🏭 บอร์ดไทม์ไลน์ 24 ชม. — แถบเงาเวลาพักต้องเป็น "ของไลน์แถวนั้น" (20/10 รอบที่ 2)
+        เดิมทั้ง 3 จอวาดแถบจากค่ากลาง + เดาว่า "แถบนี้คือพักอะไร" ด้วยการจับคู่ `start_time` เอง
+        ⇒ พัก `anchor='shift_end'` (`start_time = null`) จับไม่ติด = tooltip เขียน "undefined"
+          และไลน์ที่ตั้ง 5ส. 10 นาที ถูกวาดเป็น 20 นาที = จอบอกเวลาพักผิดจากที่ไลน์ตั้งไว้ */
+  const BOARDS = ['src/pages/Dashboard.jsx', 'src/pages/Management.jsx', 'src/pages/HeijunkaKanban.jsx'];
+  for (const rel of BOARDS) {
+    const code = stripComments(readFileSync(join(ROOT, rel), 'utf8'));
+    // (ก) ห้ามจับคู่นโยบายจากเวลาเอง — ชื่อพักต้องมาจาก `band.policies` ที่ breakBandsIn ติดมา
+    if (/half\.hours\.indexOf\(\s*Number\(\s*String\(\s*bp\.start_time/.test(code))
+      bad.push(`${rel} — ห้ามหานโยบายของแถบพักด้วยการจับคู่ start_time เอง (ใช้ band.policies จาก halfDayBreakBands)`);
+    // (ข) ต้องวาดแถบจาก halfDayBreakBands (ตัวที่ติดป้ายมาให้)
+    if (!/halfDayBreakBands/.test(code))
+      bad.push(`${rel} — บอร์ดไทม์ไลน์ต้องวาดแถบพักผ่าน halfDayBreakBands (ได้ชื่อพัก + ป้าย "ไลน์นี้ตั้งเอง")`);
+    /* (ค) 🔴 ตัวสำคัญที่สุด — เรียกแบบ**ไม่ส่งชื่อไลน์** = ไลน์ที่ตั้งเวลาพักเองกลับไปใช้ค่ากลาง
+           เงียบสนิท (จอดูปกติ · build/lint/เทสผ่านหมด) ซึ่งเป็นสถานะก่อน 20/10 รอบที่ 2 พอดี */
+    for (const call of ['getBreakBands(half)', 'getBreakIntervals(half)', 'allBreaksOnce()'])
+      if (code.includes(call))
+        bad.push(`${rel} — \`${call}\` ไม่ส่งชื่อไลน์ ⇒ แถวนั้นกลับไปใช้เวลาพักค่ากลางเงียบๆ (ส่ง row.line / lineName)`);
+  }
+
   assert.deepEqual(bad, [],
     '\n\n❌ ข้อยกเว้นเวลาพัก "รายไลน์" จะเพี้ยน/ตายเงียบ:\n'
     + bad.map(b => '   • ' + b).join('\n') + '\n'
     + '   ทำไมสำคัญ: ไลน์ที่ตั้ง 5ส. 10 นาที ถ้าระบบกลับไปหัก 20 นาที = ฐานเวลาของ %A/%P\n'
     + '              ผิดทุกกะ โดยที่จอดูปกติและ build ผ่าน — หาไม่เจอจนกว่าจะมีคนทักจากหน้างาน\n'
-    + '   เจ้าของกฎ: src/utils/breakLineRules.js (ไล่สายแม่-ลูก + ทะเบียนกลาง)\n'
+    + '              บอร์ดไทม์ไลน์ที่วาดแถบเงาต้องส่งชื่อไลน์ของแถวนั้นเข้า halfDayBreakBands\n'
+    + '   เจ้าของกฎ: src/utils/breakLineRules.js (ไล่สายแม่-ลูก + ทะเบียนกลาง + ป้ายบนแถบ)\n'
     + '              src/utils/oee.js  (จุดทับค่าจุดเดียว — ใน breakIntervalsIn)\n');
 });
 
@@ -5957,6 +5978,65 @@ test('🛡️ scope-layer-closed-screens — 4 จอที่ปิดรูช
     + '        เรียก **ในฟังก์ชันที่เขียน DB** + เขียนเหตุผลบนจอ (writeBlockText/teamRowLockNote) ห้ามซ่อนปุ่มเงียบ\n');
 });
 
+/* ── 🔐 ชั้นที่ ③ ของ **ทะเบียน 2 ตัวที่มีคอลัมน์หน่วยงานอยู่แล้ว** (20/10 · audit §14) ─────────
+   ต่างจากด่าน `plant-registry-needs-perm-key` ข้างบน (ทะเบียนของกลางที่ไม่มีคอลัมน์หน่วยงาน
+   ⇒ คีย์สิทธิ์เป็นด่านเดียวที่มีได้) — 2 ตารางนี้**บอกเจ้าของได้** จึงต้องเช็คขอบเขตจริง:
+     · `dr_products.line_name` — CT คือฐานของ %P ทุกกะ · `is_active=false` = ไลน์เขาเปิดงานไม่ได้
+       เขียนได้จาก 4 ทาง: /products · /daily-report ⚙️ · /die-registry (ตั้งคู่ RH/LH) · /planner-sales (ผูก p_no)
+       ⇒ ปิดทางเดียวไม่พอ **ต้องปิดทุกทาง** (ฝั่ง DR ไม่มี RLS ⇒ จอคือด่านเดียว)
+     · `skill_definitions.scope_section` — "ลบสกิล" ลบคะแนนพนักงานทุกคน + requirement ทุกจุดงาน (กู้ไม่ได้)
+   🔴 ทั้ง 2 ตารางต้องเช็ค **2 ฝั่ง** ตอนแก้ (แถวเดิม + ค่าที่กำลังจะเขียน) — กฎ "ย้ายของ" 19/10 */
+test('🛡️ row-scope-dr-products-skills — ทุกทางเขียน dr_products / skill_definitions ต้องมีด่านชั้น ③', () => {
+  const FN2 = /\n  (?:const|async function)\s+[A-Za-z0-9_]+\s*=?\s*(?:async)?\s*(?:\([^)]*\)|[A-Za-z0-9_]+)\s*=>?\s*\{/g;
+  const SCOPE = /pGuard\(|sdGuard\(|pWrite\(|sdWrite\(|canWriteLine\(|canWriteUnit\(/;
+  const cases = [
+    ['src/pages/ProductMaster.jsx', 'dr_products'],
+    ['src/pages/DailyReport.jsx',   'dr_products'],
+    ['src/pages/DieRegistry.jsx',   'dr_products'],
+    ['src/pages/PlannerSales.jsx',  'dr_products'],
+    ['src/pages/operator.jsx',      'skill_definitions'],
+  ];
+  const bad = [];
+  for (const [file, table] of cases) {
+    const code = stripComments(readFileSync(join(ROOT, file), 'utf8'));
+    const starts = [...code.matchAll(FN2)].map(m => m.index);
+    const writes = [...code.matchAll(new RegExp(`from\\('${table}'\\)[\\s\\S]{0,200}?\\.(insert|update|upsert|delete)\\(`, 'g'))];
+    assert.ok(writes.length > 0, `${file}: ไม่เจอคำสั่งเขียน ${table} — ด่านนี้ต้องแก้ตามโครงไฟล์ใหม่`);
+    for (const w of writes) {
+      const fnStart = starts.filter(i => i < w.index).pop();
+      const body = code.slice(fnStart ?? 0, w.index);
+      /* ยกเว้นที่มีเหตุผล (กติกาข้อ 4 ของไฟล์นี้) — 2 จุดนี้ "ไม่ได้เขียนของที่ผูกไลน์":
+         · makeBomHead — เปิดใบ BOM สร้างหัวพาร์ทโดยไม่ใส่ `line_name` เลย (ของกลาง ⇒ ด่านจะผ่านอยู่แล้ว)
+         · เติม `image_url` จากทะเบียนกลาง parts_master ให้สินค้าที่ยังไม่มีรูป — รูปคือตัวตนพาร์ท
+           (MAT เดียวกันใช้รูปเดียวกันทุกไลน์) ไม่ใช่ค่าที่ไลน์เป็นเจ้าของ */
+      if (/const makeBomHead\b/.test(body.slice(0, 80))) continue;
+      if (/update\(\{ image_url: imageUrl \}\)[\s\S]{0,30}\.in\('id', emptyIds\)/.test(code.slice(w.index, w.index + 200))) continue;
+      if (!SCOPE.test(body))
+        bad.push(`${file} — เขียน ${table} โดยฟังก์ชันนั้นไม่เช็คขอบเขต (ตำแหน่ง ~${w.index})`);
+    }
+  }
+  /* 🔴 ด่าน "2 ฝั่ง": ตอนแก้ต้องเทียบทั้งแถวเดิมและไลน์/ส่วนงานปลายทาง */
+  const pm = stripComments(readFileSync(join(ROOT, 'src/pages/ProductMaster.jsx'), 'utf8'));
+  if (!/orig && !pGuard\(orig\.line_name/.test(pm) || !/pGuard\(form\.line_name/.test(pm))
+    bad.push('src/pages/ProductMaster.jsx — handleSave ต้องเช็ค 2 ฝั่ง (orig.line_name + form.line_name)');
+  const dr = stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'));
+  if (!/orig && !pGuard\(orig\.line_name/.test(dr) || !/pGuard\(form\.line_name/.test(dr))
+    bad.push('src/pages/DailyReport.jsx — ProductSetup.handleSave ต้องเช็ค 2 ฝั่ง');
+  const op = stripComments(readFileSync(join(ROOT, 'src/pages/operator.jsx'), 'utf8'));
+  if (!/sdGuard\(sdOrig\?\.scope_section/.test(op) || !/sdGuard\(editingSkill\.scope_section/.test(op))
+    bad.push('src/pages/operator.jsx — handleUpdateSkill ต้องเช็ค 2 ฝั่ง (แถวเดิม + ส่วนงานปลายทาง)');
+  /* แผงลูกที่ยืมมือเขียนทะเบียนสินค้า ต้องได้ทะเบียนไลน์ผลิตจากหน้าแม่ (ไม่มี = ตัดสินเจ้าของไม่ได้ ⇒ ด่านปลอม) */
+  const die = stripComments(readFileSync(join(ROOT, 'src/pages/DieRegistry.jsx'), 'utf8'));
+  if (!/<SetPairNote[^>]*prodLines=\{lines\}/s.test(die))
+    bad.push('src/pages/DieRegistry.jsx — ไม่ได้ส่ง prodLines={lines} ให้ SetPairNote');
+
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n   ') + '\n'
+    + '   ทำไม: ทั้ง 2 ตารางรู้เจ้าของ (line_name / scope_section) ⇒ "กดปุ่มเป็นไหม" ไม่พอ\n'
+    + '         CT/โหมดลงยอด/ปิดใช้งานสินค้าของไลน์อื่น = %P ทั้งกะเขาเพี้ยน · ลบสกิล = คะแนนพนักงานหายทั้งส่วนงาน\n'
+    + '         ฝั่ง DR ไม่มี RLS เลย ⇒ จอคือด่านเดียว · ปิดทางเดียวไม่พอ ต้องปิดทุกทางที่เขียนตารางนั้น\n'
+    + '   แก้: canWriteLine/canWriteUnit (utils/writeScope.js) เรียกในฟังก์ชันที่เขียน DB + writeBlockText บนจอ\n');
+});
+
 /* ── 🧭 จุดอ้างอิงของ `audit/stdsweep.mjs` (§2.1 ลำดับแนวตั้ง) ห้ามหาย — 2026-10-20 ───────
    ตัวตรวจลำดับวัดจาก "ก้อนหัวเพจ" (`data-ph-root`) และยกเว้นของที่ติดป้ายไว้
    (`data-ro-note` / `data-page-note` / `data-subtab` / `data-subpanel`)
@@ -5981,4 +6061,154 @@ test('stdsweep anchors — PageHeader/ReadOnlyNote ต้องคงป้า�
   assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n'
     + '   ทำไม: ตัวตรวจลำดับ §2.1 ใช้ป้ายพวกนี้เป็นจุดอ้างอิง/ข้อยกเว้น — หายแล้วมันจะร้องหมาป่าทั้งระบบ\n'
     + '   แก้: คืนป้ายกลับ (docs/UI-STANDARD.md §2.1 เพิ่มเติม) ห้ามแก้ด้วยการผ่อนเกณฑ์ตัวตรวจ\n');
+});
+
+/* ── 🏠 "บ้านจริง" ≠ "ขอบเขตการมองเห็น" — ช่องเดียวห้ามทำ 2 หน้าที่ (20/10 · คำสั่ง user) ───────
+   `/add-user` เคยบันทึก `profiles.section` (บ้านจริง = แกนตัดสิน "แก้ข้อมูลของใครได้")
+   เป็น **`form.sections[0]`** คือช่องแรกของ "เห็นข้อมูลของใคร"
+   ⇒ ติ๊กพื้นที่ที่ไปตรวจ แล้ว**สังกัดเปลี่ยนตามเงียบๆ** · วัดจริง 20/10: QC 13 บัญชี
+     ทะเบียนพนักงานว่าสังกัด **QA** แต่ `profiles.section` กลายเป็น **PD3**
+   ⇒ บ้านจริงของบัญชีของคนต้องมาจาก**ทะเบียนพนักงาน** (สูตรเดียวกับ `App.jsx`: `emp.section ?? ident.section`)
+
+   และ `/operator` แถบ "⚠️ ข้อมูลไม่ตรงผังองค์กร" ห้ามนับ **ผู้จัดการ/หัวหน้าส่วน** ว่า "ยังไม่ระบุแผนก"
+   (เขายืนเหนือชั้นแผนก — user: "ดุลยทรรศน์ เป็นผู้จัดการ เลือกแค่ส่วนพอ") · ตัดสินที่ `needsDepartment()` */
+test('🛡️ home-unit-vs-view-scope — บ้านจริงมาจากทะเบียนพนักงาน · ผู้จัดการไม่ต้องมีแผนก', () => {
+  const bad = [];
+  const au = stripComments(readFileSync(join(ROOT, 'src/pages/AddUser.jsx'), 'utf8'));
+  if (/section:\s*form\.sections\[0\]/.test(au))
+    bad.push('src/pages/AddUser.jsx — ยังบันทึก profiles.section จาก form.sections[0] (ช่อง "เห็นข้อมูลของใคร")');
+  const saves = (au.match(/section:\s*homeSectionForSave\(\)/g) || []).length;
+  if (saves < 2) bad.push(`src/pages/AddUser.jsx — ต้องบันทึกบ้านจริงผ่าน homeSectionForSave() ทั้งตอนสร้างและตอนแก้ (เจอ ${saves}/2)`);
+  if (!/linkedEmp\(\)\?\.section\s*\|\|\s*form\.homeSection/.test(au))
+    bad.push('src/pages/AddUser.jsx — homeSectionForSave() ต้องให้ทะเบียนพนักงานชนะ (emp.section ก่อน form.homeSection)');
+
+  const op = stripComments(readFileSync(join(ROOT, 'src/pages/operator.jsx'), 'utf8'));
+  if (!/if \(!dep && needsDepartment\(emp\.position\)\)/.test(op))
+    bad.push('src/pages/operator.jsx — ด่าน "ยังไม่ระบุแผนก" ต้องผ่าน needsDepartment(emp.position)');
+  const pos = stripComments(readFileSync(join(ROOT, 'src/utils/positions.js'), 'utf8'));
+  if (!/export function needsDepartment/.test(pos) || !/levelOfPosition\(v\) !== 'manager'/.test(pos))
+    bad.push("src/utils/positions.js — needsDepartment() ต้องคืน false ให้ระดับ 'manager' (และ SECTION_LEVEL_POSITION_KEYS)");
+
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n   ') + '\n'
+    + '   ทำไม: "สังกัดหน่วยไหน" (profiles.section · ชั้นสิทธิ์ที่ 3) กับ "เห็นข้อมูลของใคร" (profiles.sections)\n'
+    + '         เป็นคนละคำถาม — ช่องเดียวทำ 2 หน้าที่ = ข้อมูลขัดกับทะเบียนพนักงานโดยไม่มีใครรู้\n'
+    + '   แก้: AddUser → homeSectionForSave() (ทะเบียนพนักงานชนะ) · operator → needsDepartment() (utils/positions.js)\n');
+});
+
+/* ── 🧾 กรอบแผน (Layer 1) ต้องยังขึ้นบอร์ด Heijunka — 2026-10-20 ───────────────────────
+   ที่มา (คำสั่ง user): หน้างานไม่สแกนคัมบัง ⇒ บอร์ดว่าง ⇒ ถูกอ่านว่า "ไม่มีออเดอร์"
+   🔴 ถอดการโหลด `production_plan_lots` ออกจาก `/management` เมื่อไหร่ = **จอกลับไปโกหกเงียบๆ**
+      (ไม่มีอะไรพัง ไม่มีเทสตก — แค่ความต้องการจริงหายจากจอ) ⇒ ต้องมีด่าน
+   🔴 CT ต้องครอบ mat ของ "กรอบ" ด้วย — ถ้าเอาเฉพาะ mat ของ `orders` พาร์ทที่ยังไม่เปิดใบ
+      (= เคสที่ฟีเจอร์นี้มีไว้เพื่อโชว์) จะไม่มี CT = วางบนแกนเวลาไม่ได้สักใบ */
+test('🧾 plan-frame-on-heijunka — บอร์ด /management ต้องอ่านกรอบแผน + CT ต้องครอบ mat ของกรอบ', () => {
+  const bad = [];
+  const read = (rel) => readFileSync(join(ROOT, rel), 'utf8');
+  const mg = read('src/pages/Management.jsx');
+
+  if (!/from\('production_plan_lots'\)/.test(mg))
+    bad.push("src/pages/Management.jsx (ไม่ได้โหลด production_plan_lots — กรอบแผนหายจากบอร์ด)");
+  if (!/matchPlanToActual\(/.test(mg))
+    bad.push('src/pages/Management.jsx (ไม่ได้เทียบกรอบกับของจริงผ่าน matchPlanToActual)');
+  for (const c of ['PlanFrameBar', 'PlanFrameRow'])
+    if (!new RegExp(`<${c}\\b`).test(mg)) bad.push(`src/pages/Management.jsx (ไม่ได้วาด <${c}>)`);
+
+  /* mat ที่ใช้หา CT ต้องมาจาก 2 ทาง: ใบผลิต + กรอบแผน */
+  const matLine = (mg.match(/const matNos = \[[\s\S]{0,400}?\];/) || [''])[0];
+  if (!/planLots/.test(matLine))
+    bad.push('src/pages/Management.jsx (matNos ไม่รวม mat ของ planLots — พาร์ทที่ยังไม่เปิดใบจะไม่มี CT)');
+
+  /* `ctOf` ของ layoutLots รับ **mat_no** (lotRunInfo เรียก ctOf(lot?.mat_no)) — ส่ง lot = ไม่มี CT เลย */
+  const row = read('src/components/PlanFrameRow.jsx');
+  if (/ctOf\s*=\s*\(\s*l(ot)?\s*\)\s*=>/.test(mg) || /ctOf\(\s*lot\s*\)/.test(row))
+    bad.push('ctOf ต้องรับ mat_no ไม่ใช่ lot (lotRunInfo เรียก ctOf(lot?.mat_no))');
+  if (!/layoutLots\(/.test(row))
+    bad.push('src/components/PlanFrameRow.jsx (ไม่ได้ใช้ layoutLots — ห้ามคิดพิกัดเวลาเองในหน้า)');
+
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n'
+    + '   ทำไม: บอร์ดที่เห็นเฉพาะใบที่สแกน ทำให้ "ไม่มีใครสแกน" กับ "ไม่มีงาน" หน้าตาเหมือนกันเป๊ะ\n'
+    + '   แก้: คืนการโหลด production_plan_lots + <PlanFrameBar>/<PlanFrameRow>\n'
+    + '        📄 docs/modules/production-plan.md §กรอบแผนขึ้นบอร์ด Heijunka\n');
+});
+
+/* ── 🔁 ปิดกะ: ใบที่ยังไม่ได้ผลิต ต้องยกเอง ห้ามมีปุ่มยกเลิก — 2026-10-20 ─────────────────
+   คำสั่ง user: "มันควรจะต้องส่งต่อไปเรื่อยๆ · ห้ามลบ นอกจากแพลนนิ่งจะปิดโปรสิ้นเดือน"
+                "ยกยอดแค่ใบที่ทำไม่จบครึ่งๆกลางๆ ที่เหลือออโต้ยกไปเลย"
+   เหตุผลหน้างาน: ต้องกดตัดสินทุกใบก่อนปิดกะ ⇒ เปิดคัมบังไว้ 20 ใบแล้วทำไม่ทัน = กด 20 ครั้ง
+   หรือกด "ยกเลิก" ทิ้ง ⇒ หัวหน้าเลยเลือก **ไม่เปิดใบตั้งแต่แรก** = บอร์ดดูเหมือนไม่มีออเดอร์
+   🔴 ถอดการแยก 2 กองออกเมื่อไหร่ = กลับไปบังคับกดทุกใบ = พฤติกรรมเดิมกลับมาทันที */
+test('🔁 close-auto-carry — ปิดกะต้องแยก "ยังไม่แตะ = ยกเอง" ออกจาก "ทำบางส่วน = คนตัดสิน"', () => {
+  const bad = [];
+  const read = (rel) => stripComments(readFileSync(join(ROOT, rel), 'utf8'));
+  const dr = read('src/pages/DailyReport.jsx');
+
+  if (!/splitCloseOrders\(/.test(dr))
+    bad.push('src/pages/DailyReport.jsx (ไม่ได้ใช้ splitCloseOrders — กฎอยู่ utils/closeShiftOrders.js ห้ามคิดเองในหน้า)');
+  if (!/autoCarryPatch\(/.test(dr))
+    bad.push('src/pages/DailyReport.jsx (ไม่ได้เขียน carry_over ให้ใบที่ยังไม่แตะผ่าน autoCarryPatch)');
+  /* 🔴 ยกให้เองได้ แต่ **ห้ามยกเงียบ** — จอปิดกะต้องเขียนว่ากำลังจะยกกี่ใบ/กี่ชิ้น */
+  if (!/autoCarryText\(/.test(dr))
+    bad.push('src/pages/DailyReport.jsx (ไม่ได้เขียนบนจอว่าจะยกให้กี่ใบ — ยกเงียบ = คนไม่รู้ว่าของไปไหน)');
+
+  /* ปุ่มปิดกะต้องรอเฉพาะกองที่คนตัดสิน — รอทุกใบ = บังคับกดทีละใบเหมือนเดิม */
+  const btn = (dr.match(/onClick=\{handleCloseSession\}[^\n]*/) || [''])[0];
+  if (!/needDecision/.test(btn))
+    bad.push('src/pages/DailyReport.jsx (ปุ่มปิดกะยังรอ "ทุกใบที่ open" ไม่ใช่เฉพาะ needDecision)');
+
+  /* กองที่ยกอัตโนมัติต้องเช็ค error — ล้มเงียบ = กะปิดแต่ใบยัง open ค้างในกะที่ปิดแล้ว */
+  const loop = (dr.match(/for \(const order of autoCarryOrders\)[\s\S]{0,900}?\n    \}/) || [''])[0];
+  if (loop && !/if \(acErr\)/.test(loop))
+    bad.push('src/pages/DailyReport.jsx (ยกอัตโนมัติแล้วไม่เช็ค error — ใบค้าง open ในกะที่ปิดแล้ว)');
+  if (!loop) bad.push('src/pages/DailyReport.jsx (ไม่เจอลูปยกอัตโนมัติ)');
+
+  /* กฎกลางต้องไม่เผลอเซ็ต carry_over_from_session_id (ใบชี้กลับหาตัวเอง = ป้าย "ยกยอดมา" ผิด) */
+  if (/carry_over_from_session_id/.test(read('src/utils/closeShiftOrders.js')))
+    bad.push('src/utils/closeShiftOrders.js (ห้ามเซ็ต carry_over_from_session_id ในฝั่ง "ยกออก")');
+
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n'
+    + '   ทำไม: บังคับตัดสินทุกใบ = หน้างานเลี่ยงด้วยการไม่เปิดใบ ⇒ ความต้องการจริงหายจากระบบ\n'
+    + '   แก้: ใช้ splitCloseOrders/autoCarryPatch (src/utils/closeShiftOrders.js)\n'
+    + '        📄 docs/modules/daily-report.md §ปิดกะ — ยกยอดอัตโนมัติ\n');
+});
+
+/* ── 📥 ของค้างต้องไม่หายตามอายุ — 2026-10-20 ("มันหาย" จากแชทหน้างาน) ──────────────────
+   🕳️ บั๊กเดิม: หายอดค้างด้วย "ใบของ **8 กะล่าสุด**" ของไลน์ ⇒ ไลน์เดิน 2 กะ/วัน = หน้าต่าง ~4 วัน
+      ของที่ค้างเกินนั้นหลุดหน้าต่าง **หายถาวร** (วัดจริง: 8 / 28 / 33 / 97 วัน)
+      หน้างานจึงเลือก "ทยอยปริ้น" เพราะเปิดไปก็หาย ⇒ บอร์ดดูเหมือนไม่มีออเดอร์
+   🔴 ห้ามกลับไปจำกัดด้วย "จำนวนกะ" — ต้องถามด้วย **สถานะ** (open/carry_over) ซึ่งถูกกว่าด้วย */
+test('📥 carry-debt-no-session-window — ของค้างต้องถามด้วยสถานะ ห้ามจำกัด "กี่กะล่าสุด"', () => {
+  const bad = [];
+  const read = (rel) => stripComments(readFileSync(join(ROOT, rel), 'utf8'));
+  const dr = read('src/pages/DailyReport.jsx');
+
+  /* ตัวโหลดยอดค้าง — ดูเฉพาะบล็อกนี้ (หน้านี้มี .limit() ที่อื่นโดยชอบธรรม) */
+  const blk = (dr.match(/const CARRY_COLS[\s\S]{0,2600}?setCarryOrders\(deduped\)/) || [''])[0];
+  if (!blk) { bad.push('src/pages/DailyReport.jsx (ไม่เจอบล็อกโหลดยอดค้าง)'); }
+  else {
+    if (/production_sessions'\)[\s\S]{0,400}?\.limit\(/.test(blk))
+      bad.push('src/pages/DailyReport.jsx (กลับไปจำกัดยอดค้างด้วยจำนวนกะ — ของเก่าจะหายอีก)');
+    if (!/\.in\('status', PENDING_STATUSES\)/.test(blk))
+      bad.push('src/pages/DailyReport.jsx (ไม่ได้ถามด้วยสถานะ PENDING_STATUSES)');
+    if (!/carryOffers\(/.test(blk))
+      bad.push('src/pages/DailyReport.jsx (ไม่ได้ใช้ carryOffers — กฎ dedupe อยู่ utils/carryDebt.js)');
+    if (!/fetchByIds\(/.test(blk))
+      bad.push('src/pages/DailyReport.jsx (ประวัติ prod_no ไม่ได้ผ่าน fetchByIds — .in() ยาวคืนค่าว่างเงียบ)');
+    if (!/histRes\.failed \|\| histRes\.truncated/.test(blk))
+      bad.push('src/pages/DailyReport.jsx (โหลดไม่ครบแล้วไม่บอกบนจอ — ลิสต์ขาดถูกอ่านว่า "ของค้างทั้งหมด")');
+  }
+  /* 🔴 "รับยอดต่อ" ต้องเลือกใบได้ (feedback: "ไม่อยากมาส่งต่อกะทุกใบที่เหลือ")
+     เอาทั้งหมดอย่างเดียว = คนที่ไม่อยากลากพาร์ทอื่นเข้ากะ **ไม่กดเลย** แล้วของค้างไม่ขยับ */
+  const imp = (dr.match(/const handleImportCarryOrders[\s\S]{0,600}?for \(const o of/) || [''])[0];
+  if (!/carryPick\.has/.test(imp))
+    bad.push('src/pages/DailyReport.jsx (รับยอดต่อยังเป็น "เอาทั้งหมด" — ต้องเลือกใบได้ผ่าน carryPick)');
+
+  /* กฎ ② ที่เคยทำยอดค้างหายทั้งกะ — ต้องยังอยู่ในไฟล์กฎ */
+  const cd = read('src/utils/carryDebt.js');
+  if (!/status === 'imported' \? 1 : 0/.test(cd))
+    bad.push("src/utils/carryDebt.js (หายกฎ 'imported ห้ามเป็นใบล่าสุด' — เคส Assy LWR 09/09)");
+
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n'
+    + '   ทำไม: ของค้างที่มองไม่เห็น = หน้างานเลิกเชื่อระบบ แล้วกลับไปทยอยเปิดใบเหมือนเดิม\n'
+    + '   แก้: ถามด้วยสถานะ + carryOffers() (src/utils/carryDebt.js)\n'
+    + '        📄 docs/modules/daily-report.md §ของค้าง\n');
 });

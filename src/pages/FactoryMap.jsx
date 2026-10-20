@@ -2475,17 +2475,34 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
           ชิปต่อแท็บไม่เท่ากัน (🫥 โซนสนับสนุน · ⚠ PM ไม่ผูกไลน์ · legend) ⇒ บางแท็บ 2 บรรทัด บางแท็บ 3 ⇒ ผังขยับขึ้นลง
           และตัววนจอ TV ย่อ (zoom) ใหม่ทุกครั้ง = ขนาดเด้ง · ตอนนี้แยก 2 แถว: แถวแท็บคงที่ · แถวชิป+เครื่องมือจองความสูงไว้ */}
       {/* 📺 จอประชุม: แถวปุ่มแท็บ → หัวเรื่องตัวใหญ่ "ตอนนี้ดูเรื่องอะไร" (ไม่มีใครกดปุ่มบนทีวี) */}
-      {tv && !editing && (
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 16, flexWrap: 'wrap', marginBottom: 8 }}>
-          <span style={{ fontSize: 34, fontWeight: 800, color: 'var(--text)', lineHeight: 1.15 }}>{METRICS[metric]?.label}</span>
-          <span style={{ fontSize: 22, fontWeight: 700, color: isReview ? 'var(--accent)' : '#22c55e' }}>
-            {isReview ? `📅 ยอดทั้งวัน ${fmtThaiDate(reviewDate)}` : '⚡ สดวันนี้'}
-          </span>
-          {cycleList.length > 1 && cycleOn && (
-            <span style={{ fontSize: 20, fontWeight: 700, color: 'var(--muted)' }}>🔁 เรื่องที่ {cycleList.indexOf(metric) + 1}/{cycleList.length}</span>
-          )}
-        </div>
-      )}
+      {/* 📺 20/10 (user "ทำเรื่อง scale กับผังให้เหมือนกัน" — ผังรวม vs Andon Board): หัวจอ = กล่องสถานะแบบเดียวกับ Andon
+          (ขอบ/พื้นตามสีที่แย่สุด · ซ้าย = ดูเรื่องอะไร ตัวใหญ่ · ขวา = นับไลน์ตามสี) — ต่างกันที่ "เนื้อหา" ไม่ใช่หน้าตา
+          (Andon = ต้องไปจัดการอะไรตอนนี้ · ผังรวม = เรื่องนี้วันนี้ดีไม่ดี) · ตัวนับใช้ regCat ชุดเดียวกับสีบนผัง */}
+      {tv && !editing && (() => {
+        const cnt = {};
+        regions.filter(r => !facHidden(r.line_name)).forEach((r) => { const k = regCat(stOf(r.line_name)); cnt[k] = (cnt[k] || 0) + 1; });
+        const worst = cnt.down || cnt.bad ? '#ef4444' : cnt.ok ? '#f59e0b' : '#22c55e';
+        const order = ['down', 'bad', 'ok', 'good', 'waiting', 'busy', 'idle'].filter(k => cnt[k]);
+        return (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'center', justifyContent: 'space-between', marginBottom: 10,
+            background: 'var(--card)', backgroundImage: `linear-gradient(${worst}14, ${worst}14)`, border: `1px solid ${worst}`, borderRadius: 12, padding: '10px 18px' }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 16, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 30, fontWeight: 900, color: 'var(--text)', lineHeight: 1.15 }}>{METRICS[metric]?.label}</span>
+              <span style={{ fontSize: 22, fontWeight: 800, color: isReview ? 'var(--accent)' : '#22c55e' }}>
+                {isReview ? `📅 ยอดทั้งวัน ${fmtThaiDate(reviewDate)}` : '⚡ สดวันนี้'}
+              </span>
+              {cycleList.length > 1 && cycleOn && (
+                <span style={{ fontSize: 20, fontWeight: 700, color: 'var(--muted)' }}>🔁 เรื่องที่ {cycleList.indexOf(metric) + 1}/{cycleList.length}</span>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', fontSize: 25, fontWeight: 800 }}>
+              {order.length ? order.map(k => (
+                <span key={k} style={{ color: CAT[k].color }}>● {CAT[k].label} {cnt[k]}</span>
+              )) : <span style={{ color: 'var(--muted)' }}>ยังไม่มีกรอบไลน์บนผัง</span>}
+            </div>
+          </div>
+        );
+      })()}
       <div className="tv-hide" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
         {Object.entries(METRICS).map(([k, m]) => (
           <button key={k} onClick={() => setMetric(k)} style={btn(metric === k)}>{m.label}</button>
@@ -2949,7 +2966,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
           {!editing && !panelHide && (
             /* 📺 จอ TV กดอะไรไม่ได้ (20/10 คำสั่ง user · รูปจอจริง "แผงขวาต้อง scroll") — เดิม zoom 1.45 + เดาความสูง
                ⇒ ล้นขอบล่าง · TvFitBox วัดที่ว่างจริงแล้วย่อให้พอดี (≤1.45×) · ยังล้น = เลื่อนเอง · แท็บแผงซ่อน (เลือกที่ /display-rotation `panel=`) */
-            <TvFitBox enabled={tv} maxScale={1.45}
+            <TvFitBox enabled={tv} maxScale={2}
               style={{ flex: '0 0 360px', maxWidth: '100%', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 16px', maxHeight: 'calc(100vh - 200px)', overflowY: 'auto' }}
               tvStyle={{ flex: `0 0 ${Math.round(360 * 1.45)}px`, maxWidth: '100%', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12 }}
               innerStyle={{ padding: '14px 16px' }}>

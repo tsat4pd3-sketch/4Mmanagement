@@ -219,3 +219,9 @@ migration `20261014_display_rotation_scope_main.sql` (**apply แล้ว 14/10
 - **`/dashboard` ไม่เห็นใบของแต่ละพาร์ท** (HYDROFORM): ทุกพาร์ทเป็นใบเปิดเอง ⇒ แถว "✍️ ใบเปิดเอง" ยุบไว้ให้กดกาง ⇒ บนจอ TV กางเสมอ
 - **ช่องตัวกรอง kind `scope` = `<OrgScopePicker>`** (user "filter ซ้ำรึป่าว"): เดิมวาด select เอง — แผนก/กลุ่มไลน์ชื่อเดียวกันเรียงเป็นพี่น้อง
   ดูเหมือนซ้ำ + ค่าแผนกใช้ชื่อแทน code (หน้าปลายทางอ่านด้วยคีย์ของ `buildOrgScope`) · ค่าเก่าที่ไม่ตรงผัง = ขึ้น ⚠ ไม่หายเงียบ
+
+## รอบ 8 (2026-10-20) — scale เดียวกันทุกหน้า + ผังรวม/Andon หน้าตาชุดเดียว
+- fit: พื้นการย่อ 55% → **80%** · ไม่พอดีที่ 80% = **100% + แบ่งส่วนตามขอบการ์ด** (`tvPages`) หมุนตาม `boardFlipSec` · แถบบน "ส่วน n/N" + `data-tv-subpage`
+- harness: `?rot=/path[,/path]` = แผนจอวน (mock `display_rotations` · 20 วิ/หน้า) · ใช้คู่ `?tvshell=1&role=admin` · main ใน harness ไม่เลื่อนเองเมื่อ tvshell (เหมือน App)
+- ผังรวม: หัวจอ TV เป็นกล่องสถานะแบบ Andon (นับไลน์ตามสี `regCat`) · แผงขวา `TvFitBox maxScale 2`
+- Andon (`MtnAndonBoard`): คอลัมน์ขวา TvFitBox (เดิม maxHeight + scroll ในกรอบ = การ์ดท้ายไม่มีใครเห็น)
