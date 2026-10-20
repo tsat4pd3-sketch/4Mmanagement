@@ -206,6 +206,15 @@ export default function QaClaims({ lines = [], scopeNames = null, role, lineId, 
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {/* UI-STANDARD 2026-09-24: 3 ตัวเลือกเท่ากัน → Segmented · "ทุก…" ซ้ายสุด (state 'all' เดิม) */}
+      <FilterBar>
+        <Segmented label="สถานะ" value={filter} onChange={setFilter} options={[
+          { value: 'all', label: ALL.status }, { value: 'active', label: 'ยังไม่ปิด' }, { value: 'closed', label: 'ปิดแล้ว' }, { value: 'cancelled', label: 'ยกเลิก' },
+        ]} />
+        <span className="spacer" />
+        {canRecord && <button style={btnSt()} onClick={() => setDetail(EMPTY())}>📮 รับเคลมใหม่</button>}
+      </FilterBar>
+
       {/* ── สรุปสั้น: ตัวเลขที่ผู้จัดการถามก่อนเสมอ ── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
         {[
@@ -235,14 +244,6 @@ export default function QaClaims({ lines = [], scopeNames = null, role, lineId, 
         </div>
       )}
 
-      {/* UI-STANDARD 2026-09-24: 3 ตัวเลือกเท่ากัน → Segmented · "ทุก…" ซ้ายสุด (state 'all' เดิม) */}
-      <FilterBar>
-        <Segmented label="สถานะ" value={filter} onChange={setFilter} options={[
-          { value: 'all', label: ALL.status }, { value: 'active', label: 'ยังไม่ปิด' }, { value: 'closed', label: 'ปิดแล้ว' }, { value: 'cancelled', label: 'ยกเลิก' },
-        ]} />
-        <span className="spacer" />
-        {canRecord && <button style={btnSt()} onClick={() => setDetail(EMPTY())}>📮 รับเคลมใหม่</button>}
-      </FilterBar>
       {/* กรองตามขอบเขตแล้วต้องบอกว่าซ่อนกี่ใบ — "ไม่มีรายการ" ทั้งที่มี = จอโกหก (CLAUDE.md §สิทธิ์ 3 ชั้น) */}
       {hiddenN > 0 && (
         <div style={{ fontSize: 11.5, color: 'var(--muted)', margin: '-4px 0 8px' }}>🔒 ซ่อน {hiddenN} ใบของไลน์นอกขอบเขตของคุณ</div>

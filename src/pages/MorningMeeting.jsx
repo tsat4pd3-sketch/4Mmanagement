@@ -1056,7 +1056,7 @@ export default function MorningMeeting() {
             </button>
           )}
         </>} />
-      <FilterBar style={{ marginTop: -12 }}>
+      <FilterBar>
         {sectionOpts.length > 1 && (
           <select value={secFilter} onChange={e => setSecFilter(e.target.value)}>
             <option value="">{ALL.section}</option>

@@ -186,8 +186,9 @@ export default function BomDupPanel({ onOpenSheet }) {
         </div>
       )}
 
-      {/* ── ที่มา + สิ่งที่จอนี้ไม่ทำ (คนอ่านครั้งแรกต้องเข้าใจว่าทำไมมีคู่พวกนี้) ── */}
-      <div style={{ marginBottom: 12, padding: '10px 14px', borderRadius: 10, fontSize: 12, lineHeight: 1.65,
+      {/* ── ที่มา + สิ่งที่จอนี้ไม่ทำ (คนอ่านครั้งแรกต้องเข้าใจว่าทำไมมีคู่พวกนี้) ──
+          คำอธิบายถาวร ไม่ขึ้นกับตัวกรอง ⇒ อยู่เหนือแถบกรองได้ (UI-STANDARD §2.1) */}
+      <div data-page-note="1" style={{ marginBottom: 12, padding: '10px 14px', borderRadius: 10, fontSize: 12, lineHeight: 1.65,
         color: 'var(--text2)', border: '1px solid var(--border)', background: 'var(--bg2)' }}>
         <div style={{ fontWeight: 800, color: 'var(--text)', marginBottom: 2 }}>
           🔁 ของชิ้นเดียวถูกกรอกลูกไว้ 2 ที่ — ใบที่ใช้มัน และใบ BOM ของตัวมันเอง
@@ -197,6 +198,18 @@ export default function BomDupPanel({ onOpenSheet }) {
         <b> จอนี้ชี้ให้เห็นอย่างเดียว ไม่ยุบ/ไม่ลบ/ไม่เลือกใบให้เอง</b> —
         ของบางตัวใช้ต่างกันตามรุ่น/ลูกค้าได้จริง การตัดสินเป็นของ PE/Planning
       </div>
+
+      <FilterBar style={{ marginBottom: 12 }}>
+        <Segmented label="สถานะ" value={vFilter} onChange={setVFilter} options={[
+          { value: 'open', label: `ยังไม่ตรวจ (${prog.open})` },
+          { value: 'hot', label: `🔥 ของร้อน (${prog.openHot})` },
+          { value: 'cleared', label: `ตรวจแล้ว (${prog.cleared})` },
+          { value: 'all', label: `ทั้งหมด (${prog.total})` },
+        ]} />
+        <SearchInput value={search} onChange={setSearch} fields="MAT ใบ / พาร์ท / ชื่อ" />
+        <span className="spacer" />
+        <span className="filter-count">{shown.length} คู่</span>
+      </FilterBar>
 
       {/* ── ความคืบหน้า ── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10,
@@ -216,18 +229,6 @@ export default function BomDupPanel({ onOpenSheet }) {
           </div>
         ))}
       </div>
-
-      <FilterBar style={{ marginBottom: 12 }}>
-        <Segmented label="สถานะ" value={vFilter} onChange={setVFilter} options={[
-          { value: 'open', label: `ยังไม่ตรวจ (${prog.open})` },
-          { value: 'hot', label: `🔥 ของร้อน (${prog.openHot})` },
-          { value: 'cleared', label: `ตรวจแล้ว (${prog.cleared})` },
-          { value: 'all', label: `ทั้งหมด (${prog.total})` },
-        ]} />
-        <SearchInput value={search} onChange={setSearch} fields="MAT ใบ / พาร์ท / ชื่อ" />
-        <span className="spacer" />
-        <span className="filter-count">{shown.length} คู่</span>
-      </FilterBar>
 
       {/* 🔴 ว่างต้องเขียนว่าว่างเพราะอะไร ห้ามซ่อนแผงเงียบๆ */}
       {!shown.length ? (
