@@ -104,6 +104,17 @@ export function normalizePrNo(v) {
 /** ใบที่ยังรอเลข PR จาก SAP = เปิดอยู่ (ยังไม่รับของ/ไม่ยกเลิก) และยังไม่มีเลข */
 export const isAwaitingPrNo = (pr) => isPrOpen(pr) && !normalizePrNo(pr?.pr_no);
 
+/** ใบ MO ที่เลือกเส้นทาง "ต้องเปิด PR" แต่ยังไม่มีรายการขอซื้อสักแถว (ไม่นับที่ยกเลิก)
+ *  — ต้นคิวของแอดมินช่าง: ไม่มีแถวนี้ = ใบตกหล่น ไม่ขึ้นคิวไหนเลย (20/10 · user ถาม "ไปขึ้นลิสต์รอใช่มั้ย")
+ *  `isOpen` ส่งเข้ามา (กฎ "ใบปิดแล้ว" อยู่ mtnStepPerm.js ที่เดียว) · เรียงใบเก่าสุดก่อน (รอนานสุด) */
+export function mosNeedingPr(orders = [], prs = [], isOpen = () => true) {
+  const has = new Set((prs || []).filter(p => p && p.status !== 'cancelled' && p.order_id).map(p => p.order_id));
+  return (orders || [])
+    .filter(o => o && repairPathMeta(o.repair_path)?.needsPr && isOpen(o) && !has.has(o.id))
+    .sort((a, b) => String(a.report_at || '').localeCompare(String(b.report_at || '')));
+}
+export const NEEDS_PR_PATHS = () => REPAIR_PATHS.filter(p => p.needsPr).map(p => p.key);
+
 /* ── เลข PR บนใบ MO (ใบพิมพ์ FM-MTN-006) ─────────────────────────────────────────── */
 /** รวมเลข PR ของใบ — ใบขอซื้อที่ผูกใบนี้ (ไม่นับที่ยกเลิก) + ช่อง `pr_no` ที่กรอกมือเดิม · ตัดซ้ำ คงลำดับ */
 export function prNumbersOf(order, prs = []) {
