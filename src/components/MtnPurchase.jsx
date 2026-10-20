@@ -458,7 +458,10 @@ export function MtnPrBoard({ parts = [], fullName, canEdit = false, onStockChang
   const doneList = prs.filter(p => !isPrOpen(p)).slice(0, 50);
 
   return (
-    <div style={{ ...box, marginBottom: 14 }}>
+    /* data-subpanel = **แผงของตัวเอง** ไม่ใช่ "แถวสรุปเหนือแถบกรอง" — แท็บ 🔩 คลังอะไหล่ วางแผงนี้
+       ไว้เหนือแผงทะเบียนอะไหล่ ซึ่งมีแถบกรองของแผงตัวเอง (หน้านี้ไม่มีแถบกรองระดับหน้า)
+       ⇒ ประกาศไว้ให้ `audit/stdsweep.mjs` ไม่ตีเป็นลำดับผิด (UI-STANDARD §2.1) */
+    <div data-subpanel="1" style={{ ...box, marginBottom: 14 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
         <b style={{ fontSize: 13.5 }}>🛒 ใบขอซื้ออะไหล่ (PR)</b>
         <span style={{ fontSize: 11.5, color: needOrder.length ? '#ef4444' : 'var(--muted)' }}>ติด Min ยังไม่เปิด PR {needOrder.length} รายการ</span>

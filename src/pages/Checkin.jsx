@@ -1750,7 +1750,7 @@ export default function Checkin() {
 
       {/* แถบตัวตนคนล็อกอิน — กันเช็คชื่อผิด session บนเครื่องแชร์ (หัวหน้ากะก่อนไม่ logout)
           เด่นชัดตลอดเวลา + ปุ่มสลับผู้ใช้ในตัว · Andon: นิ่ง ไม่กระพริบ (แค่เตือนตัวตน ไม่ใช่ alarm) */}
-      <div style={{
+      <div data-page-note="1" style={{
         display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
         background: 'var(--accent-dim)', border: '1px solid var(--accent)',
         borderRadius: 10, padding: '9px 14px', marginBottom: 14,

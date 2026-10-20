@@ -1963,19 +1963,6 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 10, marginBottom: 16 }}>
-        {Object.entries(CAT_META).map(([k, m]) => (
-          <div key={k} onClick={() => setCat(c => c === k ? '' : k)} style={{
-            background: cat === k ? m.bg : 'var(--card)', border: `1px solid ${cat === k ? m.color : 'var(--border)'}`,
-            borderRadius: 10, padding: '12px 14px', cursor: 'pointer', transition: 'all 0.15s'
-          }}>
-            <div style={{ fontSize: 20 }}>{m.icon}</div>
-            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>{m.label}</div>
-            <div style={{ fontSize: 22, fontWeight: 800, color: m.color, fontFamily: 'var(--font-display)' }}>{kpi[k] || 0}</div>
-          </div>
-        ))}
-      </div>
-
       <TimeRangeBar
         scale={tr.scale} from={from} to={to} today={tr.today} scales={null}
         onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset} style={{ marginBottom: 14 }}
@@ -2037,6 +2024,20 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
           }}>⚙️ จัดการเอกสาร<ToggleDot on={showDocPanel} /></button>
         )}
       </TimeRangeBar>
+
+      {/* การ์ดนับตามหมวด 4M (กดเพื่อกรองได้) = เนื้อหา ⇒ อยู่ใต้แถบกรอง (UI-STANDARD §2.1) */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 10, marginBottom: 16 }}>
+        {Object.entries(CAT_META).map(([k, m]) => (
+          <div key={k} onClick={() => setCat(c => c === k ? '' : k)} style={{
+            background: cat === k ? m.bg : 'var(--card)', border: `1px solid ${cat === k ? m.color : 'var(--border)'}`,
+            borderRadius: 10, padding: '12px 14px', cursor: 'pointer', transition: 'all 0.15s'
+          }}>
+            <div style={{ fontSize: 20 }}>{m.icon}</div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>{m.label}</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: m.color, fontFamily: 'var(--font-display)' }}>{kpi[k] || 0}</div>
+          </div>
+        ))}
+      </div>
 
       {showDocPanel && canManageDoc && <DocumentControlPanel />}
 

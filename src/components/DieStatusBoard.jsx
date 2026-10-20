@@ -125,40 +125,20 @@ export default function DieStatusBoard({
   return (
     <div>
       {!ready && (
-        <div style={{ ...warnBox, marginBottom: 12 }}>
+        <div data-page-note="1" style={{ ...warnBox, marginBottom: 12 }}>
           <b>⚠️ สถานะ manual ยังใช้ไม่ได้</b> — {MIGRATION_HINT}
           <div style={{ marginTop: 3, color: 'var(--muted)' }}>คอลัมน์ "ใบซ่อม MO ค้าง" ยังแสดงได้ปกติ (อ่านจากระบบแจ้งซ่อมโดยตรง)</div>
         </div>
       )}
 
-      {/* ตัวนับ — กดเพื่อกรอง */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
-        {chip('ทั้งหมด', activeDies.length, { active: !fStatus, onClick: () => setFStatus('') })}
-        {chip('🔧 มีใบซ่อมค้าง', counts.mo, {
-          color: counts.mo ? '#ef4444' : 'var(--text)', border: counts.mo ? 'rgba(239,68,68,0.5)' : 'var(--border)',
-          active: fStatus === 'mo', onClick: () => setFStatus(v => v === 'mo' ? '' : 'mo'),
-        })}
-        {DIE_STATUSES.map(s => chip(`${s.icon} ${s.label}`, counts.per[s.key] || 0, {
-          color: s.color, active: fStatus === s.key, onClick: () => setFStatus(v => v === s.key ? '' : s.key),
-        }))}
-        {chip(`${DIE_STATUS_UNSET.icon} ยังไม่ระบุ`, counts.unset, {
-          color: counts.unset ? '#f59e0b' : 'var(--text)', border: counts.unset ? 'rgba(245,158,11,0.5)' : 'var(--border)',
-          active: fStatus === 'unset', onClick: () => setFStatus(v => v === 'unset' ? '' : 'unset'),
-        })}
-        {chip('⚠️ เจียรครบเกณฑ์', counts.regrind, {
-          color: counts.regrind ? '#ef4444' : 'var(--text)', border: counts.regrind ? 'rgba(239,68,68,0.5)' : 'var(--border)',
-          active: fStatus === 'regrind', onClick: () => setFStatus(v => v === 'regrind' ? '' : 'regrind'),
-        })}
-      </div>
-
       {counts.unset > 0 && ready && (
-        <div style={{ ...warnBox, marginBottom: 12 }}>
+        <div data-page-note="1" style={{ ...warnBox, marginBottom: 12 }}>
           ⚠️ แม่พิมพ์ <b>{counts.unset}</b> ตัวยังไม่ระบุสถานะ — ระบบไม่เดาให้ (หลักเดียวกับ backfill ทะเบียน)
           ให้ทีม DIE MTN ไล่ตั้งสถานะจริงจากหน้างาน แล้วตัวนับนี้จะหายเอง
         </div>
       )}
 
-      {/* ตัวกรอง — FilterBar มาตรฐาน (UI-STANDARD 2026-09-24): ไลน์ → ค้นหา → จำนวน */}
+      {/* ตัวกรอง — FilterBar มาตรฐาน (UI-STANDARD 2026-09-24): ไลน์ → ชิปสถานะ → ค้นหา → จำนวน */}
       <FilterBar>
         {/* ⚠️ ไลน์ของแม่พิมพ์ = ชื่อ "กลุ่มเครื่องปั๊ม" (เช่น LINE A ( 800 Ton )) ซึ่งบางชื่อ
             ไม่มีในทะเบียนไลน์ผลิต → ตัวที่ตรงจัดลำดับชั้นตามผัง ที่เหลือแยก optgroup ไว้
@@ -168,6 +148,25 @@ export default function DieStatusBoard({
           value={fLine} onChange={setFLine} placeholder={ALL.line}
           extraGroups={[{ label: '🔨 กลุ่มเครื่องปั๊ม', options: lineNames.filter(n => !prodLines.some(l => l.name === n)).map(n => ({ value: n })) }]}
         />
+        {/* ชิปสถานะ = ตัวกรอง (กดเพื่อกรอง) ⇒ อยู่ "ใน" แถบกรอง ไม่ใช่แถวการ์ดเหนือมัน (UI-STANDARD §2.1) */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          {chip('ทั้งหมด', activeDies.length, { active: !fStatus, onClick: () => setFStatus('') })}
+          {chip('🔧 มีใบซ่อมค้าง', counts.mo, {
+            color: counts.mo ? '#ef4444' : 'var(--text)', border: counts.mo ? 'rgba(239,68,68,0.5)' : 'var(--border)',
+            active: fStatus === 'mo', onClick: () => setFStatus(v => v === 'mo' ? '' : 'mo'),
+          })}
+          {DIE_STATUSES.map(s => chip(`${s.icon} ${s.label}`, counts.per[s.key] || 0, {
+            color: s.color, active: fStatus === s.key, onClick: () => setFStatus(v => v === s.key ? '' : s.key),
+          }))}
+          {chip(`${DIE_STATUS_UNSET.icon} ยังไม่ระบุ`, counts.unset, {
+            color: counts.unset ? '#f59e0b' : 'var(--text)', border: counts.unset ? 'rgba(245,158,11,0.5)' : 'var(--border)',
+            active: fStatus === 'unset', onClick: () => setFStatus(v => v === 'unset' ? '' : 'unset'),
+          })}
+          {chip('⚠️ เจียรครบเกณฑ์', counts.regrind, {
+            color: counts.regrind ? '#ef4444' : 'var(--text)', border: counts.regrind ? 'rgba(239,68,68,0.5)' : 'var(--border)',
+            active: fStatus === 'regrind', onClick: () => setFStatus(v => v === 'regrind' ? '' : 'regrind'),
+          })}
+        </div>
         <SearchInput value={q} onChange={setQ} fields="เลขแม่พิมพ์ / พาร์ท / หมายเหตุ" />
         <span className="spacer" />
         <span className="filter-count">แสดง {rows.length} ตัว</span>
