@@ -31,12 +31,18 @@ import PageHeader from '../components/PageHeader'
 import SearchInput from '../components/SearchInput'
 import ScanModal from '../components/ScanModal'
 import { resolveJig } from '../utils/qrCode'
+import LineScopeSelect from '../components/LineScopeSelect'
+import { useProductionLinesState } from '../utils/useProductionLines'
+import { lineKnownSet, groupEquipRowsByLine } from '../utils/pmEquipList'
+import { filterPlanRows } from '../utils/pmPlanFilter'
 
 /* 🔩 จุดชิมของ fixture บนใบตรวจ PM (2026-09-08 · คำสั่ง user "shim record กับการตรวจใช้กลไกเดียวกัน")
    ข้อมูลแยกตาราง (fixture_points/fixture_shim_events) แต่ "รูป + หมุด" ชุดเดียวกับจุดตรวจ PM:
    หมุดม่วงบนรูปเดียวกัน + แถวกรอก "ค่าชิมรวมที่วัดได้" ท้ายใบ · บันทึกผ่าน recordShimEvent ผูก inspection_id
    ไม่บังคับกรอก (จุดชิมมีความถี่ของตัวเอง — กฎเหล็ก 1 ของโมดูล fixture) · ไม่นับใน isFormReady */
 const SHIM_PIN_COLOR = '#a78bfa'
+// ชิปข้อที่ยังไม่ตรวจในแถบความคืบหน้า — เกินนี้พับไว้หลังปุ่ม "+N ▾" (แถบติดบน ห้ามกินจอมือถือ)
+const CHIP_CAP = 20
 // คอลัมน์ jigs ที่หน้านี้ใช้จริง (ลิสต์ · หัวฟอร์ม · resolveJig · ใบซ่อม · Daily PM) — เพิ่มฟิลด์ใหม่ต้องเติมที่นี่
 const JIG_COLS = 'id, name, jig_no, machine_no, machine_id, line_name, equipment_type, image_path, process'
 
@@ -748,6 +754,9 @@ export default function PMCheckData() {
   })
   const viewerRef = useRef(null)
   const [viewerH, setViewerH] = useState(0)
+  // ความสูงจริงของแถบความคืบหน้าที่ติดบน — บวกเข้า scrollMarginTop ของแถว (ไม่งั้นแถวที่เลื่อนไปหาจะนอนใต้แถบ)
+  const progRef = useRef(null)
+  const [progH, setProgH] = useState(0)
   // มือถือ/แท็บเล็ต: master-detail — โชว์ "ลิสต์อุปกรณ์" หรือ "ฟอร์มเช็ค" ทีละอัน (ไม่อัด 2 คอลัมน์)
   const [isNarrow, setIsNarrow] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 860px)').matches)
   const [isWide, setIsWide] = useState(() => typeof window !== 'undefined' && window.matchMedia('(min-width: 1180px)').matches)
@@ -765,6 +774,15 @@ export default function PMCheckData() {
   const canShim = can('fixture_shim', 'record', userRole)
   // 🔎 ค้นในลิสต์เครื่อง (feedback 2026-09-08: JIG MTN มี 60+ เครื่อง ไล่เลื่อนหาเอง) — เทียบเลขเครื่อง/ชื่อ/ไลน์
   const [jigQuery, setJigQuery] = useState('')
+  /* 🗂️ ลิสต์ซ้ายแท็บช่าง (PM) — จัดกลุ่มตามไลน์ + กรองขอบเขตไลน์ (20/10 audit หน้า PM ข้อ 6)
+     ⚠️ กรองการดูเท่านั้น ไม่ตัดตามส่วนงานของผู้ใช้ — ช่างซ่อมข้ามไลน์เป็นงานปกติ (แกนสิทธิ์ช่าง = ทีม) */
+  const { rows: lineRows } = useProductionLinesState()
+  const scopeLines = useMemo(() => {   // ชื่อไลน์ซ้ำในทะเบียน = key ซ้ำในตัวเลือก ⇒ ยุบด้วยชื่อ
+    const seen = new Set()
+    return (lineRows || []).filter(l => l?.name && !seen.has(l.name) && seen.add(l.name))
+  }, [lineRows])
+  const [jigScope, setJigScope] = useState({ section: '', line: '', names: null })
+  const [chipsAll, setChipsAll] = useState(false)   // ชิปข้อที่ยังไม่ตรวจ: เกิน CHIP_CAP พับไว้ กดขยายได้
   const [scanOpen, setScanOpen] = useState(false)   // 📷 สแกนป้ายเครื่อง → เลือกอุปกรณ์
   const [rawResults, setResults] = useState({})   // ที่คนกรอก
   /* 🧮 จุดคำนวณ (A − B) เติมค่า ①②③ จากจุด A/B ให้เอง — ทุกที่ที่อ่าน `results` (ตัดสิน/นับครบ/บันทึก) เห็นค่าชุดเดียวกัน */
@@ -1006,12 +1024,24 @@ export default function PMCheckData() {
     setViewerH(el.getBoundingClientRect().height)
     return () => ro.disconnect()
   }, [selectedJig, checkpoints, frames, viewerOpen, isNarrow, isWide])
+  useEffect(() => {
+    const el = progRef.current
+    if (!el || typeof ResizeObserver === 'undefined') { setProgH(0); return }
+    const ro = new ResizeObserver(() => setProgH(el.getBoundingClientRect().height))
+    ro.observe(el)
+    setProgH(el.getBoundingClientRect().height)
+    return () => ro.disconnect()
+  }, [selectedJig, checkpoints, cpLoad.status, frames, isNarrow, isWide])
 
   // คลิกหมุดบนรูป → เลื่อนไปแถวเช็คของจุดนั้น (โหมดจิ้มหมุดไม่ต้องเลื่อน — ข้อโผล่ใต้รูปอยู่แล้ว)
+  /* 🔴 เทียบ "โหมดจิ้มหมุดเปิดจริง" ไม่ใช่แค่ `pinFocus` (20/10) — pinFocus ค่าเริ่ม = true แม้เครื่องไม่มีรูป/ปักไม่ครบ
+     ⇒ เดิมกดชิป/หมุดแล้วไม่เลื่อนไปแถวเลย · เงื่อนไขต้องตรงกับ `focusOn` ในส่วนวาด */
+  const focusOnNow = pinFocus && frames.length > 0 && checkpoints.length > 0 && checkpoints.every(c => c.x_pos != null)
   useEffect(() => {
-    if (pinFocus) return
-    if (activeCpId && rowRefs.current[activeCpId]) rowRefs.current[activeCpId].scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-  }, [activeCpId, pinFocus])
+    if (focusOnNow) return
+    if (activeCpId && rowRefs.current[activeCpId]) rowRefs.current[activeCpId].scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [activeCpId, focusOnNow])
+  useEffect(() => { setChipsAll(false) }, [selectedJig?.id])
 
   /* ข้อนี้กรอกครบหรือยัง — เกณฑ์เดียวกับที่ปุ่มบันทึกใช้นับ "ยังไม่ครบกี่จุด"
      ⚠️ แก้ที่นี่ต้องแก้ปุ่มบันทึกด้วย ไม่งั้นแถบความคืบหน้ากับปุ่มตอบคนละเลข */
@@ -1188,7 +1218,12 @@ export default function PMCheckData() {
     const hay = `${j.machine_no || ''} ${j.name || ''} ${j.line_name || ''}`.toLowerCase()
     return qWords.every(w => hay.includes(w))
   }
-  const deptJigs = deptJigsAll.filter(matchJig)
+  const deptJigsQ = deptJigsAll.filter(matchJig)
+  const amTab = isAmTeam(department)
+  const { rows: deptJigs, droppedNoLine: jigDropped } = amTab
+    ? { rows: deptJigsQ, droppedNoLine: 0 }
+    : filterPlanRows(deptJigsQ, { scopeNames: jigScope.names, known: lineKnownSet(scopeLines), getLine: j => j.line_name })
+  const jigGroups = amTab ? [] : groupEquipRowsByLine(deptJigs.map(j => ({ jig: j })), scopeLines)
 
   // จอแคบ: โชว์ทีละคอลัมน์ (ยังไม่เลือก=ลิสต์ · เลือกแล้ว=ฟอร์ม) · desktop โชว์ทั้งคู่เหมือนเดิม
   const showSidebar = !isNarrow || !selectedJig
@@ -1226,8 +1261,17 @@ export default function PMCheckData() {
             style={{ minWidth: 44, minHeight: 44, padding: 0, fontSize: 18, borderRadius: 8,
               background: 'var(--bg3)', border: '1px solid var(--border2)', cursor: 'pointer' }}>📷</button>
         </div>
-        {qWords.length > 0 && !isAmTeam(department) && (
-          <div style={{ padding: '0 16px 6px', fontSize: 11, color: 'var(--muted)' }}>พบ {deptJigs.length} จาก {deptJigsAll.length} เครื่อง</div>
+        {!amTab && (
+          <div style={{ padding: '0 16px 8px' }}>
+            <LineScopeSelect lines={scopeLines} section={jigScope.section} line={jigScope.line}
+              onChange={(section, line, info) => setJigScope({ section, line, names: info?.lines?.length ? info.lines : (section || line ? [line || section] : null) })} />
+          </div>
+        )}
+        {!amTab && (qWords.length > 0 || jigScope.names?.length) && (
+          <div style={{ padding: '0 16px 6px', fontSize: 11, color: 'var(--muted)' }}>
+            พบ {deptJigs.length} จาก {deptJigsAll.length} เครื่อง
+            {jigDropped > 0 && <span style={{ color: '#f59e0b' }}> · อีก {jigDropped} เครื่องไลน์ไม่ตรงทะเบียน (กรองตามไลน์ไม่ได้)</span>}
+          </div>
         )}
         {listErr && (
           <div role="alert" style={{ margin: '0 16px 8px', padding: '8px 10px', borderRadius: 8, fontSize: 12, lineHeight: 1.5,
@@ -1314,13 +1358,21 @@ export default function PMCheckData() {
               {pendingBlock}
             </>)
           })() : (<>
-            {deptJigs.length === 0 && (qWords.length
-              ? <p style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', marginTop: 20, lineHeight: 1.6 }}>ไม่พบเครื่องที่ตรงกับ “{jigQuery.trim()}”<br /><span onClick={() => setJigQuery('')} style={{ fontSize: 11, color: 'var(--accent)', cursor: 'pointer', fontWeight: 700 }}>ล้างคำค้น</span></p>
+            {deptJigs.length === 0 && ((qWords.length || jigScope.names?.length)
+              ? <p style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', marginTop: 20, lineHeight: 1.6 }}>ไม่พบเครื่องที่ตรงกับ{jigQuery.trim() ? ` “${jigQuery.trim()}”` : 'ตัวกรอง'}<br /><span onClick={() => { setJigQuery(''); setJigScope({ section: '', line: '', names: null }) }} style={{ fontSize: 11, color: 'var(--accent)', cursor: 'pointer', fontWeight: 700 }}>ล้างตัวกรอง</span></p>
               : <p style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', marginTop: 20, lineHeight: 1.6 }}>ยังไม่มีอุปกรณ์ในทีมนี้<br /><span style={{ fontSize: 11 }}>({(teams.find(d => d.key === department) || {}).label})</span></p>)}
-            {deptJigs.map(jig => (
-              <div key={jig.id} onClick={() => selectJig(jig)} style={S.jigItem(selectedJig?.id === jig.id, deptColor)}>
-                <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', margin: 0 }}>{jig.name}</p>
-                {jig.line_name && <p style={{ fontSize: 11, color: 'var(--muted)', margin: '2px 0 0' }}>📍 {jig.line_name}</p>}
+            {/* จัดกลุ่มตามไลน์ (ทะเบียน ส่วนงาน→แม่→ลูก · ไม่ระบุไลน์ท้ายสุด) — เดิมเรียงตามชื่อยาวเหยียดเป็นแถวเดียว */}
+            {jigGroups.map(g => (
+              <div key={g.key}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: g.known ? 'var(--text2)' : '#f59e0b', margin: '8px 2px 5px', lineHeight: 1.4 }}>
+                  📍 {g.label} <span style={{ fontWeight: 600, color: 'var(--muted)' }}>· {g.rows.length}</span>
+                </div>
+                {g.rows.map(({ jig }) => (
+                  <div key={jig.id} onClick={() => selectJig(jig)} style={S.jigItem(selectedJig?.id === jig.id, deptColor)}>
+                    <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', margin: 0 }}>{jig.name}</p>
+                    {(jig.machine_no || jig.jig_no) && <p style={{ fontSize: 11, color: 'var(--muted)', margin: '2px 0 0' }}>{[jig.machine_no, jig.jig_no].filter(Boolean).join(' · ')}</p>}
+                  </div>
+                ))}
               </div>
             ))}
           </>)}
@@ -1446,15 +1498,17 @@ export default function PMCheckData() {
                       {/* ── 📍 แถบคุมโหมดจิ้มหมุด (user 23/09 "ขึ้นแค่ข้อที่จิ้มจุดนั้น ไม่รก ไม่ต้องเลื่อนหา")
                           🔴 ซ่อนข้ออื่นได้ ก็ต่อเมื่อแถบนี้บอกความจริงครบ: ตรวจไปกี่ข้อ · เหลือข้อไหน ·
                              กดข้ามไปข้อที่ยังไม่ตรวจได้ · สลับกลับ "ทุกข้อ" ได้ตลอด ── */}
-                      {showPhoto && checkpoints.length > 1 && (
-                        <div style={{ position: 'sticky', top: stackCompact ? viewerH : 0, zIndex: 4, background: 'var(--bg)',
+                      {/* แถบความคืบหน้า + ชิปข้อที่ยังไม่ตรวจ — โชว์ทั้งโหมดมีรูปและโหมดรายการ (20/10 · เดิมโหมดรายการไม่มีเลย
+                          เครื่อง 81 จุดต้องเลื่อนไล่หาข้อที่ลืมเอง) · กดชิป = เลื่อนไปแถวนั้น / ขึ้นข้อนั้นในโหมดจิ้มหมุด */}
+                      {checkpoints.length > 1 && (
+                        <div ref={progRef} style={{ position: 'sticky', top: stackCompact ? viewerH : 0, zIndex: 4, background: 'var(--bg)',
                           borderBottom: '1px solid var(--border)', padding: '7px 0 8px', marginBottom: 8,
                           display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
                           <span style={{ fontSize: 12, fontWeight: 800, color: doneN === checkpoints.length ? 'var(--accent)' : 'var(--text2)' }}>
                             ตรวจแล้ว {doneN}/{checkpoints.length}
                             {todo.length > 0 && <span style={{ color: '#f59e0b', fontWeight: 700 }}> · เหลือ {todo.length}</span>}
                           </span>
-                          {allPinned ? (
+                          {!showPhoto ? null : allPinned ? (
                             <button onClick={() => { setPinFocus(v => !v); setActiveShimId(null) }}
                               title={pinFocus ? 'สลับเป็นไล่ดูทุกข้อในหน้าเดียว' : 'สลับเป็นแตะหมุดบนรูปแล้วขึ้นเฉพาะข้อนั้น'}
                               style={{ padding: '4px 12px', borderRadius: 999, cursor: 'pointer', fontSize: 11.5, fontWeight: 700,
@@ -1468,10 +1522,10 @@ export default function PMCheckData() {
                               (โหมดแตะหมุดต้องปักจุดบนรูปครบก่อน — ตอนนี้ปักแล้ว {pinnedCps.length}/{checkpoints.length} · ปักที่ PM Setup)
                             </span>
                           )}
-                          {focusOn && (
+                          {(
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center', marginLeft: 'auto' }}>
                               <span style={{ fontSize: 11, color: 'var(--muted)' }}>{todo.length ? 'ยังไม่ตรวจ:' : 'ครบแล้ว 🎉'}</span>
-                              {todo.slice(0, 12).map(c => (
+                              {(chipsAll ? todo : todo.slice(0, CHIP_CAP)).map(c => (
                                 <button key={c.id} onClick={() => { setActiveShimId(null); setActiveCpId(c.id) }}
                                   title={c.name}
                                   style={{ minWidth: 22, height: 22, borderRadius: 11, cursor: 'pointer', fontSize: 11, fontWeight: 700,
@@ -1481,7 +1535,14 @@ export default function PMCheckData() {
                                   {checkpoints.indexOf(c) + 1}
                                 </button>
                               ))}
-                              {todo.length > 12 && <span style={{ fontSize: 11, color: 'var(--muted)' }}>+{todo.length - 12}</span>}
+                              {/* เกินเพดาน = ปุ่มขยาย (เดิมเขียนแค่ "+N" แล้วกดไปข้อที่ 13+ ไม่ได้เลย) */}
+                              {todo.length > CHIP_CAP && (
+                                <button onClick={() => setChipsAll(v => !v)}
+                                  style={{ height: 22, padding: '0 8px', borderRadius: 11, cursor: 'pointer', fontSize: 11, fontWeight: 700,
+                                    border: '1px dashed var(--border2)', background: 'transparent', color: 'var(--text2)' }}>
+                                  {chipsAll ? 'ย่อ ▴' : `+${todo.length - CHIP_CAP} ▾`}
+                                </button>
+                              )}
                             </div>
                           )}
                         </div>
@@ -1537,7 +1598,7 @@ export default function PMCheckData() {
                               {header}
                               <div ref={el => { rowRefs.current[cp.id] = el }} onClick={() => setActiveCpId(cp.id)}
                                 style={{ borderRadius: 10, outline: activeCpId === cp.id ? '2px solid var(--accent)' : '2px solid transparent', outlineOffset: 1, transition: 'outline-color .15s',
-                                  scrollMarginTop: stackCompact ? viewerH + 12 : 12 }}>
+                                  scrollMarginTop: (stackCompact ? viewerH : 0) + progH + 12 }}>
                                 {row}
                               </div>
                             </div>
@@ -1590,7 +1651,7 @@ export default function PMCheckData() {
                               const k = kindOf(pt.kind_code)
                               return (
                                 <div key={pt.id} ref={el => { rowRefs.current[`shim:${pt.id}`] = el }}
-                                  style={{ ...S.cpRow(null), borderColor: overMax ? '#ef4444' : mm != null ? SHIM_PIN_COLOR : 'var(--border)', scrollMarginTop: stackCompact ? viewerH + 12 : 12 }}>
+                                  style={{ ...S.cpRow(null), borderColor: overMax ? '#ef4444' : mm != null ? SHIM_PIN_COLOR : 'var(--border)', scrollMarginTop: (stackCompact ? viewerH : 0) + progH + 12 }}>
                                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                                     <span style={{ minWidth: 22, height: 18, padding: '0 5px', borderRadius: 9, background: pinned ? SHIM_PIN_COLOR : 'var(--border2)', color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }} title={pinned ? 'ปักบนรูปแล้ว' : 'ยังไม่ปักบนรูป'}>{pt.point_no}</span>
                                     <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{k.icon} {k.label}{pt.name ? <span style={{ fontWeight: 500, color: 'var(--muted)' }}> · {pt.name}</span> : null}</span>
