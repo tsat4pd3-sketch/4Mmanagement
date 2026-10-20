@@ -220,16 +220,35 @@ test('🛡️ onlyShopfloorStaff (server) ต้องตัดชุดเด�
   /* ทุกค่าที่ server ตัด client ก็ต้องตอบ false และกลับกัน — ไม่มีคนกลุ่มไหนตกร่องระหว่าง 2 ฝั่ง */
   for (const v of ['shopfloor', 'technician', 'support', 'indirect'])
     assert.equal(m.isShopfloorStaff({ staff_kind: v }), !cut.includes(v), `ค่า ${v}: 2 ฝั่งตอบไม่ตรงกัน`);
-
-  /* ตัวแยกของบอร์ดกำลังคน — ตัดเฉพาะสายสนับสนุน **ช่างต้องผ่าน** */
-  const ws = m.withoutSupportStaff(spy());
-  const cut2 = ws.val.replace(/[()]/g, '').split(',').map(s => s.trim()).filter(Boolean);
-  assert.deepEqual([...cut2].sort(), [...m.SUPPORT_VALUES].sort());
-  assert.ok(!cut2.includes('technician'), 'withoutSupportStaff ต้องปล่อยช่างผ่าน (บอร์ดวาดแถวช่างแยก)');
 });
 
+/* ═══ 🗂️ จอ "ผังองค์กร" ห้ามกรอง staff_kind เลย (20/10 · คำสั่ง user) ═══════════════
+   *"ต้องขึ้นคนให้ครบ ให้ตรงผังก่อน"* — `/manpower-board` วาดแถวครบทุกชั้นด้วยตัวเอง
+   (ผจก./หัวหน้าส่วน · วิศวกร·เจ้าหน้าที่ · หัวหน้าแผนก · หัวหน้ากลุ่ม · ช่าง · พนักงาน)
+   ⇒ ตัวกรองกลุ่มไหนก็ตาม = แถวนั้นว่างทั้งที่มีคนอยู่จริง
+   เกิดจริง: backfill 14/10 ย้าย ผจก./หัวหน้าส่วน/วิศวกร/ธุรการ ไป `support` ⇒ หัวผังของ
+   **ทุกส่วนงาน** ขึ้น "ยังไม่มีผู้จัดการ/หัวหน้าส่วนในทะเบียน" เงียบๆ นาน 6 วัน
+   ปลอดภัยเพราะตัวนับอ่านจาก `cols[].ops` (แถวพนักงาน) ไม่ได้นับจากคนที่โหลดมา */
+test('🗂️ /manpower-board (ผังองค์กร) ห้ามกรอง staff_kind — ต้องเห็นครบทุกชั้น', () => {
+  /* คอมเมนต์ในไฟล์อธิบายกฎนี้เอง (มีคำว่า staff_kind) ⇒ ต้องลอกคอมเมนต์ออกก่อนสแกน
+     แทนที่ด้วยบรรทัดว่างเพื่อให้เลขบรรทัดที่รายงานยังตรงกับไฟล์จริง */
+  const raw = readFileSync(join(ROOT, 'src/pages/ManpowerBoard.jsx'), 'utf8');
+  const src = raw.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
+                 .replace(/^\s*\/\/.*$/gm, '');
+  const bad = [];
+  src.split('\n').forEach((l, i) => {
+    if (/onlyShopfloorStaff\(|onlyDirectStaff\(|withoutSupportStaff\(|staff_kind/.test(l)
+        && !/EMP_COLS\s*=/.test(l)) bad.push(`ManpowerBoard.jsx:${i + 1} — ${l.trim().slice(0, 90)}`);
+  });
+  assert.deepEqual(bad, [], '\n\n❌ บอร์ดผังองค์กรกลับมามีตัวกรอง staff_kind\n'
+    + '   แถวหัวผัง (ผจก./หัวหน้าส่วน/วิศวกร/ธุรการ) เป็น `support` ทั้งหมดตั้งแต่ backfill 14/10\n'
+    + '   ⇒ กรองเมื่อไหร่ = หัวผังว่างทั้งจอ ทั้งที่คนอยู่ครบในทะเบียน\n'
+    + '   ตัวนับกำลังคนปลอดภัยอยู่แล้ว: staffingOfDept()/opsTotal นับจาก cols[].ops เท่านั้น\n');
+});
+
+/* ── ตัวกรองรุ่น "ตัดเฉพาะสายสนับสนุน" ถูกถอดออก 20/10 — ห้ามสร้างกลับ ────────────── */
 /* ── บอร์ดกำลังคนเป็นจอเดียวที่ตั้งใจเห็นช่าง — ห้ามให้จออื่นหยิบ withoutSupportStaff ไปใช้มั่ว ── */
-test('🛡️ withoutSupportStaff ใช้ได้เฉพาะ /manpower-board (จอที่วาดแถวช่างแยก)', () => {
+test('🛡️ ห้ามสร้าง withoutSupportStaff กลับมา (จอผังไม่ต้องกรอง · จอนับใช้ onlyShopfloorStaff)', () => {
   const bad = [];
   const stack = [join(ROOT, 'src')];
   while (stack.length) {
@@ -239,11 +258,11 @@ test('🛡️ withoutSupportStaff ใช้ได้เฉพาะ /manpower-bo
       if (e.isDirectory()) { if (e.name !== '__tests__') stack.push(full); continue; }
       if (!/\.(jsx?|mjs)$/.test(e.name)) continue;
       const rel = full.replace(ROOT, '');
-      if (rel === 'src/utils/staffKind.js' || rel === 'src/pages/ManpowerBoard.jsx') continue;
+      if (rel === 'src/utils/staffKind.js') continue;              // หมายเหตุ "อย่าสร้างกลับ"
       if (/withoutSupportStaff\s*\(/.test(readFileSync(full, 'utf8'))) bad.push(rel);
     }
   }
   assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n'
-    + '   จอที่นับกำลังคนต้องใช้ onlyShopfloorStaff() — withoutSupportStaff ปล่อยช่างผ่าน\n'
-    + '   จะใช้ที่จอใหม่จริงๆ ต้องพิสูจน์ก่อนว่า "ช่างไม่ถูกนับรวมเป็นกำลังคนของไลน์" แล้วแก้ด่านนี้\n');
+    + '   จอ "นับกำลังคน" ใช้ onlyShopfloorStaff() · จอ "ผังองค์กร" ไม่กรองเลย — ไม่มีกรณีที่สาม\n'
+    + '   (เพิ่มไว้ 19/10 แล้วถอด 20/10 เพราะบอร์ดผังไม่ควรกรองอะไรตั้งแต่แรก)\n');
 });

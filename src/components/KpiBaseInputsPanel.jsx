@@ -5,7 +5,8 @@
    · ตาราง `kpi_base_inputs` unique index มี `coalesce(scope_value,'')` = expression ⇒ **ห้าม upsert** (42P10 · กฎ DB ข้อ 3) → หาแถวเดิมจาก
      ดัชนีแล้ว update ตาม id ไม่มีค่อย insert · ทุกการเขียนนับแถว (RLS ปฏิเสธ = 0 แถวเงียบ · กฎ DB ข้อ 2)
    · สูตร/ตัวแปรอยู่ `utils/kpiSetup.js` + `utils/kpiFormula.js` — แผงนี้ไม่คำนวณอะไรเอง */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useContext } from 'react';
+import { UserContext } from '../App';
 import { supabase } from '../supabaseClient';
 import { toast } from './Toast';
 import { checkWriteRows } from '../utils/dbWrite';
@@ -40,6 +41,9 @@ function Cell({ value, auto, disabled, onCommit }) {
  * @param onChanged  โหลดแถวใหม่หลังบันทึก
  */
 export default function KpiBaseInputsPanel({ year, scope, org, rows = [], base: baseIn = null, canManage = false, onChanged, onGoPlant, defaultOpen = false, blockText = '' }) {
+  const { fullName } = useContext(UserContext);
+  /* ใครกรอก — 20/10 พบว่าค่าที่นำเข้าจากเว็บ 63 แถว created_by ว่างหมด ⇒ แยกไม่ออกจากตัวนำเข้าอัตโนมัติ (ซึ่งเขียน 'acct-import') */
+  const stamp = async () => ({ created_by: (await supabase.auth.getUser()).data?.user?.id ?? null, created_by_name: fullName || null });
   const plant = isPlant(scope);
   const base = baseIn || buildBaseIndex(rows);
   const [importing, setImporting] = useState(false);
@@ -59,7 +63,7 @@ export default function KpiBaseInputsPanel({ year, scope, org, rows = [], base: 
     setBusy(`${sk}|${varKey}|${month}`);
     const ok = existing
       ? checkWriteRows(await supabase.from('kpi_base_inputs').update({ value }).eq('id', existing.id).select('id'), tag)
-      : checkWriteRows(await supabase.from('kpi_base_inputs').insert({ year, month, var_key: varKey, value, ...baseScopeColumns(sk === PLANT_BASE_KEY ? { kind: 'plant', value: '' } : scope) }).select('id'), tag);
+      : checkWriteRows(await supabase.from('kpi_base_inputs').insert({ year, month, var_key: varKey, value, ...baseScopeColumns(sk === PLANT_BASE_KEY ? { kind: 'plant', value: '' } : scope), ...(await stamp()) }).select('id'), tag);
     setBusy('');
     if (ok) onChanged?.();
   };
@@ -79,7 +83,7 @@ export default function KpiBaseInputsPanel({ year, scope, org, rows = [], base: 
         const tag = `นำเข้า ${varKey} ${MONTHS[month - 1]}`;
         const ok = existing
           ? checkWriteRows(await supabase.from('kpi_base_inputs').update({ value }).eq('id', existing.id).select('id'), tag)
-          : checkWriteRows(await supabase.from('kpi_base_inputs').insert({ year, month, var_key: varKey, value, ...cols }).select('id'), tag);
+          : checkWriteRows(await supabase.from('kpi_base_inputs').insert({ year, month, var_key: varKey, value, ...cols, ...(await stamp()) }).select('id'), tag);
         if (ok) n += 1; else fail += 1;
       }
     }
