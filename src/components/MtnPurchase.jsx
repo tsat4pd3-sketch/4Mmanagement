@@ -30,7 +30,8 @@ import {
 import { isMoOpen, MO_DONE_STATUSES } from '../utils/mtnStepPerm';
 import { isMttrHeld, mttrHoldMin } from '../utils/mtnVendor';
 import { notifyEvent } from '../utils/notifyEvent';
-import { teamKeyOf } from '../utils/mtnTeams';
+import { teamKeyOf, teamRowOwner, teamRowLockNote } from '../utils/mtnTeams';
+import { can } from '../utils/permissions';
 
 const inp = { width: '100%', padding: '7px 9px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 12.5, boxSizing: 'border-box' };
 const btnPri = { background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, padding: '7px 14px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' };
@@ -125,7 +126,9 @@ function GlPicker({ category, value, glCodes, onChange }) {
 }
 
 /* ── แถว PR หนึ่งใบ + ปุ่มเดินสถานะ (ใช้ทั้งในใบ MO และบอร์ดคลัง) ───────────────────── */
-function PrRow({ pr, canEdit, fullName, onChanged, showSource, mo = null }) {
+/* `own` = ผลด่านชั้น ③ ฝั่งช่าง (แกน "ทีม") — ส่งมาจากบอร์ดคลัง · ในใบ MO ไม่ส่ง = `{ ok: true }`
+   (อยู่ในใบของทีมตัวเองอยู่แล้ว และผ่านด่านขั้น/ฝั่งของใบนั้นมาก่อน) */
+function PrRow({ pr, canEdit, fullName, onChanged, showSource, mo = null, own = { ok: true } }) {
   const st = prStatusMeta(pr.status);
   const waitNo = isAwaitingPrNo(pr);
   const [mode, setMode] = useState(null);         // 'prno' | 'order' | 'receive' | 'cancel'
@@ -133,8 +136,12 @@ function PrRow({ pr, canEdit, fullName, onChanged, showSource, mo = null }) {
   const [busy, setBusy] = useState(false);
   const run = async (fn) => { setBusy(true); try { await fn(); } finally { setBusy(false); } };
 
-  const doPrNo = () => run(async () => { if (await savePrNo(pr, val)) { toast.success(`บันทึกเลข PR ${normalizePrNo(val)}`); setMode(null); onChanged?.(); } });
+  /* 🔴 เช็คซ้ำในฟังก์ชันที่เขียนจริงทุกตัว — ซ่อนปุ่มอย่างเดียวไม่ใช่ด่าน (QC audit 20/10)
+     ใบ PR ของทีมอื่น: รับของเข้า = ขยับสต็อกคลังของทีมนั้น · ยกเลิก = ลบงานเขาแบบ soft */
+  const ownBlock = () => { if (own.ok) return false; toast.error(teamRowLockNote(pr, own.code)); return true; };
+  const doPrNo = () => run(async () => { if (ownBlock()) return; if (await savePrNo(pr, val)) { toast.success(`บันทึกเลข PR ${normalizePrNo(val)}`); setMode(null); onChanged?.(); } });
   const doOrder = () => run(async () => {
+    if (ownBlock()) return;
     const ok = checkWriteRows(await supabaseDR.from('mtn_purchase_requests')
       .update({ status: 'ordered', ordered_at: new Date().toISOString(), ordered_by: fullName || null, po_no: val.trim() || null, updated_at: new Date().toISOString() })
       .eq('id', pr.id).eq('status', 'requested').select('id'), 'บันทึกสั่งซื้อ',
@@ -142,6 +149,7 @@ function PrRow({ pr, canEdit, fullName, onChanged, showSource, mo = null }) {
     if (ok) { toast.success('บันทึก "สั่งแล้ว"'); setMode(null); onChanged?.(); }
   });
   const doReceive = () => run(async () => {
+    if (ownBlock()) return;
     const q = Number(val);
     if (!(q > 0)) return toast.error('ใส่จำนวนที่รับจริง');
     const { data, error } = await supabaseDR.rpc('mtn_pr_receive', { p_id: pr.id, p_qty: q, p_by_name: fullName || null });
@@ -151,6 +159,7 @@ function PrRow({ pr, canEdit, fullName, onChanged, showSource, mo = null }) {
     setMode(null); onChanged?.();
   });
   const doCancel = () => run(async () => {
+    if (ownBlock()) return;
     if (!val.trim()) return toast.error('ใส่เหตุผลที่ยกเลิก');
     const ok = checkWriteRows(await supabaseDR.from('mtn_purchase_requests')
       .update({ status: 'cancelled', cancelled_at: new Date().toISOString(), cancelled_by: fullName || null, cancel_reason: val.trim(), updated_at: new Date().toISOString() })
@@ -182,7 +191,11 @@ function PrRow({ pr, canEdit, fullName, onChanged, showSource, mo = null }) {
         {!pr.part_id && pr.status !== 'cancelled' ? ' · ไม่ผูกอะไหล่ในทะเบียน (รับแล้วไม่เข้าสต็อก)' : ''}
         {pr.note ? ` · ${pr.note}` : ''}
       </div>
-      {canEdit && isPrOpen(pr) && !mode && (
+      {/* 🔒 ไม่ใช่ของทีมเรา = เขียนบอกเหตุผล **ห้ามซ่อนปุ่มเงียบ** (กฎความซื่อสัตย์ของจอ) */}
+      {canEdit && isPrOpen(pr) && !own.ok && (
+        <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 5 }}>🔒 {teamRowLockNote(pr, own.code)}</div>
+      )}
+      {canEdit && own.ok && isPrOpen(pr) && !mode && (
         <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
           <button disabled={busy} onClick={() => { setVal(pr.pr_no || ''); setMode('prno'); }}
             style={waitNo ? { ...btnGhost, color: '#f59e0b', borderColor: '#f59e0b', fontWeight: 800 } : btnGhost}>{waitNo ? '✏️ กรอกเลข PR (SAP)' : '✏️ แก้เลข PR'}</button>
@@ -392,7 +405,12 @@ export function MtnPrPanel({ order, parts = [], fullName, canEdit = false, teamK
 }
 
 /* ══ บอร์ดในคลังอะไหล่ — ติด Min → เปิด PR · คิว PR ค้าง ══════════════════════════════ */
-export function MtnPrBoard({ parts = [], fullName, canEdit = false, onStockChanged }) {
+export function MtnPrBoard({ parts = [], fullName, canEdit = false, onStockChanged, myTeams = [], role = '' }) {
+  /* 🔐 ชั้น ③ ฝั่งช่าง = แกน "ทีม" (`utils/mtnTeams.js`) — บอร์ดนี้โหลด PR ของทุกทีมทั้งโรงงาน
+     ⇒ ไม่มีด่านเจ้าของ = หัวหน้าแผนกที่ถือ `spare_master` รับของ/ยกเลิกใบของทีมช่างอื่นได้
+     (เคสเดียวกับที่ PERMISSIONS-DESIGN §14 เขียนไว้) · เกณฑ์ strict เดียวกับทะเบียนอะไหล่ */
+  const strictOwn = can('mtn_repair', 'spare_master', role) && !can('mtn_repair', 'manage_master', role);
+  const ownOf = useCallback((pr) => teamRowOwner(pr, { myTeams, role, strict: strictOwn }), [myTeams, role, strictOwn]);
   const [prs, setPrs] = useState([]);
   const [glCodes, setGlCodes] = useState([]);
   const [err, setErr] = useState(null);
@@ -496,10 +514,10 @@ export function MtnPrBoard({ parts = [], fullName, canEdit = false, onStockChang
         </div>
       )) : <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 6 }}>ไม่มีใบ MO ที่รอเปิด PR</div>}
       <div style={{ fontSize: 12, fontWeight: 700, margin: '6px 0 4px', color: waitNoList.length ? '#f59e0b' : undefined }}>⏳ รอเลข PR จาก SAP ({waitNoList.length}) — แอดมินช่างกรอกเลขผูกกับใบ MO</div>
-      {waitNoList.length ? waitNoList.map(pr => <PrRow key={pr.id} pr={pr} canEdit={canEdit} fullName={fullName} onChanged={reload} showSource mo={mos[pr.order_id] || null} />)
+      {waitNoList.length ? waitNoList.map(pr => <PrRow key={pr.id} pr={pr} canEdit={canEdit} own={ownOf(pr)} fullName={fullName} onChanged={reload} showSource mo={mos[pr.order_id] || null} />)
         : <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 6 }}>ไม่มีใบที่รอเลข PR</div>}
       <div style={{ fontSize: 12, fontWeight: 700, margin: '6px 0 4px' }}>📋 PR ค้าง — รอสั่ง / รอของ ({hasNoList.length})</div>
-      {hasNoList.length ? hasNoList.map(pr => <PrRow key={pr.id} pr={pr} canEdit={canEdit} fullName={fullName} onChanged={reload} showSource mo={mos[pr.order_id] || null} />)
+      {hasNoList.length ? hasNoList.map(pr => <PrRow key={pr.id} pr={pr} canEdit={canEdit} own={ownOf(pr)} fullName={fullName} onChanged={reload} showSource mo={mos[pr.order_id] || null} />)
         : <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>ไม่มี PR ค้าง</div>}
       <button onClick={() => setShowDone(v => !v)} style={{ ...btnGhost, marginTop: 6 }}>{showDone ? 'ซ่อน' : 'ดู'} PR ที่จบแล้ว (50 ล่าสุด)</button>
       {showDone && <div style={{ marginTop: 6 }}>{doneList.map(pr => <PrRow key={pr.id} pr={pr} canEdit={false} fullName={fullName} showSource />)}</div>}

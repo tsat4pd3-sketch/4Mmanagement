@@ -70,9 +70,20 @@ export default function KpiBaseInputsPanel({ year, scope, org, rows = [], base: 
 
   /* 📥 นำเข้าจาก Excel — เขียนทีละค่า (ไม่ upsert · unique index เป็น expression) · นับแถวทุกครั้ง · คืนจำนวนที่สำเร็จ */
   const saveMany = async (values) => {
+    /* 🔴 ด่านต้องอยู่ใน "ฟังก์ชันที่เขียน DB จริง" ไม่ใช่แค่ในโมดัล (QC audit 20/10)
+       `save()` เช็ค `canManage` ถูกแล้ว แต่ทางนำเข้า Excel ไม่เช็คเลย — พึ่งด่านชั้น UI ชั้นเดียว
+       (`KpiBaseImportModal` กรองด้วย `canPlant`/`canUnit`) ⇒ สลับ props/เรียกจากที่อื่นเมื่อไหร่
+       คนที่ถือ `kpi:manage` ที่ขอบเขตหน่วย จะเขียน **ยอดขาย/COGS กลางของโรงงาน** ได้เงียบๆ */
+    if (!canManage) { toast.error(blockText || 'ไม่มีสิทธิ์กรอกตัวเลขฐานของขอบเขตนี้'); return 0; }
     let n = 0, fail = 0;
     for (const [varKey, byMonth] of Object.entries(values)) {
       const lvl = [...BASE_VARS_BY_LEVEL.plant, ...BASE_VARS_BY_LEVEL.unit].find(v => v.key === varKey)?.level;
+      /* 🔴 ตัวแปรระดับ "ทั้งโรงงาน" เขียนได้เฉพาะตอนยืนอยู่ที่ขอบเขตทั้งโรงงาน (เท่ากับ `canPlant`
+         ที่ส่งเข้าโมดัล) — เช็คซ้ำที่นี่ ไม่ใช่เชื่อว่าโมดัลกรองมาแล้ว */
+      if (lvl === 'plant' && !plant) {
+        toast.error('ยอดกลางของโรงงาน (ยอดขาย/COGS) กรอกได้ที่ขอบเขต "ทั้งโรงงาน" เท่านั้น');
+        fail++; continue;
+      }
       const sk = lvl === 'plant' ? PLANT_BASE_KEY : mySk;
       const cols = lvl === 'plant' ? { scope_kind: 'plant', scope_value: '' } : baseScopeColumns(scope);
       for (const [m, value] of Object.entries(byMonth)) {
