@@ -61,6 +61,8 @@ const MO_COLS = [
   'labor_cost', 'parts_cost', 'repair_type',
   // แผง KPI ช่าง (MtnKpiPanel): ความพึงพอใจ + ช่วงที่อยู่กับ supplier (techRepairMin หักออกจาก MTTR)
   'satisfaction', 'vendor_sent_at', 'vendor_back_at',
+  // ⏸️ ช่วงหยุดนับ MTTR หลัง MTN ตัดสินเส้นทาง (รออะไหล่ PR / ส่งภายนอก · 20/10) — techRepairMin หักออก
+  'mttr_hold_from', 'mttr_hold_to',
 ].join(',');
 const DT_COLS = 'id, machine_no, description, duration_min, started_at, fix_action, fix_by, call_mtn_team';
 
