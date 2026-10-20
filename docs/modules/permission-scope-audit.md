@@ -553,3 +553,20 @@ migration `supabase/migrations/20261020_rls_scope_net_fn_main.sql` · **apply �
 - ย้อนกลับ: `create or replace` ตัวเดิมจาก `20261012_rls_round5_anon_scope_masters_main.sql` (ตัดบล็อก ④ ออก)
 - ⚠️ ข้อ 2 ของ "ที่ยังเหลือ" ข้างบน (**ฝั่ง DB ยังไม่รู้จัก `resp_cost_centers` ในชั้น RLS ของตารางอื่น**)
   ยังเหมือนเดิม — อันนี้ปิดเฉพาะ "แก้สิทธิ์ตัวเอง" ไม่ใช่ predicate ของหน่วยงานในทุกตาราง
+
+## 🔐 รอบ 20/10 — ปิดชั้น ③ อีก 4 จอ (ด่าน `scope-layer-closed-screens`)
+
+ทั้ง 4 จุดมีชั้น ② (`can()`) อยู่แล้ว แต่**ไม่มีชั้น ③** และ RLS ปลายทางรู้แค่คีย์สิทธิ์ ไม่รู้ขอบเขต
+⇒ เปิด `?sec=` / `?scope=` ของหน่วยอื่นแล้วเขียนได้จริง
+
+| จอ | เขียนอะไรข้ามหน่วยได้ | ปิดด้วย |
+|---|---|---|
+| `/manpower-board` ⚙️ ตั้งค่าบอร์ด | `station_slot_plans` · `manpower_slot_plans` · `line_technicians` · `employee_flex_units` ของส่วนงานอื่น (เดิมตัดสินด้วย `sections` = แกน "ที่เห็น" ซึ่ง**ว่าง = เห็นทั้งโรงงาน**) | หน้าแม่ส่ง `secWrite={canWriteUnit(wctx, section.name, { unknownTarget:'block' })}` ลงแผงลูก + `blocked()` ต้นทั้ง **7 ฟังก์ชัน** ที่เขียน DB + แถบ 🔒 บนแผง |
+| `/line-stock` 📋 ตรวจนับ | `line_stock_transactions` ของไลน์อื่น (และตั้ง `approved` ทันทีถ้ามีสิทธิ์) · `cutShipped` หักสต็อกย้อนหลังที่คลัง FG | `canWriteLine(wctx, …)` ต้น `save()` และ `postMissingCuts()` (ไฟล์พี่น้องในหน้าเดียวกันทำถูกตั้งแต่ 15/10 — แท็บนี้ตกสำรวจ) |
+| `/equipment?tab=spare` 🛒 บอร์ด PR | **รับของเข้าสต็อก** (RPC `mtn_pr_receive`) / **ยกเลิกใบ** ของทีมช่างอื่น — ผู้ถือ `mtn_repair:spare_master` รวม `dept_admin` ฝ่ายผลิต | `MtnPrBoard` รับ `myTeams`/`role` จาก `EquipmentHub` → `teamRowOwner` ต่อแถว → `ownBlock()` ต้น **4 ฟังก์ชัน** (เลข PR · สั่งแล้ว · รับของ · ยกเลิก) + แถว 🔒 บอกเหตุ |
+| แผงตัวเลขฐาน KPI (`KpiBaseInputsPanel`) | ทางนำเข้า Excel (`saveMany`) **ไม่เช็คสิทธิ์เลย** — ด่านอยู่ในโมดัลชั้นเดียว ⇒ คนถือ `kpi:manage` ที่ขอบเขตหน่วย เขียนยอดขาย/COGS กลางโรงงานได้ | `if (!canManage) return 0` + กันตัวแปรระดับ `plant` เมื่อไม่ได้ยืนที่ขอบเขตทั้งโรงงาน |
+
+🔴 **บทเรียนที่ด่านเดิมมองไม่เห็น:** `write-scope-layer` ตรวจ (ก) เนื้อใน `writeScope.js` (ข) `App.jsx`
+ส่ง ctx ครบ (ค) จำนวนด่านใน `KpiMonthly.jsx` — **ไม่มีกฎที่ถามว่า "จอที่เขียน DB เรียกของกลางชั้น ③ หรือยัง"**
+⇒ ทั้ง 4 จุดผ่าน build มาตลอด · ด่านใหม่ `scope-layer-closed-screens` ตรึง 4 จอนี้ไว้
+(ยิงทดสอบด้วยการถอดด่านออกทีละจุดแล้ว จับได้ครบ 5/5)
