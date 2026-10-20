@@ -5726,12 +5726,33 @@ test('🛡️ break-line-rules-single-entry — ข้อยกเว้นเ�
   if (!/primeBreakRuleIndex\(\)/.test(app))
     bad.push('src/App.jsx — ต้องปลุก primeBreakRuleIndex() (จอ OEE บางจอคิวรี break_policies ตรงๆ)');
 
+  /* ⑥ 🏭 บอร์ดไทม์ไลน์ 24 ชม. — แถบเงาเวลาพักต้องเป็น "ของไลน์แถวนั้น" (20/10 รอบที่ 2)
+        เดิมทั้ง 3 จอวาดแถบจากค่ากลาง + เดาว่า "แถบนี้คือพักอะไร" ด้วยการจับคู่ `start_time` เอง
+        ⇒ พัก `anchor='shift_end'` (`start_time = null`) จับไม่ติด = tooltip เขียน "undefined"
+          และไลน์ที่ตั้ง 5ส. 10 นาที ถูกวาดเป็น 20 นาที = จอบอกเวลาพักผิดจากที่ไลน์ตั้งไว้ */
+  const BOARDS = ['src/pages/Dashboard.jsx', 'src/pages/Management.jsx', 'src/pages/HeijunkaKanban.jsx'];
+  for (const rel of BOARDS) {
+    const code = stripComments(readFileSync(join(ROOT, rel), 'utf8'));
+    // (ก) ห้ามจับคู่นโยบายจากเวลาเอง — ชื่อพักต้องมาจาก `band.policies` ที่ breakBandsIn ติดมา
+    if (/half\.hours\.indexOf\(\s*Number\(\s*String\(\s*bp\.start_time/.test(code))
+      bad.push(`${rel} — ห้ามหานโยบายของแถบพักด้วยการจับคู่ start_time เอง (ใช้ band.policies จาก halfDayBreakBands)`);
+    // (ข) ต้องวาดแถบจาก halfDayBreakBands (ตัวที่ติดป้ายมาให้)
+    if (!/halfDayBreakBands/.test(code))
+      bad.push(`${rel} — บอร์ดไทม์ไลน์ต้องวาดแถบพักผ่าน halfDayBreakBands (ได้ชื่อพัก + ป้าย "ไลน์นี้ตั้งเอง")`);
+    /* (ค) 🔴 ตัวสำคัญที่สุด — เรียกแบบ**ไม่ส่งชื่อไลน์** = ไลน์ที่ตั้งเวลาพักเองกลับไปใช้ค่ากลาง
+           เงียบสนิท (จอดูปกติ · build/lint/เทสผ่านหมด) ซึ่งเป็นสถานะก่อน 20/10 รอบที่ 2 พอดี */
+    for (const call of ['getBreakBands(half)', 'getBreakIntervals(half)', 'allBreaksOnce()'])
+      if (code.includes(call))
+        bad.push(`${rel} — \`${call}\` ไม่ส่งชื่อไลน์ ⇒ แถวนั้นกลับไปใช้เวลาพักค่ากลางเงียบๆ (ส่ง row.line / lineName)`);
+  }
+
   assert.deepEqual(bad, [],
     '\n\n❌ ข้อยกเว้นเวลาพัก "รายไลน์" จะเพี้ยน/ตายเงียบ:\n'
     + bad.map(b => '   • ' + b).join('\n') + '\n'
     + '   ทำไมสำคัญ: ไลน์ที่ตั้ง 5ส. 10 นาที ถ้าระบบกลับไปหัก 20 นาที = ฐานเวลาของ %A/%P\n'
     + '              ผิดทุกกะ โดยที่จอดูปกติและ build ผ่าน — หาไม่เจอจนกว่าจะมีคนทักจากหน้างาน\n'
-    + '   เจ้าของกฎ: src/utils/breakLineRules.js (ไล่สายแม่-ลูก + ทะเบียนกลาง)\n'
+    + '              บอร์ดไทม์ไลน์ที่วาดแถบเงาต้องส่งชื่อไลน์ของแถวนั้นเข้า halfDayBreakBands\n'
+    + '   เจ้าของกฎ: src/utils/breakLineRules.js (ไล่สายแม่-ลูก + ทะเบียนกลาง + ป้ายบนแถบ)\n'
     + '              src/utils/oee.js  (จุดทับค่าจุดเดียว — ใน breakIntervalsIn)\n');
 });
 

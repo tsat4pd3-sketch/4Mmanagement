@@ -1,5 +1,5 @@
 import { useState, useEffect, useLayoutEffect, useContext, useRef, useCallback, useMemo, Fragment } from 'react';
-import { halfDayBreakIntervals } from '../utils/oee';
+import { halfDayBreakIntervals, halfDayBreakBands, breakBandTitle } from '../utils/oee';
 import { createPortal } from 'react-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { fetchAllPages } from '../utils/fetchByIds';
@@ -385,7 +385,7 @@ export default function Management() {
     return (chain.find(n => linesWithLayout.has(n)) || null) === layoutLineName;
   }, [allLines, linesWithLayout, layoutLineName]);
 
-  const fetchLineProd = useCallback(async (lineNames) => {
+  const fetchLineProd = useCallback(async (lineNames, boardLine = null) => {
     if (!lineNames?.length) { setLineProdData(null); return; }
     const dateStr = boardDate;
     const { data: sessions } = await supabaseDR
@@ -424,13 +424,13 @@ export default function Management() {
     (dtLogs || []).forEach(d => { (dtBySession[d.session_id] ||= []).push(d); });
     const enriched = sessions.map(s => ({ ...s, orders: ordersBySession[s.id] || [], dtLogs: dtBySession[s.id] || [] }));
     const { data: breakPolicies } = await supabaseDR.from('break_policies').select('*').eq('is_active', true);
-    setLineProdData({ sessions: enriched, workDate: dateStr, ctByMatNo: ctMap, nameByMatNo: nameMap, imgByMatNo: imgMap, pairMatByMat: pairMap, breakPolicies: breakPolicies || [] });
+    setLineProdData({ boardLine, sessions: enriched, workDate: dateStr, ctByMatNo: ctMap, nameByMatNo: nameMap, imgByMatNo: imgMap, pairMatByMat: pairMap, breakPolicies: breakPolicies || [] });
   }, [boardDate]);
 
   useEffect(() => {
     if (!selectedLine) return;
-    fetchLineProd(viewLineNames);
-    return visibleInterval(() => fetchLineProd(viewLineNames), RATE.BOARD);
+    fetchLineProd(viewLineNames, selectedLine);
+    return visibleInterval(() => fetchLineProd(viewLineNames, selectedLine), RATE.BOARD);
   }, [selectedLine, viewKey, fetchLineProd]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Downtime alarm — จุดเครื่องจักรบนผังกระพริบแดงเฉพาะตอน downtime ยังเปิดค้าง (ปิดรายการ = ดับทันที) ──
@@ -1555,8 +1555,14 @@ export default function Management() {
           const imgByMatNo = lineProdData.imgByMatNo || {};
           const pairMatByMat = lineProdData.pairMatByMat || {};
           const breakPolicies = lineProdData.breakPolicies || [];
-          // 🔴 ผ่าน halfDayBreakIntervals (utils/oee.js) ที่เดียว — กรอง process/ot_scope เหมือนสูตร OEE (QC 05/10)
-          const getBreakIntervals = (half) => halfDayBreakIntervals({ policies: breakPolicies, half });
+          /* 🏭 ไลน์ของบอร์ดนี้ — มาจากก้อนข้อมูลที่โหลดมา (ไม่ใช่ `selectedLine` สด) เพื่อให้
+             เวลาพักที่วาด ตรงกับไลน์ของข้อมูลที่อยู่บนจอจริง · ไลน์ลูกตกทอดจากแม่ให้เอง */
+          const boardLine = lineProdData.boardLine || null;
+          /* 🔴 ผ่าน halfDayBreakIntervals (utils/oee.js) ที่เดียว — กรอง process/ot_scope เหมือนสูตร OEE (QC 05/10)
+             🏭 **ต้องส่ง `lineName` เสมอ** (`break_line_rules` · 20/10) — ไม่ส่ง = ไลน์ที่ตั้งพักเองกลับไปใช้ค่ากลางเงียบๆ */
+          const getBreakIntervals = (half, lineName = null) => halfDayBreakIntervals({ policies: breakPolicies, half, lineName });
+          // แถบที่ติดป้ายมาด้วย (ชื่อพัก + ไลน์นี้ตั้งเองกี่นาที) — ใช้ตอนวาดเงา ห้ามจับคู่นโยบายจากเวลาเอง
+          const getBreakBands = (half, lineName = null) => halfDayBreakBands({ policies: breakPolicies, half, lineName });
 
           // คำนวณคิวทั้งวัน (24 ชม.) ครั้งเดียวต่อแถว product แทนการตัดแยกทีละกะ
           // เพื่อให้การ์ดที่ดีเลย์ล้นข้ามกะ (เช่น ผลิตจากกะเช้าไปจบกะดึก) ต่อแถวเดิมได้ ไม่ถูกตัดทิ้งที่ขอบกะ
@@ -1565,7 +1571,7 @@ export default function Management() {
           const ROUND_MS = 2 * 3600000;
           const roundIndexOf = (ms) => Math.floor((ms - gridStartMs) / ROUND_MS);
           const roundStartOf = (idx) => gridStartMs + idx * ROUND_MS;
-          const allBreaksOnce = () => [...getBreakIntervals(HALVES[0]), ...getBreakIntervals(HALVES[1])].sort((a, b) => a[0] - b[0]);
+          const allBreaksOnce = (lineName = null) => [...getBreakIntervals(HALVES[0], lineName), ...getBreakIntervals(HALVES[1], lineName)].sort((a, b) => a[0] - b[0]);
 
 
           // ตัดผลคิวทั้งวัน (ms จริง) มาเป็น % สำหรับ "กะ" หนึ่ง ๆ — การ์ดเดียวกันแสดงต่อกันได้ทั้ง 2 กะ
@@ -1637,8 +1643,10 @@ export default function Management() {
           const linesByName = {}; (allLines || []).forEach(l => { linesByName[l.name] = l; });
           const machineCountByLine = {};
           (machinePoints || []).forEach(pt => { (machineCountByLine[pt.line_name] ||= new Set()).add(pt.machine_no); });
+          /* 🏭 คิวระดับ "กลุ่มไลน์" ⇒ กฎพักของไลน์แม่ (ลูกตกทอดจากแม่เป็นค่าตั้งต้น) ·
+             ตัวเลขรายแถว (`rowPlan`) อิงกฎของไลน์ตัวเอง */
           const positionedByOrder = positionAllCards(allCards, {
-            breaks: allBreaksOnce(), ctByMat: ctByMatNo, nowMs, frameEndMs: gridEndMs, roundIndexOf, roundStartOf,
+            breaks: allBreaksOnce(boardLine), ctByMat: ctByMatNo, nowMs, frameEndMs: gridEndMs, roundIndexOf, roundStartOf,
             flowByLine: linesByName, machineCountByLine, pairMatByMat,
           });
           const positionedForCards = (cs) => cs.map(c => positionedByOrder.get(orderKeyOf(c))).filter(Boolean)
@@ -1659,7 +1667,7 @@ export default function Management() {
             if (!blamedBy.has(v.key)) blamedBy.set(v.key, { root: c.root, blameMin: v.blameMin, pushedMin: v.pushedMin });
           }));
           const boardPlan  = planStatusOf({
-            positioned: positionedByOrder, cards: allCards, breaks: allBreaksOnce(),
+            positioned: positionedByOrder, cards: allCards, breaks: allBreaksOnce(boardLine),
             ctByMat: ctByMatNo, nowMs, frameEndMs: gridEndMs, shiftEndMs,
           });
 
@@ -1679,7 +1687,7 @@ export default function Management() {
             const NIGHT_REG_IN = gridStartMs + 14.5 * 3600000;  // 22:30 (เข้าปกติ)
             const FRAME_END    = gridEndMs;                     // 08:00
             const finishFrom = (startMs, workMs) => {
-              const breaks = allBreaksOnce();
+              const breaks = allBreaksOnce(boardLine);
               let end = startMs + workMs;
               const consumed = new Set();
               let ext = true;
@@ -1875,19 +1883,17 @@ export default function Management() {
                             return <div key={i} style={{ flex: 1, minWidth: 0, height: '100%', borderRight: `1px solid ${isShiftBound ? 'var(--border2)' : 'var(--border)'}`, background: isNow ? 'rgba(77,159,255,0.06)' : 'transparent' }} />;
                           })}
                           {(() => {
-                            const breaks = getBreakIntervals(half);
-                            return breaks.map(([bs, be], pi) => {
+                            /* 🏭 แถบพัก "ของไลน์แถวนี้" (break_line_rules · 20/10) · ชื่อพักมาจาก band.policies
+                               **ห้ามจับคู่จากเวลาเอง** — พัก anchor='shift_end' มี start_time = null
+                               ⇒ เดิมจับไม่ติด tooltip เขียน "undefined" */
+                            const bands = getBreakBands(half, row.line || boardLine);
+                            return bands.map((band, pi) => {
+                                const { s: bs, e: be } = band;
                                 const leftPct = Math.max(0, (bs - half.startMs) * pctPerMs);
                                 const widthPct = Math.min(100 - leftPct, (be - bs) * pctPerMs);
                                 if (widthPct <= 0) return null;
-                                const p = breakPolicies.find(bp => {
-                                  const idx = half.hours.indexOf(Number(String(bp.start_time).slice(0,2)));
-                                  if (idx < 0) return false;
-                                  const mins = Number(String(bp.start_time).slice(3,5)) || 0;
-                                  return half.startMs + idx * 3600000 + mins * 60000 === bs;
-                                }) || {};
                                 return (
-                                  <div key={`brk-${pi}`} title={`${p.name_th || p.name_en} — ไลน์ไม่รองรับ KANBAN`}
+                                  <div key={`brk-${pi}`} title={`${breakBandTitle(band, row.line || boardLine)} — ไลน์ไม่รองรับ KANBAN`}
                                     style={{
                                       position: 'absolute', top: 0, bottom: 0, left: `${leftPct}%`, width: `${widthPct}%`,
                                       background: 'repeating-linear-gradient(45deg, rgba(148,163,184,0.18) 0px, rgba(148,163,184,0.18) 4px, transparent 4px, transparent 8px)',
@@ -2063,7 +2069,7 @@ export default function Management() {
                       const finOver   = finMs != null && finMs > gridEndMs;
                       /* 📋 หลุดแผนของแถวนี้ — สูตรกลางตัวเดียวกับหัวบอร์ด (ห้ามคิดเองในหน้า) */
                       const rowPlan   = planStatusOf({
-                        positioned: rowPos, cards: row.cards, breaks: allBreaksOnce(),
+                        positioned: rowPos, cards: row.cards, breaks: allBreaksOnce(row.line || boardLine),
                         ctByMat: ctByMatNo, nowMs, frameEndMs: gridEndMs, shiftEndMs,
                       });
                       const isOpen    = row.cards.some(c => c.sessionOpen);
