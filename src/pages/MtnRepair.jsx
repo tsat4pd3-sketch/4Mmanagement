@@ -33,6 +33,7 @@ import { loadDocForms, docFormSync } from '../utils/docForms';
 loadDocForms(); // ทะเบียนเอกสาร — printMoReport (sync) อ่านผ่าน docFormSync
 import { fmtDateTime } from '../utils/dateFormat';
 import tsLogo from '../assets/TS logo.png';
+import { absAssetUrl } from '../utils/assetUrl';
 import EventComments from '../components/EventComments';
 /* 💬 คอมเมนต์ใต้ใบ MO ไปโผล่ในช่องแรกของใบพิมพ์ด้วย (คอมเมนต์ทีม MTN ข้อ 1 · 07/10)
    🔴 อ่าน `event_comments` ของเดิมที่ <EventComments> ใช้อยู่ — ห้ามทำที่เก็บคอมเมนต์ชุดที่ 2
@@ -98,7 +99,6 @@ const PR_FILTERS = [
 /* 🖼️ โลโก้ในตัวแอป — ไฟล์เล็กกว่า 4 KB ถูก Vite ฝังเป็น `data:` URL อยู่แล้ว (TS logo.png = 2.4 KB)
    🔴 เดิมเช็คแค่ `https?:` แล้วต่อ `location.origin` หน้า `data:` = URL พัง ⇒ ใบพิมพ์ไม่มีโลโก้ (19/10 · user แจ้ง)
    ⇒ ใช้ URL ตามที่ bundler ให้มา: absolute (http/data/blob) ใช้ตรง · path สัมพัทธ์ค่อยต่อ origin */
-const absAssetUrl = (u) => (/^(https?:|data:|blob:)/i.test(u) ? u : location.origin + u);
 const BUILTIN_LOGO = absAssetUrl(tsLogo);
 async function logoDataUrl(overrideUrl) {
   if (!overrideUrl) return BUILTIN_LOGO;
