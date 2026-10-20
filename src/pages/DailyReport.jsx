@@ -24,6 +24,7 @@ import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { fetchByIds } from '../utils/fetchByIds';
 import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
 import { checkShiftCapacity } from '../utils/shiftCapacity';
+import { splitCloseOrders, autoCarryPatch, autoCarryText } from '../utils/closeShiftOrders';   // 🔁 ปิดกะ: ใบที่ยังไม่แตะ = ยกเอง (20/10)
 import { canShortClose, shortCloseError, shortClosePatch, isShortClosed } from '../utils/shortClose';   // ✂️ ปิดใบด้วยยอดเศษ (งานปั๊ม 2xx · 2026-10-02)   // ⏱️ ด่าน "เปิดใบนี้แล้วเกินกะไหม" (ไลน์เครื่องขนานนับเป็นเลน · 2026-10-02)
 import { MTN_TEAMS, teamForItem, teamForMachine, teamKeyOf, deptNameOf } from '../utils/mtnTeams';
 import useIsMobile from '../utils/useIsMobile';
@@ -2340,21 +2341,25 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       return;
     }
 
-    // Check open orders that haven't been decided yet
+    /* 🔁 แยก 2 กองก่อน (กฎกลาง `utils/closeShiftOrders.js` · คำสั่ง user 20/10
+       "ยกยอดแค่ใบที่ทำไม่จบครึ่งๆกลางๆ ที่เหลือออโต้ยกไปเลย")
+       · ยังไม่แตะเลย → ระบบยกให้เอง **ไม่ต้องกด ไม่มีปุ่มยกเลิก** (ห้ามลบความต้องการทิ้ง)
+       · แตะแล้ว     → คนตัดสินเหมือนเดิม (ต้องยืนยันยอดจริง ระบบเดาแทนไม่ได้) */
     const openOrders = prodOrders.filter(o => o.status === 'open');
-    const undecided  = openOrders.filter(o => !carryOverDecisions[o.id]);
+    const { autoCarry: autoCarryOrders, needDecision } = splitCloseOrders(openOrders, carryQtyActual);
+    const undecided  = needDecision.filter(o => !carryOverDecisions[o.id]);
     if (undecided.length > 0) {
-      toast.error(`มี ${undecided.length} Order ที่ยังไม่ได้ตัดสินใจ (ผลิตครบแล้ว / ยกยอดต่อ / ปิดด้วยยอดเศษ / ยกเลิก)`);
+      toast.error(`มี ${undecided.length} Order ที่ทำไปบางส่วนแล้ว — ต้องตัดสินใจก่อนปิดกะ (ผลิตครบแล้ว / ยกยอดต่อ / ปิดด้วยยอดเศษ / ยกเลิก)`);
       return;
     }
     // ครบเป้าแล้วแต่ยังเลือก "ยกยอดต่อ" — ไม่มีอะไรเหลือให้ยก ต้องใช้ "ผลิตครบแล้ว" แทน
-    const invalidCarry = openOrders.filter(o => carryOverDecisions[o.id] === 'carry' && (parseInt(carryQtyActual[o.id]) || 0) >= o.qty);
+    const invalidCarry = needDecision.filter(o => carryOverDecisions[o.id] === 'carry' && (parseInt(carryQtyActual[o.id]) || 0) >= o.qty);
     if (invalidCarry.length > 0) {
       toast.error(`มี ${invalidCarry.length} Order ที่ผลิตครบเป้าแล้วแต่เลือก "ยกยอดต่อ" — กรุณาเปลี่ยนเป็น "ผลิตครบแล้ว"`);
       return;
     }
     // ✂️ ปิดด้วยยอดเศษ — ยอดต้องเข้าเกณฑ์ (>0 · ไม่เกิน/ไม่เท่าเป้า) และของต้องส่งเศษได้ (ไม่ใช่ FG)
-    const badShort = openOrders.find(o => carryOverDecisions[o.id] === 'short'
+    const badShort = needDecision.find(o => carryOverDecisions[o.id] === 'short'
       && (!canShortClose(o.mat_no).ok || shortCloseError(parseInt(carryQtyActual[o.id]) || 0, o.qty_target ?? o.qty)));
     if (badShort) {
       const g = canShortClose(badShort.mat_no);
@@ -2415,7 +2420,20 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
 
     // Process carry-over decisions
     const { data: { user } } = await supabase.auth.getUser();
-    for (const order of openOrders) {
+    /* 🔁 ยกอัตโนมัติ (ใบที่ยังไม่ได้ผลิตเลย) — ⚠️ เขียนแล้วต้องเช็ค error เหมือนกองที่คนตัดสิน
+       ล้มแล้วปล่อยผ่าน = กะปิดแต่ใบยัง `open` ค้างในกะที่ปิดไปแล้ว = หายจากทุกจอ */
+    for (const order of autoCarryOrders) {
+      const stopAuto = closeEndTime && selSession.work_date
+        ? new Date(`${selSession.work_date}T${closeEndTime.slice(0, 5)}:00`).toISOString() : null;
+      const { error: acErr } = await supabaseDR.from('prod_orders')
+        .update(autoCarryPatch(order, {
+          shiftLabel: selSession.shift === 'day' ? 'กะเช้า' : 'กะดึก',
+          dateLabel: fmtDate(selSession.work_date), stoppedAt: stopAuto,
+        })).eq('id', order.id);
+      if (acErr) { toast.error(`ยกยอดใบ ${order.prod_no || order.mat_no} อัตโนมัติไม่สำเร็จ — ยังไม่ปิดกะ ลองใหม่: ` + acErr.message); setSavingClose(false); return; }
+    }
+
+    for (const order of needDecision) {
       const decision  = carryOverDecisions[order.id];
       const qActual   = parseInt(carryQtyActual[order.id]) || 0;
       // เวลาหยุดผลิตจริงของออเดอร์นี้ — ใช้ที่กรอกไว้ ถ้าไม่ได้แก้ก็ใช้เวลาปิดกะรวมเป็น default
@@ -2615,9 +2633,12 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       oee_q:        Q != null ? parseFloat((Q * 100).toFixed(1)) : null,
       parts: summarizeParts([
         ...confirmed.map(o => ({ mat_no: o.mat_no, part_name: o.part_name, qty: o.qty })),
-        ...openOrders.map(o => carryOverDecisions[o.id] === 'confirm'
+        ...needDecision.map(o => carryOverDecisions[o.id] === 'confirm'
           ? { mat_no: o.mat_no, part_name: o.part_name, qty: o.qty }
           : { mat_no: o.mat_no, part_name: o.part_name, qty: parseInt(carryQtyActual[o.id]) || 0, carry: true }),
+        /* ใบที่ยกอัตโนมัติ = ยังไม่ได้ผลิตเลย ⇒ ยอด 0 แต่ **ต้องอยู่ในสรุป** ไม่งั้นแจ้งเตือนปิดกะ
+           จะเหมือนไม่มีของค้าง ทั้งที่ยกไป N ใบ */
+        ...autoCarryOrders.map(o => ({ mat_no: o.mat_no, part_name: o.part_name, qty: 0, carry: true })),
       ]),
       downtimes:    summarizeDowntimes(updatedDtLogs),
       dt_total_min: Math.round(updatedDtLogs.reduce((s, d) => s + (d.duration_min || 0), 0)),
@@ -5046,8 +5067,13 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 <div style={{ minWidth: 0 }}>
                 {/* Carry-over: handle open orders */}
                 {(() => {
-                  const openOrders = prodOrders.filter(o => o.status === 'open');
-                  if (!openOrders.length) return null;
+                  const openAll = prodOrders.filter(o => o.status === 'open');
+                  if (!openAll.length) return null;
+                  /* 🔁 กฎกลาง `utils/closeShiftOrders.js` — ใบที่ยังไม่แตะเลย ระบบยกให้เอง
+                     ⇒ รายการที่ต้องกดเหลือเฉพาะใบที่ "ทำไปบางส่วน" (ลดภาระตอนปิดกะ
+                        และไม่มีปุ่มยกเลิกให้ใบที่ยังไม่ได้ทำ — ห้ามลบความต้องการทิ้ง) */
+                  const { autoCarry, needDecision: openOrders } = splitCloseOrders(openAll, carryQtyActual);
+                  const autoPcs = autoCarry.reduce((a, o) => a + (Number(o.qty) || 0), 0);
                   // ยอดยกต้องมาจากของจริงที่ leader กรอกเองเท่านั้น ห้ามให้ระบบประมาณเวลาที่ "น่าจะ" ผลิตได้มาเติมให้
                   // (ของเดิมเคยเดาจากเวลาที่เหลือ ทำให้ดูเหมือนผลิตครบทั้งที่ยังไม่ได้ทำ)
                   // ข้อยกเว้นเดียว: ยอดที่ "คนกรอกเอง" ไว้ระหว่างกะ (qty_actual) ถูกเติมให้ตอนเปิด modal — แก้ทับได้
@@ -5063,9 +5089,25 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   const allDecided = openOrders.every(o => carryOverDecisions[o.id]) && invalidCarry.length === 0;
                   return (
                     <div style={{ marginBottom: 14, padding: '12px 14px', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 10 }}>
+                      {/* 🔁 ยกอัตโนมัติ — ต้องเขียนบนจอว่าระบบกำลังจะทำอะไรให้ **ห้ามยกเงียบ** */}
+                      {autoCarry.length > 0 && (
+                        <div style={{ marginBottom: 10, padding: '9px 12px', borderRadius: 8, fontSize: 12, lineHeight: 1.65,
+                          background: 'var(--card)', backgroundImage: 'linear-gradient(rgba(34,197,94,0.10), rgba(34,197,94,0.10))',
+                          border: '1px solid rgba(34,197,94,0.4)', color: 'var(--text2)' }}>
+                          <div style={{ fontWeight: 800, color: '#22c55e' }}>{autoCarryText(autoCarry.length, autoPcs)}</div>
+                          <div style={{ marginTop: 3, fontFamily: 'monospace', fontSize: 11, color: 'var(--muted)' }}>
+                            {autoCarry.slice(0, 8).map(o => o.prod_no || o.mat_no).join(' · ')}
+                            {autoCarry.length > 8 ? ` · +${autoCarry.length - 8} ใบ` : ''}
+                          </div>
+                          <div style={{ marginTop: 3, fontSize: 11, color: 'var(--muted)' }}>
+                            ใบที่ออกผิดจริงๆ ให้ลบ<b>ระหว่างกะ</b>ที่รายการใบนั้น — ตอนปิดกะไม่มีปุ่มยกเลิกให้ใบที่ยังไม่ได้ผลิต
+                          </div>
+                        </div>
+                      )}
+                      {openOrders.length === 0 ? null : (
                       <div style={{ fontSize: 12, fontWeight: 700, color: '#f59e0b', marginBottom: 10 }}>
-                        ⚠ มี {openOrders.length} Order ที่ยังไม่ปิด — ต้องตัดสินใจก่อนปิดกะ
-                      </div>
+                        ⚠ มี {openOrders.length} Order ที่ทำไปบางส่วน — ต้องตัดสินใจก่อนปิดกะ
+                      </div>)}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                         {openOrders.map(o => {
                           const dec     = carryOverDecisions[o.id];
@@ -5215,7 +5257,10 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
 
                 <div style={{ display: 'flex', gap: 10, marginTop: 16, justifyContent: 'flex-end' }}>
                   <button onClick={() => { setShowCloseShift(false); setCarryOverDecisions({}); }} style={cancelBtnStyle}>ยกเลิก</button>
-                  <button onClick={handleCloseSession} disabled={savingClose || prodOrders.filter(o => o.status === 'open').some(o => !carryOverDecisions[o.id])}
+                  {/* 🔁 ปุ่มปิดกะรอเฉพาะ "ใบที่ทำไปบางส่วน" — ใบที่ยังไม่แตะระบบยกให้เอง (closeShiftOrders.js)
+                      เดิมรอทุกใบ ⇒ เปิดคัมบังไว้ 20 ใบแล้วทำไม่ทัน = ต้องกด 20 ครั้งก่อนปิดกะได้
+                      (นี่คือเหตุผลที่หน้างานเลือก "ทยอยเปิด" จนบอร์ดดูเหมือนไม่มีออเดอร์) */}
+                  <button onClick={handleCloseSession} disabled={savingClose || splitCloseOrders(prodOrders.filter(o => o.status === 'open'), carryQtyActual).needDecision.some(o => !carryOverDecisions[o.id])}
                     style={{ ...saveBtnStyle, background: '#ef4444',
                       opacity: (savingClose || prodOrders.filter(o => o.status === 'open').some(o => !carryOverDecisions[o.id])) ? 0.5 : 1 }}>
                     {savingClose ? '...' : closeIsRequest ? '📋 ส่งขอปิดกะ' : '🔒 ยืนยันปิดกะ'}
