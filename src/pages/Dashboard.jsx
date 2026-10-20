@@ -39,7 +39,7 @@ import { useLatestRequest } from '../utils/useLatestRequest';
 import { loadBreakPolicies } from '../utils/oeeMasters';
 import { fetchAllRows } from '../utils/fetchAllRows';
 import SearchInput from '../components/SearchInput';
-import { urlPick, urlBool } from '../utils/urlInit';
+import { urlPick, urlBool, urlParam } from '../utils/urlInit';
 
 /* เกณฑ์ "อัตราการมาทำงาน" ของจอนี้ — การ์ดบนสุดกับการ์ดรายไลน์ต้องใช้ชุดเดียวกัน (2026-10-19)
    เดิมการ์ดไลน์ตัดที่ 80% และเอา 4M มาปนสีมาทำงาน ⇒ ไลน์มา 91% ขึ้น "⚠ Risk" · มา 82% ขึ้น "✓ Normal" */
@@ -686,8 +686,13 @@ export default function Dashboard({ view = 'timeline' }) {
 
   // mandatory scope filter (pattern มาตรฐาน — CLAUDE.md "Section/Line/Team Scoping"):
   // กรองก่อนเสมอ แล้วค่อยให้ dropdown section เลือกแคบลงทับอีกชั้น · user ไม่มี scope = เห็นหมดเหมือนเดิม
-  const scopeActive = (role === 'leader' && !!userLineId) || (scopeSecs?.length > 0);
-  const scopedLines = useMemo(() => {
+  /* ?bline=<ชื่อไลน์>[,<ชื่อไลน์>…] (จอวนหน้า · 20/10 user "ตั้งโชว์ไลน์ใครไลน์มันไม่ได้") — จอนี้เห็นเฉพาะไลน์นั้น + ไลน์ลูก
+     ทั้งหน้า (บอร์ด · ตัวนับ · 4M · ผัง) · ไม่มีในลิงก์ = เหมือนเดิม · ชื่อไม่ตรงทะเบียน = ไม่กรอง (ลิงก์พิมพ์ผิดต้องไม่ทำจอว่าง)
+     ⚠️ ห้ามใช้ `?line=` — คีย์นั้นของ /people-board (ลิงก์เก่า /dashboard?line= ถูกส่งต่อไปเปิดผังไลน์) */
+  const [lineSeed] = useState(() => (urlParam('bline') || '').split(',').map(x => x.trim()).filter(Boolean));
+  const lineSeedKey = lineSeed.join(',');
+  const scopeActive = (role === 'leader' && !!userLineId) || (scopeSecs?.length > 0) || lineSeed.length > 0;
+  const roleScopedLines = useMemo(() => {
     if (role === 'leader' && userLineId) {
       // เทียบ id ด้วย String() — lineId จาก profile อาจเป็นคนละ type กับ production_lines.id (pattern เดียวกับ EventLog)
       const myLine = lines.find(l => String(l.id) === String(userLineId));
@@ -697,6 +702,14 @@ export default function Dashboard({ view = 'timeline' }) {
     if (scopeSecs?.length) return lines.filter(l => inSectionScope(scopeSecs, l.section));
     return lines;
   }, [lines, role, userLineId, scopeSecs]);
+  // ไลน์จากลิงก์ = แคบลงจากขอบเขตของบัญชี (ห้ามขยายเกิน — จอ PD1 ตั้งไลน์ PD3 = ไม่เห็น)
+  const scopedLines = useMemo(() => {
+    if (!lineSeed.length) return roleScopedLines;
+    const fam = new Set(lineSeed.flatMap(n => (lines.some(l => l.name === n) ? getLineFamilyNames(lines, n) : [])));
+    return fam.size ? roleScopedLines.filter(l => fam.has(l.name)) : roleScopedLines;
+  }, [roleScopedLines, lines, lineSeedKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  // ไลน์จากลิงก์ที่ใช้กรองจริง (ชื่อตรงทะเบียน) — ขึ้นหัวจอให้รู้ว่าจอนี้ไม่ใช่ "ทุกไลน์"
+  const lineSeedShown = useMemo(() => lineSeed.filter(n => lines.some(l => l.name === n)), [lineSeedKey, lines]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const sections = useMemo(
     () => (!scopeActive && orgSections.length) ? orgSections : sortLike(scopedLines.map(l => l.section), orgSections),
@@ -961,7 +974,7 @@ export default function Dashboard({ view = 'timeline' }) {
       <div className="ph-chrome" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 28, gap: 16, flexWrap: 'wrap' }}>
         <motion.div {...stagger(0)}>
           <h1 style={{ margin: 0, fontSize: 'clamp(18px,3vw,24px)', fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text)', letterSpacing: '-0.5px' }}>
-            {isPeople ? 'ภาพรวมกำลังคน' : 'ไทม์ไลน์ผลิตทุกไลน์'}
+            {isPeople ? 'ภาพรวมกำลังคน' : (lineSeedShown.length ? `ไทม์ไลน์ผลิต · ${lineSeedShown.join(' · ')}` : 'ไทม์ไลน์ผลิตทุกไลน์')}
           </h1>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 6, flexWrap: 'wrap' }}>
             {selectedShift !== 'all' && (
