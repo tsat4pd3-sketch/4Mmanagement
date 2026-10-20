@@ -2,6 +2,7 @@ import { useState, useEffect, useContext, useCallback, useRef, useMemo } from 'r
 import { Link, useNavigate } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
+import { canWriteLine, writeBlockText } from '../utils/writeScope';   // 🔐 ชั้นที่ 3 — ทะเบียนสินค้าของไลน์ส่วนงานอื่น (20/10)
 import { fmtDate, fmtDateTime, fmtDateTimeFull, fmtTime } from '../utils/dateFormat';
 import { buildMachineKeyMap, snapMachineNo } from '../utils/machineNo';
 import { dtBucketName, buildDtIndex } from '../utils/downtimeCategory';
@@ -8136,6 +8137,17 @@ function BreakPolicySetup({ role }) {
 function ProductSetup({ role }) {
   const [items, setItems]     = useState([]);
   const [lines, setLines]     = useState([]);
+  /* 🔐 ชั้นที่ 3 — แผงนี้แก้ `dr_products` ชุดเดียวกับ /products (CT · โหมดลงยอด · ลบทิ้ง)
+     ⇒ ต้องมีด่านเดียวกัน ไม่งั้นปิดทาง /products แล้วยังเข้าทางนี้ได้ (audit §14 · 20/10)
+     🔴 สินค้าที่ยังไม่ผูกไลน์ = ของกลาง ยังแก้ได้ตาม default (เพิ่มสินค้าใหม่ที่ยังไม่รู้ไลน์) */
+  const { section: homeSection, sections: scopeSecs, allUnits, respCostCenters, scopeIdx } = useContext(UserContext);
+  const pCtx = { role, section: homeSection, sections: scopeSecs, allUnits, respCostCenters, scopeIdx };
+  const pGuard = (lineName, what) => {
+    const w = canWriteLine(pCtx, lineName, lines);
+    if (w.ok) return true;
+    toast.error(writeBlockText(w, { what, unit: lineName || '' }));
+    return false;
+  };
   const [editing, setEditing] = useState(null);   // product id | 'new'
   const [ecSource, setEcSource] = useState(null); // product being EC'd
   const [form, setForm]       = useState({});
@@ -8193,6 +8205,13 @@ function ProductSetup({ role }) {
 
   const handleSave = async () => {
     if (!form.name) { toast.error('กรอกชื่อสินค้า'); return; }
+    /* ชั้นที่ 3 — เช็ค 2 ฝั่ง: แถวเดิม/ต้นฉบับ EC + ไลน์ปลายทางที่กำลังจะเขียนลง (กฎ "ย้ายของ") */
+    {
+      const orig = editing !== 'new' ? items.find(i => i.id === editing) : null;
+      if (orig && !pGuard(orig.line_name, `สินค้า ${orig.mat_no || orig.name}`)) return;
+      if (ecSource && !pGuard(ecSource.line_name, `สินค้าต้นฉบับ ${ecSource.mat_no || ecSource.name}`)) return;
+      if (!pGuard(form.line_name, 'สินค้าของไลน์นี้')) return;
+    }
     setSaving(true);
     const payload = {
       name: form.name.trim(),
@@ -8237,6 +8256,8 @@ function ProductSetup({ role }) {
   };
 
   const handleDelete = async (id) => {
+    const row = items.find(i => i.id === id);
+    if (!pGuard(row?.line_name, `สินค้า ${row?.mat_no || row?.name || ''}`)) return;   // ชั้นที่ 3
     if (!window.confirm('ลบสินค้านี้?')) return;
     const { error } = await supabaseDR.from('dr_products').delete().eq('id', id);
     if (error) { toast.error(error.message); return; }

@@ -15,6 +15,7 @@ import resizeImg from '../utils/resizeImage';
 import { fmtDateMedium } from '../utils/dateFormat';
 import ImageCropModal from '../components/ImageCropModal';
 import { can, isActionSeeded, canDelete as canDeleteUtil } from '../utils/permissions';
+import { canWriteUnit, writeBlockText } from '../utils/writeScope';   // 🔐 ชั้นที่ 3 — ทะเบียนนิยามสกิลเป็นของส่วนงาน (20/10)
 import {
   inSectionScope, ORPHAN_SECTION, ORPHAN_SECTION_LABEL,
   sectionValueForSave, sectionValueForEdit, orphanDepts, deptOptionsFor, deptNodeFor,
@@ -79,7 +80,8 @@ const getEmpGrade = (code = '') => {
 const TAB_KEYS = ['employees', 'skills', 'levelup'];
 
 export default function Operator() {
-  const { role, lineId: userLineId, section: userSection, sections: scopeSecs = [], fullName } = useContext(UserContext);
+  const { role, lineId: userLineId, section: userSection, sections: scopeSecs = [], fullName,
+          allUnits, respCostCenters, scopeIdx } = useContext(UserContext);
   const isLeader = role === 'leader';
   const isSupervisor = role === 'supervisor';
   // ถ้าขอบเขตเหลือ section เดียว → ล็อกฟิลด์ Section ตอนแก้ไขพนักงาน (พฤติกรรม supervisor เดิม)
@@ -121,6 +123,22 @@ export default function Operator() {
   const editAllSections = !isActionSeeded('employees', 'edit_all_sections')
     || can('employees', 'edit_all_sections', role);
   const homeSection = userSection || scopeSecs[0] || null;
+  /* 🔐 ชั้นที่ 3 ของ **ทะเบียนนิยามสกิล** (`skill_definitions.scope_section`) — audit §14 · 20/10
+     เดิมมีแค่ชั้น ② (`skills:edit`) ⇒ หัวหน้า PD1 แก้/ลบนิยามสกิลของ PD4 ได้ และ "ลบสกิล"
+     ลบคะแนนพนักงานทุกคน + requirement ทุกจุดงานของส่วนงานนั้นไปด้วย (กู้ไม่ได้)
+     · วัดจาก audit log จริง: ผู้แก้ทุกคนแตะเฉพาะสกิลของส่วนงานตัวเอง (หรือสกิลกลาง) ⇒ ด่านนี้ไม่กระทบงานจริง
+     🔴 `scope_section` ว่าง = **สกิลกลางทั้งโรงงาน** — ยังให้แก้ได้ (default `unknownTarget:'allow'`)
+        เพราะวัดจริง 20/10: หัวหน้า/leader 4 คนที่ไม่มีใบผ่านข้ามหน่วย แก้สกิลกลางไป 63 ครั้ง
+        (สกิลกลาง 23 จาก 70 ตัว = 5ส/ความปลอดภัย/งานทั่วไป) ⇒ บล็อกทันทีคือหยุดงานที่ทำกันอยู่
+        **แต่จอต้องเตือนว่ากระทบทุกส่วนงาน** — จะปิดจริงให้ส่ง `{ unknownTarget: 'block' }` ทีเดียวที่ `sdWrite` */
+  const sdCtx = { role, section: homeSection, sections: scopeSecs, allUnits, respCostCenters, scopeIdx };
+  const sdWrite = (scopeSec) => canWriteUnit(sdCtx, scopeSec);
+  const sdGuard = (scopeSec, what) => {
+    const w = sdWrite(scopeSec);
+    if (w.ok) return true;
+    toast.error(writeBlockText(w, { what, unit: scopeSec || '' }));
+    return false;
+  };
   /** แก้แถวนี้ได้ไหม — ต้องมีสิทธิ์ employees:edit และอยู่ในส่วนงานที่ตัวเองดูแล */
   const canEditEmp = (emp) => can('employees', 'edit', role)
     && (editAllSections || (!!homeSection && inSectionScope([homeSection], emp?.section)));
@@ -728,6 +746,8 @@ export default function Operator() {
     /* ด่านชั้น 2 — ทะเบียนนิยามสกิลเป็นของกลาง (ใช้ทั้งโรงงาน) ⇒ ด่าน = คีย์เดียวกับปุ่ม
        ซ่อนปุ่มไม่ใช่ด่าน: โมดัลเปิดค้างตอนสิทธิ์เปลี่ยน / เรียกตรงได้ (QC audit §7.4 · 20/10) */
     if (!canEditSkills) { toast.error('เพิ่มสกิลต้องมีสิทธิ์ skills:edit'); return; }
+    /* ชั้นที่ 3 — "ปลายทาง": สร้างสกิลให้ส่วนงานอื่นไม่ได้ (ช่องเลือกส่วนงานเป็นแค่ตัวกรอง ไม่ใช่ด่าน) */
+    if (!sdGuard(newSkill.scope_section.trim(), 'สกิลของส่วนงานนี้')) return;
     const lbl = newSkill.label.trim();
     if (!lbl) { toast.error('กรุณาระบุชื่อสกิล'); return; }
     // UUID-based key: never conflicts, works with Thai/any language
@@ -753,6 +773,7 @@ export default function Operator() {
     /* 🔴 ลบนิยามสกิล = ลบคะแนนของพนักงานทุกคน + requirement ทุกจุดงานด้วย
        ⇒ ใช้ `canDelete()` ของกลาง (คุม "บัญชีกลางห้ามลบ" ให้ด้วย) ไม่ใช่ `can()` เปล่า */
     if (!canDeleteUtil('skills', 'delete', role)) { toast.error('ลบสกิลต้องมีสิทธิ์ skills:delete'); return; }
+    if (!sdGuard(sd.scope_section, `สกิล "${sd.label}"`)) return;   // ชั้นที่ 3 — ลบของส่วนงานอื่นไม่ได้
     if (!window.confirm(`ลบสกิล "${sd.label}"?\nคะแนนสกิลนี้ของพนักงานและ requirement ทุก station จะถูกลบด้วย`)) return;
     // ลบลูกก่อน (คะแนน + requirement) แล้วค่อยลบนิยามสกิล + เช็ค error ทุกสเตป
     // ไม่งั้นถ้าลบลูกไม่สำเร็จแต่ลบนิยามไปแล้ว จะเหลือ skill_name ค้างที่อ้างสกิลที่ไม่มี
@@ -769,6 +790,12 @@ export default function Operator() {
   const handleUpdateSkill = async () => {
     if (!canEditSkills) { toast.error('แก้สกิลต้องมีสิทธิ์ skills:edit'); return; }
     if (!editingSkill?.label?.trim()) { toast.error('กรุณาระบุชื่อสกิล'); return; }
+    /* 🔴 ชั้นที่ 3 ต้องเช็ค **2 ฝั่ง** (กฎ "ย้ายของ" 19/10) — แถวเดิม + ส่วนงานที่กำลังจะเขียนลง
+       เช็คฝั่งเดียวแปลว่า: ดึงสกิลส่วนงานอื่นมาเป็นของเรา (เดิม) หรือผลักสกิลเราไปให้ส่วนงานอื่น (ปลายทาง) */
+    const sdOrig = skillDefs.find(d => d.id === editingSkill.id);
+    if (!sdGuard(sdOrig?.scope_section, `สกิล "${sdOrig?.label || editingSkill.label}"`)) return;
+    if ((sdOrig?.scope_section || null) !== (editingSkill.scope_section || null)
+        && !sdGuard(editingSkill.scope_section, 'สกิลของส่วนงานปลายทาง')) return;
     const { error } = await supabase.from('skill_definitions').update({
       label:          editingSkill.label.trim(),
       color:          editingSkill.color,
@@ -1450,7 +1477,10 @@ export default function Operator() {
                   {g.desc && <span style={{ fontSize: 11, color: g.color, opacity: 0.7 }}>{g.desc}</span>}
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8 }}>
-                  {g.skills.map(sd => (
+                  {g.skills.map(sd => {
+                    /* 🔐 ชั้นที่ 3 — ซ่อนปุ่มของสกิลส่วนงานอื่น (ด่านจริงอยู่ใน handler ซ่อนปุ่มไม่ใช่ด่าน) */
+                    const sdOk = sdWrite(sd.scope_section).ok;
+                    return (
                     <div key={sd.id} className="card" style={{ padding: '12px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
                         <div style={{ width: 10, height: 10, borderRadius: '50%', background: sd.color, flexShrink: 0 }} />
@@ -1460,6 +1490,19 @@ export default function Operator() {
                             {(sd.scope_division || sd.scope_section) && (
                               <span style={{ fontSize: 11, background: 'rgba(77,159,255,0.12)', color: '#4d9fff', borderRadius: 4, padding: '0 5px', fontWeight: 600 }}>
                                 📍 {skillScopeLabel(sd)}
+                              </span>
+                            )}
+                            {!sd.scope_division && !sd.scope_section && (
+                              /* สกิลกลาง = แก้แล้วกระทบทุกส่วนงาน — ต้องเขียนบนจอ ไม่ใช่ปล่อยให้เดาจากช่องว่าง */
+                              <span title="ไม่ได้ผูกส่วนงาน — ใช้กับพนักงานทุกส่วนงาน แก้/ลบแล้วกระทบทั้งโรงงาน"
+                                style={{ fontSize: 11, background: 'rgba(245,158,11,0.12)', color: '#f59e0b', borderRadius: 4, padding: '0 5px', fontWeight: 600 }}>
+                                🌐 สกิลกลาง (ทุกส่วนงาน)
+                              </span>
+                            )}
+                            {!sdOk && (
+                              <span title={writeBlockText(sdWrite(sd.scope_section), { what: 'สกิลนี้', unit: sd.scope_section || '' })}
+                                style={{ fontSize: 11, background: 'rgba(148,163,184,0.15)', color: 'var(--muted)', borderRadius: 4, padding: '0 5px', fontWeight: 600 }}>
+                                🔒 ดูได้ แก้ไม่ได้
                               </span>
                             )}
                             {sd.allowance_type && (
@@ -1476,16 +1519,17 @@ export default function Operator() {
                           <button onClick={() => setSubItemsSkill(sd)} title="หัวข้อการพิจารณา (ใบประเมินรายบุคคล)"
                             className="tbtn" style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 13, padding: '2px 4px' }}>📝</button>
                         )}
-                        {can('skills', 'edit', role) && (
+                        {can('skills', 'edit', role) && sdOk && (
                           <button onClick={() => setEditingSkill({ ...sd, scope_division: sd.scope_division || '', scope_section: sd.scope_section || '' })}
                             className="tbtn" style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 13, padding: '2px 4px' }}>✏️</button>
                         )}
-                        {can('skills', 'delete', role) && (
+                        {can('skills', 'delete', role) && sdOk && (
                           <DeleteButton onClick={() => handleDeleteSkill(sd)} title="ลบทักษะนี้" />
                         )}
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             ))}
