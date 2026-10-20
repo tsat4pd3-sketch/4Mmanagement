@@ -82,3 +82,23 @@ test('สถานะรอ supplier ต้องเป็น "ใบเปิ�
   assert.notEqual(MO_STATUS_META[VENDOR_STATUS].color, '#8b8b96', 'ต้องตั้งสีเอง ไม่ใช่ค่าถอย');
   assert.equal(MO_STATUS_META[VENDOR_STATUS].step, 3);
 });
+
+test('หยุด MTTR ตั้งแต่ MTN ตัดสินใจ (รออะไหล่ PR) — ไม่หักซ้ำกับช่วง supplier', async () => {
+  const { mttrHoldMin, isMttrHeld, holdIntervals } = await import('../mtnVendor.js');
+  // ซ่อมเอง+PR: รับงาน 8 · ตัดสินรออะไหล่ 9 · ของครบ 11 · ซ่อมเสร็จ 12 ⇒ ช่างทำจริง 2 ชม.
+  const a = { accept_at: T(8), repair_done_at: T(12), mttr_hold_from: T(9), mttr_hold_to: T(11) };
+  assert.equal(techRepairMin(a, NOW), 120);
+  // ส่งภายนอก: ตัดสิน 9 · ส่งของ 10 · กลับ 13 · จบช่วงหยุด 13 · เสร็จ 14 ⇒ หยุด 9→13 = 4 ชม. (ทับกัน ไม่หัก 7)
+  const b = { accept_at: T(8), repair_done_at: T(14), mttr_hold_from: T(9), mttr_hold_to: T(13), vendor_sent_at: T(10), vendor_back_at: T(13) };
+  assert.equal(mttrHoldMin(b, NOW), 240);
+  assert.equal(techRepairMin(b, NOW), 120);
+  // ยังหยุดอยู่ แต่ซ่อมเสร็จแล้ว ⇒ ตัดที่ซ่อมเสร็จ ไม่ลามถึงตอนนี้
+  const c = { accept_at: T(8), repair_done_at: T(12), mttr_hold_from: T(10) };
+  assert.equal(techRepairMin(c, NOW), 120);
+  assert.equal(isMttrHeld(c), true);
+  assert.equal(isMttrHeld(a), false);
+  // ช่วงสลับ (จบก่อนเริ่ม) = ทิ้ง
+  assert.deepEqual(holdIntervals({ mttr_hold_from: T(11), mttr_hold_to: T(9) }, NOW), []);
+  // ไม่เคยหยุด = เท่าเดิม
+  assert.equal(techRepairMin({ accept_at: T(8), repair_done_at: T(11) }, NOW), 180);
+});
