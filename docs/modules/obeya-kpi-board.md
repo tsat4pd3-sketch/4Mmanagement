@@ -1260,7 +1260,13 @@ layout ใช้ของรหัส (ใหม่กว่า 14/10) แทน
      · **secrets ที่ต้องตั้งใน repo (user ทำ):** `DR_SUPABASE_URL` · `DR_SUPABASE_SERVICE_KEY` (Product DB) · `MAIN_SUPABASE_URL` · `MAIN_SUPABASE_SERVICE_KEY` (MAIN) — ไม่ตั้ง = job เตือนแล้วข้าม (ไม่แดง)
   · 🔴 **แกนอ่านไฟล์มีชุดเดียว** (`utils/kpiBaseImport.js` + `collectPlantValues`) — เว็บ/CLI/Actions ต้องได้ตัวเลขเดียวกัน · แก้กติกาจับแถวต้องแก้ที่นั่นที่เดียว
   · 🔴 **ไฟล์ซ้ำ/ฉบับแก้** — บัญชีส่งฉบับแก้ด้วยชื่อเดียวกันใน message id ใหม่ = เข้าคิวอีกแถว ⇒ ตัวรันเขียนทับค่าเดิม (update ตาม id) = ฉบับล่าสุดชนะ · note ในแถว `kpi_base_inputs` บอกชื่อไฟล์ที่มา
-  · ยังไม่ทำ: แจ้ง Telegram เมื่อนำเข้าเสร็จ/ล้ม · อ่าน M365 ตรง (ต้อง Azure app จาก IT) — ตอนนี้พึ่งเครื่อง user เปิดอยู่เหมือน EDI
+  · 🔔 **แจ้งผลในแอป** (20/10 · user: "ไม่ใช้ Telegram ละ โฟกัสแจ้งเตือนในแอพ") — กฎ `notification_rules.kpi_acct_import` (category `kpi` · seed ผู้รับ = `admin` เท่านั้น · ปรับที่ `/notification-config`)
+    ตัวรันคิวอ่านกฎเอง → แถว `notifications` (`event_key='kpi_acct_import'` · link `/obeya?tab=kpi` · สำเร็จ = success · ล้ม = error) · **ไม่มีกฎ/ปิด/0 คน = `::warning` ใน log ห้ามเงียบ** · dry-run ไม่แจ้ง
+    · migration `20261020_notif_rule_kpi_acct_import_main.sql` (apply แล้ว) · 🔴 ห้ามขยาย `inapp_roles` เป็น supervisor/manager ทั้งโรงงาน (= 44 คน · บทเรียน `notify-inapp-audit.md`)
+  · **dry-run ทดสอบ secrets ได้แม้คิวว่าง** — ตัวรันเช็ค `count` ทั้ง DR (`demand_mail_inbox`) และ MAIN (`kpi_base_inputs`) ก่อนเสมอ · secret ผิด = `::error` exit 2
+  · ⚠️ **GitHub App ของ Claude กด Run workflow ไม่ได้ (403 `actions:write`)** — user กดเองที่ Actions → Accounting import → Run workflow
+  · **ใครกรอก:** 63 แถวที่นำเข้าจากเว็บ 19/10 `created_by` ว่างหมด → `KpiBaseInputsPanel` stamp `created_by`/`created_by_name` ตั้งแต่ 20/10 · ตัวอัตโนมัติเขียน `created_by_name='acct-import'`
+  · ยังไม่ทำ: อ่าน M365 ตรง (ต้อง Azure app จาก IT) — ตอนนี้พึ่งเครื่อง user เปิดอยู่เหมือน EDI
 - **ยอดขาย/หัว = ตัวตั้งสะสม YTD** (19/10 ใบ 5.Manpower แถว "Sale All / Head (All)": เม.ย. = Accumulate Total Sale 706.43 ÷ Head count (All) 392 = 1.802 · ทั้งปี 2,118.70 ÷ 386 = 5.489 = เป้า)
   ⇒ `KPI_FORMULAS.sale_per_head.cum = ['sale_total']` · `formulaMonths` รวม ม.ค.→m · **ขาดเดือนใดเดือนหนึ่งก่อนหน้า = คำนวณไม่ได้** (ห้ามรวมเฉพาะที่มี)
 - **กำลังคน (`manpower`) อัตโนมัติ** — `utils/kpiHeadcount.js`: นับ `employees` active ที่ `start_date` ≤ สิ้นเดือน (ว่าง/อนาคต-บั๊ก พ.ศ. = นับ) ·
