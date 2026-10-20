@@ -1246,6 +1246,10 @@ layout ใช้ของรหัส (ใหม่กว่า 14/10) แทน
     - **1.Sale / 2.Sale & Material**: เดือนเป็นแถว ไม่อ่าน (PL มีครบ · ตัวเลข 1.Sale ไม่ตรง PL — ไม่ใช้)
   · ทรงหัวตาราง = เดือน merge คร่อมบล็อก + แถวย่อย ⇒ `resolveSubHeaders()` เลือก **ACTUAL → Amount** ต่อเดือน (ไม่มี ACTUAL ถอยไป Rolling แล้วเตือน · `limitMonths` ตัดเดือนเกิน "ถึงเดือน") ·
     `detectVarRows` ไล่ตาม pattern ไม่ใช่ตามแถว + ข้าม **แถวหัวเรื่องที่ไม่มีตัวเลข** · เทสจำลองโครงจริงทั้ง PL/Manpower/Inventory/GL/ดัชนีท้ายชีท (`kpiBaseImport.test.mjs`)
+- **ท่อนำเข้านอกเบราว์เซอร์ (20/10 · ครึ่งหลังของ "อ่านเมลออโต้แบบ 830/862")** — `scripts/acct-import/import_base.mjs <file> [--year] [--month] [--write]`
+  · อ่าน `.xlsb` ผ่าน `read_xlsb.py` (pyxlsb · รัน `python3 -I`) · `.xlsx` ด้วย xlsx ตัวเดียวกับเว็บ · ตรวจจับด้วย `utils/kpiBaseImport.js` ชุดเดียวกับปุ่มบนเว็บ (`collectPlantValues()`: PL Summary ชนะ · Manpower เติมกำลังคน · Inventory เติมมูลค่าสต็อก)
+  · **dry-run เป็น default** (ตารางเทียบไฟล์ vs ฐาน) · `--write` ต้องมี `SUPABASE_URL`+`SUPABASE_SERVICE_KEY` (MAIN) · เขียนเฉพาะ ทั้งโรงงาน · update ตาม id/insert ไม่ upsert · ค่า 0/เดือนเกิน "ถึงเดือน" ไม่เขียน
+  · **ครึ่งแรก (เมล → ไฟล์) ยังไม่ทำ** — รอ user เคาะ: เมลชนิดไหน (Gmail/M365/IMAP) · รันที่ไหน (GitHub Actions ตั้งเวลา vs server บริษัท) · บัญชีส่งเดือนละครั้งช่วงวันที่ 10-20
 - **ยอดขาย/หัว = ตัวตั้งสะสม YTD** (19/10 ใบ 5.Manpower แถว "Sale All / Head (All)": เม.ย. = Accumulate Total Sale 706.43 ÷ Head count (All) 392 = 1.802 · ทั้งปี 2,118.70 ÷ 386 = 5.489 = เป้า)
   ⇒ `KPI_FORMULAS.sale_per_head.cum = ['sale_total']` · `formulaMonths` รวม ม.ค.→m · **ขาดเดือนใดเดือนหนึ่งก่อนหน้า = คำนวณไม่ได้** (ห้ามรวมเฉพาะที่มี)
 - **กำลังคน (`manpower`) อัตโนมัติ** — `utils/kpiHeadcount.js`: นับ `employees` active ที่ `start_date` ≤ สิ้นเดือน (ว่าง/อนาคต-บั๊ก พ.ศ. = นับ) ·
