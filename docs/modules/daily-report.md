@@ -1080,3 +1080,12 @@ MAT ที่ระบบตีคลาสไม่ออก (ไม่ใช�
 
 > มีด่าน `carry-delete-restores-source` + เทส `kbLayout.test.mjs` (ล็อกเลขใบจริงทั้ง 6 ใบจาก audit log)
 > · ใบที่หายไปกู้คืนแล้วจาก `audit_log.old_data` (20/10)
+
+## 🔐 ชั้นที่ ③ ของแผงสินค้าใน `/daily-report` ⚙️ (20/10)
+
+`ProductSetup` เขียน `dr_products` ชุดเดียวกับ `/products` (CT · โหมดลงยอด · **ลบจริง**)
+⇒ ต้องมีด่าน `pGuard()` (`canWriteLine` · `utils/writeScope.js`) เหมือนกัน ไม่งั้นปิดทาง `/products`
+แล้วยังเข้าทางนี้ได้ · `handleSave` เช็ค **2 ฝั่ง** (แถวเดิม/ต้นฉบับ EC + `form.line_name`)
+🔴 **`dr_products` มี 4 ทางเขียนทั้งระบบ** (`/products` · หน้านี้ · ตั้งคู่ RH/LH ใน `/equipment?tab=die`
+· ผูก `p_no` ใน `/planner-sales`) — ฝั่ง DR ไม่มี RLS ⇒ **จอคือด่านเดียว ปิดทางเดียวไม่พอ**
+· มีด่าน `row-scope-dr-products-skills` · 📄 `permission-scope-audit.md` §14

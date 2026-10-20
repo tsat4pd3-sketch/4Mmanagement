@@ -435,6 +435,11 @@ model: inherit
   (อ่านไม่สำเร็จ ≠ "ขาดตรวจ" · ใบร่างเปล่าจากการอ่านที่ล้ม = บันทึกแล้วคำตอบเดิมหายถาวร)
 - **C (สิทธิ์):** `cc-scope-trigger-columns` — `protect_profile_role()` ต้องกัน
   `role · sections · section · scope_depth · resp_cost_centers` ครบ (คอลัมน์ที่ให้สิทธิ์ = เจ้าของแถวแก้เองไม่ได้)
+- **C (สิทธิ์) + D (ขอบเขต):** `row-scope-dr-products-skills` — ทุกฟังก์ชันที่เขียน `dr_products`
+  (4 ทาง: `/products` · `/daily-report` ⚙️ · `/equipment?tab=die` ตั้งคู่ · `/planner-sales` ผูก `p_no`)
+  และ `skill_definitions` (`/operator` แท็บสกิล) ต้องเรียกของกลางชั้น ③ **ในฟังก์ชันนั้น** ·
+  ตอน "แก้" ต้องเช็ค **2 ฝั่ง** (แถวเดิม + ไลน์/ส่วนงานปลายทาง) · นำเข้า CSV ต้องกรองแถวนอกขอบเขต
+  **แล้วเขียนบนจอว่าข้ามกี่แถว** · ฝั่ง DR ไม่มี RLS ⇒ จอคือด่านเดียว ปิดทางเดียวไม่พอ (📄 audit §14)
 
 > 🔴 **หมวด C ต้องตรวจชั้นสิทธิ์ที่ 3 ด้วย** (กฎ 15/10 ยังไม่เคยอยู่ใน checklist นี้):
 > `writeScope.js` (`canWriteUnit`/`canWriteLine`/`writableRows`) · `ccScope.js` (`canWriteScope`) ·

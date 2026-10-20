@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useContext, useRef } from 'r
 import { lineNameCompare } from '../utils/lineHierarchy';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
+import { canWriteLine } from '../utils/writeScope';   // 🔐 ชั้นที่ 3 — เขียน p_no ลงทะเบียนสินค้าของไลน์อื่น (20/10)
 import { cachedMaster, mrows } from '../utils/masterCache';
 import { colIdx, isEdiHeaderRow, detectEdiKind, HEADER_SCAN_ROWS, buildEdiDict, sigOf } from '../utils/ediDetect';
 import CustomerFileFormats from '../components/CustomerFileFormats';
@@ -1388,6 +1389,12 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
 
   const lines = useMemo(() => [...new Set(rows.map(r => r.line).filter(Boolean))].sort(lineNameCompare), [rows]);
   const prodLines = useProductionLines();   // ทะเบียนไลน์ (ให้ dropdown มีลำดับชั้น)
+  /* 🔐 ชั้นที่ 3 (20/10) — "จับคู่เลขลูกค้า" เขียน `dr_products.p_no` ของพาร์ทที่เลือก
+     ⇒ เป็นการแก้ทะเบียนสินค้าของไลน์นั้น ต้องใช้ด่านเดียวกับ /products
+     🔑 บัญชีที่ทำงานนี้จริง (planner_store · warehouse_delivery · manager · admin) ถือ `scope:all_units`
+        ⇒ ด่านนี้ไม่กระทบงานจริง · คนที่ไม่มีใบผ่าน = ข้ามพาร์ทนอกขอบเขต **แล้วต้องเขียนบนจอว่าข้ามกี่ตัว** */
+  const { role: myRole, section: homeSection, sections: scopeSecs, allUnits, respCostCenters, scopeIdx } = useContext(UserContext);
+  const mapScopeCtx = { role: myRole, section: homeSection, sections: scopeSecs, allUnits, respCostCenters, scopeIdx };
   const changedRows = rows.filter(r => r.changed);
 
   // (#2) พาร์ทที่ forecast จับคู่เลข SAP ภายในไม่ได้ = ไม่มีใน dr_products/parts_master/kanban_standards เลย
@@ -1530,9 +1537,17 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
   // (#1) จับคู่เลขพาร์ทลูกค้า → เลข SAP ภายใน: เขียน p_no ให้ dr_products (รอบถัดไป) + re-point forecast เดิม
   const doMapping = async () => {
     // เขียนเฉพาะคู่ที่เลข SAP มีจริงใน Product Master — เลขที่ไม่มีจะ update dr_products 0 แถวเงียบ แต่ยัง re-point forecast ไป MAT ผี (2026-09-07)
-    const pairs = Object.entries(mapSel).filter(([, sap]) => sap && drMap[sap]);
+    const all = Object.entries(mapSel).filter(([, sap]) => sap && drMap[sap]);
+    /* ชั้นที่ 3 — ตัดพาร์ทที่ไลน์อยู่นอกขอบเขตออก (ไม่เขียนทับทะเบียนของส่วนงานอื่น) */
+    const pairs = all.filter(([, sap]) => canWriteLine(mapScopeCtx, drMap[sap]?.line_name, prodLines).ok);
+    const outScope = all.length - pairs.length;
+    if (outScope) toast.error(`ข้าม ${outScope} พาร์ทที่อยู่ไลน์นอกขอบเขตของคุณ — ให้คนในส่วนงานนั้นจับคู่ หรือขอสิทธิ์ข้ามหน่วยงาน`);
     const skipped = Object.values(mapSel).filter(v => v && !drMap[v]).length;
-    if (!pairs.length) { toast.info(skipped ? 'เลข SAP ที่เลือกไม่มีใน Product Master — เลือกจากลิสต์' : 'ยังไม่ได้เลือกคู่ SAP'); return; }
+    /* ไม่เหลือคู่ให้เขียน — ต้องบอกเหตุที่ถูกต้อง (นอกขอบเขต ≠ ไม่มีในทะเบียน ≠ ยังไม่ได้เลือก) */
+    if (!pairs.length) {
+      if (!outScope) toast.info(skipped ? 'เลข SAP ที่เลือกไม่มีใน Product Master — เลือกจากลิสต์' : 'ยังไม่ได้เลือกคู่ SAP');
+      return;
+    }
     if (skipped) toast.info(`ข้าม ${skipped} พาร์ทที่เลข SAP ไม่มีใน Product Master`);
     setMapping(true);
     try {
