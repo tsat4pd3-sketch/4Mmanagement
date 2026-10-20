@@ -25,6 +25,7 @@ import { fetchByIds } from '../utils/fetchByIds';
 import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
 import { checkShiftCapacity } from '../utils/shiftCapacity';
 import { splitCloseOrders, autoCarryPatch, autoCarryText } from '../utils/closeShiftOrders';   // 🔁 ปิดกะ: ใบที่ยังไม่แตะ = ยกเอง (20/10)
+import { carryOffers, debtByPart, debtPcs, debtAgeDays, PENDING_STATUSES, TAKEABLE_SESSION_STATUSES } from '../utils/carryDebt';   // 📥 ของค้าง "ต้องไล่เก็บอีกเท่าไหร่" (20/10)
 import { canShortClose, shortCloseError, shortClosePatch, isShortClosed } from '../utils/shortClose';   // ✂️ ปิดใบด้วยยอดเศษ (งานปั๊ม 2xx · 2026-10-02)   // ⏱️ ด่าน "เปิดใบนี้แล้วเกินกะไหม" (ไลน์เครื่องขนานนับเป็นเลน · 2026-10-02)
 import { MTN_TEAMS, teamForItem, teamForMachine, teamKeyOf, deptNameOf } from '../utils/mtnTeams';
 import useIsMobile from '../utils/useIsMobile';
@@ -745,73 +746,56 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
          → กะที่รับไปแล้วแต่ยังไม่กดปิด สถานะยังเป็น `open` ⇒ ถ้าไม่ดึงมาด้วย จะมองไม่เห็นใบ confirmed ของมัน
            แล้วใบเก่าที่ค้างในกะก่อนหน้านั้นจะกลายเป็น "ใบล่าสุด" แล้วถูกเสนอซ้ำ
          ดึง 8 กะ (ไม่ใช่ 5) เพราะตอนนี้มีกะ `open` ปนอยู่ในโควตาด้วย */
-      const { data: prevSessions } = await supabaseDR.from('production_sessions')
-        .select('id, status')
-        .eq('line_name', lineName)
-        .neq('id', sessionId)
-        .order('created_at', { ascending: false })
-        .limit(8);
+      /* 📥 ของค้างของไลน์นี้ที่ยังไม่มีใครรับ — **ถามด้วย "สถานะ" ไม่ใช่ "กี่กะล่าสุด"** (20/10)
+         🕳️ ของเดิมดึง "ใบของ 8 กะล่าสุด" ⇒ ไลน์เดิน 2 กะ/วัน = หน้าต่างแค่ ~4 วัน
+            ของที่ค้างเกินนั้น **หลุดหน้าต่างแล้วหายถาวร** — วัดจริง 20/10: Assembly Line D 4 ใบ (8 วัน) ·
+            LASER E50 (28) · Line 60 3 ใบ (33) · LWR BAR (97) · ตรงกับที่หน้างานพูดว่า "มันหาย"
+            และเป็นเหตุผลที่เขาเลือก "ทยอยปริ้น" จนบอร์ดดูเหมือนไม่มีออเดอร์
+         🔑 ถามด้วยสถานะแล้ว**ถูกกว่าเดิม**: เดิมดึง "ทุกสถานะของ 8 กะ" · ตอนนี้ดึงเฉพาะใบที่ค้างจริง
+            (ทั้งระบบมี ~46 ใบ) แล้วค่อยถามประวัติเฉพาะ prod_no เท่าที่ค้าง
+         🔴 คอลัมน์ต้องเลือกเท่าที่ใช้ (egress วัดจริง 25/09: `select=*` = 61% ของ traffic ตารางนี้)
+            **เพิ่มฟิลด์ที่ handleImportCarryOrders ส่งต่อ = ต้องเติมที่นี่ด้วย** ไม่งั้นค่าหายเงียบ */
+      const CARRY_COLS = 'id, session_id, prod_no, mat_no, part_name, p_no, customer, qty, qty_actual, status, is_manual, carry_over_note, opened_at';
+      const SESS_EMBED = ', production_sessions!inner(id, status, line_name, work_date, shift, created_at)';
+      const { data: pending, error: pendErr } = await supabaseDR.from('prod_orders')
+        .select(CARRY_COLS + SESS_EMBED)
+        .in('status', PENDING_STATUSES)
+        .eq('production_sessions.line_name', lineName)
+        .neq('session_id', sessionId);
       if (isStaleSess(sessionId)) return;
-      if (prevSessions?.length) {
-        const prevIds = prevSessions.map(s => s.id);
-        // กะที่ "ยอดค้างของมัน" หยิบมาได้จริง — กะที่ยังเปิดอยู่ห้ามหยิบ (เจ้าของกะยังทำงานอยู่)
-        const takeableSess = new Set(prevSessions.filter(sx => ['closed', 'pending_close'].includes(sx.status)).map(sx => sx.id));
-        /* ⚠️ ต้องดึง **ทุกสถานะ** ไม่ใช่แค่ carry_over/open (แก้ 2026-09-09 · feedback หน้างาน
-           "งานยกยอดที่กะเมื่อคืนเคลียร์จากกะเช้าเมื่อวานไปแล้ว ยังมาเด้งโชว์ต่อกะเช้าวันนี้")
-           เพราะต้องรู้ด้วยว่า prod_no นั้น **มีใบที่ใหม่กว่าซึ่งถูกรับ/ปิดไปแล้วหรือยัง**
-           ถ้าดึงแค่ open/carry_over จะมองไม่เห็นใบ confirmed/imported ของกะที่ใหม่กว่า
-           → ใบที่ค้างอยู่ในกะเก่า (ซึ่ง `pending_close` ก็เข้าเงื่อนไข) ถูกเสนอซ้ำทุกกะไปเรื่อยๆ */
-        /* 🔴 ห้ามกลับไป `select('*')` — คิวรีนี้ดึงใบของ **8 กะก่อนหน้า** และวิ่งใหม่ทุกครั้งที่มี
-           realtime event หรือมีใครบันทึกในกะนี้ · `prod_orders` มี 33 คอลัมน์ และวัดจริง 25/09:
-           shape `select=*` = 8,625 ครั้ง/วัน = 61% ของ traffic ทั้งตาราง
-           คอลัมน์ด้านล่าง = ทุกตัวที่ตรรกะยกยอด + ปุ่ม "รับยอดค้างเข้ากะ" + แบนเนอร์ใช้จริง
-           **เพิ่มฟิลด์ที่ handleImportCarryOrders ส่งต่อ = ต้องเติมที่นี่ด้วย** ไม่งั้นค่าหายเงียบ */
-        const CARRY_COLS = 'id, session_id, prod_no, mat_no, part_name, p_no, customer, qty, qty_actual, status, is_manual, carry_over_note, opened_at';
-        const { data: carried } = await supabaseDR.from('prod_orders')
-          .select(CARRY_COLS)
-          .in('session_id', prevIds)
-          .order('opened_at', { ascending: false });
-        if (isStaleSess(sessionId)) return;
-        // ลำดับความใหม่ของกะ (prevSessions เรียง created_at desc อยู่แล้ว) → 0 = ใหม่สุด
-        const sessRank = {};
-        prevSessions.forEach((sx, i) => { sessRank[sx.id] = i; });
-        /* ใบล่าสุดจริงๆ ของแต่ละ prod_no = กะใหม่สุดก่อน ถ้ากะเดียวกันค่อยดู opened_at
-           (เรียงมาแล้ว desc → ตัวแรกที่เจอในกะ rank ต่ำสุดคือใบล่าสุด) */
-        /* ⭐ `imported` ห้ามเป็น "ใบล่าสุด" ที่ตัดสินว่างานจบ (2026-09-10 · feedback หน้างาน
-             "กะกลางคืนส่งยอดต่อกะ เข้านี้ 25 ตัว · ตอนเข้าเปิดกะมาไม่โชว์ขึ้น")
-           imported แปลว่า "ใบนี้ถูกกะอื่นรับไปแล้ว" = **มีใบต่อจากมันเสมอ** ไม่ใช่จุดจบของงาน
-           (ต่างจาก confirmed/cancelled ที่จบจริง) · เคสจริง 09/09 Assy LWR: กะดึกถูกเปิดซ้ำ 2 กะ
-           ใบ 25/35 ถูกรับเข้ากะซ้ำ ⇒ ต้นทางกลายเป็น imported อยู่ในกะที่ created_at ใหม่กว่า
-           ⇒ ชนะ rank แล้วถูกตีว่า "จบแล้ว" ทับใบ carry_over 10 ชิ้นตัวจริงที่อยู่ในกะซ้ำ
-           ⇒ กะเช้าวันถัดมาไม่เห็นยอดค้าง 10 ชิ้นเลย
-           แก้: เรียงด้วย (ไม่ใช่ imported ก่อน, แล้วค่อยดูความใหม่ของกะ) — ใบต่อของ imported
-           อยู่ในกะที่ใหม่กว่าเสมอหรือไม่ก็กะปัจจุบัน (ซึ่งถูกกรองด้วย currentProdNos อยู่แล้ว) */
-        const latest = {};
-        (carried || []).forEach(o => {
-          const cur = latest[o.prod_no];
-          const r = sessRank[o.session_id] ?? 99;
-          const sup = o.status === 'imported' ? 1 : 0;   // 0 = ใบที่ยังพูดแทนงานนี้ได้ · 1 = ถูกรับไปแล้ว
-          if (!cur || sup < cur.sup || (sup === cur.sup && r < cur.rank)) latest[o.prod_no] = { row: o, rank: r, sup };
-        });
-        const currentProdNos = new Set((data || []).map(o => o.prod_no));
-        const deduped = Object.values(latest).map(x => x.row).filter(o => {
-          if (currentProdNos.has(o.prod_no)) return false;      // รับเข้ากะนี้แล้ว
-          /* ⭐ ด่านใหม่: เสนอเฉพาะเมื่อ **ใบล่าสุด** ของ prod_no นั้นยังค้างจริง
-             ใบล่าสุดเป็น confirmed = กะหลังทำจนจบแล้ว · imported = ถูกรับไปแล้ว · cancelled = ยกเลิกแล้ว
-             → ทั้ง 3 กรณีงานจบไปแล้ว ห้ามปลุกใบเก่าที่ค้างในกะที่ยังไม่ปิดขึ้นมาเสนอซ้ำ
-             (ครอบถึงกะที่ "คอนเฟิมยอดแล้วแต่ยังไม่กดปิดกะ" ด้วย เพราะ prevSessions รวมกะ `open` แล้ว) */
-          if (!['carry_over', 'open'].includes(o.status)) return false;
-          /* ใบล่าสุดอยู่ในกะที่ยัง `open` = กะนั้นกำลังทำงานกับใบนี้อยู่ ห้ามแย่งมา
-             (ต่างจาก `pending_close` ที่หัวหน้ากะตัดสินใจยกยอดไปแล้ว) */
-          if (!takeableSess.has(o.session_id)) return false;
-          // ออเดอร์ที่ผลิตครบเป้าแล้ว (qty_actual >= qty) ไม่ถือเป็นยอดค้าง — ถ้ายังยกมาจะกลายเป็น
-          // "ผีค้าง 1 ชิ้น" ไปเรื่อยๆ ทุกกะเพราะโค้ดเก่าบังคับขั้นต่ำ 1 ชิ้นแม้ผลิตครบแล้ว
-          if ((o.qty_actual || 0) >= o.qty) return false;
-          return true;
+      /* 🔴 อ่านไม่สำเร็จ = "ตอบไม่ได้" ไม่ใช่ "ไม่มีของค้าง" — ล้างลิสต์แล้วเงียบ = จอโกหก */
+      if (pendErr) { setCarryOrders([]); setSessLoadErr(e => ({ ...e, 'ยอดค้างกะก่อน': pendErr.message })); return; }
+      setSessLoadErr(e => (e['ยอดค้างกะก่อน'] ? { ...e, 'ยอดค้างกะก่อน': null } : e));
+
+      const prodNos = [...new Set((pending || []).map(o => o.prod_no).filter(Boolean))];
+      if (!prodNos.length) { setCarryOrders([]); return; }
+      /* ประวัติของเฉพาะ prod_no ที่ค้าง — ต้องรู้ว่ามีใบ "ใหม่กว่า" ที่จบไปแล้วหรือยัง
+         (กฎข้อ ① และ ② ใน utils/carryDebt.js) · `.in()` ยาวได้ ⇒ ผ่าน fetchByIds กันคืนค่าว่างเงียบ */
+      const histRes = await fetchByIds(prodNos, (part) => supabaseDR.from('prod_orders')
+        .select(CARRY_COLS + SESS_EMBED)
+        .eq('production_sessions.line_name', lineName)
+        .in('prod_no', part));
+      if (isStaleSess(sessionId)) return;
+      /* 🔴 โหลดไม่ครบ = ตอบไม่ได้ ⇒ บอกบนจอ ห้ามโชว์ลิสต์ที่ขาดเป็น "ของค้างทั้งหมด" */
+      if (histRes.failed || histRes.truncated) {
+        setCarryOrders([]);
+        setSessLoadErr(e => ({ ...e, 'ยอดค้างกะก่อน': histRes.error || 'โหลดประวัติใบไม่ครบ' }));
+        return;
+      }
+      {
+        const rows = histRes.rows || [];
+        /* rank = ความใหม่ของกะ (0 = ใหม่สุด) — เดิมได้จากลำดับ prevSessions · ตอนนี้จาก created_at ของกะ */
+        const order = [...new Set(rows.map(o => o.production_sessions?.created_at).filter(Boolean))]
+          .sort((a, b) => (a < b ? 1 : a > b ? -1 : 0));
+        const rankByTime = new Map(order.map((t, i) => [t, i]));
+        const takeable = new Set(TAKEABLE_SESSION_STATUSES);
+        const deduped = carryOffers({
+          rows,
+          rankOf: (o) => rankByTime.get(o.production_sessions?.created_at) ?? 99,
+          currentProdNos: new Set((data || []).map(o => o.prod_no)),
+          isTakeable: (o) => takeable.has(o.production_sessions?.status),
         });
         setCarryOrders(deduped);
-      } else {
-        setCarryOrders([]);
       }
     }
   }, [isStaleSess]);
@@ -3570,10 +3554,37 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
               {carryOrders.length > 0 && canScan && (
                 <div style={{ marginBottom: 10, padding: '10px 14px', background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.4)', borderRadius: 9 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                    <div>
-                      <div style={{ fontSize: 12, fontWeight: 700, color: '#a78bfa' }}>➡ มียอดค้างจากกะก่อน {carryOrders.length} Order (เหลือ {carryOrders.reduce((s,o) => s + Math.max(0, o.qty - (o.qty_actual || 0)), 0)} ชิ้น)</div>
-                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{carryOrders.map(o => o.prod_no).join(', ')}</div>
-                    </div>
+                    {/* 📥 user 20/10: "ตามหลักต้องเปิดให้เห็นว่า **ต้องไล่เก็บอีกแค่ไหน**"
+                        ⇒ บอกเป็น ชิ้น + อายุค้าง ไม่ใช่แค่ "กี่ใบ" · เรียงหนี้มากก่อน */}
+                    {(() => {
+                      const parts = debtByPart(carryOrders, selSession?.work_date, (o) => o.production_sessions?.work_date);
+                      const pcs   = carryOrders.reduce((a, o) => a + debtPcs(o), 0);
+                      const ages  = carryOrders.map(o => debtAgeDays(o.production_sessions?.work_date, selSession?.work_date)).filter(a => a != null);
+                      const oldest = ages.length ? Math.max(...ages) : null;
+                      return (
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: '#a78bfa' }}>
+                            ➡ ต้องไล่เก็บอีก {pcs.toLocaleString()} ชิ้น · {carryOrders.length} ใบ จากกะก่อน
+                            {/* 🔴 อายุที่คำนวณไม่ได้ = ไม่เขียน ห้ามเขียน "0 วัน" (0 แปลว่าของวันนี้) */}
+                            {oldest != null && oldest > 0 && (
+                              <span style={{ color: oldest >= 7 ? '#ef4444' : '#f59e0b', marginLeft: 6 }}>
+                                · เก่าสุดค้างมา {oldest} วัน
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2, lineHeight: 1.6 }}>
+                            {parts.slice(0, 6).map(x => (
+                              <span key={x.mat_no} style={{ marginRight: 10, whiteSpace: 'nowrap' }}>
+                                <MatLabel mat={x.mat_no} name={x.part_name} size={11} />
+                                <b style={{ color: 'var(--text2)' }}> {x.pcs.toLocaleString()}</b> ชิ้น
+                                {x.oldestDays != null && x.oldestDays > 0 ? ` (${x.oldestDays} วัน)` : ''}
+                              </span>
+                            ))}
+                            {parts.length > 6 ? `+${parts.length - 6} พาร์ท` : ''}
+                          </div>
+                        </div>
+                      );
+                    })()}
                     <button onClick={handleImportCarryOrders}
                       style={{ background: '#a78bfa', color: '#fff', border: 'none', borderRadius: 7, padding: '6px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
                       📥 รับยอดต่อ

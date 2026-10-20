@@ -6134,3 +6134,39 @@ test('🔁 close-auto-carry — ปิดกะต้องแยก "ยัง�
     + '   แก้: ใช้ splitCloseOrders/autoCarryPatch (src/utils/closeShiftOrders.js)\n'
     + '        📄 docs/modules/daily-report.md §ปิดกะ — ยกยอดอัตโนมัติ\n');
 });
+
+/* ── 📥 ของค้างต้องไม่หายตามอายุ — 2026-10-20 ("มันหาย" จากแชทหน้างาน) ──────────────────
+   🕳️ บั๊กเดิม: หายอดค้างด้วย "ใบของ **8 กะล่าสุด**" ของไลน์ ⇒ ไลน์เดิน 2 กะ/วัน = หน้าต่าง ~4 วัน
+      ของที่ค้างเกินนั้นหลุดหน้าต่าง **หายถาวร** (วัดจริง: 8 / 28 / 33 / 97 วัน)
+      หน้างานจึงเลือก "ทยอยปริ้น" เพราะเปิดไปก็หาย ⇒ บอร์ดดูเหมือนไม่มีออเดอร์
+   🔴 ห้ามกลับไปจำกัดด้วย "จำนวนกะ" — ต้องถามด้วย **สถานะ** (open/carry_over) ซึ่งถูกกว่าด้วย */
+test('📥 carry-debt-no-session-window — ของค้างต้องถามด้วยสถานะ ห้ามจำกัด "กี่กะล่าสุด"', () => {
+  const bad = [];
+  const read = (rel) => stripComments(readFileSync(join(ROOT, rel), 'utf8'));
+  const dr = read('src/pages/DailyReport.jsx');
+
+  /* ตัวโหลดยอดค้าง — ดูเฉพาะบล็อกนี้ (หน้านี้มี .limit() ที่อื่นโดยชอบธรรม) */
+  const blk = (dr.match(/const CARRY_COLS[\s\S]{0,2600}?setCarryOrders\(deduped\)/) || [''])[0];
+  if (!blk) { bad.push('src/pages/DailyReport.jsx (ไม่เจอบล็อกโหลดยอดค้าง)'); }
+  else {
+    if (/production_sessions'\)[\s\S]{0,400}?\.limit\(/.test(blk))
+      bad.push('src/pages/DailyReport.jsx (กลับไปจำกัดยอดค้างด้วยจำนวนกะ — ของเก่าจะหายอีก)');
+    if (!/\.in\('status', PENDING_STATUSES\)/.test(blk))
+      bad.push('src/pages/DailyReport.jsx (ไม่ได้ถามด้วยสถานะ PENDING_STATUSES)');
+    if (!/carryOffers\(/.test(blk))
+      bad.push('src/pages/DailyReport.jsx (ไม่ได้ใช้ carryOffers — กฎ dedupe อยู่ utils/carryDebt.js)');
+    if (!/fetchByIds\(/.test(blk))
+      bad.push('src/pages/DailyReport.jsx (ประวัติ prod_no ไม่ได้ผ่าน fetchByIds — .in() ยาวคืนค่าว่างเงียบ)');
+    if (!/histRes\.failed \|\| histRes\.truncated/.test(blk))
+      bad.push('src/pages/DailyReport.jsx (โหลดไม่ครบแล้วไม่บอกบนจอ — ลิสต์ขาดถูกอ่านว่า "ของค้างทั้งหมด")');
+  }
+  /* กฎ ② ที่เคยทำยอดค้างหายทั้งกะ — ต้องยังอยู่ในไฟล์กฎ */
+  const cd = read('src/utils/carryDebt.js');
+  if (!/status === 'imported' \? 1 : 0/.test(cd))
+    bad.push("src/utils/carryDebt.js (หายกฎ 'imported ห้ามเป็นใบล่าสุด' — เคส Assy LWR 09/09)");
+
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n'
+    + '   ทำไม: ของค้างที่มองไม่เห็น = หน้างานเลิกเชื่อระบบ แล้วกลับไปทยอยเปิดใบเหมือนเดิม\n'
+    + '   แก้: ถามด้วยสถานะ + carryOffers() (src/utils/carryDebt.js)\n'
+    + '        📄 docs/modules/daily-report.md §ของค้าง\n');
+});
