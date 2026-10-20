@@ -1,5 +1,5 @@
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { supabase } from '../supabaseClient';
+import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext, NAV_ITEMS, NAV_GROUP_ORDER } from '../App';
 import Page from '../components/Page';
 import PageHeader from '../components/PageHeader';
@@ -13,6 +13,7 @@ import { checkWriteRows } from '../utils/dbWrite';
 import useProductionLines from '../utils/useProductionLines';
 import useIsMobile from '../utils/useIsMobile';
 import { ALL } from '../utils/filterLabels';
+import { orgNodeCompare } from '../utils/listOrder';
 import {
   ROT_LIMITS, normalizeConfig, buildPlaylist, secOf, pathOnly, isValidRotationPath,
   cleanItemsForSave, fmtSec, SKIP_REASON_LABEL,
@@ -52,6 +53,21 @@ export default function DisplayRotation() {
   const isMobile = useIsMobile(1100);
   const canEdit = canSeeded('display_rotation', 'manage', role);
   const lines = useProductionLines();
+  /* ผังองค์กร (ส่วนงาน/แผนก) — ให้ช่องตัวกรอง kind 'orgdept' เลือก "แผนก" ได้ (บางหน้ากรองด้วย id โหนด/ชื่อแผนก · 20/10)
+     null = ยังโหลด · โหลดล้ม = ช่องเขียนบอก (ห้ามดูเหมือนองค์กรไม่มีแผนก) */
+  const [orgNodes, setOrgNodes] = useState(null);
+  const [orgFail, setOrgFail] = useState('');
+  useEffect(() => {
+    let alive = true;
+    supabase.from('org_nodes').select('id, kind, code, name, parent_id, sort_order').eq('is_active', true)
+      .in('kind', ['section', 'department'])
+      .then(({ data, error }) => {
+        if (!alive) return;
+        if (error) { console.warn('[DisplayRotation] โหลดผังองค์กรไม่สำเร็จ', error); setOrgFail('โหลดผังองค์กรไม่สำเร็จ'); }
+        setOrgNodes(error ? [] : (data || []));
+      });
+    return () => { alive = false; };
+  }, []);
 
   const [accounts, setAccounts] = useState([]);      // profiles (role display เท่านั้น)
   const [emails, setEmails] = useState({});          // id → email (admin เท่านั้นที่อ่านได้)
@@ -358,7 +374,7 @@ export default function DisplayRotation() {
                     focused={i === focusIdx} onFocus={() => setFocusIdx(i)}
                     pageOptions={pageOptions} defaultSec={form.default_sec}
                     skip={preview.skipped.find(s => s.idx === i)}
-                    lines={lines} tvSections={tvSections} allSections={allSections}
+                    lines={lines} tvSections={tvSections} allSections={allSections} orgNodes={orgNodes} orgFail={orgFail}
                     onChange={(patch) => setItem(i, patch)}
                     onMove={(d) => moveItem(i, d)}
                     onRemove={() => { setF('items', form.items.filter((_, j) => j !== i)); setFocusIdx(Math.max(0, i - 1)); }} />
@@ -438,7 +454,7 @@ export default function DisplayRotation() {
 }
 
 /* ── 1 แถวในรอบ: เลือกหน้า + ตัวกรองของหน้านั้น + วินาที ── */
-function ItemRow({ i, it, n, canEdit, focused, onFocus, pageOptions, defaultSec, skip, lines, tvSections, allSections, onChange, onMove, onRemove }) {
+function ItemRow({ i, it, n, canEdit, focused, onFocus, pageOptions, defaultSec, skip, lines, tvSections, allSections, orgNodes, orgFail, onChange, onMove, onRemove }) {
   const base = it.path ? pathOnly(it.path) : '';
   const params = queryParamsOf(it.path);
   const defs = DISPLAY_PAGE_PARAMS[base] || null;
@@ -448,6 +464,17 @@ function ItemRow({ i, it, n, canEdit, focused, onFocus, pageOptions, defaultSec,
     (defs || []).forEach(d => { if (!paramVisible(d, next)) delete next[d.key]; });
     onChange({ path: withQueryParams(base, next) });
   };
+  /* แผนกในส่วนงานของจอ (หรือส่วนงานที่ตั้งในแถวนี้) — เรียงตาม /org-setup (listOrder) */
+  const deptOptions = useMemo(() => {
+    const all = orgNodes || [];
+    const secNodes = all.filter(x => x.kind === 'section');
+    const pickSec = params.sec || params.section || '';
+    const allowSec = (x) => (pickSec ? [x.code, x.name].includes(pickSec)
+      : (!tvSections.length || tvSections.includes(x.name) || tvSections.includes(x.code)));
+    const secIds = new Map(secNodes.filter(allowSec).map(x => [x.id, x.name]));
+    return all.filter(x => x.kind === 'department' && secIds.has(x.parent_id)).sort(orgNodeCompare)
+      .map(x => ({ id: x.id, name: x.name, sec: secIds.get(x.parent_id) }));
+  }, [orgNodes, tvSections, params.sec, params.section]);
   const scopeOptions = useMemo(() => {
     const secs = tvSections.length ? tvSections : allSections;
     const parents = (lines || []).filter(l => !l.parent_line_name && (!tvSections.length || tvSections.includes(l.section)))
@@ -455,9 +482,50 @@ function ItemRow({ i, it, n, canEdit, focused, onFocus, pageOptions, defaultSec,
     return [
       ...(tvSections.length ? [] : [{ value: 'plant', label: '🏭 ทั้งโรงงาน' }]),
       ...secs.map(x => ({ value: `section:${x}`, label: `📁 ส่วนงาน ${x}` })),
+      ...deptOptions.map(x => ({ value: `department:${x.name}`, label: `🗂️ แผนก ${tvSections.length === 1 ? '' : `${x.sec} · `}${x.name}` })),
       ...parents.map(x => ({ value: `line_group:${x}`, label: `🏭 กลุ่มไลน์ ${x}` })),
     ];
-  }, [tvSections, allSections, lines]);
+  }, [tvSections, allSections, lines, deptOptions]);
+  /* ตัวเลือกที่มาจากข้อมูล (จุดงาน · ประเภทงานค่าฝีมือ · คลังในจอเฝ้าระวัง) — โหลดเฉพาะแถวที่กำลังแก้และหน้านั้นมีช่องชนิดนั้น
+     null = ยังโหลด · { fail } = โหลดล้ม (ช่องเขียนบอก ห้ามดูเหมือนไม่มีตัวเลือก) */
+  const needKinds = (focused || skip) && defs ? defs.map(d => d.kind).filter(k => k === 'station' || k === 'wtype' || k === 'storeline').join(',') : '';
+  const [srcOpts, setSrcOpts] = useState({});
+  useEffect(() => {
+    if (!needKinds) return undefined;
+    let alive = true;
+    const put = (k, v) => { if (alive) setSrcOpts(o => ({ ...o, [k]: v })); };
+    const kinds = needKinds.split(',');
+    if (kinds.includes('station')) {
+      supabase.from('workstations').select('id, station_name, line_name').order('line_name').order('station_name')
+        .then(({ data, error }) => put('station', error ? { fail: 'โหลดจุดงานไม่สำเร็จ' } : (data || [])));
+    }
+    if (kinds.includes('wtype')) {
+      supabase.from('skill_definitions').select('allowance_type').eq('category', 'allowance_skill')
+        .then(({ data, error }) => put('wtype', error ? { fail: 'โหลดประเภทงานไม่สำเร็จ' }
+          : [...new Set((data || []).map(r => r.allowance_type).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'th'))));
+    }
+    if (kinds.includes('storeline')) {
+      // ชื่อที่จอเฝ้าระวังโชว์ = line_name ในวิวเดียวกับที่หน้าอ่าน (มีทั้งไลน์ผลิตและคลัง)
+      supabaseDR.from('v_store_abnormal').select('line_name').limit(1000)
+        .then(({ data, error }) => put('storeline', error ? { fail: 'โหลดรายชื่อคลังไม่สำเร็จ' }
+          : [...new Set((data || []).map(r => r.line_name).filter(Boolean))]));
+    }
+    return () => { alive = false; };
+  }, [needKinds]);
+  const stationOpts = useMemo(() => {
+    const src = srcOpts.station;
+    if (!Array.isArray(src)) return [];
+    const sec = params.sec || '';
+    const secOfLine = new Map((lines || []).map(l => [l.name, l.section]));
+    return src.filter(w => !sec || secOfLine.get(w.line_name) === sec);
+  }, [srcOpts.station, params.sec, lines]);
+  const warehouseOpts = useMemo(() => {
+    const src = srcOpts.storeline;
+    if (!Array.isArray(src)) return [];
+    const prod = new Set((lines || []).map(l => l.name));
+    return src.filter(n => !prod.has(n)).sort((a, b) => a.localeCompare(b, 'th', { numeric: true }));
+  }, [srcOpts.storeline, lines]);
+  const srcState = (k) => (srcOpts[k] == null ? 'กำลังโหลด…' : srcOpts[k].fail ? `⚠️ ${srcOpts[k].fail}` : '');
   const rawQ = (String(it.path || '').match(/[?#].*$/) || [''])[0];
   const secOptions = tvSections.length ? tvSections : allSections;
 
@@ -557,6 +625,38 @@ function ItemRow({ i, it, n, canEdit, focused, onFocus, pageOptions, defaultSec,
                 {d.kind === 'text' && (
                   <input type="text" value={params[d.key] || ''} disabled={!canEdit} maxLength={80}
                     onChange={e => setParam(d.key, e.target.value)} style={{ width: 180 }} />
+                )}
+                {d.kind === 'orgdept' && (
+                  <select value={params[d.key] || ''} disabled={!canEdit || orgNodes == null} onChange={e => setParam(d.key, e.target.value)}>
+                    <option value="">{orgNodes == null ? 'กำลังโหลดผังองค์กร…' : orgFail ? `⚠️ ${orgFail}` : ALL.dept}</option>
+                    {params[d.key] && !deptOptions.some(o => (d.valueAs === 'name' ? o.name : o.id) === params[d.key]) && (
+                      <option value={params[d.key]}>{`(ไม่พบในผังปัจจุบัน) ${params[d.key]}`}</option>
+                    )}
+                    {deptOptions.map(o => <option key={o.id} value={d.valueAs === 'name' ? o.name : o.id}>{tvSections.length === 1 ? o.name : `${o.sec} · ${o.name}`}</option>)}
+                  </select>
+                )}
+                {d.kind === 'station' && (
+                  <select value={params[d.key] || ''} disabled={!canEdit || srcOpts.station == null} onChange={e => setParam(d.key, e.target.value)}>
+                    <option value="">{srcState('station') || '— ค่าเริ่มต้นของหน้า (จุดงานแรก) —'}</option>
+                    {params[d.key] && !stationOpts.some(w => String(w.id) === params[d.key]) && <option value={params[d.key]}>{`(ไม่พบในรายการ) ${params[d.key]}`}</option>}
+                    {stationOpts.map(w => <option key={w.id} value={String(w.id)}>{`${w.line_name || '—'} · ${w.station_name || w.id}`}</option>)}
+                  </select>
+                )}
+                {d.kind === 'wtype' && (
+                  <select value={params[d.key] || ''} disabled={!canEdit || srcOpts.wtype == null} onChange={e => setParam(d.key, e.target.value)}>
+                    <option value="">{srcState('wtype') || '— ยังไม่เลือก —'}</option>
+                    {params[d.key] && Array.isArray(srcOpts.wtype) && !srcOpts.wtype.includes(params[d.key]) && <option value={params[d.key]}>{`(ไม่พบในทะเบียน) ${params[d.key]}`}</option>}
+                    {(Array.isArray(srcOpts.wtype) ? srcOpts.wtype : []).map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                )}
+                {d.kind === 'storeline' && (
+                  <span style={{ display: 'grid', gap: 2 }}>
+                    <LineSelect lines={lines} value={params[d.key] || ''} disabled={!canEdit}
+                      sections={tvSections} placeholder={ALL.line}
+                      extraGroups={warehouseOpts.length ? [{ label: '🏬 คลัง', options: warehouseOpts.map(n => ({ value: n })) }] : undefined}
+                      onChange={v => setParam(d.key, v)} />
+                    {srcState('storeline') && <span style={{ fontSize: 11, color: 'var(--muted)' }}>คลัง: {srcState('storeline')}</span>}
+                  </span>
                 )}
                 {d.kind === 'line' && (
                   <LineSelect lines={lines} value={params[d.key] || ''} disabled={!canEdit}

@@ -93,6 +93,16 @@ const RULES = [
     allow: {},
   },
   {
+    id: 'dr-products-has-no-part-name',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* select จาก dr_products (DR) ที่ขอคอลัมน์ part_name — ชื่อสินค้าของตารางนี้คือ `name` */
+    re: /from\(['"]dr_products['"]\)\s*\.select\(['"`][^'"`]*\bpart_name\b/g,
+    why: 'ตาราง DR `dr_products` **ไม่มีคอลัมน์ part_name** (ชื่อ = `name` · `part_name` อยู่ที่ prod_orders/qa_parts) — '
+       + '/scan เคย select ไป ⇒ 42703 ทุกครั้ง ⇒ สแกนบาร์โค้ด MAT ไม่เคยเจอสินค้า (20/10)',
+    fix: "ใช้ `select('mat_no, p_no, name')` แล้วอ่าน `.name` — ดู ScanLanding.jsx",
+    allow: {},
+  },
+  {
     id: 'pm-checkpoints-no-delete-all',
     scan: ['src'], ext: ['.jsx', '.js'],
     /* จับการลบจุดตรวจ/รูปทั้งชุดด้วยคีย์แม่ (checklist_id / jig_id) — pattern "ลบหมดแล้ว insert ใหม่" */
@@ -2989,6 +2999,38 @@ test('🛡️ /org-setup: ทุกชั้นที่มีปุ่มเพ
     '\n\n❌ handleSave ไม่ได้ใช้ orgSaveBlockReason ตัดสินสิทธิ์ — ดูเหตุผลด้านบน\n');
 });
 
+/* ── 🔴 MO: `manage_master` ต้องอยู่ "ท้ายสุด" ของตัวตรวจขั้น — ด่านทุกตัวต้องมาก่อน (20/10/2026) ──
+   คีย์นี้ถูกแจกให้ role `mtn` **ทั้งก้อน 16 บัญชี** (ไม่ใช่แค่หัวหน้า) ⇒ ด่านไหนที่อยู่ "ใต้" มัน
+   = ด่านปลอมสำหรับช่างทุกคน · เจอมาแล้ว 2 รอบในไฟล์เดียวกัน:
+     · 15/10 ล็อก "ทีมใครทีมมัน" อยู่ใต้ manage_master ⇒ ช่างข้ามทีมได้
+     · 20/10 ด่าน "งานปรับปรุง/สร้างต้องให้ ผจก.เซ็นก่อน" อยู่ใต้ manage_master ⇒ ช่างเริ่มงานเองได้
+       (+ `canSignMtnApproval` ยอมให้ manage_master **เซ็นลายเซ็น ผจก. แทน** — เกิดจริง 1 ใบ
+        โดยบัญชีกลาง `maintenance` ซึ่งสอบกลับไม่ได้ว่าใครกด) */
+test('🛡️ mtn: ด่านทุกตัวต้องอยู่ก่อน manage_master · ช่องเซ็น ผจก. ห้ามเซ็นแทนด้วย manage_master', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/utils/mtnStepPerm.js'), 'utf8'));
+  const fn = code.slice(code.indexOf('export function canDoStep'));
+  const body = fn.slice(0, fn.indexOf('\nexport '));
+  const iMaster = body.indexOf("can('manage_master')");
+  assert.ok(iMaster > -1, 'canDoStep ไม่มีบรรทัด manage_master แล้ว — ด่านนี้ต้องแก้ตามโครงใหม่');
+  for (const [what, needle] of [
+    ['ด่านฝั่ง/ตำแหน่ง', 'wrong_side'],
+    ['ล็อกทีมใครทีมมัน', "code: 'other_team'"],
+    ['ด่านอนุมัติก่อนเริ่มงาน', 'await_mgr_approval'],
+  ]) {
+    const at = body.indexOf(needle);
+    assert.ok(at > -1 && at < iMaster,
+      `\n\n❌ ${what} อยู่ "ใต้" manage_master ใน canDoStep\n`
+      + '   คีย์นั้นแจกให้ role mtn ทั้งก้อน ⇒ ด่านที่อยู่ใต้มันไม่เคยกัดช่างเลย (เกิดจริงมาแล้ว 2 รอบ)\n'
+      + '   ย้ายบรรทัด `if (can(\'manage_master\')) …` ลงไปไว้ท้ายสุดของด่านทั้งหมด\n');
+  }
+  const sign = code.slice(code.indexOf('export function canSignMtnApproval'));
+  const signBody = sign.slice(0, sign.indexOf('\n}'));
+  assert.ok(!/can\('manage_master'\)/.test(signBody),
+    '\n\n❌ canSignMtnApproval ยอมให้ manage_master เซ็นช่อง ผจก. แทน\n'
+    + '   ช่องนี้คือลายเซ็น ผจก. บนใบจริง ⇒ ต้องเป็นคนที่ใบระบุชื่อ หรือผู้ถือ mtn_repair:approve เท่านั้น\n'
+    + '   (กฎ 04/10 "ช่องเซ็นล็อกฝั่ง+ตำแหน่ง ไม่มีการเซ็นแทน แม้แต่ผู้ถือ manage_master")\n');
+});
+
 /* ── 🔴 SQL: `array_length(<NOT NULL default '{}'>, 1)` = NULL ⇒ ด่านผ่านทุกคนเงียบๆ (20/10/2026) ──
    เกิดจริงกับ `app_can_write_line()` (ตาข่ายขอบเขตชั้น DB): เขียน
      `resp_cost_centers is not null and array_length(resp_cost_centers,1) > 0`
@@ -3311,6 +3353,17 @@ test('🛡️ UI: fontSize บนจอต้องไม่ต่ำกว่�
       if (ln.includes('cellPadding') || ln.includes("font: 'Sarabun'")) return;   // jsPDF = pt
       for (const m of ln.matchAll(/fontSize\s*[:=]\s*\{?\s*(\d+(?:\.\d+)?)\s*\}?/g)) {
         if (Number(m[1]) < 11) bad.push(`${rel}:${i + 1} → fontSize ${m[1]}`);
+      }
+      /* 🕳️ รูของด่านนี้ (QC audit 20/10): รูปที่มี quote นำ **หลุดทั้งหมด** เพราะ regex ข้างบน
+         จับเฉพาะ "ตัวเลขดิบ" ⇒ เจอจริง `clamp(9px,…)` 3 จุด + `0.72em` 1 จุด (ซึ่งยังถูกคูณ
+         `zoom` ที่ผู้ใช้กด A− ลงได้ถึง 0.6 = ~5px บนจอ)
+         · `clamp()` — ค่า **min** คือขนาดจริงบนจอเล็ก จึงเป็นตัวที่ต้อง ≥ 11px
+         · `em`/`rem` ที่ < 1 — ขนาดจริงขึ้นกับแม่ (และ zoom) พิสูจน์ไม่ได้ว่า ≥ 11px ⇒ ห้ามใช้กับฟอนต์ */
+      for (const m of ln.matchAll(/fontSize\s*[:=]\s*['"`]clamp\(\s*(\d+(?:\.\d+)?)px/g)) {
+        if (Number(m[1]) < 11) bad.push(`${rel}:${i + 1} → clamp() min ${m[1]}px`);
+      }
+      for (const m of ln.matchAll(/fontSize\s*[:=]\s*['"`](0?\.\d+)(em|rem)\b/g)) {
+        bad.push(`${rel}:${i + 1} → fontSize ${m[1]}${m[2]} (พิสูจน์ไม่ได้ว่า ≥ 11px — ใช้ px/clamp แทน)`);
       }
     });
   }
@@ -5562,6 +5615,89 @@ test('🛡️ break-anchor-needs-shift-end — จุดที่กรอบ �
     + '            ยังไม่รู้เวลาเลิกกะ = อย่าเดา ให้กรองแถว shift_end ออกแล้วชูธงบอกจอ\n');
 });
 
+/* 🛡️ limit-over-postgrest-cap — `.limit(N > 1000)` = ความมั่นใจปลอม (QC audit 19/10)
+   PostgREST **clamp ที่ 1000 แถวเสมอ** ⇒ `.limit(5000)` ไม่ได้ขยายอะไรเลย และ "ถูกตัดแถว"
+   **ไม่ใช่ error** ⇒ `if (error)` จับไม่ได้ จอได้ข้อมูลไม่ครบแบบเงียบสนิท
+   เคสจริงที่ทำให้ต้องมีด่านนี้ — `CtReview.jsx` `.in(session_id).limit(5000)`:
+     วัด 19/10 ต่อไลน์ 60 วัน `prod_orders` สูงสุด **2,802 แถว (เกิน 1000 อยู่ 4 ไลน์)** ·
+     `downtime_logs` 1,179 ⇒ หักเวลาหยุดไม่ครบ ⇒ CT ที่เสนอช้ากว่าจริง ⇒ อนุมัติแล้วเขียนทับ
+     `dr_products.cycle_time_sec` = ตัวเศษ %P ทั้งโรงงาน · กฎนี้เขียนไว้ในคอมเมนต์ 5 ที่มาก่อน
+     **แต่ไม่มีด่าน** จึง drift เรื่อยๆ
+   กติกา: เกิน 1000 ต้องมีคำว่า `cap-ok` ใน 3 บรรทัดเหนือขึ้นไป พร้อม**ตัวเลขที่วัดมา**
+          — ไม่ใช่ตรายาง: ถ้าวัดไม่ได้/วัดแล้วเกิน ให้เปลี่ยนไปใช้
+          `fetchByIds` / `fetchAllPages` / `fetchAllRows` (แบ่งก้อน + แบ่งหน้า + order คู่ range) */
+test('🛡️ limit-over-postgrest-cap — .limit(N > 1000) ต้องมีหลักฐาน cap-ok ว่าไม่ชนเพดาน', () => {
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const raw = readFileSync(file, 'utf8');
+    const rawLines = raw.split('\n');
+    /* ตัดคอมเมนต์ก่อน — ไม่งั้นคำเตือน ".limit(5000) ใช้ไม่ได้" ที่เขียนกันไว้ 7 ที่จะกลายเป็นผู้ต้องหา */
+    stripComments(raw).split('\n').forEach((ln, i) => {
+      const m = ln.match(/\.limit\(\s*(\d+)\s*\)/);
+      if (!m || Number(m[1]) <= 1000) return;
+      const near = rawLines.slice(Math.max(0, i - 3), i + 1).join('\n');
+      if (!/cap-ok/.test(near)) bad.push(`${file.slice(ROOT.length)}:${i + 1} (.limit(${m[1]}))`);
+    });
+  }
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n'
+    + '   ทำไม: PostgREST clamp ที่ 1000 แถวเสมอ — `.limit(5000)` ไม่ได้อะไรเพิ่ม\n'
+    + '         และการถูกตัดแถวไม่ใช่ error ⇒ จอได้ข้อมูลไม่ครบเงียบๆ (CT/OEE/ยอด เพี้ยนโดยไม่มีสัญญาณ)\n'
+    + '   แก้: โตเกิน 1000 ได้ → fetchByIds / fetchAllPages / fetchAllRows (แบ่งหน้า + order คู่ range)\n'
+    + '        โตไม่ถึงจริง → เขียน `cap-ok: <ตาราง> วัด <วันที่> = <N> แถว` เหนือบรรทัดนั้น (ต้องวัดจริง)\n');
+});
+
+/* 🛡️ lpa-read-fail-not-missed — `/lpa` อ่านไม่สำเร็จ ≠ "ขาดตรวจ" และ ≠ "ยังไม่มีใบ" (QC audit 20/10)
+   2 คิวรีฝั่ง Main ของหน้านี้เคยแกะแต่ `{ data }` ทิ้ง `error`:
+     ① ใบของเดือน (`loadMonth`) ล้ม ⇒ ทั้งเดือนขึ้น "ขาดตรวจ" + ตัวหาร % คิดจากใบ 0 ใบ
+        = **จอกล่าวหาหน้างานว่าไม่ตรวจ** (ไฟล์นี้ระวังฝั่ง DR ไว้ดีแล้วด้วย `loadRunDays` แต่ฝั่ง Main ไม่มีด่าน)
+     ② ใบที่กำลังกรอก (effect โหลด draft) ล้ม ⇒ ได้ใบร่างเปล่า แล้ว `saveAudit` ทำ
+        upsert → delete คำตอบทั้งใบ → insert ชุดใหม่ = **คำตอบที่ตรวจไปแล้วหายถาวร**
+   ด่าน `daily-check-unknown-not-false` จับเฉพาะรูป `ranOn(…) ?? false` จึงมองไม่เห็นทั้ง 2 เคส */
+test('🛡️ lpa-read-fail-not-missed — /lpa ต้องอ่าน error ของ lpa_audits แล้ว fail-closed', () => {
+  const bad = [];
+  const rel = 'src/pages/LayerProcessAudit.jsx';
+  const code = stripComments(readFileSync(join(ROOT, rel), 'utf8'));
+  /* แกะ `{ data: x }` จาก Promise.all โดยไม่เก็บตัว result ไว้อ่าน error = กลืน error ตั้งแต่ต้นทาง */
+  /* ตรวจเฉพาะก้อนที่ดึง `lpa_audits` — ก้อนอื่น (ทะเบียนคำถาม/ไลน์/โปรไฟล์) เป็นคนละเรื่อง */
+  for (const m of code.matchAll(/const \[\{\s*data:[^\]]*\]\s*=\s*await Promise\.all\(\[/g)) {
+    if (/lpa_audits/.test(code.slice(m.index, m.index + 700)))
+      bad.push(rel + ' (แกะ { data } จาก Promise.all ที่ดึง lpa_audits = ทิ้ง error)');
+  }
+  for (const [v, why] of [
+    ['monthErr', 'ตารางเดือน: อ่านไม่ได้ต้องเป็น unknown ทั้งเดือน ห้ามเป็น "ขาดตรวจ"'],
+    ['draftErr', 'ใบที่กำลังกรอก: อ่านไม่ได้ต้องไม่ตั้ง draft (บันทึกทับแล้วคำตอบเดิมหาย)'],
+  ]) if (!new RegExp(`\\b${v}\\b`).test(code)) bad.push(`${rel} (ไม่มี ${v} — ${why})`);
+  /* เดือนที่อ่านไม่ได้ต้องส่ง planned/ran เป็น null เข้า checkDayState (null ⇒ unknown) */
+  if (!/monthErr \? null :/.test(code))
+    bad.push(rel + ' (checkDayState ไม่ได้รับ null ตอน monthErr — เดือนที่อ่านไม่ได้จะกลายเป็น "ขาดตรวจ")');
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n'
+    + '   ทำไม: อ่านไม่สำเร็จ = "ไม่รู้" — บีบเป็น "ขาดตรวจ" คือจอโกหกในทิศที่กล่าวหาคน\n'
+    + '         และใบร่างเปล่าที่มาจากการอ่านที่ล้ม พอกดบันทึกจะลบคำตอบเดิมทั้งใบ (delete-then-insert)\n'
+    + '   แก้: เก็บผลเป็นตัวแปร (exRes/audRes) อ่าน .error → ตั้ง draftErr/monthErr แล้ว fail-closed\n');
+});
+
+/* 🛡️ cc-scope-trigger-columns — คอลัมน์ที่ "ให้สิทธิ์" ต้องอยู่ใน protect_profile_role() (QC audit 20/10)
+   `profiles.resp_cost_centers` (แกนที่ 2 ของชั้นสิทธิ์ ③ · `utils/ccScope.js`) เพิ่มมา 16/10
+   แต่ไม่มีใครเติมเข้า trigger ⇒ เจ้าของแถว `PATCH /profiles?id=eq.<ตัวเอง>` ตั้งขอบเขตให้ตัวเองได้
+   🔴 เกิดซ้ำรอบที่ 2 — migration 12/10 เขียนเตือนคลาสนี้ไว้เองแล้ว ("คอลัมน์ที่เพิ่มทีหลัง") */
+test('🛡️ cc-scope-trigger-columns — คอลัมน์ให้สิทธิ์ใน profiles ต้องถูก trigger กันครบ', () => {
+  const dir = join(ROOT, 'supabase/migrations');
+  const defs = readdirSync(dir).filter(f => f.endsWith('.sql'))
+    .map(f => readFileSync(join(dir, f), 'utf8'))
+    .filter(sql => /create or replace function public\.protect_profile_role/i.test(sql));
+  const bad = [];
+  if (!defs.length) bad.push('ไม่พบ migration ที่นิยาม protect_profile_role()');
+  /* ดูนิยาม "ล่าสุด" ตามลำดับชื่อไฟล์ — create or replace ตัวหลังชนะตัวหน้า */
+  const latest = defs[defs.length - 1] || '';
+  for (const col of ['role', 'sections', 'section', 'scope_depth', 'resp_cost_centers']) {
+    if (!new RegExp(`new\\.${col}\\s+is distinct from\\s+old\\.${col}`).test(latest))
+      bad.push(`protect_profile_role() ไม่ได้กันคอลัมน์ ${col}`);
+  }
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n'
+    + '   ทำไม: คอลัมน์พวกนี้ = "ขอบเขตที่บัญชีนี้แก้ได้" — ปล่อยให้เจ้าของแถวแก้เอง = ยกสิทธิ์ให้ตัวเอง\n'
+    + '   แก้: migration ใหม่ `create or replace function public.protect_profile_role()` ที่คัดลอกของเดิม\n'
+    + '        มาครบ แล้วเติมบล็อก `if new.<col> is distinct from old.<col> then raise exception …`\n');
+});
 /* ── 📥 ลบใบที่ "ยกยอดมาจากกะก่อน" ต้องคืนยอดค้างให้ต้นทาง (2026-10-20) ───────────
    ตอนกดรับยอด ระบบมาร์คใบต้นทางเป็น `imported` (= ถูกรับไปแล้ว) ⇒ ลบใบปลายทางทิ้ง
    = ต้นทางค้าง `imported` ตลอดกาล · แบนเนอร์ "รับยอดค้าง" ไม่กลับมา · **งานหายถาวร
@@ -5617,4 +5753,50 @@ test('🛡️ jspdf-needs-thai-font — ไฟล์ที่ new jsPDF ต้�
     '\n\n❌ PDF ภาษาไทยจะออกมาเป็นอักขระขยะ:\n' + bad.map(b => '   • ' + b).join('\n') + '\n'
     + "   แก้ยังไง: const { registerThaiFont } = await import('../lib/pdfThaiFont'); registerThaiFont(doc)\n"
     + "            แล้วใช้ฟอนต์ 'Sarabun' (รวมใน autoTable styles.font ด้วย)\n");
+});
+
+/* 🛡️ scope-layer-closed-screens — 4 จอที่ปิดรูชั้น ③ รอบ QC audit 20/10 ห้ามถอยกลับ
+   ทั้ง 4 จุดมี "สิทธิ์กดปุ่ม" (ชั้น ②) อยู่แล้ว แต่**ไม่มีด่าน "แถวนี้/หน่วยนี้เป็นของเราไหม"**
+   และ RLS ของตารางปลายทางรู้แค่คีย์สิทธิ์ ไม่รู้ขอบเขต ⇒ `?sec=`/`?scope=` เปิดตรงแล้วเขียนได้
+     · `/manpower-board` ⚙️ — เขียน station_slot_plans / manpower_slot_plans / line_technicians / employee_flex_units ของส่วนงานอื่น
+     · `/line-stock` 📋 ตรวจนับ — เขียน line_stock_transactions (+ approved ทันที) ของไลน์อื่น
+     · `/equipment?tab=spare` 🛒 บอร์ด PR — รับของเข้าสต็อก/ยกเลิกใบของทีมช่างอื่น
+     · แผงตัวเลขฐาน KPI — ทางนำเข้า Excel ไม่เช็คสิทธิ์เลย (ด่านอยู่ในโมดัลชั้นเดียว) */
+test('🛡️ scope-layer-closed-screens — 4 จอที่ปิดรูชั้น ③ ต้องยังเช็คในฟังก์ชันที่เขียนจริง', () => {
+  const bad = [];
+  const read = (rel) => stripComments(readFileSync(join(ROOT, rel), 'utf8'));
+
+  /* ⚙️ manpower: หน้าแม่ต้องส่งผลด่านลงแผงลูก (ส่งแค่ "เปิดได้ไหม" = แผงลูกเขียนข้ามหน่วยได้) */
+  const mb = read('src/pages/ManpowerBoard.jsx');
+  if (!/secWrite=\{canWriteUnit\(/.test(mb))
+    bad.push('src/pages/ManpowerBoard.jsx (ไม่ได้ส่ง secWrite=canWriteUnit(...) ลง ManpowerBoardSetup)');
+  const mbs = read('src/components/ManpowerBoardSetup.jsx');
+  const blocks = (mbs.match(/if \(blocked\(\)\) return;/g) || []).length;
+  if (blocks < 7) bad.push(`src/components/ManpowerBoardSetup.jsx (ด่าน blocked() เหลือ ${blocks} จุด — ต้องมีครบทุกฟังก์ชันที่เขียน DB)`);
+
+  /* 📋 ตรวจนับสต็อก: ด่านต้องอยู่ใน save()/postMissingCuts() ไม่ใช่แค่กรองรายการใน <LineSelect> */
+  const scs = read('src/components/StockCountSheet.jsx');
+  if ((scs.match(/canWriteLine\(/g) || []).length < 2)
+    bad.push('src/components/StockCountSheet.jsx (ต้องเรียก canWriteLine ทั้งตอนบันทึกผลนับและตอนหักสต็อกย้อนหลัง)');
+
+  /* 🛒 PR: แกน "ทีม" (ฝั่งช่าง) — ปุ่มซ่อนอย่างเดียวไม่ใช่ด่าน ต้องเช็คซ้ำใน do* ทุกตัว */
+  const pur = read('src/components/MtnPurchase.jsx');
+  if (!/teamRowOwner\(/.test(pur)) bad.push('src/components/MtnPurchase.jsx (บอร์ด PR ไม่มีด่านเจ้าของทีม)');
+  const owns = (pur.match(/if \(ownBlock\(\)\) return;/g) || []).length;
+  if (owns < 4) bad.push(`src/components/MtnPurchase.jsx (ownBlock() เหลือ ${owns} จุด — ต้องครบ 4: เลข PR · สั่งแล้ว · รับของ · ยกเลิก)`);
+  const eq = read('src/pages/EquipmentHub.jsx');
+  if (!/<MtnPrBoard[^>]*myTeams=/s.test(eq))
+    bad.push('src/pages/EquipmentHub.jsx (ไม่ได้ส่ง myTeams ให้ MtnPrBoard — แผงลูกตัดสินเจ้าของไม่ได้)');
+
+  /* 💰 ตัวเลขฐาน KPI: ทางนำเข้าต้องเช็คเอง ไม่พึ่งโมดัล */
+  const kb = read('src/components/KpiBaseInputsPanel.jsx');
+  const many = kb.slice(kb.indexOf('const saveMany'), kb.indexOf('const saveMany') + 2200);
+  if (!/if \(!canManage\)/.test(many)) bad.push('src/components/KpiBaseInputsPanel.jsx (saveMany ไม่เช็ค canManage)');
+  if (!/lvl === 'plant' && !plant/.test(many)) bad.push("src/components/KpiBaseInputsPanel.jsx (saveMany ไม่กันตัวแปรระดับ plant ตอนยืนที่ขอบเขตหน่วย)");
+
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n'
+    + '   ทำไม: "กดปุ่มเป็นไหม" (can) ≠ "หน่วย/ทีม/ไลน์นี้ของเราไหม" — RLS ปลายทางไม่รู้ขอบเขต\n'
+    + '         ⇒ เปิด ?sec=/?scope= ของหน่วยอื่นแล้วเขียนได้จริง (ตั้งช่องตำแหน่ง · เฟิร์มยอดคลัง · รับของเข้าสต็อกทีมอื่น)\n'
+    + '   แก้: canWriteUnit/canWriteLine (utils/writeScope.js) · teamRowOwner (utils/mtnTeams.js)\n'
+    + '        เรียก **ในฟังก์ชันที่เขียน DB** + เขียนเหตุผลบนจอ (writeBlockText/teamRowLockNote) ห้ามซ่อนปุ่มเงียบ\n');
 });

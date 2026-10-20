@@ -6,6 +6,7 @@ import { STAFF_SUPPORT, isShopfloorStaff, staffGroupOf } from '../utils/staffKin
 import { normSearch } from '../components/SearchSelect';   // ค้นหาทนการสะกดไทย (ของกลาง)
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
+import { acceptImageFile } from '../utils/acceptImageFile';
 import ToggleDot from '../components/ToggleDot';
 import { filterLinesByDept, getLineFamilyIds } from '../utils/lineHierarchy';
 import LineSelect from '../components/LineSelect';
@@ -1759,12 +1760,20 @@ export default function Operator() {
                           <div style={{ border: `2px dashed ${luDocFile ? '#a855f7' : 'var(--border2)'}`, borderRadius: 7, padding: '8px 12px', cursor: 'pointer', background: luDocFile ? 'rgba(168,85,247,0.06)' : 'var(--bg2)', textAlign: 'center' }}
                             onClick={() => document.getElementById(`doc-${req.id}`).click()}>
                             <input id={`doc-${req.id}`} type="file" accept="image/*,application/pdf" style={{ display: 'none' }}
-                              onChange={e => {
-                                const f = e.target.files?.[0];
+                              /* 🔴 ขา "ไม่ใช่ PDF" ต้องผ่าน `acceptImageFile()` (HEIC จาก iPhone / MIME ว่างจาก
+                                 ตัวจัดการไฟล์ Android) — เดิมเทียบ `type.startsWith('image/')` เอง ⇒ ไฟล์ MIME ว่าง
+                                 ตกด่าน แล้วถูกอัปขึ้น `four-m-images` เป็น `.jpg` + contentType image/jpeg เงียบๆ
+                                 = หลักฐานอบรมที่เปิดดูไม่ได้ (QC audit 20/10 · ด่าน image-input-via-accept-helper
+                                 ตรวจ "รายไฟล์" จึงมองข้ามช่องนี้เพราะไฟล์มี ImageCropModal อยู่ที่อื่น) */
+                              onChange={async e => {
+                                const picked = e.target.files?.[0];
                                 e.target.value = '';   // เลือกไฟล์เดิมซ้ำต้องยิง change อีกครั้ง (หลังแนบล้มแล้วลองรูปเดิม)
-                                if (!f) return;
+                                if (!picked) return;
+                                const isPdf = picked.type === 'application/pdf' || /\.pdf$/i.test(picked.name || '');
+                                const f = isPdf ? picked : await acceptImageFile(picked);
+                                if (!f) return;        // ปฏิเสธแล้ว `acceptImageFile` ขึ้น toast บอกเหตุผลเอง
                                 setLuDocFile(f);
-                                if (f.type.startsWith('image/')) {
+                                if (!isPdf) {
                                   const reader = new FileReader();
                                   reader.onload = ev => setLuDocPreview(ev.target.result);
                                   reader.readAsDataURL(f);

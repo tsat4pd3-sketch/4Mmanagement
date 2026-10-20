@@ -16,6 +16,7 @@ const normKey = (s) => String(s || '').trim().toUpperCase().replace(/\s+/g, ' ')
 
 async function loadDerived() {
   const [p, s] = await Promise.all([
+    /* cap-ok: dr_products 216 แถว (วัด 20/10) */
     supabaseDR.from('dr_products').select('customer').not('customer', 'is', null).limit(5000),
     /* แหล่งเสริม (เติมชื่อที่ยังไม่เคยผลิต · น้ำหนัก n=0) — ตารางอาจยังไม่มี ⇒ ไม่ให้ล้มทั้งก้อน
        แต่ห้ามไร้ร่องรอย: error จริงต้องเห็นใน log ไม่งั้น "ลูกค้าหาย" หาต้นเหตุไม่ได้ */

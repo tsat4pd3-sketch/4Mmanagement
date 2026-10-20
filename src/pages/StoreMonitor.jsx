@@ -131,6 +131,27 @@ export default function StoreMonitor() {
       <PageHeader title="เฝ้าระวังสต๊อก & รอบส่ง (Abnormality Monitor)" icon="🚨"
         sub="จับความผิดปกติแล้วสรุปเป็นผล 🟥 จะขาด (Shortage) / 🟧 ล้น (Over stock) — แนวคิดจาก TEI-TEI ของ Toyota · เงื่อนไขตรวจอยู่ในวิว v_store_abnormal ที่เดียว (ตัวแจ้งเตือนใช้ตัวเดียวกัน)" />
 
+
+      {/* UI-STANDARD 2026-09-24 — ไลน์ (ขอบเขต) ก่อน → ชนิดเรื่อง (Segmented) */}
+      <FilterBar style={{ marginBottom: 14 }}>
+        {/* 🔴 แถบกรองต้องเป็น **แถบเดียว** (UI-STANDARD §3.1) — เดิมชิปฝั่งขาเข้า-ขาออกเป็นแถวแยก
+            เหนือแถบกรอง = ตัวกรอง 2 ชั้น · ย้ายเข้ามาเป็น child 20/10 (ต้นแบบ: /line-stock) */}
+        <SideFilterChips value={sideFilter} onChange={setSideFilter} counts={sideCounts} unit="เรื่อง" />
+        {lines.length > 0 && (
+          /* ไลน์ที่มีเรื่องเตือน — จัดลำดับชั้นตามผัง (แม่→ลูก) ส่วนคลังที่ไม่ใช่ไลน์ผลิตแยก optgroup
+             scope ถูกกรองที่ `scoped` แล้ว จึงไม่ต้องส่ง role/sections ซ้ำ */
+          <LineSelect
+            lines={prodLines.filter(l => lines.includes(l.name))}
+            value={lineFilter} onChange={setLineFilter} placeholder={ALL.line}
+            extraGroups={[{ label: '🏬 คลัง', options: lines.filter(n => !prodLines.some(l => l.name === n)).map(n => ({ value: n })) }]}
+          />
+        )}
+        <Segmented value={kindFilter} onChange={setKindFilter} label="ชนิดความผิดปกติ"
+          options={[{ value: 'all', label: ALL.type }, { value: 'shortage', label: '🟥 จะขาด' }, { value: 'over', label: '🟧 ล้น' }]} />
+      </FilterBar>
+
+      {/* 🔴 การ์ดนับ = **เนื้อหา** ต้องอยู่ใต้แถบกรอง (UI-STANDARD §2.1) — ย้ายลงมา 20/10
+          และตัวเลขพวกนี้นับจาก `scoped` ที่ผ่านตัวกรองแล้ว ⇒ อยู่ใต้แถบกรองอ่านตรงกว่า */}
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
         {[
           { icon: '🟥', label: 'จะขาด (Shortage)', value: nShort, warn: nShort > 0, tone: '#ef4444' },
@@ -144,26 +165,6 @@ export default function StoreMonitor() {
           </div>
         ))}
       </div>
-
-      {/* หน้านี้อยู่ทั้งหมวดขาเข้า-ขาออก (คาบ 2 ฝั่งจริง) → กรองฝั่งได้ แต่ default เห็นภาพรวมทั้งหมด */}
-      <div style={{ marginBottom: 12 }}>
-        <SideFilterChips value={sideFilter} onChange={setSideFilter} counts={sideCounts} unit="เรื่อง" />
-      </div>
-
-      {/* UI-STANDARD 2026-09-24 — ไลน์ (ขอบเขต) ก่อน → ชนิดเรื่อง (Segmented) */}
-      <FilterBar style={{ marginBottom: 14 }}>
-        {lines.length > 0 && (
-          /* ไลน์ที่มีเรื่องเตือน — จัดลำดับชั้นตามผัง (แม่→ลูก) ส่วนคลังที่ไม่ใช่ไลน์ผลิตแยก optgroup
-             scope ถูกกรองที่ `scoped` แล้ว จึงไม่ต้องส่ง role/sections ซ้ำ */
-          <LineSelect
-            lines={prodLines.filter(l => lines.includes(l.name))}
-            value={lineFilter} onChange={setLineFilter} placeholder={ALL.line}
-            extraGroups={[{ label: '🏬 คลัง', options: lines.filter(n => !prodLines.some(l => l.name === n)).map(n => ({ value: n })) }]}
-          />
-        )}
-        <Segmented value={kindFilter} onChange={setKindFilter} label="ชนิดความผิดปกติ"
-          options={[{ value: 'all', label: ALL.type }, { value: 'shortage', label: '🟥 จะขาด' }, { value: 'over', label: '🟧 ล้น' }]} />
-      </FilterBar>
 
       {loadErr && (
         <div style={{ ...card, borderColor: 'rgba(239,68,68,0.5)', background: 'rgba(239,68,68,0.08)', padding: '10px 14px', marginBottom: 12, fontSize: 13, color: '#ef4444', fontWeight: 700 }}>

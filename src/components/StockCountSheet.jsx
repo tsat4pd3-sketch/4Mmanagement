@@ -12,6 +12,8 @@ import { fetchAllPages } from '../utils/fetchByIds';
 import { getWorkDate } from '../utils/workDate';
 import { buildPnIndex, pickStockMat, matIssueText } from '../utils/matResolve';
 import { countDelta, toAdjustTxns, countSummary, lastCountAt, pendingShipCuts } from '../utils/stockCount';
+/* 🔐 ชั้นสิทธิ์ที่ ③ — "ไลน์/คลังนี้เป็นของหน่วยงานเราไหม" (ช่องเลือกไลน์เป็นตัวกรองการดู ไม่ใช่ด่าน) */
+import { canWriteLine, writeBlockText } from '../utils/writeScope';
 import LineSelect from './LineSelect';
 
 /* ─── 📋 ตรวจนับ / เฟิร์มยอด — แท็บใน /line-stock (2026-09-23) ─────────────────
@@ -44,7 +46,11 @@ const n0 = (v) => (Number(v) || 0).toLocaleString();
 
 export default function StockCountSheet({ role, scope }) {
   const isMobile = useIsMobile();   // 📱 การ์ดต่อพาร์ท + ปุ่มบันทึกเกาะล่าง (15/10)
-  const { fullName } = useContext(UserContext);
+  const { fullName, section: homeSection, sections: mySections, allUnits, respCostCenters, scopeIdx } = useContext(UserContext);
+  /* 🔐 ขอบเขต "ที่แก้ได้" (คนละตัวกับ `scope` ที่เป็นขอบเขต "ที่เห็น") — ชุดเดียวกับ `StockTab` ในหน้าแม่
+     QC audit 20/10: แท็บนี้มีด่านแค่ที่ dropdown ⇒ `?` เปิดตรง/สลับไลน์แล้วกดบันทึกได้ข้ามส่วนงาน */
+  const wctx = useMemo(() => ({ role, section: homeSection, sections: mySections, allUnits, respCostCenters, scopeIdx }),
+    [role, homeSection, mySections, allUnits, respCostCenters, scopeIdx]);
   const canCount   = can('line_stock', 'issue', role);
   const canApprove = can('line_stock', 'approve', role);
 
@@ -122,6 +128,9 @@ export default function StockCountSheet({ role, scope }) {
 
   const postMissingCuts = async () => {
     if (!shipGap.open.length) return;
+    /* 🔴 หักสต็อกย้อนหลังที่คลัง FG = เขียนของหน่วยงานนั้น ⇒ เช็คชั้น ③ ในฟังก์ชันที่เขียนจริง */
+    const wf = canWriteLine(wctx, fgDest, lines);
+    if (!wf.ok) { toast.error(writeBlockText(wf, { what: `ยอดคลัง ${fgDest}` })); return; }
     // แถวที่หักแล้วจะทำให้คงเหลือติดลบ = "ของออกไปแล้วแต่ไม่เคยถูกบันทึกรับเข้า" — ต้องบอกก่อน ห้ามเงียบ
     const onHand = {};
     stock.forEach(s => { if (s.line_name === fgDest) onHand[s.mat_no] = parseFloat(s.qty_on_hand) || 0; });
@@ -168,6 +177,10 @@ export default function StockCountSheet({ role, scope }) {
   const summary = useMemo(() => countSummary({ rows, counts }), [rows, counts]);
 
   const save = async () => {
+    /* 🔴 ผลตรวจนับเขียน `line_stock_transactions` ของไลน์/คลังที่เลือก (และ `approved` ทันทีถ้ามีสิทธิ์)
+       ⇒ ด่านชั้น ③ ต้องอยู่ตรงนี้ ไม่ใช่แค่กรองรายการใน `<LineSelect>` */
+    const w = canWriteLine(wctx, lineFilter, lines);
+    if (!w.ok) { toast.error(writeBlockText(w, { what: `ยอดคลังของ ${lineFilter || 'ไลน์นี้'}` })); return; }
     const txns = toAdjustTxns({ rows, lineName: lineFilter, workDate, by: fullName, note, counts });
     if (!txns.length) { toast.info('ยังไม่มีแถวที่ยอดต่างจากระบบ'); return; }
     const approved = approveNow && canApprove;

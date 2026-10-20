@@ -159,8 +159,11 @@ role `mtn` **ทั้งก้อน** (ไม่ใช่แค่หัวห
 1. **ชั้น DB (RLS) ฝั่ง Main — 68 policy ยังเป็น `has_perm()` เปล่า**
    ⇒ ด่านทั้งหมดวันนี้อยู่ที่จอ · **คนยิง API ตรงยังข้ามได้**
    · 🔴 **ฝั่ง DR ทำไม่ได้เลย** (`anon` ไม่มี JWT) ต้องผ่าน Edge Function — known gap เดิมใน CLAUDE.md
-2. **ใบ MO ขั้น 2-3 ล็อกแล้ว** (15/10) แต่ `mtn_repair:manage_master` ยังถูกแจกให้ role `mtn` ทั้งก้อน
-   ⇒ คีย์นี้กว้างกว่าชื่อของมัน · ถ้าจะให้ตรงความหมาย ควรแยก `mtn_repair:head` ออกมา (ยังไม่ทำ)
+2. 🟡 **`mtn_repair:manage_master` แจกให้ role `mtn` ทั้งก้อน (16 บัญชี)** — ปิด "ทางข้าม" ไปแล้ว 2 ทาง
+   (20/10 · คำสั่ง user "ปิดทั้ง 2 ทาง"): ด่านอนุมัติก่อนเริ่มงานย้ายขึ้นเหนือ `manage_master` ·
+   `canSignMtnApproval()` ไม่ยอมให้เซ็นแทน ผจก. อีก (เกิดจริง 1 ใบ โดยบัญชีกลาง `maintenance`)
+   ⇒ **ตัวคีย์ยังกว้างกว่าชื่ออยู่** (ปลดสิทธิ์รายขั้นในฝั่ง/ทีมตัวเองได้) · การเลิกแจกให้ทั้ง role
+   แล้วให้ช่างถือเฉพาะคีย์ที่ใช้จริง = ยังรอ user เคาะ · 📄 `docs/modules/mtn-work-order.md`
 3. **bucket `dept_admin` ถือคีย์ action 101 ตัว (99 ตัวเป็นของ `manager`)**
    ⇒ ตอนนี้ขอบเขตถูกจำกัดด้วยชั้นที่ 3 แล้ว แต่ *ชุดคีย์* ยังกว้างเกินชื่อ "แอดมินหน่วยงาน"
 4. **ทะเบียนกลางที่ยังไม่ตัดสินว่ามีเจ้าของไหม** — `dr_products` · `machine_types` · `pm_facility_areas`
@@ -530,3 +533,40 @@ migration `supabase/migrations/20261020_rls_scope_net_fn_main.sql` · **apply �
 1. ชั้น DB (ข้อ 7.1) — RLS ฝั่ง Main 68 policy ยังไม่มี predicate ของหน่วยงาน · ฝั่ง DR ไม่มีด่านเลย (anon)
 2. ฝั่ง DB ยังไม่รู้จัก `resp_cost_centers` ⇒ คนยิง API ตรงยังข้ามด่านจอได้ทุกจอ
 3. `manage_master` ให้ทั้ง role `mtn` · `dept_admin` ถือ 101 คีย์ (ตรวจค้างจาก audit 15/10)
+
+---
+
+## 🔐 ปิดรู `resp_cost_centers` ที่ `protect_profile_role()` (2026-10-20 · QC audit · ด่าน `cc-scope-trigger-columns`)
+
+คอลัมน์ `profiles.resp_cost_centers` (เพิ่ม 16/10 · แกนที่ 2 ของชั้น ③) **ไม่ได้อยู่ในรายการที่ trigger กัน**
+⇒ เจ้าของแถวยิง `PATCH /profiles?id=eq.<ตัวเอง>` **ตั้งขอบเขตที่ตัวเองแก้ได้ให้ตัวเอง** ได้
+(วันที่เจอ ยังไม่มีจอไหนอ่านค่านี้ แต่ 19/10 `canWriteUnit` สลับไปใช้ `canWriteScope` แล้ว ⇒ รูเปิดใช้งานทันที)
+
+🔴 **เกิดซ้ำรอบที่ 2 ของคลาสเดียวกัน** — migration 12/10 เขียนเตือนไว้เองในบล็อก ③ ว่า
+*"คอลัมน์ที่เพิ่มมาหลังเขียน trigger นี้ แล้วไม่มีใครเติมเข้ารายการ"* ⇒ รอบนี้จึงเพิ่ม**ด่านฝั่งเทส**ด้วย
+(`cc-scope-trigger-columns` อ่าน migration ล่าสุดที่ `create or replace` ฟังก์ชันนี้ แล้วบังคับว่าต้องมี
+`role · sections · section · scope_depth · resp_cost_centers` ครบ)
+
+- migration: `supabase/migrations/20261020_protect_resp_cost_centers_main.sql` (**apply แล้ว 20/10** ·
+  Main "MAIN" `ewhdfqwfwofivojtsizn`) — `create or replace` เติมบล็อกเดียว ไม่แตะ trigger/คอลัมน์/policy
+- ตรวจกลับแล้ว: `pg_get_functiondef(...) ilike '%resp_cost_centers%'` = `true` · trigger ที่ผูกอยู่ = 1 ตัวเหมือนเดิม
+- ย้อนกลับ: `create or replace` ตัวเดิมจาก `20261012_rls_round5_anon_scope_masters_main.sql` (ตัดบล็อก ④ ออก)
+- ⚠️ ข้อ 2 ของ "ที่ยังเหลือ" ข้างบน (**ฝั่ง DB ยังไม่รู้จัก `resp_cost_centers` ในชั้น RLS ของตารางอื่น**)
+  ยังเหมือนเดิม — อันนี้ปิดเฉพาะ "แก้สิทธิ์ตัวเอง" ไม่ใช่ predicate ของหน่วยงานในทุกตาราง
+
+## 🔐 รอบ 20/10 — ปิดชั้น ③ อีก 4 จอ (ด่าน `scope-layer-closed-screens`)
+
+ทั้ง 4 จุดมีชั้น ② (`can()`) อยู่แล้ว แต่**ไม่มีชั้น ③** และ RLS ปลายทางรู้แค่คีย์สิทธิ์ ไม่รู้ขอบเขต
+⇒ เปิด `?sec=` / `?scope=` ของหน่วยอื่นแล้วเขียนได้จริง
+
+| จอ | เขียนอะไรข้ามหน่วยได้ | ปิดด้วย |
+|---|---|---|
+| `/manpower-board` ⚙️ ตั้งค่าบอร์ด | `station_slot_plans` · `manpower_slot_plans` · `line_technicians` · `employee_flex_units` ของส่วนงานอื่น (เดิมตัดสินด้วย `sections` = แกน "ที่เห็น" ซึ่ง**ว่าง = เห็นทั้งโรงงาน**) | หน้าแม่ส่ง `secWrite={canWriteUnit(wctx, section.name, { unknownTarget:'block' })}` ลงแผงลูก + `blocked()` ต้นทั้ง **7 ฟังก์ชัน** ที่เขียน DB + แถบ 🔒 บนแผง |
+| `/line-stock` 📋 ตรวจนับ | `line_stock_transactions` ของไลน์อื่น (และตั้ง `approved` ทันทีถ้ามีสิทธิ์) · `cutShipped` หักสต็อกย้อนหลังที่คลัง FG | `canWriteLine(wctx, …)` ต้น `save()` และ `postMissingCuts()` (ไฟล์พี่น้องในหน้าเดียวกันทำถูกตั้งแต่ 15/10 — แท็บนี้ตกสำรวจ) |
+| `/equipment?tab=spare` 🛒 บอร์ด PR | **รับของเข้าสต็อก** (RPC `mtn_pr_receive`) / **ยกเลิกใบ** ของทีมช่างอื่น — ผู้ถือ `mtn_repair:spare_master` รวม `dept_admin` ฝ่ายผลิต | `MtnPrBoard` รับ `myTeams`/`role` จาก `EquipmentHub` → `teamRowOwner` ต่อแถว → `ownBlock()` ต้น **4 ฟังก์ชัน** (เลข PR · สั่งแล้ว · รับของ · ยกเลิก) + แถว 🔒 บอกเหตุ |
+| แผงตัวเลขฐาน KPI (`KpiBaseInputsPanel`) | ทางนำเข้า Excel (`saveMany`) **ไม่เช็คสิทธิ์เลย** — ด่านอยู่ในโมดัลชั้นเดียว ⇒ คนถือ `kpi:manage` ที่ขอบเขตหน่วย เขียนยอดขาย/COGS กลางโรงงานได้ | `if (!canManage) return 0` + กันตัวแปรระดับ `plant` เมื่อไม่ได้ยืนที่ขอบเขตทั้งโรงงาน |
+
+🔴 **บทเรียนที่ด่านเดิมมองไม่เห็น:** `write-scope-layer` ตรวจ (ก) เนื้อใน `writeScope.js` (ข) `App.jsx`
+ส่ง ctx ครบ (ค) จำนวนด่านใน `KpiMonthly.jsx` — **ไม่มีกฎที่ถามว่า "จอที่เขียน DB เรียกของกลางชั้น ③ หรือยัง"**
+⇒ ทั้ง 4 จุดผ่าน build มาตลอด · ด่านใหม่ `scope-layer-closed-screens` ตรึง 4 จอนี้ไว้
+(ยิงทดสอบด้วยการถอดด่านออกทีละจุดแล้ว จับได้ครบ 5/5)

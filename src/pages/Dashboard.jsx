@@ -39,6 +39,7 @@ import { useLatestRequest } from '../utils/useLatestRequest';
 import { loadBreakPolicies } from '../utils/oeeMasters';
 import { fetchAllRows } from '../utils/fetchAllRows';
 import SearchInput from '../components/SearchInput';
+import { urlPick, urlBool } from '../utils/urlInit';
 
 /* เกณฑ์ "อัตราการมาทำงาน" ของจอนี้ — การ์ดบนสุดกับการ์ดรายไลน์ต้องใช้ชุดเดียวกัน (2026-10-19)
    เดิมการ์ดไลน์ตัดที่ 80% และเอา 4M มาปนสีมาทำงาน ⇒ ไลน์มา 91% ขึ้น "⚠ Risk" · มา 82% ขึ้น "✓ Normal" */
@@ -200,7 +201,10 @@ export default function Dashboard({ view = 'timeline' }) {
   const workDateStr = getWorkDateStr(now);
 
   const [selectedDate,  setSelectedDate]  = useState(workDateStr);
-  const [selectedShift, setSelectedShift] = useState(shiftInfo.isDay ? 'day' : 'night');
+  /* ?shift=all|day|night (จอวนหน้า /display-rotation) — ตั้งจากลิงก์ = ปักกะไว้ ไม่ให้ auto-sync กะข้างล่างดีดทับ
+     ไม่มีในลิงก์ = พฤติกรรมเดิมเป๊ะ (กะปัจจุบัน + กลิ้งเองตอน 08:00/20:00) */
+  const [shiftSeed] = useState(() => urlPick('shift', ['all', 'day', 'night'], null));
+  const [selectedShift, setSelectedShift] = useState(() => shiftSeed || (shiftInfo.isDay ? 'day' : 'night'));
 
   // Section filter — เหมาะกับจอ TV ที่ตั้งไว้ดูเฉพาะส่วนงานตัวเอง
   // จำค่าไว้ใน URL (?section=...) เพื่อให้ bookmark จอ TV ได้ตรงส่วนงานทุกครั้งที่เปิด
@@ -232,10 +236,11 @@ export default function Dashboard({ view = 'timeline' }) {
 
   // Auto-sync shift when day→night boundary crosses (20:00) while viewing today
   useEffect(() => {
+    if (shiftSeed) return;   // ปักกะจากลิงก์ (?shift=) = ไม่ดีดทับ
     if (selectedDate === workDateStr) {
       setSelectedShift(shiftInfo.isDay ? 'day' : 'night');
     }
-  }, [shiftInfo.isDay, selectedDate, workDateStr]);
+  }, [shiftInfo.isDay, selectedDate, workDateStr, shiftSeed]);
   const [logs, setLogs]         = useState([]);
   const [fourMLogs, setFourMLogs] = useState([]);
   const [lines, setLines]       = useState([]);
@@ -935,7 +940,7 @@ export default function Dashboard({ view = 'timeline' }) {
   // 📺 แบ่งหน้า+หมุนเองเมื่อยาวเกินจอ · มือถือ/ผู้ใช้กด "เลื่อนเอง" = ปิด (จำต่อเครื่อง · storage พังได้ = ค่าเริ่มต้น)
   const tvBoxRef = useRef(null);
   const scrollKey = `esm.dash.scroll.${view}`;
-  const [tvScroll, setTvScroll] = useState(() => { try { return localStorage.getItem(scrollKey) === '1'; } catch { return false; } });
+  const [tvScroll, setTvScroll] = useState(() => urlBool('scroll', (() => { try { return localStorage.getItem(scrollKey) === '1'; } catch { return false; } })()));
   const setScrollMode = (on) => { setTvScroll(on); try { localStorage.setItem(scrollKey, on ? '1' : '0'); } catch { /* ไม่มี storage = ไม่จำ */ } };
   const tvPager = useTvPager(tvBoxRef, {
     enabled: !isMobile && !tvScroll,
@@ -2488,7 +2493,8 @@ export default function Dashboard({ view = 'timeline' }) {
               background: 'var(--card)', borderRadius: 16, padding: '20px 24px',
               width: 'min(94vw, 720px)', maxHeight: '90vh', overflowY: 'auto',
               border: `2px solid ${LV.color}88`,
-              boxShadow: `0 20px 60px rgba(0,0,0,0.6), 0 0 30px ${LV.color}40`,
+              /* 🌑 เงาโมดัลมาจาก token (ธีมมืด = none) · เหลือเฉพาะ glow สีที่เป็น "สัญญาณ" ของระดับ Andon */
+              boxShadow: `var(--shadow-lg), 0 0 30px ${LV.color}40`,
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>

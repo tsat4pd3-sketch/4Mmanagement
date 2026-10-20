@@ -12,6 +12,7 @@ import useFitHeight from '../utils/useFitHeight';
 import { packPages, clampPage } from '../utils/boardPager';
 import useTabParam, { useMergeParams } from '../utils/useTabParam';
 import { useSearchParams } from 'react-router-dom';
+import { urlParam } from '../utils/urlInit';
 import useProductionLines from '../utils/useProductionLines';
 import { useLiveBoard } from '../utils/useLiveBoard';
 import { LIVE } from '../utils/refreshRates';
@@ -37,6 +38,7 @@ import useImgBox from '../utils/useImgBox';
 import { mergeBorrowedEmployees, loadBorrowedRange } from '../utils/lineHelpers';
 import { canSeeded } from '../utils/permissions';
 import ManpowerBoardSetup from '../components/ManpowerBoardSetup';
+import { canWriteUnit } from '../utils/writeScope';
 import {
   buildManpowerBoard, fourMStatus, layoutPeople, lineFamilyOf, paginateTv, tvCardCapacity,
   describeSlotChanges, summarizeSlotChanges, SLOT_AUDIT_TABLES, SLOT_KIND_META,
@@ -62,7 +64,7 @@ import {
 const EMP_COLS = 'id, name, employee_id_code, image_url, position, team, line_id, department, section, org_node_id, staff_kind, start_date';
 
 export default function ManpowerBoard() {
-  const { sections: scopeSecs = [], role } = useContext(UserContext);
+  const { sections: scopeSecs = [], role, section: homeSection, allUnits, respCostCenters, scopeIdx } = useContext(UserContext);
   const [tab, setTab] = useTabParam(['org', 'layout', 'fourm', 'staffing', 'history'], 'org');
   const [params] = useSearchParams();
   const merge = useMergeParams();
@@ -83,6 +85,12 @@ export default function ManpowerBoard() {
   const [flexUnits, setFlexUnits] = useState([]);   // 🏃 คนวิ่งข้ามแผนก (employee_flex_units)
   const [setupOpen, setSetupOpen] = useState(false);
   const canSetup = canSeeded('manpower_board', 'edit', role);
+  /* 🔐 ชั้น ③ — "ส่วนงานที่กำลังตั้งค่าเป็นของหน่วยงานเราไหม" (QC audit 20/10)
+     `scopeSecs` = ขอบเขต "ที่เห็น" (**ว่าง = เห็นทั้งโรงงาน**) ⇒ เอามาตัดสินการแก้ไม่ได้ ·
+     ⚙️ แผงตั้งค่าเขียน `station_slot_plans` / `manpower_slot_plans` / `line_technicians` /
+     `employee_flex_units` ของส่วนงานนั้น และ RLS รู้แค่ `has_perm('manpower_board:edit')` ไม่รู้ขอบเขต */
+  const wctx = useMemo(() => ({ role, section: homeSection, sections: scopeSecs, allUnits, respCostCenters, scopeIdx }),
+    [role, homeSection, scopeSecs, allUnits, respCostCenters, scopeIdx]);
   const [err, setErr] = useState('');
   const [loading, setLoading] = useState(true);
   const workDate = getWorkDate();
@@ -177,7 +185,7 @@ export default function ManpowerBoard() {
     .filter(n => !scopeSecs.length || inSectionScope(scopeSecs, orgKey(n)) || inSectionScope(scopeSecs, n.name))
     .sort(orgNodeCompare), [nodes, scopeSecs]);
   const secParam = params.get('sec') || '';
-  const section = sectionNodes.find(n => orgKey(n) === secParam) || sectionNodes[0] || null;
+  const section = sectionNodes.find(n => orgKey(n) === secParam) || (secParam && sectionNodes.find(n => n.name === secParam)) || sectionNodes[0] || null;
   const deptParam = params.get('dept') || '';
   // 📺 โหมดจอ TV (ไม่เลื่อน · แบ่งหน้า) — `?tv=1|0` ชนะ · ไม่ระบุ = บัญชี display (จอแขวน) เปิดให้เอง
   const tvParam = params.get('tv');
@@ -251,6 +259,8 @@ export default function ManpowerBoard() {
       {setupOpen && section && (
         <ManpowerBoardSetup section={section} nodes={nodes} lines={lines} employees={employees}
           slotPlans={slotPlans} lineTechs={lineTechs} stations={stations} stationPlans={stationPlans} flexUnits={flexUnits}
+          /* 🔴 หน้าแม่ที่มีกฎแล้วต้องส่งกฎลงแผงลูก — ส่งแค่ "เปิดได้ไหม" = แผงลูกเขียนข้ามหน่วยได้ */
+          secWrite={canWriteUnit(wctx, section?.name, { unknownTarget: 'block' })}
           onChanged={loadSetup} onClose={() => setSetupOpen(false)} />
       )}
     </Page>
@@ -555,6 +565,7 @@ function LayoutTab({ board, depts, lines, attendance, maps, tv, stationPlans, sk
   const [stations, setStations] = useState([]);
   const [homes, setHomes] = useState({});
   const [pick, setPick] = useState('');
+  const [seedLine] = useState(() => urlParam('lline') || '');   // ?lline= ชื่อไลน์ของผังที่จะเปิด (จอวนหน้า) · คนเลือกเองแล้ว `pick` ชนะ
   const [err, setErr] = useState('');
 
   const family = useMemo(() => lineFamilyOf(lines, depts.flatMap(d => d.lines.map(l => l.id))), [lines, depts]);
@@ -583,7 +594,7 @@ function LayoutTab({ board, depts, lines, attendance, maps, tv, stationPlans, sk
   // 📺 จอ TV: หลายผัง = วนทีละผังเอง (ไม่มีเมาส์ไปเลือก dropdown) · โหมดปกติ = เลือกเอง
   const [tvIdx, setTvIdx] = useAutoPage(tv ? layouts.length : 0);
   const layout = tv ? layouts[clampPage(tvIdx, layouts.length)] || null
-    : layouts.find(l => String(l.id) === pick) || layouts[0] || null;
+    : layouts.find(l => String(l.id) === pick) || (!pick && seedLine ? layouts.find(l => l.line_name === seedLine) : null) || layouts[0] || null;
   useEffect(() => {
     let alive = true;
     if (!layout) { setStations([]); return undefined; }
