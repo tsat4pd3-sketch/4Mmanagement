@@ -514,7 +514,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
   // ── ผังกระดาษ ──────────────────────────────────────────────────────────────────
   const [board, setBoard] = useState(() => urlBool('board', false));   // โหมดจอ TV = ซ่อนหัวเพจ เต็มจอ · ?board=1
   const wrapRef = useRef(null);
-  const tv = useTvShell();   // 📺 จอประชุม = 2×2 ต่อหน้า (TV_SHEET_GRID) · จอคอมเหมือนเดิม
+  const tv = useTvShell();   // 📺 จอประชุม = 3×2 ต่อหน้า (TV_SHEET_GRID) · จอคอมเหมือนเดิม
   const grid = useSheetGrid(wrapRef, 10, tv ? TV_SHEET_GRID : undefined);
 
   /* ── 📖 แบ่งหน้าแทนการเลื่อน (25/09 · คำสั่ง user "ดูจบได้ในหน้าเดียว … กดเปลี่ยนหน้า") ──
