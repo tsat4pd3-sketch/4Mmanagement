@@ -14,6 +14,8 @@
  *   ⑥ 🔴 `isOt` ต้องตัดสินจาก**ค่ากลาง** — ไลน์ที่ตั้งพักโอเป็น 0 ห้ามปลุกนโยบาย `no_ot` กลับมา
  *   ⑦ ไลน์ที่มีกฎแต่ไม่อยู่ในทะเบียน = รายงานเป็น `orphanLines` (ห้ามกลืน) แต่ยังใช้ได้แบบตรงชื่อ
  *   ⑧ ค่านาทีที่แกะไม่ออก/นอกช่วง = `null` (ห้ามเดา 0 — 0 มีความหมายของมันเอง)
+ *   ⑩ แถบเงาบนบอร์ดไทม์ไลน์ (`halfDayBreakBands`) — ช่วงต้องตรงกับ `halfDayBreakIntervals`
+ *      เป๊ะ + ติดป้ายชื่อพักและ "ไลน์นี้ตั้งเองกี่นาที" มาด้วย (20/10 รอบที่ 2)
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -39,10 +41,14 @@ const LINES = [
 ];
 
 /* ชุดนโยบายกลาง — ตรงกับของจริงหลัง migration 20/10 (5ส. = แถวเดียวผูกปลายกะ) */
-const P_LUNCH = { id: 'p-lunch', shift: 'day',  start_time: '11:50:00', duration_min: 50, process_type: 'common', ot_scope: 'always', anchor: 'clock' };
-const P_5S    = { id: 'p-5s',    shift: 'both', start_time: null,       duration_min: 20, process_type: 'common', ot_scope: 'always', anchor: 'shift_end', offset_min: 20 };
-const P_OTBRK = { id: 'p-ot',    shift: 'day',  start_time: '17:30:00', duration_min: 30, process_type: 'common', ot_scope: 'ot',    anchor: 'clock' };
+/* 🔴 `name_th` ต้องมี — เทส ⑩ ล็อกว่าป้ายบนแถบต้องเป็นชื่อพักจริง ไม่ใช่ "undefined"/"พัก" */
+const P_LUNCH = { id: 'p-lunch', name_th: 'พักกลางวัน',  shift: 'day',  start_time: '11:50:00', duration_min: 50, process_type: 'common', ot_scope: 'always', anchor: 'clock' };
+const P_5S    = { id: 'p-5s',    name_th: '5ส. ท้ายกะ',  shift: 'both', start_time: null,       duration_min: 20, process_type: 'common', ot_scope: 'always', anchor: 'shift_end', offset_min: 20 };
+const P_OTBRK = { id: 'p-ot',    name_th: 'เบรค OT',     shift: 'day',  start_time: '17:30:00', duration_min: 30, process_type: 'common', ot_scope: 'ot',    anchor: 'clock' };
 const POLICIES = [P_LUNCH, P_5S, P_OTBRK];
+
+/** กฎรายไลน์ชุดมาตรฐานของเทส ⑩ — ไลน์แม่ GOR ตั้ง 5ส. 10 นาที (ลูกตกทอด · LINE C ไม่เกี่ยว) */
+const ROWS_5S = [{ policy_id: 'p-5s', line_name: 'GOR', duration_min: 10 }];
 
 /** กะเช้าปกติ 08:00–17:30 */
 const dayShift = (extra = {}) => ({
@@ -232,4 +238,65 @@ test('breakRuleFollowers: ลูก-หลานที่ได้ตามก�
   assert.deepEqual(fLunch.get('GOR'), ['GOR 1', 'GOR 1A', 'GOR 2']);   // ไม่มีลูกคนไหนตั้งเอง
   assert.equal(breakRuleFollowers(rows, LINES, 'p-ot').size, 0);
   assert.equal(breakRuleFollowers([], LINES, 'p-5s').size, 0);
+});
+
+/* ─── ⑩ แถบเงาบนบอร์ดไทม์ไลน์ 24 ชม. — `halfDayBreakBands` (20/10 รอบที่ 2) ──────────
+   ที่มาของเทสชุดนี้: บอร์ด 3 จอ (`/dashboard` · `/management` · `/heijunka-kanban`)
+   เคยหา "แถบนี้คือพักอะไร" ด้วยการ **จับคู่เวลาเริ่มกับ `break_policies.start_time` เอง**
+   ⇒ พัก `anchor='shift_end'` (5ส.) มี `start_time = null` ⇒ จับไม่ติด ⇒ tooltip เขียน
+      "undefined" และบนจอ TV พิมพ์ "🚫undefined" ลงบนแถบ · ไลน์ที่ตั้งเวลาพักเองยังเลื่อน
+      offset อีก = ยิ่งจับไม่ติด ⇒ ย้ายมาให้ `breakBandsIn` ติดป้ายมาให้ตั้งแต่ต้นทาง */
+test('halfDayBreakBands: ช่วงตรงกับ halfDayBreakIntervals เป๊ะ (ตัวเลข %A/%P ห้ามขยับ)', async () => {
+  const { halfDayBreakIntervals, halfDayBreakBands } = await import('../oee.js');
+  const half = { key: 'am', startMs: new Date('2026-10-20T08:00:00').getTime() };
+  for (const lineName of [null, 'GOR', 'GOR 1', 'GOR 1A', 'LINE C', 'ไม่มีไลน์นี้']) {
+    const lineRules = idx(ROWS_5S);
+    const iv = halfDayBreakIntervals({ policies: POLICIES, half, lineRules, lineName });
+    const bands = halfDayBreakBands({ policies: POLICIES, half, lineRules, lineName });
+    assert.deepEqual(bands.map(b => [b.s, b.e]), iv, `ช่วงไม่ตรงกันที่ไลน์ ${lineName}`);
+  }
+});
+
+test('halfDayBreakBands: ป้ายชื่อพัก — พักท้ายกะ (start_time = null) ต้องไม่เป็น undefined', async () => {
+  const { halfDayBreakBands, breakBandName, breakBandTitle } = await import('../oee.js');
+  const half = { key: 'am', startMs: new Date('2026-10-20T08:00:00').getTime() };
+  const bands = halfDayBreakBands({ policies: POLICIES, half });
+  const names = bands.map(breakBandName);
+  assert.equal(names.includes('undefined'), false, 'ชื่อพักหลุดเป็น undefined (บั๊กเดิมของบอร์ด)');
+  assert.ok(names.every(n => n && n !== 'พัก'), `ชื่อพักต้องมาจากนโยบายจริง: ${names.join(' | ')}`);
+  // ไลน์ที่ไม่ได้ตั้งอะไร = ห้ามมีท่อน "ตั้งเอง" ในป้าย
+  assert.equal(bands.some(b => breakBandTitle(b, 'LINE C').includes('ตั้งเอง')), false);
+});
+
+test('halfDayBreakBands: ไลน์ที่ตั้งเอง ต้องติดป้าย "ตั้งเอง N นาที (ค่ากลาง M)" · ไลน์อื่นไม่ติด', async () => {
+  const { halfDayBreakBands, breakBandTitle } = await import('../oee.js');
+  const half = { key: 'am', startMs: new Date('2026-10-20T08:00:00').getTime() };
+  const lineRules = idx(ROWS_5S);
+
+  const own = halfDayBreakBands({ policies: POLICIES, half, lineRules, lineName: 'GOR' })
+    .find(b => b.lineRuleMin !== null);
+  assert.ok(own, 'ไลน์ที่ตั้งเองต้องมี band ที่ lineRuleMin ไม่ใช่ null');
+  assert.equal(own.lineRuleMin, 10);
+  assert.equal(own.centralMin, 20);
+  const t = breakBandTitle(own, 'GOR');
+  assert.match(t, /GOR ตั้งเอง 10 นาที/);
+  assert.match(t, /ค่ากลาง 20 นาที/);
+
+  // 🔴 ไลน์ลูกที่ตกทอดจากแม่ ก็ต้องเห็นป้าย (ไม่งั้นคนนึกว่าจอเพี้ยนเพราะแถบไม่เท่าไลน์ข้างๆ)
+  const kid = halfDayBreakBands({ policies: POLICIES, half, lineRules, lineName: 'GOR 1A' })
+    .find(b => b.lineRuleMin !== null);
+  assert.ok(kid, 'ไลน์ลูกที่ตกทอดต้องติดป้ายด้วย');
+
+  // ไลน์ที่ไม่เกี่ยวข้อง = ไม่มี band ไหนติดป้าย
+  const other = halfDayBreakBands({ policies: POLICIES, half, lineRules, lineName: 'LINE C' });
+  assert.equal(other.every(b => b.lineRuleMin === null), true);
+});
+
+test('halfDayBreakBands: ไลน์ที่ตั้ง 0 นาที = ไม่มีแถบรายการนั้นเลย (ห้ามวาดแถบยาว 0)', async () => {
+  const { halfDayBreakBands, breakBandName } = await import('../oee.js');
+  const half = { key: 'am', startMs: new Date('2026-10-20T08:00:00').getTime() };
+  const zero = idx([{ policy_id: 'p-5s', line_name: 'GOR', duration_min: 0 }]);
+  const bands = halfDayBreakBands({ policies: POLICIES, half, lineRules: zero, lineName: 'GOR' });
+  assert.equal(bands.some(b => breakBandName(b).includes('5ส')), false, 'ตั้ง 0 แล้วยังวาดแถบ 5ส.');
+  assert.equal(bands.every(b => b.e > b.s), true, 'มีแถบที่ยาว 0 หรือติดลบหลุดออกมา');
 });
