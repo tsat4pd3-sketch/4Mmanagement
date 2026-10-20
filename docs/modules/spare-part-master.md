@@ -90,7 +90,7 @@
 
 ### 🛒 อะไหล่ติด Min → ใบขอซื้อ (PR) → รับของเข้าสต็อก (2026-10-14)
 แผง `<MtnPrBoard>` (`src/components/MtnPurchase.jsx`) เหนือคลังอะไหล่ — ลูปเดียวกับสโตร์ purchase part:
-ติด Min → 🛒 เปิด PR (ระบบรันเลข) → 🚚 สั่งแล้ว (PO) → 📥 รับของ = RPC `mtn_pr_receive` เข้าสต็อกผ่าน `mtn_stock_move` ในทรานแซกชันเดียว
+ติด Min → 🛒 ขอซื้อ → ⏳ แอดมินช่างกรอกเลข PR จาก SAP (20/10 · ระบบไม่ออกเลขเอง) → 🚚 สั่งแล้ว (PO) → 📥 รับของ = RPC `mtn_pr_receive` เข้าสต็อกผ่าน `mtn_stock_move` ในทรานแซกชันเดียว
 · สูตรติด Min/จำนวนเสนอ = `src/utils/mtnPurchase.js` (`isBelowMin`/`suggestReorderQty` — หักยอด PR ค้าง) · Min ว่าง/0 = ไม่ตรวจ
 · รายละเอียด/กฎ PR + GL → `docs/modules/mtn-work-order.md` §🛒 PR / GL / IO
 
