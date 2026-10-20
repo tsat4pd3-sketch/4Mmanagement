@@ -71,7 +71,8 @@ export default function LineOrderBoard({ lineName, family, date, lines, onSelect
   const view = useMemo(() => {
     if (!state.sessions?.length) return null;
     const f = boardFrame(date);
-    const breaks = f.halves.flatMap(h => halfDayBreakIntervals({ policies: state.breaks, half: h })).sort((a, b) => a[0] - b[0]);
+    // 🏭 `lineName` = ข้อยกเว้นเวลาพักรายไลน์ (ทะเบียนกลาง · 20/10) — บอร์ดนี้เป็นของไลน์เดียว
+    const breaks = f.halves.flatMap(h => halfDayBreakIntervals({ policies: state.breaks, half: h, lineName })).sort((a, b) => a[0] - b[0]);
     const cards = buildBoardCards(state.sessions, { ctByMat: state.ct, nameByMat: state.nm, imgByMat: state.img, nowMs });
     const linesByName = {}; (lines || []).forEach(l => { linesByName[l.name] = l; });
     const positioned = positionAllCards(cards, {

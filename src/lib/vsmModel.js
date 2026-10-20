@@ -49,7 +49,7 @@ export function median(arr) {
 }
 
 /** เวลาที่มีให้ผลิตต่อวัน (วินาที) = Σ ต่อกะ (เวลากะ − พักตามนโยบาย) */
-export function availableTimeSec({ sessions = [], breakPolicies = [], processType = null }) {
+export function availableTimeSec({ sessions = [], breakPolicies = [], processType = null, lineRules = null, lineName = null }) {
   const byShift = new Map();               // เอากะละ 1 ตัวแทน (ค่ากลางของ shift_min)
   sessions.forEach(s => {
     if (!s.shift) return;
@@ -60,7 +60,7 @@ export function availableTimeSec({ sessions = [], breakPolicies = [], processTyp
   let total = 0;
   byShift.forEach((mins, shift) => {
     const shiftMin = median(mins) || 0;
-    const brk = policyBreakForShift({ policies: breakPolicies, shift, shiftMin, processType });
+    const brk = policyBreakForShift({ policies: breakPolicies, shift, shiftMin, processType, lineRules, lineName });
     total += Math.max(0, shiftMin - brk) * 60;
   });
   return { atSec: total, shifts: byShift.size };
@@ -129,7 +129,7 @@ const pick = (over, auto, srcAuto) =>
  * @returns { name, line, ct, ttSec, setupSec, oeePct, shifts, atSec, lotSize, operators, ... }
  */
 export function processBox({ step, matNo, ctx, overrides = {} }) {
-  const { products, kanbanStds, lines, sessionsByLine, downtimesByLine, breakPolicies, ttSec } = ctx;
+  const { products, kanbanStds, lines, sessionsByLine, downtimesByLine, breakPolicies, lineRules, ttSec } = ctx;
   const line = step.line_name || null;
   const sess = (line && sessionsByLine[line]) || [];
   const dts = (line && downtimesByLine[line]) || [];
@@ -149,7 +149,7 @@ export function processBox({ step, matNo, ctx, overrides = {} }) {
   const setupAuto = num(step.setup_sec) ?? (setupMins.length ? median(setupMins) * 60 : null);
   const setup = pick(overrides.setup_sec, setupAuto, num(step.setup_sec) != null ? 'routing' : 'downtime');
 
-  const { atSec, shifts } = availableTimeSec({ sessions: sess, breakPolicies, processType: step.process_type });
+  const { atSec, shifts } = availableTimeSec({ sessions: sess, breakPolicies, processType: step.process_type, lineRules, lineName: step.line_name ?? null });
 
   const ks = (kanbanStds || []).find(k => k.mat_no === matNo);
   const lotAuto = num(step.lot_size) || num(ks?.lot_size) || null;   // LOT 0 = ยังไม่ตั้ง ไม่ใช่ค่าจริง
@@ -187,7 +187,7 @@ export function processBox({ step, matNo, ctx, overrides = {} }) {
 export function buildVsmModel(input) {
   const {
     fg, bomItems = [], products = [], partsMaster = [], routings = {},
-    kanbanStds = [], lines = [], sessions = [], downtimes = [], breakPolicies = [],
+    kanbanStds = [], lines = [], sessions = [], downtimes = [], breakPolicies = [], lineRules = null,
     stockByMat = {}, forecasts = [], shippingOrders = [],
     monthKey, workingDays, overrides = {}, deliveryRounds = [],
   } = input;
@@ -207,13 +207,13 @@ export function buildVsmModel(input) {
   if (!workingDays) W('error', 'ปฏิทินบริษัทยังไม่ได้ตั้งวันทำงานของเดือนนี้', 'no_working_days');
 
   const fgSess = sessionsByLine[fg.line_name] || [];
-  const { atSec: lineAt } = availableTimeSec({ sessions: fgSess, breakPolicies, processType: fg.process_type });
+  const { atSec: lineAt } = availableTimeSec({ sessions: fgSess, breakPolicies, processType: fg.process_type, lineRules, lineName: fg.line_name });
   const atSec = num(overrides.__at_sec) ?? lineAt;
   if (!atSec) W('error', `ไม่มีกะที่ปิดแล้วของไลน์ ${fg.line_name || '—'} ในช่วงที่เลือก — AT/TT/%OEE คำนวณไม่ได้`, 'no_sessions');
 
   const ttSec = atSec && demand.perDay ? round(atSec / demand.perDay, 1) : null;
 
-  const ctx = { products, kanbanStds, lines, sessionsByLine, downtimesByLine, breakPolicies, ttSec };
+  const ctx = { products, kanbanStds, lines, sessionsByLine, downtimesByLine, breakPolicies, lineRules, ttSec };
   const boxOf = (step, matNo) => processBox({ step, matNo, ctx, overrides: overrides[`${matNo}#${step.seq}`] || {} });
 
   // ── แตกโครงสาย ────────────────────────────────────────────────────────────

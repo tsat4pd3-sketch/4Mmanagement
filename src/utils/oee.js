@@ -34,6 +34,7 @@
 import { collapsePairShots } from './pairTotals.js';
 // §8 computeSessionOee ต้องรู้โหมดไลน์/จำนวนสถานีขนาน (source of truth = lineTypes.js · ไม่มี import วนกลับ)
 import { parallelUnitsOf, flowModeOf } from './lineTypes.js';
+import { applyBreakLineRules, breakLineRuleIndexSync } from './breakLineRules.js';   // ข้อยกเว้นเวลาพัก "รายไลน์" (เจ้าของกฎไล่สายแม่-ลูก)
 import { WORK_DAY_START_HOUR } from './workDate.js';   // ขอบวันทำงาน (ก่อน 08:00 = วันก่อนหน้า) — เจ้าของกฎ
 
 /* ═══ 6) ยอดผลิตของใบผลิต 1 ใบ ═══════════════════════════════════════════════════════
@@ -182,7 +183,7 @@ export function unionIv(intervals = []) {
  *  · จุดที่ต้องรู้ว่า "พักอยู่ช่วงไหนบ้าง" (เช่นตัด downtime ที่ทับพักออก) ให้เรียกตัวนี้ **ห้ามสร้างช่วงพักเองซ้ำ**
  *  ⚠️ union ช่วงที่ทับกัน: ชุดนโยบายปัจจุบันไม่มีคู่ไหนทับกัน (ผลลัพธ์เท่าเดิมเป๊ะ) แต่ถ้าวันหน้ามีคนตั้งทับ
  *     การบวกดิบๆ จะนับพักเกิน — union กันไว้ตั้งแต่ต้น */
-export function breakIntervalsIn({ policies = [], startMs, endMs, workDate, shift, processType = null, shiftEndMs = null }) {
+export function breakIntervalsIn({ policies = [], startMs, endMs, workDate, shift, processType = null, shiftEndMs = null, lineRules = null, lineName = null }) {
   if (!startMs || !endMs || endMs <= startMs || !workDate) return [];
   /* 🔚 `anchor = 'shift_end'` — พักที่ผูกกับ **ปลายกะ** ไม่ใช่เวลานาฬิกา (2026-10-20 · feedback หน้างาน)
      เหตุ: 5ส. ท้ายกะเป็นเรื่องเดียวกันแต่เวลาเลื่อนตามรูปแบบวัน (เลิก 17:30 / 20:00 / 17:00 วันหยุด /
@@ -220,8 +221,15 @@ export function breakIntervalsIn({ policies = [], startMs, endMs, workDate, shif
      (ควรต่างจากกะไม่ทำโอแค่ 30 นาที = เบรค OT แต่กลายเป็น 50)
      กติกา: กรอบนี้ครอบนโยบาย 'ot' อยู่แล้ว = กะนี้ทำโอ ⇒ ทิ้ง 'no_ot' ทั้งหมด
      — data-driven ล้วน ไม่ต้องรู้เวลาเลิกงานปกติของกะไหนเลย · แถวที่ไม่ตั้ง = 'always' = เหมือนเดิม */
+  /* 🔴 `isOt` ตัดสินจาก **ค่ากลาง** ก่อนทับรายไลน์ — ไลน์ที่ตั้งพักโอเป็น 0 แปลว่า
+        "ไลน์นี้ไม่พักรอบนั้น" **ไม่ใช่ "ไลน์นี้ไม่ได้ทำโอ"** · เอาค่าหลังทับไปตัดสินจะปลุก
+        นโยบาย `no_ot` กลับมา = หักพักซ้ำเงียบๆ (ดูหัวไฟล์ `utils/breakLineRules.js`) */
   const isOt = applicable.some(p => p.ot_scope === 'ot' && rangeOf(p));
-  const iv = applicable
+  /* 🏭 ข้อยกเว้น "ไลน์นี้พักกี่นาที" (`break_line_rules` · 20/10)
+     ไม่ส่ง `lineRules` = อ่าน**ทะเบียนกลาง** (`utils/breakLineRules.js` — เหตุผลอยู่ที่นั่น)
+     ⇒ จอไม่ต้องไล่ส่ง prop · ไม่รู้ไลน์ / ไลน์นั้นไม่ได้ตั้งอะไร / ทะเบียนยังไม่มา
+       ⇒ `applyBreakLineRules` คืน array เดิม = **พฤติกรรมเดิมเป๊ะ** */
+  const iv = applyBreakLineRules(applicable, lineRules ?? breakLineRuleIndexSync(), lineName)
     .filter(p => !(isOt && p.ot_scope === 'no_ot'))
     .map(rangeOf).filter(Boolean)
     .sort((a, b) => a[0] - b[0]);
@@ -239,8 +247,8 @@ export function overlapMinutesWith(sMs, eMs, intervals = []) {
   return t;
 }
 
-export function policyBreakOverlapMin({ policies = [], startMs, endMs, workDate, shift, processType = null, shiftEndMs = null }) {
-  return breakIntervalsIn({ policies, startMs, endMs, workDate, shift, processType, shiftEndMs })
+export function policyBreakOverlapMin({ policies = [], startMs, endMs, workDate, shift, processType = null, shiftEndMs = null, lineRules = null, lineName = null }) {
+  return breakIntervalsIn({ policies, startMs, endMs, workDate, shift, processType, shiftEndMs, lineRules, lineName })
     .reduce((s, [a, b]) => s + (b - a) / 60000, 0);
 }
 
@@ -250,14 +258,14 @@ export function policyBreakOverlapMin({ policies = [], startMs, endMs, workDate,
  *     ⇒ พัก 5ส. ไม่ทำโอ (17:10) กับพักโอ (17:30/19:40) ขึ้นพร้อมกัน = คิวการ์ดถูกดันเกินจริง
  *     ⇒ ผ่าน `breakIntervalsIn` ที่เดียว · กรอบ 12 ชม. ครอบช่วงโอ = ตีเป็นกะทำโอ (ทิ้ง `no_ot`)
  *  processType = null → เฉพาะนโยบาย common (จอที่ไม่รู้กระบวนการของไลน์ ห้ามเดานโยบายเฉพาะ) */
-export function halfDayBreakIntervals({ policies = [], half, processType = null }) {
+export function halfDayBreakIntervals({ policies = [], half, processType = null, lineRules = null, lineName = null }) {
   if (!half?.startMs) return [];
   const d = new Date(half.startMs);
   const p2 = (n) => String(n).padStart(2, '0');
   const workDate = `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
   return breakIntervalsIn({
     policies, startMs: half.startMs, endMs: half.startMs + 12 * 3600000, workDate,
-    shift: half.key === 'pm' ? 'night' : 'day', processType,
+    shift: half.key === 'pm' ? 'night' : 'day', processType, lineRules, lineName,
   });
 }
 
@@ -323,12 +331,12 @@ export function dtMinOutsideBreaks(d, intervals = [], nowMs = null) {
 
 // รูปแบบย่อสำหรับจอที่มีแค่ (กะ, นาทีกะ) — คิดจากเวลาเริ่มกะจริงถ้ามี ไม่งั้น 08:00/20:00
 export const SHIFT_START_MIN = { day: 8 * 60, night: 20 * 60 };
-export function policyBreakForShift({ policies = [], shift, shiftMin, workDate, startTime = null, processType = null }) {
+export function policyBreakForShift({ policies = [], shift, shiftMin, workDate, startTime = null, processType = null, lineRules = null, lineName = null }) {
   if (!shiftMin || !workDate) return 0;
   const hhmm = startTime ? String(startTime).slice(0, 5)
     : `${String(Math.floor((SHIFT_START_MIN[shift] ?? SHIFT_START_MIN.day) / 60)).padStart(2, '0')}:00`;
   const startMs = new Date(`${workDate}T${hhmm}:00`).getTime();
-  return policyBreakOverlapMin({ policies, startMs, endMs: startMs + Number(shiftMin) * 60000, workDate, shift, processType });
+  return policyBreakOverlapMin({ policies, startMs, endMs: startMs + Number(shiftMin) * 60000, workDate, shift, processType, lineRules, lineName });
 }
 
 
@@ -358,11 +366,12 @@ export function sessionWindow(session, { nowMs = null } = {}) {
 export function sessionDowntimeMin({
   session = null, downtimes = [], breakPolicies = [], processType = null,
   weightFn = null, nowMs = null, startMs = null, endMs = null, workDate = null, shift = null,
+  lineRules = null,
 } = {}) {
   const win = (startMs && endMs) ? { startMs, endMs, workDate: workDate || session?.work_date, shift: shift || session?.shift }
     : sessionWindow(session, { nowMs });
   const brkIv = (win && breakPolicies.length)
-    ? breakIntervalsIn({ policies: breakPolicies, startMs: win.startMs, endMs: win.endMs, workDate: win.workDate, shift: win.shift, processType })
+    ? breakIntervalsIn({ policies: breakPolicies, startMs: win.startMs, endMs: win.endMs, workDate: win.workDate, shift: win.shift, processType, lineName: session?.line_name ?? null, lineRules })
     : [];
   const w = weightFn || (() => 1);
   let planned = 0, unplanned = 0, plannedRaw = 0, unplannedRaw = 0, breakOverlapMin = 0;
@@ -389,13 +398,13 @@ export function sessionDowntimeMin({
  *  🔴 `opts.lines` = ทะเบียนไลน์ (`name`, `flow_mode`, `parallel_stations`) — **จอที่เอาผลไปถ่วง
  *     `wLoad` ต้องส่งเสมอ** ไม่งั้นไลน์เครื่องขนานได้นาทีรวมของทุกเครื่องมาหักจากเวลากะเดียว (§3.2)
  *     ไม่ส่ง = ไม่หารเลน (พฤติกรรมเดิมเป๊ะ สำหรับจอที่โชว์ "เครื่องหยุดกี่นาที" ล้วนๆ) */
-export function dtMinBySession(sessions = [], downtimes = [], breakPolicies = [], { lines = null } = {}) {
+export function dtMinBySession(sessions = [], downtimes = [], breakPolicies = [], { lines = null, lineRules = null } = {}) {
   const laneOf = lines ? parallelNBySession(lines) : null;
   const ivBy = {}, wBy = {};
   for (const s of sessions) {
     const win = sessionWindow(s);
     ivBy[s.id] = (win && breakPolicies.length)
-      ? breakIntervalsIn({ policies: breakPolicies, startMs: win.startMs, endMs: win.endMs, workDate: win.workDate, shift: win.shift })
+      ? breakIntervalsIn({ policies: breakPolicies, startMs: win.startMs, endMs: win.endMs, workDate: win.workDate, shift: win.shift, lineName: s?.line_name ?? null, lineRules })
       : [];
     if (laneOf) wBy[s.id] = laneWeightFn(laneOf(s));
   }
@@ -482,7 +491,7 @@ export function busyMinutes(orders = [], startMs, endMs) {
      ไม่ส่ง = ไม่หักพัก → กลับไปต่างจากค่าที่ stamp อีก (util คืน `noBreakPolicy: true` ให้จอรู้ตัว)
    ⚠️ netAvail ≤ 0 (เพิ่งเปิดกะแล้วยังอยู่ในประชุมแถว/พัก) = **ประเมินไม่ได้ → คืน null**
      ห้ามคืน A = 0 (กฎเดียวกับ noOutput/noCt — 0 แปลว่า "แย่มาก" ไม่ใช่ "ยังไม่รู้") */
-export function computeLiveOee({ session, orders = [], downtimes = [], ctMap = {}, ngQty = null, workDate, nowMs = Date.now(), parallelN = 1, parallelCap = 1, breakPolicies = [], processType = null, pairMap = null, ngForP = null }) {
+export function computeLiveOee({ session, orders = [], downtimes = [], ctMap = {}, ngQty = null, workDate, nowMs = Date.now(), parallelN = 1, parallelCap = 1, breakPolicies = [], processType = null, pairMap = null, ngForP = null, lineRules = null }) {
   if (!session?.start_time) return null;
   const wd = workDate || session.work_date;
   if (!wd) return null;
@@ -531,6 +540,7 @@ export function computeLiveOee({ session, orders = [], downtimes = [], ctMap = {
     ? breakIntervalsIn({
         policies: usablePolicies, startMs: opened, endMs: opened + elapsed * 60000,
         workDate: wd, shift: session.shift, processType, shiftEndMs: hardEndMs,
+        lineName: session.line_name ?? null, lineRules,
       })
     : [];
   const breakMin = brkIv.reduce((s, [a, b]) => s + (b - a) / 60000, 0);
@@ -1234,6 +1244,7 @@ export function computeSessionOee({
   kanbanStds = [],
   breakPolicies = [],
   processType = null,
+  lineRules = null,
   lineFlow = {},
   machineCount = 0,
   startTime = null,
@@ -1279,6 +1290,7 @@ export function computeSessionOee({
   const brkIvIn = (a, b) => breakIntervalsIn({
     policies: breakPolicies, startMs: a ? a.getTime() : 0, endMs: b ? b.getTime() : 0,
     workDate, shift: sessionShift, processType, shiftEndMs: shiftFrame?.endMs ?? null,
+    lineName: session?.line_name ?? null, lineRules,
   });
   const ivMin = (iv) => iv.reduce((sum, [a, b]) => sum + (b - a) / 60000, 0);
   const dtOverlapMin = (startMs, endMs, pred, logs, weightFn, breakIv = []) => {

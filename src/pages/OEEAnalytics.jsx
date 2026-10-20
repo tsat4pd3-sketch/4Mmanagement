@@ -86,7 +86,7 @@ function calcOEE(sessions, downtimes, defects, breakPols = [], lines = null) {
       ? new Date(`${shiftStartDate(s.work_date, String(s.start_time).slice(0, 5), s.shift)}T${String(s.start_time).slice(0, 5)}:00`).getTime() : null;
     const brkIv = (startMs && Number(s.shift_min) > 0 && breakPols.length)
       ? breakIntervalsIn({ policies: breakPols, startMs, endMs: startMs + Number(s.shift_min) * 60000,
-          workDate: s.work_date, shift: s.shift })
+          workDate: s.work_date, shift: s.shift, lineName: s.line_name })   // 🏭 ข้อยกเว้นเวลาพักรายไลน์ (ทะเบียนกลาง · 20/10)
       : [];
     const laneW = laneOf ? laneWeightFn(laneOf(s)) : () => 1;
     const plannedMin   = sessionDT.filter(d => d.dr_downtime_types?.category === 'planned').reduce((a, d) => a + dtMinOutsideBreaks(d, brkIv) * laneW(d), 0);

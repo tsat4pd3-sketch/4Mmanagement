@@ -21,6 +21,12 @@ import { effectiveSections } from './utils/sectionScope';
 import { buildOrgScope } from './utils/orgScope';
 import { attachCc } from './utils/ccScope';
 import { loadLinesRes } from './utils/useProductionLines';
+/* 🏭 ปลุก **ทะเบียนกลาง** ของข้อยกเว้นเวลาพักรายไลน์ (`break_line_rules` · 20/10)
+   ที่นี่เพราะจอ OEE บางจอคิวรี `break_policies` ตรงๆ ไม่ผ่าน `loadBreakPolicies()`
+   ⇒ ปลุกครั้งเดียวที่ระดับโมดูลของ App (แพทเทิร์นเดียวกับ `loadProcessTypes()` ใน DailyReport)
+   🔴 ไม่โหลด = ทุกไลน์ใช้ค่ากลางเหมือนวันนี้ (ไม่พัง) แต่ไลน์ที่ตั้ง 10 นาทีจะถูกหัก 20 เงียบๆ */
+import { primeBreakRuleIndex } from './utils/oeeMasters';
+primeBreakRuleIndex();
 import useIsMobile from './utils/useIsMobile';
 import ScrollHint from './components/ScrollHint';
 import MobileNavBar from './components/MobileNavBar';
