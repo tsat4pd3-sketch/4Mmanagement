@@ -3354,6 +3354,17 @@ test('🛡️ UI: fontSize บนจอต้องไม่ต่ำกว่�
       for (const m of ln.matchAll(/fontSize\s*[:=]\s*\{?\s*(\d+(?:\.\d+)?)\s*\}?/g)) {
         if (Number(m[1]) < 11) bad.push(`${rel}:${i + 1} → fontSize ${m[1]}`);
       }
+      /* 🕳️ รูของด่านนี้ (QC audit 20/10): รูปที่มี quote นำ **หลุดทั้งหมด** เพราะ regex ข้างบน
+         จับเฉพาะ "ตัวเลขดิบ" ⇒ เจอจริง `clamp(9px,…)` 3 จุด + `0.72em` 1 จุด (ซึ่งยังถูกคูณ
+         `zoom` ที่ผู้ใช้กด A− ลงได้ถึง 0.6 = ~5px บนจอ)
+         · `clamp()` — ค่า **min** คือขนาดจริงบนจอเล็ก จึงเป็นตัวที่ต้อง ≥ 11px
+         · `em`/`rem` ที่ < 1 — ขนาดจริงขึ้นกับแม่ (และ zoom) พิสูจน์ไม่ได้ว่า ≥ 11px ⇒ ห้ามใช้กับฟอนต์ */
+      for (const m of ln.matchAll(/fontSize\s*[:=]\s*['"`]clamp\(\s*(\d+(?:\.\d+)?)px/g)) {
+        if (Number(m[1]) < 11) bad.push(`${rel}:${i + 1} → clamp() min ${m[1]}px`);
+      }
+      for (const m of ln.matchAll(/fontSize\s*[:=]\s*['"`](0?\.\d+)(em|rem)\b/g)) {
+        bad.push(`${rel}:${i + 1} → fontSize ${m[1]}${m[2]} (พิสูจน์ไม่ได้ว่า ≥ 11px — ใช้ px/clamp แทน)`);
+      }
     });
   }
   assert.deepEqual(bad, [], `\n\n❌ ฟอนต์ต่ำกว่า 11px ${bad.length} จุด\n`
@@ -5723,6 +5734,25 @@ test('🛡️ carry-delete-restores-source — ลบใบยกยอดต้
     + '   ยอดค้างจะไม่โผล่ให้รับอีกเลย และไม่มีร่องรอยบนจอว่าหายไปไหน\n'
     + '   แก้ยังไง: ลบใบที่มี carry_over_from_session_id → update ต้นทาง (session+prod_no เดิม)\n'
     + '            จาก imported กลับเป็น carry_over ผ่าน checkWriteRows แล้วรีโหลดแบนเนอร์\n');
+});
+
+/* ── 🔤 PDF จาก jsPDF ต้องลงฟอนต์ไทยก่อนเขียนตัวอักษร (2026-10-20) ─────────────
+   Helvetica ของ jsPDF ไม่มี glyph ไทย ⇒ ชื่อจุดตรวจ/ชื่อคนออกมาเป็นอักขระขยะทั้งใบ
+   (เคสจริง: ใบ PM JIG FM-JIG-003 export จาก /pm — user: "แย่มาก") ·
+   ตัวลงฟอนต์มีตัวเดียว `src/lib/pdfThaiFont.js` (`registerThaiFont`) */
+test('🛡️ jspdf-needs-thai-font — ไฟล์ที่ new jsPDF ต้องเรียก registerThaiFont และห้ามตั้ง helvetica', () => {
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
+    const code = stripComments(readFileSync(file, 'utf8'));
+    if (!/new jsPDF\b/.test(code)) continue;
+    const rel = relative(ROOT, file);
+    if (!/registerThaiFont\(/.test(code)) bad.push(`${rel} — new jsPDF แต่ไม่เรียก registerThaiFont(doc)`);
+    if (/['"]helvetica['"]/i.test(code)) bad.push(`${rel} — ตั้งฟอนต์ 'helvetica' (ไม่มี glyph ไทย)`);
+  }
+  assert.deepEqual(bad, [],
+    '\n\n❌ PDF ภาษาไทยจะออกมาเป็นอักขระขยะ:\n' + bad.map(b => '   • ' + b).join('\n') + '\n'
+    + "   แก้ยังไง: const { registerThaiFont } = await import('../lib/pdfThaiFont'); registerThaiFont(doc)\n"
+    + "            แล้วใช้ฟอนต์ 'Sarabun' (รวมใน autoTable styles.font ด้วย)\n");
 });
 
 /* 🛡️ scope-layer-closed-screens — 4 จอที่ปิดรูชั้น ③ รอบ QC audit 20/10 ห้ามถอยกลับ

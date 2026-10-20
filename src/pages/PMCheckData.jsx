@@ -503,7 +503,7 @@ function NgRecheckPanel({ result, cp, onSaved, canRecord = false, deptWrite = nu
 }
 
 // ─── History Detail Modal ─────────────────────────────────────────────────────
-function HistoryModal({ inspection, checkpoints, jig, onClose, userId, userRole, deptWrite, canRecord = false }) {
+function HistoryModal({ inspection, checkpoints: cpsFromPage, jig, onClose, userId, userRole, deptWrite, canRecord = false }) {
   const [results, setResults] = useState([])
   const [approving, setApproving] = useState(false)
   const [exporting, setExporting] = useState(false)
@@ -514,6 +514,23 @@ function HistoryModal({ inspection, checkpoints, jig, onClose, userId, userRole,
   const fetchResults = () => supabaseDR.from('inspection_results').select('*').eq('inspection_id', inspection.id).then(({ data }) => setResults(data ?? []))
   useEffect(() => { fetchResults() }, [inspection.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  /* 🔴 จุดตรวจของ "ใบนี้" ต้องโหลดจากผลตรวจของใบเอง (20/10 · user: PDF PM JIG ออกมาไม่มีตารางเลย)
+     เดิมใช้ checkpoints ของหน้าแม่ = รายการของ "ทีมที่กำลังเปิดดูอยู่" — เปิดประวัติจากแท็บทีมอื่น
+     (ใบตรวจของ production แต่หน้าเปิดแท็บช่าง) ⇒ จับคู่ไม่ได้สักจุด ⇒ ใบพิมพ์/Excel ไม่มีตาราง + จอขึ้นแต่ id
+     ⇒ โหลดตาม checkpoint_id ที่ใบนี้บันทึกไว้จริง · ล้ม = ถอยไปใช้ของหน้าแม่ + บอกบนจอ */
+  const [ownCps, setOwnCps] = useState(null)
+  const cpIdsKey = results.map(r => r.checkpoint_id).filter(Boolean).sort().join(',')
+  useEffect(() => {
+    if (!cpIdsKey) return undefined
+    let alive = true
+    supabaseDR.from('jig_checkpoints').select('*').in('id', cpIdsKey.split(',')).order('sort_order').then(({ data, error }) => {
+      if (!alive) return
+      if (error) { toast.error('โหลดจุดตรวจของใบนี้ไม่สำเร็จ — ใช้รายการของหน้าที่เปิดอยู่แทน (อาจไม่ครบ)'); setOwnCps(null); return }
+      setOwnCps(data ?? [])
+    })
+    return () => { alive = false }
+  }, [cpIdsKey])
+  const checkpoints = ownCps && ownCps.length ? ownCps : cpsFromPage
   const cpMap = Object.fromEntries(checkpoints.map(c => [c.id, c]))
   /* 🔐 อนุมัติ/ตีกลับผลตรวจ = ตัดสินงานของทีมนั้น ⇒ ต้องเป็นทีมของเรา (ส่งมาจากหน้าแม่) */
   const canApprove = can('pm', 'approve', userRole) && (deptWrite?.ok !== false)
@@ -571,12 +588,17 @@ function HistoryModal({ inspection, checkpoints, jig, onClose, userId, userRole,
     }
     const inspector = { email: profMap[insp.inspector_id]?.full_name ?? 'Inspector', signature_data: await getSig(insp.inspector_id) }
     const approver = insp.approved_by ? { email: profMap[insp.approved_by]?.full_name ?? 'Approver', signature_data: await getSig(insp.approved_by) } : null
-    const exporter = { email: currentUserEmail ?? 'Exporter', signature_data: await getSig(userId) }
+    // ชื่อใต้ลายเซ็น = ชื่อจริง (profiles.full_name) ไม่ใช่อีเมล — เดิมช่อง APPROVED ขึ้น "tsat4pd3" (20/10)
+    const exporter = { email: profMap[userId]?.full_name ?? currentUserEmail ?? 'Exporter', signature_data: await getSig(userId) }
     const categories = await fetchCategories({ includeInactive: true })
+    // วิธีตรวจ (มอง/สัมผัส/วัด) → ป้ายในคอลัมน์ Checking ของใบพิมพ์ (เดิมช่องนี้ว่างทุกแถว · 20/10)
+    const methods = Object.fromEntries((await fetchCheckingMethods({ includeInactive: true })).map(m => [m.code, m.label || m.code]))
     // เลขฟอร์ม/Rev/Effective อ่านจาก Document Master กลาง (doc_control แก้ได้ที่ /doc-forms) · fallback ค่าเดิม
     const docForm = await getDocForm('pm_jig', { form_code: 'FM-JIG-003', rev: 'Rev.00', effective_date: '01/07/2020' })
     checkWriteRows(await supabaseDR.from('inspections').update({ exported_by: userId, exported_at: new Date().toISOString() }).eq('id', insp.id).select('id'), 'บันทึกว่า export แล้ว');
-    return { jig, inspection: insp, checkpoints, results: resultMap, inspector, approver, exporter, categories, docForm }
+    // 🔴 ใบที่มีผลตรวจแต่จับคู่จุดตรวจไม่ได้เลย = ใบพิมพ์ไม่มีตาราง — หยุดแล้วบอก ห้ามออกใบเปล่าเงียบๆ
+    if (results.length && !checkpoints.some(c => resultMap[c.id])) throw new Error('ยังโหลดจุดตรวจของใบนี้ไม่เสร็จ/ไม่พบ — รอสักครู่แล้วกด export อีกครั้ง')
+    return { jig, inspection: insp, checkpoints, results: resultMap, inspector, approver, exporter, categories, docForm, methods }
   }
 
   const handleExport = async (kind) => {
