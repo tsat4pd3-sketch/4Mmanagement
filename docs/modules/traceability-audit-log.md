@@ -41,6 +41,11 @@
   · **ไม่รวมโดยตั้งใจ:** ตารางที่ระบบลบ-สร้างใหม่ทั้งก้อนเป็นปกติ (`customer_forecasts` · `*_alerts` ·
   `child_demand_accumulator` · ตัวนับ MO) · actor = คนแก้ล่าสุด (ข้อจำกัด DR เดิม) · ทดสอบในธุรกรรมย้อนกลับ 06/10:
   ลบ 1 แถว → audit 1 แถว · **ตารางงานใหม่ฝั่ง DR ที่ client ลบได้ ต้องผูก `trg_audit_delete` ด้วย**
+- **🔍 ตารางคุณภาพ QA ผูก audit แล้ว 2026-10-20** — migration `20261020_qa_inspection_audit_main.sql` (Main · **apply แล้ว**)
+  ใบตรวจ/ผลรายจุด/รายชิ้น/action/จุดตรวจ/แผ่นแบบ/NCR/CAPA/SPC/FME → `fn_audit` · `qa_fme_obligations` → `fn_audit_manual_only` (edge เขียนถี่)
+  · ⭐ **คอลัมน์ "คนบันทึก" ใช้ default `auth.uid()` ฝั่ง DB แทนการไล่แก้โค้ดรายจุด** — ได้เฉพาะคอลัมน์ที่ "คนกด = คนในคอลัมน์" จริง
+    (`created_by_uid`/`recorded_by_uid`) · **ห้ามใส่กับคอลัมน์คนที่ถูกเลือกจาก picker** (inspector/approver/closer) · ฝั่ง DR ใช้ไม่ได้ (anon = null)
+  · ทดสอบด้วย uid จริงแล้ว (UPDATE ผลตรวจ → audit 1 แถว actor มีชื่อ · INSERT → `recorded_by_uid` = uid ผู้กด) · ⚠️ `apply_migration` ผ่าน MCP ค้าง 60 วิ 2 ครั้ง — รันผ่าน `execute_sql` ทีละก้อนพร้อม `lock_timeout` แทน
 - **⏳ retention 6 เดือน (2026-08-19 · คำสั่ง user):** cron `purge-audit-log` ทั้ง 2 project ลบแถวเก่ากว่า 6 เดือนทุกวัน 17:30 UTC (00:30 ไทย) — migration `20260819_audit_log_retention.sql` (**apply แล้วทั้ง Main + DR**)
   - **เหตุผล:** วัดอัตราโตจริงแล้ว **audit_log เป็นตัวโตเร็วที่สุดของทั้ง 2 project** (DR 197 KB/วัน = 42% ของการโตทั้งหมด · Main 89 KB/วัน ≈ 43%) เพราะเก็บ `old_data` + `new_data` เป็น jsonb **ทั้งแถว** (1,100-1,400 bytes/แถว)
   - **⭐ retention ทำให้ audit_log "หยุดโต" ไม่ใช่แค่ "โตช้าลง"** (ตกผลึกกับ user 2026-08-19) — มันเข้าสมดุลที่ `อัตรา/วัน × 180 วัน` แล้วนิ่ง (ลบเท่าที่เพิ่ม): 20/วัน = ~5 MB · 50/วัน = ~13 MB · 141/วัน = ~35 MB → **เลิกเป็นปัญหาถาวรไม่ว่าใช้หนักแค่ไหน**

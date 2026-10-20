@@ -114,6 +114,23 @@ export const AUDIT_TABLE_LABELS = {
   kanban_calc_settings:    '🎴 ตั้งค่าคำนวณคัมบัง',
   dt_alert_config:         '🔔 เกณฑ์เตือน Downtime',
   energy_monthly:          '⚡ พลังงานรายเดือน',
+  // ── คุณภาพ QA (Main) — 20/10 ──
+  qa_parts:                '🔍 พาร์ทตรวจ QA',
+  qa_part_drawings:        '🔍 แผ่นแบบของพาร์ท',
+  qa_inspection_items:     '🔍 จุดตรวจ QA',
+  qa_inspection_sheets:    '📝 ใบตรวจ QA',
+  qa_inspection_results:   '📝 ผลตรวจรายจุด',
+  qa_inspection_pieces:    '📝 ผลตรวจรายชิ้น',
+  qa_inspection_actions:   '📝 การแก้ไขในใบตรวจ',
+  qa_ncr:                  '🚨 NCR',
+  qa_capa:                 '🛠️ CAPA / 8D',
+  qa_customer_claims:      '📣 เคลมลูกค้า',
+  qa_characteristics:      '📈 SPC — ค่าที่ควบคุม',
+  qa_measurements:         '📈 SPC — ค่าที่วัด',
+  qa_instruments:          '📏 เครื่องมือวัด',
+  qa_fme_config:           '⏰ ตั้งค่า FME',
+  qa_fme_part_rules:       '⏰ กฎ FME รายพาร์ท',
+  qa_fme_obligations:      '⏰ คิวตรวจ FME',
 };
 
 /* ฟิลด์ → ชื่อไทย (ใช้ตอนโชว์ ค่าเก่า → ค่าใหม่) */
@@ -145,6 +162,9 @@ export const AUDIT_FIELD_LABELS = {
   image_url: 'รูป', is_enabled: 'เปิดใช้งาน', chat_id: 'ห้องแชท', inapp_roles: 'แจ้งในแอป (role)',
   work_date: 'วันที่งาน', shift: 'กะ', employee_id: 'พนักงาน', emp_name: 'พนักงาน',
   to_line_id: 'ไลน์ปลายทาง', to_line_name: 'ไลน์ปลายทาง', created_by_name: 'ผู้บันทึก',
+  judgement: 'ผลตัดสิน', values_json: 'ค่าที่วัด', qty_checked: 'จำนวนตรวจ', qty_ng: 'จำนวน NG',
+  result: 'ผล', disposition: 'การจัดการ', status: 'สถานะ', usl: 'USL', lsl: 'LSL', nominal: 'ค่ากลาง',
+  balloon_no: 'เลขบอลลูน', recorded_by: 'ผู้บันทึก', cancel_reason: 'เหตุผลยกเลิก',
 };
 
 /** ป้ายตาราง — ไม่รู้จักคืนชื่อดิบ (ไม่ซ่อน ไม่พัง) */
@@ -159,5 +179,7 @@ export const AUDIT_SKIP_FIELDS = new Set(['updated_at', 'updated_by_name', 'crea
 export const rowLabel = (r) => {
   const d = r?.new_data || r?.old_data || {};
   return d.name || d.name_th || d.full_name || d.emp_name || d.machine_no || d.mat_no || d.characteristic
-      || d.label || d.code || d.permission_key || d.cost_center || '(ไม่ระบุชื่อ)';
+      || d.label || d.code || d.permission_key || d.cost_center
+      || d.ncr_no || d.capa_no || d.claim_no || d.part_no || d.title
+      || (d.piece_no != null ? `ชิ้นที่ ${d.piece_no}` : null) || '(ไม่ระบุชื่อ)';
 };

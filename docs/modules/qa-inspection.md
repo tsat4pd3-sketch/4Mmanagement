@@ -17,7 +17,7 @@
 > · FME (19/10): กดงานในคิว = เปิด**ใบที่ผูกไว้ / รอบแรกที่ยังไม่ปิด / รอบใหม่ต่อท้าย** (เดิมรอบ 1 เสมอ → รอบกลาง/ท้ายเปิดใบที่ปิดแล้ว) · คิวกรองขอบเขตที่ server + เพดาน 300 พร้อมเตือน · โหลดล้ม = เขียนบนจอ
 > · ฟอร์มพาร์ท `/qa-setup` มีช่อง **MAT (SAP)** (`ProductSelect`) = กุญแจผูกงานเรียกตรวจ — **1 MAT = 1 พาร์ท** (เช็คก่อนบันทึก · index ฝั่ง DB ยังไม่ unique)
 > · ใบตรวจ (`QaCheckSheet`) ใช้ `qaViewScope` ด้วย — ฝ่าย QA เห็นพาร์ททุกไลน์
-> · ค้าง: ตาราง `qa_inspection_*` ไม่มี audit trigger
+> · 🕓 **audit (20/10):** ตาราง QA ทั้งชุด (ใบตรวจ/ผลรายจุด/รายชิ้น/action/จุดตรวจ/แผ่นแบบ/NCR/CAPA/SPC/FME) ผูก `fn_audit` แล้ว — ดูที่ `/audit-log` · `qa_fme_obligations` ใช้ `fn_audit_manual_only` (edge `qa-fme-scan` เขียนถี่ ไม่ log) · คอลัมน์คนบันทึก (`created_by_uid`/`recorded_by_uid`) มี default `auth.uid()` ฝั่ง DB · **คอลัมน์ "คนที่ถูกเลือก" (`inspector_uid`/`action_by_uid`/`disposition_by_uid`/`closed_by_uid`) ห้ามใส่ default** (คนกด ≠ คนที่ถูกเลือก) · migration `20261020_qa_inspection_audit_main.sql` (apply แล้ว)
 
 > 📷 **สแกนบาร์โค้ด MAT เลือกพาร์ท** (19/10) — ปุ่มข้างช่องพาร์ทในใบตรวจ + deep link `/qa?tab=sheet&part=<mat|part_no>` (จาก `/scan`) · ตัวตัดสิน `findQaPartByScan()` → 📄 `qr-equipment-scan.md` §ทางเข้ากลาง
 
