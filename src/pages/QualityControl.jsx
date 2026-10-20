@@ -997,6 +997,8 @@ function NCRTab({ lineObjs, canRecord, canManage, onOpenCapa, partOpts = [] }) {
   useEffect(() => { load(); }, [load]);
 
   const createNCR = async () => {
+    /* ด่านชั้น 2 — ซ่อนปุ่มไม่ใช่ด่าน (โมดัลเปิดค้างตอนสิทธิ์เปลี่ยน / ยิงตรง) · NCR = บันทึกคุณภาพมีเลขที่ */
+    if (!canRecord) { toast.error('เปิด/แก้ NCR ต้องมีสิทธิ์ qa:record'); return; }
     const f = createModal;
     if (!f.defect_desc.trim()) { toast.error('กรอกรายละเอียดของเสีย'); return; }
     /* ✏️ แก้หัวใบที่เปิดผิด (19/10 · หน้างานแจ้ง "เปิดผิดแก้ไม่ได้") — ฟอร์มเดียวกับตอนเปิด ไม่ออกเลขใหม่ */
@@ -1017,14 +1019,14 @@ function NCRTab({ lineObjs, canRecord, canManage, onOpenCapa, partOpts = [] }) {
     }
     const ncr_no = await nextDocNo('qa_ncr', 'ncr_no', 'NCR');
     if (!ncr_no) { toast.error('ออกเลขที่ NCR ไม่สำเร็จ — ยังไม่ได้บันทึก ลองใหม่อีกครั้ง'); return; }
-    const { error } = await supabase.from('qa_ncr').insert({
+    const ins = await supabase.from('qa_ncr').insert({
       ncr_no, report_date: f.report_date || getWorkDate(),
       line_name: f.line_name || null, part_no: f.part_no.trim() || null, part_name: f.part_name.trim() || null,
       source: f.source, severity: f.severity, defect_desc: f.defect_desc.trim(),
       qty_found: parseInt(f.qty_found) || 0, qty_ng: parseInt(f.qty_ng) || 0,
       created_by: fullName || null,
-    });
-    if (error) { toast.error(`สร้าง NCR ไม่สำเร็จ: ${error.message}`); return; }
+    }).select('id');
+    if (!checkWriteRows(ins, `สร้าง ${ncr_no}`)) return;
     notifyEvent({
       event: 'qa_ncr_opened', type: 'error', ref_table: 'qa_ncr',
       line_name: f.line_name || null, actor: fullName,
@@ -1042,6 +1044,7 @@ function NCRTab({ lineObjs, canRecord, canManage, onOpenCapa, partOpts = [] }) {
 
   /* ❌ ยกเลิก NCR ที่เปิดผิด/ใบซ้ำ — ไม่ลบ (เลขที่ต้องสอบย้อนได้) · เหตุผลบังคับ (DB check) · ผูก 8D แล้ว = ห้าม */
   const cancelNCR = async (n) => {
+    if (!canManage) { toast.error('ยกเลิกใบ NCR ต้องมีสิทธิ์ qa:manage'); return; }
     const { count, error: eC } = await supabase.from('qa_capa').select('id', { count: 'exact', head: true }).eq('ncr_id', n.id);
     if (eC || count == null) { toast.error('ตรวจใบ 8D ที่ผูกอยู่ไม่สำเร็จ — ยังยกเลิกไม่ได้'); return; }
     if (count > 0) { toast.error(`${n.ncr_no} มีใบ 8D ผูกอยู่ ${count} ใบ — ยกเลิกไม่ได้ (ปิดผ่านขั้นตอนปกติแทน)`); return; }
@@ -1057,8 +1060,9 @@ function NCRTab({ lineObjs, canRecord, canManage, onOpenCapa, partOpts = [] }) {
   };
 
   const updateNCR = async (id, patch, msg) => {
-    const { error } = await supabase.from('qa_ncr').update(patch).eq('id', id);
-    if (error) { toast.error(error.message); return false; }
+    if (!canRecord) { toast.error('แก้ใบ NCR ต้องมีสิทธิ์ qa:record'); return false; }
+    // นับแถวที่เขียนจริง (กฎเขียน DB ข้อ 2) — RLS ปฏิเสธ UPDATE = 0 แถวไม่มี error
+    if (!checkWriteRows(await supabase.from('qa_ncr').update(patch).eq('id', id).select('id'), msg || 'บันทึกใบ NCR')) return false;
     toast.success(msg);
     await load();
     const { data } = await supabase.from('qa_ncr').select('*').eq('id', id).single();

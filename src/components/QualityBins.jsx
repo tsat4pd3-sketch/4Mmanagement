@@ -18,6 +18,7 @@ import SearchInput from './SearchInput';
 import { ALL } from '../utils/filterLabels';
 import useTimeRange from '../utils/useTimeRange';
 import LineSelect from './LineSelect';
+import { checkWriteRows } from '../utils/dbWrite';
 import ProductSelect from './ProductSelect';
 import PersonSelect from './PersonSelect';
 import useColumnHistory from '../utils/useColumnHistory'; // 📜 ค่าที่เคยบันทึกใน quality_bin_records — ทะเบียนไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
@@ -257,6 +258,9 @@ export default function QualityBins() {
   );
 
   const save = async () => {
+    /* ด่านชั้น 2 — ซ่อนปุ่มไม่ใช่ด่าน (สิทธิ์เปลี่ยนระหว่างเปิดจอ / โมดัลเปิดค้าง / ยิงตรง)
+       ถังเหลือง-แดง = บันทึกคุณภาพที่มีอายุเอกสาร ⇒ คนที่ไม่มี scrap:record ห้ามเขียน */
+    if (!canRecord) { toast.error('บัญชีนี้ไม่มีสิทธิ์บันทึกของเสีย (scrap:record)'); return; }
     const isY = bin === 'yellow';
     if (!form.work_date) { toast.error('กรอกวันที่ลงถัง'); return; }
     if (!numOrNull(form.qty)) { toast.error('กรอกจำนวนชิ้นงาน'); return; }
@@ -342,16 +346,17 @@ export default function QualityBins() {
   };
 
   const remove = async (r) => {
+    if (!canManage) { toast.error('ลบรายการของเสียต้องมีสิทธิ์ scrap:manage'); return; }
     if (!window.confirm(`ลบรายการ ${r.part_name || r.mat_no} (${r.qty} ชิ้น) ?`)) return;
     // soft delete — ใบเก่าต้องยังสืบย้อนได้ (บันทึกคุณภาพ ห้ามลบทิ้งจริง)
-    const { error } = await supabaseDR.from('quality_bin_records')
-      .update({ is_active: false }).eq('id', r.id);
-    if (error) { toast.error(error.message); return; }
+    // นับแถวที่เขียนจริง (กฎเขียน DB ข้อ 2) — 0 แถวแล้วขึ้น "ลบแล้ว" = จอโกหก แถวยังอยู่
+    if (!checkWriteRows(await supabaseDR.from('quality_bin_records').update({ is_active: false }).eq('id', r.id).select('id'), 'ลบรายการ')) return;
     toast.success('ลบแล้ว'); load();
   };
 
   /** ซ่อมแล้ว NG → ย้ายลงถังแดง (ตามหมายเหตุท้ายฟอร์มเหลือง) */
   const toRed = async (r) => {
+    if (!canRecord) { toast.error('บัญชีนี้ไม่มีสิทธิ์บันทึกของเสีย (scrap:record)'); return; }
     /* จำนวนที่ย้าย: ซ่อมแล้ว NG มาก่อน · ถ้า QA ชี้ "ทำลาย" ตรงๆ โดยไม่ผ่านการซ่อม ใช้จำนวนทั้งใบ
        (WI §5.4 — ทำลายเป็น 1 ใน 3 ทางที่ QA เลือกได้ ไม่ได้บังคับให้ซ่อมก่อน) */
     const qty = (Number(r.qty_ng) || 0) || (r.qa_decision === 'scrap' ? (Number(r.qty) || 0) : 0);

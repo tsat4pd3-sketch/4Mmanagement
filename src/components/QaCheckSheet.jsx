@@ -21,8 +21,7 @@ import { loadProductionLines } from '../utils/useProductionLines';
 import { toast } from './Toast';
 import { UserContext } from '../App';
 import useIsMobile from '../utils/useIsMobile';
-import { getLineFamilyNames } from '../utils/lineHierarchy';
-import { inSectionScope } from '../utils/sectionScope';
+import { qaViewScope } from '../utils/qaViewScope';
 import { nextDocNo } from '../utils/qaDocNo';
 import CalloutPin from './CalloutPin';
 import PointZoom from './inspect/PointZoom';
@@ -138,13 +137,11 @@ export default function QaCheckSheet({ canRecord }) {
   useEffect(() => {
     loadProductionLines().then(d => setAllLines(d || []));   // cache กลาง (25/09)
   }, []);
+  // 👁 ตัวกลางเดียวกับทั้งหน้า /qa (utils/qaViewScope) — ส่วนงานที่ไม่มีไลน์ผลิต (QA) = ทั้งโรงงาน
+  //    เดิมเขียนเอง ⇒ ฝ่าย QA ที่ขอบเขต "QA" เห็นแค่พาร์ทที่ไม่ผูกไลน์ (audit 19/10)
   const scopedLineNames = useMemo(() => {
-    if (role === 'leader' && lineId) {
-      const my = allLines.find(l => String(l.id) === String(lineId));
-      return my ? getLineFamilyNames(allLines, my.name) : [];
-    }
-    if (sections && sections.length) return allLines.filter(l => inSectionScope(sections, l.section)).map(l => l.name);
-    return null; // ไม่จำกัด
+    const v = qaViewScope(allLines, { role, lineId, sections });
+    return v.names ? [...v.names] : null; // null = ไม่จำกัด
   }, [role, lineId, sections, allLines]);
 
   useEffect(() => {
@@ -621,11 +618,26 @@ export default function QaCheckSheet({ canRecord }) {
       )}
 
       {/* คิว "ฝ่ายผลิตเรียกตรวจ" — กดแล้วตั้งพาร์ท/วัน/กะ/ช่วงตรวจให้ตรงกับรุ่นที่ถูกเรียก */}
-      <QaFmeQueue scopedLineNames={scopedLineNames} onOpen={(ob) => {
+      <QaFmeQueue scopedLineNames={scopedLineNames} onOpen={async (ob) => {
+        /* 🔴 เลือกรอบให้ถูก (audit 19/10) — เดิมตั้งรอบ 1 เสมอ ⇒ คิวรอบกลาง/ท้ายเปิดใบรอบ 1 ที่ "ยอมรับ/ปิดแล้ว"
+           จากชิ้นแรก → บันทึกไม่ได้ + คิวไม่ถูกปิด เตือนซ้ำไม่จบ
+           ผูกใบไว้แล้ว = เปิดใบนั้น · ยังไม่ผูก = รอบแรกที่ยังไม่ปิด · ปิดหมด = รอบใหม่ต่อท้าย */
+        if (!scopedParts.some(p => p.id === ob.part_id)) {
+          toast.error('เปิดใบตรวจไม่ได้ — พาร์ทของงานนี้ถูกปิดใช้งานหรืออยู่นอกขอบเขตของคุณ (ตรวจที่ /qa-setup)');
+          return;
+        }
+        const { data: shs, error: eSh } = await supabase.from('qa_inspection_sheets').select('id, round_no, status')
+          .eq('part_id', ob.part_id).eq('work_date', ob.work_date).eq('shift', ob.shift).order('round_no');
+        if (eSh) { toast.error(`อ่านใบตรวจของงานนี้ไม่สำเร็จ: ${eSh.message}`); return; }
+        const linked = ob.sheet_id && (shs || []).find(x => x.id === ob.sheet_id);
+        const open = (shs || []).find(x => x.status !== 'done');
+        const nextRound = linked ? linked.round_no
+          : open ? open.round_no
+            : Math.min(20, ((shs || []).reduce((m, x) => Math.max(m, x.round_no || 0), 0)) + 1);
         setPartId(ob.part_id);
         setWorkDate(ob.work_date);
         setShift(ob.shift);
-        setRoundNo(1);
+        setRoundNo(nextRound);
         setSheetStage(FME_SHEET_STAGE[ob.stage] || null);
         setFmeObId(ob.id);
         fmeKeyRef.current = `${ob.part_id}|${ob.work_date}|${ob.shift}`;

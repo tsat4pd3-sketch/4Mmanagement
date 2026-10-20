@@ -284,6 +284,19 @@ export default function AddUser() {
   };
 
   const empById = useMemo(() => Object.fromEntries(emps.map(e => [e.id, e])), [emps]);
+  /* 🩺 แถบ "งานค้างของทะเบียนบัญชี" — feedback user 19/10: *"กว่าจะเจอหน้าจอหลัก พวกแจ้งเตือนเต็มไปหมด"*
+     5 แผงเดิมกางค้างไว้ทั้งหมด (29+6+15+1+10 รายการ) ⇒ ต้องเลื่อนยาวกว่าจะถึงตารางผู้ใช้
+     🔴 **พับได้ แต่ห้ามหาย** — จำนวนทุกกองยังอยู่บนจอเป็นชิปเสมอ กดชิปแล้วกางกองนั้นตรงนั้น
+        (กฎความซื่อสัตย์ของจอ: ข้อมูลไม่ครบ/มีงานค้าง ต้องเห็น ห้ามซ่อนเงียบ) */
+  const [openWl, setOpenWl] = useState(null);   // คีย์กองที่กางอยู่ · null = พับหมด
+  const wlCounts = useMemo(() => ({
+    mismatch: users.filter(u => identityDiff(u, u.employee_id ? empById[u.employee_id] : null).length).length,
+    fallback: users.filter(u => identityFallbacks(u, u.employee_id ? empById[u.employee_id] : null).length).length,
+    dual:     users.filter(u => dualMeaningInfo(u, u.employee_id ? empById[u.employee_id] : null).length).length,
+    unknown:  unlinkedTriage(users, emps).queue.length,
+    ghost:    users.filter(scopeIneffective).length,
+    review:   users.filter(needsScopeReview).length,
+  }), [users, emps, empById]);
   /* ผลค้นพนักงาน — ถ้าคำค้นไม่ตรงใคร **ห้ามคืนลิสต์ว่าง** (ลิสต์ว่าง = คนอ่านสรุปว่า "ไม่มีคนนี้"
      แล้วไปสร้างซ้ำ — เกิดจริง 23/09) · คืนทุกคนแทน แล้วขึ้นป้ายบอกว่าไม่พบคำค้น */
   const empMatches = useMemo(() => {
@@ -733,6 +746,34 @@ export default function AddUser() {
         </div>
       )}
 
+      {/* 🩺 แถบสรุปงานค้าง — คลิกชิปเพื่อกาง/พับกองนั้น (ค่าเริ่มต้น = พับหมด ตารางผู้ใช้จึงอยู่บนสุด) */}
+      {(() => {
+        const CHIPS = [
+          ['mismatch', '⚠️ ตัวตนไม่ตรงฐานพนักงาน', '#f59e0b'],
+          ['fallback', '🧩 ฐานพนักงานยังไม่ได้กรอก', '#f59e0b'],
+          ['dual',     '🧭 ทำงานคนละตำแหน่งกับที่บรรจุ', 'var(--accent)'],
+          ['unknown',  '🪪 ยังไม่รู้ว่าเป็นใคร', '#f59e0b'],
+          ['ghost',    '🚩 ตั้งขอบเขตแล้วไม่มีผล', '#ef4444'],
+          ['review',   '🔭 ยังไม่ได้ทบทวนขอบเขต', '#f59e0b'],
+        ].filter(([k]) => wlCounts[k] > 0);
+        if (!CHIPS.length) return null;
+        return (
+          <div className="card" style={{ marginBottom: 12, padding: '8px 10px', display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            <b style={{ fontSize: 12, color: 'var(--text2)' }}>🩺 งานค้างของทะเบียนบัญชี</b>
+            {CHIPS.map(([k, label, color]) => (
+              <button key={k} type="button" onClick={() => setOpenWl(o => (o === k ? null : k))}
+                aria-expanded={openWl === k}
+                style={{ width: 'auto', fontSize: 11.5, padding: '3px 10px', cursor: 'pointer', borderRadius: 999,
+                  border: `1px solid ${openWl === k ? color : 'var(--border2)'}`,
+                  background: openWl === k ? 'var(--accent-dim)' : 'var(--bg3)', color: 'var(--text2)' }}>
+                {label} <b style={{ color }}>{wlCounts[k]}</b> {openWl === k ? '▴' : '▾'}
+              </button>
+            ))}
+            <span style={{ fontSize: 11, color: 'var(--muted)' }}>— กดเพื่อดูรายชื่อ + ปุ่มแก้</span>
+          </div>
+        );
+      })()}
+
       {/* ── worklist: บัญชีที่ตัวตนไม่ตรงกับฐานพนักงาน / ยังไม่ระบุประเภท ──────────
           ⚠️ ห้ามซ่อนเงียบ — ข้อมูลไม่ตรงทำให้ "มองไม่เห็นกะตัวเอง" (Checkin กรองด้วย team ของบัญชี)
              เคสจริง: หัวหน้า 2 คนทีมสลับกัน เพราะ admin เดาตอนสร้างบัญชี */}
@@ -747,10 +788,12 @@ export default function AddUser() {
         const tri = unlinkedTriage(users, emps);
         const unset = tri.queue;
         if (!mism.length && !tri.queue.length && !tri.personUnlinked.length) return null;
+        // กางเฉพาะกองที่กดชิปไว้ (จำนวนทุกกองยังอยู่บนแถบสรุปด้านบนเสมอ)
+        if (!['mismatch', 'fallback', 'dual', 'unknown'].includes(openWl)) return null;
         return (
           <div className="card" style={{ marginBottom: 12, padding: 12, borderLeft: '3px solid #f59e0b' }}>
-            {mism.length > 0 && (
-              <div style={{ marginBottom: unset.length ? 10 : 0 }}>
+            {mism.length > 0 && openWl === 'mismatch' && (
+              <div>
                 <div style={{ fontSize: 13, fontWeight: 700, color: '#f59e0b', marginBottom: 6 }}>
                   ⚠️ ตัวตนไม่ตรงกับฐานข้อมูลพนักงาน · {mism.length} บัญชี
                 </div>
@@ -789,9 +832,9 @@ export default function AddUser() {
               const fb = users
                 .map(u => ({ u, miss: identityFallbacks(u, u.employee_id ? empById[u.employee_id] : null) }))
                 .filter(x => x.miss.length);
-              if (!fb.length) return null;
+              if (!fb.length || openWl !== 'fallback') return null;
               return (
-                <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: unset.length ? 10 : 0 }}>
+                <div style={{ fontSize: 12, color: 'var(--text2)' }}>
                   <b style={{ color: '#f59e0b' }}>ฐานพนักงานยังไม่ได้กรอก · {fb.length} บัญชี</b>
                   <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3, lineHeight: 1.5 }}>
                     {fb.map(({ u, miss }) => `${u.full_name} (${miss.map(m => m.label).join('/')})`).join(' · ')}
@@ -809,9 +852,9 @@ export default function AddUser() {
               const dual = users
                 .map(u => ({ u, info: dualMeaningInfo(u, u.employee_id ? empById[u.employee_id] : null) }))
                 .filter(x => x.info.length);
-              if (!dual.length) return null;
+              if (!dual.length || openWl !== 'dual') return null;
               return (
-                <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: unset.length ? 10 : 0 }}>
+                <div style={{ fontSize: 12, color: 'var(--text2)' }}>
                   <b style={{ color: 'var(--accent)' }}>🧭 ทำงานคนละตำแหน่งกับที่บริษัทบรรจุ · {dual.length} บัญชี</b>
                   <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3, lineHeight: 1.6 }}>
                     <b>ไม่ใช่ข้อผิดพลาด</b> — 2 ช่องนี้ตอบคนละคำถาม และระบบ<b>ตัดสินสิทธิ์จากตำแหน่งที่ปฏิบัติงาน</b>
@@ -840,7 +883,7 @@ export default function AddUser() {
                 ⇒ แอดมินต้องไปไล่หาเองใน 122 แถว ⇒ ไม่มีใครทำ ค้างมาตลอด
                 🔴 วัดแล้ว: จับคู่ชื่ออัตโนมัติแก้ไม่ได้ (ชื่อตรง 1/18) — ปลายทางมี 3 ทาง
                    ⇒ จอต้องเสนอ "ทางไปต่อ" รายใบ ไม่ใช่ปุ่ม "ผูกให้หมด" */}
-            {tri.queue.length > 0 && (
+            {tri.queue.length > 0 && openWl === 'unknown' && (
               <div style={{ fontSize: 12, color: 'var(--text2)' }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: '#f59e0b', marginBottom: 4 }}>
                   🪪 ยังไม่รู้ว่าบัญชีนี้เป็นใคร · {tri.queue.length} บัญชี
@@ -932,8 +975,9 @@ export default function AddUser() {
            ปล่อยเงียบ = จอบอกว่าถูกจำกัด แต่ความจริงไม่ถูกจำกัด (แย่กว่าไม่ตั้งเลย) */
         const ghost = users.filter(scopeIneffective);
         if (!review.length && !ghost.length) return null;
+        if (openWl !== 'ghost' && openWl !== 'review') return null;
         return (<>
-          {ghost.length > 0 && (
+          {ghost.length > 0 && openWl === 'ghost' && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
               background: 'rgba(239,68,68,0.10)', border: '1px solid rgba(239,68,68,0.35)',
               borderRadius: 10, padding: '9px 12px', marginBottom: 10, fontSize: 12, color: 'var(--text2)' }}>
@@ -948,7 +992,7 @@ export default function AddUser() {
               </span>
             </div>
           )}
-          {review.length > 0 && (
+          {review.length > 0 && openWl === 'review' && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
             background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.35)',
             borderRadius: 10, padding: '9px 12px', marginBottom: 10, fontSize: 12, color: 'var(--text2)' }}>

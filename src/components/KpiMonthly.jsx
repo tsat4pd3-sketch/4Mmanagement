@@ -899,6 +899,9 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
   /* คัดลอกชุด KPI จากปีอื่นมาปีนี้ — ลงข้อมูลย้อนหลังโดยไม่ต้องพิมพ์ชื่อใหม่ (ต้นตอของการพิมพ์ผิด)
      ⚠️ คัดลอกเฉพาะ "นิยาม" ไม่คัดลอกค่ารายเดือน (ค่าคือข้อเท็จจริงของปีนั้น ห้ามลอก) */
   const copyFromYear = async () => {
+    /* 🔐 ด่านชั้นที่ 3 ซ้ำตอนกดจริง — สร้างนิยามใหม่ "ในขอบเขตที่เปิดอยู่" (deep-link `?scope=` เปิดตรงได้)
+       เดิมมีแต่ removeDef ที่เช็ค ⇒ คัดลอกชุดปีก่อนเข้าไปในขอบเขตของหน่วยอื่นได้ทั้งชุด */
+    if (!scopeWrite.ok) { toast.info(writeBlockText(scopeWrite, { what: 'KPI ของขอบเขตนี้', unit: scopeOwner })); return; }
     const raw = window.prompt(`คัดลอกชุด KPI จากปีไหนมาปี ${year + 543}?\n(ใส่ปี พ.ศ. เช่น ${year + 542})`, String(year + 542));
     if (raw == null) return;
     const be = Number(String(raw).trim());
@@ -977,6 +980,15 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
 
   /* 🗄️ เปิดคืนนิยามที่ปิดใช้งาน — นับแถว (RLS ปฏิเสธ UPDATE = 0 แถวไม่มี error · กฎ DB ข้อ 2) · ค่าเดิมผูก id เดิมกลับมาเอง */
   const restoreDef = async (d2, { silentConfirm = false } = {}) => {
+    /* 🔐 ด่านชั้นที่ 3 — เปิดคืนนิยาม = เขียน KPI ของขอบเขตนั้น (เดิมไม่เช็คเลย)
+       🔴 ตัดสินด้วย "ขอบเขตของแถวนั้น" ไม่ใช่ขอบเขตที่เปิดอยู่ — restoreDef ถูกเรียกจาก saveDef
+          ด้วยแถวแฝด (twin) ที่อาจเป็นของขอบเขตอื่น (ผ่าน canonicalScope แล้ว) */
+    const rowOwner = (() => {
+      const sc = canonicalScope(org, scopeOfDef(d2));
+      return (!orgReady || isPlant(sc)) ? '' : (org.sectionOf?.(sc.kind, sc.value) || '');
+    })();
+    const rowWrite = canWriteUnit({ role, section: homeSection, sections: userSections, allUnits, respCostCenters, scopeIdx }, rowOwner, { unknownTarget: 'block' });
+    if (!rowWrite.ok) { toast.info(writeBlockText(rowWrite, { what: `KPI "${defName(d2)}"`, unit: rowOwner })); return false; }
     if (!silentConfirm && !window.confirm(`เปิดคืน KPI "${defName(d2)}"?\nค่ารายเดือน/แผน/หมายเหตุที่เคยกรอกไว้จะกลับมาด้วย`)) return false;
     const ok = checkWriteRows(await supabase.from('kpi_definitions').update({ is_active: true }).eq('id', d2.id).select('id'),
       `เปิดคืน KPI "${defName(d2)}"`, { zeroMsg: 'ไม่มีสิทธิ์ kpi:manage หรือแถวถูกลบไปแล้ว' });

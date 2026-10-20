@@ -82,18 +82,27 @@ import { checkWrite, checkWriteRows } from '../utils/dbWrite';
 import { uploadOpts } from '../utils/storageUpload';
 import { acceptImageFile } from '../utils/acceptImageFile';
 import { DeleteButton } from '../components/IconButton';
-import { MtnPrPanel, MtnGlMaster, MtnPrSeqMaster } from '../components/MtnPurchase';
+import { MtnPrPanel, MtnGlMaster } from '../components/MtnPurchase';
 import MachineRepairHistory from '../components/MachineRepairHistory';
 import { prPlacement, assignedTechsOf, joinTechs } from '../utils/mtnPurchase';
 /* ── helpers ─────────────────────────────────────────────── */
 // แปลง URL โลโก้ (รวมโลโก้ที่ admin อัปโหลดใน /doc-forms) เป็น dataURL เพื่อฝังในหน้าพิมพ์
 // (โลโก้ต่าง origin เช่น Supabase Storage จะพิมพ์ไม่ติดถ้าใช้ <img src=url> ตรงๆ)
+/* 🖼️ โลโก้ในตัวแอป — ไฟล์เล็กกว่า 4 KB ถูก Vite ฝังเป็น `data:` URL อยู่แล้ว (TS logo.png = 2.4 KB)
+   🔴 เดิมเช็คแค่ `https?:` แล้วต่อ `location.origin` หน้า `data:` = URL พัง ⇒ ใบพิมพ์ไม่มีโลโก้ (19/10 · user แจ้ง)
+   ⇒ ใช้ URL ตามที่ bundler ให้มา: absolute (http/data/blob) ใช้ตรง · path สัมพัทธ์ค่อยต่อ origin */
+const absAssetUrl = (u) => (/^(https?:|data:|blob:)/i.test(u) ? u : location.origin + u);
+const BUILTIN_LOGO = absAssetUrl(tsLogo);
 async function logoDataUrl(overrideUrl) {
-  const url = overrideUrl || (/^https?:/.test(tsLogo) ? tsLogo : location.origin + tsLogo);
+  if (!overrideUrl) return BUILTIN_LOGO;
   try {
-    const res = await fetch(url); const blob = await res.blob();
-    return await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(blob); });
-  } catch { return /^https?:/.test(tsLogo) ? tsLogo : location.origin + tsLogo; }
+    const res = await fetch(overrideUrl);
+    // ไฟล์ที่ admin อัปโหลดหาย/ไม่ใช่รูป (404 คืน JSON/HTML) = ถอยไปโลโก้ในตัวแอป ห้ามฝังของเสียลงใบ
+    if (!res.ok) return BUILTIN_LOGO;
+    const blob = await res.blob();
+    if (!/^image\//.test(blob.type)) return BUILTIN_LOGO;
+    return await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.onerror = () => r(BUILTIN_LOGO); fr.readAsDataURL(blob); });
+  } catch { return BUILTIN_LOGO; }
 }
 
 // บีบรูป/อัปโหลดรูป MO ย้ายไป `src/utils/mtnImage.js` แล้ว (ของกลาง — จุดแนบรูปใหม่ต้องใช้ตัวนั้น)
@@ -1524,7 +1533,7 @@ function printMoReport(o, dparts = [], logo0, dlabor = [], cmt = NO_CMT, costErr
   const esc = (s) => String(s ?? '').replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]));
   const L = (k, v) => `<div class="f"><span class="fk">${k}</span> <span class="fv">${esc(v)}</span></div>`;
   const statusTh = statusMetaOf(o).label?.replace(/^[^฀-๿]+/, '').trim() || o.status;
-  const logo = logo0 || (/^https?:/.test(tsLogo) ? tsLogo : location.origin + tsLogo);
+  const logo = logo0 || BUILTIN_LOGO;
   // ป้ายหัวช่องเซ็น 4 ช่อง — ไล่เฉดเทาอ่อน→เข้ม ตามฟอร์มกระดาษ (ช่องสุดท้ายพื้นเข้ม ตัวอักษรขาว)
   const SG_BG = ['#d9d9d9', '#b7b7b7', '#999999', '#666666'];
   const SG_W = ['26.4%', '23.8%', '25.5%', '24.3%'];   // ความกว้าง 4 ช่องตามฟอร์มจริง (ไม่ใช่ 25% เป๊ะ)
@@ -1627,7 +1636,7 @@ function printMoReportMtn(o, dparts = [], logo0, dlabor = [], cmt = NO_CMT, cost
   const esc = (s) => String(s ?? '').replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]));
   const money = (v) => (v == null ? '' : Number(v).toLocaleString('en-US'));
   const dept = deptNameOf(o.mtn_dept || deptForItem(o.item_type));
-  const logo = logo0 || (/^https?:/.test(tsLogo) ? tsLogo : location.origin + tsLogo);
+  const logo = logo0 || BUILTIN_LOGO;
   /* 🛒 เลข PR (14/10): PR เดียว → ช่อง PR.No. ข้างบน · หลายใบ → ช่องรายละเอียด (กฎที่ prPlacement) */
   const prPl = prPlacement(o, o._prs || []);
   const done = o.status === 'closed' || o.current_step >= 3;
@@ -2842,9 +2851,15 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
     const { error } = await supabaseDR.from('downtime_logs').update(patch).eq('id', order.source_downtime_id);
     if (error) { toast.error('บันทึกใบ MO แล้ว แต่ส่งเวลากลับไปที่รายการเครื่องหยุดไม่สำเร็จ — ' + error.message); return; }
     if (fillCallAt) {
+      /* 🔴 ต้องเติม `call_mtn_team` ด้วย (แก้ 2026-10-19 · คำสั่ง user "แยกแผนกช่างให้ชัด")
+         เดิมเติมแค่ `call_mtn`+เวลา ⇒ แถวนั้น **ไม่ระบุทีม** (วัด ต.ค.: 80 จาก 175 ครั้ง = 46%)
+         แล้ว `DowntimeSiren` ตีความ "ไม่ระบุ = ดังทุกห้อง" ⇒ **ไซเรนดังข้ามทีมทั้งโรงงาน**
+         ใบ MO รู้ทีมอยู่แล้ว (`mtn_dept`) ⇒ ส่งต่อไปเลย ไม่ต้องให้ใครมากรอกซ้ำ
+         ⚠️ ไม่รู้ทีม = ปล่อยว่างตามเดิม (ดังทุกห้อง ดีกว่าเงียบผิดทีม) ห้ามเดา */
+      const callTeam = teamKeyOf(order?.mtn_dept) || null;
       // 0 แถว = มีเวลาเรียกช่างอยู่แล้ว (ตั้งใจไม่ทับ) — แต่ error ต้องบอก (QC 05/10 · เดิมไม่อ่านผล)
       checkWrite(await supabaseDR.from('downtime_logs')
-        .update({ call_mtn: true, call_mtn_at: fillCallAt })
+        .update({ call_mtn: true, call_mtn_at: fillCallAt, ...(callTeam ? { call_mtn_team: callTeam } : {}) })
         .eq('id', order.source_downtime_id).is('call_mtn_at', null), 'บันทึกใบ MO แล้ว แต่ส่งเวลาเรียกช่างกลับไปที่รายการเครื่องหยุด');
     }
   };
@@ -3846,14 +3861,13 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
   return (
     <div>
       <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
-        {[['tech', '👷 ช่าง (ทุกทีม)'], ['labor', '💰 ค่าแรงมาตรฐาน'], ['mo', '🔢 เลขรัน MO'], ['gl', '💳 รหัส GL'], ['prseq', '🛒 เลขรัน PR'], ['prob', '🛑 ลักษณะปัญหา'], ['item', '⚙️ ชนิดอุปกรณ์'], ['repair', '🔧 ประเภทงานซ่อม'], ['audit', '📜 ประวัติการแก้ไข']].map(([k, t]) =>
+        {[['tech', '👷 ช่าง (ทุกทีม)'], ['labor', '💰 ค่าแรงมาตรฐาน'], ['mo', '🔢 เลขรัน MO'], ['gl', '💳 รหัส GL'], ['prob', '🛑 ลักษณะปัญหา'], ['item', '⚙️ ชนิดอุปกรณ์'], ['repair', '🔧 ประเภทงานซ่อม'], ['audit', '📜 ประวัติการแก้ไข']].map(([k, t]) =>
           <button key={k} onClick={() => setSub(k)} style={{ ...(sub === k ? btnPri : btnGhost), padding: '7px 14px', fontSize: 12.5 }}>{t}</button>)}
       </div>
       {sub === 'tech' && TechList()}
       {sub === 'labor' && LaborList()}
       {sub === 'mo' && MoSeqList()}
       {sub === 'gl' && <MtnGlMaster canEdit={can('mtn_repair', 'manage_master', role)} fullName={fullName} />}
-      {sub === 'prseq' && <MtnPrSeqMaster canEdit={can('mtn_repair', 'manage_master', role)} />}
       {sub === 'audit' && <MasterAuditLog teams={mtnTeams.length ? mtnTeams : DEFAULT_TEAMS} />}
       {sub === 'prob' && <SimpleList table="mtn_problem_types" items={problemTypes} addLabel="เพิ่มปัญหา" shared
         fields={[{ k: 'group_name', ph: 'กลุ่มใหญ่ (เช่น ระบบลม)', w: 190 }, { k: 'characteristic', ph: 'หัวข้อย่อย', w: 220 }, { k: 'detail', ph: 'คำอธิบาย', w: 260 }]} />}
