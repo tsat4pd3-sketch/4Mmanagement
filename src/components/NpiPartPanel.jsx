@@ -18,8 +18,14 @@ import Segmented from './Segmented';
 import { allOf } from '../utils/filterLabels';
 import useColumnHistory from '../utils/useColumnHistory';
 import { DeleteButton } from './IconButton';
+import { npiBlock } from '../utils/npiScope';
 
-export default function NpiPartPanel({ part, project, template, phases, delivs, drawings, tooling, peSets, qaParts, canEdit, canApprove, fullName, today, onChanged }) {
+export default function NpiPartPanel({ part, project, template, phases, delivs, drawings, tooling, peSets, qaParts, canEdit, canApprove, fullName, today, onChanged, partWriteOf }) {
+  /* 🔐 ชั้นที่ 3 — ทุกแถวในแผงนี้เป็นของ `part` ตัวเดียว ⇒ ถามกฎครั้งเดียว (src/utils/npiScope.js)
+     ไม่ได้รับ `partWriteOf` / พาร์ทไม่ระบุไลน์ = ตัดสินไม่ได้ ⇒ ไม่บล็อก (คงพฤติกรรมเดิม) */
+  const scopeMsg = npiBlock(partWriteOf, part?.line_name);
+  const mayEdit = canEdit && !scopeMsg;
+  const blocked = () => { if (scopeMsg) { toast.info(scopeMsg); return true; } return false; };
   const [phaseModal, setPhaseModal] = useState(null);
   const [dvModal, setDvModal] = useState(null);
   // 📜 ชื่อผู้รับผิดชอบที่เคยบันทึกไว้ (Main) — คนนอก profiles (เช่น ฝั่งลูกค้า) ยังเลือกซ้ำได้ (2026-09-07)
@@ -44,6 +50,7 @@ export default function NpiPartPanel({ part, project, template, phases, delivs, 
 
   /* ── sync จากแม่แบบ: เติมเฉพาะเฟส/รายการที่ยังไม่มี ── */
   const syncTemplate = async () => {
+    if (blocked()) return;
     if (!template) return toast.error('ไม่พบแม่แบบของโปรเจค');
     const { phaseRows, delivRows } = buildPartRows({ partId: part.id, templatePhases: template.phases, templateDelivs: template.delivs,
       existingPhases: phases, existingDelivs: delivs, sopDate: project.sop_date, kickoffDate: project.kickoff_date });
@@ -59,6 +66,7 @@ export default function NpiPartPanel({ part, project, template, phases, delivs, 
 
   /* ── เฟส ── */
   const savePhase = async () => {
+    if (blocked()) return;
     const m = phaseModal;
     setSaving(true);
     const { error } = await supabase.from('npi_part_phases').update({
@@ -72,6 +80,7 @@ export default function NpiPartPanel({ part, project, template, phases, delivs, 
 
   /* ── เอกสารส่งมอบ ── */
   const patchDeliv = async (d, patch) => {
+    if (blocked()) return;
     const { error } = await supabase.from('npi_deliverables').update(patch).eq('id', d.id);
     if (error) return toast.error(`บันทึกไม่สำเร็จ: ${error.message}`);
     onChanged();
@@ -86,6 +95,7 @@ export default function NpiPartPanel({ part, project, template, phases, delivs, 
     patchDeliv(d, patch);
   };
   const saveDeliv = async () => {
+    if (blocked()) return;
     const m = dvModal;
     if (!m.label?.trim()) return toast.error('กรอกชื่อรายการ');
     setSaving(true);
@@ -102,6 +112,7 @@ export default function NpiPartPanel({ part, project, template, phases, delivs, 
     toast.success('บันทึกแล้ว'); setDvModal(null); onChanged();
   };
   const delDeliv = async (d) => {
+    if (blocked()) return;
     if (!window.confirm(`ลบรายการ "${d.label}" ?`)) return;
     const { error } = await supabase.from('npi_deliverables').delete().eq('id', d.id);
     if (error) return toast.error(error.message);
@@ -109,6 +120,7 @@ export default function NpiPartPanel({ part, project, template, phases, delivs, 
     onChanged();
   };
   const attach = async (d, file) => {
+    if (blocked()) return;    // กันอัปโหลดไฟล์ทิ้งไว้ทั้งที่เขียนแถวไม่ได้
     const url = await uploadNpiFile(`parts/${part.id}/deliv`, file);
     if (!url) return;
     if (d.file_url) removeNpiFile(d.file_url);
@@ -117,6 +129,7 @@ export default function NpiPartPanel({ part, project, template, phases, delivs, 
 
   /* ── PPAP / PSW ── */
   const savePpap = async () => {
+    if (blocked()) return;
     const m = ppapModal;
     if ((m.ppap_status === 'approved' || m.ppap_status === 'interim' || m.ppap_status === 'rejected') && !canApprove) return toast.error('บันทึกผลจากลูกค้าต้องมีสิทธิ์ npi:approve');
     setSaving(true);
@@ -163,9 +176,12 @@ export default function NpiPartPanel({ part, project, template, phases, delivs, 
         </div>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           <button style={ghost} onClick={() => printPpapChecklist({ project, part, delivs, phases, today }) || toast.error('เบราว์เซอร์บล็อกหน้าต่างพิมพ์')}>🖨️ PPAP checklist</button>
-          {canEdit && <button style={ghost} onClick={() => setPpapModal({ ppap_status: part.ppap_status, ppap_level: part.ppap_level, psw_no: part.psw_no || '', psw_submitted_at: part.psw_submitted_at || '', psw_approved_at: part.psw_approved_at || '', status: part.status })}>📦 สถานะ PPAP/PSW</button>}
-          {canEdit && <button style={ghost} disabled={saving} onClick={syncTemplate} title="เติมเฟส/รายการที่แม่แบบมีแต่พาร์ทนี้ยังไม่มี (ไม่แตะของเดิม)">🔄 sync แม่แบบ</button>}
-          {canEdit && <button style={btn()} onClick={() => setDvModal({ label: '', phase_code: roll.current?.phase_code || phases[0]?.phase_code || '', doc_kind: 'other', required: true, ppap_element: false, seq: 900 })}>+ รายการ</button>}
+          {mayEdit && <button style={ghost} onClick={() => setPpapModal({ ppap_status: part.ppap_status, ppap_level: part.ppap_level, psw_no: part.psw_no || '', psw_submitted_at: part.psw_submitted_at || '', psw_approved_at: part.psw_approved_at || '', status: part.status })}>📦 สถานะ PPAP/PSW</button>}
+          {mayEdit && <button style={ghost} disabled={saving} onClick={syncTemplate} title="เติมเฟส/รายการที่แม่แบบมีแต่พาร์ทนี้ยังไม่มี (ไม่แตะของเดิม)">🔄 sync แม่แบบ</button>}
+          {mayEdit && <button style={btn()} onClick={() => setDvModal({ label: '', phase_code: roll.current?.phase_code || phases[0]?.phase_code || '', doc_kind: 'other', required: true, ppap_element: false, seq: 900 })}>+ รายการ</button>}
+          {canEdit && scopeMsg && (
+            <span style={{ fontSize: 11.5, color: 'var(--muted)', alignSelf: 'center', maxWidth: 420, lineHeight: 1.45 }}>🔒 {scopeMsg}</span>
+          )}
         </div>
       </div>
 
@@ -194,8 +210,8 @@ export default function NpiPartPanel({ part, project, template, phases, delivs, 
             {[...phases].sort((a, b) => a.seq - b.seq).map(ph => {
               const r = phaseRollup(ph, delivs, today);
               return (
-                <div key={ph.id} onClick={() => canEdit && setPhaseModal({ ...ph, plan_start: ph.plan_start || '', plan_end: ph.plan_end || '', actual_start: ph.actual_start || '', actual_end: ph.actual_end || '' })}
-                  style={{ ...card, padding: '8px 10px', cursor: canEdit ? 'pointer' : 'default', borderTop: `4px solid ${(ph.status === 'completed') ? '#22c55e' : r.light === 'red' ? '#ef4444' : r.light === 'amber' ? '#f59e0b' : 'var(--border)'}` }}>
+                <div key={ph.id} onClick={() => mayEdit && setPhaseModal({ ...ph, plan_start: ph.plan_start || '', plan_end: ph.plan_end || '', actual_start: ph.actual_start || '', actual_end: ph.actual_end || '' })}
+                  style={{ ...card, padding: '8px 10px', cursor: mayEdit ? 'pointer' : 'default', borderTop: `4px solid ${(ph.status === 'completed') ? '#22c55e' : r.light === 'red' ? '#ef4444' : r.light === 'amber' ? '#f59e0b' : 'var(--border)'}` }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4 }}>
                     <span style={{ fontWeight: 800, fontSize: 12.5 }}>{ph.label}</span><LightDot light={r.light} />
                   </div>
@@ -259,13 +275,13 @@ export default function NpiPartPanel({ part, project, template, phases, delivs, 
                               {d.required === false && <span style={{ fontSize: 11, color: 'var(--muted)' }}>(ไม่บังคับ)</span>}
                             </td>
                             <td style={{ ...tdSt, minWidth: 130 }}>
-                              {canEdit ? (
+                              {mayEdit ? (
                                 <MetaSelect value={d.status} onChange={v => setStatus(d, v)} meta={DELIV_STATUS} style={{ padding: '3px 6px', fontSize: 11.5, borderColor: DELIV_STATUS[d.status]?.color }} />
                               ) : <Pill label={DELIV_STATUS[d.status]?.label} color={DELIV_STATUS[d.status]?.color} />}
                               {d.status === 'approved' && d.approved_by && <div style={{ fontSize: 11, color: '#22c55e' }}>✓ {d.approved_by}</div>}
                             </td>
-                            <td style={tdSt}>{canEdit ? <input type="date" value={d.due_date || ''} onChange={e => patchDeliv(d, { due_date: e.target.value || null })} style={{ ...inp, width: 128, padding: '3px 6px', fontSize: 11.5, color: lt === 'red' ? '#ef4444' : undefined }} /> : (d.due_date ? fmtDate(d.due_date) : '—')}</td>
-                            <td style={tdSt}>{canEdit ? <input type="date" value={d.done_at || ''} onChange={e => patchDeliv(d, { done_at: e.target.value || null })} style={{ ...inp, width: 128, padding: '3px 6px', fontSize: 11.5 }} /> : (d.done_at ? fmtDate(d.done_at) : '—')}</td>
+                            <td style={tdSt}>{mayEdit ? <input type="date" value={d.due_date || ''} onChange={e => patchDeliv(d, { due_date: e.target.value || null })} style={{ ...inp, width: 128, padding: '3px 6px', fontSize: 11.5, color: lt === 'red' ? '#ef4444' : undefined }} /> : (d.due_date ? fmtDate(d.due_date) : '—')}</td>
+                            <td style={tdSt}>{mayEdit ? <input type="date" value={d.done_at || ''} onChange={e => patchDeliv(d, { done_at: e.target.value || null })} style={{ ...inp, width: 128, padding: '3px 6px', fontSize: 11.5 }} /> : (d.done_at ? fmtDate(d.done_at) : '—')}</td>
                             <td style={tdSt}>
                               <div>{d.owner_name || <span style={{ color: 'var(--muted)' }}>—</span>}</div>
                               {d.owner_role && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{OWNER_ROLE[d.owner_role] || d.owner_role}</div>}
@@ -274,12 +290,12 @@ export default function NpiPartPanel({ part, project, template, phases, delivs, 
                               <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                                 {refLink(d)}
                                 {d.file_url && <a href={d.file_url} target="_blank" rel="noreferrer" style={{ color: '#4d9fff', fontSize: 11.5 }}>📎 {fileName(d.file_url).slice(0, 22)}</a>}
-                                {canEdit && <FilePick onFile={f => attach(d, f)} label={d.file_url ? '↻' : '📎'} />}
+                                {mayEdit && <FilePick onFile={f => attach(d, f)} label={d.file_url ? '↻' : '📎'} />}
                               </div>
                             </td>
                             <td style={{ ...tdSt, maxWidth: 220, fontSize: 11.5 }}>{d.note || ''}</td>
                             <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>
-                              {canEdit && <><button className="tbtn" style={{ ...ghost, padding: '2px 7px' }} onClick={() => setDvModal({ ...d, due_date: d.due_date || '', done_at: d.done_at || '' })}>✏️</button> <DeleteButton onClick={() => delDeliv(d)} title="ลบ" /></>}
+                              {mayEdit && <><button className="tbtn" style={{ ...ghost, padding: '2px 7px' }} onClick={() => setDvModal({ ...d, due_date: d.due_date || '', done_at: d.done_at || '' })}>✏️</button> <DeleteButton onClick={() => delDeliv(d)} title="ลบ" /></>}
                             </td>
                           </tr>
                         );

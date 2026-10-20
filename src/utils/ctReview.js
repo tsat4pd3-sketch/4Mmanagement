@@ -64,6 +64,7 @@ export function observedCtOfOrder(order, { session, downtimes = [], breakPolicie
   const brkIv = breakIntervalsIn({
     policies: breakPolicies, startMs, endMs,
     workDate: session?.work_date, shift: session?.shift || 'day', processType,
+    shiftEndMs: frame?.endMs ?? null,   // 🔚 กรอบนี้คือช่วงของ "ใบผลิต" ไม่ใช่ทั้งกะ (พักท้ายกะต้องยึดปลายกะ)
   });
 
   // นาที downtime ที่ทับช่วงใบนี้ — ตัดส่วนที่ทับเวลาพักออกก่อน ไม่งั้นหักซ้ำ (กฎเหล็ก oee.js §3.1)

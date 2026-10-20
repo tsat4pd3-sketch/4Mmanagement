@@ -146,14 +146,11 @@ export default function Register() {
     /* ชิดซ้าย-บนเหมือนหน้าอื่น (เดิมจัดกลางจอ ⇒ ชื่อหน้าเริ่มคนละตำแหน่ง — UI-STANDARD §1) */
     <Page width="narrow">
       <PageHeader title="เพิ่มพนักงานใหม่" icon="📸" sub="บันทึกข้อมูลพนักงานเข้าระบบ" />
-      <div style={{
-        width: '100%', maxWidth: 440,
-        background: 'var(--card)',
-        border: '1px solid var(--border2)',
-        borderRadius: 16,
-        padding: '36px 32px',
-        boxShadow: 'var(--shadow-lg)',
-      }}>
+      {/* 🔴 การ์ดต้องเต็มคอลัมน์ของ <Page width="narrow"> (640px) — ห้ามตั้ง maxWidth ซ้อนอีกชั้น (14/10)
+          เดิมตรึง 440px ไว้ตั้งแต่ยุคที่หน้านี้จัดกลางจอ ⇒ พอเปลี่ยนเป็นชิดซ้าย กลายเป็น
+          ฟอร์มผอมเกาะขอบซ้าย เหลือที่ว่างขวาค่อนจอ · ช่อง 2 คอลัมน์แคบจนป้ายล้น
+          · กล่อง = `.card` ของกลาง (เงา `--shadow-sm` · UI §6.20 — `--shadow-lg` เป็นของ modal) */}
+      <div className="card" style={{ width: '100%', padding: '28px 26px' }}>
 
 
         <form onSubmit={handleRegister} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>

@@ -23,7 +23,11 @@ import { fetchAllRows } from '../utils/fetchAllRows';
 import { loadBreakPolicies, loadCtProducts, loadCtKanban, fetchOeeTargets } from '../utils/oeeMasters';
 import { valueInk, statusOf } from '../utils/statusTone';
 import { useLatestRequest } from '../utils/useLatestRequest';
-import { polyArea, centroid, labelAnchor } from '../utils/regionGeom';
+import { polyArea, centroid, labelAnchor, bboxOf } from '../utils/regionGeom';
+import MapPillars3D, { map3dTransform } from '../components/MapPillars3D';
+import useMapOrbit from '../components/useMapOrbit';
+import { urlParam, urlPick, urlBool, urlNum } from '../utils/urlInit';
+import { pillarHeight, pillarLegend, liftLabels, orbitScale } from '../utils/mapPillar';
 import { loadPmTeams, isAmTeam } from '../utils/pmTeams';
 import { fetchByIds } from '../utils/fetchByIds';
 import { loadDailyAm, dailyAmLineStatus, amShiftInfo } from '../lib/dailyAmBoard';
@@ -41,6 +45,13 @@ import { checkWriteRows } from '../utils/dbWrite';
 import { uploadOpts } from '../utils/storageUpload';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
+import LineLensMap, { MachineDetailCard } from '../components/LineLensMap';
+import LineOrderBoard, { OrderDetailCard } from '../components/LineOrderBoard';
+import Segmented from '../components/Segmented';   // 🗺️ ผังเครื่องจักรคู่กล่องรายละเอียดไลน์ (2026-10-16)
+import useIsMobile from '../utils/useIsMobile';
+import useTvShell from '../utils/useTvShell';
+import TvFitBox from '../components/TvFitBox';
+import { storySectionsFor, mapLensOf } from '../utils/lineLens';
 import { isGifFile, GIF_MAX_BYTES, GIF_TOO_BIG_MSG } from '../utils/imageFileKind';   // ตัวตรวจชนิดไฟล์ + เพดาน GIF = จุดเดียว
 
 /* ── ผังรวมโรงงาน (Factory Master Map) — polygon อิสระ + เลือก metric, 2026-07-16 ──────
@@ -237,7 +248,9 @@ const METRICS = {
     // แยกให้เห็นชัด: มี order → ทำได้/เป้า ณ เวลานี้/เต็มกะ · เปิดกะแต่ยังไม่มี order · ยังไม่เปิดกะ
     // ป้ายบนผังไม่โชว์ % (2026-08-06 · คำสั่ง user "คนจะงง ชนกับ OEE") — เอาแค่ ได้/ควรได้/เป้า
     // สีของกรอบยังบอกว่าทันจังหวะไหม (cat) · % เต็มๆ ดูได้ที่ popup รายละเอียด
-    text: s => s.target > 0 ? `${s.actual}/${Math.round(s.onTimeTarget)}/${s.target}` : (s.hasOpen ? '🔵 เปิดกะ · ยังไม่มี order' : '⏸ ยังไม่เปิดกะ'),
+    text: s => s.reviewMode
+      ? (s.target > 0 ? `${s.actual}/${s.target} · ${Math.round(s.actual / s.target * 100)}%` : (s.hasOpen ? 'ไม่มี order' : 'ไม่มีกะ'))   // ทบทวน = ทั้งวัน ไม่มี "ควรได้ ณ ตอนนี้"
+      : s.target > 0 ? `${s.actual}/${Math.round(s.onTimeTarget)}/${s.target}` : (s.hasOpen ? '🔵 เปิดกะ · ยังไม่มี order' : '⏸ ยังไม่เปิดกะ'),
     cat: s => s.target > 0 ? (s.onTimeTarget < 1 ? 'ok' : (() => { const p = s.actual / s.onTimeTarget * 100; return p >= 95 ? 'good' : p >= 80 ? 'ok' : 'bad'; })()) : (s.hasOpen ? 'waiting' : 'idle'),
     short: s => s.target > 0 ? (s.onTimeTarget >= 1 ? `${Math.round(s.actual / s.onTimeTarget * 100)}%` : `${s.actual}`) : '',
   },
@@ -265,8 +278,9 @@ const METRICS = {
     cat: s => s.dtActive ? 'down' : !s.hasOpen && s.dtMin === 0 ? 'idle' : s.dtMin === 0 ? 'good' : s.dtMin < 30 ? 'ok' : 'bad',
     // สีบนแผนที่ = downtime "สะสมเฉพาะชั่วโมงปัจจุบัน" (รีเซ็ตทุกต้นชั่วโมง) — ≤5น.เขียว · ≤15น.เหลือง · >15น.แดง
     //   กำลังหยุดอยู่ (ยังไม่กลับมารัน) = แดงต่อเนื่อง · เพิ่งกลับมารัน = คิดตามนาทีที่หยุดในชั่วโมงนี้
-    mapCat: s => s.dtActive ? 'down' : !s.hasOpen && s.dtMinHour === 0 ? 'idle' : s.dtMinHour <= 5 ? 'good' : s.dtMinHour <= 15 ? 'ok' : 'bad',
-    mapText: s => s.dtActive ? `🔴 หยุด ${fmtDtElapsed(s.dtOpenMin)}` : s.dtMinHour > 0 ? `${s.dtMinHour} น./ชม.นี้` : (s.hasOpen ? '✓ ปกติ' : ''),
+    //   📅 โหมดทบทวน = ทั้งวัน ⇒ ใช้เกณฑ์ cat/text ของทั้งวัน (เกณฑ์รายชั่วโมงใช้กับยอดทั้งวันไม่ได้)
+    mapCat: s => s.reviewMode ? METRICS.breakdown.cat(s) : s.dtActive ? 'down' : !s.hasOpen && s.dtMinHour === 0 ? 'idle' : s.dtMinHour <= 5 ? 'good' : s.dtMinHour <= 15 ? 'ok' : 'bad',
+    mapText: s => s.reviewMode ? METRICS.breakdown.text(s) : s.dtActive ? `🔴 หยุด ${fmtDtElapsed(s.dtOpenMin)}` : s.dtMinHour > 0 ? `${s.dtMinHour} น./ชม.นี้` : (s.hasOpen ? '✓ ปกติ' : ''),
     short: s => s.dtActive ? `🔴 ${fmtDtElapsed(s.dtOpenMin)}` : s.dtMinHour > 0 ? `${s.dtMinHour}น.` : '',
   },
   ng: {
@@ -476,7 +490,8 @@ const supNames = (list, riskOnly) => {
 
 // setupMode=false (default, /factory-map) = display-only (ดู + popup ไม่มีปุ่มแก้ผัง)
 // setupMode=true (/layout-setup แท็บภาพรวมโรงงาน) = โหมดตั้งค่า อัปโหลดรูป/วาด polygon ได้
-export default function FactoryMap({ setupMode = false }) {
+/* `viewParam` = ชื่อคีย์ลิงก์ของมุมมอง 2D/3D — หน้าที่ฝังผังนี้ (เช่น /mtn-layout ที่ใช้ ?view= ของตัวเองอยู่แล้ว) เปลี่ยนชื่อได้ */
+export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
   const { role } = useContext(UserContext);
   const canEdit = setupMode && can('factory_map', 'edit', role);
   const navigate = useNavigate();
@@ -513,10 +528,17 @@ export default function FactoryMap({ setupMode = false }) {
   const [editing, setEditing] = useState(canEdit); // setup mode + มีสิทธิ์ → เข้าโหมดแก้เลย
   const [uploading, setUploading] = useState(false);
   const [aspect, setAspect] = useState(null);
-  const [metric, setMetric] = useState('health'); // 🚦 default = ปกติ/ผิดปกติ (2026-08-26 คำสั่ง user) — เปิดมาตอบก่อนว่าทั้งโรงงานโอเคไหม
-  const [showFac, setShowFac] = useState(false); // 🫥 เปิดดูโซนสนับสนุนชั่วคราวบน metric ผลิต (กดจากชิป)
+  const [metric, setMetric] = useState(() => { const c = urlParam('cycle'); const first = c && c !== '1' ? c.split(',')[0].trim() : null; return urlPick('metric', Object.keys(METRICS), Object.keys(METRICS).includes(first) ? first : 'health'); }); // ?metric= (จอวนหน้า · 15/10) // 🚦 default = ปกติ/ผิดปกติ (2026-08-26 คำสั่ง user) — เปิดมาตอบก่อนว่าทั้งโรงงานโอเคไหม
+  const [showFac, setShowFac] = useState(() => urlBool('support', false)); // 🫥 เปิดดูโซนสนับสนุนชั่วคราวบน metric ผลิต (กดจากชิป)
   // แผงขวา: 'review' = สรุปทบทวนทั้งวัน (default · ประชุมผู้จัดการ) · 'live' = จัดอันดับสดตาม metric (เดิม)
-  const [panelMode, setPanelMode] = useState('review');
+  const [panelMode, setPanelMode] = useState(() => urlPick('panel', ['review', 'obeya', 'live'], 'review'));
+  /* ⚡/📅 สวิตช์เดียวคุมทั้งหน้า (2026-10-16 · user เลือก "สวิตช์เดียวคุมทั้งหน้า"):
+     'live' = ผัง + แผงขวา + กล่องรายละเอียดที่คลิก เป็นของวันนี้สด
+     'review' = ทั้งหน้าเป็นยอดทั้งวันของ reviewDate — เดิมแผงขวาโชว์ 15/10 แต่คลิกไลน์บนผังได้ 16/10 สด (คนงง)
+     panelMode 'review' ในโหมด live = "สรุปวันนี้ (สด)" (กล่องหน้าตาเดียวกับทบทวน แต่ตัวเลขสด) */
+  // ลิงก์จอ TV เดิมที่ตั้ง ?panel=review (ไม่มี ?mode=) = ตั้งใจดูทบทวนรายวัน ⇒ เปิดเป็นโหมดทบทวน (ลิงก์เก่าไม่เปลี่ยนความหมาย)
+  const [viewMode, setViewMode] = useState(() => urlPick('mode', ['live', 'review'], urlParam('panel') === 'review' ? 'review' : 'live'));
+  const isReview = viewMode === 'review';
   // 🏛️ หัวข้อที่กดเจาะอยู่บนบอร์ด OBEYA (null = ยังไม่กด) — ดู obeyaBoard
   const [obeyaAxis, setObeyaAxis] = useState(null);
   const [reviewDate, setReviewDate] = useState(reviewDefaultDate);
@@ -526,6 +548,12 @@ export default function FactoryMap({ setupMode = false }) {
   const [reviewDetail, setReviewDetail] = useState(null); // ไลน์แม่ที่คลิกดู breakdown ไลน์ย่อย (โหมด review)
   const [storyLine, setStoryLine] = useState(null);   // ไลน์ที่คลิกดู "สรุปเรื่องราวทั้งวัน" (modal หลัก)
   const [story, setStory] = useState(null);           // ข้อมูลสรุปของ storyLine
+  const [storyAll, setStoryAll] = useState(() => urlBool('storyall', false));   // ?storyall= (จอวนหน้า)
+  const [lensSel, setLensSel] = useState(null);       // เครื่องที่คลิกบนผังคู่ — การ์ดอยู่คอลัมน์ขวา (ผังไม่ดันตัวเองขึ้นลง · 16/10)    // กล่องรายละเอียด: true = ทุกเรื่อง · false = เฉพาะเรื่องของแท็บ (2026-10-16)
+  const isMobile = useIsMobile();
+  /* 📺 โหมดจอประชุม (20/10 · user "ทีวี 43-50 นิ้ว ยืนดูห่าง 2-3 ม.") — UI §6.32
+     ซ่อนปุ่ม/คำใบ้ที่ไม่มีใครกด (.tv-hide) · หัวเรื่องแท็บตัวใหญ่แทนแถวปุ่ม · ป้ายบนผังขั้นต่ำ 140% · แผงขวาขยาย */
+  const tv = useTvShell();
   const [storyLoading, setStoryLoading] = useState(false);
   const [oeeExplain, setOeeExplain] = useState(null); // { title, rows } — กางวิธีคิด OEE เฉลี่ยถ่วงน้ำหนัก
   // วันที่ของ modal สรุปเรื่องราว — ตั้งตอนเปิด: คลิกจากผัง (live) = วันงานปัจจุบัน · คลิกจากแถบขวา = วันที่ในกรอบ
@@ -553,19 +581,59 @@ export default function FactoryMap({ setupMode = false }) {
        → ขึ้น "จอแคบ · ซ่อนป้าย" ทั้งที่จอใหญ่มาก
      ทางแก้ที่เลือก: ให้แต่ละเครื่องปรับขนาดป้ายเอง (A− / A+) จำใน localStorage — ตั้งครั้งเดียวต่อจอ
      (แก้จาก OS ก็ได้แต่หน้างานเข้า settings จอ TV ไม่ได้/ไม่กล้า) · คู่กับปุ่มซ่อนแผงขวาคืนพื้นที่ให้ผัง */
-  const [lblScale, setLblScale] = useState(() => {
+  const [lblScaleSet, setLblScale] = useState(() => {
+    // ?lbl= จากลิงก์จอวนหน้าชนะค่าที่จำในเครื่อง (ไม่เขียนทับ localStorage จนกว่าจะกด A−/A+)
+    const fromUrl = urlNum('lbl', 0.6, 1.6, null);
+    if (fromUrl != null) return Math.round(fromUrl * 10) / 10;
     try { const v = parseFloat(localStorage.getItem('fm_lbl_scale')); return Number.isFinite(v) ? Math.min(1.6, Math.max(0.6, v)) : 1; }
     catch { return 1; }
   });
+  // จอประชุม: ป้ายขั้นต่ำ 140% (11px บนทีวี 43" ยืน 2-3 ม. อ่านไม่ออก) · ?lbl= จากจอวนหน้ายังชนะเสมอ
+  const lblScale = tv && urlNum('lbl', 0.6, 1.6, null) == null ? Math.max(lblScaleSet, 1.4) : lblScaleSet;
   const applyScale = (v) => {
     const nv = Math.min(1.6, Math.max(0.6, Math.round(v * 10) / 10));
     setLblScale(nv);
     try { localStorage.setItem('fm_lbl_scale', String(nv)); } catch { /* per-device pref เท่านั้น */ }
   };
   // ซ่อนแผงขวา (จอ TV เอาพื้นที่คืนให้ผัง — จำต่อเครื่อง) · ปุ่มอยู่แถบ metric
-  const [panelHide, setPanelHide] = useState(() => { try { return localStorage.getItem('fm_panel_hide') === '1'; } catch { return false; } });
-  const togglePanelHide = () => setPanelHide(v => { const nv = !v; try { localStorage.setItem('fm_panel_hide', nv ? '1' : '0'); } catch { /* ignore */ } return nv; });
+  const [panelHide, setPanelHide] = useState(() => urlBool('nopanel', (() => { try { return localStorage.getItem('fm_panel_hide') === '1'; } catch { return false; } })()));
+  // 🧊 มุมมอง 3D (2.5D · mockup 14/10) — ความชอบรายเครื่อง · โหมดแก้ผังบังคับ 2D เสมอ (ลาก/คลิกจุดต้องตรงพิกัด)
+  const [view3d, setView3d] = useState(() => { const u = urlPick(viewParam, ['2d', '3d'], null); if (u) return u === '3d'; try { return localStorage.getItem('fm_view3d') === '1'; } catch { return false; } });
+  const toggleView3d = () => setView3d(v => { const n = !v; try { localStorage.setItem('fm_view3d', n ? '1' : '0'); } catch { /* ignore */ } return n; });
+  // 🔄 มุมกล้อง 3D — ลากหมุน/ปุ่ม/ทัวร์ (ทำงานเฉพาะ 3D ที่ไม่ได้แก้ผัง — editing ประกาศไว้ข้างบนแล้ว)
   const wrapRef = useRef(null);
+  const orbit = useMapOrbit(view3d && !editing, wrapRef);
+  /* 🔁 วนมุมมองเอง (จอวนหน้า · 15/10 · user: "อยากโชว์แบบนี้ และวน tab ไปทีละเรื่อง")
+     ?cycle=health,oee,breakdown (หรือ ?cycle=1 = ทุกมุมมอง) · ?csec= วินาทีต่อมุมมอง (ค่าตั้งต้น 15)
+     มีคนกด/แตะจอ = หยุดวน (คนกำลังดูมุมนั้นอยู่) · โหมดแก้ผังไม่วน */
+  const cycleList = useMemo(() => {
+    const raw = urlParam('cycle');
+    if (!raw) return [];
+    const all = Object.keys(METRICS);
+    return raw === '1' ? all : raw.split(',').map(x => x.trim()).filter(k => all.includes(k));
+  }, []);
+  const cycleMs = urlNum('csec', 5, 600, 15) * 1000;
+  const [cycleOn, setCycleOn] = useState(true);
+  useEffect(() => {
+    if (cycleList.length < 2 || !cycleOn || editing) return undefined;
+    const id = setInterval(() => {
+      setMetric(m => cycleList[(cycleList.indexOf(m) + 1) % cycleList.length]);
+    }, cycleMs);
+    return () => clearInterval(id);
+  }, [cycleList, cycleMs, cycleOn, editing]);
+  useEffect(() => {
+    if (cycleList.length < 2) return undefined;
+    const stop = () => setCycleOn(false);
+    window.addEventListener('pointerdown', stop, { passive: true });
+    window.addEventListener('keydown', stop);
+    return () => { window.removeEventListener('pointerdown', stop); window.removeEventListener('keydown', stop); };
+  }, [cycleList]);
+  // ?tour=1 — จอวนหน้าสั่งเปิดทัวร์หมุนกล้องเอง (เฉพาะ 3D) · ครั้งเดียวตอนเปิด
+  const tourFromUrl = useRef(urlBool('tour', false));
+  useEffect(() => {
+    if (tourFromUrl.current && view3d && !editing) { tourFromUrl.current = false; orbit.setAuto(true); }
+  }, [view3d, editing, orbit]);
+  const togglePanelHide = () => setPanelHide(v => { const nv = !v; try { localStorage.setItem('fm_panel_hide', nv ? '1' : '0'); } catch { /* ignore */ } return nv; });
   const hoverCardRef = useRef(null); // วัดความสูงจริงของการ์ด hover เพื่อกันตกขอบ
   const dragRef = useRef(null);
   const regionsRef = useRef([]);
@@ -816,6 +884,7 @@ export default function FactoryMap({ setupMode = false }) {
         const brkIvWin = breakIntervalsIn({
           policies: breaks || [], startMs: anchor, endMs: Math.min(nowMs, capMs),
           workDate, shift: s.shift, processType: procOfSess,
+          shiftEndMs: capMs,   // 🔚 กรอบจบที่ "ตอนนี้" ระหว่างกะ — พักท้ายกะต้องยึด capMs ไม่ใช่ปลายกรอบ
         });
         availMin -= brkIvWin.reduce((a, [x, y]) => a + (y - x) / 60000, 0);
         /* หักหยุดตามแผน — ⚠️ ต้อง clamp กับหน้าต่าง [anchor, min(now, capMs)] ก่อน
@@ -1449,7 +1518,7 @@ export default function FactoryMap({ setupMode = false }) {
     } catch (e) { console.error('[loadReview]', e); if (!live()) return; setReviewStatus({}); setReviewError(e?.message || String(e)); }
     finally { if (live()) setReviewLoading(false); }
   }, [reviewDate, beginReview]);
-  useEffect(() => { if (panelMode === 'review' && !editing) loadReview(); }, [loadReview, panelMode, editing]);
+  useEffect(() => { if (isReview && !editing) loadReview(); }, [loadReview, isReview, editing]);
 
   /* ── สรุปเรื่องราวทั้งวันของไลน์ที่คลิก (modal) — ผลิตรายพาร์ท · Downtime+เหตุผล · ของเสีย · 4M · คน ──
      วันที่ = วันที่ของแผงทบทวน (โหมด review) หรือวันงานปัจจุบัน (โหมดสด) · โหลดเมื่อเปิด modal เท่านั้น */
@@ -1669,12 +1738,12 @@ export default function FactoryMap({ setupMode = false }) {
     const sz = storeZoneOf(name);
     if (sz) { setHoverLine(null); setStoreZoneModal(sz); return; }
     if (isFac(name)) { setHoverLine(null); navigate(`/mtn-layout?view=facility&zone=${encodeURIComponent(name)}&from=factory-map`); return; }
-    setHoverLine(null); setStoryDate(date || getWorkDate()); setStoryLine(name);
+    setHoverLine(null); setStoryDate(date || (isReview ? reviewDate : getWorkDate())); setStoryAll(false); setLensSel(null); setStoryLine(name);
   };
   // เปิดผังไลน์ + พนักงาน (Dashboard) — จากปุ่มใน modal สรุป
   const openFloorMap = (name) => {
     const t = floorMapTarget(name);
-    if (t) navigate(`/dashboard?line=${encodeURIComponent(t)}&from=factory-map`);
+    if (t) navigate(`/people-board?line=${encodeURIComponent(t)}&from=factory-map`);
     else { setStoryLine(null); setDetailLine(name); }
   };
   // ตีกรอบเฉพาะ "ไลน์บนสุด (top-level)" = parent_line_name IS NULL — 1 กรอบ/กลุ่ม (รวมยอดลูกด้วย stOf)
@@ -1682,6 +1751,18 @@ export default function FactoryMap({ setupMode = false }) {
   // ชื่อไลน์ผลิตทั้งหมด (แม่+ลูก) — กรอบที่ line_name ไม่ตรงไลน์ผลิตใดเลย = โซน MTN/facility
   const allProdNames = useMemo(() => new Set(lines.map(l => l.name)), [lines]);
   const isFac = (name) => !allProdNames.has(name);
+  const reviewOf = (name) => {
+    const agg = { actual: 0, target: 0, oee: null, oeeWSum: 0, oeeWLoad: 0, oeeSum: 0, oeeN: 0, dtMin: 0, ng: 0, present: 0, headTotal: 0, oeeRows: [] };
+    familyNames(name).forEach(n => {
+      const r = reviewStatus[n]; if (!r) return;
+      agg.actual += r.actual || 0; agg.target += r.target || 0;
+      agg.oeeWSum += r.oeeWSum || 0; agg.oeeWLoad += r.oeeWLoad || 0; agg.oeeSum += r.oeeSum || 0; agg.oeeN += r.oeeN || 0;
+      agg.dtMin += r.dtMin || 0; agg.ng += r.ng || 0; agg.present += r.present || 0; agg.headTotal += r.headTotal || 0;
+      if (r.oeeRows?.length) agg.oeeRows.push(...r.oeeRows);
+    });
+    agg.oee = agg.oeeWLoad > 0 ? Math.round(agg.oeeWSum / agg.oeeWLoad) : (agg.oeeN ? Math.round(agg.oeeSum / agg.oeeN) : null);
+    return agg;
+  };
   const stOf = (name) => {
     const agg = { ...EMPTY_ST, supList: [], oeeRows: [] };
     familyNames(name).forEach(n => {
@@ -1730,6 +1811,18 @@ export default function FactoryMap({ setupMode = false }) {
     agg.oeeTarget = oeeTargetForLines(familyNames(name), lines, oeeTargets)?.oee ?? null;
     // 🌱 คาร์บอน (C1) — คำนวณจาก kWh × EF ของเดือนที่ผังโชว์ · ไม่มี EF = null (ห้ามเดา)
     agg.kwhCo2 = co2eKg(agg.kwh ?? null, energyEf);
+    /* 📅 โหมดทบทวน: เรื่องที่ผูกกับวัน (ยอดผลิต/OEE/DT/ของเสีย/คน) = ยอดทั้งวันของ reviewDate จาก reviewOf()
+       เรื่องที่เป็น "สถานะตอนนี้" (PM/AM/พลังงาน/Supply) คงค่าเดิม — แถบบนผังเขียนกำกับไว้ (ห้ามทำเหมือนเป็นของวันนั้น) */
+    if (isReview && !agg.isFac) {
+      const r = reviewOf(name);
+      Object.assign(agg, {
+        reviewMode: true, actual: r.actual, target: r.target, onTimeTarget: r.target, runN: 0, capN: 0,
+        hasOpen: r.target > 0 || r.actual > 0 || r.oeeN > 0 || r.dtMin > 0 || r.ng > 0,
+        dtMin: r.dtMin, dtMinHour: r.dtMin, dtActive: false, dtOpenMin: null, dtOpenUnknown: false, ng: r.ng,
+        oee: r.oee, oeeRows: [], oeeLive: false, oeeNoCt: false, oeeCtPartial: false, oeePOver: false, oeeA: null, oeeP: null, oeeQ: null,
+        present: r.present, headTotal: r.headTotal, stationTotal: 0, stationFilled: 0, ppeBad: 0,
+      });
+    }
     return agg;
   };
   const catColor = (name) => CAT[M.cat(stOf(name))];
@@ -1893,18 +1986,6 @@ export default function FactoryMap({ setupMode = false }) {
 
   // ── สรุปทบทวนรายวัน: rollup ทั้งครอบครัว (แม่+ลูก) เหมือน stOf แต่อ่านจาก reviewStatus ──
   //    OEE ถ่วงน้ำหนักด้วยเวลารับภาระ (oeeWSum/oeeWLoad) — ห้าม mean-of-percentages · fallback = เฉลี่ยธรรมดา
-  const reviewOf = (name) => {
-    const agg = { actual: 0, target: 0, oee: null, oeeWSum: 0, oeeWLoad: 0, oeeSum: 0, oeeN: 0, dtMin: 0, ng: 0, present: 0, headTotal: 0, oeeRows: [] };
-    familyNames(name).forEach(n => {
-      const r = reviewStatus[n]; if (!r) return;
-      agg.actual += r.actual || 0; agg.target += r.target || 0;
-      agg.oeeWSum += r.oeeWSum || 0; agg.oeeWLoad += r.oeeWLoad || 0; agg.oeeSum += r.oeeSum || 0; agg.oeeN += r.oeeN || 0;
-      agg.dtMin += r.dtMin || 0; agg.ng += r.ng || 0; agg.present += r.present || 0; agg.headTotal += r.headTotal || 0;
-      if (r.oeeRows?.length) agg.oeeRows.push(...r.oeeRows);
-    });
-    agg.oee = agg.oeeWLoad > 0 ? Math.round(agg.oeeWSum / agg.oeeWLoad) : (agg.oeeN ? Math.round(agg.oeeSum / agg.oeeN) : null);
-    return agg;
-  };
   // เรียงไลน์ที่ทำได้ต่ำสุดขึ้นบน (ปัญหาก่อน) · ไม่มีเป้าไปท้าย
   // ⚠️ ลิสต์เฉพาะ "กลุ่มไลน์บนสุด" (1 แถว/กลุ่ม รวมยอดลูกด้วย reviewOf) — ไม่ลิสต์ไลน์ลูกซ้ำ
   //    (แม้ลูกจะถูกตีกรอบไว้ก็ตาม เช่น LWR BAR + Laser LWR/Assy LWR → เห็นแค่ LWR BAR ยอดรวม กันนับซ้ำในสายตา · ดูแยกลูกได้ที่ drill-down)
@@ -1927,6 +2008,29 @@ export default function FactoryMap({ setupMode = false }) {
     t.oee = t.oeeWLoad > 0 ? Math.round(t.oeeWSum / t.oeeWLoad) : (t.oeeN ? Math.round(t.oeeSum / t.oeeN) : null);
     return t;
   }, [reviewStatus, topNames]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* ⚡ สรุปวันนี้ (สด) — กล่องหน้าตาเดียวกับทบทวนรายวัน แต่ตัวเลขจาก stOf() สด (2026-10-16)
+     ไลน์บนสุดเท่านั้น (1 แถว/กลุ่ม รวมลูก) กันนับซ้ำ · OEE รวมถ่วงน้ำหนักด้วยกติกาเดียวกับ stOf (wavg + wLoad) */
+  const liveSummary = (() => {
+    if (isReview) return null;
+    const names = [...new Set([...topNames, ...regions.map(r => r.line_name).filter(n => !parentOf[n] && !isFac(n))])];
+    const ranked = names.map(name => ({ name, r: stOf(name) })).filter(x => !x.r.isFac);
+    ranked.sort((a, b) => {
+      const ap = a.r.target > 0 ? a.r.actual / a.r.target : null, bp = b.r.target > 0 ? b.r.actual / b.r.target : null;
+      if (ap == null && bp == null) return a.name.localeCompare(b.name);
+      if (ap == null) return 1; if (bp == null) return -1;
+      return ap - bp;
+    });
+    const t = { actual: 0, target: 0, dtMin: 0, ng: 0, present: 0, headTotal: 0, oee: null };
+    const rows = [];
+    topNames.forEach(n => { const r = stOf(n); if (r.isFac) return; t.actual += r.actual; t.target += r.target; t.dtMin += r.dtMin; t.ng += r.ng; t.present += r.present; t.headTotal += r.headTotal; rows.push(...(r.oeeRows || [])); });
+    const o = wavg(rows, r => r.oee, wLoad); t.oee = o != null ? Math.round(o) : null;
+    return { totals: t, ranked, names };
+  })();
+  const sumBox = isReview
+    ? { totals: reviewTotals, ranked: reviewRanked, rowOf: (n) => reviewStatus[n], names: Object.keys(reviewStatus || {}), loading: reviewLoading, error: reviewError, date: reviewDate }
+    : { totals: liveSummary.totals, ranked: liveSummary.ranked, rowOf: (n) => { const p = lineStatus[n]; return p ? { target: p.target, dtMin: p.dtMin, ng: p.ng, oeeN: (p.oeeRows || []).length } : null; },
+        names: liveSummary.names, loading: false, error: '', date: getWorkDate() };
 
   /* ── อัปโหลดรูปผัง (บีบเบา 2560/2.5MB/q0.9) ── */
   const handleUpload = async (e) => {
@@ -2189,6 +2293,9 @@ export default function FactoryMap({ setupMode = false }) {
     setAssignLine(''); setNewZone(''); setNewZoneType('fac'); setNewZoneKind('fg'); setAssignFor(pts); // ตีกรอบได้เสมอ (ไลน์ผลิต / โซน facility / โซนคลัง / พิมพ์ชื่อโซนใหม่)
   };
   const confirmAssign = async () => {
+    /* ด่านชั้น 2 — ตีกรอบไลน์/โซนบนผัง + สร้างทะเบียนโซน (ของกลางทั้งโรงงาน)
+       ⇒ ด่าน = คีย์เดียวกับปุ่ม (ซ่อนปุ่มไม่ใช่ด่าน · QC audit §7.4 · 20/10) */
+    if (!canEdit) { toast.error('แก้ผังโรงงานต้องมีสิทธิ์ factory_map:edit (และอยู่ในโหมดตั้งค่าผัง)'); return; }
     const target = (assignLine === '__new__' ? newZone.trim() : assignLine).trim();
     if (!target) return toast.error('เลือกไลน์/โซน หรือพิมพ์ชื่อโซนใหม่ก่อน');
     if (regions.some(r => r.line_name === target)) return toast.error(`"${target}" ถูกตีกรอบไว้แล้ว`);
@@ -2277,14 +2384,58 @@ export default function FactoryMap({ setupMode = false }) {
     setWrapW(el.getBoundingClientRect().width);
     return () => ro.disconnect();
   }, [imageUrl, loading]);
-  const wrapStyle = aspect ? { width: `min(100%, calc((100vh - 210px) * ${aspect}))` } : { width: '100%' };
+  const is3d = view3d && !editing;
+  /* 🧊 3D = วัด "ที่ว่างจริงใต้หัวผัง" แทนสูตรตายตัว `100vh − 200px` (20/10 · จอ TV "ผัง 3D หลุดขอบล่าง")
+     สูตรเดิมเดาว่ามีหัวเพจอยู่ด้านบน · กรอบจอ TV ซ่อนหัวเพจ ⇒ ผังเริ่มต่ำกว่าที่เดา แล้วล้นขอบล่าง
+     และโหมด 3D ติด data-tv-nofit (ตัววนจอไม่ย่อให้ — Cr94 คิด 3D ใต้ zoom ผิด) ⇒ ไม่มีใครช่วยดึงกลับ
+     · วัดจาก offset (ไม่โดน transform ของผังที่เอียงอยู่) · 2D คงสูตรเดิม (จอ TV มีตัววนย่อให้แล้ว) */
+  const [avail3d, setAvail3d] = useState(0);
+  useLayoutEffect(() => {
+    if (!is3d && !tv) { setAvail3d(0); return undefined; }
+    const measure = () => {
+      const w = wrapRef.current, par = w?.offsetParent;
+      if (!w || !par) return;
+      const top = par.getBoundingClientRect().top + par.clientTop + w.offsetTop;
+      setAvail3d(Math.max(320, Math.floor(window.innerHeight - top - 48)));   // 48 = มุมพื้นที่เอียงเข้าหาจอยื่นพ้นกรอบ ~26px
+    };
+    measure();
+    const t = setTimeout(measure, 500);   // แถบ/แผงที่โหลดทีหลังดันผังลง
+    window.addEventListener('resize', measure);
+    return () => { clearTimeout(t); window.removeEventListener('resize', measure); };
+  }, [is3d, tv, loading, imageUrl]);
+  /* 🧊 เสา 3D — คิดก่อน render เพื่อให้หัวผังบอกได้ว่าป้ายไหนแน่นจนวางไม่ได้ (ห้ามหายเงียบ) */
+  const pillarMaxH = Math.max(60, wrapW * 0.2);
+  const BLOCK_K = 0.55;
+  const pillarItems = !is3d ? [] : regions.filter(r => !facHidden(r.line_name)).map(r => {
+                  const st = stOf(r.line_name); const cat = regCat(st); const meta = CAT[cat];
+                  /* 🏢 กรอบไลน์ = กล่องยกจากรูปทรงกรอบจริง (`pts`) · ป้ายกลางหลังคา (centroid)
+                     สูง × BLOCK_K — กล่องกินพื้นที่มากกว่าเสา สูงเต็มจะบังผังข้างหลังหมด */
+                  const [x, y] = centroid(r.points);
+                  return { key: r.id, name: r.line_name, x, y, pts: r.points, color: meta.color, blink: !!meta.blink,
+                    h: pillarHeight(metric, cat, st.oee).h * BLOCK_K, text: shortText(st), dim: cat === 'idle' };
+                }).concat(autoHulls.map(h => {
+                  /* ▣ เสากลุ่ม = ยอดรวมทั้งครอบครัว (stOf รวมลูกให้แล้ว) · ตั้งที่ "ขอบล่างกลาง" ของกรอบแม่
+                     เสาลูกตั้งที่ขอบบน (labelAnchor) ⇒ 2 ชั้นไม่ชนกันในจุดเดียว */
+                  const st = stOf(h.name); const cat = regCat(st); const meta = CAT[cat];
+                  const bb = bboxOf(h.hull);
+                  return { key: `hull-${h.name}`, name: h.name, x: (bb.x0 + bb.x1) / 2, y: bb.y1, color: meta.color, blink: !!meta.blink,
+                    h: pillarHeight(metric, cat, st.oee).h, text: shortText(st), dim: cat === 'idle',
+                    group: true, kids: (childrenOf[h.name] || []).length };
+                }));
+  // ป้ายเสา 3D: จอประชุมขยาย 1.8× (ป้ายลอยบนผังที่ถูกย่อ+เอียง ⇒ 12px เหลือ ~8px บนจอ) · ตัวกันชนต้องคูณตัวเดียวกัน
+  const pillarLblK = tv ? 1.8 : 1;
+  const pillarLifts = is3d ? liftLabels(pillarItems, { Wpx: wrapW, Hpx: aspect ? wrapW / aspect : 0, tiltDeg: orbit.tilt, rotZDeg: orbit.rot, maxH: pillarMaxH, charPx: 6.8 * pillarLblK, labelH: 36 * pillarLblK }) : null;
+  const pillarCrowded = pillarLifts ? [...pillarLifts.values()].filter(v => !v.ok).length : 0;
+  const wrapStyle = (is3d || tv) && avail3d
+    ? { width: aspect ? `min(100%, ${Math.round(avail3d * aspect)}px)` : '100%', maxHeight: avail3d }
+    : { ...(aspect ? { width: `min(100%, calc((100vh - 210px) * ${aspect}))` } : { width: '100%' }), maxHeight: 'calc(100vh - 200px)' };
   const ptsStr = (pts) => pts.map(p => `${p[0]},${p[1]}`).join(' ');
   const flashLine = (name) => { setHighlight(name); setTimeout(() => setHighlight(h => h === name ? null : h), 2000); };
 
   return (
     <Page width="full">
       <PageHeader title="ผังรวมโรงงาน" icon="🗺️"
-        sub={<>ทุกไลน์บนผังเดียว — เลือกดูได้หลายมุมมอง · <b>วางเม้าส์ดูสรุป · คลิกเปิดผังไลน์พร้อมพนักงาน</b> · อัปเดตสดอัตโนมัติ · <b>แผงขวา = ทบทวนรายวัน · 🏛️ สถานะ OBEYA สด · จัดอันดับ</b></>}
+        sub={<>ทุกไลน์บนผังเดียว — เลือกดูได้หลายมุมมอง · <b>วางเม้าส์ดูสรุป · คลิกเปิดผังไลน์พร้อมพนักงาน</b> · อัปเดตสดอัตโนมัติ · <b>สวิตช์ ⚡ Live / 📅 ทบทวนรายวัน คุมทั้งผัง แผงขวา และรายละเอียดที่คลิก</b> · hover/คลิก = เฉพาะเรื่องของแท็บที่เลือก</>}
         actions={canEdit && <button onClick={() => { setEditing(v => !v); cancelDraw(); }} style={{ ...btn(editing), position: 'relative' }}>{editing ? '✓ เสร็จ' : '✏️ แก้ผัง'}<ToggleDot on={editing} /></button>} />
       {partial && (
         <div style={{ marginBottom: 10, padding: '8px 12px', borderRadius: 8, fontSize: 12.5, fontWeight: 700,
@@ -2293,15 +2444,65 @@ export default function FactoryMap({ setupMode = false }) {
         </div>
       )}
 
+      {/* ⚡/📅 สวิตช์เดียวคุมทั้งหน้า — ผัง + แผงขวา + กล่องรายละเอียดที่คลิก ใช้ช่วงเวลาเดียวกันเสมอ (2026-10-16) */}
+      {!editing && (
+        <div className="tv-hide" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+          <Segmented label="ช่วงเวลาของทั้งหน้า" value={viewMode} onChange={setViewMode} options={[
+            { value: 'live', label: '⚡ Live (วันนี้สด)', title: 'ผัง แผงขวา และรายละเอียดที่คลิก = ข้อมูลสดของวันนี้' },
+            { value: 'review', label: '📅 ทบทวนรายวัน', title: 'ผัง แผงขวา และรายละเอียดที่คลิก = ยอดทั้งวันของวันที่เลือก' },
+          ]} />
+          {isReview && (<>
+            <button onClick={() => setReviewDate(d => shiftDate(d, -1))} style={navBtn}>◀</button>
+            <input type="date" value={reviewDate} max={getWorkDate()} onChange={e => e.target.value && setReviewDate(e.target.value)}
+              style={{ width: 150, padding: '6px 8px', borderRadius: 8, fontSize: 13, textAlign: 'center' }} />
+            <button onClick={() => setReviewDate(d => (d < getWorkDate() ? shiftDate(d, 1) : d))} disabled={reviewDate >= getWorkDate()} style={{ ...navBtn, opacity: reviewDate >= getWorkDate() ? 0.4 : 1 }}>▶</button>
+            <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text2)' }}>{fmtThaiDate(reviewDate)}</span>
+            {reviewLoading && <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>กำลังโหลด…</span>}
+            {reviewError && <span style={{ fontSize: 11.5, color: '#ef4444', fontWeight: 700 }}>⚠ โหลดยอดของวันนี้ไม่สำเร็จ — ผังเป็น 0 ไม่ใช่ "ไม่มีการผลิต"</span>}
+          </>)}
+        </div>
+      )}
+      {!editing && isReview && (
+        <div className="tv-hide" style={{ marginBottom: 10, padding: '7px 12px', borderRadius: 8, fontSize: 12, background: 'var(--accent-dim)', border: '1px solid var(--accent)', color: 'var(--text2)' }}>
+          📅 <b style={{ color: 'var(--text)' }}>โหมดทบทวน {fmtThaiDate(reviewDate)}</b> — ยอดผลิต / OEE / Downtime / ของเสีย / คน บนผังเป็นยอดทั้งวันของวันนั้น ·
+          <b> แท็บ PM / AM / พลังงาน / Supply Route ยังเป็นสถานะปัจจุบัน</b> (ไม่มีประวัติย้อนหลังรายวัน)
+        </div>
+      )}
+
       {/* เลือก metric */}
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+      {/* 20/10 (user "จอขนาดเด้งกระพริบเวลาเปลี่ยน tab" · คลิปจอ TV): เดิมปุ่มแท็บ + ชิปบอกข้อมูล + ปุ่ม A−/2D อยู่แถว wrap เดียว
+          ชิปต่อแท็บไม่เท่ากัน (🫥 โซนสนับสนุน · ⚠ PM ไม่ผูกไลน์ · legend) ⇒ บางแท็บ 2 บรรทัด บางแท็บ 3 ⇒ ผังขยับขึ้นลง
+          และตัววนจอ TV ย่อ (zoom) ใหม่ทุกครั้ง = ขนาดเด้ง · ตอนนี้แยก 2 แถว: แถวแท็บคงที่ · แถวชิป+เครื่องมือจองความสูงไว้ */}
+      {/* 📺 จอประชุม: แถวปุ่มแท็บ → หัวเรื่องตัวใหญ่ "ตอนนี้ดูเรื่องอะไร" (ไม่มีใครกดปุ่มบนทีวี) */}
+      {tv && !editing && (
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 16, flexWrap: 'wrap', marginBottom: 8 }}>
+          <span style={{ fontSize: 34, fontWeight: 800, color: 'var(--text)', lineHeight: 1.15 }}>{METRICS[metric]?.label}</span>
+          <span style={{ fontSize: 22, fontWeight: 700, color: isReview ? 'var(--accent)' : '#22c55e' }}>
+            {isReview ? `📅 ยอดทั้งวัน ${fmtThaiDate(reviewDate)}` : '⚡ สดวันนี้'}
+          </span>
+          {cycleList.length > 1 && cycleOn && (
+            <span style={{ fontSize: 20, fontWeight: 700, color: 'var(--muted)' }}>🔁 เรื่องที่ {cycleList.indexOf(metric) + 1}/{cycleList.length}</span>
+          )}
+        </div>
+      )}
+      <div className="tv-hide" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
         {Object.entries(METRICS).map(([k, m]) => (
           <button key={k} onClick={() => setMetric(k)} style={btn(metric === k)}>{m.label}</button>
         ))}
+        {cycleList.length > 1 && (
+          <button onPointerDown={e => e.stopPropagation()} onClick={() => setCycleOn(v => !v)} title="วนมุมมองอัตโนมัติ (ตั้งจากจอวนหน้า)"
+            style={{ ...btn(cycleOn), position: 'relative' }}>
+            🔁 {cycleOn ? `วนมุมมอง · ${cycleList.indexOf(metric) + 1}/${cycleList.length}` : 'วนมุมมอง (หยุด)'}<ToggleDot on={cycleOn} />
+          </button>
+        )}
+      </div>
+      {/* จอคอม/TV = บรรทัดเดียวเสมอ (ชิปยาวหดเป็น … · เต็มอยู่ใน title) ⇒ ความสูงไม่เปลี่ยนตามแท็บ · มือถือ wrap ตามเดิม (index.css .fm-chips) */}
+      <div className={isMobile ? undefined : 'fm-chips'} style={{ display: 'flex', gap: 8, flexWrap: isMobile ? 'wrap' : 'nowrap', alignItems: 'center', minHeight: 30, marginBottom: 12, ...(tv ? { zoom: 1.6 } : {}) }}>
         {/* ⚡ พลังงานเป็นข้อมูล "รายเดือน" ไม่ใช่ live เหมือน metric อื่นบนจอนี้ — ต้องประกาศเดือนเสมอ
             ไม่งั้นคนอ่านเป็นค่าปัจจุบัน (จอนี้ทุกอย่างสดหมด) */}
         {!editing && metric === 'energy' && (
-          <span style={{ alignSelf: 'center', display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, whiteSpace: 'nowrap' }}>
+          <span title={`${energyMonth ? monthLabel(energyMonth) : 'ยังไม่มีข้อมูล'} · กรอกมือรายเดือน · สีกรอบ = เทียบเดือนก่อน (ลดลง = เขียว)${energyEf ? '' : ' · ยังไม่ตั้งค่าการปล่อย → ไม่มี tCO2e'}`}
+            style={{ alignSelf: 'center', display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, whiteSpace: 'nowrap' }}>
             <b style={{ color: '#f59e0b', background: '#f59e0b1a', border: '1px solid #f59e0b55', borderRadius: 6, padding: '3px 8px' }}>
               📅 {energyMonth ? monthLabel(energyMonth) : 'ยังไม่มีข้อมูล'} · ✍️ กรอกมือรายเดือน
             </b>
@@ -2320,7 +2521,7 @@ export default function FactoryMap({ setupMode = false }) {
         )}
         {/* 🫥 โซนสนับสนุนถูกซ่อนตาม metric ที่กด — สัญญาณผิดปกติยุบเป็นตัวนับ ⚠ บนชิป (ไม่หายเงียบ) · กดชิปเปิดดูชั่วคราว */}
         {!editing && !!facZones.all.length && (
-          <button onClick={() => setShowFac(v => !v)}
+          <button onClick={() => setShowFac(v => !v)} className={facZones.warn.length ? undefined : 'tv-hide'}
             title={facZones.warn.length
               ? `โซนที่มีสัญญาณ: ${facZones.warn.map(n => `${n} (${facHealthText(stOf(n))})`).join(' · ')}`
               : `ซ่อน: ${facZones.all.join(', ')}`}
@@ -2328,8 +2529,8 @@ export default function FactoryMap({ setupMode = false }) {
               background: showFac ? 'var(--bg3)' : facZones.warn.length ? '#f59e0b1a' : 'transparent',
               border: `1px solid ${showFac ? 'var(--border2)' : facZones.warn.length ? '#f59e0b55' : 'var(--border)'}`,
               color: facZones.warn.length ? '#f59e0b' : 'var(--muted)' }}>
-            {showFac ? '👁 กำลังแสดงโซนสนับสนุน — แตะเพื่อซ่อน'
-              : `🫥 ซ่อนโซนสนับสนุน ${facZones.all.length} โซน${facZones.warn.length ? ` · ⚠ ${facZones.warn.length} มีสัญญาณ` : ''} — แตะเพื่อดู`}
+            {showFac ? <>👁 กำลังแสดงโซนสนับสนุน<span className="tv-hide"> — แตะเพื่อซ่อน</span></>
+              : <>{`🫥 ซ่อนโซนสนับสนุน ${facZones.all.length} โซน${facZones.warn.length ? ` · ⚠ ${facZones.warn.length} มีสัญญาณ` : ''}`}<span className="tv-hide"> — แตะเพื่อดู</span></>}
           </button>
         )}
         {/* 🛠️ แผน PM ที่อุปกรณ์ยังไม่ผูกไลน์ — วางบนผังไม่ได้ แต่ต้องรู้ว่ามีค้างอยู่ (ห้ามหายเงียบ) */}
@@ -2353,7 +2554,8 @@ export default function FactoryMap({ setupMode = false }) {
         )}
         {/* legend อธิบายเลขบนป้าย — เลข 3 ตัวติดกันไม่มีคำอธิบายคนอ่านไม่ออก (คำสั่ง user 2026-08-06) */}
         {!editing && metric === 'productivity' && (
-          <span style={{ alignSelf: 'center', fontSize: 11.5, color: 'var(--muted)', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 4 }}>
+          <span title="ทำได้ / ควรได้ตอนนี้ / เป้ากะ · สีกรอบ = ทันจังหวะไหม"
+            style={{ alignSelf: 'center', fontSize: 11.5, color: 'var(--muted)', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 4 }}>
             <b style={{ color: '#22c55e' }}>ทำได้</b> /
             <b style={{ color: 'var(--text2)' }} title="ถ้าเดินตามจังหวะปกติ ถึงตอนนี้ควรได้เท่านี้ (คิดจากเวลาที่ผลิตได้จริง ÷ รอบเวลาชิ้นงาน)">ควรได้ตอนนี้</b> /
             <b style={{ color: 'var(--text2)' }} title="เป้ารวมของใบงานที่เปิดในกะนี้">เป้ากะ</b>
@@ -2368,14 +2570,15 @@ export default function FactoryMap({ setupMode = false }) {
           </span>
         )}
         {!editing && !labelLayout.hidden.length && !!autoHulls.length && (
-          <span style={{ marginLeft: 'auto', alignSelf: 'center', fontSize: 11.5, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
+          <span title="▣ กลุ่ม (ยอดรวมทั้งกลุ่ม · เส้นประ) · ↳ ไลน์ย่อย ในกลุ่ม"
+            style={{ marginLeft: 'auto', alignSelf: 'center', fontSize: 11.5, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
             <b style={{ color: 'var(--text2)' }}>▣ กลุ่ม</b> (ยอดรวมทั้งกลุ่ม · เส้นประ) · <b style={{ color: 'var(--text2)' }}>↳ ไลน์ย่อย</b> ในกลุ่ม
           </span>
         )}
         {/* ปรับขนาดป้ายต่อเครื่อง + ซ่อนแผงขวา — สำหรับจอ TV ที่ OS scaling ทำสัดส่วนป้าย/ผังเพี้ยน (2026-08-25)
             ค่าจำใน localStorage ของเครื่องนั้น: ตั้งครั้งเดียวต่อจอ ทุกจอเลยดูสม่ำเสมอได้แม้ scaling ไม่เท่ากัน */}
         {!editing && (
-          <span style={{ marginLeft: (!labelLayout.hidden.length && !autoHulls.length) ? 'auto' : 0, alignSelf: 'center', display: 'inline-flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}
+          <span className="fm-keep tv-hide" style={{ marginLeft: (!labelLayout.hidden.length && !autoHulls.length) ? 'auto' : 0, alignSelf: 'center', display: 'inline-flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}
             title="ขนาดป้ายบนผัง (จำค่าต่อเครื่อง) — จอ TV ที่ป้ายใหญ่/ทับกัน ให้กด A−">
             <button onClick={() => applyScale(lblScale - 0.1)} disabled={lblScale <= 0.6}
               style={{ ...miniTab(false), padding: '3px 8px', fontSize: 12, opacity: lblScale <= 0.6 ? 0.4 : 1 }}>A−</button>
@@ -2384,6 +2587,10 @@ export default function FactoryMap({ setupMode = false }) {
             </span>
             <button onClick={() => applyScale(lblScale + 0.1)} disabled={lblScale >= 1.6}
               style={{ ...miniTab(false), padding: '3px 8px', fontSize: 12, opacity: lblScale >= 1.6 ? 0.4 : 1 }}>A+</button>
+            <button onClick={toggleView3d} style={{ ...miniTab(view3d), padding: '3px 8px', fontSize: 11.5 }}
+              title={view3d ? 'กลับเป็นผังแบนแบบเดิม' : 'เอียงผังเป็นมุมเฉียง + เสาสถานะตั้งขึ้นจากแต่ละไลน์ (ทดลอง)'}>
+              {view3d ? '🗺️ 2D' : '🧊 3D'}
+            </button>
             <button onClick={togglePanelHide} style={{ ...miniTab(panelHide), padding: '3px 8px', fontSize: 11.5 }}
               title={panelHide ? 'แสดงแผงสรุปด้านขวา' : 'ซ่อนแผงขวา — คืนพื้นที่ให้ผัง (เหมาะกับจอ TV)'}>
               {panelHide ? '▶ แผงขวา' : '◀ ซ่อนแผงขวา'}
@@ -2423,9 +2630,51 @@ export default function FactoryMap({ setupMode = false }) {
       ) : (
         <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', flexWrap: 'wrap' }}>
           {/* ── ผัง ── */}
-          <div style={{ flex: '1 1 640px', minWidth: 0, display: 'flex', justifyContent: 'center' }}>
+          {/* data-tv-nofit (16/10 · จอ TV ส่งรูปมา ผัง 3D ยุบไปมุมซ้ายบน): ตัววนหน้าย่อทั้งหน้าด้วย CSS zoom
+              แต่ Chromium 94 (webOS) คิด perspective/origin ของ 3D ใต้ zoom ผิด ⇒ เจอแอตทริบิวต์นี้ = ไม่ย่อ
+              (ผังคุมความสูงเองอยู่แล้ว maxHeight calc(100vh - 200px)) · ดู DisplayRotator fit() */}
+          <div {...orbit.handlers} ref={orbit.rootRef} data-tv-nofit={(is3d || tv) ? '1' : undefined} style={{ flex: '1 1 640px', minWidth: 0, display: 'flex', justifyContent: 'center', flexDirection: 'column', alignItems: 'center',
+            ...(is3d ? { touchAction: 'none', cursor: orbit.dragging ? 'grabbing' : 'grab', userSelect: 'none' } : {}),
+            /* 🧊 คอลัมน์ผังตัดของล้น (พื้นกริดยื่นออกนอกรูป ห้ามไปทับแผงขวา) — overflow ที่ "ชั้นนอก" ของ preserve-3d ไม่ flatten เสา */
+            ...(is3d ? { perspective: 2600, perspectiveOrigin: '50% 20%', overflow: 'hidden', borderRadius: 12, paddingBottom: 32 } : {}),
+            /* 📺 TV: ป้ายเสา ×1.8 ยกสูงพ้นขอบบนคอลัมน์ (20/10 รูปจอจริง "ตัวหนังสือเลยขอบบน") ⇒ ตัดแค่ซ้าย/ขวา/ล่าง ขอบบนปล่อย */
+            ...(is3d && tv ? { overflow: 'visible', clipPath: 'inset(-100vh 0 0 0)' } : {}) }}>   {/* paddingBottom: มุมพื้นที่เอียงเข้าหาจอยื่นพ้นกรอบผัง ~26px — ไม่เว้น = โดน overflow ตัด */}
+          {is3d && (
+            <div style={{ alignSelf: 'stretch', position: 'relative', zIndex: 3, background: 'var(--bg)', padding: '2px 4px', display: 'flex', flexWrap: 'wrap', gap: '2px 12px', fontSize: 11.5, color: 'var(--muted)', marginBottom: Math.round(wrapW * 0.1),
+              /* 📺 TV: แถวนี้เหลือแค่ตัวนับป้ายแน่น ⇒ ห้ามมีพื้นทึบทับป้ายเสาที่ยกขึ้นมา · เว้นหัวเพิ่มให้ป้ายตัวใหญ่ */
+              ...(tv ? { background: 'transparent', zIndex: 'auto', marginBottom: Math.round(wrapW * 0.1) + 48 } : {}) }}>
+              <span className="tv-hide">🧊 มุมมอง 3D (ทดลอง) · {pillarLegend(metric)}</span>
+              <span className="tv-hide">กรอบไลน์ = กล่อง · ▣ เสา = ยอดรวมกลุ่ม · ป้ายที่ชนกันถูกยกขึ้นสูง มีเส้นโยงลง · คลิกกล่อง/เสาเปิดไลน์</span>
+              {pillarCrowded > 0 && <b style={{ color: '#f59e0b', ...(tv ? { fontSize: 18 } : {}) }}>ป้ายแน่นจนวางไม่ได้ {pillarCrowded} ใบ<span className="tv-hide"> — ชี้/แตะกล่องเพื่อดู</span></b>}
+              {/* 🔄 มุมกล้อง — ลากบนผังก็หมุนได้ · ปุ่มไว้สำหรับจอ TV (ไม่มีเมาส์) · stopPropagation กันปุ่มเริ่ม "ลาก" */}
+              <span className="tv-hide" onPointerDown={e => e.stopPropagation()} style={{ marginLeft: 'auto', display: 'inline-flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
+                <span>ลาก = หมุน/ก้มเงย · ล้อเมาส์/2 นิ้ว = ซูม · Shift+ลาก = เลื่อน</span>
+                <button onClick={() => orbit.zoomBy(1 / 1.3)} disabled={orbit.zoom <= 1} title="ซูมออก" style={{ ...miniTab(false), padding: '2px 8px', fontSize: 12, opacity: orbit.zoom <= 1 ? 0.45 : 1 }}>－</button>
+                <span style={{ minWidth: 34, textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}>{Math.round(orbit.zoom * 100)}%</span>
+                <button onClick={() => orbit.zoomBy(1.3)} disabled={orbit.zoom >= 3} title="ซูมเข้า (กลางผัง)" style={{ ...miniTab(false), padding: '2px 8px', fontSize: 12, opacity: orbit.zoom >= 3 ? 0.45 : 1 }}>＋</button>
+                <button onClick={() => orbit.step(-15)} title="หมุนซ้าย 15° (หมุนได้ไม่เกิน ±45° จากมุมเริ่ม)" style={{ ...miniTab(false), padding: '2px 8px', fontSize: 12 }}>⟲</button>
+                <button onClick={() => orbit.step(15)} title="หมุนขวา 15° (หมุนได้ไม่เกิน ±45° จากมุมเริ่ม)" style={{ ...miniTab(false), padding: '2px 8px', fontSize: 12 }}>⟳</button>
+                <button onClick={() => orbit.tiltBy(8)} title="ก้มลง (มองเฉียงขึ้น)" style={{ ...miniTab(false), padding: '2px 8px', fontSize: 12 }}>▼</button>
+                <button onClick={() => orbit.tiltBy(-8)} title="เงยขึ้น (มองจากบนมากขึ้น)" style={{ ...miniTab(false), padding: '2px 8px', fontSize: 12 }}>▲</button>
+                <button onClick={() => orbit.setAuto(a => !a)} title="แกว่งมุมมองไป-กลับเองช้าๆ (เหมาะกับจอแขวน)" style={{ ...miniTab(orbit.auto), padding: '2px 8px', fontSize: 11.5 }}>{orbit.auto ? '⏸ หยุดทัวร์' : '▶ ทัวร์'}</button>
+                <button onClick={orbit.reset} title="กลับมุมเริ่มต้น + ซูมพอดีกรอบ" style={{ ...miniTab(false), padding: '2px 8px', fontSize: 11.5 }}>↺ มุมเดิม</button>
+              </span>
+            </div>
+          )}
+          {/* 🧊 3D: overflow ต้อง visible — overflow:hidden บังคับ flatten ลูกที่ preserve-3d (เสาจะแบนติดพื้น) */}
           <div ref={wrapRef} onClick={onMapClick} onPointerMove={onMapMove} onPointerUp={endDrag} onPointerCancel={endDrag}
-            style={{ position: 'relative', ...wrapStyle, maxHeight: 'calc(100vh - 200px)', borderRadius: 10, overflow: 'hidden', border: '1px solid var(--border)', cursor: drawing ? 'crosshair' : 'default', touchAction: 'none', background: '#0a0a0f' }}>
+            style={{ position: 'relative', ...wrapStyle, borderRadius: 10, overflow: is3d ? 'visible' : 'hidden', border: '1px solid var(--border)', cursor: drawing ? 'crosshair' : 'default', touchAction: 'none', background: '#0a0a0f',
+              transition: orbit.transition, ...(is3d ? { transform: `translate(${orbit.px}px, ${orbit.py}px) scale(${orbit.zoom}) ` + map3dTransform(orbit.tilt, orbit.rot, orbitScale(orbit.rot, orbit.tilt, aspect ? 1 / aspect : null)), transformStyle: 'preserve-3d', boxShadow: 'var(--shadow-float)' } : {}) }}>
+            {/* 🧊 พื้นโรงงานรอบผัง (3D) — ตารางกริดจางๆ ยื่นออกนอกรูป แล้วเฟดเข้าพื้นหลังหน้า
+                ให้ผังดู "วางอยู่บนพื้น" ไม่ใช่รูปแผ่นเดียวลอยกลางความมืด (user ทัก 15/10 "พื้นหลังโล่ง ดูเป็น 3D ปลอม") */}
+            {is3d && (
+              <div aria-hidden style={{ position: 'absolute', left: '-45%', right: '-45%', top: '-45%', bottom: '-45%', pointerEvents: 'none',
+                transform: 'translateZ(-2px)',
+                background: 'radial-gradient(ellipse at center, rgba(0,0,0,0) 30%, var(--bg) 70%), '
+                  + 'repeating-linear-gradient(0deg, rgba(148,163,184,0.16) 0 1px, rgba(0,0,0,0) 1px 48px), '
+                  + 'repeating-linear-gradient(90deg, rgba(148,163,184,0.16) 0 1px, rgba(0,0,0,0) 1px 48px), '
+                  + 'linear-gradient(rgba(30,41,59,0.55), rgba(30,41,59,0.55))' }} />
+            )}
             <img src={imageUrl} alt="ผังโรงงาน" onLoad={onImgLoad} style={{ display: 'block', width: '100%', height: 'auto', pointerEvents: 'none', userSelect: 'none' }} />
             {/* scrim บางๆ ให้กรอบเด่นแต่ยังเห็นผังชัด (ไม่หรี่จนภาพหม่น) */}
             <div style={{ position: 'absolute', inset: 0, background: 'rgba(6,8,14,0.14)', pointerEvents: 'none' }} />
@@ -2470,7 +2719,7 @@ export default function FactoryMap({ setupMode = false }) {
                   (user ทัก 2026-08-25 "เส้นไกด์ที่ชี้กลับไปที่ไลน์มองไม่เห็นเลย")
                   ⚠️ จุดปลายใช้ line ยาว 0 + linecap round (วาดเป็นวงกลมขนาด px คงที่) — ห้ามใช้ <circle r="%">
                   เพราะ viewBox ถูกยืด preserveAspectRatio=none วงกลมจะเบี้ยวเป็นวงรี */}
-              {!editing && [
+              {!editing && !is3d && [
                 ...regions.map(r => [labelLayout.region[r.id]?.link, CAT[regCat(stOf(r.line_name))].color, `lk-r-${r.id}`]),
                 ...autoHulls.map(h => [labelLayout.hull[h.name]?.link, CAT[regCat(stOf(h.name))].color, `lk-h-${h.name}`]),
               ].filter(([l]) => l).map(([l, color, key]) => (
@@ -2501,7 +2750,7 @@ export default function FactoryMap({ setupMode = false }) {
 
             {/* ป้ายกลุ่ม (กรอบแม่อัตโนมัติ) — ยอดรวมทั้ง family (รวมคนที่เช็คชื่อผูกไลน์แม่)
                 แยกจากป้ายไลน์ให้ชัด (2026-08-06): ▣ + ขอบประหนา + ตัวใหญ่กว่า + ชิปบอกจำนวนไลน์ย่อย */}
-            {!editing && autoHulls.map(h => {
+            {!editing && !is3d && autoHulls.map(h => {
               const box = labelLayout.hull[h.name];
               if (labelLayout.ready && !box) return null;   // จอแคบ ไม่มีที่ว่างจริง → นับไปบอกบนจอแทน (ห้ามวาดทับ)
               const st = stOf(h.name); const meta = CAT[regCat(st)];
@@ -2522,7 +2771,9 @@ export default function FactoryMap({ setupMode = false }) {
                   <div style={{ ...(lblScale !== 1 ? { zoom: lblScale } : {}), background: 'linear-gradient(180deg, rgba(8,10,16,0.93), rgba(8,10,16,0.82))', border: `2px dashed ${meta.color}`, borderRadius: 9, padding: '3px 9px 4px', textAlign: 'center', textShadow: '0 1px 3px rgba(0,0,0,0.95)', boxShadow: `0 3px 14px rgba(0,0,0,0.45), inset 0 0 0 1px ${meta.color}22` }}>
                     <div style={{ fontSize: 'clamp(12px,1.15vw,16px)', fontWeight: 800, color: '#fff', letterSpacing: 0.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.25 }}>
                       {st.dtActive && metric !== 'breakdown' && <span className="dt-alarm-icon" style={{ color: '#ef4444' }}>🔴 </span>}▣ {h.name}
-                      {kids > 0 && <span style={{ fontSize: '0.72em', fontWeight: 700, color: 'rgba(255,255,255,0.62)', marginLeft: 5 }}>{kids} ไลน์</span>}
+                      {/* 🔴 `em` คูณกับแม่ (clamp 12-16px) **และคูณ `zoom: lblScale` ที่ผู้ใช้กด A− ลงได้ถึง 0.6**
+                          ⇒ เดิม 0.72em ได้ ~5px บนจอจริง · ตรึงเป็น clamp พื้น 11px เหมือนป้ายอื่น */}
+                      {kids > 0 && <span style={{ fontSize: 'clamp(11px,0.85vw,12.5px)', fontWeight: 700, color: 'rgba(255,255,255,0.62)', marginLeft: 5 }}>{kids} ไลน์</span>}
                     </div>
                     {txt && <div style={{ fontSize: 'clamp(11px,1vw,13.5px)', fontWeight: 800, color: meta.color, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.25 }}>{txt}</div>}
                   </div>
@@ -2534,7 +2785,13 @@ export default function FactoryMap({ setupMode = false }) {
                 ตำแหน่งมาจาก labelLayout (กันทับกัน) — ยังไม่รู้ขนาดผัง = ถอยไปเกาะขอบบนแบบเดิม
                 ไลน์ที่เป็น "ลูก" ของกลุ่ม นำหน้าด้วย ↳ ให้อ่านออกว่าอยู่ใต้กลุ่มไหน (2026-08-06)
                 ข้อมูลครบทุกตัวเหมือนเดิม (คำสั่ง user 2026-08-04) */}
-            {regions.map(r => {
+            {is3d && (
+              <MapPillars3D maxH={pillarMaxH} size={Math.max(12, Math.round(wrapW * 0.024))}
+                onOpen={(n) => openLine(n)}
+                onHover={(n, e) => { if (n) { setHoverLine(n); setHoverXY({ x: e.clientX, y: e.clientY }); } else setHoverLine(null); }}
+                items={pillarItems} lifts={pillarLifts} wPx={wrapW} hPx={aspect ? wrapW / aspect : 0} cam={pillarLblK === 1 ? orbit : { ...orbit, lblScale: pillarLblK }} />
+            )}
+            {!is3d && regions.map(r => {
               if (facHidden(r.line_name)) return null;      // 🫥 โซนที่ซ่อนตาม metric — ป้ายก็ไม่วาด
               const box = labelLayout.region[r.id];
               if (labelLayout.ready && !box) return null;   // จอแคบ ไม่มีที่ว่างจริง → กรอบสียังบอกสถานะ แตะดูรายละเอียดได้
@@ -2666,7 +2923,7 @@ export default function FactoryMap({ setupMode = false }) {
                       {parent && <span title={`ไลน์ย่อยของ ${parent}`} style={{ color: 'rgba(255,255,255,0.5)', fontWeight: 700, marginRight: 2 }}>↳</span>}
                       {st.isFac && (st.storeZone ? `${zoneKindMeta(st.storeZone.kind).icon} ` : st.die ? '🔨 ' : '🔧 ')}{r.line_name}
                     </div>
-                    {txt && <div style={{ fontSize: 'clamp(10px,0.9vw,12.5px)', fontWeight: 800, color: meta.color, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.25, opacity: 0.95 }}>{txt}</div>}
+                    {txt && <div style={{ fontSize: 'clamp(11px,0.9vw,12.5px)',   /* min ≥ 11px (ด่าน font-min-11) */ fontWeight: 800, color: meta.color, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.25, opacity: 0.95 }}>{txt}</div>}
                   </div>
                 </div>
               );
@@ -2689,38 +2946,43 @@ export default function FactoryMap({ setupMode = false }) {
           {/* ── side panel: สรุปทบทวนรายวัน (default) / จัดอันดับสด (ใช้พื้นที่ข้าง) ──
               จอ TV ซ่อนได้ (ปุ่ม ◀ ในแถบ metric) — คืนความกว้างให้ผัง ~360px แล้ว wrapW มักพ้นเกณฑ์ compact */}
           {!editing && !panelHide && (
-            <aside style={{ flex: '0 0 360px', maxWidth: '100%', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 16px', maxHeight: 'calc(100vh - 200px)', overflowY: 'auto' }}>
+            /* 📺 จอ TV กดอะไรไม่ได้ (20/10 คำสั่ง user · รูปจอจริง "แผงขวาต้อง scroll") — เดิม zoom 1.45 + เดาความสูง
+               ⇒ ล้นขอบล่าง · TvFitBox วัดที่ว่างจริงแล้วย่อให้พอดี (≤1.45×) · ยังล้น = เลื่อนเอง · แท็บแผงซ่อน (เลือกที่ /display-rotation `panel=`) */
+            <TvFitBox enabled={tv} maxScale={1.45}
+              style={{ flex: '0 0 360px', maxWidth: '100%', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 16px', maxHeight: 'calc(100vh - 200px)', overflowY: 'auto' }}
+              tvStyle={{ flex: `0 0 ${Math.round(360 * 1.45)}px`, maxWidth: '100%', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12 }}
+              innerStyle={{ padding: '14px 16px' }}>
               {/* สลับโหมดแผง */}
-              <div style={{ display: 'flex', gap: 5, marginBottom: 12 }}>
-                <button onClick={() => setPanelMode('review')} style={{ ...miniTab(panelMode === 'review'), flex: 1, fontSize: 11.5, padding: '5px 4px' }}>📅 ทบทวนรายวัน</button>
+              {/* โหมดทบทวน = แผงเป็นสรุปของวันที่เลือกอย่างเดียว (OBEYA/อันดับ เป็นของสด) */}
+              {!isReview && <div className="tv-hide" style={{ display: 'flex', gap: 5, marginBottom: 12 }}>
+                <button onClick={() => setPanelMode('review')} style={{ ...miniTab(panelMode === 'review'), flex: 1, fontSize: 11.5, padding: '5px 4px' }}>⚡ สรุปวันนี้</button>
                 <button onClick={() => setPanelMode('obeya')} style={{ ...miniTab(panelMode === 'obeya'), flex: 1, fontSize: 11.5, padding: '5px 4px' }}
                   title="สถานะรายหัวข้อแบบห้อง OBEYA (SQDCM) จากข้อมูลสดของวันนี้ — กดหัวข้อเพื่อเจาะหาไลน์ที่มีปัญหา">🏛️ OBEYA (สด)</button>
                 <button onClick={() => setPanelMode('live')} style={{ ...miniTab(panelMode === 'live'), flex: 1, fontSize: 11.5, padding: '5px 4px' }}
                   title="จัดอันดับไลน์ตามแท็บ metric ที่เลือกด้านบน (พลังงาน / PM / Supply Route ดูได้ที่นี่เท่านั้น)">📊 อันดับ</button>
-              </div>
+              </div>}
 
-              {panelMode === 'review' ? (
+              {(isReview || panelMode === 'review') ? (
                 <>
-                  {/* ตัวเลือกวันที่ */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-                    <button onClick={() => setReviewDate(d => shiftDate(d, -1))} style={navBtn}>◀</button>
-                    <input type="date" value={reviewDate} max={getWorkDate()} onChange={e => e.target.value && setReviewDate(e.target.value)}
-                      style={{ width: 150, padding: '6px 8px', borderRadius: 8, fontSize: 13, textAlign: 'center' }} />
-                    <button onClick={() => setReviewDate(d => (d < getWorkDate() ? shiftDate(d, 1) : d))} disabled={reviewDate >= getWorkDate()} style={{ ...navBtn, opacity: reviewDate >= getWorkDate() ? 0.4 : 1 }}>▶</button>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
-                    <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text2)' }}>{fmtThaiDate(reviewDate)}</div>
-                    {reviewDate !== reviewDefaultDate() && <button onClick={() => setReviewDate(reviewDefaultDate())} style={{ ...miniTab(false), padding: '2px 8px', fontSize: 11 }}>↺ วันล่าสุด</button>}
-                  </div>
-                  <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>ภาพรวมทั้งวัน (กะเช้า+ดึก) สำหรับประชุมผู้จัดการ · เรียงไลน์ที่ทำได้ต่ำสุดขึ้นบน · คลิกแถวเปิดผังไลน์</div>
+                  {isReview ? (<>
+                    <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text2)', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      📅 {fmtThaiDate(reviewDate)}
+                      {reviewDate !== reviewDefaultDate() && <button className="tv-hide" onClick={() => setReviewDate(reviewDefaultDate())} style={{ ...miniTab(false), padding: '2px 8px', fontSize: 11 }}>↺ วันล่าสุด</button>}
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>ภาพรวมทั้งวัน (กะเช้า+ดึก) สำหรับประชุมผู้จัดการ · เปลี่ยนวันที่ที่สวิตช์เหนือผัง · เรียงไลน์ที่ทำได้ต่ำสุดขึ้นบน<span className="tv-hide"> · คลิกแถวเปิดรายละเอียดไลน์</span></div>
+                  </>) : (
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>
+                      <b style={{ color: 'var(--accent)' }}>⚡ วันนี้ {fmtThaiDate(getWorkDate())} (สด)</b> — ยอดถึงตอนนี้ ไม่ใช่ยอดทั้งวัน · เรียงไลน์ที่ทำได้ต่ำสุดขึ้นบน<span className="tv-hide"> · คลิกแถวเปิดรายละเอียดไลน์</span>
+                    </div>
+                  )}
 
                   {/* สรุปทั้งโรงงาน */}
                   {(() => {
-                    const t = reviewTotals; const pct = t.target > 0 ? Math.round(t.actual / t.target * 100) : null;
+                    const t = sumBox.totals; const pct = t.target > 0 ? Math.round(t.actual / t.target * 100) : null;
                     const stats = [
                       { label: 'ผลิตได้รวม / เป้า', val: `${fmtNum(t.actual)}/${fmtNum(t.target)}${pct != null ? ` · ${pct}%` : ''}`, color: pctCol(pct) },
-                      { label: 'OEE เฉลี่ย', val: t.oee != null ? `${t.oee}%` : '—', color: oeeCol(t.oee, Object.keys(reviewStatus || {})),
-                        explain: t.oeeRows?.length ? { title: 'OEE เฉลี่ยทั้งโรงงาน', rows: t.oeeRows } : null },
+                      { label: 'OEE เฉลี่ย', val: t.oee != null ? `${t.oee}%` : '—', color: oeeCol(t.oee, sumBox.names),
+                        explain: isReview && t.oeeRows?.length ? { title: 'OEE เฉลี่ยทั้งโรงงาน', rows: t.oeeRows } : null },
                       { label: 'Downtime รวม', val: `${fmtNum(t.dtMin)} น.`, color: t.dtMin > 0 ? '#f59e0b' : 'var(--text)' },
                       { label: 'ของเสียรวม', val: fmtNum(t.ng), color: t.ng > 0 ? '#ef4444' : 'var(--text)' },
                       { label: 'คนเข้างาน', val: t.headTotal > 0 ? `${t.present}/${t.headTotal}` : '—', color: 'var(--text)' },
@@ -2742,26 +3004,26 @@ export default function FactoryMap({ setupMode = false }) {
                     );
                   })()}
 
-                  {reviewLoading ? (
+                  {sumBox.loading ? (
                     <div style={{ fontSize: 12, color: 'var(--muted)', padding: 16, textAlign: 'center' }}>กำลังโหลด...</div>
-                  ) : reviewError ? (
+                  ) : sumBox.error ? (
                     <div style={{ fontSize: 12, color: '#ef4444', padding: 14, textAlign: 'center', border: '1px solid #ef444455', borderRadius: 8 }}>
                       ⚠️ โหลดสรุปวันนี้ไม่สำเร็จ — ตัวเลขด้านบนจึงเป็น 0 <b>ไม่ใช่ "ไม่มีการผลิต"</b>
-                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, wordBreak: 'break-all' }}>{reviewError}</div>
+                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, wordBreak: 'break-all' }}>{sumBox.error}</div>
                       <button onClick={loadReview} style={{ ...miniTab(false), marginTop: 8, padding: '3px 10px', fontSize: 11.5 }}>↻ ลองใหม่</button>
                     </div>
-                  ) : reviewRanked.every(x => !x.r.target && !x.r.dtMin && !x.r.ng && x.r.oee == null) ? (
-                    <div style={{ fontSize: 12, color: 'var(--muted)', padding: 20, textAlign: 'center' }}>ไม่มีข้อมูลการผลิตของวันที่เลือก</div>
-                  ) : reviewRanked.map(({ name, r }, i) => {
+                  ) : sumBox.ranked.every(x => !x.r.target && !x.r.dtMin && !x.r.ng && x.r.oee == null) ? (
+                    <div style={{ fontSize: 12, color: 'var(--muted)', padding: 20, textAlign: 'center' }}>{isReview ? 'ไม่มีข้อมูลการผลิตของวันที่เลือก' : 'ยังไม่มีไลน์ไหนลงยอดวันนี้'}</div>
+                  ) : sumBox.ranked.map(({ name, r }, i) => {
                     const noData = !r.target && !r.dtMin && !r.ng && r.oee == null;
                     if (noData) return null;
                     const hasRegion = regions.some(rg => rg.line_name === name);
-                    const kids = (childrenOf[name] || []).filter(k => { const kr = reviewStatus[k]; return kr && (kr.target || kr.dtMin || kr.ng || kr.oeeN); });
+                    const kids = (childrenOf[name] || []).filter(k => { const kr = sumBox.rowOf(k); return kr && (kr.target || kr.dtMin || kr.ng || kr.oeeN); });
                     const hasKids = kids.length > 0;
                     const pct = r.target > 0 ? Math.round(r.actual / r.target * 100) : null;
                     return (
                       // ไลน์แม่ที่มีลูก → คลิกเปิด breakdown ไลน์ย่อย · ไลน์เดี่ยว → เปิดผังไลน์พร้อมพนักงาน
-                      <div key={name} onClick={() => { if (hasKids) { setReviewDetail(name); } else { if (hasRegion) flashLine(name); openLine(name, reviewDate); } }}
+                      <div key={name} onClick={() => { if (hasKids && isReview) { setReviewDetail(name); } else { if (hasRegion) flashLine(name); openLine(name, sumBox.date); } }}
                         style={{ padding: '8px 10px', borderRadius: 9, marginBottom: 5, cursor: 'pointer', background: highlight === name ? 'var(--bg2)' : 'var(--bg3)', border: `1px solid ${highlight === name ? pctCol(pct) : 'var(--border2)'}` }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 5 }}>
                           <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--muted)', width: 18, textAlign: 'right', flexShrink: 0 }}>{i + 1}</span>
@@ -2827,7 +3089,7 @@ export default function FactoryMap({ setupMode = false }) {
                           </div>
                         );
                       })}
-                      <div style={{ fontSize: 11, color: 'var(--muted)' }}>กดแถวไลน์เพื่อเน้นบนผัง + เปิดรายละเอียด</div>
+                      <div className="tv-hide" style={{ fontSize: 11, color: 'var(--muted)' }}>กดแถวไลน์เพื่อเน้นบนผัง + เปิดรายละเอียด</div>
                     </>)}
                   </div>
                 );
@@ -2835,7 +3097,7 @@ export default function FactoryMap({ setupMode = false }) {
                   <>
                     <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 2 }}>🏛️ สถานะวันนี้ (สด) — ทั้งโรงงาน</div>
                     <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>
-                      หัวข้อแบบห้อง OBEYA (SQDCM) · {B.lineCount} ไลน์ · เปิดกะแล้ว {B.openCount} ไลน์ — กดหัวข้อเพื่อดูว่าไลน์ไหนเป็นต้นเหตุ
+                      หัวข้อแบบห้อง OBEYA (SQDCM) · {B.lineCount} ไลน์ · เปิดกะแล้ว {B.openCount} ไลน์<span className="tv-hide"> — กดหัวข้อเพื่อดูว่าไลน์ไหนเป็นต้นเหตุ</span>
                     </div>
 
                     {/* ไฟรวม — ต้องบอกเสมอว่าตัดสินจากกี่หัวข้อ ไม่งั้นเขียวจาก 2/6 ดูเหมือนเขียวจาก 6/6 */}
@@ -2863,7 +3125,7 @@ export default function FactoryMap({ setupMode = false }) {
                               {meta?.icon} {meta?.label} <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}>{meta?.en}</span>
                             </div>
                             <div style={{ fontSize: 15, fontWeight: 800, color: col, whiteSpace: 'nowrap', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>{ax.value ?? '—'}</div>
-                            <span style={{ fontSize: 11, color: 'var(--muted)', flexShrink: 0 }}>{on ? '▾' : '▸'}</span>
+                            <span className="tv-hide" style={{ fontSize: 11, color: 'var(--muted)', flexShrink: 0 }}>{on ? '▾' : '▸'}</span>
                           </div>
                           {ax.sub && <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 3, paddingLeft: 19 }}>{ax.sub}</div>}
                           {ax.live && (
@@ -2885,7 +3147,7 @@ export default function FactoryMap({ setupMode = false }) {
                       );
                     })}
 
-                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 12, lineHeight: 1.5, borderTop: '1px solid var(--border2)', paddingTop: 8 }}>
+                    <div className="tv-hide" style={{ fontSize: 11, color: 'var(--muted)', marginTop: 12, lineHeight: 1.5, borderTop: '1px solid var(--border2)', paddingTop: 8 }}>
                       เกณฑ์สีของทุกหัวข้อ<b> ยืมมาจากแท็บ metric ของเรื่องนั้นบนผังนี้เอง</b> — แผงขวากับสีบนผังจึงตอบตรงกันเสมอ<br />
                       ต้องการแนวโน้มย้อนหลัง/เป้ารายเดือน → <Link to="/obeya?tab=sqdcm" style={{ color: 'var(--accent)', fontWeight: 700 }}>ห้อง OBEYA</Link>
                     </div>
@@ -2907,7 +3169,7 @@ export default function FactoryMap({ setupMode = false }) {
                         </span>
                       ))}
                     </div>
-                    <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>{M.desc ? 'มาก → น้อย (ปัญหาขึ้นบน)' : 'น้อย → มาก (ตามหลังขึ้นบน)'} · คลิกแถวเพื่อเน้นบนผัง</div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>{M.desc ? 'มาก → น้อย (ปัญหาขึ้นบน)' : 'น้อย → มาก (ตามหลังขึ้นบน)'}<span className="tv-hide"> · คลิกแถวเพื่อเน้นบนผัง</span></div>
                     {metric === 'productivity' && (
                       <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8, padding: '4px 8px', background: 'var(--bg3)', borderRadius: 6, lineHeight: 1.5 }}>
                         รูปแบบ <b style={{ color: 'var(--text2)' }}>ทำได้ / ควรได้ ณ ตอนนี้ / เป้า (ใบที่เปิด)</b><br />
@@ -2940,7 +3202,7 @@ export default function FactoryMap({ setupMode = false }) {
                   </>
                 );
               })()}
-            </aside>
+            </TvFitBox>
           )}
         </div>
       )}
@@ -2952,7 +3214,6 @@ export default function FactoryMap({ setupMode = false }) {
       {/* ── การ์ดพรีวิวลอยตามเม้าส์ (hover) — สรุปทุกมุมมองแบบย่อ, เฉพาะ mouse ── */}
       {hoverLine && !editing && !detailLine && (() => {
         const st = stOf(hoverLine); const kids = childrenOf[hoverLine] || []; const meta = CAT[M.cat(st)];
-        const hasFloor = !!floorMapTarget(hoverLine);
         const W = 264, OFF = 18;
         const vw = typeof window !== 'undefined' ? window.innerWidth : 1280;
         const vh = typeof window !== 'undefined' ? window.innerHeight : 800;
@@ -3029,7 +3290,9 @@ export default function FactoryMap({ setupMode = false }) {
                   ของเดิมโชว์ครบ 7 แถวโดย 5 แถวเขียนว่า "🔧 Facility" เฉยๆ = การ์ดยาวแต่ไม่มีข้อมูล
                   (user ทัก 2026-08-20 "box card จุดที่เป็นระบบ utility มันโชว์หลาย")
                   → ตัดแถวที่ N/A ออก แล้ว **บอกด้วยบรรทัดเดียวว่าตัดอะไรไป** (ห้ามหายเงียบ) */}
-              {Object.entries(METRICS).filter(([, m]) => !(st.isFac && m.facilityNA)).map(([k, m]) => {
+              {/* 🎯 การ์ด hover ตอบเฉพาะเรื่องของแท็บที่เลือก (2026-10-16 · user "hover ควรโชว์เรื่องที่เกี่ยวกับ tab
+                  ไม่ใช่โชว์ทั้งหมด จะโชว์ทั้งหมดก็คือ tab ปกติ/ผิดปกติ") — แท็บ health = รวมทุกเรื่อง */}
+              {Object.entries(METRICS).filter(([k, m]) => !(st.isFac && m.facilityNA) && (metric === 'health' || k === metric)).map(([k, m]) => {
                 const c = CAT[m.cat(st)]; const t = m.text(st); const isCur = k === metric;
                 return (
                   <div key={k} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
@@ -3059,14 +3322,24 @@ export default function FactoryMap({ setupMode = false }) {
                 );
               })}
             </div>
-            {st.isFac && (
+            {metric !== 'health' && st.isFac && M.facilityNA && (
+              <div style={{ fontSize: 12, color: 'var(--text2)', fontWeight: 700 }}>
+                {st.die ? '🔨 โซนคลังแม่พิมพ์' : '🔧 โซนระบบสนับสนุน'} — ไม่ใช่ไลน์ผลิต จึงไม่มีเรื่อง {M.label}
+              </div>
+            )}
+            {metric !== 'health' && (
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6, lineHeight: 1.4 }}>
+                แสดงเฉพาะเรื่อง {M.label} · ดูทุกเรื่องที่แท็บ {METRICS.health.label}
+              </div>
+            )}
+            {st.isFac && metric === 'health' && (
               <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6, lineHeight: 1.4 }}>
                 {st.die ? '🔨 โซนคลังแม่พิมพ์' : '🔧 โซนระบบสนับสนุน (utility)'} — ไม่ใช่ไลน์ผลิต
                 จึงไม่มี {Object.values(METRICS).filter(m => m.facilityNA).map(m => m.label.replace(/^\S+\s/, '')).join(' / ')}
               </div>
             )}
             <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 9, textAlign: 'center', fontWeight: 700 }}>
-              {hasFloor ? '🏭 คลิกเพื่อเปิดผังไลน์ + พนักงาน' : 'คลิกเพื่อดูรายละเอียด + แยกไลน์ย่อย'}
+              คลิกเพื่อดูรายละเอียด{M?.label && metric !== 'health' ? ` เรื่อง ${M.label}` : ''} + ผังของไลน์
             </div>
           </div>
         );
@@ -3157,9 +3430,15 @@ export default function FactoryMap({ setupMode = false }) {
         const pct = s && s.totTarget > 0 ? Math.round(s.totProduced / s.totTarget * 100) : null;
         const kids = childrenOf[storyLine] || [];
         const sh = (v) => v === 'day' ? '☀️ กะเช้า' : v === 'night' ? '🌙 กะดึก' : (v || '—');
+        /* 🔎 แท็บที่เลือก = เลนส์ (2026-10-16 · user "คลิกไลน์ ควรโชว์เรื่องที่เกี่ยวกับ tab ที่เลือก + คู่กับผังเลย์เอาต์")
+           หัวข้อ/เลนส์ผังตัดสินที่ utils/lineLens.js · ซ่อนแล้วต้องบอกบนหัว + ปุ่มดูทุกเรื่อง (ห้ามหายเงียบ) */
+        const sections = storySectionsFor(metric);
+        const sec = (k) => storyAll || sections.has(k);
+        const lens = mapLensOf(metric);
+        const showMap = !!lens && !stOf(storyLine).isFac;
         return (
           <div onClick={() => setStoryLine(null)} style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(0,0,0,0.66)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-            <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, width: '100%', maxWidth: 860, maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
+            <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, width: '100%', maxWidth: showMap ? 1440 : 860, maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
               {/* หัว */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, padding: '18px 20px 12px', borderBottom: '1px solid var(--border)' }}>
                 <div style={{ minWidth: 0 }}>
@@ -3169,14 +3448,48 @@ export default function FactoryMap({ setupMode = false }) {
                       ? <span style={{ color: 'var(--accent)', fontWeight: 700 }}>⚡ วันนี้ (สด)</span>
                       : 'สรุปทั้งวัน'} · {fmtThaiDate(storyDate)}{kids.length ? ` · รวม ${kids.length} ไลน์ย่อย` : ''}{s?.sessionCount ? ` · ${s.sessionCount} กะ` : ''}
                   </div>
+                  {metric !== 'health' && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 6, fontSize: 12 }}>
+                      <span style={{ color: 'var(--text2)', fontWeight: 700 }}>🔎 {storyAll ? 'แสดงทุกเรื่อง' : `แสดงเฉพาะเรื่อง ${M.label}`}</span>
+                      <button onClick={() => setStoryAll(v => !v)} style={{ ...miniTab(storyAll), fontSize: 11.5, padding: '3px 10px' }}>
+                        {storyAll ? `กลับไปเฉพาะ ${M.label}` : 'ดูทุกเรื่องของไลน์'}
+                      </button>
+                    </div>
+                  )}
                 </div>
                 <div style={{ display: 'flex', gap: 7, flexShrink: 0 }}>
-                  <button onClick={() => openFloorMap(storyLine)} style={{ ...miniTab(false), whiteSpace: 'nowrap' }}>🏭 ผังไลน์ + พนักงาน</button>
                   <button onClick={() => setStoryLine(null)} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, width: 32, height: 32, cursor: 'pointer', color: 'var(--text2)', fontSize: 15 }}>✕</button>
                 </div>
               </div>
 
-              <div style={{ overflowY: 'auto', padding: '16px 20px 20px' }}>
+              <div style={showMap && !isMobile
+                ? { display: 'grid', gridTemplateColumns: 'minmax(0, 1.5fr) minmax(360px, 1fr)', gap: 16, padding: '16px 20px 20px', minHeight: 0, flex: 1, overflow: 'hidden' }
+                : { overflowY: 'auto', padding: '16px 20px 20px' }}>
+              {showMap && (
+                <div style={{ minWidth: 0, overflowY: isMobile ? 'visible' : 'auto', marginBottom: isMobile ? 16 : 0 }}>
+                  {/* 📦 ยอดผลิต = บอร์ด Heijunka ของไลน์ · 👷 คน = ผังจุดงาน+คนประจำ (user 16/10 — ปุ่ม "ผังไลน์+พนักงาน" ไม่จำเป็นแล้ว) */}
+                  {lens === 'productivity' ? (
+                    <LineOrderBoard lineName={storyLine} family={familyNames(storyLine)} date={storyDate} lines={lines}
+                      height={isMobile ? undefined : 'calc(92vh - 300px)'} onSelectCard={isMobile ? undefined : setLensSel} />
+                  ) : (
+                    <LineLensMap lineName={storyLine} family={familyNames(storyLine)} parentName={parentOf[storyLine] || null}
+                      lens={lens} dtRows={story?.dtUnplanned || null} height={isMobile ? '360px' : 'clamp(300px, calc(92vh - 360px), 760px)'}
+                      date={storyDate} lineIds={lens === 'people' ? lines.filter(l => familyNames(storyLine).includes(l.name)).map(l => l.id) : undefined}
+                      onSelectMachine={isMobile ? undefined : setLensSel} />
+                  )}
+                  {lens === 'people' && floorMapTarget(storyLine) && (
+                    <button onClick={() => openFloorMap(storyLine)} style={{ ...miniTab(false), fontSize: 11.5, padding: '3px 10px', marginTop: 8 }}>↗ เปิดผังคนเต็มจอ (OT · PPE · กะ)</button>
+                  )}
+                </div>
+              )}
+              <div style={showMap && !isMobile ? { minWidth: 0, overflowY: 'auto' } : undefined}>
+                {/* เครื่องที่คลิกบนผัง — ติดหัวคอลัมน์ขวา (sticky) · มือถือการ์ดอยู่ใต้ผังใน LineLensMap เอง */}
+                {showMap && !isMobile && lensSel && (
+                  <div style={{ position: 'sticky', top: 0, zIndex: 2, background: 'var(--card)', paddingBottom: 10, marginBottom: 6 }}>
+                    {lens === 'productivity' ? <OrderDetailCard c={lensSel} /> : <MachineDetailCard m={lensSel} lens={lens} />}
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>{lens === 'productivity' ? 'คลิกใบเดิมอีกครั้งเพื่อปิด' : 'คลิกหมุดเดิมอีกครั้งเพื่อปิด'}</div>
+                  </div>
+                )}
                 {storyLoading ? (
                   <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>กำลังโหลด...</div>
                 ) : !s ? (
@@ -3184,14 +3497,14 @@ export default function FactoryMap({ setupMode = false }) {
                 ) : (<>
                   {/* ไม่ได้เปิดกะ = บอกแล้วไปต่อ ห้ามจบแค่บรรทัดเดียว — PM/ใบซ่อม/คน/ไฟ ยังมีเรื่องให้ดู
                       (2026-08-26 · user ทัก "คลิกมาไม่เจอข้อมูลอะไรเลย ทั้งที่บอก PM ค้าง") */}
-                  {!s.sessionCount && (
+                  {!s.sessionCount && ['summary', 'shifts', 'parts', 'dt', 'ng'].some(sec) && (
                     <div style={{ background: 'var(--bg3)', border: '1px dashed var(--border2)', borderRadius: 9, padding: '10px 12px', marginBottom: 16, fontSize: 12.5, color: 'var(--text2)' }}>
                       ⏸ <b>ไม่มีการเปิดกะของไลน์นี้ใน{fmtThaiDate(storyDate)}</b> — ไม่มียอดผลิต/OEE/Downtime ของวันนี้
                       <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 2 }}>ด้านล่างคือสถานะปัจจุบันของไลน์ (PM · ใบซ่อม · คน · ไฟฟ้า) ซึ่งไม่ผูกกับวันที่เลือก</div>
                     </div>
                   )}
                   {/* สรุปหัวเรื่อง */}
-                  {s.sessionCount > 0 && (
+                  {sec('summary') && s.sessionCount > 0 && (
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px,1fr))', gap: 8, marginBottom: 18 }}>
                     {[
                       { k: 'ผลิตได้ / เป้า', v: `${fmtNum(s.totProduced)}/${fmtNum(s.totTarget)}`, sub: pct != null ? `${pct}%` : '', c: pctCol(pct) },
@@ -3210,7 +3523,7 @@ export default function FactoryMap({ setupMode = false }) {
                   )}
 
                   {/* รายกะ */}
-                  {s.sessionCount > 0 && (
+                  {sec('shifts') && s.sessionCount > 0 && (
                   <StorySection title="🕐 แยกตามกะ">
                     <div style={{ display: 'grid', gap: 6 }}>
                       {s.shifts.map(x => {
@@ -3239,7 +3552,7 @@ export default function FactoryMap({ setupMode = false }) {
                   )}
 
                   {/* ผลิตรายพาร์ท */}
-                  {s.parts.length > 0 && (
+                  {sec('parts') && s.parts.length > 0 && (
                     <StorySection title={`📦 ผลิตรายชิ้นงาน (${s.parts.length})`}>
                       <div style={{ overflowX: 'auto' }}>
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 420, fontVariantNumeric: 'tabular-nums' }}>
@@ -3273,7 +3586,7 @@ export default function FactoryMap({ setupMode = false }) {
                   {/* 🔗 สายการไหล — "หยุดที่นี่ กระทบใคร / ของมาจากไหน" (2026-08-19)
                       ⚠️ ยังไม่ผูกกับเวลาหยุดจริง (ต้องรู้ buffer ครบก่อนถึงบอกได้ว่ากระทบเมื่อไหร่)
                          ตอนนี้บอกแค่ "เชื่อมกับใคร" ซึ่งก็ยังดีกว่าไม่มีอะไรเลย — ห้ามเขียนให้ดูเหมือนคำตอบสำเร็จรูป */}
-                  {(s.flowDown?.length > 0 || s.flowUp?.length > 0) && (
+                  {sec('flow') && (s.flowDown?.length > 0 || s.flowUp?.length > 0) && (
                     <StorySection title="🔗 สายการไหลระหว่างไลน์">
                       <div style={{ display: 'grid', gap: 6 }}>
                         {s.flowDown?.length > 0 && (
@@ -3312,7 +3625,7 @@ export default function FactoryMap({ setupMode = false }) {
 
                   {/* Downtime + เหตุผล */}
                   {s.sessionCount > 0 && (<>
-                  <StorySection title={`🔧 Downtime นอกแผน (${s.dtUnplanned.length} ครั้ง · ${fmtNum(s.dtUnplannedMin)} นาที)`}>
+                  {sec('dt') && <StorySection title={`🔧 Downtime นอกแผน (${s.dtUnplanned.length} ครั้ง · ${fmtNum(s.dtUnplannedMin)} นาที)`}>
                     {s.dtUnplanned.length === 0 ? <div style={{ fontSize: 12, color: 'var(--muted)' }}>ไม่มี — ไม่มีเครื่องหยุดนอกแผน 👍</div> : (
                       <div style={{ display: 'grid', gap: 5 }}>
                         {s.dtUnplanned.map(d => (
@@ -3334,10 +3647,10 @@ export default function FactoryMap({ setupMode = false }) {
                         ในแผน (ไม่นับเป็น loss): {s.dtPlanned.map(d => `${d.type} ${d.mins}น.`).join(' · ')}
                       </div>
                     )}
-                  </StorySection>
+                  </StorySection>}
 
                   {/* ของเสีย */}
-                  <StorySection title={`🚫 ของเสีย (${fmtNum(s.ngTotal)} ชิ้น)`}>
+                  {sec('ng') && <StorySection title={`🚫 ของเสีย (${fmtNum(s.ngTotal)} ชิ้น)`}>
                     {s.defects.length === 0 ? <div style={{ fontSize: 12, color: 'var(--muted)' }}>ไม่มีของเสีย 👍</div> : (
                       <div style={{ display: 'grid', gap: 5 }}>
                         {s.defects.map(d => (
@@ -3355,11 +3668,11 @@ export default function FactoryMap({ setupMode = false }) {
                         ))}
                       </div>
                     )}
-                  </StorySection>
+                  </StorySection>}
                   </>)}
 
                   {/* 4M */}
-                  {s.fourM.length > 0 && (
+                  {sec('fourm') && s.fourM.length > 0 && (
                     <StorySection title={`🔄 4M วันนี้ (${s.fourM.length})`}>
                       <div style={{ display: 'grid', gap: 5 }}>
                         {s.fourM.map(f => (
@@ -3382,13 +3695,15 @@ export default function FactoryMap({ setupMode = false }) {
                          ไม่งั้นคนอ่านเข้าใจว่าเป็นข้อมูลย้อนหลังของวันนั้น */}
                   {(() => {
                     const st = stOf(storyLine);
-                    const pmDue = (s.pmRows || []).filter(r => r.bucket !== 'ok');   // เกิน/ใกล้ครบ/ไม่เคยตรวจ/ไม่ตั้งรอบ
+                    if (!['pm', 'mo', 'people', 'energy', 'supply'].some(sec)) return null;
+                    // แท็บ PM = งานช่าง · แท็บ AM = ผลิตตรวจเอง — รายการแยกตามแท็บ (ตัวนับรวมด้านบนยังเป็นของทั้งคู่)
+                    const pmDue = (s.pmRows || []).filter(r => r.bucket !== 'ok' && (storyAll || (metric !== 'pm' && metric !== 'am') || (metric === 'am' ? r.am : !r.am)));   // เกิน/ใกล้ครบ/ไม่เคยตรวจ/ไม่ตั้งรอบ
                     const eDelta = st.kwhPrev ? deltaPct(st.kwh, st.kwhPrev) : null;
                     return (
                       <StorySection title="🧭 สถานะปัจจุบันของไลน์ (ไม่ขึ้นกับวันที่เลือก)">
                         <div style={{ display: 'grid', gap: 9 }}>
                           {/* 🛠️ PM — ตัวที่ผังโชว์บนป้าย ต้องกดเข้ามาแล้วเห็นว่า "เครื่องไหน" */}
-                          <div>
+                          {sec('pm') && <div>
                             <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted)' }}>
                               🛠️ PM เครื่องจักร{st.pmTotal ? ` · ${st.pmTotal} แผน` : ''}
                             </div>
@@ -3421,10 +3736,10 @@ export default function FactoryMap({ setupMode = false }) {
                               )}
                               <Link to="/pm?tab=plan" style={{ fontSize: 11, color: 'var(--accent)', textDecoration: 'none', display: 'inline-block', marginTop: 4 }}>→ ดูแผน PM ทั้งหมด</Link>
                             </>)}
-                          </div>
+                          </div>}
 
                           {/* 🔧 ใบซ่อม MO ค้าง */}
-                          <div style={{ borderTop: '1px dashed var(--border)', paddingTop: 8 }}>
+                          {sec('mo') && <div style={{ borderTop: '1px dashed var(--border)', paddingTop: 8 }}>
                             <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted)' }}>🔧 ใบซ่อม MO ที่ยังไม่ปิด</div>
                             {s.moRows == null ? (
                               <div style={{ fontSize: 11.5, color: '#f59e0b', marginTop: 3 }}>⚠ ดึงใบซ่อมไม่สำเร็จ</div>
@@ -3444,11 +3759,11 @@ export default function FactoryMap({ setupMode = false }) {
                                 {s.moRows.length > 5 && <div style={{ fontSize: 11, color: 'var(--muted)' }}>+ อีก {s.moRows.length - 5} ใบ</div>}
                               </div>
                             </>)}
-                          </div>
+                          </div>}
 
                           {/* 👷 คน & จุดงาน · ⚡ ไฟฟ้า · 🔗 Supply route — ตัวเลขชุดเดียวกับแท็บบนผัง */}
-                          <div style={{ borderTop: '1px dashed var(--border)', paddingTop: 8, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px,1fr))', gap: 8 }}>
-                            <div>
+                          {(sec('people') || sec('energy') || sec('supply')) && <div style={{ borderTop: '1px dashed var(--border)', paddingTop: 8, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px,1fr))', gap: 8 }}>
+                            {sec('people') && <div>
                               <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted)' }}>👷 คน & จุดงาน (ตอนนี้)</div>
                               {st.headTotal || st.stationTotal ? (
                                 <div style={{ fontSize: 12.5, color: 'var(--text)', marginTop: 3, fontWeight: 700 }}>
@@ -3457,8 +3772,8 @@ export default function FactoryMap({ setupMode = false }) {
                                   {st.ppeBad > 0 && <span style={{ color: '#ef4444' }}> · ⚠PPE {fmtNum(st.ppeBad)}</span>}
                                 </div>
                               ) : <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>ยังไม่มีข้อมูลเช็คชื่อ</div>}
-                            </div>
-                            <div>
+                            </div>}
+                            {sec('energy') && <div>
                               <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted)' }}>⚡ ไฟฟ้า{energyMonth ? ` · ${monthLabel(energyMonth)}` : ''}</div>
                               {st.kwh != null ? (
                                 <div style={{ fontSize: 12.5, color: 'var(--text)', marginTop: 3, fontWeight: 700 }}>
@@ -3467,8 +3782,8 @@ export default function FactoryMap({ setupMode = false }) {
                                   {st.kwhCost > 0 && <span style={{ color: 'var(--muted)', fontWeight: 500 }}> · {fmtBaht(st.kwhCost)} บาท</span>}
                                 </div>
                               ) : <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>ยังไม่กรอกของไลน์นี้</div>}
-                            </div>
-                            {st.supList?.length > 0 && (
+                            </div>}
+                            {sec('supply') && (st.supList?.length > 0 ? (
                               <div>
                                 <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted)' }}>🔗 ระบบสนับสนุนที่จ่ายให้</div>
                                 <div style={{ fontSize: 12, color: st.supAtRisk ? '#ef4444' : 'var(--text2)', marginTop: 3, fontWeight: st.supAtRisk ? 800 : 500 }}>
@@ -3476,13 +3791,16 @@ export default function FactoryMap({ setupMode = false }) {
                                   {[...new Set(st.supList.filter(x => !st.supAtRisk || x.atRisk).map(x => x.name || x.no))].slice(0, 4).join(' · ')}
                                 </div>
                               </div>
-                            )}
-                          </div>
+                            ) : metric === 'supply' ? (
+                              <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>🔗 ไลน์นี้ยังไม่ได้ผูกระบบสนับสนุน (supply route)</div>
+                            ) : null)}
+                          </div>}
                         </div>
                       </StorySection>
                     );
                   })()}
                 </>)}
+              </div>
               </div>
             </div>
           </div>
@@ -3570,7 +3888,9 @@ export default function FactoryMap({ setupMode = false }) {
               {/* การ์ดทุก metric */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 8, marginBottom: kids.length ? 18 : 0 }}>
                 {/* โซน utility ตัด metric ผลิตออกเหมือนการ์ด hover — ไม่โชว์ช่อง "Facility" เปล่าๆ 5 ใบ */}
-                {Object.entries(METRICS).filter(([, m]) => !(st.isFac && m.facilityNA)).map(([k, m]) => {
+                {/* 🎯 การ์ด hover ตอบเฉพาะเรื่องของแท็บที่เลือก (2026-10-16 · user "hover ควรโชว์เรื่องที่เกี่ยวกับ tab
+                  ไม่ใช่โชว์ทั้งหมด จะโชว์ทั้งหมดก็คือ tab ปกติ/ผิดปกติ") — แท็บ health = รวมทุกเรื่อง */}
+              {Object.entries(METRICS).filter(([k, m]) => !(st.isFac && m.facilityNA) && (metric === 'health' || k === metric)).map(([k, m]) => {
                   const cat = m.cat(st); const meta = CAT[cat]; const txt = m.text(st);
                   return (
                     <div key={k} style={{ background: 'var(--bg3)', border: `1px solid ${meta.color}55`, borderLeft: `3px solid ${meta.color}`, borderRadius: 8, padding: '9px 11px' }}>

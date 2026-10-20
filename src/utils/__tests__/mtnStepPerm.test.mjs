@@ -2,7 +2,7 @@
 // pure module (ไม่ import supabase) → import ตรงได้เลย ไม่ต้อง bundle
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { canDoStep, canSignMtnApproval, lastStep, canSkipQa, isOrderReporter, isQaSkipped, isWaitingQa, MTN_STEPS, stepDenyHint, stepLabel, stepMeta } from '../mtnStepPerm.js';
+import { canDoStep, canSignMtnApproval, lastStep, canSkipQa, isOrderReporter, orderReporterText, isQaSkipped, isWaitingQa, MTN_STEPS, stepDenyHint, stepLabel, stepMeta } from '../mtnStepPerm.js';
 
 // ผูก role เป็นชุดสิทธิ์ง่ายๆ: keys = คีย์ที่ role นั้นถือ
 const perms = (keys, seededKeys = null) => ({
@@ -346,9 +346,16 @@ test('ด่านอนุมัติ: งานซ่อม/บริกา�
   assert.deepEqual(canDoStep(3, head), { ok: true, code: 'perm' });
 });
 
-test('ด่านอนุมัติ: manage_master ยังผ่านได้ (กฎเดิมของทั้งโมดูล — หัวหน้าปลดล็อกเองได้)', () => {
+/* 🔴 เปลี่ยนกฎ 2026-10-20 (QC audit §7.2 · คำสั่ง user "ปิดทั้ง 2 ทาง")
+   เดิม manage_master ข้ามด่านอนุมัติได้ ⇒ ด่านนี้เป็นของปลอมสำหรับช่างทุกคน
+   เพราะคีย์นั้นถูกแจกให้ role `mtn` ทั้งก้อน 16 บัญชี (ไม่ใช่แค่หัวหน้า)
+   ⇒ ตอนนี้ด่านอนุมัติอยู่ **เหนือ** manage_master แล้ว — ทางออกคือให้ ผจก. เซ็น ไม่ใช่กดข้าม */
+test('🔒 ด่านอนุมัติ: แม้ถือ manage_master ก็เริ่มงานปรับปรุง/สร้างก่อน ผจก.เซ็น ไม่ได้', () => {
   const boss = { order: ORDER, fullName: 'ผจก.', ...perms(['manage_master']), approvalBlocked: true };
-  assert.deepEqual(canDoStep(2, boss), { ok: true, code: 'manage_master' });
+  assert.deepEqual(canDoStep(2, boss), { ok: false, code: 'await_mgr_approval' });
+  assert.deepEqual(canDoStep(3, boss), { ok: false, code: 'await_mgr_approval' });
+  // เซ็นแล้ว (approvalBlocked=false) = เดินงานได้ตามปกติ
+  assert.deepEqual(canDoStep(2, { ...boss, approvalBlocked: false }), { ok: true, code: 'manage_master' });
 });
 
 /* ═══ 🔴 ลำดับลายเซ็น 7 จุดของใบ MTN (คำสั่ง user 2026-09-22 — เคยสลับผิดมา 2 รอบ) ═══════
@@ -441,11 +448,13 @@ test('QA: งานปรับปรุง/สร้างไม่ต้อง
     { ok: false, code: 'not_waiting_qa' });
 });
 
-test('canSignMtnApproval: คนที่ถูกระบุชื่อ / ผู้ถือ approve / manage_master เซ็นได้ · เซ็นแล้วซ้ำไม่ได้', () => {
+/* 🔴 2026-10-20: ถอดทาง manage_master ออกจากช่องเซ็น ผจก. (ไม่มีการ "เซ็นแทน" · กฎ 04/10)
+   เกิดจริง 1 ใบ: บัญชีกลาง `maintenance` (role mtn ไม่มี approve) เซ็นอนุมัติแทน ผจก. */
+test('canSignMtnApproval: เฉพาะคนที่ใบระบุชื่อ / ผู้ถือ approve · manage_master เซ็นแทนไม่ได้ · เซ็นแล้วซ้ำไม่ได้', () => {
   const o = { purpose: 'improve', dept_manager_name: 'ผจก.สมศรี', plant_manager_name: 'ผจก.โรงงาน' };
   assert.deepEqual(canSignMtnApproval('dept', { order: o, fullName: 'ผจก.สมศรี', ...perms([]) }), { ok: true, code: 'named' });
   assert.deepEqual(canSignMtnApproval('dept', { order: o, fullName: 'คนอื่น', ...perms(['approve']) }), { ok: true, code: 'approve' });
-  assert.deepEqual(canSignMtnApproval('dept', { order: o, fullName: 'คนอื่น', ...perms(['manage_master']) }), { ok: true, code: 'manage_master' });
+  assert.deepEqual(canSignMtnApproval('dept', { order: o, fullName: 'คนอื่น', ...perms(['manage_master']) }), { ok: false, code: 'denied' });
   assert.deepEqual(canSignMtnApproval('dept', { order: o, fullName: 'ช่างเอก', ...perms(['service']) }), { ok: false, code: 'denied' });
   assert.deepEqual(canSignMtnApproval('dept', { order: { ...o, dept_manager_at: 'x' }, fullName: 'ผจก.สมศรี', ...perms(['approve']) }),
     { ok: false, code: 'already_signed' });
@@ -461,12 +470,19 @@ test('stepDenyHint: ติดด่านอนุมัติ ต้องบ�
 });
 
 test('ป้ายสถานะ: ใบรออนุมัติต้องไม่ขึ้น "รอรับงาน" · แถวที่ไม่ได้ select คอลัมน์ลายเซ็นห้ามเดา', () => {
-  const base = { status: 'pending', purpose: 'improve' };
+  /* 🔴 13/10: เกณฑ์ย้ายไป `isApprovalBlocked()` (mtnMoForm.js) ที่เดียว แล้ว**เพิ่มเงื่อนไข `isMtnFormRow`**
+     — ด่านที่บล็อกช่างจริงอยู่ที่ `approvalBlocked` ใน MtnRepair ซึ่งคิดเฉพาะใบฟอร์ม MTN
+     (`appr = mtnForm ? mtnApprovalState(o) : null`) ⇒ ใบทีมอื่นที่บังเอิญมี purpose ช่าง**กดรับได้**
+     ป้าย "รอผู้จัดการอนุมัติ" บนใบนั้นจึงเป็นคำโกหก · วัดจริง 13/10: ใบที่มี purpose ทั้ง 14 ใบ
+     เป็น mtn_dept='maintenance' ทั้งหมด ⇒ ไม่มีใบไหนเปลี่ยนป้ายจากการรัดเกณฑ์นี้ */
+  const base = { status: 'pending', purpose: 'improve', mtn_dept: 'maintenance' };
   assert.equal(moStatusLabel({ ...base, dept_manager_at: null }), MO_LABEL_WAIT_APPROVAL);
   assert.equal(moStatusLabel({ ...base, dept_manager_at: '2026-09-15T02:00:00Z' }), MO_STATUS_LABEL.pending);
   assert.equal(moStatusLabel(base), MO_STATUS_LABEL.pending, 'ไม่ได้ select dept_manager_at = ใช้ป้ายเดิม');
-  assert.equal(moStatusLabel({ status: 'pending', purpose: 'repair', dept_manager_at: null }), MO_STATUS_LABEL.pending, 'งานซ่อมไม่เคยติดด่าน');
+  assert.equal(moStatusLabel({ ...base, purpose: 'repair', dept_manager_at: null }), MO_STATUS_LABEL.pending, 'งานซ่อมไม่เคยติดด่าน');
   assert.equal(moStatusLabel({ status: 'pending' }), MO_STATUS_LABEL.pending, 'ใบทีมอื่น/ใบเก่าเหมือนเดิม');
+  assert.equal(moStatusLabel({ status: 'pending', purpose: 'improve', mtn_dept: 'jig', dept_manager_at: null }),
+    MO_STATUS_LABEL.pending, 'ไม่ใช่ฟอร์ม MTN = ช่างกดรับได้จริง ⇒ ห้ามติดป้ายว่ารออนุมัติ');
 });
 
 test('ป้ายสถานะ: `handover` ของฟอร์มอื่นห้ามไปขึ้นป้ายขั้นปิดใบของสาย MTN', () => {
@@ -495,7 +511,11 @@ test('🔴 MO_STATUS_META: ทุกสถานะใน MO_STATUS_LABEL ต้
     assert.ok(/^#[0-9a-f]{6}$/i.test(m.color), `สี "${k}" ต้องเป็น hex 6 หลัก (ได้ ${m.color})`);
     assert.ok(/^rgba\(\d+,\d+,\d+,0\.14\)$/.test(m.bg), `พื้นชิป "${k}" เพี้ยน (ได้ ${m.bg})`);
     assert.equal(typeof m.step, 'number');
-    if (k !== 'rejected') {
+    /* สถานะ "โมฆะ" ใช้เทากลางตัวเดียวกันโดยเจตนา — จบแล้วและไม่ใช่ผลงานซ่อม
+       🔴 เพิ่มชื่อเข้าลิสต์นี้ได้เฉพาะเมื่อ "ตั้งใจให้เทา" จริงๆ ห้ามใส่เพื่อให้เทสผ่าน
+          (ของที่ลืมตั้งสีจะได้เทาเหมือนกัน — ลิสต์นี้คือสิ่งเดียวที่แยก 2 กรณีออกจากกัน) */
+    const VOID_GREY = ['rejected', 'cancelled'];
+    if (!VOID_GREY.includes(k)) {
       assert.notEqual(m.color, FALLBACK,
         `สถานะ "${k}" ยังใช้สีถอย = ลืมตั้งใน MO_STATUS_STYLE ⇒ dropdown/การ์ดจะสื่อผิด`);
     }
@@ -516,6 +536,66 @@ test('moStatusMeta: สถานะแปลกปลอม/ว่าง ถอ�
   assert.equal(moStatusMeta({ status: 'ไม่รู้จัก' }).color, MO_STATUS_META.pending.color);
   assert.equal(moStatusMeta(null).color, MO_STATUS_META.pending.color);
   // ป้ายยังมาจาก moStatusLabel() เสมอ (ใบที่ติดด่านอนุมัติต้องไม่ขึ้น "รอรับงาน")
-  const blocked = { status: 'pending', purpose: 'improve', dept_manager_at: null, current_step: 1 };
+  const blocked = { status: 'pending', purpose: 'improve', mtn_dept: 'maintenance', dept_manager_at: null, current_step: 1 };
   assert.equal(moStatusMeta(blocked).label, MO_LABEL_WAIT_APPROVAL);
+});
+
+/* ── 🧑 ชื่อผู้แจ้งบนจอ — "ต่างกันต้องโชว์ทั้งคู่" (2026-10-13 · คำสั่ง user) ───────── */
+
+test('orderReporterText: ตรงกัน = โชว์ชื่อเดียว · ต่างกัน = โชว์ทั้งคู่', () => {
+  assert.deepEqual(orderReporterText({ reporter_prod: 'สมชาย ใจดี', reported_by_name: 'สมชาย ใจดี' }),
+    { main: 'สมชาย ใจดี', extra: null });
+  // ใบที่เปิดด้วยบัญชีกลาง — ชื่อในฟอร์มขึ้นก่อน ส่วนบัญชีที่เปิดใบต่อท้าย
+  assert.deepEqual(orderReporterText({ reporter_prod: 'ธวัช พิมพ์วงศ์', reported_by_name: 'toolingmaintenance' }),
+    { main: 'ธวัช พิมพ์วงศ์', extra: 'toolingmaintenance' });
+});
+
+test('orderReporterText: ช่องว่างซ้ำ/ตัวพิมพ์ ไม่ทำให้ชื่อเดียวกันถูกเขียน 2 ครั้ง', () => {
+  // เจอจริงในฐาน: ชื่อพิมพ์เว้นวรรค 2 เคาะ
+  assert.deepEqual(orderReporterText({ reporter_prod: 'ยุทธภูมิ  การัมย์', reported_by_name: 'ยุทธภูมิ การัมย์' }),
+    { main: 'ยุทธภูมิ  การัมย์', extra: null });
+  assert.deepEqual(orderReporterText({ reporter_prod: ' Somchai ', reported_by_name: 'somchai' }),
+    { main: 'Somchai', extra: null });
+});
+
+test('orderReporterText: มีฟิลด์เดียว/ไม่มีเลย — ห้ามพ่น undefined ออกจอ', () => {
+  assert.deepEqual(orderReporterText({ reported_by_name: 'สมชาย ใจดี' }), { main: 'สมชาย ใจดี', extra: null });
+  assert.deepEqual(orderReporterText({ reporter_prod: 'สมหญิง' }), { main: 'สมหญิง', extra: null });
+  assert.deepEqual(orderReporterText({ reporter_prod: '   ', reported_by_name: null }), { main: null, extra: null });
+  assert.deepEqual(orderReporterText(null), { main: null, extra: null });
+});
+
+/* ── 🗑️→🚫 moRemoveMode — ลบได้เฉพาะใบที่ยังไม่มีเลข (2026-10-14 · คำสั่ง user) ────── */
+import { moRemoveMode, OPEN_MO_STATUSES } from '../mtnStepPerm.js';
+test('🔴 moRemoveMode: ใบที่ออกเลขแล้ว ลบไม่ได้ — ยกเลิกเท่านั้น', () => {
+  // เคสจริงที่ทำให้ต้องมีกฎนี้: ใบสถานะ repaired ถูก delete ไป ⇒ ค่าแรง/อะไหล่หายถาวร
+  const r = moRemoveMode({ status: 'repaired', mo_no: 'MTN.2026/10-5' });
+  assert.equal(r.mode, 'cancel');
+  assert.ok(r.why.includes('ยกเลิก'), 'ต้องมีเหตุผลให้จอเขียนบอก');
+  for (const st of ['pending', 'assigned', 'repairing', 'checked', 'qa', 'handover', 'returned', 'waiting_vendor']) {
+    assert.equal(moRemoveMode({ status: st, mo_no: 'JIG-BM-141026-0014-M8' }).mode, 'cancel', st);
+  }
+});
+
+test('ใบที่ยังไม่ออกเลข = ลบทิ้งได้ (ไม่มีเลข/ประวัติให้เสีย)', () => {
+  for (const mo of [null, undefined, '', '   ']) {
+    assert.equal(moRemoveMode({ status: 'pending', mo_no: mo }).mode, 'delete');
+  }
+});
+
+test('🔴 ใบที่ปิด/จบไปแล้ว ห้ามทั้งลบและยกเลิก — ใบที่ปิดแล้วคือบันทึก', () => {
+  assert.equal(moRemoveMode({ status: 'closed', mo_no: 'PRO-BM-141026-0712-M169' }).mode, 'blocked');
+  // ปิดแล้วต้องบล็อกแม้จะยังไม่มีเลข (ไม่งั้นใบปิดที่ออกเลขไม่ติดจะถูกลบทิ้งได้)
+  assert.equal(moRemoveMode({ status: 'closed', mo_no: null }).mode, 'blocked');
+  for (const st of ['rejected', 'transferred', 'cancelled']) {
+    const r = moRemoveMode({ status: st, mo_no: 'X-1' });
+    assert.equal(r.mode, 'blocked', st);
+    assert.ok(r.why, 'ต้องบอกเหตุผล ห้ามเงียบ');
+  }
+});
+
+test('cancelled เป็นสถานะจบ — ต้องหลุดจากคิวงานค้างเอง', () => {
+  assert.ok(MO_DONE_STATUSES.includes('cancelled'));
+  assert.equal(isMoOpen({ status: 'cancelled' }), false);
+  assert.ok(!OPEN_MO_STATUSES.includes('cancelled'), 'ห้ามอยู่ใน allowlist ของคิวงาน');
 });

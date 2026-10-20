@@ -23,7 +23,7 @@ import { checkWrite } from '../utils/dbWrite';
 import { buildPnIndex, resolveMatNo } from '../utils/matResolve';
 import {
   FALLBACK_PROFILE, pickProfile, parsePullFile, aggregateSignals,
-  planOrderUpdates, signalKey, dateStr, timeStr, findDuplicateUploads, orderShipAt, pullRoundOptions, shipSlotOf, fileNameStamp} from '../utils/pullSignal';
+  planOrderUpdates, signalKey, dateStr, timeStr, findDuplicateUploads, orderShipAt, pullRoundOptions, shipSlotOf, fileNameStamp, shipDueDate} from '../utils/pullSignal';
 
 const SOURCE = 'esmart';
 const inputSt = {
@@ -147,7 +147,9 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
     const [ordRes, sigRes] = await Promise.all([
       supabaseDR.from('customer_shipping_orders')
         .select('id, customer, mat_no, customer_part_no, part_name, qty, plan_qty, due_date, ship_time, status, dock_code, source, order_no, pull_batch_id, plan_ship_time')
-        .eq('customer', shipTo).eq('due_date', workDate),
+        /* วันงาน D = ใบ due D (กลางวัน) + ใบ due D+1 (กะดึก <08:00) — ช่วงเวลาตัดสินใน planOrderUpdates
+           (เดิม .eq(due_date, workDate) ⇒ รอบกะดึกไปเจอใบ 862 ของ "เมื่อวาน" แล้วทับยอดผิดใบ · 16/10) */
+        .eq('customer', shipTo).in('due_date', [workDate, shipDueDate(workDate, '00:00')]),
       (async () => {
         const times = (parsed?.rows || []).map(r => r.pulled_at.getTime());
         if (!times.length) return { data: [], error: null };
@@ -250,7 +252,8 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
      (กติกาการจับคู่ + เหตุผลอยู่ใน planOrderUpdates · ห้ามจับคู่เองในหน้า) */
   const slot = useMemo(() => ({
     windowStart: parsed?.windowStart || null,
-    targetAt: workDate && shipTime ? orderShipAt(workDate, shipTime) : null,
+    /* 🔴 workDate = วันงาน (กรอบ 08:00→08:00) · ใบลงวันที่ตามปฏิทิน ⇒ แปลงก่อนเสมอ (16/10 รอบกะดึกลงผิดวัน) */
+    targetAt: workDate && shipTime ? orderShipAt(shipDueDate(workDate, shipTime), shipTime) : null,
     /* ⭐ dock = ส่วนหนึ่งของ "เที่ยวรถ" (2026-09-15) — ใบของ dock อื่นห้ามถูกแตะ */
     dock: parsed?.dock || null,
     /* ไฟล์ชุดเดียวกันที่เคยอัพมาก่อน = เคลมใบเดิมซ้ำได้ (อัพใหม่ต้องแก้ของเดิม ไม่ใช่ชนกันเอง) */
@@ -385,7 +388,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
       } else if (x.action === 'create') {
         const rec = {
           customer: shipTo, mat_no: x.mat, customer_part_no: x.group.customer_part_no,
-          part_name: x.group.part_name || null, qty: x.group.qty, due_date: workDate,
+          part_name: x.group.part_name || null, qty: x.group.qty, due_date: shipDueDate(workDate, shipTime),
           ship_time: shipTime, dock_code: x.group.dock_code || parsed.dock || null,
           source: SOURCE, status: 'confirmed', pull_batch_id: batchId,
           created_by_name: fullName || null,   // 📜 ให้แท็บประวัติตอบได้ว่าใบนี้เกิดจากใครอัพไฟล์

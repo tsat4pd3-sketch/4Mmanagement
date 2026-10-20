@@ -48,7 +48,8 @@ const PAGE_GROUPS = [
     group: 'จอแสดงผล',
     pages: [
       { key: 'page:/dashboard',   label: 'ไทม์ไลน์ผลิตทุกไลน์ (TV)' },
-      { key: 'page:/tv',          label: 'จอเฝ้าระวังแขวนห้อง (ช่าง/ผลิต/สโตร์)' },
+      { key: 'page:/people-board', label: 'ภาพรวมกำลังคน (TV · เข้าได้ถ้ามีสิทธิ์ไทม์ไลน์ผลิต)' },
+      { key: 'page:/tv',          label: 'Andon Board (จอแขวน)' },
       { key: 'page:/line-oee',    label: 'OEE รายไลน์ (จอหน้าไลน์)' },
       { key: 'page:/obeya',       label: 'บอร์ด KPI ส่วนงาน (OBEYA)' },
     ],
@@ -451,7 +452,7 @@ export default function PermissionsManagement() {
       <ReadOnlyNote show={!canManage} role={myRole} what="แก้ตารางสิทธิ์" permKey="permissions:manage"
         hint="ดูได้ทั้งตาราง แต่ติ๊กไม่ได้ — ฐานข้อมูลใช้คีย์เดียวกันนี้เป็นด่าน (เดิมติ๊กได้บนจอแต่ไม่บันทึกจริง)" />
 
-      <div style={{ ...s.section, fontSize: 12, color: 'var(--muted)', lineHeight: 1.6 }}>
+      <div data-page-note="1" style={{ ...s.section, fontSize: 12, color: 'var(--muted)', lineHeight: 1.6 }}>
         ⚠️ <strong>Admin เข้าถึงได้ทุกอย่างเสมอ</strong> (ล็อกไว้ กันกรณีตั้งค่าผิดจนตัวเองเข้าไม่ได้) —
         การเปลี่ยนแปลงมีผลกับทุกเครื่องที่เปิดระบบอยู่ทันที (sync อัตโนมัติ)
         <div style={{ marginTop: 6 }}>
@@ -463,7 +464,7 @@ export default function PermissionsManagement() {
 
       {tab === 'matrix' && (<>
         {/* ── 3 แกนที่ตัดสินว่า "คนคนหนึ่งทำอะไรได้" — เขียนไว้บนจอ เพราะคนเข้าใจผิดซ้ำว่า role = ตำแหน่ง ── */}
-        <div style={{ ...s.section, padding: 0, overflow: 'hidden' }}>
+        <div data-page-note="1" style={{ ...s.section, padding: 0, overflow: 'hidden' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 1, background: 'var(--border)' }}>
             {[
               { ic: '🔐', t: 'ชุดสิทธิ์ (role)', c: 'var(--accent)',

@@ -252,3 +252,157 @@ const delLink = async (it) => { if (!confirm(…)) return; await supabaseDR…; 
 ที่ไม่ได้บอกอะไร แล้วตัวที่ 18 ที่มีฟอร์มจริงก็ยังหลุดได้อยู่ดี
 ⚠️ **window แบบนับบรรทัดตายตัวใช้ไม่ได้** — ลองแล้วล้นไปโมดัลถัดไป (FactoryMap `storeZoneModal`
 จบบรรทัด 3564 แต่ `<select>` ที่เจอเป็นของโมดัล `assignFor` ที่เริ่ม 3567 = false positive)
+
+---
+
+## 🔎 รอบกวาด "ล้มเงียบ" ทั้งรีโป (2026-10-13 · user: *"ไล่เช็คอีกทีว่ามีจุดอื่นที่ล้มเงียบแบบนี้อยู่ไหม"*)
+
+### สิ่งที่วัดได้ (ตัวสแกนไล่ทุกคำสั่งที่แตะ supabase ทั้งรีโป ไม่ใช่ grep บรรทัดเดียว)
+
+| คลาส | ทั้งหมด | มีตัวเช็ค | ไม่มี |
+|---|---|---|---|
+| คำสั่ง **เขียน** (insert/update/upsert/delete) | **642** | 642 — อ่าน error 464 · `checkWriteRows` 53 · `checkWrite` 36 · เช็คผ่านตัวแปรผล 53 | **0** |
+| คำสั่ง **อ่าน** (select) | **1047** | 874 (83%) | 173 กลืน error |
+| `catch {}` ว่าง | 8 | — | 5 เป็น exceljs/jsPDF (ไม่ใช่ DB) · 3 เป็นคอมเมนต์ของบั๊กที่แก้แล้ว |
+
+**ฝั่งเขียนปิดครบแล้วจริง** — 34 จุดที่ตัวสแกนสงสัยไล่ดูด้วยตาทุกจุด มีตัวเช็คหมด
+(ส่วนใหญ่เป็น ternary `แก้ : เพิ่ม` ที่ `checkWrite(...)` ห่ออยู่ชั้นนอก ⇒ regex 3 บรรทัดมองไม่เห็น)
+
+### 🔴 คลาสใหม่ที่เจอ — **"อ่านไม่ได้" แล้วเอาไปตัดสินใจเขียน/ลบ (fail-open)**
+
+173 จุดที่กลืน error ส่วนใหญ่เป็นจอที่แค่โชว์ว่าง — คัดเฉพาะที่**ผลการอ่านถูกใช้ตัดสินใจเขียน/ลบ**
+(ตัวที่ทำข้อมูลเสีย ไม่ใช่แค่จอว่าง) เหลือ 7 → เป็นของจริง 5:
+
+| จุด | อ่านล้มแล้วเกิดอะไร | แก้เป็น |
+|---|---|---|
+| `LineSetup.jsx` ลบไลน์ + ลบรูปผัง (2 จุด) | `{ data: sharers }` ล้ม = `undefined` ⇒ `!undefined?.length` เป็น **true** ⇒ **ลบไฟล์ผังที่ไลน์อื่นยืมใช้ ถาวร** (ไลน์แม่-ลูกยืมผัง URL เดียวกันเป็นเรื่องปกติ ⇒ ผังหายทั้งตระกูล) | นับไม่ได้ = **ไม่ลบ** + toast บอก (fail-closed · ต้นแบบ `orgNodeRefs.js`) |
+| `Management.jsx` ใบ 4M Man อัตโนมัติ | `{ data: dup }` ล้ม ⇒ "ยังไม่มีใบ" ⇒ สร้างซ้ำทุกครั้งที่ย้ายจุดคนเดิม (ขัดกฎ "ตัวสร้างอัตโนมัติต้องกันใบซ้ำ") | เช็คซ้ำไม่ได้ = **ไม่สร้างใบ** + toast |
+| `CustomerDemand.jsx` คัดลอกค่ามาตรฐาน | ล้มแล้วจอขึ้น "ยังไม่มีค่ามาตรฐานให้คัดลอก" = **จอโกหก** คนไปตั้งใหม่ทั้งชุด | แยก error ออกจาก "ว่างจริง" |
+| `ProductMaster.jsx` EC → `parts_master` | `{ data }` ของเลขเดิมล้ม ⇒ `oldPm = null` เงียบ ⇒ MAT ใหม่ไม่สืบทอด uom/กล่อง/supplier **และแถวเลขเดิมไม่ถูกติดโน้ต EC** = บั๊กที่วัดเจอ 05/10 กลับมาเป๊ะ | ธง `oldPmUnread` + toast บอกให้ไปทำมือ |
+
+### ✅ 5 จุดที่ดูเหมือนบั๊ก แต่เช็คกับ RLS/ดัชนีจริงแล้ว **ไม่ใช่** (บันทึกไว้กันคนมาแก้ซ้ำ)
+
+| จุด | ทำไมไม่ใช่ |
+|---|---|
+| `MonitoringUpload.jsx` ลบ forecast/ออเดอร์ก่อน insert ใหม่ | RLS ของ `customer_forecasts` + `customer_shipping_orders` = **`ALL / public / true`** ⇒ DELETE ถูกปฏิเสธเงียบไม่ได้ · และ delete ล้ม → `ok=false` → ไม่ insert ต่อ |
+| `LineSetup.jsx:446` ลบไลน์ไม่นับแถว | policy = `has_perm('line_setup:delete') OR has_perm('line_setup:edit')` และปุ่มเปิดด้วย `canDel` (fallback = edit) ⇒ คนที่เห็นปุ่มผ่าน policy เสมอ |
+| `QAInspectionSetup.jsx` ป้าย balloon (2 จุด) | ทั้งการลากและปุ่มคืนค่าถูกปิดด้วย `canManage` ⇒ คนไม่มี `qa:manage` กดไม่ถึง |
+| `LineStock.jsx` กันรอบจัดส่งซ้ำ | unique index `(line_name, shift, round_no)` ⇒ ซ้ำแล้วได้ `23505` ซึ่งโค้ดโชว์ให้ |
+| `ProductMaster.jsx` เช็ค `exist` ก่อน insert | `parts_master.mat_no` เป็น unique ⇒ ซ้ำแล้ว error เด้ง ไม่เงียบ |
+
+> 🔴 **บทเรียน: "0 แถวเงียบได้ไหม" ตอบจาก RLS/ดัชนี ไม่ใช่จากหน้าตาโค้ด**
+> 4 ใน 9 จุดที่สแกนชี้ หายไปเมื่อเปิด `pg_policies` + `pg_index` ดูของจริง — เขียนด่าน/แก้โค้ดจากหน้าตาโค้ดล้วน
+> = เสียเวลาแก้ของที่ไม่พัง และทำให้ toast แดงโผล่ในเคสปกติ (ซึ่งแย่กว่าไม่เช็ค)
+
+### 🔴 ทะเบียนของ picker — ลิสต์ว่าง 2 ความหมาย (13 hook)
+
+`useCustomers` `useSuppliers` `useProductionLines` `useStorageLocations` `useDiePressLines` `useChildParts`
+`useInstruments` `useDieSetKinds` `useCostCenters` `usePartOptions` `useColumnHistory` `useOrgScope` `useOrgDepts`
+
+เดิมทุกตัวลงท้าย `.catch(() => {})` แล้วคืน `[]` ⇒ หน้างานเปิดช่องเลือกเห็นว่าง → สรุปว่า
+"ยังไม่ได้ลงทะเบียน" → ไปสร้างซ้ำ · `useProductionLines` เป็นตัวอ่านทะเบียนไลน์ตัวเดียวที่อนุญาต
+⇒ ล้มทีเดียว dropdown ไลน์ว่างทั้งแอปโดยจอไม่บอกเหตุ
+
+**สิ่งที่มีอยู่แล้วก่อนรอบนี้ (อย่าทำซ้ำ):** `cachedMaster` กลืน error เป็นของเดิม + ตั้ง `at:0` ให้ยิงใหม่
++ ยิง `failSink` → **`main.jsx` ขึ้น toast แดงรวบ 1 ข้อความ/10 วิ** ⇒ "มีอะไรล้ม" ระดับแอป **มีคนบอกแล้ว**
+
+**ช่องว่างที่เหลือจริง 3 อย่าง — รอบนี้แก้:**
+1. **`usePartOptions`** — `return { sets: a.data || [], qaParts: b.data || [] }` อยู่บรรทัดที่ 6 ของ loader
+   ⇒ หลบด่าน `master-cache-swallow` (เดิมดู 2 บรรทัด) ⇒ `cachedMaster` **ไม่เห็น error** ⇒ toast กลางไม่ขึ้น
+   = เงียบสนิท + ลิสต์ว่างถูก cache 4 ชม. → แก้เป็น `mrows()` + **ขยายด่านเป็น 500 ตัวอักษร
+   แต่หยุดเมื่อเจอ `throw`/`mrows`/ปลาย loader** (ไม่งั้น `useProducts`/`useMachines`/`usePeople`/`partImages`
+   ที่ `throw` ไว้ก่อนแล้วถูกจับผิด = ด่านที่ false positive = ด่านที่คนอยากปิด)
+2. **`useOrgScope` + `useOrgDepts`** — ไม่ผ่าน `cachedMaster` โดยตั้งใจ (ผังแก้ที่ `/org-setup` ต้องเห็นทันที
+   ไม่รอ TTL 4 ชม.) ⇒ **toast กลางไม่ครอบมาถึง** และ `setNodes(error ? [] : …)` อ่าน error แล้วโยนทิ้ง
+   ⇒ `ready` เป็น true ด้วย ⇒ จอ OBEYA/KPI สรุปว่า "ผังมีแค่นี้" → คืน `failed` ให้จอเขียนบอก
+3. **toast ผ่านไปแล้วหาย และไม่บอกว่า*ช่องที่กำลังเพ่งอยู่*คือช่องที่ล้ม** → `useMasterRows` + `loadFail`
+
+**ของกลางใหม่:** `src/utils/useMasterRows.js` → `{ rows, failed, stale, message, loading, reload }`
+อ่านผลล้มจากทะเบียนต่อคีย์ (`masterLoadState(key)` ใน `masterCache.js`) เพราะ **`cachedMaster` ไม่ throw**
+⇒ รอ `catch` = ไม่มีวันรู้ · `stale: true` = "มีของ แต่เป็นของเก่าที่เก็บไว้"
+**hook ทุกตัวคง default export เดิม (คืนแถวล้วน)** ⇒ จุดเรียกเดิม 100+ จุดไม่ต้องแก้ · ช่องเลือกใช้ `use*State()`
+
+**ด่านใหม่:** `registry-loader-no-silent-catch` — `scan: ['src/utils']` จับ `loadXxx()….catch(() => {})`
+⚠️ **ตั้งใจไม่ทำทั้งรีโป** — นอก `src/utils` มีอีก 9 จุด (`loadPmTeams` 5 หน้า · `loadProfilesPeople`
+· `loadProcessTypes` · `loadCompanyCalendar`) ที่ยังไม่ได้แก้ ⇒ ทำทั้งรีโปต้องใส่ `allow` 9 รายการ
+= ด่านที่มีข้อยกเว้นเยอะจนคนอยากปิด · **งานค้าง: ไล่ 9 จุดนั้นแล้วขยายด่านเป็น `src`**
+
+---
+
+## 🗑️ ด่านนับปลายทางก่อนลบ "ทะเบียนที่จับคู่ด้วยข้อความ" — ปิดครบ 7/7 (2026-10-18)
+
+`src/components/SimpleMasterPanel.jsx` มี prop `onBeforeDelete` (fail-closed) มาตั้งแต่ 06/10
+แต่ไล่ดู 18/10 แล้วพบว่า **ใช้จริงแค่ `cost_centers` ตัวเดียว** — อีก 6 ทะเบียนกดลบได้ทันที
+โดยไม่เคยนับปลายทางเลย ทั้งที่ปลายทางเก็บเป็น **text ไม่ผูก FK** ⇒ ลบแล้วไม่มีใครเตือน
+
+ของใหม่: **`src/utils/masterRefs.js`** (`MASTER_REF_SPECS` · `loadMasterRefs` ·
+`masterBlockMessage` · `masterDeleteGuard`) + ด่าน `regressionGuards` ข้อ
+"🗑️ ทะเบียนข้อความ (SimpleMasterPanel) ต้องส่ง onBeforeDelete"
+
+| ทะเบียน (DR) | จอ | จับคู่ด้วย | ปลายทางที่นับ (วัด 18/10) |
+|---|---|---|---|
+| `customers` | `/products?tab=customers` | code · name · **ทุก alias** | prod_orders **1,974** · mtn_orders 600 · dr_products 378 · kanban_calc_params 153 · ship_to_plants 18 · monitor_boards 4 · customer_forecasts 2 |
+| `suppliers` | `/products?tab=suppliers` | code · name | purchase_requests **16,552** · bom_items 1,052 · parts_master 516 · mtn_spare_parts 118 · part_routings 2 · container_types 0 |
+| `die_press_lines` | `/equipment?tab=die` | code · name | machines (`equipment_kind='die'`) **268** · die_sets 96 |
+| `die_op_types` | `/equipment?tab=die` | **`key` เท่านั้น** | equipment_die 186 |
+| `die_set_kinds` | `/equipment?tab=die` | **`key` เท่านั้น** | die_sets 2 |
+| `repair_wi_registry` | `/qa` แท็บถังแดง | **substring ของ `wi_no` ทุกเล่ม** | defect_logs.fix_action 0 · downtime_logs.fix_action 0 |
+| `cost_centers` (Main) | `/mtn-analysis` แผงเรต | code | — (`utils/costCenterRefs.js` ตัวเดิม ไม่แตะ) |
+
+### 🔴 วิธีวัด และ **ทำไมผลสแกนดิบใช้ตรงๆ ไม่ได้**
+
+วัดด้วยการไล่ **ทุกคอลัมน์ text ของทุกตารางใน schema `public` ฝั่ง DR (147 ตาราง ·
+1,020 คอลัมน์)** แล้วนับแถวที่ค่าเท่ากับคีย์ของทะเบียนพอดี (`to_jsonb(row)` +
+`jsonb_each_text` join ชุดคีย์ — สแกนตารางละรอบเดียว) **ห้ามเขียนลิสต์จากความจำ**
+(กฎเดียวกับ `orgNodeRefs.js`) · ⚠️ MCP timeout 60 วิ ⇒ ต้องแบ่งก้อนเรียงตามจำนวนแถว
+และตารางกว้าง-ยาว (`prod_orders` 21k) ต้องสแกนด้วยลิสต์คอลัมน์ตรงๆ แทน `to_jsonb`
+
+**แต่ทะเบียนหลายตัวพูดภาษาเดียวกัน** ⇒ สแกนดิบให้ false positive เป็นพัน:
+
+| ที่สแกนเจอ | ทำไม**ไม่**นับ |
+|---|---|
+| production_sessions.line_name 586 · stock_receipts.source_line 758 · line_stock_transactions 623 · pm_daily_alerts 216 · mtn_orders.line_name 186 · purchase_requests.dest_line 106 … | เป็น **ชื่อไลน์ผลิต** (`production_lines`) ที่ชนกับชื่อกลุ่มเครื่องปั๊ม ไม่ใช่การอ้างทะเบียนนี้ |
+| machines.line_name 438 (ทั้งตาราง) | กรองเหลือ `equipment_kind='die'` → 268 · วัดแล้ว die **268/268 = 100%** ถือชื่อจากทะเบียนนี้ · machine 78/270 · jig 23/184 = ไลน์ผลิตชนชื่อ |
+| purchase_requests.supplier แมตช์ `customers.code` 1,342 · parts_master.supplier 50 · bom_items.supplier 54 | บริษัทเดียวเป็นได้ทั้งลูกค้าและผู้ขาย ⇒ ช่อง supplier **นับให้ `suppliers` เท่านั้น** (และกลับกัน dr_products.customer ไม่นับให้ suppliers) |
+| monitoring_shipments.sheet **1,231** | เป็น **ชื่อชีทบอร์ด** ที่ตั้งตามลูกค้า ไม่ใช่ช่องอ้างลูกค้า |
+| mtn_orders.problem_characteristic 328 · problem_group 12 · dr_defect_types.name_th · improvements.problem_label · jig_checkpoints.group_name · fixture_point_kinds.* | ชนกับ **`label`** ของ `die_op_types`/`die_set_kinds` ซึ่งเป็นคำไทยกลาง ("อื่นๆ" ฯลฯ) ⇒ 2 ทะเบียนนี้จับคู่ด้วย **`key` เท่านั้น** (มีด่าน) |
+| `audit_log` 69k แถว | ประวัติ ไม่ใช่การอ้างอิงที่ยังมีผล — ลบทะเบียนไม่ทำให้ประวัติผิด |
+
+### 🔴 `repair_wi_registry` — ปลายทางเป็น "ข้อความในใบ" ไม่ใช่คอลัมน์อ้างอิง
+
+สแกนทั้งฐานแล้ว **ไม่มีคอลัมน์ไหนเก็บเลข WI เลย (0)** เพราะชิปใน `ProblemFixModal`
+เติมเป็นประโยค `"ซ่อมตาม WI-PD3-018"` ลงใน `fix_action` ของ `defect_logs`/`downtime_logs`
+⇒ ต้องนับแบบ **substring** และ `wi_no` ใส่หลายเล่มคั่น `,` ได้ ⇒ `splitWiNos()` แยกก่อนค้นทุกเล่ม
+· วัด 18/10 ยังไม่มีใครใช้ชิปนี้ (ทุกเล่ม 0) — ด่านจึงยังไม่เคยบล็อกจริง **แต่ต้องมีไว้ก่อน**
+เพราะวันที่มีคนใช้แล้วมาลบทะเบียน จะไม่มีใครรู้ว่าใบไหนอ้างเล่มที่หายไป
+
+### กติกาสำหรับทะเบียนใหม่
+
+1. เพิ่ม spec ใน `MASTER_REF_SPECS` โดย**วัดปลายทางจากฐานจริง** (วิธีข้างบน) ห้ามเขียนจากความจำ
+2. ส่ง `onBeforeDelete={masterDeleteGuard(supabaseDR, '<ทะเบียน>')}` ที่แผง (ด่าน build เช็คให้)
+3. ชื่อที่โชว์ในข้อความอยู่คอลัมน์อื่น → ส่ง `nameOf` เป็นอาร์กิวเมนต์ที่ 3 (เช่น `r => r?.label`)
+4. **นับไม่ได้ = `partial: true` ห้ามตอบ 0** · `42P01`/`42703` = ปลายทางยังไม่ apply migration ⇒ นับ 0 ได้จริง
+
+
+## 🔴 `.limit(N > 1000)` = ความมั่นใจปลอม — ด่าน `limit-over-postgrest-cap` (2026-10-20 · QC audit)
+
+PostgREST **clamp ที่ 1000 แถวเสมอ** ⇒ `.limit(5000)` ไม่ได้ขยายอะไรเลย และ **"ถูกตัดแถว" ไม่ใช่ error**
+⇒ `if (error)` จับไม่ได้ · จอได้ข้อมูลไม่ครบเงียบสนิท · กฎข้อ 5 เขียนเรื่องนี้ไว้ตั้งแต่ต้น
+แต่**ไม่มีด่าน** จึง drift เรื่อยมา (คอมเมนต์เตือนกระจายอยู่ 7 ที่ในรีโป — เตือนกันเองแต่ไม่มีใครบังคับ)
+
+**เคสจริงที่ทำให้ต้องมีด่าน — `src/components/CtReview.jsx`** (`.in('session_id', ids).limit(5000)` 2 คิวรี):
+
+| คิวรี (ต่อไลน์ · 60 วัน) | แถวสูงสุด | ไลน์ที่เกิน 1000 |
+|---|---|---|
+| `prod_orders` (confirmed) | **2,802** | **4 ไลน์** |
+| `downtime_logs` | 1,179 | 1 ไลน์ |
+
+`downtime_logs` ขาด = หักเวลาหยุดไม่ครบ ⇒ CT สังเกตการณ์ **ช้ากว่าจริง** ⇒ ขึ้นเป็นข้อเสนอ ⇒ กดอนุมัติ
+= เขียนทับ `dr_products.cycle_time_sec` ซึ่งเป็น **ตัวเศษ %P ของทั้งโรงงาน**
+
+**กติกา:** เกิน 1000 ⇒ ใช้ `fetchByIds` / `fetchAllPages` / `fetchAllRows` (แบ่งก้อน + แบ่งหน้า + `.order()`
+คู่ `.range()`) · **ถ้าโตไม่ถึงจริง** ให้เขียน `cap-ok: <ตาราง> วัด <วันที่> = <N> แถว` ใน 3 บรรทัดเหนือ
+บรรทัดนั้น — **ต้องวัดจริง ไม่ใช่ตรายาง** (ตัวเลขที่วัดไว้ 20/10 อยู่ในคอมเมนต์ของแต่ละจุดแล้ว)
+
+🔴 **โหลดไม่ครบแล้วยังเสนอค่า = ห้าม** — `CtReview` รับ `truncated`/`failed` จาก `fetchByIds` แล้ว
+**ไม่โชว์ข้อเสนอเลย** + เขียนบนจอว่าทำไม (fail-closed · ของเดิมโชว์ข้อเสนอจากข้อมูลที่ขาด)

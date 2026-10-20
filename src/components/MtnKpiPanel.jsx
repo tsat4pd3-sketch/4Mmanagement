@@ -7,6 +7,7 @@ import TimeRangeBar from './TimeRangeBar';
 import { ALL } from '../utils/filterLabels';
 import useTimeRange from '../utils/useTimeRange';
 import { rangeDays } from '../utils/timeRange';
+import { urlParam } from '../utils/urlInit';
 
 /* ══ 📊 KPI ช่าง — MTTA / MTTR / MDT + ความพึงพอใจ + ความน่าเชื่อถือรายอุปกรณ์ ══════════
    ย้ายมาจากแท็บ `?tab=kpi` ของ `/mtn-repair` เมื่อ 2026-09-22 (คำสั่ง user: *"ฟังก์ชันของช่าง
@@ -42,7 +43,7 @@ const satAvg = (s) => {
 };
 
 export default function MtnKpiPanel({ orders = [], scopeLines = null, lineObjs = [], machines = [], onGoQc7 }) {
-  const [line, setLine] = useState('');
+  const [line, setLine] = useState(() => urlParam('kline') || '');   // ?kline= ชื่อไลน์ (จอวนหน้า)
   /* ⏱️ ช่วงข้อมูล = แถบกลาง (UI §6.16) — เดิมเป็น dropdown "N วันล่าสุด" อย่างเดียว เลือกช่วงในอดีตไม่ได้
      · แผงนี้ฝังอยู่ในหน้าแม่ ⇒ ใช้ `?from=&to=` ร่วมกับแท็บอื่นของหน้าเดียวกัน (สลับแท็บแล้วช่วงไม่หาย)
      · `days` ยังคงไว้เพราะโค้ดคำนวณด้านล่างใช้ตัวเลขนี้ — แต่มาจากช่วงที่เลือกจริงแล้ว ไม่ใช่ค่าคงที่ */
@@ -102,6 +103,13 @@ export default function MtnKpiPanel({ orders = [], scopeLines = null, lineObjs =
         📋 <b style={{ color: 'var(--text2)' }}>นับจากใบแจ้งซ่อม (MO) ที่ปิดแล้ว</b> — วัดการตอบสนองของทีมช่าง
         · ส่วน <b style={{ color: 'var(--text2)' }}>MTTR/MTBF รายอุปกรณ์</b> ที่อยู่ล่างสุดของหน้านี้นับจาก
         <b style={{ color: 'var(--text2)' }}> downtime จริงของเครื่อง</b> — คนละฐาน ตัวเลขไม่เท่ากันเป็นเรื่องปกติ
+        {/* 🏛️ 13/10 user ถาม "ข้อมูลพวกนี้ต้องตรงกับ OBEYA ไหม" — บอร์ด KPI ใช้สูตรทางการ (730 ชม./เครื่อง/เดือน · รายปฏิทินเดือน)
+            จึงไม่เท่ากับหน้านี้ที่ใช้เวลาเดินเครื่องจริง/ช่วงวันที่เลือก — เขียนไว้ตรงนี้ ไม่งั้นกลายเป็น "2 จอตอบคนละเลข" */}
+        <div>
+          🏛️ <b style={{ color: 'var(--text2)' }}>บอร์ด OBEYA (KPI ส่งกลุ่ม)</b> คิด MTBF/MTTR/Machine Break Down จาก downtime ชุดเดียวกัน
+          แต่ใช้<b style={{ color: 'var(--text2)' }}>สูตรทางการ KPI Guideline</b> (ฐาน 730 ชม./เครื่อง/เดือน · ตามเดือนปฏิทิน · ชนิดอุปกรณ์ที่ทีมดูแล)
+          — ตัวเลขจึงต่างจากหน้านี้ที่ใช้เวลาเดินเครื่องจริงและช่วงวันที่เลือก ไม่ใช่ข้อมูลคนละชุด
+        </div>
         {/* พาเรโตถูกย้ายไปแท็บ QC7 (แยกตามชนิดสินทรัพย์) — ต้องมีทางไปให้ชัด ไม่ใช่หายเงียบ */}
         {onGoQc7 && (
           <div>

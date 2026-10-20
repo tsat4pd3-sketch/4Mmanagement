@@ -242,3 +242,25 @@ export function mergeJigLabelRows(mcJigs = [], pmRows = []) {
     dup,
   };
 }
+
+/**
+ * ✅ สแกนบาร์โค้ดชิ้นงาน/กล่อง/คัมบัง → พาร์ทในใบตรวจ QA (`qa_parts`) (2026-10-19 · คำสั่ง user
+ * "สแกน QR/บาร์โค้ด แล้ว direct เข้าไปทำงานเลย — ระบบตรวจสอบชิ้นงานของ QA")
+ * บาร์โค้ดบนกล่อง/บัตรคัมบัง = `mat_no` (MatLabel) · ป้ายระบบ = `ESM:P:<mat_no>` · พิมพ์มือ = เลขพาร์ทลูกค้าก็ได้
+ * คืน `{ part }` หรือ `{ error }` — **ทุกทางที่หาไม่เจอต้องบอกเหตุ** (ป้ายผิดชนิด · ยังไม่ตั้งมาตรฐาน · นอกขอบเขต)
+ * @param {object} scan       ผลจาก parseQrPayload
+ * @param {Array}  allParts   qa_parts ทั้งหมด (ไม่กรองขอบเขต — ไม่งั้นแยก "นอกขอบเขต" กับ "ไม่มี" ไม่ได้)
+ * @param {Array}  scoped     qa_parts ที่ผู้ใช้เห็นได้ (null = ไม่จำกัด)
+ */
+export function findQaPartByScan(scan, allParts = [], scoped = null) {
+  if (!scan) return { error: 'อ่านรหัสจากป้ายไม่ได้' };
+  if (scan.kind && scan.kind !== 'product') {
+    return { error: `ป้ายนี้เป็นป้าย${QR_KINDS[scan.kind]?.label || scan.kind} — ใบตรวจ QA ต้องสแกนบาร์โค้ด MAT บนกล่อง/คัมบัง` };
+  }
+  const part = resolveProduct(scan, allParts);
+  if (!part) return { error: `ยังไม่มีมาตรฐานการตรวจของ "${scan.id}" — ตั้งจุดตรวจที่หน้า มาตรฐานการตรวจ & Drawing ก่อน` };
+  if (scoped && !scoped.some(p => p.id === part.id)) {
+    return { error: `พาร์ท ${part.part_no || part.mat_no} อยู่นอกขอบเขตไลน์ของคุณ${part.line_name ? ` (${part.line_name})` : ''}` };
+  }
+  return { part };
+}

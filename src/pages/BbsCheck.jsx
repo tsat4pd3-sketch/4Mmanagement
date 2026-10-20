@@ -28,6 +28,7 @@ import { loadLinesRes } from '../utils/useProductionLines';
 import usePeople from '../utils/usePeople';
 import { inSectionScope } from '../utils/sectionScope';
 import { MARKS, MARK_BY_KEY, markGlyph, markColor, daysInMonth, ppeToMark } from '../utils/bbsMarks';
+import { getWorkDate } from '../utils/workDate';
 import { printBbsSheet } from '../lib/bbsPrint';
 import { checkWriteRows } from '../utils/dbWrite';
 import SearchSelect from '../components/SearchSelect';
@@ -390,15 +391,27 @@ export default function BbsCheck() {
     if (error || !data?.length) return toast.error('บันทึกรหัสพนักงานไม่สำเร็จ');
   };
 
-  /* ── สรุปเดือน (นับเฉพาะช่องที่มีข้อมูล — ไม่เดาช่องว่าง) ── */
+  /* ── สรุปเดือน (นับเฉพาะช่องที่มีข้อมูล — ไม่เดาช่องว่าง) ──
+     🔴 ต้องมี "ตัวหาร" ด้วย (13/10 · กฎเดียวกับ utils/dailyCheckDay.js ข้อ 2):
+        "✓ 120 ช่อง" ลอยๆ ตอบไม่ได้ว่ากรอกไป 90% หรือ 20% ของเดือน ⇒ คนอ่านเหมาะว่าครบแล้ว
+        · ตัวหารนับ **เฉพาะวันที่ผ่านมาแล้ว** (วันข้างหน้ายังไม่ถึงคิวกรอก นับเข้าไป = ค้างปลอม)
+        · ช่องว่าง = **"ยังไม่กรอก"** ไม่ใช่ `na` ("ไม่ได้ตรวจ/ไม่มาทำงาน" เป็นคำตอบที่คนเลือก)
+          — `ppeToMark` ก็ถือหลักนี้อยู่แล้ว (ไม่มีแถว log = ไม่เติมอะไรเลย) */
   const stat = useMemo(() => {
     const s = { ok: 0, ng: 0, fixed: 0, na: 0, auto: 0, manual: 0 };
     Object.values(cells).forEach(c => {
       s[c.mark] = (s[c.mark] || 0) + 1;
       if (c.source === 'ppe') s.auto++; else s.manual++;
     });
+    const today = getWorkDate();
+    const elapsed = today.slice(0, 7) === month ? Math.min(days, Number(today.slice(8, 10)))
+      : (month < today.slice(0, 7) ? days : 0);   // เดือนอนาคต = ยังไม่ถึงคิวเลย
+    s.due = elapsed * emps.length;
+    s.filled = s.ok + s.ng + s.fixed + s.na;
+    s.blank = Math.max(0, s.due - s.filled);
+    s.elapsed = elapsed;
     return s;
-  }, [cells]);
+  }, [cells, month, days, emps.length]);
 
   const doPrint = async () => {
     if (!sheet) return toast.error('ยังไม่มีใบของเดือน/ไลน์นี้ — บันทึกอย่างน้อย 1 ช่องก่อน');
@@ -436,7 +449,7 @@ export default function BbsCheck() {
       <FilterBar style={{ marginBottom: 12 }}>
         <span className="filter-label">พื้นที่ / ไลน์</span>
         {/* <LineSelect valueKey="id"> — เก็บ line id เหมือนเดิม · scopedLines กรอง scope ไว้แล้ว (2026-09-07) */}
-        <LineSelect lines={scopedLines} value={selLine} valueKey="id" placeholder={null} onChange={setSelLine} />
+        <LineSelect lines={scopedLines} value={selLine} valueKey="id" placeholder={null} onChange={setSelLine} includeSupport />
         <span className="filter-label">เดือน</span>
         <input type="month" value={month} onChange={e => setMonth(e.target.value)} />
         {/* 🔴 ไม่มีปุ่มเลือกกะ — BBS ไม่แยกกะ (ดูหัวบล็อกไฟล์) ห้ามเติมกลับ */}
@@ -663,6 +676,14 @@ export default function BbsCheck() {
         <span style={{ color: 'var(--muted)' }}>
           เดือนนี้: ✓ {stat.ok} · ไม่เหมาะสม {stat.ng} · ปรับแก้ {stat.fixed} · ไม่ได้ตรวจ {stat.na}
           {' · '}เติมอัตโนมัติ {stat.auto} / กรอกเอง {stat.manual} ช่อง
+          {/* 🔴 ตัวหาร — ไม่มีแล้วบรรทัดนี้ตอบไม่ได้ว่ากรอกครบแค่ไหน (ดูเหตุผลที่ stat) */}
+          {stat.due > 0 && (
+            <>
+              {' · '}กรอกแล้ว <b style={{ color: 'var(--text)' }}>{stat.filled}</b>/{stat.due} ช่อง
+              {stat.blank > 0 && <> · <b style={{ color: 'var(--amber)' }}>ยังไม่กรอก {stat.blank}</b></>}
+              {' '}(ถึงวันที่ {stat.elapsed} · {emps.length} คน)
+            </>
+          )}
         </span>
       </div>
 
@@ -707,6 +728,8 @@ function AgreementsModal({ agreements, canManage, role, onClose }) {
   const patch = (i, p) => setRows(r => r.map((x, k) => (k === i ? { ...x, ...p } : x)));
 
   const save = async () => {
+    /* ด่านชั้น 2 — ข้อตกลง BBS เป็นของกลางทั้งโรงงาน ⇒ ด่าน = คีย์เดียวกับปุ่ม (QC audit §7.4 · 20/10) */
+    if (!canManage) { toast.error('แก้ข้อตกลงความปลอดภัยต้องมีสิทธิ์ bbs:manage'); return; }
     setSaving(true);
     try {
       const bad = rows.filter(r => !String(r.text || '').trim());

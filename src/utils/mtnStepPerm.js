@@ -27,19 +27,21 @@
 
 /* ⚠️ import ได้เฉพาะ util ที่ pure ด้วยกัน (mtnMoForm ไม่แตะ supabase) · ต้องมีนามสกุล .js
    ไม่งั้น `npm test` (node:test รันไฟล์ตรงๆ ไม่ผ่าน Vite) จะ ERR_MODULE_NOT_FOUND */
-import { isMtnFormRow, mtnApprovalState, qaAppliesTo } from './mtnMoForm.js';
+import {
+  isMtnFormRow, mtnApprovalState, qaAppliesTo, isApprovalBlocked, approvalKindPending,
+} from './mtnMoForm.js';
 
 /** ขั้นที่ 1 ไม่อยู่ในตารางนี้ — เป็นการ "เปิดใบ" คุมด้วย mtn_repair:report ตรงๆ */
 export const MTN_STEPS = {
   2: {
     stage: 'assign',
-    key: 'assign', fallback: 'service', ownTeam: true, byReporter: false, side: 'mtn',
+    key: 'assign', fallback: 'service', ownTeam: true, byReporter: false, side: 'mtn', teamSide: true,
     icon: '🔧', title: 'รับงาน / จ่ายงาน',
     who: 'หัวหน้าช่าง (คนจ่ายงานให้ทีม)', whoShort: 'หัวหน้าช่าง',
   },
   3: {
     stage: 'service',
-    key: 'service', fallback: null, ownTeam: true, byReporter: false, side: 'mtn',
+    key: 'service', fallback: null, ownTeam: true, byReporter: false, side: 'mtn', teamSide: true,
     icon: '🛠', title: 'ลงมือซ่อม / อัพเดทผล',
     who: 'ช่างที่ได้รับมอบหมาย', whoShort: 'ช่างที่รับงาน',
   },
@@ -202,6 +204,24 @@ export function isOrderReporter(order, fullName) {
 }
 
 /**
+ * ชื่อผู้แจ้งที่จะเขียนบนจอ/ในใบ — คืน `{ main, extra }` (2026-10-13 · คำสั่ง user "โชว์ทั้งคู่เมื่อต่างกัน")
+ *
+ * ทำไมมี 2 ฟิลด์: `reporter_prod` = ช่องในฟอร์มที่**พิมพ์แก้ได้** (ชื่อคนที่แจ้งจริงหน้างาน)
+ * · `reported_by_name` = ระบบ stamp ชื่อ**บัญชีที่เปิดใบ** ตอน insert (แก้ไม่ได้ · เป็นตัวตัดสินสิทธิ์
+ * ใน `isOrderReporter` ห้ามสลับ) ⇒ ใบที่เปิดด้วยบัญชีกลาง (เช่น toolingmaintenance) 2 ค่านี้ไม่ตรงกัน
+ *
+ * 🔴 เทียบด้วย `norm` (ตัดช่องว่างซ้ำ/ตัวพิมพ์) ก่อนเสมอ — ไม่งั้นชื่อเดียวกันที่พิมพ์เว้นวรรค 2 เคาะ
+ *    จะถูกเขียนซ้ำ 2 ครั้งบนจอ (เจอจริง: "ยุทธภูมิ  การัมย์")
+ */
+export function orderReporterText(order) {
+  const form = String(order?.reporter_prod ?? '').trim();
+  const stamp = String(order?.reported_by_name ?? '').trim();
+  if (!form) return { main: stamp || null, extra: null };
+  if (!stamp || norm(form) === norm(stamp)) return { main: form, extra: null };
+  return { main: form, extra: stamp };
+}
+
+/**
  * ทำขั้นนี้ได้ไหม — ใช้ทั้งตอนซ่อนปุ่มและตอนกดบันทึก
  *
  * opts:
@@ -241,12 +261,32 @@ export function isOrderReporter(order, fullName) {
    ⚠️ ไฟล์นี้ pure — ผู้เรียกคำนวณ `actorSide`/`posRank` มาให้ (ดู actorSideOf ด้านล่าง) */
 
 /** ฝั่งของคนกด — ตัดสินจาก "ข้อมูลที่บันทึกไว้จริง" เท่านั้น ห้ามเดาจากชื่อ/ตำแหน่ง
- *  คืน 'mtn' | 'reporter' | 'unknown'  —  🔴 unknown ไม่ใช่ "ผ่าน" แต่คือ "ระบบไม่รู้ ต้องเขียนบนจอ" */
-export function actorSideOf({ mtnTeams = [], role = '', sections = [] } = {}) {
-  if (Array.isArray(mtnTeams) && mtnTeams.length > 0) return 'mtn';
-  if (String(role || '').trim() === 'mtn') return 'mtn';
+ *  คืน 'mtn' | 'reporter' | 'both' | 'unknown'
+ *   — 🔴 unknown ไม่ใช่ "ผ่าน" แต่คือ "ระบบไม่รู้ ต้องเขียนบนจอ"
+ *
+ *  🔴 **'both' = ทีม AM (ผลิตซ่อมเอง)** — เพิ่ม 2026-10-16 หลังเจอเคสจริง:
+ *     ผอ.ฝ่ายผลิตที่อยู่ทีม AM (`mtn_teams = {production}`) ถูกตีเป็น "ฝั่งช่าง" ถาวร
+ *     ⇒ เซ็นขั้น 7 (อนุมัติปิดใบ · ช่องของ**ฝ่ายผู้แจ้ง**) ไม่ได้ ทั้งที่ตัวเองคือเจ้าของค่าใช้จ่าย
+ *     และใบก็หายจากคิว "รอคุณ" ด้วย (`soleSignerFor` เทียบฝั่งตรงๆ)
+ *     เหตุผลเชิงโมเดล: **AM คือฝ่ายผลิตซ่อมเครื่องตัวเอง ⇒ ช่าง = ผู้แจ้ง = หน่วยงานเดียวกัน**
+ *     ไม่มี "อีกฝั่ง" ให้กัน · ส่วนทีมช่างจริง (MTN/DIE/JIG) ยังเป็น 'mtn' เหมือนเดิมทุกประการ
+ *
+ *  ⚠️ ไฟล์นี้ pure — ผู้เรียกต้องส่ง `isAm` (= `isAmTeam` จาก `utils/pmTeams.js`) เข้ามาเอง
+ *     **ห้าม hardcode `'production'` ที่นี่** (ชนิดทีมอ่านจาก `mtn_teams.kind` · กฎ AM↔PM ใน CLAUDE.md)
+ *     ไม่ส่ง = พฤติกรรมเดิมเป๊ะ (fail-safe) — มีด่านบังคับให้ทุก call site ส่ง */
+export function actorSideOf({ mtnTeams = [], role = '', sections = [], isAm = () => false } = {}) {
+  const teams = (Array.isArray(mtnTeams) ? mtnTeams : []).filter(Boolean);
+  if (String(role || '').trim() === 'mtn') return 'mtn';        // ช่างเต็มตัว — ไม่ว่าอยู่ทีมไหน
+  if (teams.length) return teams.every(t => isAm(t)) ? 'both' : 'mtn';
   if (Array.isArray(sections) && sections.length > 0) return 'reporter';
   return 'unknown';
+}
+
+/** ฝั่งนี้ทำช่องที่เป็นของฝั่ง `need` ได้ไหม — 'both' ผ่านทั้งสองฝั่ง · 'unknown' ไม่บล็อก (เขียนบนจอแทน)
+ *  🔴 ที่เดียวที่เทียบฝั่ง — ห้ามเขียน `actorSide !== meta.side` เองในหน้า/ในคิว (มีด่าน) */
+export function sideAllows(actorSide, need) {
+  if (!need) return true;
+  return actorSide === 'unknown' || actorSide === 'both' || actorSide === need;
 }
 
 /** ข้อความเตือนตอนระบบ "ปล่อยผ่านเพราะไม่รู้" — คืน null เมื่อไม่มีอะไรต้องเตือน
@@ -285,7 +325,7 @@ export function canDoStep(step, opts = {}) {
 
   /* 🔒 ด่านฝั่ง + ตำแหน่ง (2026-10-02) — ตรวจ**ก่อน** manage_master เพื่อให้รู้ว่า
      "ถ้าไม่ใช่ผู้ถือคีย์หัวหน้า คนนี้จะกดได้ไหม" ⇒ ตอบได้ว่านี่คือการ "เซ็นแทน" หรือไม่ */
-  const sideBad = meta.side && actorSide !== 'unknown' && actorSide !== meta.side;
+  const sideBad = !sideAllows(actorSide, meta.side);
   const rankBad = meta.minRank != null && posRank != null && posRank < meta.minRank;
   // ผู้เปิดใบทำขั้นของตัวเองได้เสมอ (เช็คก่อนด่านฝั่ง/ตำแหน่ง — เจ้าของใบต้องไม่ถูกล็อกออก)
   const isReporterSelf = meta.byReporter && isOrderReporter(order, fullName);
@@ -299,16 +339,36 @@ export function canDoStep(step, opts = {}) {
     return { ok: false, code: sideBad ? 'wrong_side' : 'rank_too_low', need: meta.side, needRank: meta.minRank };
   }
 
-  /* หัวหน้า (ผู้ถือ manage_master) แก้ย้อนหลังได้ทุกขั้น — พฤติกรรมเดิม ห้ามถอด
-     ⚠️ ตกมาถึงตรงนี้แปลว่า "ฝั่งและตำแหน่งถูกต้องแล้ว" ⇒ คีย์นี้ปลดได้แค่เรื่อง *สิทธิ์/ลำดับขั้น*
-        **ปลดด่านฝั่ง/ตำแหน่งไม่ได้อีกต่อไป** (ด่านอยู่ข้างบนแล้ว ห้ามย้ายบรรทัดนี้ขึ้นไปก่อนมัน) */
-  if (can('manage_master')) return { ok: true, code: 'manage_master' };
+  /* 🔒 ด่าน "ทีมใครทีมมัน" (15/10 · คำสั่ง user) — ตรวจ**ก่อน** manage_master
+     > *"ไม่ควรทำข้ามกันได้ ต้องล็อกทีมใครทีมมัน เพราะผู้แจ้งจะแจ้งเจาะจงไปหาทีมที่ต้องการอยู่แล้ว
+     >  ในกรณีที่จะส่งงานไปทีมอื่น ก็คือให้เลือกส่งงานทีมอื่น ถึงจะถูก"*
+
+     เดิมบรรทัดนี้อยู่ **ใต้** `manage_master` ⇒ ไม่เคยกัดเลย เพราะ `mtn_repair:manage_master`
+     ถูกแจกให้ role `mtn` **ทั้งก้อน** (ไม่ใช่แค่หัวหน้า) ⇒ ช่างทุกคนข้ามทีมได้ (audit 15/10)
+
+     🔴 ทางที่ถูกสำหรับงานข้ามทีมมีอยู่แล้ว 2 ทาง **ห้ามถอด** — ล็อกนี้ปลอดภัยเพราะมีมันรองรับ:
+       · ใบมาผิดทีม → ตีกลับ (`returned`) แล้วผู้แจ้ง "แก้แผนก & ส่งใหม่"
+       · ทำเองไม่ได้ ต้องให้ทีมเฉพาะทาง → "➡️ ส่งต่องาน" (เปิดใบใหม่ของทีมนั้น ผูก handoff)
+     🔴 `hasTeams` เท็จ (ไม่ได้ตั้งทีม) = **ไม่บล็อก** — ไม่รู้ ≠ ปฏิเสธ · admin/ผจก. ไม่มีทีม
+        จึงผ่านตามเดิม (วัด 15/10: ช่าง 16/16 · หัวหน้ากลุ่ม 19/19 ตั้งทีมแล้ว ⇒ ด่านกัดจริง) */
+  if (meta.teamSide && hasTeams && !inOrderTeam) return { ok: false, code: 'other_team' };
 
   /* 🔒 ใบ MTN "งานปรับปรุง/สร้าง" ต้องมีลายเซ็นผู้จัดการก่อน ช่างถึงจะรับงานได้ — 2026-09-15
      ผู้เรียกคำนวณ `approvalBlocked` จาก mtnApprovalState(order).blocked (mtnMoForm.js)
      ⚠️ **งานซ่อม/บริการไม่เข้าเงื่อนไขนี้เด็ดขาด** (คำสั่ง user: "ไม่งั้นไลน์จะหยุดรอการอนุมัติ")
-        — ใบพวกนั้นเดินงานได้ทันที แล้วค่อยไล่เซ็นรับทราบตามหลัง */
+        — ใบพวกนั้นเดินงานได้ทันที แล้วค่อยไล่เซ็นรับทราบตามหลัง
+
+     🔴 ตรวจ **ก่อน** `manage_master` (ย้ายขึ้นมา 2026-10-20 · QC audit §7.2)
+        เดิมอยู่ใต้มัน ⇒ ไม่เคยกัดช่างเลย เพราะ `mtn_repair:manage_master` ถูกแจกให้ role `mtn`
+        **ทั้งก้อน 16 บัญชี** (ไม่ใช่แค่หัวหน้า) = ด่านอนุมัติก่อนเริ่มงานเป็นของปลอมสำหรับช่างทุกคน
+        — **คลาสเดียวกับล็อก "ทีมใครทีมมัน" ที่เจอ 15/10** (บั๊กลำดับบรรทัด ไม่ใช่บั๊กตรรกะ)
+        ทางที่ถูกคือ "ให้ ผจก. เซ็นอนุมัติ" (ปุ่ม ✍️ อนุมัติใบ MO) ไม่ใช่ให้ใครกดข้ามเงียบๆ */
   if (approvalBlocked && (Number(step) === 2 || Number(step) === 3)) return { ok: false, code: 'await_mgr_approval' };
+
+  /* หัวหน้า (ผู้ถือ manage_master) แก้ย้อนหลังได้ทุกขั้น — พฤติกรรมเดิม ห้ามถอด
+     ⚠️ ตกมาถึงตรงนี้แปลว่า "ฝั่ง · ตำแหน่ง · ทีม · ด่านอนุมัติก่อนเริ่มงาน ผ่านหมดแล้ว"
+        ⇒ คีย์นี้ปลดได้แค่เรื่อง *สิทธิ์/ลำดับขั้น* **ห้ามย้ายบรรทัดนี้ขึ้นไปก่อนด่านใดด่านหนึ่ง** */
+  if (can('manage_master')) return { ok: true, code: 'manage_master' };
 
   // ผู้เปิดใบตรวจรับงานของตัวเองได้เสมอ (ขั้น 4, 6) — ไม่ต้องรอ admin ติ๊ก role และไม่ติด scope
   // (เช็คก่อน perm: เจ้าของใบต้องไม่ถูกล็อกออกด้วยเกณฑ์ scope ไม่ว่ากรณีไหน)
@@ -318,9 +378,6 @@ export function canDoStep(step, opts = {}) {
      inReporterScope: true = ใบอยู่ในขอบเขต · false = อยู่นอกขอบเขต (ล็อก) · null = ตัดสินไม่ได้
      (ผู้ใช้ไม่จำกัด scope / ใบไม่ระบุไลน์ / ไลน์ไม่อยู่ในทะเบียน) = ปล่อยผ่านตามเดิม
      ผู้เรียกคำนวณผ่าน orderInReporterScope() ด้านล่าง — util นี้ยัง pure ไม่แตะทะเบียนไลน์เอง */
-  /* ขั้นของฝั่งช่าง (ขั้น 8 ของใบ MTN) — คนที่ "รู้แน่ว่าสังกัดทีมช่างอื่น" ปิดใบทีมนี้ไม่ได้
-     hasTeams = ผู้ใช้มี profiles.mtn_teams ตั้งไว้ไหม (ผู้เรียกส่งมา) · ไม่ได้ตั้ง = ปล่อยผ่าน */
-  if (meta.teamSide && hasTeams && !inOrderTeam) return { ok: false, code: 'other_team' };
 
   const outOfScope = !!meta.reporterSide && inReporterScope === false;
   if (can(meta.key)) return outOfScope ? { ok: false, code: 'out_of_scope' } : { ok: true, code: 'perm' };
@@ -346,7 +403,10 @@ export function canDoStep(step, opts = {}) {
  * ⚠️ เกณฑ์นี้ต้องใช้ทั้งตอน "วาดกล่องเตือนบนฟอร์ม" และตอน "กดบันทึก" — ห้ามเขียนซ้ำในหน้า
  */
 export function canBounceBack(order = {}) {
-  if (['closed', 'rejected'].includes(order.status)) return false;
+  /* 🔴 อ่านชุด "สถานะจบ" จาก MO_DONE_STATUSES ห้ามเขียนลิสต์มือซ้ำ — เดิมเขียน
+     `['closed','rejected']` ที่นี่ แล้วตอนเพิ่ม `transferred`/`cancelled` ลิสต์นี้ไม่ถูกแก้ตาม
+     ⇒ ใบที่จบไปแล้วยังกดตีกลับได้ (สถานะถอยกลับขั้น 1 ทั้งที่มีใบรับช่วงต่อ/เลขถูกยกเลิกแล้ว) */
+  if (MO_DONE_STATUSES.includes(String(order?.status || '').trim())) return false;
   return Number(order.current_step || 1) <= 2;
 }
 
@@ -435,7 +495,12 @@ export const QA_SKIP_REASON_STEP4 = 'ขั้น 4 ระบุว่าไม�
  * ใช้ 3 ทางที่มีอยู่แล้ว:
  *   ① คนที่ถูกระบุชื่อไว้ในใบเซ็นของตัวเองได้เลย (เกณฑ์เดียวกับ isOrderReporter — ยึดชื่อในใบ)
  *   ② ผู้ถือ mtn_repair:approve = หัวหน้าแผนก/ส่วน/ผจก. (กลุ่มเดียวกับที่อนุมัติปิดใบขั้น 7)
- *   ③ manage_master (หัวหน้าโมดูล) — ตามกฎเดิมของทั้งไฟล์
+ * 🔴 **ไม่มีทาง ③ "manage_master เซ็นแทน" อีกต่อไป** (ถอด 2026-10-20 · QC audit §7.2)
+ *    ช่องนี้คือลายเซ็น **ผจก.** บนใบจริง ⇒ ต้องเป็นคนที่ใบระบุชื่อ หรือผู้ถือ `mtn_repair:approve`
+ *    (หัวหน้าแผนก/ส่วน/ผจก.) เท่านั้น — ตรงกับกฎ 04/10 "ช่องเซ็นล็อกฝั่ง+ตำแหน่ง ไม่มีการเซ็นแทน
+ *    แม้แต่ผู้ถือ manage_master" · เดิมเปิดไว้ ⇒ **ช่างทั้ง 16 บัญชีเซ็นอนุมัติให้งานตัวเองได้**
+ *    (เกิดจริงแล้ว 1 ใบ โดยบัญชีกลาง `maintenance` ซึ่งสอบกลับไม่ได้ว่าใครกด)
+ *    ⚠️ ไม่มีใครที่เคยเซ็นถูกต้องเสียสิทธิ์ — วัดแล้ว ผู้เซ็นจริงทุกคนถือ `approve` อยู่แล้ว
  * เซ็นแล้วเซ็นซ้ำไม่ได้ (แก้ต้องผ่าน manage_master ที่ขั้นอื่น) — ลายเซ็นที่ทับได้ = หลักฐานที่เชื่อไม่ได้
  */
 export function canSignMtnApproval(kind, opts = {}) {
@@ -446,7 +511,6 @@ export function canSignMtnApproval(kind, opts = {}) {
   const named = kind === 'dept' ? order.dept_manager_name : order.plant_manager_name;
   const me = norm(fullName);
   if (me && norm(named) === me) return { ok: true, code: 'named' };
-  if (can('manage_master')) return { ok: true, code: 'manage_master' };
   if (can('approve')) return { ok: true, code: 'approve' };
   return { ok: false, code: 'denied' };
 }
@@ -497,7 +561,11 @@ export function moQaState(order) {
       edge อีก 1) ⇒ เพิ่มสถานะจบใหม่ทีไร ใบจะไปโผล่ค้างในคิวของจอที่ลืมแก้ **ห้ามเขียนลิสต์ซ้ำอีก
       ให้ import `isMoOpen` / `MO_DONE_STATUSES` จากที่นี่เสมอ**
    · `OPEN_MO_STATUSES` ใน dieStatus.js เป็น allowlist (ตรงข้ามกัน) จึงกันสถานะใหม่ให้เองอยู่แล้ว */
-export const MO_DONE_STATUSES = ['closed', 'rejected', 'transferred'];
+/* 🔴 `cancelled` (2026-10-14) — ใบที่ออกเลขแล้วแต่ยกเลิก **แทนการ `delete`**
+   เลขไม่หาย · ประวัติค่าแรง/อะไหล่/ลายเซ็นไม่หาย · ตอบได้ว่าเลขที่ขาดไปเพราะอะไร
+   (วัด 14/10: ทีม MTN มีใบถูก delete 4 ใบ — 2 ใบลบตอน `repaired` ⇒ ประวัติซ่อมหายถาวร
+    และเลข 09-2 · 10-3 · 10-5 · 10-7 ขาดไปโดยไม่มีใครตอบได้ว่าทำไม) */
+export const MO_DONE_STATUSES = ['closed', 'rejected', 'transferred', 'cancelled'];
 export const isMoOpen = (order) => !MO_DONE_STATUSES.includes(String(order?.status || '').trim());
 
 export const MO_STATUS_LABEL = {
@@ -519,6 +587,9 @@ export const MO_STATUS_LABEL = {
      ต้องเป็นสถานะของตัวเอง ไม่ใช่ปล่อยค้าง `repairing` เพราะผู้แจ้งต้องเห็นว่า
      "ไม่ได้ดองอยู่ที่ช่าง แต่รอของจากข้างนอก" (คำสั่ง user 21/09) */
   waiting_vendor: '📤 ส่งซ่อมภายนอก (รอ supplier)',
+  /* ยกเลิกใบที่ออกเลขไปแล้ว (2026-10-14) — **ไม่ใช่ `rejected`** (ใบไม่ถูกต้อง/ผิดแผนก)
+     และไม่ใช่ `transferred` (ส่งต่อทีมอื่น) · นี่คือ "ใบนี้ไม่ต้องทำแล้ว แต่เลขถูกใช้ไปแล้ว" */
+  cancelled: '🚫 ยกเลิกใบ (เลขถูกใช้ไปแล้ว)',
 };
 
 /* สี + ลำดับขั้นของแต่ละสถานะ (การ์ด/ชิป/dropdown ฟิลเตอร์) — ย้ายมาจาก MtnRepair.jsx 2026-09-16
@@ -544,6 +615,8 @@ const MO_STATUS_STYLE = {
   transferred: { step: 0, color: '#a855f7' },   // ม่วง = จบแล้วแต่ไม่ใช่ผลงานซ่อม (คนละกลุ่มกับเขียว closed)
   // ฟ้า = ใบเปิดอยู่แต่ "ไม่ได้อยู่ในมือเรา" — ต่างจากส้ม (กำลังทำ) ชัดเจนบนกระดาน
   waiting_vendor: { step: 3, color: '#0ea5e9' },
+  // เทา ขั้น 0 = จบแล้วและไม่ใช่ผลงาน (กลุ่มเดียวกับ rejected) — ห้ามเขียว ห้ามแดง
+  cancelled:   { step: 0, color: '#8b8b96' },
 };
 /* สถานะที่ยังไม่ได้ตั้งสี = เทา ขั้น 0 — **ไม่ throw** (throw ตอน import = จอขาวทั้งหน้า)
    เทสเป็นด่านแทน: คีย์ใหม่ที่ลืมตั้งสีจะ build ไม่ผ่านตั้งแต่บนเครื่อง */
@@ -565,6 +638,55 @@ export const moStatusMeta = (order) => {
   const m = MO_STATUS_META[String(order?.status || '').trim()] || MO_STATUS_META.pending;
   return { ...m, label: moStatusLabel(order) };
 };
+
+/* ═══ 🗑️→🚫 เลิกใบ MO: `delete` ได้เฉพาะใบที่ยังไม่มีเลข ═════════════  2026-10-14
+   คำสั่ง user (ข้อ "ก" — ล็อกตามสถานะ) หลังเห็นของจริง:
+     วัด 14/10 จาก `audit_log` — ทีม MTN มีใบถูก **`delete`** ไป 4 ใบ
+     (`MTN.2026/09-2` · `10-3` · `10-5` · `10-7`) และ **2 ใบลบตอนสถานะ `repaired`**
+     ⇒ เลขหายจากลำดับโดยไม่มีใครตอบได้ว่าทำไม + ค่าแรง/อะไหล่/ลายเซ็นหายถาวร กู้ไม่ได้
+     ⇒ ยิ่งตอนนี้เลขมีหาง `-M<n>` (ใบที่เท่าไหร่ของเดือน) เลขขาดจะเห็นชัดทุกเดือน
+
+   กติกา 3 ทาง — **ตัดสินที่นี่ที่เดียว ห้ามเขียน `if (status === …)` ในหน้า**
+     · ยังไม่ออกเลข (`mo_no` ว่าง) → **`delete` ได้** (ใบเปิดผิด ยังไม่มีร่องรอยให้เสีย)
+     · ออกเลขแล้ว ยังไม่ปิด        → **`cancel` เท่านั้น + ต้องมีเหตุผล** (เลขอยู่ ประวัติอยู่)
+     · ปิดไปแล้ว / จบไปแล้ว        → **ห้ามทั้งคู่** — ใบที่ปิดแล้วคือ *บันทึก* (กฎเดิมของโมดูล
+       "ใบ MO ที่ปิดแล้ว = บันทึก" 12/10 · มี snapshot) · ผิดจริงต้องคุยกันเป็นเคส ไม่ใช่กดปุ่ม
+   ⚠️ นี่เป็นกติกาของ **ตัวใบ** — สิทธิ์ว่า "คนนี้กดได้ไหม" ยังเป็นของ `canDelete()` เหมือนเดิม
+      ผู้เรียกต้องผ่านทั้ง 2 ด่าน (ด่านนี้ไม่รู้จัก role โดยเจตนา — pure) */
+/* ── ใบที่ "ไม่เคยเกิดขึ้นเป็นงาน" ────────────────────────────────────────────────
+   `rejected` (แจ้งผิดแผนก/ไม่รับเรื่อง) และ `cancelled` (ออกเลขแล้วแต่ยกเลิก) ต่างจาก
+   `closed`/`transferred` ที่ **มีงานเกิดขึ้นจริง** ⇒ จอที่นับ "งานซ่อมที่เกิดขึ้น"
+   (ต้นทุน · พาเรโต · "เครื่องนี้มีใบซ่อมหรือยัง") ต้องกัน 2 ตัวนี้ออก
+   🔴 เขียนลิสต์นี้ด้วยมือในหน้า = ตกรุ่นทุกครั้งที่เพิ่มสถานะใหม่ (มีด่าน `mtn-status-no-neq`)
+   ⚠️ คนละชุดกับ `MO_DONE_STATUSES` ("จบแล้ว" ซึ่งรวม closed/transferred ที่เป็นงานจริง) */
+export const MO_VOID_STATUSES = ['rejected', 'cancelled'];
+export const isMoVoid = (order = {}) => MO_VOID_STATUSES.includes(String(order?.status || '').trim());
+/** ไว้ต่อท้าย `.not('status','in', …)` ฝั่งคิวรี — ให้ฝั่ง DB กรองตรงกับ `isMoVoid()` */
+export const MO_VOID_NOT_IN = `(${MO_VOID_STATUSES.join(',')})`;
+
+export const MO_REMOVE_DELETE = 'delete';
+export const MO_REMOVE_CANCEL = 'cancel';
+export const MO_REMOVE_BLOCKED = 'blocked';
+
+/**
+ * ใบนี้เลิกได้แบบไหน
+ * @returns {{ mode: 'delete'|'cancel'|'blocked', why: string }}
+ *   `why` = ข้อความที่ **ต้องขึ้นบนจอ** (ซ่อนปุ่มได้ ห้ามซ่อนเหตุผล · UI §6.9)
+ */
+export function moRemoveMode(order = {}) {
+  const st = String(order?.status || '').trim();
+  const hasNo = !!String(order?.mo_no || '').trim();
+  if (st === 'closed') {
+    return { mode: MO_REMOVE_BLOCKED, why: 'ใบที่ปิดแล้วเป็นบันทึก — ลบหรือยกเลิกไม่ได้' };
+  }
+  if (MO_DONE_STATUSES.includes(st)) {
+    return { mode: MO_REMOVE_BLOCKED, why: `ใบนี้จบไปแล้ว (${MO_STATUS_LABEL[st] || st}) — ไม่ต้องยกเลิกซ้ำ` };
+  }
+  if (!hasNo) {
+    return { mode: MO_REMOVE_DELETE, why: 'ยังไม่ออกเลข MO — ลบทิ้งได้ (ไม่มีเลขและประวัติให้เสีย)' };
+  }
+  return { mode: MO_REMOVE_CANCEL, why: 'ออกเลข MO ไปแล้ว — ยกเลิกได้ แต่ลบไม่ได้ (เลขและประวัติต้องอยู่)' };
+}
 
 /** ใบ MTN งานปรับปรุง/สร้างที่ยังไม่ได้อนุมัติ — ไม่ใช่ "รอรับงาน" (ช่างกดรับไม่ได้จนกว่าจะเซ็น) */
 export const MO_LABEL_WAIT_APPROVAL = '🔒 รอผู้จัดการอนุมัติ (ก่อนเริ่มงาน)';
@@ -588,7 +710,7 @@ export function moStatusLabel(order) {
   const st = String(order?.status || '').trim();
   /* ใบที่ติดด่านอนุมัติ ต้องไม่ขึ้น "📣 รอรับงาน" — ช่างเห็นแล้วกดรับไม่ได้ ก็จะกองค้างเงียบ (2026-09-15)
      ⚠️ ตัดสินเฉพาะแถวที่ select `dept_manager_at` มาด้วยจริง (undefined = ไม่รู้ ห้ามเดา) */
-  if (st === 'pending' && order?.purpose && order?.dept_manager_at !== undefined && mtnApprovalState(order).blocked) return MO_LABEL_WAIT_APPROVAL;
+  if (isApprovalBlocked(order)) return MO_LABEL_WAIT_APPROVAL;
   /* ใบ MTN ค้างที่ `handover` ได้ 3 ขั้น (6 หัวหน้าแผนกช่างตรวจ · 7 ผจก.ช่างอนุมัติ · 8 ปิดใบ)
      แยกด้วยเวลาเซ็นจริง — ป้ายต้องบอกว่า "รอใคร" ไม่ใช่เหมารวมว่ารออนุมัติปิด (2026-09-22)
      ⚠️ ฟอร์มอื่น (JIG/DIE/PRODUCTION) `handover` = รอขั้น 7 อนุมัติปิดขั้นเดียว → ป้ายรวมเดิม
@@ -604,6 +726,61 @@ export function moStatusLabel(order) {
   // แถวที่ไม่ได้ select `qa_skipped_at` มาด้วย = ตัดสินไม่ได้ว่าข้ามหรือยัง → ใช้ป้ายรวม ห้ามเดา
   if (order?.qa_skipped_at === undefined) return MO_STATUS_LABEL.checked;
   return isWaitingQa(order) ? MO_LABEL_WAIT_QA : MO_LABEL_WAIT_HANDOVER;
+}
+
+/* ══ 🔒 ด่านอนุมัติก่อนเริ่มงาน = "จังหวะงาน" ที่ไม่มีเลขขั้น ════════════  2026-10-13
+   คำสั่ง user: *"มีงานรอเราอนุมัติ MO แต่เราหาไม่เจอ — ผู้จัดการฝ่ายที่แจ้งต้องอนุมัติให้ MTN ดำเนินการ"*
+
+   ใบ improve/build ที่ยังไม่มีลายเซ็นผู้จัดการ **ช่างกดรับงานไม่ได้** แต่ `nextStepOf()` คืน 2
+   ⇒ ตัวกรอง "รอขั้นไหน" / คิวงานของฉัน / กระดิ่ง เหมารวมไปกองเดียวกับ "รอช่างรับงาน"
+   ⇒ กองนี้ไม่เคยมีชื่อของตัวเองบนจอไหนเลย · **ห้ามกลับไปเทียบ `nextStepOf()` ตรงๆ อีก**
+   ใช้ `moWaitMeta()` ตัวเดียวทุกจอ (ด่าน `regressionGuards`) */
+export const STAGE_APPROVE_FIRST = 'approve_first';
+
+/** meta ของด่านนี้ — รูปร่างเดียวกับ `MTN_STEPS[n]` (จอ/คิวใช้ `icon`/`title`/`whoShort` เหมือนกันหมด)
+ *  `side`/`minRank` = เกณฑ์เดียวกับช่องเซ็นฝั่งผู้แจ้ง (ขั้น 7 ของฟอร์ม JIG/DIE = ผจก. ฝ่ายที่แจ้ง) */
+export const APPROVE_FIRST_META = {
+  stage: STAGE_APPROVE_FIRST, key: 'approve', fallback: null,
+  ownTeam: false, byReporter: false, reporterSide: true, side: 'reporter', minRank: 50,
+  icon: '🔒', title: 'ผู้จัดการอนุมัติ (ก่อนเริ่มงาน)',
+  who: 'ผจก. ของฝ่ายที่แจ้ง (ต้นสังกัดผู้เปิดใบ)', whoShort: 'ผจก.ฝ่ายที่แจ้ง',
+};
+
+/**
+ * "ใบนี้รออะไรอยู่" — `{ stage, step, meta }` ชุดเดียวกันทุกจอ
+ * 🔴 ด่านอนุมัติชนะเลขขั้นเสมอ (ช่างกดรับไม่ได้ = ใบไม่ได้รอช่าง)
+ * `step` เป็น `null` ได้ ⇒ ผู้เรียกที่จะส่งต่อ `canDoStep(step, …)` ต้องเช็ค stage ก่อน
+ */
+export function moWaitMeta(order) {
+  if (isApprovalBlocked(order)) {
+    return { stage: STAGE_APPROVE_FIRST, step: null, meta: APPROVE_FIRST_META };
+  }
+  const mtnForm = isMtnFormRow(order);
+  const step = nextStepOf(order);
+  if (!step) return { stage: null, step: null, meta: null };
+  return { stage: stageOf(step, { mtnForm }), step, meta: stepMeta(step, { mtnForm }) };
+}
+
+/**
+ * ช่องอนุมัติของใบนี้ "รอคนนี้อยู่คนเดียว" ไหม — ใช้ตัดสินว่าจะเข้าชั้น `mine` + ขึ้น badge
+ *
+ * 🔴 กติกาเดียวกับ `soleSignerFor` ของขั้นที่ล็อกตำแหน่ง:
+ *    · ชื่ออยู่ในใบ = ช่องนี้รอคนนี้ตรงๆ (ชนะทุกเกณฑ์)
+ *    · ผู้ถือสิทธิ์ `approve` ต้อง **อยู่ฝั่งผู้แจ้ง + ตำแหน่งถึงเกณฑ์** — ไม่รู้ฝั่ง/ตำแหน่ง = ไม่นับ
+ *    · **`manage_master` ไม่นับ** (หัวหน้าระบบเซ็นแทนได้ ≠ คนที่ช่องนี้รอ) ไม่งั้น admin
+ *      จะได้ใบรออนุมัติทั้งโรงงานเป็น "รอคุณ" = badge ค้างถาวร (ซ้ำรอยกระดิ่งเดิม)
+ */
+export function approvalWaitsOnMe(order, me = {}) {
+  const kind = approvalKindPending(order);
+  if (!kind) return false;
+  const v = canSignMtnApproval(kind, {
+    order, fullName: me.name || '', can: me.can || (() => false),
+  });
+  if (!v.ok) return false;
+  if (v.code === 'named') return true;
+  if (v.code !== 'approve') return false;
+  if (!me.actorSide || me.actorSide !== APPROVE_FIRST_META.side) return false;
+  return me.posRank != null && me.posRank >= APPROVE_FIRST_META.minRank;
 }
 
 /**
@@ -672,8 +849,17 @@ export function stepDenyHint(step, { teamName = '', reporterName = '', outOfScop
     return lines;
   }
   if (otherTeam) {
-    lines.push(`ใบนี้เป็นของทีม ${teamName || '—'} — ขั้นปิดใบเป็นของผู้จัดการฝั่งช่างทีมนั้น`);
-    lines.push('ถ้าคุณคือผู้จัดการของทีมนี้จริง ให้ admin ตั้ง “🔧 ทีมช่างซ่อม” ของบัญชีนี้ให้ตรงที่ /add-user');
+    /* 15/10: ด่านนี้ครอบขั้น 2-3 ด้วยแล้ว (รับงาน/จ่ายงาน/ลงผลซ่อม) ⇒ ข้อความต้องแยกตามขั้น
+       ไม่งั้นช่างอ่านว่า "ขั้นปิดใบ" ทั้งที่กำลังจะกดรับงาน = จอโกหก */
+    const isWork = Number(step) === 2 || Number(step) === 3;
+    lines.push(isWork
+      ? `ใบนี้แจ้งถึงทีม ${teamName || '—'} โดยตรง — งานซ่อมของทีมนั้นต้องให้ช่างทีมนั้นทำ`
+      : `ใบนี้เป็นของทีม ${teamName || '—'} — ขั้นปิดใบเป็นของผู้จัดการฝั่งช่างทีมนั้น`);
+    if (isWork) {
+      lines.push('ถ้าทีมนั้นทำไม่ได้/ไม่ใช่งานของเขา ให้ใช้ทางที่ถูก: ตีกลับใบ (ผู้แจ้งแก้แผนกแล้วส่งใหม่)'
+        + ' หรือให้ทีมเจ้าของกด “➡️ ส่งต่องาน” เปิดใบใหม่ให้ทีมคุณ (ประวัติผูกกันไว้)');
+    }
+    lines.push('ถ้าบัญชีนี้ถูกตั้งทีมผิด ให้ admin แก้ “🔧 ทีมช่างซ่อม” ที่ /add-user');
     return lines;
   }
   if (meta.byReporter) {

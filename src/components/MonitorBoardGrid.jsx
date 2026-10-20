@@ -6,6 +6,9 @@ import {
 } from '../utils/monitorGrid';
 import { rowDefs, balanceRowKey, minRowKey } from '../utils/monitorBoards';
 import { matText } from '../utils/matLabel';
+import { supabaseDR } from '../supabaseClient';
+import PartThumb from './PartThumb';
+import { loadPartImages, partImageOf } from '../utils/partImages';   // 🖼️ รูปชิ้นงาน (12/10 · user "รูปยังไม่ขึ้น")
 import { periodHead, isTodayPeriod, startIndexForToday, periodTone } from '../utils/periodHead';   // 🗓️ หัวคอลัมน์ชุดเดียวทุกตาราง (08/10)
 
 /* ══ 📉 MonitorBoardGrid — ตารางบอร์ด Monitoring (พาร์ท × ช่วงเวลา × แถว) ════════════════
@@ -42,8 +45,8 @@ const card = {
 };
 
 export default function MonitorBoardGrid({
-  board, parts = [], periods = [], manualMap, systemMap, anchorMap,
-  onEditCell, editable = false, truncated = false, loadWarn = '',
+  board, parts = [], periods = [], manualMap, systemMap, anchorMap, lockMap,
+  onEditCell, onLockedCell, editable = false, truncated = false, loadWarn = '',
   windowSize = 14,
 }) {
   const rows = useMemo(() => rowDefs(board), [board]);
@@ -67,6 +70,13 @@ export default function MonitorBoardGrid({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- คีย์รูปร่างคอลัมน์ (string) ไม่ใช่ identity ของ array
     [firstKey, periods.length, todayKey, pKind, windowSize]);
   useEffect(() => { setWinStart(homeStart); }, [board?.id, homeStart]);
+  /* 🖼️ ทะเบียนรูป (cachedMaster ในตัว) — โหลดไม่ได้ = กล่อง "ยังไม่มีรูป" ไม่ทำจอพัง */
+  const [imgMap, setImgMap] = useState({});
+  useEffect(() => {
+    let alive = true;
+    loadPartImages(supabaseDR).then(({ map }) => { if (alive) setImgMap(map || {}); });
+    return () => { alive = false; };
+  }, []);
   const win = useMemo(() => {
     if (periods.length <= windowSize) return periods;
     const body = periods.slice(1);
@@ -77,8 +87,8 @@ export default function MonitorBoardGrid({
   /* ── กริดคิดเต็มทุกคอลัมน์เสมอ (ไม่ใช่แค่ที่มองเห็น) ──────────────────────────────
      เพราะ BALANCE/UNBOUND เป็น recurrence — คิดแค่ช่วงที่มองเห็นจะได้ยอดยกมาผิด */
   const grid = useMemo(
-    () => buildGrid({ parts, periods, rows, manual: manualMap, system: systemMap, anchor: anchorMap }),
-    [parts, periods, rows, manualMap, systemMap, anchorMap],
+    () => buildGrid({ parts, periods, rows, manual: manualMap, system: systemMap, anchor: anchorMap, locked: lockMap }),
+    [parts, periods, rows, manualMap, systemMap, anchorMap, lockMap],
   );
 
   const balKey = balanceRowKey(board);
@@ -316,7 +326,10 @@ export default function MonitorBoardGrid({
                 <tr key={`${part.id}|${row.key}`} style={{ background: rowBg }}>
                   {ri === 0 ? (
                     <td rowSpan={rows.length} style={{ ...tdSticky, width: HEAD_W, verticalAlign: 'top', background: pi % 2 ? 'var(--bg2)' : 'var(--card)' }}>
-                      <PartHead part={part} board={board} shortAt={shortAt} racks={racks} raw={raw} />
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                        <PartThumb url={partImageOf(imgMap, part.mat_no)} alt={part.part_name || part.mat_no || ''} size={44} />
+                        <PartHead part={part} board={board} shortAt={shortAt} racks={racks} raw={raw} />
+                      </div>
                     </td>
                   ) : null}
                   <td style={{
@@ -344,18 +357,23 @@ export default function MonitorBoardGrid({
                     return (
                       <td key={p.key}
                         /* คลาสนี้ให้ hover + เส้นประใต้ตัวเลข = "ช่องนี้กดแก้ได้" (index.css · เฉพาะเครื่องที่มีเมาส์) */
-                        className={c?.editable && editable ? 'mon-cell-edit' : undefined}
-                        onClick={() => c?.editable && !editing && startEdit(part.id, row.key, p.key, c.v)}
+                        className={(c?.editable && editable) || (c?.src === 'locked' && onLockedCell) ? 'mon-cell-edit' : undefined}
+                        onClick={() => {
+                          /* 🔒 ช่องที่ระบบเป็นเจ้าของ — กดแล้วเปิดใบขอปรับยอดคลัง ไม่ใช่ช่องพิมพ์ทับ (13/10) */
+                          if (c?.src === 'locked') { if (onLockedCell) onLockedCell({ partId: part.id, rowKey: row.key, periodKey: p.key }); return; }
+                          if (c?.editable && !editing) startEdit(part.id, row.key, p.key, c.v);
+                        }}
                         title={br ? `ต่ำกว่า MIN ${fmtN(br.short)} ชิ้น (MIN ${fmtN(br.min)})` : (c?.src === 'system' ? 'ระบบดึงจากใบผลิต/สต๊อก — กดเพื่อกรอกทับ'
+                          : c?.src === 'locked' ? `🔒 ระบบเป็นเจ้าของ (คลังกดรับแล้ว) — แก้บนบอร์ดไม่ได้${onLockedCell ? ' · กดเพื่อขอปรับยอดคลัง' : ''}`
                           : c?.src === 'ledger' ? '🔗 ยอดคงเหลือจริงในคลัง (ledger) ณ ตอนนี้ — ไม่ใช่สูตร · ยอดไม่ตรงของจริงให้ตรวจนับที่ /line-stock?tab=count' : undefined)}
                         style={{
-                          ...tdBase, textAlign: 'right', cursor: c?.editable && editable ? 'cell' : 'default',
+                          ...tdBase, textAlign: 'right', cursor: (c?.editable && editable) ? 'cell' : (c?.src === 'locked' && onLockedCell ? 'pointer' : 'default'),
                           minWidth: COL_W, width: COL_W, padding: editing ? 0 : tdBase.padding,
                           borderLeft: isToday ? '2px solid var(--accent)'
                             : (isSeed || ci === 1 ? '2px solid var(--border2)' : tdBase.borderLeft),
                           borderRight: isToday ? '2px solid var(--accent)' : undefined,
                           background: isToday ? 'var(--accent-dim)' : (isSeed ? 'var(--bg3)' : undefined),
-                          color: neg || br ? '#f87171' : (c?.src === 'system' ? 'var(--text2)' : (isCalc ? 'var(--muted)' : 'var(--text)')),
+                          color: neg || br ? '#f87171' : (c?.src === 'system' || c?.src === 'locked' ? 'var(--text2)' : (isCalc ? 'var(--muted)' : 'var(--text)')),
                           /* ตัวเลขของแถวสูตร = เอียง ⇒ มองผ่านๆ ก็รู้ว่า "เครื่องคิดให้" ไม่ใช่ของที่ใครพิมพ์
                              (สีจางอย่างเดียวไม่พอ — ตัวเลขที่ระบบดึงมา `system` ก็จางเหมือนกัน แต่กรอกทับได้) */
                           fontStyle: isCalc && c?.src !== 'ledger' ? 'italic' : undefined,
@@ -432,7 +450,14 @@ function PartHead({ part, board, shortAt, racks = null, raw = null }) {
   if (part.ct_sec) sub.push(`CT ${part.ct_sec}s`);
   if (part.pieces_per_shot > 1) sub.push(`${part.pieces_per_shot} ชิ้น/จังหวะ`);
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 1, maxWidth: HEAD_W - 16 }}>
+    /* 🔴 หัวพาร์ทต้อง "ตัดบรรทัดเอง" — `tdBase` ตั้ง `whiteSpace:'nowrap'` ไว้สำหรับช่องตัวเลข
+       ⇒ ถ้าไม่ปลดที่นี่ บรรทัดรายละเอียด (รุ่น · LOT · บรรจุ · CT) จะ**ล้นออกนอกคอลัมน์หัว**
+       ไปทับช่องตัวเลขช่องแรก (วัดจริง 13/10 @390px: กล่อง 222 เนื้อหา 242 · mobilesweep "ล้นปัดไม่ได้")
+       `anywhere` เพราะเลข MAT/ชื่อพาร์ทเป็นคำยาวไม่มีช่องว่างให้เบรก */
+    <div style={{
+      display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0, maxWidth: HEAD_W - 16 - 52,
+      whiteSpace: 'normal', overflowWrap: 'anywhere',
+    }}>
       {/* 🔴 `matText(mat, index, row)` — อาร์กิวเมนต์แรกคือ "เลข MAT" ไม่ใช่ทั้งแถว
           เดิมส่ง `matText(part)` ⇒ หัวพาร์ททุกแถวขึ้น `MAT [object Object]` แทนเลขจริง (แก้ 05/10)
           ชื่อพาร์ทวาดเป็นบรรทัดของตัวเองข้างล่าง (clamp 2 บรรทัด) จึงไม่ส่ง `name` เข้ามาซ้ำ */}

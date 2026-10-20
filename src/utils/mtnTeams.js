@@ -2,6 +2,7 @@
 //   ใช้แจกใบแจ้งซ่อม MO ให้ถูกทีม: คิวงานแยกทีม + default หน่วยงานตอนแจ้ง + แจ้งเตือน Telegram แยกห้อง
 //   จับคู่จาก profiles.sections (ตามคำสั่ง user) — ผูกกับ section ของคน
 import { pmTeamsSync, DEFAULT_TEAMS } from './pmTeams'
+import { teamRowOwnerKeys } from './mtnTeamOwn.js'
 
 // ⚠️ ค่าที่ "เก็บลง DB" คือ key เสมอ (mtn_teams.key) — ชื่อ (dept_name) ใช้แสดงผลเท่านั้น
 //    เหตุผล: ชื่อทีมเปลี่ยนได้ (เคยเปลี่ยน PRODUCTION → "AM (ผลิตตรวจเอง)") ถ้าเก็บชื่อ ข้อมูลเก่าจะกำพร้าทันที
@@ -118,3 +119,46 @@ export { teamForEquipmentKind, guessTeamFromName, teamForMachine } from './mtnTe
 
 /** ทีมทั้งหมดสำหรับทำ dropdown — [{ key, name }] · value = key (เก็บลง DB) · name = ชื่อที่โชว์ */
 export const teamOptions = () => teamRows().map(t => ({ key: t.key, name: t.dept_name || t.label || t.key }))
+
+/* ═══ "แถวนี้ใครแก้/ลบได้" — กฎเจ้าของทีม (2026-08-11 · ขยายคุมคลังอะไหล่ 2026-10-14) ═══
+   📄 เหตุผล/กติกาเต็ม + fallback ที่ห้ามเปลี่ยน → `mtnTeamOwn.js` (ตรรกะจริงอยู่ที่นั่น pure)
+   ที่นี่แค่ normalize ชื่อทีม→key ให้ก่อน (ข้อมูลเก่าบางแถวเก็บเป็นชื่อ ไม่ใช่ key) */
+export function teamRowOwner(row, { myTeams = [], role = '', strict = false } = {}) {
+  return teamRowOwnerKeys(
+    teamKeyOf(row?.team),
+    (Array.isArray(myTeams) ? myTeams : []).map(teamKeyOf).filter(Boolean),
+    role, { strict })
+}
+
+/** เหตุผลที่กดไม่ได้ — ต้องเขียนบนจอเสมอ ห้ามซ่อนปุ่มเงียบ (กฎความซื่อสัตย์ของจอ)
+ *  `code` จาก teamRowOwner — ส่งมาด้วยเมื่ออยากได้ข้อความตรงเคส (no_team ชี้ทางแก้ให้ด้วย) */
+export function teamRowLockNote(row, code = '') {
+  if (code === 'no_team') return 'บัญชีนี้ยังไม่ได้ตั้งทีมช่าง — เพิ่มของใหม่ได้ แต่แก้/ลบของเดิมไม่ได้ (ตั้งทีมที่ /add-user)'
+  const t = teamKeyOf(row?.team)
+  return t
+    ? `รายการนี้เป็นของทีม ${deptNameOf(t)} — แก้/ลบได้เฉพาะทีมนั้นหรือหัวหน้า`
+    : 'รายการนี้ทุกทีมใช้ร่วมกัน — แก้/ลบได้เฉพาะหัวหน้า (แก้ทีเดียวกระทบทุกทีม)'
+}
+
+/* ══ 🔐 "ทีมนี้เป็นของเราไหม" — ด่านชั้นที่ 3 ฝั่งช่าง (2026-10-15 · คำสั่ง user) ═══════════
+ * ฝั่งช่างใช้ **ทีม** เป็นแกน ไม่ใช่ส่วนงาน — เพราะช่างซ่อมข้ามไลน์เป็นงานปกติ
+ * (ใช้ `profiles.section` ตัดสินเหมือนจอผลิต = ช่าง JIG ซ่อมเครื่องของ PD3 ไม่ได้ = พังงานจริง)
+ * 🔴 **ไม่ผูกทีม = ไม่บล็อก** (`no_team_anchor`) — หลักเดียวกับ `canDoStep`: ไม่รู้ ≠ ปฏิเสธ
+ *    วัดจริง 15/10: role mtn 16/16 · leader 19/19 · supervisor 24/33 ตั้งทีมแล้ว ⇒ ด่านกัดจริง
+ *    (คอมเมนต์เก่าใน mtnStepPerm ที่ว่า "79% ยังไม่ตั้ง" ล้าสมัยแล้ว — วัดใหม่ 15/10)
+ * ══════════════════════════════════════════════════════════════════════════════════════ */
+export function canWriteTeam(myTeams, targetTeam, { allUnits = false, role } = {}) {
+  if (role === 'admin' || allUnits) return { ok: true, code: 'all_units' }
+  const mine = (Array.isArray(myTeams) ? myTeams : []).map(teamKeyOf).filter(Boolean)
+  if (!mine.length) return { ok: true, code: 'no_team_anchor' }   // ไม่รู้ทีมของคนกด = ไม่บล็อก
+  const t = teamKeyOf(targetTeam)
+  if (!t) return { ok: true, code: 'unknown_target' }             // แถวไม่ระบุทีม = ของกลาง
+  return mine.includes(t) ? { ok: true, code: 'own_team' } : { ok: false, code: 'other_team' }
+}
+
+/** ข้อความบอกคนกด — ต้องบอกทางแก้ ห้ามขึ้นแค่ "ไม่มีสิทธิ์" */
+export function teamBlockText(res, what = 'งานของทีมนี้') {
+  if (!res || res.ok) return ''
+  return `${what}เป็นของทีมช่างอื่น — ดูได้ แต่แก้ไม่ได้`
+    + ' (ให้ช่างทีมนั้นทำ หรือขอสิทธิ์ข้ามหน่วยงานจากแอดมิน)'
+}

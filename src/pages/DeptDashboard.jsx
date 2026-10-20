@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
+import { isOpenQaDoc } from '../utils/qaDocStatus';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { loadLinesRes } from '../utils/useProductionLines';
@@ -14,7 +15,7 @@ import { loadPairMap } from '../utils/useProducts';
 import { fetchByIds, fetchAllPages } from '../utils/fetchByIds';
 import useIsMobile from '../utils/useIsMobile';
 import { scopedLineNames } from '../utils/sectionScope';
-import { isMoOpen } from '../utils/mtnStepPerm';
+import { isMoOpen, isMoVoid } from '../utils/mtnStepPerm';
 import { planDueBucket } from '../lib/pmSchedule';
 import { loadPmTeams, isAmTeam } from '../utils/pmTeams';
 import { loadDailyAm, dailyAmLineStatus } from '../lib/dailyAmBoard';
@@ -460,7 +461,9 @@ function MaintenanceView({ d, ctx }) {
       const c = dtBucketName(x, dtIdx); m.causes[c] = (m.causes[c] || 0) + 1;
       const dt = x.started_at || sMap[x.session_id]?.work_date; if (dt && (!m.last || dt > m.last)) m.last = dt;
     });
-    const hasMo = new Set(d.mo.filter(o => o.machine_no && (daysSince(o.report_at) ?? 999) <= 30).map(o => o.machine_no));
+    /* 🔴 ใบโมฆะ (`rejected`/`cancelled`) ไม่นับว่า "เครื่องนี้มีใบซ่อมแล้ว" — แผงนี้หา
+       **เครื่องที่หยุดซ้ำแต่ยังไม่มีใบ** ⇒ นับใบที่ถูกยกเลิกเข้าไป = ซ่อนเครื่องที่ควรถูกชี้ (`isMoVoid`) */
+    const hasMo = new Set(d.mo.filter(o => !isMoVoid(o) && o.machine_no && (daysSince(o.report_at) ?? 999) <= 30).map(o => o.machine_no));
     return Object.values(byMc).filter(m => m.times >= 2 && !hasMo.has(m.machine)).sort((a, b) => b.min - a.min);
   }, [d]);
 
@@ -537,7 +540,7 @@ function MaintenanceView({ d, ctx }) {
     </Section>
 
     <Section title="🔗 ทางลัด">
-      <Links navigate={navigate} items={[['/tv?dept=maintenance', '📺 จอเฝ้าระวัง (แขวนทีวี)', callMtn.length || null], ['/mtn-repair', '🛠️ แจ้งซ่อม MO', scopedMo.length], ['/pm?tab=plan', '📅 แผน PM', overdue.length], ['/pm?tab=forecast', '🔧 PM ล่วงหน้า'], ['/daily-checker', '✅ Daily Checker'], ['/mtn-layout', '🗺️ ผังเครื่องจักร']]} />
+      <Links navigate={navigate} items={[['/tv?dept=maintenance', '📺 Andon Board (จอแขวน)', callMtn.length || null], ['/mtn-repair', '🛠️ แจ้งซ่อม MO', scopedMo.length], ['/pm?tab=plan', '📅 แผน PM', overdue.length], ['/pm?tab=forecast', '🔧 PM ล่วงหน้า'], ['/daily-checker', '✅ Daily Checker'], ['/mtn-layout', '🗺️ ผังเครื่องจักร']]} />
     </Section>
   </>);
 }
@@ -749,7 +752,7 @@ function QaView({ d, ctx }) {
 
   /* ── เคลมลูกค้า — ของเสียที่หลุดออกไปถึงลูกค้าแล้ว (ระดับความเร่งด่วนสูงสุดของ QA) ── */
   const claims = d.claims || [];
-  const claimOpen = claims.filter(c => c.status !== 'closed');
+  const claimOpen = claims.filter(isOpenQaDoc);   // ใบยกเลิก (เปิดผิด) ไม่ใช่งานค้าง — utils/qaDocStatus
   const claimLate = claimOpen.filter(c => c.due_reply_date && c.due_reply_date < workDate && !c.replied_at);
   const claimNo8D = claimOpen.filter(c => !c.capa_id);
 
@@ -954,8 +957,8 @@ export default function DeptDashboard({ embedded = false, tabs, tab: hubTab, onT
             <span className="spacer" />
             {/* 📺 จอเฝ้าระวังย้ายไปหน้า `/tv` แล้ว (nav audit 2026-08-28) — ปุ่มนี้คงทางเข้าเดิมไว้ (ห้ามตัดทางออกของใคร) */}
             <button className="ctl-btn" onClick={() => navigate(`/tv?dept=${dept === 'store' ? 'store' : dept === 'production' ? 'production' : 'maintenance'}`)}
-              title="เปิดจอเฝ้าระวังสำหรับแขวนทีวี (ผัง + เครื่องหยุด + เสียงเตือน)"
-              style={tvBtn(false)}>📺 จอเฝ้าระวัง (แขวนทีวี)</button>
+              title="เปิด Andon Board สำหรับแขวนทีวี (ผัง + เครื่องหยุด + เสียงเตือน)"
+              style={tvBtn(false)}>📺 Andon Board (จอแขวน)</button>
           </>) : undefined}
         />
 

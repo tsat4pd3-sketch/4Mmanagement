@@ -252,6 +252,12 @@ const AM_TARGET = {
 const AM_INSP = { 2: 'fail', 5: 'pending', 8: 'pending', 12: 'pending', 13: 'pending', 14: 'pending' }
 
 const TABLE_ROWS = {
+  /* 🔨 ผังจัดเก็บแม่พิมพ์ — ชื่อต้องไม่ชนชื่อไลน์ (2026-10-16 · ห้ามถอด)
+     เดิมได้ `name` = LINE_NAME(i) เหมือนไลน์ผลิต ⇒ FactoryMap `openLine()` เข้าใจว่าทุกกรอบเป็นโซนแม่พิมพ์
+     แล้ว navigate ทิ้ง ⇒ **กล่องรายละเอียดไลน์ (story modal) ไม่เคยถูกเรนเดอร์ใน harness เลย** */
+  die_storage_areas: (r, i) => ({ ...r, name: `คลังแม่พิมพ์ทดสอบ ${i}` }),
+  /* 🏬 โซนคลังสินค้า — เหตุผลเดียวกัน (ชื่อชนไลน์ = คลิกไลน์แล้วเปิด popup คลังแทน) · แถว 1 ตรงกับกรอบ rg-4 ให้การ์ดคลังยังถูกวาด */
+  storage_zones: (r, i) => ({ ...r, name: i === 1 ? 'คลังสินค้า FG ทดสอบ' : `คลังสินค้าทดสอบ ${i}` }),
   /* 🔑 ทะเบียน action ในตารางสิทธิ์ — **ห้ามปล่อยให้ resource/action เป็น null** (2026-10-08)
      เดิม `permission_catalog` ได้ ROWS ทั่วไป (ไม่มี 2 คอลัมน์นี้) ⇒ คีย์ของทุกแถวกลายเป็น
      `undefined:undefined` เหมือนกันหมด ⇒ harness เตือนคีย์ซ้ำ 14 แถว และ **แท็บ "การทำงาน"
@@ -302,6 +308,13 @@ const TABLE_ROWS = {
      แผนก/ฝ่าย/กลุ่มไลน์ ไม่เคยถูกรันใน harness): 1 = ส่วนงาน PD1 · 2 = แผนกใต้ PD1 · 3-5 = ไลน์ในแผนก
      (ref_line_id ชี้ production_lines mock ที่ id เป็น 'id-N') · 6 = แผนกขึ้นตรงฝ่ายช่าง (ไม่มีไลน์) ·
      7 = org line node ไม่ผูก production line (สโตร์) · ที่เหลือ = ทีม · แถว NULLISH ยังคงว่างตามกติกา */
+  /* 🏭 ชนิดหน่วย — **ต้องมีแถว `support` อย่างน้อย 1 ตัวเสมอ ห้ามถอด** (2026-10-13)
+     ของจริงมี 3 หน่วย (Office PD4 · Coating · Rework - PD1) ที่ไม่ใช่ไลน์ผลิต
+     ไม่มีในmock = สาขา "กรองหน่วยสนับสนุนออก" + ป้าย "🗂️ หน่วยสนับสนุน" ของค่าที่เลือกไว้แล้ว
+     ไม่เคยถูกรันใน harness เลย · เลือกแถว 5 เพราะเป็นไลน์เดี่ยว (ไม่อยู่ใน PARENT_OF
+     และไม่ถูกอ้างโดย sessions/workstations ที่ผูก LINE_NAME(1..3)) */
+  production_lines: (r, i) => ({ ...r, unit_kind: i === 5 ? 'support' : 'production' }),
+
   org_nodes: (r, i) => ({
     ...r,
     kind: i === 1 ? 'section' : (i === 2 || i === 6) ? 'department' : i <= 5 || i === 7 ? 'line' : 'team',
@@ -346,7 +359,23 @@ const TABLE_ROWS = {
       old_data: act === 'INSERT' ? null : { ...data, slots: (data.slots ?? 0) + 2 }, new_data: act === 'DELETE' ? null : data,
       changed_at: `2026-${String(8 + (i % 3)).padStart(2, '0')}-1${i % 9}T03:00:00Z` };
   },
-  line_technicians: (r, i) => ({ ...r, employee_id: `id-${i}`, line_id: 'id-3' }),
+  /* 🔧 ช่างประจำไลน์ — id-3..id-15 (13 คน) · 🔴 **เว้น id-1/id-2 ไว้โดยเจตนา** (14/10)
+     เดิมผูก `id-${i}` ครบทุกคน ⇒ พนักงานทั้ง 15 คนเป็น "ช่างประจำไลน์" ของแผนก id-2 หมด
+     แล้วสาย **คนวิ่งข้ามแผนก** (employee_flex_units) ถูกกฎ "ไม่วาดซ้ำคนที่อยู่แผนกนี้แล้ว"
+     กรองออกทุกแถว ⇒ การ์ด flex ไม่เคยถูกรันใน harness เลย (วัดจริงด้วย console probe)
+     ⇒ ต้องมีคนที่ **ไม่ใช่** ทั้งคนในสังกัดและช่างของแผนก id-2 เหลืออยู่เสมอ */
+  line_technicians: (r, i) => ({ ...r, employee_id: `id-${(i % 13) + 3}`, line_id: 'id-3' }),
+  /* 🏃 คนวิ่งข้ามแผนก (14/10) — คนที่ผูกระดับ **ส่วนงาน** (employees 1-2 = org_node_id 'id-1')
+     ไปช่วยแผนก 'id-2' ⇒ สายการ์ด flex + ป้าย "↗ บ้าน" + ตัวนับ "วิ่งข้ามมาช่วย" ถูกรัน
+     🔴 ห้ามชี้หน่วยเดียวกับบ้านของคนนั้น — กฎกรองออก (ไม่วาดซ้ำ) แล้วสายนี้จะไม่เคยถูกรันเลย
+     🔴 แถวที่บ้านจริงสืบไม่ได้ (ผูกระดับส่วนงาน) = เคสที่ `flexFrom.nodeName` ต้องถอยไปใช้ชื่อแผนกใน
+        ทะเบียนพนักงาน — ห้ามเปลี่ยนให้ชี้แผนกตรงๆ ไม่งั้นสาขา fallback หายจาก harness */
+  /* 🎖️ แถวที่ 3 เป็น `kind='acting'` โดยเจตนา — **ห้ามถอด** (20/10)
+     ป้ายรักษาการขึ้นหัวผัง/แถวหัวหน้าแผนก คนละเส้นทางกับการ์ด 🏃 flex
+     ไม่มีแถว acting ใน mock = เส้นทางนั้นไม่เคยถูกรันใน crashsweep เลย */
+  employee_flex_units: (r, i) => ({ ...r, employee_id: `id-${(i % 2) + 1}`, org_node_id: i % 3 === 2 ? 'id-1' : 'id-2',
+    kind: i % 3 === 2 ? 'acting' : 'flex',
+    note: isNullish(r) ? null : 'ช่วยกะเช้าประจำ' }),
   line_helpers: (r, i) => ({ ...r, employee_id: `id-${(i % 4) + 7}`, to_line_id: 'id-9', shift: i % 2 ? 'day' : 'night',
     work_date: _recentDay(i % 20) }),
   /* 📊 แผน vs มาจริง (08/10) — เช็คชื่อกระจาย 20 วันล่าสุด · คนตรงกับทะเบียน (id-*) · คละ มา/ลา/ขาด
@@ -356,12 +385,34 @@ const TABLE_ROWS = {
   employee_skills: (r, i) => ({ ...r, employee_id: `id-${(i % 14) + 1}`, skill_name: i % 2 ? 'SPOT' : 'GAUGE', score: [25, 50, 75, 100][i % 4] }),
   daily_production_logs: (r, i) => ({ ...r, employee_id: `id-${(i % 14) + 1}`, work_date: _recentDay(i % 20),
     shift: i % 3 ? 'day' : 'night', is_present: i % 6 !== 0, leave_type: i % 12 === 0 ? 'ลาป่วย' : null }),
+  /* ⚙️ หมุดเครื่องบนผังไลน์ — ต้องมีพิกัด "xx%" (รูปแบบเดียวกับของจริง) และกระจุกอยู่โซนกลาง (2026-10-16 · ห้ามถอด)
+     เดิมไม่มี pos_top/pos_left ⇒ หมุดทุกตัวกองที่มุมซ้ายบน · โหมด "ครอปเฉพาะโซนที่มีหมุด" (MachineFloorMap autoCrop)
+     ไม่เคยถูกรันใน harness · แถว NULLISH = พิกัดว่าง ⇒ ต้องไม่ทำให้กรอบครอปพัง (cropBox ข้ามจุดที่ไม่มีพิกัด) */
+  machine_points: (r, i) => ({ ...r, machine_no: `SP-${i}`, line_name: LINE_NAME((i % 3) + 1),
+    pos_top: isNullish(r) ? null : `${(40 + (i * 7) % 22).toFixed(2)}%`, pos_left: isNullish(r) ? null : `${(35 + (i * 11) % 30).toFixed(2)}%` }),
   /* จุดงาน + จุดประจำ + รูปผัง — ให้สาย "รูปคนบนผัง LAYOUT" ถูกรัน (เดิมไม่มีพิกัด = ไม่มีจุดถูกวาด) */
   workstations: (r, i) => ({ ...r, station_name: `ST-${i} SPOT WELD`, line_id: 'id-3', line_name: LINE_NAME(3),
     /* 🎯 (12/10) ทักษะที่จุดต้องการ — 2 ใน 3 จุดตั้งไว้ ⇒ แผง "ยืนจุดที่ทักษะยังไม่ถึง" + "ยังไม่ตั้งทักษะ" ถูกรันทั้งคู่ */
     station_requirements: i % 3 ? [{ skill_name: 'SPOT', min_score: 50 }, { skill_name: 'GAUGE', min_score: 75 }] : [],
     pos_top: isNullish(r) ? null : String(15 + (i * 5) % 70), pos_left: isNullish(r) ? null : String(8 + (i * 7) % 84) }),
   employee_home_positions: (r, i) => ({ ...r, employee_id: `id-${i}`, station_id: `id-${(i % 7) + 1}` }),
+  /* 🏬 รหัสคลัง (SLoc) — **ต้องมีอย่างน้อย 1 รหัสที่ "ผูกไลน์" ไว้ ห้ามถอด** (13/10)
+     ไม่มีเลย ⇒ มุมมอง "ตามพื้นที่ SAP" ของ /line-stock ถอยไปโหมดไลน์ทุกครั้ง
+     = สาขาที่สโตร์/วางแผนเปิดดูทุกวัน (จัดกลุ่มตามพื้นที่ · รวมยอดข้ามไลน์) ไม่เคยถูกเรนเดอร์ใน harness
+     · รหัสต้องตรงรูปแบบ `SLOC_RE` (ตัวอักษร+เลข 3 หลัก) ไม่งั้นแผงทะเบียนขึ้นป้าย "รหัสผิดรูปแบบ" ทุกแถว */
+  storage_locations: (r, i) => ({ ...r, code: `P4${String(i).padStart(2, '0')}`, kind: 'production',
+    line_names: i === 1 ? [r.line_name] : [], sort_order: i }),
+  /* 📍 ยอดหน้าไลน์ + จุดเรียกเติม — **ต้องผูกกับชื่อไลน์จริงในทะเบียน ห้ามถอด** (20/10)
+     ROW() ให้ `line_name` = 'LINE APRON ASSY / HYDROFORM' ซึ่งไม่ตรงชื่อใน `production_lines` เลยสักไลน์
+     ⇒ `partLevelCoverage()` กันทุกแถวออกเป็น "คลัง" ⇒ แท็บ 📍 จุดเรียกเติม (ทั้งโรงงาน) ของ `/line-stock`
+       ขึ้น "ยังไม่มียอดสต็อก" ตลอด = สาขาที่สโตร์/วางแผนใช้ตามงาน ไม่เคยถูกเรนเดอร์ใน harness
+     · คละให้ครบทุกสาขา: ตั้ง min แล้ว · มีแถวแต่ไม่ใส่ min · ไม่มีแถวจุดเรียกเติมเลย · ยอดเหลือ 0
+     · เว้นบางแถวไว้ที่ชื่อเดิม (i % 5 === 0) ให้ยังมี "ปลายทางที่ไม่ใช่ไลน์ผลิต" = ตัวนับ "กันออก"
+       และ optgroup 🏬 คลัง ของตัวเลือกไลน์ยังถูกเรนเดอร์เหมือนเดิม */
+  line_stock_summary: (r, i) => ({ ...r, line_name: i % 5 === 0 ? r.line_name : LINE_NAME((i % 3) + 1),
+    qty_on_hand: i % 4 === 0 ? 0 : i * 120 }),
+  line_part_levels: (r, i) => ({ ...r, line_name: LINE_NAME((i % 3) + 1), mat_no: `1010${1000 + (i % 8)}`,
+    min_qty: i % 3 === 0 ? null : 40 * i, max_qty: 200 * i }),
   /* 🔴 ใบแจ้งซ่อม MO — ต้องคละ **สถานะจริงของ workflow** (2026-10-06)
      เดิมทุกแถวได้ `status: 'open'` จาก ROW() ซึ่ง **ไม่ใช่สถานะของ mtn_orders เลย**
      ⇒ `nextStepOf()` คืน null ทุกแถว ⇒ โค้ดสาย "ใบนี้รอขั้นไหน / รอใคร" (ตัวกรองรอขั้นไหน ·
@@ -377,7 +428,24 @@ const TABLE_ROWS = {
     qa_skipped_at: null, purpose: i % 4 === 0 ? 'improve' : 'repair',
     report_at: '2026-08-04T09:30:00+07:00',
     mtn_head_at: i % 2 ? '2026-08-05T09:00:00+07:00' : null, approve_at: null,
-    reported_by_name: 'สมชาย ใจดี', assigned_to: 'ช่างเอก',
+    /* ⏳ เวลา "เข้าขั้น" — ฐานนับของแผงใบค้างขั้นเดิม (`STAGE_SINCE` ใน utils/mtnStale.js · 13/10)
+       ต้องสอดคล้องกับ `status` ด้านบน (`i % 6`) ไม่งั้นใบอยู่ขั้น 5 แต่ไม่มีเวลาของขั้น 1-4 = ข้อมูลที่เป็นไปไม่ได้
+       🔴 **ห้ามตั้งให้ทุกแถว** — แถวที่ไม่มีเวลาเข้าขั้น (nullish + แถวที่เว้นไว้) คือตัวที่ทำให้เส้นทาง
+          `exact:false` ("ถอยไปนับจากวันแจ้ง" + บรรทัด ℹ️ บนแผง) ถูกเรนเดอร์จริงในด่าน */
+    accept_at:      i % 6 >= 1 ? '2026-08-05T08:00:00+07:00' : null,
+    repair_done_at: i % 6 >= 2 ? '2026-08-07T08:00:00+07:00' : null,
+    check_at:       i % 6 >= 3 && i % 5 !== 0 ? '2026-08-09T08:00:00+07:00' : null,
+    qa_at:          i % 6 >= 4 ? '2026-08-10T08:00:00+07:00' : null,
+    ho_at:          i % 6 >= 4 ? '2026-08-11T08:00:00+07:00' : null,
+    repair_start_at: null, returned_at: null, vendor_sent_at: null,
+    /* 🧑 ชื่อผู้แจ้ง — ลิสต์ MO โชว์เป็นคอลัมน์ตั้งแต่ 13/10 ⇒ ต้องมีทั้ง 3 เคสในด่าน
+       (วัดจากฐาน 13/10: 720 ใบ · reported_by_name 689 · reporter_prod 692 · ไม่มีทั้งคู่ 25)
+       · แถว NULLISH = ไม่มีทั้งคู่ ⇒ เส้นทาง '—' ถูกเรนเดอร์จริง
+       · บางแถวว่างช่องแรกแต่มีช่องสอง ⇒ เส้นทาง fallback `reported_by_name || reporter_prod` ถูกวิ่ง
+       🔴 ห้ามตั้งชื่อให้ทุกแถว (เดิมเป็นแบบนั้น) = 2 เส้นทางนั้นหลุดด่านทั้งคู่ */
+    reported_by_name: isNullish(r) ? null : (i % 4 === 1 ? null : 'สมชาย ใจดี'),
+    reporter_prod: isNullish(r) ? null : (i % 4 === 1 ? 'ผู้แจ้งฝ่ายผลิต' : null),
+    assigned_to: 'ช่างเอก',
   }),
   line_layouts: (r, i) => ({ ...r, line_id: `id-${i}`, line_name: LINE_NAME(i), image_url: FACTORY_MAP_IMG }),
   /* คิวรับเข้าคลัง (2026-10-02) — คละ รอรับ/ค้างเกินกำหนด/รับแล้ว(ยอดไม่ตรง) ให้ทุกโซนของ StockReceiptQueue ถูกรัน */
@@ -565,6 +633,43 @@ const MOCK_DAY = (n) => {
 }
 
 const TABLE_FIXED = {
+  /* ☕ ทะเบียนเวลาพัก — **ห้ามถอด** (2026-10-20)
+     เดิมตารางนี้ตกไปใช้ ROWS กลาง ⇒ ได้แถวขยะ (ไม่มีชื่อ · process "undefined" · เริ่ม 08:00 ทุกแถว)
+     ⇒ จอ "☕ นโยบายหยุดพัก" ไม่เคยถูกสวีปด้วยข้อมูลทรงจริงเลย และที่สำคัญกว่า:
+     **ทุกจอที่คิด %A/%P ในฮาร์เนสหักเวลาพักผิด** เพราะนโยบายที่ป้อนเข้าไปไม่ใช่ของจริง
+     🔴 ต้องมีครบ 3 ทรงที่เปิด "คนละสาขาโค้ด" ของ breakIntervalsIn():
+       ① `ot_scope: 'always'`    พักปกติ
+       ② `ot_scope: 'ot'`        เปิดสาขา isOt (ทิ้งแถว no_ot ทั้งหมด)
+       ③ `anchor: 'shift_end'`   เปิดสาขาพักท้ายกะ (ยึดเวลาเลิกกะ · offset_min)
+          — ถอดแถวนี้ = สาขาที่เพิ่งแก้ 20/10 ไม่ถูกรันในสวีปใดเลย */
+  break_policies: [
+    { id: 'bp-1', name_th: 'ประชุมแถวกะเช้า', name_en: 'Morning Line Meeting', shift: 'day',
+      start_time: '08:00:00', duration_min: 10, process_type: 'common', ot_scope: 'always',
+      anchor: 'clock', offset_min: null, is_active: true, sort_order: 1 },
+    { id: 'bp-2', name_th: 'พักกลางวัน', name_en: 'Lunch Break', shift: 'day',
+      start_time: '11:50:00', duration_min: 50, process_type: 'common', ot_scope: 'always',
+      anchor: 'clock', offset_min: null, is_active: true, sort_order: 2 },
+    { id: 'bp-3', name_th: 'พักเบรคบ่าย', name_en: 'Afternoon Break', shift: 'day',
+      start_time: '15:00:00', duration_min: 10, process_type: 'common', ot_scope: 'always',
+      anchor: 'clock', offset_min: null, is_active: true, sort_order: 3 },
+    { id: 'bp-4', name_th: 'พักเบรค OT กะเช้า', name_en: '1st OT Brake 30 minute', shift: 'day',
+      start_time: '17:30:00', duration_min: 30, process_type: 'common', ot_scope: 'ot',
+      anchor: 'clock', offset_min: null, is_active: true, sort_order: 4 },
+    { id: 'bp-5', name_th: 'ประชุมแถวกะดึก', name_en: 'Night Line Meeting', shift: 'night',
+      start_time: '20:00:00', duration_min: 10, process_type: 'common', ot_scope: 'always',
+      anchor: 'clock', offset_min: null, is_active: true, sort_order: 5 },
+    { id: 'bp-6', name_th: 'พักดึก', name_en: 'Night Break', shift: 'night',
+      start_time: '02:30:00', duration_min: 50, process_type: 'common', ot_scope: 'always',
+      anchor: 'clock', offset_min: null, is_active: true, sort_order: 6 },
+    /* ③ พักท้ายกะ — เลื่อนตามเวลาเลิกกะของวันนั้น (17:30 / 20:00 / 17:00 วันหยุด / 08:00 กะดึก) */
+    { id: 'bp-7', name_th: '5ส. ท้ายกะ', name_en: '5S (end of shift)', shift: 'both',
+      start_time: null, duration_min: 20, process_type: 'common', ot_scope: 'always',
+      anchor: 'shift_end', offset_min: 20, is_active: true, sort_order: 7 },
+    /* แถวปิดใช้ — จอต้องวาดจางพร้อมป้าย "(ปิดใช้)" และสูตรต้องไม่หยิบไปคิด */
+    { id: 'bp-8', name_th: '5ส.(ทำโอ) — แทนด้วยแถวท้ายกะแล้ว', name_en: '5S (OT)', shift: 'day',
+      start_time: '19:40:00', duration_min: 20, process_type: 'common', ot_scope: 'ot',
+      anchor: 'clock', offset_min: null, is_active: false, sort_order: 8 },
+  ],
   /* 🔁 ผลตรวจคู่ "BOM ซ้ำ 2 ใบ" — **ห้ามถอด** (2026-10-08)
      ตั้ง `fingerprint` ให้ **ไม่ตรง** ของจริงโดยตั้งใจ ⇒ สาขา `staleReview`
      ("⚠️ BOM เปลี่ยนหลังตรวจ — ต้องตรวจซ้ำ") ถูกวาดทุกรอบ
@@ -704,10 +809,13 @@ const TABLE_FIXED = {
     { id: 't-4', key: 'production', label: 'AM (ผลิตตรวจเอง)', icon: '🏭', equip_type: null, dept_name: 'PRODUCTION', color: '#94a3b8', sort_order: 4, kind: 'am', is_active: true },
   ],
   factory_map: [{ id: 'fm-1', image_url: FACTORY_MAP_IMG, updated_at: '2026-09-01T00:00:00+07:00' }],
+  /* 🧩 กรอบตีที่ "ไลน์ลูก 2 + 3" ไม่ตีที่แม่ (1) — ตั้งใจ (15/10) ⇒ กรอบแม่อัตโนมัติ (autoHulls) ถูกวาดจริง
+     เดิมตีที่แม่ตรงๆ = สาย hull/ป้ายกลุ่ม/เสากลุ่มโหมด 3D ไม่เคยถูกรันใน harness เลย */
   factory_line_regions: [
-    { id: 'rg-1', line_name: LINE_NAME(1), points: [[6, 8], [44, 8], [44, 46], [6, 46]] },
+    { id: 'rg-1', line_name: LINE_NAME(3), points: [[6, 8], [44, 8], [44, 46], [6, 46]] },
     { id: 'rg-2', line_name: LINE_NAME(2), points: [[54, 8], [92, 8], [92, 46], [54, 46]] },
     { id: 'rg-3', line_name: 'ห้องคอมเพรสเซอร์', points: [[6, 56], [44, 56], [44, 92], [6, 92]] },
+    { id: 'rg-4', line_name: 'คลังสินค้า FG ทดสอบ', points: [[54, 56], [92, 56], [92, 92], [54, 92]] },
   ],
 
   /* 📉 บอร์ด Monitoring — **ห้ามถอดแถวพิเศษ** (2026-10-02)
@@ -834,10 +942,26 @@ const TABLE_FIXED = {
     { board_part_id: 'mp-6', row_key: 'to_vendor', period_key: '2026-10-01', qty: 398, txt: null },
   ],
 }
+/* ➕ แถวเพิ่มเฉพาะตาราง (ต่อท้ายผลของ TABLE_ROWS) — ใช้ตอนต้องการ "ทรงพิเศษ" ที่ ROWS กลางให้ไม่ได้
+   🔴 bom_items — **ห้ามถอด** (14/10) เดิม 2 สาขานี้ไม่เคยถูกเรนเดอร์ในฮาร์เนสเลย:
+     ① ใบของพาร์ท **ว่าง** แต่ลูกถูกกรอกไว้ในใบอื่น  → 10101003 (ใบ id-3 ว่าง · ลูกอยู่ในใบ id-1)
+     ② พาร์ท **ไม่มีใบของตัวเองเลย** แต่มีลูก        → 30047020 (ลูก 50027099 อยู่ในใบ id-1)
+   ทั้ง 2 ตัวไม่แตะทรง "ซ้ำ 2 ใบ" ของ 10101002 (ไม่มีใบของตัวเอง/ใบว่าง = ไม่เข้าเงื่อนไขคู่) */
+const TABLE_EXTRA = {
+  bom_items: [
+    { id: 'bx-1', product_id: 'id-1', parent_mat: null, mat_no: '10101003', part_name: 'ชิ้นงาน 3 (ใบตัวเองว่าง)',
+      qty_per_unit: 1, uom: 'PC', item_no: 70, is_active: true },
+    { id: 'bx-2', product_id: 'id-1', parent_mat: '10101003', mat_no: '30047020', part_name: 'ลูกที่ใบแม่กรอกให้',
+      qty_per_unit: 3, uom: 'PC', item_no: 80, is_active: true },
+    { id: 'bx-3', product_id: 'id-1', parent_mat: '30047020', mat_no: '50027099', part_name: 'คอยล์ของตัวที่ไม่มีใบ',
+      qty_per_unit: 0.45, uom: 'KG', item_no: 90, is_active: true },
+  ],
+}
 const rowsFor = (table) => {
   if (TABLE_FIXED[table]) return TABLE_FIXED[table]
   const fn = TABLE_ROWS[table]
-  return fn ? ROWS.map((r, idx) => fn(r, idx + 1)) : ROWS
+  const base = fn ? ROWS.map((r, idx) => fn(r, idx + 1)) : ROWS
+  return TABLE_EXTRA[table] ? [...base, ...TABLE_EXTRA[table]] : base
 }
 /* ── 📊 ตัวนับคิวรี (2026-10-08) — ใช้หาว่า "ใครโหลดซ้ำ" โดยไม่ต้องแตะโค้ดใน src/ ──────────
    ที่มา: log ของ Supabase บอกได้แค่ว่า *มี* คิวรีซ้ำ (เช่น StoreLotQueue ยิง

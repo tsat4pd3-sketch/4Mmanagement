@@ -25,6 +25,7 @@ import FilterBar from './FilterBar';
 import SearchInput from './SearchInput';
 import ScanModal from './ScanModal';   // 📷 สแกนป้ายแม่พิมพ์ → เด้งเข้าหมุด (2026-10-06)
 import { uploadOpts } from '../utils/storageUpload';
+import { dieSetMats } from '../utils/dieSetMats'; // 🔨 ชุดแม่พิมพ์ทำได้ 2 MAT (งานคู่ RH/LH)
 
 const inp = { width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box' };
 const btnPri = { background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' };
@@ -479,7 +480,9 @@ export default function DieLayout({
                   const placed = e.area_id && e.pos_x != null;
                   const mos = openMosOf(selDie, moMap);
                   const dieSet = setsById[e.die_set_id];
-                  const feedLine = dieSet?.mat_no ? matLine[dieSet.mat_no] : null;   // ไลน์ผลิตที่ใช้พาร์ทของชุดนี้
+                  /* ไลน์ผลิตที่ใช้พาร์ทของชุดนี้ — ชุดหนึ่งทำได้ 2 MAT (งานคู่ RH/LH)
+                     ลงทะเบียนไว้ตัวไหนก็ต้องหาไลน์เจอ ⇒ ไล่ทุกตัวที่ชุดนี้ทำ เอาตัวแรกที่รู้ไลน์ */
+                  const feedLine = dieSetMats(dieSet).map(m => matLine[m]).find(Boolean) || null;
                   return (
                     <div style={{ display: 'grid', gap: 8, fontSize: 12 }}>
                       <div style={{ color: 'var(--muted)', lineHeight: 1.7 }}>

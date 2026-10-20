@@ -18,6 +18,7 @@ import { UserContext } from '../App';
 import { suggestChanges, matchDocSet, LEG_META, CR_STATUS, DOC_LABEL } from '../utils/peLink';
 import { todayLocal as localToday } from '../utils/dateFormat';
 import { notifyEvent } from '../utils/notifyEvent';
+import { fetchByIds } from '../utils/fetchByIds';
 
 const btn = (bg, fg = '#08130a') => ({ padding: '5px 11px', borderRadius: 7, border: 'none', background: bg, color: fg, fontSize: 11.5, fontWeight: 700, cursor: 'pointer' });
 const ghost = { padding: '5px 11px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' };
@@ -133,9 +134,12 @@ export default function PeChangeRequests({
       if (others.length) {
         const { data: op } = await supabase.from('pe_processes').select('id, op_no, set_id').in('set_id', others.map((s) => s.id));
         const map = Object.fromEntries((op || []).map((p) => [p.id, p]));
-        const { data: of } = (op || []).length
-          ? await supabase.from('pe_fmea_items').select('id, process_id, failure_mode').in('process_id', (op || []).map((p) => p.id)).limit(4000)
-          : { data: [] };
+        /* 🔴 ห้าม `.limit(4000)` — PostgREST clamp 1000 · วัด 19/10 `pe_fmea_items` ทั้งตาราง 1,136 แถว
+           ⇒ เลือกหลายพาร์ทพร้อมกันเกินเพดานได้จริง (ขาด = ขา systemic เสนอไม่ครบเงียบๆ) */
+        const of = (op || []).length
+          ? (await fetchByIds((op || []).map((p) => p.id), (part) => supabase.from('pe_fmea_items')
+              .select('id, process_id, failure_mode').in('process_id', part))).rows
+          : [];
         const label = Object.fromEntries(others.map((s) => [s.id, s.part_no]));
         otherFmea = (of || []).map((f) => ({
           ...f, set_id: map[f.process_id]?.set_id,

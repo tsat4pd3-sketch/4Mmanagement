@@ -6,6 +6,7 @@ import {
   ReferenceLine, LabelList,
 } from 'recharts';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { buildScheduleMaps, lineScheduleTeam } from '../utils/shiftAssign';
 import { UserContext } from '../App';
 import { inSectionScope } from '../utils/sectionScope';
 import { dtBucketName, buildDtIndex, dtTrashStats } from '../utils/downtimeCategory';
@@ -33,6 +34,7 @@ import TimeRangeBar from '../components/TimeRangeBar';
 import useTimeRange from '../utils/useTimeRange';
 import { bucketKey, bucketLabel } from '../utils/timeRange';
 import useTabParam from '../utils/useTabParam';
+import { urlBool } from '../utils/urlInit';
 import { fmtTime } from '../utils/dateFormat';
 import { visibleInterval } from '../utils/usePolling';
 import { fetchByIds, fetchAllPages } from '../utils/fetchByIds';
@@ -380,7 +382,7 @@ export default function OEEAnalytics() {
      ⇒ ทั้ง 3 แท็บต้องเริ่มที่ขอบเขตเดียวกัน: วันนี้ (section→dept→line) · แนวโน้ม/วิเคราะห์ (ไลน์ = line ∥ dept) */
   const [urlParams] = useSearchParams();
   const [tdDate,   setTdDate]   = useState(() => urlParams.get('date') || getWorkDateStr());
-  const [tdShift,  setTdShift]  = useState('');
+  const [tdShift,  setTdShift]  = useState(() => (['day', 'night'].includes(urlParams.get('shift')) ? urlParams.get('shift') : ''));   // ?shift= (จอวนหน้า · 15/10)
   const [tdSection,setTdSection]= useState(() => urlParams.get('section') || '');
   const [tdDept,   setTdDept]   = useState(() => urlParams.get('dept') || '');
   // แผนกตามผังองค์กร (BIG PRESS ฯลฯ · 2026-10-02) — กรองด้วย "ชุดไลน์ของแผนก" จากดัชนีผังตัวเดียวกับช่องขอบเขต
@@ -388,10 +390,11 @@ export default function OEEAnalytics() {
   const [tdLine,   setTdLine]   = useState(() => urlParams.get('line') || '');
   /* ไลน์ของแท็บแนวโน้ม (ประกาศตรงนี้เพราะ effect ตรวจสิทธิ์ด้านล่างต้องเคลียร์มันด้วย) = ที่เจาะมา (`?line=` ละเอียดกว่า `?dept=`) */
   const [selLine,    setSelLine]    = useState(() => urlParams.get('line') || urlParams.get('dept') || '');
-  const [tdTeam,   setTdTeam]   = useState('');
+  const [tdTeam,   setTdTeam]   = useState(() => (['A', 'B', 'C'].includes(urlParams.get('team')) ? urlParams.get('team') : ''));
   // แถบ "วันนี้เทียบค่าเฉลี่ย" พับเป็นค่าเริ่มต้น — หน้านี้คือภาพวันเดียว การเทียบย้อนหลังอยู่แท็บแนวโน้ม
-  const [tdCmpOpen, setTdCmpOpen] = useState(false);
-  const [autoRefresh, setAutoRefresh] = useState(true);
+  // ?cmp= / ?auto= (จอวนหน้า /display-rotation · ไม่มีในลิงก์ = ค่าเดิม)
+  const [tdCmpOpen, setTdCmpOpen] = useState(() => urlBool('cmp', false));
+  const [autoRefresh, setAutoRefresh] = useState(() => urlBool('auto', true));
   const [lastUpdate,  setLastUpdate]  = useState(null);
 
   const [tdSessions,  setTdSessions]  = useState([]);
@@ -403,7 +406,7 @@ export default function OEEAnalytics() {
   const [tdCtMap, setTdCtMap] = useState({});                 // mat_no -> cycle_time_sec (คำนวณ OEE สดของกะที่ยังไม่ปิด)
   const [tdOrdersBySession, setTdOrdersBySession] = useState({}); // session_id -> prod_orders[] (สำหรับนับงานคู่ RH/LH เป็น 1 คู่)
   const [tdPairMat, setTdPairMat] = useState({}); // mat_no -> pair_mat_no
-  const [shiftSchedMap, setShiftSchedMap] = useState({}); // line_id -> day_team
+  const [shiftSchedMap, setShiftSchedMap] = useState({}); // ผลของ buildScheduleMaps (byLine + parentOf)
   const [tdLoading, setTdLoading] = useState(false);
 
   // Cascading Section → Department(group) → Line options (2026-09-07: ส่วนงานยึด org_nodes · แผนก/ไลน์ผ่าน <LineSelect> กลาง)
@@ -581,6 +584,7 @@ export default function OEEAnalytics() {
       .select('work_date, oee, oee_a, oee_p, oee_q, status, line_name, shift, shift_min, start_time, actual_qty, qty_ng')
       .eq('status', 'closed')
       .gte('work_date', startStr).lte('work_date', tdDate)
+      /* cap-ok: production_sessions 10 วัน = 255 แถว (วัด 20/10) */
       .limit(3000);
     if (tdScopeLines?.length === 1) q = q.eq('line_name', tdScopeLines[0]);
     else if (tdScopeLines?.length > 1) q = q.in('line_name', tdScopeLines);
@@ -592,19 +596,20 @@ export default function OEEAnalytics() {
   // ทีมตามตาราง shift_schedules (A/B สลับกันตามวัน, C กะเช้าตลอด) — best effort, ถ้าไม่มีข้อมูลจะไม่ระบุ
   useEffect(() => {
     if (!tdDate || !linesFull.length) return;
-    const ids = linesFull.map(l => l.id);
-    supabase.from('shift_schedules').select('line_id, day_team').eq('work_date', tdDate).in('line_id', ids)
-      .then(({ data }) => {
-        const m = {};
-        (data || []).forEach(r => { m[r.line_id] = r.day_team; });
-        setShiftSchedMap(m);
+    /* 🔴 ไม่กรอง `.in('line_id', ids)` แล้ว — ไลน์ลูกตกทอดกะจาก**ไลน์แม่** ซึ่งอาจไม่อยู่ในขอบเขตที่ดูอยู่
+       และห้ามอ่าน `byLine[id]` ตรงๆ (ข้ามการตกทอด = ไลน์ลูกที่ยังไม่มีแถวของตัวเองจะ "ไม่ระบุทีม")
+       ⚠️ อ่านไม่ได้ ≠ "ไม่มีตารางกะ" — เดิมแกะแค่ `{ data }` แล้วเงียบ */
+    supabase.from('shift_schedules').select('line_id, dept_name, day_team').eq('work_date', tdDate)
+      .then(({ data, error }) => {
+        if (error) { console.warn('[OEEAnalytics] อ่านตารางกะไม่สำเร็จ — ทีมของกะจะไม่ระบุ', error); setShiftSchedMap({}); return; }
+        setShiftSchedMap(buildScheduleMaps(data || [], linesFull));
       });
   }, [tdDate, linesFull]);
 
   const lineIdByName = useMemo(() => Object.fromEntries(linesFull.map(l => [l.name, l.id])), [linesFull]);
   const resolveTeam = useCallback((lineName, shift) => {
     const id = lineIdByName[lineName];
-    const dayTeam = id != null ? shiftSchedMap[id] : undefined;
+    const dayTeam = lineScheduleTeam(id, shiftSchedMap) || undefined;
     if (!dayTeam) return null;
     if (shift === 'day') return dayTeam;
     if (dayTeam === 'C') return null; // Team C ไม่มีกะดึก
@@ -800,7 +805,7 @@ export default function OEEAnalytics() {
   // Downtime donut (โดยประเภท)
   // จัดอันดับสาเหตุ (pareto) — สีตาม "ประเภท" เท่านั้น: นอกแผน = ม่วง (เด่น) / ในแผน = เทา (จาง)
   // ห้ามกลับไปไล่สีตามลำดับแถว (hue-cycling อ่านไม่ออกว่าสีสื่ออะไร — เคยเป็นโดนัท 25 สี)
-  const [tdDtShowAll, setTdDtShowAll] = useState(false);
+  const [tdDtShowAll, setTdDtShowAll] = useState(() => urlBool('dtall', false));   // ?dtall= (จอวนหน้า)
   // เจาะดูรายการดิบของแถวที่กด — { kind: 'cause'|'part', key, label }
   const [tdDtDrill, setTdDtDrill] = useState(null);
   /* พจนานุกรมเดาประเภทจากคำ — จากชื่อประเภทในชุดข้อมูลเอง (ไม่ยิงคิวรีเพิ่ม) */
@@ -864,6 +869,7 @@ export default function OEEAnalytics() {
         .eq('downtime_type_id', tdDtDrill.typeId)
         .gte('production_sessions.work_date', from)
         .lte('production_sessions.work_date', tdDate)
+        /* cap-ok: downtime_logs 30 วัน ต่อ 1 downtime_type สูงสุด 541 แถว (วัด 20/10 — ทุก type รวมกัน 3,275 แต่คิวรีนี้กรอง type เดียว) */
         .limit(3000);
       if (tdScopeLines?.length === 1) q = q.eq('production_sessions.line_name', tdScopeLines[0]);
       else if (tdScopeLines?.length > 1) q = q.in('production_sessions.line_name', tdScopeLines);
@@ -916,7 +922,7 @@ export default function OEEAnalytics() {
   useEffect(() => {
     supabase.from('cost_center_rates').select('*').then(({ data, error }) => { if (!error) setCcRates(data || []); });
   }, []);
-  const [dtIncludePlanned, setDtIncludePlanned] = useState(false); // Pareto DT: default นับเฉพาะนอกแผน
+  const [dtIncludePlanned, setDtIncludePlanned] = useState(() => urlBool('planned', false));   // ?planned= (จอวนหน้า) // Pareto DT: default นับเฉพาะนอกแผน
   // สั่ง Pareto ให้เจาะประเภทที่กดจากการ์ด 💰 (nonce = กดชื่อเดิมซ้ำต้องเปิดใหม่ได้)
   const [dtFocus, setDtFocus]   = useState(null);
   const [defFocus, setDefFocus] = useState(null);
@@ -938,7 +944,7 @@ export default function OEEAnalytics() {
         ⇒ %P รายชั่วโมงจะเป็นตัวเลขที่เดาเอา · จอนี้จึงไม่มีปุ่ม "วันนี้" โดยตั้งใจ */
   const tr = useTimeRange({ defaultScale: 'week', defaultDays: 90, finest: 'day' });
   const { scale: period, from: dateFrom, to: dateTo } = tr;
-  const [selShift,   setSelShift]   = useState('');
+  const [selShift,   setSelShift]   = useState(() => (['day', 'night'].includes(new URLSearchParams(window.location.search).get('shift')) ? new URLSearchParams(window.location.search).get('shift') : ''));
   // ชื่อไลน์ใน sessions ที่ไม่ตรงทะเบียน (ไลน์ถูก rename/ลบ) — แยก optgroup ใน dropdown ห้ามซ่อน (2026-09-07)
   const trOrphanLines = useMemo(() => {
     const reg = new Set(linesFull.map(l => String(l.name).trim().toLowerCase()));

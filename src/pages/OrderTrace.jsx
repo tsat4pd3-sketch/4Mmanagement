@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useContext, useCallback } from 'react';
 import { orIlike } from '../utils/pgrstFilter';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useMergeParams } from '../utils/useTabParam';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { loadLinesRes } from '../utils/useProductionLines';
@@ -23,7 +23,9 @@ import SymptomSearch from '../components/SymptomSearch';
 import { inspMeta } from '../utils/inspectionStatus';
 import { julianLabel, parseJulianTerm, toJulian } from '../utils/julianDate';
 import TimeRangeBar from '../components/TimeRangeBar';
+import ScanModal from '../components/ScanModal';
 import useTimeRange from '../utils/useTimeRange';
+import { urlBool } from '../utils/urlInit';
 
 /*
   🔎 สอบกลับ Order (Order Traceability) — 2026-07-30
@@ -95,7 +97,7 @@ export default function OrderTrace() {
   }, [julYear]);
   const jul = useMemo(() => julOf(search), [julOf, search]);
   const [results, setResults] = useState([]);       // ใบที่ค้นเจอ
-  const [includeOpen, setIncludeOpen] = useState(false);   // สอบกลับ = ของที่ออกจากไลน์แล้ว → ตัดใบที่ยังผลิตอยู่ออก
+  const [includeOpen, setIncludeOpen] = useState(() => urlBool('open', false));   // ?open= (จอวนหน้า)   // สอบกลับ = ของที่ออกจากไลน์แล้ว → ตัดใบที่ยังผลิตอยู่ออก
   const [searching, setSearching] = useState(false);
   const [searchErr, setSearchErr] = useState('');   // ค้นล้ม ≠ "ไม่เจอใบ" — ต้องเขียนบนจอ (กฎข้อ 12)
   const [sel, setSel] = useState(null);              // order ที่เลือก (พร้อม session)
@@ -208,18 +210,40 @@ export default function OrderTrace() {
     finally { setSearching(false); }
   }, [search, from, to, inScope, includeOpen, julOf]);
 
-  // deep-link ?prod= — รอ lines โหลด (scope) ก่อน
+  // deep-link ?prod= (เปิดใบนั้นเลย) · ?q= (ค้นเฉยๆ ไม่เลือกให้ — มาจาก /scan ป้าย MAT · 2026-10-19) — รอ lines โหลด (scope) ก่อน
   useEffect(() => {
     const p = searchParams.get('prod');
-    if (!p || !lines.length) return;
-    setSearch(p);
-    doSearch(p).then(rows => {
-      const hit = rows.find(o => o.prod_no === p) || rows[0];
-      if (hit) setSel(hit);
-    });
-    setParams({ prod: null }, { replace: true });   // ล้างเฉพาะ ?prod= — ล้างทั้งก้อนจะพา ?tab= ของหน้านี้หายไปด้วย
+    const q = searchParams.get('q');
+    if ((!p && !q) || !lines.length) return;
+    if (p) {
+      setSearch(p);
+      doSearch(p).then(rows => {
+        const hit = rows.find(o => o.prod_no === p) || rows[0];
+        if (hit) setSel(hit);
+      });
+    } else {
+      setSearch(q);
+      doSearch(q, { includeOpen: true });
+    }
+    setParams({ prod: null, q: null }, { replace: true });   // ล้างเฉพาะคีย์นี้ — ล้างทั้งก้อนจะพา ?tab= ของหน้านี้หายไปด้วย
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lines.length]);
+
+  /* 📷 สแกนในแท็บใบผลิต (2026-10-19 · ลูป QR) — คัมบัง/ใบผลิต = ค้นเลขนั้น · ป้ายเครื่อง = สลับไปโหมด "เครื่องนี้"
+     ป้ายเครื่อง resolve เป็นเลขเครื่องด้วย useMachines ไม่ได้ที่นี่ (หน้านี้ไม่โหลดทะเบียนทั้งก้อน) ⇒ ให้ /scan เป็นคนแปล */
+  const navigate = useNavigate();
+  const [scanOpen, setScanOpen] = useState(false);
+  const onScanCode = (parsed) => {
+    if (!parsed?.id) return 'อ่านรหัสไม่ได้';
+    if (parsed.typed && parsed.kind !== 'product') { setScanOpen(false); navigate(`/scan?c=${encodeURIComponent(parsed.raw)}`); return undefined; }
+    setSearch(parsed.id);
+    doSearch(parsed.id, { includeOpen: true }).then(rows => {
+      const hit = rows.find(o => o.prod_no === parsed.id);
+      if (hit) setSel(hit);
+    });
+    return undefined;
+  };
+  const machineParam = searchParams.get('machine') || null;
 
   /* ── โหลด bundle สอบกลับของใบที่เลือก ── */
   useEffect(() => {
@@ -981,6 +1005,8 @@ export default function OrderTrace() {
       {tab === 'symptom' && (
         <SymptomSearch
           inScope={inScope}
+          machine={machineParam}
+          onClearMachine={() => setParams({ machine: null }, { replace: true })}
           onOpenOrder={(prodNo) => {
             setTab('order');
             setSearch(prodNo);
@@ -991,6 +1017,11 @@ export default function OrderTrace() {
             });
           }}
         />
+      )}
+
+      {scanOpen && (
+        <ScanModal title="สแกนใบผลิต / คัมบัง" hint="ส่องบาร์โค้ด PROD.NO หรือ MAT · ป้ายเครื่องจะพาไปหน้าเลือกงานของเครื่องนั้น"
+          onScan={onScanCode} onClose={() => setScanOpen(false)} />
       )}
 
       {tab === 'order' && (<>
@@ -1015,6 +1046,10 @@ export default function OrderTrace() {
           <button onClick={() => doSearch()} disabled={searching}
             style={{ height: 'var(--ctl-h)', padding: '0 18px', flexShrink: 0, borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, cursor: 'pointer' }}>
             {searching ? '⏳' : 'ค้นหา'}
+          </button>
+          <button onClick={() => setScanOpen(true)} title="สแกนคัมบัง / ใบผลิต / ป้ายเครื่องด้วยกล้อง"
+            style={{ height: 'var(--ctl-h)', padding: '0 12px', flexShrink: 0, borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', fontWeight: 700, cursor: 'pointer' }}>
+            📷
           </button>
         </div>
         {sel && <>

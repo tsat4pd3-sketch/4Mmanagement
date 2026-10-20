@@ -43,6 +43,16 @@ DEFAULTS = {
         'lookback_days': '7',
         'interval_minutes': '15',
     },
+    # 📊 กฎชุดที่ 2 (20/10): monthly report ของบัญชี → ตัวเลขฐาน KPI (เดือนละฉบับ ช่วงวันที่ 10-20 · ตัวนำเข้าอัตโนมัติอยู่ GitHub Actions)
+    # section ชื่อ mail.<อะไรก็ได้> = กฎเพิ่ม · ต้องมี kind · ค่าที่ไม่ตั้งถอยไปใช้ของ [mail] · ปิดกฎ = enabled = 0
+    'mail.acct': {
+        'kind': 'acct',
+        'enabled': '1',
+        'subject_regex': r'Report\s*Monthly\s*FS',
+        'sender_contains': '',
+        'attachment_regex': r'Report.*Monthly.*FS.*\.(xlsb|xlsx|xlsm)$',
+        'lookback_days': '45',
+    },
 }
 
 log = logging.getLogger('esm_mail')
@@ -183,9 +193,23 @@ def message_id(item):
     return 'entry:' + item.EntryID
 
 
-def check_mail(cfg, item):
-    """คืน (ผ่านไหม, ผู้ส่ง, ไฟล์แนบที่เข้าเงื่อนไข, เหตุผลที่ตก)"""
-    m = cfg['mail']
+def mail_rules(cfg):
+    """กฎทั้งหมด: [mail] = kind 'demand' (EDI 830/862 เดิม) + [mail.*] ที่ enabled — แต่ละกฎเป็น dict ที่เติมค่าที่ขาดจาก [mail]"""
+    base = dict(cfg['mail'])
+    base.setdefault('kind', 'demand')
+    rules = [base]
+    for sec in cfg.sections():
+        if not sec.startswith('mail.'):
+            continue
+        r = dict(base)
+        r.update(cfg[sec])
+        if r.get('enabled', '1').strip() not in ('0', 'false', 'no'):
+            rules.append(r)
+    return rules
+
+
+def check_mail(m, item):
+    """คืน (ผ่านไหม, ผู้ส่ง, ไฟล์แนบที่เข้าเงื่อนไข, เหตุผลที่ตก) — m = กฎ 1 ชุดจาก mail_rules()"""
     if not re.search(m['subject_regex'], item.Subject or '', re.I):
         return False, '', [], 'หัวเรื่องไม่เข้า'
     snd = sender_of(item)
@@ -202,12 +226,19 @@ def check_mail(cfg, item):
 
 
 def matching_mails(cfg):
-    cutoff = dt.datetime.now() - dt.timedelta(days=int(cfg['mail']['lookback_days']))
+    """yield (item, received, sender, attachments, kind) — เมลฉบับเดียวเข้าได้กฎเดียว (กฎแรกที่ผ่านชนะ)"""
+    rules = mail_rules(cfg)
+    days = max(int(r['lookback_days']) for r in rules)
+    cutoff = dt.datetime.now() - dt.timedelta(days=days)
     for _, folder in outlook_folders(cfg['mail']['folder']):
         for item, rt in recent_items(folder, cutoff):
-            ok, snd, atts, _ = check_mail(cfg, item)
-            if ok:
-                yield item, rt, snd, atts
+            for m in rules:
+                if rt < dt.datetime.now() - dt.timedelta(days=int(m['lookback_days'])):
+                    continue
+                ok, snd, atts, _ = check_mail(m, item)
+                if ok:
+                    yield item, rt, snd, atts, m['kind']
+                    break
 
 
 def diag(cfg):
@@ -222,18 +253,28 @@ def diag(cfg):
             log.info(f'  • {store.DisplayName}  (Inbox {inbox.Items.Count} ฉบับ)')
         except Exception:
             log.info(f'  • {store.DisplayName}  (ไม่มี Inbox)')
-    log.info(f'── สแกนตามตั้งค่า folder = {cfg["mail"]["folder"]} · ย้อนหลัง {days} วัน ──')
+    rules = mail_rules(cfg)
+    days = max(days, *(int(r['lookback_days']) for r in rules))
+    cutoff = dt.datetime.now() - dt.timedelta(days=days)
+    log.info(f'── สแกนตามตั้งค่า folder = {cfg["mail"]["folder"]} · ย้อนหลัง {days} วัน · กฎ: {", ".join(r["kind"] for r in rules)} ──')
     for label, folder in outlook_folders(cfg['mail']['folder']):
         n = 0
         shown = 0
         for item, rt in recent_items(folder, cutoff):
             n += 1
-            ok, snd, atts, why = check_mail(cfg, item)
             subj = item.Subject or ''
-            if ok:
-                log.info(f'  ✅ {label} · {rt:%d/%m %H:%M} · {subj} · {", ".join(a.FileName for a in atts)}')
-            elif why != 'หัวเรื่องไม่เข้า' or re.search(r'830|862', subj):
-                log.info(f'  ❌ {label} · {rt:%d/%m %H:%M} · {subj} · {why}')
+            hit = None
+            whys = []
+            for m in rules:
+                ok, snd, atts, why = check_mail(m, item)
+                if ok:
+                    hit = (m['kind'], atts)
+                    break
+                whys.append((m['kind'], why))
+            if hit:
+                log.info(f'  ✅ [{hit[0]}] {label} · {rt:%d/%m %H:%M} · {subj} · {", ".join(a.FileName for a in hit[1])}')
+            elif any(w != 'หัวเรื่องไม่เข้า' for _, w in whys) or re.search(r'830|862|Monthly\s*FS', subj, re.I):
+                log.info(f'  ❌ {label} · {rt:%d/%m %H:%M} · {subj} · ' + ' | '.join(f'{k}: {w}' for k, w in whys))
             elif shown < 3:
                 shown += 1
                 log.info(f'  · {label} · {rt:%d/%m %H:%M} · {subj}')
@@ -243,14 +284,15 @@ def diag(cfg):
 def run_once(cfg, st, dry=False):
     tz = dt.datetime.now().astimezone().tzinfo
     found = sent_n = 0
-    for item, rt, snd, atts in matching_mails(cfg):
+    for item, rt, snd, atts, kind in matching_mails(cfg):
         mid = message_id(item)
         found += 1
-        if mid in st['sent']:
+        key = mid if kind == 'demand' else f'{kind}:{mid}'   # คีย์เดิมของ EDI คงไว้ (state.json เก่ายังใช้ได้)
+        if key in st['sent']:
             continue
         names = [a.FileName for a in atts]
         if dry:
-            log.info(f'[test] เจอ: {rt:%d/%m %H:%M} · {item.Subject} · {", ".join(names)}')
+            log.info(f'[test] เจอ [{kind}]: {rt:%d/%m %H:%M} · {item.Subject} · {", ".join(names)}')
             continue
         files = []
         with tempfile.TemporaryDirectory() as td:
@@ -260,13 +302,13 @@ def run_once(cfg, st, dry=False):
                 with open(p, 'rb') as f:
                     files.append({'name': a.FileName, 'content_b64': base64.b64encode(f.read()).decode('ascii')})
         res = post(cfg, {
-            'message_id': mid, 'subject': item.Subject, 'sender': snd,
+            'message_id': mid, 'subject': item.Subject, 'sender': snd, 'kind': kind,
             'received_at': rt.replace(tzinfo=tz).isoformat(), 'host': socket.gethostname(), 'files': files,
         })
         if res.get('rejected'):
             log.warning(f'ไฟล์ถูกปฏิเสธ: {res["rejected"]}')
-        log.info(f'ส่งแล้ว: {item.Subject} · ใหม่ {res.get("saved")} · ซ้ำ {res.get("duplicate")}')
-        st['sent'][mid] = dt.datetime.now().isoformat(timespec='seconds')
+        log.info(f'ส่งแล้ว [{kind}]: {item.Subject} · ใหม่ {res.get("saved")} · ซ้ำ {res.get("duplicate")}')
+        st['sent'][key] = dt.datetime.now().isoformat(timespec='seconds')
         save_state(st)                                  # จำทีละเมล — ล่มกลางทางไม่ส่งซ้ำของที่ส่งแล้ว
         sent_n += 1
     return found, sent_n

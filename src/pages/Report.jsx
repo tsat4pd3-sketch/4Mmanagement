@@ -47,6 +47,8 @@ import Segmented from '../components/Segmented';
 import { ALL, SHIFT_OPTIONS } from '../utils/filterLabels';
 import useTimeRange from '../utils/useTimeRange';
 import { acceptImageFile } from '../utils/acceptImageFile';
+import { urlParam, urlPick, urlBool } from '../utils/urlInit';
+import { parseScopeKey } from '../utils/orgScope';
 
 /* โลโก้สำหรับฝังในใบพิมพ์ — cache ต่อ "url" ไม่ใช่ตัวเดียวตายตัว (QC audit 08/10)
    🔴 ต้องรับ url ได้ เพราะ doc_control อัปโลโก้ทับรายฟอร์มได้ (`doc_forms.logo_url`)
@@ -147,6 +149,36 @@ function CsvBtn({ onClick, style = {} }) {
 
 // UI-STANDARD 2026-09-24 — กะใน /report: state เดิมใช้ 'all' = ทุกกะ ⇒ map ค่าแรกของ SHIFT_OPTIONS ('' → 'all')
 const SHIFT_SEG_ALL = SHIFT_OPTIONS.map(o => (o.value === '' ? { ...o, value: 'all' } : o));
+
+/* ══ ค่าตั้งต้นตัวกรองจากลิงก์ (?scope= ?team= ?shift= …) — จอวนหน้า /display-rotation (2026-10-20) ══
+   อ่านครั้งเดียวตอน mount (src/utils/urlInit.js) · ไม่มีพารามิเตอร์ = ค่าเดิมของแท็บเป๊ะ · ไม่เขียนกลับลงลิงก์
+   คีย์ต้องลงทะเบียนใน DISPLAY_PAGE_PARAMS (utils/displayRotation.js) ด้วย ไม่งั้นตั้งจากจอไม่ได้
+   🔑 ?scope= = คีย์ผังองค์กร (`section:PD3` · `department:…` · `line_group:…` · `line:…` — scopeKey() ตัวเดียวกับ OBEYA)
+      แปลงเป็น state ของแท็บ (ส่วนงาน / แผนก / ชื่อไลน์) แบบเดียวกับที่ <LineScopeSelect> onChange ทำ
+      · แท็บที่เก็บไลน์เป็น id (รายวัน/สรุปช่วง/Skill Matrix/Multi-Skill) แปลงชื่อ→id หลังโหลดทะเบียนไลน์
+      · ฝ่าย / Cost Center = ไม่รองรับ (ตัวเลือกของแท็บไม่มี) ⇒ ไม่สนใจ */
+/** เติมชุดไลน์ของแผนกที่ตั้งชื่อไว้แล้ว — เนื้อเดิม = คืนตัวเดิม (ไม่ re-render วน) */
+function fillUnitLines(u, names) {
+  if (!u.name) return u;
+  const next = names || [];
+  return next.length === u.lines.length && next.every((n, i) => n === u.lines[i]) ? u : { ...u, lines: next };
+}
+
+function urlScopeSeed() {
+  const sc = parseScopeKey(urlParam('scope'));
+  if (sc.kind === 'section') return { section: sc.value, dept: '', line: '' };
+  if (sc.kind === 'department') return { section: '', dept: sc.value, line: '' };
+  if (sc.kind === 'line' || sc.kind === 'line_group') return { section: '', dept: '', line: sc.value };
+  return null;
+}
+/** ชื่อไลน์จากลิงก์ → id (เป็น string) · ไม่เจอ = null */
+const seedLineId = (seed, lines) => {
+  if (!seed?.line) return null;
+  const l = (lines || []).find(x => x.name === seed.line);
+  return l ? String(l.id) : null;
+};
+const urlTeam = () => urlParam('team') ?? '';
+const urlPeriod = (fallback) => Number(urlPick('period', ['1', '2'], String(fallback)));
 
 const CAT_META = {
   Man:      { color: '#4d9fff', bg: 'rgba(77,159,255,0.12)',  label: 'Man',      icon: '👷' },
@@ -628,16 +660,17 @@ function DailyTab() {
   const isDay = (now.getHours() * 60 + now.getMinutes()) >= 480 && (now.getHours() * 60 + now.getMinutes()) < 1200;
   const orgSectionList = useOrgSections();
   const deptsOf        = useOrgDepts();
+  const [scopeSeed] = useState(urlScopeSeed);   // ?scope= จากลิงก์ (จอวนหน้า) · null = ไม่มี
   const [date, setDate]   = useState(getWorkDate());
-  const [shift, setShift] = useState(isDay ? 'day' : 'night');
+  const [shift, setShift] = useState(() => urlPick('shift', ['all', 'day', 'night'], isDay ? 'day' : 'night'));
   const [logs, setLogs]   = useState([]);
   const [loading, setLoading] = useState(false);
   const [stationMap, setStationMap] = useState({});
   const [lines, setLines] = useState([]);
-  const [dailySection, setDailySection] = useState('');
+  const [dailySection, setDailySection] = useState(scopeSeed?.section ?? '');
   const [dailyLine, setDailyLine] = useState('');
-  const [dailyTeam, setDailyTeam] = useState('');
-  const [dailyDept, setDailyDept] = useState('');
+  const [dailyTeam, setDailyTeam] = useState(urlTeam);
+  const [dailyDept, setDailyDept] = useState(scopeSeed?.dept ?? '');
   const [calLoaded, setCalLoaded] = useState(false);
 
   useEffect(() => {
@@ -646,7 +679,10 @@ function DailyTab() {
       (data || []).forEach(w => { m[String(w.id)] = w.station_name; });
       setStationMap(m);
     });
-    loadLinesRes().then(({ data }) => setLines(data || [])); // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
+    loadLinesRes().then(({ data }) => {
+      setLines(data || []); // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
+      const sid = seedLineId(scopeSeed, data); if (sid) setDailyLine(sid);   // ?scope=line: (ไลน์เก็บเป็น id)
+    });
     loadCompanyCalendar().then(() => setCalLoaded(true));
   }, []);
 
@@ -820,9 +856,9 @@ function PerEmployeeTab() {
   const [loading, setLoading] = useState(false);
   const [month, setMonth] = useState(toLocalDateStr(new Date()).slice(0, 7));
   const [stationMap, setStationMap] = useState({});
-  const [empSection, setEmpSection] = useState('');
-  const [empDept,    setEmpDept]    = useState('');
-  const [empTeam, setEmpTeam] = useState('');
+  const [empSection, setEmpSection] = useState(() => urlParam('sec') ?? '');
+  const [empDept,    setEmpDept]    = useState(() => urlParam('dept') ?? '');
+  const [empTeam, setEmpTeam] = useState(urlTeam);
   const [calLoaded, setCalLoaded] = useState(false);
 
   useEffect(() => {
@@ -834,7 +870,10 @@ function PerEmployeeTab() {
     // mandatory scope: leader → ทั้งครอบครัวไลน์ตัวเอง (ตัวเอง + แม่ + ลูก — ห้ามกรอง line_id
     // ตรงตัว ไม่งั้นคนที่ผูกไลน์ลูกหายจากสายตาหัวหน้าที่ผูกไลน์แม่) · sections → เฉพาะใน scope
     (async () => {
-      let empQ = onlyShopfloorStaff(supabase.from('employees').select('id, name, employee_id_code, section, department, team').eq('is_active', true));
+      /* 👥 แท็บ "รายบุคคล" = **ประวัติการมาทำงานของคนคนนั้น** ⇒ ห้ามกรอง staff_kind (14/10)
+         ใครเช็คชื่อได้ ต้องเปิดดูเดือนของเขาได้ · กรอง = ช่าง/ธุรการที่เช็คชื่อทุกวัน
+         **เปิดดูประวัติตัวเองไม่ได้เลย** (วัด 14/10: Office PD4 6 คน เช็คชื่อ 28/28 วัน) */
+      let empQ = supabase.from('employees').select('id, name, employee_id_code, section, department, team, staff_kind').eq('is_active', true);
       if (role === 'leader' && userLineId) {
         const { data: ls } = await loadLinesRes();
         const fam = getLineFamilyIds(ls || [], Number(userLineId));
@@ -844,7 +883,9 @@ function PerEmployeeTab() {
       }
       const { data } = await empQ.order('name');
       setEmployees(data || []);
-      if (data?.length) setSelected(data[0].id);
+      // ตัวกรองตั้งจากลิงก์ (จอวนหน้า) ⇒ เลือกคนแรกที่เข้าตัวกรอง · ไม่มีตัวกรอง = คนแรกเหมือนเดิม
+      const fit = (data || []).find(e => (!empSection || e.section === empSection) && (!empDept || e.department === empDept) && (!empTeam || e.team === empTeam));
+      if (data?.length) setSelected((fit || data[0]).id);
     })();
     loadCompanyCalendar().then(() => setCalLoaded(true));
   }, []);
@@ -1002,9 +1043,10 @@ function StationLogTab() {
   const { from, to } = tr;
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [stationSection, setStationSection] = useState('');
-  const [stationTeam, setStationTeam] = useState('');
-  const [stationShift, setStationShift] = useState('');
+  const [stationSection, setStationSection] = useState(() => urlParam('sec') ?? '');
+  const [stationTeam, setStationTeam] = useState(urlTeam);
+  const [stationShift, setStationShift] = useState(() => urlPick('shift', ['day', 'night'], ''));
+  const stationSeedRef = useRef(urlParam('station'));   // ?station=<id> — ใช้ครั้งแรกที่ลิสต์จุดงานมีของ
   const [calLoaded, setCalLoaded] = useState(false);
 
   useEffect(() => {
@@ -1056,7 +1098,9 @@ function StationLogTab() {
       return;
     }
     if (!scopedStations.find(s => String(s.id) === selectedStation)) {
-      setSelectedStation(String(scopedStations[0].id));
+      const seed = stationSeedRef.current; stationSeedRef.current = null;
+      const seeded = seed ? scopedStations.find(s => String(s.id) === String(seed)) : null;
+      setSelectedStation(String((seeded || scopedStations[0]).id));
     }
   }, [scopedStations]);
 
@@ -1241,13 +1285,18 @@ function RangeTab() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [lines, setLines] = useState([]);
-  const [rangeSection, setRangeSection] = useState('');
-  const [rangeUnit, setRangeUnit] = useState({ name: '', lines: [] });   // แผนก (org) → ชุดไลน์ (02/10)
+  /* ?scope= — แผนก: ตั้งชื่อไว้ก่อน แล้ว <LineScopeSelect onUnitLines> เติมชุดไลน์ให้เมื่อผังโหลดเสร็จ (20/10) */
+  const [scopeSeed] = useState(urlScopeSeed);
+  const [rangeSection, setRangeSection] = useState(scopeSeed?.section ?? '');
+  const [rangeUnit, setRangeUnit] = useState({ name: scopeSeed?.dept || '', lines: [] });   // แผนก (org) → ชุดไลน์ (02/10)
   const [rangeLine, setRangeLine] = useState('');
-  const [rangeTeam, setRangeTeam] = useState('');
+  const [rangeTeam, setRangeTeam] = useState(urlTeam);
 
   useEffect(() => {
-    loadLinesRes().then(({ data }) => setLines(data || [])); // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
+    loadLinesRes().then(({ data }) => {
+      setLines(data || []); // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
+      const sid = seedLineId(scopeSeed, data); if (sid) setRangeLine(sid);
+    });
   }, []);
 
   useEffect(() => { load(); }, [from, to]);
@@ -1338,7 +1387,7 @@ table{border-collapse:collapse;width:100%}
       >
         {/* ขอบเขต = ช่องเดียว ส่วนงาน → กลุ่มไลน์ → ไลน์ (<LineScopeSelect> · 2026-10-02) — เลือกไลน์ = กรองตามไลน์อย่างเดียวเหมือนเดิม (ส่วนงานว่าง) */}
         {/* + แผนก (org department) อยู่ในต้นไม้เดียวกัน (02/10 · user: "ให้เลือกระดับแผนกได้") — เดิมเป็นช่องแยกถัดไป */}
-        <LineScopeSelect lines={rangeLinesInScope} sections={rangeSections} section={rangeSection} line={rangeLine} unit={rangeUnit.name} pickDept valueKey="id"
+        <LineScopeSelect lines={rangeLinesInScope} sections={rangeSections} section={rangeSection} line={rangeLine} unit={rangeUnit.name} pickDept valueKey="id" onUnitLines={ul => setRangeUnit(u => fillUnitLines(u, ul))}
           onChange={(sec, ln, { unit, lines: ul }) => { setRangeSection(ln || unit ? '' : sec); setRangeLine(ln); setRangeUnit({ name: unit || '', lines: unit ? ul : [] }); }} />
         <select value={rangeTeam} onChange={e => setRangeTeam(e.target.value)}>
           <option value="">{ALL.team}</option>
@@ -1436,15 +1485,17 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
         ⇒ `useTimeRange` รับช่วงจาก deep-link ให้เองแล้ว ไม่ต้องเซ็ตซ้ำ (prop คงไว้เพื่อความเข้ากันได้) */
   const tr = useTimeRange({ defaultDays: 7 });
   const { from, to } = tr;
+  /* ?scope= — แผนก: ชุดไลน์เติมผ่าน <LineScopeSelect onUnitLines> (20/10) · ไลน์ตั้งหลังโหลดทะเบียน ให้ครอบครัวไลน์ครบ */
+  const [scopeSeed] = useState(urlScopeSeed);
   const [line,        setLine]        = useState('');
-  const [cat,         setCat]         = useState('');
+  const [cat,         setCat]         = useState(() => urlPick('cat', Object.keys(CAT_META), ''));
   const [statusFilter,setStatusFilter]= useState(() => STATUS_META[initStatus] ? initStatus : ''); // validate ค่าจาก URL
   const [focus,       setFocus]       = useState(focusId);  // id ใบที่เน้นอยู่ ('' = ไม่เน้น)
   const [logs,        setLogs]        = useState([]);
   const [lines,       setLines]       = useState([]);
   const [loading,     setLoading]     = useState(false);
-  const [fourMSection, setFourMSection] = useState('');
-  const [fourMUnit, setFourMUnit] = useState({ name: '', lines: [] });   // แผนก (org) → ชุดไลน์ (02/10)
+  const [fourMSection, setFourMSection] = useState(scopeSeed?.section ?? '');
+  const [fourMUnit, setFourMUnit] = useState({ name: scopeSeed?.dept || '', lines: [] });   // แผนก (org) → ชุดไลน์ (02/10)
   const [rejectModal,  setRejectModal]  = useState(null);
   const [rejectReason, setRejectReason] = useState('');
   const [profileMap,   setProfileMap]   = useState({});
@@ -1479,7 +1530,10 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
   }, [role, scopeSecs, userLineId, lines]);
 
   useEffect(() => {
-    loadLinesRes().then(({ data }) => setLines(data || [])); // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
+    loadLinesRes().then(({ data }) => {
+      setLines(data || []); // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
+      if (seedLineId(scopeSeed, data)) setLine(scopeSeed.line);   // แท็บนี้เก็บไลน์เป็นชื่อ
+    });
     loadCompanyCalendar();
   }, []);
 
@@ -1622,6 +1676,7 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
       .select('id, work_date, line_name, category, description, status, created_at, created_by, sv_approved_by, approved_by')
       .in('line_name', lineFamilyOf(line)).eq('status', 'approved')
       .gte('work_date', monthStart).lte('work_date', monthEnd)
+      /* cap-ok: four_m_logs ต่อเดือน สูงสุด 433 แถว (วัด 20/10) */
       .limit(5000);
 
     // กะถูก derive จากเวลาที่บันทึก (created_at) — ใช้กฎเดียวกับ getCurrentShift(): 08:00-19:59 = กะเช้า
@@ -1908,19 +1963,6 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 10, marginBottom: 16 }}>
-        {Object.entries(CAT_META).map(([k, m]) => (
-          <div key={k} onClick={() => setCat(c => c === k ? '' : k)} style={{
-            background: cat === k ? m.bg : 'var(--card)', border: `1px solid ${cat === k ? m.color : 'var(--border)'}`,
-            borderRadius: 10, padding: '12px 14px', cursor: 'pointer', transition: 'all 0.15s'
-          }}>
-            <div style={{ fontSize: 20 }}>{m.icon}</div>
-            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>{m.label}</div>
-            <div style={{ fontSize: 22, fontWeight: 800, color: m.color, fontFamily: 'var(--font-display)' }}>{kpi[k] || 0}</div>
-          </div>
-        ))}
-      </div>
-
       <TimeRangeBar
         scale={tr.scale} from={from} to={to} today={tr.today} scales={null}
         onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset} style={{ marginBottom: 14 }}
@@ -1934,7 +1976,7 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
           return (<>
             {/* ขอบเขต = ช่องเดียว ส่วนงาน → กลุ่มไลน์ → ไลน์ (<LineScopeSelect> · 2026-10-02) — เลือกไลน์ = กรองตามไลน์อย่างเดียวเหมือนเดิม (ส่วนงานว่าง) */}
             {/* + แผนก (org department) อยู่ในต้นไม้เดียวกัน (02/10 · user: "ให้เลือกระดับแผนกได้") — เดิมเป็นช่องแยกถัดไป */}
-            <LineScopeSelect lines={scopedLines} sections={fourMSections} section={fourMSection} line={line} unit={fourMUnit.name} pickDept
+            <LineScopeSelect lines={scopedLines} sections={fourMSections} section={fourMSection} line={line} unit={fourMUnit.name} pickDept onUnitLines={ul => setFourMUnit(u => fillUnitLines(u, ul))}
               onChange={(sec, ln, { unit, lines: ul }) => { setFourMSection(ln || unit ? '' : sec); setLine(ln); setFourMUnit({ name: unit || '', lines: unit ? ul : [] }); }} />
           </>);
         })()}
@@ -1982,6 +2024,20 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
           }}>⚙️ จัดการเอกสาร<ToggleDot on={showDocPanel} /></button>
         )}
       </TimeRangeBar>
+
+      {/* การ์ดนับตามหมวด 4M (กดเพื่อกรองได้) = เนื้อหา ⇒ อยู่ใต้แถบกรอง (UI-STANDARD §2.1) */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 10, marginBottom: 16 }}>
+        {Object.entries(CAT_META).map(([k, m]) => (
+          <div key={k} onClick={() => setCat(c => c === k ? '' : k)} style={{
+            background: cat === k ? m.bg : 'var(--card)', border: `1px solid ${cat === k ? m.color : 'var(--border)'}`,
+            borderRadius: 10, padding: '12px 14px', cursor: 'pointer', transition: 'all 0.15s'
+          }}>
+            <div style={{ fontSize: 20 }}>{m.icon}</div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>{m.label}</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: m.color, fontFamily: 'var(--font-display)' }}>{kpi[k] || 0}</div>
+          </div>
+        ))}
+      </div>
 
       {showDocPanel && canManageDoc && <DocumentControlPanel />}
 
@@ -2095,11 +2151,13 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
                           <button onClick={async () => {
                             // Reset = status change → ต้องเคลียร์รูป QA เดิม (ลบไฟล์ด้วย) + แจ้ง Telegram + เช็ค error
                             const oldQaUrl = l.qa_image_url;
-                            const { error } = await supabase.from('four_m_logs').update({
+                            /* 🔴 นับแถว ไม่ใช่ดูแค่ error — RLS ปฏิเสธ UPDATE = 0 แถว ไม่มี error
+                               ⇒ ใบยังชี้รูป QA เดิม แต่โค้ดข้างล่างลบไฟล์นั้นไปแล้ว = รูปเสียถาวร */
+                            const res = await supabase.from('four_m_logs').update({
                               status: 'pending', sv_approved_by: null, sv_approved_at: null,
                               approved_by: null, approved_at: null, reject_reason: null, qa_image_url: null,
-                            }).eq('id', l.id);
-                            if (error) { toast.error('Reset ไม่สำเร็จ: ' + error.message); return; }
+                            }).eq('id', l.id).select('id');
+                            if (!checkWriteRows(res, 'Reset ใบ 4M')) return;
                             if (oldQaUrl?.includes('/four-m-images/')) {
                               const oldPath = decodeURIComponent(oldQaUrl.split('/four-m-images/')[1] || '').split('?')[0];
                               if (oldPath) supabase.storage.from('four-m-images').remove([oldPath]).catch(() => {});
@@ -2338,10 +2396,11 @@ function SkillMatrixTab() {
   const [skillDefs,      setSkillDefs]      = useState([]);
   const [employees,      setEmployees]      = useState([]);
   const [loading,        setLoading]        = useState(false);
+  const [scopeSeed] = useState(urlScopeSeed);   // ?scope= จากลิงก์ (จอวนหน้า)
   const [filterLine,     setFilterLine]     = useState('');
-  const [filterSection,  setFilterSection]  = useState('');
-  const [filterTeam,     setFilterTeam]     = useState('');
-  const [filterDept,     setFilterDept]     = useState('');
+  const [filterSection,  setFilterSection]  = useState(scopeSeed?.section ?? '');
+  const [filterTeam,     setFilterTeam]     = useState(urlTeam);
+  const [filterDept,     setFilterDept]     = useState(scopeSeed?.dept ?? '');
   const [lines,          setLines]          = useState([]);
   const [selectedEmp,    setSelectedEmp]    = useState(null);
   const [subItemsByskill, setSubItemsByskill] = useState({});
@@ -2350,7 +2409,10 @@ function SkillMatrixTab() {
   const reqIdRef = useRef(0);
 
   useEffect(() => {
-    loadLinesRes().then(({ data }) => setLines(data || [])); // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
+    loadLinesRes().then(({ data }) => {
+      setLines(data || []); // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
+      const sid = seedLineId(scopeSeed, data); if (sid) setFilterLine(sid);
+    });
     supabase.from('skill_sub_items').select('skill_name, seq, label, wi_ref').order('seq')
       .then(({ data }) => {
         const map = {};
@@ -2425,6 +2487,11 @@ function SkillMatrixTab() {
         <EmpScopeFilters lines={lines} filterSection={filterSection} setFilterSection={setFilterSection} filterLine={filterLine} setFilterLine={setFilterLine} filterTeam={filterTeam} setFilterTeam={setFilterTeam} filterDept={filterDept} setFilterDept={setFilterDept} />
         <span className="spacer" />
         <span className="filter-count">{employees.length} คน · {skillDefs.length} สกิล</span>
+        {/* 🔴 กฎความซื่อสัตย์ของจอ — จอนี้กรองช่าง/สายสนับสนุนออก (กำลังคนของไลน์เท่านั้น)
+            ต้องเขียนไว้ ไม่งั้นคนเทียบกับใบเช็คชื่อ (เห็นครบทุกกลุ่มตั้งแต่ 14/10) แล้วงงว่าทำไมหัวไม่ตรง */}
+        <span className="filter-count" title="สกิล/กำลังคน นับเฉพาะพนักงานหน้างาน — ช่างและสายสนับสนุนไม่เข้าสูตร (กฎ staffKind.js)">
+          · ไม่รวม 🔧 ช่าง / 🗂️ สายสนับสนุน
+        </span>
         <span className="filter-count">· คลิกที่พนักงานเพื่อดู Radar Chart</span>
         {canExport && (
         <button onClick={() => {
@@ -2847,10 +2914,11 @@ function MultiSkillFormTab() {
   const [employees,     setEmployees]     = useState([]);
   const [lines,         setLines]         = useState([]);
   const [loading,       setLoading]       = useState(false);
+  const [scopeSeed] = useState(urlScopeSeed);   // ?scope= จากลิงก์ (จอวนหน้า)
   const [filterLine,    setFilterLine]    = useState('');
-  const [filterSection, setFilterSection] = useState('');
-  const [filterTeam,    setFilterTeam]    = useState('');
-  const [filterDept,    setFilterDept]    = useState('');
+  const [filterSection, setFilterSection] = useState(scopeSeed?.section ?? '');
+  const [filterTeam,    setFilterTeam]    = useState(urlTeam);
+  const [filterDept,    setFilterDept]    = useState(scopeSeed?.dept ?? '');
 
   // Header info inputs
   // 2026-09-07 ฝ่าย/ส่วน/แผนก เลือกจากผังองค์กร (org_divisions / org_nodes) แทนพิมพ์เอง — ส่วน/แผนก ยังถูก auto-fill จากไลน์ที่เลือกเหมือนเดิม
@@ -2888,7 +2956,10 @@ function MultiSkillFormTab() {
 
   useEffect(() => {
     loadLinesRes()
-      .then(({ data }) => setLines(data || []));
+      .then(({ data }) => {
+        setLines(data || []);
+        const sid = seedLineId(scopeSeed, data); if (sid) setFilterLine(sid);
+      });
     supabase.from('skill_definitions').select('*').order('sort_order')
       .then(({ data }) => setSkillDefs(data || []));
   }, []);
@@ -2937,6 +3008,14 @@ function MultiSkillFormTab() {
     setEmployees(data || []);
     setLoading(false);
   };
+
+  /* ?load=1 (จอวนหน้า) = กด "ดึงข้อมูล" ให้เองครั้งเดียว หลังทะเบียนไลน์โหลดแล้ว · ไม่มี = เหมือนเดิม (กดเอง) */
+  const autoLoadRef = useRef(urlBool('load', false));
+  useEffect(() => {
+    if (!autoLoadRef.current || !lines.length) return;
+    autoLoadRef.current = false;
+    load();
+  }, [lines]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handlePrint = async () => {
     // ใช้ชุดข้อมูลเดียวกับตารางบนจอ (msVisibleDefs + empLevelRows) — เดิมพิมพ์จาก skillDefs ทั้งหมด
@@ -3008,6 +3087,10 @@ function MultiSkillFormTab() {
       {/* Filters (UI-STANDARD 2026-09-24 — แถบกรองมาตรฐาน · gap ของ column แทน marginBottom) */}
       <FilterBar style={{ marginBottom: 0 }}>
         <EmpScopeFilters lines={lines} filterSection={filterSection} setFilterSection={setFilterSection} filterLine={filterLine} setFilterLine={setFilterLine} filterTeam={filterTeam} setFilterTeam={setFilterTeam} filterDept={filterDept} setFilterDept={setFilterDept} />
+        {/* กรองช่าง/สายสนับสนุนออกเหมือนแท็บสกิล — ต้องเขียนบนจอ (กฎความซื่อสัตย์ของจอ) */}
+        <span className="filter-count" title="ใบประเมินทักษะออกให้พนักงานหน้างาน — ช่างและสายสนับสนุนไม่เข้าสูตร (กฎ staffKind.js)">
+          ไม่รวม 🔧 ช่าง / 🗂️ สายสนับสนุน
+        </span>
         <span className="spacer" />
         <button onClick={load} disabled={loading}
           style={{ padding: '0 20px', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer', opacity: loading ? 0.6 : 1 }}>
@@ -3345,17 +3428,17 @@ function SkillAllowanceTab() {
   const today = new Date();
   const [year,   setYear]   = useState(today.getFullYear());
   const [month,  setMonth]  = useState(today.getMonth() + 1);
-  const [period, setPeriod] = useState(1); // 1=วันที่ 1-15, 2=วันที่ 16-31
-  const [line,   setLine]   = useState('');
+  const [period, setPeriod] = useState(() => urlPeriod(1)); // 1=วันที่ 1-15, 2=วันที่ 16-31
+  const [line,   setLine]   = useState(() => urlParam('line') ?? '');
   const [section, setSection] = useState('');
-  const [team,   setTeam]   = useState('');
+  const [team,   setTeam]   = useState(urlTeam);
   const [lines,     setLines]     = useState([]);
   const [skillDefs, setSkillDefs] = useState([]);
   const [rows,   setRows]   = useState([]); // [{emp, shifts:{day:{},night:{}}}]
   const [loading, setLoading] = useState(false);
 
   const workTypes = useMemo(() => [...new Set(skillDefs.filter(sd => sd.category === 'allowance_skill' && sd.allowance_type).map(sd => sd.allowance_type))].sort(), [skillDefs]);
-  const [workType,   setWorkType]   = useState('');
+  const [workType,   setWorkType]   = useState(() => urlParam('wtype') ?? '');
   const [costCenter, setCostCenter] = useState('');
   const [rightsDay,   setRightsDay]   = useState('');
   const [rightsNight, setRightsNight] = useState('');
@@ -3490,6 +3573,14 @@ function SkillAllowanceTab() {
     setRows(result);
     setLoading(false);
   };
+
+  /* ?load=1 (จอวนหน้า) = กด "ดึงข้อมูล" ให้เองครั้งเดียว หลังทะเบียนไลน์โหลดแล้ว · ค่าฝีมือต้องมี ?wtype= ด้วย ไม่มี = ไม่โหลดเอง · ไม่มี = เหมือนเดิม (กดเอง) */
+  const autoLoadRef = useRef(urlBool('load', false));
+  useEffect(() => {
+    if (!autoLoadRef.current || !lines.length || !workType) return;
+    autoLoadRef.current = false;
+    load();
+  }, [lines, workType]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handlePrint = async () => {
     const days = periodDays();
@@ -3867,11 +3958,12 @@ function AttendanceFormTab() {
   const deptsOf        = useOrgDepts();
   const [year,    setYear]    = useState(today.getFullYear());
   const [month,   setMonth]   = useState(today.getMonth() + 1);
-  const [period,  setPeriod]  = useState(2); // 1=1-15, 2=16-end
-  const [line,    setLine]    = useState('');
-  const [dept,    setDept]    = useState('');
-  const [empDept, setEmpDept] = useState('');
-  const [team,    setTeam]    = useState('');
+  const [scopeSeed] = useState(urlScopeSeed);   // ?scope= จากลิงก์ (จอวนหน้า) — แท็บนี้เก็บชื่อไลน์/ส่วนงาน/แผนก ตรงๆ
+  const [period,  setPeriod]  = useState(() => urlPeriod(2)); // 1=1-15, 2=16-end
+  const [line,    setLine]    = useState(scopeSeed?.line ?? '');
+  const [dept,    setDept]    = useState(scopeSeed?.section ?? '');
+  const [empDept, setEmpDept] = useState(scopeSeed?.dept ?? '');
+  const [team,    setTeam]    = useState(urlTeam);
   /* เลขที่เอกสารของใบบันทึกการมาทำงาน — 🔴 ค่าตั้งต้นต้องมาจากทะเบียน (QC audit 08/10)
      เดิม hardcode `'F-HR-001'` แล้วพิมพ์ลงหัวใบ ขณะที่ **ท้ายใบเดียวกัน** ห่อด้วย
      `withDocFoot(html, 'attendance_record')` ที่อ่านจากทะเบียน ⇒ doc_control ตั้ง form_code ใหม่
@@ -3941,8 +4033,11 @@ function AttendanceFormTab() {
     // Step 1: get employees matching current filters from employees table (server-side)
     // เลือกไลน์ = ทั้งครอบครัวไลน์ (หลัก↔ย่อย) — พนักงานอาจผูกกับไลน์หลักแต่ทำงานไลน์ย่อย หรือกลับกัน
     const familyIds = line ? [...getLineFamilyIds(lines, line)] : [];
-    let empQ = onlyShopfloorStaff(supabase.from('employees')
-      .select('id, name, employee_id_code, section, department, team, line_id'));
+    /* 👥 รายงาน OT รายบุคคล = **ชั่วโมง OT ของคนคนนั้น** ⇒ ห้ามกรอง staff_kind (14/10)
+       OT ของช่าง/ธุรการเป็น OT จริงที่ต้องจ่ายเงิน — กรอง = หายจากรายงานเงียบๆ
+       (แกน "กำลังคนของไลน์" ยังกรองอยู่ที่แท็บสกิล/กำลังคน) */
+    let empQ = supabase.from('employees')
+      .select('id, name, employee_id_code, section, department, team, line_id, staff_kind');
     // mandatory scope ก่อน (leader → ครอบครัวไลน์ตัวเอง แบบเดียวกับแท็บอื่น, sections → เฉพาะส่วนงานใน scope) แล้วค่อย filter อิสระทับ
     if (role === 'leader' && userLineId) {
       const leaderFam = [...getLineFamilyIds(lines, Number(userLineId) || userLineId)];
@@ -4011,6 +4106,14 @@ function AttendanceFormTab() {
     setEmpRows(result);
     setLoading(false);
   };
+
+  /* ?load=1 (จอวนหน้า) = กด "ดึงข้อมูล" ให้เองครั้งเดียว หลังทะเบียนไลน์โหลดแล้ว · ไม่มี = เหมือนเดิม (กดเอง) */
+  const autoLoadRef = useRef(urlBool('load', false));
+  useEffect(() => {
+    if (!autoLoadRef.current || !lines.length) return;
+    autoLoadRef.current = false;
+    load();
+  }, [lines]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handlePrint = async () => {
     const days    = periodDays();

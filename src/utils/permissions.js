@@ -20,6 +20,19 @@ let _deptAdmin = false;
 export function setDeptAdmin(v) { _deptAdmin = !!v; }
 export function isDeptAdminActive() { return _deptAdmin; }
 
+/* 🖥️ บัญชีกลาง (`profiles.account_kind = 'shared'` — จอ TV / บัญชีประจำเครื่อง-กะ เช่น `maintenance`)
+   **ห้ามลบอะไรทั้งนั้น** (2026-10-13 · คำสั่ง user + คำขอหน้างานทีม MTN "ไม่กดลบกันมั่ว")
+   เหตุผล: บัญชีกลางไม่มีเจ้าของเป็นคน ⇒ ลบแล้ว**สอบกลับไม่ได้ว่าใครกด** (audit เขียนได้แค่ชื่อบัญชี)
+   ส่วนช่างที่เป็นบัญชีของคน (`account_kind='person'`) สิทธิ์เดิมไม่เปลี่ยน
+   🔴 เก็บเป็น module-level เหมือน `_deptAdmin` — เพื่อให้ `canDelete()` ทุกจุดที่เรียกอยู่แล้ว
+      ถูกคุมทันทีโดยไม่ต้องไล่เติมพารามิเตอร์รายจุด (เติมมือ = ลืมจุดไหนก็หลุดเงียบ)
+   ⚠️ ฝั่ง DB: `has_perm()` ของ **Main** ปฏิเสธคีย์ `%:delete` ของบัญชีกลางด้วย
+      (migration `20261013_has_perm_shared_no_delete_main.sql`) — แต่ **ฝั่ง DR วิ่งด้วย `anon`
+      ไม่มีด่าน DB** (known gap) ⇒ ใบ MO/ตาราง DR พึ่งด่านฝั่งจอตัวนี้เป็นหลัก */
+let _sharedAccount = false;
+export function setSharedAccount(v) { _sharedAccount = !!v; }
+export function isSharedAccount() { return _sharedAccount; }
+
 export async function loadPermissions(forceRefresh = false) {
   if (cache && !forceRefresh) return cache;
   if (loadingPromise && !forceRefresh) return loadingPromise;
@@ -120,7 +133,19 @@ export function canAccessPage(path, role) {
         || hasPermission('page:/pm-check', role)
         || hasPermission('page:/mtn-repair', role)
         || hasPermission('page:/pm-setup', role)
-        || hasPermission('page:/order-trace', role);
+        || hasPermission('page:/order-trace', role)
+        || hasPermission('page:/qa', role);   // 2026-10-19 สแกนคัมบัง/MAT → ใบตรวจ QA
+  }
+  /* 🔁 ตั้งค่าจอวนหน้า — แอดมินหน่วยงาน (bucket dept_admin) ตั้งจอของส่วนงานตัวเองได้ (14/10 · คำสั่ง user)
+     bucket แจกได้แค่ action ห้ามแจก page:* ⇒ piggyback คีย์ action แทนการแจก page:/display-rotation ให้ทุก role
+     ขอบเขตว่าตั้งจอไหนได้ = canManageDisplay() + RLS fn_can_manage_display() */
+  /* 👷 /people-board = ครึ่งหนึ่งของ /dashboard เดิม (แยกจอ 19/10) — ข้อมูลชุดเดียวกัน ⇒ piggyback page:/dashboard
+     ไม่ต้อง seed คีย์ใหม่ (ใครเคยเห็นการ์ดคนบน /dashboard ก็ยังเห็นเหมือนเดิม) */
+  if (path === '/people-board') {
+    return hasPermission('page:/people-board', role) || hasPermission('page:/dashboard', role);
+  }
+  if (path === '/display-rotation') {
+    return hasPermission('page:/display-rotation', role) || hasPermission('display_rotation:manage', role);
   }
   return hasPermission(`page:${path}`, role);
 }
@@ -165,6 +190,9 @@ export function canSeeded(resource, action, role) {
  * เมื่อ seed ด้วยค่าเท่ากับผู้ถือสิทธิ์เดิม ผลลัพธ์เหมือนเดิมเป๊ะ แต่หลังจากนั้น Admin ปิดเฉพาะ role ได้
  */
 export function canDelete(resource, fallbackAction, role) {
+  /* 🖥️🔴 บัญชีกลางห้ามลบ — ต้องอยู่**ก่อน**ด่าน admin (บัญชี `ADMIN` ก็เป็นบัญชีกลาง
+     ⇒ ย้ายบรรทัดนี้ลงไปใต้ admin = บัญชีกลางที่ถือ role admin ลบได้เหมือนเดิม = ด่านเสียเปล่า) */
+  if (_sharedAccount) return false;
   if (role === 'admin') return true;
   return isActionSeeded(resource, 'delete')
     ? can(resource, 'delete', role)

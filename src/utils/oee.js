@@ -182,13 +182,30 @@ export function unionIv(intervals = []) {
  *  · จุดที่ต้องรู้ว่า "พักอยู่ช่วงไหนบ้าง" (เช่นตัด downtime ที่ทับพักออก) ให้เรียกตัวนี้ **ห้ามสร้างช่วงพักเองซ้ำ**
  *  ⚠️ union ช่วงที่ทับกัน: ชุดนโยบายปัจจุบันไม่มีคู่ไหนทับกัน (ผลลัพธ์เท่าเดิมเป๊ะ) แต่ถ้าวันหน้ามีคนตั้งทับ
  *     การบวกดิบๆ จะนับพักเกิน — union กันไว้ตั้งแต่ต้น */
-export function breakIntervalsIn({ policies = [], startMs, endMs, workDate, shift, processType = null }) {
+export function breakIntervalsIn({ policies = [], startMs, endMs, workDate, shift, processType = null, shiftEndMs = null }) {
   if (!startMs || !endMs || endMs <= startMs || !workDate) return [];
+  /* 🔚 `anchor = 'shift_end'` — พักที่ผูกกับ **ปลายกะ** ไม่ใช่เวลานาฬิกา (2026-10-20 · feedback หน้างาน)
+     เหตุ: 5ส. ท้ายกะเป็นเรื่องเดียวกันแต่เวลาเลื่อนตามรูปแบบวัน (เลิก 17:30 / 20:00 / 17:00 วันหยุด /
+     08:00 กะดึก) · ทะเบียนเดิมผูกเวลานาฬิกา ⇒ ต้องแตกเป็นหลายแถว แล้ว**ยังไม่ครอบวันหยุด 8 ชม.**
+     (กะ 08:00–17:00 ไม่ถูกหักพัก 20 นาที = %A/%P ตกทั้งที่ทำงานครบ — เคสจริง Laser LWR 17/10)
+     🔴 `shiftEndMs` = เวลาเลิกกะจริง · **ไม่ส่งมา = ใช้ปลายกรอบ** ซึ่งถูกต้องเฉพาะกรอบที่เป็น "ทั้งกะ"
+        จุดที่กรอบคือ "ถึงตอนนี้" (OEE สด) หรือ "ช่วงที่พาร์ทวิ่ง" **ต้องส่งมาเสมอ**
+        ไม่งั้นพักท้ายกะจะไหลตามปลายกรอบ = หักพักผิดที่/ซ้ำ (มีด่าน `break-anchor-needs-shift-end`) */
+  const endAnchor = Number(shiftEndMs) > 0 ? Number(shiftEndMs) : endMs;
   const rangeOf = (p) => {
-    const [ph, pm] = String(p.start_time || '00:00').split(':').map(Number);
-    let ps = new Date(`${workDate}T${String(ph).padStart(2, '0')}:${String(pm).padStart(2, '0')}:00`).getTime();
-    let pe = ps + (Number(p.duration_min) || 0) * 60000;
-    if (pe < startMs) { ps += 86400000; pe += 86400000; }  // พักกะดึกหลังเที่ยงคืน
+    let ps, pe;
+    if (p.anchor === 'shift_end') {
+      const off = Number(p.offset_min);
+      // ตั้งไม่ครบ = **ไม่เดา** (CHECK ฝั่ง DB กันอีกชั้น) — เดา 0 จะกลายเป็นพักยาวถึงปลายกะ
+      if (!(off > 0)) return null;
+      ps = endAnchor - off * 60000;
+      pe = ps + (Number(p.duration_min) || 0) * 60000;
+    } else {
+      const [ph, pm] = String(p.start_time || '00:00').split(':').map(Number);
+      ps = new Date(`${workDate}T${String(ph).padStart(2, '0')}:${String(pm).padStart(2, '0')}:00`).getTime();
+      pe = ps + (Number(p.duration_min) || 0) * 60000;
+      if (pe < startMs) { ps += 86400000; pe += 86400000; }  // พักกะดึกหลังเที่ยงคืน
+    }
     const s = Math.max(ps, startMs), e = Math.min(pe, endMs);
     return e > s ? [s, e] : null;
   };
@@ -222,8 +239,8 @@ export function overlapMinutesWith(sMs, eMs, intervals = []) {
   return t;
 }
 
-export function policyBreakOverlapMin({ policies = [], startMs, endMs, workDate, shift, processType = null }) {
-  return breakIntervalsIn({ policies, startMs, endMs, workDate, shift, processType })
+export function policyBreakOverlapMin({ policies = [], startMs, endMs, workDate, shift, processType = null, shiftEndMs = null }) {
+  return breakIntervalsIn({ policies, startMs, endMs, workDate, shift, processType, shiftEndMs })
     .reduce((s, [a, b]) => s + (b - a) / 60000, 0);
 }
 
@@ -492,12 +509,28 @@ export function computeLiveOee({ session, orders = [], downtimes = [], ctMap = {
   if (session.shift_min) elapsed = Math.min(elapsed, session.shift_min);
   if (!(elapsed >= LIVE_MIN_ELAPSED)) return null;
 
+  /* 🔚 พักที่ผูกปลายกะ (`anchor='shift_end'` เช่น 5ส.) ต้องรู้ "เวลาเลิกกะจริง" ก่อน
+     กะที่ยังเปิดอยู่ **ไม่มี `end_time` และส่วนใหญ่ไม่มี `shift_min`** (วัดจริง ก.ย.: เปิดอยู่ 6 กะ
+     มี end_time 0 · มี shift_min 1) ⇒ ยังไม่รู้ว่าจะเลิกกี่โมง
+     🔴 ห้ามเดาเวลาเลิกกะ (กฎเดียวกับ `checkCloseTime`) และ **ห้ามปล่อยให้ไหลตาม "ตอนนี้"** —
+        ไม่งั้นพักท้ายกะจะถูกหักทุกนาทีที่จอ refresh · ยังไม่รู้ = ไม่หัก + ชูธงให้จอเขียนบอก
+     ⏱️ ช่วงท้ายกะจริงๆ ค่าสดจะสูงกว่าค่าที่ stamp เล็กน้อย แล้วตรงกันเองตอนปิดกะ (ตอนนั้นมี end_time) */
+  const hardEndMs = (() => {
+    if (session.end_time) {
+      const hm = String(session.end_time).slice(0, 5);
+      let e = new Date(`${openedDate}T${hm}:00`).getTime();
+      if (Number.isFinite(e)) { if (e <= opened) e += 86400000; return e; }   // กะดึกข้ามเที่ยงคืน
+    }
+    return Number(session.shift_min) > 0 ? opened + Number(session.shift_min) * 60000 : null;
+  })();
+  const anchoredPolicies = breakPolicies.filter(p => p?.anchor === 'shift_end');
+  const usablePolicies = hardEndMs ? breakPolicies : breakPolicies.filter(p => p?.anchor !== 'shift_end');
   // เวลาพักตามนโยบายที่ทับช่วง [เปิดกะ, ตอนนี้] — สูตรกลางตัวเดียวกับตอนปิดกะ
   // เก็บเป็น "ช่วงเวลา" ไม่ใช่แค่ยอดรวม เพราะต้องเอาไปตัด downtime ที่ทับพักออกด้วย (§3.1)
-  const brkIv = breakPolicies.length
+  const brkIv = usablePolicies.length
     ? breakIntervalsIn({
-        policies: breakPolicies, startMs: opened, endMs: opened + elapsed * 60000,
-        workDate: wd, shift: session.shift, processType,
+        policies: usablePolicies, startMs: opened, endMs: opened + elapsed * 60000,
+        workDate: wd, shift: session.shift, processType, shiftEndMs: hardEndMs,
       })
     : [];
   const breakMin = brkIv.reduce((s, [a, b]) => s + (b - a) / 60000, 0);
@@ -564,6 +597,8 @@ export function computeLiveOee({ session, orders = [], downtimes = [], ctMap = {
     netAvailMin: Math.round(netAvail), breakMin: Math.round(breakMin),
     plannedDtMin: Math.round(plannedDtMin), unplannedDtMin: Math.round(unplannedDtMin),
     noBreakPolicy: !breakPolicies.length, startTimeOutOfFrame,
+    /* ยังไม่รู้เวลาเลิกกะ ⇒ พักท้ายกะ (5ส.) ยังไม่ถูกหัก — จอต้องเขียนบอก ห้ามเงียบ */
+    noShiftEndBreak: !hardEndMs && anchoredPolicies.length > 0,
   };
 
   // ยังไม่ผลิตชิ้นแรก (เพิ่งเปิดกะ/รอของ) → ประเมิน P/Q/OEE ไม่ได้ ต้องคืน null
@@ -1239,9 +1274,11 @@ export function computeSessionOee({
   const ctForMatNo = (matNo) => ctForMat(matNo, { kanbanStds, products });
   const pairOf = (mat) => products.find(p => p.mat_no === mat)?.pair_mat_no || null;
 
+  /* 🔚 กรอบที่ส่งเข้ามาคือ "ช่วงที่ MAT ตัวนี้วิ่ง" ไม่ใช่ทั้งกะ ⇒ ต้องบอก **ปลายกะจริง** ด้วย
+     ไม่งั้นพักที่ผูกปลายกะ (5ส.) จะไปเกาะปลายช่วงของแต่ละ MAT = หักพักซ้ำทุกใบ */
   const brkIvIn = (a, b) => breakIntervalsIn({
     policies: breakPolicies, startMs: a ? a.getTime() : 0, endMs: b ? b.getTime() : 0,
-    workDate, shift: sessionShift, processType,
+    workDate, shift: sessionShift, processType, shiftEndMs: shiftFrame?.endMs ?? null,
   });
   const ivMin = (iv) => iv.reduce((sum, [a, b]) => sum + (b - a) / 60000, 0);
   const dtOverlapMin = (startMs, endMs, pred, logs, weightFn, breakIv = []) => {

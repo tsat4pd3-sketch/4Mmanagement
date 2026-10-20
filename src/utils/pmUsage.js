@@ -70,6 +70,23 @@ export function piecesToShots(pieces, piecesPerStroke) {
   return Math.round(p / n);
 }
 
+/** 🔴 "ชิ้นต่อ 1 จังหวะ" ของแม่พิมพ์ตัวนี้ — **จุดเดียวของระบบ ห้ามอ่าน `pieces_per_stroke` ตรงๆ ในหน้า**
+
+    ทะเบียนแม่พิมพ์มี 2 ชั้น และ migration 20260810 ออกแบบไว้ว่า
+      `equipment_die.pieces_per_stroke` ว่าง = ใช้ค่าของ `die_sets` (ชั้นชุด)
+    แต่การถอยชั้นนี้ไม่เคยถูกเขียนจริง — จอ PM อ่านแค่ชั้น OP ที่ว่าง 264/264 ⇒ คิด shot ไม่ได้สักตัว
+
+    🔴 ไม่รู้ = คืน null ห้ามเดาเป็น 1 — งานคู่ LH/RH ปั๊มทีเดียวได้ 2 ชิ้น
+       เดาเป็น 1 = เกณฑ์ PM ที่ตั้งเป็น "ทน 50,000 shot" จะเด้ง**ช้าไป 2 เท่า** แม่พิมพ์พังก่อนถึงคิว  */
+export function ppsOf(die, set) {
+  for (const v of [die?.pieces_per_stroke, set?.pieces_per_stroke]) {
+    if (v == null || v === '') continue;          // ⚠️ Number(null) = 0 (finite!) ต้องกันก่อน
+    const n = Number(v);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return null;                                     // ทั้ง 2 ชั้นไม่รู้ = ไม่รู้ จอต้องเขียนบอก
+}
+
 /* ระดับสัญญาณ — ล้อ Andon ของทั้งระบบ (เขียว/เหลือง/แดง · ดู docs/UI-CONVENTIONS.md)
    over = เลยเกณฑ์แล้ว (แดงกระพริบได้) · due = ใกล้มาก · warn = เริ่มเตรียม · ok = ยังไกล */
 export const USAGE_LEVELS = { ok: '#22c55e', warn: '#f59e0b', due: '#f97316', over: '#ef4444' };

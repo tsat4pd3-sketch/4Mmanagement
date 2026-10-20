@@ -60,9 +60,10 @@ function drawRect(doc, x, y, w, h, opts = {}) {
   }
 }
 
+const FONT = 'Sarabun'
 function txt(doc, text, x, y, opts = {}) {
   doc.setFontSize(opts.size ?? 7)
-  doc.setFont('helvetica', opts.bold ? 'bold' : 'normal')
+  doc.setFont(FONT, opts.bold ? 'bold' : 'normal')
   doc.setTextColor(...(opts.color ?? [0, 0, 0]))
   doc.text(String(text ?? ''), x, y, {
     align: opts.align ?? 'left',
@@ -91,7 +92,7 @@ export async function resolveSignatureDataUrl(publicUrl) {
  */
 export async function exportInspectionPDF({
   jig, inspection, checkpoints, results,
-  inspector, approver, exporter, categories, docForm,
+  inspector, approver, exporter, categories, docForm, methods = {},
 }) {
   const CAT = buildCatMaps(categories)
   const catColor = (cat) => CAT.color[cat] ?? [107, 114, 128]
@@ -100,7 +101,11 @@ export async function exportInspectionPDF({
     import('jspdf'), import('jspdf-autotable'),
   ])
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
-  doc.setFont('helvetica', 'normal')
+  /* 🔴 ฟอนต์ไทย (20/10 · user: "PM JIG ที่ export ออกมา แย่มาก") — Helvetica ไม่มีตัวไทย
+     ⇒ ชื่อบริษัท/ชื่อคนเซ็น/คำอธิบายกลายเป็น "#4)1 D"1!!4" · ใช้ Sarabun ที่ฝังไว้แล้ว (lib/pdfThaiFont.js) */
+  const { registerThaiFont } = await import('./pdfThaiFont')
+  registerThaiFont(doc)
+  doc.setFont(FONT, 'normal')
 
   const datePart = new Date(inspection.inspected_at).toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' })
   const dateDisplay = fmtDate(inspection.inspected_at)
@@ -189,11 +194,9 @@ export async function exportInspectionPDF({
   })
 
   const sigData = [inspector?.signature_data, approver?.signature_data, exporter?.signature_data]
-  const sigNames = [
-    inspector?.email?.split('@')[0] ?? '',
-    approver?.email?.split('@')[0] ?? '',
-    exporter?.email?.split('@')[0] ?? '',
-  ]
+  // ช่อง `email` ของ 3 คนนี้ = ชื่อจริง (หน้าแม่ส่ง full_name) · ถ้าหลุดเป็นอีเมลมา ตัดเหลือส่วนหน้า @
+  const nm = (p) => String(p?.email ?? '').split('@')[0]
+  const sigNames = [nm(inspector), nm(approver), nm(exporter)]
   sigData.forEach((sd, i) => {
     const cx = SIG_X + i * COL_W
     if (sd) {
@@ -209,7 +212,8 @@ export async function exportInspectionPDF({
   drawRect(doc, M, META_Y, W - 2 * M, META_ROW)
   const col1 = M + 55, col2 = col1 + 70
   txt(doc, 'Jig No. :', M + 1, META_Y + META_ROW / 2, { size: 7, bold: true })
-  txt(doc, jig.jig_no ?? '', M + 14, META_Y + META_ROW / 2, { size: 7 })
+  // จิ๊ก/เครื่องที่ไม่ได้ตั้งเลขจิ๊ก = ใช้เลขเครื่อง (MC No.) — เดิมช่องนี้ว่าง (20/10)
+  txt(doc, jig.jig_no || jig.machine_no || '', M + 14, META_Y + META_ROW / 2, { size: 7 })
   doc.line(col1, META_Y, col1, META_Y + META_ROW)
   txt(doc, 'Process :', col1 + 1, META_Y + META_ROW / 2, { size: 7, bold: true })
   txt(doc, jig.process ?? '', col1 + 14, META_Y + META_ROW / 2, { size: 7 })
@@ -279,7 +283,7 @@ export async function exportInspectionPDF({
     doc.line(cx + 1.15, cy + PIN_R - 0.45, cx, pinY)
 
     doc.setFontSize(num > 9 ? 4 : 5)
-    doc.setFont('helvetica', 'bold')
+    doc.setFont(FONT, 'bold')
     doc.setTextColor(255, 255, 255)
     doc.text(String(num), cx, cy, { align: 'center', baseline: 'middle' })
   })
@@ -379,7 +383,7 @@ export async function exportInspectionPDF({
           { header: 'Remark', dataKey: 'remark' },
         ],
         body: rows,
-        styles: { fontSize: 6.5, cellPadding: 0.8, lineWidth: 0.15, lineColor: [0, 0, 0], overflow: 'linebreak' },
+        styles: { font: FONT, fontSize: 6.5, cellPadding: 0.8, lineWidth: 0.15, lineColor: [0, 0, 0], overflow: 'linebreak' },
         headStyles: { fillColor: [220, 220, 220], textColor: [0, 0, 0], fontStyle: 'bold', fontSize: 6, halign: 'center', cellPadding: 0.8 },
         columnStyles: {
           item: { cellWidth: 9, halign: 'center' }, name: { cellWidth: 22 },
@@ -422,7 +426,7 @@ export async function exportInspectionPDF({
           : r?.status === 'pass' ? 'OK' : r?.status === 'fail' ? 'NG' : ''
         return {
           // Standard = เกณฑ์ตัดสินหลายบรรทัด (description) ถ้าไม่มีใช้ชื่อจุดแบบเดิม
-          item: String(itemNoMap[cp.id]), name: cp.name, std: cp.description || cp.name, checking: '', picture: '',
+          item: String(itemNoMap[cp.id]), name: cp.name, std: cp.description || cp.name, checking: methods[cp.checking_method] || cp.checking_method || '', picture: '',
           okng: ok, action: r?.action_text ?? '', date: '', results: '', approve: '',
           remark: '', _ng: ok === 'NG', _img: cpImgs[cp.id] ?? null,
         }
@@ -441,7 +445,7 @@ export async function exportInspectionPDF({
           { header: 'Remark', dataKey: 'remark' },
         ],
         body: rows,
-        styles: { fontSize: 6.5, cellPadding: 0.8, lineWidth: 0.15, lineColor: [0, 0, 0], overflow: 'linebreak' },
+        styles: { font: FONT, fontSize: 6.5, cellPadding: 0.8, lineWidth: 0.15, lineColor: [0, 0, 0], overflow: 'linebreak' },
         headStyles: { fillColor: [220, 220, 220], textColor: [0, 0, 0], fontStyle: 'bold', fontSize: 6, halign: 'center', cellPadding: 0.8 },
         columnStyles: {
           item: { cellWidth: 9, halign: 'center' }, name: { cellWidth: 28 },
@@ -481,19 +485,25 @@ export async function exportInspectionPDF({
     curY += 0.5
   }
 
-  // SECTION 5: LEGEND
-  const legendY = Math.max(curY + 2, H - 14)
-
+  // SECTION 5: LEGEND — ตัดบรรทัดตามความกว้างกระดาษ (เดิมบรรทัดยาวล้นขอบขวา + ทับเลขฟอร์ม · 20/10)
   doc.setFontSize(6.5)
-  doc.setFont('helvetica', 'bold')
+  doc.setFont(FONT, 'normal')
+  const LEG_X = M + 28, LEG_W = W - M - LEG_X
+  const legendItems = Object.entries(CAT_LABEL).map(([k, v]) => `${k} = ${v}`)
+  const legendLines = [
+    ...doc.splitTextToSize(legendItems.join('     '), LEG_W),
+    'NG = ผิดปกติ     OK = ปกติ',
+  ]
+  const LINE = 3.6
+  const FOOT_H = 4                          // แถวเลขฟอร์มของตัวเอง ใต้คำอธิบาย ไม่ทับกัน
+  const legH = legendLines.length * LINE + 2
+  let legendY = Math.max(curY + 2, H - M - FOOT_H - legH)
+  if (legendY + legH + FOOT_H > H - M) { doc.addPage(); legendY = M }
+  doc.setFont(FONT, 'bold')
   doc.setTextColor(0, 0, 0)
   doc.text('Code Check Point', M, legendY + 3)
-
-  doc.setFont('helvetica', 'normal')
-  const legendItems = Object.entries(CAT_LABEL).map(([k, v]) => `${k} = ${v}`)
-  doc.text(legendItems.slice(0, 5).join('     '), M + 28, legendY + 3)
-  doc.text(legendItems.slice(5).join('     '), M + 28, legendY + 7)
-  doc.text('NG = ผิดปกติ     OK = ปกติ', M + 28, legendY + 11)
+  doc.setFont(FONT, 'normal')
+  legendLines.forEach((ln, i) => doc.text(ln, LEG_X, legendY + 3 + i * LINE))
 
   doc.setFontSize(6)
   // เลขฟอร์ม/Rev/Effective จาก Document Master กลาง (fallback ค่าเดิม)
@@ -502,5 +512,5 @@ export async function exportInspectionPDF({
   const _eff = docForm?.effective_date || '01/07/2020'
   doc.text(`${_fc}     ${_rev} Eff.date: ${_eff}`, W - M, H - M, { align: 'right', baseline: 'bottom' })
 
-  doc.save(`PM_JIG_${jig.jig_no ?? jig.name}_${datePart}.pdf`)
+  doc.save(`${docForm?.form_code || 'FM-JIG-003'}_PM_${jig.jig_no || jig.machine_no || jig.name}_${datePart}.pdf`)
 }

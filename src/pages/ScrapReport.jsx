@@ -40,6 +40,14 @@ import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
 import FilterBar from '../components/FilterBar';
 import { DeleteButton } from '../components/IconButton';
+import useIsMobile from '../utils/useIsMobile';
+/* 🗑️ ถังเหลือง/แดง — **ชิ้นเดียวกับที่ /qa ใช้** embed ทั้งดุ้น ไม่แก้ของเดิม (pattern เดียวกับ /equipment)
+   user 19/10: *"feature ถังเหลือง/แดง ควรจะอยู่กับผลิตนะ หลักๆ ผลิตจะเป็นคน input data มาจาก daily report
+   และ QA มีหน้าที่ตรวจสอบ … มาอยู่กะ QA ผลิตจะหาไม่เจอ"*
+   🔴 สิทธิ์ของมันคือ `scrap:record` / `scrap:manage` อยู่แล้ว (ไม่ใช่ `qa:*`) — อยู่หน้าฝ่ายผลิตจึงตรงกว่า
+   ⚠️ แท็บที่ /qa ยังอยู่เหมือนเดิม (QA = คนพิจารณา) — ข้อมูลชุดเดียวกัน ไม่ได้ก๊อป */
+import QualityBins from '../components/QualityBins';
+import useTabParam from '../utils/useTabParam';
 
 /* ── date helpers (ห้าม toISOString หา work date — ดู CLAUDE.md) ── */
 function localDateStr(d = new Date()) {
@@ -83,6 +91,7 @@ const EMPTY_ITEM = () => ({
 });
 
 function Modal({ title, onClose, children, width = 560 }) {
+  const isMobile = useIsMobile();
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 3000, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '4vh 12px', overflowY: 'auto' }}>
       <div style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 14, width: `min(${width}px, 96vw)`, boxShadow: 'var(--shadow-lg)', maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
@@ -90,15 +99,23 @@ function Modal({ title, onClose, children, width = 560 }) {
           <div style={{ fontWeight: 800, fontSize: 15 }}>{title}</div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 18, cursor: 'pointer' }}>✕</button>
         </div>
-        <div style={{ padding: 18, overflowY: 'auto' }}>{children}</div>
+        <div className={isMobile ? 'm-scroll-host' : undefined} style={{ padding: 18, overflowY: 'auto' }}>{children}</div>
       </div>
     </div>
   );
 }
 
+/* 📋 ใบรายงานของเสีย (งานเอกสารรายวัน) · 🗑️ ถังเหลือง/แดง (บันทึกหน้ากล่องก่อนถึง NCR/Scrap)
+   = ของเสียชุดเดียวกัน คนละขั้นของเรื่อง ⇒ อยู่หน้าเดียวกันแต่คนละแท็บ (UI §6.8) */
+const TABS = [
+  { key: 'scrap', label: '♻️ ใบรายงานของเสีย' },
+  { key: 'bins',  label: '🗑️ ถังเหลือง / ถังแดง' },
+];
+
 export default function ScrapReport() {
   const { fullName, role, lineId, sections } = useContext(UserContext);
   const { can } = usePerms();
+  const [tab, setTab] = useTabParam(TABS.map(t => t.key), 'scrap');
   const canRecord = can('scrap', 'record');
   const canManage = can('scrap', 'manage');
   const canDel    = canDelete('scrap', 'manage', role);  // สิทธิ์ลบใบ แยกจากอนุมัติ (fallback = manage)
@@ -611,14 +628,21 @@ export default function ScrapReport() {
     if (!ok) toast.error('เบราว์เซอร์บล็อก popup — อนุญาต popup ของเว็บนี้แล้วลองใหม่');
   };
 
+  const isMobile = useIsMobile();
   const STATUS_META = { draft: { label: 'ร่าง', color: '#6b7280' }, submitted: { label: 'ส่งอนุมัติ', color: '#f59e0b' }, approved: { label: 'อนุมัติแล้ว', color: '#22c55e' } };
 
   return (
     <Page>
       <ReadOnlyNote show={!canRecord} role={role} what="สร้าง/แก้ใบรายงานของเสีย"
         permKey="scrap:record" hint="ยังเปิดดูใบเดิม พิมพ์ และ export Excel ได้ตามปกติ" />
-      <PageHeader title="ใบรายงานของเสีย (Scrap Report)" icon="♻️"
-        sub={`${scrapFormNo} — ลงยอดของเสียต่อไลน์/วัน · ดึงตั้งต้นจาก Daily Report + เพิ่มพาร์ทย่อย · export ตรงฟอร์ม`} />
+      <PageHeader title="ของเสีย — ใบรายงาน & ถังเหลือง/แดง" icon="♻️"
+        sub={tab === 'bins'
+          ? 'ชิ้นงานต้องสงสัย (ถังเหลือง) / ชิ้นงานเสีย (ถังแดง) — ผลิตลงบันทึก · QA เป็นคนพิจารณาผล'
+          : `${scrapFormNo} — ลงยอดของเสียต่อไลน์/วัน · ดึงตั้งต้นจาก Daily Report + เพิ่มพาร์ทย่อย · export ตรงฟอร์ม`}
+        tabs={TABS} tab={tab} onTab={setTab} />
+
+      {/* 🗑️ ถังเหลือง/แดง = คอมโพเนนต์เดียวกับที่ /qa ใช้ (ข้อมูลชุดเดียว ไม่ได้ก๊อป) */}
+      {tab === 'bins' ? <QualityBins /> : (<>
 
       {/* UI-STANDARD 2026-09-24: แถบกรองมาตรฐาน (ไม่ใส่ขนาด inline ในช่อง) */}
       <FilterBar style={{ marginBottom: 14 }}>
@@ -630,6 +654,46 @@ export default function ScrapReport() {
         {canRecord && <button style={btnSt()} onClick={openNew}>+ เปิดใบใหม่</button>}
       </FilterBar>
 
+      {/* 📱 มือถือ = การ์ดต่อใบ (MOBILE-UX-STANDARD ชนิด B) — ตาราง 7 คอลัมน์ minWidth 720 บนจอ 360 ซ่อนปุ่ม ✏️ ไว้คอลัมน์สุดท้าย
+          ต้องปัดตารางไปขวาถึงจะเจอ (ไม่มีอะไรบอกว่าปัดได้) ⇒ เปิดใบแก้ไม่ได้ในทางปฏิบัติ · 15/10 */}
+      {isMobile ? (
+        <div className="sr-cards">
+          {reports.map(rep => {
+            const sm = STATUS_META[rep.status];
+            return (
+              <div key={rep.id} className="sr-card">
+                <div className="sr-head">
+                  <b>{rep.doc_no || '—'}</b>
+                  <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 9px', borderRadius: 999, color: sm?.color, background: `${sm?.color}1f`, border: `1px solid ${sm?.color}55` }}>{sm?.label || rep.status}</span>
+                </div>
+                <div className="sr-line">{rep.line_name || '—'} · {fmtD(rep.report_date)}</div>
+                <div className="sr-sum"><ItemCount reportId={rep.id} /> · ของเสีย <ScrapSum reportId={rep.id} /></div>
+                <div className="sr-acts">
+                  {canRecord && <button className="sr-main" onClick={() => openEdit(rep)}>✏️ เปิด/แก้ใบ</button>}
+                  <button onClick={() => doPrint(rep)}>🖨️ PDF</button>
+                  <button onClick={() => doExport(rep)}>⬇ Excel</button>
+                  {canDel && <DeleteButton onClick={() => delReport(rep)} title="ลบ" />}
+                </div>
+              </div>
+            );
+          })}
+          {reports.length === 0 && (
+            <div style={{ ...cardSt, fontSize: 13 }}>
+              {listErr ? <span style={{ color: '#ef4444', fontWeight: 700 }}>⚠️ โหลดรายการไม่สำเร็จ: {listErr} — ไม่ใช่ "ไม่มีใบ" ให้ลองใหม่อีกครั้ง</span>
+                : outside ? (
+                  <span style={{ color: 'var(--text2)' }}>
+                    ไม่มีใบในช่วงนี้ — แต่<b>มีใบอยู่นอกช่วง</b> ล่าสุด <b style={{ color: 'var(--accent)' }}>{outside.latest}</b>{' '}
+                    <button onClick={() => { setListFrom(outside.latest); setListTo(getWorkDate()); }}
+                      style={{ marginTop: 6, fontSize: 13, fontWeight: 800, padding: '8px 12px', borderRadius: 8, cursor: 'pointer',
+                        background: 'rgba(61,214,92,0.12)', color: 'var(--accent)', border: '1px solid rgba(61,214,92,0.45)', fontFamily: 'var(--font-body)' }}>
+                      ขยายช่วงไปถึงวันนั้น
+                    </button>
+                  </span>
+                ) : <span style={{ color: 'var(--muted)' }}>ไม่มีใบในช่วงนี้ (ทั้งระบบยังไม่มีใบรายงานของเสียเลย)</span>}
+            </div>
+          )}
+        </div>
+      ) : (
       <div className="table-sticky" style={{ ...cardSt, padding: 0, overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
           <thead><tr>
@@ -674,11 +738,12 @@ export default function ScrapReport() {
           </tbody>
         </table>
       </div>
+      )}
 
       {editor && (
         <Modal title={editor.report.id ? `✏️ แก้ใบ ${editor.report.doc_no || ''}` : '➕ เปิดใบรายงานของเสียใหม่'} onClose={() => setEditor(null)} width={1180}>
           {/* หัวใบ */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 12 }}>
+          <div className="sr-hgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 12 }}>
             <Field label="วันที่"><input type="date" style={inputSt} value={editor.report.report_date} onChange={e => setRep({ report_date: e.target.value })} /></Field>
             <Field label="ไลน์ *">
               {/* 2026-09-07 อ่านทะเบียนไลน์ผ่าน <LineSelect> — เลือกไลน์แล้ว "ส่วน" เติมจาก production_lines.section อัตโนมัติ */}
@@ -767,8 +832,10 @@ export default function ScrapReport() {
             </div>
           )}
 
-          <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1050 }}>
+          {/* 📱 มือถือ: ตาราง 15 คอลัมน์ (กว้าง 1,315px ในกล่อง 306px) → การ์ดต่อรายการด้วย CSS ล้วน (.sr-items · data-l = ป้ายช่อง)
+              จอคอม: คลาส/attribute ไม่มีผล — ตารางเดิมเป๊ะ · 15/10 */}
+          <div className="sr-items-box" style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
+            <table className="sr-items" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1050 }}>
               <thead><tr>
                 <th style={thSt}>#</th><th style={thSt}>ที่มา</th><th style={thSt}>PART NO.</th><th style={thSt}>PART NAME</th>
                 <th style={thSt}>MAT SAP</th><th style={thSt}>MODEL</th><th style={thSt}>CODE</th><th style={thSt}>BOM</th>
@@ -778,13 +845,13 @@ export default function ScrapReport() {
               <tbody>
                 {editor.items.map((it, i) => (
                   <tr key={it._key}>
-                    <td style={tdSt}>{i + 1}
+                    <td style={tdSt} data-l="#" className="sr-c sr-no">{i + 1}
                       {it.src_defect_from_logs && <span title="ดึงจาก Daily Report" style={{ marginLeft: 3, fontSize: 11, color: '#4d9fff' }}>⤵</span>}
                       {it.src_request_item_id && <span title="ดึงจากใบเบิก QA (ทดสอบแบบทำลาย)" style={{ marginLeft: 3, fontSize: 11, color: '#a855f7' }}>📦</span>}
                       {it.src_bin_id && <span title="ดึงจากถังแดง (แท็กแดง) — WI-PD3-069 §5.5" style={{ marginLeft: 3, fontSize: 11, color: '#e05252' }}>🔴</span>}
                       {opInfoOf(it.mat_no, explodeCtx.opMap) && <span title="ขั้นตอน (OP) — เลขนี้ไม่มีใน SAP ตัดสต๊อกไม่ได้ ต้องระเบิดเป็นวัตถุดิบก่อน" style={{ marginLeft: 3, fontSize: 11, color: '#ef4444' }}>🔩</span>}
                       {it.src_op_mat && <span title={`ระเบิดมาจากขั้น ${it.src_op_mat}`} style={{ marginLeft: 3, fontSize: 11, color: '#f97316' }}>🧩</span>}</td>
-                    <td style={tdSt}><span style={{ fontSize: 11, fontWeight: 700, color: it.source === 'sub' ? '#f59e0b' : '#4d9fff' }}>{it.source === 'sub' ? 'ย่อย' : 'หลัก'}</span></td>
+                    <td style={tdSt} data-l="ที่มา" className="sr-c sr-src"><span style={{ fontSize: 11, fontWeight: 700, color: it.source === 'sub' ? '#f59e0b' : '#4d9fff' }}>{it.source === 'sub' ? 'ย่อย' : 'หลัก'}</span></td>
                     {/* 2026-09-07 MAT SAP = <ProductSelect> (Product Master ∪ BOM/parts_master) · ตรงทะเบียน → part_no/part_name ล็อกตามทะเบียน
                         allowFree เพราะบางพาร์ทใน master กรอกเลขเครื่องแทนเลขพาร์ท (badMaster) — ยังต้องพิมพ์เองได้พร้อมป้าย */}
                     {(() => {
@@ -792,9 +859,9 @@ export default function ScrapReport() {
                       const lockNo = !!(so && so.part_no && !so.badMaster);
                       const lockName = !!(so && so.part_name);
                       return (<>
-                        <td style={tdSt}><input style={{ ...inputSt, width: 120, padding: '5px 7px', opacity: lockNo ? 0.75 : 1 }} value={it.part_no} readOnly={lockNo} title={lockNo ? 'ตามทะเบียน — ล้าง MAT SAP เพื่อแก้เอง' : ''} onChange={e => setItem(it._key, { part_no: e.target.value })} /></td>
-                        <td style={tdSt}><input style={{ ...inputSt, width: 150, padding: '5px 7px', opacity: lockName ? 0.75 : 1 }} value={it.part_name} readOnly={lockName} title={lockName ? 'ตามทะเบียน — ล้าง MAT SAP เพื่อแก้เอง' : ''} onChange={e => setItem(it._key, { part_name: e.target.value })} /></td>
-                        <td style={tdSt}>
+                        <td style={tdSt} data-l="PART NO." className="sr-c"><input style={{ ...inputSt, width: 120, padding: '5px 7px', opacity: lockNo ? 0.75 : 1 }} value={it.part_no} readOnly={lockNo} title={lockNo ? 'ตามทะเบียน — ล้าง MAT SAP เพื่อแก้เอง' : ''} onChange={e => setItem(it._key, { part_no: e.target.value })} /></td>
+                        <td style={tdSt} data-l="PART NAME" className="sr-c sr-pname"><input style={{ ...inputSt, width: 150, padding: '5px 7px', opacity: lockName ? 0.75 : 1 }} value={it.part_name} readOnly={lockName} title={lockName ? 'ตามทะเบียน — ล้าง MAT SAP เพื่อแก้เอง' : ''} onChange={e => setItem(it._key, { part_name: e.target.value })} /></td>
+                        <td style={tdSt} data-l="MAT SAP" className="sr-c sr-full">
                           <div style={{ display: 'flex', gap: 2, alignItems: 'flex-start' }}>
                             <ProductSelect value={it.mat_no} extraOptions={sapExtra} history={itemMatHist} lines={editor.report.line_name ? getLineFamilyNames(allLines, editor.report.line_name) : undefined}
                               allowFree freeHint="พาร์ทที่ไม่อยู่ในทะเบียน / master กรอกเลขเครื่อง" placeholder="MAT SAP"
@@ -810,14 +877,14 @@ export default function ScrapReport() {
                         </td>
                       </>);
                     })()}
-                    <td style={tdSt}><input style={{ ...inputSt, width: 66, padding: '5px 7px' }} value={it.model} onChange={e => setItem(it._key, { model: e.target.value })} /></td>
-                    <td style={tdSt}>
+                    <td style={tdSt} data-l="MODEL" className="sr-c"><input style={{ ...inputSt, width: 66, padding: '5px 7px' }} value={it.model} onChange={e => setItem(it._key, { model: e.target.value })} /></td>
+                    <td style={tdSt} data-l="CODE" className="sr-c">
                       <select style={{ ...inputSt, width: 60, padding: '5px 4px' }} value={it.code} onChange={e => setItem(it._key, { code: e.target.value })}>
                         <option value="">—</option>{CODE_OPTS.map(([v]) => <option key={v} value={v}>{v}</option>)}
                       </select>
                     </td>
-                    <td style={tdSt}><input style={{ ...inputSt, width: 60, padding: '5px 7px' }} value={it.bom_ref} onChange={e => setItem(it._key, { bom_ref: e.target.value })} /></td>
-                    <td style={tdSt}>
+                    <td style={tdSt} data-l="BOM" className="sr-c"><input style={{ ...inputSt, width: 60, padding: '5px 7px' }} value={it.bom_ref} onChange={e => setItem(it._key, { bom_ref: e.target.value })} /></td>
+                    <td style={tdSt} data-l="Q'TY" className="sr-c sr-big">
                       {/* หน่วยจาก BOM (KG/PC) — จอเท่านั้น ฟอร์มกระดาษไม่มีคอลัมน์หน่วย (SAP รู้หน่วยฐานของ mat เอง)
                           ⚠️ coil เป็น KG ทศนิยม ห้ามปัดเป็นจำนวนเต็ม */}
                       <div style={{ display: 'flex', gap: 3, alignItems: 'center' }}>
@@ -825,25 +892,25 @@ export default function ScrapReport() {
                         {uomByMat[it.mat_no] && <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{uomByMat[it.mat_no]}</span>}
                       </div>
                     </td>
-                    <td style={tdSt}>
+                    <td style={tdSt} data-l="สาเหตุ" className="sr-c">
                       <select style={{ ...inputSt, width: 90, padding: '5px 4px' }} value={it.m_cause} onChange={e => setItem(it._key, { m_cause: e.target.value })}>
                         <option value="">—</option>{M_OPTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                       </select>
                     </td>
-                    <td style={tdSt}>
+                    <td style={tdSt} data-l="ช่วง" className="sr-c">
                       <select style={{ ...inputSt, width: 96, padding: '5px 4px' }} value={it.stage} onChange={e => setItem(it._key, { stage: e.target.value })}>
                         {STAGE_OPTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                       </select>
                     </td>
-                    <td style={tdSt}><input type="number" style={{ ...inputSt, width: 64, padding: '5px 7px' }} value={it.confirm_qty} onChange={e => setItem(it._key, { confirm_qty: e.target.value })} /></td>
-                    <td style={tdSt}>
+                    <td style={tdSt} data-l="ยืนยัน" className="sr-c sr-big"><input type="number" style={{ ...inputSt, width: 64, padding: '5px 7px' }} value={it.confirm_qty} onChange={e => setItem(it._key, { confirm_qty: e.target.value })} /></td>
+                    <td style={tdSt} data-l="รหัสงานเสีย" className="sr-c sr-dcode">
                       <button style={{ ...ghostBtn, padding: '5px 8px', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} onClick={() => setDefectPicker(it._key)}>
                         {it.defect_codes || '+ เลือก'}
                       </button>
                     </td>
                     {/* 📷 รูปหลักฐาน — แถวที่ดึงจากถังแดงจะมีรูปติดมาเอง (found_img ของแท็กแดง)
                         แถวที่คีย์มือแนบเองได้ · ว่าง = ปุ่มจางๆ ไม่ใช่ช่องว่างให้เดา */}
-                    <td style={tdSt}>
+                    <td style={tdSt} data-l="รูป" className="sr-c sr-pic">
                       {(it.defect_img || it._imgFile) ? (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
                           <img src={it._imgFile ? URL.createObjectURL(it._imgFile) : it.defect_img}
@@ -857,7 +924,7 @@ export default function ScrapReport() {
                           onClick={() => setPhotoItem(it._key)}>📎</button>
                       )}
                     </td>
-                    <td style={tdSt}><DeleteButton onClick={() => delItem(it._key)} title="ลบ" /></td>
+                    <td style={tdSt} data-l="" className="sr-c sr-del"><DeleteButton onClick={() => delItem(it._key)} title="ลบ" /></td>
                   </tr>
                 ))}
                 {editor.items.length === 0 && <tr><td style={tdSt} colSpan={15}><span style={{ color: 'var(--muted)' }}>ยังไม่มีรายการ — กด "ดึงจาก Daily Report" หรือ "เพิ่มจาก SAP/BOM"</span></td></tr>}
@@ -875,7 +942,7 @@ export default function ScrapReport() {
           </div>
 
           {/* สายอนุมัติ — 2026-09-07 เลือกคนจาก profiles ผ่าน <PersonSelect> (role ที่ตรงช่องขึ้นก่อน · เก็บชื่อ snapshot เหมือนเดิม — ตาราง DR) */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginTop: 14 }}>
+          <div className="sr-sgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginTop: 14 }}>
             <Field label="ผู้ตรวจสอบ (QC)"><PersonSelect value={editor.report.inspector_name || ''} roles={['qa']} lines={editor.report.line_name ? getLineFamilyNames(allLines, editor.report.line_name) : undefined} history={inspectorHist} inputStyle={inputSt} onChange={({ name }) => setRep({ inspector_name: name })} /></Field>
             <Field label="ผู้ขออนุมัติ (หัวหน้าแผนก)"><PersonSelect value={editor.report.requester_name || ''} roles={['supervisor', 'leader']} lines={editor.report.line_name ? getLineFamilyNames(allLines, editor.report.line_name) : undefined} history={requesterHist} inputStyle={inputSt} onChange={({ name }) => setRep({ requester_name: name })} /></Field>
             <Field label="ผู้อนุมัติ (ผจก. QA/QC)"><PersonSelect value={editor.report.approver_qa_name || ''} roles={['qa', 'manager']} lines={editor.report.line_name ? getLineFamilyNames(allLines, editor.report.line_name) : undefined} history={approverQaHist} inputStyle={inputSt} onChange={({ name }) => setRep({ approver_qa_name: name })} /></Field>
@@ -889,7 +956,7 @@ export default function ScrapReport() {
             </Field>
           </div>
 
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+          <div className={isMobile ? 'sr-foot m-stickfoot' : 'sr-foot'} style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
             <button style={ghostBtn} onClick={() => setEditor(null)}>ยกเลิก</button>
             {canRecord && <button style={btnSt()} onClick={saveReport}>💾 บันทึกใบ</button>}
           </div>
@@ -987,6 +1054,7 @@ export default function ScrapReport() {
           </Modal>
         );
       })()}
+      </>)}
     </Page>
   );
 }

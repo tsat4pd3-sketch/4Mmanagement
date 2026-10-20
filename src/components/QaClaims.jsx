@@ -24,12 +24,14 @@ import { ALL } from '../utils/filterLabels';
 import PartSelect from './PartSelect';
 import CustomerSelect from './CustomerSelect';
 import useColumnHistory from '../utils/useColumnHistory';
+import { isOpenQaDoc, qaDocInFilter, QA_CANCELLED } from '../utils/qaDocStatus';
 
 const STATUS = {
   open: { label: 'รับเรื่องแล้ว', color: '#ef4444' },
   investigating: { label: 'กำลังสอบสวน', color: '#f59e0b' },
   replied: { label: 'ตอบลูกค้าแล้ว', color: '#4d9fff' },
   closed: { label: 'ปิดเคลม', color: '#22c55e' },
+  cancelled: { label: 'ยกเลิก (เปิดผิด)', color: '#6b7280' },
 };
 const CATEGORY = { quality: 'คุณภาพ', delivery: 'การส่งมอบ', packaging: 'บรรจุภัณฑ์', warranty: 'รับประกัน', other: 'อื่นๆ' };
 const SEVERITY = { minor: { label: 'เล็กน้อย', color: '#6b7280' }, major: { label: 'สำคัญ', color: '#f59e0b' }, critical: { label: 'วิกฤต', color: '#ef4444' } };
@@ -62,7 +64,7 @@ const EMPTY = () => ({
 });
 
 // lines = แถว production_lines เต็ม (LINE_COLUMNS) จากหน้าหลัก — ไม่ใช่ชื่ออย่างเดียวแล้ว (2026-09-07)
-export default function QaClaims({ lines = [], role, lineId, sections, partOpts = [], canRecord, canManage, onOpenCapa }) {
+export default function QaClaims({ lines = [], scopeNames = null, role, lineId, sections, partOpts = [], canRecord, canManage, onOpenCapa }) {
   const { fullName } = useContext(UserContext);
   const [list, setList] = useState([]);
   const [filter, setFilter] = useState('active');
@@ -81,22 +83,24 @@ export default function QaClaims({ lines = [], role, lineId, sections, partOpts 
   useEffect(() => { load(); }, [load]);
 
   const today = localDate();
-  /* scope ตาม pattern มาตรฐาน — `lines` ที่ส่งมาถูกกรองตามสิทธิ์แล้ว (ไม่มี scope = ครบทุกไลน์ = no-op)
-     เคลมที่ยังไม่ระบุไลน์ให้เห็นได้ทุกคน (เพิ่งรับเรื่อง ยังไม่รู้ว่าไลน์ไหนผลิต) */
-  const scoped = useMemo(() => list.filter((c) => !c.line_name || lines.includes(c.line_name)), [list, lines]);
-  const shown = useMemo(() => scoped.filter((c) => (
-    filter === 'all' ? true : filter === 'closed' ? c.status === 'closed' : c.status !== 'closed'
-  )), [scoped, filter]);
+  /* 👁 ขอบเขตที่เห็น = `scopeNames` จากหน้าแม่ (utils/qaViewScope · ตัวเดียวกับแท็บ NCR) · null = ไม่จำกัด
+     · ใบที่ยังไม่ระบุไลน์ = ทุกคนเห็น (เพิ่งรับเรื่อง ยังไม่รู้ว่าไลน์ไหน)
+     🔴 บั๊ก 19/10: เดิม `lines.includes(ชื่อไลน์)` ทั้งที่ `lines` เป็นแถว object = ไม่ตรงเลย ⇒ เคลมที่ระบุไลน์หายทุกใบ */
+  const scoped = useMemo(() => list.filter((c) => !scopeNames || !c.line_name || scopeNames.has(c.line_name)), [list, scopeNames]);
+  const hiddenN = list.length - scoped.length;
+  const shown = useMemo(() => scoped.filter((c) => qaDocInFilter(c, filter)), [scoped, filter]);
 
-  const openList = scoped.filter((c) => c.status !== 'closed');
+  // ใบยกเลิก (เปิดผิด/ใบซ้ำ) ไม่ใช่งานค้าง และไม่นับเป็นเคลมซ้ำ (utils/qaDocStatus)
+  const openList = scoped.filter(isOpenQaDoc);
+  const live = useMemo(() => list.filter((c) => c.status !== QA_CANCELLED), [list]);
   const overdue = openList.filter((c) => c.due_reply_date && c.due_reply_date < today && !c.replied_at);
   /* เคลมซ้ำ — นับเป็นจำนวน "ใบที่มีของเก่าซ้ำ" ไม่ใช่จำนวนคู่ */
   /* แยก 2 ระดับ — ซ้ำแน่ (ข้อความตรง) vs อาจซ้ำ (ตรงแค่กลุ่มคำ) · ห้ามยุบรวม ดู findRepeats */
   const repMap = useMemo(() => {
     const m = new Map();
-    for (const c of scoped) { const r = findRepeats(c, list); if (r.length) m.set(c.id, r); }
+    for (const c of scoped) { if (c.status === QA_CANCELLED) continue; const r = findRepeats(c, live); if (r.length) m.set(c.id, r); }
     return m;
-  }, [scoped, list]);
+  }, [scoped, live]);
   const sureIds = useMemo(() => new Set([...repMap].filter(([, r]) => sureRepeats(r).length).map(([id]) => id)), [repMap]);
   const maybeIds = useMemo(() => new Set([...repMap.keys()].filter((id) => !sureIds.has(id))), [repMap, sureIds]);
 
@@ -140,6 +144,22 @@ export default function QaClaims({ lines = [], role, lineId, sections, partOpts 
     toast.success(msg);
     setDetail(null); load();
     return row?.id || f.id;
+  };
+
+  /* ❌ ยกเลิกเคลมที่เปิดผิด/ใบซ้ำ (19/10 · หน้างานแจ้ง "เปิดผิดแก้ไม่ได้") — ไม่ลบ: เลขที่ต้องสอบย้อนได้
+     ต้องมีเหตุผล (DB check) · นับแถว (RLS ปฏิเสธ = 0 แถว ไม่มี error) */
+  const cancel = async (c) => {
+    const reason = window.prompt(`ยกเลิก ${c.claim_no} — เหตุผล (เช่น เปิดซ้ำกับ CLM-xxx / กรอกผิดใบ):`);
+    if (reason == null) return;
+    if (!reason.trim()) { toast.error('ต้องใส่เหตุผลการยกเลิก'); return; }
+    setBusy(true);
+    const ok = checkWriteRows(await supabase.from('qa_customer_claims').update({
+      status: QA_CANCELLED, cancel_reason: reason.trim(), cancelled_by: fullName || null, cancelled_at: new Date().toISOString(),
+    }).eq('id', c.id).select('id'), `ยกเลิก ${c.claim_no}`);
+    setBusy(false);
+    if (!ok) return;
+    toast.success(`ยกเลิก ${c.claim_no} แล้ว (ดูได้ที่ตัวกรอง "ยกเลิก")`);
+    setDetail(null); load();
   };
 
   /* เปิด 8D จากเคลม — สร้างใบ CAPA แล้วผูกกลับทันที (ไม่ปล่อยให้ผูกทีหลังแล้วลืม) */
@@ -186,6 +206,15 @@ export default function QaClaims({ lines = [], role, lineId, sections, partOpts 
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {/* UI-STANDARD 2026-09-24: 3 ตัวเลือกเท่ากัน → Segmented · "ทุก…" ซ้ายสุด (state 'all' เดิม) */}
+      <FilterBar>
+        <Segmented label="สถานะ" value={filter} onChange={setFilter} options={[
+          { value: 'all', label: ALL.status }, { value: 'active', label: 'ยังไม่ปิด' }, { value: 'closed', label: 'ปิดแล้ว' }, { value: 'cancelled', label: 'ยกเลิก' },
+        ]} />
+        <span className="spacer" />
+        {canRecord && <button style={btnSt()} onClick={() => setDetail(EMPTY())}>📮 รับเคลมใหม่</button>}
+      </FilterBar>
+
       {/* ── สรุปสั้น: ตัวเลขที่ผู้จัดการถามก่อนเสมอ ── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
         {[
@@ -215,14 +244,10 @@ export default function QaClaims({ lines = [], role, lineId, sections, partOpts 
         </div>
       )}
 
-      {/* UI-STANDARD 2026-09-24: 3 ตัวเลือกเท่ากัน → Segmented · "ทุก…" ซ้ายสุด (state 'all' เดิม) */}
-      <FilterBar>
-        <Segmented label="สถานะ" value={filter} onChange={setFilter} options={[
-          { value: 'all', label: ALL.status }, { value: 'active', label: 'ยังไม่ปิด' }, { value: 'closed', label: 'ปิดแล้ว' },
-        ]} />
-        <span className="spacer" />
-        {canRecord && <button style={btnSt()} onClick={() => setDetail(EMPTY())}>📮 รับเคลมใหม่</button>}
-      </FilterBar>
+      {/* กรองตามขอบเขตแล้วต้องบอกว่าซ่อนกี่ใบ — "ไม่มีรายการ" ทั้งที่มี = จอโกหก (CLAUDE.md §สิทธิ์ 3 ชั้น) */}
+      {hiddenN > 0 && (
+        <div style={{ fontSize: 11.5, color: 'var(--muted)', margin: '-4px 0 8px' }}>🔒 ซ่อน {hiddenN} ใบของไลน์นอกขอบเขตของคุณ</div>
+      )}
 
       <div className="table-sticky" style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 12 }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
@@ -232,7 +257,7 @@ export default function QaClaims({ lines = [], role, lineId, sections, partOpts 
           <tbody>
             {shown.map((c) => {
               const st = STATUS[c.status] || STATUS.open;
-              const late = c.due_reply_date && c.due_reply_date < today && !c.replied_at && c.status !== 'closed';
+              const late = c.due_reply_date && c.due_reply_date < today && !c.replied_at && isOpenQaDoc(c);
               const sure = sureIds.has(c.id), maybe = maybeIds.has(c.id);
               return (
                 <tr key={c.id} onClick={() => setDetail({ ...c, cost_impact: c.cost_impact ?? '' })} style={{ cursor: 'pointer' }}
@@ -260,22 +285,22 @@ export default function QaClaims({ lines = [], role, lineId, sections, partOpts 
                 </tr>
               );
             })}
-            {!shown.length && <tr><td colSpan={9} style={{ ...tdSt, textAlign: 'center', color: 'var(--muted)', padding: 26 }}>ยังไม่มีเคลมในช่วงนี้</td></tr>}
+            {!shown.length && <tr><td colSpan={9} style={{ ...tdSt, textAlign: 'center', color: 'var(--muted)', padding: 26 }}>ยังไม่มีเคลมในช่วงนี้{hiddenN > 0 ? ` (ซ่อน ${hiddenN} ใบของไลน์นอกขอบเขตคุณ)` : ''}</td></tr>}
           </tbody>
         </table>
       </div>
 
-      {detail && <ClaimModal {...{ detail, setDetail, lines, role, lineId, sections, partOpts, canRecord, canManage, busy, save, openCapa, repeats: findRepeats(detail, list) }} />}
+      {detail && <ClaimModal {...{ detail, setDetail, lines, role, lineId, sections, partOpts, canRecord, canManage, busy, save, openCapa, repeats: detail.status === QA_CANCELLED ? [] : findRepeats(detail, live), cancel }} />}
     </div>
   );
 }
 
-function ClaimModal({ detail, setDetail, lines, role, lineId, sections, partOpts = [], canRecord, canManage, busy, save, openCapa, repeats }) {
+function ClaimModal({ detail, setDetail, lines, role, lineId, sections, partOpts = [], canRecord, canManage, busy, save, openCapa, repeats, cancel }) {
   // 📜 ค่าที่เคยบันทึกใน qa_claims (Main) — พาร์ท/ลูกค้าที่ทะเบียนยังไม่มี ยังเลือกซ้ำได้ (สะกดเดิม = ไม่แตกกลุ่มเคลมซ้ำ) (2026-09-07)
   const partHist = useColumnHistory(supabase, 'qa_customer_claims', 'part_no', { upper: true });
   const custHist = useColumnHistory(supabase, 'qa_customer_claims', 'customer');
   const set = (k) => (e) => setDetail((f) => ({ ...f, [k]: e.target.value }));
-  const ro = !canRecord || detail.status === 'closed';
+  const ro = !canRecord || detail.status === 'closed' || detail.status === QA_CANCELLED;
   return (
     <div /* ⚠️ ฟอร์มกรอกข้อมูล — ไม่ปิดจาก backdrop กันเผลอแตะแล้วข้อมูลหาย (UI-CONVENTIONS §5) */ style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2500, padding: 16 }}>
       <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: 18, width: 'min(980px, 100%)', maxHeight: '92vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
@@ -364,6 +389,10 @@ function ClaimModal({ detail, setDetail, lines, role, lineId, sections, partOpts
 
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16, flexWrap: 'wrap' }}>
           <button style={ghostBtn} onClick={() => setDetail(null)}>ปิด</button>
+          {/* ❌ เปิดผิด / ใบซ้ำ → ยกเลิกพร้อมเหตุผล (เลขที่ยังอยู่ · ไม่ลบเอกสาร) — ใบที่ผูก 8D แล้วยกเลิกไม่ได้ */}
+          {!ro && detail.id && !detail.capa_id && (
+            <button style={ghostBtn} disabled={busy} onClick={() => cancel(detail)}>❌ ยกเลิกใบนี้ (เปิดผิด)</button>
+          )}
           {!ro && <button style={btnSt('#f59e0b')} disabled={busy} onClick={() => save()}>💾 บันทึก</button>}
           {!ro && detail.id && detail.status !== 'replied' && (
             <button style={btnSt('#4d9fff', '#fff')} disabled={busy} onClick={() => {
@@ -371,7 +400,7 @@ function ClaimModal({ detail, setDetail, lines, role, lineId, sections, partOpts
               save({ status: 'replied' }, 'บันทึกการตอบลูกค้าแล้ว ✓');
             }}>📤 บันทึกว่าตอบลูกค้าแล้ว</button>
           )}
-          {canManage && detail.id && detail.status !== 'closed' && (
+          {canManage && detail.id && isOpenQaDoc(detail) && (
             <button style={btnSt('#22c55e')} disabled={busy} onClick={() => {
               /* ⚠️ ปิดเคลมโดยไม่มี 8D = ไม่มีหลักฐานว่าแก้อะไร — auditor จับข้อนี้แน่ */
               if (!detail.capa_id) { toast.error('ปิดเคลมไม่ได้ — ต้องเปิด 8D และดำเนินการแก้ไขก่อน'); return; }

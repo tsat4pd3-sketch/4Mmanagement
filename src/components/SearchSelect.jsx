@@ -27,20 +27,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { NO_ROW, initialActiveRow, moveActiveRow } from '../utils/pickerKeys';
 
-/* เครื่องหมายประกอบของไทย — สระบน/ล่าง · วรรณยุกต์ · ทัณฑฆาต (์) · ไม้ไต่คู้
-   U+0E31 · U+0E34–U+0E3A · U+0E47–U+0E4E */
-const THAI_MARKS = /[\u0E31\u0E34-\u0E3A\u0E47-\u0E4E]/g;
-
-/** ตัดช่องว่าง/ขีด/จุด/วงเล็บ + lowercase — คนพิมพ์รหัสอะไหล่ไม่เป๊ะ (M8 D6.6 / m8d66)
- *
- *  🔴 ตัด "เครื่องหมายประกอบของไทย" ด้วย (2026-09-23 · เกิดจริงที่ /add-user)
- *  ฐานพนักงานเก็บ `เจนนิภา เจริญพันธ` (ไม่มี ์) แต่คนพิมพ์ค้น `เจนนิภา เจริญพันธ์`
- *  ⇒ ค้นไม่เจอ ⇒ สรุปว่า "ไม่มีคนนี้ในฐาน" ⇒ กดเพิ่มใหม่ ⇒ ชนรหัสพนักงานซ้ำ
- *  ชื่อคนไทยในฐานพิมพ์มือ สะกดต่างกันได้ 1 ตัวเสมอ — **ตัวค้นต้องทน ไม่ใช่ให้คนพิมพ์ให้เป๊ะ**
- *  (ผลข้างเคียงที่ยอมรับ: คำที่ต่างกันแค่วรรณยุกต์จะ match กัน เช่น มา/ม้า — เป็นแค่ตัวกรอง
- *   ไม่ได้เปลี่ยนค่าที่บันทึก จึงกว้างไว้ดีกว่าแคบจนหาไม่เจอ) */
-export const normSearch = (s) => String(s ?? '').toLowerCase()
-  .replace(THAI_MARKS, '').replace(/[\s\-_./()]+/g, '');
+/* ตัว normalize คำค้น (ทนการสะกดไทย) ย้ายไปอยู่ชั้นภาษาไทยแล้ว — `utils/thaiText.js`
+   (เพราะ util ที่ pure ต้องใช้ตัวเดียวกัน แต่ import ไฟล์ .jsx ไม่ได้)
+   re-export ต่อ ⇒ ที่ `import { normSearch } from '../components/SearchSelect'` ยังใช้ได้เหมือนเดิม */
+import { normSearch } from '../utils/thaiText';
+export { normSearch };   // 🔴 ต้อง import เข้ามาด้วย — ไฟล์นี้เรียกใช้เองในตัวกรองลิสต์
 
 export default function SearchSelect({
   value = '',            // id ที่เลือกอยู่ ('' = ยังไม่ได้เลือกจากลิสต์)
@@ -58,6 +49,10 @@ export default function SearchSelect({
   allowFree = false,     // พิมพ์ชื่อที่ไม่มีในลิสต์ได้ไหม
   placeholder = 'ค้นหา…',
   emptyText = 'ไม่พบรายการที่ค้นหา',
+  /* 🔴 "ลิสต์ว่าง/ไม่ครบ เพราะโหลดทะเบียนไม่สำเร็จ" — ข้อความจาก `registryFailText()` (utils/useMasterRows.js)
+     ลิสต์ว่างเฉยๆ ทำให้คนสรุปว่า "ไม่มีในทะเบียน" แล้วไปสร้างซ้ำ ⇒ ต้องเขียนบอกทั้งตอนปิดและตอนเปิดลิสต์
+     ⚠️ เตือนเท่านั้น **ห้ามบล็อกการพิมพ์/เลือกค่าเดิม** (กฎ: ข้อมูลไม่พอ = เขียนบนจอ ไม่ใช่ปิดช่อง) */
+  loadFail = '',
   freeHint = '',         // ต่อท้ายข้อความ "ใช้ … เป็นชื่อที่พิมพ์เองได้" (ผลข้างเคียงเฉพาะหน้านั้น)
   maxRows = 60,
   // ให้ข้อความในลิสต์ "ตัดบรรทัด" แทนตัดด้วย ellipsis — ใช้กับลิสต์ที่ชื่อยาวและกล่องแคบ
@@ -186,6 +181,11 @@ export default function SearchSelect({
           : <span style={{ position: 'absolute', right: 9, top: '50%', transform: 'translateY(-50%)', color: 'var(--muted)', fontSize: 12, pointerEvents: 'none' }}>🔎</span>}
       </div>
 
+      {/* 🔴 ทะเบียนโหลดไม่สำเร็จ — ต้องเห็นตอนช่องปิดอยู่ด้วย (ไม่มีใครเปิดลิสต์เพื่อหาคำเตือน) */}
+      {!open && loadFail && (
+        <div style={{ fontSize: 11, color: 'var(--red)', marginTop: 3 }}>{loadFail}</div>
+      )}
+
       {/* ⚠️ พิมพ์ชื่อเองแล้วไม่ตรงลิสต์ = ยังบันทึกได้ แต่ต้องบอกให้เห็น ไม่ปล่อยเงียบ */}
       {!open && allowFree && !sel && text.trim() !== '' && (
         <div style={{ fontSize: 11, color: 'var(--accent2)', marginTop: 3 }}>✎ ชื่อที่พิมพ์เอง — ไม่ได้อยู่ในทะเบียน</div>
@@ -193,6 +193,9 @@ export default function SearchSelect({
 
       {open && (
         <div style={{ marginTop: 4, background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 8, overflow: 'hidden' }}>
+          {loadFail && (
+            <div style={{ padding: '6px 10px', fontSize: 11.5, fontWeight: 800, color: 'var(--red)', background: 'var(--bg3)', borderBottom: '1px solid var(--border)' }}>{loadFail}</div>
+          )}
           <div ref={listRef} style={{ maxHeight: 244, overflowY: 'auto' }}>
             {rows.map((o, i) => {
               const head = i === 0 || rows[i - 1].group !== o.group;

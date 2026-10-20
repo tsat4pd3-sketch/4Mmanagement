@@ -13,10 +13,13 @@ import DowntimeSiren from '../components/DowntimeSiren';
 import { buildMan4mPendingMatcher, ppeMissingList } from '../utils/personAlarm';
 import { inSectionScope } from '../utils/sectionScope';
 import { canAccessPage } from '../utils/permissions';
-import { buildScheduleMaps, resolveAssignedShift, shiftFromTeam } from '../utils/shiftAssign';
+import { buildScheduleMaps, resolveAssignedShift, shiftFromTeam, lineScheduleTeam } from '../utils/shiftAssign';
 import { getLineFamilyNames, sortLineNames } from '../utils/lineHierarchy';
 import useIsMobile from '../utils/useIsMobile';
 import { toneOf, toneInk, statusColor } from '../utils/statusTone';
+import useTvPager from '../utils/useTvPager';
+import TvPagerBar from '../components/TvPagerBar';
+import useTvShell, { tvSizer } from '../utils/useTvShell';
 import { pairAwareTotal, collapseOps } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
@@ -26,6 +29,7 @@ import { RATE, LIVE } from '../utils/refreshRates';
 import { coalesce } from '../utils/liveRefresh';
 import { visibleInterval } from '../utils/usePolling';
 import { positionAllCards, delayedCountOf, orderKeyOf, projectedFinishMs, planStatusOf, pushChainOf, dayDelaySummaryOf } from '../utils/heijunkaQueue';
+import { buildBoardCards } from '../utils/boardCards';
 import PlanSlipBar from '../components/PlanSlipBar';   // 📋 แถบ "หลุดแผนไปแค่ไหน" (เวลา+ยอด · 2026-09-30)
 import DelayBlameBar from '../components/DelayBlameBar';   // 🔗 สรุปดีเลย์ของวัน + ต้นเหตุ/ผู้ถูกพาล (ทีมปั๊ม 2026-09-30)
 import { liveChannel } from '../utils/liveChannel';
@@ -35,6 +39,11 @@ import { useLatestRequest } from '../utils/useLatestRequest';
 import { loadBreakPolicies } from '../utils/oeeMasters';
 import { fetchAllRows } from '../utils/fetchAllRows';
 import SearchInput from '../components/SearchInput';
+import { urlPick, urlBool, urlParam } from '../utils/urlInit';
+
+/* เกณฑ์ "อัตราการมาทำงาน" ของจอนี้ — การ์ดบนสุดกับการ์ดรายไลน์ต้องใช้ชุดเดียวกัน (2026-10-19)
+   เดิมการ์ดไลน์ตัดที่ 80% และเอา 4M มาปนสีมาทำงาน ⇒ ไลน์มา 91% ขึ้น "⚠ Risk" · มา 82% ขึ้น "✓ Normal" */
+const attendTone = (rate) => (rate == null ? 'none' : rate >= 90 ? 'good' : rate >= 75 ? 'warn' : 'bad');
 
 const FADE_UP = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 } };
 const stagger = (i) => ({ ...FADE_UP, transition: { delay: i * 0.06, duration: 0.35 } });
@@ -169,7 +178,13 @@ function getWorkDateStr(date) {
   return `${y}-${m}-${day}`;
 }
 
-export default function Dashboard() {
+/* 📺 2026-10-19 (user "ไทม์ไลน์ที่ไม่เห็นไทม์ไลน์" · "จอภาพรวมเปิดโชว์ไม่ควรต้อง scroll" · "แยก heijunka ออกมาเลย")
+   หน้าเดียวเดิมแยกเป็น 2 จอ — คอมโพเนนต์เดียว (โหลดข้อมูลชุดเดียว ไม่ก๊อปโค้ด) สลับด้วย `view`:
+   · `timeline` = /dashboard "ไทม์ไลน์ผลิตทุกไลน์" — แถบเครื่องหยุด + บอร์ด Heijunka (+ ไซเรน)
+   · `people`   = /people-board "ภาพรวมกำลังคน" — KPI คน + การ์ดสถานะไลน์ + ผังไลน์/4M (+ deep-link ?line= เปิดผังไลน์)
+   เนื้อหายาวเกินจอ = แบ่งหน้าหมุนเอง (`useTvPager` · ตัดตาม `data-tv-item`) ห้ามให้จอ TV ต้องเลื่อน */
+export default function Dashboard({ view = 'timeline' }) {
+  const isPeople = view === 'people';
   const now = useNow();
   // scope ตาม user (คำสั่ง user 2026-07-12: "filter ได้ก็ไม่มีปัญหา ถ้าไม่ใช้ก็เหมือนไม่ filter")
   // — leader เห็นเฉพาะ family ไลน์ตัวเอง · role ที่มี sections เห็นเฉพาะ section ตัวเอง · ที่เหลือเห็นหมดเหมือนเดิม
@@ -178,11 +193,18 @@ export default function Dashboard() {
   const vw = useWidth();
   const isWide = vw >= 1280;   // desktop / laptop
   const isUltra = vw >= 1600;  // large desktop / TV
+  /* 📺 โหมดจอประชุม (20/10 · TV 43–50" ยืนดู 2–3 ม.) — จอคอมเหมือนเดิมทุกพิกเซล · TV: ตัวใหญ่ + ซ่อนตัวควบคุม/คำอธิบาย (UI §6.32)
+     `T(desk, tv)` = ขนาดบนจอคอม / บนจอ TV */
+  const tv = useTvShell();
+  const T = tvSizer(tv);
   const shiftInfo = getShiftInfo(now);
   const workDateStr = getWorkDateStr(now);
 
   const [selectedDate,  setSelectedDate]  = useState(workDateStr);
-  const [selectedShift, setSelectedShift] = useState(shiftInfo.isDay ? 'day' : 'night');
+  /* ?shift=all|day|night (จอวนหน้า /display-rotation) — ตั้งจากลิงก์ = ปักกะไว้ ไม่ให้ auto-sync กะข้างล่างดีดทับ
+     ไม่มีในลิงก์ = พฤติกรรมเดิมเป๊ะ (กะปัจจุบัน + กลิ้งเองตอน 08:00/20:00) */
+  const [shiftSeed] = useState(() => urlPick('shift', ['all', 'day', 'night'], null));
+  const [selectedShift, setSelectedShift] = useState(() => shiftSeed || (shiftInfo.isDay ? 'day' : 'night'));
 
   // Section filter — เหมาะกับจอ TV ที่ตั้งไว้ดูเฉพาะส่วนงานตัวเอง
   // จำค่าไว้ใน URL (?section=...) เพื่อให้ bookmark จอ TV ได้ตรงส่วนงานทุกครั้งที่เปิด
@@ -214,10 +236,11 @@ export default function Dashboard() {
 
   // Auto-sync shift when day→night boundary crosses (20:00) while viewing today
   useEffect(() => {
+    if (shiftSeed) return;   // ปักกะจากลิงก์ (?shift=) = ไม่ดีดทับ
     if (selectedDate === workDateStr) {
       setSelectedShift(shiftInfo.isDay ? 'day' : 'night');
     }
-  }, [shiftInfo.isDay, selectedDate, workDateStr]);
+  }, [shiftInfo.isDay, selectedDate, workDateStr, shiftSeed]);
   const [logs, setLogs]         = useState([]);
   const [fourMLogs, setFourMLogs] = useState([]);
   const [lines, setLines]       = useState([]);
@@ -501,7 +524,7 @@ export default function Dashboard() {
     // ตารางกะ: ไลน์ผลิต + หน่วยงานสนับสนุน — สูตรเดียวกับ Checkin ผ่าน utils/shiftAssign.js
     // (เดิมหน้านี้เขียนซ้ำเองแล้ว **ตกเงื่อนไข Team C** → คนทีม C หายจากบอร์ดทั้งกะเช้าและกะดึก
     //  เพราะบอร์ดกรองด้วย assignedShift ซึ่งเป็น null)
-    const schedMaps = buildScheduleMaps(scheduleData);
+    const schedMaps = buildScheduleMaps(scheduleData, lineData);   // ส่ง lines = ไลน์ลูกตกทอดกะจากไลน์แม่
 
     // Build per-employee override map
     const empOverride = {};
@@ -538,8 +561,9 @@ export default function Dashboard() {
       if (!emp.line_id) return;
       if (!counts[emp.line_id]) counts[emp.line_id] = { day: 0, night: 0, all: 0 };
       counts[emp.line_id].all++;
-      // กำลังคนเป็นเรื่องของ "ไลน์" → ใช้ตารางกะของไลน์ตรงๆ (ไม่ตกไปกะหน่วยงาน)
-      const sh = shiftFromTeam(schedMaps.byLine[emp.line_id], emp.team);
+      /* กำลังคนเป็นเรื่องของ "ไลน์" → ใช้ตารางกะของไลน์ (รวมตกทอดจากไลน์แม่) ไม่ตกไปกะหน่วยงาน
+         🔴 ห้ามอ่าน `schedMaps.byLine[...]` ตรงๆ — ข้ามการตกทอดไลน์แม่ แล้วไลน์ลูกจะนับกำลังคนเป็น 0 (มีด่าน) */
+      const sh = shiftFromTeam(lineScheduleTeam(emp.line_id, schedMaps), emp.team);
       if (sh === 'day')        counts[emp.line_id].day++;
       else if (sh === 'night') counts[emp.line_id].night++;
     });
@@ -662,8 +686,13 @@ export default function Dashboard() {
 
   // mandatory scope filter (pattern มาตรฐาน — CLAUDE.md "Section/Line/Team Scoping"):
   // กรองก่อนเสมอ แล้วค่อยให้ dropdown section เลือกแคบลงทับอีกชั้น · user ไม่มี scope = เห็นหมดเหมือนเดิม
-  const scopeActive = (role === 'leader' && !!userLineId) || (scopeSecs?.length > 0);
-  const scopedLines = useMemo(() => {
+  /* ?bline=<ชื่อไลน์>[,<ชื่อไลน์>…] (จอวนหน้า · 20/10 user "ตั้งโชว์ไลน์ใครไลน์มันไม่ได้") — จอนี้เห็นเฉพาะไลน์นั้น + ไลน์ลูก
+     ทั้งหน้า (บอร์ด · ตัวนับ · 4M · ผัง) · ไม่มีในลิงก์ = เหมือนเดิม · ชื่อไม่ตรงทะเบียน = ไม่กรอง (ลิงก์พิมพ์ผิดต้องไม่ทำจอว่าง)
+     ⚠️ ห้ามใช้ `?line=` — คีย์นั้นของ /people-board (ลิงก์เก่า /dashboard?line= ถูกส่งต่อไปเปิดผังไลน์) */
+  const [lineSeed] = useState(() => (urlParam('bline') || '').split(',').map(x => x.trim()).filter(Boolean));
+  const lineSeedKey = lineSeed.join(',');
+  const scopeActive = (role === 'leader' && !!userLineId) || (scopeSecs?.length > 0) || lineSeed.length > 0;
+  const roleScopedLines = useMemo(() => {
     if (role === 'leader' && userLineId) {
       // เทียบ id ด้วย String() — lineId จาก profile อาจเป็นคนละ type กับ production_lines.id (pattern เดียวกับ EventLog)
       const myLine = lines.find(l => String(l.id) === String(userLineId));
@@ -673,6 +702,14 @@ export default function Dashboard() {
     if (scopeSecs?.length) return lines.filter(l => inSectionScope(scopeSecs, l.section));
     return lines;
   }, [lines, role, userLineId, scopeSecs]);
+  // ไลน์จากลิงก์ = แคบลงจากขอบเขตของบัญชี (ห้ามขยายเกิน — จอ PD1 ตั้งไลน์ PD3 = ไม่เห็น)
+  const scopedLines = useMemo(() => {
+    if (!lineSeed.length) return roleScopedLines;
+    const fam = new Set(lineSeed.flatMap(n => (lines.some(l => l.name === n) ? getLineFamilyNames(lines, n) : [])));
+    return fam.size ? roleScopedLines.filter(l => fam.has(l.name)) : roleScopedLines;
+  }, [roleScopedLines, lines, lineSeedKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  // ไลน์จากลิงก์ที่ใช้กรองจริง (ชื่อตรงทะเบียน) — ขึ้นหัวจอให้รู้ว่าจอนี้ไม่ใช่ "ทุกไลน์"
+  const lineSeedShown = useMemo(() => lineSeed.filter(n => lines.some(l => l.name === n)), [lineSeedKey, lines]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const sections = useMemo(
     () => (!scopeActive && orgSections.length) ? orgSections : sortLike(scopedLines.map(l => l.section), orgSections),
@@ -782,8 +819,14 @@ export default function Dashboard() {
     return names;
   }, [parentChildrenMap, layouts]);
 
+  // ลิงก์เก่า /dashboard?line=… (ผังไลน์+คน) ย้ายไปจอคนแล้ว — ส่งต่อพร้อม param เดิม (จอวนหน้าที่ตั้งไว้ไม่พัง)
+  useEffect(() => {
+    if (!isPeople && searchParams.get('line')) navigate(`/people-board?${searchParams.toString()}`, { replace: true });
+  }, [isPeople, searchParams, navigate]);
+
   // deep-link จากผังรวมโรงงาน: ?line=NAME → เปิดผังไลน์ที่ครอบชื่อนี้ (ตรงชื่อ หรือเป็นลูกในการ์ดของ layout)
   useEffect(() => {
+    if (!isPeople) return;
     const wanted = searchParams.get('line');
     if (!wanted || !layouts.length) return;
     const hit = layouts.find(l => l.line_name === wanted)
@@ -791,7 +834,7 @@ export default function Dashboard() {
     if (hit) { setExpandedLine(hit.line_name); cameFromFactoryMap.current = searchParams.get('from') === 'factory-map'; }
     searchParams.delete('line'); searchParams.delete('from'); // ล้าง param กันเปิดซ้ำตอน re-render/ปิด modal
     setSearchParams(searchParams, { replace: true });
-  }, [layouts, searchParams, layoutLineNamesForCard, setSearchParams]);
+  }, [isPeople, layouts, searchParams, layoutLineNamesForCard, setSearchParams]);
 
   // ปิดผังไลน์: ถ้าเปิดมาจากผังรวมโรงงาน → เด้งกลับหน้านั้น (ไม่ค้างที่ Dashboard)
   const closeExpandedLine = useCallback(() => {
@@ -852,7 +895,7 @@ export default function Dashboard() {
     const lineTotal = stdTotal > 0 ? stdTotal : (empCounts[line.id]?.[shiftKey] ?? lineLogs.length);
     const lineAlerts = fourMLogs.filter(f => f.line_name === line.name).length;
     const rate = lineTotal > 0 ? Math.round((linePresent / lineTotal) * 100) : 0;
-    return { ...line, linePresent, lineTotal, lineAlerts, rate };
+    return { ...line, linePresent, lineTotal, lineAlerts, rate, lineChecked: lineLogs.length };
   }), [visibleLines, shiftLogs, selectedShift, empCounts, shiftKey, fourMLogs]);
 
   const totalCapacity = useMemo(() => lineStats.reduce((s, l) => s + l.lineTotal, 0) || shiftLogs.length, [lineStats, shiftLogs]);
@@ -860,7 +903,8 @@ export default function Dashboard() {
      เดิมคืน 0 ⇒ ตอนเช้าก่อนใครเช็คชื่อ (และทุกวันที่ยังไม่มีข้อมูล) การ์ด "อัตราการมาทำงาน"
      ขึ้น **0% ตัวแดงเต็มจอ** ซึ่งแปลว่า "วันนี้ไม่มีใครมาทำงานเลย" — เป็นคำกล่าวอ้างเท็จ
      ความจริงคือ "ยังไม่รู้" · เห็นชัดตอนทำใบนี้เป็นการ์ดพระเอก 62px (ตอนเป็นวงแหวน 19px ไม่มีใครทันสังเกต) */
-  const attendRate    = useMemo(() => totalCapacity > 0 ? Math.round((present.length / totalCapacity) * 100) : null, [totalCapacity, present]);
+  // 19/10: ยังไม่มีใครเช็คชื่อในกะ/ขอบเขตนี้ (มา+ขาด = 0) = "ยังไม่รู้" เหมือนกัน — เดิมขึ้น 0% แดง ทั้งที่การ์ดไลน์บอก "ยังไม่มีใครเช็คชื่อ"
+  const attendRate    = useMemo(() => totalCapacity > 0 && present.length + absent.length > 0 ? Math.round((present.length / totalCapacity) * 100) : null, [totalCapacity, present, absent]);
   const ppeRate       = useMemo(() => present.length > 0 ? Math.round((ppeReady.length / present.length) * 100) : null, [present, ppeReady]);
 
   // ── การ์ดผังไลน์ (Line Floor Maps): นับ "ตามจุดงาน" (คนที่ถูกวางบนสถานีของผังนี้) = ตรงกับหมุดบนรูป ──
@@ -906,9 +950,19 @@ export default function Dashboard() {
 
   const isToday = selectedDate === workDateStr;
 
+  // 📺 แบ่งหน้า+หมุนเองเมื่อยาวเกินจอ · มือถือ/ผู้ใช้กด "เลื่อนเอง" = ปิด (จำต่อเครื่อง · storage พังได้ = ค่าเริ่มต้น)
+  const tvBoxRef = useRef(null);
+  const scrollKey = `esm.dash.scroll.${view}`;
+  const [tvScroll, setTvScroll] = useState(() => urlBool('scroll', (() => { try { return localStorage.getItem(scrollKey) === '1'; } catch { return false; } })()));
+  const setScrollMode = (on) => { setTvScroll(on); try { localStorage.setItem(scrollKey, on ? '1' : '0'); } catch { /* ไม่มี storage = ไม่จำ */ } };
+  const tvPager = useTvPager(tvBoxRef, {
+    enabled: !isMobile && !tvScroll,
+    dataKey: `${view}|${visibleProdStatus.length}|${lineStats.length}|${boardLineSel}|${boardQuery}|${selectedShift}|${selectedSection}|${selectedDate}|${loading}|${expandedLines.size}|${dtAlarmList.length}`,
+  });
+
   return (
     <div className="page-content" style={{ maxWidth: '100%' }}>
-      <DowntimeSiren mode="open_15min" />
+      {!isPeople && <DowntimeSiren mode="open_15min" />}
       {prodErr && (
         <div role="alert" style={{ margin: '0 0 12px', padding: '10px 14px', borderRadius: 10, border: '1px solid #ef444488', background: '#ef444414', color: '#ef4444', fontSize: 14, fontWeight: 700 }}>
           {prodErr}
@@ -916,11 +970,12 @@ export default function Dashboard() {
       )}
 
       {/* ── Header ─────────────────────────────────────── */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 28, gap: 16, flexWrap: 'wrap' }}>
+      {/* ph-chrome = หัวเพจ — กรอบจอ TV ซ่อน (แถบบนของกรอบบอกชื่อหน้า/กะ/เวลาแทน · index.css) */}
+      <div className="ph-chrome" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 28, gap: 16, flexWrap: 'wrap' }}>
         <motion.div {...stagger(0)}>
-          <div style={{ fontSize: 'clamp(18px,3vw,24px)', fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text)', letterSpacing: '-0.5px' }}>
-            Production Overview
-          </div>
+          <h1 style={{ margin: 0, fontSize: 'clamp(18px,3vw,24px)', fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text)', letterSpacing: '-0.5px' }}>
+            {isPeople ? 'ภาพรวมกำลังคน' : (lineSeedShown.length ? `ไทม์ไลน์ผลิต · ${lineSeedShown.join(' · ')}` : 'ไทม์ไลน์ผลิตทุกไลน์')}
+          </h1>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 6, flexWrap: 'wrap' }}>
             {selectedShift !== 'all' && (
               <span style={{
@@ -987,9 +1042,20 @@ export default function Dashboard() {
             <input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)}
               style={{ border: 'none', background: 'transparent', color: 'var(--accent)', fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 16, outline: 'none', padding: 0, width: 'auto' }} />
           </div>
+          {tvScroll && !isMobile && (
+            <button type="button" onClick={() => setScrollMode(false)}
+              style={{ padding: '7px 12px', borderRadius: 10, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+              📺 กลับเป็นหมุนหน้า
+            </button>
+          )}
         </motion.div>
       </div>
 
+      {/* 📺 กล่องเนื้อหาที่แบ่งหน้าได้ (useTvPager) — modal อยู่นอกกล่องนี้
+          data-tv-nofit = บอกตัววนจอ (DisplayRotator) ว่าหน้านี้คุมความสูงเอง ห้ามย่อด้วย zoom ซ้อน
+          (zoom ทำให้หน่วยวัดของ pager เพี้ยน แล้วสองตัวแย่งกันปรับ) · โหมด "เลื่อนเอง" = ให้ตัววนย่อตามเดิม */}
+      <div ref={tvBoxRef} data-tv-nofit={!isMobile && !tvScroll ? '' : undefined}>
+      {isPeople && (<>
       {/* คนที่ยังจัดเข้ากะไม่ได้ — ห้ามปล่อยให้ KPI โชว์ 0 เฉยๆ (งานค้าง = ป้ายนิ่ง ไม่กระพริบ) */}
       {selectedShift !== 'all' && noShiftLogs.length > 0 && (
         <div style={{
@@ -998,15 +1064,15 @@ export default function Dashboard() {
           display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10,
         }}>
           <div style={{ flex: '1 1 320px', minWidth: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 800, color: '#f59e0b' }}>
+            <div style={{ fontSize: T(13, 20), fontWeight: 800, color: '#f59e0b' }}>
               ⚠️ เช็คชื่อแล้ว {noShiftLogs.length} คน แต่ยังจัดเข้ากะไม่ได้ — ตัวเลขด้านล่างจึงยังไม่รวมคนกลุ่มนี้
             </div>
-            <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3, lineHeight: 1.6 }}>
+            <div className="tv-hide" style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3, lineHeight: 1.6 }}>
               ไลน์ที่ยังไม่มีตารางกะของวันที่เลือก: <b style={{ color: 'var(--text)' }}>{noShiftLineNames.join(' · ') || '—'}</b>
               {' '}— ตั้งตารางกะแล้วตัวเลขจะขึ้นเอง
             </div>
           </div>
-          <button onClick={() => setSelectedShift('all')} style={{
+          <button className="tv-hide" onClick={() => setSelectedShift('all')} style={{
             padding: '6px 12px', borderRadius: 8, border: '1px solid rgba(245,158,11,0.5)',
             background: 'transparent', color: '#f59e0b', fontSize: 12, fontWeight: 700, cursor: 'pointer',
           }}>👁 ดูรวมทุกกะ</button>
@@ -1020,7 +1086,7 @@ export default function Dashboard() {
       )}
 
       {/* ── KPI Row ─────────────────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: isWide ? 'repeat(6, 1fr)' : 'repeat(auto-fit, minmax(175px, 1fr))', gap: isMobile ? 10 : 14, marginBottom: 24 }}>
+      <div data-tv-item style={{ display: 'grid', gridTemplateColumns: isWide ? 'repeat(6, 1fr)' : 'repeat(auto-fit, minmax(175px, 1fr))', gap: isMobile ? 10 : 14, marginBottom: 24 }}>
         {[
           /* 🚦 สีบนการ์ด = **สถานะเทียบเป้าเท่านั้น** (`utils/statusTone.js`) — 23/09 จาก brief De-AI UI
              เดิมแถวนี้ปนกัน 3 แบบในบรรทัดเดียวกัน: น้ำเงิน = สีประจำใบ · ส้ม = สีประจำใบ ·
@@ -1048,11 +1114,11 @@ export default function Dashboard() {
           {
             label: 'อัตราการมาทำงาน', value: attendRate, unit: '%', primary: true,
             sub: attendRate == null ? 'ยังไม่มีใครเช็คชื่อ — ตัวเลขยังตัดสินไม่ได้'
-              : `มา ${present.length} · ขาด ${absent.length} · จาก ${totalCapacity} คน`,
+              : `มา ${present.length} · ขาด ${absent.length}${totalCapacity - present.length - absent.length > 0 ? ` · ยังไม่เช็ค ${totalCapacity - present.length - absent.length}` : ''} · จาก ${totalCapacity} คน`,
             // เกณฑ์เดิมของหน้านี้ (90 / 75) — คงพฤติกรรมไว้ แต่ให้ "สี" มาจากชุดกลาง + เขียนบนจอ
             tone: attendRate == null ? 'none'
-              : attendRate >= 90 ? 'good' : attendRate >= 75 ? 'warn' : 'bad',
-            basis: attendRate == null ? null : 'เกณฑ์จอนี้: เขียว ≥ 90% · เหลือง ≥ 75%',
+              : attendTone(attendRate),
+            basis: attendRate == null ? null : 'เกณฑ์จอนี้ (ใช้กับการ์ดรายไลน์ด้วย): เขียว ≥ 90% · เหลือง ≥ 75%',
             icon: '✅',
           },
           {
@@ -1077,7 +1143,7 @@ export default function Dashboard() {
             icon: '🚨',
           },
         ].map((kpi, i) => {
-          const numSize = kpi.primary ? (isWide ? 62 : isMobile ? 40 : 48) : (isWide ? 36 : isMobile ? 28 : 32);
+          const numSize = tv ? (kpi.primary ? 96 : 64) : kpi.primary ? (isWide ? 62 : isMobile ? 40 : 48) : (isWide ? 36 : isMobile ? 28 : 32);
           return (
           <motion.div key={kpi.label} {...stagger(i + 2)}
             style={{ height: '100%', gridColumn: isWide && kpi.primary ? 'span 2' : 'auto' }}>
@@ -1092,10 +1158,10 @@ export default function Dashboard() {
             }}>
               <div style={{
                 display: 'flex', alignItems: 'baseline', gap: 7,
-                fontSize: isWide ? 15 : 14, fontWeight: 700, color: 'var(--muted)',
+                fontSize: T(isWide ? 15 : 14, 22), fontWeight: 700, color: 'var(--muted)',
                 textTransform: 'uppercase', letterSpacing: '0.06em',
               }}>
-                <span aria-hidden="true" style={{ fontSize: isWide ? 17 : 15, flexShrink: 0 }}>{kpi.icon}</span>
+                <span aria-hidden="true" style={{ fontSize: T(isWide ? 17 : 15, 24), flexShrink: 0 }}>{kpi.icon}</span>
                 <span style={{ minWidth: 0 }}>{kpi.label}</span>
               </div>
               <div style={{
@@ -1110,9 +1176,9 @@ export default function Dashboard() {
                 )}
               </div>
               <div>
-                <div style={{ fontSize: isWide ? 14.5 : 13.5, color: 'var(--muted)' }}>{kpi.sub}</div>
+                <div style={{ fontSize: T(isWide ? 14.5 : 13.5, 20), color: 'var(--muted)' }}>{kpi.sub}</div>
                 {kpi.basis && (
-                  <div style={{ fontSize: isWide ? 13 : 12, color: 'var(--muted)', marginTop: 2, opacity: 0.85 }}>
+                  <div className="tv-hide" style={{ fontSize: isWide ? 13 : 12, color: 'var(--muted)', marginTop: 2, opacity: 0.85 }}>
                     {kpi.basis}
                   </div>
                 )}
@@ -1123,13 +1189,16 @@ export default function Dashboard() {
         })}
       </div>
 
+      </>)}
+
+      {!isPeople && (<>
       {/* ── Downtime Alarm Banner — เครื่องจักรหยุด กระพริบเตือนทั้งแถบ ── */}
       {dtAlarmList.length > 0 && (
         <motion.div {...stagger(6)} className="dt-alarm-banner"
           style={{ border: '1px solid rgba(239,68,68,0.45)', borderRadius: 12, padding: isMobile ? '12px 14px' : '14px 18px', marginBottom: 24 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-            <span className="dt-alarm-icon" style={{ fontSize: 20 }}>🚨</span>
-            <span style={{ fontSize: 16, fontWeight: 800, color: '#ef4444', fontFamily: 'var(--font-display)' }}>
+            <span className="dt-alarm-icon" style={{ fontSize: T(20, 30) }}>🚨</span>
+            <span style={{ fontSize: T(16, 26), fontWeight: 800, color: '#ef4444', fontFamily: 'var(--font-display)' }}>
               เครื่องจักร Downtime {dtAlarmList.length} รายการ
             </span>
           </div>
@@ -1141,11 +1210,11 @@ export default function Dashboard() {
                   display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', borderRadius: 8,
                   background: 'rgba(0,0,0,0.25)', border: '1px solid rgba(239,68,68,0.4)',
                 }}>
-                  <span style={{ fontSize: 14, fontWeight: 800, color: '#fca5a5' }}>⚙️ {d.machine_no || d.line_name}</span>
-                  <span style={{ fontSize: 13, color: 'var(--text2)' }}>{d.line_name}</span>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: '#ef4444' }}>{d.dr_downtime_types?.name_th || 'Downtime'}</span>
+                  <span style={{ fontSize: T(14, 22), fontWeight: 800, color: '#fca5a5' }}>⚙️ {d.machine_no || d.line_name}</span>
+                  <span style={{ fontSize: T(13, 20), color: 'var(--text2)' }}>{d.line_name}</span>
+                  <span style={{ fontSize: T(13, 20), fontWeight: 700, color: '#ef4444' }}>{d.dr_downtime_types?.name_th || 'Downtime'}</span>
                   {elapsed != null && (
-                    <span style={{ fontSize: 13, fontWeight: 800, color: '#fbbf24' }}>⏱ หยุดมาแล้ว {fmtDtElapsed(elapsed)}</span>
+                    <span style={{ fontSize: T(13, 20), fontWeight: 800, color: '#fbbf24' }}>⏱ หยุดมาแล้ว {fmtDtElapsed(elapsed)}</span>
                   )}
                 </div>
               );
@@ -1154,6 +1223,9 @@ export default function Dashboard() {
         </motion.div>
       )}
 
+      </>)}
+
+      {isPeople && (<>
       {/* ── Line Status Grid ─────────────────────────────── */}
       {(() => {
         // ไลน์หลักที่มีไลน์ย่อย → รวมยอดคนของไลน์หลัก+ย่อยเข้าเป็นการ์ดเดียว (กันเลข "0/14" ซ้ำกันทุกไลน์ย่อย)
@@ -1170,6 +1242,7 @@ export default function Dashboard() {
               linePresent: ls.linePresent + childStats.reduce((s, c) => s + c.linePresent, 0),
               lineTotal:   ls.lineTotal   + childStats.reduce((s, c) => s + c.lineTotal, 0),
               lineAlerts:  ls.lineAlerts  + childStats.reduce((s, c) => s + c.lineAlerts, 0),
+              lineChecked: ls.lineChecked + childStats.reduce((s, c) => s + c.lineChecked, 0),
             };
             combined.rate = combined.lineTotal > 0 ? Math.round((combined.linePresent / combined.lineTotal) * 100) : 0;
             renderOrder.push({ ...combined, _isChild: false, _hasChildren: true, _children: childStats });
@@ -1184,14 +1257,19 @@ export default function Dashboard() {
         });
         return (
           <motion.div {...stagger(7)} style={{ marginBottom: 24 }}>
-            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>
+            <div style={{ fontSize: T(14, 22), fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>
               สถานะไลน์ผลิต
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: isUltra ? 'repeat(auto-fill, minmax(250px, 1fr))' : isWide ? 'repeat(auto-fill, minmax(230px, 1fr))' : 'repeat(auto-fill, minmax(200px, 1fr))', gap: isMobile ? 10 : 14 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: tv ? 'repeat(auto-fill, minmax(360px, 1fr))' : isUltra ? 'repeat(auto-fill, minmax(250px, 1fr))' : isWide ? 'repeat(auto-fill, minmax(230px, 1fr))' : 'repeat(auto-fill, minmax(200px, 1fr))', gap: isMobile ? 10 : 14 }}>
               {renderOrder.flatMap((line, i) => {
-                const healthy = line.rate >= 80 && line.lineAlerts === 0;
-                const warn    = line.lineAlerts > 0 || (line.rate > 0 && line.rate < 80);
-                const color   = healthy ? '#22c55e' : warn ? '#f59e0b' : '#555';
+                /* สี = อัตรามาทำงานเทียบเกณฑ์เดียวกับการ์ดบนสุด เท่านั้น · 4M มีป้ายของมันเอง (มุมขวาบน) ห้ามปนสี
+                   ไม่มีกำลังคนมาตรฐาน / ยังไม่มีใครเช็คชื่อ = เทา (ตัดสินไม่ได้ — ห้ามขึ้น 0% เหมือนไม่มีใครมา) */
+                const judgeable = line.lineTotal > 0 && line.lineChecked > 0;
+                const color   = statusColor(judgeable ? attendTone(line.rate) : 'none');
+                const over    = line.linePresent - line.lineTotal;
+                const attendText = line.lineTotal === 0 ? 'ไม่ได้ตั้งกำลังคนมาตรฐาน'
+                  : line.lineChecked === 0 ? 'ยังไม่มีใครเช็คชื่อ'
+                  : `มาทำงาน ${Math.min(line.rate, 100)}%${over > 0 ? ` · เกินมาตรฐาน ${over} คน` : ''}`;
                 const isExpanded = line._hasChildren && expandedLines.has(line.name);
                 // downtime alarm ของไลน์นี้ + ไลน์ย่อยที่ถูกรวมเข้าการ์ดเดียวกัน
                 const cardNames = [line.name, ...(line._children?.map(c => c.name) || [])];
@@ -1199,7 +1277,7 @@ export default function Dashboard() {
                 // ป้าย 4M: แดงเมื่อยังมีรายการรออนุมัติ · เหลืองเมื่ออนุมัติครบแล้ว (เป็นแค่ประวัติวันนี้)
                 const cardFMPending = fourMLogs.some(f => cardNames.includes(f.line_name) && f.status !== 'approved' && f.status !== 'rejected');
                 const card = (
-                  <motion.div key={line.id} {...stagger(8 + i)} style={{ height: '100%' }}>
+                  <motion.div key={line.id} data-tv-item {...stagger(8 + i)} style={{ height: '100%' }}>
                     <div
                       style={{
                         background: 'var(--card)',
@@ -1215,7 +1293,7 @@ export default function Dashboard() {
                         <div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                             {line._hasChildren && <span style={{ fontSize: 17 }}>📂</span>}
-                            <div style={{ fontSize: isWide ? 19 : 17, fontWeight: 700, color: 'var(--text)', lineHeight: 1.25 }}>{line.name}</div>
+                            <div style={{ fontSize: T(isWide ? 19 : 17, 26), fontWeight: 700, color: 'var(--text)', lineHeight: 1.25 }}>{line.name}</div>
                           </div>
                           {line.section && (
                             <div style={{ fontSize: isWide ? 14 : 13, color: '#4d9fff', marginTop: 2, fontWeight: 600 }}>
@@ -1247,18 +1325,18 @@ export default function Dashboard() {
                         </div>
                       </div>
                       <div style={{ marginTop: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                        <span style={{ fontSize: isWide ? 42 : 34, fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
+                        <span style={{ fontSize: T(isWide ? 42 : 34, 60), fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
                           {line.linePresent}
                         </span>
                         <span style={{ fontSize: isWide ? 17 : 15, color: 'var(--muted)' }}>/ {line.lineTotal} คน{line._hasChildren && ' (รวมย่อย)'}</span>
                       </div>
                       <MiniBar value={line.linePresent} max={line.lineTotal} color={color} />
                       <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
-                        <span style={{ fontSize: isWide ? 15 : 14, fontWeight: 700, color }}>
-                          {line.lineTotal === 0 ? 'ไม่มีข้อมูล' : `${line.rate}% Attendance ${healthy ? '· ✓ Normal' : line.lineAlerts > 0 ? '· ⚠ Risk' : ''}`}
+                        <span style={{ fontSize: T(isWide ? 15 : 14, 21), fontWeight: 700, color }}>
+                          {attendText}
                         </span>
                         {line._hasChildren && (
-                          <button onClick={() => toggleExpand(line.name)}
+                          <button className="tv-hide" onClick={() => toggleExpand(line.name)}
                             style={{
                               fontSize: 13, fontWeight: 800, color: 'var(--accent)', whiteSpace: 'nowrap',
                               display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer',
@@ -1280,7 +1358,7 @@ export default function Dashboard() {
                   .map(cs => ({ cs, pl: placementForLine(cs.name) }))
                   .filter(({ cs, pl }) => pl.people > 0 || (dtAlarmByLine[cs.name] || []).length > 0 || cs.lineAlerts > 0);
                 const nested = (
-                  <motion.div key={`${line.id}-children`} {...stagger(8 + i)} style={{ gridColumn: '1 / -1' }}>
+                  <motion.div key={`${line.id}-children`} data-tv-item {...stagger(8 + i)} style={{ gridColumn: '1 / -1' }}>
                     <div style={{
                       background: 'var(--bg2)',
                       border: '1px dashed var(--border2)',
@@ -1356,13 +1434,16 @@ export default function Dashboard() {
         );
       })()}
 
+      </>)}
+
+      {!isPeople && (<>
       {/* ── Heijunka Timeline Board ───────────────────── */}
       {visibleProdStatus.length > 0 && (() => {
         const HOURS   = [8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,0,1,2,3,4,5,6,7];
-        const LEFT_W  = isMobile ? 120 : 175; // ป้ายพาร์ทใหญ่ (รูป 44px + ชื่อ 2 บรรทัด) — มือถือแคบลง + บอร์ดเลื่อนแนวนอน
+        const LEFT_W  = tv ? 300 : isMobile ? 120 : 175; // ป้ายพาร์ทใหญ่ (รูป 44px + ชื่อ 2 บรรทัด) — มือถือแคบลง + บอร์ดเลื่อนแนวนอน
         const tlW = Math.max(0, boardW - LEFT_W);   // ความกว้างแถบเวลาจริง (px) — วัดจากบอร์ด
         const CARD_MIN_PX = 24;                     // ความกว้างขั้นต่ำของใบงาน (จะถูกคลิปด้วยช่องว่างถึงใบถัดไป)
-        const CARD_TEXT_MIN_PX = 46;                // แคบกว่านี้ = ไม่พิมพ์ตัวหนังสือในใบ (เหลือแค่เศษอักษรอ่านไม่รู้เรื่อง)
+        const CARD_TEXT_MIN_PX = tv ? 72 : 46;                // แคบกว่านี้ = ไม่พิมพ์ตัวหนังสือในใบ (เหลือแค่เศษอักษรอ่านไม่รู้เรื่อง)
         const nowMs   = now.getTime();
 
         const wd = visibleProdStatus[0]?.work_date || boardDate;
@@ -1423,12 +1504,12 @@ export default function Dashboard() {
         return (
           <motion.div {...stagger(8)} style={{ marginBottom: 24 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
-              <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+              <div style={{ fontSize: T(14, 22), fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
                 📊 Heijunka Board — ไทม์ไลน์การผลิต
-                {isHistorical && <span style={{ marginLeft: 8, fontSize: 12, padding: '2px 8px', borderRadius: 10, background: 'rgba(168,85,247,0.15)', color: '#a855f7', letterSpacing: 0 }}>📅 ย้อนหลัง {boardDate}</span>}
+                {isHistorical && <span style={{ marginLeft: 8, fontSize: T(12, 17), padding: '2px 8px', borderRadius: 10, background: 'rgba(168,85,247,0.15)', color: '#a855f7', letterSpacing: 0 }}>📅 ย้อนหลัง {boardDate}</span>}
                 {isFutureDay && <span style={{ marginLeft: 8, fontSize: 12, padding: '2px 8px', borderRadius: 10, background: 'rgba(148,163,184,0.15)', color: 'var(--muted)', letterSpacing: 0 }}>📅 ล่วงหน้า {boardDate}</span>}
               </div>
-              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              <div className="tv-hide" style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                 <button onClick={() => shiftDate(-1)} style={dateBtn}>◀</button>
                 {/* width ต้องกำหนดเอง — index.css ตั้ง input width:100% ทั้งแอป ถ้าปล่อยไว้ช่องวันที่จะกินเต็มแถวจนปุ่มแตกบรรทัด */}
                 <input type="date" value={boardDate} max={todayStr} onChange={e => e.target.value && setBoardDate(e.target.value)}
@@ -1450,8 +1531,8 @@ export default function Dashboard() {
                 { c: '#ef4444', icon: '⛔', label: 'Downtime (แถบบนแถว)' },
               ].map(item => (
                 <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                  <span style={{ width: 16, height: 16, borderRadius: 3, background: `${item.c}28`, border: `1.5px solid ${item.c}cc`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, color: item.c, flexShrink: 0 }}>{item.icon}</span>
-                  <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600 }}>{item.label}</span>
+                  <span style={{ width: T(16, 24), height: T(16, 24), borderRadius: 3, background: `${item.c}28`, border: `1.5px solid ${item.c}cc`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: T(11, 16), fontWeight: 800, color: item.c, flexShrink: 0 }}>{item.icon}</span>
+                  <span style={{ fontSize: T(12, 18), color: 'var(--muted)', fontWeight: 600 }}>{item.label}</span>
                 </div>
               ))}
             </div>
@@ -1462,7 +1543,7 @@ export default function Dashboard() {
             {(() => {
               const lineNames = sortLineNames(Object.keys(byLine), lines);   // ลำดับมาตรฐาน (ส่วนงาน→ชื่อ) 2026-10-01
               const effSel = lineNames.includes(boardLineSel) ? boardLineSel : '';
-              if (lineNames.length <= 1 && !boardQuery) return null;
+              if (tv || (lineNames.length <= 1 && !boardQuery)) return null;   // 📺 จอประชุมไม่มีใครกดกรอง/ค้นหา
               const chip = (active) => ({
                 padding: '3px 11px', borderRadius: 20, cursor: 'pointer', fontSize: 12, fontWeight: 700,
                 border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
@@ -1490,46 +1571,9 @@ export default function Dashboard() {
               .map(([lineName, sessions]) => {
               const hasOpen = sessions.some(s => s.status === 'open');
 
-              // flatten ทุกออเดอร์ของทุก session ในไลน์ พร้อม timing + product key
-              const buildCards = (sessList) => {
-                const cards = [];
-                sessList.forEach(s => {
-                  const sessionCtSec = s.dr_products?.cycle_time_sec || 0;
-                  const sessionStartMs = s.created_at ? new Date(s.created_at).getTime() : null;
-                  // ใบที่ status = carry_over คือใบเดิมที่ถูกยกยอดไปต่อในกะถัดไปแล้ว (มีใบใหม่ status='open'
-                  // พร้อม carry_over_from_session_id ชี้กลับมา) — ถ้าแสดงทั้งสองใบจะเห็นเป็นกัมบังซ้ำกัน
-                  // ข้ามกะเช้า/กะดึก ทั้งที่เป็นงานเดียวกัน จึงตัดใบเดิม (carry_over) ออกจาก timeline
-                  const sorted = [...s.orders].filter(o => o.status !== 'carry_over').sort((a, b) => new Date(a.opened_at || 0) - new Date(b.opened_at || 0));
-                  let cumSec = 0;
-                  sorted.forEach(o => {
-                    // session.dr_products มาจาก product_id ที่อาจไม่ถูกตั้งค่า (กะนึงมีได้หลาย mat_no)
-                    // จึง fallback ไปหา cycle_time_sec ตรงจาก mat_no ของออเดอร์เอง
-                    const ctSec = ctByMatNo[o.mat_no] || sessionCtSec || 0;
-                    // ถ้ามี opened_at ใช้เวลาจริงเป็น start แทนการสะสมจาก session start
-                    const openedMs = o.opened_at ? new Date(o.opened_at).getTime() : null;
-                    const startSec = cumSec;
-                    cumSec += (o.qty || 0) * ctSec;
-                    let orderStartMs = openedMs || (sessionStartMs && ctSec > 0 ? sessionStartMs + startSec * 1000 : null);
-                    let orderEndMs   = orderStartMs && ctSec > 0 ? orderStartMs + (o.qty || 0) * ctSec * 1000 : null;
-                    if (orderStartMs && !orderEndMs) {
-                      // ไม่รู้ cycle time จริง ๆ — ให้แสดงเป็นแท่งบาง ๆ แทนการซ่อนไปเลย
-                      orderEndMs = orderStartMs + 5 * 60000;
-                    }
-                    const isDone    = o.status === 'confirmed';
-                    const isCarry   = o.status === 'carry_over';
-                    /* ⚠️ ตัด `is_backfill` เหมือน Management + heijunkaQueue (2026-09-16) — ใบเปิดย้อนหลัง
-                             คนกรอกเวลาเอง เวลาเปิดไม่ใช่เวลาเริ่มผลิตจริง ตัดสินดีเลย์จากมันไม่ได้ */
-                          const isDelayed = !isDone && !isCarry && !o.is_backfill && !!orderEndMs && nowMs > orderEndMs;
-                    const productKey = (nameByMatNo[o.mat_no] || s.dr_products?.name || '').trim().toUpperCase() || o.mat_no || 'unknown';
-                    const productLabel = nameByMatNo[o.mat_no] || s.dr_products?.name || o.mat_no || 'ไม่ทราบ P/N';
-                    const productImg = imgByMatNo[o.mat_no] || '';
-                    cards.push({ ...o, orderStartMs, orderEndMs, isDone, isCarry, isDelayed, productKey, productLabel, productImg, shift: s.shift, sessionOpen: s.status === 'open', line_name: s.line_name });
-                  });
-                });
-                return cards;
-              };
-
-              const allCards = buildCards(sessions);
+              // การ์ด = `buildBoardCards()` (utils/boardCards.js) ที่เดียว (2026-10-19) · หน้านี้เดาเวลาเริ่มจาก
+              // เวลาเปิดกะ + CT สะสม เมื่อใบไม่มี opened_at (`guessStartFromSession` — พฤติกรรมเดิมของบอร์ดนี้)
+              const allCards = buildBoardCards(sessions, { ctByMat: ctByMatNo, nameByMat: nameByMatNo, imgByMat: imgByMatNo, nowMs, guessStartFromSession: true });
 
               /* ── คิวการ์ดของทั้งกลุ่มไลน์ — คำนวณ "ครั้งเดียว" ตรงนี้ แล้วใช้ร่วมกันทั้งหัวการ์ดและบอร์ด ──
                  🔴 บั๊กที่แก้ (2026-09-16): เดิมหัวการ์ดนับดีเลย์ด้วยสูตรของตัวเอง (สะสม CT ระดับ session
@@ -1564,7 +1608,7 @@ export default function Dashboard() {
               });
 
               return (
-                <div key={lineName} style={{
+                <div key={lineName} data-tv-item style={{
                   marginBottom: 16,
                   background: 'var(--card)',
                   border: `1px solid ${totalDelayed > 0 ? 'rgba(239,68,68,0.45)' : hasOpen ? 'rgba(34,197,94,0.35)' : 'var(--border2)'}`,
@@ -1577,15 +1621,15 @@ export default function Dashboard() {
                     {/* 📱 ต้องมี flexWrap — ชิปสถานะ (ดีเลย์/แถบหลุดแผน/⬜ ไม่รู้) เป็นข้อความ nowrap
                         หดไม่ได้ ⇒ ที่ 390px หัวบอร์ดล้นกรอบ 11px (mobilesweep จับได้ 30/09) */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', minWidth: 0 }}>
-                      <span style={{ fontSize: 17, fontWeight: 800, color: 'var(--text)' }}>{lineName}</span>
+                      <span style={{ fontSize: T(17, 26), fontWeight: 800, color: 'var(--text)' }}>{lineName}</span>
                       {/* ⚠️ ชิป "ดีเลย์ N ใบ" ถอดออก 30/09 — เลขเดียวกันอยู่ในสรุปวันแล้ว ("ยังค้าง N")
                           หัวบอร์ดมี 4 บรรทัดที่พูดเรื่องเดียวกันคือต้นเหตุที่คนเลิกอ่าน
                           · `totalDelayed` ยังใช้คุมสีขอบ/เงาการ์ดเหมือนเดิม */}
                       {/* 📋 ขนาดของการหลุดแผน (นาที + ชิ้น + คาดจบ) — "กี่ใบ" อย่างเดียวตอบหน้างานไม่ได้ */}
-                      <PlanSlipBar st={boardPlan} fmtMs={fmtMs} size={12} />
+                      <PlanSlipBar st={boardPlan} fmtMs={fmtMs} size={T(12, 18)} />
                       {/* 🔗 สรุปวัน + ต้นเหตุ/ผู้ถูกพาล (ทีมปั๊ม) — วางเต็มบรรทัดของตัวเอง */}
                       <div style={{ flexBasis: '100%', minWidth: 0 }}>
-                        <DelayBlameBar day={dayDelay} chains={blameChain} />
+                        <DelayBlameBar day={dayDelay} chains={blameChain} size={T(12, 18)} />
                       </div>
                       {/* ⬜ นาทีที่ยังไม่มีคำอธิบาย รวมทั้งกลุ่มไลน์ — "ต้อง recover กี่นาที" ตอบด้วยเลขนี้
                           ⚠️ ตั้งใจไม่ทำเป็นไฟแดง: ค่ากลางทั้งโรงงานอยู่ที่ ~20% ของกะ ถ้าตีแดงคือแดงทุกไลน์
@@ -1599,7 +1643,7 @@ export default function Dashboard() {
                         const shaky = parts.some(p => p.state !== 'ok');
                         return (
                           <span title={`เวลาที่เดินได้แต่ยังไม่มีคำอธิบาย — หักงานที่ทำได้และ downtime ที่บันทึกแล้วออกหมดแล้ว${shaky ? ' · บางกะข้อมูลยังไม่ครบ ดูรายละเอียดที่การ์ดกะด้านล่าง' : ''}`}
-                            style={{ fontSize: 12, padding: '2px 8px', borderRadius: 20, fontWeight: 700, background: 'rgba(156,163,175,0.15)', color: 'var(--text2)' }}>
+                            style={{ fontSize: T(12, 18), padding: '2px 8px', borderRadius: 20, fontWeight: 700, background: 'rgba(156,163,175,0.15)', color: 'var(--text2)' }}>
                             ⬜ ไม่รู้ {unknown} น. ({Math.round((unknown / cap) * 100)}%){shaky ? ' ⚠️' : ''}
                           </span>
                         );
@@ -1616,7 +1660,7 @@ export default function Dashboard() {
                           const list = [...byChild[ln]].sort((a, b) => (a.shift === b.shift ? 0 : a.shift === 'day' ? -1 : 1));
                           const anyOpen = list.some(s => s.status === 'open');
                           return (
-                            <span key={ln} style={{ fontSize: 12, padding: '2px 8px', borderRadius: 20, fontWeight: 700,
+                            <span key={ln} style={{ fontSize: T(12, 18), padding: '2px 8px', borderRadius: 20, fontWeight: 700,
                               background: anyOpen ? 'rgba(34,197,94,0.15)' : 'rgba(128,128,128,0.12)',
                               color: anyOpen ? '#22c55e' : '#888' }}>
                               {multi && <span style={{ fontWeight: 800 }}>{ln} · </span>}
@@ -1687,7 +1731,10 @@ export default function Dashboard() {
                     /* ⚠️ ยุบ "การแสดงผล" เท่านั้น — ห้ามกรองก่อนคำนวณคิว/ตำแหน่งการ์ด
                        (ตำแหน่งใบและเวลาคาดเสร็จผูกกับคิวทั้งไลน์ ตัดใบออกก่อน = เวลาเพี้ยนทั้งแถว) */
                     const manualRows = qRows.filter(isManualRow);
-                    const visRows = showManualRows ? qRows : qRows.filter(r => !isManualRow(r));
+                    /* 📺 จอ TV กดกางไม่ได้ (20/10 user "ทำไมไม่เห็นกัมบังของแต่ละพาร์ท" — ไลน์ HYDROFORM เป็นใบเปิดเองทั้งไลน์
+                       ⇒ ยุบหมดเหลือแถบ ▶ ที่ไม่มีใครกด) ⇒ บนจอ TV กางเสมอ · UI §6.33 */
+                    const manualOpen = showManualRows || tv;
+                    const visRows = manualOpen ? qRows : qRows.filter(r => !isManualRow(r));
 
 
 
@@ -1767,7 +1814,7 @@ export default function Dashboard() {
                                   {/* แคบเกินกว่าจะพิมพ์ชื่อ = ไม่พิมพ์ (เดิมหมุนตั้ง 90° แล้วโดนตัดกลางคำ อ่านไม่ออก
                                       + ไปทับใบงานที่คร่อมช่วงพัก) — แถบลายเฉียงยังบอกว่าเป็นช่วงพัก ชี้เมาส์เห็นชื่อ */}
                                   {tlW > 0 && widthPct * tlW / 100 >= 52 && (
-                                    <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', whiteSpace: 'nowrap', marginBottom: 1 }}>
+                                    <span style={{ fontSize: T(11, 17), fontWeight: 700, color: 'var(--muted)', whiteSpace: 'nowrap', marginBottom: 1 }}>
                                       🚫{p.name_th || p.name_en}
                                     </span>
                                   )}
@@ -1858,10 +1905,10 @@ export default function Dashboard() {
                               {(tlW <= 0 || widthPct * tlW / 100 >= CARD_TEXT_MIN_PX) && (
                               <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '0 3px', overflow: 'hidden' }}>
                                 {/* fill เข้มของใบ manual ทำสีเดิมจม — เกินครึ่งสลับตัวหนังสือเป็นขาว */}
-                                <div style={{ fontSize: 11, fontWeight: 800, color: o.is_manual && !o.isDone && pctBlock >= 45 ? '#fff' : statusColor, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                <div style={{ fontSize: T(11, 16), fontWeight: 800, color: o.is_manual && !o.isDone && pctBlock >= 45 ? '#fff' : statusColor, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                   {icon} {o.prod_no || (oi + 1)}
                                 </div>
-                                <div style={{ fontSize: 11, color: o.is_manual && !o.isDone && pctBlock >= 45 ? 'rgba(255,255,255,0.85)' : 'var(--muted)', lineHeight: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                <div style={{ fontSize: T(11, 16), color: o.is_manual && !o.isDone && pctBlock >= 45 ? 'rgba(255,255,255,0.85)' : 'var(--muted)', lineHeight: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                   {/* ใบ manual ที่ยังเปิด: โชว์ยอดสะสม/เป้า (พนักงานอัพเดททุกเบรค) — ใบสแกน/ปิดแล้ว: จำนวนตามเดิม */}
                                   {o.is_manual && !o.isDone ? `${o.qty_actual ?? 0}/${o.qty_target ?? o.qty}` : o.qty}ชิ้น
                                   {isOverCap && <span style={{ color: '#ef4444', fontWeight: 800 }}> 🔴ล้น+{(overMs / 3600000).toFixed(1)}ชม.</span>}
@@ -2058,7 +2105,7 @@ export default function Dashboard() {
 
                     const plannerStrip = plannerChips.length > 0 && (
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '6px 10px', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)' }}>
-                        <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--muted)', alignSelf: 'center' }}>🧠 PLANNER</span>
+                        <span style={{ fontSize: T(11, 17), fontWeight: 800, color: 'var(--muted)', alignSelf: 'center' }}>🧠 PLANNER</span>
                         {plannerChips.map((c, i) => (
                           <span key={i} style={{ fontSize: 12, fontWeight: 700, padding: '3px 9px', borderRadius: 10, background: 'var(--card)', color: c.color, border: `1px solid ${c.color}` }}>{/* สีจาก token ธีม — เดิม hex สว่าง+พื้นโปร่ง ธีมสว่างมองไม่เห็น (02/10) */}
                             {c.text}
@@ -2076,7 +2123,7 @@ export default function Dashboard() {
                         {/* พาร์ทละ 1 บล็อก — ป้าย/รูปใหญ่อันเดียวครอบ 2 แถบเวลา (☀️ 08–20 บน / 🌙 20–08 ล่าง)
                             หัวชั่วโมงแสดงเวลาคู่บน-ล่างในคอลัมน์เดียวกัน (โครงเดียวกับบอร์ดหน้าจัดการไลน์) */}
                         <div style={{ display: 'flex', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)', position: 'relative' }}>
-                          <div style={{ width: LEFT_W, flexShrink: 0, borderRight: '1px solid var(--border2)', padding: '4px 8px', fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1, ...(isMobile ? { position: 'sticky', left: 0, zIndex: 6, background: 'var(--bg2)' } : null) }}>
+                          <div style={{ width: LEFT_W, flexShrink: 0, borderRight: '1px solid var(--border2)', padding: '4px 8px', fontSize: T(11, 17), fontWeight: 700, color: tv ? 'var(--text2)' : 'var(--muted)', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1, ...(isMobile ? { position: 'sticky', left: 0, zIndex: 6, background: 'var(--bg2)' } : null) }}>
                             <span>☀️ กะเช้า{isMobile ? '' : ' (แถบบน)'}</span>
                             <span>🌙 กะดึก{isMobile ? '' : ' (แถบล่าง)'}</span>
                           </div>
@@ -2103,8 +2150,8 @@ export default function Dashboard() {
                                 borderRight: '1px solid var(--border)',
                                 background: (isNowAm || isNowPm) ? 'rgba(77,159,255,0.12)' : 'transparent',
                               }}>
-                                <div style={{ fontSize: 11, fontWeight: isNowAm ? 800 : 500, color: isNowAm ? '#4d9fff' : 'var(--text2)' }}>{String(h).padStart(2, '0')}:00</div>
-                                <div style={{ fontSize: 11, fontWeight: isNowPm ? 800 : 400, color: isNowPm ? '#4d9fff' : 'var(--muted)' }}>{String(hPm).padStart(2, '0')}:00</div>
+                                <div style={{ fontSize: T(11, 16), fontWeight: isNowAm ? 800 : 500, color: isNowAm ? '#4d9fff' : 'var(--text2)' }}>{String(h).padStart(2, '0')}:00</div>
+                                <div style={{ fontSize: T(11, 16), fontWeight: isNowPm ? 800 : 400, color: isNowPm ? '#4d9fff' : 'var(--muted)' }}>{String(hPm).padStart(2, '0')}:00</div>
                               </div>
                             );
                           })}
@@ -2117,7 +2164,7 @@ export default function Dashboard() {
                         )}
                         {/* ✍️ ใบเปิดเอง — ยุบไว้ แต่ **ห้ามซ่อนเงียบ** ต้องบอกจำนวน + กดกางได้เสมอ
                             (ยอดผลิต/pace บนหัวการ์ดยังนับใบพวกนี้ครบตามจริง — ยุบแค่การแสดงผลรายแถว) */}
-                        {manualRows.length > 0 && (
+                        {manualRows.length > 0 && !tv && (
                           <div onClick={() => setShowManualRows(v => !v)}
                             style={{
                               padding: '6px 12px', fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8,
@@ -2156,39 +2203,39 @@ export default function Dashboard() {
                             <div key={row.key} style={{ display: 'flex', borderTop: '1px solid var(--border2)', overflow: 'hidden' }}>
                               {/* Left summary — ป้ายเดียวครอบทั้ง 2 แถบเวลา */}
                               <div style={{ width: LEFT_W, flexShrink: 0, padding: '4px 8px', borderRight: '1px solid var(--border2)', display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 7, overflow: 'hidden', ...(isMobile ? { position: 'sticky', left: 0, zIndex: 6, background: 'var(--card)' } : null) }}>
-                                {row.img && <img loading="lazy" src={row.img} alt="" style={{ width: 44, height: 44, objectFit: 'cover', borderRadius: 6, flexShrink: 0 }} />}
+                                {row.img && <img loading="lazy" src={row.img} alt="" style={{ width: T(44, 56), height: T(44, 56), objectFit: 'cover', borderRadius: 6, flexShrink: 0 }} />}
                                 <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 2, minWidth: 0 }}>
-                                  <div style={{ fontSize: 11, color: 'var(--text2)', fontWeight: 700, lineHeight: 1.25, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', wordBreak: 'break-word' }}>
+                                  <div title={row.label} style={{ fontSize: T(11, 19), color: 'var(--text2)', fontWeight: 700, lineHeight: 1.25, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', wordBreak: 'break-word' }}>
                                     {row.label}
                                     {/* บอร์ดรวมหลาย sub-line — ป้ายบอกว่าแถวนี้ของไลน์ไหน (product เดียวกันคนละไลน์ = คนละแถว) */}
                                     {multiSubLine && row.line && (
-                                      <span style={{ marginLeft: 4, fontSize: 11, fontWeight: 800, color: '#4d9fff', background: 'rgba(77,159,255,0.14)', border: '1px solid rgba(77,159,255,0.4)', borderRadius: 5, padding: '0 5px', whiteSpace: 'nowrap' }}>{row.line}</span>
+                                      <span style={{ marginLeft: 4, fontSize: T(11, 17), fontWeight: 800, color: '#4d9fff', background: 'rgba(77,159,255,0.14)', border: '1px solid rgba(77,159,255,0.4)', borderRadius: 5, padding: '0 5px', whiteSpace: 'nowrap' }}>{row.line}</span>
                                     )}
                                   </div>
                                   <div style={{ display: 'flex', alignItems: 'baseline', gap: 3, flexWrap: 'wrap' }}>
-                                    <span style={{ fontSize: 15, fontWeight: 900, color: barColor, lineHeight: 1 }}>{rowActual}</span>
-                                    <span style={{ fontSize: 11, color: 'var(--muted)' }}>/{rowDemand} ชิ้น · {doneCount}/{row.cards.length}ใบ</span>
-                                    {delayed > 0 && <span style={{ fontSize: 11, color: '#ef4444', fontWeight: 700 }}>⚠️{delayed}ใบ</span>}
-                                    {isOpen && delayed === 0 && <span style={{ fontSize: 11, color: '#22c55e', fontWeight: 700 }}>● Live</span>}
+                                    <span style={{ fontSize: T(15, 26), fontWeight: 900, color: barColor, lineHeight: 1 }}>{rowActual}</span>
+                                    <span style={{ fontSize: T(11, 18), color: 'var(--muted)' }}>/{rowDemand} ชิ้น · {doneCount}/{row.cards.length}ใบ</span>
+                                    {delayed > 0 && <span style={{ fontSize: T(11, 18), color: '#ef4444', fontWeight: 700 }}>⚠️{delayed}ใบ</span>}
+                                    {isOpen && delayed === 0 && <span style={{ fontSize: T(11, 18), color: '#22c55e', fontWeight: 700 }}>● Live</span>}
                                   </div>
                                   {/* 📋 แถบหลุดแผนของ "แถวนี้" (พาร์ท/ไลน์นี้) — เวลา + ยอด ในบรรทัดเดียว */}
                                   <div style={{ display: 'flex', gap: 5, minWidth: 0, overflow: 'hidden' }}>
                                     {/* 📱 มือถือ: คอลัมน์ซ้ายแคบ ~55px ⇒ ข้อความถูกตัดเหลือ "ช้า 23:0…" ซึ่ง**อ่านผิดได้**
                                     (23:0 = 23 นาที?) ⇒ ไม่วาดเลย ให้อ่านจากแถบหัวบอร์ดที่เต็มประโยคแทน
                                     — เศษตัวเลขที่อ่านผิดได้ แย่กว่าไม่มีตัวเลข */}
-                                {!isMobile && <PlanSlipBar st={rowPlan} fmtMs={fmtMs} oneLine compact />}
+                                {!isMobile && <PlanSlipBar st={rowPlan} fmtMs={fmtMs} oneLine compact size={T(11, 16)} />}
                                     {finOver && (
                                       <span title="งานที่เหลือล้นกรอบวันงาน (08:00 ของวันถัดไป) — ต้องยกยอดข้ามกะ/เพิ่มกำลังผลิต"
-                                        style={{ fontSize: 11, fontWeight: 800, color: '#ef4444' }}>🔴 ล้นวันงาน</span>
+                                        style={{ fontSize: T(11, 17), fontWeight: 800, color: '#ef4444' }}>🔴 ล้นวันงาน</span>
                                     )}
                                   </div>
                                 </div>
                               </div>
                               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
                                 {HALVES.map(half => (
-                                  <div key={half.key} style={{ height: 36, display: 'flex', position: 'relative', borderTop: half.key === 'pm' ? '1px dashed var(--border)' : 'none' }}>
+                                  <div key={half.key} style={{ height: T(36, 48), display: 'flex', position: 'relative', borderTop: half.key === 'pm' ? '1px dashed var(--border)' : 'none' }}>
                                     {renderTimeline(row.cards, half, `${half.key}-${ri}`)}
-                                    <span style={{ position: 'absolute', left: 3, bottom: 1, fontSize: 11, opacity: 0.55, zIndex: 2, pointerEvents: 'none' }}>{half.key === 'am' ? '☀️' : '🌙'}</span>
+                                    <span style={{ position: 'absolute', left: 3, bottom: 1, fontSize: T(11, 17), opacity: 0.55, zIndex: 2, pointerEvents: 'none' }}>{half.key === 'am' ? '☀️' : '🌙'}</span>
                                   </div>
                                 ))}
                               </div>
@@ -2218,13 +2265,13 @@ export default function Dashboard() {
                       return (
                         <div key={childName} style={{ flex: '1 1 220px', minWidth: 200, display: 'flex', flexDirection: 'column', gap: 8 }}>
                           {multi && (
-                            <div style={{ fontSize: 13, fontWeight: 800, color: '#f59e0b', borderBottom: '1px solid var(--border)', paddingBottom: 3 }}>
+                            <div style={{ fontSize: T(13, 20), fontWeight: 800, color: '#f59e0b', borderBottom: '1px solid var(--border)', paddingBottom: 3 }}>
                               🏭 {childName}
-                              {emptyCount > 0 && <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)' }}> · {emptyCount} กะไม่มีแผน</span>}
+                              {emptyCount > 0 && <span style={{ fontSize: T(11, 17), fontWeight: 600, color: 'var(--muted)' }}> · {emptyCount} กะไม่มีแผน</span>}
                             </div>
                           )}
                           {active.length === 0 && (
-                            <div style={{ fontSize: 13, color: 'var(--muted)' }}>ไม่มีแผนผลิต</div>
+                            <div style={{ fontSize: T(13, 20), color: 'var(--muted)' }}>ไม่มีแผนผลิต</div>
                           )}
                           {active.map(s => {
                       const pct      = s.demand > 0 ? Math.min((s.actual / s.demand) * 100, 100) : 0;
@@ -2238,24 +2285,24 @@ export default function Dashboard() {
                         <div key={s.id} style={{ minWidth: 180 }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
                             <div style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}>
-                              <span style={{ fontSize: 12, color: 'var(--muted)' }}>{s.shift === 'day' ? '☀️ กะเช้า' : '🌙 กะดึก'}</span>
-                              <span style={{ fontSize: 20, fontWeight: 900, color: barColor, lineHeight: 1 }}>{s.actual}</span>
-                              <span style={{ fontSize: 13, color: 'var(--muted)' }}>/ {s.demand} ชิ้น</span>
-                              <span style={{ fontSize: 12, color: 'var(--muted)' }}>{doneCount}/{s.orders.length} ใบ</span>
+                              <span style={{ fontSize: T(12, 18), color: 'var(--muted)' }}>{s.shift === 'day' ? '☀️ กะเช้า' : '🌙 กะดึก'}</span>
+                              <span style={{ fontSize: T(20, 30), fontWeight: 900, color: barColor, lineHeight: 1 }}>{s.actual}</span>
+                              <span style={{ fontSize: T(13, 19), color: 'var(--muted)' }}>/ {s.demand} ชิ้น</span>
+                              <span style={{ fontSize: T(12, 18), color: 'var(--muted)' }}>{doneCount}/{s.orders.length} ใบ</span>
                               {(() => {
                                 const prods = [...new Set(s.orders.map(o => nameByMatNo[o.mat_no] || o.mat_no).filter(Boolean))];
                                 if (!prods.length) return null;
                                 return (
-                                  <span title={prods.join(' · ')} style={{ fontSize: 11, fontWeight: 700, color: '#4d9fff', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  <span title={prods.join(' · ')} style={{ fontSize: T(11, 17), fontWeight: 700, color: '#4d9fff', maxWidth: T(130, 220), overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                     {prods[0]}{prods.length > 1 ? ` +${prods.length - 1}` : ''}
                                   </span>
                                 );
                               })()}
                             </div>
                             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                              {s.target > 0 && <span style={{ fontSize: 12, color: tpct >= 100 ? '#22c55e' : 'var(--muted)' }}>เป้า {tpct.toFixed(0)}%</span>}
-                              <span style={{ fontSize: 15, fontWeight: 800, color: barColor }}>{pct.toFixed(0)}%</span>
-                              {oee && <span style={{ fontSize: 15, fontWeight: 800, color: oeeColor }}>OEE {oee.oee != null ? `${(oee.oee * 100).toFixed(0)}%` : 'N/A'}</span>}
+                              {s.target > 0 && <span style={{ fontSize: T(12, 18), color: tpct >= 100 ? '#22c55e' : 'var(--muted)' }}>เป้า {tpct.toFixed(0)}%</span>}
+                              <span style={{ fontSize: T(15, 22), fontWeight: 800, color: barColor }}>{pct.toFixed(0)}%</span>
+                              {oee && <span style={{ fontSize: T(15, 22), fontWeight: 800, color: oeeColor }}>OEE {oee.oee != null ? `${(oee.oee * 100).toFixed(0)}%` : 'N/A'}</span>}
                             </div>
                           </div>
                           <div style={{ height: 5, borderRadius: 3, background: 'var(--border2)', overflow: 'hidden' }}>
@@ -2266,7 +2313,7 @@ export default function Dashboard() {
                               {[{ l: 'A', v: oee.A, t: 'Availability' }, { l: 'P', v: oee.P, t: 'Performance' }, { l: 'Q', v: oee.Q, t: 'Quality' }].map(k => {
                                 const c = k.v == null ? '#888' : k.v >= 0.85 ? '#22c55e' : k.v >= 0.65 ? '#f59e0b' : '#ef4444';
                                 return (
-                                  <span key={k.l} title={k.t} style={{ fontSize: 12, color: c, fontWeight: 700 }}>
+                                  <span key={k.l} title={k.t} style={{ fontSize: T(12, 18), color: c, fontWeight: 700 }}>
                                     {k.l} {k.v != null ? `${(k.v * 100).toFixed(0)}%` : 'N/A'}
                                   </span>
                                 );
@@ -2294,24 +2341,34 @@ export default function Dashboard() {
         );
       })()}
 
+      {/* จอชื่อ "ไทม์ไลน์" ห้ามว่างเงียบ — ไม่มีกะของวันนั้น = เขียนบอก */}
+      {visibleProdStatus.length === 0 && !loading && (
+        <div style={{ marginBottom: 24, padding: '18px 20px', borderRadius: 12, border: '1px dashed var(--border2)',
+          background: 'var(--card)', color: 'var(--muted)', fontSize: 15, fontWeight: 600 }}>
+          🗓️ ยังไม่มีไลน์ไหนเปิดกะของวันที่ {boardDate}{!passAll ? ' (ในขอบเขต/ส่วนงานที่เลือก)' : ''}
+        </div>
+      )}
+      </>)}
+
+      {isPeople && (<>
       {/* ── Bottom Grid ─────────────────────────────────── */}
       {/* floorBig (หัวหน้า/scope แคบ) → ผังไลน์ตัวเองเต็มความกว้าง, 4M feed ไปอยู่ล่าง · ภาพรวม → 2 คอลัมน์เหมือนเดิม */}
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile || floorBig ? '1fr' : isUltra ? 'minmax(0,3fr) minmax(0,1fr)' : 'minmax(0,2fr) minmax(0,1fr)', gap: isWide ? 20 : 16 }}>
+      <div data-tv-item style={{ display: 'grid', gridTemplateColumns: isMobile || floorBig ? '1fr' : isUltra ? 'minmax(0,3fr) minmax(0,1fr)' : 'minmax(0,2fr) minmax(0,1fr)', gap: isWide ? 20 : 16 }}>
 
         {/* Line Floor Maps */}
         <motion.div {...stagger(12)}>
           <div className="card" style={{ padding: 20, height: '100%' }}>
-            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)', fontFamily: 'var(--font-display)', marginBottom: 16 }}>
+            <div style={{ fontSize: T(15, 24), fontWeight: 700, color: 'var(--text)', fontFamily: 'var(--font-display)', marginBottom: 16 }}>
               🏭 Line Floor Maps
             </div>
             {visibleLayouts.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--muted)', fontSize: 15 }}>
+              <div style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--muted)', fontSize: T(15, 24) }}>
                 ยังไม่มีผัง — ไปตั้งค่าที่หน้า <strong>ตั้งค่าผังไลน์</strong>
               </div>
             ) : floorCards.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--muted)', fontSize: 15 }}>
+              <div style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--muted)', fontSize: T(15, 24) }}>
                 ยังไม่มีคนถูกจัดลงจุดงานในผังกะนี้ — จัดคนลงจุดงานที่หน้า <strong>จัดการไลน์ผลิต</strong>
-                <div style={{ fontSize: 12, marginTop: 6, opacity: 0.7 }}>(สรุปกำลังคนรวมดูได้ที่การ์ดสถานะไลน์ด้านบน)</div>
+                <div style={{ fontSize: T(12, 18), marginTop: 6, opacity: 0.7 }}>(สรุปกำลังคนรวมดูได้ที่การ์ดสถานะไลน์ด้านบน)</div>
               </div>
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : floorBig ? 'repeat(auto-fit, minmax(min(100%, 480px), 1fr))' : isUltra ? 'repeat(3, 1fr)' : '1fr 1fr', gap: isWide ? 14 : 12 }}>
@@ -2357,14 +2414,14 @@ export default function Dashboard() {
                       />
                       {/* Line label */}
                       <div style={{ padding: '8px 10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg3)' }}>
-                        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '60%' }}>
+                        <span style={{ fontSize: T(13, 20), fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '60%' }}>
                           {layout.line_name}
                         </span>
                         <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
-                          <span title="จำนวนคนที่เข้าประจำจุดงานบนผังนี้ (นับตามหมุด)" style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', background: 'var(--bg2)', padding: '2px 6px', borderRadius: 4 }}>👷 {presentPeople}</span>
+                          <span title="จำนวนคนที่เข้าประจำจุดงานบนผังนี้ (นับตามหมุด)" style={{ fontSize: T(12, 18), fontWeight: 700, color: 'var(--text2)', background: 'var(--bg2)', padding: '2px 6px', borderRadius: 4 }}>👷 {presentPeople}</span>
                           {totalStations > 0 && (
                             <span title="จุดงานที่มีคนเข้าประจำ / จุดงานทั้งหมดของผังนี้"
-                              style={{ fontSize: 12, fontWeight: 700, color: allStaffed ? '#22c55e' : '#f59e0b', background: allStaffed ? 'rgba(34,197,94,0.12)' : 'rgba(245,158,11,0.12)', padding: '2px 6px', borderRadius: 4 }}>
+                              style={{ fontSize: T(12, 18), fontWeight: 700, color: allStaffed ? '#22c55e' : '#f59e0b', background: allStaffed ? 'rgba(34,197,94,0.12)' : 'rgba(245,158,11,0.12)', padding: '2px 6px', borderRadius: 4 }}>
                               {allStaffed ? '✓' : '⚠'} {staffedStations}/{totalStations} จุด
                             </span>
                           )}
@@ -2381,16 +2438,16 @@ export default function Dashboard() {
         {/* 4M Activity Feed */}
         <motion.div {...stagger(13)}>
           <div className="card" style={{ padding: 20, height: '100%' }}>
-            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)', fontFamily: 'var(--font-display)', marginBottom: 16 }}>
+            <div style={{ fontSize: T(15, 24), fontWeight: 700, color: 'var(--text)', fontFamily: 'var(--font-display)', marginBottom: 16 }}>
               4M Activity Feed
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: isWide ? 600 : 420, overflowY: 'auto' }}>
               <AnimatePresence>
                 {visibleFourMLogs.length === 0 ? (
                   <div style={{ textAlign: 'center', padding: '48px 20px' }}>
-                    <div style={{ fontSize: 28, marginBottom: 8 }}>✅</div>
-                    <div style={{ fontSize: 15, color: 'var(--muted)' }}>ไม่มีการแจ้งเตือน 4M</div>
-                    <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 4, opacity: 0.6 }}>สถานะปกติ</div>
+                    <div style={{ fontSize: T(28, 40), marginBottom: 8 }}>✅</div>
+                    <div style={{ fontSize: T(15, 24), color: 'var(--muted)' }}>ไม่มีการแจ้งเตือน 4M</div>
+                    <div style={{ fontSize: T(13, 20), color: 'var(--muted)', marginTop: 4, opacity: 0.6 }}>สถานะปกติ</div>
                   </div>
                 ) : visibleFourMLogs.map((log, i) => {
                   const meta = getCatMeta(log.category);
@@ -2402,17 +2459,17 @@ export default function Dashboard() {
                         border: `1px solid ${meta.color}22`,
                         display: 'flex', gap: 10, alignItems: 'flex-start',
                       }}>
-                        <div style={{ fontSize: 18, flexShrink: 0, marginTop: 1 }}>{meta.icon}</div>
+                        <div style={{ fontSize: T(18, 26), flexShrink: 0, marginTop: 1 }}>{meta.icon}</div>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6, flexWrap: 'wrap' }}>
-                            <span style={{ fontSize: 13, fontWeight: 700, color: meta.color }}>{log.category}</span>
-                            <span style={{ fontSize: 12, color: 'var(--muted)', flexShrink: 0 }}>{log.line_name}</span>
+                            <span style={{ fontSize: T(13, 20), fontWeight: 700, color: meta.color }}>{log.category}</span>
+                            <span style={{ fontSize: T(12, 18), color: 'var(--muted)', flexShrink: 0 }}>{log.line_name}</span>
                           </div>
-                          <div style={{ fontSize: 14, color: 'var(--text)', marginTop: 3, lineHeight: 1.4 }}>
+                          <div style={{ fontSize: T(14, 20), color: 'var(--text)', marginTop: 3, lineHeight: 1.4 }}>
                             {log.description}
                           </div>
                           {log.created_at && (
-                            <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
+                            <div style={{ fontSize: T(12, 18), color: 'var(--muted)', marginTop: 4 }}>
                               {new Date(log.created_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
                             </div>
                           )}
@@ -2426,6 +2483,10 @@ export default function Dashboard() {
           </div>
         </motion.div>
       </div>
+
+      </>)}
+      </div>
+      <TvPagerBar pager={tvPager} onScrollMode={() => setScrollMode(true)} />
 
       {/* ── Andon Alarm Panel — เจาะรายละเอียดว่า alarm ของไลน์มาจากอะไร ── */}
       {andonLine && (() => {
@@ -2448,7 +2509,8 @@ export default function Dashboard() {
               background: 'var(--card)', borderRadius: 16, padding: '20px 24px',
               width: 'min(94vw, 720px)', maxHeight: '90vh', overflowY: 'auto',
               border: `2px solid ${LV.color}88`,
-              boxShadow: `0 20px 60px rgba(0,0,0,0.6), 0 0 30px ${LV.color}40`,
+              /* 🌑 เงาโมดัลมาจาก token (ธีมมืด = none) · เหลือเฉพาะ glow สีที่เป็น "สัญญาณ" ของระดับ Andon */
+              boxShadow: `var(--shadow-lg), 0 0 30px ${LV.color}40`,
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>

@@ -85,16 +85,20 @@ export function providerReaches(providerKey, scopeKind) {
    ⚠️ ตาราง `kpi_base_inputs.var_key` **ไม่มี check constraint โดยตั้งใจ** — เพิ่มตัวแปรใหม่
       แก้ที่ลิสต์นี้พอ ไม่ต้องทำ migration (กติกาเดียวกับ `meeting_action_items.kpi_key`) */
 export const KPI_BASE_VARS = [
-  { key: 'sale_product',   label: 'ยอดขายจากสินค้า (Sale from product)', unit: 'บาท' },
-  { key: 'sale_total',     label: 'ยอดขายรวม (Total Sale)',              unit: 'บาท' },
-  { key: 'dl',             label: 'ค่าแรงทางตรง (Direct Labour)',         unit: 'บาท' },
-  { key: 'oh',             label: 'ค่าโสหุ้ย (Overhead)',                 unit: 'บาท' },
-  { key: 'raw_material',   label: 'ต้นทุนวัตถุดิบ (Raw Material)',        unit: 'บาท' },
-  { key: 'cogs',           label: 'ต้นทุนขาย COGS (ตัวหารของ DSI)',        unit: 'บาท' },
-  { key: 'inventory_baht', label: 'มูลค่าสต็อกสิ้นเดือน (ตาม storage location)', unit: 'บาท' },
-  { key: 'manpower',       label: 'กำลังคน (หัว)',                        unit: 'คน' },
-  { key: 'cost_100p',      label: '100P + CR (มูลค่าที่ลดได้)',           unit: 'บาท' },
-  { key: 'days_in_month',  label: 'ตัวหารวัน (ใบจริงใช้ 30 คงที่)',        unit: 'วัน' },
+  /* `level` (15/10 · user: "ให้คนคนนึงกรอกค่าที่ใช้ร่วมกันทั้งโรงงาน · DL ของแต่ละส่วนงานกรอกยอดเงินอย่างเดียว ระบบหารให้")
+       'plant' = ตัวเลขกลางของโรงงาน กรอกครั้งเดียวที่ขอบเขต ทั้งโรงงาน ทุกสูตรของทุกหน่วยอ่านตัวเดียวกัน (ยอดขาย · COGS · ตัวหารวัน)
+       'unit'  = ยอดเงินของหน่วยเอง กรอกที่ขอบเขตของหน่วย (DL · OH · วัตถุดิบ · สต็อก · กำลังคน · 100P) — ที่ขอบเขต ทั้งโรงงาน = ยอดรวมโรงงาน */
+  { key: 'sale_total',     label: 'ยอดขายรวม (Total Sales)',                 unit: 'บาท', level: 'plant' },
+  { key: 'sale_product',   label: 'ยอดขายจากสินค้า (Sales from product)',     unit: 'บาท', level: 'plant' },
+  { key: 'sale_trading',   label: 'ยอดขายสินค้าซื้อมาขายไป (Sales from trading goods)', unit: 'บาท', level: 'plant' },
+  { key: 'cogs',           label: 'ต้นทุนขาย COGS (ตัวหารของ DSI)',           unit: 'บาท', level: 'plant' },
+  { key: 'days_in_month',  label: 'ตัวหารวัน (ใบจริงใช้ 30 คงที่)',           unit: 'วัน',  level: 'plant' },
+  { key: 'dl',             label: 'ค่าแรงทางตรง (Direct Labour)',            unit: 'บาท', level: 'unit' },
+  { key: 'oh',             label: 'ค่าโสหุ้ย (Overhead)',                    unit: 'บาท', level: 'unit' },
+  { key: 'raw_material',   label: 'ต้นทุนวัตถุดิบ (Raw Material)',           unit: 'บาท', level: 'unit' },
+  { key: 'inventory_baht', label: 'มูลค่าสต็อกสิ้นเดือน (ตาม storage location)', unit: 'บาท', level: 'unit' },
+  { key: 'manpower',       label: 'กำลังคนเฉลี่ย (หัว)',                      unit: 'คน',  level: 'unit' },
+  { key: 'cost_100p',      label: '100P + CR (มูลค่าที่ลดได้)',              unit: 'บาท', level: 'unit' },
 ];
 
 export const baseVarOf = (key) => KPI_BASE_VARS.find(v => v.key === key) || null;
@@ -120,7 +124,9 @@ export const KPI_FORMULAS = [
   { key: 'rm_pct',        label: '%RM',         expr: 'raw_material ÷ sale_product × 100',        vars: ['raw_material', 'sale_product'],   unit: '%' },
   { key: 'p100_pct',      label: '100P %',      expr: 'cost_100p ÷ sale_product × 100',           vars: ['cost_100p', 'sale_product'],      unit: '%' },
   { key: 'inventory_day', label: 'DSI (วัน)',   expr: '(inventory_baht ÷ cogs) × days_in_month',      vars: ['inventory_baht', 'cogs', 'days_in_month'], unit: 'วัน' },
-  { key: 'sale_per_head', label: 'ยอดขาย/หัว (MB)', expr: 'sale_total ÷ manpower ÷ 1,000,000',    vars: ['sale_total', 'manpower'],         unit: 'MB' },
+  /* 19/10 ใบจริง "5.Manpower" แถว "Sale All / Head (All)" = **Accumulate Total Sale (ม.ค.→เดือนนี้) ÷ Total Head count (All) ของเดือนนั้น**
+     (เม.ย. 706.43 ÷ 392 = 1.802 · พ.ค. 887.45 ÷ 384 = 2.311 · ทั้งปี 2,118.70 ÷ 386 = 5.489 = เป้า) ⇒ ตัวตั้งสะสม YTD ไม่ใช่ยอดเดือนเดียว (`cum`) */
+  { key: 'sale_per_head', label: 'ยอดขาย/หัว (MB)', expr: 'Σ sale_total (ม.ค.→เดือนนี้) ÷ manpower ÷ 1,000,000', vars: ['sale_total', 'manpower'], cum: ['sale_total'], unit: 'MB' },
 ];
 
 export const formulaOf = (key) => KPI_FORMULAS.find(f => f.key === key) || null;
@@ -301,6 +307,38 @@ export function sharedValueDef(defs, d) {
     && !String(x.source || '').startsWith('auto:')
     && (d?.year == null || x.year == null || Number(x.year) === Number(d.year))
     && ((cid && x.catalog_id === cid) || normKpiName(x.kpi_catalog?.name || x.name) === nm)) || null;   // แถวเก่าไม่มี catalog_id = เทียบชื่อ (ชื่อคือตัวตนของทะเบียนอยู่แล้ว · unique index)
+}
+
+/** 5.3) นิยามระดับโรงงานที่ "ต้องมี" สำหรับ KPI แบบ plant (19/10 · เคสจริง: Customer Satisfaction ถูกตั้งเป็นค่าโรงงาน 30/09
+ *  โดยไม่มีนิยาม scope plant ⇒ ทุกหน่วยขึ้นว่าง + ค่าที่ PD4 กรอกไว้ 8 เดือนถูกซ่อน 3 สัปดาห์)
+ *  → รายการทะเบียน plant ที่ปีนี้ยังไม่มีนิยามโรงงาน พร้อมจำนวนค่าที่หน่วยกรอกไว้แล้วแต่ไม่แสดง (จอต้องเขียนบอก) */
+export function missingPlantValueDefs(defs = [], entries = {}) {
+  const out = new Map();
+  for (const d of defs || []) {
+    if (!d || d.is_active === false || valueScopeOf(d) !== 'plant' || isPlantDef(d)) continue;
+    if (sharedValueDef(defs, d)) continue;
+    const key = d.catalog_id || d.kpi_catalog?.id || normKpiName(d.kpi_catalog?.name || d.name);
+    const cur = out.get(key) || { key, catalogId: d.catalog_id || d.kpi_catalog?.id || null, name: d.kpi_catalog?.name || d.name, year: d.year ?? null, unitDefs: [], hiddenEntries: 0 };
+    cur.unitDefs.push(d);
+    cur.hiddenEntries += Object.values(entries?.[d.id] || {}).filter(v => v != null).length;
+    out.set(key, cur);
+  }
+  return [...out.values()];
+}
+
+/** payload สร้างนิยามระดับโรงงานจากนิยามของหน่วย (โคลนเป้า/หน่วย/ทิศทาง/ทะเบียน · ขอบเขต = ทั้งโรงงาน · ไม่ก๊อป entries) */
+export function plantDefPayloadFrom(u, { year = null, note = '' } = {}) {
+  if (!u) return null;
+  const pick = (k) => (u[k] === undefined ? null : u[k]);
+  return {
+    year: year ?? u.year ?? null, section: null, line_group: null, scope_kind: 'plant', scope_value: null,
+    category: pick('category') || 'internal', seq: Number(u.seq) || 0, name: u.kpi_catalog?.name || u.name,
+    formula_text: pick('formula_text'), scope_text: note || `ค่าโรงงาน — สร้างอัตโนมัติจากนิยามของ ${u.scope_value || u.section || 'หน่วยงาน'}`,
+    unit: pick('unit'), decimals: pick('decimals'), commitment: pick('commitment'), target: pick('target'), target_value: pick('target_value'),
+    direction: pick('direction'), commit_compare: pick('commit_compare'), commit_value: pick('commit_value'), target_compare: pick('target_compare'),
+    weight: null, source: 'manual', is_active: true, catalog_id: u.catalog_id || u.kpi_catalog?.id || null, std_item_id: pick('std_item_id'),
+    provider: u.provider === 'formula' ? 'formula' : 'manual', provider_config: u.provider === 'formula' ? (u.provider_config ?? null) : null,
+  };
 }
 
 /* ── 5.4) ช่องบนบอร์ด OBEYA (30/09 · user: "inventory balance กับ DSI คือเรื่องเดียวกัน · training กับ TS Academy คือสกอเดียวกัน") ──

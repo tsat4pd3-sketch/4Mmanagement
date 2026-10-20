@@ -6,6 +6,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { toast } from './Toast';
+import { npiBlockForPart } from '../utils/npiScope';
 import { notifyEvent } from '../utils/notifyEvent';
 import { fmtDate } from '../utils/dateFormat';
 import { ECI_STATUS, ECI_LEGS, eciMissingLinks, nextEciCode } from '../utils/npi';
@@ -17,7 +18,15 @@ import { DeleteButton } from './IconButton';
 const DWG_KIND = { '2d': '2D', '3d': '3D', spec: 'Spec', other: 'อื่นๆ' };
 const DWG_STATUS = { draft: { label: 'ร่าง', color: '#94a3b8' }, released: { label: 'ปล่อยแล้ว', color: '#22c55e' }, obsolete: { label: 'ยกเลิก', color: '#64748b' } };
 
-export default function NpiDrawingsEci({ project, parts, partId, onPickPart, drawings, ecis, tooling, canEdit, canApprove, fullName, today, onChanged }) {
+export default function NpiDrawingsEci({ project, parts, partId, onPickPart, drawings, ecis, tooling, canEdit, canApprove, fullName, today, onChanged, partWriteOf }) {
+  /* 🔐 ชั้นที่ 3 — แบบ/ECI ผูกพาร์ท ⇒ ตัดสินรายแถวจากไลน์ของพาร์ทนั้น (src/utils/npiScope.js)
+     ECI ที่ไม่ผูกพาร์ท (ระดับโปรเจค) = ตัดสินไม่ได้ ⇒ ไม่บล็อก (คงพฤติกรรมเดิม)
+     🔴 ย้ายแถวข้ามพาร์ทได้ (ช่อง "พาร์ท" ในโมดัล) ⇒ ต้องเช็คทั้งพาร์ทเดิมและพาร์ทที่เลือกใหม่ */
+  const rowBlocked = (ref, what) => {
+    const msg = npiBlockForPart(partWriteOf, parts, ref, what);
+    if (msg) { toast.info(msg); return true; }
+    return false;
+  };
   const [dwModal, setDwModal] = useState(null);
   const [eciModal, setEciModal] = useState(null);
   // 📜 ผู้ขอ ECI ที่เคยบันทึกไว้ (Main npi_eci) — ผู้ติดต่อฝั่งลูกค้าไม่มีใน profiles เลือกซ้ำได้ไม่ต้องพิมพ์ใหม่ (2026-09-07)
@@ -46,6 +55,8 @@ export default function NpiDrawingsEci({ project, parts, partId, onPickPart, dra
   const saveDrawing = async () => {
     const m = dwModal;
     if (!m.rev?.trim()) return toast.error('กรอก Rev');
+    if (rowBlocked({ part_id: m.part_id }, 'แบบของพาร์ทนี้')) return;
+    if (m.id && rowBlocked(drawings.find(d => d.id === m.id), 'แบบของพาร์ทนี้')) return;
     setSaving(true);
     let file_url = m.file_url || null, file_name = m.file_name || null;
     if (m._file) {
@@ -65,6 +76,7 @@ export default function NpiDrawingsEci({ project, parts, partId, onPickPart, dra
   };
   const releaseDrawing = async (dw) => {
     if (!canApprove) return toast.error('ปล่อยแบบต้องมีสิทธิ์ npi:approve');
+    if (rowBlocked(dw, 'แบบของพาร์ทนี้')) return;
     if (!window.confirm(`ปล่อยแบบ ${DWG_KIND[dw.kind]} Rev ${dw.rev} เป็น "ปัจจุบัน"? rev เดิมของชนิดนี้จะถูกตั้งเป็นยกเลิก`)) return;
     setSaving(true);
     // ปลดตัวเดิมก่อน (unique index บังคับ is_current ตัวเดียวต่อ (พาร์ท, ชนิด))
@@ -75,6 +87,7 @@ export default function NpiDrawingsEci({ project, parts, partId, onPickPart, dra
     toast.success(`ปล่อยแบบ Rev ${dw.rev} แล้ว`); onChanged();
   };
   const delDrawing = async (dw) => {
+    if (rowBlocked(dw, 'แบบของพาร์ทนี้')) return;
     if (!window.confirm(`ลบแบบ ${DWG_KIND[dw.kind]} Rev ${dw.rev}?`)) return;
     const { error } = await supabase.from('npi_drawing_revisions').delete().eq('id', dw.id);
     if (error) return toast.error(error.message);
@@ -95,6 +108,8 @@ export default function NpiDrawingsEci({ project, parts, partId, onPickPart, dra
     if (m.status === 'rejected' && !m.reject_reason?.trim()) return toast.error('ปฏิเสธต้องมีเหตุผล');
     const decided = ['approved', 'rejected', 'implemented'].includes(m.status);
     if (decided && m.status !== eciModal._orig_status && !canApprove) return toast.error('ตัดสิน ECI ต้องมีสิทธิ์ npi:approve');
+    if (rowBlocked({ part_id: m.part_id }, 'ECI ของพาร์ทนี้')) return;
+    if (m.id && rowBlocked(ecis.find(x => x.id === m.id), 'ECI ของพาร์ทนี้')) return;
     setSaving(true);
     const row = {
       eci_no: m.eci_no.trim(), part_id: m.part_id || null, source: m.source, title: m.title.trim(), description: m.description?.trim() || null,
@@ -121,6 +136,7 @@ export default function NpiDrawingsEci({ project, parts, partId, onPickPart, dra
     toast.success('บันทึก ECI แล้ว'); setEciModal(null); onChanged();
   };
   const delEci = async (e) => {
+    if (rowBlocked(e, 'ECI ของพาร์ทนี้')) return;
     if (!window.confirm(`ลบ ECI ${e.eci_no}?`)) return;
     const { error } = await supabase.from('npi_change_requests').delete().eq('id', e.id);
     if (error) return toast.error(error.message);

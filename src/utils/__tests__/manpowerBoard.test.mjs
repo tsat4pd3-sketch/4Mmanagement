@@ -287,14 +287,50 @@ test('แผน vs มาจริง: ที่นั่ง = การ์ด+�
   assert.equal(s.night.noPlan, true);
   assert.equal(s.unknown.registered, 1); assert.equal(s.unknown.gap, null);
 
+  /* 🔴 15/10 — ขาด 2 ชนิดต้องแยก: คนขาด (absentGap) vs ช่องว่างอัตรากำลัง (structGap) */
+  assert.equal(D.absentGap, 3, 'ลา 1 + ขาด 1 + ยังไม่เช็ค 1 + ถูกยืมออก 1 − ยืมเข้า 1');
+  assert.equal(D.structGap, 2, 'ช่องว่างล้วน ไม่ใช่คนขาด');
+  assert.equal(D.gap, D.absentGap + D.structGap, 'รวมกันต้องเท่ากับขาดทั้งหมด');
+
   const sum = M.summarizeStaffing([
     { date: '2026-10-01', depts: [{ key: 'd', name: 'D', shifts: s }] },
-    { date: '2026-10-02', depts: [{ key: 'd', name: 'D', shifts: { ...s, day: { ...s.day, gap: -1, onFloor: 8 } } }] },
+    { date: '2026-10-02', depts: [{ key: 'd', name: 'D', shifts: { ...s, day: { ...s.day, gap: -1, absentGap: -1, onFloor: 8 } } }] },
   ])[0];
   assert.equal(sum.shifts, 2); assert.equal(sum.notChecked, 2);
-  assert.equal(sum.shortShifts, 1); assert.equal(sum.overShifts, 1); assert.equal(sum.short, 5);
-  assert.deepEqual(sum.worst, { date: '2026-10-01', shift: 'day', gap: 5 });
-  assert.equal(sum.fill, 10 / 14);
+  assert.equal(sum.shortShifts, 1, 'กะที่ "ขาดคน" นับจาก absentGap เท่านั้น — ช่องว่างไม่ใช่วันนี้ขาดคน');
+  assert.equal(sum.overShifts, 1); assert.equal(sum.short, 5);
+  assert.equal(sum.absentShort, 3); assert.equal(sum.structShort, 4, 'ช่องว่าง 2 × 2 กะ');
+  assert.deepEqual(sum.worst, { date: '2026-10-01', shift: 'day', gap: 3 }, 'ขาดหนักสุด = คนขาด ไม่ใช่ช่องว่าง');
+  assert.equal(sum.fill, 10 / 10, 'มาจริง ÷ คนในทะเบียน (ไม่ใช่ ÷ ที่นั่ง)');
+});
+
+test('แผน vs มาจริง: ② กะที่ยืนยันไม่ได้ว่าไลน์เดิน = ไม่คิดช่องว่าง · ③ ช่องว่างห้ามเกิน std − คนที่มาจริง', () => {
+  const op = (id, attend) => ({ id, attend, log: attend === 'unchecked' ? null : { is_present: attend === 'present' } });
+  /* จำลองเคสจริงที่ user แจ้ง 15/10: จุดงาน 15 จุด แต่กำลังคนตามผัง (std) = 10 และมาจริง 8
+     ⇒ ช่องว่างดิบ 7 (จากจุดงาน) ต้องถูกตัดเหลือ 2 = std 10 − มาจริง 8 */
+  const dept = (slots, plan) => ({
+    plan,
+    cols: [{ team: 'A', shift: 'day', slots, slotSource: 'station', ops: Array.from({ length: 8 }, (_, i) => op(`p${i}`, 'present')) }],
+  });
+
+  const capped = M.staffingOfDept(dept(7, { day: 10, night: null }));
+  assert.equal(capped.day.emptyRaw, 7, 'ค่าดิบจากจุดงานต้องเก็บไว้ให้ตรวจสอบได้');
+  assert.equal(capped.day.structGap, 2, 'เพดาน = std − คนที่มาจริง');
+  assert.equal(capped.day.capped, 5, 'ส่วนที่ตัดต้องนับไว้บอกบนจอ');
+  assert.equal(capped.day.seats, 10, 'ที่นั่ง = คนในทะเบียน 8 + ช่องว่างหลังตัด 2');
+
+  const noStd = M.staffingOfDept(dept(7, { day: null, night: null }));
+  assert.equal(noStd.day.structGap, 7, 'ไม่รู้ std = ไม่ตัดเพดาน (ห้ามเดา)');
+  assert.equal(noStd.day.capped, 0);
+
+  const notRun = M.staffingOfDept(dept(7, { day: 10, night: null }), { ran: { day: false, night: false } });
+  assert.equal(notRun.day.structGap, null, 'ยืนยันไม่ได้ว่าไลน์เดิน = null ห้ามเป็น 0');
+  assert.equal(notRun.day.ranKnown, false);
+  assert.equal(notRun.day.seats, 8, 'ที่นั่งเหลือเท่าคนในทะเบียน');
+
+  const sum = M.summarizeStaffing([{ date: '2026-10-01', depts: [{ key: 'd', name: 'D', shifts: notRun }] }])[0];
+  assert.equal(sum.structUnknownShifts, 1, 'ต้องนับกะที่คิดช่องว่างไม่ได้ ไว้เขียนบนจอ');
+  assert.equal(sum.structShort, 0);
 });
 
 test('rosterOn: ตัดคนที่เริ่มงานหลังวันนั้น · ไม่มี start_date = นับ · ปี พ.ศ./ค่าอนาคต ไม่ใช้ตัด · เช็คชื่อแล้วชนะ', () => {
@@ -343,4 +379,168 @@ test('stationSkillGaps: นับเฉพาะคนมาที่ยืน�
   assert.deepEqual(r.gaps.map(g => [g.emp.id, g.fit.score, g.temp]), [['zero', 0, false], ['half', 50, true]]);
   assert.deepEqual(r.gaps[1].missing.map(m => m.skill_name), ['g']);
   assert.equal(r.noReqStations, 1); assert.equal(r.noReqPeople, 2, 'จุดไม่ตั้งทักษะ = ไม่รู้ ห้ามนับว่าผ่าน');
+});
+
+test('stationSkillGaps: ขาดเพราะรอหัวหน้าอนุมัติขั้น = onlyApproval (นับแยก)', () => {
+  const placed = [{ station: { id: 1 }, people: [{ emp: { id: 'a', name: 'a' }, attend: 'present', shift: 'day' }, { emp: { id: 'b', name: 'b' }, attend: 'present', shift: 'day' }] }];
+  const r = M.stationSkillGaps(placed, {
+    skillsByEmp: { a: [{ skill_name: 'w', score: 49, pending_level: 50 }], b: [{ skill_name: 'w', score: 20 }] },
+    reqsByStation: { 1: [{ skill_name: 'w', min_score: 50 }] },
+  });
+  assert.equal(r.gaps.length, 2); assert.equal(r.onlyApproval, 1);
+  assert.equal(r.gaps.find(g => g.emp.id === 'a').onlyApproval, true);
+});
+
+/* ── 🏃 คนวิ่งข้ามแผนก (employee_flex_units · 14/10 feedback user "ใช่ คนวิ่งข้ามแผนก") ──
+   กฎที่ห้าม regress:
+     · ไม่ส่ง flexUnits / ทะเบียนว่าง = พฤติกรรมเดิมเป๊ะ
+     · การ์ดโผล่บนบอร์ดแผนกที่ไปช่วย พร้อมบ้านจริง + cost center ของบ้าน
+     · 🔴 **ไม่นับเป็นกำลังคนของแผนกที่ไปช่วย** — ช่องว่าง/ในทะเบียน/มาวันนี้ ต้องไม่ขยับ
+     · คนไม่ active / ผูกหน่วยที่ตัวเองสังกัดอยู่แล้ว = ไม่วาดซ้ำ                       */
+test('คนวิ่งข้ามแผนก: ไม่ส่ง flexUnits = ผลเดิมทุกตัว', () => {
+  const base = M.buildManpowerBoard({ section: NODES[0], nodes: NODES, employees: EMPS, lines: LINES, maps: { byLine: { 10: 'A' }, byDept: {} } });
+  const same = M.buildManpowerBoard({ section: NODES[0], nodes: NODES, employees: EMPS, lines: LINES, maps: { byLine: { 10: 'A' }, byDept: {} }, flexUnits: [] });
+  assert.equal(JSON.stringify(base), JSON.stringify(same));
+  for (const d of base.depts) assert.deepEqual(d.flex, []);
+  assert.equal(base.totals.flex, 0);
+});
+
+test('คนวิ่งข้ามแผนก: การ์ดโผล่ที่แผนกปลายทาง + ชี้บ้านจริง/cost center · แต่กำลังคนไม่ขยับ', () => {
+  const nodes = NODES.map(n => (n.id === 'd1' ? { ...n, cost_center: '2140562100' } : n));
+  const args = { section: nodes[0], nodes, employees: EMPS, lines: LINES, maps: { byLine: { 10: 'A' }, byDept: {} } };
+  const before = M.buildManpowerBoard(args);
+  // a1 สังกัด l1 (ใต้ HYDROFORM) ไปช่วย APRON (d2) ประจำ
+  const after = M.buildManpowerBoard({ ...args, flexUnits: [{ employee_id: 'a1', org_node_id: 'd2', note: 'ช่วยกะเช้า' }] });
+
+  const apronB = before.depts.find(d => d.name === 'APRON');
+  const apronA = after.depts.find(d => d.name === 'APRON');
+  assert.deepEqual(apronA.flex.map(p => p.id), ['a1']);
+  assert.equal(apronA.flex[0].flexFrom.nodeName, 'HYDROFORM');
+  assert.equal(apronA.flex[0].flexFrom.costCenter, '2140562100');
+  assert.equal(apronA.flex[0].flexFrom.note, 'ช่วยกะเช้า');
+
+  // 🔴 กำลังคนของแผนกปลายทางห้ามขยับแม้แต่ช่องเดียว
+  assert.equal(apronA.opsTotal, apronB.opsTotal);
+  assert.equal(apronA.present, apronB.present);
+  assert.deepEqual(apronA.cols.map(c => c.slots), apronB.cols.map(c => c.slots));
+  assert.deepEqual(apronA.registered, apronB.registered);
+  // บ้านจริงยังนับเขาเหมือนเดิม
+  const hB = before.depts.find(d => d.name === 'HYDROFORM'), hA = after.depts.find(d => d.name === 'HYDROFORM');
+  assert.equal(hA.opsTotal, hB.opsTotal);
+  assert.deepEqual(hA.cols.map(c => c.slots), hB.cols.map(c => c.slots));
+  assert.deepEqual(hA.flex, []);
+  // ตัวนับระดับส่วนงาน: flex แยกช่อง ไม่ปนกับ ops
+  assert.equal(after.totals.flex, 1);
+  assert.equal(after.totals.ops, before.totals.ops);
+});
+
+test('คนวิ่งข้ามแผนก: ผูกกับโหนดลูก (กลุ่ม/ไลน์) ⇒ ขึ้นที่แผนกแม่ของโหนดนั้น', () => {
+  const after = M.buildManpowerBoard({ section: NODES[0], nodes: NODES, employees: EMPS, lines: LINES,
+    maps: { byLine: { 10: 'A' }, byDept: {} }, flexUnits: [{ employee_id: 'p1', org_node_id: 'l1' }] });
+  const h = after.depts.find(d => d.name === 'HYDROFORM');
+  assert.deepEqual(h.flex.map(p => p.id), ['p1']);
+});
+
+test('คนวิ่งข้ามแผนก: คนที่สังกัดแผนกนั้นอยู่แล้ว / คนไม่อยู่ในทะเบียน = ไม่วาด', () => {
+  const after = M.buildManpowerBoard({ section: NODES[0], nodes: NODES, employees: EMPS, lines: LINES,
+    maps: { byLine: { 10: 'A' }, byDept: {} },
+    flexUnits: [
+      { employee_id: 'a1', org_node_id: 'd1' },      // สังกัด HYDROFORM อยู่แล้ว
+      { employee_id: 'ghost', org_node_id: 'd1' },   // ไม่อยู่ในทะเบียน active
+      { employee_id: null, org_node_id: 'd1' },      // แถวเพี้ยน
+    ] });
+  assert.deepEqual(after.depts.find(d => d.name === 'HYDROFORM').flex, []);
+  assert.equal(after.totals.flex, 0);
+});
+
+test('คนวิ่งข้ามแผนก: แผนกที่เดิมไม่วาด (ไม่มีคน) แต่มีคนวิ่งมาช่วย = ต้องวาด ห้ามหาย', () => {
+  const after = M.buildManpowerBoard({ section: NODES[0], nodes: NODES, employees: EMPS, lines: LINES,
+    maps: { byLine: { 10: 'A' }, byDept: {} }, flexUnits: [{ employee_id: 'a1', org_node_id: 'd3' }] });
+  const empty = after.depts.find(d => d.name === 'EMPTY');
+  assert.ok(empty, 'แผนกที่มีแต่คนวิ่งมาช่วย ต้องโผล่บนบอร์ด');
+  assert.deepEqual(empty.flex.map(p => p.id), ['a1']);
+  assert.equal(empty.opsTotal, 0, 'แต่ยังนับกำลังคน = 0');
+  assert.equal(after.emptyDepts.includes('EMPTY'), false);
+});
+
+/* ── 🎖️ รักษาการ (employee_flex_units.kind='acting' · 20/10 คำสั่ง user) ───────────────
+   เคสจริง: ผจก.ฝ่ายสังกัด PD3 (cost center ของ PD3) **รักษาการ** ผจก. ของ PD4 + JIG MTN
+   กฎที่ห้าม regress:
+     · ขึ้น "หัวผัง" ของหน่วยที่ระบุ (รากบอร์ด → top · แผนก → heads ของแผนกนั้น)
+     · 🔴 **ไม่นับเป็นกำลังคน** — ในทะเบียน/มาวันนี้/ช่องว่าง ห้ามขยับแม้แต่ช่องเดียว
+     · 🔴 **ไม่ย้ายสังกัด ไม่แตะ cost center** — การ์ดต้องเขียนบ้านจริง + CC ของบ้านจริง
+     · แถวเก่าที่ไม่มีคอลัมน์ `kind` = `flex` เหมือนเดิม (ไม่กลายเป็นรักษาการเงียบๆ)        */
+test('รักษาการ: ขึ้นหัวผังของส่วนงาน พร้อมบ้านจริง + cost center · กำลังคนไม่ขยับ', () => {
+  const nodes = NODES.map(n => (n.id === 's' ? { ...n, cost_center: '2140462000' } : n));
+  const pd4 = nodes.find(n => n.id === 'x');
+  const args = { section: pd4, nodes, employees: EMPS, lines: LINES, maps: { byLine: {}, byDept: {} } };
+  const before = M.buildManpowerBoard(args);
+  assert.deepEqual(before.top.map(p => p.id), [], 'PD4 ยังไม่มีหัวผัง (ตั้งต้น)');
+
+  const after = M.buildManpowerBoard({ ...args,
+    flexUnits: [{ employee_id: 'mgr', org_node_id: 'x', kind: 'acting', note: 'รักษาการตั้งแต่ ต.ค.' }] });
+  assert.deepEqual(after.top.map(p => p.id), ['mgr']);
+  const card = after.top[0];
+  assert.equal(card.acting.nodeName, 'PD3', 'ต้องเขียนบ้านจริง ไม่ใช่หน่วยที่ไปรักษาการ');
+  assert.equal(card.acting.costCenter, '2140462000', 'cost center ยังเป็นของบ้านจริง');
+  assert.equal(card.acting.note, 'รักษาการตั้งแต่ ต.ค.');
+  // 🔴 ตัวเลขกำลังคนห้ามขยับ
+  assert.equal(after.totals.ops, before.totals.ops);
+  assert.equal(after.totals.present, before.totals.present);
+  assert.equal(after.totals.flex, before.totals.flex, 'รักษาการไม่ใช่ "คนวิ่งข้ามแผนก" — ห้ามนับรวมช่องนั้น');
+  assert.deepEqual(after.depts.map(d => d.opsTotal), before.depts.map(d => d.opsTotal));
+});
+
+test('รักษาการ: ผูกกับ "แผนก" ⇒ ขึ้นแถวหัวหน้าแผนกนั้น ไม่ใช่หัวผัง', () => {
+  const args = { section: NODES[0], nodes: NODES, employees: EMPS, lines: LINES, maps: { byLine: { 10: 'A' }, byDept: {} } };
+  const before = M.buildManpowerBoard(args);
+  const after = M.buildManpowerBoard({ ...args, flexUnits: [{ employee_id: 'dh', org_node_id: 'd2', kind: 'acting' }] });
+  const apronB = before.depts.find(d => d.name === 'APRON');
+  const apronA = after.depts.find(d => d.name === 'APRON');
+  assert.ok(apronA.heads.some(p => p.id === 'dh' && p.acting), 'ต้องขึ้นแถวหัวหน้าแผนก APRON พร้อมธง acting');
+  assert.deepEqual(after.top.map(p => p.id), before.top.map(p => p.id), 'ไม่ไปโผล่หัวผัง');
+  assert.deepEqual(apronA.flex, [], 'รักษาการไม่ใช่การ์ด 🏃 คนวิ่งข้ามแผนก');
+  assert.equal(apronA.opsTotal, apronB.opsTotal);
+  assert.deepEqual(apronA.cols.map(c => c.slots), apronB.cols.map(c => c.slots));
+  // บ้านจริงของ dh คือ HYDROFORM — ต้องยังอยู่แถวหัวหน้าแผนกเดิมด้วย (ไม่ย้ายออก)
+  assert.ok(after.depts.find(d => d.name === 'HYDROFORM').heads.some(p => p.id === 'dh' && !p.acting));
+});
+
+test('รักษาการ: แถวเก่าที่ไม่มี kind = คนวิ่งข้ามแผนกเหมือนเดิม (ห้ามกลายเป็นรักษาการเงียบๆ)', () => {
+  const args = { section: NODES[0], nodes: NODES, employees: EMPS, lines: LINES, maps: { byLine: { 10: 'A' }, byDept: {} } };
+  const legacy = M.buildManpowerBoard({ ...args, flexUnits: [{ employee_id: 'p1', org_node_id: 'd1' }] });
+  const explicit = M.buildManpowerBoard({ ...args, flexUnits: [{ employee_id: 'p1', org_node_id: 'd1', kind: 'flex' }] });
+  assert.equal(JSON.stringify(legacy), JSON.stringify(explicit));
+  const h = legacy.depts.find(d => d.name === 'HYDROFORM');
+  assert.deepEqual(h.flex.map(p => p.id), ['p1']);
+  assert.ok(!h.heads.some(p => p.acting));
+  assert.equal(M.flexKind({}), 'flex');
+  assert.equal(M.flexKind({ kind: 'เอ๊ะ' }), 'flex', 'ค่าที่ไม่รู้จัก = flex (fail-open ไม่ใช่ acting)');
+  assert.equal(M.flexKind({ kind: 'acting' }), 'acting');
+});
+
+test('รักษาการ: คนที่สังกัดหน่วยนั้นอยู่แล้ว = หัวหน้าตัวจริง ไม่ติดป้าย · ไม่วาดซ้ำ', () => {
+  const args = { section: NODES[0], nodes: NODES, employees: EMPS, lines: LINES, maps: { byLine: { 10: 'A' }, byDept: {} } };
+  const b = M.buildManpowerBoard({ ...args, flexUnits: [{ employee_id: 'mgr', org_node_id: 's', kind: 'acting' }] });
+  assert.equal(b.top.filter(p => p.id === 'mgr').length, 1, 'ห้ามวาดซ้ำ 2 ใบ');
+  assert.ok(!b.top.find(p => p.id === 'mgr').acting, 'สังกัดจริงอยู่แล้ว = ไม่ใช่รักษาการ');
+});
+
+/* ── 🏛️ แผนกขึ้นตรงฝ่าย (parent_id ว่าง — JIG MTN · QA) เปิดเป็นบอร์ดของตัวเองได้ (20/10) ──
+   เดิมบอร์ดรับเฉพาะ kind='section' ⇒ 2 หน่วยนี้เปิดไม่ได้เลย คนในหน่วยไม่เคยขึ้นผัง */
+test('แผนกขึ้นตรงฝ่าย: เปิดเป็นบอร์ดเองได้ · คนในหน่วยไม่ตกถัง "ไม่ระบุแผนก"', () => {
+  const jig = { id: 'j', kind: 'department', name: 'JIG MTN', parent_id: null, cost_center: '2140563100', sort_order: 9 };
+  const nodes = [...NODES, jig];
+  const emps = [...EMPS, E('j1', 'operator', 'A', 'j'), E('jh', 'dept_head', 'C', 'j')];
+  const b = M.buildManpowerBoard({ section: jig, nodes, employees: emps, lines: LINES, maps: { byLine: {}, byDept: {} } });
+  assert.deepEqual(b.depts.map(d => d.name), ['JIG MTN']);
+  assert.notEqual(b.depts[0].key, '__none__', 'ต้องเป็นแผนกจริง ไม่ใช่ถังไม่ระบุแผนก');
+  assert.deepEqual(b.depts[0].heads.map(p => p.id), ['jh']);
+  assert.equal(b.depts[0].opsTotal, 1);
+  // ตั้งรักษาการที่รากซึ่งเป็น "แผนก" ⇒ ขึ้นหัวผังของบอร์ด
+  const b2 = M.buildManpowerBoard({ section: jig, nodes, employees: emps, lines: LINES,
+    maps: { byLine: {}, byDept: {} }, flexUnits: [{ employee_id: 'mgr', org_node_id: 'j', kind: 'acting' }] });
+  assert.deepEqual(b2.top.map(p => p.id), ['mgr']);
+  assert.equal(b2.top[0].acting.nodeName, 'PD3');
+  assert.equal(b2.depts[0].opsTotal, b.depts[0].opsTotal, 'กำลังคนไม่ขยับ');
 });

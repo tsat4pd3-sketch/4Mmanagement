@@ -15,11 +15,41 @@ Environment Variables:
   VITE_SUPABASE_ANON_KEY=<key from Supabase dashboard>
 ```
 
+### 💸 Build pipeline minutes — build ล่มเพราะโควต้าหมด (2026-10-13)
+
+Render นับ **นาที build ต่อเดือน** (ไม่เกี่ยวกับจำนวนคนเข้าเว็บ) · เพดานค่าใช้จ่ายตั้งไว้ $0 ⇒ นาทีหมด = **merge แล้วไม่ deploy**
+(เว็บยังเสิร์ฟเวอร์ชันล่าสุดที่ build ผ่าน) · ต.ค. 2026 หมดวันที่ 13 หลัง push เข้า main 112 ครั้งใน 13 วัน
+- `render.yaml` → `buildFilter.ignoredPaths` ข้ามการ build เมื่อ push แตะแค่ `*.md` / `.claude/**`
+  (วัดย้อนหลังได้แค่ ~6% ของ push — **ตัวประหยัดจริงคือ merge เป็นรอบ ไม่ใช่ทีละงานเล็ก**)
+- 🔴 **ห้ามใส่ `docs/**` / `supabase/**` / `audit/**` ทั้งโฟลเดอร์** — เทสใน build อ่านไฟล์ในนั้น (`docs/**/*.py`,
+  migrations, `audit/mobilesweep.mjs`) ข้ามแล้วด่านพังจะไปโผล่ตอน push โค้ดครั้งถัดไปแทน
+- `buildFilter` ใน yaml มีผลเฉพาะ service ที่สร้างจาก Blueprint — ไม่งั้นต้องตั้งซ้ำที่ dashboard
+  (Settings → Build & Deploy → Build Filters → Ignored Paths)
+
+### ⏰ Deploy ตาม merge + กันถี่ (2026-10-13 · คำสั่ง user)
+
+push เข้า main วันละถึง 31 ครั้ง (หลาย session ขนาน) ⇒ ~290 build/เดือน เกินนาทีฟรี 500 (build จริง ~2.5 นาที)
+- **`.github/workflows/scheduled-deploy.yml`** ทำงานตอน **push เข้า main** (ข้าม push ที่แตะแค่ `.md`/`.claude`):
+  deploy ล่าสุดเก่ากว่า **60 นาที** = deploy ทันที · ไม่งั้นรอ "เงียบ" **30 นาที** (push ใหม่ระหว่างรอ = ยกเลิกตัวเก่า
+  `concurrency: cancel-in-progress` แล้วนับใหม่) แต่ไม่เกินครบ 60 นาทีจากรอบก่อน · จำลองจาก push จริง ≈ **~130 build/เดือน (~320 นาที)**
+- จำ commit + เวลาที่ deploy ด้วย **annotated tag `render-deployed`** (เวลา = taggerdate) · ไม่มีของใหม่ = ข้าม · มีแค่ `.md`/`.claude` = เลื่อน tag ไม่ build
+- **cron รายชั่วโมงเหลือเป็นตัวสำรองเท่านั้น** — 13/10 cron ของ GitHub ข้าม 3 รอบติด (11:07/12:07/13:07) ทั้งที่ไฟล์ถูก
+  ⇒ 🔴 **ห้ามกลับไปพึ่ง schedule อย่างเดียว**
+- repo เป็น **public** ⇒ นาที GitHub Actions ไม่จำกัด การ `sleep` รอใน job จึงไม่มีค่าใช้จ่าย · **ถ้า repo เปลี่ยนเป็น private ต้องคิดใหม่** (เพดานฟรี 2,000 นาที/เดือน)
+- **ด่วน** (บั๊กหน้างาน): GitHub → Actions → *Scheduled deploy* → **Run workflow** = deploy ทันทีเสมอ
+  · AI session สั่ง Run workflow ไม่ได้ (MCP ได้ 403) — ต้องให้ user กด
+- hook ตอบไม่ใช่ 2xx = งานแดง ไม่เลื่อน tag · secret ไม่มี = push/cron ขึ้น warning / กดมือขึ้น error
+- ⚠️ tag เลื่อนตอน Render **รับคิว** ไม่ใช่ตอน build ผ่าน — build ล้มบน Render ต้องกด Run workflow ซ้ำหลังแก้
+- 🔴 **Render Auto-Deploy ต้องปิด** — service เป็น **Blueprint managed** ⇒ คุมด้วย `autoDeploy: false` ใน `render.yaml` (ปิดใน dashboard อย่างเดียว sync แล้วอาจเปิดกลับ) ไม่งั้น build ซ้ำ 2 ทาง
+- ตั้งครั้งแรก (ทำแล้ว 13/10): Render → Settings → **Deploy Hook** → GitHub secret `RENDER_DEPLOY_HOOK` · **URL นี้เป็นความลับ**
+- spend limit ของ Render ตั้ง $5 (ต.ค. นาทีฟรีหมดแล้ว) · user จะตั้งกลับ $0 แล้วถอดบัตรเดือน พ.ย. — **ตั้ง $0 ก่อนถอดบัตร**
+
 ### PWA — เพิ่มลงหน้าจอโฮม เปิดเหมือนแอป (2026-07-23)
 
 รองรับ "เพิ่มลงหน้าจอโฮม" (iOS Safari / Android Chrome) เปิดแบบ standalone (เต็มจอ ไม่มีแถบ browser มีไอคอนเอง) เหมาะจอหน้าไลน์/มือถือหัวหน้า
 - **manifest-only ตั้งใจ ไม่มี service worker** — เพราะ SW ที่ cache asset จะชนกับ **version-guard/auto-reload** ใน `main.jsx` + no-cache header ใน `render.yaml` (กลไกกัน "จอดำหลัง deploy" — ดู 3 กับดักด้านล่าง) · ถ้าจะเพิ่ม offline/auto-install-prompt (Android banner) ต้องเขียน SW แบบ **network-only ห้าม cache HTML/chunk** ไม่งั้นแอปค้างเวอร์ชันเก่า
 - ไฟล์: `public/manifest.webmanifest` (name/short_name ESM, display standalone, theme/bg `#080f08`) + icons `public/icon-192.png`/`icon-512.png`/`icon-maskable-512.png`/`apple-touch-icon.png` (180 — iOS ต้อง PNG ไม่รับ SVG) · ต้นฉบับไอคอน `public/app-icon.svg` (โลโก้ TS + ESM บนพื้นเขียวเข้ม) · gen จาก TS logo ผ่าน Chromium (สร้างใหม่: rasterize `app-icon.svg` → PNG ขนาดที่ต้องการ)
+- **ทางลัดไอคอนแอป (`shortcuts` · 2026-10-19)** — กดค้างไอคอน ESM บนหน้าจอโฮม → "สแกน" เปิด `/scan` (กล้องเปิดเอง) · ใช้ได้เฉพาะ Android/Chrome ที่ติดตั้งแบบแอป (iOS ไม่รองรับ) · เครื่องที่ติดตั้งไว้แล้ว Chrome อัปเดต manifest เองภายใน ~1 วัน · ใส่เฉพาะปลายทางที่ทุก role เปิดได้ (`/scan` piggyback สิทธิ์) — ห้ามใส่หน้าที่บาง role ไม่มีสิทธิ์ (กดแล้วเจอหน้าไม่มีสิทธิ์)
 - `index.html` `<head>` มี `<link rel=manifest>` + `theme-color` + `apple-touch-icon` + `apple-mobile-web-app-*` (status-bar-style = `default` กันเนื้อหาทับ notch) — **ห้ามถอด**
 - **เปลี่ยนโลโก้/ไอคอน** → แก้ `app-icon.svg` แล้ว rasterize ใหม่ทับ PNG ทั้ง 4 ไฟล์ (ขนาดเดิม) · เปลี่ยนชื่อไฟล์ไอคอนต้องอัพเดท manifest + index.html ด้วย
 - **Badge จุดแดง/เลขบนไอคอนแอป (2026-07-23):** `NotificationBell` (App.jsx) sync `navigator.setAppBadge(unread)`/`clearAppBadge()` ตามจำนวนแจ้งเตือนที่ยังไม่อ่าน (ตาราง `notifications`) · **guard `'setAppBadge' in navigator`** · ✅ Android/desktop Chrome-Edge (ติดตั้ง PWA) · ❌ **iOS ไม่รองรับ App Badging API** (Apple ยังไม่ทำ — iPhone จะไม่เห็นเลขบนไอคอน) · อัปเดต**เฉพาะตอนเปิดแอป**เท่านั้น (ไม่มี service worker/Web Push → ปิดแอปแล้วไม่เด้ง) · ล้าง badge ตอน logout/unmount · ถ้าจะให้เด้งตอนปิดแอป (เหมือน LINE) ต้องเพิ่ม SW network-only + Web Push VAPID (ยังไม่ทำ)
@@ -92,3 +122,50 @@ Environment Variables:
 > แชร์ข้ามแท็บ เดี๋ยวพาแท็บดีๆ หลุดตาม) · หมายเหตุ test harness: seed token ต้องลง localStorage แล้ว
 
 ---
+
+---
+
+## 🎯 ย้ายเข้า server บริษัท — คำสั่งถาวร user (2026-10-14)
+
+> *"อนาคต คำสั่งนายคือย้ายเข้า server บริษัทนะ"*
+
+**เป้าหมายปลายทาง: ระบบรันบน server ของบริษัท** — ทุก session ที่แตะ deploy/โครงสร้างพื้นฐาน
+ให้เลือกทางที่พาไปทางนั้น · **ห้ามผูกกับของเฉพาะ Render เพิ่ม** (เช่น Render redirects/headers/env
+ที่ย้ายตามไม่ได้ — ของพวกนี้ให้ไปอยู่ในไฟล์ config ของแอปแทน)
+
+### 🔴 แยกให้ออกก่อน: hosting กับ egress เป็นคนละเรื่อง
+
+| | อยู่ที่ไหน | ย้าย hosting แล้วได้อะไร |
+|---|---|---|
+| ไฟล์หน้าเว็บ (JS/CSS/HTML) | Render Static Site | ✅ ไม่ต้องพึ่งโควตา build · เร็วขึ้นบน LAN |
+| **ข้อมูล/auth/รูป/realtime** | **Supabase (เบราว์เซอร์ยิงตรง)** | ❌ **ไม่ลดแม้แต่ไบต์เดียว** |
+
+เบราว์เซอร์ของแต่ละคนเรียก `https://<project>.supabase.co` **ตรงๆ** ไม่ผ่านตัว host
+⇒ **ห้ามอ้าง "ย้าย server แล้วค่า Supabase จะลด"** — ไม่จริง และเคยเกือบตัดสินใจผิดด้วยเหตุผลนี้ (14/10)
+
+### ลำดับที่ต้องทำ (ห้ามข้ามขั้น)
+
+**ขั้น 1 — static hosting (ความเสี่ยงต่ำ ทำได้เลย)**
+ย้ายไฟล์ที่ build แล้วไปเสิร์ฟจาก server บริษัท (nginx/IIS ก็พอ)
+· ล่ม = แค่เปิดหน้าเว็บไม่ได้ **ข้อมูลไม่หาย** (ยังอยู่ที่ Supabase) ⇒ ย้อนกลับง่าย
+· ต้องมี: TLS (ใบรับรอง) · ทางเข้าจากนอกโรงงาน (คนใช้มือถือ 4G/5G จริง — วัดได้ 679 IP เมื่อ 13/10)
+· ⚠️ `vite:preloadError` auto-reload ใน `src/main.jsx` ต้องยังทำงาน (ไฟล์ chunk เก่าหายหลัง deploy)
+
+**ขั้น 2 — self-host Supabase (ความเสี่ยงสูง ห้ามเริ่มจนครบเงื่อนไข)**
+🔴 **เงื่อนไขที่ต้องมีครบก่อน ขาดข้อใดข้อหนึ่ง = ยังไม่ย้าย:**
+1. **มีคนดูแลจริง** (ไม่ใช่ AI session) — patch security · ต่ออายุใบรับรอง · ดู log
+2. **backup + ซ้อมกู้คืนสำเร็จจริงอย่างน้อย 1 ครั้ง** — ไม่ใช่แค่ "ตั้ง backup ไว้แล้ว"
+3. **ทางเข้าจากมือถือนอกเครือข่ายโรงงาน** ที่ปลอดภัย (VPN หรือ reverse proxy + TLS + firewall)
+4. **แผนตอน server ล่มตี 2** — ทั้งโรงงานพึ่งระบบนี้แล้ว เปิดกะไม่ได้ = เสียหายจริง
+
+ของที่ต้องย้าย: Postgres 2 ชุด · GoTrue (auth) · PostgREST · Realtime · Storage · Edge Functions
+· RLS policy ทั้งหมด · publication ของ realtime (`src/utils/realtimeTables.js`)
+⚠️ **ฝั่ง DR เป็น `anon` ทั้งโปรเจค** — เปิดออกอินเทอร์เน็ตโดยไม่มีด่านหน้า = ใครก็อ่านข้อมูลผลิตได้
+
+### ค่าใช้จ่ายระหว่างที่ยังอยู่ Supabase (วัด 14/10)
+
+Supabase projection ของรอบ 11 ต.ค.–11 พ.ย. = **$37.42** — ไม่ใช่ $25 (นั่นคือค่า plan อย่างเดียว)
+· Pro plan $25 · compute 2 projects × Micro ≈ $20 **− compute credits $10** ≈ $10–12
+· egress/storage = $0 (ใช้ ~17 GB จาก 250 GB ที่รวมอยู่แล้ว)
+🔴 **compute ลดไม่ได้** — Micro เล็กสุด · **ห้ามยุบ 2 projects เป็น 1** (DR เป็น anon ทั้งโปรเจค)
+📄 ตัวเลขสำหรับทำเรื่องขออนุมัติ → `docs/EGRESS-AUDIT-2026-09-17.md` §17

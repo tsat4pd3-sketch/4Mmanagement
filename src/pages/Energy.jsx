@@ -30,6 +30,7 @@ import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
 import FilterBar from '../components/FilterBar';
 import useTabParam from '../utils/useTabParam';
+import { urlBool } from '../utils/urlInit';
 import {
   monthKeyOf, shiftMonth, monthLabel, fmtKwh, fmtBaht, deltaPct,
   bahtPerUnit, RATE_SANE_MIN, RATE_SANE_MAX, sumRows,
@@ -69,7 +70,7 @@ export default function Energy() {
   const [factors, setFactors] = useState([]);     // energy_emission_factors
   const [loading, setLoading] = useState(true);
   const [cfgMissing, setCfgMissing] = useState(false);  // ยังไม่ apply migration C1
-  const [showUnmetered, setShowUnmetered] = useState(false);
+  const [showUnmetered, setShowUnmetered] = useState(() => urlBool('unmet', false));   // ?unmet= (จอวนหน้า)
   const [prod, setProd] = useState(null);   // month → ชิ้นที่ผลิตได้ทั้งโรงงาน (null = ยังไม่โหลด)
   const [prodErr, setProdErr] = useState('');
   /* 📡 MQTT ยัง "พักไว้" (user 2026-08-20: "คิดต่อไว้เฉยๆ ยังไม่ต้องทำ")

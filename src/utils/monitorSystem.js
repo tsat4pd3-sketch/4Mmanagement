@@ -19,6 +19,8 @@
       (ใส่ทุกช่องก็ได้ค่าเดียวกัน แต่เปลืองและทำให้ "คนแก้ค่าเองกลางทาง" ใช้ไม่ได้)
    ═══════════════════════════════════════════════════════════════════════════════════════ */
 
+import { addDaysStr } from './workDate.js';
+
 const num = (v) => {
   if (v === null || v === undefined || v === '') return null;
   const n = Number(v);
@@ -122,6 +124,46 @@ export function outAtRef(rows = [], locOf = () => null) {
   });
 }
 
+/* 📥 IN = ของที่ **คลังกดรับเข้าแล้ว** ไม่ใช่ "ผลิตคอนเฟิร์มแล้ว" (user 12/10)
+ *  ผลิตคอนเฟิร์ม → ออกใบรอรับ (`stock_receipts` pending) → สโตร์/คลัง FG นับแล้วกด "รับ" → ledger `issue` ที่คลังปลายทาง
+ *  เดิมนับจาก `prod_orders` confirmed ⇒ ยอดวิ่งเข้าตารางทันทีทั้งที่ของยังไม่ถึงคลัง (ค้างรับ 171 ใบเกินกำหนด 12/10)
+ *  · พาร์ทล็อตสโตร์ = ปิดล็อตที่บอร์ดสโตร์ลง `issue` ที่ไลน์ผลิต (คลังอ้างอิงของมัน) — ตัวเดียวกัน */
+export const IN_TXN_TYPES = ['issue'];
+
+/** ของเข้าต่อวันที่คลังอ้างอิง (`mat|work_date` → Σ) — เฉพาะ `approved` + IN_TXN_TYPES */
+export function inAtRef(rows = [], locOf = () => null) {
+  return sumByMatDate(rows, {
+    keep: (r) => {
+      if (!IN_TXN_TYPES.includes(r?.type)) return false;
+      if (r?.status !== undefined && r.status !== 'approved') return false;
+      const loc = locOf(String(r?.mat_no ?? '').trim());
+      return !!loc && String(r?.line_name ?? '').trim() === String(loc).trim();
+    },
+  });
+}
+
+/**
+ * 🚚 ช่อง ORDER ของบอร์ดรายแร็ค (ชีทลูกค้า) → ใบส่งของ `customer_shipping_orders` (user 12/10)
+ * คนพิมพ์ยอดลงบอร์ดแล้วไม่ขึ้น Shipping Time Chart ⇒ ต้องไปเพิ่มมืออีกรอบที่ /delivery
+ * กติกา: ใบที่ยังไม่ส่ง (`pending` · source `monitoring` — ชุดเดียวกับที่ตัวนำเข้าเขียน/ล้าง) ของ
+ *   (ลูกค้า, MAT, วันส่ง) ต้องรวมได้ = ยอดในช่อง − `covered`
+ *   · covered = ส่งไปแล้ว (ทุก source) + ใบรอส่งที่มาจากทางอื่น (เพิ่มมือที่ /delivery · EDI) — กันออเดอร์ซ้อน 2 ใบ
+ *   · ส่งแล้ว/ยกเลิก/ใบจากทางอื่น **ห้ามแตะ** — แก้ได้เฉพาะใบ source `monitoring` ที่ยังไม่ส่ง
+ * @param {{ qty:number|null, covered:number, pending:Array<{id,qty}> }} a  qty = null/≤0 คือล้างช่อง
+ * @returns {{ update?:{id,qty}, insertQty?:number, deleteIds:string[] }}
+ */
+export function rackOrderSyncPlan({ qty, covered = 0, pending = [] } = {}) {
+  const want = Math.max(0, (num(qty) ?? 0) - (num(covered) ?? 0));
+  const rows = (pending || []).filter(r => r?.id);
+  if (!(want > 0)) return { deleteIds: rows.map(r => r.id) };
+  if (!rows.length) return { insertQty: want, deleteIds: [] };
+  const [first, ...rest] = rows;
+  return {
+    ...(num(first.qty) !== want ? { update: { id: first.id, qty: want } } : {}),
+    deleteIds: rest.map(r => r.id),
+  };
+}
+
 /**
  * ยอด FG "ของพอส่งไหม" ณ วันนี้ — จุดยึด (anchor) ของบอร์ด FG
  *   = ของในคลัง FG ตอนนี้ − ใบที่ถึงกำหนด (≤ วันนี้) แต่ยังไม่ส่ง + ใบที่ส่งล่วงหน้าแล้วแต่กำหนด > วันนี้
@@ -179,3 +221,78 @@ export function orderInQty(o) {
  *  🔴 ส่งแล้ว (`shipped`) **ยังนับ** เพราะบอร์ด FG หักยอดตามวันส่งที่ลูกค้าขอ
  *     (ของออกไปแล้วก็ต้องหายจากสต๊อก — ไม่ใช่ว่าหายไปจากความต้องการ) */
 export const DEMAND_SKIP_STATUS = ['cancelled'];
+
+/**
+ * ย้ายดัชนี `mat|วันที่` ไปเป็น `mat|คีย์คอลัมน์` ของบอร์ดรายสัปดาห์ (Argen · 13/10)
+ * วันที่ตกคอลัมน์ไหน = คอลัมน์ล่าสุดที่เริ่ม ≤ วันที่นั้น และยังไม่เกิน 7 วัน · นอกช่วงบอร์ด = ทิ้ง (ไม่ยัดเข้าคอลัมน์ขอบ)
+ * @param {Map<string, number>} idx  ผลจาก sumByMatDate
+ * @param {Array<{key:string,date:string}>} periods  เรียงจากเก่าไปใหม่
+ */
+export function rebucketToWeeks(idx, periods = []) {
+  const out = new Map();
+  if (!(idx instanceof Map) || !periods.length) return out;
+  const ps = periods.map((p) => ({ key: p.key, t: Date.parse(`${String(p.date).slice(0, 10)}T00:00:00Z`) }));
+  const WEEK = 7 * 86400000;
+  for (const [k, v] of idx) {
+    const cut = k.lastIndexOf('|');
+    const mat = k.slice(0, cut);
+    const t = Date.parse(`${k.slice(cut + 1)}T00:00:00Z`);
+    if (!Number.isFinite(t)) continue;
+    let hit = null;
+    for (const p of ps) { if (p.t <= t && t < p.t + WEEK) hit = p.key; }
+    if (!hit) continue;
+    const nk = `${mat}|${hit}`;
+    out.set(nk, (out.get(nk) || 0) + v);
+  }
+  return out;
+}
+
+/* ═══ 🔒 ล็อกช่อง IN เมื่อระบบเริ่มมีตัวเลขของพาร์ทนั้นแล้ว (13/10 · คำสั่ง user) ═══════════════
+   *"พาร์ทไหนที่เริ่มมีตัวเลขจากระบบเข้ามาแล้ว หรือมีใน product master แล้ว daily report เริ่มลงยอดแล้ว
+     จะไม่รับ IN manual ดีกว่า แต่จะต้องมีช่องทางให้ขอปรับยอด"*
+   · ล็อกตั้งแต่ "วันแรกที่ระบบมีตัวเลข" = วันแรกที่คลังอ้างอิงรับเข้า (ledger `issue`) หรือวันแรกที่ใบผลิต
+     ของ MAT นั้นคอนเฟิร์มยอด (Daily Report) — แล้วแต่อันไหนมาก่อน
+   · 🔴 ก่อนวันนั้น = ประวัติจาก Excel ที่ระบบไม่มีตัวแทน ⇒ **ไม่ล็อก ไม่ทิ้ง** (ลบ = ประวัติหาย)
+   · 🔴 ล็อกเฉพาะคอลัมน์ที่เริ่ม ≤ วันนี้ (ของจริง) · คอลัมน์อนาคตยังกรอกได้ (= คาดการณ์ ระบบยังไม่มีอะไรให้)
+   · ช่องที่ล็อกแต่ระบบไม่มีรายการ = **0** (ระบบติดตามพาร์ทนี้อยู่ ไม่มีรับเข้า = ไม่มีของเข้า) ไม่ใช่ "ไม่รู้"
+   · ยอดไม่ตรงของจริง ⇒ "ขอปรับยอด" = ใบ `adjust` สถานะ pending เข้าคิวอนุมัติเดิมของ /line-stock (ห้ามพิมพ์ทับบนบอร์ด) */
+const d10 = (v) => String(v ?? '').slice(0, 10);
+
+/** MAT → วันแรกที่ระบบมีตัวเลข (YYYY-MM-DD) · ไม่มีหลักฐานเลย = ไม่ใส่ (ไม่ล็อก กรอกเองได้) */
+export function lockFromByMat({ inRows = [], prodRows = [], locOf = () => null } = {}) {
+  const m = new Map();
+  const take = (mt, d) => {
+    if (!mt || !/^\d{4}-\d{2}-\d{2}$/.test(d)) return;
+    if (!m.has(mt) || d < m.get(mt)) m.set(mt, d);
+  };
+  for (const r of inRows || []) {
+    const mt = String(r?.mat_no ?? '').trim();
+    if (!IN_TXN_TYPES.includes(r?.type)) continue;
+    if (r?.status !== undefined && r.status !== 'approved') continue;
+    const loc = locOf(mt);
+    if (!loc || String(r?.line_name ?? '').trim() !== String(loc).trim()) continue;
+    take(mt, d10(r?.work_date));
+  }
+  for (const r of prodRows || []) take(String(r?.mat_no ?? '').trim(), d10(r?.work_date));
+  return m;
+}
+
+/** คอลัมน์นี้ล็อกไหม — ต้อง (ก) ครอบ/อยู่หลังวันแรกที่ระบบมีตัวเลข และ (ข) เริ่มไม่เกินวันนี้ */
+export function isLockedPeriod(periodDate, { kind = 'day', lockFrom, today } = {}) {
+  const p = d10(periodDate);
+  if (!p || !lockFrom || !today || p > today) return false;
+  if (kind !== 'week') return p >= lockFrom;
+  const end = addDaysStr(p, 6) || p;   // บวกวันด้วยของกลาง (กฎ no-utc-workdate)
+  return end >= lockFrom;
+}
+
+/** ฟังก์ชัน `locked(partId, rowKey, periodKey)` ให้ `buildGrid` — ล็อกเฉพาะแถวใน `rows` (ค่าเริ่ม IN) */
+export function makeLockLookup({ partMat, lockFrom, periods = [], kind = 'day', today, rows = ['in'] } = {}) {
+  const dateOf = new Map((periods || []).map((p) => [p.key, p.date]));
+  return (partId, rk, pk) => {
+    if (!rows.includes(rk) || !(lockFrom instanceof Map)) return false;
+    const mat = partMat?.get?.(partId);
+    if (!mat || !lockFrom.has(mat)) return false;
+    return isLockedPeriod(dateOf.get(pk) ?? pk, { kind, lockFrom: lockFrom.get(mat), today });
+  };
+}

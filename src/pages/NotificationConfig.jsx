@@ -6,6 +6,7 @@ import { deptNameOf } from '../utils/mtnTeams'
 import { pmTeamsSync, loadPmTeams } from '../utils/pmTeams'   // ทีมช่างซ่อมจากตาราง mtn_teams — เลิกวน MTN_TEAMS hardcode (2026-09-07)
 import { ROLE_OPTIONS } from '../utils/roleMeta'
 import InfoMore from '../components/InfoMore'
+import CollapseCard from '../components/CollapseCard'
 import { reachLabel, reachWarnings } from '../utils/notifReach'   // 🏷️ ป้ายราคาต่อเรื่อง — สูตรอยู่ util ที่เดียว (มีเทส)
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
@@ -34,6 +35,7 @@ const CATEGORY_LABEL = {
   maintenance: '🔧 Maintenance', pull: '🎴 Pull System', stock: '📦 Stock',
   logistic: '🚚 Logistic',
   safety: '🛡️ Safety',
+  kpi: '📊 KPI / Obeya',   // 20/10 · ผลนำเข้าตัวเลขบัญชีอัตโนมัติ (GitHub Actions acct-import)
 }
 
 // Starting point shown when an admin first customizes a message. NULL template
@@ -426,10 +428,17 @@ export default function NotificationConfig() {
       {/* ── Rules ── */}
       <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>รายการแจ้งเตือน — เลือกว่าเรื่องไหนเข้าห้องไหน</div>
       <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>กดเลือกห้องได้ <b>หลายห้อง</b> ต่อหนึ่งเรื่อง · ไม่เลือกห้องเลย = เข้ากลุ่มเดิม (fallback)</div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* 📏 พับเป็นหมวด (2026-10-13 · ด่าน lengthsweep) — ฐานจริง 13/10: **65 เรื่อง × 8 ห้อง**
+          ⇒ กางทุกหมวดพร้อมกัน = หน้ายาว ~12 เท่าของจอ หาเรื่องที่จะแก้ไม่เจอ (ไม่ใช่ของ mock)
+          · หัวหมวดโชว์จำนวนเรื่องเสมอ · จำสถานะที่กด/พับไว้ใน localStorage (CollapseCard)
+          🔴 **พับทุกหมวดเป็น default** — 1 เรื่องกินความสูง ~400-700px (ชิปห้อง + ชิป role ผู้รับ
+          + ป้ายราคา + ตัวจำกัดผู้รับ + แก้ข้อความ) ⇒ กางหมวดเดียวที่มี 15 เรื่องก็ยังยาว 11,000px
+          · หน้านี้คนเข้ามา "แก้เรื่องใดเรื่องหนึ่ง" ไม่ได้มาอ่านทั้งหมด ⇒ เห็นหัวหมวด + จำนวน
+            แล้วกดเข้าเรื่องที่ต้องการ = เร็วกว่าเลื่อนหา · CollapseCard จำสถานะที่กดไว้ให้ */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
         {Object.entries(rulesByCat).map(([cat, catRules]) => (
-          <div key={cat}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', marginBottom: 6 }}>{CATEGORY_LABEL[cat] ?? cat}</div>
+          <CollapseCard key={cat} id={cat} storePrefix="nc" defaultOpen={false}
+            title={CATEGORY_LABEL[cat] ?? cat} count={catRules.length} style={{ marginBottom: 10 }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {catRules.map(rule => {
                 const selected = Array.isArray(rule.channel_ids) ? rule.channel_ids : []
@@ -680,7 +689,7 @@ export default function NotificationConfig() {
                 )
               })}
             </div>
-          </div>
+          </CollapseCard>
         ))}
       </div>
 

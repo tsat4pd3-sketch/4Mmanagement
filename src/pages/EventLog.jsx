@@ -9,7 +9,7 @@ import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { fmtDate } from '../utils/dateFormat';
-import { can } from '../utils/permissions';
+import { can, canDelete as canDeleteUtil } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { loadDocForms, withDocFoot, docFormSync, fullCode } from '../utils/docForms';
 import { xlsxDocName } from '../utils/csvDoc';
@@ -291,14 +291,6 @@ export default function EventLog() {
   const groupedEvents = { A: [], B: [], C: [] };
   eventDefs.forEach(e => { if (groupedEvents[e.category]) groupedEvents[e.category].push(e); });
 
-  /* ── Stats ── */
-  const stats = {
-    total: logs.length,
-    pending: logs.filter(l => l.overall_status === 'pending' || l.overall_status === 'in_progress').length,
-    approved: logs.filter(l => l.overall_status === 'approved').length,
-    catC: logs.filter(l => l.cqi15_event_definitions?.category === 'C').length,
-  };
-
   return (
     <Page>
       <PageHeader
@@ -312,37 +304,6 @@ export default function EventLog() {
           </button>
         )}
       />
-
-      {/* KPI row — 24/09 (ก้อน E ของ De-AI UI · UI §6.17 + §6.18)
-          🚦 เดิม 4 ใบทาสีประจำใบ: น้ำเงิน/ส้ม/เขียว/แดง ⇒ ปนกัน 2 ความหมายในแถวเดียว
-             ที่แย่ที่สุดคือ "อนุมัติแล้ว" **เขียวตายตัว** — 0 จาก 14 ใบก็ยังเขียว ทั้งที่แปลว่ายังไม่มีใครอนุมัติเลย
-             และ "Cat C (ฉุกเฉิน)" แดงตายตัวทั้งที่ 0 ใบ = ข่าวดี
-          📏 3 ใบหลังเป็น **ส่วนหนึ่งของ "ทั้งหมด"** ไม่ใช่ KPI คนละตัว ⇒ ต้องบอกสัดส่วนของยอดรวม
-             และ "ทั้งหมด" เป็นตัวหาร จึงเป็นใบพระเอกของแถว */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px,1fr))', gap: 12, marginBottom: 24 }}>
-        {[
-          { label: 'ทั้งหมด', value: stats.total, tone: 'none', primary: true,
-            sub: `ใบ CQI-15 ในช่วงที่กรองอยู่` },
-          // คิวรออนุมัติ = เหลือง ไม่ใช่แดง (งานยังเดินอยู่) — ให้ตรงกับการ์ด 4M บนหน้าแรก
-          { label: 'รออนุมัติ', value: stats.pending, tone: toneOf({ value: stats.pending, zeroIsGood: true, over: 'warn' }) },
-          // จำนวนที่อนุมัติแล้ว = ข้อเท็จจริง ไม่มีเป้า ⇒ เทา (ห้ามเขียวตายตัว)
-          { label: 'อนุมัติแล้ว', value: stats.approved, tone: 'none' },
-          // Cat C = เหตุฉุกเฉิน · 0 = ดีจริง · มีเมื่อไหร่ = แดงจริง
-          { label: 'Cat C (ฉุกเฉิน)', value: stats.catC, tone: toneOf({ value: stats.catC, zeroIsGood: true }) },
-        ].map(k => (
-          <div key={k.label} className="card"
-            style={{ borderTop: `3px solid ${statusColor(k.tone)}`, padding: '14px 18px',
-              gridColumn: k.primary ? 'span 2' : 'auto' }}>
-            <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em' }}>{k.label}</div>
-            <div style={{ fontSize: k.primary ? 44 : 30, fontWeight: 800, fontFamily: 'var(--font-display)', color: toneInk(k.tone), lineHeight: 1.2, marginTop: 4 }}>
-              {k.value}<span style={{ fontSize: k.primary ? 17 : 13, fontWeight: 500, color: 'var(--text2)', marginLeft: 4 }}>ใบ</span>
-            </div>
-            <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>
-              {k.sub ?? (stats.total > 0 ? `${Math.round(k.value / stats.total * 100)}% ของ ${stats.total} ใบ` : 'ยังไม่มีใบในช่วงนี้')}
-            </div>
-          </div>
-        ))}
-      </div>
 
       {tab === 'create' && canCreate ? (
         <CreateEventForm
@@ -864,6 +825,16 @@ function EventList({ logs, loading, onSelect, role, eventDefs }) {
     return true;
   });
 
+  /* ── Stats ── 20/10: ย้ายมาอยู่ "ใต้แถบกรอง" ตาม UI-STANDARD §2.1 — และนับจาก `filtered`
+     เดิมแถวนี้อยู่เหนือแถบกรองบนหน้าแม่ แล้วนับจาก `logs` ทั้งก้อน ⇒ ป้าย "ในช่วงที่กรองอยู่"
+     ไม่จริง (กรองหมวด C เหลือ 1 ใบ การ์ด "ทั้งหมด" ยังขึ้น 15) = จอโกหก */
+  const stats = {
+    total: filtered.length,
+    pending: filtered.filter(l => l.overall_status === 'pending' || l.overall_status === 'in_progress').length,
+    approved: filtered.filter(l => l.overall_status === 'approved').length,
+    catC: filtered.filter(l => l.cqi15_event_definitions?.category === 'C').length,
+  };
+
   return (
     <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
       {/* Filters — UI-STANDARD 2026-09-24: FilterBar (bare ในหัวการ์ด) · หมวด 4 ตัวเลือก = Segmented */}
@@ -903,6 +874,37 @@ function EventList({ logs, loading, onSelect, role, eventDefs }) {
           </>
         )}
       </FilterBar>
+
+      {/* KPI row — 24/09 (ก้อน E ของ De-AI UI · UI §6.17 + §6.18)
+          🚦 เดิม 4 ใบทาสีประจำใบ: น้ำเงิน/ส้ม/เขียว/แดง ⇒ ปนกัน 2 ความหมายในแถวเดียว
+             ที่แย่ที่สุดคือ "อนุมัติแล้ว" **เขียวตายตัว** — 0 จาก 14 ใบก็ยังเขียว ทั้งที่แปลว่ายังไม่มีใครอนุมัติเลย
+             และ "Cat C (ฉุกเฉิน)" แดงตายตัวทั้งที่ 0 ใบ = ข่าวดี
+          📏 3 ใบหลังเป็น **ส่วนหนึ่งของ "ทั้งหมด"** ไม่ใช่ KPI คนละตัว ⇒ ต้องบอกสัดส่วนของยอดรวม
+             และ "ทั้งหมด" เป็นตัวหาร จึงเป็นใบพระเอกของแถว */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px,1fr))', gap: 12, padding: '14px 16px', borderBottom: '1px solid var(--border)' }}>
+        {[
+          { label: 'ทั้งหมด', value: stats.total, tone: 'none', primary: true,
+            sub: `ใบ CQI-15 ในช่วงที่กรองอยู่` },
+          // คิวรออนุมัติ = เหลือง ไม่ใช่แดง (งานยังเดินอยู่) — ให้ตรงกับการ์ด 4M บนหน้าแรก
+          { label: 'รออนุมัติ', value: stats.pending, tone: toneOf({ value: stats.pending, zeroIsGood: true, over: 'warn' }) },
+          // จำนวนที่อนุมัติแล้ว = ข้อเท็จจริง ไม่มีเป้า ⇒ เทา (ห้ามเขียวตายตัว)
+          { label: 'อนุมัติแล้ว', value: stats.approved, tone: 'none' },
+          // Cat C = เหตุฉุกเฉิน · 0 = ดีจริง · มีเมื่อไหร่ = แดงจริง
+          { label: 'Cat C (ฉุกเฉิน)', value: stats.catC, tone: toneOf({ value: stats.catC, zeroIsGood: true }) },
+        ].map(k => (
+          <div key={k.label} className="card"
+            style={{ borderTop: `3px solid ${statusColor(k.tone)}`, padding: '14px 18px',
+              gridColumn: k.primary ? 'span 2' : 'auto' }}>
+            <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em' }}>{k.label}</div>
+            <div style={{ fontSize: k.primary ? 44 : 30, fontWeight: 800, fontFamily: 'var(--font-display)', color: toneInk(k.tone), lineHeight: 1.2, marginTop: 4 }}>
+              {k.value}<span style={{ fontSize: k.primary ? 17 : 13, fontWeight: 500, color: 'var(--text2)', marginLeft: 4 }}>ใบ</span>
+            </div>
+            <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>
+              {k.sub ?? (stats.total > 0 ? `${Math.round(k.value / stats.total * 100)}% ของ ${stats.total} ใบ` : 'ยังไม่มีใบในช่วงนี้')}
+            </div>
+          </div>
+        ))}
+      </div>
 
       {loading ? (
         <div style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--muted)' }}>กำลังโหลด...</div>
@@ -1026,7 +1028,11 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
 
   // Action-level permission gates (role_permissions table via src/utils/permissions.js)
   const canActForCqiRole = (cqiRole) => can('event_log', `approve_${cqiRole.toLowerCase()}`, role);
-  const canDelete = can('event_log', 'delete', role);
+  /* 🖥️🔴 ต้องผ่าน `canDelete()` ของกลาง (utils/permissions.js) — เดิมประกาศตัวแปรชื่อ `canDelete`
+     ทับ util แล้วเรียกแค่ `can(...)` ⇒ อ่านโค้ดเหมือนมีด่าน แต่ **ด่าน "บัญชีกลางห้ามลบ" ไม่ทำงาน**
+     (ออดิท 13/10 เจอแบบนี้ 5 หน้า) · เปลี่ยนชื่อตัวแปรเป็น `mayDelete` + เรียก util ผ่าน alias
+     ⚠️ ห้ามตั้งชื่อตัวแปรท้องถิ่นว่า `canDelete` อีก — มีด่าน `no-shadow-candelete` */
+  const mayDelete = canDeleteUtil('event_log', 'create', role);
 
   useEffect(() => {
     const loadData = async () => {
@@ -1188,13 +1194,13 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
             })()}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {canDelete && !confirmDelete && (
+            {mayDelete && !confirmDelete && (
               <button onClick={() => setConfirmDelete(true)}
                 style={{ background: '#ef4444', color: '#fff', border: 'none', borderRadius: 7, padding: '5px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
                 🗑 ลบ
               </button>
             )}
-            {canDelete && confirmDelete && (
+            {mayDelete && confirmDelete && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <span style={{ fontSize: 12, color: '#ef4444', fontWeight: 700 }}>ยืนยันลบ?</span>
                 <button onClick={handleDelete} disabled={deleting}

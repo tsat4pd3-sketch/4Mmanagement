@@ -10,6 +10,8 @@ import {
   orgRefKeyChange, renameOrgRefs, ORG_KIND_TH,
 } from '../utils/orgNodeRefs';
 import { loadDivisions, divisionsSync, divisionOfNode } from '../utils/orgDivisions';
+/* 🔴 "แก้/ย้ายโหนดนี้ได้ไหม" = กฎเดียวใน src/utils/orgNodeEdit.js (ปุ่ม · ลิสต์แม่ · ด่านตอนบันทึก) */
+import { canEditOrgNode, canAddOrgNodeUnder, orgSaveBlockReason, filterParentOptions } from '../utils/orgNodeEdit';
 import { laborMeta, laborTypeOfNode } from '../utils/laborType';
 import CostCenterRatePanel from '../components/CostCenterRatePanel';
 import OrgAssignmentsPanel from '../components/OrgAssignmentsPanel';   // 👔 ใครคุมหน่วยไหน + รักษาการ
@@ -104,37 +106,14 @@ export default function OrgSetup() {
   }, [sections, myUnit]);
   /* แก้ได้ไหม — admin ทำได้ทุก node · ผู้ถือ manage_own_unit ทำได้เฉพาะแผนก/กลุ่มใต้ส่วนงานตัวเอง
      (section เป็นโครงบริษัท ไม่เปิดให้หน่วยงานแก้ ป้องกันการเปลี่ยนชื่อ/ลบส่วนงานอื่นแล้ว cascade ทั้งระบบ) */
-  const canEditNode = (node) => {
-    if (isAdmin) return true;
-    if (!canOwn || !mySecId || !node) return false;
-    if (node.kind === 'department') return node.parent_id === mySecId;
-    if (node.kind === 'line') {
-      const dep = allDepts.find(d => d.id === node.parent_id);
-      return !!dep && dep.parent_id === mySecId;
-    }
-    if (node.kind === 'team') {        // ทีม → ไต่ขึ้น กลุ่ม → แผนก → ส่วนงานของตัวเอง
-      const ln  = allLines.find(l => l.id === node.parent_id);
-      const dep = ln && allDepts.find(d => d.id === ln.parent_id);
-      return !!dep && dep.parent_id === mySecId;
-    }
-    return false;                       // section = admin เท่านั้น
-  };
-  const canAddDeptHere = (secId) => isAdmin || (canOwn && !!mySecId && secId === mySecId);
-  const canAddLineHere = (deptId) => {
-    if (isAdmin) return true;
-    const dep = allDepts.find(d => d.id === deptId);
-    return canOwn && !!mySecId && !!dep && dep.parent_id === mySecId;
-  };
-  const canAddTeamHere = (lineId) => {
-    if (isAdmin) return true;
-    const ln  = allLines.find(l => l.id === lineId);
-    const dep = ln && allDepts.find(d => d.id === ln.parent_id);
-    return canOwn && !!mySecId && !!dep && dep.parent_id === mySecId;
-  };
-  /* 🔴 ด่านชั้นสองตอนบันทึก ต้องครอบ "ทุกชั้นที่หน้านี้มีปุ่มเพิ่ม" — เดิมเป็นเชน ternary ลงท้าย `: false`
-     ⇒ เพิ่มชั้นใหม่ (ทีม 05/10) แล้วลืมต่อสาขา = ปุ่ม ➕ โชว์ แต่กดบันทึกเด้ง "แก้ได้เฉพาะ…" (เกิดจริง)
-     ใช้ map แทน: ชั้นที่ไม่มีตัวตรวจ = admin เท่านั้น (section) ซึ่งตรงกับปุ่มบนจอ · มีด่าน regressionGuards */
-  const CAN_ADD_HERE = { department: canAddDeptHere, line: canAddLineHere, team: canAddTeamHere };
+  const scopeCtx = useMemo(() => ({ nodes, isAdmin, canOwn, mySecId }), [nodes, isAdmin, canOwn, mySecId]);
+  const canEditNode    = (node)   => canEditOrgNode(node, scopeCtx);
+  const canAddDeptHere = (secId)  => canAddOrgNodeUnder('department', secId, scopeCtx);
+  const canAddLineHere = (deptId) => canAddOrgNodeUnder('line', deptId, scopeCtx);
+  const canAddTeamHere = (lineId) => canAddOrgNodeUnder('team', lineId, scopeCtx);
+  /* 🔴 ชั้นที่หน้านี้มีปุ่ม ➕ ต้องตัดสินได้ครบ — ห้ามเป็นเชน ternary ลงท้าย `: false`
+     (เพิ่มชั้นใหม่ 05/10 แล้วลืมต่อสาขา = ปุ่มโชว์ แต่กดบันทึกเด้ง "แก้ได้เฉพาะ…" เกิดจริง)
+     ⇒ ชุดชั้น + กฎอยู่ที่ `ORG_PARENT_KIND` ใน utils/orgNodeEdit.js ที่เดียว · มีด่าน regressionGuards */
 
   // single source: cost center ระดับไลน์มาจาก production_lines (ตั้งที่หน้าจัดการไลน์) — org group node ที่ผูก ref_line_id ไม่เก็บซ้ำ
   const lineById = useMemo(() => Object.fromEntries(lines.map(l => [String(l.id), l])), [lines]);
@@ -166,6 +145,11 @@ export default function OrgSetup() {
     return [];
   };
   const PARENT_LABEL = { department: 'อยู่ภายใต้ Section', line: 'อยู่ภายใต้ Department', team: 'อยู่ภายใต้ Group' };
+  /* ลิสต์ "อยู่ภายใต้" = ตัวกรองการดู (ด่านจริง = orgSaveBlockReason ตอนกดบันทึก) — กฎเดียวกันทั้งสองชั้น */
+  const parentChoices = useMemo(
+    () => filterParentOptions(modal?.kind, modal ? parentOptionsFor(modal.kind) : [], scopeCtx),
+    [modal?.kind, scopeCtx],  // eslint-disable-line react-hooks/exhaustive-deps
+  );
 
   useEffect(() => {
     if (!selSection && sections.length) setSelSection(sections[0].id);
@@ -230,13 +214,10 @@ export default function OrgSetup() {
 
   const handleSave = async () => {
     if (!formName.trim()) return toast.error('กรุณากรอกชื่อ');
-    // guard ชั้นสอง — ซ่อนปุ่มอย่างเดียวไม่พอ (โมดัลอาจถูกเปิดค้างไว้ตอนสิทธิ์เปลี่ยน)
-    if (!isAdmin) {
-      const okAdd = modal.editing ? canEditNode(modal.editing)
-        : !!CAN_ADD_HERE[modal.kind]?.(modal.parentId);
-      if (!okAdd) return toast.error(`ไม่มีสิทธิ์${modal.editing ? 'แก้' : 'เพิ่ม'}`
-        + `${ORG_KIND_TH[modal.kind] || 'หน่วยงาน'}ตรงนี้ — ทำได้เฉพาะใต้ส่วนงานของคุณ`);
-    }
+    /* guard ชั้นสอง — ซ่อนปุ่ม/กรองลิสต์อย่างเดียวไม่พอ (โมดัลอาจเปิดค้างไว้ตอนสิทธิ์เปลี่ยน)
+       🔴 รวม "ปลายทาง" ด้วย — payload เขียน parent_id ตัวใหม่ เช็คแต่แถวเดิม = ย้ายออกนอกส่วนงานได้ */
+    const block = orgSaveBlockReason({ kind: modal.kind, parentId: modal.parentId, editing: modal.editing }, scopeCtx);
+    if (block) return toast.error(block);
     // group/line node ที่ผูก production_lines → cost center มาจาก production_lines (single source) ไม่บังคับ/ไม่เช็คซ้ำ
     const linkedLine = modal.kind === 'line' && !!formRefLineId;
     const linkedCC = linkedLine ? (lineById[String(formRefLineId)]?.cost_center || '') : '';
@@ -541,9 +522,15 @@ export default function OrgSetup() {
                 <div>
                   <label style={labelSt}>{PARENT_LABEL[modal.kind]}</label>
                   <select value={modal.parentId ?? ''} onChange={e => setModal(m => ({ ...m, parentId: e.target.value || null }))}>
-                    {modal.kind === 'department' && <option value="">🏛️ ขึ้นตรงฝ่าย — ไม่อยู่ใต้ Section ใด</option>}
-                    {parentOptionsFor(modal.kind).map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
+                    {isAdmin && modal.kind === 'department' && <option value="">🏛️ ขึ้นตรงฝ่าย — ไม่อยู่ใต้ Section ใด</option>}
+                    {parentChoices.rows.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
                   </select>
+                  {/* 🔴 กรองแถวออกแล้วต้องเขียนบนจอว่าซ่อนกี่รายการ — ไม่งั้นดูเหมือนผังมีแค่นี้ */}
+                  {parentChoices.hidden > 0 && (
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.45 }}>
+                      🔒 ซ่อน {parentChoices.hidden} รายการที่อยู่นอกส่วนงานของคุณ — ย้ายข้ามส่วนงานต้องให้ admin ทำ
+                    </div>
+                  )}
                 </div>
               )}
               <div>
@@ -624,7 +611,7 @@ export default function OrgSetup() {
                 return (
                   <div>
                     <label style={labelSt}>ผูกกับไลน์ผลิตจริง (production_lines)</label>
-                    <LineSelect lines={lines} value={formRefLineId} valueKey="id"
+                    <LineSelect lines={lines} value={formRefLineId} valueKey="id" includeSupport
                       placeholder="— ไม่ผูก —" onChange={setFormRefLineId} />
                     {supportUnit && (
                       <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4 }}>

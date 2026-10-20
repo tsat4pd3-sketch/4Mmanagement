@@ -65,7 +65,8 @@ test('scopeUnder: ลูก/หลานอยู่ใต้แม่ · ตั
   assert.equal(scopeUnder(ix, PD1, { kind: 'department', value: 'BIG PRESS' }), false);
   assert.equal(scopeUnder(ix, { kind: 'plant', value: '' }, PD1), false);
   assert.equal(scopeUnder(ix, { kind: 'cost_center', value: '2140561001' }, PD1), true);
-  assert.equal(scopeUnder(ix, { kind: 'cost_center', value: '2140561001' }, { kind: 'department', value: 'BIG PRESS' }), true);
+  // 15/10: CC ที่เจ้าของ = หน่วยที่เลือก คือ "ตัวเอง" ไม่ใช่ลูก (เดิม true ⇒ KPI ของหน่วยถูกรายงานเป็น "ค่ารวมจากหน่วยลูก" ของตัวเอง)
+  assert.equal(scopeUnder(ix, { kind: 'cost_center', value: '2140561001' }, { kind: 'department', value: 'BIG PRESS' }), false);
   assert.equal(scopeUnder(ix, { kind: 'department', value: 'BIG PRESS' }, { kind: 'plant', value: '' }), true);
 });
 

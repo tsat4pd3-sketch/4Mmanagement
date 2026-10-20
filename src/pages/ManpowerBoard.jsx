@@ -12,14 +12,24 @@ import useFitHeight from '../utils/useFitHeight';
 import { packPages, clampPage } from '../utils/boardPager';
 import useTabParam, { useMergeParams } from '../utils/useTabParam';
 import { useSearchParams } from 'react-router-dom';
+import { urlParam } from '../utils/urlInit';
 import useProductionLines from '../utils/useProductionLines';
 import { useLiveBoard } from '../utils/useLiveBoard';
 import { LIVE } from '../utils/refreshRates';
 import { fetchAllPages, fetchByIds } from '../utils/fetchByIds';
-import { onlyShopfloorStaff } from '../utils/staffKind';
+/* 👥 🔴 **บอร์ดนี้ไม่กรอง `staff_kind` เลย — เป็น "ผังองค์กร" ไม่ใช่ "จอนับกำลังคน"**
+   (คำสั่ง user 20/10: *"ต้องขึ้นคนให้ครบ ให้ตรงผังก่อน"*)
+   บอร์ดวาดแถวของตัวเองครบทุกชั้น: ผู้จัดการ/หัวหน้าส่วน · วิศวกร·เจ้าหน้าที่ · หัวหน้าแผนก ·
+   หัวหน้ากลุ่ม · 🔧 ช่าง · พนักงาน ⇒ กรองกลุ่มไหนออก = **แถวนั้นว่างทั้งที่มีคนอยู่จริง**
+   เหตุการณ์จริง: backfill 14/10 ย้าย ผจก./หัวหน้าส่วน/หัวหน้าแผนก/วิศวกร/ธุรการ ไป `support`
+   ⇒ ตัวกรองเดิมทำให้หัวผังของทุกส่วนงานขึ้น "ยังไม่มีผู้จัดการ/หัวหน้าส่วนในทะเบียน" เงียบๆ
+   🔴 **ปลอดภัยเพราะตัวนับไม่ได้นับจาก "คนที่โหลดมา"** — `staffingOfDept()`/`opsTotal`/`present`
+      นับจาก `cols[].ops` (แถวพนักงาน) เท่านั้น · ตำแหน่งสายสนับสนุนทุกตัว (manager/section_head/
+      dept_head/engineer/officer/clerk/secretary) ตกแถวหัวผังหมด ไม่มีตัวไหนลงแถวพนักงาน
+   🔴 **ห้ามใส่ตัวกรอง staff_kind กลับ** — มีด่าน `staffKindGuard.test.mjs` */
 import { inSectionScope } from '../utils/sectionScope';
 import { orgNodeCompare, orgKey } from '../utils/listOrder';
-import { loadPositions, positionLabel } from '../utils/positions';
+import { loadPositions, positionLabel, loadWorkingPositions, applyWorkingPositions } from '../utils/positions';
 import { buildScheduleMaps, shiftFromTeam, scheduleTeamFor } from '../utils/shiftAssign';
 import { getWorkDate, addDaysStr } from '../utils/workDate';
 import { ALL } from '../utils/filterLabels';
@@ -28,6 +38,7 @@ import useImgBox from '../utils/useImgBox';
 import { mergeBorrowedEmployees, loadBorrowedRange } from '../utils/lineHelpers';
 import { canSeeded } from '../utils/permissions';
 import ManpowerBoardSetup from '../components/ManpowerBoardSetup';
+import { canWriteUnit } from '../utils/writeScope';
 import {
   buildManpowerBoard, fourMStatus, layoutPeople, lineFamilyOf, paginateTv, tvCardCapacity,
   describeSlotChanges, summarizeSlotChanges, SLOT_AUDIT_TABLES, SLOT_KIND_META,
@@ -53,7 +64,7 @@ import {
 const EMP_COLS = 'id, name, employee_id_code, image_url, position, team, line_id, department, section, org_node_id, staff_kind, start_date';
 
 export default function ManpowerBoard() {
-  const { sections: scopeSecs = [], role } = useContext(UserContext);
+  const { sections: scopeSecs = [], role, section: homeSection, allUnits, respCostCenters, scopeIdx } = useContext(UserContext);
   const [tab, setTab] = useTabParam(['org', 'layout', 'fourm', 'staffing', 'history'], 'org');
   const [params] = useSearchParams();
   const merge = useMergeParams();
@@ -70,8 +81,16 @@ export default function ManpowerBoard() {
   const [stationPlans, setStationPlans] = useState([]);
   const [homeByEmp, setHomeByEmp] = useState({});
   const [helpers, setHelpers] = useState([]);
+  const [actingPos, setActingPos] = useState(null);   // 🧭 employee_id → ตำแหน่งที่ปฏิบัติงาน (null = ยังไม่โหลด)
+  const [flexUnits, setFlexUnits] = useState([]);   // 🏃 คนวิ่งข้ามแผนก (employee_flex_units)
   const [setupOpen, setSetupOpen] = useState(false);
   const canSetup = canSeeded('manpower_board', 'edit', role);
+  /* 🔐 ชั้น ③ — "ส่วนงานที่กำลังตั้งค่าเป็นของหน่วยงานเราไหม" (QC audit 20/10)
+     `scopeSecs` = ขอบเขต "ที่เห็น" (**ว่าง = เห็นทั้งโรงงาน**) ⇒ เอามาตัดสินการแก้ไม่ได้ ·
+     ⚙️ แผงตั้งค่าเขียน `station_slot_plans` / `manpower_slot_plans` / `line_technicians` /
+     `employee_flex_units` ของส่วนงานนั้น และ RLS รู้แค่ `has_perm('manpower_board:edit')` ไม่รู้ขอบเขต */
+  const wctx = useMemo(() => ({ role, section: homeSection, sections: scopeSecs, allUnits, respCostCenters, scopeIdx }),
+    [role, homeSection, scopeSecs, allUnits, respCostCenters, scopeIdx]);
   const [err, setErr] = useState('');
   const [loading, setLoading] = useState(true);
   const workDate = getWorkDate();
@@ -81,18 +100,27 @@ export default function ManpowerBoard() {
     let alive = true;
     (async () => {
       // รอทะเบียนตำแหน่งก่อนจัดแถว — ไม่งั้นรอบแรกจัดด้วยค่า default แล้วไม่จัดใหม่ (memo ไม่รู้ว่า cache เปลี่ยน)
-      const [nRes, eRes, dRes] = await Promise.all([
-        supabase.from('org_nodes').select('id, kind, name, code, parent_id, ref_line_id, sort_order').eq('is_active', true),
-        fetchAllPages(() => onlyShopfloorStaff(supabase.from('employees').select(EMP_COLS).eq('is_active', true))),
+      const [nRes, eRes, dRes, , actingMap] = await Promise.all([
+        supabase.from('org_nodes').select('id, kind, name, code, parent_id, ref_line_id, sort_order, cost_center').eq('is_active', true),
+        fetchAllPages(() => supabase.from('employees').select(EMP_COLS).eq('is_active', true)),
         supabase.from('skill_definitions').select('name, label, color, sort_order'),
         loadPositions(),
+        /* 🧭 ตำแหน่ง "ที่ปฏิบัติงานจริง" จากบัญชี — บอร์ดนี้ตอบว่า *วันนี้ใครทำหน้าที่อะไร*
+           จึงต้องจัดแถวด้วยงานที่ทำ ไม่ใช่ตำแหน่งที่บริษัทบรรจุ (คำสั่ง user 14/10)
+           🔴 เป็น **fallback** — มีบัญชีแค่ 45 จาก 220 คน · อ่านไม่ได้ = Map ว่าง = พฤติกรรมเดิมเป๊ะ */
+        loadWorkingPositions(),
       ]);
       if (!alive) return;
       const errs = [nRes.error?.message, eRes.error, dRes.error?.message].filter(Boolean);
       setNodes(nRes.data || []);
-      setEmployees(eRes.rows || []);
+      /* ทับเฉพาะ `position` ที่ใช้จัดแถว — เก็บของเดิมไว้ที่ `company_position` ให้การ์ดเขียนบอกได้
+         ⚠️ ค่าที่คำนวณตอนแสดงผลเท่านั้น **ห้ามเขียนกลับฐาน** (ดู utils/positions.js §ตำแหน่ง 2 ชั้น)
+         🔴 เก็บ map ไว้ด้วย — **คนยืมตัวโหลดคนละรอบ ต้องทับด้วยชุดเดียวกัน** ไม่งั้นคนเดียวกัน
+            โชว์ "ตำแหน่งที่ทำ" ตอนอยู่ไลน์ตัวเอง แต่โชว์ "ตำแหน่งที่บรรจุ" ตอนถูกยืมไปไลน์อื่น */
+      setActingPos(actingMap || null);
+      setEmployees(applyWorkingPositions(eRes.rows || [], actingMap));
       const sk = await fetchByIds((eRes.rows || []).map(e => e.id),
-        (ids) => supabase.from('employee_skills').select('id, employee_id, skill_name, score').in('employee_id', ids));
+        (ids) => supabase.from('employee_skills').select('id, employee_id, skill_name, score, pending_level').in('employee_id', ids));
       if (!alive) return;
       if (sk.error) errs.push(sk.error);
       const byEmp = {};
@@ -108,20 +136,22 @@ export default function ManpowerBoard() {
   // ── ค่าตั้งบอร์ด (ช่องต่อทีม · ช่างประจำไลน์) — โหลดตอนเปิด + หลังแก้ในหน้าต่างตั้งค่า ──
   //    ตารางยังไม่ apply (42P01) = บอร์ดทำงานแบบเดิม (std) แต่ต้องเขียนบนจอ ห้ามเงียบ
   const loadSetup = useCallback(async () => {
-    const [sp, lt, ws, ssp, hp] = await Promise.all([
+    const [sp, lt, ws, ssp, hp, fu] = await Promise.all([
       supabase.from('manpower_slot_plans').select('id, org_node_id, team, slots'),
       supabase.from('line_technicians').select('id, employee_id, line_id'),
       fetchAllPages(() => supabase.from('workstations').select('id, line_id, line_name, station_name')),
       supabase.from('station_slot_plans').select('station_id, per_shift'),
       fetchAllPages(() => supabase.from('employee_home_positions').select('employee_id, station_id'), { orderBy: 'employee_id' }),
+      supabase.from('employee_flex_units').select('id, employee_id, org_node_id, note, kind'),
     ]);
-    const e = [sp.error?.message, lt.error?.message, ws.error, ssp.error?.message, hp.error].filter(Boolean);
+    const e = [sp.error?.message, lt.error?.message, ws.error, ssp.error?.message, hp.error, fu.error?.message].filter(Boolean);
     if (e.length) setErr(`ค่าตั้งบอร์ด: ${e.join(' · ')}`);
     setSlotPlans(sp.data || []);
     setLineTechs(lt.data || []);
     setStations(ws.rows || []);
     setStationPlans(ssp.data || []);
     setHomeByEmp(Object.fromEntries((hp.rows || []).map(h => [h.employee_id, h.station_id])));
+    setFlexUnits(fu.data || []);
   }, []);
   useEffect(() => { loadSetup(); }, [loadSetup]);
 
@@ -151,11 +181,15 @@ export default function ManpowerBoard() {
   useLiveBoard(loadToday, { tables: ['daily_production_logs', 'four_m_logs', 'line_helpers'], topic: 'manpower-board', client: supabase, tier: LIVE.BOARD });
 
   // ── ส่วนงานที่เลือกได้ (ตามผัง + scope ของ user) ──
-  const sectionNodes = useMemo(() => nodes.filter(n => n.kind === 'section')
+  /* 🏛️ รวม **แผนกขึ้นตรงฝ่าย** (parent_id ว่าง — JIG MTN · QA) เป็นบอร์ดของตัวเองด้วย (20/10)
+     เดิมกรองแค่ `kind === 'section'` ⇒ 2 หน่วยนี้ **เปิดบอร์ดไม่ได้เลย** คนในหน่วยไม่เคยขึ้นผัง
+     (หลักเดียวกับ ORPHAN_SECTION ใน sectionScope.js — หน่วยจริง มี cost center ของตัวเอง) */
+  const sectionNodes = useMemo(() => nodes
+    .filter(n => n.kind === 'section' || (n.kind === 'department' && !n.parent_id))
     .filter(n => !scopeSecs.length || inSectionScope(scopeSecs, orgKey(n)) || inSectionScope(scopeSecs, n.name))
     .sort(orgNodeCompare), [nodes, scopeSecs]);
   const secParam = params.get('sec') || '';
-  const section = sectionNodes.find(n => orgKey(n) === secParam) || sectionNodes[0] || null;
+  const section = sectionNodes.find(n => orgKey(n) === secParam) || (secParam && sectionNodes.find(n => n.name === secParam)) || sectionNodes[0] || null;
   const deptParam = params.get('dept') || '';
   // 📺 โหมดจอ TV (ไม่เลื่อน · แบ่งหน้า) — `?tv=1|0` ชนะ · ไม่ระบุ = บัญชี display (จอแขวน) เปิดให้เอง
   const tvParam = params.get('tv');
@@ -166,9 +200,11 @@ export default function ManpowerBoard() {
     for (const r of attLogs) { const cur = m[r.employee_id]; if (!cur || (!cur.is_present && r.is_present)) m[r.employee_id] = r; }
     return m;
   }, [attLogs]);
-  const maps = useMemo(() => buildScheduleMaps(sched), [sched]);
-  const board = useMemo(() => buildManpowerBoard({ section, nodes, employees, lines, maps, attendance, slotPlans, lineTechs, helpers, stations, stationPlans, homeByEmp }),
-    [section, nodes, employees, lines, maps, attendance, slotPlans, lineTechs, helpers, stations, stationPlans, homeByEmp]);
+  const maps = useMemo(() => buildScheduleMaps(sched, lines), [sched, lines]);   // lines = ไลน์ลูกตกทอดกะจากไลน์แม่
+  // 🧭 คนยืมตัวโหลดคนละรอบกับ master ⇒ ทับตำแหน่งที่นี่ (memo คิดใหม่เองเมื่อ map มาถึง)
+  const helpersPos = useMemo(() => applyWorkingPositions(helpers, actingPos), [helpers, actingPos]);
+  const board = useMemo(() => buildManpowerBoard({ section, nodes, employees, lines, maps, attendance, slotPlans, lineTechs, helpers: helpersPos, stations, stationPlans, homeByEmp, flexUnits }),
+    [section, nodes, employees, lines, maps, attendance, slotPlans, lineTechs, helpersPos, stations, stationPlans, homeByEmp, flexUnits]);
   const depts = useMemo(() => (board?.depts || []).filter(d => !deptParam || d.key === deptParam), [board, deptParam]);
 
   const filters = (
@@ -221,12 +257,14 @@ export default function ManpowerBoard() {
         : tab === 'org' ? (tv ? <OrgTv board={board} depts={depts} skills={skills} /> : <OrgTab board={board} depts={depts} skills={skills} />)
         : tab === 'layout' ? <LayoutTab board={board} depts={depts} lines={lines} attendance={attendance} maps={maps} tv={tv} stationPlans={stationPlans} skills={skills} />
         : tab === 'staffing' ? <StaffingTab section={section} deptParam={deptParam} today={workDate} nodes={nodes} employees={employees} lines={lines}
-            slotPlans={slotPlans} lineTechs={lineTechs} stations={stations} stationPlans={stationPlans} homeByEmp={homeByEmp} />
+            slotPlans={slotPlans} lineTechs={lineTechs} stations={stations} stationPlans={stationPlans} homeByEmp={homeByEmp} actingPos={actingPos} />
         : tab === 'history' ? <HistoryTab section={section} dept={deptParam ? (board?.depts || []).find(d => d.key === deptParam) || null : null} deptParam={deptParam} nodes={nodes} lines={lines} stations={stations} employees={employees} />
         : <FourMTab depts={depts} logs={fourM} tv={tv} />}
       {setupOpen && section && (
         <ManpowerBoardSetup section={section} nodes={nodes} lines={lines} employees={employees}
-          slotPlans={slotPlans} lineTechs={lineTechs} stations={stations} stationPlans={stationPlans}
+          slotPlans={slotPlans} lineTechs={lineTechs} stations={stations} stationPlans={stationPlans} flexUnits={flexUnits}
+          /* 🔴 หน้าแม่ที่มีกฎแล้วต้องส่งกฎลงแผงลูก — ส่งแค่ "เปิดได้ไหม" = แผงลูกเขียนข้ามหน่วยได้ */
+          secWrite={canWriteUnit(wctx, section?.name, { unknownTarget: 'block' })}
           onChanged={loadSetup} onClose={() => setSetupOpen(false)} />
       )}
     </Page>
@@ -280,7 +318,36 @@ function HelperTag({ p }) {
   return <span title={title} style={{ fontSize: 11, fontWeight: 700, color: '#0ea5e9', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{text}</span>;
 }
 
+/** 🏃 ป้ายคนวิ่งข้ามแผนก — "ไปช่วยประจำ" ไม่ใช่ "ยืมวันนี้" และไม่ใช่ "ย้ายสังกัด"
+ *  วาดจาง + ชี้บ้านจริง ท่าเดียวกับแถวทางลัดของเมนู (`alsoIn` = ทางลัด ไม่ใช่บ้านที่สอง · UI §4.5)
+ *  🔴 ต้องเขียน cost center ของบ้านจริงไว้ด้วย — คนอ่านบอร์ดจะได้ไม่คิดว่าค่าแรงมาลงที่แผนกนี้ */
+function FlexTag({ p }) {
+  const f = p.flexFrom;
+  if (!f) return null;
+  const home = f.nodeName || 'หน่วยอื่น';
+  const cc = f.costCenter ? ` · cost center ${f.costCenter}` : '';
+  return (
+    <span title={`บ้านจริง: ${home}${cc}${f.note ? ` · ${f.note}` : ''} — มาช่วยแผนกนี้ประจำ ไม่ได้ย้ายสังกัด และไม่นับเป็นกำลังคนของแผนกนี้`}
+      style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+      ↗ บ้าน {home}
+    </span>
+  );
+}
+
 /** ชิปคนระดับหัวหน้า — รูป + ชื่อ + ตำแหน่ง */
+/* 🎖️ ป้ายรักษาการ — **ต้องเขียนบ้านจริง + cost center ของบ้านจริงเสมอ**
+   ไม่งั้นคนอ่านผังจะเข้าใจว่าเขาย้ายมาสังกัดหน่วยนี้แล้ว (ซึ่งไม่ใช่ · ค่าแรงยังลงหน่วยเดิม)
+   Andon เหลือง = นิ่ง ไม่กระพริบ (UI-CONVENTIONS) — นี่คือข้อเท็จจริง ไม่ใช่ alarm */
+function ActingNote({ a }) {
+  const where = [a?.nodeName, a?.costCenter && `CC ${a.costCenter}`].filter(Boolean).join(' · ');
+  return (
+    <div style={{ fontSize: 11, color: 'var(--amber)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+      title={`รักษาการ — สังกัดจริงและ cost center ยังอยู่ที่ ${where || 'หน่วยเดิม'}${a?.note ? ` · ${a.note}` : ''}`}>
+      🎖️ รักษาการ{where ? ` · สังกัด ${where}` : ''}
+    </div>
+  );
+}
+
 function PersonChip({ p }) {
   return (
     <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: 6, border: '1px solid var(--border)', borderRadius: 8, background: 'var(--card)', minWidth: 0, maxWidth: '100%' }}>
@@ -291,15 +358,44 @@ function PersonChip({ p }) {
         {p.linkedLines?.length > 0 && (
           <div style={{ fontSize: 11, color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={`ช่างประจำไลน์: ${p.linkedLines.join(', ')}`}>🔧 {p.linkedLines.join(', ')}</div>
         )}
+        {p.acting && <ActingNote a={p.acting} />}
         <AttendDot p={p} />
       </div>
     </div>
   );
 }
 
+/** 🧭 ป้าย "ทำงานคนละตำแหน่งกับที่บริษัทบรรจุ" — 2026-10-14 · คำสั่ง user
+ *  บอร์ดจัดแถวด้วย**ตำแหน่งที่ปฏิบัติงาน** ⇒ คนที่ยืนคนละแถวกับที่บรรจุต้องอธิบายได้ว่าทำไม
+ *  (ไม่งั้นคนดูบอร์ดเทียบกับทะเบียน HR แล้วคิดว่าระบบจัดผิด) · ธงมาจาก `isActingPosition()`
+ *  ⚠️ ไม่ใช่ความผิดพลาด = **ห้ามใช้สีเตือน** · ฟอนต์ 11 = พื้นขั้นต่ำของจอ TV (ด่าน font-min-11) */
+function ActingTag({ p }) {
+  if (!p?.acting) return null;
+  return (
+    <span title={`ตำแหน่งตามบริษัท: ${positionLabel(p.company_position) || p.company_position || '—'}`}
+      style={{ fontSize: 11, color: 'var(--accent)', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+      🧭 ทำหน้าที่ {positionLabel(p.position) || p.position}
+    </span>
+  );
+}
+
 /** การ์ด skill พนักงาน (แทนการ์ด SKILL EVALUATION CARD บนบอร์ดกระดาษ) */
+/** 🎯 Top N ทักษะของคน — **ยุบชื่อทักษะซ้ำก่อนตัด** (14/10)
+ *  ทะเบียน `employee_skills` ไม่มี unique(employee_id, skill_name) ⇒ คนเดียวมี 2 แถวชื่อทักษะเดียวกันได้
+ *  (พบจริงตอนการ์ดคนวิ่งข้ามแผนกเริ่มวาดคนที่เดิมเป็นแค่ชิป — React เตือนคีย์ซ้ำ `SPOT`
+ *   = แถบคะแนนอาจถูกวาดซ้ำ/หายไปเงียบๆ) · ลิสต์ถูกเรียงคะแนนมาก→น้อยมาแล้ว ⇒ เก็บตัวแรก = คะแนนสูงสุด */
+function topSkills(rows, n) {
+  const out = [], seen = new Set();
+  for (const s of rows || []) {
+    if (!s?.skill_name || seen.has(s.skill_name)) continue;
+    seen.add(s.skill_name); out.push(s);
+    if (out.length >= n) break;
+  }
+  return out;
+}
+
 function SkillCard({ p, skills }) {
-  const top = (skills.byEmp[p.id] || []).slice(0, 3);
+  const top = topSkills(skills.byEmp[p.id], 3);
   return (
     <div title={`${p.name}${p.employee_id_code ? ` (${p.employee_id_code})` : ''}`} style={{
       border: '1px solid var(--border)', borderRadius: 8, padding: 6, background: 'var(--card)',
@@ -313,6 +409,8 @@ function SkillCard({ p, skills }) {
       </div>
       <AttendDot p={p} />
       <HelperTag p={p} />
+      <FlexTag p={p} />
+      <ActingTag p={p} />
       {p.unknownPos && <span style={{ fontSize: 11, color: '#f59e0b' }} title="ตำแหน่งนี้ไม่อยู่ในทะเบียนตำแหน่ง — แก้ที่ /operator">⚠️ {p.position}</span>}
       {top.length ? top.map(s => {
         const d = skills.defs[s.skill_name];
@@ -399,9 +497,10 @@ function OrgTab({ board, depts, skills }) {
         </div>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
           <Counter label="แผน (std 2 กะ)" value={t.plan} sub={t.plan == null ? 'ยังไม่ตั้ง std' : null} />
-          <Counter label="ในทะเบียน" value={t.ops} />
+          <Counter label="ในทะเบียน" value={t.ops} sub="เฉพาะพนักงาน" />
           <Counter label="มาวันนี้" value={t.present} tone="#22c55e" />
           {t.borrowed > 0 && <Counter label="ยืมมาช่วย" value={t.borrowed} tone="#0ea5e9" />}
+          {t.flex > 0 && <Counter label="วิ่งข้ามมาช่วย" value={t.flex} sub="ไม่นับในทะเบียน" />}
         </div>
       </div>
 
@@ -419,9 +518,10 @@ function OrgTab({ board, depts, skills }) {
                 : <span style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่มีหัวหน้าแผนกในทะเบียน</span>}
             </div>
             <Counter label="แผน เช้า/ดึก" value={d.planTotal == null ? null : `${d.plan.day ?? '–'}/${d.plan.night ?? '–'}`} sub={d.planTotal == null ? 'ยังไม่ตั้ง std ที่ไลน์' : null} />
-            <Counter label="ในทะเบียน" value={d.opsTotal} />
+            <Counter label="ในทะเบียน" value={d.opsTotal} sub="เฉพาะพนักงาน" />
             <Counter label="มาวันนี้" value={d.present} tone="#22c55e" />
             {d.borrowed.length > 0 && <Counter label="ยืมมาช่วย" value={d.borrowed.length} tone="#0ea5e9" />}
+            {d.flex.length > 0 && <Counter label="วิ่งข้ามมาช่วย" value={d.flex.length} sub="ไม่นับในทะเบียน" />}
           </div>
           {d.stationInfo && (
             <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 8 }}>
@@ -448,6 +548,21 @@ function OrgTab({ board, depts, skills }) {
               </div>
             </div>
           )}
+          {d.flex.length > 0 && (
+            <div style={{ marginTop: 8 }}>
+              {/* 🏃 คนวิ่งข้ามแผนก — ทะเบียนถาวร (employee_flex_units) คนละตัวกับยืมรายวัน
+                  🔴 ไม่นับรวมในทะเบียน/ช่องว่างของแผนกนี้ · บ้านจริงนับเขาอยู่แล้ว (นับ 2 ที่ = กำลังคนปลอม)
+                  🔴 cost center ยังอยู่ที่บ้านจริง — เขียนบนจอเสมอ ห้ามให้คนเข้าใจผิดว่าย้ายสังกัด */}
+              <span style={{ display: 'inline-block', fontSize: 11.5, fontWeight: 800, padding: '2px 8px', borderRadius: 4, border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text2)' }}>
+                🏃 วิ่งข้ามมาช่วยประจำ {d.flex.length} คน</span>
+              <span style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 8 }}>
+                ไม่นับรวมในทะเบียนของแผนก · cost center ยังอยู่ที่หน่วยต้นสังกัด
+              </span>
+              <div style={{ ...CARD_GRID, marginTop: 6 }}>
+                {d.flex.map(p => <SkillCard key={p.id} p={p} skills={skills} />)}
+              </div>
+            </div>
+          )}
           {d.techs.length > 0 && (
             <div style={{ marginTop: 8 }}>
               <RoleTag>ช่างเทคนิคประจำไลน์</RoleTag>
@@ -468,6 +583,7 @@ function LayoutTab({ board, depts, lines, attendance, maps, tv, stationPlans, sk
   const [stations, setStations] = useState([]);
   const [homes, setHomes] = useState({});
   const [pick, setPick] = useState('');
+  const [seedLine] = useState(() => urlParam('lline') || '');   // ?lline= ชื่อไลน์ของผังที่จะเปิด (จอวนหน้า) · คนเลือกเองแล้ว `pick` ชนะ
   const [err, setErr] = useState('');
 
   const family = useMemo(() => lineFamilyOf(lines, depts.flatMap(d => d.lines.map(l => l.id))), [lines, depts]);
@@ -496,7 +612,7 @@ function LayoutTab({ board, depts, lines, attendance, maps, tv, stationPlans, sk
   // 📺 จอ TV: หลายผัง = วนทีละผังเอง (ไม่มีเมาส์ไปเลือก dropdown) · โหมดปกติ = เลือกเอง
   const [tvIdx, setTvIdx] = useAutoPage(tv ? layouts.length : 0);
   const layout = tv ? layouts[clampPage(tvIdx, layouts.length)] || null
-    : layouts.find(l => String(l.id) === pick) || layouts[0] || null;
+    : layouts.find(l => String(l.id) === pick) || (!pick && seedLine ? layouts.find(l => l.line_name === seedLine) : null) || layouts[0] || null;
   useEffect(() => {
     let alive = true;
     if (!layout) { setStations([]); return undefined; }
@@ -548,6 +664,7 @@ function LayoutTab({ board, depts, lines, attendance, maps, tv, stationPlans, sk
       <div style={{ fontSize: 12, color: fitGaps.gaps.length ? '#f59e0b' : 'var(--muted)' }}>
         🎯 ฝีมือตรงจุดไหม (คนที่มาวันนี้): ตรวจ {fitGaps.checked} คน · ผ่านครบทุกทักษะ {fitGaps.ok} คน
         {fitGaps.gaps.length > 0 && <b> · ยืนจุดที่ทักษะยังไม่ถึง {fitGaps.gaps.length} คน</b>}
+        {fitGaps.onlyApproval > 0 && <span> (⏳ ในนี้ {fitGaps.onlyApproval} คนได้ขั้นแล้ว แค่รอหัวหน้าอนุมัติที่ /operator?tab=levelup)</span>}
         {fitGaps.noReqStations > 0 && <span style={{ color: 'var(--muted)' }}> · ยังไม่ตั้งทักษะที่จุดต้องการ {fitGaps.noReqStations} จุด ({fitGaps.noReqPeople} คนที่ยืนอยู่ ตรวจไม่ได้ — ตั้งที่ /line-setup)</span>}
       </div>
       <LayoutMap layout={layout} placed={placed} reserve={tv ? 48 : 12} />
@@ -580,6 +697,7 @@ function SkillGapTable({ gaps, defs }) {
                       border: `1px ${m.assessed ? 'solid' : 'dashed'} var(--border2)`, color: m.assessed ? 'var(--text)' : 'var(--muted)' }}>
                       {defs[m.skill_name]?.label || m.skill_name}{' '}
                       {m.assessed ? <b style={{ fontVariantNumeric: 'tabular-nums' }}>{m.actual}/{m.required}</b> : <span>ยังไม่ประเมิน (ต้องการ {m.required})</span>}
+                      {m.pending != null && <span title="ได้ขั้นนี้แล้วจากการสะสม EXP — รอหัวหน้ากดอนุมัติ" style={{ marginLeft: 4, color: m.waitApproval ? '#0ea5e9' : 'var(--muted)' }}>⏳ รออนุมัติขั้น {m.pending}</span>}
                     </span>
                   ))}
                 </span>
@@ -590,6 +708,7 @@ function SkillGapTable({ gaps, defs }) {
       </table>
       <div style={{ padding: '8px 12px', fontSize: 12, color: 'var(--muted)' }}>
         กรอบทึบ = ประเมินแล้วแต่คะแนนยังไม่ถึง (มี/ต้องการ) · กรอบประ = ยังไม่เคยประเมินทักษะนั้น (นับเป็น 0) ·
+        ⏳ = ได้ขั้นแล้วจากการสะสม EXP แต่รอหัวหน้าอนุมัติ (สีฟ้า = อนุมัติแล้วจะผ่านจุดนี้ทันที) ·
         ประเมิน/ปรับคะแนนที่ /operator · ตั้งทักษะที่จุดต้องการที่ /line-setup
       </div>
     </div>
@@ -755,18 +874,23 @@ function useAutoPage(count) {
 /** ชิปคนแบบบรรทัดเดียว (แถบหัวจอ TV) */
 function MiniPerson({ p }) {
   return (
-    <div title={`${p.name} · ${positionLabel(p.position) || ''}`} style={{ display: 'flex', alignItems: 'center', gap: 6, flex: '0 1 auto', minWidth: 0, maxWidth: 220 }}>
+    <div title={`${p.name} · ${positionLabel(p.position) || ''}${p.acting ? ` · 🎖️ รักษาการ (สังกัดจริง ${p.acting.nodeName || '—'}${p.acting.costCenter ? ` · CC ${p.acting.costCenter}` : ''})` : ''}`}
+      style={{ display: 'flex', alignItems: 'center', gap: 6, flex: '0 1 auto', minWidth: 0, maxWidth: 220 }}>
       <Photo p={p} size={26} />
       <div style={{ minWidth: 0, lineHeight: 1.2 }}>
         <div style={{ fontSize: 12.5, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
-        <div style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{positionLabel(p.position)}</div>
+        {/* 🎖️ จอ TV ไม่มีที่ให้เขียนยาว — แทนตำแหน่งด้วย "รักษาการ · บ้านจริง" ไปเลย
+            (ป้ายที่ตัดทิ้งเพราะพื้นที่ไม่พอ = คนอ่านผังเข้าใจว่าเขาย้ายมาสังกัดแล้ว) */}
+        <div style={{ fontSize: 11, color: p.acting ? 'var(--amber)' : 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {p.acting ? `🎖️ รักษาการ${p.acting.nodeName ? ` · ${p.acting.nodeName}` : ''}` : positionLabel(p.position)}
+        </div>
       </div>
     </div>
   );
 }
 
 function TvCard({ p, skills }) {
-  const top = (skills.byEmp[p.id] || []).slice(0, 2);
+  const top = topSkills(skills.byEmp[p.id], 2);
   return (
     <div style={{ width: TV_CARD.w, height: TV_CARD.h, overflow: 'hidden', border: '1px solid var(--border)', borderRadius: 8, padding: 6,
       background: 'var(--card)', display: 'flex', flexDirection: 'column', gap: 3 }}>
@@ -830,7 +954,7 @@ function OrgTv({ board, depts, skills }) {
             {[...board.top, ...board.support].map(p => <MiniPerson key={p.id} p={p} />)}
           </div>
           <Counter label="แผน" value={t.plan} />
-          <Counter label="ในทะเบียน" value={t.ops} />
+          <Counter label="ในทะเบียน" value={t.ops} sub="เฉพาะพนักงาน" />
           <Counter label="มาวันนี้" value={t.present} tone="#22c55e" />
         </div>
         {!d ? <div className="card" style={{ padding: 24, color: 'var(--muted)' }}>ส่วนงานนี้ยังไม่มีพนักงานหน้างานในทะเบียน</div> : (
@@ -843,9 +967,12 @@ function OrgTv({ board, depts, skills }) {
                 {d.techs.map(p => <MiniPerson key={p.id} p={p} />)}
                 {d.borrowed.length > 0 && <span style={{ fontSize: 12, color: '#0ea5e9', fontWeight: 700, whiteSpace: 'nowrap', alignSelf: 'center' }}>🤝 ยืมมาช่วย {d.borrowed.length}:</span>}
                 {d.borrowed.map(p => <MiniPerson key={p.id} p={p} />)}
+                {/* 🏃 คนวิ่งข้ามแผนก — ไม่นับเป็นกำลังคนของแผนกนี้ (เทา ไม่ใช่สีบริบทฟ้าของคนยืม) */}
+                {d.flex.length > 0 && <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700, whiteSpace: 'nowrap', alignSelf: 'center' }}>🏃 วิ่งข้ามมาช่วย {d.flex.length}:</span>}
+                {d.flex.map(p => <MiniPerson key={p.id} p={p} />)}
               </div>
               <Counter label="แผน เช้า/ดึก" value={d.planTotal == null ? null : `${d.plan.day ?? '–'}/${d.plan.night ?? '–'}`} />
-              <Counter label="ในทะเบียน" value={d.opsTotal} />
+              <Counter label="ในทะเบียน" value={d.opsTotal} sub="เฉพาะพนักงาน" />
               <Counter label="มาวันนี้" value={d.present} tone="#22c55e" />
             </div>
             <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: TV_GAP }}>
@@ -890,7 +1017,7 @@ function OrgTv({ board, depts, skills }) {
    เพดาน 62 วัน (~7,500 แถวเช็คชื่อ) — เลือกยาวกว่านั้น = ตัดให้เหลือ 62 วันล่าสุดแล้วเขียนบอก ไม่บล็อก */
 const STAFFING_MAX_DAYS = 62;
 
-function StaffingTab({ section, deptParam, today, nodes, employees, lines, slotPlans, lineTechs, stations, stationPlans, homeByEmp }) {
+function StaffingTab({ section, deptParam, today, nodes, employees, lines, slotPlans, lineTechs, stations, stationPlans, homeByEmp, actingPos }) {
   const tr = useTimeRange({ defaultDays: 30 });
   const to = tr.to > today ? today : tr.to;
   const capFrom = addDaysStr(to, -(STAFFING_MAX_DAYS - 1));
@@ -935,14 +1062,23 @@ function StaffingTab({ section, deptParam, today, nodes, employees, lines, slotP
     const sIdx = indexSessions(raw.sessions);
     const out = [];
     for (let d = from; d && d <= to; d = addDaysStr(d, 1)) {
-      const board = buildManpowerBoard({ section, nodes, employees: rosterOn(employees, d, { today, attendance: att[d] }), lines, maps: buildScheduleMaps(sch[d] || []),
-        attendance: att[d] || {}, slotPlans, lineTechs, helpers: raw.borrowed.byDate?.[d] || [], stations, stationPlans, homeByEmp });
+      /* 🏃 ไม่ส่ง `flexUnits` ที่นี่โดยเจตนา — แท็บนี้ตอบ "ที่นั่ง vs คนยืนจริง" ของแผนก และคนวิ่งข้าม
+         แผนก **ไม่ใช่กำลังคนของที่นี่** (บ้านจริงนับเขาอยู่แล้ว) ⇒ ส่งเข้ามาก็ไม่ควรขยับตัวเลขใดๆ
+         🔴 อย่าเติมเพราะ "ให้ครบพารามิเตอร์" — ทะเบียนนี้เป็นของวันนี้ ไม่มีประวัติย้อนหลังด้วย */
+      const board = buildManpowerBoard({ section, nodes, employees: rosterOn(employees, d, { today, attendance: att[d] }), lines, maps: buildScheduleMaps(sch[d] || [], lines),
+        // 🧭 คนยืมตัวย้อนหลังก็ต้องทับตำแหน่งด้วยชุดเดียวกับ `employees` (ส่งมาแล้วทับจากหน้าแม่)
+        attendance: att[d] || {}, slotPlans, lineTechs, helpers: applyWorkingPositions(raw.borrowed.byDate?.[d] || [], actingPos), stations, stationPlans, homeByEmp });
       out.push({ date: d, depts: (board?.depts || []).filter(x => !deptParam || x.key === deptParam)
-        .map(x => ({ key: x.key, name: x.name, shifts: staffingOfDept(x),
-          sessions: { day: sessionsOfDeptShift(sIdx, x.lines, d, 'day'), night: sessionsOfDeptShift(sIdx, x.lines, d, 'night') } })) });
+        .map(x => {
+          /* 🔴 กะผลิตที่ปิดแล้ว = หลักฐานว่า "ไลน์เดินในกะนี้จริง" — ไม่มี = ยืนยันไม่ได้
+             ⇒ ไม่คิดช่องว่างของกะนั้น (จุดงานที่ไม่ได้เดินวันนั้น ไม่ใช่ "ขาดคน" · user 15/10) */
+          const sessions = { day: sessionsOfDeptShift(sIdx, x.lines, d, 'day'), night: sessionsOfDeptShift(sIdx, x.lines, d, 'night') };
+          const ran = { day: sessions.day.length > 0, night: sessions.night.length > 0 };
+          return { key: x.key, name: x.name, shifts: staffingOfDept(x, { ran }), sessions };
+        }) });
     }
     return out;
-  }, [raw, from, to, today, section, deptParam, nodes, employees, lines, slotPlans, lineTechs, stations, stationPlans, homeByEmp]);
+  }, [raw, from, to, today, section, deptParam, nodes, employees, lines, slotPlans, lineTechs, stations, stationPlans, homeByEmp, actingPos]);
   const summary = useMemo(() => summarizeStaffing(days), [days]);
   const oeeCmp = useMemo(() => compareOeeByStaffing(days), [days]);
   const rowsOf = useMemo(() => summary.flatMap(sm => ['day', 'night'].map(sh => ({ key: sm.key, name: sm.name, sh }))), [summary]);
@@ -956,7 +1092,10 @@ function StaffingTab({ section, deptParam, today, nodes, employees, lines, slotP
   const cellOf = (key, date, sh) => deptOf(key, date)?.shifts[sh] || null;
   const tip = (s, sess) => {
     const o = oeeOfSessions(sess);
-    return `ที่นั่ง ${s.seats} · ยืนจริง ${s.onFloor}\nช่องว่าง ${s.empty} · ลา ${s.leave} · ขาดงาน ${s.absent} · ยังไม่เช็ค ${s.unchecked} · ถูกยืมออก ${s.lentOut} · ยืมเข้า ${s.borrowedIn}`
+    return `ในทะเบียน ${s.registered} · ยืนจริง ${s.onFloor}`
+      + `\nคนขาด ${s.absentGap ?? '–'} = ลา ${s.leave} + ขาดงาน ${s.absent} + ยังไม่เช็ค ${s.unchecked} + ถูกยืมออก ${s.lentOut} − ยืมเข้า ${s.borrowedIn}`
+      + `\nช่องว่างอัตรากำลัง ${s.structGap == null ? 'คิดไม่ได้ (ยืนยันไม่ได้ว่าไลน์เดินกะนี้)' : s.structGap}`
+      + (s.capped ? ` (ตัดจาก ${s.emptyRaw} ตามกำลังคนผัง ${s.std})` : '')
       + `\n${o ? `OEE ${o.oee}%${o.p != null ? ` · %P ${o.p}%` : ''} (${o.sessions} กะผลิต)` : 'ไม่มีกะผลิตที่ปิดแล้ว'}`
       + (s.noPlan ? '\n⚠️ บางทีมไม่มีแผนช่อง — ใช้จำนวนคนในทะเบียนเป็นที่นั่ง' : '');
   };
@@ -967,7 +1106,9 @@ function StaffingTab({ section, deptParam, today, nodes, employees, lines, slotP
         onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset}
         note={`ส่วนงาน ${section?.name || '–'}${deptParam ? ` · แผนก ${summary[0]?.name || '(ไม่มีข้อมูลในช่วงนี้)'}` : ''} · แท่งละ 1 วัน × กะ · ดูได้ครั้งละไม่เกิน ${STAFFING_MAX_DAYS} วัน`} />
       <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.6 }}>
-        ℹ️ <b>ที่นั่ง</b> = การ์ดคนในทะเบียน + ช่องว่าง ของกะนั้น (กฎเดียวกับบอร์ด) · <b>ขาด</b> = ที่นั่ง − คนยืนจริง (มา + ยืมเข้า − ถูกยืมออก) ·
+        ℹ️ <b>ขาด 2 ชนิด แยกกันคนละคอลัมน์</b> — <b>ขาดคน</b> = ลา + ขาดงาน + ยังไม่เช็ค + ถูกยืมออก − ยืมเข้า (เรื่องรายวัน หัวหน้าจัดการได้) ·
+        <b>ช่องว่างอัตรากำลัง</b> = ตำแหน่งที่ยังไม่มีคน (เรื่องอัตรากำลัง/รับคน) · <b>มาจริง %</b> หารด้วย<b>คนในทะเบียนของกะนั้น</b> ไม่ใช่ที่นั่ง ·
+        ช่องว่างคิดเฉพาะกะที่<b>ยืนยันได้ว่าไลน์เดิน</b> (มีกะผลิตปิดแล้ว) และ<b>ไม่เกินกำลังคนตามผัง − คนที่มาจริง</b> ·
         คิดจาก<b>ค่าตั้งบอร์ด/std และทะเบียนพนักงานปัจจุบัน</b> (ตัดคนที่เริ่มงานหลังวันนั้น — คนที่ลาออกไปแล้วไม่อยู่ในตัวเลขย้อนหลัง) ·
         กะที่ไม่มีใครในแผนกถูกเช็คชื่อเลย = <b>ไม่ได้เช็คชื่อ</b> ไม่นับเป็นขาด
       </div>
@@ -984,8 +1125,8 @@ function StaffingTab({ section, deptParam, today, nodes, employees, lines, slotP
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead><tr>
                 <th style={th}>แผนก</th><th style={{ ...th, textAlign: 'right' }}>กะที่เช็คแล้ว</th><th style={{ ...th, textAlign: 'right' }}>กะที่ขาดคน</th>
-                <th style={{ ...th, textAlign: 'right' }}>ยืนจริง / ที่นั่ง</th><th style={{ ...th, textAlign: 'right' }}>ขาดรวม (คน-กะ)</th>
-                <th style={{ ...th, textAlign: 'right' }}>ช่องว่าง</th><th style={{ ...th, textAlign: 'right' }}>ลา</th><th style={{ ...th, textAlign: 'right' }}>ขาดงาน</th>
+                <th style={{ ...th, textAlign: 'right' }}>ยืนจริง / ในทะเบียน</th><th style={{ ...th, textAlign: 'right' }}>🧑 ขาดคน (คน-กะ)</th>
+                <th style={{ ...th, textAlign: 'right' }}>🪑 ช่องว่างอัตรากำลัง</th><th style={{ ...th, textAlign: 'right' }}>ลา</th><th style={{ ...th, textAlign: 'right' }}>ขาดงาน</th>
                 <th style={{ ...th, textAlign: 'right' }}>ยังไม่เช็ค</th><th style={{ ...th, textAlign: 'right' }}>ถูกยืมออก</th><th style={{ ...th, textAlign: 'right' }}>ยืมเข้า</th>
                 <th style={th}>ขาดหนักสุด</th><th style={{ ...th, textAlign: 'right' }}>กะไม่ได้เช็คชื่อ</th>
               </tr></thead>
@@ -995,9 +1136,20 @@ function StaffingTab({ section, deptParam, today, nodes, employees, lines, slotP
                     <td style={{ ...td, fontWeight: 700, whiteSpace: 'normal', minWidth: 140 }}>{sm.name}{sm.noPlanShifts > 0 && <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 400 }}>⚠️ {sm.noPlanShifts} กะมีทีมที่ไม่มีแผนช่อง</div>}</td>
                     <td style={num}>{sm.shifts}</td>
                     <td style={num}>{sm.shifts ? `${sm.shortShifts} (${pct(sm.shortShifts / sm.shifts)})` : '–'}</td>
-                    <td style={num}>{sm.shifts ? `${sm.onFloor} / ${sm.seats} (${pct(sm.fill)})` : '–'}</td>
-                    <td style={{ ...num, fontWeight: 800 }}>{sm.shifts ? sm.short : '–'}</td>
-                    <td style={num}>{sm.empty}</td><td style={num}>{sm.leave}</td><td style={num}>{sm.absent}</td>
+                    <td style={num}>{sm.shifts ? `${sm.onFloor} / ${sm.registered} (${pct(sm.fill)})` : '–'}</td>
+                    <td style={{ ...num, fontWeight: 800 }}>{sm.shifts ? sm.absentShort : '–'}</td>
+                    <td style={num}>
+                      {sm.structUnknownShifts >= sm.shifts && sm.shifts ? '–' : sm.structShort}
+                      {sm.structUnknownShifts > 0 && (
+                        <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}>คิดไม่ได้ {sm.structUnknownShifts} กะ</div>
+                      )}
+                      {sm.capped > 0 && (
+                        <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}>ตัดตามผัง {sm.capped}</div>
+                      )}
+                      {sm.stdUnknownShifts > 0 && (
+                        <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 400 }}>⚠️ ไม่รู้กำลังคนผัง {sm.stdUnknownShifts} กะ</div>
+                      )}
+                    </td><td style={num}>{sm.leave}</td><td style={num}>{sm.absent}</td>
                     <td style={num}>{sm.unchecked}</td><td style={num}>{sm.lentOut}</td><td style={num}>{sm.borrowedIn}</td>
                     <td style={td}>{sm.worst ? `${dShort(sm.worst.date)} ${SHIFT_TH[sm.worst.shift]} ขาด ${sm.worst.gap}` : '–'}</td>
                     <td style={num}>{sm.notChecked}</td>
@@ -1006,7 +1158,11 @@ function StaffingTab({ section, deptParam, today, nodes, employees, lines, slotP
               </tbody>
             </table>
             <div style={{ padding: '8px 12px', fontSize: 12, color: 'var(--muted)' }}>
-              ช่องว่าง + ลา + ขาดงาน + ยังไม่เช็ค + ถูกยืมออก − ยืมเข้า = ขาด (นับทุกกะ ทั้งกะที่ขาดและกะที่เกิน) · "ขาดรวม" นับเฉพาะกะที่ขาด
+              🧑 <b>ขาดคน</b> = ลา + ขาดงาน + ยังไม่เช็ค + ถูกยืมออก − ยืมเข้า (นับเฉพาะกะที่ขาด) · <b>"กะที่ขาดคน" นับจากช่องนี้เท่านั้น</b> ·
+              🪑 <b>ช่องว่างอัตรากำลัง</b> คนละเรื่องกัน — ไม่ใช่ "วันนี้มีคนไม่มา" แต่คือตำแหน่งที่ยังไม่มีคนประจำ ·
+              "คิดไม่ได้ N กะ" = ยืนยันไม่ได้ว่าไลน์เดินกะนั้น (ไม่มีกะผลิตที่ปิดแล้ว) จึงไม่นับช่องว่าง — <b>ไม่รู้ ≠ ไม่ขาด</b> ·
+              "ตัดตามผัง N" = ช่องว่างดิบจากจุดงานเกินกำลังคนตามผัง (std − คนที่มาจริง) จึงถูกตัด — จุดที่ใช้คนวนๆ ไม่ใช่ช่องว่างถาวร ·
+              "⚠️ ไม่รู้กำลังคนผัง N กะ" = ไลน์ของแผนกนี้ยังไม่ได้ตั้ง std (ตั้งที่ /line-setup) ⇒ <b>ไม่ได้ตัดเพดาน</b> ช่องว่างอาจสูงกว่าจริง
             </div>
           </div>
 
@@ -1048,7 +1204,7 @@ function StaffingTab({ section, deptParam, today, nodes, employees, lines, slotP
           </div>
 
           <div className="card" style={{ padding: 0, overflowX: 'auto' }}>
-            <div style={{ padding: '10px 12px', fontWeight: 800 }}>รายวัน — ขาดกี่คน <span style={{ fontWeight: 400, fontSize: 12, color: 'var(--muted)' }}>(ตัวเลข = ขาด · +n = เกิน · ✓ = ครบ · · = ไม่ได้เช็คชื่อ · ชี้ที่ช่องเพื่อดูสาเหตุ)</span></div>
+            <div style={{ padding: '10px 12px', fontWeight: 800 }}>รายวัน — คนขาดกี่คน <span style={{ fontWeight: 400, fontSize: 12, color: 'var(--muted)' }}>(ตัวเลข = คนขาด (ลา/ขาดงาน/ยังไม่เช็ค/ถูกยืมออก) · +n = คนเกิน · ✓ = มากันครบ · · = ไม่ได้เช็คชื่อ · ชี้ที่ช่องเพื่อดูสาเหตุ + ช่องว่างอัตรากำลัง)</span></div>
             <table style={{ borderCollapse: 'collapse' }}>
               <thead><tr>
                 <th style={{ ...th, position: 'sticky', left: 0, background: 'var(--card)', zIndex: 1 }}>แผนก · กะ</th>
@@ -1065,8 +1221,10 @@ function StaffingTab({ section, deptParam, today, nodes, employees, lines, slotP
                       const base = { ...td, textAlign: 'center', padding: '6px 4px', minWidth: 34, fontSize: 12 };
                       if (!s || (!s.seats && !s.evaluated)) return <td key={d.date} style={{ ...base, color: 'var(--muted)' }} />;
                       if (!s.evaluated) return <td key={d.date} style={{ ...base, color: 'var(--muted)' }} title="ไม่มีใครในแผนกถูกเช็คชื่อกะนี้ — ไม่รู้ว่ามาครบไหม">·</td>;
-                      if (s.gap > 0) return <td key={d.date} title={tip(s, deptOf(r.key, d.date)?.sessions?.[r.sh])} style={{ ...base, fontWeight: 800, color: 'var(--text)', background: `rgba(239,68,68,${Math.min(0.15 + s.gap * 0.08, 0.6).toFixed(2)})` }}>{s.gap}</td>;
-                      if (s.gap < 0) return <td key={d.date} title={tip(s, deptOf(r.key, d.date)?.sessions?.[r.sh])} style={{ ...base, color: '#0ea5e9' }}>+{-s.gap}</td>;
+                      /* 🔴 ช่องสีแดง = "คนขาดจริง" เท่านั้น — ช่องว่างอัตรากำลังไม่ใช่เหตุการณ์ของวันนั้น
+                         (เดิมใช้ gap รวม ⇒ ทั้งตารางแดงหมดทุกวันจนดูไม่ออกว่าวันไหนมีปัญหาจริง · 15/10) */
+                      if (s.absentGap > 0) return <td key={d.date} title={tip(s, deptOf(r.key, d.date)?.sessions?.[r.sh])} style={{ ...base, fontWeight: 800, color: 'var(--text)', background: `rgba(239,68,68,${Math.min(0.15 + s.absentGap * 0.08, 0.6).toFixed(2)})` }}>{s.absentGap}</td>;
+                      if (s.absentGap < 0) return <td key={d.date} title={tip(s, deptOf(r.key, d.date)?.sessions?.[r.sh])} style={{ ...base, color: '#0ea5e9' }}>+{-s.absentGap}</td>;
                       return <td key={d.date} title={tip(s, deptOf(r.key, d.date)?.sessions?.[r.sh])} style={{ ...base, color: 'var(--muted)' }}>✓</td>;
                     })}
                   </tr>

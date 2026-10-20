@@ -91,6 +91,7 @@ export default function MaterialRequests() {
     supabase.from('profiles').select('id, full_name, signature_url').not('signature_url', 'is', null)
       .then(({ data }) => setSigners(data || []));
     supabaseDR.from('parts_master').select('mat_no, part_name, uom').eq('is_active', true)
+      /* cap-ok: parts_master 430 แถว (วัด 20/10) */
       .order('mat_no').limit(2000)
       .then(({ data }) => setParts(data || []));
   }, []);
@@ -222,7 +223,9 @@ export default function MaterialRequests() {
       produced_date: it.produced_date || null, batch_no: it.batch_no || null,
       updated_by_name: fullName || null,
     }));
-    const { error: eUp } = await supabaseDR.from('material_request_items').upsert(up);
+    /* 🔴 `defaultToNull:false` — ปนแถวเดิม (มี id) กับแถวใหม่ (ไม่มี id) ในก้อนเดียว postgrest ส่งคอลัมน์รวม
+       แล้วเติม id = NULL ให้แถวใหม่ ⇒ 23502 ล้มทั้งก้อน หลังลบแถวเดิมไปแล้ว (audit 19/10) */
+    const { error: eUp } = await supabaseDR.from('material_request_items').upsert(up, { defaultToNull: false });
     if (eUp) return toast.error(`บันทึกรายการไม่สำเร็จ: ${eUp.message}`);
 
     // แจ้งเมื่อใบถูก "ส่งขออนุมัติ" (ไม่ใช่ตอนร่าง) — คนอนุมัติต้องรู้ว่ามีใบรออยู่

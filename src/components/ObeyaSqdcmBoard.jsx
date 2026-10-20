@@ -1,4 +1,5 @@
 import { fmtAxis, tooltipProps, CELL_BAR_FILL, focusDomain, shortTick } from '../utils/chartAxis';
+import { urlPick, urlBool } from '../utils/urlInit';
 import { ALL } from '../utils/filterLabels';
 /* ══ 🏛️ OBEYA — ห้องบัญชาการโรงงาน (SQDCM + ลูปปิด countermeasure) ═══════════════════════
    ออกแบบ: docs/OBEYA-DESIGN.md · KPI ทั้งหมด: src/utils/obeyaKpi.js (ห้ามคำนวณซ้ำในไฟล์นี้)
@@ -38,9 +39,11 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import PageHeader from './PageHeader';
 import { OBEYA_TITLE, OBEYA_ICON } from '../utils/obeyaPage';
-import { A4, GAP, useSheetGrid, StatusLamp, Sheet, WarnNote, EmptyChart, FocusAxisNote } from './ObeyaSheet';
+import { A4, GAP, useSheetGrid, StatusLamp, Sheet, WarnNote, EmptyChart, FocusAxisNote, TV_SHEET_GRID } from './ObeyaSheet';
+import useTvShell from '../utils/useTvShell';
 import BoardPager from './BoardPager';
 import useFitHeight from '../utils/useFitHeight';
+import useIsMobile from '../utils/useIsMobile';
 import { packPages, clampPage, pageLabels, cellsUsed } from '../utils/boardPager';
 import LineSelect from './LineSelect';
 import PersonSelect from './PersonSelect';
@@ -53,6 +56,7 @@ import { inSectionScope, scopedLineNames } from '../utils/sectionScope';
 import useOrgScope from '../utils/useOrgScope';
 import OrgScopePicker from './OrgScopePicker';
 import { PLANT, isPlant, parseScopeKey, drillParams, scopePathText } from '../utils/orgScope';
+import { canWriteUnit, writeBlockText } from '../utils/writeScope';
 import useColumnHistory from '../utils/useColumnHistory';
 import { useLiveBoard } from '../utils/useLiveBoard';
 import { LIVE, RATE } from '../utils/refreshRates';
@@ -63,6 +67,10 @@ import { defectUnitCost, fmtBaht, lineCostCenter, rateFor, ratePerHour, RATE_COM
 import { notifyEvent } from '../utils/notifyEvent';
 import TimeRangeBar from './TimeRangeBar';
 import Segmented from './Segmented';
+/* 📷 ปิด action ต้องแนบรูปหลักฐานได้ (12/10 · คำสั่ง user) — อัปโหลดผ่าน utils/actionImage.js เท่านั้น
+   `<QualityPhotoField>` เป็นช่องกรอกล้วน (คืน File ให้หน้าแม่) ใช้ซ้ำได้ สัดส่วน 4:3 ชุดเดียวกัน */
+import QualityPhotoField from './QualityPhotoField';
+import { uploadActionPhoto, removeActionImg } from '../utils/actionImage';
 import { LOOKBACK_DAYS, presetRange, addDays, rangeDays, normalizeRange } from '../utils/timeRange';
 import {
   OBEYA_AXES, PERIODS, periodRange, prevRange, statusColor, statusOf, statusWhy, gapToTarget,
@@ -81,12 +89,15 @@ const getWorkDate = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 const dayLabel = (k) => { const [, m, d] = String(k).split('-'); return `${+d}/${+m}`; };
+/* แผ่นบนมือถือสูงคงที่ — เท่ากับแท็บบอร์ด KPI (ObeyaKpiBoard) ให้ 2 แท็บหน้าตาเดียวกัน */
+const MOBILE_SHEET_H = 330;
+
 export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
-  const { role, lineId, sections, fullName } = useContext(UserContext);
+  const { role, lineId, sections, fullName, section: homeSection, allUnits, respCostCenters, scopeIdx } = useContext(UserContext);
   const canRecord = can('obeya', 'record', role) || can('morning_meeting', 'record', role);
   const today = getWorkDate();
 
-  const [period, setPeriod] = useState('week');
+  const [period, setPeriod] = useState(() => urlPick('period', ['week', 'month', 'year'], 'week'));   // ?period= ค่าตั้งต้น (จอวนหน้า) — ยังเป็น "ดูช่วงไหน" ไม่ใช่วันที่ตายตัว
   /* ขอบเขต = ผังองค์กรทุกมิติ (23/09 · แทน select ส่วนงานจาก org_nodes kind='section') — รับ ?scope= / ?section= ตอนเปิด */
   const [scope, setScope] = useState(() => {
     try {
@@ -148,10 +159,16 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
 
   // ── master (โหลดครั้งเดียว) ────────────────────────────────────────────────────
   const [lines, setLines] = useState([]);
-  const { index: org } = useOrgScope(lines);
+  const { index: org, failed: orgFailed } = useOrgScope(lines);
   const scopeLineSet = useMemo(() => (isPlant(scope) ? null : new Set(org.lineNamesOf(scope.kind, scope.value))), [scope, org]);
   // ส่วนงานที่ขอบเขตนี้สังกัด — ใช้ตอนตั้ง Action item / ส่งต่อ ?section= ให้หน้าที่ยังอ่านแค่ section
   const secFilter = isPlant(scope) ? '' : (org.sectionOf(scope.kind, scope.value) || '');
+  /* 🔐 ชั้นที่ 3 — ใบ Action ผูกส่วนงาน ⇒ เขียน/ปิดได้เฉพาะส่วนงานตัวเอง (audit 15/10)
+     เดิม `scope` มาจาก URL โดย **ไม่มีด่านเลยแม้แต่ `org.has()`** ⇒ เขียน Action ใส่ส่วนงานอื่นได้
+     🔴 ระดับโรงงาน/ฝ่าย (หา section ไม่ได้) = ของกลาง ⇒ ต้องมีใบผ่าน */
+  const scopeWrite = useMemo(
+    () => canWriteUnit({ role, section: homeSection, sections, allUnits, respCostCenters, scopeIdx }, secFilter, { unknownTarget: 'block' }),
+    [role, homeSection, sections, allUnits, respCostCenters, scopeIdx, secFilter]);
   /* ส่วนงานทั้งหมดที่อยู่ใต้ขอบเขตที่เลือก (ฝ่าย = หลายส่วนงาน) — ใช้กรองใบ Action ที่ระบุแค่ส่วนงาน · null = ทั้งโรงงาน */
   const scopeSecs = useMemo(() => (isPlant(scope) ? null : org.sectionsOf(scope.kind, scope.value)), [scope, org]);
   const scopeText = scopePathText(org, scope, 'ทุกส่วนงาน');   // CC = เส้นทางหน่วยเจ้าของ › 💰 รหัส (12/10)
@@ -495,9 +512,10 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
   }, [health]);
 
   // ── ผังกระดาษ ──────────────────────────────────────────────────────────────────
-  const [board, setBoard] = useState(false);            // โหมดจอ TV = ซ่อนหัวเพจ เต็มจอ
+  const [board, setBoard] = useState(() => urlBool('board', false));   // โหมดจอ TV = ซ่อนหัวเพจ เต็มจอ · ?board=1
   const wrapRef = useRef(null);
-  const grid = useSheetGrid(wrapRef, 10);
+  const tv = useTvShell();   // 📺 จอประชุม = 2×2 ต่อหน้า (TV_SHEET_GRID) · จอคอมเหมือนเดิม
+  const grid = useSheetGrid(wrapRef, 10, tv ? TV_SHEET_GRID : undefined);
 
   /* ── 📖 แบ่งหน้าแทนการเลื่อน (25/09 · คำสั่ง user "ดูจบได้ในหน้าเดียว … กดเปลี่ยนหน้า") ──
      แผ่นของบอร์ดนี้ตายตัว 8 ใบ = 10 ช่อง (OEE กับ ACTION BOARD กว้าง 2 ช่อง)
@@ -524,8 +542,12 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
     window.addEventListener('resize', on);
     return () => window.removeEventListener('resize', on);
   }, []);
-  const shortScreen = !board && vh < SHORT_VH;
-  const fitOn = availH != null && !shortScreen;
+  /* 📱 มือถือ (15/10): ไม่ใช้ "จอเตี้ย" (กริดสูงตรึง 760px) และไม่ใช้โหมดพอดีจอ — จอ 360×640 เตี้ยกว่า 800 เสมอ
+     ⇒ เดิมแผ่น 10 ใบถูกบีบลงกล่อง 760px = **สูงใบละ 67px ตัวเลขใหญ่โดนตัดครึ่ง กราฟหาย** (วัดจริง 15/10)
+     ⇒ แผ่นเรียงลง 1 คอลัมน์ สูงคงที่ MOBILE_SHEET_H แล้วเลื่อนหน้าปกติ (แบบเดียวกับแท็บบอร์ด KPI) · จอคอม/TV เดิมเป๊ะ */
+  const isMobile = useIsMobile();
+  const shortScreen = !board && !isMobile && vh < SHORT_VH;
+  const fitOn = availH != null && !shortScreen && !isMobile;
 
   /* ช่องต่อหน้า = คอลัมน์ × **แถวที่ลงจอจริง** — จอเตี้ย/จอแคบใส่ได้น้อยแถว ก็แบ่งหน้าเพิ่ม
      ห้ามบีบแผ่นให้เล็กลงเพื่อยัดลงจอ (ฟอนต์จะต่ำกว่า 11px = ผิดกติกา UI จอ TV) */
@@ -553,10 +575,15 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
   });
   const saveAction = async () => {
     if (!modal.problem.trim()) return toast.error('ระบุปัญหา/สิ่งที่ต้องทำก่อน');
+    /* 🔴 ต้องตรวจ "ค่าที่จะเขียนจริง" ไม่ใช่ขอบเขตที่กำลังดู (QC audit 15/10)
+       `sec` มาจากไลน์ที่เลือกในฟอร์ม ซึ่งอาจเป็นส่วนงานอื่นแม้ขอบเขตที่ดูจะเป็นของเรา
+       (`<LineSelect>` fail-open เมื่อ `sections` ว่าง) ⇒ คำนวณ `sec` ก่อน แล้วค่อยตรวจ */
+    const sec = modal.line_name ? (secOfLine[modal.line_name] || secFilter || null) : (secFilter || null);
+    const wSec = canWriteUnit({ role, section: homeSection, sections, allUnits, respCostCenters, scopeIdx }, sec, { unknownTarget: 'block' });
+    if (!wSec.ok) return toast.info(writeBlockText(wSec, { what: 'ใบ Action ของส่วนงานนี้', unit: sec }));
     setSaving(true);
     try {
       const { data: { user } = {} } = await supabase.auth.getUser();
-      const sec = modal.line_name ? (secOfLine[modal.line_name] || secFilter || null) : (secFilter || null);
       const ok = checkWrite(await supabase.from('meeting_action_items').insert({
         meeting_date: today, section: sec, line_name: modal.line_name || null,
         problem: modal.problem.trim(), root_cause: modal.root_cause?.trim() || null,
@@ -581,14 +608,41 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
       loadActions();
     } finally { setSaving(false); }
   };
-  const setStatus = async (a, status) => {
-    const patch = { status, updated_at: new Date().toISOString() };
+  const setStatus = async (a, status, extra = null) => {
+    /* 🔐 ปิด/เลื่อนใบของส่วนงานอื่นไม่ได้ — ตัดสินจาก section ของ "ใบนั้น" ไม่ใช่ขอบเขตที่กำลังดู */
+    const w = canWriteUnit({ role, section: homeSection, sections, allUnits, respCostCenters, scopeIdx }, a?.section);
+    if (!w.ok) return toast.info(writeBlockText(w, { what: 'ใบ Action นี้', unit: a?.section }));
+    const patch = { status, updated_at: new Date().toISOString(), ...(extra || {}) };
     if (status === 'done') patch.done_at = new Date().toISOString();
     // ⚠️ RLS ปฏิเสธ UPDATE = "สำเร็จ 0 แถว ไม่มี error" ⇒ ต้องนับแถวจริง ห้ามเชื่อ !error
     const res = await supabase.from('meeting_action_items').update(patch).eq('id', a.id).select('id');
-    if (!checkWrite(res, 'อัพเดท Action')) return;
-    if (!res.data?.length) return toast.error('ไม่มีสิทธิ์อัพเดทใบนี้ (ติดต่อผู้ดูแลระบบ)');
+    if (!checkWrite(res, 'อัพเดท Action')) return false;
+    if (!res.data?.length) { toast.error('ไม่มีสิทธิ์อัพเดทใบนี้ (ติดต่อผู้ดูแลระบบ)'); return false; }
     setActions(prev => prev.map(x => (x.id === a.id ? { ...x, ...patch } : x)));
+    return true;
+  };
+
+  /* ── ปิด action = บันทึก "ทำอะไรไป" + รูปหลักฐาน (12/10 · คำสั่ง user) ──────────────
+     🔴 ทั้ง 2 ช่อง **ไม่บังคับ** — บังคับเมื่อไหร่คนเลิกกดปิด แล้วบอร์ดเต็มไปด้วยงานค้างปลอม
+     🔴 อัปโหลดรูปก่อน แล้วค่อยเขียนแถว · เขียนแถวไม่ผ่าน = ลบไฟล์ที่เพิ่งอัปทิ้ง (ไม่ให้มีไฟล์กำพร้า) */
+  const [closing, setClosing] = useState(null);   // { a, result, file } | null
+  const [closeSaving, setCloseSaving] = useState(false);
+  const doClose = async () => {
+    if (!closing) return;
+    setCloseSaving(true);
+    let url = null;
+    try {
+      if (closing.file) url = await uploadActionPhoto(closing.file, closing.a.id);
+    } catch (e) {
+      setCloseSaving(false);
+      return toast.error('อัปโหลดรูปไม่สำเร็จ: ' + e.message);   // ล้มที่รูป = ยังไม่ปิดใบ (ห้ามปิดเงียบแล้วรูปหาย)
+    }
+    const extra = { result_value: closing.result?.trim() || null, ...(url ? { result_img: url } : {}) };
+    const ok = await setStatus(closing.a, 'done', extra);
+    setCloseSaving(false);
+    if (!ok) { if (url) removeActionImg(url); return; }
+    toast.success('ปิดงานแล้ว');
+    setClosing(null);
   };
 
   // ── ตัวช่วยวาดกราฟ (หน้าตาเดียวกันทุกแผ่น — ห้ามแต่ละแผ่นตั้งเอง) ────────────────
@@ -656,6 +710,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
        ที่ว่างเป็นแถบใหญ่ใต้บอร์ด (เห็นชัดตอนแบ่งหน้าบนจอเตี้ย) · จอที่เต็มพอดีได้ผลเท่าเดิมเป๊ะ */
     gridTemplateRows: `repeat(${rowsUsed}, minmax(0, 1fr))`,
     height: '100%',
+    ...(isMobile ? { gridTemplateColumns: 'minmax(0, 1fr)', gridTemplateRows: 'none', gridAutoRows: `${MOBILE_SHEET_H}px`, height: 'auto' } : null),
   };
 
   const axisSheet = (key) => OBEYA_AXES.find(a => a.key === key);
@@ -678,7 +733,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
      เพราะหน้านี้อยู่ใน <main> ที่มี sidebar + padding ⇒ 100vh จะล้นจอแล้วแถวล่างโดนตัดเงียบ
      (วัดจริงด้วย Playwright 15/09: แถวที่ 2 ถูกตัด 37px ทั้งแถว) */
   const shell = board
-    ? { position: 'fixed', inset: 0, zIndex: 1010, background: 'var(--bg)', display: 'flex', flexDirection: 'column' }   // > รางเมนู 1000 (30/09)
+    ? { position: 'fixed', top: 'var(--tvbar-h, 0px)', left: 0, right: 0, bottom: 0, zIndex: 1010, background: 'var(--bg)', display: 'flex', flexDirection: 'column' }   // > รางเมนู 1000 (30/09) · top = ใต้แถบบนของกรอบจอ TV
     : { display: 'flex', flexDirection: 'column' };
   const goBoard = (on) => {
     setBoard(on);
@@ -710,7 +765,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
           sub={`${periodText} · ${from} → ${to} · ${shiftCount.toLocaleString()} กะที่ปิดแล้ว`}
           filters={(
             <>
-              <OrgScopePicker index={org} value={scope} onChange={setScope} scopeSet={null} sections={sections}
+              <OrgScopePicker index={org} value={scope} onChange={setScope} scopeSet={null} sections={sections} failed={orgFailed}
                 plantLabel={ALL.section} width={230} title="เลือกขอบเขตตามผังองค์กร (ฝ่าย/ส่วนงาน/แผนก/กลุ่มไลน์/ไลน์/CC)" />
               <span className="sep" />
               {/* ช่วงที่ดู — value ว่างเมื่อใช้กรอบกำหนดเอง/เจาะเดือน ⇒ กดปุ่มเดิมซ้ำได้ (pickPeriod ล้าง custom) */}
@@ -731,7 +786,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
           actions={(
             <>
               {canRecord && (
-                <button onClick={() => openModal()} style={{
+                <button className="tv-hide" onClick={() => openModal()} style={{
                   fontSize: 13, fontWeight: 700, padding: '6px 12px', borderRadius: 999, cursor: 'pointer',
                   background: 'var(--accent2)', color: '#1a1206', border: 'none',
                 }}>➕ ตั้ง Action</button>
@@ -767,12 +822,12 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
           display: 'flex', alignItems: 'center', gap: 12, padding: '6px 10px', flexShrink: 0,
           borderBottom: '1px solid var(--border)',
         }}>
-          <div style={{ fontSize: 18, fontWeight: 900 }}>🏛️ OBEYA</div>
-          <div style={{ fontSize: 13, color: 'var(--muted)' }}>
-            {scopeText} · {periodText} · {from} → {to} · {shiftCount.toLocaleString()} กะ
+          <div style={{ fontSize: tv ? 26 : 18, fontWeight: 900 }}>🏛️ OBEYA</div>
+          <div style={{ fontSize: tv ? 22 : 13, color: tv ? 'var(--text2)' : 'var(--muted)', fontWeight: tv ? 700 : 400 }}>
+            {scopeText} · {periodText}{tv ? '' : ` · ${from} → ${to} · ${shiftCount.toLocaleString()} กะ`}
           </div>
           <div style={{ flex: 1 }} />
-          <button onClick={() => goBoard(false)} style={{
+          <button className="tv-hide" onClick={() => goBoard(false)} style={{
             fontSize: 12, padding: '4px 10px', borderRadius: 999, cursor: 'pointer',
             background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)',
           }}>ออกจากโหมดจอ</button>
@@ -780,7 +835,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
       )}
 
       {loadWarn && (
-        <div style={{ margin: '0 0 8px', fontSize: 12, color: '#ef4444', fontWeight: 700 }}>
+        <div style={{ margin: '0 0 8px', fontSize: tv ? 20 : 12, color: '#ef4444', fontWeight: 700 }}>
           ⚠️ {loadWarn}
         </div>
       )}
@@ -1002,12 +1057,12 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 6 }}>
                   <WarnNote k={k} tone="#ef4444"
                     text="ยังไม่มีใบ action ในช่วงที่ดู — ตามงานไม่ได้ว่าปัญหาที่พบถูกแก้หรือยัง (ตั้ง Action จากปุ่มบนหัวจอ)" />
-                  <div style={{ fontSize: fs(11), color: 'var(--muted)', lineHeight: 1.4 }}>
+                  <div className="tv-hide" style={{ fontSize: fs(11), color: 'var(--muted)', lineHeight: 1.4 }}>
                     นี่คือเหตุผลหลักที่ทำหน้านี้ — ไม่ใช่เพื่อโชว์ตัวเลขสวยๆ แต่เพื่อปิดลูป:
                     ตัวเลขหลุดเป้า → ใครรับ → ทำอะไร → ภายในเมื่อไหร่ → ดีขึ้นจริงไหม
                   </div>
                   {canRecord && (
-                    <button onClick={() => openModal()} style={{
+                    <button className="tv-hide" onClick={() => openModal()} style={{
                       alignSelf: 'flex-start', fontSize: fs(12), fontWeight: 800, padding: '6px 14px',
                       borderRadius: 999, background: 'var(--accent2)', color: '#1a1206', border: 'none', cursor: 'pointer',
                     }}>➕ ตั้งใบแรก</button>
@@ -1024,7 +1079,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
                       }}>{l} {n}</span>
                     ))}
                     {canRecord && (
-                      <button onClick={() => openModal()} style={{
+                      <button className="tv-hide" onClick={() => openModal()} style={{
                         fontSize: fs(10.5), fontWeight: 800, padding: '2px 10px', borderRadius: 999, marginLeft: 'auto',
                         background: 'var(--accent2)', color: '#1a1206', border: 'none', cursor: 'pointer',
                       }}>➕ ตั้ง Action</button>
@@ -1049,8 +1104,13 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
                           <span style={{ fontSize: fs(10), color: 'var(--muted)', whiteSpace: 'nowrap' }}>
                             {a.line_name || '—'} · {(a.assignee || '').trim() || 'ยังไม่ระบุผู้รับผิดชอบ'} · {a.due_date || 'ไม่มีกำหนด'}
                           </span>
+                          {a.result_img && (
+                            <a href={a.result_img} target="_blank" rel="noreferrer" title="รูปหลักฐานที่แนบไว้"
+                              style={{ fontSize: fs(11), textDecoration: 'none' }}>📷</a>
+                          )}
                           {canRecord && (
-                            <button onClick={() => setStatus(a, 'done')} style={{
+                            /* เปิดหน้าต่างปิดงาน (ใส่ผล + รูป) แทนการปิดทันที — ปิดเปล่าๆ ไม่มีหลักฐานว่าแก้อะไร */
+                            <button className="tv-hide" onClick={() => setClosing({ a, result: a.result_value || '', file: null })} style={{
                               fontSize: fs(10), fontWeight: 700, padding: '1px 7px', borderRadius: 999, cursor: 'pointer',
                               background: 'var(--bg2)', color: '#22c55e', border: '1px solid #22c55e55',
                             }}>ปิด</button>
@@ -1071,6 +1131,43 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
       </div>
       {/* 📖 แถบเปลี่ยนหน้า — โผล่เฉพาะตอนมีมากกว่า 1 หน้า */}
       <BoardPager page={pg} count={pages.length} onPage={setPg} labels={pgLabels} compact={board} />
+
+      {/* ── modal ปิด action (ผลที่ทำ + รูปหลักฐาน · ทั้งคู่ไม่บังคับ) ───────────── */}
+      {closing && (
+        <div className="modal-scroll" style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 2000,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14,
+        }}>
+          <div onClick={e => e.stopPropagation()} style={{
+            background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 10,
+            padding: 16, width: 'min(460px, 100%)', maxHeight: '90%', overflowY: 'auto',
+          }}>
+            <h3 style={{ margin: '0 0 4px', fontSize: 17 }}>✅ ปิดงานติดตาม</h3>
+            <div style={{ fontSize: 12.5, color: 'var(--text2)', marginBottom: 10 }}>
+              {(closing.a.problem || '').trim() || '(ไม่มีหัวข้อ)'}
+            </div>
+            <div style={{ display: 'grid', gap: 9 }}>
+              <label style={{ fontSize: 12.5, color: 'var(--muted)' }}>ทำอะไรไป / ผลที่ได้ (ไม่บังคับ)
+                <textarea value={closing.result} rows={3} onChange={e => setClosing({ ...closing, result: e.target.value })}
+                  style={{ marginTop: 3, fontSize: 13.5 }} placeholder="เช่น เปลี่ยนตัวจับชิ้นงานเป็นแบบ quick clamp · เวลาเปลี่ยนรุ่นลดจาก 25 → 14 นาที" />
+              </label>
+              <QualityPhotoField label="📷 รูปหลักฐาน (ไม่บังคับ)" url={closing.a.result_img || null} file={closing.file}
+                hint="ถ่ายสิ่งที่แก้ไปจริง — เดือนหน้าปัญหาเดิมกลับมาจะได้ย้อนดูได้"
+                onPick={(f) => setClosing({ ...closing, file: f })} />
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
+              <button onClick={() => setClosing(null)} disabled={closeSaving} style={{
+                fontSize: 13, padding: '7px 14px', borderRadius: 8, cursor: 'pointer',
+                background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)',
+              }}>ยกเลิก</button>
+              <button onClick={doClose} disabled={closeSaving} style={{
+                fontSize: 13, fontWeight: 800, padding: '7px 18px', borderRadius: 8, cursor: 'pointer',
+                background: '#22c55e', color: '#06240f', border: 'none',
+              }}>{closeSaving ? '⏳ กำลังบันทึก...' : '✅ ปิดงาน'}</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── modal ตั้ง action ─────────────────────────────────────────────────── */}
       {modal && (

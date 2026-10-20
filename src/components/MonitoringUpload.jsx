@@ -21,6 +21,7 @@ import fetchAllRows from '../utils/fetchAllRows';
 import { parseMonitoringWorkbook, monitoringToRecords, sheetReport, stockAdjustPlan, stockSeedKept } from '../utils/monitoringSheet';
 import { refStockOf, inflowDestOf } from '../utils/partRefStock';
 import { buildBoardPlan, writeBoardPlan, BoardPlanPreview } from './MonitorImport';
+import MatLabel from './MatLabel';
 
 /* วันที่งาน (ตัด 08:00 — งานกะดึกข้ามวันนับเป็นวันก่อนหน้า)
    ⚠️ ห้ามใช้ toISOString() — คืน UTC ทำให้วันที่เพี้ยนสำหรับไทย (กฎ Date/Time ใน CLAUDE.md)
@@ -47,7 +48,7 @@ async function insertChunked(table, rows, label) {
 
 export default function MonitoringUpload({ canUpload, canBoard = true, fullName, onImported, asModal = false, onClose }) {
   const [busy, setBusy] = useState(false);
-  const [preview, setPreview] = useState(null);   // { fileName, month, rec, parsed, stockPlan, lotDiff }
+  const [preview, setPreview] = useState(null);   // { fileName, month, rec, parsed, stockPlan, kbDiff, board }
   const fileRef = useRef(null);
 
   /* ── อ่านไฟล์ → แกะ → เตรียมสิ่งที่จะเขียน (ยังไม่เขียน) ─────────────────── */
@@ -91,7 +92,7 @@ export default function MonitoringUpload({ canUpload, canBoard = true, fullName,
          ตัวเลือกคลัง = `refStockOf` ตัวเดียวกับจุดเรียกเติม (พาร์ทล็อตสโตร์ = ที่ไลน์ · นอกนั้นตามกฎ)
          🔴 อ่านกฎ/ล็อตไม่ได้ = **ไม่ลงยอดผลิตเลย** (ถอยไปลงที่ไลน์ = บั๊กเดิมกลับมา) */
       const [ruleR, lotR] = await Promise.all([
-        supabaseDR.from('stock_inflow_rules').select('match_type, match_value, dest_line_name, is_active').eq('is_active', true),
+        supabaseDR.from('stock_inflow_rules').select('match_type, match_value, dest_line_name, is_active, mode').eq('is_active', true),
         fetchAllRows(supabaseDR, 'child_lot_requests', 'child_mat_no', q => q.neq('status', 'cancelled').order('child_mat_no')),
       ]);
       const stockRulesOk = !ruleR.error && !lotR.error;
@@ -122,25 +123,34 @@ export default function MonitoringUpload({ canUpload, canBoard = true, fullName,
       const stockPlan = stockAdjustPlan(rec.stock, stkRows, norm);
       const stockKept = stockSeedKept(rec.stock, stkRows, norm);
 
-      /* LOT/Packing: เทียบกับ kanban_standards — แสดงอย่างเดียว ไม่เขียน */
+      /* 🔴 LOT size กับ Packing **คนละเรื่อง ห้ามยุบเป็นรายการเดียว** (12/10 · คำสั่ง user)
+         · **LOT size** = ขนาดล็อตผลิต — คุมว่า "สะสมครบเท่าไหร่ถึงออกใบสั่งผลิต"
+           (`utils/pullAccumulator.js`) และเข้าสูตรจำนวนบัตร (`utils/kanbanCalc.js`: Total = Max + lot)
+         · **Packing** = จำนวนชิ้นต่อกล่อง/ต่อบัตร — คุมการบรรจุ/ส่งของ ไม่เกี่ยวกับจังหวะเปิดใบ
+         รวมเป็นแถวเดียวแล้วนับ "47 พาร์ทไม่ตรง" = ตอบไม่ได้ว่าต้องไปคุยกับใครเรื่องอะไร
+         และเรื่องหนึ่งที่ยังตกลงไม่ได้ ไปค้างอีกเรื่องที่ชัดอยู่แล้ว ⇒ แยกเป็น 3 กอง ตัดสินแยกกัน
+         (เทียบอย่างเดียว ไม่เขียนทับทะเบียน — ทะเบียนนี้ใช้ร่วมกับบัตรคานบัง/OEE/Heijunka/ป้าย QR) */
       const { data: kbRows, error: kbErr } = await fetchAllRows(
         supabaseDR, 'kanban_standards', 'mat_no, qty_per_kanban, lot_size', q => q.order('mat_no'));
       if (kbErr) toast.info('อ่านทะเบียน kanban ไม่ได้ — ข้ามการเทียบ LOT/Packing (ส่วนอื่นยังนำเข้าได้)');
       const kb = {};
       (kbRows || []).forEach(k => { kb[norm(k.mat_no)] = k; });
-      const lotDiff = rec.lots.map(l => {
+      const kbDiff = { lot: [], pack: [], noStd: [] };
+      rec.lots.forEach(l => {
         const cur = kb[norm(l.mat_no)];
-        const dLot = l.lot_size != null && cur && Number(cur.lot_size) !== l.lot_size;
-        const dPack = l.qty_per_kanban != null && cur && Number(cur.qty_per_kanban) !== l.qty_per_kanban;
-        if (!cur) return { ...l, status: 'ไม่มีในทะเบียน kanban' };
-        if (dLot || dPack) return { ...l, status: 'ไม่ตรง', curLot: cur.lot_size, curPack: cur.qty_per_kanban };
-        return null;
-      }).filter(Boolean);
+        if (!cur) { kbDiff.noStd.push(l); return; }
+        if (l.lot_size != null && Number(cur.lot_size) !== l.lot_size) {
+          kbDiff.lot.push({ ...l, file: l.lot_size, std: cur.lot_size });
+        }
+        if (l.qty_per_kanban != null && Number(cur.qty_per_kanban) !== l.qty_per_kanban) {
+          kbDiff.pack.push({ ...l, file: l.qty_per_kanban, std: cur.qty_per_kanban });
+        }
+      });
 
       /* 🔴 ชั้นบอร์ด (ตาราง 13 ชีท) แกะจาก `sheets` ชุดเดียวกัน — อ่านไฟล์ครั้งเดียว เขียนครั้งเดียว
          (08/10 คำสั่ง user: *"จุดอัพโหลดควรมีจุดเดียวแล้วโปรแกรมใช้ด้วยกัน"*) */
       const board = buildBoardPlan(sheets, { today });
-      setPreview({ fileName: file.name, month, parsed, rec, stockPlan, stockKept, lotDiff, nameOfMat, norm, today, bySheet, board });
+      setPreview({ fileName: file.name, month, parsed, rec, stockPlan, stockKept, kbDiff, nameOfMat, norm, today, bySheet, board });
     } catch (e) {
       toast.error(`อ่านไฟล์ไม่สำเร็จ: ${e.message}`);
     }
@@ -321,7 +331,7 @@ export default function MonitoringUpload({ canUpload, canBoard = true, fullName,
 }
 
 function PreviewPanel({ p, canBoard, onCancel, onConfirm, busy, card, warnBox }) {
-  const { rec, parsed, stockPlan, lotDiff, month, fileName, bySheet } = p;
+  const { rec, parsed, stockPlan, kbDiff, month, fileName, bySheet } = p;
   const future = rec.orders.filter(o => !o.past);
   const past = rec.orders.length - future.length;
   const histCount = rec.shipped.filter(s => s.due_date < p.today).length + past;
@@ -447,29 +457,31 @@ function PreviewPanel({ p, canBoard, onCancel, onConfirm, busy, card, warnBox })
           </div>
         </div>
       )}
-      {!!lotDiff.length && (
+      {/* 🔴 LOT size กับ Packing แยกกองกัน — คนละเรื่อง คนละคนตัดสิน (12/10 · คำสั่ง user)
+          ห้ามยุบกลับเป็นตารางเดียวที่นับรวม "N พาร์ทไม่ตรง" */}
+      {(!!kbDiff.lot.length || !!kbDiff.pack.length || !!kbDiff.noStd.length) && (
         <div style={warnBox('#1e3a8a22', '#60a5fa')}>
-          <b style={{ fontSize: 12 }}>📋 LOT / Packing ไม่ตรงกับทะเบียน kanban {lotDiff.length} พาร์ท — <u>ระบบไม่แก้ให้</u></b>
-          <div style={{ fontSize: 12, color: 'var(--text2)', margin: '4px 0 6px' }}>
+          <b style={{ fontSize: 12 }}>📋 เทียบกับทะเบียน kanban — <u>ระบบไม่แก้ให้</u></b>
+          <div style={{ fontSize: 12, color: 'var(--text2)', margin: '4px 0 8px' }}>
             ทะเบียน kanban ใช้ร่วมกับบัตรคานบัง · OEE · Heijunka · ป้าย QR — เขียนทับอัตโนมัติกระทบกว้างเกินไป
             ให้ไปแก้เองที่ <b>/products → 🎴 Kanban Std</b> ถ้ายืนยันว่าค่าในไฟล์ถูกกว่า
           </div>
-          <div style={{ maxHeight: 160, overflow: 'auto' }}>
-            <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse' }}>
-              <thead><tr style={{ textAlign: 'left', color: 'var(--muted)' }}>
-                <th>MAT</th><th>LOT ไฟล์</th><th>LOT ทะเบียน</th><th>Packing ไฟล์</th><th>Packing ทะเบียน</th><th>สถานะ</th>
-              </tr></thead>
-              <tbody>
-                {lotDiff.slice(0, 40).map((l, i) => (
-                  <tr key={i} style={{ borderTop: '1px solid var(--border2)' }}>
-                    <td>{l.mat_no}</td><td>{l.lot_size ?? '—'}</td><td>{l.curLot ?? '—'}</td>
-                    <td>{l.qty_per_kanban ?? '—'}</td><td>{l.curPack ?? '—'}</td><td>{l.status}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {lotDiff.length > 40 && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>… อีก {lotDiff.length - 40} พาร์ท</div>}
-          </div>
+          <KbDiffTable
+            title={`📦 LOT size ไม่ตรง ${kbDiff.lot.length} พาร์ท`}
+            why="ขนาดล็อตผลิต — คุมว่าสะสมครบเท่าไหร่ถึงออกใบสั่งผลิต + เข้าสูตรจำนวนบัตร"
+            rows={kbDiff.lot} />
+          <KbDiffTable
+            title={`🗳️ Packing ไม่ตรง ${kbDiff.pack.length} พาร์ท`}
+            why="จำนวนชิ้นต่อกล่อง/ต่อบัตร — คุมการบรรจุและการส่ง ไม่เกี่ยวกับจังหวะเปิดใบผลิต"
+            rows={kbDiff.pack} />
+          {!!kbDiff.noStd.length && (
+            <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 8 }}>
+              ⚪ <b>ยังไม่มีในทะเบียน kanban {kbDiff.noStd.length} พาร์ท</b> —
+              {' '}{kbDiff.noStd.slice(0, 8).map(l => l.mat_no).join(' · ')}
+              {kbDiff.noStd.length > 8 ? ` … อีก ${kbDiff.noStd.length - 8}` : ''}
+              <div style={{ color: 'var(--muted)' }}>คนละเรื่องกับ "ไม่ตรง" — ตัวนี้คือยังไม่เคยตั้งค่าเลย</div>
+            </div>
+          )}
         </div>
       )}
       {/* 🗂️ ส่วนตารางบอร์ด — รายชีท + ชีทที่ยกไม่ได้ (ตัววาดเดียวกับที่ `MonitorImport` เคยใช้) */}
@@ -500,6 +512,36 @@ function PreviewPanel({ p, canBoard, onCancel, onConfirm, busy, card, warnBox })
                          color: 'var(--text)', border: '1px solid var(--border)', cursor: 'pointer' }}>
           ยกเลิก
         </button>
+      </div>
+    </div>
+  );
+}
+
+/** ตารางเทียบ "ค่าในไฟล์ vs ทะเบียน" ของ **เรื่องเดียว** — LOT กับ Packing ใช้คนละตัว
+ *  (ยุบ 2 เรื่องเป็นตารางเดียว = ตัวเลขรวมตอบไม่ได้ว่าต้องไปคุยกับใครเรื่องอะไร) */
+function KbDiffTable({ title, why, rows = [] }) {
+  if (!rows.length) return null;
+  return (
+    <div style={{ marginTop: 8 }}>
+      <b style={{ fontSize: 12 }}>{title}</b>
+      <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 3 }}>{why}</div>
+      <div style={{ maxHeight: 150, overflow: 'auto' }}>
+        <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse' }}>
+          {/* ลำดับบนจอ = Part No. → Part Name → MAT SAP (UI §ลำดับ MAT · มีด่าน) ⇒ ใช้ <MatLabel> วาดให้ */}
+          <thead><tr style={{ textAlign: 'left', color: 'var(--muted)' }}>
+            <th>พาร์ท</th><th style={{ textAlign: 'right' }}>ในไฟล์</th><th style={{ textAlign: 'right' }}>ในทะเบียน</th>
+          </tr></thead>
+          <tbody>
+            {rows.slice(0, 40).map((l, i) => (
+              <tr key={i} style={{ borderTop: '1px solid var(--border2)' }}>
+                <td><MatLabel mat={l.mat_no} name={l.part_name} size={11} /></td>
+                <td style={{ textAlign: 'right', fontWeight: 700 }}>{fmt(l.file)}</td>
+                <td style={{ textAlign: 'right' }}>{l.std == null ? '— ยังไม่ตั้ง' : fmt(l.std)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {rows.length > 40 && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>… อีก {rows.length - 40} พาร์ท</div>}
       </div>
     </div>
   );

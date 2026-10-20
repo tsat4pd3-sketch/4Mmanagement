@@ -2,10 +2,11 @@ import { useState, useEffect, useContext, useRef, useMemo, startTransition, lazy
 import { orgNodeCompare, naturalCompare, sortLike } from '../utils/listOrder';
 import { Link } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
-import { STAFF_SUPPORT, isShopfloorStaff } from '../utils/staffKind';   // 👥 หน้างาน vs สายสนับสนุน (แกนเช็คชื่อ)
+import { STAFF_SUPPORT, isShopfloorStaff, staffGroupOf } from '../utils/staffKind';   // 👥 3 กลุ่ม: หน้างาน / ช่าง / สนับสนุน
 import { normSearch } from '../components/SearchSelect';   // ค้นหาทนการสะกดไทย (ของกลาง)
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
+import { acceptImageFile } from '../utils/acceptImageFile';
 import ToggleDot from '../components/ToggleDot';
 import { filterLinesByDept, getLineFamilyIds } from '../utils/lineHierarchy';
 import LineSelect from '../components/LineSelect';
@@ -13,7 +14,7 @@ import { loadLinesRes, loadProductionLines } from '../utils/useProductionLines';
 import resizeImg from '../utils/resizeImage';
 import { fmtDateMedium } from '../utils/dateFormat';
 import ImageCropModal from '../components/ImageCropModal';
-import { can, isActionSeeded } from '../utils/permissions';
+import { can, isActionSeeded, canDelete as canDeleteUtil } from '../utils/permissions';
 import {
   inSectionScope, ORPHAN_SECTION, ORPHAN_SECTION_LABEL,
   sectionValueForSave, sectionValueForEdit, orphanDepts, deptOptionsFor, deptNodeFor,
@@ -24,6 +25,7 @@ import { loadGrades, gradesSync, gradeFitsPosition, gradeRow } from '../utils/gr
 import { buildLaborMap, laborTypeOf, laborMeta, LABOR_META } from '../utils/laborType';
 import { SKILL_LEVELS, SKILL_GATES, getLevel, getBandCeiling, SKILL_CAT_META_FULL, SKILL_EDIT_CAP } from '../utils/skillLevels';
 import { loadDivisions, divisionsSync, divisionOfEmployee, skillInScope, skillScopeLabel, scopeUnitsForDivision } from '../utils/orgDivisions';
+import { costCenterOfNode } from '../utils/ccScope';   // กฎ "CC ของโหนด = ตัวเอง → แม่ → ปู่" อยู่ที่ชั้นสิทธิ์ ห้ามมี 2 ชุด (19/10)
 import { pickUnusedColor } from '../utils/colorPick';
 import { teamLabel } from '../utils/shiftAssign';
 import PageHeader from '../components/PageHeader';
@@ -248,12 +250,12 @@ export default function Operator() {
     // ⚠️ ต้อง select `division` ด้วย — ใช้ไล่หา "ฝ่าย" ของพนักงานแบบตกทอดจาก node แม่
     //    (คอลัมน์ใหม่ 2026-08-18 · ถ้ายังไม่ apply migration จะได้ undefined = ทุกสกิลเป็นของทุกฝ่าย
     //     ซึ่งคือพฤติกรรมเดิมเป๊ะ ไม่พัง)
-    supabase.from('org_nodes').select('id, code, name, kind, parent_id, labor_type, ref_line_id, division, sort_order').eq('is_active', true)
+    supabase.from('org_nodes').select('id, code, name, kind, parent_id, labor_type, ref_line_id, division, cost_center, sort_order').eq('is_active', true)
       .then(({ data, error }) => {
         if (!alive) return;
         // คอลัมน์ division ยังไม่มี (42703) → ถอยไป select ชุดเดิม อย่าให้ทั้งหน้าพัง
         if (error) {
-          supabase.from('org_nodes').select('id, code, name, kind, parent_id, labor_type, ref_line_id, sort_order').eq('is_active', true)
+          supabase.from('org_nodes').select('id, code, name, kind, parent_id, labor_type, ref_line_id, cost_center, sort_order').eq('is_active', true)
             .then(({ data: d2 }) => { if (alive) applyOrgNodes([...(d2 || [])].sort(orgNodeCompare)); });
           return;
         }
@@ -590,7 +592,7 @@ export default function Operator() {
         .select('id').eq('employee_id_code', newCode).neq('id', editingEmp.id).limit(1);
       if (dupCode?.length) throw new Error(`รหัส ${newCode} ถูกใช้โดยพนักงานคนอื่นแล้ว`);
 
-      const { error } = await supabase.from('employees').update({
+      const { data, error } = await supabase.from('employees').update({
         employee_id_code: newCode,
         name:       editingEmp.name,
         position:   editingEmp.position   || null,
@@ -613,8 +615,13 @@ export default function Operator() {
         bus_route_id: editingEmp.bus_route_id || null,
         image_url:  photoUrl,
         start_date: editingEmp.start_date || null,
-      }).eq('id', editingEmp.id);
+      /* 🔴 ต้องนับแถว ไม่ใช่ดูแค่ error — RLS ปฏิเสธ UPDATE = "0 แถว ไม่มี error" (กฎเหล็ก DB ข้อ 2)
+         ⇒ แถวยังชี้รูปเดิม แต่โค้ดข้างล่างลบไฟล์รูปเดิมไปแล้ว = รูปพนักงานหายถาวร */
+      }).eq('id', editingEmp.id).select('id');
       if (error) throw error;
+      if (!(data || []).length) throw new Error(
+        'บันทึกไม่สำเร็จ: ระบบไม่ได้แก้แถวไหนเลย (0 แถว) — มักเกิดจากสิทธิ์ไม่พอ '
+        + 'หรือพนักงานคนนี้ถูกลบไปแล้ว · รีเฟรชหน้าแล้วลองใหม่ (รูปเดิมยังอยู่ ไม่ถูกลบ)');
 
       /* 🔧 ทีมช่างซ่อม — เขียนแยก best-effort เพราะคอลัมน์อาจยังไม่ apply migration
          ⚠️ ห้ามยัดลง payload ก้อนบน: ไม่มีคอลัมน์ = 42703 = **บันทึกพนักงานพังทั้งใบ**
@@ -718,6 +725,9 @@ export default function Operator() {
   };
 
   const handleAddSkill = async () => {
+    /* ด่านชั้น 2 — ทะเบียนนิยามสกิลเป็นของกลาง (ใช้ทั้งโรงงาน) ⇒ ด่าน = คีย์เดียวกับปุ่ม
+       ซ่อนปุ่มไม่ใช่ด่าน: โมดัลเปิดค้างตอนสิทธิ์เปลี่ยน / เรียกตรงได้ (QC audit §7.4 · 20/10) */
+    if (!canEditSkills) { toast.error('เพิ่มสกิลต้องมีสิทธิ์ skills:edit'); return; }
     const lbl = newSkill.label.trim();
     if (!lbl) { toast.error('กรุณาระบุชื่อสกิล'); return; }
     // UUID-based key: never conflicts, works with Thai/any language
@@ -740,6 +750,9 @@ export default function Operator() {
   };
 
   const handleDeleteSkill = async (sd) => {
+    /* 🔴 ลบนิยามสกิล = ลบคะแนนของพนักงานทุกคน + requirement ทุกจุดงานด้วย
+       ⇒ ใช้ `canDelete()` ของกลาง (คุม "บัญชีกลางห้ามลบ" ให้ด้วย) ไม่ใช่ `can()` เปล่า */
+    if (!canDeleteUtil('skills', 'delete', role)) { toast.error('ลบสกิลต้องมีสิทธิ์ skills:delete'); return; }
     if (!window.confirm(`ลบสกิล "${sd.label}"?\nคะแนนสกิลนี้ของพนักงานและ requirement ทุก station จะถูกลบด้วย`)) return;
     // ลบลูกก่อน (คะแนน + requirement) แล้วค่อยลบนิยามสกิล + เช็ค error ทุกสเตป
     // ไม่งั้นถ้าลบลูกไม่สำเร็จแต่ลบนิยามไปแล้ว จะเหลือ skill_name ค้างที่อ้างสกิลที่ไม่มี
@@ -754,6 +767,7 @@ export default function Operator() {
   };
 
   const handleUpdateSkill = async () => {
+    if (!canEditSkills) { toast.error('แก้สกิลต้องมีสิทธิ์ skills:edit'); return; }
     if (!editingSkill?.label?.trim()) { toast.error('กรุณาระบุชื่อสกิล'); return; }
     const { error } = await supabase.from('skill_definitions').update({
       label:          editingSkill.label.trim(),
@@ -860,6 +874,10 @@ export default function Operator() {
     orgLineNodes.forEach(g => [g.name, g.code].filter(Boolean).forEach(v => s.add(String(v).trim().toLowerCase())));
     return s;
   }, [orgLineNodes]);
+  /** ชื่อไลน์ที่มีจริงในทะเบียน `production_lines` — กลุ่มที่ตรงกับตัวนี้ = ของจริง ไม่ใช่ข้อมูลผิด */
+  const lineNameKeys = useMemo(
+    () => new Set((lines || []).map(l => String(l?.name || '').trim().toLowerCase()).filter(Boolean)),
+    [lines]);
   // คืนเหตุผลที่ไม่ตรงผัง ([] = ตรงผัง) — ยังไม่โหลดผัง (ลิสต์ว่าง) ถือว่าตรงหมด กันเตือนผิดตอนเปิดหน้า
   const offOrgReasons = useMemo(() => (emp) => {
     if (!orgDeptNodes.length) return [];
@@ -868,15 +886,26 @@ export default function Operator() {
     if (!dep) r.push('ยังไม่ระบุแผนก');
     else if (!orgDeptKeys.has(dep.toLowerCase())) r.push(`แผนก "${dep}" ไม่มีในผัง`);
     const grp = String(emp.group_name || '').trim();
-    if (grp && orgLineNodes.length && !allOrgLineKeys.has(grp.toLowerCase())) r.push(`กลุ่ม "${grp}" ไม่มีในผัง`);
+    /* 🔴 กลุ่มที่ "มีอยู่จริงในทะเบียนไลน์" ไม่ใช่ข้อมูลผิด แม้ไม่อยู่ใต้แผนกตัวเอง (16/10 · user "group ก็มั่ว")
+       เคสจริง: QC ของแผนก QA ไปประจำไลน์ HYDROFORM ⇒ group=HYDROFORM ถูกต้องแล้ว
+       (สังกัด = QA · ที่ไปยืนทำงาน = HYDROFORM — คนละแกน หลักเดียวกับ staff_kind)
+       เดิมเช็คกับ `org_nodes kind='line'` อย่างเดียว ⇒ ขึ้น ⚠️ "ไม่มีในผัง" ทั้งที่ไลน์มีจริง
+       = worklist เต็มไปด้วยของที่ไม่ต้องแก้ แล้วคนเลิกเชื่อทั้งแถบ */
+    if (grp && orgLineNodes.length && !allOrgLineKeys.has(grp.toLowerCase())
+        && !lineNameKeys.has(grp.toLowerCase())) r.push(`กลุ่ม "${grp}" ไม่มีในผัง`);
     /* 🔴 คนหน้างานที่ไม่มี `line_id` = **หายจากหน้าเช็คชื่อ/ผังกำลังคนทั้งหมด** (จอพวกนั้นลิสต์คนด้วย line_id)
        ตั้ง "แผนก" อย่างเดียวไม่พอ — `line_id` มาจาก **กลุ่ม** (org_nodes kind='line' → `ref_line_id`)
        เคสจริง 05/10 (หัวหน้า PD2 แจ้งทาง LINE "เช็คชื่อพนักงานผมหายหมดเลย"): ตั้งแผนก Assembly Line D
        ให้ครบทุกคนแล้ว แต่ทั้ง 35 คน `line_id` ยัง null ⇒ เช็คชื่อว่างเปล่า **โดยไม่มีอะไรบนจอบอกสักคำ**
        · สายสนับสนุน (staff_kind=support) ไม่เข้าเกณฑ์นี้ — ไม่ได้อยู่ไลน์อยู่แล้ว */
     if (isShopfloorStaff(emp) && !emp.line_id) r.push('ยังไม่ผูกไลน์ — จะไม่ขึ้นในหน้าเช็คชื่อ');
+    /* 🔧🗂️ ช่าง/สายสนับสนุน **เช็คชื่อได้แล้ว** (14/10) แต่คิวรีของคนที่ถูกจำกัดขอบเขต
+       กรองด้วย `section` ⇒ ไม่มีทั้งไลน์และส่วนงาน = เห็นได้แค่บัญชีที่ไม่จำกัดขอบเขต
+       (วัด 14/10: สายสนับสนุน 5 คน · 4 คนไม่มี section เลย) */
+    if (!isShopfloorStaff(emp) && !emp.line_id && !emp.section)
+      r.push('ยังไม่ผูกไลน์/ส่วนงาน — หัวหน้าที่ถูกจำกัดขอบเขตจะไม่เห็นในหน้าเช็คชื่อ');
     return r;
-  }, [orgDeptNodes, orgLineNodes, orgDeptKeys, allOrgLineKeys]);
+  }, [orgDeptNodes, orgLineNodes, orgDeptKeys, allOrgLineKeys, lineNameKeys]);
   // section ที่ผังยังไม่มีแผนกใต้มันเลย → พนักงาน section นั้น "แก้ผ่านฟอร์มไม่ได้" (ไม่มีตัวเลือกให้เลือก)
   // ต้องไปเพิ่มแผนก/กลุ่มที่ผังองค์กร (/org-setup) ก่อน — ต้องแยกให้เห็น ไม่งั้นสั่งให้ไปแก้แล้วแก้ไม่ได้
   const secWithoutDept = useMemo(() => {
@@ -898,7 +927,7 @@ export default function Operator() {
     .filter(emp => !filterLabor   || empLabor(emp) === filterLabor)
     .filter(emp => !filterOffOrg  || offOrgReasons(emp).length > 0)
     .filter(emp => !filterNoPhoto || !emp.image_url)
-    .filter(emp => !filterStaffKind || (filterStaffKind === 'support' ? !isShopfloorStaff(emp) : isShopfloorStaff(emp)))
+    .filter(emp => !filterStaffKind || staffGroupOf(emp) === filterStaffKind)   // 3 กลุ่ม (14/10) — ห้ามกลับไปเทียบ 2 ขั้ว
     /* 🔎 ค้นท้ายสุด (หลังตัวกรองอื่น) — ใช้ normSearch ของกลาง: ทนช่องว่างซ้อน/ขีด และ
        **ทนการสะกดไทย** (ชื่อในฐานพิมพ์มือ ต่างกัน 1 ตัวเสมอ เช่น เจริญพันธ/เจริญพันธ์) */
     .filter(emp => {
@@ -1053,8 +1082,9 @@ export default function Operator() {
                 ส่วน Direct/Indirect ข้างล่าง = ประเภทแรงงานเชิงต้นทุน (derive จากแผนกในผังองค์กร) */}
             <span style={{ width: 1, height: 20, background: 'var(--border2)', margin: '0 2px' }} />
             {[
-              { k: 'shopfloor', icon: '🧑‍🏭', label: 'หน้างาน', color: '#22c55e', title: 'พนักงานหน้าไลน์ + ช่าง — เช็คชื่อ · นับเป็นกำลังคน' },
-              { k: 'support',   icon: '🗂️', label: 'สนับสนุน', color: '#a78bfa', title: 'QA · วิศวกรรม · ธุรการ · สโตร์ — ไม่เช็คชื่อ ไม่นับกำลังคนหน้าไลน์' },
+              { k: 'shopfloor',  icon: '🧑‍🏭', label: 'หน้างาน',  color: '#22c55e', title: 'พนักงานหน้าไลน์ — เช็คชื่อ · นับเป็นกำลังคนของไลน์' },
+              { k: 'technician', icon: '🔧', label: 'ช่าง',     color: '#38bdf8', title: 'ช่างซ่อมบำรุง/จิ๊ก/แม่พิมพ์ — เช็คชื่อได้ แต่ไม่นับเป็นกำลังคนของไลน์ (ซ่อมข้ามไลน์)' },
+              { k: 'support',    icon: '🗂️', label: 'สนับสนุน', color: '#a78bfa', title: 'QA · วิศวกรรม · ธุรการ · สโตร์ — เช็คชื่อได้ ไม่นับกำลังคนของไลน์' },
             ].map(t => {
               const active = filterStaffKind === t.k;
               return (
@@ -1737,12 +1767,20 @@ export default function Operator() {
                           <div style={{ border: `2px dashed ${luDocFile ? '#a855f7' : 'var(--border2)'}`, borderRadius: 7, padding: '8px 12px', cursor: 'pointer', background: luDocFile ? 'rgba(168,85,247,0.06)' : 'var(--bg2)', textAlign: 'center' }}
                             onClick={() => document.getElementById(`doc-${req.id}`).click()}>
                             <input id={`doc-${req.id}`} type="file" accept="image/*,application/pdf" style={{ display: 'none' }}
-                              onChange={e => {
-                                const f = e.target.files?.[0];
+                              /* 🔴 ขา "ไม่ใช่ PDF" ต้องผ่าน `acceptImageFile()` (HEIC จาก iPhone / MIME ว่างจาก
+                                 ตัวจัดการไฟล์ Android) — เดิมเทียบ `type.startsWith('image/')` เอง ⇒ ไฟล์ MIME ว่าง
+                                 ตกด่าน แล้วถูกอัปขึ้น `four-m-images` เป็น `.jpg` + contentType image/jpeg เงียบๆ
+                                 = หลักฐานอบรมที่เปิดดูไม่ได้ (QC audit 20/10 · ด่าน image-input-via-accept-helper
+                                 ตรวจ "รายไฟล์" จึงมองข้ามช่องนี้เพราะไฟล์มี ImageCropModal อยู่ที่อื่น) */
+                              onChange={async e => {
+                                const picked = e.target.files?.[0];
                                 e.target.value = '';   // เลือกไฟล์เดิมซ้ำต้องยิง change อีกครั้ง (หลังแนบล้มแล้วลองรูปเดิม)
-                                if (!f) return;
+                                if (!picked) return;
+                                const isPdf = picked.type === 'application/pdf' || /\.pdf$/i.test(picked.name || '');
+                                const f = isPdf ? picked : await acceptImageFile(picked);
+                                if (!f) return;        // ปฏิเสธแล้ว `acceptImageFile` ขึ้น toast บอกเหตุผลเอง
                                 setLuDocFile(f);
-                                if (f.type.startsWith('image/')) {
+                                if (!isPdf) {
                                   const reader = new FileReader();
                                   reader.onload = ev => setLuDocPreview(ev.target.result);
                                   reader.readAsDataURL(f);
@@ -1940,6 +1978,27 @@ export default function Operator() {
                   })()}
                 </div>
               </div>
+              {/* 💰 สังกัดทางบัญชี — Cost Center **เป็นของหน่วยงาน ไม่ใช่ของคน** (16/10 · คำขอ user)
+                  อ่านจากผังองค์กร (ตกทอดจากหน่วยแม่) · แก้ที่ /org-setup ที่เดียว
+                  🔴 ห้ามทำช่องให้พิมพ์ CC ลงตัวพนักงาน — คนย้ายหน่วย/ไปช่วยหน่วยอื่น CC จะไม่ตามเงียบๆ
+                     (กฎเดียวกับ Manpower Board: คนวิ่งข้ามแผนก cost center ยังเป็นของบ้านจริง) */}
+              {(() => {
+                const cc = costCenterOfNode(editingEmp.org_node_id, orgAllNodes);
+                const home = orgAllNodes.find(n => n.id === editingEmp.org_node_id);
+                return (
+                  <div style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--muted)', lineHeight: 1.6,
+                    background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 7, padding: '6px 9px' }}>
+                    💰 <b>สังกัดทางบัญชี</b> — หน่วยงาน{' '}
+                    <b style={{ color: 'var(--text)' }}>{home?.code || home?.name || '(ยังไม่ผูกหน่วยในผัง)'}</b>
+                    {' · '}Cost Center{' '}
+                    {cc.code
+                      ? <><b style={{ color: 'var(--text)', fontFamily: 'var(--font-display)' }}>{cc.code}</b>
+                          {cc.from && home && (cc.from !== (home.code || home.name)) && <span> (ตกทอดจาก {cc.from})</span>}</>
+                      : <span style={{ color: '#f59e0b' }}>ยังไม่ได้ตั้ง — ตั้งที่ /org-setup</span>}
+                    <div>แก้ที่ <b>ผังองค์กร (/org-setup)</b> — CC เป็นของหน่วยงาน คนที่สังกัดหน่วยนี้ได้รหัสเดียวกันทั้งหมด</div>
+                  </div>
+                );
+              })()}
               <div>
                 <label style={labelSt}>วันเริ่มงาน</label>
                 <input type="date" value={editingEmp.start_date || ''}
@@ -2042,7 +2101,7 @@ export default function Operator() {
                   // fallback: ผังยังไม่มีกลุ่มใต้แผนกนี้ → ใช้ production_lines เดิม (normalize + fail-open)
                   // 2026-09-07 อ่านทะเบียนไลน์ผ่าน <LineSelect> (ลำดับชั้น/ปลดระวาง/ค่าเดิมนอกลิสต์ไม่หายเงียบ) — คง pre-filter scope+แผนก เดิม
                   return (
-                    <LineSelect value={cur} disabled={!editingEmp.department}
+                    <LineSelect value={cur} includeSupport disabled={!editingEmp.department}
                       placeholder={editingEmp.department ? '— เลือก Line —' : 'เลือกแผนกก่อน'}
                       lines={filterLinesByDept(
                         (scopeSecs.length ? lines.filter(l => inSectionScope(scopeSecs, l.section)) : lines)
@@ -2099,6 +2158,16 @@ export default function Operator() {
                     ? skillDefs
                     : skillDefs.filter(sd => skillInScope(sd, { division: empDiv, section: empSec, department: editingEmp.department }) || isOwned(sd));
                   const hiddenCount = skillDefs.length - visibleSkillDefs.length;
+                  /* 🔴 ฝ่ายที่ยัง "ไม่มีสกิลของตัวเองเลย" ต้องเขียนบนจอ (16/10 · user "QC/QA แต่โชว์สกิลมั่ว")
+                     เคสจริง: QC แผนก QA (ฝ่ายวิศวกรรม) — ฝ่ายนี้มีสกิลของตัวเอง 0 ตัว
+                     ⇒ ที่ขึ้นมาคือ "สกิลกลาง" ล้วน ซึ่งบางตัวเป็นสกิลเครื่องจักรที่ยังไม่ได้ติดป้ายฝ่าย
+                     เดิมจอไม่บอกอะไรเลย คนอ่านนึกว่าระบบจับคู่สกิลให้ผิด · ไม่รู้ ≠ ไม่มี — ต้องบอกว่าทำไม */
+                  const ownDivCount = empDiv
+                    ? skillDefs.filter(sd => String(sd.scope_division || '').trim()
+                        && skillInScope(sd, { division: empDiv, section: empSec, department: editingEmp.department })).length
+                    : 0;
+                  const centralCount = skillDefs.filter(sd => !String(sd.scope_division || '').trim()
+                    && !String(sd.scope_section || '').trim()).length;
                   const empDivLabel = empDiv
                     ? (divisionsSync().find(d => d.code === empDiv)?.label || empDiv)
                     : null;
@@ -2117,6 +2186,12 @@ export default function Operator() {
                       {!empDiv && !showAllSkills && (
                         <span style={{ color: '#f59e0b' }} title="ไปติดป้ายฝ่ายให้ส่วนงาน/แผนกนี้ที่หน้าผังองค์กร">
                           ⚠️ ส่วนงานนี้ยังไม่ได้ติดป้ายฝ่าย — เห็นเฉพาะสกิลกลาง
+                        </span>
+                      )}
+                      {empDiv && ownDivCount === 0 && !showAllSkills && (
+                        <span style={{ color: '#f59e0b' }}
+                          title="ทะเบียนสกิลยังไม่มีตัวไหนติดป้ายฝ่ายนี้ไว้ — ตั้งที่หน้าทะเบียนสกิล (ช่อง 'ฝ่าย')">
+                          ⚠️ ฝ่าย{empDivLabel}ยังไม่มีสกิลของตัวเองเลย — ที่เห็นคือ<b>สกิลกลาง {centralCount} ตัว</b> (ใช้ร่วมทุกฝ่าย)
                         </span>
                       )}
                       {hiddenCount > 0 && !showAllSkills && (

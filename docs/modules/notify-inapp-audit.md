@@ -192,7 +192,22 @@ migration `20260924_skill_levelup_notify_by_section_main.sql` (**apply แล้
 · สรุปเช้าทั้งฉบับ (รันจริง 25/09 16:59) = **91 แถวรวมทุก event** เทียบกับ **3,564 แถวจาก event เดียว** เมื่อ 23/09
 · กระดิ่งของ QA เปลี่ยนจาก 113 ใบ/บ่าย → **1 ใบ** ที่บอกตัวเลขรวม ("160 ใบรอ QA · เกิน 7 วัน 102 ใบ")
 
+### ➕ รอบ 2 (2026-10-13) — เปิดยุบเพิ่ม 8 เรื่อง + edge ใส่ event_key
+`20261013_notif_rollup_more_main.sql` · defect/ojt/quality_bin 180 น. · downtime_open_15min 60 น. · ตัวเตือนรอบวัน 720 น.
+· edge `send-notification` v48 ใส่ `event_key` ให้กระดิ่งเครื่องหยุด (เดิมว่าง = ยุบไม่ได้) + ไม่ยิง open_15min ซ้ำให้คนที่ยังไม่อ่าน
+· รายละเอียด → `edge-functions.md` §ลดกระดิ่งที่ edge ยิง · `downtime_call_mtn` **ยังไม่ยุบ (ตั้งใจ)**
+
 ### 🔎 ยังไม่ได้ทำ
 · `skill_levelup_request` (พีค 43/คน/วัน) ยังไม่เปิด rollup — รอดูผลการแก้ section เมื่อ 24/09 ก่อน
 · 13 event ที่เป็น Telegram-only ยังไม่มีผู้รับในแอป (product decision · §2)
 · Web Push ยังอยู่ที่ 24% ของผู้ใช้
+
+---
+
+## 8. กฎใหม่นอก edge function — `kpi_acct_import` (2026-10-20)
+
+user ย้ำอีกครั้ง 20/10: *"telegram ตอนนี้จะไม่ใช้ละ ใช้ระบบแจ้งเตือนในแอพเลยดีกว่า ยังไม่ยกเลิกแต่โฟกัสระบบแจ้งเตือนในแอพ"*
+⇒ **event ใหม่ทุกตัว = แถว `notification_rules` ไม่มี `channel_ids` + ผู้รับแคบ** · ของเดิมที่ยิง Telegram อยู่ปล่อยไว้ ไม่เพิ่ม ไม่รื้อ
+· ตัวส่งที่อยู่นอก edge (GitHub Actions `scripts/acct-import/run_queue.mjs`) อ่านกฎเอง (`inapp_roles` + `inapp_sections`) แล้ว insert `notifications` ด้วย service role —
+  **ไม่ได้ผ่าน `notifyInApp()` ของ edge** (ไฟล์ 59 KB deploy ผ่าน MCP ไม่ได้) ⇒ ไม่มี rollup/scope_depth · ยอมรับได้เพราะเดือนละ 1 ใบ
+· seed `inapp_roles = ['admin']` (6 บัญชี) — ถ้าเลือก `supervisor,manager` ที่มี `kpi:manage` = **44 คน** ซ้ำรอย §1

@@ -11,12 +11,13 @@ import { toast } from '../components/Toast';
 import { loadProcessTypes, activeProcessTypes, procDisplay, procColor } from '../utils/processTypes';
 loadProcessTypes(); // master กระบวนการ data-driven
 import ImageCropModal from '../components/ImageCropModal';
-import { can } from '../utils/permissions';
+import { can, canDelete as canDeleteUtil } from '../utils/permissions';
 import useIsMobile from '../utils/useIsMobile';
 import RoutingPanel from '../components/RoutingPanel';
 import useTabParam from '../utils/useTabParam';
 import CtReview from '../components/CtReview';
 import { MAT_CLASSES, matClassOf, matColor, matLabel, matMatches, isSapMat, rawAsOutputWarning } from '../utils/matPrefix';
+import { pairBlockReason } from '../utils/pairOrder';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import LineSelect from '../components/LineSelect';
 import CustomerSelect from '../components/CustomerSelect';
@@ -25,6 +26,7 @@ import ProductSelect from '../components/ProductSelect';
 import useColumnHistory from '../utils/useColumnHistory'; // 📜 MAT ที่เคยบันทึกใน kanban_standards — Product Master ไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
 import useProductionLines, { loadLinesRes, LINE_COLUMNS } from '../utils/useProductionLines';
 // ทะเบียนลูกค้า/Supplier (DR customers · suppliers — 2026-09-08 single-source audit): แผง CRUD กลาง + picker กลาง
+import { masterDeleteGuard } from '../utils/masterRefs'; // ด่านนับปลายทางก่อนลบทะเบียนที่จับคู่ด้วยข้อความ — 2026-10-18
 import SimpleMasterPanel from '../components/SimpleMasterPanel';
 import SupplierSelect from '../components/SupplierSelect';
 import { invalidateCustomers } from '../utils/useCustomers';
@@ -54,6 +56,10 @@ import { ALL } from '../utils/filterLabels';
 import { loadDocForms } from '../utils/docForms';
 import { downloadCsvDoc, csvText } from '../utils/csvDoc';
 import { DeleteButton } from '../components/IconButton';
+import { loadFamilyQtyTotals, familyQtyChip } from '../utils/familyTotals';
+import { statusColor } from '../utils/statusTone';   // สีสถานะชุดเดียวทั้งระบบ (ห้ามตั้ง hex เอง)
+import { fetchAllRows } from '../utils/fetchAllRows';          // ทะเบียนที่โตได้ ห้าม select() เปล่า (เพดาน 1000 แถว)
+import { fetchAllPages } from '../utils/fetchByIds';            // คิวรีที่ต้องการ shape เอง (bom_items)
 // วันที่ local (ห้าม toISOString — UTC เพี้ยนก่อน 07:00 ไทย)
 const localDateStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 
@@ -263,7 +269,11 @@ export default function ProductMaster() {
   void isDeptAdmin;
   const canCreate = can('products', 'create', role);
   const canEdit   = can('products', 'edit', role);
-  const canDelete = can('products', 'delete', role);
+  /* 🖥️🔴 ต้องผ่าน `canDelete()` ของกลาง (utils/permissions.js) — เดิมประกาศตัวแปรชื่อ `canDelete`
+     ทับ util แล้วเรียกแค่ `can(...)` ⇒ อ่านโค้ดเหมือนมีด่าน แต่ **ด่าน "บัญชีกลางห้ามลบ" ไม่ทำงาน**
+     (ออดิท 13/10 เจอแบบนี้ 5 หน้า) · เปลี่ยนชื่อตัวแปรเป็น `mayDelete` + เรียก util ผ่าน alias
+     ⚠️ ห้ามตั้งชื่อตัวแปรท้องถิ่นว่า `canDelete` อีก — มีด่าน `no-shadow-candelete` */
+  const mayDelete = canDeleteUtil('products', 'create', role);
   // ผูกแท็บกับ URL ตาม UI-CONVENTIONS §6.8 (2026-08-20 — worklist ใน /vsm ต้อง deep-link มาที่ ?tab=routing ได้)
   const [mainTab, setMainTab] = useTabParam(['products', 'bom', 'bomdup', 'packaging', 'parts', 'kanban', 'routing', 'ct', 'customers', 'suppliers', 'export'], 'products');
   /* 🧩 เด้งไปแท็บ BOM แล้วเลือกแถวนั้นให้เลย (?tab=bom&mat=…) — ลิสต์ BOM ยาว 100+ แถว
@@ -286,6 +296,8 @@ export default function ProductMaster() {
   // 📜 MAT ที่เคยบันทึกใน kanban_standards (DR) — แถวจาก Kanban Auto-Calc (product_id null) ยังเลือกแก้ qty ซ้ำได้ (2026-09-07)
   const kanbanMatHist = useColumnHistory(supabaseDR, 'kanban_standards', 'mat_no', { upper: true });
   const [familyTotals, setFamilyTotals] = useState({});
+  /* 🔴 "อ่านยอดสะสมไม่ได้" ≠ "ยังไม่เคยผลิต" — ต้องเขียนบนจอ ห้ามซ่อนชิป (utils/familyTotals.js) */
+  const [famTotalsFail, setFamTotalsFail] = useState(false);
   const [bomCounts, setBomCounts] = useState({});          // product_id → bom count
   const [bomRows, setBomRows] = useState([]);              // {product_id, mat_no} — ใช้จัดอันดับตัวเลือก parent ของ OP ตาม BOM ของไลน์
   /* ✅ ความครบของข้อมูลต่อสินค้า (2026-09-22) — ดึงแค่คีย์ 2 ตาราง (ตัวเล็กมาก) ไม่ใช่ทั้งแถว (กฎเหล็ก 11 egress)
@@ -330,15 +342,20 @@ export default function ProductMaster() {
        (ไล่แปะทีละจุดคือวิธีที่ทำให้ `invalidateProducts()` เดิมตกหล่นจนไม่มีใครเรียกเลยสักหน้า)
        ดูทะเบียน "ตาราง → คีย์" ที่ src/utils/masterInvalidate.js */
     invalidateTable('dr_products', 'kanban_standards');   // ทะเบียนสินค้า + kanban อยู่หน้าเดียวกัน
-    const [{ data: pr }, { data: ln }, { data: stds }, { data: boms }, { data: sessions }, { data: pm }, { data: rt }, { data: pkg }] = await Promise.all([
+    const [{ data: pr }, { data: ln }, { data: stds }, { data: boms }, famRes, { data: pm }, { data: rt }, { data: pkg }] = await Promise.all([
       supabaseDR.from('dr_products').select('*').order('name').order('effective_from', { ascending: false }),
       // 2026-09-07: ต้องครบ LINE_COLUMNS (section/is_active) — <LineSelect> ใช้กรอง scope + ตัดไลน์ปลดระวาง
       loadLinesRes(),
-      supabaseDR.from('kanban_standards').select('*').order('mat_no'),
+      /* 457 / 430 แถว — ยังไม่ทะลุ แต่เป็นทะเบียนที่โตตามพาร์ทใหม่ ⇒ แบ่งหน้าไว้ก่อน (กฎเหล็ก DB ข้อ 5) */
+      fetchAllRows(supabaseDR, 'kanban_standards', '*', q => q.order('mat_no')),
       supabaseDR.from('bom_items').select('product_id, mat_no').eq('is_active', true),
-      supabaseDR.from('production_sessions').select('product_id, qty_ok, dr_products(family_id)'),
+      /* 📦 ยอดผลิตสะสมต่อ family — รวมฝั่ง DB ผ่าน RPC (utils/familyTotals.js)
+         เดิมลาก `production_sessions` ทั้งตารางมาบวกในหน้า ซึ่งผิด 2 ชั้น:
+         ติดเพดาน 1,000 แถว (วัด 15/10 = 1,675 แถว) **และ** join ด้วย `product_id`
+         ที่เป็น NULL ทั้งตาราง ⇒ ยอดเป็น {} ตลอด แล้วชิปถูกซ่อนเงียบ */
+      loadFamilyQtyTotals(),
       // ทะเบียนกลาง Parts Master (material master) — ใช้เป็น picker + เช็คเลขหลุดทะเบียนในฟอร์มสินค้า/kanban
-      supabaseDR.from('parts_master').select('id, mat_no, part_name, part_no, uom, qty_per_pkg, supplier, image_url').eq('is_active', true).order('mat_no'),
+      fetchAllRows(supabaseDR, 'parts_master', 'id, mat_no, part_name, part_no, uom, qty_per_pkg, supplier, image_url', q => q.eq('is_active', true).order('mat_no')),
       // ✅ แถบความครบ — เอาแค่คีย์พอ (มี/ไม่มี) ไม่ดึงรายละเอียดขั้นตอน/กล่อง
       supabaseDR.from('part_routings').select('mat_no').eq('is_active', true),
       supabaseDR.from('product_packaging').select('product_id').eq('is_active', true),
@@ -355,13 +372,8 @@ export default function ProductMaster() {
     setBomRows(boms || []);
     setBomCounts(bc);
 
-    const totals = {};
-    (sessions || []).forEach(s => {
-      const fid = s.dr_products?.family_id;
-      if (!fid) return;
-      totals[fid] = (totals[fid] || 0) + (s.qty_ok || 0);
-    });
-    setFamilyTotals(totals);
+    setFamilyTotals(famRes?.totals || {});
+    setFamTotalsFail(!!famRes?.fail);
   }, []);
 
   useEffect(() => { load(); }, [load, partsReloadKey]); // เพิ่มพาร์ทใน tab Parts Master แล้ว picker เห็นทันที
@@ -423,6 +435,13 @@ export default function ProductMaster() {
     if (form.posting_mode === 'lot_accumulate' && !(Number(form.lot_accumulate_threshold) > 0)) {
       toast.error('กรอกจำนวนสะสมขั้นต่ำ (เช่น 800, 1000) สำหรับโหมดสะสม lot'); return;
     }
+    // 🚫 คู่ RH/LH ต้องอยู่ไลน์เดียวกัน (เคสจริง 13/10 GOR 297 ก่อนชุบ↔หลังชุบ → Daily Report สลับ MAT ทั้งกะ · utils/pairOrder.js)
+    //    เช็คก่อนอัปโหลดรูป — ไม่งั้นบล็อกแล้วรูปค้างใน storage
+    if (form.pair_mat_no) {
+      const me = { mat_no: (form.mat_no || '').trim().toUpperCase(), line_name: form.line_name || null };
+      const pairWhy = pairBlockReason(me, items.find(i => i.mat_no === form.pair_mat_no) || { mat_no: form.pair_mat_no });
+      if (pairWhy) { toast.error(`ตั้งคู่ RH/LH ไม่ได้: ${pairWhy}`); return; }
+    }
     setSaving(true);
     try {
       let imageUrl = form.image_url || null;
@@ -476,10 +495,22 @@ export default function ProductMaster() {
                  (บั๊กจริง 05/10: ทั้งก้อนนี้เคยอยู่ใน `if (!exist?.length)` ⇒ พอเลขใหม่มีในทะเบียนอยู่แล้ว
                   ซึ่งเป็นเรื่องปกติ มันข้ามทั้งบล็อก **รวมถึงการติดหมายเหตุที่แถวเก่า**
                   วัดจริง: ทะเบียน 370 แถว มีโน้ตที่พูดถึง EC = 0 แถว ทั้งที่ทำ EC ไปแล้ว 4 ครั้ง) */
+              /* 🔴 อ่านแถวของ "เลขเดิม" ไม่สำเร็จ ≠ "เลขเดิมไม่มีในทะเบียน" (2026-10-13)
+                 เดิมแกะแค่ `{ data }` ⇒ คิวรีล้ม = `oldPm` null เงียบ แล้วเสียไป **2 อย่างพร้อมกัน**:
+                   1. MAT ใหม่ไม่ได้สืบทอด uom / จำนวนต่อกล่อง / supplier (จอบอกว่า "เลขเดิมไม่มีในทะเบียน" = โกหก)
+                   2. **แถวของเลขเดิมไม่ถูกติดหมายเหตุ EC** — ซึ่งคือบั๊กที่วัดเจอเมื่อ 05/10 เป๊ะ
+                      (ทะเบียน 370 แถว มีโน้ต EC = 0 แถว ทั้งที่ทำ EC ไปแล้ว 4 ครั้ง · ดูคอมเมนต์ 🔴 ข้างบน)
+                 ⇒ แยก "ไม่มีจริง" ออกจาก "อ่านไม่ได้" แล้วบอกให้ไปทำมือ ห้ามเงียบ */
               let oldPm = null;
+              let oldPmUnread = false;
               if (ecSource.mat_no) {
-                const { data } = await supabaseDR.from('parts_master').select('*').eq('mat_no', ecSource.mat_no).limit(1);
-                oldPm = data?.[0] || null;
+                const oldRes = await supabaseDR.from('parts_master').select('*').eq('mat_no', ecSource.mat_no).limit(1);
+                oldPmUnread = !!oldRes.error;
+                oldPm = oldRes.data?.[0] || null;
+                if (oldPmUnread) {
+                  toast.error(`อ่านทะเบียนของเลขเดิม ${ecSource.mat_no} ไม่สำเร็จ — MAT ใหม่จะไม่สืบทอด uom/จำนวนต่อกล่อง/supplier `
+                    + `และแถวของเลขเดิมจะไม่ถูกติดหมายเหตุ EC · ไปทำมือที่ tab 🗂 (${oldRes.error.message})`);
+                }
               }
               if (!exist?.length) {
                 const { error: pmErr } = await supabaseDR.from('parts_master').insert({
@@ -490,7 +521,7 @@ export default function ProductMaster() {
                 });
                 if (pmErr) toast.error('ลงทะเบียน Parts Master ไม่สำเร็จ: ' + pmErr.message + ' — ไปเพิ่มเองที่ tab 🗂');
                 else if (oldPm) toast.info('🗂 ลงทะเบียน MAT ใหม่ใน Parts Master แล้ว (สืบทอดข้อมูลจากเลขเดิม · ต้นทุนให้บัญชีเติม)');
-                else toast.info('🗂 ลงทะเบียน MAT ใหม่ใน Parts Master แล้ว — เลขเดิมไม่มีในทะเบียน ไปเติม จำนวนต่อกล่อง/supplier/ต้นทุน ที่ tab 🗂');
+                else if (!oldPmUnread) toast.info('🗂 ลงทะเบียน MAT ใหม่ใน Parts Master แล้ว — เลขเดิมไม่มีในทะเบียน ไปเติม จำนวนต่อกล่อง/supplier/ต้นทุน ที่ tab 🗂');
               }
               /* ฝากรอยไว้ที่แถวทะเบียนของเลขเดิม (นอกเงื่อนไขข้างบน — ดูคอมเมนต์ 🔴)
                  ไม่ปิด `is_active`: ของ rev เก่ายังไหลอยู่ในคลัง/รอบส่งช่วงเปลี่ยนผ่าน การเลิกใช้เป็นการตัดสินใจของคน
@@ -824,7 +855,7 @@ export default function ProductMaster() {
 
       {mainTab === 'products' && (<>
       {/* ── Callout: แนะนำ Parts Master สำหรับ 300/500 ── */}
-      <div style={{ marginBottom: 16, padding: '10px 14px', borderRadius: 10, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+      <div data-page-note="1" style={{ marginBottom: 16, padding: '10px 14px', borderRadius: 10, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         <div style={{ fontSize: 13, color: 'var(--text2)', flex: 1 }}>
           <span style={{ fontWeight: 700, color: '#f59e0b' }}>📦 ชิ้นส่วนที่ซื้อจาก Supplier</span>
           {' '}(ขึ้นต้น <strong>3</strong> · <strong>5</strong>) เพิ่มได้ที่ tab{' '}
@@ -884,7 +915,7 @@ export default function ProductMaster() {
         }).filter(Boolean);
         if (!risky.length) return null;
         return (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '10px 14px', marginBottom: 12, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 10 }}>
+          <div data-page-note="1" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '10px 14px', marginBottom: 12, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 10 }}>
             <span style={{ fontSize: 13, color: '#f59e0b', fontWeight: 700 }}>
               🔩 ขั้นตอน (OP) ที่ยอดกำลังถูกนับซ้ำ {risky.length} รายการ
             </span>
@@ -977,7 +1008,7 @@ export default function ProductMaster() {
             const active   = members.find(m => m.is_active && !m.superseded_by);
             const archived = members.filter(m => !m.is_active || m.superseded_by);
             const item     = active || members[0];
-            const totalQty = familyTotals[family_id] || 0;
+            const qtyChip  = familyQtyChip(familyTotals, family_id, famTotalsFail);
             const isExpandedKanban = expandedFamilies[family_id] !== false;
             const familyProductIds = new Set(members.map(m => m.id));
             const stds = kanbanStds.filter(s => s.product_id && familyProductIds.has(s.product_id));
@@ -1026,20 +1057,21 @@ export default function ProductMaster() {
                       {[item.line_name && `📍 ${item.line_name}`, item.cycle_time_sec && `CT ${item.cycle_time_sec}s`, item.target_per_shift && `Target ${item.target_per_shift}/กะ`, !indented && item.effective_from && `ใช้ตั้งแต่ ${item.effective_from}`].filter(Boolean).join(' · ')}
                     </div>
                     <div style={{ display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                      {totalQty > 0 && <span style={{ fontSize: 11, color: '#22c55e', fontWeight: 700 }}>📦 ยอดสะสม {totalQty.toLocaleString()} ชิ้น</span>}
+                      {/* 3 สถานะ ห้ามยุบ: ผลิตแล้ว N / ยังไม่เคยผลิต / อ่านไม่ได้ (เดิม `totalQty > 0 &&` ซ่อน 2 อันหลัง) */}
+                      <span style={{ fontSize: 11, color: statusColor(qtyChip.tone), fontWeight: qtyChip.tone === 'good' ? 700 : 600 }}>{qtyChip.text}</span>
                       {/* ✅ แถบความครบ — แทนชิป BOM/Kanban เดิม (เดิมบอกแค่ 2 ขั้น คนยังต้องไล่เปิดแท็บอื่นเอง) */}
                       <ReadyChips ready={readyOf(item)} onGo={goFixStep(item)} />
                       {totalBom > 0 && <span style={{ fontSize: 11, color: 'var(--muted)' }}>({totalBom} พาร์ทใน BOM)</span>}
                     </div>
                     <RelatedLinks matNo={item.mat_no} productId={item.id} />
                   </div>
-                  {(canEdit || canDelete) && (
+                  {(canEdit || mayDelete) && (
                     <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'flex-start' }}>
                       {canEdit && active && <button onClick={() => openEC(active)} title="Engineering Change" style={{ background: 'rgba(168,85,247,0.12)', border: '1px solid rgba(168,85,247,0.35)', borderRadius: 6, padding: '4px 10px', fontSize: 11, cursor: 'pointer', color: '#a855f7', fontWeight: 700 }}>🔄 EC</button>}
                       {canEdit && <button onClick={() => openEdit(item)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 10px', fontSize: 12, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>}
                       {/* สินค้าที่ปิดใช้งาน (ไม่ใช่ superseded โดย EC) → ปุ่มเปิดกลับ · สินค้าที่ยัง active → ✕ ปิดใช้งาน */}
-                      {canDelete && !item.is_active && !item.superseded_by && <button onClick={() => handleReactivate(item.id)} title="เปิดใช้งานสินค้ากลับ" style={{ background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 6, padding: '4px 10px', fontSize: 11, cursor: 'pointer', color: '#22c55e', fontWeight: 700 }}>♻️ เปิดใช้งาน</button>}
-                      {canDelete && item.is_active && <button className="tbtn" onClick={() => handleDelete(item.id)} title="ปิดใช้งานสินค้า (เก็บประวัติ)" style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 14 }}>✕</button>}
+                      {mayDelete && !item.is_active && !item.superseded_by && <button onClick={() => handleReactivate(item.id)} title="เปิดใช้งานสินค้ากลับ" style={{ background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 6, padding: '4px 10px', fontSize: 11, cursor: 'pointer', color: '#22c55e', fontWeight: 700 }}>♻️ เปิดใช้งาน</button>}
+                      {mayDelete && item.is_active && <button className="tbtn" onClick={() => handleDelete(item.id)} title="ปิดใช้งานสินค้า (เก็บประวัติ)" style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 14 }}>✕</button>}
                     </div>
                   )}
                 </div>
@@ -1082,10 +1114,10 @@ export default function ProductMaster() {
                               <span style={{ fontSize: 18, fontWeight: 900, color: '#0ea5e9', lineHeight: 1 }}>{std.qty_per_kanban}</span>
                               <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 3 }}>ชิ้น/ใบ</span>
                             </div>
-                            {(canEdit || canDelete) && (
+                            {(canEdit || mayDelete) && (
                               <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
                                 {canEdit && <button onClick={() => openKanbanEdit(std)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 5, padding: '3px 8px', fontSize: 11, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>}
-                                {canDelete && <button className="tbtn" onClick={() => handleKanbanDelete(std.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 13 }}>✕</button>}
+                                {mayDelete && <button className="tbtn" onClick={() => handleKanbanDelete(std.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 13 }}>✕</button>}
                               </div>
                             )}
                           </div>
@@ -1166,11 +1198,11 @@ export default function ProductMaster() {
                         {v.revCount > 1 && <span style={{ fontSize: 11, padding: '1px 5px', borderRadius: 10, background: 'rgba(168,85,247,0.12)', color: '#a855f7', fontWeight: 700 }}>🔄 {v.revCount} rev</span>}
                         {/* ✅ แถบความครบแบบย่อ (ไอคอน+เครื่องหมาย) — แถวตัวแปรมีของเยอะแล้ว ใส่ชื่อขั้นเต็มจะล้น */}
                         <ReadyChips ready={readyOf(v)} onGo={goFixStep(v)} compact />
-                        {(canEdit || canDelete) && (
+                        {(canEdit || mayDelete) && (
                           <div style={{ display: 'flex', gap: 4, marginLeft: 'auto', flexShrink: 0 }}>
                             {canEdit && <button onClick={() => openEC(v)} title="Engineering Change" style={{ background: 'rgba(168,85,247,0.12)', border: '1px solid rgba(168,85,247,0.35)', borderRadius: 6, padding: '3px 8px', fontSize: 11, cursor: 'pointer', color: '#a855f7', fontWeight: 700 }}>🔄 EC</button>}
                             {canEdit && <button onClick={() => openEdit(v)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, padding: '3px 8px', fontSize: 11, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>}
-                            {canDelete && <button className="tbtn" onClick={() => handleDelete(v.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 13 }}>✕</button>}
+                            {mayDelete && <button className="tbtn" onClick={() => handleDelete(v.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 13 }}>✕</button>}
                           </div>
                         )}
                       </div>
@@ -1200,10 +1232,10 @@ export default function ProductMaster() {
                                 <span style={{ fontSize: 18, fontWeight: 900, color: '#0ea5e9', lineHeight: 1 }}>{std.qty_per_kanban}</span>
                                 <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 3 }}>ชิ้น/ใบ</span>
                               </div>
-                              {(canEdit || canDelete) && (
+                              {(canEdit || mayDelete) && (
                                 <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
                                   {canEdit && <button onClick={() => openKanbanEdit(std)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 5, padding: '3px 8px', fontSize: 11, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>}
-                                  {canDelete && <button className="tbtn" onClick={() => handleKanbanDelete(std.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 13 }}>✕</button>}
+                                  {mayDelete && <button className="tbtn" onClick={() => handleKanbanDelete(std.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 13 }}>✕</button>}
                                 </div>
                               )}
                             </div>
@@ -1502,11 +1534,11 @@ export default function ProductMaster() {
       {partsPickFor && <PartsPickModal parts={pmParts} onPick={handlePartPick} onClose={() => setPartsPickFor(null)} />}
       </>)}
 
-      {mainTab === 'bom'   && <BOMPanel canCreate={canCreate} canEdit={canEdit} canDelete={canDelete} fullName={fullName} />}
+      {mainTab === 'bom'   && <BOMPanel canCreate={canCreate} canEdit={canEdit} mayDelete={mayDelete} fullName={fullName} />}
       {/* 🔁 คู่ที่ "ของชิ้นเดียวถูกนิยามไว้ 2 ใบ" — กดแล้วเด้งไปเปิดใบนั้นในแท็บ BOM (ใช้ `openBomFor` ตัวเดิม
           ที่ worklist ของ /vsm ใช้อยู่ — ลิสต์ยาว บอกให้ "ไปหาเอง" = คนไม่ไป) */}
       {mainTab === 'bomdup' && <BomDupPanel onOpenSheet={openBomFor} />}
-      {mainTab === 'packaging' && <PackagingPanel canCreate={canCreate} canEdit={canEdit} canDelete={canDelete} fullName={fullName} />}
+      {mainTab === 'packaging' && <PackagingPanel canCreate={canCreate} canEdit={canEdit} mayDelete={mayDelete} fullName={fullName} />}
       {mainTab === 'parts' && <PartsMasterPanel canCreate={canCreate} canEdit={canEdit} fullName={fullName} setCsvPreview={setCsvPreview} reloadKey={partsReloadKey} />}
       {mainTab === 'kanban' && <KanbanStdPanel canEdit={canEdit} fullName={fullName} />}
       {mainTab === 'routing' && <RoutingPanel canEdit={can('routing','manage',role) || canEdit} lines={lines} />}
@@ -1516,6 +1548,8 @@ export default function ProductMaster() {
           — ทะเบียนนี้เป็นเจ้าของ "สะกดหลัก" ให้ picker กลาง (CustomerSelect/SupplierSelect) · code สร้างจากชื่อ normalize อัตโนมัติ */}
       {mainTab === 'customers' && (
         <SimpleMasterPanel client={supabaseDR} table="customers" keyCol="code" canManage={canEdit}
+          /* ด่านนับปลายทางก่อนลบ (fail-closed) — ใบผลิต/ใบซ่อม/สินค้า/คัมบัง ฯลฯ เก็บชื่อนี้เป็น text ไม่ผูก FK */
+          onBeforeDelete={masterDeleteGuard(supabaseDR, 'customers')}
           stampCol="updated_by_name" stampName={fullName} onChanged={invalidateCustomers}
           title="🏷️ ทะเบียนลูกค้า"
           help="คอลัมน์ customer ของสินค้า/เอกสารเก็บชื่อนี้เป็น text · alias ใช้แม็ปสะกดเก่าเข้าชื่อหลัก · ปิดใช้ = ไม่โผล่ให้เลือกใหม่"
@@ -1528,6 +1562,7 @@ export default function ProductMaster() {
       )}
       {mainTab === 'suppliers' && (
         <SimpleMasterPanel client={supabaseDR} table="suppliers" keyCol="code" canManage={canEdit}
+          onBeforeDelete={masterDeleteGuard(supabaseDR, 'suppliers')}
           stampCol="updated_by_name" stampName={fullName} onChanged={invalidateSuppliers}
           title="🏭 ทะเบียน Supplier / ผู้รับจ้าง"
           help="ใช้กับช่อง Supplier ใน Parts Master · Packaging · Routing (จ้างนอก) · คลังอะไหล่ · NPI Tooling — คอลัมน์ปลายทางเก็บชื่อเป็น text · ชนิด (kind) ช่วยจัดลำดับตัวเลือกให้ตรงงาน · ปิดใช้ = ไม่โผล่ให้เลือกใหม่"
@@ -1659,7 +1694,7 @@ const TD = ({ children, style }) => (
   <td style={{ padding: '8px 10px', fontSize: 13, color: 'var(--text)', borderTop: '1px solid var(--border)', ...style }}>{children}</td>
 );
 
-function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
+function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
   const isMobile = useIsMobile(); // ≤768px: two-pane ยุบเป็นคอลัมน์เดียว (desktop ไม่เปลี่ยน)
   const plLines = useProductionLines(); // ทะเบียนไลน์ (LINE_COLUMNS) สำหรับ <LineSelect> ช่อง source_line (2026-09-07)
   const [products, setProducts]     = useState([]);
@@ -1672,6 +1707,11 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
   const [slocs, setSlocs]           = useState([]);     // ทะเบียนรหัสคลัง (storage_locations)
   const [slocUsed, setSlocUsed]     = useState([]);     // รหัสที่ถูกใช้ใน BOM จริง (เผื่อมีที่ยังไม่ลงทะเบียน)
   const [showTree, setShowTree]     = useState(true);   // 🌳 กางโครงแบบ SAP
+  /* 🔍 "มุมมองพาร์ทนี้" — กดเลข MAT ที่ **ยังไม่มีใบ BOM ของตัวเอง** แล้วกางเป็นตัวตั้งต้น
+     ลูกของมันถูกกรอกไว้ในใบอื่น (เคสจริง 14/10: 20058483 ลูกอยู่ในใบ 20058498)
+     ⚠️ ไม่ใช่ "ใบ" — แก้ไม่ได้จากตรงนี้ ต้องไปแก้ที่ใบที่กรอกไว้ (จอต้องเขียนบอกให้ชัด) */
+  const [partView, setPartView]     = useState(null);   // { mat, sheetId, sheets:[{sheetId,count,isOwn}] }
+  const [borrowSheet, setBorrowSheet] = useState(null);  // ใบที่เลือกดู ตอน "ใบนี้ว่าง แต่ใบอื่นกรอกลูกไว้" 
   const [partsMaster, setPartsMaster] = useState([]);   // catalog กลาง
   const [search, setSearch]         = useState('');
   const [loading, setLoading]       = useState(false);
@@ -1716,11 +1756,14 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
     // ⚠️ ต้องมี `id` — ปุ่มลบ "แถวนับซ้ำ" ในจอต้นไม้ลบด้วย id ของบรรทัด (ไม่มี id = ปุ่มหายเงียบ)
     const BOM_FULL = 'id, product_id, mat_no, part_name, qty_per_unit, uom, item_no, storage_location, parent_mat, op_no';
     const BOM_SLIM = 'id, product_id, mat_no, part_name, qty_per_unit, uom';
+    /* 🔴 ต้องแบ่งหน้า — วัดจริง 15/10: bom_items = **653 แถว** (ก.ย. 506) โตเข้าใกล้เพดาน 1,000
+       ทะลุแล้ว = ต้นไม้ BOM ขาดแถวเงียบๆ แล้วจอ "แถวนับซ้ำ"/ชิปจำนวนพาร์ทตอบผิดตามกัน */
+    const bomPaged = (cols) => fetchAllPages(() => supabaseDR.from('bom_items').select(cols).eq('is_active', true));
     const fetchBom = async () => {
-      const r = await supabaseDR.from('bom_items').select(BOM_FULL).eq('is_active', true);
-      return r.error?.code === '42703'
-        ? supabaseDR.from('bom_items').select(BOM_SLIM).eq('is_active', true)
-        : r;
+      const r = await bomPaged(BOM_FULL);
+      /* คอลัมน์ใหม่ยังไม่ apply migration = 42703 ⇒ ถอยไปชุดคอลัมน์พื้นฐาน (พฤติกรรมเดิม) */
+      const r2 = /column .* does not exist|42703/.test(r.error || '') ? await bomPaged(BOM_SLIM) : r;
+      return { data: r2.rows, error: r2.error ? { message: r2.error } : null };
     };
     const [{ data: prods }, { data: boms }, { data: parts }, opMap, { data: locs }] = await Promise.all([
       // is_operation = ต้องรู้ว่า "ใบนี้เป็นขั้นงานไหม" (ใบขั้นงานห้ามเอาไปเทียบกับใบพาร์ท)
@@ -1768,6 +1811,8 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
 
   useEffect(() => { loadAll(); }, [loadAll]);
   useEffect(() => { loadItems(selProduct?.id); }, [selProduct, loadItems]);
+  // เปลี่ยนใบ = ปิด "มุมมองพาร์ท" เสมอ (ไม่งั้นค้างข้ามใบ แล้วคนอ่านว่าเป็นของใบใหม่)
+  useEffect(() => { setPartView(null); setBorrowSheet(null); }, [selProduct?.id]);
   /* เลือกแถวตาม ?mat= แล้วล้าง param ทิ้ง (กันค้าง — กดแถวอื่นแล้ว refresh จะเด้งกลับตัวเก่า)
      ⚠️ หาไม่เจอต้องบอก ห้ามเงียบ: mat ที่ปิด is_active อยู่จะไม่อยู่ในลิสต์นี้ (loadAll กรอง is_active) */
   useEffect(() => {
@@ -2041,10 +2086,65 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
        ⇒ `selProduct.id` กลายเป็น id ของบรรทัด BOM ⇒ โหลดใบด้วย product_id ที่ไม่มีจริง = **ใบเปล่า**
        (ไม่มี error ไม่มี toast — กดแล้วเจอใบว่าง เงียบๆ) */
     const target = products.find(p => upMat(p.mat_no) === k);
-    if (!target) { toast.info(`${mat} ยังไม่มีใบ BOM ของตัวเอง — กด "➕ เปิดใบ BOM ให้พาร์ทจากทะเบียน" ได้`); return; }
+    if (!target) {
+      /* 🔍 ไม่มีใบของตัวเอง — แต่ "ลูกของมัน" อาจถูกกรอกไว้ในใบอื่นแล้ว (ใบ FG / ใบ sub ที่กางอยู่)
+         เดิมจบที่ toast ⇒ ของอย่าง 20058483 ที่เห็นลูกอยู่ตรงหน้า กดดูเป็นตัวตั้งต้นไม่ได้เลย (user 14/10)
+         ⚠️ เปิดเป็น "มุมมอง" เท่านั้น ไม่ใช่ใบ — ห้ามสร้างใบให้เองเงียบๆ (ใบใหม่ = ของจริงในฐาน PE ตัดสิน) */
+      const where = bomIx.sheetsWithKidsOf(mat);
+      if (where.length) { setPartView({ mat: upMat(mat), sheetId: where[0].sheetId, sheets: where }); return; }
+      toast.info(`${mat} ยังไม่มีใบ BOM ของตัวเอง และยังไม่มีใบไหนกรอกลูกของมันไว้ — กด "➕ เปิดใบ BOM ให้พาร์ทจากทะเบียน" ได้`);
+      return;
+    }
+    setPartView(null);
     setBomBack(prev => (selProduct ? [...prev, { id: selProduct.id, mat_no: selProduct.mat_no, name: selProduct.name }] : prev));
     setSelProduct(target); setSearch(target.mat_no || '');
-  }, [products, selProduct]);
+  }, [products, selProduct, bomIx]);
+
+  /* ชื่อ/ป้ายของ mat และของ "ใบ" — ไม่รู้ = ปล่อยว่าง **ห้ามเอาเลข MAT มาแทนชื่อ** (ด่าน regressionGuards) */
+  const nameOfMat = useCallback((mat) => {
+    const k = upMat(mat);
+    return products.find(p => upMat(p.mat_no) === k)?.name
+      || partsMaster.find(p => upMat(p.mat_no) === k)?.part_name
+      || items.find(i => upMat(i.mat_no) === k)?.part_name || '';
+  }, [products, partsMaster, items]);
+  const sheetLabel = useCallback((sheetId) => {
+    const sh = products.find(p => p.id === sheetId);
+    return sh ? [sh.mat_no, sh.name].filter(Boolean).join(' — ') : 'ใบที่ไม่อยู่ในลิสต์';
+  }, [products]);
+
+  /* ⬆️ แถบ "ของชิ้นนี้ถูกใช้เป็นลูกของใครบ้าง" (user ขอ 14/10) — กดเข้าไปที่แม่ได้เลย
+     🔴 แม่ตัวเดียวที่อยู่หลายใบ ต้องขึ้นหลายปุ่ม **ห้ามยุบ** (คนละใบ = คนละการนิยาม)
+     · ไม่มีแม่เลย = เขียนบอกว่าเป็นตัวบนสุด **ห้ามซ่อนแถบเงียบ** (ซ่อน = คนอ่านไม่ออกว่า "ไม่มี" หรือ "จอไม่รู้") */
+  const parentsBar = useCallback((mat) => {
+    const m = upMat(mat);
+    if (!m) return null;
+    const ps = bomIx.parentsOfMat(m);
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+        <span style={{ fontSize: 11.5, color: 'var(--muted)', fontWeight: 700 }}>
+          ⬆ ถูกใช้เป็นลูกของ{ps.length ? ` ${ps.length} ที่:` : ':'}
+        </span>
+        {ps.length === 0 && (
+          <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>— ไม่มี (เป็นตัวบนสุดของสาย)</span>
+        )}
+        {ps.map((x, i) => (
+          <button key={`${x.mat}|${x.sheetId}|${i}`} type="button" onClick={() => openSheetOfMat(x.mat)}
+            title={`${x.mat} ใช้ ${m} ×${x.qty} · นิยามไว้ในใบ ${sheetLabel(x.sheetId)}`}
+            style={{ ...btnSecondary, padding: '2px 9px', fontSize: 11, fontFamily: 'monospace' }}>
+            {x.mat} ↗
+          </button>
+        ))}
+      </div>
+    );
+  }, [bomIx, openSheetOfMat, sheetLabel]);
+
+  /* 📄 เปิดใบนี้แล้วว่าง — "ลูกของพาร์ทนี้" ถูกกรอกไว้ในใบอื่นหรือเปล่า
+     🔴 ต้องถามแยกจาก `items` — `items` = บรรทัดของ **ใบนี้** เท่านั้น ⇒ ว่าง ≠ ไม่มีลูก
+     (เคสจริง 14/10: ใบ 20058495 ว่าง แต่ใบ FG 10086024 กรอกลูกของมันไว้แล้ว → จอบอก "ยังไม่มีพาร์ทย่อย" = โกหก) */
+  const kidsElsewhere = useMemo(() => {
+    if (!selProduct?.mat_no) return [];
+    return bomIx.sheetsWithKidsOf(selProduct.mat_no).filter(x => x.sheetId !== selProduct.id);
+  }, [selProduct?.mat_no, selProduct?.id, bomIx]);
 
   /* ใบไหนเป็น "ขั้นงาน (OP)" — ใบขั้นงานตอบ "ขั้นนี้กินอะไร" คนละคำถามกับใบพาร์ท
      ⇒ ห้ามเอามาเทียบว่าชุดลูกต่างกัน (เตือนผิด 5 คู่จาก 19 · วัดจริง 06/10) */
@@ -2295,6 +2395,27 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
   }, [products, search, kind]);
   const opCount = useMemo(() => products.filter(p => p._op).length, [products]);
 
+  /* 🔎 ค้นแล้ว "ไม่พบ product" ≠ ของชิ้นนั้นไม่มีลูก — พาร์ทที่ยังไม่มีใบของตัวเอง
+     แต่ถูกกรอกลูกไว้ในใบอื่น ต้องหาเจอและกดดูได้ (user 14/10: ค้น 20058483 แล้วขึ้น "ไม่พบ product"
+     ทั้งที่ใบ 20058498 กรอกลูกของมันไว้แล้ว) · ตะกร้ารับท้ายลิสต์ ห้ามให้หายจากจอ */
+  const noSheetHits = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q || filtered.length > 0) return [];
+    const have = new Set(products.map(p => upMat(p.mat_no)));
+    const seen = new Set();
+    const out = [];
+    partsMaster.forEach(pm => {
+      const k = upMat(pm.mat_no);
+      if (!k || have.has(k) || seen.has(k)) return;
+      if (!k.toLowerCase().includes(q) && !(pm.part_name || '').toLowerCase().includes(q)) return;
+      const where = bomIx.sheetsWithKidsOf(pm.mat_no);
+      if (!where.length) return;
+      seen.add(k);
+      out.push({ mat: k, name: pm.part_name || '', sheets: where });
+    });
+    return out.slice(0, 20);
+  }, [search, filtered.length, partsMaster, products, bomIx]);
+
   return (
     <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(240px, 300px) 1fr', gap: 16, alignItems: 'start' }}>
       {/* left: product list */}
@@ -2344,14 +2465,72 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
               </div>
             );
           })}
-          {filtered.length === 0 && <div style={{ padding: 20, textAlign: 'center', fontSize: 13, color: 'var(--muted)' }}>ไม่พบ product</div>}
+          {filtered.length === 0 && (
+            <div style={{ padding: 20, textAlign: 'center', fontSize: 13, color: 'var(--muted)' }}>
+              ไม่พบ product
+              {noSheetHits.length > 0 && <div style={{ marginTop: 4, fontSize: 11.5 }}>แต่เจอพาร์ทที่ <b>ยังไม่มีใบของตัวเอง</b> ด้านล่าง</div>}
+            </div>
+          )}
+          {/* 🔍 พาร์ทที่ไม่มีใบของตัวเอง แต่มีคนกรอกลูกไว้ในใบอื่น — กดแล้วกางเป็นตัวตั้งต้น (อ่านอย่างเดียว) */}
+          {noSheetHits.map(h => (
+            <div key={h.mat} onClick={() => setPartView({ mat: h.mat, sheetId: h.sheets[0].sheetId, sheets: h.sheets })}
+              style={{ padding: '10px 12px', borderRadius: 8, cursor: 'pointer', background: 'var(--bg2)', border: '1px dashed rgba(14,165,233,0.5)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  🔍 {h.name || h.mat}
+                </span>
+                <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 7px', borderRadius: 10, flexShrink: 0, background: 'rgba(14,165,233,0.15)', color: '#0ea5e9' }}>
+                  {h.sheets.reduce((n, x) => n + x.count, 0)} ลูก
+                </span>
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
+                {h.mat} · ยังไม่มีใบของตัวเอง — ลูกถูกกรอกไว้ในใบ {h.sheets.length > 1 ? `${h.sheets.length} ใบ` : sheetLabel(h.sheets[0].sheetId)}
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 
       {/* right: BOM detail */}
       <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 16 }}>
+          {/* 🔍 มุมมองพาร์ทที่ "ยังไม่มีใบของตัวเอง" — กางจากใบที่กรอกลูกของมันไว้
+              ⚠️ อ่านอย่างเดียว (ไม่ส่ง onDeleteDupes) — ลบแถวของ *ใบอื่น* จากหน้าต่างนี้ = ลบผิดใบเงียบๆ */}
+          {partView && (
+            <div style={{ background: 'rgba(14,165,233,0.07)', border: '1px solid rgba(14,165,233,0.45)', borderRadius: 10, padding: '10px 12px', marginBottom: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 6 }}>
+                <span style={{ fontSize: 13, fontWeight: 800, color: '#0ea5e9' }}>🔍 มุมมองพาร์ท {partView.mat}</span>
+                <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{nameOfMat(partView.mat)}</span>
+                <button type="button" onClick={() => setPartView(null)}
+                  style={{ ...btnSecondary, padding: '3px 10px', fontSize: 11.5, marginLeft: 'auto' }}>✕ ปิดมุมมองนี้</button>
+              </div>
+              {parentsBar(partView.mat)}
+              <div style={{ fontSize: 11.5, color: 'var(--text2)', lineHeight: 1.7, margin: '8px 0' }}>
+                พาร์ทนี้<b>ยังไม่มีใบ BOM ของตัวเอง</b> — ลูกที่เห็นด้านล่างถูกกรอกไว้ในใบ <b>{sheetLabel(partView.sheetId)}</b>
+                <br />เพิ่ม/แก้ลูกของพาร์ทนี้ ต้องไปแก้ที่ใบนั้น · อยากให้มันมีใบของตัวเอง กด <b>“➕ เปิดใบ BOM ให้พาร์ทจากทะเบียน”</b> ทางซ้าย
+                {partView.sheets?.length > 1 && (
+                  <div style={{ marginTop: 5 }}>
+                    ⚠️ <b>ลูกของพาร์ทนี้ถูกกรอกไว้ {partView.sheets.length} ใบ</b> — เลือกดูทีละใบ (ระบบไม่รวมให้ รวม = นับซ้ำ)
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
+                      {partView.sheets.map(x => (
+                        <button key={x.sheetId} type="button" onClick={() => setPartView(v => ({ ...v, sheetId: x.sheetId }))}
+                          style={{ ...btnSecondary, padding: '3px 9px', fontSize: 11,
+                            background: x.sheetId === partView.sheetId ? 'rgba(14,165,233,0.18)' : 'var(--bg2)',
+                            color: x.sheetId === partView.sheetId ? '#0ea5e9' : 'var(--text2)' }}>
+                          📄 {sheetLabel(x.sheetId)} ({x.count})
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+              <BomTreeView rootMat={partView.mat} rootName={nameOfMat(partView.mat)}
+                bomOf={bomIx.bomOf} sheetFor={bomIx.sheetFor} ownSheetOf={bomIx.ownSheetOf}
+                isOpSheet={isOpSheet} startSheet={partView.sheetId} onOpenSheet={openSheetOfMat} />
+            </div>
+          )}
+
         {!selProduct ? (
-          <div style={{ padding: '60px 20px', textAlign: 'center', color: 'var(--muted)', fontSize: 14 }}>← เลือก product เพื่อดู / แก้ไข BOM</div>
+          !partView && <div style={{ padding: '60px 20px', textAlign: 'center', color: 'var(--muted)', fontSize: 14 }}>← เลือก product เพื่อดู / แก้ไข BOM</div>
         ) : (
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
@@ -2359,6 +2538,7 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
                 <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>{selProduct.name}</div>
                 <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>{[selProduct.p_no && `P/No: ${selProduct.p_no}`, selProduct.mat_no && `Mat: ${selProduct.mat_no}`, selProduct.line_name, selProduct.customer].filter(Boolean).join(' · ')}</div>
                 {/* ↩ เส้นทางที่กดเข้ามาจากต้นไม้ (ใบ FG → ใบ sub-assembly) — ย้อนกลับได้ทีละชั้น */}
+                {selProduct.mat_no && parentsBar(selProduct.mat_no)}
                 {bomBack.length > 0 && (
                   <button type="button"
                     onClick={() => { const prev = bomBack[bomBack.length - 1];
@@ -2403,7 +2583,7 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
                     <BomTreeView rootMat={selProduct.mat_no} rootName={selProduct.name}
                       bomOf={bomIx.bomOf} sheetFor={bomIx.sheetFor} ownSheetOf={bomIx.ownSheetOf}
                       isOpSheet={isOpSheet}
-                      onDeleteDupes={canDelete ? handleDeleteDupes : undefined}
+                      onDeleteDupes={mayDelete ? handleDeleteDupes : undefined}
                       onOpenSheet={openSheetOfMat} />
                   </div>
                 )}
@@ -2413,16 +2593,50 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
             {loading ? (
               <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>กำลังโหลด...</div>
             ) : items.length === 0 ? (
-              <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--muted)', fontSize: 13, background: 'var(--bg2)', borderRadius: 8, border: '1px dashed var(--border)' }}>
-                ยังไม่มีพาร์ทย่อยใน BOM นี้{canCreate && ' — กด "+ เพิ่มพาร์ทย่อย" เพื่อเริ่ม'}
-              </div>
+              /* 🔴 ใบนี้ว่าง ≠ พาร์ทนี้ไม่มีลูก — ถ้ามีใบอื่นกรอกลูกของมันไว้ ต้องบอก ห้ามขึ้น "ยังไม่มีพาร์ทย่อย"
+                 (เคสจริง 14/10: ใบ 20058495 ว่าง ทั้งที่ใบ FG 10086024 กรอกลูกของมันไว้แล้ว — user เรียกว่า "มั่ว") */
+              kidsElsewhere.length > 0 ? (() => {
+                const showId = kidsElsewhere.some(x => x.sheetId === borrowSheet) ? borrowSheet : kidsElsewhere[0].sheetId;
+                return (
+                  <div style={{ background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.45)', borderRadius: 10, padding: '10px 12px' }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 800, color: '#f59e0b', marginBottom: 4 }}>
+                      ⚠️ ใบนี้ยังไม่มีพาร์ทย่อยของตัวเอง — แต่ลูกของ {selProduct.mat_no} ถูกกรอกไว้ในใบอื่นแล้ว
+                    </div>
+                    <div style={{ fontSize: 11.5, color: 'var(--text2)', lineHeight: 1.7 }}>
+                      ของที่เห็นด้านล่าง <b>ไม่ใช่ของใบนี้</b> — มาจากใบ <b>{sheetLabel(showId)}</b> ·
+                      ระบบ<b>ไม่ย้ายให้เอง</b> (ย้ายผิด = ความต้องการวัตถุดิบเพี้ยน PE/Planning ตัดสิน)
+                      {canCreate && ' · จะกรอกให้ใบนี้มีของตัวเอง กด "+ เพิ่มพาร์ทย่อย" ด้านบน'}
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', margin: '7px 0' }}>
+                      {kidsElsewhere.map(x => (
+                        <button key={x.sheetId} type="button" onClick={() => setBorrowSheet(x.sheetId)}
+                          style={{ ...btnSecondary, padding: '3px 9px', fontSize: 11,
+                            background: x.sheetId === showId ? 'rgba(245,158,11,0.18)' : 'var(--bg2)',
+                            color: x.sheetId === showId ? '#f59e0b' : 'var(--text2)' }}>
+                          📄 {sheetLabel(x.sheetId)} ({x.count})
+                        </button>
+                      ))}
+                      <button type="button" onClick={() => openSheetOfMat(products.find(pr => pr.id === showId)?.mat_no || '')}
+                        disabled={!products.find(pr => pr.id === showId)?.mat_no}
+                        style={{ ...btnSecondary, padding: '3px 9px', fontSize: 11 }}>↗ ไปเปิดใบนั้น</button>
+                    </div>
+                    <BomTreeView rootMat={selProduct.mat_no} rootName={selProduct.name}
+                      bomOf={bomIx.bomOf} sheetFor={bomIx.sheetFor} ownSheetOf={bomIx.ownSheetOf}
+                      isOpSheet={isOpSheet} startSheet={showId} onOpenSheet={openSheetOfMat} />
+                  </div>
+                );
+              })() : (
+                <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--muted)', fontSize: 13, background: 'var(--bg2)', borderRadius: 8, border: '1px dashed var(--border)' }}>
+                  ยังไม่มีพาร์ทย่อยใน BOM นี้{canCreate && ' — กด "+ เพิ่มพาร์ทย่อย" เพื่อเริ่ม'}
+                </div>
+              )
             ) : (
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr style={{ background: 'var(--bg2)' }}>
                       <TH w={62}>Item</TH><TH w={150}>ชั้น / ขั้นตอน</TH><TH>Part Name</TH><TH>Part No.</TH><TH>Mat SAP</TH><TH w={90}>ใช้/ชิ้น</TH><TH w={90}>Qty/Pkg</TH><TH w={60}>หน่วย</TH><TH w={70}>คลัง</TH><TH>ผลิตที่ไลน์</TH><TH>Supplier</TH>
-                      {(canEdit || canDelete) && <TH w={90}> </TH>}
+                      {(canEdit || mayDelete) && <TH w={90}> </TH>}
                     </tr>
                   </thead>
                   <tbody>
@@ -2494,11 +2708,11 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
                           ? <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: 'rgba(59,130,246,0.12)', color: '#3b82f6' }}>🏭 {it.source_line}</span>
                           : <span style={{ color: 'var(--muted)' }}>—</span>}</TD>
                         <TD style={{ color: 'var(--muted)', fontSize: 12 }}>{it.supplier || '—'}</TD>
-                        {(canEdit || canDelete) && (
+                        {(canEdit || mayDelete) && (
                           <TD>
                             <div style={{ display: 'flex', gap: 6 }}>
                               {canEdit && <button className="tbtn" onClick={() => openEdit_(it)} style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', fontSize: 12 }}>✏️</button>}
-                              {canDelete && <DeleteButton onClick={() => handleDelete(it)} title="ลบ" />}
+                              {mayDelete && <DeleteButton onClick={() => handleDelete(it)} title="ลบ" />}
                             </div>
                           </TD>
                         )}
@@ -3466,7 +3680,7 @@ const PKG_CATEGORIES = ['BOX', 'RACK', 'BASKET', 'PALLETTE', 'Other'];
 const EMPTY_PKG_MASTER = { code: '', name: '', category: 'BOX', supplier: '' };
 const cardSt = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 16 };
 
-function PackagingPanel({ canCreate, canEdit, canDelete, fullName }) {
+function PackagingPanel({ canCreate, canEdit, mayDelete, fullName }) {
   const isMobile = useIsMobile(); // ≤768px: two-pane ยุบเป็นคอลัมน์เดียว (desktop ไม่เปลี่ยน)
   const [products, setProducts]   = useState([]);
   const [selProduct, setSelProduct] = useState(null);
@@ -3594,7 +3808,7 @@ function PackagingPanel({ canCreate, canEdit, canDelete, fullName }) {
                 : links.length === 0 ? <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--muted)', fontSize: 13, background: 'var(--bg2)', borderRadius: 8, border: '1px dashed var(--border)' }}>ยังไม่ผูก packaging{canCreate && ' — กด "+ ผูก Packaging"'}</div>
                 : (
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                    <thead><tr style={{ background: 'var(--bg2)' }}><TH>Code</TH><TH>ชื่อ</TH><TH w={140}>ชิ้น/บรรจุภัณฑ์</TH><TH>หมายเหตุ</TH>{(canEdit || canDelete) && <TH w={90}> </TH>}</tr></thead>
+                    <thead><tr style={{ background: 'var(--bg2)' }}><TH>Code</TH><TH>ชื่อ</TH><TH w={140}>ชิ้น/บรรจุภัณฑ์</TH><TH>หมายเหตุ</TH>{(canEdit || mayDelete) && <TH w={90}> </TH>}</tr></thead>
                     <tbody>
                       {links.map(it => (
                         <tr key={it.id}>
@@ -3602,9 +3816,9 @@ function PackagingPanel({ canCreate, canEdit, canDelete, fullName }) {
                           <TD>{it.packaging_name || '—'}</TD>
                           <TD style={{ fontWeight: 800, color: 'var(--accent)' }}>{it.pcs_per_pkg}</TD>
                           <TD style={{ color: 'var(--muted)', fontSize: 12 }}>{it.note || '—'}</TD>
-                          {(canEdit || canDelete) && <TD><div style={{ display: 'flex', gap: 6 }}>
+                          {(canEdit || mayDelete) && <TD><div style={{ display: 'flex', gap: 6 }}>
                             {canEdit && <button className="tbtn" onClick={() => openEditLink(it)} style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', fontSize: 12 }}>✏️</button>}
-                            {canDelete && <DeleteButton onClick={() => delLink(it)} title="ลบ" />}
+                            {mayDelete && <DeleteButton onClick={() => delLink(it)} title="ลบ" />}
                           </div></TD>}
                         </tr>
                       ))}

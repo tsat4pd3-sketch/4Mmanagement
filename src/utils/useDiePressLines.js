@@ -3,9 +3,9 @@
    ตั้งใจแยกจาก production_lines (ไม่ให้ "LINE A ( 800 Ton )" โผล่ใน dropdown ไลน์ผลิตทุกหน้า)
    ref_production_line = ชื่อไลน์ผลิตจริงเมื่อกลุ่มนั้นคือไลน์ (HDF1/HDF2) — ใช้ต่อ linkage OEE/session ในอนาคต
    จัดการที่ /die-registry แผง ⚙️ กลุ่มเครื่องปั๊ม · แก้แล้วเรียก invalidateDiePressLines() */
-import { useEffect, useState } from 'react';
 import { supabaseDR } from '../supabaseClient';
 import { cachedMaster, invalidateMaster, mrows } from './masterCache';
+import useMasterRows from './useMasterRows.js';
 
 const KEY = 'die_press_lines:master';
 
@@ -17,12 +17,9 @@ export async function loadDiePressLines() {
 }
 export const invalidateDiePressLines = () => invalidateMaster(KEY);
 
-export default function useDiePressLines() {
-  const [rows, setRows] = useState([]);
-  useEffect(() => {
-    let alive = true;
-    loadDiePressLines().then(d => { if (alive) setRows(d || []); }).catch(() => {});
-    return () => { alive = false; };
-  }, []);
-  return rows;
-}
+/** สถานะโหลดทะเบียน — `{ rows, failed, stale, message, loading, reload }`
+ *  🔴 ช่องเลือกที่ต้องบอกว่า "ลิสต์ว่างเพราะไม่มีของ หรือเพราะโหลดไม่สำเร็จ" ใช้ตัวนี้
+ *     (ตัว default คืนแค่แถว = พฤติกรรมเดิม ไม่ต้องแก้จุดเรียกเก่า) */
+export function useDiePressLinesState() { return useMasterRows(KEY, loadDiePressLines); }
+
+export default function useDiePressLines() { return useDiePressLinesState().rows; }

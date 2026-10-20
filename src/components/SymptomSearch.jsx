@@ -1,10 +1,11 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { lineNameCompare } from '../utils/lineHierarchy';
 import { supabaseDR } from '../supabaseClient';
 import { noteSimilarity, clusterNotes, CLUSTER_THRESHOLD } from '../utils/textCluster';
 import TimeRangeBar from './TimeRangeBar';
 import SearchInput from './SearchInput';
 import useTimeRange from '../utils/useTimeRange';
+import { machineKey, machineNoLikePattern } from '../utils/machineNo';
 
 /* ── 🔎 ค้นด้วย "อาการ" — สอบกลับจากปลายทางเข้าหาต้นเหตุ (2026-08-26 · คำถามหน้างาน) ────
    *"ลูกค้าแจ้ง ปัญหาตัดไม่ขาด — หา downtime/defect ที่เกี่ยวกับอาการนี้ได้มั้ย"*
@@ -25,7 +26,15 @@ import useTimeRange from '../utils/useTimeRange';
 
    ⚠️ **ค้นด้วย "คำ" ไม่ใช่ "ความหมาย"** — ต้องเขียนบอกบนจอ ไม่งั้นคนเข้าใจว่าไม่เจอ = ไม่เคยเกิด
    ⚠️ ยิง DB เฉพาะตอนกดค้น (ไม่ใช่ live search) — กฎ egress
-   ⚠️ ระบบ **เสนอรายการที่น่าจะใช่** ไม่ได้สรุปสาเหตุ — คนตัดสินเสมอ (หลักเดียวกับแผง 8D)   */
+   ⚠️ ระบบ **เสนอรายการที่น่าจะใช่** ไม่ได้สรุปสาเหตุ — คนตัดสินเสมอ (หลักเดียวกับแผง 8D)
+
+   ── ⚙️ โหมด "เครื่องนี้" (`machine` prop · 2026-10-19 · ลูป QR) ─────────────────────
+   ส่องป้าย QR ที่เครื่อง → /scan → "สอบกลับ" มาที่นี่พร้อม `?machine=<เลขเครื่อง>`
+   (เดิมปุ่มนั้นพามาแท็บนี้เปล่าๆ ⇒ ต้องพิมพ์ทุกอย่างใหม่ = ทางตัน)
+   · ไม่ต้องพิมพ์อาการก็ค้นได้ (= ทุกเหตุการณ์ของเครื่องในช่วงวัน) · พิมพ์อาการ = แคบลงในเครื่องนั้น
+   · จับเลขเครื่องแบบทนการสะกด: server กรองหยาบ `machineNoLikePattern` → **กรองซ้ำด้วย `machineKey` เสมอ**
+   · ของเสียไม่มีช่องเครื่อง — ผูกผ่าน `prod_orders.machine_no` (มีเฉพาะไลน์เครื่องขนานที่เลือกเครื่องตอนเปิดใบ)
+     ⇒ **จอต้องเขียนบอก** ว่าของเสียของไลน์ไหลทีละชิ้นไม่โผล่ในโหมดนี้ (ไม่ใช่ "ไม่มีของเสีย")   */
 
 const DEFAULT_BACK_DAYS = 90;
 const ROW_LIMIT = 500;              // ต่อชนิด — ชนเพดานต้องบอก ห้ามตัดเงียบ
@@ -62,7 +71,7 @@ export function relevance(q, typeName, description) {
   return hit ? Math.max(sim, 0.9) : sim;
 }
 
-export default function SymptomSearch({ inScope, onOpenOrder }) {
+export default function SymptomSearch({ inScope, onOpenOrder, machine = null, onClearMachine }) {
   const [q, setQ] = useState('');
   /* ⏱️ ช่วงข้อมูล = แถบกลาง (UI §6.16) · ไม่ได้แบ่งถังเวลา ⇒ `scales={null}` */
   const tr = useTimeRange({ defaultDays: DEFAULT_BACK_DAYS });
@@ -71,11 +80,42 @@ export default function SymptomSearch({ inScope, onOpenOrder }) {
   const [res, setRes] = useState(null);      // null = ยังไม่เคยค้น (ต่างจาก [] = ค้นแล้วไม่เจอ)
   const [err, setErr] = useState(null);
 
+  /* ⚙️ โหมดเครื่อง — ดึงทุกเหตุการณ์ของเครื่องในช่วงวัน แล้วค่อยแคบด้วยอาการ (ถ้าพิมพ์) ฝั่ง client */
+  async function runMachine(term) {
+    const pat = machineNoLikePattern(machine);
+    if (!pat) throw new Error('เลขเครื่องว่าง');
+    const k = machineKey(machine);
+    const DT_COLS = 'id, machine_no, description, duration_min, started_at, downtime_type_id, session_id, dr_downtime_types(name_th, category), production_sessions!inner(work_date, line_name, shift)';
+    const DEF_COLS = 'id, description, qty_ng, qty_suspect, logged_at, defect_type_id, prod_order_id, session_id, dr_defect_types(name_th), prod_orders!inner(prod_no, mat_no, part_name, machine_no), production_sessions!inner(work_date, line_name, shift)';
+    const [dt, def] = await Promise.all([
+      supabaseDR.from('downtime_logs').select(DT_COLS).ilike('machine_no', pat)
+        .gte('production_sessions.work_date', from).lte('production_sessions.work_date', to).limit(ROW_LIMIT),
+      supabaseDR.from('defect_logs').select(DEF_COLS).ilike('prod_orders.machine_no', pat)
+        .gte('production_sessions.work_date', from).lte('production_sessions.work_date', to).limit(ROW_LIMIT),
+    ]);
+    if (dt.error) throw dt.error;
+    if (def.error) throw def.error;
+    const hitCap = (dt.data || []).length >= ROW_LIMIT || (def.data || []).length >= ROW_LIMIT;
+    const rows = [
+      ...(dt.data || []).filter((r) => machineKey(r.machine_no) === k)
+        .map((r) => ({ ...r, _kind: 'dt', _viaType: false, _type: r.dr_downtime_types?.name_th || '' })),
+      ...(def.data || []).filter((r) => machineKey(r.prod_orders?.machine_no) === k)
+        .map((r) => ({ ...r, _kind: 'def', _viaType: false, _type: r.dr_defect_types?.name_th || '' })),
+    ]
+      .filter((r) => inScope(r.production_sessions?.line_name))
+      .map((r) => ({ ...r, _score: term ? relevance(term, r._type, r.description) : 1 }))
+      .filter((r) => !term || r._score >= CLUSTER_THRESHOLD)
+      .sort((a, b) => String(b.production_sessions?.work_date).localeCompare(String(a.production_sessions?.work_date))
+        || b._score - a._score);
+    return { term: term || `เครื่อง ${machine}`, rows, hitCap, typeHits: 0, pats: [], machine };
+  }
+
   const run = useCallback(async () => {
     const term = q.trim();
-    if (!term) return;
+    if (!term && !machine) return;
     setBusy(true); setErr(null);
     try {
+      if (machine) { setRes(await runMachine(term)); return; }
       const pats = ilikePatterns(term);
       const orText = pats.map((p) => `description.ilike.%${p}%`).join(',');
 
@@ -141,7 +181,15 @@ export default function SymptomSearch({ inScope, onOpenOrder }) {
       setErr(e?.message || String(e));
       setRes(null);
     } finally { setBusy(false); }
-  }, [q, from, to, inScope]);
+  }, [q, from, to, inScope, machine]);   // eslint-disable-line react-hooks/exhaustive-deps -- runMachine อ่านค่าชุดเดียวกัน
+
+  /* มาจากป้าย QR (`?machine=`) = ตั้งใจดูเครื่องนี้อยู่แล้ว ⇒ ค้นให้เลยครั้งเดียว (ไม่ต้องกดซ้ำ) · เปลี่ยน/ล้างเครื่อง = ล้างผลเก่า */
+  useEffect(() => {
+    setRes(null);
+    if (machine) run();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [machine]);
+
 
   /* สรุป + จัดกลุ่ม "แบบการเขียน" — บอกว่าอาการนี้ถูกบันทึกกี่สำนวน (ไว้ใช้เป็นคำค้นรอบหน้า) */
   const sum = useMemo(() => {
@@ -160,6 +208,7 @@ export default function SymptomSearch({ inScope, onOpenOrder }) {
     };
   }, [res]);
 
+  const noInput = !q.trim() && !machine;
   const box = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 14px' };
   const th = { textAlign: 'left', fontSize: 11.5, color: 'var(--muted)', fontWeight: 700, padding: '6px 8px', whiteSpace: 'nowrap' };
   const td = { fontSize: 12.5, padding: '6px 8px', borderTop: '1px solid var(--border)', verticalAlign: 'top' };
@@ -173,13 +222,28 @@ export default function SymptomSearch({ inScope, onOpenOrder }) {
       >
         <SearchInput value={q} onChange={setQ} onKeyDown={(e) => { if (e.key === 'Enter') run(); }}
           fields="อาการ เช่น ตัดไม่ขาด · นัทไม่มี · เป็นครีบ · โรบอทชนจิ๊ก" />
-        <button onClick={run} disabled={busy || !q.trim()}
+        <button onClick={run} disabled={busy || noInput}
           style={{ padding: '0 18px', borderRadius: 8, border: 'none', fontWeight: 800, fontSize: 13,
-                   background: busy || !q.trim() ? 'var(--bg3)' : 'var(--accent)', color: busy || !q.trim() ? 'var(--muted)' : '#fff',
-                   cursor: busy || !q.trim() ? 'default' : 'pointer' }}>
+                   background: busy || noInput ? 'var(--bg3)' : 'var(--accent)', color: busy || noInput ? 'var(--muted)' : '#fff',
+                   cursor: busy || noInput ? 'default' : 'pointer' }}>
           {busy ? 'กำลังค้น…' : '🔎 ค้นหา'}
         </button>
       </TimeRangeBar>
+      {machine && (
+        <div style={{ ...box, borderColor: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 13, fontWeight: 800 }}>⚙️ เฉพาะเครื่อง <b style={{ fontSize: 15 }}>{machine}</b></span>
+          <span style={{ fontSize: 11.5, color: 'var(--muted)', flex: '1 1 260px', lineHeight: 1.55 }}>
+            กด 🔎 ค้นหาได้เลยโดยไม่ต้องพิมพ์อาการ (= ทุกเหตุการณ์ของเครื่องนี้ในช่วงวัน) · พิมพ์อาการเพื่อแคบลง
+            · ของเสียเห็นเฉพาะใบที่ระบุเครื่องตอนเปิดใบ (ไลน์เครื่องขนาน) — ไลน์ไหลทีละชิ้นไม่ได้ผูกของเสียกับเครื่อง
+          </span>
+          {onClearMachine && (
+            <button onClick={() => { onClearMachine(); setRes(null); }}
+              style={{ fontSize: 12, fontWeight: 700, padding: '5px 12px', borderRadius: 8, background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', cursor: 'pointer' }}>
+              ✕ ทุกเครื่อง
+            </button>
+          )}
+        </div>
+      )}
       <div style={box}>
         <div style={{ fontSize: 13.5, fontWeight: 800, marginBottom: 4 }}>🔎 ค้นจากอาการที่ลูกค้าแจ้ง</div>
         <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.55 }}>

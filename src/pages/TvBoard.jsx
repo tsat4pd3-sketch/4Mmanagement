@@ -49,7 +49,7 @@ const DEPTS = [
   { key: 'store', icon: '📦', label: 'สโตร์', sub: 'ไลน์เรียกของ · รอบส่งค้าง · พาร์ทจะขาด' },
 ];
 
-export default function TvBoard() {
+export default function TvBoard({ onOpenMenu = null }) {
   const { role, lineId, sections } = useContext(UserContext);
   const navigate = useNavigate();
   const isMobile = useIsMobile();
@@ -168,10 +168,11 @@ export default function TvBoard() {
     <div style={{ minHeight: '100vh', background: 'var(--bg)', padding: 'clamp(8px, 1vw, 14px)', display: 'flex', flexDirection: 'column', gap: 10 }}>
       {/* ── แถบบนสุด: บางที่สุดเท่าที่ยังบอกได้ว่า "จอนี้ของแผนกไหน" ──
           ทุกพิกเซลแนวตั้งที่แถบนี้กิน = พื้นที่ที่ผังเสียไป (บทเรียน 2026-08-26 "ยังสเกลแย่อยู่เลย")
-          → ตัวเลือกทั้งหมดพับหลังปุ่ม ⚙️ · เปิดมาเจอเนื้อหาเลย */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          → ตัวเลือกทั้งหมดพับหลังปุ่ม ⚙️ · เปิดมาเจอเนื้อหาเลย
+          ph-chrome = กรอบจอ TV ซ่อน (แถบบนของกรอบบอกชื่อ/มุมมอง/วันงานแทน · index.css) */}
+      <div className="ph-chrome" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <span style={{ fontSize: 16, fontWeight: 900, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
-          {cur.icon} จอ TV · {cur.label}
+          {cur.icon} Andon Board · {cur.label}
         </span>
         <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
           {cur.sub} · วันงาน {workDate}
@@ -179,6 +180,8 @@ export default function TvBoard() {
           {scopeSet ? ` · ${scopeSet.size} ไลน์` : ' · ทุกไลน์'}
         </span>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {/* ☰ เมนู (13/10 · feedback user) — เดิมเข้ามาแล้วไปหน้าอื่นไม่ได้ · ไม่ส่ง onOpenMenu (บัญชีจอแขวน) = ไม่วาด */}
+          {onOpenMenu && <button onClick={onOpenMenu} style={btn(false)} title="เปิดเมนู — ไปหน้าอื่น (จอยังโล่งเหมือนเดิมจนกว่าจะกด)">☰ เมนู</button>}
           <button onClick={toggleFs} style={btn(fs)} title="เต็มจอ — เก็บแถบเบราว์เซอร์คืนพื้นที่ให้ผัง">⛶</button>
           <button onClick={() => setBarOpen(o => !o)} style={btn(barOpen)}>⚙️ ตั้งค่าจอ</button>
         </div>

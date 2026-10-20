@@ -235,3 +235,19 @@ export function filterRowsByLineScope(rows = [], { scopedNames = null, lineNames
   });
   return { rows: kept, hidden: rows.length - kept.length, offRegistry: [...off.values()] };
 }
+
+/**
+ * 🚩 **"หัวหน้ากลุ่มที่ไม่มีสมอ"** — role ที่ขอบเขตผูกกับไลน์ (`leader`) แต่บัญชีไม่มี `line_id`
+ * ⇒ ด่านไลน์ไม่ทำงาน · ต้อง**ถอยไปใช้ขอบเขตส่วนงาน** ห้ามเขียน `if (leader) {…} else if (sections)`
+ *
+ * เจอ 2026-10-19 ที่ `/checkin`: โครง else-if ทำให้ leader ที่ไม่มี `line_id`
+ * **หลุดทั้งสองด่าน = เห็นพนักงานทั้งโรงงาน** (วันนั้นยังไม่มีบัญชีไหนอยู่สถานะนี้ —
+ * แต่การตั้ง "รักษาการหลายหน่วย" ด้วย `sections` สร้างบัญชีแบบนี้ขึ้นมาทันที)
+ *
+ * คืน `true` = ไม่มีสมอทั้งไลน์และส่วนงาน ⇒ 🔴 **จอต้องเขียนบนจอว่ากำลังแสดงทั้งโรงงาน**
+ * (กฎความซื่อสัตย์ของจอ · **ไม่บล็อก** — บล็อกเงียบ = เช็คชื่อไม่ได้ทั้งกะ)
+ */
+export function scopeAnchorless({ role, lineId, sections = [] }) {
+  if (role !== 'leader') return false;
+  return !lineId && !(Array.isArray(sections) ? sections.filter(Boolean) : []).length;
+}

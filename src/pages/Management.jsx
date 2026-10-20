@@ -2,6 +2,8 @@ import { useState, useEffect, useLayoutEffect, useContext, useRef, useCallback, 
 import { halfDayBreakIntervals } from '../utils/oee';
 import { createPortal } from 'react-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { fetchAllPages } from '../utils/fetchByIds';
+import { buildKindMap, splitPointLayers } from '../utils/mapLayers';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import DowntimeSiren from '../components/DowntimeSiren';
@@ -23,6 +25,7 @@ import { visibleInterval } from '../utils/usePolling';
 import { RATE, LIVE } from '../utils/refreshRates';
 import { coalesce, makeIdleGate } from '../utils/liveRefresh';
 import { positionAllCards, delayedCountOf, orderKeyOf, projectedFinishMs, planStatusOf, pushChainOf, dayDelaySummaryOf } from '../utils/heijunkaQueue';
+import { buildBoardCards } from '../utils/boardCards';
 import PlanSlipBar from '../components/PlanSlipBar';   // 📋 แถบ "หลุดแผนไปแค่ไหน" (เวลา+ยอด · 2026-09-30)
 import DelayBlameBar from '../components/DelayBlameBar';   // 🔗 สรุปดีเลย์ของวัน + ต้นเหตุ/ผู้ถูกพาล (ทีมปั๊ม 2026-09-30)
 import { liveChannel } from '../utils/liveChannel';
@@ -154,6 +157,11 @@ export default function Management() {
   const navigate = useNavigate();
   const isLeader = role === 'leader';
   const isSupervisor = role === 'supervisor';
+  /* 🔑 สิทธิ์จัดกำลังคน — ตัวเดียวทั้งหน้า
+     เดิมมีแต่ `canDrag` ที่ประกาศในฟังก์ชันวาดการ์ด (บรรทัด ~980) ⇒ ปุ่มใน modal จุดงาน
+     (📌 บันทึกตำแหน่งประจำ · ↩ Pool) ไม่ถูกกันเลย ใครเปิด modal ได้ก็กดได้
+     ⇒ ต้องกันทั้งที่ปุ่มและที่ฟังก์ชัน (ซ่อนปุ่มอย่างเดียวไม่พอ — Enter/โค้ดเรียกตรงยังเข้าถึงได้) */
+  const canAssignManpower = can('management', 'assign_manpower', role);
 
   const [workers,        setWorkers]        = useState([]);
   const [specialTaskOptions, setSpecialTaskOptions] = useState(DEFAULT_SPECIAL_TASKS); // master งานนอกไลน์ (best-effort)
@@ -202,6 +210,11 @@ export default function Management() {
   const [panelCollapsed,  setPanelCollapsed]  = useState(false);
   const [filterMan,       setFilterMan]       = useState(true);
   const [filterMachine,   setFilterMachine]   = useState(false);
+  // ชั้นหมุดอุปกรณ์: Machine (MTN) | Jig/Fixture (JIG MTN) — โชว์ทีละชั้น (robot ติดจิ๊กปลายแขน = หมุดทับกัน)
+  // ชนิดตัดสินจาก machines.equipment_kind เท่านั้น · กฎ src/utils/mapLayers.js
+  const [filterJig,       setFilterJig]       = useState(false);
+  const [kindMap,         setKindMap]         = useState(null);   // null = ยังโหลด/โหลดไม่ได้
+  const [kindErr,         setKindErr]         = useState('');
   // ป้ายชื่อบนผัง: โชว์/ซ่อน อย่างเดียว คุมทุกชนิดจุด (คน/เครื่องจักร — UI-CONVENTIONS §1)
   // ป้ายเตือน (เครื่อง Downtime / หมุดที่กำลังเลือก) โชว์เสมอแม้ซ่อนป้าย
   const [showPills,       setShowPills]       = useState(true);
@@ -247,6 +260,16 @@ export default function Management() {
      · บอร์ด unmount (สลับไปมุมมองผัง) = คงค่าล่าสุด ห้าม reset เป็น 0 ไม่งั้น squish หลุดกลับ false */
   const [boardSectionH, setBoardSectionH] = useState(0);
   const boardSectionRef = useRef(null);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const { rows, error, truncated } = await fetchAllPages(() => supabaseDR.from('machines').select('id, machine_no, equipment_kind').eq('is_active', true));
+      if (!alive) return;
+      if (error || truncated) { setKindErr(error || 'ทะเบียนเครื่องยาวเกินเพดาน'); setKindMap(null); return; }
+      setKindErr(''); setKindMap(buildKindMap(rows));
+    })();
+    return () => { alive = false; };
+  }, []);
   useEffect(() => {
     const el = boardSectionRef.current;
     if (el) setBoardSectionH(el.scrollHeight);
@@ -574,6 +597,9 @@ export default function Management() {
   const assignWorker = async (logId, stationId) => {
     // guard ชั้นสุดท้าย — โหมดย้อนหลัง/กะอื่น ห้ามเขียนอะไรทั้งสิ้น (ซ่อนปุ่มอย่างเดียวไม่พอ)
     if (!isLiveView) { toast.error('โหมดดูย้อนหลัง — จัดกำลังคนได้เฉพาะกะปัจจุบันของวันนี้'); return; }
+    // ด่านสิทธิ์ — RLS ฝั่ง DB รัด daily_production_logs ด้วย management:assign_manpower แล้ว
+    // ถ้าไม่กันที่นี่ คนที่ไม่มีสิทธิ์จะกดแล้วเจอ error ดิบจาก Postgres
+    if (!canAssignManpower) { toast.error('บัญชีของคุณไม่มีสิทธิ์จัดกำลังคน'); return; }
     const finalAssign = stationId === 'Pool' ? null : stationId;
     const droppedWorker = workers.find(w => w.id === logId);
     const prevAssign = droppedWorker?.assigned_line ?? null;
@@ -658,9 +684,15 @@ export default function Management() {
           if (manCase === 1) {
             // Silent: log directly as approved, no notification
             const desc = `${droppedWorker.employees?.name} ย้ายไปจุด ${station.station_name} (ไลน์เดิม / skill ผ่าน / มีประวัติ)`;
-            const { data: dup } = await supabase.from('four_m_logs')
+            /* 🔴 เช็คใบซ้ำไม่ได้ = **ไม่สร้างใบ** (fail-closed) — เดิมแกะแค่ `{ data: dup }`
+               ⇒ อ่านพลาด = undefined = "ยังไม่มีใบ" ⇒ สร้างซ้ำทุกครั้งที่ย้ายจุดคนเดิม
+               ขัดกฎ "ตัวสร้างอัตโนมัติต้องกันใบซ้ำ" (CLAUDE.md §4M ที่ระบบสร้างเอง)
+               ใบที่ขาดไปกู้ได้ด้วยการย้ายจุดอีกครั้ง · ใบซ้ำในประวัติ 4M ลบไม่ได้ (ห้าม delete) */
+            const dupRes = await supabase.from('four_m_logs')
               .select('id').eq('work_date', today).eq('category', 'Man').eq('description', desc).limit(1);
-            if (!dup?.length) {
+            if (dupRes.error) {
+              toast.error('เข้าจุดงานแล้ว แต่เช็คใบ 4M Man ซ้ำไม่ได้ จึงยังไม่บันทึกใบ (กันใบซ้ำ): ' + dupRes.error.message);
+            } else if (!dupRes.data?.length) {
               // supabase-js ไม่ throw — ไม่เช็ค error = ประวัติย้ายจุด (4M Man) หายเงียบ
               const { error: m4Err } = await supabase.from('four_m_logs').insert([{
                 work_date: today, line_name: station.line_name, category: 'Man',
@@ -882,6 +914,7 @@ export default function Management() {
   const saveHomePosition = async (worker, stationId) => {
     const empId = worker.employee_id || worker.employees?.id;
     if (!empId) return;
+    if (!canAssignManpower) { toast.error('บัญชีของคุณไม่มีสิทธิ์จัดกำลังคน'); return; }
     // ใช้ line_name ของสถานีจริง ไม่ใช่ selectedLine เฉยๆ — เพราะตอนนี้ selectedLine อาจเป็นไลน์หลัก
     // (เช่น HYDROFORM) ที่รวมจุดงานจากไลน์ย่อยหลายไลน์ (HDF1/HDF2/...) เข้ามาแสดงพร้อมกัน
     const station = dynamicStations.find(s => String(s.id) === String(stationId));
@@ -1139,11 +1172,17 @@ export default function Management() {
   const isOpenIssue = m => m.status !== 'approved' && m.status !== 'rejected';
 
   // ตัวเลข badge บนปุ่ม toggle ต้องสื่อความหมาย "ผิดปกติ" ไม่ใช่แค่จำนวนจุดทั้งหมด
+  // หมุดอุปกรณ์ที่อยู่บนผังใบนี้ แยกชั้น Machine | Jig (ไม่รู้ชนิด = ชั้น machine แต่นับให้เห็น)
+  const mcSplit = splitPointLayers(machinePoints.filter(p => belongsToShownMap(p.line_name)), kindMap);
   const vacantStationCount = dynamicStations.filter(st => !workers.some(w => String(w.assigned_line) === String(st.id))).length;
 
   const STATUS_FILTERS = [
     { key: 'man',     on: filterMan,     toggle: () => setFilterMan(v => !v),     label: 'MAN',     icon: '👤', color: '#4d9fff', count: vacantStationCount, title: 'แสดง/ซ่อนจุดงาน (คน) บนผัง — ตัวเลข = จุดที่ยังไม่มีคนประจำ' },
-    { key: 'machine', on: filterMachine, toggle: () => setFilterMachine(v => !v), label: 'MACHINE', icon: '⚙️', color: '#f59e0b', count: 0,                  title: 'แสดง/ซ่อนจุดเครื่องจักรบนผัง' },
+    // Machine กับ Jig/Fixture โชว์ทีละชั้น — เปิดชั้นหนึ่ง = ปิดอีกชั้น (robot ติดจิ๊กปลายแขน วาดพร้อมกันหมุดทับกันจนอ่านไม่ออก)
+    { key: 'machine', on: filterMachine, toggle: () => { setFilterMachine(v => !v); setFilterJig(false); }, label: 'MACHINE', icon: '⚙️', color: '#f59e0b', count: 0,
+      title: `ชั้นเครื่องจักร (ทีม MTN) — ${mcSplit.machine.length} จุด${mcSplit.unknown.length ? `\n⚠️ ${mcSplit.unknown.length} จุดไม่อยู่ในทะเบียนเครื่อง/ไม่ระบุชนิด → วาดในชั้นนี้ (กรอบประ)` : ''}${kindErr ? `\n⚠️ โหลดชนิดอุปกรณ์ไม่ได้ (${kindErr}) — แยกชั้นไม่ได้` : ''}\nเปิดชั้นนี้ = ปิดชั้น Jig/Fixture` },
+    { key: 'jig',     on: filterJig,     toggle: () => { setFilterJig(v => !v); setFilterMachine(false); },     label: 'JIG',     icon: '🗜️', color: '#a78bfa', count: 0,
+      title: `ชั้น Jig/Fixture (ทีม JIG MTN) — ${mcSplit.jig.length} จุด\nตัดสินจาก "ชนิดอุปกรณ์" ในทะเบียน (/equipment?tab=jig)\nเปิดชั้นนี้ = ปิดชั้นเครื่องจักร` },
   ];
 
   // ปุ่มกรอง MAN/MACHINE + โชว์/ซ่อนป้าย — ใช้ทั้ง rail แนวตั้ง (desktop) และแถบแนวนอน (มือถือ)
@@ -1556,34 +1595,8 @@ export default function Management() {
             return { o: item.o, leftPct, widthPct, tailLeftPct, tailWidthPct, realEndMs: item.endMs, isDelayed: item.isDelayed, isLateDone: item.isLateDone, startMs: item.startMs, occupiedEndMs: item.occupiedEndMs, planLeftPct, planWidthPct, planStartMs: item.planStartMs, plannedEndMs: item.plannedEndMs, planSlipped };
           };
 
-          const buildCards = (sessList) => {
-            const cards = [];
-            sessList.forEach(s => {
-              const sessionCtSec = s.dr_products?.cycle_time_sec || 0;
-              // ใบที่ status = carry_over คือใบเดิมที่ถูกยกยอดไปต่อในกะถัดไปแล้ว (มีใบใหม่ status='open'
-              // พร้อม carry_over_from_session_id ชี้กลับมา) — ถ้าแสดงทั้งสองใบจะเห็นเป็นกัมบังซ้อนทับกัน
-              // ข้ามกะเช้า/กะดึก ทั้งที่เป็นงานเดียวกัน จึงตัดใบเดิม (carry_over) ออกจาก timeline
-              const sorted = [...s.orders].filter(o => o.status !== 'carry_over').sort((a, b) => new Date(a.opened_at || 0) - new Date(b.opened_at || 0));
-              sorted.forEach(o => {
-                const ctSec = ctByMatNo[o.mat_no] || sessionCtSec || 0;
-                // ใช้ opened_at เป็น start จริง — ไม่ accumulate จาก session start
-                // เพื่อไม่ให้ order ที่ยิงตอนบ่ายกลายเป็น delay ทันที
-                const orderStartMs = o.opened_at ? new Date(o.opened_at).getTime() : null;
-                let orderEndMs   = orderStartMs && ctSec > 0 ? orderStartMs + (o.qty || 0) * ctSec * 1000 : null;
-                if (orderStartMs && !orderEndMs) orderEndMs = orderStartMs + 5 * 60000;
-                const isDone    = o.status === 'confirmed';
-                const isCarry   = o.status === 'carry_over';
-                const isDelayed = !isDone && !isCarry && !o.is_backfill && !!orderEndMs && nowMs > orderEndMs;
-                const productKey = (nameByMatNo[o.mat_no] || s.dr_products?.name || '').trim().toUpperCase() || o.mat_no || 'unknown';
-                const productLabel = nameByMatNo[o.mat_no] || s.dr_products?.name || o.mat_no || 'ไม่ทราบ P/N';
-                const productImg = imgByMatNo[o.mat_no] || '';
-                cards.push({ ...o, orderStartMs, orderEndMs, isDone, isCarry, isDelayed, productKey, productLabel, productImg, shift: s.shift, sessionOpen: s.status === 'open', line_name: s.line_name });
-              });
-            });
-            return cards;
-          };
-
-          const allCards = buildCards(sessions);
+          // การ์ด = `buildBoardCards()` (utils/boardCards.js) ที่เดียว — ห้ามเขียน buildCards ในหน้าอีก (2026-10-19)
+          const allCards = buildBoardCards(sessions, { ctByMat: ctByMatNo, nameByMat: nameByMatNo, imgByMat: imgByMatNo, nowMs });
 
           // ── Downtime ของไลน์นี้ — แถบ ⛔ บนไทม์ไลน์ + สาเหตุใน tooltip ของใบที่ดีเลย์/ปิดช้า ──
           // บอร์ดนี้รวมหลาย sub-line (เช่น Line 60 + Line 61) — ต้องจำว่า downtime เป็นของ sub-line ไหน
@@ -2155,10 +2168,12 @@ export default function Management() {
                 //   machinePoints โหลดมาทั้งครอบครัวไลน์ แต่ไลน์ลูกที่มีผังเป็นของตัวเอง
                 //   ใช้พิกัด % ที่อ้างอิงรูปคนละใบ — เอามาคิดระยะเพื่อนบ้านจะเพี้ยน (วงเล็กเกินจริง)
                 const shownMcPts = machinePoints.filter(p => belongsToShownMap(p.line_name));
+                // ความแน่นคิดจากชั้นที่วาดจริง (Machine หรือ Jig) — ไม่งั้นหมุดเล็กลงเพราะนับชั้นที่ซ่อนอยู่ด้วย
+                const layerPts = filterJig ? mcSplit.jig : filterMachine ? mcSplit.machine : shownMcPts;
                 const { MK, SUB, ring: RING, subRing: SUB_RING, pillFont: PILL_F, subPillFont: SUB_PILL_F, badgeFont: FIT_F, pillMaxW: PILL_MAXW, subPillMaxW: SUB_PILL_MAXW } =
                   markerScale(imgBox.rw, {
-                    machineCount: shownMcPts.length,
-                    points: shownMcPts,
+                    machineCount: layerPts.length,
+                    points: layerPts,
                     mapHeight: imgBox.rh,
                   });
                 // ป้ายชื่อทุกชนิดจุด: ปุ่ม 🏷️ โชว์/ซ่อน อย่างเดียว (ป้ายเตือน alarm/below-min โชว์เสมอ)
@@ -2404,8 +2419,12 @@ export default function Management() {
           })}
                     {shownMcPts.map(p => {
                       const alarms = dtAlarms.byMachine[p.machine_no];
-                      // เครื่องที่กำลัง Downtime ต้องโชว์เสมอแม้ปิด filter MACHINE — เป็น alarm ไม่ใช่แค่ข้อมูลผัง
-                      if (!filterMachine && !alarms) return null;
+                      // ชั้น Machine | Jig/Fixture — โชว์ชั้นที่เลือก · ไม่รู้ชนิด = ชั้น machine (กรอบประ)
+                      // เครื่องที่กำลัง Downtime ต้องโชว์เสมอแม้ปิดชั้นนั้น — เป็น alarm ไม่ใช่แค่ข้อมูลผัง
+                      const isJig = mcSplit.layerOf(p) === 'jig';
+                      const kindUnknown = !isJig && mcSplit.unknown.includes(p);
+                      if (!(isJig ? filterJig : filterMachine) && !alarms) return null;
+                      const ringC = isJig ? 'rgba(167,139,250,0.9)' : 'rgba(245,158,11,0.85)';
                       const mc = drMachines.find(m => m.machine_no === p.machine_no);
                       const mTop  = imgBox.offsetY + (parseFloat(p.pos_top) / 100) * imgBox.rh;
                       const mLeft = imgBox.offsetX + (parseFloat(p.pos_left) / 100) * imgBox.rw;
@@ -2416,7 +2435,7 @@ export default function Management() {
                       const ongoing = firstAlarm && !firstAlarm.ended_at && firstAlarm.duration_min == null;
                       const title = alarms
                         ? `🚨 ${p.machine_no} ${mc?.machine_name || ''} — DOWNTIME\n${alarms.map(d => `${d.dr_downtime_types?.name_th || 'Downtime'}${d.description ? ` — ${d.description}` : ''}`).join('\n')}`
-                        : `⚙️ ${p.machine_no} ${mc?.machine_name || ''}`;
+                        : `${isJig ? '🗜️' : '⚙️'} ${p.machine_no} ${mc?.machine_name || ''}${isJig ? '\nJig/Fixture · ทีม JIG MTN' : kindUnknown ? '\n⚠️ ไม่อยู่ในทะเบียนเครื่อง/ไม่ระบุชนิด — ตั้งชนิดที่ /equipment' : ''}`;
                       return (
                         <div key={`mc-${p.id}`} title={title}
                           onClick={(e) => { e.stopPropagation(); openMachineDetail(p); }}
@@ -2428,11 +2447,11 @@ export default function Management() {
                           <div className={alarms ? 'dt-alarm-blink' : undefined}
                             style={{
                               width: MKS, height: MKS, borderRadius: '50%',
-                              border: `${SUB_RING}px solid ${alarms ? '#ef4444' : 'rgba(245,158,11,0.85)'}`,
+                              border: `${SUB_RING}px ${kindUnknown && !alarms ? 'dashed' : 'solid'} ${alarms ? '#ef4444' : ringC}`,
                               backgroundColor: alarms ? 'rgba(239,68,68,0.25)' : 'rgba(0,0,0,0.78)',
                               display: 'flex', alignItems: 'center', justifyContent: 'center',
                               fontSize: Math.max(13, Math.round(MKS * 0.44)), lineHeight: 1,
-                            }}>{alarms ? '🚨' : '⚙️'}</div>
+                            }}>{alarms ? '🚨' : isJig ? '🗜️' : '⚙️'}</div>
                           {/* ป้าย: โชว์เมื่อเปิดป้าย (auto/บังคับ) หรือมี downtime ค้าง — alarm ต้องเห็นเสมอ */}
                           {(pillsOn || alarms) && (
                           <div style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)', display: 'flex', flexDirection: 'column', alignItems: 'center', zIndex: 2 }}>
@@ -2526,7 +2545,7 @@ export default function Management() {
         <button
           onClick={() => { setShow4MModal({ lineName: selectedLine }); setLog4MForm({ category: 'Man', description: '' }); }}
           style={{
-            position: 'fixed', bottom: 20, right: 20, zIndex: 500,
+            position: 'fixed', bottom: 'calc(20px + var(--mnav-h, 0px))', right: 20, zIndex: 500,
             width: 54, height: 54, borderRadius: '50%',
             background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none',
             fontSize: 22, fontWeight: 900, cursor: 'pointer',
@@ -2744,7 +2763,7 @@ export default function Management() {
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
                       <div style={{ background: fitColor(fitHere.score), color: '#fff', fontWeight: 900, fontSize: 18, padding: '2px 10px', borderRadius: 6 }}>{fitHere.score}</div>
                       <div style={{ display: 'flex', gap: 6 }}>
-                        {homePositions[workerHere.employee_id] !== String(st.id) && (
+                        {canAssignManpower && homePositions[workerHere.employee_id] !== String(st.id) && (
                           <button
                             onClick={async () => { await saveHomePosition(workerHere, st.id); }}
                             style={{ fontSize: 11, padding: '3px 8px', borderRadius: 6, background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.3)', cursor: 'pointer', fontWeight: 700 }}
@@ -2754,10 +2773,10 @@ export default function Management() {
                         {homePositions[workerHere.employee_id] === String(st.id) && (
                           <span style={{ fontSize: 11, padding: '3px 8px', borderRadius: 6, background: 'rgba(34,197,94,0.12)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', fontWeight: 700 }}>🏠 ตำแหน่งประจำ</span>
                         )}
-                        <button
+                        {canAssignManpower && <button
                           onClick={() => { assignWorker(workerHere.id, 'Pool'); setStationModal(null); }}
                           style={{ fontSize: 11, padding: '3px 8px', borderRadius: 6, background: 'rgba(231,76,60,0.1)', color: 'var(--red)', border: '1px solid rgba(231,76,60,0.3)', cursor: 'pointer', fontWeight: 700 }}
-                        >↩ Pool</button>
+                        >↩ Pool</button>}
                       </div>
                     </div>
                   </div>
@@ -2881,11 +2900,16 @@ export default function Management() {
                     if (upErr) throw upErr;
                     publicUrl = supabase.storage.from('four-m-images').getPublicUrl(path).data.publicUrl;
                   }
-                  const { error: updErr } = await supabase.from('four_m_logs').update({
+                  /* 🔴 นับแถว ไม่ใช่ดูแค่ error — RLS ปฏิเสธ UPDATE = 0 แถว ไม่มี error
+                     ⇒ ใบยังชี้รูปเดิม แต่โค้ดข้างล่างลบไฟล์เดิมไปแล้ว = เอกสารแนบหายถาวร */
+                  const { data: updRows, error: updErr } = await supabase.from('four_m_logs').update({
                     status: 'pending',
                     ...(publicUrl ? { request_image_url: publicUrl } : {}),
-                  }).eq('id', pendingDocModal.log.id);
+                  }).eq('id', pendingDocModal.log.id).select('id');
                   if (updErr) throw updErr;
+                  if (!(updRows || []).length) throw new Error(
+                    'แนบเอกสารไม่สำเร็จ: ระบบไม่ได้แก้แถวไหนเลย (0 แถว) — มักเกิดจากสิทธิ์ไม่พอ '
+                    + 'หรือใบนี้ถูกแก้/ลบไปแล้ว · รีเฟรชแล้วลองใหม่ (ไฟล์เดิมยังอยู่)');
                   // แนบรูปใหม่ทับสำเร็จแล้ว ค่อยลบไฟล์เก่า (best-effort — กติกา CLAUDE.md กันไฟล์กำพร้า)
                   const oldReqUrl = pendingDocModal.log.request_image_url;
                   if (publicUrl && oldReqUrl && oldReqUrl !== publicUrl && oldReqUrl.includes('/four-m-images/')) {
@@ -3186,7 +3210,7 @@ function WorkerHoverCard({ card, skillDefs }) {
 function FitPopup({ fitPopup, onClose }) {
   const fc = fitColor(fitPopup.fit.score);
   return (
-    <div style={{ position: 'fixed', bottom: 24, right: 24, background: 'rgba(10,10,18,0.97)', border: `1px solid ${fc}66`, borderLeft: `4px solid ${fc}`, borderRadius: 12, padding: '14px 16px', boxShadow: 'var(--shadow-lg)', zIndex: 1000, width: 264, animation: 'fmSlideIn 0.35s cubic-bezier(0.34,1.56,0.64,1)' }}>
+    <div style={{ position: 'fixed', bottom: 'calc(24px + var(--mnav-h, 0px))', right: 24, background: 'rgba(10,10,18,0.97)', border: `1px solid ${fc}66`, borderLeft: `4px solid ${fc}`, borderRadius: 12, padding: '14px 16px', boxShadow: 'var(--shadow-lg)', zIndex: 1000, width: 264, animation: 'fmSlideIn 0.35s cubic-bezier(0.34,1.56,0.64,1)' }}>
       <style>{`@keyframes fmSlideIn { from { opacity:0; transform: translateX(28px) scale(0.94); } to { opacity:1; transform:translateX(0) scale(1); } }`}</style>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
         <img loading="lazy" src={fitPopup.worker.employees?.image_url || ''} style={{ width: 42, height: 42, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: `2.5px solid ${fc}`, flexShrink: 0 }} />

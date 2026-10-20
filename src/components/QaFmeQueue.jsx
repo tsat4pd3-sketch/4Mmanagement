@@ -44,7 +44,10 @@ const fmtTime = (iso) => {
   try { return new Date(iso).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }); } catch { return '-'; }
 };
 
+const FME_QUEUE_LIMIT = 300;   // ถึงเพดาน = เขียนบนจอว่าอาจไม่ครบ (ไม่ตัดเงียบ)
+
 export default function QaFmeQueue({ scopedLineNames, onOpen }) {
+  const [loadErr, setLoadErr] = useState(null);
   const { role } = useContext(UserContext);
   const canManage = can('qa', 'manage', role);
   const [rows, setRows] = useState([]);
@@ -66,8 +69,11 @@ export default function QaFmeQueue({ scopedLineNames, onOpen }) {
 
   const load = useCallback(async () => {
     const [{ data: obs, error }, { data: c }] = await Promise.all([
-      supabase.from('qa_fme_obligations').select('*')
-        .in('status', ['pending', 'acked']).order('due_at').limit(60),
+      /* 🔴 กรองขอบเขตที่ server (audit 19/10) — เดิมดึง 60 แถวทั้งโรงงานแล้วค่อยกรองใน JS
+         ⇒ หัวหน้าที่มีขอบเขตเห็น "ไม่มีคิว" ทั้งที่ไลน์ตัวเองมีงานเรียกตรวจ (โดนแถวไลน์อื่นกินโควต้า) */
+      (scopedLineNames ? supabase.from('qa_fme_obligations').select('*').in('line_name', scopedLineNames)
+        : supabase.from('qa_fme_obligations').select('*'))
+        .in('status', ['pending', 'acked']).order('due_at').limit(FME_QUEUE_LIMIT),
       supabase.from('qa_fme_config').select('*').eq('id', 1).maybeSingle(),
     ]);
     // 42P01 = ตารางยังไม่มี → บอกให้ชัดแทน error งงๆ (pattern เดียวกับ needMigration ในใบตรวจ)
@@ -75,6 +81,8 @@ export default function QaFmeQueue({ scopedLineNames, onOpen }) {
     setMissing(false);
     setCfg(c || null);
     const ok = scopedLineNames ? new Set(scopedLineNames) : null;
+    if (error) { setLoadErr(error.message); return; }
+    setLoadErr(null);
     setRows((obs || []).filter(o => !ok || ok.has(o.line_name)));
   }, [scopedLineNames]);
 
@@ -92,6 +100,7 @@ export default function QaFmeQueue({ scopedLineNames, onOpen }) {
   /* โหลด 3 ชุดแยกกัน — ชุดไหนพัง = null ให้ตัวประเมินบอกว่า "ประเมินไม่ได้" (ห้ามแปลงเป็นผ่าน) */
   const loadReadiness = useCallback(async () => {
     const [qaParts, products, rules] = await Promise.all([
+      /* cap-ok: qa_parts 5 แถว (วัด 20/10) */
       supabase.from('qa_parts').select('id, part_no, mat_no').eq('is_active', true).limit(2000)
         .then(r => (r.error ? null : (r.data || []))),
       // dr_products อยู่ DR (anon เสมอ) · แบ่งหน้าเหมือน QaFmeBoard — key แยกเพราะเลือกคอลัมน์คนละชุด
@@ -272,16 +281,21 @@ export default function QaFmeQueue({ scopedLineNames, onOpen }) {
 
       {view === 'board' ? (
         <QaFmeBoard scopedLineNames={scopedLineNames} onOpen={onOpen} />
+      ) : loadErr ? (
+        <div style={{ fontSize: 13, color: '#ef4444' }}>⚠️ โหลดคิวเรียกตรวจไม่สำเร็จ — {loadErr} (ห้ามถือว่าไม่มีคิว)</div>
       ) : !rows.length ? (
         <div style={{ fontSize: 13, color: '#22c55e' }}>✅ ไม่มีคิวรอตรวจ</div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {rows.length >= FME_QUEUE_LIMIT && (
+            <div style={{ fontSize: 12, color: '#f59e0b' }}>⚠️ คิวค้างถึงเพดาน {FME_QUEUE_LIMIT} รายการ — อาจแสดงไม่ครบ เคลียร์งานเก่าก่อน</div>
+          )}
           {rows.map(o => {
             const sm = STAGE_META[o.stage] || STAGE_META.first;
             const isLate = o.status === 'pending' && new Date(o.due_at).getTime() < now;
             const lateMin = Math.round((now - new Date(o.due_at).getTime()) / 60000);
             return (
-              <div key={o.id} style={{
+              <div key={o.id} className="fme-row" style={{
                 display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap',
                 background: isLate ? 'rgba(239,68,68,0.08)' : 'var(--bg3)',
                 border: `1px solid ${isLate ? 'rgba(239,68,68,0.45)' : 'var(--border2)'}`,
@@ -289,7 +303,7 @@ export default function QaFmeQueue({ scopedLineNames, onOpen }) {
               }}>
                 <span style={{ fontSize: 13, fontWeight: 700, color: sm.color, whiteSpace: 'nowrap' }}>{sm.icon} {sm.label}</span>
                 {/* basis 220: จอแคบข้อความกินทั้งแถว ปุ่ม/เวลาตกบรรทัดใหม่ (เดิม flex:1 ถูกบีบจนคำละบรรทัด การ์ดสูง 500px+ วัดจริง 390px · 2026-09-07) */}
-                <span style={{ fontSize: 13, minWidth: 0, flex: '1 1 220px' }}>
+                <span className="fme-txt" style={{ fontSize: 13, minWidth: 0, flex: '1 1 220px' }}>
                   <b>{o.line_name}</b> · {o.shift === 'night' ? 'กะดึก' : 'กะเช้า'} ·{' '}
                   <b>{o.mat_no}</b>{o.product_name ? <span style={{ color: 'var(--muted)' }}> {o.product_name}</span> : null}
                   <span style={{ color: 'var(--muted)' }}> · {REASON_LABEL[o.trigger_reason] || o.trigger_reason}</span>

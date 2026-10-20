@@ -26,7 +26,12 @@ export const MIN_SHEET_H = 150;
  *   3) เท่ากัน → เอา **ทรง A4** ก่อน แล้วค่อยดูขนาดแผ่น
  * แผ่นต้องผ่าน MIN_SHEET_W/H เสมอ — ไม่มีผังไหนผ่าน = ใส่ใบเดียวเต็มกล่อง (จอจิ๋ว)
  */
-export function chooseSheetGrid(w, h, sheets = 10) {
+/* 📺 `opts` (20/10 · โหมดจอประชุม): `maxCols`/`maxRows` = เพดานผัง (จอ TV ประชุมใช้ 2×2 = 4 แผ่น/หน้า ⇒ แผ่นใหญ่ 2 เท่า)
+   · `kMax` = เพดานสเกลตัวอักษร (ค่าเดิม 2.4) · ไม่ส่ง = พฤติกรรมเดิมเป๊ะ */
+export function chooseSheetGrid(w, h, sheets = 10, opts = {}) {
+  const maxCols = Math.max(1, Math.min(6, opts.maxCols || 6));
+  const maxRows = Math.max(1, Math.min(6, opts.maxRows || 6));
+  const kMax = opts.kMax || 2.4;
   if (!w || !h) return { cols: 5, rows: 2, cw: 0, ch: 0, fit: true, k: 1, bw: 0, bh: 0 };
   const want = Math.max(1, Number(sheets) || 1);
   let best = null;
@@ -49,9 +54,9 @@ export function chooseSheetGrid(w, h, sheets = 10) {
           : cand.area !== best.area ? cand.area > best.area : cand.a4);
     if (better) best = cand;
   };
-  for (let cols = 1; cols <= 6; cols++) {
+  for (let cols = 1; cols <= maxCols; cols++) {
     const cwFull = (w - GAP * (cols - 1)) / cols;          // กว้างเต็มคอลัมน์
-    for (let rows = 1; rows <= 6; rows++) {
+    for (let rows = 1; rows <= maxRows; rows++) {
       const chRow = (h - GAP * (rows - 1)) / rows;         // สูงเท่าที่แถวนี้มี
       if (chRow <= 0) continue;
       const cwA4 = Math.min(cwFull, chRow * A4);           // ก) ทรง A4
@@ -62,6 +67,28 @@ export function chooseSheetGrid(w, h, sheets = 10) {
   if (!best) best = { cols: 1, rows: 1, cw: w, ch: h, cells: 1, fits: want <= 1 };
   return {
     cols: best.cols, rows: best.rows, cw: best.cw, ch: best.ch,
-    fit: best.cells >= want, k: clamp(best.cw / 330, 0.72, 2.4), bw: w, bh: h,
+    fit: best.cells >= want, k: clamp(best.cw / 330, 0.72, kMax), bw: w, bh: h,
   };
+}
+
+/**
+ * ⚖️ เกลี่ยแผ่นให้เท่ากันทุกหน้า (15/10 · user: "เกลี่ยหน้าแรกเหลือ 8 การ์ด ที่เหลือไปหน้า 2")
+ * ผัง 5×2 ใส่ได้ 10 · มี 14 แผ่น ⇒ เดิม 10 + 4 (หน้า 2 โหรงเหรง) · ใหม่: จำนวนหน้าเท่าเดิม (2) แต่ลดคอลัมน์
+ * ให้ต่อหน้า = ⌈14/2⌉ = 7 → ⌈7/2 แถว⌉ = 4 คอลัมน์ ⇒ 8 + 6 · แผ่นกว้างขึ้น (ไม่เคยเล็กลง = ไม่ผิดกติกาจอ TV)
+ * · ใส่ครบหน้าเดียวอยู่แล้ว / คอลัมน์ไม่ลด = คืนผังเดิม (อ้างอิงเดิม ไม่สร้าง object ใหม่)
+ * · จำนวนแถวคงเดิมเสมอ (ความสูงแผ่นมาจากที่วัดจริง) · กว้าง = เต็มคอลัมน์ · สูง ≤ สัดส่วน A4 (กติกาเดียวกับ chooseSheetGrid)
+ */
+export function balanceGrid(grid, total) {
+  const n = Math.max(0, Math.floor(Number(total) || 0));
+  if (!grid || !(grid.cols > 0) || !(grid.rows > 0) || !(grid.bw > 0) || !(grid.bh > 0)) return grid;
+  const cells = grid.cols * grid.rows;
+  if (n <= cells) return grid;
+  const pagesN = Math.ceil(n / cells);
+  const perPage = Math.ceil(n / pagesN);
+  const cols = Math.max(1, Math.ceil(perPage / grid.rows));
+  if (cols >= grid.cols) return grid;
+  const cw = (grid.bw - GAP * (cols - 1)) / cols;
+  const chRow = (grid.bh - GAP * (grid.rows - 1)) / grid.rows;
+  const ch = Math.min(chRow, cw / A4);
+  return { ...grid, cols, cw, ch, k: clamp(cw / 330, 0.72, 2.4), balanced: true };
 }

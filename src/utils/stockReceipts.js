@@ -23,16 +23,33 @@ export const INFLOW_MODES = {
              hint: 'ปิดใบผลิตแล้วเข้าคิว "รอรับเข้า" · สต็อกเข้าตอนคนนับของจริงแล้วกดรับ' },
   off:     { key: 'off',     label: '⚫ ปิด', color: '#64748b',
              hint: 'ของที่ปิดใบผลิตจะไม่เข้าคลังนี้เลย และไม่มีคิวให้ใครรับ' },
+  /* 🔧 19/10 (user เคาะ "ตั้งรายพาร์ทเอง") — แทนกฎเดิม "MAT ที่เคยมีใบล็อต = ข้ามทุกใบตลอดไป"
+     ซึ่งทำให้ GOR 20058498 (เลิกเปิดล็อตตั้งแต่ 09/09) ยอดผลิตไม่เข้าคลังเลย 317 ใบ / 4,438 ชิ้น
+     ใช้ได้กับกฎ **MAT ตรงตัว** เท่านั้น (prefix = ทั้งตระกูล 2xx หายเงียบ) · คลังปลายทางของโหมดนี้ไม่ถูกใช้ */
+  lot:     { key: 'lot',     label: '🔧 ปิดล็อตที่สโตร์', color: '#a855f7', matOnly: true,
+             hint: 'ปิดใบผลิตไม่ลงสต็อก · ยอดเข้าตอนสโตร์ปิดล็อตที่บอร์ดสโตร์ (ลงที่ไลน์ผลิตของล็อต)' },
 };
 
 /** โหมดปัจจุบันของแถวกฎ */
 export const inflowModeOf = (rule) =>
-  !rule?.is_active ? 'off' : (rule.mode === 'confirm' ? 'confirm' : 'auto');
+  !rule?.is_active ? 'off' : (rule.mode === 'confirm' ? 'confirm' : rule.mode === 'lot' ? 'lot' : 'auto');
+
+/** โหมดที่เลือกได้สำหรับแถวกฎนี้ — 🔧 ปิดล็อต เฉพาะกฎ MAT ตรงตัว */
+export const inflowModesFor = (rule) =>
+  Object.values(INFLOW_MODES).filter(m => !m.matOnly || rule?.match_type === 'mat');
+
+const keepMode = (m) => (m === 'confirm' || m === 'lot' ? m : 'auto');
 
 /** ค่าที่ต้องเขียนลงแถวกฎเมื่อเลือกโหมด (ปิด = คงโหมดเดิมไว้ เปิดกลับมาได้แบบเดิม) */
 export const inflowPatchFor = (modeKey, rule) =>
-  modeKey === 'off' ? { is_active: false, mode: rule?.mode === 'confirm' ? 'confirm' : 'auto' }
-                    : { is_active: true, mode: modeKey === 'confirm' ? 'confirm' : 'auto' };
+  modeKey === 'off' ? { is_active: false, mode: keepMode(rule?.mode) }
+                    : { is_active: true, mode: modeKey === 'confirm' || modeKey === 'lot' ? modeKey : 'auto' };
+
+/** MAT ที่ยอดเข้าคลังทาง "ปิดล็อตที่สโตร์" (กฎ MAT · เปิดอยู่ · โหมด lot) — ตัวเดียวกับที่ trigger ใช้ข้าม
+ *  🔴 ห้ามถามจาก `child_lot_requests` ตรงๆ อีก ("เคยมีล็อต" ≠ "ยอดเข้าทางล็อต" · บั๊ก GOR 19/10 · มีด่าน) */
+export const lotMatsOf = (rules = []) => new Set((rules || [])
+  .filter(r => r?.match_type === 'mat' && r?.is_active !== false && r?.mode === 'lot')
+  .map(r => String(r.match_value ?? '').trim()).filter(Boolean));
 
 const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : null; };
 

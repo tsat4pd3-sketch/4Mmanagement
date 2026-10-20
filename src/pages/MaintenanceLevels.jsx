@@ -30,6 +30,7 @@ import { ALL } from '../utils/filterLabels';
 import fetchAllRows from '../utils/fetchAllRows';
 import useProductionLines from '../utils/useProductionLines';
 import useTabParam from '../utils/useTabParam';
+import { urlParam, urlPick, urlNum } from '../utils/urlInit';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { inSectionScope } from '../utils/sectionScope';
 import { getWorkDate } from '../utils/workDate';
@@ -116,9 +117,10 @@ export default function MaintenanceLevels() {
   const navigate = useNavigate();
   const lines = useProductionLines();
   const [view, setView] = useTabParam(['todo', 'equip'], 'todo', 'view');
-  const [line, setLine] = useState('');
-  const [kind, setKind] = useState('all');
-  const [prio, setPrio] = useState(0);            // 0 = ทุกความด่วน
+  // ?mlline= (ชื่อไลน์) ?mlkind= ?mlprio= — จอวนหน้า · ขึ้นต้น ml กันชนคีย์ของหน้าอื่นใต้ /pm
+  const [line, setLine] = useState(() => urlParam('mlline') || '');
+  const [kind, setKind] = useState(() => urlPick('mlkind', KIND_CHIPS.map(c => c.key), 'all'));
+  const [prio, setPrio] = useState(() => Math.round(urlNum('mlprio', 0, 3, 0)));            // 0 = ทุกความด่วน
   const [q, setQ] = useState('');
   const [limit, setLimit] = useState(PAGE);
   const [raw, setRaw] = useState(null);
@@ -244,6 +246,19 @@ export default function MaintenanceLevels() {
       <PageHeader title="3 ระดับ PM" icon="🧭" />
       {loadErr && <div style={{ ...card, borderColor: '#ef4444', color: '#ef4444', fontSize: 13, fontWeight: 700 }}>⚠️ {loadErr}</div>}
 
+      {/* ── ตัวกรอง ── */}
+      <FilterBar>
+        <LineSelect lines={scopedLineObjs} value={line} onChange={setLine} placeholder={ALL.line} />
+        <Segmented value={view} onChange={setView} label="มุมมอง" options={[
+          { value: 'todo', label: `🎯 สิ่งที่ควรทำ (${actionsOf(scoped).length})` },
+          { value: 'equip', label: `📋 รายอุปกรณ์ (${scoped.length})` },
+        ]} />
+        <SearchInput value={q} onChange={setQ} fields="เลขเครื่อง / ชื่อ / ไลน์" ariaLabel="ค้นหาอุปกรณ์" />
+        <span className="spacer" />
+        <button onClick={() => setReloadKey(k => k + 1)} style={{ background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 8, padding: '0 12px', fontSize: 13, cursor: 'pointer', fontWeight: 700 }}>🔄 รีเฟรช</button>
+      </FilterBar>
+      {/* 🔴 การ์ดสถิติ 3 ใบ = **เนื้อหา** ต้องอยู่ใต้แถบกรอง (UI-STANDARD §2.1 ลำดับตายตัว)
+          ย้ายลงมา 20/10 — ตัวเลขในการ์ดก็มาจาก `sum` ที่คิดจากของที่ผ่านตัวกรองแล้ว */}
       {/* ── บันได 3 ขั้น ── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12, alignContent: 'start' }}>
         <LevelCard step="1" title="Preventive — ป้องกันตามแผน" en="Time-based PM" color="#4a90e0"
@@ -279,17 +294,6 @@ export default function MaintenanceLevels() {
         </LevelCard>
       </div>
 
-      {/* ── ตัวกรอง ── */}
-      <FilterBar>
-        <LineSelect lines={scopedLineObjs} value={line} onChange={setLine} placeholder={ALL.line} />
-        <Segmented value={view} onChange={setView} label="มุมมอง" options={[
-          { value: 'todo', label: `🎯 สิ่งที่ควรทำ (${actionsOf(scoped).length})` },
-          { value: 'equip', label: `📋 รายอุปกรณ์ (${scoped.length})` },
-        ]} />
-        <SearchInput value={q} onChange={setQ} fields="เลขเครื่อง / ชื่อ / ไลน์" ariaLabel="ค้นหาอุปกรณ์" />
-        <span className="spacer" />
-        <button onClick={() => setReloadKey(k => k + 1)} style={{ background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 8, padding: '0 12px', fontSize: 13, cursor: 'pointer', fontWeight: 700 }}>🔄 รีเฟรช</button>
-      </FilterBar>
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
         {KIND_CHIPS.map(c => {
           const on = kind === c.key;

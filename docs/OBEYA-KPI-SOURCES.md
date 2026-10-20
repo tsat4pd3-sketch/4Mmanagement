@@ -913,7 +913,7 @@ migration `20260923_kpi_seed_h1_fy2026_main.sql` (**apply แล้ว**) · ก
 | จุด | ของเรา (`kpiSetup.js`) | ใบทางการ | ผล |
 |---|---|---|---|
 | **DSI / Inventory** | `inventory_baht ÷ (sale_product ÷ days)` | `(Stock value end of month ÷ **COGS**) × Day` | **ตัวหารคนละตัว** — ของเราใช้ยอดขาย ทางการใช้ **ต้นทุนขาย (COGS)** · แผ่นบอร์ด PD3 ที่เทสล็อกไว้ (0.3817) คำนวณจากยอดขาย ⇒ อาจเป็นคนละนิยามระหว่างแผนก **ห้ามแก้เงียบๆ** ต้องถามก่อน + ถ้าแก้ต้องเพิ่มตัวแปรฐาน `cogs` |
-| **Annual Sale Per Head** | `sale_total ÷ manpower` | `Total Sales ÷ **Average** manpower` | ทางการระบุ "ค่าเฉลี่ยกำลังคน" ไม่ใช่กำลังคน ณ จุดใดจุดหนึ่ง ⇒ ควรนิยาม `manpower` ให้ชัดว่าเป็นค่าเฉลี่ยของช่วง |
+| **Annual Sale Per Head** | `Σ sale_total (ม.ค.→เดือนนี้) ÷ manpower` | `Total Sales ÷ **Average** manpower` | **19/10 ปิดจากใบจริง** "5.Manpower" แถว Sale All / Head (All): ตัวตั้ง = Accumulate Total Sale (YTD) · ตัวหาร = Total Head count (All) ของเดือนนั้น (เม.ย. 706.43 ÷ 392 = 1.802 · ทั้งปี 2,118.70 ÷ 386 = 5.489 = เป้า Commit) ⇒ ระบบใช้ `cum` แล้ว |
 | **วิธีรวม (Summary)** | `average · sum · max · as_of · rate` | `Manual · Sum · Average · Calculate · As of · Actual · Actual+Plan` | ตรงกัน 3 (`sum`/`average`/`as_of`) · **เราขาด 4** (Manual · Calculate · Actual · Actual+Plan) · **เราคิดเอง 2** (`max`, `rate`) — `rate` ใช้กับ PPM ซึ่งถูกทางคณิตศาสตร์ แต่**ไม่ใช่ชื่อ/โหมดของบริษัท** ⇒ ถ้าจะ export เข้าใบทางการต้อง map ให้ได้ |
 
 ### 13.4 🧩 สิ่งที่โมเดลเรา **ยังไม่มี** (พบจากหน้าจอจริง)
@@ -1274,6 +1274,13 @@ md5 รายหน่วยงานของ**ไฟล์ migration ตรง
 (สูตร + เทส 7 เคส) → แท็บ ⚙️: เลือกขอบเขตที่เป็นทีมช่าง (`mtn_teams.dept_name` = ชื่อแผนกในผัง) แถว KPI ที่ชื่อจับคู่ได้จะมีบรรทัด
 "⚡ ระบบคำนวณ" ใต้แถวกรอกมือ = ค่าที่บอร์ด 📋 ใช้จริง (**09/10 ค่าระบบชนะ · ค่ากรอกมือใช้เฉพาะเดือนที่ระบบไม่มีค่า** · ปุ่ม "⬇ ใช้ค่านี้" ถอดแล้ว · ไม่เขียนลงฐาน)
 · หน่วยตามแถว (JIG ตั้ง "นาที" → ×60 ให้เอง) · เดือนที่โรงงานไม่มี downtime_logs เลย = "·" ไม่ใช่ 0 · ค่าที่กรอกมือต่างจากที่คำนวณ >5% ติด ≠
+**13/10 — หน่วย MBD = % เท่านั้น:** ทะเบียนถูกแก้เป็น Hrs. + กรอกมือเป็นชั่วโมง → คืนเป็น % แล้ว (`20261013_kpi_mbd_unit_percent_main.sql`) ·
+ด่าน `autoUnitMismatch()` ใน `kpiAuto.js` เตือนที่ ⚙️ · ชั่วโมงหยุด/ครั้ง/เครื่อง โชว์คู่ % ผ่าน `autoDetailText()` (📄 `docs/modules/obeya-kpi-board.md` §หน่วยของ KPI ช่างอัตโนมัติ)
+
+**14/10 — MO Closed on target นับเฉพาะใบ Breakdown (คำสั่ง user · ทุกทีมช่าง):** `kpi_mtn_rollup` กรอง `repair_type` ที่ prefix = `BM`
+(จาก `mtn_repair_types` — data-driven) · เพิ่ม `closed_all` ให้จอเขียน "ไม่นับงานประเภทอื่น N ใบ" · `20261014_mtn_pr_gl_io_dr.sql` **apply แล้ว**
+(📄 `docs/modules/mtn-work-order.md` §🛒 PR / GL / IO)
+
 **ผลจริง 24/09 (JIG MTN):** เครื่อง jig 172 ตัว · ก.ย. เสีย 421 ครั้ง 83.75 ชม. ⇒ MTBF 729.5 ชม. · MTTR 0.20 ชม. · MBD 0.067% · MO ตรงเป้า 0/4
 — ต่างจากค่าที่เด็ค H1 กรอกไว้ (MTBF 341 ชม.) มาก ⇒ **เด็คใช้ฐานเวลาอีกแบบ** ต้องให้ JIG MTN ชี้ว่าเลขทางการที่ส่ง KPI Online คำนวณจากอะไร (09/10: บอร์ดโชว์ค่าระบบ — ถ้าต่างกันต้องแก้ที่สูตร/ฐานเวลาใน `kpiAuto.js`)
 

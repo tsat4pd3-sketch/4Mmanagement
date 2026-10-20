@@ -9,7 +9,7 @@ import { can, canDelete } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { LINE_TYPES, FLOW_MODES } from '../utils/lineTypes';
 import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory';
-import { markerScale } from '../utils/markerScale';
+import { markerScale, pillEdgeAlign, pillEdgeStyle } from '../utils/markerScale';
 import useIsMobile from '../utils/useIsMobile';
 import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
@@ -17,8 +17,10 @@ import useTabParam from '../utils/useTabParam';
 import LineFlowPanel from '../components/LineFlowPanel';
 import CollapseCard from '../components/CollapseCard';
 import DeliveryPointPanel from '../components/DeliveryPointPanel';
+import LinePartCallPanel from '../components/LinePartCallPanel';
 import SearchSelect from '../components/SearchSelect';
 import LineSelect from '../components/LineSelect';
+import { UNIT_KINDS, UNIT_PRODUCTION, UNIT_SUPPORT } from '../utils/unitKind';
 import PersonSelect from '../components/PersonSelect';
 import CostCenterSelect from '../components/CostCenterSelect';
 import { invalidateProductionLines } from '../utils/useProductionLines';
@@ -67,6 +69,7 @@ export default function LineSetup({ embedded = false } = {}) {
   const [selectedLine, setSelectedLine] = useState('');
   const [newLineName, setNewLineName] = useState('');
   const [newLineSection, setNewLineSection] = useState('');
+  const [newUnitKind, setNewUnitKind] = useState(UNIT_PRODUCTION);
   const [newLineParent, setNewLineParent] = useState('');
   const [isAddingLine, setIsAddingLine] = useState(false);
   const [editingLineId, setEditingLineId] = useState(null);
@@ -128,6 +131,7 @@ export default function LineSetup({ embedded = false } = {}) {
   const [stdNight, setStdNight] = useState(0);
   const [costCenter, setCostCenter] = useState('');
   const [lineType, setLineType] = useState('');
+  const [unitKind, setUnitKind] = useState(UNIT_PRODUCTION);   // 🏭 ไลน์ผลิต / 🗂️ หน่วยสนับสนุน (13/10)
   const hasLineTypeCol = useRef(true); // false = DB ยังไม่มีคอลัมน์ line_type (migration 20260722 ยังไม่ apply)
   const [flowMode, setFlowMode] = useState('one_piece_flow');
   const [parallelStations, setParallelStations] = useState('');
@@ -216,6 +220,7 @@ export default function LineSetup({ embedded = false } = {}) {
     String(stdNight ?? '') !== String(selLineObj.std_night_shift ?? 0) ||
     String(costCenter ?? '') !== String(selLineObj.cost_center ?? '') ||
     String(lineType ?? '') !== String(selLineObj.line_type ?? '') ||
+    String(unitKind || UNIT_PRODUCTION) !== String(selLineObj.unit_kind || UNIT_PRODUCTION) ||
     String(flowMode ?? '') !== String(selLineObj.flow_mode ?? 'one_piece_flow') ||
     String(parallelStations ?? '') !== (selLineObj.parallel_stations != null ? String(selLineObj.parallel_stations) : '') ||
     String(signerHead ?? '') !== String(selLineObj.head_name ?? '')
@@ -234,7 +239,7 @@ export default function LineSetup({ embedded = false } = {}) {
     /* 🔴 2026-09-15 — หน้านี้แก้ทะเบียนไลน์โดยตรง: ทุก save เรียก fetchLines() ต่อทันที
        ⇒ ล้าง cache master ที่นี่จุดเดียว = ครอบคลุมทุกปุ่มในหน้า (ดู src/utils/masterInvalidate.js) */
     invalidateTable('production_lines');
-    const BASE = 'id, name, section, std_day_shift, std_night_shift, cost_center, head_name, parent_line_name, is_active';
+    const BASE = 'id, name, section, std_day_shift, std_night_shift, cost_center, head_name, parent_line_name, is_active, unit_kind';
     let { data, error } = await supabase.from('production_lines').select(`${BASE}, line_type, flow_mode, parallel_stations`).order('name');
     if (error) {
       // คอลัมน์เสริมยังไม่ apply (migration 20260722 line_type / 20260723 flow_mode)
@@ -342,6 +347,7 @@ export default function LineSetup({ embedded = false } = {}) {
       .update({
         std_day_shift: parseInt(stdDay) || 0, std_night_shift: parseInt(stdNight) || 0,
         cost_center: costCenter || null, head_name: signerHead || null,
+        unit_kind: unitKind || UNIT_PRODUCTION,
         ...(hasLineTypeCol.current ? { line_type: lineType || null } : {}),
         ...(hasFlowModeCol.current ? {
           flow_mode: flowMode || 'one_piece_flow',
@@ -360,6 +366,7 @@ export default function LineSetup({ embedded = false } = {}) {
         const { error: e2 } = await supabase.from('production_lines').update({
           std_day_shift: parseInt(stdDay) || 0, std_night_shift: parseInt(stdNight) || 0,
           cost_center: costCenter || null, head_name: signerHead || null,
+          unit_kind: unitKind || UNIT_PRODUCTION,
           ...(hasLineTypeCol.current ? { line_type: lineType || null } : {}),
         }).eq('id', lineObj.id);
         if (e2) toast.error('Error: ' + e2.message);
@@ -391,12 +398,14 @@ export default function LineSetup({ embedded = false } = {}) {
       return;
     }
     setIsAddingLine(true);
-    const { error } = await supabase.from('production_lines').insert([{ name, section: newLineSection || null, parent_line_name: newLineParent || null }]);
+    const { error } = await supabase.from('production_lines')
+      .insert([{ name, section: newLineSection || null, parent_line_name: newLineParent || null, unit_kind: newUnitKind || UNIT_PRODUCTION }]);
     if (error) { toast.error('Error: ' + error.message); }
     else {
       setNewLineName('');
       setNewLineSection('');
       setNewLineParent('');
+      setNewUnitKind(UNIT_PRODUCTION);
       await fetchLines();
       setSelectedLine(name);
     }
@@ -434,8 +443,15 @@ export default function LineSetup({ embedded = false } = {}) {
     }
     // ลบเฉพาะไฟล์ของไลน์นี้เอง — ข้ามถ้าไลน์อื่น (เช่นไลน์แม่/ลูกที่ยืมผัง) ยังชี้ URL เดียวกันอยู่
     if (delLayout?.image_url?.includes('/employee-photos/layouts/')) {
-      const { data: sharers } = await supabase.from('line_layouts').select('line_name').eq('image_url', delLayout.image_url).limit(1);
-      if (!sharers?.length) {
+      /* 🔴 นับ "ไลน์อื่นที่ใช้รูปนี้ร่วม" ให้ได้ก่อนลบไฟล์ — **นับไม่ได้ = ไม่ลบ** (fail-closed · กฎเขียน DB ข้อ 2
+         "ลบไฟล์ใน storage ได้หลังนับแถว > 0 เท่านั้น" · ต้นแบบ utils/orgNodeRefs.js)
+         เดิมแกะแค่ `{ data: sharers }` ⇒ คิวรีล้ม = undefined ⇒ `!undefined?.length` เป็น **true**
+         ⇒ ลบไฟล์ทิ้งทั้งที่ไลน์อื่นยังใช้ · ไลน์แม่-ลูกยืมผัง URL เดียวกันเป็นเรื่องปกติของโปรเจคนี้
+         ⇒ ผังหายทั้งตระกูล กู้ไม่ได้ และไม่มี error ฟ้องใคร */
+      const shared = await supabase.from('line_layouts').select('line_name').eq('image_url', delLayout.image_url).limit(1);
+      if (shared.error) {
+        toast.error('ลบไลน์แล้ว แต่เช็คไม่ได้ว่ามีไลน์อื่นใช้รูปผังนี้ร่วมอยู่ไหม — จึงไม่ลบไฟล์รูป (ไฟล์ค้างไม่กระทบการใช้งาน ดีกว่าลบรูปของไลน์อื่น)');
+      } else if (!(shared.data || []).length) {
         const oldName = decodeURIComponent(delLayout.image_url.split('/employee-photos/')[1] || '');
         if (oldName.startsWith('layouts/')) supabase.storage.from('employee-photos').remove([oldName]).catch(() => {});
       }
@@ -626,8 +642,11 @@ export default function LineSetup({ embedded = false } = {}) {
       if (!(dres.data || []).length) { toast.error('ลบรูปผังไม่สำเร็จ (0 แถว) — สิทธิ์ไม่พอ · รูปผังยังอยู่'); return; }
       // ลบไฟล์จาก storage หลัง DB สำเร็จ (best-effort) — เฉพาะเมื่อไม่มีไลน์อื่นแชร์ URL เดียวกัน
       if (layoutImage.includes('/employee-photos/layouts/')) {
-        const { data: sharers } = await supabase.from('line_layouts').select('line_name').eq('image_url', layoutImage).limit(1);
-        if (!sharers?.length) {
+        /* 🔴 fail-closed เหมือนตอนลบไลน์ — นับผู้ใช้ร่วมไม่ได้ = ไม่แตะไฟล์ (ดูเหตุผลเต็มที่ handleDeleteLine) */
+        const shared = await supabase.from('line_layouts').select('line_name').eq('image_url', layoutImage).limit(1);
+        if (shared.error) {
+          toast.error('ลบรูปผังออกจากไลน์นี้แล้ว แต่เช็คไม่ได้ว่าไลน์อื่นใช้ไฟล์เดียวกันอยู่ไหม — จึงไม่ลบไฟล์ (กันรูปของไลน์อื่นหาย)');
+        } else if (!(shared.data || []).length) {
           const oldName = decodeURIComponent(layoutImage.split('/employee-photos/')[1] || '');
           if (oldName.startsWith('layouts/')) supabase.storage.from('employee-photos').remove([oldName]).catch(() => {});
         }
@@ -1090,7 +1109,7 @@ export default function LineSetup({ embedded = false } = {}) {
                   >
                     <span style={{ fontSize: pinIconSz, lineHeight: 1 }}>📍</span>
                     {(stationPillsOn || isSelected) && (
-                    <div style={pillStackSt}>
+                    <div style={{ ...pillStackSt, ...pillEdgeStyle(pillEdgeAlign(left, { pillW: pillMaxW, mapW: imgBox?.rw || 0 })) }}>   {/* หมุดใกล้ขอบ: ป้ายชิดขอบหมุด ไม่ตกกรอบผัง */}
                       <div style={{ ...pillSt, color: isSelected ? 'var(--green)' : '#fff' }}>
                         {st.station_name}
                       </div>
@@ -1160,7 +1179,7 @@ export default function LineSetup({ embedded = false } = {}) {
                   >
                     <span style={{ fontSize: subPinIconSz, lineHeight: 1 }}>⚙️</span>
                     {(pillsOn || isSelected || isConnectSource) && (
-                      <div style={pillStackSt}>
+                      <div style={{ ...pillStackSt, ...pillEdgeStyle(pillEdgeAlign(left, { pillW: subPillMaxW, mapW: imgBox?.rw || 0 })) }}>
                         <div style={{ ...subPillSt, color: isConnectSource ? '#f97316' : isSelected ? 'var(--green)' : '#fff' }}>
                           {p.machine_no}
                         </div>
@@ -1226,7 +1245,7 @@ export default function LineSetup({ embedded = false } = {}) {
               <span style={{ ...labelSt, marginBottom: 0 }}>🏭 ไลน์ที่กำลังตั้งค่า</span>
               {mpDirty && <span style={{ fontSize: 11, fontWeight: 800, color: '#f59e0b', marginLeft: 'auto' }}>● ยังไม่บันทึก</span>}
             </div>
-            <LineSelect lines={lines} value={selectedLine} onChange={selectLine} placeholder="เลือกไลน์…"
+            <LineSelect lines={lines} value={selectedLine} onChange={selectLine} placeholder="เลือกไลน์…" includeSupport
               style={{ width: '100%', fontSize: 13, fontWeight: 700, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--accent)' }} />
           </div>
         )}
@@ -1327,7 +1346,7 @@ export default function LineSetup({ embedded = false } = {}) {
                       {!l._isParent && (
                         /* 2026-09-07: ไลน์แม่ผ่าน <LineSelect> (ส่งเฉพาะไลน์ราก) — wrapper กัน click ทะลุไปเลือกแถว */
                         <span onClick={e => e.stopPropagation()} title="ไลน์หลัก (parent)" style={{ display: 'inline-flex', flexShrink: 0 }}>
-                          <LineSelect lines={lines.filter(p => p.name !== l.name && !p.parent_line_name)} value={l.parent_line_name || ''}
+                          <LineSelect lines={lines.filter(p => p.name !== l.name && !p.parent_line_name)} value={l.parent_line_name || ''} includeSupport
                             onChange={v => handleUpdateParent(l, v)} placeholder="ไม่มีหลัก"
                             style={{ fontSize: 11, padding: '1px 3px', borderRadius: 4, border: '1px solid var(--border2)', background: 'var(--bg3)', color: l.parent_line_name ? 'var(--accent)' : 'var(--muted)', cursor: 'pointer', flexShrink: 0, maxWidth: 76 }} />
                         </span>
@@ -1357,9 +1376,26 @@ export default function LineSetup({ embedded = false } = {}) {
               </select>
             </div>
             {/* 2026-09-07: <LineSelect> ส่งเฉพาะไลน์ราก · cascade: เลือก section แล้วเห็นเฉพาะไลน์แม่ของ section นั้น (2026-07-21) */}
-            <LineSelect lines={lines.filter(l => !l.parent_line_name && (!newLineSection || l.section === newLineSection))}
+            <LineSelect includeSupport lines={lines.filter(l => !l.parent_line_name && (!newLineSection || l.section === newLineSection))}
               value={newLineParent} onChange={setNewLineParent} placeholder="ไม่มีไลน์หลัก (standalone)"
               style={{ fontSize: 12, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: newLineParent ? 'var(--accent)' : 'var(--text2)' }} />
+            {/* 🔴 ชนิดหน่วย — ถามตั้งแต่ตอนสร้าง (13/10 · คำสั่ง user) ไม่งั้นสำนักงาน/งานสนับสนุน
+                ถูกสร้างเป็น "ไลน์ผลิต" แล้วไปโผล่ในแผนผลิต/OEE/ใบตรวจรายวันทุกจอ */}
+            <div style={{ display: 'flex', gap: 6 }}>
+              {UNIT_KINDS.map(k => (
+                <button key={k.key} type="button" onClick={() => setNewUnitKind(k.key)} title={k.desc}
+                  style={{ flex: 1, padding: '7px 8px', fontSize: 12, fontWeight: 700, borderRadius: 8, cursor: 'pointer',
+                    border: `1px solid ${newUnitKind === k.key ? 'var(--accent)' : 'var(--border2)'}`,
+                    background: newUnitKind === k.key ? 'var(--accent-dim)' : 'var(--bg3)',
+                    color: newUnitKind === k.key ? 'var(--text)' : 'var(--text2)' }}>{k.label}</button>
+              ))}
+            </div>
+            {newUnitKind === UNIT_SUPPORT && (
+              <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5 }}>
+                ใช้ <b>เช็คชื่อ · จัดกะ · ผังองค์กร</b> ได้ตามปกติ · <b>ไม่โผล่</b>ในแผนผลิต / OEE / Daily Report /
+                ใบตรวจรายวัน (AM · LPA · Poka-Yoke) และไม่ถูกนับเป็นไลน์ในตัวหาร
+              </div>
+            )}
             <button onClick={handleAddLine} disabled={isAddingLine || !newLineName.trim()}
               style={{ padding: '8px 12px', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 13 }}>
               {isAddingLine ? '...' : '+ เพิ่มไลน์'}
@@ -1748,6 +1784,26 @@ export default function LineSetup({ embedded = false } = {}) {
             <div style={{ ...groupHeadSt, borderTop: '2px solid var(--border)', paddingTop: 12, marginTop: 4 }}>
               🏭 คุณสมบัติของไลน์นี้ <span style={{ fontWeight: 400, color: 'var(--muted)' }}>· ไม่ใช่เรื่องกำลังคน · ไม่ตกทอดถึงไลน์ย่อย ตั้งแยกทุกไลน์</span>
             </div>
+            {/* ชนิดหน่วย ต้องมาก่อน "ประเภทไลน์" — ตอบคำถามที่ใหญ่กว่า (เป็นไลน์ผลิตไหม) */}
+            <div style={{ marginBottom: 12 }}>
+              <label style={labelSt}>🧭 ชนิดหน่วย</label>
+              <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                {UNIT_KINDS.map(k => (
+                  <button key={k.key} type="button" disabled={!canEdit} title={k.desc}
+                    onClick={() => setUnitKind(k.key)}
+                    style={{ flex: 1, padding: '7px 8px', fontSize: 12, fontWeight: 700, borderRadius: 8,
+                      cursor: canEdit ? 'pointer' : 'default',
+                      border: `1px solid ${unitKind === k.key ? 'var(--accent)' : 'var(--border2)'}`,
+                      background: unitKind === k.key ? 'var(--accent-dim)' : 'var(--bg3)',
+                      color: unitKind === k.key ? 'var(--text)' : 'var(--text2)' }}>{k.label}</button>
+                ))}
+              </div>
+              <div style={{ marginTop: 5, fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5 }}>
+                {unitKind === UNIT_SUPPORT
+                  ? 'หน่วยนี้ใช้ เช็คชื่อ · จัดกะ · ผังองค์กร ได้ แต่ไม่โผล่ในแผนผลิต / OEE / Daily Report / ใบตรวจรายวัน'
+                  : 'มีแผนผลิต · เปิดกะ · คิด OEE · ต้องตรวจรายวัน (AM · LPA · Poka-Yoke)'}
+              </div>
+            </div>
             <div style={{ marginBottom: 12 }}>
               <label style={labelSt}>🏭 ประเภทไลน์</label>
               <select value={lineType} disabled={!canEdit}
@@ -1816,6 +1872,15 @@ export default function LineSetup({ embedded = false } = {}) {
 
           {/* 🎯 จุดส่งงานหน้าไลน์ — ป้าย QR ที่สโตร์สแกนตอนวางของถึงไลน์ (ลูปสโตร์เฟส 4 · 2026-09-03) */}
           <DeliveryPointPanel lineName={selectedLine} lines={lines} />
+
+          {/* 📦 จุดเรียกเติมชิ้นส่วน (min/max ต่อพาร์ท) — 15/10 feedback หน้างาน
+              เดิมตั้งได้ที่ Daily Report เท่านั้น ⇒ ต้อง "มีกะเปิด + มีของอยู่แล้ว" ถึงจะเห็นปุ่ม
+              = ตั้งค่าตอนเซ็ตอัพไลน์ใหม่ไม่ได้เลย (หน้างานถามตรงๆ ว่า "ตั้งจุดเรียกเติมยังไง")
+              ⇒ ยืมแผงเดิมทั้งใบ (โหลด/สูตรชุดเดียวกัน ห้ามก๊อป) + `alwaysShow` ให้โผล่แม้ยังว่าง */}
+          <CollapseCard id="partLevels" storePrefix="ls" defaultOpen={false}
+            title={<>📦 จุดเรียกเติมชิ้นส่วน <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 400 }}>· min/max ต่อพาร์ท — ถึง min แล้วระบบเสนอให้เบิกจากสโตร์</span></>}>
+            <LinePartCallPanel lineName={selectedLine} lines={lines} role={role} fullName={fullName} alwaysShow />
+          </CollapseCard>
 
           {/* ผู้เซ็นใบค่าฝีมือ ราย section ย้ายไปตั้งที่ผังองค์กร (OrgSetup) — เป็นข้อมูลราย section ไม่ใช่ราย line */}
           <div style={{ borderTop: '1px solid var(--border)', margin: '14px 0 12px' }} />

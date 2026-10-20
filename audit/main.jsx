@@ -1,16 +1,21 @@
 import React, { Suspense, useState, useEffect } from 'react'
 import { createRoot } from 'react-dom/client'
 import { MemoryRouter } from 'react-router-dom'
-import { UserContext, Sidebar, NAV_ITEMS } from '../src/App'
+import { UserContext, Sidebar, NAV_ITEMS, NotificationBell } from '../src/App'
 /* เปิดทะเบียนเมนูให้ `audit/stdsweep.mjs` อ่าน — ตรวจว่า "คุณอยู่ตรงนี้" บนรางตรงกับหมวดจริงไหม
    (`alsoIn` = หน้าที่อยู่ 2 หมวดจริงๆ ต้องถูกไฮไลต์ทั้งคู่) */
 window.__NAV = NAV_ITEMS.map(i => ({ to: i.to, group: i.group, alsoIn: i.alsoIn || null }))
 import ScrollHint from '../src/components/ScrollHint'
+import MobileNavBar from '../src/components/MobileNavBar'
 import { ToastContainer } from '../src/components/Toast'
 import '../src/index.css'
 
 const mods = import.meta.glob('../src/pages/*.jsx')
 const NAMES = Object.keys(mods).map(p => p.split('/').pop().replace('.jsx',''))
+/* หน้าที่เป็น "คอมโพเนนต์เดียว หลาย route" (prop ต่างกัน) — `ไฟล์@ค่า` = เปิดไฟล์นั้นด้วย view=ค่า (19/10)
+   /people-board = Dashboard view="people" · ไม่ใส่ไว้ = สวีปทุกตัวไม่เคยเห็นจอคนเลย */
+const VARIANTS = { 'Dashboard@people': { view: 'people' } }
+NAMES.push(...Object.keys(VARIANTS))
 
 class EB extends React.Component {
   constructor(p){ super(p); this.state={e:null} }
@@ -71,11 +76,17 @@ function SidebarLab(){
   )
 }
 
+const TV_SHELL = new URLSearchParams(location.search).get('tvshell') === '1'
+const DisplayRotatorLazy = React.lazy(() => import('../src/components/DisplayRotator'))
+function TvShellHarness(){
+  useEffect(() => { document.body.classList.add('esm-tv-shell'); return () => document.body.classList.remove('esm-tv-shell') }, [])
+  return <DisplayRotatorLazy userId="x" role="display" shell />
+}
 function App(){
   const [name, setName] = useState(new URLSearchParams(location.search).get('p') || NAMES[0])
   const [C, setC] = useState(null)
   useEffect(()=>{ window.__crash=false; setC(null)
-    const key = `../src/pages/${name}.jsx`
+    const key = `../src/pages/${name.split('@')[0]}.jsx`
     mods[key]().then(m => setC(()=>m.default)).catch(e => { window.__crash=true; console.error(e) })
   },[name])
   return (
@@ -84,10 +95,14 @@ function App(){
         {/* จำลองโครงเดียวกับ App จริง: main เลื่อนแนวตั้งอย่างเดียว */}
         <main id="mainbox" style={{ flex:1, minHeight:'100vh', paddingTop:14, background:'var(--bg)',
           overflowY:'auto', overflowX:'hidden', minWidth:0 }}>
-          <ScrollHint/><EB><Suspense fallback={<div>loading</div>}>{C ? <C/> : null}</Suspense></EB>
+          <ScrollHint/><EB><Suspense fallback={<div>loading</div>}>{C ? <C {...(VARIANTS[name] || {})}/> : null}</Suspense></EB>
           {/* ToastContainer ต้องมีในหน้าปกติด้วย (05/10) — เดิมมีแค่ใน FeedbackLab ⇒ toast จากหน้าอื่น (เช่น "ขอบเขตนอกสังกัด" ของบอร์ด KPI) ไม่โผล่ ตรวจอัตโนมัติไม่ได้ */}
           <ToastContainer/>
         </main>
+        {/* 📺 ?tvshell=1 — กรอบจอ TV (16/10) · แถบบน + body.esm-tv-shell เหมือนบัญชี display ในแอปจริง */}
+        {TV_SHELL && <Suspense fallback={null}><TvShellHarness/></Suspense>}
+        {/* 📱 แถบล่างมือถือเหมือนแอปจริง (15/10) — สวีปมือถือต้องเห็นว่าแถบบังอะไรไหม · จอคอม = null */}
+        <MobileNavBar role={ROLE} onOpenMenu={() => { window.__menu = (window.__menu || 0) + 1 }} onOpenSearch={() => { window.__palette = (window.__palette || 0) + 1 }} />
       </UserContext.Provider>
     </MemoryRouter>
   )
@@ -109,7 +124,23 @@ const FeedbackLab = () => (
   </MemoryRouter>
 )
 
+/* ?p=__bell — กระดิ่ง 2 แท็บ (🎯 รอคุณ · 📢 แจ้งเตือนทั่วไป · 2026-10-13) อยู่ใน App shell เหมือน FeedbackModal
+   ⇒ crashsweep รายหน้ามองไม่เห็น · ?p=__bell&open=1 เปิด dropdown ให้เลย */
+function BellLab(){
+  useEffect(() => {
+    if (new URLSearchParams(location.search).get('open')) setTimeout(() => document.querySelector('button[title]')?.click(), 600)
+  }, [])
+  return (
+    <MemoryRouter initialEntries={[ENTRY]}>
+      <UserContext.Provider value={{ ...CTX, role:'admin', sections:['PD1'], mtnTeams:[] }}>
+        <EB><NotificationBell userId="x" role="admin" /></EB>
+        <ToastContainer/>
+      </UserContext.Provider>
+    </MemoryRouter>
+  )
+}
+
 window.__PAGES = NAMES
 const only = new URLSearchParams(location.search).get('p')
 createRoot(document.getElementById('root')).render(
-  only === '__sidebar' ? <SidebarLab/> : only === '__feedback' ? <FeedbackLab/> : <App/>)
+  only === '__sidebar' ? <SidebarLab/> : only === '__feedback' ? <FeedbackLab/> : only === '__bell' ? <BellLab/> : <App/>)

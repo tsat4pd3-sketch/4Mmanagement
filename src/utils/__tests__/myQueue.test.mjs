@@ -329,3 +329,67 @@ test('dayKeyBack — คิดวันไทยเองจาก epoch ห้�
   assert.equal(dayKeyBack(10, new Date('2026-10-06T03:00:00Z')), '2026-09-26');
   assert.equal(dayKeyBack(null, new Date('2026-10-06T03:00:00Z')), '2026-10-06', 'ไม่รู้จำนวนวัน = วันนี้');
 });
+
+/* ── ✍️ ขั้นที่ตำแหน่งเดียวเซ็นได้ → "รอคุณ" เฉพาะคนที่เซ็นได้จริง (2026-10-13 · คำสั่ง user) ── */
+test('soleSigner — ผจก.ฝ่ายผู้แจ้งในขอบเขต + มีสิทธิ์ = รอคุณ · ขึ้นก่อนใบเก่าอื่น', async () => {
+  const { buildQueue, soleSignerFor, moWaitingOn } = await import('../myQueue.js')
+  const handover = { id: 'h1', mo_no: 'MO-7', status: 'handover', work_date: '2026-10-12', dept_section: 'PD3', mtn_dept: 'jig_maintenance' }
+  const old = { id: 'r1', mo_no: 'MO-1', status: 'repaired', work_date: '2026-09-01', dept_section: 'PD3', reported_by_uid: 'me' }
+  const mgr = { uid: 'me', name: 'ผจก', sections: ['PD3'], actorSide: 'reporter', posRank: 60, can: (k) => k === 'close_cost' }
+  assert.equal(soleSignerFor(handover, moWaitingOn(handover), mgr), true)
+  const q = buildQueue({ mo: [old, handover], sessions: [], fourM: [], actions: [], summaries: [] }, mgr, new Date('2026-10-13T03:00:00Z'))
+  assert.deepEqual(q.mine.map(i => i.key), ['mo:h1', 'mo:r1'])   // ช่องเซ็นขึ้นก่อนแม้ใหม่กว่า
+  assert.equal(q.mine[0].sign, true)
+  assert.ok(!q.unit.some(i => i.key === 'mo:h1'))                 // ไม่ซ้ำในคิวหน่วยงาน
+})
+
+test('soleSigner — ไม่รู้ฝั่ง/ตำแหน่ง · ตำแหน่งต่ำ · ผิดฝั่ง · มีแค่ manage_master = ไม่นับ', async () => {
+  const { soleSignerFor, moWaitingOn } = await import('../myQueue.js')
+  const o = { id: 'h1', status: 'handover', dept_section: 'PD3', mtn_dept: 'jig_maintenance' }
+  const w = moWaitingOn(o)
+  const base = { sections: ['PD3'], can: (k) => k === 'close_cost' }
+  assert.equal(soleSignerFor(o, w, { ...base, actorSide: 'unknown', posRank: 60 }), false)
+  assert.equal(soleSignerFor(o, w, { ...base, actorSide: 'reporter', posRank: null }), false)
+  assert.equal(soleSignerFor(o, w, { ...base, actorSide: 'reporter', posRank: 40 }), false)
+  assert.equal(soleSignerFor(o, w, { ...base, actorSide: 'mtn', posRank: 60 }), false)
+  assert.equal(soleSignerFor(o, w, { sections: ['PD3'], actorSide: 'reporter', posRank: 60, can: (k) => k === 'manage_master' }), false)
+})
+
+test('soleSigner — ใบนอกขอบเขตส่วนงาน ไม่เข้า "รอคุณ" · ขั้น QA (ไม่ล็อกตำแหน่ง) ไม่นับ', async () => {
+  const { buildQueue, soleSignerFor, moWaitingOn } = await import('../myQueue.js')
+  const other = { id: 'h2', status: 'handover', work_date: '2026-10-12', dept_section: 'PD1', mtn_dept: 'jig_maintenance' }
+  const mgr = { uid: 'me', sections: ['PD3'], actorSide: 'reporter', posRank: 60, can: () => true }
+  const q = buildQueue({ mo: [other], sessions: [], fourM: [], actions: [], summaries: [] }, mgr, new Date('2026-10-13T03:00:00Z'))
+  assert.equal(q.mine.length, 0)
+  const qa = { id: 'q1', status: 'checked', dept_section: 'PD3', mtn_dept: 'jig_maintenance', quality_related: true }
+  assert.equal(soleSignerFor(qa, moWaitingOn(qa), mgr), false)
+})
+
+test('soleSigner — ไม่ส่งเกณฑ์ตำแหน่งมา = พฤติกรรมเดิม (ไม่มีใบรอเซ็นใน mine)', async () => {
+  const { buildQueue } = await import('../myQueue.js')
+  const h = { id: 'h1', status: 'handover', work_date: '2026-10-12', dept_section: 'PD3', mtn_dept: 'jig_maintenance' }
+  const q = buildQueue({ mo: [h], sessions: [], fourM: [], actions: [], summaries: [] }, { uid: 'me', sections: ['PD3'] }, new Date('2026-10-13T03:00:00Z'))
+  assert.equal(q.mine.length, 0)
+  assert.equal(q.unit.length, 1)
+})
+
+test('⬆️ คำขอขึ้นขั้น: เฉพาะคนอนุมัติได้ · บรรทัดเดียวชั้น unit · ขั้น 100 ต้องสิทธิ์แยก · ตัดตามส่วนงาน · ไม่ขึ้น badge', () => {
+  const now = new Date('2026-10-13T03:00:00Z');
+  const src = { mo: [], sessions: [], fourM: [], actions: [], levelUps: [
+    { id: 1, to_level: 50, requested_at: '2026-09-07T00:00:00Z', section: 'PD3' },
+    { id: 2, to_level: 100, requested_at: '2026-08-24T00:00:00Z', section: 'PD3' },
+    { id: 3, to_level: 75, requested_at: '2026-10-01T00:00:00Z', section: 'PD4' },
+  ] };
+  const none = buildQueue(src, { sections: ['PD3'] }, now);
+  assert.equal(none.unit.some(i => i.key === 'levelup'), false, 'ไม่มีสิทธิ์อนุมัติ = ไม่เห็น');
+  const q = buildQueue(src, { sections: ['PD3'], canLevelUp: true }, now);
+  const it = q.unit.find(i => i.key === 'levelup');
+  assert.equal(it.count, 1, 'ขั้น 100 ต้องสิทธิ์ approve_levelup_100 · PD4 อยู่นอกขอบเขต');
+  const q2 = buildQueue(src, { sections: [], canLevelUp: true, canLevelUp100: true }, now);
+  assert.equal(q2.unit.filter(i => i.key === 'levelup').length, 1, 'บรรทัดเดียว ไม่แตกรายคำขอ');
+  assert.equal(q2.unit.find(i => i.key === 'levelup').count, 3);
+  assert.equal(q2.unit.find(i => i.key === 'levelup').age, 50);
+  assert.equal(badgeCount(q2), 0, 'ไม่ขึ้น badge');
+  const miss = buildQueue({ ...src, levelUps: undefined }, { canLevelUp: true }, now);
+  assert.ok(miss.missing.includes('levelUps'), 'มีสิทธิ์แต่โหลดไม่ได้ = ต้องบอกว่าไม่ครบ');
+});

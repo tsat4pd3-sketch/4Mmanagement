@@ -9,9 +9,10 @@ import SearchInput from './SearchInput';
 import Segmented from './Segmented';
 import { matColor, matLabel } from '../utils/matPrefix';
 import {
-  auditBomDupes, applyDupReviews, dupProgress,
-  DUP_VERDICTS, DUP_DECISIONS, decisionLabel,
+  auditBomDupes, applyDupReviews, dupProgress, auditBomSheetGroups,
+  DUP_VERDICTS, DUP_DECISIONS, decisionLabel, isPairRatio, isHotPair,
 } from '../utils/bomDupAudit';
+import BomSheetGroups from './BomSheetGroups';
 import { statusColor } from '../utils/statusTone';
 
 /* ═══ 🔁 คู่ที่ "ของชิ้นเดียวถูกนิยามไว้ 2 ใบ" — จอให้ PE ไล่เคลียร์ ════════════════════
@@ -32,6 +33,11 @@ import { statusColor } from '../utils/statusTone';
    (มีด่าน `status-palette-single-source` · เคยมีแดง 4 เฉดปนกันทั้งระบบ) */
 const BAD = statusColor('bad'), WARN = statusColor('warn'), OK = statusColor('good');
 const toneOf = (v) => statusColor(DUP_VERDICTS[v]?.tone || 'warn');
+/* qty เป็นได้ทั้งจำนวนเต็ม (นัท) และทศนิยม (คอยล์ KG) — ห้ามปัดจนเลขจริงหาย */
+const fmtQty = (n) => {
+  const v = Number(n) || 0;
+  return Number.isInteger(v) ? String(v) : v.toLocaleString(undefined, { maximumFractionDigits: 4 });
+};
 
 const th = { padding: '7px 9px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left', whiteSpace: 'nowrap' };
 const td = { padding: '7px 9px', fontSize: 11.5, color: 'var(--text)', borderTop: '1px solid var(--border)', verticalAlign: 'top' };
@@ -100,27 +106,34 @@ export default function BomDupPanel({ onOpenSheet }) {
   }, [load]);
 
   /* ── ตัวลิสต์: คำนวณสดจากข้อมูล แล้วผูกผลตรวจที่คนบันทึกไว้ ── */
-  const { pairs, counts, prog } = useMemo(() => {
+  const { pairs, counts, prog, groups, gCounts } = useMemo(() => {
     const matOf = {}, opOf = {}, nameOf = {};
     for (const p of prods) { matOf[p.id] = p.mat_no; opOf[p.id] = !!p.is_operation; nameOf[p.id] = p.name || ''; }
-    const r = auditBomDupes(rows, matOf, {
+    const opt = {
       isOpSheet: (id) => !!opOf[id],
       infoOfSheet: (id) => ({ mat: matOf[id], name: nameOf[id] }),
-    });
+    };
+    const r = auditBomDupes(rows, matOf, opt);
+    /* 📋 มุมมองกลุ่ม — ข้อมูลชุดเดียวกัน ไม่โหลดซ้ำ (ตารางคู่เทียบได้แค่ 2 ใบ ดู BomSheetGroups) */
+    const gr = auditBomSheetGroups(rows, matOf, opt);
     const withRev = applyDupReviews(r.pairs, reviews);
-    return { pairs: withRev, counts: r.counts, prog: dupProgress(withRev) };
+    return { pairs: withRev, counts: r.counts, prog: dupProgress(withRev),
+      groups: gr.groups, gCounts: gr.counts };
   }, [rows, prods, reviews]);
 
   const shown = useMemo(() => {
     const q = search.trim().toUpperCase();
     return pairs.filter(p => {
       if (vFilter === 'open' && p.cleared) return false;
-      if (vFilter === 'hot' && (p.cleared || p.rank > 3)) return false;
+      /* 🔴 ใช้ `isHotPair` ตัวเดียวกับตัวนับหัวจอ — ห้ามเขียนเลข rank ซ้ำที่นี่
+         (เคยเพี้ยนจริง: ตัวนับเป็น rank ≤ 4 แต่ตัวกรองยังเป็น rank > 3 = ชิปกับตารางไม่ตรงกัน) */
+      if (vFilter === 'hot' && !isHotPair(p)) return false;
       if (vFilter === 'cleared' && !p.cleared) return false;
       if (!q) return true;
       return p.sheetMat.toUpperCase().includes(q) || p.mat.includes(q)
         || (p.sheetName || '').toUpperCase().includes(q) || (p.matName || '').toUpperCase().includes(q)
-        || p.onlyHere.some(m => m.includes(q)) || p.onlyOwn.some(m => m.includes(q));
+        || p.onlyHere.some(m => m.includes(q)) || p.onlyOwn.some(m => m.includes(q))
+        || (p.qtyDiff || []).some(d => d.mat.includes(q));
     });
   }, [pairs, vFilter, search]);
 
@@ -173,8 +186,9 @@ export default function BomDupPanel({ onOpenSheet }) {
         </div>
       )}
 
-      {/* ── ที่มา + สิ่งที่จอนี้ไม่ทำ (คนอ่านครั้งแรกต้องเข้าใจว่าทำไมมีคู่พวกนี้) ── */}
-      <div style={{ marginBottom: 12, padding: '10px 14px', borderRadius: 10, fontSize: 12, lineHeight: 1.65,
+      {/* ── ที่มา + สิ่งที่จอนี้ไม่ทำ (คนอ่านครั้งแรกต้องเข้าใจว่าทำไมมีคู่พวกนี้) ──
+          คำอธิบายถาวร ไม่ขึ้นกับตัวกรอง ⇒ อยู่เหนือแถบกรองได้ (UI-STANDARD §2.1) */}
+      <div data-page-note="1" style={{ marginBottom: 12, padding: '10px 14px', borderRadius: 10, fontSize: 12, lineHeight: 1.65,
         color: 'var(--text2)', border: '1px solid var(--border)', background: 'var(--bg2)' }}>
         <div style={{ fontWeight: 800, color: 'var(--text)', marginBottom: 2 }}>
           🔁 ของชิ้นเดียวถูกกรอกลูกไว้ 2 ที่ — ใบที่ใช้มัน และใบ BOM ของตัวมันเอง
@@ -183,24 +197,6 @@ export default function BomDupPanel({ onOpenSheet }) {
         ตัวที่มีแต่ในใบของพาร์ทเอง <b style={{ color: BAD }}>ไม่ถูกระเบิดเลย</b> ·
         <b> จอนี้ชี้ให้เห็นอย่างเดียว ไม่ยุบ/ไม่ลบ/ไม่เลือกใบให้เอง</b> —
         ของบางตัวใช้ต่างกันตามรุ่น/ลูกค้าได้จริง การตัดสินเป็นของ PE/Planning
-      </div>
-
-      {/* ── ความคืบหน้า ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10,
-        alignContent: 'start', marginBottom: 12 }}>
-        {[
-          { k: 'เหลือต้องตรวจ', v: prog.open, c: prog.open ? WARN : OK, sub: `จากทั้งหมด ${prog.total} คู่` },
-          { k: '🔥 ของร้อนที่ยังไม่แตะ', v: prog.openHot, c: prog.openHot ? BAD : OK, sub: 'ขาดของ / ขัดกัน / มีเกิน' },
-          { k: 'MAT ที่หายจากการระเบิด', v: counts.missingMats, c: counts.missingMats ? BAD : OK, sub: 'ความต้องการเป็น 0 ทั้งที่ใช้จริง' },
-          { k: 'ตรวจแล้ว', v: prog.cleared, c: OK, sub: prog.stale ? `⚠️ ${prog.stale} คู่ต้องตรวจซ้ำ (BOM เปลี่ยน)` : 'ข้อมูลยังเหมือนตอนตรวจ' },
-        ].map(s => (
-          <div key={s.k} style={{ padding: '9px 12px', borderRadius: 10, background: 'var(--card)',
-            border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)' }}>
-            <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{s.k}</div>
-            <div style={{ fontSize: 22, fontWeight: 900, color: s.c, lineHeight: 1.2 }}>{s.v}</div>
-            <div style={{ fontSize: 11, color: 'var(--muted)' }}>{s.sub}</div>
-          </div>
-        ))}
       </div>
 
       <FilterBar style={{ marginBottom: 12 }}>
@@ -214,6 +210,25 @@ export default function BomDupPanel({ onOpenSheet }) {
         <span className="spacer" />
         <span className="filter-count">{shown.length} คู่</span>
       </FilterBar>
+
+      {/* ── ความคืบหน้า ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10,
+        alignContent: 'start', marginBottom: 12 }}>
+        {[
+          { k: 'เหลือต้องตรวจ', v: prog.open, c: prog.open ? WARN : OK, sub: `จากทั้งหมด ${prog.total} คู่` },
+          { k: '🔥 ของร้อนที่ยังไม่แตะ', v: prog.openHot, c: prog.openHot ? BAD : OK, sub: 'ขาดของ / ขัดกัน / มีเกิน' },
+          { k: 'MAT ที่หายจากการระเบิด', v: counts.missingMats, c: counts.missingMats ? BAD : OK, sub: 'ความต้องการเป็น 0 ทั้งที่ใช้จริง' },
+          { k: '⚠️ มีใบที่ 3 ด้วย', v: counts.thirdSheet, c: counts.thirdSheet ? BAD : OK, sub: 'เทียบ 2 ใบแล้วตัดสินไม่ได้' },
+          { k: 'ตรวจแล้ว', v: prog.cleared, c: OK, sub: prog.stale ? `⚠️ ${prog.stale} คู่ต้องตรวจซ้ำ (BOM เปลี่ยน)` : 'ข้อมูลยังเหมือนตอนตรวจ' },
+        ].map(s => (
+          <div key={s.k} style={{ padding: '9px 12px', borderRadius: 10, background: 'var(--card)',
+            border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)' }}>
+            <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{s.k}</div>
+            <div style={{ fontSize: 22, fontWeight: 900, color: s.c, lineHeight: 1.2 }}>{s.v}</div>
+            <div style={{ fontSize: 11, color: 'var(--muted)' }}>{s.sub}</div>
+          </div>
+        ))}
+      </div>
 
       {/* 🔴 ว่างต้องเขียนว่าว่างเพราะอะไร ห้ามซ่อนแผงเงียบๆ */}
       {!shown.length ? (
@@ -234,6 +249,7 @@ export default function BomDupPanel({ onOpenSheet }) {
                 <th style={th}>ใบ</th>
                 <th style={th}>พาร์ทที่ถูกนิยาม 2 ที่</th>
                 <th style={{ ...th, textAlign: 'right' }}>ตรงกัน</th>
+                <th style={th}>จำนวนไม่ตรง (ใบนี้ ↔ ใบนั้น)</th>
                 <th style={th}>ใบนี้มี แต่ใบนั้นไม่มี</th>
                 <th style={th}>ใบนั้นมี แต่ใบนี้ไม่มี (ไม่ถูกระเบิด)</th>
                 <th style={th}>การตัดสิน</th>
@@ -252,6 +268,14 @@ export default function BomDupPanel({ onOpenSheet }) {
                       {p.missingFromExplode.length > 0 && (
                         <div style={{ fontSize: 11, color: BAD, fontWeight: 800, marginTop: 3 }}>
                           หาย {p.missingFromExplode.length} รายการ
+                        </div>
+                      )}
+                      {/* 🔴 มีใบที่ 3 นิยามไว้ด้วย ⇒ "2 ใบนี้ตรงกัน" ไม่พอที่จะยุบ
+                          (เคสจริง 14/10: ยุบคู่ที่ตรงกันเป๊ะ แล้วเส้นทางไปอ่านใบที่ 3 ยอดนัทเปลี่ยน 4→1) */}
+                      {p.hasThirdSheet && (
+                        <div style={{ fontSize: 11, color: BAD, fontWeight: 800, marginTop: 3, lineHeight: 1.5 }}>
+                          ⚠️ มีใบที่ 3: {p.otherSheets.map(o => o.sheetMat || o.sheetId).join(', ')}
+                          <div style={{ fontWeight: 400, color: 'var(--muted)' }}>ดูตารางกลุ่มด้านล่างก่อนตัดสิน</div>
                         </div>
                       )}
                     </td>
@@ -278,6 +302,22 @@ export default function BomDupPanel({ onOpenSheet }) {
                       <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}>
                         {p.kidsHere.length} / {p.kidsOwn.length}
                       </div>
+                    </td>
+                    {/* 🔢 qty ไม่ตรง — โชว์ทุก verdict (subset/conflict ก็มีได้) · ×2 พอดี = ติดป้าย ชิ้น/shot
+                        🔴 เขียนค่าทั้ง 2 ฝั่งเสมอ ห้ามบอกแค่ "ไม่ตรง" — คนตัดสินต้องเห็นเลขจริง */}
+                    <td style={{ ...td, maxWidth: 220 }}>
+                      {p.qtyDiff?.length ? p.qtyDiff.map(d => (
+                        <div key={d.mat} style={{ fontFamily: 'monospace', fontSize: 11, lineHeight: 1.6,
+                          color: isPairRatio(d.here, d.own) ? WARN : BAD }}>
+                          {d.mat} <b>{fmtQty(d.here)}</b> ↔ <b>{fmtQty(d.own)}</b>
+                          {isPairRatio(d.here, d.own) && <span style={{ color: 'var(--muted)' }}> ×2</span>}
+                        </div>
+                      )) : <span style={{ color: 'var(--muted)' }}>—</span>}
+                      {p.verdict === 'pair_shot' && (
+                        <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2, lineHeight: 1.5 }}>
+                          งานคู่ปั๊มทีเดียวได้ 2 ชิ้น — ใบหนึ่งน่าจะกรอกต่อ shot อีกใบต่อชิ้น
+                        </div>
+                      )}
                     </td>
                     <td style={{ ...td, maxWidth: 230 }}><MatList mats={p.onlyHere} color={WARN} /></td>
                     <td style={{ ...td, maxWidth: 230 }}>
@@ -361,6 +401,9 @@ export default function BomDupPanel({ onOpenSheet }) {
             </div>
           ))}
       </div>
+
+      {/* 📋 ตารางกลุ่ม — ปิดหลุมของตารางคู่ (ไม่มีใบของตัวเอง / ใบที่ 3) · อ่านอย่างเดียว */}
+      <BomSheetGroups groups={groups} counts={gCounts} search={search} onOpenSheet={onOpenSheet} />
     </>
   );
 }

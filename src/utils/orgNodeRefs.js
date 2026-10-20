@@ -6,6 +6,7 @@
      employees.org_node_id        → แกนสังกัดของพนักงาน    308 แถว
      profiles.org_node_id         → สังกัดของบัญชี          72 แถว
      org_assignments.org_node_id  → การแต่งตั้งหัวหน้าหน่วย  4 แถว  (cascade — หายพร้อมโหนด)
+     employee_flex_units.org_node_id → คนวิ่งข้ามมาช่วย + รักษาการของหน่วยนี้ (cascade — หายพร้อมโหนด · 14/10 · kind 20/10)
      + **"สำเนาชื่อ" ที่ทะเบียนอื่นเก็บเป็น text ไม่ผูก FK** (ไม่มีใครเตือนเวลาลบ/เปลี่ยนชื่อ):
        employees.section / department / group_name / team · profiles.section / team / sections[]
        **+ นอกฝั่งพนักงาน (เพิ่ม 08/10 — เดิมไม่ถูกนับเลย ⇒ กำพร้าเงียบ):**
@@ -83,7 +84,7 @@ export function orgRefKeyChange(node, nextName, nextCode) {
   return from && to && from !== to ? { from, to } : null;
 }
 
-const EMPTY = { empId: 0, profId: 0, heads: 0, textEmp: 0, textProf: 0, textOther: 0 };
+const EMPTY = { empId: 0, profId: 0, heads: 0, flex: 0, textEmp: 0, textProf: 0, textOther: 0 };
 
 /** นับทุกอย่างที่อ้างโหนดนี้ — คิวรีนับล้มสักตัว = `partial: true` (ห้ามเอา 0 ไปตัดสินใจลบ) */
 export async function loadOrgNodeRefs(supabase, node, nodes) {
@@ -95,6 +96,9 @@ export async function loadOrgNodeRefs(supabase, node, nodes) {
     ['empId',  supabase.from('employees').select('id', HEAD).eq('org_node_id', node.id)],
     ['profId', supabase.from('profiles').select('id', HEAD).eq('org_node_id', node.id)],
     ['heads',  supabase.from('org_assignments').select('id', HEAD).eq('org_node_id', node.id)],
+    /* 🏃 คนวิ่งข้ามแผนกที่ผูกไว้กับหน่วยนี้ (cascade) — ไม่บล็อกการลบ แต่ต้องบอกว่าจะหายไปด้วย
+       (ทะเบียนนี้เป็น "อ้างอิง" ไม่ใช่สังกัด ⇒ ลบโหนดแล้วคนไม่กำพร้า แค่หายจากบอร์ดหน่วยนั้น) */
+    ['flex',   supabase.from('employee_flex_units').select('id', HEAD).eq('org_node_id', node.id)],
   ];
   if (values.length) {
     for (const col of t.employees)     jobs.push([`emp:${col}`,  supabase.from('employees').select('id', HEAD).in(col, values)]);
@@ -115,6 +119,7 @@ export async function loadOrgNodeRefs(supabase, node, nodes) {
     if (key === 'empId') out.empId = n;
     else if (key === 'profId') out.profId = n;
     else if (key === 'heads') out.heads = n;
+    else if (key === 'flex') out.flex = n;
     else if (key.startsWith('emp:')) out.textEmp += n;
     else if (key.startsWith('other:')) {
       out.textOther += n;
@@ -151,6 +156,10 @@ export function orgRefDeleteNote(refs) {
   if (!refs) return '';
   const l = [];
   if (refs.heads) l.push(`⚠ การแต่งตั้งหัวหน้าหน่วยนี้ ${refs.heads} รายการจะถูกลบไปด้วย`);
+  /* นับรวมทั้ง 🏃 คนวิ่งข้ามแผนก และ 🎖️ รักษาการ — ทะเบียนเดียวกัน (`employee_flex_units.kind`)
+     ทั้งคู่ cascade หายพร้อมโหนด ⇒ ต้องบอกก่อนลบ (20/10) */
+  if (refs.flex) l.push(`⚠ คนวิ่งข้ามแผนก/รักษาการที่ผูกไว้กับหน่วยนี้ ${refs.flex} รายการจะถูกลบไปด้วย`
+                      + ' (สังกัดจริงและ cost center ของเขาไม่เปลี่ยน)');
   if (refs.sharedWith?.length && (refs.textEmp || refs.textProf)) {
     l.push(`ℹ คีย์ "${(refs.values || []).join(' / ')}" ยังมีโหนดอื่นถืออยู่ ${refs.sharedWith.length} ตัว`
          + ' — ทะเบียนที่อ้างชื่อนี้จึงไม่กำพร้า');

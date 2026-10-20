@@ -8,9 +8,9 @@
       — คอลัมน์ที่ dropdown ต้องใช้จะครบเสมอ และประหยัด egress (cache ร่วมทั้งแอป)
 
    คู่กับ <LineSelect> (src/components/LineSelect.jsx) ซึ่งรับ array นี้ไปวาด dropdown */
-import { useEffect, useState } from 'react';
 import { supabase } from '../supabaseClient';
 import { cachedMaster, invalidateMaster } from './masterCache';
+import useMasterRows from './useMasterRows.js';
 
 /* 🔴 ชุดคอลัมน์นี้เป็น **superset ของทุกหน้าที่ใช้** ตั้งใจให้ทุกจอแชร์ cache ก้อนเดียว (2026-09-25)
    เดิมมีแค่ 5 คอลัมน์ ⇒ หน้าที่อยากได้ `cost_center`/`flow_mode`/`line_type`/กำลังคน **ยิงเองแทน**
@@ -20,12 +20,12 @@ import { cachedMaster, invalidateMaster } from './masterCache';
    **ต้องการคอลัมน์เพิ่ม → เติมที่นี่ + bump คีย์ อย่าแยกไปยิงเอง**
    (ไม่เอา description/capacity/head_name/created_at/updated_at — ไม่มี dropdown ไหนใช้) */
 export const LINE_COLUMNS =
-  'id, name, parent_line_name, section, is_active, cost_center, flow_mode, parallel_stations, line_type, std_day_shift, std_night_shift';
+  'id, name, parent_line_name, section, is_active, cost_center, flow_mode, parallel_stations, line_type, unit_kind, std_day_shift, std_night_shift';
 
 /* 🔴 เปลี่ยนชุดคอลัมน์เมื่อไหร่ **ต้องเปลี่ยนคีย์ด้วยเสมอ** — cache อยู่ localStorage อายุ 4 ชม.
    ใช้คีย์เดิม = เครื่องที่มีของเก่าค้างได้แถวที่**ขาดคอลัมน์ใหม่**ไปอีก 4 ชม. โดยไม่มี error
    (บทเรียนเดียวกับ storage_locations:v2 · `:v2` = รอบที่เพิ่ม 6 คอลัมน์นี้) */
-const KEY = 'production_lines:v2';
+const KEY = 'production_lines:v3';   // v3 = เพิ่ม unit_kind (13/10)
 
 /** โหลดครั้งเดียวแล้วแชร์ทั้งแอป — คืน [] จนกว่าจะโหลดเสร็จ */
 export async function loadProductionLines() {
@@ -52,12 +52,9 @@ export const loadLinesRes = async () => ({ data: (await loadProductionLines()) |
 
 export const invalidateProductionLines = () => invalidateMaster(KEY);
 
-export default function useProductionLines() {
-  const [lines, setLines] = useState([]);
-  useEffect(() => {
-    let alive = true;
-    loadProductionLines().then(d => { if (alive) setLines(d || []); }).catch(() => {});
-    return () => { alive = false; };
-  }, []);
-  return lines;
-}
+/** สถานะโหลดทะเบียน — `{ rows, failed, stale, message, loading, reload }`
+ *  🔴 ช่องเลือกที่ต้องบอกว่า "ลิสต์ว่างเพราะไม่มีของ หรือเพราะโหลดไม่สำเร็จ" ใช้ตัวนี้
+ *     (ตัว default คืนแค่แถว = พฤติกรรมเดิม ไม่ต้องแก้จุดเรียกเก่า) */
+export function useProductionLinesState() { return useMasterRows(KEY, loadProductionLines); }
+
+export default function useProductionLines() { return useProductionLinesState().rows; }

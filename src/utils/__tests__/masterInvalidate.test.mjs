@@ -26,12 +26,14 @@ function walk(dir, out = []) {
 
 const registered = new Set([...Object.values(KEYS_BY_TABLE).flat(), ...UNMANAGED]);
 
-test('🔴 ทุกคีย์ cachedMaster ในโค้ดต้องอยู่ในทะเบียน masterInvalidate', () => {
+test('🔴 ทุกคีย์ cachedMaster/cachedRows ในโค้ดต้องอยู่ในทะเบียน masterInvalidate', () => {
   const missing = [];
   for (const file of walk(SRC)) {
     if (file.includes('__tests__') || file.endsWith('masterInvalidate.js')) continue;
     const src = readFileSync(file, 'utf8');
-    for (const m of src.matchAll(/cachedMaster\(\s*'([^']+)'/g)) {
+    /* 🔴 ต้องจับ **ทุกตัวที่เขียน cache** — เพิ่มตัวใหม่แล้วลืมต่อ regex = คีย์หลุดทะเบียนเงียบๆ
+       ซึ่งเป็นบั๊กเดียวกับที่ด่านนี้ตั้งมาดัก (`cachedRows` เพิ่ม 13/10) */
+    for (const m of src.matchAll(/cached(?:Master|Rows)\(\s*'([^']+)'/g)) {
       const key = m[1];
       if (registered.has(key)) continue;
       if (DYNAMIC_PREFIXES.some(p => key.startsWith(p))) continue;

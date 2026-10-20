@@ -9,7 +9,8 @@
      MTTR                = Total hours of breakdown / Total frequency times
 
    ที่มาตัวเลข = RPC `kpi_mtn_rollup` (DR · Σ ต่อเดือน ไม่หาร) — migration `20260924_kpi_mtn_rollup_dr.sql`
-     mo[]       {m, team, closed, on_target, no_target}   ← mtn_orders ตามทีมช่าง (mtn_dept)
+     mo[]       {m, team, closed, on_target, no_target, closed_all}   ← mtn_orders ตามทีมช่าง (mtn_dept)
+                🔴 closed/on_target/no_target = **เฉพาะ Breakdown (prefix BM)** ตั้งแต่ 14/10 · closed_all = ทุกประเภท (ไว้บอกบนจอว่าตัดไปเท่าไหร่)
      dt[]       {m, kind, events, breakdown_min}          ← downtime_logs นอกแผนที่ปิดแล้ว ตามชนิดอุปกรณ์ (machines.equipment_kind)
      machines[] {kind, n}                                  ← เครื่อง active ต่อชนิด
      months[]   เดือนที่มี downtime_logs (เดือนที่ไม่มีเลย = "ไม่มีข้อมูล" ไม่ใช่ 0)
@@ -28,7 +29,7 @@ export const ASSUMPTION_MBD = `ตัวหาร "ชั่วโมงที�
 /** KPI ช่างที่ระบบคำนวณให้ได้ — จับคู่กับแถวนิยามด้วยชื่อ (ทะเบียนมาตรฐานสะกดตามนี้) */
 export const MTN_AUTO_KPIS = [
   { key: 'mo_on_target', label: 'MO Closed on target', unit: '%',   match: /mo\s*closed|closed\s*on\s*target/i,
-    formula: '(MO Closed on target ÷ Total MO) × 100', note: 'นับใบที่ซ่อมเสร็จในเดือนนั้น · ตรงเป้า = เสร็จไม่เกินกำหนดที่ตั้งในใบ · ใบที่ไม่ได้ตั้งกำหนดนับเป็น "ไม่ตรงเป้า" และบอกจำนวนไว้' },
+    formula: '(MO Closed on target ÷ Total MO) × 100', note: 'นับเฉพาะใบประเภท Breakdown (BM) ที่ซ่อมเสร็จในเดือนนั้น — ทุกทีมช่างใช้เกณฑ์เดียวกัน (คำสั่ง user 14/10) · ตรงเป้า = เสร็จไม่เกินกำหนดที่ตั้งในใบ · ใบที่ไม่ได้ตั้งกำหนดนับเป็น "ไม่ตรงเป้า" และบอกจำนวนไว้' },
   { key: 'mbd',          label: 'Machine Break Down',  unit: '%',   match: /break\s*down/i,
     formula: `(ชม.เครื่องหยุด ÷ (${HOURS_PER_MONTH} × จำนวนเครื่อง)) × 100`, note: ASSUMPTION_MBD },
   { key: 'mtbf',         label: 'MTBF',                unit: 'ชม.', match: /mtbf|between\s*failure/i,
@@ -67,12 +68,14 @@ export function mtnAutoSeries(roll, year, team) {
     const closed = mo.reduce((s, x) => s + num(x.closed), 0);
     const onT = mo.reduce((s, x) => s + num(x.on_target), 0);
     const noT = mo.reduce((s, x) => s + num(x.no_target), 0);
+    // RPC รุ่นก่อน 14/10 ไม่มี closed_all ⇒ null (ไม่รู้) ห้ามเดาเท่ากับ closed
+    const allC = mo.some(x => x.closed_all != null) ? mo.reduce((s, x) => s + num(x.closed_all), 0) : null;
     const events = dt.reduce((s, x) => s + num(x.events), 0);
     const bdHr = dt.reduce((s, x) => s + num(x.breakdown_min), 0) / 60;
     const hasDt = withData.has(k);
     const avail = HOURS_PER_MONTH * machines;
     const r = {
-      k, machines, closed, on_target: onT, no_target: noT, events, breakdown_hr: bdHr, hasData: hasDt || closed > 0,
+      k, machines, closed, closed_all: allC, on_target: onT, no_target: noT, events, breakdown_hr: bdHr, hasData: hasDt || closed > 0,
       mo_on_target: closed > 0 ? (onT / closed) * 100 : null,
       // เดือนที่มีข้อมูล downtime แต่ชนิดนี้ไม่เสียเลย = 0% / MTBF เต็ม 730 (ถูกต้อง ไม่ใช่ "ไม่มีข้อมูล")
       mbd: hasDt && avail > 0 ? (bdHr / avail) * 100 : null,
@@ -82,6 +85,30 @@ export function mtnAutoSeries(roll, year, team) {
     out.push(r);
   }
   return { months: out, machines };
+}
+
+/** หน่วยที่ "สูตรทางการ" บังคับ — ตรวจว่าหน่วยที่คนตั้งในนิยาม/ทะเบียนขัดกับสูตรไหม (2026-10-13)
+ *  เคสจริง: ทีม MTN แก้ทะเบียนกลาง Machine Break Down จาก % เป็น "Hrs." แล้วคีย์ค่ากรอกมือเป็นชั่วโมง
+ *  ⇒ บอร์ดเอา "ชั่วโมง" (กรอกมือ) วางข้าง "%" (ระบบคำนวณ) ในแผ่นเดียวกัน · สูตรหน้า 10 คูณ 100 = % เท่านั้น
+ *  @returns null = ไม่ขัด/ไม่ใช่ KPI อัตโนมัติ/ยังไม่ตั้งหน่วย · { expect, got } = ขัด (จอเตือน ไม่บล็อก — ใบจริงบางใบใช้นาที) */
+export function autoUnitMismatch(name, unit) {
+  const ak = autoKpiOfName(name);
+  const u = String(unit || '').trim().toLowerCase();
+  if (!ak || !u) return null;
+  if (ak.unit === '%') return u.includes('%') ? null : { expect: '%', got: unit };
+  // MTBF/MTTR = หน่วยเวลา (ชม. หรือ นาที — toRowUnit แปลงให้) · อย่างอื่น เช่น % / ครั้ง = ขัด
+  return /ชม|hr|hour|นาที|min/.test(u) ? null : { expect: ak.unit, got: unit };
+}
+
+/** ข้อความ "ที่มาของเลข" ต่อเดือน สำหรับแถว auto — user 13/10 "อยากเห็น hrs. ด้วย" ทั้งที่ KPI เป็น %
+ *  ⇒ ตัวตั้ง/ตัวหารต้องโผล่บนจอคู่กับ % (tooltip + บรรทัดรองของแผ่น) ไม่ใช่เปลี่ยนหน่วย KPI */
+export function autoDetailText(m, autoKey) {
+  if (!m) return '';
+  const hr = (v) => (v == null ? '—' : Number(v).toLocaleString('th-TH', { maximumFractionDigits: 1 }));
+  if (autoKey === 'mo_on_target') return `ตรงเป้า ${m.on_target ?? 0}/${m.closed ?? 0} ใบ BM${m.no_target ? ` · ไม่ตั้งกำหนด ${m.no_target}` : ''}${m.closed_all != null && m.closed_all > (m.closed ?? 0) ? ` · ไม่นับงานประเภทอื่น ${m.closed_all - (m.closed ?? 0)} ใบ` : ''}`;
+  if (autoKey === 'mbd' || autoKey === 'mtbf') return `หยุด ${hr(m.breakdown_hr)} ชม. · ${m.events ?? 0} ครั้ง · ${m.machines ?? 0} เครื่อง`;
+  if (autoKey === 'mttr') return `หยุด ${hr(m.breakdown_hr)} ชม. ÷ ${m.events ?? 0} ครั้ง`;
+  return '';
 }
 
 /** แปลงหน่วยให้ตรงกับที่แถวนิยามตั้งไว้ — MTBF/MTTR ใบ JIG ใช้ "นาที" เด็คใช้ "ชม." (docs §12.3) */

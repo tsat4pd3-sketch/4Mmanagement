@@ -21,12 +21,16 @@ import { buildQrPayload, parseQrPayload, findDieByScan } from '../utils/qrCode';
 import DieLayout from '../components/DieLayout';
 import DieStatusBoard from '../components/DieStatusBoard';
 import ProductSelect from '../components/ProductSelect'; // MAT SAP = picker กลาง (single-source audit 2026-09-07)
+import { dieSetMats, dieSetPairState, suggestPps, pairHint } from '../utils/dieSetMats';
+import { pairBlockReason } from '../utils/pairOrder';   // 🔗 ด่านเดียวกับ Product Master — คู่ต้องอยู่ไลน์เดียวกัน
+import { checkWriteRows } from '../utils/dbWrite';      // RLS ปฏิเสธ UPDATE = 0 แถว ไม่มี error ⇒ ต้องนับแถว // 🔨 ชุดหนึ่งทำได้ 2 MAT (งานคู่ RH/LH)
 import useColumnHistory from '../utils/useColumnHistory'; // 📜 MAT ที่เคยบันทึกใน die_sets — Product Master ไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
 import SelectOrFree from '../components/SelectOrFree';
 import SimpleMasterPanel from '../components/SimpleMasterPanel';
 import CollapseCard from '../components/CollapseCard';
 import PressSetupRules from '../components/PressSetupRules';   // ⏱️ กฎเวลาเปลี่ยนรุ่นงานปั๊ม (2026-09-25)
 import useDiePressLines, { invalidateDiePressLines } from '../utils/useDiePressLines'; // ทะเบียนกลุ่มเครื่องปั๊ม (DR die_press_lines) — 2026-09-08
+import { masterDeleteGuard } from '../utils/masterRefs'; // ด่านนับปลายทางก่อนลบทะเบียนที่จับคู่ด้วยข้อความ — 2026-10-18
 
 /* ═══════════════════════════════════════════════════════════════
    ทะเบียนแม่พิมพ์ & DIE MAINTENANCE — /die-registry
@@ -92,8 +96,80 @@ const KIND_NONE = '__none__';   // ตัวกรอง "ยังไม่ร�
 
 const emptySet = {
   id: null, set_code: '', part_no: '', part_name: '', model: '', line_name: '',
-  kind: '', op_total: '',   // ว่าง = "ยังไม่ระบุ" (06/10 · คำสั่ง user — เดิม default tandem = เดาแทนหน้างาน) pieces_per_stroke: 1, mat_no: '', note: '', is_active: true,
+  // ว่าง = "ยังไม่ระบุ" (06/10 · คำสั่ง user — เดิม default tandem = เดาแทนหน้างาน)
+  kind: '', op_total: '',
+  // 🔴 ว่าง = ยังไม่รู้ ห้าม default 1 (14/10 · คำสั่ง user "ควรนับ shot ไม่ใช่นับชิ้น สำหรับงานคู่")
+  pieces_per_stroke: '',
+  mat_no: '', mat_no_2: '',   // ตัวที่ 2 = งานคู่ RH/LH (gang die ปั๊มทีเดียวได้ 2 พาร์ท)
+  note: '', is_active: true,
 };
+
+/* 🔗 ชุดที่ลง MAT ไว้ 2 ตัว ต้องสอดคล้องกับคู่ที่ตั้งไว้ใน Product Master
+   เจ้าของข้อมูล "ใครคู่กับใคร" ยังเป็น Product Master — หน้านี้แค่**ยืมมือเขียน** ⇒ ต้องเหมือนกันทุกด่าน:
+     1) สิทธิ์ `products:edit` (ไม่ใช่ `machines:edit` ของหน้านี้) — ไม่มี = บอกเหตุผล ไม่ซ่อนปุ่มเงียบ
+     2) `pairBlockReason()` ตัวเดียวกับหน้า Product Master (คู่ RH/LH ต้องผลิตไลน์เดียวกัน)
+     3) เขียน **2 ทาง** + ปลดคู่เก่าที่ชี้ค้างก่อน ไม่งั้นคู่ชี้ข้างเดียว = `collapsePairShots` ยุบไม่ครบ
+     4) `checkWriteRows` ทุกครั้ง — RLS ปฏิเสธ UPDATE คืน 0 แถวโดยไม่มี error */
+function SetPairNote({ set, products, role, onDone }) {
+  const [busy, setBusy] = useState(false);
+  const canPair = can('products', 'edit', role);
+  const byMat = (m) => products.find(p => String(p.mat_no || '').trim().toUpperCase() === m) || null;
+  const r = dieSetPairState(set, (m) => byMat(m)?.pair_mat_no || null);
+  if (r.state === 'single' || r.state === 'ok') return null;
+
+  const [a, b] = r.mats;
+  const msg = r.state === 'mismatch'
+    ? `Product Master บอกว่าคู่ของ ${a} คือ ${r.says} ไม่ใช่ ${b} — ตรวจก่อนบันทึก`
+    : `ยังไม่ได้ตั้งคู่ RH/LH ของ 2 ตัวนี้ — OEE จะยังนับ shot ซ้ำ 2 เท่า`;
+
+  async function setPair() {
+    const pa = byMat(a), pb = byMat(b);
+    if (!pa || !pb) return toast.error(`${!pa ? a : b} ยังไม่มีในทะเบียนสินค้า — เพิ่มที่ /products ก่อน`);
+    const why = pairBlockReason(pa, pb);          // ด่านเดียวกับ Product Master ห้ามข้าม
+    if (why) return toast.error(why);
+    const olds = [pa.pair_mat_no, pb.pair_mat_no]   // คู่เก่าที่ชี้ไปที่อื่น ต้องปลดก่อน ไม่งั้นค้างชี้ข้างเดียว
+      .map(v => String(v || '').trim().toUpperCase())
+      .filter(v => v && v !== a && v !== b);
+    if (!window.confirm(
+      `ตั้งให้ ${a} ↔ ${b} เป็นคู่ RH/LH ในทะเบียนสินค้า?\n`
+      + (olds.length ? `\n⚠️ จะปลดคู่เดิมออกก่อน: ${olds.join(', ')}\n` : '')
+      + '\nมีผลกับการคำนวณ OEE ของทั้ง 2 พาร์ท (ยุบ shot งานคู่)')) return;
+
+    setBusy(true);
+    try {
+      for (const o of olds) {
+        if (!checkWriteRows(await supabaseDR.from('dr_products').update({ pair_mat_no: null })
+          .eq('mat_no', o).select('id'), `ปลดคู่เดิมของ ${o}`)) return;   // ปลดไม่ได้ = หยุด ห้ามเขียนทับต่อ
+      }
+      if (!checkWriteRows(await supabaseDR.from('dr_products').update({ pair_mat_no: b })
+        .eq('mat_no', pa.mat_no).select('id'), `ผูกคู่ฝั่ง ${a}`)) return;
+      if (!checkWriteRows(await supabaseDR.from('dr_products').update({ pair_mat_no: a })
+        .eq('mat_no', pb.mat_no).select('id'), `ผูกคู่ฝั่ง ${b}`)) {
+        toast.error(`⚠️ ${a} ผูกไปแล้วแต่ ${b} ไม่สำเร็จ — คู่ชี้ข้างเดียว ไปแก้ที่ /products`);
+        return;
+      }
+      toast.success(`ตั้งคู่ ${a} ↔ ${b} แล้ว`);
+      await onDone?.();
+    } finally { setBusy(false); }
+  }
+
+  const color = r.state === 'mismatch' ? '#ef4444' : '#f59e0b';
+  return (
+    <div style={{ marginTop: 4, fontSize: 11, color }}>
+      {r.state === 'mismatch' ? '⚠️ ' : 'ℹ️ '}{msg}
+      {canPair ? (
+        <button type="button" onClick={setPair} disabled={busy}
+          style={{ marginLeft: 6, fontSize: 11, padding: '1px 8px', borderRadius: 6,
+            cursor: busy ? 'wait' : 'pointer', background: 'var(--bg3)', color: 'var(--text2)',
+            border: `1px solid ${color}` }}>
+          {busy ? 'กำลังตั้ง…' : r.state === 'mismatch' ? 'ตั้งคู่ใหม่เป็น ' + b : 'ตั้งคู่ให้เลย'}
+        </button>
+      ) : (
+        <span style={{ color: 'var(--muted)' }}> · บัญชีคุณไม่มีสิทธิ์แก้ทะเบียนสินค้า ตั้งคู่ที่ /products</span>
+      )}
+    </div>
+  );
+}
 
 export default function DieRegistry() {
   const { role, lineId: userLineId, sections: scopeSecs, fullName } = useContext(UserContext);
@@ -270,6 +346,12 @@ export default function DieRegistry() {
     if (!s.kind)    out.push('ยังไม่ระบุรูปแบบชุด');
     if (!s.part_no) out.push('ยังไม่ระบุเลขพาร์ท');
     if (!s.mat_no)  out.push('ยังไม่ผูก MAT SAP');
+    /* 🔨 ไม่รู้ "ชิ้น/จังหวะ" = PM แม่พิมพ์คิดเป็น shot ไม่ได้ (14/10) — เข้าลิสต์ "ต้องแก้" ให้หน้างานไล่กรอก
+       แนบหลักฐานที่พบในชื่อ/เลขพาร์ทไปด้วยเพื่อให้ตัดสินเร็ว · 🔴 ระบบไม่กรอกให้เอง (pairHint ไม่เขียนฐาน) */
+    if (s.pieces_per_stroke == null) {
+      const h = pairHint(s);
+      out.push('ยังไม่ระบุ ชิ้น/stroke' + (h ? ` — น่าจะเป็นงานคู่ (${h.why}) รอยืนยัน` : ''));
+    }
     if (s.op_total && mem.length !== s.op_total && dup === 0)
       out.push(`จำนวนแม่พิมพ์ (${mem.length}) ไม่ตรงกับจำนวน OP ที่ระบุ (${s.op_total})`);
     return out;
@@ -281,7 +363,7 @@ export default function DieRegistry() {
       .filter(s => inScope(s.line_name))                                    // scope ก่อน filter อิสระเสมอ
       .filter(s => !filterLine || s.line_name === filterLine)
       .filter(s => !filterKind || (filterKind === KIND_NONE ? !s.kind : s.kind === filterKind))
-      .filter(s => !q || [s.part_no, s.part_name, s.model, s.set_code, s.mat_no]
+      .filter(s => !q || [s.part_no, s.part_name, s.model, s.set_code, s.mat_no, s.mat_no_2]
         .some(v => (v || '').toLowerCase().includes(q))
         || (diesBySet[s.id] || []).some(d => (d.machine_no || '').toLowerCase().includes(q)))
       .map(s => ({ ...s, members: diesBySet[s.id] || [], issues: issuesOf(s) }))
@@ -351,8 +433,9 @@ export default function DieRegistry() {
       line_name: f.line_name || null,
       kind: f.kind || null,   // null = ยังไม่ระบุ (ห้ามเดาเป็นค่าใดค่าหนึ่ง)
       op_total: numOrNull(f.op_total),
-      pieces_per_stroke: numOrNull(f.pieces_per_stroke) ?? 1,
+      pieces_per_stroke: numOrNull(f.pieces_per_stroke),   // null = ยังไม่รู้ (ห้าม ?? 1 — งานคู่ = 2)
       mat_no: f.mat_no?.trim() || null,
+      mat_no_2: f.mat_no_2?.trim() || null,   // null = ชุดนี้ทำพาร์ทเดียว
       note: f.note?.trim() || null,
       is_active: f.is_active !== false,
     };
@@ -456,6 +539,30 @@ export default function DieRegistry() {
       )}
 
       {tab === 'registry' && <>
+      {/* filter bar — มาตรฐาน FilterBar (UI-STANDARD 2026-09-24) · ไลน์ = ชื่อเครื่องปั๊มจากแม่พิมพ์ (ไม่ใช่ production_lines) จึงไม่ใช้ LineSelect */}
+      <FilterBar>
+        <select value={filterLine} onChange={e => setFilterLine(e.target.value)}>
+          <option value="">{ALL.line}</option>
+          {dieLineNames.map(n => <option key={n} value={n}>{n}</option>)}
+        </select>
+        <select value={filterKind} onChange={e => setFilterKind(e.target.value)}>
+          <option value="">{allOf('รูปแบบชุด')}</option>
+          <option value={KIND_NONE}>— ยังไม่ระบุ ({stat.noKind}) —</option>
+          {setKinds.map(k => <option key={k.key} value={k.key}>{k.label}{k.is_active ? '' : ' (ปิดใช้)'}</option>)}
+        </select>
+        <SearchInput value={search} onChange={setSearch} fields="พาร์ท / ชื่อชุด / MAT / เลขแม่พิมพ์" />
+        <span className="spacer" />
+        <span className="filter-count">แสดง {rows.length} ชุด</span>
+        {canEdit && (
+          <button onClick={() => setEditSet({ ...emptySet, line_name: filterLine || '' })} style={{ ...saveBtnStyle, padding: '0 14px' }}>
+            + เพิ่มชุด
+          </button>
+        )}
+      </FilterBar>
+
+      {/* 🔴 การ์ดสรุป/แถบเตือน = **เนื้อหา** ต้องอยู่ใต้แถบกรอง (UI-STANDARD §2.1 ลำดับตายตัว:
+          ชื่อหน้า → แท็บ → แถบกรอง → เนื้อหา) — ย้ายลงมา 20/10 · ข้อยกเว้นมีแค่ <ReadOnlyNote>
+          และตัวเลขในการ์ดก็เปลี่ยนตามตัวกรอง ⇒ อ่านจากใต้แถบกรองตรงกว่า */}
       {/* สรุป */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
         {[
@@ -519,26 +626,6 @@ export default function DieRegistry() {
         </div>
       )}
 
-      {/* filter bar — มาตรฐาน FilterBar (UI-STANDARD 2026-09-24) · ไลน์ = ชื่อเครื่องปั๊มจากแม่พิมพ์ (ไม่ใช่ production_lines) จึงไม่ใช้ LineSelect */}
-      <FilterBar>
-        <select value={filterLine} onChange={e => setFilterLine(e.target.value)}>
-          <option value="">{ALL.line}</option>
-          {dieLineNames.map(n => <option key={n} value={n}>{n}</option>)}
-        </select>
-        <select value={filterKind} onChange={e => setFilterKind(e.target.value)}>
-          <option value="">{allOf('รูปแบบชุด')}</option>
-          <option value={KIND_NONE}>— ยังไม่ระบุ ({stat.noKind}) —</option>
-          {setKinds.map(k => <option key={k.key} value={k.key}>{k.label}{k.is_active ? '' : ' (ปิดใช้)'}</option>)}
-        </select>
-        <SearchInput value={search} onChange={setSearch} fields="พาร์ท / ชื่อชุด / MAT / เลขแม่พิมพ์" />
-        <span className="spacer" />
-        <span className="filter-count">แสดง {rows.length} ชุด</span>
-        {canEdit && (
-          <button onClick={() => setEditSet({ ...emptySet, line_name: filterLine || '' })} style={{ ...saveBtnStyle, padding: '0 14px' }}>
-            + เพิ่มชุด
-          </button>
-        )}
-      </FilterBar>
 
       {rows.length === 0 && (
         <div style={{ padding: 28, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
@@ -571,7 +658,7 @@ export default function DieRegistry() {
                       </div>
                       <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 2 }}>
                         พาร์ท {s.part_no || <Blank />}
-                        {' · '}MAT {s.mat_no || <Blank />}
+                        {' · '}MAT {dieSetMats(s).join(' + ') || <Blank />}
                         {s.model && <> · รุ่น {s.model}</>}
                       </div>
                     </div>
@@ -582,12 +669,19 @@ export default function DieRegistry() {
                     <span style={{ fontSize: 11.5, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
                       {s.members.length} ตัว{s.op_total ? ` / ${s.op_total} OP` : ''}
                     </span>
-                    {s.pieces_per_stroke > 1 && (
+                    {/* 🔴 "ยังไม่รู้" ต้องเห็นต่างจาก "1 ชิ้น" — เดิมโชว์เฉพาะ >1 ⇒ 2 กรณีนี้หน้าตาเหมือนกันเป๊ะ
+                           ทั้งที่กรณีแรกแปลว่า PM แม่พิมพ์ยังคิดเป็น shot ไม่ได้ */}
+                    {s.pieces_per_stroke == null ? (
+                      <span style={{ fontSize: 11, fontWeight: 700, color: '#f59e0b', whiteSpace: 'nowrap' }}
+                        title="ยังไม่รู้ว่า 1 stroke ได้กี่ชิ้น — PM แม่พิมพ์จะนับเป็น shot ไม่ได้จนกว่าจะกรอก">
+                        ยังไม่ระบุ ชิ้น/stroke
+                      </span>
+                    ) : s.pieces_per_stroke > 1 ? (
                       <span style={{ fontSize: 11, fontWeight: 700, color: '#22c55e', whiteSpace: 'nowrap' }}
                         title="1 stroke ได้กี่ชิ้น — งานคู่ LH/RH ปั๊มครั้งเดียวได้ 2 ชิ้น">
                         {s.pieces_per_stroke} ชิ้น/stroke
                       </span>
-                    )}
+                    ) : null}
                     {s.issues.length > 0 && (
                       <span style={{ fontSize: 11, fontWeight: 700, color: '#f59e0b', whiteSpace: 'nowrap' }}>
                         ⚠ {s.issues.length}
@@ -666,6 +760,8 @@ export default function DieRegistry() {
           SimpleMasterPanel ยืนยันก่อนปิดใช้/ลบเอง (UI-CONVENTIONS §5.4) */}
       <CollapseCard id="die_press_lines" title="⚙️ กลุ่มเครื่องปั๊ม / ไลน์ของแม่พิมพ์ (ทะเบียน)" count={pressLines.length} defaultOpen={false} storePrefix="die_registry">
         <SimpleMasterPanel client={supabaseDR} table="die_press_lines" keyCol="code" canManage={canEdit}
+          /* ด่านนับปลายทางก่อนลบ — die_sets.line_name + machines.line_name (เฉพาะ equipment_kind=die) */
+          onBeforeDelete={masterDeleteGuard(supabaseDR, 'die_press_lines')}
           stampCol="updated_by_name" stampName={fullName} onChanged={invalidateDiePressLines}
           help="ชื่อในทะเบียนนี้คือค่าที่เก็บใน die_sets.line_name / machines.line_name (text) — แยกจากทะเบียนไลน์ผลิต (production_lines) ตั้งใจไม่ให้ชื่อเครื่องปั๊มโผล่ใน dropdown ไลน์ผลิตทุกหน้า · ปิดใช้ = ไม่โผล่ให้เลือกใหม่ (ชุดเก่ายังอ่านออก)"
           fields={[
@@ -683,6 +779,7 @@ export default function DieRegistry() {
           mo_item_type = ชนิดอุปกรณ์ในใบแจ้งซ่อม **ชนะรูปแบบชุด** (HDF: ชุดเดียวมี HYDRO/BENDING/PREFORM — คอมเมนต์ทีม DIE 06/10) */}
       <CollapseCard id="die_op_types" title="⚙️ ประเภท OP ของแม่พิมพ์ (ทะเบียน)" count={opTypes.length} defaultOpen={false} storePrefix="die_registry">
         <SimpleMasterPanel client={supabaseDR} table="die_op_types" keyCol="key" canManage={canEdit}
+          onBeforeDelete={masterDeleteGuard(supabaseDR, 'die_op_types', r => r?.label)}
           keyFrom={dieSetKindKey}
           stampCol="updated_by_name" stampName={fullName}
           onChanged={() => { invalidateDieSetKinds(); load(); }}
@@ -695,6 +792,7 @@ export default function DieRegistry() {
 
       <CollapseCard id="die_set_kinds" title="⚙️ รูปแบบชุดแม่พิมพ์ (ทะเบียน)" count={setKinds.filter(k => k.is_active).length} defaultOpen={false} storePrefix="die_registry">
         <SimpleMasterPanel client={supabaseDR} table="die_set_kinds" keyCol="key" canManage={canEdit}
+          onBeforeDelete={masterDeleteGuard(supabaseDR, 'die_set_kinds', r => r?.label)}
           keyFrom={dieSetKindKey}
           stampCol="updated_by_name" stampName={fullName}
           onChanged={() => { invalidateDieSetKinds(); setKindsVer(v => v + 1); }}
@@ -737,6 +835,14 @@ export default function DieRegistry() {
                   ...(res.opt ? { part_name: res.name || f.part_name || '', part_no: res.p_no || f.part_no || '' } : null),
                 }))} inputStyle={{ background: 'var(--bg)' }} />
             </Field>
+            {/* 🔨 MAT ตัวที่ 2 — gang die ปั๊มทีเดียวได้ RH+LH (14/10 · คำสั่ง user)
+                เดิมช่องเดียว ⇒ ล็อตของอีกฝั่งหาแม่พิมพ์ไม่เจอ (ProdLotPlanner) = ไม่รู้ความสูง = คิดเวลาเปลี่ยนรุ่นไม่ได้
+                ⚠️ ช่องนี้ตอบ "แม่พิมพ์ชุดนี้ทำพาร์ทอะไร" — ไม่ใช่ที่ตั้งว่าใครคู่กับใคร (นั่นคือ Product Master) */}
+            <Field label="MAT ตัวที่ 2 (งานคู่ RH/LH)" hint="ว่าง = ชุดนี้ทำพาร์ทเดียว">
+              <ProductSelect value={editSet.mat_no_2 || ''} lines={editSet.line_name ? [editSet.line_name] : undefined} history={dieMatHist}
+                onChange={res => setEditSet(f => ({ ...f, mat_no_2: res.mat_no || '' }))} inputStyle={{ background: 'var(--bg)' }} />
+              <SetPairNote set={editSet} products={products} role={role} onDone={load} />
+            </Field>
             <Field label="รุ่น / Model">
               <input style={inputStyle} value={editSet.model || ''}
                 onChange={e => setEditSet(f => ({ ...f, model: e.target.value }))} />
@@ -765,9 +871,18 @@ export default function DieRegistry() {
               <input style={inputStyle} type="number" min="1" value={editSet.op_total ?? ''}
                 onChange={e => setEditSet(f => ({ ...f, op_total: e.target.value }))} />
             </Field>
-            <Field label="ชิ้น / stroke" hint="งานคู่ LH+RH = 2">
-              <input style={inputStyle} type="number" min="1" value={editSet.pieces_per_stroke ?? 1}
+            <Field label="ชิ้น / stroke" hint="งานคู่ LH+RH = 2 · ว่าง = ยังไม่รู้ ระบบจะไม่เดาให้">
+              <input style={inputStyle} type="number" min="1" value={editSet.pieces_per_stroke ?? ''}
                 onChange={e => setEditSet(f => ({ ...f, pieces_per_stroke: e.target.value }))} />
+              {/* 🔴 ลง MAT ไว้ 2 ตัว = ปั๊มทีเดียวได้อย่างน้อย 2 ชิ้น — แต่ "เสนอ" เท่านั้น คนกดยืนยันเอง
+                  ห้ามเติมให้อัตโนมัติ: บางชุดเป็น 2-out ของทั้งคู่ = 4 ชิ้น/จังหวะ ระบบไม่มีทางรู้ */}
+              {suggestPps(editSet) != null && !String(editSet.pieces_per_stroke ?? '').trim() && (
+                <button type="button" onClick={() => setEditSet(f => ({ ...f, pieces_per_stroke: String(suggestPps(f)) }))}
+                  style={{ marginTop: 4, fontSize: 11, padding: '2px 8px', borderRadius: 6, cursor: 'pointer',
+                    background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border)' }}>
+                  ลง MAT ไว้ {suggestPps(editSet)} ตัว — ใช้ {suggestPps(editSet)} ชิ้น/stroke?
+                </button>
+              )}
             </Field>
           </div>
           <div style={{ marginTop: 10 }}>

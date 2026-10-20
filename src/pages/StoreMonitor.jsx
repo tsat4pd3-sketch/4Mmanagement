@@ -8,6 +8,7 @@ import { scopedLineNames } from '../utils/sectionScope';
 import { visibleInterval } from '../utils/usePolling';
 import { RATE } from '../utils/refreshRates';
 import { useLiveBoard } from '../utils/useLiveBoard';
+import { urlParam, urlPick } from '../utils/urlInit';
 import { splitBySide, sideMatches } from '../utils/logisticSide';
 import SideFilterChips from '../components/SideFilterChips';
 import PageHeader from '../components/PageHeader';
@@ -43,10 +44,10 @@ export default function StoreMonitor() {
   const [findings, setFindings] = useState([]);
   const [loadErr, setLoadErr] = useState('');
   const [cutMsg, setCutMsg] = useState('');   // ชนเพดานแถว — ข้อมูลมาแล้วแต่ไม่ครบ (คนละเรื่องกับโหลดพัง)
-  const [lineFilter, setLineFilter] = useState('');
-  const [kindFilter, setKindFilter] = useState('all');   // all | shortage | over
+  const [lineFilter, setLineFilter] = useState(() => urlParam('line') || '');   // ?line= / ?kind= / ?side= (จอวนหน้า · 15/10)
+  const [kindFilter, setKindFilter] = useState(() => urlPick('kind', ['all', 'shortage', 'over'], 'all'));   // all | shortage | over
   // ฝั่งงาน — '' ทั้งหมด (default: จอเฝ้าระวังต้องเห็นภาพรวมก่อน) · inbound Store · outbound Warehouse+Delivery
-  const [sideFilter, setSideFilter] = useState('');
+  const [sideFilter, setSideFilter] = useState(() => urlPick('side', ['inbound', 'outbound', 'unknown'], ''));
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
@@ -130,27 +131,12 @@ export default function StoreMonitor() {
       <PageHeader title="เฝ้าระวังสต๊อก & รอบส่ง (Abnormality Monitor)" icon="🚨"
         sub="จับความผิดปกติแล้วสรุปเป็นผล 🟥 จะขาด (Shortage) / 🟧 ล้น (Over stock) — แนวคิดจาก TEI-TEI ของ Toyota · เงื่อนไขตรวจอยู่ในวิว v_store_abnormal ที่เดียว (ตัวแจ้งเตือนใช้ตัวเดียวกัน)" />
 
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
-        {[
-          { icon: '🟥', label: 'จะขาด (Shortage)', value: nShort, warn: nShort > 0, tone: '#ef4444' },
-          { icon: '🟧', label: 'ล้น (Over stock)', value: nOver, warn: nOver > 0, tone: '#f59e0b' },
-          { icon: '⏰', label: 'รอบส่งเลยเวลา', value: nLate, warn: nLate > 0, tone: '#ef4444' },
-          { icon: '📊', label: 'รายการทั้งหมด', value: scoped.length, tone: 'var(--text)' },
-        ].map(c => (
-          <div key={c.label} style={{ flex: '1 1 170px', background: 'var(--bg2)', border: `1px solid ${c.warn ? 'rgba(239,68,68,0.4)' : 'var(--border)'}`, borderRadius: 8, padding: '8px 12px' }}>
-            <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{c.icon} {c.label}</div>
-            <div style={{ fontSize: 22, fontWeight: 900, color: c.warn && c.value > 0 ? c.tone : 'var(--text)', fontFamily: 'var(--font-display)' }}>{c.value}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* หน้านี้อยู่ทั้งหมวดขาเข้า-ขาออก (คาบ 2 ฝั่งจริง) → กรองฝั่งได้ แต่ default เห็นภาพรวมทั้งหมด */}
-      <div style={{ marginBottom: 12 }}>
-        <SideFilterChips value={sideFilter} onChange={setSideFilter} counts={sideCounts} unit="เรื่อง" />
-      </div>
 
       {/* UI-STANDARD 2026-09-24 — ไลน์ (ขอบเขต) ก่อน → ชนิดเรื่อง (Segmented) */}
       <FilterBar style={{ marginBottom: 14 }}>
+        {/* 🔴 แถบกรองต้องเป็น **แถบเดียว** (UI-STANDARD §3.1) — เดิมชิปฝั่งขาเข้า-ขาออกเป็นแถวแยก
+            เหนือแถบกรอง = ตัวกรอง 2 ชั้น · ย้ายเข้ามาเป็น child 20/10 (ต้นแบบ: /line-stock) */}
+        <SideFilterChips value={sideFilter} onChange={setSideFilter} counts={sideCounts} unit="เรื่อง" />
         {lines.length > 0 && (
           /* ไลน์ที่มีเรื่องเตือน — จัดลำดับชั้นตามผัง (แม่→ลูก) ส่วนคลังที่ไม่ใช่ไลน์ผลิตแยก optgroup
              scope ถูกกรองที่ `scoped` แล้ว จึงไม่ต้องส่ง role/sections ซ้ำ */
@@ -163,6 +149,22 @@ export default function StoreMonitor() {
         <Segmented value={kindFilter} onChange={setKindFilter} label="ชนิดความผิดปกติ"
           options={[{ value: 'all', label: ALL.type }, { value: 'shortage', label: '🟥 จะขาด' }, { value: 'over', label: '🟧 ล้น' }]} />
       </FilterBar>
+
+      {/* 🔴 การ์ดนับ = **เนื้อหา** ต้องอยู่ใต้แถบกรอง (UI-STANDARD §2.1) — ย้ายลงมา 20/10
+          และตัวเลขพวกนี้นับจาก `scoped` ที่ผ่านตัวกรองแล้ว ⇒ อยู่ใต้แถบกรองอ่านตรงกว่า */}
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
+        {[
+          { icon: '🟥', label: 'จะขาด (Shortage)', value: nShort, warn: nShort > 0, tone: '#ef4444' },
+          { icon: '🟧', label: 'ล้น (Over stock)', value: nOver, warn: nOver > 0, tone: '#f59e0b' },
+          { icon: '⏰', label: 'รอบส่งเลยเวลา', value: nLate, warn: nLate > 0, tone: '#ef4444' },
+          { icon: '📊', label: 'รายการทั้งหมด', value: scoped.length, tone: 'var(--text)' },
+        ].map(c => (
+          <div key={c.label} style={{ flex: '1 1 140px', background: 'var(--bg2)', border: `1px solid ${c.warn ? 'rgba(239,68,68,0.4)' : 'var(--border)'}`, borderRadius: 8, padding: '8px 12px' }}>
+            <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{c.icon} {c.label}</div>
+            <div style={{ fontSize: 22, fontWeight: 900, color: c.warn && c.value > 0 ? c.tone : 'var(--text)', fontFamily: 'var(--font-display)' }}>{c.value}</div>
+          </div>
+        ))}
+      </div>
 
       {loadErr && (
         <div style={{ ...card, borderColor: 'rgba(239,68,68,0.5)', background: 'rgba(239,68,68,0.08)', padding: '10px 14px', marginBottom: 12, fontSize: 13, color: '#ef4444', fontWeight: 700 }}>
