@@ -1096,3 +1096,8 @@ body.has-mnav { --mnav-h: calc(56px + env(safe-area-inset-bottom, 0px)); padding
   .sr-items tfoot tr { display: flex; gap: 12px; padding: 8px 10px; border-radius: 10px; background: var(--bg2); font-size: 13px; }
   .sr-items tfoot td { padding: 0 !important; border: 0 !important; }
 }
+
+/* 🗺️ ผังรวมโรงงาน — แถวชิปบอกข้อมูลใต้แท็บ (20/10): บรรทัดเดียวเสมอบนจอคอม/TV ⇒ เปลี่ยนแท็บแล้วผังไม่ขยับ/ไม่เด้ง
+   ชิปยาวหดเป็น … (ข้อความเต็มอยู่ใน title) · ปุ่มเครื่องมือ (.fm-keep) ไม่หด · มือถือไม่ติด class นี้ = wrap ตามเดิม */
+.fm-chips > :not(.fm-keep) { min-width: 0; flex-shrink: 1; overflow: hidden; text-overflow: ellipsis; }
+.fm-chips > .fm-keep { flex-shrink: 0; }
