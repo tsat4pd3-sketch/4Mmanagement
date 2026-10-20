@@ -123,7 +123,7 @@ export default function Operator() {
   const editAllSections = !isActionSeeded('employees', 'edit_all_sections')
     || can('employees', 'edit_all_sections', role);
   const homeSection = userSection || scopeSecs[0] || null;
-  /* 🔐 ชั้นที่ 3 ของ **ทะเบียนนิยามสกิล** (`skill_definitions.scope_section`) — audit §13.1 · 20/10
+  /* 🔐 ชั้นที่ 3 ของ **ทะเบียนนิยามสกิล** (`skill_definitions.scope_section`) — audit §14 · 20/10
      เดิมมีแค่ชั้น ② (`skills:edit`) ⇒ หัวหน้า PD1 แก้/ลบนิยามสกิลของ PD4 ได้ และ "ลบสกิล"
      ลบคะแนนพนักงานทุกคน + requirement ทุกจุดงานของส่วนงานนั้นไปด้วย (กู้ไม่ได้)
      · วัดจาก audit log จริง: ผู้แก้ทุกคนแตะเฉพาะสกิลของส่วนงานตัวเอง (หรือสกิลกลาง) ⇒ ด่านนี้ไม่กระทบงานจริง

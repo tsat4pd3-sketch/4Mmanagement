@@ -5525,10 +5525,22 @@ test('🗑️ ทะเบียนข้อความ (SimpleMasterPanel) ต
    GOR 20058498 เลิกเปิดล็อตแล้ว แต่ระบบยังถือว่าเป็นพาร์ทล็อต → ยอดผลิตไม่เข้าคลัง 323 ใบ และจอเทียบคลังผิดที่ */
 test('🛡️ lot-mats-from-rules — lotMats มาจาก lotMatsOf(rules) ไม่ใช่ child_lot_requests', () => {
   const bad = [];
-  for (const f of ['src/components/LinePartCallPanel.jsx', 'src/pages/HeijunkaKanban.jsx']) {
+  for (const f of ['src/components/LinePartCallPanel.jsx', 'src/pages/HeijunkaKanban.jsx',
+                   'src/components/PartLevelCoveragePanel.jsx']) {
     const src = stripComments(readFileSync(join(ROOT, f), 'utf8'));
     if (/from\('child_lot_requests'\)\.select\('child_mat_no'\)/.test(src)) bad.push(`${f} (ถาม child_lot_requests หา lotMats)`);
     if (!/lotMats:\s*lotMatsOf\(/.test(src)) bad.push(`${f} (lotMats ไม่ได้มาจาก lotMatsOf)`);
+  }
+  /* 🔴 20/10 — จอที่เอากฎรับเข้าไปป้อน partRefStock ต้อง select `mode` มาด้วย
+     ไม่งั้น `inflowDestOf` มองกฎโหมด lot เป็นกฎปลายทางปกติ ⇒ ตีประเภทพาร์ท/คลังผิดเงียบๆ
+     (เจอ 4 จุดรอบเดียว 20/10: PlatingBoard · MonitoringUpload · Monitoring ×2) */
+  for (const f of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const src = stripComments(readFileSync(f, 'utf8'));
+    if (!/from\s+['"][^'"]*partRefStock['"]/.test(src)) continue;
+    for (const m of src.matchAll(/from\('stock_inflow_rules'\)\.select\((['"])([^'"]*)\1\)/g)) {
+      const cols = m[2];
+      if (/match_type/.test(cols) && !/\bmode\b/.test(cols)) bad.push(`${relative(ROOT, f)} (select stock_inflow_rules ไม่มี mode)`);
+    }
   }
   const pr = stripComments(readFileSync(join(ROOT, 'src/utils/partRefStock.js'), 'utf8'));
   if (!/mode === 'lot'\) continue/.test(pr)) bad.push('partRefStock.js inflowDestOf (กฎโหมด lot ต้องไม่ร่วมตัดสินคลัง)');
@@ -5850,7 +5862,7 @@ test('🛡️ scope-layer-closed-screens — 4 จอที่ปิดรูช
     + '        เรียก **ในฟังก์ชันที่เขียน DB** + เขียนเหตุผลบนจอ (writeBlockText/teamRowLockNote) ห้ามซ่อนปุ่มเงียบ\n');
 });
 
-/* ── 🔐 ชั้นที่ ③ ของ **ทะเบียน 2 ตัวที่มีคอลัมน์หน่วยงานอยู่แล้ว** (20/10 · audit §13.1) ─────────
+/* ── 🔐 ชั้นที่ ③ ของ **ทะเบียน 2 ตัวที่มีคอลัมน์หน่วยงานอยู่แล้ว** (20/10 · audit §14) ─────────
    ต่างจากด่าน `plant-registry-needs-perm-key` ข้างบน (ทะเบียนของกลางที่ไม่มีคอลัมน์หน่วยงาน
    ⇒ คีย์สิทธิ์เป็นด่านเดียวที่มีได้) — 2 ตารางนี้**บอกเจ้าของได้** จึงต้องเช็คขอบเขตจริง:
      · `dr_products.line_name` — CT คือฐานของ %P ทุกกะ · `is_active=false` = ไลน์เขาเปิดงานไม่ได้
@@ -5907,4 +5919,30 @@ test('🛡️ row-scope-dr-products-skills — ทุกทางเขียน
     + '         CT/โหมดลงยอด/ปิดใช้งานสินค้าของไลน์อื่น = %P ทั้งกะเขาเพี้ยน · ลบสกิล = คะแนนพนักงานหายทั้งส่วนงาน\n'
     + '         ฝั่ง DR ไม่มี RLS เลย ⇒ จอคือด่านเดียว · ปิดทางเดียวไม่พอ ต้องปิดทุกทางที่เขียนตารางนั้น\n'
     + '   แก้: canWriteLine/canWriteUnit (utils/writeScope.js) เรียกในฟังก์ชันที่เขียน DB + writeBlockText บนจอ\n');
+});
+
+/* ── 🧭 จุดอ้างอิงของ `audit/stdsweep.mjs` (§2.1 ลำดับแนวตั้ง) ห้ามหาย — 2026-10-20 ───────
+   ตัวตรวจลำดับวัดจาก "ก้อนหัวเพจ" (`data-ph-root`) และยกเว้นของที่ติดป้ายไว้
+   (`data-ro-note` / `data-page-note` / `data-subtab` / `data-subpanel`)
+   🔴 ถอดป้ายออกจากคอมโพเนนต์กลาง = ตัวตรวจถอยไปวัดจาก `h1` ⇒ คำอธิบายใต้ชื่อหน้าถูกนับเป็น
+      "ของแทรก" ทุกหน้า (รอบ 20/10 รายงานเกินจริง 19 มุมมอง เสียเวลาไล่ของที่ไม่ผิด)
+   ⇒ ด่านนี้ล็อกแค่ 2 ป้ายที่อยู่ในคอมโพเนนต์กลาง (ป้ายรายหน้าเป็นดุลพินิจ ตรวจด้วย stdsweep เอง) */
+test('stdsweep anchors — PageHeader/ReadOnlyNote ต้องคงป้ายจุดอ้างอิงไว้', () => {
+  const bad = [];
+  const read = (rel) => readFileSync(join(ROOT, rel), 'utf8');
+  if (!/data-ph-root\s*=/.test(read('src/components/PageHeader.jsx')))
+    bad.push('src/components/PageHeader.jsx (หาย data-ph-root)');
+  if (!/data-ro-note\s*=/.test(read('src/components/ReadOnlyNote.jsx')))
+    bad.push('src/components/ReadOnlyNote.jsx (หาย data-ro-note)');
+  const sweep = read('audit/stdsweep.mjs');
+  /* ดูที่ "ตัวเลือกที่เรียกใช้จริง" ไม่ใช่ทั้งไฟล์ — ไม่งั้นคอมเมนต์อธิบายป้ายทำให้ด่านผ่านเอง */
+  const sel = (sweep.match(/closest\('([^']*data-ph-root[^']*)'\)/) || [])[1] || '';
+  const noteSel = (sweep.match(/querySelectorAll\('(\[data-ro-note\][^']*)'\)/) || [])[1] || '';
+  for (const k of ['data-ph-root', 'data-ro-note', 'data-page-note', 'data-subtab', 'data-subpanel'])
+    if (!sel.includes(k)) bad.push(`audit/stdsweep.mjs (gapWhat ไม่ยกเว้น ${k})`);
+  for (const k of ['data-ro-note', 'data-page-note', 'data-subtab', 'data-subpanel'])
+    if (!noteSel.includes(k)) bad.push(`audit/stdsweep.mjs (จุดวัดระยะไม่นับ ${k})`);
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n'
+    + '   ทำไม: ตัวตรวจลำดับ §2.1 ใช้ป้ายพวกนี้เป็นจุดอ้างอิง/ข้อยกเว้น — หายแล้วมันจะร้องหมาป่าทั้งระบบ\n'
+    + '   แก้: คืนป้ายกลับ (docs/UI-STANDARD.md §2.1 เพิ่มเติม) ห้ามแก้ด้วยการผ่อนเกณฑ์ตัวตรวจ\n');
 });

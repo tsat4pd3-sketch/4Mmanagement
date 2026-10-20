@@ -7966,7 +7966,7 @@ function ProductSetup({ role }) {
   const [items, setItems]     = useState([]);
   const [lines, setLines]     = useState([]);
   /* 🔐 ชั้นที่ 3 — แผงนี้แก้ `dr_products` ชุดเดียวกับ /products (CT · โหมดลงยอด · ลบทิ้ง)
-     ⇒ ต้องมีด่านเดียวกัน ไม่งั้นปิดทาง /products แล้วยังเข้าทางนี้ได้ (audit §13.1 · 20/10)
+     ⇒ ต้องมีด่านเดียวกัน ไม่งั้นปิดทาง /products แล้วยังเข้าทางนี้ได้ (audit §14 · 20/10)
      🔴 สินค้าที่ยังไม่ผูกไลน์ = ของกลาง ยังแก้ได้ตาม default (เพิ่มสินค้าใหม่ที่ยังไม่รู้ไลน์) */
   const { section: homeSection, sections: scopeSecs, allUnits, respCostCenters, scopeIdx } = useContext(UserContext);
   const pCtx = { role, section: homeSection, sections: scopeSecs, allUnits, respCostCenters, scopeIdx };

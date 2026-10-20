@@ -509,6 +509,36 @@ export function setActiveDwellSec(sec) {
   activeDwellSec = Number.isFinite(n) && n > 0 ? n : null;
 }
 export const activeDwellSecOf = () => activeDwellSec;
+
+/* ── 📖 หน้าย่อยต้องดูครบก่อนจอวนต่อ (20/10 · user "หน้าย่อยยังเปลี่ยนไม่หมด มันเปลี่ยนหน้าใหญ่แล้ว") ──
+   เดิมจอวนนับแค่วินาทีที่ตั้งต่อหน้า (OBEYA 15 วิ) แต่บอร์ด KPI แบ่ง 4 หน้าย่อย × ≥12 วิ ⇒ เห็นแค่หน้าย่อยแรก
+   ⇒ แถบหน้าย่อยทุกตัว (`<BoardPager>` · `<TvPagerBar>`) ติด `data-tv-subpage="หน้า/ทั้งหมด"`
+   แล้วตัววนรอจนทุกแถบ "ถึงหน้าสุดท้ายและค้างไว้ ≥ SUBPAGE_HOLD_SEC" · เพดานรอเพิ่ม SUBPAGE_MAX_EXTRA_SEC (แถบค้าง/ไม่หมุน = ไม่ติดตาย) */
+export const SUBPAGE_ATTR = 'data-tv-subpage';
+export const SUBPAGE_HOLD_SEC = BOARD_FLIP_MIN_SEC;
+export const SUBPAGE_MAX_EXTRA_SEC = 180;
+export function parseSubpage(v) {
+  const m = /^(\d+)\/(\d+)$/.exec(String(v || '').trim());
+  if (!m) return null;
+  const page = Number(m[1]), count = Number(m[2]);
+  return count > 1 && page >= 1 && page <= count ? { page, count } : null;
+}
+/**
+ * @param pagers   [{ page, count }] (page นับจาก 1) ตามลำดับใน DOM · null = อ่านไม่ได้ (ข้าม)
+ * @param lastSeen Map(index → elapsed ตอนเห็นหน้าสุดท้ายครั้งแรก) — ฟังก์ชันนี้เติมให้เอง
+ * @returns {{ ready: boolean, waiting: { page, count } | null }}
+ */
+export function subpageGate(pagers, lastSeen, elapsed, { holdSec = SUBPAGE_HOLD_SEC } = {}) {
+  let waiting = null;
+  (pagers || []).forEach((pg, i) => {
+    if (!pg) return;
+    if (pg.page === pg.count && !lastSeen.has(i)) lastSeen.set(i, elapsed);
+    const seenAt = lastSeen.get(i);
+    const done = seenAt != null && elapsed - seenAt >= holdSec;
+    if (!done && !waiting) waiting = pg;
+  });
+  return { ready: !waiting, waiting };
+}
 export function boardFlipSec(pages, dwellSec = activeDwellSecOf()) {
   const p = Math.floor(Number(pages) || 0);
   if (p < 2) return null;
