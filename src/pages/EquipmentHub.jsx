@@ -84,7 +84,9 @@ function SparePanel({ view }) {
     : (<>
       {/* 🛒 อะไหล่ติด Min → เปิด PR → สั่ง → รับของเข้าสต็อก (14/10 · MTN REQUEST · utils/mtnPurchase.js)
           สิทธิ์ = คนที่รับเข้า/เบิกคลังได้อยู่แล้ว (service หรือ spare_master) — ไม่มีคีย์ใหม่ */}
-      <MtnPrBoard parts={parts} fullName={fullName} canEdit={can('mtn_repair', 'service', role) || can('mtn_repair', 'spare_master', role)} onStockChanged={load} />
+      {/* 🔐 ส่งแกนทีม (ชั้น ③) ลงแผงลูกด้วย — ส่งแค่ `canEdit` = แผงลูกรับของ/ยกเลิก PR ของทีมอื่นได้ (QC audit 20/10) */}
+      <MtnPrBoard parts={parts} fullName={fullName} role={role} myTeams={userTeams}
+        canEdit={can('mtn_repair', 'service', role) || can('mtn_repair', 'spare_master', role)} onStockChanged={load} />
       <SparePartMaster parts={parts} reload={load} fullName={fullName} role={role} myTeams={userTeams} mySection={mySection} />
     </>);
 }

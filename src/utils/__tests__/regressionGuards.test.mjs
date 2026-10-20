@@ -5692,3 +5692,49 @@ test('🛡️ carry-delete-restores-source — ลบใบยกยอดต้
     + '   แก้ยังไง: ลบใบที่มี carry_over_from_session_id → update ต้นทาง (session+prod_no เดิม)\n'
     + '            จาก imported กลับเป็น carry_over ผ่าน checkWriteRows แล้วรีโหลดแบนเนอร์\n');
 });
+
+/* 🛡️ scope-layer-closed-screens — 4 จอที่ปิดรูชั้น ③ รอบ QC audit 20/10 ห้ามถอยกลับ
+   ทั้ง 4 จุดมี "สิทธิ์กดปุ่ม" (ชั้น ②) อยู่แล้ว แต่**ไม่มีด่าน "แถวนี้/หน่วยนี้เป็นของเราไหม"**
+   และ RLS ของตารางปลายทางรู้แค่คีย์สิทธิ์ ไม่รู้ขอบเขต ⇒ `?sec=`/`?scope=` เปิดตรงแล้วเขียนได้
+     · `/manpower-board` ⚙️ — เขียน station_slot_plans / manpower_slot_plans / line_technicians / employee_flex_units ของส่วนงานอื่น
+     · `/line-stock` 📋 ตรวจนับ — เขียน line_stock_transactions (+ approved ทันที) ของไลน์อื่น
+     · `/equipment?tab=spare` 🛒 บอร์ด PR — รับของเข้าสต็อก/ยกเลิกใบของทีมช่างอื่น
+     · แผงตัวเลขฐาน KPI — ทางนำเข้า Excel ไม่เช็คสิทธิ์เลย (ด่านอยู่ในโมดัลชั้นเดียว) */
+test('🛡️ scope-layer-closed-screens — 4 จอที่ปิดรูชั้น ③ ต้องยังเช็คในฟังก์ชันที่เขียนจริง', () => {
+  const bad = [];
+  const read = (rel) => stripComments(readFileSync(join(ROOT, rel), 'utf8'));
+
+  /* ⚙️ manpower: หน้าแม่ต้องส่งผลด่านลงแผงลูก (ส่งแค่ "เปิดได้ไหม" = แผงลูกเขียนข้ามหน่วยได้) */
+  const mb = read('src/pages/ManpowerBoard.jsx');
+  if (!/secWrite=\{canWriteUnit\(/.test(mb))
+    bad.push('src/pages/ManpowerBoard.jsx (ไม่ได้ส่ง secWrite=canWriteUnit(...) ลง ManpowerBoardSetup)');
+  const mbs = read('src/components/ManpowerBoardSetup.jsx');
+  const blocks = (mbs.match(/if \(blocked\(\)\) return;/g) || []).length;
+  if (blocks < 7) bad.push(`src/components/ManpowerBoardSetup.jsx (ด่าน blocked() เหลือ ${blocks} จุด — ต้องมีครบทุกฟังก์ชันที่เขียน DB)`);
+
+  /* 📋 ตรวจนับสต็อก: ด่านต้องอยู่ใน save()/postMissingCuts() ไม่ใช่แค่กรองรายการใน <LineSelect> */
+  const scs = read('src/components/StockCountSheet.jsx');
+  if ((scs.match(/canWriteLine\(/g) || []).length < 2)
+    bad.push('src/components/StockCountSheet.jsx (ต้องเรียก canWriteLine ทั้งตอนบันทึกผลนับและตอนหักสต็อกย้อนหลัง)');
+
+  /* 🛒 PR: แกน "ทีม" (ฝั่งช่าง) — ปุ่มซ่อนอย่างเดียวไม่ใช่ด่าน ต้องเช็คซ้ำใน do* ทุกตัว */
+  const pur = read('src/components/MtnPurchase.jsx');
+  if (!/teamRowOwner\(/.test(pur)) bad.push('src/components/MtnPurchase.jsx (บอร์ด PR ไม่มีด่านเจ้าของทีม)');
+  const owns = (pur.match(/if \(ownBlock\(\)\) return;/g) || []).length;
+  if (owns < 4) bad.push(`src/components/MtnPurchase.jsx (ownBlock() เหลือ ${owns} จุด — ต้องครบ 4: เลข PR · สั่งแล้ว · รับของ · ยกเลิก)`);
+  const eq = read('src/pages/EquipmentHub.jsx');
+  if (!/<MtnPrBoard[^>]*myTeams=/s.test(eq))
+    bad.push('src/pages/EquipmentHub.jsx (ไม่ได้ส่ง myTeams ให้ MtnPrBoard — แผงลูกตัดสินเจ้าของไม่ได้)');
+
+  /* 💰 ตัวเลขฐาน KPI: ทางนำเข้าต้องเช็คเอง ไม่พึ่งโมดัล */
+  const kb = read('src/components/KpiBaseInputsPanel.jsx');
+  const many = kb.slice(kb.indexOf('const saveMany'), kb.indexOf('const saveMany') + 2200);
+  if (!/if \(!canManage\)/.test(many)) bad.push('src/components/KpiBaseInputsPanel.jsx (saveMany ไม่เช็ค canManage)');
+  if (!/lvl === 'plant' && !plant/.test(many)) bad.push("src/components/KpiBaseInputsPanel.jsx (saveMany ไม่กันตัวแปรระดับ plant ตอนยืนที่ขอบเขตหน่วย)");
+
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n'
+    + '   ทำไม: "กดปุ่มเป็นไหม" (can) ≠ "หน่วย/ทีม/ไลน์นี้ของเราไหม" — RLS ปลายทางไม่รู้ขอบเขต\n'
+    + '         ⇒ เปิด ?sec=/?scope= ของหน่วยอื่นแล้วเขียนได้จริง (ตั้งช่องตำแหน่ง · เฟิร์มยอดคลัง · รับของเข้าสต็อกทีมอื่น)\n'
+    + '   แก้: canWriteUnit/canWriteLine (utils/writeScope.js) · teamRowOwner (utils/mtnTeams.js)\n'
+    + '        เรียก **ในฟังก์ชันที่เขียน DB** + เขียนเหตุผลบนจอ (writeBlockText/teamRowLockNote) ห้ามซ่อนปุ่มเงียบ\n');
+});

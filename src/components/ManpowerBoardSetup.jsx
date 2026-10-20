@@ -8,6 +8,7 @@ import { lineFamilyOf } from '../utils/manpowerBoard';
 import { positionLabel } from '../utils/positions';
 import PersonSelect from './PersonSelect';
 import { DeleteButton } from './IconButton';
+import { writeBlockText } from '../utils/writeScope';
 
 /* ═══════════════════════════════════════════════════════════════════════════════════════
    ⚙️ ตั้งค่า Manpower Control Board ของส่วนงาน (2026-10-06 · คำสั่ง user "ทำส่วนที่ยังไม่ได้ทำต่อ")
@@ -24,8 +25,15 @@ import { DeleteButton } from './IconButton';
 const TEAMS = ['A', 'B', 'C', ''];          // '' = คอลัมน์ "ไม่ระบุทีม" บนบอร์ด
 const teamText = (t) => (t ? `ทีม ${t}` : 'ไม่ระบุทีม');
 
-export default function ManpowerBoardSetup({ section, nodes, lines, employees, slotPlans, lineTechs, stations = [], stationPlans = [], flexUnits = [], onChanged, onClose }) {
+export default function ManpowerBoardSetup({ section, nodes, lines, employees, slotPlans, lineTechs, stations = [], stationPlans = [], flexUnits = [], secWrite = { ok: true }, onChanged, onClose }) {
   const [busy, setBusy] = useState(false);
+  /* 🔐 ชั้น ③ จากหน้าแม่ (`canWriteUnit`) — **เช็คซ้ำต้นทุกฟังก์ชันที่เขียน DB**
+     ไม่ใช่แค่ซ่อนปุ่ม: `?sec=` เปิดส่วนงานอื่นตรงได้ และ RLS ฝั่ง Main รู้แค่คีย์สิทธิ์ ไม่รู้ขอบเขต */
+  const blocked = () => {
+    if (secWrite?.ok) return false;
+    toast.error(writeBlockText(secWrite, { what: `การตั้งค่าบอร์ดของ ${section?.name || 'ส่วนงานนี้'}` }));
+    return true;
+  };
   const [draft, setDraft] = useState({});    // key `${node}|${team}` → ข้อความในช่อง (ยังไม่บันทึก)
 
   const depts = useMemo(() => nodes.filter(n => n.kind === 'department' && n.parent_id === section.id).sort(orgNodeCompare), [nodes, section]);
@@ -47,6 +55,7 @@ export default function ManpowerBoardSetup({ section, nodes, lines, employees, s
 
   // 📍 จำนวนคนต่อกะของจุดงาน — ว่าง = ไม่นับจุดนี้ · 0 = จุดนี้ไม่ต้องมีคนประจำ
   const saveStation = async (stationId, raw) => {
+    if (blocked()) return;
     const v = String(raw ?? '').trim();
     const cur = needOf.get(String(stationId));
     setBusy(true);
@@ -72,6 +81,7 @@ export default function ManpowerBoardSetup({ section, nodes, lines, employees, s
   };
   // ตั้ง "จุดละ 1 คน/กะ" ให้ทุกจุดของไลน์ที่ยังไม่ได้ตั้ง (ไม่ทับค่าที่ตั้งไว้แล้ว)
   const fillLine = async (l) => {
+    if (blocked()) return;
     const rows = stationsOf(l).filter(st => !needOf.has(String(st.id))).map(st => ({ station_id: st.id, per_shift: 1 }));
     if (!rows.length) { toast.info('ทุกจุดของไลน์นี้ตั้งไว้แล้ว'); return; }
     setBusy(true);
@@ -86,6 +96,7 @@ export default function ManpowerBoardSetup({ section, nodes, lines, employees, s
 
 
   const saveSlot = async (nodeId, team) => {
+    if (blocked()) return;
     const key = `${nodeId}|${team}`;
     const raw = String(draft[key] ?? '').trim();
     const cur = planOf(nodeId, team);
@@ -111,6 +122,7 @@ export default function ManpowerBoardSetup({ section, nodes, lines, employees, s
   };
 
   const addTech = async (lineId, emp) => {
+    if (blocked()) return;
     if (!emp?.employee_id) return;
     if (lineTechs.some(t => t.line_id === lineId && t.employee_id === emp.employee_id)) { toast.info('ผูกไว้แล้ว'); return; }
     setBusy(true);
@@ -122,6 +134,7 @@ export default function ManpowerBoardSetup({ section, nodes, lines, employees, s
     } finally { setBusy(false); }
   };
   const removeTech = async (row) => {
+    if (blocked()) return;
     const e = empById.get(row.employee_id);
     if (!window.confirm(`เอา ${e?.name || 'ช่างคนนี้'} ออกจากช่างประจำไลน์?`)) return;
     setBusy(true);
@@ -137,6 +150,7 @@ export default function ManpowerBoardSetup({ section, nodes, lines, employees, s
   /* 🏃 คนวิ่งข้ามแผนก — ผูก "คน × หน่วยที่ไปช่วย" · บ้านจริง (employees.org_node_id) ไม่ขยับ
      🔴 ห้ามเสนอ/ทำการย้ายสังกัดให้แทน — cost center ผูกบ้านจริง ย้ายแล้วค่าแรงไปลงผิดหน่วย */
   const addFlex = async (nodeId, emp) => {
+    if (blocked()) return;
     if (!emp?.employee_id) return;
     if (flexUnits.some(f => f.org_node_id === nodeId && f.employee_id === emp.employee_id)) { toast.info('ผูกไว้แล้ว'); return; }
     const home = empById.get(emp.employee_id);
@@ -150,6 +164,7 @@ export default function ManpowerBoardSetup({ section, nodes, lines, employees, s
     } finally { setBusy(false); }
   };
   const removeFlex = async (row) => {
+    if (blocked()) return;
     const e = empById.get(row.employee_id);
     if (!window.confirm(`เอา ${e?.name || 'คนนี้'} ออกจากคนวิ่งข้ามแผนก?\n(สังกัดจริงและ cost center ไม่เปลี่ยนอยู่แล้ว)`)) return;
     setBusy(true);
@@ -173,6 +188,14 @@ export default function ManpowerBoardSetup({ section, nodes, lines, employees, s
           <button type="button" className="tbtn" onClick={onClose} title="ปิด"
             style={{ height: 30, padding: '0 12px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer' }}>✕ ปิด</button>
         </div>
+        {/* 🔒 นอกขอบเขตที่แก้ได้ = เขียนบอกตั้งแต่เปิดแผง **ห้ามซ่อนเงียบ** (กฎความซื่อสัตย์ของจอ)
+            ยังเปิดดูได้ตามเดิม — แค่บันทึกไม่ได้ (ทุกฟังก์ชันเขียนมีด่าน `blocked()` ซ้ำอีกชั้น) */}
+        {!secWrite?.ok && (
+          <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 8, fontSize: 12.5,
+            background: 'var(--card)', border: '1px solid var(--amber)', color: 'var(--amber)' }}>
+            🔒 {writeBlockText(secWrite, { what: `การตั้งค่าบอร์ดของ ${section?.name || 'ส่วนงานนี้'}` })} — ดูได้ แต่บันทึกไม่ได้
+          </div>
+        )}
 
         <section style={{ marginBottom: 18 }}>
           <div style={{ fontWeight: 800, marginBottom: 4 }}>1. จำนวนช่องตำแหน่งต่อทีม</div>
