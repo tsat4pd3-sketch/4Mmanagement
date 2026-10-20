@@ -5562,6 +5562,65 @@ test('🛡️ break-anchor-needs-shift-end — จุดที่กรอบ �
     + '            ยังไม่รู้เวลาเลิกกะ = อย่าเดา ให้กรองแถว shift_end ออกแล้วชูธงบอกจอ\n');
 });
 
+/* ── 🏭 ข้อยกเว้นเวลาพัก "รายไลน์" ต้องมีทางเข้าทางเดียว (2026-10-20) ─────────────────
+   ที่มา: feedback หน้างาน *"บางไลน์เค้าทำ5สก่อนเลิกงานแค่ 10นาที หรือ5นาทีก็มี"*
+   จุดคิดเวลาพักกระจาย 15 จุด / 21 จอ ⇒ เลือกทางให้สูตร OEE อ่าน **ทะเบียนกลาง** เอง
+   (`utils/breakLineRules.js` — มี `session.line_name` อยู่แล้ว จอไม่ต้องไล่ส่ง prop)
+   ⇒ ด่านนี้กันของที่ทำให้ฟีเจอร์ "ตายเงียบ" หรือ "นับพักผิด" โดยที่ build ยังผ่าน    */
+test('🛡️ break-line-rules-single-entry — ข้อยกเว้นเวลาพักรายไลน์ต้องมีทางเข้าทางเดียว', () => {
+  const bad = [];
+  const oee  = stripComments(readFileSync(join(ROOT, 'src/utils/oee.js'), 'utf8'));
+  const rules = stripComments(readFileSync(join(ROOT, 'src/utils/breakLineRules.js'), 'utf8'));
+  const masters = stripComments(readFileSync(join(ROOT, 'src/utils/oeeMasters.js'), 'utf8'));
+
+  /* ① `breakIntervalsIn` ต้องถอยไปอ่านทะเบียนกลางเมื่อผู้เรียกไม่ส่ง `lineRules`
+        ถอดบรรทัดนี้ = ทุกจอกลับไปใช้ค่ากลาง เงียบสนิท (เทสหน่วยที่ส่ง lineRules เองยังผ่านหมด) */
+  if (!/applyBreakLineRules\(\s*applicable\s*,\s*lineRules\s*\?\?\s*breakLineRuleIndexSync\(\)/.test(oee))
+    bad.push('src/utils/oee.js — breakIntervalsIn ต้องเรียก applyBreakLineRules(applicable, lineRules ?? breakLineRuleIndexSync(), lineName)');
+
+  /* ② 🔴 `isOt` ต้องตัดสิน **ก่อน** ทับค่ารายไลน์ — ไลน์ที่ตั้งพักโอเป็น 0 แปลว่า
+        "ไลน์นี้ไม่พักรอบนั้น" ไม่ใช่ "ไลน์นี้ไม่ได้ทำโอ" · สลับลำดับ = ปลุก `no_ot` กลับมา = หักพักซ้ำ */
+  const iOt = oee.indexOf('const isOt = applicable.some(');
+  const iApply = oee.indexOf('applyBreakLineRules(applicable');
+  if (iOt < 0 || iApply < 0) bad.push('src/utils/oee.js — หาบรรทัด isOt / applyBreakLineRules ไม่เจอ (เปลี่ยนโครงแล้ว? อัพเดทด่านนี้)');
+  else if (iOt > iApply) bad.push('src/utils/oee.js — isOt ต้องคำนวณก่อน applyBreakLineRules (ค่ากลางชนะ) ห้ามสลับลำดับ');
+
+  /* ③ การทับค่า + การไล่สายไลน์แม่-ลูก ต้องอยู่ใน 2 ไฟล์นี้เท่านั้น — หน้าไหนทำเองจะ drift */
+  const OWNERS = new Set(['src/utils/oee.js', 'src/utils/breakLineRules.js', 'src/utils/oeeMasters.js']);
+  for (const full of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const r = full.slice(ROOT.length).replace(/\\/g, '/');   // ROOT ลงท้ายด้วย '/' อยู่แล้ว
+    if (OWNERS.has(r)) continue;
+    const code = stripComments(readFileSync(full, 'utf8'));
+    if (/\bapplyBreakLineRules\s*\(/.test(code))
+      bad.push(`${r} — ห้ามเรียก applyBreakLineRules เอง (ทับค่าได้ที่ breakIntervalsIn ที่เดียว)`);
+    if (/\bsetBreakLineRuleIndex\s*\(/.test(code))
+      bad.push(`${r} — ห้ามตั้งทะเบียนกลางเอง ใช้ primeBreakRuleIndex() ใน utils/oeeMasters.js`);
+    /* ไล่สายแม่-ลูกของ "กฎเวลาพัก" เองในหน้า = มีกฎ 2 ชุด ⇒ จอตั้งค่าโชว์คนละเรื่องกับที่คิด %A/%P
+       (จับเฉพาะไฟล์ที่แตะ breakLineRules จริง — `parent_line_name` เฉยๆ เป็นเรื่องปกติของหลายหน้า) */
+    if (/from '[^']*breakLineRules'/.test(code) && /getAncestorNames\s*\(/.test(code))
+      bad.push(`${r} — ห้ามไล่สายไลน์แม่-ลูกของกฎเวลาพักเองในหน้า (ใช้ breakRuleFollowers/buildBreakLineRuleIndex)`);
+  }
+
+  /* ④ ค่าว่างห้ามกลายเป็น 0 — `Number(null)` = 0 ⇒ "ไม่ได้กรอก" จะลบพักของไลน์นั้นทิ้งเงียบๆ */
+  if (!/raw === null \|\| raw === undefined \|\| raw === ''/.test(rules))
+    bad.push("src/utils/breakLineRules.js — ruleDurationOf ต้องปฏิเสธ null/undefined/'' ก่อนแปลงเป็นเลข (Number(null) = 0)");
+
+  /* ⑤ ทะเบียนกลางต้องถูกปลุกจริง — ทั้งตอนโหลดนโยบายพัก และตอนเปิดแอป */
+  if (!/primeBreakRuleIndex\(\);/.test(masters))
+    bad.push('src/utils/oeeMasters.js — loadBreakPolicies() ต้องปลุก primeBreakRuleIndex()');
+  const app = stripComments(readFileSync(join(ROOT, 'src/App.jsx'), 'utf8'));
+  if (!/primeBreakRuleIndex\(\)/.test(app))
+    bad.push('src/App.jsx — ต้องปลุก primeBreakRuleIndex() (จอ OEE บางจอคิวรี break_policies ตรงๆ)');
+
+  assert.deepEqual(bad, [],
+    '\n\n❌ ข้อยกเว้นเวลาพัก "รายไลน์" จะเพี้ยน/ตายเงียบ:\n'
+    + bad.map(b => '   • ' + b).join('\n') + '\n'
+    + '   ทำไมสำคัญ: ไลน์ที่ตั้ง 5ส. 10 นาที ถ้าระบบกลับไปหัก 20 นาที = ฐานเวลาของ %A/%P\n'
+    + '              ผิดทุกกะ โดยที่จอดูปกติและ build ผ่าน — หาไม่เจอจนกว่าจะมีคนทักจากหน้างาน\n'
+    + '   เจ้าของกฎ: src/utils/breakLineRules.js (ไล่สายแม่-ลูก + ทะเบียนกลาง)\n'
+    + '              src/utils/oee.js  (จุดทับค่าจุดเดียว — ใน breakIntervalsIn)\n');
+});
+
 /* ── 📥 ลบใบที่ "ยกยอดมาจากกะก่อน" ต้องคืนยอดค้างให้ต้นทาง (2026-10-20) ───────────
    ตอนกดรับยอด ระบบมาร์คใบต้นทางเป็น `imported` (= ถูกรับไปแล้ว) ⇒ ลบใบปลายทางทิ้ง
    = ต้นทางค้าง `imported` ตลอดกาล · แบนเนอร์ "รับยอดค้าง" ไม่กลับมา · **งานหายถาวร

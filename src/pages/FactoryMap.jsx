@@ -883,6 +883,7 @@ export default function FactoryMap({ setupMode = false }) {
           policies: breaks || [], startMs: anchor, endMs: Math.min(nowMs, capMs),
           workDate, shift: s.shift, processType: procOfSess,
           shiftEndMs: capMs,   // 🔚 กรอบจบที่ "ตอนนี้" ระหว่างกะ — พักท้ายกะต้องยึด capMs ไม่ใช่ปลายกรอบ
+          lineName: s.line_name,   // 🏭 ข้อยกเว้นเวลาพักรายไลน์ (ทะเบียนกลาง · 20/10)
         });
         availMin -= brkIvWin.reduce((a, [x, y]) => a + (y - x) / 60000, 0);
         /* หักหยุดตามแผน — ⚠️ ต้อง clamp กับหน้าต่าง [anchor, min(now, capMs)] ก่อน
@@ -940,7 +941,7 @@ export default function FactoryMap({ setupMode = false }) {
             policies: breaks || [],
             startMs: new Date(`${shiftStartDate(workDate, s.start_time.slice(0, 5), s.shift)}T${s.start_time.slice(0, 5)}:00`).getTime(),
             endMs: new Date(`${shiftStartDate(workDate, s.start_time.slice(0, 5), s.shift)}T${s.start_time.slice(0, 5)}:00`).getTime() + (s.shift_min || 570) * 60000,
-            workDate, shift: s.shift,
+            workDate, shift: s.shift, lineName: s.line_name,   // 🏭 ข้อยกเว้นเวลาพักรายไลน์ (ทะเบียนกลาง · 20/10)
           })
         : [];
       /* ไลน์เครื่องขนานบันทึก downtime รายเครื่อง ⇒ หารด้วยจำนวนเลนก่อนหักจากเวลากะ (oee.js §3.2)

@@ -69,7 +69,8 @@ import { liveChannel } from '../utils/liveChannel';
 import { LIVE } from '../utils/refreshRates';
 import { coalesce } from '../utils/liveRefresh';
 import { cachedMaster, mrows } from '../utils/masterCache';
-import { loadBreakPolicies } from '../utils/oeeMasters';
+import { loadBreakPolicies, primeBreakRuleIndex } from '../utils/oeeMasters';
+import { breakRuleFollowers, ruleDurationOf, BREAK_RULE_MAX } from '../utils/breakLineRules';   // 🏭 ข้อยกเว้นเวลาพักรายไลน์ — กฎอยู่ที่นั่น ห้ามคิดเองในหน้า
 import { invalidateTable } from '../utils/masterInvalidate';
 import { checkWrite, checkWriteRows } from '../utils/dbWrite';
 /* ⌨️ เครื่องสแกนส่งคีย์เหมือนคนพิมพ์ ⇒ แป้นค้างภาษาไทย = เปิดใบขยะได้จริง (เคสจริง 20/10) */
@@ -1559,6 +1560,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     return SHIFT_MIN - policyBreakOverlapMin({
       policies: breakPolicies, startMs, endMs: startMs + SHIFT_MIN * 60000,
       workDate: selSession.work_date, shift: selSession.shift, processType: sessionProcessType(),
+      lineName: selSession.line_name,   // 🏭 ข้อยกเว้นเวลาพักรายไลน์ (ทะเบียนกลาง · 20/10)
     });
   };
 
@@ -2292,6 +2294,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       workDate: selSession?.work_date || (openedAt ? workDate(openedAt) : null),
       shift: sessionShift,
       processType,
+      lineName: selSession?.line_name ?? null,   // 🏭 ข้อยกเว้นเวลาพักรายไลน์ (ทะเบียนกลาง · 20/10)
     });
   const ivMin = (iv) => iv.reduce((sum, [a, b]) => sum + (b - a) / 60000, 0);
 
@@ -6355,10 +6358,12 @@ function HistoryTab({ role }) {
   // ทำให้ %P รายชิ้น + OEE จริง ในแท็บประวัติ ไม่ตรงกับหน้าอื่น (รวมเป็นตัวเดียว 2026-08-05)
   /* 🔚 `shiftEndMs` = ปลายกะจริง — จำเป็นเพราะกรอบที่ส่งเข้ามาบ่อยครั้งคือ "ช่วงที่พาร์ทวิ่ง"
      ไม่ใช่ทั้งกะ ⇒ พักที่ผูกปลายกะ (5ส.) จะไปเกาะปลายช่วงของแต่ละพาร์ท = หักพักซ้ำ */
-  const histBreakIv = (startMs, endMs, workDateStr, shift, processType = null, shiftEndMs = null) =>
-    breakIntervalsIn({ policies: histBreaks, startMs, endMs, workDate: workDateStr, shift, processType, shiftEndMs });
-  const histBreakOverlapMin = (startMs, endMs, workDateStr, shift, processType = null, shiftEndMs = null) =>
-    histBreakIv(startMs, endMs, workDateStr, shift, processType, shiftEndMs).reduce((s2, [a, b]) => s2 + (b - a) / 60000, 0);
+  /* 🏭 `lineName` = ข้อยกเว้นเวลาพักรายไลน์ (ทะเบียนกลาง · 20/10) — แท็บประวัติดูได้ทีละหลายไลน์
+     ⇒ ต้องส่งไลน์ของ **กะแถวนั้น** ไม่ใช่ไลน์ที่เลือกอยู่บนจอ */
+  const histBreakIv = (startMs, endMs, workDateStr, shift, processType = null, shiftEndMs = null, lineName = null) =>
+    breakIntervalsIn({ policies: histBreaks, startMs, endMs, workDate: workDateStr, shift, processType, shiftEndMs, lineName });
+  const histBreakOverlapMin = (startMs, endMs, workDateStr, shift, processType = null, shiftEndMs = null, lineName = null) =>
+    histBreakIv(startMs, endMs, workDateStr, shift, processType, shiftEndMs, lineName).reduce((s2, [a, b]) => s2 + (b - a) / 60000, 0);
 
 
   /* 🚫 ทำกะเป็นโมฆะ — ทางเลือกที่ไม่ทำลายประวัติ แทนการ `delete` (คำสั่ง user 08/10)
@@ -6701,7 +6706,7 @@ function HistoryTab({ role }) {
                     const shiftStartMs = s.start_time ? new Date(`${shiftStartDate(s.work_date, s.start_time.slice(0, 5), s.shift)}T${s.start_time.slice(0, 5)}:00`).getTime() : null;
                     let shiftEndMs = s.end_time ? new Date(`${s.work_date}T${s.end_time.slice(0, 5)}:00`).getTime() : null;
                     if (shiftStartMs && shiftEndMs && shiftEndMs <= shiftStartMs) shiftEndMs += 86400000;
-                    const brkIvS = shiftStartMs && shiftEndMs ? histBreakIv(shiftStartMs, shiftEndMs, s.work_date, s.shift, null, shiftEndMs) : [];
+                    const brkIvS = shiftStartMs && shiftEndMs ? histBreakIv(shiftStartMs, shiftEndMs, s.work_date, s.shift, null, shiftEndMs, s.line_name) : [];
                     const breakMin = brkIvS.reduce((a, [x, y]) => a + (y - x) / 60000, 0);
                     // หยุดในแผนที่ทับช่วงพัก ถูกกันออกจากฐานไปแล้วรอบหนึ่ง — ห้ามหักซ้ำ (utils/oee §3.1)
                     const plannedDtMin = dts.filter(d => d.dr_downtime_types?.category === 'planned')
@@ -6769,7 +6774,7 @@ function HistoryTab({ role }) {
                         winLabel = `${fmtT(winStart)}–${fmtT(winEnd)}`;
                         if (ctSec > 0) {
                           // 🔚 กรอบคือช่วงที่พาร์ทวิ่ง — พักท้ายกะต้องยึด "ปลายกะ" ไม่ใช่ปลายช่วงของพาร์ท
-                          const brkIvP = histBreakIv(winStart, winEnd, s.work_date, s.shift, null, sFrame?.endMs ?? null);
+                          const brkIvP = histBreakIv(winStart, winEnd, s.work_date, s.shift, null, sFrame?.endMs ?? null, s.line_name);
                           const runMin = Math.max(0, (winEnd - winStart) / 60000
                             - histDtOverlapMin(winStart, winEnd, dts, brkIvP)
                             - brkIvP.reduce((a2, [x, y]) => a2 + (y - x) / 60000, 0));
@@ -7755,18 +7760,168 @@ function DefectTypeSetup({ role }) {
   );
 }
 
+/* ── 🏭 ข้อยกเว้นเวลาพัก "รายไลน์" (`break_line_rules` · 20/10) ───────────────────────
+   feedback หน้างาน: *"บางไลน์เค้าทำ5สก่อนเลิกงานแค่ 10นาที หรือ5นาทีก็มี"*
+   · ค่ากลางของนโยบายยังเป็นตัวตั้ง — ที่นี่ตั้ง **เฉพาะไลน์ที่ต่าง**
+   · ตั้งที่ไลน์แม่ = ไลน์ลูกได้ตามกันหมด (กฎไล่สายอยู่ `utils/breakLineRules.js` ที่เดียว)
+   · 0 นาที = ไลน์นี้ไม่มีพักรายการนี้ — ต้องเขียนบนจอให้ชัด ไม่ใช่ปล่อยให้ดูเหมือนค่าว่าง */
+function BreakLineRules({ policy, lines, canEdit, onClose }) {
+  const [rows, setRows] = useState(null);      // null = ยังโหลด · [] = ไม่มีข้อยกเว้นจริงๆ
+  const [err, setErr] = useState(null);        // 🔴 โหลดไม่ได้ ≠ "ไม่มีข้อยกเว้น" — ต้องเขียนบนจอ
+  const [addLine, setAddLine] = useState('');
+  const [addMin, setAddMin] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    const { data, error } = await supabaseDR.from('break_line_rules')
+      .select('id, line_name, duration_min').eq('policy_id', policy.id).order('line_name');
+    if (error) { setErr(error.message); setRows([]); return; }
+    setErr(null); setRows(data || []);
+  }, [policy.id]);
+  useEffect(() => { load(); }, [load]);
+
+  /* ใครได้ตามใคร — ใช้ตัวกลางตัวเดียวกับที่สูตร OEE ใช้ (ห้ามไล่สายเองในหน้า) */
+  const followers = useMemo(
+    () => breakRuleFollowers((rows || []).map(r => ({ ...r, policy_id: policy.id })), lines, policy.id),
+    [rows, lines, policy.id]);
+
+  const centralMin = Number(policy.duration_min) || 0;
+  const afterSave = () => { invalidateTable('break_line_rules'); primeBreakRuleIndex(); load(); };
+
+  const handleAdd = async () => {
+    const ln = String(addLine || '').trim();
+    if (!ln) { toast.error('เลือกไลน์ก่อน'); return; }
+    const d = ruleDurationOf({ duration_min: addMin });
+    if (d === null) { toast.error(`กรอกนาที 0–${BREAK_RULE_MAX} (0 = ไลน์นี้ไม่มีพักรายการนี้)`); return; }
+    setBusy(true);
+    /* upsert บนคีย์ (policy_id, line_name) = unique index คอลัมน์ล้วน (ไม่ใช่ expression/partial) */
+    const ok = checkWrite(await supabaseDR.from('break_line_rules')
+      .upsert({ policy_id: policy.id, line_name: ln, duration_min: d, updated_at: new Date().toISOString() },
+              { onConflict: 'policy_id,line_name' }), 'บันทึกข้อยกเว้นเวลาพักรายไลน์');
+    setBusy(false);
+    if (!ok) return;
+    toast.success(`${ln} → ${d} นาที`);
+    setAddLine(''); setAddMin('');
+    afterSave();
+  };
+
+  const handleRemove = async (r) => {
+    if (!window.confirm(`เอาข้อยกเว้นของ ${r.line_name} ออก?\nไลน์นี้ (และไลน์ลูกที่ได้ตามมัน) จะกลับไปใช้ค่ากลาง ${centralMin} นาที`)) return;
+    const ok = checkWriteRows(await supabaseDR.from('break_line_rules').delete().eq('id', r.id).select('id'),
+      'ลบข้อยกเว้นเวลาพักรายไลน์');
+    if (!ok) return;
+    afterSave();
+  };
+
+  const chip = { fontSize: 11, padding: '2px 7px', borderRadius: 20, fontWeight: 700 };
+  return (
+    <div className="overlay" style={{ zIndex: 2100 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 22, width: 'min(96vw,560px)', maxHeight: '88vh', overflowY: 'auto' }}>
+        <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>🏭 ไลน์ไหนพักไม่เท่าค่ากลาง</div>
+        <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4, lineHeight: 1.6 }}>
+          <strong style={{ color: 'var(--text2)' }}>{policy.name_th}</strong> · ค่ากลาง{' '}
+          <strong style={{ color: '#22c55e' }}>{centralMin} นาที</strong> ใช้กับทุกไลน์ที่ไม่ได้ตั้งไว้ที่นี่
+          <br />💡 ตั้งที่ <strong style={{ color: 'var(--text2)' }}>ไลน์แม่</strong> ครั้งเดียว ไลน์ลูกใต้มันได้ตามกันหมด —
+          ถ้าไลน์ลูกตั้งเองไว้ ตัวเองชนะแม่
+        </div>
+
+        {err && (
+          <div style={{ marginTop: 12, padding: '9px 12px', borderRadius: 8, background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.35)', fontSize: 12, color: '#fca5a5' }}>
+            ⚠️ อ่านข้อยกเว้นรายไลน์ไม่สำเร็จ — <strong>ยังบอกไม่ได้ว่ามีไลน์ไหนตั้งไว้บ้าง</strong> ({err})
+          </div>
+        )}
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 14 }}>
+          {rows === null && <div style={{ textAlign: 'center', padding: 20, color: 'var(--muted)', fontSize: 13 }}>กำลังโหลด…</div>}
+          {rows !== null && rows.length === 0 && !err && (
+            <div style={{ textAlign: 'center', padding: 24, color: 'var(--muted)', fontSize: 13 }}>
+              ยังไม่มีไลน์ไหนตั้งต่างจากค่ากลาง — ทุกไลน์พัก {centralMin} นาที
+            </div>
+          )}
+          {(rows || []).map(r => {
+            const kids = followers.get(String(r.line_name).trim()) || [];
+            const known = lines.some(l => l.name === r.line_name);
+            return (
+              <div key={r.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 13px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 9 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>{r.line_name}</span>
+                    <span style={{ ...chip, background: 'rgba(34,197,94,0.15)', color: '#4ade80' }}>
+                      {r.duration_min === 0 ? 'ไม่มีพักรายการนี้' : `${r.duration_min} นาที`}
+                    </span>
+                    {!known && (
+                      <span style={{ ...chip, background: 'rgba(239,68,68,0.15)', color: '#f87171' }}>
+                        ⚠ ไม่มีไลน์นี้ในทะเบียน
+                      </span>
+                    )}
+                  </div>
+                  {kids.length > 0 && (
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.5 }}>
+                      ↳ ไลน์ลูกที่ได้ตามด้วย ({kids.length}): {kids.join(' · ')}
+                    </div>
+                  )}
+                  {!known && (
+                    <div style={{ fontSize: 11, color: '#f87171', marginTop: 4, lineHeight: 1.5 }}>
+                      ชื่อนี้ไม่ตรงทะเบียนไลน์ — <strong>ใช้ได้เฉพาะชื่อตรงตัว ไลน์ลูกไม่ได้ตามมัน</strong> (ไลน์ถูกเปลี่ยนชื่อ/ลบ?)
+                    </div>
+                  )}
+                </div>
+                {canEdit && (
+                  <button className="tbtn" onClick={() => handleRemove(r)}
+                    style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 15, lineHeight: 1 }}>✕</button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {canEdit && (
+          <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 8 }}>+ เพิ่มไลน์ที่พักไม่เท่าค่ากลาง</div>
+            <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 110px auto', gap: 8, alignItems: 'center' }}>
+              <LineSelect lines={lines} value={addLine} onChange={setAddLine} placeholder="— เลือกไลน์ —" style={inputStyle} />
+              <input type="number" min="0" max={BREAK_RULE_MAX} value={addMin} placeholder="นาที"
+                onChange={e => setAddMin(e.target.value)}
+                style={{ ...inputStyle, fontWeight: 800, fontSize: 16, textAlign: 'center' }} />
+              <button onClick={handleAdd} disabled={busy} style={{ ...saveBtnStyle, opacity: busy ? 0.6 : 1 }}>{busy ? '...' : 'เพิ่ม'}</button>
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6, lineHeight: 1.5 }}>
+              ใส่ <strong style={{ color: 'var(--text2)' }}>0</strong> = ไลน์นี้ไม่มีพักรายการนี้เลย ·
+              ไลน์ที่ตั้งไว้แล้ว ใส่ซ้ำได้ = แก้ค่าเดิม
+            </div>
+          </div>
+        )}
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 18 }}>
+          <button onClick={onClose} style={cancelBtnStyle}>ปิด</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── Break Policy Setup ── */
 function BreakPolicySetup({ role }) {
   const canEdit = can('daily_report', 'setup', role);
+  const allLines = useProductionLines();            // ทะเบียนไลน์ (ลำดับชั้น) — ให้ <LineSelect> + การไล่สายแม่-ลูก
   const [items, setItems]   = useState([]);
   const [editing, setEditing] = useState(null);
   const [saving, setSaving] = useState(false);
+  /* 🏭 จำนวนไลน์ที่ตั้งต่างจากค่ากลาง ต่อนโยบาย — อ่านไม่ได้ = ต้องเขียนบนจอ ห้ามโชว์ 0 */
+  const [lineRuleCount, setLineRuleCount] = useState({});
+  const [lineRuleErr, setLineRuleErr] = useState(false);
+  const [rulesFor, setRulesFor] = useState(null);   // นโยบายที่กำลังเปิดแผงข้อยกเว้นรายไลน์
   const emptyForm = { name_th: '', name_en: '', shift: 'both', start_time: '08:00', duration_min: 10, process_type: 'common', ot_scope: 'always', anchor: 'clock', offset_min: 20, sort_order: 0, is_active: true };
   const [form, setForm] = useState(emptyForm);
 
   const load = useCallback(async () => {
     const { data } = await supabaseDR.from('break_policies').select('*').order('sort_order');
     setItems(data || []);
+    const { data: lr, error: lrErr } = await supabaseDR.from('break_line_rules').select('policy_id');
+    if (lrErr) { setLineRuleErr(true); setLineRuleCount({}); return; }   // อ่านไม่ได้ ≠ ไม่มีข้อยกเว้น
+    const by = {};
+    (lr || []).forEach(r => { by[r.policy_id] = (by[r.policy_id] || 0) + 1; });
+    setLineRuleErr(false); setLineRuleCount(by);
   }, []);
   useEffect(() => { load(); }, [load]);
 
@@ -7851,6 +8006,14 @@ function BreakPolicySetup({ role }) {
                 {item.anchor === 'shift_end' && (
                   <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: 'rgba(34,197,94,0.15)', color: '#4ade80', fontWeight: 700 }}>🔚 ท้ายกะ</span>
                 )}
+                {/* 🏭 ไลน์ที่พักไม่เท่าค่ากลาง — อ่านไม่ได้ต้องเขียนบนจอ ห้ามเงียบเป็น "ไม่มี" */}
+                {lineRuleErr
+                  ? <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: 'rgba(239,68,68,0.15)', color: '#f87171', fontWeight: 700 }}>🏭 อ่านข้อยกเว้นรายไลน์ไม่ได้</span>
+                  : lineRuleCount[item.id] > 0 && (
+                      <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: 'rgba(14,165,233,0.15)', color: '#38bdf8', fontWeight: 700 }}>
+                        🏭 {lineRuleCount[item.id]} ไลน์ตั้งเอง
+                      </span>
+                    )}
                 {!item.is_active && <span style={{ fontSize: 11, color: '#ef4444' }}>(ปิดใช้)</span>}
               </div>
               <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 3 }}>
@@ -7859,6 +8022,10 @@ function BreakPolicySetup({ role }) {
                   : <>เริ่ม {(item.start_time || '').slice(0,5)} น. · </>}
                 <strong style={{ color: '#22c55e' }}>{item.duration_min} นาที</strong>
               </div>
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button onClick={() => setRulesFor(item)} title="ตั้งว่าไลน์ไหนพักไม่เท่าค่ากลาง"
+                style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 10px', fontSize: 12, cursor: 'pointer', color: 'var(--text)' }}>🏭 รายไลน์</button>
             </div>
             {canEdit && (
               <div style={{ display: 'flex', gap: 6 }}>
@@ -7869,6 +8036,11 @@ function BreakPolicySetup({ role }) {
           </div>
         ))}
       </div>
+
+      {rulesFor && (
+        <BreakLineRules policy={rulesFor} lines={allLines} canEdit={canEdit}
+          onClose={() => { setRulesFor(null); load(); }} />
+      )}
 
       {editing && (
         <div className="overlay" style={{ zIndex: 2000 }}>
