@@ -1,6 +1,7 @@
 import { Fragment, useState, useEffect, useMemo } from 'react';
 import { supabaseDR } from '../supabaseClient';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
+import { urlBool } from '../utils/urlInit';
 import { sumUsage, dailyRate, usageEta, usageProgress, USAGE_LEVELS, piecesToShots, ppsOf } from '../utils/pmUsage';
 
 /* ══ 📊 ยอดผลิตสะสมรายอุปกรณ์ — แท็บใน /pm-forecast ══════════════════  2026-09-15
@@ -35,7 +36,7 @@ export default function PmUsageBoard({ daily = [], lines = [], plans = [], today
   const [dieById, setDieById] = useState({});
   const [eqLoading, setEqLoading] = useState(true);
   const [open, setOpen] = useState({});      // ไลน์ที่กางอยู่
-  const [onlyWithThreshold, setOnlyWithThreshold] = useState(false);
+  const [onlyWithThreshold, setOnlyWithThreshold] = useState(() => urlBool('fcthr', false));   // ?fcthr= (จอวนหน้า)
 
   /* อุปกรณ์ทั้งหมดที่ผูกกับไลน์ — เครื่องจักร/แม่พิมพ์/จิ๊ก อยู่ตาราง machines เดียวกัน (equipment_kind)
      ⚠️ `.select()` เปล่าบนตารางที่โตได้ = ชนเพดาน 1000 แถวเงียบๆ → จำกัดคอลัมน์ + กรองปิดระวางออก */

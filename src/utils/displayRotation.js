@@ -245,41 +245,58 @@ export function parseDisplayCmd(p, n) {
 const opt = (value, label) => ({ value, label });
 const SHIFT = { key: 'shift', label: 'กะ', kind: 'select', options: [opt('day', '☀️ กะเช้า'), opt('night', '🌙 กะดึก')] };
 const BOARD = { key: 'board', label: 'โหมดจอ TV (ซ่อนหัวเพจ)', kind: 'bool' };
+/* ช่วงเวลาของหน้าที่ใช้ useTimeRange — จอวนหน้าตั้ง from/to ตายตัวไม่ได้ (พรุ่งนี้ล้าสมัย) ⇒ `last` = ย้อนหลัง N วันแบบเลื่อนตามวัน */
+const LAST = { key: 'last', label: 'ช่วงที่ดู (ย้อนหลังจากวันนี้)', kind: 'select', options: [
+  opt('1', 'วันนี้'), opt('7', '7 วัน'), opt('14', '14 วัน'), opt('30', '30 วัน'), opt('60', '60 วัน'), opt('90', '90 วัน'), opt('120', '120 วัน'), opt('365', '1 ปี')] };
+const SCALE = (finest = 'day') => ({ key: 'scale', label: 'แท่งละ', kind: 'select', options: [
+  ...(finest === 'hour' ? [opt('hour', 'ชั่วโมง')] : []), opt('day', 'วัน'), opt('week', 'สัปดาห์'), opt('month', 'เดือน'), opt('year', 'ปี')] });
+/* ผังโรงงาน (FactoryMap) — ใช้ทั้ง /factory-map และผังรวมที่ฝังใน /mtn-layout */
+const FM_METRICS = [
+  opt('health', '🚦 ปกติ/ผิดปกติ'), opt('energy', '⚡ พลังงาน'), opt('productivity', '📦 ยอดผลิต'), opt('oee', '⚙️ OEE'),
+  opt('breakdown', '🔧 Downtime'), opt('ng', '🚫 ของเสีย'), opt('people', '👷 คน & จุดงาน'), opt('pm', '🛠️ PM ช่าง'),
+  opt('am', '🏭 AM'), opt('supply', '🔗 Supply Route')];
+const CSEC = ['10', '15', '20', '30', '45', '60', '90', '120', '180', '300'].map(v => opt(v, `${v} วิ`));
+const FM_MODE = [opt('live', '⚡ Live (วันนี้สด)'), opt('review', '📅 ทบทวนรายวัน')];
+const FM_PANEL = [opt('review', '⚡ สรุปวันนี้'), opt('obeya', '🏛️ OBEYA (สด)'), opt('live', '📊 อันดับ')];
+const DASH_SHIFT = { key: 'shift', label: 'กะ (ตั้ง = ค้างกะนี้ ไม่สลับเองตอน 08:00/20:00)', kind: 'select', options: [opt('all', 'ทุกกะ'), opt('day', '☀️ กะเช้า'), opt('night', '🌙 กะดึก')] };
+const DASH_SCROLL = { key: 'scroll', label: 'เลื่อนเอง (ไม่แบ่งหน้าหมุน)', kind: 'select', options: [opt('1', 'เปิด'), opt('0', 'ปิด')] };
+const LBL = ['0.6', '0.8', '1', '1.2', '1.4', '1.6'].map(v => opt(v, `${Math.round(v * 100)}%`));
 /* 🔴 คีย์ทุกตัวตรวจจากโค้ดหน้านั้นแล้ว (15/10) — อ่านผ่าน useSearchParams / useTabParam หรือ utils/urlInit
    kind: select · bool · section (ชื่อส่วนงาน) · line (ชื่อไลน์) · scope (คีย์ขอบเขตผังองค์กร `section:PD3`/`line_group:…`)
-         · product (MAT ผ่าน ProductSelect) · `showIf` = โชว์ช่องนี้เฉพาะเมื่อคีย์อื่นมีค่าที่กำหนด */
+         · product (MAT ผ่าน ProductSelect) · orgdept (แผนกจากผังองค์กร · `valueAs` 'id'|'name' ตามที่หน้าเทียบ)
+         · `showIf` = โชว์ช่องนี้เฉพาะเมื่อคีย์อื่นมีค่าที่กำหนด */
 export const DISPLAY_PAGE_PARAMS = Object.freeze({
   '/tv': [
     { key: 'dept', label: 'มุมมอง', kind: 'select', options: [
       opt('maintenance', '🔧 ช่างซ่อมบำรุง'), opt('production', '🏭 ฝ่ายผลิต'), opt('store', '📦 สโตร์')] },
     { key: 'sec', label: 'ส่วนงาน', kind: 'section' },
     { key: 'team', label: 'ทีมช่าง', kind: 'select', showIf: { dept: ['', 'maintenance'] }, options: [
-      opt('all', 'ทุกทีม'), opt('maintenance', 'ช่างซ่อมบำรุง'), opt('die_maintenance', 'ซ่อมแม่พิมพ์'), opt('jig_maintenance', 'ซ่อม JIG')] },
+      opt('all', 'ทุกทีม'), opt('maintenance', 'ช่างซ่อมบำรุง'), opt('die_maintenance', 'ซ่อมแม่พิมพ์'), opt('jig_maintenance', 'ซ่อม JIG'), opt('production', '🏭 ทีมผลิต (AM)')] },
     { key: 'sound', label: 'เสียงเตือน', kind: 'select', options: [opt('all', '🔊 ทุกเครื่องหยุด')] },
   ],
   '/factory-map': [
-    { key: 'metric', label: 'มุมมอง (metric)', kind: 'select', options: [
-      opt('health', '🚦 ปกติ/ผิดปกติ'), opt('energy', '⚡ พลังงาน'), opt('productivity', '📦 ยอดผลิต'), opt('oee', '⚙️ OEE'),
-      opt('breakdown', '🔧 Downtime'), opt('ng', '🚫 ของเสีย'), opt('people', '👷 คน & จุดงาน'), opt('pm', '🛠️ PM ช่าง'),
-      opt('am', '🏭 AM'), opt('supply', '🔗 Supply Route')] },
+    { key: 'metric', label: 'มุมมอง (metric)', kind: 'select', options: FM_METRICS },
     { key: 'cycle', label: '🔁 วนมุมมองเอง (เลือกเรื่องที่จะวน)', kind: 'multi', optionsFrom: 'metric' },
-    { key: 'csec', label: 'วินาที/มุมมอง', kind: 'select', showIf: { cycle: '*' }, options: ['10', '15', '20', '30', '45', '60'].map(v => opt(v, `${v} วิ`)) },
+    { key: 'csec', label: 'วินาที/มุมมอง', kind: 'select', showIf: { cycle: '*' }, options: CSEC },
     // ⚡/📅 สวิตช์เดียวคุมผัง + แผงขวา + กล่องที่คลิก (16/10) · ไม่ตั้ง + panel=review = ทบทวน (ลิงก์เดิมไม่เปลี่ยนความหมาย)
-    { key: 'mode', label: 'ช่วงเวลาทั้งหน้า', kind: 'select', options: [opt('live', '⚡ Live (วันนี้สด)'), opt('review', '📅 ทบทวนรายวัน')] },
-    { key: 'panel', label: 'แผงขวา (โหมด Live)', kind: 'select', options: [opt('review', '⚡ สรุปวันนี้'), opt('obeya', '🏛️ OBEYA (สด)'), opt('live', '📊 อันดับ')] },
+    { key: 'mode', label: 'ช่วงเวลาทั้งหน้า', kind: 'select', options: FM_MODE },
+    { key: 'panel', label: 'แผงขวา (โหมด Live)', kind: 'select', options: FM_PANEL },
     { key: 'view', label: 'ผัง', kind: 'select', options: [opt('2d', '2D'), opt('3d', '🧊 3D')] },
     { key: 'tour', label: 'หมุนกล้องอัตโนมัติ (3D)', kind: 'bool', showIf: { view: ['3d'] } },
-    { key: 'lbl', label: 'ขนาดป้าย', kind: 'select', options: ['0.6', '0.8', '1', '1.2', '1.4', '1.6'].map(v => opt(v, `${Math.round(v * 100)}%`)) },
+    { key: 'lbl', label: 'ขนาดป้าย', kind: 'select', options: LBL },
     { key: 'nopanel', label: 'ซ่อนแผงขวา', kind: 'bool' },
     { key: 'support', label: 'โชว์โซนสนับสนุน', kind: 'bool' },
+    { key: 'storyall', label: 'ป๊อปอัปไลน์ แสดงทุกเรื่อง', kind: 'bool' },
   ],
   '/dashboard': [
     { key: 'section', label: 'ส่วนงาน', kind: 'section' },
+    DASH_SHIFT, DASH_SCROLL,
   ],
   // จอคนแยกจาก /dashboard (19/10) · ?line= เปิดผังไลน์+คน (ลิงก์เก่า /dashboard?line= ถูกส่งต่อมาที่นี่)
   '/people-board': [
     { key: 'section', label: 'ส่วนงาน', kind: 'section' },
     { key: 'line', label: 'เปิดผังไลน์', kind: 'line' },
+    DASH_SHIFT, DASH_SCROLL,
   ],
   '/line-oee': [
     { key: 'line', label: 'ไลน์', kind: 'line' },
@@ -289,28 +306,40 @@ export const DISPLAY_PAGE_PARAMS = Object.freeze({
     { key: 'section', label: 'ส่วนงาน', kind: 'section' },
     { key: 'dept', label: 'กลุ่มไลน์ (ไลน์แม่)', kind: 'line' },
     { key: 'line', label: 'ไลน์ย่อย', kind: 'line' },
-    SHIFT,
+    { ...SHIFT, showIf: { tab: ['', 'today', 'trend'] } },
     { key: 'team', label: 'ทีม', kind: 'select', showIf: { tab: ['', 'today'] }, options: [opt('A', 'ทีม A'), opt('B', 'ทีม B'), opt('C', 'ทีม C')] },
-    { key: 'scale', label: 'แท่งละ', kind: 'select', showIf: { tab: ['trend', 'insight'] }, options: [opt('day', 'วัน'), opt('week', 'สัปดาห์'), opt('month', 'เดือน')] },
+    { key: 'unit', label: 'แผนก', kind: 'orgdept', valueAs: 'name', showIf: { tab: ['', 'today'] } },
+    { ...SCALE('day'), showIf: { tab: ['trend', 'insight'] } },
+    { ...LAST, showIf: { tab: ['trend', 'insight'] } },
+    { key: 'auto', label: 'รีเฟรชอัตโนมัติ', kind: 'select', showIf: { tab: ['', 'today'] }, options: [opt('1', 'เปิด'), opt('0', 'ปิด')] },
+    { key: 'cmp', label: 'กางแถบวันนี้เทียบค่าเฉลี่ย', kind: 'bool', showIf: { tab: ['', 'today'] } },
+    { key: 'dtall', label: 'Downtime แสดงทุกสาเหตุ (ไม่ย่อ Top 8)', kind: 'bool', showIf: { tab: ['', 'today'] } },
+    { key: 'planned', label: 'Pareto รวมหยุดตามแผน', kind: 'bool', showIf: { tab: ['trend'] } },
+    { key: 'lean', label: 'แกนวิเคราะห์ Lean', kind: 'select', showIf: { tab: ['insight'] }, options: [opt('six_big_loss', '6 Big Losses (TPM)'), opt('waste_type', '8 Wastes (Lean)')] },
   ],
   '/obeya': [
-    { key: 'tab', label: 'แท็บ', kind: 'select', options: [opt('kpi', '📋 บอร์ด KPI'), opt('sqdcm', '🖥️ จอ SQDCM'), opt('todo', '📌 งานค้าง')] },
+    { key: 'tab', label: 'แท็บ', kind: 'select', options: [opt('kpi', '📋 บอร์ด KPI'), opt('sqdcm', '🖥️ จอ SQDCM'), opt('todo', '📌 งานค้าง'), opt('table', '⚙️ ตั้งค่า/กรอกข้อมูล')] },
     { key: 'scope', label: 'ขอบเขต', kind: 'scope', showIf: { tab: ['', 'kpi', 'sqdcm'] } },
     { key: 'period', label: 'ช่วง', kind: 'select', showIf: { tab: ['sqdcm'] }, options: [opt('week', 'สัปดาห์นี้'), opt('month', 'เดือนนี้'), opt('year', 'ปีนี้')] },
     { ...BOARD, showIf: { tab: ['', 'kpi', 'sqdcm'] } },
     { key: 'yfocus', label: 'โฟกัสช่วงค่าแกน Y', kind: 'bool', showIf: { tab: ['', 'kpi'] } },
+    { key: 'hr', label: 'แผ่นที่สลับ %/ชม. ได้ — เริ่มที่ชั่วโมง', kind: 'bool', showIf: { tab: ['', 'kpi'] } },
     { key: 'dept', label: 'งานค้างของ', kind: 'select', showIf: { tab: ['todo'] }, options: [
       opt('production', '🏭 ฝ่ายผลิต'), opt('maintenance', '🔧 ซ่อมบำรุง'), opt('store', '📦 สโตร์'), opt('qa', '✅ QA')] },
   ],
   '/manpower-board': [
     { key: 'tab', label: 'แท็บ', kind: 'select', options: [
       opt('org', '🧑‍🤝‍🧑 ผังกำลังคน'), opt('layout', '🗺️ ผัง LAYOUT'), opt('fourm', '🚦 ป้าย 4M'), opt('staffing', '📊 แผน vs มาจริง'), opt('history', '📜 ประวัติ')] },
+    { key: 'sec', label: 'ส่วนงาน', kind: 'section' },
+    { key: 'dept', label: 'แผนก', kind: 'orgdept', valueAs: 'id' },
+    { ...LAST, showIf: { tab: ['staffing', 'history'] } },
+    { key: 'lline', label: 'ผังไลน์ที่เปิด (ไม่มีผลในโหมดจอ TV ที่วนผังเอง)', kind: 'line', showIf: { tab: ['layout'] } },
     { key: 'tv', label: 'โหมดจอ TV (แบ่งหน้า วนเอง)', kind: 'select', options: [opt('1', 'เปิด'), opt('0', 'ปิด')] },
   ],
   '/store-monitor': [
     { key: 'line', label: 'ไลน์', kind: 'line' },
     { key: 'kind', label: 'แสดง', kind: 'select', options: [opt('shortage', '🟥 จะขาด'), opt('over', '🟧 ล้น')] },
-    { key: 'side', label: 'ฝั่ง', kind: 'select', options: [opt('inbound', 'Store (ขาเข้า)'), opt('outbound', 'Warehouse & Delivery (ขาออก)')] },
+    { key: 'side', label: 'ฝั่ง', kind: 'select', options: [opt('inbound', 'Store (ขาเข้า)'), opt('outbound', 'Warehouse & Delivery (ขาออก)'), opt('unknown', '❓ ยังไม่ระบุฝั่ง')] },
   ],
   '/heijunka': [
     { key: 'view', label: 'มุมมอง', kind: 'select', options: [
@@ -323,47 +352,101 @@ export const DISPLAY_PAGE_PARAMS = Object.freeze({
     { key: 'fline', label: 'ไลน์', kind: 'line' },
     { key: 'shift', label: 'กะ', kind: 'select', options: [opt('day', '☀️ กะเช้า'), opt('night', '🌙 กะดึก')] },
     { key: 'mat', label: 'กลุ่มพาร์ท', kind: 'select', options: [opt('200', '200 ผลิตเอง'), opt('300', '300 ซื้อ'), opt('500', '500 ซื้อ')] },
+    { key: 'dfmt', label: 'รูปแบบความต้องการวันนี้', kind: 'select', showIf: { view: ['demand'] }, options: [opt('cards', '🎴 การ์ด'), opt('table', '📋 ตาราง')] },
+    { key: 'buy', label: 'ประเภทพาร์ทจัดซื้อ', kind: 'select', showIf: { view: ['', 'unified'], store: ['purchase'] }, options: [opt('3', '🟠 Child ซื้อ (3xxxxxxx)'), opt('5', '🟣 Raw Mat (5xxxxxxx)')] },
+    { key: 'sdone', label: 'รวมงานที่เสร็จแล้ว (ตู้ Kanban)', kind: 'bool', showIf: { view: ['', 'unified'] } },
+    { key: 'nobom', label: 'กางรายชื่อ Product ไม่มี BOM', kind: 'bool' },
   ],
   '/rack-center': [
     { key: 'tab', label: 'แท็บ', kind: 'select', options: [opt('board', '📋 บอร์ดสถานะ'), opt('time', '🕐 บอร์ดเวลา'), opt('sla', '⚙️ SLA')] },
     { key: 'fline', label: 'ไลน์', kind: 'line' },
+    { key: 'done', label: 'แสดงที่รับแล้ว', kind: 'bool' },
   ],
   '/mtn-layout': [
     { key: 'view', label: 'มุมมอง', kind: 'select', options: [opt('overview', 'ผังรวม'), opt('production', 'ผังไลน์ผลิต'), opt('facility', 'โซน facility')] },
     { key: 'zone', label: 'โซน (ชื่อ)', kind: 'text', showIf: { view: ['facility'] } },
-    { key: 'metric', label: 'มุมมองผังรวม', kind: 'select', showIf: { view: ['', 'overview'] }, options: [
-      opt('health', '🚦 ปกติ/ผิดปกติ'), opt('energy', '⚡ พลังงาน'), opt('productivity', '📦 ยอดผลิต')] },
+    { key: 'team', label: 'ทีมช่าง', kind: 'select', showIf: { view: ['production', 'facility'] }, options: [
+      opt('maintenance', 'MTN (ซ่อมบำรุง)'), opt('jig_maintenance', 'JIG MTN'), opt('die_maintenance', 'DIE MTN'), opt('production', 'AM (ผลิตตรวจเอง)')] },
+    { key: 'metric', label: 'มุมมองผังรวม', kind: 'select', showIf: { view: ['', 'overview'] }, options: FM_METRICS },
+    { key: 'cycle', label: '🔁 วนมุมมองเอง', kind: 'multi', optionsFrom: 'metric', showIf: { view: ['', 'overview'] } },
+    { key: 'csec', label: 'วินาที/มุมมอง', kind: 'select', showIf: { cycle: '*' }, options: CSEC },
+    { key: 'mode', label: 'ช่วงเวลาผังรวม', kind: 'select', showIf: { view: ['', 'overview'] }, options: FM_MODE },
+    { key: 'panel', label: 'แผงขวา (โหมด Live)', kind: 'select', showIf: { view: ['', 'overview'] }, options: FM_PANEL },
+    { key: 'map', label: 'ผัง', kind: 'select', showIf: { view: ['', 'overview'] }, options: [opt('2d', '2D'), opt('3d', '🧊 3D')] },
+    { key: 'tour', label: 'หมุนกล้องอัตโนมัติ (3D)', kind: 'bool', showIf: { map: ['3d'] } },
+    { key: 'lbl', label: 'ขนาดป้าย', kind: 'select', showIf: { view: ['', 'overview'] }, options: LBL },
+    { key: 'nopanel', label: 'ซ่อนแผงขวา', kind: 'bool', showIf: { view: ['', 'overview'] } },
+    { key: 'support', label: 'โชว์โซนสนับสนุน', kind: 'bool', showIf: { view: ['', 'overview'] } },
   ],
   '/mtn-analysis': [
     { key: 'tab', label: 'แท็บ', kind: 'select', options: [opt('kpi', '📊 KPI ช่าง'), opt('qc7', '🧪 QC 7 Tools')] },
     { key: 'asset', label: 'ชนิดอุปกรณ์', kind: 'select', showIf: { tab: ['qc7'] }, options: [
       opt('machine', '🏭 เครื่องจักร'), opt('die', '🔨 แม่พิมพ์'), opt('jig', '📐 JIG / Fixture'), opt('other', '❓ ยังแยกไม่ได้')] },
-    { key: 'scale', label: 'แท่งละ', kind: 'select', options: [opt('day', 'วัน'), opt('week', 'สัปดาห์'), opt('month', 'เดือน')] },
+    SCALE('hour'),
+    LAST,
+    { key: 'team', label: 'แผนกช่าง', kind: 'select', showIf: { tab: ['qc7'] }, options: [opt('maintenance', 'MTN (ซ่อมบำรุง)'), opt('jig_maintenance', 'JIG MTN'), opt('die_maintenance', 'DIE MTN'), opt('production', 'AM (ผลิต)')] },
+    { key: 'kline', label: 'ไลน์ (KPI ช่าง)', kind: 'line', showIf: { tab: ['', 'kpi'] } },
+    { key: 'mline', label: 'ไลน์ (ความน่าเชื่อถืออุปกรณ์)', kind: 'line', showIf: { tab: ['', 'kpi'] } },
+    { key: 'mkind', label: 'ชนิดอุปกรณ์ (ความน่าเชื่อถือ)', kind: 'select', showIf: { tab: ['', 'kpi'] }, options: [opt('machine', '🏭 เครื่องจักร'), opt('die', '🔨 แม่พิมพ์'), opt('jig', '🧩 จิ๊ก / ฟิกเจอร์'), opt('facility', '🔧 Facility / Utility'), opt('_unknown', '❔ ไม่อยู่ในทะเบียน')] },
+    { key: 'mmode', label: 'นับแบบ', kind: 'select', showIf: { tab: ['', 'kpi'] }, options: [opt('full', '🔧 มุมเครื่อง (นาทีเต็ม)'), opt('line', '🏭 มุมไลน์ (ถ่วง 1/N)')] },
+    { key: 'idle', label: 'รวมเครื่องที่ไม่เคยเสีย', kind: 'select', showIf: { tab: ['', 'kpi'] }, options: [opt('1', 'เปิด'), opt('0', 'ปิด')] },
   ],
   '/nm-board': [
     { key: 'tv', label: 'โหมดจอ TV (วนโปรเจคเอง)', kind: 'select', options: [opt('1', 'เปิด')] },
     { key: 'cust', label: 'ลูกค้า', kind: 'select', options: ['toyota', 'isuzu', 'mitsubishi', 'nissan', 'ford', 'honda', 'mg', 'byd', 'gwm', 'mazda', 'bmw', 'shonan'].map(v => opt(v, v.toUpperCase())) },
+    { key: 'proj', label: 'เริ่มที่โปรเจค (โหมด TV)', kind: 'select', options: [opt('737d-mlm', '737D MLM'), opt('d02d-tmt', 'D02D TMT')] },
+    { key: 'bucket', label: 'กรองสถานะ', kind: 'select', options: [opt('delay', '🔴 ล่าช้า'), opt('onplan', '🟢 ตามแผน'), opt('done', '✅ เสร็จ')] },
   ],
   '/pm': [
-    { key: 'tab', label: 'แท็บ', kind: 'select', options: [opt('forecast', '🔮 ล่วงหน้า (Planner)')] },
-    { key: 'fc', label: 'มุมมอง', kind: 'select', options: [opt('due', '🗓 PM ที่จะครบกำหนด'), opt('usage', '📊 ยอดผลิตสะสม')] },
+    { key: 'tab', label: 'แท็บ', kind: 'select', options: [
+      opt('check', '✅ ตรวจอุปกรณ์'), opt('plan', '📅 แผน PM'), opt('forecast', '🔮 ล่วงหน้า (Planner)'), opt('levels', '🧭 3 ระดับ PM'), opt('coord', '🗓️ ประสานงาน'), opt('setup', '⚙️ ตั้งค่าจุดตรวจ')] },
+    { key: 'fc', label: 'มุมมอง', kind: 'select', showIf: { tab: ['forecast'] }, options: [opt('due', '🗓 PM ที่จะครบกำหนด'), opt('usage', '📊 ยอดผลิตสะสม')] },
+    { key: 'fcst', label: 'สถานะ (PM ล่วงหน้า)', kind: 'select', showIf: { tab: ['forecast'], fc: ['', 'due'] }, options: [opt('overdue', 'เลยกำหนด'), opt('window', 'เข้า window แล้ว'), opt('later', 'ยังไม่ถึง window')] },
+    { key: 'fcsec', label: 'ส่วนงาน (PM ล่วงหน้า)', kind: 'section', showIf: { tab: ['forecast'], fc: ['', 'due'] } },
+    { key: 'fcline', label: 'ไลน์ (PM ล่วงหน้า · ตั้งแล้วชนะส่วนงาน)', kind: 'line', showIf: { tab: ['forecast'], fc: ['', 'due'] } },
+    { key: 'fcthr', label: 'เฉพาะอุปกรณ์ที่ตั้งเกณฑ์แล้ว', kind: 'bool', showIf: { tab: ['forecast'], fc: ['usage'] } },
+    { key: 'view', label: 'มุมมอง (3 ระดับ PM)', kind: 'select', showIf: { tab: ['levels'] }, options: [opt('todo', 'งานที่ต้องทำ'), opt('equip', 'รายอุปกรณ์')] },
+    { key: 'mlline', label: 'ไลน์ (3 ระดับ PM)', kind: 'line', showIf: { tab: ['levels'] } },
+    { key: 'mlkind', label: 'ชนิดอุปกรณ์ (3 ระดับ PM)', kind: 'select', showIf: { tab: ['levels'] }, options: [opt('machine', '🏭 เครื่องจักร'), opt('die', '🔨 แม่พิมพ์'), opt('jig', '🧩 จิ๊ก / ฟิกเจอร์'), opt('facility', '🔧 Facility / Utility'), opt('_unknown', '❔ ไม่อยู่ในทะเบียน')] },
+    { key: 'mlprio', label: 'ความด่วน (3 ระดับ PM)', kind: 'select', showIf: { tab: ['levels'], view: ['', 'todo'] }, options: [opt('1', 'ด่วน'), opt('2', 'ภายในสัปดาห์'), opt('3', 'ปรับปรุง')] },
   ],
   '/vsm': [
     { key: 'tab', label: 'แท็บ', kind: 'select', options: [opt('doc', '📋 เอกสาร VSM'), opt('live', '⚡ สายธารสด')] },
     { key: 'mat', label: 'สินค้า FG', kind: 'product' },
-    { key: 'state', label: 'สถานะ', kind: 'select', options: [opt('current', 'Current state'), opt('future', '🎯 Future state')] },
+    { key: 'state', label: 'สถานะ', kind: 'select', showIf: { tab: ['', 'doc'] }, options: [opt('current', 'Current state'), opt('future', '🎯 Future state')] },
   ],
   '/energy': [
-    { key: 'tab', label: 'แท็บ', kind: 'select', options: [opt('summary', '📊 สรุป & วิเคราะห์'), opt('mqtt', '📡 มิเตอร์ / MQTT')] },
+    { key: 'tab', label: 'แท็บ', kind: 'select', options: [opt('summary', '📊 สรุป & วิเคราะห์'), opt('mqtt', '📡 มิเตอร์ / MQTT'), opt('setup', '⚙️ ตั้งค่า')] },
+    { key: 'unmet', label: 'แสดงจุดที่ยังไม่ได้แยกมิเตอร์', kind: 'bool', showIf: { tab: ['', 'input'] } },
   ],
   '/report': [
-    { key: 'tab', label: 'แท็บ', kind: 'select', options: [opt('0', 'รายวัน'), opt('1', 'รายพนักงาน'), opt('2', '📍 Log จุดงาน'), opt('3', 'สรุปช่วงเวลา'), opt('4', '🚨 4M Changes')] },
+    { key: 'tab', label: 'แท็บ', kind: 'select', options: [opt('0', 'รายวัน'), opt('1', 'รายพนักงาน'), opt('2', '📍 Log จุดงาน'), opt('3', 'สรุปช่วงเวลา'), opt('4', '🚨 4M Changes'), opt('7', '📋 ใบบันทึก'), opt('9', '🚐 จองรถ OT')] },
+    { ...LAST, showIf: { tab: ['2', '3', '4'] } },
+    { key: 'scope', label: 'ขอบเขต', kind: 'scope', showIf: { tab: ['', '0', '3', '4', '7'] } },
+    { key: 'sec', label: 'ส่วนงาน', kind: 'section', showIf: { tab: ['1', '2'] } },
+    { key: 'dept', label: 'แผนก', kind: 'orgdept', valueAs: 'name', showIf: { tab: ['1'] } },
+    { key: 'station', label: 'จุดงาน (id ของ workstations)', kind: 'text', showIf: { tab: ['2'] } },
+    { key: 'team', label: 'ทีม', kind: 'select', showIf: { tab: ['', '0', '1', '2', '3', '7'] }, options: [opt('A', 'ทีม A'), opt('B', 'ทีม B'), opt('C', 'ทีม C')] },
+    { key: 'shift', label: 'กะ', kind: 'select', showIf: { tab: ['', '0', '2'] }, options: [opt('all', 'ทุกกะ'), opt('day', '☀️ กะเช้า'), opt('night', '🌙 กะดึก')] },
+    { key: 'cat', label: 'ประเภท 4M', kind: 'select', showIf: { tab: ['4'] }, options: [opt('Man', '👷 Man'), opt('Machine', '⚙️ Machine'), opt('Material', '📦 Material'), opt('Method', '📋 Method')] },
+    { key: 'status', label: 'สถานะ 4M', kind: 'select', showIf: { tab: ['4'] }, options: [
+      opt('pending_doc', '📎 รอแนบเอกสาร OJT'), opt('pending', '⏳ รอ SV Approve'), opt('pending_qa', '🔍 รอ QA Approve'), opt('approved', '✅ อนุมัติแล้ว'), opt('rejected', '❌ ตีกลับ')] },
+    { key: 'period', label: 'งวด', kind: 'select', showIf: { tab: ['7'] }, options: [opt('1', 'งวด 1 (วันที่ 1-15)'), opt('2', 'งวด 2 (วันที่ 16-สิ้นเดือน)')] },
+    { key: 'load', label: 'ดึงข้อมูลเองตอนเปิด (ไม่ต้องกดปุ่ม)', kind: 'bool', showIf: { tab: ['7'] } },
   ],
   '/skills-report': [
     { key: 'tab', label: 'แท็บ', kind: 'select', options: [opt('5', '📊 Skill Matrix'), opt('6', '💰 ค่าฝีมือ'), opt('8', '🏅 Multi-Skill Form')] },
+    { key: 'scope', label: 'ขอบเขต', kind: 'scope', showIf: { tab: ['', '5', '8'] } },
+    { key: 'line', label: 'ไลน์', kind: 'line', showIf: { tab: ['6'] } },
+    { key: 'team', label: 'ทีม', kind: 'select', showIf: { tab: ['', '5', '6', '8'] }, options: [opt('A', 'ทีม A'), opt('B', 'ทีม B'), opt('C', 'ทีม C')] },
+    { key: 'period', label: 'งวด', kind: 'select', showIf: { tab: ['6'] }, options: [opt('1', 'งวด 1 (วันที่ 1-15)'), opt('2', 'งวด 2 (วันที่ 16-สิ้นเดือน)')] },
+    { key: 'wtype', label: 'ประเภทงาน (ค่าฝีมือ · ต้องตรงทะเบียนทักษะ)', kind: 'text', showIf: { tab: ['6'] } },
+    { key: 'load', label: 'ดึงข้อมูลเองตอนเปิด (ไม่ต้องกดปุ่ม)', kind: 'bool', showIf: { tab: ['6', '8'] } },
   ],
   '/order-trace': [
     { key: 'tab', label: 'แท็บ', kind: 'select', options: [opt('order', '🔎 จากเลขใบผลิต'), opt('symptom', '🩺 จากอาการ')] },
+    LAST,
+    { key: 'open', label: 'รวมใบที่ยังผลิตอยู่', kind: 'bool', showIf: { tab: ['', 'order'] } },
   ],
 });
 

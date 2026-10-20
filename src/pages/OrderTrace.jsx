@@ -25,6 +25,7 @@ import { julianLabel, parseJulianTerm, toJulian } from '../utils/julianDate';
 import TimeRangeBar from '../components/TimeRangeBar';
 import ScanModal from '../components/ScanModal';
 import useTimeRange from '../utils/useTimeRange';
+import { urlBool } from '../utils/urlInit';
 
 /*
   🔎 สอบกลับ Order (Order Traceability) — 2026-07-30
@@ -96,7 +97,7 @@ export default function OrderTrace() {
   }, [julYear]);
   const jul = useMemo(() => julOf(search), [julOf, search]);
   const [results, setResults] = useState([]);       // ใบที่ค้นเจอ
-  const [includeOpen, setIncludeOpen] = useState(false);   // สอบกลับ = ของที่ออกจากไลน์แล้ว → ตัดใบที่ยังผลิตอยู่ออก
+  const [includeOpen, setIncludeOpen] = useState(() => urlBool('open', false));   // ?open= (จอวนหน้า)   // สอบกลับ = ของที่ออกจากไลน์แล้ว → ตัดใบที่ยังผลิตอยู่ออก
   const [searching, setSearching] = useState(false);
   const [searchErr, setSearchErr] = useState('');   // ค้นล้ม ≠ "ไม่เจอใบ" — ต้องเขียนบนจอ (กฎข้อ 12)
   const [sel, setSel] = useState(null);              // order ที่เลือก (พร้อม session)

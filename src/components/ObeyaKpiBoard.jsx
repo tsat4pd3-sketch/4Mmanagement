@@ -150,6 +150,8 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
   /* 👁 แผ่น Machine Break Down ดูได้ 2 หน่วย (user 13/10 "ไม่ต้องแก้ แต่เพิ่มให้ดูได้ทั้ง 2 หน่วย") — KPI ทางการยังเป็น % ·
      มุมมอง "ชม." = ชั่วโมงเครื่องหยุด แปลงจาก % ด้วยฐานเดียวกับสูตร (730 × จำนวนเครื่อง ÷ 100) **ไม่แตะข้อมูล/เป้า** · สถานะไฟตัดสินจาก % เหมือนเดิม */
   const [hrRows, setHrRows] = useState(() => new Set());
+  /* ?hr=1 (จอวนหน้า) = ทุกแผ่นที่สลับได้เริ่มที่ "ชม." · hrRows จึงเป็น "แผ่นที่กดสลับจากค่าเริ่มต้น" · ไม่มีในลิงก์ = เดิมเป๊ะ (เริ่ม %) */
+  const [hrDefault] = useState(() => urlBool('hr', false));
   const toggleHr = (key) => setHrRows((prev) => { const n = new Set(prev); if (n.has(key)) n.delete(key); else n.add(key); return n; });
   const wrapRef = useRef(null);
   const reqRef = useRef(0);                             // กันผลโหลดเก่าทับผลใหม่
@@ -824,7 +826,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
   );
   /* `kk` = สเกลของแผ่นที่กำลังวาด (ปกติ = k ของกริด · ใน popup 🔍 ขยาย = ใหญ่กว่า) ⇒ ฟอนต์แกน/ป้ายโตตามแผ่น */
   /* 👁 มุมมองหน่วยของแผ่น (ตอนนี้มีแค่ MBD: % ↔ ชม.) — แปลงตอนวาดเท่านั้น · ค่าในแถว/สถานะ/คาดปลายปียังเป็น % */
-  const hvR = (r) => !!(r.hrPerPct && hrRows.has(r.key));
+  const hvR = (r) => !!(r.hrPerPct && (hrDefault ? !hrRows.has(r.key) : hrRows.has(r.key)));
   const cvR = (r, v) => (v == null ? null : hvR(r) ? v * r.hrPerPct : v);
   const unitR = (r) => (hvR(r) ? 'ชม.' : r.unit);
   const decR = (r) => (hvR(r) ? 1 : r.dec);

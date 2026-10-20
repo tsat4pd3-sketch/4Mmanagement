@@ -34,6 +34,7 @@ import TimeRangeBar from '../components/TimeRangeBar';
 import useTimeRange from '../utils/useTimeRange';
 import { bucketKey, bucketLabel } from '../utils/timeRange';
 import useTabParam from '../utils/useTabParam';
+import { urlBool } from '../utils/urlInit';
 import { fmtTime } from '../utils/dateFormat';
 import { visibleInterval } from '../utils/usePolling';
 import { fetchByIds, fetchAllPages } from '../utils/fetchByIds';
@@ -391,8 +392,9 @@ export default function OEEAnalytics() {
   const [selLine,    setSelLine]    = useState(() => urlParams.get('line') || urlParams.get('dept') || '');
   const [tdTeam,   setTdTeam]   = useState(() => (['A', 'B', 'C'].includes(urlParams.get('team')) ? urlParams.get('team') : ''));
   // แถบ "วันนี้เทียบค่าเฉลี่ย" พับเป็นค่าเริ่มต้น — หน้านี้คือภาพวันเดียว การเทียบย้อนหลังอยู่แท็บแนวโน้ม
-  const [tdCmpOpen, setTdCmpOpen] = useState(false);
-  const [autoRefresh, setAutoRefresh] = useState(true);
+  // ?cmp= / ?auto= (จอวนหน้า /display-rotation · ไม่มีในลิงก์ = ค่าเดิม)
+  const [tdCmpOpen, setTdCmpOpen] = useState(() => urlBool('cmp', false));
+  const [autoRefresh, setAutoRefresh] = useState(() => urlBool('auto', true));
   const [lastUpdate,  setLastUpdate]  = useState(null);
 
   const [tdSessions,  setTdSessions]  = useState([]);
@@ -802,7 +804,7 @@ export default function OEEAnalytics() {
   // Downtime donut (โดยประเภท)
   // จัดอันดับสาเหตุ (pareto) — สีตาม "ประเภท" เท่านั้น: นอกแผน = ม่วง (เด่น) / ในแผน = เทา (จาง)
   // ห้ามกลับไปไล่สีตามลำดับแถว (hue-cycling อ่านไม่ออกว่าสีสื่ออะไร — เคยเป็นโดนัท 25 สี)
-  const [tdDtShowAll, setTdDtShowAll] = useState(false);
+  const [tdDtShowAll, setTdDtShowAll] = useState(() => urlBool('dtall', false));   // ?dtall= (จอวนหน้า)
   // เจาะดูรายการดิบของแถวที่กด — { kind: 'cause'|'part', key, label }
   const [tdDtDrill, setTdDtDrill] = useState(null);
   /* พจนานุกรมเดาประเภทจากคำ — จากชื่อประเภทในชุดข้อมูลเอง (ไม่ยิงคิวรีเพิ่ม) */
@@ -918,7 +920,7 @@ export default function OEEAnalytics() {
   useEffect(() => {
     supabase.from('cost_center_rates').select('*').then(({ data, error }) => { if (!error) setCcRates(data || []); });
   }, []);
-  const [dtIncludePlanned, setDtIncludePlanned] = useState(false); // Pareto DT: default นับเฉพาะนอกแผน
+  const [dtIncludePlanned, setDtIncludePlanned] = useState(() => urlBool('planned', false));   // ?planned= (จอวนหน้า) // Pareto DT: default นับเฉพาะนอกแผน
   // สั่ง Pareto ให้เจาะประเภทที่กดจากการ์ด 💰 (nonce = กดชื่อเดิมซ้ำต้องเปิดใหม่ได้)
   const [dtFocus, setDtFocus]   = useState(null);
   const [defFocus, setDefFocus] = useState(null);

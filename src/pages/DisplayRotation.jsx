@@ -13,6 +13,7 @@ import { checkWriteRows } from '../utils/dbWrite';
 import useProductionLines from '../utils/useProductionLines';
 import useIsMobile from '../utils/useIsMobile';
 import { ALL } from '../utils/filterLabels';
+import { orgNodeCompare } from '../utils/listOrder';
 import {
   ROT_LIMITS, normalizeConfig, buildPlaylist, secOf, pathOnly, isValidRotationPath,
   cleanItemsForSave, fmtSec, SKIP_REASON_LABEL,
@@ -52,6 +53,21 @@ export default function DisplayRotation() {
   const isMobile = useIsMobile(1100);
   const canEdit = canSeeded('display_rotation', 'manage', role);
   const lines = useProductionLines();
+  /* ผังองค์กร (ส่วนงาน/แผนก) — ให้ช่องตัวกรอง kind 'orgdept' เลือก "แผนก" ได้ (บางหน้ากรองด้วย id โหนด/ชื่อแผนก · 20/10)
+     null = ยังโหลด · โหลดล้ม = ช่องเขียนบอก (ห้ามดูเหมือนองค์กรไม่มีแผนก) */
+  const [orgNodes, setOrgNodes] = useState(null);
+  const [orgFail, setOrgFail] = useState('');
+  useEffect(() => {
+    let alive = true;
+    supabase.from('org_nodes').select('id, kind, code, name, parent_id, sort_order').eq('is_active', true)
+      .in('kind', ['section', 'department'])
+      .then(({ data, error }) => {
+        if (!alive) return;
+        if (error) { console.warn('[DisplayRotation] โหลดผังองค์กรไม่สำเร็จ', error); setOrgFail('โหลดผังองค์กรไม่สำเร็จ'); }
+        setOrgNodes(error ? [] : (data || []));
+      });
+    return () => { alive = false; };
+  }, []);
 
   const [accounts, setAccounts] = useState([]);      // profiles (role display เท่านั้น)
   const [emails, setEmails] = useState({});          // id → email (admin เท่านั้นที่อ่านได้)
@@ -358,7 +374,7 @@ export default function DisplayRotation() {
                     focused={i === focusIdx} onFocus={() => setFocusIdx(i)}
                     pageOptions={pageOptions} defaultSec={form.default_sec}
                     skip={preview.skipped.find(s => s.idx === i)}
-                    lines={lines} tvSections={tvSections} allSections={allSections}
+                    lines={lines} tvSections={tvSections} allSections={allSections} orgNodes={orgNodes} orgFail={orgFail}
                     onChange={(patch) => setItem(i, patch)}
                     onMove={(d) => moveItem(i, d)}
                     onRemove={() => { setF('items', form.items.filter((_, j) => j !== i)); setFocusIdx(Math.max(0, i - 1)); }} />
@@ -438,7 +454,7 @@ export default function DisplayRotation() {
 }
 
 /* ── 1 แถวในรอบ: เลือกหน้า + ตัวกรองของหน้านั้น + วินาที ── */
-function ItemRow({ i, it, n, canEdit, focused, onFocus, pageOptions, defaultSec, skip, lines, tvSections, allSections, onChange, onMove, onRemove }) {
+function ItemRow({ i, it, n, canEdit, focused, onFocus, pageOptions, defaultSec, skip, lines, tvSections, allSections, orgNodes, orgFail, onChange, onMove, onRemove }) {
   const base = it.path ? pathOnly(it.path) : '';
   const params = queryParamsOf(it.path);
   const defs = DISPLAY_PAGE_PARAMS[base] || null;
@@ -458,6 +474,17 @@ function ItemRow({ i, it, n, canEdit, focused, onFocus, pageOptions, defaultSec,
       ...parents.map(x => ({ value: `line_group:${x}`, label: `🏭 กลุ่มไลน์ ${x}` })),
     ];
   }, [tvSections, allSections, lines]);
+  /* แผนกในส่วนงานของจอ (หรือส่วนงานที่ตั้งในแถวนี้) — เรียงตาม /org-setup (listOrder) */
+  const deptOptions = useMemo(() => {
+    const all = orgNodes || [];
+    const secNodes = all.filter(x => x.kind === 'section');
+    const pickSec = params.sec || params.section || '';
+    const allowSec = (x) => (pickSec ? [x.code, x.name].includes(pickSec)
+      : (!tvSections.length || tvSections.includes(x.name) || tvSections.includes(x.code)));
+    const secIds = new Map(secNodes.filter(allowSec).map(x => [x.id, x.name]));
+    return all.filter(x => x.kind === 'department' && secIds.has(x.parent_id)).sort(orgNodeCompare)
+      .map(x => ({ id: x.id, name: x.name, sec: secIds.get(x.parent_id) }));
+  }, [orgNodes, tvSections, params.sec, params.section]);
   const rawQ = (String(it.path || '').match(/[?#].*$/) || [''])[0];
   const secOptions = tvSections.length ? tvSections : allSections;
 
@@ -557,6 +584,15 @@ function ItemRow({ i, it, n, canEdit, focused, onFocus, pageOptions, defaultSec,
                 {d.kind === 'text' && (
                   <input type="text" value={params[d.key] || ''} disabled={!canEdit} maxLength={80}
                     onChange={e => setParam(d.key, e.target.value)} style={{ width: 180 }} />
+                )}
+                {d.kind === 'orgdept' && (
+                  <select value={params[d.key] || ''} disabled={!canEdit || orgNodes == null} onChange={e => setParam(d.key, e.target.value)}>
+                    <option value="">{orgNodes == null ? 'กำลังโหลดผังองค์กร…' : orgFail ? `⚠️ ${orgFail}` : ALL.dept}</option>
+                    {params[d.key] && !deptOptions.some(o => (d.valueAs === 'name' ? o.name : o.id) === params[d.key]) && (
+                      <option value={params[d.key]}>{`(ไม่พบในผังปัจจุบัน) ${params[d.key]}`}</option>
+                    )}
+                    {deptOptions.map(o => <option key={o.id} value={d.valueAs === 'name' ? o.name : o.id}>{tvSections.length === 1 ? o.name : `${o.sec} · ${o.name}`}</option>)}
+                  </select>
                 )}
                 {d.kind === 'line' && (
                   <LineSelect lines={lines} value={params[d.key] || ''} disabled={!canEdit}

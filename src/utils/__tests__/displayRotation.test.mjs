@@ -199,3 +199,20 @@ test('barChips — โชว์เฉพาะ "ข้อมูลชุดไ�
   assert.deepEqual(barChips('/tv?dept=production&sec=PD3'), ['🏭 ฝ่ายผลิต', 'PD3']);
   assert.deepEqual(barChips('/obeya?tab=kpi&board=1&scope=section:PD3'), ['📋 บอร์ด KPI', 'PD3']);
 });
+
+/* ทะเบียนตัวกรอง (20/10 — ขยายให้ตั้งได้ทุกตัวกรองของหน้า): คีย์ไม่ซ้ำในหน้าเดียว · showIf อ้างคีย์ที่มีจริง ·
+   select ต้องมีตัวเลือก · kind ต้องเป็นชนิดที่หน้า /display-rotation วาดได้ */
+test('DISPLAY_PAGE_PARAMS: คีย์ไม่ซ้ำ + showIf อ้างคีย์ที่มีจริง + kind ที่วาดได้', async () => {
+  const { DISPLAY_PAGE_PARAMS } = await import('../displayRotation.js');
+  const KINDS = new Set(['select', 'bool', 'section', 'line', 'scope', 'product', 'text', 'multi', 'orgdept']);
+  for (const [path, defs] of Object.entries(DISPLAY_PAGE_PARAMS)) {
+    const keys = defs.map(d => d.key);
+    assert.equal(new Set(keys).size, keys.length, `${path}: คีย์ซ้ำ ${keys}`);
+    for (const d of defs) {
+      assert.ok(KINDS.has(d.kind), `${path}?${d.key}: kind ${d.kind} วาดไม่ได้`);
+      if (d.kind === 'select') assert.ok(d.options?.length, `${path}?${d.key}: select ไม่มีตัวเลือก`);
+      if (d.kind === 'orgdept') assert.ok(['id', 'name'].includes(d.valueAs), `${path}?${d.key}: orgdept ต้องบอก valueAs`);
+      Object.keys(d.showIf || {}).forEach(k => assert.ok(keys.includes(k), `${path}?${d.key}: showIf อ้าง ${k} ที่ไม่มีในหน้า`));
+    }
+  }
+});
