@@ -409,6 +409,12 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   // Prod Orders
   const [prodOrders, setProdOrders]       = useState([]);
   const [carryOrders, setCarryOrders]     = useState([]); // pending carry-over from prev session
+  /* 🔴 "รับยอดต่อ" ต้องเลือกใบได้ (20/10 · feedback หน้างาน: "297 เหลือ tag เยอะ
+     มันก็ไม่อยากมาส่งต่อกะทุกใบที่เหลือ") — เดิมเป็นเอาทั้งหมดอย่างเดียว
+     ⇒ หัวหน้าที่ไม่อยากลากของพาร์ทอื่นเข้ากะ เลยไม่กดเลย แล้วของค้างก็ไม่ขยับ
+     ค่าเริ่มต้น = ติ๊กครบทุกใบ (พฤติกรรมเดิมเป๊ะ) · ติ๊กออกได้ = ทางหนีที่หายไป */
+  const [carryPick, setCarryPick]         = useState(() => new Set());
+  const [carryListOpen, setCarryListOpen] = useState(false);
   const [kanbanStds, setKanbanStds]       = useState([]);
   // minimize/expand แต่ละ section ใหญ่บนแท็บ Live — จำสถานะใน localStorage (dr_live_collapse_<section>)
   // ค่า default = กางเหมือนเดิม ยกเว้น section ที่ว่างเปล่าเริ่มแบบพับ (autoCollapsed)
@@ -799,6 +805,12 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       }
     }
   }, [isStaleSess]);
+
+  /* ของค้างเปลี่ยนชุด = เริ่มใหม่ด้วย "ติ๊กครบ" · deps เป็น string ตามกฎข้อ 9 (ห้าม array ใน deps) */
+  const carryIdsKey = carryOrders.map(o => o.id).join('|');
+  useEffect(() => {
+    setCarryPick(new Set(carryIdsKey ? carryIdsKey.split('|') : []));
+  }, [carryIdsKey]);
 
   const loadDefectLogs = useCallback(async (sessionId) => {
     if (!sessionId) return;
@@ -2208,10 +2220,13 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
 
   // Import carry-over orders into current session
   const handleImportCarryOrders = async () => {
-    if (!selSession || !carryOrders.length) return;
+    /* 🔴 รับเฉพาะใบที่ติ๊ก — ใบที่ไม่ติ๊ก **ยังค้างต่อ ไม่ถูกแตะ** (ส่งต่อไปเรื่อยๆ ตามคำสั่ง user)
+       ไม่ใช่ "ไม่รับ = ทิ้ง" · เดิมเป็นเอาทั้งหมดอย่างเดียว ⇒ คนที่ไม่อยากลากพาร์ทอื่นเข้ากะเลยไม่กดเลย */
+    const picked = carryOrders.filter(o => carryPick.has(o.id));
+    if (!selSession || !picked.length) return;
     let imported = 0;
     const opened_at = carryImportOpenedAt();
-    for (const o of carryOrders) {
+    for (const o of picked) {
       const dup = prodOrders.find(p => p.prod_no === o.prod_no);
       if (dup) {
         // มีในกะนี้แล้ว — mark ต้นทางทุกใบ (รวมใบซ้ำในกะเก่าๆ) เป็น imported เพื่อให้ banner เคลียร์ออก
@@ -3585,11 +3600,53 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                         </div>
                       );
                     })()}
-                    <button onClick={handleImportCarryOrders}
-                      style={{ background: '#a78bfa', color: '#fff', border: 'none', borderRadius: 7, padding: '6px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                      📥 รับยอดต่อ
-                    </button>
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <button onClick={() => setCarryListOpen(v => !v)}
+                        style={{ background: 'var(--bg2)', color: 'var(--text2)', border: '1px solid var(--border)', borderRadius: 7, padding: '6px 11px', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                        {carryListOpen ? '▾' : '▸'} เลือกใบ ({carryPick.size}/{carryOrders.length})
+                      </button>
+                      <button onClick={handleImportCarryOrders} disabled={carryPick.size === 0}
+                        title={carryPick.size === 0 ? 'ยังไม่ได้เลือกใบไหนเลย' : 'ใบที่ไม่ได้เลือกยังค้างต่อ ไม่ถูกลบ'}
+                        style={{ background: carryPick.size ? '#a78bfa' : 'var(--bg3)', color: carryPick.size ? '#fff' : 'var(--muted)', border: 'none', borderRadius: 7, padding: '6px 14px', fontSize: 12, fontWeight: 700, cursor: carryPick.size ? 'pointer' : 'default', whiteSpace: 'nowrap' }}>
+                        📥 รับยอดต่อ {carryPick.size < carryOrders.length ? `(${carryPick.size} ใบ)` : ''}
+                      </button>
+                    </div>
                   </div>
+
+                  {/* 🔴 เลือกได้ว่าจะรับใบไหน — ใบที่ไม่ติ๊ก **ยังค้างต่อ ไม่ถูกลบ**
+                      (feedback: "ไม่อยากมาส่งต่อกะทุกใบที่เหลือ" ⇒ เดิมไม่มีทางเลือกเลยไม่กด) */}
+                  {carryListOpen && (
+                    <div style={{ marginTop: 8, borderTop: '1px solid rgba(167,139,250,0.3)', paddingTop: 8, maxHeight: 220, overflowY: 'auto' }}>
+                      <div style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
+                        <button onClick={() => setCarryPick(new Set(carryOrders.map(o => o.id)))}
+                          style={{ fontSize: 11, padding: '3px 9px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text2)', cursor: 'pointer', fontWeight: 700 }}>เลือกทั้งหมด</button>
+                        <button onClick={() => setCarryPick(new Set())}
+                          style={{ fontSize: 11, padding: '3px 9px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text2)', cursor: 'pointer', fontWeight: 700 }}>ไม่เลือกเลย</button>
+                      </div>
+                      {carryOrders.map(o => {
+                        const age = debtAgeDays(o.production_sessions?.work_date, selSession?.work_date);
+                        const on  = carryPick.has(o.id);
+                        return (
+                          <label key={o.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 4px', cursor: 'pointer', borderBottom: '1px solid var(--border2)' }}>
+                            <input type="checkbox" checked={on} onChange={() => setCarryPick(prev => {
+                              const n = new Set(prev); if (n.has(o.id)) n.delete(o.id); else n.add(o.id); return n;
+                            })} />
+                            <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--muted)', flexShrink: 0 }}>{o.prod_no}</span>
+                            <MatLabel mat={o.mat_no} name={o.part_name} size={11} style={{ flexWrap: 'nowrap', overflow: 'hidden', minWidth: 0 }} />
+                            <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 800, color: 'var(--text2)', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                              {debtPcs(o).toLocaleString()} ชิ้น
+                              {age != null && age > 0 && (
+                                <span style={{ color: age >= 7 ? '#ef4444' : '#f59e0b', fontWeight: 700 }}> · {age} วัน</span>
+                              )}
+                            </span>
+                          </label>
+                        );
+                      })}
+                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6, lineHeight: 1.6 }}>
+                        🔁 ใบที่ไม่ได้เลือก <b style={{ color: 'var(--text2)' }}>ยังค้างต่อ ไม่ถูกลบ</b> — กะถัดไปเห็นเหมือนเดิม
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
