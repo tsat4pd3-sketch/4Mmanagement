@@ -39,7 +39,8 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import PageHeader from './PageHeader';
 import { OBEYA_TITLE, OBEYA_ICON } from '../utils/obeyaPage';
-import { A4, GAP, useSheetGrid, StatusLamp, Sheet, WarnNote, EmptyChart, FocusAxisNote } from './ObeyaSheet';
+import { A4, GAP, useSheetGrid, StatusLamp, Sheet, WarnNote, EmptyChart, FocusAxisNote, TV_SHEET_GRID } from './ObeyaSheet';
+import useTvShell from '../utils/useTvShell';
 import BoardPager from './BoardPager';
 import useFitHeight from '../utils/useFitHeight';
 import useIsMobile from '../utils/useIsMobile';
@@ -513,7 +514,8 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
   // ── ผังกระดาษ ──────────────────────────────────────────────────────────────────
   const [board, setBoard] = useState(() => urlBool('board', false));   // โหมดจอ TV = ซ่อนหัวเพจ เต็มจอ · ?board=1
   const wrapRef = useRef(null);
-  const grid = useSheetGrid(wrapRef, 10);
+  const tv = useTvShell();   // 📺 จอประชุม = 2×2 ต่อหน้า (TV_SHEET_GRID) · จอคอมเหมือนเดิม
+  const grid = useSheetGrid(wrapRef, 10, tv ? TV_SHEET_GRID : undefined);
 
   /* ── 📖 แบ่งหน้าแทนการเลื่อน (25/09 · คำสั่ง user "ดูจบได้ในหน้าเดียว … กดเปลี่ยนหน้า") ──
      แผ่นของบอร์ดนี้ตายตัว 8 ใบ = 10 ช่อง (OEE กับ ACTION BOARD กว้าง 2 ช่อง)
@@ -784,7 +786,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
           actions={(
             <>
               {canRecord && (
-                <button onClick={() => openModal()} style={{
+                <button className="tv-hide" onClick={() => openModal()} style={{
                   fontSize: 13, fontWeight: 700, padding: '6px 12px', borderRadius: 999, cursor: 'pointer',
                   background: 'var(--accent2)', color: '#1a1206', border: 'none',
                 }}>➕ ตั้ง Action</button>
@@ -820,12 +822,12 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
           display: 'flex', alignItems: 'center', gap: 12, padding: '6px 10px', flexShrink: 0,
           borderBottom: '1px solid var(--border)',
         }}>
-          <div style={{ fontSize: 18, fontWeight: 900 }}>🏛️ OBEYA</div>
-          <div style={{ fontSize: 13, color: 'var(--muted)' }}>
-            {scopeText} · {periodText} · {from} → {to} · {shiftCount.toLocaleString()} กะ
+          <div style={{ fontSize: tv ? 26 : 18, fontWeight: 900 }}>🏛️ OBEYA</div>
+          <div style={{ fontSize: tv ? 22 : 13, color: tv ? 'var(--text2)' : 'var(--muted)', fontWeight: tv ? 700 : 400 }}>
+            {scopeText} · {periodText}{tv ? '' : ` · ${from} → ${to} · ${shiftCount.toLocaleString()} กะ`}
           </div>
           <div style={{ flex: 1 }} />
-          <button onClick={() => goBoard(false)} style={{
+          <button className="tv-hide" onClick={() => goBoard(false)} style={{
             fontSize: 12, padding: '4px 10px', borderRadius: 999, cursor: 'pointer',
             background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)',
           }}>ออกจากโหมดจอ</button>
@@ -833,7 +835,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
       )}
 
       {loadWarn && (
-        <div style={{ margin: '0 0 8px', fontSize: 12, color: '#ef4444', fontWeight: 700 }}>
+        <div style={{ margin: '0 0 8px', fontSize: tv ? 20 : 12, color: '#ef4444', fontWeight: 700 }}>
           ⚠️ {loadWarn}
         </div>
       )}
@@ -1055,12 +1057,12 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 6 }}>
                   <WarnNote k={k} tone="#ef4444"
                     text="ยังไม่มีใบ action ในช่วงที่ดู — ตามงานไม่ได้ว่าปัญหาที่พบถูกแก้หรือยัง (ตั้ง Action จากปุ่มบนหัวจอ)" />
-                  <div style={{ fontSize: fs(11), color: 'var(--muted)', lineHeight: 1.4 }}>
+                  <div className="tv-hide" style={{ fontSize: fs(11), color: 'var(--muted)', lineHeight: 1.4 }}>
                     นี่คือเหตุผลหลักที่ทำหน้านี้ — ไม่ใช่เพื่อโชว์ตัวเลขสวยๆ แต่เพื่อปิดลูป:
                     ตัวเลขหลุดเป้า → ใครรับ → ทำอะไร → ภายในเมื่อไหร่ → ดีขึ้นจริงไหม
                   </div>
                   {canRecord && (
-                    <button onClick={() => openModal()} style={{
+                    <button className="tv-hide" onClick={() => openModal()} style={{
                       alignSelf: 'flex-start', fontSize: fs(12), fontWeight: 800, padding: '6px 14px',
                       borderRadius: 999, background: 'var(--accent2)', color: '#1a1206', border: 'none', cursor: 'pointer',
                     }}>➕ ตั้งใบแรก</button>
@@ -1077,7 +1079,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
                       }}>{l} {n}</span>
                     ))}
                     {canRecord && (
-                      <button onClick={() => openModal()} style={{
+                      <button className="tv-hide" onClick={() => openModal()} style={{
                         fontSize: fs(10.5), fontWeight: 800, padding: '2px 10px', borderRadius: 999, marginLeft: 'auto',
                         background: 'var(--accent2)', color: '#1a1206', border: 'none', cursor: 'pointer',
                       }}>➕ ตั้ง Action</button>
@@ -1108,7 +1110,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
                           )}
                           {canRecord && (
                             /* เปิดหน้าต่างปิดงาน (ใส่ผล + รูป) แทนการปิดทันที — ปิดเปล่าๆ ไม่มีหลักฐานว่าแก้อะไร */
-                            <button onClick={() => setClosing({ a, result: a.result_value || '', file: null })} style={{
+                            <button className="tv-hide" onClick={() => setClosing({ a, result: a.result_value || '', file: null })} style={{
                               fontSize: fs(10), fontWeight: 700, padding: '1px 7px', borderRadius: 999, cursor: 'pointer',
                               background: 'var(--bg2)', color: '#22c55e', border: '1px solid #22c55e55',
                             }}>ปิด</button>

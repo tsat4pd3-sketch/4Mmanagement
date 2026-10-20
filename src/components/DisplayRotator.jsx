@@ -341,29 +341,29 @@ function TvShellBar({ pathname, search, now, loadErr, active, idx, n, sec, elaps
     <div role="banner" style={barStyle}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1, overflow: 'hidden' }}>
         <span style={{ fontSize: 20, lineHeight: 1 }}>{nav.icon}</span>
-        <span style={{ fontSize: 17, fontWeight: 900, fontFamily: 'var(--font-display)', whiteSpace: 'nowrap' }}>{nav.label}</span>
+        <span style={{ fontSize: 21, fontWeight: 900, fontFamily: 'var(--font-display)', whiteSpace: 'nowrap' }}>{nav.label}</span>
         {chips.map(c => (
           <span key={c} style={barChip}>{c}</span>
         ))}
       </div>
       {loadErr && (
-        <span title={loadErr} style={{ fontSize: 12, fontWeight: 700, color: 'var(--amber)', whiteSpace: 'nowrap' }}>⚠ โหลดรอบวนไม่สำเร็จ — ค้างหน้านี้</span>
+        <span title={loadErr} style={{ fontSize: 16, fontWeight: 700, color: 'var(--amber)', whiteSpace: 'nowrap' }}>⚠ โหลดรอบวนไม่สำเร็จ — ค้างหน้านี้</span>
       )}
       {active && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-          <span style={{ fontSize: 12, color: 'var(--muted)', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+          <span style={{ fontSize: 16, color: 'var(--muted)', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
             🔁 {idx + 1}/{n} · {status}
           </span>
           {skipped.length > 0 && (
-            <span title={skipTitle} style={{ fontSize: 12, color: 'var(--amber)', fontWeight: 700, whiteSpace: 'nowrap' }}>⚠ ข้าม {skipped.length} หน้า</span>
+            <span title={skipTitle} style={{ fontSize: 16, color: 'var(--amber)', fontWeight: 700, whiteSpace: 'nowrap' }}>⚠ ข้าม {skipped.length} หน้า</span>
           )}
           {controls}
         </div>
       )}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
         {secs.length > 0 && <span style={{ ...barChip, fontWeight: 800, color: 'var(--text)' }}>🏭 {secs.join(' · ')}</span>}
-        <span style={{ fontSize: 12, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{shift} · วันงาน {wd}</span>
-        <span style={{ fontSize: 20, fontWeight: 900, minWidth: 58, textAlign: 'right' }}>{hhmm}</span>
+        <span style={{ fontSize: 17, color: 'var(--text2)', whiteSpace: 'nowrap' }}>{shift} · วันงาน {wd}</span>
+        <span style={{ fontSize: 26, fontWeight: 900, minWidth: 70, textAlign: 'right' }}>{hhmm}</span>
       </div>
       {active && n > 1 && (
         <div aria-hidden="true" style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 3, display: 'flex', gap: 3 }}>
@@ -387,17 +387,18 @@ const chipStyle = {
   background: 'var(--card)', border: '1px solid var(--border2)', color: 'var(--text)',
   boxShadow: 'var(--shadow-float)', opacity: 0.85,
 };
+/* 📺 แถบบนกรอบจอ TV — ตัวอักษร ≥16px (โหมดจอประชุม 20/10 · UI §6.32 · เดิม 11-12px อ่านไม่ออกจากระยะ 2-3 ม.) */
 const barStyle = {
   position: 'fixed', top: 0, left: 0, right: 0, height: 'var(--tvbar-h, 46px)', zIndex: 9990,
   display: 'flex', alignItems: 'center', gap: 14, padding: '0 16px',
   background: 'var(--card)', borderBottom: '1px solid var(--border2)', color: 'var(--text)',
 };
 const barChip = {
-  padding: '2px 10px', borderRadius: 999, fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap',
+  padding: '2px 12px', borderRadius: 999, fontSize: 16, fontWeight: 700, whiteSpace: 'nowrap',
   background: 'var(--bg2)', border: '1px solid var(--border2)', color: 'var(--text2)',
 };
 const barBtn = {
-  minWidth: 28, height: 24, padding: '0 7px', borderRadius: 999, fontSize: 11, fontWeight: 800, opacity: 0.6,
+  minWidth: 32, height: 30, padding: '0 9px', borderRadius: 999, fontSize: 15, fontWeight: 800, opacity: 0.6,
   cursor: 'pointer', background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border2)',
 };
 const btnStyle = {

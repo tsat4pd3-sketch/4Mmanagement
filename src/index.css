@@ -1101,3 +1101,8 @@ body.has-mnav { --mnav-h: calc(56px + env(safe-area-inset-bottom, 0px)); padding
    ชิปยาวหดเป็น … (ข้อความเต็มอยู่ใน title) · ปุ่มเครื่องมือ (.fm-keep) ไม่หด · มือถือไม่ติด class นี้ = wrap ตามเดิม */
 .fm-chips > :not(.fm-keep) { min-width: 0; flex-shrink: 1; overflow: hidden; text-overflow: ellipsis; }
 .fm-chips > .fm-keep { flex-shrink: 0; }
+
+/* 📺 โหมดจอประชุม (20/10 · user "เปิดทีวี 43-50 นิ้ว ยืนดูห่าง 2-3 เมตร") — UI §6.32
+   `.tv-hide` = ของที่ไม่มีใครกดในห้องประชุม / ตัวหนังสืออธิบายเล็กๆ (ปุ่มเครื่องมือ · คำใบ้ · footnote) ⇒ ซ่อนบนจอ TV
+   🔴 ห้ามใช้ซ่อน "คำเตือนข้อมูลไม่ครบ" — ย่อเป็นชิปสั้นแทน (กฎความซื่อสัตย์ของจอ) */
+body.esm-tv-shell .tv-hide { display: none !important; }

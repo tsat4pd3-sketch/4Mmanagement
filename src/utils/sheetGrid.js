@@ -26,7 +26,12 @@ export const MIN_SHEET_H = 150;
  *   3) เท่ากัน → เอา **ทรง A4** ก่อน แล้วค่อยดูขนาดแผ่น
  * แผ่นต้องผ่าน MIN_SHEET_W/H เสมอ — ไม่มีผังไหนผ่าน = ใส่ใบเดียวเต็มกล่อง (จอจิ๋ว)
  */
-export function chooseSheetGrid(w, h, sheets = 10) {
+/* 📺 `opts` (20/10 · โหมดจอประชุม): `maxCols`/`maxRows` = เพดานผัง (จอ TV ประชุมใช้ 2×2 = 4 แผ่น/หน้า ⇒ แผ่นใหญ่ 2 เท่า)
+   · `kMax` = เพดานสเกลตัวอักษร (ค่าเดิม 2.4) · ไม่ส่ง = พฤติกรรมเดิมเป๊ะ */
+export function chooseSheetGrid(w, h, sheets = 10, opts = {}) {
+  const maxCols = Math.max(1, Math.min(6, opts.maxCols || 6));
+  const maxRows = Math.max(1, Math.min(6, opts.maxRows || 6));
+  const kMax = opts.kMax || 2.4;
   if (!w || !h) return { cols: 5, rows: 2, cw: 0, ch: 0, fit: true, k: 1, bw: 0, bh: 0 };
   const want = Math.max(1, Number(sheets) || 1);
   let best = null;
@@ -49,9 +54,9 @@ export function chooseSheetGrid(w, h, sheets = 10) {
           : cand.area !== best.area ? cand.area > best.area : cand.a4);
     if (better) best = cand;
   };
-  for (let cols = 1; cols <= 6; cols++) {
+  for (let cols = 1; cols <= maxCols; cols++) {
     const cwFull = (w - GAP * (cols - 1)) / cols;          // กว้างเต็มคอลัมน์
-    for (let rows = 1; rows <= 6; rows++) {
+    for (let rows = 1; rows <= maxRows; rows++) {
       const chRow = (h - GAP * (rows - 1)) / rows;         // สูงเท่าที่แถวนี้มี
       if (chRow <= 0) continue;
       const cwA4 = Math.min(cwFull, chRow * A4);           // ก) ทรง A4
@@ -62,7 +67,7 @@ export function chooseSheetGrid(w, h, sheets = 10) {
   if (!best) best = { cols: 1, rows: 1, cw: w, ch: h, cells: 1, fits: want <= 1 };
   return {
     cols: best.cols, rows: best.rows, cw: best.cw, ch: best.ch,
-    fit: best.cells >= want, k: clamp(best.cw / 330, 0.72, 2.4), bw: w, bh: h,
+    fit: best.cells >= want, k: clamp(best.cw / 330, 0.72, kMax), bw: w, bh: h,
   };
 }
 
