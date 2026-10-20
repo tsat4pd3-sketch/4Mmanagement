@@ -35,6 +35,7 @@ const CATEGORY_LABEL = {
   maintenance: '🔧 Maintenance', pull: '🎴 Pull System', stock: '📦 Stock',
   logistic: '🚚 Logistic',
   safety: '🛡️ Safety',
+  kpi: '📊 KPI / Obeya',   // 20/10 · ผลนำเข้าตัวเลขบัญชีอัตโนมัติ (GitHub Actions acct-import)
 }
 
 // Starting point shown when an admin first customizes a message. NULL template

@@ -35,8 +35,12 @@ export default function useTimeRange(opts = {}) {
   const [sp, setSp] = useSearchParams();
   const today = opts.today || getWorkDate();
 
-  const def = useMemo(() => presetRange(defaultDays, today) || { from: today, to: today },
-    [defaultDays, today]);
+  /* `?last=N` = "ย้อนหลัง N วันนับจากวันนี้" แบบเลื่อนตามวัน (20/10) — จอวนหน้า (/display-rotation)
+     ตั้ง from/to ตายตัวไม่ได้ (พรุ่งนี้ก็ล้าสมัย) ⇒ ใช้แทนช่วงตั้งต้นของหน้า · มี from/to ใน URL = from/to ชนะ */
+  const rawLast = Number(sp.get('last'));
+  const days = Number.isInteger(rawLast) && rawLast >= 1 && rawLast <= 3660 ? rawLast : defaultDays;
+  const def = useMemo(() => presetRange(days, today) || { from: today, to: today },
+    [days, today]);
 
   const rawScale = sp.get(param.scale);
   const scale = capBucket(TIME_SCALES.some(s => s.key === rawScale) ? rawScale : defaultScale,

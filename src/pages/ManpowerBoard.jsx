@@ -12,14 +12,21 @@ import useFitHeight from '../utils/useFitHeight';
 import { packPages, clampPage } from '../utils/boardPager';
 import useTabParam, { useMergeParams } from '../utils/useTabParam';
 import { useSearchParams } from 'react-router-dom';
+import { urlParam } from '../utils/urlInit';
 import useProductionLines from '../utils/useProductionLines';
 import { useLiveBoard } from '../utils/useLiveBoard';
 import { LIVE } from '../utils/refreshRates';
 import { fetchAllPages, fetchByIds } from '../utils/fetchByIds';
-/* 👥 จอนี้ตัดเฉพาะ**สายสนับสนุน** — 🔧 ช่าง ต้องอยู่ เพราะบอร์ดวาด "แถวช่าง" แยกไว้ต่างหาก
-      และ `staffingOfDept()` นับแค่คอลัมน์ทีม (leader+operator) ⇒ ช่างไม่เคยถูกนับเป็นกำลังคนไลน์
-      🔴 ห้ามสลับเป็น onlyShopfloorStaff — ช่างจะหายจากบอร์ดทั้งแถว (กฎใน staffKind.js) */
-import { withoutSupportStaff } from '../utils/staffKind';
+/* 👥 🔴 **บอร์ดนี้ไม่กรอง `staff_kind` เลย — เป็น "ผังองค์กร" ไม่ใช่ "จอนับกำลังคน"**
+   (คำสั่ง user 20/10: *"ต้องขึ้นคนให้ครบ ให้ตรงผังก่อน"*)
+   บอร์ดวาดแถวของตัวเองครบทุกชั้น: ผู้จัดการ/หัวหน้าส่วน · วิศวกร·เจ้าหน้าที่ · หัวหน้าแผนก ·
+   หัวหน้ากลุ่ม · 🔧 ช่าง · พนักงาน ⇒ กรองกลุ่มไหนออก = **แถวนั้นว่างทั้งที่มีคนอยู่จริง**
+   เหตุการณ์จริง: backfill 14/10 ย้าย ผจก./หัวหน้าส่วน/หัวหน้าแผนก/วิศวกร/ธุรการ ไป `support`
+   ⇒ ตัวกรองเดิมทำให้หัวผังของทุกส่วนงานขึ้น "ยังไม่มีผู้จัดการ/หัวหน้าส่วนในทะเบียน" เงียบๆ
+   🔴 **ปลอดภัยเพราะตัวนับไม่ได้นับจาก "คนที่โหลดมา"** — `staffingOfDept()`/`opsTotal`/`present`
+      นับจาก `cols[].ops` (แถวพนักงาน) เท่านั้น · ตำแหน่งสายสนับสนุนทุกตัว (manager/section_head/
+      dept_head/engineer/officer/clerk/secretary) ตกแถวหัวผังหมด ไม่มีตัวไหนลงแถวพนักงาน
+   🔴 **ห้ามใส่ตัวกรอง staff_kind กลับ** — มีด่าน `staffKindGuard.test.mjs` */
 import { inSectionScope } from '../utils/sectionScope';
 import { orgNodeCompare, orgKey } from '../utils/listOrder';
 import { loadPositions, positionLabel, loadWorkingPositions, applyWorkingPositions } from '../utils/positions';
@@ -31,6 +38,7 @@ import useImgBox from '../utils/useImgBox';
 import { mergeBorrowedEmployees, loadBorrowedRange } from '../utils/lineHelpers';
 import { canSeeded } from '../utils/permissions';
 import ManpowerBoardSetup from '../components/ManpowerBoardSetup';
+import { canWriteUnit } from '../utils/writeScope';
 import {
   buildManpowerBoard, fourMStatus, layoutPeople, lineFamilyOf, paginateTv, tvCardCapacity,
   describeSlotChanges, summarizeSlotChanges, SLOT_AUDIT_TABLES, SLOT_KIND_META,
@@ -56,7 +64,7 @@ import {
 const EMP_COLS = 'id, name, employee_id_code, image_url, position, team, line_id, department, section, org_node_id, staff_kind, start_date';
 
 export default function ManpowerBoard() {
-  const { sections: scopeSecs = [], role } = useContext(UserContext);
+  const { sections: scopeSecs = [], role, section: homeSection, allUnits, respCostCenters, scopeIdx } = useContext(UserContext);
   const [tab, setTab] = useTabParam(['org', 'layout', 'fourm', 'staffing', 'history'], 'org');
   const [params] = useSearchParams();
   const merge = useMergeParams();
@@ -77,6 +85,12 @@ export default function ManpowerBoard() {
   const [flexUnits, setFlexUnits] = useState([]);   // 🏃 คนวิ่งข้ามแผนก (employee_flex_units)
   const [setupOpen, setSetupOpen] = useState(false);
   const canSetup = canSeeded('manpower_board', 'edit', role);
+  /* 🔐 ชั้น ③ — "ส่วนงานที่กำลังตั้งค่าเป็นของหน่วยงานเราไหม" (QC audit 20/10)
+     `scopeSecs` = ขอบเขต "ที่เห็น" (**ว่าง = เห็นทั้งโรงงาน**) ⇒ เอามาตัดสินการแก้ไม่ได้ ·
+     ⚙️ แผงตั้งค่าเขียน `station_slot_plans` / `manpower_slot_plans` / `line_technicians` /
+     `employee_flex_units` ของส่วนงานนั้น และ RLS รู้แค่ `has_perm('manpower_board:edit')` ไม่รู้ขอบเขต */
+  const wctx = useMemo(() => ({ role, section: homeSection, sections: scopeSecs, allUnits, respCostCenters, scopeIdx }),
+    [role, homeSection, scopeSecs, allUnits, respCostCenters, scopeIdx]);
   const [err, setErr] = useState('');
   const [loading, setLoading] = useState(true);
   const workDate = getWorkDate();
@@ -88,7 +102,7 @@ export default function ManpowerBoard() {
       // รอทะเบียนตำแหน่งก่อนจัดแถว — ไม่งั้นรอบแรกจัดด้วยค่า default แล้วไม่จัดใหม่ (memo ไม่รู้ว่า cache เปลี่ยน)
       const [nRes, eRes, dRes, , actingMap] = await Promise.all([
         supabase.from('org_nodes').select('id, kind, name, code, parent_id, ref_line_id, sort_order, cost_center').eq('is_active', true),
-        fetchAllPages(() => withoutSupportStaff(supabase.from('employees').select(EMP_COLS).eq('is_active', true))),
+        fetchAllPages(() => supabase.from('employees').select(EMP_COLS).eq('is_active', true)),
         supabase.from('skill_definitions').select('name, label, color, sort_order'),
         loadPositions(),
         /* 🧭 ตำแหน่ง "ที่ปฏิบัติงานจริง" จากบัญชี — บอร์ดนี้ตอบว่า *วันนี้ใครทำหน้าที่อะไร*
@@ -128,7 +142,7 @@ export default function ManpowerBoard() {
       fetchAllPages(() => supabase.from('workstations').select('id, line_id, line_name, station_name')),
       supabase.from('station_slot_plans').select('station_id, per_shift'),
       fetchAllPages(() => supabase.from('employee_home_positions').select('employee_id, station_id'), { orderBy: 'employee_id' }),
-      supabase.from('employee_flex_units').select('id, employee_id, org_node_id, note'),
+      supabase.from('employee_flex_units').select('id, employee_id, org_node_id, note, kind'),
     ]);
     const e = [sp.error?.message, lt.error?.message, ws.error, ssp.error?.message, hp.error, fu.error?.message].filter(Boolean);
     if (e.length) setErr(`ค่าตั้งบอร์ด: ${e.join(' · ')}`);
@@ -167,11 +181,15 @@ export default function ManpowerBoard() {
   useLiveBoard(loadToday, { tables: ['daily_production_logs', 'four_m_logs', 'line_helpers'], topic: 'manpower-board', client: supabase, tier: LIVE.BOARD });
 
   // ── ส่วนงานที่เลือกได้ (ตามผัง + scope ของ user) ──
-  const sectionNodes = useMemo(() => nodes.filter(n => n.kind === 'section')
+  /* 🏛️ รวม **แผนกขึ้นตรงฝ่าย** (parent_id ว่าง — JIG MTN · QA) เป็นบอร์ดของตัวเองด้วย (20/10)
+     เดิมกรองแค่ `kind === 'section'` ⇒ 2 หน่วยนี้ **เปิดบอร์ดไม่ได้เลย** คนในหน่วยไม่เคยขึ้นผัง
+     (หลักเดียวกับ ORPHAN_SECTION ใน sectionScope.js — หน่วยจริง มี cost center ของตัวเอง) */
+  const sectionNodes = useMemo(() => nodes
+    .filter(n => n.kind === 'section' || (n.kind === 'department' && !n.parent_id))
     .filter(n => !scopeSecs.length || inSectionScope(scopeSecs, orgKey(n)) || inSectionScope(scopeSecs, n.name))
     .sort(orgNodeCompare), [nodes, scopeSecs]);
   const secParam = params.get('sec') || '';
-  const section = sectionNodes.find(n => orgKey(n) === secParam) || sectionNodes[0] || null;
+  const section = sectionNodes.find(n => orgKey(n) === secParam) || (secParam && sectionNodes.find(n => n.name === secParam)) || sectionNodes[0] || null;
   const deptParam = params.get('dept') || '';
   // 📺 โหมดจอ TV (ไม่เลื่อน · แบ่งหน้า) — `?tv=1|0` ชนะ · ไม่ระบุ = บัญชี display (จอแขวน) เปิดให้เอง
   const tvParam = params.get('tv');
@@ -245,6 +263,8 @@ export default function ManpowerBoard() {
       {setupOpen && section && (
         <ManpowerBoardSetup section={section} nodes={nodes} lines={lines} employees={employees}
           slotPlans={slotPlans} lineTechs={lineTechs} stations={stations} stationPlans={stationPlans} flexUnits={flexUnits}
+          /* 🔴 หน้าแม่ที่มีกฎแล้วต้องส่งกฎลงแผงลูก — ส่งแค่ "เปิดได้ไหม" = แผงลูกเขียนข้ามหน่วยได้ */
+          secWrite={canWriteUnit(wctx, section?.name, { unknownTarget: 'block' })}
           onChanged={loadSetup} onClose={() => setSetupOpen(false)} />
       )}
     </Page>
@@ -315,6 +335,19 @@ function FlexTag({ p }) {
 }
 
 /** ชิปคนระดับหัวหน้า — รูป + ชื่อ + ตำแหน่ง */
+/* 🎖️ ป้ายรักษาการ — **ต้องเขียนบ้านจริง + cost center ของบ้านจริงเสมอ**
+   ไม่งั้นคนอ่านผังจะเข้าใจว่าเขาย้ายมาสังกัดหน่วยนี้แล้ว (ซึ่งไม่ใช่ · ค่าแรงยังลงหน่วยเดิม)
+   Andon เหลือง = นิ่ง ไม่กระพริบ (UI-CONVENTIONS) — นี่คือข้อเท็จจริง ไม่ใช่ alarm */
+function ActingNote({ a }) {
+  const where = [a?.nodeName, a?.costCenter && `CC ${a.costCenter}`].filter(Boolean).join(' · ');
+  return (
+    <div style={{ fontSize: 11, color: 'var(--amber)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+      title={`รักษาการ — สังกัดจริงและ cost center ยังอยู่ที่ ${where || 'หน่วยเดิม'}${a?.note ? ` · ${a.note}` : ''}`}>
+      🎖️ รักษาการ{where ? ` · สังกัด ${where}` : ''}
+    </div>
+  );
+}
+
 function PersonChip({ p }) {
   return (
     <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: 6, border: '1px solid var(--border)', borderRadius: 8, background: 'var(--card)', minWidth: 0, maxWidth: '100%' }}>
@@ -325,6 +358,7 @@ function PersonChip({ p }) {
         {p.linkedLines?.length > 0 && (
           <div style={{ fontSize: 11, color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={`ช่างประจำไลน์: ${p.linkedLines.join(', ')}`}>🔧 {p.linkedLines.join(', ')}</div>
         )}
+        {p.acting && <ActingNote a={p.acting} />}
         <AttendDot p={p} />
       </div>
     </div>
@@ -463,7 +497,7 @@ function OrgTab({ board, depts, skills }) {
         </div>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
           <Counter label="แผน (std 2 กะ)" value={t.plan} sub={t.plan == null ? 'ยังไม่ตั้ง std' : null} />
-          <Counter label="ในทะเบียน" value={t.ops} />
+          <Counter label="ในทะเบียน" value={t.ops} sub="เฉพาะพนักงาน" />
           <Counter label="มาวันนี้" value={t.present} tone="#22c55e" />
           {t.borrowed > 0 && <Counter label="ยืมมาช่วย" value={t.borrowed} tone="#0ea5e9" />}
           {t.flex > 0 && <Counter label="วิ่งข้ามมาช่วย" value={t.flex} sub="ไม่นับในทะเบียน" />}
@@ -484,7 +518,7 @@ function OrgTab({ board, depts, skills }) {
                 : <span style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่มีหัวหน้าแผนกในทะเบียน</span>}
             </div>
             <Counter label="แผน เช้า/ดึก" value={d.planTotal == null ? null : `${d.plan.day ?? '–'}/${d.plan.night ?? '–'}`} sub={d.planTotal == null ? 'ยังไม่ตั้ง std ที่ไลน์' : null} />
-            <Counter label="ในทะเบียน" value={d.opsTotal} />
+            <Counter label="ในทะเบียน" value={d.opsTotal} sub="เฉพาะพนักงาน" />
             <Counter label="มาวันนี้" value={d.present} tone="#22c55e" />
             {d.borrowed.length > 0 && <Counter label="ยืมมาช่วย" value={d.borrowed.length} tone="#0ea5e9" />}
             {d.flex.length > 0 && <Counter label="วิ่งข้ามมาช่วย" value={d.flex.length} sub="ไม่นับในทะเบียน" />}
@@ -549,6 +583,7 @@ function LayoutTab({ board, depts, lines, attendance, maps, tv, stationPlans, sk
   const [stations, setStations] = useState([]);
   const [homes, setHomes] = useState({});
   const [pick, setPick] = useState('');
+  const [seedLine] = useState(() => urlParam('lline') || '');   // ?lline= ชื่อไลน์ของผังที่จะเปิด (จอวนหน้า) · คนเลือกเองแล้ว `pick` ชนะ
   const [err, setErr] = useState('');
 
   const family = useMemo(() => lineFamilyOf(lines, depts.flatMap(d => d.lines.map(l => l.id))), [lines, depts]);
@@ -577,7 +612,7 @@ function LayoutTab({ board, depts, lines, attendance, maps, tv, stationPlans, sk
   // 📺 จอ TV: หลายผัง = วนทีละผังเอง (ไม่มีเมาส์ไปเลือก dropdown) · โหมดปกติ = เลือกเอง
   const [tvIdx, setTvIdx] = useAutoPage(tv ? layouts.length : 0);
   const layout = tv ? layouts[clampPage(tvIdx, layouts.length)] || null
-    : layouts.find(l => String(l.id) === pick) || layouts[0] || null;
+    : layouts.find(l => String(l.id) === pick) || (!pick && seedLine ? layouts.find(l => l.line_name === seedLine) : null) || layouts[0] || null;
   useEffect(() => {
     let alive = true;
     if (!layout) { setStations([]); return undefined; }
@@ -839,11 +874,16 @@ function useAutoPage(count) {
 /** ชิปคนแบบบรรทัดเดียว (แถบหัวจอ TV) */
 function MiniPerson({ p }) {
   return (
-    <div title={`${p.name} · ${positionLabel(p.position) || ''}`} style={{ display: 'flex', alignItems: 'center', gap: 6, flex: '0 1 auto', minWidth: 0, maxWidth: 220 }}>
+    <div title={`${p.name} · ${positionLabel(p.position) || ''}${p.acting ? ` · 🎖️ รักษาการ (สังกัดจริง ${p.acting.nodeName || '—'}${p.acting.costCenter ? ` · CC ${p.acting.costCenter}` : ''})` : ''}`}
+      style={{ display: 'flex', alignItems: 'center', gap: 6, flex: '0 1 auto', minWidth: 0, maxWidth: 220 }}>
       <Photo p={p} size={26} />
       <div style={{ minWidth: 0, lineHeight: 1.2 }}>
         <div style={{ fontSize: 12.5, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
-        <div style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{positionLabel(p.position)}</div>
+        {/* 🎖️ จอ TV ไม่มีที่ให้เขียนยาว — แทนตำแหน่งด้วย "รักษาการ · บ้านจริง" ไปเลย
+            (ป้ายที่ตัดทิ้งเพราะพื้นที่ไม่พอ = คนอ่านผังเข้าใจว่าเขาย้ายมาสังกัดแล้ว) */}
+        <div style={{ fontSize: 11, color: p.acting ? 'var(--amber)' : 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {p.acting ? `🎖️ รักษาการ${p.acting.nodeName ? ` · ${p.acting.nodeName}` : ''}` : positionLabel(p.position)}
+        </div>
       </div>
     </div>
   );
@@ -914,7 +954,7 @@ function OrgTv({ board, depts, skills }) {
             {[...board.top, ...board.support].map(p => <MiniPerson key={p.id} p={p} />)}
           </div>
           <Counter label="แผน" value={t.plan} />
-          <Counter label="ในทะเบียน" value={t.ops} />
+          <Counter label="ในทะเบียน" value={t.ops} sub="เฉพาะพนักงาน" />
           <Counter label="มาวันนี้" value={t.present} tone="#22c55e" />
         </div>
         {!d ? <div className="card" style={{ padding: 24, color: 'var(--muted)' }}>ส่วนงานนี้ยังไม่มีพนักงานหน้างานในทะเบียน</div> : (
@@ -932,7 +972,7 @@ function OrgTv({ board, depts, skills }) {
                 {d.flex.map(p => <MiniPerson key={p.id} p={p} />)}
               </div>
               <Counter label="แผน เช้า/ดึก" value={d.planTotal == null ? null : `${d.plan.day ?? '–'}/${d.plan.night ?? '–'}`} />
-              <Counter label="ในทะเบียน" value={d.opsTotal} />
+              <Counter label="ในทะเบียน" value={d.opsTotal} sub="เฉพาะพนักงาน" />
               <Counter label="มาวันนี้" value={d.present} tone="#22c55e" />
             </div>
             <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: TV_GAP }}>

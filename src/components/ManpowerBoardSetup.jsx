@@ -4,10 +4,11 @@ import { toast } from './Toast';
 import { checkWrite } from '../utils/dbWrite';
 import { orgNodeCompare } from '../utils/listOrder';
 import { sortLineNames } from '../utils/lineHierarchy';
-import { lineFamilyOf } from '../utils/manpowerBoard';
+import { lineFamilyOf, flexKind } from '../utils/manpowerBoard';
 import { positionLabel } from '../utils/positions';
 import PersonSelect from './PersonSelect';
 import { DeleteButton } from './IconButton';
+import { writeBlockText } from '../utils/writeScope';
 
 /* ═══════════════════════════════════════════════════════════════════════════════════════
    ⚙️ ตั้งค่า Manpower Control Board ของส่วนงาน (2026-10-06 · คำสั่ง user "ทำส่วนที่ยังไม่ได้ทำต่อ")
@@ -24,11 +25,27 @@ import { DeleteButton } from './IconButton';
 const TEAMS = ['A', 'B', 'C', ''];          // '' = คอลัมน์ "ไม่ระบุทีม" บนบอร์ด
 const teamText = (t) => (t ? `ทีม ${t}` : 'ไม่ระบุทีม');
 
-export default function ManpowerBoardSetup({ section, nodes, lines, employees, slotPlans, lineTechs, stations = [], stationPlans = [], flexUnits = [], onChanged, onClose }) {
+export default function ManpowerBoardSetup({ section, nodes, lines, employees, slotPlans, lineTechs, stations = [], stationPlans = [], flexUnits = [], secWrite = { ok: true }, onChanged, onClose }) {
   const [busy, setBusy] = useState(false);
+  /* 🔐 ชั้น ③ จากหน้าแม่ (`canWriteUnit`) — **เช็คซ้ำต้นทุกฟังก์ชันที่เขียน DB**
+     ไม่ใช่แค่ซ่อนปุ่ม: `?sec=` เปิดส่วนงานอื่นตรงได้ และ RLS ฝั่ง Main รู้แค่คีย์สิทธิ์ ไม่รู้ขอบเขต */
+  const blocked = () => {
+    if (secWrite?.ok) return false;
+    toast.error(writeBlockText(secWrite, { what: `การตั้งค่าบอร์ดของ ${section?.name || 'ส่วนงานนี้'}` }));
+    return true;
+  };
   const [draft, setDraft] = useState({});    // key `${node}|${team}` → ข้อความในช่อง (ยังไม่บันทึก)
 
-  const depts = useMemo(() => nodes.filter(n => n.kind === 'department' && n.parent_id === section.id).sort(orgNodeCompare), [nodes, section]);
+  /* 🏛️ รากของบอร์ดเป็น "แผนกขึ้นตรงฝ่าย" ได้ (JIG MTN · QA) ⇒ ตัวเองก็เป็นแผนกของบอร์ด (20/10) */
+  const depts = useMemo(() => [
+    ...(section.kind === 'department' ? [section] : []),
+    ...nodes.filter(n => n.kind === 'department' && n.parent_id === section.id),
+  ].sort(orgNodeCompare), [nodes, section]);
+  /* 🎖️ หน่วยที่ "ตั้งรักษาการ" ได้ = หน่วยรากของบอร์ด + ทุกแผนกในบอร์ด
+     (รากไม่ใช่แผนก ⇒ ไม่ซ้ำกับ depts · เป็นแผนกอยู่แล้ว ⇒ depts มีตัวเองแล้ว ไม่ต้องเติม) */
+  const actingUnits = useMemo(() => (
+    section.kind === 'department' ? depts : [section, ...depts]
+  ), [section, depts]);
   const planOf = (nodeId, team) => slotPlans.find(p => p.org_node_id === nodeId && (p.team || '') === team) || null;
 
   // ไลน์ของส่วนงาน = ไลน์ที่ผังชี้ (ทั้งครอบครัว) — ช่างผูกได้ทุกไลน์ในนี้
@@ -47,6 +64,7 @@ export default function ManpowerBoardSetup({ section, nodes, lines, employees, s
 
   // 📍 จำนวนคนต่อกะของจุดงาน — ว่าง = ไม่นับจุดนี้ · 0 = จุดนี้ไม่ต้องมีคนประจำ
   const saveStation = async (stationId, raw) => {
+    if (blocked()) return;
     const v = String(raw ?? '').trim();
     const cur = needOf.get(String(stationId));
     setBusy(true);
@@ -72,6 +90,7 @@ export default function ManpowerBoardSetup({ section, nodes, lines, employees, s
   };
   // ตั้ง "จุดละ 1 คน/กะ" ให้ทุกจุดของไลน์ที่ยังไม่ได้ตั้ง (ไม่ทับค่าที่ตั้งไว้แล้ว)
   const fillLine = async (l) => {
+    if (blocked()) return;
     const rows = stationsOf(l).filter(st => !needOf.has(String(st.id))).map(st => ({ station_id: st.id, per_shift: 1 }));
     if (!rows.length) { toast.info('ทุกจุดของไลน์นี้ตั้งไว้แล้ว'); return; }
     setBusy(true);
@@ -86,6 +105,7 @@ export default function ManpowerBoardSetup({ section, nodes, lines, employees, s
 
 
   const saveSlot = async (nodeId, team) => {
+    if (blocked()) return;
     const key = `${nodeId}|${team}`;
     const raw = String(draft[key] ?? '').trim();
     const cur = planOf(nodeId, team);
@@ -111,6 +131,7 @@ export default function ManpowerBoardSetup({ section, nodes, lines, employees, s
   };
 
   const addTech = async (lineId, emp) => {
+    if (blocked()) return;
     if (!emp?.employee_id) return;
     if (lineTechs.some(t => t.line_id === lineId && t.employee_id === emp.employee_id)) { toast.info('ผูกไว้แล้ว'); return; }
     setBusy(true);
@@ -122,6 +143,7 @@ export default function ManpowerBoardSetup({ section, nodes, lines, employees, s
     } finally { setBusy(false); }
   };
   const removeTech = async (row) => {
+    if (blocked()) return;
     const e = empById.get(row.employee_id);
     if (!window.confirm(`เอา ${e?.name || 'ช่างคนนี้'} ออกจากช่างประจำไลน์?`)) return;
     setBusy(true);
@@ -137,25 +159,57 @@ export default function ManpowerBoardSetup({ section, nodes, lines, employees, s
   /* 🏃 คนวิ่งข้ามแผนก — ผูก "คน × หน่วยที่ไปช่วย" · บ้านจริง (employees.org_node_id) ไม่ขยับ
      🔴 ห้ามเสนอ/ทำการย้ายสังกัดให้แทน — cost center ผูกบ้านจริง ย้ายแล้วค่าแรงไปลงผิดหน่วย */
   const addFlex = async (nodeId, emp) => {
+    if (blocked()) return;
     if (!emp?.employee_id) return;
-    if (flexUnits.some(f => f.org_node_id === nodeId && f.employee_id === emp.employee_id)) { toast.info('ผูกไว้แล้ว'); return; }
+    if (flexUnits.some(f => f.org_node_id === nodeId && f.employee_id === emp.employee_id && flexKind(f) === 'flex')) { toast.info('ผูกไว้แล้ว'); return; }
     const home = empById.get(emp.employee_id);
     if (home?.org_node_id === nodeId) { toast.info('คนนี้สังกัดหน่วยนี้อยู่แล้ว ไม่ต้องผูก'); return; }
     setBusy(true);
     try {
-      const res = await supabase.from('employee_flex_units').insert({ employee_id: emp.employee_id, org_node_id: nodeId }).select('id');
+      const res = await supabase.from('employee_flex_units').insert({ employee_id: emp.employee_id, org_node_id: nodeId, kind: 'flex' }).select('id');
       if (!checkWrite(res, 'ผูกคนวิ่งข้ามแผนก')) return;
       toast.success(`${emp.name} จะขึ้นบอร์ดแผนกนี้ด้วย (ไม่นับเป็นกำลังคน)`);
       onChanged();
     } finally { setBusy(false); }
   };
   const removeFlex = async (row) => {
+    if (blocked()) return;
     const e = empById.get(row.employee_id);
     if (!window.confirm(`เอา ${e?.name || 'คนนี้'} ออกจากคนวิ่งข้ามแผนก?\n(สังกัดจริงและ cost center ไม่เปลี่ยนอยู่แล้ว)`)) return;
     setBusy(true);
     try {
       const res = await supabase.from('employee_flex_units').delete().eq('id', row.id).select('id');
       if (!checkWrite(res, 'เอาคนวิ่งข้ามแผนกออก')) return;
+      if (!res.data?.length) { toast.error('ลบไม่สำเร็จ — บัญชีนี้ไม่มีสิทธิ์ manpower_board:edit'); return; }
+      onChanged();
+    } finally { setBusy(false); }
+  };
+
+  /* 🎖️ รักษาการ — "คนนี้ดูแลหน่วยนี้ด้วย" ขึ้นหัวผังของหน่วยนั้น
+     🔴 ทะเบียนอ้างอิงล้วน: **ไม่ย้าย `employees.org_node_id` ไม่แตะ cost center ไม่นับกำลังคน**
+        (ถ้าวันหนึ่งเขาย้ายมาจริง ให้แก้สังกัดที่ /operator แล้วลบแถวรักษาการทิ้ง) */
+  const addActing = async (nodeId, emp) => {
+    if (blocked()) return;
+    if (!emp?.employee_id) return;
+    if (flexUnits.some(f => f.org_node_id === nodeId && f.employee_id === emp.employee_id && flexKind(f) === 'acting')) { toast.info('ตั้งรักษาการไว้แล้ว'); return; }
+    const home = empById.get(emp.employee_id);
+    if (home?.org_node_id === nodeId) { toast.info('คนนี้สังกัดหน่วยนี้อยู่แล้ว — เป็นหัวหน้าตัวจริง ไม่ใช่รักษาการ'); return; }
+    setBusy(true);
+    try {
+      const res = await supabase.from('employee_flex_units').insert({ employee_id: emp.employee_id, org_node_id: nodeId, kind: 'acting' }).select('id');
+      if (!checkWrite(res, 'ตั้งรักษาการ')) return;
+      toast.success(`${emp.name} จะขึ้นหัวผังหน่วยนี้ในฐานะรักษาการ (สังกัด/cost center ไม่เปลี่ยน)`);
+      onChanged();
+    } finally { setBusy(false); }
+  };
+  const removeActing = async (row) => {
+    if (blocked()) return;
+    const e = empById.get(row.employee_id);
+    if (!window.confirm(`ยกเลิกรักษาการของ ${e?.name || 'คนนี้'}?\n(สังกัดจริงและ cost center ไม่เคยเปลี่ยนอยู่แล้ว)`)) return;
+    setBusy(true);
+    try {
+      const res = await supabase.from('employee_flex_units').delete().eq('id', row.id).select('id');
+      if (!checkWrite(res, 'ยกเลิกรักษาการ')) return;
       if (!res.data?.length) { toast.error('ลบไม่สำเร็จ — บัญชีนี้ไม่มีสิทธิ์ manpower_board:edit'); return; }
       onChanged();
     } finally { setBusy(false); }
@@ -173,6 +227,14 @@ export default function ManpowerBoardSetup({ section, nodes, lines, employees, s
           <button type="button" className="tbtn" onClick={onClose} title="ปิด"
             style={{ height: 30, padding: '0 12px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer' }}>✕ ปิด</button>
         </div>
+        {/* 🔒 นอกขอบเขตที่แก้ได้ = เขียนบอกตั้งแต่เปิดแผง **ห้ามซ่อนเงียบ** (กฎความซื่อสัตย์ของจอ)
+            ยังเปิดดูได้ตามเดิม — แค่บันทึกไม่ได้ (ทุกฟังก์ชันเขียนมีด่าน `blocked()` ซ้ำอีกชั้น) */}
+        {!secWrite?.ok && (
+          <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 8, fontSize: 12.5,
+            background: 'var(--card)', border: '1px solid var(--amber)', color: 'var(--amber)' }}>
+            🔒 {writeBlockText(secWrite, { what: `การตั้งค่าบอร์ดของ ${section?.name || 'ส่วนงานนี้'}` })} — ดูได้ แต่บันทึกไม่ได้
+          </div>
+        )}
 
         <section style={{ marginBottom: 18 }}>
           <div style={{ fontWeight: 800, marginBottom: 4 }}>1. จำนวนช่องตำแหน่งต่อทีม</div>
@@ -305,7 +367,7 @@ export default function ManpowerBoardSetup({ section, nodes, lines, employees, s
           {!depts.length ? <div style={{ fontSize: 13, color: 'var(--muted)' }}>ส่วนงานนี้ยังไม่มีแผนกในผังองค์กร (ตั้งที่ /org-setup)</div> : (
             <div style={{ display: 'grid', gap: 8 }}>
               {depts.map(d => {
-                const rows = flexUnits.filter(f => f.org_node_id === d.id);
+                const rows = flexUnits.filter(f => f.org_node_id === d.id && flexKind(f) === 'flex');
                 return (
                   <div key={d.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(140px, 220px) 1fr', gap: 8, alignItems: 'start', borderTop: '1px solid var(--border)', paddingTop: 8 }}>
                     <div style={{ fontWeight: 700, overflowWrap: 'anywhere' }}>{d.name}
@@ -331,6 +393,52 @@ export default function ManpowerBoardSetup({ section, nodes, lines, employees, s
               })}
             </div>
           )}
+        </section>
+
+        <section style={{ marginTop: 18 }}>
+          <div style={{ fontWeight: 800, marginBottom: 4 }}>5. 🎖️ รักษาการ (ดูแลหน่วยที่ไม่ใช่สังกัดจริง)</div>
+          <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>
+            คนที่ตำแหน่งในผังจริงอยู่หน่วยหนึ่ง แต่<b>รักษาการเป็นหัวหน้าของอีกหน่วย</b> —
+            ผูกไว้แล้วจะขึ้น <b>หัวผังของหน่วยนั้น</b> พร้อมป้าย 🎖️ รักษาการ + ชื่อหน่วยและ cost center ของบ้านจริง ·
+            <b> ไม่ย้ายสังกัด · cost center ไม่เปลี่ยน · ไม่นับเป็นกำลังคน</b>
+            {' '}· ถ้าย้ายมาสังกัดจริงแล้ว ให้แก้สังกัดที่ทะเบียนพนักงานแล้วลบแถวนี้ทิ้ง
+          </div>
+          <div style={{ display: 'grid', gap: 8 }}>
+            {actingUnits.map(u => {
+              const rows = flexUnits.filter(f => f.org_node_id === u.id && flexKind(f) === 'acting');
+              const real = employees.filter(e => e.org_node_id === u.id && ['manager', 'section_head', 'dept_head'].includes(e.position));
+              return (
+                <div key={u.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(140px, 220px) 1fr', gap: 8, alignItems: 'start', borderTop: '1px solid var(--border)', paddingTop: 8 }}>
+                  <div style={{ fontWeight: 700, overflowWrap: 'anywhere' }}>
+                    {u.name}{u.id === section.id ? <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}> (หัวผังของบอร์ด)</span> : null}
+                    {u.cost_center ? <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}>cost center {u.cost_center}</div> : null}
+                    {/* หัวหน้าตัวจริงที่มีอยู่แล้ว — บอกไว้กันตั้งรักษาการทับคนที่มีอยู่ */}
+                    {real.length > 0 && (
+                      <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}>
+                        หัวหน้าตัวจริง: {real.map(e => e.name).join(', ')}
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+                    {rows.map(r => {
+                      const e = empById.get(r.employee_id);
+                      return (
+                        <span key={r.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '2px 4px 2px 10px', border: '1px solid var(--amber)', borderRadius: 999, background: 'var(--bg2)', fontSize: 13 }}>
+                          🎖️ {e ? e.name : '(ไม่อยู่ในทะเบียน active)'}
+                          {e?.department && <span style={{ fontSize: 11, color: 'var(--muted)' }}>บ้าน {e.department}</span>}
+                          <DeleteButton disabled={busy} onClick={() => removeActing(r)} title={`ยกเลิกรักษาการของ ${e?.name || ''}`} style={{ width: 26, height: 26 }} />
+                        </span>
+                      );
+                    })}
+                    <div style={{ minWidth: 220, flex: '1 1 220px', maxWidth: 360 }}>
+                      <PersonSelect source="employees" allowFree={false} value="" disabled={busy}
+                        placeholder="+ ตั้งรักษาการ: ค้นชื่อ / รหัส…" onChange={(pp) => addActing(u.id, pp)} />
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </section>
       </div>
     </div>

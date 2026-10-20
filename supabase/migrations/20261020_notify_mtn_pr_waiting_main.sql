@@ -7,3 +7,6 @@ insert into public.notification_rules (event_key, label, category, is_enabled, s
 values ('mtn_pr_waiting', 'ใบ MO รอเปิด PR / รอเลข PR จาก SAP (แจ้งแอดมินช่าง)', 'maintenance', true, 36, '{}', array['mtn'], '{}', '{}', false, false, false, 'always', '/equipment?tab=spare')
 on conflict (event_key) do nothing;
 -- ย้อนกลับ: delete from public.notification_rules where event_key = 'mtn_pr_waiting';
+
+-- 20/10 (ต่อ) · user หาลิสต์ MO ที่รอเลข PR ไม่เจอ ⇒ ลิงก์แจ้งเตือนชี้ไปตัวกรองงาน PR ในหน้ารายการ MO (apply แล้ว)
+update public.notification_rules set link = '/mtn-repair?pr=waiting' where event_key = 'mtn_pr_waiting';

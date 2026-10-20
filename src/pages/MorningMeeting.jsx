@@ -193,6 +193,7 @@ export default function MorningMeeting() {
         // assigned_line เก็บ "id จุดงาน" ไม่ใช่ชื่อไลน์ — หาไลน์ของคนผ่าน employees.line_id แทน
         supabase.from('daily_production_logs')
           .select('employee_id, is_present, leave_type, shift, employees(line_id)')
+          /* cap-ok: daily_production_logs ของวันเดียว สูงสุด 208 แถว (วัด 20/10) */
           .eq('work_date', D).limit(3000),
         supabase.from('meeting_action_items')
           .select('*').eq('meeting_date', D).order('created_at'),

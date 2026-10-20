@@ -539,6 +539,30 @@ export default function DieRegistry() {
       )}
 
       {tab === 'registry' && <>
+      {/* filter bar — มาตรฐาน FilterBar (UI-STANDARD 2026-09-24) · ไลน์ = ชื่อเครื่องปั๊มจากแม่พิมพ์ (ไม่ใช่ production_lines) จึงไม่ใช้ LineSelect */}
+      <FilterBar>
+        <select value={filterLine} onChange={e => setFilterLine(e.target.value)}>
+          <option value="">{ALL.line}</option>
+          {dieLineNames.map(n => <option key={n} value={n}>{n}</option>)}
+        </select>
+        <select value={filterKind} onChange={e => setFilterKind(e.target.value)}>
+          <option value="">{allOf('รูปแบบชุด')}</option>
+          <option value={KIND_NONE}>— ยังไม่ระบุ ({stat.noKind}) —</option>
+          {setKinds.map(k => <option key={k.key} value={k.key}>{k.label}{k.is_active ? '' : ' (ปิดใช้)'}</option>)}
+        </select>
+        <SearchInput value={search} onChange={setSearch} fields="พาร์ท / ชื่อชุด / MAT / เลขแม่พิมพ์" />
+        <span className="spacer" />
+        <span className="filter-count">แสดง {rows.length} ชุด</span>
+        {canEdit && (
+          <button onClick={() => setEditSet({ ...emptySet, line_name: filterLine || '' })} style={{ ...saveBtnStyle, padding: '0 14px' }}>
+            + เพิ่มชุด
+          </button>
+        )}
+      </FilterBar>
+
+      {/* 🔴 การ์ดสรุป/แถบเตือน = **เนื้อหา** ต้องอยู่ใต้แถบกรอง (UI-STANDARD §2.1 ลำดับตายตัว:
+          ชื่อหน้า → แท็บ → แถบกรอง → เนื้อหา) — ย้ายลงมา 20/10 · ข้อยกเว้นมีแค่ <ReadOnlyNote>
+          และตัวเลขในการ์ดก็เปลี่ยนตามตัวกรอง ⇒ อ่านจากใต้แถบกรองตรงกว่า */}
       {/* สรุป */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
         {[
@@ -602,26 +626,6 @@ export default function DieRegistry() {
         </div>
       )}
 
-      {/* filter bar — มาตรฐาน FilterBar (UI-STANDARD 2026-09-24) · ไลน์ = ชื่อเครื่องปั๊มจากแม่พิมพ์ (ไม่ใช่ production_lines) จึงไม่ใช้ LineSelect */}
-      <FilterBar>
-        <select value={filterLine} onChange={e => setFilterLine(e.target.value)}>
-          <option value="">{ALL.line}</option>
-          {dieLineNames.map(n => <option key={n} value={n}>{n}</option>)}
-        </select>
-        <select value={filterKind} onChange={e => setFilterKind(e.target.value)}>
-          <option value="">{allOf('รูปแบบชุด')}</option>
-          <option value={KIND_NONE}>— ยังไม่ระบุ ({stat.noKind}) —</option>
-          {setKinds.map(k => <option key={k.key} value={k.key}>{k.label}{k.is_active ? '' : ' (ปิดใช้)'}</option>)}
-        </select>
-        <SearchInput value={search} onChange={setSearch} fields="พาร์ท / ชื่อชุด / MAT / เลขแม่พิมพ์" />
-        <span className="spacer" />
-        <span className="filter-count">แสดง {rows.length} ชุด</span>
-        {canEdit && (
-          <button onClick={() => setEditSet({ ...emptySet, line_name: filterLine || '' })} style={{ ...saveBtnStyle, padding: '0 14px' }}>
-            + เพิ่มชุด
-          </button>
-        )}
-      </FilterBar>
 
       {rows.length === 0 && (
         <div style={{ padding: 28, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>

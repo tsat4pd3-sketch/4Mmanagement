@@ -22,6 +22,7 @@ import fetchAllRows from '../utils/fetchAllRows';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { EQUIPMENT_KINDS, KIND_META } from '../utils/equipmentKinds';
 import { parallelUnitsOf } from '../utils/lineTypes';
+import { urlParam, urlPick, urlBool } from '../utils/urlInit';
 import { machineReliability, summarizeByKind, viewMetrics, poolRowPhases, fmtDur } from '../utils/mtnMetrics';
 import TimeRangeBar from './TimeRangeBar';
 import SearchInput from './SearchInput';
@@ -53,14 +54,15 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
      · `days` ยังคงไว้เพราะโค้ดคำนวณด้านล่างใช้ตัวเลขนี้ — แต่มาจากช่วงที่เลือกจริงแล้ว ไม่ใช่ค่าคงที่ */
   const tr = useTimeRange({ defaultDays: 30 });
   const days = rangeDays(tr.from, tr.to) || 30;
-  const [line, setLine] = useState('');
-  const [kind, setKind] = useState('all');
+  // ?mline= ?mkind= ?mmode= ?idle= (จอวนหน้า · คนละคีย์กับแผง KPI ที่อยู่หน้าเดียวกัน)
+  const [line, setLine] = useState(() => urlParam('mline') || '');
+  const [kind, setKind] = useState(() => urlPick('mkind', KIND_CHIPS.map(c => c.key), 'all'));
   const [q, setQ] = useState('');
   /* โหมดนับ: 'full' = นาทีเต็ม (มุมเครื่อง) · 'line' = ถ่วง 1/N (มุมไลน์ ตรงกับ %A) */
-  const [mode, setMode] = useState('full');
+  const [mode, setMode] = useState(() => urlPick('mmode', ['full', 'line'], 'full'));
   /* รวมเครื่องที่ไม่เคยเสียในช่วงที่ดู (คำสั่ง user 2026-09-14) — ค่าเริ่มต้นเปิด เพราะไม่นับ = MTBF ต่ำกว่าจริง
      ปิดได้เมื่ออยากดูเฉพาะตัวที่มีปัญหา (ตารางสั้นลง) */
-  const [withIdle, setWithIdle] = useState(true);
+  const [withIdle, setWithIdle] = useState(() => urlBool('idle', true));
   const [raw, setRaw] = useState({ downtimes: [], sessions: [] });
   const [breaks, setBreaks] = useState([]);
   const [loading, setLoading] = useState(true);

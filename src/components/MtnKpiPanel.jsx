@@ -7,6 +7,7 @@ import TimeRangeBar from './TimeRangeBar';
 import { ALL } from '../utils/filterLabels';
 import useTimeRange from '../utils/useTimeRange';
 import { rangeDays } from '../utils/timeRange';
+import { urlParam } from '../utils/urlInit';
 
 /* ══ 📊 KPI ช่าง — MTTA / MTTR / MDT + ความพึงพอใจ + ความน่าเชื่อถือรายอุปกรณ์ ══════════
    ย้ายมาจากแท็บ `?tab=kpi` ของ `/mtn-repair` เมื่อ 2026-09-22 (คำสั่ง user: *"ฟังก์ชันของช่าง
@@ -42,7 +43,7 @@ const satAvg = (s) => {
 };
 
 export default function MtnKpiPanel({ orders = [], scopeLines = null, lineObjs = [], machines = [], onGoQc7 }) {
-  const [line, setLine] = useState('');
+  const [line, setLine] = useState(() => urlParam('kline') || '');   // ?kline= ชื่อไลน์ (จอวนหน้า)
   /* ⏱️ ช่วงข้อมูล = แถบกลาง (UI §6.16) — เดิมเป็น dropdown "N วันล่าสุด" อย่างเดียว เลือกช่วงในอดีตไม่ได้
      · แผงนี้ฝังอยู่ในหน้าแม่ ⇒ ใช้ `?from=&to=` ร่วมกับแท็บอื่นของหน้าเดียวกัน (สลับแท็บแล้วช่วงไม่หาย)
      · `days` ยังคงไว้เพราะโค้ดคำนวณด้านล่างใช้ตัวเลขนี้ — แต่มาจากช่วงที่เลือกจริงแล้ว ไม่ใช่ค่าคงที่ */

@@ -370,7 +370,11 @@ const TABLE_ROWS = {
      🔴 ห้ามชี้หน่วยเดียวกับบ้านของคนนั้น — กฎกรองออก (ไม่วาดซ้ำ) แล้วสายนี้จะไม่เคยถูกรันเลย
      🔴 แถวที่บ้านจริงสืบไม่ได้ (ผูกระดับส่วนงาน) = เคสที่ `flexFrom.nodeName` ต้องถอยไปใช้ชื่อแผนกใน
         ทะเบียนพนักงาน — ห้ามเปลี่ยนให้ชี้แผนกตรงๆ ไม่งั้นสาขา fallback หายจาก harness */
-  employee_flex_units: (r, i) => ({ ...r, employee_id: `id-${(i % 2) + 1}`, org_node_id: 'id-2',
+  /* 🎖️ แถวที่ 3 เป็น `kind='acting'` โดยเจตนา — **ห้ามถอด** (20/10)
+     ป้ายรักษาการขึ้นหัวผัง/แถวหัวหน้าแผนก คนละเส้นทางกับการ์ด 🏃 flex
+     ไม่มีแถว acting ใน mock = เส้นทางนั้นไม่เคยถูกรันใน crashsweep เลย */
+  employee_flex_units: (r, i) => ({ ...r, employee_id: `id-${(i % 2) + 1}`, org_node_id: i % 3 === 2 ? 'id-1' : 'id-2',
+    kind: i % 3 === 2 ? 'acting' : 'flex',
     note: isNullish(r) ? null : 'ช่วยกะเช้าประจำ' }),
   line_helpers: (r, i) => ({ ...r, employee_id: `id-${(i % 4) + 7}`, to_line_id: 'id-9', shift: i % 2 ? 'day' : 'night',
     work_date: _recentDay(i % 20) }),

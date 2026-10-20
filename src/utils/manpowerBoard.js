@@ -24,6 +24,7 @@ import { getLineFamily } from './lineHierarchy.js';
 import { orgNodeCompare, naturalCompare } from './listOrder.js';
 import { wavg, wLoad, wRun } from './oee.js';
 import { skillFit, skillMapOf, pendingMapOf } from './skillFit.js';
+import { costCenterOfNode } from './ccScope.js';
 
 /** แถว (row) ของผังที่คนแต่ละตำแหน่งไปอยู่ */
 export const ROW = Object.freeze({
@@ -100,6 +101,16 @@ function deptOfNode(idx, nodeId) {
   return null;
 }
 
+/* ── 🏃 คนวิ่งข้ามแผนก / 🎖️ รักษาการ — ทะเบียนเดียวกัน (`employee_flex_units`) แยกด้วย `kind` ──
+   🔴 **ค่าว่าง/ไม่รู้จัก = `flex`** (พฤติกรรมเดิมก่อน migration 20/10 · แถวเก่าไม่มีคอลัมน์นี้)
+   ⇒ จอที่ยังไม่ `select('kind')` ทำงานเหมือนเดิมทุกประการ ไม่ใช่ "รักษาการหายเงียบ" แบบสลับกัน */
+export const FLEX_KINDS = Object.freeze({ FLEX: 'flex', ACTING: 'acting' });
+export const flexKind = (fu) => (fu?.kind === FLEX_KINDS.ACTING ? FLEX_KINDS.ACTING : FLEX_KINDS.FLEX);
+/** แถว "รักษาการ" ของหน่วยหนึ่ง — เทียบ `org_node_id` ตรงตัว **ห้ามไล่ขึ้นหาแม่**
+ *  (รักษาการ PD4 ไม่ได้แปลว่ารักษาการทุกแผนกใต้ PD4 — คนละเรื่องกับขอบเขตสิทธิ์) */
+export const actingOf = (flexUnits = [], nodeId) =>
+  (flexUnits || []).filter(f => f?.employee_id && f.org_node_id === nodeId && flexKind(f) === FLEX_KINDS.ACTING);
+
 const sectionMatches = (sec, text) => {
   const t = String(text || '').trim().toLowerCase();
   return !!t && [sec?.code, sec?.name].some(v => String(v || '').trim().toLowerCase() === t);
@@ -137,10 +148,14 @@ export function planOf(familyLines, shift) {
  * @param {object[]} [p.lineTechs]   line_technicians { employee_id, line_id } — ช่างประจำไลน์ (ข้ามแผนกได้ เช่นช่าง MTN)
  * @param {object[]} [p.helpers]     ผลของ mergeBorrowedEmployees() (พนักงาน + _helperTo/_helperFrom/_helperShift)
  *                                   — คนยืมตัววันนี้ · **ห้ามคิวรี line_helpers เอง** (UI §6.13)
- * @param {object[]} [p.flexUnits]   employee_flex_units { employee_id, org_node_id, note } — คนวิ่งข้ามแผนก
- *                                   (ไปช่วยหน่วยอื่น**ประจำ** คนละตัวกับ `helpers` ที่เป็นรายวัน/รายกะ)
- *                                   🔴 **ไม่นับเป็นกำลังคนของแผนกที่ไปช่วย** — บ้านจริงนับเขาอยู่แล้ว
- *                                   นับ 2 ที่ = กำลังคนปลอม · ว่าง/ไม่ส่ง = พฤติกรรมเดิมเป๊ะ
+ * @param {object[]} [p.flexUnits]   employee_flex_units { employee_id, org_node_id, note, kind } — **2 ความหมาย**
+ *   · `kind='flex'`   🏃 คนวิ่งข้ามแผนก — ไปช่วยหน่วยอื่น**ประจำ** (คนละตัวกับ `helpers` ที่เป็นรายวัน/รายกะ)
+ *                     ⇒ ขึ้นการ์ดในแผนกที่ไปช่วย
+ *   · `kind='acting'` 🎖️ **รักษาการ** — ดูแล/บังคับบัญชาหน่วยนั้น ⇒ ขึ้น **"หัวผัง" ของหน่วยที่ระบุ**
+ *                     (รากบอร์ด → แถวผู้จัดการ/หัวหน้าส่วน · แผนก → แถวหัวหน้าแผนกของแผนกนั้น)
+ *   🔴 **ทั้ง 2 แบบไม่นับเป็นกำลังคน** — บ้านจริงนับเขาอยู่แล้ว นับ 2 ที่ = กำลังคนปลอม
+ *   🔴 **ไม่ย้ายสังกัด ไม่แตะ cost center** — การ์ดเขียนบ้านจริง + CC ของบ้านจริงกำกับเสมอ
+ *   · ว่าง/ไม่ส่ง/ไม่มีคอลัมน์ `kind` = พฤติกรรมเดิมเป๊ะ (ค่าว่าง = `flex`)
  * @param {object[]} [p.stations]     workstations { id, line_id, line_name, station_name }
  * @param {object[]} [p.stationPlans] station_slot_plans { station_id, per_shift } — จุดงานต้องมีกี่คนต่อกะ
  * @param {object}   [p.homeByEmp]    { [employee_id]: station_id } (employee_home_positions)
@@ -153,7 +168,11 @@ export function buildManpowerBoard({ section, nodes = [], employees = [], lines 
   const idx = indexNodes(nodes);
   const sub = descendants(idx, section.id);
   const subIds = new Set([section.id, ...sub.map(n => n.id)]);
-  const deptNodes = sub.filter(n => n.kind === 'department').sort(orgNodeCompare);
+  /* 🏛️ รากของบอร์ดเป็น **แผนกขึ้นตรงฝ่าย** ได้ (JIG MTN · QA — ไม่มีส่วนงานแม่ · ORPHAN_SECTION
+     ใน sectionScope.js) ⇒ ต้องนับตัวเองเป็นแผนกของบอร์ดด้วย ไม่งั้นคนทั้งหน่วยตกถัง "ไม่ระบุแผนก"
+     (`deptOfNode` คืนโหนดตัวเองเมื่อ kind='department' อยู่แล้ว) */
+  const deptNodes = [...(section.kind === 'department' ? [section] : []),
+    ...sub.filter(n => n.kind === 'department')].sort(orgNodeCompare);
 
   const members = employees.filter(e =>
     e.org_node_id ? subIds.has(e.org_node_id) : sectionMatches(section, e.section));
@@ -183,6 +202,18 @@ export function buildManpowerBoard({ section, nodes = [], employees = [], lines 
 
   const byName = (a, b) => naturalCompare(a.name || '', b.name || '');
   const empById = new Map(employees.map(e => [e.id, e]));
+  /* 🏠 "บ้านจริง" ที่ต้องเขียนกำกับการ์ดเสมอ — หน่วยสังกัด + cost center ของหน่วยนั้น
+     🔴 การ์ด flex/acting **ห้ามโชว์ CC ของหน่วยที่ไปช่วย/รักษาการ** — ค่าแรงยังลงบ้านจริง
+     อ่าน CC ผ่าน `costCenterOfNode()` (ตกทอดจากแม่ · กฎอยู่ไฟล์เดียวใน ccScope.js) */
+  const homeRefOf = (e, fu) => ({
+    /* แผนกก่อน (พฤติกรรมเดิมของการ์ด flex) → ถ้าสังกัดอยู่ระดับส่วนงานเอง (ผจก./หัวหน้าส่วน)
+       `deptOfNode` คืน null ⇒ ใช้ชื่อโหนดนั้นตรงๆ → สุดท้ายค่อยถอยไปคอลัมน์ข้อความ */
+    nodeName: (e.org_node_id ? deptOfNode(idx, e.org_node_id)?.name : null)
+      || (e.org_node_id ? idx.byId.get(e.org_node_id)?.name : null)
+      || String(e.department || '').trim() || String(e.section || '').trim() || null,
+    costCenter: costCenterOfNode(e.org_node_id, nodes).code,
+    note: String(fu?.note || '').trim(),
+  });
   const lineById = new Map(lines.map(l => [String(l.id), l]));
   const helperByEmp = new Map(helpers.map(h => [h.id, h]));
   const needOf = new Map(stationPlans.map(sp => [String(sp.station_id), Number(sp.per_shift) || 0]));
@@ -235,18 +266,27 @@ export function buildManpowerBoard({ section, nodes = [], employees = [], lines 
       const here = new Set([...b.heads, ...b.techs, ...b.people].map(p => p.id));
       for (const fu of flexUnits) {
         if (!fu?.employee_id || !fu.org_node_id) continue;
+        if (flexKind(fu) !== 'flex') continue;        // 🎖️ รักษาการ ขึ้นหัวผัง ไม่ใช่การ์ดในแผนก
         const to = deptOfNode(idx, fu.org_node_id);
         if (!to || to.id !== b.node.id) continue;
         if (here.has(fu.employee_id)) continue;      // คนในสังกัด/ช่างของแผนกนี้แล้ว — ไม่วาดซ้ำ
         const e = empById.get(fu.employee_id);
         if (!e) continue;                            // ลาออก/ปิดใช้งาน — ทะเบียนผูกไว้แต่คนไม่อยู่แล้ว
-        const home = e.org_node_id ? deptOfNode(idx, e.org_node_id) : null;
         here.add(e.id);                              // ผูกไว้หลายหน่วยในแผนกเดียว = การ์ดใบเดียว
-        flex.push(cardOf(e, { flexFrom: {
-          nodeName: home?.name || String(e.department || '').trim() || null,
-          costCenter: home?.cost_center || null,
-          note: String(fu.note || '').trim(),
-        } }));
+        flex.push(cardOf(e, { flexFrom: homeRefOf(e, fu) }));
+      }
+    }
+
+    /* 🎖️ รักษาการของ **แผนกนี้** — ขึ้นแถวหัวหน้าแผนก (ไม่นับกำลังคน · ไม่แตะสังกัด/CC)
+       คนที่สังกัดแผนกนี้อยู่แล้วไม่ต้องติดป้าย (เขาเป็นหัวหน้าตัวจริงของหน่วยตัวเอง) */
+    if (b.node) {
+      const headIds = new Set(b.heads.map(p => p.id));
+      for (const a of actingOf(flexUnits, b.node.id)) {
+        if (headIds.has(a.employee_id)) continue;
+        const e = empById.get(a.employee_id);
+        if (!e || e.org_node_id === b.node.id) continue;
+        headIds.add(e.id);
+        b.heads.push(cardOf(e, { acting: homeRefOf(e, a) }));
       }
     }
 
@@ -336,6 +376,22 @@ export function buildManpowerBoard({ section, nodes = [], employees = [], lines 
     });
   }
   out.sort((a, b) => (a.key === NO_DEPT) - (b.key === NO_DEPT) || (a.node && b.node ? orgNodeCompare(a.node, b.node) : 0));
+
+  /* 🎖️ รักษาการของ **หน่วยรากของบอร์ด** → ขึ้นหัวผัง (แถวผู้จัดการ/หัวหน้าส่วน)
+     เคสจริง 20/10: ผจก.ฝ่ายสังกัด PD3 รักษาการ ผจก. ของ PD4 + JIG MTN ด้วย
+     ⇒ หัวผัง 2 หน่วยนั้นว่างทั้งที่หน้างานมีคนดูแลจริง
+     🔴 **ไม่นับเป็นกำลังคน** (top[] ไม่เคยเข้า cols/ops อยู่แล้ว) · **ไม่ย้ายสังกัด ไม่แตะ cost center**
+        การ์ดเขียนบ้านจริง + CC ของบ้านจริงกำกับ ⇒ อ่านแล้วรู้ทันทีว่าเป็นคนของหน่วยอื่น */
+  {
+    const topIds = new Set(top.map(p => p.id));
+    for (const a of actingOf(flexUnits, section.id)) {
+      if (topIds.has(a.employee_id)) continue;
+      const e = empById.get(a.employee_id);
+      if (!e || e.org_node_id === section.id) continue;   // สังกัดหน่วยนี้อยู่แล้ว = ตัวจริง ไม่ใช่รักษาการ
+      topIds.add(e.id);
+      top.push(cardOf(e, { acting: homeRefOf(e, a) }));
+    }
+  }
 
   const sum = (f) => out.reduce((s, d) => s + (f(d) || 0), 0);
   return {

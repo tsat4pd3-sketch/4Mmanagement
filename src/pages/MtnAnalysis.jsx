@@ -21,6 +21,7 @@ import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { ASSET_CLASSES, assetClassOf, firstAssetWithData } from '../utils/qc7';
 import { useSearchParams } from 'react-router-dom';
+import { urlParam } from '../utils/urlInit';
 import { Panel, NotEnough, Histogram, ControlChart, ScatterPlot, Fishbone, CheckSheet, Stratify, RunChart } from '../components/Qc7Charts';
 
 /* ══ 🔍 วิเคราะห์ปัญหา (ซ่อมบำรุง) — QC 7 Tools แยกตามชนิดสินทรัพย์ ══════════  2026-09-22
@@ -126,7 +127,7 @@ export default function MtnAnalysis() {
   const tr = useTimeRange({ defaultScale: 'week', defaultDays: 90 });
   const days = rangeDays(tr.from, tr.to) || 90;
   const [src] = useState('mo');   // คงไว้เพื่อ unit/ป้ายข้อความ — ไม่มี UI สลับแล้ว
-  const [team, setTeam] = useState('all');   // แผนกช่าง (แทน dropdown แหล่งข้อมูลเดิม)
+  const [team, setTeam] = useState(() => urlParam('team') || 'all');   // แผนกช่าง (แทน dropdown แหล่งข้อมูลเดิม) · ?team= (จอวนหน้า)
   const [orders, setOrders] = useState([]);
   const [dts, setDts] = useState([]);
   const [kindByMc, setKindByMc] = useState({});

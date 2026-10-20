@@ -6,7 +6,7 @@
      employees.org_node_id        → แกนสังกัดของพนักงาน    308 แถว
      profiles.org_node_id         → สังกัดของบัญชี          72 แถว
      org_assignments.org_node_id  → การแต่งตั้งหัวหน้าหน่วย  4 แถว  (cascade — หายพร้อมโหนด)
-     employee_flex_units.org_node_id → คนวิ่งข้ามมาช่วยหน่วยนี้ (cascade — หายพร้อมโหนด · เพิ่ม 14/10)
+     employee_flex_units.org_node_id → คนวิ่งข้ามมาช่วย + รักษาการของหน่วยนี้ (cascade — หายพร้อมโหนด · 14/10 · kind 20/10)
      + **"สำเนาชื่อ" ที่ทะเบียนอื่นเก็บเป็น text ไม่ผูก FK** (ไม่มีใครเตือนเวลาลบ/เปลี่ยนชื่อ):
        employees.section / department / group_name / team · profiles.section / team / sections[]
        **+ นอกฝั่งพนักงาน (เพิ่ม 08/10 — เดิมไม่ถูกนับเลย ⇒ กำพร้าเงียบ):**
@@ -156,7 +156,9 @@ export function orgRefDeleteNote(refs) {
   if (!refs) return '';
   const l = [];
   if (refs.heads) l.push(`⚠ การแต่งตั้งหัวหน้าหน่วยนี้ ${refs.heads} รายการจะถูกลบไปด้วย`);
-  if (refs.flex) l.push(`⚠ คนวิ่งข้ามแผนกที่ผูกไว้กับหน่วยนี้ ${refs.flex} รายการจะถูกลบไปด้วย`
+  /* นับรวมทั้ง 🏃 คนวิ่งข้ามแผนก และ 🎖️ รักษาการ — ทะเบียนเดียวกัน (`employee_flex_units.kind`)
+     ทั้งคู่ cascade หายพร้อมโหนด ⇒ ต้องบอกก่อนลบ (20/10) */
+  if (refs.flex) l.push(`⚠ คนวิ่งข้ามแผนก/รักษาการที่ผูกไว้กับหน่วยนี้ ${refs.flex} รายการจะถูกลบไปด้วย`
                       + ' (สังกัดจริงและ cost center ของเขาไม่เปลี่ยน)');
   if (refs.sharedWith?.length && (refs.textEmp || refs.textProf)) {
     l.push(`ℹ คีย์ "${(refs.values || []).join(' / ')}" ยังมีโหนดอื่นถืออยู่ ${refs.sharedWith.length} ตัว`

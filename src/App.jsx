@@ -635,7 +635,10 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
     {fbOpen && <Suspense fallback={null}><FeedbackModal onClose={() => setFbOpen(false)} /></Suspense>}
     {avatarFile && (
       <Suspense fallback={null}>
-        <ImageCropModal file={avatarFile} aspect={1} shape="circle" outputSize={480}
+        {/* 🚫 รูปคนไม่รับ GIF (กฎเดียวกับรูปพนักงานที่ /operator · /register) — เดิมไม่ส่ง allowGif
+            ⇒ GIF ถึง 2MB ถูกอัปเป็น `avatar_*.jpg` + contentType image/jpeg (นามสกุลโกหกเนื้อไฟล์)
+            และโผล่บน sidebar ทุกหน้าทุกเครื่อง (QC audit 20/10) */}
+        <ImageCropModal file={avatarFile} aspect={1} shape="circle" outputSize={480} allowGif={false} webp
           title="จัดตำแหน่งรูปโปรไฟล์" onCancel={() => setAvatarFile(null)}
           onConfirm={async (blob) => {
             setAvatarFile(null);
