@@ -2999,6 +2999,39 @@ test('🛡️ /org-setup: ทุกชั้นที่มีปุ่มเพ
     '\n\n❌ handleSave ไม่ได้ใช้ orgSaveBlockReason ตัดสินสิทธิ์ — ดูเหตุผลด้านบน\n');
 });
 
+/* ── 🔴 ทะเบียน "ของกลางทั้งโรงงาน" — ไม่มีเจ้าของรายหน่วย ⇒ ด่านคือ "คีย์สิทธิ์" (QC audit §7.4 · 20/10)
+   ทะเบียนพวกนี้ไม่มีคอลัมน์หน่วยงานให้ยึด (machine_types · pm_facility_areas · break_policies ·
+   bbs_agreements · skill_definitions) ⇒ ชั้นที่ 3 ใช้ไม่ได้ · ด่านเดียวที่มีคือคีย์เดียวกับปุ่มบนจอ
+   แต่วัดแล้ว 13 handler **ไม่เช็คอะไรเลย** — พึ่งการซ่อนปุ่มอย่างเดียว (คลาสเดียวกับ audit ข้อ 5)
+   ⚠️ ของพวกนี้แก้ทีเดียวกระทบทั้งโรงงาน (นโยบายพัก = ฐานเวลา %A/%P · นิยามสกิล = คะแนนทุกคน) */
+test('🛡️ ทะเบียนของกลาง: handler ที่เขียนต้องเช็คคีย์สิทธิ์เอง ไม่ใช่พึ่งซ่อนปุ่ม', () => {
+  /* ตรวจจาก "คำสั่งเขียนจริง" แล้วย้อนขึ้นไปหาฟังก์ชันที่ครอบมันอยู่ — ไม่ยึดชื่อฟังก์ชัน
+     (ไฟล์ใหญ่มี handleSave ซ้ำหลายตัว · ยึดชื่อ = จับผิดตัว) */
+  const FN = /\n  (?:const|async function)\s+[A-Za-z0-9_]+\s*=?\s*(?:async)?\s*(?:\([^)]*\)|[A-Za-z0-9_]+)\s*=>?\s*\{/g;
+  const cases = [
+    ['src/pages/MachineDatabase.jsx', 'machine_types',     /canEdit/,                  'machines:edit'],
+    ['src/pages/MachineDatabase.jsx', 'pm_facility_areas', /canEdit/,                  'machines:edit'],
+    ['src/pages/DailyReport.jsx',     'break_policies',    /canEdit/,                  'daily_report:setup'],
+    ['src/pages/BbsCheck.jsx',        'bbs_agreements',    /canManage/,                'bbs:manage'],
+    ['src/pages/FactoryMap.jsx',      'pm_facility_areas', /canEdit/,                  'factory_map:edit'],
+    ['src/pages/operator.jsx',        'skill_definitions', /canEditSkills|canDeleteUtil/, 'skills:edit / skills:delete'],
+  ];
+  for (const [file, table, need, key] of cases) {
+    const code = stripComments(readFileSync(join(ROOT, file), 'utf8'));
+    const starts = [...code.matchAll(FN)].map(m => m.index);
+    const writes = [...code.matchAll(new RegExp(`from\\('${table}'\\)[\\s\\S]{0,160}?\\.(insert|update|upsert|delete)\\(`, 'g'))];
+    assert.ok(writes.length > 0, `${file}: ไม่เจอคำสั่งเขียน ${table} — ด่านนี้ต้องแก้ตามโครงไฟล์ใหม่`);
+    for (const w of writes) {
+      const fnStart = starts.filter(i => i < w.index).pop();
+      const body = code.slice(fnStart ?? 0, w.index);
+      assert.ok(need.test(body),
+        `\n\n❌ ${file} เขียน ${table} โดยไม่เช็คสิทธิ์ (${key}) ในฟังก์ชันนั้น\n`
+        + '   ทะเบียนของกลางไม่มีคอลัมน์หน่วยงาน ⇒ ชั้นที่ 3 ช่วยไม่ได้ คีย์สิทธิ์คือด่านเดียวที่มี\n'
+        + '   และฝั่ง DR ไม่มี RLS ⇒ ยิงตรงก็ผ่าน ถ้าจอไม่เช็ค\n');
+    }
+  }
+});
+
 /* ── 🔴 MO: `manage_master` ต้องอยู่ "ท้ายสุด" ของตัวตรวจขั้น — ด่านทุกตัวต้องมาก่อน (20/10/2026) ──
    คีย์นี้ถูกแจกให้ role `mtn` **ทั้งก้อน 16 บัญชี** (ไม่ใช่แค่หัวหน้า) ⇒ ด่านไหนที่อยู่ "ใต้" มัน
    = ด่านปลอมสำหรับช่างทุกคน · เจอมาแล้ว 2 รอบในไฟล์เดียวกัน:

@@ -2293,6 +2293,9 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
     setAssignLine(''); setNewZone(''); setNewZoneType('fac'); setNewZoneKind('fg'); setAssignFor(pts); // ตีกรอบได้เสมอ (ไลน์ผลิต / โซน facility / โซนคลัง / พิมพ์ชื่อโซนใหม่)
   };
   const confirmAssign = async () => {
+    /* ด่านชั้น 2 — ตีกรอบไลน์/โซนบนผัง + สร้างทะเบียนโซน (ของกลางทั้งโรงงาน)
+       ⇒ ด่าน = คีย์เดียวกับปุ่ม (ซ่อนปุ่มไม่ใช่ด่าน · QC audit §7.4 · 20/10) */
+    if (!canEdit) { toast.error('แก้ผังโรงงานต้องมีสิทธิ์ factory_map:edit (และอยู่ในโหมดตั้งค่าผัง)'); return; }
     const target = (assignLine === '__new__' ? newZone.trim() : assignLine).trim();
     if (!target) return toast.error('เลือกไลน์/โซน หรือพิมพ์ชื่อโซนใหม่ก่อน');
     if (regions.some(r => r.line_name === target)) return toast.error(`"${target}" ถูกตีกรอบไว้แล้ว`);

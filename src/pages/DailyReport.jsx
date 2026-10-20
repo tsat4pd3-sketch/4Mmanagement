@@ -7778,6 +7778,9 @@ function BreakPolicySetup({ role }) {
   };
 
   const handleSave = async () => {
+    /* ด่านชั้น 2 — ทะเบียนของกลางทั้งโรงงาน (ไม่มีเจ้าของรายหน่วย) ⇒ ด่าน = คีย์สิทธิ์เดียวกับปุ่ม
+       (ซ่อนปุ่มไม่ใช่ด่าน · QC audit §7.4 · 20/10) */
+    if (!canEdit) { toast.error('แก้นโยบายหยุดพักต้องมีสิทธิ์ daily_report:setup'); return; }
     if (!form.name_th) { toast.error('กรอกชื่อ'); return; }
     const dur = parseInt(form.duration_min);
     if (!(dur > 0)) { toast.error('ระยะเวลาต้องมากกว่า 0'); return; }
@@ -7809,9 +7812,10 @@ function BreakPolicySetup({ role }) {
   };
 
   const handleDelete = async (id) => {
+    if (!canEdit) { toast.error('ลบนโยบายหยุดพักต้องมีสิทธิ์ daily_report:setup'); return; }
     if (!window.confirm('ลบนโยบายนี้?')) return;
-    const { error } = await supabaseDR.from('break_policies').delete().eq('id', id);
-    if (error) { toast.error(error.message); return; }
+    // นับแถวที่ลบจริง — นโยบายพักเป็นฐานเวลาของ %A/%P ทั้งโรงงาน ลบไม่ติดแล้วบอกว่าลบ = จอโกหก
+    if (!checkWriteRows(await supabaseDR.from('break_policies').delete().eq('id', id).select('id'), 'ลบนโยบายหยุดพัก')) return;
     invalidateTable('break_policies');
     load();
   };
