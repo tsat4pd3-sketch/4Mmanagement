@@ -258,6 +258,8 @@ const FM_METRICS = [
 const CSEC = ['10', '15', '20', '30', '45', '60', '90', '120', '180', '300'].map(v => opt(v, `${v} วิ`));
 const FM_MODE = [opt('live', '⚡ Live (วันนี้สด)'), opt('review', '📅 ทบทวนรายวัน')];
 const FM_PANEL = [opt('review', '⚡ สรุปวันนี้'), opt('obeya', '🏛️ OBEYA (สด)'), opt('live', '📊 อันดับ')];
+const DASH_SHIFT = { key: 'shift', label: 'กะ (ตั้ง = ค้างกะนี้ ไม่สลับเองตอน 08:00/20:00)', kind: 'select', options: [opt('all', 'ทุกกะ'), opt('day', '☀️ กะเช้า'), opt('night', '🌙 กะดึก')] };
+const DASH_SCROLL = { key: 'scroll', label: 'เลื่อนเอง (ไม่แบ่งหน้าหมุน)', kind: 'select', options: [opt('1', 'เปิด'), opt('0', 'ปิด')] };
 const LBL = ['0.6', '0.8', '1', '1.2', '1.4', '1.6'].map(v => opt(v, `${Math.round(v * 100)}%`));
 /* 🔴 คีย์ทุกตัวตรวจจากโค้ดหน้านั้นแล้ว (15/10) — อ่านผ่าน useSearchParams / useTabParam หรือ utils/urlInit
    kind: select · bool · section (ชื่อส่วนงาน) · line (ชื่อไลน์) · scope (คีย์ขอบเขตผังองค์กร `section:PD3`/`line_group:…`)
@@ -284,14 +286,17 @@ export const DISPLAY_PAGE_PARAMS = Object.freeze({
     { key: 'lbl', label: 'ขนาดป้าย', kind: 'select', options: LBL },
     { key: 'nopanel', label: 'ซ่อนแผงขวา', kind: 'bool' },
     { key: 'support', label: 'โชว์โซนสนับสนุน', kind: 'bool' },
+    { key: 'storyall', label: 'ป๊อปอัปไลน์ แสดงทุกเรื่อง', kind: 'bool' },
   ],
   '/dashboard': [
     { key: 'section', label: 'ส่วนงาน', kind: 'section' },
+    DASH_SHIFT, DASH_SCROLL,
   ],
   // จอคนแยกจาก /dashboard (19/10) · ?line= เปิดผังไลน์+คน (ลิงก์เก่า /dashboard?line= ถูกส่งต่อมาที่นี่)
   '/people-board': [
     { key: 'section', label: 'ส่วนงาน', kind: 'section' },
     { key: 'line', label: 'เปิดผังไลน์', kind: 'line' },
+    DASH_SHIFT, DASH_SCROLL,
   ],
   '/line-oee': [
     { key: 'line', label: 'ไลน์', kind: 'line' },
@@ -306,6 +311,11 @@ export const DISPLAY_PAGE_PARAMS = Object.freeze({
     { key: 'unit', label: 'แผนก', kind: 'orgdept', valueAs: 'name', showIf: { tab: ['', 'today'] } },
     { ...SCALE('day'), showIf: { tab: ['trend', 'insight'] } },
     { ...LAST, showIf: { tab: ['trend', 'insight'] } },
+    { key: 'auto', label: 'รีเฟรชอัตโนมัติ', kind: 'select', showIf: { tab: ['', 'today'] }, options: [opt('1', 'เปิด'), opt('0', 'ปิด')] },
+    { key: 'cmp', label: 'กางแถบวันนี้เทียบค่าเฉลี่ย', kind: 'bool', showIf: { tab: ['', 'today'] } },
+    { key: 'dtall', label: 'Downtime แสดงทุกสาเหตุ (ไม่ย่อ Top 8)', kind: 'bool', showIf: { tab: ['', 'today'] } },
+    { key: 'planned', label: 'Pareto รวมหยุดตามแผน', kind: 'bool', showIf: { tab: ['trend'] } },
+    { key: 'lean', label: 'แกนวิเคราะห์ Lean', kind: 'select', showIf: { tab: ['insight'] }, options: [opt('six_big_loss', '6 Big Losses (TPM)'), opt('waste_type', '8 Wastes (Lean)')] },
   ],
   '/obeya': [
     { key: 'tab', label: 'แท็บ', kind: 'select', options: [opt('kpi', '📋 บอร์ด KPI'), opt('sqdcm', '🖥️ จอ SQDCM'), opt('todo', '📌 งานค้าง'), opt('table', '⚙️ ตั้งค่า/กรอกข้อมูล')] },
@@ -313,6 +323,7 @@ export const DISPLAY_PAGE_PARAMS = Object.freeze({
     { key: 'period', label: 'ช่วง', kind: 'select', showIf: { tab: ['sqdcm'] }, options: [opt('week', 'สัปดาห์นี้'), opt('month', 'เดือนนี้'), opt('year', 'ปีนี้')] },
     { ...BOARD, showIf: { tab: ['', 'kpi', 'sqdcm'] } },
     { key: 'yfocus', label: 'โฟกัสช่วงค่าแกน Y', kind: 'bool', showIf: { tab: ['', 'kpi'] } },
+    { key: 'hr', label: 'แผ่นที่สลับ %/ชม. ได้ — เริ่มที่ชั่วโมง', kind: 'bool', showIf: { tab: ['', 'kpi'] } },
     { key: 'dept', label: 'งานค้างของ', kind: 'select', showIf: { tab: ['todo'] }, options: [
       opt('production', '🏭 ฝ่ายผลิต'), opt('maintenance', '🔧 ซ่อมบำรุง'), opt('store', '📦 สโตร์'), opt('qa', '✅ QA')] },
   ],
@@ -348,6 +359,8 @@ export const DISPLAY_PAGE_PARAMS = Object.freeze({
   '/mtn-layout': [
     { key: 'view', label: 'มุมมอง', kind: 'select', options: [opt('overview', 'ผังรวม'), opt('production', 'ผังไลน์ผลิต'), opt('facility', 'โซน facility')] },
     { key: 'zone', label: 'โซน (ชื่อ)', kind: 'text', showIf: { view: ['facility'] } },
+    { key: 'team', label: 'ทีมช่าง', kind: 'select', showIf: { view: ['production', 'facility'] }, options: [
+      opt('maintenance', 'MTN (ซ่อมบำรุง)'), opt('jig_maintenance', 'JIG MTN'), opt('die_maintenance', 'DIE MTN'), opt('production', 'AM (ผลิตตรวจเอง)')] },
     { key: 'metric', label: 'มุมมองผังรวม', kind: 'select', showIf: { view: ['', 'overview'] }, options: FM_METRICS },
     { key: 'cycle', label: '🔁 วนมุมมองเอง', kind: 'multi', optionsFrom: 'metric', showIf: { view: ['', 'overview'] } },
     { key: 'csec', label: 'วินาที/มุมมอง', kind: 'select', showIf: { cycle: '*' }, options: CSEC },

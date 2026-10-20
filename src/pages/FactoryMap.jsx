@@ -489,7 +489,8 @@ const supNames = (list, riskOnly) => {
 
 // setupMode=false (default, /factory-map) = display-only (ดู + popup ไม่มีปุ่มแก้ผัง)
 // setupMode=true (/layout-setup แท็บภาพรวมโรงงาน) = โหมดตั้งค่า อัปโหลดรูป/วาด polygon ได้
-export default function FactoryMap({ setupMode = false }) {
+/* `viewParam` = ชื่อคีย์ลิงก์ของมุมมอง 2D/3D — หน้าที่ฝังผังนี้ (เช่น /mtn-layout ที่ใช้ ?view= ของตัวเองอยู่แล้ว) เปลี่ยนชื่อได้ */
+export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
   const { role } = useContext(UserContext);
   const canEdit = setupMode && can('factory_map', 'edit', role);
   const navigate = useNavigate();
@@ -546,7 +547,7 @@ export default function FactoryMap({ setupMode = false }) {
   const [reviewDetail, setReviewDetail] = useState(null); // ไลน์แม่ที่คลิกดู breakdown ไลน์ย่อย (โหมด review)
   const [storyLine, setStoryLine] = useState(null);   // ไลน์ที่คลิกดู "สรุปเรื่องราวทั้งวัน" (modal หลัก)
   const [story, setStory] = useState(null);           // ข้อมูลสรุปของ storyLine
-  const [storyAll, setStoryAll] = useState(false);
+  const [storyAll, setStoryAll] = useState(() => urlBool('storyall', false));   // ?storyall= (จอวนหน้า)
   const [lensSel, setLensSel] = useState(null);       // เครื่องที่คลิกบนผังคู่ — การ์ดอยู่คอลัมน์ขวา (ผังไม่ดันตัวเองขึ้นลง · 16/10)    // กล่องรายละเอียด: true = ทุกเรื่อง · false = เฉพาะเรื่องของแท็บ (2026-10-16)
   const isMobile = useIsMobile();
   /* 📺 โหมดจอประชุม (20/10 · user "ทีวี 43-50 นิ้ว ยืนดูห่าง 2-3 ม.") — UI §6.32
@@ -596,7 +597,7 @@ export default function FactoryMap({ setupMode = false }) {
   // ซ่อนแผงขวา (จอ TV เอาพื้นที่คืนให้ผัง — จำต่อเครื่อง) · ปุ่มอยู่แถบ metric
   const [panelHide, setPanelHide] = useState(() => urlBool('nopanel', (() => { try { return localStorage.getItem('fm_panel_hide') === '1'; } catch { return false; } })()));
   // 🧊 มุมมอง 3D (2.5D · mockup 14/10) — ความชอบรายเครื่อง · โหมดแก้ผังบังคับ 2D เสมอ (ลาก/คลิกจุดต้องตรงพิกัด)
-  const [view3d, setView3d] = useState(() => { const u = urlPick('view', ['2d', '3d'], null); if (u) return u === '3d'; try { return localStorage.getItem('fm_view3d') === '1'; } catch { return false; } });
+  const [view3d, setView3d] = useState(() => { const u = urlPick(viewParam, ['2d', '3d'], null); if (u) return u === '3d'; try { return localStorage.getItem('fm_view3d') === '1'; } catch { return false; } });
   const toggleView3d = () => setView3d(v => { const n = !v; try { localStorage.setItem('fm_view3d', n ? '1' : '0'); } catch { /* ignore */ } return n; });
   // 🔄 มุมกล้อง 3D — ลากหมุน/ปุ่ม/ทัวร์ (ทำงานเฉพาะ 3D ที่ไม่ได้แก้ผัง — editing ประกาศไว้ข้างบนแล้ว)
   const wrapRef = useRef(null);
