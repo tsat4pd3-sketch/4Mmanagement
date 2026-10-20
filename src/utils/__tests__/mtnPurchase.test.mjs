@@ -75,3 +75,16 @@ test('GL ตั้งต้น — is_default ก่อน · แถวเดี
   assert.equal(repairPathMeta('outsource').outsource, true);
   assert.equal(repairPathMeta(null), null);
 });
+
+test('เลข PR จาก SAP — normalize + รอเลข', async () => {
+  const { normalizePrNo, isAwaitingPrNo } = await import('../mtnPurchase.js');
+  assert.equal(normalizePrNo(' 1000 2345 '), '10002345');
+  assert.equal(normalizePrNo('pr-12a'), 'PR-12A');
+  assert.equal(normalizePrNo('  '), null);
+  assert.equal(normalizePrNo(null), null);
+  assert.equal(isAwaitingPrNo({ status: 'requested', pr_no: null }), true);
+  assert.equal(isAwaitingPrNo({ status: 'ordered', pr_no: '' }), true);
+  assert.equal(isAwaitingPrNo({ status: 'requested', pr_no: '10002345' }), false);
+  assert.equal(isAwaitingPrNo({ status: 'cancelled', pr_no: null }), false);   // ยกเลิกแล้ว ไม่ต้องรอเลข
+  assert.equal(isAwaitingPrNo({ status: 'received', pr_no: null }), false);
+});

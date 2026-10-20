@@ -4830,6 +4830,8 @@ test('🛡️ mtn-pr-receive-via-rpc — รับของ PR ผ่าน mtn_
     if (!/mtn_purchase_requests/.test(src)) continue;
     if (/from\(['"]mtn_purchase_requests['"]\)[\s\S]{0,200}?\.delete\(/.test(src)) bad.push(`${relative(ROOT, f)} (delete)`);
     if (/status:\s*['"]received['"]/.test(src)) bad.push(`${relative(ROOT, f)} (เขียน status received เอง)`);
+    /* 19/10 คำสั่ง user: "เลข PR มาจาก SAP แอดมินช่างกรอก" ⇒ ระบบห้ามออกเลขเอง */
+    if (/mtn_assign_pr_no|from\(['"]mtn_pr_seq['"]\)/.test(src)) bad.push(`${relative(ROOT, f)} (ระบบออกเลข PR เอง — เลขต้องมาจาก SAP)`);
   }
   assert.deepEqual(bad, [],
     '\n\n❌ ใบขอซื้อ (PR) ถูกลบ หรือถูกตั้ง "received" ตรงจาก client: ' + bad.join(', ') + '\n'
@@ -5380,6 +5382,22 @@ test('🛡️ lot-mats-from-rules — lotMats มาจาก lotMatsOf(rules) �
   const pr = stripComments(readFileSync(join(ROOT, 'src/utils/partRefStock.js'), 'utf8'));
   if (!/mode === 'lot'\) continue/.test(pr)) bad.push('partRefStock.js inflowDestOf (กฎโหมด lot ต้องไม่ร่วมตัดสินคลัง)');
   assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n   แก้: ใช้ lotMatsOf(rules) จาก src/utils/stockReceipts.js (select ต้องมีคอลัมน์ mode)\n');
+});
+
+/* 🛡️ asset-url-data-inline (2026-10-19) — รูปที่ import ใน src/assets เล็กกว่า 4 KB ถูก Vite ฝังเป็น `data:` URL
+   เดิมใบพิมพ์ MO เช็คแค่ `https?:` แล้วต่อ `location.origin` หน้า ⇒ "https://…data:image/png…" = รูปพัง
+   (โลโก้ TS 2.4 KB ไม่ขึ้นมุมซ้ายใบแจ้งซ่อม · user แจ้ง 19/10) */
+test('🛡️ asset-url-data-inline — ห้ามต่อ location.origin หน้า URL ของ asset ที่ import มาตรงๆ', () => {
+  const bad = [];
+  for (const f of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const src = stripComments(readFileSync(f, 'utf8'));
+    const assets = [...src.matchAll(/^import\s+(\w+)\s+from\s+['"][^'"]*\.(?:png|jpe?g|svg|gif|webp)['"]/gm)].map(m => m[1]);
+    for (const a of assets) {
+      if (new RegExp(`location\\.origin\\s*\\+\\s*${a}\\b`).test(src)) bad.push(`${relative(ROOT, f)} (location.origin + ${a})`);
+    }
+  }
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n   ') + '\n'
+    + '   แก้: เช็ค /^(https?:|data:|blob:)/ ก่อน ค่อยต่อ origin เฉพาะ path สัมพัทธ์ (ดู absAssetUrl ใน MtnRepair.jsx)\n');
 });
 
 /* ── 🛡️ map3d-switch-no-transition (2026-10-19 · user "จอค่อยๆ วูมเอ้าตอนสลับ 3D/2D") ─────────────
