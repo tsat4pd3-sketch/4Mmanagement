@@ -33,6 +33,7 @@ import { toast } from './Toast';
 import { can } from '../utils/permissions';
 import { isLeafLine, getChildLineNames, getAncestorNames } from '../utils/lineHierarchy';
 import { notifyEvent } from '../utils/notifyEvent';
+import { getActor } from '../utils/actorStamp';   // 👤 "ใครเรียก" — ที่เดียวของตัวตนผู้ทำรายการ
 import { pointsForLine, DELIVER_GATES } from '../utils/replenishGate';
 import MatLabel from './MatLabel';
 import { slocCodeOfLine } from '../utils/storageLoc';   // 🏬 มุม SAP ของใบ (2026-09-08)
@@ -259,10 +260,17 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
   const lineSloc = useMemo(() => slocCodeOfLine(slocs, lines, lineName), [slocs, lines, lineName]);
   /* insert ใบ + แปะมุม SAP — 42703 = ยังไม่ apply 20260908_wip_replenish_storage_location (Main) → บันทึกแบบไม่ tag แล้วบอกบนจอ ห้ามให้การเบิกล้ม */
   const insertReq = async (row) => {
-    const full = { ...row, storage_location: lineSloc };
-    let res = await supabase.from('wip_replenish_requests').insert(full);
+    /* 🔴 20/10 — ใบที่ "ไลน์เรียก" ต้องบอกสโตร์ได้ว่าใครเรียก เหมือนใบที่สโตร์สร้างเอง
+       (`HeijunkaKanban` stamp `requested_by` อยู่แล้ว · ที่นี่เคย stamp แต่ `decided_by_name`
+       ⇒ วัดจริง: ใบ source='line' ทั้ง 4 ใบมี `requested_by` = null สโตร์โทรกลับไม่ได้ว่าใครขอ)
+       ตัวตนมาจาก `getActor()` ที่เดียว (utils/actorStamp.js) — ไม่รู้ตัวตน = ไม่ stamp ห้ามเดา */
+    const who = getActor();
+    const base = { ...row,
+                   requested_by: row.requested_by ?? (who.name || fullName || null),
+                   requested_by_uid: row.requested_by_uid ?? (who.uid || null) };
+    let res = await supabase.from('wip_replenish_requests').insert({ ...base, storage_location: lineSloc });
     if (res.error?.code === '42703') {
-      res = await supabase.from('wip_replenish_requests').insert(row);
+      res = await supabase.from('wip_replenish_requests').insert(base);
       if (!res.error) toast.info('บันทึกแล้ว แต่ยังไม่ได้ apply migration 20260908_wip_replenish_storage_location (Main) — ใบไม่ถูกแปะรหัสคลัง SAP');
     }
     return res;
@@ -322,6 +330,8 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
     setBusy(r.id);
     const { data, error } = await supabase.from('wip_replenish_requests')
       .update({ status: 'pending', requested_at: new Date().toISOString(),
+                // ปลดจากที่พักไว้ = "เรียกจริง" ตรงนี้ ⇒ คนที่ปลดคือคนเรียก (เวลาเริ่มนับที่นี่เหมือนกัน)
+                requested_by: getActor().name || fullName || null, requested_by_uid: getActor().uid || null,
                 decided_by_name: fullName || null, hold_reason: r.hold_reason })
       .eq('id', r.id).eq('status', 'hold').select('id');
     setBusy(null);
