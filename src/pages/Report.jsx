@@ -157,6 +157,13 @@ const SHIFT_SEG_ALL = SHIFT_OPTIONS.map(o => (o.value === '' ? { ...o, value: 'a
       แปลงเป็น state ของแท็บ (ส่วนงาน / แผนก / ชื่อไลน์) แบบเดียวกับที่ <LineScopeSelect> onChange ทำ
       · แท็บที่เก็บไลน์เป็น id (รายวัน/สรุปช่วง/Skill Matrix/Multi-Skill) แปลงชื่อ→id หลังโหลดทะเบียนไลน์
       · ฝ่าย / Cost Center = ไม่รองรับ (ตัวเลือกของแท็บไม่มี) ⇒ ไม่สนใจ */
+/** เติมชุดไลน์ของแผนกที่ตั้งชื่อไว้แล้ว — เนื้อเดิม = คืนตัวเดิม (ไม่ re-render วน) */
+function fillUnitLines(u, names) {
+  if (!u.name) return u;
+  const next = names || [];
+  return next.length === u.lines.length && next.every((n, i) => n === u.lines[i]) ? u : { ...u, lines: next };
+}
+
 function urlScopeSeed() {
   const sc = parseScopeKey(urlParam('scope'));
   if (sc.kind === 'section') return { section: sc.value, dept: '', line: '' };
@@ -1278,10 +1285,10 @@ function RangeTab() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [lines, setLines] = useState([]);
-  /* ?scope= — แผนกไม่รองรับในแท็บนี้ (กรองด้วยชุดไลน์ของแผนกซึ่งต้องใช้ดัชนีผัง) ⇒ รับแค่ส่วนงาน/ไลน์ */
+  /* ?scope= — แผนก: ตั้งชื่อไว้ก่อน แล้ว <LineScopeSelect onUnitLines> เติมชุดไลน์ให้เมื่อผังโหลดเสร็จ (20/10) */
   const [scopeSeed] = useState(urlScopeSeed);
   const [rangeSection, setRangeSection] = useState(scopeSeed?.section ?? '');
-  const [rangeUnit, setRangeUnit] = useState({ name: '', lines: [] });   // แผนก (org) → ชุดไลน์ (02/10)
+  const [rangeUnit, setRangeUnit] = useState({ name: scopeSeed?.dept || '', lines: [] });   // แผนก (org) → ชุดไลน์ (02/10)
   const [rangeLine, setRangeLine] = useState('');
   const [rangeTeam, setRangeTeam] = useState(urlTeam);
 
@@ -1380,7 +1387,7 @@ table{border-collapse:collapse;width:100%}
       >
         {/* ขอบเขต = ช่องเดียว ส่วนงาน → กลุ่มไลน์ → ไลน์ (<LineScopeSelect> · 2026-10-02) — เลือกไลน์ = กรองตามไลน์อย่างเดียวเหมือนเดิม (ส่วนงานว่าง) */}
         {/* + แผนก (org department) อยู่ในต้นไม้เดียวกัน (02/10 · user: "ให้เลือกระดับแผนกได้") — เดิมเป็นช่องแยกถัดไป */}
-        <LineScopeSelect lines={rangeLinesInScope} sections={rangeSections} section={rangeSection} line={rangeLine} unit={rangeUnit.name} pickDept valueKey="id"
+        <LineScopeSelect lines={rangeLinesInScope} sections={rangeSections} section={rangeSection} line={rangeLine} unit={rangeUnit.name} pickDept valueKey="id" onUnitLines={ul => setRangeUnit(u => fillUnitLines(u, ul))}
           onChange={(sec, ln, { unit, lines: ul }) => { setRangeSection(ln || unit ? '' : sec); setRangeLine(ln); setRangeUnit({ name: unit || '', lines: unit ? ul : [] }); }} />
         <select value={rangeTeam} onChange={e => setRangeTeam(e.target.value)}>
           <option value="">{ALL.team}</option>
@@ -1478,7 +1485,7 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
         ⇒ `useTimeRange` รับช่วงจาก deep-link ให้เองแล้ว ไม่ต้องเซ็ตซ้ำ (prop คงไว้เพื่อความเข้ากันได้) */
   const tr = useTimeRange({ defaultDays: 7 });
   const { from, to } = tr;
-  /* ?scope= — แผนกไม่รองรับในแท็บนี้ (ต้องใช้ดัชนีผังคิดชุดไลน์) · ไลน์ตั้งหลังโหลดทะเบียน ให้ครอบครัวไลน์ครบ */
+  /* ?scope= — แผนก: ชุดไลน์เติมผ่าน <LineScopeSelect onUnitLines> (20/10) · ไลน์ตั้งหลังโหลดทะเบียน ให้ครอบครัวไลน์ครบ */
   const [scopeSeed] = useState(urlScopeSeed);
   const [line,        setLine]        = useState('');
   const [cat,         setCat]         = useState(() => urlPick('cat', Object.keys(CAT_META), ''));
@@ -1488,7 +1495,7 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
   const [lines,       setLines]       = useState([]);
   const [loading,     setLoading]     = useState(false);
   const [fourMSection, setFourMSection] = useState(scopeSeed?.section ?? '');
-  const [fourMUnit, setFourMUnit] = useState({ name: '', lines: [] });   // แผนก (org) → ชุดไลน์ (02/10)
+  const [fourMUnit, setFourMUnit] = useState({ name: scopeSeed?.dept || '', lines: [] });   // แผนก (org) → ชุดไลน์ (02/10)
   const [rejectModal,  setRejectModal]  = useState(null);
   const [rejectReason, setRejectReason] = useState('');
   const [profileMap,   setProfileMap]   = useState({});
@@ -1982,7 +1989,7 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
           return (<>
             {/* ขอบเขต = ช่องเดียว ส่วนงาน → กลุ่มไลน์ → ไลน์ (<LineScopeSelect> · 2026-10-02) — เลือกไลน์ = กรองตามไลน์อย่างเดียวเหมือนเดิม (ส่วนงานว่าง) */}
             {/* + แผนก (org department) อยู่ในต้นไม้เดียวกัน (02/10 · user: "ให้เลือกระดับแผนกได้") — เดิมเป็นช่องแยกถัดไป */}
-            <LineScopeSelect lines={scopedLines} sections={fourMSections} section={fourMSection} line={line} unit={fourMUnit.name} pickDept
+            <LineScopeSelect lines={scopedLines} sections={fourMSections} section={fourMSection} line={line} unit={fourMUnit.name} pickDept onUnitLines={ul => setFourMUnit(u => fillUnitLines(u, ul))}
               onChange={(sec, ln, { unit, lines: ul }) => { setFourMSection(ln || unit ? '' : sec); setLine(ln); setFourMUnit({ name: unit || '', lines: unit ? ul : [] }); }} />
           </>);
         })()}
