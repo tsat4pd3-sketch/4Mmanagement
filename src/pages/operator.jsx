@@ -14,7 +14,7 @@ import { loadLinesRes, loadProductionLines } from '../utils/useProductionLines';
 import resizeImg from '../utils/resizeImage';
 import { fmtDateMedium } from '../utils/dateFormat';
 import ImageCropModal from '../components/ImageCropModal';
-import { can, isActionSeeded } from '../utils/permissions';
+import { can, isActionSeeded, canDelete as canDeleteUtil } from '../utils/permissions';
 import {
   inSectionScope, ORPHAN_SECTION, ORPHAN_SECTION_LABEL,
   sectionValueForSave, sectionValueForEdit, orphanDepts, deptOptionsFor, deptNodeFor,
@@ -725,6 +725,9 @@ export default function Operator() {
   };
 
   const handleAddSkill = async () => {
+    /* ด่านชั้น 2 — ทะเบียนนิยามสกิลเป็นของกลาง (ใช้ทั้งโรงงาน) ⇒ ด่าน = คีย์เดียวกับปุ่ม
+       ซ่อนปุ่มไม่ใช่ด่าน: โมดัลเปิดค้างตอนสิทธิ์เปลี่ยน / เรียกตรงได้ (QC audit §7.4 · 20/10) */
+    if (!canEditSkills) { toast.error('เพิ่มสกิลต้องมีสิทธิ์ skills:edit'); return; }
     const lbl = newSkill.label.trim();
     if (!lbl) { toast.error('กรุณาระบุชื่อสกิล'); return; }
     // UUID-based key: never conflicts, works with Thai/any language
@@ -747,6 +750,9 @@ export default function Operator() {
   };
 
   const handleDeleteSkill = async (sd) => {
+    /* 🔴 ลบนิยามสกิล = ลบคะแนนของพนักงานทุกคน + requirement ทุกจุดงานด้วย
+       ⇒ ใช้ `canDelete()` ของกลาง (คุม "บัญชีกลางห้ามลบ" ให้ด้วย) ไม่ใช่ `can()` เปล่า */
+    if (!canDeleteUtil('skills', 'delete', role)) { toast.error('ลบสกิลต้องมีสิทธิ์ skills:delete'); return; }
     if (!window.confirm(`ลบสกิล "${sd.label}"?\nคะแนนสกิลนี้ของพนักงานและ requirement ทุก station จะถูกลบด้วย`)) return;
     // ลบลูกก่อน (คะแนน + requirement) แล้วค่อยลบนิยามสกิล + เช็ค error ทุกสเตป
     // ไม่งั้นถ้าลบลูกไม่สำเร็จแต่ลบนิยามไปแล้ว จะเหลือ skill_name ค้างที่อ้างสกิลที่ไม่มี
@@ -761,6 +767,7 @@ export default function Operator() {
   };
 
   const handleUpdateSkill = async () => {
+    if (!canEditSkills) { toast.error('แก้สกิลต้องมีสิทธิ์ skills:edit'); return; }
     if (!editingSkill?.label?.trim()) { toast.error('กรุณาระบุชื่อสกิล'); return; }
     const { error } = await supabase.from('skill_definitions').update({
       label:          editingSkill.label.trim(),

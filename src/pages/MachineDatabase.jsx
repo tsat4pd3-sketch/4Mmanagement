@@ -154,6 +154,7 @@ export default function MachineDatabase() {
   /* + เพิ่มโซน facility ใหม่ → insert pm_facility_areas (DR) ก่อน แล้วค่อยเลือก (2026-09-07)
      ห้ามพิมพ์ชื่อโซนลง machines.line_name ตรงๆ — MtnMachineLayout/Energy จับคู่โซนด้วยชื่อ พิมพ์ต่างตัวเดียว = โซนซ้ำ */
   const addFacilityArea = async () => {
+    if (!canEdit) { toast.error('เพิ่มโซน facility ต้องมีสิทธิ์ machines:edit'); return; }
     const name = String(newArea || '').trim();
     if (!name) { toast.error('พิมพ์ชื่อโซน/ระบบก่อน'); return; }
     const dup = facilityAreas.find(a => a.trim().toLowerCase() === name.toLowerCase());
@@ -773,6 +774,9 @@ function MachineTypeManager({ types, canEdit, onClose, onChange }) {
   const cancelEdit = () => { setEditingId(null); setForm(emptyType); };
 
   const handleSave = async () => {
+    /* ด่านชั้น 2 — ทะเบียนนี้เป็น "ของกลางทั้งโรงงาน" (ไม่มีเจ้าของรายหน่วย) ⇒ ด่าน = คีย์สิทธิ์
+       ซ่อนปุ่มไม่ใช่ด่าน: โมดัลเปิดค้างตอนสิทธิ์เปลี่ยน / เรียกตรงได้ (QC audit §7.4 · 20/10) */
+    if (!canEdit) { toast.error('แก้ทะเบียนประเภทเครื่องจักรต้องมีสิทธิ์ machines:edit'); return; }
     if (!form.label.trim()) { toast.error('กรอกชื่อประเภท'); return; }
     setSaving(true);
     const payload = { label: form.label.trim(), color: form.color, icon: form.icon.trim() || null, sort_order: parseInt(form.sort_order) || 0, is_active: form.is_active,
@@ -788,9 +792,10 @@ function MachineTypeManager({ types, canEdit, onClose, onChange }) {
   };
 
   const handleDelete = async (t) => {
+    if (!canEdit) { toast.error('ลบประเภทเครื่องจักรต้องมีสิทธิ์ machines:edit'); return; }
     if (!window.confirm(`ลบประเภท "${t.label}" ?\n\nเครื่องจักรที่ใช้ประเภทนี้จะกลายเป็น "ไม่ระบุประเภท"`)) return;
-    const { error } = await supabaseDR.from('machine_types').delete().eq('id', t.id);
-    if (error) { toast.error(error.message); return; }
+    // นับแถวที่ลบจริง (กฎเขียน DB ข้อ 2) — 0 แถวแล้วปิดเงียบ = ทะเบียนยังอยู่แต่จอบอกว่าลบแล้ว
+    if (!checkWriteRows(await supabaseDR.from('machine_types').delete().eq('id', t.id).select('id'), 'ลบประเภทเครื่องจักร')) return;
     onChange();
   };
 
