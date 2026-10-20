@@ -160,7 +160,8 @@ export default function ScanLanding() {
       scan.kind === 'product' ? Promise.resolve({ data: [] })
         : supabaseDR.from('prod_orders').select('prod_no, mat_no, part_name, status, production_sessions!inner(line_name, work_date, shift)')
           .eq('prod_no', code).limit(1),
-      supabaseDR.from('dr_products').select('mat_no, p_no, part_name').eq('mat_no', code).limit(1),
+      // ⚠️ dr_products ไม่มีคอลัมน์ part_name (ชื่อ = `name`) — เดิม select ผิด ⇒ 42703 ทุกครั้ง (แก้ 20/10)
+      supabaseDR.from('dr_products').select('mat_no, p_no, name').eq('mat_no', code).limit(1),
       supabase.from('qa_parts').select('id, mat_no, part_no, part_name, line_name').eq('is_active', true),
     ]).then(([o, p, q]) => {
       if (!alive) return;
@@ -228,7 +229,7 @@ export default function ScanLanding() {
       {raw && !loading && !found && !pointHit && prodFound && (() => {
         const { order, product, qaPart } = prodHit;
         const mat = order?.mat_no || product?.mat_no || qaPart?.mat_no || code;
-        const name = order?.part_name || product?.part_name || qaPart?.part_name || '';
+        const name = order?.part_name || product?.name || qaPart?.part_name || '';
         const sess = order?.production_sessions;
         return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>

@@ -30,6 +30,7 @@ import { ALL } from '../utils/filterLabels';
 import fetchAllRows from '../utils/fetchAllRows';
 import useProductionLines from '../utils/useProductionLines';
 import useTabParam from '../utils/useTabParam';
+import { urlParam, urlPick, urlNum } from '../utils/urlInit';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { inSectionScope } from '../utils/sectionScope';
 import { getWorkDate } from '../utils/workDate';
@@ -116,9 +117,10 @@ export default function MaintenanceLevels() {
   const navigate = useNavigate();
   const lines = useProductionLines();
   const [view, setView] = useTabParam(['todo', 'equip'], 'todo', 'view');
-  const [line, setLine] = useState('');
-  const [kind, setKind] = useState('all');
-  const [prio, setPrio] = useState(0);            // 0 = ทุกความด่วน
+  // ?mlline= (ชื่อไลน์) ?mlkind= ?mlprio= — จอวนหน้า · ขึ้นต้น ml กันชนคีย์ของหน้าอื่นใต้ /pm
+  const [line, setLine] = useState(() => urlParam('mlline') || '');
+  const [kind, setKind] = useState(() => urlPick('mlkind', KIND_CHIPS.map(c => c.key), 'all'));
+  const [prio, setPrio] = useState(() => Math.round(urlNum('mlprio', 0, 3, 0)));            // 0 = ทุกความด่วน
   const [q, setQ] = useState('');
   const [limit, setLimit] = useState(PAGE);
   const [raw, setRaw] = useState(null);

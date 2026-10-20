@@ -23,6 +23,7 @@ import { uploadOpts } from '../utils/storageUpload';
 import Page, { Hub } from '../components/Page';
 import PageHeader from '../components/PageHeader';
 import { ALL } from '../utils/filterLabels';
+import { urlParam } from '../utils/urlInit';
 
 function publicUrl(path) {
   if (!path) return null
@@ -97,9 +98,12 @@ export default function MtnMachineLayout({ setupMode = false }) {
   const [viewRaw, setView] = useTabParam(['overview', 'production', 'facility'], setupMode ? 'facility' : 'overview', 'view')
   // โหมดตั้งค่าไม่มีปุ่ม "ภาพรวมทั้งโรงงาน" (แท็บนั้นอยู่ที่ /layout-setup อยู่แล้ว) — ลิงก์ ?view=overview จึงตกกลับ facility
   const view = setupMode && viewRaw === 'overview' ? 'facility' : viewRaw
-  const [dept, setDept] = useState('all')
+  // ?team=<คีย์ทีม mtn_teams> (จอวนหน้า /display-rotation) · ไม่มีในลิงก์ = 'all' เหมือนเดิม
+  const [dept, setDept] = useState(() => { const t = urlParam('team'); return t && /^[a-z0-9_]+$/.test(t) ? t : 'all' })
   const [teams, setTeams] = useState(pmTeamsSync()) // ทีมช่าง data-driven (mtn_teams)
   useEffect(() => { loadPmTeams().then(setTeams) }, [])
+  // คีย์ทีมจากลิงก์ที่ไม่มีในทะเบียนจริง = กลับไป "ทุกทีม" (ลิงก์พิมพ์ผิดต้องไม่ทำจอว่างเงียบ)
+  useEffect(() => { if (dept !== 'all' && teams.length && !teams.some(t => t.key === dept)) setDept('all') }, [teams, dept])
   // ป้าย/ไอคอนทีม — data-driven จาก teams ก่อน แล้ว fallback map เดิม
   const deptIconOf = (k) => teams.find(t => t.key === k)?.icon ?? DEPT_ICON[k] ?? ''
   const deptLabelOf = (k) => teams.find(t => t.key === k)?.label ?? DEPT_LABEL[k] ?? k
@@ -419,7 +423,7 @@ export default function MtnMachineLayout({ setupMode = false }) {
         tab={view} onTab={k => { setView(k); setSelId(null) }} />
 
       {view === 'overview' ? (
-        <Hub><FactoryMap /></Hub>
+        <Hub><FactoryMap viewParam="map" /></Hub>
       ) : (
       <>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>

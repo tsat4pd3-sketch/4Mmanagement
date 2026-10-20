@@ -20,6 +20,7 @@ import { checkWrite, checkWriteRows } from '../utils/dbWrite';
 import LineSelect from './LineSelect';
 import { summarizeObservedCt, FLAG_TEXT, SAMPLE_RULES } from '../utils/ctReview';
 import { getWorkDate, addDaysStr } from '../utils/workDate';
+import { fetchByIds } from '../utils/fetchByIds';
 
 const DAYS_BACK = 60;
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 14px' };
@@ -75,24 +76,36 @@ export default function CtReview({ lines = [] }) {
       if (!sessions.length) { setRows([]); setSpan(null); setLoading(false); return; }
       const ids = sessions.map(s => s.id);
 
+      /* 🔴 **ห้าม `.in(ids).limit(N)` ที่นี่** — PostgREST clamp ที่ 1000 แถวเสมอ (`.limit(5000)` ไม่ช่วย)
+         และ "ถูกตัดแถว" ไม่ใช่ error ⇒ เงียบสนิท · วัดจริง 19/10 (ต่อไลน์ · 60 วัน):
+           prod_orders confirmed สูงสุด **2,802 แถว — เกิน 1000 อยู่ 4 ไลน์** · downtime_logs สูงสุด 1,179
+         downtime หายไป = หักเวลาหยุดไม่ครบ ⇒ CT สังเกตการณ์ **ช้ากว่าจริง** ⇒ ขึ้นเป็นข้อเสนอ
+         ⇒ กดอนุมัติ = เขียนทับ `dr_products.cycle_time_sec` = ตัวเศษ %P ของทั้งโรงงาน
+         ⇒ ต้องผ่าน `fetchByIds` (แบ่งก้อน + แบ่งหน้า + `.order()` คู่ `.range()`) เท่านั้น */
       const [oRes, dRes] = await Promise.all([
-        supabaseDR.from('prod_orders')
+        fetchByIds(ids, (part) => supabaseDR.from('prod_orders')
           .select('session_id, mat_no, status, qty, qty_ok, opened_at, confirmed_at')
-          .in('session_id', ids).eq('status', 'confirmed').limit(5000),
-        supabaseDR.from('downtime_logs')
+          .in('session_id', part).eq('status', 'confirmed')),
+        fetchByIds(ids, (part) => supabaseDR.from('downtime_logs')
           .select('session_id, started_at, ended_at, duration_min')
-          .in('session_id', ids).limit(5000),
+          .in('session_id', part)),
       ]);
       if (!alive) return;
       if (oRes.error || dRes.error) {
-        setErr('โหลดใบผลิต/downtime ไม่สำเร็จ: ' + (oRes.error || dRes.error).message);
-        setLoading(false); return;
+        setErr('โหลดใบผลิต/downtime ไม่สำเร็จ: ' + (oRes.error || dRes.error));
+        setRows([]); setSpan(null); setLoading(false); return;
+      }
+      /* 🔴 **fail-closed** — โหลดไม่ครบแล้วยังเสนอค่า = เสนอจากข้อมูลที่ขาด แล้วคนกดอนุมัติ
+         (ชนเพดานหน้า/บางก้อนล้ม) ⇒ ไม่โชว์ข้อเสนอเลย + บอกบนจอว่าทำไม — ห้ามโชว์ 0/ค่าครึ่งๆ */
+      if (oRes.truncated || dRes.truncated || oRes.failed || dRes.failed) {
+        setErr('โหลดใบผลิต/downtime ได้ไม่ครบ — ยังเสนอค่า CT ไม่ได้ (ลองแคบช่วง/เลือกไลน์เดียวแล้วลองใหม่)');
+        setRows([]); setSpan(null); setLoading(false); return;
       }
 
       const sessById = {}; sessions.forEach(s => { sessById[s.id] = s; });
-      const dtBy = {}; (dRes.data || []).forEach(d => (dtBy[d.session_id] ||= []).push(d));
+      const dtBy = {}; (dRes.rows || []).forEach(d => (dtBy[d.session_id] ||= []).push(d));
       const byMat = {};
-      (oRes.data || []).forEach(o => {
+      (oRes.rows || []).forEach(o => {
         const s = sessById[o.session_id]; if (!s || !o.mat_no) return;
         (byMat[o.mat_no] ||= []).push({ order: o, session: s, downtimes: dtBy[o.session_id] || [] });
       });

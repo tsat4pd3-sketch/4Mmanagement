@@ -42,6 +42,7 @@ export default function LineOrderBoard({ lineName, family, date, lines, onSelect
         if (!sessions.length) { if (alive) setState({ loading: false, sessions: [] }); return; }
         const ids = sessions.map(s => s.id);
         const [oRes, bRes, mRes] = await Promise.all([
+          /* cap-ok: prod_orders ของกะวันเดียว/ตระกูลไลน์เดียว — prod_orders ทั้งโรงงาน 60 วัน/ไลน์ สูงสุด 2,802 แต่ที่นี่ 1 วัน (วัด 20/10) */
           supabaseDR.from('prod_orders').select(ORDER_COLS).in('session_id', ids).limit(2000),
           supabaseDR.from('break_policies').select('*').eq('is_active', true),
           supabase.from('machine_points').select('line_name, machine_no').in('line_name', names),

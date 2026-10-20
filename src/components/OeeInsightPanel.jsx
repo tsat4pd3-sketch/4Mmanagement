@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { urlPick } from '../utils/urlInit';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { fetchByIds } from '../utils/fetchByIds';
 import LineSelect from './LineSelect';
@@ -57,7 +58,7 @@ export default function OeeInsightPanel({ lines, ccRates = [], initLine = '', se
   const [loading, setLoading] = useState(false);
   const [insights, setInsights] = useState(null); // null = ยังไม่รัน
   const [lean, setLean] = useState(null);         // { losses: [...], wastes: [...] } — 6 Big Losses / 8 Wastes
-  const [leanAxis, setLeanAxis] = useState('six_big_loss');
+  const [leanAxis, setLeanAxis] = useState(() => urlPick('lean', ['six_big_loss', 'waste_type'], 'six_big_loss'));   // ?lean= (จอวนหน้า)
   const [meta, setMeta] = useState(null);
 
   const run = useCallback(async () => {
