@@ -2493,7 +2493,8 @@ export default function Dashboard({ view = 'timeline' }) {
               background: 'var(--card)', borderRadius: 16, padding: '20px 24px',
               width: 'min(94vw, 720px)', maxHeight: '90vh', overflowY: 'auto',
               border: `2px solid ${LV.color}88`,
-              boxShadow: `0 20px 60px rgba(0,0,0,0.6), 0 0 30px ${LV.color}40`,
+              /* 🌑 เงาโมดัลมาจาก token (ธีมมืด = none) · เหลือเฉพาะ glow สีที่เป็น "สัญญาณ" ของระดับ Andon */
+              boxShadow: `var(--shadow-lg), 0 0 30px ${LV.color}40`,
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>

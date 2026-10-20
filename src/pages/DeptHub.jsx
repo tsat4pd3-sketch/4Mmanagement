@@ -801,7 +801,8 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
       <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }}
         onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) setCropFile(f); }} />
       {cropFile && (
-        <ImageCropModal file={cropFile} aspect={1} shape="circle" outputSize={480}
+        /* 🚫 รูปคนไม่รับ GIF + บันทึกเป็น webp — สเปคเดียวกับ /operator · /register · sidebar */
+        <ImageCropModal file={cropFile} aspect={1} shape="circle" outputSize={480} allowGif={false} webp
           title="จัดตำแหน่งรูปโปรไฟล์" onCancel={() => setCropFile(null)} onConfirm={onAvatarCropped} />
       )}
       <SignatureModal open={sigOpen} onClose={() => setSigOpen(false)}

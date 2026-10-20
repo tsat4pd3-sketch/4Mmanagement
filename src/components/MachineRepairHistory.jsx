@@ -31,18 +31,27 @@ function Card({ t, v, h }) {
 }
 
 export default function MachineRepairHistory({ machineNo, onClose, onOpenOrder }) {
-  const [state, setState] = useState({ loading: true, orders: [], prsBy: {}, laborBy: null, partsBy: null, err: null, subErr: null, machine: null });
+  const [state, setState] = useState({ loading: true, orders: [], prsBy: {}, laborBy: null, partsBy: null, err: null, subErr: null, machine: null, cut: false });
   const [exporting, setExporting] = useState(false);
+  /* 🔴 ตารางยาวห้ามวาดทุกแถวทีเดียว (F14) — เริ่มที่ 30 แถว แล้วกด "แสดงอีก" */
+  const [showAll, setShowAll] = useState(false);
+  const ROWS_FIRST = 30;
 
   useEffect(() => {
     let alive = true;
     (async () => {
-      const { data, error } = await supabaseDR.rpc('mtn_orders_by_machine', { p_machine_no: machineNo, p_limit: 500 });
+      /* 🔴 ขอ 501 เพื่อ "รู้ว่าถูกตัดไหม" — เดิมขอ 500 แล้ววาดทุกแถว ⇒ เครื่องที่มีใบเกิน 500
+         จะได้สรุป (เวลาซ่อมเฉลี่ย · ค่าใช้จ่ายรวม · ปัญหาที่เจอบ่อย) **ต่ำกว่าจริงโดยไม่มีสัญญาณ**
+         (ตัดเงียบ = ผิดกฎความซื่อสัตย์ของจอ · QC audit 20/10) */
+      const CAP = 500;
+      const { data, error } = await supabaseDR.rpc('mtn_orders_by_machine', { p_machine_no: machineNo, p_limit: CAP + 1 });
       if (!alive) return;
       if (error) { setState(s => ({ ...s, loading: false, err: error.message })); return; }
       // ด่านชั้นสอง: กรองซ้ำด้วย machineKey ตัวเดียวกับ SQL machine_key() — RPC เปลี่ยน/คืนเกิน = ใบเครื่องอื่นห้ามปนเข้าประวัติ
       const k = machineKey(machineNo);
-      const orders = (data || []).filter(o => machineKey(o.machine_no) === k);
+      const all = (data || []).filter(o => machineKey(o.machine_no) === k);
+      const cut = all.length > CAP;
+      const orders = cut ? all.slice(0, CAP) : all;
       const ids = orders.map(o => o.id);
       const [pr, lb, pt, mc] = await Promise.all([
         fetchByIds(ids, c => supabaseDR.from('mtn_purchase_requests').select('id, order_id, pr_no, status').in('order_id', c)),
@@ -62,6 +71,7 @@ export default function MachineRepairHistory({ machineNo, onClose, onOpenOrder }
         partsBy: pt.error ? null : group(pt.rows),
         subErr: subErr.length ? subErr.join(' · ') : null,
         machine: (mc.data || [])[0] || { machine_no: machineNo },
+        cut,                        // ถูกตัดที่เพดาน = สรุปไม่ครบ ต้องเขียนบนจอ
       });
     })();
     return () => { alive = false; };
@@ -108,6 +118,11 @@ export default function MachineRepairHistory({ machineNo, onClose, onOpenOrder }
           {state.err && <div style={{ color: '#ef4444', fontSize: 13 }}>⚠ โหลดประวัติไม่สำเร็จ: {state.err}</div>}
           {!state.loading && !state.err && (<>
             {state.subErr && <div style={{ color: '#f59e0b', fontSize: 12, marginBottom: 8 }}>⚠ โหลด {state.subErr} ไม่ครบ — ช่องนั้นอาจไม่ครบ (ค่าใช้จ่ายถอยไปใช้ยอดรวมในใบ)</div>}
+            {/* 🔴 ถูกตัดที่เพดาน = ตัวเลขสรุปทุกการ์ดต่ำกว่าจริง ห้ามเงียบ */}
+            {state.cut && <div style={{ color: '#ef4444', fontSize: 12, marginBottom: 8, fontWeight: 700 }}>
+              ⚠ เครื่องนี้มีใบแจ้งซ่อมเกิน 500 ใบ — แสดง/สรุปจาก <b>500 ใบล่าสุด</b> เท่านั้น
+              (เวลาซ่อมเฉลี่ย · ค่าใช้จ่ายรวม · ปัญหาที่เจอบ่อย ยังไม่ครบทั้งหมด)
+            </div>}
             {!sum.total && !sum.rejected && <div style={{ color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีใบแจ้งซ่อมของเครื่องนี้</div>}
             {(sum.total > 0 || sum.rejected > 0) && (<>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8, marginBottom: 10, alignContent: 'start' }}>
@@ -131,7 +146,7 @@ export default function MachineRepairHistory({ machineNo, onClose, onOpenOrder }
                     <th style={th}>ซ่อมจริง</th><th style={th}>ค่าใช้จ่าย</th>
                   </tr></thead>
                   <tbody>
-                    {sum.rows.map(r => {
+                    {(showAll ? sum.rows : sum.rows.slice(0, ROWS_FIRST)).map(r => {
                       const st = moStatusMeta(r.o);
                       return (
                         <tr key={r.o.id} style={{ opacity: r.o.status === 'rejected' ? 0.55 : 1 }}>
@@ -156,6 +171,14 @@ export default function MachineRepairHistory({ machineNo, onClose, onOpenOrder }
                     })}
                   </tbody>
                 </table>
+                {/* 🔴 ตัดแถวที่แสดง = ต้องมีทางกดดูต่อ + บอกว่าเหลืออีกกี่ใบ (ห้ามตัดเงียบ) */}
+                {!showAll && sum.rows.length > ROWS_FIRST && (
+                  <button onClick={() => setShowAll(true)}
+                    style={{ marginTop: 8, background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border)',
+                      borderRadius: 8, padding: '6px 12px', fontSize: 12.5, cursor: 'pointer' }}>
+                    ▾ แสดงอีก {sum.rows.length - ROWS_FIRST} ใบ (ทั้งหมด {sum.rows.length} ใบ)
+                  </button>
+                )}
               </div>
             </>)}
           </>)}
