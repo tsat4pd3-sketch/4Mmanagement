@@ -35,6 +35,7 @@ import LineScopeSelect from '../components/LineScopeSelect'
 import { useProductionLinesState } from '../utils/useProductionLines'
 import { lineKnownSet, groupEquipRowsByLine } from '../utils/pmEquipList'
 import { filterPlanRows } from '../utils/pmPlanFilter'
+import useIsMobile from '../utils/useIsMobile'
 
 /* 🔩 จุดชิมของ fixture บนใบตรวจ PM (2026-09-08 · คำสั่ง user "shim record กับการตรวจใช้กลไกเดียวกัน")
    ข้อมูลแยกตาราง (fixture_points/fixture_shim_events) แต่ "รูป + หมุด" ชุดเดียวกับจุดตรวจ PM:
@@ -360,6 +361,12 @@ function VariableRow({ cp, idx, r, onChange, methodIndex, calcText }) {
 // ─── Attribute / Note Row ────────────────────────────────────────────────────
 function AttrRow({ cp, idx, value, note, onChangeAttr, onChangeNote, methodIndex }) {
   const method = methodIndex?.[cp.checking_method]
+  // 📱 มือถือ: แตะปุ่มเดิมซ้ำ (ถุงมือแตะเบิ้ล) = ล้างคำตอบเงียบๆ ⇒ ถามก่อน · จอคอมเหมือนเดิม (2026-10-20)
+  const isMobile = useIsMobile()
+  const pickAttr = (v) => {
+    if (v === value) { if (isMobile && !window.confirm(`ล้างคำตอบ ${v.toUpperCase()} ของข้อนี้?`)) return; onChangeAttr(''); return }
+    onChangeAttr(v)
+  }
   return (
     <div style={S.cpRow(null)}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -369,7 +376,7 @@ function AttrRow({ cp, idx, value, note, onChangeAttr, onChangeNote, methodIndex
         <CpImage cp={cp} />
         <div style={{ display: 'flex', gap: 4 }}>
           {['ok', 'ng'].map(v => (
-            <button key={v} onClick={() => onChangeAttr(v === value ? '' : v)} style={{
+            <button key={v} onClick={() => pickAttr(v)} style={{
               padding: '3px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer',
               border: `1px solid ${value === v ? (v === 'ok' ? 'var(--accent)' : '#e05c4a') : 'var(--border)'}`,
               background: value === v ? (v === 'ok' ? 'var(--accent)' : '#e05c4a') : 'var(--bg3)',

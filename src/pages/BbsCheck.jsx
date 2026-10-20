@@ -263,6 +263,8 @@ export default function BbsCheck() {
     const same = cur && cur.mark === brush
       && (brush !== 'ng' || cur.agreement_seq === brushSeq);
     if (same) {
+      // 📱 มือถือ: แตะเบิ้ลด้วยถุงมือ = ลบช่องที่เพิ่งทาไปเงียบๆ ⇒ ถามก่อน (จอคอมคลิกซ้ำล้างทันทีเหมือนเดิม · 2026-10-20)
+      if (isMobile && !window.confirm('ล้างเครื่องหมายช่องนี้?')) return;
       const { error } = await supabase.from('bbs_observations').delete().eq('id', cur.id);
       if (error) return toast.error(`ล้างช่องไม่สำเร็จ: ${error.message}`);
       setCells(c => { const n = { ...c }; delete n[key]; return n; });

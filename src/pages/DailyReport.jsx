@@ -448,6 +448,13 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   const [openProdForm, setOpenProdForm]   = useState({ prod_no: '', mat_no: '', qty: '', is_backfill: false, backfill_time: '' });
   const [openProdStd, setOpenProdStd]     = useState(null);
   const openProdInputRef = useRef(null);
+  /* 🔫 handheld (2026-10-20 · audit RS38) — MAT ที่ "ค้างจากใบก่อน" หลังเปิดใบสำเร็จ (ตั้งใจคงไว้ให้ยิงใบพาร์ทเดิมต่อได้เร็ว)
+     แต่ระบบไม่มีทางรู้ว่า PROD.NO ใบใหม่เป็นของพาร์ทไหน ⇒ หยิบ Tag Card ผิดพาร์ทมายิง = เปิดผิดพาร์ทเงียบๆ
+     มือถือ: สแกน PROD.NO แล้ว **ไม่เปิดเอง** ต้องแตะยืนยันพาร์ทก่อน 1 ครั้ง · จอคอมพฤติกรรมเดิม */
+  const [carriedMat, setCarriedMat] = useState(null);
+  const carryAskAtRef = useRef(0);          // กัน Enter ตัวที่ 2 ของเครื่องสแกนไปกดปุ่มยืนยันที่เพิ่งโผล่
+  const prodBusyRef = useRef(false);        // กันกด/Enter ซ้ำระหว่างเปิดใบ-ปิดใบ (CR+LF = Enter 2 ครั้ง · ถุงมือแตะเบิ้ล)
+  const qtyBusyRef = useRef(new Set());     // กันกด 💾/ปิดใบ ซ้ำต่อใบ
   const closeProdInputRef = useRef(null);
   const [savingProdOpen, setSavingProdOpen] = useState(false);
   const [pendingPairId, setPendingPairId] = useState(null); // order id ที่รอสแกนคู่ RH/LH ต่อ
@@ -1365,6 +1372,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
 
   // ── Scan OPEN handler ──────────────────────────────────────────
   const handleOpenProdMatNoChange = (val) => {
+    setCarriedMat(null);   // คนเลือก MAT เอง = ยืนยันพาร์ทแล้ว
     const upper = val.toUpperCase();
     const std = kanbanStds.find(s => s.mat_no === upper) || null;
     setOpenProdStd(std);
@@ -1670,6 +1678,11 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   };
 
   const handleScanOpen = async () => {
+    if (prodBusyRef.current) return;
+    prodBusyRef.current = true;
+    try { await handleScanOpenInner(); } finally { prodBusyRef.current = false; }
+  };
+  const handleScanOpenInner = async () => {
     const prodNo = openProdForm.prod_no.trim();
     const matNo  = openProdForm.mat_no.trim();
     if (!prodNo) { toast.error('สแกนหรือกรอก PROD.NO ก่อน'); return; }
@@ -1769,6 +1782,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       }
     }
     setOpenProdForm(f => ({ prod_no: '', mat_no: nextMatNo, qty: f.qty, is_backfill: f.is_backfill, backfill_time: nextBackfillTime }));
+    setCarriedMat(nextMatNo || null);
     loadProdOrders(selSession.id, selSession.line_name);
     setTimeout(() => openProdInputRef.current?.focus(), 80);
   };
@@ -1784,6 +1798,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     if (error) { toast.error(error.message); return; }
     toast.info(`บันทึก ${prodNo} เป็นยอดค้างกะถัดไป ✓`);
     setOpenProdForm(f => ({ prod_no: '', mat_no: f.mat_no, qty: f.qty, is_backfill: false, backfill_time: '' }));
+    setCarriedMat(matNo || null);
     loadProdOrders(selSession.id, selSession.line_name);
   };
 
@@ -1798,6 +1813,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     if (error) { toast.error(error.message); return; }
     toast.success(`เปิด Order ${prodNo} · ${qty} ชิ้น ✓ (เกินเวลากะ)`);
     setOpenProdForm(f => ({ prod_no: '', mat_no: f.mat_no, qty: f.qty, is_backfill: false, backfill_time: '' }));
+    setCarriedMat(matNo || null);
     loadProdOrders(selSession.id, selSession.line_name);
   };
 
@@ -1819,6 +1835,11 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   // เพราะพนักงานมองงานเป็น lot/batch ไม่ได้ไล่ปิดทีละใบตามเลขที่เปิด — เปลี่ยนไปใช้การจัดกลุ่มเป็น "รอบ" (ทุก 2 ชม.)
   // ในการแสดงผลที่ Dashboard แทน ไม่บังคับลำดับปิดในระดับใบย่อยอีกต่อไป
   const doConfirmCloseOrder = async (match) => {
+    if (prodBusyRef.current) return;   // Enter 2 ครั้งจากเครื่องสแกน = ยืนยันซ้ำ + toast เบิ้ล
+    prodBusyRef.current = true;
+    try { await doConfirmCloseOrderInner(match); } finally { prodBusyRef.current = false; }
+  };
+  const doConfirmCloseOrderInner = async (match) => {
     setSavingProdClose(true);
     const { error } = await supabaseDR.from('prod_orders').update({
       status:       'confirmed',
@@ -2043,6 +2064,11 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   };
 
   const handleManualQtyUpdate = async (o) => {
+    if (qtyBusyRef.current.has(o.id)) return;   // แตะ 💾 เบิ้ล = ประวัติยอดซ้ำ 2 แถว
+    qtyBusyRef.current.add(o.id);
+    try { await handleManualQtyUpdateInner(o); } finally { qtyBusyRef.current.delete(o.id); }
+  };
+  const handleManualQtyUpdateInner = async (o) => {
     const v = parseInt(manualQtyDraft[o.id]);
     if (isNaN(v) || v < 0) { toast.error('กรอกยอดสะสม (ชิ้น) ก่อน'); return; }
     // ใบสแกนมีจำนวนตายตัวตาม kanban card — ทำเกินใบไม่ได้ (ใบ manual เป็นเป้าที่ตั้งเอง เกินได้)
@@ -2066,8 +2092,14 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   // ปิดใบ manual ด้วยยอดผลิตจริง (แทนการสแกนปิด) — qty ถูกแทนด้วยยอดจริงเพื่อให้
   // OEE/รายงาน/stock (trigger ใช้ coalesce(qty_ok, qty)) นับจากของที่ผลิตได้จริง
   const handleManualClose = async (o) => {
+    if (qtyBusyRef.current.has(o.id)) return;
+    qtyBusyRef.current.add(o.id);
+    try { await handleManualCloseInner(o); } finally { qtyBusyRef.current.delete(o.id); }
+  };
+  const handleManualCloseInner = async (o) => {
     const draft = parseInt(manualQtyDraft[o.id]);
     const finalQty = !isNaN(draft) ? draft : (o.qty_actual || 0);
+    if (finalQty < 0) { toast.error('ยอดผลิตจริงติดลบไม่ได้'); return; }
     if (!window.confirm(`ปิดใบ ${o.prod_no} (${o.mat_no}) ด้วยยอดผลิตจริง ${finalQty} ชิ้น?\nเป้าที่ตั้งไว้ ${o.qty_target ?? o.qty} ชิ้น`)) return;
     const nowIso = new Date().toISOString();
     const { error } = await supabaseDR.from('prod_orders').update({
@@ -2094,6 +2126,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     const ng      = parseInt(defectForm.qty_ng)      || 0;
     const suspect = parseInt(defectForm.qty_suspect) || 0;
     const repair  = parseInt(defectForm.qty_repair)  || 0;
+    if (ng < 0 || suspect < 0 || repair < 0) { toast.error('จำนวนงานเสียติดลบไม่ได้ — แก้ช่องที่มีเครื่องหมายลบ'); return; }
     if (ng + suspect + repair === 0) { toast.error('กรอกจำนวนงานเสียอย่างน้อย 1 ช่อง'); return; }
     // ประเภท "อื่นๆ" เปล่าๆ บอกอะไรไม่ได้ — บังคับระบุอาการ/สาเหตุจริงเสมอ (เหมือนกฎฝั่ง Downtime)
     const defTypeName = defectTypes.find(t => t.id === defectForm.defect_type_id)?.name_th || '';
@@ -5403,7 +5436,15 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       if (e.key !== 'Enter') return;
                       const pn = openProdForm.prod_no.trim();
                       const dupScan = !!pn && !!prodOrders.find(o => o.prod_no === pn);
-                      if (openProdForm.mat_no && openProdForm.qty && pn && !dupScan) { handleScanOpen(); return; }
+                      if (openProdForm.mat_no && openProdForm.qty && pn && !dupScan) {
+                        // 🔫 มือถือ + MAT ค้างจากใบก่อน = ถามก่อน 1 แตะ (ดู carriedMat) · จอคอมเปิดทันทีเหมือนเดิม
+                        if (isMobile && carriedMat && carriedMat === openProdForm.mat_no) {
+                          e.preventDefault(); carryAskAtRef.current = Date.now();
+                          setTimeout(() => document.getElementById('open-carry-confirm')?.scrollIntoView({ block: 'center' }), 30);
+                          return;
+                        }
+                        handleScanOpen(); return;
+                      }
                       /* 🔴 2026-10-02 — สแกนซ้ำ (tag card ใบเดิม) = ต้องแก้ที่ **PROD.NO** ไม่ใช่ไปแก้ MAT
                          เดิมโยน focus ไปช่อง MAT ทุกกรณีที่เปิดใบไม่ได้ ⇒ Enter ที่เครื่องสแกนส่งตามท้าย
                          ไปตกที่ picker แล้วเลือกพาร์ทตัวบนสุดให้เอง (ดู utils/pickerKeys.js)
@@ -5415,6 +5456,33 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                     style={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 700, fontSize: 15 }} />
                   <ScanLenHint value={openProdForm.prod_no} />
                 </Field>
+
+                {/* 🔫 มือถือ: MAT ค้างจากใบก่อน — ต้องแตะยืนยันพาร์ทก่อนเปิด (กันหยิบ Tag Card ผิดพาร์ทมายิง · 2026-10-20) */}
+                {isMobile && carriedMat && carriedMat === openProdForm.mat_no && openProdForm.prod_no.trim() && (() => {
+                  const cs = kanbanStds.find(x => x.mat_no === carriedMat);
+                  const nm = cs?.dr_products?.name || cs?.part_name || '';
+                  const pno = cs?.dr_products?.p_no || cs?.p_no || '';
+                  return (
+                    <div id="open-carry-confirm" style={{ padding: '12px 14px', background: 'rgba(245,158,11,0.12)', border: '2px solid #f59e0b', borderRadius: 10 }}>
+                      <div style={{ fontSize: 13, fontWeight: 800, color: '#f59e0b' }}>⚠ ใบนี้เป็นพาร์ทเดียวกับใบก่อนใช่ไหม?</div>
+                      <div style={{ fontSize: 16, fontWeight: 900, color: 'var(--text)', fontFamily: 'monospace', marginTop: 6 }}>{carriedMat}</div>
+                      {(pno || nm) && <div style={{ fontSize: 13, color: 'var(--text)', marginTop: 2 }}>{pno && <b style={{ fontFamily: 'monospace' }}>{pno}</b>}{pno && nm ? ' · ' : ''}{nm}</div>}
+                      <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>เช็คกับ Tag Card ในมือก่อนกดยืนยัน — ระบบตรวจไม่ได้ว่า PROD.NO นี้เป็นของพาร์ทไหน</div>
+                      <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                        <button type="button" disabled={savingProdOpen}
+                          onClick={() => { if (Date.now() - carryAskAtRef.current < 400) return; handleScanOpen(); }}
+                          style={{ flex: 1, minHeight: 48, borderRadius: 10, border: 'none', background: '#f59e0b', color: '#000', fontWeight: 900, fontSize: 15, cursor: 'pointer' }}>
+                          {savingProdOpen ? 'กำลังเปิด…' : '✓ ใช่ เปิดใบ'}
+                        </button>
+                        <button type="button"
+                          onClick={() => { setCarriedMat(null); setOpenProdStd(null); setOpenProdForm(f => ({ ...f, mat_no: '', qty: '' })); setTimeout(() => document.getElementById('open-mat-select')?.focus(), 30); }}
+                          style={{ flex: 1, minHeight: 48, borderRadius: 10, border: '1.5px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontWeight: 800, fontSize: 14, cursor: 'pointer' }}>
+                          ↺ เปลี่ยนพาร์ท
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {(() => {
                   const lineName = selSession?.line_name;

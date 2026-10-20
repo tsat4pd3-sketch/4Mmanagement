@@ -613,6 +613,7 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
   const [limitN, setLimitN] = useState(25);      // จำนวน subgroup ล่าสุดที่ใช้คำนวณ
   const [charModal, setCharModal] = useState(null); // null | { ...form }
   const [readings, setReadings] = useState([]);  // ค่าที่กำลังกรอก
+  const measBusyRef = useRef(false);              // กันแตะบันทึกเบิ้ล = subgroup ซ้ำ ⇒ Cp/Cpk เพี้ยน (audit handheld 2026-10-20)
   const [loading, setLoading] = useState(false);
 
   const sel = chars.find(c => c.id === selId) || null;
@@ -692,6 +693,11 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
   };
 
   const saveMeasurement = async () => {
+    if (measBusyRef.current) return;
+    measBusyRef.current = true;
+    try { await saveMeasurementInner(); } finally { measBusyRef.current = false; }
+  };
+  const saveMeasurementInner = async () => {
     if (!sel) return;
     if (!selWrite.ok) { toast.info(writeBlockText(selWrite, { what: 'ผลวัดของไลน์นี้' })); return; }
     const vals = readings.map(v => Number(v));
