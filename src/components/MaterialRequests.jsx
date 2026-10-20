@@ -91,6 +91,7 @@ export default function MaterialRequests() {
     supabase.from('profiles').select('id, full_name, signature_url').not('signature_url', 'is', null)
       .then(({ data }) => setSigners(data || []));
     supabaseDR.from('parts_master').select('mat_no, part_name, uom').eq('is_active', true)
+      /* cap-ok: parts_master 430 แถว (วัด 20/10) */
       .order('mat_no').limit(2000)
       .then(({ data }) => setParts(data || []));
   }, []);
