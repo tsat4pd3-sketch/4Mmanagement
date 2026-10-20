@@ -84,7 +84,7 @@ export default function PlatingBoard({ q = '', showDone = false }) {
       const [p, b, r, l] = await Promise.all([
         fetchAllRows(supabaseDR, 'dr_products', PROD_COLS, x => x.order('mat_no').order('id')),
         fetchAllRows(supabaseDR, 'bom_items', BOM_COLS, x => x.order('id')),
-        supabaseDR.from('stock_inflow_rules').select('match_type, match_value, dest_line_name, is_active').eq('is_active', true),
+        supabaseDR.from('stock_inflow_rules').select('match_type, match_value, dest_line_name, is_active, mode').eq('is_active', true),
         loadProductionLines().then(d => ({ data: d, error: null }), e => ({ data: [], error: e })),
       ]);
       if (!alive) return;
