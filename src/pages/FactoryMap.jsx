@@ -49,6 +49,7 @@ import LineLensMap, { MachineDetailCard } from '../components/LineLensMap';
 import LineOrderBoard, { OrderDetailCard } from '../components/LineOrderBoard';
 import Segmented from '../components/Segmented';   // 🗺️ ผังเครื่องจักรคู่กล่องรายละเอียดไลน์ (2026-10-16)
 import useIsMobile from '../utils/useIsMobile';
+import useTvShell from '../utils/useTvShell';
 import { storySectionsFor, mapLensOf } from '../utils/lineLens';
 import { isGifFile, GIF_MAX_BYTES, GIF_TOO_BIG_MSG } from '../utils/imageFileKind';   // ตัวตรวจชนิดไฟล์ + เพดาน GIF = จุดเดียว
 
@@ -548,6 +549,9 @@ export default function FactoryMap({ setupMode = false }) {
   const [storyAll, setStoryAll] = useState(false);
   const [lensSel, setLensSel] = useState(null);       // เครื่องที่คลิกบนผังคู่ — การ์ดอยู่คอลัมน์ขวา (ผังไม่ดันตัวเองขึ้นลง · 16/10)    // กล่องรายละเอียด: true = ทุกเรื่อง · false = เฉพาะเรื่องของแท็บ (2026-10-16)
   const isMobile = useIsMobile();
+  /* 📺 โหมดจอประชุม (20/10 · user "ทีวี 43-50 นิ้ว ยืนดูห่าง 2-3 ม.") — UI §6.32
+     ซ่อนปุ่ม/คำใบ้ที่ไม่มีใครกด (.tv-hide) · หัวเรื่องแท็บตัวใหญ่แทนแถวปุ่ม · ป้ายบนผังขั้นต่ำ 140% · แผงขวาขยาย */
+  const tv = useTvShell();
   const [storyLoading, setStoryLoading] = useState(false);
   const [oeeExplain, setOeeExplain] = useState(null); // { title, rows } — กางวิธีคิด OEE เฉลี่ยถ่วงน้ำหนัก
   // วันที่ของ modal สรุปเรื่องราว — ตั้งตอนเปิด: คลิกจากผัง (live) = วันงานปัจจุบัน · คลิกจากแถบขวา = วันที่ในกรอบ
@@ -575,13 +579,15 @@ export default function FactoryMap({ setupMode = false }) {
        → ขึ้น "จอแคบ · ซ่อนป้าย" ทั้งที่จอใหญ่มาก
      ทางแก้ที่เลือก: ให้แต่ละเครื่องปรับขนาดป้ายเอง (A− / A+) จำใน localStorage — ตั้งครั้งเดียวต่อจอ
      (แก้จาก OS ก็ได้แต่หน้างานเข้า settings จอ TV ไม่ได้/ไม่กล้า) · คู่กับปุ่มซ่อนแผงขวาคืนพื้นที่ให้ผัง */
-  const [lblScale, setLblScale] = useState(() => {
+  const [lblScaleSet, setLblScale] = useState(() => {
     // ?lbl= จากลิงก์จอวนหน้าชนะค่าที่จำในเครื่อง (ไม่เขียนทับ localStorage จนกว่าจะกด A−/A+)
     const fromUrl = urlNum('lbl', 0.6, 1.6, null);
     if (fromUrl != null) return Math.round(fromUrl * 10) / 10;
     try { const v = parseFloat(localStorage.getItem('fm_lbl_scale')); return Number.isFinite(v) ? Math.min(1.6, Math.max(0.6, v)) : 1; }
     catch { return 1; }
   });
+  // จอประชุม: ป้ายขั้นต่ำ 140% (11px บนทีวี 43" ยืน 2-3 ม. อ่านไม่ออก) · ?lbl= จากจอวนหน้ายังชนะเสมอ
+  const lblScale = tv && urlNum('lbl', 0.6, 1.6, null) == null ? Math.max(lblScaleSet, 1.4) : lblScaleSet;
   const applyScale = (v) => {
     const nv = Math.min(1.6, Math.max(0.6, Math.round(v * 10) / 10));
     setLblScale(nv);
@@ -2380,7 +2386,7 @@ export default function FactoryMap({ setupMode = false }) {
      · วัดจาก offset (ไม่โดน transform ของผังที่เอียงอยู่) · 2D คงสูตรเดิม (จอ TV มีตัววนย่อให้แล้ว) */
   const [avail3d, setAvail3d] = useState(0);
   useLayoutEffect(() => {
-    if (!is3d) { setAvail3d(0); return undefined; }
+    if (!is3d && !tv) { setAvail3d(0); return undefined; }
     const measure = () => {
       const w = wrapRef.current, par = w?.offsetParent;
       if (!w || !par) return;
@@ -2391,7 +2397,7 @@ export default function FactoryMap({ setupMode = false }) {
     const t = setTimeout(measure, 500);   // แถบ/แผงที่โหลดทีหลังดันผังลง
     window.addEventListener('resize', measure);
     return () => { clearTimeout(t); window.removeEventListener('resize', measure); };
-  }, [is3d, loading, imageUrl]);
+  }, [is3d, tv, loading, imageUrl]);
   /* 🧊 เสา 3D — คิดก่อน render เพื่อให้หัวผังบอกได้ว่าป้ายไหนแน่นจนวางไม่ได้ (ห้ามหายเงียบ) */
   const pillarMaxH = Math.max(60, wrapW * 0.2);
   const BLOCK_K = 0.55;
@@ -2411,9 +2417,11 @@ export default function FactoryMap({ setupMode = false }) {
                     h: pillarHeight(metric, cat, st.oee).h, text: shortText(st), dim: cat === 'idle',
                     group: true, kids: (childrenOf[h.name] || []).length };
                 }));
-  const pillarLifts = is3d ? liftLabels(pillarItems, { Wpx: wrapW, Hpx: aspect ? wrapW / aspect : 0, tiltDeg: orbit.tilt, rotZDeg: orbit.rot, maxH: pillarMaxH }) : null;
+  // ป้ายเสา 3D: จอประชุมขยาย 1.8× (ป้ายลอยบนผังที่ถูกย่อ+เอียง ⇒ 12px เหลือ ~8px บนจอ) · ตัวกันชนต้องคูณตัวเดียวกัน
+  const pillarLblK = tv ? 1.8 : 1;
+  const pillarLifts = is3d ? liftLabels(pillarItems, { Wpx: wrapW, Hpx: aspect ? wrapW / aspect : 0, tiltDeg: orbit.tilt, rotZDeg: orbit.rot, maxH: pillarMaxH, charPx: 6.8 * pillarLblK, labelH: 36 * pillarLblK }) : null;
   const pillarCrowded = pillarLifts ? [...pillarLifts.values()].filter(v => !v.ok).length : 0;
-  const wrapStyle = is3d && avail3d
+  const wrapStyle = (is3d || tv) && avail3d
     ? { width: aspect ? `min(100%, ${Math.round(avail3d * aspect)}px)` : '100%', maxHeight: avail3d }
     : { ...(aspect ? { width: `min(100%, calc((100vh - 210px) * ${aspect}))` } : { width: '100%' }), maxHeight: 'calc(100vh - 200px)' };
   const ptsStr = (pts) => pts.map(p => `${p[0]},${p[1]}`).join(' ');
@@ -2433,7 +2441,7 @@ export default function FactoryMap({ setupMode = false }) {
 
       {/* ⚡/📅 สวิตช์เดียวคุมทั้งหน้า — ผัง + แผงขวา + กล่องรายละเอียดที่คลิก ใช้ช่วงเวลาเดียวกันเสมอ (2026-10-16) */}
       {!editing && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+        <div className="tv-hide" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
           <Segmented label="ช่วงเวลาของทั้งหน้า" value={viewMode} onChange={setViewMode} options={[
             { value: 'live', label: '⚡ Live (วันนี้สด)', title: 'ผัง แผงขวา และรายละเอียดที่คลิก = ข้อมูลสดของวันนี้' },
             { value: 'review', label: '📅 ทบทวนรายวัน', title: 'ผัง แผงขวา และรายละเอียดที่คลิก = ยอดทั้งวันของวันที่เลือก' },
@@ -2450,7 +2458,7 @@ export default function FactoryMap({ setupMode = false }) {
         </div>
       )}
       {!editing && isReview && (
-        <div style={{ marginBottom: 10, padding: '7px 12px', borderRadius: 8, fontSize: 12, background: 'var(--accent-dim)', border: '1px solid var(--accent)', color: 'var(--text2)' }}>
+        <div className="tv-hide" style={{ marginBottom: 10, padding: '7px 12px', borderRadius: 8, fontSize: 12, background: 'var(--accent-dim)', border: '1px solid var(--accent)', color: 'var(--text2)' }}>
           📅 <b style={{ color: 'var(--text)' }}>โหมดทบทวน {fmtThaiDate(reviewDate)}</b> — ยอดผลิต / OEE / Downtime / ของเสีย / คน บนผังเป็นยอดทั้งวันของวันนั้น ·
           <b> แท็บ PM / AM / พลังงาน / Supply Route ยังเป็นสถานะปัจจุบัน</b> (ไม่มีประวัติย้อนหลังรายวัน)
         </div>
@@ -2460,7 +2468,19 @@ export default function FactoryMap({ setupMode = false }) {
       {/* 20/10 (user "จอขนาดเด้งกระพริบเวลาเปลี่ยน tab" · คลิปจอ TV): เดิมปุ่มแท็บ + ชิปบอกข้อมูล + ปุ่ม A−/2D อยู่แถว wrap เดียว
           ชิปต่อแท็บไม่เท่ากัน (🫥 โซนสนับสนุน · ⚠ PM ไม่ผูกไลน์ · legend) ⇒ บางแท็บ 2 บรรทัด บางแท็บ 3 ⇒ ผังขยับขึ้นลง
           และตัววนจอ TV ย่อ (zoom) ใหม่ทุกครั้ง = ขนาดเด้ง · ตอนนี้แยก 2 แถว: แถวแท็บคงที่ · แถวชิป+เครื่องมือจองความสูงไว้ */}
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+      {/* 📺 จอประชุม: แถวปุ่มแท็บ → หัวเรื่องตัวใหญ่ "ตอนนี้ดูเรื่องอะไร" (ไม่มีใครกดปุ่มบนทีวี) */}
+      {tv && !editing && (
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 16, flexWrap: 'wrap', marginBottom: 8 }}>
+          <span style={{ fontSize: 34, fontWeight: 800, color: 'var(--text)', lineHeight: 1.15 }}>{METRICS[metric]?.label}</span>
+          <span style={{ fontSize: 22, fontWeight: 700, color: isReview ? 'var(--accent)' : '#22c55e' }}>
+            {isReview ? `📅 ยอดทั้งวัน ${fmtThaiDate(reviewDate)}` : '⚡ สดวันนี้'}
+          </span>
+          {cycleList.length > 1 && cycleOn && (
+            <span style={{ fontSize: 20, fontWeight: 700, color: 'var(--muted)' }}>🔁 เรื่องที่ {cycleList.indexOf(metric) + 1}/{cycleList.length}</span>
+          )}
+        </div>
+      )}
+      <div className="tv-hide" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
         {Object.entries(METRICS).map(([k, m]) => (
           <button key={k} onClick={() => setMetric(k)} style={btn(metric === k)}>{m.label}</button>
         ))}
@@ -2472,7 +2492,7 @@ export default function FactoryMap({ setupMode = false }) {
         )}
       </div>
       {/* จอคอม/TV = บรรทัดเดียวเสมอ (ชิปยาวหดเป็น … · เต็มอยู่ใน title) ⇒ ความสูงไม่เปลี่ยนตามแท็บ · มือถือ wrap ตามเดิม (index.css .fm-chips) */}
-      <div className={isMobile ? undefined : 'fm-chips'} style={{ display: 'flex', gap: 8, flexWrap: isMobile ? 'wrap' : 'nowrap', alignItems: 'center', minHeight: 30, marginBottom: 12 }}>
+      <div className={isMobile ? undefined : 'fm-chips'} style={{ display: 'flex', gap: 8, flexWrap: isMobile ? 'wrap' : 'nowrap', alignItems: 'center', minHeight: 30, marginBottom: 12, ...(tv ? { zoom: 1.6 } : {}) }}>
         {/* ⚡ พลังงานเป็นข้อมูล "รายเดือน" ไม่ใช่ live เหมือน metric อื่นบนจอนี้ — ต้องประกาศเดือนเสมอ
             ไม่งั้นคนอ่านเป็นค่าปัจจุบัน (จอนี้ทุกอย่างสดหมด) */}
         {!editing && metric === 'energy' && (
@@ -2553,7 +2573,7 @@ export default function FactoryMap({ setupMode = false }) {
         {/* ปรับขนาดป้ายต่อเครื่อง + ซ่อนแผงขวา — สำหรับจอ TV ที่ OS scaling ทำสัดส่วนป้าย/ผังเพี้ยน (2026-08-25)
             ค่าจำใน localStorage ของเครื่องนั้น: ตั้งครั้งเดียวต่อจอ ทุกจอเลยดูสม่ำเสมอได้แม้ scaling ไม่เท่ากัน */}
         {!editing && (
-          <span className="fm-keep" style={{ marginLeft: (!labelLayout.hidden.length && !autoHulls.length) ? 'auto' : 0, alignSelf: 'center', display: 'inline-flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}
+          <span className="fm-keep tv-hide" style={{ marginLeft: (!labelLayout.hidden.length && !autoHulls.length) ? 'auto' : 0, alignSelf: 'center', display: 'inline-flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}
             title="ขนาดป้ายบนผัง (จำค่าต่อเครื่อง) — จอ TV ที่ป้ายใหญ่/ทับกัน ให้กด A−">
             <button onClick={() => applyScale(lblScale - 0.1)} disabled={lblScale <= 0.6}
               style={{ ...miniTab(false), padding: '3px 8px', fontSize: 12, opacity: lblScale <= 0.6 ? 0.4 : 1 }}>A−</button>
@@ -2614,11 +2634,11 @@ export default function FactoryMap({ setupMode = false }) {
             ...(is3d ? { perspective: 2600, perspectiveOrigin: '50% 20%', overflow: 'hidden', borderRadius: 12, paddingBottom: 32 } : {}) }}>   {/* paddingBottom: มุมพื้นที่เอียงเข้าหาจอยื่นพ้นกรอบผัง ~26px — ไม่เว้น = โดน overflow ตัด */}
           {is3d && (
             <div style={{ alignSelf: 'stretch', position: 'relative', zIndex: 3, background: 'var(--bg)', padding: '2px 4px', display: 'flex', flexWrap: 'wrap', gap: '2px 12px', fontSize: 11.5, color: 'var(--muted)', marginBottom: Math.round(wrapW * 0.1) }}>
-              <span>🧊 มุมมอง 3D (ทดลอง) · {pillarLegend(metric)}</span>
-              <span>กรอบไลน์ = กล่อง · ▣ เสา = ยอดรวมกลุ่ม · ป้ายที่ชนกันถูกยกขึ้นสูง มีเส้นโยงลง · คลิกกล่อง/เสาเปิดไลน์</span>
-              {pillarCrowded > 0 && <b style={{ color: '#f59e0b' }}>ป้ายแน่นจนวางไม่ได้ {pillarCrowded} ใบ — ชี้/แตะกล่องเพื่อดู</b>}
+              <span className="tv-hide">🧊 มุมมอง 3D (ทดลอง) · {pillarLegend(metric)}</span>
+              <span className="tv-hide">กรอบไลน์ = กล่อง · ▣ เสา = ยอดรวมกลุ่ม · ป้ายที่ชนกันถูกยกขึ้นสูง มีเส้นโยงลง · คลิกกล่อง/เสาเปิดไลน์</span>
+              {pillarCrowded > 0 && <b style={{ color: '#f59e0b', ...(tv ? { fontSize: 18 } : {}) }}>ป้ายแน่นจนวางไม่ได้ {pillarCrowded} ใบ — ชี้/แตะกล่องเพื่อดู</b>}
               {/* 🔄 มุมกล้อง — ลากบนผังก็หมุนได้ · ปุ่มไว้สำหรับจอ TV (ไม่มีเมาส์) · stopPropagation กันปุ่มเริ่ม "ลาก" */}
-              <span onPointerDown={e => e.stopPropagation()} style={{ marginLeft: 'auto', display: 'inline-flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
+              <span className="tv-hide" onPointerDown={e => e.stopPropagation()} style={{ marginLeft: 'auto', display: 'inline-flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
                 <span>ลาก = หมุน/ก้มเงย · ล้อเมาส์/2 นิ้ว = ซูม · Shift+ลาก = เลื่อน</span>
                 <button onClick={() => orbit.zoomBy(1 / 1.3)} disabled={orbit.zoom <= 1} title="ซูมออก" style={{ ...miniTab(false), padding: '2px 8px', fontSize: 12, opacity: orbit.zoom <= 1 ? 0.45 : 1 }}>－</button>
                 <span style={{ minWidth: 34, textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}>{Math.round(orbit.zoom * 100)}%</span>
@@ -2758,7 +2778,7 @@ export default function FactoryMap({ setupMode = false }) {
               <MapPillars3D maxH={pillarMaxH} size={Math.max(12, Math.round(wrapW * 0.024))}
                 onOpen={(n) => openLine(n)}
                 onHover={(n, e) => { if (n) { setHoverLine(n); setHoverXY({ x: e.clientX, y: e.clientY }); } else setHoverLine(null); }}
-                items={pillarItems} lifts={pillarLifts} wPx={wrapW} hPx={aspect ? wrapW / aspect : 0} cam={orbit} />
+                items={pillarItems} lifts={pillarLifts} wPx={wrapW} hPx={aspect ? wrapW / aspect : 0} cam={pillarLblK === 1 ? orbit : { ...orbit, lblScale: pillarLblK }} />
             )}
             {!is3d && regions.map(r => {
               if (facHidden(r.line_name)) return null;      // 🫥 โซนที่ซ่อนตาม metric — ป้ายก็ไม่วาด
@@ -2915,7 +2935,9 @@ export default function FactoryMap({ setupMode = false }) {
           {/* ── side panel: สรุปทบทวนรายวัน (default) / จัดอันดับสด (ใช้พื้นที่ข้าง) ──
               จอ TV ซ่อนได้ (ปุ่ม ◀ ในแถบ metric) — คืนความกว้างให้ผัง ~360px แล้ว wrapW มักพ้นเกณฑ์ compact */}
           {!editing && !panelHide && (
-            <aside style={{ flex: '0 0 360px', maxWidth: '100%', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 16px', maxHeight: 'calc(100vh - 200px)', overflowY: 'auto' }}>
+            <aside style={{ flex: '0 0 360px', maxWidth: '100%', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 16px', maxHeight: 'calc(100vh - 200px)', overflowY: 'auto',
+              /* 📺 จอประชุม: ขยายทั้งแผงด้วย zoom (แผงไม่มี 3D — Cr94 ไม่มีปัญหา) · ความสูงหารคืนให้พอดีจอ */
+              ...(tv ? { zoom: 1.45, maxHeight: `calc((100vh - var(--tvbar-h, 0px) - 120px) / 1.45)` } : {}) }}>
               {/* สลับโหมดแผง */}
               {/* โหมดทบทวน = แผงเป็นสรุปของวันที่เลือกอย่างเดียว (OBEYA/อันดับ เป็นของสด) */}
               {!isReview && <div style={{ display: 'flex', gap: 5, marginBottom: 12 }}>
@@ -3111,7 +3133,7 @@ export default function FactoryMap({ setupMode = false }) {
                       );
                     })}
 
-                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 12, lineHeight: 1.5, borderTop: '1px solid var(--border2)', paddingTop: 8 }}>
+                    <div className="tv-hide" style={{ fontSize: 11, color: 'var(--muted)', marginTop: 12, lineHeight: 1.5, borderTop: '1px solid var(--border2)', paddingTop: 8 }}>
                       เกณฑ์สีของทุกหัวข้อ<b> ยืมมาจากแท็บ metric ของเรื่องนั้นบนผังนี้เอง</b> — แผงขวากับสีบนผังจึงตอบตรงกันเสมอ<br />
                       ต้องการแนวโน้มย้อนหลัง/เป้ารายเดือน → <Link to="/obeya?tab=sqdcm" style={{ color: 'var(--accent)', fontWeight: 700 }}>ห้อง OBEYA</Link>
                     </div>
