@@ -2456,7 +2456,10 @@ export default function FactoryMap({ setupMode = false }) {
       )}
 
       {/* เลือก metric */}
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+      {/* 20/10 (user "จอขนาดเด้งกระพริบเวลาเปลี่ยน tab" · คลิปจอ TV): เดิมปุ่มแท็บ + ชิปบอกข้อมูล + ปุ่ม A−/2D อยู่แถว wrap เดียว
+          ชิปต่อแท็บไม่เท่ากัน (🫥 โซนสนับสนุน · ⚠ PM ไม่ผูกไลน์ · legend) ⇒ บางแท็บ 2 บรรทัด บางแท็บ 3 ⇒ ผังขยับขึ้นลง
+          และตัววนจอ TV ย่อ (zoom) ใหม่ทุกครั้ง = ขนาดเด้ง · ตอนนี้แยก 2 แถว: แถวแท็บคงที่ · แถวชิป+เครื่องมือจองความสูงไว้ */}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
         {Object.entries(METRICS).map(([k, m]) => (
           <button key={k} onClick={() => setMetric(k)} style={btn(metric === k)}>{m.label}</button>
         ))}
@@ -2466,10 +2469,14 @@ export default function FactoryMap({ setupMode = false }) {
             🔁 {cycleOn ? `วนมุมมอง · ${cycleList.indexOf(metric) + 1}/${cycleList.length}` : 'วนมุมมอง (หยุด)'}<ToggleDot on={cycleOn} />
           </button>
         )}
+      </div>
+      {/* จอคอม/TV = บรรทัดเดียวเสมอ (ชิปยาวหดเป็น … · เต็มอยู่ใน title) ⇒ ความสูงไม่เปลี่ยนตามแท็บ · มือถือ wrap ตามเดิม (index.css .fm-chips) */}
+      <div className={isMobile ? undefined : 'fm-chips'} style={{ display: 'flex', gap: 8, flexWrap: isMobile ? 'wrap' : 'nowrap', alignItems: 'center', minHeight: 30, marginBottom: 12 }}>
         {/* ⚡ พลังงานเป็นข้อมูล "รายเดือน" ไม่ใช่ live เหมือน metric อื่นบนจอนี้ — ต้องประกาศเดือนเสมอ
             ไม่งั้นคนอ่านเป็นค่าปัจจุบัน (จอนี้ทุกอย่างสดหมด) */}
         {!editing && metric === 'energy' && (
-          <span style={{ alignSelf: 'center', display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, whiteSpace: 'nowrap' }}>
+          <span title={`${energyMonth ? monthLabel(energyMonth) : 'ยังไม่มีข้อมูล'} · กรอกมือรายเดือน · สีกรอบ = เทียบเดือนก่อน (ลดลง = เขียว)${energyEf ? '' : ' · ยังไม่ตั้งค่าการปล่อย → ไม่มี tCO2e'}`}
+            style={{ alignSelf: 'center', display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, whiteSpace: 'nowrap' }}>
             <b style={{ color: '#f59e0b', background: '#f59e0b1a', border: '1px solid #f59e0b55', borderRadius: 6, padding: '3px 8px' }}>
               📅 {energyMonth ? monthLabel(energyMonth) : 'ยังไม่มีข้อมูล'} · ✍️ กรอกมือรายเดือน
             </b>
@@ -2521,7 +2528,8 @@ export default function FactoryMap({ setupMode = false }) {
         )}
         {/* legend อธิบายเลขบนป้าย — เลข 3 ตัวติดกันไม่มีคำอธิบายคนอ่านไม่ออก (คำสั่ง user 2026-08-06) */}
         {!editing && metric === 'productivity' && (
-          <span style={{ alignSelf: 'center', fontSize: 11.5, color: 'var(--muted)', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 4 }}>
+          <span title="ทำได้ / ควรได้ตอนนี้ / เป้ากะ · สีกรอบ = ทันจังหวะไหม"
+            style={{ alignSelf: 'center', fontSize: 11.5, color: 'var(--muted)', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 4 }}>
             <b style={{ color: '#22c55e' }}>ทำได้</b> /
             <b style={{ color: 'var(--text2)' }} title="ถ้าเดินตามจังหวะปกติ ถึงตอนนี้ควรได้เท่านี้ (คิดจากเวลาที่ผลิตได้จริง ÷ รอบเวลาชิ้นงาน)">ควรได้ตอนนี้</b> /
             <b style={{ color: 'var(--text2)' }} title="เป้ารวมของใบงานที่เปิดในกะนี้">เป้ากะ</b>
@@ -2536,14 +2544,15 @@ export default function FactoryMap({ setupMode = false }) {
           </span>
         )}
         {!editing && !labelLayout.hidden.length && !!autoHulls.length && (
-          <span style={{ marginLeft: 'auto', alignSelf: 'center', fontSize: 11.5, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
+          <span title="▣ กลุ่ม (ยอดรวมทั้งกลุ่ม · เส้นประ) · ↳ ไลน์ย่อย ในกลุ่ม"
+            style={{ marginLeft: 'auto', alignSelf: 'center', fontSize: 11.5, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
             <b style={{ color: 'var(--text2)' }}>▣ กลุ่ม</b> (ยอดรวมทั้งกลุ่ม · เส้นประ) · <b style={{ color: 'var(--text2)' }}>↳ ไลน์ย่อย</b> ในกลุ่ม
           </span>
         )}
         {/* ปรับขนาดป้ายต่อเครื่อง + ซ่อนแผงขวา — สำหรับจอ TV ที่ OS scaling ทำสัดส่วนป้าย/ผังเพี้ยน (2026-08-25)
             ค่าจำใน localStorage ของเครื่องนั้น: ตั้งครั้งเดียวต่อจอ ทุกจอเลยดูสม่ำเสมอได้แม้ scaling ไม่เท่ากัน */}
         {!editing && (
-          <span style={{ marginLeft: (!labelLayout.hidden.length && !autoHulls.length) ? 'auto' : 0, alignSelf: 'center', display: 'inline-flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}
+          <span className="fm-keep" style={{ marginLeft: (!labelLayout.hidden.length && !autoHulls.length) ? 'auto' : 0, alignSelf: 'center', display: 'inline-flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}
             title="ขนาดป้ายบนผัง (จำค่าต่อเครื่อง) — จอ TV ที่ป้ายใหญ่/ทับกัน ให้กด A−">
             <button onClick={() => applyScale(lblScale - 0.1)} disabled={lblScale <= 0.6}
               style={{ ...miniTab(false), padding: '3px 8px', fontSize: 12, opacity: lblScale <= 0.6 ? 0.4 : 1 }}>A−</button>
