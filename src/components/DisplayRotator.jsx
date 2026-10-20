@@ -5,8 +5,9 @@ import { canAccessPage } from '../utils/permissions';
 import {
   normalizeConfig, buildPlaylist, stepIndex, indexOfLocation, resolveIndex, shouldReload,
   displayChannelName, parseDisplayCmd, ROT_NAV_STATE, fmtSec, SKIP_REASON_LABEL, markQuietReload,
-  setActiveDwellSec, barChips, SUBPAGE_ATTR, SUBPAGE_MAX_EXTRA_SEC, parseSubpage, subpageGate,
+  setActiveDwellSec, barChips, SUBPAGE_ATTR, SUBPAGE_MAX_EXTRA_SEC, parseSubpage, subpageGate, boardFlipSec,
 } from '../utils/displayRotation';
+import { tvPages } from '../utils/tvPager';
 import { NAV_ITEMS, UserContext } from '../App';
 import { getCurrentShift, getWorkDate } from '../utils/workDate';
 
@@ -76,6 +77,7 @@ export default function DisplayRotator({ userId, role, disabled, shell = false }
   const loadedAtRef = useRef(Date.now());
   const subSeenRef = useRef(new Map());          // แถบหน้าย่อยตัวที่ i เห็นหน้าสุดท้ายตอน elapsed เท่าไหร่ (subpageGate)
   const [subWait, setSubWait] = useState(null);  // { page, count } = ครบเวลาแล้วแต่ยังรอหน้าย่อย
+  const [fitPage, setFitPage] = useState(null);  // { page, count } = หน้ายาวเกินจอ ⇒ แบ่งเป็นส่วนแล้วหมุน (fit ด้านล่าง)
 
   /* ── โหลดแผนของบัญชีนี้ (guard stale response — กฎเขียน DB ข้อ 4) ── */
   useEffect(() => {
@@ -224,6 +226,40 @@ export default function DisplayRotator({ userId, role, disabled, shell = false }
     html.style.overflow = 'hidden';
     document.body.style.overflow = 'hidden';
     let zoom = 1;
+    /* 📐 20/10 (user "scale ของ UX/UI ให้สวยเหมือนกัน" — หน้า OEE แนวโน้มถูกย่อถึง 55% ตัวหนังสือ ~7px)
+       ย่อได้ไม่ต่ำกว่า FIT_FLOOR · ย่อถึงพื้นแล้วยังล้น = **แบ่งเป็นส่วนตามขอบการ์ดแล้วหมุน** (tvPages · ซ้อน 48px ถ้าการ์ดเดียวสูงเกินจอ)
+       เลื่อนด้วย body.scrollTop (html/body สูง 100% + overflow hidden ⇒ body คือกล่องที่เลื่อน · px ของ body ไม่ถูก zoom = ตรงกันทุกเบราว์เซอร์) · ตำแหน่งการ์ดคิดเป็น "สัดส่วนของ main"
+       (rect ใต้ zoom ของ Cr94 = ก่อนย่อ · Cr ใหม่ = หลังย่อ — สัดส่วนเท่ากันทั้งคู่) × ความสูงจริงจาก scrollHeight ของเอกสาร
+       แถบบนเขียน "ส่วน n/N" + data-tv-subpage ⇒ ตัววนรอจนครบทุกส่วน (subpageGate) */
+    const FIT_FLOOR = 0.8;
+    let pages = null;
+    let pg = 0;
+    let onPage = 0;
+    const measurePages = (m, avail, barH) => {
+      const root = m.querySelector('.page-content') || m;
+      const mr = m.getBoundingClientRect();
+      const hVis = Math.max(1, document.body.scrollHeight - barH);
+      const toVis = y => ((y - mr.top) / Math.max(1, mr.height)) * hVis;
+      const items = [];
+      [...root.children].forEach((b) => {
+        const r = b.getBoundingClientRect();
+        if (!r.height) return;
+        const top = toVis(r.top), bottom = toVis(r.bottom);
+        if (bottom - top > avail && b.children.length > 1) {
+          [...b.children].forEach((c) => {
+            const rc = c.getBoundingClientRect();
+            if (rc.height) items.push({ top: toVis(rc.top), bottom: toVis(rc.bottom) });
+          });
+        } else items.push({ top, bottom });
+      });
+      const ps = tvPages(items, avail);
+      return ps.length > 1 ? ps : null;
+    };
+    const showPage = () => {
+      const p = pages?.[pg];
+      document.body.scrollTop = p ? Math.max(0, p.start - 8) : 0;
+      setFitPage(pages ? { page: pg + 1, count: pages.length } : null);
+    };
     const fit = () => {
       const m = document.querySelector('main');
       if (!m) return;
@@ -231,6 +267,7 @@ export default function DisplayRotator({ userId, role, disabled, shell = false }
          (ผัง 3D ยุบไปมุมซ้ายบน · รูปจากจอจริง 16/10) ⇒ ไม่ย่อ · หน้าพวกนี้คุมความสูงเอง */
       if (m.querySelector('[data-tv-nofit], canvas')) {
         if (zoom !== 1) { zoom = 1; m.style.zoom = ''; }
+        if (pages) { pages = null; pg = 0; showPage(); }
         return;
       }
       /* 🔴 19/10 (จอ TV จริง: "จอค่อยๆ วูมเอ้า" หลังสลับ 3D→2D): เดิมคิด target = zoom × จอ ÷ rect.height
@@ -244,17 +281,39 @@ export default function DisplayRotator({ userId, role, disabled, shell = false }
       const natural = m.getBoundingClientRect().height + 2;
       m.style.zoom = prevZoom;
       const barH = parseFloat(getComputedStyle(document.body).paddingTop) || 0;   // แถบบนของกรอบจอ TV
-      const target = Math.max(0.55, Math.min(1, (window.innerHeight - barH) / Math.max(1, natural)));
-      if (Math.abs(target - zoom) < 0.02) return;
-      zoom = Math.round(target * 100) / 100;
-      m.style.zoom = zoom >= 0.995 ? '' : String(zoom);
+      const avail = window.innerHeight - barH;
+      // ย่อได้ถึง FIT_FLOOR แล้วพอดี = ย่อ · ไม่พอดี = ไม่ย่อเลย (100%) แล้วแบ่งส่วน — ต้องหมุนอยู่แล้ว ย่อไปก็แค่ตัวเล็กลง
+      const fitRatio = avail / Math.max(1, natural);
+      const target = fitRatio >= FIT_FLOOR ? Math.min(1, fitRatio) : 1;
+      if (Math.abs(target - zoom) >= 0.02) {
+        zoom = Math.round(target * 100) / 100;
+        m.style.zoom = zoom >= 0.995 ? '' : String(zoom);
+      }
+      const next = natural * zoom > avail + 4 ? measurePages(m, avail, barH) : null;
+      const sig = (ps) => (ps ? ps.map(p => Math.round(p.start)).join(',') : '');
+      if (sig(next) !== sig(pages)) {
+        pages = next;
+        if (!pages || pg >= pages.length) { pg = 0; onPage = 0; }
+        showPage();
+      }
     };
     const t0 = setTimeout(fit, 300);
     const id = setInterval(fit, 1500);
+    // หมุนส่วน — จังหวะเดียวกับบอร์ดที่แบ่งหน้าเอง (boardFlipSec) · ตัววนรอจนครบผ่าน data-tv-subpage
+    const flip = setInterval(() => {
+      if (!pages) return;
+      onPage += 1;
+      if (onPage < (boardFlipSec(pages.length) || 12)) return;
+      onPage = 0;
+      pg = (pg + 1) % pages.length;
+      showPage();
+    }, 1000);
     return () => {
-      clearTimeout(t0); clearInterval(id);
+      clearTimeout(t0); clearInterval(id); clearInterval(flip);
       const m = document.querySelector('main');
       if (m) m.style.zoom = '';
+      document.body.scrollTop = 0;
+      setFitPage(null);
       html.style.overflow = prev.h;
       document.body.style.overflow = prev.b;
     };
@@ -279,7 +338,7 @@ export default function DisplayRotator({ userId, role, disabled, shell = false }
         pathname={location.pathname} search={location.search} now={now}
         loadErr={loadErr} active={active && !!cur}
         idx={Math.min(idx, Math.max(0, n - 1))} n={n} sec={cur?.sec || 0} elapsed={elapsed}
-        held={held} pausedLeft={pausedLeft} skipped={skipped} skipTitle={skipTitle} subWait={subWait}
+        held={held} pausedLeft={pausedLeft} skipped={skipped} skipTitle={skipTitle} subWait={subWait} fitPage={fitPage}
         controls={active && cur ? (
           <>
             {btn('◀', () => goTo(stepIndex(idx, n, -1)), 'หน้าก่อนหน้า', barBtn)}
@@ -334,7 +393,7 @@ export default function DisplayRotator({ userId, role, disabled, shell = false }
    ล่างสุดของแถบ = ความคืบหน้ารอบวน (1 ขีด = 1 หน้า · ขีดปัจจุบันเติมตามเวลา)
    แทนที่: หัวเพจ/breadcrumb/แท็บ/แถบกรองของทุกหน้า · ชิปมุมจอ · นาฬิกาที่บางบอร์ดวาดเอง
    ความสูงอยู่ที่ `--tvbar-h` (index.css) — บอร์ดที่เต็มจอแบบ fixed ต้องเริ่มที่ top: var(--tvbar-h, 0px) */
-function TvShellBar({ pathname, search, now, loadErr, active, idx, n, sec, elapsed, held, pausedLeft, skipped, skipTitle, subWait, controls }) {
+function TvShellBar({ pathname, search, now, loadErr, active, idx, n, sec, elapsed, held, pausedLeft, skipped, skipTitle, subWait, fitPage, controls }) {
   const { sections, section } = useContext(UserContext) || {};
   const secs = (sections?.length ? sections : (section ? [section] : [])).filter(Boolean);
   const nav = pathname === '/tv'
@@ -358,6 +417,12 @@ function TvShellBar({ pathname, search, now, loadErr, active, idx, n, sec, elaps
         {chips.map(c => (
           <span key={c} style={barChip}>{c}</span>
         ))}
+        {/* 📐 หน้ายาวเกินจอ ⇒ แบ่งส่วนหมุน (fit) — data-tv-subpage ให้ตัววนรอจนครบทุกส่วน */}
+        {fitPage && (
+          <span {...{ [SUBPAGE_ATTR]: `${fitPage.page}/${fitPage.count}` }} style={{ ...barChip, color: 'var(--accent)', borderColor: 'var(--accent)' }}>
+            ส่วน {fitPage.page}/{fitPage.count}
+          </span>
+        )}
       </div>
       {loadErr && (
         <span title={loadErr} style={{ fontSize: 16, fontWeight: 700, color: 'var(--amber)', whiteSpace: 'nowrap' }}>⚠ โหลดรอบวนไม่สำเร็จ — ค้างหน้านี้</span>

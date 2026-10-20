@@ -972,7 +972,14 @@ const TABLE_EXTRA = {
       qty_per_unit: 0.45, uom: 'KG', item_no: 90, is_active: true },
   ],
 }
+/* 📺 ?rot=<path>[,<path>] (20/10) — แผนจอวนหน้าของบัญชี display ใน harness (คู่กับ ?tvshell=1)
+   ไม่มีแถวนี้ = DisplayRotator ไม่ active ⇒ "พอดีจอ/แบ่งส่วน/รอหน้าย่อย" ไม่เคยถูกรันในฮาร์เนส
+   ไม่ใส่ ?rot = พฤติกรรมเดิม (แถวกลาง ROWS → แผนไม่ active) */
+const ROT_PATHS = typeof location !== 'undefined' ? (new URLSearchParams(location.search).get('rot') || '') : ''
 const rowsFor = (table) => {
+  if (table === 'display_rotations' && ROT_PATHS) {
+    return [{ enabled: true, items: ROT_PATHS.split(',').map(path => ({ path, sec: 20 })), default_sec: 20, pause_sec: 120, reload_min: 0 }]
+  }
   if (TABLE_FIXED[table]) return TABLE_FIXED[table]
   const fn = TABLE_ROWS[table]
   const base = fn ? ROWS.map((r, idx) => fn(r, idx + 1)) : ROWS
