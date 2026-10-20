@@ -332,10 +332,12 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
         kplans = kp.rows || [];
       }
       /* 💰 ตัวเลขฐาน (ยอดขายกลางของโรงงาน + ยอดเงินของหน่วย) — นิยาม provider='formula' คำนวณค่ารายเดือนจากตรงนี้ (15/10) · ตารางยังไม่มี = ไม่มีสูตร */
+      /* cap-ok: kpi_base_inputs ต่อปี สูงสุด 63 แถว (วัด 20/10) */
       const kb = await supabase.from('kpi_base_inputs').select('id, month, scope_kind, scope_value, var_key, value').eq('year', year).limit(5000);
       if (kb.error && (kb.error.code || '') !== '42P01') warn.push('ตัวเลขฐาน KPI');
       const kbase = kb.data || [];
       /* 👥 ทะเบียนพนักงาน active — ตัวหาร manpower ของ "ยอดขาย/หัว" เมื่อไม่มีใครกรอก (ค่ากรอกมือชนะ) */
+      /* cap-ok: employees ทั้งโรงงาน 351 คน (วัด 20/10) */
       const em = await supabase.from('employees').select('id, section, department, is_active, start_date').eq('is_active', true).limit(5000);
       if (em.error) warn.push('ทะเบียนพนักงาน');
       const kemps = em.data || [];

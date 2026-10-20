@@ -1669,6 +1669,7 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
       .select('id, work_date, line_name, category, description, status, created_at, created_by, sv_approved_by, approved_by')
       .in('line_name', lineFamilyOf(line)).eq('status', 'approved')
       .gte('work_date', monthStart).lte('work_date', monthEnd)
+      /* cap-ok: four_m_logs ต่อเดือน สูงสุด 433 แถว (วัด 20/10) */
       .limit(5000);
 
     // กะถูก derive จากเวลาที่บันทึก (created_at) — ใช้กฎเดียวกับ getCurrentShift(): 08:00-19:59 = กะเช้า

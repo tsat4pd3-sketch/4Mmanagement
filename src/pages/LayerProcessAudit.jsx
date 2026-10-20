@@ -181,16 +181,22 @@ export default function LayerProcessAudit() {
   /* วันที่ไลน์นี้ "เปิดกะจริง" ในเดือนที่ดูอยู่ — `null` = อ่านไม่สำเร็จ (⇒ ช่องเป็น ❔ ห้ามเดาว่าไม่ผลิต) */
   const [runs, setRuns] = useState(null);
   const [monthAudits, setMonthAudits] = useState([]); // audits+answers ของเดือนที่เลือก
+  /* 🔴 อ่านใบ/แผนของเดือนไม่สำเร็จ = ตารางต้องเป็น "ไม่รู้" ทั้งเดือน **ห้ามบีบเป็น "ขาดตรวจ"** */
+  const [monthErr, setMonthErr] = useState('');
   const [savingPlan, setSavingPlan] = useState(false);
   /* แท็บแผน = มองทีละไตรมาส (3 เดือน) — คำสั่ง user 2026-07-20 */
   const [qData, setQData] = useState({});   // { 'YYYY-MM': { plan: row|null, days: {day: pd} } }
   const [qAudits, setQAudits] = useState([]); // audits ทั้งไตรมาส (ใช้ทำสถานะ ● ตรวจแล้ว)
+  /* 🔴 อ่านใบ/แผนไตรมาสไม่สำเร็จ = ห้ามทำเป็น "⊗ เลยกำหนด ยังไม่ตรวจ" (ใบนี้พิมพ์ไปเซ็น FM-QMR-008) */
+  const [qErr, setQErr] = useState('');
   const [qHeader, setQHeader] = useState({ leader_name: '', supervisor_name: '', manager_name: '', gm_name: '', stations: '' });
 
   /* audit record */
   const [auditDate, setAuditDate] = useState(getWorkDate());
   const [auditLayer, setAuditLayer] = useState(role === 'manager' ? 'manager' : role === 'supervisor' ? 'supervisor' : role === 'engineer' || role === 'qa' ? 'supervisor' : 'leader');
   const [draft, setDraft] = useState(null);          // { id?, station, auditor_name, auditor_sig_url, answers: {qid:{answer,note}} }
+  /* 🔴 อ่านใบเดิมไม่สำเร็จ = **ห้ามเดาว่า "ยังไม่มีใบ"** (ดูในเอฟเฟกต์โหลดใบ) — เก็บเหตุผลไว้เขียนบนจอ */
+  const [draftErr, setDraftErr] = useState('');
   const [auditPlanStations, setAuditPlanStations] = useState([]); // สถานีในแผนเดือนที่ตรวจ — ตัวเลือกช่อง "Station ที่ตรวจ"
   const [wsNames, setWsNames] = useState([]);        // จุดงาน (workstations) ของครอบครัวไลน์ที่เลือก — ตัวเลือกสถานี (2026-09-07)
   const [savingAudit, setSavingAudit] = useState(false);
@@ -318,7 +324,7 @@ export default function LayerProcessAudit() {
     const key = monthKey;   // คีย์ที่ "คิวรีชุดนี้" ถามไป — เทียบกับจอตอนคำตอบกลับมา
     const first = dateOf(selMonth, 1);
     const last = dateOf(selMonth, daysInMonth(selMonth));
-    const [{ data: pl }, { data: aud }, runRes] = await Promise.all([
+    const [plRes, audRes, runRes] = await Promise.all([
       supabase.from('lpa_plans').select('*, lpa_plan_days(*)').eq('line_name', selLine).eq('shift', selShift).eq('month_key', selMonth).maybeSingle(),
       supabase.from('lpa_audits').select('*, lpa_audit_answers(*)').eq('line_name', selLine).eq('shift', selShift).gte('audit_date', first).lte('audit_date', last).order('audit_date'),
       // ตารางกะอยู่ **คนละ project (DR)** — ล้มแล้วต้องเป็น "ไม่รู้" ไม่ใช่ "ไม่ได้ผลิต"
@@ -326,6 +332,12 @@ export default function LayerProcessAudit() {
     ]);
     if (monthKeyRef.current !== key) return;   // 🔴 เปลี่ยนไลน์/กะ/เดือนไปแล้ว = ทิ้งคำตอบชุดนี้
     setMonthLoadedKey(key);
+    /* 🔴🔴 ฝั่ง DR (ตารางกะ) ระวังไว้ดีแล้วด้วย `loadRunDays` — แต่**ฝั่ง Main ที่ตอบว่า "ตรวจแล้วหรือยัง"
+       เดิมแกะแต่ `{ data }` ทิ้ง error** (QC audit 20/10) ⇒ คิวรีล้มครั้งเดียว = ทั้งเดือนขึ้น "ขาดตรวจ"
+       และตัวหาร % คิดจากใบ 0 ใบ = **จอกล่าวหาหน้างานว่าไม่ตรวจ** (ทิศที่อันตรายที่สุดของจอนี้) */
+    const { data: pl } = plRes, { data: aud } = audRes;
+    setMonthErr(audRes.error ? `โหลดใบตรวจของเดือนไม่สำเร็จ: ${audRes.error.message}`
+      : plRes.error ? `โหลดแผนตรวจของเดือนไม่สำเร็จ: ${plRes.error.message}` : '');
     setRuns(runRes);
     setPlan(pl || null);
     const dm = {};
@@ -453,10 +465,15 @@ export default function LayerProcessAudit() {
     const key = monthKey;
     const mks = quarterMonths(selMonth);
     const first = dateOf(mks[0], 1), last = dateOf(mks[2], daysInMonth(mks[2]));
-    const [{ data: pls }, { data: auds }] = await Promise.all([
+    const [plsRes, audsRes] = await Promise.all([
       supabase.from('lpa_plans').select('*, lpa_plan_days(*)').eq('line_name', selLine).eq('shift', selShift).in('month_key', mks),
       supabase.from('lpa_audits').select('id, audit_date, layer, auditor_name').eq('line_name', selLine).eq('shift', selShift).gte('audit_date', first).lte('audit_date', last),
     ]);
+    /* 🔴 อ่านไม่สำเร็จ ≠ "ยังไม่ตรวจ" — ใบไตรมาสนี้ถูกพิมพ์ไปเซ็น ⇒ ช่อง ⊗ ที่มาจากคิวรีล่ม
+       = กล่าวหาหน้างานบนกระดาษที่ยื่นออกไปแล้ว (คลาสเดียวกับตารางเดือน · QC audit 20/10) */
+    const { data: pls } = plsRes, { data: auds } = audsRes;
+    const qe = audsRes.error ? `โหลดผลตรวจของไตรมาสไม่สำเร็จ: ${audsRes.error.message}`
+      : plsRes.error ? `โหลดแผนตรวจของไตรมาสไม่สำเร็จ: ${plsRes.error.message}` : '';
     const map = {};
     mks.forEach(mk => {
       const pl = (pls || []).find(p => p.month_key === mk) || null;
@@ -466,6 +483,7 @@ export default function LayerProcessAudit() {
     });
     if (monthKeyRef.current !== key) return;   // 🔴 ทิ้งคำตอบที่มาช้า (ไม่งั้นแผนไตรมาสของไลน์เก่าค้างบนจอไลน์ใหม่)
     setQLoadedKey(key);
+    setQErr(qe);
     setQData(map);
     setQAudits(auds || []);
     const firstPl = mks.map(mk => map[mk].plan).find(Boolean);
@@ -490,6 +508,8 @@ export default function LayerProcessAudit() {
     const dstr = dateOf(mk, day);
     const planned = qData[mk]?.days?.[day]?.[planKey];
     if (qAuditFor(dstr, layerKey)) return { sym: '●', color: '#22c55e', title: 'ตรวจแล้ว' };
+    /* 🔴 อ่านผลตรวจไม่ได้ = "ไม่รู้" ห้ามขึ้น ⊗ (เลยกำหนด) — จอ/ใบพิมพ์จะกล่าวหาคนจากคิวรีที่ล่ม */
+    if (qErr && planned) return { sym: '?', color: 'var(--amber)', title: 'อ่านผลตรวจไม่ได้ — ยังบอกไม่ได้ว่าตรวจแล้วหรือยัง' };
     if (planned && dstr < getWorkDate()) return { sym: '⊗', color: '#ef4444', title: 'เลยกำหนด — ยังไม่ตรวจ' };
     if (planned) return { sym: '○', color: 'var(--text2)', title: 'วางแผนตรวจ' };
     return null;
@@ -586,13 +606,24 @@ export default function LayerProcessAudit() {
     if (!selLine || tab !== 'audit') return;
     const key = draftKey;   // ใบร่างนี้เป็นของ line|shift|date|layer ชุดไหน
     (async () => {
-      const [{ data: existing }, { data: pl }] = await Promise.all([
+      const [exRes, plRes] = await Promise.all([
         supabase.from('lpa_audits').select('*, lpa_audit_answers(*)').eq('line_name', selLine).eq('shift', selShift).eq('audit_date', auditDate).eq('layer', auditLayer).maybeSingle(),
         supabase.from('lpa_plans').select('id, lpa_plan_days(day, station)').eq('line_name', selLine).eq('shift', selShift).eq('month_key', auditDate.slice(0, 7)).maybeSingle(),
       ]);
+      const { data: existing } = exRes, { data: pl } = plRes;
       /* 🔴 ทิ้งคำตอบที่มาช้า — ไม่งั้นใบร่างของไลน์ก่อนหน้าทับจอ แล้วคำตอบข้อ common ไปลงผิดไลน์เงียบๆ
          (และทับคำตอบที่คนกำลังติ๊กอยู่ด้วย) */
       if (draftKeyRef.current !== key) return;
+      /* 🔴🔴 **อ่านใบเดิมล้ม ≠ "ยังไม่มีใบ"** (QC audit 20/10) — เดิมแกะแต่ `{ data }` ทิ้ง error
+         ⇒ เน็ตสะดุดครั้งเดียว = ได้ใบร่างเปล่า `answers: {}` · กดบันทึก = `upsert` ลงแถวเดิม
+           (onConflict คุมให้) แล้ว `delete` คำตอบทั้งใบทิ้ง แล้ว insert แค่ชุดใหม่
+         = **คำตอบที่ตรวจไปแล้วหายถาวร** — คลาสเดียวกับที่ `savedOnlyAnswers` ตั้งใจกันไว้
+         ⇒ fail-closed: ไม่ตั้ง draft เลย (`draftMismatch()` บล็อกการบันทึกให้อยู่แล้ว) + เขียนบนจอว่าทำไม */
+      if (exRes.error) {
+        setDraftErr('โหลดใบตรวจเดิมไม่สำเร็จ: ' + exRes.error.message);
+        setDraft(null); return;
+      }
+      setDraftErr('');
       const planStation = pl?.lpa_plan_days?.find(d => d.day === Number(auditDate.slice(8, 10)))?.station || '';
       setAuditPlanStations([...new Set((pl?.lpa_plan_days || []).map(d => (d.station || '').trim()).filter(Boolean))]);
       if (existing) {
@@ -1044,6 +1075,12 @@ ${issuesHtml}
             <div style={{ fontWeight: 800, fontSize: 15, color: 'var(--text)' }}>ไตรมาส Q{quarterOf(selMonth)} · {monthLabel(qMonths[0])} – {monthLabel(qMonths[2])}</div>
             <button onClick={() => setSelMonth(shiftMonth(qMonths[0], 3))} style={btnGhost}>ไตรมาสถัดไป ▶</button>
           </div>
+          {qErr && (
+            <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 8, fontSize: 12.5,
+              background: 'var(--card)', border: '1px solid #ef4444', color: '#ef4444' }}>
+              ⚠ {qErr} — ช่องที่วางแผนไว้แสดงเป็น <b>?</b> (ยังบอกไม่ได้ว่าตรวจแล้วหรือยัง) <b>อย่าเพิ่งพิมพ์ใบนี้ไปเซ็น</b>
+            </div>
+          )}
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10, marginBottom: 12 }}>
             {[['leader_name', 'Leader'], ['supervisor_name', 'Supervisor'], ['manager_name', 'Manager'], ['gm_name', 'GM Plant']].map(([k, label]) => (
               <div key={k}>
@@ -1138,6 +1175,13 @@ ${issuesHtml}
       {/* ═════════ บันทึกผลตรวจ ═════════ */}
       {tab === 'audit' && (
         <div className="card" style={{ padding: 16 }}>
+          {/* 🔴 โหลดใบเดิมไม่ได้ = บอกตรงๆ + ห้ามให้ฟอร์มเปล่าเดินต่อ (ห้ามเงียบ · กฎความซื่อสัตย์ของจอ) */}
+          {draftErr && (
+            <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 8, fontSize: 12.5,
+              background: 'var(--card)', border: '1px solid #ef4444', color: '#ef4444' }}>
+              ⚠ {draftErr} — <b>ยังบันทึกไม่ได้</b> (ถ้าบันทึกทับตอนนี้ คำตอบที่เคยตรวจไว้จะหาย) · ลองเปลี่ยนวัน/ไลน์แล้วกลับมาใหม่
+            </div>
+          )}
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 12 }}>
             <div>
               <div style={lb}>วันที่ตรวจ</div>
@@ -1295,12 +1339,14 @@ ${issuesHtml}
         const todayStr = getWorkDate();
         const dayStateOf = (d) => {
           const ds = dateOf(selMonth, d);
+          /* 🔴 อ่านใบ/แผนของเดือนไม่ได้ = ส่ง `planned`/`ran` เป็น null ⇒ `checkDayState` คืน `unknown`
+             (วันหยุด/วันอนาคตยังรู้อยู่ จึงปล่อยให้ตัดสินตามเดิม) — ห้ามกลายเป็น "ขาดตรวจ" */
           return checkDayState({
-            hasResult: !!leaderAud[d],
+            hasResult: monthErr ? false : !!leaderAud[d],
             isFuture:  ds > todayStr,
             isOff:     isHoliday(ds),
-            planned:   plan ? !!planDays[d]?.plan_leader : false,
-            ran:       ranOn(runs, ds, selShift),
+            planned:   monthErr ? null : (plan ? !!planDays[d]?.plan_leader : false),
+            ran:       monthErr ? null : ranOn(runs, ds, selShift),
           });
         };
         const dayStates = daysArr.map(dayStateOf);
@@ -1320,7 +1366,12 @@ ${issuesHtml}
                 <div style={{ marginTop: 3, fontSize: 12, color: sum.missed ? 'var(--red)' : 'var(--muted)' }}>
                   {checkDaysNote(sum)}{sum.pct != null && <> · ความครบ <b>{sum.pct}%</b></>}
                 </div>
-                {!plan && (
+                {monthErr && (
+                  <div style={{ marginTop: 3, fontSize: 11.5, color: '#ef4444', fontWeight: 700 }}>
+                    ⚠ {monthErr} — ตารางเดือนนี้แสดงเป็น "ไม่รู้" ทั้งเดือน (ไม่ได้แปลว่าขาดตรวจ)
+                  </div>
+                )}
+                {!plan && !monthErr && (
                   <div style={{ marginTop: 3, fontSize: 11.5, color: 'var(--amber)' }}>
                     ⚠️ เดือนนี้ยังไม่มีแผนตรวจของ {selLine} ({SHIFT_META[selShift]}) — บอกไม่ได้ว่าวันไหนต้องตรวจ
                     จึงยังไม่นับวันขาดตรวจ · ไปตั้งที่แท็บ <b>แผนตรวจ</b>

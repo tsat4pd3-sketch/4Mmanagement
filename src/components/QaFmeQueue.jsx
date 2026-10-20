@@ -100,6 +100,7 @@ export default function QaFmeQueue({ scopedLineNames, onOpen }) {
   /* โหลด 3 ชุดแยกกัน — ชุดไหนพัง = null ให้ตัวประเมินบอกว่า "ประเมินไม่ได้" (ห้ามแปลงเป็นผ่าน) */
   const loadReadiness = useCallback(async () => {
     const [qaParts, products, rules] = await Promise.all([
+      /* cap-ok: qa_parts 5 แถว (วัด 20/10) */
       supabase.from('qa_parts').select('id, part_no, mat_no').eq('is_active', true).limit(2000)
         .then(r => (r.error ? null : (r.data || []))),
       // dr_products อยู่ DR (anon เสมอ) · แบ่งหน้าเหมือน QaFmeBoard — key แยกเพราะเลือกคอลัมน์คนละชุด

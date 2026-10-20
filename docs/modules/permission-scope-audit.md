@@ -530,3 +530,23 @@ migration `supabase/migrations/20261020_rls_scope_net_fn_main.sql` · **apply �
 1. ชั้น DB (ข้อ 7.1) — RLS ฝั่ง Main 68 policy ยังไม่มี predicate ของหน่วยงาน · ฝั่ง DR ไม่มีด่านเลย (anon)
 2. ฝั่ง DB ยังไม่รู้จัก `resp_cost_centers` ⇒ คนยิง API ตรงยังข้ามด่านจอได้ทุกจอ
 3. `manage_master` ให้ทั้ง role `mtn` · `dept_admin` ถือ 101 คีย์ (ตรวจค้างจาก audit 15/10)
+
+---
+
+## 🔐 ปิดรู `resp_cost_centers` ที่ `protect_profile_role()` (2026-10-20 · QC audit · ด่าน `cc-scope-trigger-columns`)
+
+คอลัมน์ `profiles.resp_cost_centers` (เพิ่ม 16/10 · แกนที่ 2 ของชั้น ③) **ไม่ได้อยู่ในรายการที่ trigger กัน**
+⇒ เจ้าของแถวยิง `PATCH /profiles?id=eq.<ตัวเอง>` **ตั้งขอบเขตที่ตัวเองแก้ได้ให้ตัวเอง** ได้
+(วันที่เจอ ยังไม่มีจอไหนอ่านค่านี้ แต่ 19/10 `canWriteUnit` สลับไปใช้ `canWriteScope` แล้ว ⇒ รูเปิดใช้งานทันที)
+
+🔴 **เกิดซ้ำรอบที่ 2 ของคลาสเดียวกัน** — migration 12/10 เขียนเตือนไว้เองในบล็อก ③ ว่า
+*"คอลัมน์ที่เพิ่มมาหลังเขียน trigger นี้ แล้วไม่มีใครเติมเข้ารายการ"* ⇒ รอบนี้จึงเพิ่ม**ด่านฝั่งเทส**ด้วย
+(`cc-scope-trigger-columns` อ่าน migration ล่าสุดที่ `create or replace` ฟังก์ชันนี้ แล้วบังคับว่าต้องมี
+`role · sections · section · scope_depth · resp_cost_centers` ครบ)
+
+- migration: `supabase/migrations/20261020_protect_resp_cost_centers_main.sql` (**apply แล้ว 20/10** ·
+  Main "MAIN" `ewhdfqwfwofivojtsizn`) — `create or replace` เติมบล็อกเดียว ไม่แตะ trigger/คอลัมน์/policy
+- ตรวจกลับแล้ว: `pg_get_functiondef(...) ilike '%resp_cost_centers%'` = `true` · trigger ที่ผูกอยู่ = 1 ตัวเหมือนเดิม
+- ย้อนกลับ: `create or replace` ตัวเดิมจาก `20261012_rls_round5_anon_scope_masters_main.sql` (ตัดบล็อก ④ ออก)
+- ⚠️ ข้อ 2 ของ "ที่ยังเหลือ" ข้างบน (**ฝั่ง DB ยังไม่รู้จัก `resp_cost_centers` ในชั้น RLS ของตารางอื่น**)
+  ยังเหมือนเดิม — อันนี้ปิดเฉพาะ "แก้สิทธิ์ตัวเอง" ไม่ใช่ predicate ของหน่วยงานในทุกตาราง

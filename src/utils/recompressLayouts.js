@@ -235,6 +235,7 @@ export async function recompressLayouts({ supabase, supabaseDR, onProgress = () 
   const mtnStore = supabaseDR.storage.from('mtn-images');
   const IMG_COLS = ['before_img', 'after_img', 'qa_img'];
   const { data: moRows } = await supabaseDR.from('mtn_orders')
+    /* cap-ok: improvements 9 แถว + เป็นเครื่องมือ admin รันมือ (วัด 20/10) */
     .select('id, before_img, after_img, qa_img').limit(2000);
   (moRows || []).forEach((o) => {
     IMG_COLS.forEach((col) => {

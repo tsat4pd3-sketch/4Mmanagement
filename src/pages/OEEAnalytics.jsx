@@ -584,6 +584,7 @@ export default function OEEAnalytics() {
       .select('work_date, oee, oee_a, oee_p, oee_q, status, line_name, shift, shift_min, start_time, actual_qty, qty_ng')
       .eq('status', 'closed')
       .gte('work_date', startStr).lte('work_date', tdDate)
+      /* cap-ok: production_sessions 10 วัน = 255 แถว (วัด 20/10) */
       .limit(3000);
     if (tdScopeLines?.length === 1) q = q.eq('line_name', tdScopeLines[0]);
     else if (tdScopeLines?.length > 1) q = q.in('line_name', tdScopeLines);
@@ -868,6 +869,7 @@ export default function OEEAnalytics() {
         .eq('downtime_type_id', tdDtDrill.typeId)
         .gte('production_sessions.work_date', from)
         .lte('production_sessions.work_date', tdDate)
+        /* cap-ok: downtime_logs 30 วัน ต่อ 1 downtime_type สูงสุด 541 แถว (วัด 20/10 — ทุก type รวมกัน 3,275 แต่คิวรีนี้กรอง type เดียว) */
         .limit(3000);
       if (tdScopeLines?.length === 1) q = q.eq('production_sessions.line_name', tdScopeLines[0]);
       else if (tdScopeLines?.length > 1) q = q.in('production_sessions.line_name', tdScopeLines);

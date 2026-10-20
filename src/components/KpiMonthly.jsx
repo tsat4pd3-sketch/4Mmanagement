@@ -448,11 +448,13 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
     if (!alive()) return;
     setClosedDefs(cl.error ? [] : (cl.data || []).filter(x => x.is_active === false && scopeCovers(org, scopeOfDef(x), scope)));
     /* 💰 ตัวเลขฐาน (ยอดขายกลาง + ยอดเงินของหน่วย) — โหลดทุกขอบเขตของปี (สูตรของหน่วยอ่านยอดขายจาก ทั้งโรงงาน) · ตารางยังไม่มี = ว่าง ไม่ใช่แท็บล่ม */
+    /* cap-ok: kpi_base_inputs ต่อปี สูงสุด 63 แถว (วัด 20/10) */
     const kb = await supabase.from('kpi_base_inputs').select('id, year, month, scope_kind, scope_value, var_key, value').eq('year', year).limit(5000);
     if (!alive()) return;
     if (kb.error && (kb.error.code || '') !== '42P01') toast.error('โหลดตัวเลขฐาน KPI ไม่สำเร็จ: ' + kb.error.message);
     setBaseRows(kb.error ? [] : (kb.data || []));
     /* 👥 กำลังคนจากทะเบียน (ตัวหาร "ยอดขาย/หัว") — โหลดไม่ได้ = ไม่เติมอัตโนมัติ ไม่ใช่ล่ม */
+    /* cap-ok: employees ทั้งโรงงาน 351 คน (วัด 20/10) */
     const em = await supabase.from('employees').select('id, section, department, is_active, start_date').eq('is_active', true).limit(5000);
     if (!alive()) return;
     if (em.error) toast.error('โหลดทะเบียนพนักงาน (ตัวหารยอดขาย/หัว) ไม่สำเร็จ: ' + em.error.message);
@@ -527,6 +529,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
   const fInfo = fx.info;
   const skLabel = useCallback((sk) => { const i = String(sk).indexOf(':'); return i < 0 ? 'ทั้งโรงงาน' : org.labelOf(sk.slice(0, i), sk.slice(i + 1)); }, [org]);
   const reloadBase = useCallback(async () => {
+    /* cap-ok: kpi_base_inputs ต่อปี สูงสุด 63 แถว (วัด 20/10) */
     const kb = await supabase.from('kpi_base_inputs').select('id, year, month, scope_kind, scope_value, var_key, value').eq('year', year).limit(5000);
     if (kb.error) { toast.error('โหลดตัวเลขฐาน KPI ไม่สำเร็จ: ' + kb.error.message); return; }
     setBaseRows(kb.data || []);

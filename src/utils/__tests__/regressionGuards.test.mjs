@@ -5572,6 +5572,89 @@ test('🛡️ break-anchor-needs-shift-end — จุดที่กรอบ �
     + '            ยังไม่รู้เวลาเลิกกะ = อย่าเดา ให้กรองแถว shift_end ออกแล้วชูธงบอกจอ\n');
 });
 
+/* 🛡️ limit-over-postgrest-cap — `.limit(N > 1000)` = ความมั่นใจปลอม (QC audit 19/10)
+   PostgREST **clamp ที่ 1000 แถวเสมอ** ⇒ `.limit(5000)` ไม่ได้ขยายอะไรเลย และ "ถูกตัดแถว"
+   **ไม่ใช่ error** ⇒ `if (error)` จับไม่ได้ จอได้ข้อมูลไม่ครบแบบเงียบสนิท
+   เคสจริงที่ทำให้ต้องมีด่านนี้ — `CtReview.jsx` `.in(session_id).limit(5000)`:
+     วัด 19/10 ต่อไลน์ 60 วัน `prod_orders` สูงสุด **2,802 แถว (เกิน 1000 อยู่ 4 ไลน์)** ·
+     `downtime_logs` 1,179 ⇒ หักเวลาหยุดไม่ครบ ⇒ CT ที่เสนอช้ากว่าจริง ⇒ อนุมัติแล้วเขียนทับ
+     `dr_products.cycle_time_sec` = ตัวเศษ %P ทั้งโรงงาน · กฎนี้เขียนไว้ในคอมเมนต์ 5 ที่มาก่อน
+     **แต่ไม่มีด่าน** จึง drift เรื่อยๆ
+   กติกา: เกิน 1000 ต้องมีคำว่า `cap-ok` ใน 3 บรรทัดเหนือขึ้นไป พร้อม**ตัวเลขที่วัดมา**
+          — ไม่ใช่ตรายาง: ถ้าวัดไม่ได้/วัดแล้วเกิน ให้เปลี่ยนไปใช้
+          `fetchByIds` / `fetchAllPages` / `fetchAllRows` (แบ่งก้อน + แบ่งหน้า + order คู่ range) */
+test('🛡️ limit-over-postgrest-cap — .limit(N > 1000) ต้องมีหลักฐาน cap-ok ว่าไม่ชนเพดาน', () => {
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const raw = readFileSync(file, 'utf8');
+    const rawLines = raw.split('\n');
+    /* ตัดคอมเมนต์ก่อน — ไม่งั้นคำเตือน ".limit(5000) ใช้ไม่ได้" ที่เขียนกันไว้ 7 ที่จะกลายเป็นผู้ต้องหา */
+    stripComments(raw).split('\n').forEach((ln, i) => {
+      const m = ln.match(/\.limit\(\s*(\d+)\s*\)/);
+      if (!m || Number(m[1]) <= 1000) return;
+      const near = rawLines.slice(Math.max(0, i - 3), i + 1).join('\n');
+      if (!/cap-ok/.test(near)) bad.push(`${file.slice(ROOT.length)}:${i + 1} (.limit(${m[1]}))`);
+    });
+  }
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n'
+    + '   ทำไม: PostgREST clamp ที่ 1000 แถวเสมอ — `.limit(5000)` ไม่ได้อะไรเพิ่ม\n'
+    + '         และการถูกตัดแถวไม่ใช่ error ⇒ จอได้ข้อมูลไม่ครบเงียบๆ (CT/OEE/ยอด เพี้ยนโดยไม่มีสัญญาณ)\n'
+    + '   แก้: โตเกิน 1000 ได้ → fetchByIds / fetchAllPages / fetchAllRows (แบ่งหน้า + order คู่ range)\n'
+    + '        โตไม่ถึงจริง → เขียน `cap-ok: <ตาราง> วัด <วันที่> = <N> แถว` เหนือบรรทัดนั้น (ต้องวัดจริง)\n');
+});
+
+/* 🛡️ lpa-read-fail-not-missed — `/lpa` อ่านไม่สำเร็จ ≠ "ขาดตรวจ" และ ≠ "ยังไม่มีใบ" (QC audit 20/10)
+   2 คิวรีฝั่ง Main ของหน้านี้เคยแกะแต่ `{ data }` ทิ้ง `error`:
+     ① ใบของเดือน (`loadMonth`) ล้ม ⇒ ทั้งเดือนขึ้น "ขาดตรวจ" + ตัวหาร % คิดจากใบ 0 ใบ
+        = **จอกล่าวหาหน้างานว่าไม่ตรวจ** (ไฟล์นี้ระวังฝั่ง DR ไว้ดีแล้วด้วย `loadRunDays` แต่ฝั่ง Main ไม่มีด่าน)
+     ② ใบที่กำลังกรอก (effect โหลด draft) ล้ม ⇒ ได้ใบร่างเปล่า แล้ว `saveAudit` ทำ
+        upsert → delete คำตอบทั้งใบ → insert ชุดใหม่ = **คำตอบที่ตรวจไปแล้วหายถาวร**
+   ด่าน `daily-check-unknown-not-false` จับเฉพาะรูป `ranOn(…) ?? false` จึงมองไม่เห็นทั้ง 2 เคส */
+test('🛡️ lpa-read-fail-not-missed — /lpa ต้องอ่าน error ของ lpa_audits แล้ว fail-closed', () => {
+  const bad = [];
+  const rel = 'src/pages/LayerProcessAudit.jsx';
+  const code = stripComments(readFileSync(join(ROOT, rel), 'utf8'));
+  /* แกะ `{ data: x }` จาก Promise.all โดยไม่เก็บตัว result ไว้อ่าน error = กลืน error ตั้งแต่ต้นทาง */
+  /* ตรวจเฉพาะก้อนที่ดึง `lpa_audits` — ก้อนอื่น (ทะเบียนคำถาม/ไลน์/โปรไฟล์) เป็นคนละเรื่อง */
+  for (const m of code.matchAll(/const \[\{\s*data:[^\]]*\]\s*=\s*await Promise\.all\(\[/g)) {
+    if (/lpa_audits/.test(code.slice(m.index, m.index + 700)))
+      bad.push(rel + ' (แกะ { data } จาก Promise.all ที่ดึง lpa_audits = ทิ้ง error)');
+  }
+  for (const [v, why] of [
+    ['monthErr', 'ตารางเดือน: อ่านไม่ได้ต้องเป็น unknown ทั้งเดือน ห้ามเป็น "ขาดตรวจ"'],
+    ['draftErr', 'ใบที่กำลังกรอก: อ่านไม่ได้ต้องไม่ตั้ง draft (บันทึกทับแล้วคำตอบเดิมหาย)'],
+  ]) if (!new RegExp(`\\b${v}\\b`).test(code)) bad.push(`${rel} (ไม่มี ${v} — ${why})`);
+  /* เดือนที่อ่านไม่ได้ต้องส่ง planned/ran เป็น null เข้า checkDayState (null ⇒ unknown) */
+  if (!/monthErr \? null :/.test(code))
+    bad.push(rel + ' (checkDayState ไม่ได้รับ null ตอน monthErr — เดือนที่อ่านไม่ได้จะกลายเป็น "ขาดตรวจ")');
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n'
+    + '   ทำไม: อ่านไม่สำเร็จ = "ไม่รู้" — บีบเป็น "ขาดตรวจ" คือจอโกหกในทิศที่กล่าวหาคน\n'
+    + '         และใบร่างเปล่าที่มาจากการอ่านที่ล้ม พอกดบันทึกจะลบคำตอบเดิมทั้งใบ (delete-then-insert)\n'
+    + '   แก้: เก็บผลเป็นตัวแปร (exRes/audRes) อ่าน .error → ตั้ง draftErr/monthErr แล้ว fail-closed\n');
+});
+
+/* 🛡️ cc-scope-trigger-columns — คอลัมน์ที่ "ให้สิทธิ์" ต้องอยู่ใน protect_profile_role() (QC audit 20/10)
+   `profiles.resp_cost_centers` (แกนที่ 2 ของชั้นสิทธิ์ ③ · `utils/ccScope.js`) เพิ่มมา 16/10
+   แต่ไม่มีใครเติมเข้า trigger ⇒ เจ้าของแถว `PATCH /profiles?id=eq.<ตัวเอง>` ตั้งขอบเขตให้ตัวเองได้
+   🔴 เกิดซ้ำรอบที่ 2 — migration 12/10 เขียนเตือนคลาสนี้ไว้เองแล้ว ("คอลัมน์ที่เพิ่มทีหลัง") */
+test('🛡️ cc-scope-trigger-columns — คอลัมน์ให้สิทธิ์ใน profiles ต้องถูก trigger กันครบ', () => {
+  const dir = join(ROOT, 'supabase/migrations');
+  const defs = readdirSync(dir).filter(f => f.endsWith('.sql'))
+    .map(f => readFileSync(join(dir, f), 'utf8'))
+    .filter(sql => /create or replace function public\.protect_profile_role/i.test(sql));
+  const bad = [];
+  if (!defs.length) bad.push('ไม่พบ migration ที่นิยาม protect_profile_role()');
+  /* ดูนิยาม "ล่าสุด" ตามลำดับชื่อไฟล์ — create or replace ตัวหลังชนะตัวหน้า */
+  const latest = defs[defs.length - 1] || '';
+  for (const col of ['role', 'sections', 'section', 'scope_depth', 'resp_cost_centers']) {
+    if (!new RegExp(`new\\.${col}\\s+is distinct from\\s+old\\.${col}`).test(latest))
+      bad.push(`protect_profile_role() ไม่ได้กันคอลัมน์ ${col}`);
+  }
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n'
+    + '   ทำไม: คอลัมน์พวกนี้ = "ขอบเขตที่บัญชีนี้แก้ได้" — ปล่อยให้เจ้าของแถวแก้เอง = ยกสิทธิ์ให้ตัวเอง\n'
+    + '   แก้: migration ใหม่ `create or replace function public.protect_profile_role()` ที่คัดลอกของเดิม\n'
+    + '        มาครบ แล้วเติมบล็อก `if new.<col> is distinct from old.<col> then raise exception …`\n');
+});
 /* ── 📥 ลบใบที่ "ยกยอดมาจากกะก่อน" ต้องคืนยอดค้างให้ต้นทาง (2026-10-20) ───────────
    ตอนกดรับยอด ระบบมาร์คใบต้นทางเป็น `imported` (= ถูกรับไปแล้ว) ⇒ ลบใบปลายทางทิ้ง
    = ต้นทางค้าง `imported` ตลอดกาล · แบนเนอร์ "รับยอดค้าง" ไม่กลับมา · **งานหายถาวร
