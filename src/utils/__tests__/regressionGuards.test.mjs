@@ -4852,6 +4852,8 @@ test('🛡️ mtn-pr-receive-via-rpc — รับของ PR ผ่าน mtn_
     if (!/mtn_purchase_requests/.test(src)) continue;
     if (/from\(['"]mtn_purchase_requests['"]\)[\s\S]{0,200}?\.delete\(/.test(src)) bad.push(`${relative(ROOT, f)} (delete)`);
     if (/status:\s*['"]received['"]/.test(src)) bad.push(`${relative(ROOT, f)} (เขียน status received เอง)`);
+    /* 19/10 คำสั่ง user: "เลข PR มาจาก SAP แอดมินช่างกรอก" ⇒ ระบบห้ามออกเลขเอง */
+    if (/mtn_assign_pr_no|from\(['"]mtn_pr_seq['"]\)/.test(src)) bad.push(`${relative(ROOT, f)} (ระบบออกเลข PR เอง — เลขต้องมาจาก SAP)`);
   }
   assert.deepEqual(bad, [],
     '\n\n❌ ใบขอซื้อ (PR) ถูกลบ หรือถูกตั้ง "received" ตรงจาก client: ' + bad.join(', ') + '\n'
@@ -5404,6 +5406,22 @@ test('🛡️ lot-mats-from-rules — lotMats มาจาก lotMatsOf(rules) �
   assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n   แก้: ใช้ lotMatsOf(rules) จาก src/utils/stockReceipts.js (select ต้องมีคอลัมน์ mode)\n');
 });
 
+/* 🛡️ asset-url-data-inline (2026-10-19) — รูปที่ import ใน src/assets เล็กกว่า 4 KB ถูก Vite ฝังเป็น `data:` URL
+   เดิมใบพิมพ์ MO เช็คแค่ `https?:` แล้วต่อ `location.origin` หน้า ⇒ "https://…data:image/png…" = รูปพัง
+   (โลโก้ TS 2.4 KB ไม่ขึ้นมุมซ้ายใบแจ้งซ่อม · user แจ้ง 19/10) */
+test('🛡️ asset-url-data-inline — ห้ามต่อ location.origin หน้า URL ของ asset ที่ import มาตรงๆ', () => {
+  const bad = [];
+  for (const f of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const src = stripComments(readFileSync(f, 'utf8'));
+    const assets = [...src.matchAll(/^import\s+(\w+)\s+from\s+['"][^'"]*\.(?:png|jpe?g|svg|gif|webp)['"]/gm)].map(m => m[1]);
+    for (const a of assets) {
+      if (new RegExp(`location\\.origin\\s*\\+\\s*${a}\\b`).test(src)) bad.push(`${relative(ROOT, f)} (location.origin + ${a})`);
+    }
+  }
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n   ') + '\n'
+    + '   แก้: เช็ค /^(https?:|data:|blob:)/ ก่อน ค่อยต่อ origin เฉพาะ path สัมพัทธ์ (ดู absAssetUrl ใน MtnRepair.jsx)\n');
+});
+
 /* ── 🛡️ map3d-switch-no-transition (2026-10-19 · user "จอค่อยๆ วูมเอ้าตอนสลับ 3D/2D") ─────────────
    ทรานสิชันของกรอบผัง 3D ต้องปิดใน render ที่สลับโหมด — ไม่งั้น transform เอียง+ย่อทั้งก้อนเล่น .45s เป็นภาพซูมออก/เข้า */
 test('🛡️ map3d-switch-no-transition — useMapOrbit ปิด transition ตอนสลับ 2D/3D', () => {
@@ -5460,4 +5478,23 @@ test('🛡️ tv-fit-no-compound-zoom — DisplayRotator ห้ามคิด t
   const code = stripComments(readFileSync(join(ROOT, 'src/components/DisplayRotator.jsx'), 'utf8'));
   assert.doesNotMatch(code, /zoom\s*\*\s*\(\s*window\.innerHeight/, 'สูตรย่อซ้อนทบกลับมา — วัดความสูงตอนไม่ย่อแทน');
   assert.match(code, /m\.style\.zoom\s*=\s*'';\s*\n\s*const natural/, 'ต้องถอด zoom ก่อนวัดความสูงจริง');
+});
+
+/* ═══ 🔕 แถว "เรียกช่าง" ต้องระบุทีมเสมอ — ไม่ระบุ = ไซเรนดังทุกห้อง (2026-10-19) ═══
+   `DowntimeSiren`/`MtnAndonBoard` ตีความ `call_mtn_team` ว่าง = "ดังทุกห้อง" (เจตนา: ไม่เดาทีม)
+   ⇒ ทุกจุดที่เขียน `call_mtn: true` ต้องเติมทีมไปด้วยถ้ารู้
+   วัดจริง ต.ค. 2026: 80 จาก 175 ครั้ง (46%) ไม่ระบุทีม — มาจาก syncDowntimeTimes ที่เติมแต่เวลา */
+test('🔕 เขียน call_mtn = true ต้องเติม call_mtn_team ด้วย (ไม่งั้นไซเรนดังข้ามทีม)', () => {
+  const bad = [];
+  for (const f of ['src/pages/DailyReport.jsx', 'src/pages/MtnRepair.jsx']) {
+    const src = stripComments(readFileSync(join(ROOT, f), 'utf8'));
+    /* ดูทีละ update ที่ตั้ง call_mtn เป็น true — ต้องมี call_mtn_team อยู่ใน object เดียวกัน */
+    for (const m of src.match(/\{[^{}]*call_mtn:\s*true[^{}]*\}/g) || []) {
+      if (!/call_mtn_team/.test(m)) bad.push(`${f} (${m.replace(/\s+/g, ' ').slice(0, 70)}…)`);
+    }
+  }
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n'
+    + '   ทำไม: call_mtn_team ว่าง = จอ Andon/ไซเรนถือว่า "ไม่รู้ทีม" แล้วดังให้ทุกทีม\n'
+    + '   แก้: เติม call_mtn_team จากทีมที่รู้ (ปุ่มเรียกช่าง = ทีมที่เลือก · ใบ MO = mtn_dept)\n'
+    + '   ⚠️ ไม่รู้ทีมจริงๆ ให้ปล่อยว่าง (ดังทุกห้องดีกว่าเงียบผิดทีม) แต่ห้ามลืมเติมตอนที่รู้\n');
 });
