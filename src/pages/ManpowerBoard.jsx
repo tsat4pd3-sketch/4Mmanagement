@@ -12,6 +12,7 @@ import useFitHeight from '../utils/useFitHeight';
 import { packPages, clampPage } from '../utils/boardPager';
 import useTabParam, { useMergeParams } from '../utils/useTabParam';
 import { useSearchParams } from 'react-router-dom';
+import { urlParam } from '../utils/urlInit';
 import useProductionLines from '../utils/useProductionLines';
 import { useLiveBoard } from '../utils/useLiveBoard';
 import { LIVE } from '../utils/refreshRates';
@@ -171,7 +172,7 @@ export default function ManpowerBoard() {
     .filter(n => !scopeSecs.length || inSectionScope(scopeSecs, orgKey(n)) || inSectionScope(scopeSecs, n.name))
     .sort(orgNodeCompare), [nodes, scopeSecs]);
   const secParam = params.get('sec') || '';
-  const section = sectionNodes.find(n => orgKey(n) === secParam) || sectionNodes[0] || null;
+  const section = sectionNodes.find(n => orgKey(n) === secParam) || (secParam && sectionNodes.find(n => n.name === secParam)) || sectionNodes[0] || null;
   const deptParam = params.get('dept') || '';
   // 📺 โหมดจอ TV (ไม่เลื่อน · แบ่งหน้า) — `?tv=1|0` ชนะ · ไม่ระบุ = บัญชี display (จอแขวน) เปิดให้เอง
   const tvParam = params.get('tv');
@@ -549,6 +550,7 @@ function LayoutTab({ board, depts, lines, attendance, maps, tv, stationPlans, sk
   const [stations, setStations] = useState([]);
   const [homes, setHomes] = useState({});
   const [pick, setPick] = useState('');
+  const [seedLine] = useState(() => urlParam('lline') || '');   // ?lline= ชื่อไลน์ของผังที่จะเปิด (จอวนหน้า) · คนเลือกเองแล้ว `pick` ชนะ
   const [err, setErr] = useState('');
 
   const family = useMemo(() => lineFamilyOf(lines, depts.flatMap(d => d.lines.map(l => l.id))), [lines, depts]);
@@ -577,7 +579,7 @@ function LayoutTab({ board, depts, lines, attendance, maps, tv, stationPlans, sk
   // 📺 จอ TV: หลายผัง = วนทีละผังเอง (ไม่มีเมาส์ไปเลือก dropdown) · โหมดปกติ = เลือกเอง
   const [tvIdx, setTvIdx] = useAutoPage(tv ? layouts.length : 0);
   const layout = tv ? layouts[clampPage(tvIdx, layouts.length)] || null
-    : layouts.find(l => String(l.id) === pick) || layouts[0] || null;
+    : layouts.find(l => String(l.id) === pick) || (!pick && seedLine ? layouts.find(l => l.line_name === seedLine) : null) || layouts[0] || null;
   useEffect(() => {
     let alive = true;
     if (!layout) { setStations([]); return undefined; }

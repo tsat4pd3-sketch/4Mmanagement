@@ -20,6 +20,7 @@ import { lineKnownSet } from '../utils/pmEquipList'
 import { filterPlanRows } from '../utils/pmPlanFilter'
 import useTabParam from '../utils/useTabParam'
 import PmUsageBoard from '../components/PmUsageBoard'
+import { urlParam, urlPick } from '../utils/urlInit'
 
 // PM ล่วงหน้า (Planner) — เห็นวันที่จะต้อง PM ล่วงหน้า 1-2 สัปดาห์ + buffer ที่ต้องผลิตเผื่อ
 //   sync ให้วางแผน/ผลิตเตรียมตัวก่อนเครื่องหยุดทำ PM (ดู CLAUDE.md "PM Predictive & Planner Sync")
@@ -48,7 +49,7 @@ export default function PmForecast() {
   }
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
-  const [onlyWindow, setOnlyWindow] = useState('')   // ตัวกรองสถานะ: '' | overdue | window | later
+  const [onlyWindow, setOnlyWindow] = useState(() => urlPick('fcst', ['overdue', 'window', 'later'], ''))   // ตัวกรองสถานะ: '' | overdue | window | later · ?fcst= (จอวนหน้า)
   const [daily, setDaily] = useState([])      // ยอดผลิตรายไลน์รายวัน (RPC pm_usage_daily)
   const [lineObjs, setLineObjs] = useState([])
   /* ยอดผลิตโหลดไม่ได้ = ยอดสะสม/อัตรา/buffer ทั้งหน้าเป็น 0 ⇒ ต้องเขียนบนจอ ห้ามแค่ console.warn (QC 05/10) */
@@ -172,13 +173,26 @@ export default function PmForecast() {
 
   /* 🗂️ ตัวกรอง (19/10 audit หน้า PM) — ขอบเขตไลน์ (รวมไลน์ลูก) · สถานะ · ค้นหา · กติกา `utils/pmPlanFilter.js`
      แทน checkbox "เฉพาะที่เข้า window" เดิม (เป็นตัวเลือกหนึ่งของสถานะแล้ว) */
-  const [fScope, setFScope] = useState({ section: '', line: '', names: null })
+  /* ?fcsec= (ชื่อส่วนงาน) / ?fcline= (ชื่อไลน์) จากจอวนหน้า — ตั้ง section/line ตอนเปิด แล้วกางชุดไลน์ (`names`)
+     ครั้งเดียวเมื่อทะเบียนไลน์มาถึง (ต้องรู้ไลน์ลูกก่อนถึงกรองได้) · ไม่มีพารามิเตอร์ = ค่าเดิมเป๊ะ */
+  const [fScope, setFScope] = useState(() => ({ section: urlParam('fcsec') || '', line: urlParam('fcline') || '', names: null }))
+  const seedScopePending = useRef(!!(urlParam('fcsec') || urlParam('fcline')))
   const [fQ, setFQ] = useState('')
   const scopeLines = useMemo(() => {   // ชื่อไลน์ซ้ำในทะเบียน = key ซ้ำในตัวเลือก ⇒ ยุบด้วยชื่อ
     const seen = new Set()
     return (lineObjs || []).filter(l => l?.name && !seen.has(l.name) && seen.add(l.name))
   }, [lineObjs])
   const known = useMemo(() => lineKnownSet(scopeLines), [scopeLines])
+  useEffect(() => {
+    if (!seedScopePending.current || !scopeLines.length) return
+    seedScopePending.current = false
+    setFScope(f => {
+      if (f.names) return f   // คนกดเปลี่ยนเองไปแล้ว
+      const names = f.line ? getLineFamilyNames(scopeLines, f.line)
+        : f.section ? scopeLines.filter(l => l.section === f.section).map(l => l.name) : []
+      return { ...f, names: names.length ? names : [f.line || f.section] }
+    })
+  }, [scopeLines])
   const STATUS_KEEP = { overdue: r => r.overdue, window: r => r.inWindow, later: r => !r.overdue && !r.inWindow }
   const { rows: shown, droppedNoLine } = useMemo(() => filterPlanRows(rows, {
     q: fQ, scopeNames: fScope.names, known, keep: STATUS_KEEP[onlyWindow] || null,
