@@ -57,7 +57,7 @@ import { shiftOfTime, workDateOfTime } from '../utils/workDate';
 import { ALL, SHIFT_OPTIONS, allOf } from '../utils/filterLabels';
 /* ป้ายถังขยะของ taxonomy — ของกลาง ห้ามเขียนสตริง "อื่นๆ" เองในหน้า (ดู unclassified.js) */
 import { isVague, UNGROUPED_LABEL } from '../utils/unclassified';
-import { suggestItemTypeFromHistory } from '../utils/mtnItemSuggest';
+import { suggestItemTypeFromHistory, registryItemTypeOf, pickMoItemType } from '../utils/mtnItemSuggest';
 import { machineKey } from '../utils/machineNo';
 /* 🔴 เกณฑ์ "รายละเอียดชัดพอไหม" ของใบแจ้งซ่อม — ห้าม hardcode ความยาว/ข้อความในหน้า */
 import { moNoteCheck, MO_NOTE_HINT } from '../utils/moNoteQuality';
@@ -358,6 +358,7 @@ export default function MtnRepair() {
   const [orders, setOrders] = useState([]);
   const [lines, setLines] = useState([]);
   const [machines, setMachines] = useState([]);
+  const [machineTypesById, setMachineTypesById] = useState({});   // machine_types (id → แถว) — ชนิดอุปกรณ์ในใบ MO จากทะเบียน
   const [techs, setTechs] = useState([]);
   const [parts, setParts] = useState([]);
   const [problemTypes, setProblemTypes] = useState([]);
@@ -430,12 +431,12 @@ export default function MtnRepair() {
   }, [moParam, orders, setTab, mergeSp]);
 
   const loadMasters = useCallback(async () => {
-    const [{ data: ln }, { data: mc }, { data: tc }, { data: pt }, { data: pp }, { data: rt }, { data: it }, { data: imp }, lr, { data: emps }, sup] = await Promise.all([
+    const [{ data: ln }, { data: mc }, { data: tc }, { data: pt }, { data: pp }, { data: rt }, { data: it }, { data: imp }, lr, { data: emps }, sup, mtRes] = await Promise.all([
       // flow_mode + parallel_stations = จำนวนเครื่องขนาน (N) ของไลน์ — แท็บ ⚙️ รายอุปกรณ์ ใช้ถ่วง DT 1/N
       //   ให้ตรงกับ %A ของ Daily Report (parallelUnitsOf · 2026-09-14) ห้ามถอดออก ไม่งั้นโหมด "มุมไลน์" ตาย
       loadLinesRes(), // LINE_COLUMNS = ครบตามสัญญา <LineSelect> (2026-09-07)
       // equipment_kind = แกนชนิดอุปกรณ์ (machine/die/jig/facility) — ต้องมี ไม่งั้นแยก "แม่พิมพ์" ออกจาก "เครื่องจักร" ไม่ได้
-      supabaseDR.from('machines').select('id, line_name, machine_no, machine_name, equipment_kind, io_no').eq('is_active', true).order('sort_order'),
+      supabaseDR.from('machines').select('id, line_name, machine_no, machine_name, equipment_kind, io_no, machine_type_id').eq('is_active', true).order('sort_order'),
       supabaseDR.from('mtn_technicians').select('*').eq('is_active', true).order('sort_order'),
       supabaseDR.from('mtn_problem_types').select('*').eq('is_active', true).order('sort_order'),
       /* ⚠️ ทะเบียนอะไหล่โตเกิน 1000 แถวได้ (หน้างาน: "อะไหล่เป็นพัน") — Supabase ตัดที่ 1000
@@ -452,6 +453,8 @@ export default function MtnRepair() {
         .then(r => r.error ? supabase.from('employees').select('id, name, section, department, employee_id_code').eq('is_active', true).order('name') : r),
       // supply route: utility/facility จ่ายให้ไลน์ไหน — ใช้โชว์ผลกระทบตอนซ่อม (best-effort ถ้ายังไม่ apply migration)
       supabaseDR.from('facility_supply_links').select('machine_id, line_name').then(r => r).catch(() => ({ data: [] })),
+      // ประเภทเครื่อง → ชนิดอุปกรณ์ในใบ MO (`mo_item_type` · 20/10) — select('*') เพราะตารางเล็ก + ทนก่อน migration มีคอลัมน์
+      supabaseDR.from('machine_types').select('*').then(r => r).catch(() => ({ data: [] })),
     ]);
     /* แปลงพนักงานทีมช่างเป็นรูปแบบ tech + รวมกับ mtn_technicians เดิม (พนักงานมาก่อน · กันชื่อซ้ำ)
        ลำดับที่มาของทีม:
@@ -467,6 +470,7 @@ export default function MtnRepair() {
     const empNames = new Set(empTechs.map(t => t.name.trim()));
     const legacyTechs = (tc || []).filter(t => !empNames.has((t.name || '').trim()));
     setLines(ln || []); setMachines(mc || []); setTechs([...empTechs, ...legacyTechs]);
+    setMachineTypesById(Object.fromEntries((mtRes?.data || []).map(t => [t.id, t])));
     setProblemTypes(pt || []); setParts(pp || []); setRepairTypes(rt || []); setItemTypes(it || []);
     setImprovements(imp || []); setLaborRates(lr?.data || []);
     // map machine_id → machine_no → [line_name] เพื่อโชว์ผลกระทบใน DetailDrawer (MO เก็บ machine_no ไม่ใช่ id)
@@ -706,7 +710,7 @@ export default function MtnRepair() {
 
   if (loading) return <Page><div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>กำลังโหลด…</div></Page>;
 
-  const cp = { lines: scopedLineObjs, machines, orders, techs, parts, problemTypes, repairTypes, itemTypes, laborRates, mtnDepts, mtnTeams: mtnTeamRows, role, allUnits, fullName, signatureUrl, improvements, supplyByMachineNo, userTeams, reporterScope, defaultDept: userTeams.length === 1 ? userTeams[0] : '', onOpenImprovement: openImprovementFromMo, onReload: reloadAll, reloadMasters: loadMasters };
+  const cp = { lines: scopedLineObjs, machines, machineTypesById, orders, techs, parts, problemTypes, repairTypes, itemTypes, laborRates, mtnDepts, mtnTeams: mtnTeamRows, role, allUnits, fullName, signatureUrl, improvements, supplyByMachineNo, userTeams, reporterScope, defaultDept: userTeams.length === 1 ? userTeams[0] : '', onOpenImprovement: openImprovementFromMo, onReload: reloadAll, reloadMasters: loadMasters };
 
   return (
     <Page>
@@ -926,7 +930,7 @@ function FormStep({ n, title, visible = true }) {
 }
 
 /* ── Step 1: แจ้งซ่อม ─────────────────────────────────── */
-function ReportModal({ lines, machines, orders = [], itemTypes, problemTypes, repairTypes = [], mtnDepts = MTN_DEPTS, fullName, defaultDept, onClose, onSaved }) {
+function ReportModal({ lines, machines, machineTypesById = {}, orders = [], itemTypes, problemTypes, repairTypes = [], mtnDepts = MTN_DEPTS, fullName, defaultDept, onClose, onSaved }) {
   const [f, setF] = useState({
     mtn_dept: teamKeyOf(defaultDept) || 'maintenance', repair_scope: 'in_line', line_name: '', item_type: '', machine_no: '', dept_section: '', work_area: '',
     cost_center: '', model: '', customer: '', code: '', want_at: '', problem_group: '', problem_characteristic: '', problem_detail: '',
@@ -1125,14 +1129,20 @@ function ReportModal({ lines, machines, orders = [], itemTypes, problemTypes, re
     })();
     return () => { alive = false; };
   }, [histKey]);
+  const itemAllowed = useMemo(() => teamItemTypes.map(t => t.name).filter(n => !/^DIE\b/i.test(n || '')), [teamItemTypes]);
+  /* ชั้น 1 = ทะเบียน (MC No. → ประเภทเครื่อง → mo_item_type · 20/10) · ชั้น 2 = ประวัติใบ MO ของเครื่อง
+     กฎรวม `pickMoItemType()` (utils/mtnItemSuggest.js) — ทะเบียนชนะ · ไม่อยู่ในลิสต์ทีม = ถอยไปประวัติ */
+  const regItem = useMemo(() => {
+    if (!histKey) return null;
+    return registryItemTypeOf(machines.find(m => m.machine_no === histKey), machineTypesById, { allowed: itemAllowed });
+  }, [histKey, machines, machineTypesById, itemAllowed]);
   const histItem = useMemo(() => {
-    if (!histKey || histSug.key !== histKey || !histSug.rows) return null;
-    const allowed = teamItemTypes.map(t => t.name).filter(n => !/^DIE\b/i.test(n || ''));
-    return suggestItemTypeFromHistory(histSug.rows, { allowed });
-  }, [histKey, histSug, teamItemTypes]);
+    const hist = (!histKey || histSug.key !== histKey || !histSug.rows) ? null : suggestItemTypeFromHistory(histSug.rows, { allowed: itemAllowed });
+    return pickMoItemType({ registry: regItem, history: hist });
+  }, [histKey, histSug, itemAllowed, regItem]);
   const autoHistRef = useRef('');
   useEffect(() => {
-    if (histKey && histSug.key !== histKey) return;      // ยังโหลดไม่เสร็จ — อย่าล้างค่าทิ้งระหว่างรอ
+    if (histKey && histSug.key !== histKey && !regItem) return;      // ยังโหลดไม่เสร็จ — อย่าล้างค่าทิ้งระหว่างรอ (ทะเบียนตอบได้ทันที)
     const it = histItem?.itemType || '';
     setF(p => {
       if (it) {
@@ -1145,7 +1155,7 @@ function ReportModal({ lines, machines, orders = [], itemTypes, problemTypes, re
       return p;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [histItem?.itemType, histKey, histSug.key]);
+  }, [histItem?.itemType, histKey, histSug.key, regItem]);
   const histItemAuto = !!histItem?.itemType && f.item_type === histItem.itemType && autoHistRef.current === histItem.itemType;
 
   /* ── ลักษณะปัญหา 2 ชั้น: กลุ่มใหญ่ → หัวข้อย่อย (feedback ทีมงาน 2026-08-11) ──
@@ -1303,7 +1313,9 @@ function ReportModal({ lines, machines, orders = [], itemTypes, problemTypes, re
                 .map(([label, items]) => <optgroup key={label} label={label}>{items.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}</optgroup>);
             })()}</select>
           {histItemAuto && (
-            <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>🔗 เติมจากประวัติเครื่อง {f.machine_no} — ใบ MO ที่ผ่านมาเลือกชนิดนี้ {histItem.votes}/{histItem.counted} ใบ · ไม่ใช่? เลือกใหม่ได้เลย</div>
+            <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>{histItem.source === 'registry'
+              ? <>🔗 จากทะเบียนเครื่อง {f.machine_no} — ประเภท {histItem.typeLabel} · ไม่ตรง? แก้ที่ /equipment (ประเภทเครื่องจักร) หรือเลือกใหม่ในใบนี้</>
+              : <>🔗 เติมจากประวัติเครื่อง {f.machine_no} — ใบ MO ที่ผ่านมาเลือกชนิดนี้ {histItem.votes}/{histItem.counted} ใบ · ไม่ใช่? เลือกใหม่ได้เลย</>}</div>
           )}
           {histKey && histSug.key === histKey && histSug.error && !f.item_type && (
             <div style={{ fontSize: 11.5, color: '#f59e0b', marginTop: 3 }}>⚠ โหลดประวัติเครื่อง {f.machine_no} ไม่ได้ — ระบบเติมชนิดให้ไม่ได้ เลือกเองไปก่อน</div>
