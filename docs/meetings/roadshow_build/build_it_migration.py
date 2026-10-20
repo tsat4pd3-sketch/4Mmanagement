@@ -122,7 +122,68 @@ T.text(s, 0.85, 4.85, 11.8, 1.5, [
     [("ถ้าย้ายเข้าวงในบริษัทและไม่เปิดออกอินเทอร์เน็ต ความเสี่ยงข้อนี้ลดลงมาก", {"sz": 13, "c": GREEN_D})]], sa=4)
 notes(s, "ไล่ 4 กล่อง: เครื่อง, ต้องออกเน็ตไปไหน, ต้องมีอะไรเข้ามาจากข้างนอก, งานดูแลต่อเนื่อง กล่องส้มคือเรื่องความปลอดภัย พูดตรงๆ ว่ามีจุดอ่อนที่รู้อยู่ ไอทีจะถามเรื่องนี้แน่นอน")
 
-# ── 5 คำถาม + ขั้นต่อไป ──
+# ── 5 ภาพเมื่อขยายไปหลายโรงงาน ──
+s = content("ภาพเมื่อขยายไปหลายโรงงานในกลุ่ม", "ศูนย์กลางเดียวที่ INET · ทุกโรงงานใช้โปรแกรมชุดเดียวกัน · ข้อมูลแยกกันด้วยรหัสบริษัท")
+# ฝั่งโรงงาน
+T.text(s, 0.4, 1.5, 3.6, 0.35, [[("โรงงาน (เพิ่มได้เรื่อยๆ)", {"sz": 14, "b": True, "c": GREEN})]])
+plants = [("TSAT4 (เรา)", "ใช้งานจริง", True), ("โรงงานในไทย", "TSAT1 · TSLA …", False), ("ต่างประเทศ", "เวียดนาม · อินเดีย …", False)]
+for i, (h, d, me) in enumerate(plants):
+    y = 1.9 + i * 1.45
+    T.rect(s, 0.4, y, 3.6, 1.3, fill=WHITE, line=(ORANGE if me else BORDER), lw=(2 if me else 0.75), shape=MSO_SHAPE.ROUNDED_RECTANGLE, shadow=True)
+    T.text(s, 0.55, y + 0.05, 3.3, 0.45, [[(h, {"sz": 14, "b": True, "c": ORANGE if me else GREEN_D}), ("  " + d, {"sz": 11, "c": GREY})]], anchor=MSO_ANCHOR.MIDDLE)
+    for j, t in enumerate(["PC · จอ TV", "มือถือ", "กล่อง Edge"]):
+        x = 0.55 + j * 1.15
+        T.rect(s, x, y + 0.55, 1.05, 0.6, fill=GREEN_TINT, shape=MSO_SHAPE.ROUNDED_RECTANGLE)
+        T.text(s, x, y + 0.55, 1.05, 0.6, [[(t, {"sz": 11, "b": True, "c": GREEN_D})]], align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
+
+# ชั้นเครือข่าย
+for i, (h, d, y) in enumerate([("VPN ระหว่างไซต์ / IP whitelist", "PC · จอ TV · กล่อง Edge", 2.2),
+                               ("Cloudflare Zero Trust + SSO", "มือถือ · ล็อกอินด้วยบัญชี M365", 3.95)]):
+    T.rect(s, 4.45, y, 2.55, 1.35, fill=WHITE, line=GREEN, lw=1.25, shape=MSO_SHAPE.ROUNDED_RECTANGLE)
+    T.text(s, 4.55, y + 0.05, 2.35, 1.25, [[(h, {"sz": 13, "b": True, "c": GREEN_D})], [(d, {"sz": 11, "c": GREY})]], align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE, sa=3)
+arrow(s, 4.0, 2.55, 4.45, 2.8); arrow(s, 4.0, 4.0, 4.45, 3.0); arrow(s, 4.0, 5.45, 4.45, 3.2)
+arrow(s, 4.0, 2.7, 4.45, 4.5); arrow(s, 4.0, 4.15, 4.45, 4.6); arrow(s, 4.0, 5.6, 4.45, 4.7)
+arrow(s, 7.0, 2.85, 7.4, 2.85); arrow(s, 7.0, 4.6, 7.4, 4.6)
+# ศูนย์กลาง INET
+T.rect(s, 7.4, 1.5, 5.5, 4.65, fill=GREEN_TINT, line=BORDER, shape=MSO_SHAPE.ROUNDED_RECTANGLE)
+T.text(s, 7.55, 1.55, 5.2, 0.4, [[("ศูนย์กลาง ESM ที่ INET — Kubernetes 3 เครื่อง (ล่ม 1 ยังวิ่ง)", {"sz": 13, "b": True, "c": GREEN})]])
+cen = [("หน้าเว็บ", "image เดียว ทุกโรงงาน"), ("ล็อกอิน + สิทธิ์", "SSO · role ต่อบริษัท"),
+       ("ฐานข้อมูล Main", "คน · ผังองค์กร TSG→บริษัท"), ("ฐานข้อมูล DR", "ข้อมูลผลิต · แยกด้วย company_id"),
+       ("หลังบ้าน + cron", "แจ้งเตือน · สแกน PM"), ("รายงานรวมกลุ่ม", "OBEYA · Group Overview")]
+for k, (h, d) in enumerate(cen):
+    x = 7.55 + (k % 2) * 2.65; y = 2.0 + (k // 2) * 0.98
+    T.rect(s, x, y, 2.55, 0.85, fill=WHITE, line=BORDER, shape=MSO_SHAPE.ROUNDED_RECTANGLE)
+    T.text(s, x, y, 2.55, 0.85, [[(h, {"sz": 13, "b": True, "c": GREEN_D})], [(d, {"sz": 11, "c": GREY})]], align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE, sa=0)
+T.rect(s, 7.55, 4.98, 5.2, 1.05, fill=WHITE, line=ORANGE, lw=1.25, shape=MSO_SHAPE.ROUNDED_RECTANGLE)
+T.text(s, 7.7, 4.98, 4.95, 1.05, [[("Backup นอกไซต์ (data center ที่ 2)", {"sz": 13, "b": True, "c": ORANGE})],
+                                  [("ฐานข้อมูล + ไฟล์ทุกวัน · ทดลองกู้คืนจริงปีละครั้ง", {"sz": 11, "c": GREEN_D})]], anchor=MSO_ANCHOR.MIDDLE, sa=2)
+T.text(s, 4.3, 5.4, 2.95, 0.9, [[("กล่อง Edge: ", {"sz": 11, "b": True, "c": GREEN_D}), ("รับสัญญาณเครื่องจักร + ไฟล์ EDI ส่งเข้าศูนย์", {"sz": 11, "c": GREY})],
+                                [("ภายนอก: ", {"sz": 11, "b": True, "c": GREEN_D}), ("Telegram · Push · GitHub", {"sz": 11, "c": GREY})]], sa=3)
+T.rect(s, 0.4, 6.35, 12.5, 0.45, fill=GREEN_D, shape=MSO_SHAPE.ROUNDED_RECTANGLE)
+T.text(s, 0.55, 6.35, 12.2, 0.45, [[("เพิ่มโรงงาน = เพิ่มรหัสบริษัท + ผู้ใช้ + ทะเบียน  ·  ไม่ต้องตั้งเซิร์ฟเวอร์ใหม่ทุกโรงงาน", {"sz": 14, "b": True, "c": WHITE})]], anchor=MSO_ANCHOR.MIDDLE)
+notes(s, "ภาพปลายทาง: ทุกโรงงานในกลุ่มต่อเข้าศูนย์กลางเดียวที่ INET ใช้โปรแกรมชุดเดียวกัน ข้อมูลแต่ละบริษัทแยกด้วยรหัสบริษัท (company_id) ผู้บริหารกลุ่มดูรวมได้จากจอ OBEYA/Group Overview  PC จอ TV และกล่อง Edge ต่อผ่าน VPN ระหว่างไซต์ มือถือเข้าผ่าน Cloudflare + ล็อกอินบัญชี M365 ตัวเดียวกับอีเมล ศูนย์กลางควรเป็น 3 เครื่อง ไม่ใช่เครื่องเดียว เพราะถ้าล่มจะหยุดทุกโรงงานพร้อมกัน และต้องมี backup นอกไซต์  ข้อยกเว้น: ถ้าประเทศไหนกฎหมายบังคับให้ข้อมูลอยู่ในประเทศ ค่อยแยกชุดให้โรงงานนั้น")
+
+# ── 6 ขยายทีละขั้น ──
+s = content("ขยายทีละขั้น · อะไรใช้ร่วม อะไรแยกต่อโรงงาน")
+phases = [("ขั้น 1", "TSAT4 ย้ายขึ้น INET", ["เครื่องตามผังไอที", "pipeline อัปเดตอัตโนมัติ", "backup + มือถือเข้าได้"], True),
+          ("ขั้น 2", "เตรียมรองรับหลายบริษัท", ["ใส่ company_id + สิทธิ์ต่อบริษัท", "ปิดช่องโหว่ฐานข้อมูล DR", "SSO ด้วยบัญชี M365"], False),
+          ("ขั้น 3", "โรงงานนำร่องที่ 2", ["VPN + กล่อง Edge ที่ไซต์", "ขยายเป็น 3 เครื่อง", "แล้วค่อยเพิ่มทีละโรงงาน"], False)]
+for i, (k, h, ls, now) in enumerate(phases):
+    x = 0.5 + i * 4.15
+    T.rect(s, x, 1.55, 4.0, 2.55, fill=WHITE, line=(ORANGE if now else BORDER), lw=(2 if now else 0.75), shape=MSO_SHAPE.ROUNDED_RECTANGLE, shadow=True)
+    T.rect(s, x, 1.55, 4.0, 0.5, fill=(ORANGE if now else GREEN_D))
+    T.text(s, x, 1.55, 4.0, 0.5, [[(k + "  ·  " + h, {"sz": 15, "b": True, "c": WHITE})]], align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
+    T.text(s, x + 0.25, 2.2, 3.5, 1.8, [[("•  " + l, {"sz": 13, "c": GREEN})] for l in ls], sa=8)
+for j, (h, ls, c) in enumerate([("ใช้ร่วมทุกโรงงาน", ["โปรแกรม + สูตรคำนวณ (OEE ฯลฯ) ชุดเดียว", "เซิร์ฟเวอร์ · backup · ทีมดูแล", "ล็อกอิน SSO · จอรวมกลุ่ม"], GREEN),
+                                ("แยกต่อโรงงาน", ["ข้อมูลผลิต / คน (ด้วย company_id)", "ปฏิทิน · เวลาพัก · เป้า KPI · ผังโรงงาน", "เลขฟอร์มเอกสาร · ห้อง Telegram"], ORANGE)]):
+    x = 0.5 + j * 6.25
+    T.rect(s, x, 4.35, 6.1, 1.85, fill=GREEN_TINT, shape=MSO_SHAPE.ROUNDED_RECTANGLE)
+    T.rect(s, x, 4.35, 0.14, 1.85, fill=c)
+    T.text(s, x + 0.35, 4.42, 5.6, 1.75, [[(h, {"sz": 15, "b": True, "c": c})]] + [[("•  " + l, {"sz": 13, "c": GREEN_D})] for l in ls], sa=5)
+T.text(s, 0.5, 6.35, 12.3, 0.45, [[("ต้องทำขั้น 2 ก่อนรับโรงงานที่ 2 — ไม่งั้นโรงงานหนึ่งจะมองเห็นข้อมูลของอีกโรงงานได้", {"sz": 14, "b": True, "c": ORANGE})]])
+notes(s, "ไม่ต้องรอทำทุกอย่างพร้อมกัน ขั้น 1 คือย้าย TSAT4 ตามผังที่ไอทีเสนอ ขั้น 2 คืองานฝั่งโปรแกรมให้รองรับหลายบริษัท ข้อนี้สำคัญ: ตอนนี้ฐานข้อมูล DR ไม่ผูกกับการล็อกอิน ถ้าเอาหลายบริษัทมาอยู่ฐานเดียวโดยไม่แก้ บริษัทหนึ่งจะเห็นข้อมูลอีกบริษัท ขั้น 3 ค่อยรับโรงงานนำร่อง ส่วนล่างบอกว่าอะไรใช้ร่วม อะไรแยก  ระบบออกแบบไว้รองรับแล้ว (ผังองค์กรเพิ่มชั้นบริษัทได้ ตารางรายวันไม่ต้องแก้ เพราะรู้บริษัทจากไลน์)")
+
+# ── 7 คำถาม + ขั้นต่อไป ──
 s = content("ขอคำตอบจากไอที + ขั้นต่อไป")
 qs = ["มีเครื่องที่รัน Docker ได้ไหม / ใช้ VM ตัวไหน",
       "ใช้เฉพาะในโรงงาน หรือต้องเข้าจากมือถือนอกบริษัทด้วย",
@@ -140,7 +201,7 @@ for i, q in enumerate(qs):
 T.rect(s, 8.05, 1.6, 4.8, 2.6, fill=GREEN_TINT, shape=MSO_SHAPE.ROUNDED_RECTANGLE)
 T.text(s, 8.3, 1.7, 4.4, 2.45, [[("ขั้นต่อไป", {"sz": 17, "b": True, "c": GREEN_D})]] + [
     [("•  " + t, {"sz": 13, "c": GREEN})] for t in
-    ["ไอทีเลือกทาง A / B", "ทำแผนย้ายทีละขั้น + วิธีย้อนกลับ", "ทดลองคู่ขนานก่อนสลับจริง",
+    ["ยืนยันผังไอที + ตอบคำถามข้างซ้าย", "ทำแผนย้ายทีละขั้น + วิธีย้อนกลับ", "ทดลองคู่ขนานก่อนสลับจริง",
      "ย้ายจริง หลัง roadshow ปลาย ต.ค."]], sa=6)
 T.rect(s, 8.05, 4.4, 4.8, 2.05, fill=WHITE, line=ORANGE, lw=1.5, shape=MSO_SHAPE.ROUNDED_RECTANGLE)
 T.text(s, 8.3, 4.5, 4.4, 1.9, [[("ยังไม่รับปาก", {"sz": 17, "b": True, "c": ORANGE})]] + [
