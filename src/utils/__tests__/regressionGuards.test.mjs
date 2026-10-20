@@ -5476,3 +5476,58 @@ test('🔕 เขียน call_mtn = true ต้องเติม call_mtn_tea
     + '   แก้: เติม call_mtn_team จากทีมที่รู้ (ปุ่มเรียกช่าง = ทีมที่เลือก · ใบ MO = mtn_dept)\n'
     + '   ⚠️ ไม่รู้ทีมจริงๆ ให้ปล่อยว่าง (ดังทุกห้องดีกว่าเงียบผิดทีม) แต่ห้ามลืมเติมตอนที่รู้\n');
 });
+
+/* ── 📲 แถบ "เปิดแจ้งเตือนเข้ามือถือ" ต้องไม่หายไป และต้องไม่แตะจอคอม (2026-10-20) ──────────
+   ที่มา: feedback *"มือถือ ไม่มีการแจ้งเตือนใบแจ้งซ่อมมา 2-3 วัน"* — ไล่แล้ว**ไม่ใช่เรื่องสิทธิ์**
+   ปุ่มเปิด push มีอยู่แล้วแต่ซ่อนในกระดิ่ง ⇒ วัด 20/10: ผู้รับแจ้งเตือน 7 วัน 102 คน
+   **มีเครื่องผูกไว้ 28 · ไม่มี 74** (ได้แจ้งเตือนใบซ่อมด้วย 55 คน) = มือถือไม่เคยเด้งเลย
+
+   ด่านนี้กัน 4 ทาง: ถอดแถบออกจาก layout · ย้ายไปแสดงบนคอมด้วย · ก๊อปข้อความสถานะไปเขียนซ้ำในหน้า ·
+   ทำให้ "ตรวจสถานะไม่ได้" กลายเป็นข้อความ "ยังไม่เปิด" (จอโกหก) */
+test('📲 MobilePushPrompt — ต้องถูก mount ใน layout · มือถือเท่านั้น · ข้อความมาจาก utils ที่เดียว', () => {
+  const bad = [];
+  const app    = stripComments(readFileSync(join(ROOT, 'src/App.jsx'), 'utf8'));
+  const prompt = stripComments(readFileSync(join(ROOT, 'src/components/MobilePushPrompt.jsx'), 'utf8'));
+  const util   = stripComments(readFileSync(join(ROOT, 'src/utils/pushPrompt.js'), 'utf8'));
+
+  if (!/<MobilePushPrompt\b/.test(app)) bad.push('src/App.jsx (ไม่ได้ mount <MobilePushPrompt> แล้ว)');
+  if (!/userId=\{userId\}/.test(app.split('<MobilePushPrompt')[1]?.slice(0, 80) || ''))
+    bad.push('src/App.jsx (<MobilePushPrompt> ไม่ได้รับ userId — getPushState จะเทียบ DB ไม่ได้ = ขึ้น stale ตลอด)');
+
+  /* 🔴 ห้ามเปลี่ยนจอคอมแม้แต่พิกเซลเดียว (คำสั่ง user 15/10) — ต้องตัดด้วย useIsMobile ก่อนวาด */
+  if (!/useIsMobile/.test(prompt)) bad.push('src/components/MobilePushPrompt.jsx (ไม่เช็ค useIsMobile = โผล่บนจอคอม)');
+  if (!/if \(!isMobile/.test(prompt)) bad.push('src/components/MobilePushPrompt.jsx (ไม่มี early return เมื่อไม่ใช่มือถือ)');
+  /* fixed/sticky ที่แถบนี้ = ทับเนื้อหา/ต้องบวก --mnav-h — ตั้งใจเลี่ยงทั้งคู่ */
+  if (/position:\s*['"]?(fixed|sticky)/.test(prompt))
+    bad.push('src/components/MobilePushPrompt.jsx (ใช้ fixed/sticky — แถบนี้ต้องเป็นแถบในเนื้อหา)');
+
+  /* ข้อความสถานะต้องมาจาก utils ที่เดียว ห้ามก๊อปไปเขียนในคอมโพเนนต์ */
+  if (!/pushPromptCopy/.test(prompt))
+    bad.push('src/components/MobilePushPrompt.jsx (ไม่ได้ใช้ pushPromptCopy — เขียนข้อความสถานะเองในหน้า)');
+  if (/case\s+'(stale|check-failed|ios-need-install)'/.test(prompt))
+    bad.push('src/components/MobilePushPrompt.jsx (ตัดสินสถานะเองในหน้า — ต้องอยู่ที่ utils/pushPrompt.js)');
+
+  /* 🔴 ตรวจไม่ได้ ≠ ยังไม่เปิด (กฎความซื่อสัตย์ของจอ) */
+  const cf = util.split("case 'check-failed':")[1]?.split('case ')[0] || '';
+  if (!/ยังไม่ทราบ/.test(cf) || /ยังไม่เปิดแจ้งเตือน/.test(cf))
+    bad.push("src/utils/pushPrompt.js ('check-failed' ต้องบอกว่ายังไม่ทราบ ห้ามบอกว่ายังไม่เปิด)");
+  if (!/return null/.test(util.split('default:')[1] || ''))
+    bad.push('src/utils/pushPrompt.js (สถานะที่ไม่รู้จัก/subscribed ต้องคืน null = ไม่วาดแถบ)');
+
+  /* จอแอดมิน: ลิสต์ว่าง 2 ความหมาย — RPC ต้องโยน 42501 และจอต้องแยกข้อความได้ */
+  const panel = stripComments(readFileSync(join(ROOT, 'src/components/PushCoveragePanel.jsx'), 'utf8'));
+  if (!/pushCoverageFailText/.test(panel))
+    bad.push('src/components/PushCoveragePanel.jsx (ไม่แยกสาเหตุที่อ่านไม่ได้ — "ว่าง" จะกำกวม)');
+  if (!/push_coverage/.test(panel))
+    bad.push('src/components/PushCoveragePanel.jsx (ไม่ได้เรียก RPC push_coverage — RLS ไม่ให้นับของคนอื่น)');
+  const mig = readFileSync(join(ROOT, 'supabase/migrations/20261020_push_coverage_rpc_main.sql'), 'utf8');
+  if (!/raise exception/.test(mig) || !/42501/.test(mig))
+    bad.push('migration push_coverage (ไม่โยน 42501 เมื่อไม่มีสิทธิ์ = จอแยกไม่ออกว่าไม่มีสิทธิ์หรือไม่มีข้อมูล)');
+  if (!/has_perm\('page:\/notification-config'\)/.test(mig))
+    bad.push('migration push_coverage (ด่านไม่ใช่คีย์เดียวกับหน้าที่เรียกใช้)');
+
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n   ') + '\n'
+    + '   ทำไม: แถบนี้เป็นทางเดียวที่คนหน้างานจะรู้ว่า "มือถือตัวเองยังไม่เปิดแจ้งเตือน"\n'
+    + '         (วัด 20/10: 74 จาก 102 คนที่ได้รับแจ้งเตือน ไม่มีเครื่องผูกไว้เลย)\n'
+    + '   แก้: คงการ mount ใน App.jsx · ตัดด้วย useIsMobile · ข้อความอยู่ utils/pushPrompt.js ที่เดียว\n');
+});

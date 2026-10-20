@@ -24,6 +24,7 @@ import { loadLinesRes } from './utils/useProductionLines';
 import useIsMobile from './utils/useIsMobile';
 import ScrollHint from './components/ScrollHint';
 import MobileNavBar from './components/MobileNavBar';
+import MobilePushPrompt from './components/MobilePushPrompt'; // 📲 แถบชวนเปิด push (มือถือเท่านั้น) — 2026-10-20
 import { pushSupported, getPushState, subscribePush, unsubscribePush, onPushResubscribeRequest, handlePushResubscribe } from './utils/webpush';
 import { loadPositions, positionLabel } from './utils/positions';   // ตำแหน่งเก็บเป็น key — แสดงต้องแปลงเป็นชื่อ
 import { roleLabel } from './utils/roleMeta';                       // ป้ายชื่อ role (โหมดจำลองมุมมอง 🎭)
@@ -2020,6 +2021,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
           overflowX: 'clip',
           minWidth: 0,
         }}>
+          {/* 📲 "เครื่องนี้ยังไม่เปิดแจ้งเตือน" — มือถือเท่านั้น (คอมไม่เปลี่ยนแม้แต่พิกเซลเดียว)
+              เดิมปุ่มเปิดซ่อนในกระดิ่ง ⇒ 74 จาก 102 คนที่ได้รับแจ้งเตือนไม่มีเครื่องผูกไว้เลย (วัด 20/10) */}
+          <MobilePushPrompt userId={userId} />
           <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh', color: 'var(--muted)', fontSize: 14 }}>กำลังโหลด...</div>}>
             {/* 🔁 key จากจอวนหน้า — หน้าเดิมที่เปลี่ยนแค่ ?query (เช่น ผังโรงงาน metric=oee → metric=ng) ต้อง remount
                 ไม่งั้นค่าตั้งต้นจากลิงก์ (utils/urlInit) ไม่ถูกอ่านใหม่ · ค่าว่าง = นำทางปกติ ไม่ remount */}
