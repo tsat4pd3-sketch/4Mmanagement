@@ -2989,6 +2989,38 @@ test('🛡️ /org-setup: ทุกชั้นที่มีปุ่มเพ
     '\n\n❌ handleSave ไม่ได้ใช้ orgSaveBlockReason ตัดสินสิทธิ์ — ดูเหตุผลด้านบน\n');
 });
 
+/* ── 🔴 MO: `manage_master` ต้องอยู่ "ท้ายสุด" ของตัวตรวจขั้น — ด่านทุกตัวต้องมาก่อน (20/10/2026) ──
+   คีย์นี้ถูกแจกให้ role `mtn` **ทั้งก้อน 16 บัญชี** (ไม่ใช่แค่หัวหน้า) ⇒ ด่านไหนที่อยู่ "ใต้" มัน
+   = ด่านปลอมสำหรับช่างทุกคน · เจอมาแล้ว 2 รอบในไฟล์เดียวกัน:
+     · 15/10 ล็อก "ทีมใครทีมมัน" อยู่ใต้ manage_master ⇒ ช่างข้ามทีมได้
+     · 20/10 ด่าน "งานปรับปรุง/สร้างต้องให้ ผจก.เซ็นก่อน" อยู่ใต้ manage_master ⇒ ช่างเริ่มงานเองได้
+       (+ `canSignMtnApproval` ยอมให้ manage_master **เซ็นลายเซ็น ผจก. แทน** — เกิดจริง 1 ใบ
+        โดยบัญชีกลาง `maintenance` ซึ่งสอบกลับไม่ได้ว่าใครกด) */
+test('🛡️ mtn: ด่านทุกตัวต้องอยู่ก่อน manage_master · ช่องเซ็น ผจก. ห้ามเซ็นแทนด้วย manage_master', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/utils/mtnStepPerm.js'), 'utf8'));
+  const fn = code.slice(code.indexOf('export function canDoStep'));
+  const body = fn.slice(0, fn.indexOf('\nexport '));
+  const iMaster = body.indexOf("can('manage_master')");
+  assert.ok(iMaster > -1, 'canDoStep ไม่มีบรรทัด manage_master แล้ว — ด่านนี้ต้องแก้ตามโครงใหม่');
+  for (const [what, needle] of [
+    ['ด่านฝั่ง/ตำแหน่ง', 'wrong_side'],
+    ['ล็อกทีมใครทีมมัน', "code: 'other_team'"],
+    ['ด่านอนุมัติก่อนเริ่มงาน', 'await_mgr_approval'],
+  ]) {
+    const at = body.indexOf(needle);
+    assert.ok(at > -1 && at < iMaster,
+      `\n\n❌ ${what} อยู่ "ใต้" manage_master ใน canDoStep\n`
+      + '   คีย์นั้นแจกให้ role mtn ทั้งก้อน ⇒ ด่านที่อยู่ใต้มันไม่เคยกัดช่างเลย (เกิดจริงมาแล้ว 2 รอบ)\n'
+      + '   ย้ายบรรทัด `if (can(\'manage_master\')) …` ลงไปไว้ท้ายสุดของด่านทั้งหมด\n');
+  }
+  const sign = code.slice(code.indexOf('export function canSignMtnApproval'));
+  const signBody = sign.slice(0, sign.indexOf('\n}'));
+  assert.ok(!/can\('manage_master'\)/.test(signBody),
+    '\n\n❌ canSignMtnApproval ยอมให้ manage_master เซ็นช่อง ผจก. แทน\n'
+    + '   ช่องนี้คือลายเซ็น ผจก. บนใบจริง ⇒ ต้องเป็นคนที่ใบระบุชื่อ หรือผู้ถือ mtn_repair:approve เท่านั้น\n'
+    + '   (กฎ 04/10 "ช่องเซ็นล็อกฝั่ง+ตำแหน่ง ไม่มีการเซ็นแทน แม้แต่ผู้ถือ manage_master")\n');
+});
+
 /* ── 🔴 SQL: `array_length(<NOT NULL default '{}'>, 1)` = NULL ⇒ ด่านผ่านทุกคนเงียบๆ (20/10/2026) ──
    เกิดจริงกับ `app_can_write_line()` (ตาข่ายขอบเขตชั้น DB): เขียน
      `resp_cost_centers is not null and array_length(resp_cost_centers,1) > 0`
