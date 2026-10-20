@@ -25,8 +25,9 @@ import { fmtDateTime } from '../utils/dateFormat';
 import {
   PR_STATUS_META, PR_SOURCE_LABEL, prStatusMeta, isPrOpen, REPAIR_PATHS, repairPathMeta,
   GL_CATEGORIES, glCategoryLabel, glCategoryForPr, defaultGlFor, isBelowMin, suggestReorderQty, openPrQtyByPart,
-  normalizePrNo, isAwaitingPrNo,
+  normalizePrNo, isAwaitingPrNo, mosNeedingPr, NEEDS_PR_PATHS,
 } from '../utils/mtnPurchase';
+import { isMoOpen, MO_DONE_STATUSES } from '../utils/mtnStepPerm';
 
 const inp = { width: '100%', padding: '7px 9px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 12.5, boxSizing: 'border-box' };
 const btnPri = { background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, padding: '7px 14px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' };
@@ -332,6 +333,8 @@ export function MtnPrBoard({ parts = [], fullName, canEdit = false, onStockChang
   const [showDone, setShowDone] = useState(false);
   const [freeForm, setFreeForm] = useState(false);
   const [mos, setMos] = useState({});
+  const [pathMos, setPathMos] = useState([]);       // ใบ MO ที่เลือก "ต้องเปิด PR" (ต้นคิวของแอดมิน)
+  const [prFor, setPrFor] = useState(null);         // ใบ MO ที่กำลังกรอกรายการขอซื้อ
 
   const load = useCallback(async () => {
     const [r, g] = await Promise.all([
@@ -340,8 +343,16 @@ export function MtnPrBoard({ parts = [], fullName, canEdit = false, onStockChang
     ]);
     const rows = r.data || [];
     // เลขใบ MO เฉพาะใบที่ยังเปิดอยู่ (คิวรอเลข/ค้าง) — ลิงก์กลับไปใบ MO ให้แอดมินเห็นว่าเลข PR นี้ของงานไหน
-    const m = await loadMoNos(rows.filter(isPrOpen).map(x => x.order_id));
-    setErr(r.error?.message || m.error || null); setPrs(rows); setGlCodes(g.rows); setMos(m.byId);
+    const [m, pm] = await Promise.all([
+      loadMoNos(rows.filter(isPrOpen).map(x => x.order_id)),
+      // ใบ MO ที่ช่างเลือกเส้นทาง "ต้องเปิด PR" — ยังไม่มีรายการขอซื้อ = ต้องขึ้นคิว ห้ามตกหล่น (20/10)
+      supabaseDR.from('mtn_orders').select('id, mo_no, machine_no, line_name, item_type, status, repair_path, mtn_dept, report_at, dept_section')
+        .in('repair_path', NEEDS_PR_PATHS()).not('status', 'in', `(${MO_DONE_STATUSES.join(',')})`)
+        .order('report_at', { ascending: false }).limit(500),
+    ]);
+    setErr(r.error?.message || m.error || (pm.error ? `โหลดใบ MO ที่ต้องเปิด PR ไม่สำเร็จ: ${pm.error.message}` : null));
+    if ((pm.data || []).length >= 500) toast.info('ใบ MO ที่ต้องเปิด PR เกิน 500 ใบ — คิวโชว์ 500 ใบล่าสุด');
+    setPrs(rows); setGlCodes(g.rows); setMos(m.byId); setPathMos(pm.data || []);
   }, []);
   useEffect(() => {
     let alive = true;
@@ -357,6 +368,7 @@ export function MtnPrBoard({ parts = [], fullName, canEdit = false, onStockChang
   const needOrder = below.filter(x => x.need > 0);
   const openList = prs.filter(isPrOpen);
   const waitNoList = openList.filter(isAwaitingPrNo);
+  const noPrMos = useMemo(() => mosNeedingPr(pathMos, prs, isMoOpen), [pathMos, prs]);
   const hasNoList = openList.filter(p => !isAwaitingPrNo(p));
   const doneList = prs.filter(p => !isPrOpen(p)).slice(0, 50);
 
@@ -365,6 +377,7 @@ export function MtnPrBoard({ parts = [], fullName, canEdit = false, onStockChang
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
         <b style={{ fontSize: 13.5 }}>🛒 ใบขอซื้ออะไหล่ (PR)</b>
         <span style={{ fontSize: 11.5, color: needOrder.length ? '#ef4444' : 'var(--muted)' }}>ติด Min ยังไม่เปิด PR {needOrder.length} รายการ</span>
+        <span style={{ fontSize: 11.5, color: noPrMos.length ? '#ef4444' : 'var(--muted)' }}>· ใบ MO รอเปิด PR {noPrMos.length}</span>
         <span style={{ fontSize: 11.5, color: waitNoList.length ? '#f59e0b' : 'var(--muted)' }}>· รอเลข PR {waitNoList.length}</span>
         <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>· PR ค้าง {hasNoList.length} ใบ</span>
         {canEdit && <button onClick={() => setFreeForm(v => !v)} style={{ ...btnGhost, marginLeft: 'auto' }}>{freeForm ? 'ปิดฟอร์ม' : '+ เปิด PR เอง'}</button>}
@@ -400,6 +413,21 @@ export function MtnPrBoard({ parts = [], fullName, canEdit = false, onStockChang
       )}
       {!below.length && <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 6 }}>✅ ไม่มีอะไหล่ที่ติด Min (เฉพาะรายการที่ตั้ง Min ไว้)</div>}
 
+      <div style={{ fontSize: 12, fontWeight: 700, margin: '6px 0 4px', color: noPrMos.length ? '#ef4444' : undefined }}>🔧 ใบ MO ที่ช่างเลือกว่าต้องเปิด PR — ยังไม่มีรายการขอซื้อ ({noPrMos.length})</div>
+      {noPrMos.length ? noPrMos.map(o => (
+        <div key={o.id}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', fontSize: 12, padding: '5px 9px', borderRadius: 8, background: 'var(--card)', border: '1px solid var(--border)', borderLeft: '4px solid #ef4444', marginBottom: 6 }}>
+            <a href={`/mtn-repair?mo=${encodeURIComponent(o.id)}`} style={{ color: 'var(--accent)', fontWeight: 800 }} title="เปิดใบ MO">🔧 {o.mo_no || 'ใบ MO (ยังไม่มีเลข)'}</a>
+            <span style={{ flex: 1, minWidth: 160 }}>{[o.item_type, o.machine_no, o.line_name].filter(Boolean).join(' · ') || '—'}</span>
+            <span style={{ color: 'var(--muted)' }}>{repairPathMeta(o.repair_path)?.label}</span>
+            <span style={{ color: 'var(--muted)' }}>แจ้ง {fmtDateTime(o.report_at)}</span>
+            {canEdit && <button onClick={() => setPrFor(prFor === o.id ? null : o.id)} style={{ ...btnGhost, color: 'var(--accent)', borderColor: 'var(--accent)' }}>+ กรอกรายการขอซื้อ / เลข PR</button>}
+          </div>
+          {prFor === o.id && <NewPrForm parts={parts} glCodes={glCodes} fullName={fullName}
+            defaults={{ source: 'mo', order_id: o.id, team: o.mtn_dept, section: o.dept_section || null, repairPath: o.repair_path }}
+            onCancel={() => setPrFor(null)} onDone={() => { setPrFor(null); reload(); }} />}
+        </div>
+      )) : <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 6 }}>ไม่มีใบ MO ที่รอเปิด PR</div>}
       <div style={{ fontSize: 12, fontWeight: 700, margin: '6px 0 4px', color: waitNoList.length ? '#f59e0b' : undefined }}>⏳ รอเลข PR จาก SAP ({waitNoList.length}) — แอดมินช่างกรอกเลขผูกกับใบ MO</div>
       {waitNoList.length ? waitNoList.map(pr => <PrRow key={pr.id} pr={pr} canEdit={canEdit} fullName={fullName} onChanged={reload} showSource mo={mos[pr.order_id] || null} />)
         : <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 6 }}>ไม่มีใบที่รอเลข PR</div>}
