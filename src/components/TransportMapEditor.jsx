@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, useContext, useMemo } from 'r
 import { supabase, supabaseDR } from '../supabaseClient'
 import { UserContext } from '../App'
 import { can } from '../utils/permissions'
+import { pillEdgeAlign, pillEdgeStyle } from '../utils/markerScale'
 import { toast } from '../components/Toast'
 import { NODE_KINDS, nodeKind, buildAdj, edgeWeight, segIntersect, closestPointOnSeg } from '../utils/transportGraph'
 import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory'
@@ -24,6 +25,8 @@ const MODES = [
   ['delete', '🗑 ลบ'],
 ]
 const SNAP_PCT = 2.8   // ระยะ snap เข้าจุดเดิม (หน่วย % ของผัง)
+
+const NODE_PILL_W = 180   // px · ป้ายชื่อจุดกว้างสุด — ยาวกว่านี้ตัด … (ชื่อเต็มใน title) ไม่ให้ลากออกนอกผัง
 
 export default function TransportMapEditor() {
   const { role, fullName } = useContext(UserContext)
@@ -49,12 +52,22 @@ export default function TransportMapEditor() {
   const [scaleMeters, setScaleMeters] = useState('') // input เมตรจริงของ 2 จุด
 
   const wrapRef = useRef(null)
+  const [mapW, setMapW] = useState(0)                   // ความกว้างผังจริง (px) — ไว้เลื่อนป้ายชื่อจุดใกล้ขอบเข้ากรอบ (clipsweep 20/10)
   const dragRef = useRef(null)                         // { id } กำลังลากย้าย node
   const nodesRef = useRef([])                          // sync ล่าสุด (รวม node ที่เพิ่งสร้างในคลิกเดียวกัน) กัน stale
   useEffect(() => { nodesRef.current = nodes }, [nodes])
   const edgesRef = useRef([])
   useEffect(() => { edgesRef.current = edges }, [edges])
   const getNode = (id) => nodesRef.current.find(n => n.id === id)
+
+  useEffect(() => {
+    const el = wrapRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(() => setMapW(el.clientWidth || 0))
+    ro.observe(el)
+    setMapW(el.clientWidth || 0)
+    return () => ro.disconnect()
+  }, [])
 
   // ─── Undo/Redo (snapshot ทั้งกราฟก่อนทุก action — restore = diff แล้วเขียนย้อนลง DB) ───
   const snapOf = () => ({ nodes: nodesRef.current.map(n => ({ ...n })), edges: edgesRef.current.map(e => ({ ...e })) })
@@ -464,8 +477,8 @@ export default function TransportMapEditor() {
                   cursor: canEdit ? (mode === 'select' ? 'grab' : 'pointer') : 'default', touchAction: 'none', zIndex: 2,
                 }}>
                 {n.kind !== 'junction' && <span style={{ pointerEvents: 'none' }}>{k.icon}</span>}
-                {n.name && (
-                  <span style={{ position: 'absolute', top: '105%', left: '50%', transform: 'translateX(-50%)', whiteSpace: 'nowrap', fontSize: 11, fontWeight: 700, color: '#fff', background: 'rgba(9,11,18,0.82)', padding: '1px 5px', borderRadius: 4, pointerEvents: 'none' }}>{n.name}</span>
+                {n.name && (   /* ป้ายชื่อ: กว้างสุด NODE_PILL_W + … (ชื่อเต็มอยู่ใน title) · จุดใกล้ขอบ = ป้ายชิดขอบจุดฝั่งใน ไม่ตกกรอบผัง (UI §6 pillEdge · 20/10) */
+                  <span style={{ position: 'absolute', top: '105%', left: '50%', transform: 'translateX(-50%)', whiteSpace: 'nowrap', maxWidth: NODE_PILL_W, overflow: 'hidden', textOverflow: 'ellipsis', fontSize: 11, fontWeight: 700, color: '#fff', background: 'rgba(9,11,18,0.82)', padding: '1px 5px', borderRadius: 4, pointerEvents: 'none', ...pillEdgeStyle(pillEdgeAlign(n.x, { pillW: NODE_PILL_W, mapW })) }}>{n.name}</span>
                 )}
               </div>
             )
