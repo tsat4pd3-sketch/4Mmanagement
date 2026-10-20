@@ -31,7 +31,10 @@ as $$
     when coalesce(p_line, '') = '' then true               -- แถวไม่ระบุไลน์ = ตัดสินไม่ได้
     else coalesce((
       select
-        (pr.resp_cost_centers is not null and array_length(pr.resp_cost_centers, 1) > 0)  -- แกน CC → ให้จอตัดสิน
+        -- 🔴 ต้อง coalesce — `resp_cost_centers` เป็น NOT NULL default '{}' ⇒ array_length('{}',1) = NULL
+        --    เขียน `is not null and array_length(...)>0` = NULL ⇒ ทั้ง OR เป็น NULL ⇒ coalesce(...,true)
+        --    = **ด่านผ่านทุกคนเงียบๆ** (เจอจริงตอนทดสอบ end-to-end 20/10 · ดู §บันทึกท้ายไฟล์)
+        coalesce(array_length(pr.resp_cost_centers, 1), 0) > 0   -- แกน CC → ให้จอตัดสิน
         or coalesce(pr.section, '') = ''                   -- ไม่มีบ้านจริง = ตัดสินไม่ได้
         or l.section is null                               -- ไลน์ไม่รู้ส่วนงาน = ตัดสินไม่ได้
         or l.section = pr.section                          -- ของหน่วยงานเราเอง
@@ -47,3 +50,18 @@ comment on function public.app_can_write_line(text) is
   'กฎจริงอยู่ที่ src/utils/writeScope.js · ห้ามทำให้เข้มกว่าจอ (ดูหัวไฟล์ migration 20261020)';
 
 grant execute on function public.app_can_write_line(text) to authenticated;
+
+
+-- ═══ บันทึก 20/10 — "ด่านที่ดูเหมือนมีแต่ไม่ทำงาน" ═══════════════════════════
+-- รุ่นแรกของฟังก์ชันนี้ใช้ `pr.resp_cost_centers is not null and array_length(...) > 0`
+-- คอลัมน์เป็น NOT NULL default '{}' ⇒ array_length('{}',1) คืน NULL ⇒ `true and NULL` = NULL
+-- ⇒ OR ทั้งชุดเป็น NULL ⇒ `coalesce(..., true)` ⇒ **คืน true ให้ทุกคน ทุกไลน์**
+-- policy ผูกเรียบร้อย ตรวจ pg_policies ก็เห็น `app_can_write_line` ครบ — แต่ด่านไม่เคยบล็อกใครเลย
+-- 🔴 บทเรียน: **ผูก policy เสร็จ ต้องทดสอบด้วยสิทธิ์ผู้ใช้จริง** (สวม request.jwt.claims แล้วเรียกฟังก์ชัน)
+--    ไม่ใช่แค่เช็คว่า pg_policies มีชื่อฟังก์ชันอยู่ในนิพจน์
+-- วิธีทดสอบ (ใช้ซ้ำได้ตอนขยายกลุ่มถัดไป):
+--   with c as (select set_config('request.jwt.claims',
+--                json_build_object('sub','<user uuid>','role','authenticated')::text, true) as t)
+--   select (case when c.t is not null then public.app_can_write_line('<ชื่อไลน์>') end) from c;
+--   ⚠️ ต้องบังคับลำดับด้วย lateral/case ที่อ้าง c.t — ไม่งั้น planner เรียกฟังก์ชันก่อน set_config
+--      แล้วได้ผลลวง (auth.uid() ยัง null = ผ่านหมด)

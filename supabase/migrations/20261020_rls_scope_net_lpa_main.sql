@@ -26,9 +26,12 @@
 --     using (has_perm('lpa:record') or has_perm('lpa:manage') or has_perm('lpa:delete'))
 --     with check (has_perm('lpa:record') or has_perm('lpa:manage') or has_perm('lpa:delete'));
 -- (policy อ่าน `*_read` ไม่แตะ — ดูได้ทั้งโรงงานเหมือนเดิม ตามกฎ "เห็น ≠ แก้ได้")
--- ⚠️ สถานะ: **ยังไม่ได้ apply** — MCP timeout ทุกท่า (apply_migration · execute_sql · DO block)
---    ตรวจแล้วว่า DB ไม่ถูกแตะเลย (policy เดิมครบ 8 ตัว ไม่มีตัวไหนมี app_can_write_line)
---    ⇒ user รันเองใน SQL Editor ของ project "MAIN" (ewhdfqwfwofivojtsizn) · คิวรีเช็คผลอยู่ท้ายไฟล์
+-- ✅ สถานะ: **apply แล้ว 20/10** (MCP timeout ทุกท่า ⇒ user รันเองใน SQL Editor ของ project "MAIN")
+--    ตรวจกลับแล้ว: policy `*_all` ทั้ง 4 ตัวมี app_can_write_line ครบ · `*_read` ไม่ถูกแตะ
+--    🔴 หลัง apply เจอว่าตัวตัดสินรุ่นแรกคืน true ให้ทุกคน (array_length('{}',1) = NULL)
+--       แก้แล้วด้วย migration `20261020_rls_scope_net_fn_fix_empty_cc_array` — ดูบันทึกท้ายไฟล์ส่วนที่ 1
+--    ทดสอบ end-to-end ด้วยสิทธิ์ผู้ใช้จริงหลังแก้: ของตัวเอง/ไม่รู้ไลน์/ไลน์นอกทะเบียน = ผ่าน ·
+--       ไลน์ต่างส่วนงาน = บล็อก · คู่ (คนเขียน × ไลน์) ที่เคยเขียนจริง 57 คู่ = ผ่านหมด 0 ถูกบล็อก
 -- ═══════════════════════════════════════════════════════════════════════════
 
 -- ── แผนตรวจรายเดือน ──────────────────────────────────────────────────────

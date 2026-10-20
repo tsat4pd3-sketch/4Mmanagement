@@ -2989,6 +2989,33 @@ test('🛡️ /org-setup: ทุกชั้นที่มีปุ่มเพ
     '\n\n❌ handleSave ไม่ได้ใช้ orgSaveBlockReason ตัดสินสิทธิ์ — ดูเหตุผลด้านบน\n');
 });
 
+/* ── 🔴 SQL: `array_length(<NOT NULL default '{}'>, 1)` = NULL ⇒ ด่านผ่านทุกคนเงียบๆ (20/10/2026) ──
+   เกิดจริงกับ `app_can_write_line()` (ตาข่ายขอบเขตชั้น DB): เขียน
+     `resp_cost_centers is not null and array_length(resp_cost_centers,1) > 0`
+   คอลัมน์เป็น NOT NULL default '{}' ⇒ array_length คืน NULL ⇒ `true and NULL` = NULL
+   ⇒ OR ทั้งชุด NULL ⇒ `coalesce(..., true)` ⇒ **คืน true ให้ทุกคน ทุกไลน์** ทั้งที่ policy ผูกครบ
+   (ตรวจ pg_policies เห็นชื่อฟังก์ชันอยู่ในนิพจน์ = ดูเหมือนมีด่าน — แต่ด่านไม่เคยบล็อกใครเลย)
+   ⇒ ในไฟล์ migration ให้ใช้ `coalesce(array_length(x,1),0) > 0` เสมอ */
+test('🛡️ migration SQL: ห้ามเช็คอาร์เรย์ว่างด้วย is-not-null + array_length (ได้ NULL = ด่านไม่ทำงาน)', () => {
+  const dir = join(ROOT, 'supabase/migrations');
+  const bad = [];
+  for (const f of readdirSync(dir).filter(n => n.endsWith('.sql'))) {
+    const sql = readFileSync(join(dir, f), 'utf8');
+    /* 🔴 ดูเฉพาะไฟล์ที่นิพจน์นั้น "เป็นด่าน" (policy / ฟังก์ชันคืน boolean / CHECK)
+       ใน `where` ของ UPDATE/SELECT ธรรมดา NULL = กรองแถวออก (ฝั่งปลอดภัย) ไม่ใช่ปล่อยผ่าน
+       — วัดแล้ว: ถ้าไม่แยก จะจับไฟล์เก่า 2 ไฟล์ที่ถูกต้องอยู่แล้ว = ด่านที่คนอยากปิด */
+    if (!/create\s+policy|returns\s+boolean|\bcheck\s*\(/i.test(sql)) continue;
+    sql.split('\n').forEach((ln, i) => {
+      if (/^\s*--/.test(ln)) return;                               // บรรทัดคอมเมนต์ (อธิบายบั๊กได้)
+      if (/is\s+not\s+null\s+and\s+array_length\s*\(/i.test(ln)) bad.push(`${f}:${i + 1}`);
+    });
+  }
+  assert.deepEqual(bad, [], `\n\n❌ เช็คอาร์เรย์ว่างแบบที่คืน NULL: ${bad.join(' · ')}\n`
+    + "   `array_length('{}',1)` = NULL ⇒ `true and NULL` = NULL ⇒ OR ทั้งชุดเป็น NULL\n"
+    + '   ถ้านิพจน์นั้นเป็นด่าน (policy/trigger) จะ "ผ่านทุกคนเงียบๆ" ทั้งที่ดูเหมือนมีด่าน\n'
+    + "   แก้: `coalesce(array_length(<col>, 1), 0) > 0`\n");
+});
+
 /* ── 🔴 /lpa: ใบตรวจ + แผนเดือน/ไตรมาส ไม่เคยมีด่านชั้น 3 (QC audit §7 · 20/10/2026) ──────────
    หน้านี้มี `qWrite/qGuard` อยู่แล้ว แต่คุมแค่ **ทะเบียนคำถาม** (`lpa_questions`)
    ส่วน `lpa_audits`/`lpa_plans` ซึ่งเป็นเอกสาร ISO ของไลน์ เขียนได้โดยไม่ถามขอบเขตเลย
