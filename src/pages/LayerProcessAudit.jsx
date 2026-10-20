@@ -128,6 +128,10 @@ export default function LayerProcessAudit() {
      เดิมมุมมอง "🌐 ทะเบียนกลาง" ให้ใครก็ได้ที่ถือ lpa:manage ลบข้อกลางทิ้งได้ = หายจากใบตรวจทุกไลน์ */
   const qCtx = { role, section: homeSection, sections: scopeSecs, allUnits, respCostCenters, scopeIdx };
   const qWrite = (q) => canWriteLine(qCtx, q?.line_name, lines, { unknownTarget: 'block' });
+  /* 🔐 ชั้นที่ 3 ของ "ใบตรวจ + แผนเดือน/ไตรมาส" — เดิมมีด่านเฉพาะทะเบียนคำถาม (audit 20/10)
+     ⇒ ใบตรวจ/แผนของไลน์ส่วนงานอื่น เปิด `?line=` แล้วบันทึกทับได้ (เอกสาร ISO ของหน่วยงานเขา)
+     · วัดจากข้อมูลจริง 843 ใบ: ทุกใบคนเขียนอยู่ส่วนงานเดียวกับไลน์ (หรือถือใบผ่านข้ามหน่วย)
+       ⇒ ด่านนี้ไม่กระทบงานที่ทำกันอยู่จริงเลย · ไลน์ไม่รู้ส่วนงาน = ไม่บล็อก (ตัดสินไม่ได้) */
   const qGuard = (q, what) => {
     const w = qWrite(q);
     if (w.ok) return true;
@@ -162,6 +166,12 @@ export default function LayerProcessAudit() {
   const [calReady, setCalReady] = useState(false);
 
   const [selLine, setSelLine] = useState('');
+  const lineWrite = canWriteLine(qCtx, selLine, lines);
+  const lineGuard = (what) => {
+    if (lineWrite.ok) return true;
+    toast.error(writeBlockText(lineWrite, { what }));
+    return false;
+  };
   const [selShift, setSelShift] = useState(getCurrentShift());
   const [selMonth, setSelMonth] = useState(getWorkDate().slice(0, 7));
 
@@ -292,6 +302,7 @@ export default function LayerProcessAudit() {
     return () => { alive = false; };
   }, [selLine, lines]); // eslint-disable-line react-hooks/exhaustive-deps
   const fillStationsFromWorkstations = async () => {
+    if (!lineGuard('แผนตรวจ LPA ของไลน์นี้')) return;
     const key = monthKeyRef.current;
     const { list, error } = await fetchStationNames();
     if (monthKeyRef.current !== key) return;   // เปลี่ยนไลน์ระหว่างรอ = จุดงานของไลน์เก่า ห้ามเททับหัวแผนใหม่
@@ -393,6 +404,7 @@ export default function LayerProcessAudit() {
 
   const savePlan = async () => {
     if (!canManage) return;
+    if (!lineGuard('แผนตรวจ LPA ของไลน์นี้')) return;
     const mis = monthMismatch(monthLoadedKey);
     if (mis) { toast.error(mis); return; }
     setSavingPlan(true);
@@ -519,6 +531,7 @@ export default function LayerProcessAudit() {
   };
 
   const saveQuarter = async () => {
+    if (!lineGuard('แผนตรวจรายไตรมาสของไลน์นี้')) return;
     const misQ = monthMismatch(qLoadedKey);
     if (misQ) { toast.error(misQ); return; }
     if (!canManage) return;
@@ -613,6 +626,7 @@ export default function LayerProcessAudit() {
   });
 
   const handleSignDone = async (blob) => {
+    if (!lineGuard('ใบตรวจ LPA ของไลน์นี้')) return;
     const keyAtSign = draftKeyRef.current;
     setShowSignPad(false);
     try {
@@ -637,6 +651,7 @@ export default function LayerProcessAudit() {
 
   const saveAudit = async () => {
     if (!canRecord) return;
+    if (!lineGuard('ใบตรวจ LPA ของไลน์นี้')) return;
     const mis = draftMismatch();
     if (mis) { toast.error(mis); return; }
     const unanswered = auditQuestions.filter(q => !draft.answers[q.id]?.answer);
@@ -692,6 +707,7 @@ export default function LayerProcessAudit() {
 
   const deleteAudit = async () => {
     if (!draft?.id || !mayDelete) return;
+    if (!lineGuard('ใบตรวจ LPA ของไลน์นี้')) return;
     const mis = draftMismatch();
     if (mis) { toast.error(mis); return; }
     if (!window.confirm(`ลบผลตรวจ ${thDate(auditDate)} ${SHIFT_META[selShift]} ชั้น ${LAYERS.find(l => l.key === auditLayer)?.label}?`)) return;
@@ -1010,6 +1026,14 @@ ${issuesHtml}
         tab={tab} onTab={setTab} />
 
       {selectorBar}
+
+      {/* 🔒 ไลน์ที่เลือกอยู่นอกส่วนงานเรา — ดูได้ แต่บันทึกไม่ได้ · ซ่อนปุ่มได้ ห้ามซ่อนเหตุผล (UI §6.9) */}
+      {!lineWrite.ok && selLine && (
+        <div className="card" style={{ padding: '9px 12px', marginBottom: 10, fontSize: 12, color: 'var(--text2)',
+          background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.35)' }}>
+          🔒 {writeBlockText(lineWrite, { what: `ใบตรวจ/แผน LPA ของไลน์ "${selLine}"` })}
+        </div>
+      )}
 
       {/* ═════════ แผนตรวจ — มองทีละไตรมาส (3 เดือน) ═════════ */}
       {tab === 'plan' && (
