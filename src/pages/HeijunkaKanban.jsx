@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef, useContext } from 'react';
-import { urlParam, urlPick } from '../utils/urlInit';
+import { urlParam, urlPick, urlBool } from '../utils/urlInit';
 import { lineNameCompare } from '../utils/lineHierarchy';
 import { canWriteUnit, writeBlockText } from '../utils/writeScope';
 import ReadOnlyNote from '../components/ReadOnlyNote';
@@ -1170,9 +1170,9 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
   lotRequests, rawRequests, rackRequests, pkgRequests, wipRequests, purchaseRequests, purchaseErr, busy, onAdvanceLot, onIssueRaw, onAdvanceWip, onAdvancePurchase, setBulkBuy, fmt, workDate, nowMs, canOperate }) {
 
   const { roundAlloc } = view;
-  const [buyFilter, setBuyFilter] = useState('');   // '' | '3' | '5'
+  const [buyFilter, setBuyFilter] = useState(() => urlPick('buy', ['3', '5'], ''));   // '' | '3' | '5' · ?buy= (จอวนหน้า)
   const [q, setQ] = useState('');                   // ค้นหา: รหัส / ชื่อ / ไลน์ปลายทาง
-  const [showDone, setShowDone] = useState(false);  // default = เฉพาะงานค้าง (ให้ตรงกับตัวเลขบนแท็บ)
+  const [showDone, setShowDone] = useState(() => urlBool('sdone', false));  // ?sdone= · default = เฉพาะงานค้าง (ให้ตรงกับตัวเลขบนแท็บ)
   const confirmedSet = useMemo(() => { const s = new Set(); deliveries.forEach(d => s.add(`${d.line_name}|${d.shift}|${d.round_no}`)); return s; }, [deliveries]);
   const receivedMap  = useMemo(() => { const m = {}; deliveries.forEach(d => { m[`${d.line_name}|${d.shift}|${d.round_no}`] = d; }); return m; }, [deliveries]);
 
@@ -1477,7 +1477,7 @@ export default function HeijunkaKanban() {
   /* ผูก `?view=` (ไม่ใช่ `?tab=` — หน้านี้อาจถูกฝังใต้หน้าแม่ที่ถือ ?tab= อยู่ · UI §6.8 ข้อ 2.4)
      ค่าที่ไม่รู้จักใน URL ตกกลับ 'unified' เอง (useTabParam จัดการให้) ห้ามจอว่าง */
   const [viewMode, setViewMode]   = useTabParam(Object.keys(VIEW_META), 'unified', 'view');
-  const [demandFmt, setDemandFmt] = useState('cards');
+  const [demandFmt, setDemandFmt] = useState(() => urlPick('dfmt', ['cards', 'table'], 'cards'));   // ?dfmt= (จอวนหน้า)
   /* ปุ่ม "เลือกพาร์ทไปส่ง" จากแท็บอื่น = ต้องพาไปถึงแผงติ๊กพาร์ท ไม่ใช่แค่สลับแท็บแล้วปล่อยไว้หัวหน้า
      (feedback หน้างาน 25/09 — หน้า chart สูง 3,285px แผงงานจริงอยู่ต่ำกว่าขอบจอ 2.5 จอ) */
   const [focusPick, setFocusPick] = useState(0);
@@ -1545,7 +1545,7 @@ export default function HeijunkaKanban() {
   const [bulkBuy, setBulkBuy]                   = useState(null);   // {g, next, label} — เลื่อนสถานะรวมทั้งพาร์ท
   // default = คิวเติม WIP (งานจริงของสโตร์) — เดิม 'fg' คือแท็บรอบส่งซึ่งว่างเปล่าตลอดเมื่อไม่มีรอบ (audit 2026-09-07)
   const [unifiedStore, setUnifiedStore] = useState(() => urlPick('store', ['fg', 'child', 'purchase', 'raw', 'rack', 'wip', 'plating'], 'wip')); // 'fg' | 'child' | 'purchase' | 'raw' | 'rack' | 'wip'
-  const [showNoBom, setShowNoBom]       = useState(false); // รายชื่อ product ที่ไม่มี BOM — พับไว้ ตัวเลขยังเห็นบนแถบสรุป
+  const [showNoBom, setShowNoBom]       = useState(() => urlBool('nobom', false));   // ?nobom= // รายชื่อ product ที่ไม่มี BOM — พับไว้ ตัวเลขยังเห็นบนแถบสรุป
   const [breakPolicies, setBreakPolicies] = useState([]);
   /* 🖼️ รูปชิ้นงาน (2026-09-25 · คำสั่ง user "ควรจะมีรูปภาพชิ้นงานด้วยนะ")
      โหลดครั้งเดียวตอนเปิดหน้า — ทะเบียนรูปเปลี่ยนไม่บ่อย ไม่ต้องรีเฟรชตามวัน/ไลน์
