@@ -1,5 +1,5 @@
 -- DR project (eyhclzkifitbhbljgoav · "Product DB") — 2026-10-20 · คำสั่ง user "ข้อ 6-7 ลุยเลย"
--- ⚠️ สถานะ: ยังไม่ apply (MCP เขียนฐาน DR timeout) — ส่ง SQL ให้ user รันใน SQL Editor
+-- ✅ สถานะ 20/10: user รันใน SQL Editor แล้ว (เช็คแล้ว: ผูก 9 ประเภท · brand มี · ซ่อน 3 ชื่อ)
 --
 -- ข้อ 6 · ชนิดอุปกรณ์ในใบ MO มาจาก "ประเภทเครื่อง" ของ MC No. (ไม่ให้แต่ละทีมพิมพ์ชื่อเอง)
 --   machine_types.mo_item_type = ชื่อใน mtn_item_types (จับคู่ด้วยข้อความ แบบเดียวกับ die_set_kinds.mo_item_type)
