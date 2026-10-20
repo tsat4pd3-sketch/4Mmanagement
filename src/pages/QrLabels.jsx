@@ -27,6 +27,7 @@ import FilterBar from '../components/FilterBar';
 import SearchInput from '../components/SearchInput';
 import Segmented from '../components/Segmented';
 import { ALL } from '../utils/filterLabels';
+import { loadProductsMaster } from '../utils/useProducts';
 
 /* ชนิดป้าย ⇒ Segmented (UI-STANDARD §3 · เดิมเป็นชิปสีเอง)
    2026-10-06 · คำสั่ง user: แยกแท็บ 🔨 แม่พิมพ์ ออกจาก ⚙️ เครื่องจักร (เดิมแม่พิมพ์ปนอยู่ในแท็บเครื่องจักร
@@ -41,6 +42,10 @@ const KIND_OPTIONS = [
   { value: 'die', label: '🔨 แม่พิมพ์' },
   { value: 'jig', label: '🧩 จิ๊ก' },
   { value: 'delivery', label: '🎯 จุดส่งงาน' },
+  /* 📦 ชิ้นงาน/คัมบัง (2026-10-20 · คำสั่ง user) — ป้าย `ESM:P:<mat_no>` แบบลิงก์ ⇒ ส่องด้วยกล้องมือถือแล้ว /scan
+     พาไป ✅ ใบตรวจ QA ของพาร์ท / 🔎 ใบผลิต · ด่านสโตร์ (checkPickPart) อ่านป้ายนี้ได้เหมือนบาร์โค้ด MAT เดิม
+     id ของแถว = mat_no (ไม่ใช่ uuid) — mat_no คือภาษากลางของโรงงาน+SAP (เหตุผลใน qrCode.js) */
+  { value: 'part', label: '📦 ชิ้นงาน/คัมบัง' },
 ];
 const tabLabelOf = (k) => KIND_OPTIONS.find(o => o.value === k)?.label || k;
 
@@ -65,6 +70,7 @@ export default function QrLabels() {
   const [sel, setSel] = useState(() => new Set());
   const [size, setSize] = useState('md');
   const [shadowCount, setShadowCount] = useState(0);
+  const [opHidden, setOpHidden] = useState(0);   // 📦 ขั้นย่อย OP + สินค้าปิดใช้ ที่ไม่พิมพ์ป้าย (บอกบนจอ)
   const [dupJigs, setDupJigs] = useState([]);   // แถวทะเบียน PM ที่เลขซ้ำจิ๊กใน machines (ข้ามไม่พิมพ์ — บอกบนจอ)   // เครื่องจักรที่มีแถวเงาในทะเบียน PM (ถูกกรองออกจากแท็บจิ๊ก)
 
   useEffect(() => { loadDocForms(); }, []);
@@ -88,7 +94,7 @@ export default function QrLabels() {
   /* ── โหลดอุปกรณ์ ── */
   useEffect(() => {
     let alive = true;
-    setLoading(true); setSel(new Set()); setShadowCount(0); setDupJigs([]);
+    setLoading(true); setSel(new Set()); setShadowCount(0); setDupJigs([]); setOpHidden(0);
     const load = async () => {
       // แยกแท็บด้วย equipment_kind · ชนิดว่าง (null) / facility อยู่แท็บเครื่องจักร — ห้ามหายจากทุกแท็บ
       const mcQuery = (k) => {
@@ -102,6 +108,15 @@ export default function QrLabels() {
         const { data, error } = await mcQuery(kind);
         if (error) toast.error('โหลดรายการไม่ได้: ' + error.message);   // ห้ามเงียบ — จอว่างจะอ่านว่า "ไม่มีอุปกรณ์"
         if (alive) setRows((data || []).map(r => ({ ...r, _qr: 'machine' })));
+      } else if (kind === 'part') {
+        /* ทะเบียนสินค้า (cache กลาง · แบ่งหน้าครบ) — ตัดขั้นย่อย OP (ไม่มีคัมบังของตัวเอง) + ตัวปิดใช้ แล้วบอกจำนวนบนจอ */
+        let all = [];
+        try { all = await loadProductsMaster(); } catch (e) { toast.error('โหลดทะเบียนสินค้าไม่ได้: ' + (e?.message || e)); }
+        const keep = (all || []).filter(p => p.mat_no && p.is_active !== false && !p.is_operation);
+        if (alive) {
+          setRows(keep.map(p => ({ ...p, id: String(p.mat_no).trim(), _qr: 'product' })));
+          setOpHidden((all || []).length - keep.length);
+        }
       } else if (kind === 'delivery') {
         /* 🎯 จุดส่งงานหน้าไลน์ (ลูปสโตร์เฟส 4) — 1 จุดหลายไลน์ได้ → line_name บนป้าย = ไลน์ทั้งหมดต่อกัน
            พิมพ์เฉพาะจุด active: ป้ายของจุดที่ปิดแล้วไม่ควรถูกพิมพ์ซ้ำไปติดหน้างานอีก */
@@ -138,7 +153,7 @@ export default function QrLabels() {
       if (scopedLineNames && lns.length && !lns.some(n => scopedLineNames.has(n))) return false;
       if (filterLine && !lns.includes(filterLine)) return false;
       if (!kw) return true;
-      return [r.machine_no, r.jig_no, r.machine_name, r.name, r.part_name, r.code, ln]
+      return [r.machine_no, r.jig_no, r.machine_name, r.name, r.part_name, r.code, r.mat_no, r.p_no, r.customer, ln]
         .some(v => String(v || '').toLowerCase().includes(kw));
     });
   }, [rows, q, filterLine, scopedLineNames]);
@@ -151,8 +166,10 @@ export default function QrLabels() {
   }, [rows, scopedLineNames]);
 
   // ชนิดของแถว (r._qr) ไม่ใช่ของแท็บ — แท็บจิ๊กมีทั้งแถว machines และแถวทะเบียน PM
-  const noOf = (r) => (r._qr === 'machine' ? r.machine_no : r._qr === 'delivery' ? r.code : r.jig_no) || '';
-  const nameOf = (r) => (r._qr === 'machine' ? r.machine_name : (r.name || r.part_name)) || '';
+  const noOf = (r) => (r._qr === 'machine' ? r.machine_no : r._qr === 'delivery' ? r.code : r._qr === 'product' ? r.mat_no : r.jig_no) || '';
+  const nameOf = (r) => (r._qr === 'machine' ? r.machine_name
+    : r._qr === 'product' ? [r.name, r.p_no && `P/N ${r.p_no}`].filter(Boolean).join(' · ')
+    : (r.name || r.part_name)) || '';
   const missingNo = visible.filter(r => !noOf(r).trim()).length;
 
   const toggle = (id) => setSel(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -227,7 +244,7 @@ export default function QrLabels() {
   return (
     <Page style={{ background: 'var(--bg)', minHeight: '100%' }}>
       <ReadOnlyNote show={!canPrint} role={role} what="พิมพ์ป้าย QR" permKey="qr_labels:print" />
-      <PageHeader title="พิมพ์ป้าย QR อุปกรณ์" icon="🏷️" sub="พิมพ์ป้ายติดเครื่องจักร/แม่พิมพ์/จิ๊ก แล้วส่องด้วยกล้องมือถือ → เปิดแอปมาที่เมนูของเครื่องตัวนั้นเลย (ตรวจ PM · แจ้งซ่อม)" />
+      <PageHeader title="พิมพ์ป้าย QR อุปกรณ์" icon="🏷️" sub="พิมพ์ป้ายติดเครื่องจักร/แม่พิมพ์/จิ๊ก/ชิ้นงาน แล้วส่องด้วยกล้องมือถือ → เปิดแอปมาที่เมนูของสิ่งนั้นเลย (ตรวจ AM/PM · แจ้งซ่อม · ตรวจ QA)" />
 
       {/* บอกตรงๆ ว่าป้ายที่กำลังจะพิมพ์เป็นแบบไหน — ป้ายอยู่หน้างานเป็นปี พิมพ์ผิดแบบแล้วต้องรื้อใหม่ทั้งโรงงาน */}
       <div style={{
@@ -274,6 +291,14 @@ export default function QrLabels() {
           🎯 ป้ายที่สโตร์สแกนตอนวางของถึงไลน์ (ลูปเรียกชิ้นส่วนขั้น 7) — ติดที่จุดวางของจริงหน้าไลน์ · ตั้ง/แก้จุดที่ ⚙️ ตั้งค่าผังไลน์ → 🎯 จุดส่งงาน · แนะนำขนาด <b>ใหญ่ 90×60</b> (สแกนจากระยะแร็ค)
         </div>
       )}
+      {kind === 'part' && (
+        <div style={{ fontSize: 12.5, color: 'var(--text2)', background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 8, padding: '9px 12px', marginBottom: 12, lineHeight: 1.7 }}>
+          📦 ป้ายติดกล่อง/บัตรคัมบัง/ชั้นวางของพาร์ท — ส่องด้วยกล้องมือถือแล้วเปิดเมนูของพาร์ทนั้น:
+          <b> ✅ ตรวจชิ้นงาน (ใบตรวจ QA)</b> · 🔎 ใบผลิตของพาร์ท · สโตร์ยิงป้ายนี้ตอนหยิบของได้เหมือนบาร์โค้ด MAT เดิม
+          {' '}· <b>ไม่ต้องรื้อบาร์โค้ดเดิม</b> (ยังสแกนในแอปได้) — ติดเพิ่มเฉพาะจุดที่อยากส่องด้วยกล้องมือถือ
+          {opHidden > 0 && <><br />ℹ️ ไม่แสดง {opHidden} รายการ (ขั้นย่อย OP ที่ไม่มีคัมบังของตัวเอง หรือสินค้าที่ปิดใช้งาน)</>}
+        </div>
+      )}
       {kind === 'delivery' && !loading && !visible.length && (
         <div style={{ fontSize: 12.5, color: '#f59e0b', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 8, padding: '9px 12px', marginBottom: 12 }}>
           ⚠️ ยังไม่มีจุดส่งงานที่เปิดใช้ (ในขอบเขตที่คุณเห็น) — ให้หัวหน้าไลน์ตั้งที่ ⚙️ ตั้งค่าผังไลน์ ก่อน แล้วกลับมาพิมพ์
@@ -318,7 +343,7 @@ export default function QrLabels() {
               <th style={{ ...th, width: 44 }}>
                 <input type="checkbox" checked={visible.length > 0 && sel.size === visible.length} onChange={toggleAll} style={{ width: 'auto', cursor: 'pointer' }} />
               </th>
-              <th style={th}>{kind === 'delivery' ? 'รหัสสั้น' : 'เลข'}</th>
+              <th style={th}>{kind === 'delivery' ? 'รหัสสั้น' : kind === 'part' ? 'MAT' : 'เลข'}</th>
               <th style={th}>ชื่อ</th>
               <th style={th}>ไลน์</th>
             </tr>
