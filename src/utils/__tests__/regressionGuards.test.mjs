@@ -6160,6 +6160,12 @@ test('📥 carry-debt-no-session-window — ของค้างต้องถ
     if (!/histRes\.failed \|\| histRes\.truncated/.test(blk))
       bad.push('src/pages/DailyReport.jsx (โหลดไม่ครบแล้วไม่บอกบนจอ — ลิสต์ขาดถูกอ่านว่า "ของค้างทั้งหมด")');
   }
+  /* 🔴 "รับยอดต่อ" ต้องเลือกใบได้ (feedback: "ไม่อยากมาส่งต่อกะทุกใบที่เหลือ")
+     เอาทั้งหมดอย่างเดียว = คนที่ไม่อยากลากพาร์ทอื่นเข้ากะ **ไม่กดเลย** แล้วของค้างไม่ขยับ */
+  const imp = (dr.match(/const handleImportCarryOrders[\s\S]{0,600}?for \(const o of/) || [''])[0];
+  if (!/carryPick\.has/.test(imp))
+    bad.push('src/pages/DailyReport.jsx (รับยอดต่อยังเป็น "เอาทั้งหมด" — ต้องเลือกใบได้ผ่าน carryPick)');
+
   /* กฎ ② ที่เคยทำยอดค้างหายทั้งกะ — ต้องยังอยู่ในไฟล์กฎ */
   const cd = read('src/utils/carryDebt.js');
   if (!/status === 'imported' \? 1 : 0/.test(cd))
