@@ -21,7 +21,7 @@ import {
   sectionValueForSave, sectionValueForEdit, orphanDepts, deptOptionsFor, deptNodeFor,
   orgNodeIdFor, ORG_SRC_MANUAL, MAINTENANCE_ROLES } from '../utils/sectionScope';
 import { mergeBorrowedEmployees } from '../utils/lineHelpers';
-import { positionOptionsWith, gradeCodesOfPosition } from '../utils/positions';
+import { positionOptionsWith, gradeCodesOfPosition, needsDepartment } from '../utils/positions';
 import { loadGrades, gradesSync, gradeFitsPosition, gradeRow } from '../utils/grades';   // 🎓 เกรดตามผังองค์กรทางการ
 import { buildLaborMap, laborTypeOf, laborMeta, LABOR_META } from '../utils/laborType';
 import { SKILL_LEVELS, SKILL_GATES, getLevel, getBandCeiling, SKILL_CAT_META_FULL, SKILL_EDIT_CAP } from '../utils/skillLevels';
@@ -910,7 +910,10 @@ export default function Operator() {
     if (!orgDeptNodes.length) return [];
     const r = [];
     const dep = String(emp.department || '').trim();
-    if (!dep) r.push('ยังไม่ระบุแผนก');
+    /* 🔴 ผู้จัดการ/หัวหน้าส่วน ยืน**เหนือชั้นแผนก** — ผูกแค่ส่วนงานก็ถูกแล้ว ห้ามนับเป็นข้อมูลไม่ครบ
+       (20/10 · user: "ดุลยทรรศน์ เป็นผู้จัดการ เลือกแค่ส่วนพอ ไม่ต้องเลือกแผนก")
+       ตัดสินที่ `needsDepartment()` (utils/positions.js) ที่เดียว — ห้ามเทียบชื่อตำแหน่งเองในหน้า */
+    if (!dep && needsDepartment(emp.position)) r.push('ยังไม่ระบุแผนก');
     else if (!orgDeptKeys.has(dep.toLowerCase())) r.push(`แผนก "${dep}" ไม่มีในผัง`);
     const grp = String(emp.group_name || '').trim();
     /* 🔴 กลุ่มที่ "มีอยู่จริงในทะเบียนไลน์" ไม่ใช่ข้อมูลผิด แม้ไม่อยู่ใต้แผนกตัวเอง (16/10 · user "group ก็มั่ว")
@@ -1367,7 +1370,13 @@ export default function Operator() {
                     {/* ค่าที่ไม่มีในผังองค์กรทำเป็นสีเหลืองนิ่ง + tooltip บอกเหตุผล (ไม่กระพริบ — ไม่ใช่ alarm) */}
                     <td style={{ fontSize: 12, color: offOrg.some(r => r.includes('แผนก')) ? '#f59e0b' : 'var(--text2)' }}
                       title={offOrg.find(r => r.includes('แผนก')) || ''}>
-                      {offOrg.some(r => r.includes('แผนก')) && '⚠ '}{emp.department || '—'}
+                      {offOrg.some(r => r.includes('แผนก')) && '⚠ '}
+                      {emp.department
+                        || (needsDepartment(emp.position)
+                            ? '—'
+                            /* ไม่ใช่ "ยังไม่กรอก" แต่เป็น "ไม่มีแผนกโดยตำแหน่ง" — ต้องอ่านออกจากจอ */
+                            : <span title="ตำแหน่งระดับส่วนงาน — ดูแลทั้งส่วน ไม่ได้สังกัดแผนกใดแผนกหนึ่ง"
+                                style={{ color: 'var(--muted)' }}>ทั้งส่วนงาน</span>)}
                     </td>
                     <td style={{ fontSize: 12, color: offOrg.some(r => r.includes('กลุ่ม')) ? '#f59e0b' : 'var(--text2)' }}
                       title={offOrg.find(r => r.includes('กลุ่ม')) || ''}>
