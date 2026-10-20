@@ -5,7 +5,7 @@ import { canAccessPage } from '../utils/permissions';
 import {
   normalizeConfig, buildPlaylist, stepIndex, indexOfLocation, resolveIndex, shouldReload,
   displayChannelName, parseDisplayCmd, ROT_NAV_STATE, fmtSec, SKIP_REASON_LABEL, markQuietReload,
-  setActiveDwellSec, barChips,
+  setActiveDwellSec, barChips, SUBPAGE_ATTR, SUBPAGE_MAX_EXTRA_SEC, parseSubpage, subpageGate,
 } from '../utils/displayRotation';
 import { NAV_ITEMS, UserContext } from '../App';
 import { getCurrentShift, getWorkDate } from '../utils/workDate';
@@ -74,6 +74,8 @@ export default function DisplayRotator({ userId, role, disabled, shell = false }
   const [held, setHeld] = useState(false);       // ⏸ ค้าง (กดเอง)
   const [now, setNow] = useState(() => Date.now());
   const loadedAtRef = useRef(Date.now());
+  const subSeenRef = useRef(new Map());          // แถบหน้าย่อยตัวที่ i เห็นหน้าสุดท้ายตอน elapsed เท่าไหร่ (subpageGate)
+  const [subWait, setSubWait] = useState(null);  // { page, count } = ครบเวลาแล้วแต่ยังรอหน้าย่อย
 
   /* ── โหลดแผนของบัญชีนี้ (guard stale response — กฎเขียน DB ข้อ 4) ── */
   useEffect(() => {
@@ -110,6 +112,7 @@ export default function DisplayRotator({ userId, role, disabled, shell = false }
     if (!active) return;
     setIdx(prev => Math.min(resolveIndex(playable, prev, location.pathname, location.search), playable.length - 1));
     setElapsed(0);
+    subSeenRef.current = new Map();
   }, [active, playable, location.pathname, location.search]);
 
   /* ── เริ่มวน: ถ้าหน้าปัจจุบันไม่อยู่ในรอบ (เช่น เพิ่ง login ลงหน้า Home) → ไปหน้าแรกของรอบ ── */
@@ -132,6 +135,8 @@ export default function DisplayRotator({ userId, role, disabled, shell = false }
     }
     setIdx(nextIdx);
     setElapsed(0);
+    subSeenRef.current = new Map();
+    setSubWait(null);
     // startTransition = ระหว่างโหลดไฟล์หน้าใหม่ (lazy) ค้างหน้าเดิมไว้ ไม่โชว์ "กำลังโหลด..." ของ Suspense
     veilSwap(() => startTransition(() => {
       navigate(target.path, { state: { [ROT_NAV_STATE]: `${nextIdx}-${Date.now()}` } });
@@ -151,9 +156,15 @@ export default function DisplayRotator({ userId, role, disabled, shell = false }
     return () => clearInterval(id);
   }, [active, shell, held, pausedUntil]);
 
+  /* 📖 ครบเวลาแล้ว แต่บอร์ดยังมีหน้าย่อยที่ยังไม่ได้โชว์ = รอ (เพดาน SUBPAGE_MAX_EXTRA_SEC) — ดู subpageGate */
   useEffect(() => {
-    if (active && cur && elapsed >= cur.sec) goTo(stepIndex(idx, n, 1));
-  }, [active, cur, elapsed, idx, n, goTo]);
+    if (!active || !cur) return;
+    const pagers = [...document.querySelectorAll(`[${SUBPAGE_ATTR}]`)].map(el => parseSubpage(el.getAttribute(SUBPAGE_ATTR)));
+    const gate = subpageGate(pagers, subSeenRef.current, elapsed);
+    if (elapsed < cur.sec) { if (subWait) setSubWait(null); return; }
+    if (gate.ready || elapsed >= cur.sec + SUBPAGE_MAX_EXTRA_SEC) { goTo(stepIndex(idx, n, 1)); return; }
+    if (subWait?.page !== gate.waiting.page || subWait?.count !== gate.waiting.count) setSubWait(gate.waiting);
+  }, [active, cur, elapsed, idx, n, goTo, subWait]);
 
   /* ── มีคนแตะจอ = หยุดชั่วคราว ── */
   const pauseMs = (cfg?.pauseSec || 0) * 1000;
@@ -268,7 +279,7 @@ export default function DisplayRotator({ userId, role, disabled, shell = false }
         pathname={location.pathname} search={location.search} now={now}
         loadErr={loadErr} active={active && !!cur}
         idx={Math.min(idx, Math.max(0, n - 1))} n={n} sec={cur?.sec || 0} elapsed={elapsed}
-        held={held} pausedLeft={pausedLeft} skipped={skipped} skipTitle={skipTitle}
+        held={held} pausedLeft={pausedLeft} skipped={skipped} skipTitle={skipTitle} subWait={subWait}
         controls={active && cur ? (
           <>
             {btn('◀', () => goTo(stepIndex(idx, n, -1)), 'หน้าก่อนหน้า', barBtn)}
@@ -289,7 +300,8 @@ export default function DisplayRotator({ userId, role, disabled, shell = false }
 
   const status = held ? '⏸ หยุดอยู่'
     : pausedLeft > 0 ? `⏸ มีคนใช้จอ · วนต่อใน ${fmtSec(pausedLeft)}`
-      : `ถัดไปใน ${fmtSec(Math.max(0, cur.sec - elapsed))}`;
+      : subWait ? `รอหน้าย่อย ${subWait.page}/${subWait.count}`
+        : `ถัดไปใน ${fmtSec(Math.max(0, cur.sec - elapsed))}`;
 
   const compact = !held && pausedLeft === 0 && skipped.length === 0 && now - changedAt > 6000;
   if (compact) {
@@ -322,7 +334,7 @@ export default function DisplayRotator({ userId, role, disabled, shell = false }
    ล่างสุดของแถบ = ความคืบหน้ารอบวน (1 ขีด = 1 หน้า · ขีดปัจจุบันเติมตามเวลา)
    แทนที่: หัวเพจ/breadcrumb/แท็บ/แถบกรองของทุกหน้า · ชิปมุมจอ · นาฬิกาที่บางบอร์ดวาดเอง
    ความสูงอยู่ที่ `--tvbar-h` (index.css) — บอร์ดที่เต็มจอแบบ fixed ต้องเริ่มที่ top: var(--tvbar-h, 0px) */
-function TvShellBar({ pathname, search, now, loadErr, active, idx, n, sec, elapsed, held, pausedLeft, skipped, skipTitle, controls }) {
+function TvShellBar({ pathname, search, now, loadErr, active, idx, n, sec, elapsed, held, pausedLeft, skipped, skipTitle, subWait, controls }) {
   const { sections, section } = useContext(UserContext) || {};
   const secs = (sections?.length ? sections : (section ? [section] : [])).filter(Boolean);
   const nav = pathname === '/tv'
@@ -336,7 +348,8 @@ function TvShellBar({ pathname, search, now, loadErr, active, idx, n, sec, elaps
   const status = !active ? null
     : held ? '⏸ หยุดค้าง'
       : pausedLeft > 0 ? `⏸ มีคนใช้จอ · วนต่อใน ${fmtSec(pausedLeft)}`
-        : `ถัดไปใน ${fmtSec(Math.max(0, sec - elapsed))}`;
+        : subWait ? `รอหน้าย่อย ${subWait.page}/${subWait.count}`
+          : `ถัดไปใน ${fmtSec(Math.max(0, sec - elapsed))}`;
   return (
     <div role="banner" style={barStyle}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1, overflow: 'hidden' }}>

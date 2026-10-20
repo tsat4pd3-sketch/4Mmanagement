@@ -7,10 +7,13 @@ import SearchSelect from '../components/SearchSelect';
 import SearchInput from '../components/SearchInput';
 import LineSelect from '../components/LineSelect';
 import ProductSelect from '../components/ProductSelect';
+import OrgScopePicker from '../components/OrgScopePicker';
 import { toast } from '../components/Toast';
 import { canAccessPage, canSeeded } from '../utils/permissions';
 import { checkWriteRows } from '../utils/dbWrite';
 import useProductionLines from '../utils/useProductionLines';
+import useOrgScope from '../utils/useOrgScope';
+import { parseScopeKey, scopeKey, isPlant } from '../utils/orgScope';
 import useIsMobile from '../utils/useIsMobile';
 import { ALL } from '../utils/filterLabels';
 import { orgNodeCompare } from '../utils/listOrder';
@@ -53,6 +56,9 @@ export default function DisplayRotation() {
   const isMobile = useIsMobile(1100);
   const canEdit = canSeeded('display_rotation', 'manage', role);
   const lines = useProductionLines();
+  /* ช่องตัวกรอง kind 'scope' = ต้นไม้ผังองค์กรตัวกลาง (20/10 user "filter ซ้ำรึป่าว") — เดิมวาด select เอง
+     แผนก/กลุ่มไลน์ชื่อเดียวกันเรียงเป็นพี่น้องดูเหมือนซ้ำ + ค่าแผนกใช้ชื่อแทน code (หน้าปลายทางอ่านด้วย code) */
+  const { index: scopeIndex, failed: scopeFail } = useOrgScope(lines);
   /* ผังองค์กร (ส่วนงาน/แผนก) — ให้ช่องตัวกรอง kind 'orgdept' เลือก "แผนก" ได้ (บางหน้ากรองด้วย id โหนด/ชื่อแผนก · 20/10)
      null = ยังโหลด · โหลดล้ม = ช่องเขียนบอก (ห้ามดูเหมือนองค์กรไม่มีแผนก) */
   const [orgNodes, setOrgNodes] = useState(null);
@@ -375,6 +381,7 @@ export default function DisplayRotation() {
                     pageOptions={pageOptions} defaultSec={form.default_sec}
                     skip={preview.skipped.find(s => s.idx === i)}
                     lines={lines} tvSections={tvSections} allSections={allSections} orgNodes={orgNodes} orgFail={orgFail}
+                    scopeIndex={scopeIndex} scopeFail={scopeFail || ''}
                     onChange={(patch) => setItem(i, patch)}
                     onMove={(d) => moveItem(i, d)}
                     onRemove={() => { setF('items', form.items.filter((_, j) => j !== i)); setFocusIdx(Math.max(0, i - 1)); }} />
@@ -454,7 +461,7 @@ export default function DisplayRotation() {
 }
 
 /* ── 1 แถวในรอบ: เลือกหน้า + ตัวกรองของหน้านั้น + วินาที ── */
-function ItemRow({ i, it, n, canEdit, focused, onFocus, pageOptions, defaultSec, skip, lines, tvSections, allSections, orgNodes, orgFail, onChange, onMove, onRemove }) {
+function ItemRow({ i, it, n, canEdit, focused, onFocus, pageOptions, defaultSec, skip, lines, tvSections, allSections, orgNodes, orgFail, scopeIndex, scopeFail, onChange, onMove, onRemove }) {
   const base = it.path ? pathOnly(it.path) : '';
   const params = queryParamsOf(it.path);
   const defs = DISPLAY_PAGE_PARAMS[base] || null;
@@ -475,17 +482,6 @@ function ItemRow({ i, it, n, canEdit, focused, onFocus, pageOptions, defaultSec,
     return all.filter(x => x.kind === 'department' && secIds.has(x.parent_id)).sort(orgNodeCompare)
       .map(x => ({ id: x.id, name: x.name, sec: secIds.get(x.parent_id) }));
   }, [orgNodes, tvSections, params.sec, params.section]);
-  const scopeOptions = useMemo(() => {
-    const secs = tvSections.length ? tvSections : allSections;
-    const parents = (lines || []).filter(l => !l.parent_line_name && (!tvSections.length || tvSections.includes(l.section)))
-      .map(l => l.name).filter(n => (lines || []).some(c => c.parent_line_name === n));
-    return [
-      ...(tvSections.length ? [] : [{ value: 'plant', label: '🏭 ทั้งโรงงาน' }]),
-      ...secs.map(x => ({ value: `section:${x}`, label: `📁 ส่วนงาน ${x}` })),
-      ...deptOptions.map(x => ({ value: `department:${x.name}`, label: `🗂️ แผนก ${tvSections.length === 1 ? '' : `${x.sec} · `}${x.name}` })),
-      ...parents.map(x => ({ value: `line_group:${x}`, label: `🏭 กลุ่มไลน์ ${x}` })),
-    ];
-  }, [tvSections, allSections, lines, deptOptions]);
   /* ตัวเลือกที่มาจากข้อมูล (จุดงาน · ประเภทงานค่าฝีมือ · คลังในจอเฝ้าระวัง) — โหลดเฉพาะแถวที่กำลังแก้และหน้านั้นมีช่องชนิดนั้น
      null = ยังโหลด · { fail } = โหลดล้ม (ช่องเขียนบอก ห้ามดูเหมือนไม่มีตัวเลือก) */
   const needKinds = (focused || skip) && defs ? defs.map(d => d.kind).filter(k => k === 'station' || k === 'wtype' || k === 'storeline').join(',') : '';
@@ -613,10 +609,10 @@ function ItemRow({ i, it, n, canEdit, focused, onFocus, pageOptions, defaultSec,
                   </span>
                 )}
                 {d.kind === 'scope' && (
-                  <select value={params[d.key] || ''} disabled={!canEdit} onChange={e => setParam(d.key, e.target.value)}>
-                    <option value="">— ค่าเริ่มต้นของหน้า (ส่วนงานของจอ) —</option>
-                    {scopeOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                  </select>
+                  <OrgScopePicker index={scopeIndex} failed={scopeFail} costCenter={false} sections={tvSections}
+                    plantLabel="— ค่าเริ่มต้นของหน้า (ส่วนงานของจอ) —" disabled={!canEdit}
+                    value={params[d.key] ? parseScopeKey(params[d.key]) : null}
+                    onChange={sc => setParam(d.key, isPlant(sc) ? '' : scopeKey(sc.kind, sc.value))} />
                 )}
                 {d.kind === 'product' && (
                   <ProductSelect value={params[d.key] || ''} disabled={!canEdit} style={{ minWidth: 240 }}

@@ -167,6 +167,13 @@ html, body {
    · บอร์ดเต็มจอแบบ position:fixed ต้องเริ่มที่ top: var(--tvbar-h, 0px) ไม่งั้นแถบบนทับ */
 body.esm-tv-shell { --tvbar-h: 46px; padding-top: var(--tvbar-h); }
 body.esm-tv-shell .ph-chrome { display: none !important; }
+/* 📺 จอ TV: ตัววนจอย่อหน้าที่สูงเกินจอด้วย CSS zoom — zoom คูณทุกความยาวรวมถึงเพดานกว้างของ .page-content
+   (1800px / 96vw) ⇒ ย่อ 65% เหลือกว้าง ~1,200px กลางจอ ขอบข้างว่าง (20/10 รูปจอจริงหน้า OEE)
+   ⇒ บนจอ TV ไม่มีเพดานกว้าง: เนื้อหาเต็มจอ · กว้างขึ้น = เตี้ยลง = ย่อน้อยลง ตัวหนังสือใหญ่ขึ้น */
+body.esm-tv-shell .page-content { max-width: none; }
+/* 📺 จอ TV กดไม่ได้ (UI §6.33): แถบกรองของหน้า (<FilterBar> · <TimeRangeBar>) = ช่องเลือกที่ไม่มีใครกด
+   ค่าที่เลือกมาจาก /display-rotation และแถบบนของกรอบจอโชว์ไว้แล้ว (barChips) ⇒ ซ่อนทั้งแถบ */
+body.esm-tv-shell .filter-bar { display: none !important; }
 
 /* ─── Splash Screen ──────────────────────────────────────────── */
 #splash {
