@@ -93,7 +93,7 @@ export default function OeeInsightPanel({ lines, ccRates = [], initLine = '', se
         supabaseDR.from('kanban_standards').select('mat_no, dr_products(name, cycle_time_sec)').eq('is_active', true),
         supabaseDR.from('dr_products').select('mat_no, cycle_time_sec'),
         // นโยบายเวลาพัก — ตัวกัน "หัก DT ที่ทับพักซ้ำ" ตอนถ่วงน้ำหนัก (กฎเหล็ก §OEE 2026-09-15)
-        supabaseDR.from('break_policies').select('shift, process_type, start_time, duration_min, ot_scope').eq('is_active', true),
+        supabaseDR.from('break_policies').select('shift, process_type, start_time, duration_min, ot_scope, anchor, offset_min').eq('is_active', true),
       ]);
       const dts = dtRes.rows, defs = defRes.rows, orders = ordRes.rows;
       const loadErr = [dtRes, defRes, ordRes].find(r => r.error)?.error || null;
