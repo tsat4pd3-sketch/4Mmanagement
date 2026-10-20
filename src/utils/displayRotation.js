@@ -258,6 +258,7 @@ const FM_METRICS = [
 const CSEC = ['10', '15', '20', '30', '45', '60', '90', '120', '180', '300'].map(v => opt(v, `${v} วิ`));
 const FM_MODE = [opt('live', '⚡ Live (วันนี้สด)'), opt('review', '📅 ทบทวนรายวัน')];
 const FM_PANEL = [opt('review', '⚡ สรุปวันนี้'), opt('obeya', '🏛️ OBEYA (สด)'), opt('live', '📊 อันดับ')];
+const DASH_LINE = { key: 'bline', label: 'เฉพาะไลน์ (+ ไลน์ลูก)', kind: 'line' };
 const DASH_SHIFT = { key: 'shift', label: 'กะ (ตั้ง = ค้างกะนี้ ไม่สลับเองตอน 08:00/20:00)', kind: 'select', options: [opt('all', 'ทุกกะ'), opt('day', '☀️ กะเช้า'), opt('night', '🌙 กะดึก')] };
 const DASH_SCROLL = { key: 'scroll', label: 'เลื่อนเอง (ไม่แบ่งหน้าหมุน)', kind: 'select', options: [opt('1', 'เปิด'), opt('0', 'ปิด')] };
 const LBL = ['0.6', '0.8', '1', '1.2', '1.4', '1.6'].map(v => opt(v, `${Math.round(v * 100)}%`));
@@ -291,11 +292,12 @@ export const DISPLAY_PAGE_PARAMS = Object.freeze({
   ],
   '/dashboard': [
     { key: 'section', label: 'ส่วนงาน', kind: 'section' },
-    DASH_SHIFT, DASH_SCROLL,
+    DASH_LINE, DASH_SHIFT, DASH_SCROLL,
   ],
   // จอคนแยกจาก /dashboard (19/10) · ?line= เปิดผังไลน์+คน (ลิงก์เก่า /dashboard?line= ถูกส่งต่อมาที่นี่)
   '/people-board': [
     { key: 'section', label: 'ส่วนงาน', kind: 'section' },
+    DASH_LINE,
     { key: 'line', label: 'เปิดผังไลน์', kind: 'line' },
     DASH_SHIFT, DASH_SCROLL,
   ],
