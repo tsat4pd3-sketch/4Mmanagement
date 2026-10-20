@@ -5498,3 +5498,39 @@ test('🔕 เขียน call_mtn = true ต้องเติม call_mtn_tea
     + '   แก้: เติม call_mtn_team จากทีมที่รู้ (ปุ่มเรียกช่าง = ทีมที่เลือก · ใบ MO = mtn_dept)\n'
     + '   ⚠️ ไม่รู้ทีมจริงๆ ให้ปล่อยว่าง (ดังทุกห้องดีกว่าเงียบผิดทีม) แต่ห้ามลืมเติมตอนที่รู้\n');
 });
+
+/* ── 🔚 พักที่ผูกปลายกะ: กรอบที่ไม่ใช่ "ทั้งกะ" ต้องส่ง shiftEndMs (2026-10-20) ──────
+   `breakIntervalsIn` ถอยไปใช้ "ปลายกรอบ" เมื่อไม่ส่ง `shiftEndMs` — ถูกเฉพาะกรอบที่เป็นทั้งกะ
+   จุดที่กรอบเป็น "ถึงตอนนี้" (OEE สด · ผังรวมโรงงาน) หรือ "ช่วงที่ใบ/พาร์ทวิ่ง" (แท็บประวัติ ·
+   ctReview · computeSessionOee) ถ้าไม่ส่ง ⇒ พักท้ายกะ (5ส.) จะไหลไปเกาะปลายของทุกช่วง
+   = **หักพักซ้ำทุกใบ** โดยตัวเลขยังดูสมเหตุสมผล (ไม่มี error ให้เห็น)
+   ⚠️ ด่านนี้คุม "จุดที่รู้แล้วว่ากรอบไม่ใช่ทั้งกะ" — เพิ่มจุดใหม่ที่เข้าข่าย ให้เพิ่มในลิสต์นี้ด้วย */
+test('🛡️ break-anchor-needs-shift-end — จุดที่กรอบ ≠ ทั้งกะ ต้องส่ง shiftEndMs ให้ breakIntervalsIn', () => {
+  const NEED = [
+    ['src/utils/oee.js', 'brkIvIn', /const brkIvIn = \([\s\S]{0,400}?\}\);/],
+    ['src/utils/oee.js', 'computeLiveOee', /const brkIv = usablePolicies\.length[\s\S]{0,400}?: \[\];/],
+    ['src/utils/ctReview.js', 'ช่วงของใบผลิต', /const brkIv = breakIntervalsIn\(\{[\s\S]{0,400}?\}\);/],
+    ['src/pages/DailyReport.jsx', 'histBreakIv', /const histBreakIv = \([\s\S]{0,300}?\);/],
+    ['src/pages/FactoryMap.jsx', 'brkIvWin', /const brkIvWin = breakIntervalsIn\(\{[\s\S]{0,400}?\}\);/],
+  ];
+  const bad = [];
+  for (const [rel, what, re] of NEED) {
+    const code = stripComments(readFileSync(join(ROOT, rel), 'utf8'));
+    const m = code.match(re);
+    if (!m) { bad.push(`${rel} — หาบล็อก ${what} ไม่เจอ (ย้าย/เปลี่ยนชื่อแล้ว? อัพเดทด่านนี้ด้วย)`); continue; }
+    if (!/shiftEndMs/.test(m[0])) bad.push(`${rel} — ${what} ไม่ได้ส่ง shiftEndMs`);
+  }
+  // computeLiveOee ต้องไม่เดาเวลาเลิกกะ: กะที่ยังเปิดอยู่ไม่มี end_time ⇒ ต้องกรองแถว shift_end ออก
+  const oee = stripComments(readFileSync(join(ROOT, 'src/utils/oee.js'), 'utf8'));
+  if (!/usablePolicies\s*=\s*hardEndMs\s*\?/.test(oee))
+    bad.push("src/utils/oee.js — computeLiveOee ต้องกรองแถว anchor='shift_end' ออกเมื่อยังไม่รู้เวลาเลิกกะ");
+  if (!/noShiftEndBreak/.test(oee))
+    bad.push('src/utils/oee.js — ต้องคืนธง noShiftEndBreak ให้จอเขียนบอกว่ายังไม่ได้หักพักท้ายกะ');
+  assert.deepEqual(bad, [],
+    '\n\n❌ จุดด้านล่างจะหักเวลาพัก "ท้ายกะ" ผิดที่:\n'
+    + bad.map(b => '   • ' + b).join('\n') + '\n'
+    + '   ทำไมสำคัญ: 5ส. ถูกตั้งเป็น anchor=shift_end (ยึดเวลาเลิกกะ) ตั้งแต่ 20/10\n'
+    + '   กรอบที่ส่งเข้าไปถ้าไม่ใช่ทั้งกะ แล้วไม่บอกปลายกะ = พักไปเกาะปลายกรอบนั้นแทน\n'
+    + '   แก้ยังไง: ส่ง shiftEndMs = เวลาเลิกกะจริง (shiftFrameOf(session)?.endMs / capMs / end_time)\n'
+    + '            ยังไม่รู้เวลาเลิกกะ = อย่าเดา ให้กรองแถว shift_end ออกแล้วชูธงบอกจอ\n');
+});

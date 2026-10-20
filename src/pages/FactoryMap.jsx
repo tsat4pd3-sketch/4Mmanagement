@@ -876,6 +876,7 @@ export default function FactoryMap({ setupMode = false }) {
         const brkIvWin = breakIntervalsIn({
           policies: breaks || [], startMs: anchor, endMs: Math.min(nowMs, capMs),
           workDate, shift: s.shift, processType: procOfSess,
+          shiftEndMs: capMs,   // 🔚 กรอบจบที่ "ตอนนี้" ระหว่างกะ — พักท้ายกะต้องยึด capMs ไม่ใช่ปลายกรอบ
         });
         availMin -= brkIvWin.reduce((a, [x, y]) => a + (y - x) / 60000, 0);
         /* หักหยุดตามแผน — ⚠️ ต้อง clamp กับหน้าต่าง [anchor, min(now, capMs)] ก่อน
@@ -2373,6 +2374,24 @@ export default function FactoryMap({ setupMode = false }) {
     return () => ro.disconnect();
   }, [imageUrl, loading]);
   const is3d = view3d && !editing;
+  /* 🧊 3D = วัด "ที่ว่างจริงใต้หัวผัง" แทนสูตรตายตัว `100vh − 200px` (20/10 · จอ TV "ผัง 3D หลุดขอบล่าง")
+     สูตรเดิมเดาว่ามีหัวเพจอยู่ด้านบน · กรอบจอ TV ซ่อนหัวเพจ ⇒ ผังเริ่มต่ำกว่าที่เดา แล้วล้นขอบล่าง
+     และโหมด 3D ติด data-tv-nofit (ตัววนจอไม่ย่อให้ — Cr94 คิด 3D ใต้ zoom ผิด) ⇒ ไม่มีใครช่วยดึงกลับ
+     · วัดจาก offset (ไม่โดน transform ของผังที่เอียงอยู่) · 2D คงสูตรเดิม (จอ TV มีตัววนย่อให้แล้ว) */
+  const [avail3d, setAvail3d] = useState(0);
+  useLayoutEffect(() => {
+    if (!is3d) { setAvail3d(0); return undefined; }
+    const measure = () => {
+      const w = wrapRef.current, par = w?.offsetParent;
+      if (!w || !par) return;
+      const top = par.getBoundingClientRect().top + par.clientTop + w.offsetTop;
+      setAvail3d(Math.max(320, Math.floor(window.innerHeight - top - 48)));   // 48 = มุมพื้นที่เอียงเข้าหาจอยื่นพ้นกรอบ ~26px
+    };
+    measure();
+    const t = setTimeout(measure, 500);   // แถบ/แผงที่โหลดทีหลังดันผังลง
+    window.addEventListener('resize', measure);
+    return () => { clearTimeout(t); window.removeEventListener('resize', measure); };
+  }, [is3d, loading, imageUrl]);
   /* 🧊 เสา 3D — คิดก่อน render เพื่อให้หัวผังบอกได้ว่าป้ายไหนแน่นจนวางไม่ได้ (ห้ามหายเงียบ) */
   const pillarMaxH = Math.max(60, wrapW * 0.2);
   const BLOCK_K = 0.55;
@@ -2394,7 +2413,9 @@ export default function FactoryMap({ setupMode = false }) {
                 }));
   const pillarLifts = is3d ? liftLabels(pillarItems, { Wpx: wrapW, Hpx: aspect ? wrapW / aspect : 0, tiltDeg: orbit.tilt, rotZDeg: orbit.rot, maxH: pillarMaxH }) : null;
   const pillarCrowded = pillarLifts ? [...pillarLifts.values()].filter(v => !v.ok).length : 0;
-  const wrapStyle = aspect ? { width: `min(100%, calc((100vh - 210px) * ${aspect}))` } : { width: '100%' };
+  const wrapStyle = is3d && avail3d
+    ? { width: aspect ? `min(100%, ${Math.round(avail3d * aspect)}px)` : '100%', maxHeight: avail3d }
+    : { ...(aspect ? { width: `min(100%, calc((100vh - 210px) * ${aspect}))` } : { width: '100%' }), maxHeight: 'calc(100vh - 200px)' };
   const ptsStr = (pts) => pts.map(p => `${p[0]},${p[1]}`).join(' ');
   const flashLine = (name) => { setHighlight(name); setTimeout(() => setHighlight(h => h === name ? null : h), 2000); };
 
@@ -2436,7 +2457,10 @@ export default function FactoryMap({ setupMode = false }) {
       )}
 
       {/* เลือก metric */}
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+      {/* 20/10 (user "จอขนาดเด้งกระพริบเวลาเปลี่ยน tab" · คลิปจอ TV): เดิมปุ่มแท็บ + ชิปบอกข้อมูล + ปุ่ม A−/2D อยู่แถว wrap เดียว
+          ชิปต่อแท็บไม่เท่ากัน (🫥 โซนสนับสนุน · ⚠ PM ไม่ผูกไลน์ · legend) ⇒ บางแท็บ 2 บรรทัด บางแท็บ 3 ⇒ ผังขยับขึ้นลง
+          และตัววนจอ TV ย่อ (zoom) ใหม่ทุกครั้ง = ขนาดเด้ง · ตอนนี้แยก 2 แถว: แถวแท็บคงที่ · แถวชิป+เครื่องมือจองความสูงไว้ */}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
         {Object.entries(METRICS).map(([k, m]) => (
           <button key={k} onClick={() => setMetric(k)} style={btn(metric === k)}>{m.label}</button>
         ))}
@@ -2446,10 +2470,14 @@ export default function FactoryMap({ setupMode = false }) {
             🔁 {cycleOn ? `วนมุมมอง · ${cycleList.indexOf(metric) + 1}/${cycleList.length}` : 'วนมุมมอง (หยุด)'}<ToggleDot on={cycleOn} />
           </button>
         )}
+      </div>
+      {/* จอคอม/TV = บรรทัดเดียวเสมอ (ชิปยาวหดเป็น … · เต็มอยู่ใน title) ⇒ ความสูงไม่เปลี่ยนตามแท็บ · มือถือ wrap ตามเดิม (index.css .fm-chips) */}
+      <div className={isMobile ? undefined : 'fm-chips'} style={{ display: 'flex', gap: 8, flexWrap: isMobile ? 'wrap' : 'nowrap', alignItems: 'center', minHeight: 30, marginBottom: 12 }}>
         {/* ⚡ พลังงานเป็นข้อมูล "รายเดือน" ไม่ใช่ live เหมือน metric อื่นบนจอนี้ — ต้องประกาศเดือนเสมอ
             ไม่งั้นคนอ่านเป็นค่าปัจจุบัน (จอนี้ทุกอย่างสดหมด) */}
         {!editing && metric === 'energy' && (
-          <span style={{ alignSelf: 'center', display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, whiteSpace: 'nowrap' }}>
+          <span title={`${energyMonth ? monthLabel(energyMonth) : 'ยังไม่มีข้อมูล'} · กรอกมือรายเดือน · สีกรอบ = เทียบเดือนก่อน (ลดลง = เขียว)${energyEf ? '' : ' · ยังไม่ตั้งค่าการปล่อย → ไม่มี tCO2e'}`}
+            style={{ alignSelf: 'center', display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, whiteSpace: 'nowrap' }}>
             <b style={{ color: '#f59e0b', background: '#f59e0b1a', border: '1px solid #f59e0b55', borderRadius: 6, padding: '3px 8px' }}>
               📅 {energyMonth ? monthLabel(energyMonth) : 'ยังไม่มีข้อมูล'} · ✍️ กรอกมือรายเดือน
             </b>
@@ -2501,7 +2529,8 @@ export default function FactoryMap({ setupMode = false }) {
         )}
         {/* legend อธิบายเลขบนป้าย — เลข 3 ตัวติดกันไม่มีคำอธิบายคนอ่านไม่ออก (คำสั่ง user 2026-08-06) */}
         {!editing && metric === 'productivity' && (
-          <span style={{ alignSelf: 'center', fontSize: 11.5, color: 'var(--muted)', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 4 }}>
+          <span title="ทำได้ / ควรได้ตอนนี้ / เป้ากะ · สีกรอบ = ทันจังหวะไหม"
+            style={{ alignSelf: 'center', fontSize: 11.5, color: 'var(--muted)', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 4 }}>
             <b style={{ color: '#22c55e' }}>ทำได้</b> /
             <b style={{ color: 'var(--text2)' }} title="ถ้าเดินตามจังหวะปกติ ถึงตอนนี้ควรได้เท่านี้ (คิดจากเวลาที่ผลิตได้จริง ÷ รอบเวลาชิ้นงาน)">ควรได้ตอนนี้</b> /
             <b style={{ color: 'var(--text2)' }} title="เป้ารวมของใบงานที่เปิดในกะนี้">เป้ากะ</b>
@@ -2516,14 +2545,15 @@ export default function FactoryMap({ setupMode = false }) {
           </span>
         )}
         {!editing && !labelLayout.hidden.length && !!autoHulls.length && (
-          <span style={{ marginLeft: 'auto', alignSelf: 'center', fontSize: 11.5, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
+          <span title="▣ กลุ่ม (ยอดรวมทั้งกลุ่ม · เส้นประ) · ↳ ไลน์ย่อย ในกลุ่ม"
+            style={{ marginLeft: 'auto', alignSelf: 'center', fontSize: 11.5, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
             <b style={{ color: 'var(--text2)' }}>▣ กลุ่ม</b> (ยอดรวมทั้งกลุ่ม · เส้นประ) · <b style={{ color: 'var(--text2)' }}>↳ ไลน์ย่อย</b> ในกลุ่ม
           </span>
         )}
         {/* ปรับขนาดป้ายต่อเครื่อง + ซ่อนแผงขวา — สำหรับจอ TV ที่ OS scaling ทำสัดส่วนป้าย/ผังเพี้ยน (2026-08-25)
             ค่าจำใน localStorage ของเครื่องนั้น: ตั้งครั้งเดียวต่อจอ ทุกจอเลยดูสม่ำเสมอได้แม้ scaling ไม่เท่ากัน */}
         {!editing && (
-          <span style={{ marginLeft: (!labelLayout.hidden.length && !autoHulls.length) ? 'auto' : 0, alignSelf: 'center', display: 'inline-flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}
+          <span className="fm-keep" style={{ marginLeft: (!labelLayout.hidden.length && !autoHulls.length) ? 'auto' : 0, alignSelf: 'center', display: 'inline-flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}
             title="ขนาดป้ายบนผัง (จำค่าต่อเครื่อง) — จอ TV ที่ป้ายใหญ่/ทับกัน ให้กด A−">
             <button onClick={() => applyScale(lblScale - 0.1)} disabled={lblScale <= 0.6}
               style={{ ...miniTab(false), padding: '3px 8px', fontSize: 12, opacity: lblScale <= 0.6 ? 0.4 : 1 }}>A−</button>
@@ -2581,7 +2611,7 @@ export default function FactoryMap({ setupMode = false }) {
           <div {...orbit.handlers} ref={orbit.rootRef} data-tv-nofit={is3d ? '1' : undefined} style={{ flex: '1 1 640px', minWidth: 0, display: 'flex', justifyContent: 'center', flexDirection: 'column', alignItems: 'center',
             ...(is3d ? { touchAction: 'none', cursor: orbit.dragging ? 'grabbing' : 'grab', userSelect: 'none' } : {}),
             /* 🧊 คอลัมน์ผังตัดของล้น (พื้นกริดยื่นออกนอกรูป ห้ามไปทับแผงขวา) — overflow ที่ "ชั้นนอก" ของ preserve-3d ไม่ flatten เสา */
-            ...(is3d ? { perspective: 2600, perspectiveOrigin: '50% 20%', overflow: 'hidden', borderRadius: 12 } : {}) }}>
+            ...(is3d ? { perspective: 2600, perspectiveOrigin: '50% 20%', overflow: 'hidden', borderRadius: 12, paddingBottom: 32 } : {}) }}>   {/* paddingBottom: มุมพื้นที่เอียงเข้าหาจอยื่นพ้นกรอบผัง ~26px — ไม่เว้น = โดน overflow ตัด */}
           {is3d && (
             <div style={{ alignSelf: 'stretch', position: 'relative', zIndex: 3, background: 'var(--bg)', padding: '2px 4px', display: 'flex', flexWrap: 'wrap', gap: '2px 12px', fontSize: 11.5, color: 'var(--muted)', marginBottom: Math.round(wrapW * 0.1) }}>
               <span>🧊 มุมมอง 3D (ทดลอง) · {pillarLegend(metric)}</span>
@@ -2604,7 +2634,7 @@ export default function FactoryMap({ setupMode = false }) {
           )}
           {/* 🧊 3D: overflow ต้อง visible — overflow:hidden บังคับ flatten ลูกที่ preserve-3d (เสาจะแบนติดพื้น) */}
           <div ref={wrapRef} onClick={onMapClick} onPointerMove={onMapMove} onPointerUp={endDrag} onPointerCancel={endDrag}
-            style={{ position: 'relative', ...wrapStyle, maxHeight: 'calc(100vh - 200px)', borderRadius: 10, overflow: is3d ? 'visible' : 'hidden', border: '1px solid var(--border)', cursor: drawing ? 'crosshair' : 'default', touchAction: 'none', background: '#0a0a0f',
+            style={{ position: 'relative', ...wrapStyle, borderRadius: 10, overflow: is3d ? 'visible' : 'hidden', border: '1px solid var(--border)', cursor: drawing ? 'crosshair' : 'default', touchAction: 'none', background: '#0a0a0f',
               transition: orbit.transition, ...(is3d ? { transform: `translate(${orbit.px}px, ${orbit.py}px) scale(${orbit.zoom}) ` + map3dTransform(orbit.tilt, orbit.rot, orbitScale(orbit.rot, orbit.tilt, aspect ? 1 / aspect : null)), transformStyle: 'preserve-3d', boxShadow: 'var(--shadow-float)' } : {}) }}>
             {/* 🧊 พื้นโรงงานรอบผัง (3D) — ตารางกริดจางๆ ยื่นออกนอกรูป แล้วเฟดเข้าพื้นหลังหน้า
                 ให้ผังดู "วางอยู่บนพื้น" ไม่ใช่รูปแผ่นเดียวลอยกลางความมืด (user ทัก 15/10 "พื้นหลังโล่ง ดูเป็น 3D ปลอม") */}
