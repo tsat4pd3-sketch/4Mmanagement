@@ -5676,6 +5676,42 @@ test('🛡️ break-anchor-needs-shift-end — จุดที่กรอบ �
     + '            ยังไม่รู้เวลาเลิกกะ = อย่าเดา ให้กรองแถว shift_end ออกแล้วชูธงบอกจอ\n');
 });
 
+/* ── ☕ คิวรี `break_policies` ที่เลือกคอลัมน์เอง ต้องครบทุกแกนของกติกาพัก (2026-10-20) ──
+   🔴 เคสจริงที่ทำให้ต้องมีด่านนี้ (20/10 · หัวหน้า Apron Assy ทัก):
+   ย้าย 5ส. ไปเป็นแถว `anchor='shift_end'` + ปิดแถวนาฬิกาเก่า แต่ **10 คิวรีเลือกคอลัมน์เอง
+   โดยไม่ได้ดึง `anchor`/`offset_min`** ⇒ จอพวกนั้นอ่านแถว 5ส. ได้ `start_time = null`
+   → `String(p.start_time || '00:00')` → ตีเป็น 00:00 → หลุดนอกกรอบกะ → **5ส. 20 นาทีหายไปเงียบๆ**
+   ⇒ ฐานเวลาบวม 20 นาที ⇒ **%A/%P ต่ำกว่าจริงทุกจอที่คำนวณสดย้อนหลัง** (จอ Line 61 20/10:
+   พัก 110 แทนที่จะเป็น 130 · "OEE จริง" ต่ำกว่าความจริง) — build/lint/เทสผ่านหมด ไม่มีใครเห็น
+   บทเรียนเดียวกับรอบ `ot_scope` (14/09) ที่เคยหลุดแบบนี้มาแล้ว — คราวนี้ล็อกด้วยด่าน            */
+test('🛡️ break-policy-select-needs-all-axes — คิวรี break_policies ที่เลือกคอลัมน์เองต้องมีครบทุกแกน', () => {
+  const NEED = ['ot_scope', 'anchor', 'offset_min'];
+  const bad = [];
+  for (const full of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const rel = full.slice(ROOT.length).replace(/\\/g, '/');
+    const code = stripComments(readFileSync(full, 'utf8'));
+    let i = 0;
+    while ((i = code.indexOf("from('break_policies')", i)) >= 0) {
+      const tail = code.slice(i, i + 260);
+      i += 22;
+      const m = tail.match(/\.select\(\s*(['"`])([^'"`]*)\1/);
+      if (!m) continue;                                        // ไม่มี select = ไม่ใช่การอ่าน
+      /* `.delete().select('id')` = นับแถวตามกฎเขียน DB ข้อ 2 ไม่ใช่การอ่านนโยบาย — ข้าม */
+      if (/\.(delete|insert|update)\s*\(/.test(tail.slice(0, m.index))) continue;
+      const cols = m[2];
+      if (cols.trim() === '*') continue;      // ชุดเต็ม = ครบอยู่แล้ว
+      const miss = NEED.filter(c => !cols.includes(c));
+      if (miss.length) bad.push(`${rel} — select ขาด: ${miss.join(', ')}`);
+    }
+  }
+  assert.deepEqual(bad, [],
+    '\n\n❌ คิวรีด้านล่างอ่าน `break_policies` ไม่ครบแกน — ช่วงพักจะถูกคิดผิดแบบเงียบๆ:\n'
+    + bad.map(b => '   • ' + b).join('\n') + '\n'
+    + '   ทำไมสำคัญ: ขาด `anchor`/`offset_min` = แถวพักท้ายกะ (5ส.) ถูกตีเป็นเวลา 00:00 แล้วหลุดกรอบกะ\n'
+    + '              ⇒ ฐานเวลาบวม ⇒ %A/%P ต่ำกว่าจริง · ขาด `ot_scope` = หักพักซ้ำในกะที่ทำโอ\n'
+    + '   แก้ยังไง: เติมคอลัมน์ที่ขาดใน .select() หรือใช้ `loadBreakPolicies()` (utils/oeeMasters.js) ที่ดึงชุดเต็ม\n');
+});
+
 /* ── 🏭 ข้อยกเว้นเวลาพัก "รายไลน์" ต้องมีทางเข้าทางเดียว (2026-10-20) ─────────────────
    ที่มา: feedback หน้างาน *"บางไลน์เค้าทำ5สก่อนเลิกงานแค่ 10นาที หรือ5นาทีก็มี"*
    จุดคิดเวลาพักกระจาย 15 จุด / 21 จอ ⇒ เลือกทางให้สูตร OEE อ่าน **ทะเบียนกลาง** เอง

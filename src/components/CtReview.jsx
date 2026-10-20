@@ -66,7 +66,7 @@ export default function CtReview({ lines = [] }) {
           .eq('line_name', line).eq('status', 'closed').gte('work_date', since)
           .order('work_date', { ascending: false }).limit(400),
         supabaseDR.from('dr_products').select('mat_no, name, cycle_time_sec, process_type').eq('line_name', line),
-        supabaseDR.from('break_policies').select('shift, start_time, duration_min, process_type, ot_scope'),
+        supabaseDR.from('break_policies').select('shift, start_time, duration_min, process_type, ot_scope, anchor, offset_min'),
       ]);
       if (!alive) return;
       const bad = [sRes, pRes, bRes].find(r => r.error);

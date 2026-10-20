@@ -6573,7 +6573,7 @@ function HistoryTab({ role }) {
       supabaseDR.from('kanban_standards').select('mat_no, dr_products(cycle_time_sec)').eq('is_active', true),
       supabaseDR.from('dr_products').select('mat_no, cycle_time_sec'),
     ]).then(([k, p]) => setCtByMat(buildCtMap({ kanbanStds: k.data || [], products: p.data || [] })));
-    supabaseDR.from('break_policies').select('shift, process_type, start_time, duration_min, ot_scope').eq('is_active', true)
+    supabaseDR.from('break_policies').select('shift, process_type, start_time, duration_min, ot_scope, anchor, offset_min').eq('is_active', true)
       .then(({ data }) => setHistBreaks(data || []));
   }, []);
 
