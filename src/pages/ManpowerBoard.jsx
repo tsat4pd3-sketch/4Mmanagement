@@ -142,7 +142,7 @@ export default function ManpowerBoard() {
       fetchAllPages(() => supabase.from('workstations').select('id, line_id, line_name, station_name')),
       supabase.from('station_slot_plans').select('station_id, per_shift'),
       fetchAllPages(() => supabase.from('employee_home_positions').select('employee_id, station_id'), { orderBy: 'employee_id' }),
-      supabase.from('employee_flex_units').select('id, employee_id, org_node_id, note'),
+      supabase.from('employee_flex_units').select('id, employee_id, org_node_id, note, kind'),
     ]);
     const e = [sp.error?.message, lt.error?.message, ws.error, ssp.error?.message, hp.error, fu.error?.message].filter(Boolean);
     if (e.length) setErr(`ค่าตั้งบอร์ด: ${e.join(' · ')}`);
@@ -181,7 +181,11 @@ export default function ManpowerBoard() {
   useLiveBoard(loadToday, { tables: ['daily_production_logs', 'four_m_logs', 'line_helpers'], topic: 'manpower-board', client: supabase, tier: LIVE.BOARD });
 
   // ── ส่วนงานที่เลือกได้ (ตามผัง + scope ของ user) ──
-  const sectionNodes = useMemo(() => nodes.filter(n => n.kind === 'section')
+  /* 🏛️ รวม **แผนกขึ้นตรงฝ่าย** (parent_id ว่าง — JIG MTN · QA) เป็นบอร์ดของตัวเองด้วย (20/10)
+     เดิมกรองแค่ `kind === 'section'` ⇒ 2 หน่วยนี้ **เปิดบอร์ดไม่ได้เลย** คนในหน่วยไม่เคยขึ้นผัง
+     (หลักเดียวกับ ORPHAN_SECTION ใน sectionScope.js — หน่วยจริง มี cost center ของตัวเอง) */
+  const sectionNodes = useMemo(() => nodes
+    .filter(n => n.kind === 'section' || (n.kind === 'department' && !n.parent_id))
     .filter(n => !scopeSecs.length || inSectionScope(scopeSecs, orgKey(n)) || inSectionScope(scopeSecs, n.name))
     .sort(orgNodeCompare), [nodes, scopeSecs]);
   const secParam = params.get('sec') || '';
@@ -331,6 +335,19 @@ function FlexTag({ p }) {
 }
 
 /** ชิปคนระดับหัวหน้า — รูป + ชื่อ + ตำแหน่ง */
+/* 🎖️ ป้ายรักษาการ — **ต้องเขียนบ้านจริง + cost center ของบ้านจริงเสมอ**
+   ไม่งั้นคนอ่านผังจะเข้าใจว่าเขาย้ายมาสังกัดหน่วยนี้แล้ว (ซึ่งไม่ใช่ · ค่าแรงยังลงหน่วยเดิม)
+   Andon เหลือง = นิ่ง ไม่กระพริบ (UI-CONVENTIONS) — นี่คือข้อเท็จจริง ไม่ใช่ alarm */
+function ActingNote({ a }) {
+  const where = [a?.nodeName, a?.costCenter && `CC ${a.costCenter}`].filter(Boolean).join(' · ');
+  return (
+    <div style={{ fontSize: 11, color: 'var(--amber)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+      title={`รักษาการ — สังกัดจริงและ cost center ยังอยู่ที่ ${where || 'หน่วยเดิม'}${a?.note ? ` · ${a.note}` : ''}`}>
+      🎖️ รักษาการ{where ? ` · สังกัด ${where}` : ''}
+    </div>
+  );
+}
+
 function PersonChip({ p }) {
   return (
     <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: 6, border: '1px solid var(--border)', borderRadius: 8, background: 'var(--card)', minWidth: 0, maxWidth: '100%' }}>
@@ -341,6 +358,7 @@ function PersonChip({ p }) {
         {p.linkedLines?.length > 0 && (
           <div style={{ fontSize: 11, color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={`ช่างประจำไลน์: ${p.linkedLines.join(', ')}`}>🔧 {p.linkedLines.join(', ')}</div>
         )}
+        {p.acting && <ActingNote a={p.acting} />}
         <AttendDot p={p} />
       </div>
     </div>
@@ -856,11 +874,16 @@ function useAutoPage(count) {
 /** ชิปคนแบบบรรทัดเดียว (แถบหัวจอ TV) */
 function MiniPerson({ p }) {
   return (
-    <div title={`${p.name} · ${positionLabel(p.position) || ''}`} style={{ display: 'flex', alignItems: 'center', gap: 6, flex: '0 1 auto', minWidth: 0, maxWidth: 220 }}>
+    <div title={`${p.name} · ${positionLabel(p.position) || ''}${p.acting ? ` · 🎖️ รักษาการ (สังกัดจริง ${p.acting.nodeName || '—'}${p.acting.costCenter ? ` · CC ${p.acting.costCenter}` : ''})` : ''}`}
+      style={{ display: 'flex', alignItems: 'center', gap: 6, flex: '0 1 auto', minWidth: 0, maxWidth: 220 }}>
       <Photo p={p} size={26} />
       <div style={{ minWidth: 0, lineHeight: 1.2 }}>
         <div style={{ fontSize: 12.5, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
-        <div style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{positionLabel(p.position)}</div>
+        {/* 🎖️ จอ TV ไม่มีที่ให้เขียนยาว — แทนตำแหน่งด้วย "รักษาการ · บ้านจริง" ไปเลย
+            (ป้ายที่ตัดทิ้งเพราะพื้นที่ไม่พอ = คนอ่านผังเข้าใจว่าเขาย้ายมาสังกัดแล้ว) */}
+        <div style={{ fontSize: 11, color: p.acting ? 'var(--amber)' : 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {p.acting ? `🎖️ รักษาการ${p.acting.nodeName ? ` · ${p.acting.nodeName}` : ''}` : positionLabel(p.position)}
+        </div>
       </div>
     </div>
   );
