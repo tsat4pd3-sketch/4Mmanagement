@@ -702,7 +702,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
   ], [rows]);
   /* ⚖️ 15/10 (user: "เกลี่ยหน้าแรกเหลือ 8 การ์ด ที่เหลือไปหน้า 2") — เกินหน้าเดียวเมื่อไหร่ เกลี่ยให้ทุกหน้าใกล้เคียงกัน
      โดยลดคอลัมน์ (แผ่นกว้างขึ้น ไม่เคยเล็กลง) · `balanceGrid` pure มีเทส */
-  const tv = useTvShell();   // 📺 จอประชุม = 2×2 ต่อหน้า (TV_SHEET_GRID) · จอคอมเหมือนเดิม
+  const tv = useTvShell();   // 📺 จอประชุม = 3×2 ต่อหน้า (TV_SHEET_GRID) · จอคอมเหมือนเดิม
   const grid = balanceGrid(useSheetGrid(wrapRef, 10, tv ? TV_SHEET_GRID : undefined), sheetItems.length);
   const { cols, cw, ch, fit, k } = grid;
 
