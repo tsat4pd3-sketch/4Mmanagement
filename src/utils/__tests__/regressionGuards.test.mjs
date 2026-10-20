@@ -4767,6 +4767,22 @@ test('🛡️ manpower-flex-reference-only — จอบอร์ดกำลั
   const page = stripComments(readFileSync(join(ROOT, 'src/pages/ManpowerBoard.jsx'), 'utf8'));
   assert.ok(/buildManpowerBoard\(\{[^}]*flexUnits/.test(page),
     '\n\n❌ หน้าบอร์ดไม่ส่ง flexUnits เข้า buildManpowerBoard — ทะเบียนมีข้อมูลแต่จอไม่โชว์ (ตายเงียบ)\n');
+
+  /* 🎖️ รักษาการ (20/10) — ทะเบียนเดียวกับคนวิ่งข้ามแผนก แยกด้วยคอลัมน์ `kind`
+     ลืม select('kind') = แถว acting ตกเป็น flex (ค่า default ของ flexKind)
+     ⇒ ผจก.รักษาการไปโผล่เป็นการ์ด 🏃 ในแผนกแทนที่จะขึ้นหัวผัง — ผิดแบบเงียบ */
+  assert.ok(/from\(\s*['"]employee_flex_units['"]\s*\)[\s\S]{0,160}?kind/.test(page),
+    '\n\n❌ หน้าบอร์ดไม่ได้ select คอลัมน์ `kind` ของ employee_flex_units\n'
+    + '   ⇒ แถวรักษาการถูกตีเป็น "คนวิ่งข้ามแผนก" (ค่า default) = ขึ้นผิดแถวเงียบๆ\n');
+  assert.ok(/acting/.test(util),
+    '\n\n❌ buildManpowerBoard ไม่รู้จัก acting แล้ว — ป้ายรักษาการหายจากหัวผัง\n');
+  /* รักษาการ/คนวิ่งข้ามแผนก **ห้ามเข้าตัวนับกำลังคน** — ตัวนับต้องมาจากแถวพนักงาน (cols[].ops) เท่านั้น */
+  assert.ok(/opsTotal:\s*allOps\.length/.test(util),
+    '\n\n❌ opsTotal ไม่ได้นับจาก allOps (cols[].ops) แล้ว — flex/acting อาจถูกนับเป็นกำลังคน\n');
+  for (const k of ['flex', 'acting']) {
+    assert.ok(!new RegExp(`allOps\\s*=\\s*[^;]*${k}`).test(util),
+      `\n\n❌ allOps ถูกผสม ${k} เข้าไป — "ไปช่วย/รักษาการ ≠ นับเป็นกำลังคน" (กฎ CLAUDE.md)\n`);
+  }
 });
 
 /* ── 👯 คู่ RH/LH ต้องอยู่ไลน์เดียวกัน (14/10 · เคสจริง GOR 297) ──
