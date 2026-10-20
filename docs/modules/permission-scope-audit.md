@@ -528,11 +528,57 @@ migration `supabase/migrations/20261020_rls_scope_net_fn_main.sql` · **apply �
 `qa_ncr`/`qa_capa` · `meeting_action_items` · `bbs_sheets`/`safety_events` · `pe_doc_sets`/`npi_parts`
 · **ห้ามแก้ทีเดียว 50 ตาราง** (blanket = ผิดกฎ CLAUDE.md) · ทุกกลุ่มต้องวัด "คู่คนเขียน × หน่วย" ก่อนลง
 
+---
+
+## 12. 🧑‍💼 รอบ 8 (20/10) — bucket `dept_admin` กว้างกว่าชื่อ (§7.3)
+
+### 🔴 ตัวเลขที่เอกสารเดิมเข้าใจผิด: bucket นี้ **มีคนถืออยู่จริง 13 คน**
+
+`role = 'dept_admin'` มี **0 บัญชี** ก็จริง — แต่ bucket ทำงานผ่าน **ธง `profiles.is_dept_admin`**
+ซึ่งซ้อนทับ role เดิม (`hasPermission()` บรรทัด bucket ใน `src/utils/permissions.js`)
+⇒ ของจริง: **13 คนถือธงนี้** และได้คีย์ action เพิ่มจาก bucket ทับ role ตัวเอง
+
+| role ของผู้ถือธง | คน | คีย์ที่ได้เพิ่ม/คน |
+|---|---|---|
+| `mtn` (ช่าง) | 5 | **+76** |
+| `supervisor` | 5 | +29 (รวม `mtn_repair:manage_master`) |
+| `document_control` | 1 | **+90** |
+| `planner_store` | 1 | **+83** |
+| `manager` | 1 | +2 |
+
+ของที่ได้เพิ่มมีทั้ง `four_m:approve_qa` · `qa:manage` · `pe:approve/edit` · `products:delete` ·
+`scrap:delete` · `shift_schedule:delete` — **ข้ามสายงานทั้งหมด**
+
+### 📊 วัดก่อนตัด — ใช้จริงอะไรบ้าง (audit_log Main 15,154 แถว + `*_by_uid` ฝั่ง DR)
+
+- **ใช้จริง (คงไว้):** `kpi:manage` 474 ครั้ง (มีทั้งช่างและ document_control ทำ KPI) ·
+  `employees:edit` 422 · `lpa:manage`/`lpa:delete` 209 · `org:manage_own_unit` 105 ·
+  `skills:edit`/`skills:delete` 117 · `products:edit` 120 · `machines:edit` 44 · `mtn_orders` 13
+- **ไม่เคยใช้เลย (ตัด):** `four_m:approve_qa` (0 — ไม่มีใครแตะช่อง QA ของใบ 4M เลย · ที่แก้ 212 ครั้งคือ
+  `line_name` ล้วน) · `qa:manage` (0 การเขียน `qa_*`) · `pe:approve`/`pe:edit` (0) · `doc_forms:manage` (0) ·
+  `scrap:manage`/`scrap:delete` (0) · `improvements:delete` (0) · `ojt:delete` (0) · `shift_schedule:delete` (0)
+
+### ✂️ ที่ตัด 14 คีย์ (ไฟล์ `supabase/migrations/20261020_dept_admin_bucket_trim_main.sql`)
+
+`four_m:approve_qa` · `four_m:approve_sv` · `qa:manage` · `pe:approve` · `pe:edit` ·
+`mtn_repair:manage_master` · `doc_forms:manage` · `scrap:manage` · `scrap:delete` ·
+`improvements:delete` · `ojt:delete` · `shift_schedule:delete` · `machines:delete` · `products:delete`
+
+🔴 **ไม่ตัดของที่ใช้จริงแม้แต่ตัวเดียว** — เกณฑ์คือ "ข้ามสายงาน **และ** วัดแล้วว่าไม่มีใครในกลุ่มนี้เคยใช้"
+⚠️ ฝั่ง DR ไม่มี audit log ⇒ การ "ลบ" ไม่ทิ้งร่องรอย · `products:delete`/`machines:delete` ตัดตามเกณฑ์
+ข้ามสายงาน — ถ้าหน้างานเคยใช้จริงเปิดคืนได้ทันที (บล็อก rollback อยู่ในไฟล์)
+
+### 🧠 บทเรียน
+
+**"role นี้ไม่มีบัญชี" ไม่ได้แปลว่าไม่มีใครได้สิทธิ์** — ระบบนี้มี 2 ทางที่สิทธิ์ไหลถึงคน:
+`profiles.role` และ **ธง bucket (`is_dept_admin`)** · ตรวจสิทธิ์ต้องนับทั้ง 2 ทางเสมอ
+(เอกสาร audit รอบก่อนเขียนว่า "dept_admin 0 บัญชี = latent" ซึ่งผิด)
+
 ### ที่ยังเหลือ (นอกข้อ 5)
 
 1. ชั้น DB (ข้อ 7.1) — RLS ฝั่ง Main 68 policy ยังไม่มี predicate ของหน่วยงาน · ฝั่ง DR ไม่มีด่านเลย (anon)
 2. ฝั่ง DB ยังไม่รู้จัก `resp_cost_centers` ⇒ คนยิง API ตรงยังข้ามด่านจอได้ทุกจอ
-3. `manage_master` ให้ทั้ง role `mtn` · `dept_admin` ถือ 101 คีย์ (ตรวจค้างจาก audit 15/10)
+3. 🟡 `dept_admin` bucket — **ตัดคีย์ข้ามสายงาน 14 ตัวแล้ว (SQL พร้อม · รอรัน)** ดู §12
 
 ---
 
