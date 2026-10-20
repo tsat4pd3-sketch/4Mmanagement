@@ -626,6 +626,8 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 
 ## Edge Functions
 
+- 🔔 **แจ้งเตือนใหม่ทุกตัว = ในแอป (`notification_rules` → `notifications`) ห้ามเพิ่มทาง Telegram** (คำสั่ง user 24/09 · ย้ำ 20/10 "ยังไม่ยกเลิกแต่โฟกัสในแอพ")
+  · ผู้รับต้องแคบ (role กว้าง = ไม่มีใครอ่าน · 📄 `docs/modules/notify-inapp-audit.md`) · ตัวส่งนอก edge อ่านกฎเดียวกัน (`scripts/acct-import/run_queue.mjs`)
 - Endpoint: `POST /functions/v1/send-notification`
 > 📄 รายละเอียดเต็ม → `docs/modules/edge-functions.md`
 
