@@ -486,18 +486,44 @@ migration `supabase/migrations/20261020_rls_scope_net_fn_main.sql` · **apply �
   UPDATE จริงๆ ไม่ขาด (ทางหลักเป็น RPC `upsert_push_subscription` · fallback เป็น `ON CONFLICT DO NOTHING`
   ซึ่งใช้แค่ INSERT แล้วตรวจกลับ) · 6 ตารางที่ RLS เปิดแต่ไม่มี policy เลย = ของ edge function ล้วน (service_role)
 
-### 🟡 ส่วนที่ 2 (ผูก policy) — user เคาะ "นำร่อง LPA" แล้ว (20/10) · **SQL พร้อม รอรันมือ**
+### ✅ ส่วนที่ 2 (ผูก policy) — **นำร่อง LPA ลงแล้ว 20/10** (user รันเอง · MCP timeout)
 
-ไฟล์: `supabase/migrations/20261020_rls_scope_net_lpa_main.sql` — ผูก `app_can_write_line()` เข้า policy
+ไฟล์: `supabase/migrations/20261020_rls_scope_net_lpa_main.sql` — `app_can_write_line()` ผูกเข้า policy
 `*_all` ของ 4 ตาราง (`lpa_plans` · `lpa_plan_days` · `lpa_audits` · `lpa_audit_answers`)
 ตารางลูกไต่ขึ้นหาไลน์ของใบแม่ด้วย subquery · **policy อ่าน (`*_read`) ไม่แตะ** (เห็นทั้งโรงงานเหมือนเดิม)
+· MCP ลง policy DDL ไม่ได้ (timeout ทุกท่า · `pg_locks` ว่าง = ไม่ใช่ปัญหาล็อก) ⇒ user รันใน SQL Editor
 
-🔴 **ยังไม่ได้ apply — MCP timeout ทุกท่า** (`apply_migration` · `execute_sql` · DO block + `lock_timeout`)
-· ตรวจแล้วว่า **DB ไม่ถูกแตะเลย** (policy เดิมครบ 8 ตัว ไม่มีตัวไหนมี `app_can_write_line`)
-· **ไม่ใช่ปัญหา lock** — `pg_locks` ว่าง ไม่มีใครถือล็อกตาราง LPA ⇒ เป็นที่ชั้น MCP เอง
-  (อาการเดียวกับ 19/10 ที่ลบบัญชีทดสอบไม่ได้ · SELECT ผ่านปกติ)
-⇒ ส่ง SQL เต็มให้ user รันใน SQL Editor ของ project **"MAIN"** (`ewhdfqwfwofivojtsizn`) + คิวรีเช็คผล
-⇒ ถ้าผ่านค่อยขยายทีละกลุ่ม · **ห้ามแก้ทีเดียว 50 ตาราง** (blanket = ผิดกฎ CLAUDE.md)
+### 🔴🔴 บทเรียนใหญ่ของรอบนี้ — "ด่านที่ดูเหมือนมีแต่ไม่ทำงาน"
+
+ตัวตัดสินรุ่นแรกเขียนว่า `resp_cost_centers is not null and array_length(resp_cost_centers,1) > 0`
+คอลัมน์นั้นเป็น **NOT NULL default `'{}'`** ⇒ `array_length('{}',1)` = **NULL** ⇒ `true and NULL` = NULL
+⇒ OR ทั้งชุดเป็น NULL ⇒ `coalesce(..., true)` ⇒ **ฟังก์ชันคืน true ให้ทุกคน ทุกไลน์**
+
+- `pg_policies` เห็นชื่อฟังก์ชันอยู่ในนิพจน์ครบทั้ง 4 policy = **ดูเหมือนปิดแล้ว** แต่ด่านไม่เคยบล็อกใครเลย
+- 🔴 **จับได้เพราะทดสอบด้วยสิทธิ์ผู้ใช้จริง ไม่ใช่เพราะอ่าน `pg_policies`** —
+  สวม `request.jwt.claims` แล้วเรียกฟังก์ชันเทียบ 4 เคส (ไลน์ตัวเอง / ไลน์ต่างส่วนงาน / ไม่รู้ไลน์ / ไลน์นอกทะเบียน)
+  ⚠️ ต้องบังคับลำดับด้วย `lateral` + `case when c.t is not null` ไม่งั้น planner เรียกฟังก์ชันก่อน `set_config`
+  แล้วได้ผลลวง (`auth.uid()` ยัง null = ผ่านหมด) — **เคยหลงผลลวงนี้ 1 รอบในการทดสอบ**
+- แก้แล้วด้วย `coalesce(array_length(x,1),0) > 0` (migration `rls_scope_net_fn_fix_empty_cc_array`)
+- ด่าน build ใหม่: `🛡️ migration SQL: ห้ามเช็คอาร์เรย์ว่างด้วย is-not-null + array_length` —
+  จับเฉพาะไฟล์ที่นิพจน์เป็นด่านจริง (`create policy` / `returns boolean` / `check (`) ·
+  ใน `where` ธรรมดา NULL = กรองแถวออก (ฝั่งปลอดภัย) จึงไม่นับ (วัดแล้ว: ถ้าไม่แยก จับไฟล์เก่าที่ถูกต้อง 2 ไฟล์)
+
+### 📊 ผลทดสอบหลังแก้ (ของจริงบนฐาน MAIN)
+
+| เคส | ผล |
+|---|---|
+| supervisor PD3 → ไลน์ของ PD3 | ✅ ผ่าน |
+| supervisor PD3 → ไลน์ของ PD2 | 🔒 **บล็อก** |
+| คำตอบรายข้อ (ตารางลูก) ของใบ PD3 / ใบส่วนงานอื่น | ✅ ผ่าน / 🔒 **บล็อก** |
+| ไม่รู้ไลน์ (null) · ไลน์นอกทะเบียน | ✅ ผ่าน (fail-open) |
+| ถือ `scope:all_units` · ตั้งแกน CC · ไม่ได้ตั้งส่วนงาน | ✅ ผ่านทุกไลน์ |
+| **คู่ (คนเขียน × ไลน์) ที่เคยเขียนจริงทั้งหมด 57 คู่** (จาก 843 ใบ) | ✅ **ผ่านหมด · 0 ถูกบล็อก** |
+
+### ⏭️ กลุ่มถัดไป (ยังไม่ทำ — ทำทีละกลุ่มแล้ววัดแบบเดียวกัน)
+
+`qa_ncr`/`qa_capa` · `meeting_action_items` · `bbs_sheets`/`safety_events` · `pe_doc_sets`/`npi_parts`
+· **ห้ามแก้ทีเดียว 50 ตาราง** (blanket = ผิดกฎ CLAUDE.md) · ทุกกลุ่มต้องวัด "คู่คนเขียน × หน่วย" ก่อนลง
 
 ### ที่ยังเหลือ (นอกข้อ 5)
 

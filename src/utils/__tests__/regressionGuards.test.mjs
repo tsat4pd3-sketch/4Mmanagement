@@ -2989,6 +2989,33 @@ test('🛡️ /org-setup: ทุกชั้นที่มีปุ่มเพ
     '\n\n❌ handleSave ไม่ได้ใช้ orgSaveBlockReason ตัดสินสิทธิ์ — ดูเหตุผลด้านบน\n');
 });
 
+/* ── 🔴 SQL: `array_length(<NOT NULL default '{}'>, 1)` = NULL ⇒ ด่านผ่านทุกคนเงียบๆ (20/10/2026) ──
+   เกิดจริงกับ `app_can_write_line()` (ตาข่ายขอบเขตชั้น DB): เขียน
+     `resp_cost_centers is not null and array_length(resp_cost_centers,1) > 0`
+   คอลัมน์เป็น NOT NULL default '{}' ⇒ array_length คืน NULL ⇒ `true and NULL` = NULL
+   ⇒ OR ทั้งชุด NULL ⇒ `coalesce(..., true)` ⇒ **คืน true ให้ทุกคน ทุกไลน์** ทั้งที่ policy ผูกครบ
+   (ตรวจ pg_policies เห็นชื่อฟังก์ชันอยู่ในนิพจน์ = ดูเหมือนมีด่าน — แต่ด่านไม่เคยบล็อกใครเลย)
+   ⇒ ในไฟล์ migration ให้ใช้ `coalesce(array_length(x,1),0) > 0` เสมอ */
+test('🛡️ migration SQL: ห้ามเช็คอาร์เรย์ว่างด้วย is-not-null + array_length (ได้ NULL = ด่านไม่ทำงาน)', () => {
+  const dir = join(ROOT, 'supabase/migrations');
+  const bad = [];
+  for (const f of readdirSync(dir).filter(n => n.endsWith('.sql'))) {
+    const sql = readFileSync(join(dir, f), 'utf8');
+    /* 🔴 ดูเฉพาะไฟล์ที่นิพจน์นั้น "เป็นด่าน" (policy / ฟังก์ชันคืน boolean / CHECK)
+       ใน `where` ของ UPDATE/SELECT ธรรมดา NULL = กรองแถวออก (ฝั่งปลอดภัย) ไม่ใช่ปล่อยผ่าน
+       — วัดแล้ว: ถ้าไม่แยก จะจับไฟล์เก่า 2 ไฟล์ที่ถูกต้องอยู่แล้ว = ด่านที่คนอยากปิด */
+    if (!/create\s+policy|returns\s+boolean|\bcheck\s*\(/i.test(sql)) continue;
+    sql.split('\n').forEach((ln, i) => {
+      if (/^\s*--/.test(ln)) return;                               // บรรทัดคอมเมนต์ (อธิบายบั๊กได้)
+      if (/is\s+not\s+null\s+and\s+array_length\s*\(/i.test(ln)) bad.push(`${f}:${i + 1}`);
+    });
+  }
+  assert.deepEqual(bad, [], `\n\n❌ เช็คอาร์เรย์ว่างแบบที่คืน NULL: ${bad.join(' · ')}\n`
+    + "   `array_length('{}',1)` = NULL ⇒ `true and NULL` = NULL ⇒ OR ทั้งชุดเป็น NULL\n"
+    + '   ถ้านิพจน์นั้นเป็นด่าน (policy/trigger) จะ "ผ่านทุกคนเงียบๆ" ทั้งที่ดูเหมือนมีด่าน\n'
+    + "   แก้: `coalesce(array_length(<col>, 1), 0) > 0`\n");
+});
+
 /* ── 🔴 /lpa: ใบตรวจ + แผนเดือน/ไตรมาส ไม่เคยมีด่านชั้น 3 (QC audit §7 · 20/10/2026) ──────────
    หน้านี้มี `qWrite/qGuard` อยู่แล้ว แต่คุมแค่ **ทะเบียนคำถาม** (`lpa_questions`)
    ส่วน `lpa_audits`/`lpa_plans` ซึ่งเป็นเอกสาร ISO ของไลน์ เขียนได้โดยไม่ถามขอบเขตเลย
@@ -5617,4 +5644,41 @@ test('🛡️ cc-scope-trigger-columns — คอลัมน์ให้สิ�
     + '   ทำไม: คอลัมน์พวกนี้ = "ขอบเขตที่บัญชีนี้แก้ได้" — ปล่อยให้เจ้าของแถวแก้เอง = ยกสิทธิ์ให้ตัวเอง\n'
     + '   แก้: migration ใหม่ `create or replace function public.protect_profile_role()` ที่คัดลอกของเดิม\n'
     + '        มาครบ แล้วเติมบล็อก `if new.<col> is distinct from old.<col> then raise exception …`\n');
+});
+/* ── 📥 ลบใบที่ "ยกยอดมาจากกะก่อน" ต้องคืนยอดค้างให้ต้นทาง (2026-10-20) ───────────
+   ตอนกดรับยอด ระบบมาร์คใบต้นทางเป็น `imported` (= ถูกรับไปแล้ว) ⇒ ลบใบปลายทางทิ้ง
+   = ต้นทางค้าง `imported` ตลอดกาล · แบนเนอร์ "รับยอดค้าง" ไม่กลับมา · **งานหายถาวร
+   ไม่มีทางกู้จากจอ** (เคสจริง Assy GOR 20/10: ยก 2 ชิ้นจากกะดึก แล้วถูกลบตอนไล่ลบใบขยะ
+   → กะเช้ารายงาน "ไม่ขึ้นให้รับ" ทั้งที่ระบบส่งต่อทำงานถูกทุกขั้น · กู้คืนจาก audit_log)
+
+   ⌨️ และต้นเหตุของ "ใบขยะ" รอบนั้น = เครื่องสแกนยิงตอนแป้นค้างภาษาไทย (6 ใบใน 10 วินาที)
+   ⇒ ช่องรับเลขใบต้องกรองอักษรไทยเสมอ (`utils/kbLayout.js`) */
+test('🛡️ carry-delete-restores-source — ลบใบยกยอดต้องคืนต้นทาง + ช่องสแกนต้องกันแป้นไทย', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'));
+  const bad = [];
+
+  const del = code.match(/const handleDeleteProdOrder = async \([\s\S]*?\n  \};/);
+  if (!del) bad.push('หา handleDeleteProdOrder ไม่เจอ (เปลี่ยนชื่อ/ย้ายแล้ว? อัพเดทด่านนี้ด้วย)');
+  else {
+    if (!/carry_over_from_session_id/.test(del[0]))
+      bad.push("handleDeleteProdOrder ไม่ได้ดู carry_over_from_session_id — ไม่รู้ว่าใบไหนยกยอดมา");
+    if (!/status:\s*'carry_over'/.test(del[0]))
+      bad.push("handleDeleteProdOrder ไม่ได้คืนต้นทางเป็น 'carry_over' — ยอดค้างหายถาวร");
+    if (!/checkWriteRows/.test(del[0]))
+      bad.push('handleDeleteProdOrder คืนต้นทางโดยไม่นับแถว — RLS ปฏิเสธ = 0 แถวเงียบ (กฎเหล็กข้อ 2)');
+    // ต้องส่งทั้ง object ไม่ใช่แค่ id ไม่งั้นไม่รู้ว่าใบนี้ยกยอดมา/มียอดแล้ว
+    if (/handleDeleteProdOrder\(o\.id\)/.test(code))
+      bad.push('ยังมีจุดเรียก handleDeleteProdOrder(o.id) — ต้องส่งทั้งใบ เพื่อให้รู้ว่ายกยอดมา/มียอดแล้ว');
+  }
+
+  if (!/fixThaiLayout/.test(code) || !/hasThai/.test(code))
+    bad.push('ช่องสแกนเลขใบไม่ได้ผ่าน utils/kbLayout.js — แป้นค้างภาษาไทยเปิดใบขยะได้อีก');
+
+  assert.deepEqual(bad, [],
+    '\n\n❌ ช่องโหว่ "ยอดค้างหายเงียบ" กลับมาแล้ว:\n'
+    + bad.map(b => '   • ' + b).join('\n') + '\n'
+    + '   ทำไมสำคัญ: ใบต้นทางถูกมาร์ค imported ตอนกะถัดไปกดรับ — ถ้าใบปลายทางหายไป\n'
+    + '   ยอดค้างจะไม่โผล่ให้รับอีกเลย และไม่มีร่องรอยบนจอว่าหายไปไหน\n'
+    + '   แก้ยังไง: ลบใบที่มี carry_over_from_session_id → update ต้นทาง (session+prod_no เดิม)\n'
+    + '            จาก imported กลับเป็น carry_over ผ่าน checkWriteRows แล้วรีโหลดแบนเนอร์\n');
 });

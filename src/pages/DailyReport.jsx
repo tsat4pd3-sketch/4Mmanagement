@@ -72,6 +72,8 @@ import { cachedMaster, mrows } from '../utils/masterCache';
 import { loadBreakPolicies } from '../utils/oeeMasters';
 import { invalidateTable } from '../utils/masterInvalidate';
 import { checkWrite, checkWriteRows } from '../utils/dbWrite';
+/* ⌨️ เครื่องสแกนส่งคีย์เหมือนคนพิมพ์ ⇒ แป้นค้างภาษาไทย = เปิดใบขยะได้จริง (เคสจริง 20/10) */
+import { fixThaiLayout, hasThai, thaiLayoutNote } from '../utils/kbLayout';
 import { SESSION_VOID, SESSION_STATUSES_LIVE, SESSION_STATUSES_REAL, isVoidSession, voidBadge, voidBlockReason, cleanVoidReason } from '../utils/sessionStatus';
 import MachineSelect from '../components/MachineSelect';
 import { acceptImageFile } from '../utils/acceptImageFile';
@@ -1674,6 +1676,12 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     const matNo  = openProdForm.mat_no.trim();
     if (!prodNo) { toast.error('สแกนหรือกรอก PROD.NO ก่อน'); return; }
     if (!matNo)  { toast.error('สแกนหรือกรอก MAT.NO ก่อน');  return; }
+    /* 🔴 ด่านท้าย: เลขใบที่ยังมีอักษรไทยปน = แป้นค้างแล้วแปลงกลับไม่ได้ **ห้ามเปิดใบ**
+       (เคสจริง 20/10: เปิดใบขยะ 6 ใบใน 10 วินาที แล้วตอนไล่ลบ ลบใบยกยอดตัวจริงติดไปด้วย) */
+    if (hasThai(prodNo) || hasThai(matNo)) {
+      toast.error('⌨️ แป้นพิมพ์ค้างอยู่ภาษาไทย — เลขใบที่ยิงมาอ่านไม่ออก · สลับแป้นเป็นอังกฤษแล้วยิงใหม่');
+      return;
+    }
     if (!openProdForm.qty || parseInt(openProdForm.qty) < 1) { toast.error('ระบุจำนวนชิ้น'); return; }
     if (openProdForm.is_backfill && !openProdForm.backfill_time) { toast.error('ระบุเวลาที่เริ่มผลิตจริงก่อน (บังคับสำหรับยิงย้อนหลัง)'); return; }
     // กันเวลา backfill หลุดกรอบกะ (เช่น กะเช้าเผลอกรอก 23:0x → การ์ดเด้งไปกะกลางคืนใน Heijunka)
@@ -2166,10 +2174,39 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     loadDefectLogs(selSession.id);
   };
 
-  const handleDeleteProdOrder = async (id) => {
-    if (!window.confirm('ลบ Prod Order นี้?')) return;
+  /* 🔴 ลบใบผลิต — 2 กับดักที่ทำงานหายถาวร (เคสจริง Assy GOR 20/10 · audit log)
+     ① **ใบที่ยกยอดมาจากกะก่อน**: ตอนกดรับยอด ระบบมาร์คใบต้นทางเป็น `imported` (= ถูกรับไปแล้ว)
+        ⇒ ลบใบปลายทางทิ้ง = ต้นทางค้าง `imported` ตลอดกาล · แบนเนอร์ "รับยอดค้าง" ไม่กลับมา
+        ⇒ ยอดค้างหายจากระบบ **ไม่มีทางกู้จากจอเลย** (เคสจริง: ยก 2 ชิ้นจากกะดึก แล้วถูกลบ
+           ตอนไล่ลบใบขยะ → กะเช้ารายงานว่า "ไม่ขึ้นให้รับ" ทั้งที่ระบบส่งต่อทำงานถูก)
+        ⇒ ลบแล้ว **ต้องคืนต้นทางเป็น `carry_over`** ให้ยอดค้างโผล่ให้รับใหม่ได้
+     ② **ใบที่ลงยอดไปแล้ว** (`qty_actual > 0`): ลบ = ยอดผลิตที่ทำจริงหายจากกะ ⇒ ต้องยืนยันซ้ำ
+        โดยบอกตัวเลขให้เห็น ไม่ใช่ถาม "ลบ?" ลอยๆ แบบเดิม */
+  const handleDeleteProdOrder = async (order) => {
+    // รับได้ทั้ง object และ id (กันจุดเรียกเก่าที่ส่ง id มา) — ไม่รู้จักใบ = ถามแบบเดิม
+    const o = typeof order === 'object' && order ? order : prodOrders.find(x => x.id === order);
+    const id = o?.id ?? order;
+    if (!id) return;
+    const made = Number(o?.qty_actual) || 0;
+    const carriedFrom = o?.carry_over_from_session_id || null;
+    const warn = [
+      `ลบ Prod Order ${o?.prod_no || ''} ?`,
+      made > 0 ? `\n⚠️ ใบนี้ลงยอดไปแล้ว ${made} ชิ้น — ลบแล้วยอดนี้จะหายจากกะ` : '',
+      carriedFrom ? '\n📥 ใบนี้ยกยอดมาจากกะก่อน — ลบแล้วระบบจะคืนยอดค้างให้กะก่อน เพื่อให้รับใหม่ได้' : '',
+    ].filter(Boolean).join('');
+    if (!window.confirm(warn)) return;
     const { error } = await supabaseDR.from('prod_orders').delete().eq('id', id);
     if (error) { toast.error(error.message); return; }
+    /* คืนต้นทาง — ทำ **หลัง** ลบสำเร็จเท่านั้น (คืนก่อนแล้วลบล้ม = ยอดค้างโผล่ซ้อนกับใบที่ยังอยู่)
+       ⚠️ เจาะจง session ต้นทาง + prod_no เดียวกัน ไม่ใช่กวาดทุกกะ — กะอื่นอาจมีใบชื่อเดียวกันที่จบไปแล้ว
+       0 แถว = ต้นทางถูกปิด/ลบไปแล้ว ⇒ บอกตรงๆ ว่ายอดค้างไม่กลับมา ห้ามเงียบ */
+    if (carriedFrom && o?.prod_no) {
+      checkWriteRows(await supabaseDR.from('prod_orders').update({ status: 'carry_over' })
+        .eq('session_id', carriedFrom).eq('prod_no', o.prod_no).eq('status', 'imported')
+        .select('id'), 'คืนยอดค้างให้กะก่อน',
+        { zeroMsg: `ลบใบแล้ว แต่คืนยอดค้างให้กะก่อนไม่ได้ (0 แถว — ใบต้นทางอาจถูกปิด/ลบไปแล้ว) · ยอดค้าง ${o.prod_no} จะไม่โผล่ให้รับ ต้องเปิดใบเองที่กะนี้` });
+      loadCarryOrders(selSession.id, selSession.line_name);   // แบนเนอร์ยอดค้างต้องกลับมาทันที
+    }
     loadProdOrders(selSession.id, selSession.line_name);
   };
 
@@ -3718,7 +3755,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                           ปกติ leader แก้ไม่ได้แล้วเพราะตัดสินใจไปแล้วตอนปิดกะ แต่ถ้าตกค้างผิดปกติ (เช่นกะเก่าปิดไม่สำเร็จ)
                           SV/Manager/Admin ต้องลบแก้ไขได้เพื่อเคลียร์ข้อมูลค้าง ไม่งั้นจะไม่มีทางแก้เลย */}
                       {!confirmed && (canManage || (canEditRecords && !carriedOut)) && (
-                        <button className="tbtn" onClick={() => handleDeleteProdOrder(o.id)}
+                        <button className="tbtn" onClick={() => handleDeleteProdOrder(o)}
                           style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, padding: '0 2px' }}>✕</button>
                       )}
                       {/* ถอยใบที่สแกนปิดเกิน/ปิดผิดใบ — เฉพาะกะที่ยังเปิดอยู่ (หลังปิดกะยอดถูกสรุปแล้ว ถอยไม่ได้) */}
@@ -5398,7 +5435,14 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 <Field label="PROD.NO (สแกน barcode ตัวล่าง Sender/ID บน Tag Card) *">
                   <input ref={openProdInputRef} autoFocus value={openProdForm.prod_no}
-                    onChange={e => setOpenProdForm(f => ({ ...f, prod_no: e.target.value }))}
+                    /* ⌨️ แป้นค้างไทย → แปลงกลับให้ทันทีตอนยิง + บอกให้รู้ตัว (ห้ามเงียบ — ไม่งั้นยิงผิดทั้งกะ)
+                       แกะไม่ออก = ปล่อยค่าเดิมไว้ ให้ด่านตอนกดเปิดใบปฏิเสธพร้อมเหตุผล */
+                    onChange={e => {
+                      const raw = e.target.value;
+                      const { value, fixed } = fixThaiLayout(raw);
+                      if (fixed) toast.info(thaiLayoutNote(raw.trim(), value));
+                      setOpenProdForm(f => ({ ...f, prod_no: fixed ? value : raw }));
+                    }}
                     onKeyDown={e => {
                       if (e.key !== 'Enter') return;
                       const pn = openProdForm.prod_no.trim();

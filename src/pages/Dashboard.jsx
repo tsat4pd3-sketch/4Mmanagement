@@ -1488,7 +1488,7 @@ export default function Dashboard({ view = 'timeline' }) {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
               <div style={{ fontSize: T(14, 22), fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
                 📊 Heijunka Board — ไทม์ไลน์การผลิต
-                {isHistorical && <span style={{ marginLeft: 8, fontSize: 12, padding: '2px 8px', borderRadius: 10, background: 'rgba(168,85,247,0.15)', color: '#a855f7', letterSpacing: 0 }}>📅 ย้อนหลัง {boardDate}</span>}
+                {isHistorical && <span style={{ marginLeft: 8, fontSize: T(12, 17), padding: '2px 8px', borderRadius: 10, background: 'rgba(168,85,247,0.15)', color: '#a855f7', letterSpacing: 0 }}>📅 ย้อนหลัง {boardDate}</span>}
                 {isFutureDay && <span style={{ marginLeft: 8, fontSize: 12, padding: '2px 8px', borderRadius: 10, background: 'rgba(148,163,184,0.15)', color: 'var(--muted)', letterSpacing: 0 }}>📅 ล่วงหน้า {boardDate}</span>}
               </div>
               <div className="tv-hide" style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
@@ -1793,7 +1793,7 @@ export default function Dashboard({ view = 'timeline' }) {
                                   {/* แคบเกินกว่าจะพิมพ์ชื่อ = ไม่พิมพ์ (เดิมหมุนตั้ง 90° แล้วโดนตัดกลางคำ อ่านไม่ออก
                                       + ไปทับใบงานที่คร่อมช่วงพัก) — แถบลายเฉียงยังบอกว่าเป็นช่วงพัก ชี้เมาส์เห็นชื่อ */}
                                   {tlW > 0 && widthPct * tlW / 100 >= 52 && (
-                                    <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', whiteSpace: 'nowrap', marginBottom: 1 }}>
+                                    <span style={{ fontSize: T(11, 17), fontWeight: 700, color: 'var(--muted)', whiteSpace: 'nowrap', marginBottom: 1 }}>
                                       🚫{p.name_th || p.name_en}
                                     </span>
                                   )}
@@ -2084,7 +2084,7 @@ export default function Dashboard({ view = 'timeline' }) {
 
                     const plannerStrip = plannerChips.length > 0 && (
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '6px 10px', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)' }}>
-                        <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--muted)', alignSelf: 'center' }}>🧠 PLANNER</span>
+                        <span style={{ fontSize: T(11, 17), fontWeight: 800, color: 'var(--muted)', alignSelf: 'center' }}>🧠 PLANNER</span>
                         {plannerChips.map((c, i) => (
                           <span key={i} style={{ fontSize: 12, fontWeight: 700, padding: '3px 9px', borderRadius: 10, background: 'var(--card)', color: c.color, border: `1px solid ${c.color}` }}>{/* สีจาก token ธีม — เดิม hex สว่าง+พื้นโปร่ง ธีมสว่างมองไม่เห็น (02/10) */}
                             {c.text}
@@ -2102,7 +2102,7 @@ export default function Dashboard({ view = 'timeline' }) {
                         {/* พาร์ทละ 1 บล็อก — ป้าย/รูปใหญ่อันเดียวครอบ 2 แถบเวลา (☀️ 08–20 บน / 🌙 20–08 ล่าง)
                             หัวชั่วโมงแสดงเวลาคู่บน-ล่างในคอลัมน์เดียวกัน (โครงเดียวกับบอร์ดหน้าจัดการไลน์) */}
                         <div style={{ display: 'flex', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)', position: 'relative' }}>
-                          <div style={{ width: LEFT_W, flexShrink: 0, borderRight: '1px solid var(--border2)', padding: '4px 8px', fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1, ...(isMobile ? { position: 'sticky', left: 0, zIndex: 6, background: 'var(--bg2)' } : null) }}>
+                          <div style={{ width: LEFT_W, flexShrink: 0, borderRight: '1px solid var(--border2)', padding: '4px 8px', fontSize: T(11, 17), fontWeight: 700, color: tv ? 'var(--text2)' : 'var(--muted)', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1, ...(isMobile ? { position: 'sticky', left: 0, zIndex: 6, background: 'var(--bg2)' } : null) }}>
                             <span>☀️ กะเช้า{isMobile ? '' : ' (แถบบน)'}</span>
                             <span>🌙 กะดึก{isMobile ? '' : ' (แถบล่าง)'}</span>
                           </div>
@@ -2188,7 +2188,7 @@ export default function Dashboard({ view = 'timeline' }) {
                                     {row.label}
                                     {/* บอร์ดรวมหลาย sub-line — ป้ายบอกว่าแถวนี้ของไลน์ไหน (product เดียวกันคนละไลน์ = คนละแถว) */}
                                     {multiSubLine && row.line && (
-                                      <span style={{ marginLeft: 4, fontSize: 11, fontWeight: 800, color: '#4d9fff', background: 'rgba(77,159,255,0.14)', border: '1px solid rgba(77,159,255,0.4)', borderRadius: 5, padding: '0 5px', whiteSpace: 'nowrap' }}>{row.line}</span>
+                                      <span style={{ marginLeft: 4, fontSize: T(11, 17), fontWeight: 800, color: '#4d9fff', background: 'rgba(77,159,255,0.14)', border: '1px solid rgba(77,159,255,0.4)', borderRadius: 5, padding: '0 5px', whiteSpace: 'nowrap' }}>{row.line}</span>
                                     )}
                                   </div>
                                   <div style={{ display: 'flex', alignItems: 'baseline', gap: 3, flexWrap: 'wrap' }}>
@@ -2205,7 +2205,7 @@ export default function Dashboard({ view = 'timeline' }) {
                                 {!isMobile && <PlanSlipBar st={rowPlan} fmtMs={fmtMs} oneLine compact size={T(11, 16)} />}
                                     {finOver && (
                                       <span title="งานที่เหลือล้นกรอบวันงาน (08:00 ของวันถัดไป) — ต้องยกยอดข้ามกะ/เพิ่มกำลังผลิต"
-                                        style={{ fontSize: 11, fontWeight: 800, color: '#ef4444' }}>🔴 ล้นวันงาน</span>
+                                        style={{ fontSize: T(11, 17), fontWeight: 800, color: '#ef4444' }}>🔴 ล้นวันงาน</span>
                                     )}
                                   </div>
                                 </div>
@@ -2214,7 +2214,7 @@ export default function Dashboard({ view = 'timeline' }) {
                                 {HALVES.map(half => (
                                   <div key={half.key} style={{ height: T(36, 48), display: 'flex', position: 'relative', borderTop: half.key === 'pm' ? '1px dashed var(--border)' : 'none' }}>
                                     {renderTimeline(row.cards, half, `${half.key}-${ri}`)}
-                                    <span style={{ position: 'absolute', left: 3, bottom: 1, fontSize: 11, opacity: 0.55, zIndex: 2, pointerEvents: 'none' }}>{half.key === 'am' ? '☀️' : '🌙'}</span>
+                                    <span style={{ position: 'absolute', left: 3, bottom: 1, fontSize: T(11, 17), opacity: 0.55, zIndex: 2, pointerEvents: 'none' }}>{half.key === 'am' ? '☀️' : '🌙'}</span>
                                   </div>
                                 ))}
                               </div>
@@ -2337,17 +2337,17 @@ export default function Dashboard({ view = 'timeline' }) {
         {/* Line Floor Maps */}
         <motion.div {...stagger(12)}>
           <div className="card" style={{ padding: 20, height: '100%' }}>
-            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)', fontFamily: 'var(--font-display)', marginBottom: 16 }}>
+            <div style={{ fontSize: T(15, 24), fontWeight: 700, color: 'var(--text)', fontFamily: 'var(--font-display)', marginBottom: 16 }}>
               🏭 Line Floor Maps
             </div>
             {visibleLayouts.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--muted)', fontSize: 15 }}>
+              <div style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--muted)', fontSize: T(15, 24) }}>
                 ยังไม่มีผัง — ไปตั้งค่าที่หน้า <strong>ตั้งค่าผังไลน์</strong>
               </div>
             ) : floorCards.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--muted)', fontSize: 15 }}>
+              <div style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--muted)', fontSize: T(15, 24) }}>
                 ยังไม่มีคนถูกจัดลงจุดงานในผังกะนี้ — จัดคนลงจุดงานที่หน้า <strong>จัดการไลน์ผลิต</strong>
-                <div style={{ fontSize: 12, marginTop: 6, opacity: 0.7 }}>(สรุปกำลังคนรวมดูได้ที่การ์ดสถานะไลน์ด้านบน)</div>
+                <div style={{ fontSize: T(12, 18), marginTop: 6, opacity: 0.7 }}>(สรุปกำลังคนรวมดูได้ที่การ์ดสถานะไลน์ด้านบน)</div>
               </div>
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : floorBig ? 'repeat(auto-fit, minmax(min(100%, 480px), 1fr))' : isUltra ? 'repeat(3, 1fr)' : '1fr 1fr', gap: isWide ? 14 : 12 }}>
@@ -2393,14 +2393,14 @@ export default function Dashboard({ view = 'timeline' }) {
                       />
                       {/* Line label */}
                       <div style={{ padding: '8px 10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg3)' }}>
-                        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '60%' }}>
+                        <span style={{ fontSize: T(13, 20), fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '60%' }}>
                           {layout.line_name}
                         </span>
                         <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
-                          <span title="จำนวนคนที่เข้าประจำจุดงานบนผังนี้ (นับตามหมุด)" style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', background: 'var(--bg2)', padding: '2px 6px', borderRadius: 4 }}>👷 {presentPeople}</span>
+                          <span title="จำนวนคนที่เข้าประจำจุดงานบนผังนี้ (นับตามหมุด)" style={{ fontSize: T(12, 18), fontWeight: 700, color: 'var(--text2)', background: 'var(--bg2)', padding: '2px 6px', borderRadius: 4 }}>👷 {presentPeople}</span>
                           {totalStations > 0 && (
                             <span title="จุดงานที่มีคนเข้าประจำ / จุดงานทั้งหมดของผังนี้"
-                              style={{ fontSize: 12, fontWeight: 700, color: allStaffed ? '#22c55e' : '#f59e0b', background: allStaffed ? 'rgba(34,197,94,0.12)' : 'rgba(245,158,11,0.12)', padding: '2px 6px', borderRadius: 4 }}>
+                              style={{ fontSize: T(12, 18), fontWeight: 700, color: allStaffed ? '#22c55e' : '#f59e0b', background: allStaffed ? 'rgba(34,197,94,0.12)' : 'rgba(245,158,11,0.12)', padding: '2px 6px', borderRadius: 4 }}>
                               {allStaffed ? '✓' : '⚠'} {staffedStations}/{totalStations} จุด
                             </span>
                           )}
@@ -2417,16 +2417,16 @@ export default function Dashboard({ view = 'timeline' }) {
         {/* 4M Activity Feed */}
         <motion.div {...stagger(13)}>
           <div className="card" style={{ padding: 20, height: '100%' }}>
-            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)', fontFamily: 'var(--font-display)', marginBottom: 16 }}>
+            <div style={{ fontSize: T(15, 24), fontWeight: 700, color: 'var(--text)', fontFamily: 'var(--font-display)', marginBottom: 16 }}>
               4M Activity Feed
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: isWide ? 600 : 420, overflowY: 'auto' }}>
               <AnimatePresence>
                 {visibleFourMLogs.length === 0 ? (
                   <div style={{ textAlign: 'center', padding: '48px 20px' }}>
-                    <div style={{ fontSize: 28, marginBottom: 8 }}>✅</div>
-                    <div style={{ fontSize: 15, color: 'var(--muted)' }}>ไม่มีการแจ้งเตือน 4M</div>
-                    <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 4, opacity: 0.6 }}>สถานะปกติ</div>
+                    <div style={{ fontSize: T(28, 40), marginBottom: 8 }}>✅</div>
+                    <div style={{ fontSize: T(15, 24), color: 'var(--muted)' }}>ไม่มีการแจ้งเตือน 4M</div>
+                    <div style={{ fontSize: T(13, 20), color: 'var(--muted)', marginTop: 4, opacity: 0.6 }}>สถานะปกติ</div>
                   </div>
                 ) : visibleFourMLogs.map((log, i) => {
                   const meta = getCatMeta(log.category);
@@ -2438,17 +2438,17 @@ export default function Dashboard({ view = 'timeline' }) {
                         border: `1px solid ${meta.color}22`,
                         display: 'flex', gap: 10, alignItems: 'flex-start',
                       }}>
-                        <div style={{ fontSize: 18, flexShrink: 0, marginTop: 1 }}>{meta.icon}</div>
+                        <div style={{ fontSize: T(18, 26), flexShrink: 0, marginTop: 1 }}>{meta.icon}</div>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6, flexWrap: 'wrap' }}>
-                            <span style={{ fontSize: 13, fontWeight: 700, color: meta.color }}>{log.category}</span>
-                            <span style={{ fontSize: 12, color: 'var(--muted)', flexShrink: 0 }}>{log.line_name}</span>
+                            <span style={{ fontSize: T(13, 20), fontWeight: 700, color: meta.color }}>{log.category}</span>
+                            <span style={{ fontSize: T(12, 18), color: 'var(--muted)', flexShrink: 0 }}>{log.line_name}</span>
                           </div>
-                          <div style={{ fontSize: 14, color: 'var(--text)', marginTop: 3, lineHeight: 1.4 }}>
+                          <div style={{ fontSize: T(14, 20), color: 'var(--text)', marginTop: 3, lineHeight: 1.4 }}>
                             {log.description}
                           </div>
                           {log.created_at && (
-                            <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
+                            <div style={{ fontSize: T(12, 18), color: 'var(--muted)', marginTop: 4 }}>
                               {new Date(log.created_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
                             </div>
                           )}
