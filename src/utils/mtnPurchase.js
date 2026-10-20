@@ -115,6 +115,26 @@ export function mosNeedingPr(orders = [], prs = [], isOpen = () => true) {
 }
 export const NEEDS_PR_PATHS = () => REPAIR_PATHS.filter(p => p.needsPr).map(p => p.key);
 
+/** สถานะ "งาน PR" ของใบ MO 1 ใบ — ตัวกรองหน้ารายการ MO (20/10 · user "หาลิสต์ MO ที่รอกรอกเลข PR ไม่เจอ")
+ *  · 'need'  = MTN ตัดสินว่าต้องเปิด PR แต่ยังไม่มีรายการขอซื้อ
+ *  · 'no_no' = มีรายการขอซื้อที่ยังเปิดอยู่แต่ **ยังไม่มีเลข PR จาก SAP**
+ *  · 'open'  = มีเลขแล้ว รอสั่ง/รอของ
+ *  · null    = ไม่มีงาน PR ค้าง
+ *  ลำดับความสำคัญ need > no_no > open (ใบเดียวตอบค่าเดียว) · `prs` = รายการของใบนี้ (ทุกสถานะ) */
+export function prQueueStateOf(order, prs = []) {
+  const live = (prs || []).filter(p => p && p.status !== 'cancelled');
+  if (repairPathMeta(order?.repair_path)?.needsPr && !live.length) return 'need';
+  const open = live.filter(isPrOpen);
+  if (open.some(p => !normalizePrNo(p.pr_no))) return 'no_no';
+  if (open.length) return 'open';
+  return null;
+}
+export const PR_QUEUE_META = {
+  need:  { label: '🛒 รอเปิด PR', color: '#ef4444' },
+  no_no: { label: '⏳ รอเลข PR (SAP)', color: '#f59e0b' },
+  open:  { label: '🚚 PR รอสั่ง/รอของ', color: '#0ea5e9' },
+};
+
 /* ── เลข PR บนใบ MO (ใบพิมพ์ FM-MTN-006) ─────────────────────────────────────────── */
 /** รวมเลข PR ของใบ — ใบขอซื้อที่ผูกใบนี้ (ไม่นับที่ยกเลิก) + ช่อง `pr_no` ที่กรอกมือเดิม · ตัดซ้ำ คงลำดับ */
 export function prNumbersOf(order, prs = []) {

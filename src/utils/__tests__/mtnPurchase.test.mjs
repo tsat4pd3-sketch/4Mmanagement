@@ -105,3 +105,14 @@ test('ใบ MO ที่ต้องเปิด PR แต่ยังไม่
   assert.deepEqual(out, ['b', 'a', 'f']);   // เก่าสุดก่อน
   assert.ok(NEEDS_PR_PATHS().includes('inhouse_pr') && NEEDS_PR_PATHS().includes('outsource'));
 });
+
+test('สถานะงาน PR ของใบ MO — ตัวกรองรายการ MO', async () => {
+  const { prQueueStateOf } = await import('../mtnPurchase.js');
+  assert.equal(prQueueStateOf({ repair_path: 'inhouse_pr' }, []), 'need');
+  assert.equal(prQueueStateOf({ repair_path: 'outsource' }, [{ status: 'cancelled' }]), 'need');
+  assert.equal(prQueueStateOf({ repair_path: 'inhouse_pr' }, [{ status: 'requested', pr_no: null }, { status: 'ordered', pr_no: '1000' }]), 'no_no');
+  assert.equal(prQueueStateOf({ repair_path: 'inhouse_pr' }, [{ status: 'ordered', pr_no: '1000' }]), 'open');
+  assert.equal(prQueueStateOf({ repair_path: 'inhouse_pr' }, [{ status: 'received', pr_no: '1000' }]), null);
+  assert.equal(prQueueStateOf({ repair_path: 'inhouse' }, []), null);
+  assert.equal(prQueueStateOf({ repair_path: null }, [{ status: 'requested', pr_no: '' }]), 'no_no');   // เปิดจากคลังโดยไม่ตั้งเส้นทาง ก็ยังรอเลข
+});
