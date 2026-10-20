@@ -876,6 +876,7 @@ export default function FactoryMap({ setupMode = false }) {
         const brkIvWin = breakIntervalsIn({
           policies: breaks || [], startMs: anchor, endMs: Math.min(nowMs, capMs),
           workDate, shift: s.shift, processType: procOfSess,
+          shiftEndMs: capMs,   // 🔚 กรอบจบที่ "ตอนนี้" ระหว่างกะ — พักท้ายกะต้องยึด capMs ไม่ใช่ปลายกรอบ
         });
         availMin -= brkIvWin.reduce((a, [x, y]) => a + (y - x) / 60000, 0);
         /* หักหยุดตามแผน — ⚠️ ต้อง clamp กับหน้าต่าง [anchor, min(now, capMs)] ก่อน
@@ -2373,6 +2374,24 @@ export default function FactoryMap({ setupMode = false }) {
     return () => ro.disconnect();
   }, [imageUrl, loading]);
   const is3d = view3d && !editing;
+  /* 🧊 3D = วัด "ที่ว่างจริงใต้หัวผัง" แทนสูตรตายตัว `100vh − 200px` (20/10 · จอ TV "ผัง 3D หลุดขอบล่าง")
+     สูตรเดิมเดาว่ามีหัวเพจอยู่ด้านบน · กรอบจอ TV ซ่อนหัวเพจ ⇒ ผังเริ่มต่ำกว่าที่เดา แล้วล้นขอบล่าง
+     และโหมด 3D ติด data-tv-nofit (ตัววนจอไม่ย่อให้ — Cr94 คิด 3D ใต้ zoom ผิด) ⇒ ไม่มีใครช่วยดึงกลับ
+     · วัดจาก offset (ไม่โดน transform ของผังที่เอียงอยู่) · 2D คงสูตรเดิม (จอ TV มีตัววนย่อให้แล้ว) */
+  const [avail3d, setAvail3d] = useState(0);
+  useLayoutEffect(() => {
+    if (!is3d) { setAvail3d(0); return undefined; }
+    const measure = () => {
+      const w = wrapRef.current, par = w?.offsetParent;
+      if (!w || !par) return;
+      const top = par.getBoundingClientRect().top + par.clientTop + w.offsetTop;
+      setAvail3d(Math.max(320, Math.floor(window.innerHeight - top - 48)));   // 48 = มุมพื้นที่เอียงเข้าหาจอยื่นพ้นกรอบ ~26px
+    };
+    measure();
+    const t = setTimeout(measure, 500);   // แถบ/แผงที่โหลดทีหลังดันผังลง
+    window.addEventListener('resize', measure);
+    return () => { clearTimeout(t); window.removeEventListener('resize', measure); };
+  }, [is3d, loading, imageUrl]);
   /* 🧊 เสา 3D — คิดก่อน render เพื่อให้หัวผังบอกได้ว่าป้ายไหนแน่นจนวางไม่ได้ (ห้ามหายเงียบ) */
   const pillarMaxH = Math.max(60, wrapW * 0.2);
   const BLOCK_K = 0.55;
@@ -2394,7 +2413,9 @@ export default function FactoryMap({ setupMode = false }) {
                 }));
   const pillarLifts = is3d ? liftLabels(pillarItems, { Wpx: wrapW, Hpx: aspect ? wrapW / aspect : 0, tiltDeg: orbit.tilt, rotZDeg: orbit.rot, maxH: pillarMaxH }) : null;
   const pillarCrowded = pillarLifts ? [...pillarLifts.values()].filter(v => !v.ok).length : 0;
-  const wrapStyle = aspect ? { width: `min(100%, calc((100vh - 210px) * ${aspect}))` } : { width: '100%' };
+  const wrapStyle = is3d && avail3d
+    ? { width: aspect ? `min(100%, ${Math.round(avail3d * aspect)}px)` : '100%', maxHeight: avail3d }
+    : { ...(aspect ? { width: `min(100%, calc((100vh - 210px) * ${aspect}))` } : { width: '100%' }), maxHeight: 'calc(100vh - 200px)' };
   const ptsStr = (pts) => pts.map(p => `${p[0]},${p[1]}`).join(' ');
   const flashLine = (name) => { setHighlight(name); setTimeout(() => setHighlight(h => h === name ? null : h), 2000); };
 
@@ -2581,7 +2602,7 @@ export default function FactoryMap({ setupMode = false }) {
           <div {...orbit.handlers} ref={orbit.rootRef} data-tv-nofit={is3d ? '1' : undefined} style={{ flex: '1 1 640px', minWidth: 0, display: 'flex', justifyContent: 'center', flexDirection: 'column', alignItems: 'center',
             ...(is3d ? { touchAction: 'none', cursor: orbit.dragging ? 'grabbing' : 'grab', userSelect: 'none' } : {}),
             /* 🧊 คอลัมน์ผังตัดของล้น (พื้นกริดยื่นออกนอกรูป ห้ามไปทับแผงขวา) — overflow ที่ "ชั้นนอก" ของ preserve-3d ไม่ flatten เสา */
-            ...(is3d ? { perspective: 2600, perspectiveOrigin: '50% 20%', overflow: 'hidden', borderRadius: 12 } : {}) }}>
+            ...(is3d ? { perspective: 2600, perspectiveOrigin: '50% 20%', overflow: 'hidden', borderRadius: 12, paddingBottom: 32 } : {}) }}>   {/* paddingBottom: มุมพื้นที่เอียงเข้าหาจอยื่นพ้นกรอบผัง ~26px — ไม่เว้น = โดน overflow ตัด */}
           {is3d && (
             <div style={{ alignSelf: 'stretch', position: 'relative', zIndex: 3, background: 'var(--bg)', padding: '2px 4px', display: 'flex', flexWrap: 'wrap', gap: '2px 12px', fontSize: 11.5, color: 'var(--muted)', marginBottom: Math.round(wrapW * 0.1) }}>
               <span>🧊 มุมมอง 3D (ทดลอง) · {pillarLegend(metric)}</span>
@@ -2604,7 +2625,7 @@ export default function FactoryMap({ setupMode = false }) {
           )}
           {/* 🧊 3D: overflow ต้อง visible — overflow:hidden บังคับ flatten ลูกที่ preserve-3d (เสาจะแบนติดพื้น) */}
           <div ref={wrapRef} onClick={onMapClick} onPointerMove={onMapMove} onPointerUp={endDrag} onPointerCancel={endDrag}
-            style={{ position: 'relative', ...wrapStyle, maxHeight: 'calc(100vh - 200px)', borderRadius: 10, overflow: is3d ? 'visible' : 'hidden', border: '1px solid var(--border)', cursor: drawing ? 'crosshair' : 'default', touchAction: 'none', background: '#0a0a0f',
+            style={{ position: 'relative', ...wrapStyle, borderRadius: 10, overflow: is3d ? 'visible' : 'hidden', border: '1px solid var(--border)', cursor: drawing ? 'crosshair' : 'default', touchAction: 'none', background: '#0a0a0f',
               transition: orbit.transition, ...(is3d ? { transform: `translate(${orbit.px}px, ${orbit.py}px) scale(${orbit.zoom}) ` + map3dTransform(orbit.tilt, orbit.rot, orbitScale(orbit.rot, orbit.tilt, aspect ? 1 / aspect : null)), transformStyle: 'preserve-3d', boxShadow: 'var(--shadow-float)' } : {}) }}>
             {/* 🧊 พื้นโรงงานรอบผัง (3D) — ตารางกริดจางๆ ยื่นออกนอกรูป แล้วเฟดเข้าพื้นหลังหน้า
                 ให้ผังดู "วางอยู่บนพื้น" ไม่ใช่รูปแผ่นเดียวลอยกลางความมืด (user ทัก 15/10 "พื้นหลังโล่ง ดูเป็น 3D ปลอม") */}

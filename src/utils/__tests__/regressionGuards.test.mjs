@@ -2989,6 +2989,28 @@ test('🛡️ /org-setup: ทุกชั้นที่มีปุ่มเพ
     '\n\n❌ handleSave ไม่ได้ใช้ orgSaveBlockReason ตัดสินสิทธิ์ — ดูเหตุผลด้านบน\n');
 });
 
+/* ── 🔴 /lpa: ใบตรวจ + แผนเดือน/ไตรมาส ไม่เคยมีด่านชั้น 3 (QC audit §7 · 20/10/2026) ──────────
+   หน้านี้มี `qWrite/qGuard` อยู่แล้ว แต่คุมแค่ **ทะเบียนคำถาม** (`lpa_questions`)
+   ส่วน `lpa_audits`/`lpa_plans` ซึ่งเป็นเอกสาร ISO ของไลน์ เขียนได้โดยไม่ถามขอบเขตเลย
+   ⇒ เปิด `?line=` ของส่วนงานอื่นแล้วบันทึก/ลบใบตรวจของเขาทับได้
+   (วัดจริง 843 ใบ: ทุกใบคนเขียนอยู่ส่วนงานเดียวกับไลน์ หรือถือ scope:all_units ⇒ ด่านนี้ไม่กระทบงานจริง) */
+test('🛡️ /lpa: ทุกฟังก์ชันที่เขียนใบตรวจ/แผน ต้องผ่านด่านไลน์ (lineGuard) ก่อน', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/LayerProcessAudit.jsx'), 'utf8'));
+  assert.ok(/const\s+lineWrite\s*=\s*canWriteLine\(/.test(code),
+    '\n\n❌ LayerProcessAudit ไม่มี lineWrite = canWriteLine(...) — ด่านชั้น 3 ของไลน์ที่เลือกอยู่\n');
+  for (const fn of ['const savePlan', 'const saveQuarter', 'const saveAudit', 'const deleteAudit',
+                    'const handleSignDone', 'const fillStationsFromWorkstations']) {
+    const at = code.indexOf(fn);
+    assert.ok(at > -1, `LayerProcessAudit: หา ${fn} ไม่เจอ — ด่านนี้ต้องแก้ตามโครงไฟล์ใหม่`);
+    assert.ok(/lineGuard\(/.test(code.slice(at, at + 320)),
+      `\n\n❌ LPA ${fn.replace('const ', '')}() เขียนใบตรวจ/แผนโดยไม่ผ่าน lineGuard()\n`
+      + '   ผลที่เกิด: เปิด ?line= ของส่วนงานอื่น แล้วบันทึก/ลบเอกสาร ISO ของไลน์เขาได้\n');
+  }
+  // ต้องเขียนเหตุผลบนจอด้วย ไม่ใช่เด้ง toast ตอนกดอย่างเดียว
+  assert.ok(/!lineWrite\.ok[\s\S]{0,400}writeBlockText\(lineWrite/.test(code),
+    '\n\n❌ LPA ไม่ได้เขียนบนจอว่าไลน์นี้แก้ไม่ได้ (ซ่อนปุ่มได้ ห้ามซ่อนเหตุผล · UI §6.9)\n');
+});
+
 /* ── 🔴 "ซ่อนปุ่ม" ไม่ใช่ด่าน — ฟังก์ชันที่เขียน DB ต้องเช็คคีย์เดียวกับปุ่ม (QC audit ข้อ 5 · 19/10) ──
    4 จอรอบสุดท้ายของ audit ข้อ 5: ปุ่มถูกซ่อนด้วย can()/canEdit อยู่แล้ว แต่ handler ไม่เช็คอะไรเลย
    ⇒ สิทธิ์เปลี่ยนระหว่างเปิดจอ / โมดัลเปิดค้าง / เรียกตรง = เขียนได้จริง (กฎเขียน DB ข้อ 10) */
@@ -5475,4 +5497,40 @@ test('🔕 เขียน call_mtn = true ต้องเติม call_mtn_tea
     + '   ทำไม: call_mtn_team ว่าง = จอ Andon/ไซเรนถือว่า "ไม่รู้ทีม" แล้วดังให้ทุกทีม\n'
     + '   แก้: เติม call_mtn_team จากทีมที่รู้ (ปุ่มเรียกช่าง = ทีมที่เลือก · ใบ MO = mtn_dept)\n'
     + '   ⚠️ ไม่รู้ทีมจริงๆ ให้ปล่อยว่าง (ดังทุกห้องดีกว่าเงียบผิดทีม) แต่ห้ามลืมเติมตอนที่รู้\n');
+});
+
+/* ── 🔚 พักที่ผูกปลายกะ: กรอบที่ไม่ใช่ "ทั้งกะ" ต้องส่ง shiftEndMs (2026-10-20) ──────
+   `breakIntervalsIn` ถอยไปใช้ "ปลายกรอบ" เมื่อไม่ส่ง `shiftEndMs` — ถูกเฉพาะกรอบที่เป็นทั้งกะ
+   จุดที่กรอบเป็น "ถึงตอนนี้" (OEE สด · ผังรวมโรงงาน) หรือ "ช่วงที่ใบ/พาร์ทวิ่ง" (แท็บประวัติ ·
+   ctReview · computeSessionOee) ถ้าไม่ส่ง ⇒ พักท้ายกะ (5ส.) จะไหลไปเกาะปลายของทุกช่วง
+   = **หักพักซ้ำทุกใบ** โดยตัวเลขยังดูสมเหตุสมผล (ไม่มี error ให้เห็น)
+   ⚠️ ด่านนี้คุม "จุดที่รู้แล้วว่ากรอบไม่ใช่ทั้งกะ" — เพิ่มจุดใหม่ที่เข้าข่าย ให้เพิ่มในลิสต์นี้ด้วย */
+test('🛡️ break-anchor-needs-shift-end — จุดที่กรอบ ≠ ทั้งกะ ต้องส่ง shiftEndMs ให้ breakIntervalsIn', () => {
+  const NEED = [
+    ['src/utils/oee.js', 'brkIvIn', /const brkIvIn = \([\s\S]{0,400}?\}\);/],
+    ['src/utils/oee.js', 'computeLiveOee', /const brkIv = usablePolicies\.length[\s\S]{0,400}?: \[\];/],
+    ['src/utils/ctReview.js', 'ช่วงของใบผลิต', /const brkIv = breakIntervalsIn\(\{[\s\S]{0,400}?\}\);/],
+    ['src/pages/DailyReport.jsx', 'histBreakIv', /const histBreakIv = \([\s\S]{0,300}?\);/],
+    ['src/pages/FactoryMap.jsx', 'brkIvWin', /const brkIvWin = breakIntervalsIn\(\{[\s\S]{0,400}?\}\);/],
+  ];
+  const bad = [];
+  for (const [rel, what, re] of NEED) {
+    const code = stripComments(readFileSync(join(ROOT, rel), 'utf8'));
+    const m = code.match(re);
+    if (!m) { bad.push(`${rel} — หาบล็อก ${what} ไม่เจอ (ย้าย/เปลี่ยนชื่อแล้ว? อัพเดทด่านนี้ด้วย)`); continue; }
+    if (!/shiftEndMs/.test(m[0])) bad.push(`${rel} — ${what} ไม่ได้ส่ง shiftEndMs`);
+  }
+  // computeLiveOee ต้องไม่เดาเวลาเลิกกะ: กะที่ยังเปิดอยู่ไม่มี end_time ⇒ ต้องกรองแถว shift_end ออก
+  const oee = stripComments(readFileSync(join(ROOT, 'src/utils/oee.js'), 'utf8'));
+  if (!/usablePolicies\s*=\s*hardEndMs\s*\?/.test(oee))
+    bad.push("src/utils/oee.js — computeLiveOee ต้องกรองแถว anchor='shift_end' ออกเมื่อยังไม่รู้เวลาเลิกกะ");
+  if (!/noShiftEndBreak/.test(oee))
+    bad.push('src/utils/oee.js — ต้องคืนธง noShiftEndBreak ให้จอเขียนบอกว่ายังไม่ได้หักพักท้ายกะ');
+  assert.deepEqual(bad, [],
+    '\n\n❌ จุดด้านล่างจะหักเวลาพัก "ท้ายกะ" ผิดที่:\n'
+    + bad.map(b => '   • ' + b).join('\n') + '\n'
+    + '   ทำไมสำคัญ: 5ส. ถูกตั้งเป็น anchor=shift_end (ยึดเวลาเลิกกะ) ตั้งแต่ 20/10\n'
+    + '   กรอบที่ส่งเข้าไปถ้าไม่ใช่ทั้งกะ แล้วไม่บอกปลายกะ = พักไปเกาะปลายกรอบนั้นแทน\n'
+    + '   แก้ยังไง: ส่ง shiftEndMs = เวลาเลิกกะจริง (shiftFrameOf(session)?.endMs / capMs / end_time)\n'
+    + '            ยังไม่รู้เวลาเลิกกะ = อย่าเดา ให้กรองแถว shift_end ออกแล้วชูธงบอกจอ\n');
 });
