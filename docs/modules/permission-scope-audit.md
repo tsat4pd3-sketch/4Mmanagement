@@ -486,9 +486,17 @@ migration `supabase/migrations/20261020_rls_scope_net_fn_main.sql` · **apply �
   UPDATE จริงๆ ไม่ขาด (ทางหลักเป็น RPC `upsert_push_subscription` · fallback เป็น `ON CONFLICT DO NOTHING`
   ซึ่งใช้แค่ INSERT แล้วตรวจกลับ) · 6 ตารางที่ RLS เปิดแต่ไม่มี policy เลย = ของ edge function ล้วน (service_role)
 
-### ⏸️ ส่วนที่ 2 (ผูก policy) — **ยังไม่ทำ รอ user เคาะ** (เป็นการเปลี่ยน RLS)
+### 🟡 ส่วนที่ 2 (ผูก policy) — user เคาะ "นำร่อง LPA" แล้ว (20/10) · **SQL พร้อม รอรันมือ**
 
-แผนที่เสนอ: นำร่องที่ `lpa_plans` + `lpa_audits` (+ ตารางลูกผ่าน subquery) เพราะวัดแล้วว่าไม่กระทบ 843 ใบเดิม
+ไฟล์: `supabase/migrations/20261020_rls_scope_net_lpa_main.sql` — ผูก `app_can_write_line()` เข้า policy
+`*_all` ของ 4 ตาราง (`lpa_plans` · `lpa_plan_days` · `lpa_audits` · `lpa_audit_answers`)
+ตารางลูกไต่ขึ้นหาไลน์ของใบแม่ด้วย subquery · **policy อ่าน (`*_read`) ไม่แตะ** (เห็นทั้งโรงงานเหมือนเดิม)
+
+🔴 **ยังไม่ได้ apply — MCP timeout ทุกท่า** (`apply_migration` · `execute_sql` · DO block + `lock_timeout`)
+· ตรวจแล้วว่า **DB ไม่ถูกแตะเลย** (policy เดิมครบ 8 ตัว ไม่มีตัวไหนมี `app_can_write_line`)
+· **ไม่ใช่ปัญหา lock** — `pg_locks` ว่าง ไม่มีใครถือล็อกตาราง LPA ⇒ เป็นที่ชั้น MCP เอง
+  (อาการเดียวกับ 19/10 ที่ลบบัญชีทดสอบไม่ได้ · SELECT ผ่านปกติ)
+⇒ ส่ง SQL เต็มให้ user รันใน SQL Editor ของ project **"MAIN"** (`ewhdfqwfwofivojtsizn`) + คิวรีเช็คผล
 ⇒ ถ้าผ่านค่อยขยายทีละกลุ่ม · **ห้ามแก้ทีเดียว 50 ตาราง** (blanket = ผิดกฎ CLAUDE.md)
 
 ### ที่ยังเหลือ (นอกข้อ 5)
