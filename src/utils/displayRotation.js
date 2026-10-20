@@ -264,6 +264,7 @@ const LBL = ['0.6', '0.8', '1', '1.2', '1.4', '1.6'].map(v => opt(v, `${Math.rou
 /* 🔴 คีย์ทุกตัวตรวจจากโค้ดหน้านั้นแล้ว (15/10) — อ่านผ่าน useSearchParams / useTabParam หรือ utils/urlInit
    kind: select · bool · section (ชื่อส่วนงาน) · line (ชื่อไลน์) · scope (คีย์ขอบเขตผังองค์กร `section:PD3`/`line_group:…`)
          · product (MAT ผ่าน ProductSelect) · orgdept (แผนกจากผังองค์กร · `valueAs` 'id'|'name' ตามที่หน้าเทียบ)
+         · station (id จุดงาน) · wtype (ประเภทงานค่าฝีมือจาก skill_definitions) · storeline (ไลน์ + คลังในจอเฝ้าระวัง)
          · `showIf` = โชว์ช่องนี้เฉพาะเมื่อคีย์อื่นมีค่าที่กำหนด */
 export const DISPLAY_PAGE_PARAMS = Object.freeze({
   '/tv': [
@@ -337,7 +338,7 @@ export const DISPLAY_PAGE_PARAMS = Object.freeze({
     { key: 'tv', label: 'โหมดจอ TV (แบ่งหน้า วนเอง)', kind: 'select', options: [opt('1', 'เปิด'), opt('0', 'ปิด')] },
   ],
   '/store-monitor': [
-    { key: 'line', label: 'ไลน์', kind: 'line' },
+    { key: 'line', label: 'ไลน์ / คลัง', kind: 'storeline' },
     { key: 'kind', label: 'แสดง', kind: 'select', options: [opt('shortage', '🟥 จะขาด'), opt('over', '🟧 ล้น')] },
     { key: 'side', label: 'ฝั่ง', kind: 'select', options: [opt('inbound', 'Store (ขาเข้า)'), opt('outbound', 'Warehouse & Delivery (ขาออก)'), opt('unknown', '❓ ยังไม่ระบุฝั่ง')] },
   ],
@@ -425,7 +426,7 @@ export const DISPLAY_PAGE_PARAMS = Object.freeze({
     { key: 'scope', label: 'ขอบเขต', kind: 'scope', showIf: { tab: ['', '0', '3', '4', '7'] } },
     { key: 'sec', label: 'ส่วนงาน', kind: 'section', showIf: { tab: ['1', '2'] } },
     { key: 'dept', label: 'แผนก', kind: 'orgdept', valueAs: 'name', showIf: { tab: ['1'] } },
-    { key: 'station', label: 'จุดงาน (id ของ workstations)', kind: 'text', showIf: { tab: ['2'] } },
+    { key: 'station', label: 'จุดงาน', kind: 'station', showIf: { tab: ['2'] } },
     { key: 'team', label: 'ทีม', kind: 'select', showIf: { tab: ['', '0', '1', '2', '3', '7'] }, options: [opt('A', 'ทีม A'), opt('B', 'ทีม B'), opt('C', 'ทีม C')] },
     { key: 'shift', label: 'กะ', kind: 'select', showIf: { tab: ['', '0', '2'] }, options: [opt('all', 'ทุกกะ'), opt('day', '☀️ กะเช้า'), opt('night', '🌙 กะดึก')] },
     { key: 'cat', label: 'ประเภท 4M', kind: 'select', showIf: { tab: ['4'] }, options: [opt('Man', '👷 Man'), opt('Machine', '⚙️ Machine'), opt('Material', '📦 Material'), opt('Method', '📋 Method')] },
@@ -440,7 +441,7 @@ export const DISPLAY_PAGE_PARAMS = Object.freeze({
     { key: 'line', label: 'ไลน์', kind: 'line', showIf: { tab: ['6'] } },
     { key: 'team', label: 'ทีม', kind: 'select', showIf: { tab: ['', '5', '6', '8'] }, options: [opt('A', 'ทีม A'), opt('B', 'ทีม B'), opt('C', 'ทีม C')] },
     { key: 'period', label: 'งวด', kind: 'select', showIf: { tab: ['6'] }, options: [opt('1', 'งวด 1 (วันที่ 1-15)'), opt('2', 'งวด 2 (วันที่ 16-สิ้นเดือน)')] },
-    { key: 'wtype', label: 'ประเภทงาน (ค่าฝีมือ · ต้องตรงทะเบียนทักษะ)', kind: 'text', showIf: { tab: ['6'] } },
+    { key: 'wtype', label: 'ประเภทงาน (ค่าฝีมือ)', kind: 'wtype', showIf: { tab: ['6'] } },
     { key: 'load', label: 'ดึงข้อมูลเองตอนเปิด (ไม่ต้องกดปุ่ม)', kind: 'bool', showIf: { tab: ['6', '8'] } },
   ],
   '/order-trace': [

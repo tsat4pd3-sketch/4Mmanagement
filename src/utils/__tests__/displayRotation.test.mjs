@@ -204,7 +204,7 @@ test('barChips — โชว์เฉพาะ "ข้อมูลชุดไ�
    select ต้องมีตัวเลือก · kind ต้องเป็นชนิดที่หน้า /display-rotation วาดได้ */
 test('DISPLAY_PAGE_PARAMS: คีย์ไม่ซ้ำ + showIf อ้างคีย์ที่มีจริง + kind ที่วาดได้', async () => {
   const { DISPLAY_PAGE_PARAMS } = await import('../displayRotation.js');
-  const KINDS = new Set(['select', 'bool', 'section', 'line', 'scope', 'product', 'text', 'multi', 'orgdept']);
+  const KINDS = new Set(['select', 'bool', 'section', 'line', 'scope', 'product', 'text', 'multi', 'orgdept', 'station', 'wtype', 'storeline']);
   for (const [path, defs] of Object.entries(DISPLAY_PAGE_PARAMS)) {
     const keys = defs.map(d => d.key);
     assert.equal(new Set(keys).size, keys.length, `${path}: คีย์ซ้ำ ${keys}`);
