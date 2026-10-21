@@ -43,7 +43,7 @@ import StoreLotQueue from '../components/StoreLotQueue';
 import LineWipPanel from '../components/LineWipPanel';
 import LinePartCallPanel from '../components/LinePartCallPanel';
 import ProcessTypeSetup from '../components/ProcessTypeSetup';
-import { computeSessionOee, sessionProducedQty, strictOee, strictGap, STRICT_WARN_SHARE_PCT, policyBreakOverlapMin, breakIntervalsIn, breakBandsIn, breakBandName, dtMinOutsideBreaks, overlapMinutesWith, buildCtMap, ctForMat, groupSameProductKeys, shiftFrameOf, shiftStartDate, clampWinToShift, unionIv, dtMinOutsideWork, SIX_BIG_LOSSES, EIGHT_WASTES, sumDefectQty, isTrialDefect, splitDefectQty, QBIN_EMBED, sumSuspectPending, orderCloseMs, matRawWindow } from '../utils/oee';
+import { computeSessionOee, sessionProducedQty, strictOee, strictGap, STRICT_WARN_SHARE_PCT, policyBreakOverlapMin, breakIntervalsIn, breakBandsIn, breakBandName, breakBandTitle, dtMinOutsideBreaks, overlapMinutesWith, buildCtMap, ctForMat, groupSameProductKeys, shiftFrameOf, shiftStartDate, clampWinToShift, unionIv, dtMinOutsideWork, SIX_BIG_LOSSES, EIGHT_WASTES, sumDefectQty, isTrialDefect, splitDefectQty, QBIN_EMBED, sumSuspectPending, orderCloseMs, matRawWindow } from '../utils/oee';
 import { planMatTimeWrites, MAT_TIME_SKIP_OPEN } from '../utils/matTimeEdit';
 import { resolveShiftTime, checkShiftTime, shiftWindow, windowLabel, fmtOffset, MAX_SHIFT_MIN, checkCloseTime } from '../utils/shiftWindow';
 import ScanModal from '../components/ScanModal';
@@ -247,6 +247,29 @@ const fmtMin = (min) => {
   const m = Math.round(min);
   return m >= 60 ? `${Math.floor(m / 60)} ชม. ${m % 60} นาที` : `${m} นาที`;
 };
+
+/* 🏭 รายการ "พักตามนโยบาย" ของกะนี้ — โชว์ตอนปิดกะ/ตรวจคำขอปิดกะ (2026-10-21 · คำขอ user)
+   เหตุ: พัก 5ส. ท้ายกะผูก **ปลายกะ** ไม่ใช่เวลานาฬิกา ⇒ บอร์ด 24 ชม. (กรอบเดียวครอบ 2 กะ)
+   วาดแถบเงาให้ไม่ได้ · user สั่งว่า "ไม่ต้องวาดแบบพัก แต่ให้ขึ้นตอนจะปิดกะ"
+   ⇒ ที่นี่เขียนเป็นตัวหนังสือว่าหักพักอะไรไปกี่นาที ช่วงไหน — คนปิดกะอธิบาย %A/%P ที่ตกได้
+   🔴 bands มาจาก `breakBandsIn` เท่านั้น (ห้ามคิดช่วง/ชื่อเองในหน้า · utils/oee §7)
+   🏭 = ไลน์นี้ตั้งนาทีเอง (ต่างจากค่ากลาง) — รายละเอียดอยู่ใน title ของชิป */
+function BreakBandChips({ bands = [], lineName = null, fmt }) {
+  if (!bands.length) return null;
+  const total = Math.round(bands.reduce((a, b) => a + (b.e - b.s) / 60000, 0));
+  return (
+    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginTop: 8, fontSize: 11 }}>
+      <span style={{ fontWeight: 700, color: '#4d9fff' }}>พักตามนโยบาย {total} น.</span>
+      {bands.map((b, i) => (
+        <span key={i} title={breakBandTitle(b, lineName)}
+          style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 6, padding: '1px 6px', color: 'var(--text)' }}>
+          {breakBandName(b)} {fmt(new Date(b.s))}–{fmt(new Date(b.e))} · {Math.round((b.e - b.s) / 60000)} น.
+          {b.lineRuleMin != null ? ' 🏭' : ''}
+        </span>
+      ))}
+    </div>
+  );
+}
 
 const CAT_META = {
   unplanned: { label: 'นอกแผน', color: '#ef4444', bg: 'rgba(239,68,68,0.10)' },
@@ -4575,10 +4598,10 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                      `start_time = null`) ไปโผล่ 00:00 แล้วถูกตัดทิ้ง = แถบหายจากไทม์ไลน์ทั้งที่ %A หักไปแล้ว
                      และป้ายเดิมอ่าน `p.label`/`p.name` ซึ่ง **ไม่มีในตาราง** (คอลัมน์จริง = `name_th`)
                      ⇒ ทุกแถบเขียน "พักตามนโยบาย" เหมือนกันหมด · ชื่อ+นาทีรายไลน์มาจาก `breakBandName` */
-                  breakBandsIn({ policies: breakPolicies, startMs: winStart, endMs: winEnd,
+                  const brkBands = breakBandsIn({ policies: breakPolicies, startMs: winStart, endMs: winEnd,
                     workDate: selSession.work_date, shift: sessionShift, processType,
-                    shiftEndMs: winEnd, lineName: selSession.line_name })
-                    .forEach(b => blocks.push({ start: b.s, end: b.e, label: breakBandName(b), color: '#4d9fff' }));
+                    shiftEndMs: winEnd, lineName: selSession.line_name });
+                  brkBands.forEach(b => blocks.push({ start: b.s, end: b.e, label: breakBandName(b), color: '#4d9fff' }));
                   dtLogs.forEach(d => {
                     if (!d.started_at) return;
                     const s0 = new Date(d.started_at).getTime();
@@ -4626,6 +4649,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                           </div>
                         ))}
                       </div>
+                      <BreakBandChips bands={brkBands} lineName={selSession.line_name} fmt={fmtTime} />
                       {dtLogs.some(d => !d.started_at) && (
                         <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 6 }}>⚠ มี Downtime บางรายการไม่ได้ระบุเวลาเริ่ม/จบ จึงไม่แสดงในไทม์ไลน์ (นับรวมในยอด Downtime และหักใน %A แล้ว)</div>
                       )}
@@ -5036,10 +5060,10 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                      `start_time = null`) ไปโผล่ 00:00 แล้วถูกตัดทิ้ง = แถบหายจากไทม์ไลน์ทั้งที่ %A หักไปแล้ว
                      และป้ายเดิมอ่าน `p.label`/`p.name` ซึ่ง **ไม่มีในตาราง** (คอลัมน์จริง = `name_th`)
                      ⇒ ทุกแถบเขียน "พักตามนโยบาย" เหมือนกันหมด · ชื่อ+นาทีรายไลน์มาจาก `breakBandName` */
-                  breakBandsIn({ policies: breakPolicies, startMs: winStart, endMs: winEnd,
+                  const brkBands = breakBandsIn({ policies: breakPolicies, startMs: winStart, endMs: winEnd,
                     workDate: selSession.work_date, shift: sessionShift, processType,
-                    shiftEndMs: winEnd, lineName: selSession.line_name })
-                    .forEach(b => blocks.push({ start: b.s, end: b.e, label: breakBandName(b), color: '#4d9fff' }));
+                    shiftEndMs: winEnd, lineName: selSession.line_name });
+                  brkBands.forEach(b => blocks.push({ start: b.s, end: b.e, label: breakBandName(b), color: '#4d9fff' }));
                   dtLogs.forEach(d => {
                     if (!d.started_at) return;
                     const s0 = new Date(d.started_at).getTime();
@@ -5087,6 +5111,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                           </div>
                         ))}
                       </div>
+                      <BreakBandChips bands={brkBands} lineName={selSession.line_name} fmt={fmtTime} />
                       {dtLogs.some(d => !d.started_at) && (
                         <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 6 }}>⚠ มี Downtime บางรายการไม่ได้ระบุเวลาเริ่ม/จบ จึงไม่แสดงในไทม์ไลน์ (นับรวมในยอด Downtime และหักใน %A แล้ว)</div>
                       )}
