@@ -18,6 +18,23 @@
 
    ไฟล์นี้ pure — ห้าม import supabase/react                                                    */
 
+/* ═══ 🏷️ "ใบนี้มาจากไหน" — `wip_replenish_requests.source` (2026-10-21) ════════════════════
+   3 ค่า (CHECK ฝั่ง DB · migration `20261021_wip_replenish_source_line_adhoc_main.sql`):
+     `line`           = ระบบเสนอเพราะยอดถึง min (มี `min_at_req`)
+     `line_adhoc`     = หัวหน้าไลน์ **ขอเบิกเอง** ไม่ต้องมี min ไม่ต้องรอถึง min
+     `store_forecast` = สโตร์สร้างใบจากแผนผลิต
+   🔴 ป้ายอยู่ที่นี่ที่เดียว — 3 จอเคยเทียบ `=== 'store_forecast'` เองคนละที่ (LinePartCallPanel ·
+      HeijunkaKanban · utils/storeTvDemand) ⇒ เพิ่มค่าที่ 3 แล้วป้ายไม่ตรงกันทั้ง 3 จอ
+   🔴 **ค่าที่ไม่รู้จักต้องตกเข้าฝั่งไลน์ ห้ามคืน null** — ใบเก่า/ใบจากของที่ยังไม่ apply migration
+      ต้องยังอ่านออก (ป้ายผิดพอทนได้ · ใบหายจากจอทนไม่ได้) */
+export const REQ_SOURCES = {
+  line:           { label: '📦 ไลน์ขอเบิก (ถึง min)', short: 'ถึง min',  side: 'line',  who: 'คนเรียก' },
+  line_adhoc:     { label: '📦 ไลน์ขอเบิกเอง',        short: 'ขอเอง',    side: 'line',  who: 'คนขอ' },
+  store_forecast: { label: '🏬 สโตร์ส่งตามแผนผลิต',    short: 'ตามแผน',   side: 'store', who: 'ผู้เปิดใบ' },
+};
+/** meta ของที่มาใบ — ไม่รู้จัก/ว่าง = ถือเป็นใบจากไลน์ (ห้ามคืน null) */
+export const reqSourceMeta = (s) => REQ_SOURCES[String(s ?? '').trim()] || REQ_SOURCES.line;
+
 /** ทางที่ใบ "จากไลน์" ถูกมาร์กว่าส่งถึงแล้วได้ — เก็บที่ `wip_replenish_requests.delivered_gate` */
 export const DELIVER_GATES = {
   scanned:  { label: 'สแกนจุดส่งแล้ว',           icon: '📍', color: '#22c55e' },
