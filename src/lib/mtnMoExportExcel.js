@@ -24,6 +24,7 @@
 import { assignedTechsOf, joinTechs, prNumbersOf, repairPathMeta } from '../utils/mtnPurchase';
 import { getDocForm, fullCode } from '../utils/docForms';
 import { isVague, isPlannedWork, PLANNED_GROUP } from '../utils/unclassified';
+import { qaRelatedView } from '../utils/mtnStepPerm';   // 🔴 "เกี่ยวคุณภาพ" ตอบจากที่นี่ที่เดียว
 import { moCommentText } from './moComments';   // 💬 รูปแบบบรรทัดคอมเมนต์ = ตัวเดียวกับใบพิมพ์
 
 const thin = { style: 'thin' };
@@ -189,7 +190,11 @@ export async function exportMoExcel({
     // 🔴 ยังไม่รับงาน/ยังไม่ปิด = ขีด ห้าม 0 (ไม่งั้น pivot หาค่าเฉลี่ยได้เลขที่ต่ำกว่าจริง)
     put(ws1, `${C('ตอบสนอง (นาที)')}${n}`, r.respMin == null ? DASH : r.respMin, { align: 'center', size: 9.5 });
     put(ws1, `${C('เวลาซ่อม (นาที)')}${n}`, r.fixMin == null ? DASH : r.fixMin, { align: 'center', size: 9.5 });
-    put(ws1, `${C('เกี่ยวคุณภาพ')}${n}`, o.quality_related ? 'ใช่' : '', { align: 'center', size: 9.5 });
+    /* 🔴 ห้ามอ่าน `quality_related` ดิบ — เก็บเป็น **ข้อความ** ⇒ `? 'ใช่' : ''` ตอบ "ใช่" ให้ใบที่ QA
+       ตัดสินว่า *ไม่* เกี่ยวกับคุณภาพด้วย (วัด 21/10: 411 ใบจาก 1050) · ใบที่ QA ไม่อยู่ในลูปเลย
+       (ฟอร์ม MTN · งานสร้าง/ปรับปรุง) = ขีด ไม่ใช่ว่าง — "ไม่มีคำถามนี้" ≠ "ยังไม่ตอบ" */
+    put(ws1, `${C('เกี่ยวคุณภาพ')}${n}`,
+      { yes: 'ใช่', no: 'ไม่', n_a: DASH, unknown: '' }[qaRelatedView(o)], { align: 'center', size: 9.5 });
     put(ws1, `${C('ชี้เป้าได้?')}${n}`, r.planned ? 'ตามแผน' : r.vague ? 'ไม่ได้' : 'ได้', {
       align: 'center', size: 9.5, fill: r.vague ? 'FFFFF2CC' : undefined,
     });
@@ -229,7 +234,8 @@ export async function exportMoExcel({
     put(ws2, `B${n}`, list.length, { ...opt, align: 'center' });
     put(ws2, `C${n}`, list.filter(r => !r.open).length, { ...opt, align: 'center' });
     put(ws2, `D${n}`, list.filter(r => r.open).length, { ...opt, align: 'center' });
-    put(ws2, `E${n}`, list.filter(r => r.o.quality_related).length, { ...opt, align: 'center' });
+    // นับเฉพาะใบที่ QA อยู่ในลูป **และ** ตอบว่าเกี่ยว (เดิมนับใบที่ตอบว่า "ไม่เกี่ยว" รวมมาด้วย)
+    put(ws2, `E${n}`, list.filter(r => qaRelatedView(r.o) === 'yes').length, { ...opt, align: 'center' });
     put(ws2, `F${n}`, list.filter(r => r.planned).length, { ...opt, align: 'center' });
     put(ws2, `G${n}`, vg, { ...opt, align: 'center', fill: last ? 'FFEDEDED' : (vg ? 'FFFFF2CC' : undefined) });
     put(ws2, `H${n}`, list.length ? `${((vg / list.length) * 100).toFixed(1)}%` : DASH, { ...opt, align: 'center' });
