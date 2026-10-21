@@ -21,7 +21,7 @@ import PurchaseBulkModal from '../components/PurchaseBulkModal';
 import PlatingBoard from '../components/PlatingBoard';
 import DeliverScanModal from '../components/DeliverScanModal';
 import PickScanModal from '../components/PickScanModal';
-import { DELIVER_GATES, PICK_GATES } from '../utils/replenishGate';
+import { DELIVER_GATES, PICK_GATES, reqSourceMeta } from '../utils/replenishGate';
 import { slocCodeOfLine } from '../utils/storageLoc';
 import { buildReceiptRows, RECEIPT_LINE } from '../utils/stockReceipt';
 import { rawSourceLocOf, splitRawConsume } from '../utils/partRefStock';   // 📤 ตัดวัตถุดิบล็อตจากคลังที่ของอยู่จริง (2026-10-12)   // 📥 ของซื้อเข้าคลัง ไม่ใช่เข้าไลน์ (2026-10-01)   // 🏬 ชั้นบัญชี SAP — tag ใบ/ledger ตอนเขียน (2026-09-08)
@@ -1431,6 +1431,9 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
                คอลัมน์ `point_name`/`point_type`/`wip_point_id` ยังอยู่ในตารางเพื่ออ่านประวัติ ห้ามเขียนใหม่ */
             const code = w.mat_no || w.point_name;
             const at = w.requested_at ? new Date(w.requested_at) : null;
+            /* 🏷️ ป้าย "ที่มาของใบ" มาจาก `reqSourceMeta()` ที่เดียว (utils/replenishGate.js) —
+               ใบ `line_adhoc` = ไลน์ขอเบิกเอง (ไม่ได้มาจากจุดเรียกเติม · 21/10) ห้ามเทียบ source เองในหน้า */
+            const src = reqSourceMeta(w.source);
             /* ใบจากไลน์: ขั้น "ถึงไลน์" ต้องผ่านสแกนจุดส่งก่อน (เฟส 4 — DeliverScanModal) ปุ่มจึงต้องบอกล่วงหน้า
                · ใบที่ส่งแล้วโชว์ว่าผ่านด่านทางไหน (สแกน / ไลน์ยังไม่ตั้งจุด / ปลดบล็อก) ห้ามซ่อน override */
             const gate = w.status === 'delivered' && w.delivered_gate ? DELIVER_GATES[w.delivered_gate] : null;
@@ -1444,12 +1447,12 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
                 qty={fmt(w.request_qty)} unit="" qtyLabel="จำนวนที่ต้องส่ง" destination={w.line_name}
                 statusLabel={st.label} statusColor={st.color} statusBg={st.bg} statusBorder={st.border}
                 actionLabel={canOperate ? nextLabel : null} busy={busy === w.id} onAction={() => onAdvanceWip(w)}
-                rows={[{ k: 'ที่มา', v: w.source === 'store_forecast' ? '🏬 สโตร์ส่งตามแผนผลิต' : '📦 ไลน์ขอเบิก' },
+                rows={[{ k: 'ที่มา', v: src.label },
                      { k: w.source === 'store_forecast' ? 'เปิดใบ' : 'ไลน์แจ้ง',
                        v: at ? `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')} น.` : null },
                      /* 👤 20/10 — สโตร์ต้องรู้ว่า "ใครเรียก" ไว้โทรกลับถามเวลาของไม่ตรง/ไลน์เปลี่ยนรุ่น
                         ใบเก่าของไลน์ไม่มีชื่อ (เพิ่ง stamp 20/10 ที่ LinePartCallPanel) ⇒ ไม่มีชื่อ = ไม่โชว์แถว ห้ามเดา */
-                     { k: w.source === 'store_forecast' ? 'ผู้เปิดใบ' : 'คนเรียก', v: w.requested_by || null },
+                     { k: src.who, v: w.requested_by || null },
                      { k: 'หยิบแล้ว', v: pickMeta || null },
                      { k: 'ถึงไลน์', v: gateMeta || null },
                      /* 🔴 คิวนี้ = "ของที่สโตร์ตัดจ่ายเข้าไลน์" ⇒ ต้องเป็น 2xxx/3xxx/5xxx
