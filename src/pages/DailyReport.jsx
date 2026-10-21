@@ -42,7 +42,8 @@ import StoreLotQueue from '../components/StoreLotQueue';
 import LineWipPanel from '../components/LineWipPanel';
 import LinePartCallPanel from '../components/LinePartCallPanel';
 import ProcessTypeSetup from '../components/ProcessTypeSetup';
-import { computeSessionOee, sessionProducedQty, strictOee, strictGap, STRICT_WARN_SHARE_PCT, policyBreakOverlapMin, breakIntervalsIn, dtMinOutsideBreaks, overlapMinutesWith, buildCtMap, ctForMat, groupSameProductKeys, shiftFrameOf, shiftStartDate, clampWinToShift, unionIv, dtMinOutsideWork, SIX_BIG_LOSSES, EIGHT_WASTES, sumDefectQty, isTrialDefect, splitDefectQty, QBIN_EMBED, sumSuspectPending } from '../utils/oee';
+import { computeSessionOee, sessionProducedQty, strictOee, strictGap, STRICT_WARN_SHARE_PCT, policyBreakOverlapMin, breakIntervalsIn, breakBandsIn, breakBandName, dtMinOutsideBreaks, overlapMinutesWith, buildCtMap, ctForMat, groupSameProductKeys, shiftFrameOf, shiftStartDate, clampWinToShift, unionIv, dtMinOutsideWork, SIX_BIG_LOSSES, EIGHT_WASTES, sumDefectQty, isTrialDefect, splitDefectQty, QBIN_EMBED, sumSuspectPending, orderCloseMs, matRawWindow } from '../utils/oee';
+import { planMatTimeWrites, MAT_TIME_SKIP_OPEN } from '../utils/matTimeEdit';
 import { resolveShiftTime, checkShiftTime, shiftWindow, windowLabel, fmtOffset, MAX_SHIFT_MIN, checkCloseTime } from '../utils/shiftWindow';
 import ScanModal from '../components/ScanModal';
 import SearchSelect from '../components/SearchSelect';
@@ -1061,28 +1062,35 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     if (!selSession) return;
     setSavingTimes(true);
     try {
-      // อัปเดต opened_at / confirmed_at ต่อ MAT.NO (เดียวกับตอนปิดกะ)
+      /* อัปเดตเวลาเริ่ม–จบต่อ MAT.NO — แผนการเขียนมาจาก `planMatTimeWrites` ที่เดียว
+         🔴 ต้องเขียน **ช่องเดียวกับที่จออ่าน** (ยกยอด = `stopped_at`) และ **รัดทุกใบที่เลยเวลาใหม่**
+            ไม่ใช่ขยับใบ confirmed ใบสุดท้ายใบเดียว — เดิมทำแบบนั้น MAT ที่มีใบยกยอดจึง "แก้ไม่ขึ้น"
+            (ตีกลับเป็นเวลาปิดกะทุกครั้ง · เคสจริง Apron Assy 20/10 · utils/matTimeEdit.js)
+         🔴 เวลาที่คนกรอกต้อง resolve ด้วยกรอบกะจริง (`buildDT` → resolveShiftTime) ห้ามต่อสตริง
+            `work_date + hh:mm` เอง แล้วบวกวันจากเลขชั่วโมง (กฎ shiftWindow) */
+      const skippedOpen = [];
       for (const [matNo, ov] of Object.entries(matTimeOverride)) {
         if (!ov || (!ov.start && !ov.end) || !selSession.work_date) continue;
         const orders = prodOrders.filter(o => o.mat_no === matNo);
-        if (!orders.length || orders.some(o => o.status === 'open')) continue;
-        if (ov.start) {
-          const firstOrder = orders.reduce((a, b) => (!a.opened_at || (b.opened_at && new Date(b.opened_at) < new Date(a.opened_at))) ? b : a);
-          const ms = new Date(`${selSession.work_date}T${ov.start.slice(0, 5)}:00`).getTime();
+        if (!orders.length) continue;
+        const sDt = ov.start ? buildDT(ov.start) : null;
+        const eDt = ov.end   ? buildDT(ov.end)   : null;
+        if ((ov.start && !sDt) || (ov.end && !eDt)) { toast.error(`อ่านเวลาที่กรอกของ ${matNo} ไม่ออก — ยังไม่บันทึก`); continue; }
+        const { writes, skip } = planMatTimeWrites(orders, {
+          startMs: sDt ? sDt.getTime() : null,
+          endMs:   eDt ? eDt.getTime() : null,
+        });
+        if (skip === MAT_TIME_SKIP_OPEN) { skippedOpen.push(matNo); continue; }
+        for (const w of writes) {
           /* นับแถว — เวลานี้เป็นฐานของ %A/%P ที่กำลังจะ stamp ลงกะ ถ้าเขียนไม่ติด
              OEE จะถูกคิดจากเวลาที่ไม่เคยถูกบันทึก (จอกับฐานไม่ตรงกันถาวร · กฎเขียน DB ข้อ 2) */
-          checkWriteRows(await supabaseDR.from('prod_orders').update({ opened_at: new Date(ms).toISOString() }).eq('id', firstOrder.id).select('id'), 'บันทึกเวลาเริ่ม MAT');
-        }
-        if (ov.end) {
-          const confirmedOds = orders.filter(o => o.status === 'confirmed' && o.confirmed_at);
-          if (confirmedOds.length) {
-            const lastOrder = confirmedOds.reduce((a, b) => (new Date(b.confirmed_at) > new Date(a.confirmed_at)) ? b : a);
-            let ms = new Date(`${selSession.work_date}T${ov.end.slice(0, 5)}:00`).getTime();
-            if (lastOrder.opened_at && ms < new Date(lastOrder.opened_at).getTime()) ms += 86400000;
-            checkWriteRows(await supabaseDR.from('prod_orders').update({ confirmed_at: new Date(ms).toISOString() }).eq('id', lastOrder.id).select('id'), 'บันทึกเวลาปิด MAT');
-          }
+          checkWriteRows(await supabaseDR.from('prod_orders')
+            .update({ [w.field]: new Date(w.ms).toISOString() }).eq('id', w.id).select('id'),
+            w.field === 'opened_at' ? 'บันทึกเวลาเริ่ม MAT' : 'บันทึกเวลาจบ MAT');
         }
       }
+      /* ⚠️ ข้ามแล้วต้องบอก — เดิมข้ามเงียบๆ แต่ toast ยังขึ้น "สำเร็จ" = จอโกหก (ENGINEERING-PRINCIPLES) */
+      if (skippedOpen.length) toast.error(`ยังมีใบผลิตเปิดค้าง — ไม่ได้แก้เวลาของ ${skippedOpen.join(', ')} (ปิด/ยกยอดใบที่ค้างก่อน)`);
       // คำนวณ OEE ใหม่ด้วยเวลาที่แก้
       // NG เข้าสูตร Q ต้องไม่รวมงานทดลอง (เหมือน handleCloseSession)
       const { A, P, Q, oee, shiftMin, totalProduced, ctUsed } = computeOEE(sumDefectQty(defectLogs, 'line'), closeEndTime, closeStartTime);
@@ -3351,13 +3359,10 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 const rowPct = target > 0 ? Math.min(100, Math.round((confirmed / target) * 100)) : 0;
                 // เวลาทำงานจริงของพาร์ทนี้ — บางพาร์ทในไลน์เดียวกันอาจเริ่ม/เลิกต่างกัน
                 // เช่น คนเข้า OT มาช่วยพาร์ทหนึ่งตั้งแต่ 20:00 แต่อีกพาร์ทเริ่มตามกำลังคนปกติ 22:30
-                const openedTimes = orders.map(o => o.opened_at).filter(Boolean).map(t => new Date(t).getTime());
-                const closedTimes = orders.filter(o => o.status === 'confirmed' && o.confirmed_at).map(o => new Date(o.confirmed_at).getTime());
+                // เวลาปิดของใบ = `orderCloseMs` ที่เดียว (confirmed/ยกยอด/ยกเลิก คนละช่อง · utils/oee §6.2)
+                const rawD = matRawWindow(orders);
                 // รัดให้อยู่ในกะเหมือนทุกจอ ไม่งั้นชิป 🕐 โชว์เวลาของวันถัดไป (utils/oee §7)
-                const winD = clampWinToShift(
-                  openedTimes.length ? Math.min(...openedTimes) : null,
-                  closedTimes.length ? Math.max(...closedTimes) : null,
-                  shiftFrameOf(selSession));
+                const winD = clampWinToShift(rawD.startMs, rawD.endMs, shiftFrameOf(selSession));
                 const actualStart = winD.startMs != null ? new Date(winD.startMs) : null;
                 const actualEnd   = winD.endMs   != null ? new Date(winD.endMs)   : null;
                 return { matNo, name, target, confirmed, openCnt, closedCnt, ng, dt, ct, rowPct, actualStart, actualEnd };
@@ -4492,16 +4497,12 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                     const orderIds = new Set(orders.map(o => o.id));
                     const ng = defectLogs.filter(d => orderIds.has(d.prod_order_id)).reduce((s, d) => s + (d.qty_ng || 0) + (d.qty_suspect || 0), 0);
                     const dt = dtLogs.filter(d => d.mat_no === matNo).reduce((s, d) => s + (d.duration_min || 0), 0);
-                    const openedTimes = orders.map(o => o.opened_at).filter(Boolean).map(t => new Date(t).getTime());
-                    // เวลาปิดของ order — confirmed ใช้ confirmed_at, ยกยอด/ยกเลิกใช้ stopped_at ที่กรอกไว้ตอนปิดกะ (แยกตามพาร์ทได้)
-                    const closedTimes = orders.filter(o => (o.status === 'confirmed' && o.confirmed_at) || ((o.status === 'carry_over' || o.status === 'cancelled') && o.stopped_at))
-                      .map(o => new Date(o.confirmed_at || o.stopped_at).getTime());
+                    // เวลาปิดของ order — `orderCloseMs` ที่เดียว (confirmed ใช้ confirmed_at · ยกยอด/ส่งกะถัดไป/
+                    // ยกเลิก ใช้ stopped_at) · เดิมหน้านี้ตัด `imported` ทิ้ง = เห็นเวลาจบไม่ตรงแท็บประวัติ
+                    const rawA = matRawWindow(orders);
                     // 🔴 รัดช่วงของพาร์ทให้อยู่ในกะ — ใบที่ยืนยันย้อนหลังข้ามวันเคยลาก "ควรได้" เป็นพันชิ้น (utils/oee §7)
                     const frameA = shiftFrameOf(selSession);
-                    const winA = clampWinToShift(
-                      openedTimes.length ? Math.min(...openedTimes) : null,
-                      closedTimes.length ? Math.max(...closedTimes) : (frameA?.endMs ?? null),
-                      frameA);
+                    const winA = clampWinToShift(rawA.startMs, rawA.endMs ?? (frameA?.endMs ?? null), frameA);
                     const actualStart = winA.startMs != null ? new Date(winA.startMs) : null;
                     const actualEnd   = winA.endMs   != null ? new Date(winA.endMs)   : null;
                     const ctSec = ctForMatNo(matNo);
@@ -4605,16 +4606,15 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   const sessionShift = selSession.shift || 'day';
                   const processType = sessionProcessType();
                   const blocks = [];
-                  breakPolicies
-                    .filter(p => (p.shift === 'both' || p.shift === sessionShift) && (p.process_type === 'common' || p.process_type === processType))
-                    .forEach(p => {
-                      const [ph, pm] = (p.start_time || '00:00').split(':').map(Number);
-                      let pStart = new Date(`${selSession.work_date}T${String(ph).padStart(2,'0')}:${String(pm).padStart(2,'0')}:00`).getTime();
-                      let pEnd = pStart + (p.duration_min || 0) * 60000;
-                      if (pEnd < winStart) { pStart += 86400000; pEnd += 86400000; }
-                      const s = Math.max(pStart, winStart), e = Math.min(pEnd, winEnd);
-                      if (e > s) blocks.push({ start: s, end: e, label: p.label || p.name || 'พักตามนโยบาย', color: '#4d9fff' });
-                    });
+                  /* 🏭 แถบเวลาพัก = `breakBandsIn` ที่เดียว (ห้ามปั้นช่วงพักเองในหน้า · utils/oee §7)
+                     เดิมที่นี่อ่าน `p.start_time` ตรงๆ ⇒ พัก `anchor='shift_end'` (5ส. ท้ายกะ ซึ่ง
+                     `start_time = null`) ไปโผล่ 00:00 แล้วถูกตัดทิ้ง = แถบหายจากไทม์ไลน์ทั้งที่ %A หักไปแล้ว
+                     และป้ายเดิมอ่าน `p.label`/`p.name` ซึ่ง **ไม่มีในตาราง** (คอลัมน์จริง = `name_th`)
+                     ⇒ ทุกแถบเขียน "พักตามนโยบาย" เหมือนกันหมด · ชื่อ+นาทีรายไลน์มาจาก `breakBandName` */
+                  breakBandsIn({ policies: breakPolicies, startMs: winStart, endMs: winEnd,
+                    workDate: selSession.work_date, shift: sessionShift, processType,
+                    shiftEndMs: winEnd, lineName: selSession.line_name })
+                    .forEach(b => blocks.push({ start: b.s, end: b.e, label: breakBandName(b), color: '#4d9fff' }));
                   dtLogs.forEach(d => {
                     if (!d.started_at) return;
                     const s0 = new Date(d.started_at).getTime();
@@ -4912,7 +4912,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                     const dt = dtLogs.filter(d => d.mat_no === matNo).reduce((s, d) => s + (d.duration_min || 0), 0);
                     const hasOpenOrders = orders.some(o => o.status === 'open');
                     const openedTimes = orders.map(o => o.opened_at).filter(Boolean).map(t => new Date(t).getTime());
-                    const closedTimes = orders.filter(o => o.status === 'confirmed' && o.confirmed_at).map(o => new Date(o.confirmed_at).getTime());
+                    // ใบที่ปิดแล้ว = `orderCloseMs` (ใบที่ยกเลิกไปก่อนหน้าในกะนี้ก็นับ · utils/oee §6.2)
+                    const closedTimes = orders.map(orderCloseMs).filter(t => t != null);
                     // ออเดอร์ที่ยังเปิด แต่ตัดสินใจ (ยกยอด/ยกเลิก) และกรอก "เวลาหยุดผลิตจริง" ไว้แล้ว — ใช้เวลานั้น
                     // แทนเวลาปิดกะรวมของไลน์ เผื่อพาร์ทนี้หยุดวิ่งไปแล้วก่อนเวลาปิดกะ (กรณีมีหลาย MAT.NO วิ่งพร้อมกัน)
                     const openStopTimes = orders.filter(o => o.status === 'open' && carryOverDecisions[o.id]).map(o => {
@@ -5066,16 +5067,15 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   const sessionShift = selSession.shift || 'day';
                   const processType = sessionProcessType();
                   const blocks = [];
-                  breakPolicies
-                    .filter(p => (p.shift === 'both' || p.shift === sessionShift) && (p.process_type === 'common' || p.process_type === processType))
-                    .forEach(p => {
-                      const [ph, pm] = (p.start_time || '00:00').split(':').map(Number);
-                      let pStart = new Date(`${selSession.work_date}T${String(ph).padStart(2,'0')}:${String(pm).padStart(2,'0')}:00`).getTime();
-                      let pEnd = pStart + (p.duration_min || 0) * 60000;
-                      if (pEnd < winStart) { pStart += 86400000; pEnd += 86400000; }
-                      const s = Math.max(pStart, winStart), e = Math.min(pEnd, winEnd);
-                      if (e > s) blocks.push({ start: s, end: e, label: p.label || p.name || 'พักตามนโยบาย', color: '#4d9fff' });
-                    });
+                  /* 🏭 แถบเวลาพัก = `breakBandsIn` ที่เดียว (ห้ามปั้นช่วงพักเองในหน้า · utils/oee §7)
+                     เดิมที่นี่อ่าน `p.start_time` ตรงๆ ⇒ พัก `anchor='shift_end'` (5ส. ท้ายกะ ซึ่ง
+                     `start_time = null`) ไปโผล่ 00:00 แล้วถูกตัดทิ้ง = แถบหายจากไทม์ไลน์ทั้งที่ %A หักไปแล้ว
+                     และป้ายเดิมอ่าน `p.label`/`p.name` ซึ่ง **ไม่มีในตาราง** (คอลัมน์จริง = `name_th`)
+                     ⇒ ทุกแถบเขียน "พักตามนโยบาย" เหมือนกันหมด · ชื่อ+นาทีรายไลน์มาจาก `breakBandName` */
+                  breakBandsIn({ policies: breakPolicies, startMs: winStart, endMs: winEnd,
+                    workDate: selSession.work_date, shift: sessionShift, processType,
+                    shiftEndMs: winEnd, lineName: selSession.line_name })
+                    .forEach(b => blocks.push({ start: b.s, end: b.e, label: breakBandName(b), color: '#4d9fff' }));
                   dtLogs.forEach(d => {
                     if (!d.started_at) return;
                     const s0 = new Date(d.started_at).getTime();
@@ -5373,13 +5373,10 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                       {matNos.map(matNo => {
                         const orders = prodOrders.filter(o => o.mat_no === matNo);
-                        const openedTimes  = orders.map(o => o.opened_at).filter(Boolean).map(t => new Date(t).getTime());
-                        const closedTimes  = orders
-                          .filter(o => (o.status === 'confirmed' && o.confirmed_at) || ((o.status === 'carry_over' || o.status === 'cancelled') && o.stopped_at))
-                          .map(o => new Date(o.confirmed_at || o.stopped_at).getTime());
-                        const winE = clampWinToShift(
-                          openedTimes.length ? Math.min(...openedTimes) : null,
-                          closedTimes.length ? Math.max(...closedTimes) : null,
+                        /* 🔴 ค่าที่โชว์ในช่องต้องมาจากสูตรเดียวกับจอที่อ่านผล (`matRawWindow`) ไม่งั้นช่องโชว์
+                           19:28 แต่แท็บประวัติโชว์ 20:00 = แก้แล้วเหมือนไม่เกิดอะไร (เคส Apron Assy 20/10) */
+                        const rawE = matRawWindow(orders);
+                        const winE = clampWinToShift(rawE.startMs, rawE.endMs,
                           shiftFrameOf(selSession, { startTime: closeStartTime, endTime: closeEndTime }));
                         const actualStart  = winE.startMs != null ? new Date(winE.startMs) : null;
                         const actualEnd    = winE.endMs   != null ? new Date(winE.endMs)   : null;
@@ -6873,14 +6870,10 @@ function HistoryTab({ role }) {
                       const ng = defects.filter(d => orderIds.has(d.prod_order_id)).reduce((sum, d) => sum + (d.qty_ng || 0) + (d.qty_suspect || 0), 0);
                       const dt = dts.filter(d => d.mat_no === matNo).reduce((sum, d) => sum + (d.duration_min || 0), 0);
                       // %P รายชิ้น (สูตรเดียวกับ modal ตรวจสอบคำขอปิดกะ): window ของพาร์ท − DT ทับซ้อน − พักนโยบาย
-                      const openedTimes = matOrders.map(o => o.opened_at).filter(Boolean).map(t => new Date(t).getTime());
-                      const closedTimes = matOrders.map(o => o.confirmed_at || o.stopped_at).filter(Boolean).map(t => new Date(t).getTime());
+                      const rawH = matRawWindow(matOrders);
                       // 🔴 รัดช่วงของพาร์ทให้อยู่ในกะ — ใบที่ยืนยันย้อนหลังข้ามวันเคยทำ "ควรได้" พองเป็นพัน (utils/oee §7)
                       const sFrame = shiftFrameOf(s);
-                      const { startMs: winStart, endMs: winEnd } = clampWinToShift(
-                        openedTimes.length ? Math.min(...openedTimes) : null,
-                        closedTimes.length ? Math.max(...closedTimes) : null,
-                        sFrame);
+                      const { startMs: winStart, endMs: winEnd } = clampWinToShift(rawH.startMs, rawH.endMs, sFrame);
                       const ctSec = ctByMat[matNo] || 0;
                       let achievable = null, pPct = null, winLabel = null;
                       if (winStart && winEnd && winEnd > winStart) {
