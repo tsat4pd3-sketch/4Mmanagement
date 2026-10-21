@@ -466,6 +466,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
      แต่ระบบไม่มีทางรู้ว่า PROD.NO ใบใหม่เป็นของพาร์ทไหน ⇒ หยิบ Tag Card ผิดพาร์ทมายิง = เปิดผิดพาร์ทเงียบๆ
      มือถือ: สแกน PROD.NO แล้ว **ไม่เปิดเอง** ต้องแตะยืนยันพาร์ทก่อน 1 ครั้ง · จอคอมพฤติกรรมเดิม */
   const [carriedMat, setCarriedMat] = useState(null);
+  /* 📱 ช่องสแกน PROD.NO (เปิด/ปิดใบ) ไม่เด้งคีย์บอร์ดบนมือถือ — เคอร์เซอร์รออยู่ที่ช่องตลอด ยิงต่อได้ทันที
+     คีย์บอร์ดเด้ง = บังกล่องยืนยันพาร์ท/ปุ่มครึ่งจอ · ป้ายเลอะ → แตะ ⌨️ พิมพ์เอง (2026-10-21 · feedback user) */
+  const [prodKbd, setProdKbd] = useState(false);
   const carryAskAtRef = useRef(0);          // กัน Enter ตัวที่ 2 ของเครื่องสแกนไปกดปุ่มยืนยันที่เพิ่งโผล่
   const prodBusyRef = useRef(false);        // กันกด/Enter ซ้ำระหว่างเปิดใบ-ปิดใบ (CR+LF = Enter 2 ครั้ง · ถุงมือแตะเบิ้ล)
   const qtyBusyRef = useRef(new Set());     // กันกด 💾/ปิดใบ ซ้ำต่อใบ
@@ -5510,6 +5513,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 <Field label="PROD.NO (สแกน barcode ตัวล่าง Sender/ID บน Tag Card) *">
                   <input ref={openProdInputRef} autoFocus value={openProdForm.prod_no}
+                    inputMode={isMobile && !prodKbd ? 'none' : undefined}
                     /* ⌨️ แป้นค้างไทย → แปลงกลับให้ทันทีตอนยิง + บอกให้รู้ตัว (ห้ามเงียบ — ไม่งั้นยิงผิดทั้งกะ)
                        แกะไม่ออก = ปล่อยค่าเดิมไว้ ให้ด่านตอนกดเปิดใบปฏิเสธพร้อมเหตุผล */
                     onChange={e => {
@@ -5541,6 +5545,12 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                     placeholder="สแกน PROD.NO..."
                     style={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 700, fontSize: 15 }} />
                   <ScanLenHint value={openProdForm.prod_no} />
+                  {isMobile && !prodKbd && (
+                    <button type="button" onClick={() => { openProdInputRef.current?.blur(); setProdKbd(true); setTimeout(() => openProdInputRef.current?.focus(), 30); }}
+                      style={{ marginTop: 6, minHeight: 40, padding: '6px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                      ⌨️ พิมพ์เอง (ป้ายสแกนไม่ติด)
+                    </button>
+                  )}
                 </Field>
 
                 {/* 🔫 มือถือ: MAT ค้างจากใบก่อน — ต้องแตะยืนยันพาร์ทก่อนเปิด (กันหยิบ Tag Card ผิดพาร์ทมายิง · 2026-10-20) */}
@@ -5556,7 +5566,13 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>เช็คกับ Tag Card ในมือก่อนกดยืนยัน — ระบบตรวจไม่ได้ว่า PROD.NO นี้เป็นของพาร์ทไหน</div>
                       <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
                         <button type="button" disabled={savingProdOpen}
-                          onClick={() => { if (Date.now() - carryAskAtRef.current < 400) return; handleScanOpen(); }}
+                          onClick={async () => {
+                            if (Date.now() - carryAskAtRef.current < 400) return;
+                            await handleScanOpen();
+                            /* 🔴 user 21/10: "กดยืนยันแล้วต้องสแกนต่อได้เลย ไม่ใช่ต้องคลิกช่องใหม่"
+                               ⇒ ไม่ว่าเปิดสำเร็จหรือติดด่าน เคอร์เซอร์กลับช่อง PROD.NO เสมอ */
+                            setTimeout(() => openProdInputRef.current?.focus(), 100);
+                          }}
                           style={{ flex: 1, minHeight: 48, borderRadius: 10, border: 'none', background: '#f59e0b', color: '#000', fontWeight: 900, fontSize: 15, cursor: 'pointer' }}>
                           {savingProdOpen ? 'กำลังเปิด…' : '✓ ใช่ เปิดใบ'}
                         </button>
@@ -5729,11 +5745,18 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
 
               <Field label="PROD.NO (สแกน barcode ตัวล่าง Sender/ID บน Tag Card)">
                 <input ref={closeProdInputRef} autoFocus value={closeProdNo}
+                  inputMode={isMobile && !prodKbd ? 'none' : undefined}
                   onChange={e => handleCloseProdNoChange(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter' && closeMatch) handleScanCloseImmediate(closeMatch); }}
                   placeholder="สแกน PROD.NO..."
                   style={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 700, fontSize: 15 }} />
                 <ScanLenHint value={closeProdNo} />
+                  {isMobile && !prodKbd && (
+                    <button type="button" onClick={() => { closeProdInputRef.current?.blur(); setProdKbd(true); setTimeout(() => closeProdInputRef.current?.focus(), 30); }}
+                      style={{ marginTop: 6, minHeight: 40, padding: '6px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                      ⌨️ พิมพ์เอง (ป้ายสแกนไม่ติด)
+                    </button>
+                  )}
               </Field>
 
               {/* Match preview */}
