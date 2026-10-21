@@ -123,7 +123,10 @@ export function applyBreakLineRules(policies = [], index = null, lineName = null
   return policies.map(p => {
     const d = m.get(String(p?.id ?? ''));
     if (d === undefined || d === Number(p?.duration_min)) return p;
-    const out = { ...p, duration_min: d, line_rule_min: d };
+    /* `line_rule_min` = นาทีที่ไลน์นี้ตั้งเอง · `line_rule_central_min` = ค่ากลางที่ถูกทับ
+       ⇒ จอที่วาดแถบเงา (บอร์ดไทม์ไลน์) เขียนเทียบได้ "ตั้งเอง 10 จากค่ากลาง 20" โดยไม่ต้องอ่านทะเบียนเอง
+       🔴 แปะเฉพาะตัวที่ **ต่างจากค่ากลางจริง** (เช็คไปแล้วข้างบน) — ตั้งเท่าค่ากลาง = ไม่มีป้าย */
+    const out = { ...p, duration_min: d, line_rule_min: d, line_rule_central_min: Number(p?.duration_min) || 0 };
     /* 🔚 พักท้ายกะ — เลื่อนให้เองโดยรักษาระยะถึงปลายกะ (gap ของค่ากลาง) */
     if (p?.anchor === 'shift_end') {
       const gap = Math.max(0, (Number(p.offset_min) || 0) - (Number(p.duration_min) || 0));
@@ -131,6 +134,40 @@ export function applyBreakLineRules(policies = [], index = null, lineName = null
     }
     return out;
   });
+}
+
+/* ═══ ป้ายบน "แถบเงาเวลาพัก" ของบอร์ดไทม์ไลน์ — 3 จอต้องเขียนเหมือนกัน ═══════════════
+   `/dashboard` · `/management` · `/heijunka-kanban` วาดแถบเดียวกัน ⇒ ข้อความต้องมาจากที่นี่
+   🔴 **ห้ามจอไหนจับคู่ "แถบนี้คือพักอะไร" ด้วยการเทียบเวลาเอง** — พัก `anchor='shift_end'`
+      มี `start_time = null` และไลน์ที่ตั้งเองยังเลื่อน offset อีก ⇒ จับคู่ไม่ติด = tooltip "undefined"
+      (บั๊กจริงบนบอร์ดทั้ง 3 จอ ก่อน 20/10) · ชื่อพักมาจาก `band.policies` ที่ `breakBandsIn` ติดมาให้ */
+
+const bandHhmm = (ms) => {
+  const d = new Date(ms);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+};
+
+/** ชื่อรายการพักของแถบ (ช่วงที่ทับกันถูกรวม ⇒ ต่อด้วย " + ") · ไม่รู้ชื่อ = `'พัก'` ห้ามคืนว่าง */
+export function breakBandName(band) {
+  const names = [...new Set((band?.policies || [])
+    .map(p => p?.name_th || p?.name_en || p?.name).filter(Boolean))];
+  return names.length ? names.join(' + ') : 'พัก';
+}
+
+/**
+ * tooltip ของแถบพัก: ชื่อ + ช่วงเวลา + (ถ้ามี) "ไลน์นี้ตั้งเอง N นาที จากค่ากลาง M"
+ * 🔴 ไลน์ที่ตั้งเองแล้ว**ต้องเขียนบอก** — ไม่งั้นคนเห็นแถบไม่เท่าไลน์ข้างๆ แล้วนึกว่าจอเพี้ยน
+ * @param {object} band ผลจาก `breakBandsIn`/`halfDayBreakBands` ({ s, e, policies, lineRuleMin, centralMin })
+ * @param {string|null} lineName ชื่อไลน์ของแถวนั้น (ใส่ในข้อความให้รู้ว่าเป็นของไลน์ไหน)
+ */
+export function breakBandTitle(band, lineName = null) {
+  if (!band) return 'พัก';
+  let t = `${breakBandName(band)} ${bandHhmm(band.s)}–${bandHhmm(band.e)}`;
+  if (band.lineRuleMin !== null && band.lineRuleMin !== undefined) {
+    t += ` · 🏭 ${lineName || 'ไลน์นี้'} ตั้งเอง ${band.lineRuleMin} นาที`
+       + ` (ค่ากลาง ${band.centralMin} นาที)`;
+  }
+  return t;
 }
 
 /** มีกฎรายไลน์อยู่จริงไหม (จอใช้ตัดสินว่าจะเขียนป้าย "ไลน์นี้ตั้งเอง" ไหม) */

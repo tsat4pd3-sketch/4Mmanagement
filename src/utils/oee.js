@@ -34,7 +34,12 @@
 import { collapsePairShots } from './pairTotals.js';
 // §8 computeSessionOee ต้องรู้โหมดไลน์/จำนวนสถานีขนาน (source of truth = lineTypes.js · ไม่มี import วนกลับ)
 import { parallelUnitsOf, flowModeOf } from './lineTypes.js';
-import { applyBreakLineRules, breakLineRuleIndexSync } from './breakLineRules.js';   // ข้อยกเว้นเวลาพัก "รายไลน์" (เจ้าของกฎไล่สายแม่-ลูก)
+import { applyBreakLineRules, breakLineRuleIndexSync, breakBandName, breakBandTitle } from './breakLineRules.js';   // ข้อยกเว้นเวลาพัก "รายไลน์" (เจ้าของกฎไล่สายแม่-ลูก)
+/* 🏭 ป้ายบนแถบเงาเวลาพัก — เจ้าของข้อความอยู่ `breakLineRules.js` ส่งต่อที่นี่เพื่อให้จอ
+   **import จาก `utils/oee` ที่เดียว** คู่กับ `halfDayBreakBands` ที่ผลิต band ให้
+   (จอที่ไล่สายไลน์ด้วย `getAncestorNames` เรื่องอื่นอยู่ จะได้ไม่ต้อง import breakLineRules
+    ซึ่งด่าน `break-line-rules-single-entry` ข้อ ③ จับไว้ว่า "ห้ามไล่สายกฎเวลาพักเองในหน้า") */
+export { breakBandName, breakBandTitle };
 import { WORK_DAY_START_HOUR } from './workDate.js';   // ขอบวันทำงาน (ก่อน 08:00 = วันก่อนหน้า) — เจ้าของกฎ
 
 /* ═══ 6) ยอดผลิตของใบผลิต 1 ใบ ═══════════════════════════════════════════════════════
@@ -96,6 +101,41 @@ export function orderPlanQty(o) {
   const t = Number(o.qty_target ?? o.qty ?? 0) || 0;
   if (o.status === 'imported') return Math.max(0, Math.min(t, Number(o.qty_actual ?? 0) || 0));
   return t;
+}
+
+
+/* ═══ 6.2) "เวลาปิด" ของใบผลิต 1 ใบ — เจ้าของสูตรเดียวของทั้งระบบ (2026-10-20 · feedback หน้างาน) ═══
+   เดิมหน้าเดียวกันคิดคนละแบบ ⇒ MAT เดียว กะเดียว เห็นเวลาจบไม่ตรงกัน:
+     · การ์ด %P รายพาร์ท + modal แก้เวลา → ตัด `imported` ทิ้ง         = จบ 19:28
+     · แท็บประวัติ + backfill ฝั่ง DB      → นับ `stopped_at` ด้วย      = จบ 20:00
+   ⇒ หัวหน้าไลน์แก้ "เวลาจบ" แล้วจอตีกลับเป็นเวลาปิดกะทุกครั้ง (เคสจริง Apron Assy 20/10)
+   กติกาเดียว (ตรงกับ migration 20260915 ฝั่ง DB — `case when confirmed then confirmed_at else stopped_at`):
+     · `confirmed`                         → `confirmed_at`
+     · `carry_over` / `imported` / `cancelled` → `stopped_at` (ไม่ได้กรอก = ถอยไป `confirmed_at`)
+     · `open`                              → **ยังไม่ปิด = null** (ห้ามเดาเป็นปลายกะ)
+   🔴 **ห้ามเขียน `o.confirmed_at || o.stopped_at` เองในหน้าอีก** (มีด่าน `order-close-single-entry`) */
+export function orderCloseMs(o) {
+  if (!o) return null;
+  const st = o.status;
+  const pick = st === 'confirmed' ? o.confirmed_at
+    : (st === 'carry_over' || st === 'imported' || st === 'cancelled') ? (o.stopped_at || o.confirmed_at)
+    : null;
+  if (!pick) return null;
+  const ms = new Date(pick).getTime();
+  return Number.isFinite(ms) ? ms : null;
+}
+
+/* กรอบ "ช่วงที่ MAT นี้วิ่งในกะนี้" แบบดิบ — ยังไม่รัดเข้ากรอบกะ
+   🔴 คนเรียกต้องส่งต่อ `clampWinToShift(...)` เสมอ (ใบที่ยืนยันย้อนหลังข้ามวันเคยลาก "ควรได้" เป็นพัน) */
+export function matRawWindow(orders = []) {
+  let startMs = null, endMs = null;
+  for (const o of orders || []) {
+    const op = o?.opened_at ? new Date(o.opened_at).getTime() : null;
+    if (op != null && Number.isFinite(op)) startMs = startMs == null ? op : Math.min(startMs, op);
+    const cl = orderCloseMs(o);
+    if (cl != null) endMs = endMs == null ? cl : Math.max(endMs, cl);
+  }
+  return { startMs, endMs };
 }
 
 
@@ -166,6 +206,26 @@ const mergeIv = (iv) => {
   return out;
 };
 
+/** รวมช่วงพักที่ทับ/ต่อกัน **โดยเก็บป้ายไว้** — input เรียงตาม `s` แล้ว
+ *  🔴 เงื่อนไขการรวมต้องตรงกับ `mergeIv` เป๊ะ (`b.s <= cur.e`) ไม่งั้นนาทีพักที่หักออกจากฐานเวลา
+ *     ของ `breakIntervalsIn` จะขยับจากของเดิม = %A/%P เปลี่ยนทั้งระบบโดยไม่มีใครสั่ง */
+const mergeBands = (bands) => {
+  if (!bands.length) return [];
+  const out = [{ ...bands[0], policies: [...bands[0].policies] }];
+  for (let k = 1; k < bands.length; k++) {
+    const cur = out[out.length - 1], b = bands[k];
+    if (b.s <= cur.e) {
+      cur.e = Math.max(cur.e, b.e);
+      cur.policies.push(...b.policies);
+      // ช่วงที่รวมกันแล้ว: ป้าย "ตั้งเอง" ของตัวแรกที่มีเป็นตัวแทน (รายละเอียดครบอยู่ใน policies)
+      if (cur.lineRuleMin === null && b.lineRuleMin !== null) {
+        cur.lineRuleMin = b.lineRuleMin; cur.centralMin = b.centralMin;
+      }
+    } else out.push({ ...b, policies: [...b.policies] });
+  }
+  return out;
+};
+
 /** union ช่วงเวลาหลายชุดที่ยังไม่เรียง → [[s, e], ...] เรียง + รวมช่วงที่ทับกัน
  *  ⚠️ `mergeIv` ข้างบนต้องการ input ที่เรียงมาแล้ว — ตัวนี้เรียงให้ก่อน ใช้กับชุดที่ผสมมาจากหลายที่
  *  (เช่น "ช่วงที่พาร์ทวิ่ง" ∪ "ช่วงพักตามนโยบาย" ตอนหา downtime ที่ตกนอกงานทั้งหมด — §7) */
@@ -184,6 +244,19 @@ export function unionIv(intervals = []) {
  *  ⚠️ union ช่วงที่ทับกัน: ชุดนโยบายปัจจุบันไม่มีคู่ไหนทับกัน (ผลลัพธ์เท่าเดิมเป๊ะ) แต่ถ้าวันหน้ามีคนตั้งทับ
  *     การบวกดิบๆ จะนับพักเกิน — union กันไว้ตั้งแต่ต้น */
 export function breakIntervalsIn({ policies = [], startMs, endMs, workDate, shift, processType = null, shiftEndMs = null, lineRules = null, lineName = null }) {
+  return breakBandsIn({ policies, startMs, endMs, workDate, shift, processType, shiftEndMs, lineRules, lineName })
+    .map(b => [b.s, b.e]);
+}
+
+/** ช่วงพักเดียวกับ `breakIntervalsIn` แต่**ติดป้ายมาด้วย** — สำหรับจอที่ "วาดแถบเงาเวลาพัก"
+ *  คืน `[{ s, e, policies: [...], lineRuleMin, centralMin }]` (เรียง + รวมช่วงที่ทับกันแบบเดียวกัน)
+ *  · `policies`    นโยบายที่ทำให้เกิดช่วงนี้ (ช่วงที่ทับกันถูกรวม ⇒ ได้มากกว่า 1 ตัวได้)
+ *  · `lineRuleMin` นาทีที่ **ไลน์นี้ตั้งเอง** (`break_line_rules`) · ไม่ได้ตั้ง = `null`
+ *  · `centralMin`  ค่ากลางของนโยบาย — ให้จอเขียนเทียบได้ว่า "ตั้งเอง 10 จากค่ากลาง 20"
+ *  🔴 **จอห้ามเดาเองว่าแถบนี้คือนโยบายไหนด้วยการจับคู่เวลา** — พักที่ `anchor = 'shift_end'`
+ *     ไม่ได้อยู่ที่ `start_time` (ของจริง `start_time = null`) และไลน์ที่ตั้งเองยังเลื่อน offset อีก
+ *     ⇒ บอร์ดไทม์ไลน์ 3 จอเคยจับคู่ไม่ติดแล้วเขียน tooltip ว่า "undefined" (แก้ 20/10) */
+export function breakBandsIn({ policies = [], startMs, endMs, workDate, shift, processType = null, shiftEndMs = null, lineRules = null, lineName = null }) {
   if (!startMs || !endMs || endMs <= startMs || !workDate) return [];
   /* 🔚 `anchor = 'shift_end'` — พักที่ผูกกับ **ปลายกะ** ไม่ใช่เวลานาฬิกา (2026-10-20 · feedback หน้างาน)
      เหตุ: 5ส. ท้ายกะเป็นเรื่องเดียวกันแต่เวลาเลื่อนตามรูปแบบวัน (เลิก 17:30 / 20:00 / 17:00 วันหยุด /
@@ -208,7 +281,12 @@ export function breakIntervalsIn({ policies = [], startMs, endMs, workDate, shif
       if (pe < startMs) { ps += 86400000; pe += 86400000; }  // พักกะดึกหลังเที่ยงคืน
     }
     const s = Math.max(ps, startMs), e = Math.min(pe, endMs);
-    return e > s ? [s, e] : null;
+    if (!(e > s)) return null;
+    /* `line_rule_min` / `line_rule_central_min` ถูกแปะโดย `applyBreakLineRules` เฉพาะตัวที่ถูกทับจริง
+       ⇒ ไลน์ที่ตั้งเท่าค่ากลาง = ไม่มีป้าย (ไม่มีอะไรต้องบอกคน) */
+    const lr = p.line_rule_min;
+    return { s, e, policies: [p], lineRuleMin: lr === undefined ? null : lr,
+             centralMin: lr === undefined ? null : (Number(p.line_rule_central_min) || 0) };
   };
   const applicable = policies.filter(p => {
     if (!(p.shift === 'both' || p.shift === shift)) return false;
@@ -229,11 +307,11 @@ export function breakIntervalsIn({ policies = [], startMs, endMs, workDate, shif
      ไม่ส่ง `lineRules` = อ่าน**ทะเบียนกลาง** (`utils/breakLineRules.js` — เหตุผลอยู่ที่นั่น)
      ⇒ จอไม่ต้องไล่ส่ง prop · ไม่รู้ไลน์ / ไลน์นั้นไม่ได้ตั้งอะไร / ทะเบียนยังไม่มา
        ⇒ `applyBreakLineRules` คืน array เดิม = **พฤติกรรมเดิมเป๊ะ** */
-  const iv = applyBreakLineRules(applicable, lineRules ?? breakLineRuleIndexSync(), lineName)
+  const bands = applyBreakLineRules(applicable, lineRules ?? breakLineRuleIndexSync(), lineName)
     .filter(p => !(isOt && p.ot_scope === 'no_ot'))
     .map(rangeOf).filter(Boolean)
-    .sort((a, b) => a[0] - b[0]);
-  return mergeIv(iv);
+    .sort((a, b) => a.s - b.s);
+  return mergeBands(bands);
 }
 
 /** นาทีของช่วง [sMs, eMs] ที่ทับกับ intervals (ผลลัพธ์จาก breakIntervalsIn — merged แล้ว) */
@@ -259,11 +337,18 @@ export function policyBreakOverlapMin({ policies = [], startMs, endMs, workDate,
  *     ⇒ ผ่าน `breakIntervalsIn` ที่เดียว · กรอบ 12 ชม. ครอบช่วงโอ = ตีเป็นกะทำโอ (ทิ้ง `no_ot`)
  *  processType = null → เฉพาะนโยบาย common (จอที่ไม่รู้กระบวนการของไลน์ ห้ามเดานโยบายเฉพาะ) */
 export function halfDayBreakIntervals({ policies = [], half, processType = null, lineRules = null, lineName = null }) {
+  return halfDayBreakBands({ policies, half, processType, lineRules, lineName }).map(b => [b.s, b.e]);
+}
+
+/** เหมือน `halfDayBreakIntervals` แต่**ติดป้ายนโยบาย + ป้าย "ไลน์นี้ตั้งเอง"** มาด้วย
+ *  ⇒ บอร์ดไทม์ไลน์ 24 ชม. (`/dashboard` · `/management` · `/heijunka-kanban`) ใช้วาดแถบเงา
+ *     **ส่ง `lineName` ของแถวนั้นเสมอ** — ไม่ส่ง = ได้ค่ากลาง (ไลน์ที่ตั้ง 5ส. 10 นาทีจะถูกวาด 20) */
+export function halfDayBreakBands({ policies = [], half, processType = null, lineRules = null, lineName = null }) {
   if (!half?.startMs) return [];
   const d = new Date(half.startMs);
   const p2 = (n) => String(n).padStart(2, '0');
   const workDate = `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
-  return breakIntervalsIn({
+  return breakBandsIn({
     policies, startMs: half.startMs, endMs: half.startMs + 12 * 3600000, workDate,
     shift: half.key === 'pm' ? 'night' : 'day', processType, lineRules, lineName,
   });

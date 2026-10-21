@@ -6,7 +6,7 @@ import { loadLinesRes } from '../utils/useProductionLines';
 import { motion, AnimatePresence } from 'framer-motion';
 import { UserContext } from '../App';
 import { isAlarmingDT, isOpenDT, isPlannedDT, dtElapsedMin, fmtDtElapsed } from '../utils/downtimeAlarm';
-import { sumDefectQty, computeLiveOee, ngByMatFrom, orderProducedQty, orderPlanQty, liveTimeSplit, QBIN_EMBED, halfDayBreakIntervals } from '../utils/oee';
+import { sumDefectQty, computeLiveOee, ngByMatFrom, orderProducedQty, orderPlanQty, liveTimeSplit, QBIN_EMBED, halfDayBreakIntervals, halfDayBreakBands, breakBandName, breakBandTitle } from '../utils/oee';
 import ShiftTimeSplit from '../components/ShiftTimeSplit';
 import { markerScale } from '../utils/markerScale';
 import DowntimeSiren from '../components/DowntimeSiren';
@@ -1465,11 +1465,15 @@ export default function Dashboard({ view = 'timeline' }) {
           { key: 'am', hours: HOURS.slice(0, 12), startMs: gridStartMs },
           { key: 'pm', hours: HOURS.slice(12), startMs: gridStartMs + 12 * 3600000 },
         ];
-        // ช่วง break_policies ที่ตรงกับ half นี้ ([startMs, endMs]) — ใช้ทั้งวาดแถบและกันการ์ดวางทับเวลาพัก
-        // 🔴 ผ่าน halfDayBreakIntervals (utils/oee.js) ที่เดียว — กรอง process/ot_scope เหมือนสูตร OEE (QC 05/10)
-        const getBreakIntervals = (half) => halfDayBreakIntervals({ policies: breakPolicies, half });
+        /* ช่วง break_policies ที่ตรงกับ half นี้ ([startMs, endMs]) — ใช้ทั้งวาดแถบและกันการ์ดวางทับเวลาพัก
+           🔴 ผ่าน halfDayBreakIntervals (utils/oee.js) ที่เดียว — กรอง process/ot_scope เหมือนสูตร OEE (QC 05/10)
+           🏭 **ต้องส่ง `lineName` เสมอ** (`break_line_rules` · 20/10) — ไลน์ที่ตั้ง 5ส. 10 นาที
+              ถ้าไม่ส่งจะถูกวาด/คิดเป็นค่ากลาง 20 นาที เงียบๆ · เจ้าของกฎ utils/breakLineRules.js */
+        const getBreakIntervals = (half, lineName = null) => halfDayBreakIntervals({ policies: breakPolicies, half, lineName });
+        // แถบที่ "ติดป้ายมาด้วย" (ชื่อพัก + ไลน์นี้ตั้งเองกี่นาที) — ใช้ตอนวาดเงา ห้ามจับคู่นโยบายจากเวลาเอง
+        const getBreakBands = (half, lineName = null) => halfDayBreakBands({ policies: breakPolicies, half, lineName });
         // รวมเวลาพักทั้งวัน (เช้า+ดึก) — คิวต้องต่อเนื่องข้ามกะได้ถ้าดีเลย์ล้นจากกะเช้าไปกะดึก
-        const allBreaksOnce = () => [...getBreakIntervals(HALVES[0]), ...getBreakIntervals(HALVES[1])].sort((a, b) => a[0] - b[0]);
+        const allBreaksOnce = (lineName = null) => [...getBreakIntervals(HALVES[0], lineName), ...getBreakIntervals(HALVES[1], lineName)].sort((a, b) => a[0] - b[0]);
         /* จัดการ์ดเป็น "รอบสแกน" ทุก 2 ชม. ตามเวลาเปิดจริง — จำกัดผลของดีเลย์ให้อยู่ในรอบตัวเอง
            ไม่ลากคิวยาวทั้งกะ (พนักงานสแกนปิดไม่เรียงเลขใบ แต่จะอยู่ในรอบเดียวกันเสมอ) */
         const ROUND_MS = 2 * 3600000;
@@ -1580,8 +1584,10 @@ export default function Dashboard({ view = 'timeline' }) {
                     จาก `created_at` · ไม่ตัด backfill · ไม่ดูคิวจริง) ส่วนบอร์ดใช้ `heijunkaQueue`
                     ⇒ **บอร์ดเดียวกัน /dashboard กับ /management ขึ้น "ดีเลย์ N ใบ" คนละเลข**
                     ตอนนี้ทั้ง 2 หน้าเรียก `positionAllCards` ตัวเดียวกัน — ห้ามเขียนสูตรนับเองอีก */
+              /* 🏭 คิวระดับ "กลุ่มไลน์" ⇒ ใช้กฎพักของไลน์แม่ (ไลน์ลูกตกทอดจากแม่เป็นค่าตั้งต้นอยู่แล้ว)
+                 ลูกที่ตั้งเองต่างจากแม่ ตำแหน่งการ์ดจะอิงของแม่ — ตัวเลขรายแถว (`rowPlan`) อิงของไลน์ตัวเอง */
               const positionedByOrder = positionAllCards(allCards, {
-                breaks: allBreaksOnce(), ctByMat: ctByMatNo, nowMs, frameEndMs: gridEndMs, roundIndexOf, roundStartOf,
+                breaks: allBreaksOnce(lineName), ctByMat: ctByMatNo, nowMs, frameEndMs: gridEndMs, roundIndexOf, roundStartOf,
                 flowByLine: linesByName, machineCountByLine: machineCountByLine, pairMatByMat,
               });
               const positionedForCards = (cs) => cs.map(c => positionedByOrder.get(orderKeyOf(c))).filter(Boolean)
@@ -1603,7 +1609,7 @@ export default function Dashboard({ view = 'timeline' }) {
                 if (!blamedBy.has(v.key)) blamedBy.set(v.key, { root: c.root, blameMin: v.blameMin, pushedMin: v.pushedMin });
               }));
               const boardPlan = planStatusOf({
-                positioned: positionedByOrder, cards: allCards, breaks: allBreaksOnce(),
+                positioned: positionedByOrder, cards: allCards, breaks: allBreaksOnce(lineName),
                 ctByMat: ctByMatNo, nowMs, frameEndMs: gridEndMs, shiftEndMs,
               });
 
@@ -1774,7 +1780,7 @@ export default function Dashboard({ view = 'timeline' }) {
 
                     // เรียงตามเวลาเริ่มจริง แล้วต่อคิวในแถวเดียวกัน (ไม่สร้างแถวใหม่) — แต่ละการ์ดเริ่มได้ไม่ก่อนการ์ดก่อนหน้าสิ้นสุด
                     // เพราะ 1 ไลน์ผลิตได้ทีละใบ ความกว้างคำนวณจากเวลาผลิตจริง (cycle_time × qty) และต้องหลบช่วงเวลาพัก (break_policies)
-                    const renderTimeline = (cards, half, rowKey) => (
+                    const renderTimeline = (cards, half, rowKey, rowLine = null) => (
                       <div key={rowKey} style={{ flex: 1, position: 'relative', display: 'flex' }}>
                         {half.hours.map((h, i) => {
                           const slotMs = half.startMs + i * 3600000;
@@ -1790,19 +1796,18 @@ export default function Dashboard({ view = 'timeline' }) {
                           );
                         })}
                         {(() => {
-                          const breaks = getBreakIntervals(half);
-                          return breaks.map(([bs, be], pi) => {
+                          /* 🏭 แถบพัก "ของไลน์แถวนี้" (break_line_rules · 20/10) — ไลน์ที่ทำ 5ส. 10 นาที
+                             ได้แถบ 10 นาทีจริง · ชื่อพักมาจาก band.policies **ห้ามจับคู่จากเวลาเอง**
+                             (พัก anchor='shift_end' มี start_time = null ⇒ เดิมจับไม่ติด tooltip เขียน "undefined") */
+                          const bands = getBreakBands(half, rowLine);
+                          return bands.map((band, pi) => {
+                              const { s: bs, e: be } = band;
                               const leftPct = Math.max(0, (bs - half.startMs) * pctPerMs);
                               const widthPct = Math.min(100 - leftPct, (be - bs) * pctPerMs);
                               if (widthPct <= 0) return null;
-                              const p = breakPolicies.find(bp => {
-                                const idx = half.hours.indexOf(Number(String(bp.start_time).slice(0,2)));
-                                if (idx < 0) return false;
-                                const mins = Number(String(bp.start_time).slice(3,5)) || 0;
-                                return half.startMs + idx * 3600000 + mins * 60000 === bs;
-                              }) || {};
+                              const brkName = breakBandName(band);
                               return (
-                                <div key={`brk-${pi}`} title={`${p.name_th || p.name_en} — ไลน์ไม่รองรับ KANBAN`}
+                                <div key={`brk-${pi}`} title={`${breakBandTitle(band, rowLine)} — ไลน์ไม่รองรับ KANBAN`}
                                   style={{
                                     position: 'absolute', top: 0, bottom: 0,
                                     left: `${leftPct}%`, width: `${widthPct}%`,
@@ -1815,7 +1820,7 @@ export default function Dashboard({ view = 'timeline' }) {
                                       + ไปทับใบงานที่คร่อมช่วงพัก) — แถบลายเฉียงยังบอกว่าเป็นช่วงพัก ชี้เมาส์เห็นชื่อ */}
                                   {tlW > 0 && widthPct * tlW / 100 >= 52 && (
                                     <span style={{ fontSize: T(11, 17), fontWeight: 700, color: 'var(--muted)', whiteSpace: 'nowrap', marginBottom: 1 }}>
-                                      🚫{p.name_th || p.name_en}
+                                      🚫{brkName}{band.lineRuleMin !== null ? ' 🏭' : ''}
                                     </span>
                                   )}
                                 </div>
@@ -1964,7 +1969,7 @@ export default function Dashboard({ view = 'timeline' }) {
                       const FRAME_END     = gridEndMs;                     // 08:00
                       // จำลองเวลาเสร็จ: เริ่มจาก startMs ใส่เนื้องาน workMs แล้วยืดคร่อมช่วงพักที่ทับ
                       const finishFrom = (startMs, workMs) => {
-                        const breaks = allBreaksOnce();
+                        const breaks = allBreaksOnce(lineName);
                         let end = startMs + workMs;
                         const consumed = new Set();
                         let ext = true;
@@ -2021,7 +2026,7 @@ export default function Dashboard({ view = 'timeline' }) {
                             const NIGHT_OT_IN2 = gridStartMs + 12 * 3600000, NIGHT_REG_IN2 = gridStartMs + 14.5 * 3600000;
                             const stockNote = stockUsed > 0 ? ` · หัก stock ${stockUsed.toLocaleString()} แล้ว` : '';
                             const finishFrom2 = (startMs, workMs) => {
-                              const breaks = allBreaksOnce();
+                              const breaks = allBreaksOnce(lineName);
                               let end = startMs + workMs;
                               const consumed = new Set();
                               let ext = true;
@@ -2192,7 +2197,7 @@ export default function Dashboard({ view = 'timeline' }) {
                           const finOver   = finMs != null && finMs > gridEndMs;
                           /* 📋 หลุดแผนของแถวนี้ — สูตรกลางตัวเดียวกับหัวบอร์ด (ห้ามคิดเองในหน้า) */
                           const rowPlan   = planStatusOf({
-                            positioned: rowPos, cards: row.cards, breaks: allBreaksOnce(),
+                            positioned: rowPos, cards: row.cards, breaks: allBreaksOnce(row.line || lineName),
                             ctByMat: ctByMatNo, nowMs, frameEndMs: gridEndMs, shiftEndMs,
                           });
                           const isOpen    = row.cards.some(c => c.sessionOpen);
@@ -2234,7 +2239,7 @@ export default function Dashboard({ view = 'timeline' }) {
                               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
                                 {HALVES.map(half => (
                                   <div key={half.key} style={{ height: T(36, 48), display: 'flex', position: 'relative', borderTop: half.key === 'pm' ? '1px dashed var(--border)' : 'none' }}>
-                                    {renderTimeline(row.cards, half, `${half.key}-${ri}`)}
+                                    {renderTimeline(row.cards, half, `${half.key}-${ri}`, row.line || lineName)}
                                     <span style={{ position: 'absolute', left: 3, bottom: 1, fontSize: T(11, 17), opacity: 0.55, zIndex: 2, pointerEvents: 'none' }}>{half.key === 'am' ? '☀️' : '🌙'}</span>
                                   </div>
                                 ))}
