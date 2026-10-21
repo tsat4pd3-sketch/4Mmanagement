@@ -4,7 +4,7 @@ import { supabase } from '../supabaseClient';
 import { toast } from '../components/Toast';
 import { loadLinesRes } from '../utils/useProductionLines';
 import { accessSummaryForRole } from '../App';
-import { ROLE_OPTIONS, roleLabel, groupRolesByAxis } from '../utils/roleMeta';
+import { ROLE_OPTIONS, roleLabel, groupRolesByAxis, ORG_LEVELS } from '../utils/roleMeta';
 import { positionOptions, positionOptionsWith, positionLabel, loadPositions, clearPositionsCache, levelOfPosition, maintenanceKindOfPosition, levelMeta, POSITION_LEVELS } from '../utils/positions';
 import { can, loadPermissions } from '../utils/permissions';   // เช็คสิทธิ์ของ role ที่เลือก เพื่อเตือนเมื่อไม่ตรงกับระดับงาน
 import { deptNameOf, teamKeyOf } from '../utils/mtnTeams';
@@ -1113,6 +1113,23 @@ export default function AddUser() {
         <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>
           หมวดที่เข้าได้อ่านสดจากตารางสิทธิ์ปัจจุบัน — ปรับรายหน้าได้ที่เมนู 🔐 จัดการสิทธิ์
         </div>
+        {/* 🏷️ ผูกชุดสิทธิ์แกน "ขอบเขต" เข้ากับระดับในรหัส Cost Center (21/10 · คำสั่ง user)
+            🔴 เป็นวิธี "อ่านรหัส" ให้คนเข้าใจตรงกัน — ระบบยังตัดสินลำดับชั้นจากผังองค์กรจริงเสมอ */}
+        <div style={{ fontSize: 11, lineHeight: 1.7, color: 'var(--muted)', marginBottom: 10,
+          padding: '7px 10px', borderRadius: 8, background: 'var(--card)', border: '1px solid var(--border2)' }}>
+          <b style={{ color: 'var(--text2)' }}>อ่านรหัส Cost Center ยังไง</b> — ตัวอย่าง <code>2140462100</code> ·
+          {' '}<code>21</code> กลุ่มธุรกิจ · <code>40</code> โรงงานเรา (<code>2140</code> = ทั้งโรงงาน) ·
+          {' '}<b style={{ color: 'var(--text2)' }}>หลักที่ 5 = ระดับในผัง</b> (3 ฝ่าย · 4 ส่วนงาน · 5 แผนก · 6 กลุ่ม/ไลน์) ·
+          {' '}หลักที่ 6 = หน่วยไหนในระดับนั้น (46 / 47 …) · ที่เหลือ = แตกย่อยลงไป
+          <div style={{ marginTop: 3 }}>
+            🏢 <b style={{ color: 'var(--text2)' }}>ยังไม่มีชุดสิทธิ์ของชั้น "แผนก" (เลเวล 5) แยกต่างหาก</b> —
+            ใช้ <b>สิทธิ์ระดับส่วน</b> แล้วติ๊ก <b>Cost Center ของแผนกนั้น</b> (ช่อง ④ ในหน้าแก้บัญชี)
+            ⇒ แก้ได้เฉพาะแผนกนั้น + ทุกไลน์/ทีมใต้ลงไป
+          </div>
+          <div style={{ marginTop: 3 }}>
+            🔴 ป้าย "เลเวล" เป็นแค่วิธีอ่าน — <b>ระบบตัดสินลำดับชั้นจากผังองค์กรจริง (/org-setup) ไม่ใช่จากตัวเลขรหัส</b>
+          </div>
+        </div>
         {/* ⚠️ ย้ำให้ชัดว่า role ≠ ตำแหน่งงาน — เคยเข้าใจผิดว่า "ส่วนวิศวกรรม" คือตำแหน่งวิศวกร */}
         <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10, lineHeight: 1.5 }}>
           ชุดสิทธิ์ <b>ไม่ใช่ตำแหน่งงาน</b> — ตำแหน่งจริง (วิศวกร / ช่างเทคนิค / หัวหน้าแผนก) กรอกที่ช่อง “ตำแหน่งงาน” แยกต่างหาก<br />
@@ -1131,6 +1148,14 @@ export default function AddUser() {
                     <div style={{ width: 6, height: 6, borderRadius: '50%', background: r.color, flexShrink: 0, marginTop: 5 }} />
                     <div style={{ minWidth: 0 }}>
                       <span style={{ fontSize: 12, fontWeight: 700, color: r.color }}>{r.label}</span>
+                      {/* 🏷️ ระดับองค์กรที่ role นี้เทียบได้ = หลักที่ 5 ของรหัส Cost Center (ป้ายอ่านอย่างเดียว) */}
+                      {r.orgLevel && (
+                        <span title={`เทียบกับรหัส Cost Center: หลักที่ 5 = ${r.orgLevel} (${ORG_LEVELS[r.orgLevel]}) · ระบบตัดสินลำดับชั้นจากผังองค์กรจริง ไม่ใช่จากตัวเลข`}
+                          style={{ fontSize: 11, fontWeight: 700, marginLeft: 6, padding: '0 5px', borderRadius: 4,
+                            background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.35)' }}>
+                          เลเวล {r.orgLevel} · {ORG_LEVELS[r.orgLevel]}
+                        </span>
+                      )}
                       <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 6 }}>{r.desc}</span>
                       <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 2 }}>
                         {sum.all ? '✅ เข้าได้ทุกหน้า' : sum.total === 0 ? '— ยังไม่เปิดสิทธิ์หน้าไหน' : `เข้าได้ ${sum.total} หน้า: ${sum.groups.join(' · ')}`}
