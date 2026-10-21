@@ -9,7 +9,7 @@
  * ตาราง scrap_reports / scrap_report_items / scrap_defect_types อยู่ DR project
  * (anon เสมอ) · สิทธิ์: scrap:record = สร้าง/แก้ · scrap:manage = อนุมัติ/ลบ
  */
-import { useState, useEffect, useMemo, useCallback, useContext } from 'react';
+import { useState, useEffect, useMemo, useCallback, useContext, useRef } from 'react';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { toast } from '../components/Toast';
@@ -152,6 +152,7 @@ export default function ScrapReport() {
   const [listFrom, setListFrom] = useState(() => { const d = new Date(); d.setDate(d.getDate() - 30); return localDateStr(d); });
   const [listTo, setListTo] = useState(getWorkDate());
   const [editor, setEditor] = useState(null); // { report, items } กำลังแก้/สร้าง
+  const saveBusyRef = useRef(false); // กันแตะ 💾 เบิ้ล — ครั้งที่ 2 ยังถือ id=null ⇒ ได้หัวใบ+เลขใบซ้ำ 2 ใบ (audit handheld 2026-10-20)
   const [sapPicker, setSapPicker] = useState(null); // { itemKey } | { addSource }
   const [defectPicker, setDefectPicker] = useState(null); // itemKey
   const [sapOptions, setSapOptions] = useState(null);
@@ -507,7 +508,13 @@ export default function ScrapReport() {
   }, [editor]);
 
   const saveReport = async () => {
+    if (saveBusyRef.current) return;
+    saveBusyRef.current = true;
+    try { await saveReportInner(); } finally { saveBusyRef.current = false; }
+  };
+  const saveReportInner = async () => {
     const { report, items } = editor;
+    if (items.some(it => Number(it.qty) < 0 || Number(it.confirm_qty) < 0)) { toast.error('จำนวนของเสียติดลบไม่ได้ — แก้ช่อง Q\'TY / ยืนยัน ที่มีเครื่องหมายลบ'); return; }
     if (!report.line_name) { toast.error('เลือกไลน์'); return; }
     if (!slocValid(report.storage_location)) { toast.error(`Storage Location ไม่ถูกรูปแบบ — ${SLOC_FORMAT_HINT}`); return; } // 2026-09-07
     /* 🔩 ส่งอนุมัติ/อนุมัติทั้งที่ยังมีเลขขั้นตอน (OP) ค้างอยู่ = ใบนี้สโตร์เอาไปตัด SAP ไม่ได้
