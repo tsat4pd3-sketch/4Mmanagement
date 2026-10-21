@@ -25,7 +25,8 @@ import { fetchByIds } from '../utils/fetchByIds';
 import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
 import { checkShiftCapacity } from '../utils/shiftCapacity';
 import { splitCloseOrders, autoCarryPatch, autoCarryText } from '../utils/closeShiftOrders';   // 🔁 ปิดกะ: ใบที่ยังไม่แตะ = ยกเอง (20/10)
-import { carryOffers, debtByPart, debtPcs, debtAgeDays, PENDING_STATUSES, TAKEABLE_SESSION_STATUSES } from '../utils/carryDebt';   // 📥 ของค้าง "ต้องไล่เก็บอีกเท่าไหร่" (20/10)
+import { debtByPart, debtPcs, debtAgeDays } from '../utils/carryDebt';   // 📥 ของค้าง "ต้องไล่เก็บอีกเท่าไหร่" (20/10)
+import { loadCarryOffers, importCarryOrders } from '../lib/carryDebtOps';   // 📥 โหลด/รับของค้าง — ที่เดียวทั้งระบบ
 import { canShortClose, shortCloseError, shortClosePatch, isShortClosed } from '../utils/shortClose';   // ✂️ ปิดใบด้วยยอดเศษ (งานปั๊ม 2xx · 2026-10-02)   // ⏱️ ด่าน "เปิดใบนี้แล้วเกินกะไหม" (ไลน์เครื่องขนานนับเป็นเลน · 2026-10-02)
 import { MTN_TEAMS, teamForItem, teamForMachine, teamKeyOf, deptNameOf } from '../utils/mtnTeams';
 import useIsMobile from '../utils/useIsMobile';
@@ -745,65 +746,15 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       .select('prod_no').eq('session_id', sessionId);
     if (isStaleSess(sessionId)) return;
     {
-      /* ⚠️ ดึงกะก่อนหน้า **ทุกสถานะ** รวม `open` ด้วย แล้วค่อยแยกบทบาททีหลัง (แก้รอบ 2 · 2026-09-09):
-           - "กะที่หยิบยอดค้างมาได้" = `closed` / `pending_close` เท่านั้น (ยอดยกถูกบันทึกถาวรตั้งแต่
-             หัวหน้ากะ "ส่งขอปิดกะ" ไม่ต้องรอ SV — SV ตรวจแค่ NG/Downtime/OEE ไม่เกี่ยวกับยอดยก)
-           - "กะที่ใช้ตัดสินว่างานจบไปแล้ว" = **ทุกกะ** รวมกะที่ยัง `open`
-         feedback user: "ถ้ากะก่อนหน้ารับไปแล้ว และคอนเฟิมยอดแล้ว เหลือแค่ปิดกะ ก็ไม่ควรเด้งไปหากะถัดไป"
-         → กะที่รับไปแล้วแต่ยังไม่กดปิด สถานะยังเป็น `open` ⇒ ถ้าไม่ดึงมาด้วย จะมองไม่เห็นใบ confirmed ของมัน
-           แล้วใบเก่าที่ค้างในกะก่อนหน้านั้นจะกลายเป็น "ใบล่าสุด" แล้วถูกเสนอซ้ำ
-         ดึง 8 กะ (ไม่ใช่ 5) เพราะตอนนี้มีกะ `open` ปนอยู่ในโควตาด้วย */
-      /* 📥 ของค้างของไลน์นี้ที่ยังไม่มีใครรับ — **ถามด้วย "สถานะ" ไม่ใช่ "กี่กะล่าสุด"** (20/10)
-         🕳️ ของเดิมดึง "ใบของ 8 กะล่าสุด" ⇒ ไลน์เดิน 2 กะ/วัน = หน้าต่างแค่ ~4 วัน
-            ของที่ค้างเกินนั้น **หลุดหน้าต่างแล้วหายถาวร** — วัดจริง 20/10: Assembly Line D 4 ใบ (8 วัน) ·
-            LASER E50 (28) · Line 60 3 ใบ (33) · LWR BAR (97) · ตรงกับที่หน้างานพูดว่า "มันหาย"
-            และเป็นเหตุผลที่เขาเลือก "ทยอยปริ้น" จนบอร์ดดูเหมือนไม่มีออเดอร์
-         🔑 ถามด้วยสถานะแล้ว**ถูกกว่าเดิม**: เดิมดึง "ทุกสถานะของ 8 กะ" · ตอนนี้ดึงเฉพาะใบที่ค้างจริง
-            (ทั้งระบบมี ~46 ใบ) แล้วค่อยถามประวัติเฉพาะ prod_no เท่าที่ค้าง
-         🔴 คอลัมน์ต้องเลือกเท่าที่ใช้ (egress วัดจริง 25/09: `select=*` = 61% ของ traffic ตารางนี้)
-            **เพิ่มฟิลด์ที่ handleImportCarryOrders ส่งต่อ = ต้องเติมที่นี่ด้วย** ไม่งั้นค่าหายเงียบ */
-      const CARRY_COLS = 'id, session_id, prod_no, mat_no, part_name, p_no, customer, qty, qty_actual, status, is_manual, carry_over_note, opened_at';
-      const SESS_EMBED = ', production_sessions!inner(id, status, line_name, work_date, shift, created_at)';
-      const { data: pending, error: pendErr } = await supabaseDR.from('prod_orders')
-        .select(CARRY_COLS + SESS_EMBED)
-        .in('status', PENDING_STATUSES)
-        .eq('production_sessions.line_name', lineName)
-        .neq('session_id', sessionId);
+      /* 📥 ของค้างของไลน์นี้ — ตรรกะอยู่ `src/lib/carryDebtOps.js` ที่เดียว
+         (ตอนเปิดกะรับอัตโนมัติด้วยตัวเดียวกัน · ห้ามก๊อปคิวรี/กฎ dedupe มาไว้ในหน้า) */
+      const { offers, error: carryErr } = await loadCarryOffers({
+        lineName, sessionId, currentProdNos: new Set((data || []).map(o => o.prod_no)),
+      });
       if (isStaleSess(sessionId)) return;
-      /* 🔴 อ่านไม่สำเร็จ = "ตอบไม่ได้" ไม่ใช่ "ไม่มีของค้าง" — ล้างลิสต์แล้วเงียบ = จอโกหก */
-      if (pendErr) { setCarryOrders([]); setSessLoadErr(e => ({ ...e, 'ยอดค้างกะก่อน': pendErr.message })); return; }
-      setSessLoadErr(e => (e['ยอดค้างกะก่อน'] ? { ...e, 'ยอดค้างกะก่อน': null } : e));
-
-      const prodNos = [...new Set((pending || []).map(o => o.prod_no).filter(Boolean))];
-      if (!prodNos.length) { setCarryOrders([]); return; }
-      /* ประวัติของเฉพาะ prod_no ที่ค้าง — ต้องรู้ว่ามีใบ "ใหม่กว่า" ที่จบไปแล้วหรือยัง
-         (กฎข้อ ① และ ② ใน utils/carryDebt.js) · `.in()` ยาวได้ ⇒ ผ่าน fetchByIds กันคืนค่าว่างเงียบ */
-      const histRes = await fetchByIds(prodNos, (part) => supabaseDR.from('prod_orders')
-        .select(CARRY_COLS + SESS_EMBED)
-        .eq('production_sessions.line_name', lineName)
-        .in('prod_no', part));
-      if (isStaleSess(sessionId)) return;
-      /* 🔴 โหลดไม่ครบ = ตอบไม่ได้ ⇒ บอกบนจอ ห้ามโชว์ลิสต์ที่ขาดเป็น "ของค้างทั้งหมด" */
-      if (histRes.failed || histRes.truncated) {
-        setCarryOrders([]);
-        setSessLoadErr(e => ({ ...e, 'ยอดค้างกะก่อน': histRes.error || 'โหลดประวัติใบไม่ครบ' }));
-        return;
-      }
-      {
-        const rows = histRes.rows || [];
-        /* rank = ความใหม่ของกะ (0 = ใหม่สุด) — เดิมได้จากลำดับ prevSessions · ตอนนี้จาก created_at ของกะ */
-        const order = [...new Set(rows.map(o => o.production_sessions?.created_at).filter(Boolean))]
-          .sort((a, b) => (a < b ? 1 : a > b ? -1 : 0));
-        const rankByTime = new Map(order.map((t, i) => [t, i]));
-        const takeable = new Set(TAKEABLE_SESSION_STATUSES);
-        const deduped = carryOffers({
-          rows,
-          rankOf: (o) => rankByTime.get(o.production_sessions?.created_at) ?? 99,
-          currentProdNos: new Set((data || []).map(o => o.prod_no)),
-          isTakeable: (o) => takeable.has(o.production_sessions?.status),
-        });
-        setCarryOrders(deduped);
-      }
+      /* 🔴 อ่านไม่สำเร็จ = "ตอบไม่ได้" ไม่ใช่ "ไม่มีของค้าง" — เงียบ = จอโกหก */
+      setSessLoadErr(e => ((e['ยอดค้างกะก่อน'] || carryErr) ? { ...e, 'ยอดค้างกะก่อน': carryErr } : e));
+      setCarryOrders(carryErr ? [] : offers);
     }
   }, [isStaleSess]);
 
@@ -984,6 +935,29 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       return;
     }
     toast.success('เปิดกะสำเร็จ');
+
+    /* ── 📥 รับของค้างของไลน์นี้เข้ากะใหม่ **อัตโนมัติ** (คำสั่ง user 20/10:
+          "กะถัดไปพอเปิดกะก็ต้องรับงานยกยอดออโต้เลย") ─────────────────────────────────
+       🧩 ปลอดภัยเพราะปลายทางไม่มีต้นทุนแล้ว: ใบที่กะนี้ไม่ได้แตะ **ยกออกเองตอนปิดกะ**
+          (`utils/closeShiftOrders.js`) ⇒ ของไหลผ่านกะไปเรื่อยๆ จนกว่าจะมีคนทำจริง
+       🔴 ถอด auto-carry ตอนปิดกะเมื่อไหร่ **ต้องถอดตัวนี้ด้วย** ไม่งั้นกลายเป็น
+          "ยัดงานเข้ากะให้ แล้วบังคับไล่เคลียร์เอง" = แย่กว่าเดิมทั้งคู่
+       🔴 ล้มเหลวห้ามบล็อกการเปิดกะ (กะต้องเดินได้) แต่ **ต้องบอกบนจอ** ห้ามเงียบ */
+    try {
+      const { offers, error: cErr } = await loadCarryOffers({ lineName: data.line_name, sessionId: data.id });
+      if (cErr) {
+        toast.error(`เช็คของค้างของไลน์นี้ไม่สำเร็จ (${cErr}) — เปิดกะแล้ว แต่ยังไม่ได้รับยอดค้าง กดปุ่ม "📥 รับยอดต่อ" เองได้`);
+      } else if (offers.length) {
+        const w = shiftWindow(data);
+        const r = await importCarryOrders({
+          session: data, offers, openedAt: w ? new Date(w.startMs).toISOString() : null, by: fullName,
+        });
+        if (r.imported) toast.success(`📥 รับงานค้างเข้ากะอัตโนมัติ ${r.imported} ใบ (${r.pcs.toLocaleString()} ชิ้น)`);
+        if (r.failed) toast.error(`รับงานค้างอัตโนมัติไม่สำเร็จ ${r.failed} ใบ — กดปุ่ม "📥 รับยอดต่อ" ลองอีกครั้ง`);
+      }
+    } catch (e) {
+      toast.error(`รับงานค้างอัตโนมัติไม่สำเร็จ (${e?.message || e}) — เปิดกะแล้ว กดปุ่ม "📥 รับยอดต่อ" เองได้`);
+    }
 
     // ── รับ Downtime ที่ตัดยอดข้ามกะจากกะล่าสุดของไลน์นี้ (เครื่องยังซ่อมไม่เสร็จ) มาเปิดต่ออัตโนมัติ ──
     // ดูเฉพาะ session ล่าสุด 1 กะ — carry เก่ากว่านั้นถือว่าจบไปแล้ว ไม่ปลุกขึ้นมาใหม่
@@ -2229,62 +2203,16 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   // Import carry-over orders into current session
   const handleImportCarryOrders = async () => {
     /* 🔴 รับเฉพาะใบที่ติ๊ก — ใบที่ไม่ติ๊ก **ยังค้างต่อ ไม่ถูกแตะ** (ส่งต่อไปเรื่อยๆ ตามคำสั่ง user)
-       ไม่ใช่ "ไม่รับ = ทิ้ง" · เดิมเป็นเอาทั้งหมดอย่างเดียว ⇒ คนที่ไม่อยากลากพาร์ทอื่นเข้ากะเลยไม่กดเลย */
+       ไม่ใช่ "ไม่รับ = ทิ้ง" · การเขียนจริงอยู่ `lib/carryDebtOps.js` (ตัวเดียวกับตอนเปิดกะ) */
     const picked = carryOrders.filter(o => carryPick.has(o.id));
     if (!selSession || !picked.length) return;
-    let imported = 0;
-    const opened_at = carryImportOpenedAt();
-    for (const o of picked) {
-      const dup = prodOrders.find(p => p.prod_no === o.prod_no);
-      if (dup) {
-        // มีในกะนี้แล้ว — mark ต้นทางทุกใบ (รวมใบซ้ำในกะเก่าๆ) เป็น imported เพื่อให้ banner เคลียร์ออก
-        /* นับแถว — ไม่ปิดต้นทาง = แบนเนอร์ยอดค้างไม่เคลียร์ แล้วใบเดิมถูกรับซ้ำรอบหน้า (เป้านับซ้ำ)
-           0 แถวอาจเป็นเพราะกะอื่นปิดไปแล้ว ⇒ ข้อความบอกทางออกไว้ ไม่ใช่แค่ "ล้มเหลว" */
-        checkWriteRows(await supabaseDR.from('prod_orders').update({ status: 'imported' })
-          .eq('prod_no', o.prod_no).in('status', ['carry_over', 'open']).neq('session_id', selSession.id).select('id'), 'ปิดใบต้นทาง',
-          { zeroMsg: `ไม่ได้ปิดใบต้นทาง ${o.prod_no} (0 แถว — อาจมีกะอื่นปิดไปแล้ว) · ถ้าแบนเนอร์ยอดค้างยังไม่หาย กดรับยอดอีกครั้ง` });
-        continue;
-      }
-      const remainQty = o.qty - (o.qty_actual || 0);
-      if (remainQty <= 0) {
-        // ผลิตครบเป้าแล้ว ไม่ต้องยกยอด — แค่ปิดต้นทางไม่ให้ขึ้นเตือนค้างอีก
-        /* นับแถว — ไม่ปิดต้นทาง = แบนเนอร์ยอดค้างไม่เคลียร์ แล้วใบเดิมถูกรับซ้ำรอบหน้า (เป้านับซ้ำ)
-           0 แถวอาจเป็นเพราะกะอื่นปิดไปแล้ว ⇒ ข้อความบอกทางออกไว้ ไม่ใช่แค่ "ล้มเหลว" */
-        checkWriteRows(await supabaseDR.from('prod_orders').update({ status: 'imported' })
-          .eq('prod_no', o.prod_no).in('status', ['carry_over', 'open']).neq('session_id', selSession.id).select('id'), 'ปิดใบต้นทาง',
-          { zeroMsg: `ไม่ได้ปิดใบต้นทาง ${o.prod_no} (0 แถว — อาจมีกะอื่นปิดไปแล้ว) · ถ้าแบนเนอร์ยอดค้างยังไม่หาย กดรับยอดอีกครั้ง` });
-        continue;
-      }
-      const { error } = await supabaseDR.from('prod_orders').insert({
-        session_id:   selSession.id,
-        prod_no:      o.prod_no,
-        mat_no:       o.mat_no,
-        part_name:    o.part_name,
-        p_no:         o.p_no,
-        customer:     o.customer,
-        qty:          remainQty,
-        status:       'open',
-        opened_by:    fullName,
-        // ⚠️ ธงใบ manual ต้องตามใบยกยอดไปด้วย (QC flow-audit #13) — เดิมหายเงียบ:
-        //    ใบ manual ที่ยกมาถูกมองเป็นใบสแกน → ปุ่ม "✓ ปิดใบนี้ (ยอดจริง)" หาย
-        //    ต้องพิมพ์ MANUAL-... ปิดแบบสแกน = qty_ok ถูกตั้งเป็นเป้าแทนยอดจริง
-        ...(o.is_manual ? { is_manual: true, qty_target: remainQty } : {}),
-        qty_actual:   0,
-        carry_over_from_session_id: o.session_id,
-        carry_over_note: o.carry_over_note || `ค้างจากกะก่อน (ทำได้ ${o.qty_actual || 0}/${o.qty} ชิ้น)`,
-        ...(opened_at ? { opened_at } : {}),
-      });
-      if (!error) {
-        imported++;
-        // Mark original orders (ทุกใบที่ prod_no ตรงกันในกะเก่า) as 'imported'
-        /* นับแถว — ไม่ปิดต้นทาง = แบนเนอร์ยอดค้างไม่เคลียร์ แล้วใบเดิมถูกรับซ้ำรอบหน้า (เป้านับซ้ำ)
-           0 แถวอาจเป็นเพราะกะอื่นปิดไปแล้ว ⇒ ข้อความบอกทางออกไว้ ไม่ใช่แค่ "ล้มเหลว" */
-        checkWriteRows(await supabaseDR.from('prod_orders').update({ status: 'imported' })
-          .eq('prod_no', o.prod_no).in('status', ['carry_over', 'open']).neq('session_id', selSession.id).select('id'), 'ปิดใบต้นทาง',
-          { zeroMsg: `ไม่ได้ปิดใบต้นทาง ${o.prod_no} (0 แถว — อาจมีกะอื่นปิดไปแล้ว) · ถ้าแบนเนอร์ยอดค้างยังไม่หาย กดรับยอดอีกครั้ง` });
-      }
-    }
-    toast.success(`รับยอดค้างมาแล้ว ${imported} Order`);
+    const r = await importCarryOrders({
+      session: selSession, offers: picked,
+      existingProdNos: new Set(prodOrders.map(p => p.prod_no)),
+      openedAt: carryImportOpenedAt(), by: fullName,
+    });
+    if (r.failed) toast.error(`รับยอดค้างไม่สำเร็จ ${r.failed} ใบ — ลองกดอีกครั้ง`);
+    toast.success(`รับยอดค้างมาแล้ว ${r.imported} Order (${r.pcs.toLocaleString()} ชิ้น)`);
     loadProdOrders(selSession.id, selSession.line_name);
     loadCarryOrders(selSession.id, selSession.line_name);   // แบนเนอร์ยอดค้างต้องเคลียร์ทันที
   };

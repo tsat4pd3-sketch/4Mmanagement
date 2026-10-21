@@ -6181,24 +6181,33 @@ test('📥 carry-debt-no-session-window — ของค้างต้องถ
   const read = (rel) => stripComments(readFileSync(join(ROOT, rel), 'utf8'));
   const dr = read('src/pages/DailyReport.jsx');
 
-  /* ตัวโหลดยอดค้าง — ดูเฉพาะบล็อกนี้ (หน้านี้มี .limit() ที่อื่นโดยชอบธรรม) */
-  const blk = (dr.match(/const CARRY_COLS[\s\S]{0,2600}?setCarryOrders\(deduped\)/) || [''])[0];
-  if (!blk) { bad.push('src/pages/DailyReport.jsx (ไม่เจอบล็อกโหลดยอดค้าง)'); }
-  else {
-    if (/production_sessions'\)[\s\S]{0,400}?\.limit\(/.test(blk))
-      bad.push('src/pages/DailyReport.jsx (กลับไปจำกัดยอดค้างด้วยจำนวนกะ — ของเก่าจะหายอีก)');
-    if (!/\.in\('status', PENDING_STATUSES\)/.test(blk))
-      bad.push('src/pages/DailyReport.jsx (ไม่ได้ถามด้วยสถานะ PENDING_STATUSES)');
-    if (!/carryOffers\(/.test(blk))
-      bad.push('src/pages/DailyReport.jsx (ไม่ได้ใช้ carryOffers — กฎ dedupe อยู่ utils/carryDebt.js)');
-    if (!/fetchByIds\(/.test(blk))
-      bad.push('src/pages/DailyReport.jsx (ประวัติ prod_no ไม่ได้ผ่าน fetchByIds — .in() ยาวคืนค่าว่างเงียบ)');
-    if (!/histRes\.failed \|\| histRes\.truncated/.test(blk))
-      bad.push('src/pages/DailyReport.jsx (โหลดไม่ครบแล้วไม่บอกบนจอ — ลิสต์ขาดถูกอ่านว่า "ของค้างทั้งหมด")');
-  }
+  /* ตรรกะอยู่ `lib/carryDebtOps.js` ที่เดียว (หน้าเรียกใช้ ห้ามก๊อปคิวรีมาไว้ในหน้า) */
+  const ops = read('src/lib/carryDebtOps.js');
+  if (/from\('production_sessions'\)[\s\S]{0,400}?\.limit\(/.test(ops))
+    bad.push('src/lib/carryDebtOps.js (กลับไปจำกัดยอดค้างด้วยจำนวนกะ — ของเก่าจะหายอีก)');
+  /* ดูเฉพาะตัวโหลด — `closeSource` ก็ใช้ PENDING_STATUSES ทั้งไฟล์จึงไม่พอเป็นหลักฐาน */
+  /* 🔴 หน้าต่างต้องยาวพอถึงคิวรีจริง — จบที่ `offers: carryOffers(` ไม่ใช่ `return` ตัวแรก
+     (ตัวแรกคือ early-return ตอนไม่มี lineName ซึ่งอยู่ก่อนคิวรี ⇒ ด่านจะมองไม่เห็นอะไรเลย) */
+  const loadFn = (ops.match(/export async function loadCarryOffers[\s\S]{0,2500}?offers: carryOffers\(/) || [''])[0];
+  if (!/\.in\('status', PENDING_STATUSES\)/.test(loadFn))
+    bad.push('src/lib/carryDebtOps.js (loadCarryOffers ไม่ได้ถามด้วยสถานะ PENDING_STATUSES)');
+  if (!/carryOffers\(/.test(ops))
+    bad.push('src/lib/carryDebtOps.js (ไม่ได้ใช้ carryOffers — กฎ dedupe อยู่ utils/carryDebt.js)');
+  if (!/fetchByIds\(/.test(ops))
+    bad.push('src/lib/carryDebtOps.js (ประวัติ prod_no ไม่ได้ผ่าน fetchByIds — .in() ยาวคืนค่าว่างเงียบ)');
+  if (!/hist\.failed \|\| hist\.truncated/.test(ops))
+    bad.push('src/lib/carryDebtOps.js (โหลดไม่ครบแล้วไม่บอก — ลิสต์ขาดถูกอ่านว่า "ของค้างทั้งหมด")');
+  if (!/loadCarryOffers\(/.test(dr))
+    bad.push('src/pages/DailyReport.jsx (ไม่ได้เรียก loadCarryOffers)');
+
+  /* 🔁 เปิดกะต้องรับของค้างอัตโนมัติ (คำสั่ง user: "กะถัดไปพอเปิดกะก็ต้องรับงานยกยอดออโต้เลย")
+     🔴 ตัวนี้ปลอดภัยเพราะ auto-carry ตอนปิดกะมีอยู่ — ถอดตัวนั้นต้องถอดตัวนี้ด้วย */
+  const openFn = (dr.match(/const handleOpenSession[\s\S]{0,4000}?toast\.success\('เปิดกะสำเร็จ'\)[\s\S]{0,1800}/) || [''])[0];
+  if (!/loadCarryOffers\(/.test(openFn) || !/importCarryOrders\(/.test(openFn))
+    bad.push('src/pages/DailyReport.jsx (เปิดกะแล้วไม่ได้รับของค้างอัตโนมัติ)');
   /* 🔴 "รับยอดต่อ" ต้องเลือกใบได้ (feedback: "ไม่อยากมาส่งต่อกะทุกใบที่เหลือ")
      เอาทั้งหมดอย่างเดียว = คนที่ไม่อยากลากพาร์ทอื่นเข้ากะ **ไม่กดเลย** แล้วของค้างไม่ขยับ */
-  const imp = (dr.match(/const handleImportCarryOrders[\s\S]{0,600}?for \(const o of/) || [''])[0];
+  const imp = (dr.match(/const handleImportCarryOrders[\s\S]{0,700}?importCarryOrders\(\{/) || [''])[0];
   if (!/carryPick\.has/.test(imp))
     bad.push('src/pages/DailyReport.jsx (รับยอดต่อยังเป็น "เอาทั้งหมด" — ต้องเลือกใบได้ผ่าน carryPick)');
 
