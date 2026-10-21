@@ -6,7 +6,7 @@ import { canWriteLine } from '../utils/writeScope';   // 🔐 ชั้นที
 import { cachedMaster, mrows } from '../utils/masterCache';
 import { colIdx, isEdiHeaderRow, detectEdiKind, HEADER_SCAN_ROWS, buildEdiDict, sigOf } from '../utils/ediDetect';
 import CustomerFileFormats from '../components/CustomerFileFormats';
-import { splitAlreadyDone, DONE_STATUSES, splitFirmVsForecast, splitCumCatchUp, FIRM_HORIZON_DAYS, scopedReplaceIds, buildPartMapIndex, mappedMatFor } from '../utils/ediMerge';
+import { splitAlreadyDone, splitPullCovered, pullCoverBatches, DONE_STATUSES, splitFirmVsForecast, splitCumCatchUp, FIRM_HORIZON_DAYS, scopedReplaceIds, buildPartMapIndex, mappedMatFor } from '../utils/ediMerge';
 import EdiMatchFixer from '../components/EdiMatchFixer';
 import LineSelect from '../components/LineSelect';
 import ProductSelect from '../components/ProductSelect';
@@ -28,7 +28,7 @@ import { ALL } from '../utils/filterLabels';
 import useTabParam from '../utils/useTabParam';
 import MonitoringUpload from '../components/MonitoringUpload';
 import DemandMailInbox from '../components/DemandMailInbox';
-import { fetchAllPages } from '../utils/fetchByIds';
+import { fetchAllPages, fetchByIds } from '../utils/fetchByIds';
 import { dedupeForecastRows } from '../utils/demandSupply';
 import { checkWrite, checkWriteRows } from '../utils/dbWrite';
 import { fmtAxis } from '../utils/chartAxis';
@@ -638,7 +638,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
 
   const doImportEdi = async () => {
     if (!edi) return;
-    let coveredCount = 0, fcCount = 0, fcSkipped = 0, keptCount = 0, cumCount = 0, cumQty = 0;
+    let coveredCount = 0, pullCoveredCount = 0, fcCount = 0, fcSkipped = 0, keptCount = 0, cumCount = 0, cumQty = 0;
     if (!edi.kindGuess?.sure && !edi.kindForced) {
       toast.error('ระบบแยกไม่ออกว่าเป็น 830 หรือ 862 — กดเลือกชนิดก่อนนำเข้า');
       return;
@@ -736,9 +736,34 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
           if (tPast) throw new Error('ใบวันเก่าเยอะเกินเพดาน — ไม่นำเข้าเพื่อกันยอดซ้ำ');
           pastRows.forEach(k => pastKeys.add(`${k.customer}|${k.customer_part_no || k.mat_no}|${k.due_date}|${(k.ship_time || '').slice(0, 5)}`));
         }
+        /* ⭐ ③ ช่วงเวลาที่ e-SMART ยืนยันไปแล้ว = ห้ามสร้างใบแผน 862 ของช่วงนั้นกลับมา (21/10 · คำสั่ง user)
+           *"862 = แผนทั้งวัน · e-SMART = คอนเฟิร์มว่าช่วงนั้นส่งจริง"* (งาน 060/061/306)
+           เดิม 862 รอบเช้า (08:05) พาแถวตี 0–8 กลับมาสร้างใหม่ ทั้งที่ e-SMART ยืนยัน/ปิดใบช่วงนั้นไปแล้ว
+           ⇒ ใบเบิ้ลรอบไม่ตรง · กติกาเดียวกับโหมดช่วงเวลาใน `planOrderUpdates` (pullSignal.js)
+           อ่านไม่ได้ = ห้ามเดาว่า "ไม่มี" (สร้างซ้ำ) */
+        let pullBatches = [];
+        {
+          const pFrom = new Date(new Date(`${delFrom}T00:00:00`).getTime() - 86400000);
+          const { rows: pb, error: ePb, truncated: tPb } = await fetchAllPages(() => supabaseDR.from('customer_pull_batches')
+            .select('id, ship_to, dock_code, window_start, window_end, format_code')
+            .in('ship_to', edi.shipTos).gte('window_end', pFrom.toISOString()));
+          if (ePb) throw new Error(`อ่านรอบ e-SMART ที่ยืนยันแล้วไม่ได้: ${ePb}`);
+          if (tPb) throw new Error('รอบ e-SMART เยอะเกินเพดาน — ไม่นำเข้าเพื่อกันสร้างใบซ้ำ');
+          if (pb.length) {
+            const { rows: sg, error: eSg, truncated: tSg } = await fetchByIds(pb.map(b => b.id),
+              ids => supabaseDR.from('customer_pull_signals').select('id, batch_id, customer_part_no, mat_no').in('batch_id', ids));
+            if (eSg) throw new Error(`อ่านรายการ e-SMART ไม่ได้: ${eSg}`);
+            if (tSg) throw new Error('รายการ e-SMART เยอะเกินเพดาน — ไม่นำเข้าเพื่อกันสร้างใบซ้ำ');
+            const { data: fm, error: eFm } = await supabaseDR.from('customer_pull_formats').select('code, lead_min');
+            if (eFm) throw new Error(`อ่านรูปแบบไฟล์ e-SMART ไม่ได้: ${eFm.message}`);
+            pullBatches = pullCoverBatches(pb, sg, fm || []);
+          }
+        }
+        const { insert: notPulled, covered: pullCovered } = splitPullCovered(firmRecs, pullBatches);
+        pullCoveredCount = pullCovered.length;
         /* กันซ้ำ 2 ชั้น: ① ใบที่ทำไปแล้ว (เทียบเที่ยว) ② รายการวันเก่าที่ยังอยู่ (เทียบตรงตัวตามเดิม) */
         const { insert: fresh862, covered } = splitAlreadyDone(
-          firmRecs.filter(r => !pastKeys.has(`${r.shipTo}|${r.part}|${r.date}|${r.time || ''}`)),
+          notPulled.filter(r => !pastKeys.has(`${r.shipTo}|${r.part}|${r.date}|${r.time || ''}`)),
           keepRows || []);
         coveredCount = covered.length;
         const recs = fresh862
@@ -784,6 +809,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
       toast.success(`✅ นำเข้า EDI ${edi.records.length} รายการ — แทนที่เฉพาะชุด ship-to·dock·พาร์ทที่ไฟล์ส่งมา`
         + (keptCount ? ` · 🔒 เก็บของเดิม ${keptCount} รายการ (ชุดที่ไฟล์นี้ไม่ได้ส่งมา = ไม่มีอัพเดท)` : '')
         + (coveredCount ? ` · ⏭ ข้าม ${coveredCount} รายการที่ e-SMART/หน้างานทำไปแล้ว (ไม่สร้างใบซ้ำ)` : '')
+        + (pullCoveredCount ? ` · 📡 ข้าม ${pullCoveredCount} รายการในช่วงเวลาที่ e-SMART ยืนยันแล้ว (ใช้ยอด e-SMART แทนแผน 862)` : '')
         + (fcCount ? ` · 📅 ${fcCount} รายการไม่มีเวลาส่ง+เกิน ${FIRM_HORIZON_DAYS} วัน ลงเป็นแผนระยะยาว ไม่ใช่ใบส่งของ` : '')
         + (cumCount ? ` · 📊 ${cumCount} รายการเป็นยอดค้างตาม Cum ของลูกค้า (${cumQty.toLocaleString()} ชิ้น) ไม่สร้างเป็นใบส่ง — e-SMART ดึงตามจริง` : ''));
       // จับคู่ MAT ไม่ได้ = ลง customer_forecasts ไม่ได้ (mat_no NOT NULL) — ต้องบอก ห้ามหายเงียบ
