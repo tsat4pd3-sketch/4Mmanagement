@@ -30,6 +30,7 @@ primeBreakRuleIndex();
 import useIsMobile from './utils/useIsMobile';
 import ScrollHint from './components/ScrollHint';
 import MobileNavBar from './components/MobileNavBar';
+import ScanWedgeGuard from './components/ScanWedgeGuard';   // 🔫 ปุ่มสแกนข้างเครื่อง handheld — มือถือเท่านั้น
 import { pushSupported, getPushState, subscribePush, unsubscribePush, onPushResubscribeRequest, handlePushResubscribe } from './utils/webpush';
 import { loadPositions, positionLabel } from './utils/positions';   // ตำแหน่งเก็บเป็น key — แสดงต้องแปลงเป็นชื่อ
 import { roleLabel } from './utils/roleMeta';                       // ป้ายชื่อ role (โหมดจำลองมุมมอง 🎭)
@@ -1948,6 +1949,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
         </Suspense>
         {/* 📱 แถบล่างมือถือ — หน้า Home ไม่มีช่อง ☰ (หน้านี้คือเมนูอยู่แล้ว) */}
         <MobileNavBar role={role} onOpenSearch={() => setPaletteOpen(true)} />
+        <ScanWedgeGuard />
         {/* 📺 จอตามต้องรับรีโมทได้แม้ค้างอยู่หน้า Hub (เดิม mount เฉพาะหน้าอื่น — จอ TV ที่เปิดหน้านี้ทิ้งไว้สั่งไม่ได้) */}
         {remoteCode && (
           <Suspense fallback={null}>
@@ -1971,6 +1973,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
         {!isMobile && !tvShell && <ToggleBtn isOpen={isOpen} onClick={() => setIsOpen(true)} />}
         {!tvShell && <NotificationBell userId={userId} role={role} />}
         {!tvShell && <MobileNavBar role={role} onOpenMenu={() => setIsOpen(true)} onOpenSearch={() => setPaletteOpen(true)} />}
+        {!tvShell && <ScanWedgeGuard />}
         {/* บอกว่า "ยังเลื่อนลงได้อีก" — มือถือไม่มี scrollbar ให้เห็น (ครอบทั้งหน้าเพจและ modal) */}
         <ScrollHint />
         <Suspense fallback={null}>

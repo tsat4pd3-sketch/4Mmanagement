@@ -244,7 +244,9 @@ export default function QualityBins() {
   const [repairFile, setRepairFile] = useState(null);
   const setPhotoFiles = () => { setFoundFile(null); setRepairFile(null); };
 
-  const openNew = () => { setForm({ ...BLANK, reported_by: '' }); setMatLocked(false); setPhotoFiles(); setEditing('new'); };
+  /* 📅 วันที่ต้องคิด "ตอนเปิดฟอร์ม" ไม่ใช่ตอนโหลดไฟล์ (2026-10-20) — `BLANK.work_date` ถูกคิดครั้งเดียวตอน import
+     ⇒ handheld/จอที่เปิดค้างข้ามวัน ลงถังเหลือง-แดงเป็นวันของเมื่อวานเงียบๆ */
+  const openNew = () => { setForm({ ...BLANK, work_date: today(), reported_by: '' }); setMatLocked(false); setPhotoFiles(); setEditing('new'); };
   const openEdit = (r) => {
     setForm(Object.fromEntries(Object.keys(BLANK).map(k => [k, r[k] ?? ''])));
     setMatLocked(false);
@@ -264,6 +266,7 @@ export default function QualityBins() {
     const isY = bin === 'yellow';
     if (!form.work_date) { toast.error('กรอกวันที่ลงถัง'); return; }
     if (!numOrNull(form.qty)) { toast.error('กรอกจำนวนชิ้นงาน'); return; }
+    if ([form.qty, form.qty_ok, form.qty_ng].some(v => (numOrNull(v) ?? 0) < 0)) { toast.error('จำนวนติดลบไม่ได้ — แก้ช่องที่มีเครื่องหมายลบ'); return; }
     if (!form.part_name.trim() && !form.mat_no.trim()) { toast.error('ระบุชื่อหรือรหัสชิ้นงาน'); return; }
     /* ทาง "ขอใช้" ต้องมีใบ FM-QA-042 อนุมัติ (WI §5.4) — ไม่มีเลขใบ = ยังปิดสายงานไม่ได้
        ⚠️ เตือน ไม่บล็อก: เลขใบอาจยังไม่ออกตอนที่ QA ตัดสิน (กติกาเดียวกับ checkStdSelection) */

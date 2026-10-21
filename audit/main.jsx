@@ -7,6 +7,7 @@ import { UserContext, Sidebar, NAV_ITEMS, NotificationBell } from '../src/App'
 window.__NAV = NAV_ITEMS.map(i => ({ to: i.to, group: i.group, alsoIn: i.alsoIn || null }))
 import ScrollHint from '../src/components/ScrollHint'
 import MobileNavBar from '../src/components/MobileNavBar'
+import ScanWedgeGuard from '../src/components/ScanWedgeGuard'
 import { ToastContainer } from '../src/components/Toast'
 import '../src/index.css'
 
@@ -105,6 +106,8 @@ function App(){
         {TV_SHELL && <Suspense fallback={null}><TvShellHarness/></Suspense>}
         {/* 📱 แถบล่างมือถือเหมือนแอปจริง (15/10) — สวีปมือถือต้องเห็นว่าแถบบังอะไรไหม · จอคอม = null */}
         <MobileNavBar role={ROLE} onOpenMenu={() => { window.__menu = (window.__menu || 0) + 1 }} onOpenSearch={() => { window.__palette = (window.__palette || 0) + 1 }} />
+        {/* 🔫 ด่านปุ่มสแกนข้างเครื่อง (20/10) — เหมือนแอปจริง · จอคอม = ไม่ติดตั้ง */}
+        <ScanWedgeGuard />
       </UserContext.Provider>
     </MemoryRouter>
   )

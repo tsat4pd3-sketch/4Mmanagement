@@ -17,6 +17,7 @@
  */
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { parseQrPayload } from '../utils/qrCode';
+import useIsMobile from '../utils/useIsMobile';
 
 const hasNativeDetector = () => typeof window !== 'undefined' && 'BarcodeDetector' in window;
 
@@ -32,6 +33,10 @@ export default function ScanModal({
   const [camErr, setCamErr] = useState('');
   const [err, setErr] = useState('');
   const [ok, setOk] = useState('');
+  /* 📱 handheld (2026-10-20): ช่องรอสแกนไม่เด้งคีย์บอร์ดบนจอ (`inputMode="none"`) — คีย์บอร์ดกินจอ 360×640 ไปครึ่งหนึ่ง
+     ทั้งที่เครื่องมีหัวสแกนในตัว · ป้ายเลอะ/สแกนไม่ติด → แตะ "⌨️ พิมพ์เอง" เปิดคีย์บอร์ด · จอคอมไม่เปลี่ยน */
+  const isMobile = useIsMobile();
+  const [kbd, setKbd] = useState(false);
 
   const inputRef = useRef(null);
   const videoRef = useRef(null);
@@ -197,9 +202,16 @@ export default function ScanModal({
                 setTyped(v);
               }}
               onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); submitTyped(); } }}
-              placeholder="เช่น RB-104 หรือ ESM:M:…"
-              style={{ flex: 1, minWidth: 0, padding: '9px 11px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 14 }}
+              placeholder={isMobile && !kbd ? 'กดปุ่มสแกนข้างเครื่องได้เลย' : 'เช่น RB-104 หรือ ESM:M:…'}
+              inputMode={isMobile && !kbd ? 'none' : undefined}
+              style={{ flex: 1, minWidth: 0, padding: '9px 11px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: isMobile ? 16 : 14 }}
             />
+            {isMobile && !kbd && (
+              <button type="button" className="tbtn" onClick={() => { inputRef.current?.blur(); setKbd(true); setTimeout(() => inputRef.current?.focus(), 30); }}
+                style={{ padding: '9px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontWeight: 700, fontSize: 13.5, cursor: 'pointer', flexShrink: 0 }}>
+                ⌨️ พิมพ์เอง
+              </button>
+            )}
             <button onClick={submitTyped} className="tbtn"
               style={{ padding: '9px 16px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, fontSize: 13.5, cursor: 'pointer', flexShrink: 0 }}>
               ตกลง
