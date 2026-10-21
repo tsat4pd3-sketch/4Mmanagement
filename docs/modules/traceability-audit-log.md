@@ -166,3 +166,29 @@
 - **ยังไม่มีจอที่โชว์ "ชื่อที่ผูก uid ไม่ได้"** ให้หัวหน้ากดรวมคนเอง — ตอนนี้เห็นได้จาก SQL เท่านั้น
 - **ชื่อที่สะกดผิดต่างจากทะเบียน** (พิมพ์มือ/คนนอกองค์กร) ยังได้ uid = null ตามการออกแบบ
   — การรวมคนเป็นการตัดสินใจของคน ห้ามให้ระบบเดา (ENGINEERING-PRINCIPLES §2)
+
+## 🎫 ใบผลิต (`prod_orders`) — สอบกลับ "ใครแก้ใบที่ปิดแล้ว" (2026-10-21)
+
+เดิมตารางนี้มีแค่ `trg_audit_delete` ⇒ **การ UPDATE มองไม่เห็นเลย** — ตอบไม่ได้ว่าใครแก้เวลาเริ่ม/จบ
+ใครเปลี่ยนยอด ใครยกเลิก/ยกยอดใบที่ปิดแล้ว (เจอตอน audit เคส "แก้ไขเวลาจบรุ่นไม่ขึ้น" · Apron Assy 20/10)
+และ `fn_audit()` หา actor ไม่ได้เพราะตารางไม่มี `updated_by_name`/`updated_by_uid` ⇒ **actor = null
+ทุกแถว รวมแถว DELETE ที่มีอยู่เดิม 464 แถว**
+
+**ที่ทำ** (migration `20261021_prod_orders_audit_update_dr.sql` · apply แล้ว 21/10):
+- เพิ่ม `updated_by_name` / `updated_by_uid` (nullable ไม่มี default) + ใส่ `'prod_orders'` ใน
+  `DR_AUDIT_TABLES` (`src/supabaseClient.js`) ⇒ client stamp ให้อัตโนมัติทุก write
+- `trg_audit_update_closed` = **AFTER UPDATE แบบแคบ**
+  🔴 **เงื่อนไข `OLD.status is distinct from 'open'`** — ใบผลิตถูก UPDATE ทุกครั้งที่สแกน/คอนเฟิร์ม
+  (หลายร้อยครั้ง/วัน) · log ทุก UPDATE = `audit_log` โตหลักแสนแถว/เดือน (`old_data`+`new_data` =
+  jsonb เต็มแถว) ⇒ ตัด flow ปกติ (open → confirmed) ออก **เหลือแต่ "ย้อนไปแก้ของที่ปิดแล้ว"**
+  · คอลัมน์ที่เฝ้า: `opened_at` `confirmed_at` `stopped_at` `status` `qty` `qty_target`
+    `qty_actual` `qty_ok` — **แก้ชื่อผู้แก้เฉยๆ ไม่สร้างแถว** (`fn_audit` ตัด `updated_by_*` ออกจาก
+    `changed_fields` อยู่แล้ว)
+- 🔴 `create trigger` ขอ **ACCESS EXCLUSIVE** บนตารางที่หน้างานเขียนอยู่ตลอด ⇒ **ต้อง
+  `set lock_timeout`** ก่อน ไม่งั้นค้างรอคิวล็อก (รอบแรก 21/10 ไม่ตั้ง = timeout 60 วิ)
+- ป้ายไทยของ `prod_orders` + ฟิลด์เวลา/ยอด อยู่ใน `src/utils/auditLabels.js` ·
+  `rowLabel()` โชว์ **`prod_no` ก่อน `mat_no`** (คนค้นด้วยเลขใบ) · ดูที่ `/audit-log` แท็บ DR
+
+⚠️ **ข้อจำกัดที่ยังอยู่** (known gap เดิมของ DR): ชื่อ/uid มาจาก client ที่เป็น `anon`
+= "คีย์สำหรับนับ/join" **ไม่ใช่ลายเซ็นที่ปลอมไม่ได้** (📄 `src/utils/actorStamp.js`) ·
+actor ของแถวที่เกิด**ก่อน** deploy รอบนี้ยังเป็น null — ย้อนไปเติมไม่ได้
