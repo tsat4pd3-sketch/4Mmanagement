@@ -16,9 +16,10 @@ import { toast } from '../components/Toast';
 import { checkWrite, checkWriteRows } from '../utils/dbWrite';
 import SearchSelect from './SearchSelect';
 import {
-  ASSIGNMENT_KINDS, kindLabel, assignmentStatus, STATUS,
+  ASSIGNMENT_KINDS, assignmentRoleText, assignmentStatus, STATUS,
   needsConfirm, reviewSummary, todayLocal,
 } from '../utils/orgAssignments';
+import { positionLabel, loadPositions } from '../utils/positions';   // บทบาท = ตำแหน่งจริงในทะเบียน (21/10)
 
 const NODE_KIND_TH = { section: 'ส่วน', department: 'แผนก', line: 'กลุ่ม', team: 'ทีม' };
 
@@ -48,7 +49,7 @@ export default function OrgAssignmentsPanel({ nodes = [] }) {
     const [{ data: a }, { data: p }] = await Promise.all([
       supabase.from('org_assignments')
         .select('id, profile_id, org_node_id, kind, starts_on, ends_on, note, source, confirmed_at'),
-      supabase.from('profiles').select('id, full_name, role').order('full_name'),
+      supabase.from('profiles').select('id, full_name, role, position').order('full_name'),
     ]);
     setRows(a || []);
     setPeople(p || []);
@@ -57,6 +58,10 @@ export default function OrgAssignmentsPanel({ nodes = [] }) {
 
   const nameOf = useCallback(
     (id) => people.find(p => p.id === id)?.full_name || '(ไม่ทราบชื่อ)', [people]);
+  /* ทะเบียนตำแหน่ง (positions) ต้องโหลดก่อน `positionLabel()` ถึงได้ชื่อไทย — bump state ให้ re-render */
+  const [posReady, setPosReady] = useState(0);
+  useEffect(() => { loadPositions().then(() => setPosReady(v => v + 1)); }, []);
+  const profById = useMemo(() => { void posReady; return new Map(people.map(p => [p.id, p])); }, [people, posReady]);
 
   const sum = useMemo(() => reviewSummary(rows, { today }), [rows, today]);
 
@@ -103,7 +108,7 @@ export default function OrgAssignmentsPanel({ nodes = [] }) {
   return (
     <div className="card" style={{ padding: 16 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
-        <h3 style={{ margin: 0, fontSize: 15, fontFamily: 'var(--font-display)' }}>👔 หัวหน้าหน่วย / รักษาการ</h3>
+        <h3 style={{ margin: 0, fontSize: 15, fontFamily: 'var(--font-display)' }}>👔 ใครคุมหน่วยไหน · ตำแหน่งจริง / รักษาการ</h3>
         <span style={{ fontSize: 11, color: 'var(--muted)' }}>
           ตอบ “ใครคุมหน่วยไหน” — คนละเรื่องกับ “สังกัดที่ไหน” · คนเดียวคุมได้หลายหน่วย
         </span>
@@ -122,7 +127,7 @@ export default function OrgAssignmentsPanel({ nodes = [] }) {
       {canSeeOnly && (
         <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10, padding: '7px 10px',
           background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8 }}>
-          🔒 ดูได้อย่างเดียว — การแต่งตั้งหัวหน้าหน่วย/รักษาการ ต้องมีสิทธิ์ <b>org:manage</b>
+          🔒 ดูได้อย่างเดียว — การแต่งตั้งผู้คุมหน่วยงาน (ตามตำแหน่ง/รักษาการ) ต้องมีสิทธิ์ <b>org:manage</b>
           (สิทธิ์ <b>org:manage_own_unit</b> ที่บัญชีนี้มี ใช้แก้โครงผังในหน่วยของตัวเองได้ แต่ยังแต่งตั้งคนไม่ได้)
         </div>
       )}
@@ -203,8 +208,9 @@ export default function OrgAssignmentsPanel({ nodes = [] }) {
                     <td>{n ? `${NODE_KIND_TH[n.kind] || n.kind} · ${n.name}` : '(หน่วยถูกลบ)'}</td>
                     <td>{nameOf(r.profile_id)}
                       {r.note && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.note}</div>}</td>
+                    {/* 🔴 บทบาท = **ตำแหน่งจริงของคนนั้น** ไม่ใช่คำที่ระบบประดิษฐ์ (21/10 · คำสั่ง user) */}
                     <td style={{ textAlign: 'center' }}>
-                      {ASSIGNMENT_KINDS[r.kind]?.icon} {kindLabel(r.kind)}</td>
+                      {ASSIGNMENT_KINDS[r.kind]?.icon} {assignmentRoleText(r.kind, positionLabel(profById.get(r.profile_id)?.position))}</td>
                     <td style={{ textAlign: 'center' }}>
                       {chip(`${m.color}22`, m.color, m.label)}
                       {needsConfirm(r) && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>จากผังองค์กร</div>}

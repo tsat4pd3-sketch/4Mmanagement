@@ -56,7 +56,9 @@ export default function CostCenterRatePanel({ nodes, lines }) {
   useEffect(() => { load(); }, [load]);
 
   /* union cost center: ผัง + ไลน์ + ที่มีใน rate table (รหัสเก่าที่เลิกใช้ยังเห็นประวัติ)
-     ⚠️ activity rate มีที่ "ระดับกลุ่ม" (21406 — org kind='line' / production_lines) เท่านั้น (คำสั่ง user 2026-08-11)
+     ⚠️ activity rate เป็นของ **รหัส Cost Center** ไม่ได้ผูกกับไลน์ (คำสั่ง user 2026-10-21
+        *"activity rate มันอิง cost center มันไม่ได้อิงไลน์"*) · ปกติบัญชีตั้งที่ชั้นกลุ่ม
+        แล้วชั้นบนรวมขึ้นตามลำดับชั้นในผัง — **ห้ามกลับไปตัดสินชั้นจากตัวเลขขึ้นต้นรหัส**
      ระดับส่วน (21404) / แผนก (21405) ไม่กรอก rate — ต้นทุน/saving ระดับบน = sum ขึ้นตาม hierarchy จากกลุ่ม */
   const ccList = useMemo(() => {
     const map = new Map(); // cc -> { orgGroup: [], orgOther: [], lines: [] }
@@ -156,9 +158,9 @@ export default function CostCenterRatePanel({ nodes, lines }) {
           emptyText="ยังไม่มีรหัสในทะเบียน — กด + เพิ่ม (รหัสที่ไลน์/ผังใช้อยู่แล้วยังเลือกได้จากกลุ่ม 📜)" />
       </CollapseCard>
       <CollapseCard id="cc_rates" storePrefix="orgsetup" count={groupList.length}
-        title={<span>💰 Activity Rate ต่อ Cost Center — ระดับกลุ่ม (21406) <span style={{ fontWeight: 600, color: 'var(--muted)' }}>({RATE_COMPONENTS.map(c => c.label).join('/')} บาท/ชม. — ใช้คิด cost saving ในโปรเจคปรับปรุง)</span></span>}>
+        title={<span>💰 Activity Rate ต่อ Cost Center <span style={{ fontWeight: 600, color: 'var(--muted)' }}>({RATE_COMPONENTS.map(c => c.label).join('/')} บาท/ชม. — ใช้คิด cost saving ในโปรเจคปรับปรุง)</span></span>}>
         <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>
-          rate ตั้งที่ <b>ระดับกลุ่มไลน์ (รหัส 21406)</b> เท่านั้น — ระดับแผนก/ส่วน ไม่ต้องกรอก (ต้นทุน/saving ระดับบนรวมขึ้นจากกลุ่มตาม hierarchy)
+          rate เป็นของ <b>รหัส Cost Center</b> (ไม่ได้ผูกกับไลน์) — ปกติบัญชีตั้งที่ <b>ชั้นกลุ่ม</b> แล้วชั้นแผนก/ส่วนรวมขึ้นเองตามลำดับชั้นในผัง
           · <b>บัญชีส่ง rate รอบใหม่ = กด “＋ rate ใหม่”</b> (ประวัติเดิมคงไว้ โปรเจคเก่าคำนวณด้วย rate ณ ช่วงนั้น) — ปุ่ม ✏️ ไว้แก้เฉพาะตอนกรอกตัวเลขผิด
           {noRateUsed > 0 && <span style={{ color: '#f59e0b', fontWeight: 700 }}> · ⚠ มี {noRateUsed} รหัสที่ไลน์ใช้อยู่แต่ยังไม่ตั้ง rate</span>}
           {otherCount > 0 && (
@@ -201,10 +203,12 @@ export default function CostCenterRatePanel({ nodes, lines }) {
                       <td style={{ padding: '7px 10px', fontSize: 12, fontWeight: 700, fontFamily: 'monospace', color: 'var(--text)', whiteSpace: 'nowrap' }}>
                         {cc}
                         {lns.length > 0 && !cur && <span title="ไลน์ใช้รหัสนี้อยู่ แต่ยังไม่ตั้ง rate — cost saving ของไลน์นี้จะคำนวณไม่ได้" style={{ marginLeft: 6, fontSize: 11, color: '#f59e0b', fontWeight: 800 }}>⚠</span>}
-                        {lns.length > 0 && !cc.startsWith('21406') && (
-                          <span title="ไลน์ใช้รหัสนี้อยู่ แต่ไม่ใช่ชุดระดับกลุ่ม (21406) — เช็คกับบัญชีแล้วแก้ที่หน้าจัดการไลน์/ผังองค์กร"
-                            style={{ marginLeft: 6, fontSize: 11, fontWeight: 800, color: '#f59e0b', background: 'rgba(245,158,11,0.13)', borderRadius: 5, padding: '1px 5px' }}>ไม่ใช่ 21406?</span>
-                        )}
+                        {/* ⛔ ถอดธง "ไม่ใช่ 21406?" ออกแล้ว (2026-10-21 · คำสั่ง user
+                            *"activity rate มันอิง cost center มันไม่ได้อิงไลน์"*)
+                            ธงเดิมจุดชนวนจาก "มีไลน์ใช้รหัสนี้ + รหัสไม่ขึ้นต้น 21406" ซึ่งผิด 2 ชั้น:
+                              1. rate เป็นของ **รหัส CC** ไม่ได้เป็นของไลน์ ⇒ ไลน์จะใช้รหัสชั้นไหนไม่เกี่ยว
+                              2. ตัดสินชั้นจาก **ตัวเลขขึ้นต้น** ขัดกฎ "ลำดับชั้นมาจากผัง ไม่ใช่ตัวเลข"
+                            ⇒ เหลือธงเดียวที่มีความหมายจริง: "มีคนใช้รหัสนี้อยู่ แต่ยังไม่ตั้ง rate" (ข้างบน) */}
                       </td>
                       <td style={{ padding: '7px 10px', fontSize: 11, color: 'var(--muted)', maxWidth: 260 }}>
                         {orgGroup.length > 0 && <span>▦ {orgGroup.join(', ')}</span>}
