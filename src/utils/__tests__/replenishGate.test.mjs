@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { pointsForLine, pointsForRequest, checkDeliveryPoint, buildDeliverPayload, validateDeliverPayload, overrideReasonOk, OVERRIDE_REASONS, DELIVER_GATES, checkPickPart, checkPickQty, buildPickPayload, validatePickPayload, PICK_GATES } from '../replenishGate.js';
+import { pointsForLine, pointsForRequest, checkDeliveryPoint, buildDeliverPayload, validateDeliverPayload, overrideReasonOk, OVERRIDE_REASONS, DELIVER_GATES, checkPickPart, checkPickQty, buildPickPayload, validatePickPayload, PICK_GATES, reqSourceMeta } from '../replenishGate.js';
 import { parseQrPayload, buildQrPayload, resolveDeliveryPoint } from '../qrCode.js';
 
 /* ด่านขั้น 7 ของลูปสโตร์ — docs/STORE-PULL-LOOP-DESIGN.md §4.5/§4.6 (2026-09-03) */
@@ -180,4 +180,17 @@ test('pointsForRequest = ตัวเดียวกับที่ checkDeliver
   assert.deepEqual(pointsForRequest([P60s, PHdf], { line_name: 'SUB APRON', storage_location: 'P411' }).map(p => p.id), [P60s.id]);
   assert.deepEqual(pointsForRequest([P60s, PHdf], { line_name: 'SUB APRON' }), []);                                             // ไม่มี SLoc = กฎเดิม
   assert.deepEqual(pointsForRequest([{ ...P60s, is_active: false }], { line_name: 'SUB APRON', storage_location: 'P411' }), []); // จุดปิดไม่นับ
+});
+
+/* ── 🏷️ ที่มาของใบ (`source`) — ป้ายต้องมีที่เดียว (21/10 · เพิ่มค่า line_adhoc) ─────────── */
+test('reqSourceMeta — 3 ค่าแยกฝั่งถูก และค่าที่ไม่รู้จักตกเข้าฝั่งไลน์ (ห้ามคืน null)', () => {
+  assert.equal(reqSourceMeta('line').side, 'line');
+  assert.equal(reqSourceMeta('line_adhoc').side, 'line');
+  assert.equal(reqSourceMeta('store_forecast').side, 'store');
+  assert.equal(reqSourceMeta('line_adhoc').short, 'ขอเอง');
+  // ใบเก่า/ค่าที่ยังไม่รู้จัก = ต้องยังอ่านออก (ป้ายผิดพอทนได้ · ใบหายจากจอทนไม่ได้)
+  for (const v of [null, undefined, '', 'something_new']) {
+    assert.ok(reqSourceMeta(v), `ค่า ${String(v)} ต้องคืน meta ไม่ใช่ null`);
+    assert.equal(reqSourceMeta(v).side, 'line');
+  }
 });
