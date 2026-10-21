@@ -6221,3 +6221,44 @@ test('📥 carry-debt-no-session-window — ของค้างต้องถ
     + '   แก้: ถามด้วยสถานะ + carryOffers() (src/utils/carryDebt.js)\n'
     + '        📄 docs/modules/daily-report.md §ของค้าง\n');
 });
+
+test('🛡️ order-close-single-entry — "เวลาปิดของใบผลิต" ต้องมีสูตรเดียว', () => {
+  const bad = [];
+  const oee = stripComments(readFileSync(join(ROOT, 'src/utils/oee.js'), 'utf8'));
+
+  /* ① เจ้าของสูตรต้องยังอยู่ — ตรงกับ backfill ฝั่ง DB (migration 20260915):
+        confirmed ⇒ confirmed_at · ยกยอด/ส่งกะถัดไป/ยกเลิก ⇒ stopped_at · open ⇒ null */
+  if (!/export function orderCloseMs\s*\(/.test(oee))
+    bad.push('src/utils/oee.js — ต้องมี orderCloseMs() (เจ้าของสูตร "เวลาปิดของใบผลิต")');
+  if (!/export function matRawWindow\s*\(/.test(oee))
+    bad.push('src/utils/oee.js — ต้องมี matRawWindow() (กรอบ "ช่วงที่ MAT นี้วิ่ง")');
+  if (!/st === 'carry_over' \|\| st === 'imported' \|\| st === 'cancelled'/.test(oee))
+    bad.push("src/utils/oee.js — orderCloseMs ต้องนับ imported ด้วย (ใบที่กะถัดไปรับไปแล้วก็หยุดผลิตในกะนี้จริง)");
+
+  /* ② 🔴 ห้ามหน้าไหนปั้นสูตรเอง — คลาสบั๊กจริง (Apron Assy 20/10): modal แก้เวลาตัด `imported` ทิ้ง
+        แต่แท็บประวัติอ่าน `o.confirmed_at || o.stopped_at` ⇒ MAT เดียว กะเดียว เห็นเวลาจบ 19:28 vs 20:00
+        แก้แล้ว "ตีกลับเป็นเวลาหยุดผลิต" ทุกครั้ง + ฐานเวลา %P ของ 2 จอไม่ตรงกัน */
+  for (const full of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const r = full.slice(ROOT.length).replace(/\\/g, '/');   // ROOT ลงท้ายด้วย '/' อยู่แล้ว
+    if (r === 'src/utils/oee.js') continue;
+    const code = stripComments(readFileSync(full, 'utf8'));
+    if (/\.confirmed_at\s*\|\|\s*\w+\.stopped_at/.test(code))
+      bad.push(`${r} — ห้ามเขียน \`o.confirmed_at || o.stopped_at\` เอง (ใช้ orderCloseMs/matRawWindow จาก utils/oee)`);
+    if (/status === 'carry_over' \|\| \w+\.status === 'cancelled'\)\s*&&\s*\w+\.stopped_at/.test(code))
+      bad.push(`${r} — ห้ามคัดใบที่ปิดแล้วเอง (ลืม 'imported' = เวลาจบของ MAT ไม่ตรงกับแท็บประวัติ) ใช้ orderCloseMs`);
+  }
+
+  /* ③ ตัวบันทึกต้องเขียนผ่าน planMatTimeWrites — เขียน `confirmed_at` ของใบสุดท้ายใบเดียวไม่พอ
+        (ใบยกยอดถือเวลาไว้ใน `stopped_at` ⇒ จอไม่ขยับ = "แก้ไม่ได้") */
+  const dr = stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'));
+  if (!/planMatTimeWrites\s*\(/.test(dr))
+    bad.push('src/pages/DailyReport.jsx — handleSaveTimes ต้องวางแผนการเขียนด้วย planMatTimeWrites (utils/matTimeEdit.js)');
+  /* ④ ข้ามแล้วต้องบอกบนจอ — เดิม `continue` เงียบๆ แต่ toast ยังขึ้น "บันทึกสำเร็จ" */
+  if (!/skippedOpen\.length\)\s*toast\.error/.test(dr))
+    bad.push('src/pages/DailyReport.jsx — MAT ที่ข้ามเพราะมีใบเปิดค้าง ต้องเตือนบนจอ ห้ามข้ามเงียบ');
+
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n'
+    + '   ทำไม: จอแก้เวลากับจอที่อ่านผลใช้คนละสูตร = หน้างานกดบันทึกแล้วเหมือนไม่เกิดอะไร\n'
+    + '   แก้: orderCloseMs()/matRawWindow() (src/utils/oee.js §6.2) + planMatTimeWrites() (src/utils/matTimeEdit.js)\n'
+    + '        📄 docs/modules/daily-report.md §เวลาเริ่ม-จบของ MAT\n');
+});
