@@ -730,6 +730,8 @@ function AgreementsModal({ agreements, canManage, role, onClose }) {
   const patch = (i, p) => setRows(r => r.map((x, k) => (k === i ? { ...x, ...p } : x)));
 
   const save = async () => {
+    /* ด่านชั้น 2 — ข้อตกลง BBS เป็นของกลางทั้งโรงงาน ⇒ ด่าน = คีย์เดียวกับปุ่ม (QC audit §7.4 · 20/10) */
+    if (!canManage) { toast.error('แก้ข้อตกลงความปลอดภัยต้องมีสิทธิ์ bbs:manage'); return; }
     setSaving(true);
     try {
       const bad = rows.filter(r => !String(r.text || '').trim());

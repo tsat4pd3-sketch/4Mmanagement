@@ -424,3 +424,24 @@ model: inherit
 - อย่ารายงาน false positive: อ่าน context รอบบรรทัดนั้นเสมอ เช่น `toISOString()` ที่เป็น timestamp เต็มไม่ผิด (A1)
 - ถ้าไม่แน่ใจว่าผิดจริง ให้ใส่ไว้ในหมวด "ข้อสังเกต" พร้อมบอกว่าไม่แน่ใจเพราะอะไร
 - ปิดท้ายด้วยสรุปตัวเลข: ตรวจกี่หมวด กี่ไฟล์ พบ 🔴/🟡/🔵 อย่างละกี่รายการ
+
+### ด่านที่เพิ่ม 2026-10-20 (QC audit รอบนี้ — ตรวจเพิ่มในหมวดที่เกี่ยว)
+
+- **B (DB):** `limit-over-postgrest-cap` — `.limit(N > 1000)` ต้องมี `cap-ok: <ตาราง> วัด <วันที่> = <N> แถว`
+  ใน 3 บรรทัดเหนือ ไม่งั้นใช้ `fetchByIds`/`fetchAllPages`/`fetchAllRows`
+  (PostgREST clamp 1000 เสมอ · ถูกตัดแถว ≠ error ⇒ เงียบ)
+- **B (DB) + LPA:** `lpa-read-fail-not-missed` — `/lpa` ห้ามแกะ `{ data }` จาก `Promise.all` ที่ดึง `lpa_audits`
+  ต้องมี `monthErr`/`draftErr` + ส่ง `null` เข้า `checkDayState` เมื่ออ่านไม่ได้
+  (อ่านไม่สำเร็จ ≠ "ขาดตรวจ" · ใบร่างเปล่าจากการอ่านที่ล้ม = บันทึกแล้วคำตอบเดิมหายถาวร)
+- **C (สิทธิ์):** `cc-scope-trigger-columns` — `protect_profile_role()` ต้องกัน
+  `role · sections · section · scope_depth · resp_cost_centers` ครบ (คอลัมน์ที่ให้สิทธิ์ = เจ้าของแถวแก้เองไม่ได้)
+- **C (สิทธิ์) + D (ขอบเขต):** `row-scope-dr-products-skills` — ทุกฟังก์ชันที่เขียน `dr_products`
+  (4 ทาง: `/products` · `/daily-report` ⚙️ · `/equipment?tab=die` ตั้งคู่ · `/planner-sales` ผูก `p_no`)
+  และ `skill_definitions` (`/operator` แท็บสกิล) ต้องเรียกของกลางชั้น ③ **ในฟังก์ชันนั้น** ·
+  ตอน "แก้" ต้องเช็ค **2 ฝั่ง** (แถวเดิม + ไลน์/ส่วนงานปลายทาง) · นำเข้า CSV ต้องกรองแถวนอกขอบเขต
+  **แล้วเขียนบนจอว่าข้ามกี่แถว** · ฝั่ง DR ไม่มี RLS ⇒ จอคือด่านเดียว ปิดทางเดียวไม่พอ (📄 audit §14)
+
+> 🔴 **หมวด C ต้องตรวจชั้นสิทธิ์ที่ 3 ด้วย** (กฎ 15/10 ยังไม่เคยอยู่ใน checklist นี้):
+> `writeScope.js` (`canWriteUnit`/`canWriteLine`/`writableRows`) · `ccScope.js` (`canWriteScope`) ·
+> `mtnTeams.js` (`canWriteTeam`) — **จอที่เขียน DB ต้องเช็คซ้ำในฟังก์ชันที่เขียนจริง ไม่ใช่แค่ซ่อนปุ่ม** ·
+> `sections` = ขอบเขต "ที่เห็น" **ห้ามเอามาตัดสินการแก้** · หน้าแม่ต้องส่งกฎลงแผงลูก (ส่งแค่ `canEdit` ไม่พอ)

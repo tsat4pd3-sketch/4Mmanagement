@@ -4,7 +4,7 @@ import { supabase } from '../supabaseClient';
 import { toast } from '../components/Toast';
 import { loadLinesRes } from '../utils/useProductionLines';
 import { accessSummaryForRole } from '../App';
-import { ROLE_OPTIONS, roleLabel, groupRolesByAxis } from '../utils/roleMeta';
+import { ROLE_OPTIONS, roleLabel, groupRolesByAxis, ORG_LEVELS } from '../utils/roleMeta';
 import { positionOptions, positionOptionsWith, positionLabel, loadPositions, clearPositionsCache, levelOfPosition, maintenanceKindOfPosition, levelMeta, POSITION_LEVELS } from '../utils/positions';
 import { can, loadPermissions } from '../utils/permissions';   // เช็คสิทธิ์ของ role ที่เลือก เพื่อเตือนเมื่อไม่ตรงกับระดับงาน
 import { deptNameOf, teamKeyOf } from '../utils/mtnTeams';
@@ -22,6 +22,7 @@ import { buildOrgScope, SCOPE_KIND_META } from '../utils/orgScope';
 import { attachCc, ccCoverage, unknownRespCcs } from '../utils/ccScope';
 
 import InfoMore from '../components/InfoMore';
+import CollapseCard from '../components/CollapseCard';   // 📚 ตารางอ้างอิงชุดสิทธิ์ — พับเป็นค่าเริ่มต้น (21/10 · คำสั่ง user)
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
 import FilterBar from '../components/FilterBar';
@@ -57,9 +58,15 @@ const RoleOptGroups = ({ withDesc = false }) => ROLE_GROUPS.map(g => (
     {g.roles.map(r => <option key={r.value} value={r.value}>{r.label}{withDesc ? ` — ${r.desc}` : ''}</option>)}
   </optgroup>
 ));
-// sections = ขอบเขตส่วนงาน (เลือกได้หลายอัน ทุก role) — ว่าง = เห็นทุกส่วนงาน
-// profiles.section (เดี่ยว) ยังถูกเขียนเป็นตัวแรกของ sections เสมอ เพื่อให้ rollback โค้ดกลับเวอร์ชันเก่าได้โดย supervisor ไม่หลุด scope
-const emptyForm = { email: '', password: '', fullName: '', role: 'supervisor', position: '', sections: [], respCcs: [], mtnTeams: [], deptAdmin: false, lineId: '', team: '', notifyEmail: '', scopeDepth: 'unit',
+// sections = ขอบเขต**การมองเห็น** (เลือกได้หลายอัน ทุก role) — ว่าง = เห็นทุกส่วนงาน
+/* 🔴🔴 `profiles.section` (เดี่ยว) = **บ้านจริง** — คนละคำถามกับ `sections` (20/10 · คำสั่ง user
+   "เหมือนการกรอกข้อมูลมันกลับไปกลับมา")
+   เดิมบันทึกเป็น `form.sections[0]` เสมอ ⇒ **ติ๊กช่อง "เห็นข้อมูลของใคร" แล้วบ้านจริงเปลี่ยนตาม**
+   วัดจริง 20/10: QC 13 บัญชี ทะเบียนพนักงานว่าสังกัด **QA** แต่ `profiles.section` กลายเป็น **PD3**
+   (= พื้นที่ที่เขาไปตรวจ) เพราะติ๊ก PD3 ไว้ในช่องการมองเห็น
+   ⇒ บ้านจริงของบัญชีของคน **อ่านจากทะเบียนพนักงานเท่านั้น** (สูตรเดียวกับ App.jsx: `emp.section ?? profile.section`)
+     · บัญชีกลาง (ไม่ใช่คน) ไม่มีตัวตนในทะเบียน ⇒ เลือกเองได้ 1 ส่วนงาน (`homeSection`) */
+const emptyForm = { email: '', password: '', fullName: '', role: 'supervisor', position: '', sections: [], homeSection: '', respCcs: [], mtnTeams: [], deptAdmin: false, lineId: '', team: '', notifyEmail: '', scopeDepth: 'unit',
   // ⚠️ บัญชีของคน ต้องผูกกับตัวตนใน `employees` — ทีม/ไลน์/ส่วนงาน อ่านจากที่นั่น ห้ามให้ admin กรอกเอง
   //    (เคสจริง: หัวหน้า 2 คนทีมสลับกัน เพราะ admin เดาตอนสร้างบัญชี → เช็คชื่อมองไม่เห็นกะตัวเอง)
   // บัญชีของหน่วยงาน/อุปกรณ์ (maintenance/warehouse1/Display) ไม่มีตัวตนใน employees และไม่ควรมี
@@ -456,6 +463,13 @@ export default function AddUser() {
     return null;
   };
 
+  /** พนักงานที่ผูกกับบัญชีนี้ (บัญชีของคนเท่านั้น) — แหล่งความจริงของ "ตัวตน" */
+  const linkedEmp = () => (form.accountKind === 'person' && form.employeeId ? empById[form.employeeId] : null);
+  /** 🏠 บ้านจริงที่จะบันทึกลง `profiles.section` — **ทะเบียนพนักงานชนะ**
+   *  (สูตรเดียวกับ `App.jsx`: `emp.section ?? ident.section` · 20/10)
+   *  🔴 ห้ามกลับไปใช้ `form.sections[0]` — ช่องนั้นคือ "เห็นข้อมูลของใคร" คนละคำถามกับ "สังกัดหน่วยไหน" */
+  const homeSectionForSave = () => (linkedEmp()?.section || form.homeSection || '') || null;
+
   const validateScope = () => {
     if (form.role === 'supervisor' && !form.sections.length) return 'ชุดสิทธิ์ระดับส่วน ต้องกำหนด Section อย่างน้อย 1 ส่วนงาน ไม่งั้นจะเห็นข้อมูลทุกส่วนงานแบบไม่จำกัด';
     if (form.role === 'leader' && (!form.lineId || !form.team)) return 'ชุดสิทธิ์ระดับไลน์ ต้องกำหนดทั้งไลน์ผลิตและ Team ไม่งั้นจะเห็นข้อมูลทุกไลน์แบบไม่จำกัด';
@@ -481,6 +495,7 @@ export default function AddUser() {
       role:        u.role         || 'supervisor',
       position:    u.position     || '',
       sections:    (u.sections?.length ? u.sections : (u.section ? [u.section] : [])),
+      homeSection: u.section || '',      // บ้านจริงที่เก็บไว้ (บัญชีของคน: ทะเบียนพนักงานชนะตอนบันทึก)
       respCcs:     Array.isArray(u.resp_cost_centers) ? u.resp_cost_centers : [],
       scopeDepth:  u.scope_depth || 'unit',
       mtnTeams:    Array.isArray(u.mtn_teams) ? u.mtn_teams : [],
@@ -526,7 +541,7 @@ export default function AddUser() {
             role:         form.role,
             full_name:    form.fullName || null,
             position:     form.position || null,
-            section:      form.sections[0] || null,
+            section:      homeSectionForSave(),
             sections:     form.sections,
             team:         form.team || null,
             line_id:      form.lineId ? Number(form.lineId) : null,
@@ -619,7 +634,7 @@ export default function AddUser() {
         full_name:    form.fullName    || null,
         role:         form.role,
         position:     form.position    || null,
-        section:      form.sections[0] || null,
+        section:      homeSectionForSave(),
         sections:     form.sections.length ? form.sections : null,
         /* 🔭 ความกว้างที่ "คนเลือกเอง" — ต่างจาก legacy_open ที่ได้ all มาจากการเว้นว่าง
            (docs/ACCESS-CONTROL-STANDARDS.md §2 · ขอบเขตตัดสิทธิ์ให้แคบลงเท่านั้น ห้ามขยาย) */
@@ -1089,10 +1104,31 @@ export default function AddUser() {
         </table>
       </div>
 
-      {/* Role reference — หมวดที่เข้าได้ดึงจากตารางสิทธิ์จริง (role_permissions) ไม่ hardcode */}
-      <div style={{ padding: '12px 16px', background: 'var(--bg3)', borderRadius: 10, border: '1px solid var(--border2)' }}>
-        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text2)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-          สิทธิ์การเข้าถึง <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>— หมวดที่เข้าได้อ่านจากตารางสิทธิ์ปัจจุบัน ปรับรายหน้าได้ที่เมนู 🔐 จัดการสิทธิ์</span>
+      {/* 📚 ตารางอ้างอิงชุดสิทธิ์ — หมวดที่เข้าได้ดึงจากตารางสิทธิ์จริง (role_permissions) ไม่ hardcode
+          🔴 **พับเป็นค่าเริ่มต้น** (21/10 · user "มันรก ถ้าคนอยากดูค่อยกด show") — เป็นเอกสารอ้างอิง
+             ไม่ใช่ของที่ต้องอ่านทุกครั้งที่เปิดหน้า · CollapseCard จำสถานะที่คนเลือกไว้ให้เอง */}
+      <CollapseCard id="role_ref" storePrefix="add_user" defaultOpen={false}
+        title="📚 ชุดสิทธิ์มีอะไรบ้าง / เข้าหน้าไหนได้" count={ROLE_OPTIONS.length}
+        style={{ background: 'var(--bg3)', border: '1px solid var(--border2)' }}>
+        <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>
+          หมวดที่เข้าได้อ่านสดจากตารางสิทธิ์ปัจจุบัน — ปรับรายหน้าได้ที่เมนู 🔐 จัดการสิทธิ์
+        </div>
+        {/* 🏷️ ผูกชุดสิทธิ์แกน "ขอบเขต" เข้ากับระดับในรหัส Cost Center (21/10 · คำสั่ง user)
+            🔴 เป็นวิธี "อ่านรหัส" ให้คนเข้าใจตรงกัน — ระบบยังตัดสินลำดับชั้นจากผังองค์กรจริงเสมอ */}
+        <div style={{ fontSize: 11, lineHeight: 1.7, color: 'var(--muted)', marginBottom: 10,
+          padding: '7px 10px', borderRadius: 8, background: 'var(--card)', border: '1px solid var(--border2)' }}>
+          <b style={{ color: 'var(--text2)' }}>อ่านรหัส Cost Center ยังไง</b> — ตัวอย่าง <code>2140462100</code> ·
+          {' '}<code>21</code> กลุ่มธุรกิจ · <code>40</code> โรงงานเรา (<code>2140</code> = ทั้งโรงงาน) ·
+          {' '}<b style={{ color: 'var(--text2)' }}>หลักที่ 5 = ระดับในผัง</b> (3 ฝ่าย · 4 ส่วนงาน · 5 แผนก · 6 กลุ่ม/ไลน์) ·
+          {' '}หลักที่ 6 = หน่วยไหนในระดับนั้น (46 / 47 …) · ที่เหลือ = แตกย่อยลงไป
+          <div style={{ marginTop: 3 }}>
+            🏢 <b style={{ color: 'var(--text2)' }}>ยังไม่มีชุดสิทธิ์ของชั้น "แผนก" (เลเวล 5) แยกต่างหาก</b> —
+            ใช้ <b>สิทธิ์ระดับส่วน</b> แล้วติ๊ก <b>Cost Center ของแผนกนั้น</b> (ช่อง ④ ในหน้าแก้บัญชี)
+            ⇒ แก้ได้เฉพาะแผนกนั้น + ทุกไลน์/ทีมใต้ลงไป
+          </div>
+          <div style={{ marginTop: 3 }}>
+            🔴 ป้าย "เลเวล" เป็นแค่วิธีอ่าน — <b>ระบบตัดสินลำดับชั้นจากผังองค์กรจริง (/org-setup) ไม่ใช่จากตัวเลขรหัส</b>
+          </div>
         </div>
         {/* ⚠️ ย้ำให้ชัดว่า role ≠ ตำแหน่งงาน — เคยเข้าใจผิดว่า "ส่วนวิศวกรรม" คือตำแหน่งวิศวกร */}
         <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10, lineHeight: 1.5 }}>
@@ -1112,9 +1148,24 @@ export default function AddUser() {
                     <div style={{ width: 6, height: 6, borderRadius: '50%', background: r.color, flexShrink: 0, marginTop: 5 }} />
                     <div style={{ minWidth: 0 }}>
                       <span style={{ fontSize: 12, fontWeight: 700, color: r.color }}>{r.label}</span>
+                      {/* 🏷️ ระดับองค์กรที่ role นี้เทียบได้ = หลักที่ 5 ของรหัส Cost Center (ป้ายอ่านอย่างเดียว) */}
+                      {r.orgLevel && (
+                        <span title={`เทียบกับรหัส Cost Center: หลักที่ 5 = ${r.orgLevel} (${ORG_LEVELS[r.orgLevel]}) · ระบบตัดสินลำดับชั้นจากผังองค์กรจริง ไม่ใช่จากตัวเลข`}
+                          style={{ fontSize: 11, fontWeight: 700, marginLeft: 6, padding: '0 5px', borderRadius: 4,
+                            background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.35)' }}>
+                          เลเวล {r.orgLevel} · {ORG_LEVELS[r.orgLevel]}
+                        </span>
+                      )}
                       <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 6 }}>{r.desc}</span>
                       <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 2 }}>
                         {sum.all ? '✅ เข้าได้ทุกหน้า' : sum.total === 0 ? '— ยังไม่เปิดสิทธิ์หน้าไหน' : `เข้าได้ ${sum.total} หน้า: ${sum.groups.join(' · ')}`}
+                      </div>
+                      {/* 🌐 ใบผ่านข้ามหน่วยงาน — อ่านสดจากตารางสิทธิ์ (ห้ามเขียนเป็นข้อความตายใน roleMeta
+                          ไม่งั้นคำอธิบายกับของจริงเพี้ยนคนละทาง) · ข้อความชุดเดียวกับในโมดัลแก้บัญชี */}
+                      <div style={{ fontSize: 11, marginTop: 1, color: can('scope', 'all_units', r.value) ? '#f59e0b' : 'var(--muted)' }}>
+                        {can('scope', 'all_units', r.value)
+                          ? '🌐 แก้ข้อมูลข้ามส่วนงานได้ทั้งโรงงาน'
+                          : '🔒 แก้ได้เฉพาะส่วนงานของตัวเอง (ตั้งที่ช่องขอบเขตส่วนงาน)'}
                       </div>
                     </div>
                   </div>
@@ -1123,7 +1174,7 @@ export default function AddUser() {
             </div>
           </div>
         ))}
-      </div>
+      </CollapseCard>
 
       {/* Create / Edit Modal */}
       {showModal && (
@@ -1236,7 +1287,10 @@ export default function AddUser() {
                         if (emp) setForm(f => ({
                           ...f, employeeId: emp.id, fullName: emp.name || '',
                           team: emp.team || '', lineId: emp.line_id ? String(emp.line_id) : '',
+                          /* ขอบเขต "เห็น" ตั้งต้นจากส่วนงานของเขา (แก้ทีหลังได้) ·
+                             บ้านจริงตามทะเบียนพนักงาน (ช่องนี้อ่านอย่างเดียว) */
                           sections: emp.section ? [emp.section] : f.sections,
+                          homeSection: emp.section || f.homeSection,
                           position: emp.position || f.position,
                         }));
                       }}>
@@ -1435,6 +1489,111 @@ export default function AddUser() {
                 })()}
               </div>
 
+              {/* 🏠 บ้านจริง — "สังกัดหน่วยไหน" (คนละคำถามกับ ② เห็นข้อมูลของใคร · 20/10)
+                  🔴 บัญชีของคน: **อ่านจากทะเบียนพนักงานอย่างเดียว** ห้ามให้กรอกซ้ำที่นี่
+                     (กรอก 2 ที่ = ค่าขัดกันเงียบ — เคสจริง QC 13 บัญชี ทะเบียนว่า QA แต่บัญชีกลายเป็น PD3) */}
+              {(() => {
+                const emp = form.accountKind === 'person' && form.employeeId ? empById[form.employeeId] : null;
+                const empLink = emp
+                  ? `/operator?q=${encodeURIComponent(emp.employee_id_code || emp.name || '')}`
+                  : '/operator';
+                if (form.accountKind === 'person') {
+                  return (
+                    <div>
+                      <label style={labelSt}>
+                        ส่วนงานที่สังกัด
+                        <span style={{ color: 'var(--muted)', fontWeight: 400 }}> · จากฐานพนักงาน</span>
+                      </label>
+                      <div style={{ padding: '8px 12px', background: 'var(--bg3)', borderRadius: 8, fontSize: 12.5,
+                        color: emp?.section ? 'var(--text)' : '#f59e0b', border: '1px solid var(--border2)' }}>
+                        {!emp ? '— ยังไม่ได้เลือกพนักงาน —'
+                              : emp.section
+                                ? <>🏠 <b>{emp.section}</b>{emp.department ? <span style={{ color: 'var(--muted)' }}> · {emp.department}</span> : null}</>
+                                : '⚠ ทะเบียนพนักงานยังไม่ระบุส่วนงาน — ไปกรอกที่ฐานพนักงานก่อน'}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.5 }}>
+                        ใช้ตอบว่า <b>“แก้ข้อมูลของใครได้”</b> (ชั้นสิทธิ์ที่ 3) — ไม่ใช่ช่อง ② ข้างล่างที่ตอบว่า “เห็นข้อมูลของใคร”
+                        {emp && <> · แก้ค่านี้ที่ <a href={empLink} style={{ color: 'var(--accent)', fontWeight: 600 }}>👥 ฐานข้อมูลพนักงาน →</a></>}
+                      </div>
+                    </div>
+                  );
+                }
+                /* บัญชีกลาง (จอ TV / ประจำเครื่อง) ไม่มีตัวตนในทะเบียน — เลือกเองได้ 1 ส่วนงาน */
+                return (
+                  <div>
+                    <label style={labelSt}>ส่วนงานที่สังกัด</label>
+                    <select value={form.homeSection} onChange={e => setF('homeSection', e.target.value)}>
+                      <option value="">— ไม่ผูกส่วนงาน —</option>
+                      {[...new Set([...sectionOpts, ...orphanDeptOpts, ...(form.homeSection ? [form.homeSection] : [])])]
+                        .map(sec => <option key={sec} value={sec}>{sec}</option>)}
+                    </select>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
+                      ใช้ตอบว่า <b>“แก้ข้อมูลของใครได้”</b> — ไม่ผูก = แก้อะไรไม่ได้นอกจากที่ชุดสิทธิ์เปิดให้ทั้งโรงงาน
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* บัญชีของคนที่ผูกพนักงานแล้ว → ทีม/ไลน์ มาจากฐานพนักงาน ล็อกไม่ให้ admin กรอกทับ
+                  (ต้นเหตุเดิมของ "ทีมสลับกัน" คือช่องพวกนี้ให้กรอกเองได้) */}
+              {(() => {
+                const linked = form.accountKind === 'person' && !!form.employeeId;
+                /* 🔴 ช่องที่ล็อก ต้องโชว์ "ค่าที่มีผลจริง" ไม่ใช่ค่าที่ค้างในบัญชี (25/09 · feedback user)
+                   เกิดจริง: ตีรณา — ฐานพนักงาน team='A' แต่ `profiles.team` เป็น null ⇒ ช่องขึ้น
+                   "— เลือก —" ทั้งที่ป้ายเขียนว่า "จากฐานพนักงาน" = จอโกหก แล้วกดแก้ก็ไม่ได้เพราะล็อกไว้
+                   ตัวตัดสินจริงอยู่ที่ App.jsx: `emp.team ?? profiles.team` (ฐานพนักงานชนะเมื่อมีค่า)
+                   ⇒ ที่นี่ต้องคิดด้วยสูตรเดียวกัน ห้ามอ่าน form.team เฉยๆ ตอน linked */
+                const emp = linked ? empById[form.employeeId] : null;
+                const effTeam = linked ? (emp?.team ?? form.team ?? '') : form.team;
+                const effLine = linked ? (emp?.line_id ?? form.lineId ?? '') : form.lineId;
+                /* ลิงก์ออกจากทางตัน — ช่องที่แก้ที่นี่ไม่ได้ ต้องบอกว่าไปแก้ที่ไหน และพาไปถึงตัวคน
+                   (เดิมบอกไว้ใน `title` อย่างเดียว = ต้องเอาเมาส์ไปจ่อถึงจะเห็น มือถือไม่มีทางรู้เลย) */
+                const empLink = emp
+                  ? `/operator?q=${encodeURIComponent(emp.employee_id_code || emp.name || '')}`
+                  : '/operator';
+                const fixHint = linked && (
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
+                    แก้ค่านี้ที่ <a href={empLink} style={{ color: 'var(--accent)', fontWeight: 600 }}>
+                      👥 ฐานข้อมูลพนักงาน →</a> (หัวหน้าแผนกเป็นคนดูแล)
+                  </div>
+                );
+                return (<>
+                  <div>
+                    <label style={labelSt}>
+                      Team {form.role === 'leader' && !linked && <span style={{ color: 'var(--red)' }}>* จำเป็น</span>}
+                      {linked && <span style={{ color: 'var(--muted)', fontWeight: 400 }}> · จากฐานพนักงาน</span>}
+                    </label>
+                    <select value={effTeam} disabled={linked}
+                      title={linked ? 'แก้ที่ฐานข้อมูลพนักงาน (หน้าพนักงาน) — ที่นี่แสดงค่าจริงเท่านั้น' : undefined}
+                      onChange={e => setF('team', e.target.value)}>
+                      <option value="">— เลือก —</option>
+                      {teamOpts.map(t => <option key={t} value={t}>Team {t} {TEAM_DESC[t] || ''}</option>)}
+                    </select>
+                    {/* Team ของบัญชีไม่ได้บอกแค่ "เข้ากะไหน" แต่คุม "เห็นใครบ้าง" ในหน้าเช็คชื่อด้วย
+                        ต้องเขียนไว้ตรงนี้ ไม่งั้น admin เลือก A/B ให้หัวหน้าที่ดูแลทั้งไลน์แล้วเขาเห็นคนไม่ครบ */}
+                    {form.role === 'leader' && (
+                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.5 }}>
+                        Team คุม<b>ขอบเขตการมองเห็น</b>ในหน้าเช็คชื่อด้วย ไม่ใช่แค่กะ —
+                        {' '}<b>A / B</b> = เห็นเฉพาะคนทีมเดียวกันในไลน์ตัวเอง ·
+                        {' '}<b style={{ color: 'var(--text2)' }}>C</b> = ไม่หมุนกะ <b>เห็นคนทั้งไลน์ทุกทีม</b> (สำหรับหัวหน้าที่ไม่ได้ยืนประจำกะ)
+                      </div>
+                    )}
+                    {fixHint}
+                  </div>
+
+                  {/* ใช้ <LineSelect> ตัวกลาง (มีลำดับชั้น/scope/ไลน์ปลดระวาง) + ล็อกเมื่อผูกพนักงาน */}
+                  <div title={linked ? 'แก้ที่ฐานข้อมูลพนักงาน (หน้าพนักงาน) — ที่นี่แสดงค่าจริงเท่านั้น' : undefined}>
+                    <label style={labelSt}>
+                      ไลน์ผลิต / Group {form.role === 'leader' && !linked && <span style={{ color: 'var(--red)' }}>* จำเป็น</span>}
+                      {linked && <span style={{ color: 'var(--muted)', fontWeight: 400 }}> · จากฐานพนักงาน</span>}
+                    </label>
+                    <LineSelect lines={lines} value={effLine} valueKey="id" includeSupport
+                      disabled={linked} onChange={v => setF('lineId', v)} />
+                    {fixHint}
+                  </div>
+                </>);
+              })()}
+
               <div style={{ gridColumn: '1 / -1', fontSize: 12, fontWeight: 800, color: 'var(--accent2)', borderBottom: '1px solid var(--border)', paddingBottom: 5, marginTop: 4 }}>
                 🔐 สิทธิ์การใช้งานในระบบ (ไม่เกี่ยวกับตำแหน่งงานข้างบน)
               </div>
@@ -1444,7 +1603,8 @@ export default function AddUser() {
                 background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, padding: '8px 10px' }}>
                 <div><b style={{ color: 'var(--text2)' }}>① ชุดสิทธิ์ (Role)</b> = <b>กดอะไรได้</b> — เปิดหน้า/ปุ่มไหนบ้าง · <u>ไม่ได้บอกว่าสังกัดหน่วยไหน</u></div>
                 <div><b style={{ color: 'var(--text2)' }}>② ขอบเขตการมองเห็น</b> = <b>เห็นข้อมูลของใคร</b> — กว้าง/แคบ</div>
-                <div><b style={{ color: 'var(--text2)' }}>③ ส่วนงาน + ขอบเขตส่วนงาน</b> = <b>แก้ข้อมูลของใครได้</b> (ใหม่ 15/10) — ไม่ใช่ของตัวเอง = ดูได้ แก้ไม่ได้</div>
+                <div><b style={{ color: 'var(--text2)' }}>③ ขอบเขตส่วนงาน</b> = <b>แก้ข้อมูลของใครได้</b> (ใหม่ 15/10) — ไม่ใช่ของตัวเอง = ดูได้ แก้ไม่ได้
+                  {' · '}<span style={{ color: 'var(--text2)' }}>ไม่ติ๊กเลย = ใช้ <b>🏠 ส่วนงานที่สังกัด</b> ข้างบน (มาจากทะเบียนพนักงาน)</span></div>
                 <div><b style={{ color: 'var(--text2)' }}>④ Cost Center ที่รับผิดชอบ</b> = <b>แก้ข้อมูลของใครได้ "ตามลำดับชั้น"</b> (ใหม่ 16/10) — ติ๊กชั้นส่วนงาน ได้ทุกหน่วยใต้ลงไป · <b>ไม่ติ๊ก = ใช้ ③ เหมือนเดิม</b></div>
               </div>
 
@@ -1524,7 +1684,7 @@ export default function AddUser() {
 
               <div style={{ gridColumn: '1 / -1' }}>
                 <label style={labelSt}>
-                  ③ ขอบเขตส่วนงาน (Section) — <span style={{ fontWeight: 600, color: 'var(--muted)' }}>"แก้ข้อมูลของใครได้"</span>
+                  ③ ขอบเขตส่วนงาน (Section) — <span style={{ fontWeight: 600, color: 'var(--muted)' }}>"เห็น + แก้ข้อมูลของใครได้"</span>
                   {form.role === 'supervisor' && <span style={{ color: 'var(--red)' }}> * จำเป็นอย่างน้อย 1</span>}
                 </label>
                 {/* 🔐 15/10 — ช่องนี้ไม่ใช่แค่ตัวกรองการดูอีกแล้ว มันคือด่าน "แก้ของคนอื่นไม่ได้"
@@ -1760,65 +1920,6 @@ export default function AddUser() {
                 </div>
               )}
 
-              {/* บัญชีของคนที่ผูกพนักงานแล้ว → ทีม/ไลน์ มาจากฐานพนักงาน ล็อกไม่ให้ admin กรอกทับ
-                  (ต้นเหตุเดิมของ "ทีมสลับกัน" คือช่องพวกนี้ให้กรอกเองได้) */}
-              {(() => {
-                const linked = form.accountKind === 'person' && !!form.employeeId;
-                /* 🔴 ช่องที่ล็อก ต้องโชว์ "ค่าที่มีผลจริง" ไม่ใช่ค่าที่ค้างในบัญชี (25/09 · feedback user)
-                   เกิดจริง: ตีรณา — ฐานพนักงาน team='A' แต่ `profiles.team` เป็น null ⇒ ช่องขึ้น
-                   "— เลือก —" ทั้งที่ป้ายเขียนว่า "จากฐานพนักงาน" = จอโกหก แล้วกดแก้ก็ไม่ได้เพราะล็อกไว้
-                   ตัวตัดสินจริงอยู่ที่ App.jsx: `emp.team ?? profiles.team` (ฐานพนักงานชนะเมื่อมีค่า)
-                   ⇒ ที่นี่ต้องคิดด้วยสูตรเดียวกัน ห้ามอ่าน form.team เฉยๆ ตอน linked */
-                const emp = linked ? empById[form.employeeId] : null;
-                const effTeam = linked ? (emp?.team ?? form.team ?? '') : form.team;
-                const effLine = linked ? (emp?.line_id ?? form.lineId ?? '') : form.lineId;
-                /* ลิงก์ออกจากทางตัน — ช่องที่แก้ที่นี่ไม่ได้ ต้องบอกว่าไปแก้ที่ไหน และพาไปถึงตัวคน
-                   (เดิมบอกไว้ใน `title` อย่างเดียว = ต้องเอาเมาส์ไปจ่อถึงจะเห็น มือถือไม่มีทางรู้เลย) */
-                const empLink = emp
-                  ? `/operator?q=${encodeURIComponent(emp.employee_id_code || emp.name || '')}`
-                  : '/operator';
-                const fixHint = linked && (
-                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
-                    แก้ค่านี้ที่ <a href={empLink} style={{ color: 'var(--accent)', fontWeight: 600 }}>
-                      👥 ฐานข้อมูลพนักงาน →</a> (หัวหน้าแผนกเป็นคนดูแล)
-                  </div>
-                );
-                return (<>
-                  <div>
-                    <label style={labelSt}>
-                      Team {form.role === 'leader' && !linked && <span style={{ color: 'var(--red)' }}>* จำเป็น</span>}
-                      {linked && <span style={{ color: 'var(--muted)', fontWeight: 400 }}> · จากฐานพนักงาน</span>}
-                    </label>
-                    <select value={effTeam} disabled={linked}
-                      title={linked ? 'แก้ที่ฐานข้อมูลพนักงาน (หน้าพนักงาน) — ที่นี่แสดงค่าจริงเท่านั้น' : undefined}
-                      onChange={e => setF('team', e.target.value)}>
-                      <option value="">— เลือก —</option>
-                      {teamOpts.map(t => <option key={t} value={t}>Team {t} {TEAM_DESC[t] || ''}</option>)}
-                    </select>
-                    {/* Team ของบัญชีไม่ได้บอกแค่ "เข้ากะไหน" แต่คุม "เห็นใครบ้าง" ในหน้าเช็คชื่อด้วย
-                        ต้องเขียนไว้ตรงนี้ ไม่งั้น admin เลือก A/B ให้หัวหน้าที่ดูแลทั้งไลน์แล้วเขาเห็นคนไม่ครบ */}
-                    {form.role === 'leader' && (
-                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.5 }}>
-                        Team คุม<b>ขอบเขตการมองเห็น</b>ในหน้าเช็คชื่อด้วย ไม่ใช่แค่กะ —
-                        {' '}<b>A / B</b> = เห็นเฉพาะคนทีมเดียวกันในไลน์ตัวเอง ·
-                        {' '}<b style={{ color: 'var(--text2)' }}>C</b> = ไม่หมุนกะ <b>เห็นคนทั้งไลน์ทุกทีม</b> (สำหรับหัวหน้าที่ไม่ได้ยืนประจำกะ)
-                      </div>
-                    )}
-                    {fixHint}
-                  </div>
-
-                  {/* ใช้ <LineSelect> ตัวกลาง (มีลำดับชั้น/scope/ไลน์ปลดระวาง) + ล็อกเมื่อผูกพนักงาน */}
-                  <div title={linked ? 'แก้ที่ฐานข้อมูลพนักงาน (หน้าพนักงาน) — ที่นี่แสดงค่าจริงเท่านั้น' : undefined}>
-                    <label style={labelSt}>
-                      ไลน์ผลิต / Group {form.role === 'leader' && !linked && <span style={{ color: 'var(--red)' }}>* จำเป็น</span>}
-                      {linked && <span style={{ color: 'var(--muted)', fontWeight: 400 }}> · จากฐานพนักงาน</span>}
-                    </label>
-                    <LineSelect lines={lines} value={effLine} valueKey="id" includeSupport
-                      disabled={linked} onChange={v => setF('lineId', v)} />
-                    {fixHint}
-                  </div>
-                </>);
-              })()}
 
               {(form.role === 'supervisor' || form.role === 'leader') && (
                 <div style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--muted)', padding: '8px 10px', background: 'var(--bg3)', borderRadius: 6, lineHeight: 1.5 }}>

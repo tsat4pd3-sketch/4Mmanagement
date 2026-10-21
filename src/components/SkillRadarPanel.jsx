@@ -141,7 +141,8 @@ export default function SkillRadarPanel({ emp, skillDefs, subItemsByskill = {}, 
         background: 'var(--bg2)',
         border: `1px solid ${glowColor}55`,
         borderRadius: 20,
-        boxShadow: `0 0 40px ${glowColor}33, 0 20px 60px rgba(0,0,0,0.8)`,
+        /* 🌑 เงาโมดัล = token (ห้าม rgba ดิบ · ธีมสว่างจะเงาดำทึบ) · glow สีคือสัญญาณระดับทักษะ */
+        boxShadow: `0 0 40px ${glowColor}33, var(--shadow-lg)`,
         overflow: 'hidden',
         animation: 'smSlideUp 0.28s cubic-bezier(0.16,1,0.3,1)',
       }}>

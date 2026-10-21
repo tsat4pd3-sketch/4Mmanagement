@@ -197,7 +197,7 @@ const timeToMin = (t) => {
  *    ไม่ส่ง `breakPolicies` มา = ไม่หัก + `hasBreakPolicy:false` ให้จอเตือนว่าเทียบ %A ไม่ได้
  *    processType ไม่ส่ง (null) = ใช้เฉพาะนโยบาย common — ปัจจุบันทุกแถวเป็น common อยู่แล้ว
  */
-export function operatingMinutesByLine(sessions = [], { breakPolicies = [] } = {}) {
+export function operatingMinutesByLine(sessions = [], { breakPolicies = [], lineRules = null } = {}) {
   const best = new Map();      // "line|date|shift" → { line, min, s }
   let unknownShifts = 0;
   for (const s of sessions) {
@@ -220,6 +220,7 @@ export function operatingMinutesByLine(sessions = [], { breakPolicies = [] } = {
       ? Math.min(min, policyBreakForShift({
           policies: breakPolicies, shift: s?.shift, shiftMin: min,
           workDate: s?.work_date, startTime: s?.start_time,
+          lineName: line, lineRules,   // 🏭 ข้อยกเว้นเวลาพักรายไลน์ (20/10)
         }) || 0)
       : 0;
     breakMin += brk;
@@ -257,11 +258,11 @@ export function operatingMinutesByLine(sessions = [], { breakPolicies = [] } = {
 export function machineReliability({
   downtimes = [], machines = [], sessions = [],
   lineFamilyOf = null, sessionLineOf = null,
-  breakPolicies = [], parallelOf = null, includeIdle = true,
+  breakPolicies = [], parallelOf = null, includeIdle = true, lineRules = null,
 } = {}) {
   const index = buildEquipIndex(machines);
   const { byLine, unknownShifts, breakMin, hasBreakPolicy } =
-    operatingMinutesByLine(sessions, { breakPolicies });
+    operatingMinutesByLine(sessions, { breakPolicies, lineRules });
 
   /* ⚠️ opMin หักเวลาพักไปแล้ว ⇒ นาที downtime ที่ตกอยู่ "ในช่วงพัก" ห้ามหักซ้ำจาก upMin
      (ไม่งั้น MTBF สั้นเกินจริง / %Availability ต่ำเกินจริง · utils/oee §3.1)
@@ -276,6 +277,7 @@ export function machineReliability({
       const startMs = new Date(`${shiftStartDate(wd, String(st).slice(0, 5), ss.shift)}T${String(st).slice(0, 5)}:00`).getTime();
       brkIvBy.set(ss.id, breakIntervalsIn({
         policies: breakPolicies, startMs, endMs: startMs + sm * 60000, workDate: wd, shift: ss.shift,
+        lineName: ss?.line_name ?? null, lineRules,   // 🏭 ข้อยกเว้นเวลาพักรายไลน์ (20/10)
       }));
     }
   }

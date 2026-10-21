@@ -131,6 +131,7 @@ export default function CapaEffectiveness({ capa, onChange, canEdit, canWriteRes
     try {
       const { data: sessions, error: e1 } = await supabaseDR.from('production_sessions')
         .select('id, work_date').eq('line_name', capa.line_name)
+        /* cap-ok: production_sessions 1 ไลน์/1 ช่วง — ทั้งโรงงาน 10 วัน = 255 แถว (วัด 20/10) */
         .gte('work_date', w.from).lte('work_date', w.to).limit(2000);
       if (e1) throw e1;
       if (!fresh()) return;

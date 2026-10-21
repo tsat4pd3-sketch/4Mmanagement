@@ -10,6 +10,7 @@
  *   - เก็บใน sessionStorage = ต่อแท็บ (เปิดแท็บใหม่ยังเป็น admin ปกติ · refresh คงโหมด)
  */
 import { orgValues } from '../utils/listOrder';
+import { useOrgTeams } from '../utils/useOrgSections';
 import { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { loadProductionLines } from '../utils/useProductionLines';
@@ -26,6 +27,8 @@ export default function ViewAsModal({ current, onClose, onApply }) {
   const [mtnTeams, setMtnTeams] = useState(current?.mtnTeams || []);
   const [lines, setLines] = useState([]);
   const [orgSections, setOrgSections] = useState([]);
+  /* 🗂️ ทีมจากผังองค์กร (ของกลาง — ชุดเดียวกับ /report · /checkin) · ว่าง = ถอยไป A/B/C ในตัว hook */
+  const orgTeams = useOrgTeams();
   const [teamRows, setTeamRows] = useState(pmTeamsSync());
 
   useEffect(() => {
@@ -104,7 +107,9 @@ export default function ViewAsModal({ current, onClose, onApply }) {
               ทีม
               <select value={team} onChange={e => setTeam(e.target.value)} style={{ marginTop: 4 }}>
                 <option value="">—</option>
-                {['A', 'B', 'C'].map(t => <option key={t} value={t}>Team {t}</option>)}
+                {/* 🗂️ ทีมมาจากผังองค์กร (`org_nodes kind='team'`) ไม่ใช่ A/B/C ตายตัว —
+                    ทีมที่ตั้งเพิ่มในผังเลือกไม่ได้ = สวมบทบาทหัวหน้าทีมนั้นไม่ได้ (QC audit 20/10) */}
+                {orgTeams.map(t => <option key={t} value={t}>Team {t}</option>)}
               </select>
             </label>
           </div>

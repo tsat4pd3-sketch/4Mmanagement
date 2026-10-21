@@ -168,7 +168,7 @@ export default function ProductionPlan() {
               เอาไปหัก = สั่งผลิตน้อยกว่าที่ต้องใช้ = ของขาด (ทิศอันตราย) */
         supabaseDR.from('line_stock_summary').select('mat_no, qty_on_hand').eq('line_name', 'STORE'),
         // เวลาพักตามนโยบาย — ใช้แปลงเวลากะดิบเป็น "นาทีทำงานสุทธิ" ก่อนคิดกำลังทางทฤษฎี
-        supabaseDR.from('break_policies').select('shift, start_time, duration_min, process_type, ot_scope').eq('is_active', true),
+        supabaseDR.from('break_policies').select('shift, start_time, duration_min, process_type, ot_scope, anchor, offset_min').eq('is_active', true),
         fetchAllPages(() => supabaseDR.from('production_sessions').select('id, line_name, shift, oee')
           .eq('status', 'closed').gte('work_date', histStart)),
         fetchAllPages(() => openOnly(supabaseDR.from('customer_shipping_orders').select('id, mat_no, part_name, customer, qty, due_date, status')

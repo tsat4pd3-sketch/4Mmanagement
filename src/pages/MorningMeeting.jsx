@@ -193,6 +193,7 @@ export default function MorningMeeting() {
         // assigned_line เก็บ "id จุดงาน" ไม่ใช่ชื่อไลน์ — หาไลน์ของคนผ่าน employees.line_id แทน
         supabase.from('daily_production_logs')
           .select('employee_id, is_present, leave_type, shift, employees(line_id)')
+          /* cap-ok: daily_production_logs ของวันเดียว สูงสุด 208 แถว (วัด 20/10) */
           .eq('work_date', D).limit(3000),
         supabase.from('meeting_action_items')
           .select('*').eq('meeting_date', D).order('created_at'),
@@ -203,7 +204,7 @@ export default function MorningMeeting() {
         supabaseDR.from('machines').select('machine_no, line_name').in('line_name', lineNames).limit(1000),
         // นโยบายเวลาพัก — ใช้ตัด downtime ที่ทับพักออกก่อนถ่วงน้ำหนัก OEE (utils/oee §3.1)
         // ⚠️ ต้อง select ot_scope ด้วย ไม่งั้นนับพักเกินในกะเช้าที่ทำโอ
-        supabaseDR.from('break_policies').select('shift, process_type, start_time, duration_min, ot_scope').eq('is_active', true),
+        supabaseDR.from('break_policies').select('shift, process_type, start_time, duration_min, ot_scope, anchor, offset_min').eq('is_active', true),
       ]);
       if (!live()) return;
       const sess = chk(sessRes, 'ข้อมูลกะ'), fm = chk(fmRes, '4M'), att = chk(attRes, 'เช็คชื่อ');
@@ -1055,7 +1056,7 @@ export default function MorningMeeting() {
             </button>
           )}
         </>} />
-      <FilterBar style={{ marginTop: -12 }}>
+      <FilterBar>
         {sectionOpts.length > 1 && (
           <select value={secFilter} onChange={e => setSecFilter(e.target.value)}>
             <option value="">{ALL.section}</option>

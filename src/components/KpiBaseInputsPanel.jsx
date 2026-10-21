@@ -5,7 +5,8 @@
    · ตาราง `kpi_base_inputs` unique index มี `coalesce(scope_value,'')` = expression ⇒ **ห้าม upsert** (42P10 · กฎ DB ข้อ 3) → หาแถวเดิมจาก
      ดัชนีแล้ว update ตาม id ไม่มีค่อย insert · ทุกการเขียนนับแถว (RLS ปฏิเสธ = 0 แถวเงียบ · กฎ DB ข้อ 2)
    · สูตร/ตัวแปรอยู่ `utils/kpiSetup.js` + `utils/kpiFormula.js` — แผงนี้ไม่คำนวณอะไรเอง */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useContext } from 'react';
+import { UserContext } from '../App';
 import { supabase } from '../supabaseClient';
 import { toast } from './Toast';
 import { checkWriteRows } from '../utils/dbWrite';
@@ -40,6 +41,9 @@ function Cell({ value, auto, disabled, onCommit }) {
  * @param onChanged  โหลดแถวใหม่หลังบันทึก
  */
 export default function KpiBaseInputsPanel({ year, scope, org, rows = [], base: baseIn = null, canManage = false, onChanged, onGoPlant, defaultOpen = false, blockText = '' }) {
+  const { fullName } = useContext(UserContext);
+  /* ใครกรอก — 20/10 พบว่าค่าที่นำเข้าจากเว็บ 63 แถว created_by ว่างหมด ⇒ แยกไม่ออกจากตัวนำเข้าอัตโนมัติ (ซึ่งเขียน 'acct-import') */
+  const stamp = async () => ({ created_by: (await supabase.auth.getUser()).data?.user?.id ?? null, created_by_name: fullName || null });
   const plant = isPlant(scope);
   const base = baseIn || buildBaseIndex(rows);
   const [importing, setImporting] = useState(false);
@@ -59,16 +63,27 @@ export default function KpiBaseInputsPanel({ year, scope, org, rows = [], base: 
     setBusy(`${sk}|${varKey}|${month}`);
     const ok = existing
       ? checkWriteRows(await supabase.from('kpi_base_inputs').update({ value }).eq('id', existing.id).select('id'), tag)
-      : checkWriteRows(await supabase.from('kpi_base_inputs').insert({ year, month, var_key: varKey, value, ...baseScopeColumns(sk === PLANT_BASE_KEY ? { kind: 'plant', value: '' } : scope) }).select('id'), tag);
+      : checkWriteRows(await supabase.from('kpi_base_inputs').insert({ year, month, var_key: varKey, value, ...baseScopeColumns(sk === PLANT_BASE_KEY ? { kind: 'plant', value: '' } : scope), ...(await stamp()) }).select('id'), tag);
     setBusy('');
     if (ok) onChanged?.();
   };
 
   /* 📥 นำเข้าจาก Excel — เขียนทีละค่า (ไม่ upsert · unique index เป็น expression) · นับแถวทุกครั้ง · คืนจำนวนที่สำเร็จ */
   const saveMany = async (values) => {
+    /* 🔴 ด่านต้องอยู่ใน "ฟังก์ชันที่เขียน DB จริง" ไม่ใช่แค่ในโมดัล (QC audit 20/10)
+       `save()` เช็ค `canManage` ถูกแล้ว แต่ทางนำเข้า Excel ไม่เช็คเลย — พึ่งด่านชั้น UI ชั้นเดียว
+       (`KpiBaseImportModal` กรองด้วย `canPlant`/`canUnit`) ⇒ สลับ props/เรียกจากที่อื่นเมื่อไหร่
+       คนที่ถือ `kpi:manage` ที่ขอบเขตหน่วย จะเขียน **ยอดขาย/COGS กลางของโรงงาน** ได้เงียบๆ */
+    if (!canManage) { toast.error(blockText || 'ไม่มีสิทธิ์กรอกตัวเลขฐานของขอบเขตนี้'); return 0; }
     let n = 0, fail = 0;
     for (const [varKey, byMonth] of Object.entries(values)) {
       const lvl = [...BASE_VARS_BY_LEVEL.plant, ...BASE_VARS_BY_LEVEL.unit].find(v => v.key === varKey)?.level;
+      /* 🔴 ตัวแปรระดับ "ทั้งโรงงาน" เขียนได้เฉพาะตอนยืนอยู่ที่ขอบเขตทั้งโรงงาน (เท่ากับ `canPlant`
+         ที่ส่งเข้าโมดัล) — เช็คซ้ำที่นี่ ไม่ใช่เชื่อว่าโมดัลกรองมาแล้ว */
+      if (lvl === 'plant' && !plant) {
+        toast.error('ยอดกลางของโรงงาน (ยอดขาย/COGS) กรอกได้ที่ขอบเขต "ทั้งโรงงาน" เท่านั้น');
+        fail++; continue;
+      }
       const sk = lvl === 'plant' ? PLANT_BASE_KEY : mySk;
       const cols = lvl === 'plant' ? { scope_kind: 'plant', scope_value: '' } : baseScopeColumns(scope);
       for (const [m, value] of Object.entries(byMonth)) {
@@ -79,7 +94,7 @@ export default function KpiBaseInputsPanel({ year, scope, org, rows = [], base: 
         const tag = `นำเข้า ${varKey} ${MONTHS[month - 1]}`;
         const ok = existing
           ? checkWriteRows(await supabase.from('kpi_base_inputs').update({ value }).eq('id', existing.id).select('id'), tag)
-          : checkWriteRows(await supabase.from('kpi_base_inputs').insert({ year, month, var_key: varKey, value, ...cols }).select('id'), tag);
+          : checkWriteRows(await supabase.from('kpi_base_inputs').insert({ year, month, var_key: varKey, value, ...cols, ...(await stamp()) }).select('id'), tag);
         if (ok) n += 1; else fail += 1;
       }
     }

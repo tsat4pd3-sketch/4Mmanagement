@@ -462,3 +462,85 @@ test('คนวิ่งข้ามแผนก: แผนกที่เดิ
   assert.equal(empty.opsTotal, 0, 'แต่ยังนับกำลังคน = 0');
   assert.equal(after.emptyDepts.includes('EMPTY'), false);
 });
+
+/* ── 🎖️ รักษาการ (employee_flex_units.kind='acting' · 20/10 คำสั่ง user) ───────────────
+   เคสจริง: ผจก.ฝ่ายสังกัด PD3 (cost center ของ PD3) **รักษาการ** ผจก. ของ PD4 + JIG MTN
+   กฎที่ห้าม regress:
+     · ขึ้น "หัวผัง" ของหน่วยที่ระบุ (รากบอร์ด → top · แผนก → heads ของแผนกนั้น)
+     · 🔴 **ไม่นับเป็นกำลังคน** — ในทะเบียน/มาวันนี้/ช่องว่าง ห้ามขยับแม้แต่ช่องเดียว
+     · 🔴 **ไม่ย้ายสังกัด ไม่แตะ cost center** — การ์ดต้องเขียนบ้านจริง + CC ของบ้านจริง
+     · แถวเก่าที่ไม่มีคอลัมน์ `kind` = `flex` เหมือนเดิม (ไม่กลายเป็นรักษาการเงียบๆ)        */
+test('รักษาการ: ขึ้นหัวผังของส่วนงาน พร้อมบ้านจริง + cost center · กำลังคนไม่ขยับ', () => {
+  const nodes = NODES.map(n => (n.id === 's' ? { ...n, cost_center: '2140462000' } : n));
+  const pd4 = nodes.find(n => n.id === 'x');
+  const args = { section: pd4, nodes, employees: EMPS, lines: LINES, maps: { byLine: {}, byDept: {} } };
+  const before = M.buildManpowerBoard(args);
+  assert.deepEqual(before.top.map(p => p.id), [], 'PD4 ยังไม่มีหัวผัง (ตั้งต้น)');
+
+  const after = M.buildManpowerBoard({ ...args,
+    flexUnits: [{ employee_id: 'mgr', org_node_id: 'x', kind: 'acting', note: 'รักษาการตั้งแต่ ต.ค.' }] });
+  assert.deepEqual(after.top.map(p => p.id), ['mgr']);
+  const card = after.top[0];
+  assert.equal(card.acting.nodeName, 'PD3', 'ต้องเขียนบ้านจริง ไม่ใช่หน่วยที่ไปรักษาการ');
+  assert.equal(card.acting.costCenter, '2140462000', 'cost center ยังเป็นของบ้านจริง');
+  assert.equal(card.acting.note, 'รักษาการตั้งแต่ ต.ค.');
+  // 🔴 ตัวเลขกำลังคนห้ามขยับ
+  assert.equal(after.totals.ops, before.totals.ops);
+  assert.equal(after.totals.present, before.totals.present);
+  assert.equal(after.totals.flex, before.totals.flex, 'รักษาการไม่ใช่ "คนวิ่งข้ามแผนก" — ห้ามนับรวมช่องนั้น');
+  assert.deepEqual(after.depts.map(d => d.opsTotal), before.depts.map(d => d.opsTotal));
+});
+
+test('รักษาการ: ผูกกับ "แผนก" ⇒ ขึ้นแถวหัวหน้าแผนกนั้น ไม่ใช่หัวผัง', () => {
+  const args = { section: NODES[0], nodes: NODES, employees: EMPS, lines: LINES, maps: { byLine: { 10: 'A' }, byDept: {} } };
+  const before = M.buildManpowerBoard(args);
+  const after = M.buildManpowerBoard({ ...args, flexUnits: [{ employee_id: 'dh', org_node_id: 'd2', kind: 'acting' }] });
+  const apronB = before.depts.find(d => d.name === 'APRON');
+  const apronA = after.depts.find(d => d.name === 'APRON');
+  assert.ok(apronA.heads.some(p => p.id === 'dh' && p.acting), 'ต้องขึ้นแถวหัวหน้าแผนก APRON พร้อมธง acting');
+  assert.deepEqual(after.top.map(p => p.id), before.top.map(p => p.id), 'ไม่ไปโผล่หัวผัง');
+  assert.deepEqual(apronA.flex, [], 'รักษาการไม่ใช่การ์ด 🏃 คนวิ่งข้ามแผนก');
+  assert.equal(apronA.opsTotal, apronB.opsTotal);
+  assert.deepEqual(apronA.cols.map(c => c.slots), apronB.cols.map(c => c.slots));
+  // บ้านจริงของ dh คือ HYDROFORM — ต้องยังอยู่แถวหัวหน้าแผนกเดิมด้วย (ไม่ย้ายออก)
+  assert.ok(after.depts.find(d => d.name === 'HYDROFORM').heads.some(p => p.id === 'dh' && !p.acting));
+});
+
+test('รักษาการ: แถวเก่าที่ไม่มี kind = คนวิ่งข้ามแผนกเหมือนเดิม (ห้ามกลายเป็นรักษาการเงียบๆ)', () => {
+  const args = { section: NODES[0], nodes: NODES, employees: EMPS, lines: LINES, maps: { byLine: { 10: 'A' }, byDept: {} } };
+  const legacy = M.buildManpowerBoard({ ...args, flexUnits: [{ employee_id: 'p1', org_node_id: 'd1' }] });
+  const explicit = M.buildManpowerBoard({ ...args, flexUnits: [{ employee_id: 'p1', org_node_id: 'd1', kind: 'flex' }] });
+  assert.equal(JSON.stringify(legacy), JSON.stringify(explicit));
+  const h = legacy.depts.find(d => d.name === 'HYDROFORM');
+  assert.deepEqual(h.flex.map(p => p.id), ['p1']);
+  assert.ok(!h.heads.some(p => p.acting));
+  assert.equal(M.flexKind({}), 'flex');
+  assert.equal(M.flexKind({ kind: 'เอ๊ะ' }), 'flex', 'ค่าที่ไม่รู้จัก = flex (fail-open ไม่ใช่ acting)');
+  assert.equal(M.flexKind({ kind: 'acting' }), 'acting');
+});
+
+test('รักษาการ: คนที่สังกัดหน่วยนั้นอยู่แล้ว = หัวหน้าตัวจริง ไม่ติดป้าย · ไม่วาดซ้ำ', () => {
+  const args = { section: NODES[0], nodes: NODES, employees: EMPS, lines: LINES, maps: { byLine: { 10: 'A' }, byDept: {} } };
+  const b = M.buildManpowerBoard({ ...args, flexUnits: [{ employee_id: 'mgr', org_node_id: 's', kind: 'acting' }] });
+  assert.equal(b.top.filter(p => p.id === 'mgr').length, 1, 'ห้ามวาดซ้ำ 2 ใบ');
+  assert.ok(!b.top.find(p => p.id === 'mgr').acting, 'สังกัดจริงอยู่แล้ว = ไม่ใช่รักษาการ');
+});
+
+/* ── 🏛️ แผนกขึ้นตรงฝ่าย (parent_id ว่าง — JIG MTN · QA) เปิดเป็นบอร์ดของตัวเองได้ (20/10) ──
+   เดิมบอร์ดรับเฉพาะ kind='section' ⇒ 2 หน่วยนี้เปิดไม่ได้เลย คนในหน่วยไม่เคยขึ้นผัง */
+test('แผนกขึ้นตรงฝ่าย: เปิดเป็นบอร์ดเองได้ · คนในหน่วยไม่ตกถัง "ไม่ระบุแผนก"', () => {
+  const jig = { id: 'j', kind: 'department', name: 'JIG MTN', parent_id: null, cost_center: '2140563100', sort_order: 9 };
+  const nodes = [...NODES, jig];
+  const emps = [...EMPS, E('j1', 'operator', 'A', 'j'), E('jh', 'dept_head', 'C', 'j')];
+  const b = M.buildManpowerBoard({ section: jig, nodes, employees: emps, lines: LINES, maps: { byLine: {}, byDept: {} } });
+  assert.deepEqual(b.depts.map(d => d.name), ['JIG MTN']);
+  assert.notEqual(b.depts[0].key, '__none__', 'ต้องเป็นแผนกจริง ไม่ใช่ถังไม่ระบุแผนก');
+  assert.deepEqual(b.depts[0].heads.map(p => p.id), ['jh']);
+  assert.equal(b.depts[0].opsTotal, 1);
+  // ตั้งรักษาการที่รากซึ่งเป็น "แผนก" ⇒ ขึ้นหัวผังของบอร์ด
+  const b2 = M.buildManpowerBoard({ section: jig, nodes, employees: emps, lines: LINES,
+    maps: { byLine: {}, byDept: {} }, flexUnits: [{ employee_id: 'mgr', org_node_id: 'j', kind: 'acting' }] });
+  assert.deepEqual(b2.top.map(p => p.id), ['mgr']);
+  assert.equal(b2.top[0].acting.nodeName, 'PD3');
+  assert.equal(b2.depts[0].opsTotal, b.depts[0].opsTotal, 'กำลังคนไม่ขยับ');
+});

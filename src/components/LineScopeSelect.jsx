@@ -9,7 +9,7 @@
      (ตัดทิ้ง = ต้นไม้ไม่เหมือนจอ OBEYA อีก) · หน้าที่กรองได้ทุกมิติ (OBEYA/KPI) ใช้ `<OrgScopePicker>` ตรงๆ
    · ช่องที่ต้องได้ "ไลน์เดียว" (ฟอร์ม/วางคิว) = `<LineSelect>` (ไอคอนส่วนงาน 📁 ชุดเดียวกัน)
    ═══════════════════════════════════════════════════════════════════════════════════════════════ */
-import { useMemo, useContext } from 'react';
+import { useEffect, useMemo, useContext, useRef } from 'react';
 import { UserContext } from '../App';
 import OrgScopePicker from './OrgScopePicker';
 import useOrgScope from '../utils/useOrgScope';
@@ -33,7 +33,7 @@ const PICKABLE_DEPT = ['section', 'department', 'line_group', 'line'];
  *    default false = จอผลิต · กติกาเดียวกับ `<LineSelect includeSupport>` (📄 utils/unitKind.js) */
 export default function LineScopeSelect({
   lines: allLines = [], section = '', line = '', unit = '', pickDept = false, index: givenIndex = null,
-  onChange, sections = [], valueKey = 'name', disabled, id, style, width = 260, includeSupport = false,
+  onChange, sections = [], valueKey = 'name', disabled, id, style, width = 260, includeSupport = false, onUnitLines,
 }) {
   const ctx = useContext(UserContext) || {};
   /* 🔴 หน่วยสนับสนุนไม่ใช่ "ขอบเขตของการผลิต" — ติดมาด้วยแล้วทุกตัวเลขที่กรองด้วยขอบเขตนี้
@@ -43,8 +43,17 @@ export default function LineScopeSelect({
     [allLines, includeSupport],
   );
   const scopeSecs = ctx.sections || [];
-  const { index: ownIndex, failed: ownFailed } = useOrgScope(givenIndex ? [] : lines);
+  const { index: ownIndex, failed: ownFailed, ready: ownReady } = useOrgScope(givenIndex ? [] : lines);
   const index = givenIndex || ownIndex;
+  /* แผนกที่มาจากลิงก์ (?scope=department:… · จอวนหน้า 20/10) — หน้าแม่รู้แค่ "ชื่อแผนก" แต่กรองด้วย "ชุดไลน์"
+     ⇒ ผังโหลดเสร็จเมื่อไหร่ส่งชุดไลน์ให้ผ่าน `onUnitLines` (ไม่ส่ง prop = พฤติกรรมเดิม) */
+  const unitLinesCb = useRef(onUnitLines);
+  unitLinesCb.current = onUnitLines;
+  const idxReady = !!givenIndex || ownReady;
+  useEffect(() => {
+    if (!unit || !idxReady || !unitLinesCb.current) return;
+    unitLinesCb.current(index ? index.lineNamesOf('department', unit) : []);
+  }, [unit, idxReady, index]);
   const byKey = useMemo(() => new Map(lines.map(l => [String(l[valueKey]), l])), [lines, valueKey]);
   const byName = useMemo(() => new Map(lines.map(l => [l.name, l])), [lines]);
   const scopeSet = useMemo(() => new Set(lines.map(l => l.name)), [lines]);

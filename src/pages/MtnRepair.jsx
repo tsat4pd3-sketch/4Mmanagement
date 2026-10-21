@@ -27,12 +27,13 @@ import { buildMoStaleBoard } from '../utils/mtnStale';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { teamsForUser, teamForSection, teamForItem, sameTeam, filterByTeam, visibleForTeam, seesEverything, teamKeyOf, deptNameOf, teamOptions, teamRowOwner, teamRowLockNote, canWriteTeam, teamBlockText } from '../utils/mtnTeams';
-import { VENDOR_STATUS, canSendVendor, canReceiveVendor, techRepairMin, grossRepairMin, vendorHoldMin, vendorHoldLabel } from '../utils/mtnVendor';
+import { VENDOR_STATUS, canSendVendor, canReceiveVendor, techRepairMin, grossRepairMin, mttrHoldMin, vendorHoldLabel } from '../utils/mtnVendor';
 import { isAmTeam, loadPmTeams, pmTeamsSync, DEFAULT_TEAMS } from '../utils/pmTeams';
 import { loadDocForms, docFormSync } from '../utils/docForms';
 loadDocForms(); // ทะเบียนเอกสาร — printMoReport (sync) อ่านผ่าน docFormSync
 import { fmtDateTime } from '../utils/dateFormat';
 import tsLogo from '../assets/TS logo.png';
+import { absAssetUrl } from '../utils/assetUrl';
 import EventComments from '../components/EventComments';
 /* 💬 คอมเมนต์ใต้ใบ MO ไปโผล่ในช่องแรกของใบพิมพ์ด้วย (คอมเมนต์ทีม MTN ข้อ 1 · 07/10)
    🔴 อ่าน `event_comments` ของเดิมที่ <EventComments> ใช้อยู่ — ห้ามทำที่เก็บคอมเมนต์ชุดที่ 2
@@ -84,14 +85,20 @@ import { acceptImageFile } from '../utils/acceptImageFile';
 import { DeleteButton } from '../components/IconButton';
 import { MtnPrPanel, MtnGlMaster } from '../components/MtnPurchase';
 import MachineRepairHistory from '../components/MachineRepairHistory';
-import { prPlacement, assignedTechsOf, joinTechs } from '../utils/mtnPurchase';
+import { prPlacement, assignedTechsOf, joinTechs, prQueueStateOf, PR_QUEUE_META } from '../utils/mtnPurchase';
+/* ตัวเลือกตัวกรองงาน PR — 'waiting' = ทั้ง 2 กองที่แอดมินช่างต้องทำ (รอเปิด + รอเลข) */
+const PR_FILTERS = [
+  { v: 'waiting', label: '🛒 รอแอดมินช่าง (เปิด PR + กรอกเลข)' },
+  { v: 'need',  label: PR_QUEUE_META.need.label },
+  { v: 'no_no', label: PR_QUEUE_META.no_no.label },
+  { v: 'open',  label: PR_QUEUE_META.open.label },
+];
 /* ── helpers ─────────────────────────────────────────────── */
 // แปลง URL โลโก้ (รวมโลโก้ที่ admin อัปโหลดใน /doc-forms) เป็น dataURL เพื่อฝังในหน้าพิมพ์
 // (โลโก้ต่าง origin เช่น Supabase Storage จะพิมพ์ไม่ติดถ้าใช้ <img src=url> ตรงๆ)
 /* 🖼️ โลโก้ในตัวแอป — ไฟล์เล็กกว่า 4 KB ถูก Vite ฝังเป็น `data:` URL อยู่แล้ว (TS logo.png = 2.4 KB)
    🔴 เดิมเช็คแค่ `https?:` แล้วต่อ `location.origin` หน้า `data:` = URL พัง ⇒ ใบพิมพ์ไม่มีโลโก้ (19/10 · user แจ้ง)
    ⇒ ใช้ URL ตามที่ bundler ให้มา: absolute (http/data/blob) ใช้ตรง · path สัมพัทธ์ค่อยต่อ origin */
-const absAssetUrl = (u) => (/^(https?:|data:|blob:)/i.test(u) ? u : location.origin + u);
 const BUILTIN_LOGO = absAssetUrl(tsLogo);
 async function logoDataUrl(overrideUrl) {
   if (!overrideUrl) return BUILTIN_LOGO;
@@ -388,6 +395,11 @@ export default function MtnRepair() {
      ⚠️ **อ่านจาก URL ตรงๆ ไม่เก็บ state ซ้อน** — มี 2 แหล่งแล้วจะเถียงกันตอนกดย้อนกลับ/กดลิงก์ใหม่ */
   const fWait = sp.get('wait') || '';
   const setFWait = useCallback((v) => mergeSp({ wait: v || null }), [mergeSp]);
+  /* 🛒 `?pr=` ตัวกรองงาน PR (20/10 · user "หาลิสต์ MO ที่รอกรอกเลข PR ไม่เจอ") — need | no_no | open | waiting (= need+no_no)
+     อ่านจาก URL ตรงๆ แบบเดียวกับ `?wait=` · ลิงก์แจ้งเตือน `mtn_pr_waiting` ชี้มาที่ `?pr=waiting` */
+  const fPr = sp.get('pr') || '';
+  const setFPr = useCallback((v) => mergeSp({ pr: v || null }), [mergeSp]);
+  const [openPrs, setOpenPrs] = useState({ byOrder: {}, error: null });
   const [fLine, setFLine] = useState('');
   const [fDept, setFDept] = useState('');
   /* 🔗 `?q=` = คำค้นตั้งต้นจากลิงก์ภายนอก (/scan → "ดูใบซ่อมของเครื่องนี้" ส่งเลขเครื่องมา)
@@ -517,7 +529,15 @@ export default function MtnRepair() {
   const [ordersAt, setOrdersAt] = useState(() => Date.now());
   const loadOrders = useCallback(async () => {
     // ⚠️ คอลัมน์ย่อเท่านั้น — ดูเหตุผล (egress) ที่ MO_LIST_COLS ด้านบน ห้ามเปลี่ยนกลับเป็น '*'
-    const { data, error } = await supabaseDR.from('mtn_orders').select(MO_LIST_COLS).order('report_at', { ascending: false }).limit(ORDER_CAP);
+    const [{ data, error }, prRes] = await Promise.all([
+      supabaseDR.from('mtn_orders').select(MO_LIST_COLS).order('report_at', { ascending: false }).limit(ORDER_CAP),
+      // 🛒 ใบขอซื้อที่ยังไม่ยกเลิก (ตัวกรองงาน PR · ตารางเล็ก 4 คอลัมน์) — ล้ม = ตัวกรองบอกบนจอ ไม่กลืน
+      /* cap-ok: mtn_purchase_requests ทั้งตาราง 1 แถว (วัด 20/10) — โตเกิน 1000 เมื่อไหร่ต้องเปลี่ยนเป็น fetchAllRows */
+      supabaseDR.from('mtn_purchase_requests').select('order_id, pr_no, status').neq('status', 'cancelled').not('order_id', 'is', null).limit(5000),
+    ]);
+    const byOrder = {};
+    (prRes.data || []).forEach(r => { (byOrder[r.order_id] || (byOrder[r.order_id] = [])).push(r); });
+    setOpenPrs({ byOrder, error: prRes.error?.message || null });
     if (error) { setOrdersErr(error.message); return; }   // คงรายการเดิมไว้ ดีกว่าล้างเป็น "ไม่มีรายการ"
     setOrdersErr('');
     setOrders(data || []);
@@ -582,9 +602,20 @@ export default function MtnRepair() {
 
   /* 🔴 ตัวกรอง "รอขั้นไหน" แยกชั้นจาก `beforeWait` — ไม่เอาไปรวมในชั้นเดียวกับตัวกรองอื่น
      เพราะ dropdown ด้านล่างนับตัวเลือกจาก `beforeWait` ⇒ เลือกขั้นหนึ่งแล้วขั้นอื่นต้องยังอยู่ให้เลือกกลับ */
+  const prStateOf = useCallback((o) => prQueueStateOf(o, openPrs.byOrder[o.id] || []), [openPrs]);
+  const prMatch = useCallback((o) => {
+    if (!fPr || !PR_FILTERS.some(x => x.v === fPr)) return true;   // ค่าที่ไม่รู้จัก = ไม่กรอง (ลิงก์เก่าห้ามทำจอว่าง)
+    const st = prStateOf(o);
+    return fPr === 'waiting' ? (st === 'need' || st === 'no_no') : st === fPr;
+  }, [fPr, prStateOf]);
+  const prCounts = useMemo(() => {
+    const c = { need: 0, no_no: 0, open: 0 };
+    beforeWait.forEach(o => { const st = prStateOf(o); if (st) c[st]++; });
+    return { ...c, waiting: c.need + c.no_no };
+  }, [beforeWait, prStateOf]);
   const shownNoDate = useMemo(
-    () => (fWait ? beforeWait.filter(o => waitStageOf(o) === fWait) : beforeWait),
-    [beforeWait, fWait]);
+    () => (fWait ? beforeWait.filter(o => waitStageOf(o) === fWait) : beforeWait).filter(prMatch),
+    [beforeWait, fWait, prMatch]);
 
   /* 🕰️ ตัวเลือก "รอขั้นไหน" — นับจากใบที่เหลือหลังกรองอย่างอื่น **ยกเว้นตัวกรอง wait เอง**
      (ถ้านับหลังกรอง wait แล้ว เลือกขั้นหนึ่งจะทำให้ขั้นอื่นหายจาก dropdown = กลับไปเลือกไม่ได้)
@@ -607,7 +638,9 @@ export default function MtnRepair() {
     const d = o.work_date || workDateOfTime(o.report_at);
     return !d || (d >= tr.from && d <= tr.to);   // ไม่รู้วัน = ไม่ซ่อน (ห้ามหายเงียบ)
   }, [tr.from, tr.to]);
-  const shown = useMemo(() => shownNoDate.filter(inRange), [shownNoDate, inRange]);
+  /* 🛒 กรองงาน PR = "คิว" ⇒ ไม่ตัดด้วยช่วงวันที่ (ใบที่รอเลข PR ตั้งแต่เดือนก่อนต้องยังเห็น) — จอเขียนบอกข้างตัวนับ */
+  const prIgnoresDate = !!fPr && PR_FILTERS.some(x => x.v === fPr);
+  const shown = useMemo(() => (prIgnoresDate ? shownNoDate : shownNoDate.filter(inRange)), [shownNoDate, inRange, prIgnoresDate]);
   /* 🔴 กฎความซื่อสัตย์ของจอ — ตัวกรองวันที่ซ่อนใบไปกี่ใบ ต้องเขียนบนจอเสมอ
      (คิวงานที่ "ใบค้าง 29 วันหายไปเพราะ default 30 วัน" = จอโกหก · ปัจจุบันใบค้าง >7 วันมี 128 ใบ) */
   const dateHidden = useMemo(() => {
@@ -753,9 +786,17 @@ export default function MtnRepair() {
             {waitOpts.map(w => <option key={w.stage} value={w.stage}>{w.icon} รอ{w.title} ({w.n})</option>)}
             {fWait && !waitOpts.some(w => w.stage === fWait) && <option value={fWait}>⚠ {fWait} (ไม่มีใบค้าง)</option>}
           </select>
+          {/* 🛒 งาน PR (20/10) — ตัวเลขในวงเล็บนับหลังตัวกรองอื่น (ยกเว้นตัวนี้เอง) · สถานะคิดที่ `prQueueStateOf()` */}
+          <select value={fPr} onChange={e => setFPr(e.target.value)} aria-label="งาน PR"
+            style={prCounts.waiting && !fPr ? { borderColor: '#f59e0b', color: '#f59e0b', fontWeight: 700 } : undefined}>
+            <option value="">{allOf('งาน PR')}</option>
+            {PR_FILTERS.map(x => <option key={x.v} value={x.v}>{x.label} ({prCounts[x.v] ?? 0})</option>)}
+          </select>
           <SearchInput value={fText} onChange={setFText} fields="เลข MO / เครื่อง / ปัญหา / ชื่อผู้แจ้ง" />
           <span className="spacer" />
           <span className="filter-count">{shown.length} รายการ</span>
+          {prIgnoresDate && <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>· งาน PR แสดงทุกช่วงเวลา (ไม่ตัดตามวันที่)</span>}
+          {fPr && openPrs.error && <span style={{ fontSize: 11.5, color: '#ef4444' }}>⚠ โหลดใบขอซื้อไม่สำเร็จ — ตัวกรองงาน PR อาจไม่ครบ</span>}
           {/* ⬇️ Export ข้อมูล MO ของช่วงที่เลือก (06/10 · user: "ยังไม่มีระบบ export data ของ mo
               ที่เกิดขึ้นในแต่ละช่วงเดือน" — เดิมมีแต่พิมพ์ใบทีละใบ)
               ส่ง `shown` = ใบที่เห็นบนจอจริง ⇒ ไฟล์ตรงกับที่คนกรองไว้ ไม่ใช่ทั้งฐาน */}
@@ -1905,7 +1946,8 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
         ส่วน Breakdown (หยุดรวม) **ไม่หัก** — ไลน์หยุดจริงตลอดช่วงนั้น
         สูตรอยู่ `src/utils/mtnVendor.js` ที่เดียว ห้ามลบเองในหน้า */
   const resp = minutesBetween(o.report_at, o.accept_at);
-  const ttr = techRepairMin(o), ttrGross = grossRepairMin(o), venHold = vendorHoldMin(o);
+  // หยุดนับ MTTR = รออะไหล่ PR / อยู่กับ supplier หลัง MTN ตัดสินเส้นทาง (20/10) ∪ ช่วงส่งภายนอก — union ไม่หักซ้ำ
+  const ttr = techRepairMin(o), ttrGross = grossRepairMin(o), venHold = mttrHoldMin(o);
   const bd = minutesBetween(o.report_at, o.repair_done_at);
   const [dparts, setDparts] = useState([]);
   const [dlabor, setDlabor] = useState([]);   // ค่าแรงรายคน (ตาราง 5 แถวบนฟอร์ม MTN)
@@ -2095,6 +2137,9 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
     setVenBusy(false);
     if (error) return toast.error('บันทึกไม่สำเร็จ: ' + error.message);
     if (!data?.length) return toast.error('ใบนี้ถูกคนอื่นเปลี่ยนสถานะไปแล้ว — รีเฟรชแล้วลองใหม่');
+    // ⏸️ ของกลับมาอยู่ในมือช่าง = จบช่วงหยุด MTTR ที่เริ่มตอน MTN ตัดสินเส้นทาง (20/10) · ล้ม = บอก ไม่กลืน
+    if (o.mttr_hold_from && !o.mttr_hold_to)
+      checkWrite(await supabaseDR.from('mtn_orders').update({ mttr_hold_to: nowIso }).eq('id', o.id).is('mttr_hold_to', null), 'จบช่วงหยุด MTTR');
     notifyVendor('mtn_vendor_back', data[0], [
       `🔧 ใบ ${o.mo_no || '(ยังไม่ออกเลข)'} · ${o.line_name || '-'}${o.machine_no ? ` · ${o.machine_no}` : ''}`,
       `📥 ของกลับจาก ${data[0].supplier || 'supplier'} แล้ว — รวมอยู่ข้างนอก ${vendorHoldLabel(data[0])}`,
@@ -2543,7 +2588,7 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
           <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 10, fontSize: 12.5 }}>
             <div style={{ fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>⏱ KPI</div>
             <Row k="เข้าดำเนินการ (Response)" v={fmtMin(resp)} /><Row k="เวลาซ่อม (TTR)" v={venHold > 0 && ttr != null
-              ? `${fmtMin(ttr)} (รวมรอ supplier ${fmtMin(ttrGross)})`
+              ? `${fmtMin(ttr)} (หักหยุด MTTR ${fmtMin(venHold)} · รวมทั้งหมด ${fmtMin(ttrGross)})`
               : fmtMin(ttr)} /><Row k="หยุดรวม (Breakdown)" v={fmtMin(bd)} />
           </div>
         </div>

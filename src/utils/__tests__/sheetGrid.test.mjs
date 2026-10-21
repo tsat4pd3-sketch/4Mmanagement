@@ -105,3 +105,12 @@ test('balanceGrid: ใส่ครบหน้าเดียว / ผังไ�
   assert.equal(balanceGrid(empty, 14), empty);
   assert.equal(balanceGrid(null, 14), null);
 });
+
+test('📺 จอประชุม: เพดานผัง 2×2 ⇒ 4 แผ่นต่อหน้า แผ่นกว้างเกือบครึ่งจอ · ไม่ส่ง opts = เหมือนเดิม', () => {
+  const tv = chooseSheetGrid(1900, 900, 10, { maxCols: 2, maxRows: 2 })
+  assert.equal(tv.cols * tv.rows, 4)
+  assert.equal(tv.fit, false)
+  assert.ok(tv.cw > 900)
+  assert.ok(tv.k <= 2.4)
+  assert.deepEqual(chooseSheetGrid(1900, 900, 10, {}), chooseSheetGrid(1900, 900, 10))
+})

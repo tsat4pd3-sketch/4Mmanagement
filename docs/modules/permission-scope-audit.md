@@ -159,12 +159,14 @@ role `mtn` **ทั้งก้อน** (ไม่ใช่แค่หัวห
 1. **ชั้น DB (RLS) ฝั่ง Main — 68 policy ยังเป็น `has_perm()` เปล่า**
    ⇒ ด่านทั้งหมดวันนี้อยู่ที่จอ · **คนยิง API ตรงยังข้ามได้**
    · 🔴 **ฝั่ง DR ทำไม่ได้เลย** (`anon` ไม่มี JWT) ต้องผ่าน Edge Function — known gap เดิมใน CLAUDE.md
-2. **ใบ MO ขั้น 2-3 ล็อกแล้ว** (15/10) แต่ `mtn_repair:manage_master` ยังถูกแจกให้ role `mtn` ทั้งก้อน
-   ⇒ คีย์นี้กว้างกว่าชื่อของมัน · ถ้าจะให้ตรงความหมาย ควรแยก `mtn_repair:head` ออกมา (ยังไม่ทำ)
+2. 🟡 **`mtn_repair:manage_master` แจกให้ role `mtn` ทั้งก้อน (16 บัญชี)** — ปิด "ทางข้าม" ไปแล้ว 2 ทาง
+   (20/10 · คำสั่ง user "ปิดทั้ง 2 ทาง"): ด่านอนุมัติก่อนเริ่มงานย้ายขึ้นเหนือ `manage_master` ·
+   `canSignMtnApproval()` ไม่ยอมให้เซ็นแทน ผจก. อีก (เกิดจริง 1 ใบ โดยบัญชีกลาง `maintenance`)
+   ⇒ **ตัวคีย์ยังกว้างกว่าชื่ออยู่** (ปลดสิทธิ์รายขั้นในฝั่ง/ทีมตัวเองได้) · การเลิกแจกให้ทั้ง role
+   แล้วให้ช่างถือเฉพาะคีย์ที่ใช้จริง = ยังรอ user เคาะ · 📄 `docs/modules/mtn-work-order.md`
 3. **bucket `dept_admin` ถือคีย์ action 101 ตัว (99 ตัวเป็นของ `manager`)**
    ⇒ ตอนนี้ขอบเขตถูกจำกัดด้วยชั้นที่ 3 แล้ว แต่ *ชุดคีย์* ยังกว้างเกินชื่อ "แอดมินหน่วยงาน"
-4. **ทะเบียนกลางที่ยังไม่ตัดสินว่ามีเจ้าของไหม** — `dr_products` · `machine_types` · `pm_facility_areas`
-   · `bbs_agreements` · `skill_definitions` · `break_policies` (ต้องให้ user เคาะก่อน ไม่ใช่เดา)
+4. 🟡 **ทะเบียนกลาง 6 ตัว — ตอบได้ 4 แล้ว (ปิดไปแล้ว) เหลือ 2 ที่ต้องให้ user เคาะ** · ดู §13
 
 ---
 
@@ -486,21 +488,286 @@ migration `supabase/migrations/20261020_rls_scope_net_fn_main.sql` · **apply �
   UPDATE จริงๆ ไม่ขาด (ทางหลักเป็น RPC `upsert_push_subscription` · fallback เป็น `ON CONFLICT DO NOTHING`
   ซึ่งใช้แค่ INSERT แล้วตรวจกลับ) · 6 ตารางที่ RLS เปิดแต่ไม่มี policy เลย = ของ edge function ล้วน (service_role)
 
-### 🟡 ส่วนที่ 2 (ผูก policy) — user เคาะ "นำร่อง LPA" แล้ว (20/10) · **SQL พร้อม รอรันมือ**
+### ✅ ส่วนที่ 2 (ผูก policy) — **นำร่อง LPA ลงแล้ว 20/10** (user รันเอง · MCP timeout)
 
-ไฟล์: `supabase/migrations/20261020_rls_scope_net_lpa_main.sql` — ผูก `app_can_write_line()` เข้า policy
+ไฟล์: `supabase/migrations/20261020_rls_scope_net_lpa_main.sql` — `app_can_write_line()` ผูกเข้า policy
 `*_all` ของ 4 ตาราง (`lpa_plans` · `lpa_plan_days` · `lpa_audits` · `lpa_audit_answers`)
 ตารางลูกไต่ขึ้นหาไลน์ของใบแม่ด้วย subquery · **policy อ่าน (`*_read`) ไม่แตะ** (เห็นทั้งโรงงานเหมือนเดิม)
+· MCP ลง policy DDL ไม่ได้ (timeout ทุกท่า · `pg_locks` ว่าง = ไม่ใช่ปัญหาล็อก) ⇒ user รันใน SQL Editor
 
-🔴 **ยังไม่ได้ apply — MCP timeout ทุกท่า** (`apply_migration` · `execute_sql` · DO block + `lock_timeout`)
-· ตรวจแล้วว่า **DB ไม่ถูกแตะเลย** (policy เดิมครบ 8 ตัว ไม่มีตัวไหนมี `app_can_write_line`)
-· **ไม่ใช่ปัญหา lock** — `pg_locks` ว่าง ไม่มีใครถือล็อกตาราง LPA ⇒ เป็นที่ชั้น MCP เอง
-  (อาการเดียวกับ 19/10 ที่ลบบัญชีทดสอบไม่ได้ · SELECT ผ่านปกติ)
-⇒ ส่ง SQL เต็มให้ user รันใน SQL Editor ของ project **"MAIN"** (`ewhdfqwfwofivojtsizn`) + คิวรีเช็คผล
-⇒ ถ้าผ่านค่อยขยายทีละกลุ่ม · **ห้ามแก้ทีเดียว 50 ตาราง** (blanket = ผิดกฎ CLAUDE.md)
+### 🔴🔴 บทเรียนใหญ่ของรอบนี้ — "ด่านที่ดูเหมือนมีแต่ไม่ทำงาน"
+
+ตัวตัดสินรุ่นแรกเขียนว่า `resp_cost_centers is not null and array_length(resp_cost_centers,1) > 0`
+คอลัมน์นั้นเป็น **NOT NULL default `'{}'`** ⇒ `array_length('{}',1)` = **NULL** ⇒ `true and NULL` = NULL
+⇒ OR ทั้งชุดเป็น NULL ⇒ `coalesce(..., true)` ⇒ **ฟังก์ชันคืน true ให้ทุกคน ทุกไลน์**
+
+- `pg_policies` เห็นชื่อฟังก์ชันอยู่ในนิพจน์ครบทั้ง 4 policy = **ดูเหมือนปิดแล้ว** แต่ด่านไม่เคยบล็อกใครเลย
+- 🔴 **จับได้เพราะทดสอบด้วยสิทธิ์ผู้ใช้จริง ไม่ใช่เพราะอ่าน `pg_policies`** —
+  สวม `request.jwt.claims` แล้วเรียกฟังก์ชันเทียบ 4 เคส (ไลน์ตัวเอง / ไลน์ต่างส่วนงาน / ไม่รู้ไลน์ / ไลน์นอกทะเบียน)
+  ⚠️ ต้องบังคับลำดับด้วย `lateral` + `case when c.t is not null` ไม่งั้น planner เรียกฟังก์ชันก่อน `set_config`
+  แล้วได้ผลลวง (`auth.uid()` ยัง null = ผ่านหมด) — **เคยหลงผลลวงนี้ 1 รอบในการทดสอบ**
+- แก้แล้วด้วย `coalesce(array_length(x,1),0) > 0` (migration `rls_scope_net_fn_fix_empty_cc_array`)
+- ด่าน build ใหม่: `🛡️ migration SQL: ห้ามเช็คอาร์เรย์ว่างด้วย is-not-null + array_length` —
+  จับเฉพาะไฟล์ที่นิพจน์เป็นด่านจริง (`create policy` / `returns boolean` / `check (`) ·
+  ใน `where` ธรรมดา NULL = กรองแถวออก (ฝั่งปลอดภัย) จึงไม่นับ (วัดแล้ว: ถ้าไม่แยก จับไฟล์เก่าที่ถูกต้อง 2 ไฟล์)
+
+### 📊 ผลทดสอบหลังแก้ (ของจริงบนฐาน MAIN)
+
+| เคส | ผล |
+|---|---|
+| supervisor PD3 → ไลน์ของ PD3 | ✅ ผ่าน |
+| supervisor PD3 → ไลน์ของ PD2 | 🔒 **บล็อก** |
+| คำตอบรายข้อ (ตารางลูก) ของใบ PD3 / ใบส่วนงานอื่น | ✅ ผ่าน / 🔒 **บล็อก** |
+| ไม่รู้ไลน์ (null) · ไลน์นอกทะเบียน | ✅ ผ่าน (fail-open) |
+| ถือ `scope:all_units` · ตั้งแกน CC · ไม่ได้ตั้งส่วนงาน | ✅ ผ่านทุกไลน์ |
+| **คู่ (คนเขียน × ไลน์) ที่เคยเขียนจริงทั้งหมด 57 คู่** (จาก 843 ใบ) | ✅ **ผ่านหมด · 0 ถูกบล็อก** |
+
+### ⏭️ กลุ่มถัดไป (ยังไม่ทำ — ทำทีละกลุ่มแล้ววัดแบบเดียวกัน)
+
+`qa_ncr`/`qa_capa` · `meeting_action_items` · `bbs_sheets`/`safety_events` · `pe_doc_sets`/`npi_parts`
+· **ห้ามแก้ทีเดียว 50 ตาราง** (blanket = ผิดกฎ CLAUDE.md) · ทุกกลุ่มต้องวัด "คู่คนเขียน × หน่วย" ก่อนลง
+
+---
+
+## 12. 🧑‍💼 รอบ 8 (20/10) — bucket `dept_admin` กว้างกว่าชื่อ (§7.3)
+
+### 🔴 ตัวเลขที่เอกสารเดิมเข้าใจผิด: bucket นี้ **มีคนถืออยู่จริง 13 คน**
+
+`role = 'dept_admin'` มี **0 บัญชี** ก็จริง — แต่ bucket ทำงานผ่าน **ธง `profiles.is_dept_admin`**
+ซึ่งซ้อนทับ role เดิม (`hasPermission()` บรรทัด bucket ใน `src/utils/permissions.js`)
+⇒ ของจริง: **13 คนถือธงนี้** และได้คีย์ action เพิ่มจาก bucket ทับ role ตัวเอง
+
+| role ของผู้ถือธง | คน | คีย์ที่ได้เพิ่ม/คน |
+|---|---|---|
+| `mtn` (ช่าง) | 5 | **+76** |
+| `supervisor` | 5 | +29 (รวม `mtn_repair:manage_master`) |
+| `document_control` | 1 | **+90** |
+| `planner_store` | 1 | **+83** |
+| `manager` | 1 | +2 |
+
+ของที่ได้เพิ่มมีทั้ง `four_m:approve_qa` · `qa:manage` · `pe:approve/edit` · `products:delete` ·
+`scrap:delete` · `shift_schedule:delete` — **ข้ามสายงานทั้งหมด**
+
+### 📊 วัดก่อนตัด — ใช้จริงอะไรบ้าง (audit_log Main 15,154 แถว + `*_by_uid` ฝั่ง DR)
+
+- **ใช้จริง (คงไว้):** `kpi:manage` 474 ครั้ง (มีทั้งช่างและ document_control ทำ KPI) ·
+  `employees:edit` 422 · `lpa:manage`/`lpa:delete` 209 · `org:manage_own_unit` 105 ·
+  `skills:edit`/`skills:delete` 117 · `products:edit` 120 · `machines:edit` 44 · `mtn_orders` 13
+- **ไม่เคยใช้เลย (ตัด):** `four_m:approve_qa` (0 — ไม่มีใครแตะช่อง QA ของใบ 4M เลย · ที่แก้ 212 ครั้งคือ
+  `line_name` ล้วน) · `qa:manage` (0 การเขียน `qa_*`) · `pe:approve`/`pe:edit` (0) · `doc_forms:manage` (0) ·
+  `scrap:manage`/`scrap:delete` (0) · `improvements:delete` (0) · `ojt:delete` (0) · `shift_schedule:delete` (0)
+
+### ✂️ ที่ตัด 14 คีย์ (ไฟล์ `supabase/migrations/20261020_dept_admin_bucket_trim_main.sql`)
+
+`four_m:approve_qa` · `four_m:approve_sv` · `qa:manage` · `pe:approve` · `pe:edit` ·
+`mtn_repair:manage_master` · `doc_forms:manage` · `scrap:manage` · `scrap:delete` ·
+`improvements:delete` · `ojt:delete` · `shift_schedule:delete` · `machines:delete` · `products:delete`
+
+🔴 **ไม่ตัดของที่ใช้จริงแม้แต่ตัวเดียว** — เกณฑ์คือ "ข้ามสายงาน **และ** วัดแล้วว่าไม่มีใครในกลุ่มนี้เคยใช้"
+⚠️ ฝั่ง DR ไม่มี audit log ⇒ การ "ลบ" ไม่ทิ้งร่องรอย · `products:delete`/`machines:delete` ตัดตามเกณฑ์
+ข้ามสายงาน — ถ้าหน้างานเคยใช้จริงเปิดคืนได้ทันที (บล็อก rollback อยู่ในไฟล์)
+
+### 🧠 บทเรียน
+
+**"role นี้ไม่มีบัญชี" ไม่ได้แปลว่าไม่มีใครได้สิทธิ์** — ระบบนี้มี 2 ทางที่สิทธิ์ไหลถึงคน:
+`profiles.role` และ **ธง bucket (`is_dept_admin`)** · ตรวจสิทธิ์ต้องนับทั้ง 2 ทางเสมอ
+(เอกสาร audit รอบก่อนเขียนว่า "dept_admin 0 บัญชี = latent" ซึ่งผิด)
+
+---
+
+## 13. 🗂️ รอบ 9 (20/10) — ทะเบียนกลาง "มีเจ้าของไหม" (§7.4)
+
+ตอบด้วยข้อมูลจริง: ทะเบียนไหน**ไม่มีคอลัมน์หน่วยงานให้ยึด** = ของกลางทั้งโรงงาน ⇒ ชั้นที่ 3 ใช้ไม่ได้
+ด่านเดียวที่เหลือคือ **คีย์สิทธิ์** · ทะเบียนที่**มีคอลัมน์เจ้าของ** ⇒ ตัดสินได้ว่าจะบังคับขอบเขตไหม
+
+| ทะเบียน | project | แถว | คอลัมน์เจ้าของ | สรุป |
+|---|---|---|---|---|
+| `machine_types` | DR | 39 | — | **ของกลาง** (ประเภทเครื่องจักรใช้ทั้งโรงงาน) |
+| `pm_facility_areas` | DR | 4 | — | **ของกลาง** (โซน facility) |
+| `break_policies` | DR | 14 | — | **ของกลาง** — เป็น**ฐานเวลาของ %A/%P ทุกไลน์** |
+| `bbs_agreements` | Main | 3 | — | **ของกลาง** (ข้อตกลงความปลอดภัย) |
+| `skill_definitions` | Main | 70 | `scope_section` | ⏸️ **มีเจ้าของ — รอ user เคาะ** |
+| `dr_products` | DR | 216 | `line_name` (211 แถว · 25 ไลน์) | ⏸️ **มีเจ้าของ — รอ user เคาะ** |
+
+### ✅ 4 ทะเบียน "ของกลาง" — ปิดรูที่เจอ (13 handler ไม่เช็คสิทธิ์เลย)
+
+วัดแล้วว่าทุกจอมีคีย์คุมปุ่มอยู่ — แต่ **ฟังก์ชันที่เขียนจริงไม่เช็คอะไรเลย** (คลาสเดียวกับ audit ข้อ 5)
+⇒ โมดัลเปิดค้างตอนสิทธิ์เปลี่ยน / เรียกตรง = เขียนได้ · ฝั่ง DR ไม่มี RLS ⇒ จอเป็นด่านเดียวจริงๆ
+
+| จอ | ทะเบียน | คีย์ที่เติมใน handler |
+|---|---|---|
+| `MachineDatabase` → จัดการประเภทเครื่องจักร | `machine_types` | `machines:edit` (+ นับแถวตอนลบ) |
+| `MachineDatabase` → เพิ่มโซน facility | `pm_facility_areas` | `machines:edit` |
+| `DailyReport` → นโยบายหยุดพัก | `break_policies` | `daily_report:setup` (+ นับแถวตอนลบ) |
+| `BbsCheck` → ข้อตกลงความปลอดภัย | `bbs_agreements` | `bbs:manage` |
+| `FactoryMap` → ตีกรอบไลน์/โซนใหม่ | `factory_line_regions` + `pm_facility_areas` | `factory_map:edit` |
+| `operator` → นิยามสกิล | `skill_definitions` | `skills:edit` · ลบใช้ `canDelete('skills','delete')` |
+
+· ✅ **`MtnMachineLayout` ไม่ต้องแก้** — มี `editMode = canEdit && facEdit` คุมอยู่แล้วทุกฟังก์ชัน
+  (ตัวสแกนรอบแรกรายงานว่าไม่มีด่าน = **false positive** · ต้องอ่านโค้ดก่อนแก้เสมอ)
+· ด่าน `regressionGuards` ใหม่: ไล่จาก **คำสั่งเขียนจริง** ย้อนขึ้นไปหาฟังก์ชันที่ครอบ แล้วเช็คว่ามีคีย์
+  (ไม่ยึดชื่อฟังก์ชัน — ไฟล์ใหญ่มี `handleSave` ซ้ำหลายตัว ยึดชื่อ = จับผิดตัว · เจอตอนเขียนด่านรอบแรก)
+
+### ⏸️ 2 ทะเบียนที่มีเจ้าของ — คำถามที่ต้องให้ user เคาะ
+
+1. **`dr_products.line_name`** (211/216 แถว · 25 ไลน์) — จะบังคับว่า "แก้สินค้าได้เฉพาะไลน์ในขอบเขตตัวเอง" ไหม?
+   · ผู้ถือ `products:edit` = admin · dept_admin · engineer · manager · planner_store · **supervisor (33 บัญชี)**
+   · PE/planner/manager ถือ `scope:all_units` อยู่แล้ว ⇒ **ถ้าบังคับ จะกระทบเฉพาะ supervisor/หัวหน้าไลน์**
+2. **`skill_definitions.scope_section`** — นิยามสกิลที่ระบุส่วนงาน จะให้แก้ได้เฉพาะส่วนงานตัวเองไหม?
+   · และสกิลที่ `scope_section` ว่าง (= ใช้ทั้งโรงงาน) ควรต้องมีใบผ่าน `scope:all_units` เหมือน "ข้อกลาง" ของ LPA ไหม?
 
 ### ที่ยังเหลือ (นอกข้อ 5)
 
 1. ชั้น DB (ข้อ 7.1) — RLS ฝั่ง Main 68 policy ยังไม่มี predicate ของหน่วยงาน · ฝั่ง DR ไม่มีด่านเลย (anon)
 2. ฝั่ง DB ยังไม่รู้จัก `resp_cost_centers` ⇒ คนยิง API ตรงยังข้ามด่านจอได้ทุกจอ
-3. `manage_master` ให้ทั้ง role `mtn` · `dept_admin` ถือ 101 คีย์ (ตรวจค้างจาก audit 15/10)
+3. 🟡 `dept_admin` bucket — **ตัดคีย์ข้ามสายงาน 14 ตัวแล้ว (SQL พร้อม · รอรัน)** ดู §12
+
+---
+
+## 🔐 ปิดรู `resp_cost_centers` ที่ `protect_profile_role()` (2026-10-20 · QC audit · ด่าน `cc-scope-trigger-columns`)
+
+คอลัมน์ `profiles.resp_cost_centers` (เพิ่ม 16/10 · แกนที่ 2 ของชั้น ③) **ไม่ได้อยู่ในรายการที่ trigger กัน**
+⇒ เจ้าของแถวยิง `PATCH /profiles?id=eq.<ตัวเอง>` **ตั้งขอบเขตที่ตัวเองแก้ได้ให้ตัวเอง** ได้
+(วันที่เจอ ยังไม่มีจอไหนอ่านค่านี้ แต่ 19/10 `canWriteUnit` สลับไปใช้ `canWriteScope` แล้ว ⇒ รูเปิดใช้งานทันที)
+
+🔴 **เกิดซ้ำรอบที่ 2 ของคลาสเดียวกัน** — migration 12/10 เขียนเตือนไว้เองในบล็อก ③ ว่า
+*"คอลัมน์ที่เพิ่มมาหลังเขียน trigger นี้ แล้วไม่มีใครเติมเข้ารายการ"* ⇒ รอบนี้จึงเพิ่ม**ด่านฝั่งเทส**ด้วย
+(`cc-scope-trigger-columns` อ่าน migration ล่าสุดที่ `create or replace` ฟังก์ชันนี้ แล้วบังคับว่าต้องมี
+`role · sections · section · scope_depth · resp_cost_centers` ครบ)
+
+- migration: `supabase/migrations/20261020_protect_resp_cost_centers_main.sql` (**apply แล้ว 20/10** ·
+  Main "MAIN" `ewhdfqwfwofivojtsizn`) — `create or replace` เติมบล็อกเดียว ไม่แตะ trigger/คอลัมน์/policy
+- ตรวจกลับแล้ว: `pg_get_functiondef(...) ilike '%resp_cost_centers%'` = `true` · trigger ที่ผูกอยู่ = 1 ตัวเหมือนเดิม
+- ย้อนกลับ: `create or replace` ตัวเดิมจาก `20261012_rls_round5_anon_scope_masters_main.sql` (ตัดบล็อก ④ ออก)
+- ⚠️ ข้อ 2 ของ "ที่ยังเหลือ" ข้างบน (**ฝั่ง DB ยังไม่รู้จัก `resp_cost_centers` ในชั้น RLS ของตารางอื่น**)
+  ยังเหมือนเดิม — อันนี้ปิดเฉพาะ "แก้สิทธิ์ตัวเอง" ไม่ใช่ predicate ของหน่วยงานในทุกตาราง
+
+## 🔐 รอบ 20/10 — ปิดชั้น ③ อีก 4 จอ (ด่าน `scope-layer-closed-screens`)
+
+ทั้ง 4 จุดมีชั้น ② (`can()`) อยู่แล้ว แต่**ไม่มีชั้น ③** และ RLS ปลายทางรู้แค่คีย์สิทธิ์ ไม่รู้ขอบเขต
+⇒ เปิด `?sec=` / `?scope=` ของหน่วยอื่นแล้วเขียนได้จริง
+
+| จอ | เขียนอะไรข้ามหน่วยได้ | ปิดด้วย |
+|---|---|---|
+| `/manpower-board` ⚙️ ตั้งค่าบอร์ด | `station_slot_plans` · `manpower_slot_plans` · `line_technicians` · `employee_flex_units` ของส่วนงานอื่น (เดิมตัดสินด้วย `sections` = แกน "ที่เห็น" ซึ่ง**ว่าง = เห็นทั้งโรงงาน**) | หน้าแม่ส่ง `secWrite={canWriteUnit(wctx, section.name, { unknownTarget:'block' })}` ลงแผงลูก + `blocked()` ต้นทั้ง **7 ฟังก์ชัน** ที่เขียน DB + แถบ 🔒 บนแผง |
+| `/line-stock` 📋 ตรวจนับ | `line_stock_transactions` ของไลน์อื่น (และตั้ง `approved` ทันทีถ้ามีสิทธิ์) · `cutShipped` หักสต็อกย้อนหลังที่คลัง FG | `canWriteLine(wctx, …)` ต้น `save()` และ `postMissingCuts()` (ไฟล์พี่น้องในหน้าเดียวกันทำถูกตั้งแต่ 15/10 — แท็บนี้ตกสำรวจ) |
+| `/equipment?tab=spare` 🛒 บอร์ด PR | **รับของเข้าสต็อก** (RPC `mtn_pr_receive`) / **ยกเลิกใบ** ของทีมช่างอื่น — ผู้ถือ `mtn_repair:spare_master` รวม `dept_admin` ฝ่ายผลิต | `MtnPrBoard` รับ `myTeams`/`role` จาก `EquipmentHub` → `teamRowOwner` ต่อแถว → `ownBlock()` ต้น **4 ฟังก์ชัน** (เลข PR · สั่งแล้ว · รับของ · ยกเลิก) + แถว 🔒 บอกเหตุ |
+| แผงตัวเลขฐาน KPI (`KpiBaseInputsPanel`) | ทางนำเข้า Excel (`saveMany`) **ไม่เช็คสิทธิ์เลย** — ด่านอยู่ในโมดัลชั้นเดียว ⇒ คนถือ `kpi:manage` ที่ขอบเขตหน่วย เขียนยอดขาย/COGS กลางโรงงานได้ | `if (!canManage) return 0` + กันตัวแปรระดับ `plant` เมื่อไม่ได้ยืนที่ขอบเขตทั้งโรงงาน |
+
+🔴 **บทเรียนที่ด่านเดิมมองไม่เห็น:** `write-scope-layer` ตรวจ (ก) เนื้อใน `writeScope.js` (ข) `App.jsx`
+ส่ง ctx ครบ (ค) จำนวนด่านใน `KpiMonthly.jsx` — **ไม่มีกฎที่ถามว่า "จอที่เขียน DB เรียกของกลางชั้น ③ หรือยัง"**
+⇒ ทั้ง 4 จุดผ่าน build มาตลอด · ด่านใหม่ `scope-layer-closed-screens` ตรึง 4 จอนี้ไว้
+(ยิงทดสอบด้วยการถอดด่านออกทีละจุดแล้ว จับได้ครบ 5/5)
+
+## 14. 🔐 รอบ 10 (20/10) — บังคับชั้น ③ ที่ 2 ทะเบียนที่มีเจ้าของ (ปิดข้อ ⏸️ ของ §13)
+
+> คำสั่ง user: **"บังคับทั้ง 2 ข้อเลย"** (ตอบคำถาม 2 ข้อใน §13 ⏸️)
+
+### 📊 วัดก่อนบังคับ (ของจริง 20/10)
+
+| ทะเบียน | ข้อมูลที่วัด | ถ้าบังคับแล้วใครถูกบล็อก |
+|---|---|---|
+| `dr_products` (DR · 216 แถว) | 166 แถวมี `updated_by_uid` · ผู้แก้ 6 คน · 5 แถวไม่ผูกไลน์ | **0 ราย** — หัวหน้า PD1/PD2/PD3/PD4 แก้เฉพาะไลน์ส่วนงานตัวเอง (4-6 ไลน์/คน) · อีก 2 คนเป็น admin (ถือใบผ่าน) · "Coating" มี `section` ว่าง ⇒ ไลน์ไม่รู้เจ้าของ = ไม่บล็อก |
+| `skill_definitions` (Main · 70 แถว) | `(ไม่ระบุ)` 23 · PD3 19 · PD4 14 · PD1 14 | **0 ราย** ถ้านับเฉพาะแถวที่ระบุส่วนงาน — ผู้แก้ทุกคน (จุรีย์พร PD1 · ชลทิตย์ PD4 · สุวิทย์ชัย PD3 · จีระพล PD4) แตะเฉพาะส่วนงานตัวเอง |
+
+🔴 **ข้อยกเว้นที่ตัวเลขสั่งให้ทำ — "สกิลกลาง" (23 จาก 70) ยังเปิดให้แก้**
+ผู้แก้ 4 คนข้างบน **ไม่มีใครถือ `scope:all_units`** แต่แก้/สร้างสกิลกลางไปแล้ว **63 ครั้ง**
+(5ส · ความปลอดภัย · งานทั่วไป — สกิลที่ทุกส่วนงานใช้ร่วม) ⇒ ใช้กฎ "ข้อกลาง" ของ LPA
+(`unknownTarget:'block'`) ที่นี่ = **หยุดงานที่ทำกันอยู่ทันที** จึงคง default `allow` ไว้
+แต่ต้อง **เขียนบนจอ** ว่าเป็นของกลาง: ชิป `🌐 สกิลกลาง (ทุกส่วนงาน)` + tooltip "แก้/ลบแล้วกระทบทั้งโรงงาน"
+· จะปิดจริงวันหลัง = ใส่ `{ unknownTarget: 'block' }` ที่ `sdWrite` **จุดเดียว** (แต่ต้องย้าย 23 สกิลเข้าส่วนงาน
+หรือออกใบผ่านให้คนดูแลก่อน ไม่งั้น 4 คนนี้ทำงานไม่ได้)
+
+### ✅ ที่ปิด — `dr_products` มี **4 ทางเขียน** ต้องปิดให้ครบ (ฝั่ง DR ไม่มี RLS ⇒ จอคือด่านเดียว)
+
+| ทาง | ไฟล์ | ด่านที่ใส่ |
+|---|---|---|
+| `/products` ทะเบียนสินค้า | `src/pages/ProductMaster.jsx` | `pCtx`/`pWrite`/`pGuard` → `handleSave` (**2 ฝั่ง**: แถวเดิม + `ecSource` + `form.line_name`) · `handleDelete` · `handleReactivate` · **CSV import** (กรองแถวนอกขอบเขต + เขียนบนจอว่าข้ามกี่แถว · กรองก่อนทำ payload ไม่งั้น `kanban_standards` ยังเขียนตามแถวที่ตัดไปแล้ว) |
+| `/daily-report` ⚙️ แผงสินค้า | `src/pages/DailyReport.jsx` (`ProductSetup`) | ด่านชุดเดียวกัน — `handleSave` (2 ฝั่ง) · `handleDelete` (**ลบจริง** ไม่ใช่ปิดใช้งาน) |
+| `/equipment?tab=die` ตั้งคู่ RH/LH | `src/pages/DieRegistry.jsx` (`SetPairNote`) | หน้าแม่ส่ง `prodLines={lines}` (ทะเบียน **ไลน์ผลิต** — คนละตัวกับ `die_press_lines` ของหน้านี้) → `pGuard` ทั้ง 2 ฝั่งของคู่ + **คู่เดิมที่ต้องปลด** (เป็นพาร์ทของไลน์อื่นได้) |
+| `/planner-sales` ผูกเลขลูกค้า (`p_no`) | `src/pages/PlannerSales.jsx` (`KanbanCalcTab.doMapping`) | กรองคู่ที่ไลน์นอกขอบเขตออก + toast บอกจำนวน · แก้ข้อความ "ไม่เหลือคู่" ให้แยก 3 เหตุ (นอกขอบเขต ≠ ไม่มีในทะเบียน ≠ ยังไม่ได้เลือก) · 🔑 บัญชีที่ทำงานนี้จริง (planner_store · warehouse_delivery · manager · admin) ถือ `scope:all_units` ⇒ ไม่กระทบ |
+
+**`skill_definitions`** (`src/pages/operator.jsx`): `sdCtx`/`sdWrite`/`sdGuard` →
+`handleAddSkill` (ปลายทาง) · `handleUpdateSkill` (**2 ฝั่ง** — แถวเดิม + ส่วนงานปลายทาง) ·
+`handleDeleteSkill` (ลบนิยาม = ลบคะแนนพนักงานทุกคน + `station_requirements` ทุกจุดงาน) ·
+บนจอ: ชิป `🔒 ดูได้ แก้ไม่ได้` + ซ่อนปุ่ม ✏️/🗑 ของสกิลส่วนงานอื่น (ด่านจริงยังอยู่ใน handler)
+
+### 🧩 2 จุดที่ **ยกเว้นโดยมีเหตุผล** (เขียน `dr_products` แต่ไม่ใช่ของที่ผูกไลน์)
+
+1. `makeBomHead` (แท็บ BOM) — เปิดใบ BOM สร้างหัวพาร์ทโดย**ไม่ใส่ `line_name` เลย** ⇒ ด่านผ่านอยู่แล้วตาม default
+2. เติม `image_url` ให้สินค้าที่ยังไม่มีรูป จากทะเบียนกลาง `parts_master` — รูป = ตัวตนพาร์ท
+   (MAT เดียวกันใช้รูปเดียวกันทุกไลน์) ไม่ใช่ค่าที่ไลน์เป็นเจ้าของ
+
+### 🛡️ ด่านใหม่: `row-scope-dr-products-skills` (`regressionGuards.test.mjs`)
+
+ไล่จาก **คำสั่งเขียนจริง** (`from('dr_products'|'skill_definitions').insert|update|upsert|delete`)
+ย้อนขึ้นไปหาฟังก์ชันที่ครอบ แล้วบังคับว่าต้องมี `pGuard|sdGuard|pWrite|sdWrite|canWriteLine|canWriteUnit`
+ในฟังก์ชันนั้น (ไม่ยึดชื่อฟังก์ชัน — บทเรียนจากด่าน `plant-registry-needs-perm-key` ที่เคยจับผิดตัว)
++ ตรึง "ด่าน 2 ฝั่ง" ของ 3 handler + ตรึง prop `prodLines={lines}` ที่หน้าแม่ส่งลง `SetPairNote`
+· ยกเว้น 2 จุดข้างบนเขียนเหตุผลกำกับในเทส (กติกาข้อ 4 ของไฟล์นั้น)
+· ทดสอบด้วยการถอดด่านออก — จับได้ (ถอด `handleDelete` 1 จุด → ฟ้อง 3 จุดในฟังก์ชันนั้น)
+
+### ⏭️ ที่ยังเหลือหลังรอบนี้
+
+- ชั้น DB ของ `dr_products` — **ยังเป็น known gap** (`supabaseDR` = `anon` ตลอด · ยิง API ตรงยังข้ามจอได้)
+  ⇒ จะปิดจริงต้องผ่าน Edge Function ที่ validate ฝั่ง server (ดู CLAUDE.md §Supabase Projects)
+- `skill_definitions` ฝั่ง Main มี RLS ที่ `has_perm('skills:edit')` แล้ว แต่**ยังไม่มี predicate ของ `scope_section`**
+  — ใส่ได้ด้วยตาข่าย `app_can_write_line`-สไตล์ (ทำแบบเดียวกับ LPA §11 กลุ่มถัดไป)
+
+## 15. 🏠 รอบ 11 (20/10) — "บ้านจริง" ถูกเขียนทับด้วย "ขอบเขตการมองเห็น" (feedback user จากจอจริง)
+
+> user: *"พวกงานคุณภาพเลือก section PD3 นี่ผิดปะ"* · *"ต้องจัดตรงนี้ใหม่ เหมือนการกรอกข้อมูลมันกลับไปกลับมา"*
+
+### 🔴 ต้นเหตุ — `/add-user` บันทึก `profiles.section = form.sections[0]`
+
+ช่องติ๊ก **③ ขอบเขตส่วนงาน** ตอบคำถาม *"เห็นข้อมูลของใคร"* แต่ค่าช่องแรกถูกเขียนลง
+`profiles.section` ซึ่งเป็น **บ้านจริง** = แกนตัดสิน *"แก้ข้อมูลของใครได้"* (ชั้นสิทธิ์ที่ ③)
+⇒ ติ๊กพื้นที่ที่ไปทำงาน แล้ว**สังกัดเปลี่ยนตามเงียบๆ**
+
+**วัดจริง 20/10 (Main):** บัญชี role `qa` 15 ใบ — **13 ใบ `profiles.section = PD3`**
+ทั้งที่ทะเบียนพนักงานบอกว่าทุกคนสังกัด **QA** (ตั้ง PD3/PD4 ไว้เพราะเป็นพื้นที่ที่เขาไปตรวจ)
+· 124 บัญชีทั้งระบบ: `sections` ว่าง 29 · ตรงกับ `section` เป๊ะ 86 · มีหลายส่วนงาน 9 · บ้านไม่อยู่ในลิสต์ 0
+  (= ยืนยันว่า `section` ถูก derive จาก `sections[0]` มาตลอด ไม่เคยถูกตั้งแยก)
+
+### ✅ วันนี้ยังไม่กัด — แต่เป็นระเบิดเวลา
+
+1. ตอนรันจริง `App.jsx` ใช้ **`emp.section ?? ident.section`** (ทะเบียนพนักงานชนะ) ⇒ `UserContext.section` = **QA** ถูกต้องอยู่แล้ว
+2. role `qa` ถือ `scope:all_units` ⇒ ชั้น ③ ไม่ได้จำกัดเขาอยู่แล้ว
+🔴 **แต่** `writeUnitsOf()` (`utils/writeScope.js`) ใช้ **`sections` ก่อน** แล้วค่อยถอยไป `section`
+⇒ วันที่ถอด `scope:all_units` ออกจาก role `qa` (ซึ่งเป็นเป้าหมายของ audit นี้) QC 13 คนจะกลายเป็น
+"คนของ PD3" ทันที — **แก้ข้อมูล PD3 ได้ แต่แก้ของ QA ตัวเองไม่ได้** (กลับหัวกับความจริง)
+
+### ✅ ที่แก้ (`src/pages/AddUser.jsx`)
+
+| เดิม | ใหม่ |
+|---|---|
+| `section: form.sections[0]` ทั้งตอนสร้างและตอนแก้ | `section: homeSectionForSave()` — **ทะเบียนพนักงานชนะ** (`linkedEmp()?.section \|\| form.homeSection`) สูตรเดียวกับ `App.jsx` |
+| ไม่มีช่องบอกบ้านจริงเลย | ช่อง **🏠 ส่วนงานที่สังกัด (บ้านจริง)** ในบล็อกตัวตน — บัญชีของคน = อ่านอย่างเดียวจากทะเบียน + ลิงก์ไปแก้ที่ `/operator` · บัญชีกลาง = เลือกเองได้ 1 ส่วนงาน |
+| ลำดับฟอร์มสลับไปมา: ตำแหน่ง(ขวาบน) → สิทธิ์ ① ② ③ ④ → **Team/ไลน์ (จากทะเบียนพนักงาน) ท้ายสุด** | ไหลทางเดียว: ประเภทบัญชี → พนักงาน → **ตำแหน่ง · บ้านจริง · Team · ไลน์ (ทะเบียนพนักงานทั้งก้อน)** → 🔐 สิทธิ์ ① ② ③ ④ |
+
+### 🧹 ข้อมูลที่ค้างอยู่ (ยังไม่แก้ — ต้องให้ user เคาะ)
+
+13 บัญชี QC ที่ `profiles.section = PD3` · แก้ให้ตรงทะเบียน (`QA`) ได้ด้วย SQL ชุดเดียว
+**โดยไม่แตะ `sections`** (พื้นที่ที่เขาต้องเห็นยังเป็น PD3/PD4 เหมือนเดิม)
+· ⚠️ ถ้าแก้ **ก่อน** ตัดสินเรื่อง `writeUnitsOf` precedence จะยังไม่เปลี่ยนพฤติกรรมอะไร
+  (เพราะ `sections` ชนะอยู่) — แต่ทำให้ worklist "⚠️ ตัวตนไม่ตรงฐานพนักงาน" ลดลง 13 ใบ
+
+### ❓ คำถามที่ต้องให้ user เคาะ — `writeUnitsOf` ควรให้ **บ้านจริงชนะ** ไหม
+
+วันนี้: `sections` (เห็น) ชนะ `section` (บ้าน) · ผลกระทบถ้าสลับเป็น "บ้านจริงชนะ" = **9 บัญชี**
+ที่ติ๊กหลายส่วนงาน (จะแคบลงเหลือบ้านเดียว) · อีก 115 บัญชีไม่เปลี่ยน
+🔴 เป็นการเปลี่ยน**ความหมายของสิทธิ์** ⇒ ห้าม auto-merge ตามกฎ CLAUDE.md (ต้องถามก่อน)
+
+### ✅ `/operator` — ผู้จัดการ/หัวหน้าส่วน ไม่ต้องมีแผนก
+
+> user: *"ดุลยทรรศน์ เป็นผู้จัดการ เลือกแค่ส่วนพอไม่ต้องเลือกแผนก"*
+
+แถบ "⚠️ ข้อมูลไม่ตรงผังองค์กร" เคยนับ `department` ว่างเป็นข้อมูลไม่ครบ**ทุกคน**
+⇒ ผู้จัดการ (ยืนเหนือชั้นแผนก) ถูกใส่ใน worklist ตลอดไปโดยไม่มีอะไรให้แก้
+· ตัดสินที่ **`needsDepartment()` (`src/utils/positions.js`)** — `false` สำหรับระดับ `manager`
+  และ `SECTION_LEVEL_POSITION_KEYS = ['section_head']` (หัวหน้าส่วน — แผนกอยู่ใต้เขา)
+· `dept_head` (หัวหน้าแผนก) **ยังต้องมีแผนก** · ไม่รู้ตำแหน่ง (`null`) = ยังต้องมีแผนก (ห้ามให้ "ไม่รู้" เป็นข้ออ้าง)
+· ช่องแผนกในตารางแสดง "ทั้งส่วนงาน" (เทา) แทน `—` เพื่อให้อ่านออกว่า *ตั้งใจ* ไม่ใช่ *ยังไม่กรอก*
+· วัดจริง: active 34 คนไม่มีแผนก — เข้าข่ายข้อยกเว้นนี้ **7 คน** (ผจก. 3 · หัวหน้าส่วน 4) ที่เหลือยังต้องไล่แก้ตามเดิม
+
+🛡️ ด่าน `home-unit-vs-view-scope` ตรึงทั้ง 2 เรื่องไว้ (`regressionGuards.test.mjs`)

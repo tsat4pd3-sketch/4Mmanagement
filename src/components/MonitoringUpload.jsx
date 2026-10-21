@@ -92,7 +92,7 @@ export default function MonitoringUpload({ canUpload, canBoard = true, fullName,
          ตัวเลือกคลัง = `refStockOf` ตัวเดียวกับจุดเรียกเติม (พาร์ทล็อตสโตร์ = ที่ไลน์ · นอกนั้นตามกฎ)
          🔴 อ่านกฎ/ล็อตไม่ได้ = **ไม่ลงยอดผลิตเลย** (ถอยไปลงที่ไลน์ = บั๊กเดิมกลับมา) */
       const [ruleR, lotR] = await Promise.all([
-        supabaseDR.from('stock_inflow_rules').select('match_type, match_value, dest_line_name, is_active').eq('is_active', true),
+        supabaseDR.from('stock_inflow_rules').select('match_type, match_value, dest_line_name, is_active, mode').eq('is_active', true),
         fetchAllRows(supabaseDR, 'child_lot_requests', 'child_mat_no', q => q.neq('status', 'cancelled').order('child_mat_no')),
       ]);
       const stockRulesOk = !ruleR.error && !lotR.error;

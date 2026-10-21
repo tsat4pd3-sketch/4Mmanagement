@@ -24,3 +24,24 @@
 - ได้ไฟล์เฉพาะตอนคอมเปิด — ปิดเครื่องไปเมลไม่หาย เปิดมาไล่ส่งย้อนหลังตาม `lookback_days`
 - ส่งซ้ำไม่ได้: จำเมลที่ส่งแล้วใน `state.json` + ฝั่ง ESM กันซ้ำด้วย Message-ID + ชื่อไฟล์
 - โทเคนอยู่ใน `config.ini` เท่านั้น (ไม่เข้า git) · หลุด = แจ้งทีมระบบปิด (`demand_mail_tokens.is_active=false`) แล้วออกใหม่
+
+## 📊 กฎชุดที่ 2 — รายงานบัญชีรายเดือน (เพิ่ม 2026-10-20)
+
+สคริปต์ตัวเดียวกันดูเมล 2 ชนิดแล้ว: `[mail]` = EDI 830/862 เดิม · `[mail.acct]` = ไฟล์ **"01 Report Monthly FS <เดือน>-<ปี> TSAT P4"** จากบัญชี
+(มาเดือนละฉบับ ช่วงวันที่ 10-20) · ค่า default อยู่ใน `DEFAULTS['mail.acct']` ของสคริปต์ — ปกติ**ไม่ต้องตั้งอะไรเพิ่ม** แค่ `restart.bat` ให้สคริปต์ใหม่ทำงาน
+· เปลี่ยนเงื่อนไขหรือปิดกฎ → เพิ่ม section ใน `config.ini`:
+
+```ini
+[mail.acct]
+enabled = 1
+subject_regex = Report\s*Monthly\s*FS
+sender_contains = @thaisummit
+attachment_regex = Report.*Monthly.*FS.*\.(xlsb|xlsx|xlsm)$
+lookback_days = 45
+```
+
+· ไฟล์ชุดนี้ส่งขึ้นคิวเดียวกัน (`demand_mail_inbox`) แต่ติดป้าย `kind = acct` ⇒ **ไม่โผล่ในแผง 📬 ของ /planner-sales** ·
+  ตัวที่หยิบไปใช้ = GitHub Actions `acct-import` (ทุกวัน 09:17 ช่วงวันที่ 10-21) เขียนตัวเลขฐาน KPI ทั้งโรงงานใน `/obeya?tab=kpi` ให้เอง
+· เมลฉบับเดียวเข้าได้กฎเดียว (กฎแรกที่ผ่านชนะ) · state.json ของกฎนี้ใช้คีย์ `acct:<message id>` — ของ EDI เดิมไม่เปลี่ยน
+· `run-diag.bat` แสดงว่าแต่ละฉบับเข้ากฎไหน (`✅ [acct] …`) หรือตกเพราะอะไรทั้ง 2 กฎ
+

@@ -346,9 +346,16 @@ test('ด่านอนุมัติ: งานซ่อม/บริกา�
   assert.deepEqual(canDoStep(3, head), { ok: true, code: 'perm' });
 });
 
-test('ด่านอนุมัติ: manage_master ยังผ่านได้ (กฎเดิมของทั้งโมดูล — หัวหน้าปลดล็อกเองได้)', () => {
+/* 🔴 เปลี่ยนกฎ 2026-10-20 (QC audit §7.2 · คำสั่ง user "ปิดทั้ง 2 ทาง")
+   เดิม manage_master ข้ามด่านอนุมัติได้ ⇒ ด่านนี้เป็นของปลอมสำหรับช่างทุกคน
+   เพราะคีย์นั้นถูกแจกให้ role `mtn` ทั้งก้อน 16 บัญชี (ไม่ใช่แค่หัวหน้า)
+   ⇒ ตอนนี้ด่านอนุมัติอยู่ **เหนือ** manage_master แล้ว — ทางออกคือให้ ผจก. เซ็น ไม่ใช่กดข้าม */
+test('🔒 ด่านอนุมัติ: แม้ถือ manage_master ก็เริ่มงานปรับปรุง/สร้างก่อน ผจก.เซ็น ไม่ได้', () => {
   const boss = { order: ORDER, fullName: 'ผจก.', ...perms(['manage_master']), approvalBlocked: true };
-  assert.deepEqual(canDoStep(2, boss), { ok: true, code: 'manage_master' });
+  assert.deepEqual(canDoStep(2, boss), { ok: false, code: 'await_mgr_approval' });
+  assert.deepEqual(canDoStep(3, boss), { ok: false, code: 'await_mgr_approval' });
+  // เซ็นแล้ว (approvalBlocked=false) = เดินงานได้ตามปกติ
+  assert.deepEqual(canDoStep(2, { ...boss, approvalBlocked: false }), { ok: true, code: 'manage_master' });
 });
 
 /* ═══ 🔴 ลำดับลายเซ็น 7 จุดของใบ MTN (คำสั่ง user 2026-09-22 — เคยสลับผิดมา 2 รอบ) ═══════
@@ -441,11 +448,13 @@ test('QA: งานปรับปรุง/สร้างไม่ต้อง
     { ok: false, code: 'not_waiting_qa' });
 });
 
-test('canSignMtnApproval: คนที่ถูกระบุชื่อ / ผู้ถือ approve / manage_master เซ็นได้ · เซ็นแล้วซ้ำไม่ได้', () => {
+/* 🔴 2026-10-20: ถอดทาง manage_master ออกจากช่องเซ็น ผจก. (ไม่มีการ "เซ็นแทน" · กฎ 04/10)
+   เกิดจริง 1 ใบ: บัญชีกลาง `maintenance` (role mtn ไม่มี approve) เซ็นอนุมัติแทน ผจก. */
+test('canSignMtnApproval: เฉพาะคนที่ใบระบุชื่อ / ผู้ถือ approve · manage_master เซ็นแทนไม่ได้ · เซ็นแล้วซ้ำไม่ได้', () => {
   const o = { purpose: 'improve', dept_manager_name: 'ผจก.สมศรี', plant_manager_name: 'ผจก.โรงงาน' };
   assert.deepEqual(canSignMtnApproval('dept', { order: o, fullName: 'ผจก.สมศรี', ...perms([]) }), { ok: true, code: 'named' });
   assert.deepEqual(canSignMtnApproval('dept', { order: o, fullName: 'คนอื่น', ...perms(['approve']) }), { ok: true, code: 'approve' });
-  assert.deepEqual(canSignMtnApproval('dept', { order: o, fullName: 'คนอื่น', ...perms(['manage_master']) }), { ok: true, code: 'manage_master' });
+  assert.deepEqual(canSignMtnApproval('dept', { order: o, fullName: 'คนอื่น', ...perms(['manage_master']) }), { ok: false, code: 'denied' });
   assert.deepEqual(canSignMtnApproval('dept', { order: o, fullName: 'ช่างเอก', ...perms(['service']) }), { ok: false, code: 'denied' });
   assert.deepEqual(canSignMtnApproval('dept', { order: { ...o, dept_manager_at: 'x' }, fullName: 'ผจก.สมศรี', ...perms(['approve']) }),
     { ok: false, code: 'already_signed' });

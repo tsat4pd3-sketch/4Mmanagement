@@ -6,6 +6,7 @@ import { supabase } from '../supabaseClient';
 import { toast } from './Toast';
 import { LIGHT } from '../utils/npi';
 import { toDecodableImage, isHeicFile } from '../utils/heicToJpeg';
+import { looksLikeImage, isGifFile, GIF_MAX_BYTES, GIF_TOO_BIG_MSG } from '../utils/imageFileKind';
 import { uploadOpts } from '../utils/storageUpload';
 
 export const inp = {
@@ -99,9 +100,14 @@ export async function uploadNpiFile(folder, file) {
     try { file = await toDecodableImage(file); }
     catch (e) { toast.error(e?.message || 'อ่านไฟล์รูปไม่ได้'); return null; }
   }
+  /* 🔴 ชนิดไฟล์ตัดสินที่ `utils/imageFileKind.js` จุดเดียว **ห้ามเทียบ `file.type` เองในหน้า**
+     — Android/ตัวจัดการไฟล์ส่ง MIME ว่างมากับรูปจริง ⇒ `type.startsWith('image/')` เป็นเท็จ
+     = ข้ามการบีบทั้งหมด อัปไฟล์ดิบถึง 20MB ขึ้น `npi-files` เงียบๆ (QC audit 20/10)
+     🔴 และ GIF ต้องมีเพดาน 2MB (บีบไม่ได้ — บีบแล้วภาพเคลื่อนไหวหาย · บทเรียน egress 11/09) */
+  if (isGifFile(file) && file.size > GIF_MAX_BYTES) { toast.error(GIF_TOO_BIG_MSG); return null; }
   let toUpload = file;
   let ext = (file.name.split('.').pop() || 'bin').toLowerCase();
-  if (file.type.startsWith('image/') && file.type !== 'image/gif') {
+  if (looksLikeImage(file) && !isGifFile(file)) {
     try {
       // รูปแบบ/หลักฐาน = tier drawing (ต้องซูมอ่านได้) — สเปคเดียวกับ pe-images/qa-drawings
       const { default: imageCompression } = await import('browser-image-compression');

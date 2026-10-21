@@ -29,7 +29,8 @@ import { pickBoardRows, normKpiRowName, moveBoardKey } from '../utils/kpiBoardRo
 import { checkWriteRows } from '../utils/dbWrite';
 import { loadPmTeams, pmTeamsSync } from '../utils/pmTeams';
 import { mtnAutoSeries, autoKpiOfName, toRowUnit, autoDetailText, HOURS_PER_MONTH } from '../utils/kpiAuto';
-import { GAP, useSheetGrid, StatusLamp, Sheet, WarnNote, EmptyChart, FocusAxisNote } from './ObeyaSheet';
+import { GAP, useSheetGrid, StatusLamp, Sheet, WarnNote, EmptyChart, FocusAxisNote, TV_SHEET_GRID } from './ObeyaSheet';
+import useTvShell from '../utils/useTvShell';
 import { balanceGrid } from '../utils/sheetGrid';
 import { applyFormulaEntries, buildBaseIndex, formulaNoteText } from '../utils/kpiFormula';
 import { headcountAuto, headcountAutoVar } from '../utils/kpiHeadcount';
@@ -149,6 +150,8 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
   /* 👁 แผ่น Machine Break Down ดูได้ 2 หน่วย (user 13/10 "ไม่ต้องแก้ แต่เพิ่มให้ดูได้ทั้ง 2 หน่วย") — KPI ทางการยังเป็น % ·
      มุมมอง "ชม." = ชั่วโมงเครื่องหยุด แปลงจาก % ด้วยฐานเดียวกับสูตร (730 × จำนวนเครื่อง ÷ 100) **ไม่แตะข้อมูล/เป้า** · สถานะไฟตัดสินจาก % เหมือนเดิม */
   const [hrRows, setHrRows] = useState(() => new Set());
+  /* ?hr=1 (จอวนหน้า) = ทุกแผ่นที่สลับได้เริ่มที่ "ชม." · hrRows จึงเป็น "แผ่นที่กดสลับจากค่าเริ่มต้น" · ไม่มีในลิงก์ = เดิมเป๊ะ (เริ่ม %) */
+  const [hrDefault] = useState(() => urlBool('hr', false));
   const toggleHr = (key) => setHrRows((prev) => { const n = new Set(prev); if (n.has(key)) n.delete(key); else n.add(key); return n; });
   const wrapRef = useRef(null);
   const reqRef = useRef(0);                             // กันผลโหลดเก่าทับผลใหม่
@@ -329,10 +332,12 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
         kplans = kp.rows || [];
       }
       /* 💰 ตัวเลขฐาน (ยอดขายกลางของโรงงาน + ยอดเงินของหน่วย) — นิยาม provider='formula' คำนวณค่ารายเดือนจากตรงนี้ (15/10) · ตารางยังไม่มี = ไม่มีสูตร */
+      /* cap-ok: kpi_base_inputs ต่อปี สูงสุด 63 แถว (วัด 20/10) */
       const kb = await supabase.from('kpi_base_inputs').select('id, month, scope_kind, scope_value, var_key, value').eq('year', year).limit(5000);
       if (kb.error && (kb.error.code || '') !== '42P01') warn.push('ตัวเลขฐาน KPI');
       const kbase = kb.data || [];
       /* 👥 ทะเบียนพนักงาน active — ตัวหาร manpower ของ "ยอดขาย/หัว" เมื่อไม่มีใครกรอก (ค่ากรอกมือชนะ) */
+      /* cap-ok: employees ทั้งโรงงาน 351 คน (วัด 20/10) */
       const em = await supabase.from('employees').select('id, section, department, is_active, start_date').eq('is_active', true).limit(5000);
       if (em.error) warn.push('ทะเบียนพนักงาน');
       const kemps = em.data || [];
@@ -697,7 +702,8 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
   ], [rows]);
   /* ⚖️ 15/10 (user: "เกลี่ยหน้าแรกเหลือ 8 การ์ด ที่เหลือไปหน้า 2") — เกินหน้าเดียวเมื่อไหร่ เกลี่ยให้ทุกหน้าใกล้เคียงกัน
      โดยลดคอลัมน์ (แผ่นกว้างขึ้น ไม่เคยเล็กลง) · `balanceGrid` pure มีเทส */
-  const grid = balanceGrid(useSheetGrid(wrapRef, 10), sheetItems.length);
+  const tv = useTvShell();   // 📺 จอประชุม = 3×2 ต่อหน้า (TV_SHEET_GRID) · จอคอมเหมือนเดิม
+  const grid = balanceGrid(useSheetGrid(wrapRef, 10, tv ? TV_SHEET_GRID : undefined), sheetItems.length);
   const { cols, cw, ch, fit, k } = grid;
 
   /* ── 📖 แบ่งหน้าแทนการเลื่อน (25/09 · คำสั่ง user "ดูจบได้ในหน้าเดียว … กดเปลี่ยนหน้า") ──
@@ -809,7 +815,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
   /* ⚠️ เตือนบนแผ่น — เฉพาะเรื่องที่คนต้องลงมือ: ไฟเทา (ไม่มีค่า/ไม่มีเป้า) · ค่าโรงงานยังไม่มีนิยาม · กรอกไว้แต่ถูกค่าระบบทับ */
   const cardWarn = (r, kk) => {
     if (r.st === ST.unknown) return r.note ? <WarnNote k={kk} text={r.note} /> : (r.why || null);   // ไม่มีค่า/ไม่มีเป้า: มีเหตุผลยาว = กล่อง · ไม่มี = ข้อความสั้นตามเดิม
-    if (r.mix?.overlapN) return <WarnNote k={kk} tone="#94a3b8" text={`✍️ แท่งจางที่ซ้อนอยู่ = ค่ากรอกมือ ${r.mix.overlapN} เดือน (ทีมคิดเอง) · แท่งเต็ม = ค่าระบบ — กดแท่งเพื่อดูทั้ง 2 ค่า`} />;
+    if (r.mix?.overlapN) return <WarnNote k={kk} tone="#94a3b8" tvHide text={`✍️ แท่งจางที่ซ้อนอยู่ = ค่ากรอกมือ ${r.mix.overlapN} เดือน (ทีมคิดเอง) · แท่งเต็ม = ค่าระบบ — กดแท่งเพื่อดูทั้ง 2 ค่า`} />;
     return null;
   };
   /* popup 🔍 = ที่ของรายละเอียดเต็ม (ไม่จำกัดบรรทัด): คาดปลายปี · เกณฑ์ที่ใช้ตัดสิน · ที่มา/หมายเหตุเต็ม */
@@ -822,7 +828,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
   );
   /* `kk` = สเกลของแผ่นที่กำลังวาด (ปกติ = k ของกริด · ใน popup 🔍 ขยาย = ใหญ่กว่า) ⇒ ฟอนต์แกน/ป้ายโตตามแผ่น */
   /* 👁 มุมมองหน่วยของแผ่น (ตอนนี้มีแค่ MBD: % ↔ ชม.) — แปลงตอนวาดเท่านั้น · ค่าในแถว/สถานะ/คาดปลายปียังเป็น % */
-  const hvR = (r) => !!(r.hrPerPct && hrRows.has(r.key));
+  const hvR = (r) => !!(r.hrPerPct && (hrDefault ? !hrRows.has(r.key) : hrRows.has(r.key)));
   const cvR = (r, v) => (v == null ? null : hvR(r) ? v * r.hrPerPct : v);
   const unitR = (r) => (hvR(r) ? 'ชม.' : r.unit);
   const decR = (r) => (hvR(r) ? 1 : r.dec);
@@ -1014,11 +1020,12 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       )}
       {board && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px', flexShrink: 0, borderBottom: '1px solid var(--border)', flexWrap: 'wrap' }}>
-          <div style={{ fontSize: 18, fontWeight: 900 }}>📋 OBEYA · {scope ? org.labelOf(scope.kind, scope.value) : '—'}</div>
-          {controls}
-          <StatusLamp k={1} w={999} stat={overallLamp} />
+          <div style={{ fontSize: tv ? 26 : 18, fontWeight: 900 }}>📋 OBEYA · {scope ? org.labelOf(scope.kind, scope.value) : '—'}</div>
+          {/* 📺 จอประชุม: ตัวเลือกขอบเขต/เดือน/โฟกัส ไม่มีใครกด ⇒ เหลือแค่ "ดูเดือนไหน" ตัวโต */}
+          {tv ? <b style={{ fontSize: 24 }}>{monthText}{live && <span style={{ marginLeft: 8, fontSize: 20, color: '#22c55e' }}>● สด</span>}</b> : controls}
+          <StatusLamp k={tv ? 2 : 1} w={999} stat={overallLamp} />
           <div style={{ flex: 1 }} />
-          <button onClick={() => goBoard(false)} style={pill(false)}>ออกจากโหมดจอ</button>
+          <button className="tv-hide" onClick={() => goBoard(false)} style={pill(false)}>ออกจากโหมดจอ</button>
         </div>
       )}
 
@@ -1106,12 +1113,12 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
           user 30/09: "ยังไม่ครบ มาอยู่ข้างล่างดีมั้ย เพื่อไม่ให้สเกลกราฟวิ่งไปวิ่งมา" · เดิมอยู่บนหัว โผล่/หายตามเดือน ⇒ กริดสูงไม่เท่ากัน */}
       <div style={{ minHeight: 26, margin: board ? '2px 8px 4px' : '6px 0 0', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         {warnLines.map((w, i) => (
-          <span key={i} style={{ fontSize: 11.5, fontWeight: 700, padding: '3px 10px', borderRadius: 999, color: err ? '#ef4444' : '#f59e0b', background: `${err ? '#ef4444' : '#f59e0b'}1a`, border: `1px solid ${err ? '#ef4444' : '#f59e0b'}55` }}>⚠ {w}</span>
+          <span key={i} style={{ fontSize: tv ? 20 : 11.5, fontWeight: 700, padding: tv ? '4px 14px' : '3px 10px', borderRadius: 999, color: err ? '#ef4444' : '#f59e0b', background: `${err ? '#ef4444' : '#f59e0b'}1a`, border: `1px solid ${err ? '#ef4444' : '#f59e0b'}55` }}>⚠ {w}</span>
         ))}
       </div>
 
       {!board && (
-        <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8, lineHeight: 1.7 }}>
+        <div className="tv-hide" style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8, lineHeight: 1.7 }}>
           ตัวเลข = สะสมเดือนที่เลือก · ⚡ ระบบคำนวณจากกะที่ปิดแล้ว (OEE ถ่วงเวลารับภาระ · PPM = ของเสีย ÷ ยอดที่ผลิตทั้งหมด (สแกนดี + เสีย) × 10⁶ ไม่รวมงานทดลอง)
           · ✍️ ต้องกรอกที่แท็บ ⚙️ ตั้งค่า KPI / กรอกผล · สีแท่ง/ไฟ = เกณฑ์ทางการ ถึง Target = เขียว · ถึงแค่ Commitment = เหลือง · ไม่ถึง = แดง · ไม่มีเป้าหรือไม่มีค่า = เทา (ไม่ใช่ผ่าน)
           · แท่ง "สรุป" = {`เฉลี่ยถ่วงน้ำหนักทั้งปี (แถว ⚡) / เฉลี่ยเดือนที่กรอก (แถว ✍️)`} · กดแท่งเดือนเพื่อดูเดือนนั้น

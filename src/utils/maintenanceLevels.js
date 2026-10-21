@@ -301,7 +301,7 @@ export const RULES = [
  */
 export function buildMaintenanceLevels({
   checklists = [], jigs = [], plans = [], lastInspByChecklist = {},
-  machines = [], downtimes = [], sessions = [], breakPolicies = [],
+  machines = [], downtimes = [], sessions = [], breakPolicies = [], lineRules = null,
   lineFamilyOf = null, sessionLineOf = null,
   isAm = () => false,   // (department) => true เมื่อเป็นทีม AM (ผลิตตรวจเอง) — ผู้เรียกส่ง isAmTeam จาก utils/pmTeams (ไฟล์นี้ต้อง pure)
   spare = null,          // ผลของ spareDemand() — ไม่ส่ง = กฎ spare_short ไม่ทำงาน
@@ -313,7 +313,7 @@ export function buildMaintenanceLevels({
 } = {}) {
   const spareShortByCl = spareShortageByChecklist(spare);
   const win = splitWindows({ downtimes, sessions, todayStr, w });
-  const relArgs = { machines, lineFamilyOf, sessionLineOf, breakPolicies, includeIdle: true };
+  const relArgs = { machines, lineFamilyOf, sessionLineOf, breakPolicies, lineRules, includeIdle: true };
   const R = machineReliability({ ...relArgs, downtimes: win.recent.downtimes, sessions: win.recent.sessions });
   const B = machineReliability({ ...relArgs, downtimes: win.base.downtimes, sessions: win.base.sessions });
   const recByKey = new Map(R.rows.map(r => [r.key, r]));

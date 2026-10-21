@@ -192,6 +192,16 @@
 `jigs` (ทะเบียนอุปกรณ์ · `module='mtn'`) → `checklists` → `jig_checkpoints` → `inspection_results`
 ⚠️ ชื่อตาราง `jigs` เป็นชื่อเดิมตั้งแต่ตอนมีแต่จิ๊ก — **ตอนนี้เก็บเครื่องจักรด้วย** ห้ามอ่านจากชื่อ
 
+## 📤 Export ใบตรวจ PM (FM-JIG-003 · PDF/Excel) — กฎ (2026-10-20)
+
+ปุ่ม export ในประวัติใบตรวจ (`/pm` → ข้อมูลการตรวจ → HistoryModal ใน `PMCheckData.jsx`) → `src/lib/pmExportPDF.js` / `pmExportExcel.js`
+- 🔴 **จุดตรวจต้องโหลดจาก `inspection_results.checkpoint_id` ของใบนั้นเอง** — ห้ามใช้ checkpoints ของแท็บทีมที่เปิดอยู่บนหน้า
+  (เคย = ใบออกมาไม่มีตารางเลย) · มีผลตรวจแต่จับคู่จุดตรวจไม่ได้ = **โยน error ห้ามออกใบเปล่า**
+- 🔴 **PDF ต้อง `registerThaiFont(doc)` + ฟอนต์ `Sarabun`** (Helvetica ไม่มี glyph ไทย · ด่าน `jspdf-needs-thai-font`)
+- ช่อง Checking = ป้ายวิธีตรวจจาก `fetchCheckingMethods` (ส่ง `methods`) · ชื่อผู้เซ็น = `profiles.full_name` (**ไม่แสดงอีเมล**)
+- Jig No ว่าง → ถอยไปใช้ `machine_no` · Process/Model/Part ว่างได้ (ทะเบียนยังไม่กรอก)
+- Legend ห่อบรรทัดในความกว้างกระดาษ ห้ามทับเลขฟอร์มท้ายใบ · ชื่อไฟล์ขึ้นต้นด้วยเลขฟอร์ม (กฎ `/doc-forms`)
+
 ---
 
 ## 📄 ที่เกี่ยวข้อง

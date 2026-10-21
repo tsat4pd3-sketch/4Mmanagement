@@ -1,5 +1,5 @@
 import { useState, useEffect, useLayoutEffect, useContext, useRef, useCallback, useMemo, Fragment } from 'react';
-import { halfDayBreakIntervals } from '../utils/oee';
+import { halfDayBreakIntervals, halfDayBreakBands, breakBandTitle } from '../utils/oee';
 import { createPortal } from 'react-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { fetchAllPages } from '../utils/fetchByIds';
@@ -25,6 +25,9 @@ import { visibleInterval } from '../utils/usePolling';
 import { RATE, LIVE } from '../utils/refreshRates';
 import { coalesce, makeIdleGate } from '../utils/liveRefresh';
 import { positionAllCards, delayedCountOf, orderKeyOf, projectedFinishMs, planStatusOf, pushChainOf, dayDelaySummaryOf } from '../utils/heijunkaQueue';
+import { matchPlanToActual } from '../utils/planLots';
+import PlanFrameBar from '../components/PlanFrameBar';
+import PlanFrameRow from '../components/PlanFrameRow';
 import { buildBoardCards } from '../utils/boardCards';
 import PlanSlipBar from '../components/PlanSlipBar';   // 📋 แถบ "หลุดแผนไปแค่ไหน" (เวลา+ยอด · 2026-09-30)
 import DelayBlameBar from '../components/DelayBlameBar';   // 🔗 สรุปดีเลย์ของวัน + ต้นเหตุ/ผู้ถูกพาล (ทีมปั๊ม 2026-09-30)
@@ -385,7 +388,7 @@ export default function Management() {
     return (chain.find(n => linesWithLayout.has(n)) || null) === layoutLineName;
   }, [allLines, linesWithLayout, layoutLineName]);
 
-  const fetchLineProd = useCallback(async (lineNames) => {
+  const fetchLineProd = useCallback(async (lineNames, boardLine = null) => {
     if (!lineNames?.length) { setLineProdData(null); return; }
     const dateStr = boardDate;
     const { data: sessions } = await supabaseDR
@@ -402,7 +405,17 @@ export default function Management() {
     if (ordErr) ({ data: orders } = await supabaseDR.from('prod_orders').select(ordCols.replace(', machine_no', '')).in('session_id', sessionIds));
     // production_sessions.product_id ไม่ได้ตั้งค่าเสมอ (กะนึงมีได้หลาย mat_no)
     // จึง fallback ไปหา cycle_time_sec ตรงจาก mat_no ของออเดอร์เอง
-    const matNos = [...new Set((orders || []).map(o => o.mat_no).filter(Boolean))];
+    /* 🧾 กรอบแผนของวัน (Layer 1) — โหลดก่อนหา CT เพราะพาร์ทในกรอบที่ "ยังไม่เปิดใบ"
+       ไม่มีใน `orders` ⇒ ถ้าไม่รวม mat ของกรอบเข้าไปด้วย จะไม่มี CT = กล่องกรอบวางเวลาไม่ได้ทุกใบ
+       (ซึ่งคือเคสที่แถวกรอบตั้งใจจะโชว์พอดี) · 🔴 error = `null` ≠ "ไม่มีกรอบ" (จอแยก 2 ความหมาย) */
+    const planRes = await supabaseDR.from('production_plan_lots')
+      .select('id, work_date, shift, line_name, seq, mat_no, part_name, qty_plan, est_min, status, source')
+      .eq('work_date', dateStr).in('line_name', lineNames);
+    const planLots = planRes.error ? null : (planRes.data || []);
+    const matNos = [...new Set([
+      ...(orders || []).map(o => o.mat_no),
+      ...(planLots || []).map(l => l.mat_no),
+    ].filter(Boolean))];
     const ctMap = {};
     const nameMap = {};
     const imgMap = {};
@@ -424,13 +437,13 @@ export default function Management() {
     (dtLogs || []).forEach(d => { (dtBySession[d.session_id] ||= []).push(d); });
     const enriched = sessions.map(s => ({ ...s, orders: ordersBySession[s.id] || [], dtLogs: dtBySession[s.id] || [] }));
     const { data: breakPolicies } = await supabaseDR.from('break_policies').select('*').eq('is_active', true);
-    setLineProdData({ sessions: enriched, workDate: dateStr, ctByMatNo: ctMap, nameByMatNo: nameMap, imgByMatNo: imgMap, pairMatByMat: pairMap, breakPolicies: breakPolicies || [] });
+    setLineProdData({ boardLine, sessions: enriched, workDate: dateStr, ctByMatNo: ctMap, nameByMatNo: nameMap, imgByMatNo: imgMap, pairMatByMat: pairMap, breakPolicies: breakPolicies || [], planLots });
   }, [boardDate]);
 
   useEffect(() => {
     if (!selectedLine) return;
-    fetchLineProd(viewLineNames);
-    return visibleInterval(() => fetchLineProd(viewLineNames), RATE.BOARD);
+    fetchLineProd(viewLineNames, selectedLine);
+    return visibleInterval(() => fetchLineProd(viewLineNames, selectedLine), RATE.BOARD);
   }, [selectedLine, viewKey, fetchLineProd]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Downtime alarm — จุดเครื่องจักรบนผังกระพริบแดงเฉพาะตอน downtime ยังเปิดค้าง (ปิดรายการ = ดับทันที) ──
@@ -1555,8 +1568,14 @@ export default function Management() {
           const imgByMatNo = lineProdData.imgByMatNo || {};
           const pairMatByMat = lineProdData.pairMatByMat || {};
           const breakPolicies = lineProdData.breakPolicies || [];
-          // 🔴 ผ่าน halfDayBreakIntervals (utils/oee.js) ที่เดียว — กรอง process/ot_scope เหมือนสูตร OEE (QC 05/10)
-          const getBreakIntervals = (half) => halfDayBreakIntervals({ policies: breakPolicies, half });
+          /* 🏭 ไลน์ของบอร์ดนี้ — มาจากก้อนข้อมูลที่โหลดมา (ไม่ใช่ `selectedLine` สด) เพื่อให้
+             เวลาพักที่วาด ตรงกับไลน์ของข้อมูลที่อยู่บนจอจริง · ไลน์ลูกตกทอดจากแม่ให้เอง */
+          const boardLine = lineProdData.boardLine || null;
+          /* 🔴 ผ่าน halfDayBreakIntervals (utils/oee.js) ที่เดียว — กรอง process/ot_scope เหมือนสูตร OEE (QC 05/10)
+             🏭 **ต้องส่ง `lineName` เสมอ** (`break_line_rules` · 20/10) — ไม่ส่ง = ไลน์ที่ตั้งพักเองกลับไปใช้ค่ากลางเงียบๆ */
+          const getBreakIntervals = (half, lineName = null) => halfDayBreakIntervals({ policies: breakPolicies, half, lineName });
+          // แถบที่ติดป้ายมาด้วย (ชื่อพัก + ไลน์นี้ตั้งเองกี่นาที) — ใช้ตอนวาดเงา ห้ามจับคู่นโยบายจากเวลาเอง
+          const getBreakBands = (half, lineName = null) => halfDayBreakBands({ policies: breakPolicies, half, lineName });
 
           // คำนวณคิวทั้งวัน (24 ชม.) ครั้งเดียวต่อแถว product แทนการตัดแยกทีละกะ
           // เพื่อให้การ์ดที่ดีเลย์ล้นข้ามกะ (เช่น ผลิตจากกะเช้าไปจบกะดึก) ต่อแถวเดิมได้ ไม่ถูกตัดทิ้งที่ขอบกะ
@@ -1565,7 +1584,7 @@ export default function Management() {
           const ROUND_MS = 2 * 3600000;
           const roundIndexOf = (ms) => Math.floor((ms - gridStartMs) / ROUND_MS);
           const roundStartOf = (idx) => gridStartMs + idx * ROUND_MS;
-          const allBreaksOnce = () => [...getBreakIntervals(HALVES[0]), ...getBreakIntervals(HALVES[1])].sort((a, b) => a[0] - b[0]);
+          const allBreaksOnce = (lineName = null) => [...getBreakIntervals(HALVES[0], lineName), ...getBreakIntervals(HALVES[1], lineName)].sort((a, b) => a[0] - b[0]);
 
 
           // ตัดผลคิวทั้งวัน (ms จริง) มาเป็น % สำหรับ "กะ" หนึ่ง ๆ — การ์ดเดียวกันแสดงต่อกันได้ทั้ง 2 กะ
@@ -1637,8 +1656,10 @@ export default function Management() {
           const linesByName = {}; (allLines || []).forEach(l => { linesByName[l.name] = l; });
           const machineCountByLine = {};
           (machinePoints || []).forEach(pt => { (machineCountByLine[pt.line_name] ||= new Set()).add(pt.machine_no); });
+          /* 🏭 คิวระดับ "กลุ่มไลน์" ⇒ กฎพักของไลน์แม่ (ลูกตกทอดจากแม่เป็นค่าตั้งต้น) ·
+             ตัวเลขรายแถว (`rowPlan`) อิงกฎของไลน์ตัวเอง */
           const positionedByOrder = positionAllCards(allCards, {
-            breaks: allBreaksOnce(), ctByMat: ctByMatNo, nowMs, frameEndMs: gridEndMs, roundIndexOf, roundStartOf,
+            breaks: allBreaksOnce(boardLine), ctByMat: ctByMatNo, nowMs, frameEndMs: gridEndMs, roundIndexOf, roundStartOf,
             flowByLine: linesByName, machineCountByLine, pairMatByMat,
           });
           const positionedForCards = (cs) => cs.map(c => positionedByOrder.get(orderKeyOf(c))).filter(Boolean)
@@ -1659,9 +1680,24 @@ export default function Management() {
             if (!blamedBy.has(v.key)) blamedBy.set(v.key, { root: c.root, blameMin: v.blameMin, pushedMin: v.pushedMin });
           }));
           const boardPlan  = planStatusOf({
-            positioned: positionedByOrder, cards: allCards, breaks: allBreaksOnce(),
+            positioned: positionedByOrder, cards: allCards, breaks: allBreaksOnce(boardLine),
             ctByMat: ctByMatNo, nowMs, frameEndMs: gridEndMs, shiftEndMs,
           });
+
+          /* ── 🧾 กรอบแผน (Layer 1) เทียบของจริง (Layer 2) ─────────────────────────────
+             🔴 สูตรกลาง `matchPlanToActual` เท่านั้น — ปันยอดรวมต่อพาร์ทตามลำดับล็อต
+                **ห้ามนับ "กี่ใบถูกเปิด" ในหน้า** (ใบเดียวอาจคลุมหลายล็อต และกลับกัน)
+             ที่มา 20/10: หน้างานไม่สแกนคัมบัง ⇒ บอร์ดว่าง ⇒ ถูกอ่านว่า "ไม่มีออเดอร์"
+                กรอบทำให้ช่องว่างนั้น **มีตัวเลข** ให้ cross-function เช็คได้ */
+          const planLots = lineProdData.planLots;
+          const planRec  = planLots?.length
+            ? matchPlanToActual(planLots, sessions.flatMap(sx => sx.orders || []))
+            : null;
+          /* แถว "กรอบแผน" บนไทม์ไลน์ — แยกตามกะ (แถบบน = กะเช้า · แถบล่าง = กะดึก เหมือนแถวพาร์ท)
+             สถานะรายล็อตมาจาก planRec เท่านั้น (ห้ามนับใบเองในหน้า) */
+          const planLotsByShift = { day: [], night: [] };
+          (planLots || []).forEach(l => { (planLotsByShift[l.shift === 'night' ? 'night' : 'day']).push(l); });
+          const planStateById = new Map((planRec?.rows || []).map(r => [r.lot.id, r.state]));
 
           const openByMatNo = {};
           sessions.forEach(s => s.orders.forEach(o => {
@@ -1679,7 +1715,7 @@ export default function Management() {
             const NIGHT_REG_IN = gridStartMs + 14.5 * 3600000;  // 22:30 (เข้าปกติ)
             const FRAME_END    = gridEndMs;                     // 08:00
             const finishFrom = (startMs, workMs) => {
-              const breaks = allBreaksOnce();
+              const breaks = allBreaksOnce(boardLine);
               let end = startMs + workMs;
               const consumed = new Set();
               let ext = true;
@@ -1788,6 +1824,10 @@ export default function Management() {
                   {/* ⚠️ ชิป "ดีเลย์ N ใบ" ถอดออก 30/09 — ซ้ำกับ "ยังค้าง N" ในสรุปวัน (`totalDelayed` ยังคุมสีขอบ) */}
                   {/* 📋 ขนาดของการหลุดแผน (นาที + ชิ้น + คาดจบ) — "กี่ใบ" อย่างเดียวตอบหน้างานไม่ได้ */}
                   <PlanSlipBar st={boardPlan} fmtMs={fmtMs} size={12} />
+                  {/* 🧾 กรอบแผนของทีมวางแผน — ต้องเห็นแม้ไม่มีใบคัมบังสักใบ (ว่าง ≠ ไม่มีงาน) */}
+                  <div style={{ flexBasis: '100%', minWidth: 0 }}>
+                    <PlanFrameBar rec={planRec} lots={planLots} size={12} />
+                  </div>
                   {/* 🔗 สรุปวัน + ต้นเหตุ/ผู้ถูกพาล (ทีมปั๊ม) */}
                   <div style={{ flexBasis: '100%', minWidth: 0 }}>
                     <DelayBlameBar day={dayDelay} chains={blameChain} />
@@ -1875,19 +1915,17 @@ export default function Management() {
                             return <div key={i} style={{ flex: 1, minWidth: 0, height: '100%', borderRight: `1px solid ${isShiftBound ? 'var(--border2)' : 'var(--border)'}`, background: isNow ? 'rgba(77,159,255,0.06)' : 'transparent' }} />;
                           })}
                           {(() => {
-                            const breaks = getBreakIntervals(half);
-                            return breaks.map(([bs, be], pi) => {
+                            /* 🏭 แถบพัก "ของไลน์แถวนี้" (break_line_rules · 20/10) · ชื่อพักมาจาก band.policies
+                               **ห้ามจับคู่จากเวลาเอง** — พัก anchor='shift_end' มี start_time = null
+                               ⇒ เดิมจับไม่ติด tooltip เขียน "undefined" */
+                            const bands = getBreakBands(half, row.line || boardLine);
+                            return bands.map((band, pi) => {
+                                const { s: bs, e: be } = band;
                                 const leftPct = Math.max(0, (bs - half.startMs) * pctPerMs);
                                 const widthPct = Math.min(100 - leftPct, (be - bs) * pctPerMs);
                                 if (widthPct <= 0) return null;
-                                const p = breakPolicies.find(bp => {
-                                  const idx = half.hours.indexOf(Number(String(bp.start_time).slice(0,2)));
-                                  if (idx < 0) return false;
-                                  const mins = Number(String(bp.start_time).slice(3,5)) || 0;
-                                  return half.startMs + idx * 3600000 + mins * 60000 === bs;
-                                }) || {};
                                 return (
-                                  <div key={`brk-${pi}`} title={`${p.name_th || p.name_en} — ไลน์ไม่รองรับ KANBAN`}
+                                  <div key={`brk-${pi}`} title={`${breakBandTitle(band, row.line || boardLine)} — ไลน์ไม่รองรับ KANBAN`}
                                     style={{
                                       position: 'absolute', top: 0, bottom: 0, left: `${leftPct}%`, width: `${widthPct}%`,
                                       background: 'repeating-linear-gradient(45deg, rgba(148,163,184,0.18) 0px, rgba(148,163,184,0.18) 4px, transparent 4px, transparent 8px)',
@@ -2051,6 +2089,14 @@ export default function Management() {
                         );
                       })}
                     </div>
+                    {/* 🧾 แถวกรอบแผน — อยู่บนสุด: อ่านจากบนลงล่าง = "วางไว้แบบนี้ → ทำได้แบบนี้"
+                        🔴 ต้องวาดแม้ไม่มีใบคัมบังสักใบ (นั่นคือทั้งเหตุผลที่มีแถวนี้) */}
+                    <PlanFrameRow
+                      lotsByShift={planLotsByShift} stateOf={(id) => planStateById.get(id) || null}
+                      halves={HALVES} breaksOf={getBreakIntervals} lineName={boardLine}
+                      ctOf={(mat) => ctByMatNo[mat] || null} pairOf={(mat) => pairMatByMat[mat] || null}
+                      leftW={LEFT_W} isMobile={isMobile}
+                    />
                     {/* Rows ต่อ product — ป้าย+รูปใหญ่ 1 อันครอบทั้ง 2 แถบเวลา */}
                     {productRows.map((row) => {
                       const rowActual = row.cards.reduce((a, c) => a + (c.isDone ? (c.qty_ok ?? c.qty ?? 0) : (c.qty_actual ?? 0)), 0);
@@ -2063,7 +2109,7 @@ export default function Management() {
                       const finOver   = finMs != null && finMs > gridEndMs;
                       /* 📋 หลุดแผนของแถวนี้ — สูตรกลางตัวเดียวกับหัวบอร์ด (ห้ามคิดเองในหน้า) */
                       const rowPlan   = planStatusOf({
-                        positioned: rowPos, cards: row.cards, breaks: allBreaksOnce(),
+                        positioned: rowPos, cards: row.cards, breaks: allBreaksOnce(row.line || boardLine),
                         ctByMat: ctByMatNo, nowMs, frameEndMs: gridEndMs, shiftEndMs,
                       });
                       const isOpen    = row.cards.some(c => c.sessionOpen);

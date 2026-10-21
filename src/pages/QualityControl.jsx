@@ -377,10 +377,13 @@ function QualityDashboard() {
       const oo = ooRes.rows, dd = ddRes.rows;
       // นับ NCR ค้างให้ตรงกับ scope ของ leader (ตัวเลข KPI จะได้ตรงกับรายการในแท็บ NCR)
       let ncrCountQ = supabase.from('qa_ncr').select('id', { count: 'exact', head: true }).not('status', 'in', QA_DONE_IN);
-      if (scopedLineNames) ncrCountQ = ncrCountQ.in('line_name', scopedLineNames);
+      // 🔴 ใบไม่ระบุไลน์ต้องนับด้วย — ตรงกับรายการในแท็บ NCR (IN ไม่จับ NULL)
+      if (scopedLineNames) ncrCountQ = ncrCountQ.or(`line_name.is.null,line_name.in.(${scopedLineNames.map(n => `"${n.replace(/"/g, '\\"')}"`).join(',')})`);
       const [{ count: nOpen, error: ncrErr }, { data: capas, error: capaErr }] = await Promise.all([
         ncrCountQ,
-        supabase.from('qa_capa').select('id, due_date, status').neq('status', 'closed'),
+        /* 🔴 ต้องกรองขอบเขตเหมือน NCR (เดิมนับทั้งโรงงาน = KPI ไม่ตรงรายการ) · ยกเลิก = ไม่ค้าง (qaDocStatus)
+           ไลน์ของใบ = ของใบเอง → ถอยไปไลน์ของ NCR (เหมือน capaLineOf) · ไม่รู้ไลน์ = นับไว้ (ห้ามซ่อนใบเก่าที่ไม่ผูกไลน์) */
+        supabase.from('qa_capa').select('id, due_date, status, line_name, qa_ncr(line_name)').not('status', 'in', QA_DONE_IN),
       ]);
       if (!alive) return;
       const errs = [];
@@ -396,7 +399,11 @@ function QualityDashboard() {
       setDefects(dd || []);
       setNcrOpen(ncrErr ? null : (nOpen || 0));
       const today = getWorkDate();
-      setCapaOverdue(capaErr ? null : (capas || []).filter(c => c.due_date && c.due_date < today).length);
+      const inScope = (c) => {
+        const ln = c.line_name || c.qa_ncr?.line_name;
+        return !scopedLineNames || !ln || scopedLineNames.includes(ln);
+      };
+      setCapaOverdue(capaErr ? null : (capas || []).filter(c => inScope(c) && c.due_date && c.due_date < today).length);
       setLoading(false);
     })();
     return () => { alive = false; };
@@ -626,14 +633,19 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
   }, []);
   useEffect(() => { loadChars(); }, [loadChars]);
 
+  /* 🔴 stale-response: สลับค่าที่ควบคุมเร็วๆ แล้วคำตอบเก่ามาทีหลัง = กราฟของอีกตัวทับ (db-write-rules ข้อ 4) */
+  const rowsReq = useRef(0);
   const loadRows = useCallback(async (charId, n) => {
+    const req = ++rowsReq.current;
     if (!charId) { setRows([]); return; }
     setLoading(true);
-    const { data } = await supabase.from('qa_measurements')
+    const { data, error } = await supabase.from('qa_measurements')
       .select('id, work_date, shift, readings, operator_name, note, created_at')
       .eq('characteristic_id', charId)
       .order('work_date', { ascending: false }).order('created_at', { ascending: false })
       .limit(n);
+    if (req !== rowsReq.current) return;
+    if (error) toast.error(`โหลดค่าที่วัดไม่สำเร็จ: ${error.message}`);
     setRows((data || []).reverse()); // เรียงเก่า→ใหม่สำหรับกราฟ
     setLoading(false);
   }, []);
@@ -997,12 +1009,20 @@ function NCRTab({ lineObjs, canRecord, canManage, onOpenCapa, partOpts = [] }) {
     if (filter === 'cancelled') q = q.eq('status', 'cancelled');
     // จำกัดตามไลน์ — 🔴 ใบที่ไม่ระบุไลน์ต้องเห็นด้วย (`IN` ไม่จับ NULL ⇒ เปิดแล้วหายจากรายการ · audit 19/10)
     if (scopedLineNames) q = q.or(`line_name.is.null,line_name.in.(${scopedLineNames.map(n => `"${n.replace(/"/g, '\\"')}"`).join(',')})`);
-    const { data } = await q;
+    const { data, error } = await q;
+    if (error) toast.error(`โหลด NCR ไม่สำเร็จ: ${error.message}`);
     setList(data || []);
   }, [filter, scopedLineNames]);
   useEffect(() => { load(); }, [load]);
 
+  /* 🔒 กดเบิ้ล = ออกเลข NCR 2 ใบ — กันด้วย ref (state ยังไม่ทันอัปเดตระหว่าง await) */
+  const creatingRef = useRef(false);
   const createNCR = async () => {
+    if (creatingRef.current) return;
+    creatingRef.current = true;
+    try { await createNCRInner(); } finally { creatingRef.current = false; }
+  };
+  const createNCRInner = async () => {
     /* ด่านชั้น 2 — ซ่อนปุ่มไม่ใช่ด่าน (โมดัลเปิดค้างตอนสิทธิ์เปลี่ยน / ยิงตรง) · NCR = บันทึกคุณภาพมีเลขที่ */
     if (!canRecord) { toast.error('เปิด/แก้ NCR ต้องมีสิทธิ์ qa:record'); return; }
     const f = createModal;
@@ -1290,7 +1310,8 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone, lineObjs = [], 
     let q = supabase.from('qa_capa').select('*, qa_ncr(ncr_no, source, part_no, line_name)').order('created_at', { ascending: false }).limit(300);
     if (filter === 'active') q = q.neq('status', 'closed');
     if (filter === 'closed') q = q.eq('status', 'closed');
-    const { data } = await q;
+    const { data, error } = await q;
+    if (error) toast.error(`โหลด CAPA ไม่สำเร็จ: ${error.message}`);
     setList(data || []);
   }, [filter]);
   useEffect(() => { load(); }, [load]);
@@ -1335,7 +1356,14 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone, lineObjs = [], 
     onPrefillDone();
   }, [prefill, onPrefillDone, fullName]);
 
-  const save = async (extra = {}, msg = 'บันทึกแล้ว ✓') => {
+  /* 🔒 กดเบิ้ล = ออกเลข CAPA 2 ใบ (await nextDocNo ระหว่างทาง) — กันด้วย ref ไม่ใช่ state (state ยังไม่ทันอัปเดต) */
+  const savingRef = useRef(false);
+  const save = async (...args) => {
+    if (savingRef.current) return;
+    savingRef.current = true;
+    try { await saveInner(...args); } finally { savingRef.current = false; }
+  };
+  const saveInner = async (extra = {}, msg = 'บันทึกแล้ว ✓') => {
     const f = { ...detail, ...extra };
     if (!f.title?.trim()) { toast.error('กรอกหัวข้อ CAPA'); return; }
     /* 🔐 ด่านซ้ำตอนกดจริง (ซ่อนปุ่มอย่างเดียวไม่พอ — เปิดใบตรงจาก NCR/เคลมได้) */
@@ -1688,16 +1716,17 @@ function InstrumentTab({ lineObjs, canManage }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-        <KpiCard label="สอบเทียบปกติ" value={counts.ok} color="#22c55e" />
-        <KpiCard label="ใกล้ครบกำหนด (≤30 วัน)" value={counts.soon} color="#f59e0b" />
-        <KpiCard label="เกินกำหนด / ยังไม่สอบเทียบ" value={counts.overdue} color="#ef4444" />
-      </div>
       <FilterBar>
         <SearchInput value={search} onChange={setSearch} fields="รหัส / ชื่อ / ตำแหน่ง" />
         <span className="spacer" />
         {canManage && <button style={btnSt()} onClick={() => setModal({ ...EMPTY_INST })}>+ เพิ่มเครื่องมือวัด</button>}
       </FilterBar>
+      {/* การ์ดตัวนับ = เนื้อหา ⇒ อยู่ใต้แถบกรอง (UI-STANDARD §2.1) */}
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+        <KpiCard label="สอบเทียบปกติ" value={counts.ok} color="#22c55e" />
+        <KpiCard label="ใกล้ครบกำหนด (≤30 วัน)" value={counts.soon} color="#f59e0b" />
+        <KpiCard label="เกินกำหนด / ยังไม่สอบเทียบ" value={counts.overdue} color="#ef4444" />
+      </div>
 
       <div className="table-sticky" style={{ ...cardSt, padding: 0, overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>

@@ -55,6 +55,8 @@ import { MTN_TEAMS, deptNameOf, teamKeyOf, teamsForUser, teamForEquipmentKind } 
 import { loadPmTeams, isAmTeam } from '../utils/pmTeams';
 import { planDueBucket } from '../lib/pmSchedule';
 import DowntimeSiren from './DowntimeSiren';
+import TvFitBox from './TvFitBox';
+import useTvShell from '../utils/useTvShell';
 import FactoryMiniMap from './FactoryMiniMap';
 import ProdProgressStrip from './ProdProgressStrip';
 import StoreWaitCards, { useStoreTv } from './StoreWaitCards';
@@ -101,6 +103,7 @@ function severity(x, thrMin) {
    ⚠️ นี่คือทางที่เอกสารวางไว้ว่า "ถ้าจะแยกจอ ให้ทำเป็น `?cards=` บนบอร์ดเดิม **ห้ามสร้างบอร์ดที่ 2**"
       — ก๊อปบอร์ดไปทำอีกใบเมื่อไหร่ = drift แน่นอน (บทเรียนบอร์ด Heijunka ที่ก๊อปกันแล้วต่างกันไปเรื่อยๆ) */
 export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
+  const tv = useTvShell();   // 📺 กรอบจอ TV — คอลัมน์ขวาพอดีจอ/เลื่อนเอง (TvFitBox)
   const { inScope, navigate, isMobile, workDate, scopeNames, lines: ctxLines } = ctx;
   const showPm = cards === 'maintenance';                 // PM = งานของช่าง — ฝ่ายผลิต/สโตร์ไม่ต้องเห็นรายแผน
   const showMo = cards !== 'store';                       // ใบซ่อมค้าง: ช่างทำ · ผลิตรอ · สโตร์ไม่เกี่ยว
@@ -533,11 +536,16 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
             → เรียงตาม "ต้องเห็นแค่ไหน" ไม่ใช่ลำดับ workflow · ใบซ่อมค้างเป็นคิวยาวที่สรุปได้จริง
               (ยอด + ขั้นที่ค้าง) จึงเป็นตัวที่ยอมให้เลื่อนตกไป
             สูงเท่า "ผังที่วัดได้จริง" แล้วเลื่อนในกรอบแทน (ห้ามเดา 100vh − Npx · กฎ §6.8) */}
-        <div style={{
-          display: 'flex', flexDirection: 'column', gap: 10,
-          maxHeight: leftH || undefined, overflowY: leftH ? 'auto' : undefined,
-          paddingRight: leftH ? 4 : undefined,
-        }}>
+        {/* 📺 20/10 (user "scale/ผังให้เหมือนกัน" · รูปจอจริง: การ์ดท้ายคอลัมน์ถูกตัด) — จอ TV เลื่อนเองไม่ได้
+            ⇒ TvFitBox ตัวเดียวกับแผงขวาของผังรวม: ย่อให้พอดี (ถึง 70% — ตัวอักษรตั้งต้น ×2 อยู่แล้ว) · ยังล้น = เลื่อนขึ้นลงเอง
+            จอคอม = กล่องเลื่อนในกรอบเหมือนเดิม (style เดิมเป๊ะ) */}
+        <TvFitBox enabled={tv} maxScale={1} minScale={0.7} bottomGap={12}
+          style={{
+            display: 'flex', flexDirection: 'column', gap: 10,
+            maxHeight: leftH || undefined, overflowY: leftH ? 'auto' : undefined,
+            paddingRight: leftH ? 4 : undefined,
+          }}
+          innerStyle={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {/* 📦 จอสโตร์: "ไลน์ไหนรอของ" คือเนื้อหาหลัก → ขึ้นบนสุดของคอลัมน์
               (กฎเดิมของบอร์ดนี้: จอ TV ไม่มีใครเลื่อน — อะไรอยู่ล่างสุด = มองไม่เห็นตลอดกาล
                ส่วนลิสต์เครื่องหยุดยังอยู่ต่อด้านล่างเสมอ เพราะสโตร์ต้องรู้ว่าไลน์ไหนหยุดอยู่
@@ -695,7 +703,7 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
             </>)}
           </div>
           )}
-        </div>
+        </TvFitBox>
       </div>
 
       {/* ══ 🔎 กดกรอบบนผัง → เจาะดูปัญหาของไลน์นั้น (2026-08-26 · user "กดเข้าไปดูในกรอบที่มีปัญหา") ══
