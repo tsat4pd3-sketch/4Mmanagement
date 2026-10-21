@@ -252,6 +252,10 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
      (กติกาการจับคู่ + เหตุผลอยู่ใน planOrderUpdates · ห้ามจับคู่เองในหน้า) */
   const slot = useMemo(() => ({
     windowStart: parsed?.windowStart || null,
+    /* ⭐ 21/10 โหมดช่วงเวลา — ใบแผน 862 ที่ "ช่วงดึง" (เวลาส่ง − lead) อยู่ในช่วงของไฟล์ = ไฟล์นี้ยืนยันแทน
+       (planOrderUpdates · user: "862 = แผนทั้งวัน · e-SMART = คอนเฟิร์มช่วงนั้นส่งจริง") */
+    windowEnd: parsed?.windowEnd || null,
+    leadMin: parsed?.profile?.lead_min ?? 60,
     /* 🔴 workDate = วันงาน (กรอบ 08:00→08:00) · ใบลงวันที่ตามปฏิทิน ⇒ แปลงก่อนเสมอ (16/10 รอบกะดึกลงผิดวัน) */
     targetAt: workDate && shipTime ? orderShipAt(shipDueDate(workDate, shipTime), shipTime) : null,
     /* ⭐ dock = ส่วนหนึ่งของ "เที่ยวรถ" (2026-09-15) — ใบของ dock อื่นห้ามถูกแตะ */
@@ -268,7 +272,8 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
     plan.forEach(x => { t[x.action] = (t[x.action] || 0) + 1; });
     return t;
   }, [plan]);
-  const willWrite = tally.update + tally.create;
+  const mergeCount = plan.reduce((a, x) => a + (x.merge?.length || 0), 0);
+  const willWrite = tally.update + tally.create + mergeCount;
   /* 🔴 "ยอดตรงกับ 862 อยู่แล้ว" ก็ต้องบันทึกการนำเข้า (user 2026-09-10: *"วันนี้มันวันที่ 10/9/26 ทำไมมันขึ้น 9/9"*)
      ประวัติ order เข้าระบบ = หลักฐานว่า **ได้รับสัญญาณดึงจากลูกค้าแล้ว** ไม่ใช่แค่ "มีอะไรเปลี่ยน"
      เดิมกดยืนยันไม่ได้เลยถ้าไม่มีใบต้องแก้ ⇒ ไฟล์ที่ยอดตรงพอดี **หายไปจากประวัติทั้งใบ** */
@@ -290,7 +295,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
     if (live.err) { toast.error(`ตรวจสถานะล่าสุดไม่สำเร็จ: ${live.err}`); setSaving(false); return; }
     const liveGroups = aggregateSignals((parsed.rows || []).filter(r => !live.dupKeys.has(signalKey(r, SOURCE))));
     const plan = planOrderUpdates(liveGroups, live.orders, (pn) => resolveMatNo(pn, pnIndex), slot);
-    const liveWrite = plan.filter(x => x.action === 'update' || x.action === 'create').length;
+    const liveWrite = plan.filter(x => x.action === 'update' || x.action === 'create' || x.merge?.length).length;
     setOrders(live.orders); setDupKeys(live.dupKeys);
     const fresh = (parsed.rows || []).filter(r => !live.dupKeys.has(signalKey(r, SOURCE)));
     /* ไม่มีทั้งใบให้แก้ และไม่มีแถวใหม่ให้บันทึก = ไฟล์นี้เข้าไปแล้วจริงๆ ⇒ ไม่ต้องทำอะไร
@@ -362,7 +367,6 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
           // ยอดแผนเก็บ "ครั้งแรกที่ถูกยืนยัน" เท่านั้น — อัพซ้ำรอบสองห้ามทับด้วยยอดที่ยืนยันไปแล้ว
           plan_qty: x.order.plan_qty ?? x.order.qty,
           part_name: x.order.part_name || x.group.part_name || null,
-          dock_code: x.order.dock_code || x.group.dock_code || null,
           status: x.order.status === 'pending' ? 'confirmed' : x.order.status,
           pull_batch_id: batchId, ...stamp,
           /* ⭐ ย้ายเวลาส่งไปเป็น "รอบที่รถลูกค้ามารับจริง" (user 2026-09-10:
@@ -372,6 +376,9 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
              เก็บเวลาเดิมไว้ที่ `plan_ship_time` แบบเดียวกับ `plan_qty` ⇒ เทียบแผน vs จริงได้ */
           ship_time: shipTime,
           plan_ship_time: x.order.plan_ship_time ?? x.order.ship_time,
+          /* รอบรับอาจข้ามเที่ยงคืนจากเวลาแผน (ใบ 23:00 → รอบ 01:00) ⇒ วันที่ต้องตามรอบจริงด้วย */
+          due_date: shipDueDate(workDate, shipTime),
+          dock_code: parsed.dock || x.order.dock_code || x.group.dock_code || null,
         };
         // compare-and-swap กับสถานะที่อ่านมา — 2 คนอัพไฟล์พร้อมกัน/ใบเพิ่งถูกกดเตรียม = ต้องไม่ทับ
         let res = await supabaseDR.from('customer_shipping_orders').update(patch)
@@ -406,6 +413,21 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
       }
     }
 
+    /* ⭐ 4) ใบแผน 862 อื่นในช่วงเดียวกัน = ถูกแทนด้วยยอด e-SMART → ปิด (ยังเห็นบนชาร์ตเป็นใบยกเลิกพร้อมเหตุผล)
+       compare-and-swap เฉพาะใบที่ยัง pending · ห้าม delete (ต้องย้อนดูได้ว่าแผนเดิมเป็นเท่าไหร่) */
+    let merged = 0;
+    for (const x of plan) {
+      for (const o of (x.merge || [])) {
+        const res = await supabaseDR.from('customer_shipping_orders').update({
+          status: 'cancelled', cancelled_at: now, cancelled_by: fullName || 'e-SMART',
+          cancel_reason: `แทนด้วย e-SMART รอบ ${shipTime}${parsed.dock ? ` (${parsed.dock})` : ''} — แผน 862 ${String(o.ship_time || '').slice(0, 5)} × ${fmt(o.qty)}`,
+          pull_batch_id: batchId,
+        }).eq('id', o.id).eq('status', 'pending').select('id');
+        if (res.error) failed.push(`${x.group.customer_part_no}: ปิดใบแผน ${String(o.ship_time || '').slice(0, 5)} ไม่สำเร็จ — ${res.error.message}`);
+        else if (res.data?.length) merged++;
+      }
+    }
+
     if (batchId) {
       /* ตัวนับบนแถวประวัติไฟล์ — ใบจริงลงไปแล้ว ล้มตรงนี้ไม่ทำให้ยอดผิด แต่แท็บประวัติจะโชว์ 0/0
          ⇒ ห้ามเงียบ (QC 05/10 · กฎเขียน DB ข้อ 1-2: อ่าน error + นับแถว) */
@@ -421,7 +443,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
     // ⚠️ ห้ามขึ้นเขียวล้วนเมื่อมีบางรายการล้ม (หลักเดียวกับ "กดส่งแล้วหักสต็อกไม่ได้ต้องรายงาน")
     if (sigErr) failed.push(`บันทึกแถวหลักฐานไม่สำเร็จ (แท็บประวัติจะกางดูรายการไม่ได้): ${sigErr}`);
     if (failed.length) toast.error(`อัพเดท ${updated} · สร้าง ${created} · ล้มเหลว ${failed.length} — ${failed[0]}`);
-    else toast.success(`✅ ยืนยันจากลูกค้าแล้ว — อัพเดท ${updated} ใบ · สร้างใหม่ ${created} ใบ (รอบ ${shipTime})`);
+    else toast.success(`✅ ยืนยันจากลูกค้าแล้ว — อัพเดท ${updated} ใบ · สร้างใหม่ ${created} ใบ${merged ? ` · ปิดใบแผน 862 ที่ถูกแทน ${merged} ใบ` : ''} (รอบ ${shipTime})`);
     onApplied?.({ workDate, shipTime, updated, created });
     if (!failed.length) { reset(); onClose?.(); }
   };
@@ -643,6 +665,11 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
                         <td style={{ ...td, color: m.color, fontWeight: 700 }}>{m.label}
                           {x.reason && <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 500 }}>{x.reason}</div>}
                           {/* ใบอื่นในช่วงเดียวกันที่ระบบไม่แตะ — ต้องเห็น ไม่ใช่หายเงียบ */}
+                          {x.merge?.length > 0 && (
+                            <div style={{ fontSize: 11, color: '#a855f7', fontWeight: 700 }}>
+                              ↳ ปิดใบแผน 862 ในช่วงเดียวกันอีก {x.merge.length} ใบ ({x.merge.map(o => `${String(o.ship_time || '').slice(0, 5)} × ${fmt(o.qty)}`).join(' · ')}) — แทนด้วยยอด e-SMART
+                            </div>
+                          )}
                           {x.extras?.length > 0 && (
                             <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700 }}>
                               ⚠ มีใบ 862 อื่นในช่วงนี้อีก {x.extras.length} ใบ ({x.extras.map(o => `${String(o.ship_time || '').slice(0, 5)} × ${fmt(o.qty)}`).join(' · ')}) — ระบบไม่แตะ ต้องตัดสินเอง
