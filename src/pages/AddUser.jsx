@@ -22,6 +22,7 @@ import { buildOrgScope, SCOPE_KIND_META } from '../utils/orgScope';
 import { attachCc, ccCoverage, unknownRespCcs } from '../utils/ccScope';
 
 import InfoMore from '../components/InfoMore';
+import CollapseCard from '../components/CollapseCard';   // 📚 ตารางอ้างอิงชุดสิทธิ์ — พับเป็นค่าเริ่มต้น (21/10 · คำสั่ง user)
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
 import FilterBar from '../components/FilterBar';
@@ -1103,10 +1104,14 @@ export default function AddUser() {
         </table>
       </div>
 
-      {/* Role reference — หมวดที่เข้าได้ดึงจากตารางสิทธิ์จริง (role_permissions) ไม่ hardcode */}
-      <div style={{ padding: '12px 16px', background: 'var(--bg3)', borderRadius: 10, border: '1px solid var(--border2)' }}>
-        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text2)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-          สิทธิ์การเข้าถึง <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>— หมวดที่เข้าได้อ่านจากตารางสิทธิ์ปัจจุบัน ปรับรายหน้าได้ที่เมนู 🔐 จัดการสิทธิ์</span>
+      {/* 📚 ตารางอ้างอิงชุดสิทธิ์ — หมวดที่เข้าได้ดึงจากตารางสิทธิ์จริง (role_permissions) ไม่ hardcode
+          🔴 **พับเป็นค่าเริ่มต้น** (21/10 · user "มันรก ถ้าคนอยากดูค่อยกด show") — เป็นเอกสารอ้างอิง
+             ไม่ใช่ของที่ต้องอ่านทุกครั้งที่เปิดหน้า · CollapseCard จำสถานะที่คนเลือกไว้ให้เอง */}
+      <CollapseCard id="role_ref" storePrefix="add_user" defaultOpen={false}
+        title="📚 ชุดสิทธิ์มีอะไรบ้าง / เข้าหน้าไหนได้" count={ROLE_OPTIONS.length}
+        style={{ background: 'var(--bg3)', border: '1px solid var(--border2)' }}>
+        <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>
+          หมวดที่เข้าได้อ่านสดจากตารางสิทธิ์ปัจจุบัน — ปรับรายหน้าได้ที่เมนู 🔐 จัดการสิทธิ์
         </div>
         {/* ⚠️ ย้ำให้ชัดว่า role ≠ ตำแหน่งงาน — เคยเข้าใจผิดว่า "ส่วนวิศวกรรม" คือตำแหน่งวิศวกร */}
         <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10, lineHeight: 1.5 }}>
@@ -1130,6 +1135,13 @@ export default function AddUser() {
                       <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 2 }}>
                         {sum.all ? '✅ เข้าได้ทุกหน้า' : sum.total === 0 ? '— ยังไม่เปิดสิทธิ์หน้าไหน' : `เข้าได้ ${sum.total} หน้า: ${sum.groups.join(' · ')}`}
                       </div>
+                      {/* 🌐 ใบผ่านข้ามหน่วยงาน — อ่านสดจากตารางสิทธิ์ (ห้ามเขียนเป็นข้อความตายใน roleMeta
+                          ไม่งั้นคำอธิบายกับของจริงเพี้ยนคนละทาง) · ข้อความชุดเดียวกับในโมดัลแก้บัญชี */}
+                      <div style={{ fontSize: 11, marginTop: 1, color: can('scope', 'all_units', r.value) ? '#f59e0b' : 'var(--muted)' }}>
+                        {can('scope', 'all_units', r.value)
+                          ? '🌐 แก้ข้อมูลข้ามส่วนงานได้ทั้งโรงงาน'
+                          : '🔒 แก้ได้เฉพาะส่วนงานของตัวเอง (ตั้งที่ช่องขอบเขตส่วนงาน)'}
+                      </div>
                     </div>
                   </div>
                 );
@@ -1137,7 +1149,7 @@ export default function AddUser() {
             </div>
           </div>
         ))}
-      </div>
+      </CollapseCard>
 
       {/* Create / Edit Modal */}
       {showModal && (

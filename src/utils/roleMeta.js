@@ -4,7 +4,7 @@
 // ⚠️ รหัส (key) คือค่าใน DB enum user_role — ห้ามเปลี่ยน key ที่นี่ เปลี่ยนได้เฉพาะ label/icon/desc
 export const ROLE_META = {
   admin:            { icon: '🛡️', label: 'ผู้ดูแลระบบ',     en: 'System Admin',     color: 'var(--accent)', desc: 'ทุกอย่าง + จัดการผู้ใช้และสิทธิ์', axis: 'scope' },
-  manager:          { icon: '🏭', label: 'สิทธิ์ทั้งฝ่าย',   en: 'Full Access',      color: '#f59e0b', desc: 'เห็นกว้างทุกโมดูล (จำกัดบางส่วนงานได้ด้วย Section)', axis: 'scope' },
+  manager:          { icon: '🏭', label: 'สิทธิ์ทั้งฝ่าย',   en: 'Full Access',      color: '#f59e0b', desc: 'เห็นกว้างทุกโมดูล — ขอบเขตส่วนงานจำกัดได้แค่ "สิ่งที่เห็น" ไม่ได้จำกัดการแก้', axis: 'scope' },
   supervisor:       { icon: '🏢', label: 'สิทธิ์ระดับส่วน',  en: 'Section Scope',    color: '#4d9fff', desc: 'จัดการข้อมูลภายใน Section ที่รับผิดชอบ', axis: 'scope' },
   leader:           { icon: '👥', label: 'สิทธิ์ระดับไลน์',  en: 'Line/Team Scope',  color: '#22c55e', desc: 'เฉพาะไลน์ + ทีมที่รับผิดชอบ', axis: 'scope' },
   qa:               { icon: '✅', label: 'งานคุณภาพ',        en: 'Quality',          color: '#c084fc', desc: 'อนุมัติ 4M/CQI-15 + QA Center', axis: 'unit' },
@@ -19,7 +19,7 @@ export const ROLE_META = {
   mtn:              { icon: '🔧', label: 'ซ่อมบำรุง',        en: 'Maintenance',      color: '#fb7185', desc: 'PM, ผังเครื่องจักร, ฐานข้อมูลเครื่องจักร', axis: 'unit' },
   engineer:         { icon: '⚙️', label: 'ส่วนวิศวกรรม',     en: 'Process Engineering', color: '#2dd4bf', desc: 'หน่วยงานวิศวกรรมกระบวนการ — BOM / EC / New Model · ⚠️ ไม่ใช่ "ตำแหน่งวิศวกร" (วิศวกรแผนกช่างใช้ role ซ่อมบำรุง)', axis: 'unit' },
   engineer_nm:      { icon: '🚀', label: 'วิศวกรรมรุ่นใหม่',  en: 'New Model Engineering', color: '#818cf8', desc: 'ทีม Engineering New Model — เข้าได้เฉพาะ 🚀 พาร์ทใหม่ (NPI) + 📐 Flow/PFMEA/CP · ไม่เห็นหน้าอื่นทั้งระบบ', axis: 'unit' },
-  planner_store:    { icon: '📦', label: 'แผนงาน-คลัง',      en: 'Planner & Store',  color: '#38bdf8', desc: 'หมวด Planning & Store (ยุบรวม `sale` 23/09 · ยุบหมวดแผนงานเข้า Store 30/09) — บริหารสต๊อก · จ่ายของเข้าไลน์ · จ่ายงานในโรงงาน · รับ Forecast/Order ลูกค้า · วางแผนผลิต', axis: 'unit' },
+  planner_store:    { icon: '📦', label: 'แผนงาน-คลัง',      en: 'Planner & Store',  color: '#38bdf8', desc: 'บริหารสต๊อก · จ่ายของเข้าไลน์ · จ่ายงานในโรงงาน · รับ Forecast/Order ลูกค้า · วางแผนผลิต', axis: 'unit' },
   // 🚚 ฝั่ง “Warehouse & Delivery (ส่งลูกค้า)” — แยกออกมา 2026-09-23 (คำสั่ง user)
   //    เหตุผล: เดิม planner_store ⊇ sale ทุกหน้าหมวด Logistic = “เต็ม vs ลดทอน” ไม่ใช่ “คนละหน้าที่”
   //    ⇒ คนจัดส่งต้องเลือกระหว่างได้น้อยไป กับได้สิทธิ์สโตร์ (จ่ายของเข้าไลน์/กดผลิต) เกินมา
