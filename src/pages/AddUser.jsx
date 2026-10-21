@@ -1464,7 +1464,7 @@ export default function AddUser() {
                   return (
                     <div>
                       <label style={labelSt}>
-                        ส่วนงานที่สังกัด (บ้านจริง)
+                        ส่วนงานที่สังกัด
                         <span style={{ color: 'var(--muted)', fontWeight: 400 }}> · จากฐานพนักงาน</span>
                       </label>
                       <div style={{ padding: '8px 12px', background: 'var(--bg3)', borderRadius: 8, fontSize: 12.5,
@@ -1484,7 +1484,7 @@ export default function AddUser() {
                 /* บัญชีกลาง (จอ TV / ประจำเครื่อง) ไม่มีตัวตนในทะเบียน — เลือกเองได้ 1 ส่วนงาน */
                 return (
                   <div>
-                    <label style={labelSt}>ส่วนงานที่สังกัด (บ้านจริง)</label>
+                    <label style={labelSt}>ส่วนงานที่สังกัด</label>
                     <select value={form.homeSection} onChange={e => setF('homeSection', e.target.value)}>
                       <option value="">— ไม่ผูกส่วนงาน —</option>
                       {[...new Set([...sectionOpts, ...orphanDeptOpts, ...(form.homeSection ? [form.homeSection] : [])])]
