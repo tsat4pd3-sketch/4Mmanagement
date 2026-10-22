@@ -409,3 +409,38 @@ test('🔴 moTruncated = partial (ชนเพดานต้องบอก ไ
   // badge ต้องไม่หลอกว่า "มีงานน้อย" ตอนข้อมูลไม่ครบ
   assert.equal(badgeCount(cut), 0, 'partial = badge ต้องเป็น 0 (ตัวเลขที่อาจผิดแย่กว่าไม่มีตัวเลข)');
 });
+
+/* ═══ ✍️ ป้ายคาไว้ "รอคุณเซ็น N ใบ" — กดแล้วเปิดหน้า MO ที่กรองมาให้ ═══  2026-10-22 · คำสั่ง user
+   *"ไม่ต้องซ้ำรายใบก็ได้ แต่ต้องมีแจ้งเตือนคาไว้ว่ามีงานรอเราอยู่กี่ใบที่ต้องเข้าไปเซ็น
+     พอคลิกก็เปิดหน้า mo ขึ้นมาเลยพร้อมกรองที่รอเราอนุมัติ"* */
+const MGR = {
+  uid: 'uid-mgr', name: 'ผจก. ทดสอบ', sections: ['PD3'],
+  posRank: 60, actorSide: 'reporter', hasTeams: false,
+  can: (a) => a === 'close_cost', seeded: () => true, inTeam: () => false,
+};
+const closeRow = (id, d) => ({
+  id, mo_no: `MO-${id}`, status: 'handover', current_step: 6, dept_section: 'PD3',
+  line_name: 'LASER-345', mtn_dept: 'production', work_date: d,
+});
+
+test('✍️ ใบรอเราเซ็น ≥2 ใบ ⇒ มีบรรทัดสรุปบนสุด + ลิงก์กรอง ?wait=', () => {
+  const q = buildQueue({
+    mo: [closeRow('a', '2026-09-20'), closeRow('b', '2026-09-22'), closeRow('c', '2026-09-24')],
+    sessions: [], fourM: [], actions: [], summaries: [],
+  }, MGR, NOW);
+  const top = q.mine[0];
+  assert.ok(top?.rollup, 'บรรทัดสรุปต้องอยู่บนสุดของชั้น mine');
+  assert.match(top.title, /รอคุณเซ็น 3 ใบ/);
+  assert.match(top.to, /\/mtn-repair\?tab=list&wait=close/, 'ต้องพาไปหน้า MO ที่กรองขั้นที่รอเราแล้ว');
+  assert.match(top.to, /&from=/, 'ต้องถอยขอบวันที่ให้ครอบใบเก่าสุด ไม่งั้นตัวกรอง default ซ่อนใบค้าง');
+  // 🔴 badge นับ "ใบ" จริง ไม่บวกบรรทัดสรุปเข้าไปอีก
+  assert.equal(q.counts.mine, 3, 'counts.mine ต้องเท่าจำนวนใบ ไม่นับ rollup');
+  assert.equal(badgeCount(q), 3);
+});
+
+test('✍️ ใบเดียวไม่ต้องมีบรรทัดสรุป (แถวของใบพาไปถึงใบได้ตรงกว่า)', () => {
+  const q = buildQueue({ mo: [closeRow('a', '2026-09-20')], sessions: [], fourM: [], actions: [], summaries: [] }, MGR, NOW);
+  assert.equal(q.mine.filter(x => x.rollup).length, 0);
+  assert.equal(q.counts.mine, 1);
+  assert.match(q.mine[0].to, /\?mo=/, 'ใบเดียว = ลิงก์ตรงไปที่ใบนั้น');
+});
