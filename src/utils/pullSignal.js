@@ -730,7 +730,29 @@ export function planOrderUpdates(groups, orders, resolve, slot) {
         ต้องเคลมซ้ำได้ ไม่งั้น "อัพไฟล์เดิมใหม่" = สร้างใบไม่ได้ (23505) และแก้ใบเดิมก็ไม่ได้
         เดิมโค้ดเทียบกับ `slot.batchId` ที่ **ไม่เคยถูกส่งมาเลย** ⇒ undefined ⇒ ใบที่เคยเคลมถูกตัดทิ้งเสมอ */
   const ownBatch = new Set((slot?.ownBatchIds || []).filter(Boolean));
+  /* ⭐ 21/10 (user: *"862 = แผนทั้งวันว่ามีกี่รอบ ช่วงไหน · e-SMART = คอนเฟิร์มว่าช่วงนั้นส่งจริงเท่าไหร่"*)
+     **โหมดช่วงเวลา** (ส่ง `windowEnd` มา) — ใบแผน 862 เป็นของไฟล์ e-SMART ที่ "ช่วงดึง" คลุมมัน
+       ช่วงดึงของใบแผน = เวลาส่ง − `leadMin` · อยู่ใน `(windowStart, windowEnd]` = ช่วงนี้ยืนยันแทนแล้ว
+     เหตุ: "ใกล้สุด" จับผิดใบเมื่อ 2 กริดไม่ตรงกัน — วัดจริง 21/10: ไฟล์ 06–08 (รอบ 10:00) ไปทับใบ 10:00
+       แทนใบ 08:00 ⇒ ไฟล์ 08–10 (รอบ 11:00) หาใบไม่เจอ สร้างใหม่ ⇒ ใบ 08:00 ค้างแดง + เบิ้ล + คีย์มือเพิ่ม
+     · ใบแผนหลายใบในช่วงเดียวกัน = ใบแรกรับยอด e-SMART · ที่เหลือ = `merge` (ผู้เรียกปิดเป็น "แทนด้วย e-SMART")
+     · ใบคีย์มือ / ใบ e-SMART ของไฟล์อื่น = ไม่แตะ · พาร์ทที่ไม่อยู่ในไฟล์ = ไม่แตะ (กติกา 08/09 "ไม่มีใน e-SMART = ตาม 862") */
+  const windowMode = !!(slot?.windowEnd instanceof Date && slot?.windowStart instanceof Date);
+  const leadMs = (Number(slot?.leadMin) || 0) * 60000;
+  const pullInWindow = (o) => {
+    const at = orderShipAt(o.due_date, o.ship_time);
+    if (!at) return false;
+    const p = at.getTime() - leadMs;
+    return p > slot.windowStart.getTime() && p <= slot.windowEnd.getTime();
+  };
   const inWindow = (o) => {
+    if (windowMode) {
+      if (!dockOk(o)) return false;
+      if (o.pull_batch_id && ownBatch.has(o.pull_batch_id)) return true;         // อัพไฟล์เดิมซ้ำ = แก้ใบเดิม
+      if (o.pull_batch_id && o.pull_batch_id !== slot.batchId) return false;     // ไฟล์อื่นยืนยันไปแล้ว
+      if (o.source !== 'edi_862') return false;                                   // ใบคีย์มือ/ใบระบบอื่น ห้ามแตะ
+      return pullInWindow(o);
+    }
     if (!slot?.targetAt) return true;
     if (!dockOk(o)) return false;
     if (o.pull_batch_id && o.pull_batch_id !== slot.batchId && !ownBatch.has(o.pull_batch_id)) return false;
@@ -747,6 +769,10 @@ export function planOrderUpdates(groups, orders, resolve, slot) {
     const ga = gapOf(a), gb = gapOf(b);
     return (dockRank(a) - dockRank(b)) || (Math.abs(ga) - Math.abs(gb)) || (ga - gb);
   };
+  /* โหมดช่วงเวลา: ใบของไฟล์ชุดเดียวกันมาก่อน (อัพซ้ำ) → แล้วใบแผนที่เวลามาก่อน */
+  const ownRank = (o) => (o.pull_batch_id && ownBatch.has(o.pull_batch_id) ? 0 : 1);
+  const byWindow = (a, b) => (ownRank(a) - ownRank(b)) || (dockRank(a) - dockRank(b))
+    || ((orderShipAt(a.due_date, a.ship_time)?.getTime() || 0) - (orderShipAt(b.due_date, b.ship_time)?.getTime() || 0));
 
   return (groups || []).map(g => {
     const r = resolve ? resolve(g.customer_part_no) : { mat: null, status: 'none', candidates: [] };
@@ -763,15 +789,21 @@ export function planOrderUpdates(groups, orders, resolve, slot) {
     const matOk = (o) => !r.mat || !o.mat_no || normKey(o.mat_no) === normKey(r.mat);
     const seen = new Set();
     const list = cand.filter(o => !seen.has(o.id) && seen.add(o.id)).filter(matOk).filter(inWindow)
-      .sort(slot?.targetAt ? byNearest : byTimeDesc);
+      .sort(windowMode ? byWindow : slot?.targetAt ? byNearest : byTimeDesc);
     const open = list.find(o => !LOCKED_STATUSES.includes(o.status));
     const locked = list.find(o => LOCKED_STATUSES.includes(o.status));
     // ใบอื่นในช่วงเดียวกันที่ไม่ได้ถูกเลือก — **ต้องรายงาน ห้ามแตะเอง** (คนตัดสินว่าจะยุบหรือปล่อย)
-    const extras = list.filter(o => o !== open && o !== locked && !LOCKED_STATUSES.includes(o.status));
-    const base = { group: g, mat: r.mat, matStatus: r.status, candidates: r.candidates || [], extras };
+    const others = list.filter(o => o !== open && o !== locked && !LOCKED_STATUSES.includes(o.status));
+    /* โหมดช่วงเวลา: ใบแผนที่เหลือในช่วงเดียวกัน = ถูกแทนด้วยยอด e-SMART (`merge` ผู้เรียกปิดให้)
+       โหมดเดิม: แค่รายงาน (`extras`) ไม่แตะ */
+    const extras = windowMode ? [] : others;
+    const merge = windowMode ? others.filter(o => o.source === 'edi_862' && !(o.pull_batch_id && ownBatch.has(o.pull_batch_id))) : [];
+    const base = { group: g, mat: r.mat, matStatus: r.status, candidates: r.candidates || [], extras, merge };
     if (open) {
       const diff = g.qty - Number(open.qty || 0);
-      return { ...base, order: open, action: diff === 0 ? 'same' : 'update', diff,
+      /* โหมดช่วงเวลา: ใบแผนที่ยังไม่ถูกยืนยัน ต้องถูกยืนยัน + ย้ายไปรอบรับจริงเสมอ แม้ยอดตรง */
+      const same = diff === 0 && !(windowMode && open.status === 'pending');
+      return { ...base, order: open, action: same ? 'same' : 'update', diff,
         reason: diff === 0 ? 'ยอดตรงกับ 862 อยู่แล้ว' : null };
     }
     if (locked) {

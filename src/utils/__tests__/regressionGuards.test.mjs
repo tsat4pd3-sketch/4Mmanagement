@@ -4646,16 +4646,35 @@ test('🛡️ print-photos-need-wait — ใบพิมพ์ที่แนบ
    = หลายแผงบนหน้าเดียวกันต่างคนต่างยิงคิวรีชุดเดียวกันในเรนเดอร์รอบเดียว (ไม่ใช่ poll/realtime)
    `makeDedupeFetch` แก้ทั้งระบบที่จุดเดียว — **แต่ได้ผลก็ต่อเมื่อถูกส่งเข้า createClient จริง**
    ถอดออก/ลืมฝั่งใดฝั่งหนึ่ง = กลับไปจ่าย 2-3 เท่าทันทีโดยไม่มีอะไรพัง = ไม่มีใครรู้ตัว         */
-test('🛡️ supabase-dedupe-fetch — ทั้ง supabase และ supabaseDR ต้องส่ง dedupeFetch เข้า createClient', () => {
+test('🛡️ supabase-fetch-chain — ทั้ง 2 client ต้องผ่าน "ยุบคำขอซ้ำ" + "ถอยเมื่อ 503" ตัวเดียวกัน', () => {
   const code = stripComments(readFileSync(join(ROOT, 'src/supabaseClient.js'), 'utf8'));
   const calls = [...code.matchAll(/createClient\([^)]*\)/g)].map(m => m[0]);
   assert.equal(calls.length, 2, `ควรมี createClient 2 ตัว (Main + DR) พบ ${calls.length}`);
   calls.forEach((c) => {
-    assert.match(c, /global:\s*\{\s*fetch:\s*dedupeFetch\s*\}/,
-      '\n\n❌ createClient ตัวนี้ไม่ได้ส่ง dedupeFetch:\n   ' + c + '\n'
-      + '   ผล: คำขอ GET ที่ซ้อนเวลากันกลับมายิงซ้ำทุกตัว (วัดได้ 70% ของคำขอทั้งหมด)\n'
-      + '   แก้: createClient(url, key, { global: { fetch: dedupeFetch } })\n');
+    assert.match(c, /global:\s*\{\s*fetch:\s*guardedFetch\s*\}/,
+      '\n\n❌ createClient ตัวนี้ไม่ได้ส่ง guardedFetch:\n   ' + c + '\n'
+      + '   ผล: คำขอ GET ที่ซ้อนเวลากันยิงซ้ำทุกตัว (70% ของคำขอ) และ 503 แล้วยังยิงต่อจนฐานฟื้นไม่ได้\n'
+      + '   แก้: createClient(url, key, { global: { fetch: guardedFetch } })\n');
   });
+  /* 🔴 โซ่ต้องครบทั้ง 2 ชั้น และ "ถอยเมื่อ 503" ต้องครอบ**นอก** ตัวยุบคำขอซ้ำ
+     (ถ้ากลับด้าน คำขอที่ถูกพักจะถูกยุบเป็นคีย์เดียวกับของจริง = ปล่อยผ่านเงียบ) */
+  assert.match(code, /makeDedupeFetch\(/, 'ต้องสร้าง dedupeFetch จาก makeDedupeFetch');
+  assert.match(code, /connFetch\(\s*dedupeFetch\s*\)/,
+    '\n\n❌ โซ่ fetch ผิดลำดับ — ต้องเป็น connFetch(dedupeFetch)\n'
+    + '   ทำไม: 21/10 ฐานข้อมูลตอบ 503 ทุกคำขอ แต่ทุกจอยังยิงต่อจังหวะเดิม ⇒ ฟื้นเองไม่ได้ 25 นาที\n'
+    + '   📄 src/utils/connGuard.js\n');
+});
+
+/* ── 🔴 ต่อฐานข้อมูลไม่ได้ ต้องเขียนบนจอ ห้ามหมุนค้าง (21/10 · เหตุการณ์จริง) ──
+   จอขึ้นแค่ "กำลังโหลด..." ⇒ หน้างานนึกว่าเน็ตตัวเองช้า เลยกดรีเฟรชซ้ำ = ยิงใหม่ทั้งหน้า
+   ⇒ โหลดพุ่งตอนที่ฐานข้อมูลอ่อนแรงที่สุด (ENGINEERING-PRINCIPLES: ห้ามล้มเหลวเงียบ) */
+test('🛡️ conn-banner-mounted — แถบเตือน "เชื่อมต่อไม่ได้" ต้องถูกวางใน App.jsx', () => {
+  const app = stripComments(readFileSync(join(ROOT, 'src/App.jsx'), 'utf8'));
+  assert.match(app, /<ConnBanner\s*\/>/, 'App.jsx ต้องวาง <ConnBanner /> (ไม่งั้นต่อไม่ได้แล้วจอเงียบ)');
+  assert.match(app, /from '\.\/components\/ConnBanner'/, 'App.jsx ต้อง import ConnBanner');
+  const guard = stripComments(readFileSync(join(ROOT, 'src/utils/connGuard.js'), 'utf8'));
+  // การเขียนต้องผ่านเสมอ — บล็อกการบันทึกของคน = งานหาย/ไม่รู้ว่าสำเร็จไหม
+  assert.match(guard, /method !== 'GET'/, 'connGuard ต้องปล่อยทุก method ที่ไม่ใช่ GET ผ่านเสมอ');
 });
 
 /* ── 🧪 งานชุบภายนอก — ทุกการเขียนผ่าน RPC `plating_*` เท่านั้น (13/10 · คำสั่ง user) ──
@@ -5351,6 +5370,20 @@ test('🛡️ ship-due-date-calendar — ใบส่งลูกค้าลง
   if (!/due_date:\s*shipDueDate\(addForm\.due_date/.test(cd)) bad.push('CustomerDemand.jsx (คีย์ order ด่วนไม่ได้แปลงวันงาน → ปฏิทิน)');
   assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n'
     + '   แก้: วันงาน + รอบส่ง → shipDueDate() (src/utils/pullSignal.js) · เวลาจริงของใบ → orderShipAt(due_date, ship_time) ไม่บวกวัน\n');
+});
+
+/* 🛡️ esmart-window-confirm (2026-10-21) — 862 = แผนทั้งวัน · e-SMART = คอนเฟิร์มว่า "ช่วงนั้น" ส่งจริง
+   (งาน 060/061/306 AAT GRBNA) เดิมจับคู่ "เวลาใกล้สุด 1:1" ⇒ ไฟล์ 06–08 ไปจับใบ 10:00 · ใบ 08:00 ค้างแดง
+   + ใบที่เหลือในช่วงเดียวกันกลายเป็นใบเบิ้ล · 862 รอบเช้าสร้างใบช่วงที่ยืนยันแล้วกลับมาอีก */
+test('🛡️ esmart-window-confirm — e-SMART ต้องทับใบแผน 862 ตามช่วงเวลา · 862 ห้ามสร้างช่วงที่ยืนยันแล้วกลับ', () => {
+  const bad = [];
+  const up = stripComments(readFileSync(join(ROOT, 'src/components/PullSignalUpload.jsx'), 'utf8'));
+  if (!/windowEnd:\s*parsed\?\.windowEnd/.test(up)) bad.push('PullSignalUpload.jsx (slot ไม่ส่ง windowEnd = ตกไปโหมดเวลาใกล้สุด)');
+  if (!/x\.merge\b/.test(up)) bad.push('PullSignalUpload.jsx (ไม่ปิดใบแผน 862 อื่นในช่วงเดียวกัน = ใบเบิ้ล)');
+  const ps = readFileSync(join(ROOT, 'src/pages/PlannerSales.jsx'), 'utf8');
+  if (!/splitPullCovered\(/.test(stripComments(ps))) bad.push('PlannerSales.jsx (862 ไม่กันช่วงที่ e-SMART ยืนยันแล้ว)');
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n'
+    + '   แก้: planOrderUpdates โหมดช่วงเวลา (pullSignal.js) + splitPullCovered/pullCoverBatches (ediMerge.js)\n');
 });
 
 /* ═══ 🔒 ด่านฝั่งงาน — ห้ามเทียบ actorSide ตรงๆ · ทุก call site ต้องส่ง isAm (2026-10-16) ═══
@@ -6261,4 +6294,65 @@ test('🛡️ order-close-single-entry — "เวลาปิดของใบ
     + '   ทำไม: จอแก้เวลากับจอที่อ่านผลใช้คนละสูตร = หน้างานกดบันทึกแล้วเหมือนไม่เกิดอะไร\n'
     + '   แก้: orderCloseMs()/matRawWindow() (src/utils/oee.js §6.2) + planMatTimeWrites() (src/utils/matTimeEdit.js)\n'
     + '        📄 docs/modules/daily-report.md §เวลาเริ่ม-จบของ MAT\n');
+});
+
+/* ═══ 🧪 "เกี่ยวคุณภาพ / ต้องให้ QA ตรวจ?" ต้องตอบผ่าน qaRelatedView() ═══  2026-10-21
+   `mtn_orders.quality_related` เก็บเป็น **ข้อความไทย** ('เกี่ยวกับคุณภาพ' / 'ไม่เกี่ยวกับคุณภาพ')
+   ⇒ อ่านแบบ truthiness (`o.quality_related ? 'ใช่' : ''`) ตอบ **"ใช่"** ให้ใบที่ QA ตัดสินว่า *ไม่* เกี่ยว
+   วัดจริง 21/10: 411 ใบจาก 1050 (39%) ถูกรายงานกลับด้านใน Excel + สรุปรายเดือน
+   และใบที่ QA **ไม่อยู่ในลูปเลย** (ฟอร์ม MTN · งานสร้าง/ปรับปรุง) ยังมีค่าเศษค้างจากขั้น 4
+   ⇒ เคสจริง O-MTN.2026/10-17: ใบทีม MTN ที่รอ "รับมอบ" ขึ้นว่า "ต้องผ่าน QA" = จอโกหก
+   ⇒ คำตอบนี้มีเจ้าของไฟล์เดียว = `qaRelatedView()` ใน mtnStepPerm.js */
+test('🧪 ห้ามอ่าน quality_related ดิบนอก mtnStepPerm.js — ต้องผ่าน qaRelatedView()', () => {
+  const OWNER = 'src/utils/mtnStepPerm.js';   // เจ้าของกฎ (นิยาม qaRelatedView เอง)
+  const bad = [];
+  for (const f of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const rel = relative(ROOT, f);
+    if (rel === OWNER) continue;
+    const src = stripComments(readFileSync(f, 'utf8'));
+    /* เอาเฉพาะ "การอ่านค่า" — การเขียน (`quality_related: QA_RELATED`) และชื่อคอลัมน์ใน
+       `.select('…')` ไม่เข้าข่าย เพราะตามด้วย `:` หรืออยู่ในสตริงล้วน */
+    for (const m of src.match(/\.quality_related\s*[?)&|=!,]/g) || []) bad.push(`${rel} (${m.trim()})`);
+  }
+  assert.deepEqual(bad, [], '\n\n❌ อ่าน quality_related ดิบ: ' + bad.join(', ') + '\n'
+    + '   ทำไม: คอลัมน์นี้เป็นข้อความ ไม่ใช่ boolean — "ไม่เกี่ยวกับคุณภาพ" ก็ truthy\n'
+    + '         และใบที่ QA ไม่อยู่ในลูป (ฟอร์ม MTN · งานสร้าง/ปรับปรุง) ยังมีค่าเศษค้างอยู่\n'
+    + '   แก้: ใช้ qaRelatedView(order) → yes | no | n_a | unknown แล้ว map เป็นข้อความที่หน้า\n');
+});
+
+/* ขั้น 4 ของใบที่ไม่มี QA ในลูป ห้าม stamp quality_related (ต้นทางของค่าเศษข้างบน) */
+test('🧪 ขั้น 4 stamp quality_related ได้เฉพาะใบที่ qaAppliesTo', () => {
+  const src = stripComments(readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8'));
+  const m = src.match(/stage === 'accept_work'[\s\S]{0,1200}?checker_sign: s,([^}]*)\}/);
+  assert.ok(m, 'หาบล็อกบันทึกขั้น 4 (accept_work) ไม่เจอ — แก้ชื่อ stage แล้วต้องอัพเดทด่านนี้ด้วย');
+  assert.match(m[1], /qaAppliesTo\(o\)\s*\?/,
+    '\n\n❌ ขั้น 4 ยัง stamp quality_related ให้ทุกใบ\n'
+    + '   ทำไม: ใบทีม MTN (FM-MTN-006) และงานสร้าง/ปรับปรุงไม่มีขั้น QA ในลูป —\n'
+    + '         stamp ไว้ = แผงรายละเอียด/Excel อ่านแล้วบอกว่า "ต้องผ่าน QA" ทั้งที่ไม่มีใครมาตรวจ\n'
+    + '   แก้: ...(qaAppliesTo(o) ? { quality_related: QA_RELATED } : {})\n');
+});
+
+/* ═══ 🔩 อะไหล่ในใบ MO: โหลดของเดิมก่อนแก้ · เขียนทับทั้งชุด · ขยับสต็อกด้วยส่วนต่าง ═══  2026-10-22
+   MTN แจ้ง: "Spare Part พอกดบันทึกแล้วข้อมูลถูก Hide ไป แสดงใน Export อยู่ แต่หน้าปิด MO ไม่ขึ้น"
+   ราก: `usedParts` เริ่ม [] แล้วไม่เคยอ่านจาก mtn_order_parts ⇒ เปิดแก้ไขขั้น 3 เห็นลิสต์ว่าง
+   (ข้อมูลยังอยู่ในฐาน ใบพิมพ์จึงยังมี) → พิมพ์ใหม่ → บันทึกเป็น insert ล้วน = แถวซ้ำ + ตัดสต็อกซ้ำ
+   วัด 22/10: ซ้ำไปแล้ว 4 แถว ใน 2 ใบ (จาก 475 แถว / 203 ใบ)
+   ⇒ ต้องครบ 3 ชั้นเหมือนค่าแรง: โหลดของเดิม · delete-then-insert · สต็อกคิดจากส่วนต่าง */
+test('🔩 ขั้น 3: ต้องโหลดอะไหล่เดิมเข้าฟอร์ม + บันทึกแบบลบก่อนเขียน + สต็อกใช้ส่วนต่าง', () => {
+  const src = stripComments(readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8'));
+  const miss = [];
+  // ① โหลดของเดิม — ไม่งั้นลิสต์ว่างทุกครั้งที่เปิดแก้ไข
+  if (!/from\('mtn_order_parts'\)\s*\.select\(/.test(src)) miss.push('ไม่ได้อ่าน mtn_order_parts เข้าฟอร์ม (usedParts จะว่างทุกครั้ง)');
+  // ② ลบของเดิมก่อนเขียนใหม่ — insert ล้วน = แถวซ้ำ
+  if (!/from\('mtn_order_parts'\)\s*\.delete\(\)/.test(src)) miss.push("บันทึกอะไหล่ไม่ได้ลบของเดิมก่อน (insert ล้วน = แถวซ้ำ)");
+  // ③ สต็อกต้องคิดจากส่วนต่าง ไม่ใช่ยอดเต็มทุกครั้ง
+  if (!/basePartQty/.test(src)) miss.push('ไม่มีฐานยอดเดิม (basePartQty) ⇒ ตัดสต็อกเต็มทุกครั้งที่กดบันทึก');
+  if (/p_type:\s*'issue',\s*p_qty:\s*totalQty/.test(src)) miss.push("ยังตัดสต็อกด้วยยอดเต็ม (p_qty: totalQty) แทนส่วนต่าง");
+  // ④ โหลดไม่เสร็จ/ไม่ติด = ห้ามบันทึก (ไม่งั้นลบของจริงทิ้งแล้วเขียนชุดว่าง)
+  if (!/partsState\s*!==\s*'ok'/.test(src)) miss.push("ไม่มีด่านกันบันทึกตอนอะไหล่เดิมยังโหลดไม่เสร็จ (partsState)");
+  assert.deepEqual(miss, [], '\n\n❌ ' + miss.join('\n   ❌ ') + '\n'
+    + '   ทำไม: ขั้นบันทึกลบอะไหล่เดิมทั้งชุดแล้วเขียนใหม่ — ฟอร์มที่ไม่โหลดของเดิมมาก่อน\n'
+    + '         = ลบรายการจริงทิ้ง · และตัดสต็อกด้วยยอดเต็มซ้ำทุกครั้งที่กดแก้\n'
+    + '   แก้: ทำตามแพทเทิร์น laborRows/laborState ในไฟล์เดียวกัน (โหลด → บล็อกบันทึก → delete-then-insert)\n'
+    + '   📄 docs/modules/mtn-work-order.md §อะไหล่ในใบ MO\n');
 });
