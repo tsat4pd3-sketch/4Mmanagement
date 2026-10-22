@@ -6403,3 +6403,20 @@ test('🛡️ year-rollup-not-minutely — บอร์ดที่สรุป�
     + '   ทำไม: สรุปทั้งปีครั้งละ ~1.2 วินาที · ที่ 60 วิ = จอเดียวกินเวลาฐานข้อมูล ~250 วิ ต่อ 6.5 ชม.\n'
     + '   แก้: tier: LIVE.YEAR (src/utils/refreshRates.js) — poll ยังเดินตามปกติ ช้าสุด 15-20 นาที\n');
 });
+
+/* ═══ 🔄 เซ็นงานจากคิวเสร็จแล้ว แถวต้องไม่คาอยู่ในแผง ═══  2026-10-22 · user แจ้ง "ปิดแล้วยังโชว์อยู่"
+   `useMyQueue` โหลด "ครั้งเดียวต่อ session" แล้วรีเฟรชเฉพาะตอนเปิดแผง + ของเก่าเกิน STALE_MIN (5 นาที)
+   ⇒ ผจก.กดเซ็นอนุมัติปิดใบจากคิว ใบปิดจริงแล้ว แต่แถวยังอยู่ · badge ค้างเลขเดิม · เสี่ยงกดซ้ำ
+   ⇒ ทุกจุดที่ "ปิดงานที่เคยอยู่ในคิว" ต้องเรียก invalidateMyQueue() */
+test('🔄 บันทึกขั้นใบ MO เสร็จ ต้องเคลียร์คิวงานของฉัน (invalidateMyQueue)', () => {
+  const panel = stripComments(readFileSync(join(ROOT, 'src/components/MyQueuePanel.jsx'), 'utf8'));
+  assert.match(panel, /export function invalidateMyQueue\s*\(/,
+    'MyQueuePanel ต้อง export invalidateMyQueue ให้หน้าอื่นเรียกได้');
+  assert.match(panel, /shared\.loader/,
+    'invalidateMyQueue ต้องยิงโหลดจริงเมื่อมีแผง/กระดิ่งที่ยัง mount อยู่ (ล้าง at อย่างเดียว = แผงที่เปิดค้างไม่รู้ตัว)');
+  const mo = stripComments(readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8'));
+  assert.match(mo, /invalidateMyQueue\s*\(\s*\)/,
+    '\n\n❌ /mtn-repair บันทึกขั้นเสร็จแล้วไม่ได้เคลียร์คิวงานของฉัน\n'
+    + '   ทำไม: แผงคิวโหลดครั้งเดียวต่อ session — ไม่เคลียร์ = แถวที่เซ็นไปแล้วคาอยู่ถึง 5 นาที\n'
+    + '   แก้: เรียก invalidateMyQueue() ใน onSaved ของ StepModal\n');
+});
