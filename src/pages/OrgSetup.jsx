@@ -454,7 +454,12 @@ export default function OrgSetup() {
               แต่เดิมไม่มีที่ไหนให้เห็น ⇒ ลบกลุ่มไม่ได้แล้วหาลูกไม่เจอ (ดูคอมเมนต์ที่ teamsOf) */}
           <div style={colStyle} className="card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-              <strong style={{ fontSize: 13, color: 'var(--text2)' }}>TEAM / ทีม ({currentTeams.length})</strong>
+              <strong style={{ fontSize: 13, color: 'var(--text2)' }}>
+                TEAM / ทีม ({currentTeams.length})
+                <span style={{ display: 'block', fontSize: 11, fontWeight: 400, color: 'var(--muted)' }}>
+                  ใช้จัดกะการทำงาน · ไม่ใช่ชั้นในผังองค์กร
+                </span>
+              </strong>
               {canAddTeamHere(selLine) && (
                 <button className="tbtn" onClick={() => selLine && openCreate('team', selLine)} disabled={!selLine} style={addBtnSt}>➕</button>
               )}
