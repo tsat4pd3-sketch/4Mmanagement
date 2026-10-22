@@ -7,7 +7,7 @@ import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
 import { can } from '../utils/permissions';
 import { dtBucketName, buildDtIndex } from '../utils/downtimeCategory';
-import { inSectionScope } from '../utils/sectionScope';
+import { inSectionScope, scopedLines } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import LineSelect from '../components/LineSelect';
 import PersonSelect from '../components/PersonSelect';
@@ -129,9 +129,9 @@ export default function MorningMeeting() {
       const fam = new Set(getLineFamilyNames(allLines, userLineId));
       return allLines.filter(l => fam.has(l.name));
     }
-    if (scopeSecs.length) return allLines.filter(l => inSectionScope(scopeSecs, l.section));
+    if (scopeSecs.length) return scopedLines({ sections: scopeSecs, lines: allLines, scopeIdx });
     return allLines;
-  }, [allLines, role, userLineId, scopeSecs]);
+  }, [allLines, role, userLineId, scopeSecs, scopeIdx]);
 
   // ส่วนงานในตัวเลือก: ยึดผังองค์กรก่อน (กรองตาม scope) → fallback เดาจาก production_lines เมื่อผังยังว่าง
   const sectionOpts = useMemo(() => {

@@ -126,6 +126,28 @@ export function scopedLineNames({ role, lineId, sections = [], lines = [], scope
   return null;
 }
 
+/**
+ * 🔭 **ไลน์ที่ผู้ใช้เห็นได้ — คืน "ตัวไลน์" ไม่ใช่ชื่อ** (22/10)
+ *
+ * pattern เดิมที่ก๊อปกระจายอยู่ ~10 หน้า: `lines.filter(l => inSectionScope(scopeSecs, l.section))`
+ * ⇒ ขอบเขตที่ไม่ใช่ "ส่วนงาน" (แผนก/กลุ่ม/ไลน์เดี่ยว) ตกหมด เพราะเทียบข้อความ `l.section` ตรงตัว
+ *
+ * 🔴 ส่ง `scopeIdx` (ดัชนีผังจาก `UserContext`) มาด้วย = ขยายผ่านผังองค์กร
+ *    **ไม่ส่ง = พฤติกรรมเดิมเป๊ะ** — ห้ามบีบแคบลงเงียบ (ชื่อที่ผังไม่รู้จักยังถอยไปเทียบข้อความ)
+ * ⚠️ `sections` ว่าง (ไม่จำกัด) หรือทะเบียนไลน์ยังโหลดไม่เสร็จ → คืน `lines` ทั้งก้อน
+ *    ห้ามคืน `[]` เพราะจะกลายเป็น "ไม่เห็นอะไรเลย" ระหว่างโหลด
+ * 🔴 ผู้เรียกที่เอาไปกรอง**ตาราง** ต้องเขียนบนจอว่าซ่อนไปกี่รายการ (ดู `filterRowsByLineScope`)
+ */
+export function scopedLines({ sections = [], lines = [], scopeIdx = null }) {
+  const secs = (sections || []).filter(Boolean);
+  if (!secs.length || !lines.length) return lines;
+  if (scopeIdx) {
+    const vs = buildViewScope(secs, scopeIdx);
+    if (vs.byOrg) return lines.filter(l => vs.lineOk(l));
+  }
+  return lines.filter(l => inSectionScope(secs, l.section));
+}
+
 export function inSectionScope(scopeSections, value) {
   if (!scopeSections || !scopeSections.length) return true;
   const v = norm(value);

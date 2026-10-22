@@ -24,7 +24,7 @@ import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { checkWriteRows } from '../utils/dbWrite';
 import { can } from '../utils/permissions';
-import { inSectionScope } from '../utils/sectionScope';
+import { inSectionScope, scopedLines } from '../utils/sectionScope';
 import { getLineFamilyNames, toHierarchicalOptions, visibleDepths } from '../utils/lineHierarchy';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
@@ -58,7 +58,7 @@ const TREND_MONTHS = 12;
 const GOOD = '#22c55e', BAD = '#ef4444', NEUTRAL = '#6b7f8c', ACCENT = '#38bdf8';
 
 export default function Energy() {
-  const { role, lineId, sections: scopeSecs } = useContext(UserContext);
+  const { role, lineId, sections: scopeSecs, scopeIdx } = useContext(UserContext);
   const canEdit = can('energy', 'record', role);
   const [tab, setTab] = useTabParam(['input', 'summary', 'setup', 'mqtt'], 'input');
   const [month, setMonth] = useState(() => monthKeyOf());
@@ -85,9 +85,9 @@ export default function Energy() {
       const fam = me ? getLineFamilyNames(lines, me.name) : null;
       return fam ? lines.filter(l => fam.includes(l.name)) : lines;
     }
-    if (scopeSecs?.length) return lines.filter(l => inSectionScope(scopeSecs, l.section));
+    if (scopeSecs?.length) return scopedLines({ sections: scopeSecs, lines, scopeIdx });
     return lines;
-  }, [lines, role, lineId, scopeSecs]);
+  }, [lines, role, lineId, scopeSecs, scopeIdx]);
 
   /* จุดที่กรอกได้ = **ทุกไลน์ในลำดับชั้น** (แม่ + ลูก เรียงเป็นขั้น) + โซน facility
      ⚠️ เดิมให้กรอกได้แค่ไลน์บนสุด ด้วยเหตุผล "พลังงานวัดกันระดับกลุ่ม" — ซึ่งไม่ตรงกับของจริง:
