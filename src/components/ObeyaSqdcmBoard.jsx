@@ -322,7 +322,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
   /* scope ไลน์ของ user ผ่าน helper กลางตัวเดียวกับบอร์ด KPI (05/10 · audit) — leader = ครอบครัวไลน์ตัวเอง
      ไม่ใช่แค่ส่วนงาน · null = ไม่จำกัด (ห้ามคืน [] — lines ยังไม่โหลด = เห็นทั้งหมดชั่วคราว ไม่ใช่ว่างเปล่า) */
   const userLineSet = useMemo(() => {
-    const names = scopedLineNames({ role, lineId, sections, lines });
+    const names = scopedLineNames({ role, lineId, sections, lines, scopeIdx });
     return names ? new Set(names) : null;
   }, [role, lineId, sections, lines]);
   const lineOk = useCallback((name) => {

@@ -1,4 +1,5 @@
 import { getLineFamilyNames } from './lineHierarchy.js';
+import { buildViewScope } from './viewScope.js';   // 👁️ ขยายขอบเขตผ่านผัง (แผนก/ไลน์ ไม่ใช่แค่ส่วนงาน)
 import { orgNodeCompare } from './listOrder.js';
 // ─── Multi-section scoping ──────────────────────────────────────────────────
 // ขอบเขตส่วนงานของ user: profiles.sections (text[]) = จำกัดหลายส่วนงานได้
@@ -91,7 +92,7 @@ export const MAINTENANCE_ROLES = ['mtn', 'engineer'];
  * ⚠️ ต้องเรียกหลัง production_lines โหลดเสร็จ — lines ว่าง = คืน null (ไม่จำกัด)
  *    ห้ามคืน [] เพราะ `.in('line_name', [])` = ไม่เห็นอะไรเลย
  */
-export function scopedLineNames({ role, lineId, sections = [], lines = [] }) {
+export function scopedLineNames({ role, lineId, sections = [], lines = [], scopeIdx = null }) {
   if (role === 'admin') return null;                       // ตาข่ายกันตาย (เหมือน effectiveSections)
   /* 🔭 25/09: **ถอด hardcode `MAINTENANCE_ROLES` ออกแล้ว** — ไม่ต้องรับ scopeDepth เพิ่ม เพราะ
      การตัดสินถูกยุบไว้ใน `sections` ที่ `effectiveSections()` คำนวณมาให้แล้ว (จุดเดียวของระบบ)
@@ -109,6 +110,16 @@ export function scopedLineNames({ role, lineId, sections = [], lines = [] }) {
     return fam.length ? fam : null;
   }
   if (sections.length) {
+    /* 🔁 22/10 — ขอบเขตอาจเป็น **แผนก/กลุ่ม/ไลน์** ไม่ใช่แค่ส่วนงาน (user: "jig มาฝากกับผลิต" ·
+       หัวหน้าที่ดูแล 2 ไลน์ในแผนกเดียว) ⇒ ถ้าหน้าไหนส่งดัชนีผัง (`scopeIdx`) มาด้วย ให้ขยายผ่านผัง
+       🔴 ไม่ส่ง `scopeIdx` = พฤติกรรมเดิมเป๊ะ (เทียบ `l.section` ตรงตัว) — ห้ามบีบแคบลงเงียบ */
+    if (scopeIdx) {
+      const vs = buildViewScope(sections, scopeIdx);
+      if (vs.byOrg) {
+        const names = lines.filter(l => vs.lineOk(l)).map(l => l.name);
+        return names.length ? names : null;
+      }
+    }
     const names = lines.filter(l => inSectionScope(sections, l.section)).map(l => l.name);
     return names.length ? names : null;
   }

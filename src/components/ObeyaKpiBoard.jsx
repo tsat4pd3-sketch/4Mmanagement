@@ -130,7 +130,7 @@ const MOBILE_SHEET_H = 330;
 
 export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
   const navigate = useNavigate();
-  const { role, lineId, sections, fullName } = useContext(UserContext);
+  const { role, lineId, sections, fullName, scopeIdx } = useContext(UserContext);
   const { can } = usePerms();
   const canRecord = can('safety', 'record');
   const canNote = can('kpi', 'manage');           // เขียนหมายเหตุรายเดือน = คีย์เดียวกับ RLS ของ kpi_month_notes
@@ -206,7 +206,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
 
   /* scope มาตรฐาน — helper กลางคืน null = ไม่จำกัด (ห้ามคืน [] ไม่งั้น .in() ว่าง = ไม่เห็นอะไรเลย) */
   const scopeSet = useMemo(() => {
-    const names = scopedLineNames({ role, lineId, sections, lines });
+    const names = scopedLineNames({ role, lineId, sections, lines, scopeIdx });
     return names ? new Set(names) : null;
   }, [role, lineId, sections, lines]);
 
