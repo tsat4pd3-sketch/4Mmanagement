@@ -196,6 +196,9 @@ const MO_LIST_COLS = [
 ].join(',');
 const SCOPE_OPTS = [{ v: 'in_line', t: 'ซ่อมในไลน์' }, { v: 'off_line', t: 'ซ่อมนอกไลน์' }];
 const CHECK_RESULTS = ['ตรวจสอบผ่าน', 'ตรวจสอบไม่ผ่าน'];
+/* ขั้น "เซ็นอนุมัติ/ปิดใบ" ของทั้ง 2 ฟอร์ม — ผูกกับ **stage** ไม่ใช่เลขขั้น (เลขทับกัน)
+   ใช้ตัดสินว่าโมดัลนั้นต้องโชว์สรุปค่าใช้จ่ายให้คนเซ็นเห็น (MTN แจ้ง 21/10: "ในหน้าปิด MO ไม่ขึ้น") */
+const CLOSE_STAGES = ['mtn_head', 'mtn_approve', 'cost_mgr_close', 'close'];
 const QA_RESULTS = ['ผ่านคุณภาพ', 'ไม่ผ่านคุณภาพ'];
 const FOLLOW_OPTS = ['ไม่เกิดปัญหาซ้ำ', 'แจ้งเฝ้าระวัง', 'เกิดปัญหาซ้ำ', 'แก้ไขไม่ได้'];
 // ประเมินความพึงพอใจบริการซ่อม (step 6) — KPI ให้หน่วยงานซ่อม · 5 ด้าน × 3 ระดับ
@@ -2828,6 +2831,41 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
   const afterUrl = useObjectUrl(afterFile), qaUrl = useObjectUrl(qaFile);
   const [sig, setSig] = useState({ mode: signatureUrl ? 'profile' : 'draw', url: signatureUrl, blob: null });
   const [usedParts, setUsedParts] = useState([]);
+  /* 🔴 โหลด "อะไหล่ที่ใช้" ของเดิมเข้าฟอร์ม — แพทเทิร์นเดียวกับ laborRows ข้างล่าง  (22/10 · MTN แจ้ง)
+     เดิม `usedParts` เริ่มเป็น [] **แล้วไม่เคยอ่านจาก mtn_order_parts เลย** ⇒ เปิดแก้ไขขั้น 3 อีกที
+     ลิสต์อะไหล่ว่างเปล่า (ข้อมูลยังอยู่ในฐาน ใบพิมพ์/Excel จึงยังมี) = หน้างานอ่านว่า "ข้อมูลถูก Hide"
+     แล้วพิมพ์ใหม่ → ตอนบันทึกเป็น insert ล้วน (ไม่ลบของเดิม) = **แถวซ้ำ + ตัดสต็อกซ้ำ**
+     (วัด 22/10: ซ้ำไปแล้ว 4 แถว ใน 2 ใบ จาก 475 แถว/203 ใบ)
+     ⇒ โหลดของเดิมมาแสดง + บันทึกเป็น delete-then-insert + ขยับสต็อกด้วย **ส่วนต่าง** เท่านั้น
+     ⚠️ ขั้นปิดใบก็โหลดด้วย — ใช้โชว์สรุปค่าใช้จ่ายให้คนเซ็นอนุมัติเห็น (เดิมเซ็นโดยไม่เห็นยอด) */
+  const needParts = step === 3 || CLOSE_STAGES.includes(stageOf(step, { mtnForm: isMtnForm }));
+  const [partsState, setPartsState] = useState(needParts ? 'loading' : 'ok');
+  const [partsErr, setPartsErr] = useState('');
+  /* ยอดเดิมต่ออะไหล่ (part_id → qty รวม) = ฐานคิดส่วนต่างสต็อกตอนบันทึก
+     บันทึกครั้งแรก = {} ⇒ ส่วนต่าง = ยอดเต็ม = ตัดสต็อกเท่าเดิมเป๊ะ (พฤติกรรมเดิมไม่เปลี่ยน) */
+  const [basePartQty, setBasePartQty] = useState({});
+  const loadParts = useCallback(() => {
+    if (!needParts) { setPartsState('ok'); return () => {}; }
+    let alive = true;
+    setPartsState('loading'); setPartsErr('');
+    supabaseDR.from('mtn_order_parts').select('*').eq('order_id', o.id)
+      .then(({ data, error }) => {
+        if (!alive) return;
+        if (error) { setPartsErr(error.message); setPartsState('error'); return; }
+        const rows = data || [];
+        const loaded = rows.map(r => ({
+          part_id: r.part_id || '', name: r.part_name || '', qty: r.qty ?? 1,
+          unit: r.unit || '', unit_price: r.unit_price ?? '',
+        }));
+        const base = {};
+        rows.forEach(r => { if (r.part_id) base[r.part_id] = (base[r.part_id] || 0) + Number(r.qty || 0); });
+        setBasePartQty(base);
+        setUsedParts(cur => (cur.length ? cur : loaded));   // มีแถวที่ช่างพิมพ์แล้ว = ไม่ทับ
+        setPartsState('ok');
+      });
+    return () => { alive = false; };
+  }, [needParts, o.id]);
+  useEffect(() => loadParts(), [loadParts]);
   /* ตารางค่าแรงรายคนของฟอร์ม MTN (ชื่อ × ค่าแรง/ชม. × ชม.) — เดิมมีแค่ยอดรวมก้อนเดียว
      เปิดแก้ไขขั้น 3 ให้โหลดของเดิมมาแสดง (ไม่งั้นบันทึกซ้ำแล้วค่าแรงหาย) */
   const [laborRows, setLaborRows] = useState([]);
@@ -2870,7 +2908,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
   const isReject = modalStage === 'assign' && f.repair_type === 'Reject MO';
   const needSign = !!SIGN_COL[modalStage] && !skipQa;   // ข้าม QA = ไม่ใช่การรับรองคุณภาพ ไม่ต้องเซ็น (เก็บชื่อ+เหตุผลแทน)
 
-  const addPart = () => { touch(); setUsedParts(p => [...p, { part_id: '', name: '', qty: 1, unit: '', unit_price: '' }]); };
+  const addPart = () => { if (partsState !== 'ok') return; touch(); setUsedParts(p => [...p, { part_id: '', name: '', qty: 1, unit: '', unit_price: '' }]); };
   const setPart = (i, k, v) => { touch(); setUsedParts(p => p.map((x, j) => j === i ? { ...x, [k]: v } : x)); };
   /* เลือกอะไหล่ผ่าน <SearchSelect> — คืน { id, text, opt }
      เลือกจากทะเบียน = ได้ part_id (หักสต็อกอัตโนมัติ) · พิมพ์เอง = part_id ว่าง เก็บแค่ชื่อ (ไม่หักสต็อก) */
@@ -2937,6 +2975,13 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
 
   const save = async () => {
     if (saving) return;   // กันกดซ้ำรัว — เคสจริง: บันทึกล้มเพราะรูป ช่างกดซ้ำจน toast ซ้อน 13 อัน
+    /* 🔴 อะไหล่เดิมยังไม่ได้โหลด/โหลดล้ม = ห้ามบันทึก — ขั้นบันทึกลบอะไหล่เดิมทั้งชุดแล้วเขียนใหม่
+       โหลดไม่ติดแล้วปล่อยบันทึก = ลบรายการอะไหล่จริงทิ้ง + คืนสต็อกผิด (เหตุผลเดียวกับค่าแรง) */
+    if (step === 3 && partsState !== 'ok') {
+      return toast.error(partsState === 'loading'
+        ? 'รอโหลดรายการอะไหล่เดิมของใบนี้ก่อน แล้วกดบันทึกอีกครั้ง'
+        : `โหลดรายการอะไหล่เดิมไม่สำเร็จ (${partsErr}) — ปิดแล้วเปิดใบใหม่ก่อนบันทึก ไม่งั้นอะไหล่เดิมจะหาย`);
+    }
     /* ค่าแรงเดิมยังไม่ได้โหลด/โหลดล้ม = ห้ามบันทึก (ขั้นบันทึกจะลบค่าแรงเดิมทั้งชุด) */
     if (needLabor && laborState !== 'ok') {
       return toast.error(laborState === 'loading'
@@ -3071,7 +3116,10 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
         if (upd.repair_done_at) await syncDowntimeTimes(o, { fix_at: upd.repair_done_at });
         if (imgWarn) toast.error(imgWarn);
         const usable = usedParts.filter(x => x.name && Number(x.qty) > 0);
-        for (const p of usable) {
+        /* 🔴 ล้างของเดิมก่อนเขียนใหม่ทั้งชุด (เหมือนค่าแรง) — เดิมเป็น insert ล้วน ⇒ กดบันทึกซ้ำ = แถวซ้ำ
+           🔴 delete ล้ม = **ห้าม insert ต่อ** (กฎเหล็กข้อ 1) ไม่งั้นอะไหล่ซ้อน 2 ชุด ยอดเงินบนใบเบิ้ล */
+        const delPartsOk = checkWrite(await supabaseDR.from('mtn_order_parts').delete().eq('order_id', o.id), 'ล้างรายการอะไหล่เดิมของใบนี้');
+        if (delPartsOk) for (const p of usable) {
           /* ราคาต่อหน่วย: ใช้ที่กรอก → ไม่กรอกก็ดึงจากทะเบียนอะไหล่ (mtn_spare_parts.unit_price)
              ฟอร์มกระดาษมีคอลัมน์ "ราคา" ต่อแถว — เดิมเก็บแค่ยอดรวมที่พิมพ์มือ */
           const up = p.unit_price !== '' && p.unit_price != null ? Number(p.unit_price)
@@ -3103,15 +3151,22 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
         // ตัดสต็อก: รวมยอดต่ออะไหล่ก่อน (กันนับซ้ำเมื่อใส่อะไหล่ตัวเดียวกัน 2 แถวในใบเดียว)
         // แล้วตัดผ่าน RPC `mtn_stock_move` — ล็อกแถว + กันติดลบ + ลง ledger ในทรานแซกชันเดียวฝั่ง DB
         // (เดิม read-modify-write จาก client: 2 เครื่องบันทึกพร้อมกันยอดเพี้ยน + เบิกเกินสต็อกได้)
+        /* 🔴 ขยับสต็อกด้วย **ส่วนต่างจากยอดเดิม** ไม่ใช่ยอดเต็ม (22/10)
+           แก้ใบซ้ำแล้วตัดเต็มทุกรอบ = สต็อกหายทบไปเรื่อยๆ · บันทึกครั้งแรก basePartQty = {}
+           ⇒ ส่วนต่าง = ยอดเต็ม = ตัดเท่าเดิมเป๊ะ (ใบที่ยังไม่เคยลงอะไหล่ไม่กระทบ)
+           ลดจำนวนลง/ลบแถวทิ้ง = คืนเข้าสต็อกด้วย type `in` (RPC รับ in|issue|adjust เท่านั้น) */
         const byPart = {};
         usable.filter(p => p.part_id).forEach(p => { byPart[p.part_id] = (byPart[p.part_id] || 0) + Number(p.qty); });
-        for (const [pid, totalQty] of Object.entries(byPart)) {
+        for (const pid of new Set([...Object.keys(byPart), ...Object.keys(basePartQty)])) {
+          const delta = (byPart[pid] || 0) - (basePartQty[pid] || 0);
+          if (!delta) continue;   // ยอดเท่าเดิม = ไม่แตะสต็อก (นี่คือตัวกันตัดซ้ำ)
           const { error: eSt } = await supabaseDR.rpc('mtn_stock_move', {
-            p_part_id: pid, p_type: 'issue', p_qty: totalQty,
-            p_note: `เบิกใช้ ${o.mo_no || ''}`.trim(), p_by_name: fullName, p_ref_order: o.id,
+            p_part_id: pid, p_type: delta > 0 ? 'issue' : 'in', p_qty: Math.abs(delta),
+            p_note: `${delta > 0 ? 'เบิกใช้' : 'คืนจากแก้ไขใบ'} ${o.mo_no || ''}`.trim(),
+            p_by_name: fullName, p_ref_order: o.id,
           });
           // สต็อกไม่พอ/อะไหล่ถูกลบ = แจ้งแล้วไปต่อ (บันทึกการซ่อมสำคัญกว่า ห้ามให้ทั้งใบล้มเพราะยอดอะไหล่)
-          if (eSt) toast.error(`ตัดสต็อก "${usable.find(x => x.part_id === pid)?.name || ''}" ไม่สำเร็จ: ${eSt.message}`);
+          if (eSt) toast.error(`ปรับสต็อก "${usable.find(x => x.part_id === pid)?.name || parts.find(x => x.id === pid)?.name || ''}" ไม่สำเร็จ: ${eSt.message}`);
         }
       } else if (stage === 'accept_work') {
         const s = await resolveSign('checker_sign'); if (!s) { setSaving(false); return toast.error('ลงลายเซ็นผู้ตรวจ'); }
@@ -3332,7 +3387,16 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
             </div>
           )}
           <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><label style={lbl}>อะไหล่ที่ใช้ · เลือกจากทะเบียน = หักสต็อกให้ · พิมพ์ชื่อเองได้ถ้าไม่มีในคลัง</label><button type="button" onClick={addPart} style={{ ...btnGhost, padding: '4px 10px', fontSize: 12 }}>+ เพิ่ม</button></div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><label style={lbl}>อะไหล่ที่ใช้ · เลือกจากทะเบียน = หักสต็อกให้ · พิมพ์ชื่อเองได้ถ้าไม่มีในคลัง</label><button type="button" onClick={addPart} disabled={partsState !== 'ok'} style={{ ...btnGhost, padding: '4px 10px', fontSize: 12, opacity: partsState !== 'ok' ? 0.5 : 1 }}>+ เพิ่ม</button></div>
+            {/* 🔴 โหลดอะไหล่เดิมไม่เสร็จ/ไม่ได้ ต้องเขียนบนจอ — ลิสต์ว่างมี 2 ความหมาย
+                   ("ใบนี้ยังไม่ลงอะไหล่" กับ "โหลดไม่ติด") ปล่อยให้เดาเอง = บันทึกทับของจริงหาย */}
+            {partsState === 'loading' && <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 6 }}>กำลังโหลดรายการอะไหล่เดิมของใบนี้…</div>}
+            {partsState === 'error' && (
+              <div style={{ fontSize: 12, color: '#ef4444', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: 8, padding: '6px 9px', marginBottom: 6, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <span>โหลดรายการอะไหล่เดิมไม่สำเร็จ ({partsErr}) — บันทึกไม่ได้จนกว่าจะโหลดติด</span>
+                <button type="button" onClick={loadParts} style={{ ...btnGhost, padding: '2px 8px', fontSize: 12 }}>โหลดใหม่</button>
+              </div>
+            )}
             {usedParts.map((p, i) => {
               const master = parts.find(x => x.id === p.part_id);
               const over = master && Number(p.qty) > (Number(master.stock_qty) || 0);
@@ -3468,6 +3532,23 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
           <Field label="ชื่อผู้อนุมัติ (หัวหน้าแผนก/ส่วน/ผจก. ฝ่ายที่แจ้ง)"><PersonSelect value={f.approver_name} source="profiles" roles={DEPT_HEAD_ROLES} lines={orderFam} section={o.dept_section} history={approverHist} onChange={res => set('approver_name', res.name)} inputStyle={{ background: 'var(--bg)' }} /></Field>
           {!editMode && <div style={{ fontSize: 12, color: 'var(--muted)' }}>อนุมัติแล้วสถานะจะเป็น <b style={{ color: '#22c55e' }}>Close MO</b></div>}
         </>}
+        {/* 💰 สรุปค่าใช้จ่ายในขั้นเซ็นอนุมัติ/ปิดใบ — อ่านอย่างเดียว  (22/10 · MTN แจ้ง)
+               เดิมโมดัลขั้นปิดใบมีแค่ช่องชื่อ+ความคิดเห็น ⇒ คนเซ็นอนุมัติค่าใช้จ่ายโดยไม่เห็นค่าใช้จ่าย
+               🔴 โหลดไม่ติดต้องเขียนบนจอ ห้ามโชว์ยอดว่างเฉยๆ (ลิสต์ว่าง 2 ความหมาย) */}
+        {CLOSE_STAGES.includes(modalStage) && (
+          <div style={{ fontSize: 12.5, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px', lineHeight: 1.6 }}>
+            <div style={{ fontWeight: 800, marginBottom: 4 }}>💰 ค่าใช้จ่ายของใบนี้</div>
+            {partsState === 'loading' && <div style={{ color: 'var(--muted)' }}>กำลังโหลดรายการอะไหล่…</div>}
+            {partsState === 'error' && <div style={{ color: '#ef4444' }}>โหลดรายการอะไหล่ไม่สำเร็จ ({partsErr}) — ยอดอะไหล่ข้างล่างอาจไม่ครบ</div>}
+            {partsState === 'ok' && (usedParts.length
+              ? <div style={{ color: 'var(--text2)' }}>🔩 อะไหล่ {usedParts.length} รายการ: {usedParts.map(x => `${x.name} ×${x.qty}${x.unit || ''}`).join(', ')}</div>
+              : <div style={{ color: 'var(--muted)' }}>🔩 ไม่มีการเบิกอะไหล่ในใบนี้</div>)}
+            <div style={{ marginTop: 2 }}>
+              ค่าแรง <b>{o.labor_cost == null ? '—' : Number(o.labor_cost).toLocaleString()}</b> + อะไหล่ <b>{o.parts_cost == null ? '—' : Number(o.parts_cost).toLocaleString()}</b>
+              {(o.labor_cost != null || o.parts_cost != null) && <> = <b style={{ color: 'var(--accent2)' }}>{((Number(o.labor_cost) || 0) + (Number(o.parts_cost) || 0)).toLocaleString()}</b></>} บาท
+            </div>
+          </div>
+        )}
         {needSign && <Field label="ลายเซ็น" required><SignField signatureUrl={signatureUrl} existing={o[SIGN_COL[modalStage]]} onChange={v => { touch(); setSig(v); }} /></Field>}
       </div>
       {/* 📱 มือถือ: แถว ยกเลิก/บันทึก เกาะล่างของฟอร์ม (15/10) — ฟอร์มขั้น 3 "ลงมือซ่อม" สูง ~3 จอบน 360×640
