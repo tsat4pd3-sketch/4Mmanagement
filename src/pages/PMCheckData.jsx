@@ -36,6 +36,8 @@ import { useProductionLinesState } from '../utils/useProductionLines'
 import { lineKnownSet, groupEquipRowsByLine } from '../utils/pmEquipList'
 import { filterPlanRows } from '../utils/pmPlanFilter'
 import useIsMobile from '../utils/useIsMobile'
+import { useDraftAutosave, loadDraft, clearDraft } from '../utils/formDraft'   // 📝 ร่างในเครื่อง (มือถือ · 22/10)
+import DraftRestoreBar from '../components/DraftRestoreBar'
 
 /* 🔩 จุดชิมของ fixture บนใบตรวจ PM (2026-09-08 · คำสั่ง user "shim record กับการตรวจใช้กลไกเดียวกัน")
    ข้อมูลแยกตาราง (fixture_points/fixture_shim_events) แต่ "รูป + หมุด" ชุดเดียวกับจุดตรวจ PM:
@@ -378,6 +380,8 @@ function AttrRow({ cp, idx, value, note, onChangeAttr, onChangeNote, methodIndex
           {['ok', 'ng'].map(v => (
             <button key={v} onClick={() => pickAttr(v)} style={{
               padding: '3px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+              // 📱 มือถือ: ปุ่ม OK/NG = คำตอบหลักของใบตรวจ → ใหญ่พอใส่ถุงมือกด (เดิมสูง ~22px · 22/10) · จอคอมเท่าเดิม
+              ...(isMobile ? { minHeight: 44, minWidth: 58, fontSize: 14, borderRadius: 8 } : null),
               border: `1px solid ${value === v ? (v === 'ok' ? 'var(--accent)' : '#e05c4a') : 'var(--border)'}`,
               background: value === v ? (v === 'ok' ? 'var(--accent)' : '#e05c4a') : 'var(--bg3)',
               color: value === v ? '#fff' : 'var(--muted)',
@@ -711,6 +715,10 @@ function HistoryModal({ inspection, checkpoints: cpsFromPage, jig, onClose, user
 }
 
 // ─── PMCheckData (main) ───────────────────────────────────────────────────────
+/** มีช่องไหนในใบตรวจถูกกรอกไหม (ร่างในเครื่อง) — ค่าว่างทั้งใบ = ไม่ต้องเก็บ/ไม่ต้องถามกู้คืน */
+const pmHasInput = (results, notes) => !!(notes && String(notes).trim())
+  || Object.values(results || {}).some(r => r && ['v1', 'v2', 'v3', 'attr', 'note', 'mval'].some(f => r[f] !== '' && r[f] != null))
+
 export default function PMCheckData() {
   const [searchParams] = useSearchParams()
   const setParams = useMergeParams()
@@ -818,6 +826,10 @@ export default function PMCheckData() {
   const results = useMemo(() => pmCalcResults(checkpoints, rawResults), [checkpoints, rawResults])
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
+  /* 📝 ร่างในเครื่อง (มือถือ · 22/10 · audit handheld ข้อ 4) — ผลตรวจบันทึกทีเดียวตอนท้าย และ "เปลี่ยน/สแกนเครื่องอื่น"
+     ล้างทุกช่องที่กรอกทันที ⇒ เก็บร่างต่อ เครื่อง|แผนก|คนกรอก แล้วถามกู้คืนเมื่อกลับมาเครื่องเดิม (utils/formDraft.js) */
+  const isMobileView = useIsMobile()
+  const [pendingDraft, setPendingDraft] = useState(null)
   const [inspections, setInspections] = useState([])
   const [viewInspection, setViewInspection] = useState(null)
   const [methodIndex, setMethodIndex] = useState({})
@@ -894,7 +906,23 @@ export default function PMCheckData() {
   const lineFilter = searchParams.get('line')
   /* ⚠️ ทุกตัวต้อง merge param เดิม — เขียน setSearchParams({...}) ตรงๆ จะล้าง ?tab= ของ PmHub
      แล้วจอเด้งออกจากแท็บที่ใช้อยู่ (บั๊กจริง 2026-09-16) · ล้าง param ตั้งใจด้วยค่า null */
-  const selectJig = (jig) => setParams({ equip: jig.id })
+  const pmDraftKey = isMobileView && selectedJig && userId && cpLoad.status === 'ok' && cpLoad.key === `${selectedJig.id}|${department}`
+    ? `pm:${cpLoad.key}:${userId}` : null
+  const pmDirty = !!pmDraftKey && !pendingDraft && pmHasInput(rawResults, notes)
+  useDraftAutosave(pmDraftKey, { results: rawResults, notes }, pmDirty)
+  const restorePmDraft = () => {
+    const d = pendingDraft?.data; if (!d) return
+    // เติมเฉพาะจุดตรวจที่ยังมีอยู่ในใบตอนนี้ (จุดที่ถูกลบออกจากเช็คลิสต์ทีหลัง ไม่เอากลับมา)
+    setResults(prev => { const n = { ...prev }; Object.entries(d.results || {}).forEach(([k, v]) => { if (k in n) n[k] = { ...n[k], ...v } }); return n })
+    if (d.notes) setNotes(d.notes)
+    setPendingDraft(null)
+  }
+  const selectJigRaw = (jig) => setParams({ equip: jig.id })
+  // มือถือ: เปลี่ยนเครื่องกลางฟอร์ม = บอกว่าเก็บร่างไว้แล้ว (เดิมล้างทุกช่องเงียบๆ) · ไม่ถาม/ไม่บล็อก — กลับมาเครื่องเดิมกู้คืนได้
+  const selectJig = (jig) => {
+    if (pmDirty && jig?.id !== selectedJig?.id) toast.info(`📝 เก็บร่างผลตรวจ ${selectedJig?.name || ''} ไว้ในเครื่องแล้ว — กลับมาเลือกเครื่องนี้เพื่อกู้คืน`)
+    selectJigRaw(jig)
+  }
   const clearJig = () => setParams({ equip: null })            // กลับไปลิสต์ (จอแคบ)
   const setDept = (d) => setParams({ dept: d, line: null })    // เปลี่ยนแผนก = ล้างตัวกรองไลน์ (พฤติกรรมเดิม)
 
@@ -991,7 +1019,7 @@ export default function PMCheckData() {
     const req = ++loadReqRef.current
     const live = () => req === loadReqRef.current
     const key = `${selectedJig.id}|${department}`
-    setResults({}); setNotes(''); setTab('record'); setActiveCpId(null)
+    setResults({}); setNotes(''); setTab('record'); setActiveCpId(null); setPendingDraft(null)
     setShimVals({})
     // ล้างของเครื่องก่อนทันที — ระหว่างโหลดห้ามโชว์/บันทึกด้วยจุดตรวจของเครื่องเก่า
     setChecklistId(null); setCheckpoints([]); setFrames([]); setOtherDepts([]); setInspections([]); setMoByInsp({})
@@ -1033,6 +1061,8 @@ export default function PMCheckData() {
       const init = {}
       cps.forEach(c => { init[c.id] = { v1: '', v2: '', v3: '', attr: '', note: '', mval: '' } })
       setResults(init)
+      const saved = isMobileView ? loadDraft(`pm:${key}:${userId}`) : null
+      setPendingDraft(saved && pmHasInput(saved.data?.results, saved.data?.notes) ? saved : null)
       // ไม่มีจุดตรวจของแผนกนี้ → หาให้เลยว่าแผนกอื่นลงไว้ไหม จะได้ไม่ต้องไล่กดทีละแท็บ
       if (!cps.length) {
         listChecklistsByDept(selectedJig.id, 'mtn')
@@ -1205,6 +1235,7 @@ export default function PMCheckData() {
       if (isAmTeam(department)) setCheckedThisShift(prev => ({ ...prev, [selectedJig.id]: overall }))
 
       toast.success('บันทึกผลการตรวจสำเร็จ')
+      if (pmDraftKey) clearDraft(pmDraftKey)
       const init = {}
       checkpoints.forEach(c => { init[c.id] = { v1: '', v2: '', v3: '', attr: '', note: '', mval: '' } })
       setResults(init); setNotes('')
@@ -1434,6 +1465,10 @@ export default function PMCheckData() {
             </div>
 
             <div style={{ ...S.body, ...(isNarrow ? { padding: 12 } : null) }}>
+              {tab === 'record' && (
+                <DraftRestoreBar draft={pendingDraft} what={`ใบตรวจ ${selectedJig?.name || 'เครื่องนี้'}`} onRestore={restorePmDraft}
+                  onDiscard={() => { if (pmDraftKey) clearDraft(pmDraftKey); setPendingDraft(null) }} />
+              )}
               {tab === 'record' && (() => {
                 /* ⚠️ ไม่มีจุดตรวจของแผนกนี้ = ห้ามโชว์รูปหมุน (2026-08-11 · user ทัก "ทำไมรูปยังค้างอยู่")
                    รูปหลายมุมเป็นของ "ตัวเครื่อง" (ของกลางทุกแผนก) แต่ "หมุดจุดตรวจ" ผูกกับ
