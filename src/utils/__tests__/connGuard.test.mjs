@@ -130,12 +130,44 @@ test('🔴 เวลาพักต้องสุ่ม — ไม่งั้�
   assert.ok(hi > lo * 1.5, `ช่วงสุ่มต้องกว้างพอ (${lo} vs ${hi})`);
 });
 
-test('เน็ตหลุด (throw) นับเป็นล้มด้วย และต้องโยนต่อ ไม่กลืน', async () => {
+test('🔴 เน็ตหลุด (throw) ห้ามนับเป็น "ฐานข้อมูลรับไม่ไหว" — ต้องโยนต่อ ไม่ตัดตัวเอง', async () => {
+  /* มือถือ/ไวไฟในโรงงานหลุดเป็นเรื่องปกติ · นับด้วย = เครื่องนั้นตัดตัวเองทั้งที่ฐานข้อมูลปกติดี
+     (ของที่ปล่อยครั้งแรก 21/10 นับ = ผิด · อาการ: จอค้างเฉพาะบางเครื่อง เซิร์ฟเวอร์ไม่มี error) */
   const h = harness(['throw']);
-  for (let i = 0; i < CONN.TRIP_AFTER; i++) {
-    await assert.rejects(() => h.f(URL_GET));
+  for (let i = 0; i < CONN.TRIP_AFTER + 2; i++) {
+    await assert.rejects(() => h.f(URL_GET), /network/);
   }
-  assert.equal(h.f.state().paused, true);
+  assert.equal(h.f.state().paused, false, 'เน็ตหลุดต้องไม่ทำให้ตัดตัวเอง');
+  assert.equal(h.calls.length, CONN.TRIP_AFTER + 2, 'ต้องพยายามยิงต่อตามปกติ');
+});
+
+test('🔴 503 ที่ห่างกันเกิน WINDOW ไม่ใช่ "ติดกัน" — ห้ามสะสมข้ามวัน', async () => {
+  const h = harness([503]);
+  for (let i = 0; i < CONN.TRIP_AFTER * 2; i++) {
+    await h.f(URL_GET);
+    h.tick(CONN.WINDOW_MS + 1000);        // ห่างกันเกินหน้าต่าง
+  }
+  assert.equal(h.f.state().paused, false, '503 นานๆ ครั้งต้องไม่ตัด');
+});
+
+test('🔴 probe ที่ค้าง ต้องไม่ตัดทุกคำขอถาวร (กัน deadlock)', async () => {
+  let t = 1000, hits = 0;
+  const base = () => {
+    hits++;
+    if (hits <= CONN.TRIP_AFTER) return Promise.resolve(res(503));
+    return new Promise(() => {});          // ค้างตลอดกาล — ไม่มีวัน settle
+  };
+  const f = makeConnGuard(base, { now: () => t, random: () => 0.5 });
+  for (let i = 0; i < CONN.TRIP_AFTER; i++) await f(URL_GET);
+  t = f.state().until + 1;
+  f(URL_GET);                               // probe ที่จะค้างตลอดกาล
+  assert.equal(hits, CONN.TRIP_AFTER + 1);
+  await f(URL_GET);
+  assert.equal(hits, CONN.TRIP_AFTER + 1, 'ระหว่างยังไม่เกินเวลา probe ยังกันไว้');
+
+  t += CONN.PROBE_MAX_MS + 1;               // probe ค้างเกินเวลา
+  f(URL_GET);
+  assert.equal(hits, CONN.TRIP_AFTER + 2, 'เกินเวลาแล้วต้องปล่อยตัวถัดไปลองได้ ห้ามตันถาวร');
 });
 
 test('ปุ่ม "ลองใหม่" ล้างการพักทันที', async () => {
