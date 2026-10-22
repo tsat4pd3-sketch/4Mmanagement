@@ -6221,3 +6221,37 @@ test('📥 carry-debt-no-session-window — ของค้างต้องถ
     + '   แก้: ถามด้วยสถานะ + carryOffers() (src/utils/carryDebt.js)\n'
     + '        📄 docs/modules/daily-report.md §ของค้าง\n');
 });
+
+test('🧺 receipt-group-keeps-slips — ยุบใบเพื่อ "กด" ได้ แต่ห้ามยุบการเก็บ/การปัน', () => {
+  const bad = [];
+  const read = (rel) => stripComments(readFileSync(join(ROOT, rel), 'utf8'));
+  const q = read('src/components/StockReceiptQueue.jsx');
+  const u = read('src/utils/stockReceipts.js');
+
+  /* 🔴 user เคาะ 22/10 "เก็บรายใบไว้ กางดูได้" — ยุบ 169 ใบแล้วตามรอยกลับไม่ได้ = สอบกลับออเดอร์ตาย */
+  if (/stock_receipt_confirm_group/.test(q) && !/กางดูรายใบ/.test(q))
+    bad.push('src/components/StockReceiptQueue.jsx (รับทั้งกองแต่ไม่มีปุ่มกางดูรายใบ — สอบกลับรายออเดอร์หาย)');
+
+  /* 🔴 ยอดไม่ตรงต้องปันผ่าน allocateFifo เท่านั้น — เฉลี่ยเองในหน้า = ได้เศษทศนิยมของ "ชิ้น" */
+  if (/stock_receipt_confirm_group/.test(q) && !/allocateFifo\(/.test(q))
+    bad.push('src/components/StockReceiptQueue.jsx (ไม่ได้ใช้ allocateFifo — การปันยอดต้องตรงกับฝั่ง DB)');
+
+  /* 🔴 ห้ามวนยิง RPC ใบเดี่ยวแทนการรับทั้งกอง (169 ครั้ง = ล้มกลางคัน ครึ่งรับครึ่งไม่รับ) */
+  if (/\.(map|forEach)\([^)]{0,80}=>[\s\S]{0,200}rpc\('stock_receipt_confirm'/.test(q))
+    bad.push('src/components/StockReceiptQueue.jsx (วนยิง stock_receipt_confirm ทีละใบ — ต้องใช้ RPC กอง)');
+
+  /* 🔴 การปันต้องเป็นจำนวนเต็ม — ของนับเป็นชิ้น */
+  const alloc = (u.match(/export function allocateFifo[\s\S]{0,1200}?\n\}/) || [''])[0];
+  if (!alloc) bad.push('src/utils/stockReceipts.js (ไม่มี allocateFifo แล้ว — จอกับ DB จะปันคนละแบบ)');
+  else if (!/Math\.floor\(/.test(alloc) || !/Math\.min\(/.test(alloc))
+    bad.push('src/utils/stockReceipts.js (allocateFifo ไม่ได้ปัดเป็นจำนวนเต็ม/ไม่ได้ตัดที่ยอดของใบ)');
+
+  /* 🔴 ตัวเดิมต้องอยู่ — โหมด "ทีละใบ" ใช้อยู่ และเป็นทางถอยถ้า RPC กองถูก rollback */
+  if (!/rpc\('stock_receipt_confirm'/.test(q))
+    bad.push('src/components/StockReceiptQueue.jsx (ถอด stock_receipt_confirm ใบเดี่ยวออก — ไม่เหลือทางถอย)');
+
+  assert.deepEqual(bad, [], 'ยุบใบรอรับผิดกติกา:\n' + bad.join('\n')
+    + '\nwhy: 22/10 พาร์ท 20058498 ค้าง 169 ใบ/3 วัน คิวตายเพราะการ์ดต่อใบ · FG เลยติดลบ −630'
+    + '\nfix: ยุบด้วย groupReceipts + ปันด้วย allocateFifo + ปิดใบรายตัวผ่าน RPC `stock_receipt_confirm_group`'
+    + ' และต้องมีปุ่ม "กางดูรายใบ" เสมอ');
+});

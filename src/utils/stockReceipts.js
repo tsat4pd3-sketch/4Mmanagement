@@ -104,3 +104,79 @@ export function sortReceipts(rows = []) {
     return String(b.received_at || b.created_at).localeCompare(String(a.received_at || a.created_at));
   });
 }
+
+/* ═══ 🧺 ยุบใบเป็นกอง — "พาร์ทเดียวค้าง 169 ใบ ไม่มีใครไล่กดไหว" (2026-10-22 · คำสั่ง user) ═══
+ *
+ * ปิดใบผลิต 1 ใบ = เกิดใบรอรับ 1 ใบ ⇒ วัดจริง 22/10: `20058498` ค้าง **169 ใบ / 2,324 ชิ้น / 3 วัน**
+ * ที่เส้นทางเดียวกันเป๊ะ (Assy GOR → STORE) · คิวทั้งโรงงาน 331 ใบ ⇒ จอการ์ดต่อใบ = คิวตาย
+ *
+ * 🔴 **ยุบเพื่อ "กด" เท่านั้น — ห้ามยุบการเก็บ** (user เคาะ 22/10 "เก็บรายใบไว้ กางดูได้")
+ *   ทุกใบยังถูกปิดรายใบพร้อม `qty_received` ของตัวเอง ⇒ สอบกลับว่าชิ้นนี้มาจากออเดอร์ไหนได้เหมือนเดิม
+ *
+ * 🔴 **ยอดที่นับได้ไม่ตรง ต้องปันลงใบจริง ห้ามเฉลี่ยเป็นทศนิยม** — ของนับเป็นชิ้น
+ *   กติกา = **ใบเก่าก่อน (FIFO)** ของที่ส่งมาก่อนย่อมถูกนับก่อน · ใบที่ยอดไม่พอถึงจะได้บางส่วน ·
+ *   ที่เหลือได้ 0 (ยังมาไม่ถึง) · นับได้เกินใบ = ส่วนเกินลงใบใหม่สุด (ใบที่น่าจะนับขาดที่สุด)
+ * ═══════════════════════════════════════════════════════════════════════════════ */
+
+/** คีย์ของกอง — เส้นทางต้องเหมือนกันทุกตัว ไม่งั้นลงบัญชีผิดไลน์ */
+export const receiptGroupKey = (r) =>
+  [r?.mat_no ?? '', r?.source_line ?? '', r?.dest_line_name ?? ''].join('\u0001');
+
+/**
+ * ยุบใบรอรับเป็นกอง (พาร์ท × ต้นทาง × ปลายทาง)
+ * @returns [{ key, mat_no, part_name, source_line, dest_line_name, slips, count, expected, oldestAt }]
+ *          เรียงกองที่ค้างนานสุดขึ้นก่อน · ในกองเรียงใบเก่าก่อน (ลำดับที่ FIFO ใช้)
+ */
+export function groupReceipts(rows = []) {
+  const by = new Map();
+  for (const r of rows || []) {
+    if (!r || r.status !== 'pending') continue;
+    const key = receiptGroupKey(r);
+    const g = by.get(key) || {
+      key, mat_no: r.mat_no || '', part_name: r.part_name || '',
+      source_line: r.source_line || '', dest_line_name: r.dest_line_name || '',
+      slips: [], count: 0, expected: 0, oldestAt: null,
+    };
+    g.slips.push(r);
+    g.count += 1;
+    g.expected += Number(r.qty_expected) || 0;
+    const t = String(r.created_at || '');
+    if (t && (g.oldestAt == null || t < g.oldestAt)) g.oldestAt = t;
+    by.set(key, g);
+  }
+  const out = [...by.values()];
+  for (const g of out) g.slips.sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+  /* กองที่ไม่รู้เวลา (อ่าน created_at ไม่ออก) ต่อท้าย — ห้ามหายจากจอ */
+  return out.sort((a, b) => {
+    if (a.oldestAt == null) return b.oldestAt == null ? 0 : 1;
+    if (b.oldestAt == null) return -1;
+    return a.oldestAt.localeCompare(b.oldestAt);
+  });
+}
+
+/**
+ * ปันยอดที่นับได้จริงลงใบรายตัว — ใบเก่าก่อน (FIFO)
+ * @param {Array}  slips  ใบในกอง **เรียงเก่า→ใหม่แล้ว** (groupReceipts จัดให้)
+ * @param {number} qty    ยอดที่นับได้จริงของทั้งกอง
+ * @returns {{ parts:[{id,alloc,expected}], expected:number, got:number, diff:number, zeroed:number }}
+ *          `zeroed` = จำนวนใบที่ได้ 0 (ของยังมาไม่ถึง) — จอต้องเขียนบอก
+ */
+export function allocateFifo(slips = [], qty) {
+  const list = (slips || []).filter(Boolean);
+  const expected = list.reduce((a, r) => a + (Number(r.qty_expected) || 0), 0);
+  const q = Number(qty);
+  const got = Number.isFinite(q) && q >= 0 ? Math.floor(q) : 0;
+  let left = got;
+  const parts = list.map((r) => {
+    const exp = Number(r.qty_expected) || 0;
+    const alloc = Math.min(exp, left);
+    left -= alloc;
+    return { id: r.id, alloc, expected: exp };
+  });
+  /* นับได้เกินยอดรวมของใบ — ส่วนเกินลงใบใหม่สุด (ไม่มีใบ = ทิ้งไว้ ให้ตัวเรียกเห็นจาก diff) */
+  if (left > 0 && parts.length) parts[parts.length - 1].alloc += left;
+  return {
+    parts, expected, got, diff: got - expected,
+    zeroed: parts.filter(p => p.alloc === 0).length,
+  };
+}

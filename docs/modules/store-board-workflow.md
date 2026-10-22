@@ -17,7 +17,7 @@ user: *"recheck work flow ทุก tab ให้ที ใครทำอะไ
 | 🟫 Store Raw Mat (`raw_withdrawal_requests`) | รอจ่าย → จ่ายแล้ว | สโตร์ "จ่ายวัตถุดิบ" | สโตร์ → ไลน์ child | สถานะอย่างเดียว (CAS + นับแถว) |
 | 📦 ภาชนะ/แร็ค | เรียก → เตรียม → ส่ง → รับ | **อ่านอย่างเดียวที่นี่** · ตัวจริง `/rack-center` (`rack_center:operate`) | — | `rack_requests` / `packaging_withdrawal_requests` |
 | 🚚 Store FG (รอบส่ง · ซ่อนเมื่อไม่มีรอบ) | ยังไม่ยืนยัน → ยืนยันส่ง → รับครบ | สโตร์ "✅ ยืนยันส่งแล้ว" · "✔️ รับครบ" | สโตร์ → ไลน์ | `kanban_deliveries` + ledger issue |
-| 📥 รอรับเข้า (`/line-stock` · `stock_receipts`) | รอรับ/ค้าง → รับแล้ว | คลัง "✅ นับแล้วตรง · รับ N" / "✏️ ยอดไม่ตรง" (`line_stock:issue`) | ไลน์ปิดใบผลิต → คลัง | RPC `stock_receipt_confirm` (ธุรกรรมเดียว) |
+| 📥 รอรับเข้า (`/line-stock` · `stock_receipts`) | รอรับ/ค้าง → รับแล้ว | คลัง "✅ นับแล้วตรง · รับ N" / "✏️ ยอดไม่ตรง" (`line_stock:issue`) | ไลน์ปิดใบผลิต → คลัง | RPC `stock_receipt_confirm` (ใบเดี่ยว) · `stock_receipt_confirm_group` (ทั้งกอง · ค่าตั้งต้น 22/10) |
 
 ## รูปแบบ (05/10)
 - แท็บที่มี ≥2 สถานะเปิดใช้ `<StatusZones>` + การ์ด `PartCard` ครบแล้ว: WIP · Child · **จัดซื้อ (ทำ 05/10)** · Raw · รอรับเข้า
