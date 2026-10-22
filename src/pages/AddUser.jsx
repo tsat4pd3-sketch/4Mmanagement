@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { orgNodeCompare } from '../utils/listOrder';
 import { supabase } from '../supabaseClient';
 import { toast } from '../components/Toast';
@@ -19,7 +19,7 @@ import { SCOPE_DEPTHS, SCOPE_DEPTH_META, depthForLevel, needsScopeReview } from 
 import { buildOrgScope, SCOPE_KIND_META } from '../utils/orgScope';
 /* 💰 ชั้นสิทธิ์ที่ 3 แกน Cost Center (16/10 · คำสั่ง user "เซ็ตได้ว่า user ไหน response กับ cost center
    ไหน ตามลำดับชั้น") — ทะเบียนรหัส/ลำดับชั้น/ข้อความบล็อก อยู่ใน `utils/ccScope.js` ที่เดียว */
-import { attachCc, ccCoverage, unknownRespCcs } from '../utils/ccScope';
+import { attachCc, ccCoverage, unknownRespCcs, buildCcIndex } from '../utils/ccScope';
 
 import InfoMore from '../components/InfoMore';
 import CollapseCard from '../components/CollapseCard';   // 📚 ตารางอ้างอิงชุดสิทธิ์ — พับเป็นค่าเริ่มต้น (21/10 · คำสั่ง user)
@@ -212,6 +212,19 @@ export default function AddUser() {
   /* เรียงแบบต้นไม้ (แม่ก่อนลูก) — ลำดับในแต่ละชั้นมาจาก sort_order ที่ /org-setup เพราะ `nodes`
      ถูก `.sort(orgNodeCompare)` ไว้ตอนโหลดแล้ว */
   const ccRows = useMemo(() => scopeIdx.cc.catalogTree(), [scopeIdx]);
+  /* 💰🔗 **ส่วนงาน/แผนก มีรหัส CC อยู่ในผังอยู่แล้ว — ต้องโชว์ให้เห็นว่าลิงก์กัน** (2026-10-22 · คำสั่ง user
+     *"ตั้ง section แล้ว แต่ cc ไม่ขึ้น คือมันต้องลิงก์กันโดยธรรมชาติ"*)
+     เดิมชิป 💰 ขึ้นเฉพาะบัญชีที่ **ติ๊กเอง** (`resp_cost_centers`) ⇒ แถวที่เหลืออ่านแล้วเหมือน "ไม่มี CC"
+     ทั้งที่ส่วนงานของเขามีรหัสในผัง · ชั้นสิทธิ์ก็ใช้ส่วนงานนั้นตัดสินอยู่แล้ว
+     🔴 ตกทอดจากโหนดแม่ด้วย (`ccOfNode`) — หน่วยที่ยังไม่ผูกรหัสเองต้องไม่กลายเป็น "ไม่มี" */
+  const ccIdxNodes = useMemo(() => buildCcIndex(orgAllNodes || []), [orgAllNodes]);
+  const ccOfUnitName = useCallback((name) => {
+    const v = String(name || '').trim().toLowerCase();
+    if (!v) return null;
+    const n = (orgAllNodes || []).find(x => (x.kind === 'section' || x.kind === 'department')
+      && [x.code, x.name].filter(Boolean).some(t => String(t).trim().toLowerCase() === v));
+    return n ? (ccIdxNodes.ccOfNode(n.id)?.cc || null) : null;
+  }, [orgAllNodes, ccIdxNodes]);
   const ccCov = useMemo(() => ccCoverage(scopeIdx, form.respCcs), [scopeIdx, form.respCcs]);
   /* รหัสที่ตั้งไว้แต่ผังไม่รู้จัก — เช็คได้เฉพาะเมื่อผังโหลดเสร็จ (ว่าง = ทะเบียนว่าง = ตะโกนผิด) */
   const ccUnknown = ccReady ? unknownRespCcs(scopeIdx, form.respCcs) : [];
@@ -1073,12 +1086,25 @@ export default function AddUser() {
                     {u.sections?.length ? u.sections.join(', ') : (u.section || '—')}
                     {/* 💰 ชั้นสิทธิ์ที่ 3 แกน CC — บัญชีที่ตั้งแล้ว "ชนะ" ส่วนงานข้างบน ⇒ ต้องเห็นจากลิสต์
                         ไม่งั้นแอดมินอ่านคอลัมน์นี้แล้วเข้าใจผิดว่าขอบเขตที่แก้ได้คือส่วนงานที่เขียนอยู่ */}
-                    {(u.resp_cost_centers || []).length > 0 && (
-                      <div title={(u.resp_cost_centers || []).join(' · ')}
-                        style={{ fontSize: 11, fontWeight: 700, color: '#22c55e', marginTop: 2 }}>
-                        💰 CC {(u.resp_cost_centers || []).length} รหัส
-                      </div>
-                    )}
+                    {(() => {
+                      const own = (u.resp_cost_centers || []).filter(Boolean);
+                      if (own.length) return (
+                        <div title={`ตั้งเองที่ช่อง ④ — ชนะส่วนงาน: ${own.join(' · ')}`}
+                          style={{ fontSize: 11, fontWeight: 700, color: '#22c55e', marginTop: 2 }}>
+                          💰 CC {own.length} รหัส · ตั้งเอง
+                        </div>
+                      );
+                      /* ไม่ได้ติ๊กเอง = ใช้ CC ของส่วนงานตามผัง — โชว์ให้เห็นว่าลิงก์กัน (ไม่ใช่ "ไม่มี") */
+                      const units = u.sections?.length ? u.sections : (u.section ? [u.section] : []);
+                      const derived = [...new Set(units.map(ccOfUnitName).filter(Boolean))];
+                      if (!derived.length) return null;
+                      return (
+                        <div title={`รหัสของส่วนงานตามผังองค์กร (ไม่ได้ตั้งเอง): ${derived.join(' · ')}`}
+                          style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', marginTop: 2 }}>
+                          💰 {derived.join(' · ')} · จากผัง
+                        </div>
+                      );
+                    })()}
                   </td>
                   <td style={{ fontSize: 13, color: u.line_id ? 'var(--text)' : 'var(--muted)' }}>
                     {lineName}
