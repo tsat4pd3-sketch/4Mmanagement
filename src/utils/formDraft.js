@@ -63,21 +63,23 @@ export function draftTimeText(at) {
 }
 
 /**
- * เก็บร่างอัตโนมัติระหว่างกรอก (หน่วง 600ms หลังพิมพ์ครั้งสุดท้าย · เก็บทันทีตอนแอปถูกพับ/ปิด)
+ * เก็บร่างอัตโนมัติระหว่างกรอก (เก็บทุกครั้งที่เปลี่ยน + ตอนแอปถูกพับ/ปิด)
  * @param {string|null} key   null = ไม่เก็บ (ยังโหลดไม่เสร็จ / ไม่ใช่มือถือ)
  * @param {any} data          ของที่จะเก็บ (ต้อง JSON ได้ — ไฟล์รูปให้ตัดออกก่อน)
- * @param {boolean} dirty     มีอะไรที่ยังไม่บันทึกไหม · false = ล้างร่าง (กรอกกลับเป็นเหมือนเดิม/บันทึกแล้ว)
+ * @param {boolean} dirty     มีอะไรที่ยังไม่บันทึกไหม · false = ไม่เก็บ (แต่ไม่ล้างร่างเดิม — ล้างด้วย clearDraft ตอนบันทึก/ทิ้ง)
  */
 export function useDraftAutosave(key, data, dirty) {
   const latest = useRef({ key, data, dirty });
   latest.current = { key, data, dirty };
   const json = key && dirty ? JSON.stringify(data) : '';
 
+  /* เก็บทันทีทุกครั้งที่เปลี่ยน (ไม่หน่วง) — หน่วงแล้ว "สลับไลน์/เครื่อง" ภายในช่วงหน่วงจะยกเลิกการเก็บรอบสุดท้าย
+     = ตัวที่เพิ่งพิมพ์หาย · ข้อมูลฟอร์มเล็ก (หลัก KB) เขียน localStorage ทุกครั้งไม่หนักเครื่อง */
   useEffect(() => {
-    if (!key) return undefined;
-    if (!dirty) { clearDraft(key); return undefined; }
-    const t = setTimeout(() => saveDraft(key, JSON.parse(json)), 600);
-    return () => clearTimeout(t);
+    /* 🔴 dirty=false ห้ามล้างร่างเอง — ตอนเพิ่งเปิดชุดที่มีร่าง ฟอร์มยังว่าง (dirty=false) ระหว่างรอคนกดกู้คืน
+       ถ้าล้างตรงนี้ ร่างหายก่อนคนตัดสินใจ · ล้างเฉพาะตอน "บันทึกสำเร็จ" / "ทิ้งร่าง" ที่หน้าเรียก `clearDraft()` เอง */
+    if (!key || !dirty) return;
+    saveDraft(key, JSON.parse(json));
   }, [key, dirty, json]);
 
   // แอปถูกพับ (กดปุ่มโฮม/ล็อกจอ) = เก็บเดี๋ยวนี้ ไม่รอหน่วง — Android ฆ่าแท็บพื้นหลังได้ทุกเมื่อ

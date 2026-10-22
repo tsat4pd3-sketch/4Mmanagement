@@ -636,6 +636,19 @@ export default function ScrapReport() {
   };
 
   const isMobile = useIsMobile();
+  /* 📱 มือถือ: ปิดใบที่แก้แล้วยังไม่บันทึก = ถามก่อน (22/10 · audit handheld ข้อ 4) — เดิม ✕/ยกเลิก ทิ้งทั้งใบเงียบๆ
+     ทั้งที่แตะพลาดง่ายบนจอ 360px · เทียบกับภาพตอนเปิดใบ (ไฟล์รูปที่ยังไม่อัปนับด้วย) · จอคอมปิดทันทีเหมือนเดิม */
+  const editorSnapRef = useRef(null);
+  const editorSnap = (ed) => JSON.stringify({ r: ed?.report, i: (ed?.items || []).map(({ _imgFile, ...it }) => ({ ...it, _f: !!_imgFile })) });
+  useEffect(() => {
+    if (!editor) editorSnapRef.current = null;
+    else if (editorSnapRef.current == null) editorSnapRef.current = editorSnap(editor);
+  }, [editor]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const closeEditor = () => {
+    if (isMobile && editor && editorSnap(editor) !== editorSnapRef.current
+      && !window.confirm('ปิดใบนี้โดยไม่บันทึก? — ที่กรอก/แก้ไว้จะหายทั้งหมด')) return;
+    setEditor(null);
+  };
   const STATUS_META = { draft: { label: 'ร่าง', color: '#6b7280' }, submitted: { label: 'ส่งอนุมัติ', color: '#f59e0b' }, approved: { label: 'อนุมัติแล้ว', color: '#22c55e' } };
 
   return (
@@ -748,7 +761,7 @@ export default function ScrapReport() {
       )}
 
       {editor && (
-        <Modal title={editor.report.id ? `✏️ แก้ใบ ${editor.report.doc_no || ''}` : '➕ เปิดใบรายงานของเสียใหม่'} onClose={() => setEditor(null)} width={1180}>
+        <Modal title={editor.report.id ? `✏️ แก้ใบ ${editor.report.doc_no || ''}` : '➕ เปิดใบรายงานของเสียใหม่'} onClose={closeEditor} width={1180}>
           {/* หัวใบ */}
           <div className="sr-hgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 12 }}>
             <Field label="วันที่"><input type="date" style={inputSt} value={editor.report.report_date} onChange={e => setRep({ report_date: e.target.value })} /></Field>
@@ -964,7 +977,7 @@ export default function ScrapReport() {
           </div>
 
           <div className={isMobile ? 'sr-foot m-stickfoot' : 'sr-foot'} style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
-            <button style={ghostBtn} onClick={() => setEditor(null)}>ยกเลิก</button>
+            <button style={ghostBtn} onClick={closeEditor}>ยกเลิก</button>
             {canRecord && <button style={btnSt()} onClick={saveReport}>💾 บันทึกใบ</button>}
           </div>
         </Modal>
