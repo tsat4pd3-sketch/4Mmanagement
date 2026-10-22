@@ -17,6 +17,7 @@ import ToggleDot from '../components/ToggleDot';
 import { loadCompanyCalendar, getDayType, isOtHolidayType } from '../utils/companyCalendar';
 import { holidayPeriodsForShift, defaultHolidayPeriod, otPeriodLabel, WEEKDAY_OT_TIME } from '../utils/otPeriods';
 import { getLineFamilyIds } from '../utils/lineHierarchy';
+import { buildViewScope, empScopeOrFilter, scopeLineIds } from '../utils/viewScope';   // 👁️ ขอบเขตที่เห็นได้ ผ่านผัง (22/10)
 import LineSelect from '../components/LineSelect';
 import LineScopeSelect from '../components/LineScopeSelect';
 import { loadLinesRes } from '../utils/useProductionLines';
@@ -100,7 +101,11 @@ const STATUS_META = {
 };
 
 export default function Checkin() {
-  const { role, lineId, team, sections: scopeSecs = [], fullName } = useContext(UserContext);
+  const { role, lineId, team, sections: scopeSecs = [], fullName, scopeIdx } = useContext(UserContext);
+  /* 👁️ ขอบเขต "ที่เห็นได้" ตัดสินผ่านผัง — รองรับขอบเขตที่เป็น **แผนก/ไลน์** ไม่ใช่แค่ส่วนงาน
+     (22/10 · เคสหัวหน้าที่ดูแล 2 ไลน์ในแผนกเดียว: เดิมต้องตั้ง "ทั้ง PD1" แล้วได้ไลน์อื่นมาด้วย)
+     🔴 ชื่อที่ผังไม่รู้จัก = พฤติกรรมเดิม (เทียบข้อความ) — ดู utils/viewScope.js กฎข้อ 1 */
+  const viewScope = useMemo(() => buildViewScope(scopeSecs, scopeIdx), [scopeSecs, scopeIdx]);
   const canRecord = can('checkin', 'record', role);
   const orgTeams = useOrgTeams(); // 2026-09-07 ทีม A/B/C จาก org_nodes (fallback A/B/C)
 
@@ -294,9 +299,12 @@ export default function Checkin() {
     if (famIdsQ) {
       empQ = famIdsQ.size ? empQ.in('line_id', [...famIdsQ]) : empQ.eq('line_id', lineId);
     } else if (scopeSecs.length) {
-      // ทุก role ที่ถูกจำกัดขอบเขตส่วนงาน (supervisor เดิม + manager/qa ที่กำหนด sections)
-      // · รวม leader ที่ยังไม่ผูกไลน์ (เช่นรักษาการหลายหน่วย) — ถอยมาใช้แกนนี้แทน
-      empQ = empQ.in('section', scopeSecs);
+      /* ทุก role ที่ถูกจำกัดขอบเขต (supervisor เดิม + manager/qa ที่กำหนด sections)
+         · รวม leader ที่ยังไม่ผูกไลน์ (เช่นรักษาการหลายหน่วย) — ถอยมาใช้แกนนี้แทน
+         🔁 22/10: เดิม `.in('section', …)` เทียบข้อความอย่างเดียว ⇒ ขอบเขตที่เป็น **แผนก/ไลน์**
+            คืน 0 แถว · ตอนนี้ขยายผ่านผังเป็น ส่วนงาน/แผนก/ไลน์ แล้วกรองด้วย `.or()` ชุดเดียว */
+      const orF = empScopeOrFilter(viewScope, scopeLineIds(viewScope, lineData || []));
+      if (orF) empQ = empQ.or(orF);
     }
     if (role === 'leader') {
       // ⚠️ ทีมที่ไม่หมุนกะ (C) = หัวหน้าที่ไม่ได้ยืนหน้างาน → เห็นคนทั้งไลน์ทุกทีม
@@ -958,7 +966,8 @@ export default function Checkin() {
       if (famIdsX) {   // ทั้งครอบครัวไลน์ (ตัวเอง + แม่ + ลูก) — ห้ามกรอง line_id ตรงตัว
         empQ = famIdsX.size ? empQ.in('line_id', [...famIdsX]) : empQ.eq('line_id', lineId);
       } else if (scopeSecs.length) {
-        empQ = empQ.in('section', scopeSecs);
+        const orX = empScopeOrFilter(viewScope, scopeLineIds(viewScope, lines || []));
+        if (orX) empQ = empQ.or(orX);
       }
       if (role === 'leader') {
         // ⚠️ ทีมที่ไม่หมุนกะ (C) = หัวหน้าที่ไม่ได้ยืนหน้างาน → เห็นคนทั้งไลน์ทุกทีม
