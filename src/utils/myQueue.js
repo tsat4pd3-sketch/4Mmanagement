@@ -214,7 +214,30 @@ export function buildQueue(src = {}, me = {}, now = new Date()) {
      (เกิดจริงในคอมมิทแรกของฟีเจอร์นี้ 06/10 — เทสด้านล่างกันไว้แล้ว) */
   const byPos = new Map();   // `stage` → { stage, step, meta, count, oldest }
 
-  // ── ใบซ่อม MO ────────────────────────────────────────────────────────────
+  /* ── 🔢 ยอดจริงของแต่ละกอง — แยกชุดข้อมูลออกจากชุดที่เอาไปวาดรายการ (2026-10-22) ──────────
+     ที่มา (คำสั่ง user หลังตรวจงาน QA 21/10): บรรทัดสรุปชั้น `floor` เคยนับจาก `src.mo` ซึ่งผู้เรียก
+     ตัดมาแค่ 300 แถวแรก (เรียงวันที่เก่าสุด) ⇒ วัดจริง 22/10: ใบเปิดค้าง 672 ใบ · หน้าต่างจบที่ 08/10
+     **ใบรอ QA จริง 92 ใบ แต่แผงนับได้ 26** และจอไม่เคยบอกว่านับไม่ครบ
+     ⇒ ผู้เรียกส่ง `moAll` = แถวคอลัมน์บาง **ทั้งหมด** มาให้นับกองโดยเฉพาะ (รายการยังวาดจาก `mo` เหมือนเดิม)
+     🔴 ไม่ส่ง `moAll` = ถอยไปนับจาก `mo` แบบเดิมเป๊ะ แต่ต้องติดธง `countsCapped` ให้จอเขียนบอก
+        (ห้ามเงียบ — กฎ "โหลดไม่ครบต้องเขียนบนจอ" ในหัวไฟล์ MyQueuePanel)
+     ⚠️ ชุดนับต้องผ่าน `moWaitMeta()` ตัวเดียวกับรายการ — ห้ามนับด้วย `status` ดิบ
+        (ขั้นที่รออยู่ขึ้นกับฟอร์ม/ด่านอนุมัติด้วย ไม่ใช่สถานะอย่างเดียว) */
+  const moForCount = src.moAll ?? src.mo ?? [];   // ก้อนที่โหลดไม่ได้ ติด partial ที่ need('mo') ข้างล่างอยู่แล้ว
+  const countsCapped = !src.moAll || !!src.moAllCapped;
+
+  for (const o of moForCount) {
+    const w = moWaitingOn(o);
+    if (!w.meta || w.byName) continue;          // รอคนระบุชื่อ = ไม่ใช่กองของ "ตำแหน่ง"
+    const sk = w.meta.stage || `step${w.step}`;
+    const cur = byPos.get(sk) || { stage: sk, step: w.step, meta: w.meta, count: 0, oldest: null };
+    cur.count += 1;
+    const age = ageDays(o.work_date, now);
+    if (age != null && (cur.oldest == null || age > cur.oldest)) cur.oldest = age;
+    byPos.set(sk, cur);
+  }
+
+  // ── ใบซ่อม MO (ชุดที่เอาไปวาดรายการ) ──────────────────────────────────────
   for (const o of need('mo', src.mo)) {
     const w = moWaitingOn(o);
     if (!w.meta) continue;                                  // ใบยังไม่เข้าลูป (ขั้น 1) — ไม่ใช่งานค้างของใคร
@@ -224,14 +247,7 @@ export function buildQueue(src = {}, me = {}, now = new Date()) {
       mine.push({ ...moItem(o, w, TIER.MINE), sign: true, tag: '✍️ รอคุณเซ็น' });
       continue;
     }
-    if (!w.byName) {                                        // รอ "ตำแหน่ง" ⇒ สะสมไว้สรุปชั้น floor
-      const sk = w.meta.stage || `step${w.step}`;           // ไม่รู้ stage = ยังแยกกองด้วยเลขขั้น ห้ามยุบรวม
-      const cur = byPos.get(sk) || { stage: sk, step: w.step, meta: w.meta, count: 0, oldest: null };
-      cur.count += 1;
-      const age = ageDays(o.work_date, now);
-      if (age != null && (cur.oldest == null || age > cur.oldest)) cur.oldest = age;
-      byPos.set(sk, cur);
-    }
+    /* กองของ "ตำแหน่ง" นับไปแล้วในลูปข้างบน (ชุด moAll) — ที่นี่เหลือแค่รายการของหน่วยเรา */
     if (keep(o)) unit.push(moItem(o, w, TIER.UNIT));
   }
 
@@ -311,8 +327,10 @@ export function buildQueue(src = {}, me = {}, now = new Date()) {
       /* ชื่อขั้น/ผู้รับผิดชอบ อ่านจาก `stepMeta()` เท่านั้น — ห้ามพิมพ์ชื่อขั้นซ้ำที่นี่
          (อีโมจิอยู่ `meta.icon` ไม่ได้อยู่ใน `meta.title` ⇒ ต่อ title ตรงๆ ได้) */
       title: `ใบซ่อมรอ${g.meta.title} ${g.count.toLocaleString()} ใบ`,
+      capped: countsCapped,          // 🔴 นับไม่ครบ = จอต้องเขียนบอก ห้ามโชว์เลขเฉยๆ
       detail: ['ทั้งโรงงาน', g.meta.whoShort || g.meta.who || 'ผู้รับผิดชอบ',
-        g.oldest != null ? `เก่าสุด ${g.oldest.toLocaleString()} วัน` : null].filter(Boolean).join(' · '),
+        g.oldest != null ? `เก่าสุด ${g.oldest.toLocaleString()} วัน` : null,
+        countsCapped ? 'อย่างน้อย (นับได้ไม่ครบ)' : null].filter(Boolean).join(' · '),
       /* 🔴 ลิงก์ต้องพาไปถึง "กองนั้น" จริง (06/10) — `?wait=<stage>` กรองขั้นที่รออยู่
          + `from=` ถอยขอบล่างให้ครอบใบที่เก่าสุดของกอง ไม่งั้นตัวกรองวันที่ default ซ่อนใบค้างหมด
          (กับดักเดียวกับคิว 4M: "ใบค้างมักเก่ากว่าช่วง default") · ไม่รู้อายุ = ไม่ส่ง from ให้หน้าใช้ค่าเดิม */

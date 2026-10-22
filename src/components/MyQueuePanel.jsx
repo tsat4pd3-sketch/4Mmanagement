@@ -34,6 +34,20 @@ import {
 const STALE_MIN = 5;
 /** เพดานแถวต่อคิวรี — คิวงานไม่ใช่รายงาน ไม่ต้องครบทุกแถวในโลก */
 const LIMIT = 300;
+/* เพดานต่อคิวรีของ PostgREST (กฎเหล็กข้อ 5) — ชุดนับยอดก็เกินไม่ได้
+   ⇒ ได้ครบ COUNT_LIMIT แถวพอดี = **อาจมีมากกว่านี้** ต้องติดธงให้จอเขียนบอก */
+const COUNT_LIMIT = 1000;
+
+/* 🔢 ชุด "นับยอดกอง" — คอลัมน์เท่าที่ `moWaitMeta()` ต้องใช้ตัดสินขั้นที่รออยู่เท่านั้น
+   (22/10 · คำสั่ง user หลังตรวจงาน QA) เดิมบรรทัดสรุปนับจากชุดรายการที่ถูกตัดด้วย LIMIT 300
+   ⇒ วัดจริง 22/10: ใบเปิดค้าง 672 ใบ · หน้าต่าง 300 แถวจบที่ 08/10 · **ใบรอ QA จริง 92 แต่แผงนับได้ 26**
+   🔴 ห้ามนับด้วย `status` ดิบ — ขั้นที่รอขึ้นกับฟอร์ม (JIG/DIE vs MTN) และด่านอนุมัติด้วย
+      ⇒ ต้องส่งคอลัมน์ครบพอให้ `moWaitMeta()` ตัดสินได้ ไม่งั้นกองเพี้ยนเงียบ */
+const MO_COUNT_COLS = [
+  'id', 'work_date', 'status', 'mtn_dept', 'item_type',
+  'qa_skipped_at', 'purpose', 'mtn_head_at', 'approve_at',
+  'dept_manager_at', 'plant_manager_at',
+].join(', ');
 
 /* คอลัมน์ที่ "ใครรอใบนี้" ต้องใช้จริงเท่านั้น (myQueue.moWaitingOn + การวาดแถว) */
 const MO_COLS = [
@@ -58,12 +72,16 @@ export async function loadMyQueue(me) {
   const ok = (r) => (r.error ? undefined : (r.data || []));
 
   const canLu = !!(me.canLevelUp || me.canLevelUp100);
-  const [moR, sesR, prR, fourR, actR, lines, luR] = await Promise.all([
+  const [moR, moCountR, sesR, prR, fourR, actR, lines, luR] = await Promise.all([
     /* กรองด้วยสถานะที่ยังมีคนต้องทำต่อ — เดิม `.gt('current_step', 1)` ตัดใบ "รอจ่ายงาน" (current_step = 1)
        ทิ้งทั้งหมด และ `.is('approve_at', null)` ตัดใบ MTN ที่อนุมัติแล้วแต่ยังรอปิดใบ (ขั้น 8) */
     supabaseDR.from('mtn_orders').select(MO_COLS)
       .in('status', OPEN_MO_STATUSES)
       .order('work_date', { ascending: true }).limit(LIMIT),
+    /* ชุดนับยอดกอง — คอลัมน์บาง ไม่จำกัดแค่ 300 (ดู MO_COUNT_COLS ข้างบน) */
+    supabaseDR.from('mtn_orders').select(MO_COUNT_COLS)
+      .in('status', OPEN_MO_STATUSES)
+      .order('work_date', { ascending: true }).limit(COUNT_LIMIT),
     supabaseDR.from('production_sessions').select('id, line_name, section, shift, work_date')
       .eq('status', 'pending_close').order('work_date', { ascending: true }).limit(100),
     supabaseDR.from('purchase_requests').select('id', { count: 'exact', head: true })
@@ -89,6 +107,10 @@ export async function loadMyQueue(me) {
   }));
 
   const mo = ok(moR)?.filter(o => !DEAD.includes(String(o.status || '')));
+  /* 🔴 นับไม่ได้ = **ไม่ส่ง** `moAll` (ปล่อยให้ถอยไปนับจากชุดรายการ + ติดธงว่าไม่ครบ)
+     ห้ามส่ง [] — จะกลายเป็น "ทุกกองมี 0 ใบ" ทั้งที่คิวรีล่ม (ลิสต์ว่าง 2 ความหมาย · กฎข้อ 12) */
+  const moAllRows = ok(moCountR)?.filter(o => !DEAD.includes(String(o.status || '')));
+  const moAllCapped = Array.isArray(ok(moCountR)) && ok(moCountR).length >= COUNT_LIMIT;
 
   const summaries = [];
   if (prR.error == null && Number(prR.count) > 0) {
@@ -100,7 +122,7 @@ export async function loadMyQueue(me) {
     });
   }
 
-  return buildQueue({ mo, sessions: ok(sesR), fourM, actions: ok(actR), summaries, levelUps }, me);
+  return buildQueue({ mo, moAll: moAllRows, moAllCapped, sessions: ok(sesR), fourM, actions: ok(actR), summaries, levelUps }, me);
 }
 
 /* ── UI ชิ้นเล็ก ────────────────────────────────────────────────────────── */

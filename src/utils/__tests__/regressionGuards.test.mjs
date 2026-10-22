@@ -5531,3 +5531,44 @@ test('📲 MobilePushPrompt — ต้องถูก mount ใน layout · ม
     + '         (วัด 20/10: 74 จาก 102 คนที่ได้รับแจ้งเตือน ไม่มีเครื่องผูกไว้เลย)\n'
     + '   แก้: คงการ mount ใน App.jsx · ตัดด้วย useIsMobile · ข้อความอยู่ utils/pushPrompt.js ที่เดียว\n');
 });
+
+/* ── 🔧 QA ต้องเห็น "ใบซ่อมรอตรวจ" + ยอดกองต้องเป็นยอดจริง (2026-10-22) ────────────────────
+   ที่มา (คำสั่ง user 21/10): *"ตอนนี้ QA จะรู้ได้ยังไงว่ามี MO ที่ค้างรอ QA อนุมัติกี่ใบ"*
+   วัด 22/10: ใบรอ QA จริง **92 ใบ เก่าสุด 36 วัน** แต่
+     · หน้า `/qa` ทั้ง 9 แท็บไม่มีที่ไหนพูดถึงใบซ่อมเลย
+     · บรรทัดสรุปในแผงคิวนับจากชุดรายการที่ถูกตัดที่ 300 แถว (ใบเปิดค้าง 672) ⇒ นับได้ 26 และไม่บอกว่าไม่ครบ
+   ด่านนี้กัน: ถอดแท็บออก · กลับไปนับกองจากชุดที่ถูกตัด · เทียบ `status === 'qa'` ดิบแทน moWaitMeta */
+test('🔧 ใบซ่อมรอ QA — ต้องมีแท็บใน /qa · นับกองจากชุดเต็ม · ตัดสินขั้นด้วย moWaitMeta', () => {
+  const bad = [];
+  const qc    = stripComments(readFileSync(join(ROOT, 'src/pages/QualityControl.jsx'), 'utf8'));
+  const panel = stripComments(readFileSync(join(ROOT, 'src/components/QaMoPending.jsx'), 'utf8'));
+  const queue = stripComments(readFileSync(join(ROOT, 'src/utils/myQueue.js'), 'utf8'));
+  const mq    = stripComments(readFileSync(join(ROOT, 'src/components/MyQueuePanel.jsx'), 'utf8'));
+
+  if (!/key:\s*'morepair'/.test(qc)) bad.push("src/pages/QualityControl.jsx (ไม่มีแท็บ 'morepair' แล้ว)");
+  if (!/<QaMoPending\b/.test(qc))    bad.push('src/pages/QualityControl.jsx (ไม่ได้วาด <QaMoPending>)');
+
+  /* 🔴 "ใบนี้รอ QA ไหม" ต้องผ่าน moWaitMeta — ขั้น 5 = QA ของ JIG/DIE แต่ = รับมอบ ของ MTN
+     เทียบ status ดิบ = ลากใบ MTN ที่ลูปไม่มี QA เข้ามาด้วย */
+  if (!/moWaitMeta\(/.test(panel))
+    bad.push('src/components/QaMoPending.jsx (ไม่ได้ใช้ moWaitMeta — ตัดสินขั้นเองไม่ได้)');
+  if (/status\s*===\s*'qa'/.test(panel))
+    bad.push("src/components/QaMoPending.jsx (เทียบ status === 'qa' ดิบ — ใบ MTN จะถูกนับผิด)");
+  if (!/ห้ามโชว์\s*0|ไม่ใช่ว่าไม่มี/.test(panel))
+    bad.push('src/components/QaMoPending.jsx (อ่านไม่ได้แล้วไม่ได้เขียนบนจอ — ลิสต์ว่าง 2 ความหมาย)');
+
+  /* ยอดกองในแผงคิวต้องนับจากชุดเต็ม (moAll) และบอกเมื่อนับไม่ครบ */
+  if (!/src\.moAll/.test(queue))
+    bad.push('src/utils/myQueue.js (ไม่รับชุดนับเต็ม moAll — กลับไปนับจากชุดที่ถูกตัด)');
+  if (!/capped:\s*countsCapped/.test(queue))
+    bad.push('src/utils/myQueue.js (บรรทัดสรุปไม่ติดธงว่านับไม่ครบ)');
+  if (!/moAll:/.test(mq))
+    bad.push('src/components/MyQueuePanel.jsx (ไม่ได้ส่ง moAll เข้า buildQueue)');
+  if (!/MO_COUNT_COLS/.test(mq))
+    bad.push('src/components/MyQueuePanel.jsx (ไม่มีชุดคอลัมน์บางสำหรับนับยอด)');
+
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n   ') + '\n'
+    + '   ทำไม: QA ไม่มีทางรู้ว่ามีใบรอตรวจกี่ใบ (วัด 22/10: 92 ใบ เก่าสุด 36 วัน)\n'
+    + '         และบรรทัดสรุปเคยนับจากชุด 300 แถว = ต่ำกว่าจริงโดยไม่บอกใคร\n'
+    + '   แก้: คงแท็บ morepair ใน /qa · นับกองจาก moAll · ตัดสินขั้นด้วย moWaitMeta เท่านั้น\n');
+});

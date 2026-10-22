@@ -393,3 +393,74 @@ test('⬆️ คำขอขึ้นขั้น: เฉพาะคนอน�
   const miss = buildQueue({ ...src, levelUps: undefined }, { canLevelUp: true }, now);
   assert.ok(miss.missing.includes('levelUps'), 'มีสิทธิ์แต่โหลดไม่ได้ = ต้องบอกว่าไม่ครบ');
 });
+
+/* ── 🔢 ยอดกองต้องนับจากชุดเต็ม ไม่ใช่ชุดรายการที่ถูกตัดด้วยเพดาน (2026-10-22) ────────────────
+   เคสจริง 21/10 (คำสั่ง user หลังตรวจงาน QA): บรรทัด "ใบซ่อมรอตรวจคุณภาพหลังซ่อม N ใบ"
+   นับจากชุดรายการที่ผู้เรียกตัดมาแค่ 300 แถวแรก ⇒ ใบเปิดค้าง 672 ใบ · หน้าต่างจบที่ 08/10
+   **ใบรอ QA จริง 92 ใบ แต่แผงขึ้น 26** และจอไม่เคยบอกว่านับไม่ครบ */
+const CHECKED = (id, d) => ({ id, status: 'checked', mtn_dept: 'production', dept_section: 'PD3', work_date: d });
+
+test('🔢 floor — นับกองจาก moAll (ชุดเต็ม) ไม่ใช่ mo (ชุดรายการที่ถูกตัด)', () => {
+  const q = buildQueue({
+    mo:    [CHECKED('a', '2026-09-01'), CHECKED('b', '2026-09-02')],              // ชุดรายการ 2 ใบ
+    moAll: [CHECKED('a', '2026-09-01'), CHECKED('b', '2026-09-02'),
+            CHECKED('c', '2026-09-03'), CHECKED('d', '2026-09-04')],              // ของจริง 4 ใบ
+    sessions: [], fourM: [], actions: [],
+  }, ME, new Date('2026-10-22T03:00:00Z'));
+  const qa = q.floor.find(f => f.key.startsWith('mowait:'));
+  assert.equal(qa.count, 4, 'ต้องได้ยอดจริงจาก moAll');
+  assert.match(qa.title, /4 ใบ/);
+  assert.equal(qa.capped, false);
+  assert.ok(!/นับได้ไม่ครบ/.test(qa.detail));
+});
+
+test('🔴 ไม่ส่ง moAll = ถอยไปนับจาก mo แบบเดิม **แต่ต้องติดธงว่านับไม่ครบ**', () => {
+  const q = buildQueue({
+    mo: [CHECKED('a', '2026-09-01'), CHECKED('b', '2026-09-02')],
+    sessions: [], fourM: [], actions: [],
+  }, ME, new Date('2026-10-22T03:00:00Z'));
+  const qa = q.floor.find(f => f.key.startsWith('mowait:'));
+  assert.equal(qa.count, 2, 'พฤติกรรมเดิมเป๊ะ (นับจาก mo)');
+  assert.equal(qa.capped, true, 'ไม่มีชุดเต็ม = ยอดนี้เป็นอย่างน้อย ห้ามโชว์เป็นยอดจริง');
+  assert.match(qa.detail, /นับได้ไม่ครบ/);
+});
+
+test('🔴 moAll ชนเพดานคิวรี (moAllCapped) = ยังต้องบอกว่านับไม่ครบ', () => {
+  const q = buildQueue({
+    mo: [CHECKED('a', '2026-09-01')],
+    moAll: [CHECKED('a', '2026-09-01'), CHECKED('b', '2026-09-02')],
+    moAllCapped: true,
+    sessions: [], fourM: [], actions: [],
+  }, ME, new Date('2026-10-22T03:00:00Z'));
+  const qa = q.floor.find(f => f.key.startsWith('mowait:'));
+  assert.equal(qa.count, 2);
+  assert.equal(qa.capped, true);
+  assert.match(qa.detail, /นับได้ไม่ครบ/);
+});
+
+test('🔢 ชุดนับไม่กระทบรายการชั้น unit (รายการยังมาจาก mo เท่านั้น)', () => {
+  const q = buildQueue({
+    mo:    [CHECKED('a', '2026-09-01')],
+    moAll: [CHECKED('a', '2026-09-01'), CHECKED('b', '2026-09-02'), CHECKED('c', '2026-09-03')],
+    sessions: [], fourM: [], actions: [],
+  }, ME, new Date('2026-10-22T03:00:00Z'));
+  assert.equal(q.unit.filter(i => i.key.startsWith('mo:')).length, 1,
+    'ชุดนับห้ามโผล่เป็นรายการ (คอลัมน์บาง วาดแถวไม่ได้)');
+  assert.equal(q.floor.find(f => f.key.startsWith('mowait:')).count, 3);
+});
+
+test('🔢 ชุดนับต้องผ่าน moWaitMeta เหมือนรายการ — ใบ MTN ที่ไม่มีขั้น QA ห้ามถูกนับเป็นกองรอ QA', () => {
+  const q = buildQueue({
+    mo: [],
+    moAll: [
+      { id: 'j', status: 'checked', mtn_dept: 'production', dept_section: 'PD3', work_date: '2026-09-01' },
+      { id: 'm', status: 'checked', mtn_dept: 'maintenance', dept_section: 'PD3', work_date: '2026-09-02' },
+    ],
+    sessions: [], fourM: [], actions: [],
+  }, ME, new Date('2026-10-22T03:00:00Z'));
+  const qa = q.floor.find(f => f.key === 'mowait:qa');
+  assert.equal(qa.count, 1,
+    'ขั้น 5 ของ JIG/DIE = QA แต่ของ MTN = รับมอบ (รอคนระบุชื่อ ไม่ใช่กองของตำแหน่ง) ⇒ ห้ามนับรวม');
+  assert.ok(!q.floor.some(f => f.key === 'mowait:handover'),
+    'ขั้นที่รอคนระบุชื่อไม่เข้ากองของตำแหน่ง (เป็นรายการในชั้น mine/unit แทน)');
+});
