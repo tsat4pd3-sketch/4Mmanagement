@@ -32,6 +32,12 @@ export const CONN = {
   /** พักครั้งแรกกี่ ms แล้วถ่างเป็น ×2 ไปเรื่อยๆ จนชน MAX */
   BASE_MS: 10_000,
   MAX_MS: 120_000,
+  /** 🔴 นับ "ล้มติดกัน" เฉพาะที่เกิดใกล้กัน — ห่างเกินนี้ถือว่าคนละเรื่อง เริ่มนับใหม่
+      (503 เดี่ยวๆ ตอนเช้า + ตอนบ่าย + ตอนเย็น ไม่ใช่ "ฐานข้อมูลรับไม่ไหว") */
+  WINDOW_MS: 30_000,
+  /** 🔴 กันคำขอทดลอง (probe) ค้าง — ถ้าไม่ได้คำตอบในเวลานี้ ปล่อยให้ตัวอื่นลองได้
+      ไม่งั้น probe ที่ไม่มีวัน settle = ทุกคำขอถูกตัดถาวรจนกว่าจะรีเฟรชหน้า */
+  PROBE_MAX_MS: 15_000,
 };
 
 const OFFLINE_BODY = JSON.stringify({
@@ -56,8 +62,10 @@ const offlineRes = () => new Response(OFFLINE_BODY, {
  */
 export function makeConnGuard(baseFetch, { now = Date.now, random = Math.random, onChange } = {}) {
   let failures = 0;      // ล้มติดกันกี่ครั้ง
+  let lastFailAt = 0;    // ล้มครั้งล่าสุดเมื่อไหร่ (ใช้ตัดสินว่า "ติดกัน" จริงไหม)
   let until = 0;         // พักถึงเมื่อไหร่ (0 = ไม่ได้พัก)
-  let probing = false;   // มีคำขอทดลองวิ่งอยู่ไหม (half-open)
+  let probing = false;   // มีคำขอทดลองวิ่งอยู่ไหม
+  let probeAt = 0;       // ออกไปเมื่อไหร่ (คู่กับ probing — ห้ามตัดสินจาก probeAt ลอยๆ now() = 0 ได้)
   let step = 0;          // ถ่างมาแล้วกี่ครั้ง
 
   const emit = () => { try { onChange?.(state()); } catch { /* ตัวแจ้งพังห้ามลาม */ } };
@@ -73,12 +81,15 @@ export function makeConnGuard(baseFetch, { now = Date.now, random = Math.random,
 
   const ok = () => {
     const was = until > 0 || failures > 0;
-    failures = 0; until = 0; step = 0;
+    failures = 0; lastFailAt = 0; until = 0; step = 0;
     if (was) emit();
   };
 
   const bad = () => {
-    failures++;
+    const t = now();
+    // กฎ 3 — ล้มที่ห่างกันเกิน WINDOW = คนละเรื่อง เริ่มนับใหม่ (ไม่สะสมข้ามวัน)
+    failures = (failures > 0 && t - lastFailAt <= CONN.WINDOW_MS) ? failures + 1 : 1;
+    lastFailAt = t;
     if (failures >= CONN.TRIP_AFTER) trip();
     else emit();
   };
@@ -91,10 +102,14 @@ export function makeConnGuard(baseFetch, { now = Date.now, random = Math.random,
   };
 
   const guarded = (input, init, isProbe) => {
-    if (isProbe) probing = true;
+    if (isProbe) { probing = true; probeAt = now(); }
+    const done = () => { if (isProbe) { probing = false; probeAt = 0; } };
     return Promise.resolve(baseFetch(input, init)).then(
-      (res) => { if (isProbe) probing = false; return observe(res); },
-      (err) => { if (isProbe) probing = false; bad(); throw err; },
+      (res) => { done(); return observe(res); },
+      /* 🔴 **เน็ตหลุด/คำขอถูกยกเลิก ไม่นับเป็น "ฐานข้อมูลรับไม่ไหว"** (21/10 ปล่อยครั้งแรกนับ = ผิด)
+         มือถือ/ไวไฟในโรงงานหลุดเป็นเรื่องปกติ — นับด้วยแล้วเครื่องนั้นจะตัดตัวเองทั้งที่ฐานข้อมูลปกติดี
+         อาการที่เกิดจริง: จอค้างโหลดเฉพาะบางเครื่อง โดยฝั่งเซิร์ฟเวอร์ไม่มี error ให้เห็นเลย */
+      (err) => { done(); throw err; },
     );
   };
 
@@ -110,7 +125,9 @@ export function makeConnGuard(baseFetch, { now = Date.now, random = Math.random,
     if (until > t) return Promise.resolve(offlineRes());        // พักอยู่ = ไม่ยิงเลย
     if (until > 0) {
       // กฎ 4 — ครบเวลาแล้ว: ปล่อยผ่านคำขอเดียวไปวัด ที่เหลือรอต่อ
-      if (probing) return Promise.resolve(offlineRes());
+      // 🔴 probe ที่ค้างเกิน PROBE_MAX_MS ถือว่าเจ๊ง ปล่อยให้ตัวถัดไปลองแทน
+      //    (ไม่งั้น probe ที่ไม่มีวัน settle = ตัดทุกคำขอถาวรจนกว่าจะรีเฟรชหน้า)
+      if (probing && t - probeAt <= CONN.PROBE_MAX_MS) return Promise.resolve(offlineRes());
       return guarded(input, init, true);
     }
     return guarded(input, init, false);
@@ -118,7 +135,7 @@ export function makeConnGuard(baseFetch, { now = Date.now, random = Math.random,
 
   guardedFetch.state = state;
   /** คนกดปุ่ม "ลองใหม่" — ล้างการพักทันที (ไม่รีเซ็ต step กันคนกดรัวแล้วถล่มซ้ำ) */
-  guardedFetch.retryNow = () => { until = 0; failures = 0; probing = false; emit(); };
+  guardedFetch.retryNow = () => { until = 0; failures = 0; lastFailAt = 0; probing = false; probeAt = 0; emit(); };
   return guardedFetch;
 }
 
