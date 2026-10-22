@@ -218,6 +218,7 @@ export function buildQueue(src = {}, me = {}, now = new Date()) {
      คีย์ด้วยเลขขั้น = 2 กองยุบเป็นบรรทัดเดียว แล้วใบ MTN ที่รอรับมอบถูกป้ายว่า "รอ QA"
      (เกิดจริงในคอมมิทแรกของฟีเจอร์นี้ 06/10 — เทสด้านล่างกันไว้แล้ว) */
   const byPos = new Map();   // `stage` → { stage, step, meta, count, oldest }
+  const signByStage = new Map();   // `stage` → ใบที่ "รอเราเซ็น" ของขั้นนั้น (ทำป้ายคาไว้)
 
   // ── ใบซ่อม MO ────────────────────────────────────────────────────────────
   for (const o of need('mo', src.mo)) {
@@ -227,6 +228,13 @@ export function buildQueue(src = {}, me = {}, now = new Date()) {
     // ขั้นล็อกตำแหน่งที่เราเซ็นได้คนเดียว (ในขอบเขตเรา) ⇒ รอคุณ + ขึ้นก่อน (soleSignerFor ข้างบน)
     if (!w.byName && soleSignerFor(o, w, me) && scopeStateOf(o, me) === 'in') {
       mine.push({ ...moItem(o, w, TIER.MINE), sign: true, tag: '✍️ รอคุณเซ็น' });
+      /* สะสมไว้ทำ "ป้ายคาไว้" บรรทัดเดียวต่อขั้น (คำสั่ง user 22/10) — ดู signRollup ข้างล่าง */
+      const sk = w.meta.stage || `step${w.step}`;
+      const cur = signByStage.get(sk) || { stage: sk, meta: w.meta, count: 0, oldest: null };
+      cur.count += 1;
+      const sAge = ageDays(o.work_date, now);
+      if (sAge != null && (cur.oldest == null || sAge > cur.oldest)) cur.oldest = sAge;
+      signByStage.set(sk, cur);
       continue;
     }
     if (!w.byName) {                                        // รอ "ตำแหน่ง" ⇒ สะสมไว้สรุปชั้น floor
@@ -333,13 +341,33 @@ export function buildQueue(src = {}, me = {}, now = new Date()) {
       title: s.title, detail: s.detail || '', count: Number(s.count), age: null, to: s.to });
   }
 
+  /* ✍️ "ป้ายคาไว้" — บรรทัดเดียวต่อขั้น บอกว่ามีกี่ใบรอเราเซ็น กดแล้วเปิดหน้า MO ที่กรองมาให้แล้ว
+     (คำสั่ง user 22/10: *"ไม่ต้องซ้ำรายใบก็ได้ แต่ต้องมีแจ้งเตือนคาไว้ว่ามีงานรอเราอยู่กี่ใบที่ต้องเข้าไปเซ็น
+       พอคลิกก็เปิดหน้า mo ขึ้นมาเลยพร้อมกรองที่รอเราอนุมัติ"*)
+     🔴 `rollup: true` = **ไม่นับเข้า badge** (badge ต้องเท่าจำนวนใบจริง ไม่ใช่บวกบรรทัดสรุปเข้าไปอีก)
+     🔴 มีใบเดียวไม่ต้องสรุป — แถวของใบนั้นพาไปถึงใบได้ตรงกว่า (สรุป 1 ใบ = บรรทัดซ้ำเปล่าๆ)
+     🔴 `from=` ถอยขอบล่างให้ครอบใบเก่าสุด ไม่งั้นตัวกรองวันที่ default ซ่อนใบค้างหมด (กับดักเดิมของชั้น floor) */
+  [...signByStage.values()].filter(g => g.count >= 2).forEach(g => {
+    mine.push({
+      key: `sign:${g.stage}`, icon: '✍️', tier: TIER.MINE, sign: true, rollup: true,
+      title: `รอคุณเซ็น ${g.count.toLocaleString()} ใบ — ${g.meta?.title || g.stage}`,
+      detail: ['กดเพื่อเปิดรายการที่รอคุณอนุมัติ',
+        g.oldest != null ? `เก่าสุด ${g.oldest.toLocaleString()} วัน` : null].filter(Boolean).join(' · '),
+      count: g.count, age: null,
+      to: `/mtn-repair?tab=list&wait=${encodeURIComponent(g.stage)}`
+        + (g.oldest != null ? `&from=${dayKeyBack(g.oldest, now)}` : ''),
+    });
+  });
+
   const byAge = (a, b) => (b.age ?? -1) - (a.age ?? -1);      // เก่าสุดขึ้นก่อน · ไม่รู้อายุไปท้าย
   // ✍️ ช่องที่รอเราเซ็นคนเดียวขึ้นก่อนทุกอย่าง (คำสั่ง user 13/10 "สำคัญกว่าแจ้งเตือนอื่นๆ")
-  mine.sort((a, b) => ((b.sign ? 1 : 0) - (a.sign ? 1 : 0)) || byAge(a, b)); unit.sort(byAge);
+  mine.sort((a, b) => ((b.rollup ? 1 : 0) - (a.rollup ? 1 : 0))
+    || ((b.sign ? 1 : 0) - (a.sign ? 1 : 0)) || byAge(a, b)); unit.sort(byAge);
 
   return {
     mine, unit, floor,
-    counts: { mine: mine.length, unit: unit.length, floor: floor.reduce((n, f) => n + (f.count || 0), 0) },
+    /* 🔴 badge = จำนวน "ใบ" จริง — บรรทัดสรุป (`rollup`) ไม่นับ ไม่งั้นเลขเกินจำนวนงานจริง */
+    counts: { mine: mine.filter(x => !x.rollup).length, unit: unit.length, floor: floor.reduce((n, f) => n + (f.count || 0), 0) },
     missing,
     partial: missing.length > 0,
     /* จำนวนแถวที่ระบุส่วนงานไม่ได้ ⇒ ไม่เข้าคิวของใครเลย — **จอต้องเขียนบอก** (ไม่ใช่ `partial`
