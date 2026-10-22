@@ -6420,3 +6420,37 @@ test('🔄 บันทึกขั้นใบ MO เสร็จ ต้อง�
     + '   ทำไม: แผงคิวโหลดครั้งเดียวต่อ session — ไม่เคลียร์ = แถวที่เซ็นไปแล้วคาอยู่ถึง 5 นาที\n'
     + '   แก้: เรียก invalidateMyQueue() ใน onSaved ของ StepModal\n');
 });
+
+/* ═══ 🧹 ปุ่มล้างตัวกรอง = ของกลาง ห้ามวาดเองในหน้า ═══  2026-10-22 · คำสั่ง user
+   *"ขอปุ่มล้างตัวกรองด้วยได้มั้ย และควรจะมีทุกหน้านะที่มีระบบกรอง"*
+   ⇒ ฝังใน <FilterBar> + <TimeRangeBar> ⇒ 51 หน้าที่ใช้ FilterBar และ 18 หน้าที่ใช้ TimeRangeBar ได้ฟรี
+   วาดเองในหน้า = คนละหน้าตา/คนละกฎว่าล้างอะไรบ้าง แล้วเผลอล้าง `?tab=`/`?mo=` จนเด้งออกจากหน้า */
+test('🧹 ปุ่มล้างตัวกรองอยู่ในแถบกลาง และหน้าไม่วาดเอง', () => {
+  const read = (f) => stripComments(readFileSync(join(ROOT, f), 'utf8'));
+  for (const f of ['src/components/FilterBar.jsx', 'src/components/TimeRangeBar.jsx']) {
+    assert.match(read(f), /<ClearFiltersBtn/, `${f} ต้องวาดปุ่มล้างตัวกรองให้ทุกหน้า`);
+  }
+  /* กฎ "ล้างอะไรได้บ้าง" มีเจ้าของไฟล์เดียว — หน้าห้ามเขียนลิสต์พารามิเตอร์เอง */
+  assert.match(read('src/components/ClearFiltersBtn.jsx'), /from '\.\.\/utils\/filterReset'/,
+    'ClearFiltersBtn ต้องใช้กฎจาก utils/filterReset.js ไม่ใช่เขียนเกณฑ์เอง');
+  /* 🕰️ 8 หน้านี้มีปุ่มของตัวเองมาก่อนปุ่มกลาง (22/10) — ตัวกรองอยู่ใน React state ล้วน
+     ไม่ขึ้น URL ⇒ ปุ่มกลางไม่โผล่ซ้ำ จึงยังไม่บังคับย้าย **แต่ห้ามเพิ่มหน้าใหม่เข้าลิสต์นี้**
+     (QualityControl ย้ายไปใช้ onClear ของแถบกลางแล้ว · Report ที่เหลือเป็นปุ่มในแถบเตือน
+      "ไม่พบใบที่เลือก" คนละที่กับแถบกรอง ไม่ใช่ปุ่มซ้ำ) */
+  const LEGACY_OWN_BTN = [
+    'src/pages/AddUser.jsx', 'src/pages/DailyPM.jsx', 'src/pages/Dashboard.jsx',
+    'src/pages/PMSchedule.jsx', 'src/pages/PMSetup.jsx', 'src/pages/PmForecast.jsx',
+    'src/pages/ProductMaster.jsx', 'src/pages/Report.jsx',
+  ];
+  const bad = [];
+  for (const f of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const rel = relative(ROOT, f);
+    if (rel === 'src/components/ClearFiltersBtn.jsx' || LEGACY_OWN_BTN.includes(rel)) continue;
+    const src = stripComments(readFileSync(f, 'utf8'));
+    // ปุ่มที่มีข้อความ "ล้างตัวกรอง" ของตัวเอง = วาดเอง
+    if (/<button[^>]*>[^<]*ล้างตัวกรอง/.test(src) || /'ล้างตัวกรอง'/.test(src)) bad.push(rel);
+  }
+  assert.deepEqual(bad, [], '\n\n❌ วาดปุ่มล้างตัวกรองเองใน: ' + bad.join(', ') + '\n'
+    + '   แก้: ลบออก แล้วปล่อยให้ <FilterBar>/<TimeRangeBar> วาดให้ —\n'
+    + '        หน้าที่มีตัวกรองใน state ส่ง onClear={...} · อยากเก็บพารามิเตอร์เพิ่ม ส่ง clearKeep={[...]}\n');
+});

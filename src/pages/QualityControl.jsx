@@ -502,6 +502,9 @@ function QualityDashboard() {
       <TimeRangeBar
         scale={tr.scale} from={from} to={to} today={tr.today} scales={null}
         onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset}
+        /* 🧹 ตัวกรองไลน์/ชิ้นงานอยู่ใน state (ไม่ขึ้น URL) ⇒ ส่ง onClear ให้ปุ่มกลางล้างให้ด้วย
+           เดิมวาดปุ่มของตัวเองไว้ในแถบ — ถอดออกแล้ว ใช้ปุ่มกลางตัวเดียว (22/10) */
+        onClear={() => { setLineFilter(''); setProductFilter(''); }}
       >
         {/* ตัวเลือก = ชื่อไลน์ที่มีกะในช่วงนี้ — วาดผ่าน <LineSelect> ให้ได้ลำดับ/หัวกลุ่มส่วนงานชุดเดียวกับทุกหน้า
             (2026-10-01 · เดิม select ธรรมดาเรียง localeCompare = คนละลำดับกับหน้าอื่น)
@@ -514,7 +517,6 @@ function QualityDashboard() {
         <SearchSelect value={productFilter || ''} placeholder={allOf('ชิ้นงาน')} style={{ minWidth: 200, maxWidth: 320 }}
           options={productOptions.map(p => ({ id: p.key, label: p.label, sub: p.key !== p.label ? p.key : '', keywords: p.key }))}
           onChange={({ id }) => setProductFilter(id)} />
-        {(lineFilter || productFilter) && <button style={ghostBtn} onClick={() => { setLineFilter(''); setProductFilter(''); }}>ล้างตัวกรอง</button>}
         {loading && <span className="filter-count">กำลังโหลด…</span>}
       </TimeRangeBar>
 
