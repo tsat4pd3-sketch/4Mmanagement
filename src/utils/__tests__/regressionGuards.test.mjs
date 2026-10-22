@@ -6377,3 +6377,29 @@ test('🛡️ org-scope-needs-inherit-scope — จุดที่สร้า�
     + '         ลืม select คอลัมน์นี้ = ธงหาย = หัวหน้าหน่วยแม่แก้ข้อมูลได้อีกครั้งแบบเงียบ\n'
     + '   แก้: เติม inherit_scope ใน select ของ org_nodes ที่ป้อน buildOrgScope()\n');
 });
+
+/* ── 📅 สรุปทั้งปีห้ามรีเฟรชระดับนาที (2026-10-22 · วัดจาก log จริง) ──────────────────
+   `obeya_year_rollup` = Σ รายเดือนทั้งปี · ครั้งละ ~1.15 วินาทีของเวลาฐานข้อมูล
+   เดิมผูก realtime `production_sessions` ที่ `LIVE.BOARD` (60 วิ) ⇒ ไลน์ไหนก็ได้ในโรงงาน
+   แตะ 1 แถว = บอร์ดคิดสรุปทั้งปีใหม่ · วัดจริง: **จอเดียว 216 ครั้งใน 6.5 ชม. · timeout 12 ครั้ง**
+   บนเครื่องที่ทั้งโรงงานใช้ร่วมกัน = เบียดคิวรีของหน้างานจริง (เหตุการณ์ 08:25 ของวันนั้น) */
+test('🛡️ year-rollup-not-minutely — บอร์ดที่สรุปทั้งปีต้องใช้ LIVE.YEAR ไม่ใช่ LIVE.BOARD', () => {
+  const bad = [];
+  const rates = stripComments(readFileSync(join(ROOT, 'src/utils/refreshRates.js'), 'utf8'));
+  if (!/\bYEAR:\s*\d+/.test(rates))
+    bad.push('src/utils/refreshRates.js — ต้องมีระดับ LIVE.YEAR (สรุปทั้งปี)');
+
+  for (const rel of ['src/components/ObeyaSqdcmBoard.jsx', 'src/components/ObeyaKpiBoard.jsx']) {
+    const code = stripComments(readFileSync(join(ROOT, rel), 'utf8'));
+    if (!/obeya_year_rollup/.test(code)) continue;          // ไฟล์เปลี่ยนโครงแล้ว ปล่อยผ่าน
+    // ตัว useLiveBoard ที่คุม "โหลดสรุปทั้งปี" ต้องไม่ตั้ง tier เป็น LIVE.BOARD
+    for (const m of code.matchAll(/useLiveBoard\([^;]*?\)/gs)) {
+      const call = m[0];
+      if (/topic:\s*'obeya-(year|kpi)'/.test(call) && /tier:\s*LIVE\.BOARD/.test(call))
+        bad.push(`${rel} — useLiveBoard ของสรุปทั้งปีต้องใช้ tier: LIVE.YEAR (เจอ LIVE.BOARD)`);
+    }
+  }
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n'
+    + '   ทำไม: สรุปทั้งปีครั้งละ ~1.2 วินาที · ที่ 60 วิ = จอเดียวกินเวลาฐานข้อมูล ~250 วิ ต่อ 6.5 ชม.\n'
+    + '   แก้: tier: LIVE.YEAR (src/utils/refreshRates.js) — poll ยังเดินตามปกติ ช้าสุด 15-20 นาที\n');
+});

@@ -373,7 +373,9 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
   }, [lineKey, scopeKeyStr, secKey, year, date, org, mtnTeamKey]);
   /* โหลดครั้งแรก + poll + realtime ผ่านตัวกลางตัวเดียว (กฎเหล็ก DB ข้อ 8 · เดิมประกอบ useEffect+usePolling เอง ไม่มี idle gate)
      ฟังแค่ production_sessions (เปิด/ปิดกะ = ตัวเลขเดือนเปลี่ยน) — prod_orders/downtime_logs ห้าม subscribe ในหน้านี้ */
-  useLiveBoard(load, { tables: ['production_sessions'], topic: 'obeya-kpi', tier: LIVE.BOARD, rate: RATE.BOARD });
+  /* 🔴 `LIVE.YEAR` — แถว KPI ทุกแถวมี series 12 เดือน (อ่านผ่าน obeya_year_rollup เหมือนโหมดปี)
+     ไม่ต้องสดระดับนาที · poll RATE.BOARD (15 นาที) ยังเดินตามปกติ (22/10 · ดู refreshRates) */
+  useLiveBoard(load, { tables: ['production_sessions'], topic: 'obeya-kpi', tier: LIVE.YEAR, rate: RATE.BOARD });
 
   /* ── แถว KPI 8 หัวข้อของกลุ่มที่เลือก — ทุกแถวมี series 12 เดือน + แท่งสรุป ──────────────────── */
   const rows = useMemo(() => {
