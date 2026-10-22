@@ -393,3 +393,19 @@ test('⬆️ คำขอขึ้นขั้น: เฉพาะคนอน�
   const miss = buildQueue({ ...src, levelUps: undefined }, { canLevelUp: true }, now);
   assert.ok(miss.missing.includes('levelUps'), 'มีสิทธิ์แต่โหลดไม่ได้ = ต้องบอกว่าไม่ครบ');
 });
+
+/* ═══ 🔴 โหลดไม่ครบเพราะชนเพดานแถว = ต้องติด partial ไม่ใช่ตัดเงียบ ═══  2026-10-22
+   เคสจริง: ใบ MO เปิดอยู่ 693 ใบ แต่ตัวโหลดคิวดึง 300 ใบเก่าสุด (order work_date asc + limit)
+   ⇒ ใบใหม่ 393 ใบ (57%) ตกจากคิวของทุกคน · ใบรอเซ็นปิด 107 ใบ เข้าคิวแค่ 29
+   ⇒ ผจก.ฝ่ายที่แจ้งเปิดแผงมาเจอ "ไม่มีงานที่รอคุณอยู่" ทั้งที่มี 51 ใบรออนุมัติ
+   เดิม `partial` ติดเฉพาะตอนคิวรี **ล่ม** (need() เจอ null) ⇒ ตัดแถวทิ้งเงียบสนิท */
+test('🔴 moTruncated = partial (ชนเพดานต้องบอก ไม่ใช่ยืนยันว่าไม่มีงาน)', () => {
+  const me = { name: 'ก', sections: [], posRank: 60, actorSide: 'reporter', can: () => true };
+  const base = { mo: [], sessions: [], fourM: [], actions: [], summaries: [] };
+  assert.equal(buildQueue(base, me).partial, false, 'โหลดครบต้องไม่ติด partial');
+  const cut = buildQueue({ ...base, moTruncated: true }, me);
+  assert.equal(cut.partial, true, 'ชนเพดานแล้วต้องติด partial');
+  assert.ok(cut.missing.includes('mo_truncated'), 'ต้องบอกได้ว่าก้อนไหนไม่ครบ');
+  // badge ต้องไม่หลอกว่า "มีงานน้อย" ตอนข้อมูลไม่ครบ
+  assert.equal(badgeCount(cut), 0, 'partial = badge ต้องเป็น 0 (ตัวเลขที่อาจผิดแย่กว่าไม่มีตัวเลข)');
+});
