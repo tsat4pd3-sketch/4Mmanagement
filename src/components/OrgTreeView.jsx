@@ -99,6 +99,20 @@ export default function OrgTreeView({ nodes = [], scopeCtx = {}, canEdit = false
     return { secs: [...secs].sort(orgNodeCompare), floats: [...floats].sort(orgNodeCompare) };
   }, [nodes]);
 
+  /* 🔒 สลับ "ขอบเขตของหน่วยแม่ครอบหน่วยนี้ไหม" — ผังยังโชว์ใต้แม่เหมือนเดิม
+     (22/10 · user: "องค์กรเรามันแปลกตรงเอาจิ๊กมาฝากกับผลิต") */
+  const toggleInherit = async (node) => {
+    const next = node.inherit_scope === false;   // false → เปิดคืน · true/null → ปิด
+    const why = orgSaveBlockReason({ kind: node.kind, parentId: node.parent_id, editing: node }, scopeCtx);
+    if (why) { toast.error(why); return; }
+    setBusy(true);
+    const ok = checkWriteRows(await supabase.from('org_nodes').update({ inherit_scope: next }).eq('id', node.id).select('id'), `ตั้งการตกทอดสิทธิ์ของ ${node.name}`);
+    setBusy(false);
+    if (!ok) return;
+    toast.success(next ? `${node.name}: สิทธิ์ตกทอดจากหน่วยแม่ตามปกติ` : `${node.name}: หน่วยแม่จะไม่มีสิทธิ์แก้ข้อมูลหน่วยนี้`);
+    onChanged?.();
+  };
+
   const doMove = async (node, parentId) => {
     const why = orgSaveBlockReason({ kind: node.kind, parentId, editing: node }, scopeCtx);
     if (why) { toast.error(why); return; }
@@ -152,6 +166,10 @@ export default function OrgTreeView({ nodes = [], scopeCtx = {}, canEdit = false
             ? <span style={{ fontSize: 11, color: 'var(--muted)' }}>👤 …</span>
             : cnt > 0 && <span title="จำนวนพนักงานทั้งสาย (รวมหน่วยลูก)" style={{ fontSize: 11, color: 'var(--text2)' }}>👤 {cnt}</span>}
           {n.is_active === false && <span style={{ fontSize: 11, fontWeight: 700, color: '#ef4444' }}>⛔ ปิดใช้งาน</span>}
+          {n.inherit_scope === false && (
+            <span title="อยู่ใต้หน่วยแม่ในผัง แต่ขอบเขตสิทธิ์ของหน่วยแม่ไม่ครอบหน่วยนี้ (เช่น หน่วยที่มาฝากไว้)"
+              style={{ fontSize: 11, fontWeight: 700, color: '#a855f7' }}>🔒 ไม่ตกทอดสิทธิ์</span>
+          )}
           {!n.parent_id && n.kind !== 'section' && (
             <span title="ไม่มีหน่วยแม่ในผัง — ลำดับชั้น/รหัสจะตกทอดไม่ได้"
               style={{ fontSize: 11, fontWeight: 700, color: '#f59e0b' }}>🚩 ไม่มีหน่วยแม่</span>
@@ -171,8 +189,19 @@ export default function OrgTreeView({ nodes = [], scopeCtx = {}, canEdit = false
                   style={{ fontSize: 11, padding: '2px 8px' }}>ยกเลิก</button>
               </span>
             ) : (
-              <button type="button" className="tbtn" onClick={() => setMoving(n.id)} disabled={busy}
-                style={{ fontSize: 11, padding: '2px 8px', marginLeft: 'auto' }}>↕ ย้าย</button>
+              <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 6 }}>
+                {n.parent_id && (
+                  <button type="button" className="tbtn" onClick={() => toggleInherit(n)} disabled={busy}
+                    title={n.inherit_scope === false
+                      ? 'ให้ขอบเขตของหน่วยแม่ครอบหน่วยนี้ตามปกติ'
+                      : 'หน่วยนี้มาฝากไว้ใต้หน่วยแม่ — ไม่ให้หน่วยแม่มีสิทธิ์แก้ข้อมูล'}
+                    style={{ fontSize: 11, padding: '2px 8px' }}>
+                    {n.inherit_scope === false ? '🔓 ให้ตกทอด' : '🔒 ไม่ตกทอด'}
+                  </button>
+                )}
+                <button type="button" className="tbtn" onClick={() => setMoving(n.id)} disabled={busy}
+                  style={{ fontSize: 11, padding: '2px 8px' }}>↕ ย้าย</button>
+              </span>
             )
           )}
         </div>

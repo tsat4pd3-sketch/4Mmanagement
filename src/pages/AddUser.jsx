@@ -145,7 +145,7 @@ export default function AddUser() {
        GOR · LWRBAR · BIG PRESS · HYDROFORM ติดป้าย 🏛️ ทั้งที่อยู่ใต้ส่วนงานผลิต) */
     /* ⚠️ ต้องมี `cost_center` + `ref_line_id` ด้วย — ช่อง ④ (CC ที่รับผิดชอบ) และ `buildOrgScope()`
        ใช้ 2 คอลัมน์นี้ผูกรหัส ↔ หน่วยงาน ↔ ไลน์ · ขาด = ทะเบียนรหัสว่างเปล่าแบบเงียบ */
-    supabase.from('org_nodes').select('code, name, kind, parent_id, id, sort_order, cost_center, ref_line_id, division').eq('is_active', true)
+    supabase.from('org_nodes').select('code, name, kind, parent_id, id, sort_order, cost_center, ref_line_id, division, inherit_scope').eq('is_active', true)
       .then(({ data }) => {
         const nodes = [...(data || [])].sort(orgNodeCompare);   // ลำดับผังมาตรฐาน (listOrder.js)
         setSectionOpts(nodes.filter(n => n.kind === 'section').map(n => n.code || n.name));

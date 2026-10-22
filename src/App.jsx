@@ -2451,7 +2451,7 @@ export default function App() {
     else {
       const [nodesRes, linesRes] = await Promise.all([
         supabase.from('org_nodes')
-          .select('id, kind, code, name, parent_id, ref_line_id, cost_center, division, sort_order, is_active')
+          .select('id, kind, code, name, parent_id, ref_line_id, cost_center, division, sort_order, is_active, inherit_scope')
           .eq('is_active', true),
         loadLinesRes(),
       ]);
