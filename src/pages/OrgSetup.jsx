@@ -21,6 +21,8 @@ import CostCenterSelect from '../components/CostCenterSelect';
 
 import InfoMore from '../components/InfoMore';
 import PageHeader from '../components/PageHeader';
+import useTabParam from '../utils/useTabParam';
+import OrgTreeView from '../components/OrgTreeView';   // 🌳 มุมมองผังต้นไม้ (22/10 · คำสั่ง user "อยากมีหน้าวาดผัง")
 import Page from '../components/Page';
 import { IconButton, DeleteButton } from '../components/IconButton';
 /* 🔴 ชั้นไหนมีพาเนล/ปุ่มเพิ่มบนจอ ต้องมีป้ายครบทุกชั้น — ขาดตัวไหน หัวโมดัลขึ้น "เพิ่ม undefined"
@@ -107,6 +109,9 @@ export default function OrgSetup() {
   /* แก้ได้ไหม — admin ทำได้ทุก node · ผู้ถือ manage_own_unit ทำได้เฉพาะแผนก/กลุ่มใต้ส่วนงานตัวเอง
      (section เป็นโครงบริษัท ไม่เปิดให้หน่วยงานแก้ ป้องกันการเปลี่ยนชื่อ/ลบส่วนงานอื่นแล้ว cascade ทั้งระบบ) */
   const scopeCtx = useMemo(() => ({ nodes, isAdmin, canOwn, mySecId }), [nodes, isAdmin, canOwn, mySecId]);
+  /* 🌳 แท็บ: มุมมองผัง (ภาพรวมทั้งต้นไม้ + รหัส CC ซ้อนชั้น) · จัดการหน่วยงาน (4 คอลัมน์เดิม)
+     ค่าเริ่มต้น = มุมมองผัง เพราะคำถามที่คนถามบ่อยที่สุดคือ "หน่วยไหนอยู่ใต้หน่วยไหน" */
+  const [tab, setTab] = useTabParam(['tree', 'manage'], 'tree');
   const canEditNode    = (node)   => canEditOrgNode(node, scopeCtx);
   const canAddDeptHere = (secId)  => canAddOrgNodeUnder('department', secId, scopeCtx);
   const canAddLineHere = (deptId) => canAddOrgNodeUnder('line', deptId, scopeCtx);
@@ -349,7 +354,10 @@ export default function OrgSetup() {
 
   return (
     <Page>
-      <PageHeader title="แผนผังองค์กร" icon="🏢" sub="จัดการโครงสร้าง Section/ส่วน → Department/แผนก → Group/กลุ่ม พร้อม Cost Center (master data ที่หน้าอื่นใช้อ้างอิง)" />
+      <PageHeader title="แผนผังองค์กร" icon="🏢"
+        sub="จัดการโครงสร้าง Section/ส่วน → Department/แผนก → Group/กลุ่ม พร้อม Cost Center (master data ที่หน้าอื่นใช้อ้างอิง)"
+        tabs={[{ key: 'tree', label: '🌳 มุมมองผัง' }, { key: 'manage', label: '🗂 จัดการหน่วยงาน' }]}
+        tab={tab} onTab={setTab} />
 
       {/* ซ่อนปุ่มได้ ห้ามซ่อนเหตุผล (UI-CONVENTIONS §6.9) — ต้องรู้ว่าแก้อะไรได้/ไม่ได้ และต้องไปขอใคร */}
       {!isAdmin && (
@@ -369,6 +377,8 @@ export default function OrgSetup() {
 
       {loading ? (
         <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลด...</div>
+      ) : tab === 'tree' ? (
+        <OrgTreeView nodes={nodes} scopeCtx={scopeCtx} canEdit={isAdmin || canOwn} onChanged={fetchAll} />
       ) : (
         <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
           {/* Sections */}

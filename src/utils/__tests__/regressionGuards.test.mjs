@@ -6331,3 +6331,49 @@ test('🧪 ขั้น 4 stamp quality_related ได้เฉพาะใบ�
     + '         stamp ไว้ = แผงรายละเอียด/Excel อ่านแล้วบอกว่า "ต้องผ่าน QA" ทั้งที่ไม่มีใครมาตรวจ\n'
     + '   แก้: ...(qaAppliesTo(o) ? { quality_related: QA_RELATED } : {})\n');
 });
+
+/* ═══ 🔩 อะไหล่ในใบ MO: โหลดของเดิมก่อนแก้ · เขียนทับทั้งชุด · ขยับสต็อกด้วยส่วนต่าง ═══  2026-10-22
+   MTN แจ้ง: "Spare Part พอกดบันทึกแล้วข้อมูลถูก Hide ไป แสดงใน Export อยู่ แต่หน้าปิด MO ไม่ขึ้น"
+   ราก: `usedParts` เริ่ม [] แล้วไม่เคยอ่านจาก mtn_order_parts ⇒ เปิดแก้ไขขั้น 3 เห็นลิสต์ว่าง
+   (ข้อมูลยังอยู่ในฐาน ใบพิมพ์จึงยังมี) → พิมพ์ใหม่ → บันทึกเป็น insert ล้วน = แถวซ้ำ + ตัดสต็อกซ้ำ
+   วัด 22/10: ซ้ำไปแล้ว 4 แถว ใน 2 ใบ (จาก 475 แถว / 203 ใบ)
+   ⇒ ต้องครบ 3 ชั้นเหมือนค่าแรง: โหลดของเดิม · delete-then-insert · สต็อกคิดจากส่วนต่าง */
+test('🔩 ขั้น 3: ต้องโหลดอะไหล่เดิมเข้าฟอร์ม + บันทึกแบบลบก่อนเขียน + สต็อกใช้ส่วนต่าง', () => {
+  const src = stripComments(readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8'));
+  const miss = [];
+  // ① โหลดของเดิม — ไม่งั้นลิสต์ว่างทุกครั้งที่เปิดแก้ไข
+  if (!/from\('mtn_order_parts'\)\s*\.select\(/.test(src)) miss.push('ไม่ได้อ่าน mtn_order_parts เข้าฟอร์ม (usedParts จะว่างทุกครั้ง)');
+  // ② ลบของเดิมก่อนเขียนใหม่ — insert ล้วน = แถวซ้ำ
+  if (!/from\('mtn_order_parts'\)\s*\.delete\(\)/.test(src)) miss.push("บันทึกอะไหล่ไม่ได้ลบของเดิมก่อน (insert ล้วน = แถวซ้ำ)");
+  // ③ สต็อกต้องคิดจากส่วนต่าง ไม่ใช่ยอดเต็มทุกครั้ง
+  if (!/basePartQty/.test(src)) miss.push('ไม่มีฐานยอดเดิม (basePartQty) ⇒ ตัดสต็อกเต็มทุกครั้งที่กดบันทึก');
+  if (/p_type:\s*'issue',\s*p_qty:\s*totalQty/.test(src)) miss.push("ยังตัดสต็อกด้วยยอดเต็ม (p_qty: totalQty) แทนส่วนต่าง");
+  // ④ โหลดไม่เสร็จ/ไม่ติด = ห้ามบันทึก (ไม่งั้นลบของจริงทิ้งแล้วเขียนชุดว่าง)
+  if (!/partsState\s*!==\s*'ok'/.test(src)) miss.push("ไม่มีด่านกันบันทึกตอนอะไหล่เดิมยังโหลดไม่เสร็จ (partsState)");
+  assert.deepEqual(miss, [], '\n\n❌ ' + miss.join('\n   ❌ ') + '\n'
+    + '   ทำไม: ขั้นบันทึกลบอะไหล่เดิมทั้งชุดแล้วเขียนใหม่ — ฟอร์มที่ไม่โหลดของเดิมมาก่อน\n'
+    + '         = ลบรายการจริงทิ้ง · และตัดสต็อกด้วยยอดเต็มซ้ำทุกครั้งที่กดแก้\n'
+    + '   แก้: ทำตามแพทเทิร์น laborRows/laborState ในไฟล์เดียวกัน (โหลด → บล็อกบันทึก → delete-then-insert)\n'
+    + '   📄 docs/modules/mtn-work-order.md §อะไหล่ในใบ MO\n');
+});
+
+/* ── 🔒 `inherit_scope` ต้องถูก select มาด้วยทุกจุดที่สร้างดัชนีขอบเขต (2026-10-22) ──────────
+   ธง "อยู่ใต้ในผัง แต่สิทธิ์ไม่ตกทอด" ตัดสินใน `ancestorsOf()` (`utils/orgScope.js`)
+   ⇒ จอไหน select org_nodes มาสร้าง `buildOrgScope()` โดย **ลืมคอลัมน์นี้** = ธงหายเงียบ
+     แล้วหน่วยแม่จะกลับมา "ครอบ" หน่วยที่เอามาฝากอีกครั้ง โดยไม่มี error ให้เห็น
+   (คลาสเดียวกับ `pair_mat_no` ที่ลืม select แล้ว pairMap ว่าง → นับ 2 เท่าเงียบๆ) */
+test('🛡️ org-scope-needs-inherit-scope — จุดที่สร้าง buildOrgScope ต้อง select inherit_scope', () => {
+  const bad = [];
+  for (const rel of ['src/App.jsx', 'src/utils/useOrgScope.js', 'src/pages/AddUser.jsx']) {
+    const code = stripComments(readFileSync(join(ROOT, rel), 'utf8'));
+    if (!/from\('org_nodes'\)/.test(code)) { bad.push(`${rel} — ไม่เจอคิวรี org_nodes (ด่านต้องแก้ตามโครงใหม่)`); continue; }
+    if (!/inherit_scope/.test(code)) bad.push(`${rel} — select org_nodes ไม่มี inherit_scope`);
+  }
+  const org = stripComments(readFileSync(join(ROOT, 'src/utils/orgScope.js'), 'utf8'));
+  if (!/noInherit\.has\(startKey\)/.test(org) || !/if \(noInherit\.has\(k\)\) break;/.test(org))
+    bad.push('src/utils/orgScope.js — ancestorsOf ต้องหยุดที่หน่วยที่ปิดการตกทอด (noInherit)');
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n   ') + '\n'
+    + '   ทำไม: หน่วยที่ "เอามาฝาก" ไว้ใต้หน่วยอื่น (เช่น JIG MTN ใต้ PD4) ต้องไม่ถูกหน่วยแม่ครอบ\n'
+    + '         ลืม select คอลัมน์นี้ = ธงหาย = หัวหน้าหน่วยแม่แก้ข้อมูลได้อีกครั้งแบบเงียบ\n'
+    + '   แก้: เติม inherit_scope ใน select ของ org_nodes ที่ป้อน buildOrgScope()\n');
+});

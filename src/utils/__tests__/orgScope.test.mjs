@@ -345,3 +345,29 @@ test('นิยามที่เคยเก็บที่ CC ของ PD3 = 
   assert.deepEqual(defScopeColumns(ix, { kind: 'cost_center', value: '2140563100' }), { scope_kind: 'department', scope_value: 'JIG MTN', section: null, line_group: null });
   assert.equal(defScopeColumns(ix, { kind: 'cost_center', value: '999' }).scope_kind, 'cost_center');   // กำพร้า = เก็บเป็นรหัสได้
 });
+
+/* ── 🔒 "อยู่ใต้ในผัง แต่สิทธิ์ไม่ตกทอด" (`inherit_scope = false`) — 2026-10-22 ──────────────
+   user: *"สิ่งที่ผิดคือเรื่องหัวหน้า PD4 มาแก้ข้อมูลจิ๊กนั่นแหละ คือองค์กรเรามันแปลกตรงเอาจิ๊กมาฝากกับผลิต"*
+   JIG MTN อยู่ใต้ PD4 จริงบนผัง (ผจก. คนเดียวกัน) แต่ขอบเขตของ PD4 ต้องไม่ครอบมัน */
+test('inherit_scope=false — หน่วยแม่ไม่ครอบหน่วยที่มาฝาก แต่ผังยังโชว์ใต้แม่', () => {
+  const nodes = [
+    { id: 's1', kind: 'section',    name: 'PD4',     code: 'PD4', parent_id: null, cost_center: '2140471000' },
+    { id: 'd1', kind: 'department', name: 'GOR',     code: 'GOR', parent_id: 's1', cost_center: '2140571100' },
+    { id: 'd2', kind: 'department', name: 'JIG MTN', code: null,  parent_id: 's1', cost_center: '2140563100', inherit_scope: false },
+  ];
+  const idx = buildOrgScope({ nodes, lines: [] });
+  const pd4 = { kind: 'section', value: 'PD4' };
+  const gor = { kind: 'department', value: 'GOR' };
+  const jig = { kind: 'department', value: 'JIG MTN' };
+
+  // แผนกปกติ → PD4 ครอบ
+  assert.equal(scopeCovers(idx, pd4, gor), true);
+  // แผนกที่มาฝาก → PD4 **ไม่ครอบ**
+  assert.equal(scopeCovers(idx, pd4, jig), false);
+  // ตัวมันเองยังครอบตัวเองได้ (คนที่รับผิดชอบ JIG MTN ตรงๆ ยังแก้ได้)
+  assert.equal(scopeCovers(idx, jig, jig), true);
+  // ผังยังโชว์ใต้ PD4 (ตัวเลือก/ป้ายไม่เปลี่ยน) — ธงนี้แตะเฉพาะแกนสิทธิ์
+  const opt = idx.options.find(o => o.kind === 'department' && o.value === 'JIG MTN');
+  assert.ok(opt, 'JIG MTN ต้องยังอยู่ในลิสต์ตัวเลือก');
+  assert.equal(opt.depth > 0, true, 'ต้องยังวาดเป็นลูกของ PD4 ในผัง');
+});

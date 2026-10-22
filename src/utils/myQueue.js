@@ -192,6 +192,11 @@ export function buildQueue(src = {}, me = {}, now = new Date()) {
   const mine = []; const unit = []; const floor = [];
   const missing = [];
   const need = (k, v) => { if (v === undefined || v === null) { missing.push(k); return []; } return v; };
+  /* 🔴 ตัวโหลดชนเพดานแถว = "โหลดไม่ครบ" เหมือนคิวรีล่ม ⇒ ต้องติด `partial` ให้จอเขียนบอก (22/10)
+     เคสจริง: ใบ MO เปิดอยู่ 693 ใบ แต่คิวโหลด 300 ใบเก่าสุด ⇒ ใบใหม่ 393 ใบหายจากคิวทุกคนเงียบๆ
+     แล้วแผงยืนยันว่า "ไม่มีงานที่รอคุณอยู่" ทั้งที่ ผจก.ฝ่ายที่แจ้งมี 51 ใบรออนุมัติปิด
+     ⚠️ ตัดเงียบแย่กว่าตัวเลขไม่ครบ — badgeCount() คืน 0 ตอน partial อยู่แล้ว (ไม่หลอกว่ามีงานน้อย) */
+  if (src?.moTruncated) missing.push('mo_truncated');
   /* 🔴 แถวที่ "ชี้ส่วนงานไม่ได้" — ตกจากคิวของทุกคน ⇒ ต้องนับไว้ให้จอเขียนบอก ห้ามหายเงียบ */
   let unattributed = 0;
   const keep = (row) => {

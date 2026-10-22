@@ -33,7 +33,13 @@ import {
 /** ข้อมูลเก่ากว่านี้ = โหลดใหม่ตอนเปิดแผง (นาที) */
 const STALE_MIN = 5;
 /** เพดานแถวต่อคิวรี — คิวงานไม่ใช่รายงาน ไม่ต้องครบทุกแถวในโลก */
-const LIMIT = 300;
+/* 🔴 เพดานแถวของคิว — ใบ MO ที่ยังเปิดอยู่โตเกิน 300 ไปนานแล้ว (วัด 22/10: **693 ใบ**)
+   เดิม 300 + `order('work_date', asc)` = เก็บใบ**เก่าสุด** แล้วทิ้งใบใหม่ทั้งหมด
+   ⇒ 393 ใบ (57%) ไม่เข้าคิวของใครเลย · ใบรอเซ็นปิด 107 ใบ เห็นแค่ 29 ⇒ ผจก.ฝ่ายที่แจ้ง
+     เปิดคิวมาเจอ "ไม่มีงานที่รอคุณอยู่" ทั้งที่มี 51 ใบรออนุมัติ (เคสจริง 22/10 · คำสั่ง user)
+   ⚠️ 1000 = เพดานแถวต่อคิวรีของ Supabase — เกินกว่านี้ต้องกรองฝั่ง server ไม่ใช่ขยายเลขอีก
+      ⇒ ชนเพดานเมื่อไหร่ต้องติด `partial` ให้จอเขียนบอก **ห้ามตัดเงียบ** */
+const LIMIT = 1000;
 
 /* คอลัมน์ที่ "ใครรอใบนี้" ต้องใช้จริงเท่านั้น (myQueue.moWaitingOn + การวาดแถว) */
 const MO_COLS = [
@@ -88,7 +94,11 @@ export async function loadMyQueue(me) {
     ...f, section: secOfLine.get(String(f.line_name || '').trim().toLowerCase()),
   }));
 
-  const mo = ok(moR)?.filter(o => !DEAD.includes(String(o.status || '')));
+  const moRows = ok(moR);
+  const mo = moRows?.filter(o => !DEAD.includes(String(o.status || '')));
+  /* 🔴 ชนเพดาน = โหลดไม่ครบ ไม่ใช่ "ไม่มีงาน" — ต้องติด `partial` ให้จอเขียนบอก
+     (เดิม `partial` ติดเฉพาะตอนคิวรี **ล่ม** ⇒ ตัดแถวทิ้งเงียบๆ แล้วจอยืนยันว่าเคลียร์หมด) */
+  const moTruncated = Array.isArray(moRows) && moRows.length >= LIMIT;
 
   const summaries = [];
   if (prR.error == null && Number(prR.count) > 0) {
@@ -100,7 +110,7 @@ export async function loadMyQueue(me) {
     });
   }
 
-  return buildQueue({ mo, sessions: ok(sesR), fourM, actions: ok(actR), summaries, levelUps }, me);
+  return buildQueue({ mo, moTruncated, sessions: ok(sesR), fourM, actions: ok(actR), summaries, levelUps }, me);
 }
 
 /* ── UI ชิ้นเล็ก ────────────────────────────────────────────────────────── */
