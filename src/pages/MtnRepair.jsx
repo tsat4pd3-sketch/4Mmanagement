@@ -15,6 +15,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { invalidateMyQueue } from '../components/MyQueuePanel';
 import { signMapOf, signUrlOf } from '../utils/signResolve';
+import { getActor } from '../utils/actorStamp';   // uid ของคนที่กดเซ็น
 import { loadProfilesPeople } from '../utils/usePeople';   // 🔄 เซ็นเสร็จ = คิวต้องอัพเดททันที
 import { toast } from '../components/Toast';
 import { PURPOSES, CAUSE_CATS, needsPlantManager, needsApprovalFirst, laborAmount, partAmount, sumLabor, sumParts, grandTotal, satScore, mtnApprovalState, purposeOfPrint, qaAppliesTo, isMtnFormRow, QA_SKIP_REASON_PURPOSE, QA_SKIP_REASON_MTN_FORM, needsPlantMgrByCost, orderCostTotal, PLANT_MGR_COST_LIMIT } from '../utils/mtnMoForm';
@@ -400,6 +401,11 @@ export default function MtnRepair() {
      ค่าที่ไม่รู้จัก = ไม่กรอง (ไม่ใช่ลิสต์ว่าง) — ลิงก์เก่า/พิมพ์มือผิดห้ามทำให้จอว่างเปล่า
      ⚠️ **อ่านจาก URL ตรงๆ ไม่เก็บ state ซ้อน** — มี 2 แหล่งแล้วจะเถียงกันตอนกดย้อนกลับ/กดลิงก์ใหม่ */
   const fWait = sp.get('wait') || '';
+  /* ✍️ `?ack=pending` — เฉพาะใบ MTN ที่ "ผจก.ต้นสังกัดยังไม่เซ็นรับทราบ" (24/10 · คำสั่ง user)
+     ช่องนี้ไม่บล็อกงาน ใบจึงเดินต่อ/ปิดไปได้ทั้งที่ยังไม่เซ็น ⇒ ต้องมีทางกรองมาไล่เซ็นย้อนหลัง
+     🔴 **ไม่บังคับสถานะ** — ใบที่ปิดแล้วก็ยังค้างช่องนี้ได้ (วัด 24/10: 10 ใบ) และย้อนเซ็นได้
+        ⇒ สลับช่อง "ยังไม่ปิด → ทุกสถานะ" เองเพื่อเห็นใบที่ปิดแล้วด้วย */
+  const fAck = sp.get('ack') || '';
   const setFWait = useCallback((v) => mergeSp({ wait: v || null }), [mergeSp]);
   /* 🛒 `?pr=` ตัวกรองงาน PR (20/10 · user "หาลิสต์ MO ที่รอกรอกเลข PR ไม่เจอ") — need | no_no | open | waiting (= need+no_no)
      อ่านจาก URL ตรงๆ แบบเดียวกับ `?wait=` · ลิงก์แจ้งเตือน `mtn_pr_waiting` ชี้มาที่ `?pr=waiting` */
@@ -620,8 +626,12 @@ export default function MtnRepair() {
     return { ...c, waiting: c.need + c.no_no };
   }, [beforeWait, prStateOf]);
   const shownNoDate = useMemo(
-    () => (fWait ? beforeWait.filter(o => waitStageOf(o) === fWait) : beforeWait).filter(prMatch),
-    [beforeWait, fWait, prMatch]);
+    () => {
+      let rows = fWait ? beforeWait.filter(o => waitStageOf(o) === fWait) : beforeWait;
+      if (fAck === 'pending') rows = rows.filter(o => isMtnFormOrder(o) && !o.dept_manager_at);
+      return rows.filter(prMatch);
+    },
+    [beforeWait, fWait, fAck, prMatch]);
 
   /* 🕰️ ตัวเลือก "รอขั้นไหน" — นับจากใบที่เหลือหลังกรองอย่างอื่น **ยกเว้นตัวกรอง wait เอง**
      (ถ้านับหลังกรอง wait แล้ว เลือกขั้นหนึ่งจะทำให้ขั้นอื่นหายจาก dropdown = กลับไปเลือกไม่ได้)
@@ -817,6 +827,17 @@ export default function MtnRepair() {
         {ordersErr && (
           <div role="alert" style={{ fontSize: 12.5, fontWeight: 700, color: '#ef4444', border: '1px solid #ef4444', borderRadius: 8, padding: '7px 11px', marginBottom: 10 }}>
             ⚠️ โหลดรายการใบซ่อมไม่สำเร็จ: {ordersErr} — รายการด้านล่างอาจไม่ใช่ข้อมูลล่าสุด
+          </div>
+        )}
+        {/* ✍️ มาจากป้าย "รอคุณเซ็นรับทราบ" ในคิวงาน — ต้องเขียนบนจอว่ากำลังกรองอะไรอยู่
+               (กฎ: กรองแถวออกแล้วต้องบอก · ไม่งั้นคนอ่านว่าใบหายไปไหนหมด) */}
+        {fAck === 'pending' && (
+          <div style={{ fontSize: 12, color: 'var(--text2)', background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.40)', borderRadius: 8, padding: '7px 11px', marginBottom: 10, lineHeight: 1.6 }}>
+            ✍️ กรองเฉพาะ <b>ใบทีม MTN ที่ผู้จัดการต้นสังกัดยังไม่เซ็นรับทราบ</b> — ช่องนี้ <b>ไม่บล็อกงาน</b> ใบจึงเดินต่อและปิดไปได้ทั้งที่ยังไม่เซ็น
+            <div style={{ color: 'var(--muted)', marginTop: 2 }}>
+              เปิดใบแล้วกดปุ่ม "✍️ อนุมัติใบ MO (ผู้จัดการต้นสังกัด)" · <b>ใบที่ปิดไปแล้วก็ย้อนเซ็นได้</b> —
+              สลับช่องสถานะเป็น "ทุกสถานะ" เพื่อให้ใบที่ปิดแล้วขึ้นมาด้วย
+            </div>
           </div>
         )}
         {orders.length >= ORDER_CAP && (
@@ -2035,9 +2056,12 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
     if (!v.ok) return toast.error(v.code === 'already_signed' ? 'ใบนี้เซ็นไปแล้ว' : 'เฉพาะผู้จัดการที่ถูกระบุในใบ หรือผู้ถือสิทธิ์อนุมัติปิดใบ (mtn_repair:approve) เท่านั้น');
     setSignBusy(kind);
     const nowIso = new Date().toISOString();
+    /* 🔴 stamp uid ด้วยเสมอ — ลายเซ็นบนจอ/ใบพิมพ์ดึงสดจากโปรไฟล์ด้วย uid (utils/signResolve.js)
+       ไม่ stamp = ช่องนี้ต้องพึ่ง URL ที่เก็บไว้ ซึ่งพังเมื่อคนเปลี่ยนลายเซ็น (24/10) */
+    const myUid = getActor()?.uid || null;
     const upd = kind === 'dept'
-      ? { dept_manager_name: fullName || o.dept_manager_name || null, dept_manager_sign: signatureUrl || null, dept_manager_at: nowIso }
-      : { plant_manager_name: fullName || o.plant_manager_name || null, plant_manager_sign: signatureUrl || null, plant_manager_at: nowIso };
+      ? { dept_manager_name: fullName || o.dept_manager_name || null, dept_manager_sign: signatureUrl || null, dept_manager_at: nowIso, dept_manager_uid: myUid }
+      : { plant_manager_name: fullName || o.plant_manager_name || null, plant_manager_sign: signatureUrl || null, plant_manager_at: nowIso, plant_manager_uid: myUid };
     // .select('id') + นับแถว — RLS ปฏิเสธ UPDATE = "สำเร็จ 0 แถว ไม่มี error" (กฎเหล็กข้อ 2)
     const res = await supabaseDR.from('mtn_orders').update({ ...upd, updated_at: nowIso }).eq('id', o.id).is(kind === 'dept' ? 'dept_manager_at' : 'plant_manager_at', null).select('id');
     setSignBusy('');
