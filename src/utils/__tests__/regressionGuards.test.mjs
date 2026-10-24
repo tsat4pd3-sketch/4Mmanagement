@@ -5382,6 +5382,12 @@ test('🛡️ esmart-window-confirm — e-SMART ต้องทับใบแ�
   if (!/x\.merge\b/.test(up)) bad.push('PullSignalUpload.jsx (ไม่ปิดใบแผน 862 อื่นในช่วงเดียวกัน = ใบเบิ้ล)');
   const ps = readFileSync(join(ROOT, 'src/pages/PlannerSales.jsx'), 'utf8');
   if (!/splitPullCovered\(/.test(stripComments(ps))) bad.push('PlannerSales.jsx (862 ไม่กันช่วงที่ e-SMART ยืนยันแล้ว)');
+  /* 22/10 — ไฟล์หลาย dock = หลายเที่ยว · ห้ามกลับไปวางแผนทั้งไฟล์ด้วย dock เดียว */
+  if (!/planDockLegs\(/.test(up) || !/dockLegsOf\(/.test(up)) bad.push('PullSignalUpload.jsx (ไม่แยกเที่ยวต่อ dock — ไฟล์ B1+B5 จะลงรอบเดียวกันหมด)');
+  if (/planOrderUpdates\(/.test(up)) bad.push('PullSignalUpload.jsx (เรียก planOrderUpdates ตรง — ต้องผ่าน planDockLegs)');
+  /* 24/10 — แถวลูกค้าบนชาร์ตล็อกตามทะเบียน (orderShipToRows) ห้ามวาดตาม Object.entries(byCustomer) */
+  const cd = stripComments(readFileSync(join(ROOT, 'src/pages/CustomerDemand.jsx'), 'utf8'));
+  if (/\{Object\.entries\(byCustomer\)\.map/.test(cd)) bad.push('CustomerDemand.jsx (แถวลูกค้าวาดตามลำดับคิวรี — ต้องใช้ custOrder จาก orderShipToRows)');
   assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n'
     + '   แก้: planOrderUpdates โหมดช่วงเวลา (pullSignal.js) + splitPullCovered/pullCoverBatches (ediMerge.js)\n');
 });

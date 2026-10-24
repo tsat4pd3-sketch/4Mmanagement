@@ -21,7 +21,8 @@ const OrderIntakeLog = lazy(() => import('../components/OrderIntakeLog'));      
 const PullRoundsPanel = lazy(() => import('../components/PullRoundsPanel'));
 import { openOnly, isOpenOrder, isClosedOrder, isCancelled, CANCELLED } from '../utils/shipStatus';
 import useColumnHistory from '../utils/useColumnHistory'; // 📜 MAT ที่เคยบันทึกในใบส่ง — Product Master ไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
-import { shipDueDate } from '../utils/pullSignal'; // วันงาน + รอบ → due_date ตามปฏิทิน (16/10)
+import { shipDueDate } from '../utils/pullSignal';
+import { orderShipToRows } from '../utils/shipToOrder'; // ลำดับแถวลูกค้าล็อกตามทะเบียน (24/10) // วันงาน + รอบ → due_date ตามปฏิทิน (16/10)
 
 /* ─── DELIVERY — Shipping Time Chart + Ship-to Config (Logistic) ──────────
    ติดตามรอบส่งงานลูกค้ารายวัน (walkback 4 activity, FG stock, ranking ดิว)
@@ -360,6 +361,11 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
     });
     return m;
   }, [orders, custLabel]);
+  /* 🔒 ลำดับแถวลูกค้าล็อกตามทะเบียน ship-to (24/10 · user: "lock ไปเลย ใครจะแถวไหน")
+     ห้ามวาดตาม Object.entries(byCustomer) — ลำดับนั้นคือลำดับที่ใบโผล่ในคิวรี เปลี่ยนทุกวัน */
+  const custOrder = useMemo(() => orderShipToRows(
+    Object.entries(byCustomer).map(([key, list]) => ({ key, code: list[0]?.customer || null })), shipToMap,
+  ), [byCustomer, shipToMap]);
 
   // จัดสรร stock พร้อมส่งให้รอบที่ยังไม่ส่ง เรียงตามเวลา (FIFO) — รอบไหนพร้อมส่ง/ขาดเท่าไหร่
   // ⚠️ pool แชร์ตามเลข SAP: order คนละเลขลูกค้าที่ชี้ SAP เดียวกันต้องแย่งของก้อนเดียวกัน
@@ -735,7 +741,7 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
                 </div>
               )}
             </div>
-            {Object.entries(byCustomer).map(([cust, list]) => {
+            {custOrder.map(cust => [cust, byCustomer[cust]]).map(([cust, list]) => {
               const lanes = lanesByCustomer[cust] || { map: {}, count: 1 };
               const isCol = !!collapsedCust[cust];
               const rowH = isCol ? 26 : 10 + lanes.count * LANE_H;
@@ -1236,7 +1242,7 @@ function ShipToTab({ canEdit, onChanged, fullName }) {
 
   const load = useCallback(async () => {
     const [{ data }, { data: prods }] = await Promise.all([
-      supabaseDR.from('ship_to_plants').select('*').order('code'),
+      supabaseDR.from('ship_to_plants').select('*').order('sort_order', { nullsFirst: false }).order('code'),
       supabaseDR.from('dr_products').select('customer').eq('is_active', true),
     ]);
     setRows(data || []);
@@ -1252,7 +1258,8 @@ function ShipToTab({ canEdit, onChanged, fullName }) {
     if (!d) return;
     setBusy(code);
     const { error } = await supabaseDR.from('ship_to_plants')
-      .update({ customer_name: d.customer_name?.trim() || code, plant_name: d.plant_name?.trim() || null, note: d.note?.trim() || null, updated_at: new Date().toISOString() })
+      .update({ customer_name: d.customer_name?.trim() || code, plant_name: d.plant_name?.trim() || null, note: d.note?.trim() || null,
+        sort_order: d.sort_order === '' || d.sort_order == null ? null : Number(d.sort_order), updated_at: new Date().toISOString() })
       .eq('code', code);
     if (error) toast.error(error.message);
     else { toast.success(`บันทึก ${code} แล้ว`); await load(); onChanged?.(); }
@@ -1278,7 +1285,7 @@ function ShipToTab({ canEdit, onChanged, fullName }) {
   const cell = { padding: '6px 10px', borderTop: '1px solid var(--border)' };
   const edSt = { ...inputSt, padding: '5px 8px', fontSize: 12, width: '100%', boxSizing: 'border-box' };
   const val = (r, k) => (draft[r.code]?.[k] ?? r[k] ?? '');
-  const setVal = (r, k, v) => setDraft(d => ({ ...d, [r.code]: { customer_name: val(r, 'customer_name'), plant_name: val(r, 'plant_name'), note: val(r, 'note'), ...d[r.code], [k]: v } }));
+  const setVal = (r, k, v) => setDraft(d => ({ ...d, [r.code]: { customer_name: val(r, 'customer_name'), plant_name: val(r, 'plant_name'), note: val(r, 'note'), sort_order: val(r, 'sort_order'), ...d[r.code], [k]: v } }));
 
   return (
     <>
@@ -1286,6 +1293,7 @@ function ShipToTab({ canEdit, onChanged, fullName }) {
       <div style={{ fontWeight: 800, fontSize: 14, color: 'var(--text)', marginBottom: 4, fontFamily: 'var(--font-display)' }}>⚙️ Ship-to Plant Config</div>
       <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>
         ตั้งชื่อลูกค้าให้ code ปลายทางจากไฟล์ EDI (เช่น GRBNA → AAT) — ชื่อนี้จะแสดงแทน code ในทุกหน้าจอ · code ใหม่จากไฟล์ EDI จะถูกเพิ่มเข้าลิสต์นี้อัตโนมัติ
+        · 🔒 <b>ลำดับในชาร์ต</b> = แถวลูกค้าบน Shipping Time Chart (เลขน้อยอยู่บน · ล็อกตายตัวทุกวัน · ว่าง = ต่อท้าย)
         <div style={{ marginTop: 5, color: '#f59e0b' }}>
           ⚠️ ชื่อนี้ถูกใช้เป็น<b>กุญแจแยกออเดอร์</b> ตอนนำเข้า EDI — เลขพาร์ทลูกค้าตัวเดียวมีได้หลายเลข SAP ต่างกันที่ลูกค้าปลายทาง
           <b> ต้องสะกดตรงกับช่อง "ลูกค้า" ใน Product Master</b> ไม่งั้นแยกไม่ออก แล้วออเดอร์ทุกเจ้าจะไปกองที่เลขเดียว
@@ -1295,13 +1303,17 @@ function ShipToTab({ canEdit, onChanged, fullName }) {
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
           <thead><tr style={{ background: 'var(--bg2)' }}>
-            {['Code', 'ชื่อลูกค้า *', 'โรงงาน/ท่า', 'หมายเหตุ', ''].map(h => (
+            {['ลำดับในชาร์ต', 'Code', 'ชื่อลูกค้า *', 'โรงงาน/ท่า', 'หมายเหตุ', ''].map(h => (
               <th key={h} style={{ padding: '8px 10px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left' }}>{h}</th>
             ))}
           </tr></thead>
           <tbody>
             {rows.map(r => (
               <tr key={r.code}>
+                {/* 🔒 ลำดับแถวบน Shipping Time Chart (น้อยอยู่บน · ว่าง = ต่อท้าย) — ไม่ขึ้นกับยอดของวันนั้น */}
+                <td style={{ ...cell, width: 90 }}>{canEdit
+                  ? <input type="number" step={10} value={val(r, 'sort_order')} onChange={e => setVal(r, 'sort_order', e.target.value)} style={{ ...edSt, width: 70 }} />
+                  : <span style={{ fontSize: 12, color: 'var(--text2)' }}>{r.sort_order ?? '—'}</span>}</td>
                 <td style={{ ...cell, fontFamily: 'monospace', fontWeight: 800, color: '#0ea5e9', fontSize: 13 }}>{r.code}</td>
                 <td style={cell}>{canEdit ? <CustomerPicker
                     value={val(r, 'customer_name')} code={r.code} opts={custOpts}
