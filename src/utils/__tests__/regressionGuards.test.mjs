@@ -6528,3 +6528,19 @@ test('✍️ ห้ามลบไฟล์ลายเซ็นเดิมต�
     + '   วัด 24/10: ลบไป 1 ไฟล์ = 93 ใบ (ปิดแล้ว 28) ลายเซ็นหาย\n'
     + '   📄 docs/modules/storage-images.md §ลายเซ็น\n');
 });
+
+/* ═══ 🔧 ประวัติเครื่องจักร (FM-MTN-005) ต้องกรองทีมช่างได้ ═══  2026-10-24 · ทีม MTN แจ้ง
+   *"ตัวประวัติเครื่องจักร มันดึงมาหมดเลยครับพี่ ทั้งปรับคุณภาพ ทั้งซ่อม JiG
+     น่าจะต้อง Filter ในส่วนที่เป็น O-MTN มา อย่างเดียวครับผม"*
+   เดิม `mtn_orders_by_machine` กรองแค่เลขเครื่อง ⇒ ใบของ production/jig/die/maintenance ปนกันหมด
+   ⇒ ใบพิมพ์ FM-MTN-005 (เอกสารของทีม MTN) มีใบทีมอื่นปนอยู่
+   🔴 กรองแล้ว **ต้องเขียนบนจอว่าซ่อนกี่ใบ** และ Excel ต้องออกตามที่เห็นบนจอ (จอกับใบพิมพ์ห้ามคนละชุด) */
+test('🔧 MachineRepairHistory: มีตัวกรองทีม · บอกจำนวนที่ซ่อน · Excel ตามที่กรอง', () => {
+  const src = stripComments(readFileSync(join(ROOT, 'src/components/MachineRepairHistory.jsx'), 'utf8'));
+  assert.match(src, /teamKeyOf/, 'ต้องตัดสินทีมด้วย teamKeyOf ไม่ใช่เทียบชื่อดิบ');
+  assert.match(src, /ซ่อนไป/, 'ซ่อนแถวแล้วต้องเขียนบนจอว่าซ่อนกี่ใบ (ห้ามกรองเงียบ)');
+  /* 🔴 สรุป/ตาราง/Excel ต้องมาจากชุดที่กรองแล้วชุดเดียวกัน */
+  assert.match(src, /summarizeMachineHistory\(shown,/, 'สรุปต้องคิดจากชุดที่กรองแล้ว');
+  assert.match(src, /machineHistoryRows\(shown,/, 'Excel ต้องออกตามที่เห็นบนจอ');
+  assert.doesNotMatch(src, /summarizeMachineHistory\(state\.orders/, 'สรุปห้ามคิดจากชุดก่อนกรอง');
+});
