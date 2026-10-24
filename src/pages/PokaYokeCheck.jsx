@@ -3,7 +3,7 @@ import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
-import { inSectionScope } from '../utils/sectionScope';
+import { inSectionScope, scopedLines } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 // picker กลาง (single-source audit 2026-09-07) — ไลน์/คน อ่านจากทะเบียน · สถานีจาก workstations ของไลน์
 import LineSelect from '../components/LineSelect';
@@ -31,7 +31,7 @@ const getCurrentShift = () => { const h = new Date().getHours(); return h >= 8 &
 const SHIFT_LABEL = { day: 'กะเช้า (Shift 01)', night: 'กะดึก (Shift 02)' };
 
 export default function PokaYokeCheck() {
-  const { role, lineId: userLineId, sections: scopeSecs, fullName } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs, fullName, scopeIdx } = useContext(UserContext);
   const canRecord = can('pokayoke', 'record', role);
   const canManage = can('pokayoke', 'manage', role);
   // 📜 ชื่อผู้ตรวจที่เคยบันทึก (Main pokayoke_checks) — คนนอกทะเบียนยังเลือกซ้ำได้ ไม่หายเงียบ (2026-09-07)
@@ -75,7 +75,7 @@ export default function PokaYokeCheck() {
       const fam = getLineFamilyNames(lines, Number(userLineId) || userLineId);
       arr = lines.filter(l => fam.includes(l.name));
     } else if (scopeSecs?.length) {
-      arr = lines.filter(l => inSectionScope(scopeSecs, l.section));
+      arr = scopedLines({ sections: scopeSecs, lines, scopeIdx });
     }
     return [...arr].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
   }, [lines, role, userLineId, scopeSecs]);

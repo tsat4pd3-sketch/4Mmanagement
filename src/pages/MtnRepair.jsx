@@ -13,6 +13,7 @@ import { useObjectUrl } from '../utils/useObjectUrl';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
+import { invalidateMyQueue } from '../components/MyQueuePanel';   // 🔄 เซ็นเสร็จ = คิวต้องอัพเดททันที
 import { toast } from '../components/Toast';
 import { PURPOSES, CAUSE_CATS, needsPlantManager, needsApprovalFirst, laborAmount, partAmount, sumLabor, sumParts, grandTotal, satScore, mtnApprovalState, purposeOfPrint, qaAppliesTo, isMtnFormRow, QA_SKIP_REASON_PURPOSE, QA_SKIP_REASON_MTN_FORM, needsPlantMgrByCost, orderCostTotal, PLANT_MGR_COST_LIMIT } from '../utils/mtnMoForm';
 import AuditLogViewer from '../components/AuditLogViewer';
@@ -881,7 +882,12 @@ export default function MtnRepair() {
       {detail && <DetailDrawer order={detail} {...cp}
         onClose={() => setDetail(null)} onStep={(step, editMode, extra) => setStepModal({ step, editMode, ...(extra || {}), order: detail })} />}
       {stepModal && <StepModal {...cp} step={stepModal.step} order={stepModal.order} editMode={stepModal.editMode} skipQa={!!stepModal.skipQa}
-        onClose={() => setStepModal(null)} onSaved={() => { setStepModal(null); reloadAll(); }} />}
+        onClose={() => setStepModal(null)} onSaved={() => {
+          setStepModal(null); reloadAll();
+          /* 🔄 เซ็นขั้นเสร็จ = ใบนี้ออกจาก "คิวรอคุณ" แล้ว — ถ้าไม่เคลียร์ แถวจะคาอยู่ในแผงจนครบ
+             STALE_MIN (5 นาที) · คนเซ็นเลยแยกไม่ออกว่าอันไหนทำไปแล้ว แล้วเผลอกดซ้ำ (22/10 · user แจ้ง) */
+          invalidateMyQueue();
+        }} />}
     </Page>
   );
 }

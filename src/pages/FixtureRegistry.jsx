@@ -4,7 +4,7 @@ import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
-import { inSectionScope } from '../utils/sectionScope';
+import { inSectionScope, scopedLines } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { normMat, baseOfPart } from '../utils/matResolve';
 import { fetchByIds } from '../utils/fetchByIds';
@@ -77,7 +77,7 @@ const emptyPoint = {
 };
 
 export default function FixtureRegistry() {
-  const { role, lineId: userLineId, sections: scopeSecs, fullName } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs, fullName, scopeIdx } = useContext(UserContext);
   const canManage = can('fixture_point', 'manage', role);
   const canRecord = can('fixture_shim', 'record', role);
   const canApprove = can('fixture_shim', 'approve', role);
@@ -157,7 +157,7 @@ export default function FixtureRegistry() {
       return out.length ? out : lines;
     }
     if (scopeSecs?.length) {
-      const out = lines.filter(l => inSectionScope(scopeSecs, l.section));
+      const out = scopedLines({ sections: scopeSecs, lines, scopeIdx });
       return out.length ? out : lines;   // กรองแล้วไม่เหลือ = ไม่กรอง (หน่วยงานสนับสนุนไม่มีไลน์)
     }
     return lines;

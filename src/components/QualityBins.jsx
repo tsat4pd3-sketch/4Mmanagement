@@ -77,7 +77,7 @@ const th = { padding: '7px 8px', fontSize: 11.5, color: 'var(--muted)', textAlig
 const td = { padding: '6px 8px', fontSize: 12.5, color: 'var(--text)', borderTop: '1px solid var(--border)' };
 
 export default function QualityBins() {
-  const { role, lineId, sections, fullName } = useContext(UserContext);
+  const { role, lineId, sections, fullName, scopeIdx } = useContext(UserContext);
   const canRecord = can('scrap', 'record', role);
   const canManage = can('scrap', 'manage', role);
 
@@ -121,7 +121,7 @@ export default function QualityBins() {
 
   // scope มาตรฐาน (helper กลาง) — ผลิตเห็นเฉพาะส่วนงานตัวเอง
   const scopeNames = useMemo(
-    () => scopedLineNames({ role, lineId, sections: sections || [], lines }),
+    () => scopedLineNames({ role, lineId, sections: sections || [], lines, scopeIdx }),
     [role, lineId, sections, lines],
   );
 

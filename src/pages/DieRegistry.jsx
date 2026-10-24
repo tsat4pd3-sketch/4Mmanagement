@@ -6,7 +6,7 @@ import { UserContext } from '../App';
 import { canWriteLine, writeBlockText } from '../utils/writeScope';   // 🔐 ชั้นที่ 3 — ยืมมือเขียนทะเบียนสินค้า (20/10)
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
-import { inSectionScope } from '../utils/sectionScope';
+import { inSectionScope, scopedLines } from '../utils/sectionScope';
 import { getLineFamilyNames, lineNameCompare } from '../utils/lineHierarchy';
 import { dieSetKindLabel, dieSetKindOptions, dieSetKindKey } from '../utils/equipmentKinds';
 import useDieSetKinds, { invalidateDieSetKinds } from '../utils/useDieSetKinds'; // ทะเบียนรูปแบบชุด (DR die_set_kinds) — 2026-10-05
@@ -188,7 +188,7 @@ function SetPairNote({ set, products, role, onDone, prodLines = [] }) {
 }
 
 export default function DieRegistry() {
-  const { role, lineId: userLineId, sections: scopeSecs, fullName } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs, fullName, scopeIdx } = useContext(UserContext);
   // ใช้สิทธิ์ชุดเดียวกับฐานข้อมูลเครื่องจักร — แม่พิมพ์อยู่ตาราง machines เดียวกัน คนดูแลกลุ่มเดียวกัน
   // (เลี่ยงการ seed permission key ใหม่ ซึ่งมีกับดัก enum_range ทำให้ role ที่เพิ่มทีหลัง fail-closed)
   const canEdit = can('machines', 'edit', role);
@@ -312,9 +312,9 @@ export default function DieRegistry() {
       const fam = new Set(myLine ? getLineFamilyNames(lines, myLine.name) : []);
       return fam.size ? lines.filter(l => fam.has(l.name)) : lines;
     }
-    if (scopeSecs?.length) return lines.filter(l => inSectionScope(scopeSecs, l.section));
+    if (scopeSecs?.length) return scopedLines({ sections: scopeSecs, lines, scopeIdx });
     return lines;
-  }, [lines, role, userLineId, scopeSecs]);
+  }, [lines, role, userLineId, scopeSecs, scopeIdx]);
   const scopedLineNames = useMemo(() => new Set(scopedLines.map(l => l.name)), [scopedLines]);
   const scopeActive = scopedLines.length !== lines.length;
   const inScope = useCallback((lineName) => !scopeActive || scopedLineNames.has(lineName), [scopeActive, scopedLineNames]);

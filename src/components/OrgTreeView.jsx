@@ -20,6 +20,7 @@ import { buildCcIndex } from '../utils/ccScope';
 import { ORG_PARENT_KIND, orgSaveBlockReason, filterParentOptions } from '../utils/orgNodeEdit';
 import { orgNodeCompare } from '../utils/listOrder';
 import SearchInput from './SearchInput';
+import { printOrgChart } from '../lib/orgChartPrint';   // 🖨️ ใบผังองค์กร FM-HRM-I-001
 
 /** ชั้นในผัง ↔ "เลเวล" ที่โรงงานใช้ (= หลักที่ 5 ของรหัส CC · ดู utils/roleMeta.js ORG_LEVELS)
  *  🔴 ป้ายอ่านอย่างเดียว — ระบบไม่เคยตัดสินชั้นจากตัวเลข */
@@ -27,8 +28,15 @@ const KIND_META = {
   section:    { th: 'ส่วนงาน', icon: '🏢', level: 4, color: '#4d9fff' },
   department: { th: 'แผนก',    icon: '🏭', level: 5, color: '#22c55e' },
   line:       { th: 'กลุ่ม',    icon: '▦',  level: 6, color: '#f59e0b' },
-  team:       { th: 'ทีม',     icon: '👥', level: null, color: 'var(--muted)' },
 };
+
+/* 🔴 "ทีม" ไม่ใช่ชั้นในผังองค์กรจริง (22/10 · คำสั่ง user: *"ระดับ team คือไว้ set กะ การทำงาน
+   ไม่มีอยู่ใน organize จริง"*) — ยืนยันจากข้อมูล: ทีมทั้ง 24 แถว **ไม่มี cost_center เลยสักตัว**
+   และไม่มีในใบ ORG-001/ORG-015 ที่ HR ออกจริง
+   ⇒ มุมมองผัง + ใบ export ตัดทีมออก · ทีมยังอยู่ใน `org_nodes` และจัดการที่แท็บ "จัดการหน่วยงาน"
+     เพราะ `useOrgTeams()` อ่านไปทำลิสต์กะทั้งระบบ — **ห้ามลบแถวทีมทิ้ง**
+   🔴 กฎความซื่อสัตย์ของจอ: กรองออกแล้วต้องเขียนบนจอว่าซ่อนไปกี่รายการ ห้ามหายเงียบ */
+const ORG_KINDS = ['section', 'department', 'line'];
 
 export default function OrgTreeView({ nodes = [], scopeCtx = {}, canEdit = false, onChanged }) {
   const [q, setQ] = useState('');
@@ -36,6 +44,7 @@ export default function OrgTreeView({ nodes = [], scopeCtx = {}, canEdit = false
   const [empCount, setEmpCount] = useState(null);   // null = ยังไม่โหลด (ห้ามโชว์ 0 ตอนไม่รู้)
   const [moving, setMoving] = useState(null);       // id ของโหนดที่กำลังเลือกปลายทาง
   const [busy, setBusy] = useState(false);
+  const [printing, setPrinting] = useState(false);
 
   /* 👤 จำนวนคนต่อหน่วย — ดึงแค่คอลัมน์เดียว (egress: 250 แถว ≈ ไม่กี่ KB) */
   useEffect(() => {
@@ -51,17 +60,21 @@ export default function OrgTreeView({ nodes = [], scopeCtx = {}, canEdit = false
     return () => { alive = false; };
   }, []);
 
+  /* ผังองค์กรจริง = ส่วนงาน/แผนก/กลุ่ม เท่านั้น (ดูคอมเมนต์ที่ ORG_KINDS) */
+  const orgNodes = useMemo(() => nodes.filter(n => ORG_KINDS.includes(n.kind)), [nodes]);
+  const teamCount = nodes.length - orgNodes.length;
+
   const ccIdx = useMemo(() => buildCcIndex(nodes), [nodes]);
   const kids = useMemo(() => {
     const m = new Map();
-    nodes.forEach(n => {
+    orgNodes.forEach(n => {
       const k = n.parent_id || '__root__';
       if (!m.has(k)) m.set(k, []);
       m.get(k).push(n);
     });
     m.forEach(arr => arr.sort(orgNodeCompare));
     return m;
-  }, [nodes]);
+  }, [orgNodes]);
 
   /** นับคนทั้งสาย (ตัวเอง + ลูกหลาน) — `null` = ยังไม่รู้ */
   const deepCount = useMemo(() => {
@@ -74,30 +87,30 @@ export default function OrgTreeView({ nodes = [], scopeCtx = {}, canEdit = false
       memo.set(id, sum);
       return sum;
     };
-    nodes.forEach(n => walk(n.id));
+    orgNodes.forEach(n => walk(n.id));
     return memo;
-  }, [empCount, kids, nodes]);
+  }, [empCount, kids, orgNodes]);
 
   /* ค้นหา: โชว์โหนดที่ตรง + บรรพบุรุษของมัน (ไม่งั้นกิ่งขาด อ่านไม่รู้เรื่อง) */
   const matchSet = useMemo(() => {
     const kw = q.trim().toLowerCase();
     if (!kw) return null;
-    const byId = new Map(nodes.map(n => [n.id, n]));
+    const byId = new Map(orgNodes.map(n => [n.id, n]));
     const keep = new Set();
-    nodes.forEach(n => {
+    orgNodes.forEach(n => {
       const hay = [n.name, n.code, n.cost_center].filter(Boolean).join(' ').toLowerCase();
       if (!hay.includes(kw)) return;
       let cur = n;
       while (cur) { keep.add(cur.id); cur = cur.parent_id ? byId.get(cur.parent_id) : null; }
     });
     return keep;
-  }, [q, nodes]);
+  }, [q, orgNodes]);
 
   const roots = useMemo(() => {
-    const secs = nodes.filter(n => n.kind === 'section');
-    const floats = nodes.filter(n => n.kind !== 'section' && !n.parent_id);
+    const secs = orgNodes.filter(n => n.kind === 'section');
+    const floats = orgNodes.filter(n => n.kind !== 'section' && !n.parent_id);
     return { secs: [...secs].sort(orgNodeCompare), floats: [...floats].sort(orgNodeCompare) };
-  }, [nodes]);
+  }, [orgNodes]);
 
   /* 🔒 สลับ "ขอบเขตของหน่วยแม่ครอบหน่วยนี้ไหม" — ผังยังโชว์ใต้แม่เหมือนเดิม
      (22/10 · user: "องค์กรเรามันแปลกตรงเอาจิ๊กมาฝากกับผลิต") */
@@ -125,17 +138,30 @@ export default function OrgTreeView({ nodes = [], scopeCtx = {}, canEdit = false
     onChanged?.();
   };
 
+  /* 🖨️ ออกใบผังองค์กรตามฟอร์มจริง — ผังใหญ่ = ทั้งโรงงาน · ผังย่อย = กางเฉพาะหน่วยที่เลือก
+     เปิดหน้าต่างพิมพ์ไม่ได้ = ต้องบอก ห้ามเงียบ (ส่วนใหญ่คือ popup ถูกบล็อก) */
+  const doPrint = async (opts) => {
+    setPrinting(true);
+    try {
+      const ok = await printOrgChart({ ...opts, nodes });
+      if (!ok) toast.error('เปิดหน้าต่างพิมพ์ไม่ได้ — เบราว์เซอร์บล็อกป๊อปอัป ให้อนุญาตแล้วลองใหม่');
+    } catch (e) {
+      toast.error(`ออกใบผังไม่สำเร็จ: ${e?.message || e}`);
+    }
+    setPrinting(false);
+  };
+
   const Row = ({ n, depth }) => {
     if (matchSet && !matchSet.has(n.id)) return null;
     if (n.is_active === false && !showOff) return null;
-    const meta = KIND_META[n.kind] || KIND_META.team;
+    const meta = KIND_META[n.kind] || { th: n.kind, icon: '•', level: null, color: 'var(--muted)' };
     const cc = ccIdx.ccOfNode(n.id);
     const inherited = cc?.cc && cc?.from && cc.from.id !== n.id;
     const kidRows = (kids.get(n.id) || []);
     const cnt = deepCount?.get(n.id);
     const parentKind = ORG_PARENT_KIND[n.kind];
     const parentOpts = parentKind
-      ? filterParentOptions(n.kind, nodes.filter(x => x.kind === parentKind && x.is_active !== false), scopeCtx)
+      ? filterParentOptions(n.kind, orgNodes.filter(x => x.kind === parentKind && x.is_active !== false), scopeCtx)
       : null;
     return (
       <>
@@ -190,6 +216,11 @@ export default function OrgTreeView({ nodes = [], scopeCtx = {}, canEdit = false
               </span>
             ) : (
               <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 6 }}>
+                {(n.kind === 'section' || n.kind === 'department') && (
+                  <button type="button" className="tbtn" onClick={() => doPrint({ mode: 'dept', rootId: n.id })}
+                    disabled={printing} title="ออกใบผังองค์กรเฉพาะหน่วยนี้ (กางถึงกลุ่ม + รายชื่อ)"
+                    style={{ fontSize: 11, padding: '2px 8px' }}>🖨️ ผังย่อย</button>
+                )}
                 {n.parent_id && (
                   <button type="button" className="tbtn" onClick={() => toggleInherit(n)} disabled={busy}
                     title={n.inherit_scope === false
@@ -210,11 +241,14 @@ export default function OrgTreeView({ nodes = [], scopeCtx = {}, canEdit = false
     );
   };
 
-  const offCount = nodes.filter(n => n.is_active === false).length;
+  const offCount = orgNodes.filter(n => n.is_active === false).length;
   return (
     <div className="card" style={{ padding: 14 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
         <SearchInput value={q} onChange={setQ} fields="ชื่อหน่วย / รหัส / CC" />
+        <button type="button" className="tbtn" onClick={() => doPrint({ mode: 'overall' })} disabled={printing}
+          title="ออกใบแผนผังองค์กรทั้งโรงงาน (ฝ่าย → ส่วน → แผนก) ตามฟอร์ม FM-HRM-I-001"
+          style={{ fontSize: 12, padding: '3px 10px' }}>🖨️ ผังใหญ่ (ทั้งโรงงาน)</button>
         <label style={{ fontSize: 12, color: 'var(--text2)', display: 'inline-flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}>
           <input type="checkbox" checked={showOff} onChange={e => setShowOff(e.target.checked)} style={{ margin: 0 }} />
           โชว์ที่ปิดใช้งาน ({offCount})
@@ -223,6 +257,13 @@ export default function OrgTreeView({ nodes = [], scopeCtx = {}, canEdit = false
           ลำดับชั้นมาจากผัง (หน่วยแม่) ไม่ใช่ตัวเลขรหัส · 💰 เทา = ตกทอดจากหน่วยแม่
         </span>
       </div>
+      {/* 🔴 ห้ามซ่อนเงียบ — บอกตรงๆ ว่าตัดอะไรออกและของนั้นไปอยู่ไหน */}
+      {teamCount > 0 && (
+        <div style={{ fontSize: 11.5, color: 'var(--text2)', marginBottom: 6 }}>
+          👥 ไม่นับทีม {teamCount} รายการ — <b>ทีม A/B/C ใช้จัดกะการทำงาน ไม่ใช่ชั้นในผังองค์กร</b>
+          {' '}(จัดการที่แท็บ “จัดการหน่วยงาน”)
+        </div>
+      )}
       {empCount === undefined && (
         <div style={{ fontSize: 11.5, color: '#f59e0b', marginBottom: 6 }}>
           ⚠ อ่านจำนวนพนักงานไม่สำเร็จ — ตัวเลข 👤 จะไม่ขึ้น (ไม่ได้แปลว่าหน่วยนั้นไม่มีคน)

@@ -19,7 +19,7 @@ import { loadProcessTypes, activeProcessTypes, procDisplay, procColor } from '..
 loadProcessTypes(); // master กระบวนการ (data-driven) — dropdown/ป้ายในหน้านี้อ่านผ่าน sync cache
 import tsLogoUrl from '../assets/TS logo.png';
 import { can, canAccessPage, isSharedAccount } from '../utils/permissions';
-import { inSectionScope } from '../utils/sectionScope';
+import { inSectionScope, scopedLines } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { fetchByIds } from '../utils/fetchByIds';
 import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
@@ -280,7 +280,7 @@ const CAT_META = {
    MAIN PAGE
 ═══════════════════════════════════════════════════════════════ */
 export default function DailyReport() {
-  const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs = [], scopeIdx } = useContext(UserContext);
   const canSetup = can('daily_report', 'setup', role);
   const [tabRaw, setTab] = useTabParam(['live', 'stale', 'history', 'export', 'setup'], 'live');
   const tab = tabRaw === 'setup' && !canSetup ? 'live' : tabRaw;   // ลิงก์เข้าแท็บที่ไม่มีสิทธิ์ = ตกกลับแท็บแรก
@@ -325,7 +325,7 @@ export default function DailyReport() {
    LIVE TAB
 ═══════════════════════════════════════════════════════════════ */
 function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
-  const { fullName, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
+  const { fullName, lineId: userLineId, sections: scopeSecs = [], scopeIdx } = useContext(UserContext);
   /* 🔴🔴 2026-10-06 — `scopeSecs` เป็น **array** ห้ามอยู่ใน deps ของตัวโหลด (กฎเหล็กข้อ 9)
      2 ทางที่ทำให้ได้ array ใบใหม่ "เนื้อเหมือนเดิม" ซ้ำๆ:
        ① destructure ข้างบนมี default `sections: scopeSecs = []` ⇒ ถ้า context ส่ง `undefined`
@@ -713,9 +713,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   // ไลน์ที่เปิดกะได้ตาม scope (leader→family · role อื่น→sections · admin/qa→null=ทั้งหมด) — กันเปิดกะไลน์ข้ามส่วนงาน
   const openScopeLineNames = useMemo(() => {
     if (role === 'leader' && userLineId) return new Set(getLineFamilyNames(lines, Number(userLineId) || userLineId));
-    if (scopeSecs.length) return new Set(lines.filter(l => inSectionScope(scopeSecs, l.section)).map(l => l.name));
+    if (scopeSecs.length) return new Set(scopedLines({ sections: scopeSecs, lines, scopeIdx }).map(l => l.name));
     return null; // ไม่จำกัด
-  }, [role, userLineId, scopeSecs, lines]);
+  }, [role, userLineId, scopeSecs, lines, scopeIdx]);
 
   const loadDT = useCallback(async (sessionId) => {
     if (!sessionId) return;
@@ -6483,7 +6483,7 @@ function StaleTab({ stale, onOpenSession, role }) {
    HISTORY TAB
 ═══════════════════════════════════════════════════════════════ */
 function HistoryTab({ role }) {
-  const { lineId: userLineId, sections: scopeSecs = [], fullName } = useContext(UserContext);
+  const { lineId: userLineId, sections: scopeSecs = [], fullName, scopeIdx } = useContext(UserContext);
   // คีย์เนื้อหาแทน array ใน deps ของตัวโหลด — เหตุผลเต็มดูที่ scopeKey ตัวแรกในไฟล์นี้
   const scopeKey = useMemo(() => [...scopeSecs].sort().join('|'), [scopeSecs]);
   const [sessions, setSessions]   = useState([]);
@@ -6598,7 +6598,7 @@ function HistoryTab({ role }) {
       const myLine = (ln || []).find(l => l.id === userLineId);
       allowedLineNames = myLine ? [myLine.name, ...(pcm[myLine.name] || [])] : [];
     } else if (role !== 'admin' && scopeSecs.length) {
-      allowedLineNames = (ln || []).filter(l => inSectionScope(scopeSecs, l.section)).map(l => l.name);
+      allowedLineNames = scopedLines({ sections: scopeSecs, lines: ln || [], scopeIdx }).map(l => l.name);
     }
 
     /* ใบโมฆะต้อง **เห็นในลิสต์** (ไม่ใช่หายไปเหมือนถูกลบ) — ติดป้าย 🚫 + ไม่เข้าชุดวิเคราะห์
@@ -7195,7 +7195,7 @@ function HistoryTab({ role }) {
    EXPORT TAB
 ═══════════════════════════════════════════════════════════════ */
 function ExportTab() {
-  const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs = [], scopeIdx } = useContext(UserContext);
   // คีย์เนื้อหาแทน array ใน deps ของตัวโหลด — เหตุผลเต็มดูที่ scopeKey ตัวแรกในไฟล์นี้
   const scopeKey = useMemo(() => [...scopeSecs].sort().join('|'), [scopeSecs]);
   const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
@@ -7220,7 +7220,7 @@ function ExportTab() {
           const myLine = ln.find(l => l.id === userLineId);
           allowed = myLine ? [myLine.name, ...(pcm[myLine.name] || [])] : [];
         } else if (role !== 'admin' && scopeSecs.length) {
-          allowed = ln.filter(l => inSectionScope(scopeSecs, l.section)).map(l => l.name);
+          allowed = scopedLines({ sections: scopeSecs, lines: ln, scopeIdx }).map(l => l.name);
         }
         setAllowedLineNames(allowed);
         setLineNames(allowed ?? ln.map(l => l.name));
