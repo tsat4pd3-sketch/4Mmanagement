@@ -157,7 +157,7 @@ export default function FixtureRegistry() {
       return out.length ? out : lines;
     }
     if (scopeSecs?.length) {
-      const out = scopedLines({ sections: scopeSecs, lines, scopeIdx });
+      const out = scopedLines({ role, lineId: userLineId, sections: scopeSecs, lines, scopeIdx });
       return out.length ? out : lines;   // กรองแล้วไม่เหลือ = ไม่กรอง (หน่วยงานสนับสนุนไม่มีไลน์)
     }
     return lines;

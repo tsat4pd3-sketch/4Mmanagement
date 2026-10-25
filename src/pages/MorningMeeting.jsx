@@ -129,7 +129,7 @@ export default function MorningMeeting() {
       const fam = new Set(getLineFamilyNames(allLines, userLineId));
       return allLines.filter(l => fam.has(l.name));
     }
-    if (scopeSecs.length) return scopedLines({ sections: scopeSecs, lines: allLines, scopeIdx });
+    if (scopeSecs.length) return scopedLines({ role, lineId: userLineId, sections: scopeSecs, lines: allLines, scopeIdx });
     return allLines;
   }, [allLines, role, userLineId, scopeSecs, scopeIdx]);
 

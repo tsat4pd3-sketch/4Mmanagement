@@ -43,7 +43,7 @@ export function scopeLines(lines, { role, lineId, sections, scopeIdx = null } = 
     return lines;
   }
   if (sections?.length) {
-    const inScope = scopedLines({ sections, lines, scopeIdx });
+    const inScope = scopedLines({ role, lineId, sections, lines, scopeIdx });
     /* 🔴 ส่วนงานที่ "ไม่มีไลน์ผลิตสังกัดอยู่เลย" ต้องไม่ถูกล็อกจนเลือกอะไรไม่ได้ (2026-08-24)
        เคสจริง: แอดมินหน่วยงานฝั่งคลัง (section `Planning&Store`) เปิดฟอร์มเพิ่มรอบจัดส่ง
        แล้ว dropdown ไลน์ **ว่างเปล่า** — เพราะ production_lines ไม่มีแถวไหน section = Planning&Store

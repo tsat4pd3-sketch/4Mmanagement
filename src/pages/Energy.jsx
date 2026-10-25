@@ -85,7 +85,7 @@ export default function Energy() {
       const fam = me ? getLineFamilyNames(lines, me.name) : null;
       return fam ? lines.filter(l => fam.includes(l.name)) : lines;
     }
-    if (scopeSecs?.length) return scopedLines({ sections: scopeSecs, lines, scopeIdx });
+    if (scopeSecs?.length) return scopedLines({ role, lineId, sections: scopeSecs, lines, scopeIdx });
     return lines;
   }, [lines, role, lineId, scopeSecs, scopeIdx]);
 
