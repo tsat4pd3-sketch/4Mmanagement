@@ -15,6 +15,7 @@ import { moStatusMeta } from '../utils/mtnStepPerm';
 import { fmtDateTime } from '../utils/dateFormat';
 import { machineKey } from '../utils/machineNo';
 import { machineHistoryRows } from '../utils/machineHistoryForm';
+import { teamKeyOf, deptNameOf } from '../utils/mtnTeams';
 import { toast } from './Toast';
 
 const fmtMin = (m) => (m == null ? '—' : m >= 60 ? `${(m / 60).toFixed(1)} ชม.` : `${Math.round(m)} นาที`);
@@ -77,10 +78,30 @@ export default function MachineRepairHistory({ machineNo, onClose, onOpenOrder }
     return () => { alive = false; };
   }, [machineNo]);
 
+  /* ── 🔧 กรองตามทีมช่าง (2026-10-24 · ทีม MTN แจ้ง) ──────────────────────────────
+     *"ตัวประวัติเครื่องจักร มันดึงมาหมดเลยครับพี่ ทั้งปรับคุณภาพ ทั้งซ่อม JiG
+       น่าจะต้อง Filter ในส่วนที่เป็น O-MTN มา อย่างเดียวครับผม"*
+     ฟอร์มนี้คือ **FM-MTN-005 ของทีม MTN** ⇒ ค่าเริ่มต้น = เฉพาะใบทีม MTN
+     🔴 **ห้ามกรองเงียบ** — ต้องเขียนบนจอว่าซ่อนไปกี่ใบ และสลับดูทีมอื่นได้ (กฎความซื่อสัตย์ของจอ)
+     ⚠️ กรองที่ชั้นแสดงผล ไม่ใช่ที่คิวรี — ตัวเลือกทีมและตัวนับ "ซ่อนไป" ต้องรู้ของทั้งหมด */
+  const [team, setTeam] = useState('maintenance');
+  const teamsSeen = useMemo(() => {
+    const seen = new Map();
+    for (const o of state.orders) {
+      const k = teamKeyOf(o.mtn_dept) || '';
+      seen.set(k, (seen.get(k) || 0) + 1);
+    }
+    return [...seen.entries()].sort((a, b) => b[1] - a[1]);
+  }, [state.orders]);
+  const shown = useMemo(
+    () => (team === 'all' ? state.orders : state.orders.filter(o => (teamKeyOf(o.mtn_dept) || '') === team)),
+    [state.orders, team]);
+  const hidden = state.orders.length - shown.length;
+
   // ⚠️ `now` จับครั้งเดียวตอนข้อมูลมาถึง (ใบที่ยังอยู่กับ supplier นับเวลาถึงตอนนั้น)
-  const sum = useMemo(() => summarizeMachineHistory(state.orders, {
+  const sum = useMemo(() => summarizeMachineHistory(shown, {
     prsBy: state.prsBy, laborBy: state.laborBy, partsBy: state.partsBy, now: Date.now(),
-  }), [state.orders, state.prsBy, state.laborBy, state.partsBy]);
+  }), [shown, state.prsBy, state.laborBy, state.partsBy]);
 
   const box = { background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 10, width: 'min(980px, 100%)', boxShadow: 'var(--shadow-lg)', display: 'flex', flexDirection: 'column', maxHeight: '92vh' };
   const th = { textAlign: 'left', padding: '6px 8px', fontSize: 11.5, color: 'var(--muted)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, background: 'var(--card)' };
@@ -97,12 +118,35 @@ export default function MachineRepairHistory({ machineNo, onClose, onOpenOrder }
               นับจากใบแจ้งซ่อม (MO) ของเครื่องนี้ · ⬇️ Excel = ฟอร์ม FM-MTN-005 (ใบตีกลับไม่ลงประวัติ)
               {sum.spellings.length > 1 && <> · ⚠ เลขเครื่องถูกพิมพ์ {sum.spellings.length} แบบ: {sum.spellings.join(' / ')} (รวมให้แล้ว)</>}
             </div>
+            {/* 🔧 ตัวเลือกทีมช่าง — ค่าเริ่มต้น "ทีม MTN" เพราะฟอร์มนี้คือ FM-MTN-005 ของทีม MTN
+                   🔴 ซ่อนแล้วต้องเขียนบนจอว่าซ่อนไปกี่ใบ + สลับดูได้ ห้ามกรองเงียบ */}
+            {state.orders.length > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 5, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 11, color: 'var(--muted)' }}>ทีมช่าง:</span>
+                <select value={team} onChange={e => setTeam(e.target.value)} aria-label="กรองตามทีมช่าง"
+                  style={{ height: 26, fontSize: 11.5, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', padding: '0 6px' }}>
+                  <option value="all">ทุกทีม ({state.orders.length} ใบ)</option>
+                  {teamsSeen.map(([k, n]) => (
+                    <option key={k || '_none'} value={k}>{k ? (deptNameOf(k) || k) : '— ไม่ระบุทีม —'} ({n} ใบ)</option>
+                  ))}
+                </select>
+                {hidden > 0 && (
+                  <span style={{ fontSize: 11, color: '#f59e0b' }}>
+                    ⚠️ ซ่อนไป <b>{hidden}</b> ใบของทีมอื่น — สรุป/ตาราง/Excel นับเฉพาะที่เห็นอยู่
+                  </span>
+                )}
+                {team !== 'all' && !shown.length && state.orders.length > 0 && (
+                  <span style={{ fontSize: 11, color: '#f59e0b' }}>⚠️ เครื่องนี้ไม่มีใบของทีมที่เลือก — ลองเลือก "ทุกทีม"</span>
+                )}
+              </div>
+            )}
           </div>
           <button disabled={state.loading || !!state.err || exporting} onClick={async () => {
             setExporting(true);
             try {
               const { exportMachineHistoryExcel } = await import('../lib/mtnMachineHistoryExcel');
-              const rows = machineHistoryRows(state.orders, { partsBy: state.partsBy || {}, prsBy: state.prsBy, now: Date.now() });
+              // ⬇️ Excel ออกตาม "ที่เห็นบนจอ" เสมอ — ไม่งั้นใบพิมพ์กับจอตอบคนละชุด
+              const rows = machineHistoryRows(shown, { partsBy: state.partsBy || {}, prsBy: state.prsBy, now: Date.now() });
               const r = await exportMachineHistoryExcel({ machine: state.machine, rows });
               toast.success(`⬇️ FM-MTN-005 · ${r.rows} รายการ · ${r.pages} หน้า`);
               if (state.subErr) toast.info(`⚠ โหลด ${state.subErr} ไม่ครบ — ช่องนั้นในไฟล์อาจไม่ครบ`);

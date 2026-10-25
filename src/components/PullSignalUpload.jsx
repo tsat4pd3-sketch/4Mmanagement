@@ -23,7 +23,7 @@ import { checkWrite } from '../utils/dbWrite';
 import { buildPnIndex, resolveMatNo } from '../utils/matResolve';
 import {
   FALLBACK_PROFILE, pickProfile, parsePullFile, aggregateSignals,
-  planOrderUpdates, signalKey, dateStr, timeStr, findDuplicateUploads, orderShipAt, pullRoundOptions, shipSlotOf, fileNameStamp, shipDueDate} from '../utils/pullSignal';
+  planDockLegs, dockLegsOf, dockKey, signalKey, dateStr, timeStr, findDuplicateUploads, orderShipAt, pullRoundOptions, shipSlotOf, fileNameStamp, shipDueDate} from '../utils/pullSignal';
 
 const SOURCE = 'esmart';
 const inputSt = {
@@ -69,6 +69,10 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
      บทเรียน 2026-09-10: อ่าน 10/09 เป็น 9 ต.ค. ⇒ ใบไปคนละเดือน + สต็อกถูกตัดซ้ำ 115 ชิ้น
      คำเตือนเฉยๆ ไม่พอ เพราะคนกดยืนยันเร็วกว่าอ่าน — วันที่ผิด = เสียหายถึงสต็อกทันที */
   const [dateAck, setDateAck] = useState(false);
+  /* ⭐ เที่ยวต่อ dock (22/10) — ไฟล์ B1+B5 ปนกัน = 2 เที่ยว คนละรอบรับ (`dockLegsOf` ใน pullSignal.js)
+     dock หลักใช้รอบ/วันงานบนจอ · dock อื่นใช้ตารางรอบรับของตัวเอง */
+  const legs = useMemo(() => dockLegsOf(parsed, { pattern, shipTime, workDate }), [parsed, pattern, shipTime, workDate]);
+  const legsKey = legs.map(l => `${l.dock || ''}|${l.workDate || ''}|${l.shipTime || ''}`).join(',');
 
   /* ── โปรไฟล์รูปแบบไฟล์ (data-driven) — ยังไม่ apply migration = ใช้ค่าสำรองในโค้ด + บอกบนจอ ── */
   useEffect(() => {
@@ -144,12 +148,17 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
      เคสจริง 2026-09-09: ไฟล์เดียวกันถูกอัพ 2 ครั้งห่างกัน 4 วินาที · รอบที่ 2 ใช้ `plan` ที่คำนวณไว้
      ตั้งแต่ตอนเปิดไฟล์ (ยังไม่มีใบพวกนั้น) ⇒ **สร้างใบซ้ำอีกชุด 3 ใบ = ยอดเด้งเป็น 2 เท่า** */
   const fetchContext = useCallback(async () => {
+    const legDates = [...new Set(legsKey.split(',').flatMap(k => {
+      const wd = k.split('|')[1];
+      return wd ? [wd, shipDueDate(wd, '00:00')] : [];
+    }))];
     const [ordRes, sigRes] = await Promise.all([
       supabaseDR.from('customer_shipping_orders')
         .select('id, customer, mat_no, customer_part_no, part_name, qty, plan_qty, due_date, ship_time, status, dock_code, source, order_no, pull_batch_id, plan_ship_time')
         /* วันงาน D = ใบ due D (กลางวัน) + ใบ due D+1 (กะดึก <08:00) — ช่วงเวลาตัดสินใน planOrderUpdates
            (เดิม .eq(due_date, workDate) ⇒ รอบกะดึกไปเจอใบ 862 ของ "เมื่อวาน" แล้วทับยอดผิดใบ · 16/10) */
-        .eq('customer', shipTo).in('due_date', [workDate, shipDueDate(workDate, '00:00')]),
+        /* ไฟล์หลาย dock = หลายเที่ยว (คนละวันงานได้) ⇒ ดึงใบของทุกเที่ยว */
+        .eq('customer', shipTo).in('due_date', legDates),
       (async () => {
         const times = (parsed?.rows || []).map(r => r.pulled_at.getTime());
         if (!times.length) return { data: [], error: null };
@@ -169,7 +178,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
       // ตารางยังไม่ apply (42P01) = ถือว่ายังไม่เคยนำเข้า แต่ต้องบอกบนจอ ห้ามเงียบ
       err: ordRes.error?.message || (sigRes.error ? `ยังตรวจการนำเข้าซ้ำไม่ได้: ${sigRes.error.message}` : ''),
     };
-  }, [shipTo, workDate, shipTime, parsed]);
+  }, [shipTo, legsKey, parsed]);
 
   /* ⚠️ guard คำตอบเก่าทับจอใหม่ (กฎ stale-response ของโปรเจค) — เปลี่ยนรอบ/ลูกค้าเร็วๆ ได้ */
   useEffect(() => {
@@ -203,10 +212,11 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
         if (!alive) return;
         // ตารางยังไม่ apply = ตรวจไม่ได้ แต่ไม่ใช่ "ไม่ซ้ำ" → ctxError บอกอยู่แล้วจากอีกจุด
         if (error) { setDupUploads([]); return; }   // 42703 (ยังไม่ apply migration) = ตรวจไม่ได้ · ctxError บอกอยู่แล้ว
-        setDupUploads(findDuplicateUploads(data, {
-          fileName: file?.name, windowStart: parsed.windowStart, windowEnd: parsed.windowEnd,
-          dock: parsed.dock,
-        }));
+        /* ไฟล์หลาย dock = เช็คซ้ำทีละ dock (คนละ dock = คนละเที่ยว ไม่ใช่ของซ้ำ) แล้วรวม */
+        const seen = new Set();
+        setDupUploads(((parsed.docks?.length > 1 ? parsed.docks : [parsed.dock])).flatMap(dk => findDuplicateUploads(data, {
+          fileName: file?.name, windowStart: parsed.windowStart, windowEnd: parsed.windowEnd, dock: dk,
+        })).filter(d => !seen.has(d.batch?.id) && seen.add(d.batch?.id)));
         setDupAck(false);
       });
     return () => { alive = false; };
@@ -231,7 +241,6 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
     () => (parsed?.rows || []).filter(r => !dupKeys.has(signalKey(r, SOURCE))),
     [parsed, dupKeys]);
   const dupCount = (parsed?.rows?.length || 0) - fresh.length;
-  const groups = useMemo(() => aggregateSignals(fresh), [fresh]);
   /* ⭐ รอบรับตาม pattern ที่เลือกอยู่ — เปลี่ยน pattern แล้วเวลารับต้องขยับตามทันที
      (ช่วง 14:00-16:00: ปกติรับ 22:00 · OT กลางวันรับ 17:00 — ต่างกัน 5 ชม.) */
   const patOpts = parsed?.patternOptions || [];
@@ -250,25 +259,34 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
 
   /* เที่ยวรถของไฟล์นี้ — ใบ 862 ที่เวลาส่ง "ใกล้เที่ยวนี้ที่สุด" = ใบเดียวกันกับที่ลูกค้าเรียก
      (กติกาการจับคู่ + เหตุผลอยู่ใน planOrderUpdates · ห้ามจับคู่เองในหน้า) */
-  const slot = useMemo(() => ({
+  const slotOf = useCallback((leg) => ({
     windowStart: parsed?.windowStart || null,
+    /* ⭐ 21/10 โหมดช่วงเวลา — ใบแผน 862 ที่ "ช่วงดึง" (เวลาส่ง − lead) อยู่ในช่วงของไฟล์ = ไฟล์นี้ยืนยันแทน
+       (planOrderUpdates · user: "862 = แผนทั้งวัน · e-SMART = คอนเฟิร์มช่วงนั้นส่งจริง") */
+    windowEnd: parsed?.windowEnd || null,
+    leadMin: parsed?.profile?.lead_min ?? 60,
     /* 🔴 workDate = วันงาน (กรอบ 08:00→08:00) · ใบลงวันที่ตามปฏิทิน ⇒ แปลงก่อนเสมอ (16/10 รอบกะดึกลงผิดวัน) */
-    targetAt: workDate && shipTime ? orderShipAt(shipDueDate(workDate, shipTime), shipTime) : null,
+    targetAt: leg.workDate && leg.shipTime ? orderShipAt(shipDueDate(leg.workDate, leg.shipTime), leg.shipTime) : null,
     /* ⭐ dock = ส่วนหนึ่งของ "เที่ยวรถ" (2026-09-15) — ใบของ dock อื่นห้ามถูกแตะ */
-    dock: parsed?.dock || null,
-    /* ไฟล์ชุดเดียวกันที่เคยอัพมาก่อน = เคลมใบเดิมซ้ำได้ (อัพใหม่ต้องแก้ของเดิม ไม่ใช่ชนกันเอง) */
-    ownBatchIds: dupUploads.map(d => d.batch?.id).filter(Boolean),
-  }), [parsed, workDate, shipTime, dupUploads]);
+    dock: leg.dock || null,
+    /* ไฟล์ชุดเดียวกันที่เคยอัพมาก่อน (dock เดียวกัน) = เคลมใบเดิมซ้ำได้ (อัพใหม่ต้องแก้ของเดิม ไม่ใช่ชนกันเอง) */
+    ownBatchIds: dupUploads.filter(d => !d.batch?.dock_code || dockKey(d.batch.dock_code) === dockKey(leg.dock))
+      .map(d => d.batch?.id).filter(Boolean),
+  }), [parsed, dupUploads]);
+  const legGroups = useMemo(
+    () => legs.map(l => ({ ...l, groups: aggregateSignals(l.rows.filter(r => !dupKeys.has(signalKey(r, SOURCE)))) })),
+    [legs, dupKeys]);
   const plan = useMemo(
-    () => planOrderUpdates(groups, orders, (p) => resolveMatNo(p, pnIndex), slot),
-    [groups, orders, pnIndex, slot]);
+    () => planDockLegs(legGroups, orders, (p) => resolveMatNo(p, pnIndex), slotOf),
+    [legGroups, orders, pnIndex, slotOf]);
 
   const tally = useMemo(() => {
     const t = { update: 0, create: 0, same: 0, locked: 0, unresolved: 0 };
     plan.forEach(x => { t[x.action] = (t[x.action] || 0) + 1; });
     return t;
   }, [plan]);
-  const willWrite = tally.update + tally.create;
+  const mergeCount = plan.reduce((a, x) => a + (x.merge?.length || 0), 0);
+  const willWrite = tally.update + tally.create + mergeCount;
   /* 🔴 "ยอดตรงกับ 862 อยู่แล้ว" ก็ต้องบันทึกการนำเข้า (user 2026-09-10: *"วันนี้มันวันที่ 10/9/26 ทำไมมันขึ้น 9/9"*)
      ประวัติ order เข้าระบบ = หลักฐานว่า **ได้รับสัญญาณดึงจากลูกค้าแล้ว** ไม่ใช่แค่ "มีอะไรเปลี่ยน"
      เดิมกดยืนยันไม่ได้เลยถ้าไม่มีใบต้องแก้ ⇒ ไฟล์ที่ยอดตรงพอดี **หายไปจากประวัติทั้งใบ** */
@@ -288,9 +306,9 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
        เชื่อ plan เก่า = สร้างใบซ้ำทั้งชุด · ตัวกันซ้ำที่ DB เป็นด่านสุดท้าย ไม่ใช่ด่านเดียว */
     const live = await fetchContext();
     if (live.err) { toast.error(`ตรวจสถานะล่าสุดไม่สำเร็จ: ${live.err}`); setSaving(false); return; }
-    const liveGroups = aggregateSignals((parsed.rows || []).filter(r => !live.dupKeys.has(signalKey(r, SOURCE))));
-    const plan = planOrderUpdates(liveGroups, live.orders, (pn) => resolveMatNo(pn, pnIndex), slot);
-    const liveWrite = plan.filter(x => x.action === 'update' || x.action === 'create').length;
+    const liveLegs = legs.map(l => ({ ...l, groups: aggregateSignals(l.rows.filter(r => !live.dupKeys.has(signalKey(r, SOURCE)))) }));
+    const plan = planDockLegs(liveLegs, live.orders, (pn) => resolveMatNo(pn, pnIndex), slotOf);
+    const liveWrite = plan.filter(x => x.action === 'update' || x.action === 'create' || x.merge?.length).length;
     setOrders(live.orders); setDupKeys(live.dupKeys);
     const fresh = (parsed.rows || []).filter(r => !live.dupKeys.has(signalKey(r, SOURCE)));
     /* ไม่มีทั้งใบให้แก้ และไม่มีแถวใหม่ให้บันทึก = ไฟล์นี้เข้าไปแล้วจริงๆ ⇒ ไม่ต้องทำอะไร
@@ -303,125 +321,147 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
     const now = new Date().toISOString();
     const stamp = { confirm_source: SOURCE, confirmed_at: now };
 
-    // 1) ก้อนการนำเข้า — ทำเป็น "ร่องรอย" ก่อน แล้วค่อยเขียนใบ (ล้มกลางทางยังสืบได้ว่าไฟล์ไหน)
-    const batchRow = {
-      source: SOURCE, format_code: parsed.profile?.code || null, ship_to: shipTo,
-      file_name: file?.name || null, work_date: workDate, ship_time: shipTime,
-      window_start: parsed.windowStart ? parsed.windowStart.toISOString() : null,
-      window_end: parsed.windowEnd ? parsed.windowEnd.toISOString() : null,
-      row_count: parsed.rows.length, new_signals: fresh.length, uploaded_by: fullName || null,
-      dock_code: parsed.dock || null,
-    };
-    let bRes = await supabaseDR.from('customer_pull_batches').insert(batchRow).select('id').single();
-    if (bRes.error?.code === '42703') {                    // ยังไม่ apply migration dock_code
-      // eslint-disable-next-line no-unused-vars
-      const { dock_code, ...slim } = batchRow;
-      bRes = await supabaseDR.from('customer_pull_batches').insert(slim).select('id').single();
-    }
-    if (bRes.error) {
-      // ตารางยังไม่ apply = เขียนใบส่งได้อยู่ แต่จะไม่มีร่องรอย → ถามก่อน ห้ามเงียบ
-      const go = window.confirm(`บันทึกประวัติการนำเข้าไม่ได้ (${bRes.error.message})\nยังจะอัพเดทใบส่งต่อไหม? (จะไม่มีบันทึกว่ามาจากไฟล์ไหน)`);
-      if (!go) { setSaving(false); return; }
-    }
-    const batchId = bRes.data?.id || null;
-
-    // 2) แถวดิบ = หลักฐาน ห้ามแก้ · ชนคีย์กันซ้ำที่ DB → upsert ignoreDuplicates (ปลอดภัยกว่าเช็คฝั่ง client อย่างเดียว)
-    //    ล้มแล้วต้องไปโผล่ในสรุปท้าย ห้ามให้ toast เขียวกลบ
-    let sigErr = null;
-    if (fresh.length) {
-      const matOf = new Map(plan.map(x => [x.group.customer_part_no, x.mat]));
-      const recs = fresh.map(r => ({
-        batch_id: batchId, source: SOURCE, ship_to: r.ship_to || shipTo,
-        supplier_ref: r.supplier_ref, customer_part_no: r.customer_part_no, part_name: r.part_name,
-        pulled_at: r.pulled_at.toISOString(), containers: r.containers,
-        qty_per_container: r.qty_per_container, qty: r.qty, dock_code: r.dock_code || '',
-        market_area: r.market_area, market_rack: r.market_rack, lsa: r.lsa, lp: r.lp,
+    let updated = 0, created = 0, merged = 0, sigErr = null; const failed = [];
+    /* ⭐ ทีละเที่ยว (dock) — 1 เที่ยว = 1 แถวประวัติไฟล์ (dock/รอบ/วันงานของตัวเอง) */
+    for (const leg of legs) {
+      const legPlan = plan.filter(x => x.leg?.dock === leg.dock);
+      const legFresh = leg.rows.filter(r => !live.dupKeys.has(signalKey(r, SOURCE)));
+      if (!legFresh.length && !legPlan.some(x => x.action === 'update' || x.action === 'create' || x.merge?.length)) continue;
+      let legUpd = 0, legCre = 0;
+      // 1) ก้อนการนำเข้า — ทำเป็น "ร่องรอย" ก่อน แล้วค่อยเขียนใบ (ล้มกลางทางยังสืบได้ว่าไฟล์ไหน)
+      const batchRow = {
+        source: SOURCE, format_code: parsed.profile?.code || null, ship_to: shipTo,
+        file_name: file?.name || null, work_date: leg.workDate, ship_time: leg.shipTime,
         window_start: parsed.windowStart ? parsed.windowStart.toISOString() : null,
         window_end: parsed.windowEnd ? parsed.windowEnd.toISOString() : null,
-        work_date: workDate, ship_time: shipTime, mat_no: matOf.get(r.customer_part_no) || null,
-      }));
-      /* ⚠️ `onConflict` ต้องเป็น **คอลัมน์ล้วนที่ตรงกับ unique index จริง** —
-         เดิม index ใช้ `coalesce(supplier_ref, customer_part_no)` แล้วส่ง `supplier_ref` มา
-         ⇒ Postgres หา constraint ไม่เจอ (42P10) ⇒ **แถวหลักฐานไม่ถูกบันทึกเลย** และแท็บประวัติกางออกมาว่าง
-         (เกิดจริง 2026-09-09) · ตอนนี้ index = `(source, ship_to, customer_part_no, pulled_at, dock_code)` คอลัมน์ล้วน
-         ⚠️ `dock_code` เป็น NOT NULL DEFAULT '' **โดยเจตนา** — ถ้าทำเป็น `coalesce(dock_code,'')` ใน index
-            จะกลับไปเจอ 42P10 อีกรอบ (2026-09-15) */
-      for (let i = 0; i < recs.length; i += 400) {
-        const res = await supabaseDR.from('customer_pull_signals')
-          .upsert(recs.slice(i, i + 400), { onConflict: 'source,ship_to,customer_part_no,pulled_at,dock_code', ignoreDuplicates: true });
-        if (res.error) { sigErr = res.error.message; checkWrite(res, 'บันทึกแถวสัญญาณดึง'); break; }
+        row_count: leg.rows.length, new_signals: legFresh.length, uploaded_by: fullName || null,
+        dock_code: leg.dock || null,
+      };
+      let bRes = await supabaseDR.from('customer_pull_batches').insert(batchRow).select('id').single();
+      if (bRes.error?.code === '42703') {                    // ยังไม่ apply migration dock_code
+        // eslint-disable-next-line no-unused-vars
+        const { dock_code, ...slim } = batchRow;
+        bRes = await supabaseDR.from('customer_pull_batches').insert(slim).select('id').single();
       }
-    }
+      if (bRes.error) {
+        // ตารางยังไม่ apply = เขียนใบส่งได้อยู่ แต่จะไม่มีร่องรอย → ถามก่อน ห้ามเงียบ
+        const go = window.confirm(`บันทึกประวัติการนำเข้าไม่ได้ (${bRes.error.message})\nยังจะอัพเดทใบส่งต่อไหม? (จะไม่มีบันทึกว่ามาจากไฟล์ไหน)`);
+        if (!go) { setSaving(false); return; }   // ⚠️ เที่ยวก่อนหน้า (ถ้ามี) ลงไปแล้ว — ตัวนับด้านล่างไม่รวม
+      }
+      const batchId = bRes.data?.id || null;
 
-    // 3) ใบส่ง — อัพเดท/สร้าง เฉพาะพาร์ทที่อยู่ในไฟล์
-    let updated = 0, created = 0; const failed = [];
-    for (const x of plan) {
-      if (x.action === 'update') {
-        const patch = {
-          qty: x.group.qty,
-          // ยอดแผนเก็บ "ครั้งแรกที่ถูกยืนยัน" เท่านั้น — อัพซ้ำรอบสองห้ามทับด้วยยอดที่ยืนยันไปแล้ว
-          plan_qty: x.order.plan_qty ?? x.order.qty,
-          part_name: x.order.part_name || x.group.part_name || null,
-          dock_code: x.order.dock_code || x.group.dock_code || null,
-          status: x.order.status === 'pending' ? 'confirmed' : x.order.status,
-          pull_batch_id: batchId, ...stamp,
-          /* ⭐ ย้ายเวลาส่งไปเป็น "รอบที่รถลูกค้ามารับจริง" (user 2026-09-10:
-             *"รอบ AAT ยังไม่ตรงนะ มันควรขึ้น 11 ปะ ไม่ใช่ 10 โมง"*)
-             862 = เวลาตามแผน · ตารางรอบรับ = **เวลาที่รถมาถึงจริง** ⇒ หน้างานต้องเตรียมของตามเวลาหลัง
-             (เดิมผมตั้งกฎ "ห้ามแก้ ship_time" ไว้เอง — ผิด เพราะทำให้จอบอกเวลาที่ไม่มีรถมารับ)
-             เก็บเวลาเดิมไว้ที่ `plan_ship_time` แบบเดียวกับ `plan_qty` ⇒ เทียบแผน vs จริงได้ */
-          ship_time: shipTime,
-          plan_ship_time: x.order.plan_ship_time ?? x.order.ship_time,
-        };
-        // compare-and-swap กับสถานะที่อ่านมา — 2 คนอัพไฟล์พร้อมกัน/ใบเพิ่งถูกกดเตรียม = ต้องไม่ทับ
-        let res = await supabaseDR.from('customer_shipping_orders').update(patch)
-          .eq('id', x.order.id).eq('status', x.order.status).select('id');
-        if (res.error?.code === '42703') {                    // migration ยังไม่ apply → ยอดยังอัพได้
-          res = await supabaseDR.from('customer_shipping_orders')
-            .update({ qty: patch.qty, part_name: patch.part_name, dock_code: patch.dock_code, status: patch.status, ship_time: patch.ship_time })
+      // 2) แถวดิบ = หลักฐาน ห้ามแก้ · ชนคีย์กันซ้ำที่ DB → upsert ignoreDuplicates (ปลอดภัยกว่าเช็คฝั่ง client อย่างเดียว)
+      //    ล้มแล้วต้องไปโผล่ในสรุปท้าย ห้ามให้ toast เขียวกลบ
+      if (legFresh.length) {
+        const matOf = new Map(plan.map(x => [x.group.customer_part_no, x.mat]));
+        const recs = legFresh.map(r => ({
+          batch_id: batchId, source: SOURCE, ship_to: r.ship_to || shipTo,
+          supplier_ref: r.supplier_ref, customer_part_no: r.customer_part_no, part_name: r.part_name,
+          pulled_at: r.pulled_at.toISOString(), containers: r.containers,
+          qty_per_container: r.qty_per_container, qty: r.qty, dock_code: r.dock_code || '',
+          market_area: r.market_area, market_rack: r.market_rack, lsa: r.lsa, lp: r.lp,
+          window_start: parsed.windowStart ? parsed.windowStart.toISOString() : null,
+          window_end: parsed.windowEnd ? parsed.windowEnd.toISOString() : null,
+          work_date: leg.workDate, ship_time: leg.shipTime, mat_no: matOf.get(r.customer_part_no) || null,
+        }));
+        /* ⚠️ `onConflict` ต้องเป็น **คอลัมน์ล้วนที่ตรงกับ unique index จริง** —
+           เดิม index ใช้ `coalesce(supplier_ref, customer_part_no)` แล้วส่ง `supplier_ref` มา
+           ⇒ Postgres หา constraint ไม่เจอ (42P10) ⇒ **แถวหลักฐานไม่ถูกบันทึกเลย** และแท็บประวัติกางออกมาว่าง
+           (เกิดจริง 2026-09-09) · ตอนนี้ index = `(source, ship_to, customer_part_no, pulled_at, dock_code)` คอลัมน์ล้วน
+           ⚠️ `dock_code` เป็น NOT NULL DEFAULT '' **โดยเจตนา** — ถ้าทำเป็น `coalesce(dock_code,'')` ใน index
+              จะกลับไปเจอ 42P10 อีกรอบ (2026-09-15) */
+        for (let i = 0; i < recs.length; i += 400) {
+          const res = await supabaseDR.from('customer_pull_signals')
+            .upsert(recs.slice(i, i + 400), { onConflict: 'source,ship_to,customer_part_no,pulled_at,dock_code', ignoreDuplicates: true });
+          if (res.error) { sigErr = res.error.message; checkWrite(res, 'บันทึกแถวสัญญาณดึง'); break; }
+        }
+      }
+
+      // 3) ใบส่ง — อัพเดท/สร้าง เฉพาะพาร์ทที่อยู่ในไฟล์
+      for (const x of legPlan) {
+        if (x.action === 'update') {
+          const patch = {
+            qty: x.group.qty,
+            // ยอดแผนเก็บ "ครั้งแรกที่ถูกยืนยัน" เท่านั้น — อัพซ้ำรอบสองห้ามทับด้วยยอดที่ยืนยันไปแล้ว
+            plan_qty: x.order.plan_qty ?? x.order.qty,
+            part_name: x.order.part_name || x.group.part_name || null,
+            status: x.order.status === 'pending' ? 'confirmed' : x.order.status,
+            pull_batch_id: batchId, ...stamp,
+            /* ⭐ ย้ายเวลาส่งไปเป็น "รอบที่รถลูกค้ามารับจริง" (user 2026-09-10:
+               *"รอบ AAT ยังไม่ตรงนะ มันควรขึ้น 11 ปะ ไม่ใช่ 10 โมง"*)
+               862 = เวลาตามแผน · ตารางรอบรับ = **เวลาที่รถมาถึงจริง** ⇒ หน้างานต้องเตรียมของตามเวลาหลัง
+               (เดิมผมตั้งกฎ "ห้ามแก้ ship_time" ไว้เอง — ผิด เพราะทำให้จอบอกเวลาที่ไม่มีรถมารับ)
+               เก็บเวลาเดิมไว้ที่ `plan_ship_time` แบบเดียวกับ `plan_qty` ⇒ เทียบแผน vs จริงได้ */
+            ship_time: leg.shipTime,
+            plan_ship_time: x.order.plan_ship_time ?? x.order.ship_time,
+            /* รอบรับอาจข้ามเที่ยงคืนจากเวลาแผน (ใบ 23:00 → รอบ 01:00) ⇒ วันที่ต้องตามรอบจริงด้วย */
+            due_date: shipDueDate(leg.workDate, leg.shipTime),
+            dock_code: leg.dock || x.order.dock_code || x.group.dock_code || null,
+          };
+          // compare-and-swap กับสถานะที่อ่านมา — 2 คนอัพไฟล์พร้อมกัน/ใบเพิ่งถูกกดเตรียม = ต้องไม่ทับ
+          let res = await supabaseDR.from('customer_shipping_orders').update(patch)
             .eq('id', x.order.id).eq('status', x.order.status).select('id');
-          if (!res.error) toast.info('ยังไม่ได้ apply migration — อัพเดทยอดให้แล้ว แต่ไม่ได้บันทึกว่ามาจาก e-SMART');
+          if (res.error?.code === '42703') {                    // migration ยังไม่ apply → ยอดยังอัพได้
+            res = await supabaseDR.from('customer_shipping_orders')
+              .update({ qty: patch.qty, part_name: patch.part_name, dock_code: patch.dock_code, status: patch.status, ship_time: patch.ship_time })
+              .eq('id', x.order.id).eq('status', x.order.status).select('id');
+            if (!res.error) toast.info('ยังไม่ได้ apply migration — อัพเดทยอดให้แล้ว แต่ไม่ได้บันทึกว่ามาจาก e-SMART');
+          }
+          if (res.error) failed.push(`${x.group.customer_part_no}: ${res.error.message}`);
+          else if (!res.data?.length) failed.push(`${x.group.customer_part_no}: ใบถูกเปลี่ยนสถานะไปแล้ว — โหลดใหม่แล้วลองอีกครั้ง`);
+          else { updated++; legUpd++; }
+        } else if (x.action === 'create') {
+          const rec = {
+            customer: shipTo, mat_no: x.mat, customer_part_no: x.group.customer_part_no,
+            part_name: x.group.part_name || null, qty: x.group.qty, due_date: shipDueDate(leg.workDate, leg.shipTime),
+            ship_time: leg.shipTime, dock_code: x.group.dock_code || leg.dock || null,
+            source: SOURCE, status: 'confirmed', pull_batch_id: batchId,
+            created_by_name: fullName || null,   // 📜 ให้แท็บประวัติตอบได้ว่าใบนี้เกิดจากใครอัพไฟล์
+            ...stamp,
+          };
+          let res = await supabaseDR.from('customer_shipping_orders').insert(rec).select('id');
+          if (res.error?.code === '42703') {
+            // eslint-disable-next-line no-unused-vars
+            const { pull_batch_id, confirm_source, confirmed_at, created_by_name, ...slim } = rec;
+            res = await supabaseDR.from('customer_shipping_orders').insert(slim).select('id');
+          }
+          if (res.error?.code === '23505') failed.push(`${x.group.customer_part_no}: มีใบของรอบนี้อยู่แล้ว${leg.dock ? ` (dock ${leg.dock})` : ''} — กด ↻ แล้วลองใหม่ · ถ้าเป็นไฟล์คนละ dock แต่ยังชนกัน แปลว่ายังไม่ได้ apply migration dock`);
+          else if (res.error) failed.push(`${x.group.customer_part_no}: ${res.error.message}`);
+          else { created++; legCre++; }
         }
-        if (res.error) failed.push(`${x.group.customer_part_no}: ${res.error.message}`);
-        else if (!res.data?.length) failed.push(`${x.group.customer_part_no}: ใบถูกเปลี่ยนสถานะไปแล้ว — โหลดใหม่แล้วลองอีกครั้ง`);
-        else updated++;
-      } else if (x.action === 'create') {
-        const rec = {
-          customer: shipTo, mat_no: x.mat, customer_part_no: x.group.customer_part_no,
-          part_name: x.group.part_name || null, qty: x.group.qty, due_date: shipDueDate(workDate, shipTime),
-          ship_time: shipTime, dock_code: x.group.dock_code || parsed.dock || null,
-          source: SOURCE, status: 'confirmed', pull_batch_id: batchId,
-          created_by_name: fullName || null,   // 📜 ให้แท็บประวัติตอบได้ว่าใบนี้เกิดจากใครอัพไฟล์
-          ...stamp,
-        };
-        let res = await supabaseDR.from('customer_shipping_orders').insert(rec).select('id');
-        if (res.error?.code === '42703') {
-          // eslint-disable-next-line no-unused-vars
-          const { pull_batch_id, confirm_source, confirmed_at, created_by_name, ...slim } = rec;
-          res = await supabaseDR.from('customer_shipping_orders').insert(slim).select('id');
-        }
-        if (res.error?.code === '23505') failed.push(`${x.group.customer_part_no}: มีใบของรอบนี้อยู่แล้ว${parsed.dock ? ` (dock ${parsed.dock})` : ''} — กด ↻ แล้วลองใหม่ · ถ้าเป็นไฟล์คนละ dock แต่ยังชนกัน แปลว่ายังไม่ได้ apply migration dock`);
-        else if (res.error) failed.push(`${x.group.customer_part_no}: ${res.error.message}`);
-        else created++;
       }
-    }
 
-    if (batchId) {
-      /* ตัวนับบนแถวประวัติไฟล์ — ใบจริงลงไปแล้ว ล้มตรงนี้ไม่ทำให้ยอดผิด แต่แท็บประวัติจะโชว์ 0/0
-         ⇒ ห้ามเงียบ (QC 05/10 · กฎเขียน DB ข้อ 1-2: อ่าน error + นับแถว) */
-      const { data: cnt, error: eCnt } = await supabaseDR.from('customer_pull_batches').update({
-        orders_updated: updated, orders_created: created,
-        // นับ "ตรงกับ 862 อยู่แล้ว" รวมด้วย — ไม่งั้นไฟล์ที่ยอดตรงพอดีจะดูเหมือนไม่ได้ทำอะไรเลย
-        orders_skipped: plan.filter(x => x.action !== 'update' && x.action !== 'create').length,
-      }).eq('id', batchId).select('id');
-      // แยกจาก `failed` — ใบส่งลงครบแล้ว ห้ามค้างโมดัลชวนให้กดยืนยันซ้ำ แค่บอกว่าประวัติไม่ตรง
-      if (eCnt || !cnt?.length) toast.error(`บันทึกตัวนับลงประวัติไฟล์ไม่สำเร็จ — ใบส่งลงครบแล้ว แต่แท็บประวัติจะโชว์ตัวเลขไม่ตรง: ${eCnt?.message || 'ไม่มีแถวถูกแก้ (สิทธิ์?)'}`);
+      /* ⭐ 4) ใบแผน 862 อื่นในช่วงเดียวกัน = ถูกแทนด้วยยอด e-SMART → ปิด (ยังเห็นบนชาร์ตเป็นใบยกเลิกพร้อมเหตุผล)
+         compare-and-swap เฉพาะใบที่ยัง pending · ห้าม delete (ต้องย้อนดูได้ว่าแผนเดิมเป็นเท่าไหร่) */
+      for (const x of legPlan) {
+        for (const o of (x.merge || [])) {
+          const res = await supabaseDR.from('customer_shipping_orders').update({
+            status: 'cancelled', cancelled_at: now, cancelled_by: fullName || 'e-SMART',
+            cancel_reason: `แทนด้วย e-SMART รอบ ${leg.shipTime}${leg.dock ? ` (${leg.dock})` : ''} — แผน 862 ${String(o.ship_time || '').slice(0, 5)} × ${fmt(o.qty)}`,
+            pull_batch_id: batchId,
+          }).eq('id', o.id).eq('status', 'pending').select('id');
+          if (res.error) failed.push(`${x.group.customer_part_no}: ปิดใบแผน ${String(o.ship_time || '').slice(0, 5)} ไม่สำเร็จ — ${res.error.message}`);
+          else if (res.data?.length) merged++;
+        }
+      }
+
+      if (batchId) {
+        /* ตัวนับบนแถวประวัติไฟล์ — ใบจริงลงไปแล้ว ล้มตรงนี้ไม่ทำให้ยอดผิด แต่แท็บประวัติจะโชว์ 0/0
+           ⇒ ห้ามเงียบ (QC 05/10 · กฎเขียน DB ข้อ 1-2: อ่าน error + นับแถว) */
+        const { data: cnt, error: eCnt } = await supabaseDR.from('customer_pull_batches').update({
+          orders_updated: legUpd, orders_created: legCre,
+          // นับ "ตรงกับ 862 อยู่แล้ว" รวมด้วย — ไม่งั้นไฟล์ที่ยอดตรงพอดีจะดูเหมือนไม่ได้ทำอะไรเลย
+          orders_skipped: legPlan.filter(x => x.action !== 'update' && x.action !== 'create').length,
+        }).eq('id', batchId).select('id');
+        // แยกจาก `failed` — ใบส่งลงครบแล้ว ห้ามค้างโมดัลชวนให้กดยืนยันซ้ำ แค่บอกว่าประวัติไม่ตรง
+        if (eCnt || !cnt?.length) toast.error(`บันทึกตัวนับลงประวัติไฟล์ไม่สำเร็จ — ใบส่งลงครบแล้ว แต่แท็บประวัติจะโชว์ตัวเลขไม่ตรง: ${eCnt?.message || 'ไม่มีแถวถูกแก้ (สิทธิ์?)'}`);
+      }
     }
     setSaving(false);
     // ⚠️ ห้ามขึ้นเขียวล้วนเมื่อมีบางรายการล้ม (หลักเดียวกับ "กดส่งแล้วหักสต็อกไม่ได้ต้องรายงาน")
     if (sigErr) failed.push(`บันทึกแถวหลักฐานไม่สำเร็จ (แท็บประวัติจะกางดูรายการไม่ได้): ${sigErr}`);
     if (failed.length) toast.error(`อัพเดท ${updated} · สร้าง ${created} · ล้มเหลว ${failed.length} — ${failed[0]}`);
-    else toast.success(`✅ ยืนยันจากลูกค้าแล้ว — อัพเดท ${updated} ใบ · สร้างใหม่ ${created} ใบ (รอบ ${shipTime})`);
+    else toast.success(`✅ ยืนยันจากลูกค้าแล้ว — อัพเดท ${updated} ใบ · สร้างใหม่ ${created} ใบ${merged ? ` · ปิดใบแผน 862 ที่ถูกแทน ${merged} ใบ` : ''} (รอบ ${legs.map(l => `${l.dock ? `${l.dock} ` : ''}${l.shipTime}`).join(' · ')})`);
     onApplied?.({ workDate, shipTime, updated, created });
     if (!failed.length) { reset(); onClose?.(); }
   };
@@ -548,7 +588,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
                 <input type="date" value={workDate} onChange={e => setWorkDate(e.target.value)} style={inputSt} />
               </Field>
               <Field label={activeRound
-                ? `รอบรถลูกค้ามารับ (ตารางรอบรับ${parsed.dock ? ` · Dock ${parsed.dock}` : ''})`
+                ? `รอบรถลูกค้ามารับ (ตารางรอบรับ${parsed.dock ? ` · Dock ${parsed.dock}` : ''}${legs.length > 1 ? ' · เที่ยวหลัก' : ''})`
                 : `รอบส่ง (⚠ เดาจากปลายช่วง +${parsed.profile?.lead_min ?? 60} นาที)`}>
                 <input type="time" value={shipTime} onChange={e => setShipTime(e.target.value)} style={inputSt} />
               </Field>
@@ -607,6 +647,18 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
               </div>
             )}
             {ctxError && <div style={{ ...noteBox('#ef4444'), marginBottom: 8 }}>🔴 {ctxError}</div>}
+            {/* ⭐ ไฟล์หลาย dock = หลายเที่ยวรถ — โชว์ให้เห็นว่าแต่ละ dock ไปลงรอบไหน วันงานไหน */}
+            {legs.length > 1 && (
+              <div style={{ ...noteBox('#0ea5e9'), marginBottom: 8 }}>
+                <div style={{ fontWeight: 800, marginBottom: 2 }}>🚚 ไฟล์นี้มี {legs.length} dock — แยกเป็น {legs.length} เที่ยว</div>
+                {legs.map(l => (
+                  <div key={l.dock || '-'}>
+                    • Dock <b>{l.dock || '—'}</b> {l.rows.length} แถว → รอบ <b>{l.shipTime || '—'}</b> วันงาน <b>{l.workDate || '—'}</b>
+                    {l.primary ? ' (ช่องด้านบน)' : l.fromLead ? ' ⚠ ไม่มีตารางรอบรับ ใช้สูตรปลายช่วง' : ` (ตารางรอบรับ ${String(l.round?.pickup_time || '').slice(0, 5)})`}
+                  </div>
+                ))}
+              </div>
+            )}
 
             <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760, fontVariantNumeric: 'tabular-nums' }}>
@@ -635,14 +687,20 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
                           {x.order ? (x.diff > 0 ? `+${fmt(x.diff)}` : fmt(x.diff)) : '—'}
                         </td>
                         <td style={{ ...td, fontWeight: 700, whiteSpace: 'nowrap' }}>
-                          {x.order ? String(x.order.ship_time || '').slice(0, 5) : shipTime}
-                          {x.order && String(x.order.ship_time || '').slice(0, 5) !== shipTime && (
-                            <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 500 }}>ใบ 862 เดิม</div>
+                          {x.order ? String(x.order.ship_time || '').slice(0, 5) : x.leg?.shipTime}
+                          {x.order && String(x.order.ship_time || '').slice(0, 5) !== x.leg?.shipTime && (
+                            <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 500 }}>ใบ 862 เดิม → {x.leg?.shipTime}</div>
                           )}
+                          {legs.length > 1 && <div style={{ fontSize: 11, color: '#0ea5e9', fontWeight: 800 }}>Dock {x.leg?.dock || '—'}</div>}
                         </td>
                         <td style={{ ...td, color: m.color, fontWeight: 700 }}>{m.label}
                           {x.reason && <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 500 }}>{x.reason}</div>}
                           {/* ใบอื่นในช่วงเดียวกันที่ระบบไม่แตะ — ต้องเห็น ไม่ใช่หายเงียบ */}
+                          {x.merge?.length > 0 && (
+                            <div style={{ fontSize: 11, color: '#a855f7', fontWeight: 700 }}>
+                              ↳ ปิดใบแผน 862 ในช่วงเดียวกันอีก {x.merge.length} ใบ ({x.merge.map(o => `${String(o.ship_time || '').slice(0, 5)} × ${fmt(o.qty)}`).join(' · ')}) — แทนด้วยยอด e-SMART
+                            </div>
+                          )}
                           {x.extras?.length > 0 && (
                             <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700 }}>
                               ⚠ มีใบ 862 อื่นในช่วงนี้อีก {x.extras.length} ใบ ({x.extras.map(o => `${String(o.ship_time || '').slice(0, 5)} × ${fmt(o.qty)}`).join(' · ')}) — ระบบไม่แตะ ต้องตัดสินเอง
@@ -669,7 +727,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
                 {tally.unresolved ? ` · ⚠ จับคู่ไม่ได้ ${tally.unresolved}` : ''}
               </span>
               <button onClick={() => { reset(); onClose?.(); }} style={{ ...inputSt, cursor: 'pointer', fontWeight: 700 }}>ยกเลิก</button>
-              <button onClick={apply} disabled={saving || !canImport || !shipTo || !shipTime || blockedByDup || blockedByDate}
+              <button onClick={apply} disabled={saving || !canImport || !shipTo || !shipTime || legs.some(l => !l.shipTime || !l.workDate) || blockedByDup || blockedByDate}
                 style={{
                   padding: '9px 18px', borderRadius: 8, border: 'none', fontSize: 13, fontWeight: 800,
                   cursor: saving || !willWrite ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-body)',

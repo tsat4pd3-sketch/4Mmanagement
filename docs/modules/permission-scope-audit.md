@@ -771,3 +771,25 @@ migration `supabase/migrations/20261020_rls_scope_net_fn_main.sql` · **apply �
 · วัดจริง: active 34 คนไม่มีแผนก — เข้าข่ายข้อยกเว้นนี้ **7 คน** (ผจก. 3 · หัวหน้าส่วน 4) ที่เหลือยังต้องไล่แก้ตามเดิม
 
 🛡️ ด่าน `home-unit-vs-view-scope` ตรึงทั้ง 2 เรื่องไว้ (`regressionGuards.test.mjs`)
+
+## 🔭 ชั้น "เห็นข้อมูลของใคร" ไล่ตามผัง — รอบที่ 2 (2026-10-22)
+
+ต่อจาก `viewScope.js` (รอบแรก ปิด `/checkin`) — รอบนี้ยุบ pattern ที่ก๊อปกระจาย ~10 หน้า
+`lines.filter(l => inSectionScope(scopeSecs, l.section))` ⇒ **`scopedLines()`** (`utils/sectionScope.js`)
+
+🔴 **กฎของ `scopedLines`**
+· ส่ง `scopeIdx` (จาก `UserContext`) = ขยายผ่านผัง — ขอบเขตที่เป็น **แผนก/กลุ่ม/ไลน์** ใช้ได้จริง
+· **ไม่ส่ง `scopeIdx` = พฤติกรรมเดิมเป๊ะ** (เทียบข้อความ `l.section`) — ห้ามบีบแคบลงเงียบ
+· ชื่อที่ผังไม่รู้จัก → ถอยไปเทียบข้อความเสมอ · `sections` ว่าง / ทะเบียนไลน์ยังไม่โหลด → คืนทั้งก้อน
+  **ห้ามคืน `[]`** (จอว่างระหว่างโหลด)
+· เทส `utils/__tests__/scopedLines.test.mjs` คุมสัญญา 4 ข้อนี้
+
+**หน้าที่แปลงแล้ว (11 จุด · 10 ไฟล์)**
+`DailyReport` (3 จุด: LiveTab เปิดกะ · ประวัติ · ExportTab) · `MtnAnalysis` · `PokaYokeCheck` ·
+`MorningMeeting` · `DieRegistry` · `FixtureRegistry` · `Energy` · `LineSetup` · `BbsCheck` ·
+`components/LineSelect.scopeLines()` (picker กลาง — รับ `scopeIdx` ผ่าน options แล้ว)
+
+**ยังเหลือ (ไม่ใช่แกนไลน์ จึงไม่แปลง)**
+· `MonthlyReviewExport` / `MorningMeeting:140` — กรอง **ชื่อส่วนงาน** ไม่ใช่ไลน์
+· `SparePartMaster` — `inSectionScope` คนละตัว (มาจาก `utils/spareSection.js` แกนคลังอะไหล่)
+· `staleSessions` / `lineHelpers` — รับ section ที่ resolve มาแล้วจากผู้เรียก

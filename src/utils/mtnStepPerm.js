@@ -180,6 +180,9 @@ export const stageOf = (step, { mtnForm = false } = {}) =>
 
 /** ป้ายปุ่ม/หัวข้อขั้น — สร้างจากที่นี่ที่เดียว ห้ามพิมพ์ชื่อขั้นซ้ำในหน้า */
 export const stepLabel = (step, { withWho = true, mtnForm = false } = {}) => {
+  /* ขั้น 1 ไม่อยู่ใน MTN_STEPS โดยตั้งใจ (เป็น "การเปิดใบ" ไม่ใช่ขั้นที่รอใครเซ็น)
+     แต่ป้ายต้องอ่านรู้เรื่อง — ไม่งั้นหัวโมดัลแก้ไขขึ้นว่า "ขั้น 1" เฉยๆ (25/10) */
+  if (Number(step) === 1) return `📣 แจ้งซ่อม (ขั้น 1${withWho ? ' · ผู้แจ้ง' : ''})`;
   const m = stepMeta(step, { mtnForm });
   if (!m) return `ขั้น ${step}`;
   return `${m.icon} ${m.title} (ขั้น ${step}${withWho ? ` · ${m.whoShort}` : ''})`;
@@ -471,6 +474,21 @@ export function orderInReporterScope(order, { scopeLineNames = null, knownLineNa
    ⚠️ nextStepFor / ปุ่มข้าม / StepBox ต้องเทียบผ่านตัวนี้ ห้ามพิมพ์ข้อความซ้ำในหน้า */
 export const QA_RELATED = 'เกี่ยวกับคุณภาพ';
 export const QA_NOT_RELATED = 'ไม่เกี่ยวกับคุณภาพ';
+
+/* ── "เกี่ยวกับคุณภาพไหม" สำหรับ **การแสดงผล** (แผงขั้น 4 · Excel) ───────────────  2026-10-21
+   🔴 4 คำตอบ ห้ามบีบเป็น boolean — คอลัมน์นี้เก็บ **ข้อความ** ⇒ `o.quality_related ? 'ใช่' : ''`
+      รายงานใบที่ QA ตัดสินว่า "ไม่เกี่ยวกับคุณภาพ" ว่า **ใช่** (วัด 21/10: 411 ใบจาก 1050)
+   🔴 `'n_a'` = **QA ไม่อยู่ในลูปของใบนี้เลย** (ฟอร์ม MTN · งานสร้าง/ปรับปรุง) — ค่าในคอลัมน์เป็น
+      เศษที่ขั้น 4 เคย stamp ไว้ ไม่ได้แปลว่าใบนี้ต้องผ่าน QA ⇒ **จอ/รายงานห้ามเขียนว่า "ต้องผ่าน QA"**
+      (เคสจริง O-MTN.2026/10-17: ใบทีม MTN รอรับมอบอยู่ แต่ขั้น 4 เขียน "ต้องผ่าน QA" = จอโกหก)
+   · `'no'` = อยู่ในลูปได้ แต่ QA ตัดสินแล้วว่าไม่เกี่ยว · `'yes'` = ต้องผ่าน QA
+   · `'unknown'` = ยังไม่มีค่า (ใบยังไม่ถึงขั้น 4) — ผู้เรียกเว้นว่าง ห้ามเดาไปทางใดทางหนึ่ง */
+export function qaRelatedView(order = {}) {
+  if (!qaAppliesTo(order)) return 'n_a';
+  if (order?.quality_related === QA_NOT_RELATED || order?.qa_skipped_at) return 'no';
+  if (order?.quality_related === QA_RELATED) return 'yes';
+  return 'unknown';
+}
 
 /** ใบนี้ค้างรอ QA อยู่ไหม = ผ่านขั้น 4 แล้ว (status checked) และ QA ยังไม่ได้ตัดสินว่าไม่ต้องตรวจ
  *  ⚠️ ไม่ดู `quality_related` แล้ว — ช่องนั้นเป็นคำตอบของ QA ไม่ใช่ตัวกำหนดว่าจะได้เจอ QA หรือเปล่า

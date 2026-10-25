@@ -27,8 +27,9 @@
 import { personKey, normPersonName } from './actorStamp.js';
 import {
   canDoStep, moWaitMeta, approvalWaitsOnMe, sideAllows, STAGE_APPROVE_FIRST,
+  canSignMtnApproval,
 } from './mtnStepPerm.js';
-import { isMtnFormRow } from './mtnMoForm.js';
+import { isMtnFormRow, isApprovalBlocked } from './mtnMoForm.js';
 import { bkkDateStr } from './workDate.js';
 
 /** 3 ชั้นของคิว — ชื่อชั้นใช้ร่วมกับจอ ห้ามพิมพ์สตริงเองในหน้า */
@@ -192,6 +193,11 @@ export function buildQueue(src = {}, me = {}, now = new Date()) {
   const mine = []; const unit = []; const floor = [];
   const missing = [];
   const need = (k, v) => { if (v === undefined || v === null) { missing.push(k); return []; } return v; };
+  /* 🔴 ตัวโหลดชนเพดานแถว = "โหลดไม่ครบ" เหมือนคิวรีล่ม ⇒ ต้องติด `partial` ให้จอเขียนบอก (22/10)
+     เคสจริง: ใบ MO เปิดอยู่ 693 ใบ แต่คิวโหลด 300 ใบเก่าสุด ⇒ ใบใหม่ 393 ใบหายจากคิวทุกคนเงียบๆ
+     แล้วแผงยืนยันว่า "ไม่มีงานที่รอคุณอยู่" ทั้งที่ ผจก.ฝ่ายที่แจ้งมี 51 ใบรออนุมัติปิด
+     ⚠️ ตัดเงียบแย่กว่าตัวเลขไม่ครบ — badgeCount() คืน 0 ตอน partial อยู่แล้ว (ไม่หลอกว่ามีงานน้อย) */
+  if (src?.moTruncated) missing.push('mo_truncated');
   /* 🔴 แถวที่ "ชี้ส่วนงานไม่ได้" — ตกจากคิวของทุกคน ⇒ ต้องนับไว้ให้จอเขียนบอก ห้ามหายเงียบ */
   let unattributed = 0;
   const keep = (row) => {
@@ -213,15 +219,42 @@ export function buildQueue(src = {}, me = {}, now = new Date()) {
      คีย์ด้วยเลขขั้น = 2 กองยุบเป็นบรรทัดเดียว แล้วใบ MTN ที่รอรับมอบถูกป้ายว่า "รอ QA"
      (เกิดจริงในคอมมิทแรกของฟีเจอร์นี้ 06/10 — เทสด้านล่างกันไว้แล้ว) */
   const byPos = new Map();   // `stage` → { stage, step, meta, count, oldest }
+  const signByStage = new Map();   // `stage` → ใบที่ "รอเราเซ็น" ของขั้นนั้น (ทำป้ายคาไว้)
+  /* ✍️ ช่อง "ผจก.ต้นสังกัดรับทราบ" ของใบ MTN — **ไม่บล็อกงาน แต่ต้องเซ็น** (24/10 · คำสั่ง user)
+     🔴 ช่องนี้อยู่ **นอกลำดับขั้น** ⇒ `moWaitMeta()` คืนด่านอนุมัติเฉพาะตอน `isApprovalBlocked()`
+        (= งานปรับปรุง/สร้างเท่านั้น) ⇒ ใบซ่อมปกติ **ช่องนี้ไม่โผล่ในจอไหนเลย** ไม่มีใครรู้ว่าค้าง
+     วัดจริง 24/10: ใบทีม MTN 61 ใบ — **ผจก.ยังไม่เซ็น 52 ใบ (85%)** · เดินข้ามขั้น 2 ไปแล้ว 49 ใบ
+     · **ปิดใบไปแล้วทั้งที่ช่องว่าง 10 ใบ** (เอกสารควบคุมที่ลายเซ็นไม่ครบ)
+     ⇒ นับแยกเป็นป้ายของตัวเอง ไม่ยุ่งกับ "ขั้นที่ใบรออยู่" (ใบไม่ได้รอช่องนี้ — งานเดินต่อได้) */
+  let ackCount = 0; let ackOldest = null;
 
   // ── ใบซ่อม MO ────────────────────────────────────────────────────────────
   for (const o of need('mo', src.mo)) {
+    /* ✍️ นับช่องรับทราบก่อนด่าน `!w.meta` — ใบที่ปิดแล้วก็ยังค้างช่องนี้ได้ (10 ใบ · ย้อนเซ็นได้)
+       เกณฑ์ผู้เซ็น = `canSignMtnApproval()` **ตัวเดียวกับปุ่มในใบ** ⇒ ขึ้นในคิว = กดเซ็นได้จริง
+       + ต้องอยู่ในขอบเขตเรา ⇒ ผจก.เห็นเฉพาะใบของส่วนงานตัวเอง (แบบ ก · คำสั่ง user 24/10) */
+    /* 🔴 ใบที่ลายเซ็นนี้ **บล็อกงานจริง** (งานปรับปรุง/สร้าง) ไม่เข้าป้ายนี้ — มันขึ้นเป็นรายการ
+       ของตัวเองอยู่แล้วผ่าน moWaitMeta/approvalWaitsOnMe · นับซ้ำ = badge เกินจริง
+       และป้ายนี้เขียนว่า "ไม่บล็อกงาน" ซึ่งจะกลายเป็นคำโกหกสำหรับใบที่บล็อกอยู่ */
+    if (isMtnFormRow(o) && !o.dept_manager_at && !isApprovalBlocked(o) && scopeStateOf(o, me) === 'in'
+        && canSignMtnApproval('dept', { order: o, fullName: me.name || '', can: me.can || (() => false) }).ok) {
+      ackCount += 1;
+      const aAge = ageDays(o.work_date, now);
+      if (aAge != null && (ackOldest == null || aAge > ackOldest)) ackOldest = aAge;
+    }
     const w = moWaitingOn(o);
     if (!w.meta) continue;                                  // ใบยังไม่เข้าลูป (ขั้น 1) — ไม่ใช่งานค้างของใคร
     if (w.byName && w.who && isMe(w.who, me)) { mine.push(moItem(o, w, TIER.MINE)); continue; }
     // ขั้นล็อกตำแหน่งที่เราเซ็นได้คนเดียว (ในขอบเขตเรา) ⇒ รอคุณ + ขึ้นก่อน (soleSignerFor ข้างบน)
     if (!w.byName && soleSignerFor(o, w, me) && scopeStateOf(o, me) === 'in') {
       mine.push({ ...moItem(o, w, TIER.MINE), sign: true, tag: '✍️ รอคุณเซ็น' });
+      /* สะสมไว้ทำ "ป้ายคาไว้" บรรทัดเดียวต่อขั้น (คำสั่ง user 22/10) — ดู signRollup ข้างล่าง */
+      const sk = w.meta.stage || `step${w.step}`;
+      const cur = signByStage.get(sk) || { stage: sk, meta: w.meta, count: 0, oldest: null };
+      cur.count += 1;
+      const sAge = ageDays(o.work_date, now);
+      if (sAge != null && (cur.oldest == null || sAge > cur.oldest)) cur.oldest = sAge;
+      signByStage.set(sk, cur);
       continue;
     }
     if (!w.byName) {                                        // รอ "ตำแหน่ง" ⇒ สะสมไว้สรุปชั้น floor
@@ -328,13 +361,46 @@ export function buildQueue(src = {}, me = {}, now = new Date()) {
       title: s.title, detail: s.detail || '', count: Number(s.count), age: null, to: s.to });
   }
 
+  /* ✍️ "ป้ายคาไว้" — บรรทัดเดียวต่อขั้น บอกว่ามีกี่ใบรอเราเซ็น กดแล้วเปิดหน้า MO ที่กรองมาให้แล้ว
+     (คำสั่ง user 22/10: *"ไม่ต้องซ้ำรายใบก็ได้ แต่ต้องมีแจ้งเตือนคาไว้ว่ามีงานรอเราอยู่กี่ใบที่ต้องเข้าไปเซ็น
+       พอคลิกก็เปิดหน้า mo ขึ้นมาเลยพร้อมกรองที่รอเราอนุมัติ"*)
+     🔴 `rollup: true` = **ไม่นับเข้า badge** (badge ต้องเท่าจำนวนใบจริง ไม่ใช่บวกบรรทัดสรุปเข้าไปอีก)
+     🔴 มีใบเดียวไม่ต้องสรุป — แถวของใบนั้นพาไปถึงใบได้ตรงกว่า (สรุป 1 ใบ = บรรทัดซ้ำเปล่าๆ)
+     🔴 `from=` ถอยขอบล่างให้ครอบใบเก่าสุด ไม่งั้นตัวกรองวันที่ default ซ่อนใบค้างหมด (กับดักเดิมของชั้น floor) */
+  [...signByStage.values()].filter(g => g.count >= 2).forEach(g => {
+    mine.push({
+      key: `sign:${g.stage}`, icon: '✍️', tier: TIER.MINE, sign: true, rollup: true,
+      title: `รอคุณเซ็น ${g.count.toLocaleString()} ใบ — ${g.meta?.title || g.stage}`,
+      detail: ['กดเพื่อเปิดรายการที่รอคุณอนุมัติ',
+        g.oldest != null ? `เก่าสุด ${g.oldest.toLocaleString()} วัน` : null].filter(Boolean).join(' · '),
+      count: g.count, age: null,
+      to: `/mtn-repair?tab=list&wait=${encodeURIComponent(g.stage)}`
+        + (g.oldest != null ? `&from=${dayKeyBack(g.oldest, now)}` : ''),
+    });
+  });
+
+  /* ✍️ ป้าย "รอคุณเซ็นรับทราบ" — แยกจากป้ายขั้นที่ใบรออยู่ **ต้องเขียนว่าไม่บล็อกงาน**
+     ไม่งั้นหน้างานอ่านว่าใบค้างรออนุมัติแล้วหยุดรอ ทั้งที่ช่างทำงานต่อได้เลย */
+  if (ackCount > 0) {
+    mine.push({
+      key: 'sign:ack_dept', icon: '✍️', tier: TIER.MINE, sign: true, rollup: true,
+      title: `รอคุณเซ็นรับทราบ ${ackCount.toLocaleString()} ใบ — ผู้จัดการต้นสังกัด`,
+      detail: ['ไม่บล็อกงาน — เซ็นตอนว่างได้', 'กดเพื่อเปิดรายการ',
+        ackOldest != null ? `เก่าสุด ${ackOldest.toLocaleString()} วัน` : null].filter(Boolean).join(' · '),
+      count: ackCount, age: null,
+      to: `/mtn-repair?tab=list&ack=pending${ackOldest != null ? `&from=${dayKeyBack(ackOldest, now)}` : ''}`,
+    });
+  }
+
   const byAge = (a, b) => (b.age ?? -1) - (a.age ?? -1);      // เก่าสุดขึ้นก่อน · ไม่รู้อายุไปท้าย
   // ✍️ ช่องที่รอเราเซ็นคนเดียวขึ้นก่อนทุกอย่าง (คำสั่ง user 13/10 "สำคัญกว่าแจ้งเตือนอื่นๆ")
-  mine.sort((a, b) => ((b.sign ? 1 : 0) - (a.sign ? 1 : 0)) || byAge(a, b)); unit.sort(byAge);
+  mine.sort((a, b) => ((b.rollup ? 1 : 0) - (a.rollup ? 1 : 0))
+    || ((b.sign ? 1 : 0) - (a.sign ? 1 : 0)) || byAge(a, b)); unit.sort(byAge);
 
   return {
     mine, unit, floor,
-    counts: { mine: mine.length, unit: unit.length, floor: floor.reduce((n, f) => n + (f.count || 0), 0) },
+    /* 🔴 badge = จำนวน "ใบ" จริง — บรรทัดสรุป (`rollup`) ไม่นับ ไม่งั้นเลขเกินจำนวนงานจริง */
+    counts: { mine: mine.filter(x => !x.rollup).length, unit: unit.length, floor: floor.reduce((n, f) => n + (f.count || 0), 0) },
     missing,
     partial: missing.length > 0,
     /* จำนวนแถวที่ระบุส่วนงานไม่ได้ ⇒ ไม่เข้าคิวของใครเลย — **จอต้องเขียนบอก** (ไม่ใช่ `partial`

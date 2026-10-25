@@ -123,6 +123,13 @@ export function buildOrgScope({ nodes = [], lines = [], divisions = [], costCent
 
   const opts = [];          // ตัวเลือกเรียงตามต้นไม้ (depth-first)
   const parentOf = new Map(); // key → parent key
+  /* 🔒 หน่วยที่ **อยู่ใต้ในผัง แต่สิทธิ์ไม่ตกทอดลงมา** (`org_nodes.inherit_scope = false`)
+     ที่มา (2026-10-22 · คำสั่ง user): *"องค์กรเรามันแปลกตรงเอาจิ๊กมาฝากกับผลิต"*
+       JIG MTN อยู่ใต้ PD4 ในผังจริง (ผจก. คนเดียวกัน) **แต่หัวหน้า PD4 ต้องไม่มีสิทธิ์แก้ข้อมูลจิ๊ก**
+     ⇒ แยก 2 เรื่องออกจากกัน: *สายบังคับบัญชาบนผัง* (ยังโชว์ใต้ PD4) กับ *การตกทอดขอบเขตสิทธิ์*
+     🔴 ตัดที่ `ancestorsOf` ที่เดียว — ทุกตัวที่ถามว่า "ครอบไหม" (`scopeCovers`/`canWriteScope`)
+        เดินผ่านตัวนี้หมด · ห้ามไปเช็ค flag ซ้ำในจอ */
+  const noInherit = new Set(); // key ของหน่วยที่ปิดการตกทอดสิทธิ์
   const linesOf = new Map();  // key → Set(ชื่อไลน์)
   const labelOfKey = new Map();
   const sectionOfKey = new Map();
@@ -137,6 +144,7 @@ export function buildOrgScope({ nodes = [], lines = [], divisions = [], costCent
     seen.add(k);
     opts.push({ key: k, kind, value, label, depth, parentKey, ...meta });
     parentOf.set(k, parentKey);
+    if (meta.noInherit) noInherit.add(k);
     linesOf.set(k, new Set(lineSet));
     labelOfKey.set(k, label);
     return k;
@@ -176,7 +184,8 @@ export function buildOrgScope({ nodes = [], lines = [], divisions = [], costCent
        ส่วนการจับคู่ทุกที่ใช้ `o.value` (เช่น `mtn_teams.dept_name` ใน KpiMonthly/ObeyaKpiBoard)
        ⇒ เปลี่ยนป้ายไม่กระทบขอบเขต/นิยาม KPI ที่บันทึกไว้ */
     push('department', nodeCode(dep), dep.name || nodeCode(dep), depth, parentKey, all,
-      { cost_center: dep.cost_center || null, ...(shared.length ? { refShared: shared } : {}) });
+      { cost_center: dep.cost_center || null, noInherit: dep.inherit_scope === false,
+        ...(shared.length ? { refShared: shared } : {}) });
     if (secCode) sectionOfKey.set(dKey, secCode);
     [...groups.keys()].sort(naturalCompare).forEach((grp) => {
       const fam = familyOf(grp);
@@ -189,7 +198,7 @@ export function buildOrgScope({ nodes = [], lines = [], divisions = [], costCent
       });
     });
     orphanNodes.sort(bySort).forEach((ln) => {
-      const lk = push('line', nodeCode(ln), nodeCode(ln), depth + 1, dKey, [], { noData: true, cost_center: ln.cost_center || null });
+      const lk = push('line', nodeCode(ln), nodeCode(ln), depth + 1, dKey, [], { noData: true, cost_center: ln.cost_center || null, noInherit: ln.inherit_scope === false });
       if (secCode) sectionOfKey.set(lk, secCode);
     });
     return dKey;
@@ -318,8 +327,17 @@ export function buildOrgScope({ nodes = [], lines = [], divisions = [], costCent
   const lineNamesOf = (kind, value) => [...(linesOf.get(scopeKey(kind, value)) || [])];
   const ancestorsOf = (kind, value) => {
     const out = [];
-    let k = parentOf.get(scopeKey(kind, value));
-    for (let i = 0; k && i < 12; i++) { out.unshift(parseScopeKey(k)); k = parentOf.get(k); }
+    const startKey = scopeKey(kind, value);
+    /* 🔒 ตัวเองปิดการตกทอด = **ไม่มีแม่ในแกนสิทธิ์** (ขอบเขตของหน่วยแม่จะไม่ครอบหน่วยนี้)
+       ยังคืน plant ข้างล่างเหมือนเดิม — "ทั้งโรงงาน" ครอบทุกอย่างเสมอ (ผู้บริหาร/ใบผ่านข้ามหน่วย) */
+    if (!noInherit.has(startKey)) {
+      let k = parentOf.get(startKey);
+      for (let i = 0; k && i < 12; i++) {
+        out.unshift(parseScopeKey(k));
+        if (noInherit.has(k)) break;   // เจอหน่วยที่ปิดการตกทอดระหว่างทาง → หยุดแค่นั้น ไม่ไต่ขึ้นแม่ของมัน
+        k = parentOf.get(k);
+      }
+    }
     if (!out.length && !isPlant({ kind, value })) out.unshift({ ...PLANT });
     return out;
   };

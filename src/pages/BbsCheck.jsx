@@ -26,7 +26,7 @@ import { getLineFamilyIds } from '../utils/lineHierarchy';
 import LineSelect from '../components/LineSelect';
 import { loadLinesRes } from '../utils/useProductionLines';
 import usePeople from '../utils/usePeople';
-import { inSectionScope } from '../utils/sectionScope';
+import { inSectionScope, scopedLines } from '../utils/sectionScope';
 import { MARKS, MARK_BY_KEY, markGlyph, markColor, daysInMonth, ppeToMark } from '../utils/bbsMarks';
 import { getWorkDate } from '../utils/workDate';
 import { printBbsSheet } from '../lib/bbsPrint';
@@ -68,7 +68,7 @@ const MOBILE_LABEL = { ok: 'เหมาะสม', ng: 'ไม่เหมา�
    · **ห้าม import `SHIFT_OPTIONS` จาก `utils/filterLabels` มาใส่หน้านี้** — ตัวนั้นสำหรับจอที่
      `''` = "แสดงทุกกะจริงๆ" (/report · /oee-analytics · /mtn-repair · /workforce-insight) */
 export default function BbsCheck() {
-  const { role, lineId, sections = [], fullName } = useContext(UserContext);
+  const { role, lineId, sections = [], fullName, scopeIdx } = useContext(UserContext);
   const { can } = usePerms();
   const canRecord = can('bbs', 'record');
   const canManage = can('bbs', 'manage');
@@ -118,7 +118,7 @@ export default function BbsCheck() {
     }
     // ⚠️ ต้องเทียบผ่าน inSectionScope (trim+lowercase) — `section` เป็น free text ที่พิมพ์มือได้
     //    `.includes()` ตรงตัวจะทำให้ 'PD1 ' / 'pd1' หลุด scope เงียบๆ (หัวหน้าเปิดมาแล้วไลน์ตัวเองหาย)
-    if (sections.length) return lines.filter(l => inSectionScope(sections, l.section));
+    if (sections.length) return scopedLines({ sections, lines, scopeIdx });
     return lines;
   }, [lines, role, lineId, sections]);
 
@@ -263,6 +263,8 @@ export default function BbsCheck() {
     const same = cur && cur.mark === brush
       && (brush !== 'ng' || cur.agreement_seq === brushSeq);
     if (same) {
+      // 📱 มือถือ: แตะเบิ้ลด้วยถุงมือ = ลบช่องที่เพิ่งทาไปเงียบๆ ⇒ ถามก่อน (จอคอมคลิกซ้ำล้างทันทีเหมือนเดิม · 2026-10-20)
+      if (isMobile && !window.confirm('ล้างเครื่องหมายช่องนี้?')) return;
       const { error } = await supabase.from('bbs_observations').delete().eq('id', cur.id);
       if (error) return toast.error(`ล้างช่องไม่สำเร็จ: ${error.message}`);
       setCells(c => { const n = { ...c }; delete n[key]; return n; });

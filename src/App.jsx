@@ -8,6 +8,7 @@ import { loadProfilesPeople } from './utils/usePeople';
 import MyQueuePanel, { useMyQueue } from './components/MyQueuePanel';
 import { OLD_DAYS } from './utils/myQueue';
 import { ToastContainer, toast } from './components/Toast';
+import ConnBanner from './components/ConnBanner';
 import Login from './pages/Login';
 import SignatureModal from './components/SignatureModal';
 import ChangePasswordModal from './components/ChangePasswordModal';
@@ -30,6 +31,8 @@ primeBreakRuleIndex();
 import useIsMobile from './utils/useIsMobile';
 import ScrollHint from './components/ScrollHint';
 import MobileNavBar from './components/MobileNavBar';
+import ScanWedgeGuard from './components/ScanWedgeGuard';
+import { purgeOldDrafts } from './utils/formDraft';   // 📝 ล้างร่างฟอร์มที่หมดอายุ (ร่างค้างห้ามกินที่ในเครื่อง)   // 🔫 ปุ่มสแกนข้างเครื่อง handheld — มือถือเท่านั้น
 import { pushSupported, getPushState, subscribePush, unsubscribePush, onPushResubscribeRequest, handlePushResubscribe } from './utils/webpush';
 import { loadPositions, positionLabel } from './utils/positions';   // ตำแหน่งเก็บเป็น key — แสดงต้องแปลงเป็นชื่อ
 import { roleLabel } from './utils/roleMeta';                       // ป้ายชื่อ role (โหมดจำลองมุมมอง 🎭)
@@ -1547,6 +1550,7 @@ const ACTIVITY_LS_KEY = 'esm-last-activity';
 // ยกเว้น admin (ดูแลระบบ เครื่องตัวเอง) + display (จอลอย — ไม่ logout อยู่แล้ว)
 const SESSION_START_KEY = 'esm-session-started';
 const SHIFT_GRACE_MS = 60 * 60 * 1000; // เผื่อ 60 นาทีหลังสิ้นกะ (ทำงานคาบเกี่ยว/OT ต่อเนื่อง)
+const SHIFT_WARN_MS  = 15 * 60 * 1000; // เตือนบนมือถือ 15 นาทีก่อนถูกเตะออก (22/10)
 
 // คืน timestamp (ms) ที่ session ต้องหมดอายุ = สิ้นกะของเวลาที่ login + grace
 // กะเช้า 08:00–19:59 → สิ้นกะ 20:00 · กะดึก 20:00–07:59 → สิ้นกะ 08:00 ของเช้าถัดไป
@@ -1568,6 +1572,9 @@ function shiftDeadlineFrom(loginTsMs) {
 // disabled = ไม่ต้องเฝ้าเลย (role display หรือกำลังเปิดหน้าจอแขวน — ดู kioskRoutes.js)
 function useAutoLogout(disabled, onLogout, shiftCapped) {
   const [warnSecsLeft, setWarnSecsLeft] = useState(null); // null = not warning
+  /* ⏰ เหลือกี่นาทีก่อนเตะออกเพราะหมดกะ (null = ยังไกล/ไม่ติดเพดานกะ) — แถบเตือนบนมือถือ (22/10 · audit handheld)
+     เพดานกะเตะ "แม้กำลังใช้อยู่" ⇒ ฟอร์มที่บันทึกทีเดียวตอนท้ายหายทั้งใบ · เตือนล่วงหน้า SHIFT_WARN_MS ให้กดบันทึกก่อน */
+  const [shiftLeftMin, setShiftLeftMin] = useState(null);
   const lastActivityRef = useRef(Date.now());
   const warnActiveRef   = useRef(false);
   const countdownRef    = useRef(null);
@@ -1631,10 +1638,13 @@ function useAutoLogout(disabled, onLogout, shiftCapped) {
         startTs = Date.now();
         try { localStorage.setItem(SESSION_START_KEY, String(startTs)); } catch { /* private mode */ }
       }
-      if (Date.now() > shiftDeadlineFrom(startTs)) { onLogoutRef.current(); return true; }
+      const left = shiftDeadlineFrom(startTs) - Date.now();
+      if (left <= 0) { onLogoutRef.current(); return true; }
+      setShiftLeftMin(left <= SHIFT_WARN_MS ? Math.max(1, Math.ceil(left / 60000)) : null);
       return false;
     };
 
+    checkShiftDeadline();   // ตั้งแถบเตือนทันทีตอนเปิดแอป (ไม่ต้องรอ poll รอบแรก 30 วิ)
     // Poll every 30s to check idle time — เทียบกับ activity ล่าสุดของ "ทุกแท็บ" (max ของ local ref กับ localStorage)
     const pollId = setInterval(() => {
       if (checkShiftDeadline()) return; // เลยเพดานกะ = ออกแล้ว
@@ -1670,7 +1680,24 @@ function useAutoLogout(disabled, onLogout, shiftCapped) {
     };
   }, [disabled, shiftCapped, dismissWarning]);
 
-  return { warnSecsLeft, dismissWarning };
+  return { warnSecsLeft, dismissWarning, shiftLeftMin };
+}
+
+/* ⏰ แถบเตือน "ใกล้หมดกะ ระบบจะออกจากระบบเอง" — มือถือเท่านั้น (22/10 · audit handheld ข้อ 4)
+   เพดานกะเตะออกแม้กำลังกรอกอยู่ ⇒ เตือน 15 นาทีก่อน ให้กดบันทึก · อยู่เหนือโมดัล (ฟอร์มส่วนใหญ่อยู่ในโมดัล)
+   แตะเพื่อซ่อน — ถ้าซ่อนตอนเหลือเกิน 5 นาที จะกลับมาอีกครั้งตอนเหลือ 5 นาที · ฟอร์มยาวมีร่างเก็บในเครื่องอยู่แล้ว (utils/formDraft.js) */
+function ShiftEndBanner({ minLeft }) {
+  const [hiddenAbove, setHiddenAbove] = useState(null);   // ซ่อนไว้จนกว่าจะเหลือ ≤ ค่านี้
+  if (minLeft == null) return null;
+  if (hiddenAbove != null && minLeft > hiddenAbove) return null;
+  return (
+    <div role="alert" onClick={() => setHiddenAbove(minLeft > 5 ? 5 : 0)}
+      style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 2300, padding: '8px 14px', cursor: 'pointer',
+        background: '#b45309', color: '#fff', fontSize: 13, fontWeight: 700, lineHeight: 1.45, textAlign: 'center' }}>
+      ⏰ อีก {minLeft} นาที ระบบจะออกจากระบบเอง (หมดกะ) — กดบันทึกงานที่กรอกค้างก่อน
+      <span style={{ fontWeight: 500, opacity: 0.9 }}> · แตะเพื่อซ่อน</span>
+    </div>
+  );
 }
 
 function AutoLogoutWarning({ secsLeft, onStay, onLogout }) {
@@ -1725,6 +1752,7 @@ function AutoLogoutWarning({ secsLeft, onStay, onLogout }) {
 function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, viewAs, onApplyViewAs, userLineId, userTeam, userSection, userSections, userRespCcs, userScopeIdx, userMtnTeams, userIsDeptAdmin, userAccountKind, userPosition, userEmail, userFullName, userNotifyEmail, userSignatureUrl, userAvatarUrl, onAvatarSaved, onSignatureSaved, permsVersion }) {
   const isMobile = useIsMobile();
   const isTV     = !useIsMobile(1919);   // จอ ≥1920 (TV) — reactive แทน innerWidth ครั้งเดียว
+  useEffect(() => { purgeOldDrafts(); }, []);   // 📝 ร่างฟอร์มหมดอายุ (utils/formDraft.js)
   const [isOpen, setIsOpen] = useState(() => typeof window !== 'undefined' && window.innerWidth > 768);
   /* 📺 เมนูบนจอ /tv (13/10 · feedback user "เข้ามาแล้วกลับออกไปหน้าอื่นไม่ได้") — state แยกจาก `isOpen`
      ⇒ เปิดจอ TV มาต้องปิดเสมอ (ไม่รับค่าค้างจากหน้าก่อน) · ปิดเองเมื่อเปลี่ยนหน้า */
@@ -1775,7 +1803,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
   // ⚠️ เพดานกะตัดสินจาก "role จริง" — admin ที่จำลองมุมมอง leader ต้องไม่โดนเตะออกท้ายกะ
   // ⚠️ จอแขวนไม่โดนเพดานกะด้วย — ไม่งั้นยกเว้น idle ไปก็ยังโดนเตะทุกสิ้นกะอยู่ดี
   const shiftCapped = !viewAs && !isKiosk && ['leader', 'supervisor'].includes(userRole);
-  const { warnSecsLeft, dismissWarning } = useAutoLogout(isDisplay || isKiosk, handleLogout, shiftCapped);
+  const { warnSecsLeft, dismissWarning, shiftLeftMin } = useAutoLogout(isDisplay || isKiosk, handleLogout, shiftCapped);
 
   // 🎭 โหมดจำลองมุมมอง role — modal เลือก role (admin จริงเท่านั้น) + ป้ายลอยบอกว่าอยู่ในโหมด
   const [viewAsOpen, setViewAsOpen] = useState(false);
@@ -1948,6 +1976,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
         </Suspense>
         {/* 📱 แถบล่างมือถือ — หน้า Home ไม่มีช่อง ☰ (หน้านี้คือเมนูอยู่แล้ว) */}
         <MobileNavBar role={role} onOpenSearch={() => setPaletteOpen(true)} />
+        <ScanWedgeGuard />
         {/* 📺 จอตามต้องรับรีโมทได้แม้ค้างอยู่หน้า Hub (เดิม mount เฉพาะหน้าอื่น — จอ TV ที่เปิดหน้านี้ทิ้งไว้สั่งไม่ได้) */}
         {remoteCode && (
           <Suspense fallback={null}>
@@ -1966,11 +1995,13 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
       {warnSecsLeft !== null && (
         <AutoLogoutWarning secsLeft={warnSecsLeft} onStay={dismissWarning} onLogout={handleLogout} />
       )}
+      {isMobile && <ShiftEndBanner minLeft={shiftLeftMin} />}
       <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg)' }}>
         {/* มือถือ: ☰ ย้ายไปแถบล่าง (นิ้วโป้งถึง · ไม่ลอยทับเนื้อหา) — จอคอมเหมือนเดิม (docs/MOBILE-UX-STANDARD.md §3) */}
         {!isMobile && !tvShell && <ToggleBtn isOpen={isOpen} onClick={() => setIsOpen(true)} />}
         {!tvShell && <NotificationBell userId={userId} role={role} />}
         {!tvShell && <MobileNavBar role={role} onOpenMenu={() => setIsOpen(true)} onOpenSearch={() => setPaletteOpen(true)} />}
+        {!tvShell && <ScanWedgeGuard />}
         {/* บอกว่า "ยังเลื่อนลงได้อีก" — มือถือไม่มี scrollbar ให้เห็น (ครอบทั้งหน้าเพจและ modal) */}
         <ScrollHint />
         <Suspense fallback={null}>
@@ -2447,7 +2478,7 @@ export default function App() {
     else {
       const [nodesRes, linesRes] = await Promise.all([
         supabase.from('org_nodes')
-          .select('id, kind, code, name, parent_id, ref_line_id, cost_center, division, sort_order, is_active')
+          .select('id, kind, code, name, parent_id, ref_line_id, cost_center, division, sort_order, is_active, inherit_scope')
           .eq('is_active', true),
         loadLinesRes(),
       ]);
@@ -2575,6 +2606,8 @@ export default function App() {
         </Router>
       )}
       <ToastContainer />
+      {/* ⚠️ ต่อฐานข้อมูลไม่ได้ต้องเขียนบนจอ ห้ามปล่อยให้หมุนค้างเงียบ (21/10 · utils/connGuard.js) */}
+      <ConnBanner />
     </>
   );
 }

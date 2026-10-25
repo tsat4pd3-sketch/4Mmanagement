@@ -362,7 +362,7 @@ export default function ManpowerBoardSetup({ section, nodes, lines, employees, s
           <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>
             คนที่สังกัดแผนกหนึ่งแต่ไปช่วยอีกแผนกเป็นประจำ — ผูกไว้แล้วการ์ดจะขึ้นบนบอร์ดของแผนกที่ไปช่วยด้วย ·
             <b> ไม่ย้ายสังกัด · cost center ไม่เปลี่ยน · ไม่นับเป็นกำลังคน/ช่องว่างของแผนกที่ไปช่วย</b>
-            (บ้านจริงนับเขาอยู่แล้ว — นับ 2 ที่ = กำลังคนเกินจริง) · อยากยืมเฉพาะวันนี้ให้ใช้ "ยืมตัว" ที่หน้าเช็คชื่อแทน
+            (หน่วยต้นสังกัดนับเขาอยู่แล้ว — นับ 2 ที่ = กำลังคนเกินจริง) · อยากยืมเฉพาะวันนี้ให้ใช้ "ยืมตัว" ที่หน้าเช็คชื่อแทน
           </div>
           {!depts.length ? <div style={{ fontSize: 13, color: 'var(--muted)' }}>ส่วนงานนี้ยังไม่มีแผนกในผังองค์กร (ตั้งที่ /org-setup)</div> : (
             <div style={{ display: 'grid', gap: 8 }}>
@@ -378,7 +378,7 @@ export default function ManpowerBoardSetup({ section, nodes, lines, employees, s
                         return (
                           <span key={r.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '2px 4px 2px 10px', border: '1px solid var(--border2)', borderRadius: 999, background: 'var(--bg2)', fontSize: 13 }}>
                             🏃 {e ? e.name : '(ไม่อยู่ในทะเบียน active)'}
-                            {e?.department && <span style={{ fontSize: 11, color: 'var(--muted)' }}>บ้าน {e.department}</span>}
+                            {e?.department && <span style={{ fontSize: 11, color: 'var(--muted)' }}>ต้นสังกัด {e.department}</span>}
                             <DeleteButton disabled={busy} onClick={() => removeFlex(r)} title={`เอา ${e?.name || ''} ออก`} style={{ width: 26, height: 26 }} />
                           </span>
                         );
@@ -399,7 +399,7 @@ export default function ManpowerBoardSetup({ section, nodes, lines, employees, s
           <div style={{ fontWeight: 800, marginBottom: 4 }}>5. 🎖️ รักษาการ (ดูแลหน่วยที่ไม่ใช่สังกัดจริง)</div>
           <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>
             คนที่ตำแหน่งในผังจริงอยู่หน่วยหนึ่ง แต่<b>รักษาการเป็นหัวหน้าของอีกหน่วย</b> —
-            ผูกไว้แล้วจะขึ้น <b>หัวผังของหน่วยนั้น</b> พร้อมป้าย 🎖️ รักษาการ + ชื่อหน่วยและ cost center ของบ้านจริง ·
+            ผูกไว้แล้วจะขึ้น <b>หัวผังของหน่วยนั้น</b> พร้อมป้าย 🎖️ รักษาการ + ชื่อหน่วยและ cost center ของหน่วยต้นสังกัด ·
             <b> ไม่ย้ายสังกัด · cost center ไม่เปลี่ยน · ไม่นับเป็นกำลังคน</b>
             {' '}· ถ้าย้ายมาสังกัดจริงแล้ว ให้แก้สังกัดที่ทะเบียนพนักงานแล้วลบแถวนี้ทิ้ง
           </div>
@@ -425,7 +425,7 @@ export default function ManpowerBoardSetup({ section, nodes, lines, employees, s
                       return (
                         <span key={r.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '2px 4px 2px 10px', border: '1px solid var(--amber)', borderRadius: 999, background: 'var(--bg2)', fontSize: 13 }}>
                           🎖️ {e ? e.name : '(ไม่อยู่ในทะเบียน active)'}
-                          {e?.department && <span style={{ fontSize: 11, color: 'var(--muted)' }}>บ้าน {e.department}</span>}
+                          {e?.department && <span style={{ fontSize: 11, color: 'var(--muted)' }}>ต้นสังกัด {e.department}</span>}
                           <DeleteButton disabled={busy} onClick={() => removeActing(r)} title={`ยกเลิกรักษาการของ ${e?.name || ''}`} style={{ width: 26, height: 26 }} />
                         </span>
                       );

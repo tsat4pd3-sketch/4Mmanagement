@@ -33,7 +33,13 @@ import {
 /** ข้อมูลเก่ากว่านี้ = โหลดใหม่ตอนเปิดแผง (นาที) */
 const STALE_MIN = 5;
 /** เพดานแถวต่อคิวรี — คิวงานไม่ใช่รายงาน ไม่ต้องครบทุกแถวในโลก */
-const LIMIT = 300;
+/* 🔴 เพดานแถวของคิว — ใบ MO ที่ยังเปิดอยู่โตเกิน 300 ไปนานแล้ว (วัด 22/10: **693 ใบ**)
+   เดิม 300 + `order('work_date', asc)` = เก็บใบ**เก่าสุด** แล้วทิ้งใบใหม่ทั้งหมด
+   ⇒ 393 ใบ (57%) ไม่เข้าคิวของใครเลย · ใบรอเซ็นปิด 107 ใบ เห็นแค่ 29 ⇒ ผจก.ฝ่ายที่แจ้ง
+     เปิดคิวมาเจอ "ไม่มีงานที่รอคุณอยู่" ทั้งที่มี 51 ใบรออนุมัติ (เคสจริง 22/10 · คำสั่ง user)
+   ⚠️ 1000 = เพดานแถวต่อคิวรีของ Supabase — เกินกว่านี้ต้องกรองฝั่ง server ไม่ใช่ขยายเลขอีก
+      ⇒ ชนเพดานเมื่อไหร่ต้องติด `partial` ให้จอเขียนบอก **ห้ามตัดเงียบ** */
+const LIMIT = 1000;
 
 /* คอลัมน์ที่ "ใครรอใบนี้" ต้องใช้จริงเท่านั้น (myQueue.moWaitingOn + การวาดแถว) */
 const MO_COLS = [
@@ -88,7 +94,11 @@ export async function loadMyQueue(me) {
     ...f, section: secOfLine.get(String(f.line_name || '').trim().toLowerCase()),
   }));
 
-  const mo = ok(moR)?.filter(o => !DEAD.includes(String(o.status || '')));
+  const moRows = ok(moR);
+  const mo = moRows?.filter(o => !DEAD.includes(String(o.status || '')));
+  /* 🔴 ชนเพดาน = โหลดไม่ครบ ไม่ใช่ "ไม่มีงาน" — ต้องติด `partial` ให้จอเขียนบอก
+     (เดิม `partial` ติดเฉพาะตอนคิวรี **ล่ม** ⇒ ตัดแถวทิ้งเงียบๆ แล้วจอยืนยันว่าเคลียร์หมด) */
+  const moTruncated = Array.isArray(moRows) && moRows.length >= LIMIT;
 
   const summaries = [];
   if (prR.error == null && Number(prR.count) > 0) {
@@ -100,7 +110,7 @@ export async function loadMyQueue(me) {
     });
   }
 
-  return buildQueue({ mo, sessions: ok(sesR), fourM, actions: ok(actR), summaries, levelUps }, me);
+  return buildQueue({ mo, moTruncated, sessions: ok(sesR), fourM, actions: ok(actR), summaries, levelUps }, me);
 }
 
 /* ── UI ชิ้นเล็ก ────────────────────────────────────────────────────────── */
@@ -171,7 +181,19 @@ function Group({ tier, items, onGo }) {
    @param {boolean} open  แผงเปิดอยู่ไหม — ใช้ตัดสินว่าถึงเวลารีเฟรชของเก่าหรือยัง */
 /* 🔁 ผลโหลดใช้ร่วมกันทุกตัวที่เรียก hook นี้ (13/10) — sidebar กับกระดิ่งต่างเรียก ⇒ ห้ามยิงคิวรีชุดเดียวกัน 2 รอบ
    คีย์ = ตัวตน+ขอบเขต · ตัวที่เรียกพร้อมกันรอ promise เดียวกัน · โหลดเสร็จแจ้งทุกตัวให้เห็นเลขเดียวกัน */
-const shared = { key: null, at: 0, promise: null, q: null, listeners: new Set() };
+const shared = { key: null, at: 0, promise: null, q: null, listeners: new Set(), loader: null };
+
+/* ── 🔄 เคลียร์คิวให้โหลดใหม่ หลังมีการ "ทำงานเสร็จ" ที่ทำให้คิวเปลี่ยน ───────  2026-10-22
+   เคสจริง (คำสั่ง user): ผจก.กดเซ็นอนุมัติปิดใบจากคิว → ใบปิดแล้วจริง แต่**แถวยังคาอยู่ในแผง**
+   เพราะแผงโหลด "ครั้งเดียวต่อ session" แล้วรีเฟรชเฉพาะตอนเปิดแผงและของเก่าเกิน STALE_MIN (5 นาที)
+   ⇒ คนเซ็นเสร็จแล้วมองไม่ออกว่าอันไหนทำไปแล้ว · เผลอกดซ้ำ · และ badge ค้างเลขเดิม
+   🔴 ต้องเรียกจากทุกจุดที่ "ปิดงานที่เคยอยู่ในคิว" — ไม่ใช่แค่ /mtn-repair
+   ⚠️ ล้าง `at` อย่างเดียวไม่พอ (แผงที่เปิดค้างอยู่จะไม่รู้ตัว) ⇒ ถ้ามีคนฟังอยู่ ให้ยิงโหลดจริงเลย
+      ไม่มีคนฟัง = แค่ทำให้ของเก่าหมดอายุ รอบหน้าที่เปิดแผงค่อยโหลด (ไม่เปลืองคิวรีฟรีๆ) */
+export function invalidateMyQueue() {
+  shared.at = 0;
+  if (shared.listeners.size && typeof shared.loader === 'function') shared.loader();
+}
 
 export function useMyQueue(open = false) {
   const { sections, fullName, role, position, mtnTeams } = useContext(UserContext);
@@ -227,6 +249,8 @@ export function useMyQueue(open = false) {
     } finally { shared.promise = null; setBusy(false); }
   }, [secKey, teamKey, fullName, role, position]);
 
+  /* ให้ invalidateMyQueue() ยิงโหลดจริงได้ — เก็บตัวโหลดล่าสุดไว้ (hook ตัวไหนก็ได้ที่ยัง mount อยู่) */
+  useEffect(() => { shared.loader = () => load(true); return () => { if (shared.loader) shared.loader = null; }; }, [load]);
   useEffect(() => { load(false); }, [load]);        // รอบแรกตอน mount (1 ครั้ง/session · ตัวที่ 2 ใช้ผลร่วม)
   useEffect(() => {
     if (open) load(false);                           // เปิดแผง/กระดิ่ง = รีเฟรชเฉพาะเมื่อของเก่าเกิน STALE_MIN

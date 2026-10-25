@@ -227,12 +227,29 @@ async function dropOtherTeamTechs(ids: string[], team: string | null): Promise<s
     return kept;
   } catch { return ids; }
 }
-async function usersInTeam(dept?: string | null): Promise<string[]> {
+/* 🏭 ทีม production (AM) ≠ ทีมช่าง — AM คือหัวหน้า/ลีดเดอร์ฝ่ายผลิตที่ดูแล **ไลน์ของตัวเอง** (2026-10-21)
+   วัด 7 วัน (13→20/10): ใบ 249/308 เป็นทีม production · `usersInTeam` คืน "ทุกคนที่มีทีม production"
+   = หัวหน้า/ลีดเดอร์ทั้งโรงงาน ⇒ `mtn_reported` ไปถึง sv 23 + leader 17 คน · 1,046+765 แถว · ~30 แถว/คน
+   ⇒ ทีม production เหลือเฉพาะคนที่ผูกไลน์ในสายเดียวกับใบ (`line_family`) · ไม่ผูกไลน์ = ส่วนงานตรงกับไลน์
+   · ไม่รู้ไลน์ของใบ = ไม่ยิงทั้งทีม (ทะเบียน role × ส่วนงาน × ไลน์ ใน `usersByRule` ยังทำงานตามเดิม)
+   · กติกาเดียวกับ SQL `notify_recipients` ที่แยก `p_team <> 'production'` ไว้แล้ว */
+async function usersInTeam(dept?: string | null, lineName?: string | null): Promise<string[]> {
   const want = teamKey(dept);
   if (!want) return [];
   try {
-    const { data } = await supabase.from('profiles').select('id, mtn_teams');
-    return (data ?? []).filter((p) => (p.mtn_teams as string[] | null ?? []).some((t) => teamKey(t) === want))
+    const { data } = await supabase.from('profiles').select('id, mtn_teams, line_id, section, sections');
+    const inTeam = (data ?? []).filter((p) => (p.mtn_teams as string[] | null ?? []).some((t) => teamKey(t) === want));
+    if (want !== 'production') return inTeam.map((p) => p.id as string);
+    const line = lineName && lineName !== '-' ? lineName : null;
+    if (!line) return [];
+    const { data: famArr } = await supabase.rpc('line_family', { p_line: line });
+    const fam = new Set<string>(Array.isArray(famArr) && famArr.length ? famArr as string[] : [line]);
+    const { data: famLines } = await supabase.from('production_lines').select('id, name').in('name', [...fam]);
+    const famIds = new Set((famLines ?? []).map((l) => String(l.id)));
+    const sec = await sectionOfLine(line);
+    return inTeam.filter((p) => (p.line_id != null
+      ? famIds.has(String(p.line_id))
+      : !!sec && (p.section === sec || ((p.sections as string[] | null) ?? []).includes(sec))))
       .map((p) => p.id as string);
   } catch { return []; }   // ยังไม่ apply migration profiles.mtn_teams — ข้าม ไม่ทำให้พัง
 }
@@ -317,7 +334,7 @@ async function notifyMoInApp(routes: Record<string, Route>, event: string, v: Re
     const castAlways = (routes[event]?.cast || 'always') !== 'fallback';
 
     // เจ้าของงานของใบนี้ = คนในใบ (ผู้แจ้ง/ช่างที่รับ/ผู้ตรวจ ฯลฯ) + ช่างทีมที่รับผิดชอบ
-    const byTeam = aud.team ? await usersInTeam(dept) : [];
+    const byTeam = aud.team ? await usersInTeam(dept, v.line_name) : [];
     const owners = [...new Set([...peopleOf(mo || {}, aud.people), ...byTeam])].filter(Boolean);
 
     /* 🔴 ห้ามล้มเหลวเงียบ — โหมด fallback ที่เจอใบเก่าไม่มี uid เลยจะได้ 0 คน

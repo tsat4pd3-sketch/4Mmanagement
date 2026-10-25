@@ -1,4 +1,5 @@
 import { getLineFamilyNames } from './lineHierarchy.js';
+import { buildViewScope } from './viewScope.js';   // 👁️ ขยายขอบเขตผ่านผัง (แผนก/ไลน์ ไม่ใช่แค่ส่วนงาน)
 import { orgNodeCompare } from './listOrder.js';
 // ─── Multi-section scoping ──────────────────────────────────────────────────
 // ขอบเขตส่วนงานของ user: profiles.sections (text[]) = จำกัดหลายส่วนงานได้
@@ -91,7 +92,7 @@ export const MAINTENANCE_ROLES = ['mtn', 'engineer'];
  * ⚠️ ต้องเรียกหลัง production_lines โหลดเสร็จ — lines ว่าง = คืน null (ไม่จำกัด)
  *    ห้ามคืน [] เพราะ `.in('line_name', [])` = ไม่เห็นอะไรเลย
  */
-export function scopedLineNames({ role, lineId, sections = [], lines = [] }) {
+export function scopedLineNames({ role, lineId, sections = [], lines = [], scopeIdx = null }) {
   if (role === 'admin') return null;                       // ตาข่ายกันตาย (เหมือน effectiveSections)
   /* 🔭 25/09: **ถอด hardcode `MAINTENANCE_ROLES` ออกแล้ว** — ไม่ต้องรับ scopeDepth เพิ่ม เพราะ
      การตัดสินถูกยุบไว้ใน `sections` ที่ `effectiveSections()` คำนวณมาให้แล้ว (จุดเดียวของระบบ)
@@ -109,10 +110,42 @@ export function scopedLineNames({ role, lineId, sections = [], lines = [] }) {
     return fam.length ? fam : null;
   }
   if (sections.length) {
+    /* 🔁 22/10 — ขอบเขตอาจเป็น **แผนก/กลุ่ม/ไลน์** ไม่ใช่แค่ส่วนงาน (user: "jig มาฝากกับผลิต" ·
+       หัวหน้าที่ดูแล 2 ไลน์ในแผนกเดียว) ⇒ ถ้าหน้าไหนส่งดัชนีผัง (`scopeIdx`) มาด้วย ให้ขยายผ่านผัง
+       🔴 ไม่ส่ง `scopeIdx` = พฤติกรรมเดิมเป๊ะ (เทียบ `l.section` ตรงตัว) — ห้ามบีบแคบลงเงียบ */
+    if (scopeIdx) {
+      const vs = buildViewScope(sections, scopeIdx);
+      if (vs.byOrg) {
+        const names = lines.filter(l => vs.lineOk(l)).map(l => l.name);
+        return names.length ? names : null;
+      }
+    }
     const names = lines.filter(l => inSectionScope(sections, l.section)).map(l => l.name);
     return names.length ? names : null;
   }
   return null;
+}
+
+/**
+ * 🔭 **ไลน์ที่ผู้ใช้เห็นได้ — คืน "ตัวไลน์" ไม่ใช่ชื่อ** (22/10)
+ *
+ * pattern เดิมที่ก๊อปกระจายอยู่ ~10 หน้า: `lines.filter(l => inSectionScope(scopeSecs, l.section))`
+ * ⇒ ขอบเขตที่ไม่ใช่ "ส่วนงาน" (แผนก/กลุ่ม/ไลน์เดี่ยว) ตกหมด เพราะเทียบข้อความ `l.section` ตรงตัว
+ *
+ * 🔴 ส่ง `scopeIdx` (ดัชนีผังจาก `UserContext`) มาด้วย = ขยายผ่านผังองค์กร
+ *    **ไม่ส่ง = พฤติกรรมเดิมเป๊ะ** — ห้ามบีบแคบลงเงียบ (ชื่อที่ผังไม่รู้จักยังถอยไปเทียบข้อความ)
+ * ⚠️ `sections` ว่าง (ไม่จำกัด) หรือทะเบียนไลน์ยังโหลดไม่เสร็จ → คืน `lines` ทั้งก้อน
+ *    ห้ามคืน `[]` เพราะจะกลายเป็น "ไม่เห็นอะไรเลย" ระหว่างโหลด
+ * 🔴 ผู้เรียกที่เอาไปกรอง**ตาราง** ต้องเขียนบนจอว่าซ่อนไปกี่รายการ (ดู `filterRowsByLineScope`)
+ */
+export function scopedLines({ sections = [], lines = [], scopeIdx = null }) {
+  const secs = (sections || []).filter(Boolean);
+  if (!secs.length || !lines.length) return lines;
+  if (scopeIdx) {
+    const vs = buildViewScope(secs, scopeIdx);
+    if (vs.byOrg) return lines.filter(l => vs.lineOk(l));
+  }
+  return lines.filter(l => inSectionScope(secs, l.section));
 }
 
 export function inSectionScope(scopeSections, value) {

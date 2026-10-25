@@ -1,10 +1,13 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { explainNetError } from '../utils/netError';
 
 /* ── Toast store (singleton outside React) ── */
+const onMobile = () => { try { return window.matchMedia('(max-width:768px)').matches; } catch { return false; } };
 let _dispatch = null;
 export const toast = {
   success: (msg) => _dispatch?.({ type: 'success', msg }),
-  error:   (msg) => _dispatch?.({ type: 'error',   msg }),
+  /* 📶 มือถือ: error ที่เป็นเน็ตหลุดต่อท้ายคำอธิบายภาษาไทย (utils/netError.js) · จอคอมข้อความเดิม (กฎจอคอมห้ามเปลี่ยน) */
+  error:   (msg) => _dispatch?.({ type: 'error',   msg: onMobile() ? explainNetError(msg) : msg }),
   info:    (msg) => _dispatch?.({ type: 'info',     msg }),
 };
 

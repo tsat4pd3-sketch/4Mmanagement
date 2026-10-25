@@ -9,7 +9,7 @@
  * ตาราง scrap_reports / scrap_report_items / scrap_defect_types อยู่ DR project
  * (anon เสมอ) · สิทธิ์: scrap:record = สร้าง/แก้ · scrap:manage = อนุมัติ/ลบ
  */
-import { useState, useEffect, useMemo, useCallback, useContext } from 'react';
+import { useState, useEffect, useMemo, useCallback, useContext, useRef } from 'react';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { toast } from '../components/Toast';
@@ -152,6 +152,7 @@ export default function ScrapReport() {
   const [listFrom, setListFrom] = useState(() => { const d = new Date(); d.setDate(d.getDate() - 30); return localDateStr(d); });
   const [listTo, setListTo] = useState(getWorkDate());
   const [editor, setEditor] = useState(null); // { report, items } กำลังแก้/สร้าง
+  const saveBusyRef = useRef(false); // กันแตะ 💾 เบิ้ล — ครั้งที่ 2 ยังถือ id=null ⇒ ได้หัวใบ+เลขใบซ้ำ 2 ใบ (audit handheld 2026-10-20)
   const [sapPicker, setSapPicker] = useState(null); // { itemKey } | { addSource }
   const [defectPicker, setDefectPicker] = useState(null); // itemKey
   const [sapOptions, setSapOptions] = useState(null);
@@ -507,7 +508,13 @@ export default function ScrapReport() {
   }, [editor]);
 
   const saveReport = async () => {
+    if (saveBusyRef.current) return;
+    saveBusyRef.current = true;
+    try { await saveReportInner(); } finally { saveBusyRef.current = false; }
+  };
+  const saveReportInner = async () => {
     const { report, items } = editor;
+    if (items.some(it => Number(it.qty) < 0 || Number(it.confirm_qty) < 0)) { toast.error('จำนวนของเสียติดลบไม่ได้ — แก้ช่อง Q\'TY / ยืนยัน ที่มีเครื่องหมายลบ'); return; }
     if (!report.line_name) { toast.error('เลือกไลน์'); return; }
     if (!slocValid(report.storage_location)) { toast.error(`Storage Location ไม่ถูกรูปแบบ — ${SLOC_FORMAT_HINT}`); return; } // 2026-09-07
     /* 🔩 ส่งอนุมัติ/อนุมัติทั้งที่ยังมีเลขขั้นตอน (OP) ค้างอยู่ = ใบนี้สโตร์เอาไปตัด SAP ไม่ได้
@@ -629,6 +636,19 @@ export default function ScrapReport() {
   };
 
   const isMobile = useIsMobile();
+  /* 📱 มือถือ: ปิดใบที่แก้แล้วยังไม่บันทึก = ถามก่อน (22/10 · audit handheld ข้อ 4) — เดิม ✕/ยกเลิก ทิ้งทั้งใบเงียบๆ
+     ทั้งที่แตะพลาดง่ายบนจอ 360px · เทียบกับภาพตอนเปิดใบ (ไฟล์รูปที่ยังไม่อัปนับด้วย) · จอคอมปิดทันทีเหมือนเดิม */
+  const editorSnapRef = useRef(null);
+  const editorSnap = (ed) => JSON.stringify({ r: ed?.report, i: (ed?.items || []).map(({ _imgFile, ...it }) => ({ ...it, _f: !!_imgFile })) });
+  useEffect(() => {
+    if (!editor) editorSnapRef.current = null;
+    else if (editorSnapRef.current == null) editorSnapRef.current = editorSnap(editor);
+  }, [editor]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const closeEditor = () => {
+    if (isMobile && editor && editorSnap(editor) !== editorSnapRef.current
+      && !window.confirm('ปิดใบนี้โดยไม่บันทึก? — ที่กรอก/แก้ไว้จะหายทั้งหมด')) return;
+    setEditor(null);
+  };
   const STATUS_META = { draft: { label: 'ร่าง', color: '#6b7280' }, submitted: { label: 'ส่งอนุมัติ', color: '#f59e0b' }, approved: { label: 'อนุมัติแล้ว', color: '#22c55e' } };
 
   return (
@@ -741,7 +761,7 @@ export default function ScrapReport() {
       )}
 
       {editor && (
-        <Modal title={editor.report.id ? `✏️ แก้ใบ ${editor.report.doc_no || ''}` : '➕ เปิดใบรายงานของเสียใหม่'} onClose={() => setEditor(null)} width={1180}>
+        <Modal title={editor.report.id ? `✏️ แก้ใบ ${editor.report.doc_no || ''}` : '➕ เปิดใบรายงานของเสียใหม่'} onClose={closeEditor} width={1180}>
           {/* หัวใบ */}
           <div className="sr-hgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 12 }}>
             <Field label="วันที่"><input type="date" style={inputSt} value={editor.report.report_date} onChange={e => setRep({ report_date: e.target.value })} /></Field>
@@ -957,7 +977,7 @@ export default function ScrapReport() {
           </div>
 
           <div className={isMobile ? 'sr-foot m-stickfoot' : 'sr-foot'} style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
-            <button style={ghostBtn} onClick={() => setEditor(null)}>ยกเลิก</button>
+            <button style={ghostBtn} onClick={closeEditor}>ยกเลิก</button>
             {canRecord && <button style={btnSt()} onClick={saveReport}>💾 บันทึกใบ</button>}
           </div>
         </Modal>

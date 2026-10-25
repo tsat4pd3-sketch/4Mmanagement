@@ -17,7 +17,7 @@ import TimeRangeBar from '../components/TimeRangeBar';
 import useTimeRange from '../utils/useTimeRange';
 import { rangeDays, addDays, bucketAxis, bucketKey, bucketLabel, bkkHourKey, scaleOf } from '../utils/timeRange';
 import { getWorkDate } from '../utils/workDate';
-import { inSectionScope } from '../utils/sectionScope';
+import { inSectionScope, scopedLines } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { ASSET_CLASSES, assetClassOf, firstAssetWithData } from '../utils/qc7';
 import { useSearchParams } from 'react-router-dom';
@@ -114,7 +114,7 @@ const MAIN_TABS = [
 ];
 
 export default function MtnAnalysis() {
-  const { role, lineId, sections } = useContext(UserContext);
+  const { role, lineId, sections, scopeIdx } = useContext(UserContext);
   const [tab, setTab] = useTabParam(MAIN_TABS.map(t => t.key), 'kpi');
   // ⚠️ ชนิดสินทรัพย์ใช้ `?asset=` — แท็บซ้อนแท็บห้ามใช้ `?tab=` ซ้ำ (UI-CONVENTIONS §6.8)
   const [asset, setAsset] = useTabParam(ASSET_CLASSES.map(a => a.key), 'machine', 'asset');
@@ -297,9 +297,9 @@ export default function MtnAnalysis() {
   const scopeLines = useMemo(() => {
     if (role === 'admin') return null;
     if (role === 'leader' && lineId) { const self = lines.find(l => String(l.id) === String(lineId)); return self ? new Set(getLineFamilyNames(lines, self.name)) : new Set(); }
-    if (sections?.length) return new Set(lines.filter(l => inSectionScope(sections, l.section)).map(l => l.name));
+    if (sections?.length) return new Set(scopedLines({ sections, lines, scopeIdx }).map(l => l.name));
     return null;
-  }, [lines, role, lineId, sections]);
+  }, [lines, role, lineId, sections, scopeIdx]);
   const scopedLineObjs = useMemo(() => (scopeLines ? lines.filter(l => scopeLines.has(l.name)) : lines), [lines, scopeLines]);
 
   const rows = byClass[asset] || [];

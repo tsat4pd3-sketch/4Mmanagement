@@ -162,14 +162,13 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
       const res = await saveMyProfileMedia('signature_url', publicUrl);
       if (!res.ok) { toast.error('บันทึกไม่สำเร็จ: ' + res.message); setSaving(false); return; }
 
-      // อัปเดต signature_url สำเร็จแล้ว ค่อยลบไฟล์ลายเซ็นเดิมทิ้ง กันไฟล์กำพร้าใน storage
-      // ลบเฉพาะไฟล์ใน bucket signatures ที่อยู่ในโฟลเดอร์ของ user เอง (best-effort)
-      if (currentSignatureUrl?.includes('/signatures/')) {
-        const oldPath = decodeURIComponent(currentSignatureUrl.split('/signatures/')[1] || '').split('?')[0];
-        if (oldPath && oldPath.startsWith(`${user.id}/`) && oldPath !== filePath) {
-          supabase.storage.from('signatures').remove([oldPath]).catch(() => {});
-        }
-      }
+      /* 🔴 **ห้ามลบไฟล์ลายเซ็นเดิม** (2026-10-24 · คำสั่ง user — เดิมลบทิ้งเพื่อกันไฟล์กำพร้า)
+         เอกสารที่เซ็นไปแล้วเก็บ **URL ของไฟล์นั้น** ไว้ในใบ (mtn_orders.*_sign · ใบตรวจ LPA · OJT ฯลฯ)
+         ลบ = ช่องลายเซ็นในเอกสารเก่ากลายเป็น **รูปเสีย กู้ไม่ได้ และไม่มี error ฟ้อง**
+         วัดจริง 24/10: ไฟล์ที่ใบ MO อ้างถึง 31 ไฟล์ · ถูกลบไปแล้ว 1 ⇒ **93 ใบ (ปิดแล้ว 28) รูปเสีย**
+         · ตอนนี้จอ/ใบพิมพ์ดึงลายเซ็น "สด" จากโปรไฟล์ด้วย uid แล้ว (utils/signResolve.js)
+           แต่ของเก่าที่ไม่มี uid ติดมา (เช่น checker_sign 889 ใบ แต่ checker_uid 864) **ยังต้องพึ่งไฟล์เดิม**
+         · ค่าเก็บ: ลายเซ็นทั้งระบบ 31 ไฟล์ ≈ ไม่กี่ร้อย KB — ถูกกว่าบันทึกเสียมาก */
 
       toast.success('บันทึกลายเซ็นเรียบร้อย');
       onSaved(publicUrl);

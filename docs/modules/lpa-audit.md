@@ -286,3 +286,9 @@ effect ใบร่างผลตรวจ · (เดิม `fetchStationNames`
 🔴 ด่านเดิม `daily-check-unknown-not-false` จับเฉพาะรูป `ranOn(…) ?? false` ⇒ **มองไม่เห็นทั้ง 3 เคส**
 (ต้นทางคือ "ไม่อ่าน error" ไม่ใช่ "บีบ null เป็น false") — ด่านใหม่ตรวจว่าก้อนที่ดึง `lpa_audits`
 ไม่แกะ `{ data }` ทิ้ง error และมี `monthErr`/`draftErr` + ส่ง `null` เข้า `checkDayState`
+
+
+### 📝 ร่างในเครื่อง (มือถือ · 2026-10-22 · audit handheld)
+- ใบตรวจบันทึกทีเดียวตอนท้าย ⇒ มือถือเก็บร่าง `lpa:<line|shift|date|layer>:<คนกรอก>` (คำตอบ+หมายเหตุ+สถานี) ด้วย `useDraftAutosave`
+- เปิดชุดเดิมแล้วร่างต่างจากใบในฐาน (`lpaSnap()`) ⇒ แถบ **กู้คืน/ทิ้งร่าง** (`DraftRestoreBar`) · กู้คืน = เติมคำตอบกลับเข้าใบ ไม่เขียน DB
+- บันทึกสำเร็จ = ล้างร่าง · กฎกลาง → `docs/MOBILE-UX-STANDARD.md` §3.2
