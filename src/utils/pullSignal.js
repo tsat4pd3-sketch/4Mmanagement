@@ -352,7 +352,12 @@ export function shipSlotOf(windowEnd, leadMin = 60, round = null) {
   if (pk) {
     const [h, m] = pk.split(':').map(Number);
     at = new Date(windowEnd.getFullYear(), windowEnd.getMonth(), windowEnd.getDate(), h, m);
-    at.setDate(at.getDate() + (Number(round.pickup_day_offset) || 0));
+    const off = Number(round.pickup_day_offset) || 0;
+    at.setDate(at.getDate() + off);
+    /* 🔴 รถมารับ "ก่อน" ช่วงดึงจบไม่ได้ ⇒ เวลารับที่น้อยกว่าปลายช่วง = รอบของวันถัดไป (22/10)
+       เดิมวางไว้วันเดียวกับปลายช่วง ⇒ ไฟล์ 08–10 + รอบรับ 01:15 กลายเป็น "01:00 ของเมื่อคืน"
+       ใบไปโผล่วันงานก่อนหน้า หน้างานไม่เห็น เลยคีย์มือซ้ำ · ตั้ง offset เองในทะเบียน = เชื่อทะเบียน */
+    if (!off && at < windowEnd) at.setDate(at.getDate() + 1);
     from = 'schedule';
   } else {
     at = new Date(windowEnd.getTime() + (Number(leadMin) || 0) * 60000);
@@ -360,6 +365,54 @@ export function shipSlotOf(windowEnd, leadMin = 60, round = null) {
   const wd = new Date(at.getTime());
   if (wd.getHours() < 8) wd.setDate(wd.getDate() - 1);
   return { at, ship_time: timeStr(at), work_date: dateStr(wd), from, round: round || null };
+}
+
+/** นาทีจากปลายช่วงดึงถึงเวลารถมารับ (ข้ามเที่ยงคืนได้) — ไว้จับทะเบียนที่พิมพ์ผิด */
+export function roundGapMin(round) {
+  const e = minOf(hhmm(round?.period_end)), k = minOf(hhmm(round?.pickup_time));
+  if (e === null || k === null) return null;
+  return (k >= e ? k - e : k + 1440 - e) + (Number(round?.pickup_day_offset) || 0) * 1440;
+}
+
+/**
+ * ⭐ แยกไฟล์เป็น "เที่ยวต่อ dock" (22/10) — dock = ส่วนหนึ่งของเที่ยวรถ (B1/B5 คนละท่า คนละเวลารับ)
+ * dock หลัก (มากสุด) ใช้รอบ/วันงานที่คนเห็นและแก้บนจอ · dock อื่นใช้ตารางรอบรับของตัวเอง (pattern เดียวกัน)
+ * แถวที่ไม่ระบุ dock ไปอยู่กับ dock หลัก (พฤติกรรมเดิม)
+ * @returns {Array<{dock, rows, shipTime, workDate, primary, round, fromLead}>}
+ */
+export function dockLegsOf(parsed, { pattern = 'normal', shipTime = '', workDate = '' } = {}) {
+  const rows = parsed?.rows || [];
+  const docks = parsed?.docks || [];
+  const primary = parsed?.dock || null;
+  if (docks.length <= 1) return [{ dock: primary, rows, shipTime, workDate, primary: true, round: null, fromLead: false }];
+  const pk = dockKey(primary);
+  return docks.map(d => {
+    const dk = dockKey(d);
+    if (dk === pk) {
+      return { dock: d, rows: rows.filter(r => !dockKey(r.dock_code) || dockKey(r.dock_code) === pk),
+        shipTime, workDate, primary: true, round: null, fromLead: false };
+    }
+    const opts = parsed.dockSlots?.[d]?.patternOptions || [];
+    const opt = opts.find(o => o.key === pattern) || opts[0] || null;
+    const sl = shipSlotOf(parsed.windowEnd, parsed.leadMin ?? 60, opt?.round || null);
+    return { dock: d, rows: rows.filter(r => dockKey(r.dock_code) === dk),
+      shipTime: sl?.ship_time || '', workDate: sl?.work_date || '', primary: false, round: opt?.round || null, fromLead: !opt };
+  });
+}
+
+/** วางแผนทีละเที่ยว — ใบที่เที่ยวก่อนหน้าใช้ไปแล้ว (ทับ/ปิด/ตรงอยู่แล้ว) ห้ามให้เที่ยวถัดไปเคลมซ้ำ
+ *  @param legs  [{...leg, groups}] · @param slotOf (leg) => slot ของ planOrderUpdates */
+export function planDockLegs(legs, orders, resolveMat, slotOf) {
+  let pool = orders || [];
+  const out = [];
+  for (const leg of legs || []) {
+    const plan = planOrderUpdates(leg.groups || [], pool, resolveMat, slotOf(leg));
+    const used = new Set();
+    plan.forEach(x => { if (x.order?.id) used.add(x.order.id); (x.merge || []).forEach(o => used.add(o.id)); });
+    pool = pool.filter(o => !used.has(o.id));
+    plan.forEach(x => out.push({ ...x, leg }));
+  }
+  return out;
 }
 
 /** ประกอบเลขพาร์ทลูกค้า RB3B + 16E060 + BA → 'RB3B-16E060-BA' (ส่วนที่ว่างถูกข้าม) */
@@ -536,7 +589,10 @@ export function parsePullFile(matrix, profile, rounds = null, { now = new Date()
   const dockCnt = {};
   rows.forEach(r => { if (r.dock_code) dockCnt[r.dock_code] = (dockCnt[r.dock_code] || 0) + 1; });
   const docks = Object.keys(dockCnt).sort((a, b) => dockCnt[b] - dockCnt[a]);
-  if (docks.length > 1) warnings.push(`ไฟล์มีหลาย Dock: ${docks.join(', ')} — ใช้ตารางรอบรับของ ${docks[0]} (แก้รอบเองบนจอได้)`);
+  /* ⭐ หลาย dock ในไฟล์เดียว = หลายเที่ยวรถ (22/10 · เกิดจริง AAT 08–10: B1 + B5 ในไฟล์เดียว)
+     เดิมใช้รอบของ dock ที่มากสุดกับทั้งไฟล์ ⇒ ของ B5 ไปลงรอบ B1 + ไม่ไปทับใบแผน B5 = ใบเบิ้ล
+     ⇒ แยกเป็นเที่ยวต่อ dock (`dockLegsOf`) แต่ละ dock ใช้ตารางรอบรับของตัวเอง */
+  if (docks.length > 1) warnings.push(`ไฟล์มีหลาย Dock: ${docks.map(d => `${d} (${dockCnt[d]} แถว)`).join(', ')} — แยกเป็นเที่ยวต่อ dock ใช้ตารางรอบรับของแต่ละ dock`);
   const dock = docks[0] || null;
 
   /* ⭐ เลือกได้หลาย pattern (ปกติ / OT กลางวัน / OT กลางคืน) — คืนตัวเลือกทั้งหมดให้จอ
@@ -549,9 +605,26 @@ export function parsePullFile(matrix, profile, rounds = null, { now = new Date()
       warnings.push(`ช่วงนี้มีรอบรับ ${patternOptions.length} แบบ (${patternOptions.map(o => o.label).join(' / ')}) — ระบบเลือก "${patternOptions[0].label}" ให้ ⚠️ ถ้าวันนั้นเป็นวัน OT ต้องเปลี่ยนเอง`);
     }
   }
+  /* รอบรับของ dock อื่นในไฟล์เดียวกัน — เก็บตัวเลือกไว้ให้ `dockLegsOf` (dock หลักใช้ patternOptions ด้านบน) */
+  const dockSlots = {};
+  if (docks.length > 1) {
+    for (const d of docks.slice(1)) {
+      const opts = rounds && windowEnd ? pullRoundOptions(rounds, { shipTo: shipTos[0], dock: d, windowStart, windowEnd }) : [];
+      if (rounds && windowEnd && !opts.length) warnings.push(`ไม่มีรอบรับของ dock ${d} ช่วง ${windowStart ? timeStr(windowStart) : '?'}-${timeStr(windowEnd)} — dock นี้ใช้สูตร "ปลายช่วง +${p.lead_min ?? 60} นาที" ⚠️ ตรวจก่อนยืนยัน`);
+      dockSlots[d] = { patternOptions: opts };
+    }
+  }
+  /* 🔴 รอบรับที่ห่างจากปลายช่วงของตัวเองเกิน 8 ชม. = น่าจะพิมพ์ผิดในทะเบียน (22/10: B1 06–10 → รับ 01:15
+     ทั้งที่เตรียมของ 10:10–11:00) — ไม่เดาแก้ให้ แต่ต้องเตือนบนจอ */
+  for (const [d, opts] of [[dock, patternOptions], ...Object.entries(dockSlots).map(([k, v]) => [k, v.patternOptions])]) {
+    const r = opts?.[0]?.round;
+    const gap = r ? roundGapMin(r) : null;
+    if (gap != null && gap > 8 * 60) warnings.push(`🔴 ตารางรอบรับ${d ? ` dock ${d}` : ''} ช่วง ${hhmm(r.period_start)}-${hhmm(r.period_end)} ตั้งให้รถมารับ ${hhmm(r.pickup_time)} = หลังปลายช่วง ${Math.round(gap / 60)} ชม. — น่าจะพิมพ์ผิด ตรวจที่ ⚙️ Ship-to Config ก่อนยืนยัน`);
+  }
 
   return { ok: rows.length > 0, error: rows.length ? undefined : 'ไม่พบแถวข้อมูลในไฟล์',
-    meta, rows, warnings, windowStart, windowEnd, slot, dock, patternOptions, shipTo: shipTos[0] || null };
+    meta, rows, warnings, windowStart, windowEnd, slot, dock, docks, dockSlots, leadMin: p.lead_min ?? 60,
+    patternOptions, shipTo: shipTos[0] || null };
 }
 
 /**

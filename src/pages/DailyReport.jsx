@@ -4259,7 +4259,11 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   </div>
                   {moImgPreview && <img src={moImgPreview} alt="" style={{ display: 'block', width: '100%', maxHeight: 130, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)', marginBottom: 6 }} />}
                   {/* reset value เสมอ — ไม่งั้นเลือก "รูปเดิม" ซ้ำแล้ว change ไม่ยิง (บทเรียนเดียวกับ ImgField ใน MtnRepair) */}
-                  <input type="file" accept="image/*" capture="environment" style={{ fontSize: 12 }}
+                  {/* 🔴 ห้ามใส่ `capture` (24/10 · user แจ้ง "เหมือนมีแต่บังคับถ่ายใหม่")
+                      `capture="environment"` บนมือถือ/แท็บเล็ต = **เปิดกล้องตรง ไม่มีตัวเลือกแกลเลอรี/ไฟล์**
+                      ⇒ รูปที่ถ่ายไว้ก่อนหน้า/ภาพหน้าจอ alarm แนบไม่ได้เลย · ถอดออกแล้วถ่ายใหม่ยังกดแท็บเดียว
+                      แค่เพิ่มทางเลือก ไม่เสียอะไร (ด่าน `no-capture-on-image-input` กันใส่กลับ) */}
+                  <input type="file" accept="image/*" style={{ fontSize: 12 }}
                     onChange={async e => { const p = e.target.files?.[0]; e.target.value = ''; const f = await acceptImageFile(p); if (f) setMoImg(f); }} />
                   {moImg && (
                     <button type="button" onClick={() => setMoImg(null)}
@@ -5872,14 +5876,22 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
 
                 <Field label="ประเภทงานเสีย *">
                   {(() => {
+                    /* 🔴 เหตุผลเดียวกับประเภท Downtime — ห้ามซ่อน ให้ของไลน์นี้ขึ้นก่อน (ดูคอมเมนต์ที่นั่น) */
                     const pts = sessionProcessTypesAll();
-                    const filtered = defectTypes.filter(t => !t.process_type || t.process_type === 'common' || pts.has(t.process_type));
+                    const ofLine = (t) => !t.process_type || t.process_type === 'common' || pts.has(t.process_type);
+                    const filtered = defectTypes.filter(ofLine);
+                    const others   = defectTypes.filter(t => !ofLine(t));
                     return (
                       <select value={defectForm.defect_type_id} onChange={e => setDefectForm(f => ({ ...f, defect_type_id: e.target.value }))} style={inputStyle}>
                         <option value="">เลือกประเภท...</option>
                         {filtered.map(t => (
                           <option key={t.id} value={t.id}>{t.name_th}</option>
                         ))}
+                        {others.length > 0 && (
+                          <optgroup label="กระบวนการอื่น">
+                            {others.map(t => (<option key={t.id} value={t.id}>{t.name_th}</option>))}
+                          </optgroup>
+                        )}
                       </select>
                     );
                   })()}
@@ -6059,11 +6071,27 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   {/* Downtime type */}
                   <Field label="ประเภท Downtime *">
                     {(() => {
+                      /* 🔴 **ห้ามซ่อนประเภทที่ไม่ตรง process — เอาไว้ท้ายลิสต์แทน** (2026-10-24 · เคสจริง)
+                         `sessionProcessTypesAll()` เดาจาก (ก) เครื่องในสายไลน์ (ข) สินค้าในใบผลิต**ที่เปิดอยู่**
+                         ⇒ **เครื่องเสียตอนต้นกะ ก่อนเปิดใบผลิตใบแรก = ข้อ (ข) ยังว่าง** เหลือแต่ป้ายของเครื่อง
+                         ซึ่งไลน์ปั๊มทุกไลน์ถูกติดป้ายไว้ผิดเป็น `welding_assembly`
+                         ⇒ หน้างานเห็นแค่ "Welding / Assembly + Common" เลือกประเภทของงานปั๊ม (24 ตัว) ไม่ได้เลย
+                         ⇒ ถูกบังคับให้ลงผิดประเภท = พาเรโตเพี้ยนถาวร (แจ้งจากหน้างาน 23/10)
+                         กติกา: ของไลน์นี้ขึ้นก่อน · ที่เหลือต่อท้ายในกลุ่ม "กระบวนการอื่น" **ยังเลือกได้เสมอ** */
                       const pts = sessionProcessTypesAll();
-                      const filtered = dtTypes.filter(t => !t.process_type || t.process_type === 'common' || pts.has(t.process_type));
+                      const ofLine = (t) => !t.process_type || t.process_type === 'common' || pts.has(t.process_type);
+                      const options = ['unplanned', 'planned'].flatMap(cat => {
+                        const head = cat === 'unplanned' ? '⚠ นอกแผน' : '📋 ในแผน';
+                        const inCat = dtTypes.filter(t => t.category === cat);
+                        const opt = (t, g) => ({ id: String(t.id), label: t.name_th, group: g });
+                        return [
+                          ...inCat.filter(ofLine).map(t => opt(t, head)),
+                          ...inCat.filter(t => !ofLine(t)).map(t => opt(t, `${head} · กระบวนการอื่น`)),
+                        ];
+                      });
                       return (
                         <SearchSelect value={String(dtForm.downtime_type_id || '')} placeholder="เลือกประเภท… (พิมพ์ค้นหา)" inputStyle={inputStyle}
-                          options={['unplanned', 'planned'].flatMap(cat => filtered.filter(t => t.category === cat).map(t => ({ id: String(t.id), label: t.name_th, group: cat === 'unplanned' ? '⚠ นอกแผน' : '📋 ในแผน' })))}
+                          options={options}
                           onChange={({ id }) => setDtForm(f => ({ ...f, downtime_type_id: id }))} />
                       );
                     })()}

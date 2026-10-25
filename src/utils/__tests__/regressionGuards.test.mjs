@@ -5412,6 +5412,12 @@ test('🛡️ esmart-window-confirm — e-SMART ต้องทับใบแ�
   if (!/x\.merge\b/.test(up)) bad.push('PullSignalUpload.jsx (ไม่ปิดใบแผน 862 อื่นในช่วงเดียวกัน = ใบเบิ้ล)');
   const ps = readFileSync(join(ROOT, 'src/pages/PlannerSales.jsx'), 'utf8');
   if (!/splitPullCovered\(/.test(stripComments(ps))) bad.push('PlannerSales.jsx (862 ไม่กันช่วงที่ e-SMART ยืนยันแล้ว)');
+  /* 22/10 — ไฟล์หลาย dock = หลายเที่ยว · ห้ามกลับไปวางแผนทั้งไฟล์ด้วย dock เดียว */
+  if (!/planDockLegs\(/.test(up) || !/dockLegsOf\(/.test(up)) bad.push('PullSignalUpload.jsx (ไม่แยกเที่ยวต่อ dock — ไฟล์ B1+B5 จะลงรอบเดียวกันหมด)');
+  if (/planOrderUpdates\(/.test(up)) bad.push('PullSignalUpload.jsx (เรียก planOrderUpdates ตรง — ต้องผ่าน planDockLegs)');
+  /* 24/10 — แถวลูกค้าบนชาร์ตล็อกตามทะเบียน (orderShipToRows) ห้ามวาดตาม Object.entries(byCustomer) */
+  const cd = stripComments(readFileSync(join(ROOT, 'src/pages/CustomerDemand.jsx'), 'utf8'));
+  if (/\{Object\.entries\(byCustomer\)\.map/.test(cd)) bad.push('CustomerDemand.jsx (แถวลูกค้าวาดตามลำดับคิวรี — ต้องใช้ custOrder จาก orderShipToRows)');
   assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n'
     + '   แก้: planOrderUpdates โหมดช่วงเวลา (pullSignal.js) + splitPullCovered/pullCoverBatches (ediMerge.js)\n');
 });
@@ -6434,6 +6440,32 @@ test('🛡️ year-rollup-not-minutely — บอร์ดที่สรุป�
     + '   แก้: tier: LIVE.YEAR (src/utils/refreshRates.js) — poll ยังเดินตามปกติ ช้าสุด 15-20 นาที\n');
 });
 
+/* ── 🏭 ประเภท Downtime/ของเสีย ห้ามถูกซ่อนจนเลือกไม่ได้ (2026-10-24 · แจ้งจากหน้างาน) ──
+   `sessionProcessTypesAll()` เดา process ของกะจาก (ก) เครื่องในสายไลน์ (ข) สินค้าในใบผลิต**ที่เปิดอยู่**
+   🔴 เครื่องเสียตอนต้นกะ ก่อนเปิดใบผลิตใบแรก ⇒ ข้อ (ข) ว่าง เหลือแต่ป้ายของเครื่อง
+      ซึ่งไลน์ปั๊มทุกไลน์ติดป้ายไว้ผิดเป็น welding_assembly (วัดจริง: LINE A/B/C/D รวม 285 เครื่อง)
+   ⇒ หน้างานเห็นแค่ 2 กลุ่ม เลือกประเภทของงานปั๊มไม่ได้เลย = ถูกบังคับให้ลงผิด = พาเรโตเพี้ยนถาวร
+   กติกา: กรองเพื่อ **จัดลำดับ** ได้ แต่ **ห้ามตัดออกจากลิสต์** */
+test('🛡️ dt-defect-types-never-hidden — ประเภทที่ไม่ตรง process ต้องยังเลือกได้ (อยู่ท้ายลิสต์)', () => {
+  const bad = [];
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'));
+  /* รูปแบบเดิมที่ห้ามกลับมา: เอาผลกรองไปเป็น "ลิสต์ทั้งหมด" ตรงๆ
+     (dtTypes/defectTypes.filter(...) แล้วใช้ตัวนั้นเป็น options/map เดียวโดยไม่มีตะกร้ารับที่เหลือ) */
+  for (const which of ['dtTypes', 'defectTypes']) {
+    const re = new RegExp(`const\\s+filtered\\s*=\\s*${which}\\.filter\\([^;]*process_type[^;]*\\);`);
+    if (re.test(code) && !new RegExp(`${which}\\.filter\\(\\s*t\\s*=>\\s*!ofLine\\(t\\)\\s*\\)|const\\s+others\\s*=\\s*${which}\\.filter`).test(code))
+      bad.push(`src/pages/DailyReport.jsx — ${which}: กรองด้วย process_type แล้วไม่มีตะกร้ารับตัวที่เหลือ (ประเภทจะหายจากลิสต์)`);
+  }
+  // ต้องมีกลุ่มท้ายลิสต์ให้คนเห็นว่ายังเลือกได้
+  if (!/กระบวนการอื่น/.test(code))
+    bad.push('src/pages/DailyReport.jsx — ต้องมีกลุ่ม "กระบวนการอื่น" ท้ายลิสต์ (ห้ามซ่อนประเภทที่ไม่ตรง process)');
+
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n'
+    + '   ทำไม: ป้าย process_type ของเครื่องในฐานยังผิดอยู่หลายร้อยตัว + ตอนต้นกะยังไม่มีใบผลิต\n'
+    + '        ⇒ กรองแบบตัดทิ้ง = หน้างานลงประเภทที่ถูกต้องไม่ได้เลย\n'
+    + '   แก้: กรองเพื่อจัดลำดับ (ของไลน์นี้ขึ้นก่อน) แล้วต่อท้ายด้วยกลุ่ม "กระบวนการอื่น"\n');
+});
+
 /* ═══ 🔄 เซ็นงานจากคิวเสร็จแล้ว แถวต้องไม่คาอยู่ในแผง ═══  2026-10-22 · user แจ้ง "ปิดแล้วยังโชว์อยู่"
    `useMyQueue` โหลด "ครั้งเดียวต่อ session" แล้วรีเฟรชเฉพาะตอนเปิดแผง + ของเก่าเกิน STALE_MIN (5 นาที)
    ⇒ ผจก.กดเซ็นอนุมัติปิดใบจากคิว ใบปิดจริงแล้ว แต่แถวยังอยู่ · badge ค้างเลขเดิม · เสี่ยงกดซ้ำ
@@ -6483,4 +6515,78 @@ test('🧹 ปุ่มล้างตัวกรองอยู่ในแถ
   assert.deepEqual(bad, [], '\n\n❌ วาดปุ่มล้างตัวกรองเองใน: ' + bad.join(', ') + '\n'
     + '   แก้: ลบออก แล้วปล่อยให้ <FilterBar>/<TimeRangeBar> วาดให้ —\n'
     + '        หน้าที่มีตัวกรองใน state ส่ง onClear={...} · อยากเก็บพารามิเตอร์เพิ่ม ส่ง clearKeep={[...]}\n');
+});
+
+/* ═══ 📷 ช่องรับรูปห้ามบังคับกล้อง ═══  2026-10-24 · user แจ้ง "เหมือนมีแต่บังคับถ่ายใหม่"
+   `<input type="file" accept="image/*" capture="environment">` บนมือถือ/แท็บเล็ต
+   = **เปิดกล้องตรง ไม่มีตัวเลือกแกลเลอรี/ไฟล์** ⇒ รูปที่ถ่ายไว้ก่อนหน้า หรือภาพหน้าจอ alarm แนบไม่ได้เลย
+   เคสจริง: ช่อง "รูปก่อนซ่อม" ในโมดัลเปิดใบซ่อมจาก Downtime (DailyReport) เป็นจุดเดียวทั้งแอปที่ใส่ไว้
+   ⇒ ถอดออก · ถ่ายใหม่ยังกดแท็บเดียวเหมือนเดิม แค่เพิ่มทางเลือก ไม่เสียอะไร */
+test('📷 ไม่มีช่องรับรูปไหนใส่ capture (บังคับกล้อง = แนบรูปในเครื่องไม่ได้)', () => {
+  const bad = [];
+  for (const f of walk(join(ROOT, 'src'), ['.jsx'])) {
+    const src = stripComments(readFileSync(f, 'utf8'));
+    for (const tag of src.match(/<input[^>]*type="file"[^>]*>/g) || []) {
+      if (/\bcapture\s*=/.test(tag)) bad.push(`${relative(ROOT, f)} (${tag.replace(/\s+/g, ' ').slice(0, 80)}…)`);
+    }
+  }
+  assert.deepEqual(bad, [], '\n\n❌ ช่องรับรูปที่บังคับกล้อง: ' + bad.join(', ') + '\n'
+    + '   ทำไม: capture= ตัดตัวเลือก "เลือกจากเครื่อง" ทิ้งบนมือถือ/แท็บเล็ต\n'
+    + '         รูปที่ถ่ายไว้ก่อนหน้า/ภาพหน้าจอ alarm แนบไม่ได้เลย\n'
+    + '   แก้: ลบ capture ออก — ถ่ายใหม่ยังทำได้ปกติ แค่ไม่บังคับ\n'
+    + '   📄 docs/modules/storage-images.md §ห้ามบังคับกล้อง\n');
+});
+
+/* ═══ ✍️ ลายเซ็น: ดึงสดจากโปรไฟล์ · ห้ามลบไฟล์ที่เอกสารอ้างถึง ═══  2026-10-24 · คำสั่ง user
+   ตอนคนอัพเดทลายเซ็น ระบบอัปโหลด path ใหม่แล้ว **ลบไฟล์เดิม** ⇒ ใบที่เก็บ URL เดิมไว้
+   กลายเป็นรูปเสีย กู้ไม่ได้ ไม่มี error ฟ้อง · วัด 24/10: 31 ไฟล์ที่ถูกอ้าง หาย 1 ⇒ 93 ใบ (ปิดแล้ว 28)
+   ⇒ 2 ชั้น: (1) แสดงผลดึงสดจากโปรไฟล์ด้วย uid (2) ห้ามลบไฟล์เดิมอีก */
+test('✍️ ใบพิมพ์/แผง MO ต้องดึงลายเซ็นสดจากโปรไฟล์ ไม่ส่ง null หรือค่าดิบ', () => {
+  const src = stripComments(readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8'));
+  assert.match(src, /from '\.\.\/utils\/signResolve'/, 'ต้องใช้ตัวแปลงกลาง signResolve.js');
+  /* ช่องเซ็นที่ส่ง null/ค่าดิบตรงๆ = ช่องว่างตลอดกาล หรือพังเมื่อไฟล์ถูกลบ */
+  const raw = src.match(/sg\('[^']*',\s*o\.[a-z_]+,\s*(?:null|o\.[a-z_]*sign)\s*,/g) || [];
+  assert.deepEqual(raw, [], '\n\n❌ ช่องเซ็นในใบพิมพ์ที่ยังไม่ดึงสด: ' + raw.join(' · ') + '\n'
+    + '   แก้: ห่อด้วย sgn(<uid>, <ค่าที่เก็บไว้>) — null = ช่องว่างตลอดกาล (เคสผู้ออก M/O · ผู้รับ MO)\n');
+});
+
+test('✍️ ห้ามลบไฟล์ลายเซ็นเดิมตอนอัพเดทโปรไฟล์ (เอกสารเก่าอ้าง URL นั้นอยู่)', () => {
+  const src = stripComments(readFileSync(join(ROOT, 'src/components/SignatureModal.jsx'), 'utf8'));
+  assert.doesNotMatch(src, /storage\.from\('signatures'\)\s*\.remove\(/,
+    '\n\n❌ SignatureModal ลบไฟล์ลายเซ็นเดิมอีกแล้ว\n'
+    + '   ทำไม: ใบที่เซ็นไปแล้วเก็บ URL ของไฟล์นั้นไว้ — ลบ = รูปเสีย กู้ไม่ได้ ไม่มี error ฟ้อง\n'
+    + '   วัด 24/10: ลบไป 1 ไฟล์ = 93 ใบ (ปิดแล้ว 28) ลายเซ็นหาย\n'
+    + '   📄 docs/modules/storage-images.md §ลายเซ็น\n');
+});
+
+/* ═══ 🔧 ประวัติเครื่องจักร (FM-MTN-005) ต้องกรองทีมช่างได้ ═══  2026-10-24 · ทีม MTN แจ้ง
+   *"ตัวประวัติเครื่องจักร มันดึงมาหมดเลยครับพี่ ทั้งปรับคุณภาพ ทั้งซ่อม JiG
+     น่าจะต้อง Filter ในส่วนที่เป็น O-MTN มา อย่างเดียวครับผม"*
+   เดิม `mtn_orders_by_machine` กรองแค่เลขเครื่อง ⇒ ใบของ production/jig/die/maintenance ปนกันหมด
+   ⇒ ใบพิมพ์ FM-MTN-005 (เอกสารของทีม MTN) มีใบทีมอื่นปนอยู่
+   🔴 กรองแล้ว **ต้องเขียนบนจอว่าซ่อนกี่ใบ** และ Excel ต้องออกตามที่เห็นบนจอ (จอกับใบพิมพ์ห้ามคนละชุด) */
+test('🔧 MachineRepairHistory: มีตัวกรองทีม · บอกจำนวนที่ซ่อน · Excel ตามที่กรอง', () => {
+  const src = stripComments(readFileSync(join(ROOT, 'src/components/MachineRepairHistory.jsx'), 'utf8'));
+  assert.match(src, /teamKeyOf/, 'ต้องตัดสินทีมด้วย teamKeyOf ไม่ใช่เทียบชื่อดิบ');
+  assert.match(src, /ซ่อนไป/, 'ซ่อนแถวแล้วต้องเขียนบนจอว่าซ่อนกี่ใบ (ห้ามกรองเงียบ)');
+  /* 🔴 สรุป/ตาราง/Excel ต้องมาจากชุดที่กรองแล้วชุดเดียวกัน */
+  assert.match(src, /summarizeMachineHistory\(shown,/, 'สรุปต้องคิดจากชุดที่กรองแล้ว');
+  assert.match(src, /machineHistoryRows\(shown,/, 'Excel ต้องออกตามที่เห็นบนจอ');
+  assert.doesNotMatch(src, /summarizeMachineHistory\(state\.orders/, 'สรุปห้ามคิดจากชุดก่อนกรอง');
+});
+
+/* ═══ 🧩 ทุก stage ที่มีฟอร์มในโมดัล ต้องมี branch ตอนบันทึกด้วย ═══  2026-10-25
+   เคสจริง: `modalStage === 'report'` **ไม่มีทั้งบล็อกฟอร์มและ branch ตอนบันทึก**
+   ⇒ ปุ่ม "✏️ แก้ไขข้อมูลแจ้งซ่อม" เปิดโมดัลว่างเปล่า · กดบันทึกแล้วลูกโซ่ if/else ไม่เข้าสักอัน
+     `upd` เหลือแค่ updated_at แล้วไหลไปจบที่ toast "แก้ไขแล้ว ✅" = **ล้มเหลวเงียบ**
+   (คนเติมรูปปัญหาย้อนหลังไม่ได้ทั้งที่จอบอกว่าบันทึกแล้ว — ปุ่มหลอกมาตลอด) */
+test('🧩 StepModal: ทุก modalStage ที่มีฟอร์ม ต้องมี branch ตอนบันทึก (กันบันทึกเงียบ)', () => {
+  const src = stripComments(readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8'));
+  const forms = new Set((src.match(/modalStage === '([a-z_]+)'/g) || []).map(m => m.split("'")[1]));
+  const saves = new Set((src.match(/stage === '([a-z_]+)'/g) || []).map(m => m.split("'")[1]));
+  const missing = [...forms].filter(x => !saves.has(x));
+  assert.deepEqual(missing, [], '\n\n❌ stage ที่มีฟอร์มแต่ไม่มี branch ตอนบันทึก: ' + missing.join(', ') + '\n'
+    + '   ทำไม: ลูกโซ่ if/else ไม่มี else ปิดท้าย — ไม่เข้าสักอัน = เขียนแค่ updated_at\n'
+    + '         แล้วยังขึ้น toast "บันทึกแล้ว" ⇒ คนกรอกเสียเวลาฟรีและไม่รู้ตัว\n'
+    + '   แก้: เพิ่ม `} else if (stage === \'<ชื่อ>\') {` พร้อม checkWriteRows()\n');
 });

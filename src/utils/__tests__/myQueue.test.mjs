@@ -444,3 +444,50 @@ test('✍️ ใบเดียวไม่ต้องมีบรรทัด�
   assert.equal(q.counts.mine, 1);
   assert.match(q.mine[0].to, /\?mo=/, 'ใบเดียว = ลิงก์ตรงไปที่ใบนั้น');
 });
+
+/* ═══ ✍️ ช่อง "ผจก.ต้นสังกัดรับทราบ" ต้องโผล่ในคิว — ไม่บล็อกงาน แต่ต้องเซ็น ═══  2026-10-24
+   คำสั่ง user: *"mo MTN สเตป 2 ก็รอ ผจก.ผู้แจ้งเซ็น แค่ไม่บล็อกสเต็ปถัดไป แต่ต้องเซ็นตอนว่าง"*
+   เดิม `moWaitMeta()` คืนด่านอนุมัติเฉพาะตอน isApprovalBlocked (งานปรับปรุง/สร้าง)
+   ⇒ ใบซ่อมปกติ ช่องนี้ไม่โผล่ที่ไหนเลย · วัด 24/10: 52 จาก 61 ใบ (85%) ยังไม่เซ็น · ปิดไปแล้ว 10 ใบ */
+const ACK_MGR = {
+  uid: 'uid-mgr', name: 'ผจก. ทดสอบ', sections: ['PD3'],
+  posRank: 60, actorSide: 'reporter', hasTeams: false,
+  can: (a) => a === 'approve', seeded: () => true, inTeam: () => false,
+};
+const ackRow = (id, extra = {}) => ({
+  id, mo_no: `MO-${id}`, status: 'repairing', current_step: 3, dept_section: 'PD3',
+  line_name: 'HDF1', mtn_dept: 'maintenance', work_date: '2026-09-20',
+  dept_manager_at: null, ...extra,
+});
+
+test('✍️ ใบ MTN ที่ ผจก.ยังไม่เซ็นรับทราบ ⇒ มีป้ายในคิว + บอกว่าไม่บล็อกงาน', () => {
+  const q = buildQueue({ mo: [ackRow('a'), ackRow('b')], sessions: [], fourM: [], actions: [], summaries: [] }, ACK_MGR, NOW);
+  const ack = q.mine.find(x => x.key === 'sign:ack_dept');
+  assert.ok(ack, 'ต้องมีป้าย "รอคุณเซ็นรับทราบ"');
+  assert.match(ack.title, /รอคุณเซ็นรับทราบ 2 ใบ/);
+  assert.match(ack.detail, /ไม่บล็อกงาน/, 'ต้องเขียนว่าไม่บล็อกงาน ไม่งั้นหน้างานหยุดรอ');
+  assert.match(ack.to, /ack=pending/);
+  assert.equal(q.counts.mine, 0, 'ป้ายสรุปไม่นับเข้า badge (ยังไม่มีใบที่รอเราเซ็นรายขั้น)');
+});
+
+test('✍️ ใบที่ปิดแล้วแต่ยังไม่เซ็นรับทราบ ก็ต้องนับ (ย้อนเซ็นได้)', () => {
+  const q = buildQueue({ mo: [ackRow('c', { status: 'closed', current_step: 8 })], sessions: [], fourM: [], actions: [], summaries: [] }, ACK_MGR, NOW);
+  assert.ok(q.mine.find(x => x.key === 'sign:ack_dept'), 'ใบปิดแล้วต้องยังนับ — ช่องนี้ยังว่างอยู่จริง');
+});
+
+test('✍️ เซ็นแล้ว / ใบฟอร์ม JIG / นอกขอบเขต = ไม่นับ', () => {
+  const none = (mo) => buildQueue({ mo, sessions: [], fourM: [], actions: [], summaries: [] }, ACK_MGR, NOW)
+    .mine.find(x => x.key === 'sign:ack_dept');
+  assert.equal(none([ackRow('d', { dept_manager_at: '2026-09-21T00:00:00Z' })]), undefined, 'เซ็นแล้ว');
+  assert.equal(none([ackRow('e', { mtn_dept: 'jig_maintenance' })]), undefined, 'ฟอร์ม JIG ไม่มีช่องนี้');
+  assert.equal(none([ackRow('f', { dept_section: 'PD1' })]), undefined, 'ส่วนงานอื่น — แบบ ก เห็นเฉพาะของตัวเอง');
+});
+
+test('🔴 ใบที่ลายเซ็นนี้บล็อกงานจริง (งานปรับปรุง/สร้าง) ไม่เข้าป้าย "รับทราบ" — กันนับซ้ำ', () => {
+  /* ใบแบบนั้นขึ้นเป็นรายการของตัวเองอยู่แล้ว (moWaitMeta → approve_first)
+     ถ้านับซ้ำ badge จะเกินจริง และป้ายที่เขียนว่า "ไม่บล็อกงาน" จะกลายเป็นคำโกหก */
+  const blocked = ackRow('g', { purpose: 'improve', status: 'pending', current_step: 1 });
+  const q = buildQueue({ mo: [blocked], sessions: [], fourM: [], actions: [], summaries: [] }, ACK_MGR, NOW);
+  assert.equal(q.mine.filter(x => x.key === 'sign:ack_dept').length, 0, 'ต้องไม่มีป้ายรับทราบ');
+  assert.ok(q.mine.length >= 1, 'แต่ใบต้องยังขึ้นเป็นรายการรออนุมัติของตัวเอง');
+});
