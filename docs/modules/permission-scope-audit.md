@@ -793,3 +793,28 @@ migration `supabase/migrations/20261020_rls_scope_net_fn_main.sql` · **apply �
 · `MonthlyReviewExport` / `MorningMeeting:140` — กรอง **ชื่อส่วนงาน** ไม่ใช่ไลน์
 · `SparePartMaster` — `inSectionScope` คนละตัว (มาจาก `utils/spareSection.js` แกนคลังอะไหล่)
 · `staleSessions` / `lineHelpers` — รับ section ที่ resolve มาแล้วจากผู้เรียก
+
+## 🔓 "หัวหน้ากลุ่มเห็นทุกไลน์ผลิต" — รอบที่ 3 (2026-10-24 · แจ้งจากหน้างาน)
+
+**อาการ:** หัวหน้ากลุ่ม LWR BAR / APRON ASSY เปิด `/daily-report` แล้วเห็นกะของไลน์ที่ไม่ใช่ของตัวเอง
+(ภาพหน้างาน: แถบซ้ายมีทั้ง APRON family และ HYDROFORM family ปนกัน)
+
+**ต้นเหตุ (ไม่ใช่บั๊กของโค้ด — เป็นการตั้งค่า + ช่องว่างเชิงออกแบบ):**
+· `profiles.scope_depth = 'all'` ติดอยู่กับ **52 บัญชีที่ไม่ใช่ admin** รวม leader 2 คน
+  (หัวหน้า LWR BAR · หัวหน้า HYDROFORM) ⇒ `effectiveSections()` คืน `[]` = **ไม่จำกัด**
+· จอจำนวนมากกรองด้วย **`sections` อย่างเดียว ไม่สน `line_id` ของหัวหน้ากลุ่ม**
+  ⇒ ถึงตั้ง `sections` ถูก หัวหน้ากลุ่มก็ยังเห็นทั้งส่วนงาน (APRON เห็น HYDROFORM ด้วย)
+· ตรวจแล้วว่า**ไม่เกี่ยวกับ deploy 22/10**: `role_permissions` วันนั้นแก้ 0 รายการ ·
+  สิทธิ์หน้าของ `leader` สะสมมาตั้งแต่ 24/07–06/10 · ชุดไลน์ที่แต่ละขอบเขตเห็นก่อน/หลังเท่ากันทุกค่า
+
+**ที่แก้ (ชั้นโค้ด — ตาข่ายกันตั้งค่าผิด):**
+🔴 **`scopedLines()` บีบ role `leader` ที่มี `lineId` กลับเป็น "ครอบครัวไลน์ตัวเอง" เสมอ
+   แม้ `scope_depth='all'`** — แกน **ไลน์มาก่อน** แกนส่วนงาน
+· หาไลน์ตัวเองไม่เจอทั้งที่ทะเบียนโหลดแล้ว = **fail-closed** คืน `[]` (หลักเดียวกับ `staleSessions.keep()`)
+· ทุกจุดเรียกต้องส่ง `role` (+ `lineId`) — **มีด่าน `leader-line-wins`** ใน regressionGuards
+  ตรวจ 3 อย่าง: รับ role/lineId · มีกิ่ง leader · **กิ่ง leader อยู่ก่อนการอ่าน `sections`**
+· `scopeTooWide(p)` — role `leader`/`supervisor` ที่ `scope_depth='all'` ขึ้นคิว
+  **🔓 หัวหน้าหน้างานเห็นทั้งโรงงาน** ที่ `/add-user` (role ที่เห็นทั้งโรงงานเป็นปกติ เช่น qa/mtn ไม่เข้าข่าย)
+
+**ยังเหลือ (ต้องให้คนตัดสิน):** ไล่ตั้ง `scope_depth` ของ 52 บัญชีให้ตรงหน้าที่จริง —
+🔴 **ห้ามแก้อัตโนมัติ** คนต้องเป็นคนเคาะว่าใครควรเห็นแค่ไหน (จอ `/add-user` ฟ้องให้แล้ว)

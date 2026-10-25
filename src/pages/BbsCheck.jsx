@@ -118,7 +118,7 @@ export default function BbsCheck() {
     }
     // ⚠️ ต้องเทียบผ่าน inSectionScope (trim+lowercase) — `section` เป็น free text ที่พิมพ์มือได้
     //    `.includes()` ตรงตัวจะทำให้ 'PD1 ' / 'pd1' หลุด scope เงียบๆ (หัวหน้าเปิดมาแล้วไลน์ตัวเองหาย)
-    if (sections.length) return scopedLines({ sections, lines, scopeIdx });
+    if (sections.length) return scopedLines({ role, lineId, sections, lines, scopeIdx });
     return lines;
   }, [lines, role, lineId, sections]);
 

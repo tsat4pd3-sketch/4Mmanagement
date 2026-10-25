@@ -14,7 +14,7 @@ import LineSelect from '../components/LineSelect';
 import { STAFF_KINDS, STAFF_SHOPFLOOR, STAFF_SUPPORT } from '../utils/staffKind';   // 👥 หน้าไลน์ vs สายสนับสนุน
 import { normSearch } from '../components/SearchSelect';   // ตัว normalize คำค้นกลาง (ทนการสะกดไทย)
 import { orphanDepts, deptOptionsFor, ORPHAN_SECTION, ORPHAN_SECTION_LABEL, sectionValueForSave,
-  orgNodeIdFor, ORG_SRC_MANUAL, scopeIneffective } from '../utils/sectionScope';
+  orgNodeIdFor, ORG_SRC_MANUAL, scopeIneffective, scopeTooWide } from '../utils/sectionScope';
 import { SCOPE_DEPTHS, SCOPE_DEPTH_META, depthForLevel, needsScopeReview } from '../utils/scopeDepth';   // 🔭 เห็นกว้างแค่ไหน (คนละแกนกับ role)
 import { buildOrgScope, SCOPE_KIND_META } from '../utils/orgScope';
 /* 💰 ชั้นสิทธิ์ที่ 3 แกน Cost Center (16/10 · คำสั่ง user "เซ็ตได้ว่า user ไหน response กับ cost center
@@ -315,6 +315,7 @@ export default function AddUser() {
     dual:     users.filter(u => dualMeaningInfo(u, u.employee_id ? empById[u.employee_id] : null).length).length,
     unknown:  unlinkedTriage(users, emps).queue.length,
     ghost:    users.filter(scopeIneffective).length,
+    toowide:  users.filter(scopeTooWide).length,
     review:   users.filter(needsScopeReview).length,
   }), [users, emps, empById]);
   /* ผลค้นพนักงาน — ถ้าคำค้นไม่ตรงใคร **ห้ามคืนลิสต์ว่าง** (ลิสต์ว่าง = คนอ่านสรุปว่า "ไม่มีคนนี้"
@@ -781,6 +782,7 @@ export default function AddUser() {
           ['fallback', '🧩 ฐานพนักงานยังไม่ได้กรอก', '#f59e0b'],
           ['dual',     '🧭 ทำงานคนละตำแหน่งกับที่บรรจุ', 'var(--accent)'],
           ['unknown',  '🪪 ยังไม่รู้ว่าเป็นใคร', '#f59e0b'],
+          ['toowide',  '🔓 หัวหน้าหน้างานเห็นทั้งโรงงาน', '#ef4444'],
           ['ghost',    '🚩 ตั้งขอบเขตแล้วไม่มีผล', '#ef4444'],
           ['review',   '🔭 ยังไม่ได้ทบทวนขอบเขต', '#f59e0b'],
         ].filter(([k]) => wlCounts[k] > 0);
@@ -1002,9 +1004,28 @@ export default function AddUser() {
            ต้องแยกจากคิวข้างบน เพราะคนละอาการ: อันนั้น "ไม่เคยตั้ง" · อันนี้ "ตั้งแล้วแต่ไม่ครบ"
            ปล่อยเงียบ = จอบอกว่าถูกจำกัด แต่ความจริงไม่ถูกจำกัด (แย่กว่าไม่ตั้งเลย) */
         const ghost = users.filter(scopeIneffective);
-        if (!review.length && !ghost.length) return null;
-        if (openWl !== 'ghost' && openWl !== 'review') return null;
+        /* 🔓 "หัวหน้าหน้างานที่ตั้งไว้ให้เห็นทั้งโรงงาน" — คนละอาการกับ 2 กองบน:
+           อันนี้ "ตั้งกว้างไว้จริงๆ" (scope_depth=all) ทั้งที่เป็น leader/supervisor หน้างาน
+           `scopedLines()` บีบ leader กลับเป็นไลน์ตัวเองให้แล้ว แต่การตั้งค่ายังผิด ⇒ ต้องให้คนมาแก้ */
+        const toowide = users.filter(scopeTooWide);
+        if (!review.length && !ghost.length && !toowide.length) return null;
+        if (openWl !== 'ghost' && openWl !== 'review' && openWl !== 'toowide') return null;
         return (<>
+          {toowide.length > 0 && openWl === 'toowide' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+              background: 'rgba(239,68,68,0.10)', border: '1px solid rgba(239,68,68,0.35)',
+              borderRadius: 10, padding: '9px 12px', marginBottom: 10, fontSize: 12, color: 'var(--text2)' }}>
+              <b style={{ color: '#ef4444' }}>🔓 หัวหน้าหน้างานตั้งไว้ให้เห็นทั้งโรงงาน {toowide.length} บัญชี</b>
+              <span>
+                role <b>หัวหน้ากลุ่ม/หัวหน้างาน</b> แต่ตั้งความกว้างเป็น <b>“ทั้งโรงงาน”</b> —
+                ควรจำกัดที่หน่วยของตัวเอง · เปิดแก้ไขแล้วเลือกขอบเขตให้ตรงงานจริง
+              </span>
+              <span style={{ color: 'var(--muted)' }}>
+                ({toowide.slice(0, 4).map(u => u.full_name || '—').join(' · ')}
+                {toowide.length > 4 ? ` · +${toowide.length - 4}` : ''})
+              </span>
+            </div>
+          )}
           {ghost.length > 0 && openWl === 'ghost' && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
               background: 'rgba(239,68,68,0.10)', border: '1px solid rgba(239,68,68,0.35)',

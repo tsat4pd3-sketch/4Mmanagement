@@ -297,7 +297,7 @@ export default function MtnAnalysis() {
   const scopeLines = useMemo(() => {
     if (role === 'admin') return null;
     if (role === 'leader' && lineId) { const self = lines.find(l => String(l.id) === String(lineId)); return self ? new Set(getLineFamilyNames(lines, self.name)) : new Set(); }
-    if (sections?.length) return new Set(scopedLines({ sections, lines, scopeIdx }).map(l => l.name));
+    if (sections?.length) return new Set(scopedLines({ role, lineId, sections, lines, scopeIdx }).map(l => l.name));
     return null;
   }, [lines, role, lineId, sections, scopeIdx]);
   const scopedLineObjs = useMemo(() => (scopeLines ? lines.filter(l => scopeLines.has(l.name)) : lines), [lines, scopeLines]);

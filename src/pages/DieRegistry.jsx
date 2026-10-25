@@ -312,7 +312,7 @@ export default function DieRegistry() {
       const fam = new Set(myLine ? getLineFamilyNames(lines, myLine.name) : []);
       return fam.size ? lines.filter(l => fam.has(l.name)) : lines;
     }
-    if (scopeSecs?.length) return scopedLines({ sections: scopeSecs, lines, scopeIdx });
+    if (scopeSecs?.length) return scopedLines({ role, lineId: userLineId, sections: scopeSecs, lines, scopeIdx });
     return lines;
   }, [lines, role, userLineId, scopeSecs, scopeIdx]);
   const scopedLineNames = useMemo(() => new Set(scopedLines.map(l => l.name)), [scopedLines]);

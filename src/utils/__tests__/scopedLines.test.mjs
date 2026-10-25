@@ -43,3 +43,28 @@ test('🔴 ชื่อที่ผังไม่รู้จัก → ถอ�
   const mixed = scopedLines({ sections: ['ส่วนงานเก่า', 'PD1'], lines, scopeIdx: idx });
   assert.deepEqual(names(mixed), names(lines));               // ยังเห็นของ PD1 ตามเดิม
 });
+
+/* ══ 🔴 ตาข่ายกันตั้งค่าผิด: หัวหน้ากลุ่ม (leader) ที่ผูกไลน์ ต้องเห็นเฉพาะครอบครัวไลน์ตัวเอง ══
+   เคสจริง 24/10 — หัวหน้า LWR BAR / HYDROFORM ถูกตั้ง `scope_depth='all'` ⇒ sections = []
+   ⇒ เดิมจอที่กรองด้วย sections อย่างเดียวโชว์ทั้งโรงงาน (user แจ้ง "เห็นทุกไลน์ผลิตเลย") */
+test('🔴 leader + lineId → เห็นเฉพาะ family แม้ sections ว่าง (scope_depth=all)', () => {
+  const out = scopedLines({ role: 'leader', lineId: 17, sections: [], lines, scopeIdx: idx });
+  assert.deepEqual(names(out), ['LINE A ( 800 Ton )']);
+});
+
+test('🔴 leader + lineId → แกนไลน์ชนะแกนส่วนงานเสมอ (ตั้ง PD1 ก็ยังเหลือไลน์ตัวเอง)', () => {
+  const out = scopedLines({ role: 'leader', lineId: 17, sections: ['PD1'], lines, scopeIdx: idx });
+  assert.deepEqual(names(out), ['LINE A ( 800 Ton )']);
+  // ไม่ใช่ leader = พฤติกรรมเดิม (ทั้งส่วนงาน)
+  assert.deepEqual(names(scopedLines({ role: 'supervisor', sections: ['PD1'], lines, scopeIdx: idx })), names(lines));
+});
+
+test('🔴 leader ที่หาไลน์ตัวเองไม่เจอ = fail-closed (คืน []) ไม่ใช่เห็นทั้งโรงงาน', () => {
+  assert.deepEqual(scopedLines({ role: 'leader', lineId: 999, sections: [], lines, scopeIdx: idx }), []);
+  // ทะเบียนยังไม่โหลด = คืนของเดิม ไม่ใช่ fail-closed (จอต้องไม่ว่างระหว่างโหลด)
+  assert.deepEqual(scopedLines({ role: 'leader', lineId: 999, sections: [], lines: [], scopeIdx: idx }), []);
+});
+
+test('admin = ไม่จำกัดเสมอ (ตาข่ายกันตาย)', () => {
+  assert.deepEqual(names(scopedLines({ role: 'admin', lineId: 17, sections: ['PD1'], lines, scopeIdx: idx })), names(lines));
+});

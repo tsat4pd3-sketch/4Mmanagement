@@ -75,7 +75,7 @@ export default function PokaYokeCheck() {
       const fam = getLineFamilyNames(lines, Number(userLineId) || userLineId);
       arr = lines.filter(l => fam.includes(l.name));
     } else if (scopeSecs?.length) {
-      arr = scopedLines({ sections: scopeSecs, lines, scopeIdx });
+      arr = scopedLines({ role, lineId: userLineId, sections: scopeSecs, lines, scopeIdx });
     }
     return [...arr].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
   }, [lines, role, userLineId, scopeSecs]);

@@ -5123,6 +5123,36 @@ test('🛡️ inspection-setup-shared — จอตั้งค่าจุด�
    ① `writeScope.js` ต้องไม่เอา `sections` (= ขอบเขตที่ **เห็น**) มาตัดสินการ **แก้**
       — 31/122 บัญชีมี `sections` ว่างโดยตั้งใจ (ช่างต้องเห็นทุกไลน์) ⇒ ใช้ตัดสินการแก้ = เปิดทั้งโรงงาน
    ② จอที่มีด่านแล้ว ต้องเช็ค **ซ้ำในฟังก์ชันที่เขียนจริง** ไม่ใช่แค่ซ่อนปุ่ม (deep-link เปิดตรงได้) */
+/* 🛡️ leader-line-wins — "หัวหน้ากลุ่มเห็นทุกไลน์" ห้ามกลับมา (24/10 · แจ้งจากหน้างาน)
+   เคสจริง: หัวหน้า LWR BAR / HYDROFORM ถูกตั้ง `scope_depth='all'` ⇒ effectiveSections() คืน []
+   ⇒ จอที่กรองด้วย `sections` อย่างเดียวโชว์ทั้งโรงงาน
+   ⇒ แกน "ไลน์" ต้องมาก่อนแกน "ส่วนงาน" ใน scopedLines() เสมอ และทุกจุดเรียกต้องส่ง role/lineId */
+test('🛡️ leader-line-wins — scopedLines ต้องบีบ leader กลับเป็นครอบครัวไลน์ตัวเอง', () => {
+  const bad = [];
+  const ss = stripComments(readFileSync(join(ROOT, 'src/utils/sectionScope.js'), 'utf8'));
+  if (!/export function scopedLines\(\{\s*role,\s*lineId,/.test(ss))
+    bad.push('sectionScope.js (scopedLines ไม่ได้รับ role/lineId)');
+  if (!/role === 'leader' && lineId/.test(ss))
+    bad.push('sectionScope.js (scopedLines ไม่มีกิ่ง leader)');
+  /* กิ่ง leader ต้องอยู่ **ก่อน** การอ่าน sections — ไม่งั้น scope_depth=all จะหลุดไปคืน lines ทั้งก้อน */
+  const iLeader = ss.indexOf("role === 'leader' && lineId");
+  const iSecs = ss.indexOf('const secs = (sections || []).filter(Boolean);', ss.indexOf('export function scopedLines'));
+  if (iLeader < 0 || iSecs < 0 || iLeader > iSecs)
+    bad.push('sectionScope.js (กิ่ง leader ต้องมาก่อนการอ่าน sections)');
+  if (!/export function scopeTooWide/.test(ss))
+    bad.push('sectionScope.js (ไม่มี scopeTooWide — คิวทบทวนสิทธิ์จะไม่ฟ้องการตั้งกว้างเกิน)');
+
+  /* ทุกจุดเรียก scopedLines ต้องส่ง role เข้าไป ไม่งั้นตาข่ายไม่ทำงานที่จอนั้น */
+  for (const f of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
+    if (/utils[\\/]sectionScope\.js$/.test(f) || /__tests__/.test(f)) continue;
+    const src = stripComments(readFileSync(f, 'utf8'));
+    for (const m of src.matchAll(/scopedLines\(\{([^}]*)\}/g)) {
+      if (!/\brole\b/.test(m[1])) bad.push(`${f.replace(ROOT + '/', '')} (scopedLines ไม่ส่ง role)`);
+    }
+  }
+  assert.deepEqual(bad, [], 'ด่าน "หัวหน้ากลุ่มเห็นทุกไลน์" หาย:\n' + bad.join('\n'));
+});
+
 test('🛡️ write-scope-layer — ด่าน "แก้ข้ามหน่วยงาน" ยังอยู่ครบ', () => {
   const bad = [];
   const ws = stripComments(readFileSync(join(ROOT, 'src/utils/writeScope.js'), 'utf8'));

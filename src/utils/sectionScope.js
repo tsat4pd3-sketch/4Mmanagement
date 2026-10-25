@@ -73,6 +73,26 @@ export function scopeIneffective(p) {
   return !hasSections && !String(p.section || '').trim();
 }
 
+/**
+ * 🔴 **"หัวหน้าหน้างานที่ตั้งไว้ให้เห็นทั้งโรงงาน"** — ขอบเขตกว้างเกินหน้าที่ (24/10)
+ *
+ * เคสจริง: หัวหน้ากลุ่ม LWR BAR และ HYDROFORM ถูกตั้ง `scope_depth='all'`
+ * ⇒ `effectiveSections()` คืน `[]` = ไม่จำกัด ⇒ ทุกจอที่กรองด้วย `sections` โชว์ทั้งโรงงาน
+ * (user แจ้งจากหน้างาน: *"หัวหน้ากลุ่มแจ้งว่าเค้าเห็นทุกไลน์ผลิตเลย"*)
+ *
+ * `scopedLines()` บีบ leader กลับเป็นครอบครัวไลน์ให้แล้วเป็นตาข่าย — แต่ **การตั้งค่ายังผิดอยู่**
+ * ⇒ ต้องเอาขึ้นคิวทบทวนสิทธิ์ให้คนไปแก้ ห้ามปล่อยเงียบ (ISO 27001 A.5.18 · หลักเดียวกับ `scopeIneffective`)
+ *
+ * 🔴 role ที่ "เห็นทั้งโรงงานเป็นเรื่องปกติ" (qa/mtn/engineer/manager/display ฯลฯ) **ไม่เข้าข่าย**
+ *    — จำกัดเฉพาะ role ที่ผูกกับหน่วยหน้างานโดยธรรมชาติ
+ */
+export const FLOOR_SCOPED_ROLES = ['leader', 'supervisor'];
+export function scopeTooWide(p) {
+  if (!p || p.role === 'admin') return false;
+  if (!FLOOR_SCOPED_ROLES.includes(p.role)) return false;
+  return p.scope_depth === 'all';
+}
+
 /** เช็คว่าค่า section หนึ่งอยู่ในขอบเขตไหม — scope ว่าง = ผ่านเสมอ */
 /**
  * หน่วยงานช่าง — ดูแลเครื่องจักรทั้งโรงงาน จึงต้องเห็นสัญญาณ Andon/Downtime ทุกไลน์
@@ -138,9 +158,24 @@ export function scopedLineNames({ role, lineId, sections = [], lines = [], scope
  *    ห้ามคืน `[]` เพราะจะกลายเป็น "ไม่เห็นอะไรเลย" ระหว่างโหลด
  * 🔴 ผู้เรียกที่เอาไปกรอง**ตาราง** ต้องเขียนบนจอว่าซ่อนไปกี่รายการ (ดู `filterRowsByLineScope`)
  */
-export function scopedLines({ sections = [], lines = [], scopeIdx = null }) {
+export function scopedLines({ role, lineId, sections = [], lines = [], scopeIdx = null }) {
+  if (!lines?.length) return lines || [];
+  if (role === 'admin') return lines;                      // ตาข่ายกันตาย (เหมือน effectiveSections)
+  /* 🔴🔴 หัวหน้ากลุ่มที่ผูกไลน์ = เห็นเฉพาะ "ครอบครัวไลน์ตัวเอง" เสมอ — **แม้ `scope_depth='all'`**
+     (24/10 · เคสจริง: หัวหน้า LWR BAR + หัวหน้า HYDROFORM ถูกตั้ง `scope_depth='all'`
+      ⇒ `effectiveSections()` คืน `[]` = ไม่จำกัด ⇒ จอที่กรองด้วย `sections` อย่างเดียวโชว์ทั้งโรงงาน
+      user แจ้ง: *"หัวหน้ากลุ่มแจ้งว่าเค้าเห็นทุกไลน์ผลิตเลย"*)
+     ⇒ แกน "ไลน์" ต้องมาก่อนแกน "ส่วนงาน" เสมอ · ชั้นนี้คือตาข่ายกันการตั้งค่าผิด
+     ⚠️ หาไลน์ตัวเองไม่เจอทั้งที่ทะเบียนโหลดแล้ว = **fail-closed** (คืน `[]`)
+        — หลักเดียวกับ `staleSessions.keep()` ที่คืน `false` เมื่อ fam ว่าง
+        (ทะเบียนยังไม่โหลด ถูกดักด้วย `!lines.length` ข้างบนไปแล้ว) */
+  if (role === 'leader' && lineId) {
+    const me = lines.find(l => String(l.id) === String(lineId));
+    const fam = me ? new Set(getLineFamilyNames(lines, me.name)) : null;
+    return fam?.size ? lines.filter(l => fam.has(l.name)) : [];
+  }
   const secs = (sections || []).filter(Boolean);
-  if (!secs.length || !lines.length) return lines;
+  if (!secs.length) return lines;
   if (scopeIdx) {
     const vs = buildViewScope(secs, scopeIdx);
     if (vs.byOrg) return lines.filter(l => vs.lineOk(l));
