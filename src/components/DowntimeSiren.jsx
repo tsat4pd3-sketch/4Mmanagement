@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
+import { useEffect, useMemo, useState, useCallback } from 'react'
 import { supabaseDR } from '../supabaseClient'
 import { visibleInterval } from '../utils/usePolling'
 import { RATE, LIVE } from '../utils/refreshRates'
@@ -6,6 +6,10 @@ import { coalesce, makeIdleGate } from '../utils/liveRefresh'
 import { isAlarmingDT, isOverDtThreshold, loadDtAlertMin, DT_OPEN_ALERT_MIN_DEFAULT } from '../utils/downtimeAlarm'
 import { liveChannel } from '../utils/liveChannel'
 import { checkWriteRows } from '../utils/dbWrite';
+/* 🔊 เครื่องเสียง = ของกลาง `utils/useSiren.js` (แยกออกมา 24/10 ตอนทำไซเรนฝั่งสโตร์)
+   ⚠️ กฎเหล็กของเครื่องเสียง (สร้าง AudioContext ตั้งแต่ mount · ปลดล็อก pointer+key ·
+      รายงาน muted ตามจริง) ย้ายไปอยู่หัวไฟล์นั้น — อ่านก่อนแก้ ห้ามก๊อปกลับมาที่นี่ */
+import useSiren, { SIREN_PATTERN_ALARM } from '../utils/useSiren';
 /* ทีมที่ถูกเรียกเก็บเป็น key — แปลงเป็นชื่อผ่านของกลางเท่านั้น (utils/mtnTeams.js) */
 import { teamKeyOf, deptNameOf } from '../utils/mtnTeams'
 
@@ -39,9 +43,6 @@ export default function DowntimeSiren({ mode = 'open_15min', team = null }) {
   const [thr, setThr] = useState(null)     // เกณฑ์นาที (dt_alert_config)
   const [loadErr, setLoadErr] = useState(false) // อ่านรายการเครื่องหยุดไม่ได้ — ห้ามเงียบ (จอ TV ไม่มีใครเฝ้า)
   const [, setTick] = useState(0)          // นาฬิกา — ให้ "ครบเกณฑ์" เกิดเองโดยไม่ต้องยิง DB
-  const [muted, setMuted] = useState(false) // เบราว์เซอร์บล็อกเสียงอยู่ (ยังไม่มีใครแตะจอ)
-  const acRef = useRef(null)
-  const loopRef = useRef(null)
 
   /* ชนิดของแต่ละแถว — โหมด 'all' มีได้ทั้ง 2 ชนิดพร้อมกัน จึงตัดสินรายแถว ไม่ใช่ราย component
      "เรียกช่างแล้วยังไม่รับทราบ" ชนะเสมอ (ด่วนกว่า + ปุ่มรับทราบต้องไปลงช่องที่ถูก) */
@@ -118,65 +119,8 @@ export default function DowntimeSiren({ mode = 'open_15min', team = null }) {
     return () => { stopPoll(); bump.cancel(); supabaseDR.removeChannel(ch); clearInterval(clk) }
   }, [mode, fetchAlerts])
 
-  /* เตรียม AudioContext ตั้งแต่ mount — ต้องรู้สถานะเสียง "ก่อน" มี alert (ดูกฎหัวไฟล์)
-     ฟัง statechange เพื่อให้ชิปหายเองทันทีที่ปลดล็อกได้ ไม่ว่าจะปลดจากทางไหน */
-  useEffect(() => {
-    let ac = acRef.current
-    if (!ac) {
-      try { ac = acRef.current = new (window.AudioContext || window.webkitAudioContext)() } catch { ac = null }
-    }
-    if (!ac) { setMuted(true); return }   // เบราว์เซอร์ไม่มี Web Audio = ไม่มีทางมีเสียง ต้องบอก
-    const sync = () => setMuted(ac.state !== 'running')
-    sync()
-    ac.addEventListener?.('statechange', sync)
-    // ลอง resume ทันที — บนเครื่องที่เพิ่งคลิกมา (นำทางจากเมนู) มักผ่านเลย ชิปจะไม่ขึ้นกวน
-    try { ac.resume().then(sync, sync) } catch { /* ignore */ }
-    const unlock = () => { try { ac.resume().then(sync, () => {}) } catch { /* ignore */ } }
-    window.addEventListener('pointerdown', unlock)
-    window.addEventListener('keydown', unlock)   // รีโมท TV บางรุ่นส่ง key ไม่ใช่ pointer
-    return () => {
-      ac.removeEventListener?.('statechange', sync)
-      window.removeEventListener('pointerdown', unlock)
-      window.removeEventListener('keydown', unlock)
-    }
-  }, [])
-
-  // เล่น/หยุดไซเรน ตามว่ามี alert ค้างไหม
-  useEffect(() => {
-    if (!alerts.length) { clearInterval(loopRef.current); loopRef.current = null; return }
-    if (loopRef.current) return // เล่นอยู่แล้ว
-    if (!acRef.current) { try { acRef.current = new (window.AudioContext || window.webkitAudioContext)() } catch { acRef.current = null } }
-    const ac = acRef.current
-    const beep = () => {
-      if (!ac) return
-      try { ac.resume() } catch { /* ignore */ }
-      const now = ac.currentTime
-      ;[[880, 0], [660, 0.18]].forEach(([f, dt]) => {
-        const o = ac.createOscillator(), g = ac.createGain()
-        o.type = 'square'; o.frequency.value = f
-        g.gain.setValueAtTime(0.0001, now + dt)
-        g.gain.exponentialRampToValueAtTime(0.25, now + dt + 0.02)
-        g.gain.exponentialRampToValueAtTime(0.0001, now + dt + 0.16)
-        o.connect(g); g.connect(ac.destination)
-        o.start(now + dt); o.stop(now + dt + 0.17)
-      })
-    }
-    beep()
-    /* จอ TV ที่ไม่มีใครแตะ = เบราว์เซอร์บล็อก autoplay → "เห็นแถบแต่ไม่มีเสียง"
-       ห้ามเงียบ: บอกบนแถบเลยว่าต้องแตะจอ 1 ครั้ง (เจอจริง 2026-08-26 "เสียงก็ไม่มี") */
-    setMuted(!ac || ac.state !== 'running')
-    loopRef.current = setInterval(beep, 1300)
-    return () => { clearInterval(loopRef.current); loopRef.current = null }
-  }, [alerts.length])
-
-  useEffect(() => () => { clearInterval(loopRef.current); try { acRef.current?.close() } catch { /* ignore */ } }, [])
-
-  // ปลดล็อกเสียงด้วยการแตะ (ใช้ร่วมทั้งชิป standby และปุ่มในแถบ alert — อย่าเขียนซ้ำ)
-  const unlockNow = useCallback(() => {
-    const ac = acRef.current
-    if (!ac) return
-    try { ac.resume().then(() => setMuted(ac.state !== 'running'), () => {}) } catch { /* ignore */ }
-  }, [])
+  /* 🔊 เสียง + สถานะ "เบราว์เซอร์บล็อกเสียงอยู่ไหม" = ของกลาง (ลายเสียงเดิม: คู่โน้ตตก 880→660) */
+  const { muted, unlockNow } = useSiren(alerts.length > 0, { pattern: SIREN_PATTERN_ALARM })
 
   const ack = async (a) => {
     setRaw(prev => prev.filter(x => x.id !== a.id))

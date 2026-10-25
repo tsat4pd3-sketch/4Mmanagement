@@ -60,6 +60,7 @@ import useTvShell from '../utils/useTvShell';
 import FactoryMiniMap from './FactoryMiniMap';
 import ProdProgressStrip from './ProdProgressStrip';
 import StoreWaitCards, { useStoreTv } from './StoreWaitCards';
+import StoreCallSiren from './StoreCallSiren';
 import ProdRoutineCard, { useProdRoutine } from './ProdRoutineCard';
 import { routineMapOf, ROUTINE_MAP_COLOR } from '../utils/prodRoutine';
 import { liveChannel } from '../utils/liveChannel';
@@ -374,6 +375,11 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
       {/* 🔕 จอสโตร์เงียบเป็นค่าเริ่มต้น (12/10 · user: "จอของแต่ละส่วนงานแสดงเรื่องของส่วนงานนั้น")
           เสียงเรียกช่างไม่ใช่งานสโตร์ · ห้องสโตร์ที่อยากได้ยินตั้ง `?sound=all` ในแถบตั้งค่าจอได้ */}
       {(!showStore || soundAll) && <DowntimeSiren mode={soundAll ? 'all' : 'call_mtn'} team={team} />}
+
+      {/* 🔊📦 จอสโตร์ต้องได้ยินเสียงตอนไลน์เรียกของ (24/10 · user: "เหมือนเวลา MTN ได้ยินเสียงเรียกช่าง")
+          🔴 ห้อง `?sound=all` จะมี 2 ไซเรนพร้อมกัน ⇒ ส่ง `slot=1` ไม่ให้แถบ/ชิปทับกันสนิท
+             (ทั้งคู่เป็น position:fixed ตำแหน่งเดียวกัน — เหตุผลอยู่หัวไฟล์ DowntimeSiren) */}
+      {showStore && <StoreCallSiren slot={soundAll ? 1 : 0} />}
 
       {/* ── แถบสรุปบนสุด — อ่านจากอีกฝั่งห้องได้ · ชิปเลือกทีมอยู่ในแถวนี้ด้วย ──
           ⚠️ ชิปทีมเคยเป็นแถวของตัวเองเหนือแถบสรุป — ยุบเข้ามาเพราะบนจอ TV ทุกแถวที่เพิ่ม
