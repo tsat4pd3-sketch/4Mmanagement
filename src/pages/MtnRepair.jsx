@@ -2878,7 +2878,12 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
     follow_up: o.follow_up || 'ไม่เกิดปัญหาซ้ำ', ho_checker: o.ho_checker || fullName || '',
     satisfaction: o.satisfaction || {},
     approver_name: o.approver_name || fullName || '',
+    /* ✏️ แก้ข้อมูลแจ้งซ่อมย้อนหลัง (ขั้น 1) — เปิดแค่ 3 ช่องนี้ (25/10 · คำสั่ง user)
+       ไลน์/เครื่อง/ลักษณะปัญหา/ผู้แจ้ง **ล็อกไว้** — ใบออกเลข MO แล้วแก้ = สอบกลับเพี้ยน */
+    problem_detail: o.problem_detail || '', report_note: o.report_note || '',
   }));
+  const [beforeFile, setBeforeFile] = useState(null);
+  const beforeUrl = useObjectUrl(beforeFile);
   const [afterFile, setAfterFile] = useState(null);
   const [qaFile, setQaFile] = useState(null);
   const afterUrl = useObjectUrl(afterFile), qaUrl = useObjectUrl(qaFile);
@@ -3105,6 +3110,25 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
           if (!error) toast.error('ข้าม QA แล้ว แต่ยังบันทึกเหตุผลไม่ได้ — ฐาน DR ยังไม่มีคอลัมน์ qa_skip_reason (รัน migration 20260903_mtn_qa_skip)');
         }
         if (error) throw error;
+      } else if (stage === 'report') {
+        /* ✏️ แก้ข้อมูลแจ้งซ่อมย้อนหลัง  (2026-10-25 · คำสั่ง user)
+           🔴 เดิม **ไม่มี branch นี้เลย** ⇒ ลูกโซ่ if/else ไม่เข้าสักอัน `upd` เหลือแค่ updated_at
+              แล้วไหลไปจบที่ toast "แก้ไขแล้ว ✅" = **ล้มเหลวเงียบ** (ปุ่มหลอกมาตลอด)
+           🔴 เปิดแค่ 3 ช่อง: รูปปัญหา · รายละเอียดปัญหา · ระบุเพิ่มเติม
+              ไลน์/เครื่อง/ลักษณะปัญหา/ผู้แจ้ง/ทีมช่าง ล็อกไว้ — ใบออกเลข MO แล้วแก้ = สอบกลับเพี้ยน
+              (ใบมาผิดแผนกให้ใช้ "ตีกลับ" หรือ "ส่งต่องาน" ซึ่งมีอยู่แล้ว ห้ามแก้เงียบในใบเดิม)
+           ⚠️ `before_img` เดิมเขียนได้ที่เดียวคือตอน insert ใบใหม่ ⇒ ใบที่เปิดจาก Downtime
+              (596 ใบ) ไม่มีรูปปัญหาเลย และเติมย้อนหลังไม่ได้ — ตรงนี้คือทางเดียวที่เติมได้ */
+        Object.assign(upd, { problem_detail: f.problem_detail, report_note: f.report_note });
+        // รูปพังห้ามลากบันทึกทั้งใบล้ม (บทเรียนเดียวกับรูปหลังซ่อมขั้น 3)
+        let imgWarn1 = null;
+        if (beforeFile) {
+          try { const b = await resizeMoImage(beforeFile); upd.before_img = await uploadMtnImg(b, `before/${o.id}-${Date.now()}.${imgExt(b)}`); }
+          catch (e) { imgWarn1 = `บันทึกข้อมูลแจ้งซ่อมแล้ว แต่แนบ "รูปปัญหา" ไม่สำเร็จ — ${e.message || e}`; }
+        }
+        const r1 = await supabaseDR.from('mtn_orders').update(upd).eq('id', o.id).select('id');
+        if (!checkWriteRows(r1, 'แก้ไขข้อมูลแจ้งซ่อม')) { setSaving(false); return; }
+        if (imgWarn1) toast.error(imgWarn1);
       } else if (stage === 'assign') {
         if (!f.assigned_techs.length && !isReject) { setSaving(false); return toast.error('มอบหมายช่างอย่างน้อย 1 คน'); }
         if (isReject && !f.reject_reason.trim()) { setSaving(false); return toast.error('ระบุเหตุผลที่ตีกลับ'); }
@@ -3352,6 +3376,19 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
             {stepMeta(step, { mtnForm: isMtnForm }).byReporter && (o.reported_by_name || o.reporter_prod) ? <> · ใบนี้เปิดโดย <b style={{ color: 'var(--text2)' }}>{o.reported_by_name || o.reporter_prod}</b></> : null}
           </div>
         )}
+        {modalStage === 'report' && <>
+          <div style={{ fontSize: 12, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 11px', lineHeight: 1.6 }}>
+            ✏️ <b>แก้ได้เฉพาะ 3 ช่องนี้</b> — รูปปัญหา · รายละเอียดปัญหา · ระบุเพิ่มเติม
+            <div style={{ color: 'var(--muted)', marginTop: 2 }}>
+              ไลน์ · เครื่อง · ลักษณะปัญหา · ผู้แจ้ง · ทีมช่าง <b style={{ color: 'var(--text2)' }}>ล็อกไว้</b> —
+              ใบออกเลข MO แล้วแก้ของพวกนี้ทำให้สอบกลับเพี้ยน · แจ้งผิดแผนกให้ใช้ <b>ตีกลับ</b> หรือ <b>ส่งต่องาน</b>
+            </div>
+          </div>
+          {/* 📷 ใบที่เปิดจากการ์ด Downtime ไม่เคยมีช่องแนบรูป ⇒ ตรงนี้คือทางเดียวที่เติมย้อนหลังได้ */}
+          <ImgField label="รูปปัญหา (ก่อนซ่อม)" value={beforeUrl || o.before_img} onPick={f2 => { touch(); setBeforeFile(f2); }} />
+          <Field label="รายละเอียดปัญหา"><textarea value={f.problem_detail} onChange={e => set('problem_detail', e.target.value)} style={{ ...inp, minHeight: 60 }} /></Field>
+          <Field label="ระบุเพิ่มเติม"><textarea value={f.report_note} onChange={e => set('report_note', e.target.value)} style={{ ...inp, minHeight: 60 }} /></Field>
+        </>}
         {modalStage === 'assign' && <>
           <Field label={`ประเภทงานซ่อม${o.repair_type && !editMode ? ' (ผู้แจ้งระบุมา — แก้ได้ก่อนออกเลข MO)' : ''}`} required><select value={f.repair_type} onChange={e => set('repair_type', e.target.value)} style={inp}>{teamRepairTypes.map(r => <option key={r.id} value={r.name}>{r.name} ({r.prefix})</option>)}</select></Field>
           {isReject ? <><div style={{ fontSize: 11.5, color: canBounceBack(o) ? '#e0894a' : '#ef4444', background: canBounceBack(o) ? 'rgba(224,137,74,0.1)' : 'rgba(239,68,68,0.12)', border: `1px solid ${canBounceBack(o) ? 'rgba(224,137,74,0.3)' : 'rgba(239,68,68,0.5)'}`, borderRadius: 8, padding: '7px 10px' }}>{canBounceBack(o) ? '↩️ ตีกลับให้ผู้แจ้ง — ใบจะเด้งกลับหาผู้แจ้งพร้อมเหตุผล ให้แก้แผนกแล้วส่งใหม่ (ไม่ทิ้งใบ · เวลาเริ่มนับใหม่ให้แผนกที่ถูก)' : `⛔ ใบนี้เดินไปถึงขั้น ${o.current_step} แล้ว — ตีกลับไม่ได้ (ผลงาน/ลายเซ็นขั้น 3 เป็นต้นไปจะหายจากใบ) กดบันทึกจะไม่ผ่าน · ถ้าแจ้งผิดแผนกจริง ให้ปิดใบนี้แล้วเปิดใบใหม่ให้ทีมที่ถูก`}</div><Field label="เหตุผลที่ตีกลับ (เช่น ผิดแผนก — ควรแจ้ง JIG MTN)" required><textarea value={f.reject_reason} onChange={e => set('reject_reason', e.target.value)} style={{ ...inp, minHeight: 60 }} /></Field></> : <>

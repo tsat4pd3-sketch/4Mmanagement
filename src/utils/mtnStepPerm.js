@@ -180,6 +180,9 @@ export const stageOf = (step, { mtnForm = false } = {}) =>
 
 /** ป้ายปุ่ม/หัวข้อขั้น — สร้างจากที่นี่ที่เดียว ห้ามพิมพ์ชื่อขั้นซ้ำในหน้า */
 export const stepLabel = (step, { withWho = true, mtnForm = false } = {}) => {
+  /* ขั้น 1 ไม่อยู่ใน MTN_STEPS โดยตั้งใจ (เป็น "การเปิดใบ" ไม่ใช่ขั้นที่รอใครเซ็น)
+     แต่ป้ายต้องอ่านรู้เรื่อง — ไม่งั้นหัวโมดัลแก้ไขขึ้นว่า "ขั้น 1" เฉยๆ (25/10) */
+  if (Number(step) === 1) return `📣 แจ้งซ่อม (ขั้น 1${withWho ? ' · ผู้แจ้ง' : ''})`;
   const m = stepMeta(step, { mtnForm });
   if (!m) return `ขั้น ${step}`;
   return `${m.icon} ${m.title} (ขั้น ${step}${withWho ? ` · ${m.whoShort}` : ''})`;
