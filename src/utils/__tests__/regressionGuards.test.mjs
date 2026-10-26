@@ -6993,3 +6993,27 @@ test('💥 no-shadowed-import-call — const ที่ชื่อชนกั�
     + '            lint no-use-before-define จับไม่ได้ (คนละ scope) · crashsweep เดิมจับไม่ได้ (mock ไม่มี scope)\n'
     + '   แก้: import เป็น alias → `import { x as xOf } from "..."` แล้วเรียก xOf() ข้างใน\n');
 });
+
+/* ═══ 🫙 ลิสต์ตัวเลือกว่าง ห้ามบอกเหตุผลเดียวแบบเหมารวม ═══  2026-10-26
+   เคสจริง: หัวหน้ากลุ่มแจ้ง *"เปิดยอดเลเซอร์ไม่ได้"* — ช่องเลือกสินค้าของ "เปิดเป้าผลิต (ไม่มีบาร์โค้ด)"
+   ขึ้นว่า **"ไลน์นี้ยังไม่มีสินค้า register (เพิ่มที่ Product Master ก่อน)"**
+   ของจริง: สินค้าเลเซอร์ตัวนั้น **ถูกปิดใช้งานไว้** (เคยเปิดใบด้วย 40 ครั้ง ล่าสุด 30/09)
+   ⇒ หน้างานไปรอ ผจก. "เพิ่มสินค้าใหม่" ทั้งที่ของมีอยู่แล้ว แค่ต้องเปิดใช้งานคืน = เสียกะเปล่า
+   🔴 ลิสต์ว่างที่นี่มี 4 ความหมาย ต้องแยกให้ครบ:
+     ทะเบียนยังโหลดไม่เสร็จ · ไลน์ไม่อยู่ในทะเบียน · มีของแต่ถูกปิดใช้งาน · ไม่มีจริงๆ
+   (กฎ "ห้ามล้มเหลวเงียบ" + กฎเขียน DB ข้อ 12 "ลิสต์ว่าง 2 ความหมาย") */
+test('🫙 manual-open-product-empty-reason — ช่องเลือกสินค้าต้องแยกสาเหตุลิสต์ว่าง ไม่ใช่บอกว่า "ยังไม่มี register" อย่างเดียว', () => {
+  const src = stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'));
+  const bad = [];
+  if (!src.includes('inactiveProds')) bad.push('ไม่มี inactiveProds — จอตอบไม่ได้ว่า "ของถูกปิดใช้งาน"');
+  if (!/dr_products:inactive/.test(src)) bad.push('ไม่ได้โหลดสินค้าที่ปิดใช้งาน (คีย์ dr_products:inactive)');
+  for (const need of ['ไม่อยู่ในทะเบียนไลน์', 'ปิดใช้งาน', 'ยังโหลดไม่เสร็จ']) {
+    if (!src.includes(need)) bad.push(`ข้อความแยกสาเหตุหาย: "${need}"`);
+  }
+  /* คีย์ cache ใหม่ต้องลงทะเบียนด้วย ไม่งั้นแก้ Product Master แล้วค้าง 4 ชม. */
+  const inv = stripComments(readFileSync(join(ROOT, 'src/utils/masterInvalidate.js'), 'utf8'));
+  if (!inv.includes("'dr_products:inactive'")) bad.push('masterInvalidate ไม่ได้ลงทะเบียน dr_products:inactive');
+  assert.deepEqual(bad, [], '\n\n❌ ช่องเลือกสินค้ากลับไปบอกสาเหตุเดียว:\n  ' + bad.join('\n  ')
+    + '\n\n   ทำไมสำคัญ: "ไม่มีสินค้า register" กับ "มีแต่ถูกปิดใช้งาน" แก้คนละทางกันคนละคน\n'
+    + '              บอกผิด = หน้างานรอของที่ไม่ต้องรอ และของที่ต้องทำไม่มีใครทำ\n');
+});

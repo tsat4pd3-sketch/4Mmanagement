@@ -356,6 +356,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   const [lines, setLines]           = useState([]);
   const [lineMap, setLineMap]       = useState({});
   const [products, setProducts]     = useState([]);
+  /* สินค้าที่ถูกปิดใช้งาน (แถวบาง) — ใช้ตอบ "ทำไมของที่เคยเปิดใบได้ หายไปจากช่องเลือก" เท่านั้น */
+  const [inactiveProds, setInactiveProds] = useState([]);
   /* คู่ RH/LH — ใช้ร่วมทั้ง "ภาพรวมทั้งกะ" และแบนเนอร์ "จะส่งต่อกะหน้า"
      ⚠️ นิยามที่เดียว ห้ามประกาศซ้ำในแต่ละ IIFE (2 จอในหน้าเดียวกันต้องนับเหมือนกันเสมอ) */
   const pairOf = useCallback(
@@ -592,9 +594,10 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
         (ทะเบียน "ตาราง → คีย์" อยู่ `src/utils/masterInvalidate.js` · มีเทสในด่าน build) */
   const load = useCallback(async () => {
     setLoading(true);
-    const [ln, pr, dt, ks, bp, mc, dft] = await Promise.all([
+    const [ln, pr, prOff, dt, ks, bp, mc, dft] = await Promise.all([
       cachedMaster('production_lines:dr', async () => mrows(await loadLinesRes())),
       cachedMaster('dr_products:full', async () => mrows(await supabaseDR.from('dr_products').select('*').eq('is_active', true).order('name'))),
+      cachedMaster('dr_products:inactive', async () => mrows(await supabaseDR.from('dr_products').select('id, mat_no, name, line_name').eq('is_active', false).order('name'))),
       cachedMaster('dr_downtime_types:active', async () => mrows(await supabaseDR.from('dr_downtime_types').select('*').eq('is_active', true).order('sort_order'))),
       cachedMaster('kanban_standards:full', async () => mrows(await supabaseDR.from('kanban_standards').select('*, dr_products(id, name, line_name, cycle_time_sec, process_type, p_no)').eq('is_active', true).order('mat_no'))),
       loadBreakPolicies(),   // loader กลาง (utils/breakPolicies.js · 05/10)
@@ -624,6 +627,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       setLineFlow(fm);
     }, () => {});
     setProducts(pr || []);
+    setInactiveProds(prOff || []);
     setDtTypes(dt || []);
     setKanbanStds(ks || []);
     setBreakPolicies(bp || []);
@@ -5478,15 +5482,46 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   {(() => {
                     // เฉพาะสินค้าของ family ไลน์นี้ (ไลน์ตัวเอง + แม่ + ลูก เผื่อ register ไว้ที่ระดับไลน์หลัก)
                     // ห้าม fallback โชว์ทุกสินค้า — เคยหลุดแล้ว user ทัก (2026-07-12)
-                    const fam = new Set(getLineFamilyNames(lines, selSession?.line_name || '').map(n => n.trim().toLowerCase()));
-                    const lineProds = products.filter(p => p.mat_no && fam.has((p.line_name || '').trim().toLowerCase()));
+                    const key = (v) => (v || '').trim().toLowerCase();
+                    const fam = new Set(getLineFamilyNames(lines, selSession?.line_name || '').map(key));
+                    const lineProds = products.filter(p => p.mat_no && fam.has(key(p.line_name)));
+                    /* 🔴 ลิสต์ว่างมี **4 ความหมาย** — บอกเหมารวมว่า "ยังไม่มีสินค้า register" = จอโกหก (26/10)
+                       เคสจริง: หัวหน้ากลุ่มแจ้ง *"เปิดยอดเลเซอร์ไม่ได้"* — ของจริงคือสินค้าเลเซอร์ของไลน์นั้น
+                       **ถูกปิดใช้งานไว้** (เคยเปิดใบด้วย 40 ครั้ง) แต่จอบอกว่า "ยังไม่มีสินค้า register"
+                       ⇒ หน้างานไปรอ ผจก. เพิ่มสินค้าใหม่ ทั้งที่ของมีอยู่แล้ว แค่ต้องเปิดใช้งานคืน
+                       (กฎ "ห้ามล้มเหลวเงียบ" + "ลิสต์ว่าง 2 ความหมาย" — ENGINEERING-PRINCIPLES / กฎเขียน DB ข้อ 12) */
+                    const famOff = fam.size ? inactiveProds.filter(p => p.mat_no && fam.has(key(p.line_name))) : [];
+                    const why = (!lines.length || !products.length) ? 'loading'
+                      : !fam.size ? 'noline'
+                      : lineProds.length ? ''
+                      : famOff.length ? 'off' : 'none';
+                    const PH = {
+                      loading: '— ทะเบียนยังโหลดไม่เสร็จ/โหลดไม่ได้ — ลองรีเฟรชหน้า —',
+                      noline: `— ไลน์ "${selSession?.line_name || '-'}" ไม่อยู่ในทะเบียนไลน์ — แจ้งแอดมิน —`,
+                      off: `— สินค้าของไลน์นี้ถูก "ปิดใช้งาน" ไว้ ${famOff.length} รายการ —`,
+                      none: '— ไลน์นี้ยังไม่มีสินค้า register (เพิ่มที่ Product Master ก่อน) —',
+                    };
                     return (
-                      <select value={manualForm.mat_no} onChange={e => setManualForm(f => ({ ...f, mat_no: e.target.value }))}>
-                        <option value="">{lineProds.length ? '— เลือกสินค้า —' : '— ไลน์นี้ยังไม่มีสินค้า register (เพิ่มที่ Product Master ก่อน) —'}</option>
-                        {lineProds.map(p => (
-                          <option key={p.id} value={p.mat_no}>{p.mat_no} · {p.name}</option>
-                        ))}
-                      </select>
+                      <>
+                        <select value={manualForm.mat_no} onChange={e => setManualForm(f => ({ ...f, mat_no: e.target.value }))}>
+                          <option value="">{why ? PH[why] : '— เลือกสินค้า —'}</option>
+                          {lineProds.map(p => (
+                            <option key={p.id} value={p.mat_no}>{p.mat_no} · {p.name}</option>
+                          ))}
+                        </select>
+                        {/* 🔴 มีของแต่ถูกปิดใช้งาน = ต้องบอกว่า "ของไหน" ให้หน้างานไปขอเปิดคืนได้ตรงตัว
+                            (โชว์ทั้งตอนลิสต์ว่าง และตอนลิสต์ไม่ว่างแต่มีตัวที่ถูกปิด — คนหาของไม่เจอทั้ง 2 แบบ) */}
+                        {!!famOff.length && (
+                          <div style={{ marginTop: 6, fontSize: 11.5, lineHeight: 1.5, color: 'var(--muted)' }}>
+                            ⚠️ ไลน์นี้มีสินค้าที่ <b>ปิดใช้งานอยู่</b> {famOff.length} รายการ จึงไม่ขึ้นในช่องนี้ —{' '}
+                            {famOff.slice(0, 3).map(p => `${p.mat_no} · ${p.name || ''}`.trim()).join(' / ')}
+                            {famOff.length > 3 ? ` …อีก ${famOff.length - 3}` : ''}
+                            <br />ถ้าของที่ต้องใช้อยู่ในลิสต์นี้ <b>อย่าสร้างใหม่</b> — ให้ตรวจที่ Product Master ก่อนว่า
+                            ถูก <b>เปลี่ยนชื่อ/เปลี่ยน MAT</b> ไปรวมกับตัวอื่น หรือถูกปิดใช้งานไว้เฉยๆ
+                            (สร้างใหม่ทับ = ประวัติผลิตเดิมขาดเป็น 2 ท่อน)
+                          </div>
+                        )}
+                      </>
                     );
                   })()}
                 </Field>
