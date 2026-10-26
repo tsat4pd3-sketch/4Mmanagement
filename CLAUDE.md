@@ -658,8 +658,6 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 ที่ต้องรู้ข้าม session:
 - **`src/App.jsx` = source of truth ของเมนู/หมวด** (`NAV_ITEMS`, `NAV_GROUP_ORDER`, `UserContext`, `Sidebar`)
 - **`src/main.jsx`** — `RootErrorBoundary` + `vite:preloadError` auto-reload **ห้ามถอด**
-  · 🔴 **ตาข่ายกันจอขาวอยู่ใน `index.html` (`#boot-fallback`) ห้ามถอด** — chunk โหลดไม่ได้/พังตอน import
-    = React ไม่เคยขึ้น ⇒ ErrorBoundary ไม่ทำงาน · `main.jsx` ต้องตั้ง `window.__ESM_MOUNTED` หลัง render (มีด่าน)
 - **`src/supabaseClient.js`** — 2 clients: `supabase` (Main) / `supabaseDR` (DR — anon เสมอ)
 - **`src/utils/`** = กฎ/สูตรกลางทั้งหมด (สิทธิ์ · ขอบเขตส่วนงาน · loader ทะเบียนของ picker · ชั้นภาษาไทย)
   **แก้กฎที่นี่ที่เดียว ห้ามก๊อปสูตรไปไว้ในหน้า** · `src/lib/` = logic เฉพาะโดเมน · `src/pages/` ชื่อไฟล์ตรงกับ route (⚠️ `operator.jsx` ตัวพิมพ์เล็ก)
