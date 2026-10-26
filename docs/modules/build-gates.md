@@ -252,3 +252,47 @@ CLAUDE.md เหลือ "คำสั่งที่ต้องรัน + �
 — SQL ทั้ง 3 ชุดอยู่ใน `_meta.refresh_sql` (2 ชุดฝั่ง Main · 1 ชุดฝั่ง DR) · ไม่ได้แตะกฎ = ไม่ต้องรีเฟรช
 (ทะเบียนเลื่อนไปจากของจริงบ้างไม่เป็นไร — ด่านตอบคำถาม "กฎนี้บีบใครออกไหม" ไม่ใช่ "ทะเบียนวันนี้เป็นอะไร")
 
+---
+
+## 💥 TDZ จอขาว "ชื่อ const ชนกับ import" + 🔭 รอบขอบเขตของ crashsweep (2026-10-26)
+
+**เคสจริง:** commit `83b3e1c3` (25/10) เขียนแบบนี้ไว้ **4 หน้า**
+
+```js
+import { scopedLines } from '../utils/sectionScope';
+…
+const scopedLines = useMemo(() => {
+  if (role === 'leader' && lineId) { … }
+  if (scopeSecs?.length) return scopedLines({ … });   // ← เรียกตัวที่กำลังประกาศ
+  return lines;
+}, [...]);
+```
+
+`const` ในฟังก์ชันคอมโพเนนต์ **บังของที่ import มาทั้งก้อน** · callback ของ `useMemo` รัน
+*ระหว่าง* ที่ const ยังไม่ถูก assign ⇒ `ReferenceError: Cannot access 'scopedLines' before initialization`
+= **จอขาวทั้งหน้า** (RootErrorBoundary รับ)
+
+**ใครโดน:** ทุกบัญชีที่ **ไม่ใช่ `leader` และมีขอบเขตส่วนงาน** = supervisor/manager/display เกือบทั้งหมด
+**หน้าที่พัง:** `/energy` · `/morning-meeting` · `/equipment?tab=die` · `/equipment?tab=jig`
+
+### 🔴 ทำไมด่านทั้งชุดจับไม่ได้ — 3 ชั้นพลาดพร้อมกัน
+
+| ด่าน | ทำไมหลุด |
+|---|---|
+| `lint:critical` (`no-use-before-define`) | การอ่านอยู่ใน **callback** = คนละ scope กับที่ประกาศ · กฎตั้งไว้จับ scope เดียวกัน |
+| `npm test` | ไม่มีเทสเรนเดอร์คอมโพเนนต์ (เทสทั้งหมดเป็น pure function) |
+| `crashsweep` | ยิง `role=admin` + mock `sections: []` **เสมอ** ⇒ `if (scopeSecs?.length)` ไม่เคยเป็นจริง |
+
+⇒ รายงาน "พัง 0" ติดกัน 2 วัน ทั้งที่ 4 หน้าจอขาวอยู่หน้างาน
+
+### ของที่เพิ่ม
+
+1. **ด่าน `no-shadowed-import-call`** (regressionGuards) — `const <ชื่อ>` ที่ชนกับ named import
+   แล้วมีการเรียก `<ชื่อ>(` หลังจุดประกาศ = ล่ม · แก้ด้วย `import { x as xOf }` **ห้ามตั้งชื่อชนแล้วหวังว่าจะไม่เรียก**
+2. **🔭 รอบที่ 2 ของ `audit/crashsweep.mjs`** — โหลดทุกหน้าซ้ำด้วย `role=supervisor&sections=PD1`
+   (หน้าแรกอย่างเดียว ไม่กดปุ่ม = เร็ว) · 🔴 **ห้ามถอดรอบนี้ออกเพื่อให้สวีปเร็วขึ้น**
+   — รอบแรก (`role=admin`, scope ว่าง) ไม่ได้เดินกิ่งที่คนส่วนใหญ่ในโรงงานเดินจริง
+
+🔴 **บทเรียนที่กว้างกว่าบั๊ก: ด่านที่รันด้วย "ผู้ใช้สมมติที่ไม่เหมือนใครในโรงงาน" = ด่านที่หลอกตัวเอง**
+(หลักเดียวกับด่าน `scopeRegistryGate` ที่เพิ่มเช้าวันเดียวกัน — เทสต้องเล่นกับของจริง)
+
