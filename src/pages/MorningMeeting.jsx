@@ -7,7 +7,7 @@ import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
 import { can } from '../utils/permissions';
 import { dtBucketName, buildDtIndex } from '../utils/downtimeCategory';
-import { inSectionScope, scopedLines } from '../utils/sectionScope';
+import { inSectionScope, scopedLines as scopedLinesOf } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import LineSelect from '../components/LineSelect';
 import PersonSelect from '../components/PersonSelect';
@@ -124,12 +124,16 @@ export default function MorningMeeting() {
   }, [defects]);
 
   /* ── ไลน์ใน scope — branch ของ leader มาก่อน section scope เสมอ (กฎ D2) ── */
+  /* 🔴 ชื่อ const ห้ามชนกับฟังก์ชันที่ import มา แล้วเรียกตัวนั้นข้างใน = **TDZ จอขาวทั้งหน้า**
+     (`ReferenceError: Cannot access 'scopedLines' before initialization` — เกิดจริง 25-26/10
+      กับทุกบัญชีที่ไม่ใช่ leader และมีขอบเขตส่วนงาน · crashsweep จับไม่ได้เพราะ mock ใช้ `sections: []`)
+     ⇒ เรียกของกลางผ่านชื่อ alias เสมอ · มีด่าน `no-shadowed-import-call` */
   const scopedLines = useMemo(() => {
     if (role === 'leader' && userLineId) {
       const fam = new Set(getLineFamilyNames(allLines, userLineId));
       return allLines.filter(l => fam.has(l.name));
     }
-    if (scopeSecs.length) return scopedLines({ role, lineId: userLineId, sections: scopeSecs, lines: allLines, scopeIdx });
+    if (scopeSecs.length) return scopedLinesOf({ role, lineId: userLineId, sections: scopeSecs, lines: allLines, scopeIdx });
     return allLines;
   }, [allLines, role, userLineId, scopeSecs, scopeIdx]);
 

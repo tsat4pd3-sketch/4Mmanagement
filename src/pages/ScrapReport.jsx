@@ -18,7 +18,7 @@ import { getLineFamilyNames } from '../utils/lineHierarchy';
 /* 📷 รูปหลักฐานของเสีย — ของกลางชุดเดียวกับถังเหลือง/แดง (ด่าน quality-photo-via-helper · 2026-10-12) */
 import QualityPhotoField from '../components/QualityPhotoField';
 import { uploadQualityPhoto } from '../utils/qualityImage';
-import LineSelect from '../components/LineSelect';
+import LineSelect, { scopeLines as pickerLines } from '../components/LineSelect';
 import { loadLinesRes } from '../utils/useProductionLines';
 import ProductSelect from '../components/ProductSelect';
 import PersonSelect from '../components/PersonSelect';
@@ -143,11 +143,13 @@ export default function ScrapReport() {
     return null;
   }, [role, lineId, sections, allLines]);
   // object array (id/name/parent_line_name) — render dropdown จัดชั้นตามผัง (§5.3 ข้อ 8) · ค่า value ยังเป็น name เหมือนเดิม
-  const lines = useMemo(() => {
-    if (!scopedLineNames) return allLines;
-    const ok = new Set(scopedLineNames);
-    return allLines.filter(l => ok.has(l.name));
-  }, [allLines, scopedLineNames]);
+  /* 🔴 ลิสต์ของ picker ต้อง "ไม่ตาย" — ส่วนงานที่ไม่มีไลน์ผลิตสังกัด (QA · Planning&Store · ฝั่งช่าง)
+     กรองแล้วเหลือ 0 ⇒ dropdown ว่าง = ออกใบไม่ได้ทั้งหน้า (เคสจริง 26/10 · ด่าน line-picker-never-dead)
+     ⇒ ผ่าน `scopeLines()` ของกลาง (components/LineSelect.jsx) = "กรองแล้วไม่เหลือ = ไม่กรอง"
+     ⚠️ `scopedLineNames` ด้านบนยัง fail-closed เหมือนเดิม (ใช้กรองรายการใบ) — คนละแกน */
+  const lines = useMemo(
+    () => pickerLines(allLines, { role, lineId, sections }),
+    [allLines, role, lineId, sections]);
   const [defectTypes, setDefectTypes] = useState([]);
   const [listFrom, setListFrom] = useState(() => { const d = new Date(); d.setDate(d.getDate() - 30); return localDateStr(d); });
   const [listTo, setListTo] = useState(getWorkDate());

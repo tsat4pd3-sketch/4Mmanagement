@@ -156,7 +156,11 @@ export default function ProductionPlan() {
           .gte('work_date', addDays(today, -2)).lte('work_date', addDays(today, DAILY_HORIZON + 200)),
         /* ⚠️ `pair_mat_no` ห้ามลืม — ขาดคอลัมน์นี้ = คู่ RH/LH จับกันไม่ติด แล้วโหลดถูกนับ 2 เท่าเงียบๆ
            (กฎเหล็ก "ชิ้น ≠ shot" ใน CLAUDE.md · บั๊กที่ audit 22/09 จับได้) */
-        supabaseDR.from('dr_products').select('id, mat_no, name, line_name, cycle_time_sec, p_no, pair_mat_no, customer').eq('is_active', true).not('mat_no', 'is', null),
+        /* 🔧 `is_operation` + `op_parent_mat` — ขั้นตอน "ต่อ Process" (26/10 · feedback สโตร์:
+           *"งานต่อ Process ตอนนี้ขึ้นให้เข้าแผนแค่ Step2 อยากให้ขึ้น Step1 ด้วย เนื่องจาก Cycle time ไม่เท่ากัน"*)
+           Step 1 ลงทะเบียนเป็นแถว `is_operation` ที่ `mat_no` ไม่ใช่เลข SAP (เช่น `4X4,LH-STEP 1`)
+           และ **ไม่มีใน `bom_items` เลย** ⇒ ไม่มีทางได้ความต้องการ ⇒ ไม่เคยโผล่ในลิสต์ */
+        supabaseDR.from('dr_products').select('id, mat_no, name, line_name, cycle_time_sec, p_no, pair_mat_no, customer, is_operation, op_parent_mat').eq('is_active', true).not('mat_no', 'is', null),
         // 🌳 BOM ทุกแถว (ฐานจริง ~600 แถว) — ใช้ระเบิดความต้องการลงพาร์ทลูก ดู utils/demandExplode.js
         /* 🔴 ต้องแบ่งหน้า — วัดจริง 15/10: bom_items = **653 แถว** (ก.ย. 506) โตเข้าใกล้เพดาน 1,000
            ทะลุแล้ว = BOM ระเบิดไม่ครบ ⇒ ความต้องการพาร์ทลูกขาด ⇒ **สั่งผลิตขาดเงียบๆ** */
@@ -201,7 +205,7 @@ export default function ProductionPlan() {
       const pmap = {};
       const pnoMap = {};
       (prods || []).forEach(p => {
-        if (p.mat_no) pmap[p.mat_no] = { line: p.line_name, ct: p.cycle_time_sec || 0, pair: p.pair_mat_no || null, customer: p.customer || '', name: p.name || '' };
+        if (p.mat_no) pmap[p.mat_no] = { line: p.line_name, ct: p.cycle_time_sec || 0, pair: p.pair_mat_no || null, customer: p.customer || '', name: p.name || '', isOp: !!p.is_operation, opParent: p.op_parent_mat || null };
         if (p.p_no && p.mat_no) { const k = normMat(p.p_no); if (k && !pnoMap[k]) pnoMap[k] = p.mat_no; } // เลขลูกค้า (p_no) → SAP
       });
       setProdByMat(pmap);
@@ -314,6 +318,24 @@ export default function ProductionPlan() {
         มาจากใบผลิตจริง (`actual`) หรือคำนวณจาก CT×OEE (`ct`) ถ้าไม่แยก จอจะเทียบตัวเองกับตัวเอง */
   const estOf = useCallback((mat) => { const rid = resolveMat(mat); return rid ? capByMat[rid] : undefined; },
     [resolveMat, capByMat]);
+  /* 📋 พาร์ท "ทั้งหมดที่ไลน์นี้ผลิต" — ไม่ว่าจะมีความต้องการในช่วงนี้หรือไม่ (26/10 · feedback สโตร์:
+     *"ขึ้นข้อมูลพาร์ทไม่ครบทุกรายการ อยากให้ขึ้นข้อมูลพาร์ททั้งหมดที่ผลิตของไลน์ผลิตนั้น"*)
+     🔴 ลิสต์ที่กดเข้าแผนได้เดิมมาจาก **ความต้องการ** ล้วน (ออเดอร์ลูกค้า + ระเบิด BOM)
+        ⇒ ไลน์ที่ยังไม่มีออเดอร์ค้างเลย = ลิสต์ว่าง = **ไม่มีปุ่มให้กด เปิดแผนไม่ได้**
+        (วัด 26/10: LINE A 800 ตัน 18 พาร์ท/ออเดอร์ค้าง 0 · LINE B 600 ตัน 30 พาร์ท/ออเดอร์ค้าง 0
+         เทียบ LINE C = 5 ใบ · LINE D = 6 ใบ ซึ่งเปิดแผนได้ปกติ — ตรงกับที่สโตร์แจ้งเป๊ะ) */
+  const partsOfLine = useCallback((line) => {
+    if (!line) return [];
+    return Object.entries(prodByMat)
+      .filter(([, v]) => v?.line === line)
+      .map(([mat, v]) => ({ mat, name: v.name || '', isOp: !!v.isOp, opParent: v.opParent || null }))
+      .sort((a, b) => String(a.mat).localeCompare(String(b.mat), 'th'));
+  }, [prodByMat]);
+  /* 🔧 ขั้น "ต่อ Process" ของพาร์ทแม่ — ความต้องการของแม่เท่าไร ขั้นย่อยก็ต้องทำเท่านั้น
+     (ชิ้นเดียวกันวิ่งผ่าน Step 1 แล้วค่อย Step 2) · CT คนละค่า ⇒ ภาระกะคนละก้อน */
+  const opStepsOf = useCallback((parentMat) => Object.entries(prodByMat)
+    .filter(([, v]) => v?.isOp && v.opParent && String(v.opParent) === String(parentMat))
+    .map(([mat, v]) => ({ mat, line: v.line })), [prodByMat]);
   const customerOf = useCallback((mat) => prodByMat[mat]?.customer || null, [prodByMat]);
   const nameOfMat = useCallback((mat) => prodByMat[mat]?.name || '', [prodByMat]);
   const capMonths = useMemo(() => Array.from({ length: CAPACITY_HORIZON }, (_, i) => {
@@ -816,6 +838,7 @@ export default function ProductionPlan() {
           lines={viewLines} demandByDate={demandPcs.byDate} carry={demandPcs.carry}
           ctOf={ctOf} pairOf={pairOf} lineOfMat={lineOfMat} nameOfMat={nameOfMat}
           customerOf={customerOf} netMin={shiftNet?.netMin}
+          partsOfLine={partsOfLine} opStepsOf={opStepsOf}
           /* 🔗 ปฏิทินบริษัท — คิวที่ล้นข้ามวันต้อง**ข้ามวันที่โรงงานไม่เดินเครื่อง**
              ส่ง null ตอนยังโหลดไม่เสร็จ เพื่อให้แท็บเขียนบนจอว่ายังไม่ได้เช็ควันหยุด (ห้ามเดาเงียบ) */
           calOf={Object.keys(calMap).length ? calOf : null}

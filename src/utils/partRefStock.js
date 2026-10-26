@@ -14,10 +14,19 @@
    กติกา (pure · เทส `__tests__/partRefStock.test.mjs`):
    · พาร์ทที่ Product Master บอกว่าไลน์นี้ผลิต + มีกฎรับเข้าคลัง ⇒ `produce` · อ้างยอดคลังปลายทางของกฎ
      (ตรรกะเลือกกฎ = ตัวเดียวกับ trigger: กฎ MAT ชนะ prefix · prefix ยาวชนะสั้น)
-     · 🔴 **ยกเว้นพาร์ทที่สโตร์คุมเป็นล็อต** (กฎ MAT โหมด 🔧 ปิดล็อต · `lotMatsOf(rules)` · ส่งมาเป็น `lotMats`) — ยอดเข้าทาง
-       "ปิดล็อตที่บอร์ดสโตร์" ทางเดียว ซึ่งลงที่ **ชื่อไลน์ผลิต** (`advanceLot` · trigger ข้าม MAT พวกนี้ตั้งแต่ 06/10)
-       ⇒ อ้างยอดที่ไลน์ตัวเอง (ยังเป็น `produce` = ผลิตเติม ไม่ใช่เบิก) · เทียบ STORE = ไม่มียอดตลอดกาล
    · นอกนั้น (ของที่ไลน์ใช้ / ชั้น OP ซึ่งไม่เข้าคลังเลย / ไม่มีกฎ) ⇒ `consume` · อ้างยอดหน้าไลน์เหมือนเดิม
+
+   🔁 **26/10 (คำสั่ง user) — พาร์ทโหมด 🔧 ปิดล็อต เลิกเป็นข้อยกเว้นแล้ว**
+   เดิม: กดปุ่ม "📥 รับของเข้าสโตร์" บนบอร์ดคัมบัง แล้วยอดลงที่ **ชื่อไลน์ผลิต** ⇒ `inflowDestOf()`
+         ต้องข้ามกฎโหมดนั้น และ `refStockOf()` ต้องมีข้อยกเว้นให้อ้างยอดที่ไลน์ตัวเอง
+   สโตร์แจ้ง (ใบ E-Production TSAT P4): *"ปลายทางคือสโตร์ ... ปัจจุบันพอกดรับ สต็อกจะวิ่งไปที่ไลน์นั้นๆ
+   เนื่องจาก set ปลายทางเป็นไลน์ผลิต"* ⇒ สโตร์เปิดดูยอดของตัวเองไม่เจอของที่เพิ่งรับ
+   วัด 26/10: แถว `issue` จากปุ่มนี้ 70 แถว ลงที่ LINE A/B/C/D + Assy GOR **ไม่มีแถวไหนลง STORE เลย**
+   ⇒ user เคาะ: **ปลายทางของโหมด 🔧 = `dest_line_name` ของกฎนั้นจริงๆ** (ซึ่งตั้งไว้ STORE อยู่แล้ว)
+   ⇒ `inflowDestOf()` **เลิกข้ามกฎโหมด lot** · `refStockOf()` ไม่มีข้อยกเว้นอีก · พารามิเตอร์ `lotMats`
+     ถูกถอดจากทุกฟังก์ชันในไฟล์นี้ (ไม่มีใครใช้ตัดสินคลังแล้ว)
+   🔴 โหมด 🔧 **ยังมีความหมายเดิม** = "ยอดเข้าทางปิดล็อตทางเดียว ปิดใบผลิตไม่ลงสต็อก"
+     (trigger `fn_post_confirmed_output` ยังข้ามตามเดิม — **ห้ามแก้ฝั่ง DB**) เปลี่ยนแค่ "ลงที่คลังไหน"
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 const key = (s) => String(s ?? '').trim();
@@ -30,9 +39,9 @@ export function inflowDestOf(mat, rules = []) {
   let best = null;
   for (const r of rules || []) {
     if (r?.is_active === false) continue;
-    /* 🔧 กฎโหมด "ปิดล็อตที่สโตร์" ไม่ได้บอกคลัง (ยอดลงที่ไลน์ผลิตของล็อต) ⇒ ไม่ร่วมตัดสินปลายทาง
-       — ถอยไปกฎ prefix เหมือนก่อนมีโหมดนี้เป๊ะ (19/10) */
-    if (r?.mode === 'lot') continue;
+    /* 🔧 กฎโหมด "ปิดล็อตที่สโตร์" **ร่วมตัดสินปลายทางด้วย** (26/10 · คำสั่ง user — เดิมข้าม)
+       โหมดบอกแค่ "ยอดเข้าทางไหน" (ปิดล็อตที่บอร์ด ไม่ใช่ปิดใบผลิต) · `dest_line_name` บอก "เข้าคลังไหน"
+       สองเรื่องนี้แยกกัน — เอามาปนกันคือต้นเหตุที่ของเข้าสโตร์แล้วไปโผล่ที่ไลน์ */
     const v = key(r?.match_value);
     if (!v || !r?.dest_line_name) continue;
     const hit = r.match_type === 'mat' ? v === m : (r.match_type === 'prefix' && m.startsWith(v));
@@ -46,15 +55,13 @@ export function inflowDestOf(mat, rules = []) {
 /**
  * จุดเรียกเติมของ MAT นี้บนไลน์นี้ อ้างยอดที่ไหน
  * @param {string} mat
- * @param {{ lineName:string, products?:Array<{mat_no,line_name,is_active,is_operation}>, rules?:Array, lotMats?:Set<string>|string[] }} ctx
+ * @param {{ lineName:string, products?:Array<{mat_no,line_name,is_active,is_operation}>, rules?:Array }} ctx
  * @returns {{ kind:'produce'|'consume', loc:string }}
  */
-export function refStockOf(mat, { lineName, products = [], rules = [], lotMats = [] } = {}) {
+export function refStockOf(mat, { lineName, products = [], rules = [] } = {}) {
   const m = key(mat);
   const prod = (products || []).find(p => key(p?.mat_no) === m && p?.is_active !== false);
   const madeHere = prod && !prod.is_operation && lineKey(prod.line_name) === lineKey(lineName);
-  const lots = lotMats instanceof Set ? lotMats : new Set(lotMats || []);
-  if (madeHere && lots.has(m)) return { kind: 'produce', loc: lineName };
   const dest = madeHere ? inflowDestOf(m, rules) : null;
   return dest ? { kind: 'produce', loc: dest } : { kind: 'consume', loc: lineName };
 }
@@ -76,7 +83,7 @@ export function madeHereMats(lineName, products = []) {
  *   ไม่มีขั้นต่ำใน Kanban = `produceNoStd` (ไม่เดา · ห้ามถอยไปใช้ line_part_levels = 2 แหล่งความจริง)
  * · ของที่ไลน์ใช้: `line_part_levels` + ยอดหน้าไลน์ เหมือนเดิม
  * @param {Array} levels  แถว line_part_levels ของไลน์
- * @param {{ lineName, products, rules, lotMats, stds:Map<string,{min_qty,max_qty}> }} ctx
+ * @param {{ lineName, products, rules, stds:Map<string,{min_qty,max_qty}> }} ctx
  * @param {(loc:string, mat:string) => number|null} haveAt  ยอดคงเหลือ (null = ไม่มีแถว = ยังเช็คไม่ได้)
  */
 export function splitLevels(levels = [], ctx = {}, haveAt = () => null) {
@@ -111,18 +118,18 @@ export function splitLevels(levels = [], ctx = {}, haveAt = () => null) {
 
    กติกา (ตัวเลือกคลังชุดเดียวกับ `refStockOf` — จุดเรียกเติม/บอร์ด Monitoring/ตัวนำเข้า):
    1. ของที่ผลิตในโรงงาน (Product Master มีไลน์ผลิต · ไม่ใช่ชั้น OP) ⇒ คลังที่ของผลิตเสร็จเข้า
-      (ล็อตสโตร์ = ไลน์ที่ผลิต · นอกนั้นตามกฎ `stock_inflow_rules`)
+      (ตามกฎ `stock_inflow_rules` — รวมกฎโหมด 🔧 ปิดล็อต ตั้งแต่ 26/10)
    2. ไม่ได้ผลิตเอง แต่มีกฎรับเข้า ⇒ คลังตามกฎ
    3. ของซื้อ (MAT ขึ้นต้น 3/5 — เกณฑ์เดียวกับ trigger `fn_explode_child_demand` ที่ออก purchase_requests)
       ⇒ `receiptLine` (คลังรับของซื้อ = STORE · `stockReceipt.RECEIPT_LINE`)
    4. ไม่รู้เลย ⇒ ไลน์ที่ใช้ (พฤติกรรมเดิม — ไม่เดาคลังใหม่ให้)
    ═══════════════════════════════════════════════════════════════════════════════ */
-export function rawSourceLocOf(mat, { consumingLine, products = [], rules = [], lotMats = [], receiptLine = 'STORE' } = {}) {
+export function rawSourceLocOf(mat, { consumingLine, products = [], rules = [], receiptLine = 'STORE' } = {}) {
   const m = key(mat);
   if (!m) return key(consumingLine) || null;
   const prod = (products || []).find(p => key(p?.mat_no) === m && p?.is_active !== false && !p?.is_operation);
   if (prod && key(prod.line_name)) {
-    const ref = refStockOf(m, { lineName: prod.line_name, products, rules, lotMats });
+    const ref = refStockOf(m, { lineName: prod.line_name, products, rules });
     if (ref.kind === 'produce') return ref.loc;
   }
   const dest = inflowDestOf(m, rules);

@@ -163,6 +163,20 @@ model: inherit
 - **D2** branch ของ `leader` (line_id + team) ต้องมา**ก่อน** branch ของ section scope เสมอ
 - **D3** โค้ดที่อ่าน `profiles.section` เดี่ยวตรงๆ แทนที่จะผ่าน `effectiveSections()` /
   `sections` จาก UserContext = ผิด pattern (ยกเว้น AddUser ที่ตั้งใจเขียน section เดี่ยวคู่กัน — ห้ามรายงานอันนั้น)
+- **D5** 🪧 **ลิสต์ที่ส่งเข้า `<LineSelect>`/`<LineScopeSelect>` ต้องมาจาก `scopeLines()` ของกลาง**
+  (26/10 · หน้างานแจ้ง "เปิด MO ไม่มีไลน์ให้เลือก") — ส่วนงานที่ไม่มีไลน์ผลิตสังกัด (QA · Planning&Store ·
+  ฝั่งช่าง) กรองแล้วเหลือ 0 ⇒ dropdown ว่าง = ใช้ฟีเจอร์ไม่ได้ทั้งหน้า · เจอ 9 หน้าที่ก๊อปสูตรไปเขียนเอง
+  · 🔴 **ลิสต์ picker fail-open · ตัวกรองรายการ/ด่านสิทธิ์ fail-closed — ห้ามรายงานว่า "ไม่ตรงกัน" เป็นบั๊ก**
+  · ⚖️ `/report` + `/morning-meeting` = ข้อยกเว้นทางการ (ลิสต์ผูกกับข้อมูลที่คิวรีจริง) **ห้ามรายงาน**
+  · ด่าน `line-picker-never-dead` · 📄 UI-CONVENTIONS §5.3 ข้อ 9.1
+- **D4** 🔴 **โค้ดห้ามบีบขอบเขตให้แคบกว่าที่ `profiles` ตั้งไว้** (26/10 · คำสั่ง user "ทำด่านกันซ้ำ")
+  เคสจริง: กฎใหม่บีบ `role='leader'` เป็นครอบครัวไลน์ตัวเองโดยไม่ดู `sections`
+  ⇒ 15 บัญชีแคบลง · หัวหน้ากลุ่ม PD1 **3 คนเหลือไลน์เดียว = เปิดกะไม่ได้** (build/เทส/crashsweep ผ่านหมด)
+  · **การบีบขอบเขตเป็น "การตั้งค่า" ไม่ใช่งานของโค้ด** — ตาข่ายกันตั้งค่าผิดทำได้ แต่ห้ามแคบกว่า anchor
+  · เจอ diff ที่แตะ `sectionScope.js` / `viewScope.js` / `lineHierarchy.js` **แต่ไม่ได้รีเฟรช
+    `src/utils/__tests__/fixtures/userScopeRegistry.json` = ให้รายงาน** (ด่าน `scopeRegistryGate` เล่นกฎซ้ำกับทะเบียนจริง)
+  · `scopedLines()` (เห็นในตัวกรอง/รายงาน) **ตั้งใจกว้างกว่า** `scopedLineNames()` (ไลน์ที่หัวหน้ากลุ่มรับผิดชอบ)
+    — **ห้ามรายงานว่า "2 ตัวนี้ไม่ตรงกัน" เป็นบั๊ก** (ล็อกด้วยด่านข้อ E แล้ว) · จะยุบ = ต้องถาม user
 
 ### หมวด E — Storage & รูปภาพ
 - **E1** อัปโหลดรูปต้องผ่าน `ImageCropModal` หรือ (กรณี crop ไม่เหมาะ: ผัง/drawing/หลักฐาน) บีบก่อนอัปโหลด
@@ -369,6 +383,10 @@ model: inherit
   · grep: `domain=\{\[(dataMin|\(?\w+\)? =>|[1-9])` · `domain:\s*\[(dataMin|\w+ =>)` · ด่าน `chart-yaxis-domain-hand-made`
 - **F-KPILEVEL** ช่องตัดสิน KPI (`yn`/`ynTotal`/สีจุดกราฟ) ต้องเป็นระดับ 1/0.5/0 จาก `scoreDef` — ห้าม `v >= target` / `v < target` เอง (2 สีไม่รู้จัก Commitment)
   · grep: `yn(Total)?:\s*[^,]*(>=|<=)` · `const \w*(miss|hit|pass)Target\w* =` · ด่าน `kpi-yn-boolean-compare`
+- **F-SHADOW** 💥 `const <ชื่อ>` ที่**ชนกับ named import ในไฟล์เดียวกัน** แล้วมีการเรียก `<ชื่อ>()` ข้างใน
+  = **TDZ จอขาวทั้งหน้า** (เคสจริง 25-26/10 · 4 หน้า: /energy /morning-meeting die/jig registry)
+  · lint `no-use-before-define` จับไม่ได้เพราะการอ่านอยู่ใน callback (คนละ scope)
+  · แก้: `import { x as xOf }` — มีด่าน `no-shadowed-import-call`
 - **F-TDZ** อ่าน `const/let` ก่อนบรรทัดประกาศใน scope เดียวกัน (จอขาว "Cannot access before initialization") — lint `no-use-before-define` จับให้แล้ว แต่ถ้าเห็น `const a = b.x` เหนือ `const b` ให้รายงาน
 
 - **F-inspect (2026-10-15) จอตั้งค่าจุดตรวจ (รูป + ปักหมุด + การ์ดจุด) ต้องประกอบจาก `src/components/inspect/*` + `SpinAnnotator`**

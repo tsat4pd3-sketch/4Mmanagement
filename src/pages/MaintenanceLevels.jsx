@@ -20,7 +20,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { RATE_COMPONENTS, lineCostCenter, rateFor, ratePerHour, fmtBaht } from '../utils/costSaving';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
-import LineSelect from '../components/LineSelect';
+import LineSelect, { scopeLines as pickerLines } from '../components/LineSelect';
 import Page from '../components/Page';
 import PageHeader from '../components/PageHeader';
 import FilterBar from '../components/FilterBar';
@@ -214,7 +214,15 @@ export default function MaintenanceLevels() {
     if (sections?.length) return new Set(lines.filter(l => inSectionScope(sections, l.section)).map(l => l.name));
     return null;
   }, [lines, role, lineId, sections]);
-  const scopedLineObjs = useMemo(() => (scopeLines ? lines.filter(l => scopeLines.has(l.name)) : lines), [lines, scopeLines]);
+  /* 🔴 ช่องเลือกไลน์ต้อง "ไม่ตาย" — ส่วนงานที่ไม่มีไลน์ผลิตสังกัดเลย (QA · Planning&Store · ฝั่งช่าง)
+     กรองด้วย section แล้วเหลือ 0 ⇒ dropdown ว่างเปล่า = แจ้งซ่อม/เลือกไลน์ไม่ได้ทั้งหน้า (เคสจริง 26/10)
+     ⇒ ต้องผ่าน `scopeLines()` ของกลางใน `components/LineSelect.jsx` ที่มีตาข่าย
+       **"กรองแล้วไม่เหลืออะไร = ไม่กรอง"** (กติกาเดิมตั้งแต่ 2026-08-24)
+     ⚠️ **คนละแกนกับ `scopeLines` (Set) ข้างบน** ซึ่งเป็นตัวกรองรายการ + ฐานของด่านสิทธิ์ขั้นเซ็น
+        (`reporterScope`) — ตัวนั้นต้อง fail-closed เหมือนเดิม **ห้ามยุบรวมกัน** */
+  const scopedLineObjs = useMemo(
+    () => pickerLines(lines, { role, lineId, sections }),
+    [lines, role, lineId, sections]);
   const famOfSel = useMemo(() => (line ? new Set(lineFamilyOf(line)) : null), [line, lineFamilyOf]);
 
   // กรองระดับอุปกรณ์ (ขอบเขต → ไลน์ → ชนิด → คำค้น) — การ์ดหัว 3 ระดับคิดจากชุดนี้

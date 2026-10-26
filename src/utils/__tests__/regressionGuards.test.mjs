@@ -17,7 +17,7 @@
    ═══════════════════════════════════════════════════════════════════════════ */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { BACKUP_RE } from '../schemaAudit.js';   // ตัวตัดสิน "ชื่อตารางสำรอง" จุดเดียวทั้งระบบ
 import { REALTIME_TABLES } from '../realtimeTables.js';   // ทะเบียนตารางที่ subscribe realtime
 import { join, relative } from 'node:path';
@@ -5589,20 +5589,31 @@ test('🗑️ ทะเบียนข้อความ (SimpleMasterPanel) ต
     + '        ทะเบียนใหม่ = เพิ่ม spec ใน MASTER_REF_SPECS โดย**วัดปลายทางจากฐานจริง** ห้ามเขียนจากความจำ\n');
 });
 
-/* 🛡️ lot-mats-from-rules (2026-10-19) — "พาร์ทนี้ยอดเข้าคลังทางปิดล็อตไหม" ต้องถามกฎรับเข้า (โหมด 🔧 lot)
-   ตัวเดียวกับที่ trigger fn_post_confirmed_output ใช้ข้าม · เดิมถาม child_lot_requests "เคยมีล็อต" ⇒
-   GOR 20058498 เลิกเปิดล็อตแล้ว แต่ระบบยังถือว่าเป็นพาร์ทล็อต → ยอดผลิตไม่เข้าคลัง 323 ใบ และจอเทียบคลังผิดที่ */
-test('🛡️ lot-mats-from-rules — lotMats มาจาก lotMatsOf(rules) ไม่ใช่ child_lot_requests', () => {
+/* 🛡️ lot-dest-from-rules (เดิม lot-mats-from-rules · เขียนใหม่ 2026-10-26 · คำสั่ง user)
+
+   19/10: พาร์ทโหมด 🔧 "ปิดล็อตที่สโตร์" ยอดลงที่ **ชื่อไลน์ผลิต** ⇒ กฎโหมดนี้ห้ามร่วมตัดสินคลัง
+   26/10: สโตร์แจ้งว่าปลายทางจริงคือสโตร์ (*"พอกดรับ สต็อกจะวิ่งไปที่ไลน์นั้นๆ"* — วัดแล้ว 70 แถว
+          ลงไลน์ · STORE 0 แถว) ⇒ user เคาะให้ย้ายปลายทางเป็นคลังตามกฎ
+   ⇒ ด่านกลับทิศ: `inflowDestOf()` **ต้องไม่ข้ามกฎโหมด lot** และ `advanceLot` ต้องลงที่คลังของกฎ
+     ไม่ใช่ `lot.source_line` · ไม่มีกฎ = ห้ามเดา (ต้อง throw ให้คืนสถานะล็อต) */
+test('🛡️ lot-dest-from-rules — ปลายทางของล็อตมาจากกฎรับเข้า ไม่ใช่ชื่อไลน์ผลิต', () => {
   const bad = [];
-  for (const f of ['src/components/LinePartCallPanel.jsx', 'src/pages/HeijunkaKanban.jsx',
-                   'src/components/PartLevelCoveragePanel.jsx']) {
-    const src = stripComments(readFileSync(join(ROOT, f), 'utf8'));
-    if (/from\('child_lot_requests'\)\.select\('child_mat_no'\)/.test(src)) bad.push(`${f} (ถาม child_lot_requests หา lotMats)`);
-    if (!/lotMats:\s*lotMatsOf\(/.test(src)) bad.push(`${f} (lotMats ไม่ได้มาจาก lotMatsOf)`);
-  }
-  /* 🔴 20/10 — จอที่เอากฎรับเข้าไปป้อน partRefStock ต้อง select `mode` มาด้วย
-     ไม่งั้น `inflowDestOf` มองกฎโหมด lot เป็นกฎปลายทางปกติ ⇒ ตีประเภทพาร์ท/คลังผิดเงียบๆ
-     (เจอ 4 จุดรอบเดียว 20/10: PlatingBoard · MonitoringUpload · Monitoring ×2) */
+  const pr = stripComments(readFileSync(join(ROOT, 'src/utils/partRefStock.js'), 'utf8'));
+  if (/mode === 'lot'\) continue/.test(pr))
+    bad.push("partRefStock.js inflowDestOf (กลับไปข้ามกฎโหมด lot = ของเข้าสโตร์แล้วไปโผล่ที่ไลน์)");
+  if (/lotMats/.test(pr))   // stripComments แล้ว ⇒ เหลือแต่โค้ดจริง
+    bad.push('partRefStock.js (ยังมีพารามิเตอร์ lotMats ค้าง — ไม่มีใครใช้ตัดสินคลังแล้ว)');
+
+  const hk = stripComments(readFileSync(join(ROOT, 'src/pages/HeijunkaKanban.jsx'), 'utf8'));
+  if (!/destLoc = inflowDestOf\(/.test(hk))
+    bad.push('HeijunkaKanban.advanceLot (ไม่ได้หาคลังปลายทางจาก inflowDestOf)');
+  if (/line_name:\s*lot\.source_line/.test(hk))
+    bad.push('HeijunkaKanban.advanceLot (ยังเขียน ledger ลงที่ lot.source_line = ชื่อไลน์ผลิต)');
+  if (!/if \(!destLoc\)/.test(hk))
+    bad.push('HeijunkaKanban.advanceLot (ไม่มีกฎแล้วไม่ได้บล็อก — เดาคลังเองกู้ยากกว่ารอคนตั้งกฎ)');
+
+  /* 🔴 จอที่เอากฎรับเข้าไปป้อน partRefStock ต้อง select `mode` มาด้วย — ตอนนี้ `mode` คือสิ่งที่
+     `/line-stock` ใช้แสดง/แก้ "ยอดเข้าทางไหน" ขาดไป = จอตั้งค่าโชว์โหมดผิด */
   for (const f of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
     const src = stripComments(readFileSync(f, 'utf8'));
     if (!/from\s+['"][^'"]*partRefStock['"]/.test(src)) continue;
@@ -5611,11 +5622,10 @@ test('🛡️ lot-mats-from-rules — lotMats มาจาก lotMatsOf(rules) �
       if (/match_type/.test(cols) && !/\bmode\b/.test(cols)) bad.push(`${relative(ROOT, f)} (select stock_inflow_rules ไม่มี mode)`);
     }
   }
-  const pr = stripComments(readFileSync(join(ROOT, 'src/utils/partRefStock.js'), 'utf8'));
-  if (!/mode === 'lot'\) continue/.test(pr)) bad.push('partRefStock.js inflowDestOf (กฎโหมด lot ต้องไม่ร่วมตัดสินคลัง)');
-  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n   แก้: ใช้ lotMatsOf(rules) จาก src/utils/stockReceipts.js (select ต้องมีคอลัมน์ mode)\n');
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n   ') + '\n'
+    + '   ทำไม: ปุ่มเขียนว่า "รับของเข้าสโตร์" แต่ยอดไปโผล่ที่ไลน์ = สโตร์หายอดตัวเองไม่เจอ\n'
+    + '   แก้: advanceLot ลงที่ inflowDestOf(mat, rules) · ไม่มีกฎ = throw ให้คืนสถานะล็อต\n');
 });
-
 /* 🛡️ asset-url-data-inline (2026-10-19) — รูปที่ import ใน src/assets เล็กกว่า 4 KB ถูก Vite ฝังเป็น `data:` URL
    เดิมใบพิมพ์ MO เช็คแค่ `https?:` แล้วต่อ `location.origin` หน้า ⇒ "https://…data:image/png…" = รูปพัง
    (โลโก้ TS 2.4 KB ไม่ขึ้นมุมซ้ายใบแจ้งซ่อม · user แจ้ง 19/10) */
@@ -5707,6 +5717,106 @@ test('🔕 เขียน call_mtn = true ต้องเติม call_mtn_tea
     + '   ทำไม: call_mtn_team ว่าง = จอ Andon/ไซเรนถือว่า "ไม่รู้ทีม" แล้วดังให้ทุกทีม\n'
     + '   แก้: เติม call_mtn_team จากทีมที่รู้ (ปุ่มเรียกช่าง = ทีมที่เลือก · ใบ MO = mtn_dept)\n'
     + '   ⚠️ ไม่รู้ทีมจริงๆ ให้ปล่อยว่าง (ดังทุกห้องดีกว่าเงียบผิดทีม) แต่ห้ามลืมเติมตอนที่รู้\n');
+});
+
+/* ── 📲 แถบ "เปิดแจ้งเตือนเข้ามือถือ" ต้องไม่หายไป และต้องไม่แตะจอคอม (2026-10-20) ──────────
+   ที่มา: feedback *"มือถือ ไม่มีการแจ้งเตือนใบแจ้งซ่อมมา 2-3 วัน"* — ไล่แล้ว**ไม่ใช่เรื่องสิทธิ์**
+   ปุ่มเปิด push มีอยู่แล้วแต่ซ่อนในกระดิ่ง ⇒ วัด 20/10: ผู้รับแจ้งเตือน 7 วัน 102 คน
+   **มีเครื่องผูกไว้ 28 · ไม่มี 74** (ได้แจ้งเตือนใบซ่อมด้วย 55 คน) = มือถือไม่เคยเด้งเลย
+
+   ด่านนี้กัน 4 ทาง: ถอดแถบออกจาก layout · ย้ายไปแสดงบนคอมด้วย · ก๊อปข้อความสถานะไปเขียนซ้ำในหน้า ·
+   ทำให้ "ตรวจสถานะไม่ได้" กลายเป็นข้อความ "ยังไม่เปิด" (จอโกหก) */
+test('📲 MobilePushPrompt — ต้องถูก mount ใน layout · มือถือเท่านั้น · ข้อความมาจาก utils ที่เดียว', () => {
+  const bad = [];
+  const app    = stripComments(readFileSync(join(ROOT, 'src/App.jsx'), 'utf8'));
+  const prompt = stripComments(readFileSync(join(ROOT, 'src/components/MobilePushPrompt.jsx'), 'utf8'));
+  const util   = stripComments(readFileSync(join(ROOT, 'src/utils/pushPrompt.js'), 'utf8'));
+
+  if (!/<MobilePushPrompt\b/.test(app)) bad.push('src/App.jsx (ไม่ได้ mount <MobilePushPrompt> แล้ว)');
+  if (!/userId=\{userId\}/.test(app.split('<MobilePushPrompt')[1]?.slice(0, 80) || ''))
+    bad.push('src/App.jsx (<MobilePushPrompt> ไม่ได้รับ userId — getPushState จะเทียบ DB ไม่ได้ = ขึ้น stale ตลอด)');
+
+  /* 🔴 ห้ามเปลี่ยนจอคอมแม้แต่พิกเซลเดียว (คำสั่ง user 15/10) — ต้องตัดด้วย useIsMobile ก่อนวาด */
+  if (!/useIsMobile/.test(prompt)) bad.push('src/components/MobilePushPrompt.jsx (ไม่เช็ค useIsMobile = โผล่บนจอคอม)');
+  if (!/if \(!isMobile/.test(prompt)) bad.push('src/components/MobilePushPrompt.jsx (ไม่มี early return เมื่อไม่ใช่มือถือ)');
+  /* fixed/sticky ที่แถบนี้ = ทับเนื้อหา/ต้องบวก --mnav-h — ตั้งใจเลี่ยงทั้งคู่ */
+  if (/position:\s*['"]?(fixed|sticky)/.test(prompt))
+    bad.push('src/components/MobilePushPrompt.jsx (ใช้ fixed/sticky — แถบนี้ต้องเป็นแถบในเนื้อหา)');
+
+  /* ข้อความสถานะต้องมาจาก utils ที่เดียว ห้ามก๊อปไปเขียนในคอมโพเนนต์ */
+  if (!/pushPromptCopy/.test(prompt))
+    bad.push('src/components/MobilePushPrompt.jsx (ไม่ได้ใช้ pushPromptCopy — เขียนข้อความสถานะเองในหน้า)');
+  if (/case\s+'(stale|check-failed|ios-need-install)'/.test(prompt))
+    bad.push('src/components/MobilePushPrompt.jsx (ตัดสินสถานะเองในหน้า — ต้องอยู่ที่ utils/pushPrompt.js)');
+
+  /* 🔴 ตรวจไม่ได้ ≠ ยังไม่เปิด (กฎความซื่อสัตย์ของจอ) */
+  const cf = util.split("case 'check-failed':")[1]?.split('case ')[0] || '';
+  if (!/ยังไม่ทราบ/.test(cf) || /ยังไม่เปิดแจ้งเตือน/.test(cf))
+    bad.push("src/utils/pushPrompt.js ('check-failed' ต้องบอกว่ายังไม่ทราบ ห้ามบอกว่ายังไม่เปิด)");
+  if (!/return null/.test(util.split('default:')[1] || ''))
+    bad.push('src/utils/pushPrompt.js (สถานะที่ไม่รู้จัก/subscribed ต้องคืน null = ไม่วาดแถบ)');
+
+  /* จอแอดมิน: ลิสต์ว่าง 2 ความหมาย — RPC ต้องโยน 42501 และจอต้องแยกข้อความได้ */
+  const panel = stripComments(readFileSync(join(ROOT, 'src/components/PushCoveragePanel.jsx'), 'utf8'));
+  if (!/pushCoverageFailText/.test(panel))
+    bad.push('src/components/PushCoveragePanel.jsx (ไม่แยกสาเหตุที่อ่านไม่ได้ — "ว่าง" จะกำกวม)');
+  if (!/push_coverage/.test(panel))
+    bad.push('src/components/PushCoveragePanel.jsx (ไม่ได้เรียก RPC push_coverage — RLS ไม่ให้นับของคนอื่น)');
+  const mig = readFileSync(join(ROOT, 'supabase/migrations/20261020_push_coverage_rpc_main.sql'), 'utf8');
+  if (!/raise exception/.test(mig) || !/42501/.test(mig))
+    bad.push('migration push_coverage (ไม่โยน 42501 เมื่อไม่มีสิทธิ์ = จอแยกไม่ออกว่าไม่มีสิทธิ์หรือไม่มีข้อมูล)');
+  if (!/has_perm\('page:\/notification-config'\)/.test(mig))
+    bad.push('migration push_coverage (ด่านไม่ใช่คีย์เดียวกับหน้าที่เรียกใช้)');
+
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n   ') + '\n'
+    + '   ทำไม: แถบนี้เป็นทางเดียวที่คนหน้างานจะรู้ว่า "มือถือตัวเองยังไม่เปิดแจ้งเตือน"\n'
+    + '         (วัด 20/10: 74 จาก 102 คนที่ได้รับแจ้งเตือน ไม่มีเครื่องผูกไว้เลย)\n'
+    + '   แก้: คงการ mount ใน App.jsx · ตัดด้วย useIsMobile · ข้อความอยู่ utils/pushPrompt.js ที่เดียว\n');
+});
+
+/* ── 🔧 QA ต้องเห็น "ใบซ่อมรอตรวจ" + ยอดกองต้องเป็นยอดจริง (2026-10-22) ────────────────────
+   ที่มา (คำสั่ง user 21/10): *"ตอนนี้ QA จะรู้ได้ยังไงว่ามี MO ที่ค้างรอ QA อนุมัติกี่ใบ"*
+   วัด 22/10: ใบรอ QA จริง **92 ใบ เก่าสุด 36 วัน** แต่
+     · หน้า `/qa` ทั้ง 9 แท็บไม่มีที่ไหนพูดถึงใบซ่อมเลย
+     · บรรทัดสรุปในแผงคิวนับจากชุดรายการที่ถูกตัดที่ 300 แถว (ใบเปิดค้าง 672) ⇒ นับได้ 26 และไม่บอกว่าไม่ครบ
+   ด่านนี้กัน: ถอดแท็บออก · กลับไปนับกองจากชุดที่ถูกตัด · เทียบ `status === 'qa'` ดิบแทน moWaitMeta */
+test('🔧 ใบซ่อมรอ QA — ต้องมีแท็บใน /qa · นับกองจากชุดเต็ม · ตัดสินขั้นด้วย moWaitMeta', () => {
+  const bad = [];
+  const qc    = stripComments(readFileSync(join(ROOT, 'src/pages/QualityControl.jsx'), 'utf8'));
+  const panel = stripComments(readFileSync(join(ROOT, 'src/components/QaMoPending.jsx'), 'utf8'));
+  const queue = stripComments(readFileSync(join(ROOT, 'src/utils/myQueue.js'), 'utf8'));
+  const mq    = stripComments(readFileSync(join(ROOT, 'src/components/MyQueuePanel.jsx'), 'utf8'));
+
+  if (!/key:\s*'morepair'/.test(qc)) bad.push("src/pages/QualityControl.jsx (ไม่มีแท็บ 'morepair' แล้ว)");
+  if (!/<QaMoPending\b/.test(qc))    bad.push('src/pages/QualityControl.jsx (ไม่ได้วาด <QaMoPending>)');
+
+  /* 🔴 "ใบนี้รอ QA ไหม" ต้องผ่าน moWaitMeta — ขั้น 5 = QA ของ JIG/DIE แต่ = รับมอบ ของ MTN
+     เทียบ status ดิบ = ลากใบ MTN ที่ลูปไม่มี QA เข้ามาด้วย */
+  if (!/moWaitMeta\(/.test(panel))
+    bad.push('src/components/QaMoPending.jsx (ไม่ได้ใช้ moWaitMeta — ตัดสินขั้นเองไม่ได้)');
+  if (/status\s*===\s*'qa'/.test(panel))
+    bad.push("src/components/QaMoPending.jsx (เทียบ status === 'qa' ดิบ — ใบ MTN จะถูกนับผิด)");
+  if (!/ห้ามโชว์\s*0|ไม่ใช่ว่าไม่มี/.test(panel))
+    bad.push('src/components/QaMoPending.jsx (อ่านไม่ได้แล้วไม่ได้เขียนบนจอ — ลิสต์ว่าง 2 ความหมาย)');
+
+  /* ยอดกองในแผงคิวต้องนับจากชุดเต็ม (moAll) และบอกเมื่อนับไม่ครบ */
+  if (!/src\.moAll/.test(queue))
+    bad.push('src/utils/myQueue.js (ไม่รับชุดนับเต็ม moAll — กลับไปนับจากชุดที่ถูกตัด)');
+  if (!/capped:\s*countsCapped/.test(queue))
+    bad.push('src/utils/myQueue.js (บรรทัดสรุปไม่ติดธงว่านับไม่ครบ)');
+  if (!/moAll:/.test(mq))
+    bad.push('src/components/MyQueuePanel.jsx (ไม่ได้ส่ง moAll เข้า buildQueue)');
+  /* 🔴 ชุดที่ใช้นับต้องครอบใบเปิดค้างได้จริง — วันนี้ทำด้วย LIMIT 1000 บนคิวรีเดียว (26/10)
+     ด่านนี้จึงเช็ค "เพดานถึงพันไหม" ไม่ใช่ "มีคิวรีนับแยกไหม" (ยิง 2 รอบบนชุดเดียวกัน = เปลือง egress) */
+  if (!/const LIMIT = 1000;/.test(mq))
+    bad.push('src/components/MyQueuePanel.jsx (เพดานแถวต่ำกว่า 1000 — ชุดนับกองกลับไปถูกตัด)');
+  if (!/moAllCapped:/.test(mq))
+    bad.push('src/components/MyQueuePanel.jsx (ไม่ส่ง moAllCapped — ชนเพดานแล้วจอไม่รู้ว่านับไม่ครบ)');
+
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n   ') + '\n'
+    + '   ทำไม: QA ไม่มีทางรู้ว่ามีใบรอตรวจกี่ใบ (วัด 22/10: 92 ใบ เก่าสุด 36 วัน)\n'
+    + '         และบรรทัดสรุปเคยนับจากชุด 300 แถว = ต่ำกว่าจริงโดยไม่บอกใคร\n'
+    + '   แก้: คงแท็บ morepair ใน /qa · นับกองจาก moAll · ตัดสินขั้นด้วย moWaitMeta เท่านั้น\n');
 });
 
 /* ── 🔚 พักที่ผูกปลายกะ: กรอบที่ไม่ใช่ "ทั้งกะ" ต้องส่ง shiftEndMs (2026-10-20) ──────
@@ -6618,4 +6728,268 @@ test('🪪 employee-identity-single-entry — ทุกจุดที่ insert
   assert.deepEqual(bad, [], '\n\n❌ ไฟล์ที่ insert employees เองโดยไม่ผ่าน newEmployeeRow(): ' + bad.join(', ') + '\n'
     + '   ทำไม: ชุดฟิลด์จะแยกกันทันทีที่เพิ่มคอลัมน์ใหม่ — ทางที่ลืมเขียนจะตกไปที่ default เงียบๆ\n'
     + '   แก้: ประกอบแถวด้วย newEmployeeRow({...}) จาก src/utils/employeeIdentity.js\n');
+});
+
+/* ═══ 📷 ปุ่ม/ช่องที่ "เปิดแล้วแผงปิดทันที" ต้องไม่ถูก unmount ไปด้วย ═══  2026-10-26
+   หน้างานแจ้ง: *"เปลี่ยนรูปโปรไฟล์จากแถบซ้ายมือไม่ได้ ต้องออกมาหน้าโฮม"*
+   ต้นเหตุ: `<input type=file ref={avatarRef}>` เคยอยู่ใน `profileActions` ซึ่งวาดเฉพาะตอนแผงโปรไฟล์เปิด
+   เมนูกด 📷 → `avatarRef.current.click()` → **แล้ว `closeNav()` ปิดแผงทันที** ⇒ input หลุดจาก React
+   ⇒ คนเลือกไฟล์เสร็จ event `change` ไม่มีใครรับ = เงียบสนิท (หน้า Home มี input ของตัวเองจึงยังทำงาน)
+   ⇒ input ต้องอยู่ใน `modals` ซึ่งวาดทุกสถานะของ sidebar ทั้ง desktop และมือถือ */
+test('📷 input เปลี่ยนรูปโปรไฟล์ต้องอยู่ใน modals ไม่ใช่ใน profileActions (กดแล้วแผงปิด = เงียบ)', () => {
+  const src = stripComments(readFileSync(join(ROOT, 'src/App.jsx'), 'utf8'));
+  const act = src.indexOf('const profileActions');
+  const mod = src.indexOf('const modals');
+  const inp = src.indexOf('ref={avatarRef}');
+  assert.ok(act >= 0 && mod >= 0 && inp >= 0, 'หา profileActions / modals / input ไม่เจอ — โครงเปลี่ยนไปแล้ว');
+  assert.ok(inp > mod, '\n\n❌ src/App.jsx: <input ref={avatarRef}> ไม่ได้อยู่ใน `modals`\n'
+    + '   ทำไม: เมนูโปรไฟล์กด 📷 แล้วปิดแผงทันที ⇒ input ถูก unmount ก่อนคนเลือกไฟล์เสร็จ\n'
+    + '         = เปลี่ยนรูปจาก sidebar ไม่ได้เลย โดยไม่มี error ให้เห็น (เคสจริง 26/10)\n'
+    + '   แก้: ย้าย <input> ไปไว้ใน `modals` (วาดทุกสถานะ ทั้ง desktop rail และ drawer มือถือ)\n');
+  assert.ok(mod > act, 'โครงไฟล์เปลี่ยน — `modals` ต้องประกาศหลัง `profileActions` ด่านนี้ถึงจะเชื่อถือได้');
+});
+
+/* ═══ 🧯 จอ error ของ RootErrorBoundary ต้องมี stack ให้หน้างานคัดลอกส่งมา ═══  2026-10-26
+   เคสจริง: หน้างานส่งรูปจอ error มาพร้อมข้อความ `Cannot access 'V' before initialization`
+   ซึ่งเป็นชื่อหลัง minify ⇒ ตามหาต้นเหตุจากข้อความอย่างเดียว**ไม่ได้เลย**
+   (โหลดทุก chunk ของ build จริง 331 ตัว + เรนเดอร์ทุกหน้า/ทุก role ในฮาร์เนส = ผ่านหมด) */
+test('🧯 RootErrorBoundary ต้องเก็บ stack + มีปุ่มคัดลอกรายละเอียด', () => {
+  const src = stripComments(readFileSync(join(ROOT, 'src/main.jsx'), 'utf8'));
+  const bad = [];
+  if (!/componentStack/.test(src)) bad.push('ไม่ได้เก็บ componentStack จาก componentDidCatch');
+  if (!/error\?\.stack|error\.stack/.test(src)) bad.push('ไม่ได้เก็บ error.stack');
+  if (!/clipboard\.writeText/.test(src)) bad.push('ไม่มีปุ่มคัดลอกรายละเอียด');
+  if (!/location\.pathname/.test(src)) bad.push('รายละเอียดไม่ได้บอกว่าพังที่หน้าไหน');
+  assert.deepEqual(bad, [], '\n\n❌ src/main.jsx: ' + bad.join(' · ') + '\n'
+    + '   ทำไม: error ที่เกิดเฉพาะเครื่องหน้างาน (ข้อมูลจริง/role จริง) จำลองซ้ำไม่ได้\n'
+    + '         ถ้าจอบอกแค่ message ที่ถูก minify แล้ว = ไล่ต้นเหตุไม่ได้เลย\n');
+});
+
+/* ═══ 📦 แผงเรียกชิ้นส่วน: คนที่ "ตั้งจุดเรียกเติมได้" ต้องเห็นปุ่ม ⚙️ แม้ไลน์ยังไม่มีอะไรต้องทำ ═══  2026-10-26
+   feedback สโตร์: *"ปุ่มเรียกชิ้นส่วนจากสโตร์ ขึ้นให้กดแค่บางไลน์ ไม่ขึ้นทั้งหมด และขึ้นเฉพาะบาง User"*
+   กิ่ง `nothing` เคยตัดด้วย `canDecide` อย่างเดียว ⇒ คนที่มี `line_levels:manage` แต่ไม่มี
+   `wip_request:decide` ไม่เห็นแม้แต่ทางเข้าไปตั้ง min บนไลน์ที่ยังไม่เคยตั้ง = ไก่กับไข่ */
+test('📦 LinePartCallPanel: กิ่ง "ไม่มีอะไรต้องทำ" ต้องเปิดให้ canSetLv ด้วย + ⚙️ ต้องเปิดโมดัลได้จริง', () => {
+  const src = stripComments(readFileSync(join(ROOT, 'src/components/LinePartCallPanel.jsx'), 'utf8'));
+  const bad = [];
+  if (!/if \(!canDecide && !canSetLv\) return null;/.test(src))
+    bad.push('กิ่ง nothing ยังตัดด้วย canDecide อย่างเดียว (คนตั้ง min ไม่เห็นทางเข้า)');
+  if ((src.match(/<LevelSetupModal/g) || []).length !== 1)
+    bad.push('มี <LevelSetupModal> มากกว่า 1 ชุด — ก๊อป JSX = ปุ่มชุดใดชุดหนึ่งกลายเป็นปุ่มหลอก');
+  if ((src.match(/\{setupModal\}/g) || []).length < 2)
+    bad.push('ไม่ได้วาง {setupModal} ทั้ง 2 กิ่ง — ปุ่ม ⚙️ ของกิ่งใดกิ่งหนึ่งจะกดแล้วไม่มีอะไรเกิดขึ้น');
+  assert.deepEqual(bad, [], '\n\n❌ src/components/LinePartCallPanel.jsx: ' + bad.join('\n   ') + '\n'
+    + '   ทำไม: ไลน์ที่ยังไม่ตั้ง min = ไม่มีอะไรต้องทำ ⇒ แผงย่อ ⇒ ถ้าซ่อน ⚙️ ด้วย\n'
+    + '         ก็ไม่มีทางตั้งจุดเฝ้าได้เลย ทั้งที่จุดเฝ้าคือสิ่งที่ต้องตั้ง "ก่อน" ของจะหมด\n');
+});
+
+/* ═══ 📉 บอร์ดคัมบังสโตร์: "ถึงจุดต้องปล่อย" ต้องมองจากยอดคงเหลือ ไม่ใช่จากคิวใบเดิม ═══  2026-10-26
+   feedback สโตร์ (ใบ E-Production TSAT P4): *"ให้แสดงรายการที่สต็อกต่ำกว่าหรือเท่ากับค่า min
+   เพื่อที่ให้สโตร์ทราบถึงสถานะงานที่จะต้องปล่อยคัมบังเข้าไลน์ผลิต (ปัจจุบัน ขึ้นบางรายการ)"*
+   เหตุที่เดิมขึ้นบางรายการ: คิวใบล็อตมาจาก trigger ระเบิด BOM + ต้องสะสมครบ `lot_size`
+   วัด 26/10: kanban_standards is_active 458 แถว แต่ **250 แถวไม่ได้ตั้ง lot_size** = ไม่มีวันออกใบ */
+test('📉 PullBoard ต้องมีชั้น "สต็อก ≤ min" และคิดผ่าน utils/kanbanReleaseDue เท่านั้น', () => {
+  const src = stripComments(readFileSync(join(ROOT, 'src/pages/HeijunkaKanban.jsx'), 'utf8'));
+  const bad = [];
+  if (!/releaseDueRows\(/.test(src)) bad.push('ไม่ได้เรียก releaseDueRows() — กติกาต้องอยู่ที่ utils ที่เดียว');
+  if (!/<ReleaseDueSection/.test(src)) bad.push('ไม่ได้วาดชั้น "ถึงจุดต้องปล่อยคัมบัง"');
+  if (!/min_qty/.test(src)) bad.push("คิวรี kanban_standards ไม่ได้ดึง min_qty — ไม่มีค่าให้เทียบ");
+  assert.deepEqual(bad, [], '\n\n❌ src/pages/HeijunkaKanban.jsx: ' + bad.join('\n   ') + '\n'
+    + '   ทำไม: ของที่ใกล้หมดแต่ยังไม่มีใครสั่ง FG รอบใหม่ ไม่เคยโผล่ในคิวใบล็อตเลย\n');
+});
+
+/* ═══ 📋 แผนสั่งงานล็อต: ต้องเข้าแผนพาร์ทที่ไลน์ผลิตได้ แม้ยังไม่มีความต้องการ ═══  2026-10-26
+   feedback สโตร์: *"ขึ้นข้อมูลพาร์ทไม่ครบทุกรายการ อยากให้ขึ้นข้อมูลพาร์ททั้งหมดที่ผลิตของไลน์ผลิตนั้น"*
+   + *"งานต่อ Process ตอนนี้ขึ้นให้เข้าแผนแค่ Step2 อยากให้ขึ้น Step1 ด้วย"*
+   เดิมปุ่ม "+ เข้าแผน" มีที่เดียวคือลิสต์ `unplanned` ซึ่งมาจากความต้องการล้วน
+   ⇒ วัด 26/10: LINE A (800 ตัน) และ LINE B (600 ตัน) ออเดอร์ค้าง **0 ใบ** ⇒ ลิสต์ว่าง ⇒ เปิดแผนไม่ได้
+   และ Step 1 เป็นแถว is_operation ที่ไม่มีใน bom_items ⇒ ไม่มีทางได้ความต้องการของตัวเอง */
+test('📋 ProdLotPlanner: มีทางเข้าแผนพาร์ทอื่นของไลน์ + ขั้นต่อ Process ตกทอดยอดจากพาร์ทแม่', () => {
+  const planner = stripComments(readFileSync(join(ROOT, 'src/components/ProdLotPlanner.jsx'), 'utf8'));
+  const page    = stripComments(readFileSync(join(ROOT, 'src/pages/ProductionPlan.jsx'), 'utf8'));
+  const bad = [];
+  if (!/otherParts/.test(planner)) bad.push('ProdLotPlanner ไม่มีลิสต์ "พาร์ทอื่นที่ไลน์นี้ผลิต"');
+  if (!/opStepsOf\(/.test(planner)) bad.push('ProdLotPlanner ไม่ได้ตกทอดยอดให้ขั้นต่อ Process');
+  if (!/op_parent_mat/.test(page))  bad.push('ProductionPlan ไม่ได้ดึง op_parent_mat — ไม่รู้จักขั้นตอน');
+  if (!/partsOfLine=/.test(page))   bad.push('ProductionPlan ไม่ได้ส่ง partsOfLine ให้แท็บล็อต');
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n   ') + '\n'
+    + '   ทำไม: ไลน์ที่ออเดอร์ยังไม่เข้า จะไม่มีปุ่มให้กดเลย = "เปิดแผนไม่ได้" ตามที่หน้างานแจ้ง\n');
+});
+
+/* ═══ 🕳️ ป้าย/ลิงก์ที่พาไปหน้าที่มีตัวกรองค้าง ต้องไม่ลงจอว่าง ═══  2026-10-26 · user "ทำไม filter ไม่ขึ้น"
+   เคสจริง: ป้าย "รอคุณเซ็นรับทราบ" (myQueue) พาไป `/mtn-repair?tab=list&ack=pending`
+   แต่ช่อง "ทีมช่าง" ของหน้านั้นตั้งต้นเป็นทีมของ user เอง — ผู้รับป้ายคือ ผจก.ต้นสังกัดของ
+   **ฝ่ายที่แจ้ง** (ส่วนใหญ่ = PRODUCTION) ส่วนใบที่ป้ายนับเป็นใบฟอร์มทีม MTN ล้วน
+   วัด 26/10 ฝั่ง DR: production 1,018 ใบ ∩ maintenance 58 ใบ = **0 ใบเสมอ ไม่ว่าเลือกวันไหน**
+   ⇒ ป้ายบอก 48 ใบ แต่จอขึ้น "ไม่มีรายการ" = จอโกหก (คนอ่านว่าไม่มีงานค้าง แล้วเดินจากไป)
+   แก้ 2 ชั้น: (1) เปิด `?ack=pending` แล้วปลดช่องทีมให้ก่อนครั้งเดียว
+              (2) ลิสต์ว่าง ต้องเขียนบนจอว่า "ตัวกรองไหนตัดทิ้ง · ปลดตัวไหนแล้วได้คืนกี่ใบ" */
+test('🕳️ จอรายการ MO: ว่างแล้วต้องบอกว่าตัวกรองไหนตัดทิ้ง + ?ack=pending ต้องปลดช่องทีมให้', () => {
+  const src = stripComments(readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8'));
+
+  assert.match(src, /blameEmpty\(/,
+    'จอรายการ MO ต้องเรียก blameEmpty() ตอนลิสต์ว่าง — "ไม่มีรายการ" เฉยๆ อ่านได้ว่า "ไม่มีงานค้าง"');
+  assert.match(src, /ladderSteps\(/,
+    'ต้องวาดบันได "ตกเหลือ 0 ตรงไหน" ด้วย — บอกแค่ชื่อตัวกรองไม่พอ คนต้องเห็นว่าตกตรงขั้นไหน');
+  assert.match(src, /clearFilterBy/,
+    'ต้องมีปุ่มปลดตัวกรองที่ชี้ — บอกว่าใครตัดทิ้งแต่ปลดไม่ได้ = ยังแก้ปัญหาให้คนหน้างานไม่ได้');
+  assert.match(src, /ackTeamCleared/,
+    '`?ack=pending` ต้องปลดช่องทีมช่างให้ก่อนครั้งเดียว (ใบชุดนั้นเป็นของทีม MTN ล้วน)');
+
+  /* 🔴 ตัวกรองของจอนี้ต้องมาจาก "ลิสต์ตัวกรอง" ชุดเดียว แล้วค่อยเอาไปทั้งกรองจริงและอธิบาย
+     เขียนเป็น if ซ้อนกันเหมือนเดิม = ต้องมีเกณฑ์ชุดที่ 2 ไว้อธิบาย แล้วมันจะเพี้ยนกันวันใดวันหนึ่ง */
+  for (const name of ['baseFilters', 'queueFilters']) {
+    assert.match(src, new RegExp(`const ${name} = useMemo`),
+      `${name} ต้องเป็นลิสต์ตัวกรองชุดเดียวที่ทั้ง "กรองจริง" และ "อธิบายว่าทำไมว่าง" ใช้ร่วมกัน`);
+  }
+  assert.match(src, /const beforeWait = useMemo\(\(\) => \{\s*const on = baseFilters\.filter/,
+    'beforeWait ต้องกรองจาก baseFilters — ห้ามกลับไปเขียน if ซ้อนกันเอง');
+  assert.match(src, /const shownNoDate = useMemo\(\(\) => \{\s*const on = queueFilters\.filter/,
+    'shownNoDate ต้องกรองจาก queueFilters — ห้ามกลับไปเขียน if ซ้อนกันเอง');
+});
+
+/* ═══ 🛡️ scope-registry-gate — ด่าน "กฎขอบเขตต้องพิสูจน์กับทะเบียนจริง" ห้ามถูกถอด ═══  2026-10-26
+   เคสจริง (คำสั่ง user "ทำด่านกันซ้ำ"): 25/10 บีบขอบเขตหัวหน้ากลุ่ม — build/เทส/crashsweep ผ่านหมด
+   เพราะเทสทุกตัวเล่นกับ **ข้อมูลสังเคราะห์ที่เขียนให้กฎใหม่ผ่าน** ⇒ เช้า 26/10 หน้างานเปิดกะไม่ได้
+   (วัดย้อนหลัง: 15 บัญชีถูกบีบ · หัวหน้ากลุ่มฝั่ง PD1 3 คนเหลือ **ไลน์เดียว**)
+   ⇒ ตั้งแต่นี้ กฎขอบเขตต้องถูกเล่นซ้ำกับทะเบียนผู้ใช้จริง (ไม่มีชื่อคน) ก่อน merge เสมอ
+   🔴 ด่านนี้คุม "ด่านนั้นยังอยู่และยังมีของจริงให้เล่น" — ตัวกฎ 5 ข้อ (A-E) อยู่ใน scopeRegistryGate */
+test('🛡️ scope-registry-gate — ด่านทะเบียนจริงของกฎขอบเขตยังอยู่ครบ', () => {
+  const bad = [];
+  const gatePath = join(ROOT, 'src/utils/__tests__/scopeRegistryGate.test.mjs');
+  const fixPath = join(ROOT, 'src/utils/__tests__/fixtures/userScopeRegistry.json');
+  if (!existsSync(gatePath)) bad.push('ไม่มี scopeRegistryGate.test.mjs (ด่านถูกลบ)');
+  if (!existsSync(fixPath)) bad.push('ไม่มี fixtures/userScopeRegistry.json (ทะเบียนถูกลบ)');
+  if (bad.length) { assert.deepEqual(bad, [], bad.join('\n')); return; }
+
+  const gate = stripComments(readFileSync(gatePath, 'utf8'));
+  /* ต้องเล่นกับทะเบียนจริง + ผ่าน 2 ประตูของกฎขอบเขต ไม่ใช่เทสสังเคราะห์ล้วน */
+  for (const need of ['userScopeRegistry.json', 'effectiveSections', 'scopedLines', 'scopedLineNames']) {
+    if (!gate.includes(need)) bad.push(`scopeRegistryGate ไม่ได้ใช้ ${need}`);
+  }
+  const reg = JSON.parse(readFileSync(fixPath, 'utf8'));
+  /* 🔴 กันทางหนีที่ง่ายที่สุด: ล้าง fixture ให้ว่าง แล้วด่านผ่านฟรี */
+  if (!(reg.profiles?.length >= 50)) bad.push(`ทะเบียนมีบัญชีแค่ ${reg.profiles?.length ?? 0} (ต้อง ≥ 50)`);
+  if (!(reg.lines?.filter(l => l.is_active).length >= 20)) bad.push('ทะเบียนไลน์ที่ใช้งานน้อยกว่า 20');
+  if (!(reg.openedLines?.length >= 10)) bad.push('ประวัติเปิดกะใน fixture น้อยกว่า 10 บัญชี');
+  if (!reg._meta?.refresh_sql) bad.push('fixture ไม่มี _meta.refresh_sql (session หน้ารีเฟรชไม่ได้)');
+  /* 🔴 ห้ามมีชื่อคน/อีเมล/uid เต็ม — ไฟล์นี้อยู่ในรีโป */
+  if (/[฀-๿]{2,}\s+[฀-๿]{2,}/.test(JSON.stringify(reg.profiles || [])))
+    bad.push('เจอข้อความไทยยาวใน profiles — น่าจะเป็นชื่อคน');
+  for (const p of reg.profiles || []) {
+    if (!/^[0-9a-f]{8}$/.test(p.acct || '')) { bad.push(`acct ไม่ใช่ hash: ${p.acct}`); break; }
+  }
+  assert.deepEqual(bad, [], 'ด่าน "กฎขอบเขตต้องพิสูจน์กับทะเบียนจริง" หาย:\n' + bad.join('\n'));
+});
+
+/* ═══ 🪧 ช่องเลือกไลน์ต้อง "ไม่ตาย" — ลิสต์ของ picker ห้ามกรองเองจนเหลือ 0 ═══  2026-10-26
+   หน้างานแจ้ง: *"ช่องไลน์การผลิต ไม่มีไลน์ให้เลือกครับ เปิด MO"*
+   ต้นเหตุ: 4 หน้า (MtnRepair · MtnAnalysis · MaintenanceLevels · DailyPM) **ก๊อปสูตรขอบเขตมาไว้ในหน้า**
+   แล้วเอา Set นั้นมากรองลิสต์ของ <LineSelect> ตรงๆ — ไม่มีตาข่าย "กรองแล้วไม่เหลือ = ไม่กรอง"
+   ที่ `scopeLines()` ของกลางใน components/LineSelect.jsx มีมาตั้งแต่ 2026-08-24
+   ⇒ บัญชีที่ส่วนงานไม่มีไลน์ผลิตสังกัดเลย (QA · Planning&Store · ฝั่งช่าง) ได้ dropdown ว่างเปล่า
+     = แจ้งซ่อมไม่ได้ทั้งหน้า โดยไม่มีข้อความบอกสักตัว (fail-closed เงียบ)
+   🔴 ลิสต์ของ picker (fail-open) **คนละแกนกับ** Set ที่เป็นตัวกรองรายการ/ด่านสิทธิ์ (fail-closed)
+      — ห้ามยุบรวมกัน และห้ามเอา Set มาเป็นลิสต์ของ picker */
+test('🪧 line-picker-never-dead — ลิสต์ที่ส่งเข้า <LineSelect> ต้องมาจาก scopeLines() ของกลาง', () => {
+  const bad = [];
+  /* helper กลางที่มีตาข่าย "กรองแล้วไม่เหลือ = ไม่กรอง" อยู่แล้ว — ผ่านตัวใดตัวหนึ่ง = ปลอดภัย */
+  const VIA_SHARED = /\b(pickerLines|scopeLines|lineOptions|scopedLineNames)\s*\(/;
+  /* สัญญาณว่ากรองด้วย "ขอบเขต" — ไม่ใช่เงื่อนไขธุรกิจ (ไลน์ที่มี demand · dedupe · ไลน์ที่เคยผลิต) */
+  const SCOPE_SRC = /\b(inSectionScope|scopedLines|getLineFamilyNames|getLineFamilyIds)\s*\(/;
+  /* ตัดเนื้อ useMemo แบบสแกนตรงๆ — regex `[\s\S]*?` บนไฟล์ 7 พันบรรทัดทำให้เทสค้าง (เจอจริง 26/10) */
+  const bodyAfter = (src, at) => {
+    /* ตัดที่ "ท้าย useMemo" ตัวแรกที่เจอ — มี 2 รูป: `\n  }, [deps]` กับ `\n  [deps],\n  );`
+       ตัดไม่ครบ = เนื้อของ memo ถัดไปปนเข้ามา แล้วด่านฟ้องผิดตัว (เจอจริงตอนทำด่านนี้) */
+    let end = src.length;
+    for (const t of ['\n  }, [', '\n    [', '\n  );', '\n\n']) {
+      const i = src.indexOf(t, at + 1);
+      if (i >= 0 && i < end) end = i;
+    }
+    return src.slice(at, Math.min(end, at + 1200));
+  };
+  const memoBody = (src, name) => {
+    const at = src.indexOf(`const ${name} = useMemo(`);
+    return at < 0 ? null : bodyAfter(src, at);
+  };
+  for (const f of walk(join(ROOT, 'src'), ['.jsx'])) {
+    if (/__tests__/.test(f) || /components[\\/]LineSelect\.jsx$/.test(f)) continue;
+    const src = stripComments(readFileSync(f, 'utf8'));
+    const rel = relative(ROOT, f);
+    /* ตัวแปรที่ "ได้มาจากขอบเขต" ในไฟล์นี้ — ใช้ไล่ต่ออีกชั้น (visibleLineNames → lineOptions) */
+    const derived = new Set();
+    for (const m of src.matchAll(/const\s+([A-Za-z_$][\w$]*)\s*=\s*useMemo\(/g)) {
+      const body = bodyAfter(src, m.index);
+      if (SCOPE_SRC.test(body) && !VIA_SHARED.test(body)) derived.add(m[1]);
+    }
+    /* ⚖️ ข้อยกเว้นทางการ — `/report` กรอง **ข้อมูล** ด้วย `scopeSecs` ของตัวเองอยู่แล้ว
+       (`empQ.in('section', scopeSecs)` ฯลฯ) ⇒ ลิสต์ไลน์ของตัวกรองผูกกับชุดข้อมูลที่มีสิทธิ์เห็นจริง
+       เปิดลิสต์ให้กว้างกว่าข้อมูล = เลือกแล้วได้จอเปล่า (จอโกหกอีกแบบ)
+       🔴 จะเปลี่ยนพฤติกรรมหน้านี้ = **product decision ต้องถาม user ก่อน** ห้ามแก้เงียบ */
+    if (/pages[\\/]Report\.jsx$/.test(f)) continue;
+    /* ⚖️ ข้อยกเว้นทางการที่ 2 — `/morning-meeting` เอาชุดไลน์นี้ไปเป็น `.in('line_name', lineNames)`
+       ของคิวรีจริง (กะ/ใบผลิต/เครื่อง) ⇒ เปิดลิสต์กว้างขึ้น = **เปิดข้อมูลกว้างขึ้นด้วย**
+       🔴 เป็น product decision ต้องถาม user ก่อน ห้ามแก้เงียบ */
+    if (/pages[\\/]MorningMeeting\.jsx$/.test(f)) continue;
+    const seen = new Set();
+    for (const m of src.matchAll(/<Line(?:Scope)?Select\b[^>]{0,400}?\blines=\{([A-Za-z_$][\w$]*)\}/g)) {
+      const name = m[1];
+      if (seen.has(name)) continue;
+      seen.add(name);
+      const body = memoBody(src, name);
+      if (!body || VIA_SHARED.test(body)) continue;   // เป็น prop / ผ่านของกลางแล้ว
+      const why = SCOPE_SRC.test(body) ? 'กรองขอบเขตเองในหน้า'
+        : [...derived].some(v => v !== name && body.includes(v)) ? 'กรองด้วยชุดที่มาจากขอบเขต'
+        : null;
+      if (why) bad.push(`${rel} → ${name} (${why})`);
+    }
+  }
+  assert.deepEqual(bad, [], '\n\n❌ ลิสต์ของ <LineSelect> ที่กรองขอบเขตเองในหน้า:\n  ' + bad.join('\n  ')
+    + '\n\n   ทำไมห้าม: ส่วนงานที่ไม่มีไลน์ผลิตสังกัด (QA · Planning&Store · ฝั่งช่าง) จะได้ลิสต์ว่าง\n'
+    + '            = เลือกไลน์ไม่ได้ทั้งหน้า และจอไม่บอกอะไรเลย (เคสจริง 26/10 "เปิด MO ไม่มีไลน์ให้เลือก")\n'
+    + '   แก้: import { scopeLines as pickerLines } from "../components/LineSelect"\n'
+    + '        แล้ว pickerLines(lines, { role, lineId, sections }) — มีตาข่าย "กรองแล้วไม่เหลือ = ไม่กรอง"\n'
+    + '   🔴 ชุดที่ใช้กรอง "รายการ/สิทธิ์" ยัง fail-closed เหมือนเดิม — คนละแกน ห้ามยุบรวม\n');
+});
+
+/* ═══ 💥 ชื่อ const ห้ามชนกับฟังก์ชันที่ import มา แล้วเรียกตัวนั้นข้างใน ═══  2026-10-26
+   เคสจริง (commit 83b3e1c3 · 25/10): 4 หน้าเขียน
+     `const scopedLines = useMemo(() => { … return scopedLines({…}) }, […])`
+   โดยไฟล์นั้น `import { scopedLines } from '../utils/sectionScope'` อยู่ด้วย
+   ⇒ ชื่อในฟังก์ชันคอมโพเนนต์ **บังของที่ import มา** · callback รันตอน const ยังไม่ถูก assign
+   ⇒ `ReferenceError: Cannot access 'scopedLines' before initialization` = **จอขาวทั้งหน้า**
+   พิสูจน์กับแอปจริง: /energy · /morning-meeting · /equipment?tab=die · ?tab=jig
+   พังทุกบัญชีที่ **ไม่ใช่ leader และมีขอบเขตส่วนงาน** (= supervisor/manager เกือบทั้งหมด)
+   🔴 ทำไม lint `no-use-before-define` ไม่จับ: การอ่านอยู่ใน callback (คนละ scope กับที่ประกาศ)
+   🔴 ทำไม crashsweep ไม่จับ: mock ใช้ `role=admin` + `sections: []` ⇒ กิ่งนั้นไม่เคยถูกเดิน
+      (อุดแล้วด้วยรอบ scoped ใน audit/crashsweep.mjs)
+   ⇒ แก้ด้วยการ import เป็น alias (`scopedLines as scopedLinesOf`) ห้ามตั้งชื่อชนแล้วหวังว่าจะไม่เรียก */
+test('💥 no-shadowed-import-call — const ที่ชื่อชนกับ import แล้วเรียกตัวนั้น = TDZ จอขาว', () => {
+  const bad = [];
+  for (const f of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
+    if (/__tests__/.test(f)) continue;
+    const src = stripComments(readFileSync(f, 'utf8'));
+    const imported = new Set();
+    for (const m of src.matchAll(/import\s*\{([^}]+)\}\s*from/g)) {
+      for (const part of m[1].split(',')) {
+        const nm = part.split(' as ').pop().trim();
+        if (nm) imported.add(nm);
+      }
+    }
+    if (!imported.size) continue;
+    for (const m of src.matchAll(/\bconst\s+([A-Za-z_$][\w$]*)\s*=/g)) {
+      const name = m[1];
+      if (!imported.has(name)) continue;
+      /* มีการ "เรียก name(" หลังจุดที่ประกาศ = อ่าน binding ตัวใหม่ที่ยังไม่ถูก assign */
+      const call = src.indexOf(`${name}(`, m.index + m[0].length);
+      if (call < 0) continue;
+      const ln = src.slice(0, m.index).split('\n').length;
+      bad.push(`${relative(ROOT, f)}:${ln} — const ${name} บังของที่ import มา แล้วเรียก ${name}() ข้างใน`);
+    }
+  }
+  assert.deepEqual(bad, [], '\n\n❌ const ที่ชื่อชนกับฟังก์ชันที่ import มา:\n  ' + bad.join('\n  ')
+    + '\n\n   ทำไมพัง: callback ของ useMemo/useCallback รัน "ระหว่าง" ที่ const ยังไม่ถูก assign\n'
+    + '            ⇒ ReferenceError: Cannot access \'x\' before initialization = จอขาวทั้งหน้า\n'
+    + '            lint no-use-before-define จับไม่ได้ (คนละ scope) · crashsweep เดิมจับไม่ได้ (mock ไม่มี scope)\n'
+    + '   แก้: import เป็น alias → `import { x as xOf } from "..."` แล้วเรียก xOf() ข้างใน\n');
 });
