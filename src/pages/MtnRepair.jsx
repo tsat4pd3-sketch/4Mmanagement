@@ -60,6 +60,7 @@ import useIsMobile from '../utils/useIsMobile';
 /* วันทำงาน/กะ ของ "เวลาที่แจ้ง" — ของกลาง ห้ามเขียนกฎ 08:00/20:00 เองในหน้า */
 import { shiftOfTime, workDateOfTime } from '../utils/workDate';
 import { ALL, SHIFT_OPTIONS, allOf } from '../utils/filterLabels';
+import { blameEmpty, ladderSteps } from '../utils/emptyFilterBlame';
 /* ป้ายถังขยะของ taxonomy — ของกลาง ห้ามเขียนสตริง "อื่นๆ" เองในหน้า (ดู unclassified.js) */
 import { isVague, UNGROUPED_LABEL } from '../utils/unclassified';
 import { suggestItemTypeFromHistory, registryItemTypeOf, pickMoItemType } from '../utils/mtnItemSuggest';
@@ -523,6 +524,22 @@ export default function MtnRepair() {
   // ทีมช่างของ user (จาก profiles.mtn_teams ที่ตั้งใน AddUser · fallback เดาจาก section) — default คิวงาน + default หน่วยงานตอนแจ้ง
   const userTeams = useMemo(() => teamsForUser(userMtnTeams, scopeSecs), [userMtnTeams, scopeSecs]);
   const teamDefaulted = useRef(false);
+  /* ✍️ ป้าย "รอคุณเซ็นรับทราบ" ในคิวงานพาเข้ามาด้วย `?ack=pending` — ใบชุดนั้น **เป็นของทีม MTN ล้วน**
+     (ฟอร์ม FM-MTN-006 · `isMtnFormRow`) แต่ช่อง "ทีมช่าง" ของหน้านี้ตั้งต้นเป็นทีมของ user เอง
+     ผู้รับป้ายนี้คือ ผจก.ต้นสังกัดของ "ฝ่ายที่แจ้ง" ซึ่งส่วนใหญ่คือฝ่ายผลิต ⇒ ช่องทีม = PRODUCTION
+     วัด 26/10: production 1,018 ใบ ∩ maintenance 58 ใบ = **0 ใบเสมอ ไม่ว่าเลือกวันไหน**
+     ⇒ ป้ายบอก "48 ใบรอคุณเซ็น" แต่จอขึ้น "ไม่มีรายการ" (เคสจริง user 26/10 "ทำไม filter ไม่ขึ้น")
+     🔴 เปิดตัวกรองนี้เมื่อไหร่ **ปลดช่องทีมให้ก่อนครั้งเดียว** แล้ว user เลือกทีมเองทีหลังได้ตามเดิม
+        · เทียบทีมผ่าน `isMtnFormOrder` ตัวเดียวกับที่ตัวกรองใช้ — ห้ามเขียนรายชื่อคีย์ทีมซ้ำที่นี่
+        · ต้องตั้ง `teamDefaulted` ด้วย ไม่งั้นเอฟเฟกต์ตั้งทีมตั้งต้นจะมาทับทีหลังตอน lines โหลดเสร็จ */
+  const ackTeamCleared = useRef(false);
+  useEffect(() => {
+    if (fAck !== 'pending') { ackTeamCleared.current = false; return; }
+    if (ackTeamCleared.current) return;
+    ackTeamCleared.current = true;
+    teamDefaulted.current = true;
+    setFDept(d => (d && !isMtnFormOrder({ mtn_dept: d }) ? '' : d));
+  }, [fAck]);
   useEffect(() => {
     if (teamDefaulted.current || !lines.length) return;
     // สังกัดทีมเดียว (ไม่ใช่ admin) → เปิดหน้ามาเห็นคิวของทีมตัวเองก่อน (ปรับเป็น "ทุกหน่วยงาน" ได้)
@@ -593,24 +610,40 @@ export default function MtnRepair() {
     return () => { bump.cancel(); supabaseDR.removeChannel(ch); };
   }, [loadMasters, loadOrders, reloadAll]);
 
+  /* 🧾 ตัวกรองทุกชั้นเขียนเป็น "ลิสต์ของตัวกรอง" แล้วค่อยเอาไปกรอง — ไม่ใช่ if ซ้อนกัน  (2026-10-26)
+     เพราะจอต้องตอบให้ได้ว่า **"ว่างเพราะตัวกรองไหน"** (`blameEmpty`) ⇒ ถ้าเขียนเกณฑ์ไว้ 2 ชุด
+     (ชุดกรองจริง + ชุดอธิบาย) มันจะเพี้ยนกันวันใดวันหนึ่ง แล้วจอจะโกหกหนักกว่าเดิม
+     🔴 **ลำดับในลิสต์ = ลำดับที่หน้าจอไล่กรองจริง** — บันได "ตกเหลือ 0 ตรงไหน" อ่านจากลำดับนี้
+     🔴 `removable:false` = ขอบเขตสิทธิ์ ไม่ใช่ตัวกรองที่ user ปลดเองได้ (ห้ามวาดปุ่มปลดให้) */
+  const baseFilters = useMemo(() => {
+    // กางครอบครัวไลน์เสมอ — MO เก็บชื่อ "ไลน์ลูก" (HDF1/SUB APRON) แต่ dropdown เลือกระดับแม่ (HYDROFORM/LINE APRON ASSY) ได้
+    // เทียบตรงตัวทำให้เลือกแม่แล้วใบของลูกหายหมด (feedback หน้างาน 2026-08-25) · fam ว่าง (ไลน์ไม่อยู่ในทะเบียน) = ถอยไปเทียบตรงตัว
+    const fam = fLine ? new Set(getLineFamilyNames(lines, fLine)) : null;
+    const t = fText.trim().toLowerCase();
+    return [
+      { key: 'scope', label: 'ขอบเขตไลน์ของคุณ', on: !!scopeLines, removable: false,
+        test: o => !o.line_name || scopeLines.has(o.line_name) },
+      { key: 'status', label: 'สถานะ', on: fStatus !== 'all',
+        value: fStatus === 'open' ? 'ยังไม่ปิด' : (STATUS_META[fStatus]?.label || fStatus),
+        // 🔵 "ยังไม่ปิด" = isMoOpen (รวม transferred = จบแล้ว · utils/mtnStepPerm) ห้ามเทียบ status ตรงๆ
+        test: fStatus === 'open' ? isMoOpen : (o => o.status === fStatus) },
+      { key: 'line', label: 'ไลน์', value: fLine, on: !!fLine,
+        test: fam && fam.size ? (o => fam.has(o.line_name)) : (o => o.line_name === fLine) },
+      { key: 'dept', label: 'ทีมช่าง', value: deptNameOf(fDept), on: !!fDept,
+        test: o => sameTeam(o.mtn_dept || deptForItem(o.item_type), fDept) },
+      { key: 'shift', label: 'กะที่แจ้ง', value: SHIFT_OPTIONS.find(x => x.value === fShift)?.label || fShift, on: !!fShift,
+        test: o => shiftOfTime(o.report_at) === fShift },
+      { key: 'repair', label: 'ประเภทงานซ่อม', value: fRepairType, on: !!fRepairType,
+        test: o => (o.repair_type || '') === fRepairType },
+      { key: 'text', label: 'คำค้น', value: fText.trim(), on: !!t,
+        test: o => [o.mo_no, o.machine_no, o.item_type, o.problem_characteristic, o.report_note, o.line_name, o.reported_by_name, o.reporter_prod].some(v => (v || '').toLowerCase().includes(t)) },
+    ];
+  }, [scopeLines, fStatus, fLine, fDept, fShift, fRepairType, fText, lines]);
+
   const beforeWait = useMemo(() => {
-    let rows = orders;
-    if (scopeLines) rows = rows.filter(o => !o.line_name || scopeLines.has(o.line_name));
-    if (fStatus === 'open') rows = rows.filter(isMoOpen);   // รวม transferred = จบแล้ว (utils/mtnStepPerm)
-    else if (fStatus === 'closed') rows = rows.filter(o => o.status === 'closed');
-    else if (fStatus !== 'all') rows = rows.filter(o => o.status === fStatus);
-    if (fLine) {
-      // กางครอบครัวไลน์เสมอ — MO เก็บชื่อ "ไลน์ลูก" (HDF1/SUB APRON) แต่ dropdown เลือกระดับแม่ (HYDROFORM/LINE APRON ASSY) ได้
-      // เทียบตรงตัวทำให้เลือกแม่แล้วใบของลูกหายหมด (feedback หน้างาน 2026-08-25) · fam ว่าง (ไลน์ไม่อยู่ในทะเบียน) = ถอยไปเทียบตรงตัว
-      const fam = new Set(getLineFamilyNames(lines, fLine));
-      rows = fam.size ? rows.filter(o => fam.has(o.line_name)) : rows.filter(o => o.line_name === fLine);
-    }
-    if (fDept) rows = rows.filter(o => sameTeam(o.mtn_dept || deptForItem(o.item_type), fDept));
-    if (fShift) rows = rows.filter(o => shiftOfTime(o.report_at) === fShift);
-    if (fRepairType) rows = rows.filter(o => (o.repair_type || '') === fRepairType);
-    if (fText.trim()) { const t = fText.trim().toLowerCase(); rows = rows.filter(o => [o.mo_no, o.machine_no, o.item_type, o.problem_characteristic, o.report_note, o.line_name, o.reported_by_name, o.reporter_prod].some(v => (v || '').toLowerCase().includes(t))); }
-    return rows;
-  }, [orders, scopeLines, fStatus, fLine, fDept, fShift, fRepairType, fText, lines]);
+    const on = baseFilters.filter(f => f.on);
+    return on.length ? orders.filter(o => on.every(f => f.test(o))) : orders;
+  }, [orders, baseFilters]);
 
   /* 🔴 ตัวกรอง "รอขั้นไหน" แยกชั้นจาก `beforeWait` — ไม่เอาไปรวมในชั้นเดียวกับตัวกรองอื่น
      เพราะ dropdown ด้านล่างนับตัวเลือกจาก `beforeWait` ⇒ เลือกขั้นหนึ่งแล้วขั้นอื่นต้องยังอยู่ให้เลือกกลับ */
@@ -625,13 +658,19 @@ export default function MtnRepair() {
     beforeWait.forEach(o => { const st = prStateOf(o); if (st) c[st]++; });
     return { ...c, waiting: c.need + c.no_no };
   }, [beforeWait, prStateOf]);
-  const shownNoDate = useMemo(
-    () => {
-      let rows = fWait ? beforeWait.filter(o => waitStageOf(o) === fWait) : beforeWait;
-      if (fAck === 'pending') rows = rows.filter(o => isMtnFormOrder(o) && !o.dept_manager_at);
-      return rows.filter(prMatch);
-    },
-    [beforeWait, fWait, fAck, prMatch]);
+  /* ชั้น "คิว" — ดูลิสต์ตัวกรองด้านบนว่าทำไมต้องเขียนเป็นลิสต์ */
+  const queueFilters = useMemo(() => [
+    { key: 'wait', label: 'รอขั้น', value: fWait, on: !!fWait, test: o => waitStageOf(o) === fWait },
+    { key: 'ack', label: '✍️ รอ ผจก.ต้นสังกัดเซ็นรับทราบ', on: fAck === 'pending',
+      test: o => isMtnFormOrder(o) && !o.dept_manager_at },
+    { key: 'pr', label: 'งาน PR', value: PR_FILTERS.find(x => x.v === fPr)?.label || fPr,
+      on: !!fPr && PR_FILTERS.some(x => x.v === fPr), test: prMatch },
+  ], [fWait, fAck, fPr, prMatch]);
+
+  const shownNoDate = useMemo(() => {
+    const on = queueFilters.filter(f => f.on);
+    return on.length ? beforeWait.filter(o => on.every(f => f.test(o))) : beforeWait;
+  }, [beforeWait, queueFilters]);
 
   /* 🕰️ ตัวเลือก "รอขั้นไหน" — นับจากใบที่เหลือหลังกรองอย่างอื่น **ยกเว้นตัวกรอง wait เอง**
      (ถ้านับหลังกรอง wait แล้ว เลือกขั้นหนึ่งจะทำให้ขั้นอื่นหายจาก dropdown = กลับไปเลือกไม่ได้)
@@ -668,6 +707,39 @@ export default function MtnRepair() {
     const d = o.work_date || workDateOfTime(o.report_at);
     return d && (!a || d < a) ? d : a;
   }, null), [shownNoDate]);
+  /* วันของใบที่เก่าที่สุด "ทั้งก้อนที่โหลดมา" — ใช้ตอนตัวกรองวันที่เป็นตัวที่ทำให้จอว่าง
+     (ตอนนั้น `oldestDate` คำนวณจากลิสต์ที่ว่างอยู่แล้ว จึงเป็น null ใช้ไม่ได้) */
+  const oldestLoaded = useMemo(() => orders.reduce((a, o) => {
+    const d = o.work_date || workDateOfTime(o.report_at);
+    return d && (!a || d < a) ? d : a;
+  }, null), [orders]);
+
+  /* 🕳️ กรองแล้วว่าง — ต้องบอกว่า "ตัวกรองไหนตัดทิ้ง และปลดตัวไหนแล้วได้ของคืนกี่ใบ"  (2026-10-26)
+     เคสจริง: ป้าย "รอคุณเซ็นรับทราบ" บอก 48 ใบ กดแล้วจอขึ้น "ไม่มีรายการ" เพราะช่องทีมช่าง
+     ตั้งต้นเป็นทีมของ user (PRODUCTION) ส่วนใบชุดนั้นเป็นของทีม MTN ล้วน ⇒ ตัดกันเหลือ 0 เสมอ
+     🔴 คิดเฉพาะตอนลิสต์ว่างจริง ⇒ จอปกติไม่เสียแรงสักนิด (วนมากสุด 10 ตัวกรอง × 1,000 ใบ)
+     🔴 "ไม่มีใบเลยตั้งแต่ต้น" ≠ "ตัวกรองตัดทิ้ง" — ไม่มีใบโหลดมาเลย ไม่ต้องไล่ให้คนไปล้างตัวกรอง */
+  const { setRange: trSetRange, to: trTo } = tr;   // แกะเป็น primitive/fn ก่อน — ห้ามใส่ object ใน deps (CLAUDE.md กฎเขียน DB ข้อ 9)
+  const dateFilter = useMemo(() => ({
+    key: 'date', label: 'ช่วงวันที่', value: `${tr.from} – ${tr.to}`, on: !prIgnoresDate, test: inRange,
+  }), [tr.from, tr.to, prIgnoresDate, inRange]);
+  const emptyWhy = useMemo(() => {
+    if (shown.length || !orders.length) return null;
+    return blameEmpty(orders, [...baseFilters, ...queueFilters, dateFilter]);
+  }, [shown.length, orders, baseFilters, queueFilters, dateFilter]);
+  /* ปุ่ม "ปลดตัวกรองนี้" — คีย์ต้องตรงกับลิสต์ตัวกรองด้านบน (ตัวที่ removable:false ไม่มีปุ่ม) */
+  const clearFilterBy = useCallback((key) => {
+    if (key === 'status') setFStatus('all');
+    else if (key === 'line') setFLine('');
+    else if (key === 'dept') setFDept('');
+    else if (key === 'shift') setFShift('');
+    else if (key === 'repair') setFRepairType('');
+    else if (key === 'text') setFText('');
+    else if (key === 'wait') setFWait('');
+    else if (key === 'ack') mergeSp({ ack: null });
+    else if (key === 'pr') setFPr('');
+    else if (key === 'date' && oldestLoaded) trSetRange(oldestLoaded, trTo);
+  }, [setFWait, setFPr, mergeSp, oldestLoaded, trSetRange, trTo]);
 
   /* ── ⬇️ Export Excel ของช่วงที่เลือก (2026-10-06 · คำขอ user) ────────────────────
      ส่ง `shown` (ใบที่เห็นบนจอหลังกรองทุกชั้น) ⇒ ไฟล์ตรงกับจอเสมอ
@@ -871,6 +943,47 @@ export default function MtnRepair() {
           onTeam={(dept) => { setFStatus('open'); setFDept(dept); }}
           teamName={deptNameOf} statusLabel={moStatusLabel} onOpen={openDetail}
         />
+        {/* 🕳️ กรองแล้วไม่เหลือใบเลย — ต้องบอกว่า "ตัวไหนตัดทิ้ง" + "ปลดแล้วได้คืนกี่ใบ"  (26/10 · คำถาม user)
+            กฎความซื่อสัตย์ของจอ: "ไม่มีรายการ" เฉยๆ อ่านได้ว่า "ไม่มีงานค้าง" ทั้งที่มีงานค้างอยู่
+            🔴 ปุ่มที่โผล่ = ตัวกรองที่ **ปลดตัวเดียวแล้วได้ของคืนจริง** (ตัวเลขคำนวณมา ไม่ใช่เดา) */}
+        {emptyWhy && (
+          <div style={{ fontSize: 12.5, color: 'var(--text2)', background: 'rgba(245,158,11,0.10)',
+            border: '1px solid rgba(245,158,11,0.40)', borderRadius: 10, padding: '10px 13px', marginBottom: 10, lineHeight: 1.7 }}>
+            <div style={{ fontWeight: 800, color: 'var(--text)', fontSize: 13 }}>
+              🕳️ ตัวกรองที่เลือกอยู่ตัดใบออกหมด — ไม่ได้แปลว่าไม่มีงาน
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 5, marginTop: 4 }}>
+              {ladderSteps(emptyWhy.ladder).map((r, i) => (
+                <span key={r.key || `all-${i}`} style={{ color: r.n === 0 ? '#ef4444' : 'var(--text2)', fontWeight: r.n === 0 ? 800 : 400 }}>
+                  {i > 0 && <span style={{ color: 'var(--muted)', fontWeight: 400 }}>→ </span>}
+                  {r.label}{r.value ? ` "${r.value}"` : ''} <b>{r.n.toLocaleString()}</b> ใบ
+                </span>
+              ))}
+            </div>
+            {emptyWhy.culprits.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginTop: 7 }}>
+                <span style={{ color: 'var(--muted)' }}>ปลดตัวใดตัวหนึ่งแล้วได้ใบคืน:</span>
+                {emptyWhy.culprits.map(c => (c.removable ? (
+                  <button key={c.key} onClick={() => clearFilterBy(c.key)}
+                    title={`ปลดตัวกรอง "${c.label}" แล้วจะเห็น ${c.n} ใบ`}
+                    style={{ height: 'var(--ctl-h)', padding: '0 11px', borderRadius: 'var(--ctl-r)', fontSize: 'var(--ctl-fs)',
+                      fontWeight: 700, cursor: 'pointer', background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border2)' }}>
+                    ✕ {c.label}{c.value ? `: ${c.value}` : ''} → {c.n.toLocaleString()} ใบ
+                  </button>
+                ) : (
+                  <span key={c.key} style={{ color: 'var(--muted)' }}>
+                    · {c.label} ({c.n.toLocaleString()} ใบ) — มาจากสิทธิ์ของคุณ ปลดเองไม่ได้
+                  </span>
+                )))}
+              </div>
+            )}
+            {emptyWhy.needsMulti && (
+              <div style={{ marginTop: 6, color: 'var(--muted)' }}>
+                ปลดตัวเดียวยังไม่พอ — กดปุ่ม <b>ล้างตัวกรอง</b> ในแถบด้านบนเพื่อเริ่มใหม่
+              </div>
+            )}
+          </div>
+        )}
         {/* 📋 รายการ = ตาราง 1 ใบ 1 บรรทัด (05/10 · คำสั่ง user "ข้อมูล 100+ MO แล้ว การ์ดดูยากมาก")
             สแกนตาลงทีละคอลัมน์ได้ · เดิมการ์ด 5 ใบ/แถว = เห็นแค่ ~15 ใบต่อจอ */}
         {/* 📱 มือถือ: การ์ดต่อใบในโฟลว์ปกติ — ตาราง 10 คอลัมน์ในกล่องเลื่อนสูง (100vh-170) = ปัดข้าง + เลื่อนซ้อนเลื่อน
