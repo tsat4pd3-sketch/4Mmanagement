@@ -53,7 +53,7 @@ docs/                  # บังคับอ่าน: ENGINEERING-PRINCIPLES.
                        #   PERMISSIONS-DESIGN.md (สิทธิ์/role) · OBEYA-KPI-SOURCES.md (ก่อนแตะ KPI)
                        #   ที่เหลือดูชื่อไฟล์เอาใน docs/ — เปิดเฉพาะที่เกี่ยวกับงานที่ทำ
                        #   📌 **ออกแบบไว้แล้ว ยังไม่ลงมือ — ห้ามหยิบไปทำเองจนกว่า user สั่ง:**
-                       #     IATF16949-GAP-REVIEW · IDENTITY-NOTIFY-DESIGN (แกนสิทธิ์อยู่
+                       #     IATF16949-GAP-REVIEW · ISA95-AUDIT (26/10) · IDENTITY-NOTIFY-DESIGN (แกนสิทธิ์อยู่
                        #       PERMISSIONS-DESIGN.md ห้ามแก้ข้ามไฟล์) · FINANCIAL-GAP-ANALYSIS
                        #       (⚠️ ห้ามใส่ราคาขายเป็นคอลัมน์ใน parts_master ฝั่ง DR — anon อ่านได้ทั้งตาราง) ·
                        #     LOCAL-SERVER-MIGRATION-SPEC (มี 8 จุด hardcode URL Supabase ที่ต้องแก้ก่อนย้าย)
