@@ -6,7 +6,7 @@ import { UserContext } from '../App';
 import { canWriteLine, writeBlockText } from '../utils/writeScope';   // 🔐 ชั้นที่ 3 — ยืมมือเขียนทะเบียนสินค้า (20/10)
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
-import { inSectionScope, scopedLines } from '../utils/sectionScope';
+import { inSectionScope, scopedLines as scopedLinesOf } from '../utils/sectionScope';
 import { getLineFamilyNames, lineNameCompare } from '../utils/lineHierarchy';
 import { dieSetKindLabel, dieSetKindOptions, dieSetKindKey } from '../utils/equipmentKinds';
 import useDieSetKinds, { invalidateDieSetKinds } from '../utils/useDieSetKinds'; // ทะเบียนรูปแบบชุด (DR die_set_kinds) — 2026-10-05
@@ -306,13 +306,17 @@ export default function DieRegistry() {
   }, []);
 
   /* ── mandatory scope (pattern มาตรฐาน: leader = family ไลน์ตัวเอง · อื่น = ตาม sections) ── */
+  /* 🔴 ชื่อ const ห้ามชนกับฟังก์ชันที่ import มา แล้วเรียกตัวนั้นข้างใน = **TDZ จอขาวทั้งหน้า**
+     (`ReferenceError: Cannot access 'scopedLines' before initialization` — เกิดจริง 25-26/10
+      กับทุกบัญชีที่ไม่ใช่ leader และมีขอบเขตส่วนงาน · crashsweep จับไม่ได้เพราะ mock ใช้ `sections: []`)
+     ⇒ เรียกของกลางผ่านชื่อ alias เสมอ · มีด่าน `no-shadowed-import-call` */
   const scopedLines = useMemo(() => {
     if (role === 'leader' && userLineId) {
       const myLine = lines.find(l => String(l.id) === String(userLineId));
       const fam = new Set(myLine ? getLineFamilyNames(lines, myLine.name) : []);
       return fam.size ? lines.filter(l => fam.has(l.name)) : lines;
     }
-    if (scopeSecs?.length) return scopedLines({ role, lineId: userLineId, sections: scopeSecs, lines, scopeIdx });
+    if (scopeSecs?.length) return scopedLinesOf({ role, lineId: userLineId, sections: scopeSecs, lines, scopeIdx });
     return lines;
   }, [lines, role, userLineId, scopeSecs, scopeIdx]);
   const scopedLineNames = useMemo(() => new Set(scopedLines.map(l => l.name)), [scopedLines]);
