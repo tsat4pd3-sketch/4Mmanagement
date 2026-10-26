@@ -6,7 +6,7 @@ import { toast } from '../components/Toast';
 import { inSectionScope, scopedLines } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 // picker กลาง (single-source audit 2026-09-07) — ไลน์/คน อ่านจากทะเบียน · สถานีจาก workstations ของไลน์
-import LineSelect from '../components/LineSelect';
+import LineSelect, { scopeLines as pickerLines } from '../components/LineSelect';
 import PersonSelect from '../components/PersonSelect';
 import useColumnHistory from '../utils/useColumnHistory';
 import SelectOrFree from '../components/SelectOrFree';
@@ -69,16 +69,13 @@ export default function PokaYokeCheck() {
   const selFam = useMemo(() => (selLine ? getLineFamilyNames(lines, selLine) : NO_LINES), [lines, selLine]);
 
   // scope ไลน์มาตรฐาน
+  /* 🔴 ลิสต์ของ picker ต้อง "ไม่ตาย" — ส่วนงานที่ไม่มีไลน์ผลิตสังกัด (QA · Planning&Store · ฝั่งช่าง)
+     กรองแล้วเหลือ 0 ⇒ dropdown ว่าง = ใช้ฟีเจอร์ไม่ได้ทั้งหน้า (เคสจริง 26/10 · ด่าน line-picker-never-dead)
+     ⇒ ผ่าน `scopeLines()` ของกลาง (components/LineSelect.jsx) = "กรองแล้วไม่เหลือ = ไม่กรอง" */
   const visibleLines = useMemo(() => {
-    let arr = lines;
-    if (role === 'leader' && userLineId) {
-      const fam = getLineFamilyNames(lines, Number(userLineId) || userLineId);
-      arr = lines.filter(l => fam.includes(l.name));
-    } else if (scopeSecs?.length) {
-      arr = scopedLines({ role, lineId: userLineId, sections: scopeSecs, lines, scopeIdx });
-    }
+    const arr = pickerLines(lines, { role, lineId: userLineId, sections: scopeSecs, scopeIdx });
     return [...arr].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-  }, [lines, role, userLineId, scopeSecs]);
+  }, [lines, role, userLineId, scopeSecs, scopeIdx]);
 
   useEffect(() => { if (!selLine && visibleLines.length) setSelLine(visibleLines[0].name); }, [visibleLines, selLine]);
 
