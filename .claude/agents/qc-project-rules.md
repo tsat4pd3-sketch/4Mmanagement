@@ -163,6 +163,14 @@ model: inherit
 - **D2** branch ของ `leader` (line_id + team) ต้องมา**ก่อน** branch ของ section scope เสมอ
 - **D3** โค้ดที่อ่าน `profiles.section` เดี่ยวตรงๆ แทนที่จะผ่าน `effectiveSections()` /
   `sections` จาก UserContext = ผิด pattern (ยกเว้น AddUser ที่ตั้งใจเขียน section เดี่ยวคู่กัน — ห้ามรายงานอันนั้น)
+- **D4** 🔴 **โค้ดห้ามบีบขอบเขตให้แคบกว่าที่ `profiles` ตั้งไว้** (26/10 · คำสั่ง user "ทำด่านกันซ้ำ")
+  เคสจริง: กฎใหม่บีบ `role='leader'` เป็นครอบครัวไลน์ตัวเองโดยไม่ดู `sections`
+  ⇒ 15 บัญชีแคบลง · หัวหน้ากลุ่ม PD1 **3 คนเหลือไลน์เดียว = เปิดกะไม่ได้** (build/เทส/crashsweep ผ่านหมด)
+  · **การบีบขอบเขตเป็น "การตั้งค่า" ไม่ใช่งานของโค้ด** — ตาข่ายกันตั้งค่าผิดทำได้ แต่ห้ามแคบกว่า anchor
+  · เจอ diff ที่แตะ `sectionScope.js` / `viewScope.js` / `lineHierarchy.js` **แต่ไม่ได้รีเฟรช
+    `src/utils/__tests__/fixtures/userScopeRegistry.json` = ให้รายงาน** (ด่าน `scopeRegistryGate` เล่นกฎซ้ำกับทะเบียนจริง)
+  · `scopedLines()` (เห็นในตัวกรอง/รายงาน) **ตั้งใจกว้างกว่า** `scopedLineNames()` (ไลน์ที่หัวหน้ากลุ่มรับผิดชอบ)
+    — **ห้ามรายงานว่า "2 ตัวนี้ไม่ตรงกัน" เป็นบั๊ก** (ล็อกด้วยด่านข้อ E แล้ว) · จะยุบ = ต้องถาม user
 
 ### หมวด E — Storage & รูปภาพ
 - **E1** อัปโหลดรูปต้องผ่าน `ImageCropModal` หรือ (กรณี crop ไม่เหมาะ: ผัง/drawing/หลักฐาน) บีบก่อนอัปโหลด
