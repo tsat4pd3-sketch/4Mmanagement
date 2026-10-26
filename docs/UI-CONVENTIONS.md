@@ -786,6 +786,29 @@ user ส่งคลิปจอมือถือมา: **เนื้อห�
 
 8. **dropdown ไลน์ตัวเดียว (ไม่ cascade) ต้องเรียงตามลำดับชั้นผ่าน `toHierarchicalOptions(lines)` (`src/utils/lineHierarchy.js`) — 2026-08-04** คืน `[{line, depth}]` เรียงแม่ → ลูกใต้แม่ แล้ว render ย่อหน้าตาม `depth` (`↳`) · **ห้าม `lines.map()` ตรงๆ แล้วเติม `↳` ให้ลูก** — ลิสต์จะเรียงตามลำดับที่ query มา ลูกลอยไปคนละที่กับแม่ (เจอจริง: แผง 🧠 วิเคราะห์สาเหตุ ใน `/oee-analytics` โชว์ `↳ Assy GOR` อยู่**เหนือ** `GOR`, `↳ HDF1/HDF2` เหนือ `HYDROFORM`)
 
+9.1 **🪧 ลิสต์ที่ส่งเข้า `<LineSelect>`/`<LineScopeSelect>` ต้องมาจาก `scopeLines()` ของกลาง — 2026-10-26 (หน้างานแจ้ง)**
+
+   *"ช่องไลน์การผลิต ไม่มีไลน์ให้เลือกครับ เปิด MO"* — จอว่างเปล่า ไม่มีข้อความบอกอะไรเลย
+
+   🔴 **หลัก: ลิสต์ของ picker fail-OPEN · ตัวกรองรายการ/ด่านสิทธิ์ fail-CLOSED — คนละแกน ห้ามยุบรวม**
+   - ส่วนงานที่ **ไม่มีไลน์ผลิตสังกัดเลย** (QA · Planning&Store · MTN/JIG/DIE) กรองด้วย `section`
+     แล้วเหลือ 0 ⇒ ถ้าเอาผลนั้นไปเป็นลิสต์ picker = **เลือกไลน์ไม่ได้ทั้งหน้า**
+     (หน่วยงานพวกนี้ทำงานให้ทุกไลน์อยู่แล้ว การกรองด้วย section จึงไม่มีความหมาย)
+   - `scopeLines(lines, { role, lineId, sections, scopeIdx })` ใน `src/components/LineSelect.jsx`
+     มีตาข่าย **"กรองแล้วไม่เหลืออะไร = ไม่กรอง"** มาตั้งแต่ 2026-08-24 — **ห้ามเขียนสูตรขอบเขตซ้ำในหน้า**
+     ```js
+     import LineSelect, { scopeLines as pickerLines } from '../components/LineSelect';
+     const pickList = useMemo(() => pickerLines(lines, { role, lineId, sections: scopeSecs }),
+       [lines, role, lineId, scopeSecs]);
+     ```
+   - 🔴 **ชุดที่เอาไปกรองแถว / เป็นฐานของด่านสิทธิ์ (เช่น `reporterScope` ของ `/mtn-repair`)
+     ต้อง fail-closed เหมือนเดิม** — ถ้าตัวแปรเดียวทำ 2 หน้าที่ ให้**แยกตัวแปร** อย่าเปลี่ยนตัวเดิม
+   - ⚖️ **ข้อยกเว้นทางการ 2 หน้า** (ด่านข้ามให้แล้ว · เปลี่ยน = product decision ต้องถาม user):
+     `/report` กรองข้อมูลด้วย `scopeSecs` ของตัวเองอยู่แล้ว · `/morning-meeting` เอาชุดไลน์ไปเป็น
+     `.in('line_name', …)` ของคิวรีจริง ⇒ เปิดลิสต์กว้าง = เปิดข้อมูลกว้างตาม
+   - **มีด่าน `line-picker-never-dead`** ใน `regressionGuards` (ไล่ทุก `<LineSelect lines={…}>` ทั้งรีโป
+     แล้วเช็คว่า memo ของตัวแปรนั้นกรองขอบเขตเองหรือเปล่า — รวมถึงกรองด้วยชุดที่มาจากขอบเขตอีกชั้น)
+
 9. **⭐ dropdown เลือกไลน์ = `<LineSelect>` เท่านั้น ห้ามเขียน `lines.map(l => <option>)` เองอีก — 2026-08-21 (คำสั่ง user)**
    `src/components/LineSelect.jsx` + hook `useProductionLines()` (`src/utils/useProductionLines.js`)
 

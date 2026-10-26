@@ -27,6 +27,7 @@ import { ALL } from '../utils/filterLabels';
 import { DeleteButton } from '../components/IconButton';
 import SearchInput from '../components/SearchInput';
 import LineScopeSelect from '../components/LineScopeSelect';
+import { scopeLines as pickerLines } from '../components/LineSelect';   // ตาข่าย "กรองแล้วไม่เหลือ = ไม่กรอง"
 import { fetchAllPages, fetchByIds } from '../utils/fetchByIds';
 import { planTaskSummary } from '../utils/pmCoordSummary';
 import useIsMobile from '../utils/useIsMobile';   // 🔴 เพดาน 1000 แถว + URL ยาว (กฎเหล็ก DB ข้อ 5)
@@ -172,7 +173,12 @@ export default function PmCoordination() {
         || String(a.sum.next?.task_date || '9999').localeCompare(String(b.sum.next?.task_date || '9999')));
   }, [plans, scopeLines, fStatus, fScope, needle, tasksByPlan, today]);
   const noLineHidden = fScope.names?.length ? plans.filter(p => !p.line_name).length : 0;
-  const scopeLineList = useMemo(() => (scopeLines ? lines.filter(l => scopeLines.has(l.name)) : lines), [lines, scopeLines]);
+  /* 🔴 ลิสต์ของ picker ต้อง "ไม่ตาย" — ส่วนงานที่ไม่มีไลน์ผลิตสังกัด (QA · Planning&Store · ฝั่งช่าง)
+     กรองแล้วเหลือ 0 ⇒ dropdown ว่าง = ใช้ฟีเจอร์ไม่ได้ทั้งหน้า (เคสจริง 26/10 · ด่าน line-picker-never-dead)
+     ⇒ ผ่าน `scopeLines()` ของกลาง (components/LineSelect.jsx) = "กรองแล้วไม่เหลือ = ไม่กรอง" */
+  const scopeLineList = useMemo(
+    () => pickerLines(lines, { role, lineId, sections: scopeSecs }),
+    [lines, role, lineId, scopeSecs]);
 
   // ช่วง Production Support ที่กำลังจะถึง (is_support · วันนี้เป็นต้นไป · แผนที่ยังไม่ done/cancelled) — เตือน Production ล่วงหน้า
   const upcomingSupport = useMemo(() => {

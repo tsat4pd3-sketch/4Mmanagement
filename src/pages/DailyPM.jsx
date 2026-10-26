@@ -8,13 +8,11 @@ import { DAILY_PM_STATUS_META, DAILY_PM_WINDOW_MIN } from '../lib/pmDailyStatus'
 import { fmtDur } from '../utils/duration'
 import { fmtTime } from '../utils/dateFormat'
 import { can } from '../utils/permissions'
-import { inSectionScope } from '../utils/sectionScope'
-import { getLineFamilyNames } from '../utils/lineHierarchy'
 import { loadDailyAm, amShiftInfo, dailyAmLineStatus } from '../lib/dailyAmBoard'
 import { invalidateTable } from '../utils/masterInvalidate'
 import { loadPmTeams, isAmTeam } from '../utils/pmTeams'
 import { checkWriteRows } from '../utils/dbWrite'
-import LineSelect from '../components/LineSelect' // dropdown ไลน์ = <LineSelect> เท่านั้น (single-source audit 2026-09-07)
+import LineSelect, { scopeLines as pickerLines } from '../components/LineSelect' // dropdown ไลน์ = <LineSelect> เท่านั้น (single-source audit 2026-09-07)
 import useTabParam from '../utils/useTabParam'
 import { visibleInterval } from '../utils/usePolling'
 import { RATE, LIVE } from '../utils/refreshRates'
@@ -41,14 +39,15 @@ export default function DailyPM() {
   const [jigs, setJigs] = useState([])
   const [prodLines, setProdLines] = useState([]) // รายชื่อไลน์ผลิต — ใช้กำหนดไลน์ให้อุปกรณ์ที่ยังไม่ระบุ
   // scope มาตรฐาน: leader→family · role อื่น→sections · admin/qa→ทั้งหมด (กัน dropdown เห็นไลน์ข้าม scope)
-  const scopedProdLines = useMemo(() => {
-    if (role === 'leader' && userLineId) {
-      const fam = getLineFamilyNames(prodLines, Number(userLineId) || userLineId)
-      return prodLines.filter(l => fam.includes(l.name))
-    }
-    if (scopeSecs?.length) return prodLines.filter(l => inSectionScope(scopeSecs, l.section))
-    return prodLines
-  }, [prodLines, role, userLineId, scopeSecs])
+  /* 🔴 ช่องเลือกไลน์ต้อง "ไม่ตาย" — ส่วนงานที่ไม่มีไลน์ผลิตสังกัดเลย (QA · Planning&Store · ฝั่งช่าง)
+     กรองด้วย section แล้วเหลือ 0 ⇒ dropdown ว่างเปล่า = แจ้งซ่อม/เลือกไลน์ไม่ได้ทั้งหน้า (เคสจริง 26/10)
+     ⇒ ต้องผ่าน `scopeLines()` ของกลางใน `components/LineSelect.jsx` ที่มีตาข่าย
+       **"กรองแล้วไม่เหลืออะไร = ไม่กรอง"** (กติกาเดิมตั้งแต่ 2026-08-24)
+     ⚠️ **คนละแกนกับ `scopeLines` (Set) ข้างบน** ซึ่งเป็นตัวกรองรายการ + ฐานของด่านสิทธิ์ขั้นเซ็น
+        (`reporterScope`) — ตัวนั้นต้อง fail-closed เหมือนเดิม **ห้ามยุบรวมกัน** */
+  const scopedProdLines = useMemo(
+    () => pickerLines(prodLines, { role, lineId: userLineId, sections: scopeSecs }),
+    [prodLines, role, userLineId, scopeSecs])
   const [targets, setTargets] = useState([])
   const [resultByJig, setResultByJig] = useState({})   // jig_id -> { status }
   const [firstOrderByLine, setFirstOrderByLine] = useState({})  // line_name -> ISO (เวลาเปิดใบผลิตใบแรก)
