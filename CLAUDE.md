@@ -164,7 +164,7 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 
 > ### 🔴🔴 กฎเหล็กข้าม session — **ตัวเศษ %P = "ทุกชิ้นที่เครื่องทำออกมา" ไม่ใช่แค่งานดี** (2026-10-04)
 > `P = CT × Total Count ÷ Run` · `Q = Good ÷ Total Count` · **Total Count = ดี + เสีย + ทดลอง + สงสัย**
-> นับแต่งานดี = ของเสีย 1 ชิ้นถูกหัก **2 ครั้ง** (%P และ %Q) ⇒ OEE ต่ำกว่าจริง · **งานทดลองเข้าด้วย**
+> นับแต่งานดี = ของเสียถูกหัก **2 ครั้ง** ⇒ OEE ต่ำกว่าจริง · **งานทดลองเข้าด้วย**
 > ⇒ `defectQtyAll` ⇒ QA ตัดสินของสงสัย **%Q ขยับ · %P ไม่ขยับ**
 > · เติมผ่าน **`ngByMatFrom()`** → `ngForP` (จอสด) · ปิดกะคิดเองจาก `defects` · **ห้ามบวกในหน้า**
 >   คิวรี `defect_logs` ต้อง embed `prod_orders(mat_no)` · ด่าน `oee-live-needs-ngforp`
@@ -191,7 +191,7 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 > · 🔴 **ใบไม่เคยถูกปิด = `neverClosed` ⇒ เขียน "N ใบไม่เคยถูกปิด" ห้ามรายงานเป็น "ช้ากว่าแผน N ชม."**
 
 > ### 🔴🔴 กฎเหล็กข้าม session — **ชิ้น ≠ shot** (งานคู่ gang die / RH-LH · 2026-09-18)
-> CT = เวลาต่อ **1 จังหวะ** แต่ปั๊มทีเดียวได้ 2 ชิ้น ⇒ บวก `qty×CT` ทั้งสองข้าง = เวลามาตรฐาน 2 เท่า (%P ทะลุ 100 แล้วถูก cap เงียบ)
+> CT = เวลาต่อ **1 จังหวะ** แต่ปั๊มทีเดียวได้ 2 ชิ้น ⇒ บวก `qty×CT` ทั้งสองข้าง = เวลามาตรฐาน 2 เท่า
 > · **ยอดผลิต/%Q/ของเสีย นับ "ชิ้น" · เวลามาตรฐานของ %P นับ "shot" — ห้ามสลับ**
 > · ยุบผ่าน `collapsePairShots()` (`utils/pairTotals.js`) — **ภาระกะตอนวางแผน ใช้ `pairLoadTotal()`
 >   ในไฟล์เดียวกัน** (มีด่าน) · `computeLiveOee` ต้องส่ง `pairMap` ทุกจอ (มีด่าน) · **ลืม `select('pair_mat_no')` = pairMap ว่าง = นับ 2 เท่าเงียบๆ**
@@ -494,7 +494,7 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 - 🔴 **`shadow_score = null` = "ประเมินไม่ได้" ไม่ใช่ "ได้ 0"** —
   ห้ามเอาไปแสดงเป็น 0 ห้ามเอาไปกดคะแนนจริง · 🔴 **ขึ้นขั้น 25/50/75/100 ต้องผ่านคนอนุมัติเสมอ**
 - 🔴 **ขา "ปริมาณ" นับ `shots` (จังหวะ) ไม่ใช่ `qty_ok` (ชิ้น)** — กฎ "ชิ้น ≠ shot" ใช้ที่นี่ด้วย ·
-  `n_ref` เป็นค่า**ต่อสถานี** จาก CT จริง (ห่างกัน 34 เท่า) ⇒ **ห้ามหาร `cum_cycles` ด้วย `n_ref` เองในหน้า**
+  `n_ref` เป็นค่า**ต่อสถานี** จาก CT จริง ⇒ **ห้ามหาร `cum_cycles` ด้วย `n_ref` เองในหน้า**
   ใช้ `cum_ratio` + `bandProgress()` (`src/utils/skillExp.js` · มีด่าน)
 - ตอนนี้อยู่ **shadow mode** (`is_enabled=false`) — v1 ยังคุมคะแนนจริง · สลับ/เคลียร์คิวที่ `/operator?tab=levelup`
 > 📄 รายละเอียดเต็ม → `docs/modules/employee-skills-exp.md` (§v2 + 4 หัวข้อย่อย) ·
@@ -592,7 +592,7 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 
 ## 📉 Monitoring — Excel ทีมวางแผนเข้าระบบ (`/monitoring` · 02/10)
 
-13 ชีท = **การตั้งค่า ไม่ใช่ 13 จอ** — ชุดแถวอยู่ใน `monitor_boards.rows` (DR) · เลขทุกตัวออกจาก
+13 ชีท = **การตั้งค่า ไม่ใช่ 13 จอ** — ชุดแถวอยู่ `monitor_boards.rows` (DR) · เลขทุกตัวออกจาก
 `buildGrid()` (`utils/monitorGrid.js`) ที่เดียว (มีด่าน)
 · 🔴 **ช่องยอดยกมาว่าง = `null` ทั้งแถว ห้ามเดา 0** · ระบบไม่รู้ = ขีด `–` · คนกรอกชนะระบบ —
   🔒 **ยกเว้นช่อง IN ที่ระบบมีตัวเลขแล้ว = ล็อก** (`makeLockLookup` · `monitorSystem.js`) ยอดไม่ตรง = ขอปรับยอดคลัง (`StockAdjustRequestModal`) ห้ามเปิดให้พิมพ์ทับ
@@ -671,7 +671,7 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 > SCADA = **"เซ็นเซอร์"** ส่ง raw data (stroke/สถานะ/เวลาหยุด) · **ESM เป็นเจ้าของสูตร** — `src/utils/oee.js`
 > ยังเป็น single source of truth · **ห้ามให้ระบบภายนอกคำนวณ OEE เองแล้วเอาเลขมาโชว์** (มี OEE 2 ชุด = เถียงกันว่าเชื่อจอไหน)
 > **SCADA = ข้อเท็จจริง · คน = เหตุผล** (เครื่องบอกไม่ได้ว่าทำไมหยุด และ**ไม่มีทางรู้ NG** → Q มาจากคนเสมอ)
-> ⚠️ แถวจะโต **×113–×450** จากที่คนกรอกวันนี้ · micro-stop เป็น P ไม่ใช่ A · **1 stroke งานคู่ = 2 ชิ้น** (`pieces_per_stroke`)
+> ⚠️ แถวจะโตหลักร้อยเท่า · micro-stop เป็น P ไม่ใช่ A · **1 stroke งานคู่ = 2 ชิ้น** (`pieces_per_stroke`)
 
 ## Patterns & Utilities
 
@@ -720,11 +720,15 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 > (อย่าให้มี 2 ชุด — section นี้เป็นเจ้าของเรื่อง **ด่าน build** เท่านั้น)
 > · เอกสารบังคับอ่าน: ทุกงาน `ENGINEERING-PRINCIPLES.md` · UI `UI-CONVENTIONS.md` · สิทธิ์ `PERMISSIONS-DESIGN.md` · DB → §Supabase Projects (**2 projects!**) + migration เสมอ
 
+> ### 🕗 **หน้าต่าง deploy — ห้าม deploy ในเวลาทำงาน** (2026-10-26 · เหตุการณ์จริง)
+> **08:00–17:30 deploy ได้เฉพาะของที่ "ไม่แก้แล้วหน้างานทำงานไม่ได้"** · ที่เหลือรอหลังเลิกกะ/ก่อนเข้ากะ
+> 🔴 **ทุกครั้งที่ deploy = สลับไฟล์ชุดใหม่ ⇒ แท็บที่เปิดค้างชี้ไปไฟล์เก่าที่ถูกลบ = พังพร้อมกันทุกเครื่อง**
+> ของที่ merge แล้วแต่ยังไม่ deploy **ไม่ทำให้ใครเดือดร้อน** — รอได้เสมอ · 📄 `docs/modules/deploy.md` §หน้าต่าง deploy
+
 **build ผ่าน (`npm run build`) ก่อน commit เสมอ** · merge เข้า `main` = **deploy แบบกันถี่** (ห่างรอบก่อน ≥60 น. = ทันที · ไม่งั้นรอเงียบ 30 น. · `.github/workflows/scheduled-deploy.yml` · ด่วนกด Run workflow) · 🔴 **ห้ามเปิด Auto-Deploy ของ Render คืน** (นาที build หมดกลางเดือน · 📄 `docs/modules/deploy.md`)
 📄 **ที่มาของทุกด่าน + เคสจริงที่ทำให้ต้องมี → `docs/modules/build-gates.md`** (อ่านก่อนจะแตะ/ถอดด่านใดๆ)
 - **`npm run build` = `check:context` → `lint:critical` → `npm test` → `vite build`** ·
      ตัวรันเทส = `scripts/run-tests.mjs` (เก็บ `src/**/__tests__/*.test.mjs` เอง — **วางไฟล์เทสใหม่แล้วถูกเก็บอัตโนมัติ**)
-  · **ห้ามเปลี่ยนเป็น `node --test '<glob>'`** (เหตุผล → build-gates.md)
   · **⏱️ `npm test` รัน 2 รอบ: ปกติ + "นาฬิกา +400 วัน"** จับ**เทสระเบิดเวลา** ⇒ **ฟังก์ชันที่กินเวลาปัจจุบัน
   ต้องรับ `now` เป็นพารามิเตอร์ แล้วเทสตรึงค่า** · ตกรอบนี้ให้แก้เทส **ห้ามถอดรอบนี้ออก**
 - **🛡️ `src/utils/__tests__/regressionGuards.test.mjs` = ด่าน "บั๊กเก่าห้ามกลับมา"** — **เจอบั๊กคลาสใหม่ที่คนถัดไปน่าจะพลาดซ้ำ → เพิ่มกฎที่ไฟล์นี้
@@ -736,7 +740,6 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 - **⚠️ build ผ่าน ≠ หน้าไม่พัง** — merge งานหลาย session ชนไฟล์เดียวกัน ให้รัน **`node audit/crashsweep.mjs`** เสมอ
      (ทุกหน้า @1500px + กดปุ่มหัวเพจ · ต้องเปิด `npx vite --config audit/vite.audit.mjs` ค้างไว้)
   · 🔭 **รัน 2 รอบ: `role=admin` scope ว่าง + `role=supervisor&sections=PD1`** — **ห้ามถอดรอบขอบเขต**
-    (รอบ admin ไม่เดินกิ่ง `if (scopeSecs.length)` ⇒ จอขาว 4 หน้าหลุดถึงหน้างาน 25-26/10)
   · 🔴 **แถวพิเศษใน mock ห้ามถอด** (รายตัว → `audit/README.md`)
   · เพิ่มคอลัมน์ nullable ใน `ROW()` ต้องเติมใน `NULLISH()` ด้วย (เหตุผลรายตัว → `audit/README.md`)
 - **📱 `node audit/mobilesweep.mjs` (ทุกหน้า @390px)** — **แตะ layout ที่มี `isMobile` หรือ `position:sticky`
@@ -790,7 +793,7 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
   · กล่องที่แค่ตัดของล้นใช้ `clip` · sticky ไม่ทำงาน ให้ไล่หาบรรพบุรุษที่ overflow ≠ visible/clip ก่อนแก้ที่หน้า
 - **`display:grid` ที่อาจสูงกว่าเนื้อหา ต้องใส่ `alignContent:'start'`** (ไม่งั้นการ์ดถูกยืดสูงผิดสัดส่วน · flexbox ไม่เป็น)
 - **จอ TV/บอร์ดหน้างาน: ฟอนต์พื้น 11px ห้ามต่ำกว่านี้** (ชิป/ป้าย 11–12 · หัวข้อ 14–15) — **มีด่าน `font-min-11`**
-  + `audit/chartsweep.mjs` วัด "ขนาดที่เห็นบนจอ" (รวมสเกล SVG) · แน่นเกิน = **เว้นป้าย/ซ่อนป้าย ห้ามลดฟอนต์**
+  + `audit/chartsweep.mjs` วัดขนาดที่เห็นจริง · แน่นเกิน = **เว้นป้าย/ซ่อนป้าย ห้ามลดฟอนต์**
   · ยกเว้น `src/lib/**` (ใบพิมพ์/PPTX = pt บนกระดาษ) · ตัวสเกลตามจอใช้ `fs()` ที่มีพื้น `Math.max(11, …)`
 - 🌑 **เงา = "ของชิ้นนี้ลอยอยู่" ห้ามเขียน rgba ดิบในหน้า** (ด่าน `card-shadow-via-token`) — การ์ดแบน `var(--shadow-sm)`
   (ธีมมืด = none · ธีมสว่างยังมี) · ของที่ลอยจริง `var(--shadow-float)` · modal `--shadow-md|lg` (UI §6.20)
