@@ -52,11 +52,24 @@ test('🔴 leader + lineId → เห็นเฉพาะ family แม้ sect
   assert.deepEqual(names(out), ['LINE A ( 800 Ton )']);
 });
 
-test('🔴 leader + lineId → แกนไลน์ชนะแกนส่วนงานเสมอ (ตั้ง PD1 ก็ยังเหลือไลน์ตัวเอง)', () => {
-  const out = scopedLines({ role: 'leader', lineId: 17, sections: ['PD1'], lines, scopeIdx: idx });
-  assert.deepEqual(names(out), ['LINE A ( 800 Ton )']);
+/* ⚠️ แก้กติกา 26/10 — เดิม (25/10) บีบ leader เหลือ "ไลน์ตัวเองไลน์เดียว" เสมอแม้ตั้งส่วนงานไว้
+   ⇒ เช้าวันจันทร์ หัวหน้ากลุ่มทั้ง 20 คน **เปิดกะไลน์อื่นในส่วนงานตัวเองไม่ได้**
+     และถ้าไลน์ตัวเองเปิดกะไปแล้ว ช่องเลือกไลน์ว่างเปล่า = ทั้งโรงงานเปิดกะไม่ได้
+   ⇒ เปลี่ยนเป็น "ไลน์ตัวเอง ∪ ไลน์ในส่วนงานที่กำกับไว้" · **ไลน์ตัวเองมาก่อนเสมอ** */
+test('🔴 leader + lineId + มีส่วนงาน → ไลน์ตัวเองมาก่อน แล้วตามด้วยไลน์ในส่วนงาน', () => {
+  const out = names(scopedLines({ role: 'leader', lineId: 17, sections: ['PD1'], lines, scopeIdx: idx }));
+  assert.equal(out[0], 'LINE A ( 800 Ton )', 'ไลน์ตัวเองต้องมาก่อน');
+  assert.ok(out.length > 1, 'ต้องเห็นไลน์อื่นในส่วนงานด้วย ไม่งั้นเปิดกะไลน์อื่นไม่ได้');
+  assert.equal(new Set(out).size, out.length, 'ห้ามซ้ำ');
   // ไม่ใช่ leader = พฤติกรรมเดิม (ทั้งส่วนงาน)
   assert.deepEqual(names(scopedLines({ role: 'supervisor', sections: ['PD1'], lines, scopeIdx: idx })), names(lines));
+});
+
+/* 🔴 เจตนาเดิมของ 25/10 ต้องยังอยู่: บัญชีที่ `sections` ว่าง (scope_depth='all' ที่ตั้งผิด)
+   ยังถูกบีบเหลือครอบครัวไลน์ตัวเอง ห้ามหลุดไปเห็นทั้งโรงงาน */
+test('🔴 leader + sections ว่าง → ยังเหลือครอบครัวไลน์ตัวเองเท่านั้น (กัน scope_depth=all)', () => {
+  assert.deepEqual(names(scopedLines({ role: 'leader', lineId: 17, sections: [], lines, scopeIdx: idx })),
+    ['LINE A ( 800 Ton )']);
 });
 
 test('🔴 leader ที่หาไลน์ตัวเองไม่เจอ = fail-closed (คืน []) ไม่ใช่เห็นทั้งโรงงาน', () => {
