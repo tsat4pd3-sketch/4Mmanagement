@@ -6590,3 +6590,32 @@ test('🧩 StepModal: ทุก modalStage ที่มีฟอร์ม ต้
     + '         แล้วยังขึ้น toast "บันทึกแล้ว" ⇒ คนกรอกเสียเวลาฟรีและไม่รู้ตัว\n'
     + '   แก้: เพิ่ม `} else if (stage === \'<ชื่อ>\') {` พร้อม checkWriteRows()\n');
 });
+
+/* ═══ 🪪 employee-identity-single-entry — "สร้างคนใหม่" ต้องได้แถวเดียวกันทุกทางเข้า ═══ 2026-10-26
+   เคสจริง (audit ตามคำสั่ง user *"การสร้างตัวตนใส่ฐานข้อมูลจากหน้าจัดการสิทธิ์ ตรงกันมั้ย"*):
+   `/register` กับโมดัลเพิ่มคนใน `/add-user` ต่างคน insert `employees` คนละชุดฟิลด์
+   ⇒ **`/register` ไม่เคยเขียน `staff_kind`** ตกไปที่ default 'shopfloor' ของคอลัมน์
+     = QA/วิศวกร/ธุรการ/สโตร์ ที่ลงทะเบียนทางนั้น ถูกนับเป็นกำลังคนหน้าไลน์เงียบๆ
+     (เข้าแผงสกิล · เข้าตัวหาร manpower · เข้า turnover — ดู staffKind.js §แกนที่ 1)
+   ⇒ ทุกทางเข้าต้องประกอบแถวผ่าน `newEmployeeRow()` ที่ utils ที่เดียว */
+test('🪪 employee-identity-single-entry — ทุกจุดที่ insert employees ต้องผ่าน newEmployeeRow()', async () => {
+  const mod = await import('../employeeIdentity.js');
+  const row = mod.newEmployeeRow({ employeeIdCode: 'E1', name: 'ทดสอบ' });
+  assert.equal(row.staff_kind, 'shopfloor', 'ไม่ส่งประเภท = หน้างาน (ตรงกับ default ของคอลัมน์)');
+  assert.ok('staff_kind' in row, '🔴 แถวต้องเขียน staff_kind เสมอ ห้ามปล่อยให้ default เงียบ');
+  /* สายสนับสนุนต้องไม่ติดไลน์/ทีมมาด้วย — เป็นคำสัญญาที่เขียนไว้บนจอทั้ง 2 หน้า */
+  const sup = mod.newEmployeeRow({ employeeIdCode: 'E2', name: 'ก', staffKind: 'support', lineId: 'L1', team: 'A', groupName: 'G' });
+  assert.equal(sup.line_id, null, 'สายสนับสนุนห้ามผูกไลน์');
+  assert.equal(sup.team, null, 'สายสนับสนุนห้ามผูกทีม');
+
+  const bad = [];
+  for (const f of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
+    const src = stripComments(readFileSync(f, 'utf8'));
+    if (!/from\(['"]employees['"]\)\s*\.?\s*\n?\s*\.insert\(/.test(src.replace(/\s+/g, ' ')
+      .replace(/from\('employees'\) \.insert\(/g, "from('employees').insert("))) continue;
+    if (!/newEmployeeRow\(/.test(src)) bad.push(f.replace(ROOT + '/', ''));
+  }
+  assert.deepEqual(bad, [], '\n\n❌ ไฟล์ที่ insert employees เองโดยไม่ผ่าน newEmployeeRow(): ' + bad.join(', ') + '\n'
+    + '   ทำไม: ชุดฟิลด์จะแยกกันทันทีที่เพิ่มคอลัมน์ใหม่ — ทางที่ลืมเขียนจะตกไปที่ default เงียบๆ\n'
+    + '   แก้: ประกอบแถวด้วย newEmployeeRow({...}) จาก src/utils/employeeIdentity.js\n');
+});
