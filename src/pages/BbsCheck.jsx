@@ -23,7 +23,7 @@ import { usePerms } from '../utils/usePerms';
 import { toast } from '../components/Toast';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { getLineFamilyIds } from '../utils/lineHierarchy';
-import LineSelect from '../components/LineSelect';
+import LineSelect, { scopeLines as pickerLines } from '../components/LineSelect';
 import { loadLinesRes } from '../utils/useProductionLines';
 import usePeople from '../utils/usePeople';
 import { inSectionScope, scopedLines } from '../utils/sectionScope';
@@ -111,16 +111,12 @@ export default function BbsCheck() {
     })();
   }, []);
 
-  const scopedLines = useMemo(() => {
-    if (role === 'leader' && lineId) {
-      const fam = getLineFamilyIds(lines, Number(lineId));
-      return fam.size ? lines.filter(l => fam.has(l.id)) : lines;
-    }
-    // ⚠️ ต้องเทียบผ่าน inSectionScope (trim+lowercase) — `section` เป็น free text ที่พิมพ์มือได้
-    //    `.includes()` ตรงตัวจะทำให้ 'PD1 ' / 'pd1' หลุด scope เงียบๆ (หัวหน้าเปิดมาแล้วไลน์ตัวเองหาย)
-    if (sections.length) return scopedLines({ role, lineId, sections, lines, scopeIdx });
-    return lines;
-  }, [lines, role, lineId, sections]);
+  /* 🔴 ลิสต์ของ picker ต้อง "ไม่ตาย" — ส่วนงานที่ไม่มีไลน์ผลิตสังกัด (QA · Planning&Store · ฝั่งช่าง)
+     กรองแล้วเหลือ 0 ⇒ dropdown ว่าง = ใช้ฟีเจอร์ไม่ได้ทั้งหน้า (เคสจริง 26/10 · ด่าน line-picker-never-dead)
+     ⇒ ผ่าน `scopeLines()` ของกลาง (components/LineSelect.jsx) = "กรองแล้วไม่เหลือ = ไม่กรอง" */
+  const scopedLines = useMemo(
+    () => pickerLines(lines, { role, lineId, sections, scopeIdx }),
+    [lines, role, lineId, sections, scopeIdx]);
 
   // ค่าที่เลือกไว้หลุด scope (เปลี่ยนตัวแม่แล้วตัวลูกต้องล้าง — UI-CONVENTIONS §5.3)
   useEffect(() => {

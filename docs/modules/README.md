@@ -100,3 +100,4 @@
 - `db-write-rules.md` — หลักฐาน/ตัวเลขเบื้องหลังกฎเขียน DB 11 ข้อ + ฉบับเต็มของทุกข้อ
 - `build-gates.md` — ที่มาของทุกด่านใน `npm run build` + เคสจริงที่ทำให้ต้องมี
 - `doc-forms.md` — ขั้นตอน register เอกสาร export เข้าทะเบียน `/doc-forms`
+- `employee-identity.md` — สร้างตัวตนพนักงานเข้าฐาน (`/register` + โมดัลใน `/add-user`) · กฎ `newEmployeeRow()` · กับดัก `staff_kind` default เงียบ

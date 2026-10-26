@@ -39,13 +39,11 @@ const num = (v) => (v === '' || v == null || Number.isNaN(Number(v)) ? null : Nu
  * @param {Array}  p.stds      kanban_standards: { mat_no, min_qty, max_qty, lot_size }
  * @param {Array}  p.products  ทะเบียนสินค้า: { mat_no, line_name, is_active, is_operation }
  * @param {Array}  p.rules     stock_inflow_rules
- * @param {Set|Array} p.lotMats  MAT ที่สโตร์คุมเป็นล็อต (กฎ MAT โหมด 'lot')
  * @param {(loc:string, mat:string) => number|null} p.stockAt  ยอดคงเหลือ — **ไม่มีแถว = null ห้ามคืน 0**
  * @param {Set|Array} p.openMats  MAT ที่มีใบล็อตค้างอยู่แล้ว (pending/producing)
  * @returns {{ due:Array, alreadyQueued:Array, unknown:Array, noMin:Array, noLine:Array }}
  */
-export function releaseDueRows({ stds = [], products = [], rules = [], lotMats = [], stockAt = () => null, openMats = [] } = {}) {
-  const lots = lotMats instanceof Set ? lotMats : new Set(lotMats || []);
+export function releaseDueRows({ stds = [], products = [], rules = [], stockAt = () => null, openMats = [] } = {}) {
   const open = openMats instanceof Set ? openMats : new Set([...(openMats || [])].map(key));
   const prodOf = new Map();
   const opMats = new Set();        // ชั้น OP = ขั้นตอนกลางทาง ไม่เคยเข้าคลัง ⇒ ไม่มี min ให้เฝ้า
@@ -72,7 +70,7 @@ export function releaseDueRows({ stds = [], products = [], rules = [], lotMats =
     if (opMats.has(mat) && !prodOf.has(mat)) { noLine.push(mat); continue; }
     const prod = prodOf.get(mat);
     const loc = prod
-      ? refStockOf(mat, { lineName: prod.line_name, products, rules, lotMats: lots }).loc
+      ? refStockOf(mat, { lineName: prod.line_name, products, rules }).loc
       : inflowDestOf(mat, rules);
     if (!loc) { noLine.push(mat); continue; }
     const lineName = prod?.line_name || null;
