@@ -146,3 +146,8 @@ createRoot(document.getElementById('root')).render(
     </RootErrorBoundary>
   </StrictMode>,
 )
+
+/* 🔴 บอกตาข่ายใน index.html ว่า "โปรแกรมขึ้นแล้ว" — ไม่ตั้งธงนี้ = ขึ้นจอ "เปิดโปรแกรมไม่สำเร็จ"
+   ทับของจริงหลัง 15 วินาที · ตั้งหลัง render() เสมอ (ถึงตรงนี้ = โมดูลโหลดครบและ React เริ่มแล้ว) */
+window.__ESM_MOUNTED = true;
+try { document.getElementById('boot-fallback')?.remove(); } catch { /* ไม่มีตาข่าย (dev) */ }
