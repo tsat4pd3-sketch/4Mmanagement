@@ -6743,3 +6743,36 @@ test('📦 LinePartCallPanel: กิ่ง "ไม่มีอะไรต้อ
     + '   ทำไม: ไลน์ที่ยังไม่ตั้ง min = ไม่มีอะไรต้องทำ ⇒ แผงย่อ ⇒ ถ้าซ่อน ⚙️ ด้วย\n'
     + '         ก็ไม่มีทางตั้งจุดเฝ้าได้เลย ทั้งที่จุดเฝ้าคือสิ่งที่ต้องตั้ง "ก่อน" ของจะหมด\n');
 });
+
+/* ═══ 📉 บอร์ดคัมบังสโตร์: "ถึงจุดต้องปล่อย" ต้องมองจากยอดคงเหลือ ไม่ใช่จากคิวใบเดิม ═══  2026-10-26
+   feedback สโตร์ (ใบ E-Production TSAT P4): *"ให้แสดงรายการที่สต็อกต่ำกว่าหรือเท่ากับค่า min
+   เพื่อที่ให้สโตร์ทราบถึงสถานะงานที่จะต้องปล่อยคัมบังเข้าไลน์ผลิต (ปัจจุบัน ขึ้นบางรายการ)"*
+   เหตุที่เดิมขึ้นบางรายการ: คิวใบล็อตมาจาก trigger ระเบิด BOM + ต้องสะสมครบ `lot_size`
+   วัด 26/10: kanban_standards is_active 458 แถว แต่ **250 แถวไม่ได้ตั้ง lot_size** = ไม่มีวันออกใบ */
+test('📉 PullBoard ต้องมีชั้น "สต็อก ≤ min" และคิดผ่าน utils/kanbanReleaseDue เท่านั้น', () => {
+  const src = stripComments(readFileSync(join(ROOT, 'src/pages/HeijunkaKanban.jsx'), 'utf8'));
+  const bad = [];
+  if (!/releaseDueRows\(/.test(src)) bad.push('ไม่ได้เรียก releaseDueRows() — กติกาต้องอยู่ที่ utils ที่เดียว');
+  if (!/<ReleaseDueSection/.test(src)) bad.push('ไม่ได้วาดชั้น "ถึงจุดต้องปล่อยคัมบัง"');
+  if (!/min_qty/.test(src)) bad.push("คิวรี kanban_standards ไม่ได้ดึง min_qty — ไม่มีค่าให้เทียบ");
+  assert.deepEqual(bad, [], '\n\n❌ src/pages/HeijunkaKanban.jsx: ' + bad.join('\n   ') + '\n'
+    + '   ทำไม: ของที่ใกล้หมดแต่ยังไม่มีใครสั่ง FG รอบใหม่ ไม่เคยโผล่ในคิวใบล็อตเลย\n');
+});
+
+/* ═══ 📋 แผนสั่งงานล็อต: ต้องเข้าแผนพาร์ทที่ไลน์ผลิตได้ แม้ยังไม่มีความต้องการ ═══  2026-10-26
+   feedback สโตร์: *"ขึ้นข้อมูลพาร์ทไม่ครบทุกรายการ อยากให้ขึ้นข้อมูลพาร์ททั้งหมดที่ผลิตของไลน์ผลิตนั้น"*
+   + *"งานต่อ Process ตอนนี้ขึ้นให้เข้าแผนแค่ Step2 อยากให้ขึ้น Step1 ด้วย"*
+   เดิมปุ่ม "+ เข้าแผน" มีที่เดียวคือลิสต์ `unplanned` ซึ่งมาจากความต้องการล้วน
+   ⇒ วัด 26/10: LINE A (800 ตัน) และ LINE B (600 ตัน) ออเดอร์ค้าง **0 ใบ** ⇒ ลิสต์ว่าง ⇒ เปิดแผนไม่ได้
+   และ Step 1 เป็นแถว is_operation ที่ไม่มีใน bom_items ⇒ ไม่มีทางได้ความต้องการของตัวเอง */
+test('📋 ProdLotPlanner: มีทางเข้าแผนพาร์ทอื่นของไลน์ + ขั้นต่อ Process ตกทอดยอดจากพาร์ทแม่', () => {
+  const planner = stripComments(readFileSync(join(ROOT, 'src/components/ProdLotPlanner.jsx'), 'utf8'));
+  const page    = stripComments(readFileSync(join(ROOT, 'src/pages/ProductionPlan.jsx'), 'utf8'));
+  const bad = [];
+  if (!/otherParts/.test(planner)) bad.push('ProdLotPlanner ไม่มีลิสต์ "พาร์ทอื่นที่ไลน์นี้ผลิต"');
+  if (!/opStepsOf\(/.test(planner)) bad.push('ProdLotPlanner ไม่ได้ตกทอดยอดให้ขั้นต่อ Process');
+  if (!/op_parent_mat/.test(page))  bad.push('ProductionPlan ไม่ได้ดึง op_parent_mat — ไม่รู้จักขั้นตอน');
+  if (!/partsOfLine=/.test(page))   bad.push('ProductionPlan ไม่ได้ส่ง partsOfLine ให้แท็บล็อต');
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n   ') + '\n'
+    + '   ทำไม: ไลน์ที่ออเดอร์ยังไม่เข้า จะไม่มีปุ่มให้กดเลย = "เปิดแผนไม่ได้" ตามที่หน้างานแจ้ง\n');
+});
