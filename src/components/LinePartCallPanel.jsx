@@ -40,7 +40,6 @@ import { slocCodeOfLine } from '../utils/storageLoc';   // 🏬 มุม SAP �
 import ProductSelect from './ProductSelect';
 import useColumnHistory from '../utils/useColumnHistory';
 import { splitLevels, refStockOf, madeHereMats } from '../utils/partRefStock';   // 🏭 ของที่ไลน์ผลิตเอง อ้างยอดคลัง (2026-10-08) // 📜 MAT ที่เคยตั้งระดับไว้ — ทะเบียนไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
-import { lotMatsOf } from '../utils/stockReceipts';   // 🔧 พาร์ทที่ยอดเข้าทางปิดล็อต = กฎรับเข้าโหมด lot (19/10)
 
 const norm = (s) => String(s ?? '').trim().toLowerCase();
 const num = (v) => (v == null || v === '' ? null : Number(v));
@@ -120,7 +119,7 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
   const [adhocQty,  setAdhocQty]  = useState('');
   /* 🏭 2026-10-08 — พาร์ทที่ไลน์นี้ผลิตเอง อ้างยอดคลังปลายทาง (FG WAREHOUSE / STORE) ไม่ใช่ยอดหน้าไลน์
      (utils/partRefStock.js) · refCtx = ทะเบียนสินค้า + กฎรับเข้า · whStock = ยอดคลังของพาร์ทเหล่านั้น */
-  const [refCtx, setRefCtx]   = useState({ products: [], rules: [], lotMats: [], stds: new Map() });
+  const [refCtx, setRefCtx]   = useState({ products: [], rules: [], stds: new Map() });
   const [whStock, setWhStock] = useState([]);
   const [whErr, setWhErr]     = useState(null);
 
@@ -196,7 +195,6 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
       if (stdRes.error) throw stdRes.error;
       // พาร์ทที่ยอดเข้าทางปิดล็อต = ลงที่ไลน์ผลิต ไม่ใช่ STORE — ตัดสินจากกฎ (ตัวเดียวกับ trigger · 19/10)
       const ctx = { lineName, products: products || [], rules: rulesRes.data || [],
-                    lotMats: lotMatsOf(rulesRes.data),
                     stds: new Map((stdRes.data || []).map(k => [k.mat_no, k])) };
       const refs = made.map(m => ({ mat: m, ...refStockOf(m, ctx) })).filter(r => r.kind === 'produce');
       let wh = [];

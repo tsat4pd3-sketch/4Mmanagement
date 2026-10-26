@@ -85,14 +85,16 @@ test('ชั้น OP (is_operation) ไม่เข้าคลัง = ไม�
   assert.deepEqual(r.noLine, ['20000009']);
 });
 
-test('พาร์ทโหมดล็อต อ้างยอดที่ไลน์ตัวเอง (ยอดเข้าทางปิดล็อตลงที่ชื่อไลน์ผลิต)', () => {
+/* 🔁 26/10 — พาร์ทโหมดปิดล็อตอ้างยอด "คลังปลายทางของกฎ" เหมือนของผลิตเองตัวอื่น (เดิมอ้างที่ไลน์ตัวเอง) */
+test('พาร์ทโหมดปิดล็อต อ้างยอดคลังปลายทางของกฎ MAT ตัวเอง', () => {
+  const rules = [...RULES, { match_type: 'mat', match_value: '20000003', dest_line_name: 'STORE', mode: 'lot', is_active: true }];
   const r = releaseDueRows({
     stds: [{ mat_no: '20000003', min_qty: 50, max_qty: 200 }],
-    products: PRODUCTS, rules: RULES, lotMats: ['20000003'],
-    stockAt: stockOf({ 'LINE A|20000003': 10, 'STORE|20000003': 999 }),
+    products: PRODUCTS, rules,
+    stockAt: stockOf({ 'LINE A|20000003': 999, 'STORE|20000003': 10 }),
   });
   assert.equal(r.due.length, 1);
-  assert.equal(r.due[0].loc, 'LINE A');
+  assert.equal(r.due[0].loc, 'STORE');
 });
 
 test('เรียงวิกฤตก่อน (เหลือเทียบ min น้อยสุดมาก่อน)', () => {

@@ -13,7 +13,6 @@ import { loadLinesRes } from '../utils/useProductionLines';
 import { loadProductsMaster } from '../utils/useProducts';
 import { fetchAllPages } from '../utils/fetchByIds';
 import { partLevelCoverage } from '../utils/partLevelCoverage';
-import { lotMatsOf } from '../utils/stockReceipts';
 import MatLabel from './MatLabel';
 import SearchInput from './SearchInput';
 import { normSearch } from '../utils/thaiText';
@@ -36,8 +35,8 @@ export default function PartLevelCoveragePanel() {
         { orderBy: ['line_name', 'mat_no'] }),
       fetchAllPages(() => supabaseDR.from('line_part_levels').select('line_name, mat_no, min_qty, max_qty, is_active').eq('is_active', true),
         { orderBy: 'id' }),
-      /* 🔴 ต้อง select `mode` — `inflowDestOf()` ข้ามกฎโหมด "ปิดล็อตที่สโตร์" ด้วยช่องนี้
-         ไม่ส่งมา = กฎล็อตถูกนับเป็นกฎปลายทางปกติ ⇒ ตีประเภทพาร์ทผิด */
+      /* 🔴 ต้อง select `mode` — ช่องนี้คือ "ยอดเข้าทางไหน" ที่ `/line-stock` ใช้แสดง/แก้
+         (ตั้งแต่ 26/10 `inflowDestOf()` ไม่ได้ข้ามกฎโหมดนี้แล้ว — ปลายทางอ่านจาก dest_line_name ตรงๆ) */
       supabaseDR.from('stock_inflow_rules').select('match_type, match_value, dest_line_name, is_active, mode').eq('is_active', true),
       loadProductsMaster().catch(() => null),
     ]);
@@ -55,8 +54,6 @@ export default function PartLevelCoveragePanel() {
       products: prods || [],
       rules: rulesRes.data || [],
       lines: lnRes.data || [],
-      // 🔴 พาร์ทล็อตมาจาก lotMatsOf(rules) เท่านั้น — ห้ามถาม child_lot_requests ("เคยมีล็อต" ≠ "คุมเป็นล็อตวันนี้" · ด่าน lot-mats-from-rules)
-      lotMats: lotMatsOf(rulesRes.data || []),
     }));
     setBusy(false);
   }, []);

@@ -25,8 +25,7 @@ import PickScanModal from '../components/PickScanModal';
 import { DELIVER_GATES, PICK_GATES, reqSourceMeta } from '../utils/replenishGate';
 import { slocCodeOfLine } from '../utils/storageLoc';
 import { buildReceiptRows, RECEIPT_LINE } from '../utils/stockReceipt';
-import { rawSourceLocOf, splitRawConsume } from '../utils/partRefStock';   // 📤 ตัดวัตถุดิบล็อตจากคลังที่ของอยู่จริง (2026-10-12)   // 📥 ของซื้อเข้าคลัง ไม่ใช่เข้าไลน์ (2026-10-01)   // 🏬 ชั้นบัญชี SAP — tag ใบ/ledger ตอนเขียน (2026-09-08)
-import { lotMatsOf } from '../utils/stockReceipts';   // 🔧 พาร์ทที่ยอดเข้าทางปิดล็อต = กฎรับเข้าโหมด lot (19/10)
+import { rawSourceLocOf, splitRawConsume, inflowDestOf } from '../utils/partRefStock';   // 📤 ตัดวัตถุดิบล็อตจากคลังที่ของอยู่จริง (2026-10-12)   // 📥 ของซื้อเข้าคลัง ไม่ใช่เข้าไลน์ (2026-10-01)   // 🏬 ชั้นบัญชี SAP — tag ใบ/ledger ตอนเขียน (2026-09-08)
 import { releaseDueRows, openLotMats } from '../utils/kanbanReleaseDue';   // 📉 สต็อก ≤ min = ถึงจุดต้องปล่อยคัมบัง (26/10 · feedback สโตร์)
 import { loadProductsMaster } from '../utils/useProducts';
 import { notifyEvent } from '../utils/notifyEvent';
@@ -1186,14 +1185,14 @@ const RAW_ZONES = (withDone) => [
 
    `showImg` = "การ์ดใบนี้เป็นของชิ้นงาน" (มี mat) — การ์ดรอบส่ง/ภาชนะไม่ใช่ จึงไม่มีช่องรูป
    แยกจาก `img` เพราะ "ไม่มีรูป" (ต้องขึ้นกล่องให้ไปเพิ่มรูป) กับ "ไม่ใช่ชิ้นงาน" คนละเรื่องกัน */
-function QueueCard({ code, name, qty, unit, qtyLabel = 'จำนวน', destination, statusLabel, statusColor, statusBg, statusBorder,
+function QueueCard({ code, name, qty, unit, qtyLabel = 'จำนวน', destination, destLabel = 'ปลายทาง', statusLabel, statusColor, statusBg, statusBorder,
                      actionLabel, onAction, busy, meta, rows, img, showImg }) {
   return (
     <PartCard
       code={code} name={name} img={img} showImg={showImg} matTone={matColor(code)}
       status={{ label: statusLabel, color: statusColor, bg: statusBg, border: statusBorder }}
       metric={{ label: qtyLabel, value: qty, unit }}
-      aside={destination ? { label: 'ปลายทาง', value: destination } : null}
+      aside={destination ? { label: destLabel, value: destination } : null}
       rows={rows} note={meta}
       footer={actionLabel
         ? (
@@ -1356,7 +1355,10 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
             const st = LOT_STATUS[lot.status] || LOT_STATUS.pending;
             return (
               <QueueCard key={lot.id} code={lot.child_mat_no} name={lot.part_name} showImg img={imgOf(lot.child_mat_no)}
-                qty={fmt(lot.lot_qty)} unit="ชิ้น" qtyLabel="ขนาดล็อต" destination={lot.source_line || 'ของซื้อ'}
+                /* 🔴 26/10 (feedback สโตร์) — ช่องนี้คือ **ไลน์ที่ผลิตล็อตนี้** ไม่ใช่ "ปลายทาง"
+                   ปลายทางจริงของของที่ผลิตเสร็จ = คลังตามกฎรับเข้า (STORE) · ป้ายเดิมอ่านแล้วเข้าใจผิดว่า
+                   ของจะไปกองที่ไลน์ ซึ่งตรงกับอาการที่สโตร์แจ้งพอดี */
+                qty={fmt(lot.lot_qty)} unit="ชิ้น" qtyLabel="ขนาดล็อต" destLabel="ไลน์ผลิต" destination={lot.source_line || 'ของซื้อ'}
                 statusLabel={st.label} statusColor={st.color} statusBg={st.bg} statusBorder={st.border}
                 actionLabel={canOperate ? st.nextLabel : null} busy={busy === lot.id} onAction={() => onAdvanceLot(lot, st.next)}
                 rows={[{ k: 'มาจาก FG', v: lot.source_prod_no || null }]} />
@@ -1780,7 +1782,7 @@ export default function HeijunkaKanban() {
     if (!dueRef || dueRef.failed) return null;
     return releaseDueRows({
       stds: stdRows, products: dueRef.products, rules: dueRef.rules,
-      lotMats: lotMatsOf(dueRef.rules), openMats: openLotMats(lotRequests),
+      openMats: openLotMats(lotRequests),
       stockAt: (loc, mat) => (dueRef.stockIdx.has(`${loc}|${mat}`) ? dueRef.stockIdx.get(`${loc}|${mat}`) : null),
     });
   }, [dueRef, stdRows, lotRequests]);
@@ -1801,7 +1803,6 @@ export default function HeijunkaKanban() {
     const ctx = {
       consumingLine, products: pr.data || [], rules: rr.data || [], receiptLine: RECEIPT_LINE,
       // ยอดเข้าทางปิดล็อต = กฎ MAT โหมด 🔧 (ตัวเดียวกับ trigger) ไม่ใช่ "เคยมีใบล็อต" (19/10)
-      lotMats: lotMatsOf(rr.data),
     };
     /* ของที่จ่ายเข้าไลน์ที่ใช้แล้ว (ยอดบวก) ใช้ก่อน — หักออกระหว่างแบ่งหลายใบในล็อตเดียว */
     const have = new Map((sr.data || []).map(r => [String(r.mat_no || '').trim(), parseFloat(r.qty_on_hand) || 0]));
@@ -1835,7 +1836,9 @@ export default function HeijunkaKanban() {
         toast.info(`ล็อต ${lot.child_mat_no} ถูกเปลี่ยนสถานะโดยคนอื่นไปแล้ว — รีเฟรชให้ใหม่`);
         await loadPull(); setPullBusy(null); return;
       }
-      // ── รับของเข้าสโตร์ = ปิด loop (ของที่ไลน์ทำเสร็จ กลับเข้าสต็อกสโตร์ + ตัดวัตถุดิบที่ใช้) ──
+      // ── รับของเข้าสโตร์ = ปิด loop (ของที่ไลน์ทำเสร็จ กลับเข้าสต็อกคลังปลายทาง + ตัดวัตถุดิบที่ใช้) ──
+      /* 🔴 ประกาศนอกบล็อก — toast ท้ายฟังก์ชันต้องอ่านค่านี้ได้ (ประกาศใน try = ReferenceError) */
+      let destLoc = null;
       if (next === 'done') {
         /* 🔴 claim สถานะไปแล้ว = กดซ้ำไม่ได้อีก (compare-and-swap ข้างบนจะคืน 0 แถว)
            ⇒ ถ้าเขียน ledger ไม่สำเร็จแล้วปล่อยไว้เฉยๆ ใบจะค้างสถานะ "ผลิตเสร็จ" ตลอดกาล
@@ -1845,10 +1848,22 @@ export default function HeijunkaKanban() {
         try {
           const wd = lot.work_date || getWorkDate();
           const txns = [];
-          // (1) ของที่ผลิตได้ กลับเข้าเติมสต็อกสโตร์ (ที่ไลน์ผลิตพาร์ท) — ถ้าเป็นของซื้อ (ไม่มี source_line) ข้าม
+          // (1) ของที่ผลิตได้ กลับเข้าเติมสต็อก **คลังปลายทางตามกฎรับเข้า** — ของซื้อ (ไม่มี source_line) ข้าม
           if (lot.source_line) {
-            txns.push({ line_name: lot.source_line, mat_no: lot.child_mat_no, part_name: lot.part_name, qty: lot.lot_qty,
-              type: 'issue', work_date: wd, note: `auto: รับ child เข้าสโตร์ (ล็อต ${lot.lot_qty})`, created_by: fullName || 'สโตร์' });
+            /* 🔁 26/10 (คำสั่ง user · feedback สโตร์ ใบ E-Production TSAT P4)
+               เดิมลงที่ `lot.source_line` = **ชื่อไลน์ผลิต** ทั้งที่ปุ่มเขียนว่า "รับของเข้าสโตร์"
+               ⇒ สโตร์เปิดดูยอดของตัวเองไม่เจอของที่เพิ่งรับ (วัด 26/10: 70 แถวลงไลน์ · STORE 0 แถว)
+               ⇒ ย้ายมาใช้คลังปลายทางของกฎ `stock_inflow_rules` ตัวเดียวกับทั้งระบบ (`inflowDestOf`)
+               🔴 ไม่มีกฎ = **ไม่เดา ไม่ลงสต็อก** (คืนสถานะล็อตให้กดใหม่ได้) — ลงผิดคลังกู้ยากกว่ารอคนตั้งกฎ */
+            const { data: rulesRows, error: eRules } = await supabaseDR.from('stock_inflow_rules')
+              .select('match_type, match_value, dest_line_name, is_active, mode').eq('is_active', true);
+            if (eRules) throw eRules;
+            destLoc = inflowDestOf(lot.child_mat_no, rulesRows || []);
+            if (!destLoc) {
+              throw new Error(`ยังไม่ได้ตั้งคลังปลายทางของ ${lot.child_mat_no} — ไปตั้งที่ สต็อกในไลน์ › กฎรับเข้าคลัง แล้วกดรับใหม่`);
+            }
+            txns.push({ line_name: destLoc, mat_no: lot.child_mat_no, part_name: lot.part_name, qty: lot.lot_qty,
+              type: 'issue', work_date: wd, note: `auto: รับ child เข้า ${destLoc} (ล็อต ${lot.lot_qty} · ผลิตที่ ${lot.source_line})`, created_by: fullName || 'สโตร์' });
             // (2) ตัดสต็อกวัตถุดิบตามใบเบิก **ที่ยังไม่ถูกจ่าย** — query สดจาก DB ห้ามใช้ state
             //    (state เคยโหลดแค่ 400 แถวล่าสุด: ใบเบิกของล็อตเก่าหลุดหน้าต่าง = ถูกมาร์ค issued
             //     โดยไม่มีแถว consume แล้วสต็อกวัตถุดิบสูงเกินจริงเงียบๆ · QC flow-audit #40)
@@ -1895,7 +1910,7 @@ export default function HeijunkaKanban() {
       }
       // toast ตามจริง: เติมสต็อกเฉพาะเมื่อมี source_line (ผลิตเองแล้วของกลับเข้าสโตร์)
       toast.success(next === 'done'
-        ? (lot.source_line ? `📥 รับเข้าสโตร์ ${lot.child_mat_no} · สต็อก +${lot.lot_qty}` : `✅ ปิดล็อต ${lot.child_mat_no}`)
+        ? (lot.source_line ? `📥 รับเข้า ${destLoc} · ${lot.child_mat_no} สต็อก +${lot.lot_qty}` : `✅ ปิดล็อต ${lot.child_mat_no}`)
         : (next === 'producing' ? `📤 ปล่อย ${lot.child_mat_no} เข้าไลน์ ${lot.source_line || ''} แล้ว` : `อัปเดตล็อต ${lot.child_mat_no} → ${next}`));
       await loadPull();
       await load();

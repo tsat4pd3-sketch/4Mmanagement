@@ -35,11 +35,9 @@ const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
  * @param {Array}  a.products  `dr_products` ผ่าน `loadProductsMaster()`
  * @param {Array}  a.rules     `stock_inflow_rules` (ต้อง select `mode` มาด้วย)
  * @param {Array}  a.lines     ทะเบียนไลน์ (`useProductionLines`) — ว่าง = ไม่รู้ ⇒ ไม่กันคลังออก
- * @param {Array|Set} a.lotMats MAT ที่สโตร์คุมเป็นล็อต — **`lotMatsOf(rules)`** (`utils/stockReceipts.js`)
- *                             ห้ามส่งชุดที่มาจาก `child_lot_requests` (ด่าน `lot-mats-from-rules`)
  * @returns {{ rows:Array, totals:object, linesUnknown:boolean }}
  */
-export function partLevelCoverage({ stock = [], levels = [], products = [], rules = [], lines = [], lotMats = [] } = {}) {
+export function partLevelCoverage({ stock = [], levels = [], products = [], rules = [], lines = [] } = {}) {
   const lineSet = new Set((lines || []).map(l => lineKey(l?.name)).filter(Boolean));
   const linesUnknown = lineSet.size === 0;
 
@@ -69,7 +67,7 @@ export function partLevelCoverage({ stock = [], levels = [], products = [], rule
     // คลัง/ปลายทางที่ไม่ใช่ไลน์ผลิต = ไม่ใช่งานของจุดเรียกเติม (แต่ต้องนับว่ากันออกกี่รายการ)
     if (!linesUnknown && !lineSet.has(lk)) { skipped += 1; continue; }
 
-    const { kind } = refStockOf(mat, { lineName: ln, products, rules, lotMats });
+    const { kind } = refStockOf(mat, { lineName: ln, products, rules });
     const watched = lvWithMin.has(pairKey);
     const rowNoMin = !watched && lvNoMin.has(pairKey);
 
