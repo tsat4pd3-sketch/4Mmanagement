@@ -7017,3 +7017,36 @@ test('🫙 manual-open-product-empty-reason — ช่องเลือกส�
     + '\n\n   ทำไมสำคัญ: "ไม่มีสินค้า register" กับ "มีแต่ถูกปิดใช้งาน" แก้คนละทางกันคนละคน\n'
     + '              บอกผิด = หน้างานรอของที่ไม่ต้องรอ และของที่ต้องทำไม่มีใครทำ\n');
 });
+
+/* ═══ ⬜ "จอขาวสนิท" ต้องเป็นไปไม่ได้ — ตาข่ายใน index.html ═══  2026-10-26
+   หน้างานแจ้ง: จอขาว **ทั้งคอมและมือถือ** · ไม่มีอะไรบนจอให้กดเลย
+   ทำไมถึงขาวสนิท: ถ้าไฟล์ chunk โหลดไม่ได้ (404 หลัง deploy · เน็ตตัด) หรือพังตั้งแต่ตอน import
+   ⇒ React ไม่เคยถูกสร้าง ⇒ `RootErrorBoundary` ไม่มีทางทำงาน ⇒ `<div id="root">` ว่างเปล่า
+   ⇒ ตาข่ายต้องอยู่ **ใน index.html** เท่านั้น (ทำงานได้แม้โปรแกรมหลักไม่โหลดสักบรรทัด)
+   🔴 ปุ่มต้อง "ล้างของเก่า + เปิดใหม่" ไม่ใช่ `reload()` เฉยๆ — reload ธรรมดาได้ index.html
+      ตัวเดิมจาก cache = วนขาวซ้ำ (เหตุผลเดียวกับที่หน้างานกด F5 แล้วไม่หาย) */
+test('⬜ boot-fallback — จอขาวสนิทต้องเป็นไปไม่ได้ (ตาข่ายใน index.html + ธงจาก main.jsx)', () => {
+  const bad = [];
+  const html = readFileSync(join(ROOT, 'index.html'), 'utf8');
+  const main = stripComments(readFileSync(join(ROOT, 'src/main.jsx'), 'utf8'));
+
+  if (!html.includes('id="boot-fallback"')) bad.push('index.html: ไม่มีกล่อง #boot-fallback');
+  if (!html.includes('id="boot-retry"')) bad.push('index.html: ไม่มีปุ่มลองใหม่ #boot-retry');
+  if (!/__ESM_MOUNTED/.test(html)) bad.push('index.html: ตาข่ายไม่ได้เช็คธง __ESM_MOUNTED');
+  /* ต้องจับทั้ง 2 ทาง: ไฟล์โหลดไม่ได้ (error ของ SCRIPT/LINK) + เงียบไปเฉยๆ (ตั้งเวลา) */
+  if (!/addEventListener\(\s*'error'/.test(html)) bad.push('index.html: ไม่ดัก error ของ SCRIPT/LINK');
+  if (!/setTimeout\(/.test(html)) bad.push('index.html: ไม่มีตัวจับเคส "เงียบแต่ไม่เคย mount"');
+  /* 🔴 ปุ่มต้องล้างของเก่าจริง — ห้ามเป็น location.reload() เปล่าๆ */
+  if (!/location\.replace\([^)]*fresh=/.test(html)) bad.push('index.html: ปุ่มไม่ได้เปิดใหม่แบบล้างแคช (ต้องมี ?fresh=)');
+  /* 🔴 ตาข่ายที่บังจอที่ใช้งานได้ = แย่กว่าไม่มีตาข่าย — ต้องเช็คว่า React วาดอะไรลง #root แล้วหรือยัง */
+  if (!/childElementCount/.test(html)) bad.push('index.html: ตาข่ายไม่ได้เช็คว่า #root มีเนื้อหาแล้ว (เสี่ยงบังของจริง)');
+
+  if (!/window\.__ESM_MOUNTED\s*=\s*true/.test(main)) bad.push('main.jsx: ไม่ได้ตั้งธง __ESM_MOUNTED หลัง render');
+  const iMount = main.indexOf('__ESM_MOUNTED');
+  const iRender = main.indexOf('createRoot(');
+  if (iMount >= 0 && iRender >= 0 && iMount < iRender) bad.push('main.jsx: ตั้งธงก่อน render — ต้องตั้งหลัง');
+
+  assert.deepEqual(bad, [], '\n\n❌ ตาข่ายกันจอขาวหาย:\n  ' + bad.join('\n  ')
+    + '\n\n   ทำไมสำคัญ: chunk โหลดไม่ได้ = React ไม่เคยขึ้น = RootErrorBoundary ไม่ทำงาน\n'
+    + '              หน้างานเห็นจอขาวเปล่าๆ ไม่รู้ว่าพังหรือช้า แล้วกด F5 รัวๆ (ยิ่งซ้ำเติมตอนระบบอ่อนแรง)\n');
+});
