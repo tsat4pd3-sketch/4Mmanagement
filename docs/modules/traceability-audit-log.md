@@ -41,6 +41,11 @@
   · **ไม่รวมโดยตั้งใจ:** ตารางที่ระบบลบ-สร้างใหม่ทั้งก้อนเป็นปกติ (`customer_forecasts` · `*_alerts` ·
   `child_demand_accumulator` · ตัวนับ MO) · actor = คนแก้ล่าสุด (ข้อจำกัด DR เดิม) · ทดสอบในธุรกรรมย้อนกลับ 06/10:
   ลบ 1 แถว → audit 1 แถว · **ตารางงานใหม่ฝั่ง DR ที่ client ลบได้ ต้องผูก `trg_audit_delete` ด้วย**
+- **🔍 ตารางคุณภาพ QA ผูก audit แล้ว 2026-10-20** — migration `20261020_qa_inspection_audit_main.sql` (Main · **apply แล้ว**)
+  ใบตรวจ/ผลรายจุด/รายชิ้น/action/จุดตรวจ/แผ่นแบบ/NCR/CAPA/SPC/FME → `fn_audit` · `qa_fme_obligations` → `fn_audit_manual_only` (edge เขียนถี่)
+  · ⭐ **คอลัมน์ "คนบันทึก" ใช้ default `auth.uid()` ฝั่ง DB แทนการไล่แก้โค้ดรายจุด** — ได้เฉพาะคอลัมน์ที่ "คนกด = คนในคอลัมน์" จริง
+    (`created_by_uid`/`recorded_by_uid`) · **ห้ามใส่กับคอลัมน์คนที่ถูกเลือกจาก picker** (inspector/approver/closer) · ฝั่ง DR ใช้ไม่ได้ (anon = null)
+  · ทดสอบด้วย uid จริงแล้ว (UPDATE ผลตรวจ → audit 1 แถว actor มีชื่อ · INSERT → `recorded_by_uid` = uid ผู้กด) · ⚠️ `apply_migration` ผ่าน MCP ค้าง 60 วิ 2 ครั้ง — รันผ่าน `execute_sql` ทีละก้อนพร้อม `lock_timeout` แทน
 - **⏳ retention 6 เดือน (2026-08-19 · คำสั่ง user):** cron `purge-audit-log` ทั้ง 2 project ลบแถวเก่ากว่า 6 เดือนทุกวัน 17:30 UTC (00:30 ไทย) — migration `20260819_audit_log_retention.sql` (**apply แล้วทั้ง Main + DR**)
   - **เหตุผล:** วัดอัตราโตจริงแล้ว **audit_log เป็นตัวโตเร็วที่สุดของทั้ง 2 project** (DR 197 KB/วัน = 42% ของการโตทั้งหมด · Main 89 KB/วัน ≈ 43%) เพราะเก็บ `old_data` + `new_data` เป็น jsonb **ทั้งแถว** (1,100-1,400 bytes/แถว)
   - **⭐ retention ทำให้ audit_log "หยุดโต" ไม่ใช่แค่ "โตช้าลง"** (ตกผลึกกับ user 2026-08-19) — มันเข้าสมดุลที่ `อัตรา/วัน × 180 วัน` แล้วนิ่ง (ลบเท่าที่เพิ่ม): 20/วัน = ~5 MB · 50/วัน = ~13 MB · 141/วัน = ~35 MB → **เลิกเป็นปัญหาถาวรไม่ว่าใช้หนักแค่ไหน**
@@ -161,3 +166,29 @@
 - **ยังไม่มีจอที่โชว์ "ชื่อที่ผูก uid ไม่ได้"** ให้หัวหน้ากดรวมคนเอง — ตอนนี้เห็นได้จาก SQL เท่านั้น
 - **ชื่อที่สะกดผิดต่างจากทะเบียน** (พิมพ์มือ/คนนอกองค์กร) ยังได้ uid = null ตามการออกแบบ
   — การรวมคนเป็นการตัดสินใจของคน ห้ามให้ระบบเดา (ENGINEERING-PRINCIPLES §2)
+
+## 🎫 ใบผลิต (`prod_orders`) — สอบกลับ "ใครแก้ใบที่ปิดแล้ว" (2026-10-21)
+
+เดิมตารางนี้มีแค่ `trg_audit_delete` ⇒ **การ UPDATE มองไม่เห็นเลย** — ตอบไม่ได้ว่าใครแก้เวลาเริ่ม/จบ
+ใครเปลี่ยนยอด ใครยกเลิก/ยกยอดใบที่ปิดแล้ว (เจอตอน audit เคส "แก้ไขเวลาจบรุ่นไม่ขึ้น" · Apron Assy 20/10)
+และ `fn_audit()` หา actor ไม่ได้เพราะตารางไม่มี `updated_by_name`/`updated_by_uid` ⇒ **actor = null
+ทุกแถว รวมแถว DELETE ที่มีอยู่เดิม 464 แถว**
+
+**ที่ทำ** (migration `20261021_prod_orders_audit_update_dr.sql` · apply แล้ว 21/10):
+- เพิ่ม `updated_by_name` / `updated_by_uid` (nullable ไม่มี default) + ใส่ `'prod_orders'` ใน
+  `DR_AUDIT_TABLES` (`src/supabaseClient.js`) ⇒ client stamp ให้อัตโนมัติทุก write
+- `trg_audit_update_closed` = **AFTER UPDATE แบบแคบ**
+  🔴 **เงื่อนไข `OLD.status is distinct from 'open'`** — ใบผลิตถูก UPDATE ทุกครั้งที่สแกน/คอนเฟิร์ม
+  (หลายร้อยครั้ง/วัน) · log ทุก UPDATE = `audit_log` โตหลักแสนแถว/เดือน (`old_data`+`new_data` =
+  jsonb เต็มแถว) ⇒ ตัด flow ปกติ (open → confirmed) ออก **เหลือแต่ "ย้อนไปแก้ของที่ปิดแล้ว"**
+  · คอลัมน์ที่เฝ้า: `opened_at` `confirmed_at` `stopped_at` `status` `qty` `qty_target`
+    `qty_actual` `qty_ok` — **แก้ชื่อผู้แก้เฉยๆ ไม่สร้างแถว** (`fn_audit` ตัด `updated_by_*` ออกจาก
+    `changed_fields` อยู่แล้ว)
+- 🔴 `create trigger` ขอ **ACCESS EXCLUSIVE** บนตารางที่หน้างานเขียนอยู่ตลอด ⇒ **ต้อง
+  `set lock_timeout`** ก่อน ไม่งั้นค้างรอคิวล็อก (รอบแรก 21/10 ไม่ตั้ง = timeout 60 วิ)
+- ป้ายไทยของ `prod_orders` + ฟิลด์เวลา/ยอด อยู่ใน `src/utils/auditLabels.js` ·
+  `rowLabel()` โชว์ **`prod_no` ก่อน `mat_no`** (คนค้นด้วยเลขใบ) · ดูที่ `/audit-log` แท็บ DR
+
+⚠️ **ข้อจำกัดที่ยังอยู่** (known gap เดิมของ DR): ชื่อ/uid มาจาก client ที่เป็น `anon`
+= "คีย์สำหรับนับ/join" **ไม่ใช่ลายเซ็นที่ปลอมไม่ได้** (📄 `src/utils/actorStamp.js`) ·
+actor ของแถวที่เกิด**ก่อน** deploy รอบนี้ยังเป็น null — ย้อนไปเติมไม่ได้

@@ -70,8 +70,9 @@ export default function AuditLogViewer({ client, tables, limit = 300, intro, fmt
 
   return (
     <div>
+      {/* คำอธิบาย "ทะเบียนนี้เก็บอะไร" — ถาวร ไม่ขึ้นกับตัวกรอง ⇒ ป้าย data-page-note (UI-STANDARD §2.1) */}
       {intro && (
-        <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10, background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 7, padding: '8px 11px' }}>
+        <div data-page-note="1" style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10, background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 7, padding: '8px 11px' }}>
           {intro}
         </div>
       )}

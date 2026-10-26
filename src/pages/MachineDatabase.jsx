@@ -12,7 +12,8 @@ import { getLineFamilyNames, lineNameCompare } from '../utils/lineHierarchy';
 import { loadMachineTraits, activeAutomationLevels, activeOperationModes, automationDisplay, operationDisplay } from '../utils/machineTraits';
 import EmojiPicker from '../components/EmojiPicker';
 import { pickUnusedColor } from '../utils/colorPick';
-import { checkWrite } from '../utils/dbWrite';
+import { checkWrite, checkWriteRows } from '../utils/dbWrite';
+import { normalizeBrand, suggestBrand, brandProposals } from '../utils/machineBrand';
 import LineSelect from '../components/LineSelect';
 import Page from '../components/Page';
 import PageHeader from '../components/PageHeader';
@@ -119,6 +120,7 @@ export default function MachineDatabase() {
       .then(({ data }) => setSupplyLines((data || []).map(r => r.line_name))).catch(() => setSupplyLines([]));
   }, [editing?.id, editing?.equipment_category]);
   const [showTypeManager, setShowTypeManager] = useState(false);
+  const [showBrandReview, setShowBrandReview] = useState(false);
   const [traitsVer, setTraitsVer] = useState(0); // bump เมื่อโหลด traits เสร็จ (re-render dropdown)
 
   useEffect(() => { loadMachineTraits().then(() => setTraitsVer(v => v + 1)); }, []);
@@ -152,6 +154,7 @@ export default function MachineDatabase() {
   /* + เพิ่มโซน facility ใหม่ → insert pm_facility_areas (DR) ก่อน แล้วค่อยเลือก (2026-09-07)
      ห้ามพิมพ์ชื่อโซนลง machines.line_name ตรงๆ — MtnMachineLayout/Energy จับคู่โซนด้วยชื่อ พิมพ์ต่างตัวเดียว = โซนซ้ำ */
   const addFacilityArea = async () => {
+    if (!canEdit) { toast.error('เพิ่มโซน facility ต้องมีสิทธิ์ machines:edit'); return; }
     const name = String(newArea || '').trim();
     if (!name) { toast.error('พิมพ์ชื่อโซน/ระบบก่อน'); return; }
     const dup = facilityAreas.find(a => a.trim().toLowerCase() === name.toLowerCase());
@@ -222,6 +225,12 @@ export default function MachineDatabase() {
   }, [filtered]);
 
   /* ── machine CRUD ── */
+  /* 🏷️ ยี่ห้อ (20/10) — คอลัมน์มาจาก migration `20261020_machine_brand_mo_item_type_dr.sql`
+     ยังไม่รัน = แถวไม่มีคีย์ `brand` ⇒ ซ่อนปุ่ม/ปิดช่อง (ห้ามส่งคอลัมน์ที่ไม่มี = บันทึกทั้งใบล้ม) */
+  const hasBrandCol = useMemo(() => machines.some(m => Object.prototype.hasOwnProperty.call(m, 'brand')), [machines]);
+  const knownBrands = useMemo(() => [...new Set(machines.map(m => normalizeBrand(m.brand)).filter(Boolean))].sort(), [machines]);
+  const brandTodo = useMemo(() => brandProposals(machines.filter(m => m.is_active && kindOf(m.equipment_kind) !== 'die'), knownBrands), [machines, knownBrands]);
+
   const openEdit = (item = null) => {
     setEditing(item
       /* ⚠️ ต้องคัดลอก equipment_kind มาด้วยเสมอ — ตกไปแล้ว kindOf(undefined)='machine'
@@ -230,6 +239,7 @@ export default function MachineDatabase() {
           shut_height_min_mm: item.shut_height_min_mm != null ? String(item.shut_height_min_mm) : '',
           shut_height_max_mm: item.shut_height_max_mm != null ? String(item.shut_height_max_mm) : '',
           io_no: item.io_no || '',
+          brand: item.brand || '',
           // equipment_die เป็น 1:1 → PostgREST คืน object (บางกรณี array) — อ่านได้ทั้ง 2 แบบ
           die_height_mm: (() => { const e = Array.isArray(item.equipment_die) ? item.equipment_die[0] : item.equipment_die; return e?.die_height_mm != null ? String(e.die_height_mm) : ''; })(),
           _die_height_orig: (() => { const e = Array.isArray(item.equipment_die) ? item.equipment_die[0] : item.equipment_die; return e?.die_height_mm ?? null; })(),
@@ -251,6 +261,8 @@ export default function MachineDatabase() {
       machine_name:      editing.machine_name || null,
       // 💳 เลข I/O ประจำเครื่อง (14/10 · MTN REQUEST) — ใบ MO เติมช่อง I/O ให้เองตอนเลือกเครื่อง
       io_no:             (editing.io_no || '').trim().toUpperCase() || null,
+      // 🏷️ ยี่ห้อ = คุณสมบัติของเครื่อง (20/10) — ส่งเฉพาะตอน migration มีคอลัมน์แล้ว (ไม่งั้นทั้งใบบันทึกไม่ได้)
+      ...(hasBrandCol ? { brand: kindOf(editing.equipment_kind) === 'die' ? null : normalizeBrand(editing.brand) } : {}),
       // แม่พิมพ์ไม่มี "ประเภทเครื่องจักร" (ประเภทของมันอยู่ที่ทะเบียนแม่พิมพ์ — ชุด/ลำดับ OP)
       machine_type_id:   kindOf(editing.equipment_kind) === 'die' ? null : (editing.machine_type_id || null),
       equipment_category: editing.equipment_category || 'production',
@@ -345,6 +357,7 @@ export default function MachineDatabase() {
         actions={(canEdit || canCreate) ? (
           <>
             {canEdit && <button onClick={() => setShowTypeManager(true)} style={cancelBtnStyle}>🏷️ จัดการประเภทเครื่องจักร</button>}
+            {canEdit && hasBrandCol && brandTodo.length > 0 && <button onClick={() => setShowBrandReview(true)} style={cancelBtnStyle}>🏷️ แยกยี่ห้อจากชื่อ ({brandTodo.length})</button>}
             {canCreate && <button onClick={() => openEdit()} style={saveBtnStyle}>+ เพิ่มเครื่องจักร</button>}
           </>
         ) : null} />
@@ -437,6 +450,7 @@ export default function MachineDatabase() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                     <span style={{ fontSize: 14, fontWeight: 800, fontFamily: 'monospace', color: 'var(--text)' }}>{item.machine_no}</span>
                     {item.machine_name && <span style={{ fontSize: 12, color: 'var(--muted)' }}>{item.machine_name}</span>}
+                    {item.brand && <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: 'var(--bg2)', color: 'var(--text2)', fontWeight: 700 }} title="ยี่ห้อ">🏷️ {item.brand}</span>}
                     {item.io_no && <span style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'monospace' }}>I/O {item.io_no}</span>}
                     {item.machine_types && (
                       <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: `${item.machine_types.color}22`, color: item.machine_types.color, fontWeight: 700 }}>
@@ -550,6 +564,19 @@ export default function MachineDatabase() {
                   <input value={editing.machine_name} onChange={e => setEditing(f => ({ ...f, machine_name: e.target.value }))} placeholder="เช่น CO2 Welder" style={inputStyle} />
                 </Field>
               </div>
+              {kindOf(editing.equipment_kind) !== 'die' && (() => {
+                const sug = !normalizeBrand(editing.brand) ? suggestBrand(editing.machine_name, knownBrands) : null;
+                return (
+                  <Field label="ยี่ห้อ (Brand)" hint={hasBrandCol ? 'ยี่ห้อเป็นของเครื่อง ไม่ต้องใส่ในชื่อชนิดอุปกรณ์ของใบ MO' : '⚠ รอรัน migration "machine_brand" ก่อน — ช่องนี้ยังบันทึกไม่ได้'}>
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                      <input value={editing.brand || ''} disabled={!hasBrandCol} list="machine-brand-list"
+                        onChange={e => setEditing(f => ({ ...f, brand: e.target.value.toUpperCase() }))} placeholder="เช่น ABB / YASKAWA" style={{ ...inputStyle, flex: 1 }} />
+                      {hasBrandCol && sug && <button type="button" onClick={() => setEditing(f => ({ ...f, brand: sug }))} style={{ ...cancelBtnStyle, padding: '6px 10px', fontSize: 12, whiteSpace: 'nowrap' }} title="จากคำขึ้นต้นของชื่อเครื่อง">ใช้ {sug}</button>}
+                    </div>
+                    <datalist id="machine-brand-list">{knownBrands.map(b => <option key={b} value={b} />)}</datalist>
+                  </Field>
+                );
+              })()}
               <Field label="เลข I/O (Internal Order) — ใบแจ้งซ่อม MO เติมให้อัตโนมัติ">
                 <input value={editing.io_no} onChange={e => setEditing(f => ({ ...f, io_no: e.target.value.toUpperCase() }))} maxLength={20} placeholder="เช่น 11A1234567" style={{ ...inputStyle, fontFamily: 'monospace' }} />
               </Field>
@@ -663,9 +690,62 @@ export default function MachineDatabase() {
           onChange={load}
         />
       )}
+      {showBrandReview && <BrandReviewModal proposals={brandTodo} onClose={() => setShowBrandReview(false)} onDone={() => { setShowBrandReview(false); load(); }} />}
       {histNo && <MachineRepairHistory machineNo={histNo} onClose={() => setHistNo(null)}
         onOpenOrder={(o) => navigate(`/mtn-repair?mo=${o.id}`)} />}
     </Page>
+  );
+}
+
+/* ═══ 🏷️ แยกยี่ห้อจากชื่อเครื่อง — ระบบเสนอ คนตรวจ แล้วค่อยบันทึก (20/10 · คำสั่ง user ข้อ 7) ═══
+   กฎเสนอ = `suggestBrand()` (utils/machineBrand.js · คำขึ้นต้นชื่อเท่านั้น ห้ามเดาจากรุ่น)
+   · ติ๊กออก/แก้ยี่ห้อได้ก่อนกด · บันทึกเป็นกลุ่มต่อยี่ห้อ · นับแถวที่เขียนติดจริง (checkWriteRows) */
+function BrandReviewModal({ proposals, onClose, onDone }) {
+  const [rows, setRows] = useState(() => proposals.map(({ m, brand }) => ({ id: m.id, no: m.machine_no, name: m.machine_name, line: m.line_name, brand, on: true })));
+  const [busy, setBusy] = useState(false);
+  const picked = rows.filter(r => r.on && normalizeBrand(r.brand));
+  const save = async () => {
+    setBusy(true);
+    let n = 0;
+    try {
+      const groups = {};
+      picked.forEach(r => { const b = normalizeBrand(r.brand); (groups[b] || (groups[b] = [])).push(r.id); });
+      for (const [b, ids] of Object.entries(groups)) {
+        const res = await supabaseDR.from('machines').update({ brand: b, updated_at: new Date().toISOString() }).in('id', ids).select('id');
+        if (!checkWriteRows(res, `บันทึกยี่ห้อ ${b}`)) break;
+        n += (res.data || []).length;
+      }
+    } finally { setBusy(false); }
+    if (n) toast.success(`บันทึกยี่ห้อแล้ว ${n} เครื่อง`);
+    onDone();
+  };
+  return (
+    <div className="overlay" style={{ zIndex: 2100 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 20, width: 'min(95vw,640px)', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+          <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>🏷️ แยกยี่ห้อจากชื่อเครื่อง</div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 18, cursor: 'pointer' }}>✕</button>
+        </div>
+        <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10, lineHeight: 1.6 }}>
+          ระบบอ่านจาก <b>คำแรกของชื่อเครื่อง</b> เท่านั้น (ไม่เดาจากชื่อรุ่น) · ตรวจแล้วติ๊กออก/แก้ยี่ห้อได้ก่อนบันทึก ·
+          เครื่องที่ระบบอ่านไม่ออกไม่อยู่ในลิสต์นี้ — กรอกเองในฟอร์มเครื่อง
+        </div>
+        <div style={{ flex: 1, overflowY: 'auto', marginBottom: 10 }}>
+          {rows.map((r, i) => (
+            <label key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: '1px solid var(--border)', fontSize: 12.5, color: 'var(--text)' }}>
+              <input type="checkbox" checked={r.on} onChange={e => setRows(x => x.map((y, j) => j === i ? { ...y, on: e.target.checked } : y))} />
+              <b style={{ fontFamily: 'monospace', minWidth: 90 }}>{r.no}</b>
+              <span style={{ flex: 1, minWidth: 0, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name} · {r.line}</span>
+              <input value={r.brand} onChange={e => setRows(x => x.map((y, j) => j === i ? { ...y, brand: e.target.value.toUpperCase() } : y))} style={{ ...inputStyle, width: 130, fontWeight: 700 }} />
+            </label>
+          ))}
+        </div>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button onClick={onClose} style={cancelBtnStyle}>ยกเลิก</button>
+          <button onClick={save} disabled={busy || !picked.length} style={{ ...saveBtnStyle, opacity: busy || !picked.length ? 0.6 : 1 }}>{busy ? 'กำลังบันทึก…' : `บันทึกยี่ห้อ ${picked.length} เครื่อง`}</button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -676,16 +756,31 @@ function MachineTypeManager({ types, canEdit, onClose, onChange }) {
   const [form, setForm] = useState(emptyType);
   const [editingId, setEditingId] = useState(null);
   const [saving, setSaving] = useState(false);
+  /* 🔗 ชนิดอุปกรณ์ในใบแจ้งซ่อม (20/10 · ข้อ 6) — เลือก MC No. ในใบ MO แล้วระบบเติมชนิดนี้ให้ (utils/mtnItemSuggest.js)
+     คอลัมน์ `mo_item_type` มาจาก migration — ยังไม่รัน = ไม่โชว์ช่อง (ส่งคอลัมน์ที่ไม่มี = บันทึกล้มทั้งแถว) */
+  const hasMoCol = types.some(t => Object.prototype.hasOwnProperty.call(t, 'mo_item_type'));
+  const [itemNames, setItemNames] = useState([]);
+  useEffect(() => {
+    if (!hasMoCol) return undefined;
+    let alive = true;
+    supabaseDR.from('mtn_item_types').select('name, team').eq('is_active', true).order('sort_order')
+      .then(({ data, error }) => { if (!alive) return; if (error) toast.error(`โหลดชนิดอุปกรณ์ไม่สำเร็จ: ${error.message}`); setItemNames((data || []).filter(r => !/^DIE\b/i.test(r.name || '')).map(r => r.name)); });
+    return () => { alive = false; };
+  }, [hasMoCol]);
 
   // สร้างใหม่ default สีที่ยังไม่ซ้ำกับประเภทที่มี (ผู้ใช้เปลี่ยนทับได้)
   const startAdd = () => { setForm({ ...emptyType, color: pickUnusedColor(types.map(t => t.color)), sort_order: types.length + 1 }); setEditingId('new'); };
-  const startEdit = (t) => { setForm({ id: t.id, label: t.label, color: t.color, icon: t.icon || '', sort_order: t.sort_order, is_active: t.is_active }); setEditingId(t.id); };
+  const startEdit = (t) => { setForm({ id: t.id, label: t.label, color: t.color, icon: t.icon || '', sort_order: t.sort_order, is_active: t.is_active, mo_item_type: t.mo_item_type || '' }); setEditingId(t.id); };
   const cancelEdit = () => { setEditingId(null); setForm(emptyType); };
 
   const handleSave = async () => {
+    /* ด่านชั้น 2 — ทะเบียนนี้เป็น "ของกลางทั้งโรงงาน" (ไม่มีเจ้าของรายหน่วย) ⇒ ด่าน = คีย์สิทธิ์
+       ซ่อนปุ่มไม่ใช่ด่าน: โมดัลเปิดค้างตอนสิทธิ์เปลี่ยน / เรียกตรงได้ (QC audit §7.4 · 20/10) */
+    if (!canEdit) { toast.error('แก้ทะเบียนประเภทเครื่องจักรต้องมีสิทธิ์ machines:edit'); return; }
     if (!form.label.trim()) { toast.error('กรอกชื่อประเภท'); return; }
     setSaving(true);
-    const payload = { label: form.label.trim(), color: form.color, icon: form.icon.trim() || null, sort_order: parseInt(form.sort_order) || 0, is_active: form.is_active };
+    const payload = { label: form.label.trim(), color: form.color, icon: form.icon.trim() || null, sort_order: parseInt(form.sort_order) || 0, is_active: form.is_active,
+      ...(hasMoCol ? { mo_item_type: (form.mo_item_type || '').trim() || null } : {}) };
     const { error } = editingId === 'new'
       ? await supabaseDR.from('machine_types').insert(payload)
       : await supabaseDR.from('machine_types').update(payload).eq('id', editingId);
@@ -697,9 +792,10 @@ function MachineTypeManager({ types, canEdit, onClose, onChange }) {
   };
 
   const handleDelete = async (t) => {
+    if (!canEdit) { toast.error('ลบประเภทเครื่องจักรต้องมีสิทธิ์ machines:edit'); return; }
     if (!window.confirm(`ลบประเภท "${t.label}" ?\n\nเครื่องจักรที่ใช้ประเภทนี้จะกลายเป็น "ไม่ระบุประเภท"`)) return;
-    const { error } = await supabaseDR.from('machine_types').delete().eq('id', t.id);
-    if (error) { toast.error(error.message); return; }
+    // นับแถวที่ลบจริง (กฎเขียน DB ข้อ 2) — 0 แถวแล้วปิดเงียบ = ทะเบียนยังอยู่แต่จอบอกว่าลบแล้ว
+    if (!checkWriteRows(await supabaseDR.from('machine_types').delete().eq('id', t.id).select('id'), 'ลบประเภทเครื่องจักร')) return;
     onChange();
   };
 
@@ -718,7 +814,8 @@ function MachineTypeManager({ types, canEdit, onClose, onChange }) {
           {types.map(t => (
             <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 0', borderBottom: '1px solid var(--border)' }}>
               <span style={{ width: 12, height: 12, borderRadius: 4, background: t.color, flexShrink: 0 }} />
-              <span style={{ fontSize: 13, color: 'var(--text)', flex: 1 }}>{t.icon || ''} {t.label}</span>
+              <span style={{ fontSize: 13, color: 'var(--text)', flex: 1 }}>{t.icon || ''} {t.label}
+                {hasMoCol && <span style={{ fontSize: 11, color: t.mo_item_type ? 'var(--text2)' : 'var(--muted)', marginLeft: 6 }}>{t.mo_item_type ? `→ ใบ MO: ${t.mo_item_type}` : '· ยังไม่ผูกชนิดในใบ MO'}</span>}</span>
               {canEdit && (
                 <>
                   <button className="tbtn" onClick={() => startEdit(t)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, padding: '3px 9px', fontSize: 11, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>
@@ -735,6 +832,15 @@ function MachineTypeManager({ types, canEdit, onClose, onChange }) {
             <div style={{ background: 'var(--bg2)', borderRadius: 10, padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
               <input autoFocus placeholder="ชื่อประเภท เช่น Robot - Arc Welding" value={form.label}
                 onChange={e => setForm(f => ({ ...f, label: e.target.value }))} style={inputStyle} />
+              {hasMoCol && (
+                <label style={{ fontSize: 11, color: 'var(--muted)' }}>ชนิดอุปกรณ์ในใบแจ้งซ่อม (เลือก MC No. แล้วระบบเติมให้)
+                  <select value={form.mo_item_type || ''} onChange={e => setForm(f => ({ ...f, mo_item_type: e.target.value }))} style={{ ...inputStyle, marginTop: 3 }}>
+                    <option value="">— ไม่ผูก (ให้ผู้แจ้งเลือกเอง) —</option>
+                    {form.mo_item_type && !itemNames.includes(form.mo_item_type) && <option value={form.mo_item_type}>{form.mo_item_type} (ปิดใช้แล้ว)</option>}
+                    {itemNames.map(n => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                </label>
+              )}
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <div style={{ width: 150 }}>
                   <EmojiPicker value={form.icon} onChange={v => setForm(f => ({ ...f, icon: v }))} style={inputStyle} />

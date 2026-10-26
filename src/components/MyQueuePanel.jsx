@@ -33,21 +33,15 @@ import {
 /** ข้อมูลเก่ากว่านี้ = โหลดใหม่ตอนเปิดแผง (นาที) */
 const STALE_MIN = 5;
 /** เพดานแถวต่อคิวรี — คิวงานไม่ใช่รายงาน ไม่ต้องครบทุกแถวในโลก */
-const LIMIT = 300;
-/* เพดานต่อคิวรีของ PostgREST (กฎเหล็กข้อ 5) — ชุดนับยอดก็เกินไม่ได้
-   ⇒ ได้ครบ COUNT_LIMIT แถวพอดี = **อาจมีมากกว่านี้** ต้องติดธงให้จอเขียนบอก */
-const COUNT_LIMIT = 1000;
-
-/* 🔢 ชุด "นับยอดกอง" — คอลัมน์เท่าที่ `moWaitMeta()` ต้องใช้ตัดสินขั้นที่รออยู่เท่านั้น
-   (22/10 · คำสั่ง user หลังตรวจงาน QA) เดิมบรรทัดสรุปนับจากชุดรายการที่ถูกตัดด้วย LIMIT 300
-   ⇒ วัดจริง 22/10: ใบเปิดค้าง 672 ใบ · หน้าต่าง 300 แถวจบที่ 08/10 · **ใบรอ QA จริง 92 แต่แผงนับได้ 26**
-   🔴 ห้ามนับด้วย `status` ดิบ — ขั้นที่รอขึ้นกับฟอร์ม (JIG/DIE vs MTN) และด่านอนุมัติด้วย
-      ⇒ ต้องส่งคอลัมน์ครบพอให้ `moWaitMeta()` ตัดสินได้ ไม่งั้นกองเพี้ยนเงียบ */
-const MO_COUNT_COLS = [
-  'id', 'work_date', 'status', 'mtn_dept', 'item_type',
-  'qa_skipped_at', 'purpose', 'mtn_head_at', 'approve_at',
-  'dept_manager_at', 'plant_manager_at',
-].join(', ');
+/* 🔴 เพดานแถวของคิว — ใบ MO ที่ยังเปิดอยู่โตเกิน 300 ไปนานแล้ว (วัด 22/10: **693 ใบ**)
+   เดิม 300 + `order('work_date', asc)` = เก็บใบ**เก่าสุด** แล้วทิ้งใบใหม่ทั้งหมด
+   ⇒ 393 ใบ (57%) ไม่เข้าคิวของใครเลย · ใบรอเซ็นปิด 107 ใบ เห็นแค่ 29 ⇒ ผจก.ฝ่ายที่แจ้ง
+     เปิดคิวมาเจอ "ไม่มีงานที่รอคุณอยู่" ทั้งที่มี 51 ใบรออนุมัติ (เคสจริง 22/10 · คำสั่ง user)
+   ⚠️ 1000 = เพดานแถวต่อคิวรีของ Supabase — เกินกว่านี้ต้องกรองฝั่ง server ไม่ใช่ขยายเลขอีก
+      ⇒ ชนเพดานเมื่อไหร่ต้องติด `partial` ให้จอเขียนบอก **ห้ามตัดเงียบ**
+   📌 26/10 — ยอดกอง (`moAll`) ใช้ชุดเดียวกันนี้ ไม่ยิงคิวรีซ้ำ: คิวรีเดียว filter/order/limit เท่ากัน
+      ⇒ "ยอดกอง" กับ "รายการ" มาจากประชากรเดียวกันเสมอ (เลขไม่เถียงกันเอง · กฎ egress ข้อ 11) */
+const LIMIT = 1000;
 
 /* คอลัมน์ที่ "ใครรอใบนี้" ต้องใช้จริงเท่านั้น (myQueue.moWaitingOn + การวาดแถว) */
 const MO_COLS = [
@@ -72,16 +66,12 @@ export async function loadMyQueue(me) {
   const ok = (r) => (r.error ? undefined : (r.data || []));
 
   const canLu = !!(me.canLevelUp || me.canLevelUp100);
-  const [moR, moCountR, sesR, prR, fourR, actR, lines, luR] = await Promise.all([
+  const [moR, sesR, prR, fourR, actR, lines, luR] = await Promise.all([
     /* กรองด้วยสถานะที่ยังมีคนต้องทำต่อ — เดิม `.gt('current_step', 1)` ตัดใบ "รอจ่ายงาน" (current_step = 1)
        ทิ้งทั้งหมด และ `.is('approve_at', null)` ตัดใบ MTN ที่อนุมัติแล้วแต่ยังรอปิดใบ (ขั้น 8) */
     supabaseDR.from('mtn_orders').select(MO_COLS)
       .in('status', OPEN_MO_STATUSES)
       .order('work_date', { ascending: true }).limit(LIMIT),
-    /* ชุดนับยอดกอง — คอลัมน์บาง ไม่จำกัดแค่ 300 (ดู MO_COUNT_COLS ข้างบน) */
-    supabaseDR.from('mtn_orders').select(MO_COUNT_COLS)
-      .in('status', OPEN_MO_STATUSES)
-      .order('work_date', { ascending: true }).limit(COUNT_LIMIT),
     supabaseDR.from('production_sessions').select('id, line_name, section, shift, work_date')
       .eq('status', 'pending_close').order('work_date', { ascending: true }).limit(100),
     supabaseDR.from('purchase_requests').select('id', { count: 'exact', head: true })
@@ -106,11 +96,11 @@ export async function loadMyQueue(me) {
     ...f, section: secOfLine.get(String(f.line_name || '').trim().toLowerCase()),
   }));
 
-  const mo = ok(moR)?.filter(o => !DEAD.includes(String(o.status || '')));
-  /* 🔴 นับไม่ได้ = **ไม่ส่ง** `moAll` (ปล่อยให้ถอยไปนับจากชุดรายการ + ติดธงว่าไม่ครบ)
-     ห้ามส่ง [] — จะกลายเป็น "ทุกกองมี 0 ใบ" ทั้งที่คิวรีล่ม (ลิสต์ว่าง 2 ความหมาย · กฎข้อ 12) */
-  const moAllRows = ok(moCountR)?.filter(o => !DEAD.includes(String(o.status || '')));
-  const moAllCapped = Array.isArray(ok(moCountR)) && ok(moCountR).length >= COUNT_LIMIT;
+  const moRows = ok(moR);
+  const mo = moRows?.filter(o => !DEAD.includes(String(o.status || '')));
+  /* 🔴 ชนเพดาน = โหลดไม่ครบ ไม่ใช่ "ไม่มีงาน" — ต้องติด `partial` ให้จอเขียนบอก
+     (เดิม `partial` ติดเฉพาะตอนคิวรี **ล่ม** ⇒ ตัดแถวทิ้งเงียบๆ แล้วจอยืนยันว่าเคลียร์หมด) */
+  const moTruncated = Array.isArray(moRows) && moRows.length >= LIMIT;
 
   const summaries = [];
   if (prR.error == null && Number(prR.count) > 0) {
@@ -122,7 +112,11 @@ export async function loadMyQueue(me) {
     });
   }
 
-  return buildQueue({ mo, moAll: moAllRows, moAllCapped, sessions: ok(sesR), fourM, actions: ok(actR), summaries, levelUps }, me);
+  /* `moAll` = ชุดนับยอดกอง · ตอนนี้เป็นชุดเดียวกับรายการ (เพดาน 1000 ครอบใบเปิดค้างทั้งหมดแล้ว)
+     🔴 คิวรีล่ม = `mo` เป็น undefined ⇒ **ไม่ส่ง** `moAll` เพื่อให้ `countsCapped` ติดธง
+        ห้ามส่ง [] (จะกลายเป็น "ทุกกองมี 0 ใบ" ทั้งที่ไม่รู้ · ลิสต์ว่าง 2 ความหมาย · กฎข้อ 12) */
+  return buildQueue({ mo, moAll: mo, moAllCapped: moTruncated, moTruncated,
+    sessions: ok(sesR), fourM, actions: ok(actR), summaries, levelUps }, me);
 }
 
 /* ── UI ชิ้นเล็ก ────────────────────────────────────────────────────────── */
@@ -193,7 +187,19 @@ function Group({ tier, items, onGo }) {
    @param {boolean} open  แผงเปิดอยู่ไหม — ใช้ตัดสินว่าถึงเวลารีเฟรชของเก่าหรือยัง */
 /* 🔁 ผลโหลดใช้ร่วมกันทุกตัวที่เรียก hook นี้ (13/10) — sidebar กับกระดิ่งต่างเรียก ⇒ ห้ามยิงคิวรีชุดเดียวกัน 2 รอบ
    คีย์ = ตัวตน+ขอบเขต · ตัวที่เรียกพร้อมกันรอ promise เดียวกัน · โหลดเสร็จแจ้งทุกตัวให้เห็นเลขเดียวกัน */
-const shared = { key: null, at: 0, promise: null, q: null, listeners: new Set() };
+const shared = { key: null, at: 0, promise: null, q: null, listeners: new Set(), loader: null };
+
+/* ── 🔄 เคลียร์คิวให้โหลดใหม่ หลังมีการ "ทำงานเสร็จ" ที่ทำให้คิวเปลี่ยน ───────  2026-10-22
+   เคสจริง (คำสั่ง user): ผจก.กดเซ็นอนุมัติปิดใบจากคิว → ใบปิดแล้วจริง แต่**แถวยังคาอยู่ในแผง**
+   เพราะแผงโหลด "ครั้งเดียวต่อ session" แล้วรีเฟรชเฉพาะตอนเปิดแผงและของเก่าเกิน STALE_MIN (5 นาที)
+   ⇒ คนเซ็นเสร็จแล้วมองไม่ออกว่าอันไหนทำไปแล้ว · เผลอกดซ้ำ · และ badge ค้างเลขเดิม
+   🔴 ต้องเรียกจากทุกจุดที่ "ปิดงานที่เคยอยู่ในคิว" — ไม่ใช่แค่ /mtn-repair
+   ⚠️ ล้าง `at` อย่างเดียวไม่พอ (แผงที่เปิดค้างอยู่จะไม่รู้ตัว) ⇒ ถ้ามีคนฟังอยู่ ให้ยิงโหลดจริงเลย
+      ไม่มีคนฟัง = แค่ทำให้ของเก่าหมดอายุ รอบหน้าที่เปิดแผงค่อยโหลด (ไม่เปลืองคิวรีฟรีๆ) */
+export function invalidateMyQueue() {
+  shared.at = 0;
+  if (shared.listeners.size && typeof shared.loader === 'function') shared.loader();
+}
 
 export function useMyQueue(open = false) {
   const { sections, fullName, role, position, mtnTeams } = useContext(UserContext);
@@ -249,6 +255,8 @@ export function useMyQueue(open = false) {
     } finally { shared.promise = null; setBusy(false); }
   }, [secKey, teamKey, fullName, role, position]);
 
+  /* ให้ invalidateMyQueue() ยิงโหลดจริงได้ — เก็บตัวโหลดล่าสุดไว้ (hook ตัวไหนก็ได้ที่ยัง mount อยู่) */
+  useEffect(() => { shared.loader = () => load(true); return () => { if (shared.loader) shared.loader = null; }; }, [load]);
   useEffect(() => { load(false); }, [load]);        // รอบแรกตอน mount (1 ครั้ง/session · ตัวที่ 2 ใช้ผลร่วม)
   useEffect(() => {
     if (open) load(false);                           // เปิดแผง/กระดิ่ง = รีเฟรชเฉพาะเมื่อของเก่าเกิน STALE_MIN

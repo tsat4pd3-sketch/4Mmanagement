@@ -292,13 +292,13 @@ function Field({ label, children, span }) {
 const prodQty = orderProducedQty;   // เจ้าของสูตรอยู่ที่ utils/oee.js §6 — ห้ามเขียนซ้ำที่นี่
 
 function QualityDashboard() {
-  const { role, lineId, sections } = useContext(UserContext);
+  const { role, lineId, sections, scopeIdx } = useContext(UserContext);
   const [allLines, setAllLines] = useState([]);
   // ขอบเขตไลน์ของภาพรวมผลิต/ของเสีย: leader → เฉพาะครอบครัวไลน์ตัวเอง (ไม่ให้เห็นทั้งโรงงานจนงง) ·
   // role ที่ถูกจำกัด sections → เฉพาะส่วนงาน · qa/manager/admin (sections ว่าง) → ทั้งโรงงานเหมือนเดิม
   // 👁 utils/qaViewScope — ส่วนงานที่ไม่มีไลน์ผลิต (QA) = ทั้งโรงงาน (เดิม 0 ไลน์ = แผงว่าง · 19/10)
   const scopedLineNames = useMemo(() => {
-    const v = qaViewScope(allLines, { role, lineId, sections });
+    const v = qaViewScope(allLines, { role, lineId, sections, scopeIdx });
     return v.names ? [...v.names] : null; // null = ไม่จำกัด
   }, [role, lineId, sections, allLines]);
   useEffect(() => { loadLinesRes().then(({ data }) => setAllLines(data || [])); }, []);
@@ -378,10 +378,13 @@ function QualityDashboard() {
       const oo = ooRes.rows, dd = ddRes.rows;
       // นับ NCR ค้างให้ตรงกับ scope ของ leader (ตัวเลข KPI จะได้ตรงกับรายการในแท็บ NCR)
       let ncrCountQ = supabase.from('qa_ncr').select('id', { count: 'exact', head: true }).not('status', 'in', QA_DONE_IN);
-      if (scopedLineNames) ncrCountQ = ncrCountQ.in('line_name', scopedLineNames);
+      // 🔴 ใบไม่ระบุไลน์ต้องนับด้วย — ตรงกับรายการในแท็บ NCR (IN ไม่จับ NULL)
+      if (scopedLineNames) ncrCountQ = ncrCountQ.or(`line_name.is.null,line_name.in.(${scopedLineNames.map(n => `"${n.replace(/"/g, '\\"')}"`).join(',')})`);
       const [{ count: nOpen, error: ncrErr }, { data: capas, error: capaErr }] = await Promise.all([
         ncrCountQ,
-        supabase.from('qa_capa').select('id, due_date, status').neq('status', 'closed'),
+        /* 🔴 ต้องกรองขอบเขตเหมือน NCR (เดิมนับทั้งโรงงาน = KPI ไม่ตรงรายการ) · ยกเลิก = ไม่ค้าง (qaDocStatus)
+           ไลน์ของใบ = ของใบเอง → ถอยไปไลน์ของ NCR (เหมือน capaLineOf) · ไม่รู้ไลน์ = นับไว้ (ห้ามซ่อนใบเก่าที่ไม่ผูกไลน์) */
+        supabase.from('qa_capa').select('id, due_date, status, line_name, qa_ncr(line_name)').not('status', 'in', QA_DONE_IN),
       ]);
       if (!alive) return;
       const errs = [];
@@ -397,7 +400,11 @@ function QualityDashboard() {
       setDefects(dd || []);
       setNcrOpen(ncrErr ? null : (nOpen || 0));
       const today = getWorkDate();
-      setCapaOverdue(capaErr ? null : (capas || []).filter(c => c.due_date && c.due_date < today).length);
+      const inScope = (c) => {
+        const ln = c.line_name || c.qa_ncr?.line_name;
+        return !scopedLineNames || !ln || scopedLineNames.includes(ln);
+      };
+      setCapaOverdue(capaErr ? null : (capas || []).filter(c => inScope(c) && c.due_date && c.due_date < today).length);
       setLoading(false);
     })();
     return () => { alive = false; };
@@ -496,6 +503,9 @@ function QualityDashboard() {
       <TimeRangeBar
         scale={tr.scale} from={from} to={to} today={tr.today} scales={null}
         onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset}
+        /* 🧹 ตัวกรองไลน์/ชิ้นงานอยู่ใน state (ไม่ขึ้น URL) ⇒ ส่ง onClear ให้ปุ่มกลางล้างให้ด้วย
+           เดิมวาดปุ่มของตัวเองไว้ในแถบ — ถอดออกแล้ว ใช้ปุ่มกลางตัวเดียว (22/10) */
+        onClear={() => { setLineFilter(''); setProductFilter(''); }}
       >
         {/* ตัวเลือก = ชื่อไลน์ที่มีกะในช่วงนี้ — วาดผ่าน <LineSelect> ให้ได้ลำดับ/หัวกลุ่มส่วนงานชุดเดียวกับทุกหน้า
             (2026-10-01 · เดิม select ธรรมดาเรียง localeCompare = คนละลำดับกับหน้าอื่น)
@@ -508,7 +518,6 @@ function QualityDashboard() {
         <SearchSelect value={productFilter || ''} placeholder={allOf('ชิ้นงาน')} style={{ minWidth: 200, maxWidth: 320 }}
           options={productOptions.map(p => ({ id: p.key, label: p.label, sub: p.key !== p.label ? p.key : '', keywords: p.key }))}
           onChange={({ id }) => setProductFilter(id)} />
-        {(lineFilter || productFilter) && <button style={ghostBtn} onClick={() => { setLineFilter(''); setProductFilter(''); }}>ล้างตัวกรอง</button>}
         {loading && <span className="filter-count">กำลังโหลด…</span>}
       </TimeRangeBar>
 
@@ -614,6 +623,7 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
   const [limitN, setLimitN] = useState(25);      // จำนวน subgroup ล่าสุดที่ใช้คำนวณ
   const [charModal, setCharModal] = useState(null); // null | { ...form }
   const [readings, setReadings] = useState([]);  // ค่าที่กำลังกรอก
+  const measBusyRef = useRef(false);              // กันแตะบันทึกเบิ้ล = subgroup ซ้ำ ⇒ Cp/Cpk เพี้ยน (audit handheld 2026-10-20)
   const [loading, setLoading] = useState(false);
 
   const sel = chars.find(c => c.id === selId) || null;
@@ -626,14 +636,19 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
   }, []);
   useEffect(() => { loadChars(); }, [loadChars]);
 
+  /* 🔴 stale-response: สลับค่าที่ควบคุมเร็วๆ แล้วคำตอบเก่ามาทีหลัง = กราฟของอีกตัวทับ (db-write-rules ข้อ 4) */
+  const rowsReq = useRef(0);
   const loadRows = useCallback(async (charId, n) => {
+    const req = ++rowsReq.current;
     if (!charId) { setRows([]); return; }
     setLoading(true);
-    const { data } = await supabase.from('qa_measurements')
+    const { data, error } = await supabase.from('qa_measurements')
       .select('id, work_date, shift, readings, operator_name, note, created_at')
       .eq('characteristic_id', charId)
       .order('work_date', { ascending: false }).order('created_at', { ascending: false })
       .limit(n);
+    if (req !== rowsReq.current) return;
+    if (error) toast.error(`โหลดค่าที่วัดไม่สำเร็จ: ${error.message}`);
     setRows((data || []).reverse()); // เรียงเก่า→ใหม่สำหรับกราฟ
     setLoading(false);
   }, []);
@@ -693,6 +708,11 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
   };
 
   const saveMeasurement = async () => {
+    if (measBusyRef.current) return;
+    measBusyRef.current = true;
+    try { await saveMeasurementInner(); } finally { measBusyRef.current = false; }
+  };
+  const saveMeasurementInner = async () => {
     if (!sel) return;
     if (!selWrite.ok) { toast.info(writeBlockText(selWrite, { what: 'ผลวัดของไลน์นี้' })); return; }
     const vals = readings.map(v => Number(v));
@@ -966,7 +986,7 @@ const DISPO = { use_as_is: 'ใช้ตามสภาพ (Use as-is)', rework:
 const EMPTY_NCR = { report_date: '', line_name: '', part_no: '', part_name: '', source: 'inprocess', severity: 'minor', defect_desc: '', qty_found: '', qty_ng: '' };
 
 function NCRTab({ lineObjs, canRecord, canManage, onOpenCapa, partOpts = [] }) {
-  const { fullName, role, lineId, sections } = useContext(UserContext);
+  const { fullName, role, lineId, sections, scopeIdx } = useContext(UserContext);
   // 📜 part_no ที่เคยบันทึกใน qa_ncr (Main) — พาร์ทที่ทะเบียนยังไม่มี ยังเลือกซ้ำได้ (2026-09-07)
   const partHist = useColumnHistory(supabase, 'qa_ncr', 'part_no', { upper: true });
   const [list, setList] = useState([]);
@@ -979,7 +999,7 @@ function NCRTab({ lineObjs, canRecord, canManage, onOpenCapa, partOpts = [] }) {
   // leader → เห็น NCR เฉพาะครอบครัวไลน์ตัวเอง · role จำกัด sections → เฉพาะส่วนงาน · qa/mgr/admin → ทั้งหมด
   // 👁 ขอบเขตที่เห็น — ตัวเดียวทุกแท็บ (utils/qaViewScope · ส่วนงานที่ไม่มีไลน์ผลิต เช่น QA = ทั้งโรงงาน)
   const scopedLineNames = useMemo(() => {
-    const v = qaViewScope(allLines, { role, lineId, sections });
+    const v = qaViewScope(allLines, { role, lineId, sections, scopeIdx });
     return v.names ? [...v.names] : null;
   }, [role, lineId, sections, allLines]);
   useEffect(() => { loadLinesRes().then(({ data }) => setAllLines(data || [])); }, []);
@@ -992,12 +1012,20 @@ function NCRTab({ lineObjs, canRecord, canManage, onOpenCapa, partOpts = [] }) {
     if (filter === 'cancelled') q = q.eq('status', 'cancelled');
     // จำกัดตามไลน์ — 🔴 ใบที่ไม่ระบุไลน์ต้องเห็นด้วย (`IN` ไม่จับ NULL ⇒ เปิดแล้วหายจากรายการ · audit 19/10)
     if (scopedLineNames) q = q.or(`line_name.is.null,line_name.in.(${scopedLineNames.map(n => `"${n.replace(/"/g, '\\"')}"`).join(',')})`);
-    const { data } = await q;
+    const { data, error } = await q;
+    if (error) toast.error(`โหลด NCR ไม่สำเร็จ: ${error.message}`);
     setList(data || []);
   }, [filter, scopedLineNames]);
   useEffect(() => { load(); }, [load]);
 
+  /* 🔒 กดเบิ้ล = ออกเลข NCR 2 ใบ — กันด้วย ref (state ยังไม่ทันอัปเดตระหว่าง await) */
+  const creatingRef = useRef(false);
   const createNCR = async () => {
+    if (creatingRef.current) return;
+    creatingRef.current = true;
+    try { await createNCRInner(); } finally { creatingRef.current = false; }
+  };
+  const createNCRInner = async () => {
     /* ด่านชั้น 2 — ซ่อนปุ่มไม่ใช่ด่าน (โมดัลเปิดค้างตอนสิทธิ์เปลี่ยน / ยิงตรง) · NCR = บันทึกคุณภาพมีเลขที่ */
     if (!canRecord) { toast.error('เปิด/แก้ NCR ต้องมีสิทธิ์ qa:record'); return; }
     const f = createModal;
@@ -1285,7 +1313,8 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone, lineObjs = [], 
     let q = supabase.from('qa_capa').select('*, qa_ncr(ncr_no, source, part_no, line_name)').order('created_at', { ascending: false }).limit(300);
     if (filter === 'active') q = q.neq('status', 'closed');
     if (filter === 'closed') q = q.eq('status', 'closed');
-    const { data } = await q;
+    const { data, error } = await q;
+    if (error) toast.error(`โหลด CAPA ไม่สำเร็จ: ${error.message}`);
     setList(data || []);
   }, [filter]);
   useEffect(() => { load(); }, [load]);
@@ -1330,7 +1359,14 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone, lineObjs = [], 
     onPrefillDone();
   }, [prefill, onPrefillDone, fullName]);
 
-  const save = async (extra = {}, msg = 'บันทึกแล้ว ✓') => {
+  /* 🔒 กดเบิ้ล = ออกเลข CAPA 2 ใบ (await nextDocNo ระหว่างทาง) — กันด้วย ref ไม่ใช่ state (state ยังไม่ทันอัปเดต) */
+  const savingRef = useRef(false);
+  const save = async (...args) => {
+    if (savingRef.current) return;
+    savingRef.current = true;
+    try { await saveInner(...args); } finally { savingRef.current = false; }
+  };
+  const saveInner = async (extra = {}, msg = 'บันทึกแล้ว ✓') => {
     const f = { ...detail, ...extra };
     if (!f.title?.trim()) { toast.error('กรอกหัวข้อ CAPA'); return; }
     /* 🔐 ด่านซ้ำตอนกดจริง (ซ่อนปุ่มอย่างเดียวไม่พอ — เปิดใบตรงจาก NCR/เคลมได้) */
@@ -1683,16 +1719,17 @@ function InstrumentTab({ lineObjs, canManage }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-        <KpiCard label="สอบเทียบปกติ" value={counts.ok} color="#22c55e" />
-        <KpiCard label="ใกล้ครบกำหนด (≤30 วัน)" value={counts.soon} color="#f59e0b" />
-        <KpiCard label="เกินกำหนด / ยังไม่สอบเทียบ" value={counts.overdue} color="#ef4444" />
-      </div>
       <FilterBar>
         <SearchInput value={search} onChange={setSearch} fields="รหัส / ชื่อ / ตำแหน่ง" />
         <span className="spacer" />
         {canManage && <button style={btnSt()} onClick={() => setModal({ ...EMPTY_INST })}>+ เพิ่มเครื่องมือวัด</button>}
       </FilterBar>
+      {/* การ์ดตัวนับ = เนื้อหา ⇒ อยู่ใต้แถบกรอง (UI-STANDARD §2.1) */}
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+        <KpiCard label="สอบเทียบปกติ" value={counts.ok} color="#22c55e" />
+        <KpiCard label="ใกล้ครบกำหนด (≤30 วัน)" value={counts.soon} color="#f59e0b" />
+        <KpiCard label="เกินกำหนด / ยังไม่สอบเทียบ" value={counts.overdue} color="#ef4444" />
+      </div>
 
       <div className="table-sticky" style={{ ...cardSt, padding: 0, overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
@@ -1796,7 +1833,7 @@ const TABS = [
 
 export default function QualityControl() {
   const { can } = usePerms();
-  const { role, lineId, sections } = useContext(UserContext);
+  const { role, lineId, sections, scopeIdx } = useContext(UserContext);
   const canRecord = can('qa', 'record');
   const canManage = can('qa', 'manage');
   const [tab, setTab] = useTabParam(TABS.map(t => t.key), 'dashboard');
@@ -1822,7 +1859,7 @@ export default function QualityControl() {
   // lineObjs = object array (id/name/parent_line_name) สำหรับ render dropdown แบบจัดชั้น (§5.3 ข้อ 8)
   // (QaClaims รับ lineObjs เต็มแถวแล้ว — 2026-09-07 — ให้ <LineSelect> จัดลำดับชั้น/ปลดระวางเหมือนแท็บอื่น)
   // 👁 utils/qaViewScope — ส่วนงานที่ไม่มีไลน์ผลิต (QA/Planning) เห็นทั้งโรงงาน (เดิมได้ 0 ไลน์ = ทุกแท็บว่าง · 19/10)
-  const viewScope = useMemo(() => qaViewScope(allLines, { role, lineId, sections }), [allLines, role, lineId, sections]);
+  const viewScope = useMemo(() => qaViewScope(allLines, { role, lineId, sections, scopeIdx }), [allLines, role, lineId, sections, scopeIdx]);
   const lineObjs = viewScope.lines;
 
   const openCapaFromNcr = useCallback((ncr) => {

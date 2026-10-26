@@ -88,3 +88,31 @@ test('เลข PR จาก SAP — normalize + รอเลข', async () => {
   assert.equal(isAwaitingPrNo({ status: 'cancelled', pr_no: null }), false);   // ยกเลิกแล้ว ไม่ต้องรอเลข
   assert.equal(isAwaitingPrNo({ status: 'received', pr_no: null }), false);
 });
+
+test('ใบ MO ที่ต้องเปิด PR แต่ยังไม่มีรายการ — ขึ้นคิว ห้ามตกหล่น', async () => {
+  const { mosNeedingPr, NEEDS_PR_PATHS } = await import('../mtnPurchase.js');
+  const orders = [
+    { id: 'a', repair_path: 'inhouse_pr', status: 'assigned', report_at: '2026-10-02' },
+    { id: 'b', repair_path: 'outsource', status: 'assigned', report_at: '2026-10-01' },
+    { id: 'c', repair_path: 'inhouse', status: 'assigned' },                 // ไม่ต้องเปิด PR
+    { id: 'd', repair_path: 'inhouse_pr', status: 'closed' },                // ปิดแล้ว
+    { id: 'e', repair_path: 'inhouse_pr', status: 'assigned' },              // มี PR แล้ว
+    { id: 'f', repair_path: 'inhouse_pr', status: 'assigned', report_at: '2026-10-03' },  // มีแต่ใบที่ยกเลิก
+    { id: 'g', repair_path: null, status: 'assigned' },                      // ยังไม่ระบุเส้นทาง
+  ];
+  const prs = [{ order_id: 'e', status: 'requested' }, { order_id: 'f', status: 'cancelled' }];
+  const out = mosNeedingPr(orders, prs, o => o.status !== 'closed').map(o => o.id);
+  assert.deepEqual(out, ['b', 'a', 'f']);   // เก่าสุดก่อน
+  assert.ok(NEEDS_PR_PATHS().includes('inhouse_pr') && NEEDS_PR_PATHS().includes('outsource'));
+});
+
+test('สถานะงาน PR ของใบ MO — ตัวกรองรายการ MO', async () => {
+  const { prQueueStateOf } = await import('../mtnPurchase.js');
+  assert.equal(prQueueStateOf({ repair_path: 'inhouse_pr' }, []), 'need');
+  assert.equal(prQueueStateOf({ repair_path: 'outsource' }, [{ status: 'cancelled' }]), 'need');
+  assert.equal(prQueueStateOf({ repair_path: 'inhouse_pr' }, [{ status: 'requested', pr_no: null }, { status: 'ordered', pr_no: '1000' }]), 'no_no');
+  assert.equal(prQueueStateOf({ repair_path: 'inhouse_pr' }, [{ status: 'ordered', pr_no: '1000' }]), 'open');
+  assert.equal(prQueueStateOf({ repair_path: 'inhouse_pr' }, [{ status: 'received', pr_no: '1000' }]), null);
+  assert.equal(prQueueStateOf({ repair_path: 'inhouse' }, []), null);
+  assert.equal(prQueueStateOf({ repair_path: null }, [{ status: 'requested', pr_no: '' }]), 'no_no');   // เปิดจากคลังโดยไม่ตั้งเส้นทาง ก็ยังรอเลข
+});

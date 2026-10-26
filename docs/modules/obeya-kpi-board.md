@@ -1246,6 +1246,27 @@ layout ใช้ของรหัส (ใหม่กว่า 14/10) แทน
     - **1.Sale / 2.Sale & Material**: เดือนเป็นแถว ไม่อ่าน (PL มีครบ · ตัวเลข 1.Sale ไม่ตรง PL — ไม่ใช้)
   · ทรงหัวตาราง = เดือน merge คร่อมบล็อก + แถวย่อย ⇒ `resolveSubHeaders()` เลือก **ACTUAL → Amount** ต่อเดือน (ไม่มี ACTUAL ถอยไป Rolling แล้วเตือน · `limitMonths` ตัดเดือนเกิน "ถึงเดือน") ·
     `detectVarRows` ไล่ตาม pattern ไม่ใช่ตามแถว + ข้าม **แถวหัวเรื่องที่ไม่มีตัวเลข** · เทสจำลองโครงจริงทั้ง PL/Manpower/Inventory/GL/ดัชนีท้ายชีท (`kpiBaseImport.test.mjs`)
+- **ท่อนำเข้านอกเบราว์เซอร์ (20/10 · ครึ่งหลังของ "อ่านเมลออโต้แบบ 830/862")** — `scripts/acct-import/import_base.mjs <file> [--year] [--month] [--write]`
+  · อ่าน `.xlsb` ผ่าน `read_xlsb.py` (pyxlsb · รัน `python3 -I`) · `.xlsx` ด้วย xlsx ตัวเดียวกับเว็บ · ตรวจจับด้วย `utils/kpiBaseImport.js` ชุดเดียวกับปุ่มบนเว็บ (`collectPlantValues()`: PL Summary ชนะ · Manpower เติมกำลังคน · Inventory เติมมูลค่าสต็อก)
+  · **dry-run เป็น default** (ตารางเทียบไฟล์ vs ฐาน) · `--write` ต้องมี `SUPABASE_URL`+`SUPABASE_SERVICE_KEY` (MAIN) · เขียนเฉพาะ ทั้งโรงงาน · update ตาม id/insert ไม่ upsert · ค่า 0/เดือนเกิน "ถึงเดือน" ไม่เขียน
+  · `importBook(book, { fileName, write, sb })` = แกนที่ CLI และตัวรันคิวใช้ร่วม (ปี/เดือนจากชื่อไฟล์ `yearFromFileName`/`monthFromFileName` · พ.ศ. → ค.ศ.)
+- **ท่ออัตโนมัติเต็มสาย (20/10 · user: "ใช้ GitHub Actions ไปก่อน · เมลเป็น M365 เหมือน 830/862")** — ใช้โครง EDI เดิมทั้งก้อน ไม่สร้างท่อใหม่:
+  1. **เมล → คิว:** สคริปต์ Outlook บนเครื่อง user (`tools/outlook-mail-ingest/esm_mail_ingest.py`) เพิ่มกฎ `[mail.acct]` (หัวเรื่อง `Report Monthly FS` · ไฟล์แนบ `.xlsb/.xlsx/.xlsm` · ย้อนหลัง 45 วัน)
+     → Edge Function `ingest-demand-mail` v3 ส่ง `kind:'acct'` → Storage `demand-mail` + `demand_mail_inbox` (`kind='acct'` · migration `20261020_demand_mail_inbox_kind_acct_dr.sql`)
+     · **ไม่ขึ้นแผง 📬 ของ /planner-sales** (จอนั้นกรอง `kind='demand'`) · user ต้องกด `restart.bat` บนเครื่องครั้งเดียวให้สคริปต์ใหม่ทำงาน
+  2. **คิว → kpi_base_inputs:** `.github/workflows/acct-import.yml` (cron `17 2 10-21 * *` = 09:17 ไทย ทุกวัน 10-21 + Run workflow · ติ๊ก dry_run ได้)
+     รัน `scripts/acct-import/run_queue.mjs`: อ่าน pending kind=acct เก่าสุดก่อน (สูงสุด 10) → โหลดไฟล์ด้วย service role DR → `importBook(write:true)` → ปิดแถว `imported` + สรุปใน `note`
+     · อ่านไม่ได้/เขียนล้ม = `failed` + เหตุผล (`handled_by='github-actions/acct-import'`) · job ออก exit 1 ให้เห็นแดงใน Actions
+     · **secrets ที่ต้องตั้งใน repo (user ทำ):** `DR_SUPABASE_URL` · `DR_SUPABASE_SERVICE_KEY` (Product DB) · `MAIN_SUPABASE_URL` · `MAIN_SUPABASE_SERVICE_KEY` (MAIN) — ไม่ตั้ง = job เตือนแล้วข้าม (ไม่แดง)
+  · 🔴 **แกนอ่านไฟล์มีชุดเดียว** (`utils/kpiBaseImport.js` + `collectPlantValues`) — เว็บ/CLI/Actions ต้องได้ตัวเลขเดียวกัน · แก้กติกาจับแถวต้องแก้ที่นั่นที่เดียว
+  · 🔴 **ไฟล์ซ้ำ/ฉบับแก้** — บัญชีส่งฉบับแก้ด้วยชื่อเดียวกันใน message id ใหม่ = เข้าคิวอีกแถว ⇒ ตัวรันเขียนทับค่าเดิม (update ตาม id) = ฉบับล่าสุดชนะ · note ในแถว `kpi_base_inputs` บอกชื่อไฟล์ที่มา
+  · 🔔 **แจ้งผลในแอป** (20/10 · user: "ไม่ใช้ Telegram ละ โฟกัสแจ้งเตือนในแอพ") — กฎ `notification_rules.kpi_acct_import` (category `kpi` · seed ผู้รับ = `admin` เท่านั้น · ปรับที่ `/notification-config`)
+    ตัวรันคิวอ่านกฎเอง → แถว `notifications` (`event_key='kpi_acct_import'` · link `/obeya?tab=kpi` · สำเร็จ = success · ล้ม = error) · **ไม่มีกฎ/ปิด/0 คน = `::warning` ใน log ห้ามเงียบ** · dry-run ไม่แจ้ง
+    · migration `20261020_notif_rule_kpi_acct_import_main.sql` (apply แล้ว) · 🔴 ห้ามขยาย `inapp_roles` เป็น supervisor/manager ทั้งโรงงาน (= 44 คน · บทเรียน `notify-inapp-audit.md`)
+  · **dry-run ทดสอบ secrets ได้แม้คิวว่าง** — ตัวรันเช็ค `count` ทั้ง DR (`demand_mail_inbox`) และ MAIN (`kpi_base_inputs`) ก่อนเสมอ · secret ผิด = `::error` exit 2
+  · ⚠️ **GitHub App ของ Claude กด Run workflow ไม่ได้ (403 `actions:write`)** — user กดเองที่ Actions → Accounting import → Run workflow
+  · **ใครกรอก:** 63 แถวที่นำเข้าจากเว็บ 19/10 `created_by` ว่างหมด → `KpiBaseInputsPanel` stamp `created_by`/`created_by_name` ตั้งแต่ 20/10 · ตัวอัตโนมัติเขียน `created_by_name='acct-import'`
+  · ยังไม่ทำ: อ่าน M365 ตรง (ต้อง Azure app จาก IT) — ตอนนี้พึ่งเครื่อง user เปิดอยู่เหมือน EDI
 - **ยอดขาย/หัว = ตัวตั้งสะสม YTD** (19/10 ใบ 5.Manpower แถว "Sale All / Head (All)": เม.ย. = Accumulate Total Sale 706.43 ÷ Head count (All) 392 = 1.802 · ทั้งปี 2,118.70 ÷ 386 = 5.489 = เป้า)
   ⇒ `KPI_FORMULAS.sale_per_head.cum = ['sale_total']` · `formulaMonths` รวม ม.ค.→m · **ขาดเดือนใดเดือนหนึ่งก่อนหน้า = คำนวณไม่ได้** (ห้ามรวมเฉพาะที่มี)
 - **กำลังคน (`manpower`) อัตโนมัติ** — `utils/kpiHeadcount.js`: นับ `employees` active ที่ `start_date` ≤ สิ้นเดือน (ว่าง/อนาคต-บั๊ก พ.ศ. = นับ) ·

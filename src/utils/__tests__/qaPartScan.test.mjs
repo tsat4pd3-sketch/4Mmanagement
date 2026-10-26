@@ -28,3 +28,15 @@ test('ไม่มีมาตรฐาน ≠ นอกขอบเขต — �
 test('ว่าง/อ่านไม่ได้ ต้องไม่โยน', () => {
   assert.ok(findQaPartByScan(null, parts).error);
 });
+
+test('📦 ป้ายลิงก์ชิ้นงาน (/qr-labels แท็บ ชิ้นงาน) ผ่านด่านหยิบของสโตร์เหมือนบาร์โค้ด MAT เดิม', async () => {
+  const { buildQrUrl } = await import('../qrCode.js');
+  const { checkPickPart } = await import('../replenishGate.js');
+  const url = buildQrUrl('product', '10100401', 'https://esm.example.com');
+  assert.equal(url, 'https://esm.example.com/scan?c=ESM%3AP%3A10100401');
+  const scan = parseQrPayload(url);
+  assert.deepEqual([scan.kind, scan.id], ['product', '10100401']);
+  assert.equal(checkPickPart({ request: { mat_no: '10100401' }, scan }).status, 'ok');
+  assert.equal(checkPickPart({ request: { mat_no: '10200500' }, scan }).block, true);
+  assert.equal(findQaPartByScan(scan, parts).part.id, 'a');
+});

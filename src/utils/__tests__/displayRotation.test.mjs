@@ -199,3 +199,43 @@ test('barChips — โชว์เฉพาะ "ข้อมูลชุดไ�
   assert.deepEqual(barChips('/tv?dept=production&sec=PD3'), ['🏭 ฝ่ายผลิต', 'PD3']);
   assert.deepEqual(barChips('/obeya?tab=kpi&board=1&scope=section:PD3'), ['📋 บอร์ด KPI', 'PD3']);
 });
+
+/* ทะเบียนตัวกรอง (20/10 — ขยายให้ตั้งได้ทุกตัวกรองของหน้า): คีย์ไม่ซ้ำในหน้าเดียว · showIf อ้างคีย์ที่มีจริง ·
+   select ต้องมีตัวเลือก · kind ต้องเป็นชนิดที่หน้า /display-rotation วาดได้ */
+test('DISPLAY_PAGE_PARAMS: คีย์ไม่ซ้ำ + showIf อ้างคีย์ที่มีจริง + kind ที่วาดได้', async () => {
+  const { DISPLAY_PAGE_PARAMS } = await import('../displayRotation.js');
+  const KINDS = new Set(['select', 'bool', 'section', 'line', 'scope', 'product', 'text', 'multi', 'orgdept', 'station', 'wtype', 'storeline']);
+  for (const [path, defs] of Object.entries(DISPLAY_PAGE_PARAMS)) {
+    const keys = defs.map(d => d.key);
+    assert.equal(new Set(keys).size, keys.length, `${path}: คีย์ซ้ำ ${keys}`);
+    for (const d of defs) {
+      assert.ok(KINDS.has(d.kind), `${path}?${d.key}: kind ${d.kind} วาดไม่ได้`);
+      if (d.kind === 'select') assert.ok(d.options?.length, `${path}?${d.key}: select ไม่มีตัวเลือก`);
+      if (d.kind === 'orgdept') assert.ok(['id', 'name'].includes(d.valueAs), `${path}?${d.key}: orgdept ต้องบอก valueAs`);
+      Object.keys(d.showIf || {}).forEach(k => assert.ok(keys.includes(k), `${path}?${d.key}: showIf อ้าง ${k} ที่ไม่มีในหน้า`));
+    }
+  }
+});
+
+/* 📖 หน้าย่อยต้องดูครบก่อนจอวนต่อ (20/10 · user "หน้าย่อยยังเปลี่ยนไม่หมด มันเปลี่ยนหน้าใหญ่แล้ว") */
+test('subpageGate: รอจนทุกแถบถึงหน้าสุดท้าย + ค้างไว้ครบ holdSec', async () => {
+  const { subpageGate, parseSubpage } = await import('../displayRotation.js');
+  assert.deepEqual(parseSubpage('2/4'), { page: 2, count: 4 });
+  for (const bad of ['', '1/1', '5/4', '0/3', 'x', null]) assert.equal(parseSubpage(bad), null, String(bad));
+  const seen = new Map();
+  // บอร์ดเดียว 4 หน้า: หน้า 1 ที่วินาที 15 = ยังรอ
+  let g = subpageGate([{ page: 1, count: 4 }], seen, 15, { holdSec: 12 });
+  assert.equal(g.ready, false); assert.deepEqual(g.waiting, { page: 1, count: 4 });
+  g = subpageGate([{ page: 4, count: 4 }], seen, 40, { holdSec: 12 });   // เพิ่งถึงหน้าสุดท้าย
+  assert.equal(g.ready, false);
+  g = subpageGate([{ page: 1, count: 4 }], seen, 52, { holdSec: 12 });   // วนกลับหน้า 1 แล้ว แต่หน้าสุดท้ายโชว์ครบ 12 วิ
+  assert.equal(g.ready, true);
+  // ไม่มีแถบ / แถบอ่านไม่ได้ = ไม่รอ
+  assert.equal(subpageGate([], new Map(), 0).ready, true);
+  assert.equal(subpageGate([null], new Map(), 0).ready, true);
+  // 2 แถบ: ตัวหนึ่งครบ อีกตัวยัง = รอตัวที่ยัง
+  const s2 = new Map();
+  subpageGate([{ page: 2, count: 2 }, { page: 1, count: 3 }], s2, 10, { holdSec: 5 });
+  g = subpageGate([{ page: 2, count: 2 }, { page: 2, count: 3 }], s2, 20, { holdSec: 5 });
+  assert.equal(g.ready, false); assert.deepEqual(g.waiting, { page: 2, count: 3 });
+});

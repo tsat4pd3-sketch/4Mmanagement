@@ -49,6 +49,9 @@ function setVal(ws, ref, value, { bold, center, wrap, size, color, fill, border 
   }
 }
 
+/** ชื่อใต้ลายเซ็น — หน้าแม่ส่งชื่อจริงในช่อง `email` · หลุดเป็นอีเมลมา = ตัดเหลือส่วนหน้า @ (ห้ามพิมพ์อีเมลลงเอกสาร) */
+const nameOf = (p) => String(p?.email ?? '').split('@')[0]
+
 function merge(ws, from, to) {
   try { ws.mergeCells(`${from}:${to}`) } catch {}
 }
@@ -91,7 +94,7 @@ function buildCategoryMeta(categories) {
   return meta
 }
 
-const COL_WIDTHS = [4, 12, 4, 7, 5, 5, 8, 6, 6, 6, 6, 5, 14, 6, 6, 10, 8]
+const COL_WIDTHS = [4, 12, 4, 7, 5, 5, 10, 6, 6, 6, 6, 5, 14, 6, 8, 10, 8]
 const TOTAL_COLS = 17
 
 /**
@@ -116,6 +119,7 @@ export async function exportInspectionExcel({
   exporter,
   categories,
   docForm,
+  methods = {},
 }) {
   const CATEGORY_META = buildCategoryMeta(categories)
   /* exceljs โหลดตอนกด export เท่านั้น (lazy chunk ใช้ร่วมกับตัว export อื่น) */
@@ -156,16 +160,16 @@ export async function exportInspectionExcel({
   ws.getRow(4).height = 32
 
   ws.getRow(5).height = 14
-  merge(ws, 'A5', 'D5'); setVal(ws, 'A5', '00', { center: true, size: 8 })
+  merge(ws, 'A5', 'D5'); setVal(ws, 'A5', 'Rev. 00', { center: true, size: 8 })
   merge(ws, 'E5', 'H5'); setVal(ws, 'E5', 'Initial issue', { center: true, size: 8 })
   merge(ws, 'I5', 'L5')
   const dateStr = new Date(inspection.inspected_at).toLocaleDateString('th-TH', {
     year: 'numeric', month: '2-digit', day: '2-digit',
   })
   setVal(ws, 'I5', dateStr, { center: true, size: 8 })
-  setVal(ws, 'M5', inspector?.email ?? '', { center: true, size: 7 })
-  merge(ws, 'N5', 'O5'); setVal(ws, 'N5', approver?.email ?? '', { center: true, size: 7 })
-  merge(ws, 'P5', 'Q5'); setVal(ws, 'P5', exporter?.email ?? '', { center: true, size: 7 })
+  setVal(ws, 'M5', nameOf(inspector), { center: true, size: 7 })
+  merge(ws, 'N5', 'O5'); setVal(ws, 'N5', nameOf(approver), { center: true, size: 7 })
+  merge(ws, 'P5', 'Q5'); setVal(ws, 'P5', nameOf(exporter), { center: true, size: 7 })
 
   const addSig = async (dataUrl, colIdx, rowStart) => {
     const buf = signatureToBuffer(dataUrl)
@@ -186,19 +190,20 @@ export async function exportInspectionExcel({
   ws.getRow(6).height = 13
   ws.getRow(7).height = 13
 
-  merge(ws, 'A6', 'A6'); setVal(ws, 'A6', 'Jig No.:', { bold: true, size: 8 })
-  merge(ws, 'B6', 'D6'); setVal(ws, 'B6', jig.jig_no ?? '', { size: 8 })
-  merge(ws, 'E6', 'E6'); setVal(ws, 'E6', 'Process:', { bold: true, size: 8 })
-  merge(ws, 'F6', 'I6'); setVal(ws, 'F6', jig.process ?? '', { size: 8 })
-  merge(ws, 'J6', 'J6'); setVal(ws, 'J6', 'Part Name:', { bold: true, size: 8 })
-  merge(ws, 'K6', 'Q6'); setVal(ws, 'K6', jig.part_name ?? '', { size: 8 })
+  /* ป้ายกว้าง 2 คอลัมน์ (20/10 · เดิมป้ายอยู่ช่องกว้าง 4–6 ตัวอักษร ⇒ "Jig Nc"/"Proces"/"Part Nam" ถูกตัด) */
+  merge(ws, 'A6', 'B6'); setVal(ws, 'A6', 'Jig No. :', { bold: true, size: 8 })
+  merge(ws, 'C6', 'F6'); setVal(ws, 'C6', jig.jig_no || jig.machine_no || '', { size: 8 })   // ไม่มีเลขจิ๊ก = เลขเครื่อง
+  merge(ws, 'G6', 'H6'); setVal(ws, 'G6', 'Process :', { bold: true, size: 8 })
+  merge(ws, 'I6', 'L6'); setVal(ws, 'I6', jig.process ?? '', { size: 8 })
+  merge(ws, 'M6', 'M6'); setVal(ws, 'M6', 'Part Name :', { bold: true, size: 8 })
+  merge(ws, 'N6', 'Q6'); setVal(ws, 'N6', jig.part_name ?? '', { size: 8 })
 
-  merge(ws, 'A7', 'A7'); setVal(ws, 'A7', 'Jig Name:', { bold: true, size: 8 })
-  merge(ws, 'B7', 'D7'); setVal(ws, 'B7', jig.name ?? '', { size: 8 })
-  merge(ws, 'E7', 'E7'); setVal(ws, 'E7', 'Model:', { bold: true, size: 8 })
-  merge(ws, 'F7', 'I7'); setVal(ws, 'F7', jig.model ?? '', { size: 8 })
-  merge(ws, 'J7', 'J7'); setVal(ws, 'J7', 'Part No.:', { bold: true, size: 8 })
-  merge(ws, 'K7', 'Q7'); setVal(ws, 'K7', jig.part_no ?? '', { size: 8 })
+  merge(ws, 'A7', 'B7'); setVal(ws, 'A7', 'Jig Name :', { bold: true, size: 8 })
+  merge(ws, 'C7', 'F7'); setVal(ws, 'C7', jig.name ?? '', { size: 8 })
+  merge(ws, 'G7', 'H7'); setVal(ws, 'G7', 'Model :', { bold: true, size: 8 })
+  merge(ws, 'I7', 'L7'); setVal(ws, 'I7', jig.model ?? '', { size: 8 })
+  merge(ws, 'M7', 'M7'); setVal(ws, 'M7', 'Part No. :', { bold: true, size: 8 })
+  merge(ws, 'N7', 'Q7'); setVal(ws, 'N7', jig.part_no ?? '', { size: 8 })
 
   borderRange(ws, 6, 1, 7, 17)
 
@@ -249,7 +254,7 @@ export async function exportInspectionExcel({
         seenBase[base].push(cp)
       }
 
-      ws.getRow(row).height = 16
+      ws.getRow(row).height = 22
       const vHdrs = [
         ['A', 'Item'], ['B', 'Check Point'], ['C', 'Axis'],
         ['D', 'Standard'], ['E', 'Max'], ['F', 'Min'],
@@ -259,7 +264,7 @@ export async function exportInspectionExcel({
         ['O', 'Results OK/NG'], ['P', 'Approve Results'], ['Q', 'Remark'],
       ]
       vHdrs.forEach(([col, label]) => {
-        setVal(ws, `${col}${row}`, label, { bold: true, center: true, size: 7, fill: 'FFD9D9D9', border: true })
+        setVal(ws, `${col}${row}`, label, { bold: true, center: true, size: 7, fill: 'FFD9D9D9', border: true, wrap: true })
       })
       row++
 
@@ -332,7 +337,7 @@ export async function exportInspectionExcel({
 
     if (attrSubset.length) {
       const cps = attrSubset
-      ws.getRow(row).height = 14
+      ws.getRow(row).height = 22
       const aHdrs = [
         ['A', 'Item'], ['B', 'Check Point'], ['G', 'Checking'],
         ['H', 'Picture / Actual'], ['L', 'OK/NG'],
@@ -340,7 +345,7 @@ export async function exportInspectionExcel({
         ['O', 'Results OK/NG'], ['P', 'Approve Results'], ['Q', 'Remark'],
       ]
       aHdrs.forEach(([col, label]) => {
-        setVal(ws, `${col}${row}`, label, { bold: true, center: true, size: 7, fill: 'FFD9D9D9', border: true })
+        setVal(ws, `${col}${row}`, label, { bold: true, center: true, size: 7, fill: 'FFD9D9D9', border: true, wrap: true })
       })
       merge(ws, `C${row}`, `F${row}`)
       setVal(ws, `C${row}`, 'Standard', { bold: true, center: true, size: 7, fill: 'FFD9D9D9', border: true })
@@ -351,7 +356,7 @@ export async function exportInspectionExcel({
       cps.forEach((cp, idx) => {
         const r = results[cp.id]
         const hasImg = !!cpImgs[cp.id]
-        ws.getRow(row).height = hasImg ? 42 : 22
+        ws.getRow(row).height = hasImg ? 42 : 28
         const ok = r?.value_attribute === 'ok' ? 'OK' : r?.value_attribute === 'ng' ? 'NG'
           : r?.status === 'pass' ? 'OK' : r?.status === 'fail' ? 'NG' : ''
 
@@ -360,7 +365,7 @@ export async function exportInspectionExcel({
         merge(ws, `C${row}`, `F${row}`)
         // Standard = เกณฑ์ตัดสินหลายบรรทัด (description) ถ้าไม่มีใช้ชื่อจุดแบบเดิม
         setVal(ws, `C${row}`, cp.description || cp.name, { size: 7, wrap: true, border: true })
-        setVal(ws, `G${row}`, '', { border: true })
+        setVal(ws, `G${row}`, methods[cp.checking_method] || cp.checking_method || '', { size: 7, center: true, wrap: true, border: true })
         merge(ws, `H${row}`, `K${row}`)
         setVal(ws, `H${row}`, '', { border: true })
         if (hasImg) {
@@ -395,14 +400,13 @@ export async function exportInspectionExcel({
   setVal(ws, `A${row}`, 'Code Check Point', { bold: true, size: 7 })
   row++
   const legendItems = Object.entries(CATEGORY_META).map(([k, v]) => `${k} = ${v.label}`)
-  const chunks = [legendItems.slice(0, 5), legendItems.slice(5)]
-  chunks.forEach(chunk => {
-    if (!chunk.length) return
-    ws.getRow(row).height = 11
+  // 6 รายการต่อแถว + wrap — เดิม 2 ก้อนใหญ่ ล้นขอบขวาของกระดาษ
+  for (let i = 0; i < legendItems.length; i += 6) {
+    ws.getRow(row).height = 12
     merge(ws, `A${row}`, `Q${row}`)
-    setVal(ws, `A${row}`, chunk.join('     '), { size: 7 })
+    setVal(ws, `A${row}`, legendItems.slice(i, i + 6).join('     '), { size: 7, wrap: true })
     row++
-  })
+  }
   merge(ws, `A${row}`, `I${row}`)
   setVal(ws, `A${row}`, 'NG = ผิดปกติ     OK = ปกติ', { size: 7 })
 
@@ -421,7 +425,7 @@ export async function exportInspectionExcel({
   const a = document.createElement('a')
   const datePart = new Date(inspection.inspected_at).toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' })
   a.href = url
-  a.download = `PM_JIG_${jig.jig_no ?? jig.name}_${datePart}.xlsx`
+  a.download = `${docForm?.form_code || 'FM-JIG-003'}_PM_${jig.jig_no || jig.machine_no || jig.name}_${datePart}.xlsx`
   a.click()
   URL.revokeObjectURL(url)
 }

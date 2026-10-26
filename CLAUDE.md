@@ -168,12 +168,16 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 > · 🔴 **ชี้ MAT ไม่ได้ = ไม่รู้ CT ⇒ ไม่เข้า %P ต้องเขียนบนจอ (`ngNoMatP`)** · "ผลิตได้" ยังเป็นงานดี
 
 > ### 🔴🔴 กฎเหล็กข้าม session — downtime ที่ทับ "เวลาพักตามนโยบาย" ห้ามหักซ้ำ (2026-09-15)
-> พักตามนโยบาย = planned stop ที่**ถูกกันออกจากฐานเวลาไปแล้ว** ⇒ นาที downtime ที่ตกในช่วงพักบวกเข้าไปอีก = หักซ้ำ
 > · **ทุกจุดที่เอา downtime ไปหักจากฐานเวลา (netAvail/runMin/wLoad/strictOee/MTBF) ต้องผ่าน
 >   `dtMinOutsideBreaks()` + `breakIntervalsIn()` ใน `src/utils/oee.js` เท่านั้น ห้ามรวม `duration_min` เองในหน้า**
 > · จุดที่ตอบ "เครื่องหยุดกี่นาที" (พาเรโต/มูลค่า/MTTR/ตาราง DT) ยังใช้ `duration_min` เต็มเหมือนเดิม — **ห้ามสลับ 2 ชุดนี้**
 > · 🔴 **ไลน์เครื่องขนานบันทึก DT รายเครื่อง ⇒ หารจำนวนเลนก่อนหักจากเวลากะ (`laneWeightFn()`) · `dtMinBySession` ต้องส่ง `{ lines }`**
 >   (มีด่าน) ไม่ส่ง = `wLoad` เหลือ 0 = **กะหายจากค่าเฉลี่ยเงียบๆ** · 🔴 **stamp `oee_a` ต้อง stamp `actual_qty` ด้วย** (`sessionProducedQty()` · มีด่าน)
+> · 🏭 **"ไลน์นี้พักกี่นาที" ไม่เท่ากันทุกไลน์** (`break_line_rules` · 20/10) — เจ้าของกฎ **`src/utils/breakLineRules.js`**
+>   (ไล่สายแม่→ลูก + ทะเบียนกลางที่ `breakIntervalsIn` อ่านเอง ⇒ สูตรที่มี `session` ไม่ต้องส่ง prop) ·
+>   🔴 **ห้ามทับค่า/ไล่สายเองในหน้า · ห้ามถอดการอ่านทะเบียนกลาง** · 🔴 **จอที่วาด "แถบเงาเวลาพัก" เอง
+>   ต้องส่งชื่อไลน์ของแถว** เข้า `halfDayBreakBands()` + อ่านชื่อพักจาก `band.policies`
+>   **ห้ามจับคู่จาก `start_time`** (พักท้ายกะ = `null`) (ด่าน `break-line-rules-single-entry`)
 
 > ### 🔴 บอร์ดไทม์ไลน์ต้องบอก "หลุดแผนแค่ไหน" เป็น **เวลา + ยอด** ไม่ใช่ "กี่ใบ" (2026-09-30)
 > · ตัวเลขทุกตัวมาจาก **`planStatusOf()`** (`utils/heijunkaQueue.js`) · วาดด้วย **`<PlanSlipBar>`** **ห้ามคิดเองในหน้า** ·
@@ -190,7 +194,7 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 >   ในไฟล์เดียวกัน** (มีด่าน) · `computeLiveOee` ต้องส่ง `pairMap` ทุกจอ (มีด่าน) · **ลืม `select('pair_mat_no')` = pairMap ว่าง = นับ 2 เท่าเงียบๆ**
 
 > ### 🔴🔴 กฎเหล็กข้าม session — **"พาร์ทจริง" = สินค้า ไม่ใช่ MAT ตัวเดียว** (2026-10-05 · คำสั่ง user)
-> `op_parent_mat` เป็น **text ช่องเดียว** ⇒ กะที่รันลูกค้าอื่นของ "สินค้าเดียวกัน" ชั้น OP ไม่ยุบ แล้ว**นับซ้ำเงียบๆ**
+> `op_parent_mat` = **text ช่องเดียว** ⇒ ลูกค้าอื่นของสินค้าเดียวกัน ชั้น OP ไม่ยุบ = **นับซ้ำเงียบๆ**
 > · ยุบผ่าน `collapseOps` ที่อ่าน **`alts`** จาก `loadOpInfo()` — จับกลุ่มด้วย **แกน `p_no`
 >   (`partCoreOf` · `src/utils/partGroup.js`) เท่านั้น ห้ามใช้ชื่อ/`family_id`** (มีด่าน) ·
 >   ยุบเกินที่นี่ = ตัดขั้นที่ไม่ควรตัด = **ยอดขาด** กู้ไม่ได้ · `alts` ว่าง = พฤติกรรมเดิมเป๊ะ
@@ -223,7 +227,7 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 
 ## Scrap Report — ใบรายงานของเสีย FM-PD2-002 Rev.06 (paperless + export · 2026-07-16)
 
-หน้า `/scrap-report` (`ScrapReport.jsx`, ฝ่ายผลิต) — แทนฟอร์มกระดาษ "ใบรายงานของเสีย" · ลงยอด scrap ต่อ ไลน์/วัน แล้ว export Excel ตรงฟอร์ม 100%
+หน้า `/scrap-report` (`ScrapReport.jsx`) — แทนฟอร์มกระดาษ "ใบรายงานของเสีย" · export Excel ตรงฟอร์ม
 > 📄 รายละเอียดเต็ม → `docs/modules/scrap-report.md`
 
 ---
@@ -235,9 +239,7 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 
 ---
 
-## ใบรายงานปัญหาการผลิต + ถังเหลือง/ถังแดง (paperless · 2026-08-19 · feedback หน้างาน)
-
-หัวหน้ากลุ่ม Assy2 แจ้งว่ายังเขียนมือทุกครั้ง 3 ใบ (ปัญหาการผลิต · ถังเหลือง · ถังแดง) ทั้งที่ข้อมูลอยู่ในระบบแล้ว → ทำเป็น export/paperless
+## ใบรายงานปัญหาการผลิต + ถังเหลือง/ถังแดง (paperless · 2026-08-19)
 
 > ### 🔴 ฟอร์มที่ยื่นออกไปแล้ว = **บันทึก** ไม่ใช่ใบที่ generate ใหม่ (2026-09-25 · มีด่าน)
 > ใบที่มีเลขที่/ต้องเก็บตามอายุเอกสาร: **ออกใบ = เขียนทะเบียนก่อนค่อยพิมพ์** (ล้ม = ห้ามพิมพ์ต่อเงียบ) ·
@@ -626,6 +628,8 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 
 ## Edge Functions
 
+- 🔔 **แจ้งเตือนใหม่ทุกตัว = ในแอป (`notification_rules` → `notifications`) ห้ามเพิ่มทาง Telegram** (คำสั่ง user 24/09 · ย้ำ 20/10 "ยังไม่ยกเลิกแต่โฟกัสในแอพ")
+  · ผู้รับต้องแคบ (role กว้าง = ไม่มีใครอ่าน · 📄 `docs/modules/notify-inapp-audit.md`) · ตัวส่งนอก edge อ่านกฎเดียวกัน (`scripts/acct-import/run_queue.mjs`)
 - Endpoint: `POST /functions/v1/send-notification`
 > 📄 รายละเอียดเต็ม → `docs/modules/edge-functions.md`
 

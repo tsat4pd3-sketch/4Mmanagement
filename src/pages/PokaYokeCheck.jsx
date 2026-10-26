@@ -3,7 +3,7 @@ import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
-import { inSectionScope } from '../utils/sectionScope';
+import { inSectionScope, scopedLines } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 // picker กลาง (single-source audit 2026-09-07) — ไลน์/คน อ่านจากทะเบียน · สถานีจาก workstations ของไลน์
 import LineSelect from '../components/LineSelect';
@@ -31,7 +31,7 @@ const getCurrentShift = () => { const h = new Date().getHours(); return h >= 8 &
 const SHIFT_LABEL = { day: 'กะเช้า (Shift 01)', night: 'กะดึก (Shift 02)' };
 
 export default function PokaYokeCheck() {
-  const { role, lineId: userLineId, sections: scopeSecs, fullName } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs, fullName, scopeIdx } = useContext(UserContext);
   const canRecord = can('pokayoke', 'record', role);
   const canManage = can('pokayoke', 'manage', role);
   // 📜 ชื่อผู้ตรวจที่เคยบันทึก (Main pokayoke_checks) — คนนอกทะเบียนยังเลือกซ้ำได้ ไม่หายเงียบ (2026-09-07)
@@ -75,7 +75,7 @@ export default function PokaYokeCheck() {
       const fam = getLineFamilyNames(lines, Number(userLineId) || userLineId);
       arr = lines.filter(l => fam.includes(l.name));
     } else if (scopeSecs?.length) {
-      arr = lines.filter(l => inSectionScope(scopeSecs, l.section));
+      arr = scopedLines({ role, lineId: userLineId, sections: scopeSecs, lines, scopeIdx });
     }
     return [...arr].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
   }, [lines, role, userLineId, scopeSecs]);
@@ -154,22 +154,6 @@ export default function PokaYokeCheck() {
       <PageHeader title="Poka-Yoke Check" icon="🛡️"
         sub={`ทดสอบอุปกรณ์กันความผิดพลาด (error-proofing) ด้วยชิ้น master NG ทุกกะ — จับ NG ได้ = ผ่าน · ${SHIFT_LABEL[selShift]} · ${selDate}`} />
 
-      {/* 🔴 "ยังไม่ทดสอบ" กับ "กะนี้ไม่ได้ผลิต" คนละเรื่อง — ไม่บอก คนอ่านจะนับเป็นขาดตรวจทั้งที่ไลน์ไม่ได้เดิน
-          (หลักเดียวกับ AM ที่แยก notStarted ออกจาก late มาตั้งแต่ 08/10 · utils/dailyCheckDay.js) */}
-      {ran === false && (
-        <div style={{ padding: '9px 13px', borderRadius: 8, marginBottom: 10, fontSize: 12.5,
-          background: 'rgba(148,163,184,0.10)', border: '1px solid var(--border)', color: 'var(--muted)' }}>
-          ⚪ <b>{selLine}</b> ไม่ได้เปิดกะใน {SHIFT_LABEL[selShift]} วันที่ {selDate} — <b>ยังไม่ต้องทดสอบ</b> ·
-          อุปกรณ์ที่ยังว่างอยู่ไม่นับเป็นขาดตรวจ
-        </div>
-      )}
-      {ran == null && runs && (
-        <div style={{ padding: '9px 13px', borderRadius: 8, marginBottom: 10, fontSize: 12.5,
-          background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', color: 'var(--amber)' }}>
-          ❔ อ่านข้อมูลการเปิดกะไม่สำเร็จ — บอกไม่ได้ว่ากะนี้ไลน์นี้เดินหรือไม่ ⇒ ที่ว่างอยู่อาจเป็น "ไม่ได้ผลิต" ไม่ใช่ "ขาดตรวจ"
-        </div>
-      )}
-
       {/* ตัวเลือก — UI-STANDARD 2026-09-24: FilterBar · กะ 2 ตัวเลือก = Segmented */}
       <FilterBar style={{ marginBottom: 12 }}>
         <span className="filter-label">ไลน์ / พื้นที่</span>
@@ -185,6 +169,22 @@ export default function PokaYokeCheck() {
         <span className="spacer" />
         {canManage && <button onClick={() => setDEditing({ line_name: selLine, name: '', is_active: true, sort: (Math.max(0, ...devices.map(d => d.sort || 0)) + 1) })} style={btnAccent}>➕ เพิ่มอุปกรณ์</button>}
       </FilterBar>
+
+      {/* 🔴 "ยังไม่ทดสอบ" กับ "กะนี้ไม่ได้ผลิต" คนละเรื่อง — ไม่บอก คนอ่านจะนับเป็นขาดตรวจทั้งที่ไลน์ไม่ได้เดิน
+          (หลักเดียวกับ AM ที่แยก notStarted ออกจาก late มาตั้งแต่ 08/10 · utils/dailyCheckDay.js) */}
+      {ran === false && (
+        <div style={{ padding: '9px 13px', borderRadius: 8, marginBottom: 10, fontSize: 12.5,
+          background: 'rgba(148,163,184,0.10)', border: '1px solid var(--border)', color: 'var(--muted)' }}>
+          ⚪ <b>{selLine}</b> ไม่ได้เปิดกะใน {SHIFT_LABEL[selShift]} วันที่ {selDate} — <b>ยังไม่ต้องทดสอบ</b> ·
+          อุปกรณ์ที่ยังว่างอยู่ไม่นับเป็นขาดตรวจ
+        </div>
+      )}
+      {ran == null && runs && (
+        <div style={{ padding: '9px 13px', borderRadius: 8, marginBottom: 10, fontSize: 12.5,
+          background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', color: 'var(--amber)' }}>
+          ❔ อ่านข้อมูลการเปิดกะไม่สำเร็จ — บอกไม่ได้ว่ากะนี้ไลน์นี้เดินหรือไม่ ⇒ ที่ว่างอยู่อาจเป็น "ไม่ได้ผลิต" ไม่ใช่ "ขาดตรวจ"
+        </div>
+      )}
 
       {/* สรุป */}
       {activeDevs.length > 0 && (

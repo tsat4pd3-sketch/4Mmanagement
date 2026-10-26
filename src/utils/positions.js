@@ -114,6 +114,21 @@ export function positionRank(v) {
   return lv ? (levelMeta(lv)?.rank ?? null) : null
 }
 
+/** ตำแหน่งนี้ต้องผูก "แผนก" ไหม — `false` = ผูกแค่ **ส่วนงาน** ก็ถูกแล้ว (2026-10-20 · คำสั่ง user
+ *  *"ดุลยทรรศน์ เป็นผู้จัดการ เลือกแค่ส่วนพอ ไม่ต้องเลือกแผนก"*)
+ *
+ *  🔴 คนที่ยืน **เหนือชั้นแผนก** (ผู้จัดการ = ทั้งส่วนงาน · หัวหน้าส่วน = ทั้งส่วน แผนกอยู่ใต้เขา)
+ *     ไม่มีแผนกเดียวให้สังกัด ⇒ แถบ "⚠️ ข้อมูลไม่ตรงผังองค์กร" ห้ามนับว่าเขาข้อมูลไม่ครบ
+ *     (worklist ที่เต็มไปด้วยของที่ไม่ต้องแก้ = คนเลิกเชื่อทั้งแถบ — บทเรียนเดียวกับ "กลุ่มไม่มีในผัง" 16/10)
+ *  ⚠️ ไม่รู้จักตำแหน่ง (`null`) = **ยังต้องมีแผนก** (เดิมเป็นอย่างนั้น ห้ามให้ "ไม่รู้" กลายเป็นข้อยกเว้น)
+ *  · `dept_head` (หัวหน้าแผนก) ยังต้องมีแผนก — เขาคือหัวหน้า *ของแผนก* ไม่ใช่เหนือแผนก */
+export const SECTION_LEVEL_POSITION_KEYS = ['section_head']   // ระดับ supervisor แต่คุมทั้งส่วน
+export function needsDepartment(v) {
+  const k = positionKeyOf(v)
+  if (k && SECTION_LEVEL_POSITION_KEYS.includes(k)) return false
+  return levelOfPosition(v) !== 'manager'
+}
+
 /** ระดับนี้ควรทำงานบำรุงรักษาแบบไหน — 'am' | 'pm' | 'both' | null (ไม่รู้จัก/สายสนับสนุน) */
 export function maintenanceKindOfPosition(v) {
   const lv = levelOfPosition(v)

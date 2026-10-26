@@ -9,6 +9,7 @@ import { createPortal } from 'react-dom';
 import { statusColor } from '../utils/obeyaKpi';
 import { A4, GAP, chooseSheetGrid } from '../utils/sheetGrid';
 import useIsMobile from '../utils/useIsMobile';
+import useTvShell from '../utils/useTvShell';
 
 /* คณิตของผัง (A4 · GAP · ตัวเลือกผัง) ย้ายไป `src/utils/sheetGrid.js` แล้ว (pure + มีเทส)
    re-export ไว้เพื่อไม่ต้องไล่แก้ import ของหน้าที่ใช้อยู่ */
@@ -20,7 +21,10 @@ export { A4, GAP, MIN_SHEET_W, chooseSheetGrid } from '../utils/sheetGrid';
    🔴 **25/09 เปลี่ยนนโยบาย (คำสั่ง user):** แผ่นที่ลงไม่พอ **ห้ามปล่อยให้เลื่อน** อีกต่อไป
       ให้ผู้เรียกเอา `bh` (ความสูงกล่องที่วัดได้) ไปคำนวณว่าหน้าหนึ่งใส่ได้กี่แถว แล้ว**แบ่งหน้า**
       ด้วย `packPages()` + `<BoardPager>` แทน — ดู `src/utils/boardPager.js` */
-export function useSheetGrid(ref, sheets = 10) {
+/* 📺 โหมดจอประชุม (20/10 · TV 43-50" ยืนดู 2-3 ม.) — ผังเพดาน 3×2 = 6 แผ่นต่อหน้า (เดิม 2×2 · 20/10 user "ไม่สวย 6 ช่องดีกว่า" — 2×2 แผ่นโล่ง กราฟยืดเกินเนื้อ) · ตัวอักษรตาม `k` (≈ 1.9)
+   แบ่งหน้า/หมุนหน้าใช้กลไกเดิม (`packPages` + `<BoardPager>`) · จอคอม = เหมือนเดิมเป๊ะ */
+export const TV_SHEET_GRID = Object.freeze({ maxCols: 3, maxRows: 2 });
+export function useSheetGrid(ref, sheets = 10, opts) {
   const [box, setBox] = useState({ w: 0, h: 0 });
   useEffect(() => {
     const el = ref.current;
@@ -36,7 +40,8 @@ export function useSheetGrid(ref, sheets = 10) {
     return () => ro.disconnect();
   }, [ref]);
 
-  return useMemo(() => chooseSheetGrid(box.w, box.h, sheets), [box, sheets]);
+  const maxCols = opts?.maxCols || 0, maxRows = opts?.maxRows || 0, kMax = opts?.kMax || 0;
+  return useMemo(() => chooseSheetGrid(box.w, box.h, sheets, { maxCols, maxRows, kMax }), [box, sheets, maxCols, maxRows, kMax]);
 }
 /* ── แผ่นกระดาษ 1 ใบ ──────────────────────────────────────────────────────────────
    หัวแผ่น = ชื่อแกน + ตัวเลขใหญ่ + Δ เทียบเป้า · กลาง = กราฟ · ท้าย = หมายเหตุ/ลิงก์
@@ -138,8 +143,8 @@ function SheetZoom({ onClose, children }) {
    วัดจริง 06/10: desktop `sw === cw` ทุกปุ่ม · ปุ่มตัวอักษร "X" ก็ขึ้นอาการเดียวกัน = ไม่เกี่ยวอีโมจิ
    ⇒ ด่าน `audit/mobilesweep.mjs` ตัด min-width/height ของ pseudo นี้ก่อนวัดแล้ว · UI §7.1
    (`inline-flex` คงไว้เพราะจัดไอคอนให้อยู่กลางปุ่มพอดีจริง ไม่ได้เกี่ยวกับการล้น) */
-const SheetIconBtn = ({ fs, title, onClick, children }) => (
-  <button type="button" onClick={onClick} title={title} aria-label={title} style={{
+const SheetIconBtn = ({ fs, title, onClick, children, className }) => (
+  <button type="button" className={className} onClick={onClick} title={title} aria-label={title} style={{
     display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
     fontSize: fs(11), lineHeight: 1, padding: '3px 6px', borderRadius: 4, flexShrink: 0, cursor: 'pointer',
     background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)',
@@ -161,7 +166,13 @@ export function Sheet({ k, cw = 0, span = 1, icon, title, sub, big, unit, bigNot
   const fit = useHeadFit(headRef, `${big}|${unit}|${bigNote}|${delta}|${stat?.label}|${sheetW}|${k}`);
   const bigScale = headFitBigScale(fit);
   const body = typeof children === 'function' ? children(k, cw) : children;   // cw = ความกว้างแผ่น (popup = 1200) ให้กราฟตัดสินความหนาแน่นของป้าย
-  const footNode = typeof foot === 'function' ? foot(k) : foot;     // foot ก็รับ `(k) => node` ได้ (ให้บรรทัดท้ายโตตามใน popup)
+  const footRaw = typeof foot === 'function' ? foot(k) : foot;     // foot ก็รับ `(k) => node` ได้ (ให้บรรทัดท้ายโตตามใน popup)
+  /* 📺 จอประชุม: ท้ายแผ่นเหลือเฉพาะ "คำเตือนข้อมูลไม่ครบ" (`<WarnNote>`) — คำอธิบาย/คาดปลายปี/เป้า ซ่อน (อ่านไม่ออกที่ 2-3 ม. · กินที่กราฟ)
+     🔴 คำเตือนห้ามหาย (กฎความซื่อสัตย์ของจอ) · WarnNote ที่เป็นแค่คำอธิบายให้ส่ง `tvHide` */
+  const tv = useTvShell();
+  const footNode = tv && !onClose
+    ? (footRaw && footRaw.type === WarnNote && !footRaw.props?.tvHide ? footRaw : null)
+    : footRaw;
   return (<>
     <div style={{
       gridColumn: `span ${span}`,
@@ -182,7 +193,7 @@ export function Sheet({ k, cw = 0, span = 1, icon, title, sub, big, unit, bigNot
           </div>
           {onClose
             ? <SheetIconBtn fs={fs} title="ปิด (Esc)" onClick={onClose}>✕</SheetIconBtn>
-            : (zoom && <SheetIconBtn fs={fs} title="ขยายดูใหญ่" onClick={() => setZoomed(true)}>🔍</SheetIconBtn>)}
+            : (zoom && <SheetIconBtn className="tv-hide" fs={fs} title="ขยายดูใหญ่" onClick={() => setZoomed(true)}>🔍</SheetIconBtn>)}
         </div>
         {sub && <div style={{ fontSize: fs(10.5), color: 'var(--muted)', marginTop: 1 }}>{sub}</div>}
         {/* 📱 มือถือ: ขึ้นบรรทัดใหม่ได้ — "14.1 พันบาท เดือน มี.ค. (ล่าสุด) ▲ 35.9 ตามเป้า" กว้าง 371px ในแผ่น 346px (mobilesweep 15/10) */}
@@ -212,11 +223,11 @@ export function Sheet({ k, cw = 0, span = 1, icon, title, sub, big, unit, bigNot
         </div>
       </div>
       <div style={{ flex: 1, minHeight: 0, padding: `${Math.round(4 * k)}px ${Math.round(4 * k)}px 0` }}>{body}</div>
-      {(footNode || link) && (
+      {(footNode || (link && !tv)) && (
         <div style={{ padding: `${Math.round(5 * k)}px ${Math.round(9 * k)}px ${Math.round(7 * k)}px`, flexShrink: 0 }}>
           {footNode && <div style={{ fontSize: fs(10.5), lineHeight: 1.35, color: 'var(--muted)' }}>{footNode}</div>}
           {link && (
-            <button onClick={onLink} style={{
+            <button className="tv-hide" onClick={onLink} style={{
               marginTop: 4, fontSize: fs(10.5), fontWeight: 700, padding: '2px 8px', borderRadius: 999,
               background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', cursor: 'pointer',
             }}>{link} ↗</button>
@@ -236,13 +247,19 @@ export function Sheet({ k, cw = 0, span = 1, icon, title, sub, big, unit, bigNot
 }
 
 /* หมายเหตุ "ข้อมูลยังไม่พร้อม" — ต้องเห็นชัดบนแผ่น ไม่ใช่ตัวจิ๋วมุมล่าง (กฎความซื่อสัตย์ของจอ) */
-export const WarnNote = ({ k, text, tone = '#f59e0b' }) => (
-  <div style={{
-    fontSize: Math.max(11, Math.round(10.5 * k)), lineHeight: 1.3, color: tone, fontWeight: 600,
-    background: 'var(--bg3)', backgroundImage: `linear-gradient(${tone}14, ${tone}14)`,
-    border: `1px solid ${tone}55`, borderRadius: 4, padding: '3px 6px',
-  }}>⚠️ {text}</div>
-);
+/* 📺 จอประชุม = ชิปบรรทัดเดียว (ตัดท้าย … · ข้อความเต็มอยู่ใน title) — ยังเห็นว่า "มีข้อมูลขาด" แต่ไม่กินที่กราฟ
+   `tvHide` = WarnNote ที่เป็นแค่คำอธิบาย (ไม่ใช่ข้อมูลขาด) ⇒ `<Sheet>` ไม่วาดบนจอประชุม */
+export function WarnNote({ k, text, tone = '#f59e0b' }) {
+  const tv = useTvShell();
+  return (
+    <div title={tv ? String(text) : undefined} style={{
+      fontSize: Math.max(11, Math.round(10.5 * k)), lineHeight: 1.3, color: tone, fontWeight: 600,
+      background: 'var(--bg3)', backgroundImage: `linear-gradient(${tone}14, ${tone}14)`,
+      border: `1px solid ${tone}55`, borderRadius: 4, padding: '3px 6px',
+      ...(tv ? { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } : null),
+    }}>⚠️ {text}</div>
+  );
+}
 
 /* 🎯 ป้าย "แกนเริ่ม X ไม่ใช่ 0" — กติกาความซื่อสัตย์ (UI §กราฟ 30/09): แกน Y ที่ไม่เริ่ม 0 ต้องเขียนบนจอทุกแผ่น
    วางในกล่อง position:relative ที่ครอบกราฟ · `fixed` = กราฟที่โฟกัสถาวร (ค่ากระจุกใกล้ 100 เช่น %Q) ไม่มีปุ่มปิด */

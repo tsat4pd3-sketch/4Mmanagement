@@ -370,7 +370,11 @@ const TABLE_ROWS = {
      🔴 ห้ามชี้หน่วยเดียวกับบ้านของคนนั้น — กฎกรองออก (ไม่วาดซ้ำ) แล้วสายนี้จะไม่เคยถูกรันเลย
      🔴 แถวที่บ้านจริงสืบไม่ได้ (ผูกระดับส่วนงาน) = เคสที่ `flexFrom.nodeName` ต้องถอยไปใช้ชื่อแผนกใน
         ทะเบียนพนักงาน — ห้ามเปลี่ยนให้ชี้แผนกตรงๆ ไม่งั้นสาขา fallback หายจาก harness */
-  employee_flex_units: (r, i) => ({ ...r, employee_id: `id-${(i % 2) + 1}`, org_node_id: 'id-2',
+  /* 🎖️ แถวที่ 3 เป็น `kind='acting'` โดยเจตนา — **ห้ามถอด** (20/10)
+     ป้ายรักษาการขึ้นหัวผัง/แถวหัวหน้าแผนก คนละเส้นทางกับการ์ด 🏃 flex
+     ไม่มีแถว acting ใน mock = เส้นทางนั้นไม่เคยถูกรันใน crashsweep เลย */
+  employee_flex_units: (r, i) => ({ ...r, employee_id: `id-${(i % 2) + 1}`, org_node_id: i % 3 === 2 ? 'id-1' : 'id-2',
+    kind: i % 3 === 2 ? 'acting' : 'flex',
     note: isNullish(r) ? null : 'ช่วยกะเช้าประจำ' }),
   line_helpers: (r, i) => ({ ...r, employee_id: `id-${(i % 4) + 7}`, to_line_id: 'id-9', shift: i % 2 ? 'day' : 'night',
     work_date: _recentDay(i % 20) }),
@@ -398,6 +402,17 @@ const TABLE_ROWS = {
      · รหัสต้องตรงรูปแบบ `SLOC_RE` (ตัวอักษร+เลข 3 หลัก) ไม่งั้นแผงทะเบียนขึ้นป้าย "รหัสผิดรูปแบบ" ทุกแถว */
   storage_locations: (r, i) => ({ ...r, code: `P4${String(i).padStart(2, '0')}`, kind: 'production',
     line_names: i === 1 ? [r.line_name] : [], sort_order: i }),
+  /* 📍 ยอดหน้าไลน์ + จุดเรียกเติม — **ต้องผูกกับชื่อไลน์จริงในทะเบียน ห้ามถอด** (20/10)
+     ROW() ให้ `line_name` = 'LINE APRON ASSY / HYDROFORM' ซึ่งไม่ตรงชื่อใน `production_lines` เลยสักไลน์
+     ⇒ `partLevelCoverage()` กันทุกแถวออกเป็น "คลัง" ⇒ แท็บ 📍 จุดเรียกเติม (ทั้งโรงงาน) ของ `/line-stock`
+       ขึ้น "ยังไม่มียอดสต็อก" ตลอด = สาขาที่สโตร์/วางแผนใช้ตามงาน ไม่เคยถูกเรนเดอร์ใน harness
+     · คละให้ครบทุกสาขา: ตั้ง min แล้ว · มีแถวแต่ไม่ใส่ min · ไม่มีแถวจุดเรียกเติมเลย · ยอดเหลือ 0
+     · เว้นบางแถวไว้ที่ชื่อเดิม (i % 5 === 0) ให้ยังมี "ปลายทางที่ไม่ใช่ไลน์ผลิต" = ตัวนับ "กันออก"
+       และ optgroup 🏬 คลัง ของตัวเลือกไลน์ยังถูกเรนเดอร์เหมือนเดิม */
+  line_stock_summary: (r, i) => ({ ...r, line_name: i % 5 === 0 ? r.line_name : LINE_NAME((i % 3) + 1),
+    qty_on_hand: i % 4 === 0 ? 0 : i * 120 }),
+  line_part_levels: (r, i) => ({ ...r, line_name: LINE_NAME((i % 3) + 1), mat_no: `1010${1000 + (i % 8)}`,
+    min_qty: i % 3 === 0 ? null : 40 * i, max_qty: 200 * i }),
   /* 🔴 ใบแจ้งซ่อม MO — ต้องคละ **สถานะจริงของ workflow** (2026-10-06)
      เดิมทุกแถวได้ `status: 'open'` จาก ROW() ซึ่ง **ไม่ใช่สถานะของ mtn_orders เลย**
      ⇒ `nextStepOf()` คืน null ทุกแถว ⇒ โค้ดสาย "ใบนี้รอขั้นไหน / รอใคร" (ตัวกรองรอขั้นไหน ·
@@ -618,6 +633,58 @@ const MOCK_DAY = (n) => {
 }
 
 const TABLE_FIXED = {
+  /* ☕ ทะเบียนเวลาพัก — **ห้ามถอด** (2026-10-20)
+     เดิมตารางนี้ตกไปใช้ ROWS กลาง ⇒ ได้แถวขยะ (ไม่มีชื่อ · process "undefined" · เริ่ม 08:00 ทุกแถว)
+     ⇒ จอ "☕ นโยบายหยุดพัก" ไม่เคยถูกสวีปด้วยข้อมูลทรงจริงเลย และที่สำคัญกว่า:
+     **ทุกจอที่คิด %A/%P ในฮาร์เนสหักเวลาพักผิด** เพราะนโยบายที่ป้อนเข้าไปไม่ใช่ของจริง
+     🔴 ต้องมีครบ 3 ทรงที่เปิด "คนละสาขาโค้ด" ของ breakIntervalsIn():
+       ① `ot_scope: 'always'`    พักปกติ
+       ② `ot_scope: 'ot'`        เปิดสาขา isOt (ทิ้งแถว no_ot ทั้งหมด)
+       ③ `anchor: 'shift_end'`   เปิดสาขาพักท้ายกะ (ยึดเวลาเลิกกะ · offset_min)
+          — ถอดแถวนี้ = สาขาที่เพิ่งแก้ 20/10 ไม่ถูกรันในสวีปใดเลย */
+  break_policies: [
+    { id: 'bp-1', name_th: 'ประชุมแถวกะเช้า', name_en: 'Morning Line Meeting', shift: 'day',
+      start_time: '08:00:00', duration_min: 10, process_type: 'common', ot_scope: 'always',
+      anchor: 'clock', offset_min: null, is_active: true, sort_order: 1 },
+    { id: 'bp-2', name_th: 'พักกลางวัน', name_en: 'Lunch Break', shift: 'day',
+      start_time: '11:50:00', duration_min: 50, process_type: 'common', ot_scope: 'always',
+      anchor: 'clock', offset_min: null, is_active: true, sort_order: 2 },
+    { id: 'bp-3', name_th: 'พักเบรคบ่าย', name_en: 'Afternoon Break', shift: 'day',
+      start_time: '15:00:00', duration_min: 10, process_type: 'common', ot_scope: 'always',
+      anchor: 'clock', offset_min: null, is_active: true, sort_order: 3 },
+    { id: 'bp-4', name_th: 'พักเบรค OT กะเช้า', name_en: '1st OT Brake 30 minute', shift: 'day',
+      start_time: '17:30:00', duration_min: 30, process_type: 'common', ot_scope: 'ot',
+      anchor: 'clock', offset_min: null, is_active: true, sort_order: 4 },
+    { id: 'bp-5', name_th: 'ประชุมแถวกะดึก', name_en: 'Night Line Meeting', shift: 'night',
+      start_time: '20:00:00', duration_min: 10, process_type: 'common', ot_scope: 'always',
+      anchor: 'clock', offset_min: null, is_active: true, sort_order: 5 },
+    { id: 'bp-6', name_th: 'พักดึก', name_en: 'Night Break', shift: 'night',
+      start_time: '02:30:00', duration_min: 50, process_type: 'common', ot_scope: 'always',
+      anchor: 'clock', offset_min: null, is_active: true, sort_order: 6 },
+    /* ③ พักท้ายกะ — เลื่อนตามเวลาเลิกกะของวันนั้น (17:30 / 20:00 / 17:00 วันหยุด / 08:00 กะดึก) */
+    { id: 'bp-7', name_th: '5ส. ท้ายกะ', name_en: '5S (end of shift)', shift: 'both',
+      start_time: null, duration_min: 20, process_type: 'common', ot_scope: 'always',
+      anchor: 'shift_end', offset_min: 20, is_active: true, sort_order: 7 },
+    /* แถวปิดใช้ — จอต้องวาดจางพร้อมป้าย "(ปิดใช้)" และสูตรต้องไม่หยิบไปคิด */
+    { id: 'bp-8', name_th: '5ส.(ทำโอ) — แทนด้วยแถวท้ายกะแล้ว', name_en: '5S (OT)', shift: 'day',
+      start_time: '19:40:00', duration_min: 20, process_type: 'common', ot_scope: 'ot',
+      anchor: 'clock', offset_min: null, is_active: false, sort_order: 8 },
+  ],
+  /* 🏭 ข้อยกเว้นเวลาพัก "รายไลน์" — **ห้ามถอด** (2026-10-20)
+     ตารางนี้ถ้าตกไปใช้ ROWS กลาง จะได้แถวที่ `policy_id`/`duration_min` ไม่ตรงทรงจริง
+     ⇒ แผง "🏭 รายไลน์" + การไล่สายไลน์แม่→ลูก ไม่ถูกรันในสวีปใดเลย
+     🔴 ต้องมีครบ 4 ทรงที่เปิด "คนละสาขาโค้ด" ของ `utils/breakLineRules.js`:
+       ① กฎที่ **ไลน์แม่** (ชุดที่ 1 มีลูก 2/3 · หลาน 4) ⇒ สาขา "ลูกตกทอดจากแม่"
+       ② กฎที่ **ไลน์ลูก** ทับของแม่ (ชุดที่ 2) ⇒ สาขา "ตัวเองชนะแม่" + `breakRuleFollowers`
+       ③ `duration_min: 0` ⇒ สาขา "ไลน์นี้ไม่มีพักรายการนี้" (ชิปคนละข้อความ · ช่วงพักหายไปทั้งช่วง)
+       ④ ชื่อไลน์ที่ **ไม่อยู่ในทะเบียน** ⇒ สาขา `orphanLines` (ป้าย "⚠ ไม่มีไลน์นี้ในทะเบียน")
+          — ถอดแถวนี้ = จอจะไม่เคยวาดคำเตือนกฎค้างหลังเปลี่ยนชื่อ/ลบไลน์ */
+  break_line_rules: [
+    { id: 'blr-1', policy_id: 'bp-7', line_name: LINE_NAME(1), duration_min: 10, note: null },
+    { id: 'blr-2', policy_id: 'bp-7', line_name: LINE_NAME(2), duration_min: 5,  note: null },
+    { id: 'blr-3', policy_id: 'bp-2', line_name: LINE_NAME(3), duration_min: 0,  note: 'ไลน์นี้ไม่หยุดพักเที่ยงพร้อมกัน' },
+    { id: 'blr-4', policy_id: 'bp-7', line_name: 'ไลน์ที่ถูกเปลี่ยนชื่อไปแล้ว', duration_min: 15, note: null },
+  ],
   /* 🔁 ผลตรวจคู่ "BOM ซ้ำ 2 ใบ" — **ห้ามถอด** (2026-10-08)
      ตั้ง `fingerprint` ให้ **ไม่ตรง** ของจริงโดยตั้งใจ ⇒ สาขา `staleReview`
      ("⚠️ BOM เปลี่ยนหลังตรวจ — ต้องตรวจซ้ำ") ถูกวาดทุกรอบ
@@ -905,7 +972,14 @@ const TABLE_EXTRA = {
       qty_per_unit: 0.45, uom: 'KG', item_no: 90, is_active: true },
   ],
 }
+/* 📺 ?rot=<path>[,<path>] (20/10) — แผนจอวนหน้าของบัญชี display ใน harness (คู่กับ ?tvshell=1)
+   ไม่มีแถวนี้ = DisplayRotator ไม่ active ⇒ "พอดีจอ/แบ่งส่วน/รอหน้าย่อย" ไม่เคยถูกรันในฮาร์เนส
+   ไม่ใส่ ?rot = พฤติกรรมเดิม (แถวกลาง ROWS → แผนไม่ active) */
+const ROT_PATHS = typeof location !== 'undefined' ? (new URLSearchParams(location.search).get('rot') || '') : ''
 const rowsFor = (table) => {
+  if (table === 'display_rotations' && ROT_PATHS) {
+    return [{ enabled: true, items: ROT_PATHS.split(',').map(path => ({ path, sec: 20 })), default_sec: 20, pause_sec: 120, reload_min: 0 }]
+  }
   if (TABLE_FIXED[table]) return TABLE_FIXED[table]
   const fn = TABLE_ROWS[table]
   const base = fn ? ROWS.map((r, idx) => fn(r, idx + 1)) : ROWS

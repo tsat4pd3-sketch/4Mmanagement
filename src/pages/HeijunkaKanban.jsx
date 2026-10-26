@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef, useContext } from 'react';
-import { urlParam, urlPick } from '../utils/urlInit';
+import { urlParam, urlPick, urlBool } from '../utils/urlInit';
 import { lineNameCompare } from '../utils/lineHierarchy';
 import { canWriteUnit, writeBlockText } from '../utils/writeScope';
 import ReadOnlyNote from '../components/ReadOnlyNote';
@@ -17,11 +17,12 @@ import { addMinutes, timeStrToMs, dayFrameMs, roundDeliveryMin, getRoundStatus }
 import { MAT_CLASSES, matColor, matMatches } from '../utils/matPrefix';
 import ProdProgressStrip from '../components/ProdProgressStrip';
 import StoreTimeChart from '../components/StoreTimeChart';
+import StoreCallSiren from '../components/StoreCallSiren';
 import PurchaseBulkModal from '../components/PurchaseBulkModal';
 import PlatingBoard from '../components/PlatingBoard';
 import DeliverScanModal from '../components/DeliverScanModal';
 import PickScanModal from '../components/PickScanModal';
-import { DELIVER_GATES, PICK_GATES } from '../utils/replenishGate';
+import { DELIVER_GATES, PICK_GATES, reqSourceMeta } from '../utils/replenishGate';
 import { slocCodeOfLine } from '../utils/storageLoc';
 import { buildReceiptRows, RECEIPT_LINE } from '../utils/stockReceipt';
 import { rawSourceLocOf, splitRawConsume } from '../utils/partRefStock';   // 📤 ตัดวัตถุดิบล็อตจากคลังที่ของอยู่จริง (2026-10-12)   // 📥 ของซื้อเข้าคลัง ไม่ใช่เข้าไลน์ (2026-10-01)   // 🏬 ชั้นบัญชี SAP — tag ใบ/ledger ตอนเขียน (2026-09-08)
@@ -39,7 +40,7 @@ import { groupAccumulator, STALE_DAYS } from '../utils/pullAccumulator';
 import { storeBtn } from '../utils/storeUi';
 import MatLabel from '../components/MatLabel';
 import { fetchByIds, openPlusHistory } from '../utils/fetchByIds';
-import { halfDayBreakIntervals } from '../utils/oee';
+import { halfDayBreakIntervals, halfDayBreakBands, breakBandName, breakBandTitle } from '../utils/oee';
 import { SPENT_STATUSES } from '../utils/shiftCapacity';
 import PartCard, { partCardGrid } from '../components/PartCard';
 import StatusZones from '../components/StatusZones';
@@ -393,8 +394,11 @@ function DeliveryTimelineBoard({ rounds, deliveries, view, kanbanStd, fmt, lineM
   );
 
   // ช่วง break_policies ที่ตรงกับ half นี้ (เป็น [startMs, endMs]) — ใช้ทั้งวาดแถบและกันรอบจัดส่งวางทับเวลาพัก
-  // 🔴 ผ่าน halfDayBreakIntervals (utils/oee.js) ที่เดียว — กรอง process/ot_scope เหมือนสูตร OEE (QC 05/10)
-  const getBreakIntervals = (half) => halfDayBreakIntervals({ policies: breakPolicies, half });
+  /* 🔴 ผ่าน halfDayBreakIntervals (utils/oee.js) ที่เดียว — กรอง process/ot_scope เหมือนสูตร OEE (QC 05/10)
+     🏭 **ต้องส่ง `lineName` เสมอ** (`break_line_rules` · 20/10) — ไม่ส่ง = ไลน์ที่ตั้งพักเองกลับไปใช้ค่ากลางเงียบๆ */
+  const getBreakIntervals = (half, lineName = null) => halfDayBreakIntervals({ policies: breakPolicies, half, lineName });
+  // แถบที่ติดป้ายมาด้วย (ชื่อพัก + ไลน์นี้ตั้งเองกี่นาที) — ใช้ตอนวาดเงา ห้ามจับคู่นโยบายจากเวลาเอง
+  const getBreakBands = (half, lineName = null) => halfDayBreakBands({ policies: breakPolicies, half, lineName });
 
   /* รอบที่ "ตกอยู่ในครึ่งวันนี้" — ใช้ทั้งวาดบล็อกและนับเลขบนป้ายซ้าย (ต้องเป็นชุดเดียวกันเสมอ
      ไม่งั้นป้ายบอก 3 รอบ แต่แถวว่างเปล่า = จอขัดกันเอง) */
@@ -414,7 +418,7 @@ function DeliveryTimelineBoard({ rounds, deliveries, view, kanbanStd, fmt, lineM
      รอบจัดส่งคือ "นัดหมาย" ไม่ใช่คิวงานที่เลื่อนได้ — ชนเวลาพัก = ข้อมูลที่หัวหน้าต้องเห็นแล้วไปขยับเวลาเอง
      ไม่ใช่สิ่งที่จอควรซ่อนด้วยการเลื่อนบล็อก · ตอนนี้ชนแล้วติด ⚠ ไว้บนบล็อก + บอกใน tooltip
      **ห้ามเอา queue/break push กลับมาไม่ว่ากรณีใด** */
-  const renderTimeline = (lineRounds, half, rowKey) => (
+  const renderTimeline = (lineRounds, half, rowKey, lineName = null) => (
     <div key={rowKey} style={{ flex: 1, position: 'relative', display: 'flex' }}>
       {half.hours.map((h, i) => {
         const slotMs = half.startMs + i * 3600000;
@@ -423,19 +427,17 @@ function DeliveryTimelineBoard({ rounds, deliveries, view, kanbanStd, fmt, lineM
         return <div key={i} style={{ flex: 1, minWidth: 0, height: '100%', borderRight: `1px solid ${isShiftBound ? 'var(--border2)' : 'var(--border)'}`, background: isNow ? 'rgba(77,159,255,0.06)' : 'transparent' }} />;
       })}
       {(() => {
-        const breaks = getBreakIntervals(half);
-        return breaks.map(([bs, be], pi) => {
+        /* 🏭 แถบพัก "ของไลน์แถวนี้" (break_line_rules · 20/10) · ชื่อพักมาจาก band.policies
+           **ห้ามจับคู่จากเวลาเอง** — พัก anchor='shift_end' มี start_time = null
+           ⇒ เดิมจับไม่ติด tooltip เขียน "undefined" */
+        const bands = getBreakBands(half, lineName);
+        return bands.map((band, pi) => {
+          const { s: bs, e: be } = band;
           const leftPct = Math.max(0, (bs - half.startMs) * pctPerMs);
           const widthPct = Math.min(100 - leftPct, (be - bs) * pctPerMs);
           if (widthPct <= 0) return null;
-          const p = breakPolicies.find(bp => {
-            const idx = half.hours.indexOf(Number(String(bp.start_time).slice(0,2)));
-            if (idx < 0) return false;
-            const mins = Number(String(bp.start_time).slice(3,5)) || 0;
-            return half.startMs + idx * 3600000 + mins * 60000 === bs;
-          }) || {};
           return (
-            <div key={`brk-${pi}`} title={`${p.name_th || p.name_en || 'พัก'} — ไลน์ไม่รองรับ KANBAN`}
+            <div key={`brk-${pi}`} title={`${breakBandTitle(band, lineName)} — ไลน์ไม่รองรับ KANBAN`}
               style={{
                 position: 'absolute', top: 0, bottom: 0, left: `${leftPct}%`, width: `${widthPct}%`,
                 background: 'repeating-linear-gradient(45deg, rgba(148,163,184,0.18) 0px, rgba(148,163,184,0.18) 4px, transparent 4px, transparent 8px)',
@@ -448,7 +450,7 @@ function DeliveryTimelineBoard({ rounds, deliveries, view, kanbanStd, fmt, lineM
       })()}
       {(() => {
         const MIN_W_PCT = 1.5;
-        const breaks = getBreakIntervals(half);
+        const breaks = getBreakIntervals(half, lineName);
         return roundsInHalf(lineRounds, half).map(({ r, startMs, endMs }) => {
           const leftPct = Math.max(0, (startMs - half.startMs) * pctPerMs);
           if (leftPct >= 100) return null;
@@ -523,7 +525,7 @@ function DeliveryTimelineBoard({ rounds, deliveries, view, kanbanStd, fmt, lineM
                   <div style={{ width: LEFT_W, flexShrink: 0, padding: '4px 8px', borderRight: '1px solid var(--border2)', display: 'flex', alignItems: 'center', fontSize: 11, color: nHalf ? 'var(--muted)' : 'var(--border2)', fontWeight: 700, ...stickyL('var(--card)') }}>
                     {nHalf ? `${nHalf} รอบ` : `— ไม่มีรอบ${half.key === 'pm' ? 'กะดึก' : 'กะเช้า'}`}
                   </div>
-                  {renderTimeline(lineRounds, half, `${lineName}-${half.key}`)}
+                  {renderTimeline(lineRounds, half, `${lineName}-${half.key}`, lineName)}
                 </div>
               </div>
               );
@@ -711,13 +713,15 @@ function PlannerStrip({ rounds, deliveries, roundAlloc, workDate, breakPolicies,
   const nextCutMins = nextCut ? Math.round((nextCut.ms - nowMs) / 60000) : null;
 
   // ⚠️ ตรวจตารางรอบ: cutoff ต้องมาก่อนเวลาส่ง + ช่วงส่งไม่ควรชนช่วงพักของกะนั้น
-  /* 🔴 ช่วงพักต่อกะผ่าน halfDayBreakIntervals (QC 05/10) — เดิม timeStrToMs(workDate, 00:30) วางพักกะดึก
-     หลังเที่ยงคืนไว้ "เช้าวันงาน" (ผิดวัน) + ไม่กรอง ot_scope · ชื่อพักหาจากเวลาเริ่มที่ตรงกัน */
+  /* 🔴 ช่วงพักต่อกะผ่าน halfDayBreakBands (QC 05/10) — เดิม timeStrToMs(workDate, 00:30) วางพักกะดึก
+     หลังเที่ยงคืนไว้ "เช้าวันงาน" (ผิดวัน) + ไม่กรอง ot_scope */
   const fStart = dayFrameMs(workDate).startMs;
-  const hhmmOf = (ms) => { const d = new Date(ms); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
-  const brkName = (ms) => { const p = breakPolicies.find(bp => String(bp.start_time || '').slice(0, 5) === hhmmOf(ms)); return p?.name_th || p?.name_en || p?.name || 'พัก'; };
+  /* 🏭 ชื่อพักมาจาก `band.policies` — เดิมจับคู่จาก `start_time` ⇒ พัก `anchor='shift_end'`
+     (start_time = null) จับไม่ติด แล้วคำเตือนเขียนแค่ "พัก" บอกไม่ได้ว่าชนรายการไหน
+     ⚠️ ตัวนี้ตรวจ**ตารางรอบของทุกไลน์รวมกัน** ⇒ ใช้ค่ากลาง (ไม่ส่ง lineName) โดยตั้งใจ —
+        เตือนด้วยค่ากลางดีกว่าไม่เตือน · ไลน์ที่ตั้งพักเองอาจไม่ชนจริง จึงเขียนว่า "ตามค่ากลาง" */
   const breakIvs = [['day', 'am', fStart], ['night', 'pm', fStart + 12 * 3600000]].flatMap(([shift, key, startMs]) =>
-    halfDayBreakIntervals({ policies: breakPolicies, half: { key, startMs } }).map(([s, e]) => ({ s, e, name: brkName(s), shift })));
+    halfDayBreakBands({ policies: breakPolicies, half: { key, startMs } }).map(b => ({ s: b.s, e: b.e, name: breakBandName(b), shift })));
   const warnings = [];
   rounds.forEach(r => {
     const cut = timeStrToMs(workDate, r.cutoff_time);
@@ -727,7 +731,7 @@ function PlannerStrip({ rounds, deliveries, roundAlloc, workDate, breakPolicies,
     if (dlv != null) {
       const fin = dlv + roundDeliveryMin(r) * 60000;
       const hit = breakIvs.find(b => (b.shift === 'both' || b.shift === r.shift) && dlv < b.e && fin > b.s);
-      if (hit) warnings.push(`${r.line_name} รอบ ${r.round_no}: ช่วงส่ง ${r.delivery_time?.slice(0, 5)} ชนช่วง "${hit.name}" — ควรเลื่อนเวลาส่ง`);
+      if (hit) warnings.push(`${r.line_name} รอบ ${r.round_no}: ช่วงส่ง ${r.delivery_time?.slice(0, 5)} ชนช่วง "${hit.name}" (ตามเวลาพักค่ากลาง) — ควรเลื่อนเวลาส่ง`);
     }
   });
 
@@ -1170,9 +1174,9 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
   lotRequests, rawRequests, rackRequests, pkgRequests, wipRequests, purchaseRequests, purchaseErr, busy, onAdvanceLot, onIssueRaw, onAdvanceWip, onAdvancePurchase, setBulkBuy, fmt, workDate, nowMs, canOperate }) {
 
   const { roundAlloc } = view;
-  const [buyFilter, setBuyFilter] = useState('');   // '' | '3' | '5'
+  const [buyFilter, setBuyFilter] = useState(() => urlPick('buy', ['3', '5'], ''));   // '' | '3' | '5' · ?buy= (จอวนหน้า)
   const [q, setQ] = useState('');                   // ค้นหา: รหัส / ชื่อ / ไลน์ปลายทาง
-  const [showDone, setShowDone] = useState(false);  // default = เฉพาะงานค้าง (ให้ตรงกับตัวเลขบนแท็บ)
+  const [showDone, setShowDone] = useState(() => urlBool('sdone', false));  // ?sdone= · default = เฉพาะงานค้าง (ให้ตรงกับตัวเลขบนแท็บ)
   const confirmedSet = useMemo(() => { const s = new Set(); deliveries.forEach(d => s.add(`${d.line_name}|${d.shift}|${d.round_no}`)); return s; }, [deliveries]);
   const receivedMap  = useMemo(() => { const m = {}; deliveries.forEach(d => { m[`${d.line_name}|${d.shift}|${d.round_no}`] = d; }); return m; }, [deliveries]);
 
@@ -1428,6 +1432,9 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
                คอลัมน์ `point_name`/`point_type`/`wip_point_id` ยังอยู่ในตารางเพื่ออ่านประวัติ ห้ามเขียนใหม่ */
             const code = w.mat_no || w.point_name;
             const at = w.requested_at ? new Date(w.requested_at) : null;
+            /* 🏷️ ป้าย "ที่มาของใบ" มาจาก `reqSourceMeta()` ที่เดียว (utils/replenishGate.js) —
+               ใบ `line_adhoc` = ไลน์ขอเบิกเอง (ไม่ได้มาจากจุดเรียกเติม · 21/10) ห้ามเทียบ source เองในหน้า */
+            const src = reqSourceMeta(w.source);
             /* ใบจากไลน์: ขั้น "ถึงไลน์" ต้องผ่านสแกนจุดส่งก่อน (เฟส 4 — DeliverScanModal) ปุ่มจึงต้องบอกล่วงหน้า
                · ใบที่ส่งแล้วโชว์ว่าผ่านด่านทางไหน (สแกน / ไลน์ยังไม่ตั้งจุด / ปลดบล็อก) ห้ามซ่อน override */
             const gate = w.status === 'delivered' && w.delivered_gate ? DELIVER_GATES[w.delivered_gate] : null;
@@ -1441,9 +1448,12 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
                 qty={fmt(w.request_qty)} unit="" qtyLabel="จำนวนที่ต้องส่ง" destination={w.line_name}
                 statusLabel={st.label} statusColor={st.color} statusBg={st.bg} statusBorder={st.border}
                 actionLabel={canOperate ? nextLabel : null} busy={busy === w.id} onAction={() => onAdvanceWip(w)}
-                rows={[{ k: 'ที่มา', v: w.source === 'store_forecast' ? '🏬 สโตร์ส่งตามแผนผลิต' : '📦 ไลน์ขอเบิก' },
+                rows={[{ k: 'ที่มา', v: src.label },
                      { k: w.source === 'store_forecast' ? 'เปิดใบ' : 'ไลน์แจ้ง',
                        v: at ? `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')} น.` : null },
+                     /* 👤 20/10 — สโตร์ต้องรู้ว่า "ใครเรียก" ไว้โทรกลับถามเวลาของไม่ตรง/ไลน์เปลี่ยนรุ่น
+                        ใบเก่าของไลน์ไม่มีชื่อ (เพิ่ง stamp 20/10 ที่ LinePartCallPanel) ⇒ ไม่มีชื่อ = ไม่โชว์แถว ห้ามเดา */
+                     { k: src.who, v: w.requested_by || null },
                      { k: 'หยิบแล้ว', v: pickMeta || null },
                      { k: 'ถึงไลน์', v: gateMeta || null },
                      /* 🔴 คิวนี้ = "ของที่สโตร์ตัดจ่ายเข้าไลน์" ⇒ ต้องเป็น 2xxx/3xxx/5xxx
@@ -1477,7 +1487,7 @@ export default function HeijunkaKanban() {
   /* ผูก `?view=` (ไม่ใช่ `?tab=` — หน้านี้อาจถูกฝังใต้หน้าแม่ที่ถือ ?tab= อยู่ · UI §6.8 ข้อ 2.4)
      ค่าที่ไม่รู้จักใน URL ตกกลับ 'unified' เอง (useTabParam จัดการให้) ห้ามจอว่าง */
   const [viewMode, setViewMode]   = useTabParam(Object.keys(VIEW_META), 'unified', 'view');
-  const [demandFmt, setDemandFmt] = useState('cards');
+  const [demandFmt, setDemandFmt] = useState(() => urlPick('dfmt', ['cards', 'table'], 'cards'));   // ?dfmt= (จอวนหน้า)
   /* ปุ่ม "เลือกพาร์ทไปส่ง" จากแท็บอื่น = ต้องพาไปถึงแผงติ๊กพาร์ท ไม่ใช่แค่สลับแท็บแล้วปล่อยไว้หัวหน้า
      (feedback หน้างาน 25/09 — หน้า chart สูง 3,285px แผงงานจริงอยู่ต่ำกว่าขอบจอ 2.5 จอ) */
   const [focusPick, setFocusPick] = useState(0);
@@ -1545,7 +1555,7 @@ export default function HeijunkaKanban() {
   const [bulkBuy, setBulkBuy]                   = useState(null);   // {g, next, label} — เลื่อนสถานะรวมทั้งพาร์ท
   // default = คิวเติม WIP (งานจริงของสโตร์) — เดิม 'fg' คือแท็บรอบส่งซึ่งว่างเปล่าตลอดเมื่อไม่มีรอบ (audit 2026-09-07)
   const [unifiedStore, setUnifiedStore] = useState(() => urlPick('store', ['fg', 'child', 'purchase', 'raw', 'rack', 'wip', 'plating'], 'wip')); // 'fg' | 'child' | 'purchase' | 'raw' | 'rack' | 'wip'
-  const [showNoBom, setShowNoBom]       = useState(false); // รายชื่อ product ที่ไม่มี BOM — พับไว้ ตัวเลขยังเห็นบนแถบสรุป
+  const [showNoBom, setShowNoBom]       = useState(() => urlBool('nobom', false));   // ?nobom= // รายชื่อ product ที่ไม่มี BOM — พับไว้ ตัวเลขยังเห็นบนแถบสรุป
   const [breakPolicies, setBreakPolicies] = useState([]);
   /* 🖼️ รูปชิ้นงาน (2026-09-25 · คำสั่ง user "ควรจะมีรูปภาพชิ้นงานด้วยนะ")
      โหลดครั้งเดียวตอนเปิดหน้า — ทะเบียนรูปเปลี่ยนไม่บ่อย ไม่ต้องรีเฟรชตามวัน/ไลน์
@@ -2609,6 +2619,10 @@ export default function HeijunkaKanban() {
 
   return (
     <Page width="full">
+      {/* 🔊📦 ไซเรน "ไลน์เรียกของ" — บอร์ดนี้คือจอทำงานของสโตร์ (24/10 · คำสั่ง user)
+          ดังเฉพาะใบที่ "ไลน์เรียก" และยังไม่มีใครรับทราบ · ใบที่สโตร์สร้างเองไม่ดัง (ไม่เตือนตัวเอง)
+          🔴 หน้านี้ไม่มี <DowntimeSiren> ⇒ slot=0 ได้ · ถ้าวันหลังเพิ่มไซเรนอื่นในหน้านี้ ต้องแยก slot */}
+      <StoreCallSiren />
       {/* ⚠️ heijunka:operate seed ตั้งแต่ 2026-07-08 = ทุก role ณ ตอนนั้น — mtn/dept_admin ที่เพิ่มทีหลังไม่มีแถว */}
       <ReadOnlyNote show={!canOperate} role={role} what="สั่งงาน/จัดคิวบนบอร์ด"
         permKey="heijunka:operate" />

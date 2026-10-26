@@ -3,9 +3,10 @@ import ReadOnlyNote from '../components/ReadOnlyNote';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
+import { canWriteLine, writeBlockText } from '../utils/writeScope';   // 🔐 ชั้นที่ 3 — ยืมมือเขียนทะเบียนสินค้า (20/10)
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
-import { inSectionScope } from '../utils/sectionScope';
+import { inSectionScope, scopedLines } from '../utils/sectionScope';
 import { getLineFamilyNames, lineNameCompare } from '../utils/lineHierarchy';
 import { dieSetKindLabel, dieSetKindOptions, dieSetKindKey } from '../utils/equipmentKinds';
 import useDieSetKinds, { invalidateDieSetKinds } from '../utils/useDieSetKinds'; // ทะเบียนรูปแบบชุด (DR die_set_kinds) — 2026-10-05
@@ -110,8 +111,20 @@ const emptySet = {
      2) `pairBlockReason()` ตัวเดียวกับหน้า Product Master (คู่ RH/LH ต้องผลิตไลน์เดียวกัน)
      3) เขียน **2 ทาง** + ปลดคู่เก่าที่ชี้ค้างก่อน ไม่งั้นคู่ชี้ข้างเดียว = `collapsePairShots` ยุบไม่ครบ
      4) `checkWriteRows` ทุกครั้ง — RLS ปฏิเสธ UPDATE คืน 0 แถวโดยไม่มี error */
-function SetPairNote({ set, products, role, onDone }) {
+function SetPairNote({ set, products, role, onDone, prodLines = [] }) {
   const [busy, setBusy] = useState(false);
+  /* 🔐 ชั้นที่ 3 (20/10) — ข้อ 1 ข้างบนยืมสิทธิ์ `products:edit` มาแล้ว **แต่ยังไม่ได้ยืมขอบเขต**
+     ⇒ ต้องเช็ค "ไลน์ของพาร์ท" เหมือนหน้า Product Master ไม่งั้นปิดทางนั้นแล้วยังเข้าทางนี้ได้
+     (ตั้งคู่ผิด = `collapsePairShots` ยุบ shot ของไลน์เขา ⇒ %P ทั้งกะเพี้ยน)
+     🔴 ต้องรับทะเบียนไลน์ผลิตจากหน้าแม่ (`prodLines`) — คนละตัวกับ die_press_lines ของหน้านี้ */
+  const { section: homeSection, sections: scopeSecs, allUnits, respCostCenters, scopeIdx } = useContext(UserContext);
+  const pGuard = (prod, what) => {
+    const w = canWriteLine({ role, section: homeSection, sections: scopeSecs, allUnits, respCostCenters, scopeIdx },
+      prod?.line_name, prodLines);
+    if (w.ok) return true;
+    toast.error(writeBlockText(w, { what, unit: prod?.line_name || '' }));
+    return false;
+  };
   const canPair = can('products', 'edit', role);
   const byMat = (m) => products.find(p => String(p.mat_no || '').trim().toUpperCase() === m) || null;
   const r = dieSetPairState(set, (m) => byMat(m)?.pair_mat_no || null);
@@ -127,6 +140,7 @@ function SetPairNote({ set, products, role, onDone }) {
     if (!pa || !pb) return toast.error(`${!pa ? a : b} ยังไม่มีในทะเบียนสินค้า — เพิ่มที่ /products ก่อน`);
     const why = pairBlockReason(pa, pb);          // ด่านเดียวกับ Product Master ห้ามข้าม
     if (why) return toast.error(why);
+    if (!pGuard(pa, `สินค้า ${a}`) || !pGuard(pb, `สินค้า ${b}`)) return;   // ชั้นที่ 3 — ทั้ง 2 ฝั่งของคู่
     const olds = [pa.pair_mat_no, pb.pair_mat_no]   // คู่เก่าที่ชี้ไปที่อื่น ต้องปลดก่อน ไม่งั้นค้างชี้ข้างเดียว
       .map(v => String(v || '').trim().toUpperCase())
       .filter(v => v && v !== a && v !== b);
@@ -138,6 +152,8 @@ function SetPairNote({ set, products, role, onDone }) {
     setBusy(true);
     try {
       for (const o of olds) {
+        /* คู่เก่าที่ต้องปลด อาจเป็นพาร์ทของไลน์อื่น — ปลดคู่ของเขาก็คือการเขียนทับข้อมูลเขา */
+        if (!pGuard(byMat(o), `คู่เดิม ${o}`)) return;
         if (!checkWriteRows(await supabaseDR.from('dr_products').update({ pair_mat_no: null })
           .eq('mat_no', o).select('id'), `ปลดคู่เดิมของ ${o}`)) return;   // ปลดไม่ได้ = หยุด ห้ามเขียนทับต่อ
       }
@@ -172,7 +188,7 @@ function SetPairNote({ set, products, role, onDone }) {
 }
 
 export default function DieRegistry() {
-  const { role, lineId: userLineId, sections: scopeSecs, fullName } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs, fullName, scopeIdx } = useContext(UserContext);
   // ใช้สิทธิ์ชุดเดียวกับฐานข้อมูลเครื่องจักร — แม่พิมพ์อยู่ตาราง machines เดียวกัน คนดูแลกลุ่มเดียวกัน
   // (เลี่ยงการ seed permission key ใหม่ ซึ่งมีกับดัก enum_range ทำให้ role ที่เพิ่มทีหลัง fail-closed)
   const canEdit = can('machines', 'edit', role);
@@ -296,9 +312,9 @@ export default function DieRegistry() {
       const fam = new Set(myLine ? getLineFamilyNames(lines, myLine.name) : []);
       return fam.size ? lines.filter(l => fam.has(l.name)) : lines;
     }
-    if (scopeSecs?.length) return lines.filter(l => inSectionScope(scopeSecs, l.section));
+    if (scopeSecs?.length) return scopedLines({ role, lineId: userLineId, sections: scopeSecs, lines, scopeIdx });
     return lines;
-  }, [lines, role, userLineId, scopeSecs]);
+  }, [lines, role, userLineId, scopeSecs, scopeIdx]);
   const scopedLineNames = useMemo(() => new Set(scopedLines.map(l => l.name)), [scopedLines]);
   const scopeActive = scopedLines.length !== lines.length;
   const inScope = useCallback((lineName) => !scopeActive || scopedLineNames.has(lineName), [scopeActive, scopedLineNames]);
@@ -539,6 +555,30 @@ export default function DieRegistry() {
       )}
 
       {tab === 'registry' && <>
+      {/* filter bar — มาตรฐาน FilterBar (UI-STANDARD 2026-09-24) · ไลน์ = ชื่อเครื่องปั๊มจากแม่พิมพ์ (ไม่ใช่ production_lines) จึงไม่ใช้ LineSelect */}
+      <FilterBar>
+        <select value={filterLine} onChange={e => setFilterLine(e.target.value)}>
+          <option value="">{ALL.line}</option>
+          {dieLineNames.map(n => <option key={n} value={n}>{n}</option>)}
+        </select>
+        <select value={filterKind} onChange={e => setFilterKind(e.target.value)}>
+          <option value="">{allOf('รูปแบบชุด')}</option>
+          <option value={KIND_NONE}>— ยังไม่ระบุ ({stat.noKind}) —</option>
+          {setKinds.map(k => <option key={k.key} value={k.key}>{k.label}{k.is_active ? '' : ' (ปิดใช้)'}</option>)}
+        </select>
+        <SearchInput value={search} onChange={setSearch} fields="พาร์ท / ชื่อชุด / MAT / เลขแม่พิมพ์" />
+        <span className="spacer" />
+        <span className="filter-count">แสดง {rows.length} ชุด</span>
+        {canEdit && (
+          <button onClick={() => setEditSet({ ...emptySet, line_name: filterLine || '' })} style={{ ...saveBtnStyle, padding: '0 14px' }}>
+            + เพิ่มชุด
+          </button>
+        )}
+      </FilterBar>
+
+      {/* 🔴 การ์ดสรุป/แถบเตือน = **เนื้อหา** ต้องอยู่ใต้แถบกรอง (UI-STANDARD §2.1 ลำดับตายตัว:
+          ชื่อหน้า → แท็บ → แถบกรอง → เนื้อหา) — ย้ายลงมา 20/10 · ข้อยกเว้นมีแค่ <ReadOnlyNote>
+          และตัวเลขในการ์ดก็เปลี่ยนตามตัวกรอง ⇒ อ่านจากใต้แถบกรองตรงกว่า */}
       {/* สรุป */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
         {[
@@ -602,26 +642,6 @@ export default function DieRegistry() {
         </div>
       )}
 
-      {/* filter bar — มาตรฐาน FilterBar (UI-STANDARD 2026-09-24) · ไลน์ = ชื่อเครื่องปั๊มจากแม่พิมพ์ (ไม่ใช่ production_lines) จึงไม่ใช้ LineSelect */}
-      <FilterBar>
-        <select value={filterLine} onChange={e => setFilterLine(e.target.value)}>
-          <option value="">{ALL.line}</option>
-          {dieLineNames.map(n => <option key={n} value={n}>{n}</option>)}
-        </select>
-        <select value={filterKind} onChange={e => setFilterKind(e.target.value)}>
-          <option value="">{allOf('รูปแบบชุด')}</option>
-          <option value={KIND_NONE}>— ยังไม่ระบุ ({stat.noKind}) —</option>
-          {setKinds.map(k => <option key={k.key} value={k.key}>{k.label}{k.is_active ? '' : ' (ปิดใช้)'}</option>)}
-        </select>
-        <SearchInput value={search} onChange={setSearch} fields="พาร์ท / ชื่อชุด / MAT / เลขแม่พิมพ์" />
-        <span className="spacer" />
-        <span className="filter-count">แสดง {rows.length} ชุด</span>
-        {canEdit && (
-          <button onClick={() => setEditSet({ ...emptySet, line_name: filterLine || '' })} style={{ ...saveBtnStyle, padding: '0 14px' }}>
-            + เพิ่มชุด
-          </button>
-        )}
-      </FilterBar>
 
       {rows.length === 0 && (
         <div style={{ padding: 28, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
@@ -837,7 +857,7 @@ export default function DieRegistry() {
             <Field label="MAT ตัวที่ 2 (งานคู่ RH/LH)" hint="ว่าง = ชุดนี้ทำพาร์ทเดียว">
               <ProductSelect value={editSet.mat_no_2 || ''} lines={editSet.line_name ? [editSet.line_name] : undefined} history={dieMatHist}
                 onChange={res => setEditSet(f => ({ ...f, mat_no_2: res.mat_no || '' }))} inputStyle={{ background: 'var(--bg)' }} />
-              <SetPairNote set={editSet} products={products} role={role} onDone={load} />
+              <SetPairNote set={editSet} products={products} role={role} onDone={load} prodLines={lines} />
             </Field>
             <Field label="รุ่น / Model">
               <input style={inputStyle} value={editSet.model || ''}

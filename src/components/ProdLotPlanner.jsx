@@ -232,7 +232,8 @@ export default function ProdLotPlanner({
      ยิงทีเดียวด้วยกรอบ 48 ชม. = ได้พักผิดทั้งยวง */
   const breaks = useMemo(() => horizon.segments.flatMap(sg => breakIntervalsIn({
     policies: breakPolicies, startMs: sg.startMs, endMs: sg.endMs, workDate: sg.workDate, shift: sg.shift,
-  })), [breakPolicies, horizon.segments]);
+    lineName,   // 🏭 ข้อยกเว้นเวลาพักรายไลน์ (ทะเบียนกลาง · 20/10) — แผนต้องใช้เวลาพักของไลน์ที่กำลังวาง
+  })), [breakPolicies, horizon.segments, lineName]);
 
   const summary = useMemo(() => planSummary({
     lots, orders, ctOf, pairOf, dieOf, rule, netShiftMin: netMin,

@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { setActor, getActor, actorFields, applyStepActors } from './utils/actorStamp'
 import { makeDedupeFetch } from './utils/dedupeFetch'
+import { connFetch } from './utils/connGuard'
 
 /* 🔴 ยุบคำขอ GET ที่เหมือนกันและกำลังวิ่งพร้อมกัน (2026-10-13 · งานลด egress)
    วัดจริง 13/10: คำขอซ้ำบนตารางหลักห่างกัน **median 3-77 ms** = หลายแผงบนหน้าเดียวกัน
@@ -8,6 +9,13 @@ import { makeDedupeFetch } from './utils/dedupeFetch'
    ⚠️ **ไม่ใช่ cache** — settle แล้วลบคีย์ทันที ของสดยังสดเท่าเดิม · กติกาเต็มอยู่ใน dedupeFetch.js
    ⚠️ ห้ามย้ายไปใส่ที่อื่น — ต้องอยู่ที่ createClient ของ **ทั้งสอง** client ไม่งั้นครอบไม่ครบ */
 const dedupeFetch = makeDedupeFetch((...a) => fetch(...a))
+
+/* 🔴 ถอยเมื่อฐานข้อมูลตอบว่ารับไม่ไหว (2026-10-21 · เหตุการณ์จริง 20:20–20:44 ทั้งโรงงานใช้ไม่ได้)
+   เปลี่ยนกะ = ทุกเครื่องกลับมาพร้อมกัน ⇒ ช่องต่อฐานข้อมูลเต็ม ⇒ 503 ทุกคำขอ
+   แล้ว**ทุกจอยังยิงต่อจังหวะเดิม + คนกดรีเฟรชซ้ำ** ⇒ โหลดพุ่งตอนที่ฐานอ่อนแรงที่สุด ฟื้นเองไม่ได้
+   ตัวนี้พัก GET ชั่วคราวให้ฐานฟื้น · **การเขียนผ่านเสมอ** · กติกาเต็มใน utils/connGuard.js
+   ⚠️ ต้องครอบ **นอก** dedupe และอยู่ที่ createClient ของทั้งสอง client เหมือนกัน */
+const guardedFetch = connFetch(dedupeFetch)
 
 const supabaseUrl     = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -18,13 +26,13 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 // (อาการ: แท็บใหม่จาก ctrl+click เห็นเลขฝั่ง DR ปกติ แต่เลขฝั่ง Main เป็น 0 + เมนูหาย)
 // localStorage แชร์ session ข้ามแท็บ + supabase-js ประสานการ refresh ให้เอง
 // ส่วนความปลอดภัยเครื่องส่วนกลางมี auto-logout idle 30 นาทีคุมอยู่แล้ว (useAutoLogout ใน App.jsx)
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, { global: { fetch: dedupeFetch } })
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, { global: { fetch: guardedFetch } })
 
 // Second project — Daily Report & PM data
 const supabaseDrUrl  = import.meta.env.VITE_SUPABASE_DR_URL  || 'https://eyhclzkifitbhbljgoav.supabase.co'
 const supabaseDrKey  = import.meta.env.VITE_SUPABASE_DR_KEY  || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV5aGNsemtpZml0YmhibGpnb2F2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY4ODExMDQsImV4cCI6MjA5MjQ1NzEwNH0.fHTA70fQ8yAvQuwAeM9HQ_UQjMdR3FUkxu_klvXs-h4'
 
-export const supabaseDR = createClient(supabaseDrUrl, supabaseDrKey, { global: { fetch: dedupeFetch } })
+export const supabaseDR = createClient(supabaseDrUrl, supabaseDrKey, { global: { fetch: guardedFetch } })
 
 // ═══ DR actor stamping (traceability) — 2026-07-24 · เพิ่ม uid 2026-09-16 ═══════════════════
 // DR เป็น anon เสมอ → ฐานข้อมูลไม่รู้ว่าใครแก้ · trigger fn_audit อ่าน updated_by_name/_uid เป็น actor
@@ -57,6 +65,9 @@ export const DR_AUDIT_TABLES = new Set([
   'press_setup_rules',   // กฎเวลาเปลี่ยนรุ่นงานปั๊ม — ตัวเลขมาจากช่างปั๊ม ต้องรู้ว่าใครแก้เมื่อไหร่ (2026-09-25)
   'stock_receipts',   // คิวรับเข้าคลัง (ยืนยันรับ/ยกเลิก) — ใครรับ ใครยกเลิก ต้องสอบกลับได้ (2026-10-02)
   'production_plan_lots',   // แผนสั่งงานรายล็อตที่วางแผนออกให้ฝ่ายผลิต — ใครเปลี่ยนลำดับ/จำนวน/ยกเลิก ต้องสอบกลับได้ (2026-09-30)
+  'prod_orders',   // ใบผลิต — ใครแก้เวลาเริ่ม/จบ · ยอด · ยกเลิก/ยกยอด **ของใบที่ปิดแล้ว** ต้องสอบกลับได้ (2026-10-21)
+                   // trigger ฝั่ง DB ยิงเฉพาะใบที่ปิดแล้ว (migration 20261021_prod_orders_audit_update_dr.sql)
+                   // ⇒ flow ปกติ (สแกน/คอนเฟิร์ม) ไม่สร้างแถว audit · การ stamp ชื่อคนเฉยๆ ก็ไม่สร้าง
 ])
 // ═══ คอลัมน์ "ผู้ทำงานแต่ละขั้น" ฝั่ง DR — 2026-09-16 ════════════════════════════════════
 // ต่างจาก updated_by_* ข้างบน: อันนั้นคือ "ใครกดเซฟแถวนี้ล่าสุด" · อันนี้คือ "ใครทำขั้นตอนนี้"

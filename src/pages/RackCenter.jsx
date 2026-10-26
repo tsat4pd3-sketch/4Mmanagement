@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useContext, useRef } from 'r
 import { lineNameCompare } from '../utils/lineHierarchy';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { useSearchParams } from 'react-router-dom';
-import { urlParam } from '../utils/urlInit';
+import { urlParam, urlBool } from '../utils/urlInit';
 import useTabParam, { useMergeParams } from '../utils/useTabParam';
 import Page from '../components/Page';
 import PageHeader from '../components/PageHeader';
@@ -83,7 +83,7 @@ export default function RackCenter() {
   const [form,           setForm]           = useState(EMPTY_FORM);
   const [saving,         setSaving]         = useState(false);
   const [busyId,         setBusyId]         = useState(null);
-  const [showDone,       setShowDone]       = useState(false);
+  const [showDone,       setShowDone]       = useState(() => urlBool('done', false));   // ?done= (จอวนหน้า)
   const [pkgReqs,        setPkgReqs]        = useState([]);   // packaging_withdrawal_requests
   const [pkgBusy,        setPkgBusy]        = useState(null);
   const [view,           setView]           = useTabParam(VIEW_TABS.map(v => v.key), 'board');   // 'board' | 'time' | 'sla' (?tab=)

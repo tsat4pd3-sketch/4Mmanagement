@@ -63,6 +63,7 @@ export const AUDIT_TABLE_LABELS = {
   npi_tooling_step_templates: '🔧 NPI แม่แบบขั้นงาน tooling',
 
   // ── สินค้า & คัมบัง (DR) ──
+  prod_orders:             '🎫 ใบผลิต (แก้หลังปิดกะ)',
   dr_products:             '📦 สินค้า (Product Master)',
   parts_master:            '🗂 ทะเบียนพาร์ท',
   kanban_standards:        '🎴 มาตรฐานคัมบัง',
@@ -114,6 +115,23 @@ export const AUDIT_TABLE_LABELS = {
   kanban_calc_settings:    '🎴 ตั้งค่าคำนวณคัมบัง',
   dt_alert_config:         '🔔 เกณฑ์เตือน Downtime',
   energy_monthly:          '⚡ พลังงานรายเดือน',
+  // ── คุณภาพ QA (Main) — 20/10 ──
+  qa_parts:                '🔍 พาร์ทตรวจ QA',
+  qa_part_drawings:        '🔍 แผ่นแบบของพาร์ท',
+  qa_inspection_items:     '🔍 จุดตรวจ QA',
+  qa_inspection_sheets:    '📝 ใบตรวจ QA',
+  qa_inspection_results:   '📝 ผลตรวจรายจุด',
+  qa_inspection_pieces:    '📝 ผลตรวจรายชิ้น',
+  qa_inspection_actions:   '📝 การแก้ไขในใบตรวจ',
+  qa_ncr:                  '🚨 NCR',
+  qa_capa:                 '🛠️ CAPA / 8D',
+  qa_customer_claims:      '📣 เคลมลูกค้า',
+  qa_characteristics:      '📈 SPC — ค่าที่ควบคุม',
+  qa_measurements:         '📈 SPC — ค่าที่วัด',
+  qa_instruments:          '📏 เครื่องมือวัด',
+  qa_fme_config:           '⏰ ตั้งค่า FME',
+  qa_fme_part_rules:       '⏰ กฎ FME รายพาร์ท',
+  qa_fme_obligations:      '⏰ คิวตรวจ FME',
 };
 
 /* ฟิลด์ → ชื่อไทย (ใช้ตอนโชว์ ค่าเก่า → ค่าใหม่) */
@@ -126,6 +144,9 @@ export const AUDIT_FIELD_LABELS = {
   role: 'สิทธิ์ (role)', allowed: 'อนุญาต', permission_key: 'คีย์สิทธิ์', is_dept_admin: 'แอดมินหน่วยงาน',
   full_name: 'ชื่อ-สกุล', position: 'ตำแหน่ง', line_id: 'ไลน์', sections: 'ส่วนงานที่ดูแล', mtn_teams: 'ทีมช่าง',
   mat_no: 'เลข MAT', p_no: 'เลขพาร์ทลูกค้า', cycle_time_sec: 'CT (วินาที)', pair_mat_no: 'พาร์ทคู่',
+  prod_no: 'เลขใบผลิต', opened_at: 'เวลาเริ่มผลิต', confirmed_at: 'เวลาจบ/คอนเฟิร์ม',
+  stopped_at: 'เวลาหยุดผลิต (ยกยอด/ยกเลิก)', qty: 'จำนวน', qty_target: 'เป้า',
+  qty_actual: 'ยอดจริง', qty_ok: 'ยอดดี', qty_suspect: 'ของสงสัย',
   line_name: 'ไลน์', machine_no: 'หมายเลขเครื่อง', machine_name: 'ชื่อเครื่อง',
   equipment_kind: 'ชนิดอุปกรณ์', equipment_category: 'หมวดอุปกรณ์', equipment_type: 'ประเภทอุปกรณ์',
   min_qty: 'ขั้นต่ำ', max_qty: 'สูงสุด', stock_qty: 'ยอดคงเหลือ', qty_per_kanban: 'จำนวน/คัมบัง',
@@ -145,6 +166,9 @@ export const AUDIT_FIELD_LABELS = {
   image_url: 'รูป', is_enabled: 'เปิดใช้งาน', chat_id: 'ห้องแชท', inapp_roles: 'แจ้งในแอป (role)',
   work_date: 'วันที่งาน', shift: 'กะ', employee_id: 'พนักงาน', emp_name: 'พนักงาน',
   to_line_id: 'ไลน์ปลายทาง', to_line_name: 'ไลน์ปลายทาง', created_by_name: 'ผู้บันทึก',
+  judgement: 'ผลตัดสิน', values_json: 'ค่าที่วัด', qty_checked: 'จำนวนตรวจ', qty_ng: 'จำนวน NG',
+  result: 'ผล', disposition: 'การจัดการ', status: 'สถานะ', usl: 'USL', lsl: 'LSL', nominal: 'ค่ากลาง',
+  balloon_no: 'เลขบอลลูน', recorded_by: 'ผู้บันทึก', cancel_reason: 'เหตุผลยกเลิก',
 };
 
 /** ป้ายตาราง — ไม่รู้จักคืนชื่อดิบ (ไม่ซ่อน ไม่พัง) */
@@ -153,11 +177,13 @@ export const tableLabel = (t) => AUDIT_TABLE_LABELS[t] || t;
 export const fieldLabel = (f) => AUDIT_FIELD_LABELS[f] || f;
 
 /** ฟิลด์ที่ไม่ต้องโชว์ในรายการ "เปลี่ยนอะไรบ้าง" (เป็น metadata ของ audit เอง) */
-export const AUDIT_SKIP_FIELDS = new Set(['updated_at', 'updated_by_name', 'created_at']);
+export const AUDIT_SKIP_FIELDS = new Set(['updated_at', 'updated_by_name', 'updated_by_uid', 'created_at']);
 
 /** ชื่อที่ใช้เรียกแถวที่ถูกแก้ (เดาจากฟิลด์ยอดนิยม) */
 export const rowLabel = (r) => {
   const d = r?.new_data || r?.old_data || {};
-  return d.name || d.name_th || d.full_name || d.emp_name || d.machine_no || d.mat_no || d.characteristic
-      || d.label || d.code || d.permission_key || d.cost_center || '(ไม่ระบุชื่อ)';
+  return d.name || d.name_th || d.full_name || d.emp_name || d.prod_no || d.machine_no || d.mat_no || d.characteristic
+      || d.label || d.code || d.permission_key || d.cost_center
+      || d.ncr_no || d.capa_no || d.claim_no || d.part_no || d.title
+      || (d.piece_no != null ? `ชิ้นที่ ${d.piece_no}` : null) || '(ไม่ระบุชื่อ)';
 };

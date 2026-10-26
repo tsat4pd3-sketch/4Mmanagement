@@ -298,7 +298,9 @@ function MetricBlock({ panel, size = 'page', level = 3, trailing = null }) {
   const warn = metricWarn(m);
   const color = m.eva === 'none' ? 'var(--text2)' : evaMeta(m.eva).color;
   const F = tv
-    ? { hero: 'clamp(16px, 1.5vw, 40px)', suffix: 'clamp(10px, 0.8vw, 20px)', meta: 'clamp(9px, 0.68vw, 17px)' }
+    /* 🔴 ค่า min ของ clamp = ขนาดจริงบนจอเล็ก ⇒ ต้อง ≥ 11px (กฎจอ TV · ด่าน font-min-11)
+       เดิม 10/9px มีผลจริงเมื่อจอ < ~1280px (0.8vw/0.68vw) ⇒ บน PC-โน้ตบุ๊กอ่านไม่ออก */
+    ? { hero: 'clamp(16px, 1.5vw, 40px)', suffix: 'clamp(11px, 0.8vw, 20px)', meta: 'clamp(11px, 0.68vw, 17px)' }
     : { hero: 22, suffix: 12, meta: 11 };
 
   return (
@@ -1181,11 +1183,11 @@ function TvView({ projects, index, onIndex, onExit, openPanelKey, onPick, onClos
     sub:   'clamp(12px, 0.95vw, 26px)',
     axis:  'clamp(13px, 1.05vw, 28px)',
     panel: 'clamp(12px, 1.02vw, 27px)',
-    note:  'clamp(10px, 0.78vw, 20px)',
+    note:  'clamp(11px, 0.78vw, 20px)',   // min ≥ 11px (ด่าน font-min-11)
     // ชั้น "ร้อน" (แดง) — ใหญ่กว่าชั้นปกติ ~25% · ขั้นต่ำยังเกิน 11px ตาม UI §จอ TV
     panelHot: 'clamp(14px, 1.3vw, 34px)',
     noteHot:  'clamp(11.5px, 0.92vw, 24px)',
-    eyebrow:  'clamp(9px, 0.62vw, 16px)',
+    eyebrow:  'clamp(11px, 0.62vw, 16px)',  // min ≥ 11px (ด่าน font-min-11)
     clock:    'clamp(22px, 2.3vw, 62px)',
   };
 
