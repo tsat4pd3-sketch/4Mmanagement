@@ -7,8 +7,9 @@
    คืน `names` = Set ชื่อไลน์ที่เห็น หรือ null = ไม่จำกัด */
 import { scopedLineNames } from './sectionScope.js';
 
-export function qaViewScope(allLines = [], { role, lineId, sections } = {}) {
-  const names = scopedLineNames({ role, lineId, sections: sections || [], lines: allLines });
+export function qaViewScope(allLines = [], { role, lineId, sections, scopeIdx } = {}) {
+  /* ส่ง `scopeIdx` ต่อให้ตัวกลาง — ขอบเขตที่เป็นแผนก/ไลน์จึงขยายผ่านผังได้ (22/10) */
+  const names = scopedLineNames({ role, lineId, sections: sections || [], lines: allLines, scopeIdx });
   if (!names) return { lines: allLines, names: null };
   const set = new Set(names);
   return { lines: allLines.filter(l => set.has(l.name)), names: set };

@@ -84,6 +84,59 @@ export function splitAlreadyDone(records, done) {
   return { insert, covered };
 }
 
+/**
+ * ⭐ 21/10 — แถวแผน 862 ที่ e-SMART "ยืนยันช่วงนั้นไปแล้ว" ห้ามสร้างกลับมาเป็นใบใหม่
+ * (user: *"862 = แผนทั้งวัน · e-SMART = คอนเฟิร์มว่าช่วงนั้นส่งจริง"* · กติกาเดียวกับโหมดช่วงเวลาของ
+ *  `planOrderUpdates` ใน pullSignal.js — ช่วงดึงของแถว = เวลาส่ง − lead ต้องอยู่ใน `(window_start, window_end]`)
+ * เหตุ: 862 เข้าทุกเช้า 08:05 พร้อมแถวของตี 0–8 (= กะดึกที่ e-SMART ยืนยันไปแล้ว) ⇒ ใบแผนเก่าโผล่กลับมาแดงซ้อน
+ * @param {Array} records  แถว 862 ({shipTo, part, mat_no, date, time, dock})
+ * @param {Array} batches  [{ ship_to, dock_code, window_start, window_end, lead_min, parts:Set<normKey>, mats:Set<normKey> }]
+ * @returns {{ insert: Array, covered: Array<{rec, by}> }}
+ */
+export function splitPullCovered(records, batches) {
+  const insert = [], covered = [];
+  const list = (batches || []).filter(b => b && b.window_start && b.window_end);
+  for (const rec of records || []) {
+    const at = shipAtMs(rec.date, rec.time);
+    let by = null;
+    if (at != null) {
+      const rk = normKey(rec.mat_no), pk = normKey(rec.part), dk = dockKey(rec.dock);
+      for (const b of list) {
+        if (String(b.ship_to || '').trim() !== String(rec.shipTo || '').trim()) continue;
+        const bd = dockKey(b.dock_code);
+        if (dk && bd && dk !== bd) continue;                        // dock อื่น = คนละเที่ยว
+        // MAT ชนะเลขพาร์ท (กติกาเดียวกับ findDoneCover) — เลขพาร์ทลูกค้าตัวเดียวอาจผูกหลาย MAT
+        const hasItem = rk && b.mats?.size ? b.mats.has(rk) : !!(pk && b.parts?.has(pk));
+        if (!hasItem) continue;                                      // พาร์ทไม่อยู่ในไฟล์ = ตาม 862 (กติกา 08/09)
+        const p = at - (Number(b.lead_min ?? 60) || 0) * 60000;
+        const ws = new Date(b.window_start).getTime(), we = new Date(b.window_end).getTime();
+        if (p > ws && p <= we) { by = b; break; }
+      }
+    }
+    if (by) covered.push({ rec, by }); else insert.push(rec);
+  }
+  return { insert, covered };
+}
+
+/** ประกอบชุด batch ของ e-SMART ให้ `splitPullCovered` ใช้ (pure — หน้าเป็นคนโหลด)
+ *  lead ของ batch = `customer_pull_formats.lead_min` ของ format นั้น · ไม่รู้ = 60 (ค่าเดียวกับ DEFAULT_PROFILE) */
+export function pullCoverBatches(batches = [], signals = [], formats = []) {
+  const leadOf = new Map((formats || []).map(f => [f.code, f.lead_min]));
+  const byId = new Map();
+  for (const b of batches || []) {
+    if (!b?.id || !b.window_start || !b.window_end) continue;
+    const lead = leadOf.get(b.format_code);
+    byId.set(b.id, { ...b, lead_min: lead == null ? 60 : Number(lead), parts: new Set(), mats: new Set() });
+  }
+  for (const s of signals || []) {
+    const b = byId.get(s?.batch_id); if (!b) continue;
+    const pk = normKey(s.customer_part_no), mk = normKey(s.mat_no);
+    if (pk) b.parts.add(pk);
+    if (mk) b.mats.add(mk);
+  }
+  return [...byId.values()].filter(b => b.parts.size || b.mats.size);
+}
+
 /* ═══ 862 ≠ ใบส่งของทุกแถว — แถว forecast ระยะยาวต้องไม่กลายเป็นใบส่งของ ═════════
    🔴 ที่มา (เกิดจริง 2026-09-19..20 · user: *"ก่อนเค้าใช้มันจะแดงๆ อยากให้เคลียร์ให้ก่อน"*)
 

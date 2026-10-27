@@ -21,6 +21,8 @@ import CostCenterSelect from '../components/CostCenterSelect';
 
 import InfoMore from '../components/InfoMore';
 import PageHeader from '../components/PageHeader';
+import useTabParam from '../utils/useTabParam';
+import OrgTreeView from '../components/OrgTreeView';   // 🌳 มุมมองผังต้นไม้ (22/10 · คำสั่ง user "อยากมีหน้าวาดผัง")
 import Page from '../components/Page';
 import { IconButton, DeleteButton } from '../components/IconButton';
 /* 🔴 ชั้นไหนมีพาเนล/ปุ่มเพิ่มบนจอ ต้องมีป้ายครบทุกชั้น — ขาดตัวไหน หัวโมดัลขึ้น "เพิ่ม undefined"
@@ -107,6 +109,9 @@ export default function OrgSetup() {
   /* แก้ได้ไหม — admin ทำได้ทุก node · ผู้ถือ manage_own_unit ทำได้เฉพาะแผนก/กลุ่มใต้ส่วนงานตัวเอง
      (section เป็นโครงบริษัท ไม่เปิดให้หน่วยงานแก้ ป้องกันการเปลี่ยนชื่อ/ลบส่วนงานอื่นแล้ว cascade ทั้งระบบ) */
   const scopeCtx = useMemo(() => ({ nodes, isAdmin, canOwn, mySecId }), [nodes, isAdmin, canOwn, mySecId]);
+  /* 🌳 แท็บ: มุมมองผัง (ภาพรวมทั้งต้นไม้ + รหัส CC ซ้อนชั้น) · จัดการหน่วยงาน (4 คอลัมน์เดิม)
+     ค่าเริ่มต้น = มุมมองผัง เพราะคำถามที่คนถามบ่อยที่สุดคือ "หน่วยไหนอยู่ใต้หน่วยไหน" */
+  const [tab, setTab] = useTabParam(['tree', 'manage', 'teams'], 'tree');
   const canEditNode    = (node)   => canEditOrgNode(node, scopeCtx);
   const canAddDeptHere = (secId)  => canAddOrgNodeUnder('department', secId, scopeCtx);
   const canAddLineHere = (deptId) => canAddOrgNodeUnder('line', deptId, scopeCtx);
@@ -349,7 +354,11 @@ export default function OrgSetup() {
 
   return (
     <Page>
-      <PageHeader title="แผนผังองค์กร" icon="🏢" sub="จัดการโครงสร้าง Section/ส่วน → Department/แผนก → Group/กลุ่ม พร้อม Cost Center (master data ที่หน้าอื่นใช้อ้างอิง)" />
+      <PageHeader title="แผนผังองค์กร" icon="🏢"
+        sub="จัดการโครงสร้าง Section/ส่วน → Department/แผนก → Group/กลุ่ม พร้อม Cost Center (master data ที่หน้าอื่นใช้อ้างอิง)"
+        tabs={[{ key: 'tree', label: '🌳 มุมมองผัง' }, { key: 'manage', label: '🗂 จัดการหน่วยงาน' },
+               { key: 'teams', label: '👥 ทีม (จัดกะ)' }]}
+        tab={tab} onTab={setTab} />
 
       {/* ซ่อนปุ่มได้ ห้ามซ่อนเหตุผล (UI-CONVENTIONS §6.9) — ต้องรู้ว่าแก้อะไรได้/ไม่ได้ และต้องไปขอใคร */}
       {!isAdmin && (
@@ -369,6 +378,61 @@ export default function OrgSetup() {
 
       {loading ? (
         <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลด...</div>
+      ) : tab === 'tree' ? (
+        <OrgTreeView nodes={nodes} scopeCtx={scopeCtx} canEdit={isAdmin || canOwn} onChanged={fetchAll} />
+      ) : tab === 'teams' ? (
+        /* 👥 ทีม — แยกออกจากแถวผังองค์กร (22/10 · user: "ระดับ team ไว้ set กะ ไม่มีอยู่ใน organize จริง")
+           🔴 ห้ามถอดแท็บนี้ทิ้ง: ทีมเป็นลูกของกลุ่มใน `org_nodes` จริง ถ้าไม่มีที่ให้เห็น
+              จะกลับไปเป็นทางตันเหมือน 05/10 (ลบกลุ่มไม่ได้ แล้วหาไม่เจอว่าลูกอยู่ไหน)
+           ใช้ CRUD ชุดเดียวกับแท็บจัดการหน่วยงาน (openCreate/openEdit/handleDelete) ไม่ได้ก๊อปตรรกะใหม่ */
+        <>
+          <div style={{ marginBottom: 12, padding: '9px 12px', borderRadius: 9, border: '1px solid var(--border2)',
+                        background: 'var(--bg3)', fontSize: 12, color: 'var(--text2)', lineHeight: 1.7 }}>
+            👥 <b>ทีม A/B/C ใช้สำหรับจัดกะการทำงาน — ไม่ใช่ชั้นในผังองค์กร</b> จึงไม่ปรากฏในมุมมองผังและใบ export
+            <div style={{ color: 'var(--muted)' }}>
+              ค่าที่บันทึกคือช่อง <b>Code</b> (เช่น <code>A</code>) ซึ่งตรงกับ <code>employees.team</code> ·
+              ตารางกะใช้ที่ <b>🗓 ตารางกะการทำงาน</b> ({'/shift-organize'})
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+            <div style={colStyle} className="card">
+              <strong style={{ fontSize: 13, color: 'var(--text2)', display: 'block', marginBottom: 10 }}>
+                เลือกกลุ่ม ({allLines.length})
+              </strong>
+              <div style={{ maxHeight: 'calc(100vh - 320px)', overflowY: 'auto' }}>
+                {allLines.map(l => {
+                  const dept = nodes.find(n => n.id === l.parent_id);
+                  const sec = dept ? nodes.find(n => n.id === dept.parent_id) : null;
+                  return (
+                    <div key={l.id} style={itemStyle(selLine === l.id)} onClick={() => setSelLine(l.id)}>
+                      <NodeLabel node={l} meta={
+                        <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+                          {' '}· {[sec?.name, dept?.name].filter(Boolean).join(' › ') || 'ไม่มีหน่วยแม่'}
+                          {teamsOf(l.id).length > 0 ? ` · ${teamsOf(l.id).length} ทีม` : ''}
+                        </span>} />
+                    </div>
+                  );
+                })}
+                {!allLines.length && <Empty text="ยังไม่มีกลุ่มในผัง" />}
+              </div>
+            </div>
+            <div style={colStyle} className="card">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                <strong style={{ fontSize: 13, color: 'var(--text2)' }}>TEAM / ทีม ({currentTeams.length})</strong>
+                {canAddTeamHere(selLine) && (
+                  <button className="tbtn" onClick={() => selLine && openCreate('team', selLine)} disabled={!selLine} style={addBtnSt}>➕</button>
+                )}
+              </div>
+              {!selLine ? <Empty text="เลือกกลุ่มก่อน" /> : currentTeams.map(t => (
+                <div key={t.id} style={itemStyle(false)}>
+                  <NodeLabel node={t} meta={t.code && t.code !== t.name && <span style={{ fontSize: 11, color: 'var(--muted)' }}> ({t.code})</span>} />
+                  {canEditNode(t) && <RowActions node={t} onEdit={openEdit} onToggle={toggleActive} onDelete={handleDelete} />}
+                </div>
+              ))}
+              {selLine && !currentTeams.length && <Empty text="ยังไม่มีทีมในกลุ่มนี้" />}
+            </div>
+          </div>
+        </>
       ) : (
         <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
           {/* Sections */}
@@ -440,23 +504,6 @@ export default function OrgSetup() {
             {selDept && !currentLines.length && <Empty text="ยังไม่มีกลุ่มในแผนกนี้" />}
           </div>
 
-          {/* Teams — ชั้นที่ 4 (2026-10-05) · ทีมมีอยู่ในผังและถูกใช้จริงโดย useOrgTeams()
-              แต่เดิมไม่มีที่ไหนให้เห็น ⇒ ลบกลุ่มไม่ได้แล้วหาลูกไม่เจอ (ดูคอมเมนต์ที่ teamsOf) */}
-          <div style={colStyle} className="card">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-              <strong style={{ fontSize: 13, color: 'var(--text2)' }}>TEAM / ทีม ({currentTeams.length})</strong>
-              {canAddTeamHere(selLine) && (
-                <button className="tbtn" onClick={() => selLine && openCreate('team', selLine)} disabled={!selLine} style={addBtnSt}>➕</button>
-              )}
-            </div>
-            {!selLine ? <Empty text="เลือกกลุ่มก่อน" /> : currentTeams.map(t => (
-              <div key={t.id} style={itemStyle(false)}>
-                <NodeLabel node={t} meta={t.code && t.code !== t.name && <span style={{ fontSize: 11, color: 'var(--muted)' }}> ({t.code})</span>} />
-                {canEditNode(t) && <RowActions node={t} onEdit={openEdit} onToggle={toggleActive} onDelete={handleDelete} />}
-              </div>
-            ))}
-            {selLine && !currentTeams.length && <Empty text="ยังไม่มีทีมในกลุ่มนี้" />}
-          </div>
 
           {/* ✍️ ผู้เซ็น/อนุมัติใบค่าฝีมือ ราย section (ย้ายมาจาก LineSetup — เป็นข้อมูลราย "ส่วนงาน") */}
           {selSection && selSection !== ORPHAN && (() => {

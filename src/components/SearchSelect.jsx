@@ -26,6 +26,8 @@
    ══════════════════════════════════════════════════════════════════════════ */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { NO_ROW, initialActiveRow, moveActiveRow } from '../utils/pickerKeys';
+import { scanOfEvent, exactScanMatch } from '../utils/scanWedge';
+import { toast } from './Toast';
 
 /* ตัว normalize คำค้น (ทนการสะกดไทย) ย้ายไปอยู่ชั้นภาษาไทยแล้ว — `utils/thaiText.js`
    (เพราะ util ที่ pure ต้องใช้ตัวเดียวกัน แต่ import ไฟล์ .jsx ไม่ได้)
@@ -137,6 +139,18 @@ export default function SearchSelect({
 
   const onKey = (e) => {
     if (e.key === 'Escape') { closeList(); return; }
+    /* 🔫 2026-10-20 — Enter ท้าย "การสแกน" (handheld · ตัดสินโดย utils/scanWedge.js) = เลือกได้เฉพาะตัวที่รหัส**ตรงเป๊ะ**
+       เดิม Enter เลือกแถวแรกของผล "มีคำนี้อยู่ข้างใน" ⇒ สแกน 1009245 ได้ 10092454 เงียบๆ · ไม่ตรง/ตรงหลายตัว = ไม่เลือก ให้คนเลือกเอง
+       (มีแค่บนมือถือ — จอคอมไม่ติดตั้งตัวดักสแกน ⇒ scanOfEvent คืน null เสมอ พฤติกรรมเดิม) */
+    const scanned = e.key === 'Enter' ? scanOfEvent(e) : null;
+    if (scanned) {
+      e.preventDefault();
+      const hit = exactScanMatch(options, scanned);
+      if (hit) { pick(hit); return; }
+      setOpen(true); setActive(NO_ROW);
+      toast.error(`ไม่พบรหัส "${scanned}" ที่ตรงตัวในรายการ — เลือกจากรายการเอง (ระบบไม่เลือกตัวที่ใกล้เคียงให้)`);
+      return;
+    }
     if (!open && (e.key === 'ArrowDown' || e.key === 'Enter')) { setOpen(true); return; }
     if (!open) return;
     if (e.key === 'ArrowDown') { e.preventDefault(); setActive(a => moveActiveRow(a, 1, rows.length)); }

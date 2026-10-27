@@ -47,6 +47,10 @@ export const inflowPatchFor = (modeKey, rule) =>
 
 /** MAT ที่ยอดเข้าคลังทาง "ปิดล็อตที่สโตร์" (กฎ MAT · เปิดอยู่ · โหมด lot) — ตัวเดียวกับที่ trigger ใช้ข้าม
  *  🔴 ห้ามถามจาก `child_lot_requests` ตรงๆ อีก ("เคยมีล็อต" ≠ "ยอดเข้าทางล็อต" · บั๊ก GOR 19/10 · มีด่าน) */
+/* MAT ที่ "ยอดเข้าคลังทางปิดล็อตที่บอร์ดสโตร์ทางเดียว" (กฎโหมด 🔧) — คู่กับที่ trigger
+   `fn_post_confirmed_output` ข้ามตอนปิดใบผลิต
+   🔴 26/10 — **ไม่ใช่ตัวตัดสินว่าของอยู่คลังไหนอีกแล้ว** (ปลายทางอ่านจาก `dest_line_name` ของกฎ
+   ผ่าน `inflowDestOf()` เหมือนพาร์ทอื่นทุกตัว · ดูหัวไฟล์ `utils/partRefStock.js`) */
 export const lotMatsOf = (rules = []) => new Set((rules || [])
   .filter(r => r?.match_type === 'mat' && r?.is_active !== false && r?.mode === 'lot')
   .map(r => String(r.match_value ?? '').trim()).filter(Boolean));

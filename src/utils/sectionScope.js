@@ -1,4 +1,5 @@
 import { getLineFamilyNames } from './lineHierarchy.js';
+import { buildViewScope } from './viewScope.js';   // 👁️ ขยายขอบเขตผ่านผัง (แผนก/ไลน์ ไม่ใช่แค่ส่วนงาน)
 import { orgNodeCompare } from './listOrder.js';
 // ─── Multi-section scoping ──────────────────────────────────────────────────
 // ขอบเขตส่วนงานของ user: profiles.sections (text[]) = จำกัดหลายส่วนงานได้
@@ -72,6 +73,26 @@ export function scopeIneffective(p) {
   return !hasSections && !String(p.section || '').trim();
 }
 
+/**
+ * 🔴 **"หัวหน้าหน้างานที่ตั้งไว้ให้เห็นทั้งโรงงาน"** — ขอบเขตกว้างเกินหน้าที่ (24/10)
+ *
+ * เคสจริง: หัวหน้ากลุ่ม LWR BAR และ HYDROFORM ถูกตั้ง `scope_depth='all'`
+ * ⇒ `effectiveSections()` คืน `[]` = ไม่จำกัด ⇒ ทุกจอที่กรองด้วย `sections` โชว์ทั้งโรงงาน
+ * (user แจ้งจากหน้างาน: *"หัวหน้ากลุ่มแจ้งว่าเค้าเห็นทุกไลน์ผลิตเลย"*)
+ *
+ * `scopedLines()` บีบ leader กลับเป็นครอบครัวไลน์ให้แล้วเป็นตาข่าย — แต่ **การตั้งค่ายังผิดอยู่**
+ * ⇒ ต้องเอาขึ้นคิวทบทวนสิทธิ์ให้คนไปแก้ ห้ามปล่อยเงียบ (ISO 27001 A.5.18 · หลักเดียวกับ `scopeIneffective`)
+ *
+ * 🔴 role ที่ "เห็นทั้งโรงงานเป็นเรื่องปกติ" (qa/mtn/engineer/manager/display ฯลฯ) **ไม่เข้าข่าย**
+ *    — จำกัดเฉพาะ role ที่ผูกกับหน่วยหน้างานโดยธรรมชาติ
+ */
+export const FLOOR_SCOPED_ROLES = ['leader', 'supervisor'];
+export function scopeTooWide(p) {
+  if (!p || p.role === 'admin') return false;
+  if (!FLOOR_SCOPED_ROLES.includes(p.role)) return false;
+  return p.scope_depth === 'all';
+}
+
 /** เช็คว่าค่า section หนึ่งอยู่ในขอบเขตไหม — scope ว่าง = ผ่านเสมอ */
 /**
  * หน่วยงานช่าง — ดูแลเครื่องจักรทั้งโรงงาน จึงต้องเห็นสัญญาณ Andon/Downtime ทุกไลน์
@@ -91,7 +112,7 @@ export const MAINTENANCE_ROLES = ['mtn', 'engineer'];
  * ⚠️ ต้องเรียกหลัง production_lines โหลดเสร็จ — lines ว่าง = คืน null (ไม่จำกัด)
  *    ห้ามคืน [] เพราะ `.in('line_name', [])` = ไม่เห็นอะไรเลย
  */
-export function scopedLineNames({ role, lineId, sections = [], lines = [] }) {
+export function scopedLineNames({ role, lineId, sections = [], lines = [], scopeIdx = null }) {
   if (role === 'admin') return null;                       // ตาข่ายกันตาย (เหมือน effectiveSections)
   /* 🔭 25/09: **ถอด hardcode `MAINTENANCE_ROLES` ออกแล้ว** — ไม่ต้องรับ scopeDepth เพิ่ม เพราะ
      การตัดสินถูกยุบไว้ใน `sections` ที่ `effectiveSections()` คำนวณมาให้แล้ว (จุดเดียวของระบบ)
@@ -109,10 +130,75 @@ export function scopedLineNames({ role, lineId, sections = [], lines = [] }) {
     return fam.length ? fam : null;
   }
   if (sections.length) {
+    /* 🔁 22/10 — ขอบเขตอาจเป็น **แผนก/กลุ่ม/ไลน์** ไม่ใช่แค่ส่วนงาน (user: "jig มาฝากกับผลิต" ·
+       หัวหน้าที่ดูแล 2 ไลน์ในแผนกเดียว) ⇒ ถ้าหน้าไหนส่งดัชนีผัง (`scopeIdx`) มาด้วย ให้ขยายผ่านผัง
+       🔴 ไม่ส่ง `scopeIdx` = พฤติกรรมเดิมเป๊ะ (เทียบ `l.section` ตรงตัว) — ห้ามบีบแคบลงเงียบ */
+    if (scopeIdx) {
+      const vs = buildViewScope(sections, scopeIdx);
+      if (vs.byOrg) {
+        const names = lines.filter(l => vs.lineOk(l)).map(l => l.name);
+        return names.length ? names : null;
+      }
+    }
     const names = lines.filter(l => inSectionScope(sections, l.section)).map(l => l.name);
     return names.length ? names : null;
   }
   return null;
+}
+
+/**
+ * 🔭 **ไลน์ที่ผู้ใช้เห็นได้ — คืน "ตัวไลน์" ไม่ใช่ชื่อ** (22/10)
+ *
+ * pattern เดิมที่ก๊อปกระจายอยู่ ~10 หน้า: `lines.filter(l => inSectionScope(scopeSecs, l.section))`
+ * ⇒ ขอบเขตที่ไม่ใช่ "ส่วนงาน" (แผนก/กลุ่ม/ไลน์เดี่ยว) ตกหมด เพราะเทียบข้อความ `l.section` ตรงตัว
+ *
+ * 🔴 ส่ง `scopeIdx` (ดัชนีผังจาก `UserContext`) มาด้วย = ขยายผ่านผังองค์กร
+ *    **ไม่ส่ง = พฤติกรรมเดิมเป๊ะ** — ห้ามบีบแคบลงเงียบ (ชื่อที่ผังไม่รู้จักยังถอยไปเทียบข้อความ)
+ * ⚠️ `sections` ว่าง (ไม่จำกัด) หรือทะเบียนไลน์ยังโหลดไม่เสร็จ → คืน `lines` ทั้งก้อน
+ *    ห้ามคืน `[]` เพราะจะกลายเป็น "ไม่เห็นอะไรเลย" ระหว่างโหลด
+ * 🔴 ผู้เรียกที่เอาไปกรอง**ตาราง** ต้องเขียนบนจอว่าซ่อนไปกี่รายการ (ดู `filterRowsByLineScope`)
+ */
+export function scopedLines({ role, lineId, sections = [], lines = [], scopeIdx = null }) {
+  if (!lines?.length) return lines || [];
+  if (role === 'admin') return lines;                      // ตาข่ายกันตาย (เหมือน effectiveSections)
+  /* 🔴🔴 หัวหน้ากลุ่มที่ผูกไลน์ = เห็นเฉพาะ "ครอบครัวไลน์ตัวเอง" เสมอ — **แม้ `scope_depth='all'`**
+     (24/10 · เคสจริง: หัวหน้า LWR BAR + หัวหน้า HYDROFORM ถูกตั้ง `scope_depth='all'`
+      ⇒ `effectiveSections()` คืน `[]` = ไม่จำกัด ⇒ จอที่กรองด้วย `sections` อย่างเดียวโชว์ทั้งโรงงาน
+      user แจ้ง: *"หัวหน้ากลุ่มแจ้งว่าเค้าเห็นทุกไลน์ผลิตเลย"*)
+     ⇒ แกน "ไลน์" ต้องมาก่อนแกน "ส่วนงาน" เสมอ · ชั้นนี้คือตาข่ายกันการตั้งค่าผิด
+     ⚠️ หาไลน์ตัวเองไม่เจอทั้งที่ทะเบียนโหลดแล้ว = **fail-closed** (คืน `[]`)
+        — หลักเดียวกับ `staleSessions.keep()` ที่คืน `false` เมื่อ fam ว่าง
+        (ทะเบียนยังไม่โหลด ถูกดักด้วย `!lines.length` ข้างบนไปแล้ว) */
+  const secs = (sections || []).filter(Boolean);
+  if (role === 'leader' && lineId) {
+    const me = lines.find(l => String(l.id) === String(lineId));
+    const fam = me ? new Set(getLineFamilyNames(lines, me.name)) : null;
+    const own = fam?.size ? lines.filter(l => fam.has(l.name)) : [];
+    /* 🔴🔴 **ล็อกไว้ "ไลน์ตัวเองไลน์เดียว" ไม่ได้** (26/10 · เคสจริง ทั้งโรงงานเปิดกะไม่ได้เช้าวันจันทร์)
+       กติกา 25/10 บีบ leader เหลือครอบครัวไลน์ตัวเองเสมอ เพื่อกันเคส `scope_depth='all'`
+       ⇒ หัวหน้ากลุ่มที่ดูแลหลายไลน์ในส่วนงานเดียวกัน **เปิดกะไลน์อื่นไม่ได้เลย**
+         และถ้าไลน์ตัวเองเปิดกะไปแล้ว ช่องเลือกไลน์จะ**ว่างเปล่า** (หน้างานแจ้ง: "เลือกไลน์ไม่ได้",
+         "250 ตันไปโผล่ไลน์ D") · กระทบหัวหน้ากลุ่มทั้ง 20 คน ทุกส่วนงาน
+       ⇒ เห็น **ไลน์ตัวเอง ∪ ไลน์ในส่วนงานที่ถูกกำกับไว้**
+       🔴 เจตนาเดิมยังอยู่ครบ: บัญชีที่ `sections` ว่าง (= `scope_depth='all'` ที่ตั้งผิด)
+          **ยังถูกบีบเหลือครอบครัวไลน์ตัวเองเหมือนเดิม** ไม่หลุดไปเห็นทั้งโรงงาน
+       ⚠️ หาไลน์ตัวเองไม่เจอทั้งที่ทะเบียนโหลดแล้ว + ไม่มีส่วนงานกำกับ = fail-closed คืน [] (เท่าเดิม) */
+    if (!secs.length) return own;
+    const bySec = scopedBySections(secs, lines, scopeIdx);
+    const seen = new Set(own.map(l => l.name));
+    return own.concat(bySec.filter(l => !seen.has(l.name)));
+  }
+  if (!secs.length) return lines;
+  return scopedBySections(secs, lines, scopeIdx);
+}
+
+/** กรองไลน์ด้วย "ส่วนงาน" ล้วน — ผังองค์กรก่อน ถ้าผังไม่ครอบค่อยถอยไปเทียบชื่อ section */
+function scopedBySections(secs, lines, scopeIdx) {
+  if (scopeIdx) {
+    const vs = buildViewScope(secs, scopeIdx);
+    if (vs.byOrg) return lines.filter(l => vs.lineOk(l));
+  }
+  return lines.filter(l => inSectionScope(secs, l.section));
 }
 
 export function inSectionScope(scopeSections, value) {

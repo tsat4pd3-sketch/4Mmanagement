@@ -359,6 +359,11 @@ button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
      = อาการ "หน้าเลื่อนไปมา/ต้องถ่างนิ้วกลับ" ที่หน้างานบ่น · วัดจริง: ทุกหน้าตรวจ (BBS 61 ช่อง ·
      เช็คชื่อ 224 ช่อง) เป็น 15px หมด · ใส่ที่ธีมทีเดียว ห้ามไล่แก้รายหน้า */
   input, select, textarea { font-size: 16px; }
+  /* 📱 2026-10-22 (audit handheld RS38) — กฎข้างบนแพ้ `style={{ fontSize: 13 }}` ที่เขียนในหน้า (inline ชนะ class)
+     วัดจริง: ช่องค้นหาพาร์ท 13 · ช่องสแกน 14 · ช่องยอด Daily Report 13 ⇒ ตัวเล็ก+เป้าเล็กบนเครื่อง 360px
+     ⇒ บนจอ ≤768 บังคับทับด้วย !important (จอคอมไม่โดน — อยู่ใน media นี้) · checkbox/radio/ปุ่มไม่เกี่ยว */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):not([type="button"]):not([type="submit"]),
+  select, textarea { font-size: 16px !important; }
 }
 
 .page-content {
@@ -612,7 +617,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
    → อุปกรณ์จอทัช (pointer:coarse) ขยาย hit area เป็น ≥40px กดง่ายด้วยนิ้ว
    desktop เมาส์ไม่เปลี่ยน · หน้าใหม่ที่มีปุ่มไอคอนเล็กให้ติด class นี้เสมอ */
 @media (pointer: coarse) {
-  .tbtn { min-width: 40px; min-height: 40px; }
+  .tbtn { min-width: 44px; min-height: 44px; }   /* 44 = Apple HIG / MOBILE-UX-STANDARD §2.6 (เดิม 40 · 22/10) */
 
   /* ── ขยาย "พื้นที่กด" ของปุ่มเล็กทุกตัวให้ถึง 40px โดยไม่ขยับ layout (2026-08-04) ──
      วัดจริงแล้วมีปุ่มเล็กกว่า 32px อยู่ 265 ปุ่ม ใน 30 หน้า — พนักงานใส่ถุงมือกดพลาด
@@ -627,7 +632,9 @@ button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
   button:not(:has(*))::before {
     content: ''; position: absolute; left: 50%; top: 50%;
     transform: translate(-50%, -50%);
-    width: 100%; height: 100%; min-width: 40px; min-height: 40px;
+    width: 100%; height: 100%; min-width: 44px; min-height: 44px;
+    /* 44 ไม่ใช่ 48 (22/10): พื้นที่กดล่องหนนี้ล้นออกนอกตัวปุ่ม — ปุ่มเล็กที่วางชิดกัน (✎ ✕ ห่าง 4px)
+       ยิ่งขยายยิ่งทับกัน แตะขอบปุ่มหนึ่งไปโดนอีกปุ่ม · ปุ่มที่ต้องกดด้วยถุงมือจริงให้ขยาย "ตัวปุ่ม" เป็น 48 ในหน้า */
   }
   /* ☑️ checkbox/radio ของเบราว์เซอร์ = 13×13px — handheld 360px วัดเจอ 7 หน้า (RackCenter · ตรวจนับ LineStock ·
      Monitoring · PmForecast · ProductionPlan · EquipmentHub · FixtureRegistry) ใส่ถุงมือกดไม่โดน (15/10)
@@ -934,6 +941,11 @@ body.has-mnav { --mnav-h: calc(56px + env(safe-area-inset-bottom, 0px)); padding
 
 /* ─── 🔎 พับแถบกรองบนมือถือ (MobileFilterFold · 2026-10-15) — class เหล่านี้ถูก render เฉพาะมือถือ ─── */
 .mfold-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; flex: 1 1 100%; min-width: 0; }
+/* 🔴 22/10 — คลาสเดียวกับ .trb-row ข้างบน: ใน `.filter-bar.trb` (column + stretch) เส้น = max-content ของลูก
+   ⇒ ช่องค้นหา+ปุ่มที่ basis กว้าง (/order-trace `flex 1 1 360px`) ดันหัวพับให้กว้าง 391 ในกรอบ 320 → ปุ่ม 📷 ตกขอบขวา
+   max-width บังคับให้เส้นจบที่กรอบ แล้วลูกถึงหดได้ (วัดจริง handheld 360) */
+.mfold-head { max-width: 100%; }
+.mfold-head > div { min-width: 0; }
 .mfold-head > .search-input, .mfold-head > .seg { flex: 1 1 100%; min-width: 0; }
 .mfold-head > .search-input input { width: 100%; }
 .mfold-toggle {
@@ -966,6 +978,17 @@ body.has-mnav { --mnav-h: calc(56px + env(safe-area-inset-bottom, 0px)); padding
 .ck-lbl { font-size: 11px; font-weight: 700; color: var(--muted); margin-bottom: 3px; }
 .ck-more select, .ck-more input[type=text], .ck-more input[type=number] { min-height: 40px; font-size: 16px !important; max-width: 100% !important; width: 100%; }
 .ck-book > div { align-items: stretch !important; }
+
+/* ─── 📱 แถวปุ่มท้ายโมดัลเกาะล่างจอ (Daily Report · 2026-10-22 · audit handheld) ─────────────────
+   โมดัลแบบ `.overlay` เลื่อนที่ตัวฉาก ⇒ แถวปุ่มที่เป็นลูกตรงของกล่องโมดัลเกาะขอบล่างได้ด้วย sticky
+   (เดิมปุ่มบันทึกอยู่ท้ายฟอร์มยาว ต้องเลื่อนหา · คีย์บอร์ดเด้งยิ่งไกล) · `background: inherit` = สีกล่องโมดัลเอง
+   หน้าใส่ className เฉพาะ isMobile ⇒ จอคอมไม่มี class นี้เลย */
+.m-modalfoot {
+  position: sticky; bottom: -12px; z-index: 5;
+  background: inherit; border-top: 1px solid var(--border);
+  padding: 10px 0 12px; margin-bottom: -12px;
+}
+.m-modalfoot > button { min-height: 46px; flex: 1 1 auto; font-size: 15px !important; }
 
 /* ─── 📱 แถบปุ่มบันทึกเกาะล่างจอ (มือถือ · ใช้ซ้ำได้ทุกหน้าที่เป็นฟอร์มยาว) ─────────────────── */
 .m-savebar {

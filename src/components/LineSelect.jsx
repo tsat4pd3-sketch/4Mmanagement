@@ -29,12 +29,12 @@
    ══════════════════════════════════════════════════════════════════════════ */
 import { useMemo } from 'react';
 import { toHierarchicalOptions, getLineFamilyNames } from '../utils/lineHierarchy';
-import { inSectionScope } from '../utils/sectionScope';
+import { inSectionScope, scopedLines } from '../utils/sectionScope';
 import { isSupportUnit } from '../utils/unitKind';
 
 /** กรองไลน์ตาม scope มาตรฐาน — leader = ครอบครัวไลน์ตัวเอง · อื่น = ตาม sections
  *  คืน array เดิมเมื่อไม่ถูกจำกัด (admin / ไม่มี scope) */
-export function scopeLines(lines, { role, lineId, sections } = {}) {
+export function scopeLines(lines, { role, lineId, sections, scopeIdx = null } = {}) {
   if (!lines?.length) return [];
   if (role === 'leader' && lineId) {
     const fam = new Set(getLineFamilyNames(lines, Number(lineId)));
@@ -43,7 +43,7 @@ export function scopeLines(lines, { role, lineId, sections } = {}) {
     return lines;
   }
   if (sections?.length) {
-    const inScope = lines.filter(l => inSectionScope(sections, l.section));
+    const inScope = scopedLines({ role, lineId, sections, lines, scopeIdx });
     /* 🔴 ส่วนงานที่ "ไม่มีไลน์ผลิตสังกัดอยู่เลย" ต้องไม่ถูกล็อกจนเลือกอะไรไม่ได้ (2026-08-24)
        เคสจริง: แอดมินหน่วยงานฝั่งคลัง (section `Planning&Store`) เปิดฟอร์มเพิ่มรอบจัดส่ง
        แล้ว dropdown ไลน์ **ว่างเปล่า** — เพราะ production_lines ไม่มีแถวไหน section = Planning&Store

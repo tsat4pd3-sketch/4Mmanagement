@@ -6,7 +6,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { invalidateTable } from '../utils/masterInvalidate';
 import { can, canDelete } from '../utils/permissions';
-import { inSectionScope } from '../utils/sectionScope';
+import { inSectionScope, scopedLines } from '../utils/sectionScope';
 import { LINE_TYPES, FLOW_MODES } from '../utils/lineTypes';
 import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory';
 import { markerScale, pillEdgeAlign, pillEdgeStyle } from '../utils/markerScale';
@@ -62,7 +62,7 @@ const POINT_H = 46;
 export default function LineSetup({ embedded = false } = {}) {
   // embedded=true เมื่อฝังในแท็บ "ผลิต" ของ /layout-setup — ปรับ height/padding ให้พอดีในกรอบแท็บ (ไม่ใช้ 100vh)
   // สิทธิ์แก้ไข — role ที่ไม่มี line_setup:edit เห็นหน้าแบบอ่านอย่างเดียว (ดูผัง/รายการได้ แก้ไม่ได้)
-  const { role, sections: scopeSecs = [], fullName } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs = [], fullName, scopeIdx } = useContext(UserContext);
   const canEdit = can('line_setup', 'edit', role);
   const canDel  = canDelete('line_setup', 'edit', role);  // สิทธิ์ลบไลน์/จุดงาน แยกจากแก้ไข (fallback = edit ถ้ายังไม่ seed)
   const [lines, setLines] = useState([]);
@@ -257,7 +257,7 @@ export default function LineSetup({ embedded = false } = {}) {
     }
     // mandatory scope filter — role ที่ถูกจำกัดขอบเขตส่วนงาน (supervisor/manager ที่ตั้ง sections)
     // เห็น/แก้ได้เฉพาะไลน์ในส่วนงานตัวเอง — หน้านี้เป็นหน้า edit master data ห้ามเห็นข้ามส่วนงาน
-    const visible = scopeSecs.length ? (data || []).filter(l => inSectionScope(scopeSecs, l.section)) : (data || []);
+    const visible = scopeSecs.length ? scopedLines({ role, lineId: userLineId, sections: scopeSecs, lines: data || [], scopeIdx }) : (data || []);
     setLines(visible);
     if (visible.length > 0 && !selectedLine) setSelectedLine(visible[0].name);
   };

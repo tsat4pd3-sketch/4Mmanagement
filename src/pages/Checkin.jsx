@@ -17,6 +17,7 @@ import ToggleDot from '../components/ToggleDot';
 import { loadCompanyCalendar, getDayType, isOtHolidayType } from '../utils/companyCalendar';
 import { holidayPeriodsForShift, defaultHolidayPeriod, otPeriodLabel, WEEKDAY_OT_TIME } from '../utils/otPeriods';
 import { getLineFamilyIds } from '../utils/lineHierarchy';
+import { buildViewScope, empScopeOrFilter, scopeLineIds } from '../utils/viewScope';   // 👁️ ขอบเขตที่เห็นได้ ผ่านผัง (22/10)
 import LineSelect from '../components/LineSelect';
 import LineScopeSelect from '../components/LineScopeSelect';
 import { loadLinesRes } from '../utils/useProductionLines';
@@ -31,6 +32,8 @@ import Page from '../components/Page';
 import FilterBar from '../components/FilterBar';
 import SearchInput from '../components/SearchInput';
 import { ALL } from '../utils/filterLabels';
+import { useDraftAutosave, loadDraft, clearDraft } from '../utils/formDraft';   // 📝 ร่างในเครื่อง (มือถือ · 22/10)
+import DraftRestoreBar from '../components/DraftRestoreBar';
 
 // fallback เมื่อ master ยังว่าง/ยังไม่ apply migration 20260819 — ตัวจริงอยู่ตาราง leave_types
 // (จัดการที่ /report แผงจองรถ OT · เลิก hardcode ตาม QC audit 2026-08-19)
@@ -98,7 +101,11 @@ const STATUS_META = {
 };
 
 export default function Checkin() {
-  const { role, lineId, team, sections: scopeSecs = [], fullName } = useContext(UserContext);
+  const { role, lineId, team, sections: scopeSecs = [], fullName, scopeIdx } = useContext(UserContext);
+  /* 👁️ ขอบเขต "ที่เห็นได้" ตัดสินผ่านผัง — รองรับขอบเขตที่เป็น **แผนก/ไลน์** ไม่ใช่แค่ส่วนงาน
+     (22/10 · เคสหัวหน้าที่ดูแล 2 ไลน์ในแผนกเดียว: เดิมต้องตั้ง "ทั้ง PD1" แล้วได้ไลน์อื่นมาด้วย)
+     🔴 ชื่อที่ผังไม่รู้จัก = พฤติกรรมเดิม (เทียบข้อความ) — ดู utils/viewScope.js กฎข้อ 1 */
+  const viewScope = useMemo(() => buildViewScope(scopeSecs, scopeIdx), [scopeSecs, scopeIdx]);
   const canRecord = can('checkin', 'record', role);
   const orgTeams = useOrgTeams(); // 2026-09-07 ทีม A/B/C จาก org_nodes (fallback A/B/C)
 
@@ -188,6 +195,33 @@ export default function Checkin() {
     ? { ...realShiftInfo, shift: 'night', label: '🌙 กะดึก (Preview)' }
     : realShiftInfo;
 
+  /* 📝 ร่างในเครื่อง (มือถือ · 22/10 · audit handheld ข้อ 4) — เช็คชื่อ 20+ คนแล้วบันทึกทีเดียวตอนท้าย
+     ⇒ เน็ตหลุด/รีโหลด/เตะออกหมดกะ = ต้องไล่ติ๊กใหม่ทั้งหมด · เก็บเฉพาะ "คนที่แก้ต่างจากตอนโหลด" (ส่วนเช็คชื่อ+PPE+ลา)
+     ต่อ วันงาน|กะ|คนเช็ค · การจองรถ OT ไม่อยู่ในร่าง (มีจอ/บันทึกของมันเอง) · utils/formDraft.js */
+  const ckDraftKey = isMobile && shiftInfo?.workDateStr ? `checkin:${shiftInfo.workDateStr}:${shiftInfo.shift}:${fullName || ''}` : null;
+  const ckChanges = useMemo(() => {
+    const out = {};
+    for (const [id, rec] of Object.entries(attendance)) {
+      const b = baseline.att?.[id];
+      if (b && JSON.stringify(rec) !== JSON.stringify(b)) out[id] = rec;
+    }
+    return out;
+  }, [attendance, baseline]);
+  const [ckPending, setCkPending] = useState(null);
+  useDraftAutosave(ckDraftKey, ckChanges, !!ckDraftKey && !ckPending && Object.keys(ckChanges).length > 0);
+  // โหลดรายชื่อเสร็จ (baseline ใหม่) → มีร่างของชุดนี้ที่ต่างจากฐานไหม · เทียบเฉพาะคนที่ยังอยู่ในรายชื่อ
+  useEffect(() => {
+    if (!ckDraftKey) { setCkPending(null); return; }
+    const d = loadDraft(ckDraftKey);
+    const usable = d && Object.entries(d.data || {}).some(([id, rec]) => baseline.att?.[id] && JSON.stringify(rec) !== JSON.stringify(baseline.att[id]));
+    setCkPending(usable ? d : null);
+  }, [ckDraftKey, baseline]);
+  const restoreCkDraft = () => {
+    const d = ckPending?.data || {};
+    setAttendance(prev => { const n = { ...prev }; for (const [id, rec] of Object.entries(d)) if (n[id]) n[id] = { ...n[id], ...rec }; return n; });
+    setCkPending(null);
+  };
+
   // โหลด master ประเภทลา (ตารางว่าง/ยังไม่ apply = ใช้ค่า default เดิม)
   useEffect(() => {
     supabase.from('leave_types').select('name, is_active').order('sort_order').then(({ data, error }) => {
@@ -265,9 +299,12 @@ export default function Checkin() {
     if (famIdsQ) {
       empQ = famIdsQ.size ? empQ.in('line_id', [...famIdsQ]) : empQ.eq('line_id', lineId);
     } else if (scopeSecs.length) {
-      // ทุก role ที่ถูกจำกัดขอบเขตส่วนงาน (supervisor เดิม + manager/qa ที่กำหนด sections)
-      // · รวม leader ที่ยังไม่ผูกไลน์ (เช่นรักษาการหลายหน่วย) — ถอยมาใช้แกนนี้แทน
-      empQ = empQ.in('section', scopeSecs);
+      /* ทุก role ที่ถูกจำกัดขอบเขต (supervisor เดิม + manager/qa ที่กำหนด sections)
+         · รวม leader ที่ยังไม่ผูกไลน์ (เช่นรักษาการหลายหน่วย) — ถอยมาใช้แกนนี้แทน
+         🔁 22/10: เดิม `.in('section', …)` เทียบข้อความอย่างเดียว ⇒ ขอบเขตที่เป็น **แผนก/ไลน์**
+            คืน 0 แถว · ตอนนี้ขยายผ่านผังเป็น ส่วนงาน/แผนก/ไลน์ แล้วกรองด้วย `.or()` ชุดเดียว */
+      const orF = empScopeOrFilter(viewScope, scopeLineIds(viewScope, lineData || []));
+      if (orF) empQ = empQ.or(orF);
     }
     if (role === 'leader') {
       // ⚠️ ทีมที่ไม่หมุนกะ (C) = หัวหน้าที่ไม่ได้ยืนหน้างาน → เห็นคนทั้งไลน์ทุกทีม
@@ -716,6 +753,7 @@ export default function Checkin() {
 
     // เช็คชื่อเสร็จแล้วไม่มีอะไรเด้งต่อ (ถอดออโต้เปิดกะออก 16/09) — บอกทางไปต่อให้ชัด ไม่ปล่อยเงียบ
     toast.success('บันทึกเช็คชื่อสำเร็จ! · ไลน์ที่ต้องลงข้อมูลผลิต ไปกด “เปิดกะ” ที่หน้า Daily Report');
+    if (ckDraftKey) clearDraft(ckDraftKey);
 
     /* ── สรุปเช็คชื่อเข้า Telegram ──
        ⚠️ ไม่มีการชวน "เปิดกะ Daily Report" ตรงนี้แล้ว (2026-09-16 · คำสั่ง user "ให้เค้าเปิดกันเองดีกว่า")
@@ -928,7 +966,8 @@ export default function Checkin() {
       if (famIdsX) {   // ทั้งครอบครัวไลน์ (ตัวเอง + แม่ + ลูก) — ห้ามกรอง line_id ตรงตัว
         empQ = famIdsX.size ? empQ.in('line_id', [...famIdsX]) : empQ.eq('line_id', lineId);
       } else if (scopeSecs.length) {
-        empQ = empQ.in('section', scopeSecs);
+        const orX = empScopeOrFilter(viewScope, scopeLineIds(viewScope, lines || []));
+        if (orX) empQ = empQ.or(orX);
       }
       if (role === 'leader') {
         // ⚠️ ทีมที่ไม่หมุนกะ (C) = หัวหน้าที่ไม่ได้ยืนหน้างาน → เห็นคนทั้งไลน์ทุกทีม
@@ -1831,6 +1870,8 @@ export default function Checkin() {
         {role === 'leader' && <span style={{ fontSize: 12, color: 'var(--muted)', padding: '3px 0' }}>รวม {displayed.length} คน</span>}
       </div>
 
+      <DraftRestoreBar draft={ckPending} what="การเช็คชื่อกะนี้" onRestore={restoreCkDraft}
+        onDiscard={() => { if (ckDraftKey) clearDraft(ckDraftKey); setCkPending(null); }} />
       {shiftChanged && (
         <div style={{
           padding: '10px 14px', borderRadius: 8, marginBottom: 14,

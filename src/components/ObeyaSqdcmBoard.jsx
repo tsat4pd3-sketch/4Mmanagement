@@ -297,8 +297,10 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
       } else setPartCost({});
     } finally { if (live()) setLoading(false); }
   }, [from, to, begin]);
+  /* 🔴 `LIVE.YEAR` ไม่ใช่ `LIVE.BOARD` — สรุปทั้งปีไม่ต้องสดระดับนาที (22/10 · ดู refreshRates)
+     ที่ 60 วิ: ทุกครั้งที่ไลน์ไหนก็ได้แตะ production_sessions = คิดสรุปทั้งปีใหม่ (ครั้งละ ~1.2 วินาที) */
   useLiveBoard(loadYear, {
-    tables: ['production_sessions'], topic: 'obeya-year', tier: LIVE.BOARD, rate: RATE.ANALYTIC,
+    tables: ['production_sessions'], topic: 'obeya-year', tier: LIVE.YEAR, rate: RATE.ANALYTIC,
     enabled: isYear,
   });
 
@@ -322,7 +324,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
   /* scope ไลน์ของ user ผ่าน helper กลางตัวเดียวกับบอร์ด KPI (05/10 · audit) — leader = ครอบครัวไลน์ตัวเอง
      ไม่ใช่แค่ส่วนงาน · null = ไม่จำกัด (ห้ามคืน [] — lines ยังไม่โหลด = เห็นทั้งหมดชั่วคราว ไม่ใช่ว่างเปล่า) */
   const userLineSet = useMemo(() => {
-    const names = scopedLineNames({ role, lineId, sections, lines });
+    const names = scopedLineNames({ role, lineId, sections, lines, scopeIdx });
     return names ? new Set(names) : null;
   }, [role, lineId, sections, lines]);
   const lineOk = useCallback((name) => {

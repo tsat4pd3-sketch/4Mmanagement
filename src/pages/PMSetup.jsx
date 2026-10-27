@@ -1091,6 +1091,14 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
                     .filter(e => !q || [e.machine_no, e.jig_no, e.name, e.line_name].some(v => String(v || '').toLowerCase().includes(q)))
                   const sameKind = cands.filter(e => kindOfEquip(e) === curKind)
                   const shown = q ? cands : sameKind     // ไม่ค้น = โชว์เฉพาะชนิดเดียวกัน (ที่เหลือค้นเอา)
+                  /* 🔎 เครื่องที่ "มีในทะเบียนเครื่องจักร แต่ยังไม่ได้เพิ่มเป็นอุปกรณ์ PM" (26/10 · ทีม PPM แจ้ง)
+                     ลิสต์นี้ดึงจาก `jigs` (ทะเบียนอุปกรณ์ PM · 245) ไม่ใช่ `machines` (ทะเบียนเครื่อง · 325)
+                     ⇒ ค้นเลขเครื่องที่ยังไม่ได้เพิ่มเข้า PM แล้วเจอ "ไม่พบเครื่องที่ค้น" = จอโกหก
+                        (คนอ่านว่า "ไม่มีเครื่องนี้ในระบบ" แล้วเดินไปแจ้งว่าระบบพัง — เคสจริง 26/10 14:55)
+                     🔴 เทียบด้วย `machine_id` ไม่ใช่เลขเครื่อง — ไม่ยิงคิวรีเพิ่ม (machineOptions โหลดมาแล้ว) */
+                  const pmMachineIds = new Set(allEquip.map(e => e.machine_id).filter(Boolean))
+                  const notPmYet = !q ? [] : machineOptions.filter(m => !pmMachineIds.has(m.id)
+                    && [m.machine_no, m.machine_name, m.line_name].some(v => String(v || '').toLowerCase().includes(q)))
                   return (
                     <div style={{ marginTop: 9, paddingTop: 9, borderTop: '1px dashed var(--border2)' }}>
                       <div style={{ fontSize: 11.5, color: 'var(--text2)', marginBottom: 6 }}>
@@ -1122,6 +1130,9 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
                         {!q && cands.length > shown.length
                           ? <> · ซ่อนเครื่องชนิดอื่น {cands.length - shown.length} ตัว — <b>พิมพ์ค้นเพื่อดูทุกชนิด</b></>
                           : q ? ' · กรองด้วยคำค้น (ทุกชนิด)' : ' · ครบทุกเครื่องแล้ว'}
+                        {/* 🔴 "ค้นไม่เจอ" กับ "ยังไม่ได้เพิ่มเข้า PM" คนละเรื่อง — ต้องแยกให้เห็น */}
+                        {!!notPmYet.length && <> · <b style={{ color: 'var(--accent2)' }}>อีก {notPmYet.length} เครื่องที่ค้นเจอในทะเบียนเครื่องจักร
+                          ยังไม่ได้เพิ่มเป็นอุปกรณ์ PM</b> จึงยังคัดลอกไปไม่ได้</>}
                       </div>
                       <div style={{ maxHeight: 148, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 7, padding: 6,
                         display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(168px, 1fr))', gap: 3, alignContent: 'start' }}>
@@ -1140,8 +1151,13 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
                             </label>
                           )
                         })}
-                        {!shown.length && <span style={{ fontSize: 11.5, color: 'var(--muted)', padding: 4 }}>
-                          {q ? 'ไม่พบเครื่องที่ค้น' : 'ไม่มีเครื่องชนิดเดียวกันตัวอื่น — พิมพ์ค้นเพื่อดูเครื่องชนิดอื่น'}</span>}
+                        {!shown.length && <span style={{ fontSize: 11.5, color: 'var(--muted)', padding: 4, lineHeight: 1.7 }}>
+                          {!q ? 'ไม่มีเครื่องชนิดเดียวกันตัวอื่น — พิมพ์ค้นเพื่อดูเครื่องชนิดอื่น'
+                            : notPmYet.length ? <>ไม่พบใน<b>ทะเบียนอุปกรณ์ PM</b> — แต่เจอ <b style={{ color: 'var(--accent2)' }}>{notPmYet.length} เครื่อง</b> ใน
+                                ทะเบียนเครื่องจักร ({notPmYet.slice(0, 4).map(m => m.machine_no || m.machine_name).join(' · ')}{notPmYet.length > 4 ? ' …' : ''})
+                                <br />⇒ เครื่องพวกนี้<b>ยังไม่ได้ถูกเพิ่มเป็นอุปกรณ์ PM</b> จึงยังไม่มีให้ติ๊ก —
+                                ปิดหน้าต่างนี้แล้วกด <b>“+ เพิ่มอุปกรณ์”</b> ให้เครื่องนั้นก่อน แล้วค่อยกลับมาคัดลอก</>
+                            : <>ไม่พบ “{copyQ.trim()}” ทั้งใน<b>ทะเบียนอุปกรณ์ PM</b>และ<b>ทะเบียนเครื่องจักร</b> — ตรวจว่าพิมพ์เลขเครื่องถูกไหม</>}</span>}
                       </div>
                       <p style={{ fontSize: 11, color: 'var(--muted)', margin: '5px 0 0', lineHeight: 1.6 }}>
                         เครื่องที่<b>มีจุดตรวจอยู่แล้วจะถูกข้าม ไม่ทับของเดิม</b> (ทับ = ประวัติผลตรวจของเครื่องนั้นหายถาวร)

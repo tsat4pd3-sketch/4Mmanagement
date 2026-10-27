@@ -10,7 +10,7 @@ import { can, canDelete as canDeleteUtil } from '../utils/permissions';
 import { toast } from '../components/Toast';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
-import LineSelect from '../components/LineSelect';
+import LineSelect, { scopeLines as pickerLines } from '../components/LineSelect';
 import PersonSelect from '../components/PersonSelect';
 import useColumnHistory from '../utils/useColumnHistory';
 import SelectOrFree from '../components/SelectOrFree';
@@ -33,6 +33,8 @@ import { loadLpaQuestionRefs, lpaQuestionBlockMessage, lpaDeleteConfirmText, sav
 /* 🔴 ช่องว่างในตารางตรวจรายวันต้องแยกได้ว่า "ไม่ได้ตรวจ / ไม่ได้ผลิต / ไม่มีแผนตรวจ" (13/10 · คำสั่ง user) */
 import { checkDayState, CHECK_DAY_META, CHECK_DAY_LEGEND, summarizeCheckDays, checkDaysNote } from '../utils/dailyCheckDay';
 import { loadRunDays, ranOn } from '../utils/runDays';
+import { useDraftAutosave, loadDraft, clearDraft } from '../utils/formDraft';   // 📝 ร่างในเครื่อง (มือถือ · 22/10)
+import DraftRestoreBar from '../components/DraftRestoreBar';
 
 /* ══════════════════════════════════════════════════════════════
    📋 Layer Process Audit (LPA) — paperless แทนฟอร์มกระดาษ 2 ใบ:
@@ -120,6 +122,12 @@ function SignPadModal({ title, onCancel, onDone }) {
   );
 }
 
+/** ภาพรวมคำตอบ+สถานีของใบ LPA เป็นสตริง — เทียบว่า "แก้แล้วยังไม่บันทึก" ไหม (ร่างในเครื่อง) */
+const lpaSnap = (answers, station) => JSON.stringify([
+  Object.entries(answers || {}).filter(([, v]) => v?.answer || v?.note).map(([k, v]) => [k, v.answer || '', v.note || '']).sort(),
+  station || '',
+]);
+
 export default function LayerProcessAudit() {
   const { role, lineId: userLineId, sections: scopeSecs = [], fullName,
           section: homeSection, allUnits, respCostCenters, scopeIdx } = useContext(UserContext);
@@ -197,6 +205,11 @@ export default function LayerProcessAudit() {
   const [draft, setDraft] = useState(null);          // { id?, station, auditor_name, auditor_sig_url, answers: {qid:{answer,note}} }
   /* 🔴 อ่านใบเดิมไม่สำเร็จ = **ห้ามเดาว่า "ยังไม่มีใบ"** (ดูในเอฟเฟกต์โหลดใบ) — เก็บเหตุผลไว้เขียนบนจอ */
   const [draftErr, setDraftErr] = useState('');
+  /* 📝 ร่างในเครื่อง (มือถือ · 22/10 · audit handheld ข้อ 4) — ใบตรวจบันทึกทีเดียวตอนท้าย ⇒ เน็ตหลุด/รีโหลด/
+     เตะออกหมดกะ/สลับไลน์-กะ-วัน-ชั้น = คำตอบที่ติ๊กไว้หายทั้งใบ · เก็บร่างต่อชุด line|shift|date|layer|คนกรอก
+     แล้วถามกู้คืนตอนเปิดชุดเดิม (utils/formDraft.js) · `loadedSnapRef` = คำตอบที่โหลดจากฐาน (ไว้ดูว่า "แก้แล้วยังไม่บันทึก" ไหม) */
+  const loadedSnapRef = useRef('');
+  const [pendingDraft, setPendingDraft] = useState(null);
   const [auditPlanStations, setAuditPlanStations] = useState([]); // สถานีในแผนเดือนที่ตรวจ — ตัวเลือกช่อง "Station ที่ตรวจ"
   const [wsNames, setWsNames] = useState([]);        // จุดงาน (workstations) ของครอบครัวไลน์ที่เลือก — ตัวเลือกสถานี (2026-09-07)
   const [savingAudit, setSavingAudit] = useState(false);
@@ -237,14 +250,12 @@ export default function LayerProcessAudit() {
   const [docReady, setDocReady] = useState(false); // ทะเบียนเอกสารโหลดแล้ว → subtitle/ปุ่มดึงเลขฟอร์มจาก registry
 
   /* ── scope มาตรฐาน: leader → family ไลน์ตัวเอง · role อื่นตาม sections ── */
+  /* 🔴 ลิสต์ของ picker ต้อง "ไม่ตาย" — ส่วนงานที่ไม่มีไลน์ผลิตสังกัด (QA · Planning&Store · ฝั่งช่าง)
+     กรองแล้วเหลือ 0 ⇒ dropdown ว่าง = ใช้ฟีเจอร์ไม่ได้ทั้งหน้า (เคสจริง 26/10 · ด่าน line-picker-never-dead)
+     ⇒ ผ่าน `scopeLines()` ของกลาง (components/LineSelect.jsx) ที่มีตาข่าย "กรองแล้วไม่เหลือ = ไม่กรอง"
+     ⚠️ **ตัวกรองรายการยัง fail-closed เหมือนเดิม** — คนละแกน ห้ามยุบรวม */
   const visibleLines = useMemo(() => {
-    let arr = lines;
-    if (role === 'leader' && userLineId) {
-      const fam = getLineFamilyNames(lines, Number(userLineId) || userLineId);
-      arr = lines.filter(l => fam.includes(l.name));
-    } else if (scopeSecs.length) {
-      arr = lines.filter(l => inSectionScope(scopeSecs, l.section));
-    }
+    const arr = pickerLines(lines, { role, lineId: userLineId, sections: scopeSecs });
     return [...arr].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
   }, [lines, role, userLineId, scopeSecs]);
 
@@ -632,9 +643,13 @@ export default function LayerProcessAudit() {
            ให้ดูอีกแล้ว ถ้าไม่พกข้อความมา ใบเก่าจะหายไปเงียบๆ (ดู savedOnlyAnswers) */
         (existing.lpa_audit_answers || []).forEach(a => { if (a.question_id) ans[a.question_id] = { answer: a.answer, note: a.note || '', text: a.question_text || '' }; });
         setDraft({ key, id: existing.id, station: existing.station || planStation, auditor_name: existing.auditor_name || fullName || '', auditor_sig_url: existing.auditor_sig_url || null, answers: ans });
+        loadedSnapRef.current = lpaSnap(ans, existing.station || planStation);
       } else {
         setDraft({ key, id: null, station: planStation, auditor_name: fullName || '', auditor_sig_url: myProfile?.signature_url || null, answers: {} });
+        loadedSnapRef.current = lpaSnap({}, planStation);
       }
+      const saved = isMobile ? loadDraft(`lpa:${key}:${fullName || ''}`) : null;
+      setPendingDraft(saved && lpaSnap(saved.data?.answers, saved.data?.station) !== loadedSnapRef.current ? saved : null);
     })();
   }, [selLine, selShift, auditDate, auditLayer, tab, myProfile, fullName]);   // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -646,6 +661,15 @@ export default function LayerProcessAudit() {
     return isStale(draft.key, draftKey)
       ? staleBlockText({ what: 'ใบที่แสดงอยู่', unitWord: 'ไลน์/กะ/วันที่/ชั้น' })
       : null;
+  };
+
+  const lpaDraftKey = isMobile && draft && draft.key === draftKey ? `lpa:${draft.key}:${fullName || ''}` : null;
+  const lpaDirty = !!lpaDraftKey && !pendingDraft && lpaSnap(draft.answers, draft.station) !== loadedSnapRef.current;
+  useDraftAutosave(lpaDraftKey, { answers: draft?.answers || {}, station: draft?.station || '' }, lpaDirty);
+  const restoreLpaDraft = () => {
+    const d = pendingDraft?.data; if (!d) return;
+    setDraft(prev => (prev ? { ...prev, answers: { ...prev.answers, ...(d.answers || {}) }, station: d.station || prev.station } : prev));
+    setPendingDraft(null);
   };
 
   const setAnswer = (qid, answer) => setDraft(prev => ({ ...prev, answers: { ...prev.answers, [qid]: { ...(prev.answers[qid] || {}), answer } } }));
@@ -731,6 +755,8 @@ export default function LayerProcessAudit() {
       });
       toast.success(`บันทึกผลตรวจ LPA ${thDate(auditDate)} เรียบร้อย`);
       setDraft(prev => ({ ...prev, id: saved.id }));
+      loadedSnapRef.current = lpaSnap(draft.answers, draft.station);   // บันทึกแล้ว = ไม่มีของค้าง ⇒ ร่างถูกล้างเอง
+      if (lpaDraftKey) clearDraft(lpaDraftKey);
       loadMonth();
     } catch (e) { toast.error('บันทึกไม่สำเร็จ: ' + e.message); }
     finally { setSavingAudit(false); }
@@ -1182,6 +1208,8 @@ ${issuesHtml}
               ⚠ {draftErr} — <b>ยังบันทึกไม่ได้</b> (ถ้าบันทึกทับตอนนี้ คำตอบที่เคยตรวจไว้จะหาย) · ลองเปลี่ยนวัน/ไลน์แล้วกลับมาใหม่
             </div>
           )}
+          <DraftRestoreBar draft={pendingDraft} what="ใบตรวจ LPA ชุดนี้" onRestore={restoreLpaDraft}
+            onDiscard={() => { if (lpaDraftKey) clearDraft(lpaDraftKey); setPendingDraft(null); }} />
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 12 }}>
             <div>
               <div style={lb}>วันที่ตรวจ</div>

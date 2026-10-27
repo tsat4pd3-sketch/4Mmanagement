@@ -104,6 +104,41 @@ export function orderPlanQty(o) {
 }
 
 
+/* ═══ 6.2) "เวลาปิด" ของใบผลิต 1 ใบ — เจ้าของสูตรเดียวของทั้งระบบ (2026-10-20 · feedback หน้างาน) ═══
+   เดิมหน้าเดียวกันคิดคนละแบบ ⇒ MAT เดียว กะเดียว เห็นเวลาจบไม่ตรงกัน:
+     · การ์ด %P รายพาร์ท + modal แก้เวลา → ตัด `imported` ทิ้ง         = จบ 19:28
+     · แท็บประวัติ + backfill ฝั่ง DB      → นับ `stopped_at` ด้วย      = จบ 20:00
+   ⇒ หัวหน้าไลน์แก้ "เวลาจบ" แล้วจอตีกลับเป็นเวลาปิดกะทุกครั้ง (เคสจริง Apron Assy 20/10)
+   กติกาเดียว (ตรงกับ migration 20260915 ฝั่ง DB — `case when confirmed then confirmed_at else stopped_at`):
+     · `confirmed`                         → `confirmed_at`
+     · `carry_over` / `imported` / `cancelled` → `stopped_at` (ไม่ได้กรอก = ถอยไป `confirmed_at`)
+     · `open`                              → **ยังไม่ปิด = null** (ห้ามเดาเป็นปลายกะ)
+   🔴 **ห้ามเขียน `o.confirmed_at || o.stopped_at` เองในหน้าอีก** (มีด่าน `order-close-single-entry`) */
+export function orderCloseMs(o) {
+  if (!o) return null;
+  const st = o.status;
+  const pick = st === 'confirmed' ? o.confirmed_at
+    : (st === 'carry_over' || st === 'imported' || st === 'cancelled') ? (o.stopped_at || o.confirmed_at)
+    : null;
+  if (!pick) return null;
+  const ms = new Date(pick).getTime();
+  return Number.isFinite(ms) ? ms : null;
+}
+
+/* กรอบ "ช่วงที่ MAT นี้วิ่งในกะนี้" แบบดิบ — ยังไม่รัดเข้ากรอบกะ
+   🔴 คนเรียกต้องส่งต่อ `clampWinToShift(...)` เสมอ (ใบที่ยืนยันย้อนหลังข้ามวันเคยลาก "ควรได้" เป็นพัน) */
+export function matRawWindow(orders = []) {
+  let startMs = null, endMs = null;
+  for (const o of orders || []) {
+    const op = o?.opened_at ? new Date(o.opened_at).getTime() : null;
+    if (op != null && Number.isFinite(op)) startMs = startMs == null ? op : Math.min(startMs, op);
+    const cl = orderCloseMs(o);
+    if (cl != null) endMs = endMs == null ? cl : Math.max(endMs, cl);
+  }
+  return { startMs, endMs };
+}
+
+
 /* ═══ 1) เฉลี่ยถ่วงน้ำหนัก ═══ */
 // เฉลี่ยถ่วงน้ำหนัก — ไม่มีน้ำหนัก (ทุกตัว 0) ถอยไปเป็น mean ธรรมดา · ไม่มีค่า valid = null
 export function wavg(items, valFn, wFn) {

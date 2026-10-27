@@ -393,3 +393,172 @@ test('⬆️ คำขอขึ้นขั้น: เฉพาะคนอน�
   const miss = buildQueue({ ...src, levelUps: undefined }, { canLevelUp: true }, now);
   assert.ok(miss.missing.includes('levelUps'), 'มีสิทธิ์แต่โหลดไม่ได้ = ต้องบอกว่าไม่ครบ');
 });
+
+/* ── 🔢 ยอดกองต้องนับจากชุดเต็ม ไม่ใช่ชุดรายการที่ถูกตัดด้วยเพดาน (2026-10-22) ────────────────
+   เคสจริง 21/10 (คำสั่ง user หลังตรวจงาน QA): บรรทัด "ใบซ่อมรอตรวจคุณภาพหลังซ่อม N ใบ"
+   นับจากชุดรายการที่ผู้เรียกตัดมาแค่ 300 แถวแรก ⇒ ใบเปิดค้าง 672 ใบ · หน้าต่างจบที่ 08/10
+   **ใบรอ QA จริง 92 ใบ แต่แผงขึ้น 26** และจอไม่เคยบอกว่านับไม่ครบ */
+const CHECKED = (id, d) => ({ id, status: 'checked', mtn_dept: 'production', dept_section: 'PD3', work_date: d });
+
+test('🔢 floor — นับกองจาก moAll (ชุดเต็ม) ไม่ใช่ mo (ชุดรายการที่ถูกตัด)', () => {
+  const q = buildQueue({
+    mo:    [CHECKED('a', '2026-09-01'), CHECKED('b', '2026-09-02')],              // ชุดรายการ 2 ใบ
+    moAll: [CHECKED('a', '2026-09-01'), CHECKED('b', '2026-09-02'),
+            CHECKED('c', '2026-09-03'), CHECKED('d', '2026-09-04')],              // ของจริง 4 ใบ
+    sessions: [], fourM: [], actions: [],
+  }, ME, new Date('2026-10-22T03:00:00Z'));
+  const qa = q.floor.find(f => f.key.startsWith('mowait:'));
+  assert.equal(qa.count, 4, 'ต้องได้ยอดจริงจาก moAll');
+  assert.match(qa.title, /4 ใบ/);
+  assert.equal(qa.capped, false);
+  assert.ok(!/นับได้ไม่ครบ/.test(qa.detail));
+});
+
+test('🔴 ไม่ส่ง moAll = ถอยไปนับจาก mo แบบเดิม **แต่ต้องติดธงว่านับไม่ครบ**', () => {
+  const q = buildQueue({
+    mo: [CHECKED('a', '2026-09-01'), CHECKED('b', '2026-09-02')],
+    sessions: [], fourM: [], actions: [],
+  }, ME, new Date('2026-10-22T03:00:00Z'));
+  const qa = q.floor.find(f => f.key.startsWith('mowait:'));
+  assert.equal(qa.count, 2, 'พฤติกรรมเดิมเป๊ะ (นับจาก mo)');
+  assert.equal(qa.capped, true, 'ไม่มีชุดเต็ม = ยอดนี้เป็นอย่างน้อย ห้ามโชว์เป็นยอดจริง');
+  assert.match(qa.detail, /นับได้ไม่ครบ/);
+});
+
+test('🔴 moAll ชนเพดานคิวรี (moAllCapped) = ยังต้องบอกว่านับไม่ครบ', () => {
+  const q = buildQueue({
+    mo: [CHECKED('a', '2026-09-01')],
+    moAll: [CHECKED('a', '2026-09-01'), CHECKED('b', '2026-09-02')],
+    moAllCapped: true,
+    sessions: [], fourM: [], actions: [],
+  }, ME, new Date('2026-10-22T03:00:00Z'));
+  const qa = q.floor.find(f => f.key.startsWith('mowait:'));
+  assert.equal(qa.count, 2);
+  assert.equal(qa.capped, true);
+  assert.match(qa.detail, /นับได้ไม่ครบ/);
+});
+
+test('🔢 ชุดนับไม่กระทบรายการชั้น unit (รายการยังมาจาก mo เท่านั้น)', () => {
+  const q = buildQueue({
+    mo:    [CHECKED('a', '2026-09-01')],
+    moAll: [CHECKED('a', '2026-09-01'), CHECKED('b', '2026-09-02'), CHECKED('c', '2026-09-03')],
+    sessions: [], fourM: [], actions: [],
+  }, ME, new Date('2026-10-22T03:00:00Z'));
+  assert.equal(q.unit.filter(i => i.key.startsWith('mo:')).length, 1,
+    'ชุดนับห้ามโผล่เป็นรายการ (คอลัมน์บาง วาดแถวไม่ได้)');
+  assert.equal(q.floor.find(f => f.key.startsWith('mowait:')).count, 3);
+});
+
+test('🔢 ชุดนับต้องผ่าน moWaitMeta เหมือนรายการ — ใบ MTN ที่ไม่มีขั้น QA ห้ามถูกนับเป็นกองรอ QA', () => {
+  const q = buildQueue({
+    mo: [],
+    moAll: [
+      { id: 'j', status: 'checked', mtn_dept: 'production', dept_section: 'PD3', work_date: '2026-09-01' },
+      { id: 'm', status: 'checked', mtn_dept: 'maintenance', dept_section: 'PD3', work_date: '2026-09-02' },
+    ],
+    sessions: [], fourM: [], actions: [],
+  }, ME, new Date('2026-10-22T03:00:00Z'));
+  const qa = q.floor.find(f => f.key === 'mowait:qa');
+  assert.equal(qa.count, 1,
+    'ขั้น 5 ของ JIG/DIE = QA แต่ของ MTN = รับมอบ (รอคนระบุชื่อ ไม่ใช่กองของตำแหน่ง) ⇒ ห้ามนับรวม');
+  assert.ok(!q.floor.some(f => f.key === 'mowait:handover'),
+    'ขั้นที่รอคนระบุชื่อไม่เข้ากองของตำแหน่ง (เป็นรายการในชั้น mine/unit แทน)');
+});
+
+/* ═══ 🔴 โหลดไม่ครบเพราะชนเพดานแถว = ต้องติด partial ไม่ใช่ตัดเงียบ ═══  2026-10-22
+   เคสจริง: ใบ MO เปิดอยู่ 693 ใบ แต่ตัวโหลดคิวดึง 300 ใบเก่าสุด (order work_date asc + limit)
+   ⇒ ใบใหม่ 393 ใบ (57%) ตกจากคิวของทุกคน · ใบรอเซ็นปิด 107 ใบ เข้าคิวแค่ 29
+   ⇒ ผจก.ฝ่ายที่แจ้งเปิดแผงมาเจอ "ไม่มีงานที่รอคุณอยู่" ทั้งที่มี 51 ใบรออนุมัติ
+   เดิม `partial` ติดเฉพาะตอนคิวรี **ล่ม** (need() เจอ null) ⇒ ตัดแถวทิ้งเงียบสนิท */
+test('🔴 moTruncated = partial (ชนเพดานต้องบอก ไม่ใช่ยืนยันว่าไม่มีงาน)', () => {
+  const me = { name: 'ก', sections: [], posRank: 60, actorSide: 'reporter', can: () => true };
+  const base = { mo: [], sessions: [], fourM: [], actions: [], summaries: [] };
+  assert.equal(buildQueue(base, me).partial, false, 'โหลดครบต้องไม่ติด partial');
+  const cut = buildQueue({ ...base, moTruncated: true }, me);
+  assert.equal(cut.partial, true, 'ชนเพดานแล้วต้องติด partial');
+  assert.ok(cut.missing.includes('mo_truncated'), 'ต้องบอกได้ว่าก้อนไหนไม่ครบ');
+  // badge ต้องไม่หลอกว่า "มีงานน้อย" ตอนข้อมูลไม่ครบ
+  assert.equal(badgeCount(cut), 0, 'partial = badge ต้องเป็น 0 (ตัวเลขที่อาจผิดแย่กว่าไม่มีตัวเลข)');
+});
+
+/* ═══ ✍️ ป้ายคาไว้ "รอคุณเซ็น N ใบ" — กดแล้วเปิดหน้า MO ที่กรองมาให้ ═══  2026-10-22 · คำสั่ง user
+   *"ไม่ต้องซ้ำรายใบก็ได้ แต่ต้องมีแจ้งเตือนคาไว้ว่ามีงานรอเราอยู่กี่ใบที่ต้องเข้าไปเซ็น
+     พอคลิกก็เปิดหน้า mo ขึ้นมาเลยพร้อมกรองที่รอเราอนุมัติ"* */
+const MGR = {
+  uid: 'uid-mgr', name: 'ผจก. ทดสอบ', sections: ['PD3'],
+  posRank: 60, actorSide: 'reporter', hasTeams: false,
+  can: (a) => a === 'close_cost', seeded: () => true, inTeam: () => false,
+};
+const closeRow = (id, d) => ({
+  id, mo_no: `MO-${id}`, status: 'handover', current_step: 6, dept_section: 'PD3',
+  line_name: 'LASER-345', mtn_dept: 'production', work_date: d,
+});
+
+test('✍️ ใบรอเราเซ็น ≥2 ใบ ⇒ มีบรรทัดสรุปบนสุด + ลิงก์กรอง ?wait=', () => {
+  const q = buildQueue({
+    mo: [closeRow('a', '2026-09-20'), closeRow('b', '2026-09-22'), closeRow('c', '2026-09-24')],
+    sessions: [], fourM: [], actions: [], summaries: [],
+  }, MGR, NOW);
+  const top = q.mine[0];
+  assert.ok(top?.rollup, 'บรรทัดสรุปต้องอยู่บนสุดของชั้น mine');
+  assert.match(top.title, /รอคุณเซ็น 3 ใบ/);
+  assert.match(top.to, /\/mtn-repair\?tab=list&wait=close/, 'ต้องพาไปหน้า MO ที่กรองขั้นที่รอเราแล้ว');
+  assert.match(top.to, /&from=/, 'ต้องถอยขอบวันที่ให้ครอบใบเก่าสุด ไม่งั้นตัวกรอง default ซ่อนใบค้าง');
+  // 🔴 badge นับ "ใบ" จริง ไม่บวกบรรทัดสรุปเข้าไปอีก
+  assert.equal(q.counts.mine, 3, 'counts.mine ต้องเท่าจำนวนใบ ไม่นับ rollup');
+  assert.equal(badgeCount(q), 3);
+});
+
+test('✍️ ใบเดียวไม่ต้องมีบรรทัดสรุป (แถวของใบพาไปถึงใบได้ตรงกว่า)', () => {
+  const q = buildQueue({ mo: [closeRow('a', '2026-09-20')], sessions: [], fourM: [], actions: [], summaries: [] }, MGR, NOW);
+  assert.equal(q.mine.filter(x => x.rollup).length, 0);
+  assert.equal(q.counts.mine, 1);
+  assert.match(q.mine[0].to, /\?mo=/, 'ใบเดียว = ลิงก์ตรงไปที่ใบนั้น');
+});
+
+/* ═══ ✍️ ช่อง "ผจก.ต้นสังกัดรับทราบ" ต้องโผล่ในคิว — ไม่บล็อกงาน แต่ต้องเซ็น ═══  2026-10-24
+   คำสั่ง user: *"mo MTN สเตป 2 ก็รอ ผจก.ผู้แจ้งเซ็น แค่ไม่บล็อกสเต็ปถัดไป แต่ต้องเซ็นตอนว่าง"*
+   เดิม `moWaitMeta()` คืนด่านอนุมัติเฉพาะตอน isApprovalBlocked (งานปรับปรุง/สร้าง)
+   ⇒ ใบซ่อมปกติ ช่องนี้ไม่โผล่ที่ไหนเลย · วัด 24/10: 52 จาก 61 ใบ (85%) ยังไม่เซ็น · ปิดไปแล้ว 10 ใบ */
+const ACK_MGR = {
+  uid: 'uid-mgr', name: 'ผจก. ทดสอบ', sections: ['PD3'],
+  posRank: 60, actorSide: 'reporter', hasTeams: false,
+  can: (a) => a === 'approve', seeded: () => true, inTeam: () => false,
+};
+const ackRow = (id, extra = {}) => ({
+  id, mo_no: `MO-${id}`, status: 'repairing', current_step: 3, dept_section: 'PD3',
+  line_name: 'HDF1', mtn_dept: 'maintenance', work_date: '2026-09-20',
+  dept_manager_at: null, ...extra,
+});
+
+test('✍️ ใบ MTN ที่ ผจก.ยังไม่เซ็นรับทราบ ⇒ มีป้ายในคิว + บอกว่าไม่บล็อกงาน', () => {
+  const q = buildQueue({ mo: [ackRow('a'), ackRow('b')], sessions: [], fourM: [], actions: [], summaries: [] }, ACK_MGR, NOW);
+  const ack = q.mine.find(x => x.key === 'sign:ack_dept');
+  assert.ok(ack, 'ต้องมีป้าย "รอคุณเซ็นรับทราบ"');
+  assert.match(ack.title, /รอคุณเซ็นรับทราบ 2 ใบ/);
+  assert.match(ack.detail, /ไม่บล็อกงาน/, 'ต้องเขียนว่าไม่บล็อกงาน ไม่งั้นหน้างานหยุดรอ');
+  assert.match(ack.to, /ack=pending/);
+  assert.equal(q.counts.mine, 0, 'ป้ายสรุปไม่นับเข้า badge (ยังไม่มีใบที่รอเราเซ็นรายขั้น)');
+});
+
+test('✍️ ใบที่ปิดแล้วแต่ยังไม่เซ็นรับทราบ ก็ต้องนับ (ย้อนเซ็นได้)', () => {
+  const q = buildQueue({ mo: [ackRow('c', { status: 'closed', current_step: 8 })], sessions: [], fourM: [], actions: [], summaries: [] }, ACK_MGR, NOW);
+  assert.ok(q.mine.find(x => x.key === 'sign:ack_dept'), 'ใบปิดแล้วต้องยังนับ — ช่องนี้ยังว่างอยู่จริง');
+});
+
+test('✍️ เซ็นแล้ว / ใบฟอร์ม JIG / นอกขอบเขต = ไม่นับ', () => {
+  const none = (mo) => buildQueue({ mo, sessions: [], fourM: [], actions: [], summaries: [] }, ACK_MGR, NOW)
+    .mine.find(x => x.key === 'sign:ack_dept');
+  assert.equal(none([ackRow('d', { dept_manager_at: '2026-09-21T00:00:00Z' })]), undefined, 'เซ็นแล้ว');
+  assert.equal(none([ackRow('e', { mtn_dept: 'jig_maintenance' })]), undefined, 'ฟอร์ม JIG ไม่มีช่องนี้');
+  assert.equal(none([ackRow('f', { dept_section: 'PD1' })]), undefined, 'ส่วนงานอื่น — แบบ ก เห็นเฉพาะของตัวเอง');
+});
+
+test('🔴 ใบที่ลายเซ็นนี้บล็อกงานจริง (งานปรับปรุง/สร้าง) ไม่เข้าป้าย "รับทราบ" — กันนับซ้ำ', () => {
+  /* ใบแบบนั้นขึ้นเป็นรายการของตัวเองอยู่แล้ว (moWaitMeta → approve_first)
+     ถ้านับซ้ำ badge จะเกินจริง และป้ายที่เขียนว่า "ไม่บล็อกงาน" จะกลายเป็นคำโกหก */
+  const blocked = ackRow('g', { purpose: 'improve', status: 'pending', current_step: 1 });
+  const q = buildQueue({ mo: [blocked], sessions: [], fourM: [], actions: [], summaries: [] }, ACK_MGR, NOW);
+  assert.equal(q.mine.filter(x => x.key === 'sign:ack_dept').length, 0, 'ต้องไม่มีป้ายรับทราบ');
+  assert.ok(q.mine.length >= 1, 'แต่ใบต้องยังขึ้นเป็นรายการรออนุมัติของตัวเอง');
+});

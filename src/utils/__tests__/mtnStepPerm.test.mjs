@@ -599,3 +599,34 @@ test('cancelled เป็นสถานะจบ — ต้องหลุด�
   assert.equal(isMoOpen({ status: 'cancelled' }), false);
   assert.ok(!OPEN_MO_STATUSES.includes('cancelled'), 'ห้ามอยู่ใน allowlist ของคิวงาน');
 });
+
+import { qaRelatedView, nextStepOf, stageOf } from '../mtnStepPerm.js';
+
+/* ═══ qaRelatedView — "ต้องให้ QA ตรวจ?" ห้ามอ่าน quality_related ดิบ ═══  2026-10-21
+   เคสจริง O-MTN.2026/10-17: ใบทีม MTN (ไม่มี QA ในลูป) รอรับมอบอยู่ แต่ขั้น 4 เขียน "ต้องผ่าน QA" */
+test('🔴 qaRelatedView: ใบทีม MTN = n_a เสมอ ไม่ว่าคอลัมน์จะ stamp อะไรไว้', () => {
+  const mtn = { mtn_dept: 'maintenance', status: 'checked' };
+  assert.equal(qaRelatedView({ ...mtn, quality_related: QA_RELATED }), 'n_a');
+  assert.equal(qaRelatedView({ ...mtn, quality_related: QA_NOT_RELATED }), 'n_a');
+  assert.equal(qaRelatedView({ ...mtn, quality_related: null }), 'n_a');
+  assert.equal(qaRelatedView({ ...mtn, mtn_dept: 'mtn', quality_related: QA_RELATED }), 'n_a');
+  // งานสร้าง/ปรับปรุงของฟอร์มอื่นก็ไม่มี QA ในลูปเหมือนกัน
+  assert.equal(qaRelatedView({ mtn_dept: 'jig_maintenance', purpose: 'improve', quality_related: QA_RELATED }), 'n_a');
+});
+
+test('🔴 qaRelatedView: "ไม่เกี่ยวกับคุณภาพ" ต้องไม่ถูกนับเป็น "ใช่" (บั๊ก Excel 411/1050 ใบ)', () => {
+  const jig = { mtn_dept: 'jig_maintenance', status: 'checked' };
+  assert.equal(qaRelatedView({ ...jig, quality_related: QA_NOT_RELATED }), 'no');
+  assert.equal(qaRelatedView({ ...jig, quality_related: QA_RELATED, qa_skipped_at: '2026-10-01' }), 'no');
+  assert.equal(qaRelatedView({ ...jig, quality_related: QA_RELATED }), 'yes');
+  // ยังไม่ถึงขั้น 4 = ไม่รู้ ห้ามเดาไปทางใดทางหนึ่ง
+  assert.equal(qaRelatedView({ ...jig, status: 'repairing', quality_related: null }), 'unknown');
+});
+
+test('🔴 ใบทีม MTN ที่ status=checked ขั้นถัดไปคือ 5 (รับมอบ) ไม่ใช่ QA', () => {
+  const o = { mtn_dept: 'maintenance', status: 'checked', quality_related: QA_RELATED };
+  assert.equal(isWaitingQa(o), false);
+  assert.equal(nextStepOf(o), 5);
+  assert.equal(stageOf(nextStepOf(o), { mtnForm: true }), 'handover');
+  assert.equal(stepMeta(5, { mtnForm: true }).title, 'รับมอบ / ติดตามผล');
+});
