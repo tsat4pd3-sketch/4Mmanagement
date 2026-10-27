@@ -494,9 +494,75 @@ MAT ที่เพิ่ม (ตาม `dr_products.customer`): `20059949` `200
 - ข้อความ toast ต้องตรงกับสิ่งที่เกิดจริง — ปิดใบโดยไม่ลงสต็อก **ห้ามขึ้นว่า "สต็อก +N"**
 - มีด่าน `lot-dest-from-rules` (เพิ่มข้อเช็ค `lotMatsOf` ก่อนลงสต็อก)
 
-### ⏭️ ขั้นถัดไป (ยังไม่ทำ) — สลับโหมดพาร์ท ต้องทำ **หลัง** โค้ดนี้ขึ้น production
+### ⏭️ ขั้นถัดไป (ยังไม่ทำ) — สลับโหมดพาร์ท มี **ลำดับบังคับ 3 ขั้น**
 
-🔴 **ลำดับสำคัญ:** สลับโหมดก่อนโค้ดขึ้น = ช่วงคาบเกี่ยวนั้น ปิดล็อต 1 ครั้ง **เข้าคลัง 2 เด้ง**
+🔴🔴 **กฎข้าม session — สลับโหมด `lot` → `confirm` ของ MAT ที่ยังมีใบล็อตค้าง = ของหายจากบัญชี**
+โหมด 🔧 ทำให้ trigger `fn_post_confirmed_output` **ข้าม** ⇒ ใบผลิตที่ปิดไปแล้วตอนอยู่โหมด 🔧
+**ไม่มี `stock_receipts` รองรับเลย** · ทางเข้าคลังทางเดียวของมันคือ "ปิดล็อต" บนบอร์ด
+⇒ สลับโหมดตอนใบล็อตยังค้าง = ปุ่มปิดล็อตเลิกลงสต็อก **และ** ไม่มีใบรับเข้าให้กดแทน = **ของหายเงียบ**
+⇒ **ต้องเคลียร์ใบล็อตขั้น "อยู่ที่ไลน์ผลิต" (`producing`) ให้หมดก่อนสลับทุกครั้ง** · คิวรีเช็คอยู่ข้างล่าง
+
+| ขั้น | ทำอะไร | สถานะ |
+|---|---|---|
+| ① | โค้ด A2 ขึ้น production (ด่านกันลงสต็อกซ้ำ) | ✅ **27/10 17:32** (`2949dd72` · tag `render-deployed`) |
+| ② | สโตร์ปิดใบล็อตที่ค้างขั้น `producing` ให้หมด (ยังอยู่โหมด 🔧 ⇒ ลงสต็อกเข้า STORE ถูกต้อง) | ⏳ **27/10 ค้าง 7 ใบ · 13,200 ชิ้น** |
+| ③ | สลับ 25 MAT เป็น `mode='confirm'` | ⏳ รอ ② |
+
+**🔴 สลับก่อนขั้น ① = ช่วงคาบเกี่ยวนั้น ปิดล็อต 1 ครั้ง เข้าคลัง 2 เด้ง**
+**🔴 สลับก่อนขั้น ② = ของบนใบล็อตที่ค้างไม่เข้าคลังเลย** (27/10 วัดได้: 7 ใบค้าง · บนใบ 13,200 ชิ้น ·
+5 ใบมีใบผลิตปิดแล้ว 10,800 ชิ้น · `stock_receipts` รองรับ **0 ใบ**)
+
+```sql
+-- Product DB (eyhclzkifitbhbljgoav) · เช็คก่อนสลับโหมดทุกครั้ง — ต้องได้ 0 แถว
+select l.child_mat_no, l.lot_qty, l.source_line, l.created_at::date
+from child_lot_requests l
+join stock_inflow_rules r on r.match_type='mat' and r.match_value=l.child_mat_no
+                         and r.mode='lot' and coalesce(r.is_active,true)
+where l.status = 'producing' order by l.child_mat_no;
+```
+
+ใบขั้น `pending` (รอปล่อยเข้าไลน์) **ไม่ต้องรอ** — ใบผลิตของมันจะถูกปิดหลังสลับ ⇒ trigger สร้างใบรับเข้าให้เอง
+
+**SQL ขั้น ③ (ยังไม่รัน · รอ user เคาะ)** — เขียนให้ **กันตัวเอง**: `not exists … status='producing'`
+⇒ MAT ที่ยังมีใบล็อตค้างที่ไลน์จะ**ไม่ถูกสลับ** รันผิดจังหวะก็ไม่ทำของหาย · รันซ้ำได้ (idempotent)
+
+```sql
+-- Product DB (eyhclzkifitbhbljgoav) · สลับพาร์ทที่ "มีใบผลิตจริง + ไม่มีใบล็อตค้าง" → 🟡 ยืนยันรับ
+update stock_inflow_rules r
+   set mode = 'confirm', updated_at = now(),
+       updated_by_name = 'ย้ายโหมดตาม feedback สโตร์ A2'
+ where r.match_type = 'mat' and r.mode = 'lot' and coalesce(r.is_active, true)
+   and exists (select 1 from prod_orders po
+                 join production_sessions ps on ps.id = po.session_id
+                where po.mat_no = r.match_value
+                  and po.status in ('confirmed','carry_over')
+                  and ps.work_date >= work_date_bangkok() - 30)   -- 🔴 ห้าม current_date (= UTC)
+   and not exists (select 1 from child_lot_requests l              -- 🔴 ด่านกันของหาย
+                    where l.child_mat_no = r.match_value and l.status = 'producing')
+returning r.match_value, r.dest_line_name, r.mode;
+```
+
+```sql
+-- เช็คผล: เหลืออะไรอยู่โหมด 🔧 และเพราะอะไร
+select r.match_value,
+       (select count(*) from child_lot_requests l
+         where l.child_mat_no = r.match_value and l.status='producing')          as lot_producing,
+       (select count(*) from prod_orders po join production_sessions ps on ps.id=po.session_id
+         where po.mat_no = r.match_value and po.status in ('confirmed','carry_over')
+           and ps.work_date >= work_date_bangkok() - 30)                          as orders_30d
+from stock_inflow_rules r
+where r.match_type='mat' and r.mode='lot' and coalesce(r.is_active,true)
+order by r.match_value;
+```
+
+### 🔴 ด่านบนจอ — ใบล็อตที่ออกก่อนสลับโหมด (27/10 · `lotOrphanRisk`)
+
+ขั้น ② พึ่งคนปิดใบให้ครบ ⇒ **ถ้าตกหล่น จอต้องไม่โกหก** · การ์ดล็อตขั้น `producing` ของพาร์ทที่
+**ไม่ใช่โหมด 🔧 แล้ว** แต่ใบออก**ก่อน** `rule.updated_at` ⇒ ไม่มีใบรับเข้ารองรับ:
+- ปุ่มเปลี่ยนเป็น **"⚠️ ปิดใบล็อต (ของจะไม่เข้าคลัง)"** (เดิม "✔ … ไม่ลงสต็อกที่นี่" = อ่านแล้วเข้าใจว่าของไปอยู่ที่อื่น)
+- ป้ายใต้การ์ด: *"🔴 ใบนี้ออกก่อนเปลี่ยนวิธีรับเข้า — ไม่มีใบ 'รอรับเข้า' รองรับ · ปิดแล้วของจะไม่เข้าคลัง แจ้งแอดมินก่อนกด"*
+- 🔴 **อ่าน `updated_at`/`created_at` ไม่ได้ = เตือน (fail-closed)** — เตือนเกินเสียแค่เวลาคนไปเช็คคิว · ไม่เตือน = ของหาย
+- กฎอยู่ `lotOrphanRisk()` (`src/utils/stockReceipts.js`) · ด่าน `lot-dest-from-rules` บังคับทั้งตัวเช็คและ `select updated_at`
 
 วัดช่วงที่กฎโหมดล็อตมีผลจริง (19/10 → 27/10):
 

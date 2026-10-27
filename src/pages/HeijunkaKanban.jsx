@@ -26,7 +26,7 @@ import { DELIVER_GATES, PICK_GATES, reqSourceMeta } from '../utils/replenishGate
 import { slocCodeOfLine } from '../utils/storageLoc';
 import { buildReceiptRows, RECEIPT_LINE } from '../utils/stockReceipt';
 import { rawSourceLocOf, splitRawConsume, inflowDestOf } from '../utils/partRefStock';   // 📤 ตัดวัตถุดิบล็อตจากคลังที่ของอยู่จริง (2026-10-12)   // 📥 ของซื้อเข้าคลัง ไม่ใช่เข้าไลน์ (2026-10-01)   // 🏬 ชั้นบัญชี SAP — tag ใบ/ledger ตอนเขียน (2026-09-08)
-import { lotMatsOf } from '../utils/stockReceipts';   // 🔧 พาร์ทที่ยอดเข้าคลังทางปิดล็อตทางเดียว
+import { lotMatsOf, lotOrphanRisk } from '../utils/stockReceipts';   // 🔧 พาร์ทที่ยอดเข้าคลังทางปิดล็อตทางเดียว
 import { releaseDueRows, openLotMats } from '../utils/kanbanReleaseDue';   // 📉 สต็อก ≤ min = ถึงจุดต้องปล่อยคัมบัง (26/10 · feedback สโตร์)
 import { loadProductsMaster } from '../utils/useProducts';
 import { notifyEvent } from '../utils/notifyEvent';
@@ -1233,7 +1233,7 @@ const matchQ = (q, ...fields) => {
 };
 
 function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfirm, confirming, onReceive, imgOf,
-  lotRequests, rawRequests, rackRequests, pkgRequests, wipRequests, purchaseRequests, purchaseErr, busy, onAdvanceLot, onIssueRaw, onAdvanceWip, onAdvancePurchase, setBulkBuy, fmt, workDate, nowMs, canOperate, lotMats = null }) {
+  lotRequests, rawRequests, rackRequests, pkgRequests, wipRequests, purchaseRequests, purchaseErr, busy, onAdvanceLot, onIssueRaw, onAdvanceWip, onAdvancePurchase, setBulkBuy, fmt, workDate, nowMs, canOperate, lotMats = null, inflowRules = null }) {
 
   const { roundAlloc } = view;
   const [buyFilter, setBuyFilter] = useState(() => urlPick('buy', ['3', '5'], ''));   // '' | '3' | '5' · ?buy= (จอวนหน้า)
@@ -1360,11 +1360,18 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
                · พาร์ทโหมด 🟡 ยืนยันรับ = ของเข้าทางคิว "รอรับเข้า" แล้ว ⇒ ปุ่มนี้แค่ **ปิดใบ ไม่ลงสต็อก**
                🔴 อ่านกฎไม่ได้ (`lotMats === null`) = **ไม่รู้** ⇒ เขียนบนการ์ดตรงๆ ห้ามเดาข้างใดข้างหนึ่ง */
             const byLot = lotMats ? lotMats.has(String(lot.child_mat_no || '').trim()) : null;
+            const orphan = byLot === false && inflowRules ? lotOrphanRisk(lot, inflowRules) : false;
             const doneLabel = byLot === null ? '✔ ปิดใบล็อต (ยังอ่านกฎรับเข้าไม่ได้)'
-              : byLot ? st.nextLabel : '✔ ปิดใบล็อต · ไม่ลงสต็อกที่นี่';
+              : byLot ? st.nextLabel
+              : orphan ? '⚠️ ปิดใบล็อต (ของจะไม่เข้าคลัง)' : '✔ ปิดใบล็อต · ไม่ลงสต็อกที่นี่';
+            /* 🔴 ใบที่ออกก่อนสลับโหมด = ไม่มีใบรับเข้ารองรับ ⇒ ปิดแล้วของหายจากบัญชี
+               ห้ามบอกว่า "ของเข้าคิวแล้ว" โดยไม่ดูว่าใบนี้ออกตอนไหน (`lotOrphanRisk` ข้างบน) */
             const inflowNote = lot.status !== 'producing' ? null
               : byLot === null ? '⚠️ อ่านกฎรับเข้าคลังไม่ได้ — ยังบอกไม่ได้ว่าของเข้าทางไหน'
-              : byLot ? null : '📥 ของเข้าคลังทางคิว "สต็อกในไลน์ › รอรับเข้า" แล้ว — ปุ่มนี้แค่ปิดใบ';
+              : orphan ? '🔴 ใบนี้ออกก่อนเปลี่ยนวิธีรับเข้า — ไม่มีใบ "รอรับเข้า" รองรับ · ปิดแล้วของจะไม่เข้าคลัง แจ้งแอดมินก่อนกด'
+              /* 🔴 เขียนเท่าที่รู้จริง — กฎที่ถูกปิด (⚫) ไม่โผล่ในชุดนี้ (select กรอง is_active) ⇒
+                 ห้ามฟันธงว่า "ของเข้าคิวแล้ว" · บอกว่าเข้าตามกฎของพาร์ท แล้วให้ไปดูที่คิวจริง */
+              : byLot ? null : '📥 ของเข้าคลังตามกฎรับเข้าของพาร์ทนี้ (ดูที่ "สต็อกในไลน์ › รอรับเข้า") — ปุ่มนี้แค่ปิดใบ ไม่ลงสต็อก';
             return (
               <QueueCard key={lot.id} code={lot.child_mat_no} name={lot.part_name} showImg img={imgOf(lot.child_mat_no)}
                 /* 🔴 26/10 (feedback สโตร์) — ช่องนี้คือ **ไลน์ที่ผลิตล็อตนี้** ไม่ใช่ "ปลายทาง"
@@ -1818,7 +1825,8 @@ export default function HeijunkaKanban() {
     if (!list.length) return (m, qty) => [{ loc: consumingLine, qty: Number(qty) || 0 }];
     const [pr, rr, sr] = await Promise.all([
       supabaseDR.from('dr_products').select('mat_no, line_name, is_active, is_operation').in('mat_no', list),
-      supabaseDR.from('stock_inflow_rules').select('match_type, match_value, dest_line_name, is_active, mode').eq('is_active', true),
+      // `updated_at` = ตอนที่โหมดถูกสลับ — ใช้จับใบล็อตที่ออกก่อนสลับ (`lotOrphanRisk`) ห้ามถอด
+      supabaseDR.from('stock_inflow_rules').select('match_type, match_value, dest_line_name, is_active, mode, updated_at').eq('is_active', true),
       supabaseDR.from('line_stock_summary').select('mat_no, qty_on_hand').eq('line_name', consumingLine).in('mat_no', list),
     ]);
     const err = pr.error || rr.error || sr.error;
@@ -2908,6 +2916,7 @@ export default function HeijunkaKanban() {
             lotRequests={lotRequests} rawRequests={rawRequests} rackRequests={rackRequests} pkgRequests={pkgRequests} wipRequests={wipRequests} purchaseRequests={purchaseRequests} purchaseErr={purchaseErr} setBulkBuy={setBulkBuy}
             busy={pullBusy} onAdvanceLot={advanceLot} onIssueRaw={issueRaw} onAdvanceWip={advanceWip} onAdvancePurchase={advancePurchase}
             lotMats={lotMats}
+            inflowRules={inflowRules}
             fmt={fmt} workDate={workDate} nowMs={nowMs} canOperate={canOperate} imgOf={imgOf}
           />
         ) : viewMode === 'chart' ? (

@@ -5619,6 +5619,24 @@ test('🛡️ lot-dest-from-rules — ปลายทางของล็อต
   if (!/lotMatsOf\((?:rulesRows|rules)/.test(hk))
     bad.push('HeijunkaKanban.advanceLot (ไม่ได้เช็คโหมดก่อนลงสต็อก — พาร์ทโหมดยืนยันรับจะเข้าคลัง 2 เด้ง)');
 
+  /* 🔴🔴 27/10 — ด่านคู่แฝดของข้างบน: ด่านนั้นกันเข้าคลัง 2 เด้ง **ด่านนี้กันของหายจากบัญชี**
+     ใบล็อตที่ออกตอนพาร์ทยังโหมด 🔧 ไม่เคยมี `stock_receipts` รองรับ (trigger ข้าม) ⇒ พอสลับโหมด
+     ปุ่มปิดล็อตเลิกลงสต็อก **และ** ไม่มีใบรับเข้าให้กดแทน = ปิดแล้วของหายเงียบ
+     (วัดวันสลับ: 7 ใบค้างขั้น producing · บนใบ 13,200 ชิ้น · ใบรับเข้ารองรับ 0)
+     ⇒ การ์ดต้องเตือนก่อนกด **ห้ามบอกว่า "ของเข้าคิวแล้ว" ลอยๆ** · ต้องรู้ว่าใบออกก่อน/หลังสลับ
+       ⇒ ต้อง select `updated_at` ของกฎมาด้วย */
+  if (!/lotOrphanRisk\(/.test(hk))
+    bad.push('HeijunkaKanban (การ์ดล็อตไม่ได้เช็ค lotOrphanRisk — ใบที่ออกก่อนสลับโหมดจะปิดแล้วของหายเงียบ)');
+  if (![...hk.matchAll(/from\('stock_inflow_rules'\)\.select\('([^']*)'\)/g)]
+        .some(m => /\bupdated_at\b/.test(m[1])))
+    bad.push('HeijunkaKanban (ไม่มี select stock_inflow_rules ตัวไหน select updated_at — lotOrphanRisk ตัดสินไม่ได้)');
+
+  /* 🔴 ชั้นป้องกันของขั้น ③ — จอตั้งค่าต้องห้ามสลับออกจากโหมด 🔧 เงียบๆ ตอนยังมีใบล็อตค้าง
+     (นับไม่ได้ = บล็อก · ด่านนี้ตรวจแค่ว่า "ยังเช็คอยู่" ไม่ตรวจข้อความ) */
+  const ls = stripComments(readFileSync(join(ROOT, 'src/pages/LineStock.jsx'), 'utf8'));
+  if (!/'producing'/.test(ls) || !/child_lot_requests/.test(ls))
+    bad.push('LineStock.setRuleMode (ไม่ได้เช็คใบล็อตค้างก่อนสลับออกจากโหมด lot — ของบนใบที่ค้างจะไม่เข้าคลังเลย)');
+
   /* 🔴 จอที่เอากฎรับเข้าไปป้อน partRefStock ต้อง select `mode` มาด้วย — ตอนนี้ `mode` คือสิ่งที่
      `/line-stock` ใช้แสดง/แก้ "ยอดเข้าทางไหน" ขาดไป = จอตั้งค่าโชว์โหมดผิด */
   for (const f of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
