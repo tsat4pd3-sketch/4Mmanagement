@@ -24,7 +24,8 @@ const hasNativeDetector = () => typeof window !== 'undefined' && 'BarcodeDetecto
 export default function ScanModal({
   title = 'สแกน QR / บาร์โค้ด',
   hint = 'ส่องกล้องที่ป้าย QR หรือยิงด้วยเครื่องสแกน',
-  onScan,          // (parsed) => void | string  — คืน string = ข้อความ error ให้โชว์ (เช่น "ไม่พบเครื่องนี้")
+  footer = null,   // ของที่หน้าอยากโชว์ใต้ผลสแกน (เช่น ตัวนับ "เช็คแล้ว 12/20 คน")
+  onScan,          // (parsed) => void | string | { ok } — string = ข้อความ error (เช่น "ไม่พบเครื่องนี้") · { ok } = ข้อความสำเร็จของหน้าเอง
   onClose,
   closeOnHit = true,
 }) {
@@ -33,6 +34,7 @@ export default function ScanModal({
   const [camErr, setCamErr] = useState('');
   const [err, setErr] = useState('');
   const [ok, setOk] = useState('');
+  const [okMsg, setOkMsg] = useState('');
   /* 📱 handheld (2026-10-20): ช่องรอสแกนไม่เด้งคีย์บอร์ดบนจอ (`inputMode="none"`) — คีย์บอร์ดกินจอ 360×640 ไปครึ่งหนึ่ง
      ทั้งที่เครื่องมีหัวสแกนในตัว · ป้ายเลอะ/สแกนไม่ติด → แตะ "⌨️ พิมพ์เอง" เปิดคีย์บอร์ด · จอคอมไม่เปลี่ยน */
   const isMobile = useIsMobile();
@@ -56,11 +58,15 @@ export default function ScanModal({
 
     const problem = onScan?.(parsed);
     if (typeof problem === 'string' && problem) {
-      setErr(problem); setOk('');
+      setErr(problem); setOk(''); setOkMsg('');
       if (navigator.vibrate) navigator.vibrate([80, 60, 80]);
+      /* 🔴 คลุมข้อความเดิมไว้ (27/10) — ไม่งั้นรหัสถัดไปจากเครื่องสแกนไป "ต่อท้าย" ตัวที่ไม่ผ่าน (NOPE999 + 61004 = อ่านผิดทุกใบต่อจากนั้น)
+         คลุมแทนล้าง: คนพิมพ์มือยังแก้ตัวเดิมได้ · ยิงใหม่ = แทนที่ทั้งช่อง */
+      setTimeout(() => inputRef.current?.select(), 0);
       return;
     }
-    setErr(''); setOk(parsed.raw);
+    // คืน { ok: 'ข้อความ' } = สำเร็จพร้อมข้อความของหน้าเอง (เช่น "✓ สมชาย — มางาน") — ใช้กับโหมดสแกนต่อเนื่อง
+    setErr(''); setOk(parsed.raw); setOkMsg(problem && typeof problem === 'object' && problem.ok ? String(problem.ok) : '');
     if (navigator.vibrate) navigator.vibrate(60);
     setTyped('');
     if (closeOnHit) onClose?.();
@@ -220,7 +226,10 @@ export default function ScanModal({
         </div>
 
         {err && <div style={{ marginTop: 10, fontSize: 13, color: '#ef4444', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: 8, padding: '8px 11px' }}>✕ {err}</div>}
-        {ok && !err && <div style={{ marginTop: 10, fontSize: 13, color: '#22c55e' }}>✓ อ่านได้: <span style={{ fontFamily: 'monospace' }}>{ok}</span></div>}
+        {footer}
+        {ok && !err && (okMsg
+          ? <div style={{ marginTop: 10, fontSize: 15, fontWeight: 800, color: '#22c55e', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.35)', borderRadius: 8, padding: '8px 11px' }}>{okMsg}</div>
+          : <div style={{ marginTop: 10, fontSize: 13, color: '#22c55e' }}>✓ อ่านได้: <span style={{ fontFamily: 'monospace' }}>{ok}</span></div>)}
       </div>
     </div>
   );

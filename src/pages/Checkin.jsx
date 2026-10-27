@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext, useMemo, Fragment } from 'react';
+import { useState, useEffect, useContext, useMemo, useRef, Fragment } from 'react';
 import { orgValues, sortLike } from '../utils/listOrder';
 import { supabase } from '../supabaseClient';
 /* 👥 แกนคน 2 แกน (14/10) — "เช็คชื่อไหม" คนละคำถามกับ "นับกำลังคนไลน์ไหม" (กฎ staffKind.js)
@@ -34,6 +34,9 @@ import SearchInput from '../components/SearchInput';
 import { ALL } from '../utils/filterLabels';
 import { useDraftAutosave, loadDraft, clearDraft } from '../utils/formDraft';   // 📝 ร่างในเครื่อง (มือถือ · 22/10)
 import DraftRestoreBar from '../components/DraftRestoreBar';
+import ScanModal from '../components/ScanModal';
+import { badgeScanOutcome } from '../utils/badgeCheckin';   // 🪪 สแกน QR บัตรพนักงาน = ติ๊กมางาน (27/10)
+import { SCAN_EVENT } from '../utils/scanWedge';
 
 // fallback เมื่อ master ยังว่าง/ยังไม่ apply migration 20260819 — ตัวจริงอยู่ตาราง leave_types
 // (จัดการที่ /report แผงจองรถ OT · เลิก hardcode ตาม QC audit 2026-08-19)
@@ -208,6 +211,23 @@ export default function Checkin() {
     return out;
   }, [attendance, baseline]);
   const [ckPending, setCkPending] = useState(null);
+
+  /* 🪪 เช็คชื่อด้วยบัตรพนักงาน (มือถือ · 27/10 · คำสั่ง user) — QR บนบัตร = รหัสพนักงาน (utils/badgeCheckin.js)
+     2 ทาง: 📷 เปิดกล้องสแกนต่อเนื่อง (โมดัลไม่ปิดเอง ยิงทีละคนได้เลย) · กดปุ่มสแกนข้างเครื่องตอนไม่ได้แตะช่องไหน
+     (ScanWedgeGuard ยิง `esm:scan` มา — หน้านี้รับ) · สแกน = ติ๊ก "มางาน" บนจอเท่านั้น ยังต้องกด 💾 บันทึก เหมือนเดิม */
+  const [badgeScanOpen, setBadgeScanOpen] = useState(false);
+  const badgeScanRef = useRef(null);
+  useEffect(() => {
+    if (!isMobile) return undefined;
+    const onScan = (e) => {
+      const fn = badgeScanRef.current; if (!fn) return;
+      e.preventDefault();   // หน้านี้รับรหัสแล้ว — ScanWedgeGuard ไม่ต้องขึ้น "จอนี้ไม่มีช่องรอรับ"
+      const r = fn(e.detail?.parsed || { raw: e.detail?.raw });
+      if (typeof r === 'string') toast.error(r); else if (r?.ok) toast.success(r.ok);
+    };
+    window.addEventListener(SCAN_EVENT, onScan);
+    return () => window.removeEventListener(SCAN_EVENT, onScan);
+  }, [isMobile]);
   useDraftAutosave(ckDraftKey, ckChanges, !!ckDraftKey && !ckPending && Object.keys(ckChanges).length > 0);
   // โหลดรายชื่อเสร็จ (baseline ใหม่) → มีร่างของชุดนี้ที่ต่างจากฐานไหม · เทียบเฉพาะคนที่ยังอยู่ในรายชื่อ
   useEffect(() => {
@@ -1199,6 +1219,19 @@ export default function Checkin() {
     if (selSection) return sectionFamilyIds.has(el) || (!el && emp.section === selSection);
     return true;
   });
+
+  // 🪪 ผลการสแกนบัตร 1 ใบ → ติ๊กมางานบนจอ (กติกาอยู่ใน utils/badgeCheckin.js) · คืน string = ข้อความ error ให้ ScanModal/toast
+  const onBadgeScan = (parsed) => {
+    if (!canRecord) return 'บัญชีนี้ไม่มีสิทธิ์เช็คชื่อ (checkin:record)';
+    const raw = parsed?.raw || '';
+    const r = badgeScanOutcome({ employees, displayedIds: new Set(displayed.map(e => e.id)), attendance, raw });
+    if (r.kind === 'unknown') return `ไม่พบรหัส "${raw}" ในรายชื่อพนักงานที่โหลดมา — ตรวจรหัสบนบัตร หรือพนักงานยังไม่อยู่ในทะเบียน`;
+    if (r.kind === 'not_shown') return `${r.emp.name} (${r.emp.employee_id_code}) ไม่อยู่ในรายชื่อที่แสดงตอนนี้ (คนละไลน์/กะ/ตัวกรอง) — เปลี่ยนตัวกรอง หรือกด "ยืมตัว" ถ้ามาช่วยไลน์นี้`;
+    if (r.kind === 'already') return { ok: `✓ ${r.emp.name} — เช็คมางานไว้แล้ว` };
+    setAttendance(prev => ({ ...prev, [r.emp.id]: r.record }));
+    return { ok: `✓ ${r.emp.name} (${r.emp.employee_id_code}) — มางาน` };
+  };
+  badgeScanRef.current = isMobile && displayed.length > 0 ? onBadgeScan : null;
   /* 🔴 เรียงตามกลุ่มคน (หน้างาน → ช่าง → สนับสนุน) เพื่อให้แทรกหัวข้อกลุ่มได้ (14/10)
      ใช้ sort ที่เสถียร ⇒ ภายในกลุ่มยังเรียงตามรหัสพนักงานเหมือนเดิมทุกประการ
      🔴 ห้ามเปลี่ยน "ใครอยู่ใน displayed" — ตัวแปรนี้คือรายชื่อที่ถูก **บันทึก** ด้วย (บรรทัด ~601) */
@@ -1950,6 +1983,21 @@ export default function Checkin() {
         </div>
       )}
 
+      {isMobile && canRecord && displayed.length > 0 && (
+        <button type="button" onClick={() => setBadgeScanOpen(true)}
+          style={{ width: '100%', minHeight: 52, marginBottom: 12, borderRadius: 12, border: '2px solid var(--accent)', background: 'var(--accent-dim)',
+            color: 'var(--accent)', fontSize: 16, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
+          🪪 สแกนบัตรพนักงานเช็คชื่อ
+        </button>
+      )}
+      {badgeScanOpen && (
+        <ScanModal title="สแกนบัตรพนักงาน" closeOnHit={false}
+          hint="ส่องกล้องที่ QR บนบัตร หรือกดปุ่มสแกนข้างเครื่อง — สแกนต่อได้ทีละคนจนครบ แล้วปิดหน้าต่างนี้กด 💾 บันทึก"
+          onScan={onBadgeScan} onClose={() => setBadgeScanOpen(false)}
+          footer={<div style={{ marginTop: 12, fontSize: 13, fontWeight: 700, color: 'var(--text2)' }}>
+            มางาน {displayed.filter(e => attendance[e.id]?.is_present).length}/{displayed.length} คน · <span style={{ color: '#f59e0b' }}>ยังไม่ได้บันทึก</span>
+          </div>} />
+      )}
       {isMobile ? (
         <div className="ck-cards">
           {displayed.map(renderCheckinRow)}
