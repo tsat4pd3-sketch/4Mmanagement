@@ -36,9 +36,9 @@ test('พาร์ทไม่อยู่ในไฟล์ e-SMART = ตาม
   assert.equal(splitPullCovered([rec('2026-10-21', '08:00', '10100385')], B).insert.length, 1);
 });
 
-test('dock ต่างกัน = คนละเที่ยว · ship-to อื่นไม่โดน', () => {
+test('⭐ 27/10 dock ไม่กัน (862 AAT มีแต่ B5 · ไฟล์ B1 ยืนยันช่วงนั้นแล้ว) · ship-to อื่นไม่โดน', () => {
   const B = pullCoverBatches([batch('b1', 21, 6, 21, 8, 'B1')], [sig('b1', '10100385')], FM);
-  assert.equal(splitPullCovered([rec('2026-10-21', '08:00', '10100385', 'B5')], B).insert.length, 1);
+  assert.equal(splitPullCovered([rec('2026-10-21', '08:00', '10100385', 'B5')], B).covered.length, 1);
   assert.equal(splitPullCovered([rec('2026-10-21', '08:00', '10100385', 'B1', 'GBJ')], B).insert.length, 1);
   assert.equal(splitPullCovered([rec('2026-10-21', '08:00', '10100385', 'B1')], B).covered.length, 1);
 });

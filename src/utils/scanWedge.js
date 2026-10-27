@@ -16,6 +16,8 @@
    · ไฟล์นี้ไม่ตัดสินว่ารหัสคืออะไร — แค่บอกว่า "นี่คือการสแกน" (ตีความรหัส = `utils/qrCode.js` parseQrPayload)
    ═══════════════════════════════════════════════════════════════════════════════════════════════ */
 
+import { parseQrPayload } from './qrCode.js';
+
 export const SCAN_MIN_LEN = 4;
 export const SCAN_MAX_GAP_MS = 40;
 export const TRAIL_ENTER_MS = 200;
@@ -103,11 +105,19 @@ export function normScanCode(s) {
  * @returns {object|null} ตัวที่ตรงตัวเดียว · ไม่เจอ/เจอหลายตัว = null (ให้คนเลือกเอง ห้ามเดา)
  */
 export function exactScanMatch(options, raw) {
-  const q = normScanCode(raw);
-  if (!q) return null;
+  /* 🔴 22→27/10 — แกะรูปแบบป้ายของระบบก่อน (`ESM:M:<uuid>` · ลิงก์ `/scan?c=…`) ไม่งั้นสแกนสติกเกอร์ที่ระบบพิมพ์เอง
+     ลงช่องเลือกเครื่อง/พาร์ท "ไม่ตรงอะไรเลย" ทั้งที่ป้ายถูก · ป้ายที่อ่านรูปแบบออก = เทียบด้วย id ในป้าย
+     เลขเปล่า (บาร์โค้ดเดิม/บัตรพนักงาน/พิมพ์มือ) = เทียบตามเดิม */
+  const parsed = parseQrPayload(raw);
+  if (!parsed) return null;
+  const qs = [...new Set([parsed.id, parsed.raw].map(normScanCode).filter(Boolean))];
+  if (!qs.length) return null;
   const strip = (v) => normScanCode(String(v ?? '').replace(/^MAT\s+/i, ''));
+  /* ช่องที่เทียบ: id · label · lead · code · employee_code (บัตรพนักงาน — ตัวเลือกคนเก็บรหัสไว้ช่องนี้ ไม่ได้โชว์เป็นป้าย) ·
+     scanKeys (รหัสอื่นที่ตัวเลือกอยากให้สแกนเจอโดยไม่ต้องโชว์บนจอ) */
+  const keysOf = (o) => [o.id, o.label, o.lead, o.code, o.employee_code, ...(Array.isArray(o.scanKeys) ? o.scanKeys : [])];
   // ตัวเลือก "นอกทะเบียน" (history) ไม่นับ — ตัวหนึ่งในนั้นคือเงาของคำที่เพิ่งสแกนเอง (พาเรนต์เก็บคำค้นแล้วเติมกลับ)
-  const hits = (options || []).filter(o => !o.history && [o.id, o.label, o.lead, o.code].some(v => v != null && v !== '' && strip(v) === q));
+  const hits = (options || []).filter(o => !o.history && keysOf(o).some(v => v != null && v !== '' && qs.includes(strip(v))));
   const uniq = [...new Map(hits.map(o => [o.id, o])).values()];
   return uniq.length === 1 ? uniq[0] : null;
 }

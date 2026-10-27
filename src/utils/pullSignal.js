@@ -405,7 +405,11 @@ export function dockLegsOf(parsed, { pattern = 'normal', shipTime = '', workDate
 export function planDockLegs(legs, orders, resolveMat, slotOf) {
   let pool = orders || [];
   const out = [];
-  for (const leg of legs || []) {
+  /* dock ที่มีใบของตัวเองมากกว่าวางแผนก่อน — ใบแผน B5 ต้องตกเป็นของเที่ยว B5 ก่อน
+     เที่ยว B1 ค่อยรับใบแผนที่เหลือในช่วง (27/10 · 862 ของ AAT มีแต่ B5) */
+  const own = (leg) => pool.filter(o => dockKey(o.dock_code) && dockKey(o.dock_code) === dockKey(leg.dock)).length;
+  const ordered = [...(legs || [])].map((l, i) => ({ l, i, n: own(l) })).sort((a, b) => (b.n - a.n) || (a.i - b.i)).map(x => x.l);
+  for (const leg of ordered) {
     const plan = planOrderUpdates(leg.groups || [], pool, resolveMat, slotOf(leg));
     const used = new Set();
     plan.forEach(x => { if (x.order?.id) used.add(x.order.id); (x.merge || []).forEach(o => used.add(o.id)); });
@@ -820,10 +824,14 @@ export function planOrderUpdates(groups, orders, resolve, slot) {
   };
   const inWindow = (o) => {
     if (windowMode) {
-      if (!dockOk(o)) return false;
-      if (o.pull_batch_id && ownBatch.has(o.pull_batch_id)) return true;         // อัพไฟล์เดิมซ้ำ = แก้ใบเดิม
+      if (o.pull_batch_id && ownBatch.has(o.pull_batch_id)) return dockOk(o);    // อัพไฟล์เดิมซ้ำ = แก้ใบเดิม
       if (o.pull_batch_id && o.pull_batch_id !== slot.batchId) return false;     // ไฟล์อื่นยืนยันไปแล้ว
       if (o.source !== 'edi_862') return false;                                   // ใบคีย์มือ/ใบระบบอื่น ห้ามแตะ
+      /* ⭐ 27/10 — ใบแผน 862 ที่ยังไม่มีใครยืนยัน (pending) = "แผนรวมของช่วงนั้น" ทุก dock เคลมได้ (dock ตรงก่อน)
+         เหตุ: 862 ของ AAT ลง dock **B5 อย่างเดียว** (ไม่เคยมี B1 เลย) แต่ลูกค้าดึงจริงทั้ง B1 + B5
+         เดิมไฟล์ B1 แตะใบ B5 ไม่ได้ ⇒ สร้างใบใหม่ทุกไฟล์ (= add order) + ใบแผน B5 ค้างแดงทั้งช่วง
+         ใบที่ยืนยัน/เตรียม/ส่งไปแล้ว ยังยึด dock เหมือนเดิม (กติกา 15/09 — เที่ยวที่เกิดจริงคนละท่า) */
+      if (o.status !== 'pending' && !dockOk(o)) return false;
       return pullInWindow(o);
     }
     if (!slot?.targetAt) return true;

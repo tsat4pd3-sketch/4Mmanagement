@@ -5417,6 +5417,8 @@ test('🛡️ esmart-window-confirm — e-SMART ต้องทับใบแ�
   if (/planOrderUpdates\(/.test(up)) bad.push('PullSignalUpload.jsx (เรียก planOrderUpdates ตรง — ต้องผ่าน planDockLegs)');
   /* 24/10 — แถวลูกค้าบนชาร์ตล็อกตามทะเบียน (orderShipToRows) ห้ามวาดตาม Object.entries(byCustomer) */
   const cd = stripComments(readFileSync(join(ROOT, 'src/pages/CustomerDemand.jsx'), 'utf8'));
+  /* 27/10 — แผน 862 รอ e-SMART ห้ามนับเป็น "เลยเวลา"/"ค้างส่ง" (AAT แดงทั้งแถวทุกวัน) */
+  if (!/const isOverdue = \(o\) => isOpenOrder\(o\) && !isPlan\(o\)/.test(cd)) bad.push('CustomerDemand.jsx (isOverdue ไม่กันแผน 862 รอ e-SMART — ใช้ isEsmartPlanRow จาก utils/shipPlan.js)');
   if (/\{Object\.entries\(byCustomer\)\.map/.test(cd)) bad.push('CustomerDemand.jsx (แถวลูกค้าวาดตามลำดับคิวรี — ต้องใช้ custOrder จาก orderShipToRows)');
   assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n'
     + '   แก้: planOrderUpdates โหมดช่วงเวลา (pullSignal.js) + splitPullCovered/pullCoverBatches (ediMerge.js)\n');
@@ -5611,6 +5613,11 @@ test('🛡️ lot-dest-from-rules — ปลายทางของล็อต
     bad.push('HeijunkaKanban.advanceLot (ยังเขียน ledger ลงที่ lot.source_line = ชื่อไลน์ผลิต)');
   if (!/if \(!destLoc\)/.test(hk))
     bad.push('HeijunkaKanban.advanceLot (ไม่มีกฎแล้วไม่ได้บล็อก — เดาคลังเองกู้ยากกว่ารอคนตั้งกฎ)');
+  /* 🔴 27/10 (ข้อ A2) — ปิดล็อตลงสต็อกได้เฉพาะพาร์ทที่ยังอยู่โหมด 🔧
+     พาร์ทที่ย้ายไปโหมด 🟡 ยืนยันรับ ของเข้าทางคิว "รอรับเข้า" แล้ว ⇒ ลงที่นี่อีก = เข้าคลัง 2 เด้ง
+     (ตรงกับที่สโตร์แจ้ง: *"ถ้ามีปุ่มนี้จะเหมือนเป็นการรับงานซ้ำ 2 รอบ"*) */
+  if (!/lotMatsOf\((?:rulesRows|rules)/.test(hk))
+    bad.push('HeijunkaKanban.advanceLot (ไม่ได้เช็คโหมดก่อนลงสต็อก — พาร์ทโหมดยืนยันรับจะเข้าคลัง 2 เด้ง)');
 
   /* 🔴 จอที่เอากฎรับเข้าไปป้อน partRefStock ต้อง select `mode` มาด้วย — ตอนนี้ `mode` คือสิ่งที่
      `/line-stock` ใช้แสดง/แก้ "ยอดเข้าทางไหน" ขาดไป = จอตั้งค่าโชว์โหมดผิด */

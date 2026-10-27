@@ -49,5 +49,8 @@ JIG MTN 10 · Maintenance 3 · Die/Tooling MTN 3 · MTN 1 · processengineering 
 ซึ่งเป็น**ขอบเขตที่เห็น** — และพอ `scope_depth='all'` ค่านั้นก็ถูก override เป็น "เห็นทุกส่วน" อยู่ดี
 ⇒ ข้อมูล "ตรวจให้ไลน์ไหน" **ไม่มีที่อยู่จริงในระบบ**
 
-🔴 **ยังไม่แก้** — เปลี่ยน `profiles.section` เป็น `QA` จะเปลี่ยน**สิทธิ์เขียน**ของ 13 คนทันที
-(ของที่เขาเคยแก้ในขอบเขต PD3 อาจเขียนไม่ได้) ต้องให้ user ตัดสินก่อน · ดู "ข้อเสนอ" ในแชท 26/10
+✅ **แก้แล้ว 27/10** (คำสั่ง user *"ทำเลย แยก QA ออกจากผลิต"*) — พิสูจน์ก่อนแก้ว่า**ไม่กระทบสิทธิ์ใคร**:
+`UserContext.section` อ่าน `employees.section` (= `QA`) ชนะ `profiles.section` อยู่แล้ว และ role `qa`
+ถือคีย์ `scope:all_units` ⇒ ค่า `PD3` นั้นเป็นข้อมูลที่ขัดกันเฉยๆ ไม่เคยถูกใช้ตัดสินอะไร
+· `profiles.section` ของ 13 บัญชี → `QA` · "ตรวจให้หน่วยไหน" ย้ายไปแกนที่ 3 `qa_inspector_scopes`
+📄 `docs/modules/qa-inspector-scopes.md`
