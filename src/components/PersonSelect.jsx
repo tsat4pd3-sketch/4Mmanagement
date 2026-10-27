@@ -26,7 +26,7 @@ import { personOptions, sameName, appendHistoryOptions } from '../utils/pickerOp
 
 export { personOptions };
 
-export default function PersonSelect({
+export default function PersonSelect({ scan,
   value = '', onChange, source = 'profiles',
   lines, lineIds, section, roles, teams, strict = false,
   allowFree = true, placeholder = 'ค้นชื่อ / รหัสพนักงาน…', freeHint = '', emptyText,
@@ -48,6 +48,7 @@ export default function PersonSelect({
   return (
     <SearchSelect
       value={sel ? sel.id : ''} text={value || ''} options={options} onChange={emit}
+      scan={scan === false ? undefined : (scan || 'บัตรพนักงาน')}   /* 📷 มือถือ: สแกนเพื่อเลือก (27/10) · scan={false} = ปิด */
       allowFree={allowFree} placeholder={placeholder} freeHint={freeHint}
       emptyText={emptyText || (failed ? 'โหลดทะเบียนคนไม่สำเร็จ' : 'ไม่พบชื่อที่ค้นหา')}
       disabled={disabled} inputStyle={inputStyle} style={style} wrapRows={wrapRows} maxRows={maxRows}
