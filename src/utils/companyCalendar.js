@@ -5,6 +5,7 @@
  * day_type: 'working' | 'ot15' (หยุด OT*1.5) | 'ot2' (หยุด OT*2)
  */
 import { supabase } from '../supabaseClient';
+import { isWorkingDayFrom, setDayTypeMap } from './workingDay';
 
 export const DAY_TYPE_META = {
   working: { label: 'วันทำงาน',        color: '#3d3d3d', otMultiplier: 1 },
@@ -32,11 +33,10 @@ export function countWorkingDaysInMonth(monthKey, fallback = 22) {
   const [y, m] = monthKey.split('-').map(Number);
   const nDays = new Date(y, m, 0).getDate();
   let wd = 0;
+  /* 🔴 กฎ "วันไหนคือวันทำงาน" อยู่ที่ `utils/workingDay.js` ที่เดียว (27/10)
+     — เวลาพักวันหยุดใช้กฎเดียวกันนี้ ถ้าแยก 2 ชุดเมื่อไหร่ ตัวนับวันกับการหักพักจะไม่ตรงกัน */
   for (let d = 1; d <= nDays; d++) {
-    const t = cache.get(`${monthKey}-${String(d).padStart(2, '0')}`);
-    const dow = new Date(y, m - 1, d).getDay();
-    if (t) { if (t === 'working') wd++; continue; }
-    if (dow >= 1 && dow <= 5) wd++;
+    if (isWorkingDayFrom(cache, `${monthKey}-${String(d).padStart(2, '0')}`)) wd++;
   }
   return wd || fallback;
 }
@@ -47,6 +47,9 @@ export async function loadCompanyCalendar(forceRefresh = false) {
   if (cache && !forceRefresh) return cache;
   const { data } = await supabase.from('company_calendar').select('work_date, day_type');
   cache = new Map((data || []).map(r => [r.work_date, r.day_type]));
+  /* ป้อนทะเบียนให้ `utils/workingDay.js` — `utils/oee.js` อ่านจากที่นั่นเพื่อหักเวลาพักวันหยุด
+     (oee.js import ไฟล์นี้ตรงๆ ไม่ได้ เพราะไฟล์นี้ import supabaseClient แล้วเทสใน node จะพัง) */
+  setDayTypeMap(cache);
   return cache;
 }
 

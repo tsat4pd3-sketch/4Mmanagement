@@ -7179,3 +7179,26 @@ test('🧭 identity-line-wider — ตัวตนจากฐานพนัก
   assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n  ')
     + '\n\n   หัวหน้าที่ดูแล "ไลน์แม่" แต่ตัวเองสังกัดไลน์ลูก จะถูกบีบเหลือกลุ่มย่อยของตัวเองเงียบๆ\n');
 });
+
+test('🏖️ holiday-break-single-entry — เวลาพักวันหยุด/กฎวันทำงาน ต้องมีชุดเดียว', () => {
+  /* 27/10 (คำสั่ง user): วันที่ปฏิทินบอกว่าไม่ใช่วันทำงาน พักเที่ยง 50 → 60 นาที
+     🔴 ค่าเป็นของโรงงาน ไม่ใช่ตรรกะ ⇒ อยู่ในทะเบียน `break_policies.duration_min_holiday`
+        ห้ามฝังเลขในโค้ด (วันหลังเปลี่ยนเป็น 45/70 จะต้องรอโปรแกรมเมอร์)
+     🔴 กฎ "วันไหนคือวันทำงาน" มีชุดเดียว = `isWorkingDayFrom()` ใน utils/workingDay.js
+        — ตัวนับวันทำงานในเดือน (companyCalendar) ต้องเรียกตัวเดียวกัน ไม่งั้นตัวนับวัน
+          กับการหักเวลาพักจะไม่ตรงกัน แล้วหาไม่เจอว่าจอไหนถูก */
+  const bad = [];
+  const oee = stripComments(readFileSync(join(ROOT, 'src/utils/oee.js'), 'utf8'));
+  if (!/applyHolidayBreaks\s*\(/.test(oee)) bad.push('src/utils/oee.js: ไม่ได้เรียก applyHolidayBreaks()');
+
+  const cal = stripComments(readFileSync(join(ROOT, 'src/utils/companyCalendar.js'), 'utf8'));
+  if (!/isWorkingDayFrom\s*\(/.test(cal)) bad.push('companyCalendar.js: countWorkingDaysInMonth ไม่ได้ใช้ isWorkingDayFrom()');
+  if (!/setDayTypeMap\s*\(/.test(cal)) bad.push('companyCalendar.js: โหลดปฏิทินแล้วไม่ได้ป้อนให้ workingDay.js');
+
+  /* workingDay.js ต้องบริสุทธิ์ — oee.js import มัน และ oee.js มีเทสที่รันใน node */
+  const wd = readFileSync(join(ROOT, 'src/utils/workingDay.js'), 'utf8');
+  if (/from\s+['"]\.\.?\/supabaseClient/.test(wd)) bad.push('workingDay.js: ห้าม import supabaseClient (เทสจะพัง)');
+
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n  ')
+    + '\n\n   หักเวลาพักผิด = ฐานเวลาของ %A/%P ผิดทั้งกะ โดยไม่มีใครเห็นบนจอ\n');
+});

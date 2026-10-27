@@ -35,6 +35,7 @@ import { collapsePairShots } from './pairTotals.js';
 // §8 computeSessionOee ต้องรู้โหมดไลน์/จำนวนสถานีขนาน (source of truth = lineTypes.js · ไม่มี import วนกลับ)
 import { parallelUnitsOf, flowModeOf } from './lineTypes.js';
 import { applyBreakLineRules, breakLineRuleIndexSync, breakBandName, breakBandTitle } from './breakLineRules.js';   // ข้อยกเว้นเวลาพัก "รายไลน์" (เจ้าของกฎไล่สายแม่-ลูก)
+import { applyHolidayBreaks } from './workingDay';
 /* 🏭 ป้ายบนแถบเงาเวลาพัก — เจ้าของข้อความอยู่ `breakLineRules.js` ส่งต่อที่นี่เพื่อให้จอ
    **import จาก `utils/oee` ที่เดียว** คู่กับ `halfDayBreakBands` ที่ผลิต band ให้
    (จอที่ไล่สายไลน์ด้วย `getAncestorNames` เรื่องอื่นอยู่ จะได้ไม่ต้อง import breakLineRules
@@ -288,11 +289,15 @@ export function breakBandsIn({ policies = [], startMs, endMs, workDate, shift, p
     return { s, e, policies: [p], lineRuleMin: lr === undefined ? null : lr,
              centralMin: lr === undefined ? null : (Number(p.line_rule_central_min) || 0) };
   };
-  const applicable = policies.filter(p => {
+  /* 🏖️ วันที่ "ไม่ใช่วันทำงาน" ตามปฏิทินบริษัท ใช้นาทีพักอีกชุด (`duration_min_holiday` · 27/10)
+     เคสจริง: วันหยุดที่คนมาทำ OT พักเที่ยง 50 → 60 นาที (คำสั่ง user)
+     🔴 ทับ **ก่อน** `applyBreakLineRules` เสมอ ⇒ ไลน์ที่ตั้งนาทีของตัวเองยังชนะ (ค่าเจาะจงที่สุด)
+     🔴 ปฏิทินยังไม่โหลด / เป็นวันทำงาน / ไม่ได้ตั้งค่าวันหยุด = คืนชุดเดิมเป๊ะ (ดู utils/workingDay.js) */
+  const applicable = applyHolidayBreaks(policies.filter(p => {
     if (!(p.shift === 'both' || p.shift === shift)) return false;
     const proc = p.process_type;
     return !(proc && proc !== 'common' && proc !== processType);
-  });
+  }), workDate);
   /* ⚠️ นโยบายที่เกิด "เฉพาะตอนทำโอ / เฉพาะตอนไม่ทำโอ" (break_policies.ot_scope · 2026-09-14)
      เคสจริงที่ user จับได้: 5ส. กะเช้ามี 2 แถว — 17:10 (ไม่ทำโอ) กับ 19:40 (ทำโอ) ซึ่งเป็น
      "อย่างใดอย่างหนึ่ง" แต่กะ 08:00-20:00 กวาดทั้งคู่ ⇒ หักพักเกินจริง 20 นาที ทุกกะที่ทำโอ

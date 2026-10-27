@@ -8133,7 +8133,7 @@ function BreakPolicySetup({ role }) {
   const [lineRuleCount, setLineRuleCount] = useState({});
   const [lineRuleErr, setLineRuleErr] = useState(false);
   const [rulesFor, setRulesFor] = useState(null);   // นโยบายที่กำลังเปิดแผงข้อยกเว้นรายไลน์
-  const emptyForm = { name_th: '', name_en: '', shift: 'both', start_time: '08:00', duration_min: 10, process_type: 'common', ot_scope: 'always', anchor: 'clock', offset_min: 20, sort_order: 0, is_active: true };
+  const emptyForm = { name_th: '', name_en: '', shift: 'both', start_time: '08:00', duration_min: 10, duration_min_holiday: '', process_type: 'common', ot_scope: 'always', anchor: 'clock', offset_min: 20, sort_order: 0, is_active: true };
   const [form, setForm] = useState(emptyForm);
 
   const load = useCallback(async () => {
@@ -8150,7 +8150,7 @@ function BreakPolicySetup({ role }) {
   const openEdit = (item = null) => {
     setEditing(item?.id || 'new');
     setForm(item
-      ? { name_th: item.name_th, name_en: item.name_en || '', shift: item.shift, start_time: (item.start_time || '08:00').slice(0,5), duration_min: item.duration_min, process_type: item.process_type, ot_scope: item.ot_scope || 'always', anchor: item.anchor || 'clock', offset_min: item.offset_min ?? item.duration_min ?? 20, sort_order: item.sort_order, is_active: item.is_active }
+      ? { name_th: item.name_th, name_en: item.name_en || '', shift: item.shift, start_time: (item.start_time || '08:00').slice(0,5), duration_min: item.duration_min, duration_min_holiday: item.duration_min_holiday ?? '', process_type: item.process_type, ot_scope: item.ot_scope || 'always', anchor: item.anchor || 'clock', offset_min: item.offset_min ?? item.duration_min ?? 20, sort_order: item.sort_order, is_active: item.is_active }
       : { ...emptyForm, sort_order: items.length + 1 });
   };
 
@@ -8171,8 +8171,15 @@ function BreakPolicySetup({ role }) {
     setSaving(true);
     /* เก็บเฉพาะช่องที่ "โหมดนั้นใช้จริง" — อีกช่องต้องเป็น null ไม่ใช่ค่าค้างจากโหมดก่อน
        (ค่าค้าง = คนอ่านทะเบียนแล้วเข้าใจผิดว่าพักเริ่มกี่โมง) */
+    /* 🏖️ ช่องวันหยุด: ว่าง = null (ใช้ค่าปกติทุกวัน) — ห้ามเขียน 0 แทนว่าง
+       เพราะ 0 แปลว่า "วันหยุดไม่พักเลย" ซึ่งเป็นคนละความหมาย */
+    const holRaw = String(form.duration_min_holiday ?? '').trim();
+    const hol = holRaw === '' ? null : parseInt(holRaw);
+    if (hol !== null && !(hol >= 0)) { toast.error('นาทีพักวันหยุดต้องเป็นตัวเลข 0 ขึ้นไป (เว้นว่าง = ใช้ค่าปกติ)'); setSaving(false); return; }
+    if (hol !== null && byEnd && off < hol) { toast.error(`วันหยุดพัก ${hol} นาที แต่เริ่มก่อนเลิกกะแค่ ${off} นาที — พักจะล้นเลยเวลาเลิกกะ`); setSaving(false); return; }
     const payload = {
       ...form, duration_min: dur, sort_order: parseInt(form.sort_order) || 0,
+      duration_min_holiday: hol,
       start_time: byEnd ? null : form.start_time,
       offset_min: byEnd ? off : null,
       updated_at: new Date().toISOString(),
@@ -8301,6 +8308,19 @@ function BreakPolicySetup({ role }) {
                 <Field label="ระยะเวลา (นาที)">
                   <input type="number" min="1" value={form.duration_min} onChange={e => setForm(f => ({ ...f, duration_min: e.target.value }))} style={{ ...inputStyle, fontWeight: 800, fontSize: 16, textAlign: 'center' }} />
                 </Field>
+                {/* 🏖️ นาทีพักของ "วันที่ไม่ใช่วันทำงาน" (27/10 · คำสั่ง user: วันหยุดพักเที่ยง 50 → 60)
+                    ว่าง = ใช้ค่าเดียวกับช่องซ้ายทุกวัน (พฤติกรรมเดิม) */}
+                <Field label="วันหยุด (นาที)">
+                  <input type="number" min="0" placeholder="เท่าเดิม"
+                    value={form.duration_min_holiday ?? ''}
+                    onChange={e => setForm(f => ({ ...f, duration_min_holiday: e.target.value }))}
+                    style={{ ...inputStyle, fontWeight: 800, fontSize: 16, textAlign: 'center' }} />
+                </Field>
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: -4, lineHeight: 1.55 }}>
+                🏖️ <strong style={{ color: 'var(--text2)' }}>วันหยุด (นาที)</strong> = ใช้เมื่อ<strong style={{ color: 'var(--text2)' }}>ปฏิทินบริษัท</strong>บอกว่าวันนั้นไม่ใช่วันทำงาน
+                (เสาร์-อาทิตย์ที่ไม่ได้มาร์คว่าทำงาน · วันที่มาร์ค OT×1.5 / OT×2 / ม.75) — เช่น พักเที่ยงปกติ 50 วันหยุดใส่ 60
+                <br />เว้นว่าง = ใช้เท่ากันทุกวันเหมือนเดิม · ไลน์ที่ตั้งนาทีของตัวเองไว้ที่ <strong style={{ color: 'var(--text2)' }}>ข้อยกเว้นรายไลน์</strong> ยังชนะค่านี้
               </div>
               {form.anchor === 'shift_end' && (
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: -4, lineHeight: 1.55 }}>
