@@ -7019,3 +7019,43 @@ test('🫙 manual-open-product-empty-reason — ช่องเลือกส�
     + '\n\n   ทำไมสำคัญ: "ไม่มีสินค้า register" กับ "มีแต่ถูกปิดใช้งาน" แก้คนละทางกันคนละคน\n'
     + '              บอกผิด = หน้างานรอของที่ไม่ต้องรอ และของที่ต้องทำไม่มีใครทำ\n');
 });
+
+/* ═══ 🔧 ขั้น 4 ของใบ JIG/DIE เป็นของหัวหน้าแผนกช่าง — ห้ามลืมส่ง `toolTeam` ═══  2026-10-27
+   คำสั่ง user: *"สำหรับ MO ของ jig กับ DIE งานซ่อมนอกไลน์ step 4 ต้องเป็นหัวหน้าแผนกช่าง
+   ก่อน QA ไม่ใช่ผู้แจ้ง"* — `stepMeta/stepLabel/stepDenyHint/stepAssumptions` ต้องรู้ 2 อย่าง:
+   ฟอร์มไหน (`mtnForm`) **และ** ทีมเครื่องมือไหม (`toolTeam`)
+   ลืมส่ง `toolTeam` = ไม่พัง ไม่มี error — แค่จอกลับไปเขียนว่า "ผู้เปิดใบแจ้งซ่อม (ฝ่ายที่แจ้ง)"
+   ทั้งที่ปุ่มกดไม่ได้ (canDoStep อ่านจากใบเอง) ⇒ **จอบอกคนผิดว่าใครต้องเซ็น** = คนเดินไปตามผิดคน
+   (คลาสเดียวกับ `dtMinBySession` ที่ไม่ส่ง `{lines}` แล้วกะหายเงียบ) */
+test('🔧 ส่ง mtnForm เข้าตัวอ่านขั้นที่ไหน ต้องส่ง toolTeam ที่นั่นด้วย', () => {
+  const FNS = ['stepMeta', 'stepLabel', 'stepDenyHint', 'stepAssumptions'];
+  const bad = [];
+  for (const f of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const rel = relative(ROOT, f);
+    // เจ้าของกฎเอง + ชั้น util ที่อ่านทีมจากใบให้แล้ว (canDoStep/moWaitMeta) ไม่ต้องมีใครส่งเข้ามา
+    if (rel === 'src/utils/mtnStepPerm.js') continue;
+    const src = stripComments(readFileSync(f, 'utf8'));
+    for (const fn of FNS) {
+      /* 🔴 ต้องนับวงเล็บให้สมดุล ห้ามใช้ regex จับถึง `)` ตัวแรก —
+         `stepLabel(step, { mtnForm: isMtnFormOrder(order), toolTeam: … })` มีวงเล็บซ้อน
+         regex แบบขี้เกียจจะตัดที่ `isMtnFormOrder(order)` แล้วฟ้องผิดทั้งที่ส่ง toolTeam แล้ว */
+      const re = new RegExp(`\\b${fn}\\(`, 'g');
+      for (const m of src.matchAll(re)) {
+        let i = m.index + m[0].length, depth = 1;
+        while (i < src.length && depth > 0) {
+          const c = src[i];
+          if (c === '(') depth++; else if (c === ')') depth--;
+          i++;
+        }
+        const args = src.slice(m.index + m[0].length, i - 1);
+        if (/\bmtnForm\b/.test(args) && !/\btoolTeam\b/.test(args)) {
+          bad.push(`${rel} → ${fn}(${args.replace(/\s+/g, ' ').slice(0, 70)})`);
+        }
+      }
+    }
+  }
+  assert.deepEqual(bad, [], '\n\n❌ ส่ง mtnForm แต่ไม่ส่ง toolTeam:\n   ' + bad.join('\n   ') + '\n'
+    + '   ทำไม: ขั้น 4 ของใบทีม JIG/DIE เป็นของ "หัวหน้าแผนกช่าง" ไม่ใช่ผู้แจ้ง (27/10)\n'
+    + '         ไม่ส่ง toolTeam = จอเขียนชื่อฝั่งผิด ทั้งที่ปุ่มกดไม่ได้ = คนเดินไปตามผิดคน\n'
+    + '   แก้: เติม `toolTeam: isToolTeamOrder(o)` ข้างๆ `mtnForm` (เกณฑ์อยู่ที่ utils/mtnMoForm.js)\n');
+});

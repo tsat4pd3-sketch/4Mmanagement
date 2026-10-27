@@ -18,7 +18,7 @@ import { signMapOf, signUrlOf } from '../utils/signResolve';
 import { getActor } from '../utils/actorStamp';   // uid ของคนที่กดเซ็น
 import { loadProfilesPeople } from '../utils/usePeople';   // 🔄 เซ็นเสร็จ = คิวต้องอัพเดททันที
 import { toast } from '../components/Toast';
-import { PURPOSES, CAUSE_CATS, needsPlantManager, needsApprovalFirst, laborAmount, partAmount, sumLabor, sumParts, grandTotal, satScore, mtnApprovalState, purposeOfPrint, qaAppliesTo, isMtnFormRow, QA_SKIP_REASON_PURPOSE, QA_SKIP_REASON_MTN_FORM, needsPlantMgrByCost, orderCostTotal, PLANT_MGR_COST_LIMIT } from '../utils/mtnMoForm';
+import { PURPOSES, CAUSE_CATS, needsPlantManager, needsApprovalFirst, laborAmount, partAmount, sumLabor, sumParts, grandTotal, satScore, mtnApprovalState, purposeOfPrint, qaAppliesTo, isMtnFormRow, QA_SKIP_REASON_PURPOSE, QA_SKIP_REASON_MTN_FORM, needsPlantMgrByCost, orderCostTotal, PLANT_MGR_COST_LIMIT, isToolTeamRow } from '../utils/mtnMoForm';
 import AuditLogViewer from '../components/AuditLogViewer';
 import { can, canDelete, isActionSeeded, isSharedAccount } from '../utils/permissions';
 import { MO_STATUS_META as STATUS_META, QA_NOT_RELATED, QA_RELATED, QA_SKIP_REASON_STEP4, canBounceBack, canDoStep, canHandoff, canSignMtnApproval, canSkipQa, isMoOpen, isOrderReporter, isQaSkipped, isWaitingQa, lastStep, orderReporterText, nextStepOf, moQaState, mtnCloseStage, moStatusLabel, moStatusMeta, orderInReporterScope, stageOf, stepDenyHint, stepLabel, stepMeta, moWaitMeta, qaRelatedView, moRemoveMode, MO_REMOVE_BLOCKED, MO_REMOVE_CANCEL, MO_REMOVE_DELETE, actorSideOf, stepAssumptions, assumptionHint } from '../utils/mtnStepPerm';
@@ -252,6 +252,9 @@ const stepPerms = (role) => ({ can: (a) => can('mtn_repair', a, role), seeded: (
       ต้องตัดสินได้จากฝั่ง util ด้วย (qaAppliesTo/moStatusLabel) ⇒ เขียนไว้ 2 ที่ = เพี้ยนกันแน่
    ⚠️ เกณฑ์นี้ถูกใช้ 5 ที่ (ฟอร์มแจ้ง · ขั้นตอน · ป้ายขั้น · ด่านอนุมัติ · ใบพิมพ์) — ห้ามเขียนซ้ำในหน้า */
 const isMtnFormOrder = isMtnFormRow;
+/* 🔧 ใบของทีมเครื่องมือ (JIG/DIE) — ขั้น 4 เป็นของหัวหน้าแผนกช่าง ไม่ใช่ผู้แจ้ง (27/10 · คำสั่ง user)
+   เกณฑ์อยู่ที่ `mtnMoForm.js` ที่เดียว — ห้ามเทียบคีย์ทีมเองในหน้า */
+const isToolTeamOrder = isToolTeamRow;
 
 const notifyMtn = (payload, event) => {
   // ⚠️ DB เก็บ mtn_dept เป็น "รหัสทีม" แต่ข้อความ Telegram ต้องอ่านออก → ส่งเป็น "ชื่อทีม" ไปใน payload
@@ -1699,7 +1702,7 @@ function ReportModal({ lines, machines, machineTypesById = {}, orders = [], item
    — ใบ MTN ช่วง handover แยก 6/7/8 ด้วยเวลาเซ็นจริง (mtnCloseStage) ไม่ใช่ current_step */
 function nextStepFor(order) {
   const step = nextStepOf(order);
-  return step == null ? null : { step, label: stepLabel(step, { mtnForm: isMtnFormOrder(order) }) };
+  return step == null ? null : { step, label: stepLabel(step, { mtnForm: isMtnFormOrder(order), toolTeam: isToolTeamOrder(order) }) };
 }
 
 /* ช่อง "5.คุณภาพ" ในใบพิมพ์: ใบที่ไม่ต้องตรวจ QA ต้องพิมพ์ว่า "ไม่เกี่ยวกับคุณภาพ" ไม่ใช่ปล่อยว่าง
@@ -1813,7 +1816,7 @@ function printMoReport(o, dparts = [], logo0, dlabor = [], cmt = NO_CMT, costErr
   <table>
     <tr><td class="sech" style="width:50.2%;height:25pt"><b>4&5 [CONFIRM QUALITY]</b> <span class="en">ยืนยันคุณภาพ</span></td>
         <td class="sech" style="width:49.8%;height:25pt"><b>6 [ACCEPT]</b> <span class="en">รับมอบหลังซ่อม</span></td></tr>
-    <tr class="q"><td>${L('4.ผลงานหลังแก้ไข:', o.check_result)}${L('4.ผู้ตรวจรับ (ฝ่ายที่แจ้ง):', o.checker_name)}${L('4.รายละเอียด:', o.check_note)}${L('5.คุณภาพหลังการแก้ไข:', o.qa_result || (qaSkippedPrint(o) ? 'ไม่เกี่ยวกับคุณภาพ (ไม่ต้องตรวจ QA)' : ''))}${L('5.รายละเอียด', o.qa_note || (qaSkippedPrint(o) ? `${o.qa_skip_reason || QA_SKIP_REASON_STEP4}${o.qa_skipped_by ? ` — ${o.qa_skipped_by}` : ''}` : ''))}</td>
+    <tr class="q"><td>${L('4.ผลงานหลังแก้ไข:', o.check_result)}${L(isToolTeamOrder(o) ? '4.ผู้ตรวจรับ (หัวหน้าแผนกช่าง):' : '4.ผู้ตรวจรับ (ฝ่ายที่แจ้ง):', o.checker_name)}${L('4.รายละเอียด:', o.check_note)}${L('5.คุณภาพหลังการแก้ไข:', o.qa_result || (qaSkippedPrint(o) ? 'ไม่เกี่ยวกับคุณภาพ (ไม่ต้องตรวจ QA)' : ''))}${L('5.รายละเอียด', o.qa_note || (qaSkippedPrint(o) ? `${o.qa_skip_reason || QA_SKIP_REASON_STEP4}${o.qa_skipped_by ? ` — ${o.qa_skipped_by}` : ''}` : ''))}</td>
         <td>${L('สถานะ:', o.follow_up)}${L('ผู้แจ้ง:', o.ho_reporter || o.reporter_prod)}${L('รายละเอียด:', '')}</td></tr>
   </table>
   <table class="signs">
@@ -2433,7 +2436,7 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
   /* `skipped` = ขั้นนี้ "ไม่ต้องทำ" (ข้ามอย่างเป็นทางการ) — ต่างจาก done (ทำแล้ว) และจาก
      กล่องจางๆ (ยังไม่ได้ทำ) · ห้ามวาดเป็น ✅ เขียว เพราะแปลว่า "มีคนตรวจแล้ว" = โกหกผู้ตรวจสอบ */
   const StepBox = ({ n, done, skipped, note, children }) => {
-    const meta = n === 1 ? { title: 'แจ้งซ่อม', who: 'ผู้แจ้ง (ฝ่ายที่พบปัญหา)' } : stepMeta(n, { mtnForm });
+    const meta = n === 1 ? { title: 'แจ้งซ่อม', who: 'ผู้แจ้ง (ฝ่ายที่พบปัญหา)' } : stepMeta(n, { mtnForm, toolTeam: isToolTeamOrder(o) });
     const mark = done ? '✅' : (skipped || note) ? '⏭' : '⬜';
     return (
     <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 10, marginBottom: 8, background: done ? 'var(--bg2)' : 'transparent', opacity: done || note || skipped ? 1 : 0.55 }}>
@@ -2791,13 +2794,13 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
           <div style={{ color: 'var(--text2)', marginTop: 3 }}>
             {(stepDenyHint(next.step, { teamName: deptNameOf(orderTeam), reporterName: o.reported_by_name || o.reporter_prod, outOfScope: canDoStep(next.step, stepCtx).code === 'out_of_scope', otherTeam: canDoStep(next.step, stepCtx).code === 'other_team',
               wrongSide: canDoStep(next.step, stepCtx).code === 'wrong_side', rankTooLow: canDoStep(next.step, stepCtx).code === 'rank_too_low',
-              orderLine: o.line_name, orderSection: o.dept_section, mtnForm,
+              orderLine: o.line_name, orderSection: o.dept_section, mtnForm, toolTeam: isToolTeamOrder(o),
               awaitApproval: canDoStep(next.step, stepCtx).code === 'await_mgr_approval' ? { missing: appr.missing, deptName: o.dept_manager_name, plantName: o.plant_manager_name } : null }) || []).map((t, i) => <div key={i}>{t}</div>)}
             {/* 🔴 ระบบปล่อยผ่านเพราะ "ไม่รู้ฝั่ง/ตำแหน่งของคนกด" ⇒ ต้องเขียนบนจอ ห้ามเงียบ
                 (ไม่งั้นคนเข้าใจว่าด่านตรวจแล้ว ทั้งที่ไม่ได้ตรวจ — 31% ยังไม่มีส่วนงาน · 79% ไม่มีทีมช่าง) */}
             {(() => {
               const hint = canDoStep(next.step, stepCtx).ok
-                ? assumptionHint(stepAssumptions(next.step, { mtnForm, actorSide, posRank }))
+                ? assumptionHint(stepAssumptions(next.step, { mtnForm, toolTeam: isToolTeamOrder(o), actorSide, posRank }))
                 : null;
               return hint ? <div style={{ color: '#f59e0b', marginTop: 3 }}>{hint}</div> : null;
             })()}
@@ -2981,6 +2984,10 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
   const approverHist = useColumnHistory(supabaseDR, 'mtn_orders', 'approver_name');
   const o = order;
   const isMtnForm = isMtnFormOrder(o);   // ใช้ฟอร์ม/ขั้นตอน FM-MTN-006
+  /* 🔧 ใบทีมเครื่องมือ (JIG/DIE) — ขั้น 4 "ตรวจรับงานหลังซ่อม" เป็นของหัวหน้าแผนกช่าง ไม่ใช่ผู้แจ้ง
+     (27/10 · คำสั่ง user — ของถูกถอดมาซ่อมที่ห้องช่าง ผู้แจ้งยังไม่ได้ของคืนจะตรวจรับไม่ได้)
+     ใช้สลับ **ป้ายช่อง + ลิสต์คนที่ขึ้นก่อน** ให้ตรงกับฝั่งที่เซ็นจริง — เกณฑ์กดได้อยู่ที่ canDoStep */
+  const isToolTeam = isToolTeamOrder(o);
   const [f, setF] = useState(() => ({
     accepted_by: o.accepted_by || fullName || '', repair_type: o.repair_type || 'Breakdown Maintenance', assign_note: o.assign_note || '',
     target_done_at: o.target_done_at ? String(o.target_done_at).slice(0, 10) : '', assigned_to: o.assigned_to || '', assigned_techs: assignedTechsOf(o), reject_reason: o.reject_reason || '',
@@ -3187,7 +3194,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
       const verdict = skipQa ? { ok: true } : canDoStep(step, stepCtx);
       if (!verdict.ok) {
         setSaving(false);
-        const meta = stepMeta(step, { mtnForm: isMtnForm });
+        const meta = stepMeta(step, { mtnForm: isMtnForm, toolTeam: isToolTeamOrder(o) });
         // บอกให้ตรงเหตุ — "ไม่มีสิทธิ์" เฉยๆ ทำให้หน้างานเดาว่าต้องไปขออะไรกับใคร
         if (verdict.code === 'other_team')
           /* 15/10: ด่านนี้ครอบขั้น 2-3 (รับงาน/ลงผลซ่อม) ด้วยแล้ว — ข้อความต้องตรงขั้นที่กด */
@@ -3483,7 +3490,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
 
   // หัวโมดัล = stepLabel() ตัวเดียวกับปุ่มขั้นถัดไป — ห้ามพิมพ์ชื่อขั้นซ้ำที่นี่ (เคยมี map `titles` แล้ว drift)
   return (
-    <ModalShell title={`${o.mo_no || o.item_type || ''} · ${skipQa ? '⏭ ข้าม QA — งานไม่เกี่ยวกับคุณภาพ (ขั้น 5 → 6)' : `${editMode ? '✏️ แก้ไข ' : ''}${stepLabel(step, { mtnForm: isMtnForm })}`}`} onClose={onClose} dirty={dirty}>
+    <ModalShell title={`${o.mo_no || o.item_type || ''} · ${skipQa ? '⏭ ข้าม QA — งานไม่เกี่ยวกับคุณภาพ (ขั้น 5 → 6)' : `${editMode ? '✏️ แก้ไข ' : ''}${stepLabel(step, { mtnForm: isMtnForm, toolTeam: isToolTeam })}`}`} onClose={onClose} dirty={dirty}>
       <div style={{ display: 'grid', gap: 12 }}>
         {skipQa && (
           <div style={{ fontSize: 12, color: 'var(--text2)', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 8, padding: '8px 10px', lineHeight: 1.6 }}>
@@ -3491,10 +3498,10 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
             กดยืนยันเพื่อข้ามการตรวจ QA แล้วไป <b>รับมอบ / ติดตามผล (ขั้น 6)</b> ทันที · ระบบบันทึกชื่อคุณและเหตุผลไว้ในใบ
           </div>
         )}
-        {stepMeta(step, { mtnForm: isMtnForm }) && !skipQa && (
+        {stepMeta(step, { mtnForm: isMtnForm, toolTeam: isToolTeam }) && !skipQa && (
           <div style={{ fontSize: 11.5, color: 'var(--muted)', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 8, padding: '6px 10px' }}>
-            👤 ขั้นนี้เป็นหน้าที่ของ <b style={{ color: 'var(--text2)' }}>{stepMeta(step, { mtnForm: isMtnForm }).who}</b>
-            {stepMeta(step, { mtnForm: isMtnForm }).byReporter && (o.reported_by_name || o.reporter_prod) ? <> · ใบนี้เปิดโดย <b style={{ color: 'var(--text2)' }}>{o.reported_by_name || o.reporter_prod}</b></> : null}
+            👤 ขั้นนี้เป็นหน้าที่ของ <b style={{ color: 'var(--text2)' }}>{stepMeta(step, { mtnForm: isMtnForm, toolTeam: isToolTeam }).who}</b>
+            {stepMeta(step, { mtnForm: isMtnForm, toolTeam: isToolTeam }).byReporter && (o.reported_by_name || o.reporter_prod) ? <> · ใบนี้เปิดโดย <b style={{ color: 'var(--text2)' }}>{o.reported_by_name || o.reporter_prod}</b></> : null}
           </div>
         )}
         {modalStage === 'report' && <>
@@ -3654,7 +3661,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
           <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>รวมค่าใช้จ่าย (1)+(2) = <b style={{ color: 'var(--text)' }}>{((Number(f.labor_cost) || 0) + (Number(f.parts_cost) || 0)).toLocaleString()}</b> บาท · ตั้งราคามาตรฐานที่แท็บ ⚙️ ข้อมูลตั้งต้น → 💰 ค่าแรงมาตรฐาน</div>
         </>}
         {modalStage === 'accept_work' && <>
-          <Field label="ผลตรวจรับ — ฝ่ายที่แจ้งรับงานได้ไหม"><select value={f.check_result} onChange={e => set('check_result', e.target.value)} style={inp}>{CHECK_RESULTS.map(r => <option key={r}>{r}</option>)}</select></Field>
+          <Field label={isToolTeam ? 'ผลตรวจรับ — ช่างตรวจงานผ่านไหม (ก่อนส่ง QA)' : 'ผลตรวจรับ — ฝ่ายที่แจ้งรับงานได้ไหม'}><select value={f.check_result} onChange={e => set('check_result', e.target.value)} style={inp}>{CHECK_RESULTS.map(r => <option key={r}>{r}</option>)}</select></Field>
           {/* 🔴 2026-09-14 (คำสั่ง user): ช่อง "กระทบคุณภาพไหม" ถูกถอดออกจากขั้น 4
               เดิมผู้ตรวจรับ (= ฝ่ายที่แจ้ง) เลือกเองได้ว่าไม่ต้องให้ QA ตรวจ = ผู้ถูกตรวจเปิดด่านเอง
               ตอนนี้ทุกใบจอดรอ QA และ **QA เท่านั้น** ที่ตัดสินว่าเกี่ยว/ไม่เกี่ยวกับคุณภาพ (ขั้น 5) */}
@@ -3671,13 +3678,18 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
               🚫 <b>ใบนี้ไม่มีขั้นตรวจคุณภาพ (QA) ในลูป</b>
               <div style={{ color: 'var(--muted)', marginTop: 2 }}>
                 {isMtnForm ? 'ใบซ่อมของทีม MTN (FM-MTN-006) เดินตามลำดับลายเซ็นของฟอร์มนี้ซึ่งไม่มีช่อง QA' : 'งานสร้าง/ปรับปรุง ไม่ใช่งานซ่อมของที่กำลังผลิต จึงไม่ต้องตรวจคุณภาพหลังซ่อม'} —
-                เซ็นแล้วใบไปที่ <b style={{ color: 'var(--text2)' }}>{stepLabel(nextStepOf({ ...o, status: 'checked' }) ?? (isMtnForm ? 5 : 6), { mtnForm: isMtnForm })}</b> ต่อทันที
+                เซ็นแล้วใบไปที่ <b style={{ color: 'var(--text2)' }}>{stepLabel(nextStepOf({ ...o, status: 'checked' }) ?? (isMtnForm ? 5 : 6), { mtnForm: isMtnForm, toolTeam: isToolTeam })}</b> ต่อทันที
               </div>
             </>}
           </div>
           <Field label="ระบุรายละเอียด (เช่น ยังเหลืออะไรต้องตามต่อ)"><input value={f.check_note} onChange={e => set('check_note', e.target.value)} style={inp} /></Field>
-          {/* ผู้ตรวจรับ = คนของฝ่ายที่แจ้ง (ไลน์/แผนกของใบขึ้นก่อน) ผ่าน <PersonSelect> · 2026-09-07 */}
-          <Field label="ชื่อผู้ตรวจรับงาน (ฝ่ายที่แจ้ง)"><PersonSelect value={f.checker_name} source="both" lines={orderFam} section={o.dept_section} history={checkerHist} onChange={res => set('checker_name', res.name)} inputStyle={{ background: 'var(--bg)' }} /></Field>
+          {/* ผู้ตรวจรับ = คนของฝ่ายที่แจ้ง (ไลน์/แผนกของใบขึ้นก่อน) ผ่าน <PersonSelect> · 2026-09-07
+              🔧 ใบ JIG/DIE = คนของ **ทีมช่างที่ซ่อม** ขึ้นก่อนแทน (27/10) — ลิสต์ที่เรียงคนหน้าไลน์ขึ้นก่อน
+                 ทำให้คนที่เซ็นได้จริงจมอยู่ท้ายลิสต์ 280 คน (กับดักเดียวกับช่อง "ผู้รับเรื่อง" ที่ทีม DIE แจ้ง 06/10) */}
+          <Field label={isToolTeam ? 'ชื่อผู้ตรวจรับงาน (หัวหน้าแผนกช่าง / วิศวกร ของทีมที่ซ่อม)' : 'ชื่อผู้ตรวจรับงาน (ฝ่ายที่แจ้ง)'}>
+            <PersonSelect value={f.checker_name} source="both"
+              lines={isToolTeam ? NO_LINES : orderFam} section={isToolTeam ? undefined : o.dept_section} teams={isToolTeam ? acceptTeams : undefined}
+              history={checkerHist} onChange={res => set('checker_name', res.name)} inputStyle={{ background: 'var(--bg)' }} /></Field>
         </>}
         {skipQa && <>
           <Field label="เหตุผลที่ไม่ต้องให้ QA ตรวจ (เช่น ซ่อมไฟ/ลม/โครงสร้าง ไม่แตะจุดที่กระทบชิ้นงาน)" required><textarea value={f.qa_skip_reason} onChange={e => set('qa_skip_reason', e.target.value)} style={{ ...inp, minHeight: 64 }} /></Field>

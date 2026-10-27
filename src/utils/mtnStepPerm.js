@@ -28,7 +28,7 @@
 /* ⚠️ import ได้เฉพาะ util ที่ pure ด้วยกัน (mtnMoForm ไม่แตะ supabase) · ต้องมีนามสกุล .js
    ไม่งั้น `npm test` (node:test รันไฟล์ตรงๆ ไม่ผ่าน Vite) จะ ERR_MODULE_NOT_FOUND */
 import {
-  isMtnFormRow, mtnApprovalState, qaAppliesTo, isApprovalBlocked, approvalKindPending,
+  isMtnFormRow, isToolTeamRow, mtnApprovalState, qaAppliesTo, isApprovalBlocked, approvalKindPending,
 } from './mtnMoForm.js';
 
 /** ขั้นที่ 1 ไม่อยู่ในตารางนี้ — เป็นการ "เปิดใบ" คุมด้วย mtn_repair:report ตรงๆ */
@@ -126,6 +126,30 @@ export const MTN_FORM_STEPS = {
   },
 };
 
+/* ═══ ขั้น 4 ของใบ "ทีมเครื่องมือ" (JIG / DIE) — หัวหน้าแผนกช่างตรวจรับ ไม่ใช่ผู้แจ้ง ═══  2026-10-27
+   คำสั่ง user: *"สำหรับ MO ของ jig กับ DIE งานซ่อมนอกไลน์ step 4 ต้องเป็นหัวหน้าแผนกช่าง
+   ก่อน QA ไม่ใช่ผู้แจ้ง"*
+
+   เหตุผล: งาน JIG/DIE **ถอดของออกมาซ่อมที่ห้องช่าง** ⇒ ผู้แจ้งที่อยู่หน้าไลน์ยังไม่ได้ของคืน
+   จะ "ตรวจรับงานหลังซ่อม" ไม่ได้ · คนที่เห็นของจริงตอนนั้นคือหัวหน้าแผนกช่างของทีมที่ซ่อม
+   ลำดับใหม่ของใบ JIG/DIE: 1 ผู้แจ้ง → 2 หัวหน้าช่าง → 3 ช่าง → **4 หัวหน้าแผนกช่าง** →
+   5 QA → 6 หัวหน้าแผนกผู้แจ้ง (รับของคืน) → 7 ผจก.ผู้แจ้ง (ปิดใบ)
+   🔴 **ทีม PRODUCTION ไม่เปลี่ยน** — ซ่อมในไลน์ ผู้แจ้งเห็นเครื่องกลับมาเดินจริง จึงตรวจรับเองถูกแล้ว
+
+   🔴 `minRank: 30` (วิศวกรขึ้นไป) **ไม่ใช่ 50** — คำสั่ง user 27/10 "หัวหน้าแผนก+วิศวกร"
+      วัดทะเบียนผู้ใช้ 27/10: ทีม Die มี `dept_head` **0 คน** (มีแต่ engineer/clerk)
+      ⇒ ล็อก 50 = ใบ DIE 35 ใบเซ็นขั้น 4 ไม่ได้เลย (ล็อกเต็ม `manage_master` ก็ข้ามไม่ได้)
+      เปลี่ยนเกณฑ์นี้เมื่อไหร่ **ต้องพิสูจน์กับทะเบียนผู้ใช้จริงก่อน** (กฎขอบเขต CLAUDE.md 26/10)
+   · คีย์สิทธิ์ยังเป็น `accept_work` ตัวเดิม (ไม่ต้อง seed ใหม่) · fallback `service` = ช่างมีอยู่แล้ว
+   · `teamSide` + `ownTeam` ⇒ ล็อก "ทีมใครทีมมัน" เหมือนขั้น 2/3 */
+const TOOL_FORM_STEPS = {
+  4: {
+    ...MTN_STEPS[4],
+    ownTeam: true, byReporter: false, reporterSide: false, teamSide: true, side: 'mtn', minRank: 30,
+    who: 'หัวหน้าแผนกช่าง / วิศวกร (ทีมที่ซ่อม)', whoShort: 'หัวหน้าแผนกช่าง',
+  },
+};
+
 /** ขั้นสุดท้ายของใบ — MTN 8 ขั้น · ฟอร์มอื่น 7 ขั้น (ห้าม hardcode เลขขั้นในหน้าอีก) */
 export const lastStep = ({ mtnForm = false } = {}) => (mtnForm ? 8 : 7);
 
@@ -167,8 +191,10 @@ export function nextStepOf(order = {}) {
 }
 
 /** meta ของขั้น — `mtnForm` = ใบนี้ใช้ฟอร์ม FM-MTN-006 (ผู้เรียกคำนวณจากทีมช่างมาให้) */
-export const stepMeta = (step, { mtnForm = false } = {}) =>
-  (mtnForm && MTN_FORM_STEPS[step]) || MTN_STEPS[step] || null;
+export const stepMeta = (step, { mtnForm = false, toolTeam = false } = {}) =>
+  /* 🔴 ลำดับสำคัญ: ฟอร์ม MTN ชนะเสมอ (ทีม MTN ไม่ใช่ทีมเครื่องมืออยู่แล้ว ชนกันไม่ได้จริง
+     แต่เขียนให้ชัดกันคนถัดไปสลับ) · ไม่ส่ง `toolTeam` = พฤติกรรมเดิมเป๊ะ */
+  (mtnForm && MTN_FORM_STEPS[step]) || (toolTeam && TOOL_FORM_STEPS[step]) || MTN_STEPS[step] || null;
 
 /* ── `stage` = ชื่อจังหวะงานที่ "ไม่ขยับตามเลขขั้น" ───────────────────────────  2026-09-22
    🔴 เลขขั้นเดียวกันคนละความหมายระหว่าง 2 ฟอร์ม (ขั้น 5 = QA ของ JIG/DIE แต่ = รับมอบ ของ MTN
@@ -179,11 +205,11 @@ export const stageOf = (step, { mtnForm = false } = {}) =>
   (Number(step) === 1 ? 'report' : stepMeta(step, { mtnForm })?.stage) || null;
 
 /** ป้ายปุ่ม/หัวข้อขั้น — สร้างจากที่นี่ที่เดียว ห้ามพิมพ์ชื่อขั้นซ้ำในหน้า */
-export const stepLabel = (step, { withWho = true, mtnForm = false } = {}) => {
+export const stepLabel = (step, { withWho = true, mtnForm = false, toolTeam = false } = {}) => {
   /* ขั้น 1 ไม่อยู่ใน MTN_STEPS โดยตั้งใจ (เป็น "การเปิดใบ" ไม่ใช่ขั้นที่รอใครเซ็น)
      แต่ป้ายต้องอ่านรู้เรื่อง — ไม่งั้นหัวโมดัลแก้ไขขึ้นว่า "ขั้น 1" เฉยๆ (25/10) */
   if (Number(step) === 1) return `📣 แจ้งซ่อม (ขั้น 1${withWho ? ' · ผู้แจ้ง' : ''})`;
-  const m = stepMeta(step, { mtnForm });
+  const m = stepMeta(step, { mtnForm, toolTeam });
   if (!m) return `ขั้น ${step}`;
   return `${m.icon} ${m.title} (ขั้น ${step}${withWho ? ` · ${m.whoShort}` : ''})`;
 };
@@ -307,8 +333,8 @@ export function assumptionHint(assumed = []) {
  *  🔴 แยกจาก `canDoStep` โดยตั้งใจ — verdict ตอบว่า "กดได้ไหม" ส่วนตัวนี้ตอบว่า "เชื่อได้แค่ไหน"
  *     ปนกันเมื่อไหร่ รูปร่าง verdict จะเปลี่ยนทุกใบจนคนอ่านชินแล้วมองข้าม (ธงที่ขึ้นตลอด = ไม่ใช่ธง)
  *  ใช้ที่จอเพื่อเขียนบอกว่า "ระบบไม่รู้ฝั่ง/ตำแหน่งของคุณ จึงไม่ได้ตรวจ" + ชี้ว่าต้องไปเติมที่ไหน */
-export function stepAssumptions(step, { mtnForm = false, actorSide = 'unknown', posRank = null } = {}) {
-  const meta = stepMeta(step, { mtnForm });
+export function stepAssumptions(step, { mtnForm = false, toolTeam = false, actorSide = 'unknown', posRank = null } = {}) {
+  const meta = stepMeta(step, { mtnForm, toolTeam });
   if (!meta) return [];
   const out = [];
   if (meta.side && actorSide === 'unknown') out.push('side');
@@ -323,7 +349,9 @@ export function canDoStep(step, opts = {}) {
   // ขั้น 1 = แก้ข้อมูลการแจ้ง — ใครแจ้งได้ก็แก้ได้ (พฤติกรรมเดิม)
   if (Number(step) === 1) return can('report') ? { ok: true, code: 'report' } : { ok: false, code: 'denied' };
 
-  const meta = stepMeta(step, { mtnForm });
+  /* 🔴 "ใบนี้เป็นทีมเครื่องมือไหม" อ่านจากใบเอง — ผู้เรียกไม่ต้องส่งเพิ่ม (กันลืมแล้วด่านหาย)
+     ถามผ่าน `isToolTeamRow()` ที่ `mtnMoForm.js` ที่เดียว ห้ามเทียบคีย์ทีมเองที่นี่ */
+  const meta = stepMeta(step, { mtnForm, toolTeam: isToolTeamRow(order) });
   if (!meta) return { ok: false, code: 'unknown_step' };
 
   /* 🔒 ด่านฝั่ง + ตำแหน่ง (2026-10-02) — ตรวจ**ก่อน** manage_master เพื่อให้รู้ว่า
@@ -774,9 +802,11 @@ export function moWaitMeta(order) {
     return { stage: STAGE_APPROVE_FIRST, step: null, meta: APPROVE_FIRST_META };
   }
   const mtnForm = isMtnFormRow(order);
+  const toolTeam = isToolTeamRow(order);
   const step = nextStepOf(order);
   if (!step) return { stage: null, step: null, meta: null };
-  return { stage: stageOf(step, { mtnForm }), step, meta: stepMeta(step, { mtnForm }) };
+  // `stage` ไม่เปลี่ยนตามทีม (ยังเป็น accept_work) — เปลี่ยนแค่ "ใครเซ็น" ⇒ ส่ง toolTeam เฉพาะ meta
+  return { stage: stageOf(step, { mtnForm }), step, meta: stepMeta(step, { mtnForm, toolTeam }) };
 }
 
 /**
@@ -828,8 +858,8 @@ export function canSkipQa(opts = {}) {
  * ข้อความบอกเหตุผลเมื่อทำไม่ได้ (UI-CONVENTIONS §6.9 — ซ่อนปุ่มได้ ห้ามซ่อนเหตุผล)
  * คืนเป็นโครงสร้าง ไม่ใช่ JSX — ให้หน้าจอวาดเอง
  */
-export function stepDenyHint(step, { teamName = '', reporterName = '', outOfScope = false, otherTeam = false, orderLine = '', orderSection = '', mtnForm = false, awaitApproval = null, wrongSide = false, rankTooLow = false, assumed = [] } = {}) {
-  const meta = stepMeta(step, { mtnForm });
+export function stepDenyHint(step, { teamName = '', reporterName = '', outOfScope = false, otherTeam = false, orderLine = '', orderSection = '', mtnForm = false, toolTeam = false, awaitApproval = null, wrongSide = false, rankTooLow = false, assumed = [] } = {}) {
+  const meta = stepMeta(step, { mtnForm, toolTeam });
   if (!meta) return null;
   const lines = [`ขั้นนี้เป็นหน้าที่ของ: ${meta.who}`];
   /* 🔒 ล็อกฝั่ง/ตำแหน่ง (2026-10-04) — ต้องบอกให้ตรงเหตุ ไม่งั้นคนจะไปขอ role เพิ่ม
