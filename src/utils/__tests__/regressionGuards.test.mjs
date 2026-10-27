@@ -7138,3 +7138,19 @@ test('🧩 upsert-mixed-id-needs-default — upsert ที่ปนแถวเ�
     + '\n\n   แก้: .upsert(rows, { defaultToNull: false })  ← ให้ postgrest ใช้ default ของคอลัมน์\n'
     + '   หรือแยก insert (แถวใหม่) / upsert (แถวเดิม) คนละคอล แบบ OjtTraining.jsx\n');
 });
+
+test('🧭 identity-line-wider — ตัวตนจากฐานพนักงานห้ามบีบ "ไลน์ที่ดูแล" ให้แคบลง', () => {
+  /* เคสจริง 27/10 (หน้างานแจ้ง): หัวหน้ากลุ่ม Assembly Line D 2 คน
+     `profiles.line_id` = ไลน์แม่ (ไลน์ที่ดูแล · แอดมินตั้งถูกแล้ว)
+     `employees.line_id` = ไลน์ลูกที่ตัวเองสังกัด ⇒ กติกา "ตัวตนอ่านจาก employees" ทำให้ของพนักงานชนะ
+     ⇒ ครอบครัวไลน์เหลือใบเดียว ⇒ เช็คชื่อ/เปิดกะไลน์ใหญ่/จัดการไลน์ผลิต ทำไม่ได้
+     ขัดกฎ "ห้ามคืนน้อยกว่าที่ profiles ตั้งไว้" (CLAUDE.md §สิทธิ์ 3 ชั้น)
+     ⇒ แกนไลน์ต้องผ่าน widerLineId() เสมอ (utils/lineHierarchy.js) */
+  const app = stripComments(readFileSync(join(ROOT, 'src/App.jsx'), 'utf8'));
+  const bad = [];
+  if (/line_id:\s*emp\.line_id\s*\?\?/.test(app) && !/widerLineId\s*\(/.test(app)) {
+    bad.push('src/App.jsx: เอา employees.line_id มาทับโดยไม่ผ่าน widerLineId()');
+  }
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n  ')
+    + '\n\n   หัวหน้าที่ดูแล "ไลน์แม่" แต่ตัวเองสังกัดไลน์ลูก จะถูกบีบเหลือกลุ่มย่อยของตัวเองเงียบๆ\n');
+});
