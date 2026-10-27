@@ -101,3 +101,4 @@
 - `build-gates.md` — ที่มาของทุกด่านใน `npm run build` + เคสจริงที่ทำให้ต้องมี
 - `doc-forms.md` — ขั้นตอน register เอกสาร export เข้าทะเบียน `/doc-forms`
 - `employee-identity.md` — สร้างตัวตนพนักงานเข้าฐาน (`/register` + โมดัลใน `/add-user`) · กฎ `newEmployeeRow()` · กับดัก `staff_kind` default เงียบ
+- `qa-inspector-scopes.md` — QC ประจำไลน์ (`qa_inspector_scopes`) · แยก 3 แกน สังกัด/เห็น/ตรวจให้หน่วยไหน · กฎ `src/utils/qaScope.js`
