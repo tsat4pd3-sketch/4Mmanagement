@@ -125,3 +125,18 @@ test('🛡️ SearchSelect ต้องเช็ค Enter ท้ายการ�
   assert.match(s, /scanOfEvent\(e\)/);
   assert.match(s, /exactScanMatch\(/);
 });
+
+test('🔴 สติกเกอร์ของระบบ (ESM:M:<uuid> / ลิงก์ /scan?c=) สแกนลงช่องเลือกต้องเจอ — เดิมไม่ตรงอะไรเลย', () => {
+  const machines = [{ id: 'a1b2-uuid', label: 'SW-10' }, { id: 'c3d4-uuid', label: 'SW-11' }];
+  assert.equal(exactScanMatch(machines, 'ESM:M:a1b2-uuid')?.label, 'SW-10');
+  assert.equal(exactScanMatch(machines, 'https://esm.example.com/scan?c=ESM:M:c3d4-uuid')?.label, 'SW-11');
+  assert.equal(exactScanMatch(machines, 'SW10')?.label, 'SW-10', 'เลขเปล่าบนป้ายเดิมยังใช้ได้');
+  const parts = [{ id: 7, label: '10092454', lead: 'PN-A' }];
+  assert.equal(exactScanMatch(parts, 'ESM:P:10092454')?.id, 7);
+});
+
+test('บัตรพนักงานสแกนลงช่องเลือกคนได้ (employee_code) · scanKeys ไม่ต้องโชว์บนจอก็สแกนเจอ', () => {
+  const people = [{ id: 'e:1', label: 'สมชาย', employee_code: '2101864' }, { id: 'p:9', label: 'สมหญิง' }];
+  assert.equal(exactScanMatch(people, '2101864')?.id, 'e:1');
+  assert.equal(exactScanMatch([{ id: 'x', label: 'โกดัง A', scanKeys: ['WH-A'] }], 'wh a')?.id, 'x');
+});

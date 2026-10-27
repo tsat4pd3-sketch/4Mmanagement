@@ -5417,6 +5417,8 @@ test('🛡️ esmart-window-confirm — e-SMART ต้องทับใบแ�
   if (/planOrderUpdates\(/.test(up)) bad.push('PullSignalUpload.jsx (เรียก planOrderUpdates ตรง — ต้องผ่าน planDockLegs)');
   /* 24/10 — แถวลูกค้าบนชาร์ตล็อกตามทะเบียน (orderShipToRows) ห้ามวาดตาม Object.entries(byCustomer) */
   const cd = stripComments(readFileSync(join(ROOT, 'src/pages/CustomerDemand.jsx'), 'utf8'));
+  /* 27/10 — แผน 862 รอ e-SMART ห้ามนับเป็น "เลยเวลา"/"ค้างส่ง" (AAT แดงทั้งแถวทุกวัน) */
+  if (!/const isOverdue = \(o\) => isOpenOrder\(o\) && !isPlan\(o\)/.test(cd)) bad.push('CustomerDemand.jsx (isOverdue ไม่กันแผน 862 รอ e-SMART — ใช้ isEsmartPlanRow จาก utils/shipPlan.js)');
   if (/\{Object\.entries\(byCustomer\)\.map/.test(cd)) bad.push('CustomerDemand.jsx (แถวลูกค้าวาดตามลำดับคิวรี — ต้องใช้ custOrder จาก orderShipToRows)');
   assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n'
     + '   แก้: planOrderUpdates โหมดช่วงเวลา (pullSignal.js) + splitPullCovered/pullCoverBatches (ediMerge.js)\n');

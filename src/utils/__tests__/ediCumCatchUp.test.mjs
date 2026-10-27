@@ -39,3 +39,12 @@ test('แถวไม่มีเวลาที่ไม่ใช่วัน�
   const recs = [r('GRBNA', '2026-10-05', '08:00', 50), r('GRBNA', '2026-10-06', null, 30)];
   assert.equal(splitCumCatchUp(recs, ['GRBNA']).catchUp.length, 0);
 });
+
+test('⭐ 27/10 แถว Cum ที่ลงเวลา 00:01 วันแรกของชุด = ยอดค้าง ไม่ใช่เที่ยวรถ · 00:30 ยังเป็นใบปกติ', () => {
+  const recs = [r('GRBNA', '2026-10-27', '00:01', 170), r('GRBNA', '2026-10-27', '10:00', 60),
+    r('GRBNA', '2026-10-28', '00:30', 40), r('GRBNA', '2026-10-28', '00:01', 20)];
+  const { keep, catchUp } = splitCumCatchUp(recs, ['GRBNA']);
+  assert.deepEqual(catchUp.map(x => `${x.date} ${x.time}`), ['2026-10-27 00:01']);
+  assert.equal(keep.length, 3, 'วันถัดไป 00:01 ไม่ใช่วันแรกของชุด = ไม่ตัด');
+  assert.equal(splitCumCatchUp(recs, ['GBL9A']).catchUp.length, 0, 'ship-to ไม่มี e-SMART คงเดิม');
+});
