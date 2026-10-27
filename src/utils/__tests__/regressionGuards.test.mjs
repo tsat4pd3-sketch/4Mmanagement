@@ -7063,3 +7063,30 @@ test('🔧 ส่ง mtnForm เข้าตัวอ่านขั้นที
     + '         ไม่ส่ง toolTeam = จอเขียนชื่อฝั่งผิด ทั้งที่ปุ่มกดไม่ได้ = คนเดินไปตามผิดคน\n'
     + '   แก้: เติม `toolTeam: isToolTeamOrder(o)` ข้างๆ `mtnForm` (เกณฑ์อยู่ที่ utils/mtnMoForm.js)\n');
 });
+
+/* ═══ 🔀 "ไลน์หยุดกี่นาที" ต้องหารเลนเสมอ — ห้ามบวก duration_min ดิบ ═══  2026-10-27 · คำสั่ง user
+   *"มันไม่ควรนับรวมเป็น 306 นาที สำหรับไลน์ขนาน เพราะความจริงมันคือ 102 นาที"*
+   ไลน์เครื่องขนานบันทึก downtime **รายเครื่อง** ⇒ บวกดิบ = นับเหตุการณ์เดียวซ้ำตามจำนวนเลน
+   วัด 30 วัน (5 ไลน์ที่ตั้ง parallel_stations): ดิบ 68,137 → ของไลน์ 21,517 นาที (โป่งเกิน ~777 ชม.)
+   เคสที่ทำให้รู้: จอ OEE หัวข้อ 1 (%A) หารเลนแล้ว แต่หัวข้อ 2 บวกดิบ ⇒ หน้าเดียวกันขัดกันเอง */
+test('🔀 จอที่ตอบ "ไลน์หยุดกี่นาที" ต้องใช้ dtLineMin() ไม่ใช่บวก duration_min เอง', () => {
+  /* ไฟล์ที่ย้ายมาใช้ `dtLineMin` แล้ว — **ย้ายไฟล์ไหนเพิ่ม ให้เติมชื่อที่นี่** กันถอยกลับ */
+  const MIGRATED = ['src/pages/OEEAnalytics.jsx'];
+  for (const rel of MIGRATED) {
+    const src = stripComments(readFileSync(join(ROOT, rel), 'utf8'));
+    assert.match(src, /\bdtLineMin\s*\(/, `${rel} ต้องรวมนาที downtime ผ่าน dtLineMin()`);
+  }
+  /* เจ้าของกฎมีไฟล์เดียว — ห้ามใครหาร parallel เองในหน้า */
+  const owner = stripComments(readFileSync(join(ROOT, 'src/utils/oee.js'), 'utf8'));
+  assert.match(owner, /export const dtLineMin/, 'dtLineMin ต้องอยู่ที่ utils/oee.js');
+  const bad = [];
+  for (const f of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const rel = relative(ROOT, f);
+    if (rel === 'src/utils/oee.js') continue;
+    const src = stripComments(readFileSync(f, 'utf8'));
+    // หาร duration_min ด้วยจำนวนเลน/สถานีเองในหน้า = เกณฑ์ชุดที่ 2
+    if (/duration_min[^;\n]{0,40}\/\s*(parallel|lanes?|stations?|laneN|pN)\b/i.test(src)) bad.push(rel);
+  }
+  assert.deepEqual(bad, [], '\n\n❌ หารเลนเองใน: ' + bad.join(', ') + '\n'
+    + '   แก้: ใช้ dtLineMin(row, laneN) จาก utils/oee.js — เกณฑ์เดียวกับฐานเวลาของ %A\n');
+});

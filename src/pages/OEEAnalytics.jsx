@@ -22,7 +22,7 @@ import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
 import { lazy, Suspense } from 'react';
 import { defectUnitCost, fmtBaht, lineCostCenter, rateFor, ratePerHour, RATE_COMPONENTS } from '../utils/costSaving';
-import { computeLiveOee, shiftStartDate, LIVE_MIN_ELAPSED, strictOee, wavg, wLoad, wRun, wProd, policyBreakForShift, breakIntervalsIn, dtMinOutsideBreaks, laneWeightFn, parallelNBySession, buildCtMap, sumDefectQty, splitDefectQty, ngByMatFrom, isTrialDefect, avgOeeTarget, QBIN_EMBED, defectQty, defectQtyAll, suspectPendingQty } from '../utils/oee';
+import { computeLiveOee, shiftStartDate, LIVE_MIN_ELAPSED, strictOee, wavg, wLoad, wRun, wProd, policyBreakForShift, breakIntervalsIn, dtMinOutsideBreaks, laneWeightFn, parallelNBySession, dtLineMin, laneBySessionId, buildCtMap, sumDefectQty, splitDefectQty, ngByMatFrom, isTrialDefect, avgOeeTarget, QBIN_EMBED, defectQty, defectQtyAll, suspectPendingQty } from '../utils/oee';
 import { statusColor, statusOf } from '../utils/statusTone';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
@@ -635,6 +635,16 @@ export default function OEEAnalytics() {
   const tdDowntimesScoped = useMemo(() => tdTeam ? tdDowntimes.filter(d => tdSessionIdSet.has(d.session_id)) : tdDowntimes, [tdDowntimes, tdTeam, tdSessionIdSet]);
   const tdDefectsScoped   = useMemo(() => tdTeam ? tdDefects.filter(d => tdSessionIdSet.has(d.session_id)) : tdDefects,   [tdDefects, tdTeam, tdSessionIdSet]);
 
+  /* 🔀 จำนวนเลนของแต่ละกะ — ไลน์เครื่องขนานบันทึก downtime รายเครื่อง ⇒ ทุกยอดรวมนาทีในหน้านี้
+     ต้องแปลงเป็น "นาทีของไลน์" ด้วย `dtLineMin()` (oee.js §3.2 · คำสั่ง user 27/10)
+     ไม่งั้นหน้าเดียวกันขัดกันเอง: หัวข้อ 1 (%A) หารเลนแล้ว แต่หัวข้อ 2 บวกนาทีดิบ
+     (22/10 LASER-345: ดิบ 1,078 นาที บนเวลาผลิต 1,440 = อ่านว่าหยุด 75% ทั้งที่ %A = 80.68/94.73) */
+  const tdLaneBy = useMemo(() => laneBySessionId(tdSessionsTeamFiltered, flowByLine || {}),
+    [tdSessionsTeamFiltered, flowByLine]);
+  const tdLaneOfRow = useCallback((d) => tdLaneBy[d?.session_id] || 1, [tdLaneBy]);
+  /* มีไลน์ขนานอยู่ในชุดที่ดูอยู่ไหม — ใช้ตัดสินว่าจะเขียนหมายเหตุหน่วยบนจอ (ไม่มี = ไม่ต้องรก) */
+  const tdHasParallel = useMemo(() => Object.values(tdLaneBy).some(n => Number(n) > 1), [tdLaneBy]);
+
   const tdRows = useMemo(() => calcOEE(tdSessionsTeamFiltered, tdDowntimesScoped, tdDefectsScoped, breakPols, flowByLine), [tdSessionsTeamFiltered, tdDowntimesScoped, tdDefectsScoped, breakPols, flowByLine]);
 
   const tdKpi = useMemo(() => {
@@ -702,10 +712,10 @@ export default function OEEAnalytics() {
       breakMinTotal: Math.round(tdBreak), plannedMinTotal: Math.round(tdPlanned), teepLines: tdLineSet.size,
       totalQty: tdRows.reduce((s, r) => s + sessActual(r), 0),
       targetQty: tdRows.reduce((s, r) => s + sessTarget(r), 0),
-      totalDT: tdDowntimesScoped.reduce((s, d) => s + (d.duration_min || 0), 0),
+      totalDT: tdDowntimesScoped.reduce((s, d) => s + dtLineMin(d, tdLaneBy[d.session_id] || 1), 0),
       totalShiftMin: tdSessionsTeamFiltered.reduce((s, r) => s + (r.shift_min || 0), 0),
     };
-  }, [tdRows, tdDowntimesScoped, tdSessionsTeamFiltered, tdOrdersBySession, tdPairMat, breakPols]);
+  }, [tdRows, tdDowntimesScoped, tdSessionsTeamFiltered, tdOrdersBySession, tdPairMat, breakPols, tdLaneBy]);
 
   const tdHistoryGrouped = useMemo(() => {
     const map = {};
@@ -818,8 +828,9 @@ export default function OEEAnalytics() {
       const name = dtBucketName(d, tdDtIdx);
       const cat  = d.dr_downtime_types?.category || 'unplanned';
       // typeId ไว้ query ย้อนหลังของสาเหตุนี้ตอนกดเจาะ (ชื่อเป็น snapshot เทียบตรงๆ ไม่ได้)
-      if (!map[name]) map[name] = { name, min: 0, category: cat, typeId: d.downtime_type_id || null };
-      map[name].min += d.duration_min || 0;
+      if (!map[name]) map[name] = { name, min: 0, rawMin: 0, category: cat, typeId: d.downtime_type_id || null };
+      map[name].min += dtLineMin(d, tdLaneOfRow(d));   // 🔀 นาทีของไลน์ (ขนานหารเลน)
+      map[name].rawMin += d.duration_min || 0;          // นาที-เครื่องดิบ — ไว้เขียนกำกับ ไม่ใช่ตัวจัดอันดับ
     }
     const rows = Object.values(map).sort((a, b) => b.min - a.min);
     const total = rows.reduce((s, d) => s + d.min, 0);
@@ -828,13 +839,14 @@ export default function OEEAnalytics() {
       total: +total.toFixed(1),
       plannedMin:   +rows.filter(d => d.category === 'planned').reduce((s, d) => s + d.min, 0).toFixed(1),
       unplannedMin: +rows.filter(d => d.category !== 'planned').reduce((s, d) => s + d.min, 0).toFixed(1),
+      rawTotal: +rows.reduce((s, d) => s + d.rawMin, 0).toFixed(1),
       rows: rows.map(d => ({
-        ...d, min: +d.min.toFixed(1),
+        ...d, min: +d.min.toFixed(1), rawMin: +d.rawMin.toFixed(1),
         pct: total > 0 ? +(d.min / total * 100).toFixed(1) : 0,
         barPct: max > 0 ? (d.min / max * 100) : 0,
       })),
     };
-  }, [tdDowntimesScoped]);
+  }, [tdDowntimesScoped, tdDtIdx, tdLaneOfRow]);
 
   // Top 10 downtime แยกตามพาร์ท (mat_no ที่บันทึกไว้ตอน log downtime)
   // นับเฉพาะ "นอกแผน" — ในแผน (นับสต๊อก/ไม่มีแผนผลิต) ไม่ผูก mat_no แล้วเคยครองอันดับ 1 เป็น
@@ -845,13 +857,13 @@ export default function OEEAnalytics() {
       if (d.dr_downtime_types?.category === 'planned') continue;
       const mat = d.mat_no || 'ไม่ระบุ MAT.NO';
       if (!map[mat]) map[mat] = { mat, part: tdProductsByMat[mat] || mat, min: 0 };
-      map[mat].min += d.duration_min || 0;
+      map[mat].min += dtLineMin(d, tdLaneOfRow(d));   // 🔀 นาทีของไลน์
     }
     const arr = Object.values(map).sort((a, b) => b.min - a.min).slice(0, 10);
     const max = arr.length ? arr[0].min : 0;
     const total = Object.values(map).reduce((s, d) => s + d.min, 0);
     return arr.map(d => ({ ...d, min: +d.min.toFixed(1), pct: total > 0 ? +(d.min / total * 100).toFixed(1) : 0, barPct: max > 0 ? (d.min / max * 100) : 0 }));
-  }, [tdDowntimesScoped, tdProductsByMat]);
+  }, [tdDowntimesScoped, tdProductsByMat, tdLaneOfRow]);
 
   /* "สาเหตุนี้เกิดซ้ำแค่ไหน" — ย้อนหลัง 30 วันของ downtime type ที่กดเจาะ
      ⚠️ ยิงตอนเปิดโมดัลเท่านั้น (user กดเอง ไม่ใช่ polling) และกรองฝั่ง server ให้แคบที่สุด
@@ -1721,12 +1733,21 @@ export default function OEEAnalytics() {
               {/* 2.2 Pareto by cause */}
               <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px' }}>
                 <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>2.2 Downtime แยกตามสาเหตุ</div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>2.2 Downtime แยกตามสาเหตุ<span style={{ fontWeight: 600, color: 'var(--muted2)' }}> · นาทีที่ไลน์หยุด</span></div>
                   <div style={{ display: 'flex', gap: 10, fontSize: 11, color: 'var(--muted)' }}>
                     <span><span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 3, background: '#a855f7', marginRight: 4, verticalAlign: 'middle' }} />นอกแผน</span>
                     <span><span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 3, background: 'var(--muted2)', marginRight: 4, verticalAlign: 'middle' }} />ในแผน 📅</span>
                   </div>
                 </div>
+                {/* 🔀 ไลน์เครื่องขนาน — บอกหน่วยให้ชัด ไม่งั้นคนเทียบกับเลขที่พนักงานลงแล้วคิดว่าจอผิด
+                    (เคสจริง 27/10 ทีม MTN: ราง Conveyor เสีย 50 นาที ลง 3 เครื่อง → จอเคยโชว์ 306 นาที = "ไลน์หยุด 5 ชม.") */}
+                {tdHasParallel && (
+                  <div style={{ fontSize: 11, color: '#f59e0b', background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.35)',
+                    borderRadius: 7, padding: '6px 9px', marginBottom: 10, lineHeight: 1.6 }}>
+                    🔀 ชุดนี้มี<b>ไลน์เครื่องขนาน</b> — เครื่องหยุดพร้อมกันหลายเครื่องนับเป็น<b>ไลน์หยุดครั้งเดียว</b> (หารจำนวนเลน)
+                    ตรงกับฐานเวลาของ %A ในหัวข้อ 1 · รวมนาทีที่พนักงานลงจริงทุกเครื่อง = <b>{tdDtByCause.rawTotal.toLocaleString()}</b> นาที-เครื่อง
+                  </div>
+                )}
                 {tdDtByCause.rows.length === 0 ? (
                   <div style={{ textAlign: 'center', padding: 30, color: 'var(--muted)', fontSize: 13 }}>ไม่มีข้อมูล Downtime</div>
                 ) : (() => {
@@ -1800,7 +1821,12 @@ export default function OEEAnalytics() {
 
           {/* เจาะรายการดิบของแถวที่กด (แผง 2.2 / 2.3) — ตอบว่าปัญหานี้เกิดที่ไหน เครื่องไหน กี่โมง */}
           {tdDtDrill && (() => {
-            const totMin = tdDrillRows.reduce((a, d) => a + (d.duration_min || 0), 0);
+            /* 🔀 ยอดรวมในหัวโมดัล = **นาทีของไลน์** (ไลน์ขนานหารเลน) ส่วนตัวเลขในแต่ละแถว
+               ยังเป็นนาทีที่พนักงานลงจริง (นาที-เครื่อง) — 2 หน่วยนี้ต้องเขียนกำกับให้ชัด
+               เคส LASER-345 22/10: 7 แถว ดิบ 306 นาที = ไลน์หยุดจริง 102 นาที (3 แถวเวลาเดียวกัน = ครั้งเดียว) */
+            const totMin = tdDrillRows.reduce((a, d) => a + dtLineMin(d, tdLaneOfRow(d)), 0);
+            const totRawMin = tdDrillRows.reduce((a, d) => a + (d.duration_min || 0), 0);
+            const drillParallel = tdDrillRows.some(d => tdLaneOfRow(d) > 1);
             const th = { padding: '6px 8px', fontSize: 11, color: 'var(--muted)', textAlign: 'left', whiteSpace: 'nowrap' };
             const td = { padding: '6px 8px', fontSize: 12, color: 'var(--text)', borderTop: '1px solid var(--border)', verticalAlign: 'top' };
             return (
@@ -1814,9 +1840,16 @@ export default function OEEAnalytics() {
                         {tdDtDrill.kind === 'cause' ? '⏱ ' : '📦 '}{tdDtDrill.label}
                       </div>
                       <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 2 }}>
-                        {tdDate} · {tdDrillRows.length} รายการ · รวม <b style={{ color: '#a855f7' }}>{Math.round(totMin).toLocaleString()}</b> นาที
+                        {tdDate} · {tdDrillRows.length} รายการ · รวม <b style={{ color: '#a855f7' }}>{Math.round(totMin).toLocaleString()}</b> นาทีที่ไลน์หยุด
                         {tdDtDrill.kind === 'part' && ' · เฉพาะนอกแผน'}
                       </div>
+                      {/* 🔀 ไลน์เครื่องขนาน — ต้องบอกว่าทำไมผลรวมไม่เท่ากับการบวกเลขในคอลัมน์ ไม่งั้นคนอ่านว่าจอคำนวณผิด */}
+                      {drillParallel && (
+                        <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 3, lineHeight: 1.5 }}>
+                          🔀 <b>ไลน์เครื่องขนาน</b> — เครื่องหยุดพร้อมกันหลายเครื่อง = ไลน์หยุดครั้งเดียว ·
+                          นาทีในตารางคือ <b>นาที-เครื่อง</b> ที่พนักงานลงไว้ (รวม {Math.round(totRawMin).toLocaleString()} นาที)
+                        </div>
+                      )}
                     </div>
                     <button onClick={() => setTdDtDrill(null)} style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--muted)', borderRadius: 6, padding: '2px 9px', fontSize: 14, cursor: 'pointer' }}>✕</button>
                   </div>
