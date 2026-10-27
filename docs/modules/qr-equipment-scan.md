@@ -135,3 +135,12 @@ user ถาม: *"พิมพ์ QR ติดเครื่องแล้ว 
 - 🔴 **ตาราง DR `jigs` ไม่มีคอลัมน์ `department`** — `/scan` เคย select ไปด้วย ⇒ 42703 ⇒ จิ๊กไม่เคยถูกพบ ปุ่มตรวจ PM ไม่เคยโผล่ (มีด่าน `jigs-has-no-department-column`)
 - แผนกของใบตรวจ PM อ่านจาก `checklists.department` (module=mtn) แล้วส่ง `&dept=` ไป `/pm?tab=check` (ไม่ส่ง = เปิดแผนก maintenance เสมอ · วัด 05/10: 106/147 ใบตรวจ mtn เป็น jig_maintenance) · มีหลายแผนก = ปุ่มละแผนก
 - ป้ายจุดส่งงาน `ESM:D:<uuid>` (QrLabels พิมพ์เป็นลิงก์ /scan) → หน้า /scan แสดงจุดส่ง + ทางไป /heijunka (เดิมขึ้น "ไม่พบอุปกรณ์")
+
+## 📷 เฟส 1 "ทุกอย่างที่ต้องเลือก สแกนได้" — สแกนเพื่อเลือกใน picker กลาง (2026-10-27 · คำสั่ง user)
+- `SearchSelect` prop **`scan="<ชื่อสิ่งที่สแกน>"`** → **มือถือ** มีปุ่ม 📷 ข้างช่อง เปิด `ScanModal` (กล้อง + ปุ่มสแกนข้างเครื่อง + พิมพ์เอง)
+  · จอคอม/ไม่ส่ง prop = DOM เดิมเป๊ะ (`inputBox` ตัวเดียวกัน)
+- เปิดให้แล้ว (default · ปิดด้วย `scan={false}`): `MachineSelect` · `ProductSelect` · `PersonSelect` (บัตรพนักงาน) · `StorageLocSelect` · `PartSelect` · `InstrumentSelect`
+- ตัวตัดสิน = **`exactScanMatch()` (`utils/scanWedge.js`)** — 🔴 **แกะป้ายของระบบด้วย `parseQrPayload` ก่อนเทียบ** (เดิมสติกเกอร์ `ESM:M:<uuid>`/ลิงก์ `/scan?c=` สแกนลงช่องเลือกไม่ตรงอะไรเลย)
+  · เทียบ `id · label · lead · code · employee_code · scanKeys[]` **ตรงเป๊ะ** · ไม่ตรง/ตรงหลายตัว = ไม่เลือก + ข้อความในโมดัล
+  · `scanKeys` = รหัสอื่นที่อยากให้สแกนเจอโดยไม่โชว์บนจอ (ใช้ตอนเฟส 2 ให้ไลน์/ประเภท downtime/NG มีรหัส)
+- ยังไม่ทำ (เฟส 2–3): รหัสของ ไลน์ · ประเภท downtime · ประเภท NG · อะไหล่ · คลัง ใน `/qr-labels` + **ใบสแกน A4 แยกตามไลน์** (คำสั่ง user 27/10) · `/scan` เปิดได้ทุกชนิด

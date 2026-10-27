@@ -11,7 +11,7 @@ import { registryFailText } from '../utils/useMasterRows.js';
 import { slocLabel, slocValid, SLOC_KINDS } from '../utils/storageLoc';
 import { appendHistoryOptions } from '../utils/pickerOptions';
 
-export default function StorageLocSelect({ value = '', onChange, allowFree = true, placeholder = 'รหัสคลัง เช่น S401…', disabled, inputStyle, style, kinds, history = [] }) {
+export default function StorageLocSelect({ scan, value = '', onChange, allowFree = true, placeholder = 'รหัสคลัง เช่น S401…', disabled, inputStyle, style, kinds, history = [] }) {
   const { rows, failed, stale } = useStorageLocationsState();
   const options = useMemo(() => rows
     .filter(r => r.is_active !== false || slocLabel(r.code) === slocLabel(value))
@@ -30,6 +30,7 @@ export default function StorageLocSelect({ value = '', onChange, allowFree = tru
   return (
     <div style={style}>
       <SearchSelect value={sel ? sel.id : ''} text={sel ? sel.label : (value || '')} options={optionsAll} onChange={emit}
+      scan={scan === false ? undefined : (scan || 'รหัสคลัง')}   /* 📷 มือถือ: สแกนเพื่อเลือก (27/10) · scan={false} = ปิด */
         allowFree={allowFree} placeholder={placeholder} freeHint="รูปแบบ ตัวอักษร 1-3 + เลข 3 หลัก"
         emptyText="ไม่พบรหัสคลังนี้ในทะเบียน" disabled={disabled}
         loadFail={failed ? registryFailText('ทะเบียนรหัสคลัง', stale) : ''}
