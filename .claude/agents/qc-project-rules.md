@@ -110,6 +110,15 @@ model: inherit
   · ทำไมสำคัญ: `sessionProcessType()` เลือก **นโยบายเวลาพัก** ⇒ ผิด = `shift_min` ผิด = **%A/%P ผิดทั้งกะ**
   · ด่านอัตโนมัติ: `machine-process-vote-needs-asset-filter` ใน `regressionGuards`
 
+- **B-UPSERT** 🧩 **`upsert` ที่ส่ง array ปน "แถวเดิม (มี id) + แถวใหม่ (ไม่มี id)" ต้องมี
+  `{ defaultToNull: false }`** — ไม่งั้น postgrest เติม `null` ทับ `default gen_random_uuid()`
+  ⇒ `23502 null value in column "id"` **ล้มทั้งก้อน** (เจอ 2 รอบ: `material_request_items` 19/10
+  · `bbs_agreements` 27/10) · อันตรายสุดเมื่อมี `delete` นำหน้า = ของหายจริง
+  · grep: `...(x.id ? { id: x.id } : {})` ที่อยู่ใน `.map()` แล้วไฟล์ไม่มี `defaultToNull`
+  · ทางแก้อีกทาง: แยก `insert` แถวใหม่ / `upsert` แถวเดิม (`OjtTraining.jsx`)
+  · 🔴 ห้ามแก้ด้วยการถอด not-null ของ PK หรือยัด uuid จาก client
+  · ด่านอัตโนมัติ: `upsert-mixed-id-needs-default` ใน `regressionGuards`
+
 ### หมวด C — Permissions (data-driven)
 
 - **[C-RLS-1]** policy RLS ฝั่ง Main ที่เขียนได้ (`for all/update/delete`) ห้าม hardcode `role = any(array[...])` — ต้องเป็น `has_perm('<คีย์เดียวกับ can() ของปุ่มนั้น>')` (2026-09-04 · `20260904_rls_match_ui_permissions.sql`) · ตรวจ: `grep -n "ARRAY\['admin'" supabase/migrations/*.sql` เทียบกับ pg_policies ปัจจุบัน

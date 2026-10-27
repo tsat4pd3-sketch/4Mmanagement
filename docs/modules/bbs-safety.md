@@ -124,3 +124,19 @@ migration `20260821_bbs_safety_observation.sql` (**apply แล้ว 2026-08-21
 (ถ้าเป็น Postgres ต้องได้ error ตอน 25 วิ) แต่เป็น transport ของ MCP · ตรวจแล้วไม่มี lock ค้าง
 ไม่มี FK ไหนขาด index และ `audit_log` ปกติ (10k แถว 12 MB) → **ให้ user รันเองผ่าน SQL Editor**
 · ไฟล์ migration เขียนให้ **รันซ้ำได้ (idempotent)** ทุกขั้น เพราะขั้น 0-4 ถูกรันผ่าน MCP ไปแล้วบางส่วน
+
+---
+
+## 🐞 27/10 — "เพิ่มหัวข้อ BBS ไม่สำเร็จ" (หน้างานแจ้ง)
+
+`null value in column "id" of relation "bbs_agreements" violates not-null constraint`
+
+**ไม่ใช่ปัญหาของตาราง** — `bbs_agreements.id` มี `default gen_random_uuid()` ตั้งแต่ migration แรก
+ต้นเหตุคือ `upsert` ส่งก้อนที่ปน **แถวเดิม (มี id) + แถวใหม่ (ไม่มี id)** ⇒ postgrest เติม `null` ทับ default
+⇒ **ล้มทั้งก้อน** = ข้อที่พิมพ์ใหม่ *และ* ข้อเดิมที่แก้ไว้ ไม่ถูกบันทึกเลยสักข้อ
+(ตรวจฐานหลังเกิดเหตุ: มีแค่ 3 ข้อที่ seed ไว้ตั้งแต่ 21/08 — ที่พิมพ์เพิ่ม 10 ข้อหายหมด)
+
+**แก้:** `.upsert(up, { defaultToNull: false })` · 📄 กฎเต็ม + เคสอื่น → `db-write-rules.md` §upsert ที่ปนแถวเดิม/ใหม่
+
+🔴 **ข้อตกลง 13 ข้อในใบจริง ยังต้องให้ user พิมพ์เอง — ห้ามเดาข้อความ** (กฎเดิมตั้งแต่ migration)
+

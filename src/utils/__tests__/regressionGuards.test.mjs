@@ -7102,3 +7102,39 @@ test('🏭 machine-process-vote-needs-asset-filter — ห้ามโหวต 
     + '        machineAssetsOnly(machines.filter(m => … && m.process_type))\n'
     + '   ทำไม: แม่พิมพ์/จิ๊ก/facility ถือ process_type default ⇒ โหวตชนะเครื่องจักรจริง\n');
 });
+
+test('🧩 upsert-mixed-id-needs-default — upsert ที่ปนแถวเดิม/แถวใหม่ ต้องส่ง defaultToNull:false', () => {
+  /* เจอ 2 รอบแล้ว (MaterialRequests 19/10 · BbsCheck 27/10 หน้างานแจ้ง "เพิ่มหัวข้อ BBS ไม่สำเร็จ")
+     อาการ: `null value in column "id" ... violates not-null constraint` ทั้งที่ตารางมี
+     `default gen_random_uuid()` อยู่แล้ว
+     สาเหตุ: ส่ง array ที่ **บางแถวมี id บางแถวไม่มี** เข้า upsert ⇒ postgrest สร้าง INSERT ก้อนเดียว
+     ด้วย "คอลัมน์รวมของทุกแถว" แล้วเติม NULL ให้แถวที่ขาดคีย์นั้น ⇒ DEFAULT ไม่ถูกใช้ ⇒ ล้มทั้งก้อน
+     🔴 ห้ามแก้ด้วยการถอด not-null ของ PK / ยัด id เองจากฝั่ง client
+        ⇒ ส่ง { defaultToNull: false } (postgrest `missing=default`)
+        หรือแยก insert (แถวใหม่) / upsert (แถวเดิม) คนละคอลแบบ OjtTraining.jsx
+
+     จับเฉพาะรูปที่อันตรายจริง — ต้องครบ 2 อย่าง:
+       ① สเปรดแบบ `...(x.id ? { id: x.id } : {})` = แถวนั้น**ยังอยู่ในก้อน**แต่ไม่มี id
+          (ถ้าเป็น `: null` แล้ว filter ทิ้ง = ปลอดภัย ไม่เข้าข่าย)
+       ② อยู่ในคอลแบ็กของ `.map(` ที่รับตัวแปรนั้นเป็นพารามิเตอร์ = สร้างเป็น "อาร์เรย์หลายแถว"
+          (ออบเจกต์เดี่ยวไม่มีปัญหานี้ — คีย์ของมันเองคือคอลัมน์ลิสต์ทั้งหมด เช่น LayerProcessAudit) */
+  const bad = [];
+  const RE = /\.\.\.\((\w+)\??\.id \? \{ id: \1\??\.id \} : \{\}\)/g;
+  for (const file of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
+    const src = stripComments(readFileSync(file, 'utf8'));
+    for (const m of src.matchAll(RE)) {
+      const ident = m[1];
+      const back = src.slice(Math.max(0, m.index - 400), m.index);
+      const mapAt = back.lastIndexOf('.map(');
+      if (mapAt < 0) continue;                                   // ออบเจกต์เดี่ยว = ปลอดภัย
+      const between = back.slice(mapAt);
+      if (!new RegExp(`\\b${ident}\\b`).test(between)) continue;  // .map() คนละตัว (บังเอิญอยู่ใกล้)
+      if (!src.includes('defaultToNull')) {
+        bad.push(`${file.replace(ROOT, '')}: upsert ปนแถวเดิม/ใหม่ (${ident}) แต่ไม่ได้ส่ง { defaultToNull: false }`);
+      }
+    }
+  }
+  assert.deepEqual([...new Set(bad)], [], '\n\n❌ upsert ที่ปน id/ไม่มี id จะพังด้วย 23502:\n  ' + bad.join('\n  ')
+    + '\n\n   แก้: .upsert(rows, { defaultToNull: false })  ← ให้ postgrest ใช้ default ของคอลัมน์\n'
+    + '   หรือแยก insert (แถวใหม่) / upsert (แถวเดิม) คนละคอล แบบ OjtTraining.jsx\n');
+});
