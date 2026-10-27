@@ -7050,3 +7050,55 @@ test('⬜ boot-fallback — จอขาวสนิทต้องเป็น�
     + '\n\n   ทำไมสำคัญ: chunk โหลดไม่ได้ = React ไม่เคยขึ้น = RootErrorBoundary ไม่ทำงาน\n'
     + '              หน้างานเห็นจอขาวเปล่าๆ ไม่รู้ว่าพังหรือช้า แล้วกด F5 รัวๆ (ยิ่งซ้ำเติมตอนระบบอ่อนแรง)\n');
 });
+
+test('🏭 machine-process-vote-needs-asset-filter — ห้ามโหวต process_type จากทะเบียน machines โดยไม่กรองชนิดสินทรัพย์', () => {
+  /* บั๊กจริง 2026-10-27: ตาราง `machines` (DR) เก็บสินทรัพย์ทุกชนิด — เครื่องจักร 226 · แม่พิมพ์ 268
+     · จิ๊ก 190 · facility 44 — และ 674/728 แถวมี process_type = 'welding_assembly' (ค่า default
+     ที่ไม่มีใครแก้) ⇒ นับรวมทุกชนิด = แม่พิมพ์/จิ๊กโหวตชนะเครื่องจักร
+     วัดจริง: HDF1 · HDF2 · LASER-345 · LASER-789 ถูกตีเป็น welding_assembly ทั้งที่เครื่องจักร
+     ทั้งหมดเป็น metal_forming ⇒ DailyReport เลือก **นโยบายเวลาพัก** ผิดชุด ⇒ %A/%P ผิดทั้งกะ
+     ⇒ ต้องผ่าน processVotingRows() (src/utils/machineAssets.js) เสมอ
+     🔴 ยอมรับ `processUnionRows(` ด้วย = "จุดนี้ตั้งใจไม่กรอง" (dropdown ต้องใจกว้าง — ซ่อนผิด
+        = หน้างานบันทึกปัญหาจริงไม่ได้ · เคสจริง Line 60 ลง DT metal_forming 10 ใบ ทั้งที่ประเภทนั้น
+        มาจากแม่พิมพ์/จิ๊ก) — บังคับให้เลือกข้างอย่างชัดเจน ห้ามปล่อยให้ดูเหมือนลืมกรอง
+     หมายเหตุ: จับเฉพาะการ "อ่าน process_type ของแถวที่กรองมาจาก machines" — การแสดงผลรายแถว
+     (`machine?.process_type` ในการ์ด/ชิป) ไม่เข้าข่าย เพราะไม่ได้เอามาตัดสินแทนทั้งไลน์ */
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
+    if (/machineAssets\.js$/.test(file)) continue;
+    const src = stripComments(readFileSync(file, 'utf8'));
+    let i = 0;
+    for (;;) {
+      i = src.indexOf('machines.filter(', i);
+      if (i < 0) break;
+      const stmt = src.slice(i, i + 400);
+      const end = stmt.search(/\)\s*[;,)\n]/);
+      const body = end > 0 ? stmt.slice(0, end + 1) : stmt;
+      if (/process_type/.test(body)) {
+        /* ยอมรับได้เมื่อห่อด้วย processVotingRows( … machines.filter(…) … ) */
+        const before = src.slice(Math.max(0, i - 60), i);
+        if (!/(machineAssetsOnly|machineLaneCount|processUnionRows)\(\s*$/.test(before)) {
+          bad.push(`${file.replace(ROOT, '')}: machines.filter(...process_type...) ไม่ได้ห่อด้วย machineAssetsOnly()`);
+        }
+      }
+      i += 'machines.filter('.length;
+    }
+  }
+  /* 🔴 ชุดที่ 2 — "นับจำนวนเครื่องของไลน์" เอาไปเป็น **ตัวหาร** (เลนของไลน์เครื่องขนาน / ฐาน % Downtime)
+     นับจิ๊ก/แม่พิมพ์รวม = ตัวหารใหญ่เกิน = **หักเวลาเสียน้อยกว่าจริง = %A/OEE สูงเกินจริง**
+     วัดจริง 27/10: Line D1 9→4 · D3 8→4 · D5 8→5 · D4 5→3 (ส่วนเกินคือจิ๊ก)
+     ⇒ ต้องผ่าน machineLaneCount() */
+  for (const file of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
+    if (/machineAssets\.js$/.test(file)) continue;
+    const src = stripComments(readFileSync(file, 'utf8'));
+    /* รูปแบบที่เคยเขียนกันมา: new Set(machines.filter(...).map(m => m.machine_no)).size */
+    const re = /new Set\(\s*machines\s*\.filter\([\s\S]{0,220}?machine_no\s*\)\s*\)\s*\.size/g;
+    if (re.test(src)) {
+      bad.push(`${file.replace(ROOT, '')}: นับเลน/เครื่องต่อไลน์เองจาก machines — ต้องใช้ machineLaneCount()`);
+    }
+  }
+  assert.deepEqual(bad, [], '\n\n❌ โหวต process_type จาก machines โดยไม่กรองชนิดสินทรัพย์:\n  ' + bad.join('\n  ')
+    + '\n\n   แก้: import { processVotingRows } from \'<path>/utils/machineAssets\';\n'
+    + '        machineAssetsOnly(machines.filter(m => … && m.process_type))\n'
+    + '   ทำไม: แม่พิมพ์/จิ๊ก/facility ถือ process_type default ⇒ โหวตชนะเครื่องจักรจริง\n');
+});
