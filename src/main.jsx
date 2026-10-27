@@ -86,11 +86,21 @@ const isChunkError = (err) =>
     .test(err?.message || '');
 
 class RootErrorBoundary extends Component {
-  state = { error: null };
+  state = { error: null, stack: '' };
   static getDerivedStateFromError(error) { return { error }; }
-  componentDidCatch(error) {
+  /* 🔴 เก็บ stack + componentStack ไว้ให้หน้างาน "คัดลอกส่งมาได้" (26/10)
+     เคสจริง: หน้างานแจ้ง "เข้า /morning-meeting ไม่ได้" พร้อมข้อความ `Cannot access 'V' before initialization`
+     ซึ่งเป็นชื่อที่ถูก minify แล้ว ⇒ **ตามหาต้นเหตุจากข้อความอย่างเดียวไม่ได้เลย**
+     (เทสโหลดทุก chunk + เรนเดอร์ทุกหน้าใน harness ผ่านหมด = ต้องได้ stack จากเครื่องจริงเท่านั้น) */
+  componentDidCatch(error, info) {
+    this.setState({ stack: [error?.stack || '', info?.componentStack || ''].filter(Boolean).join('\n') });
     if (isChunkError(error) && canAutoReload()) window.location.reload();
   }
+  details() {
+    return [`หน้า: ${window.location.pathname}${window.location.search}`,
+      String(this.state.error?.message || this.state.error), this.state.stack].filter(Boolean).join('\n');
+  }
+
   render() {
     if (!this.state.error) return this.props.children;
     return (
@@ -113,6 +123,17 @@ class RootErrorBoundary extends Component {
         <div style={{ fontSize: 11, opacity: 0.5, maxWidth: 520, wordBreak: 'break-word' }}>
           {String(this.state.error?.message || this.state.error)}
         </div>
+        {/* รายละเอียดสำหรับแจ้งผู้ดูแล — ย่อไว้ ไม่รบกวนคนที่แค่อยากกดโหลดใหม่ */}
+        <details style={{ maxWidth: 640, width: '100%', textAlign: 'left' }}>
+          <summary style={{ fontSize: 11.5, opacity: 0.6, cursor: 'pointer' }}>รายละเอียดสำหรับแจ้งผู้ดูแล</summary>
+          <pre style={{ fontSize: 11, opacity: 0.6, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+            maxHeight: 220, overflow: 'auto', marginTop: 8 }}>{this.details()}</pre>
+          <button onClick={() => { try { navigator.clipboard.writeText(this.details()); } catch { /* ไม่มีสิทธิ์คลิปบอร์ด */ } }}
+            style={{ fontSize: 11.5, fontWeight: 700, padding: '6px 12px', borderRadius: 8, cursor: 'pointer',
+              background: 'transparent', color: 'inherit', border: '1px solid currentColor', opacity: 0.7, fontFamily: 'inherit' }}>
+            📋 คัดลอกรายละเอียด
+          </button>
+        </details>
       </div>
     );
   }

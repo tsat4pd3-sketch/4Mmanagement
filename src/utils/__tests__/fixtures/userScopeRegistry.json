@@ -1,0 +1,1738 @@
+{
+  "_meta": {
+    "what": "ทะเบียนผู้ใช้/ไลน์จริงของโรงงาน แบบไม่มีชื่อคน (acct = md5(uid) 8 ตัวแรก) — ให้ด่าน scopeRegistryGate เล่นกฎขอบเขตซ้ำกับของจริง",
+    "why": "25/10 แก้กฎขอบเขตแล้ว build/เทส/crashsweep ผ่านหมด แต่หัวหน้ากลุ่ม PD1 3 คนเหลือไลน์เดียว = เปิดกะไม่ได้เช้าวันจันทร์ 26/10",
+    "snapshot_date": "2026-10-26",
+    "projects": {
+      "profiles+production_lines": "Main (MAIN · ewhdfqwfwofivojtsizn)",
+      "opened_lines": "DR (Product DB · eyhclzkifitbhbljgoav)"
+    },
+    "refresh_sql": {
+      "1_main_profiles": "select json_agg(json_build_object('acct',left(md5(id::text),8),'role',role,'scope_depth',scope_depth,'sections',sections,'section',section,'line_id',line_id) order by role) from profiles",
+      "2_main_lines": "select json_agg(json_build_object('id',id,'name',name,'parent_line_name',parent_line_name,'section',section,'unit_kind',unit_kind,'is_active',is_active) order by id) from production_lines",
+      "3_dr_opened": "with t as (select left(md5(lower(trim(opened_by_uid))),8) acct, line_name from production_sessions where opened_by_uid is not null and opened_by_uid <> '' and status <> 'void' and work_date >= (current_date - 90) group by 1,2) select json_agg(json_build_object('acct',acct,'lines',lines) order by acct) from (select acct, json_agg(line_name order by line_name) lines from t group by acct) x"
+    },
+    "note": "🔴 ห้ามใส่ชื่อคน/อีเมล/uid ดิบในไฟล์นี้ — acct เป็น md5 ที่ย้อนกลับไม่ได้ในทางปฏิบัติ · ชื่อไลน์/ส่วนงานไม่ใช่ข้อมูลส่วนบุคคล และกฎขอบเขตตัดสินด้วยค่าพวกนี้ จึงต้องเป็นค่าจริง",
+    "moved_lines": {
+      "f9cbcb2b": [
+        "LINE ASSY TSRA",
+        "LINE MAIN TSRA-1"
+      ]
+    },
+    "moved_lines_note": "ไลน์ที่ถูกลบ/เปลี่ยนชื่อออกจากทะเบียนไปแล้ว — ด่าน 'งานจริงห้ามหาย' ข้ามให้ (เทียบกับทะเบียนปัจจุบันไม่ได้)"
+  },
+  "profiles": [
+    {
+      "acct": "05858c06",
+      "role": "supervisor",
+      "scope_depth": "branch",
+      "sections": [
+        "PD4"
+      ],
+      "section": "PD4",
+      "line_id": 51
+    },
+    {
+      "acct": "148a734f",
+      "role": "supervisor",
+      "scope_depth": "branch",
+      "sections": [
+        "PD1"
+      ],
+      "section": "PD1",
+      "line_id": null
+    },
+    {
+      "acct": "16ec2efa",
+      "role": "supervisor",
+      "scope_depth": "branch",
+      "sections": [
+        "PD3"
+      ],
+      "section": "PD3",
+      "line_id": 7
+    },
+    {
+      "acct": "21f093c6",
+      "role": "supervisor",
+      "scope_depth": "branch",
+      "sections": [
+        "PD3"
+      ],
+      "section": "PD3",
+      "line_id": 7
+    },
+    {
+      "acct": "24cde956",
+      "role": "supervisor",
+      "scope_depth": "branch",
+      "sections": [
+        "PD2"
+      ],
+      "section": "PD2",
+      "line_id": null
+    },
+    {
+      "acct": "24e2b1fc",
+      "role": "supervisor",
+      "scope_depth": "branch",
+      "sections": [
+        "PD3"
+      ],
+      "section": "PD3",
+      "line_id": null
+    },
+    {
+      "acct": "2dcd2248",
+      "role": "supervisor",
+      "scope_depth": "branch",
+      "sections": [
+        "PD3"
+      ],
+      "section": "PD3",
+      "line_id": 6
+    },
+    {
+      "acct": "3150c144",
+      "role": "supervisor",
+      "scope_depth": "all",
+      "sections": [
+        "QA"
+      ],
+      "section": "QA",
+      "line_id": null
+    },
+    {
+      "acct": "3767d113",
+      "role": "supervisor",
+      "scope_depth": "branch",
+      "sections": [
+        "PD3"
+      ],
+      "section": "PD3",
+      "line_id": null
+    },
+    {
+      "acct": "64061f60",
+      "role": "supervisor",
+      "scope_depth": "branch",
+      "sections": [
+        "PD3"
+      ],
+      "section": "PD3",
+      "line_id": null
+    },
+    {
+      "acct": "6b010346",
+      "role": "supervisor",
+      "scope_depth": "branch",
+      "sections": [
+        "PD2",
+        "PD1"
+      ],
+      "section": "PD2",
+      "line_id": null
+    },
+    {
+      "acct": "6d25a2e1",
+      "role": "supervisor",
+      "scope_depth": "branch",
+      "sections": [
+        "PD1"
+      ],
+      "section": "PD1",
+      "line_id": null
+    },
+    {
+      "acct": "72427fff",
+      "role": "supervisor",
+      "scope_depth": "branch",
+      "sections": [
+        "QA"
+      ],
+      "section": "QA",
+      "line_id": null
+    },
+    {
+      "acct": "72d8e78b",
+      "role": "supervisor",
+      "scope_depth": "branch",
+      "sections": [
+        "PD4"
+      ],
+      "section": "PD4",
+      "line_id": null
+    },
+    {
+      "acct": "74fbe85a",
+      "role": "supervisor",
+      "scope_depth": "all",
+      "sections": [
+        "QA"
+      ],
+      "section": "QA",
+      "line_id": null
+    },
+    {
+      "acct": "75e6decb",
+      "role": "supervisor",
+      "scope_depth": "all",
+      "sections": [
+        "QA"
+      ],
+      "section": "QA",
+      "line_id": null
+    },
+    {
+      "acct": "8062ce98",
+      "role": "supervisor",
+      "scope_depth": "unit",
+      "sections": [
+        "PD1"
+      ],
+      "section": "PD1",
+      "line_id": null
+    },
+    {
+      "acct": "893e892e",
+      "role": "supervisor",
+      "scope_depth": "branch",
+      "sections": [
+        "PD3"
+      ],
+      "section": "PD3",
+      "line_id": 6
+    },
+    {
+      "acct": "89d2e5a5",
+      "role": "supervisor",
+      "scope_depth": "branch",
+      "sections": [
+        "PD3"
+      ],
+      "section": "PD3",
+      "line_id": null
+    },
+    {
+      "acct": "964c65e2",
+      "role": "supervisor",
+      "scope_depth": "branch",
+      "sections": [
+        "PD3"
+      ],
+      "section": "PD3",
+      "line_id": 6
+    },
+    {
+      "acct": "9aa86ec9",
+      "role": "supervisor",
+      "scope_depth": "branch",
+      "sections": [
+        "PD2"
+      ],
+      "section": "PD2",
+      "line_id": null
+    },
+    {
+      "acct": "9b6ca31a",
+      "role": "supervisor",
+      "scope_depth": "branch",
+      "sections": [
+        "PD4"
+      ],
+      "section": "PD4",
+      "line_id": 51
+    },
+    {
+      "acct": "9fd2b9cf",
+      "role": "supervisor",
+      "scope_depth": "unit",
+      "sections": [
+        "PD2"
+      ],
+      "section": "PD2",
+      "line_id": null
+    },
+    {
+      "acct": "a2beac97",
+      "role": "supervisor",
+      "scope_depth": "branch",
+      "sections": [
+        "PD1"
+      ],
+      "section": "PD1",
+      "line_id": null
+    },
+    {
+      "acct": "af58ddc2",
+      "role": "supervisor",
+      "scope_depth": "all",
+      "sections": [
+        "QA"
+      ],
+      "section": "QA",
+      "line_id": null
+    },
+    {
+      "acct": "b5bbcbf4",
+      "role": "supervisor",
+      "scope_depth": "branch",
+      "sections": [
+        "PD3"
+      ],
+      "section": "PD3",
+      "line_id": 7
+    },
+    {
+      "acct": "bd098a06",
+      "role": "supervisor",
+      "scope_depth": "all",
+      "sections": [
+        "QA"
+      ],
+      "section": "QA",
+      "line_id": null
+    },
+    {
+      "acct": "d034d61d",
+      "role": "supervisor",
+      "scope_depth": "branch",
+      "sections": [
+        "PD4"
+      ],
+      "section": "PD4",
+      "line_id": 51
+    },
+    {
+      "acct": "d6d01e89",
+      "role": "supervisor",
+      "scope_depth": "all",
+      "sections": [
+        "QA"
+      ],
+      "section": "QA",
+      "line_id": null
+    },
+    {
+      "acct": "db9270af",
+      "role": "supervisor",
+      "scope_depth": "branch",
+      "sections": [
+        "PD1"
+      ],
+      "section": "PD1",
+      "line_id": null
+    },
+    {
+      "acct": "dc0457d0",
+      "role": "supervisor",
+      "scope_depth": "branch",
+      "sections": [
+        "Planning&Store"
+      ],
+      "section": "Planning&Store",
+      "line_id": null
+    },
+    {
+      "acct": "e961240b",
+      "role": "supervisor",
+      "scope_depth": "branch",
+      "sections": [
+        "PD3"
+      ],
+      "section": "PD3",
+      "line_id": 7
+    },
+    {
+      "acct": "f9f9249b",
+      "role": "supervisor",
+      "scope_depth": "branch",
+      "sections": [
+        "PD4"
+      ],
+      "section": "PD4",
+      "line_id": 51
+    },
+    {
+      "acct": "21319760",
+      "role": "manager",
+      "scope_depth": "branch",
+      "sections": [
+        "PD3",
+        "PD4"
+      ],
+      "section": "PD3",
+      "line_id": null
+    },
+    {
+      "acct": "33d2e12a",
+      "role": "manager",
+      "scope_depth": "branch",
+      "sections": [
+        "Planning&Store",
+        "PD1",
+        "PD2",
+        "PD3",
+        "PD4"
+      ],
+      "section": "Planning&Store",
+      "line_id": null
+    },
+    {
+      "acct": "43601b1c",
+      "role": "manager",
+      "scope_depth": "all",
+      "sections": null,
+      "section": null,
+      "line_id": null
+    },
+    {
+      "acct": "5868712b",
+      "role": "manager",
+      "scope_depth": "all",
+      "sections": [
+        "QA"
+      ],
+      "section": "QA",
+      "line_id": null
+    },
+    {
+      "acct": "9ee81a95",
+      "role": "manager",
+      "scope_depth": "branch",
+      "sections": [
+        "PD1"
+      ],
+      "section": "PD1",
+      "line_id": null
+    },
+    {
+      "acct": "adca7f8a",
+      "role": "manager",
+      "scope_depth": "branch",
+      "sections": [
+        "PD2"
+      ],
+      "section": "PD2",
+      "line_id": null
+    },
+    {
+      "acct": "00c7dc8b",
+      "role": "admin",
+      "scope_depth": "all",
+      "sections": null,
+      "section": null,
+      "line_id": null
+    },
+    {
+      "acct": "0ba2f96c",
+      "role": "admin",
+      "scope_depth": "unit",
+      "sections": [
+        "PD4"
+      ],
+      "section": "PD4",
+      "line_id": 51
+    },
+    {
+      "acct": "801621e8",
+      "role": "admin",
+      "scope_depth": "all",
+      "sections": null,
+      "section": "Maintenance",
+      "line_id": null
+    },
+    {
+      "acct": "8fca8f32",
+      "role": "admin",
+      "scope_depth": "all",
+      "sections": [
+        "Planning&Store"
+      ],
+      "section": "Planning&Store",
+      "line_id": null
+    },
+    {
+      "acct": "c2401e87",
+      "role": "admin",
+      "scope_depth": "branch",
+      "sections": [
+        "PD3"
+      ],
+      "section": "PD3",
+      "line_id": 6
+    },
+    {
+      "acct": "048c99f8",
+      "role": "leader",
+      "scope_depth": "branch",
+      "sections": [
+        "PD4"
+      ],
+      "section": "PD4",
+      "line_id": 10
+    },
+    {
+      "acct": "094fbff5",
+      "role": "leader",
+      "scope_depth": "branch",
+      "sections": [
+        "PD2"
+      ],
+      "section": "PD2",
+      "line_id": 9
+    },
+    {
+      "acct": "20e1b9a1",
+      "role": "leader",
+      "scope_depth": "branch",
+      "sections": [
+        "PD3"
+      ],
+      "section": "PD3",
+      "line_id": 7
+    },
+    {
+      "acct": "2bd17004",
+      "role": "leader",
+      "scope_depth": "unit",
+      "sections": [
+        "PD1"
+      ],
+      "section": "PD1",
+      "line_id": 17
+    },
+    {
+      "acct": "320fb676",
+      "role": "leader",
+      "scope_depth": "unit",
+      "sections": [
+        "PD1"
+      ],
+      "section": "PD1",
+      "line_id": 18
+    },
+    {
+      "acct": "45361287",
+      "role": "leader",
+      "scope_depth": "branch",
+      "sections": [
+        "PD4"
+      ],
+      "section": "PD4",
+      "line_id": 8
+    },
+    {
+      "acct": "49626671",
+      "role": "leader",
+      "scope_depth": "branch",
+      "sections": [
+        "PD3"
+      ],
+      "section": "PD3",
+      "line_id": 7
+    },
+    {
+      "acct": "57745084",
+      "role": "leader",
+      "scope_depth": "branch",
+      "sections": [
+        "PD3"
+      ],
+      "section": "PD3",
+      "line_id": 6
+    },
+    {
+      "acct": "6541ccf5",
+      "role": "leader",
+      "scope_depth": "branch",
+      "sections": [
+        "PD3"
+      ],
+      "section": "PD3",
+      "line_id": 6
+    },
+    {
+      "acct": "824d3c24",
+      "role": "leader",
+      "scope_depth": "all",
+      "sections": null,
+      "section": "PD3",
+      "line_id": 7
+    },
+    {
+      "acct": "95568bcd",
+      "role": "leader",
+      "scope_depth": "branch",
+      "sections": [
+        "PD4"
+      ],
+      "section": "PD4",
+      "line_id": 10
+    },
+    {
+      "acct": "9e67499d",
+      "role": "leader",
+      "scope_depth": "all",
+      "sections": null,
+      "section": "PD4",
+      "line_id": 8
+    },
+    {
+      "acct": "9eb758cc",
+      "role": "leader",
+      "scope_depth": "branch",
+      "sections": [
+        "PD3"
+      ],
+      "section": "PD3",
+      "line_id": 7
+    },
+    {
+      "acct": "ba4c067a",
+      "role": "leader",
+      "scope_depth": "branch",
+      "sections": [
+        "PD3"
+      ],
+      "section": "PD3",
+      "line_id": 6
+    },
+    {
+      "acct": "e881a0d9",
+      "role": "leader",
+      "scope_depth": "branch",
+      "sections": [
+        "PD3"
+      ],
+      "section": "PD3",
+      "line_id": 6
+    },
+    {
+      "acct": "e9d9b66f",
+      "role": "leader",
+      "scope_depth": "branch",
+      "sections": null,
+      "section": "PD1",
+      "line_id": 19
+    },
+    {
+      "acct": "f57646e8",
+      "role": "leader",
+      "scope_depth": "branch",
+      "sections": [
+        "PD2"
+      ],
+      "section": "PD2",
+      "line_id": 9
+    },
+    {
+      "acct": "f67753ab",
+      "role": "leader",
+      "scope_depth": "branch",
+      "sections": [
+        "PD3"
+      ],
+      "section": "PD3",
+      "line_id": 7
+    },
+    {
+      "acct": "f90ec9ec",
+      "role": "leader",
+      "scope_depth": "branch",
+      "sections": [
+        "PD3"
+      ],
+      "section": "PD3",
+      "line_id": 7
+    },
+    {
+      "acct": "f9cbcb2b",
+      "role": "leader",
+      "scope_depth": "branch",
+      "sections": [
+        "PD2"
+      ],
+      "section": "PD2",
+      "line_id": 9
+    },
+    {
+      "acct": "04c9b152",
+      "role": "qa",
+      "scope_depth": "all",
+      "sections": [
+        "PD3",
+        "PD4"
+      ],
+      "section": "PD3",
+      "line_id": null
+    },
+    {
+      "acct": "12465fd2",
+      "role": "qa",
+      "scope_depth": "all",
+      "sections": [
+        "PD3",
+        "PD4"
+      ],
+      "section": "PD3",
+      "line_id": null
+    },
+    {
+      "acct": "30dfb872",
+      "role": "qa",
+      "scope_depth": "all",
+      "sections": [
+        "PD3",
+        "PD4"
+      ],
+      "section": "PD3",
+      "line_id": null
+    },
+    {
+      "acct": "410c7cfc",
+      "role": "qa",
+      "scope_depth": "all",
+      "sections": [
+        "QA"
+      ],
+      "section": "QA",
+      "line_id": null
+    },
+    {
+      "acct": "4210ac67",
+      "role": "qa",
+      "scope_depth": "all",
+      "sections": [
+        "PD3"
+      ],
+      "section": "PD3",
+      "line_id": null
+    },
+    {
+      "acct": "4cefd90c",
+      "role": "qa",
+      "scope_depth": "all",
+      "sections": [
+        "PD3"
+      ],
+      "section": "PD3",
+      "line_id": null
+    },
+    {
+      "acct": "519e8acc",
+      "role": "qa",
+      "scope_depth": "all",
+      "sections": [
+        "PD3",
+        "PD4"
+      ],
+      "section": "PD3",
+      "line_id": null
+    },
+    {
+      "acct": "800c25e9",
+      "role": "qa",
+      "scope_depth": "all",
+      "sections": [
+        "PD3",
+        "PD4"
+      ],
+      "section": "PD3",
+      "line_id": null
+    },
+    {
+      "acct": "96d5969f",
+      "role": "qa",
+      "scope_depth": "all",
+      "sections": [
+        "QA"
+      ],
+      "section": "QA",
+      "line_id": null
+    },
+    {
+      "acct": "ac6954b8",
+      "role": "qa",
+      "scope_depth": "all",
+      "sections": [
+        "PD3"
+      ],
+      "section": "PD3",
+      "line_id": null
+    },
+    {
+      "acct": "bd18c42b",
+      "role": "qa",
+      "scope_depth": "all",
+      "sections": [
+        "PD3"
+      ],
+      "section": "PD3",
+      "line_id": null
+    },
+    {
+      "acct": "c883b928",
+      "role": "qa",
+      "scope_depth": "all",
+      "sections": [
+        "PD3"
+      ],
+      "section": "PD3",
+      "line_id": null
+    },
+    {
+      "acct": "cac185b0",
+      "role": "qa",
+      "scope_depth": "all",
+      "sections": [
+        "PD3"
+      ],
+      "section": "PD3",
+      "line_id": null
+    },
+    {
+      "acct": "cd454da7",
+      "role": "qa",
+      "scope_depth": "all",
+      "sections": [
+        "PD3"
+      ],
+      "section": "PD3",
+      "line_id": null
+    },
+    {
+      "acct": "f7a029f9",
+      "role": "qa",
+      "scope_depth": "all",
+      "sections": [
+        "PD3"
+      ],
+      "section": "PD3",
+      "line_id": null
+    },
+    {
+      "acct": "a92c0da3",
+      "role": "document_control",
+      "scope_depth": "branch",
+      "sections": [
+        "PD4"
+      ],
+      "section": "PD4",
+      "line_id": 51
+    },
+    {
+      "acct": "d0e595dc",
+      "role": "document_control",
+      "scope_depth": "branch",
+      "sections": [
+        "PD3"
+      ],
+      "section": "PD3",
+      "line_id": 7
+    },
+    {
+      "acct": "01ff21e7",
+      "role": "display",
+      "scope_depth": "unit",
+      "sections": [
+        "PD3"
+      ],
+      "section": "PD3",
+      "line_id": null
+    },
+    {
+      "acct": "0787bdd8",
+      "role": "display",
+      "scope_depth": "unit",
+      "sections": [
+        "QA"
+      ],
+      "section": "QA",
+      "line_id": null
+    },
+    {
+      "acct": "1328cccc",
+      "role": "display",
+      "scope_depth": "unit",
+      "sections": [
+        "PD3"
+      ],
+      "section": "PD3",
+      "line_id": null
+    },
+    {
+      "acct": "53fb6a2e",
+      "role": "display",
+      "scope_depth": "unit",
+      "sections": [
+        "PD1"
+      ],
+      "section": "PD1",
+      "line_id": null
+    },
+    {
+      "acct": "6b409129",
+      "role": "display",
+      "scope_depth": "all",
+      "sections": null,
+      "section": null,
+      "line_id": null
+    },
+    {
+      "acct": "728d54bd",
+      "role": "display",
+      "scope_depth": "unit",
+      "sections": [
+        "MTN"
+      ],
+      "section": "MTN",
+      "line_id": null
+    },
+    {
+      "acct": "83010b80",
+      "role": "display",
+      "scope_depth": "unit",
+      "sections": [
+        "PD2"
+      ],
+      "section": "PD2",
+      "line_id": null
+    },
+    {
+      "acct": "84347edc",
+      "role": "display",
+      "scope_depth": "unit",
+      "sections": [
+        "Planning&Store"
+      ],
+      "section": "Planning&Store",
+      "line_id": null
+    },
+    {
+      "acct": "88978583",
+      "role": "display",
+      "scope_depth": "unit",
+      "sections": [
+        "Planning&Store"
+      ],
+      "section": "Planning&Store",
+      "line_id": null
+    },
+    {
+      "acct": "9394fc8e",
+      "role": "display",
+      "scope_depth": "unit",
+      "sections": [
+        "DIE MTN"
+      ],
+      "section": "Die MTN",
+      "line_id": null
+    },
+    {
+      "acct": "98ae2d80",
+      "role": "display",
+      "scope_depth": "branch",
+      "sections": [
+        "PD3"
+      ],
+      "section": "PD3",
+      "line_id": null
+    },
+    {
+      "acct": "b46bac2b",
+      "role": "display",
+      "scope_depth": "unit",
+      "sections": [
+        "JIG MTN"
+      ],
+      "section": "JIG MTN",
+      "line_id": null
+    },
+    {
+      "acct": "c352dc34",
+      "role": "display",
+      "scope_depth": "unit",
+      "sections": [
+        "Planning&Store"
+      ],
+      "section": "Planning&Store",
+      "line_id": null
+    },
+    {
+      "acct": "d8bb5509",
+      "role": "display",
+      "scope_depth": "unit",
+      "sections": [
+        "PD4"
+      ],
+      "section": "PD4",
+      "line_id": null
+    },
+    {
+      "acct": "fb5135e7",
+      "role": "display",
+      "scope_depth": "unit",
+      "sections": [
+        "Planning&Store"
+      ],
+      "section": "Planning&Store",
+      "line_id": null
+    },
+    {
+      "acct": "fcbc6413",
+      "role": "display",
+      "scope_depth": "all",
+      "sections": null,
+      "section": null,
+      "line_id": null
+    },
+    {
+      "acct": "1f5b93ba",
+      "role": "mtn",
+      "scope_depth": "all",
+      "sections": [
+        "MTN",
+        "Maintenance"
+      ],
+      "section": "MTN",
+      "line_id": null
+    },
+    {
+      "acct": "226d8c40",
+      "role": "mtn",
+      "scope_depth": "all",
+      "sections": null,
+      "section": "JIG MTN",
+      "line_id": null
+    },
+    {
+      "acct": "2badd58f",
+      "role": "mtn",
+      "scope_depth": "all",
+      "sections": null,
+      "section": "Die MTN",
+      "line_id": null
+    },
+    {
+      "acct": "32dea526",
+      "role": "mtn",
+      "scope_depth": "all",
+      "sections": [
+        "Maintenance",
+        "Tooling MTN"
+      ],
+      "section": "Maintenance",
+      "line_id": null
+    },
+    {
+      "acct": "35d6b488",
+      "role": "mtn",
+      "scope_depth": "all",
+      "sections": null,
+      "section": "JIG MTN",
+      "line_id": null
+    },
+    {
+      "acct": "4aaeb5d0",
+      "role": "mtn",
+      "scope_depth": "all",
+      "sections": [
+        "JIG MTN"
+      ],
+      "section": "JIG MTN",
+      "line_id": null
+    },
+    {
+      "acct": "4ed00ee8",
+      "role": "mtn",
+      "scope_depth": "all",
+      "sections": [
+        "JIG MTN"
+      ],
+      "section": "JIG MTN",
+      "line_id": null
+    },
+    {
+      "acct": "68a33596",
+      "role": "mtn",
+      "scope_depth": "all",
+      "sections": null,
+      "section": "Maintenance",
+      "line_id": null
+    },
+    {
+      "acct": "806a9da6",
+      "role": "mtn",
+      "scope_depth": "all",
+      "sections": null,
+      "section": "JIG MTN",
+      "line_id": null
+    },
+    {
+      "acct": "9f8280f6",
+      "role": "mtn",
+      "scope_depth": "all",
+      "sections": null,
+      "section": "JIG MTN",
+      "line_id": null
+    },
+    {
+      "acct": "a8dc8480",
+      "role": "mtn",
+      "scope_depth": "all",
+      "sections": null,
+      "section": "JIG MTN",
+      "line_id": null
+    },
+    {
+      "acct": "bd87377e",
+      "role": "mtn",
+      "scope_depth": "all",
+      "sections": null,
+      "section": "Tooling MTN",
+      "line_id": null
+    },
+    {
+      "acct": "c7baf62c",
+      "role": "mtn",
+      "scope_depth": "all",
+      "sections": null,
+      "section": "Maintenance",
+      "line_id": null
+    },
+    {
+      "acct": "e77c654b",
+      "role": "mtn",
+      "scope_depth": "all",
+      "sections": null,
+      "section": "JIG MTN",
+      "line_id": null
+    },
+    {
+      "acct": "ee4e1168",
+      "role": "mtn",
+      "scope_depth": "all",
+      "sections": null,
+      "section": "JIG MTN",
+      "line_id": null
+    },
+    {
+      "acct": "fa825b9a",
+      "role": "mtn",
+      "scope_depth": "all",
+      "sections": null,
+      "section": "JIG MTN",
+      "line_id": null
+    },
+    {
+      "acct": "f4da50a5",
+      "role": "engineer",
+      "scope_depth": "all",
+      "sections": null,
+      "section": null,
+      "line_id": null
+    },
+    {
+      "acct": "4ff78ac9",
+      "role": "planner_store",
+      "scope_depth": "branch",
+      "sections": [
+        "Planning&Store"
+      ],
+      "section": "Planning&Store",
+      "line_id": null
+    },
+    {
+      "acct": "5d1e26e8",
+      "role": "planner_store",
+      "scope_depth": "all",
+      "sections": [
+        "Planning&Store"
+      ],
+      "section": "Planning&Store",
+      "line_id": null
+    },
+    {
+      "acct": "a35a29ec",
+      "role": "planner_store",
+      "scope_depth": "all",
+      "sections": [],
+      "section": "Planning&Store",
+      "line_id": null
+    },
+    {
+      "acct": "855a8c37",
+      "role": "engineer_nm",
+      "scope_depth": "unit",
+      "sections": null,
+      "section": null,
+      "line_id": null
+    },
+    {
+      "acct": "3995286d",
+      "role": "warehouse_delivery",
+      "scope_depth": "unit",
+      "sections": [
+        "Planning&Store"
+      ],
+      "section": "Planning&Store",
+      "line_id": null
+    },
+    {
+      "acct": "7302e21b",
+      "role": "warehouse_delivery",
+      "scope_depth": "all",
+      "sections": [],
+      "section": "Planning&Store",
+      "line_id": null
+    },
+    {
+      "acct": "9fac379c",
+      "role": "warehouse_delivery",
+      "scope_depth": "all",
+      "sections": [],
+      "section": "Planning&Store",
+      "line_id": null
+    },
+    {
+      "acct": "a937794d",
+      "role": "warehouse_delivery",
+      "scope_depth": "all",
+      "sections": [],
+      "section": "Planning&Store",
+      "line_id": null
+    },
+    {
+      "acct": "d426e5b3",
+      "role": "warehouse_delivery",
+      "scope_depth": "all",
+      "sections": [
+        "Planning&Store"
+      ],
+      "section": "Planning&Store",
+      "line_id": null
+    },
+    {
+      "acct": "fb3edb5d",
+      "role": "warehouse_delivery",
+      "scope_depth": "all",
+      "sections": [],
+      "section": "Planning&Store",
+      "line_id": null
+    }
+  ],
+  "lines": [
+    {
+      "id": 6,
+      "name": "LINE APRON ASSY",
+      "parent_line_name": null,
+      "section": "PD3",
+      "unit_kind": "production",
+      "is_active": true
+    },
+    {
+      "id": 7,
+      "name": "HYDROFORM",
+      "parent_line_name": null,
+      "section": "PD3",
+      "unit_kind": "production",
+      "is_active": true
+    },
+    {
+      "id": 8,
+      "name": "LWR BAR",
+      "parent_line_name": null,
+      "section": "PD4",
+      "unit_kind": "production",
+      "is_active": true
+    },
+    {
+      "id": 9,
+      "name": "Assembly Line D - GWM&RA",
+      "parent_line_name": null,
+      "section": "PD2",
+      "unit_kind": "production",
+      "is_active": true
+    },
+    {
+      "id": 10,
+      "name": "GOR",
+      "parent_line_name": null,
+      "section": "PD4",
+      "unit_kind": "production",
+      "is_active": true
+    },
+    {
+      "id": 12,
+      "name": "SPARE PART",
+      "parent_line_name": "Assembly Line D - GWM&RA",
+      "section": "PD2",
+      "unit_kind": "production",
+      "is_active": true
+    },
+    {
+      "id": 14,
+      "name": "test",
+      "parent_line_name": null,
+      "section": "TEST",
+      "unit_kind": "production",
+      "is_active": false
+    },
+    {
+      "id": 17,
+      "name": "LINE A ( 800 Ton )",
+      "parent_line_name": null,
+      "section": "PD1",
+      "unit_kind": "production",
+      "is_active": true
+    },
+    {
+      "id": 18,
+      "name": "LINE B ( 600 Ton )",
+      "parent_line_name": null,
+      "section": "PD1",
+      "unit_kind": "production",
+      "is_active": true
+    },
+    {
+      "id": 19,
+      "name": "LINE C ( 200&250 Ton )",
+      "parent_line_name": null,
+      "section": "PD1",
+      "unit_kind": "production",
+      "is_active": true
+    },
+    {
+      "id": 20,
+      "name": "LINE D ( 110&300 Ton )",
+      "parent_line_name": null,
+      "section": "PD1",
+      "unit_kind": "production",
+      "is_active": true
+    },
+    {
+      "id": 21,
+      "name": "Rework - PD1",
+      "parent_line_name": null,
+      "section": "PD1",
+      "unit_kind": "support",
+      "is_active": true
+    },
+    {
+      "id": 23,
+      "name": "HDF1",
+      "parent_line_name": "HYDROFORM",
+      "section": "PD3",
+      "unit_kind": "production",
+      "is_active": true
+    },
+    {
+      "id": 24,
+      "name": "HDF2",
+      "parent_line_name": "HYDROFORM",
+      "section": "PD3",
+      "unit_kind": "production",
+      "is_active": true
+    },
+    {
+      "id": 25,
+      "name": "LASER-345",
+      "parent_line_name": "HYDROFORM",
+      "section": "PD3",
+      "unit_kind": "production",
+      "is_active": true
+    },
+    {
+      "id": 26,
+      "name": "LASER-789",
+      "parent_line_name": "HYDROFORM",
+      "section": "PD3",
+      "unit_kind": "production",
+      "is_active": true
+    },
+    {
+      "id": 27,
+      "name": "LASER E50",
+      "parent_line_name": "HYDROFORM",
+      "section": "PD3",
+      "unit_kind": "production",
+      "is_active": true
+    },
+    {
+      "id": 28,
+      "name": "LASER EXPORT",
+      "parent_line_name": "HYDROFORM",
+      "section": "PD3",
+      "unit_kind": "production",
+      "is_active": true
+    },
+    {
+      "id": 30,
+      "name": "test child",
+      "parent_line_name": "test",
+      "section": "TEST",
+      "unit_kind": "production",
+      "is_active": false
+    },
+    {
+      "id": 31,
+      "name": "Line 60",
+      "parent_line_name": "LINE APRON ASSY",
+      "section": "PD3",
+      "unit_kind": "production",
+      "is_active": true
+    },
+    {
+      "id": 32,
+      "name": "Line 61",
+      "parent_line_name": "LINE APRON ASSY",
+      "section": "PD3",
+      "unit_kind": "production",
+      "is_active": true
+    },
+    {
+      "id": 33,
+      "name": "SUB APRON",
+      "parent_line_name": "LINE APRON ASSY",
+      "section": "PD3",
+      "unit_kind": "production",
+      "is_active": true
+    },
+    {
+      "id": 35,
+      "name": "test child 2",
+      "parent_line_name": "test",
+      "section": "TEST",
+      "unit_kind": "production",
+      "is_active": false
+    },
+    {
+      "id": 36,
+      "name": "Laser GOR",
+      "parent_line_name": "GOR",
+      "section": "PD4",
+      "unit_kind": "production",
+      "is_active": true
+    },
+    {
+      "id": 37,
+      "name": "Laser LWR",
+      "parent_line_name": "LWR BAR",
+      "section": "PD4",
+      "unit_kind": "production",
+      "is_active": true
+    },
+    {
+      "id": 38,
+      "name": "Assy GOR",
+      "parent_line_name": "GOR",
+      "section": "PD4",
+      "unit_kind": "production",
+      "is_active": true
+    },
+    {
+      "id": 39,
+      "name": "Assy  LWR",
+      "parent_line_name": "LWR BAR",
+      "section": "PD4",
+      "unit_kind": "production",
+      "is_active": true
+    },
+    {
+      "id": 49,
+      "name": "BENDING EXPORT",
+      "parent_line_name": "HYDROFORM",
+      "section": "PD3",
+      "unit_kind": "production",
+      "is_active": true
+    },
+    {
+      "id": 50,
+      "name": "BENDING E50",
+      "parent_line_name": "HYDROFORM",
+      "section": "PD3",
+      "unit_kind": "production",
+      "is_active": true
+    },
+    {
+      "id": 51,
+      "name": "Office PD4",
+      "parent_line_name": null,
+      "section": "PD4",
+      "unit_kind": "production",
+      "is_active": true
+    },
+    {
+      "id": 52,
+      "name": "Line D6 - Sub Assembly",
+      "parent_line_name": "Assembly Line D - GWM&RA",
+      "section": "PD2",
+      "unit_kind": "production",
+      "is_active": true
+    },
+    {
+      "id": 53,
+      "name": "Line D1 - GWM",
+      "parent_line_name": "Assembly Line D - GWM&RA",
+      "section": "PD2",
+      "unit_kind": "production",
+      "is_active": true
+    },
+    {
+      "id": 54,
+      "name": "Line D4 - BRK FRT BMPR",
+      "parent_line_name": "Assembly Line D - GWM&RA",
+      "section": "PD2",
+      "unit_kind": "production",
+      "is_active": true
+    },
+    {
+      "id": 55,
+      "name": "Line D5 - BRK RR BMPR",
+      "parent_line_name": "Assembly Line D - GWM&RA",
+      "section": "PD2",
+      "unit_kind": "production",
+      "is_active": true
+    },
+    {
+      "id": 56,
+      "name": "Line D2 - LWR BAR",
+      "parent_line_name": "Assembly Line D - GWM&RA",
+      "section": "PD2",
+      "unit_kind": "production",
+      "is_active": true
+    },
+    {
+      "id": 57,
+      "name": "Line D3 - STAMPED",
+      "parent_line_name": "Assembly Line D - GWM&RA",
+      "section": "PD2",
+      "unit_kind": "production",
+      "is_active": true
+    },
+    {
+      "id": 58,
+      "name": "Coating",
+      "parent_line_name": null,
+      "section": null,
+      "unit_kind": "support",
+      "is_active": true
+    }
+  ],
+  "openedLines": [
+    {
+      "acct": "00c7dc8b",
+      "lines": [
+        "LINE D ( 110&300 Ton )"
+      ]
+    },
+    {
+      "acct": "048c99f8",
+      "lines": [
+        "Assy GOR",
+        "Laser GOR"
+      ]
+    },
+    {
+      "acct": "094fbff5",
+      "lines": [
+        "Assembly Line D - GWM&RA",
+        "Line D1 - GWM",
+        "Line D2 - LWR BAR",
+        "Line D4 - BRK FRT BMPR",
+        "Line D5 - BRK RR BMPR",
+        "Line D6 - Sub Assembly",
+        "SPARE PART"
+      ]
+    },
+    {
+      "acct": "148a734f",
+      "lines": [
+        "LINE A ( 800 Ton )",
+        "LINE B ( 600 Ton )",
+        "LINE C ( 200&250 Ton )",
+        "LINE D ( 110&300 Ton )"
+      ]
+    },
+    {
+      "acct": "20e1b9a1",
+      "lines": [
+        "BENDING E50",
+        "BENDING EXPORT",
+        "HDF1",
+        "HDF2",
+        "LASER E50",
+        "LASER EXPORT",
+        "LASER-345",
+        "LASER-789"
+      ]
+    },
+    {
+      "acct": "24cde956",
+      "lines": [
+        "Assembly Line D - GWM&RA",
+        "Line D4 - BRK FRT BMPR"
+      ]
+    },
+    {
+      "acct": "320fb676",
+      "lines": [
+        "LINE B ( 600 Ton )"
+      ]
+    },
+    {
+      "acct": "45361287",
+      "lines": [
+        "Assy  LWR",
+        "Laser LWR"
+      ]
+    },
+    {
+      "acct": "57745084",
+      "lines": [
+        "Line 60",
+        "Line 61",
+        "LINE APRON ASSY",
+        "SUB APRON"
+      ]
+    },
+    {
+      "acct": "6541ccf5",
+      "lines": [
+        "Line 60",
+        "Line 61",
+        "SUB APRON"
+      ]
+    },
+    {
+      "acct": "6b010346",
+      "lines": [
+        "Assembly Line D - GWM&RA"
+      ]
+    },
+    {
+      "acct": "6d25a2e1",
+      "lines": [
+        "LINE D ( 110&300 Ton )"
+      ]
+    },
+    {
+      "acct": "95568bcd",
+      "lines": [
+        "Assy GOR",
+        "Laser GOR"
+      ]
+    },
+    {
+      "acct": "964c65e2",
+      "lines": [
+        "Line 60",
+        "Line 61",
+        "SUB APRON"
+      ]
+    },
+    {
+      "acct": "9aa86ec9",
+      "lines": [
+        "Assembly Line D - GWM&RA"
+      ]
+    },
+    {
+      "acct": "9e67499d",
+      "lines": [
+        "Assy  LWR",
+        "Laser LWR"
+      ]
+    },
+    {
+      "acct": "9eb758cc",
+      "lines": [
+        "BENDING E50",
+        "BENDING EXPORT",
+        "HDF1",
+        "HDF2",
+        "LASER E50",
+        "LASER EXPORT",
+        "LASER-345",
+        "LASER-789"
+      ]
+    },
+    {
+      "acct": "a2beac97",
+      "lines": [
+        "LINE A ( 800 Ton )",
+        "LINE B ( 600 Ton )",
+        "LINE C ( 200&250 Ton )",
+        "LINE D ( 110&300 Ton )"
+      ]
+    },
+    {
+      "acct": "ba4c067a",
+      "lines": [
+        "Line 60",
+        "Line 61",
+        "SUB APRON"
+      ]
+    },
+    {
+      "acct": "db9270af",
+      "lines": [
+        "LINE A ( 800 Ton )",
+        "LINE B ( 600 Ton )"
+      ]
+    },
+    {
+      "acct": "e881a0d9",
+      "lines": [
+        "Line 60",
+        "Line 61",
+        "LINE APRON ASSY",
+        "SUB APRON"
+      ]
+    },
+    {
+      "acct": "e9d9b66f",
+      "lines": [
+        "LINE C ( 200&250 Ton )"
+      ]
+    },
+    {
+      "acct": "f67753ab",
+      "lines": [
+        "BENDING E50",
+        "BENDING EXPORT",
+        "HDF1",
+        "HDF2",
+        "LASER E50",
+        "LASER EXPORT",
+        "LASER-345",
+        "LASER-789"
+      ]
+    },
+    {
+      "acct": "f90ec9ec",
+      "lines": [
+        "BENDING E50",
+        "BENDING EXPORT",
+        "HDF1",
+        "HDF2",
+        "LASER E50",
+        "LASER EXPORT",
+        "LASER-345",
+        "LASER-789"
+      ]
+    },
+    {
+      "acct": "f9cbcb2b",
+      "lines": [
+        "Assembly Line D - GWM&RA",
+        "LINE ASSY TSRA",
+        "Line D4 - BRK FRT BMPR",
+        "Line D5 - BRK RR BMPR",
+        "Line D6 - Sub Assembly",
+        "LINE MAIN TSRA-1"
+      ]
+    }
+  ]
+}

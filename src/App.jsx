@@ -31,6 +31,7 @@ primeBreakRuleIndex();
 import useIsMobile from './utils/useIsMobile';
 import ScrollHint from './components/ScrollHint';
 import MobileNavBar from './components/MobileNavBar';
+import MobilePushPrompt from './components/MobilePushPrompt'; // 📲 แถบชวนเปิด push (มือถือเท่านั้น) — 2026-10-20
 import ScanWedgeGuard from './components/ScanWedgeGuard';
 import { purgeOldDrafts } from './utils/formDraft';   // 📝 ล้างร่างฟอร์มที่หมดอายุ (ร่างค้างห้ามกินที่ในเครื่อง)   // 🔫 ปุ่มสแกนข้างเครื่อง handheld — มือถือเท่านั้น
 import { pushSupported, getPushState, subscribePush, unsubscribePush, onPushResubscribeRequest, handlePushResubscribe } from './utils/webpush';
@@ -629,12 +630,16 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
         </button>
       );
     })}
-    {/* input ไฟล์ของ 📷 เปลี่ยนรูปโปรไฟล์ — ซ่อนไว้ กดผ่านรายการเมนูด้านบน */}
-    <input ref={avatarRef} type="file" accept="image/*" style={{ display: 'none' }}
-      onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) setAvatarFile(f); }} />
   </>);
 
   const modals = (<>
+    {/* 📷 input ไฟล์ของ "เปลี่ยนรูปโปรไฟล์" — ต้องอยู่ใน `modals` (วาดทุกสถานะ) **ห้ามย้ายกลับเข้า
+        `profileActions`** (26/10 feedback: *"เปลี่ยนรูปโปรไฟล์จากแถบซ้ายมือไม่ได้ ต้องออกมาหน้าโฮม"*)
+        เมนูโปรไฟล์กด 📷 แล้วสั่ง `.click()` → **แล้วปิดแผงทันที** (`closeNav`) ⇒ input ถูก unmount
+        ก่อนคนเลือกไฟล์เสร็จ ⇒ event `change` ตกใส่ element ที่หลุดจาก React แล้ว = เงียบสนิท
+        (หน้า Home ใช้ input ของตัวเองซึ่งไม่ถูกปิด จึงยังทำงาน — ตรงกับที่หน้างานแจ้ง) */}
+    <input ref={avatarRef} type="file" accept="image/*" style={{ display: 'none' }}
+      onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) setAvatarFile(f); }} />
     {fbOpen && <Suspense fallback={null}><FeedbackModal onClose={() => setFbOpen(false)} /></Suspense>}
     {avatarFile && (
       <Suspense fallback={null}>
@@ -2060,6 +2065,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
           overflowX: 'clip',
           minWidth: 0,
         }}>
+          {/* 📲 "เครื่องนี้ยังไม่เปิดแจ้งเตือน" — มือถือเท่านั้น (คอมไม่เปลี่ยนแม้แต่พิกเซลเดียว)
+              เดิมปุ่มเปิดซ่อนในกระดิ่ง ⇒ 74 จาก 102 คนที่ได้รับแจ้งเตือนไม่มีเครื่องผูกไว้เลย (วัด 20/10) */}
+          <MobilePushPrompt userId={userId} />
           <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh', color: 'var(--muted)', fontSize: 14 }}>กำลังโหลด...</div>}>
             {/* 🔁 key จากจอวนหน้า — หน้าเดิมที่เปลี่ยนแค่ ?query (เช่น ผังโรงงาน metric=oee → metric=ng) ต้อง remount
                 ไม่งั้นค่าตั้งต้นจากลิงก์ (utils/urlInit) ไม่ถูกอ่านใหม่ · ค่าว่าง = นำทางปกติ ไม่ remount */}

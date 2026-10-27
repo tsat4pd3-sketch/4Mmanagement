@@ -48,6 +48,7 @@ import QaCheckSheet from '../components/QaCheckSheet';
 import PeChangeRequests from '../components/PeChangeRequests';
 import QaClaims from '../components/QaClaims';
 import QualityBins from '../components/QualityBins';
+import QaMoPending from '../components/QaMoPending';   // 🔧 ใบซ่อมรอ QA ตรวจหลังซ่อม — 2026-10-22
 import CapaEffectiveness from '../components/CapaEffectiveness';
 import { VERDICTS as EFF_V } from '../utils/capaEffect';
 import { notifyEvent } from '../utils/notifyEvent';
@@ -1818,6 +1819,10 @@ const TABS = [
   { key: 'ncr',         icon: '🚨', label: 'NCR ของเสีย' },
   // เคลมลูกค้า = ของเสียที่หลุดออกไปถึงลูกค้า — วางคู่ NCR เพราะอ่านด้วยกัน (2026-08-17)
   // ถังเหลือง/แดง = บันทึกหน้ากล่องก่อนถึง NCR/Scrap (ฟอร์มกระดาษเดิม 2 ใบ · 2026-08-19)
+  /* 🔧 ใบซ่อมรอ QA ตรวจหลังซ่อม (2026-10-22 · คำสั่ง user *"QA จะรู้ได้ยังไงว่ามี MO ค้างรอ QA กี่ใบ"*)
+     วัด 22/10: มีจริง 92 ใบ เก่าสุด 36 วัน แต่หน้านี้ไม่เคยมีที่ไหนพูดถึงใบซ่อมเลย
+     วางถัดจากใบตรวจเพราะเป็น "งานตรวจที่มีคนรออยู่" เหมือนกัน (ใบตรวจ = ตามแผน · อันนี้ = ตามเหตุ) */
+  { key: 'morepair',    icon: '🔧', label: 'ใบซ่อมรอตรวจ' },
   { key: 'bins',        icon: '🗑️', label: 'ถังเหลือง / ถังแดง' },
   { key: 'claims',      icon: '📮', label: 'เคลมลูกค้า' },
   // ใบเบิกชิ้นงานไปทดสอบ (FM-STO-003) — ของที่ทดสอบแล้วถูกดึงเข้าใบรายงานของเสีย (2026-08-24)
@@ -1871,6 +1876,7 @@ export default function QualityControl() {
       />
 
       {tab === 'dashboard' && <QualityDashboard />}
+      {tab === 'morepair' && <QaMoPending />}
       {tab === 'sheet' && <QaCheckSheet canRecord={canRecord} />}
       {tab === 'spc' && <SPCTab lineObjs={lineObjs} canRecord={canRecord} canManage={canManage} partOpts={partOpts} instruments={instruments} />}
       {tab === 'ncr' && <NCRTab lineObjs={lineObjs} canRecord={canRecord} canManage={canManage} onOpenCapa={openCapaFromNcr} partOpts={partOpts} />}

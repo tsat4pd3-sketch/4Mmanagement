@@ -12,9 +12,10 @@ import { pmTeamsSync, loadPmTeams } from '../utils/pmTeams';   // ทีมช�
 import { checkWrite, checkWriteRows } from '../utils/dbWrite';
 import LineSelect from '../components/LineSelect';
 import { STAFF_KINDS, STAFF_SHOPFLOOR, STAFF_SUPPORT } from '../utils/staffKind';   // 👥 หน้าไลน์ vs สายสนับสนุน
+import { newEmployeeRow, staffKindHint } from '../utils/employeeIdentity';   // 🪪 ตัวตนพนักงานใหม่ = ชุดเดียวกับ /register
 import { normSearch } from '../components/SearchSelect';   // ตัว normalize คำค้นกลาง (ทนการสะกดไทย)
-import { orphanDepts, deptOptionsFor, ORPHAN_SECTION, ORPHAN_SECTION_LABEL, sectionValueForSave,
-  orgNodeIdFor, ORG_SRC_MANUAL, scopeIneffective, scopeTooWide } from '../utils/sectionScope';
+import { orphanDepts, deptOptionsFor, ORPHAN_SECTION, ORPHAN_SECTION_LABEL,
+  scopeIneffective, scopeTooWide } from '../utils/sectionScope';
 import { SCOPE_DEPTHS, SCOPE_DEPTH_META, depthForLevel, needsScopeReview } from '../utils/scopeDepth';   // 🔭 เห็นกว้างแค่ไหน (คนละแกนกับ role)
 import { buildOrgScope, SCOPE_KIND_META } from '../utils/orgScope';
 /* 💰 ชั้นสิทธิ์ที่ 3 แกน Cost Center (16/10 · คำสั่ง user "เซ็ตได้ว่า user ไหน response กับ cost center
@@ -279,19 +280,20 @@ export default function AddUser() {
     }
     setNewEmpSaving(true);
     const { data: userData } = await supabase.auth.getUser();
-    const row = {
-      employee_id_code: code,
+    /* 🪪 ประกอบแถวที่ `utils/employeeIdentity.js` ที่เดียว — ทางเข้าอีกทางคือ /register
+       ฟิลด์ที่ฟอร์มสั้นนี้ไม่มีช่อง (วันเริ่มงาน · ทีม · ไลน์ · รถรับส่ง · รูป) = `null`
+       **ห้ามเดาค่าให้** — ไปเติมต่อที่ /operator (ค่าว่างคนเห็น ค่าที่ระบบเดาไม่มีใครรู้ว่าต้องแก้) */
+    const row = newEmployeeRow({
+      employeeIdCode: code,
       name,
-      department: newEmp.department || null,
-      section: sectionValueForSave(newEmp.section),   // sentinel "ขึ้นตรงฝ่าย" → null (ตรงกับผังจริง)
-      /* 🧭 แกนสังกัด — คนใหม่ต้องผูกโหนดในผังตั้งแต่แรก ไม่ต้องรอ backfill มาเดาทีหลัง
-         (docs/ORG-AXES-DECISION.md §5.1 · ข้อความ section/department ข้างบน = สำเนาไว้โชว์) */
-      org_node_id: orgNodeIdFor(newEmp.section, newEmp.department, orgNodes.sections, orgNodes.depts),
-      org_node_src: ORG_SRC_MANUAL,
-      staff_kind: newEmp.staff_kind || STAFF_SHOPFLOOR,
-      position: form.position || null,
-      created_by: userData?.user?.id || null,
-    };
+      department: newEmp.department,
+      section:    newEmp.section,
+      orgSections: orgNodes.sections,
+      orgDepts:    orgNodes.depts,
+      staffKind:  newEmp.staff_kind,
+      position:   form.position,
+      createdBy:  userData?.user?.id,
+    });
     const res = await supabase.from('employees').insert(row).select('id, employee_id_code, name, team, line_id, section, department, position').single();
     setNewEmpSaving(false);
     if (!checkWrite(res, 'เพิ่มพนักงานเข้าฐาน')) return;
@@ -1445,9 +1447,8 @@ export default function AddUser() {
                         )}
 
                         <div style={{ fontSize: 11, color: 'var(--muted)' }}>
-                          {newEmp.staff_kind === STAFF_SUPPORT
-                            ? 'สายสนับสนุน = ไม่ผูกไลน์/ทีม ⇒ ไม่โผล่ในหน้าเช็คชื่อ · ไม่ถูกนับเป็นกำลังคนหน้าไลน์ · ไม่มีแผงสกิล'
-                            : 'พนักงานหน้าไลน์ = จะถูกนับในเช็คชื่อ/กำลังคน — ไลน์และทีมไปตั้งต่อที่หน้าพนักงาน (/operator)'}
+                          {staffKindHint(newEmp.staff_kind)}
+                          {' · '}ไลน์ · ทีม · วันเริ่มงาน · รูป ไปเติมต่อที่หน้าพนักงาน (/operator)
                         </div>
 
                         <div style={{ display: 'flex', gap: 8 }}>

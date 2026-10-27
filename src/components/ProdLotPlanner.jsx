@@ -116,7 +116,7 @@ function DieMatLinkNote({ lot, dies, role, mayWrite, onDone }) {
 export default function ProdLotPlanner({
   lines = [], demandByDate = {}, carry = {}, ctOf = () => 0, pairOf = () => null,
   lineOfMat = () => null, nameOfMat = () => '', customerOf = () => null, netMin = null,
-  calOf = null,
+  calOf = null, partsOfLine = () => [], opStepsOf = () => [],
 }) {
   const { role, fullName } = useContext(UserContext);
   /* ยังไม่ seed สิทธิ์ = โหมดอ่านอย่างเดียว (deploy-safe — จอไม่พัง คนแค่แก้ไม่ได้) */
@@ -269,11 +269,31 @@ export default function ProdLotPlanner({
       if (d > lastDate) return;
       Object.entries(byMat || {}).forEach(([mat, q]) => { if (q > 0) want[mat] = (want[mat] || 0) + q; });
     });
+    /* 🔧 ขั้น "ต่อ Process" (26/10 · feedback สโตร์) — Step 1 ไม่มีเลข SAP และไม่อยู่ใน BOM
+       ⇒ ไม่มีทางได้ความต้องการของตัวเอง · ความต้องการของมัน = ความต้องการของ**พาร์ทแม่**
+       (ชิ้นเดียวกันวิ่ง Step 1 ก่อนแล้วค่อย Step 2) · CT คนละค่า ⇒ คิดภาระกะแยกก้อน
+       🔴 เติมเฉพาะขั้นที่อยู่ "ไลน์นี้" และ **ห้ามทับยอดที่มีอยู่แล้ว** (พาร์ทที่มีความต้องการตรงๆ ชนะ) */
+    Object.entries(want).slice().forEach(([parent, qty]) => {
+      if (!(qty > 0)) return;
+      for (const st of opStepsOf(parent) || []) {
+        if (!st?.mat || st.line !== lineName) continue;
+        if (want[st.mat] == null) want[st.mat] = qty;
+      }
+    });
     return Object.entries(want)
       .filter(([mat]) => lineOfMat(mat) === lineName && !planned.has(mat))
       .map(([mat, qty]) => ({ mat, qty: Math.round(qty) }))
       .sort((a, b) => b.qty - a.qty);
-  }, [carry, demandByDate, lastDate, lots, lineOfMat, lineName]);
+  }, [carry, demandByDate, lastDate, lots, lineOfMat, lineName, opStepsOf]);
+
+  /* 📋 พาร์ทอื่นที่ไลน์นี้ผลิต แต่ "ยังไม่มีความต้องการในช่วงนี้" (26/10 · feedback สโตร์)
+     เดิมเข้าแผนได้เฉพาะพาร์ทที่มีความต้องการ ⇒ ไลน์ที่ออเดอร์ยังไม่เข้า **เปิดแผนไม่ได้เลย**
+     🔴 ไม่ได้บอกว่า "ต้องผลิต" — เป็นแค่ทางให้คนวางแผน**เลือกเอง** (จำนวนตั้งต้น 1 แล้วแก้ในแถวแผน) */
+  const otherParts = useMemo(() => {
+    const seen = new Set(lots.filter(l => l.status !== 'cancelled').map(l => l.mat_no));
+    unplanned.forEach(u => seen.add(u.mat));
+    return (partsOfLine(lineName) || []).filter(p => p?.mat && !seen.has(p.mat));
+  }, [partsOfLine, lineName, lots, unplanned]);
 
   /* ── แก้แผนในหน่วยความจำก่อน แล้วค่อยกดบันทึกทีเดียว ────────────────────────── */
   const patch = (id, upd) => { setLots(ls => ls.map(l => (l.id === id ? { ...l, ...upd } : l))); setDirty(true); };
@@ -701,6 +721,28 @@ export default function ProdLotPlanner({
               </div>
             ))}
           </div>
+        )}
+
+        {/* 📋 พาร์ทอื่นที่ไลน์นี้ผลิต — ย่อไว้ ไม่แย่งที่กับ "ความต้องการจริง" ด้านบน
+            🔴 ไลน์ที่ออเดอร์ยังไม่เข้า ลิสต์บนจะว่าง ⇒ ตรงนี้คือทางเดียวที่จะเปิดแผนได้ */}
+        {otherParts.length > 0 && (
+          <details style={{ marginTop: 10 }}>
+            <summary style={{ fontSize: 12, color: 'var(--muted)', cursor: 'pointer' }}>
+              📋 พาร์ทอื่นที่ไลน์นี้ผลิต ({otherParts.length}) — ยังไม่มีความต้องการในช่วงนี้ แต่เลือกเข้าแผนเองได้
+            </summary>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
+              {otherParts.map(p => (
+                <div key={p.mat} style={{ border: '1px dashed var(--border2)', borderRadius: 6, padding: '5px 9px', display: 'flex', alignItems: 'baseline', gap: 7 }}>
+                  <MatLabel mat={p.mat} size={12} />
+                  {p.isOp && <span style={{ fontSize: 11, color: 'var(--muted)' }}>🔧 ต่อ Process</span>}
+                  {mayWrite && <button onClick={() => addLot(p.mat, 1)} style={{ fontSize: 11 }}>+ เข้าแผน</button>}
+                </div>
+              ))}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>
+              จำนวนตั้งต้น 1 ชิ้น — แก้ยอดในแถวแผนหลังกดเข้าแผน
+            </div>
+          </details>
         )}
       </div>
     </div>

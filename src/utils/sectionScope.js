@@ -169,13 +169,31 @@ export function scopedLines({ role, lineId, sections = [], lines = [], scopeIdx 
      ⚠️ หาไลน์ตัวเองไม่เจอทั้งที่ทะเบียนโหลดแล้ว = **fail-closed** (คืน `[]`)
         — หลักเดียวกับ `staleSessions.keep()` ที่คืน `false` เมื่อ fam ว่าง
         (ทะเบียนยังไม่โหลด ถูกดักด้วย `!lines.length` ข้างบนไปแล้ว) */
+  const secs = (sections || []).filter(Boolean);
   if (role === 'leader' && lineId) {
     const me = lines.find(l => String(l.id) === String(lineId));
     const fam = me ? new Set(getLineFamilyNames(lines, me.name)) : null;
-    return fam?.size ? lines.filter(l => fam.has(l.name)) : [];
+    const own = fam?.size ? lines.filter(l => fam.has(l.name)) : [];
+    /* 🔴🔴 **ล็อกไว้ "ไลน์ตัวเองไลน์เดียว" ไม่ได้** (26/10 · เคสจริง ทั้งโรงงานเปิดกะไม่ได้เช้าวันจันทร์)
+       กติกา 25/10 บีบ leader เหลือครอบครัวไลน์ตัวเองเสมอ เพื่อกันเคส `scope_depth='all'`
+       ⇒ หัวหน้ากลุ่มที่ดูแลหลายไลน์ในส่วนงานเดียวกัน **เปิดกะไลน์อื่นไม่ได้เลย**
+         และถ้าไลน์ตัวเองเปิดกะไปแล้ว ช่องเลือกไลน์จะ**ว่างเปล่า** (หน้างานแจ้ง: "เลือกไลน์ไม่ได้",
+         "250 ตันไปโผล่ไลน์ D") · กระทบหัวหน้ากลุ่มทั้ง 20 คน ทุกส่วนงาน
+       ⇒ เห็น **ไลน์ตัวเอง ∪ ไลน์ในส่วนงานที่ถูกกำกับไว้**
+       🔴 เจตนาเดิมยังอยู่ครบ: บัญชีที่ `sections` ว่าง (= `scope_depth='all'` ที่ตั้งผิด)
+          **ยังถูกบีบเหลือครอบครัวไลน์ตัวเองเหมือนเดิม** ไม่หลุดไปเห็นทั้งโรงงาน
+       ⚠️ หาไลน์ตัวเองไม่เจอทั้งที่ทะเบียนโหลดแล้ว + ไม่มีส่วนงานกำกับ = fail-closed คืน [] (เท่าเดิม) */
+    if (!secs.length) return own;
+    const bySec = scopedBySections(secs, lines, scopeIdx);
+    const seen = new Set(own.map(l => l.name));
+    return own.concat(bySec.filter(l => !seen.has(l.name)));
   }
-  const secs = (sections || []).filter(Boolean);
   if (!secs.length) return lines;
+  return scopedBySections(secs, lines, scopeIdx);
+}
+
+/** กรองไลน์ด้วย "ส่วนงาน" ล้วน — ผังองค์กรก่อน ถ้าผังไม่ครอบค่อยถอยไปเทียบชื่อ section */
+function scopedBySections(secs, lines, scopeIdx) {
   if (scopeIdx) {
     const vs = buildViewScope(secs, scopeIdx);
     if (vs.byOrg) return lines.filter(l => vs.lineOk(l));

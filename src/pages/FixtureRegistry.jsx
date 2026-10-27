@@ -4,7 +4,7 @@ import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
-import { inSectionScope, scopedLines } from '../utils/sectionScope';
+import { inSectionScope, scopedLines as scopedLinesOf } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { normMat, baseOfPart } from '../utils/matResolve';
 import { fetchByIds } from '../utils/fetchByIds';
@@ -149,6 +149,10 @@ export default function FixtureRegistry() {
   useEffect(() => { load(); }, [load]);
 
   // ── scope (pattern มาตรฐาน) ──────────────────────────────────────────────
+  /* 🔴 ชื่อ const ห้ามชนกับฟังก์ชันที่ import มา แล้วเรียกตัวนั้นข้างใน = **TDZ จอขาวทั้งหน้า**
+     (`ReferenceError: Cannot access 'scopedLines' before initialization` — เกิดจริง 25-26/10
+      กับทุกบัญชีที่ไม่ใช่ leader และมีขอบเขตส่วนงาน · crashsweep จับไม่ได้เพราะ mock ใช้ `sections: []`)
+     ⇒ เรียกของกลางผ่านชื่อ alias เสมอ · มีด่าน `no-shadowed-import-call` */
   const scopedLines = useMemo(() => {
     if (role === 'leader' && userLineId) {
       const my = lines.find(l => l.id === userLineId);
@@ -157,7 +161,7 @@ export default function FixtureRegistry() {
       return out.length ? out : lines;
     }
     if (scopeSecs?.length) {
-      const out = scopedLines({ role, lineId: userLineId, sections: scopeSecs, lines, scopeIdx });
+      const out = scopedLinesOf({ role, lineId: userLineId, sections: scopeSecs, lines, scopeIdx });
       return out.length ? out : lines;   // กรองแล้วไม่เหลือ = ไม่กรอง (หน่วยงานสนับสนุนไม่มีไลน์)
     }
     return lines;

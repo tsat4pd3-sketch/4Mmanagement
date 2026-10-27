@@ -25,6 +25,7 @@ import { toast } from '../components/Toast';
 import { checkWriteRows } from '../utils/dbWrite';
 import { can } from '../utils/permissions';
 import { inSectionScope, scopedLines } from '../utils/sectionScope';
+import { scopeLines as pickerLines } from '../components/LineSelect';   // ตาข่าย "กรองแล้วไม่เหลือ = ไม่กรอง"
 import { getLineFamilyNames, toHierarchicalOptions, visibleDepths } from '../utils/lineHierarchy';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
@@ -79,15 +80,13 @@ export default function Energy() {
   const [mqttReady, setMqttReady] = useState(false);
 
   /* ── scope มาตรฐาน: leader = family ไลน์ตัวเอง · role อื่น = ตาม sections ── */
-  const scopedLines = useMemo(() => {
-    if (role === 'leader' && lineId) {
-      const me = lines.find(l => l.id === lineId);
-      const fam = me ? getLineFamilyNames(lines, me.name) : null;
-      return fam ? lines.filter(l => fam.includes(l.name)) : lines;
-    }
-    if (scopeSecs?.length) return scopedLines({ role, lineId, sections: scopeSecs, lines, scopeIdx });
-    return lines;
-  }, [lines, role, lineId, scopeSecs, scopeIdx]);
+  /* 🔴 ชื่อ const ห้ามชนกับฟังก์ชันที่ import มา แล้วเรียกตัวนั้นข้างใน = **TDZ จอขาวทั้งหน้า**
+     (`ReferenceError: Cannot access 'scopedLines' before initialization` — เกิดจริง 25-26/10
+      กับทุกบัญชีที่ไม่ใช่ leader และมีขอบเขตส่วนงาน · crashsweep จับไม่ได้เพราะ mock ใช้ `sections: []`)
+     ⇒ เรียกของกลางผ่านชื่อ alias เสมอ · มีด่าน `no-shadowed-import-call` */
+  const scopedLines = useMemo(
+    () => pickerLines(lines, { role, lineId, sections: scopeSecs, scopeIdx }),
+    [lines, role, lineId, scopeSecs, scopeIdx]);
 
   /* จุดที่กรอกได้ = **ทุกไลน์ในลำดับชั้น** (แม่ + ลูก เรียงเป็นขั้น) + โซน facility
      ⚠️ เดิมให้กรอกได้แค่ไลน์บนสุด ด้วยเหตุผล "พลังงานวัดกันระดับกลุ่ม" — ซึ่งไม่ตรงกับของจริง:

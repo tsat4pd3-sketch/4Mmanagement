@@ -33,6 +33,7 @@ export const KEYS_BY_TABLE = {
     'pn_index:src',              // CapaEffectiveness (mat_no → p_no)
     'fx_products',               // FixtureRegistry
     'dr_products:full',          // DailyReport load() — แถวเต็ม (ตัวหนัก 107 KB)
+    'dr_products:inactive',      // DailyReport — ตัวที่ถูกปิดใช้งาน (ตอบ "ของหายไปไหน" ในช่องเลือกสินค้า)
     'dr_products:matname',       // LineSetup (mat_no + ชื่อ + ไลน์)
     'dr_products:qa',            // QAInspectionSetup
     'dr_products:heijunka',      // HeijunkaKanban (CT)

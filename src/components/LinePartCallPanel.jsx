@@ -40,7 +40,6 @@ import { slocCodeOfLine } from '../utils/storageLoc';   // 🏬 มุม SAP �
 import ProductSelect from './ProductSelect';
 import useColumnHistory from '../utils/useColumnHistory';
 import { splitLevels, refStockOf, madeHereMats } from '../utils/partRefStock';   // 🏭 ของที่ไลน์ผลิตเอง อ้างยอดคลัง (2026-10-08) // 📜 MAT ที่เคยตั้งระดับไว้ — ทะเบียนไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
-import { lotMatsOf } from '../utils/stockReceipts';   // 🔧 พาร์ทที่ยอดเข้าทางปิดล็อต = กฎรับเข้าโหมด lot (19/10)
 
 const norm = (s) => String(s ?? '').trim().toLowerCase();
 const num = (v) => (v == null || v === '' ? null : Number(v));
@@ -120,7 +119,7 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
   const [adhocQty,  setAdhocQty]  = useState('');
   /* 🏭 2026-10-08 — พาร์ทที่ไลน์นี้ผลิตเอง อ้างยอดคลังปลายทาง (FG WAREHOUSE / STORE) ไม่ใช่ยอดหน้าไลน์
      (utils/partRefStock.js) · refCtx = ทะเบียนสินค้า + กฎรับเข้า · whStock = ยอดคลังของพาร์ทเหล่านั้น */
-  const [refCtx, setRefCtx]   = useState({ products: [], rules: [], lotMats: [], stds: new Map() });
+  const [refCtx, setRefCtx]   = useState({ products: [], rules: [], stds: new Map() });
   const [whStock, setWhStock] = useState([]);
   const [whErr, setWhErr]     = useState(null);
 
@@ -196,7 +195,6 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
       if (stdRes.error) throw stdRes.error;
       // พาร์ทที่ยอดเข้าทางปิดล็อต = ลงที่ไลน์ผลิต ไม่ใช่ STORE — ตัดสินจากกฎ (ตัวเดียวกับ trigger · 19/10)
       const ctx = { lineName, products: products || [], rules: rulesRes.data || [],
-                    lotMats: lotMatsOf(rulesRes.data),
                     stds: new Map((stdRes.data || []).map(k => [k.mat_no, k])) };
       const refs = made.map(m => ({ mat: m, ...refStockOf(m, ctx) })).filter(r => r.kind === 'produce');
       let wh = [];
@@ -507,6 +505,13 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
   const btn = (bg, fg, bd) => ({ fontSize: 11.5, fontWeight: 800, padding: '5px 11px', borderRadius: 7,
     cursor: 'pointer', background: bg, color: fg, border: `1px solid ${bd || bg}`, whiteSpace: 'nowrap' });
 
+  /* ⚙️ โมดัลตั้งจุดเรียกเติม — ประกาศครั้งเดียว ใช้ทั้งกิ่ง "ไม่มีอะไรต้องทำ" และแผงเต็ม
+     (ห้ามก๊อป JSX 2 ชุด — ปุ่มที่เปิดโมดัลไม่ได้ = ปุ่มหลอก) */
+  const setupModal = !showSetup ? null : (
+    <LevelSetupModal lineName={lineName} lines={lines} upMats={[...new Set(stuckUp.map(s => s.mat_no))]} levels={levels} onHand={onHand} refHave={refHave}
+      fullName={fullName} onClose={() => { setShowSetup(false); load(); }} />
+  );
+
   /* ➕ ฟอร์ม "ขอเบิกพาร์ทนี้เลย" — ต้องเข้าถึงได้**ทุกสถานะของแผง** รวมตอนไม่มีอะไรต้องทำ
      (บทเรียน 15/10: จอที่ซ่อนตัวเองเมื่อไม่มีข้อมูล ห้ามเป็นที่เดียวที่เข้าถึงงานของตัวเอง) */
   const adhocBlock = !canDecide ? null : (
@@ -548,17 +553,31 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
   );
 
   /* ไม่มีอะไรต้องทำ + ไม่ใช่หน้าตั้งค่า = ยังไม่รกจอผลิตเหมือนเดิม
-     **แต่ต้องเหลือทางขอเบิกไว้** (เดิม return null ⇒ อยากเบิกตอนของยังไม่ถึง min = ไม่มีปุ่มให้กดเลย) */
+     **แต่ต้องเหลือทางขอเบิกไว้** (เดิม return null ⇒ อยากเบิกตอนของยังไม่ถึง min = ไม่มีปุ่มให้กดเลย)
+     🔴 26/10 (feedback สโตร์: *"ปุ่มเรียกชิ้นส่วนจากสโตร์ ขึ้นให้กดแค่บางไลน์ และขึ้นเฉพาะบาง User"*)
+        เดิมกิ่งนี้ตัดด้วย `canDecide` อย่างเดียว ⇒ คนที่ตั้งจุดเรียกเติมได้ (`line_levels:manage` —
+        รวม **สิทธิ์ระดับส่วน**) แต่ไม่มีสิทธิ์ตัดสินใจเบิก **ไม่เห็นแม้แต่ปุ่ม ⚙️ ตั้งจุดเรียกเติม**
+        บนไลน์ที่ยังไม่ตั้ง min = ไก่กับไข่ตัวเดิมที่ 15/10 ตั้งใจปิดไปแล้ว แต่ยังเหลือรูนี้
+     ⇒ เห็นกิ่งย่อนี้ถ้า "ขอเบิกได้" **หรือ** "ตั้งจุดเรียกเติมได้" · ไม่ได้ทั้งคู่ = ซ่อนเหมือนเดิม
+        (ไม่มีอะไรให้กด การ์ดเปล่าบนจอผลิตทุกไลน์ = รกเปล่าๆ) */
   if (nothing && !alwaysShow) {
-    if (!canDecide) return null;
+    if (!canDecide && !canSetLv) return null;
     return (
       <div style={card}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: canDecide ? 10 : 0 }}>
           <div style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--text)' }}>📦 เรียกชิ้นส่วนจากสโตร์</div>
-          <span style={{ fontSize: 11, color: 'var(--muted)' }}>{lineName} · ไม่มีพาร์ทไหนถึงจุดเรียกเติม</span>
+          <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+            {lineName} · {noLevel.length || split.produceNoStd?.length ? 'ยังไม่ได้ตั้งจุดเรียกเติม' : 'ไม่มีพาร์ทไหนถึงจุดเรียกเติม'}
+          </span>
           <button onClick={load} title="รีเฟรช" style={{ marginLeft: 'auto', ...btn('var(--bg3)', 'var(--text2)', 'var(--border2)') }}>↻</button>
+          {canSetLv && (
+            <button onClick={() => setShowSetup(true)} style={btn('var(--bg3)', 'var(--text2)', 'var(--border2)')}>
+              ⚙️ ตั้งจุดเรียกเติม
+            </button>
+          )}
         </div>
         {adhocBlock}
+        {setupModal}
       </div>
     );
   }
@@ -766,10 +785,7 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
         </div>
       )}
 
-      {showSetup && (
-        <LevelSetupModal lineName={lineName} lines={lines} upMats={[...new Set(stuckUp.map(s => s.mat_no))]} levels={levels} onHand={onHand} refHave={refHave}
-          fullName={fullName} onClose={() => { setShowSetup(false); load(); }} />
-      )}
+      {setupModal}
     </div>
   );
 }
