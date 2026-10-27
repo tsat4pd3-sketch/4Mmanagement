@@ -9,9 +9,17 @@
  *  · 🔴 ล็อตที่ไม่รู้ CT = `widthPct: null` **ความยาวไม่ได้สเกลกับเวลา** ⇒ วาดต่างและเขียนบอก
  *    (`noCt`) · ล็อตหลังตัวที่ไม่รู้ CT = เวลาเชื่อไม่ได้ (`afterUnknown`) ⇒ จางลง + บอกใน tooltip
  *  · สถานะ "เปิดใบแล้วหรือยัง" มาจาก `matchPlanToActual()` เท่านั้น — **ห้ามนับใบเองที่นี่**
+ *
+ * 🧲 **ลากจัดแผนได้จากบอร์ด** (27/10 · คำสั่ง user "drag drop box ของแต่ละ order
+ *    และที่เหลือขยับหนีตาม") — เปิดเมื่อ `editable` เท่านั้น
+ *  · 🔴 **ลากได้เฉพาะกล่องกรอบแผน (Layer 1)** — กล่องใบคัมบังข้างล่างคือ *สิ่งที่เกิดขึ้นจริง*
+ *    (ลำดับมาจาก `confirmed_at`/เวลาเปิดใบจริง) ลากมันได้ = **บอร์ดโกหกว่าอดีตเป็นอีกแบบ**
+ *  · 🔴 **ลากข้ามกะไม่ได้** — คนละกรอบเวลา/คนละทีม ย้ายข้ามต้องไปทำที่ `/production-plan?tab=lots`
+ *  · ลำดับใหม่คิดด้วย `reorderTo()` ตัวเดียวกับจอวางแผน **ห้ามเขียนสูตรสลับเองที่นี่**
+ *  · ♿ ลากด้วยเมาส์เท่านั้น — จอสัมผัสใช้ปุ่ม ↑↓ ในจอวางแผน (เหมือน `PlanTimeline`)
  */
-import React from 'react';
-import { layoutLots, UNKNOWN_BOX_MIN_PCT } from '../utils/planTimeline';
+import React, { useState } from 'react';
+import { layoutLots, reorderTo, UNKNOWN_BOX_MIN_PCT } from '../utils/planTimeline';
 import MatLabel, { useMatIndex } from './MatLabel';
 import { matText } from '../utils/matLabel';
 
@@ -29,11 +37,25 @@ const ST = {
 export default function PlanFrameRow({
   lotsByShift = {}, stateOf = () => null, halves = [], breaksOf = () => [],
   ctOf = () => null, pairOf = () => null, leftW = 170, isMobile = false, lineName = null,
+  editable = false, onReorder = null,
 }) {
   /* 🔢 ป้ายชิ้นงาน = Part No. → Part Name → MAT SAP ที่เดียวทั้งระบบ (<MatLabel>/`matText` · มีด่าน) */
   const matIdx = useMatIndex();
+  /* 🔴 hook ต้องอยู่เหนือ early return ทุกตัว (react-hooks/rules-of-hooks · ผิด = React #310 จอขาวทั้งหน้า) */
+  const [drag, setDrag] = useState(null);       // { id, shiftKey } — กะไหนลากอยู่
+  const [overIdx, setOverIdx] = useState(null); // ตำแหน่งที่กำลังจะวาง (ไฮไลต์)
   const totalLots = (lotsByShift.day?.length || 0) + (lotsByShift.night?.length || 0);
   if (!totalLots) return null;
+
+  const canDrag = !!(editable && onReorder);
+  const drop = (shiftKey, idx) => {
+    setOverIdx(null);
+    const d = drag;
+    setDrag(null);
+    /* ลากข้ามกะ = เปลี่ยนกรอบเวลา/ทีม ไม่ใช่แค่สลับลำดับ ⇒ ปฏิเสธเงียบๆ ตรงนี้ ไม่เขียนอะไร */
+    if (!canDrag || !d || d.shiftKey !== shiftKey) return;
+    onReorder(shiftKey, reorderTo(lotsByShift[shiftKey] || [], d.id, idx));
+  };
 
   const strip = (half, shiftKey) => {
     const lots = lotsByShift[shiftKey] || [];
@@ -44,11 +66,14 @@ export default function PlanFrameRow({
       breaks: breaksOf(half, lineName), rowSpanMs: spanMs,
     });
     return (
-      <div key={half.key} style={{
-        position: 'relative', height: 30, borderTop: '1px dashed var(--border2)',
-        background: 'var(--card)', backgroundImage: `linear-gradient(${FRAME}0a, ${FRAME}0a)`,
-      }}>
-        {boxes.map((b) => {
+      <div key={half.key}
+        onDragOver={canDrag ? (e) => { e.preventDefault(); setOverIdx(boxes.length); } : undefined}
+        onDrop={canDrag ? (e) => { e.preventDefault(); drop(shiftKey, boxes.length); } : undefined}
+        style={{
+          position: 'relative', height: 30, borderTop: '1px dashed var(--border2)',
+          background: 'var(--card)', backgroundImage: `linear-gradient(${FRAME}0a, ${FRAME}0a)`,
+        }}>
+        {boxes.map((b, boxIndex) => {
           const st = ST[stateOf(b.lot.id) || 'pending'] || ST.pending;
           /* กล่องที่คำนวณเวลาไม่ได้ = ช่องนามธรรม ⇒ กว้างขั้นต่ำ + ลายทแยง (ห้ามทำให้ดูเหมือนเวลาจริง) */
           const w = b.widthPct != null ? Math.max(b.widthPct, 1.2) : Math.max(b.nominalPct, UNKNOWN_BOX_MIN_PCT);
@@ -62,9 +87,17 @@ export default function PlanFrameRow({
             b.noCt ? '⚠ ไม่รู้ CT ของพาร์ทนี้ — กล่องนี้ไม่ได้สเกลกับเวลา (ตำแหน่งเป็นลำดับ ไม่ใช่เวลาจริง)' : null,
             b.afterUnknown && !b.noCt ? '⚠ มีล็อตที่คำนวณเวลาไม่ได้อยู่ก่อนหน้า — เวลาของกล่องนี้เชื่อไม่ได้' : null,
             '— กรอบ ไม่ใช่ใบผลิต · ไม่นับเป็นยอดที่ทำได้',
+            canDrag ? '🧲 ลากเพื่อสลับลำดับ (ที่เหลือขยับตามเอง) · ข้ามกะไม่ได้' : null,
           ].filter(Boolean).join('\n');
+          const dropHere = canDrag && drag?.shiftKey === shiftKey && overIdx === boxIndex;
           return (
-            <div key={b.lot.id} title={tip} style={{
+            <div key={b.lot.id} title={tip}
+              draggable={canDrag}
+              onDragStart={canDrag ? () => setDrag({ id: b.lot.id, shiftKey }) : undefined}
+              onDragEnd={canDrag ? () => { setDrag(null); setOverIdx(null); } : undefined}
+              onDragOver={canDrag ? (e) => { e.preventDefault(); e.stopPropagation(); setOverIdx(boxIndex); } : undefined}
+              onDrop={canDrag ? (e) => { e.preventDefault(); e.stopPropagation(); drop(shiftKey, boxIndex); } : undefined}
+              style={{
               position: 'absolute', top: 4, bottom: 4, left: `${left}%`, width: `${Math.min(w, 100 - left)}%`,
               boxSizing: 'border-box', borderRadius: 5, overflow: 'hidden',
               border: `1.5px dashed ${st.c}cc`,
@@ -72,7 +105,9 @@ export default function PlanFrameRow({
                 ? `repeating-linear-gradient(45deg, ${st.c}26 0 5px, transparent 5px 10px)`
                 : `linear-gradient(${st.c}14, ${st.c}14)`,
               display: 'flex', alignItems: 'center', gap: 3, padding: '0 4px',
-              opacity: b.afterUnknown ? 0.75 : 1,
+              opacity: (b.afterUnknown ? 0.75 : 1) * (drag?.id === b.lot.id ? 0.45 : 1),
+              cursor: canDrag ? 'grab' : 'default',
+              ...(dropHere ? { boxShadow: `inset 3px 0 0 0 ${FRAME}` } : null),
             }}>
               <span style={{ fontSize: 11, fontWeight: 800, color: st.c, flexShrink: 0 }}>{st.mark}</span>
               {b.lot.mat_no
@@ -107,7 +142,9 @@ export default function PlanFrameRow({
         <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.3 }}>
           แพลนนิ่งตีไว้ {totalLots} ล็อต
         </div>
-        <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.3 }}>ยังไม่ใช่ใบผลิต</div>
+        <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.3 }}>
+          {canDrag ? '🧲 ลากสลับลำดับได้' : 'ยังไม่ใช่ใบผลิต'}
+        </div>
       </div>
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
         {strip(halves[0], 'day')}

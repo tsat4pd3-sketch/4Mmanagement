@@ -10,7 +10,7 @@ import DowntimeSiren from '../components/DowntimeSiren';
 import ToggleDot from '../components/ToggleDot';
 import { RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer } from 'recharts';
 import { useNavigate } from 'react-router-dom';
-import { can, canAccessPage } from '../utils/permissions';
+import { can, canAccessPage, canSeeded } from '../utils/permissions';
 import resizeImg from '../utils/resizeImage';
 import { getLineFamilyNames, getLineFamilyIds, getAncestorNames } from '../utils/lineHierarchy';
 import LineSelect from '../components/LineSelect';
@@ -32,7 +32,7 @@ import { buildBoardCards } from '../utils/boardCards';
 import PlanSlipBar from '../components/PlanSlipBar';   // 📋 แถบ "หลุดแผนไปแค่ไหน" (เวลา+ยอด · 2026-09-30)
 import DelayBlameBar from '../components/DelayBlameBar';   // 🔗 สรุปดีเลย์ของวัน + ต้นเหตุ/ผู้ถูกพาล (ทีมปั๊ม 2026-09-30)
 import { liveChannel } from '../utils/liveChannel';
-import { checkWrite } from '../utils/dbWrite';
+import { checkWrite, checkWriteRows } from '../utils/dbWrite';
 import { uploadOpts } from '../utils/storageUpload';
 import { acceptImageFile } from '../utils/acceptImageFile';
 
@@ -445,6 +445,30 @@ export default function Management() {
     fetchLineProd(viewLineNames, selectedLine);
     return visibleInterval(() => fetchLineProd(viewLineNames, selectedLine), RATE.BOARD);
   }, [selectedLine, viewKey, fetchLineProd]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* ══ 🧲 ลากจัดลำดับ "กรอบแผน" จากบอร์ด (27/10 · คำสั่ง user) ═══════════════════════
+     🔴 ลากได้เฉพาะแถวกรอบแผน (Layer 1) — กล่องใบคัมบังข้างล่างคือสิ่งที่เกิดขึ้นจริง
+        (ลำดับมาจาก confirmed_at / เวลาเปิดใบ) ลากมันได้ = บอร์ดโกหกว่าอดีตเป็นอีกแบบ
+     🔴 บอร์ดไม่มีปุ่มบันทึก ⇒ เขียนทันที และ **ต้องนับแถว** (RLS ปฏิเสธ UPDATE = 0 แถว ไม่มี error)
+     🔴 เขียนเฉพาะล็อตที่ seq เปลี่ยนจริง — ยิงทั้งกะทุกครั้ง = เขียนทับงานกะอื่นโดยไม่จำเป็น */
+  const canPlanDrag = canSeeded('production_plan', 'write', role) && !isMobile;
+  const handlePlanReorder = useCallback(async (shiftKey, nextLots) => {
+    const before = new Map((lineProdData?.planLots || []).map(l => [l.id, l.seq]));
+    const changed = (nextLots || []).filter(l => before.get(l.id) !== l.seq);
+    if (!changed.length) return;
+    let okRows = 0;
+    for (const l of changed) {
+      const res = await supabaseDR.from('production_plan_lots').update({ seq: l.seq })
+        .eq('id', l.id).select('id');
+      if (await checkWriteRows(res, 'จัดลำดับกรอบแผน', {
+        zeroMsg: 'จัดลำดับไม่สำเร็จ — บัญชีนี้อาจไม่มีสิทธิ์แก้แผนของไลน์นี้ (แผนไม่ถูกเปลี่ยน)',
+      })) okRows++;
+    }
+    /* 🔴 เขียนได้ไม่ครบ = ลำดับบนฐานครึ่งๆ ⇒ ต้องบอก ไม่ใช่โหลดใหม่เงียบแล้วให้คนงงว่าทำไมไม่ขยับ */
+    if (okRows < changed.length) toast.error(`จัดลำดับสำเร็จ ${okRows}/${changed.length} ล็อต — รีเฟรชแล้วลองใหม่`);
+    else toast.success(`🧲 จัดลำดับกรอบแผนกะ${shiftKey === 'night' ? 'ดึก' : 'เช้า'}แล้ว (${changed.length} ล็อตขยับ)`);
+    fetchLineProd(viewLineNames, selectedLine);
+  }, [lineProdData, fetchLineProd, viewLineNames, selectedLine]);
 
   // ── Downtime alarm — จุดเครื่องจักรบนผังกระพริบแดงเฉพาะตอน downtime ยังเปิดค้าง (ปิดรายการ = ดับทันที) ──
   // realtime: บันทึก/ปิดรายการที่หน้า Daily Report แล้วผังหน้านี้ต้องอัปเดตทันที
@@ -2096,6 +2120,7 @@ export default function Management() {
                       halves={HALVES} breaksOf={getBreakIntervals} lineName={boardLine}
                       ctOf={(mat) => ctByMatNo[mat] || null} pairOf={(mat) => pairMatByMat[mat] || null}
                       leftW={LEFT_W} isMobile={isMobile}
+                      editable={canPlanDrag} onReorder={handlePlanReorder}
                     />
                     {/* Rows ต่อ product — ป้าย+รูปใหญ่ 1 อันครอบทั้ง 2 แถบเวลา */}
                     {productRows.map((row) => {

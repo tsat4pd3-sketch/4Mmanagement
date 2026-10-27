@@ -7051,3 +7051,44 @@ test('🫙 manual-open-product-empty-reason — ช่องเลือกส�
     + '\n\n   ทำไมสำคัญ: "ไม่มีสินค้า register" กับ "มีแต่ถูกปิดใช้งาน" แก้คนละทางกันคนละคน\n'
     + '              บอกผิด = หน้างานรอของที่ไม่ต้องรอ และของที่ต้องทำไม่มีใครทำ\n');
 });
+
+test('🧲 plan-drag-layer1-only — ลากจัดลำดับได้เฉพาะ "กรอบแผน" ห้ามลากกล่องใบคัมบัง', () => {
+  const bad = [];
+  const read = (rel) => stripComments(readFileSync(join(ROOT, rel), 'utf8'));
+  const frame = read('src/components/PlanFrameRow.jsx');
+  const mg = read('src/pages/Management.jsx');
+
+  /* 🔴 Layer 2 (ใบคัมบังจริง) เรียงจาก confirmed_at / เวลาเปิดใบ = ข้อเท็จจริง
+     ลากได้เมื่อไหร่ = บอร์ดโกหกว่าอดีตเกิดคนละลำดับ (กฎ Layer1/Layer2 ใน CLAUDE.md) */
+  const board = (mg.match(/\{productRows\.map\(\(row\)[\s\S]{0,12000}/) || [''])[0];
+  if (/draggable=\{(?!false)/.test(board) && !/PlanFrameRow/.test(board))
+    bad.push('src/pages/Management.jsx (แถวใบคัมบังถูกทำให้ลากได้ — Layer 2 คือสิ่งที่เกิดขึ้นจริง ห้ามลาก)');
+
+  /* 🔴 ลำดับใหม่ต้องมาจาก reorderTo ตัวเดียวกับจอวางแผน ห้ามเขียนสูตรสลับเองในคอมโพเนนต์ */
+  if (/draggable=/.test(frame) && !/reorderTo\(/.test(frame))
+    bad.push('src/components/PlanFrameRow.jsx (ลากได้แต่ไม่ได้ใช้ reorderTo — สูตรลำดับต้องมีชุดเดียว)');
+
+  /* 🔴 ลากข้ามกะ = เปลี่ยนกรอบเวลา/ทีม ไม่ใช่สลับลำดับ — ต้องมีด่านกันไว้ */
+  if (/draggable=/.test(frame) && !/shiftKey !== shiftKey|d\.shiftKey !== shiftKey/.test(frame))
+    bad.push('src/components/PlanFrameRow.jsx (ไม่ได้กันการลากข้ามกะ)');
+
+  /* 🔴 บอร์ดไม่มีปุ่มบันทึก = เขียนทันที ⇒ ต้องนับแถว (RLS ปฏิเสธ UPDATE = 0 แถว ไม่มี error) */
+  const h = (mg.match(/const handlePlanReorder[\s\S]{0,1800}?\n  \}, \[/) || [''])[0];
+  if (!h) bad.push('src/pages/Management.jsx (ไม่มี handlePlanReorder แล้ว — ลากบนบอร์ดจะไม่ถูกบันทึก)');
+  else {
+    if (!/checkWriteRows\(/.test(h))
+      bad.push('src/pages/Management.jsx (handlePlanReorder ไม่ได้นับแถว — ลากแล้วไม่ขยับโดยไม่มี error)');
+    if (!/production_plan_lots/.test(h))
+      bad.push('src/pages/Management.jsx (handlePlanReorder ไม่ได้เขียน production_plan_lots)');
+    if (!/before\.get\(l\.id\) !== l\.seq/.test(h))
+      bad.push('src/pages/Management.jsx (ยิงอัปเดตทุกล็อตแม้ seq ไม่เปลี่ยน — เขียนทับงานกะอื่นโดยไม่จำเป็น)');
+  }
+  /* 🔴 สิทธิ์ต้องผ่าน can()/canSeeded ห้าม hardcode role */
+  if (!/canSeeded\('production_plan', 'write', role\)/.test(mg))
+    bad.push('src/pages/Management.jsx (สิทธิ์ลากแผนไม่ได้ผ่าน canSeeded(production_plan, write))');
+
+  assert.deepEqual(bad, [], 'ลากจัดแผนผิดกติกา:\n' + bad.join('\n')
+    + '\nwhy: บอร์ดแสดง 2 ชั้น — กรอบแผน (Layer 1 แก้ได้) กับใบคัมบังจริง (Layer 2 คือข้อเท็จจริง)'
+    + '\nfix: ลากเฉพาะ PlanFrameRow · ลำดับจาก reorderTo() · เขียน seq พร้อม checkWriteRows()'
+    + '\n     📄 docs/modules/production-plan.md §ลากจัดแผนจากบอร์ด');
+});
