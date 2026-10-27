@@ -100,11 +100,12 @@ export function splitPullCovered(records, batches) {
     const at = shipAtMs(rec.date, rec.time);
     let by = null;
     if (at != null) {
-      const rk = normKey(rec.mat_no), pk = normKey(rec.part), dk = dockKey(rec.dock);
+      const rk = normKey(rec.mat_no), pk = normKey(rec.part);
       for (const b of list) {
         if (String(b.ship_to || '').trim() !== String(rec.shipTo || '').trim()) continue;
-        const bd = dockKey(b.dock_code);
-        if (dk && bd && dk !== bd) continue;                        // dock อื่น = คนละเที่ยว
+        /* ⭐ 27/10 ไม่เทียบ dock — 862 ของ AAT ลง B5 อย่างเดียว แต่ลูกค้าดึงจริงทั้ง B1/B5
+           ช่วงที่ e-SMART (dock ไหนก็ได้) ยืนยันพาร์ทนี้แล้ว = แผน 862 ของช่วงนั้นถูกแทนแล้ว
+           (กติกาเดียวกับ planOrderUpdates โหมดช่วงเวลา) */
         // MAT ชนะเลขพาร์ท (กติกาเดียวกับ findDoneCover) — เลขพาร์ทลูกค้าตัวเดียวอาจผูกหลาย MAT
         const hasItem = rk && b.mats?.size ? b.mats.has(rk) : !!(pk && b.parts?.has(pk));
         if (!hasItem) continue;                                      // พาร์ทไม่อยู่ในไฟล์ = ตาม 862 (กติกา 08/09)
@@ -221,6 +222,9 @@ export function splitFirmVsForecast(records, today, horizonDays = FIRM_HORIZON_D
 export function splitCumCatchUp(records, pullShipTos) {
   const pull = new Set([...(pullShipTos || [])].map(s => String(s).trim()));
   const hasTime = (r) => !!String(r?.time || '').trim();
+  /* ⭐ 27/10 — ไฟล์รอบหลังลงแถวยอดค้างตาม Cum ด้วยเวลา **00:01** (ไม่ใช่ช่องว่างแล้ว)
+     เคสจริง AAT: 21/10 และ 27/10 ใบ 00:01 ยอด 170/180 โผล่ทุกครั้งที่นำเข้า (ไม่มีเที่ยวรถเที่ยงคืน) */
+  const cumTime = (r) => !hasTime(r) || /^00:0[01]/.test(String(r?.time || '').trim());
   const timedShipTo = new Set();
   const firstDate = new Map();                 // shipTo|dock|part → วันแรกของชุด
   const keyOf = (r) => `${r.shipTo}|${dockKey(r.dock)}|${normKey(r.part)}`;
@@ -232,7 +236,7 @@ export function splitCumCatchUp(records, pullShipTos) {
   const keep = [], catchUp = [];
   for (const r of records || []) {
     const isCatchUp = pull.has(String(r?.shipTo || '').trim()) && timedShipTo.has(r.shipTo)
-      && !hasTime(r) && !!r?.date && firstDate.get(keyOf(r)) === r.date;
+      && cumTime(r) && !!r?.date && firstDate.get(keyOf(r)) === r.date;
     (isCatchUp ? catchUp : keep).push(r);
   }
   return { keep, catchUp };
