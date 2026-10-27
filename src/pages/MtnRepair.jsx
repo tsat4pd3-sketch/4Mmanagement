@@ -410,11 +410,14 @@ export default function MtnRepair() {
      🔴 **ไม่บังคับสถานะ** — ใบที่ปิดแล้วก็ยังค้างช่องนี้ได้ (วัด 24/10: 10 ใบ) และย้อนเซ็นได้
         ⇒ สลับช่อง "ยังไม่ปิด → ทุกสถานะ" เองเพื่อเห็นใบที่ปิดแล้วด้วย */
   const fAck = sp.get('ack') || '';
-  const setFWait = useCallback((v) => mergeSp({ wait: v || null }), [mergeSp]);
+  /* 🔗 ธง "คนกดช่องกรองเองบนหน้า" (ไม่ใช่เดินมาจากลิงก์) — ใช้ตัดสินว่าจะปลดช่องทีมให้ไหม
+     ดูเหตุผลเต็มที่เอฟเฟกต์ `queueLinkSeen` ด้านล่าง */
+  const inPageFilterEdit = useRef(false);
+  const setFWait = useCallback((v) => { inPageFilterEdit.current = true; mergeSp({ wait: v || null }); }, [mergeSp]);
   /* 🛒 `?pr=` ตัวกรองงาน PR (20/10 · user "หาลิสต์ MO ที่รอกรอกเลข PR ไม่เจอ") — need | no_no | open | waiting (= need+no_no)
      อ่านจาก URL ตรงๆ แบบเดียวกับ `?wait=` · ลิงก์แจ้งเตือน `mtn_pr_waiting` ชี้มาที่ `?pr=waiting` */
   const fPr = sp.get('pr') || '';
-  const setFPr = useCallback((v) => mergeSp({ pr: v || null }), [mergeSp]);
+  const setFPr = useCallback((v) => { inPageFilterEdit.current = true; mergeSp({ pr: v || null }); }, [mergeSp]);
   const [openPrs, setOpenPrs] = useState({ byOrder: {}, error: null });
   const [fLine, setFLine] = useState('');
   const [fDept, setFDept] = useState('');
@@ -527,22 +530,30 @@ export default function MtnRepair() {
   // ทีมช่างของ user (จาก profiles.mtn_teams ที่ตั้งใน AddUser · fallback เดาจาก section) — default คิวงาน + default หน่วยงานตอนแจ้ง
   const userTeams = useMemo(() => teamsForUser(userMtnTeams, scopeSecs), [userMtnTeams, scopeSecs]);
   const teamDefaulted = useRef(false);
-  /* ✍️ ป้าย "รอคุณเซ็นรับทราบ" ในคิวงานพาเข้ามาด้วย `?ack=pending` — ใบชุดนั้น **เป็นของทีม MTN ล้วน**
-     (ฟอร์ม FM-MTN-006 · `isMtnFormRow`) แต่ช่อง "ทีมช่าง" ของหน้านี้ตั้งต้นเป็นทีมของ user เอง
-     ผู้รับป้ายนี้คือ ผจก.ต้นสังกัดของ "ฝ่ายที่แจ้ง" ซึ่งส่วนใหญ่คือฝ่ายผลิต ⇒ ช่องทีม = PRODUCTION
-     วัด 26/10: production 1,018 ใบ ∩ maintenance 58 ใบ = **0 ใบเสมอ ไม่ว่าเลือกวันไหน**
-     ⇒ ป้ายบอก "48 ใบรอคุณเซ็น" แต่จอขึ้น "ไม่มีรายการ" (เคสจริง user 26/10 "ทำไม filter ไม่ขึ้น")
-     🔴 เปิดตัวกรองนี้เมื่อไหร่ **ปลดช่องทีมให้ก่อนครั้งเดียว** แล้ว user เลือกทีมเองทีหลังได้ตามเดิม
-        · เทียบทีมผ่าน `isMtnFormOrder` ตัวเดียวกับที่ตัวกรองใช้ — ห้ามเขียนรายชื่อคีย์ทีมซ้ำที่นี่
-        · ต้องตั้ง `teamDefaulted` ด้วย ไม่งั้นเอฟเฟกต์ตั้งทีมตั้งต้นจะมาทับทีหลังตอน lines โหลดเสร็จ */
-  const ackTeamCleared = useRef(false);
+  /* 🔗 เดินมาจากลิงก์ที่ "กรองกองมาให้แล้ว" (`?wait=` · `?ack=` · `?pr=`) — กระดิ่ง · 📌 คิวงานของฉัน ·
+     แผงใบค้าง · แจ้งเตือน ⇒ **ต้องปลดช่องทีมให้ก่อน 1 ครั้ง**
+
+     ทำไม: ป้ายพวกนั้นนับ **ข้ามทีม** (ชั้น floor เขียนว่า "ทั้งโรงถาม" · ป้าย "รอคุณเซ็น" = ทุกใบที่เรา
+     เซ็นได้จริงไม่ว่าทีมไหน) แต่หน้านี้ตั้งช่อง "ทีมช่าง" เป็นทีมของ user เองตอนเปิด
+     ⇒ กดจากป้ายแล้ว **เลขไม่ตรงป้าย หรือว่างเปล่าไปเลย** โดยที่ไม่มีอะไรบอก
+       · 26/10 `?ack=pending` — ป้ายบอก 48 ใบ จอขึ้น "ไม่มีรายการ" (production ∩ maintenance = 0)
+       · 27/10 `?wait=handover` จากกระดิ่ง — user แจ้ง *"กดจากกระดิ่งก็ไม่เจออะไรเลย"*
+         (ใบ `O-MTN.2026/10-46` ทีม maintenance · วัด 27/10: กอง handover มี 86 ใบ แต่กระจาย 3 ทีม
+          ⇒ ช่องทีมที่ตั้งไว้ตัดทิ้งเกือบหมดหรือหมดเลย แล้วแต่ว่า user อยู่ทีมไหน)
+
+     🔴 **ปลดเฉพาะตอน "เดินมาจากลิงก์"** — กดเลือกขั้น/งาน PR เองบนหน้า (`inPageFilterEdit`)
+        ห้ามไปล้างทีมที่ user ตั้งใจเลือกไว้
+     🔴 ต้องตั้ง `teamDefaulted` ด้วย ไม่งั้นเอฟเฟกต์ตั้งทีมตั้งต้นจะมาทับทีหลังตอน `lines` โหลดเสร็จ */
+  const queueLinkKey = `${fWait}|${fAck}|${fPr}`;
+  const queueLinkSeen = useRef(null);
   useEffect(() => {
-    if (fAck !== 'pending') { ackTeamCleared.current = false; return; }
-    if (ackTeamCleared.current) return;
-    ackTeamCleared.current = true;
+    if (!(fWait || fAck || fPr)) { queueLinkSeen.current = null; return; }
+    if (queueLinkSeen.current === queueLinkKey) return;
+    queueLinkSeen.current = queueLinkKey;
     teamDefaulted.current = true;
-    setFDept(d => (d && !isMtnFormOrder({ mtn_dept: d }) ? '' : d));
-  }, [fAck]);
+    if (inPageFilterEdit.current) { inPageFilterEdit.current = false; return; }  // คนกดเองบนหน้า — ไม่แตะทีม
+    setFDept('');
+  }, [queueLinkKey, fWait, fAck, fPr]);
   useEffect(() => {
     if (teamDefaulted.current || !lines.length) return;
     // สังกัดทีมเดียว (ไม่ใช่ admin) → เปิดหน้ามาเห็นคิวของทีมตัวเองก่อน (ปรับเป็น "ทุกหน่วยงาน" ได้)
