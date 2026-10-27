@@ -22,7 +22,9 @@ const PullRoundsPanel = lazy(() => import('../components/PullRoundsPanel'));
 import { openOnly, isOpenOrder, isClosedOrder, isCancelled, CANCELLED } from '../utils/shipStatus';
 import useColumnHistory from '../utils/useColumnHistory'; // 📜 MAT ที่เคยบันทึกในใบส่ง — Product Master ไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
 import { shipDueDate } from '../utils/pullSignal';
-import { orderShipToRows } from '../utils/shipToOrder'; // ลำดับแถวลูกค้าล็อกตามทะเบียน (24/10) // วันงาน + รอบ → due_date ตามปฏิทิน (16/10)
+import { orderShipToRows } from '../utils/shipToOrder'; // ลำดับแถวลูกค้าล็อกตามทะเบียน (24/10)
+import { buildEsmartManaged, isEsmartPlanRow } from '../utils/shipPlan'; // แผน 862 รอ e-SMART ≠ order เลยเวลา (27/10)
+import { fetchAllPages } from '../utils/fetchByIds'; // วันงาน + รอบ → due_date ตามปฏิทิน (16/10)
 
 /* ─── DELIVERY — Shipping Time Chart + Ship-to Config (Logistic) ──────────
    ติดตามรอบส่งงานลูกค้ารายวัน (walkback 4 activity, FG stock, ranking ดิว)
@@ -78,6 +80,10 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
   const [collapsedCust, setCollapsedCust] = useState({});  // ย่อแถวลูกค้า (ข้อมูลเยอะ) — ยังเห็นจุดสถานะแบบย่อ
   const [breakPolicies, setBreakPolicies] = useState([]);  // เงาเวลาพักบนชาร์ต (มาตรฐานเดียวกับบอร์ด Heijunka)
   const [pastDue, setPastDue] = useState([]);              // ใบค้างส่งจากวันงานก่อนหน้า (ย้อน 14 วัน)
+  /* 📋 (ship-to, MAT) ที่ e-SMART เคยยืนยัน — ใบ 862 pending ของพาร์ทพวกนี้ = "แผน" ไม่ใช่ order (27/10 · utils/shipPlan.js)
+     โหลดไม่ได้ = ชุดว่าง = ทุกใบเป็น order แบบเดิม (ไม่ซ่อนอะไร) + เขียนบอกบนหัวชาร์ต */
+  const [esmartManaged, setEsmartManaged] = useState(() => new Set());
+  const [managedErr, setManagedErr] = useState('');
   // ➕ คีย์ order ด่วนทีละใบ (ลูกค้า add order นอกไฟล์ EDI เช่นโทรสั่ง) — ไม่ต้องรออัพโหลด 862 รอบถัดไป
   const [showAdd, setShowAdd] = useState(false);
   const [showPull, setShowPull] = useState(false);   // 📥 modal อัพโหลด e-SMART (ยืนยัน order จากลูกค้า)
@@ -97,6 +103,20 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
     supabaseDR.from('break_policies').select('*').eq('is_active', true)
       .then(({ data }) => setBreakPolicies(data || []));
   }, []);
+  useEffect(() => {
+    let alive = true;
+    const back = new Date(); back.setDate(back.getDate() - 60);
+    fetchAllPages(() => supabaseDR.from('customer_shipping_orders').select('id, customer, mat_no')
+      .not('pull_batch_id', 'is', null).gte('due_date', dateStr(back)))
+      .then(({ rows, error, truncated }) => {
+        if (!alive) return;
+        setEsmartManaged(buildEsmartManaged(rows));
+        setManagedErr(error ? `อ่านรายการพาร์ทที่ e-SMART คุมไม่ได้ (${error}) — ใบแผน 862 แสดงเป็น order ปกติ`
+          : truncated ? 'รายการพาร์ทที่ e-SMART คุมเยอะเกินเพดาน — บางใบแผนอาจแสดงเป็น order' : '');
+      });
+    return () => { alive = false; };
+  }, [refreshKey]);
+  const isPlan = useCallback((o) => isEsmartPlanRow(o, esmartManaged), [esmartManaged]);
 
   const saveAddOrder = async () => {
     const mat = addForm.mat_no.trim().toUpperCase();
@@ -211,7 +231,7 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
       // ใบค้างส่งจากวันงานก่อนหน้า (ย้อน 14 วัน) — เตือนบนหัวหน้า ไม่ให้ของเก่าหายเงียบตอนข้ามวัน
       // ⚠️ ใบกะดึกของวันงาน D-1 มี due_date = D + ship_time < 08:00 (กรอบวันงาน 08:00→08:00)
       //    เดิม .lt('due_date', day) อย่างเดียว → ใบกะดึกของวันงานที่เพิ่งจบหลุดจากตัวนับเงียบๆ
-      openOnly(supabaseDR.from('customer_shipping_orders').select('id, due_date, ship_time')
+      openOnly(supabaseDR.from('customer_shipping_orders').select('id, due_date, ship_time, customer, mat_no, source, status, pull_batch_id')
         .gte('due_date', dateStr(back)))
         .or(`due_date.lt.${day},and(due_date.eq.${day},ship_time.lt.08:00)`),
       // คลังปลายทางของ FG จากกฎรับเข้าอัตโนมัติ — "ของพร้อมส่ง" ต้องเป็นของในคลัง FG เท่านั้น
@@ -292,7 +312,8 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
   const nowW = frameMin(`${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`);
   // เลยเวลา = ยังไม่ส่ง และ (วันงานนั้นผ่านไปแล้วทั้งวัน หรือ วันนี้แต่เลยเวลาส่งแล้ว)
   // — เดิมเช็คเฉพาะ isToday ทำให้พอข้ามวัน ใบค้างส่งกลายเป็นเหลือง "รอยืนยัน" เฉยๆ ทั้งที่ตกดิวไปแล้ว
-  const isOverdue = (o) => isOpenOrder(o)
+  // 📋 แผน 862 ที่ e-SMART ยังไม่ยืนยัน ไม่ใช่ order ⇒ ไม่มีวัน "เลยเวลา" (27/10 · utils/shipPlan.js)
+  const isOverdue = (o) => isOpenOrder(o) && !isPlan(o)
     && (isPastDay || (isToday && frameMin(o.ship_time) != null && frameMin(o.ship_time) < nowW));
 
   // ── Standard workflow (walkback): deadline ต่อเฟส = เวลาส่ง − offset_min ──
@@ -330,7 +351,7 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
       return { ...st, dlW: dl, deadline: `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`, done, missed };
     });
   };
-  const phaseLate = (o) => isOpenOrder(o) && !isOverdue(o) && phaseList(o).some(ph => ph.missed);
+  const phaseLate = (o) => isOpenOrder(o) && !isPlan(o) && !isOverdue(o) && phaseList(o).some(ph => ph.missed);
 
   /* ปุ่ม "ขั้นถัดไป" ของใบนี้ — คืน { to, label, color, terminal } หรือ null (จบแล้ว)
      ก้าวที่ทำให้ถึง/เลย "เฟสท้ายสุดที่ตั้งไว้" = ปิดรอบส่งเลย (to = 'shipped')
@@ -375,7 +396,8 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
     const remain = {};
     Object.entries(fgStock).forEach(([m, v]) => { remain[m] = v.fg; });
     const map = {};
-    orders.forEach(o => {
+    // order จริงจองของก่อน · แผน 862 รอ e-SMART จองทีหลัง (แผนที่อาจไม่ถูกเรียก ห้ามแย่งของจาก order ที่ยืนยันแล้ว)
+    [...orders.filter(o => !isPlan(o)), ...orders.filter(isPlan)].forEach(o => {
       if (isClosedOrder(o)) return;   // ยกเลิกแล้วไม่จองของในคลัง
       const sap = matMap[o.mat_no]?.mat ?? null;
       const avail = sap ? (remain[sap] || 0) : 0;
@@ -387,7 +409,7 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
       map[o.id] = { covered: use, short: Number(o.qty) - use, tracked: !!(sap && fgStock[sap]), unknown: !sap, offFg };
     });
     return map;
-  }, [orders, fgStock, matMap]);
+  }, [orders, fgStock, matMap, isPlan]);
 
   const advance = async (o) => {
     const step = nextStep(o);
@@ -533,6 +555,8 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
 
   const shippedCount = orders.filter(o => o.status === 'shipped').length;
   const overdueCount = orders.filter(isOverdue).length;
+  const planCount = orders.filter(isPlan).length;
+  const pastDueReal = pastDue.filter(p => !isPlan(p));   // แผน 862 ที่ไม่ถูกเรียก ไม่ใช่ "ค้างส่ง"
   // นับ "stock ไม่พอ" เฉพาะรอบที่เช็คสต็อกได้จริง — รอบที่จับคู่เลขไม่ได้แยกไปอีกตัวนับ
   // (ไม่งั้นตัวเลข "N รอบ stock ไม่พอ" จะโป่งด้วยรอบที่แค่ยังไม่รู้ แล้วสั่งผลิตเกิน)
   const shortCount = orders.filter(o => isOpenOrder(o) && !coverage[o.id]?.unknown && (coverage[o.id]?.short || 0) > 0).length;
@@ -605,14 +629,16 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
         <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>
           🚚 {orders.length} รอบส่ง · ✅ {shippedCount} ส่งแล้ว
           {overdueCount > 0 && <span style={{ color: '#ef4444' }}> · 🔴 {overdueCount} เลยเวลา</span>}
+          {planCount > 0 && <span style={{ color: '#94a3b8' }} title="ใบจาก 862 ของพาร์ทที่ลูกค้ายืนยันรอบด้วย e-SMART — ยังไม่มีไฟล์ e-SMART ยืนยัน = เป็นแผน ไม่ใช่ order ที่ต้องส่ง"> · 📋 {planCount} แผน 862 รอ e-SMART</span>}
+          {managedErr && <span style={{ color: '#f59e0b' }} title={managedErr}> · ⚠ {managedErr}</span>}
           {shortCount > 0 && <span style={{ color: '#f59e0b' }}> · 📦 {shortCount} รอบ stock ไม่พอ</span>}
           {unknownCount > 0 && <span style={{ color: 'var(--muted)' }} title="เลขพาร์ทลูกค้ายังไม่จับคู่ MAT SAP — เช็คสต็อกและตัดสต็อกอัตโนมัติไม่ได้ ตั้ง p_no ที่ Product Master"> · ❔ {unknownCount} รอบ ยังเช็ค stock ไม่ได้</span>}
         </span>
-        {pastDue.length > 0 && (
-          <button onClick={() => setDay(pastDue.reduce((a, p) => (p.due_date > a ? p.due_date : a), pastDue[0].due_date))}
+        {pastDueReal.length > 0 && (
+          <button onClick={() => setDay(pastDueReal.reduce((a, p) => (p.due_date > a ? p.due_date : a), pastDueReal[0].due_date))}
             title="คลิกเพื่อกระโดดไปวันงานล่าสุดที่ยังมีใบค้างส่ง"
             style={{ padding: '4px 12px', borderRadius: 8, border: '1.5px solid rgba(239,68,68,0.5)', background: 'rgba(239,68,68,0.12)', color: '#ef4444', fontSize: 12, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)', flexShrink: 0 }}>
-            ⏰ ค้างส่งจากวันก่อน {pastDue.length} ใบ — กดดู
+            ⏰ ค้างส่งจากวันก่อน {pastDueReal.length} ใบ — กดดู
           </button>
         )}
         {canAdd && (
@@ -783,7 +809,8 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
                       const st = SHIP_STATUS[o.status] || SHIP_STATUS.pending;
                       const od = isOverdue(o);
                       const pl = phaseLate(o);
-                      const color = od ? '#ef4444' : pl ? '#f97316' : st.color;
+                      const plan = isPlan(o);   // 📋 แผน 862 รอ e-SMART — เทาเส้นประ ไม่ใช่ order
+                      const color = plan ? '#94a3b8' : od ? '#ef4444' : pl ? '#f97316' : st.color;
                       const left = ((tw - tStart) / span) * 100;
                       const lane = lanes.map[o.id] || 0;
                       const isSel = popup?.o?.id === o.id;
@@ -799,10 +826,11 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
                       return (
                         <div key={o.id}
                           onClick={e => setPopup({ o, x: e.clientX, y: e.clientY })}
+                          title={plan ? `แผน 862 · ${o.mat_no} × ${fmt(o.qty)} — รอ e-SMART ยืนยัน (ไม่ใช่ order ที่ต้องส่ง)` : undefined}
                           style={{
                             position: 'absolute', top: 5 + lane * LANE_H, height: LANE_H - 6,
                             left: `${Math.min(left, 97)}%`, width: `${(SPAN_MIN / span) * 100}%`, minWidth: 48,
-                            background: `${color}${isSel ? '55' : '22'}`, border: `1.5px solid ${color}${isSel ? '' : 'cc'}`, borderRadius: 5, zIndex: 1,
+                            background: plan ? 'transparent' : `${color}${isSel ? '55' : '22'}`, border: `1.5px ${plan ? 'dashed' : 'solid'} ${color}${isSel ? '' : 'cc'}`, borderRadius: 5, zIndex: 1,
                             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3, overflow: 'hidden', cursor: 'pointer', boxSizing: 'border-box',
                             boxShadow: od ? `0 0 5px ${color}55` : 'none',
                           }}>
@@ -848,6 +876,7 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
             const st = SHIP_STATUS[o.status] || SHIP_STATUS.pending;
             const od = isOverdue(o);
             const pl = phaseLate(o);
+            const plan = isPlan(o);
             const phases = phaseList(o);
             const cov = coverage[o.id];
             const W = 270;
@@ -861,8 +890,9 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
                   <div style={{ padding: '10px 14px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                       <span style={{ fontSize: 15, fontWeight: 900, color: 'var(--text)' }}>🕐 {(o.ship_time ? o.ship_time.slice(0, 5) : '⏳ ไม่ระบุเวลา')}</span>
-                      <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 8, background: 'rgba(0,0,0,0.15)', color: od ? '#ef4444' : pl ? '#f97316' : st.color }}>{od ? '🔴 เลยเวลา' : pl ? '🟠 หลุดเฟส' : statusLabel(o)}</span>
+                      <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 8, background: 'rgba(0,0,0,0.15)', color: plan ? '#94a3b8' : od ? '#ef4444' : pl ? '#f97316' : st.color }}>{plan ? '📋 แผน 862 · รอ e-SMART' : od ? '🔴 เลยเวลา' : pl ? '🟠 หลุดเฟส' : statusLabel(o)}</span>
                     </div>
+                    {plan && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>ลูกค้ายืนยันรอบจริงด้วย e-SMART — อัพไฟล์แล้วใบนี้จะถูกแทนด้วยยอดจริง</div>}
                     <div style={{ fontSize: 11, fontWeight: 700, color: '#3b82f6', marginTop: 2 }}>{custLabel ? custLabel(o.customer) : o.customer}{o.due_date !== day ? ` · ส่งเช้า ${o.due_date}` : ''}</div>
                     {/* ลำดับ Part No. ลูกค้า → ชื่องาน → MAT (UI §6.21 · 2026-09-30) */}
                     <div style={{ fontSize: 12, fontFamily: 'monospace', color: '#0ea5e9', fontWeight: 700, marginTop: 6 }}>
@@ -947,7 +977,7 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
           <FilterBar bare style={{ marginBottom: 0 }}>
             <Segmented value={cardFilter} onChange={setCardFilter} label="สถานะรอบส่ง" options={[
               { value: 'all',     label: ALL.status },
-              { value: 'todo',    label: `🕐 ต้องทำ (${orders.filter(isOpenOrder).length})` },
+              { value: 'todo',    label: `🕐 ต้องทำ (${orders.filter(o => isOpenOrder(o) && !isPlan(o)).length})` },
               { value: 'overdue', label: `🔴 เลยเวลา (${overdueCount})` },
               { value: 'shipped', label: `✅ ส่งแล้ว (${shippedCount})` },
             ]} />
@@ -965,12 +995,13 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
               cardFilter === 'all' ? true
               : cardFilter === 'shipped' ? o.status === 'shipped'
               : cardFilter === 'overdue' ? isOverdue(o)
-              : isOpenOrder(o)
+              : isOpenOrder(o) && !isPlan(o)   // 📋 แผน 862 รอ e-SMART ไม่ใช่งานที่ต้องทำ (ดูได้ที่ "ทั้งหมด")
             ).map(o => {
               const st = SHIP_STATUS[o.status] || SHIP_STATUS.pending;
               const od = isOverdue(o);
               const pl = phaseLate(o);
-              const cardColor = od ? '#ef4444' : pl ? '#f97316' : st.color;
+              const plan = isPlan(o);
+              const cardColor = plan ? '#94a3b8' : od ? '#ef4444' : pl ? '#f97316' : st.color;
               const phases = phaseList(o);
               const isHl = highlightId === o.id;
               return (
@@ -982,7 +1013,7 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
                   <div style={{ padding: '10px 14px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                       <span style={{ fontSize: 15, fontWeight: 900, color: 'var(--text)' }}>🕐 {(o.ship_time ? o.ship_time.slice(0, 5) : '⏳ ไม่ระบุเวลา')}{o.due_date !== day ? <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}> (เช้า {(o.due_date || '').slice(5)})</span> : null}</span>
-                      <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 8, background: 'rgba(0,0,0,0.12)', color: cardColor }}>{od ? '🔴 เลยเวลา' : pl ? '🟠 หลุดเฟส' : statusLabel(o)}</span>
+                      <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 8, background: 'rgba(0,0,0,0.12)', color: cardColor }}>{plan ? '📋 แผน 862 · รอ e-SMART' : od ? '🔴 เลยเวลา' : pl ? '🟠 หลุดเฟส' : statusLabel(o)}</span>
                     </div>
                     {/* ลำดับ Part No. ลูกค้า → ชื่องาน → MAT (UI §6.21 · 2026-09-30) */}
                     <div style={{ fontSize: 12, fontFamily: 'monospace', color: '#0ea5e9', fontWeight: 700, marginTop: 4 }}>
