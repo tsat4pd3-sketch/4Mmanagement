@@ -169,6 +169,7 @@ export default function ProductionPlan() {
         /* 📦 buffer stock ของพาร์ทลูกที่ **STORE** — เอาไปหักความต้องการก่อนสั่งผลิตซ้ำ
            🔴 หักเฉพาะแถว STORE เท่านั้น **ห้ามหักยอดที่ไลน์ (mini-store)** — กฎเหล็ก demand-flow-tower:
               backflush ไม่ทำงาน (issue 5,908 : consume 40) ⇒ ยอดคงเหลือที่ไลน์ **สูงกว่าความจริงเสมอ**
+              🔄 27/10: backflush ทำงานแล้ว แต่ยอดที่ไลน์ยังเชื่อไม่ได้ (ย้ายของ STORE→ไลน์ไม่ถูกบันทึก) — กฎเดิมยังใช้
               เอาไปหัก = สั่งผลิตน้อยกว่าที่ต้องใช้ = ของขาด (ทิศอันตราย) */
         supabaseDR.from('line_stock_summary').select('mat_no, qty_on_hand').eq('line_name', 'STORE'),
         // เวลาพักตามนโยบาย — ใช้แปลงเวลากะดิบเป็น "นาทีทำงานสุทธิ" ก่อนคิดกำลังทางทฤษฎี
@@ -710,7 +711,7 @@ export default function ProductionPlan() {
               📦 {useBuffer
                 ? <>หักของที่มีใน <b>STORE</b> แล้ว <b>{Math.round(demandPcs.buffer.dailyAbsorbed).toLocaleString()} ชิ้น</b> (รายวัน) ·
                     <b> {Math.round(demandPcs.buffer.monthlyAbsorbed).toLocaleString()} ชิ้น</b> (รายเดือน) จาก {demandPcs.buffer.mats} พาร์ทที่มีของคงเหลือ
-                    {' · '}<span title="backflush ยังไม่ทำงานครบ (issue 5,908 : consume 40) ⇒ ยอดคงเหลือที่ไลน์สูงกว่าความจริง เอามาหักแล้วจะสั่งผลิตน้อยเกินไป">
+                    {' · '}<span title="ยอดคงเหลือที่ไลน์ยังไม่ตรงของจริง — สโตร์ยังบันทึกการย้ายของเข้าไลน์ไม่ครบ เอามาหักแล้วแผนจะผิด">
                       ⚠️ ไม่หักยอดที่ค้างอยู่ "ที่ไลน์" (เชื่อถือไม่ได้)</span></>
                 : <>ไม่หักสต็อก STORE — ตัวเลขคือความต้องการดิบ (ยังไม่ดูของที่มีอยู่)</>}
             </div>

@@ -71,7 +71,7 @@
 - Dispatching ● ใบขอเติม/เบิก (`wip_replenish_requests` `raw_withdrawal_requests` `material_requests`) · `replenishGate.js`
 - Execution ● `/line-stock` (`line_stock_transactions`) · `stock_receipts` · ขาออก `customer_shipping_orders`
 - Data collection ◐ สแกน QR + กรอกมือ · ไม่มีการกระทบยอดกับ SAP
-- Tracking ◐ `line_stock_summary` `lineWipLedger.js` `/flow-tower` — 🔴 **backflush ไม่เคยเกิดจริง (issue 5,908 : consume 40 แถว · `lineWipLedger.js` หัวไฟล์)** ⇒ ยอดคงเหลือในระบบสูงกว่าจริงเสมอ
+- Tracking ◐ `line_stock_summary` `lineWipLedger.js` `/flow-tower` — backflush **ทำงานแล้ว** (แก้ 21/08) แต่ 🔴 **การย้ายของ STORE → ไลน์ส่วนใหญ่ไม่ถูกบันทึก** (ต.ค. 273 คู่ไลน์×พาร์ท) ⇒ ยอดที่ไลน์ต่ำกว่าจริง และยอด STORE ไม่ลดตามการใช้จริง *(แก้ 27/10 — ฉบับแรกอ้างตัวเลข 40 : 5,908 ที่ล้าสมัย)*
 - Performance ◐ `/store-monitor` (`v_store_abnormal`) · `wipRunout.js` — ไม่มี KPI stock accuracy / inventory turns
 
 ---
@@ -130,7 +130,7 @@
 1. **ESM แข็งที่ "กลาง" ของระดับ 3 แต่ "ขอบ" ทั้งสองด้านยังเป็นคน** — กิจกรรม Execution/Performance ครบทุกหมวด ขณะที่ Dispatching + Data collection ◐ แทบทุกหมวด และ L4 ขาออก ○
    ⇒ ตัวเลข OEE ทั้งหมดแม่นได้เท่าที่คนกรอก — นี่คือความเสี่ยงอันดับ 1 ต่อความน่าเชื่อถือของจอทุกจอ
 2. **ไม่มีล็อตของจริง = ไม่มี genealogy** — ISA-95 ถือ Material Lot เป็นแกนของ tracking · ช่องว่างเดียวกับ IATF 8.5.2 ⇒ ทำตัวเดียวปิดได้ 2 มาตรฐาน
-3. **บัญชีสต๊อกในไลน์ไม่เคยถูกหัก** — Inventory Tracking ใช้ตอบ "ค้างเท่าไหร่" ไม่ได้ จนกว่า backflush จะทำงาน (ต้นเหตุ: ชื่อไลน์ที่เปิดกะ ≠ ไลน์แม่ที่สโตร์จ่ายเข้า · `lineWipLedger.js`)
+3. **การย้ายของ STORE → ไลน์ไม่ถูกบันทึก** — backflush ทำงานแล้ว (ของที่บันทึกจ่าย ระบบหักครบ) แต่ ต.ค. มี 273 คู่ไลน์×พาร์ทที่ผลิตใช้โดยไม่มีบันทึกรับเข้า ⇒ Inventory Tracking ยังตอบ "ค้างเท่าไหร่" ไม่ได้ และยอด STORE ที่แผนผลิตเอาไปหักอาจสูงเกินจริง (`demand-flow-tower.md` §27/10) *(แก้ 27/10)*
 4. **ลำดับชั้นอุปกรณ์มี 5 ชุด ผูกด้วยข้อความ** — ทุกการเชื่อมข้ามโมดูลต้องผ่านการเทียบชื่อ (`machine_key()` · `orgNodeRefs.js`) ⇒ ต้นทุนแฝงของทุกฟีเจอร์ linkage ใหม่ (ขัดเป้า golden thread)
 
 ---
@@ -141,7 +141,7 @@
 
 | # | งาน | ปิดช่องว่าง ISA-95 | ขนาด | หมายเหตุ |
 |---|---|---|---|---|
-| 1 | **แก้ backflush** ให้ consume หักที่ไลน์แม่ (ตามสาย SLoc) | Inventory Tracking/Perf | S–M | ไม่ต้องมีตารางใหม่ · ตัวเลข `gap` บนจอมีอยู่แล้วใช้วัดผล |
+| 1 | ~~แก้ backflush~~ → **ให้สโตร์บันทึกการย้ายของเข้าไลน์ทุกครั้ง** (user เคาะ 27/10 · แก้ที่หน้างาน ไม่แก้โค้ด) | Inventory Tracking/Perf | S | trigger ทำงานถูกแล้ว · ส่ง worklist 273 คู่ให้สโตร์ · วัดซ้ำด้วยคิวรีภาคผนวก |
 | 2 | **ล็อตวัตถุดิบ + genealogy** บนสาย 060/061: รับเข้า (lot supplier) → ผูกใบผลิต → กล่อง FG | Material Lot · Production Tracking · IATF 8.5.2 | M–L | ต่อยอด `stock_receipts` + `line_stock_transactions.ref_order_id` + `/order-trace` |
 | 3 | **ทะเบียนอุปกรณ์ชั้นเดียว**: ติดชั้น ISA (site/area/work center/work unit) + เปลี่ยนไลน์แม่เป็น id + คีย์ `equipment_id` คงที่ข้าม Main/DR | Equipment hierarchy | L | schema ข้าม 2 โปรเจค = ต้องถาม user · เริ่มจาก "ตารางเทียบ" แบบอ่านอย่างเดียวก่อน |
 | 4 | **รวมนิยามขั้นตอนผลิต**: ให้ `part_routings` เป็น process segment หลัก ผูกคีย์ไปยัง `pe_processes` + OP-products · เติม routing ให้ 060/061 ครบ | Process segment · Product definition | M | `peRouting.js` เสนอ routing จาก PFC อยู่แล้ว |
@@ -149,3 +149,27 @@
 | 6 | **SPC ชุดเดียว** + run rules + เตือนตอนกรอก | Quality Performance | S–M | ยุบ 3 ชุด (`QualityControl.jsx` · `qc7.js` · `lib/spc.js`) |
 | 7 | ประตู Edge Function ให้ฝั่ง DR (เริ่มจากตารางที่เขียนผลผลิต) | IEC 62443 / ความถูกต้องข้อมูล | L | known gap เดิม |
 | 8 | SCADA / MQTT | L2 ↔ L3 | L | **พักตามคำสั่ง user 14/10 — ห้ามเริ่ม** ออกแบบไว้แล้วสอดคล้อง ISA-95 |
+
+---
+
+## ภาคผนวก — คิวรีวัดซ้ำ "ไลน์ใช้ของที่ไม่มีบันทึกรับเข้า" (DR · "Product DB" `eyhclzkifitbhbljgoav`)
+
+อ่านอย่างเดียว · เปลี่ยนช่วงวันที่ได้ · ตัวเลข "ควรใช้" = สูตรเดียวกับ `fn_explode_child_demand` (ใบ `confirmed` × `bom_items.qty_per_unit`)
+
+```sql
+with fg as (select distinct on (mat_no) mat_no, id, coalesce(is_operation,false) is_op
+            from dr_products where is_active order by mat_no, id),
+o as (select ps.line_name, o.mat_no, o.qty from prod_orders o
+      join production_sessions ps on ps.id = o.session_id
+      where o.status = 'confirmed' and ps.work_date between '2026-10-01' and '2026-10-26' and o.qty > 0),
+need as (select o.line_name, b.mat_no child, sum(o.qty * b.qty_per_unit) need
+         from o join fg on fg.mat_no = o.mat_no and not fg.is_op
+         join bom_items b on b.product_id = fg.id and b.is_active group by 1, 2),
+iss as (select line_name, mat_no child, sum(qty) issued from line_stock_transactions
+        where type = 'issue' and work_date between '2026-10-01' and '2026-10-26' group by 1, 2)
+select n.line_name, count(*) child_mats,
+       count(*) filter (where coalesce(i.issued, 0) < n.need) short_mats,
+       round(sum(n.need)) need, round(sum(coalesce(i.issued, 0))) issued
+from need n left join iss i using (line_name, child)
+group by 1 order by need desc;
+```
