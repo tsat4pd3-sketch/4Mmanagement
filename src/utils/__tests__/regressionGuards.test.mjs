@@ -5353,9 +5353,10 @@ test('🛡️ unlinked-account-queue — คิวบัญชีไม่ผู
     if (!new RegExp(`export function ${fn}\\b`).test(im)) bad.push(`identityMatch.js (ไม่มี ${fn})`);
   }
   /* ชื่อซ้ำ/ชื่อต้นตรง ต้องไม่ถูกผูกให้เอง — `confident` ต้องผูกกับ "เจอคนเดียว" เท่านั้น */
-  if (!/confident: same\.length === 1/.test(im))
-    bad.push('identityMatch.js (confident ไม่ได้ผูกกับ "ชื่อตรงและเจอคนเดียว" — เสี่ยงผูกผิดคน)');
-  if (!/tier: 'first', rows: first\.slice\(0, limit\), confident: false/.test(im))
+  /* 28/10 เข้มขึ้น: ต้อง "เจอคนเดียว" **และ** คนนั้นยังไม่ถูกบัญชีอื่นจอง (ด่าน link-suggest-must-check-taken) */
+  if (!/confident: free\.length === 1 && same\.length === 1/.test(im))
+    bad.push('identityMatch.js (confident ไม่ได้ผูกกับ "ชื่อตรง เจอคนเดียว และยังไม่ถูกจอง" — เสี่ยงผูกผิดคน/ชน unique)');
+  if (!/tier: 'first', rows: first\.slice\(0, limit\)\.map\(mark\), confident: false/.test(im))
     bad.push('identityMatch.js (ชั้น "ชื่อต้นตรง" ต้อง confident=false เสมอ)');
   if (!/e\.is_active !== false/.test(im)) bad.push('identityMatch.js (เสนอคนที่ลาออกแล้วได้)');
 
@@ -5367,7 +5368,8 @@ test('🛡️ unlinked-account-queue — คิวบัญชีไม่ผู
   if (!/tri\.sharedOk\.length/.test(au))
     bad.push('AddUser.jsx (ไม่ได้เขียนว่าบัญชีกลางที่ไม่ผูกตัวตน = ถูกต้องแล้ว)');
   /* 2 ปุ่มนั้นเขียน DB ⇒ ต้องนับแถว (RLS ปฏิเสธ UPDATE = 0 แถว ไม่มี error) */
-  if ((au.match(/checkWriteRows\(await supabase\.from\('profiles'\)/g) || []).length < 2)
+  /* ปุ่มในคิวทั้ง 2 ทางต้องนับแถวจริง — รับทั้งแบบ inline และแบบแยก `const res = await …` (28/10) */
+  if ((au.match(/checkWriteRows\((await supabase\.from\('profiles'\)|res, )/g) || []).length < 2)
     bad.push('AddUser.jsx (ปุ่มในคิวไม่ได้นับแถวที่เขียนจริงด้วย checkWriteRows)');
 
   /* บ้านเดียวของ normSearch */
@@ -7596,4 +7598,37 @@ test('🔭 leader-scope-no-silent-fallopen — กรองด้วยไลน
     'ต้องจำไว้ว่ารอบนี้ตัดสินขอบเขตไม่ได้');
   assert.match(src, /\{scopeUnsure && \(/,
     '🔴 รายการกว้างกว่าที่ควร = ต้องเขียนบนจอ ห้ามให้คนเข้าใจว่าได้สิทธิ์ดูทุกไลน์แล้ว');
+});
+
+/* ═══ 🪪 link-suggest-must-check-taken — ห้ามเสนอผูกพนักงานที่ถูกจองไปแล้ว ═══ 2026-10-28
+   เคสจริง (หน้างาน 21:19): กดปุ่ม "ผูกได้เลย" แล้วเด้ง error ดิบจาก Postgres
+   `duplicate key value violates unique constraint "profiles_employee_id_uniq"` ×2
+   ต้นเหตุ: `employeeCandidates()` จับคู่จาก**ชื่อ**อย่างเดียว ไม่รู้ว่าพนักงานคนนั้น
+   ถูกบัญชีอื่นผูกไปแล้ว ⇒ จอเสนอทางที่ **ล้มเหลวแน่นอน 100%**
+   ("ธวัช  พิมพ์วงศ์" มี 2 บัญชี ต่างกันแค่จำนวนช่องว่าง — ตัวหนึ่งผูกแล้ว อีกตัวยังค้าง)
+   🔴 ซ่อนคนที่ถูกจองออกไม่ได้ — จอจะบอก "ไม่มีชื่อนี้ในทะเบียนพนักงาน" ซึ่งไม่จริง
+      ⇒ ต้องโชว์ + ติดป้ายว่าใครถืออยู่ + ไม่นับเป็น "ผูกได้เลย" */
+test('🪪 link-suggest-must-check-taken — คนที่ถูกผูกแล้วต้องไม่ถูกเสนอเป็น "ผูกได้เลย"', async () => {
+  const m = await import('../identityMatch.js');
+  const emps = [{ id: 'e1', name: 'ธวัช  พิมพ์วงศ์', is_active: true }];
+  const users = [
+    { id: 'a', full_name: 'ธวัช พิมพ์วงศ์', employee_id: 'e1' },
+    { id: 'b', full_name: 'ธวัช  พิมพ์วงศ์', employee_id: null },
+  ];
+  const row = m.unlinkedTriage(users, emps).queue.find(x => x.u.id === 'b');
+  assert.equal(row.confident, false, '🔴 คนที่ถูกจองแล้วห้ามเป็น "ผูกได้เลย" (กดแล้วชน unique แน่นอน)');
+  assert.equal(row.rows.length, 1, 'ต้องยังโชว์ — ซ่อน = จอบอก "ไม่มีชื่อนี้ในทะเบียน" ซึ่งไม่จริง');
+  assert.ok(row.rows[0].takenByName, 'ต้องติดป้ายว่าบัญชีไหนถืออยู่');
+  assert.equal(m.routeHint(row).key, 'taken', 'ป้ายบนจอต้องบอกว่าถูกผูกไปแล้ว ไม่ใช่ "ผูกได้เลย"');
+  /* คนที่ยังว่าง = พฤติกรรมเดิมเป๊ะ */
+  const free = m.unlinkedTriage([{ id: 'c', full_name: 'ก ข', employee_id: null }],
+    [{ id: 'e9', name: 'ก ข', is_active: true }]).queue[0];
+  assert.equal(free.confident, true, 'คนที่ยังไม่ถูกจอง ต้องยังเสนอ "ผูกได้เลย" เหมือนเดิม');
+
+  /* ฝั่งจอ: เช็คก่อนเขียน + แปล error ดิบเป็นภาษาคน */
+  const au = stripComments(readFileSync(join(ROOT, 'src/pages/AddUser.jsx'), 'utf8'));
+  assert.match(au, /const holder = users\.find\(x => x\.employee_id === emp\.id && x\.id !== u\.id\)/,
+    '🔴 ต้องเช็คก่อนเขียนว่าพนักงานคนนี้ถูกบัญชีอื่นถืออยู่ไหม');
+  assert.match(au, /res\?\.error\?\.code === '23505'/,
+    '🔴 ชนแม้เช็คแล้ว (จอถือรายชื่อเก่า) ต้องบอกให้รีเฟรช ห้ามโชว์ error ดิบของ Postgres');
 });

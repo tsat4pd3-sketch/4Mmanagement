@@ -432,10 +432,27 @@ export default function AddUser() {
   const [triBusy, setTriBusy] = useState(null);   // id ที่กำลังเขียน (กันกดซ้ำ)
   const linkEmployee = async (u, emp) => {
     if (!u?.id || !emp?.id) return;
+    /* 🔴 พนักงาน 1 คน = บัญชีเดียว (unique `profiles_employee_id_uniq`)
+       เช็คก่อนเขียน แล้วบอกเป็นภาษาคน — เดิมปล่อยให้ชนแล้วเด้ง error ดิบจาก Postgres
+       ("duplicate key value violates unique constraint …") ซึ่งคนอ่านไม่รู้ว่าต้องทำอะไรต่อ */
+    const holder = users.find(x => x.employee_id === emp.id && x.id !== u.id);
+    if (holder) {
+      toast.error(`${emp.name} ถูกผูกกับบัญชี "${holder.full_name || holder.email || '-'}" อยู่แล้ว`
+        + ' — พนักงาน 1 คนผูกได้บัญชีเดียว · ถ้าบัญชีนี้ซ้ำ ให้ลบหรือตั้งเป็นบัญชีกลางแทน');
+      return;
+    }
     setTriBusy(u.id);
-    const ok = checkWriteRows(await supabase.from('profiles')
+    const res = await supabase.from('profiles')
       .update({ employee_id: emp.id, account_kind: 'person' })
-      .eq('id', u.id).select('id'), 'ผูกบัญชีกับพนักงาน');
+      .eq('id', u.id).select('id');
+    /* ชนแม้เช็คแล้ว = จอถือรายชื่อเก่า (มีคนผูกไปเสี้ยววินาทีก่อน) — บอกให้รีเฟรช ห้ามโชว์ error ดิบ */
+    if (res?.error?.code === '23505') {
+      setTriBusy(null);
+      toast.error(`${emp.name} เพิ่งถูกผูกกับบัญชีอื่นไป — กดรีเฟรชแล้วดูใหม่อีกครั้ง`);
+      fetchUsers();
+      return;
+    }
+    const ok = checkWriteRows(res, 'ผูกบัญชีกับพนักงาน');
     setTriBusy(null);
     if (!ok) return;
     toast.success(`ผูก "${u.full_name || u.email}" กับ ${emp.name} แล้ว — ทีม/ไลน์/ส่วนงานจะอ่านจากฐานพนักงานต่อไป`);
