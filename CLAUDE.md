@@ -103,7 +103,21 @@ QR/บาร์โค้ดอุปกรณ์ `qr-equipment-scan.md` · ก�
 ประชุมแถวเช้า `morning-meeting.md` · ผังรวมโรงงาน `factory-master-map.md` ·
 Adoption Outlook `adoption-outlook.md` · ภาพรวมกลุ่ม TSG (mockup) `group-overview.md` ·
 จอตาม-มือถือคุม `remote-control.md` · แผนประสานงาน PM ข้ามวัน `pm-coordination.md` ·
-Audit log ใครแก้อะไร `traceability-audit-log.md` · ของที่ยกไปโปรเจคหน้าได้ `reusable-pm-checker.md`
+Audit log ใครแก้อะไร `traceability-audit-log.md` · ของที่ยกไปโปรเจคหน้าได้ `reusable-pm-checker.md` ·
+ติดตามการส่งงานลูกค้า (Planner/Sales · Delivery · Rundown Stock) `logistic-planner-sales.md` ·
+ใบรายงานของเสีย FM-PD2-002 `/scrap-report` `scrap-report.md` ·
+ใบขอเบิก/คืนสินค้าคงคลัง FM-STO-003 (แท็บใน `/qa`) `store-requisition-form.md` ·
+QA setup → ใบตรวจ (2 หน้า ห้ามปนกัน) `qa-inspection.md` ·
+BBS สังเกตพฤติกรรมความปลอดภัย (แท็บใน `/daily-checker`) `bbs-safety.md` ·
+Dashboard ส่วนงาน `/dept-dashboard?dept=` `dept-dashboard-tv.md` (ดีไซน์ `docs/DASHBOARD-DESIGN.md`) ·
+VSM `/vsm` `vsm.md` ·
+คลังอะไหล่ FM-JIG-009 + Rank `/equipment?tab=spare` `spare-part-master.md` ·
+Fixture shim record `/equipment?tab=jig` `fixture-shim-record.md` ·
+ตั้งค่าผัง/Floorplan `/layout-setup` (display = ดูอย่างเดียว) `floorplan-setup.md` ·
+กำลังคน/เปลี่ยนจุดงาน/Turnover `/workforce-insight` (อ่านอย่างเดียว) `workforce-insight.md` ·
+ประวัติผลิต by Product `/product-history` `product-history.md` ·
+สอบกลับ Order `/order-trace` `order-trace.md` ·
+กล่องรับ feedback หน้างาน (ปุ่มท้าย sidebar) `feedback-inbox.md`
 
 ---
 ## Organizational Hierarchy · Role System
@@ -122,6 +136,10 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 >   🔴 **ลำดับชั้นมาจาก `org_nodes.parent_id` เท่านั้น — เลขรหัสไม่ได้บอกชั้น**
 >   · ทีมไม่มีรหัส = **ตกทอดจากแม่** · ไล่ขึ้นไม่เจอ = fail-closed · กฎ "CC ของโหนด" **ห้ามเขียนชุดที่ 2**
 >   (`costCenterOfNode()` อยู่ไฟล์นี้ที่เดียว · มีด่าน `cc-scope-layer`)
+>   🔴 **หน่วยแม่ของขอบเขตเรา ≠ "หน่วยอื่น"** (28/10 · คำสั่ง user "ยุบเหลือแกนเดียว · CC ละเอียดกว่า")
+>     ถาม `canWriteUnit(ctx,'<ส่วนงาน>')` ทั้งที่ถือ CC ระดับแผนก = **`partial_unit` (ok)** ไม่ใช่บล็อก
+>     — บล็อก = ติ๊ก CC แล้วใช้จอไหนไม่ได้เลย (โดน 15/15 ใบ) · **ความละเอียดอยู่ที่ชั้นรายไลน์/รายแถว**
+>     (แผนกพี่น้องยัง ❌ เหมือนเดิม) ⇒ **จอต้องเช็คซ้ำตอนเขียนจริง ห้ามถือ `partial_unit` เป็นใบผ่าน**
 >   🔑 **จอไม่ต้องรู้เรื่อง 2 แกน** — `canWriteUnit`/`canWriteLine` สลับให้เองเมื่อ ctx มี `respCostCenters`
 >     **+ `scopeIdx`** ⇒ **ctx ของด่านทุกจอต้องส่ง 2 ช่องนี้** (ด่านตรวจรายบรรทัดใน `write-scope-layer`) ·
 >     ไลน์ตัดสินที่ตัวไลน์ก่อนถอยไปส่วนงาน · อ่านผังไม่ได้ = บล็อก (`scope_unreadable`)
@@ -152,13 +170,6 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 > **กฎ:** ตัวสร้างอัตโนมัติต้องมีเพดาน/ตัวนับ + กันใบซ้ำ · แยกใบระบบออกจากใบคนให้เห็นในคิว ·
 > เคลียร์คิวค้างจากบั๊กด้วย `rejected` + เหตุผล **ห้าม `delete` ห้าม `approved`**
 > 📄 กฎเต็ม + เหตุการณ์ → `docs/modules/four-m-workflow.md`
-
----
-
-## Logistic — Planner & Sales / Delivery / Rundown Stock (2026-07-10..11)
-
-โมดูลติดตามการส่งงานลูกค้า (ตารางทั้งหมดอยู่ DR project) — 3 หน้า:
-> 📄 รายละเอียดเต็ม → `docs/modules/logistic-planner-sales.md`
 
 ---
 
@@ -227,20 +238,6 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 
 ---
 
-## Scrap Report — ใบรายงานของเสีย FM-PD2-002 Rev.06 (paperless + export · 2026-07-16)
-
-หน้า `/scrap-report` (`ScrapReport.jsx`) — แทนฟอร์มกระดาษ "ใบรายงานของเสีย" · export Excel ตรงฟอร์ม
-> 📄 รายละเอียดเต็ม → `docs/modules/scrap-report.md`
-
----
-
-## 📦 ใบขอเบิก/คืนสินค้าคงคลัง FM-STO-003 Rev.01 (paperless · 2026-08-24)
-
-แท็บ 📦 ใบเบิกทดสอบ ใน `/qa` (`src/components/MaterialRequests.jsx`) — user ส่งใบกระดาษมา
-> 📄 รายละเอียดเต็ม → `docs/modules/store-requisition-form.md`
-
----
-
 ## ใบรายงานปัญหาการผลิต + ถังเหลือง/ถังแดง (paperless · 2026-08-19)
 
 > ### 🔴 ฟอร์มที่ยื่นออกไปแล้ว = **บันทึก** ไม่ใช่ใบที่ generate ใหม่ (2026-09-25 · มีด่าน)
@@ -251,34 +248,6 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 >   **ห้ามประกาศซ้ำในหน้า** · **ห้ามเพิ่ม `closed_at` ที่ต้องมีคนกดปิด** (ไม่มีใครกด = ของค้างเทียมเต็มจอ)
 
 > 📄 รายละเอียดเต็ม → `docs/modules/production-problem-report-bins.md`
-
----
-
-## QA Inspection — setup → ใบตรวจ (ปิดช่องว่าง 2026-08-04)
-
-สายงานคุณภาพแบ่งชัด 2 หน้า — อย่าเอาไปปนกัน:
-> 📄 รายละเอียดเต็ม → `docs/modules/qa-inspection.md`
-
----
-
-## 🦺 BBS — สังเกตพฤติกรรมความปลอดภัย (Behavior-Based Safety · paperless · 2026-08-21)
-
-แท็บ 🦺 BBS ใน `/daily-checker` (`src/pages/BbsCheck.jsx`) — user ส่งฟอร์ม Excel มา
-> 📄 รายละเอียดเต็ม → `docs/modules/bbs-safety.md`
-
----
-
-## Dashboard ส่วนงาน — 📋 `/dept-dashboard` (2026-08-06)
-
-หน้าเดียวสลับส่วนงานด้วย `?dept=` — เฟส 1: ฝ่ายผลิต · ซ่อมบำรุง · สโตร์ · QA (ออกแบบเต็ม + ส่วนงานที่ยังไม่ทำ ดู `docs/DASHBOARD-DESIGN.md`)
-> 📄 รายละเอียดเต็ม → `docs/modules/dept-dashboard-tv.md`
-
----
-
-## Value Stream Mapping — `/vsm` (เฟส 1 · 2026-08-13)
-
-หน้า VSM (`VSM.jsx`, กลุ่มวิเคราะห์ & รายงาน) — เลือกสินค้าสำเร็จรูป (mat เบอร์ 1) + เดือน แล้ว
-> 📄 รายละเอียดเต็ม → `docs/modules/vsm.md`
 
 ---
 
@@ -424,13 +393,6 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 
 ---
 
-## คลังอะไหล่ (Spare Part Master) — FM-JIG-009 + Rank ตาม WI-JIG-010 (2026-08-05)
-
-แท็บ 🔩 คลังอะไหล่ ใน `/equipment?tab=spare` (`src/components/SparePartMaster.jsx`) — ค้นอะไหล่/ชั้นวาง · ยอดตรงการเบิกจริงในใบ MO · Rank A/B/C อัตโนมัติ
-> 📄 รายละเอียดเต็ม → `docs/modules/spare-part-master.md`
-
----
-
 ## DIE MAINTENANCE — Layout & สถานะแม่พิมพ์ (2026-08-19)
 
 > ### ⏱️ เวลาเปลี่ยนรุ่นงานปั๊ม (setup time · 2026-09-25) — คิดผ่าน `src/utils/pressSetup.js` เท่านั้น
@@ -440,13 +402,6 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 >   `fitsPress` คืน `null` ≠ `false` · ตัวไม่รู้ความสูงต่อท้ายลำดับ ห้ามตัดทิ้ง · `canPlan` ≠ `canTotal`
 > · 🔴 **`varMin` (เทียบลำดับ ไม่ต้องรู้เวลาฐาน เพราะหักกลบ) ≠ `totalMin`** · ชั้น 2-3 ยังไม่ทำ ห้ามเริ่มจนกว่า user สั่ง
 > 📄 `docs/modules/die-maintenance.md`
-
----
-
-## Fixture Shim Record — คุมความยั่งยืนของจิ๊ก (2026-09-01 · คำขอลูกค้า)
-
-หน้า `/equipment?tab=jig` (เดิม `/fixture` · แท็บลูก `?fx=` · `FixtureRegistry.jsx`) — ลูกค้าขอ ระบบบันทึกชิม (shim record) เพื่อคุม fixture sustainability
-> 📄 รายละเอียดเต็ม → `docs/modules/fixture-shim-record.md`
 
 ---
 
@@ -463,13 +418,6 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 >     — ไลน์แม่หลายตัวไม่เคยเปิดกะในชื่อตัวเอง ⇒ ชุดนี้เป็นประตูของงานตรวจ (`utils/prodRoutine.js`) = **งานตรวจหายเงียบ**
 > · **ทะเบียนรายวัน ⇒ แผน AM = run_day อัตโนมัติชั้น DB** (`pm_am_plan_follow_registry`) —
 >   **ห้ามเขียน `next_due_date` ลงแผน run_day** จากจอใด · เอาออกจากทะเบียน = `is_active=false` ห้าม delete · AM ไม่นับในชั้น Preventive ของช่าง
-
----
-
-## ตั้งค่าผัง/Floorplan — แยก display ออกจาก setup (2026-07-16)
-
-หลักการ: หน้า display (ผังรวมโรงงาน/Dashboard) = ดู + popup เท่านั้น · การตั้งค่าผังทั้งหมดรวมที่ `/layout-setup` "🗺️ ตั้งค่าผัง/Floorplan" (หมวดตั้งค่าโปรแกรม) แยกแท็บตาม POV — เตรียมรับ Store/AMR ในอนาคต
-> 📄 รายละเอียดเต็ม → `docs/modules/floorplan-setup.md`
 
 ---
 
@@ -564,27 +512,6 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 
 ---
 
-## Workforce Insight — กำลังคน / เปลี่ยนจุดงาน / Turnover (`/workforce-insight` · 2026-09-02)
-
-หน้า `WorkforceInsight.jsx` (พนักงาน & ทักษะ) — **อ่านอย่างเดียว ไม่มี resource:action ใหม่** · 3 แท็บ: กำลังคนรายวัน · การเปลี่ยนจุดงาน · Turnover
-> 📄 รายละเอียดเต็ม → `docs/modules/workforce-insight.md`
-
----
-
-## ประวัติผลิต by Product — `/product-history` (2026-07-24)
-
-หน้า ProductHistory (กลุ่มวิเคราะห์ & รายงาน) — เลือกสินค้า (ค้นด้วย mat_no/ชื่อ/PN) → ดูย้อนหลังว่าเคยผลิตที่ไลน์ไหน/กะไหน เท่าไหร่ เสียเท่าไหร่ + ประวัติการแก้ master data
-> 📄 รายละเอียดเต็ม → `docs/modules/product-history.md`
-
----
-
-## สอบกลับ Order — `/order-trace` (Order Traceability · 2026-07-30)
-
-หน้า OrderTrace (วิเคราะห์ & รายงาน) — 2 แท็บ `order` (จากเลขใบผลิต · default) / `symptom` (จากอาการ) — สแกน `prod_no` แล้วเห็นทุกเหตุการณ์ของใบนั้น
-> 📄 รายละเอียดเต็ม → `docs/modules/order-trace.md`
-
----
-
 ## 📌 คิวงานของฉัน — แผงในเมนูบัญชี (2026-09-25 · คำสั่ง user)
 
 กฎการแบ่งชั้น = `src/utils/myQueue.js` (pure · มีเทส) · โหลด/วาด = `components/MyQueuePanel.jsx`
@@ -625,13 +552,6 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 · 🔴 **สคริปต์ห้ามทำ build ล่ม · clone ตื้นห้ามเขียนทับ** (ของใหม่น้อยกว่าเดิม >10% = ไม่เขียน)
 · กฎตีชนิด = `src/utils/changelog.js` (**ต้องมีตะกร้ารับท้ายลิสต์** — commit ไม่ตามรูปห้ามหายจากจอ)
 > 📄 `docs/modules/program-update.md`
-
----
-
-## 💬 กล่องรับ Feedback จากหน้างาน (2026-08-14 · คำขอ user)
-
-ปุ่ม "💬 แจ้งปัญหา / ข้อเสนอแนะ" ท้าย sidebar (ใต้เปลี่ยนรหัสผ่าน) → `src/components/FeedbackModal.jsx` (lazy chunk)
-> 📄 รายละเอียดเต็ม → `docs/modules/feedback-inbox.md`
 
 ---
 

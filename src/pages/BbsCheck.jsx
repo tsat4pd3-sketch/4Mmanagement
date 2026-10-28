@@ -106,8 +106,10 @@ export default function BbsCheck() {
   /* ── ไลน์ (scope มาตรฐาน: leader = ทั้งครอบครัวไลน์ตัวเอง · อื่น = ตาม sections) ── */
   useEffect(() => {
     (async () => {
-      const { data } = await loadLinesRes();   // ครบ is_active ให้ <LineSelect> (2026-09-07)
-      setLines(data || []);
+      const { data, error: lineErr } = await loadLinesRes();   // ครบ is_active ให้ <LineSelect> (2026-09-07)
+      /* 🔴 28/10 — อ่านทะเบียนไม่สำเร็จ **ห้ามทับลิสต์เดิมด้วย []** (เคสจริง: หน้างานแจ้ง
+         "ไม่มีไลน์ให้เลือกในลิสต์" ทั้งที่ไลน์ยังอยู่ครบ) · toast กลางใน main.jsx บอกเหตุให้แล้ว */
+      if (!lineErr) setLines(data || []);
     })();
   }, []);
 
