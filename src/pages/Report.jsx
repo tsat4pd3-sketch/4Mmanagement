@@ -4,6 +4,8 @@ import ReadOnlyNote from '../components/ReadOnlyNote';
 import { useLocation } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { onlyShopfloorStaff } from '../utils/staffKind';   // 👥 นับคน = เฉพาะพนักงานหน้างาน (กฎ staffKind.js)
+import { lineHeadsOf } from '../utils/lineHeads';          // 👨‍🔧 หัวหน้างานของไลน์ (หลายคน/หลายกะ)
+import { buildScheduleMaps } from '../utils/shiftAssign';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
@@ -15,7 +17,7 @@ import { fmtDate, fmtDateTime } from '../utils/dateFormat';
 import { can } from '../utils/permissions';
 import { loadCompanyCalendar, getDayType, isOtHolidayType, DAY_TYPE_META } from '../utils/companyCalendar';
 import { otPeriodMeta, WEEKDAY_OT_TIME } from '../utils/otPeriods';
-import { getLineFamilyNames, getLineFamilyIds } from '../utils/lineHierarchy';
+import { getLineFamilyNames, getLineFamilyIds, lineAncestorIds } from '../utils/lineHierarchy';
 import { inSectionScope } from '../utils/sectionScope';
 import {
   SKILL_LEVELS, getLevel, groupSkillsByCategory,
@@ -3481,6 +3483,37 @@ function SkillAllowanceTab() {
       .then(({ data }) => setSkillDefs(data || []));
   }, []);
 
+  /* 👨‍🔧 หัวหน้างานของไลน์ที่เลือก — **ของจริงจากทะเบียนพนักงาน** (28/10 · feedback user)
+     *"ไลน์นึงมีหัวหน้าได้ 2-3 คน แล้วแต่ว่ามีกี่กะ"* ⇒ `production_lines.head_name` ช่องเดียวตอบไม่ได้
+     กฎอยู่ใน utils/lineHeads.js ที่เดียว (จอตั้งค่าไลน์ใช้ชุดเดียวกัน) */
+  const [headEmps, setHeadEmps] = useState([]);
+  const [headSched, setHeadSched] = useState([]);
+  const lineObjSel = useMemo(() => lines.find(l => l.name === line) || null, [lines, line]);
+  useEffect(() => {
+    let alive = true;                       // กฎข้อ 4: await แล้ว setState ต้องมี guard
+    if (!lineObjSel) { setHeadEmps([]); setHeadSched([]); return undefined; }
+    const ids = [lineObjSel.id, ...lineAncestorIds(lines, lineObjSel.id)];
+    (async () => {
+      const [{ data: he }, { data: sc }] = await Promise.all([
+        supabase.from('employees').select('id, name, position, team, line_id').eq('is_active', true).in('line_id', ids),
+        supabase.from('shift_schedules').select('*').eq('work_date', getWorkDate()),
+      ]);
+      if (!alive) return;
+      setHeadEmps(he || []); setHeadSched(sc || []);
+    })();
+    return () => { alive = false; };
+  }, [lineObjSel, lines]);
+  const headMaps = useMemo(() => buildScheduleMaps(headSched, lines), [headSched, lines]);
+  const lineHeads = useMemo(() => lineHeadsOf({
+    lineId: lineObjSel?.id, lines, employees: headEmps,
+    maps: headSched.length ? headMaps : null,
+    legacyName: lineObjSel?.head_name || '',
+  }), [lineObjSel, lines, headEmps, headSched, headMaps]);
+  /* ตัวเลือกที่ "ตรงกับใบที่กำลังออก" — เลือกทีมไว้ = เหลือหัวหน้าของทีมนั้น · ไม่เลือก = ทั้งหมด */
+  const headChoices = useMemo(() => (
+    team ? lineHeads.rows.filter(r => r.team === team) : lineHeads.rows
+  ), [lineHeads, team]);
+
   // ดึง Cost Center และหัวหน้างาน จากไลน์ที่เลือกอัตโนมัติ (ยังแก้ไขเองได้ถ้าต้องการ)
   useEffect(() => {
     const lineObj = lines.find(l => l.name === line);
@@ -3488,8 +3521,16 @@ function SkillAllowanceTab() {
     // เดิมไม่ fallback → HDF1/HDF2 ที่ยังไม่กรอก ทำให้ช่องหัวหน้าในใบค่าฝีมือโล่ง ทั้งที่ไลน์แม่มีชื่ออยู่
     const parentObj = lineObj?.parent_line_name ? lines.find(l => l.name === lineObj.parent_line_name) : null;
     setCostCenter(lineObj?.cost_center || parentObj?.cost_center || '');
-    setSignerHead(lineObj?.head_name || parentObj?.head_name || '');
   }, [line, lines]);
+
+  /* 🔴 เติมชื่อหัวหน้าให้เองเฉพาะตอน "ไม่กำกวม" — ใบมีช่องเซ็นช่องเดียว
+     เหลือคนเดียว (หรือเลือกทีมแล้วเหลือคนเดียว) = เติมให้ · มากกว่านั้น = **เว้นว่างแล้วให้คนเลือก**
+     เดาให้เองตอนมี 2-4 คน = ใบถูกเซ็นชื่อผิดกะโดยไม่มีใครรู้ (ของเดิมเติมจาก head_name ช่องเดียวเสมอ) */
+  useEffect(() => {
+    if (headChoices.length === 1) { setSignerHead(headChoices[0].name); return; }
+    if (!headChoices.length) { setSignerHead(lineHeads.legacyName || ''); return; }
+    setSignerHead('');
+  }, [headChoices, lineHeads.legacyName]);
 
   // ดึงชื่อผู้อนุมัติ ประจำส่วนงานอัตโนมัติ (ยังแก้ไขเองได้ถ้าต้องการ)
   useEffect(() => {
@@ -3875,6 +3916,41 @@ function SkillAllowanceTab() {
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>บันทึกโดย (หัวหน้างาน)</div>
           {/* 2026-09-07 เลือกคนจาก profiles ผ่าน <PersonSelect> (ค่า auto-fill เดิมยังโชว์ · พิมพ์เองได้พร้อมป้าย) */}
           <PersonSelect value={signerHead} roles={['supervisor', 'leader']} placeholder="ค้นชื่อ…" style={{ width: 200 }} onChange={({ name }) => setSignerHead(name)} />
+          {/* 👨‍🔧 รายชื่อหัวหน้างานจริงของไลน์นี้ (28/10 · feedback user "ไลน์นึงมีหัวหน้าได้ 2-3 คน")
+              🔴 ใบนี้มีช่องเซ็น "หัวหน้างาน" ช่องเดียว ⇒ มีหลายคน = **ให้คนเลือก ห้ามเดาให้** */}
+          {headChoices.length > 1 && (
+            <div style={{ marginTop: 5, maxWidth: 320 }}>
+              <div style={{ fontSize: 11, color: 'var(--amber)' }}>
+                ⚠️ ไลน์นี้มีหัวหน้างาน {headChoices.length} คน{team ? ` ในทีม ${team}` : ' (ทุกกะ)'} — ใบมีช่องเซ็นช่องเดียว เลือกคนที่เซ็นใบนี้
+                {!team ? ' · เลือก "ทีม" ที่แถบกรองด้านบน แล้วระบบจะเหลือเฉพาะหัวหน้าของกะนั้น' : ''}
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
+                {headChoices.map(r => (
+                  <button key={r.id} type="button" onClick={() => setSignerHead(r.name)}
+                    title={`${r.name}${r.team ? ` · ทีม ${r.team}` : ''}${r.shift ? ` · ${r.shift === 'day' ? 'กะเช้า' : 'กะดึก'}` : ' · ยังไม่รู้กะ'}`}
+                    style={{ padding: '3px 9px', borderRadius: 999, fontSize: 11.5, cursor: 'pointer',
+                      border: `1px solid ${signerHead === r.name ? 'var(--accent)' : 'var(--border2)'}`,
+                      background: signerHead === r.name ? 'var(--accent-dim)' : 'var(--bg3)',
+                      color: 'var(--text)', fontWeight: signerHead === r.name ? 700 : 400 }}>
+                    {r.name}{r.shift ? (r.shift === 'day' ? ' · เช้า' : ' · ดึก') : r.team ? ` · ทีม ${r.team}` : ''}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {/* ไม่มีใครในทะเบียน = บอกตรงๆ ว่าชื่อที่เห็นมาจากช่องพิมพ์เก่า (จอต้องไม่เงียบ) */}
+          {line && !lineHeads.rows.length && (
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 5, maxWidth: 320 }}>
+              ℹ️ ทะเบียนพนักงานยังไม่มีหัวหน้าไลน์/หัวหน้าแผนกของไลน์นี้
+              {lineHeads.legacyName ? ` — ที่เติมให้คือชื่อที่พิมพ์ไว้ในทะเบียนไลน์ ("${lineHeads.legacyName}")` : ''}
+              {' · ตั้งตำแหน่ง+ทีม+ไลน์ ให้เขาที่ /operator แล้วจะเลือกตามกะได้'}
+            </div>
+          )}
+          {lineHeads.level === 'supervisor' && headChoices.length > 0 && (
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, maxWidth: 320 }}>
+              ℹ️ ไลน์นี้ยังไม่มี "หัวหน้าไลน์" ในทะเบียน — ที่เห็นคือหัวหน้าแผนก
+            </div>
+          )}
         </div>
         <div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>บันทึกโดย (ผู้จัดการต้นสังกัด)</div>
