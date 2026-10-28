@@ -7179,3 +7179,27 @@ test('🧭 identity-line-wider — ตัวตนจากฐานพนัก
   assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n  ')
     + '\n\n   หัวหน้าที่ดูแล "ไลน์แม่" แต่ตัวเองสังกัดไลน์ลูก จะถูกบีบเหลือกลุ่มย่อยของตัวเองเงียบๆ\n');
 });
+
+/* ═══ 🔗 deep-link-scope-race — "ไม่พบใบที่เลือก" ห้ามขึ้นตอนยังไม่รู้ขอบเขต ═══ 2026-10-28
+   เคสจริง (user แจ้ง): กดจากคิวงาน/Dashboard ส่วนงาน → `/report?tab=4&focus=<id>`
+   → จอขึ้น "⚠️ ไม่พบใบที่เลือกในรายการนี้" + Man/Machine/Material/Method = 0
+   → อีกแป๊บใบก็โผล่มาเอง (ผู้ใช้สรุปว่า "บางทีขึ้นบางทีไม่ขึ้น")
+   ต้นเหตุ: `lines` โหลดทีหลัง (loadLinesRes) ⇒ รอบแรก `allowedLineNames` = `[]`
+   ⇒ คิวรีกลายเป็น `.in('line_name', ['__none__'])` = 0 แถว · `loading` ก็เริ่ม `false`
+   ⇒ **"ยังไม่รู้ขอบเขต" ถูกแปลเป็น "ไม่มีสิทธิ์เห็นอะไรเลย" แล้วประกาศผลทันที**
+   ⇒ 3 ค่าต้องแยกกัน: `undefined` ยังไม่รู้ · `[]` รู้แล้วว่าว่าง · `null` ไม่จำกัด */
+test('🔗 deep-link-scope-race — FourMTab ต้องรอทะเบียนไลน์ก่อนประกาศว่า "ไม่พบใบ"', () => {
+  const src = stripComments(readFileSync(join(ROOT, 'src/pages/Report.jsx'), 'utf8'));
+  assert.match(src, /const \[linesLoaded, setLinesLoaded\] = useState\(false\)/,
+    'ต้องมีธงว่าทะเบียนไลน์ settle แล้วหรือยัง');
+  assert.match(src, /if \(needsLines && !linesLoaded\) return undefined;/,
+    '🔴 ยังไม่รู้ขอบเขตต้องคืน undefined ห้ามคืน [] (ซึ่งแปลว่า "ไม่มีไลน์ในขอบเขต")');
+  assert.match(src, /if \(allowedLineNames === undefined\) \{ setLoading\(true\); return; \}/,
+    '🔴 ยังไม่รู้ขอบเขต = ห้ามยิงคิวรี และต้องคา loading ไว้');
+  assert.match(src, /setLinesLoaded\(true\)/, 'โหลดล้มก็ต้องปลดล็อก ไม่งั้นจอค้างหมุนตลอด');
+  assert.match(src, /\.finally\(\(\) => setLinesLoaded\(true\)\)/,
+    'ต้องตั้งธงใน finally (ทั้งสำเร็จและล้ม) ไม่ใช่เฉพาะ then');
+  /* เฟรมแรกต้องเป็น Loader ไม่ใช่ "ไม่มีข้อมูล" — บรรทัดนี้จัดคอลัมน์แบบเฉพาะของ FourMTab */
+  assert.match(src, /const \[loading, {5}setLoading\] {5}= useState\(true\);/,
+    '🔴 loading ของ FourMTab ต้องเริ่ม true — เริ่ม false = เฟรมแรกประกาศว่าไม่มีข้อมูล');
+});

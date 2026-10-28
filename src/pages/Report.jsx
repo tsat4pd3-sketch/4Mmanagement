@@ -1493,7 +1493,13 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
   const [focus,       setFocus]       = useState(focusId);  // id ใบที่เน้นอยู่ ('' = ไม่เน้น)
   const [logs,        setLogs]        = useState([]);
   const [lines,       setLines]       = useState([]);
-  const [loading,     setLoading]     = useState(false);
+  /* 🔴 เริ่ม `true` — เริ่ม false = เฟรมแรกวาด "ไม่มีข้อมูล"/"ไม่พบใบที่เลือก" ทั้งที่ยังไม่ได้ยิงคิวรี (28/10) */
+  const [loading,     setLoading]     = useState(true);
+  /* 🔴 "ยังไม่รู้ขอบเขต" ≠ "ขอบเขตว่าง" — ทะเบียนไลน์โหลดทีหลัง (loadLinesRes) ⇒ รอบแรก `lines` ว่าง
+     ⇒ allowedLineNames = [] ⇒ คิวรีกลายเป็น `.in('line_name', ['__none__'])` = 0 แถว
+     ⇒ จอขึ้น "⚠️ ไม่พบใบที่เลือกในรายการนี้" แล้วอีกแป๊บใบก็โผล่มาเอง (เคสจริง 28/10 จาก deep-link)
+     ⇒ ต้องกลั้นไม่ให้ยิงคิวรีจนกว่าทะเบียนไลน์จะ settle */
+  const [linesLoaded, setLinesLoaded] = useState(false);
   const [fourMSection, setFourMSection] = useState(scopeSeed?.section ?? '');
   const [fourMUnit, setFourMUnit] = useState({ name: scopeSeed?.dept || '', lines: [] });   // แผนก (org) → ชุดไลน์ (02/10)
   const [rejectModal,  setRejectModal]  = useState(null);
@@ -1518,7 +1524,11 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
   };
 
   // supervisor/leader เห็น 4M log เฉพาะไลน์/ส่วนงานตัวเอง (เดิมเห็นข้ามไลน์ได้หมด)
+  /* คืน `undefined` = **ยังตัดสินขอบเขตไม่ได้** (ทะเบียนไลน์ยังไม่ settle) — คนละความหมายกับ
+     `[]` = รู้แล้วว่าไม่มีไลน์ในขอบเขต และ `null` = ไม่จำกัด · ห้ามยุบ 3 ค่านี้เป็นค่าเดียว */
   const allowedLineNames = useMemo(() => {
+    const needsLines = (role === 'leader' && userLineId) || scopeSecs.length > 0;
+    if (needsLines && !linesLoaded) return undefined;
     if (role === 'leader' && userLineId) {
       const myLine = lines.find(l => l.id === userLineId);
       return myLine ? getLineFamilyNames(lines, myLine.name) : [];
@@ -1527,13 +1537,13 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
       return lines.filter(l => inSectionScope(scopeSecs, l.section)).map(l => l.name);
     }
     return null;
-  }, [role, scopeSecs, userLineId, lines]);
+  }, [role, scopeSecs, userLineId, lines, linesLoaded]);
 
   useEffect(() => {
     loadLinesRes().then(({ data }) => {
       setLines(data || []); // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
       if (seedLineId(scopeSeed, data)) setLine(scopeSeed.line);   // แท็บนี้เก็บไลน์เป็นชื่อ
-    });
+    }).catch(() => {}).finally(() => setLinesLoaded(true));   // ล้มก็ต้องปลดล็อก ไม่งั้นจอค้างหมุน
     loadCompanyCalendar();
   }, []);
 
@@ -1559,6 +1569,9 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
   };
 
   const load = async () => {
+    /* 🔴 ยังไม่รู้ขอบเขต = **ยังไม่ยิงคิวรี** และคา loading ไว้ — ยิงไปก็ได้ 0 แถวแล้วจอโกหกว่าไม่มีใบ
+       (effect มี allowedLineNames ใน deps ⇒ พอทะเบียนไลน์มาถึงจะวิ่งรอบใหม่เอง) */
+    if (allowedLineNames === undefined) { setLoading(true); return; }
     setLoading(true);
     const data = await fetchAllRows(buildQ);
     setLogs(data || []);
@@ -2041,8 +2054,20 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
 
       {showDocPanel && canManageDoc && <DocumentControlPanel />}
 
+      {/* 🔴 รู้ขอบเขตแล้วแต่ไม่มีไลน์เลย = คิวรีถูกบีบเป็น 0 แถว — ต้องบอกว่าเป็นเรื่อง "ทะเบียนไลน์"
+          ห้ามปล่อยให้ไปโผล่เป็น "ไม่พบใบที่เลือก" (คนละสาเหตุ คนละทางแก้) */}
+      {allowedLineNames?.length === 0 && !loading && (
+        <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 8, fontSize: 12.5, color: 'var(--text)',
+          background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.35)' }}>
+          ⚠️ ยังจับคู่ไลน์ในขอบเขตของคุณไม่ได้เลย — รายการจึงว่างทั้งที่อาจมีใบค้างอยู่
+          <div style={{ color: 'var(--muted)', marginTop: 2 }}>
+            อ่านทะเบียนไลน์ไม่สำเร็จ หรือส่วนงานที่ตั้งไว้ยังไม่มีไลน์ในผังองค์กร — โหลดหน้าใหม่ ถ้ายังไม่หายให้แจ้ง admin
+          </div>
+        </div>
+      )}
+
       {/* deep-link จากหน้าอื่น (เช่น Dashboard ส่วนงาน) — บอกเสมอว่าเน้นใบไหนอยู่ และถ้าหาไม่เจอห้ามเงียบ */}
-      {focus && !loading && (
+      {focus && !loading && allowedLineNames?.length !== 0 && (
         focusRow ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12, padding: '8px 12px', borderRadius: 8,
             background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.35)', fontSize: 12.5, color: 'var(--text)' }}>
