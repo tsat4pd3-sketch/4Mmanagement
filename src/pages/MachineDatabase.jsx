@@ -2,13 +2,16 @@ import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { loadLinesRes } from '../utils/useProductionLines';
+/* 🔀 จำนวนเลนของไลน์เครื่องขนาน — source of truth เดียวกับสูตร OEE (ห้ามอ่าน parallel_stations เอง) */
+import { parallelUnitsOf, isParallelLine } from '../utils/lineTypes';
+import { invalidateAffectsLanes } from '../utils/affectsLanes';
 import { UserContext } from '../App';
 import { invalidateTable } from '../utils/masterInvalidate';
 import { toast } from '../components/Toast';
 import { can, canDelete as canDeleteUtil } from '../utils/permissions';
 import { EQUIPMENT_KINDS, kindOf, kindLabel, kindIcon } from '../utils/equipmentKinds';   // แม่พิมพ์/จิ๊กไม่ใช่เครื่องจักร — กรองแยกกัน
 import { inSectionScope } from '../utils/sectionScope';
-import { getLineFamilyNames, lineNameCompare } from '../utils/lineHierarchy';
+import { getAncestorNames, getLineFamilyNames, lineNameCompare } from '../utils/lineHierarchy';
 import { loadMachineTraits, activeAutomationLevels, activeOperationModes, automationDisplay, operationDisplay } from '../utils/machineTraits';
 import EmojiPicker from '../components/EmojiPicker';
 import { pickUnusedColor } from '../utils/colorPick';
@@ -52,7 +55,7 @@ const cancelBtnStyle = {
   borderRadius: 8, padding: '8px 16px', fontSize: 13, cursor: 'pointer',
 };
 
-const emptyMachine = { id: null, line_name: '', machine_no: '', machine_name: '', machine_type_id: '', sort_order: 0, is_active: true, equipment_category: 'production', equipment_kind: 'machine', automation_level: '', operation_mode: '', gang_count: '', shut_height_min_mm: '', shut_height_max_mm: '', io_no: '' };
+const emptyMachine = { id: null, line_name: '', machine_no: '', machine_name: '', machine_type_id: '', sort_order: 0, is_active: true, equipment_category: 'production', equipment_kind: 'machine', automation_level: '', operation_mode: '', gang_count: '', shut_height_min_mm: '', shut_height_max_mm: '', io_no: '', affects_lanes: '', stops_whole_line: false };
 // หมวดอุปกรณ์ในฐานเครื่องจักร — Facility/Utility ไม่ผูกไลน์ผลิต (ระบบน้ำ/ลม/High Pressure ฯลฯ)
 // รวม Facility + Utility เป็นหมวดเดียว (ทีมช่างดูแลทีมเดียวกัน + แยกยาก · คำสั่ง user 2026-07-24)
 // ค่าใน DB ใช้ 'facility' เป็นตัวแทน · 'utility' เดิม migrate มาเป็น facility แล้ว (โค้ดที่เหลือเช็ค !== 'production' อยู่แล้ว)
@@ -132,6 +135,8 @@ export default function MachineDatabase() {
        (ไล่แปะทีละจุดคือวิธีที่ทำให้ `invalidateProducts()` เดิมตกหล่นจนไม่มีใครเรียกเลยสักหน้า)
        ดูทะเบียน "ตาราง → คีย์" ที่ src/utils/masterInvalidate.js */
     invalidateTable('machines');
+    /* 🔀 cache "ตัวนี้ครอบกี่เลน" ไม่ได้ผ่าน cachedMaster ⇒ invalidateTable ไม่ล้างให้ (ล้างที่นี่) */
+    invalidateAffectsLanes();
     const [{ data: mc }, { data: ln }, { data: mt }, fa] = await Promise.all([
       // equipment_die(die_height_mm) — แม่พิมพ์กรอกความสูงได้จากฟอร์มนี้ด้วย (19/10 · ตัวจริงเก็บ 1:1 ที่ equipment_die)
       supabaseDR.from('machines').select('*, machine_types(id, label, color, icon), equipment_die(die_height_mm)').order('line_name').order('sort_order'),
@@ -236,6 +241,8 @@ export default function MachineDatabase() {
       /* ⚠️ ต้องคัดลอก equipment_kind มาด้วยเสมอ — ตกไปแล้ว kindOf(undefined)='machine'
          ⇒ เปิดแก้แม่พิมพ์/จิ๊กแล้วกด save = ชนิดถูกเขียนทับเป็น "เครื่องจักร" เงียบๆ (audit 2026-09-08) */
       ? { id: item.id, equipment_kind: kindOf(item.equipment_kind), line_name: item.line_name, machine_no: item.machine_no, machine_name: item.machine_name || '', machine_type_id: item.machine_type_id || '', sort_order: item.sort_order ?? 0, is_active: item.is_active, equipment_category: item.equipment_category === 'utility' ? 'facility' : (item.equipment_category || 'production'), automation_level: item.automation_level || '', operation_mode: item.operation_mode || '', gang_count: item.gang_count != null ? String(item.gang_count) : '',
+        affects_lanes: item.affects_lanes != null ? String(item.affects_lanes) : '',
+        stops_whole_line: item.stops_whole_line === true,
           shut_height_min_mm: item.shut_height_min_mm != null ? String(item.shut_height_min_mm) : '',
           shut_height_max_mm: item.shut_height_max_mm != null ? String(item.shut_height_max_mm) : '',
           io_no: item.io_no || '',
@@ -279,6 +286,12 @@ export default function MachineDatabase() {
          ว่าง = null = "ไม่รู้" — fitsPress() จะคืน null ไม่ใช่ false (ห้ามตัดตัวเลือกคนวางแผน) */
       shut_height_min_mm: isRunningMachine ? numOrNull(editing.shut_height_min_mm) : null,
       shut_height_max_mm: isRunningMachine ? numOrNull(editing.shut_height_max_mm) : null,
+      /* 🔀 "ตัวนี้หยุดแล้วกระทบกี่เลน" — เฉพาะไลน์เครื่องขนาน · ว่าง/1 = null = พฤติกรรมเดิม
+         (คอนเวเยอร์ที่เลี้ยงทั้งไลน์ = จำนวนเลน · โรบอทที่ป้อน 2 เครื่อง = 2 · เลเซอร์แต่ละตัว = ว่าง)
+         เก็บ null เมื่อ ≤ 1 เพื่อไม่ให้ทะเบียนเต็มไปด้วยเลข 1 ที่ไม่มีความหมาย */
+      affects_lanes:     parseInt(editing.affects_lanes) > 1 ? parseInt(editing.affects_lanes) : null,
+      /* 🏭 ของกลางของสาย — เก็บ `null` เมื่อไม่ติ๊ก (ไม่ใช่ false) ทะเบียนจะได้ไม่เต็มไปด้วยค่าที่ไม่มีความหมาย */
+      stops_whole_line:  editing.stops_whole_line === true ? true : null,
       sort_order:        parseInt(editing.sort_order) || 0,
       is_active:         editing.is_active,
       updated_at:        new Date().toISOString(),
@@ -290,13 +303,13 @@ export default function MachineDatabase() {
     // ทน migration ยังไม่ apply: ถ้าไม่มีคอลัมน์ใหม่ → ตัดออกแล้วบันทึกแบบเดิม
     let strippedCat = false;
     let strippedKind = false;
-    if (error && /equipment_category|equipment_kind|automation_level|operation_mode|gang_count|shut_height_/.test(error.message || '')) {
+    if (error && /equipment_category|equipment_kind|automation_level|operation_mode|gang_count|shut_height_|affects_lanes|stops_whole_line/.test(error.message || '')) {
       strippedCat = /equipment_category/.test(error.message || '');
       strippedKind = /equipment_kind/.test(error.message || '');
       const { equipment_category, equipment_kind, automation_level, operation_mode, gang_count,
-        shut_height_min_mm, shut_height_max_mm, ...rest } = payload;
+        shut_height_min_mm, shut_height_max_mm, affects_lanes, stops_whole_line, ...rest } = payload;
       void equipment_category; void equipment_kind; void automation_level; void operation_mode; void gang_count;
-      void shut_height_min_mm; void shut_height_max_mm;
+      void shut_height_min_mm; void shut_height_max_mm; void affects_lanes; void stops_whole_line;
       ({ data: savedRows, error } = await doSave(rest));
     }
     if (error) { setSaving(false); toast.error(error.message); return; }
@@ -645,6 +658,59 @@ export default function MachineDatabase() {
                         <input type="number" min={1} value={editing.gang_count} onChange={e => setEditing(f => ({ ...f, gang_count: e.target.value }))} placeholder="e.g. 4" style={inputStyle} />
                       </Field>
                     )}
+                    {/* 🔀 ไลน์เครื่องขนาน — "ตัวนี้หยุดแล้วกระทบกี่เลน" (2026-10-28 · คำสั่ง user)
+                        🏭 โชว์ 2 กรณี: (ก) เครื่องอยู่บนไลน์ที่ตั้งเลนไว้ > 1 → กรอกเลขได้
+                           (ข) อุปกรณ์อยู่ที่ **ไลน์แม่** ของไลน์ขนาน → ติ๊ก "ของกลางของสาย" ได้อย่างเดียว
+                        user 28/10: *"conveyor อยู่ไลน์แม่ เป็นเหมือนส่วนกลางที่ใช้ทั้ง hdf1,hdf2,laser345,laser789"*
+                        ⇒ ของกลางที่ใช้หลายไลน์ซึ่งเลนไม่เท่ากัน "กระทบกี่เลน" ไม่มีคำตอบเป็นเลขเดียว
+                        🔴 กรอกเฉพาะ "ตัวยกเว้น" — ว่าง = 1 เลน = พฤติกรรมเดิมเป๊ะ (ทยอยกรอกได้ ไม่ต้อง cut-over) */}
+                    {(() => {
+                      const lineRow = lines.find(l => l.name === editing.line_name);
+                      /* เกตเดียวกับที่สูตรใช้จริง (parallelNBySession → parallelUnitsOf ไม่มี fallback) */
+                      const laneN = parallelUnitsOf(lineRow);
+                      /* ไลน์นี้เป็น "แม่" ของไลน์ขนานตัวไหนบ้าง — ของกลางของสายลงทะเบียนไว้ที่ไลน์แม่ */
+                      const kids = editing.line_name
+                        ? lines.filter(l => parallelUnitsOf(l) > 1
+                            && getAncestorNames(lines, l.name).includes(editing.line_name)).map(l => l.name)
+                        : [];
+                      if (!(laneN > 1) && !kids.length) {
+                        if (!isParallelLine(lineRow?.flow_mode)) return null;
+                        return (
+                          <Field label="🔀 หยุดแล้วกระทบกี่เลน">
+                            <div style={{ fontSize: 11, color: 'var(--amber)', lineHeight: 1.6 }}>
+                              ไลน์นี้เป็น <b>เครื่องขนาน</b> แต่ยังไม่ได้ตั้ง <b>จำนวนเลน</b> ที่ทะเบียนไลน์
+                              ⇒ สูตร OEE ยังไม่หารเลน · กรอกช่องนี้จะไม่มีผล
+                              <div style={{ marginTop: 2 }}>ไปตั้ง &quot;เครื่องขนานกี่เลน&quot; ที่ <b>ทะเบียนไลน์ผลิต</b> ก่อน แล้วกลับมากรอก</div>
+                            </div>
+                          </Field>
+                        );
+                      }
+                      return (
+                        <Field label={laneN > 1 ? `🔀 หยุดแล้วกระทบกี่เลน (ไลน์นี้มี ${laneN} เลน)` : '🏭 ของกลางของสาย'}>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', marginBottom: laneN > 1 ? 6 : 0 }}>
+                            <input type="checkbox" checked={editing.stops_whole_line === true}
+                              onChange={e => setEditing(f => ({ ...f, stops_whole_line: e.target.checked }))} />
+                            ของกลางของสาย — หยุดแล้ว<b>หยุดทั้งไลน์</b>ที่ใช้มัน
+                          </label>
+                          {laneN > 1 && !editing.stops_whole_line && (
+                            <input type="number" min={1} max={laneN} value={editing.affects_lanes ?? ''}
+                              onChange={e => setEditing(f => ({ ...f, affects_lanes: e.target.value }))}
+                              placeholder={`ว่าง = 1 เลน  ·  สูงสุด ${laneN}`} style={inputStyle} />
+                          )}
+                          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.6 }}>
+                            {kids.length > 0 ? (
+                              <>อุปกรณ์ที่อยู่ที่ <b>ไลน์แม่</b> และใช้ร่วมกันหลายไลน์ (คอนเวเยอร์ · ระบบลม · ตู้ไฟ)
+                                — ติ๊กช่องนี้แล้วจะไม่ถูกหารเลนในทุกไลน์ที่ใช้มัน
+                                <div style={{ marginTop: 2 }}>ไลน์ขนานที่อยู่ใต้ไลน์นี้: <b>{kids.join(' · ')}</b></div></>
+                            ) : (
+                              <>กรอกเฉพาะ<b>ตัวยกเว้น</b> — คอนเวเยอร์/ระบบที่เลี้ยงทั้งไลน์ = ติ๊กช่องบน ·
+                                โรบอทที่ป้อน 2 เครื่อง = ใส่ <b>2</b> · เครื่องที่เดินเองไม่เกี่ยวกับตัวอื่น = <b>เว้นว่างทั้งคู่</b></>
+                            )}
+                            <div style={{ marginTop: 2 }}>ใช้แปลงนาที downtime เป็น <b>&quot;นาทีที่ไลน์หยุด&quot;</b> — ฐานเวลาของ %A และตัวหารของ %P</div>
+                          </div>
+                        </Field>
+                      );
+                    })()}
                   </div>
                 );
               })()}
