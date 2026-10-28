@@ -44,7 +44,7 @@ import StoreLotQueue from '../components/StoreLotQueue';
 import LineWipPanel from '../components/LineWipPanel';
 import LinePartCallPanel from '../components/LinePartCallPanel';
 import ProcessTypeSetup from '../components/ProcessTypeSetup';
-import { computeSessionOee, sessionProducedQty, strictOee, strictGap, STRICT_WARN_SHARE_PCT, policyBreakOverlapMin, breakIntervalsIn, breakBandsIn, breakBandName, breakBandTitle, dtMinOutsideBreaks, overlapMinutesWith, buildCtMap, ctForMat, groupSameProductKeys, shiftFrameOf, shiftStartDate, clampWinToShift, unionIv, dtMinOutsideWork, SIX_BIG_LOSSES, EIGHT_WASTES, sumDefectQty, isTrialDefect, splitDefectQty, QBIN_EMBED, sumSuspectPending, orderCloseMs, matRawWindow } from '../utils/oee';
+import { affectsLanesMap, computeSessionOee, sessionProducedQty, strictOee, strictGap, STRICT_WARN_SHARE_PCT, policyBreakOverlapMin, breakIntervalsIn, breakBandsIn, breakBandName, breakBandTitle, dtMinOutsideBreaks, overlapMinutesWith, buildCtMap, ctForMat, groupSameProductKeys, shiftFrameOf, shiftStartDate, clampWinToShift, unionIv, dtMinOutsideWork, SIX_BIG_LOSSES, EIGHT_WASTES, sumDefectQty, isTrialDefect, splitDefectQty, QBIN_EMBED, sumSuspectPending, orderCloseMs, matRawWindow } from '../utils/oee';
 import { planMatTimeWrites, MAT_TIME_SKIP_OPEN } from '../utils/matTimeEdit';
 import { resolveShiftTime, checkShiftTime, shiftWindow, windowLabel, fmtOffset, MAX_SHIFT_MIN, checkCloseTime } from '../utils/shiftWindow';
 import ScanModal from '../components/ScanModal';
@@ -2340,6 +2340,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
      ที่ต้องย้ายเพราะสูตรปิดกะถูกขังอยู่ในคอมโพเนนต์ ⇒ คำนวณกะเก่าย้อนหลังจากสคริปต์ไม่ได้เลย
      (เจอตอนต้องแก้ start_time ของ 10 กะที่ปิดแล้ว 24/09 — ทางเลือกเดียวคือเขียนสูตรซ้ำใน SQL ซึ่งผิดกฎ)
      dtLogsOverride: ใช้ตอนปิดกะที่เพิ่งปิด/ตัดยอด Downtime เปิดค้างใน call เดียวกัน (state ยังเป็นค่าเก่า) */
+  /* 🔀 แมป "เครื่องไหนหยุดแล้วครอบกี่เลน" — ได้จากทะเบียนเครื่องที่หน้านี้โหลดอยู่แล้ว (ไม่ยิงคิวรีเพิ่ม) */
+  const affectsLn = useMemo(() => affectsLanesMap(machines), [machines]);
   const computeOEE = (ngQtyOverride, endTimeOverride, startTimeOverride, dtLogsOverride) =>
     computeSessionOee({
       session: selSession,
@@ -2354,6 +2356,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       //    ค่านี้เป็นตัวหารของ downtime และถูก stamp ลง oee_a ตอนปิดกะ ⇒ นับเกิน = OEE ที่เก็บไว้สูงเกินจริง
       machineCount: machineLaneCount(
         machines.filter(m => m.line_name === selSession?.line_name && m.is_active !== false)),
+      /* 🔀 ของกลางของไลน์ขนาน (คอนเวเยอร์/ระบบลม) ที่ติ๊ก `stops_whole_line` / กรอก `affects_lanes`
+         ต้องไม่ถูกหารเลน — เคส HDF1→LASER-345 (คำสั่ง user 28/10) · `{}` = พฤติกรรมเดิมเป๊ะ */
+      affectsLanes: affectsLn,
       startTime: startTimeOverride || null,
       endTime: endTimeOverride || null,
       carryQtyActual, carryOverDecisions, carryStopTime, matTimeOverride,

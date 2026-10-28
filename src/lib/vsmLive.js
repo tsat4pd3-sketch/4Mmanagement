@@ -43,10 +43,12 @@ const bySession = rows => {
  * @param lines     production_lines (name, flow_mode, parallel_stations) — ใช้หา N เครื่องขนาน
  * @param breakPolicies break_policies ที่ is_active — **ต้องส่ง** ไม่งั้น A/P สด ≠ ค่าที่ stamp ตอนปิดกะ (2026-09-14)
  * @param pairMap   mat_no → pair_mat_no (งานคู่ gang die / RH-LH) — **ต้องส่ง** ไม่งั้นเวลามาตรฐานของ %P นับ 2 เท่า (2026-09-18)
+ * @param affectsBy จาก `loadAffectsLanes()` (utils/affectsLanes.js) — "เครื่องไหนหยุดแล้วครอบกี่เลน"
+ *                  ไม่ส่ง = ทุกเครื่องครอบ 1 เลน (พฤติกรรมเดิม) ⇒ ของกลางของไลน์ขนานถูกหารเลนเกินจริง
  */
 export function buildVsmLive({
   boxes = [], sessions = [], orders = [], downtimes = [], defects = [],
-  ctMap = {}, lines = [], nowMs = Date.now(), breakPolicies = [], pairMap = {},
+  ctMap = {}, lines = [], nowMs = Date.now(), breakPolicies = [], pairMap = {}, affectsBy = null,
 }) {
   const ordBy = bySession(orders);
   const dtBy = bySession(downtimes);
@@ -101,6 +103,8 @@ export function buildVsmLive({
       breakPolicies,
       // งานคู่ gang die / RH-LH = 1 shot ได้ 2 ชิ้น — ยุบก่อนคิดเวลามาตรฐานของ %P (pairTotals.js)
       pairMap,
+      // 🔀 ของกลางของไลน์ขนาน (คอนเวเยอร์) ต้องไม่ถูกหารเลน — machines.affects_lanes
+      affectsLanes: affectsBy,
     }) : null;
 
     /* OEE กะที่ปิดแล้ววันนี้ = ค่า stamp ถ่วงเวลารับภาระ (plannedMin จาก DT category='planned')
@@ -110,7 +114,7 @@ export function buildVsmLive({
           ไม่ตรงกับ /oee-analytics ทั้งที่เป็นกะชุดเดียวกัน */
     let closedOee = null;
     if (closed.length) {
-      const dtEffBy = dtMinBySession(closed, closed.flatMap(s => dtBy[s.id] || []), breakPolicies, { lines });   // หารเลนไลน์เครื่องขนาน (oee.js §3.2)
+      const dtEffBy = dtMinBySession(closed, closed.flatMap(s => dtBy[s.id] || []), breakPolicies, { lines, affectsBy });   // หารเลนไลน์เครื่องขนาน (oee.js §3.2)
       const withLoad = closed.map(s => ({ ...s, plannedMin: dtEffBy[s.id]?.planned || 0 }));
       const v = wavg(withLoad, s => num(s.oee), wLoad);
       closedOee = v == null ? null : Math.round(v * 10) / 10;

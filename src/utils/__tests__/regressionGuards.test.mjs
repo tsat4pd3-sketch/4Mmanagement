@@ -4346,6 +4346,94 @@ test('🛡️ dt-by-session-needs-lines — ทุกการเรียก dt
     + bad.map(b => '   • ' + b).join('\n') + '\n');
 });
 
+/* ═══ ทุกการ "อนุมัติ/เซ็น" ใบ MO ต้องถามยืนยันก่อนเขียน (2026-10-28 · คำสั่ง user) ═══
+   user: *"ทุกการกดอนุมัติ ของ mo ต้องมีการยืนยันก่อนนะ อันนี้กดพลาดคือพลาดเลย"*
+   ลายเซ็นบนใบ MO เป็น one-way — เซ็นแล้วเจ้าตัวแก้เองไม่ได้ ต้องให้ผู้ถือสิทธิ์แก้ย้อนหลังมาปลด
+   และใบเดินไปขั้นถัดไปทันที · ปุ่มเซ็นอยู่ติดปุ่มอื่นในใบ กดพลาดบนแท็บเล็ตหน้างานง่ายมาก */
+test('🛡️ mtn-approve-needs-confirm — ปุ่มเซ็น/อนุมัติใบ MO ต้องผ่าน confirmSign() ก่อนเขียน DB', () => {
+  const src = readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8');
+
+  /* ① ปุ่ม "อนุมัติใบ MO (ผู้จัดการ…)" — confirm ต้องมาก่อน update() ในฟังก์ชันเดียวกัน */
+  const i = src.indexOf('const signApproval = async');
+  assert.ok(i > 0, '\n\n❌ หา `signApproval` ใน MtnRepair.jsx ไม่เจอ — ถ้าเปลี่ยนชื่อ ให้แก้ด่านนี้ด้วย\n');
+  const body = src.slice(i, i + 3000);
+  const cAt = body.indexOf('confirmSign('), uAt = body.indexOf(".update(");
+  assert.ok(cAt > 0 && uAt > 0 && cAt < uAt,
+    '\n\n❌ `signApproval` เขียน DB โดยไม่ถามยืนยันก่อน (หรือถามหลังเขียนไปแล้ว)\n'
+    + '   ทำไมห้าม: ลายเซ็นผู้จัดการเป็น one-way — เซ็นพลาดแล้วเจ้าตัวปลดเองไม่ได้\n'
+    + '   แก้ยังไง: `if (!confirmSign({ what, orderNo, actor, as })) return;` ก่อน `.update(`\n');
+
+  /* ② ขั้นที่เป็นการเซ็น/อนุมัติใน StepModal — ต้องถามผ่านทะเบียน stage ไม่ใช่ไล่เช็คเลขขั้นเอง */
+  assert.ok(/needsSignConfirm\s*\(/.test(src) && /confirmSign\s*\(/.test(src),
+    '\n\n❌ StepModal ไม่ได้ถามยืนยันก่อนเซ็นขั้น\n'
+    + '   แก้ยังไง: `needsSignConfirm(stageOf(step, …))` แล้ว `confirmSign({ … })` ก่อนประกอบ payload\n');
+
+  /* ③ ห้ามเขียนข้อความยืนยันเองในหน้า — ต้องบอกครบ 3 อย่าง (เซ็นอะไร · ใบไหน · ในนามใคร)
+        จึงบังคับให้ผ่าน utils/mtnConfirm.js จุดเดียว */
+  const conf = readFileSync(join(ROOT, 'src/utils/mtnConfirm.js'), 'utf8');
+  for (const k of ['what', 'orderNo', 'actor']) {
+    assert.ok(new RegExp(`signConfirmText[\\s\\S]{0,800}?\\b${k}\\b`).test(conf),
+      `\n\n❌ \`signConfirmText\` ไม่ได้บอก \`${k}\` แล้ว — ข้อความยืนยันต้องบอกครบ "เซ็นอะไร · ใบไหน · ในนามใคร"\n`
+      + '   ถามยืนยันลอยๆ = คนกด OK ผ่านโดยไม่อ่าน (UI-CONVENTIONS §5.4)\n');
+  }
+
+  /* ④ ห้ามลากการ "กรอกงาน" เข้ามาถามด้วย — ถามพร่ำเพรื่อแล้วคนกดผ่านโดยไม่อ่าน */
+  const stages = conf.slice(conf.indexOf('SIGN_STAGES'), conf.indexOf('needsSignConfirm'));
+  for (const bad of ['assign', 'service']) {
+    assert.ok(!new RegExp(`'${bad}'`).test(stages),
+      `\n\n❌ \`SIGN_STAGES\` มี '${bad}' ซึ่งเป็น "การกรอกงาน" ไม่ใช่การอนุมัติ\n`
+      + '   (จ่ายงาน/ลงผลซ่อม ช่างทำวันละหลายรอบ — ถามทุกครั้ง = คนกดผ่านจนด่านจริงไม่มีความหมาย)\n');
+  }
+});
+
+/* ═══ ของกลางของไลน์ขนาน ห้ามถูกหารเลน — `affects_lanes` (2026-10-28 · คำสั่ง user) ═══
+   ที่มา: user ถามถึงเคส HDF1 → LASER-345 (เลเซอร์ 3 เครื่องวิ่งขนาน · คอนเวเยอร์ลำเลียงตัวเดียว
+   เลี้ยงทั้ง 3 เครื่อง) — *"คอนเวเย่อ พัง ไม่ใช่เลเซอพัง … ถ้าคอนเวเย่อเบรคดาว จะกระทบกับทั้ง3เครื่องทันที"*
+   การหาร 1/N (กฎ 12/10) ถูกสำหรับ **เครื่องในเลน** แต่ผิดสำหรับ **ของกลางของไลน์**:
+   คอนเวเยอร์หยุด 155 นาที = ไลน์หยุด 155 นาที ไม่ใช่ 52 นาที
+   ⇒ ทะเบียนเครื่องตอบว่า "ตัวนี้ครอบกี่เลน" (`machines.affects_lanes` ฝั่ง DR · กรอกที่ `/machines`)
+     แล้วทุกสูตรต้องรับแมปนั้นผ่าน `laneWeightFn(parallelN, affectsBy)` — ว่าง = 1 เลน = พฤติกรรมเดิม
+   🔴 สูตรน้ำหนักเลนต้องมี **ชุดเดียว** — ใครเขียน `1 / parallelN` เองในหน้า/ในสูตร = ของกลางหายไปเงียบ */
+test('🛡️ lane-weight-single-entry — น้ำหนักเลนต้องมาจาก laneWeightFn ห้ามเขียน 1/parallelN เอง', () => {
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const rel = relative(ROOT, file);
+    if (rel.includes('__tests__')) continue;
+    const code = stripComments(readFileSync(file, 'utf8'));
+    /* จับ `1 / parallelN` · `1 / N` · `1/parallelUnitsOf(...)` — รูปที่เคยมีจริงใน computeLiveOee */
+    if (/\b1\s*\/\s*(parallelN|parallelUnitsOf|laneN|lanes)\b/.test(code)) bad.push(rel);
+  }
+  assert.deepEqual(bad, [],
+    '\n\n❌ ไฟล์ด้านล่างคิดน้ำหนักเลนเองด้วย `1 / parallelN`\n'
+    + '   ทำไมห้าม: ของกลางของไลน์ขนาน (คอนเวเยอร์ · ระบบลม · ตู้ไฟ) ที่กรอก `machines.affects_lanes` ไว้\n'
+    + '   จะยังถูกหารเลนอยู่ ⇒ นาทีที่ไลน์หยุดต่ำกว่าจริง N เท่า (เคส LASER-345: 155 น. → 52 น.)\n'
+    + '   แก้ยังไง: `laneWeightFn(parallelN, affectsBy)` (utils/oee.js §3.2) — สูตรมีชุดเดียวที่นั่น\n\n'
+    + bad.map(b => '   • ' + b).join('\n') + '\n');
+});
+
+test('🛡️ lane-weight-needs-affects — สูตรที่หารเลนต้องรับแมป affects_lanes ด้วย', () => {
+  const src = readFileSync(join(ROOT, 'src/utils/oee.js'), 'utf8');
+  for (const [fn, param] of [['laneWeightFn', 'affectsBy'], ['dtLineMin', 'affectsBy'],
+                             ['dtMinBySession', 'affectsBy'], ['computeSessionOee', 'affectsLanes'],
+                             ['computeLiveOee', 'affectsLanes']]) {
+    assert.ok(new RegExp(`${fn}[\\s\\S]{0,900}?${param}`).test(src),
+      `\n\n❌ \`${fn}\` ใน utils/oee.js ไม่รับ \`${param}\` แล้ว\n`
+      + '   ถอดออก = ของกลางของไลน์ขนาน (คอนเวเยอร์) ถูกหารเลนเหมือนเครื่องในเลน\n'
+      + '   = นาทีที่ไลน์หยุดต่ำกว่าจริง N เท่า โดยไม่มี error (คำสั่ง user 28/10)\n');
+  }
+  /* 🏭 ของกลางของสาย — อุปกรณ์ที่ลงทะเบียนไว้ที่ "ไลน์แม่" ใช้ร่วมหลายไลน์ที่เลนไม่เท่ากัน
+     (คอนเวเยอร์สาย HYDROFORM ใช้ทั้ง hdf1/hdf2/laser345/laser789 · user 28/10)
+     ⇒ ต้องมีธง `stops_whole_line` ไม่ใช่ตัวเลขอย่างเดียว ไม่งั้นคนกรอกไม่รู้ว่าต้องใส่เลขของไลน์ไหน */
+  assert.ok(/stops_whole_line/.test(src),
+    '\n\n❌ `affectsLanesMap` ไม่รู้จัก `stops_whole_line` แล้ว\n'
+    + '   ของกลางที่ลงทะเบียนไว้ที่ไลน์แม่ (คอนเวเยอร์) จะถูกหารเลนเหมือนเครื่องในเลน\n');
+
+  /* ตัวอ่านแมปต้อง normalize เลขเครื่องผ่าน machineKey — `SW10` vs `SW-10` = คนละคีย์ join ไม่ติด */
+  assert.ok(/affectsLanesMap[\s\S]{0,600}?machineKey\s*\(/.test(src),
+    '\n\n❌ `affectsLanesMap` ไม่ได้ผ่าน `machineKey()` — เลขเครื่องที่เขียนต่างแบบจะ join ไม่ติด\n'
+    + '   (กฎ CLAUDE.md §machine_no = คีย์ join แบบ text)\n');
+});
+
 /* ═══ ยอดผลิตของ "ทั้งกะ" ห้ามวน reduce ใบผลิตเองในหน้า (2026-10-12) ═══
    กฎเดียวกันเคยอยู่ 3 ที่ (orderProducedQty / computeSessionOee / handleCloseSession)
    ⇒ `confirmed → o.qty` ที่หนึ่ง กับ `qty_ok ?? qty` อีกที่หนึ่ง = รอวัน drift
@@ -6858,8 +6946,12 @@ test('🕳️ จอรายการ MO: ว่างแล้วต้อง�
     'ต้องวาดบันได "ตกเหลือ 0 ตรงไหน" ด้วย — บอกแค่ชื่อตัวกรองไม่พอ คนต้องเห็นว่าตกตรงขั้นไหน');
   assert.match(src, /clearFilterBy/,
     'ต้องมีปุ่มปลดตัวกรองที่ชี้ — บอกว่าใครตัดทิ้งแต่ปลดไม่ได้ = ยังแก้ปัญหาให้คนหน้างานไม่ได้');
-  assert.match(src, /ackTeamCleared/,
-    '`?ack=pending` ต้องปลดช่องทีมช่างให้ก่อนครั้งเดียว (ใบชุดนั้นเป็นของทีม MTN ล้วน)');
+  /* 🔗 ลิงก์ที่กรองกองมาแล้ว (`?wait=` `?ack=` `?pr=`) ต้องปลดช่องทีมให้ก่อน — ป้ายนับข้ามทีม
+     แต่หน้าตั้งทีมเป็นทีมของ user เอง ⇒ กดจากกระดิ่งแล้วว่างเปล่า (26/10 ack · 27/10 wait) */
+  assert.match(src, /queueLinkSeen/,
+    'ลิงก์ ?wait=/?ack=/?pr= ต้องปลดช่องทีมช่างให้ก่อนครั้งเดียว (ป้ายในคิวนับข้ามทีม)');
+  assert.match(src, /inPageFilterEdit/,
+    'ต้องแยก "เดินมาจากลิงก์" ออกจาก "กดเลือกเองบนหน้า" — กดเองแล้วห้ามล้างทีมที่ user ตั้งไว้');
 
   /* 🔴 ตัวกรองของจอนี้ต้องมาจาก "ลิสต์ตัวกรอง" ชุดเดียว แล้วค่อยเอาไปทั้งกรองจริงและอธิบาย
      เขียนเป็น if ซ้อนกันเหมือนเดิม = ต้องมีเกณฑ์ชุดที่ 2 ไว้อธิบาย แล้วมันจะเพี้ยนกันวันใดวันหนึ่ง */
@@ -7043,6 +7135,73 @@ test('🫙 manual-open-product-empty-reason — ช่องเลือกส�
     + '              บอกผิด = หน้างานรอของที่ไม่ต้องรอ และของที่ต้องทำไม่มีใครทำ\n');
 });
 
+/* ═══ 🔧 ขั้น 4 ของใบ JIG/DIE เป็นของหัวหน้าแผนกช่าง — ห้ามลืมส่ง `toolTeam` ═══  2026-10-27
+   คำสั่ง user: *"สำหรับ MO ของ jig กับ DIE งานซ่อมนอกไลน์ step 4 ต้องเป็นหัวหน้าแผนกช่าง
+   ก่อน QA ไม่ใช่ผู้แจ้ง"* — `stepMeta/stepLabel/stepDenyHint/stepAssumptions` ต้องรู้ 2 อย่าง:
+   ฟอร์มไหน (`mtnForm`) **และ** ทีมเครื่องมือไหม (`toolTeam`)
+   ลืมส่ง `toolTeam` = ไม่พัง ไม่มี error — แค่จอกลับไปเขียนว่า "ผู้เปิดใบแจ้งซ่อม (ฝ่ายที่แจ้ง)"
+   ทั้งที่ปุ่มกดไม่ได้ (canDoStep อ่านจากใบเอง) ⇒ **จอบอกคนผิดว่าใครต้องเซ็น** = คนเดินไปตามผิดคน
+   (คลาสเดียวกับ `dtMinBySession` ที่ไม่ส่ง `{lines}` แล้วกะหายเงียบ) */
+test('🔧 ส่ง mtnForm เข้าตัวอ่านขั้นที่ไหน ต้องส่ง toolTeam ที่นั่นด้วย', () => {
+  const FNS = ['stepMeta', 'stepLabel', 'stepDenyHint', 'stepAssumptions'];
+  const bad = [];
+  for (const f of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const rel = relative(ROOT, f);
+    // เจ้าของกฎเอง + ชั้น util ที่อ่านทีมจากใบให้แล้ว (canDoStep/moWaitMeta) ไม่ต้องมีใครส่งเข้ามา
+    if (rel === 'src/utils/mtnStepPerm.js') continue;
+    const src = stripComments(readFileSync(f, 'utf8'));
+    for (const fn of FNS) {
+      /* 🔴 ต้องนับวงเล็บให้สมดุล ห้ามใช้ regex จับถึง `)` ตัวแรก —
+         `stepLabel(step, { mtnForm: isMtnFormOrder(order), toolTeam: … })` มีวงเล็บซ้อน
+         regex แบบขี้เกียจจะตัดที่ `isMtnFormOrder(order)` แล้วฟ้องผิดทั้งที่ส่ง toolTeam แล้ว */
+      const re = new RegExp(`\\b${fn}\\(`, 'g');
+      for (const m of src.matchAll(re)) {
+        let i = m.index + m[0].length, depth = 1;
+        while (i < src.length && depth > 0) {
+          const c = src[i];
+          if (c === '(') depth++; else if (c === ')') depth--;
+          i++;
+        }
+        const args = src.slice(m.index + m[0].length, i - 1);
+        if (/\bmtnForm\b/.test(args) && !/\btoolTeam\b/.test(args)) {
+          bad.push(`${rel} → ${fn}(${args.replace(/\s+/g, ' ').slice(0, 70)})`);
+        }
+      }
+    }
+  }
+  assert.deepEqual(bad, [], '\n\n❌ ส่ง mtnForm แต่ไม่ส่ง toolTeam:\n   ' + bad.join('\n   ') + '\n'
+    + '   ทำไม: ขั้น 4 ของใบทีม JIG/DIE เป็นของ "หัวหน้าแผนกช่าง" ไม่ใช่ผู้แจ้ง (27/10)\n'
+    + '         ไม่ส่ง toolTeam = จอเขียนชื่อฝั่งผิด ทั้งที่ปุ่มกดไม่ได้ = คนเดินไปตามผิดคน\n'
+    + '   แก้: เติม `toolTeam: isToolTeamOrder(o)` ข้างๆ `mtnForm` (เกณฑ์อยู่ที่ utils/mtnMoForm.js)\n');
+});
+
+/* ═══ 🔀 "ไลน์หยุดกี่นาที" ต้องหารเลนเสมอ — ห้ามบวก duration_min ดิบ ═══  2026-10-27 · คำสั่ง user
+   *"มันไม่ควรนับรวมเป็น 306 นาที สำหรับไลน์ขนาน เพราะความจริงมันคือ 102 นาที"*
+   ไลน์เครื่องขนานบันทึก downtime **รายเครื่อง** ⇒ บวกดิบ = นับเหตุการณ์เดียวซ้ำตามจำนวนเลน
+   วัด 30 วัน (5 ไลน์ที่ตั้ง parallel_stations): ดิบ 68,137 → ของไลน์ 21,517 นาที (โป่งเกิน ~777 ชม.)
+   เคสที่ทำให้รู้: จอ OEE หัวข้อ 1 (%A) หารเลนแล้ว แต่หัวข้อ 2 บวกดิบ ⇒ หน้าเดียวกันขัดกันเอง */
+test('🔀 จอที่ตอบ "ไลน์หยุดกี่นาที" ต้องใช้ dtLineMin() ไม่ใช่บวก duration_min เอง', () => {
+  /* ไฟล์ที่ย้ายมาใช้ `dtLineMin` แล้ว — **ย้ายไฟล์ไหนเพิ่ม ให้เติมชื่อที่นี่** กันถอยกลับ */
+  const MIGRATED = ['src/pages/OEEAnalytics.jsx'];
+  for (const rel of MIGRATED) {
+    const src = stripComments(readFileSync(join(ROOT, rel), 'utf8'));
+    assert.match(src, /\bdtLineMin\s*\(/, `${rel} ต้องรวมนาที downtime ผ่าน dtLineMin()`);
+  }
+  /* เจ้าของกฎมีไฟล์เดียว — ห้ามใครหาร parallel เองในหน้า */
+  const owner = stripComments(readFileSync(join(ROOT, 'src/utils/oee.js'), 'utf8'));
+  assert.match(owner, /export const dtLineMin/, 'dtLineMin ต้องอยู่ที่ utils/oee.js');
+  const bad = [];
+  for (const f of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const rel = relative(ROOT, f);
+    if (rel === 'src/utils/oee.js') continue;
+    const src = stripComments(readFileSync(f, 'utf8'));
+    // หาร duration_min ด้วยจำนวนเลน/สถานีเองในหน้า = เกณฑ์ชุดที่ 2
+    if (/duration_min[^;\n]{0,40}\/\s*(parallel|lanes?|stations?|laneN|pN)\b/i.test(src)) bad.push(rel);
+  }
+  assert.deepEqual(bad, [], '\n\n❌ หารเลนเองใน: ' + bad.join(', ') + '\n'
+    + '   แก้: ใช้ dtLineMin(row, laneN) จาก utils/oee.js — เกณฑ์เดียวกับฐานเวลาของ %A\n');
+});
+
 /* ═══ ⬜ "จอขาวสนิท" ต้องเป็นไปไม่ได้ — ตาข่ายใน index.html ═══  2026-10-26
    หน้างานแจ้ง: จอขาว **ทั้งคอมและมือถือ** · ไม่มีอะไรบนจอให้กดเลย
    ทำไมถึงขาวสนิท: ถ้าไฟล์ chunk โหลดไม่ได้ (404 หลัง deploy · เน็ตตัด) หรือพังตั้งแต่ตอน import
@@ -7178,4 +7337,72 @@ test('🧭 identity-line-wider — ตัวตนจากฐานพนัก
   }
   assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n  ')
     + '\n\n   หัวหน้าที่ดูแล "ไลน์แม่" แต่ตัวเองสังกัดไลน์ลูก จะถูกบีบเหลือกลุ่มย่อยของตัวเองเงียบๆ\n');
+});
+
+/* ═══ 👨‍🔧 "หัวหน้างานของไลน์" = หลายคน/หลายกะ — ห้ามกลับไปใช้ head_name ช่องเดียว (2026-10-28) ═══
+   คำพูด user: *"ไลน์นึง มีหัวหน้าได้ 2-3 คน แล้วแต่ว่ามีกี่กะการทำงาน บางที่ 1 กะ บางที่ 2 กะ บางที่ 3 กะ"*
+   วัดจริง 28/10 (13 ไลน์ที่กรอก `production_lines.head_name` ไว้): ช่องเดียวถูกกรอกเป็น **3 ความหมายปนกัน**
+     หัวหน้าแผนก 3 · หัวหน้าไลน์ของกะเช้า 3 · ชื่อที่จับคู่ทะเบียนพนักงานไม่ได้เลย 6 (สะกดมือ)
+   ⇒ แหล่งความจริง = ทะเบียนพนักงาน (position + team + line_id) ผ่าน `lineHeadsOf()` ที่เดียว
+   ด่านนี้กันการถอยกลับ 2 ทาง: จอเลิกเรียก lineHeadsOf · auto-fill กลับไปอ่าน head_name ตรงๆ */
+test('👨‍🔧 line-heads-single-source — จอตั้งค่าไลน์ + ใบค่าฝีมือ ต้องอ่านหัวหน้างานผ่าน lineHeadsOf()', () => {
+  const bad = [];
+  for (const f of ['src/pages/LineSetup.jsx', 'src/pages/Report.jsx']) {
+    const code = stripComments(readFileSync(join(ROOT, f), 'utf8'));
+    if (!/lineHeadsOf\s*\(/.test(code)) bad.push(`${f} (ไม่ได้เรียก lineHeadsOf)`);
+    /* auto-fill ชื่อหัวหน้าจาก head_name ตรงๆ = กลับไปเดาคนเดียวต่อไลน์
+       (ยังอ่าน head_name ได้ แต่ต้องส่งเข้า lineHeadsOf เป็น `legacyName` เท่านั้น) */
+    if (/setSignerHead\(\s*lineObj\?\.head_name/.test(code))
+      bad.push(`${f} (setSignerHead อ่าน head_name ตรงๆ)`);
+  }
+  const util = stripComments(readFileSync(join(ROOT, 'src/utils/lineHeads.js'), 'utf8'));
+  /* กะต้องมาจากตารางกะจริง ห้ามเดาจากตัวอักษรทีม (กฎเดียวกับ shiftAssign ทั้งระบบ) */
+  if (!/shiftFromTeam\s*\(/.test(util)) bad.push('lineHeads.js (ไม่ได้ใช้ shiftFromTeam — เดากะเอง?)');
+  if (/['"]A['"]\s*(===|==)\s*team|team\s*(===|==)\s*['"]A['"]/.test(util))
+    bad.push('lineHeads.js (เทียบทีม A ตรงๆ = เดาว่า A คือกะเช้า)');
+  /* ไลน์ลูกห้ามดันหัวหน้าขึ้นไปให้ไลน์แม่ — ต้องไล่ขึ้น (ancestors) เท่านั้น */
+  if (!/lineAncestorIds/.test(util) || /getLineFamilyIds|getChildLineNames/.test(util))
+    bad.push('lineHeads.js (ต้องไล่ขึ้นหาไลน์แม่เท่านั้น ห้ามดึงจากไลน์ลูก)');
+
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n'
+    + '   ทำไม: `production_lines.head_name` เป็นข้อความช่องเดียว ⇒ ตอบ "ใครเป็นหัวหน้ากะไหน" ไม่ได้\n'
+    + '   แก้: lineHeadsOf({ lineId, lines, employees, maps, legacyName }) จาก src/utils/lineHeads.js\n'
+    + '        head_name ส่งเป็น legacyName ได้อย่างเดียว (ชื่อที่พิมพ์ทับ) ห้ามเป็นแหล่งหลัก\n');
+});
+
+test('🛡️ notify-no-insert-per-recipient — ห้าม insert `notifications` ทีละคนในลูป', () => {
+  /* บั๊กที่เคยเกิดจริง 26/10/2026 (branch 4M ใน supabase/functions/send-notification):
+     โค้ดเขียนว่า `Promise.allSettled(unique.map(t => supabase.from('notifications').insert({...})))`
+     = ผู้รับ 79 คน ⇒ **79 รอบวิ่งไป DB ต่อการเปลี่ยนสถานะ 1 ครั้ง** และเพราะเป็นการเขียนทีละแถว
+     มันเลยไม่มีจุดไหนเห็นภาพรวมพอจะกันซ้ำได้เลย
+
+     ผลที่วัดได้: ใบ 4M **ใบเดียว** สถานะ pending ได้ 316 แถว / 79 คน = คนละ 4 ใบ ใน 16 วินาที
+     (edge ถูก invoke 4 รอบจากฝั่งจอ · ตัวมันยุบผู้รับซ้ำได้แค่ภายในรอบเดียว ข้ามรอบไม่รู้เรื่องกัน)
+     วันนั้นตาราง notifications โตวันเดียว 44,570 แถว = 75% ของทั้งตาราง (12 MB)
+
+     🔑 กฎนี้บังคับ "เขียนเป็นก้อน" ซึ่งเป็นเงื่อนไขที่ทำให้ **กันซ้ำได้จริง** — ก้อนเดียว
+        = กรองผู้รับก่อนเขียนได้ทีเดียว (ดู withoutRecentSame / withoutUnreadFor) */
+  const hits = [];
+  for (const f of [...walk(join(ROOT, 'src'), ['.js', '.jsx']),
+                   ...walk(join(ROOT, 'supabase/functions'), ['.ts'])]) {
+    const src = stripComments(readFileSync(f, 'utf8'));
+    // Promise.all / allSettled ที่มี insert ลง notifications อยู่ข้างใน = เขียนทีละคน
+    const re = /Promise\.(?:all|allSettled)\(([\s\S]{0,400}?)\)\s*\)?\s*[;,)]/g;
+    let m;
+    while ((m = re.exec(src))) {
+      const body = m[1];
+      if (/from\(\s*['"`]notifications['"`]\s*\)[\s\S]{0,120}?\.insert\(/.test(body)) {
+        hits.push(relative(ROOT, f));
+        break;
+      }
+    }
+  }
+  assert.deepEqual(hits, [],
+    '\n\n❌ ไฟล์ด้านล่าง insert ลงตาราง `notifications` ทีละคนในลูป (Promise.all/allSettled)\n'
+    + '   ทำไมพัง: 1 เหตุการณ์ × ผู้รับ N คน = N รอบวิ่งไป DB · และกันแจ้งเตือนซ้ำไม่ได้เลย\n'
+    + '   (เกิดจริง 26/10/2026: ใบ 4M ใบเดียวได้ 316 แถว/79 คน ใน 16 วินาที เพราะ edge ถูกเรียก 4 รอบ\n'
+    + '    วันนั้น notifications โตวันเดียว 44,570 แถว = 75% ของทั้งตาราง)\n'
+    + '   แก้ยังไง: รวมผู้รับเป็น array แล้ว `.insert(ids.map(uid => ({...})))` ครั้งเดียว\n'
+    + '        และกรองคนที่เพิ่งได้ไปแล้วออกก่อนเขียน (withoutRecentSame / withoutUnreadFor)\n\n'
+    + hits.map(h => '   • ' + h).join('\n') + '\n');
 });
