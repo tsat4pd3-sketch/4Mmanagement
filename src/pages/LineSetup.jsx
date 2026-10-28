@@ -342,7 +342,7 @@ export default function LineSetup({ embedded = false } = {}) {
         .select('id, name, position, team, line_id').eq('is_active', true).in('line_id', headLineIds);
       setHeadEmps(he || []);
       const { data: pf } = await supabase.from('profiles')
-        .select('full_name, role, team, line_id').in('role', ['leader', 'supervisor']);
+        .select('full_name, role, team, line_id, employee_id').in('role', ['leader', 'supervisor']);
       setHeadProfiles(pf || []);
       // ตารางกะของวันงานนี้ — ไม่มีแถว = `lineHeadsOf` คืน shift null แล้วจอเขียนว่า "ยังไม่รู้กะ"
       const { data: sc } = await supabase.from('shift_schedules').select('*').eq('work_date', getWorkDate());
@@ -1862,6 +1862,14 @@ export default function LineSetup({ embedded = false } = {}) {
                   <div style={{ color: 'var(--muted)', marginTop: 3 }}>
                     ชื่อที่ขึ้นข้างบนยึด <strong>ตำแหน่งในทะเบียนพนักงาน</strong> เสมอ — สิทธิ์ของบัญชีไม่ใช่ตำแหน่งงาน
                   </div>
+                </div>
+              )}
+              {/* 🔑 บัญชีที่ยังไม่ผูก `profiles.employee_id` — วันนี้ยังจับคู่ได้ด้วย "ชื่อ" แต่เปราะ
+                  เปลี่ยนชื่อ/เว้นวรรคเมื่อไหร่ ความเชื่อมโยงขาดเงียบ (เคยเกิด: "ณัฐพล  คำผาง" เว้น 2 เคาะ) */}
+              {lineHeads.unlinkedAccounts.length > 0 && (
+                <div style={{ marginTop: 6, fontSize: 11, color: 'var(--muted)' }}>
+                  🔑 บัญชีผู้ใช้ที่ยังไม่ได้ผูกกับทะเบียนพนักงาน: <strong>{lineHeads.unlinkedAccounts.join(' · ')}</strong>
+                  {' '}— ตอนนี้จับคู่ด้วย<u>ชื่อ</u> ถ้าชื่อเปลี่ยนจะขาดจากกันเงียบๆ · ผูกให้ถาวรที่ทะเบียนผู้ใช้
                 </div>
               )}
               {/* ชื่อที่พิมพ์ทับ — เก็บไว้เพราะของเดิม 6/13 ไลน์เป็นชื่อที่ไม่มีในทะเบียน (เกษียณ/สะกดต่าง)
