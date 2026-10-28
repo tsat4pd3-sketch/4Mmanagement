@@ -15,6 +15,7 @@ import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
 import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory';
 import { computeLiveOee, shiftStartDate, wavg, wLoad, wRun, wProd, buildCtMap, isTrialDefect, defectQty, ngByMatFrom, breakIntervalsIn, overlapMinutesWith, dtMinOutsideBreaks, laneWeightFn, dtMinBySession, orderPlanQty, oeeTargetForLines, QBIN_EMBED } from '../utils/oee';
+import { loadAffectsLanes } from '../utils/affectsLanes';
 import { usePolling } from '../utils/usePolling';
 import { RATE, LIVE } from '../utils/refreshRates';
 import { coalesce, makeIdleGate } from '../utils/liveRefresh';
@@ -649,6 +650,9 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
      ⚠️ เดิม modal อ่าน `production_sessions.oee` (stamp ตอนปิดกะ) ตรงๆ → กะที่ยังเปิดขึ้น "—"
         ขณะที่การ์ด hover บนผังเดียวกันโชว์ "OEE 99% (สด)" = จอเดียวกันตอบคนละอย่าง (user ทัก 2026-08-06) */
   const liveOeeRef = useRef({});
+  /* 🔀 "เครื่องไหนหยุดแล้วครอบกี่เลน" (machines.affects_lanes) — ref เหมือน flowByLineRef
+     ของกลางของไลน์ขนาน (คอนเวเยอร์/ระบบลม) ต้องไม่ถูกหารเลน · `{}` = พฤติกรรมเดิมเป๊ะ */
+  const affectsLnRef = useRef({});
   const flowByLineRef = useRef({}); // line_name → { flow_mode, parallel_stations } — หัก DT 1/N ใน OEE สด (loadStatus เป็น useCallback deps แคบ ใช้ ref กัน stale)
   useEffect(() => { regionsRef.current = regions; }, [regions]);
 
@@ -695,6 +699,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
       const { data: fl } = await loadLinesRes();
       const m = {}; (fl || []).forEach(l => { m[l.name] = l; });
       flowByLineRef.current = m;
+      affectsLnRef.current = await loadAffectsLanes();
     } catch { /* คอลัมน์ยังไม่มี — N=1 พฤติกรรมเดิม */ }
     setLayoutLines(new Set((lay || []).map(l => l.line_name)));
     setLoading(false);
@@ -805,6 +810,8 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
           ? parallelUnitsOf(flowByLineRef.current[s.line_name]) : 1,
         // งานคู่ gang die / RH-LH = 1 shot ได้ 2 ชิ้น — ยุบก่อนคิดเวลามาตรฐานของ %P (pairTotals.js)
         pairMap,
+        // 🔀 ของกลางของไลน์ขนาน (คอนเวเยอร์) ต้องไม่ถูกหารเลน — machines.affects_lanes
+        affectsLanes: affectsLnRef.current,
       });
       return r; // คืนทั้งก้อน — ต้องรู้ "สาเหตุ" ที่คำนวณไม่ได้ (noOutput vs ไม่ได้ตั้ง CT) ไม่ใช่แค่ null
     };
@@ -948,7 +955,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
         : [];
       /* ไลน์เครื่องขนานบันทึก downtime รายเครื่อง ⇒ หารด้วยจำนวนเลนก่อนหักจากเวลากะ (oee.js §3.2)
          ไม่หาร = plannedMin ทะลุความยาวกะ ⇒ wLoad เหลือ 0 ⇒ กะนั้นหายจากค่าเฉลี่ยของไลน์เงียบๆ */
-      const laneW = laneWeightFn(parallelUnitsOf(flowByLineRef.current[s.line_name]));
+      const laneW = laneWeightFn(parallelUnitsOf(flowByLineRef.current[s.line_name]), affectsLnRef.current);
       const plannedDtMinAll = dl.filter(d => d.dr_downtime_types?.category === 'planned')
         .reduce((a, d) => a + dtMinOutsideBreaks(d, wLoadBrkIv) * laneW(d), 0);
       const lr = s.oee != null ? null : liveOee(s, os, dl);
@@ -1080,7 +1087,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
       if (dErr) { setOeeHistRaw([]); return; }
       dtsAll.push(...(dts || []));
     }
-    const eff = dtMinBySession(rows, dtsAll, brk || [], { lines: flowByLineRef.current });   // หารเลนไลน์เครื่องขนาน (oee.js §3.2)
+    const eff = dtMinBySession(rows, dtsAll, brk || [], { lines: flowByLineRef.current, affectsBy: affectsLnRef.current });   // หารเลนไลน์เครื่องขนาน (oee.js §3.2)
     setOeeHistRaw(rows.map(s => ({ line_name: s.line_name, work_date: s.work_date, oee: Number(s.oee), shift_min: s.shift_min, plannedMin: eff[s.id]?.planned || 0 })));
   }, []);
   useEffect(() => { if (metric === 'oee' && oeeHistRaw == null) loadOeeHist(); }, [metric, oeeHistRaw, loadOeeHist]);
@@ -1474,7 +1481,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
         ]);
         const orders = need(ordRes, 'ใบผลิต'), dts = need(dtRes, 'เครื่องหยุด'), rvDefs = need(defRes, 'ของเสีย');
         // น้ำหนัก wLoad = shift_min − planned ที่ "หักได้จริง" (ตัดส่วนที่ทับพักออก · กฎเหล็ก OEE downtime ทับพัก)
-        const effBySess = dtMinBySession(sessions, dts || [], rvBreaks || [], { lines: flowByLineRef.current });   // หารเลนไลน์เครื่องขนาน (oee.js §3.2)
+        const effBySess = dtMinBySession(sessions, dts || [], rvBreaks || [], { lines: flowByLineRef.current, affectsBy: affectsLnRef.current });   // หารเลนไลน์เครื่องขนาน (oee.js §3.2)
         const rvNgBySess = {}; (rvDefs || []).forEach(d => { rvNgBySess[d.session_id] = (rvNgBySess[d.session_id] || 0) + (Number(d.qty_ng) || 0) + (Number(d.qty_suspect) || 0); });
         const pairOf = (m) => pairMap?.[m] ?? null;   // pairMap null = ยังไม่รู้คู่ ⇒ ไม่ยุบ (ห้ามแปลงเป็น {} และห้าม index ตรงๆ)
         const ordBySess = {}; (orders || []).forEach(o => { (ordBySess[o.session_id] ||= []).push(o); });

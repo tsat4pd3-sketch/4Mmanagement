@@ -55,9 +55,11 @@ import { dtBucketName, buildDtIndex } from '../utils/downtimeCategory';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { wavg, wLoad, wRun, wProd, isTrialDefect, normOeeTarget, avgOeeTarget, weightedOeeOf, weekOfMonth,
          buildCtMap, groupLean, dtMinBySession, SIX_BIG_LOSSES, EIGHT_WASTES } from '../utils/oee';
+import { loadAffectsLanes } from '../utils/affectsLanes';
 import { lineCostCenter, rateFor, ratePerHour, RATE_COMPONENTS } from '../utils/costSaving';
 import { fetchByIds } from '../utils/fetchByIds';
 import { fitOneLine, layoutTable, textHeightIn, lineHeightIn } from './pptxFit';
+import { BREAK_POLICY_COLS } from '../utils/oeeMasters';
 
 /* ── TSG R01 palette (hex ไม่มี # — ตาม pptxgenjs) ── */
 const C = {
@@ -386,7 +388,7 @@ async function buildTrendMonths({ monthKeys, sections, allLineNames, perLine = f
         'session_id, qty_ng, qty_suspect, is_trial, dr_defect_types(excl_from_q)',
         'session_id, qty_ng, qty_suspect'),
       fetchByIds(ids, c => supabaseDR.from('prod_orders').select('session_id, mat_no, qty, qty_ok, qty_actual, status').in('session_id', c)),
-      supabaseDR.from('break_policies').select('shift, process_type, start_time, duration_min, ot_scope, anchor, offset_min').eq('is_active', true),
+      supabaseDR.from('break_policies').select(BREAK_POLICY_COLS).eq('is_active', true),
     ]);
     const err = [dtR, defR, ordR].find(r => r.error)?.error;
     if (err) return { series: {}, byLine: null, warn: 'โหลดข้อมูลย้อนหลังไม่ครบ' };
@@ -405,7 +407,7 @@ async function buildTrendMonths({ monthKeys, sections, allLineNames, perLine = f
     /* 🔴 plannedMin ต้องตัดนาทีที่ทับเวลาพักออกก่อน — มันถูกกันออกจากฐานเวลาไปแล้ว
        รวม `duration_min` เองที่นี่ = หักซ้ำ (กฎเหล็ก CLAUDE.md §OEE 2026-09-15)
        กระทบ "ชั่วโมงรับภาระ" + OEE เฉลี่ยในเด็ค PPTX ที่ส่งผู้บริหาร ⇒ ไม่ตรงกับ /oee-analytics */
-    const dtEffTrend = dtMinBySession(sessions, downtimes, brkR.data || [], { lines: await laneLinesBestEffort() });
+    const dtEffTrend = dtMinBySession(sessions, downtimes, brkR.data || [], { lines: await laneLinesBestEffort(), affectsBy: await loadAffectsLanes() });
     const plannedBySess = Object.fromEntries(Object.entries(dtEffTrend).map(([k, v]) => [k, v.planned]));
     const ngBySess = {};
     defects.forEach(d => {
@@ -581,7 +583,7 @@ export async function buildMonthlyReviewData({ monthKey, sections, trendMonths =
     fetchByIdsTolerant(sessIds, (sel, c) => supabaseDR.from('defect_logs').select(sel).in('session_id', c), DEF_FULL, DEF_SLIM),
     fetchByIds(sessIds, c => supabaseDR.from('prod_orders')
       .select('session_id, mat_no, qty, qty_ok, qty_actual, status').in('session_id', c)),
-    supabaseDR.from('break_policies').select('shift, process_type, start_time, duration_min, ot_scope, anchor, offset_min').eq('is_active', true),
+    supabaseDR.from('break_policies').select(BREAK_POLICY_COLS).eq('is_active', true),
   ]);
   const downtimes = dtRes.rows, defects = defRes.rows, orders = ordRes.rows;
   const fixSlim = dtRes.slim || defRes.slim; // คอลัมน์วิธีแก้ยังไม่ apply — บอกบนสไลด์
@@ -683,7 +685,7 @@ export async function buildMonthlyReviewData({ monthKey, sections, trendMonths =
   // เฉลี่ยถ่วงน้ำหนักตามกฎ OEE (util กลาง oee.js): A/OEE ถ่วงเวลารับภาระ · P ถ่วงเวลาเดินเครื่อง · Q ถ่วงจำนวนผลิต
   // สแกน downtimes ครั้งเดียวแล้วเก็บเป็น map (เดิมวนทั้งก้อนต่อ session — ยิ่งเลือกไลน์เยอะยิ่งช้าทวีคูณ)
   /* 🔴 ตัดนาทีที่ทับเวลาพักก่อนเสมอ (กฎเหล็ก §OEE 2026-09-15) — ดูเหตุผลที่ชุด trend ด้านบน */
-  const dtEffMain = dtMinBySession(sessions, downtimes, brkRes.data || [], { lines: await laneLinesBestEffort() });
+  const dtEffMain = dtMinBySession(sessions, downtimes, brkRes.data || [], { lines: await laneLinesBestEffort(), affectsBy: await loadAffectsLanes() });
   const plannedMinOf = (sid) => dtEffMain[sid]?.planned || 0;
   // ทั้ง 4 ตัวนี้เรียกสูตรกลาง (§0) — เดือนย้อนหลังใน trend ใช้สูตรเดียวกันเป๊ะ
   const ordersIdx = indexBySession(orders), dtIdx = indexBySession(downtimes), defIdx = indexBySession(defects);

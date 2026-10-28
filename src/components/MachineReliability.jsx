@@ -31,6 +31,7 @@ import Segmented from './Segmented';
 import { ALL } from '../utils/filterLabels';
 import useTimeRange from '../utils/useTimeRange';
 import { rangeDays } from '../utils/timeRange';
+import { BREAK_POLICY_COLS } from '../utils/oeeMasters';
 
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14 };
 const th = { padding: '8px 10px', textAlign: 'left', fontSize: 12, fontWeight: 800, whiteSpace: 'nowrap' };
@@ -105,7 +106,7 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
      ⚠️ ต้องได้ process_type มาด้วย (สัญญาของ policyBreakForShift) แม้ตอนนี้ทุกแถวเป็น common */
   useEffect(() => {
     let alive = true;
-    supabaseDR.from('break_policies').select('shift, process_type, start_time, duration_min, ot_scope, anchor, offset_min')
+    supabaseDR.from('break_policies').select(BREAK_POLICY_COLS)
       .eq('is_active', true)
       .then(({ data, error }) => {
         if (!alive) return;

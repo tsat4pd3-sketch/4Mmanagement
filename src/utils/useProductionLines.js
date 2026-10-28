@@ -9,7 +9,7 @@
 
    คู่กับ <LineSelect> (src/components/LineSelect.jsx) ซึ่งรับ array นี้ไปวาด dropdown */
 import { supabase } from '../supabaseClient';
-import { cachedMaster, invalidateMaster, masterLoadState } from './masterCache';
+import { cachedMaster, invalidateMaster, masterLoadState, MasterLoadError } from './masterCache';
 import useMasterRows from './useMasterRows.js';
 
 /* 🔴 ชุดคอลัมน์นี้เป็น **superset ของทุกหน้าที่ใช้** ตั้งใจให้ทุกจอแชร์ cache ก้อนเดียว (2026-09-25)
@@ -44,22 +44,18 @@ export async function loadProductionLines() {
  * (2026-09-25) audit 07/09 ทำให้ทุกหน้าใช้ `LINE_COLUMNS` ชุดเดียวกันแล้วจริง **แต่ยัง
  * `supabase.from('production_lines').select(LINE_COLUMNS)` เองอยู่ ~30 จุด = ไม่ผ่าน cache เลย
  * ⇒ "คอลัมน์ตรงกัน" กับ "ยิงครั้งเดียว" เป็นคนละเรื่อง — อันแรกทำแล้ว อันหลังเพิ่งทำ
- * 🔴 **เคยคืน `error: null` เสมอ — เป็นต้นเหตุ "เปิดกะไม่ได้" ของหน้างาน 28/10**
- *    `loadProductionLines()` กลืน error แล้วคืน `[]` (ตาม cachedMaster) ⇒ ตัวนี้ห่อเป็น
- *    "สำเร็จ แต่ว่าง" ⇒ จุดที่เอาไปใส่ `cachedMaster('production_lines:dr', …)` อีกชั้น
- *    **มองว่าสำเร็จ แล้ว `lsWrite([])` ลง localStorage อายุ 4 ชม.**
- *    ⇒ เครื่องนั้น "ไม่มีไลน์ให้เลือก" ค้างยาว 4 ชม. ทั้งที่คนอื่นใช้ได้ปกติ
- *    (cache ซ้อน cache: ชั้นในล้มเงียบ ชั้นนอกจดความว่างนั้นเป็นของจริง)
- * ⇒ **ต้องส่งต่อความล้ม** — `mrows()` จะ throw ให้ชั้นนอกรู้ว่า "อย่าจดลิสต์ว่างนี้"
+ * 🔴 **28/10 — เลิกคืน `error: null` ตายตัว** (เคสจริง: หัวหน้า PD1 แจ้ง *"ไม่มีไลน์ให้เลือกในลิสต์"*)
+ *    เดิมโหลดพลาด = `cachedMaster` กลืน error แล้วคืน `[]` ⇒ ที่นี่แปลงเป็น `{ data: [], error: null }`
+ *    ⇒ จอวาด dropdown ว่างแล้วบอกว่า **"ไม่มีไลน์"** ทั้งที่ความจริงคือ **"อ่านทะเบียนไม่สำเร็จ"**
+ *    = จอโกหก (กฎเขียน DB ข้อ 12) · คนหน้างานสรุปว่าไลน์ถูกลบ แล้วโทรหา admin
+ *    ⇒ ลิสต์ว่าง **และ** มีผลล้มค้างอยู่ที่คีย์นี้ = คืน `error` ให้จอเขียนบอก + มีปุ่มลองใหม่
+ *    ⚠️ ล้มแต่ยังมีของเก่าใน cache (`data.length > 0`) = **ไม่ใช่ error** — จอใช้งานได้ตามปกติ
+ *       (เจตนาเดิมของ `cachedMaster` ที่คืนของเก่า ห้ามเปลี่ยน)
  */
 export const loadLinesRes = async () => {
-  const data = await loadProductionLines();
-  const fail = masterLoadState(KEY);          // ธงล้มของชั้นใน (cachedMaster จดไว้)
-  /* ล้ม **และ** ไม่มีของเก่าให้ใช้ = ความว่างนี้ไม่ใช่ความจริง ห้ามให้ใครจดเก็บ */
-  if (fail && !data?.length) {
-    return { data: [], error: { message: fail.message || 'อ่านทะเบียนไลน์ไม่สำเร็จ', code: 'LINES_LOAD_FAILED' } };
-  }
-  return { data: data || [], error: null };
+  const data = (await loadProductionLines()) || [];
+  const fail = data.length ? null : masterLoadState(KEY);
+  return { data, error: fail ? new MasterLoadError(fail) : null };
 };
 
 export const invalidateProductionLines = () => invalidateMaster(KEY);

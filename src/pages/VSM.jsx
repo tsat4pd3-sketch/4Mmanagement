@@ -22,6 +22,7 @@ import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { loadCompanyCalendar, countWorkingDaysInMonth } from '../utils/companyCalendar';
 import { groupRoutings } from '../utils/routing';
 import { buildCtMap, dtMinBySession, QBIN_EMBED } from '../utils/oee';
+import { loadAffectsLanes } from '../utils/affectsLanes';
 import { fetchByIds } from '../utils/fetchByIds';
 import { buildVsmModel, fmtMct, fmtMinSec } from '../lib/vsmModel';
 import { buildVsmGaps } from '../lib/vsmGaps';
@@ -223,7 +224,7 @@ export default function VSM() {
          🔴 planned ต้องตัดนาทีที่ทับเวลาพักออกก่อน — มันถูกกันออกจากฐานเวลาไปแล้ว
             รวม `duration_min` เองที่นี่ = หักซ้ำ (กฎเหล็ก §OEE 2026-09-15 · แก้ 2026-09-16)
          ⚠️ VSM เก็บ snapshot ถาวรและพิมพ์เป็นเอกสาร — ตัวเลขผิดที่บันทึกไปแล้วแก้ย้อนหลังไม่ได้ */
-      const dtEffBy = dtMinBySession(sessions, dtRaw, bp.data || [], { lines });   // หารเลนไลน์เครื่องขนาน (oee.js §3.2)
+      const dtEffBy = dtMinBySession(sessions, dtRaw, bp.data || [], { lines, affectsBy: await loadAffectsLanes() });   // หารเลนไลน์เครื่องขนาน (oee.js §3.2)
       sessions.forEach(s => { s.plannedMin = dtEffBy[s.id]?.planned || 0; });
 
       const stockByMat = {};
@@ -377,6 +378,8 @@ export default function VSM() {
       boxes, sessions: sess || [], orders, downtimes: dts, defects: dfs,
       ctMap: liveRaw.ctMap, lines, nowMs: Date.now(),
       pairMap: liveRaw.pairMap || {},
+      // 🔀 "เครื่องไหนหยุดแล้วครอบกี่เลน" — ขาดไป = ของกลางของไลน์ขนาน (คอนเวเยอร์) ถูกหารเลนเกินจริง
+      affectsBy: await loadAffectsLanes(),
       // นโยบายพัก — ขาดไปแล้ว A/P สดในแท็บสดไม่ตรงกับค่าที่ stamp ตอนปิดกะ (2026-09-14)
       breakPolicies: liveRaw.raw?.breakPolicies || [],
     });

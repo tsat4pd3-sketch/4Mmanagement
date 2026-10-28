@@ -181,6 +181,10 @@ export default function Management() {
   const [selectedLine,   setSelectedLine]   = useState('');
   const [lines,          setLines]          = useState([]);
   const [allLines,       setAllLines]       = useState([]); // ทุกไลน์รวมไลน์ย่อย (ใช้หา parent_line_name)
+  /* 🔴 28/10 — "ลิสต์ไลน์ว่าง" มี 2 ความหมาย (หัวหน้า PD1 แจ้ง *"ไม่มีไลน์ให้เลือกในลิสต์"*)
+     อ่านทะเบียนไม่สำเร็จแล้วโชว์ช่องว่างเฉยๆ = จอโกหก ⇒ เก็บเหตุไว้เขียนบนจอ + ให้กดลองใหม่ */
+  const [lineLoadErr,    setLineLoadErr]    = useState('');
+  const retryLinesRef = useRef(null);
   const [show4MModal,    setShow4MModal]    = useState(null);
   const [log4MForm,      setLog4MForm]      = useState({ category: 'Man', description: '', moveType: 'same', skillOk: false, hasHistory: false, subtype: 'change' });
   const isMobile = useIsMobile();
@@ -482,7 +486,10 @@ export default function Management() {
     const fetchLines = async () => {
       // ดึงทุกไลน์เสมอเพื่อ resolve ลำดับชั้น (parent/children) ได้ครบ — scope ไปตัดที่ "รายการให้เลือก" แทน
       // ไม่งั้น leader ที่ผูกกับไลน์หลักจะมองไม่เห็นจุดที่ set ไว้ที่ไลน์ย่อย (และกลับกัน)
-      const { data } = await loadLinesRes(); // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
+      const { data, error: lineErr } = await loadLinesRes(); // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
+      /* อ่านไม่ได้ = **คงลิสต์เดิมไว้** แล้วเขียนบนจอ · ห้ามล้างเป็น [] (จอจะบอกว่า "ไม่มีไลน์") */
+      setLineLoadErr(lineErr ? (lineErr.message || 'อ่านทะเบียนไลน์ผลิตไม่สำเร็จ') : '');
+      if (lineErr) return;
       let all = data || [];
       // เติมโหมดการไหลงาน (flow_mode/parallel_stations) best-effort — ถ้ายังไม่ apply migration 20260723 ก็ข้าม
       const { data: flowData } = await loadLinesRes();
@@ -522,6 +529,7 @@ export default function Management() {
       if (first) setSelectedLine(first.name);
     };
     fetchLines();
+    retryLinesRef.current = fetchLines;
   }, []);
 
   useEffect(() => {
@@ -1289,6 +1297,16 @@ export default function Management() {
           {/* 2026-09-07 อ่านทะเบียนไลน์ผ่าน <LineSelect> (ลำดับชั้น/ปลดระวาง/ค่าไม่รู้จัก) — ไม่มี option ว่าง เหมือนเดิม */}
           <LineSelect lines={lines} value={selectedLine} placeholder={null} onChange={setSelectedLine}
             style={{ width: '100%', padding: '6px 8px', borderRadius: 6, fontSize: 13, background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' }} />
+          {lineLoadErr && (
+            <div style={{ fontSize: 11, color: 'var(--danger)', marginTop: 5, lineHeight: 1.5 }}>
+              ⚠️ อ่านทะเบียนไลน์ผลิตไม่สำเร็จ — รายการที่เห็นอาจไม่ครบ (ไม่ใช่ว่าไลน์ถูกลบ)
+              <button onClick={() => retryLinesRef.current?.()}
+                style={{ marginLeft: 6, fontSize: 11, padding: '1px 8px', borderRadius: 5, cursor: 'pointer',
+                         background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' }}>
+                ลองใหม่
+              </button>
+            </div>
+          )}
           {mergedChildNames.length > 0 && (
             <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
               🔗 รวมไลน์ย่อย: {mergedChildNames.join(', ')}

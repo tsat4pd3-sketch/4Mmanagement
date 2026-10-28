@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext, useMemo, useRef } from 'react';
+import { useState, useEffect, useContext, useMemo, useRef, forwardRef, useImperativeHandle } from 'react';
 import { orgValues, orgNodeCompare } from '../utils/listOrder';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { supabase } from '../supabaseClient';
@@ -57,39 +57,111 @@ async function urlToDataUrl(url) {
   } catch { return null; }
 }
 
-/* ── แผ่นเซ็นชื่อ (canvas → PNG blob) — พนักงานเซ็นบนจอ/แท็บเล็ต ── */
-function SignPadModal({ title, onCancel, onDone }) {
+/* ── แผ่นเซ็นชื่อ (canvas → PNG blob) — ใช้ร่วมกันทั้งเซ็นทีละคนและโหมดวนเซ็น ──
+   🔴 โค้ดวาดเส้นมีชุดเดียวที่นี่ · ห้ามก๊อปไปไว้ในโมดัลใหม่ (ปากกาเพี้ยนทีจะเพี้ยนคนละแบบ) */
+const SignCanvas = forwardRef(function SignCanvas({ height = 160 }, ref) {
   const cvRef = useRef(null);
   const drawing = useRef(false);
   const last = useRef({ x: 0, y: 0 });
   const dirty = useRef(false);
 
-  useEffect(() => {
-    const c = cvRef.current;
-    if (c) { const ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height); }
-  }, []);
+  const wipe = () => {
+    const c = cvRef.current; if (!c) return;
+    const ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+    dirty.current = false;
+  };
+  useEffect(wipe, []);
+  useImperativeHandle(ref, () => ({
+    isDirty: () => dirty.current,
+    clear: wipe,
+    /* คืน blob ของลายเซ็น — ยังไม่ได้เซ็น = null (ผู้เรียกเป็นคนตัดสินว่าจะเตือนหรือข้าม) */
+    getBlob: () => new Promise(res => {
+      if (!dirty.current || !cvRef.current) { res(null); return; }
+      cvRef.current.toBlob(b => res(b || null), 'image/png');
+    }),
+  }), []);
 
   const pos = (e) => { const c = cvRef.current, r = c.getBoundingClientRect(), t = e.touches?.[0] || e; return { x: (t.clientX - r.left) * (c.width / r.width), y: (t.clientY - r.top) * (c.height / r.height) }; };
   const down = (e) => { e.preventDefault(); drawing.current = true; last.current = pos(e); };
   const move = (e) => { if (!drawing.current) return; e.preventDefault(); const c = cvRef.current, ctx = c.getContext('2d'), p = pos(e); ctx.strokeStyle = '#111'; ctx.lineWidth = 2.4; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(last.current.x, last.current.y); ctx.lineTo(p.x, p.y); ctx.stroke(); last.current = p; dirty.current = true; };
   const up = () => { drawing.current = false; };
-  const clear = () => { const c = cvRef.current, ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height); dirty.current = false; };
 
-  const done = () => {
-    if (!dirty.current) { toast.error('ยังไม่ได้เซ็น'); return; }
-    cvRef.current.toBlob(b => b && onDone(b), 'image/png');
+  return (
+    <canvas ref={cvRef} width={560} height={180} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerLeave={up}
+      style={{ width: '100%', height, border: '1px dashed var(--border2)', borderRadius: 10, background: '#fff', touchAction: 'none', cursor: 'crosshair', display: 'block' }} />
+  );
+});
+
+const padBtn = (bg, color, border) => ({ padding: '7px 14px', borderRadius: 8, border: border || '1px solid var(--border2)', background: bg, color, cursor: 'pointer', fontSize: 13 });
+
+/* เซ็นทีละคน (กดจากแถวในตาราง) */
+function SignPadModal({ title, onCancel, onDone }) {
+  const pad = useRef(null);
+  const done = async () => {
+    const b = await pad.current?.getBlob();
+    if (!b) { toast.error('ยังไม่ได้เซ็น'); return; }
+    onDone(b);
   };
-
   return (
     <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 3200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
       <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: 18, width: 'min(96vw, 620px)' }}>
         <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 10 }}>✍️ {title}</div>
-        <canvas ref={cvRef} width={560} height={180} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerLeave={up}
-          style={{ width: '100%', height: 160, border: '1px dashed var(--border2)', borderRadius: 10, background: '#fff', touchAction: 'none', cursor: 'crosshair', display: 'block' }} />
+        <SignCanvas ref={pad} />
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
-          <button onClick={clear} style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>🗑️ ล้าง</button>
-          <button onClick={onCancel} style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
-          <button onClick={done} style={{ padding: '7px 18px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: 'pointer', fontSize: 13 }}>✔ ใช้ลายเซ็นนี้</button>
+          <button onClick={() => pad.current?.clear()} style={padBtn('var(--bg3)', 'var(--text2)')}>🗑️ ล้าง</button>
+          <button onClick={onCancel} style={padBtn('var(--bg3)', 'var(--text2)')}>ยกเลิก</button>
+          <button onClick={done} style={{ ...padBtn('var(--accent)', 'var(--accent-ink)', 'none'), padding: '7px 18px', fontWeight: 700 }}>✔ ใช้ลายเซ็นนี้</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── 📱 โหมด "ส่งแท็บเล็ตวนเซ็น" (2026-10-28 · คำสั่ง user) ───────────────────────
+   ทำไมต้องมี: ของเดิมเซ็นได้ทีละคน — กดเข้าแถว → เซ็น → **อัปขึ้นเน็ตทันที** → ปิด → กดแถวถัดไป
+   9 คน = กด 9 รอบ รอเน็ต 9 ครั้งบนแท็บเล็ตหน้างาน ⇒ ช้ากว่าส่งกระดาษให้เซ็นต่อๆ กัน
+   (วัดจากของจริง 28/10: ใบในระบบ 72 ใบ · รายชื่อ 524 คน · **เซ็นบนจอจริงแค่ 10 คน = 2%**)
+   ⇒ โหมดนี้: ชื่อขึ้นใหญ่ทีละคน · เซ็นเสร็จกดถัดไป · **เก็บไว้ในเครื่องก่อน อัปทีเดียวตอนจบ**
+   🔴 ปิดกลางคัน = ของที่เซ็นไปแล้วยังอยู่ (ส่งกลับให้ผู้เรียกอัป) ห้ามทิ้งเงียบ */
+function SignQueueModal({ queue, onCancel, onDone }) {
+  const pad = useRef(null);
+  const [pos, setPos] = useState(0);
+  const [done, setDone] = useState(() => new Map());   // idx → blob
+  const cur = queue[pos];
+  const total = queue.length;
+
+  const keep = async () => {
+    const b = await pad.current?.getBlob();
+    if (!b) { toast.error(`${cur.name} ยังไม่ได้เซ็น — ถ้าจะข้ามให้กด "ข้ามคนนี้"`); return null; }
+    const next = new Map(done); next.set(cur.idx, b); setDone(next);
+    return next;
+  };
+  const go = (map) => {
+    if (pos + 1 < total) { pad.current?.clear(); setPos(pos + 1); }
+    else onDone(map);
+  };
+
+  return (
+    <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.72)', zIndex: 3300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 12 }}>
+      <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: 18, width: 'min(96vw, 660px)' }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, marginBottom: 2 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>✍️ ส่งแท็บเล็ตให้เซ็นทีละคน</div>
+          <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--accent)' }}>คนที่ {pos + 1} / {total} · เซ็นแล้ว {done.size}</div>
+        </div>
+        {/* ชื่อใหญ่ — คนที่รับแท็บเล็ตต่อต้องรู้ทันทีว่าช่องนี้ของตัวเองหรือเปล่า */}
+        <div style={{ fontSize: 22, fontWeight: 900, color: 'var(--text)', lineHeight: 1.25, marginBottom: 2 }}>{cur.name}</div>
+        <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>รหัส {cur.code || '—'}{cur.hadSign ? ' · มีลายเซ็นเดิมอยู่แล้ว (เซ็นใหม่จะทับของเดิม)' : ''}</div>
+        <SignCanvas ref={pad} height={190} />
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end', marginTop: 12 }}>
+          <button onClick={() => pad.current?.clear()} style={padBtn('var(--bg3)', 'var(--text2)')}>🗑️ ล้าง</button>
+          <button onClick={() => { pad.current?.clear(); go(done); }} style={padBtn('var(--bg3)', 'var(--muted)')}>ข้ามคนนี้</button>
+          <button onClick={() => onDone(done)} style={padBtn('var(--bg3)', 'var(--text2)')}>
+            {done.size ? `หยุดแล้วบันทึก ${done.size} ลายเซ็น` : 'ปิด'}
+          </button>
+          <button onClick={async () => { const m = await keep(); if (m) go(m); }}
+            style={{ ...padBtn('var(--accent)', 'var(--accent-ink)', 'none'), padding: '7px 20px', fontWeight: 800 }}>
+            {pos + 1 < total ? '✔ ถัดไป →' : '✔ เสร็จสิ้น'}
+          </button>
         </div>
       </div>
     </div>
@@ -122,6 +194,8 @@ export default function OjtTraining() {
   const [editing, setEditing] = useState(null);   // training draft (มี attendees[])
   const [saving, setSaving] = useState(false);
   const [signTarget, setSignTarget] = useState(null); // { idx, title } — แถวที่กำลังเซ็น
+  const [signQueue, setSignQueue] = useState(null);   // [{ idx, name, code, hadSign }] — โหมดส่งแท็บเล็ตวนเซ็น
+  const [signingQueue, setSigningQueue] = useState(false);
   const [empSearch, setEmpSearch] = useState('');
   const [printing, setPrinting] = useState(null);
   const [docReady, setDocReady] = useState(false); // ทะเบียนเอกสารโหลดแล้ว → subtitle ดึงเลขฟอร์มจาก registry
@@ -129,10 +203,13 @@ export default function OjtTraining() {
 
   /* ── scope มาตรฐาน: leader → section ของไลน์ตัวเอง · role อื่นตาม sections ── */
   const leaderLine = useMemo(() => lines.find(l => String(l.id) === String(userLineId)), [lines, userLineId]);
+  /* 🔴 `scopeSecs` เป็น array ⇒ ใส่ใน deps ตรงๆ ไม่ได้ (ใบใหม่เนื้อเดิมทุกเรนเดอร์ = คิวรีซ้ำ
+     และล้างเพดาน coalesce · กฎเขียน DB ข้อ 9) ⇒ ใช้ `scopeKey` คีย์เนื้อหาที่ประกาศไว้ข้างบนแล้ว
+     (เรียงแล้ว — ลำดับส่วนงานไม่มีผลกับการกรอง) */
   const effSections = useMemo(() => {
     if (role === 'leader' && userLineId) return leaderLine?.section ? [leaderLine.section] : [];
-    return scopeSecs;
-  }, [role, userLineId, leaderLine, scopeSecs]);
+    return scopeKey ? scopeKey.split('|') : [];
+  }, [role, userLineId, leaderLine, scopeKey]);
 
   const load = async () => {
     setLoading(true);
@@ -261,33 +338,65 @@ export default function OjtTraining() {
 
   const removeAttendee = (idx) => setEditing(prev => ({ ...prev, attendees: prev.attendees.filter((_, i) => i !== idx) }));
 
-  const handleSignDone = async (blob) => {
-    const { idx } = signTarget;
-    setSignTarget(null);
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user?.id) { toast.error('เซสชันหมดอายุ — กรุณา login ใหม่'); return; }
+  /* อัปลายเซ็นหลายคนในคราวเดียว — ใช้ร่วมกันทั้งเซ็นทีละคนและโหมดวนเซ็น
+     🔴 โค้ดคิด path / ตามหาไฟล์เก่า มีชุดเดียวที่นี่ · เดิมอยู่ใน handleSignDone ตัวเดียว
+     คืน { urls: Map<idx,url>, oldPaths: [] } — ผู้เรียกเป็นคน setState ทีเดียวจบ */
+  const uploadSignatures = async (entries) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user?.id) { toast.error('เซสชันหมดอายุ — กรุณา login ใหม่'); return null; }
+    const urls = new Map(); const oldPaths = []; const failed = [];
+    for (const { idx, blob } of entries) {
       // path ต้องอยู่ในโฟลเดอร์ auth.uid ของคนบันทึก (RLS bucket signatures) — ชื่อไฟล์กันชนด้วย timestamp
-      const path = `${user.id}/ojt_${editing.id}_${idx}_${Date.now()}.png`;
+      const path = `${user.id}/ojt_${editing.id}_${idx}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}.png`;
       const { error } = await supabase.storage.from('signatures').upload(path, blob, uploadOpts({ contentType: 'image/png' }));
-      if (error) { toast.error('อัปโหลดลายเซ็นไม่สำเร็จ: ' + error.message); return; }
-      const url = supabase.storage.from('signatures').getPublicUrl(path).data.publicUrl;
+      if (error) { failed.push(editing.attendees[idx]?.emp_name || `คนที่ ${idx + 1}`); continue; }
+      urls.set(idx, supabase.storage.from('signatures').getPublicUrl(path).data.publicUrl);
       /* เซ็นทับของเดิม — **จดไว้ก่อน ลบหลังบันทึกใบสำเร็จ** (QC 05/10)
          เดิมลบไฟล์เก่าทันทีตอนเซ็น ⇒ ยกเลิก/บันทึกล้ม = แถวในฐานยังชี้ไฟล์เก่าที่ถูกลบไปแล้ว = ลายเซ็นหายถาวร
          (best-effort · เฉพาะโฟลเดอร์ตัวเอง ตาม RLS bucket signatures) */
       const old = editing.attendees[idx]?.sign_url;
-      let oldPath = null;
       if (old?.includes('/signatures/')) {
         const p0 = decodeURIComponent(old.split('/signatures/')[1] || '').split('?')[0];
-        if (p0.startsWith(`${user.id}/`)) oldPath = p0;
+        if (p0.startsWith(`${user.id}/`)) oldPaths.push(p0);
       }
-      setEditing(prev => ({
-        ...prev,
-        attendees: prev.attendees.map((a, i) => (i === idx ? { ...a, sign_url: url } : a)),
-        _replacedSigPaths: oldPath ? [...(prev._replacedSigPaths || []), oldPath] : (prev._replacedSigPaths || []),
-      }));
-      toast.success('บันทึกลายเซ็นแล้ว');
+    }
+    /* 🔴 ล้มบางคนต้องบอกเป็นชื่อ — "บันทึกแล้ว" ทั้งที่ขาดไป 3 คน = ต้องมาตามหาทีหลังว่าใคร */
+    if (failed.length) toast.error(`อัปลายเซ็นไม่สำเร็จ ${failed.length} คน: ${failed.join(', ')} — ลองเซ็นใหม่เฉพาะคนนั้น`);
+    return { urls, oldPaths };
+  };
+
+  const applySignUrls = ({ urls, oldPaths }) => {
+    if (!urls.size) return;
+    setEditing(prev => ({
+      ...prev,
+      attendees: prev.attendees.map((a, i) => (urls.has(i) ? { ...a, sign_url: urls.get(i) } : a)),
+      _replacedSigPaths: [...(prev._replacedSigPaths || []), ...oldPaths],
+    }));
+  };
+
+  const handleSignDone = async (blob) => {
+    const { idx } = signTarget;
+    setSignTarget(null);
+    try {
+      const res = await uploadSignatures([{ idx, blob }]);
+      if (!res) return;
+      applySignUrls(res);
+      if (res.urls.size) toast.success('บันทึกลายเซ็นแล้ว');
     } catch (e) { toast.error('เกิดข้อผิดพลาด: ' + e.message); }
+  };
+
+  /* 📱 จบโหมดวนเซ็น — อัปทุกลายเซ็นรวดเดียว (เน็ต 1 รอบแทน N รอบ) */
+  const handleQueueDone = async (map) => {
+    setSignQueue(null);
+    if (!map?.size) return;
+    setSigningQueue(true);
+    try {
+      const res = await uploadSignatures([...map.entries()].map(([idx, blob]) => ({ idx, blob })));
+      if (!res) return;
+      applySignUrls(res);
+      if (res.urls.size) toast.success(`บันทึกลายเซ็น ${res.urls.size} คนแล้ว — อย่าลืมกดบันทึกใบ`);
+    } catch (e) { toast.error('เกิดข้อผิดพลาด: ' + e.message); }
+    finally { setSigningQueue(false); }
   };
 
   const handleSave = async () => {
@@ -722,6 +831,29 @@ table{border-collapse:collapse}
                     </div>
                   )}
                 </div>
+                {/* 📱 ส่งแท็บเล็ตวนเซ็น — ทางเดียวที่เร็วกว่ากระดาษคือไม่ต้องกดกลับมาหาแถวทีละคน
+                    (28/10 · ของเดิมเซ็นได้ทีละคนแล้วอัปทันที ⇒ หน้างานเลยยังปริ้นไปเซ็นมืออยู่ 98%) */}
+                {canRecord && editing.attendees.length > 0 && (() => {
+                  const signed = editing.attendees.filter(a => a.sign_url).length;
+                  const total = editing.attendees.length;
+                  const rest = editing.attendees.map((a, idx) => ({ idx, a })).filter(x => !x.a.sign_url);
+                  const mk = (list) => list.map(({ idx, a }) => ({ idx, name: a.emp_name, code: a.emp_code, hadSign: !!a.sign_url }));
+                  return (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', margin: '10px 0 6px' }}>
+                      <button onClick={() => setSignQueue(mk(rest.length ? rest : editing.attendees.map((a, idx) => ({ idx, a }))))}
+                        disabled={signingQueue}
+                        style={{ padding: '8px 16px', borderRadius: 9, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, fontSize: 13, cursor: signingQueue ? 'wait' : 'pointer' }}>
+                        {signingQueue ? 'กำลังอัปลายเซ็น…' : `📱 ส่งแท็บเล็ตวนเซ็น (${rest.length || total} คน)`}
+                      </button>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: signed === total ? '#22c55e' : 'var(--muted)' }}>
+                        เซ็นแล้ว {signed}/{total}{signed < total ? ` · ยังขาด ${total - signed}` : ' ✔ ครบแล้ว'}
+                      </span>
+                      <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+                        เซ็นจนครบแล้วค่อยปล่อยเน็ตทีเดียว — เซ็นกลางคันแล้วปิดก็เก็บเท่าที่เซ็นไป
+                      </span>
+                    </div>
+                  );
+                })()}
                 <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', minWidth: 780 }}>
                     <thead>
@@ -793,6 +925,7 @@ table{border-collapse:collapse}
       )}
 
       {signTarget && <SignPadModal title={signTarget.title} onCancel={() => setSignTarget(null)} onDone={handleSignDone} />}
+      {signQueue && <SignQueueModal queue={signQueue} onCancel={() => setSignQueue(null)} onDone={handleQueueDone} />}
     </Page>
   );
 }

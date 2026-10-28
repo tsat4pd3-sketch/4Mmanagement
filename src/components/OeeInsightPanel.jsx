@@ -5,10 +5,12 @@ import { fetchByIds } from '../utils/fetchByIds';
 import LineSelect from './LineSelect';
 import { ALL } from '../utils/filterLabels';
 import { wavg, wLoad, buildCtMap, groupLean, dtMinBySession, SIX_BIG_LOSSES, EIGHT_WASTES } from '../utils/oee';
+import { loadAffectsLanes } from '../utils/affectsLanes';
 import { lineCostCenter, rateFor, ratePerHour, RATE_COMPONENTS } from '../utils/costSaving';
 import TimeRangeBar from './TimeRangeBar';
 import useTimeRange from '../utils/useTimeRange';
 import { rangeDays } from '../utils/timeRange';
+import { BREAK_POLICY_COLS } from '../utils/oeeMasters';
 
 /* ── 🧠 OEE Insight Engine — วิเคราะห์ภาพรวมอัตโนมัติ (rule-based + สถิติ) ──
    ตอบ 2 คำถามหลักของ user (2026-07-14):
@@ -93,7 +95,7 @@ export default function OeeInsightPanel({ lines, ccRates = [], initLine = '', se
         supabaseDR.from('kanban_standards').select('mat_no, dr_products(name, cycle_time_sec)').eq('is_active', true),
         supabaseDR.from('dr_products').select('mat_no, cycle_time_sec'),
         // นโยบายเวลาพัก — ตัวกัน "หัก DT ที่ทับพักซ้ำ" ตอนถ่วงน้ำหนัก (กฎเหล็ก §OEE 2026-09-15)
-        supabaseDR.from('break_policies').select('shift, process_type, start_time, duration_min, ot_scope, anchor, offset_min').eq('is_active', true),
+        supabaseDR.from('break_policies').select(BREAK_POLICY_COLS).eq('is_active', true),
       ]);
       const dts = dtRes.rows, defs = defRes.rows, orders = ordRes.rows;
       const loadErr = [dtRes, defRes, ordRes].find(r => r.error)?.error || null;
@@ -143,7 +145,7 @@ export default function OeeInsightPanel({ lines, ccRates = [], initLine = '', se
             รวม `duration_min` เองที่นี่ = หักซ้ำ ⇒ เวลารับภาระต่ำกว่าจริง แล้ว insight
             "กะเช้า vs กะดึก / วันไหนแย่สุด" จะอ้างตัวเลขที่ไม่ตรงกับ /oee-analytics
             (กฎเหล็ก CLAUDE.md §OEE 2026-09-15 · แก้ 2026-09-16) */
-      const dtEffBy = dtMinBySession(sess, dts || [], breakPols || [], { lines });   // หารเลนไลน์เครื่องขนาน (oee.js §3.2)
+      const dtEffBy = dtMinBySession(sess, dts || [], breakPols || [], { lines, affectsBy: await loadAffectsLanes() });   // หารเลนไลน์เครื่องขนาน (oee.js §3.2)
       const plannedMinOf = (sid) => dtEffBy[sid]?.planned || 0;
 
       const out = [];

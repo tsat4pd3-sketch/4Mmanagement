@@ -1002,6 +1002,25 @@ body.has-mnav { --mnav-h: calc(56px + env(safe-area-inset-bottom, 0px)); padding
   background: var(--accent); color: var(--accent-ink); font-size: 15px; font-weight: 800; font-family: var(--font-display);
 }
 .m-savebar > button:disabled { background: var(--muted); cursor: not-allowed; }
+
+/* ─── 🖥️ ใบ MO บนจอคอม: แถบปุ่มท้ายใบเกาะล่าง (2026-10-28 · คำสั่ง user) ──────────────────
+   user: *"แก้ ux/ui ยังไงให้ไม่ต้องเลื่อน scroll ถึง 3 ทีกว่าจะมาเจอกับพวกปุ่มที่จะ interface ด้วย"*
+   ใบ MO ที่เซ็นครบหลายขั้นสูง ~3 จอ (ขั้น 1-8 + ลายเซ็น + KPI + คอมเมนต์) ปุ่ม "ขั้นถัดไป"
+   อยู่ก้นใบ ⇒ ทุกครั้งที่เปิดใบต้องเลื่อนสุดก่อนถึงจะทำงานได้
+   มือถือแก้ไปแล้ว 15/10 (`.m-actbar`) — อันนี้คือฝั่งจอคอม ใช้หลักเดียวกัน (UI-CONVENTIONS §มือถือ ข้อ "ปุ่มหลักในโมดัลยาว")
+   🔴 ตัวเลื่อนคือการ์ดโมดัล (`ModalShell` maxHeight:92vh + overflowY:auto) ⇒ sticky เกาะในนั้น
+   🔴 `position:sticky; bottom` **ห้ามบวก `--mnav-h`** (กฎ UI §มือถือ) · เงาใช้ token ห้าม rgba ดิบ
+   margin ลบ = ดันแถบไปชนขอบการ์ด (พ่อมี padding 18) ไม่งั้นเนื้อหาเลื่อนโผล่ที่ร่อง 18px ข้างแถบ */
+.mo-actbar-desk {
+  position: sticky; bottom: 0; z-index: 20;
+  margin: 16px -18px -18px; padding: 10px 18px;
+  background: var(--card); border-top: 1px solid var(--border2); box-shadow: var(--shadow-float);
+}
+/* มือถือมีแถบของตัวเอง (`.m-actbar`) — คืนแถวนี้เป็นแถวธรรมดา ห้ามซ้อน 2 แถบ */
+@media (max-width: 768px) {
+  .mo-actbar-desk { position: static; margin: 16px 0 0; padding: 0; background: none; border-top: 0; box-shadow: none; }
+}
+
 .ck-tgs > .ck-tg:first-child { grid-column: 1 / -1; }   /* "มางาน" = คำถามแรก เต็มแถว → PPE 3 ปุ่ม → OT */
 
 /* ─── 📱 Daily Report: ปุ่ม "กะที่เลือก · เปลี่ยนกะ" (มือถือเท่านั้น · 2026-10-15) ───────────── */
