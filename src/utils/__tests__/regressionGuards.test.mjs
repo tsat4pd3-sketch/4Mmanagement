@@ -7467,9 +7467,24 @@ test('👨‍🔧 line-heads-single-source — จอตั้งค่าไล
   if (!/shiftFromTeam\s*\(/.test(util)) bad.push('lineHeads.js (ไม่ได้ใช้ shiftFromTeam — เดากะเอง?)');
   if (/['"]A['"]\s*(===|==)\s*team|team\s*(===|==)\s*['"]A['"]/.test(util))
     bad.push('lineHeads.js (เทียบทีม A ตรงๆ = เดาว่า A คือกะเช้า)');
-  /* ไลน์ลูกห้ามดันหัวหน้าขึ้นไปให้ไลน์แม่ — ต้องไล่ขึ้น (ancestors) เท่านั้น */
-  if (!/lineAncestorIds/.test(util) || /getLineFamilyIds|getChildLineNames/.test(util))
-    bad.push('lineHeads.js (ต้องไล่ขึ้นหาไลน์แม่เท่านั้น ห้ามดึงจากไลน์ลูก)');
+  /* ── 🔴 2 ทะเบียนตอบคนละคำถาม (28/10 รอบ 2) ─────────────────────────────────────
+     "ดูแลไลน์ไหน" = widerLineId(profiles, employees) — ไม่ใช้ = ไลน์แม่ที่หัวหน้าสังกัดไลน์ลูก
+     จะขึ้นว่า "ไม่มีหัวหน้า" ทั้งที่มี (เคสจริง Assembly Line D) */
+  if (!/widerLineId/.test(util)) bad.push('lineHeads.js (ไม่ได้ใช้ widerLineId — ขอบเขตไลน์ผิด)');
+  /* "เป็นหัวหน้าไหม" ต้องตัดสินด้วย levelOfPosition ของ employees เท่านั้น
+     role ของบัญชี = ชุดสิทธิ์ใช้ระบบ ไม่ใช่ตำแหน่งงาน (กฎ CLAUDE.md §Role System) */
+  if (!/levelOfPosition\s*\(/.test(util))
+    bad.push('lineHeads.js (ไม่ได้ตัดสินตำแหน่งจาก levelOfPosition)');
+  if (/picked\s*=\s*profiles|profiles\.filter\([^)]*role[^)]*\)\s*\.map\(.*=>.*rows/.test(util))
+    bad.push('lineHeads.js (เอา profiles.role มาเป็นตำแหน่งงาน — role คือชุดสิทธิ์ ไม่ใช่ตำแหน่ง)');
+  /* ที่ 2 ทะเบียนไม่ตรงกันต้องฟ้อง ห้ามเงียบ */
+  if (!/conflicts/.test(util)) bad.push('lineHeads.js (ไม่มี conflicts — ข้อมูลไม่ตรงกันแล้วเงียบ)');
+  for (const f of ['src/pages/LineSetup.jsx', 'src/pages/Report.jsx']) {
+    const code = stripComments(readFileSync(join(ROOT, f), 'utf8'));
+    if (!/lineHeads\.conflicts/.test(code)) bad.push(`${f} (ไม่ได้เขียน conflicts บนจอ)`);
+    if (!/headScopeLineIds\s*\(/.test(code))
+      bad.push(`${f} (คิวรีพนักงานไม่ได้ใช้ headScopeLineIds — ไลน์ลูกไม่ถูกดึง หัวหน้าหาย)`);
+  }
 
   assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n'
     + '   ทำไม: `production_lines.head_name` เป็นข้อความช่องเดียว ⇒ ตอบ "ใครเป็นหัวหน้ากะไหน" ไม่ได้\n'

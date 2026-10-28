@@ -4,7 +4,7 @@ import ReadOnlyNote from '../components/ReadOnlyNote';
 import { useLocation } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { onlyShopfloorStaff } from '../utils/staffKind';   // 👥 นับคน = เฉพาะพนักงานหน้างาน (กฎ staffKind.js)
-import { lineHeadsOf } from '../utils/lineHeads';          // 👨‍🔧 หัวหน้างานของไลน์ (หลายคน/หลายกะ)
+import { lineHeadsOf, headScopeLineIds } from '../utils/lineHeads';   // 👨‍🔧 หัวหน้างานของไลน์ (หลายคน/หลายกะ)
 import { buildScheduleMaps } from '../utils/shiftAssign';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
@@ -3487,28 +3487,32 @@ function SkillAllowanceTab() {
      *"ไลน์นึงมีหัวหน้าได้ 2-3 คน แล้วแต่ว่ามีกี่กะ"* ⇒ `production_lines.head_name` ช่องเดียวตอบไม่ได้
      กฎอยู่ใน utils/lineHeads.js ที่เดียว (จอตั้งค่าไลน์ใช้ชุดเดียวกัน) */
   const [headEmps, setHeadEmps] = useState([]);
+  const [headProfiles, setHeadProfiles] = useState([]);
   const [headSched, setHeadSched] = useState([]);
   const lineObjSel = useMemo(() => lines.find(l => l.name === line) || null, [lines, line]);
   useEffect(() => {
     let alive = true;                       // กฎข้อ 4: await แล้ว setState ต้องมี guard
-    if (!lineObjSel) { setHeadEmps([]); setHeadSched([]); return undefined; }
-    const ids = [lineObjSel.id, ...lineAncestorIds(lines, lineObjSel.id)];
+    if (!lineObjSel) { setHeadEmps([]); setHeadProfiles([]); setHeadSched([]); return undefined; }
+    /* 🔴 ต้องครอบไลน์ลูกด้วย — หัวหน้าที่ดูแลไลน์แม่อาจสังกัดไลน์ลูก (headScopeLineIds อธิบายไว้) */
+    const ids = headScopeLineIds(lines, lineObjSel.id);
     (async () => {
-      const [{ data: he }, { data: sc }] = await Promise.all([
+      const [{ data: he }, { data: pf }, { data: sc }] = await Promise.all([
         supabase.from('employees').select('id, name, position, team, line_id').eq('is_active', true).in('line_id', ids),
+        // บัญชีผู้ใช้ = ตอบ "ดูแลไลน์ไหน" เท่านั้น · role ไม่ใช่ตำแหน่งงาน (กฎ CLAUDE.md)
+        supabase.from('profiles').select('full_name, role, team, line_id').in('role', ['leader', 'supervisor']),
         supabase.from('shift_schedules').select('*').eq('work_date', getWorkDate()),
       ]);
       if (!alive) return;
-      setHeadEmps(he || []); setHeadSched(sc || []);
+      setHeadEmps(he || []); setHeadProfiles(pf || []); setHeadSched(sc || []);
     })();
     return () => { alive = false; };
   }, [lineObjSel, lines]);
   const headMaps = useMemo(() => buildScheduleMaps(headSched, lines), [headSched, lines]);
   const lineHeads = useMemo(() => lineHeadsOf({
-    lineId: lineObjSel?.id, lines, employees: headEmps,
+    lineId: lineObjSel?.id, lines, employees: headEmps, profiles: headProfiles,
     maps: headSched.length ? headMaps : null,
     legacyName: lineObjSel?.head_name || '',
-  }), [lineObjSel, lines, headEmps, headSched, headMaps]);
+  }), [lineObjSel, lines, headEmps, headProfiles, headSched, headMaps]);
   /* ตัวเลือกที่ "ตรงกับใบที่กำลังออก" — เลือกทีมไว้ = เหลือหัวหน้าของทีมนั้น · ไม่เลือก = ทั้งหมด */
   const headChoices = useMemo(() => (
     team ? lineHeads.rows.filter(r => r.team === team) : lineHeads.rows
@@ -3944,6 +3948,13 @@ function SkillAllowanceTab() {
               ℹ️ ทะเบียนพนักงานยังไม่มีหัวหน้าไลน์/หัวหน้าแผนกของไลน์นี้
               {lineHeads.legacyName ? ` — ที่เติมให้คือชื่อที่พิมพ์ไว้ในทะเบียนไลน์ ("${lineHeads.legacyName}")` : ''}
               {' · ตั้งตำแหน่ง+ทีม+ไลน์ ให้เขาที่ /operator แล้วจะเลือกตามกะได้'}
+            </div>
+          )}
+          {/* 🔴 2 ทะเบียนไม่ตรงกัน — คนออกใบต้องรู้ว่าทำไมชื่อที่คาดว่าจะเห็นไม่ขึ้น (28/10) */}
+          {lineHeads.conflicts.length > 0 && (
+            <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 5, maxWidth: 320 }}>
+              ⚠️ {lineHeads.conflicts.map(c => c.name).join(' · ')} — บัญชีผู้ใช้ตั้งเป็นหัวหน้าของไลน์นี้
+              แต่ทะเบียนพนักงานยังไม่ใช่ตำแหน่งหัวหน้า จึงไม่ขึ้นในรายชื่อ · แก้ที่ /operator
             </div>
           )}
           {lineHeads.level === 'supervisor' && headChoices.length > 0 && (

@@ -22,8 +22,8 @@ import SearchSelect from '../components/SearchSelect';
 import LineSelect from '../components/LineSelect';
 import { UNIT_KINDS, UNIT_PRODUCTION, UNIT_SUPPORT } from '../utils/unitKind';
 import PersonSelect from '../components/PersonSelect';
-import { lineHeadsOf } from '../utils/lineHeads';
-import { lineAncestorIds } from '../utils/lineHierarchy';
+import { lineHeadsOf, headScopeLineIds } from '../utils/lineHeads';
+import { positionLabel } from '../utils/positions';
 import { buildScheduleMaps } from '../utils/shiftAssign';
 import { getWorkDate } from '../utils/workDate';
 import CostCenterSelect from '../components/CostCenterSelect';
@@ -148,6 +148,7 @@ export default function LineSetup({ embedded = false } = {}) {
      ช่อง head_name เป็นข้อความช่องเดียว ตอบไม่ได้ ⇒ โชว์ของจริงจากทะเบียนพนักงาน + ตารางกะ
      (กฎอยู่ใน utils/lineHeads.js ที่เดียว — จอค่าฝีมือใช้ชุดเดียวกัน) */
   const [headEmps, setHeadEmps] = useState([]);
+  const [headProfiles, setHeadProfiles] = useState([]);
   const [schedRows, setSchedRows] = useState([]);
 
 
@@ -224,9 +225,9 @@ export default function LineSetup({ embedded = false } = {}) {
   /* 👨‍🔧 หัวหน้างานตามทะเบียน (กฎเดียวทั้งระบบ = utils/lineHeads.js) — ไลน์หนึ่งมีได้หลายคน/หลายกะ */
   const schedMaps = useMemo(() => buildScheduleMaps(schedRows, lines), [schedRows, lines]);
   const lineHeads = useMemo(() => lineHeadsOf({
-    lineId: selLineObj?.id, lines, employees: headEmps, maps: schedRows.length ? schedMaps : null,
-    legacyName: signerHead,
-  }), [selLineObj, lines, headEmps, schedRows, schedMaps, signerHead]);
+    lineId: selLineObj?.id, lines, employees: headEmps, profiles: headProfiles,
+    maps: schedRows.length ? schedMaps : null, legacyName: signerHead,
+  }), [selLineObj, lines, headEmps, headProfiles, schedRows, schedMaps, signerHead]);
 
   /* ⚠️ แผง "ตั้งค่าไลน์" กด 💾 เองเท่านั้น — เดิมสลับไลน์ขณะแก้ค้าง ค่าหายเงียบ ไม่มีอะไรบอก (user 05/10)
      เทียบเป็น string ทุกช่อง เพราะ input คืน string แต่ค่าในฐานเป็น number/null */
@@ -333,15 +334,20 @@ export default function LineSetup({ embedded = false } = {}) {
     }
     /* 👨‍🔧 คนที่เป็น "หัวหน้างาน" ของไลน์นี้ตามทะเบียน — ดึงเฉพาะไลน์ตัวเอง + ไลน์แม่ (ชุดที่ lineHeadsOf ใช้)
        🔴 ไม่กรอง position ฝั่ง DB — ให้ `lineHeadsOf` ตัดสินชั้นตำแหน่งที่เดียว (ห้ามมีกฎ 2 ชุด) */
-    const headLineIds = lineObj ? [lineObj.id, ...lineAncestorIds(lines, lineObj.id)] : [];
+    const headLineIds = headScopeLineIds(lines, lineObj?.id);
     if (headLineIds.length) {
+      /* 🔴 ต้องดึง 2 ทะเบียน — ตำแหน่งมาจาก employees · "ดูแลไลน์ไหน" มาจาก profiles ที่กว้างกว่า
+         (กฎ widerLineId 27/10 · เคสจริง Assembly Line D: บัญชีผูกไลน์แม่ แต่พนักงานสังกัดไลน์ลูก) */
       const { data: he } = await supabase.from('employees')
         .select('id, name, position, team, line_id').eq('is_active', true).in('line_id', headLineIds);
       setHeadEmps(he || []);
+      const { data: pf } = await supabase.from('profiles')
+        .select('full_name, role, team, line_id').in('role', ['leader', 'supervisor']);
+      setHeadProfiles(pf || []);
       // ตารางกะของวันงานนี้ — ไม่มีแถว = `lineHeadsOf` คืน shift null แล้วจอเขียนว่า "ยังไม่รู้กะ"
       const { data: sc } = await supabase.from('shift_schedules').select('*').eq('work_date', getWorkDate());
       setSchedRows(sc || []);
-    } else { setHeadEmps([]); setSchedRows([]); }
+    } else { setHeadEmps([]); setHeadProfiles([]); setSchedRows([]); }
   };
 
   /** ปลดระวาง/คืนสถานะไลน์ — บันทึกทันทีแยกจากปุ่ม 💾 (เป็น action ไม่ใช่ค่าในฟอร์ม) */
@@ -1834,6 +1840,30 @@ export default function LineSetup({ embedded = false } = {}) {
                   </div>
                 )}
               </div>
+              {/* 🔴 2 ทะเบียนไม่ตรงกัน — ฟ้องตรงนี้ ห้ามเงียบ ห้ามเลือกข้างให้เอง (28/10 · feedback user
+                  "ฐานข้อมูลกับ user ใช้งานจะมั่วไม่ตรงกัน") · ตำแหน่งงานอ่านจากทะเบียนพนักงานเสมอ
+                  เพราะ role ของบัญชี = ชุดสิทธิ์ใช้ระบบ ไม่ใช่ตำแหน่งงาน (กฎ CLAUDE.md) */}
+              {lineHeads.conflicts.length > 0 && (
+                <div style={{ marginTop: 6, padding: '7px 10px', borderRadius: 8, fontSize: 11.5,
+                  background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', color: 'var(--text)' }}>
+                  <div style={{ fontWeight: 700, color: 'var(--amber)', marginBottom: 3 }}>
+                    ⚠️ บัญชีผู้ใช้กับทะเบียนพนักงานไม่ตรงกัน {lineHeads.conflicts.length} รายการ
+                  </div>
+                  <ul style={{ margin: 0, paddingInlineStart: 16 }}>
+                    {lineHeads.conflicts.map((c, i) => (
+                      <li key={`${c.kind}-${c.name}-${i}`}>
+                        <strong>{c.name}</strong>{c.team ? ` (ทีม ${c.team})` : ''} —{' '}
+                        {c.kind === 'no_employee'
+                          ? `มีบัญชีผู้ใช้ผูกไลน์นี้ (สิทธิ์ ${c.role}) แต่ยังไม่มีตัวตนในทะเบียนพนักงาน (ชื่อไม่ตรง/ยังไม่ลงทะเบียน)`
+                          : `บัญชีให้สิทธิ์ระดับ ${c.role} แต่ตำแหน่งในทะเบียนพนักงานคือ "${positionLabel(c.position) || c.position || 'ไม่ระบุ'}" ⇒ ไม่ถูกนับเป็นหัวหน้างาน`}
+                      </li>
+                    ))}
+                  </ul>
+                  <div style={{ color: 'var(--muted)', marginTop: 3 }}>
+                    ชื่อที่ขึ้นข้างบนยึด <strong>ตำแหน่งในทะเบียนพนักงาน</strong> เสมอ — สิทธิ์ของบัญชีไม่ใช่ตำแหน่งงาน
+                  </div>
+                </div>
+              )}
               {/* ชื่อที่พิมพ์ทับ — เก็บไว้เพราะของเดิม 6/13 ไลน์เป็นชื่อที่ไม่มีในทะเบียน (เกษียณ/สะกดต่าง)
                   🔴 ใช้ได้แค่ "คนเดียว" ⇒ เป็นทางหนี ไม่ใช่ทางหลัก — เขียนบอกให้ชัด */}
               <details style={{ marginTop: 6 }} open={!!signerHead && lineHeads.legacyInRegistry === false}>
