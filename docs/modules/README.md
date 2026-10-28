@@ -62,6 +62,7 @@
 | Pages & Routes | `docs/modules/pages-routes.md` |
 | PE Core Tools — Process Flow / PFMEA / Control Plan (2026-08-13) | `docs/modules/pe-core-tools.md` |
 | 🔐 Audit — "เข้าหน้าได้ ≠ แก้ของหน่วยงานอื่นได้" (2026-10-15 · คำสั่ง user) | `docs/modules/permission-scope-audit.md` |
+| 🔑 Audit PK/FK ทั้ง 2 โปรเจค — ทะเบียนหลัก (คน·เครื่อง·ไลน์·ชิ้นงาน) ผูกด้วย FK หรือ text · แถวกำพร้าจริง · ลำดับแก้ (2026-10-28 · ยังไม่แก้) | `docs/modules/pk-fk-audit.md` |
 | PM Coordination — แผนประสานงาน PM ข้ามวัน (MTN แจ้ง Production · 2026-07-23) | `docs/modules/pm-coordination.md` |
 | 🔧 ศูนย์ PM — แท็บตรวจ PM + ตั้งค่าจุดตรวจ (ปุ่มบันทึกตรวจไม่ครบ · คัดลอกแผน PM ข้ามเครื่อง · 2026-10-07) | `docs/modules/pm-hub-check-setup.md` |
 | PM Predictive & Planner Sync — เห็นวัน PM ล่วงหน้า + buffer (2026-07-16) · 🧭 3 ระดับ Preventive→Predictive→Prescriptive (2026-09-23) | `docs/modules/pm-predictive-planner-sync.md` |
