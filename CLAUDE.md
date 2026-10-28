@@ -178,7 +178,7 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 >   (มีด่าน) ไม่ส่ง = `wLoad` เหลือ 0 = **กะหายจากค่าเฉลี่ยเงียบๆ** · 🔴 **stamp `oee_a` ต้อง stamp `actual_qty` ด้วย** (`sessionProducedQty()` · มีด่าน)
 >   🔴 **แต่ "ของกลางของไลน์" (คอนเวเยอร์/ระบบลม) หยุด = ไลน์หยุดทั้งไลน์ ห้ามหารเลน** (28/10 · คำสั่ง user)
 >   ⇒ ทะเบียนตอบว่าตัวนี้ครอบกี่เลน (`machines.affects_lanes` · กรอกที่ `/machines`) · โหลดผ่าน
->   **`src/utils/affectsLanes.js`** ส่งเข้า `laneWeightFn(N, affectsBy)` · **ว่าง = 1 เลน = พฤติกรรมเดิม**
+>   **`src/utils/affectsLanes.js`** ส่งเข้า `laneWeightFn(N, affectsBy)` · **ว่าง = 1 เลน = พฤติกรรมเดิม** · ของกลางที่อยู่**ไลน์แม่** ใช้ธง `stops_whole_line`
 >   · ห้ามเขียน `1/parallelN` เองในหน้า (ด่าน `lane-weight-single-entry`)
 > · 🏭 **"ไลน์นี้พักกี่นาที" ไม่เท่ากันทุกไลน์** (`break_line_rules` · 20/10) — เจ้าของกฎ **`src/utils/breakLineRules.js`**
 >   (ไล่สายแม่→ลูก + ทะเบียนกลางที่ `breakIntervalsIn` อ่านเอง ⇒ สูตรที่มี `session` ไม่ต้องส่ง prop) ·

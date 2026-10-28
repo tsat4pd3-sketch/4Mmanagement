@@ -21,6 +21,7 @@ import { toast } from '../components/Toast';
 import { PURPOSES, CAUSE_CATS, needsPlantManager, needsApprovalFirst, laborAmount, partAmount, sumLabor, sumParts, grandTotal, satScore, mtnApprovalState, purposeOfPrint, qaAppliesTo, isMtnFormRow, QA_SKIP_REASON_PURPOSE, QA_SKIP_REASON_MTN_FORM, needsPlantMgrByCost, orderCostTotal, PLANT_MGR_COST_LIMIT, isToolTeamRow } from '../utils/mtnMoForm';
 import AuditLogViewer from '../components/AuditLogViewer';
 import { can, canDelete, isActionSeeded, isSharedAccount } from '../utils/permissions';
+import { confirmSign, needsSignConfirm } from '../utils/mtnConfirm';
 import { MO_STATUS_META as STATUS_META, QA_NOT_RELATED, QA_RELATED, QA_SKIP_REASON_STEP4, canBounceBack, canDoStep, canHandoff, canSignMtnApproval, canSkipQa, isMoOpen, isOrderReporter, isQaSkipped, isWaitingQa, lastStep, orderReporterText, nextStepOf, moQaState, mtnCloseStage, moStatusLabel, moStatusMeta, orderInReporterScope, stageOf, stepDenyHint, stepLabel, stepMeta, moWaitMeta, qaRelatedView, moRemoveMode, MO_REMOVE_BLOCKED, MO_REMOVE_CANCEL, MO_REMOVE_DELETE, actorSideOf, stepAssumptions, assumptionHint } from '../utils/mtnStepPerm';
 import { positionRank } from '../utils/positions';
 import { findOpenOnMachine, dupLevel } from '../utils/mtnDuplicate';
@@ -2189,6 +2190,15 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
   const signApproval = async (kind) => {
     const v = canSignMtnApproval(kind, stepCtx);
     if (!v.ok) return toast.error(v.code === 'already_signed' ? 'ใบนี้เซ็นไปแล้ว' : 'เฉพาะผู้จัดการที่ถูกระบุในใบ หรือผู้ถือสิทธิ์อนุมัติปิดใบ (mtn_repair:approve) เท่านั้น');
+    /* 🔴 ถามยืนยันก่อนเสมอ — ลายเซ็นเป็น one-way เซ็นแล้วเจ้าตัวแก้เองไม่ได้
+       (คำสั่ง user 28/10: "กดพลาดคือพลาดเลย") · ข้อความต้องบอกว่าเซ็นอะไร ใบไหน ในนามใคร */
+    if (!confirmSign({
+      what: kind === 'dept' ? 'อนุมัติใบ MO (ผู้จัดการต้นสังกัด)' : 'อนุมัติใบ MO (ผจก.โรงงาน)',
+      orderNo: o.mo_no || o.id,
+      actor: fullName || '—',
+      as: kind === 'dept' ? 'ผู้จัดการต้นสังกัดของฝ่ายที่แจ้ง' : 'ผู้จัดการโรงงาน',
+      effect: appr?.blocked ? 'ปลดด่านอนุมัติ — ช่างเริ่มงานได้' : null,
+    })) return;
     setSignBusy(kind);
     const nowIso = new Date().toISOString();
     /* 🔴 stamp uid ด้วยเสมอ — ลายเซ็นบนจอ/ใบพิมพ์ดึงสดจากโปรไฟล์ด้วย uid (utils/signResolve.js)
@@ -2842,7 +2852,10 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
       <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 4 }}>
         🖨️ คอมเมนต์ข้างบนจะถูกพิมพ์ลงใบ MO ด้วย — <b>ต่อท้ายรายละเอียดที่ผู้แจ้งเขียนไว้</b> (ของเดิมไม่ถูกแก้ทับ) พร้อมชื่อผู้คอมเมนต์และเวลา
       </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
+      {/* 🖥️ แถบปุ่มท้ายใบ — เกาะล่างของการ์ดโมดัลบนจอคอม (28/10 · คำสั่ง user)
+          ใบที่เซ็นครบหลายขั้นสูง ~3 จอ ปุ่ม "ขั้นถัดไป" เคยอยู่ก้นใบ ⇒ เปิดใบทีต้องเลื่อนสุดก่อนทำงาน
+          ปุ่ม/ตรรกะเดิมทั้งหมด ไม่แยกชุดใหม่ · มือถือมี `.m-actbar` ของตัวเองอยู่แล้ว (CSS คืนเป็นแถวธรรมดา) */}
+      <div className="mo-actbar-desk" style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
         {/* 🖥️ บัญชีกลางลบไม่ได้ — **ซ่อนปุ่มได้ แต่ห้ามซ่อนเหตุผล** (UI §6.9) ไม่งั้นช่างคิดว่าระบบพัง */}
         {canDelete('mtn_repair', 'manage_master', role)
           ? (removal.mode === MO_REMOVE_BLOCKED
@@ -3230,6 +3243,26 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
         if (meta?.byReporter)
           return toast.error(`ขั้นนี้เป็นของ${meta.who} — ใบนี้เปิดโดย “${o.reported_by_name || o.reporter_prod || '—'}”`);
         return toast.error(`ขั้นนี้เป็นหน้าที่ของ${meta?.who || 'ผู้มีสิทธิ์'} — บัญชีนี้ทำไม่ได้`);
+      }
+      /* 🔴 ถามยืนยันก่อนเขียน — เฉพาะจังหวะที่เป็น "การอนุมัติ/เซ็นรับ" (utils/mtnConfirm.js)
+         ไม่ครอบ จ่ายงาน/ลงผลซ่อม (เป็นการกรอกงาน ไม่ใช่อนุมัติ · UI §5.4 ห้ามถามพร่ำเพรื่อ)
+         วางหลังด่านสิทธิ์ผ่านแล้ว — ถามก่อนแล้วค่อยบอกว่าไม่มีสิทธิ์ = ถามฟรี */
+      {
+        const _stage = stageOf(step, { mtnForm: isMtnForm });
+        const _meta = stepMeta(step, { mtnForm: isMtnForm, toolTeam: isToolTeamOrder(o) });
+        if (skipQa) {
+          if (!confirmSign({
+            what: 'ข้าม QA — บันทึกว่า "ไม่ต้องให้ QA ตรวจ"',
+            orderNo: o.mo_no || o.id, actor: fullName || '—', as: 'ผู้ตัดสินว่าไม่เกี่ยวกับคุณภาพ',
+            effect: 'ใบข้ามขั้น QA ไปขั้นถัดไปทันที',
+          })) { setSaving(false); return; }
+        } else if (needsSignConfirm(_stage)) {
+          if (!confirmSign({
+            what: `ขั้น ${step}: ${_meta?.title || _stage}`,
+            orderNo: o.mo_no || o.id, actor: fullName || '—', as: _meta?.whoShort || _meta?.who || null,
+            effect: _stage === 'close' || _stage === 'cost_mgr_close' ? 'ปิดใบ MO ใบนี้' : null,
+          })) { setSaving(false); return; }
+        }
       }
       const upd = { updated_at: new Date().toISOString() };
       /* 🔴 แตกสาขาด้วย "จังหวะงาน" (stage) ไม่ใช่เลขขั้น — เลขขั้นเดียวกันคนละความหมายระหว่าง

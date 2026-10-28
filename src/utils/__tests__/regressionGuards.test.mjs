@@ -4346,6 +4346,46 @@ test('🛡️ dt-by-session-needs-lines — ทุกการเรียก dt
     + bad.map(b => '   • ' + b).join('\n') + '\n');
 });
 
+/* ═══ ทุกการ "อนุมัติ/เซ็น" ใบ MO ต้องถามยืนยันก่อนเขียน (2026-10-28 · คำสั่ง user) ═══
+   user: *"ทุกการกดอนุมัติ ของ mo ต้องมีการยืนยันก่อนนะ อันนี้กดพลาดคือพลาดเลย"*
+   ลายเซ็นบนใบ MO เป็น one-way — เซ็นแล้วเจ้าตัวแก้เองไม่ได้ ต้องให้ผู้ถือสิทธิ์แก้ย้อนหลังมาปลด
+   และใบเดินไปขั้นถัดไปทันที · ปุ่มเซ็นอยู่ติดปุ่มอื่นในใบ กดพลาดบนแท็บเล็ตหน้างานง่ายมาก */
+test('🛡️ mtn-approve-needs-confirm — ปุ่มเซ็น/อนุมัติใบ MO ต้องผ่าน confirmSign() ก่อนเขียน DB', () => {
+  const src = readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8');
+
+  /* ① ปุ่ม "อนุมัติใบ MO (ผู้จัดการ…)" — confirm ต้องมาก่อน update() ในฟังก์ชันเดียวกัน */
+  const i = src.indexOf('const signApproval = async');
+  assert.ok(i > 0, '\n\n❌ หา `signApproval` ใน MtnRepair.jsx ไม่เจอ — ถ้าเปลี่ยนชื่อ ให้แก้ด่านนี้ด้วย\n');
+  const body = src.slice(i, i + 3000);
+  const cAt = body.indexOf('confirmSign('), uAt = body.indexOf(".update(");
+  assert.ok(cAt > 0 && uAt > 0 && cAt < uAt,
+    '\n\n❌ `signApproval` เขียน DB โดยไม่ถามยืนยันก่อน (หรือถามหลังเขียนไปแล้ว)\n'
+    + '   ทำไมห้าม: ลายเซ็นผู้จัดการเป็น one-way — เซ็นพลาดแล้วเจ้าตัวปลดเองไม่ได้\n'
+    + '   แก้ยังไง: `if (!confirmSign({ what, orderNo, actor, as })) return;` ก่อน `.update(`\n');
+
+  /* ② ขั้นที่เป็นการเซ็น/อนุมัติใน StepModal — ต้องถามผ่านทะเบียน stage ไม่ใช่ไล่เช็คเลขขั้นเอง */
+  assert.ok(/needsSignConfirm\s*\(/.test(src) && /confirmSign\s*\(/.test(src),
+    '\n\n❌ StepModal ไม่ได้ถามยืนยันก่อนเซ็นขั้น\n'
+    + '   แก้ยังไง: `needsSignConfirm(stageOf(step, …))` แล้ว `confirmSign({ … })` ก่อนประกอบ payload\n');
+
+  /* ③ ห้ามเขียนข้อความยืนยันเองในหน้า — ต้องบอกครบ 3 อย่าง (เซ็นอะไร · ใบไหน · ในนามใคร)
+        จึงบังคับให้ผ่าน utils/mtnConfirm.js จุดเดียว */
+  const conf = readFileSync(join(ROOT, 'src/utils/mtnConfirm.js'), 'utf8');
+  for (const k of ['what', 'orderNo', 'actor']) {
+    assert.ok(new RegExp(`signConfirmText[\\s\\S]{0,800}?\\b${k}\\b`).test(conf),
+      `\n\n❌ \`signConfirmText\` ไม่ได้บอก \`${k}\` แล้ว — ข้อความยืนยันต้องบอกครบ "เซ็นอะไร · ใบไหน · ในนามใคร"\n`
+      + '   ถามยืนยันลอยๆ = คนกด OK ผ่านโดยไม่อ่าน (UI-CONVENTIONS §5.4)\n');
+  }
+
+  /* ④ ห้ามลากการ "กรอกงาน" เข้ามาถามด้วย — ถามพร่ำเพรื่อแล้วคนกดผ่านโดยไม่อ่าน */
+  const stages = conf.slice(conf.indexOf('SIGN_STAGES'), conf.indexOf('needsSignConfirm'));
+  for (const bad of ['assign', 'service']) {
+    assert.ok(!new RegExp(`'${bad}'`).test(stages),
+      `\n\n❌ \`SIGN_STAGES\` มี '${bad}' ซึ่งเป็น "การกรอกงาน" ไม่ใช่การอนุมัติ\n`
+      + '   (จ่ายงาน/ลงผลซ่อม ช่างทำวันละหลายรอบ — ถามทุกครั้ง = คนกดผ่านจนด่านจริงไม่มีความหมาย)\n');
+  }
+});
+
 /* ═══ ของกลางของไลน์ขนาน ห้ามถูกหารเลน — `affects_lanes` (2026-10-28 · คำสั่ง user) ═══
    ที่มา: user ถามถึงเคส HDF1 → LASER-345 (เลเซอร์ 3 เครื่องวิ่งขนาน · คอนเวเยอร์ลำเลียงตัวเดียว
    เลี้ยงทั้ง 3 เครื่อง) — *"คอนเวเย่อ พัง ไม่ใช่เลเซอพัง … ถ้าคอนเวเย่อเบรคดาว จะกระทบกับทั้ง3เครื่องทันที"*
@@ -4381,8 +4421,15 @@ test('🛡️ lane-weight-needs-affects — สูตรที่หารเล
       + '   ถอดออก = ของกลางของไลน์ขนาน (คอนเวเยอร์) ถูกหารเลนเหมือนเครื่องในเลน\n'
       + '   = นาทีที่ไลน์หยุดต่ำกว่าจริง N เท่า โดยไม่มี error (คำสั่ง user 28/10)\n');
   }
+  /* 🏭 ของกลางของสาย — อุปกรณ์ที่ลงทะเบียนไว้ที่ "ไลน์แม่" ใช้ร่วมหลายไลน์ที่เลนไม่เท่ากัน
+     (คอนเวเยอร์สาย HYDROFORM ใช้ทั้ง hdf1/hdf2/laser345/laser789 · user 28/10)
+     ⇒ ต้องมีธง `stops_whole_line` ไม่ใช่ตัวเลขอย่างเดียว ไม่งั้นคนกรอกไม่รู้ว่าต้องใส่เลขของไลน์ไหน */
+  assert.ok(/stops_whole_line/.test(src),
+    '\n\n❌ `affectsLanesMap` ไม่รู้จัก `stops_whole_line` แล้ว\n'
+    + '   ของกลางที่ลงทะเบียนไว้ที่ไลน์แม่ (คอนเวเยอร์) จะถูกหารเลนเหมือนเครื่องในเลน\n');
+
   /* ตัวอ่านแมปต้อง normalize เลขเครื่องผ่าน machineKey — `SW10` vs `SW-10` = คนละคีย์ join ไม่ติด */
-  assert.ok(/affectsLanesMap[\s\S]{0,400}?machineKey\s*\(/.test(src),
+  assert.ok(/affectsLanesMap[\s\S]{0,600}?machineKey\s*\(/.test(src),
     '\n\n❌ `affectsLanesMap` ไม่ได้ผ่าน `machineKey()` — เลขเครื่องที่เขียนต่างแบบจะ join ไม่ติด\n'
     + '   (กฎ CLAUDE.md §machine_no = คีย์ join แบบ text)\n');
 });

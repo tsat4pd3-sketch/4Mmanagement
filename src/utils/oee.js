@@ -392,13 +392,22 @@ export function halfDayBreakBands({ policies = [], half, processType = null, lin
    ⇒ ธง 2 ค่า (เลน/ของกลาง) ไม่พอ ต้องเป็น **ตัวเลข**
 
    🔴 **ว่าง/ไม่รู้จัก = 1 เลน = พฤติกรรมเดิมเป๊ะ** ⇒ ทยอยกรอกทีละไลน์ได้ ไม่ต้องมีวัน cut-over
-      (กรอกเฉพาะ "ตัวยกเว้น" ที่ครอบ >1 เลน — วัด 90 วัน: ทั้งโรงงานมีราว 33 ตัว ไม่ใช่ 270 เครื่อง) */
+      (กรอกเฉพาะ "ตัวยกเว้น" ที่ครอบ >1 เลน)
+
+   🏭 **ของกลางของสาย = `stops_whole_line` ไม่ใช่ตัวเลข** (2026-10-28 · user ชี้เพิ่ม)
+      *"conveyor อยู่ไลน์แม่ เป็นเหมือนส่วนกลางที่ใช้ทั้ง hdf1, hdf2, laser345, laser789"*
+      ⇒ อุปกรณ์ตัวเดียวถูกใช้โดยไลน์ที่มีจำนวนเลนไม่เท่ากัน (HDF1 = 1 · LASER-345 = 3)
+      "กระทบกี่เลน" จึงไม่มีคำตอบเป็นเลขเดียว · ธงนี้แปลว่า **ทุกเลนของไลน์ที่ใบนั้นอ้างถึง**
+      เก็บเป็น `Infinity` ในแมป แล้วให้ `laneWeightFn` เพดานที่ `N` เอง (น้ำหนัก = 1 ทุกไลน์) */
 export function affectsLanesMap(machines = []) {
   const m = {};
   for (const r of (Array.isArray(machines) ? machines : [])) {
     const k = machineKey(r?.machine_no);
+    if (!k) continue;
+    /* ของกลางของสาย ชนะตัวเลขเสมอ — ตั้งธงแล้วยังกรอกเลขไว้ = เจตนาคือ "ทั้งไลน์" */
+    if (r?.stops_whole_line === true) { m[k] = Infinity; continue; }
     const n = Number(r?.affects_lanes);
-    if (k && n > 1) m[k] = n;   // เก็บเฉพาะตัวยกเว้น — ค่า 1 คือ default อยู่แล้ว
+    if (n > 1) m[k] = n;   // เก็บเฉพาะตัวยกเว้น — ค่า 1 คือ default อยู่แล้ว
   }
   return m;
 }

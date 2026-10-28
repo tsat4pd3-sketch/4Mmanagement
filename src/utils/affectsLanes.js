@@ -10,7 +10,11 @@
      · ว่าง/1 = ครอบ 1 เลน = **พฤติกรรมเดิมเป๊ะ** (ไม่ต้อง cut-over · ทยอยกรอกได้)
      · = N     = ของกลางของไลน์ (คอนเวเยอร์/ระบบลม/ตู้ไฟ) → ไม่หาร
      · = 2     = โรบอทที่ป้อน 2 เครื่อง → หาร 2/3
-     กรอกที่ `/machines` (ช่องโชว์เฉพาะไลน์ที่ตั้งจำนวนเลนไว้)
+     กรอกที่ `/machines`
+
+   🏭 **ของกลางของ "สาย" ไม่ได้อยู่ใต้ไลน์ใดไลน์หนึ่ง** (28/10 · user ชี้เพิ่ม) —
+     คอนเวเยอร์ของสาย HYDROFORM ลงทะเบียนไว้ที่ **ไลน์แม่** ใช้ร่วมกัน hdf1/hdf2/laser345/laser789
+     ซึ่งจำนวนเลนไม่เท่ากัน ⇒ ใช้ธง **`stops_whole_line`** แทนตัวเลข = "ทุกเลนของไลน์ที่ใบนั้นอ้างถึง"
 
    🔴 อ่านไม่ได้ = คืนแมปว่าง = **พฤติกรรมเดิม ไม่ใช่ศูนย์** (fail-open โดยตั้งใจ)
       — fail-closed (ไม่หารเลย) จะพ่นนาทีเกินจริง N เท่าในทุกจอทันที ซึ่งแย่กว่า
@@ -24,7 +28,7 @@ let inflight = null;
 
 /**
  * แมป `{ [machineKey(machine_no)]: จำนวนเลนที่ครอบ }` — cache ทั้งแอป (ทะเบียนแทบไม่เปลี่ยน)
- * 🔴 ดึงเฉพาะแถวที่กรอกไว้ (`affects_lanes > 1`) — ทั้งโรงงานมีไม่ถึงสิบตัว ไม่ใช่โหลดทะเบียนทั้งก้อน
+ * 🔴 ดึงเฉพาะแถวที่กรอกไว้ (ธงของกลาง หรือ `affects_lanes > 1`) — ทั้งโรงงานมีไม่ถึงสิบตัว
  * @returns {Promise<Object>} แมป (ว่าง = ไม่มีใครกรอก **หรือ** อ่านไม่ได้ → ดู `affectsLanesLoadFail()`)
  */
 export async function loadAffectsLanes(force = false) {
@@ -34,10 +38,12 @@ export async function loadAffectsLanes(force = false) {
     try {
       const { data, error } = await supabaseDR
         .from('machines')
-        .select('machine_no, affects_lanes')
-        .gt('affects_lanes', 1);
+        .select('machine_no, affects_lanes, stops_whole_line')
+        /* ดึงเฉพาะ "ตัวยกเว้น" — ของกลางของสาย (ธง) หรือครอบมากกว่า 1 เลน (ตัวเลข)
+           ทั้งโรงงานมีไม่กี่ตัว ⇒ ไม่ใช่การโหลดทะเบียนเครื่องทั้งก้อน */
+        .or('affects_lanes.gt.1,stops_whole_line.is.true');
       /* migration ยังไม่ apply (42703) = ไม่มีใครกรอกได้อยู่แล้ว ⇒ แมปว่าง ไม่ใช่ความผิดพลาด */
-      const missingCol = !!error && /affects_lanes/.test(error.message || '');
+      const missingCol = !!error && /affects_lanes|stops_whole_line/.test(error.message || '');
       cache = { map: error ? {} : affectsLanesMap(data || []), loadFail: !!error && !missingCol };
     } catch {
       cache = { map: {}, loadFail: true };

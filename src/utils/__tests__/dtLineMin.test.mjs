@@ -104,3 +104,35 @@ test('🔴 ไลน์ไม่ขนาน (N=1) = ไม่หารอะไ
   const by = affectsLanesMap([{ machine_no: 'M1', affects_lanes: 3 }]);
   assert.equal(dtLineMin(row('M1', 45), 1, { affectsBy: by }), 45);
 });
+
+
+/* ═══ 🏭 ของกลางของสาย (`stops_whole_line`) — 2026-10-28 · user ชี้ว่าคอนเวเยอร์อยู่ไลน์แม่ ═══
+   *"conveyor อยู่ไลน์แม่ เป็นเหมือนส่วนกลางที่ใช้ทั้ง hdf1, hdf2, laser345, laser789"*
+   ⇒ อุปกรณ์ตัวเดียวใช้หลายไลน์ที่เลนไม่เท่ากัน "กระทบกี่เลน" ไม่มีคำตอบเป็นเลขเดียว */
+test('ของกลางของสาย: ธงชนะตัวเลข และไม่หารเลนไม่ว่าไลน์นั้นมีกี่เลน', () => {
+  const map = affectsLanesMap([
+    { machine_no: 'CONVEYOR', stops_whole_line: true },
+    { machine_no: 'RB-84', affects_lanes: 2 },
+    { machine_no: 'LS-03' },
+  ]);
+  const dt = { machine_no: 'CONVEYOR', duration_min: 155 };
+  // LASER-345 = 3 เลน · HDF1 = 1 เลน — ของกลางต้องได้นาทีเต็มทั้งคู่
+  assert.equal(dtLineMin(dt, 3, { affectsBy: map }), 155);
+  assert.equal(dtLineMin(dt, 1, { affectsBy: map }), 155);
+  // ตัวเลขยังทำงานเหมือนเดิม
+  assert.equal(dtLineMin({ machine_no: 'RB-84', duration_min: 540 }, 3, { affectsBy: map }), 360);
+  // เครื่องในเลนยังหารเหมือนเดิม
+  assert.equal(dtLineMin({ machine_no: 'LS-03', duration_min: 300 }, 3, { affectsBy: map }), 100);
+});
+
+test('ของกลางของสาย: ติ๊กธงแล้วกรอกเลขไว้ด้วย — ธงชนะ (เจตนาคือทั้งไลน์)', () => {
+  const map = affectsLanesMap([{ machine_no: 'CONVEYOR', stops_whole_line: true, affects_lanes: 2 }]);
+  assert.equal(dtLineMin({ machine_no: 'CONVEYOR', duration_min: 90 }, 3, { affectsBy: map }), 90);
+});
+
+test('ของกลางของสาย: `stops_whole_line` ที่ไม่ใช่ true เป๊ะ ต้องไม่ติดธง', () => {
+  for (const v of [false, null, undefined, 0, '', 'true']) {
+    const map = affectsLanesMap([{ machine_no: 'X-1', stops_whole_line: v }]);
+    assert.equal(map['X1'], undefined, `stops_whole_line=${JSON.stringify(v)} ไม่ควรติดธง`);
+  }
+});
