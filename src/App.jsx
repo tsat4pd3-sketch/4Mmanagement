@@ -22,6 +22,7 @@ import { effectiveSections } from './utils/sectionScope';
 import { buildOrgScope } from './utils/orgScope';
 import { attachCc } from './utils/ccScope';
 import { loadLinesRes } from './utils/useProductionLines';
+import { widerLineId } from './utils/lineHierarchy';
 /* 🏭 ปลุก **ทะเบียนกลาง** ของข้อยกเว้นเวลาพักรายไลน์ (`break_line_rules` · 20/10)
    ที่นี่เพราะจอ OEE บางจอคิวรี `break_policies` ตรงๆ ไม่ผ่าน `loadBreakPolicies()`
    ⇒ ปลุกครั้งเดียวที่ระดับโมดูลของ App (แพทเทิร์นเดียวกับ `loadProcessTypes()` ใน DailyReport)
@@ -2451,6 +2452,18 @@ export default function App() {
         line_id: emp.line_id ?? ident.line_id,
         section: emp.section ?? ident.section,
       };
+      /* 🔴 ยกเว้นแกน "ไลน์": ถ้าบัญชีตั้งไว้เป็น **ไลน์แม่** ของไลน์ที่พนักงานสังกัด = เขาดูแลทั้งสาขา
+         ⇒ เอาตัวที่กว้างกว่า (กฎ "ห้ามคืนน้อยกว่าที่ profiles ตั้งไว้")
+         เคสจริง 27/10: หัวหน้ากลุ่ม Assembly Line D 2 คน — บัญชีตั้งไลน์แม่ไว้ถูกแล้ว แต่ของพนักงาน
+         (ไลน์ลูกที่ตัวเองสังกัด) ชนะ ⇒ เช็คชื่อ/เปิดกะไลน์ใหญ่/จัดการไลน์ผลิต ทำไม่ได้
+         ⚠️ โหลดทะเบียนเฉพาะตอน "2 ค่าไม่ตรงกัน" เท่านั้น — บัญชีทั่วไปไม่เสียคิวรีเพิ่ม
+            · อ่านไม่ได้ = คงค่าฐานพนักงาน = พฤติกรรมเดิมเป๊ะ (ห้ามเดาให้กว้างขึ้นเอง)
+            · คนละสาย = ฐานพนักงานชนะเหมือนเดิม (ตัวตนจริง กันบัญชีล้าสมัย) */
+      if (emp?.line_id != null && data?.line_id != null
+          && String(emp.line_id) !== String(data.line_id)) {
+        const { data: lsForId } = await loadLinesRes();
+        ident.line_id = widerLineId(data.line_id, emp.line_id, lsForId || []);
+      }
     }
 
     setUserRole(data?.role ?? null);

@@ -22,7 +22,7 @@ import { machineOptions, appendHistoryOptions, pickerText } from '../utils/picke
 const up = (s) => String(s ?? '').trim().toUpperCase();
 export { machineOptions };
 
-export default function MachineSelect({
+export default function MachineSelect({ scan,
   value = '', onChange, machines: given, lines, kinds, strict = false, includeInactive = false, groupByLine = false,
   valueKey = 'machine_no', allowFree = false, placeholder = 'ค้นเลขเครื่อง / ชื่อ / ไลน์…', freeHint = '',
   history = [],          // เลขเครื่องที่เคยบันทึกในคอลัมน์ปลายทาง (useColumnHistory) — ทะเบียนไม่มีก็ยังเลือกได้ (กลุ่ม 📜)
@@ -53,6 +53,7 @@ export default function MachineSelect({
   };
   return (
     <SearchSelect value={sel ? sel.id : ''} text={text} options={options} onChange={emit}
+      scan={scan === false ? undefined : (scan || 'เครื่องจักร/อุปกรณ์')}   /* 📷 มือถือ: สแกนเพื่อเลือก (27/10) · scan={false} = ปิด */
       allowFree={allowFree} placeholder={placeholder} freeHint={freeHint}
       emptyText={failed ? 'โหลดทะเบียนเครื่องไม่สำเร็จ' : 'ไม่พบเครื่องที่ค้นหา — เพิ่มได้ที่ /machines'}
       disabled={disabled} inputStyle={inputStyle} style={style} wrapRows={wrapRows} maxRows={maxRows} />

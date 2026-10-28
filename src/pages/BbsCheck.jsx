@@ -739,7 +739,11 @@ function AgreementsModal({ agreements, canManage, role, onClose }) {
         ...(r.id ? { id: r.id } : {}),
         seq: r.seq, text: String(r.text).trim(), auto_source: r.auto_source || null, is_active: true,
       }));
-      const { error } = await supabase.from('bbs_agreements').upsert(up).select('id');
+      /* 🔴 `defaultToNull:false` — ปนแถวเดิม (มี id) กับแถวใหม่ (ไม่มี id) ในก้อนเดียว postgrest ส่งคอลัมน์รวม
+         แล้วเติม id = NULL ให้แถวใหม่ ⇒ 23502 ล้มทั้งก้อน (หน้างานแจ้ง 27/10 "เพิ่มหัวข้อ BBS ไม่สำเร็จ")
+         คลาสเดียวกับที่แก้ไปแล้วใน MaterialRequests.jsx (audit 19/10) — ตารางมี default gen_random_uuid()
+         อยู่แล้ว ปัญหาอยู่ที่ postgrest ไม่ใช่ที่ schema ⇒ ห้ามแก้ด้วยการถอด not-null ของ PK */
+      const { error } = await supabase.from('bbs_agreements').upsert(up, { defaultToNull: false }).select('id');
       if (error) {
         // 23505 = ชนกับ unique index ของเลขข้อ (bbs_agree_seq_uniq) — แปลเป็นภาษาคน
         toast.error(error.code === '23505'

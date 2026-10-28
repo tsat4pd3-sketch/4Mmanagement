@@ -26,6 +26,7 @@ import { DELIVER_GATES, PICK_GATES, reqSourceMeta } from '../utils/replenishGate
 import { slocCodeOfLine } from '../utils/storageLoc';
 import { buildReceiptRows, RECEIPT_LINE } from '../utils/stockReceipt';
 import { rawSourceLocOf, splitRawConsume, inflowDestOf } from '../utils/partRefStock';   // 📤 ตัดวัตถุดิบล็อตจากคลังที่ของอยู่จริง (2026-10-12)   // 📥 ของซื้อเข้าคลัง ไม่ใช่เข้าไลน์ (2026-10-01)   // 🏬 ชั้นบัญชี SAP — tag ใบ/ledger ตอนเขียน (2026-09-08)
+import { lotMatsOf, lotOrphanRisk } from '../utils/stockReceipts';   // 🔧 พาร์ทที่ยอดเข้าคลังทางปิดล็อตทางเดียว
 import { releaseDueRows, openLotMats } from '../utils/kanbanReleaseDue';   // 📉 สต็อก ≤ min = ถึงจุดต้องปล่อยคัมบัง (26/10 · feedback สโตร์)
 import { loadProductsMaster } from '../utils/useProducts';
 import { notifyEvent } from '../utils/notifyEvent';
@@ -1232,7 +1233,7 @@ const matchQ = (q, ...fields) => {
 };
 
 function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfirm, confirming, onReceive, imgOf,
-  lotRequests, rawRequests, rackRequests, pkgRequests, wipRequests, purchaseRequests, purchaseErr, busy, onAdvanceLot, onIssueRaw, onAdvanceWip, onAdvancePurchase, setBulkBuy, fmt, workDate, nowMs, canOperate }) {
+  lotRequests, rawRequests, rackRequests, pkgRequests, wipRequests, purchaseRequests, purchaseErr, busy, onAdvanceLot, onIssueRaw, onAdvanceWip, onAdvancePurchase, setBulkBuy, fmt, workDate, nowMs, canOperate, lotMats = null, inflowRules = null }) {
 
   const { roundAlloc } = view;
   const [buyFilter, setBuyFilter] = useState(() => urlPick('buy', ['3', '5'], ''));   // '' | '3' | '5' · ?buy= (จอวนหน้า)
@@ -1353,6 +1354,24 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
         vLots.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ไม่มีใบสั่งผลิตที่ค้างอยู่{q ? ` และตรงกับคำค้น "${q}"` : ''}</div> :
         <StatusZones rows={vLots} zones={LOT_ZONES(showDone)} renderCard={lot => {
             const st = LOT_STATUS[lot.status] || LOT_STATUS.pending;
+            /* 🔴 27/10 (feedback สโตร์ ข้อ A2): *"ปุ่ม รับของเข้าสโตร์ ให้เอาออก ... ถ้าสโตร์มีการกดรับงาน
+               จากหน้า สต็อกในไลน์ > รอรับเข้า"* ⇒ ขั้นสุดท้ายของล็อตมี 2 ความหมาย แล้วแต่ "ของเข้าทางไหน":
+               · พาร์ทโหมด 🔧 ปิดล็อต = ปุ่มนี้คือที่ที่ของเข้าคลัง (ข้อความเดิม)
+               · พาร์ทโหมด 🟡 ยืนยันรับ = ของเข้าทางคิว "รอรับเข้า" แล้ว ⇒ ปุ่มนี้แค่ **ปิดใบ ไม่ลงสต็อก**
+               🔴 อ่านกฎไม่ได้ (`lotMats === null`) = **ไม่รู้** ⇒ เขียนบนการ์ดตรงๆ ห้ามเดาข้างใดข้างหนึ่ง */
+            const byLot = lotMats ? lotMats.has(String(lot.child_mat_no || '').trim()) : null;
+            const orphan = byLot === false && inflowRules ? lotOrphanRisk(lot, inflowRules) : false;
+            const doneLabel = byLot === null ? '✔ ปิดใบล็อต (ยังอ่านกฎรับเข้าไม่ได้)'
+              : byLot ? st.nextLabel
+              : orphan ? '⚠️ ปิดใบล็อต (ของจะไม่เข้าคลัง)' : '✔ ปิดใบล็อต · ไม่ลงสต็อกที่นี่';
+            /* 🔴 ใบที่ออกก่อนสลับโหมด = ไม่มีใบรับเข้ารองรับ ⇒ ปิดแล้วของหายจากบัญชี
+               ห้ามบอกว่า "ของเข้าคิวแล้ว" โดยไม่ดูว่าใบนี้ออกตอนไหน (`lotOrphanRisk` ข้างบน) */
+            const inflowNote = lot.status !== 'producing' ? null
+              : byLot === null ? '⚠️ อ่านกฎรับเข้าคลังไม่ได้ — ยังบอกไม่ได้ว่าของเข้าทางไหน'
+              : orphan ? '🔴 ใบนี้ออกก่อนเปลี่ยนวิธีรับเข้า — ไม่มีใบ "รอรับเข้า" รองรับ · ปิดแล้วของจะไม่เข้าคลัง แจ้งแอดมินก่อนกด'
+              /* 🔴 เขียนเท่าที่รู้จริง — กฎที่ถูกปิด (⚫) ไม่โผล่ในชุดนี้ (select กรอง is_active) ⇒
+                 ห้ามฟันธงว่า "ของเข้าคิวแล้ว" · บอกว่าเข้าตามกฎของพาร์ท แล้วให้ไปดูที่คิวจริง */
+              : byLot ? null : '📥 ของเข้าคลังตามกฎรับเข้าของพาร์ทนี้ (ดูที่ "สต็อกในไลน์ › รอรับเข้า") — ปุ่มนี้แค่ปิดใบ ไม่ลงสต็อก';
             return (
               <QueueCard key={lot.id} code={lot.child_mat_no} name={lot.part_name} showImg img={imgOf(lot.child_mat_no)}
                 /* 🔴 26/10 (feedback สโตร์) — ช่องนี้คือ **ไลน์ที่ผลิตล็อตนี้** ไม่ใช่ "ปลายทาง"
@@ -1360,7 +1379,9 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
                    ของจะไปกองที่ไลน์ ซึ่งตรงกับอาการที่สโตร์แจ้งพอดี */
                 qty={fmt(lot.lot_qty)} unit="ชิ้น" qtyLabel="ขนาดล็อต" destLabel="ไลน์ผลิต" destination={lot.source_line || 'ของซื้อ'}
                 statusLabel={st.label} statusColor={st.color} statusBg={st.bg} statusBorder={st.border}
-                actionLabel={canOperate ? st.nextLabel : null} busy={busy === lot.id} onAction={() => onAdvanceLot(lot, st.next)}
+                actionLabel={canOperate ? (st.next === 'done' ? doneLabel : st.nextLabel) : null}
+                busy={busy === lot.id} onAction={() => onAdvanceLot(lot, st.next)}
+                meta={inflowNote}
                 rows={[{ k: 'มาจาก FG', v: lot.source_prod_no || null }]} />
             );
           }} />}
@@ -1577,6 +1598,8 @@ export default function HeijunkaKanban() {
   const [stdRows,    setStdRows]      = useState([]);   // kanban_standards (min/max/lot) — ฐานของ "ถึงจุดต้องปล่อย"
   /* 📉 ของอ้างอิงสำหรับ "ถึงจุดต้องปล่อยคัมบัง" — null = ยังโหลดไม่เสร็จ/ไม่ได้ (คนละความหมายกับ "ไม่มีของต้องปล่อย") */
   const [dueRef,     setDueRef]       = useState(null); // { products, rules, stockIdx } | { failed }
+  /* กฎรับเข้าคลัง — ใช้ **ติดป้ายบนการ์ด** ว่าพาร์ทนี้ของเข้าทางไหน · null = ยังไม่รู้ (ห้ามเดา) */
+  const [inflowRules, setInflowRules] = useState(null);
   const [pullBusy, setPullBusy]       = useState(null);
   const [lineMap,   setLineMap]       = useState({});   // name → { parent_line_name, ... }
   /* ขอบเขตไลน์ — ช่องเดียวมาตรฐานเดียวกับทุกหน้า (QC audit 06/10 · user: "เอาให้เป็นมาตรฐาน")
@@ -1679,7 +1702,7 @@ export default function HeijunkaKanban() {
     //    (2026-08-25: child_lot cancelled 100 ใบ / purchase cancelled 984 ใบ จากบั๊กหน่วย lot_size
     //     ทำให้แท็บ Store Child ขึ้น 158 การ์ด · จัดซื้อขึ้น 300 การ์ด — user: "ดูรก อะไรเยอะไปหมด")
     //    precedent เดียวกับ rackRequests ที่กรอง cancelled อยู่แล้ว
-    const [{ data: lots, error: eLots }, { data: raws, error: eRaws }, { data: acc, error: eAcc }, { data: ks, error: eKs }, { data: racks, error: eRacks }, { data: pkgs, error: ePkgs }, { data: wips, error: eWips }, { data: dps, error: dpErr }, { data: purchases, error: purErr }, { data: slocRows, error: slocErr }] = await Promise.all([
+    const [{ data: lots, error: eLots }, { data: raws, error: eRaws }, { data: acc, error: eAcc }, { data: ks, error: eKs }, { data: racks, error: eRacks }, { data: pkgs, error: ePkgs }, { data: wips, error: eWips }, { data: dps, error: dpErr }, { data: purchases, error: purErr }, { data: slocRows, error: slocErr }, { data: inflowRows, error: inflowErr }] = await Promise.all([
       /* 🔴 QC 05/10 — "งานค้าง" ต้องโหลดครบทุกใบ (แบ่งหน้า) · "ประวัติ" ค่อยตัดล่าสุด N ใบ
          เดิม: ใบเบิก = ล่าสุด 400 ใบ**ไม่กรองสถานะ** ⇒ ปนใบ cancelled 700 ใบ (ขึ้นเป็น "รอจ่าย" มีปุ่มจ่าย)
                แล้วใบรอจ่ายเก่า 172 ใบหลุดหน้าต่างหายจากจอสโตร์ (วัด 05/10: pending 482 · issued 290 · cancelled 700)
@@ -1713,6 +1736,8 @@ export default function HeijunkaKanban() {
       supabaseDR.from('v_purchase_open_summary').select('*').order('total_qty', { ascending: false }),
       // master → cache กลาง (ชุดคอลัมน์นี้คือ superset ที่ loader ถืออยู่แล้ว · ห้ามยิงตรง)
       loadStorageLocations().then(rows => ({ data: rows, error: null })),
+      // กฎรับเข้าคลัง — ตอบ "พาร์ทนี้ของเข้าทางปิดล็อต หรือทางคิวรอรับเข้า"
+      supabaseDR.from('stock_inflow_rules').select('match_type, match_value, dest_line_name, is_active, mode').eq('is_active', true),
     ]);
     // ทะเบียนรหัสคลังยังไม่ apply (42P01/42703) = ยังไม่ผูก SLoc ทั้งระบบ (tag เป็น null ตรงความจริง) · error อื่นห้ามกลืน
     if (slocErr && !['42P01', '42703'].includes(slocErr.code)) toast.error('โหลดทะเบียนรหัสคลังไม่ได้: ' + slocErr.message);
@@ -1738,6 +1763,8 @@ export default function HeijunkaKanban() {
     if (dpErr && dpErr.code !== '42P01') toast.error('โหลดทะเบียนจุดส่งไม่ได้: ' + dpErr.message);
     setDeliveryPoints(dpErr ? [] : (dps || []));
     setPurchaseRequests(purchases || []);
+    /* 🔴 อ่านกฎไม่ได้ = **ไม่รู้** ว่าพาร์ทไหนเข้าทางไหน ⇒ null ให้การ์ดเขียนว่ายังตอบไม่ได้ ห้ามเดา */
+    setInflowRules(inflowErr ? null : (inflowRows || []));
     if (!eKs) {
       const lm = {};
       (ks || []).forEach(s => { if (s.lot_size != null) lm[s.mat_no] = s.lot_size; });
@@ -1777,6 +1804,9 @@ export default function HeijunkaKanban() {
     return () => { alive = false; };
   }, [stdSig]);
 
+  /* พาร์ทที่ "ของเข้าคลังทางปิดล็อตทางเดียว" — null = อ่านกฎไม่ได้ ⇒ การ์ดต้องเขียนว่ายังตอบไม่ได้ */
+  const lotMats = useMemo(() => (inflowRules ? lotMatsOf(inflowRules) : null), [inflowRules]);
+
   /* คำนวณล้วน — กติกาอยู่ `utils/kanbanReleaseDue.js` ที่เดียว ห้ามคิดเองในหน้า */
   const releaseDue = useMemo(() => {
     if (!dueRef || dueRef.failed) return null;
@@ -1795,7 +1825,8 @@ export default function HeijunkaKanban() {
     if (!list.length) return (m, qty) => [{ loc: consumingLine, qty: Number(qty) || 0 }];
     const [pr, rr, sr] = await Promise.all([
       supabaseDR.from('dr_products').select('mat_no, line_name, is_active, is_operation').in('mat_no', list),
-      supabaseDR.from('stock_inflow_rules').select('match_type, match_value, dest_line_name, is_active, mode').eq('is_active', true),
+      // `updated_at` = ตอนที่โหมดถูกสลับ — ใช้จับใบล็อตที่ออกก่อนสลับ (`lotOrphanRisk`) ห้ามถอด
+      supabaseDR.from('stock_inflow_rules').select('match_type, match_value, dest_line_name, is_active, mode, updated_at').eq('is_active', true),
       supabaseDR.from('line_stock_summary').select('mat_no, qty_on_hand').eq('line_name', consumingLine).in('mat_no', list),
     ]);
     const err = pr.error || rr.error || sr.error;
@@ -1858,12 +1889,19 @@ export default function HeijunkaKanban() {
             const { data: rulesRows, error: eRules } = await supabaseDR.from('stock_inflow_rules')
               .select('match_type, match_value, dest_line_name, is_active, mode').eq('is_active', true);
             if (eRules) throw eRules;
-            destLoc = inflowDestOf(lot.child_mat_no, rulesRows || []);
-            if (!destLoc) {
-              throw new Error(`ยังไม่ได้ตั้งคลังปลายทางของ ${lot.child_mat_no} — ไปตั้งที่ สต็อกในไลน์ › กฎรับเข้าคลัง แล้วกดรับใหม่`);
+            /* 🔴🔴 27/10 (feedback สโตร์ ข้อ A2) — **ลงสต็อกที่นี่ได้เฉพาะพาร์ทที่ยังอยู่โหมด 🔧 ปิดล็อต**
+               พาร์ทที่ย้ายไปโหมด 🟡 ยืนยันรับแล้ว ของเข้าทางคิว "📥 รอรับเข้า" (trigger สร้างใบให้ตอนปิดใบผลิต)
+               ⇒ ถ้าปิดล็อตแล้วลงสต็อกอีก = **เข้าคลัง 2 เด้ง** ซึ่งคือสิ่งที่สโตร์แจ้งมาตั้งแต่แรก
+               (*"ถ้ามีปุ่มนี้จะเหมือนเป็นการรับงานซ้ำ 2 รอบ"*) · อ่านกฎสดตอนกด ไม่ใช่จาก state
+               เพราะคนอาจเพิ่งสลับโหมดที่ /line-stock · **ส่วนตัดวัตถุดิบข้างล่างทำเหมือนเดิมทุกกรณี** */
+            if (lotMatsOf(rulesRows || []).has(String(lot.child_mat_no || '').trim())) {
+              destLoc = inflowDestOf(lot.child_mat_no, rulesRows || []);
+              if (!destLoc) {
+                throw new Error(`ยังไม่ได้ตั้งคลังปลายทางของ ${lot.child_mat_no} — ไปตั้งที่ สต็อกในไลน์ › กฎรับเข้าคลัง แล้วกดรับใหม่`);
+              }
+              txns.push({ line_name: destLoc, mat_no: lot.child_mat_no, part_name: lot.part_name, qty: lot.lot_qty,
+                type: 'issue', work_date: wd, note: `auto: รับ child เข้า ${destLoc} (ล็อต ${lot.lot_qty} · ผลิตที่ ${lot.source_line})`, created_by: fullName || 'สโตร์' });
             }
-            txns.push({ line_name: destLoc, mat_no: lot.child_mat_no, part_name: lot.part_name, qty: lot.lot_qty,
-              type: 'issue', work_date: wd, note: `auto: รับ child เข้า ${destLoc} (ล็อต ${lot.lot_qty} · ผลิตที่ ${lot.source_line})`, created_by: fullName || 'สโตร์' });
             // (2) ตัดสต็อกวัตถุดิบตามใบเบิก **ที่ยังไม่ถูกจ่าย** — query สดจาก DB ห้ามใช้ state
             //    (state เคยโหลดแค่ 400 แถวล่าสุด: ใบเบิกของล็อตเก่าหลุดหน้าต่าง = ถูกมาร์ค issued
             //     โดยไม่มีแถว consume แล้วสต็อกวัตถุดิบสูงเกินจริงเงียบๆ · QC flow-audit #40)
@@ -1909,8 +1947,10 @@ export default function HeijunkaKanban() {
         }
       }
       // toast ตามจริง: เติมสต็อกเฉพาะเมื่อมี source_line (ผลิตเองแล้วของกลับเข้าสโตร์)
+      /* ข้อความต้องตรงกับสิ่งที่เกิดขึ้นจริง — ปิดล็อตโดยไม่ลงสต็อก ห้ามขึ้นว่า "สต็อก +N" */
       toast.success(next === 'done'
-        ? (lot.source_line ? `📥 รับเข้า ${destLoc} · ${lot.child_mat_no} สต็อก +${lot.lot_qty}` : `✅ ปิดล็อต ${lot.child_mat_no}`)
+        ? (destLoc ? `📥 รับเข้า ${destLoc} · ${lot.child_mat_no} สต็อก +${lot.lot_qty}`
+          : `✅ ปิดใบล็อต ${lot.child_mat_no} — ของเข้าคลังทางคิว "รอรับเข้า" ไม่ลงสต็อกซ้ำที่นี่`)
         : (next === 'producing' ? `📤 ปล่อย ${lot.child_mat_no} เข้าไลน์ ${lot.source_line || ''} แล้ว` : `อัปเดตล็อต ${lot.child_mat_no} → ${next}`));
       await loadPull();
       await load();
@@ -2875,6 +2915,8 @@ export default function HeijunkaKanban() {
             onConfirm={confirmRound} confirming={confirming} onReceive={openReceive}
             lotRequests={lotRequests} rawRequests={rawRequests} rackRequests={rackRequests} pkgRequests={pkgRequests} wipRequests={wipRequests} purchaseRequests={purchaseRequests} purchaseErr={purchaseErr} setBulkBuy={setBulkBuy}
             busy={pullBusy} onAdvanceLot={advanceLot} onIssueRaw={issueRaw} onAdvanceWip={advanceWip} onAdvancePurchase={advancePurchase}
+            lotMats={lotMats}
+            inflowRules={inflowRules}
             fmt={fmt} workDate={workDate} nowMs={nowMs} canOperate={canOperate} imgOf={imgOf}
           />
         ) : viewMode === 'chart' ? (

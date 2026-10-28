@@ -5613,6 +5613,29 @@ test('🛡️ lot-dest-from-rules — ปลายทางของล็อต
     bad.push('HeijunkaKanban.advanceLot (ยังเขียน ledger ลงที่ lot.source_line = ชื่อไลน์ผลิต)');
   if (!/if \(!destLoc\)/.test(hk))
     bad.push('HeijunkaKanban.advanceLot (ไม่มีกฎแล้วไม่ได้บล็อก — เดาคลังเองกู้ยากกว่ารอคนตั้งกฎ)');
+  /* 🔴 27/10 (ข้อ A2) — ปิดล็อตลงสต็อกได้เฉพาะพาร์ทที่ยังอยู่โหมด 🔧
+     พาร์ทที่ย้ายไปโหมด 🟡 ยืนยันรับ ของเข้าทางคิว "รอรับเข้า" แล้ว ⇒ ลงที่นี่อีก = เข้าคลัง 2 เด้ง
+     (ตรงกับที่สโตร์แจ้ง: *"ถ้ามีปุ่มนี้จะเหมือนเป็นการรับงานซ้ำ 2 รอบ"*) */
+  if (!/lotMatsOf\((?:rulesRows|rules)/.test(hk))
+    bad.push('HeijunkaKanban.advanceLot (ไม่ได้เช็คโหมดก่อนลงสต็อก — พาร์ทโหมดยืนยันรับจะเข้าคลัง 2 เด้ง)');
+
+  /* 🔴🔴 27/10 — ด่านคู่แฝดของข้างบน: ด่านนั้นกันเข้าคลัง 2 เด้ง **ด่านนี้กันของหายจากบัญชี**
+     ใบล็อตที่ออกตอนพาร์ทยังโหมด 🔧 ไม่เคยมี `stock_receipts` รองรับ (trigger ข้าม) ⇒ พอสลับโหมด
+     ปุ่มปิดล็อตเลิกลงสต็อก **และ** ไม่มีใบรับเข้าให้กดแทน = ปิดแล้วของหายเงียบ
+     (วัดวันสลับ: 7 ใบค้างขั้น producing · บนใบ 13,200 ชิ้น · ใบรับเข้ารองรับ 0)
+     ⇒ การ์ดต้องเตือนก่อนกด **ห้ามบอกว่า "ของเข้าคิวแล้ว" ลอยๆ** · ต้องรู้ว่าใบออกก่อน/หลังสลับ
+       ⇒ ต้อง select `updated_at` ของกฎมาด้วย */
+  if (!/lotOrphanRisk\(/.test(hk))
+    bad.push('HeijunkaKanban (การ์ดล็อตไม่ได้เช็ค lotOrphanRisk — ใบที่ออกก่อนสลับโหมดจะปิดแล้วของหายเงียบ)');
+  if (![...hk.matchAll(/from\('stock_inflow_rules'\)\.select\('([^']*)'\)/g)]
+        .some(m => /\bupdated_at\b/.test(m[1])))
+    bad.push('HeijunkaKanban (ไม่มี select stock_inflow_rules ตัวไหน select updated_at — lotOrphanRisk ตัดสินไม่ได้)');
+
+  /* 🔴 ชั้นป้องกันของขั้น ③ — จอตั้งค่าต้องห้ามสลับออกจากโหมด 🔧 เงียบๆ ตอนยังมีใบล็อตค้าง
+     (นับไม่ได้ = บล็อก · ด่านนี้ตรวจแค่ว่า "ยังเช็คอยู่" ไม่ตรวจข้อความ) */
+  const ls = stripComments(readFileSync(join(ROOT, 'src/pages/LineStock.jsx'), 'utf8'));
+  if (!/'producing'/.test(ls) || !/child_lot_requests/.test(ls))
+    bad.push('LineStock.setRuleMode (ไม่ได้เช็คใบล็อตค้างก่อนสลับออกจากโหมด lot — ของบนใบที่ค้างจะไม่เข้าคลังเลย)');
 
   /* 🔴 จอที่เอากฎรับเข้าไปป้อน partRefStock ต้อง select `mode` มาด้วย — ตอนนี้ `mode` คือสิ่งที่
      `/line-stock` ใช้แสดง/แก้ "ยอดเข้าทางไหน" ขาดไป = จอตั้งค่าโชว์โหมดผิด */
@@ -7018,4 +7041,141 @@ test('🫙 manual-open-product-empty-reason — ช่องเลือกส�
   assert.deepEqual(bad, [], '\n\n❌ ช่องเลือกสินค้ากลับไปบอกสาเหตุเดียว:\n  ' + bad.join('\n  ')
     + '\n\n   ทำไมสำคัญ: "ไม่มีสินค้า register" กับ "มีแต่ถูกปิดใช้งาน" แก้คนละทางกันคนละคน\n'
     + '              บอกผิด = หน้างานรอของที่ไม่ต้องรอ และของที่ต้องทำไม่มีใครทำ\n');
+});
+
+/* ═══ ⬜ "จอขาวสนิท" ต้องเป็นไปไม่ได้ — ตาข่ายใน index.html ═══  2026-10-26
+   หน้างานแจ้ง: จอขาว **ทั้งคอมและมือถือ** · ไม่มีอะไรบนจอให้กดเลย
+   ทำไมถึงขาวสนิท: ถ้าไฟล์ chunk โหลดไม่ได้ (404 หลัง deploy · เน็ตตัด) หรือพังตั้งแต่ตอน import
+   ⇒ React ไม่เคยถูกสร้าง ⇒ `RootErrorBoundary` ไม่มีทางทำงาน ⇒ `<div id="root">` ว่างเปล่า
+   ⇒ ตาข่ายต้องอยู่ **ใน index.html** เท่านั้น (ทำงานได้แม้โปรแกรมหลักไม่โหลดสักบรรทัด)
+   🔴 ปุ่มต้อง "ล้างของเก่า + เปิดใหม่" ไม่ใช่ `reload()` เฉยๆ — reload ธรรมดาได้ index.html
+      ตัวเดิมจาก cache = วนขาวซ้ำ (เหตุผลเดียวกับที่หน้างานกด F5 แล้วไม่หาย) */
+test('⬜ boot-fallback — จอขาวสนิทต้องเป็นไปไม่ได้ (ตาข่ายใน index.html + ธงจาก main.jsx)', () => {
+  const bad = [];
+  const html = readFileSync(join(ROOT, 'index.html'), 'utf8');
+  const main = stripComments(readFileSync(join(ROOT, 'src/main.jsx'), 'utf8'));
+
+  if (!html.includes('id="boot-fallback"')) bad.push('index.html: ไม่มีกล่อง #boot-fallback');
+  if (!html.includes('id="boot-retry"')) bad.push('index.html: ไม่มีปุ่มลองใหม่ #boot-retry');
+  if (!/__ESM_MOUNTED/.test(html)) bad.push('index.html: ตาข่ายไม่ได้เช็คธง __ESM_MOUNTED');
+  /* ต้องจับทั้ง 2 ทาง: ไฟล์โหลดไม่ได้ (error ของ SCRIPT/LINK) + เงียบไปเฉยๆ (ตั้งเวลา) */
+  if (!/addEventListener\(\s*'error'/.test(html)) bad.push('index.html: ไม่ดัก error ของ SCRIPT/LINK');
+  if (!/setTimeout\(/.test(html)) bad.push('index.html: ไม่มีตัวจับเคส "เงียบแต่ไม่เคย mount"');
+  /* 🔴 ปุ่มต้องล้างของเก่าจริง — ห้ามเป็น location.reload() เปล่าๆ */
+  if (!/location\.replace\([^)]*fresh=/.test(html)) bad.push('index.html: ปุ่มไม่ได้เปิดใหม่แบบล้างแคช (ต้องมี ?fresh=)');
+  /* 🔴 ตาข่ายที่บังจอที่ใช้งานได้ = แย่กว่าไม่มีตาข่าย — ต้องเช็คว่า React วาดอะไรลง #root แล้วหรือยัง */
+  if (!/childElementCount/.test(html)) bad.push('index.html: ตาข่ายไม่ได้เช็คว่า #root มีเนื้อหาแล้ว (เสี่ยงบังของจริง)');
+
+  if (!/window\.__ESM_MOUNTED\s*=\s*true/.test(main)) bad.push('main.jsx: ไม่ได้ตั้งธง __ESM_MOUNTED หลัง render');
+  const iMount = main.indexOf('__ESM_MOUNTED');
+  const iRender = main.indexOf('createRoot(');
+  if (iMount >= 0 && iRender >= 0 && iMount < iRender) bad.push('main.jsx: ตั้งธงก่อน render — ต้องตั้งหลัง');
+
+  assert.deepEqual(bad, [], '\n\n❌ ตาข่ายกันจอขาวหาย:\n  ' + bad.join('\n  ')
+    + '\n\n   ทำไมสำคัญ: chunk โหลดไม่ได้ = React ไม่เคยขึ้น = RootErrorBoundary ไม่ทำงาน\n'
+    + '              หน้างานเห็นจอขาวเปล่าๆ ไม่รู้ว่าพังหรือช้า แล้วกด F5 รัวๆ (ยิ่งซ้ำเติมตอนระบบอ่อนแรง)\n');
+});
+
+test('🏭 machine-process-vote-needs-asset-filter — ห้ามโหวต process_type จากทะเบียน machines โดยไม่กรองชนิดสินทรัพย์', () => {
+  /* บั๊กจริง 2026-10-27: ตาราง `machines` (DR) เก็บสินทรัพย์ทุกชนิด — เครื่องจักร 226 · แม่พิมพ์ 268
+     · จิ๊ก 190 · facility 44 — และ 674/728 แถวมี process_type = 'welding_assembly' (ค่า default
+     ที่ไม่มีใครแก้) ⇒ นับรวมทุกชนิด = แม่พิมพ์/จิ๊กโหวตชนะเครื่องจักร
+     วัดจริง: HDF1 · HDF2 · LASER-345 · LASER-789 ถูกตีเป็น welding_assembly ทั้งที่เครื่องจักร
+     ทั้งหมดเป็น metal_forming ⇒ DailyReport เลือก **นโยบายเวลาพัก** ผิดชุด ⇒ %A/%P ผิดทั้งกะ
+     ⇒ ต้องผ่าน processVotingRows() (src/utils/machineAssets.js) เสมอ
+     🔴 ยอมรับ `processUnionRows(` ด้วย = "จุดนี้ตั้งใจไม่กรอง" (dropdown ต้องใจกว้าง — ซ่อนผิด
+        = หน้างานบันทึกปัญหาจริงไม่ได้ · เคสจริง Line 60 ลง DT metal_forming 10 ใบ ทั้งที่ประเภทนั้น
+        มาจากแม่พิมพ์/จิ๊ก) — บังคับให้เลือกข้างอย่างชัดเจน ห้ามปล่อยให้ดูเหมือนลืมกรอง
+     หมายเหตุ: จับเฉพาะการ "อ่าน process_type ของแถวที่กรองมาจาก machines" — การแสดงผลรายแถว
+     (`machine?.process_type` ในการ์ด/ชิป) ไม่เข้าข่าย เพราะไม่ได้เอามาตัดสินแทนทั้งไลน์ */
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
+    if (/machineAssets\.js$/.test(file)) continue;
+    const src = stripComments(readFileSync(file, 'utf8'));
+    let i = 0;
+    for (;;) {
+      i = src.indexOf('machines.filter(', i);
+      if (i < 0) break;
+      const stmt = src.slice(i, i + 400);
+      const end = stmt.search(/\)\s*[;,)\n]/);
+      const body = end > 0 ? stmt.slice(0, end + 1) : stmt;
+      if (/process_type/.test(body)) {
+        /* ยอมรับได้เมื่อห่อด้วย processVotingRows( … machines.filter(…) … ) */
+        const before = src.slice(Math.max(0, i - 60), i);
+        if (!/(machineAssetsOnly|machineLaneCount|processUnionRows)\(\s*$/.test(before)) {
+          bad.push(`${file.replace(ROOT, '')}: machines.filter(...process_type...) ไม่ได้ห่อด้วย machineAssetsOnly()`);
+        }
+      }
+      i += 'machines.filter('.length;
+    }
+  }
+  /* 🔴 ชุดที่ 2 — "นับจำนวนเครื่องของไลน์" เอาไปเป็น **ตัวหาร** (เลนของไลน์เครื่องขนาน / ฐาน % Downtime)
+     นับจิ๊ก/แม่พิมพ์รวม = ตัวหารใหญ่เกิน = **หักเวลาเสียน้อยกว่าจริง = %A/OEE สูงเกินจริง**
+     วัดจริง 27/10: Line D1 9→4 · D3 8→4 · D5 8→5 · D4 5→3 (ส่วนเกินคือจิ๊ก)
+     ⇒ ต้องผ่าน machineLaneCount() */
+  for (const file of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
+    if (/machineAssets\.js$/.test(file)) continue;
+    const src = stripComments(readFileSync(file, 'utf8'));
+    /* รูปแบบที่เคยเขียนกันมา: new Set(machines.filter(...).map(m => m.machine_no)).size */
+    const re = /new Set\(\s*machines\s*\.filter\([\s\S]{0,220}?machine_no\s*\)\s*\)\s*\.size/g;
+    if (re.test(src)) {
+      bad.push(`${file.replace(ROOT, '')}: นับเลน/เครื่องต่อไลน์เองจาก machines — ต้องใช้ machineLaneCount()`);
+    }
+  }
+  assert.deepEqual(bad, [], '\n\n❌ โหวต process_type จาก machines โดยไม่กรองชนิดสินทรัพย์:\n  ' + bad.join('\n  ')
+    + '\n\n   แก้: import { processVotingRows } from \'<path>/utils/machineAssets\';\n'
+    + '        machineAssetsOnly(machines.filter(m => … && m.process_type))\n'
+    + '   ทำไม: แม่พิมพ์/จิ๊ก/facility ถือ process_type default ⇒ โหวตชนะเครื่องจักรจริง\n');
+});
+
+test('🧩 upsert-mixed-id-needs-default — upsert ที่ปนแถวเดิม/แถวใหม่ ต้องส่ง defaultToNull:false', () => {
+  /* เจอ 2 รอบแล้ว (MaterialRequests 19/10 · BbsCheck 27/10 หน้างานแจ้ง "เพิ่มหัวข้อ BBS ไม่สำเร็จ")
+     อาการ: `null value in column "id" ... violates not-null constraint` ทั้งที่ตารางมี
+     `default gen_random_uuid()` อยู่แล้ว
+     สาเหตุ: ส่ง array ที่ **บางแถวมี id บางแถวไม่มี** เข้า upsert ⇒ postgrest สร้าง INSERT ก้อนเดียว
+     ด้วย "คอลัมน์รวมของทุกแถว" แล้วเติม NULL ให้แถวที่ขาดคีย์นั้น ⇒ DEFAULT ไม่ถูกใช้ ⇒ ล้มทั้งก้อน
+     🔴 ห้ามแก้ด้วยการถอด not-null ของ PK / ยัด id เองจากฝั่ง client
+        ⇒ ส่ง { defaultToNull: false } (postgrest `missing=default`)
+        หรือแยก insert (แถวใหม่) / upsert (แถวเดิม) คนละคอลแบบ OjtTraining.jsx
+
+     จับเฉพาะรูปที่อันตรายจริง — ต้องครบ 2 อย่าง:
+       ① สเปรดแบบ `...(x.id ? { id: x.id } : {})` = แถวนั้น**ยังอยู่ในก้อน**แต่ไม่มี id
+          (ถ้าเป็น `: null` แล้ว filter ทิ้ง = ปลอดภัย ไม่เข้าข่าย)
+       ② อยู่ในคอลแบ็กของ `.map(` ที่รับตัวแปรนั้นเป็นพารามิเตอร์ = สร้างเป็น "อาร์เรย์หลายแถว"
+          (ออบเจกต์เดี่ยวไม่มีปัญหานี้ — คีย์ของมันเองคือคอลัมน์ลิสต์ทั้งหมด เช่น LayerProcessAudit) */
+  const bad = [];
+  const RE = /\.\.\.\((\w+)\??\.id \? \{ id: \1\??\.id \} : \{\}\)/g;
+  for (const file of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
+    const src = stripComments(readFileSync(file, 'utf8'));
+    for (const m of src.matchAll(RE)) {
+      const ident = m[1];
+      const back = src.slice(Math.max(0, m.index - 400), m.index);
+      const mapAt = back.lastIndexOf('.map(');
+      if (mapAt < 0) continue;                                   // ออบเจกต์เดี่ยว = ปลอดภัย
+      const between = back.slice(mapAt);
+      if (!new RegExp(`\\b${ident}\\b`).test(between)) continue;  // .map() คนละตัว (บังเอิญอยู่ใกล้)
+      if (!src.includes('defaultToNull')) {
+        bad.push(`${file.replace(ROOT, '')}: upsert ปนแถวเดิม/ใหม่ (${ident}) แต่ไม่ได้ส่ง { defaultToNull: false }`);
+      }
+    }
+  }
+  assert.deepEqual([...new Set(bad)], [], '\n\n❌ upsert ที่ปน id/ไม่มี id จะพังด้วย 23502:\n  ' + bad.join('\n  ')
+    + '\n\n   แก้: .upsert(rows, { defaultToNull: false })  ← ให้ postgrest ใช้ default ของคอลัมน์\n'
+    + '   หรือแยก insert (แถวใหม่) / upsert (แถวเดิม) คนละคอล แบบ OjtTraining.jsx\n');
+});
+
+test('🧭 identity-line-wider — ตัวตนจากฐานพนักงานห้ามบีบ "ไลน์ที่ดูแล" ให้แคบลง', () => {
+  /* เคสจริง 27/10 (หน้างานแจ้ง): หัวหน้ากลุ่ม Assembly Line D 2 คน
+     `profiles.line_id` = ไลน์แม่ (ไลน์ที่ดูแล · แอดมินตั้งถูกแล้ว)
+     `employees.line_id` = ไลน์ลูกที่ตัวเองสังกัด ⇒ กติกา "ตัวตนอ่านจาก employees" ทำให้ของพนักงานชนะ
+     ⇒ ครอบครัวไลน์เหลือใบเดียว ⇒ เช็คชื่อ/เปิดกะไลน์ใหญ่/จัดการไลน์ผลิต ทำไม่ได้
+     ขัดกฎ "ห้ามคืนน้อยกว่าที่ profiles ตั้งไว้" (CLAUDE.md §สิทธิ์ 3 ชั้น)
+     ⇒ แกนไลน์ต้องผ่าน widerLineId() เสมอ (utils/lineHierarchy.js) */
+  const app = stripComments(readFileSync(join(ROOT, 'src/App.jsx'), 'utf8'));
+  const bad = [];
+  if (/line_id:\s*emp\.line_id\s*\?\?/.test(app) && !/widerLineId\s*\(/.test(app)) {
+    bad.push('src/App.jsx: เอา employees.line_id มาทับโดยไม่ผ่าน widerLineId()');
+  }
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n  ')
+    + '\n\n   หัวหน้าที่ดูแล "ไลน์แม่" แต่ตัวเองสังกัดไลน์ลูก จะถูกบีบเหลือกลุ่มย่อยของตัวเองเงียบๆ\n');
 });
