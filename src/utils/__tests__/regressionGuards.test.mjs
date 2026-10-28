@@ -7479,6 +7479,18 @@ test('👨‍🔧 line-heads-single-source — จอตั้งค่าไล
     bad.push('lineHeads.js (เอา profiles.role มาเป็นตำแหน่งงาน — role คือชุดสิทธิ์ ไม่ใช่ตำแหน่ง)');
   /* ที่ 2 ทะเบียนไม่ตรงกันต้องฟ้อง ห้ามเงียบ */
   if (!/conflicts/.test(util)) bad.push('lineHeads.js (ไม่มี conflicts — ข้อมูลไม่ตรงกันแล้วเงียบ)');
+  /* 🔑 จับคู่บัญชี↔พนักงาน ต้องใช้ FK `profiles.employee_id` ก่อน ชื่อเป็นท่าสุดท้าย
+     (กฎ CLAUDE.md: ทะเบียนที่จับคู่ด้วย "ข้อความ" คือกับดัก — มี FK ให้ใช้ ต้องใช้ FK)
+     เคยพลาด: "ณัฐพล  คำผาง" เว้น 2 เคาะ จับไม่ติด = หัวหน้าหายทั้งไลน์ */
+  if (!/employee_id/.test(util)) bad.push('lineHeads.js (ไม่ได้ใช้ profiles.employee_id — จับคู่ด้วยชื่อล้วน)');
+  for (const f of ['src/pages/LineSetup.jsx', 'src/pages/Report.jsx']) {
+    const code = stripComments(readFileSync(join(ROOT, f), 'utf8'));
+    /* เจาะเฉพาะคิวรี "บัญชีหัวหน้า" (กรอง role leader/supervisor) — หน้าเดียวกันมีคิวรี profiles อื่นด้วย */
+    for (const q of code.match(/from\(\s*['"]profiles['"]\s*\)[\s\S]{0,200}?\['leader',\s*'supervisor'\]/g) || []) {
+      if (!/employee_id/.test(q))
+        bad.push(`${f} (คิวรีบัญชีหัวหน้าไม่ได้ดึง employee_id ⇒ ถอยไปจับคู่ด้วยชื่อเงียบๆ)`);
+    }
+  }
   for (const f of ['src/pages/LineSetup.jsx', 'src/pages/Report.jsx']) {
     const code = stripComments(readFileSync(join(ROOT, f), 'utf8'));
     if (!/lineHeads\.conflicts/.test(code)) bad.push(`${f} (ไม่ได้เขียน conflicts บนจอ)`);

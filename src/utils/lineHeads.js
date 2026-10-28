@@ -80,7 +80,7 @@ export function headScopeLineIds(lines = [], lineId) {
 export function lineHeadsOf({ lineId, lines = [], employees = [], profiles = [], maps = null, legacyName = '' } = {}) {
   const empty = {
     rows: [], byShift: { day: [], night: [], unknown: [] },
-    level: null, fromLineName: null, conflicts: [],
+    level: null, fromLineName: null, conflicts: [], unlinkedAccounts: [],
     legacyName: txt(legacyName), legacyInRegistry: null,
   };
   if (lineId == null) return empty;
@@ -89,11 +89,20 @@ export function lineHeadsOf({ lineId, lines = [], employees = [], profiles = [],
   const inChain = (id) => id != null && chain.some(c => String(c) === String(id));
   const nameOfLine = (id) => lines.find(l => String(l.id) === String(id))?.name || null;
 
-  /* บัญชีผู้ใช้ที่ "ถูกตั้งให้ดูแลไลน์" — ใช้ตอบ **ขอบเขต** อย่างเดียว ไม่ใช่ตำแหน่งงาน */
-  const profOf = (name) => profiles.find(p => sameName(p.full_name, name)) || null;
+  /* 🔑 จับคู่ "บัญชีผู้ใช้ ↔ พนักงาน" ด้วย **`profiles.employee_id` (FK) ก่อนเสมอ**
+     ชื่อเป็น**ท่าสุดท้าย** สำหรับบัญชีที่ยังไม่ผูก FK — และติดธง `_byName` ให้จอรู้ว่าเป็นของเปราะ
+     🔴 เคยพลาดมาแล้ว: จับด้วยชื่อล้วน ⇒ "ณัฐพล  คำผาง" (เว้น 2 เคาะ) จับไม่ติด = หัวหน้าหายทั้งไลน์
+        (กฎ CLAUDE.md: ทะเบียนที่จับคู่ด้วย "ข้อความ" คือกับดัก — มี FK ให้ใช้ ต้องใช้ FK) */
+  const profByFk = new Map(profiles.filter(p => p?.employee_id).map(p => [String(p.employee_id), p]));
+  const profOf = (e) => profByFk.get(String(e?.id))
+    || (profiles.find(p => !p?.employee_id && sameName(p.full_name, e?.name)) ? { ...profiles.find(p => !p?.employee_id && sameName(p.full_name, e?.name)), _byName: true } : null);
+  /* ทิศกลับ: บัญชี → พนักงาน (ใช้ตอนหา conflicts) — FK ก่อน แล้วค่อยชื่อ */
+  const empById = new Map(employees.map(e => [String(e.id), e]));
+  const empOfProfile = (p) => (p?.employee_id ? empById.get(String(p.employee_id)) : null)
+    || employees.find(x => sameName(x.name, p?.full_name)) || null;
 
   /* ① ไลน์ที่พนักงานคนนี้ "ดูแล" — ของบัญชีกว้างกว่าชนะ (กฎ 27/10 widerLineId) */
-  const ownedLineId = (e) => widerLineId(profOf(e.name)?.line_id ?? null, e.line_id ?? null, lines);
+  const ownedLineId = (e) => widerLineId(profOf(e)?.line_id ?? null, e.line_id ?? null, lines);
 
   /* ② หัวหน้าของไลน์ในสาย — ชั้น leader ก่อน ไม่มีจึงถอยไป supervisor
         เลือกไลน์ที่ใกล้ตัวเองที่สุดในสาย (ไลน์ตัวเองชนะไลน์แม่) */
@@ -108,7 +117,7 @@ export function lineHeadsOf({ lineId, lines = [], employees = [], profiles = [],
   }
 
   const rows = picked.map(e => {
-    const pr = profOf(e.name);
+    const pr = profOf(e);
     const team = txt(e.team).toUpperCase() || txt(pr?.team).toUpperCase() || null;
     return {
       id: e.id,
@@ -119,6 +128,8 @@ export function lineHeadsOf({ lineId, lines = [], employees = [], profiles = [],
       shift: maps ? shiftFromTeam(scheduleTeamFor({ ...e, team }, maps), team) || null : null,
       lineName: nameOfLine(ownedLineId(e)),
       hasAccount: !!pr,
+      // 🔴 true = ผูกกันด้วย "ชื่อ" ไม่ใช่ FK ⇒ เปลี่ยนชื่อ/เว้นวรรคเมื่อไหร่ ความเชื่อมโยงขาดเงียบ
+      linkedByName: !!pr?._byName,
     };
   }).sort((a, b) =>
     (SHIFT_ORDER[a.shift ?? 'x'] - SHIFT_ORDER[b.shift ?? 'x'])
@@ -136,7 +147,7 @@ export function lineHeadsOf({ lineId, lines = [], employees = [], profiles = [],
   for (const p of profiles) {
     if (!['leader', 'supervisor'].includes(p?.role)) continue;
     if (!inChain(p.line_id)) continue;
-    const e = employees.find(x => sameName(x.name, p.full_name));
+    const e = empOfProfile(p);
     if (!e) { conflicts.push({ kind: 'no_employee', name: txt(p.full_name), role: p.role, team: txt(p.team).toUpperCase() || null }); continue; }
     if (pickedIds.has(e.id)) continue;                       // ตรงกันแล้ว ไม่ใช่ปัญหา
     if (HEAD_LEVELS.includes(levelOfPosition(e.position))) continue;   // เป็นหัวหน้าของไลน์อื่นในสาย
@@ -154,6 +165,10 @@ export function lineHeadsOf({ lineId, lines = [], employees = [], profiles = [],
        ห้ามตีเป็น false แล้วขึ้นเตือน "ชื่อนี้ไม่มีในทะเบียน" ทั้งที่แค่ยังโหลดไม่เสร็จ */
     legacyInRegistry: !lg || (!employees.length && !profiles.length) ? null
       : employees.some(e => sameName(e.name, lg)) || profiles.some(p => sameName(p.full_name, lg)),
+    /* 🔑 บัญชีหัวหน้าของไลน์นี้ที่ยัง **ไม่ผูก `employee_id`** — จับคู่อยู่ได้ด้วยชื่อเท่านั้น (เปราะ)
+       จอควรเขียนบอกให้ไปผูกที่ทะเบียนผู้ใช้ · ไม่ใช่ error แต่เป็นหนี้ที่รอวันขาด */
+    unlinkedAccounts: profiles.filter(p => ['leader', 'supervisor'].includes(p?.role)
+      && inChain(p.line_id) && !p.employee_id).map(p => txt(p.full_name)),
   };
 }
 

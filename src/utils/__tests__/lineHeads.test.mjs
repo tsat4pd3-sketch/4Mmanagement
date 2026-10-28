@@ -181,3 +181,39 @@ test('ชื่อที่พิมพ์ทับ: นับว่า "มี�
   assert.equal(h.legacyInRegistry, true, 'มีบัญชีผู้ใช้อยู่จริง = จับคู่ได้ ไม่ใช่ชื่อลอย');
   assert.deepEqual(h.conflicts, [], 'บัญชีไม่ได้ผูกไลน์นี้ = ไม่ใช่ข้อขัดแย้งของไลน์นี้');
 });
+
+/* ── 🔑 จับคู่บัญชีผู้ใช้ ↔ พนักงาน ด้วย FK ก่อน ชื่อเป็นท่าสุดท้าย (28/10 รอบ 3) ─────────
+   `profiles.employee_id` มีอยู่แล้วในฐาน (49/58 บัญชีหัวหน้าผูกไว้แล้ว) — จับด้วยชื่อล้วน
+   = กับดักเดิมของโปรเจค ("ทะเบียนที่จับคู่ด้วยข้อความ") · "ณัฐพล  คำผาง" เว้น 2 เคาะ จับไม่ติด */
+
+test('🔑 FK ชนะชื่อ — ชื่อสะกดต่างกันคนละแบบ แต่ employee_id ตรง = คนเดียวกัน', () => {
+  const lines = [
+    { id: 9, name: 'Assembly Line D', parent_line_name: null },
+    { id: 91, name: 'Line D2', parent_line_name: 'Assembly Line D' },
+  ];
+  const emps = [E('n1', 'ณัฐพล  คำผาง', 'line_leader', 'A', 91)];   // ชื่อในทะเบียนเว้น 2 เคาะ
+  const profs = [{ full_name: 'คุณณัฐพล คำผาง (รก.)', role: 'leader', line_id: 9, team: 'A', employee_id: 'n1' }];
+  const h = M.lineHeadsOf({ lineId: 9, lines, employees: emps, profiles: profs });
+  assert.deepEqual(h.rows.map(r => r.name), ['ณัฐพล  คำผาง'], 'FK ต้องชนะ แม้ชื่อเขียนคนละแบบ');
+  assert.equal(h.rows[0].linkedByName, false);
+  assert.deepEqual(h.unlinkedAccounts, []);
+});
+
+test('🔑 บัญชีที่ยังไม่ผูก FK — ยังจับด้วยชื่อได้ แต่ต้องติดธงว่าเปราะ', () => {
+  const profs = [{ full_name: 'ทินวัฒน์ พันแก่น', role: 'leader', line_id: 1, team: 'A' }];  // ไม่มี employee_id
+  const h = M.lineHeadsOf({ lineId: 1, lines: LINES, employees: EMPS, profiles: profs, maps: MAPS });
+  const row = h.rows.find(r => r.name === 'ทินวัฒน์ พันแก่น');
+  assert.ok(row, 'ยังต้องเจอ (ไม่ใช่ทำคนหาย)');
+  assert.equal(row.linkedByName, true, 'ต้องบอกจอว่าผูกกันด้วยชื่อ ไม่ใช่ FK');
+  assert.deepEqual(h.unlinkedAccounts, ['ทินวัฒน์ พันแก่น']);
+});
+
+test('🔑 FK ชี้คนละคนกับชื่อ — ต้องเชื่อ FK (ชื่อซ้ำในโรงงานมีจริง)', () => {
+  const emps = [E('a', 'สมชาย ใจดี', 'line_leader', 'A', 1), E('b', 'สมชาย ใจดี', 'operator', 'B', 1)];
+  const profs = [{ full_name: 'สมชาย ใจดี', role: 'leader', line_id: 1, team: 'B', employee_id: 'b' }];
+  const h = M.lineHeadsOf({ lineId: 1, lines: LINES, employees: emps, profiles: profs, maps: MAPS });
+  // 'a' เป็น line_leader ⇒ ขึ้นเป็นหัวหน้า · 'b' ที่บัญชีชี้ เป็น operator ⇒ เข้า conflicts
+  assert.deepEqual(h.rows.map(r => r.id), ['a']);
+  assert.deepEqual(h.conflicts, [{ kind: 'role_only', name: 'สมชาย ใจดี', role: 'leader', team: 'B', position: 'operator' }],
+    'conflict ต้องชี้คนที่ FK ระบุ ไม่ใช่คนแรกที่ชื่อตรง');
+});
