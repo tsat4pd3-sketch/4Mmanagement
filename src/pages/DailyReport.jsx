@@ -49,7 +49,8 @@ import { planMatTimeWrites, MAT_TIME_SKIP_OPEN } from '../utils/matTimeEdit';
 import { resolveShiftTime, checkShiftTime, shiftWindow, windowLabel, fmtOffset, MAX_SHIFT_MIN, checkCloseTime } from '../utils/shiftWindow';
 import ScanModal from '../components/ScanModal';
 import SearchSelect from '../components/SearchSelect';
-import { resolveMachine, normCode } from '../utils/qrCode';
+import { resolveMachine, normCode, resolveTypeRow, QR_KINDS } from '../utils/qrCode';
+import { SCAN_EVENT } from '../utils/scanWedge';
 import { pickUnusedColor } from '../utils/colorPick';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
@@ -521,6 +522,33 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   const [defectTypes, setDefectTypes]   = useState([]);
   const [defectLogs, setDefectLogs]     = useState([]);
   const [showDefect, setShowDefect]     = useState(false);
+  const [ngTypeScanOpen, setNgTypeScanOpen] = useState(false);   // 📷 สแกนประเภทงานเสีย (มือถือ · เฟส 2)
+  /* 🔫 ปุ่มสแกนข้างเครื่องตอน "ไม่ได้แตะช่องไหน" ระหว่างเปิดฟอร์ม Downtime / งานเสีย (มือถือ · เฟส 2 · 28/10)
+     ScanWedgeGuard ยิง `esm:scan` มา → ป้ายประเภทจากใบสแกนประจำไลน์ เติมช่องประเภทให้เลย ไม่ต้องแตะ 📷 ก่อน
+     ป้ายชนิดอื่น = บอกให้แตะ 📷 ข้างช่องนั้น (ห้ามเดาว่าจะลงช่องไหน) · ใช้ state ล่าสุดผ่าน ref (listener ผูกครั้งเดียว) */
+  const formScanRef = useRef(null);
+  formScanRef.current = { showDT, showDefect, dtTypes, defectTypes };
+  useEffect(() => {
+    if (!isMobile) return undefined;
+    const onScan = (e) => {
+      const c = formScanRef.current;
+      if (!c || (!c.showDT && !c.showDefect)) return;
+      e.preventDefault();
+      const parsed = e.detail?.parsed;
+      const kind = c.showDT ? 'downtime_type' : 'defect_type';
+      if (parsed?.kind && parsed.kind !== kind) {
+        toast.error(`ป้าย${QR_KINDS[parsed.kind]?.label || parsed.kind} — แตะ 📷 ข้างช่องที่จะกรอกแล้วยิงใหม่`);
+        return;
+      }
+      const r = resolveTypeRow(parsed, kind, c.showDT ? c.dtTypes : c.defectTypes);
+      if (r.error) { toast.error(r.error); return; }
+      if (c.showDT) setDtForm(f => ({ ...f, downtime_type_id: String(r.row.id) }));
+      else setDefectForm(f => ({ ...f, defect_type_id: String(r.row.id) }));
+      toast.success(`✓ ${r.row.name_th}`);
+    };
+    window.addEventListener(SCAN_EVENT, onScan);
+    return () => window.removeEventListener(SCAN_EVENT, onScan);
+  }, [isMobile]);   // eslint-disable-line react-hooks/exhaustive-deps
   const [defectForm, setDefectForm]     = useState({ id: null, mat_no: '', defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '', is_trial: false, defect_img: '' });
   /* ไฟล์รูปที่เพิ่งเลือก (ยังไม่อัปโหลด) — อัปตอนกดบันทึกเท่านั้น กดยกเลิกแล้วต้องไม่มีไฟล์ค้างในถัง */
   const [defectFile, setDefectFile]     = useState(null);
@@ -4311,7 +4339,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 <Field label="ไลน์การผลิต">
                   {/* 2026-09-07 อ่านทะเบียนไลน์ผ่าน <LineSelect> (ลำดับชั้น/ปลดระวาง/ค่าไม่รู้จัก เหมือนทุกหน้า) — คง pre-filter scope เปิดกะ (openScopeLineNames) ไว้เท่าเดิม */}
                   <LineSelect lines={openScopeLineNames ? lines.filter(l => openScopeLineNames.has(l.name)) : lines}
-                    value={openForm.line_name} placeholder="เลือกไลน์..." style={inputStyle}
+                    value={openForm.line_name} placeholder="เลือกไลน์..." style={inputStyle} scan
                     onChange={v => setOpenForm(f => ({ ...f, line_name: v }))} />
                 </Field>
                 <Field label="กะทำงาน">
@@ -5929,8 +5957,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                     const ofLine = (t) => !t.process_type || t.process_type === 'common' || pts.has(t.process_type);
                     const filtered = defectTypes.filter(ofLine);
                     const others   = defectTypes.filter(t => !ofLine(t));
-                    return (
-                      <select value={defectForm.defect_type_id} onChange={e => setDefectForm(f => ({ ...f, defect_type_id: e.target.value }))} style={inputStyle}>
+                    const sel = (
+                      <select value={defectForm.defect_type_id} onChange={e => setDefectForm(f => ({ ...f, defect_type_id: e.target.value }))}
+                        style={isMobile ? { ...inputStyle, flex: 1, minWidth: 0 } : inputStyle}>
                         <option value="">เลือกประเภท...</option>
                         {filtered.map(t => (
                           <option key={t.id} value={t.id}>{t.name_th}</option>
@@ -5941,6 +5970,24 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                           </optgroup>
                         )}
                       </select>
+                    );
+                    if (!isMobile) return sel;   // จอคอม = select เดิมเป๊ะ
+                    /* 📷 มือถือ: ยิง QR ประเภทงานเสียจากใบสแกนประจำไลน์ (เฟส 2 · 28/10) */
+                    return (
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'stretch' }}>
+                        {sel}
+                        <button type="button" onClick={() => setNgTypeScanOpen(true)} aria-label="สแกนประเภทงานเสีย"
+                          style={{ flexShrink: 0, minWidth: 48, borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', fontSize: 18, cursor: 'pointer' }}>📷</button>
+                        {ngTypeScanOpen && (
+                          <ScanModal title="สแกนประเภทงานเสีย" hint="ยิง QR 🔴 ประเภทงานเสียจากใบสแกนประจำไลน์"
+                            onClose={() => setNgTypeScanOpen(false)}
+                            onScan={(parsed) => {
+                              const r = resolveTypeRow(parsed, 'defect_type', defectTypes);
+                              if (r.error) return r.error;
+                              setDefectForm(f => ({ ...f, defect_type_id: String(r.row.id) }));
+                            }} />
+                        )}
+                      </div>
                     );
                   })()}
                 </Field>
@@ -6139,7 +6186,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       });
                       return (
                         <SearchSelect value={String(dtForm.downtime_type_id || '')} placeholder="เลือกประเภท… (พิมพ์ค้นหา)" inputStyle={inputStyle}
-                          options={options}
+                          options={options} scan="ประเภท Downtime (ใบสแกนประจำไลน์)"
                           onChange={({ id }) => setDtForm(f => ({ ...f, downtime_type_id: id }))} />
                       );
                     })()}
