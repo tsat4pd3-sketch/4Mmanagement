@@ -1,4 +1,4 @@
-import { lineAncestorIds } from './lineHierarchy.js';
+import { lineAncestorIds, widerLineId } from './lineHierarchy.js';
 import { levelOfPosition } from './positions.js';
 import { shiftFromTeam, scheduleTeamFor } from './shiftAssign.js';
 import { naturalCompare } from './listOrder.js';
@@ -13,13 +13,29 @@ import { naturalCompare } from './listOrder.js';
  *      · ชื่อที่**จับคู่กับทะเบียนพนักงานไม่ได้เลย 6 ไลน์** (พิมพ์มือ สะกดไม่ตรง เช่น "สุวิทชัย" vs "สุวิทย์ชัย")
  *    และไลน์จริงมีหัวหน้า 1–4 คนต่อ 2 ทีม (เช่น LINE APRON ASSY: A×2 · B×2)
  *
- * ⇒ **แหล่งความจริงคือทะเบียนพนักงาน** (`employees.position` + `team` + `line_id`) ซึ่งจอเช็คชื่อ/
+ * ⇒ **แหล่งความจริงคือทะเบียนพนักงาน** (`employees.position` + `team`) ซึ่งจอเช็คชื่อ/
  *    จัดกะ/บอร์ดกำลังคน อ่านอยู่แล้ว · `head_name` เหลือสถานะ "ชื่อที่พิมพ์ทับ" เท่านั้น
+ *
+ * ── 🔴 2 ทะเบียนตอบคนละคำถาม — ห้ามใช้ตัวเดียวตอบทั้งคู่ (แก้ 28/10 รอบ 2 · feedback user
+ *    *"มันมีหัวหน้าหมดแล้วนะ นอกจากฐานข้อมูลกับ user ใช้งานจะมั่วไม่ตรงกัน"*) ──
+ *   | คำถาม | อ่านจาก | ทำไม |
+ *   |---|---|---|
+ *   | **เป็นหัวหน้าไหม** (ตำแหน่งงาน) | `employees.position` | `profiles.role` = **ชุดสิทธิ์ใช้ระบบ ไม่ใช่ตำแหน่งงาน** (กฎ CLAUDE.md) · ช่าง 4 คนของ HYDROFORM ถือ role `supervisor` ไว้ใช้สิทธิ์ ไม่ได้เป็นหัวหน้า |
+ *   | **ดูแลไลน์ไหน** (ขอบเขต)      | **`widerLineId(profiles.line_id, employees.line_id)`** | กฎ 27/10 — หัวหน้าสังกัด*ไลน์ลูก* แต่แอดมินตั้ง `profiles.line_id` เป็น*ไลน์แม่* (ไลน์ที่เขาดูแลจริง) ⇒ เอาตัวที่กว้างกว่า |
+ *   | **ทีม/กะ**                     | `employees.team` → ไม่มีจึง `profiles.team` | ตัวตนจริงชนะ |
+ *   วัดจริง 28/10: `Assembly Line D - GWM&RA` มีหัวหน้า 3 คนใน `profiles` ผูกที่**ไลน์แม่**
+ *   แต่ `employees.line_id` ของเขาอยู่ที่ **Line D2 / Line D3** ⇒ อ่านฝั่ง employees อย่างเดียว
+ *   = **ไลน์แม่ไม่มีหัวหน้าเลย** ทั้งที่มีจริง
+ *
+ * 🔴 **ที่ 2 ทะเบียนไม่ตรงกัน = `conflicts`** — ห้ามเงียบ ห้ามเลือกข้างให้เอง
+ *   (บัญชีตั้ง role หัวหน้า แต่ตำแหน่งเป็นพนักงาน / มีบัญชีแต่ไม่มีตัวตนในทะเบียนพนักงาน)
+ *   จอต้องเขียนบนจอให้คนไปแก้ — **ห้าม backfill เดาให้**
  *
  * กติกาที่ไฟล์นี้เป็นเจ้าของ (ห้ามเขียนชุดที่ 2 ในหน้า):
  *  1. **ไลน์ตัวเองชนะไลน์แม่เสมอ** — ไม่มีหัวหน้าของตัวเอง จึงค่อยไล่ขึ้นไปหาไลน์แม่ที่ใกล้ที่สุด
  *     (กฎตกทอดชุดเดียวกับ `cost_center`/`head_name` ที่ `LineSetup`/`Report` ใช้อยู่)
- *     🔴 **ไม่ดึงจากไลน์ลูก** — หัวหน้าของไลน์ย่อยไม่ใช่หัวหน้าของไลน์แม่
+ *     🔴 **ไม่ไล่ลงไปกวาดไลน์ลูก** — "ไลน์ที่เขาดูแล" ตัดสินที่ `widerLineId` ของคนคนนั้นทีละคน
+ *     (หัวหน้าที่ดูแลไลน์แม่จริงจะถูกยกขึ้นมาเอง · คนที่ดูแลเฉพาะไลน์ลูกจะไม่ถูกยก)
  *  2. **กะมาจากตารางกะจริง** (`scheduleTeamFor` + `shiftFromTeam`) **ห้ามเดาว่า A = กะเช้า**
  *     ไม่ส่ง `maps` / ตารางกะยังไม่ตั้ง = `shift: null` ⇒ จอต้องเขียนว่า "ยังไม่รู้กะ" ห้ามเดา
  *  3. **ไม่มีหัวหน้าไลน์เลย จึงถอยไปหัวหน้าแผนก** (`level: 'supervisor'`) — บอกชั้นที่ใช้กลับไปด้วย
@@ -42,36 +58,69 @@ const SHIFT_ORDER = { day: 0, night: 1, x: 2 };
  * @param {string}   [p.legacyName]    `production_lines.head_name` ของไลน์นั้น (ชื่อที่พิมพ์ทับ)
  * @returns {{rows, byShift, level, fromLineName, legacyName, legacyInRegistry}}
  */
-export function lineHeadsOf({ lineId, lines = [], employees = [], maps = null, legacyName = '' } = {}) {
+/**
+ * ไลน์ที่ต้อง "ดึงพนักงานมาดู" เพื่อตอบหัวหน้าของไลน์นี้ — **ไม่ใช่ชุดเดียวกับคำตอบ**
+ * = สายของตัวเอง (ตัวเอง+แม่) **บวกไลน์ที่สายนี้เป็นแม่ของมัน**
+ * เพราะหัวหน้าที่ดูแลไลน์แม่ อาจ**สังกัด**ไลน์ลูก (`employees.line_id` = ไลน์ลูก) —
+ * ไม่ดึงไลน์ลูกมาด้วย = คนคนนั้นไม่เคยถูกพิจารณา แล้วไลน์แม่ขึ้นว่า "ไม่มีหัวหน้า" ทั้งที่มี
+ * 🔴 **ผู้เรียกต้องใช้ตัวนี้ตอนคิวรี** ห้ามคิวรีแค่ `[lineId, ...ancestors]` (เคสจริง Assembly Line D 28/10)
+ */
+export function headScopeLineIds(lines = [], lineId) {
+  if (lineId == null) return [];
+  const chain = [lineId, ...lineAncestorIds(lines, lineId)];
+  const inChain = (id) => chain.some(c => String(c) === String(id));
+  const out = new Set(chain);
+  for (const l of lines) {
+    if (out.has(l.id)) continue;
+    for (const a of lineAncestorIds(lines, l.id)) if (inChain(a)) { out.add(l.id); break; }
+  }
+  return [...out];
+}
+
+export function lineHeadsOf({ lineId, lines = [], employees = [], profiles = [], maps = null, legacyName = '' } = {}) {
   const empty = {
     rows: [], byShift: { day: [], night: [], unknown: [] },
-    level: null, fromLineName: null,
+    level: null, fromLineName: null, conflicts: [],
     legacyName: txt(legacyName), legacyInRegistry: null,
   };
   if (lineId == null) return empty;
 
-  // ① ไลน์ตัวเอง → ไลน์แม่ที่ใกล้ที่สุด (เรียงจากใกล้ไปไกล) — ตัวแรกที่มีคนชนะทั้งชุด
   const chain = [lineId, ...lineAncestorIds(lines, lineId)];
+  const inChain = (id) => id != null && chain.some(c => String(c) === String(id));
   const nameOfLine = (id) => lines.find(l => String(l.id) === String(id))?.name || null;
 
+  /* บัญชีผู้ใช้ที่ "ถูกตั้งให้ดูแลไลน์" — ใช้ตอบ **ขอบเขต** อย่างเดียว ไม่ใช่ตำแหน่งงาน */
+  const profOf = (name) => profiles.find(p => sameName(p.full_name, name)) || null;
+
+  /* ① ไลน์ที่พนักงานคนนี้ "ดูแล" — ของบัญชีกว้างกว่าชนะ (กฎ 27/10 widerLineId) */
+  const ownedLineId = (e) => widerLineId(profOf(e.name)?.line_id ?? null, e.line_id ?? null, lines);
+
+  /* ② หัวหน้าของไลน์ในสาย — ชั้น leader ก่อน ไม่มีจึงถอยไป supervisor
+        เลือกไลน์ที่ใกล้ตัวเองที่สุดในสาย (ไลน์ตัวเองชนะไลน์แม่) */
   let picked = [], level = null, fromId = null;
   outer:
   for (const lv of HEAD_LEVELS) {
     for (const id of chain) {
-      const hit = employees.filter(e => String(e.line_id) === String(id) && levelOfPosition(e.position) === lv);
+      const hit = employees.filter(e =>
+        levelOfPosition(e.position) === lv && String(ownedLineId(e)) === String(id));
       if (hit.length) { picked = hit; level = lv; fromId = id; break outer; }
     }
   }
 
-  const rows = picked.map(e => ({
-    id: e.id,
-    name: txt(e.name),
-    position: e.position,
-    team: txt(e.team).toUpperCase() || null,
-    // ② กะจากตารางกะจริง — ไม่รู้ = null (ห้ามเดาจากตัวอักษรทีม)
-    shift: maps ? shiftFromTeam(scheduleTeamFor(e, maps), txt(e.team).toUpperCase()) || null : null,
-    lineName: nameOfLine(e.line_id),
-  })).sort((a, b) =>
+  const rows = picked.map(e => {
+    const pr = profOf(e.name);
+    const team = txt(e.team).toUpperCase() || txt(pr?.team).toUpperCase() || null;
+    return {
+      id: e.id,
+      name: txt(e.name),
+      position: e.position,
+      team,
+      // ③ กะจากตารางกะจริง — ไม่รู้ = null (ห้ามเดาจากตัวอักษรทีม)
+      shift: maps ? shiftFromTeam(scheduleTeamFor({ ...e, team }, maps), team) || null : null,
+      lineName: nameOfLine(ownedLineId(e)),
+      hasAccount: !!pr,
+    };
+  }).sort((a, b) =>
     (SHIFT_ORDER[a.shift ?? 'x'] - SHIFT_ORDER[b.shift ?? 'x'])
     || naturalCompare(a.team || 'zz', b.team || 'zz')
     || naturalCompare(a.name, b.name));
@@ -79,19 +128,34 @@ export function lineHeadsOf({ lineId, lines = [], employees = [], maps = null, l
   const byShift = { day: [], night: [], unknown: [] };
   for (const r of rows) byShift[r.shift === 'day' || r.shift === 'night' ? r.shift : 'unknown'].push(r);
 
+  /* ④ 🔴 จุดที่ 2 ทะเบียนไม่ตรงกัน — ห้ามเลือกข้างให้เอง ให้จอเขียนแล้วคนไปแก้
+        kind: 'role_only'  = บัญชีตั้ง role หัวหน้า แต่ตำแหน่งในทะเบียนพนักงานไม่ใช่หัวหน้า
+              'no_employee'= มีบัญชีผูกไลน์นี้ แต่จับคู่ตัวตนในทะเบียนพนักงานไม่ได้ (ชื่อไม่ตรง/ยังไม่ลงทะเบียน) */
+  const pickedIds = new Set(picked.map(e => e.id));
+  const conflicts = [];
+  for (const p of profiles) {
+    if (!['leader', 'supervisor'].includes(p?.role)) continue;
+    if (!inChain(p.line_id)) continue;
+    const e = employees.find(x => sameName(x.name, p.full_name));
+    if (!e) { conflicts.push({ kind: 'no_employee', name: txt(p.full_name), role: p.role, team: txt(p.team).toUpperCase() || null }); continue; }
+    if (pickedIds.has(e.id)) continue;                       // ตรงกันแล้ว ไม่ใช่ปัญหา
+    if (HEAD_LEVELS.includes(levelOfPosition(e.position))) continue;   // เป็นหัวหน้าของไลน์อื่นในสาย
+    conflicts.push({ kind: 'role_only', name: txt(p.full_name), role: p.role,
+      team: txt(e.team).toUpperCase() || txt(p.team).toUpperCase() || null, position: e.position });
+  }
+
   const lg = txt(legacyName);
   return {
-    rows, byShift, level,
+    rows, byShift, level, conflicts,
     // null = หัวหน้าเป็นของไลน์ตัวเอง · มีค่า = ตกทอดมาจากไลน์แม่ชื่อนี้ (จอต้องเขียนบอก)
     fromLineName: fromId != null && String(fromId) !== String(lineId) ? nameOfLine(fromId) : null,
     legacyName: lg,
     /* 🔴 `null` = **ยังตัดสินไม่ได้** (ไม่มีชื่อพิมพ์ทับ หรือยังไม่ได้โหลดทะเบียนพนักงาน)
        ห้ามตีเป็น false แล้วขึ้นเตือน "ชื่อนี้ไม่มีในทะเบียน" ทั้งที่แค่ยังโหลดไม่เสร็จ */
-    legacyInRegistry: !lg || !employees.length ? null
-      : employees.some(e => sameName(e.name, lg)),
+    legacyInRegistry: !lg || (!employees.length && !profiles.length) ? null
+      : employees.some(e => sameName(e.name, lg)) || profiles.some(p => sameName(p.full_name, lg)),
   };
 }
-
 
 /** เทียบชื่อคนแบบผ่อนคำนำหน้า/ช่องว่าง — "คุณสุวิทย์ชัย  ดีทั่ว" = "สุวิทย์ชัย ดีทั่ว"
  *  🔴 ผ่อนได้แค่ **รูปแบบ** เท่านั้น (คำนำหน้า/ช่องว่าง) — สะกดต่าง = คนละคน ห้ามเดาให้ตรง
