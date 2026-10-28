@@ -7632,3 +7632,20 @@ test('🪪 link-suggest-must-check-taken — คนที่ถูกผูก�
   assert.match(au, /res\?\.error\?\.code === '23505'/,
     '🔴 ชนแม้เช็คแล้ว (จอถือรายชื่อเก่า) ต้องบอกให้รีเฟรช ห้ามโชว์ error ดิบของ Postgres');
 });
+
+/* ═══ 🧹 logout-clears-master-cache — "ออกจากระบบแล้วเข้าใหม่" ต้องเป็นทางแก้จริง ═══ 28/10
+   คำพูด user: *"Logout แล้ว login ใหม่หายมั้ย · incognito หน้างานไม่เข้าใจ แย่ๆ"* — ถูกต้อง
+   เดิม logout ไม่ล้าง cache ทะเบียนกลางเลย ⇒ ของพิษ (ลิสต์ไลน์ว่างที่ถูกจดไว้ 4 ชม.) ยังค้าง
+   ⇒ ทางแก้เดียวที่เหลือคือ "เปิด incognito" ซึ่ง**หน้างานทำตามไม่ถูก**
+   ⇒ ต้องมีประโยคเดียวที่ทุกคนทำได้: ออกจากระบบ → เข้าใหม่ */
+test('🧹 logout-clears-master-cache — logout ต้องล้าง cache ทะเบียนกลางของเครื่องนั้น', () => {
+  const mc = stripComments(readFileSync(join(ROOT, 'src/utils/masterCache.js'), 'utf8'));
+  assert.match(mc, /export function clearAllMasterCache\(\)/, 'ต้องมีตัวล้าง cache ทั้งเครื่อง');
+  assert.match(mc, /cache\.clear\(\);[\s\S]{0,60}failures\.clear\(\);/,
+    'ล้างทั้ง memory และธงล้ม ไม่งั้นรอบหน้ายังถือสถานะเดิม');
+  const app = stripComments(readFileSync(join(ROOT, 'src/App.jsx'), 'utf8'));
+  const i = app.indexOf('clearAllMasterCache();');
+  assert.ok(i > 0, '🔴 handler logout ต้องเรียก clearAllMasterCache()');
+  assert.ok(app.indexOf("auth.signOut({ scope: 'local' })", i) - i < 200,
+    'ต้องล้างก่อน signOut ในก้อนเดียวกัน (ล้างทีหลัง = navigate ไปแล้ว)');
+});

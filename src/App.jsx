@@ -20,6 +20,7 @@ import { effectiveSections } from './utils/sectionScope';
 /* 💰 ชั้นสิทธิ์ที่ 3 แกน Cost Center — ดัชนีผังสร้างที่นี่ที่เดียว แล้วส่งผ่าน UserContext
    (จอ 20 จออ่านผ่าน `canWriteUnit`/`canWriteLine` เหมือนเดิม ไม่ต้องรู้ว่ามีแกนที่ 2) */
 import { buildOrgScope } from './utils/orgScope';
+import { clearAllMasterCache } from './utils/masterCache';
 import { attachCc } from './utils/ccScope';
 import { loadLinesRes } from './utils/useProductionLines';
 import { widerLineId } from './utils/lineHierarchy';
@@ -1793,6 +1794,11 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
     setActor(null, null);   // ล้างตัวตนผู้ใช้ (ชื่อ+uid) ตอน logout
     setDeptAdmin(false);
     setSharedAccount(false);
+    /* 🧹 ล้าง cache ทะเบียนกลางของเครื่องนี้ด้วย (28/10)
+       เดิม logout ไม่ล้างอะไรเลย ⇒ ของพิษ (เช่นลิสต์ไลน์ว่างที่ถูกจดไว้ 4 ชม.) ยังค้าง
+       ⇒ ต้องบอกหน้างานให้ "เปิด incognito" ซึ่งเขาไม่เข้าใจและทำไม่ถูก
+       ตอนนี้ **"ออกจากระบบแล้วเข้าใหม่" = ทางแก้จริง** — ประโยคเดียวที่หน้างานทำตามได้ */
+    clearAllMasterCache();
     await supabase.auth.signOut({ scope: 'local' });
     navigate('/login');
   };
