@@ -5,6 +5,7 @@ import { fetchByIds } from '../utils/fetchByIds';
 import LineSelect from './LineSelect';
 import { ALL } from '../utils/filterLabels';
 import { wavg, wLoad, buildCtMap, groupLean, dtMinBySession, SIX_BIG_LOSSES, EIGHT_WASTES } from '../utils/oee';
+import { loadAffectsLanes } from '../utils/affectsLanes';
 import { lineCostCenter, rateFor, ratePerHour, RATE_COMPONENTS } from '../utils/costSaving';
 import TimeRangeBar from './TimeRangeBar';
 import useTimeRange from '../utils/useTimeRange';
@@ -143,7 +144,7 @@ export default function OeeInsightPanel({ lines, ccRates = [], initLine = '', se
             รวม `duration_min` เองที่นี่ = หักซ้ำ ⇒ เวลารับภาระต่ำกว่าจริง แล้ว insight
             "กะเช้า vs กะดึก / วันไหนแย่สุด" จะอ้างตัวเลขที่ไม่ตรงกับ /oee-analytics
             (กฎเหล็ก CLAUDE.md §OEE 2026-09-15 · แก้ 2026-09-16) */
-      const dtEffBy = dtMinBySession(sess, dts || [], breakPols || [], { lines });   // หารเลนไลน์เครื่องขนาน (oee.js §3.2)
+      const dtEffBy = dtMinBySession(sess, dts || [], breakPols || [], { lines, affectsBy: await loadAffectsLanes() });   // หารเลนไลน์เครื่องขนาน (oee.js §3.2)
       const plannedMinOf = (sid) => dtEffBy[sid]?.planned || 0;
 
       const out = [];
