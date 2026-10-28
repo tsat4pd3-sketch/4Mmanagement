@@ -22,6 +22,7 @@ import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
 import { lazy, Suspense } from 'react';
 import { defectUnitCost, fmtBaht, lineCostCenter, rateFor, ratePerHour, RATE_COMPONENTS } from '../utils/costSaving';
+import { loadAffectsLanes } from '../utils/affectsLanes';
 import { computeLiveOee, shiftStartDate, LIVE_MIN_ELAPSED, strictOee, wavg, wLoad, wRun, wProd, policyBreakForShift, breakIntervalsIn, dtMinOutsideBreaks, laneWeightFn, parallelNBySession, dtLineMin, laneBySessionId, buildCtMap, sumDefectQty, splitDefectQty, ngByMatFrom, isTrialDefect, avgOeeTarget, QBIN_EMBED, defectQty, defectQtyAll, suspectPendingQty } from '../utils/oee';
 import { statusColor, statusOf } from '../utils/statusTone';
 import PageHeader from '../components/PageHeader';
@@ -75,7 +76,7 @@ const METRIC_LABEL = { a: 'AVAILABILITY (A)', p: 'PERFORMANCE (P)', q: 'QUALITY 
 /* `lines` = ทะเบียนไลน์ (แมป ชื่อไลน์ → แถว) — ไลน์เครื่องขนานบันทึก downtime รายเครื่อง
    ⇒ ต้องหารด้วยจำนวนเลนก่อนเอามาหักจากเวลากะ (oee.js §3.2) ไม่งั้น `plannedMin` ทะลุความยาวกะ
    แล้วน้ำหนัก wLoad ของกะนั้นเหลือ 0 = หายจากค่าเฉลี่ยเงียบๆ */
-function calcOEE(sessions, downtimes, defects, breakPols = [], lines = null) {
+function calcOEE(sessions, downtimes, defects, breakPols = [], lines = null, affectsBy = null) {
   const laneOf = lines ? parallelNBySession(lines) : null;
   const results = [];
   for (const s of sessions) {
@@ -88,7 +89,7 @@ function calcOEE(sessions, downtimes, defects, breakPols = [], lines = null) {
       ? breakIntervalsIn({ policies: breakPols, startMs, endMs: startMs + Number(s.shift_min) * 60000,
           workDate: s.work_date, shift: s.shift, lineName: s.line_name })   // 🏭 ข้อยกเว้นเวลาพักรายไลน์ (ทะเบียนกลาง · 20/10)
       : [];
-    const laneW = laneOf ? laneWeightFn(laneOf(s)) : () => 1;
+    const laneW = laneOf ? laneWeightFn(laneOf(s), affectsBy) : () => 1;
     const plannedMin   = sessionDT.filter(d => d.dr_downtime_types?.category === 'planned').reduce((a, d) => a + dtMinOutsideBreaks(d, brkIv) * laneW(d), 0);
     const unplannedMin = sessionDT.filter(d => d.dr_downtime_types?.category !== 'planned').reduce((a, d) => a + dtMinOutsideBreaks(d, brkIv) * laneW(d), 0);
 
@@ -310,6 +311,10 @@ export default function OEEAnalytics() {
   const [viewTab, setViewTab] = useTabParam(['today', 'trend', 'insight'], 'today');
   // break_policies — ใช้คิดเวลาพักนโยบายสำหรับ OOE/TEEP (ต้องประกาศก่อน tdKpi/kpi ที่เรียกใช้)
   const [breakPols, setBreakPols] = useState([]);
+  /* 🔀 "เครื่องไหนหยุดแล้วครอบกี่เลน" (machines.affects_lanes · utils/affectsLanes.js)
+     `{}` = ยังไม่โหลด / ไม่มีใครกรอก = ทุกเครื่องครอบ 1 เลน = **พฤติกรรมเดิมเป๊ะ** */
+  const [affectsLn, setAffectsLn] = useState({});
+  useEffect(() => { let alive = true; loadAffectsLanes().then(m => { if (alive) setAffectsLn(m || {}); }); return () => { alive = false; }; }, []);
   useEffect(() => {
     supabaseDR.from('break_policies').select('shift, process_type, start_time, duration_min, ot_scope, anchor, offset_min').eq('is_active', true)
       .then(r => setBreakPols(r.data || []), () => setBreakPols([]));
@@ -645,7 +650,7 @@ export default function OEEAnalytics() {
   /* มีไลน์ขนานอยู่ในชุดที่ดูอยู่ไหม — ใช้ตัดสินว่าจะเขียนหมายเหตุหน่วยบนจอ (ไม่มี = ไม่ต้องรก) */
   const tdHasParallel = useMemo(() => Object.values(tdLaneBy).some(n => Number(n) > 1), [tdLaneBy]);
 
-  const tdRows = useMemo(() => calcOEE(tdSessionsTeamFiltered, tdDowntimesScoped, tdDefectsScoped, breakPols, flowByLine), [tdSessionsTeamFiltered, tdDowntimesScoped, tdDefectsScoped, breakPols, flowByLine]);
+  const tdRows = useMemo(() => calcOEE(tdSessionsTeamFiltered, tdDowntimesScoped, tdDefectsScoped, breakPols, flowByLine, affectsLn), [tdSessionsTeamFiltered, tdDowntimesScoped, tdDefectsScoped, breakPols, flowByLine, affectsLn]);
 
   const tdKpi = useMemo(() => {
     // งานคู่ RH/LH (pair_mat_no) นับเป็น 1 คู่/stroke — เฉพาะกะที่มีคู่จริงถึงคำนวณจาก prod_orders ที่เหลือใช้ค่า stamped เดิม
@@ -712,10 +717,10 @@ export default function OEEAnalytics() {
       breakMinTotal: Math.round(tdBreak), plannedMinTotal: Math.round(tdPlanned), teepLines: tdLineSet.size,
       totalQty: tdRows.reduce((s, r) => s + sessActual(r), 0),
       targetQty: tdRows.reduce((s, r) => s + sessTarget(r), 0),
-      totalDT: tdDowntimesScoped.reduce((s, d) => s + dtLineMin(d, tdLaneBy[d.session_id] || 1), 0),
+      totalDT: tdDowntimesScoped.reduce((s, d) => s + dtLineMin(d, tdLaneBy[d.session_id] || 1, { affectsBy: affectsLn }), 0),
       totalShiftMin: tdSessionsTeamFiltered.reduce((s, r) => s + (r.shift_min || 0), 0),
     };
-  }, [tdRows, tdDowntimesScoped, tdSessionsTeamFiltered, tdOrdersBySession, tdPairMat, breakPols, tdLaneBy]);
+  }, [tdRows, tdDowntimesScoped, tdSessionsTeamFiltered, tdOrdersBySession, tdPairMat, breakPols, tdLaneBy, affectsLn]);
 
   const tdHistoryGrouped = useMemo(() => {
     const map = {};
@@ -779,6 +784,8 @@ export default function OEEAnalytics() {
       ngForP: ngByMatFrom(tdDefects.filter(d => d.session_id === tdLiveSession.id), os),
       // งานคู่ gang die / RH-LH = 1 shot ได้ 2 ชิ้น — ยุบก่อนคิดเวลามาตรฐานของ %P (pairTotals.js)
       pairMap: tdPairMat,
+      // 🔀 ของกลางของไลน์ขนาน (คอนเวเยอร์) ต้องไม่ถูกหารเลน — machines.affects_lanes
+      affectsLanes: affectsLn,
       nowMs: lastUpdate?.getTime?.() || Date.now(),
       // ไลน์เครื่องขนาน (LASER-345/789 N=3): DT ที่ระบุเครื่องหักแค่ 1/N — สูตรเดียวกับตอนปิดกะ
       parallelN: parallelUnitsOf(flowByLine[tdLiveSession.line_name]),
@@ -790,7 +797,7 @@ export default function OEEAnalytics() {
       breakPolicies: breakPols || [],
       processType: tdLiveSession.dr_products?.process_type || null,
     });
-  }, [tdLiveSession, tdLiveRowStamped, tdOrdersBySession, tdDowntimes, tdDefects, tdCtMap, tdPairMat, tdDate, lastUpdate, flowByLine, breakPols]);
+  }, [tdLiveSession, tdLiveRowStamped, tdOrdersBySession, tdDowntimes, tdDefects, tdCtMap, tdPairMat, tdDate, lastUpdate, flowByLine, breakPols, affectsLn]);
   const isLiveCalc = Boolean(tdLiveCalc);
   const tdLiveRow = useMemo(() => tdLiveCalc
     ? { calcA: tdLiveCalc.A, calcP: tdLiveCalc.P, calcQ: tdLiveCalc.Q, calcOEE: tdLiveCalc.oee }
@@ -829,7 +836,7 @@ export default function OEEAnalytics() {
       const cat  = d.dr_downtime_types?.category || 'unplanned';
       // typeId ไว้ query ย้อนหลังของสาเหตุนี้ตอนกดเจาะ (ชื่อเป็น snapshot เทียบตรงๆ ไม่ได้)
       if (!map[name]) map[name] = { name, min: 0, rawMin: 0, category: cat, typeId: d.downtime_type_id || null };
-      map[name].min += dtLineMin(d, tdLaneOfRow(d));   // 🔀 นาทีของไลน์ (ขนานหารเลน)
+      map[name].min += dtLineMin(d, tdLaneOfRow(d), { affectsBy: affectsLn });   // 🔀 นาทีของไลน์ (ขนานหารเลน)
       map[name].rawMin += d.duration_min || 0;          // นาที-เครื่องดิบ — ไว้เขียนกำกับ ไม่ใช่ตัวจัดอันดับ
     }
     const rows = Object.values(map).sort((a, b) => b.min - a.min);
@@ -846,7 +853,7 @@ export default function OEEAnalytics() {
         barPct: max > 0 ? (d.min / max * 100) : 0,
       })),
     };
-  }, [tdDowntimesScoped, tdDtIdx, tdLaneOfRow]);
+  }, [tdDowntimesScoped, tdDtIdx, tdLaneOfRow, affectsLn]);
 
   // Top 10 downtime แยกตามพาร์ท (mat_no ที่บันทึกไว้ตอน log downtime)
   // นับเฉพาะ "นอกแผน" — ในแผน (นับสต๊อก/ไม่มีแผนผลิต) ไม่ผูก mat_no แล้วเคยครองอันดับ 1 เป็น
@@ -857,13 +864,13 @@ export default function OEEAnalytics() {
       if (d.dr_downtime_types?.category === 'planned') continue;
       const mat = d.mat_no || 'ไม่ระบุ MAT.NO';
       if (!map[mat]) map[mat] = { mat, part: tdProductsByMat[mat] || mat, min: 0 };
-      map[mat].min += dtLineMin(d, tdLaneOfRow(d));   // 🔀 นาทีของไลน์
+      map[mat].min += dtLineMin(d, tdLaneOfRow(d), { affectsBy: affectsLn });   // 🔀 นาทีของไลน์
     }
     const arr = Object.values(map).sort((a, b) => b.min - a.min).slice(0, 10);
     const max = arr.length ? arr[0].min : 0;
     const total = Object.values(map).reduce((s, d) => s + d.min, 0);
     return arr.map(d => ({ ...d, min: +d.min.toFixed(1), pct: total > 0 ? +(d.min / total * 100).toFixed(1) : 0, barPct: max > 0 ? (d.min / max * 100) : 0 }));
-  }, [tdDowntimesScoped, tdProductsByMat, tdLaneOfRow]);
+  }, [tdDowntimesScoped, tdProductsByMat, tdLaneOfRow, affectsLn]);
 
   /* "สาเหตุนี้เกิดซ้ำแค่ไหน" — ย้อนหลัง 30 วันของ downtime type ที่กดเจาะ
      ⚠️ ยิงตอนเปิดโมดัลเท่านั้น (user กดเอง ไม่ใช่ polling) และกรองฝั่ง server ให้แคบที่สุด
@@ -1077,7 +1084,7 @@ export default function OEEAnalytics() {
   useEffect(() => { loadData(); }, [loadData]);
 
   // ── Computed rows ──────────────────────────────────────────────
-  const rows = useMemo(() => calcOEE(sessions, downtimes, defects, breakPols, flowByLine), [sessions, downtimes, defects, breakPols, flowByLine]);
+  const rows = useMemo(() => calcOEE(sessions, downtimes, defects, breakPols, flowByLine, affectsLn), [sessions, downtimes, defects, breakPols, flowByLine, affectsLn]);
 
   /* ยอดผลิตจากใบงาน (pair-aware + op-aware) ของกลุ่ม session ใดๆ — ใช้ทั้ง KPI หัวแท็บ และตารางรายช่วง
      (QC audit 2026-08-20 · T3-12: เดิมตารางรายช่วงบวก actual_qty ดิบ → บวกกันแล้วไม่เท่า KPI หัวแท็บ
@@ -1824,7 +1831,7 @@ export default function OEEAnalytics() {
             /* 🔀 ยอดรวมในหัวโมดัล = **นาทีของไลน์** (ไลน์ขนานหารเลน) ส่วนตัวเลขในแต่ละแถว
                ยังเป็นนาทีที่พนักงานลงจริง (นาที-เครื่อง) — 2 หน่วยนี้ต้องเขียนกำกับให้ชัด
                เคส LASER-345 22/10: 7 แถว ดิบ 306 นาที = ไลน์หยุดจริง 102 นาที (3 แถวเวลาเดียวกัน = ครั้งเดียว) */
-            const totMin = tdDrillRows.reduce((a, d) => a + dtLineMin(d, tdLaneOfRow(d)), 0);
+            const totMin = tdDrillRows.reduce((a, d) => a + dtLineMin(d, tdLaneOfRow(d), { affectsBy: affectsLn }), 0);
             const totRawMin = tdDrillRows.reduce((a, d) => a + (d.duration_min || 0), 0);
             const drillParallel = tdDrillRows.some(d => tdLaneOfRow(d) > 1);
             const th = { padding: '6px 8px', fontSize: 11, color: 'var(--muted)', textAlign: 'left', whiteSpace: 'nowrap' };

@@ -6,6 +6,7 @@ import { UserContext } from '../App';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { toast } from './Toast';
 import { wavg, wLoad, sumDefectQty, dtMinBySession, QBIN_EMBED } from '../utils/oee';
+import { loadAffectsLanes } from '../utils/affectsLanes';
 import { defectUnitCost } from '../utils/costSaving';
 import { fetchByIds } from '../utils/fetchByIds';
 import useOrgScope from '../utils/useOrgScope';
@@ -368,7 +369,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
       const brk = await supabaseDR.from('break_policies')
         .select('shift, process_type, start_time, duration_min, ot_scope, anchor, offset_min').eq('is_active', true);
       if (brk.error) toast.error(`โหลดนโยบายพักไม่สำเร็จ — OEE ในตารางนี้จะไม่ตัดช่วงพัก (ต่างจาก /oee-analytics): ${brk.error.message}`);   // ห้ามล้มเหลวเงียบ (audit 05/10)
-      const dtEffBy = dtMinBySession(sessions, dtRes.rows, brk.data || [], { lines });   // { lines } = หารนาที DT ของไลน์เครื่องขนาน (oee.js §3.2) — ไม่ส่ง = น้ำหนักกะนั้นเหลือ 0 เงียบๆ
+      const dtEffBy = dtMinBySession(sessions, dtRes.rows, brk.data || [], { lines, affectsBy: await loadAffectsLanes() });   // { lines } = หารนาที DT ของไลน์เครื่องขนาน (oee.js §3.2) — ไม่ส่ง = น้ำหนักกะนั้นเหลือ 0 เงียบๆ
       Object.entries(dtEffBy).forEach(([sid, v]) => { dtPlanned[sid] = v.planned; dtUnplanned[sid] = v.unplanned; });
       setProg(`โหลด Downtime ${dtRes.rows.length} แถว...`);
       // 3) ของเสีย (line-mode ต้องรู้ is_trial + excl_from_q + mat สำหรับคิดเงิน)

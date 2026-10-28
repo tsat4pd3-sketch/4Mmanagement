@@ -3,7 +3,7 @@
    เคสจริง LASER-345 22/10 (3 เลน): ราง Conveyor เสีย พนักงานลง downtime รายเครื่อง LS-03/04/05 */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { dtLineMin, laneBySessionId } from '../oee.js';
+import { dtLineMin, laneBySessionId, affectsLanesMap, laneWeightFn } from '../oee.js';
 
 const row = (machine_no, duration_min) => ({ machine_no, duration_min, ended_at: '2026-10-22T12:00:00Z' });
 
@@ -40,7 +40,7 @@ test('🔴 แถวที่ยังเปิดค้าง (ไม่มี 
   const open = { machine_no: 'M1', started_at: '2026-10-22T10:00:00Z' };
   assert.equal(dtLineMin(open, 3), 0);
   const now = new Date('2026-10-22T10:30:00Z').getTime();
-  assert.equal(dtLineMin(open, 3, now), 10, '30 นาที ÷ 3 เลน');
+  assert.equal(dtLineMin(open, 3, { nowMs: now }), 10, '30 นาที ÷ 3 เลน');
 });
 
 test('🔀 laneBySessionId — แมปกะ→เลน · กะที่ไม่รู้ไลน์ = 1', () => {
@@ -59,4 +59,48 @@ test('🔀 laneBySessionId รับทะเบียนแบบแมปไ�
   assert.equal(by.s1, 6);
   assert.deepEqual(laneBySessionId(), {});
   assert.deepEqual(laneBySessionId(null, null), {});
+});
+
+/* ═══ 🔀 "ครอบกี่เลน" — ทะเบียน machines.affects_lanes ═══  2026-10-27 · คำสั่ง user
+   หน้างาน HDF1→LASER-345: เลเซอร์ 3 เครื่องขนานไม่รอกัน · คอนเวเยอร์เลี้ยงทั้ง 3 ·
+   โรบอทตัวกลางป้อนเลเซอร์ 4+5 ⇒ ครอบ 1 / 3 / 2 เลน ตามลำดับ */
+test('🔀 affectsLanesMap — เก็บเฉพาะตัวยกเว้น (>1) · คีย์ทนการสะกดต่างแบบ', () => {
+  const m = affectsLanesMap([
+    { machine_no: 'LS-03', affects_lanes: 1 },
+    { machine_no: 'CONVEYOR', affects_lanes: 3 },
+    { machine_no: 'RB-84', affects_lanes: 2 },
+    { machine_no: 'LS-04' },
+    { machine_no: null, affects_lanes: 5 },
+  ]);
+  assert.deepEqual(m, { CONVEYOR: 3, RB84: 2 }, 'ค่า 1 / ว่าง ไม่ต้องเก็บ — default อยู่แล้ว');
+  assert.deepEqual(affectsLanesMap(), {});
+});
+
+test('🔀 คอนเวเยอร์ครอบ 3 เลน = ไม่หาร · เลเซอร์ครอบ 1 เลน = หาร 3 · โรบอทกลาง 2 เลน = ×⅔', () => {
+  const by = affectsLanesMap([{ machine_no: 'CONVEYOR', affects_lanes: 3 }, { machine_no: 'RB-84', affects_lanes: 2 }]);
+  assert.equal(dtLineMin(row('CONVEYOR', 50), 3, { affectsBy: by }), 50, 'หยุดทั้งไลน์ 50 นาทีจริง');
+  assert.equal(dtLineMin(row('LS-03', 30), 3, { affectsBy: by }), 10, 'เลนเดียวจาก 3 = เสียกำลัง ⅓');
+  assert.equal(+dtLineMin(row('RB-84', 30), 3, { affectsBy: by }).toFixed(4), 20, 'ครอบ 2 จาก 3 เลน');
+});
+
+test('🔴 กรอกเกินจำนวนเลน ต้องไม่ทำให้นาทีบวมเกินจริง (เพดานที่ N)', () => {
+  const by = affectsLanesMap([{ machine_no: 'X1', affects_lanes: 99 }]);
+  assert.equal(dtLineMin(row('X1', 40), 3, { affectsBy: by }), 40, 'ครอบเกิน = หยุดทั้งไลน์ ไม่เกินนั้น');
+});
+
+test('🔴 ไม่ส่งแมป = พฤติกรรมเดิมเป๊ะ (ทุกเครื่องครอบ 1 เลน)', () => {
+  assert.equal(+dtLineMin(row('CONVEYOR', 50), 3).toFixed(4), 16.6667);   // ทศนิยมลอยตัว — เทียบแบบปัดก่อน
+  assert.equal(laneWeightFn(3)({ machine_no: 'CONVEYOR' }), 1 / 3);
+});
+
+test('🔴 สะกดต่างแบบต้อง join ติด (CONVEYOR vs conveyor vs CONV-EYOR ไม่ใช่)', () => {
+  const by = affectsLanesMap([{ machine_no: 'CONVEYOR', affects_lanes: 3 }]);
+  assert.equal(dtLineMin(row('conveyor', 50), 3, { affectsBy: by }), 50, 'ตัวพิมพ์เล็ก-ใหญ่');
+  assert.equal(dtLineMin(row('CONV EYOR', 50), 3, { affectsBy: by }), 50, 'ช่องว่าง');
+  assert.equal(+dtLineMin(row('CONVAYOR', 50), 3, { affectsBy: by }).toFixed(4), 16.6667, 'สะกดผิดคนละคำ = คนละเครื่อง (ต้องไปรวมที่ทะเบียน)');
+});
+
+test('🔴 ไลน์ไม่ขนาน (N=1) = ไม่หารอะไรเลย แม้จะกรอก affects_lanes ไว้', () => {
+  const by = affectsLanesMap([{ machine_no: 'M1', affects_lanes: 3 }]);
+  assert.equal(dtLineMin(row('M1', 45), 1, { affectsBy: by }), 45);
 });

@@ -4346,6 +4346,47 @@ test('🛡️ dt-by-session-needs-lines — ทุกการเรียก dt
     + bad.map(b => '   • ' + b).join('\n') + '\n');
 });
 
+/* ═══ ของกลางของไลน์ขนาน ห้ามถูกหารเลน — `affects_lanes` (2026-10-28 · คำสั่ง user) ═══
+   ที่มา: user ถามถึงเคส HDF1 → LASER-345 (เลเซอร์ 3 เครื่องวิ่งขนาน · คอนเวเยอร์ลำเลียงตัวเดียว
+   เลี้ยงทั้ง 3 เครื่อง) — *"คอนเวเย่อ พัง ไม่ใช่เลเซอพัง … ถ้าคอนเวเย่อเบรคดาว จะกระทบกับทั้ง3เครื่องทันที"*
+   การหาร 1/N (กฎ 12/10) ถูกสำหรับ **เครื่องในเลน** แต่ผิดสำหรับ **ของกลางของไลน์**:
+   คอนเวเยอร์หยุด 155 นาที = ไลน์หยุด 155 นาที ไม่ใช่ 52 นาที
+   ⇒ ทะเบียนเครื่องตอบว่า "ตัวนี้ครอบกี่เลน" (`machines.affects_lanes` ฝั่ง DR · กรอกที่ `/machines`)
+     แล้วทุกสูตรต้องรับแมปนั้นผ่าน `laneWeightFn(parallelN, affectsBy)` — ว่าง = 1 เลน = พฤติกรรมเดิม
+   🔴 สูตรน้ำหนักเลนต้องมี **ชุดเดียว** — ใครเขียน `1 / parallelN` เองในหน้า/ในสูตร = ของกลางหายไปเงียบ */
+test('🛡️ lane-weight-single-entry — น้ำหนักเลนต้องมาจาก laneWeightFn ห้ามเขียน 1/parallelN เอง', () => {
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const rel = relative(ROOT, file);
+    if (rel.includes('__tests__')) continue;
+    const code = stripComments(readFileSync(file, 'utf8'));
+    /* จับ `1 / parallelN` · `1 / N` · `1/parallelUnitsOf(...)` — รูปที่เคยมีจริงใน computeLiveOee */
+    if (/\b1\s*\/\s*(parallelN|parallelUnitsOf|laneN|lanes)\b/.test(code)) bad.push(rel);
+  }
+  assert.deepEqual(bad, [],
+    '\n\n❌ ไฟล์ด้านล่างคิดน้ำหนักเลนเองด้วย `1 / parallelN`\n'
+    + '   ทำไมห้าม: ของกลางของไลน์ขนาน (คอนเวเยอร์ · ระบบลม · ตู้ไฟ) ที่กรอก `machines.affects_lanes` ไว้\n'
+    + '   จะยังถูกหารเลนอยู่ ⇒ นาทีที่ไลน์หยุดต่ำกว่าจริง N เท่า (เคส LASER-345: 155 น. → 52 น.)\n'
+    + '   แก้ยังไง: `laneWeightFn(parallelN, affectsBy)` (utils/oee.js §3.2) — สูตรมีชุดเดียวที่นั่น\n\n'
+    + bad.map(b => '   • ' + b).join('\n') + '\n');
+});
+
+test('🛡️ lane-weight-needs-affects — สูตรที่หารเลนต้องรับแมป affects_lanes ด้วย', () => {
+  const src = readFileSync(join(ROOT, 'src/utils/oee.js'), 'utf8');
+  for (const [fn, param] of [['laneWeightFn', 'affectsBy'], ['dtLineMin', 'affectsBy'],
+                             ['dtMinBySession', 'affectsBy'], ['computeSessionOee', 'affectsLanes'],
+                             ['computeLiveOee', 'affectsLanes']]) {
+    assert.ok(new RegExp(`${fn}[\\s\\S]{0,900}?${param}`).test(src),
+      `\n\n❌ \`${fn}\` ใน utils/oee.js ไม่รับ \`${param}\` แล้ว\n`
+      + '   ถอดออก = ของกลางของไลน์ขนาน (คอนเวเยอร์) ถูกหารเลนเหมือนเครื่องในเลน\n'
+      + '   = นาทีที่ไลน์หยุดต่ำกว่าจริง N เท่า โดยไม่มี error (คำสั่ง user 28/10)\n');
+  }
+  /* ตัวอ่านแมปต้อง normalize เลขเครื่องผ่าน machineKey — `SW10` vs `SW-10` = คนละคีย์ join ไม่ติด */
+  assert.ok(/affectsLanesMap[\s\S]{0,400}?machineKey\s*\(/.test(src),
+    '\n\n❌ `affectsLanesMap` ไม่ได้ผ่าน `machineKey()` — เลขเครื่องที่เขียนต่างแบบจะ join ไม่ติด\n'
+    + '   (กฎ CLAUDE.md §machine_no = คีย์ join แบบ text)\n');
+});
+
 /* ═══ ยอดผลิตของ "ทั้งกะ" ห้ามวน reduce ใบผลิตเองในหน้า (2026-10-12) ═══
    กฎเดียวกันเคยอยู่ 3 ที่ (orderProducedQty / computeSessionOee / handleCloseSession)
    ⇒ `confirmed → o.qty` ที่หนึ่ง กับ `qty_ok ?? qty` อีกที่หนึ่ง = รอวัน drift
