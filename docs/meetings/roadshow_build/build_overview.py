@@ -575,6 +575,39 @@ def build(lang):
              "(4) ต่อเครื่องจักร SCADA ภายหลัง — เครื่องบอกข้อเท็จจริง คนบอกเหตุผล (5) ขยายไปโรงงานอื่น เริ่มที่ผลิต + ซ่อมบำรุงก่อน\n"
              "สิ่งที่ยังไม่ได้ทำ ห้ามพูดว่าเสร็จ: ต่อ SAP/SCADA · ระบบหลายบริษัทจริง (/group-overview เป็นตัวอย่างจอ)")
 
+    # ── Beyond TSAT — ขยายไปโรงงานอื่น (ภาพ · 28/10) · เช็คลิสต์เต็มอยู่เด็ค build_new_factory_deploy.py ──
+    s = content(("BEYOND TSAT", "ก้าวต่อไป: จาก TSAT สู่โรงงานอื่นในกลุ่ม"),
+                ("Same program, each plant keeps its own data", "โปรแกรมเดียวกัน · ข้อมูลของแต่ละโรงงานแยกกัน"))
+    def bubble(x, y, d, emo, fill, line=None):
+        T.rect(s, x, y, d, d, fill=fill, line=line, lw=2, shape=MSO_SHAPE.OVAL)
+        T.text(s, x, y, d, d, [[(emo, {"sz": int(d * 30), "f": "Segoe UI Emoji", "c": GREEN})]], align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
+    bubble(0.9, 1.95, 2.1, "🏭", GREEN_TINT, ORANGE)
+    T.text(s, 0.5, 4.1, 2.9, 0.8, [[("TSAT", {"sz": 20, "b": True, "c": ORANGE})],
+                                  [(t(("in use today", "ใช้งานจริงวันนี้")), {"sz": 12.5, "c": GREY})]], align=PP_ALIGN.CENTER, sa=2)
+    for i, yy in enumerate([1.85, 3.05, 4.25]):
+        T.rect(s, 3.35, yy + 0.25, 1.1, 0.42, fill=GREEN, shape=MSO_SHAPE.RIGHT_ARROW)
+        bubble(4.6, yy, 0.95, "🏭", WHITE, GREEN)
+        T.text(s, 5.65, yy + 0.2, 1.9, 0.55, [[(t((f"Plant {'ABC'[i]}", f"โรงงาน {'ABC'[i]}")), {"sz": 15, "b": True, "c": GREEN_D})]], anchor=MSO_ANCHOR.MIDDLE)
+    T.text(s, 4.6, 5.3, 3.0, 0.4, [[(t(("own data · own users", "ข้อมูลแยก · ผู้ใช้แยก")), {"sz": 12.5, "c": GREY})]])
+    T.rect(s, 7.75, 1.75, 5.1, 4.15, fill=WHITE, line=BORDER, shape=MSO_SHAPE.ROUNDED_RECTANGLE, shadow=True)
+    T.rect(s, 7.75, 1.75, 5.1, 0.46, fill=GREEN_D)
+    T.text(s, 7.75, 1.75, 5.1, 0.46, [[(t(("A new plant prepares 3 things", "โรงงานใหม่เตรียม 3 อย่าง")), {"sz": 15, "b": True, "c": WHITE})]],
+           align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
+    for i, (emo, h, d) in enumerate([
+            ("🖥️", ("System space", "ที่ตั้งระบบ"), ("IT · a few days", "IT · ไม่กี่วัน")),
+            ("🛠️", ("Own name & forms", "ชื่อ โลโก้ ฟอร์มของตัวเอง"), ("ESM team", "ทีม ESM")),
+            ("📋", ("Plant data", "ข้อมูลของโรงงาน"), ("People · lines · machines · parts", "คน · ไลน์ · เครื่องจักร · สินค้า"))]):
+        yy = 2.4 + i * 1.12
+        bubble(8.0, yy, 0.9, emo, GREEN_TINT)
+        T.text(s, 9.1, yy + 0.02, 3.6, 0.9, [[(t(h), {"sz": 15, "b": True, "c": GREEN_D})], [(t(d), {"sz": 12.5, "c": GREY})]],
+               anchor=MSO_ANCHOR.MIDDLE, sa=2)
+    T.headline_box(s, 0.5, 6.1, 12.35, t(("Start with Production + Maintenance on 1–2 pilot lines — then add departments",
+                                        "เริ่มที่ฝ่ายผลิต + ซ่อมบำรุง บนไลน์นำร่อง 1–2 ไลน์ แล้วค่อยเพิ่มแผนก")))
+    notes(s, "ภาพอนาคต (ยังเป็นแผน ไม่ใช่สิ่งที่ทำเสร็จแล้ว): ESM ที่ TSAT เป็นต้นแบบ โรงงานอื่นในกลุ่มใช้โปรแกรมเดียวกันได้\n"
+             "แต่ละโรงงานมีข้อมูลและผู้ใช้ของตัวเอง ไม่เห็นข้อมูลกัน — ปรับปรุงที่เดียว ได้ทุกโรง\n"
+             "สิ่งที่โรงงานใหม่ต้องเตรียม 3 อย่าง: ที่ตั้งระบบ (IT) · ชื่อ/โลโก้/ฟอร์มของตัวเอง (ทีม ESM) · ข้อมูลโรงงาน (นานที่สุด)\n"
+             "ข้อเสนอเบื้องต้น ~5 สัปดาห์ต่อโรงงาน ขึ้นกับความพร้อมข้อมูล · เช็คลิสต์เต็ม: ESM_New_Factory_Deploy_Checklist_2026-10-28.pptx")
+
     # ── ปิด (R01: พื้นขาว) ──
     page[0] += 1
     s = T.closing_slide(p, page[0], "Before We Build Parts, We Build People", [
