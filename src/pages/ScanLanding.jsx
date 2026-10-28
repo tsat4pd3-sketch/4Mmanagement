@@ -19,6 +19,11 @@
       ไม่ใช่เครื่อง/จิ๊ก/จุดส่ง ⇒ ลองเป็น **ใบผลิต (`prod_no`)** แล้ว **MAT/พาร์ท** (บาร์โค้ดคัมบัง/กล่อง)
       → ปุ่ม ✅ ตรวจชิ้นงาน QA (`/qa?tab=sheet&part=`) · 🔎 สอบกลับ · ปุ่ม AM/PM แยกป้ายตาม `isAmTeam`
       · ตัวแปลง/ตัดสินอยู่ `qrCode.js` ที่เดียว (`resolveProduct`/`findQaPartByScan`) ห้ามเทียบเองในหน้านี้
+   6. **เฟส 3 "สแกนอะไรก็เปิดหน้าของสิ่งนั้น"** (2026-10-28 · คำสั่ง user)
+      ป้ายไลน์ (ESM:L / ชื่อไลน์เปล่า) → หน้าของไลน์นั้น · บัตรพนักงาน (รหัสล้วน) → การ์ดคน ·
+      ป้ายคลัง (ESM:W) → ข้อมูลคลัง · ป้ายประเภท Downtime/งานเสีย (ESM:T/X) → บอกว่าเป็นอะไร + ใช้ที่ไหน
+      · ตัวตัดสิน = `resolveLine`/`resolveTypeRow` (qrCode.js) · `findByBadge` (badgeCheckin.js) — ห้ามเทียบเองในหน้านี้
+      · โหลดเฉพาะเมื่อป้ายเป็นชนิดนั้น (กฎ egress) · หาเจอหลายอย่างพร้อมกัน (เลขเปล่า) = โชว์ทุกการ์ด ห้ามเดาว่าเป็นอันไหน
    ══════════════════════════════════════════════════════════════════════════ */
 import { useContext, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
@@ -32,7 +37,10 @@ import { canAccessPage } from '../utils/permissions';
 import { DEFAULT_TEAMS, loadPmTeams } from '../utils/pmTeams';
 import { supabase } from '../supabaseClient';
 import MachineRepairHistory from '../components/MachineRepairHistory';
-import { parseQrPayload, resolveMachine, resolveJig, resolveDeliveryPoint, resolveProduct, QR_KINDS } from '../utils/qrCode';
+import { parseQrPayload, resolveMachine, resolveJig, resolveDeliveryPoint, resolveProduct, resolveLine, resolveTypeRow, QR_KINDS } from '../utils/qrCode';
+import { useProductionLinesState } from '../utils/useProductionLines';
+import { useStorageLocationsState } from '../utils/useStorageLocations';
+import { findByBadge, normBadgeCode } from '../utils/badgeCheckin';
 
 const card = {
   background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)',
@@ -179,6 +187,61 @@ export default function ScanLanding() {
   const prodFound = !!(prodHit && (prodHit.order || prodHit.product || prodHit.qaPart));
   const pointHit = !found ? hit?.point : null;
 
+  /* ══ เฟส 3 (28/10) — ไลน์ · บัตรพนักงาน · คลัง · ประเภท Downtime/งานเสีย ══ */
+  const { rows: allLines, loading: linesLoading, failed: linesFailed } = useProductionLinesState();
+  const { rows: storageRows, loading: stoLoading, failed: stoFailed } = useStorageLocationsState();
+  const lineById = useMemo(() => Object.fromEntries((allLines || []).map(l => [String(l.id), l])), [allLines]);
+  /* ป้ายไลน์ (ESM:L) หรือเลขเปล่าที่ตรงชื่อไลน์เป๊ะ — ชื่อไลน์เปล่าไม่ตรง = ไม่ใช่ไลน์ (ไม่ขึ้น error) */
+  const lineHit = useMemo(() => {
+    if (!scan || !(scan.kind === 'line' || scan.kind === null)) return null;
+    return resolveLine(scan, allLines || []).line || null;
+  }, [scan, allLines]);
+  const storageHit = useMemo(() => {
+    if (scan?.kind !== 'storage') return null;
+    const q = normBadgeCode(scan.id);
+    return (storageRows || []).find(r => normBadgeCode(r.code) === q) || null;
+  }, [scan, storageRows]);
+
+  /* 🪪 บัตรพนักงาน = รหัสล้วน (เลขเปล่า) — ลองเฉพาะป้ายไม่มีชนิด · `.in` 2 รูป (ตามที่สแกน + ปรับรูป) แล้วตัดสินด้วย findByBadge */
+  const tryEmp = !!(scan && scan.kind === null && code && !loading && !found && !hit?.point);
+  const [empHit, setEmpHit] = useState(null);   // null = ยังไม่ลอง · { emp, err }
+  useEffect(() => {
+    if (!tryEmp) { setEmpHit(null); return undefined; }
+    let alive = true;
+    setEmpHit(null);
+    supabase.from('employees').select('id, name, employee_id_code, position, section, line_id, is_active')
+      .in('employee_id_code', [...new Set([code, normBadgeCode(code)])]).limit(5)
+      .then(({ data, error }) => {
+        if (!alive) return;
+        setEmpHit({ emp: error ? null : findByBadge(data || [], code), err: !!error });
+      });
+    return () => { alive = false; };
+  }, [tryEmp, code]);
+
+  /* ⏱/🔴 ป้ายประเภท — ดึงแถวเดียวตาม id เฉพาะเมื่อเป็นป้ายชนิดนั้น */
+  const typeKind = scan?.kind === 'downtime_type' || scan?.kind === 'defect_type' ? scan.kind : null;
+  const [typeHit, setTypeHit] = useState(null);   // null = ยังไม่โหลด · { row, err }
+  useEffect(() => {
+    if (!typeKind || !code) { setTypeHit(null); return undefined; }
+    let alive = true;
+    setTypeHit(null);
+    const table = typeKind === 'downtime_type' ? 'dr_downtime_types' : 'dr_defect_types';
+    const cols = typeKind === 'downtime_type' ? 'id, name_th, category, process_type, is_active' : 'id, name_th, process_type, is_active';
+    supabaseDR.from(table).select(cols).eq('id', code).limit(1)
+      .then(({ data, error }) => {
+        if (!alive) return;
+        setTypeHit({ row: error ? null : (resolveTypeRow(scan, typeKind, data || []).row || null), err: !!error });
+      });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [typeKind, code]);
+
+  const extraLoading = (scan?.kind === 'line' && linesLoading) || (scan?.kind === 'storage' && stoLoading)
+    || (tryEmp && !empHit) || (typeKind && !typeHit);
+  const extraFound = !!(lineHit || storageHit || empHit?.emp || typeHit?.row);
+  const extraErr = (scan?.kind === 'line' && linesFailed) || (scan?.kind === 'storage' && stoFailed) || empHit?.err || typeHit?.err;
+  const emp = empHit?.emp || null;
+
   return (
     <Page>
       <PageHeader icon="📷" title="สแกนเข้างาน"
@@ -222,8 +285,89 @@ export default function ScanLanding() {
         </div>
       )}
 
-      {raw && !loading && !found && !pointHit && tryProduct && !prodHit && (
-        <div style={{ ...card, color: 'var(--muted)', fontSize: 13 }}>ไม่ใช่ป้ายอุปกรณ์ — กำลังค้นเป็นใบผลิต / MAT…</div>
+      {raw && !loading && !found && !pointHit && extraFound && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: prodFound ? 12 : 0 }}>
+          {lineHit && (() => {
+            const q = encodeURIComponent(lineHit.name);
+            return (<>
+              <div style={card}>
+                <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 2 }}>🏭 ไลน์ผลิต</div>
+                <div style={{ fontSize: 26, fontWeight: 900, lineHeight: 1.2 }}>{lineHit.name}</div>
+                <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 2 }}>
+                  {[lineHit.section && `ส่วนงาน ${lineHit.section}`, lineHit.parent_line_name && `ใต้ ${lineHit.parent_line_name}`].filter(Boolean).join(' · ')}
+                  {lineHit.is_active === false && <b style={{ color: 'var(--red, #ef4444)' }}> · ปิดใช้งานแล้ว</b>}
+                </div>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {canAccessPage('/daily-report', role) && <ActionLink to={`/daily-report?line=${q}`} icon="📋" label="Daily Report ของไลน์นี้" sub="เปิดกะ · สแกนใบผลิต · ลง Downtime / งานเสีย" />}
+                {canAccessPage('/line-oee', role) && <ActionLink to={`/line-oee?line=${q}`} icon="📈" label="OEE สดของไลน์" sub="A × P × Q ของกะนี้" tone="#22c55e" />}
+                {canAccessPage('/management', role) && <ActionLink to={`/management?line=${q}`} icon="🗓️" label="แผน / สถานะงานของไลน์" sub="ใบผลิตที่กำลังเดิน + คิวถัดไป" tone="#60a5fa" />}
+                {canAccessPage('/people-board', role) && <ActionLink to={`/people-board?line=${q}`} icon="🧑‍🤝‍🧑" label="คนในไลน์ / จุดงาน" sub="ใครอยู่จุดไหน กะนี้" tone="#a78bfa" />}
+                {canAccessPage('/pm-check', role) && <ActionLink to={`/pm?tab=check&line=${q}`} icon="✅" label="ตรวจ AM / PM ของไลน์" sub="ใบตรวจของอุปกรณ์ในไลน์นี้" tone="#f59e0b" />}
+                {canAccessPage('/qr-labels', role) && <ActionLink to={`/qr-labels?kind=sheet&line=${q}`} icon="🗒️" label="พิมพ์ใบสแกนประจำไลน์ (A4)" sub="QR ประเภท Downtime / งานเสียของไลน์นี้" tone="var(--muted)" />}
+              </div>
+            </>);
+          })()}
+
+          {emp && (<>
+            <div style={card}>
+              <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 2 }}>🪪 พนักงาน</div>
+              <div style={{ fontSize: 24, fontWeight: 900, lineHeight: 1.2 }}>{emp.name || '—'}</div>
+              <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 2 }}>
+                {[`รหัส ${emp.employee_id_code}`, emp.position, lineById[String(emp.line_id)]?.name, emp.section].filter(Boolean).join(' · ')}
+                {emp.is_active === false && <b style={{ color: 'var(--red, #ef4444)' }}> · พ้นสภาพ / ปิดใช้งาน</b>}
+              </div>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {canAccessPage('/operator', role) && <ActionLink to={`/operator?q=${encodeURIComponent(emp.employee_id_code)}`} icon="👤" label="ข้อมูลพนักงาน / ทักษะ" sub="เปิดฐานข้อมูลพนักงานที่คนนี้" />}
+              {canAccessPage('/checkin', role) && <ActionLink to="/checkin" icon="🪪" label="เช็คชื่อด้วยบัตร" sub="หน้าเช็คชื่อ → ปุ่ม 🪪 สแกนบัตรพนักงาน" tone="#22c55e" />}
+            </div>
+          </>)}
+
+          {storageHit && (
+            <div style={card}>
+              <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 2 }}>🏬 ที่เก็บ / รหัสคลัง</div>
+              <div style={{ fontSize: 26, fontWeight: 900, lineHeight: 1.2 }}>{storageHit.code}</div>
+              <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 2 }}>
+                {[storageHit.name, storageHit.kind, (storageHit.line_names || []).join(', ')].filter(Boolean).join(' · ')}
+                {storageHit.is_active === false && <b style={{ color: 'var(--red, #ef4444)' }}> · ปิดใช้งานแล้ว</b>}
+              </div>
+              <p style={{ fontSize: 12.5, color: 'var(--muted)', margin: '10px 0 0', lineHeight: 1.7 }}>
+                ป้ายนี้ใช้ <b>ยิงในช่องรหัสคลัง</b> (ช่องที่มีปุ่ม 📷) แทนการเลือกจากรายการ
+              </p>
+            </div>
+          )}
+
+          {typeHit?.row && (() => {
+            const t = typeHit.row;
+            const isDt = typeKind === 'downtime_type';
+            return (<>
+              <div style={card}>
+                <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 2 }}>{isDt ? '⏱ ประเภท Downtime' : '🔴 ประเภทงานเสีย'}</div>
+                <div style={{ fontSize: 24, fontWeight: 900, lineHeight: 1.2 }}>{t.name_th || '—'}</div>
+                <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 2 }}>
+                  {[isDt && (t.category === 'planned' ? 'ในแผน' : 'นอกแผน'), t.process_type && `กระบวนการ ${t.process_type}`].filter(Boolean).join(' · ')}
+                  {t.is_active === false && <b style={{ color: 'var(--red, #ef4444)' }}> · ปิดใช้งานแล้ว — ยิงลงใบไม่ได้ พิมพ์แผ่นใหม่</b>}
+                </div>
+                <p style={{ fontSize: 12.5, color: 'var(--muted)', margin: '10px 0 0', lineHeight: 1.7 }}>
+                  ป้ายนี้มาจาก <b>ใบสแกนประจำไลน์</b> — ใช้ยิงตอนบันทึก {isDt ? 'Downtime' : 'งานเสีย'} ใน Daily Report (ปุ่ม 📷 ข้างช่องประเภท หรือกดปุ่มสแกนข้างเครื่องตอนฟอร์มเปิดอยู่)
+                </p>
+              </div>
+              {canAccessPage('/daily-report', role) && <ActionLink to="/daily-report" icon="📋" label="ไป Daily Report" sub={`เปิดฟอร์มบันทึก${isDt ? ' Downtime' : 'งานเสีย'} แล้วยิงป้ายนี้`} />}
+            </>);
+          })()}
+
+          {!prodFound && (
+            <button onClick={() => setRescan(true)}
+              style={{ minHeight: 44, background: 'var(--bg3)', border: '1px solid var(--border2)', fontSize: 13 }}>
+              📷 สแกนป้ายอื่น
+            </button>
+          )}
+        </div>
+      )}
+
+      {raw && !loading && !found && !pointHit && (extraLoading || (tryProduct && !prodHit)) && !extraFound && !prodFound && (
+        <div style={{ ...card, color: 'var(--muted)', fontSize: 13 }}>ไม่ใช่ป้ายอุปกรณ์ — กำลังค้นเป็นใบผลิต / MAT / บัตรพนักงาน / ไลน์…</div>
       )}
 
       {raw && !loading && !found && !pointHit && prodFound && (() => {
@@ -263,13 +407,18 @@ export default function ScanLanding() {
         );
       })()}
 
-      {raw && !loading && !found && !pointHit && (!tryProduct || (prodHit && !prodFound)) && (
+      {raw && !loading && !found && !pointHit && !extraFound && !extraLoading && (!tryProduct || (prodHit && !prodFound)) && (
         <div style={{ ...card, borderColor: 'var(--amber, #f59e0b)' }}>
-          <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 6 }}>⚠️ ไม่พบอุปกรณ์ / ใบผลิต / พาร์ทของป้ายนี้</div>
+          <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 6 }}>⚠️ ไม่พบสิ่งที่ตรงกับป้ายนี้</div>
           <div style={{ fontSize: 12.5, color: 'var(--text2)', lineHeight: 1.8 }}>
             รหัสที่อ่านได้: <code style={{ background: 'var(--bg3)', padding: '1px 6px', borderRadius: 4 }}>{scan?.raw || raw}</code><br />
             ชนิดป้าย: {scan?.typed ? `${QR_KINDS[scan.kind]?.icon ?? ''} ${QR_KINDS[scan.kind]?.label ?? scan.kind}` : 'เลขเปล่า (ไม่ใช่ป้ายของระบบ)'}
-            {(mFailed || jigErr || pointErr || prodHit?.err?.length > 0) && <><br /><b style={{ color: 'var(--red, #ef4444)' }}>⚠️ โหลดทะเบียนไม่ครบ — อาจไม่ใช่ว่าไม่มีเครื่องนี้จริง ลองใหม่อีกครั้ง</b></>}
+            {/* 🗒️ ป้ายเฟส 2 ที่หาแถวไม่เจอ (ถูกลบ/ปิด) — บอกว่าป้ายใช้ที่ไหน ไม่ปล่อยให้คิดว่าป้ายเสีย (28/10) */}
+            {['line', 'downtime_type', 'defect_type', 'storage'].includes(scan?.kind) && (
+              <><br />ป้ายชนิดนี้ถูกต้อง แต่<b>ไม่พบแถวในทะเบียน</b> (อาจถูกลบ/เปลี่ยนรหัส) — พิมพ์ป้ายใหม่จากหน้า QR Labels</>
+            )}
+            {scan?.kind === null && <><br />ลองแล้ว: เครื่อง/จิ๊ก · ใบผลิต · MAT · บัตรพนักงาน · ชื่อไลน์</>}
+            {(mFailed || jigErr || pointErr || prodHit?.err?.length > 0 || extraErr) && <><br /><b style={{ color: 'var(--red, #ef4444)' }}>⚠️ โหลดทะเบียนไม่ครบ — อาจไม่ใช่ว่าไม่มีเครื่องนี้จริง ลองใหม่อีกครั้ง</b></>}
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
             <button onClick={() => setRescan(true)} style={{ minHeight: 44, padding: '0 16px', fontWeight: 700 }}>📷 สแกนใหม่</button>
@@ -342,7 +491,7 @@ export default function ScanLanding() {
       )}
 
       {rescan && (
-        <ScanModal title="สแกนป้ายอุปกรณ์"
+        <ScanModal title="สแกนป้าย / บาร์โค้ด / บัตร"
           onScan={(parsed) => { if (!parsed?.raw) return 'อ่านรหัสไม่ได้'; setSp({ c: parsed.raw }); setRescan(false); }}
           onClose={() => setRescan(false)} />
       )}

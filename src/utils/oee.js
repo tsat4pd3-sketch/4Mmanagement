@@ -34,6 +34,9 @@
 import { collapsePairShots } from './pairTotals.js';
 // §8 computeSessionOee ต้องรู้โหมดไลน์/จำนวนสถานีขนาน (source of truth = lineTypes.js · ไม่มี import วนกลับ)
 import { parallelUnitsOf, flowModeOf } from './lineTypes.js';
+/* 🏷️ คีย์เลขเครื่อง — `machine_no` เป็นข้อความอิสระ (SW10 vs SW-10 = เครื่องเดียวกัน)
+   ทะเบียน "ครอบกี่เลน" ต้อง join ด้วยคีย์เดียวกับทั้งระบบ ห้ามเทียบสตริงดิบ (utils/machineNo.js) */
+import { machineKey } from './machineNo.js';
 import { applyBreakLineRules, breakLineRuleIndexSync, breakBandName, breakBandTitle } from './breakLineRules.js';   // ข้อยกเว้นเวลาพัก "รายไลน์" (เจ้าของกฎไล่สายแม่-ลูก)
 import { applyHolidayBreaks } from './workingDay.js';
 /* 🏭 ป้ายบนแถบเงาเวลาพัก — เจ้าของข้อความอยู่ `breakLineRules.js` ส่งต่อที่นี่เพื่อให้จอ
@@ -386,8 +389,72 @@ export function halfDayBreakBands({ policies = [], half, processType = null, lin
 
    ⚠️ หารเฉพาะแถวที่ **ระบุเครื่อง** (`machine_no`) — แถวที่ไม่ระบุเครื่องคือ "หยุดทั้งไลน์"
       (ไฟดับ/ไม่มีแผนผลิต/เปลี่ยนรุ่นทั้งไลน์) หารแล้วจะ**ต่ำกว่าจริง** */
-export const laneWeightFn = (parallelN = 1) =>
-  (d) => (Number(parallelN) > 1 && d?.machine_no) ? 1 / Number(parallelN) : 1;
+/* 🔀 "อุปกรณ์ตัวนี้หยุดแล้วกระทบกี่เลน" — ทะเบียน `machines.affects_lanes`  (2026-10-27 · คำสั่ง user)
+
+   ที่มา (คำอธิบายหน้างาน HDF1 → LASER-345): เลเซอร์ 3 เครื่องทำงานขนาน **ไม่รอกัน**
+   เครื่องไหนพังก็ไม่กระทบตัวอื่น ⇒ ครอบ 1 เลน · แต่ **คอนเวเยอร์ที่ลำเลียงงานมาเลี้ยงทั้ง 3 เครื่อง
+   พังเมื่อไหร่ หยุดทันทีทั้ง 3** ⇒ ครอบ 3 เลน · และ **โรบอทตัวกลางป้อนเลเซอร์ 4+5** ⇒ ครอบ 2 เลน
+   ⇒ ธง 2 ค่า (เลน/ของกลาง) ไม่พอ ต้องเป็น **ตัวเลข**
+
+   🔴 **ว่าง/ไม่รู้จัก = 1 เลน = พฤติกรรมเดิมเป๊ะ** ⇒ ทยอยกรอกทีละไลน์ได้ ไม่ต้องมีวัน cut-over
+      (กรอกเฉพาะ "ตัวยกเว้น" ที่ครอบ >1 เลน)
+
+   🏭 **ของกลางของสาย = `stops_whole_line` ไม่ใช่ตัวเลข** (2026-10-28 · user ชี้เพิ่ม)
+      *"conveyor อยู่ไลน์แม่ เป็นเหมือนส่วนกลางที่ใช้ทั้ง hdf1, hdf2, laser345, laser789"*
+      ⇒ อุปกรณ์ตัวเดียวถูกใช้โดยไลน์ที่มีจำนวนเลนไม่เท่ากัน (HDF1 = 1 · LASER-345 = 3)
+      "กระทบกี่เลน" จึงไม่มีคำตอบเป็นเลขเดียว · ธงนี้แปลว่า **ทุกเลนของไลน์ที่ใบนั้นอ้างถึง**
+      เก็บเป็น `Infinity` ในแมป แล้วให้ `laneWeightFn` เพดานที่ `N` เอง (น้ำหนัก = 1 ทุกไลน์) */
+export function affectsLanesMap(machines = []) {
+  const m = {};
+  for (const r of (Array.isArray(machines) ? machines : [])) {
+    const k = machineKey(r?.machine_no);
+    if (!k) continue;
+    /* ของกลางของสาย ชนะตัวเลขเสมอ — ตั้งธงแล้วยังกรอกเลขไว้ = เจตนาคือ "ทั้งไลน์" */
+    if (r?.stops_whole_line === true) { m[k] = Infinity; continue; }
+    const n = Number(r?.affects_lanes);
+    if (n > 1) m[k] = n;   // เก็บเฉพาะตัวยกเว้น — ค่า 1 คือ default อยู่แล้ว
+  }
+  return m;
+}
+
+/**
+ * น้ำหนักของ 1 แถว downtime → "นาทีของไลน์"
+ * @param {number} parallelN  จำนวนเลนของไลน์ (1 = ไม่ใช่ไลน์ขนาน)
+ * @param {Object|null} affectsBy  แมปจาก `affectsLanesMap()` — ไม่ส่ง = ทุกเครื่องครอบ 1 เลน (เดิม)
+ *
+ * น้ำหนัก = (ครอบกี่เลน ÷ จำนวนเลน) · แถวที่ **ไม่ระบุเครื่อง** = หยุดทั้งไลน์ ห้ามหาร
+ * 🔴 เพดานที่ `parallelN` — กรอกเกินจำนวนเลน (พิมพ์ผิด/ไลน์ลดเครื่อง) ต้องไม่ทำให้นาทีบวมเกินจริง
+ */
+export const laneWeightFn = (parallelN = 1, affectsBy = null) => (d) => {
+  const N = Number(parallelN) || 1;
+  if (N <= 1) return 1;            // ไลน์เลนเดียว = ไม่หารอยู่แล้ว
+  if (!d?.machine_no) return 1;    // ไม่ระบุเครื่อง = ไฟดับ/ไม่มีแผนผลิต/เปลี่ยนรุ่นทั้งไลน์
+  const hit = affectsBy ? Number(affectsBy[machineKey(d.machine_no)]) : 0;
+  const affects = Math.min(Math.max(1, hit || 1), N);
+  return affects / N;
+};
+
+/* 🔴 นาที downtime ของ **1 แถว** ในหน่วย "นาทีของไลน์" — จุดเดียวที่จอใช้ตอบ "ไลน์หยุดกี่นาที"
+   (2026-10-27 · คำสั่ง user: *"มันไม่ควรนับรวมเป็น 306 นาที สำหรับไลน์ขนาน เพราะความจริงมันคือ 102 นาที"*)
+
+   เคสจริง LASER-345 22/10 — ราง Conveyor เสีย 1 ครั้ง แต่พนักงานลง downtime **3 แถว** (LS-03/04/05)
+   แถวละ 50 นาที ⇒ ผลรวมดิบ 150 นาที ทั้งที่ไลน์หยุดจริง **50 นาที**
+     3×50 + 3×42 + 1×30 = 306 นาทีดิบ  →  ÷3 = **102 นาทีของไลน์** (= 50 + 42 + 10) ✔ ตรงกับ %A ที่ stamp ไว้
+   วัด 30 วัน (5 ไลน์ที่ตั้ง `parallel_stations`): ดิบ 68,137 → ของไลน์ 21,517 นาที (โป่งเกิน ~777 ชม.)
+
+   ⚠️ **หน่วยคนละตัวกับ "นาที-เครื่อง"** (`dtRawMin`) ที่ตอบว่า *ช่างเสียเวลา/ค่าใช้จ่ายรายเครื่องเท่าไหร่*
+      — จอไหนใช้ตัวไหนต้อง **เขียนหน่วยกำกับเสมอ** ห้ามโชว์เลขลอยๆ ให้คนเดาเอง */
+export const dtLineMin = (d, parallelN = 1, { affectsBy = null, nowMs = null } = {}) =>
+  dtRawMin(d, nowMs) * laneWeightFn(parallelN, affectsBy)(d);
+
+/** แมป `session_id → จำนวนเลน` — จอที่รวมนาที downtime จากหลายกะใช้ตัวนี้คู่กับ `dtLineMin`
+ *  กะที่ไม่รู้ไลน์/ไม่อยู่ในชุดที่ส่งมา = 1 เลน (พฤติกรรมเดิมเป๊ะ — ไม่เดาว่าเป็นไลน์ขนาน) */
+export function laneBySessionId(sessions = [], lines = []) {
+  const laneOf = parallelNBySession(lines);
+  const by = {};
+  for (const s of sessions || []) if (s?.id) by[s.id] = laneOf(s);
+  return by;
+}
 
 /** ทะเบียนไลน์ → ฟังก์ชัน `(session) => จำนวนเลน` สำหรับส่งให้ `dtMinBySession`
  *  รับได้ทั้ง **อาร์เรย์แถวไลน์** และ **แมป `{ [ชื่อไลน์]: แถว }`** (จอที่มีแต่แมปอยู่แล้วจะได้ไม่ต้องแปลง)
@@ -488,7 +555,7 @@ export function sessionDowntimeMin({
  *  🔴 `opts.lines` = ทะเบียนไลน์ (`name`, `flow_mode`, `parallel_stations`) — **จอที่เอาผลไปถ่วง
  *     `wLoad` ต้องส่งเสมอ** ไม่งั้นไลน์เครื่องขนานได้นาทีรวมของทุกเครื่องมาหักจากเวลากะเดียว (§3.2)
  *     ไม่ส่ง = ไม่หารเลน (พฤติกรรมเดิมเป๊ะ สำหรับจอที่โชว์ "เครื่องหยุดกี่นาที" ล้วนๆ) */
-export function dtMinBySession(sessions = [], downtimes = [], breakPolicies = [], { lines = null, lineRules = null } = {}) {
+export function dtMinBySession(sessions = [], downtimes = [], breakPolicies = [], { lines = null, lineRules = null, affectsBy = null } = {}) {
   const laneOf = lines ? parallelNBySession(lines) : null;
   const ivBy = {}, wBy = {};
   for (const s of sessions) {
@@ -496,7 +563,7 @@ export function dtMinBySession(sessions = [], downtimes = [], breakPolicies = []
     ivBy[s.id] = (win && breakPolicies.length)
       ? breakIntervalsIn({ policies: breakPolicies, startMs: win.startMs, endMs: win.endMs, workDate: win.workDate, shift: win.shift, lineName: s?.line_name ?? null, lineRules })
       : [];
-    if (laneOf) wBy[s.id] = laneWeightFn(laneOf(s));
+    if (laneOf) wBy[s.id] = laneWeightFn(laneOf(s), affectsBy);
   }
   const out = {};
   for (const d of downtimes) {
@@ -581,7 +648,7 @@ export function busyMinutes(orders = [], startMs, endMs) {
      ไม่ส่ง = ไม่หักพัก → กลับไปต่างจากค่าที่ stamp อีก (util คืน `noBreakPolicy: true` ให้จอรู้ตัว)
    ⚠️ netAvail ≤ 0 (เพิ่งเปิดกะแล้วยังอยู่ในประชุมแถว/พัก) = **ประเมินไม่ได้ → คืน null**
      ห้ามคืน A = 0 (กฎเดียวกับ noOutput/noCt — 0 แปลว่า "แย่มาก" ไม่ใช่ "ยังไม่รู้") */
-export function computeLiveOee({ session, orders = [], downtimes = [], ctMap = {}, ngQty = null, workDate, nowMs = Date.now(), parallelN = 1, parallelCap = 1, breakPolicies = [], processType = null, pairMap = null, ngForP = null, lineRules = null }) {
+export function computeLiveOee({ session, orders = [], downtimes = [], ctMap = {}, ngQty = null, workDate, nowMs = Date.now(), parallelN = 1, parallelCap = 1, breakPolicies = [], processType = null, pairMap = null, ngForP = null, lineRules = null, affectsLanes = null }) {
   if (!session?.start_time) return null;
   const wd = workDate || session.work_date;
   if (!wd) return null;
@@ -635,7 +702,10 @@ export function computeLiveOee({ session, orders = [], downtimes = [], ctMap = {
     : [];
   const breakMin = brkIv.reduce((s, [a, b]) => s + (b - a) / 60000, 0);
   // Downtime ที่ยังเปิดค้าง (ไม่มีเวลาจบ/นาที) นับถึงตอนนี้ · นาทีที่ตกในช่วงพักถูกตัดออก (ห้ามหักซ้ำ §3.1)
-  const dtW = d => (parallelN > 1 && d.machine_no) ? 1 / parallelN : 1;
+  /* 🔀 น้ำหนักเลน — **ต้องผ่าน `laneWeightFn` (§3.2) ห้ามเขียนสูตรซ้ำที่นี่**
+     ของกลางของไลน์ (คอนเวเยอร์/ระบบลม) ที่กรอก `machines.affects_lanes` ไว้ ต้องไม่ถูกหารเลน
+     ไม่ส่ง `affectsLanes` = ทุกเครื่องครอบ 1 เลน = พฤติกรรมเดิมเป๊ะ */
+  const dtW = laneWeightFn(parallelN, affectsLanes);
   const dtOne = (d) => dtMinOutsideBreaks(d, brkIv, nowMs) * dtW(d);
   /* แยกหยุดตามแผน (PM/เปลี่ยนรุ่น) ออกจากหยุดนอกแผน — ต้อง join dr_downtime_types(category) มา
      ไม่ได้ join = ทุกแถวถูกนับเป็นนอกแผน (fail-safe ฝั่งเข้มงวด ไม่ใช่ปล่อยผ่าน) */
@@ -1337,6 +1407,8 @@ export function computeSessionOee({
   lineRules = null,
   lineFlow = {},
   machineCount = 0,
+  /* 🔀 แมป "เครื่องไหนครอบกี่เลน" จาก `affectsLanesMap(machines)` — ไม่ส่ง = ทุกเครื่องครอบ 1 เลน (เดิม) */
+  affectsLanes = null,
   startTime = null,
   endTime = null,
   carryQtyActual = {},
@@ -1370,7 +1442,7 @@ export function computeSessionOee({
   const shiftFrame = openedAt ? { startMs: +openedAt, endMs: +closedAt } : null;
 
   const parallelN = parallelUnitsOf(lineFlow, machineCount);
-  const dtW = laneWeightFn(parallelN);   // §3.2 — สูตรเดียวกับที่ dtMinBySession ใช้ ห้ามเขียนซ้ำ
+  const dtW = laneWeightFn(parallelN, affectsLanes);   // §3.2 — สูตรเดียวกับที่ dtMinBySession ใช้ ห้ามเขียนซ้ำ
   const sessionShift = session?.shift || 'day';
   const ctForMatNo = (matNo) => ctForMat(matNo, { kanbanStds, products });
   const pairOf = (mat) => products.find(p => p.mat_no === mat)?.pair_mat_no || null;

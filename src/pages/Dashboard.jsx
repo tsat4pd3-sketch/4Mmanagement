@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { UserContext } from '../App';
 import { isAlarmingDT, isOpenDT, isPlannedDT, dtElapsedMin, fmtDtElapsed } from '../utils/downtimeAlarm';
 import { sumDefectQty, computeLiveOee, ngByMatFrom, orderProducedQty, orderPlanQty, liveTimeSplit, QBIN_EMBED, halfDayBreakIntervals, halfDayBreakBands, breakBandName, breakBandTitle } from '../utils/oee';
+import { loadAffectsLanes } from '../utils/affectsLanes';
 import ShiftTimeSplit from '../components/ShiftTimeSplit';
 import { markerScale } from '../utils/markerScale';
 import DowntimeSiren from '../components/DowntimeSiren';
@@ -360,6 +361,9 @@ export default function Dashboard({ view = 'timeline' }) {
     setBreakPolicies(breakPolicies || []);
     // pErr = ไม่รู้คู่ ⇒ null (ไม่ยุบ) ห้าม {} ("รู้แล้วว่าไม่มีคู่" = นับงานคู่ 2 เท่า)
     const pairMapLive = pErr ? null : pairMap;
+    /* 🔀 "เครื่องไหนหยุดแล้วครอบกี่เลน" (machines.affects_lanes) — ของกลางของไลน์ขนาน
+       (คอนเวเยอร์/ระบบลม) ต้องไม่ถูกหารเลน · `{}` = ไม่มีใครกรอก = พฤติกรรมเดิมเป๊ะ */
+    const affectsLn = await loadAffectsLanes();
     // 📡 รอบส่งลูกค้า (EDI 862) ของวันนี้→พรุ่งนี้ ที่ยังไม่ส่ง — ใช้พยากรณ์กะดึกล่วงหน้าแม้ยังไม่เปิดใบผลิต
     {
       const nd = new Date(`${boardDate}T12:00:00`);
@@ -427,6 +431,7 @@ export default function Dashboard({ view = 'timeline' }) {
         parallelCap: flowModeOf(line?.flow_mode) === 'parallel_machine' ? parallelUnitsOf(line) : 1,
         // งานคู่ gang die / RH-LH = 1 shot ได้ 2 ชิ้น — ยุบก่อนคิดเวลามาตรฐานของ %P (pairTotals.js)
         pairMap: pairMapLive,   // 05/10: เดิม state `pairMatByMat` (deps [boardDate] = ค่ารอบก่อน/ว่างตอนเปิดจอครั้งแรก ⇒ คู่ RH/LH %P นับ 2 เท่า)
+        affectsLanes: affectsLn,
         /* ⚠️ นโยบายพัก + process ของกะ — ขาดไปแล้ว A สด ≠ A ที่ stamp ตอนปิดกะ (2026-09-14) */
         breakPolicies: breakPolicies || [],
         processType: s.dr_products?.process_type || null,

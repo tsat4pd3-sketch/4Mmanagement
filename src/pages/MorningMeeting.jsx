@@ -21,6 +21,7 @@ import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { loadPairMap } from '../utils/useProducts';
 import { loadDocForms, withDocFoot } from '../utils/docForms';
 import { wavg, wLoad, dtMinBySession, orderPlanQty } from '../utils/oee';
+import { loadAffectsLanes } from '../utils/affectsLanes';
 import { notifyEvent } from '../utils/notifyEvent';
 import Page from '../components/Page';
 import PageHeader from '../components/PageHeader';
@@ -100,6 +101,9 @@ export default function MorningMeeting() {
   const [sessions, setSessions]       = useState([]);
   const [downtimes, setDowntimes]     = useState([]);
   const [breakPols, setBreakPols]     = useState([]); // break_policies (DR) — ตัด DT ที่ทับพักออกก่อนถ่วงน้ำหนัก
+  /* 🔀 "เครื่องไหนหยุดแล้วครอบกี่เลน" (machines.affects_lanes) — ใช้ใน useMemo (sync) ⇒ เก็บเป็น state
+     `{}` = ยังไม่โหลด/ไม่มีใครกรอก = พฤติกรรมเดิมเป๊ะ (ทุกเครื่องครอบ 1 เลน) */
+  const [affectsLn, setAffectsLn]     = useState({});
   const [defects, setDefects]         = useState([]);
   const [orders, setOrders]           = useState([]);
   const [pairMat, setPairMat]         = useState({}); // mat_no → pair_mat_no (งานคู่ RH/LH)
@@ -164,8 +168,10 @@ export default function MorningMeeting() {
 
   useEffect(() => {
     (async () => {
-      const { data } = await loadLinesRes();   // cache กลาง (25/09) — กำลังคนอยู่ใน LINE_COLUMNS แล้ว
-      setAllLines(data || []);
+      const { data, error: lineErr } = await loadLinesRes();   // cache กลาง (25/09) — กำลังคนอยู่ใน LINE_COLUMNS แล้ว
+      /* 🔴 28/10 — อ่านทะเบียนไม่สำเร็จ **ห้ามทับลิสต์เดิมด้วย []** (เคสจริง: หน้างานแจ้ง
+         "ไม่มีไลน์ให้เลือกในลิสต์" ทั้งที่ไลน์ยังอยู่ครบ) · toast กลางใน main.jsx บอกเหตุให้แล้ว */
+      if (!lineErr) setAllLines(data || []);
       // ส่วนงานจากผังองค์กร (org_nodes kind='section') — ลิสต์/ลำดับตามผัง ไม่เดาจาก production_lines.section
       const { data: og } = await supabase.from('org_nodes').select('code, name, sort_order').eq('kind', 'section').eq('is_active', true);
       setOrgSections(orgValues(og));
@@ -331,6 +337,8 @@ export default function MorningMeeting() {
     if (s.qty_ok != null) return s.qty_ok;
     return s.actual_qty || 0;
   };
+  useEffect(() => { let alive = true; loadAffectsLanes().then(m => { if (alive) setAffectsLn(m || {}); }); return () => { alive = false; }; }, []);
+
   const sum = useMemo(() => {
     let actual = 0, target = 0;
     sessions.forEach(s => {
@@ -342,7 +350,7 @@ export default function MorningMeeting() {
     // และตัวเลขในประชุมเช้า/Telegram/ใบพิมพ์ ไม่ตรงกับ /oee-analytics (แก้ 2026-08-05)
     /* plannedMin = นาทีที่หักจากฐานเวลาได้จริง (ตัดส่วนที่ทับพักตามนโยบายออก · utils/oee §3.1)
        ต้องเป็นชุดเดียวกับ /oee-analytics ไม่งั้น OEE เฉลี่ยในใบประชุม/Telegram คนละเลขกับจอ */
-    const dtEffBy = dtMinBySession(closed, downtimes, breakPols, { lines: allLines });   // หารเลนไลน์เครื่องขนาน (oee.js §3.2)
+    const dtEffBy = dtMinBySession(closed, downtimes, breakPols, { lines: allLines, affectsBy: affectsLn });   // หารเลนไลน์เครื่องขนาน (oee.js §3.2)
     const oeeRows = closed.map(s => ({
       oee: Number(s.oee), shift_min: s.shift_min,
       plannedMin: dtEffBy[s.id]?.planned || 0,
@@ -372,7 +380,7 @@ export default function MorningMeeting() {
       dtMin, dtCount, dtPlannedMin, dtBaseMin, dtPct, dtMachines, ng,
       present, attTotal: attendance.length,
     };
-  }, [sessions, downtimes, attendance, viewLines, orders, machineCountByLine, breakPols]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [sessions, downtimes, attendance, viewLines, orders, machineCountByLine, breakPols, affectsLn]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ผลต่อไลน์ (การ์ด) — เฉพาะ leaf lines, ไลน์ไม่เปิดกะ = เทา
   const lineResults = useMemo(() => leafLines.map(l => {
