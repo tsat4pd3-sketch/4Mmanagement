@@ -269,6 +269,10 @@ export default function ScanLanding() {
           <div style={{ fontSize: 12.5, color: 'var(--text2)', lineHeight: 1.8 }}>
             รหัสที่อ่านได้: <code style={{ background: 'var(--bg3)', padding: '1px 6px', borderRadius: 4 }}>{scan?.raw || raw}</code><br />
             ชนิดป้าย: {scan?.typed ? `${QR_KINDS[scan.kind]?.icon ?? ''} ${QR_KINDS[scan.kind]?.label ?? scan.kind}` : 'เลขเปล่า (ไม่ใช่ป้ายของระบบ)'}
+            {/* 🗒️ ป้ายเฟส 2 (ไลน์/ประเภท Downtime/งานเสีย/คลัง) ยังไม่มีหน้าของตัวเอง — บอกว่าใช้ที่ไหน ไม่ปล่อยให้คิดว่าป้ายเสีย (28/10) */}
+            {['line', 'downtime_type', 'defect_type', 'storage'].includes(scan?.kind) && (
+              <><br /><b>ป้ายนี้ใช้ยิงในช่องที่มีปุ่ม 📷</b> เช่น Daily Report → บันทึก Downtime / งานเสีย · ช่องเลือกไลน์ · ช่องรหัสคลัง</>
+            )}
             {(mFailed || jigErr || pointErr || prodHit?.err?.length > 0) && <><br /><b style={{ color: 'var(--red, #ef4444)' }}>⚠️ โหลดทะเบียนไม่ครบ — อาจไม่ใช่ว่าไม่มีเครื่องนี้จริง ลองใหม่อีกครั้ง</b></>}
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>

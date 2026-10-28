@@ -27,7 +27,10 @@
       ขาด parent_line_name = ไม่มีลำดับชั้น · ขาด section = กรอง scope ไม่ได้
       (เป็นสาเหตุจริงของบั๊กเดิม — หลายหน้า select('name') อย่างเดียว)
    ══════════════════════════════════════════════════════════════════════════ */
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
+import useIsMobile from '../utils/useIsMobile';
+import ScanModal from './ScanModal';
+import { resolveLine } from '../utils/qrCode';
 import { toHierarchicalOptions, getLineFamilyNames } from '../utils/lineHierarchy';
 import { inSectionScope, scopedLines } from '../utils/sectionScope';
 import { isSupportUnit } from '../utils/unitKind';
@@ -121,7 +124,12 @@ export default function LineSelect({
   lines, value = '', onChange, placeholder = '— เลือกไลน์ —',
   role, lineId, sections, extraGroups = [], extraAt = 'start', includeRetired = false, includeSupport = false,
   style, disabled, id, required, valueKey = 'name',
+  /* 📷 สแกนป้ายไลน์ (เฟส 2 · 28/10) — opt-in · มือถือเท่านั้น: ปุ่ม 📷 ข้างช่อง → ป้าย `ESM:L:<id>` หรือชื่อไลน์ตรงเป๊ะ
+     เลือกได้เฉพาะไลน์ที่อยู่ในรายการนี้ (ขอบเขตเดียวกับ dropdown) · จอคอม/ไม่ส่ง = `<select>` เดิมเป๊ะ */
+  scan = false,
 }) {
+  const isMobile = useIsMobile();
+  const [scanOpen, setScanOpen] = useState(false);
   // ค่าที่เลือกอยู่ในกลุ่มพิเศษ (คลัง / ชื่อนอกทะเบียน) = มี option อยู่แล้ว ห้ามปักซ้ำเป็น "⚠ ไม่มีในทะเบียน"
   const inExtra = extraGroups.some(g => g.options?.some(o => String(o.value) === String(value)));
   const opts = useMemo(
@@ -135,8 +143,8 @@ export default function LineSelect({
       {g.options.map(o => <option key={o.value} value={o.value}>{o.label ?? o.value}</option>)}
     </optgroup>
   ));
-  return (
-    <select id={id} value={value} disabled={disabled} required={required} style={style}
+  const selectEl = (
+    <select id={id} value={value} disabled={disabled} required={required} style={scan && isMobile && !disabled ? { ...style, flex: 1, minWidth: 0, width: 'auto' } : style}
       onChange={e => onChange?.(e.target.value)}>
       {placeholder != null && <option value="">{placeholder}</option>}
       {extraAt !== 'end' && extraEls}
@@ -149,5 +157,24 @@ export default function LineSelect({
       })}
       {extraAt === 'end' && extraEls}
     </select>
+  );
+  if (!(scan && isMobile && !disabled)) return selectEl;
+  const pickable = (lines || []).filter(l => opts.some(o => o.value === String(l[valueKey])));
+  return (
+    <div style={{ display: 'flex', gap: 6, alignItems: 'stretch', width: style?.width || '100%' }}>
+      {selectEl}
+      <button type="button" onClick={() => setScanOpen(true)} aria-label="สแกนป้ายไลน์" title="สแกนป้ายไลน์"
+        style={{ flexShrink: 0, minWidth: 48, borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', fontSize: 18, cursor: 'pointer' }}>📷</button>
+      {scanOpen && (
+        <ScanModal title="สแกนป้ายไลน์" hint="ยิง QR ไลน์ที่หัวใบสแกนประจำไลน์ หรือป้ายชื่อไลน์"
+          onClose={() => setScanOpen(false)}
+          onScan={(parsed) => {
+            const r = resolveLine(parsed, pickable);
+            if (r.error) return r.error.startsWith('ไม่พบไลน์ของป้าย') || r.error.startsWith('ไม่พบไลน์ "')
+              ? `${r.error} — หรือไลน์นี้อยู่นอกขอบเขตที่เลือกได้ในช่องนี้` : r.error;
+            onChange?.(String(r.line[valueKey]));
+          }} />
+      )}
+    </div>
   );
 }
