@@ -39,3 +39,13 @@ test('ใบสแกน: QR ไลน์/Downtime/งานเสีย เป�
   assert.ok(html.includes('LINE &lt;60&gt;') && !html.includes('LINE <60>'));
   assert.ok(html.includes('ในแผน'), 'Downtime ในแผนต้องติดป้ายให้เห็น');
 });
+
+/* ── เฟส 3 (28/10): /scan เปิดหน้าของทุกสิ่งที่สแกน — ตัวตัดสินต้องเป็นของกลาง ห้ามเทียบเองในหน้า ── */
+import { readFileSync } from 'node:fs';
+test('🛡️ /scan รับป้ายไลน์/บัตรพนักงาน/ประเภท ผ่านตัวตัดสินกลาง (resolveLine · findByBadge · resolveTypeRow)', () => {
+  const s = readFileSync(new URL('../../pages/ScanLanding.jsx', import.meta.url), 'utf8');
+  assert.match(s, /resolveLine\(scan/);
+  assert.match(s, /findByBadge\(/);
+  assert.match(s, /resolveTypeRow\(scan/);
+  assert.match(s, /useProductionLinesState\(\)/, 'ทะเบียนไลน์ต้องมาจาก hook กลาง');
+});

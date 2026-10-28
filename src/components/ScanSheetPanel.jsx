@@ -13,7 +13,8 @@ import { withDocFoot, docFormSync, fullCode } from '../utils/docForms';
    → ติ๊กเพิ่ม/เอาออก → พิมพ์ · กติกา `utils/scanSheet.js` · ตัวพิมพ์ `lib/scanSheetPrint.js` · ทะเบียนเอกสาร `scan_sheet` */
 export default function ScanSheetPanel({ lines, canPrint }) {
   const { role, lineId, sections, scopeIdx } = useContext(UserContext);
-  const [lineName, setLineName] = useState('');
+  // `?line=` = มาจากหน้า /scan (สแกนป้ายไลน์ → "พิมพ์ใบสแกนของไลน์นี้") · อ่านครั้งเดียวตอน mount
+  const [lineName, setLineName] = useState(() => new URLSearchParams(window.location.search).get('line') || '');
   const [dt, setDt] = useState([]);
   const [ng, setNg] = useState([]);
   const [machines, setMachines] = useState([]);
