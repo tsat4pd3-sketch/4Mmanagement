@@ -3499,7 +3499,7 @@ function SkillAllowanceTab() {
       const [{ data: he }, { data: pf }, { data: sc }] = await Promise.all([
         supabase.from('employees').select('id, name, position, team, line_id').eq('is_active', true).in('line_id', ids),
         // บัญชีผู้ใช้ = ตอบ "ดูแลไลน์ไหน" เท่านั้น · role ไม่ใช่ตำแหน่งงาน (กฎ CLAUDE.md)
-        supabase.from('profiles').select('full_name, role, team, line_id').in('role', ['leader', 'supervisor']),
+        supabase.from('profiles').select('full_name, role, team, line_id, employee_id').in('role', ['leader', 'supervisor']),
         supabase.from('shift_schedules').select('*').eq('work_date', getWorkDate()),
       ]);
       if (!alive) return;

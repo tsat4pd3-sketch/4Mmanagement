@@ -24,7 +24,10 @@ import useColumnHistory from '../utils/useColumnHistory'; // 📜 MAT ที่�
 import { shipDueDate } from '../utils/pullSignal';
 import { orderShipToRows } from '../utils/shipToOrder'; // ลำดับแถวลูกค้าล็อกตามทะเบียน (24/10)
 import { buildEsmartManaged, isEsmartPlanRow } from '../utils/shipPlan'; // แผน 862 รอ e-SMART ≠ order เลยเวลา (27/10)
-import { fetchAllPages } from '../utils/fetchByIds'; // วันงาน + รอบ → due_date ตามปฏิทิน (16/10)
+import { fetchAllPages } from '../utils/fetchByIds';
+import PartCard, { partCardGrid } from '../components/PartCard';   // 🃏 การ์ดมาตรฐานเดียวกับสโตร์ (UI §6.23)
+import usePartImages from '../utils/usePartImages';
+import { storeBtn } from '../utils/storeUi'; // วันงาน + รอบ → due_date ตามปฏิทิน (16/10)
 
 /* ─── DELIVERY — Shipping Time Chart + Ship-to Config (Logistic) ──────────
    ติดตามรอบส่งงานลูกค้ารายวัน (walkback 4 activity, FG stock, ranking ดิว)
@@ -117,6 +120,7 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
     return () => { alive = false; };
   }, [refreshKey]);
   const isPlan = useCallback((o) => isEsmartPlanRow(o, esmartManaged), [esmartManaged]);
+  const imgOf = usePartImages();   // 🖼️ รูปชิ้นงานบนการ์ดรอบส่ง (โหลดครั้งเดียวต่อจอ · UI §6.22)
 
   const saveAddOrder = async () => {
     const mat = addForm.mat_no.trim().toUpperCase();
@@ -990,7 +994,9 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
             <span className="spacer" />
             <span className="filter-count">{orders.length} รอบส่ง</span>
           </FilterBar>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(260px, 100%), 1fr))', gap: 12 }}>
+          {/* 🃏 การ์ดรอบส่ง = `<PartCard>` มาตรฐานเดียวกับสโตร์ (28/10 · user: "การ์ดของหน้าจัดส่งยังไม่เห็นมีรูปแบบการ์ดของสโตร์")
+              รูปชิ้นงาน + Part No. → ชื่องาน → MAT (UI §6.21-6.23) · สีสถานะอยู่ที่แถบซ้าย + ป้ายเท่านั้น */}
+          <div style={partCardGrid()}>
             {cardsSorted.filter(o =>
               cardFilter === 'all' ? true
               : cardFilter === 'shipped' ? o.status === 'shipped'
@@ -1004,64 +1010,61 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
               const cardColor = plan ? '#94a3b8' : od ? '#ef4444' : pl ? '#f97316' : st.color;
               const phases = phaseList(o);
               const isHl = highlightId === o.id;
+              const sap = matMap[o.mat_no]?.mat || o.mat_no;   // เลขบนใบอาจเป็นเลขลูกค้า → รูป/ชื่อต้องอ่านจากเลข SAP
+              const cov = isOpenOrder(o) ? coverage[o.id] : null;
+              const covEl = !cov ? null
+                : cov.unknown
+                  ? <span title={matIssueText(o.mat_no, matMap[o.mat_no]) || ''} style={{ color: 'var(--muted)', fontWeight: 700 }}>❔ ยังเช็คไม่ได้ — เลขนี้ยังไม่จับคู่ MAT SAP</span>
+                  : cov.short <= 0
+                    ? <span style={{ color: '#22c55e', fontWeight: 700 }}>📦 พร้อมส่งครบ</span>
+                    : cov.offFg >= cov.short
+                      ? <span style={{ color: '#f59e0b', fontWeight: 700 }}>🟠 คลัง FG มี {fmt(cov.covered)} — อีก {fmt(cov.short)} อยู่นอกคลัง FG (ยังไม่ผ่านรับเข้า)</span>
+                      : cov.covered > 0 || cov.offFg > 0
+                        ? <span style={{ color: '#f59e0b', fontWeight: 700 }}>⚠️ มี {fmt(cov.covered)}{cov.offFg > 0 ? ` (+${fmt(cov.offFg)} นอกคลัง FG)` : ''} — ขาด {fmt(cov.short)} (รอผลิต)</span>
+                        : <span style={{ color: '#ef4444', fontWeight: 800 }}>🚨 ไม่มีของพร้อมส่ง — ขาด {fmt(cov.short)} ต้องผลิต!</span>;
+              const nx = nextStep(o);
               return (
-                <div key={o.id} id={`ship-card-${o.id}`} style={{
-                  background: `${cardColor}0f`, border: `1px solid ${cardColor}55`, borderRadius: 12, overflow: 'hidden',
-                  boxShadow: isHl ? '0 0 0 3px rgba(77,159,255,0.65)' : 'none', transition: 'box-shadow 0.3s',
-                }}>
-                  <div style={{ height: 4, background: cardColor }} />
-                  <div style={{ padding: '10px 14px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                      <span style={{ fontSize: 15, fontWeight: 900, color: 'var(--text)' }}>🕐 {(o.ship_time ? o.ship_time.slice(0, 5) : '⏳ ไม่ระบุเวลา')}{o.due_date !== day ? <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}> (เช้า {(o.due_date || '').slice(5)})</span> : null}</span>
-                      <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 8, background: 'rgba(0,0,0,0.12)', color: cardColor }}>{plan ? '📋 แผน 862 · รอ e-SMART' : od ? '🔴 เลยเวลา' : pl ? '🟠 หลุดเฟส' : statusLabel(o)}</span>
-                    </div>
-                    {/* ลำดับ Part No. ลูกค้า → ชื่องาน → MAT (UI §6.21 · 2026-09-30) */}
-                    <div style={{ fontSize: 12, fontFamily: 'monospace', color: '#0ea5e9', fontWeight: 700, marginTop: 4 }}>
-                      {o.customer_part_no && o.customer_part_no !== o.mat_no ? o.customer_part_no : (o.part_name || '')}
-                    </div>
-                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>
-                      {o.customer_part_no && o.customer_part_no !== o.mat_no && o.part_name ? `${o.part_name} · ` : ''}MAT {o.mat_no}{o.order_no ? ` · PO ${o.order_no}` : ''}{o.dock_code ? ` · Dock ${o.dock_code}` : ''}
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: 6 }}>
-                      <span style={{ fontSize: 18, fontWeight: 900, color: 'var(--text)' }}>{fmt(o.qty)} <span style={{ fontSize: 11, color: 'var(--muted)' }}>ชิ้น</span></span>
-                      <span style={{ fontSize: 11, fontWeight: 700, color: '#3b82f6' }}>{o.customer ? (custLabel ? custLabel(o.customer) : o.customer) : ''}</span>
-                    </div>
-                    {isOpenOrder(o) && phases.length > 0 && (
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
-                        {phases.map(ph => (
-                          <span key={ph.id} title={`${ph.name} — ต้องเสร็จภายใน ${ph.deadline}`} style={{ fontSize: 11, fontWeight: 700, padding: '2px 6px', borderRadius: 6,
-                            background: ph.done ? 'rgba(34,197,94,0.12)' : ph.missed ? 'rgba(239,68,68,0.12)' : 'var(--bg2)',
-                            color: ph.done ? '#22c55e' : ph.missed ? '#ef4444' : 'var(--muted)',
-                            border: `1px solid ${ph.done ? 'rgba(34,197,94,0.3)' : ph.missed ? 'rgba(239,68,68,0.35)' : 'var(--border)'}` }}>
-                            {ph.done ? '✓' : ph.missed ? '🔴' : '⏳'} {ph.name} {ph.deadline}
-                          </span>
-                        ))}
+                <div key={o.id} id={`ship-card-${o.id}`} style={{ borderRadius: 'var(--radius-lg)',
+                  boxShadow: isHl ? '0 0 0 3px rgba(77,159,255,0.65)' : 'none', transition: 'box-shadow 0.3s' }}>
+                  <PartCard
+                    code={sap} name={o.part_name}
+                    img={imgOf(sap)}
+                    status={{ label: plan ? '📋 แผน 862 · รอ e-SMART' : od ? '🔴 เลยเวลา' : pl ? '🟠 หลุดเฟส' : statusLabel(o), color: cardColor }}
+                    metric={{ label: 'จำนวนส่ง', value: fmt(o.qty), unit: 'ชิ้น' }}
+                    aside={{ label: 'รอบส่ง', value: `🕐 ${o.ship_time ? o.ship_time.slice(0, 5) : 'ไม่ระบุเวลา'}${o.due_date !== day ? ` (เช้า ${(o.due_date || '').slice(5)})` : ''} · ${o.customer ? (custLabel ? custLabel(o.customer) : o.customer) : '—'}` }}
+                    rows={[
+                      { k: 'เลขลูกค้า', v: o.customer_part_no && o.customer_part_no !== sap ? o.customer_part_no : null },
+                      { k: 'PO / Dock', v: [o.order_no && `PO ${o.order_no}`, o.dock_code && `Dock ${o.dock_code}`].filter(Boolean).join(' · ') || null },
+                      { k: 'สต็อก', v: covEl },
+                      { k: 'ส่งโดย', v: o.shipped_by ? `✓ ${o.shipped_by}${o.shipped_at ? ` · ${new Date(o.shipped_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Bangkok' })}` : ''}` : null },
+                    ]}
+                    note={plan ? 'ลูกค้ายืนยันรอบจริงด้วย e-SMART — อัพไฟล์แล้วใบนี้จะถูกแทนด้วยยอดจริง' : null}
+                    alert={od}
+                    dim={isClosedOrder(o)}
+                    footer={(isOpenOrder(o) && phases.length > 0) || nx ? (
+                      <div style={{ display: 'grid', gap: 8 }}>
+                        {isOpenOrder(o) && phases.length > 0 && (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                            {phases.map(ph => (
+                              <span key={ph.id} title={`${ph.name} — ต้องเสร็จภายใน ${ph.deadline}`} style={{ fontSize: 11, fontWeight: 700, padding: '2px 6px', borderRadius: 'var(--radius)',
+                                background: ph.done ? 'rgba(34,197,94,0.12)' : ph.missed ? 'rgba(239,68,68,0.12)' : 'var(--bg2)',
+                                color: ph.done ? '#22c55e' : ph.missed ? '#ef4444' : 'var(--muted)',
+                                border: `1px solid ${ph.done ? 'rgba(34,197,94,0.3)' : ph.missed ? 'rgba(239,68,68,0.35)' : 'var(--border)'}` }}>
+                                {ph.done ? '✓' : ph.missed ? '🔴' : '⏳'} {ph.name} {ph.deadline}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        {nx && (
+                          <button onClick={() => advance(o)} disabled={busy === o.id}
+                            title={nx.terminal ? 'เฟสท้ายสุดที่ตั้งไว้ = จบงาน (ปิดรอบส่งเลย ไม่มีขั้นถัดไป)' : undefined}
+                            style={storeBtn('primary', { width: '100%' })}>
+                            {busy === o.id ? '...' : nx.label}
+                          </button>
+                        )}
                       </div>
-                    )}
-                    {isOpenOrder(o) && coverage[o.id] && (
-                      coverage[o.id].unknown
-                        ? <div title={matIssueText(o.mat_no, matMap[o.mat_no]) || ''} style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginTop: 4 }}>❔ ยังเช็ค stock ไม่ได้ — เลขนี้ยังไม่จับคู่ MAT SAP</div>
-                        : coverage[o.id].short <= 0
-                          ? <div style={{ fontSize: 11, color: '#22c55e', fontWeight: 700, marginTop: 4 }}>📦 stock พร้อมส่งครบ</div>
-                          : coverage[o.id].offFg >= coverage[o.id].short
-                            ? <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700, marginTop: 4 }}>🟠 คลัง FG มี {fmt(coverage[o.id].covered)} — อีก {fmt(coverage[o.id].short)} อยู่นอกคลัง FG (ยังไม่ผ่านรับเข้า)</div>
-                            : coverage[o.id].covered > 0 || coverage[o.id].offFg > 0
-                              ? <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700, marginTop: 4 }}>⚠️ stock มี {fmt(coverage[o.id].covered)}{coverage[o.id].offFg > 0 ? ` (+${fmt(coverage[o.id].offFg)} นอกคลัง FG)` : ''} — ขาด {fmt(coverage[o.id].short)} ชิ้น (รอผลิต)</div>
-                              : <div style={{ fontSize: 12, color: '#ef4444', fontWeight: 800, marginTop: 4 }}>🚨 ไม่มี stock พร้อมส่ง — ขาด {fmt(coverage[o.id].short)} ชิ้น ต้องผลิต!</div>
-                    )}
-                    {o.shipped_by && <div style={{ fontSize: 11, color: '#22c55e', marginTop: 4 }}>✓ {o.shipped_by} · {o.shipped_at ? new Date(o.shipped_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Bangkok' }) : ''}</div>}
-                    {(() => {
-                      const nx = nextStep(o);
-                      if (!nx) return null;
-                      return (
-                        <button onClick={() => advance(o)} disabled={busy === o.id}
-                          title={nx.terminal ? 'เฟสท้ายสุดที่ตั้งไว้ = จบงาน (ปิดรอบส่งเลย ไม่มีขั้นถัดไป)' : undefined}
-                          style={{ marginTop: 8, width: '100%', padding: '7px 10px', borderRadius: 8, fontSize: 12, fontWeight: 800, cursor: 'pointer', background: 'rgba(0,0,0,0.12)', color: nx.color, border: `1px solid ${nx.color}55`, fontFamily: 'var(--font-body)' }}>
-                          {busy === o.id ? '...' : nx.label}
-                        </button>
-                      );
-                    })()}
-                  </div>
+                    ) : null}
+                  />
                 </div>
               );
             })}
