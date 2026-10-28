@@ -7562,3 +7562,26 @@ test('🛡️ notify-no-insert-per-recipient — ห้าม insert `notificati
     + '        และกรองคนที่เพิ่งได้ไปแล้วออกก่อนเขียน (withoutRecentSame / withoutUnreadFor)\n\n'
     + hits.map(h => '   • ' + h).join('\n') + '\n');
 });
+
+/* ═══ 🔭 leader-scope-no-silent-fallopen — ชี้ไลน์ไม่ได้ ห้ามกลายเป็น "เห็นทั้งโรงงาน" ═══ 28/10
+   เคสจริง (หัวหน้าไลน์ LWR แจ้ง 21:15): *"กลายเป็นเห็นของทุกไลน์ แต่เปิดกะเลือกไลน์ตัวเองไม่ได้"*
+   ข้อมูลบัญชีเขาถูกต้องครบ (role=leader · line_id ตรงกันทั้ง profiles/employees · sections=[PD4])
+   ต้นเหตุเดียว = **ทะเบียนไลน์ในเครื่องว่าง** แล้วโค้ด 2 ที่ตอบคนละทาง:
+     · รายการกะ   `if (myLine) {กรอง}` — **ไม่มี else** ⇒ หาไลน์ไม่เจอ = ไม่กรองเลย = เห็นทั้งโรงงาน
+       ซ้ำร้าย ตาข่ายส่วนงานข้างล่างเขียน `role !== 'leader'` ⇒ หัวหน้ากลุ่มไม่มีด่านสักชั้น
+     · ช่องเลือกไลน์ `getLineFamilyNames(lines, id)` ⇒ ว่าง = เลือกไม่ได้
+   ⇒ สาเหตุเดียว อาการตรงข้าม (fail-open ฝั่งดู · fail-closed ฝั่งเลือก) — หาต้นเหตุยากมาก
+   กฎ: **"ยังตัดสินขอบเขตไม่ได้" ห้ามแปลว่า "ไม่จำกัด"** · ถอยไปแกนที่กว้างรองลงมา + เขียนบนจอ */
+test('🔭 leader-scope-no-silent-fallopen — กรองด้วยไลน์ไม่ได้ ต้องถอยไปส่วนงาน ไม่ใช่ปล่อยผ่าน', () => {
+  const src = stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'));
+  assert.match(src, /let scopedByLine = false;/,
+    'ต้องมีธงว่า "กรองด้วยไลน์สำเร็จไหม" — ไม่งั้นแยก "ไม่มีไลน์" ออกจาก "ไม่จำกัด" ไม่ได้');
+  assert.match(src, /if \(!scopedByLine && scopeSecs\.length\)/,
+    '🔴 ตาข่ายส่วนงานต้องครอบหัวหน้ากลุ่มที่ชี้ไลน์ไม่ได้ด้วย ห้ามเขียน `role !== \'leader\'`');
+  assert.doesNotMatch(src, /if \(role !== 'leader' && scopeSecs\.length\)/,
+    '🔴 เงื่อนไขเดิมกันหัวหน้ากลุ่มออกจากตาข่าย = ไม่มีด่านสักชั้นเมื่อทะเบียนไลน์ว่าง');
+  assert.match(src, /setScopeUnsure\(role === 'leader' && !!userLineId && !scopedByLine\)/,
+    'ต้องจำไว้ว่ารอบนี้ตัดสินขอบเขตไม่ได้');
+  assert.match(src, /\{scopeUnsure && \(/,
+    '🔴 รายการกว้างกว่าที่ควร = ต้องเขียนบนจอ ห้ามให้คนเข้าใจว่าได้สิทธิ์ดูทุกไลน์แล้ว');
+});

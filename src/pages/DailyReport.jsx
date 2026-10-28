@@ -418,6 +418,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
 
   const [showOpen, setShowOpen] = useState(false);
   const [openingSession, setOpeningSession] = useState(false); // กันกดปุ่ม "เปิดกะ" ซ้ำระหว่างรอ insert
+  const [scopeUnsure, setScopeUnsure] = useState(false);       // ชี้ไลน์ของหัวหน้ากลุ่มไม่ได้ = รายการกว้างเกินจริง
   const [openForm, setOpenForm] = useState(() => ({ line_name: '', product_id: '', ...openShiftDefaults() }));
   const [lineFlow, setLineFlow] = useState({});   // line_name → { flow_mode, parallel_stations } (best-effort — ไลน์เครื่องขนาน)
   const [openMachineNo, setOpenMachineNo] = useState(''); // เครื่องที่จะผูกกับใบที่เปิดถัดไป (เฉพาะไลน์ parallel_machine)
@@ -675,6 +676,12 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       .in('status', ['open', 'pending_close'])
       .order('created_at', { ascending: false });
 
+    /* 🔴 28/10 — เดิมถ้าหาไลน์ของ leader ไม่เจอใน `ln` จะ **ไม่กรองอะไรเลย** = เห็นกะทั้งโรงงาน
+       และ `role !== 'leader'` ข้างล่างก็กันหัวหน้ากลุ่มออกจากตาข่ายส่วนงานด้วย ⇒ ไม่มีด่านสักชั้น
+       เคสจริง: ทะเบียนไลน์โหลดพลาด (`ln` ว่าง) ⇒ หัวหน้า LWR เห็นกะทุกไลน์ **แต่เปิดกะไลน์ตัวเองไม่ได้**
+       (รายการ fail-open · ช่องเลือก fail-closed — สาเหตุเดียวกัน ออกอาการคนละทาง)
+       ⇒ กรองด้วยไลน์ไม่ได้ = **ต้องถอยไปกรองด้วยส่วนงาน ห้ามปล่อยผ่าน** */
+    let scopedByLine = false;
     if (role === 'leader' && userLineId) {
       const myLine = (ln || []).find(l => l.id === userLineId);
       if (myLine) {
@@ -684,17 +691,21 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
         } else {
           sq = sq.eq('line_name', myLine.name);
         }
+        scopedByLine = true;
       }
     }
 
     let { data: ss } = await sq;
-    if (role !== 'leader' && scopeSecs.length) {
+    if (!scopedByLine && scopeSecs.length) {
       // role ที่ถูกจำกัดขอบเขตส่วนงาน (supervisor เดิม + manager/qa ที่กำหนด sections)
+      // + หัวหน้ากลุ่มที่ยังชี้ไลน์ตัวเองไม่ได้ (ทะเบียนไลน์ยังไม่มา) — ตาข่ายชั้นสุดท้าย
       ss = (ss || []).filter(s => {
         const liveSection = lm[s.line_name]?.section;
         return inSectionScope(scopeSecs, liveSection) || inSectionScope(scopeSecs, s.section);
       });
     }
+    /* ชี้ไลน์ตัวเองไม่ได้ = จอกำลังโชว์กว้างกว่าที่ควร — ห้ามเงียบ (กฎความซื่อสัตย์ของจอ) */
+    setScopeUnsure(role === 'leader' && !!userLineId && !scopedByLine);
 
     /* กะค้าง (open/pending_close ของวันก่อนๆ) โหลดที่หน้าแม่ผ่าน useStaleSessions — ไม่ query ซ้ำที่นี่
        แต่ต้องสั่งรีเฟรชด้วย เพราะ load() ถูกเรียกทุกครั้งที่กะเปลี่ยน (ปิดกะ/อนุมัติ/realtime)
@@ -3032,6 +3043,15 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
           ...(isMobile
             ? ((mPickOpen || !selSession) ? {} : { display: 'none' })
             : { position: 'sticky', top: 12, alignSelf: 'start', maxHeight: 'calc(100vh - 24px)' }) }}>
+          {/* 🔴 ชี้ไลน์ของตัวเองไม่ได้ = รายการนี้กว้างกว่าที่ควร — ต้องบอก ห้ามให้คนเข้าใจว่า
+              "ระบบให้ดูได้ทุกไลน์แล้ว" (เคสจริง 28/10: หัวหน้า LWR เห็นกะทั้งโรงงาน) */}
+          {scopeUnsure && (
+            <div style={{ marginBottom: 6, padding: '6px 10px', borderRadius: 8, fontSize: 11.5, lineHeight: 1.5,
+              background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.35)', color: 'var(--text)', flexShrink: 0 }}>
+              ⚠️ ระบบยังชี้ไลน์ของคุณไม่ได้ (อ่านทะเบียนไลน์ไม่สำเร็จ) — <b>รายการนี้จึงกว้างกว่าปกติ</b>
+              {' '}และอาจเปิดกะไม่ได้ · กด 🔄 ที่หัวข้อเพื่อโหลดใหม่
+            </div>
+          )}
           {(() => {
             const groupNames = [...new Set(freshSessions.map(s => lineMap[s.line_name]?.parent_line_name || s.line_name))];
             const allCollapsed = groupNames.length > 0 && groupNames.every(n => sessGroupCollapsed.has(n));
