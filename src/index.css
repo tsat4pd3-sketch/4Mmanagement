@@ -84,6 +84,13 @@
   --shadow-float: 0 2px 8px rgba(0,0,0,0.45);
   --shadow-md: 0 4px 20px rgba(0,0,0,0.7);
   --shadow-lg: 0 10px 40px rgba(0,0,0,0.85);
+  /* 🧊 กระจกฝ้า (2026-10-28 · UI §6.34) — ใช้ผ่านบล็อก "กระจกฝ้า" ท้ายไฟล์เท่านั้น ห้ามเขียน rgba ดิบในหน้า
+     ความทึบ .62/.80 = ทดลองบนหน้า Home แล้วตัวหนังสือยังอ่านชัด · modal ทึบกว่าเพราะเป็นฟอร์ม */
+  --glass-bg:        rgba(15,31,16,0.62);
+  --glass-bg-strong: rgba(19,36,21,0.80);
+  --glass-border:    rgba(255,255,255,0.14);
+  --glass-hi:        inset 0 1px 0 rgba(255,255,255,0.18);
+  --glass-filter:    blur(16px) saturate(170%);
 }
 
 /* ─── Light Theme — VX White/Green ──────────────────────────────────── */
@@ -126,6 +133,10 @@
   --shadow-float: 0 2px 8px rgba(0,0,0,0.18);   /* ของที่ลอยจริง — มีเงาทั้ง 2 ธีม (ดู :root) */
   --shadow-md: 0 4px 20px rgba(0,0,0,0.10);
   --shadow-lg: 0 10px 40px rgba(0,0,0,0.14);
+  --glass-bg:        rgba(255,255,255,0.62);
+  --glass-bg-strong: rgba(255,255,255,0.82);
+  --glass-border:    rgba(10,31,12,0.12);
+  --glass-hi:        inset 0 1px 0 rgba(255,255,255,0.9);
 }
 
 /* ─── Reset ────────────────────────────────────────────────── */
@@ -1136,3 +1147,29 @@ body.has-mnav { --mnav-h: calc(56px + env(safe-area-inset-bottom, 0px)); padding
    `.tv-hide` = ของที่ไม่มีใครกดในห้องประชุม / ตัวหนังสืออธิบายเล็กๆ (ปุ่มเครื่องมือ · คำใบ้ · footnote) ⇒ ซ่อนบนจอ TV
    🔴 ห้ามใช้ซ่อน "คำเตือนข้อมูลไม่ครบ" — ย่อเป็นชิปสั้นแทน (กฎความซื่อสัตย์ของจอ) */
 body.esm-tv-shell .tv-hide { display: none !important; }
+
+/* ─── 🧊 กระจกฝ้า (frosted glass · 2026-10-28 · คำสั่ง user · UI-CONVENTIONS §6.34) ─────────────────
+   ใช้กับ "ของที่ลอยทับเนื้อหาจริง" เท่านั้น: แถบล่างมือถือ · แถบบันทึกเกาะล่าง · toast (`.glass`) · กล่อง `.modal`
+   🔴 กับดัก: `backdrop-filter` ทำให้ element เป็น containing block ของลูกที่ `position:fixed`
+      ⇒ ห้ามใส่ให้กล่องที่ข้างในเปิด popup/modal ซ้อนแบบ fixed (ลายเซ็น · ครอปรูป · สแกน) — popup จะถูกขังในกล่อง
+      `.modal` จึง**ไม่ใส่ backdrop-filter ที่ตัวกล่อง** แค่ทำพื้นโปร่ง แล้วให้ `.overlay` (ถือ backdrop-filter อยู่แล้วแต่เดิม) เบลอให้
+   🔴 ห้ามใช้กับไซเรน / Andon / ป้ายเตือน — ต้องทึบให้เห็นชัด
+   · เบราว์เซอร์ที่ไม่รองรับ = พื้นทึบเดิม (อยู่นอก @supports) · จอ TV (`data-perf="lite"`) = พื้นทึบ ไม่เบลอ (GPU อ่อน) */
+.glass { background: var(--card); border: 1px solid var(--border2); box-shadow: var(--shadow-float); }
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass, .mnav, .m-savebar {
+    background: var(--glass-bg);
+    -webkit-backdrop-filter: var(--glass-filter); backdrop-filter: var(--glass-filter);
+    border-color: var(--glass-border);
+  }
+  .glass, .m-savebar { box-shadow: var(--glass-hi), var(--shadow-float); }
+  .mnav { box-shadow: var(--glass-hi), var(--shadow-float); }
+  /* เฉพาะ .modal ที่นั่งใน .overlay (ตัวที่เบลอฉากหลังให้) — wrapper inline อื่นไม่เบลอ ⇒ พื้นโปร่งจะเห็นหน้าหลังชัดๆ ปนตัวหนังสือ */
+  .overlay > .modal { background: var(--glass-bg-strong); border-color: var(--glass-border); box-shadow: var(--glass-hi), var(--shadow-lg); }
+  .overlay { -webkit-backdrop-filter: blur(10px) saturate(140%); backdrop-filter: blur(10px) saturate(140%); }
+}
+[data-perf="lite"] .glass, [data-perf="lite"] .mnav, [data-perf="lite"] .m-savebar {
+  background: var(--card); -webkit-backdrop-filter: none; backdrop-filter: none; border-color: var(--border2);
+}
+[data-perf="lite"] .overlay > .modal { background: var(--bg3); border-color: var(--border2); }
+[data-perf="lite"] .overlay { -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }

@@ -67,13 +67,14 @@ export function ToastContainer() {
   return (
     <div style={{ position: 'fixed', bottom: 'calc(24px + var(--mnav-h, 0px))', left: '50%', transform: 'translateX(-50%)', zIndex: 9999, display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'center', pointerEvents: 'none' }}>
       {toasts.map(t => (
-        <div key={t.id} onClick={() => remove(t.id)} title="คลิกเพื่อปิด" style={{
+        /* 🧊 พื้น/เบลอ/เงามาจาก class `.glass` (index.css · UI §6.34) — ห้ามใส่ background/boxShadow inline ทับ
+           (inline ชนะ class ⇒ กระจกหาย) · ขอบสีตามชนิดยังเป็น inline ได้ · ตัวหนังสือใช้ --text เพราะธีมสว่างพื้นเป็นกระจกขาว */
+        <div key={t.id} className="glass" onClick={() => remove(t.id)} title="คลิกเพื่อปิด" style={{
           display: 'flex', alignItems: 'center', gap: 10,
           padding: '10px 18px', borderRadius: 10,
-          background: 'rgba(18,18,28,0.96)', border: `1px solid ${COLORS[t.type]}55`,
+          border: `1px solid ${COLORS[t.type]}55`,
           borderLeft: `4px solid ${COLORS[t.type]}`,
-          boxShadow: 'var(--shadow-float)',
-          fontSize: 13, fontWeight: 600, color: '#f0f0f4',
+          fontSize: 13, fontWeight: 600, color: 'var(--text)',
           maxWidth: 'min(90vw, 560px)', cursor: 'pointer',
           animation: 'toastIn 0.25s cubic-bezier(0.34,1.56,0.64,1)',
           pointerEvents: 'auto',
