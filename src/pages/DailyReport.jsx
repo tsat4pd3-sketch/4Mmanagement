@@ -60,8 +60,8 @@ import { ALL } from '../utils/filterLabels';
 /* ชื่อกลุ่ม "ยังระบุไม่ได้" ของทะเบียนลักษณะปัญหา — ห้ามเขียนสตริงเองในหน้า */
 import { OTHER_GROUP } from '../utils/unclassified';
 import useTabParam from '../utils/useTabParam';
-import LineSelect from '../components/LineSelect';
-import useProductionLines, { loadLinesRes } from '../utils/useProductionLines';
+import LineSelect, { scopeLines as pickerLines } from '../components/LineSelect';
+import useProductionLines, { loadLinesRes, invalidateProductionLines } from '../utils/useProductionLines';
 import MatLabel from '../components/MatLabel';
 import PlannedLotQueue from '../components/PlannedLotQueue';
 import ProductSelect from '../components/ProductSelect';
@@ -74,7 +74,7 @@ import { openShiftDefaults, shiftStartTime } from '../utils/workDate';
 import { liveChannel } from '../utils/liveChannel';
 import { LIVE } from '../utils/refreshRates';
 import { coalesce } from '../utils/liveRefresh';
-import { cachedMaster, mrows } from '../utils/masterCache';
+import { cachedMaster, mrows, invalidateMaster } from '../utils/masterCache';
 import { loadBreakPolicies, primeBreakRuleIndex } from '../utils/oeeMasters';
 import { breakRuleFollowers, ruleDurationOf, BREAK_RULE_MAX } from '../utils/breakLineRules';   // 🏭 ข้อยกเว้นเวลาพักรายไลน์ — กฎอยู่ที่นั่น ห้ามคิดเองในหน้า
 import { invalidateTable } from '../utils/masterInvalidate';
@@ -722,6 +722,22 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     return null; // ไม่จำกัด
   }, [role, userLineId, scopeSecs, lines, scopeIdx]);
 
+  /* 🪧 ลิสต์ของช่องเลือกไลน์ = **ของกลาง `pickerLines()` เท่านั้น** (ด่าน `line-picker-never-dead`)
+     มันมีตาข่าย "กรองแล้วไม่เหลือ = ไม่กรอง" ⇒ ช่องไม่มีวันตาย
+     🔴 ลิสต์ที่เห็น ≠ ด่าน — ด่านจริงอยู่ที่ `handleOpenSession` ก่อน insert (กฎชั้น ③) */
+  const openableLines = useMemo(
+    () => pickerLines(lines, { role, lineId: userLineId, sections: scopeSecs, scopeIdx }),
+    [lines, role, userLineId, scopeSecs, scopeIdx]);
+
+  /* 🔄 ทะเบียนไลน์โหลดไม่สำเร็จ ⇒ ต้องมีทางกดใหม่เอง — ล้าง cache ทั้ง 2 ชั้นก่อน ไม่งั้นได้ลิสต์ว่างเดิม
+     (ชั้นใน `production_lines:v3` · ชั้นนอกที่หน้านี้ห่อไว้ `production_lines:dr` / `:flow`) */
+  const reloadLineRegistry = useCallback(() => {
+    invalidateProductionLines();
+    invalidateMaster('production_lines:dr');
+    invalidateMaster('production_lines:flow');
+    load();
+  }, [load]);
+
   const loadDT = useCallback(async (sessionId) => {
     if (!sessionId) return;
     const { data, error } = await supabaseDR.from('downtime_logs')
@@ -931,6 +947,13 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
 
   const handleOpenSession = async () => {
     if (!openForm.line_name) { toast.error('เลือกไลน์ก่อน'); return; }
+    /* 🔴 ชั้น ③ — ช่องเลือกไลน์เป็น "ตัวกรองการดู" ไม่ใช่ด่าน (ของกลางเป็น fail-open โดยตั้งใจ)
+       ⇒ ต้องเช็คขอบเขตซ้ำตรงนี้ก่อน insert · เดิมไม่มีเลย = เปลี่ยนค่าใน dropdown ก็เปิดกะข้ามไลน์ได้
+       `openScopeLineNames === null` = บัญชีไม่ถูกจำกัด (admin/QA) ⇒ ผ่าน */
+    if (openScopeLineNames && !openScopeLineNames.has(openForm.line_name)) {
+      toast.error(`ไลน์ "${openForm.line_name}" ไม่อยู่ในขอบเขตของคุณ — เปิดกะให้ไลน์นี้ไม่ได้`);
+      return;
+    }
     /* กดปุ่มซ้ำระหว่างรอ = เปิดกะซ้ำ — ด่าน `dup` ข้างล่างเป็น read-then-insert (TOCTOU)
        กันไม่ได้ถ้าสองคำขอวิ่งพร้อมกัน · วัดจริง 10/09: Line 61 ได้ 2 กะ ห่างกัน 2.9 มิลลิวินาที
        ด่านจริงที่กันได้แน่คือ unique index ฝั่ง DB (20260910_production_sessions_no_dup_open.sql) */
@@ -4305,9 +4328,25 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 </Field>
                 <Field label="ไลน์การผลิต">
                   {/* 2026-09-07 อ่านทะเบียนไลน์ผ่าน <LineSelect> (ลำดับชั้น/ปลดระวาง/ค่าไม่รู้จัก เหมือนทุกหน้า) — คง pre-filter scope เปิดกะ (openScopeLineNames) ไว้เท่าเดิม */}
-                  <LineSelect lines={openScopeLineNames ? lines.filter(l => openScopeLineNames.has(l.name)) : lines}
+                  <LineSelect lines={openableLines}
                     value={openForm.line_name} placeholder="เลือกไลน์..." style={inputStyle}
                     onChange={v => setOpenForm(f => ({ ...f, line_name: v }))} />
+                  {/* 🔴 ลิสต์ว่าง = ต้องบอกว่าเพราะอะไร ห้ามปล่อยช่องเปล่า (เคสจริง 28/10 หน้างานเปิดกะไม่ได้
+                      แล้วไม่มีอะไรบนจอบอกเลยว่าติดตรงไหน — ต้องไปถามกันในไลน์แชท) */}
+                  {!openableLines.length && (
+                    <div style={{ marginTop: 6, fontSize: 12, color: '#ef4444', lineHeight: 1.55 }}>
+                      ⚠️ ไม่มีไลน์ให้เลือก — <b>ยังเปิดกะไม่ได้</b>
+                      <div style={{ color: 'var(--muted)', marginTop: 2 }}>
+                        อ่านทะเบียนไลน์ไม่สำเร็จ (เน็ตหลุด/เซิร์ฟเวอร์ตอบช้า) — ของที่ค้างอยู่ในเครื่องเป็นลิสต์ว่าง
+                        กดโหลดใหม่ได้เลย ไม่ต้องรอ
+                      </div>
+                      <button type="button" onClick={reloadLineRegistry}
+                        style={{ marginTop: 6, padding: '4px 12px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                          background: 'rgba(245,158,11,0.15)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.4)' }}>
+                        🔄 โหลดทะเบียนไลน์ใหม่
+                      </button>
+                    </div>
+                  )}
                 </Field>
                 <Field label="กะทำงาน">
                   <select value={openForm.shift} onChange={e => setOpenForm(f => ({ ...f, shift: e.target.value, start_time: shiftStartTime(e.target.value) }))} style={inputStyle}>
@@ -4322,8 +4361,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
               </div>
               <div className={isMobile ? 'm-modalfoot' : undefined} style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-end' }}>
                 <button onClick={() => setShowOpen(false)} style={cancelBtnStyle}>ยกเลิก</button>
-                <button onClick={handleOpenSession} disabled={!openForm.line_name || openingSession}
-                  style={{ ...saveBtnStyle, opacity: (!openForm.line_name || openingSession) ? 0.5 : 1 }}>
+                <button onClick={handleOpenSession} disabled={!openForm.line_name || openingSession || !openableLines.length}
+                  title={!openableLines.length ? 'ยังไม่มีไลน์ให้เลือก — ดูเหตุผลข้างช่องไลน์การผลิต' : undefined}
+                  style={{ ...saveBtnStyle, opacity: (!openForm.line_name || openingSession || !openableLines.length) ? 0.5 : 1 }}>
                   {openingSession ? '⏳ กำลังเปิดกะ...' : 'เปิดกะ'}</button>
               </div>
             </div>

@@ -7234,3 +7234,36 @@ test('👨‍🔧 line-heads-single-source — จอตั้งค่าไล
     + '   แก้: lineHeadsOf({ lineId, lines, employees, maps, legacyName }) จาก src/utils/lineHeads.js\n'
     + '        head_name ส่งเป็น legacyName ได้อย่างเดียว (ชื่อที่พิมพ์ทับ) ห้ามเป็นแหล่งหลัก\n');
 });
+
+/* ═══ 🏭 line-registry-empty-is-not-truth — cache ซ้อน cache ห้ามจด "ลิสต์ว่าง" เป็นของจริง ═══ 28/10
+   เคสจริง (หน้างานแจ้งในไลน์ 20:50): *"วันนี้เป็นของ600 ครับ เปิดกะไม่ได้ครับ · 250 ตัน ใช้งานได้ปกติ"*
+   ช่อง "ไลน์การผลิต" ในโมดัลเปิดกะ **ว่างเปล่า** และไม่มีอะไรบนจอบอกว่าทำไม
+   ลูกโซ่:
+     1. `loadProductionLines()` ล้ม → `cachedMaster` กลืน error คืน `[]` (ถูกแล้วตามสัญญาของมัน)
+     2. `loadLinesRes()` ห่อเป็น `{ data: [], error: null }` = **"สำเร็จ แต่ว่าง"**  ← ตรงนี้คือจุดโกหก
+     3. หน้าเอาไปใส่ `cachedMaster('production_lines:dr', …)` อีกชั้น ⇒ ชั้นนอกคิดว่าสำเร็จ
+        แล้ว **`lsWrite([])` ลง localStorage อายุ 4 ชม.**
+     ⇒ เครื่องนั้นเปิดกะไม่ได้ยาว 4 ชม. ส่วนเครื่องอื่นปกติ = "บางคนได้ บางคนไม่ได้"
+   กฎ: **helper ที่ห่อ cache ชั้นในต้องส่งต่อความล้ม** ไม่งั้นชั้นนอกจดความว่างนั้นเป็นข้อเท็จจริง */
+test('🏭 line-registry-empty-is-not-truth — loadLinesRes ต้องส่งต่อความล้ม ไม่ใช่ error:null เสมอ', () => {
+  const src = stripComments(readFileSync(join(ROOT, 'src/utils/useProductionLines.js'), 'utf8'));
+  assert.doesNotMatch(src, /export const loadLinesRes = async \(\) => \(\{[^}]*error: null[^}]*\}\);/,
+    '\n\n❌ loadLinesRes คืน `error: null` เสมอ = ชั้นนอกจะจดลิสต์ว่างลง localStorage 4 ชม.\n'
+    + '   แก้: เช็ค masterLoadState(KEY) แล้วคืน error เมื่อล้มและไม่มีของเก่าให้ใช้\n');
+  assert.match(src, /masterLoadState\(KEY\)/, 'ต้องอ่านธงล้มของ cache ชั้นในก่อนบอกว่าสำเร็จ');
+  assert.match(src, /LINES_LOAD_FAILED/, 'ต้องมีรหัสบอกว่า "อ่านทะเบียนไลน์ไม่สำเร็จ" ให้ชั้นนอกแยกออกจาก "ว่างจริง"');
+
+  /* ฝั่งจอ: ลิสต์ว่างต้องเขียนบนจอว่าเพราะอะไร + ปุ่มเปิดกะต้องกดไม่ได้ */
+  const dr = stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'));
+  assert.match(dr, /const openableLines = useMemo/, 'ชุดไลน์ของช่องเลือกต้องคิดที่เดียว ใช้ร่วมทั้ง dropdown · คำเตือน · ปุ่ม');
+  assert.match(dr, /pickerLines\(lines, \{ role, lineId: userLineId, sections: scopeSecs, scopeIdx \}\)/,
+    '🪧 ลิสต์ของช่องเลือกต้องมาจากของกลาง (fail-open) ห้ามเอา Set ขอบเขตมากรองเอง');
+  /* 🔴 ลิสต์ที่เห็นเป็น fail-open ⇒ **ด่านจริงต้องอยู่ตอนเขียน** ไม่งั้นเปลี่ยนค่าใน dropdown = เปิดกะข้ามไลน์ */
+  assert.match(dr, /if \(openScopeLineNames && !openScopeLineNames\.has\(openForm\.line_name\)\)/,
+    '🔴 handleOpenSession ต้องเช็คขอบเขตซ้ำก่อน insert (กฎสิทธิ์ชั้น ③)');
+  assert.match(dr, /!openableLines\.length && \(/, '🔴 ลิสต์ว่างต้องขึ้นเหตุผลบนจอ ห้ามปล่อยช่องเปล่าเงียบ');
+  assert.match(dr, /disabled=\{!openForm\.line_name \|\| openingSession \|\| !openableLines\.length\}/,
+    '🔴 ไม่มีไลน์ให้เลือก = ปุ่มเปิดกะต้องกดไม่ได้ (กดแล้วเงียบ = คนไม่รู้ว่าติดตรงไหน)');
+  assert.match(dr, /invalidateMaster\('production_lines:dr'\)/,
+    'ปุ่มโหลดใหม่ต้องล้าง cache ชั้นนอกด้วย ไม่งั้นได้ลิสต์ว่างเดิม');
+});
