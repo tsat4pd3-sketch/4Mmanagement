@@ -7179,3 +7179,30 @@ test('🧭 identity-line-wider — ตัวตนจากฐานพนัก
   assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n  ')
     + '\n\n   หัวหน้าที่ดูแล "ไลน์แม่" แต่ตัวเองสังกัดไลน์ลูก จะถูกบีบเหลือกลุ่มย่อยของตัวเองเงียบๆ\n');
 });
+
+/* 🛡️ line-registry-load-visible (2026-10-28 · เคสจริง หัวหน้า PD1)
+   หน้างานแจ้ง *"ไม่มีไลน์ให้เลือกในลิสต์"* — ไล่แล้วไม่ใช่เรื่องสิทธิ์ (RLS select ของ
+   `production_lines` = `true` · ขอบเขตของบัญชีนั้นคืนครบทุกไลน์เมื่อรันกับผังจริง)
+   ต้นเหตุคือ `loadLinesRes()` เคยคืน `error: null` ตายตัว แล้วจอเขียน `setLines(data || [])`
+   ⇒ อ่านทะเบียนพลาด = ลิสต์ว่าง **เงียบ** = จอบอกว่า "ไม่มีไลน์" ทั้งที่แปลว่า "อ่านไม่ได้"
+   (กฎเขียน DB ข้อ 12: `catch {}` แล้วโชว์ "ไม่มีข้อมูล" = จอโกหก)
+   ⇒ ด่าน 2 ชั้น: util ต้องคืน error จริง · จอต้องไม่ทับลิสต์เดิมด้วยผลที่ล้มเหลว */
+test('🛡️ line-registry-load-visible — ลิสต์ไลน์ว่างต้องแยก "ไม่มีของ" ออกจาก "อ่านไม่ได้"', () => {
+  const bad = [];
+  const util = stripComments(readFileSync(join(ROOT, 'src/utils/useProductionLines.js'), 'utf8'));
+  if (/loadLinesRes\s*=\s*async\s*\(\)\s*=>\s*\(\{[^}]*error:\s*null/.test(util))
+    bad.push('useProductionLines.loadLinesRes (กลับไปคืน error: null ตายตัว — จอแยกไม่ออกว่าว่างเพราะอะไร)');
+  if (!/masterLoadState\(/.test(util))
+    bad.push('useProductionLines.loadLinesRes (ไม่ได้อ่านผลล้มจาก masterLoadState — error จะไม่มีวันถูกตั้ง)');
+
+  for (const f of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const src = stripComments(readFileSync(f, 'utf8'));
+    if (!/loadLinesRes\s*\(/.test(src)) continue;
+    /* แกะผลโดยไม่เอา error ออกมาเลย = กลืนความล้มเหลวซ้ำรอยเดิม */
+    if (/const\s*\{\s*data\s*\}\s*=\s*await\s+loadLinesRes\s*\(/.test(src))
+      bad.push(`${relative(ROOT, f)} (แกะแค่ { data } จาก loadLinesRes — อ่านพลาดแล้วลิสต์ว่างเงียบ)`);
+  }
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n   ') + '\n'
+    + '   ทำไม: จอบอก "ไม่มีไลน์" ทั้งที่ไลน์ยังอยู่ครบ — หน้างานสรุปว่าไลน์ถูกลบ\n'
+    + '   แก้: const { data, error } = await loadLinesRes() · error = คงลิสต์เดิม + เขียนบนจอ ห้าม setLines([])\n');
+});
