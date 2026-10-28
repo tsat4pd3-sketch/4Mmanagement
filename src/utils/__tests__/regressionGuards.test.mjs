@@ -7179,3 +7179,34 @@ test('🧭 identity-line-wider — ตัวตนจากฐานพนัก
   assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n  ')
     + '\n\n   หัวหน้าที่ดูแล "ไลน์แม่" แต่ตัวเองสังกัดไลน์ลูก จะถูกบีบเหลือกลุ่มย่อยของตัวเองเงียบๆ\n');
 });
+
+/* ═══ 👨‍🔧 "หัวหน้างานของไลน์" = หลายคน/หลายกะ — ห้ามกลับไปใช้ head_name ช่องเดียว (2026-10-28) ═══
+   คำพูด user: *"ไลน์นึง มีหัวหน้าได้ 2-3 คน แล้วแต่ว่ามีกี่กะการทำงาน บางที่ 1 กะ บางที่ 2 กะ บางที่ 3 กะ"*
+   วัดจริง 28/10 (13 ไลน์ที่กรอก `production_lines.head_name` ไว้): ช่องเดียวถูกกรอกเป็น **3 ความหมายปนกัน**
+     หัวหน้าแผนก 3 · หัวหน้าไลน์ของกะเช้า 3 · ชื่อที่จับคู่ทะเบียนพนักงานไม่ได้เลย 6 (สะกดมือ)
+   ⇒ แหล่งความจริง = ทะเบียนพนักงาน (position + team + line_id) ผ่าน `lineHeadsOf()` ที่เดียว
+   ด่านนี้กันการถอยกลับ 2 ทาง: จอเลิกเรียก lineHeadsOf · auto-fill กลับไปอ่าน head_name ตรงๆ */
+test('👨‍🔧 line-heads-single-source — จอตั้งค่าไลน์ + ใบค่าฝีมือ ต้องอ่านหัวหน้างานผ่าน lineHeadsOf()', () => {
+  const bad = [];
+  for (const f of ['src/pages/LineSetup.jsx', 'src/pages/Report.jsx']) {
+    const code = stripComments(readFileSync(join(ROOT, f), 'utf8'));
+    if (!/lineHeadsOf\s*\(/.test(code)) bad.push(`${f} (ไม่ได้เรียก lineHeadsOf)`);
+    /* auto-fill ชื่อหัวหน้าจาก head_name ตรงๆ = กลับไปเดาคนเดียวต่อไลน์
+       (ยังอ่าน head_name ได้ แต่ต้องส่งเข้า lineHeadsOf เป็น `legacyName` เท่านั้น) */
+    if (/setSignerHead\(\s*lineObj\?\.head_name/.test(code))
+      bad.push(`${f} (setSignerHead อ่าน head_name ตรงๆ)`);
+  }
+  const util = stripComments(readFileSync(join(ROOT, 'src/utils/lineHeads.js'), 'utf8'));
+  /* กะต้องมาจากตารางกะจริง ห้ามเดาจากตัวอักษรทีม (กฎเดียวกับ shiftAssign ทั้งระบบ) */
+  if (!/shiftFromTeam\s*\(/.test(util)) bad.push('lineHeads.js (ไม่ได้ใช้ shiftFromTeam — เดากะเอง?)');
+  if (/['"]A['"]\s*(===|==)\s*team|team\s*(===|==)\s*['"]A['"]/.test(util))
+    bad.push('lineHeads.js (เทียบทีม A ตรงๆ = เดาว่า A คือกะเช้า)');
+  /* ไลน์ลูกห้ามดันหัวหน้าขึ้นไปให้ไลน์แม่ — ต้องไล่ขึ้น (ancestors) เท่านั้น */
+  if (!/lineAncestorIds/.test(util) || /getLineFamilyIds|getChildLineNames/.test(util))
+    bad.push('lineHeads.js (ต้องไล่ขึ้นหาไลน์แม่เท่านั้น ห้ามดึงจากไลน์ลูก)');
+
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n'
+    + '   ทำไม: `production_lines.head_name` เป็นข้อความช่องเดียว ⇒ ตอบ "ใครเป็นหัวหน้ากะไหน" ไม่ได้\n'
+    + '   แก้: lineHeadsOf({ lineId, lines, employees, maps, legacyName }) จาก src/utils/lineHeads.js\n'
+    + '        head_name ส่งเป็น legacyName ได้อย่างเดียว (ชื่อที่พิมพ์ทับ) ห้ามเป็นแหล่งหลัก\n');
+});
