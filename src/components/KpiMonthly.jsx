@@ -33,6 +33,7 @@ import PersonSelect from './PersonSelect';
 import SearchSelect, { normSearch } from './SearchSelect';
 import KpiStandardModal from './KpiStandardModal';
 import { DeleteButton } from './IconButton';
+import { BREAK_POLICY_COLS } from '../utils/oeeMasters';
 import {
   ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis,
   CartesianGrid, ReferenceLine, LabelList, Cell,
@@ -367,7 +368,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
          ⇒ plannedMin (ตัวถ่วง wLoad) และนาทีนอกแผนที่เทียบกับเวลากะ ต้องเป็นชุดที่ตัดแล้ว
          ให้ตรงกับ /oee-analytics · ไม่โหลดนโยบายพักได้ = ไม่ตัด (เท่าพฤติกรรมเดิม ไม่ใช่ล้มทั้งรายงาน) */
       const brk = await supabaseDR.from('break_policies')
-        .select('shift, process_type, start_time, duration_min, ot_scope, anchor, offset_min').eq('is_active', true);
+        .select(BREAK_POLICY_COLS).eq('is_active', true);
       if (brk.error) toast.error(`โหลดนโยบายพักไม่สำเร็จ — OEE ในตารางนี้จะไม่ตัดช่วงพัก (ต่างจาก /oee-analytics): ${brk.error.message}`);   // ห้ามล้มเหลวเงียบ (audit 05/10)
       const dtEffBy = dtMinBySession(sessions, dtRes.rows, brk.data || [], { lines, affectsBy: await loadAffectsLanes() });   // { lines } = หารนาที DT ของไลน์เครื่องขนาน (oee.js §3.2) — ไม่ส่ง = น้ำหนักกะนั้นเหลือ 0 เงียบๆ
       Object.entries(dtEffBy).forEach(([sid, v]) => { dtPlanned[sid] = v.planned; dtUnplanned[sid] = v.unplanned; });

@@ -48,6 +48,7 @@ import { RATE } from '../utils/refreshRates';
 import { useLatestRequest } from '../utils/useLatestRequest';
 
 import { MORE_MARK } from '../components/InfoMore';   // เครื่องหมาย "อ่านเพิ่ม" ชุดเดียวกันทั้งระบบ
+import { BREAK_POLICY_COLS } from '../utils/oeeMasters';
 const MonthlyReviewExport = lazy(() => import('../components/MonthlyReviewExport'));
 
 // ── Colour helpers ───────────────────────────────────────────────
@@ -316,7 +317,7 @@ export default function OEEAnalytics() {
   const [affectsLn, setAffectsLn] = useState({});
   useEffect(() => { let alive = true; loadAffectsLanes().then(m => { if (alive) setAffectsLn(m || {}); }); return () => { alive = false; }; }, []);
   useEffect(() => {
-    supabaseDR.from('break_policies').select('shift, process_type, start_time, duration_min, ot_scope, anchor, offset_min').eq('is_active', true)
+    supabaseDR.from('break_policies').select(BREAK_POLICY_COLS).eq('is_active', true)
       .then(r => setBreakPols(r.data || []), () => setBreakPols([]));
   }, []);
   const canSetTarget = can('oee', 'set_target', role);
