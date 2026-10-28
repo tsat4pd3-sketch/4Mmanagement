@@ -16,6 +16,7 @@ import { buildProblemReport, dtNeedsFix, countPendingFix, PROBLEM_MIN_MINUTES } 
    (2026-09-25 · user: "ใบบันทึกปัญหา ก็ไม่ได้เก็บข้อมูลหรอ เห็นหัวหน้าต้องปริ้นออกมาเก็บเป็นกระดาษทุกวัน") */
 import { issueProblemReport, reprintProblemReport, loadProblemDocs, docMatchesNow } from '../lib/prodProblemDoc';
 import { loadProcessTypes, activeProcessTypes, procDisplay, procColor } from '../utils/processTypes';
+import { machineAssetsOnly, machineLaneCount, processUnionRows } from '../utils/machineAssets';
 loadProcessTypes(); // master กระบวนการ (data-driven) — dropdown/ป้ายในหน้านี้อ่านผ่าน sync cache
 import tsLogoUrl from '../assets/TS logo.png';
 import { can, canAccessPage, isSharedAccount } from '../utils/permissions';
@@ -1529,7 +1530,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   // หา process_type ของกะนี้ — อิงจากไลน์เป็นหลัก (เครื่องจักรของไลน์ HYDROFORM ถูก tag เป็น metal_forming ไว้แล้วใน
   // ตั้งค่า > เครื่องจักร และไม่ขึ้นกับว่าเปิด Order ไปแล้วหรือยัง) ถ้าไลน์ไม่มีเครื่องจักร tag ไว้ ค่อย fallback ไปดูสินค้าที่กำลังผลิต
   const sessionProcessType = () => {
-    const lineMachines = machines.filter(m => m.line_name === selSession?.line_name && m.process_type);
+    // 🔴 ต้องกรองชนิดสินทรัพย์ก่อนโหวต — ตารางนี้เก็บแม่พิมพ์/จิ๊ก/facility ด้วย ซึ่ง process_type
+    // เป็นค่า default ที่ไม่มีใครแก้ ⇒ นับรวม = แม่พิมพ์โหวตชนะเครื่องจักร (ดู processVotingRows)
+    const lineMachines = machineAssetsOnly(machines.filter(m => m.line_name === selSession?.line_name && m.process_type));
     if (lineMachines.length) {
       const counts = {};
       lineMachines.forEach(m => { counts[m.process_type] = (counts[m.process_type] || 0) + 1; });
@@ -1554,7 +1557,10 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     // แต่เครื่อง welding (Stationary) ลงทะเบียนใต้ไลน์พี่น้อง/ไลน์แม่ → เทียบตรงตัวแล้วมองไม่เห็น (บั๊กจริง 2026-07-24)
     if (selSession?.line_name) {
       const famNames = new Set(getLineFamilyNames(lines, selSession.line_name).map(n => (n || '').trim().toLowerCase()));
-      machines.filter(m => m.process_type && famNames.has((m.line_name || '').trim().toLowerCase())).forEach(m => set.add(m.process_type));
+      // 🔴 จุดนี้ **ห้ามกรองชนิดสินทรัพย์** (ต่างจาก sessionProcessType ข้างบนโดยเจตนา)
+      //    นี่คือ "dropdown มีตัวเลือกอะไร" — ซ่อนผิด = หน้างานบันทึกปัญหาจริงไม่ได้
+      //    เคสจริง: Line 60 ได้ metal_forming จากแม่พิมพ์/จิ๊ก แต่ลง DT ประเภทนั้นไปแล้ว 10 ใบ
+      processUnionRows(machines.filter(m => m.process_type && famNames.has((m.line_name || '').trim().toLowerCase()))).forEach(m => set.add(m.process_type));
     }
     prodOrders.forEach(o => {
       const pt = kanbanStds.find(st => st.mat_no === o.mat_no)?.dr_products?.process_type;
@@ -1594,8 +1600,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     flowMode: lineFlow[selSession?.line_name]?.flow_mode,
     parallelUnits: parallelUnitsOf(
       lineFlow[selSession?.line_name] || {},
-      new Set(machines.filter(m => m.line_name === selSession?.line_name && m.is_active !== false)
-        .map(m => m.machine_no)).size,
+      // 🔴 นับเฉพาะ "เครื่องจักรจริง" — จิ๊ก/แม่พิมพ์ที่ลงทะเบียนใต้ไลน์เดียวกันไม่ใช่เลน
+      // (วัดจริง 27/10: Line D1 นับได้ 9 ทั้งที่มีเครื่อง 4 ⇒ หัก DT น้อยกว่าจริง = %A สูงเกิน)
+      machineLaneCount(machines.filter(m => m.line_name === selSession?.line_name && m.is_active !== false)),
     ),
     machineNo: openMachineNo || null,
   });
@@ -2317,10 +2324,11 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       products, kanbanStds, breakPolicies,
       processType: sessionProcessType(),
       lineFlow: lineFlow[selSession?.line_name] || {},
-      machineCount: new Set(machines
-        .filter(m => m.line_name === selSession?.line_name && m.is_active !== false)
-        .map(m => m.machine_no)).size,
-      /* 🔀 ของกลางของไลน์ขนาน (คอนเวเยอร์/ระบบลม) ที่กรอก `machines.affects_lanes` ไว้
+      // 🔴 เลน = เครื่องจักรจริงเท่านั้น (จิ๊ก/แม่พิมพ์ใต้ไลน์เดียวกันไม่ใช่เลน · utils/machineAssets.js)
+      //    ค่านี้เป็นตัวหารของ downtime และถูก stamp ลง oee_a ตอนปิดกะ ⇒ นับเกิน = OEE ที่เก็บไว้สูงเกินจริง
+      machineCount: machineLaneCount(
+        machines.filter(m => m.line_name === selSession?.line_name && m.is_active !== false)),
+      /* 🔀 ของกลางของไลน์ขนาน (คอนเวเยอร์/ระบบลม) ที่ติ๊ก `stops_whole_line` / กรอก `affects_lanes`
          ต้องไม่ถูกหารเลน — เคส HDF1→LASER-345 (คำสั่ง user 28/10) · `{}` = พฤติกรรมเดิมเป๊ะ */
       affectsLanes: affectsLn,
       startTime: startTimeOverride || null,

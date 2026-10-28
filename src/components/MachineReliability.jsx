@@ -22,6 +22,7 @@ import fetchAllRows from '../utils/fetchAllRows';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { EQUIPMENT_KINDS, KIND_META } from '../utils/equipmentKinds';
 import { parallelUnitsOf } from '../utils/lineTypes';
+import { machineLaneCount } from '../utils/machineAssets';
 import { urlParam, urlPick, urlBool } from '../utils/urlInit';
 import { machineReliability, summarizeByKind, viewMetrics, poolRowPhases, fmtDur } from '../utils/mtnMetrics';
 import TimeRangeBar from './TimeRangeBar';
@@ -129,7 +130,8 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
   const parallelOf = useCallback((lineName) => {
     const row = lineObjs.find(l => l.name === lineName);
     if (!row) return 1;
-    const fallback = new Set(machines.filter(m => m.line_name === lineName).map(m => m.machine_no)).size;
+    // 🔴 เลน = เครื่องจักรจริงเท่านั้น — จิ๊ก/แม่พิมพ์ในทะเบียนเดียวกันไม่ใช่เลน (utils/machineAssets.js)
+    const fallback = machineLaneCount(machines.filter(m => m.line_name === lineName));
     return parallelUnitsOf(row, fallback);
   }, [lineObjs, machines]);
 

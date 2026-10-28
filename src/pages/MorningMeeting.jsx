@@ -29,6 +29,7 @@ import FilterBar from '../components/FilterBar';
 import { useLatestRequest } from '../utils/useLatestRequest';
 import { ALL } from '../utils/filterLabels';
 import { SESSION_STATUSES_REAL } from '../utils/sessionStatus';
+import { machineLaneCount } from '../utils/machineAssets';
 loadDocForms(); // ทะเบียนเอกสาร — แถบเลขฟอร์มท้ายใบพิมพ์ (ตั้งที่ /doc-forms · 2026-07-30)
 
 // Gesture Mode (MediaPipe) — lazy ทั้ง component และโค้ด MediaPipe ข้างใน: โหลดเฉพาะตอนผู้ใช้กด 📷
@@ -209,7 +210,9 @@ export default function MorningMeeting() {
           .select('*').in('status', ['open', 'doing']).lt('meeting_date', D)
           .order('meeting_date').limit(200),
         // ทะเบียนเครื่องต่อไลน์ — ใช้เป็นฐานเวลาเครื่องรวม (เครื่อง × นาทีกะที่เปิด) เทียบ % Downtime
-        supabaseDR.from('machines').select('machine_no, line_name').in('line_name', lineNames).limit(1000),
+        // 🔴 ต้อง select equipment_kind — ทะเบียนนี้เก็บจิ๊ก/แม่พิมพ์ด้วย ถ้านับรวมจะได้ฐานเวลาเครื่อง
+        //    มากกว่าจริง ⇒ % Downtime ออกมา **ต่ำกว่าความจริง** (utils/machineAssets.js)
+        supabaseDR.from('machines').select('machine_no, line_name, equipment_kind').in('line_name', lineNames).limit(1000),
         // นโยบายเวลาพัก — ใช้ตัด downtime ที่ทับพักออกก่อนถ่วงน้ำหนัก OEE (utils/oee §3.1)
         // ⚠️ ต้อง select ot_scope ด้วย ไม่งั้นนับพักเกินในกะเช้าที่ทำโอ
         supabaseDR.from('break_policies').select('shift, process_type, start_time, duration_min, ot_scope, anchor, offset_min').eq('is_active', true),
@@ -220,8 +223,11 @@ export default function MorningMeeting() {
       const mcs = chk(mcsRes, 'ทะเบียนเครื่อง'), brkPols = chk(brkRes, 'นโยบายพัก');
       setBreakPols(brkPols || []);
       setSessions(sess || []);
+      const byLine = {};
+      (mcs || []).forEach(m => { (byLine[m.line_name] ||= []).push(m); });
       const mCnt = {};
-      (mcs || []).forEach(m => { mCnt[m.line_name] = (mCnt[m.line_name] || 0) + 1; });
+      // นับเฉพาะเครื่องจักรจริง + ไม่ซ้ำเลขเครื่อง (ตัวกลาง utils/machineAssets.js)
+      Object.entries(byLine).forEach(([ln, rows]) => { mCnt[ln] = machineLaneCount(rows); });
       setMachineCountByLine(mCnt);
       setFourM(fm || []);
       // ผูกแถวเช็คชื่อเข้ากับ "ชื่อไลน์" ผ่าน employees.line_id แล้วกรองเฉพาะไลน์ใน scope

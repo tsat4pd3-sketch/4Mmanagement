@@ -22,6 +22,10 @@ import SearchSelect from '../components/SearchSelect';
 import LineSelect from '../components/LineSelect';
 import { UNIT_KINDS, UNIT_PRODUCTION, UNIT_SUPPORT } from '../utils/unitKind';
 import PersonSelect from '../components/PersonSelect';
+import { lineHeadsOf } from '../utils/lineHeads';
+import { lineAncestorIds } from '../utils/lineHierarchy';
+import { buildScheduleMaps } from '../utils/shiftAssign';
+import { getWorkDate } from '../utils/workDate';
 import CostCenterSelect from '../components/CostCenterSelect';
 import { invalidateProductionLines } from '../utils/useProductionLines';
 import { notifyEvent } from '../utils/notifyEvent';
@@ -140,6 +144,11 @@ export default function LineSetup({ embedded = false } = {}) {
 
   // หัวหน้างานประจำไลน์ (head_name) — ใช้ในใบค่าฝีมือ · ผู้เซ็นราย section ย้ายไปตั้งที่ผังองค์กร (OrgSetup)
   const [signerHead,    setSignerHead]    = useState('');
+  /* 👨‍🔧 หัวหน้างาน "ตามทะเบียน" ของไลน์ที่เลือก — ไลน์หนึ่งมีหัวหน้าได้หลายคน/หลายกะ (28/10 · feedback user)
+     ช่อง head_name เป็นข้อความช่องเดียว ตอบไม่ได้ ⇒ โชว์ของจริงจากทะเบียนพนักงาน + ตารางกะ
+     (กฎอยู่ใน utils/lineHeads.js ที่เดียว — จอค่าฝีมือใช้ชุดเดียวกัน) */
+  const [headEmps, setHeadEmps] = useState([]);
+  const [schedRows, setSchedRows] = useState([]);
 
 
   // ─── Undo/Redo — จุดบนผังไลน์ (จุดงาน+ทักษะ / เครื่องจักร / เส้น flow) ───
@@ -212,6 +221,12 @@ export default function LineSetup({ embedded = false } = {}) {
   // รหัส cost center ที่ไลน์อื่นใช้อยู่ — ส่งเป็น history ให้ <CostCenterSelect> (กลุ่ม 📜) รหัสที่ยังไม่ลงทะเบียน cost_centers ยังเลือกได้ ไม่บล็อกงานเก่า (2026-09-07 datalist → 2026-09-08 picker กลาง)
   const ccCodes = [...new Set(lines.map(l => String(l.cost_center || '').trim()).filter(Boolean))].sort();
   const childLines    = lines.filter(l => l.parent_line_name === selectedLine);
+  /* 👨‍🔧 หัวหน้างานตามทะเบียน (กฎเดียวทั้งระบบ = utils/lineHeads.js) — ไลน์หนึ่งมีได้หลายคน/หลายกะ */
+  const schedMaps = useMemo(() => buildScheduleMaps(schedRows, lines), [schedRows, lines]);
+  const lineHeads = useMemo(() => lineHeadsOf({
+    lineId: selLineObj?.id, lines, employees: headEmps, maps: schedRows.length ? schedMaps : null,
+    legacyName: signerHead,
+  }), [selLineObj, lines, headEmps, schedRows, schedMaps, signerHead]);
 
   /* ⚠️ แผง "ตั้งค่าไลน์" กด 💾 เองเท่านั้น — เดิมสลับไลน์ขณะแก้ค้าง ค่าหายเงียบ ไม่มีอะไรบอก (user 05/10)
      เทียบเป็น string ทุกช่อง เพราะ input คืน string แต่ค่าในฐานเป็น number/null */
@@ -316,6 +331,17 @@ export default function LineSetup({ embedded = false } = {}) {
       setParallelStations(lineObj.parallel_stations != null ? String(lineObj.parallel_stations) : '');
       setSignerHead(lineObj.head_name ?? '');
     }
+    /* 👨‍🔧 คนที่เป็น "หัวหน้างาน" ของไลน์นี้ตามทะเบียน — ดึงเฉพาะไลน์ตัวเอง + ไลน์แม่ (ชุดที่ lineHeadsOf ใช้)
+       🔴 ไม่กรอง position ฝั่ง DB — ให้ `lineHeadsOf` ตัดสินชั้นตำแหน่งที่เดียว (ห้ามมีกฎ 2 ชุด) */
+    const headLineIds = lineObj ? [lineObj.id, ...lineAncestorIds(lines, lineObj.id)] : [];
+    if (headLineIds.length) {
+      const { data: he } = await supabase.from('employees')
+        .select('id, name, position, team, line_id').eq('is_active', true).in('line_id', headLineIds);
+      setHeadEmps(he || []);
+      // ตารางกะของวันงานนี้ — ไม่มีแถว = `lineHeadsOf` คืน shift null แล้วจอเขียนว่า "ยังไม่รู้กะ"
+      const { data: sc } = await supabase.from('shift_schedules').select('*').eq('work_date', getWorkDate());
+      setSchedRows(sc || []);
+    } else { setHeadEmps([]); setSchedRows([]); }
   };
 
   /** ปลดระวาง/คืนสถานะไลน์ — บันทึกทันทีแยกจากปุ่ม 💾 (เป็น action ไม่ใช่ค่าในฟอร์ม) */
@@ -1771,12 +1797,62 @@ export default function LineSetup({ embedded = false } = {}) {
             <div style={{ fontSize: 11, color: 'var(--muted)', margin: '-4px 0 12px' }}>
               รวมกำลังคน <strong style={{ color: 'var(--text)' }}>{(parseInt(stdDay) || 0) + (parseInt(stdNight) || 0)}</strong> คน (เช้า+ดึก)
             </div>
+            {/* ══ 👨‍🔧 หัวหน้างาน — ของจริงมาจากทะเบียนพนักงาน ไม่ใช่ช่องพิมพ์ (28/10 · feedback user) ══
+                *"ไลน์นึงมีหัวหน้าได้ 2-3 คน แล้วแต่ว่ามีกี่กะการทำงาน"* ⇒ ช่องข้อความช่องเดียวตอบไม่ได้
+                กฎทั้งหมดอยู่ใน utils/lineHeads.js (จอใบค่าฝีมือใช้ชุดเดียวกัน) */}
             <div style={{ marginBottom: 14 }}>
-              <label style={labelSt}>👨‍🔧 หัวหน้างาน (ใช้ในใบค่าฝีมือ)</label>
-              {/* 2026-09-07: เลือกจากทะเบียนผู้ใช้ผ่าน <PersonSelect> (allowFree — หัวหน้าที่ยังไม่มีบัญชีมีจริง · เก็บ snapshot ชื่อเหมือนเดิม) */}
-              <PersonSelect value={signerHead} onChange={({ name }) => setSignerHead(name)} disabled={!canEdit}
-                placeholder={parentLineObj?.head_name ? `ตามไลน์แม่: ${parentLineObj.head_name}` : 'เช่น คุณสุวิทชัย ดีทั่ว'}
-                style={{ marginTop: 4 }} />
+              <label style={labelSt}>👨‍🔧 หัวหน้างานของไลน์นี้ <span style={{ fontWeight: 400, color: 'var(--muted)' }}>· ใช้ในใบค่าฝีมือ</span></label>
+              <div style={{ marginTop: 4, padding: '8px 10px', borderRadius: 8, background: 'var(--bg2)', border: '1px solid var(--border)' }}>
+                {lineHeads.rows.length ? (
+                  <>
+                    <div style={{ display: 'grid', gap: 4 }}>
+                      {[['day', '🌞 กะเช้า'], ['night', '🌙 กะดึก'], ['unknown', '❔ ยังไม่รู้กะ']].map(([k, label]) => (
+                        lineHeads.byShift[k].length ? (
+                          <div key={k} style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'baseline', fontSize: 13 }}>
+                            <span style={{ color: 'var(--muted)', minWidth: 78 }}>{label}</span>
+                            <span style={{ fontWeight: 700 }}>
+                              {lineHeads.byShift[k].map(r => `${r.name}${r.team ? ` (ทีม ${r.team})` : ''}`).join(' · ')}
+                            </span>
+                          </div>
+                        ) : null
+                      ))}
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>
+                      {lineHeads.level === 'supervisor'
+                        ? '⚠️ ไลน์นี้ยังไม่มี "หัวหน้าไลน์" ในทะเบียน — ที่เห็นคือหัวหน้าแผนก'
+                        : 'มาจากทะเบียนพนักงาน (ตำแหน่ง + ทีม + ไลน์)'}
+                      {lineHeads.fromLineName ? ` · ตกทอดจากไลน์แม่ ${lineHeads.fromLineName}` : ''}
+                      {!schedRows.length ? ' · ยังไม่มีตารางกะของวันนี้ จึงยังแยกกะไม่ได้' : ''}
+                      {' · แก้ได้ที่ทะเบียนพนักงาน (/operator)'}
+                    </div>
+                  </>
+                ) : (
+                  /* 🔴 "ทะเบียนยังไม่มี" ≠ "ไลน์นี้ไม่มีหัวหน้า" — เขียนให้ตรง ห้ามโชว์ว่างเฉยๆ */
+                  <div style={{ fontSize: 12.5, color: 'var(--amber)' }}>
+                    ⚠️ ยังไม่มีใครถูกตั้งเป็นหัวหน้าไลน์/หัวหน้าแผนกของไลน์นี้ในทะเบียนพนักงาน —
+                    ตั้งตำแหน่ง + ทีม + ไลน์ ให้เขาที่ <strong>/operator</strong> แล้วชื่อจะขึ้นเองทุกจอ
+                  </div>
+                )}
+              </div>
+              {/* ชื่อที่พิมพ์ทับ — เก็บไว้เพราะของเดิม 6/13 ไลน์เป็นชื่อที่ไม่มีในทะเบียน (เกษียณ/สะกดต่าง)
+                  🔴 ใช้ได้แค่ "คนเดียว" ⇒ เป็นทางหนี ไม่ใช่ทางหลัก — เขียนบอกให้ชัด */}
+              <details style={{ marginTop: 6 }} open={!!signerHead && lineHeads.legacyInRegistry === false}>
+                <summary style={{ fontSize: 12, color: 'var(--muted)', cursor: 'pointer' }}>
+                  ✏️ ชื่อที่พิมพ์ทับ (ของเดิม · ใส่ได้คนเดียว){signerHead ? ` — ${signerHead}` : ' — ยังไม่ได้ตั้ง'}
+                </summary>
+                <div style={{ marginTop: 6 }}>
+                  <PersonSelect value={signerHead} onChange={({ name }) => setSignerHead(name)} disabled={!canEdit}
+                    placeholder={parentLineObj?.head_name ? `ตามไลน์แม่: ${parentLineObj.head_name}` : 'เว้นว่าง = ใช้ชื่อจากทะเบียนข้างบน'} />
+                  {lineHeads.legacyInRegistry === false && (
+                    <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 4 }}>
+                      ⚠️ ชื่อนี้ไม่มีในทะเบียนพนักงาน — ระบบจะเทียบกลับไม่ได้ (เช็คชื่อ/สกิล/กำลังคน ไม่รู้ว่าเป็นใคร)
+                    </div>
+                  )}
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
+                    เว้นว่างไว้ดีที่สุด — ใบค่าฝีมือจะให้เลือกจากรายชื่อจริงข้างบนตามกะที่ออกใบ
+                  </div>
+                </div>
+              </details>
             </div>
 
             {/* ══ ข้อมูลเฉพาะไลน์นี้ — คุณสมบัติเครื่อง/การไหลงานจริง ไม่ตกทอดถึงไลน์ย่อย ══

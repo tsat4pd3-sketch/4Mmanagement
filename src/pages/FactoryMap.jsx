@@ -1570,13 +1570,20 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
         const totProduced = ptot.produced + (nullPart?.produced || 0);
 
         // Downtime — แยกนอกแผน/ในแผน แล้วรวมตามประเภท+เครื่อง (เก็บ note ของพนักงานไว้ด้วย)
+        /* ⏱ ใบที่ยังหยุดอยู่ = "หยุดมาแล้วกี่นาที" (started_at → ตอนนี้) สูตรเดียวกับป้าย/hover บนผัง (dtOpenMin)
+           27/10 user "ทำไมไม่ตรงกัน" — เดิมใช้ duration_min ซึ่งยังว่างจนกว่าจะปิดใบ ⇒ modal "หยุดอยู่ · 0 น." ขณะ hover "3 ชม. 33 น."
+           ไม่รู้เวลาเริ่ม = null (จอเขียน "—" ห้ามตีเป็น 0 · กฎเดียวกับ fmtDtElapsed) */
+        const nowMsStory = Date.now();
         const dtRows = (dtRes.data || []).map(d => {
-          const mins = d.duration_min != null ? Number(d.duration_min) || 0
-            : (d.started_at && d.ended_at ? Math.max(0, (new Date(d.ended_at) - new Date(d.started_at)) / 60000) : 0);
-          return { id: d.id, session_id: d.session_id, mins: Math.round(mins), machine: d.machine_no, note: d.description,
+          const open = !d.ended_at && d.duration_min == null;
+          const mins = open
+            ? (d.started_at ? Math.max(0, Math.round((nowMsStory - new Date(d.started_at).getTime()) / 60000)) : null)
+            : Math.round(d.duration_min != null ? Number(d.duration_min) || 0
+              : (d.started_at && d.ended_at ? Math.max(0, (new Date(d.ended_at) - new Date(d.started_at)) / 60000) : 0));
+          return { id: d.id, session_id: d.session_id, mins, machine: d.machine_no, note: d.description,
             type: d.dr_downtime_types?.name_th || 'ไม่ระบุประเภท', planned: d.dr_downtime_types?.category === 'planned',
-            open: !d.ended_at && d.duration_min == null, carry_over: d.carry_over, shift: sessById[d.session_id]?.shift };
-        }).sort((a, b) => b.mins - a.mins);
+            open, carry_over: d.carry_over, shift: sessById[d.session_id]?.shift };
+        }).sort((a, b) => (b.mins ?? 0) - (a.mins ?? 0));
         const dtUnplanned = dtRows.filter(d => !d.planned);
         const dtPlanned = dtRows.filter(d => d.planned);
 
@@ -1669,7 +1676,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
           flowDown, flowUp,
           totTarget, totProduced, parts,
           dtUnplanned, dtPlanned,
-          dtUnplannedMin: dtUnplanned.reduce((a, d) => a + d.mins, 0),
+          dtUnplannedMin: dtUnplanned.reduce((a, d) => a + (d.mins || 0), 0),
           dtPlannedMin: dtPlanned.reduce((a, d) => a + d.mins, 0),
           defects, ngTotal: defects.reduce((a, d) => a + d.ng, 0), suspectTotal: defects.reduce((a, d) => a + d.suspect, 0),
           shifts, fourM: fourMRes.data || [], sessionCount: (sessions || []).length,
@@ -3660,7 +3667,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                               {d.machine && <span style={{ fontSize: 11, color: 'var(--muted)' }}>· {d.machine}</span>}
                               {d.open && <span style={{ fontSize: 11, color: '#ef4444', fontWeight: 700 }}>🔴 ยังหยุดอยู่</span>}
                               {d.carry_over && <span style={{ fontSize: 11, color: 'var(--muted)' }}>ยกข้ามกะ</span>}
-                              <span style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 800, color: '#f59e0b' }}>{fmtNum(d.mins)} น.</span>
+                              <span style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 800, color: d.open ? '#ef4444' : '#f59e0b' }}>{d.open ? fmtDtElapsed(d.mins) : `${fmtNum(d.mins)} น.`}</span>
                             </div>
                             {d.note && <div style={{ fontSize: 11.5, color: 'var(--text2)', marginTop: 3 }}>💬 {d.note}</div>}
                           </div>
@@ -3669,7 +3676,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                     )}
                     {s.dtPlanned.length > 0 && (
                       <div style={{ marginTop: 8, fontSize: 11, color: 'var(--muted)' }}>
-                        ในแผน (ไม่นับเป็น loss): {s.dtPlanned.map(d => `${d.type} ${d.mins}น.`).join(' · ')}
+                        ในแผน (ไม่นับเป็น loss): {s.dtPlanned.map(d => `${d.type} ${d.open ? `กำลังหยุด ${fmtDtElapsed(d.mins)}` : `${d.mins}น.`}`).join(' · ')}
                       </div>
                     )}
                   </StorySection>}
