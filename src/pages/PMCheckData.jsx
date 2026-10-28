@@ -8,6 +8,7 @@ import { UserContext } from '../App'
 import { can } from '../utils/permissions'
 import { toast } from '../components/Toast'
 import { getSpcStatus, STATUS_COLOR } from '../lib/spc'
+import { calcOf, calcFormula, pmCalcResults } from '../utils/inspectCalc'
 import { findChecklist, listChecklistsByDept } from '../lib/pmChecklists'
 import { notifyDepartment, createNotification } from '../lib/pmNotify'
 import { handleDailyPmSave } from '../lib/pmDailyAlarm'
@@ -30,12 +31,21 @@ import PageHeader from '../components/PageHeader'
 import SearchInput from '../components/SearchInput'
 import ScanModal from '../components/ScanModal'
 import { resolveJig } from '../utils/qrCode'
+import LineScopeSelect from '../components/LineScopeSelect'
+import { useProductionLinesState } from '../utils/useProductionLines'
+import { lineKnownSet, groupEquipRowsByLine } from '../utils/pmEquipList'
+import { filterPlanRows } from '../utils/pmPlanFilter'
+import useIsMobile from '../utils/useIsMobile'
+import { useDraftAutosave, loadDraft, clearDraft } from '../utils/formDraft'   // 📝 ร่างในเครื่อง (มือถือ · 22/10)
+import DraftRestoreBar from '../components/DraftRestoreBar'
 
 /* 🔩 จุดชิมของ fixture บนใบตรวจ PM (2026-09-08 · คำสั่ง user "shim record กับการตรวจใช้กลไกเดียวกัน")
    ข้อมูลแยกตาราง (fixture_points/fixture_shim_events) แต่ "รูป + หมุด" ชุดเดียวกับจุดตรวจ PM:
    หมุดม่วงบนรูปเดียวกัน + แถวกรอก "ค่าชิมรวมที่วัดได้" ท้ายใบ · บันทึกผ่าน recordShimEvent ผูก inspection_id
    ไม่บังคับกรอก (จุดชิมมีความถี่ของตัวเอง — กฎเหล็ก 1 ของโมดูล fixture) · ไม่นับใน isFormReady */
 const SHIM_PIN_COLOR = '#a78bfa'
+// ชิปข้อที่ยังไม่ตรวจในแถบความคืบหน้า — เกินนี้พับไว้หลังปุ่ม "+N ▾" (แถบติดบน ห้ามกินจอมือถือ)
+const CHIP_CAP = 20
 // คอลัมน์ jigs ที่หน้านี้ใช้จริง (ลิสต์ · หัวฟอร์ม · resolveJig · ใบซ่อม · Daily PM) — เพิ่มฟิลด์ใหม่ต้องเติมที่นี่
 const JIG_COLS = 'id, name, jig_no, machine_no, machine_id, line_name, equipment_type, image_path, process'
 
@@ -308,7 +318,7 @@ function CpImage({ cp }) {
 }
 
 // ─── Variable Row ───────────────────────────────────────────────────────────
-function VariableRow({ cp, idx, r, onChange, methodIndex }) {
+function VariableRow({ cp, idx, r, onChange, methodIndex, calcText }) {
   const avg = computeAvg(r.v1, r.v2, r.v3)
   const status = getSpcStatus(avg, cp)
   const c = status ? STATUS_COLOR[status] : null
@@ -322,11 +332,17 @@ function VariableRow({ cp, idx, r, onChange, methodIndex }) {
         <CpImage cp={cp} />
         {c && <span style={{ fontSize: 11, fontWeight: 700, color: c.text }}>{status === 'pass' ? '●' : status === 'warning' ? '⚠' : '✕'}</span>}
       </div>
+      {calcText && (
+        <div style={{ fontSize: 11.5, color: '#4d9fff', fontWeight: 700 }}>🧮 ค่า = {calcText} · ระบบคิดให้จากค่าที่วัด ไม่ต้องกรอก</div>
+      )}
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
         {['v1', 'v2', 'v3'].map((k, i) => (
           <div key={k}>
             <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', marginBottom: 2 }}>{['①', '②', '③'][i]}</div>
-            <input type="number" value={r[k]} onChange={e => onChange({ ...r, [k]: e.target.value })} placeholder="—" style={S.input} />
+            {/* จุดคำนวณ = อ่านอย่างเดียว (ค่ามาจากจุด A − B) */}
+            <input type="number" value={r[k]} readOnly={!!calcText} tabIndex={calcText ? -1 : undefined}
+              onChange={e => { if (!calcText) onChange({ ...r, [k]: e.target.value }) }} placeholder={calcText ? '…' : '—'}
+              style={calcText ? { ...S.input, borderStyle: 'dashed', color: 'var(--text2)' } : S.input} />
           </div>
         ))}
         <div>
@@ -347,6 +363,12 @@ function VariableRow({ cp, idx, r, onChange, methodIndex }) {
 // ─── Attribute / Note Row ────────────────────────────────────────────────────
 function AttrRow({ cp, idx, value, note, onChangeAttr, onChangeNote, methodIndex }) {
   const method = methodIndex?.[cp.checking_method]
+  // 📱 มือถือ: แตะปุ่มเดิมซ้ำ (ถุงมือแตะเบิ้ล) = ล้างคำตอบเงียบๆ ⇒ ถามก่อน · จอคอมเหมือนเดิม (2026-10-20)
+  const isMobile = useIsMobile()
+  const pickAttr = (v) => {
+    if (v === value) { if (isMobile && !window.confirm(`ล้างคำตอบ ${v.toUpperCase()} ของข้อนี้?`)) return; onChangeAttr(''); return }
+    onChangeAttr(v)
+  }
   return (
     <div style={S.cpRow(null)}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -356,8 +378,10 @@ function AttrRow({ cp, idx, value, note, onChangeAttr, onChangeNote, methodIndex
         <CpImage cp={cp} />
         <div style={{ display: 'flex', gap: 4 }}>
           {['ok', 'ng'].map(v => (
-            <button key={v} onClick={() => onChangeAttr(v === value ? '' : v)} style={{
+            <button key={v} onClick={() => pickAttr(v)} style={{
               padding: '3px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+              // 📱 มือถือ: ปุ่ม OK/NG = คำตอบหลักของใบตรวจ → ใหญ่พอใส่ถุงมือกด (เดิมสูง ~22px · 22/10) · จอคอมเท่าเดิม
+              ...(isMobile ? { minHeight: 44, minWidth: 58, fontSize: 14, borderRadius: 8 } : null),
               border: `1px solid ${value === v ? (v === 'ok' ? 'var(--accent)' : '#e05c4a') : 'var(--border)'}`,
               background: value === v ? (v === 'ok' ? 'var(--accent)' : '#e05c4a') : 'var(--bg3)',
               color: value === v ? '#fff' : 'var(--muted)',
@@ -399,8 +423,13 @@ function MeasureRow({ cp, idx, r, onChange, methodIndex }) {
   )
 }
 
-// ─── NG Recheck Panel ─────────────────────────────────────────────────────────
-function NgRecheckPanel({ result, cp, onSaved }) {
+/* ─── NG Recheck Panel ────────────────────────────────────────────────────────
+   🔐 แผงนี้เขียน `inspection_results` (action ที่แก้ไข + ค่าวัดใหม่ + final_status)
+      = ผลตรวจของ **ทีมนั้น** ⇒ ต้องผ่านด่านเดียวกับการลงผลตรวจ (`canRecord` จากหน้าแม่
+      = สิทธิ์ตามชนิดงาน AM/PM **และ** แกนทีม `canWriteTeam`) — เดิมไม่มีด่านเลย
+      ใครเปิดประวัติของทีมอื่นได้ ก็เขียน action ทับได้ (audit ข้อ 5 · 19/10)
+   🔴 ซ่อนฟอร์มได้ ห้ามซ่อนความจริงว่า "ใบนี้ NG และยังไม่มี action" (UI §6.9) */
+function NgRecheckPanel({ result, cp, onSaved, canRecord = false, deptWrite = null }) {
   const [action, setAction] = useState(result.action_text ?? '')
   const [rv1, setRv1] = useState(result.recheck_value_1 ?? '')
   const [rv2, setRv2] = useState(result.recheck_value_2 ?? '')
@@ -411,6 +440,12 @@ function NgRecheckPanel({ result, cp, onSaved }) {
   const finalStatus = recheckAvg != null ? (getSpcStatus(recheckAvg, cp) ?? 'pass') : null
 
   const submit = async () => {
+    // ด่านชั้น 2 — ปุ่มถูกซ่อนอยู่แล้ว แต่โมดัลอาจเปิดค้างไว้ตอนสลับทีม/สิทธิ์เปลี่ยน (fail-closed)
+    if (!canRecord) {
+      return toast.info(deptWrite && !deptWrite.ok
+        ? teamBlockText(deptWrite, 'ผลตรวจของทีมนี้')
+        : 'ไม่มีสิทธิ์บันทึก action / ค่าวัดใหม่ของผลตรวจนี้')
+    }
     setSaving(true)
     try {
       const patch = { action_text: action.trim() || null, recheck_at: new Date().toISOString() }
@@ -418,8 +453,9 @@ function NgRecheckPanel({ result, cp, onSaved }) {
         patch.recheck_value_1 = Number(rv1); patch.recheck_value_2 = Number(rv2); patch.recheck_value_3 = Number(rv3)
         patch.recheck_avg = recheckAvg; patch.final_status = finalStatus
       }
-      const { error: wErr396 } = await supabaseDR.from('inspection_results').update(patch).eq('id', result.id);
-      if (wErr396) throw wErr396;   // บันทึก recheck — supabase-js ไม่ throw ต้องโยนเองให้ catch เดิมเห็น
+      // นับแถวที่เขียนจริง (กฎเขียน DB ข้อ 2) — เขียน 0 แถวแล้วขึ้นสำเร็จ = action หายทั้งที่คนกรอกแล้ว
+      const ok = checkWriteRows(await supabaseDR.from('inspection_results').update(patch).eq('id', result.id).select('id'), 'บันทึก action / ค่าวัดใหม่')
+      if (!ok) return
       onSaved()
     } catch (err) { toast.error(err.message) }
     finally { setSaving(false) }
@@ -436,6 +472,19 @@ function NgRecheckPanel({ result, cp, onSaved }) {
             <span style={{ color: result.final_status === 'pass' ? 'var(--accent)' : '#e05c4a', fontWeight: 700 }}>{result.final_status?.toUpperCase()}</span>
           </p>
         )}
+      </div>
+    )
+  }
+
+  if (!canRecord) {
+    return (
+      <div style={{ marginTop: 6, borderRadius: 8, background: 'rgba(224,92,74,0.06)', border: '1px solid rgba(224,92,74,0.25)', padding: '8px 12px' }}>
+        <p style={{ fontSize: 11, color: '#e05c4a', fontWeight: 700, textTransform: 'uppercase', margin: 0 }}>NG — ยังไม่มี action</p>
+        <p style={{ fontSize: 11.5, color: 'var(--muted)', margin: '2px 0 0', lineHeight: 1.45 }}>
+          🔒 {deptWrite && !deptWrite.ok
+            ? teamBlockText(deptWrite, 'ผลตรวจของทีมนี้')
+            : 'บันทึก action / ค่าวัดใหม่ได้เฉพาะผู้มีสิทธิ์ลงผลตรวจของทีมนี้'}
+        </p>
       </div>
     )
   }
@@ -465,7 +514,7 @@ function NgRecheckPanel({ result, cp, onSaved }) {
 }
 
 // ─── History Detail Modal ─────────────────────────────────────────────────────
-function HistoryModal({ inspection, checkpoints, jig, onClose, userId, userRole, deptWrite }) {
+function HistoryModal({ inspection, checkpoints: cpsFromPage, jig, onClose, userId, userRole, deptWrite, canRecord = false }) {
   const [results, setResults] = useState([])
   const [approving, setApproving] = useState(false)
   const [exporting, setExporting] = useState(false)
@@ -476,6 +525,23 @@ function HistoryModal({ inspection, checkpoints, jig, onClose, userId, userRole,
   const fetchResults = () => supabaseDR.from('inspection_results').select('*').eq('inspection_id', inspection.id).then(({ data }) => setResults(data ?? []))
   useEffect(() => { fetchResults() }, [inspection.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  /* 🔴 จุดตรวจของ "ใบนี้" ต้องโหลดจากผลตรวจของใบเอง (20/10 · user: PDF PM JIG ออกมาไม่มีตารางเลย)
+     เดิมใช้ checkpoints ของหน้าแม่ = รายการของ "ทีมที่กำลังเปิดดูอยู่" — เปิดประวัติจากแท็บทีมอื่น
+     (ใบตรวจของ production แต่หน้าเปิดแท็บช่าง) ⇒ จับคู่ไม่ได้สักจุด ⇒ ใบพิมพ์/Excel ไม่มีตาราง + จอขึ้นแต่ id
+     ⇒ โหลดตาม checkpoint_id ที่ใบนี้บันทึกไว้จริง · ล้ม = ถอยไปใช้ของหน้าแม่ + บอกบนจอ */
+  const [ownCps, setOwnCps] = useState(null)
+  const cpIdsKey = results.map(r => r.checkpoint_id).filter(Boolean).sort().join(',')
+  useEffect(() => {
+    if (!cpIdsKey) return undefined
+    let alive = true
+    supabaseDR.from('jig_checkpoints').select('*').in('id', cpIdsKey.split(',')).order('sort_order').then(({ data, error }) => {
+      if (!alive) return
+      if (error) { toast.error('โหลดจุดตรวจของใบนี้ไม่สำเร็จ — ใช้รายการของหน้าที่เปิดอยู่แทน (อาจไม่ครบ)'); setOwnCps(null); return }
+      setOwnCps(data ?? [])
+    })
+    return () => { alive = false }
+  }, [cpIdsKey])
+  const checkpoints = ownCps && ownCps.length ? ownCps : cpsFromPage
   const cpMap = Object.fromEntries(checkpoints.map(c => [c.id, c]))
   /* 🔐 อนุมัติ/ตีกลับผลตรวจ = ตัดสินงานของทีมนั้น ⇒ ต้องเป็นทีมของเรา (ส่งมาจากหน้าแม่) */
   const canApprove = can('pm', 'approve', userRole) && (deptWrite?.ok !== false)
@@ -533,12 +599,17 @@ function HistoryModal({ inspection, checkpoints, jig, onClose, userId, userRole,
     }
     const inspector = { email: profMap[insp.inspector_id]?.full_name ?? 'Inspector', signature_data: await getSig(insp.inspector_id) }
     const approver = insp.approved_by ? { email: profMap[insp.approved_by]?.full_name ?? 'Approver', signature_data: await getSig(insp.approved_by) } : null
-    const exporter = { email: currentUserEmail ?? 'Exporter', signature_data: await getSig(userId) }
+    // ชื่อใต้ลายเซ็น = ชื่อจริง (profiles.full_name) ไม่ใช่อีเมล — เดิมช่อง APPROVED ขึ้น "tsat4pd3" (20/10)
+    const exporter = { email: profMap[userId]?.full_name ?? currentUserEmail ?? 'Exporter', signature_data: await getSig(userId) }
     const categories = await fetchCategories({ includeInactive: true })
+    // วิธีตรวจ (มอง/สัมผัส/วัด) → ป้ายในคอลัมน์ Checking ของใบพิมพ์ (เดิมช่องนี้ว่างทุกแถว · 20/10)
+    const methods = Object.fromEntries((await fetchCheckingMethods({ includeInactive: true })).map(m => [m.code, m.label || m.code]))
     // เลขฟอร์ม/Rev/Effective อ่านจาก Document Master กลาง (doc_control แก้ได้ที่ /doc-forms) · fallback ค่าเดิม
     const docForm = await getDocForm('pm_jig', { form_code: 'FM-JIG-003', rev: 'Rev.00', effective_date: '01/07/2020' })
     checkWriteRows(await supabaseDR.from('inspections').update({ exported_by: userId, exported_at: new Date().toISOString() }).eq('id', insp.id).select('id'), 'บันทึกว่า export แล้ว');
-    return { jig, inspection: insp, checkpoints, results: resultMap, inspector, approver, exporter, categories, docForm }
+    // 🔴 ใบที่มีผลตรวจแต่จับคู่จุดตรวจไม่ได้เลย = ใบพิมพ์ไม่มีตาราง — หยุดแล้วบอก ห้ามออกใบเปล่าเงียบๆ
+    if (results.length && !checkpoints.some(c => resultMap[c.id])) throw new Error('ยังโหลดจุดตรวจของใบนี้ไม่เสร็จ/ไม่พบ — รอสักครู่แล้วกด export อีกครั้ง')
+    return { jig, inspection: insp, checkpoints, results: resultMap, inspector, approver, exporter, categories, docForm, methods }
   }
 
   const handleExport = async (kind) => {
@@ -609,7 +680,7 @@ function HistoryModal({ inspection, checkpoints, jig, onClose, userId, userRole,
                     </a>
                   )}
                 </div>
-                {isNG && <NgRecheckPanel result={r} cp={cp} onSaved={fetchResults} />}
+                {isNG && <NgRecheckPanel result={r} cp={cp} onSaved={fetchResults} canRecord={canRecord} deptWrite={deptWrite} />}
               </div>
             )
           })}
@@ -644,6 +715,10 @@ function HistoryModal({ inspection, checkpoints, jig, onClose, userId, userRole,
 }
 
 // ─── PMCheckData (main) ───────────────────────────────────────────────────────
+/** มีช่องไหนในใบตรวจถูกกรอกไหม (ร่างในเครื่อง) — ค่าว่างทั้งใบ = ไม่ต้องเก็บ/ไม่ต้องถามกู้คืน */
+const pmHasInput = (results, notes) => !!(notes && String(notes).trim())
+  || Object.values(results || {}).some(r => r && ['v1', 'v2', 'v3', 'attr', 'note', 'mval'].some(f => r[f] !== '' && r[f] != null))
+
 export default function PMCheckData() {
   const [searchParams] = useSearchParams()
   const setParams = useMergeParams()
@@ -716,6 +791,9 @@ export default function PMCheckData() {
   })
   const viewerRef = useRef(null)
   const [viewerH, setViewerH] = useState(0)
+  // ความสูงจริงของแถบความคืบหน้าที่ติดบน — บวกเข้า scrollMarginTop ของแถว (ไม่งั้นแถวที่เลื่อนไปหาจะนอนใต้แถบ)
+  const progRef = useRef(null)
+  const [progH, setProgH] = useState(0)
   // มือถือ/แท็บเล็ต: master-detail — โชว์ "ลิสต์อุปกรณ์" หรือ "ฟอร์มเช็ค" ทีละอัน (ไม่อัด 2 คอลัมน์)
   const [isNarrow, setIsNarrow] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 860px)').matches)
   const [isWide, setIsWide] = useState(() => typeof window !== 'undefined' && window.matchMedia('(min-width: 1180px)').matches)
@@ -733,10 +811,25 @@ export default function PMCheckData() {
   const canShim = can('fixture_shim', 'record', userRole)
   // 🔎 ค้นในลิสต์เครื่อง (feedback 2026-09-08: JIG MTN มี 60+ เครื่อง ไล่เลื่อนหาเอง) — เทียบเลขเครื่อง/ชื่อ/ไลน์
   const [jigQuery, setJigQuery] = useState('')
+  /* 🗂️ ลิสต์ซ้ายแท็บช่าง (PM) — จัดกลุ่มตามไลน์ + กรองขอบเขตไลน์ (20/10 audit หน้า PM ข้อ 6)
+     ⚠️ กรองการดูเท่านั้น ไม่ตัดตามส่วนงานของผู้ใช้ — ช่างซ่อมข้ามไลน์เป็นงานปกติ (แกนสิทธิ์ช่าง = ทีม) */
+  const { rows: lineRows } = useProductionLinesState()
+  const scopeLines = useMemo(() => {   // ชื่อไลน์ซ้ำในทะเบียน = key ซ้ำในตัวเลือก ⇒ ยุบด้วยชื่อ
+    const seen = new Set()
+    return (lineRows || []).filter(l => l?.name && !seen.has(l.name) && seen.add(l.name))
+  }, [lineRows])
+  const [jigScope, setJigScope] = useState({ section: '', line: '', names: null })
+  const [chipsAll, setChipsAll] = useState(false)   // ชิปข้อที่ยังไม่ตรวจ: เกิน CHIP_CAP พับไว้ กดขยายได้
   const [scanOpen, setScanOpen] = useState(false)   // 📷 สแกนป้ายเครื่อง → เลือกอุปกรณ์
-  const [results, setResults] = useState({})
+  const [rawResults, setResults] = useState({})   // ที่คนกรอก
+  /* 🧮 จุดคำนวณ (A − B) เติมค่า ①②③ จากจุด A/B ให้เอง — ทุกที่ที่อ่าน `results` (ตัดสิน/นับครบ/บันทึก) เห็นค่าชุดเดียวกัน */
+  const results = useMemo(() => pmCalcResults(checkpoints, rawResults), [checkpoints, rawResults])
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
+  /* 📝 ร่างในเครื่อง (มือถือ · 22/10 · audit handheld ข้อ 4) — ผลตรวจบันทึกทีเดียวตอนท้าย และ "เปลี่ยน/สแกนเครื่องอื่น"
+     ล้างทุกช่องที่กรอกทันที ⇒ เก็บร่างต่อ เครื่อง|แผนก|คนกรอก แล้วถามกู้คืนเมื่อกลับมาเครื่องเดิม (utils/formDraft.js) */
+  const isMobileView = useIsMobile()
+  const [pendingDraft, setPendingDraft] = useState(null)
   const [inspections, setInspections] = useState([])
   const [viewInspection, setViewInspection] = useState(null)
   const [methodIndex, setMethodIndex] = useState({})
@@ -813,7 +906,23 @@ export default function PMCheckData() {
   const lineFilter = searchParams.get('line')
   /* ⚠️ ทุกตัวต้อง merge param เดิม — เขียน setSearchParams({...}) ตรงๆ จะล้าง ?tab= ของ PmHub
      แล้วจอเด้งออกจากแท็บที่ใช้อยู่ (บั๊กจริง 2026-09-16) · ล้าง param ตั้งใจด้วยค่า null */
-  const selectJig = (jig) => setParams({ equip: jig.id })
+  const pmDraftKey = isMobileView && selectedJig && userId && cpLoad.status === 'ok' && cpLoad.key === `${selectedJig.id}|${department}`
+    ? `pm:${cpLoad.key}:${userId}` : null
+  const pmDirty = !!pmDraftKey && !pendingDraft && pmHasInput(rawResults, notes)
+  useDraftAutosave(pmDraftKey, { results: rawResults, notes }, pmDirty)
+  const restorePmDraft = () => {
+    const d = pendingDraft?.data; if (!d) return
+    // เติมเฉพาะจุดตรวจที่ยังมีอยู่ในใบตอนนี้ (จุดที่ถูกลบออกจากเช็คลิสต์ทีหลัง ไม่เอากลับมา)
+    setResults(prev => { const n = { ...prev }; Object.entries(d.results || {}).forEach(([k, v]) => { if (k in n) n[k] = { ...n[k], ...v } }); return n })
+    if (d.notes) setNotes(d.notes)
+    setPendingDraft(null)
+  }
+  const selectJigRaw = (jig) => setParams({ equip: jig.id })
+  // มือถือ: เปลี่ยนเครื่องกลางฟอร์ม = บอกว่าเก็บร่างไว้แล้ว (เดิมล้างทุกช่องเงียบๆ) · ไม่ถาม/ไม่บล็อก — กลับมาเครื่องเดิมกู้คืนได้
+  const selectJig = (jig) => {
+    if (pmDirty && jig?.id !== selectedJig?.id) toast.info(`📝 เก็บร่างผลตรวจ ${selectedJig?.name || ''} ไว้ในเครื่องแล้ว — กลับมาเลือกเครื่องนี้เพื่อกู้คืน`)
+    selectJigRaw(jig)
+  }
   const clearJig = () => setParams({ equip: null })            // กลับไปลิสต์ (จอแคบ)
   const setDept = (d) => setParams({ dept: d, line: null })    // เปลี่ยนแผนก = ล้างตัวกรองไลน์ (พฤติกรรมเดิม)
 
@@ -910,7 +1019,7 @@ export default function PMCheckData() {
     const req = ++loadReqRef.current
     const live = () => req === loadReqRef.current
     const key = `${selectedJig.id}|${department}`
-    setResults({}); setNotes(''); setTab('record'); setActiveCpId(null)
+    setResults({}); setNotes(''); setTab('record'); setActiveCpId(null); setPendingDraft(null)
     setShimVals({})
     // ล้างของเครื่องก่อนทันที — ระหว่างโหลดห้ามโชว์/บันทึกด้วยจุดตรวจของเครื่องเก่า
     setChecklistId(null); setCheckpoints([]); setFrames([]); setOtherDepts([]); setInspections([]); setMoByInsp({})
@@ -952,6 +1061,8 @@ export default function PMCheckData() {
       const init = {}
       cps.forEach(c => { init[c.id] = { v1: '', v2: '', v3: '', attr: '', note: '', mval: '' } })
       setResults(init)
+      const saved = isMobileView ? loadDraft(`pm:${key}:${userId}`) : null
+      setPendingDraft(saved && pmHasInput(saved.data?.results, saved.data?.notes) ? saved : null)
       // ไม่มีจุดตรวจของแผนกนี้ → หาให้เลยว่าแผนกอื่นลงไว้ไหม จะได้ไม่ต้องไล่กดทีละแท็บ
       if (!cps.length) {
         listChecklistsByDept(selectedJig.id, 'mtn')
@@ -972,12 +1083,24 @@ export default function PMCheckData() {
     setViewerH(el.getBoundingClientRect().height)
     return () => ro.disconnect()
   }, [selectedJig, checkpoints, frames, viewerOpen, isNarrow, isWide])
+  useEffect(() => {
+    const el = progRef.current
+    if (!el || typeof ResizeObserver === 'undefined') { setProgH(0); return }
+    const ro = new ResizeObserver(() => setProgH(el.getBoundingClientRect().height))
+    ro.observe(el)
+    setProgH(el.getBoundingClientRect().height)
+    return () => ro.disconnect()
+  }, [selectedJig, checkpoints, cpLoad.status, frames, isNarrow, isWide])
 
   // คลิกหมุดบนรูป → เลื่อนไปแถวเช็คของจุดนั้น (โหมดจิ้มหมุดไม่ต้องเลื่อน — ข้อโผล่ใต้รูปอยู่แล้ว)
+  /* 🔴 เทียบ "โหมดจิ้มหมุดเปิดจริง" ไม่ใช่แค่ `pinFocus` (20/10) — pinFocus ค่าเริ่ม = true แม้เครื่องไม่มีรูป/ปักไม่ครบ
+     ⇒ เดิมกดชิป/หมุดแล้วไม่เลื่อนไปแถวเลย · เงื่อนไขต้องตรงกับ `focusOn` ในส่วนวาด */
+  const focusOnNow = pinFocus && frames.length > 0 && checkpoints.length > 0 && checkpoints.every(c => c.x_pos != null)
   useEffect(() => {
-    if (pinFocus) return
-    if (activeCpId && rowRefs.current[activeCpId]) rowRefs.current[activeCpId].scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-  }, [activeCpId, pinFocus])
+    if (focusOnNow) return
+    if (activeCpId && rowRefs.current[activeCpId]) rowRefs.current[activeCpId].scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [activeCpId, focusOnNow])
+  useEffect(() => { setChipsAll(false) }, [selectedJig?.id])
 
   /* ข้อนี้กรอกครบหรือยัง — เกณฑ์เดียวกับที่ปุ่มบันทึกใช้นับ "ยังไม่ครบกี่จุด"
      ⚠️ แก้ที่นี่ต้องแก้ปุ่มบันทึกด้วย ไม่งั้นแถบความคืบหน้ากับปุ่มตอบคนละเลข */
@@ -1112,6 +1235,7 @@ export default function PMCheckData() {
       if (isAmTeam(department)) setCheckedThisShift(prev => ({ ...prev, [selectedJig.id]: overall }))
 
       toast.success('บันทึกผลการตรวจสำเร็จ')
+      if (pmDraftKey) clearDraft(pmDraftKey)
       const init = {}
       checkpoints.forEach(c => { init[c.id] = { v1: '', v2: '', v3: '', attr: '', note: '', mval: '' } })
       setResults(init); setNotes('')
@@ -1154,7 +1278,12 @@ export default function PMCheckData() {
     const hay = `${j.machine_no || ''} ${j.name || ''} ${j.line_name || ''}`.toLowerCase()
     return qWords.every(w => hay.includes(w))
   }
-  const deptJigs = deptJigsAll.filter(matchJig)
+  const deptJigsQ = deptJigsAll.filter(matchJig)
+  const amTab = isAmTeam(department)
+  const { rows: deptJigs, droppedNoLine: jigDropped } = amTab
+    ? { rows: deptJigsQ, droppedNoLine: 0 }
+    : filterPlanRows(deptJigsQ, { scopeNames: jigScope.names, known: lineKnownSet(scopeLines), getLine: j => j.line_name })
+  const jigGroups = amTab ? [] : groupEquipRowsByLine(deptJigs.map(j => ({ jig: j })), scopeLines)
 
   // จอแคบ: โชว์ทีละคอลัมน์ (ยังไม่เลือก=ลิสต์ · เลือกแล้ว=ฟอร์ม) · desktop โชว์ทั้งคู่เหมือนเดิม
   const showSidebar = !isNarrow || !selectedJig
@@ -1192,8 +1321,17 @@ export default function PMCheckData() {
             style={{ minWidth: 44, minHeight: 44, padding: 0, fontSize: 18, borderRadius: 8,
               background: 'var(--bg3)', border: '1px solid var(--border2)', cursor: 'pointer' }}>📷</button>
         </div>
-        {qWords.length > 0 && !isAmTeam(department) && (
-          <div style={{ padding: '0 16px 6px', fontSize: 11, color: 'var(--muted)' }}>พบ {deptJigs.length} จาก {deptJigsAll.length} เครื่อง</div>
+        {!amTab && (
+          <div style={{ padding: '0 16px 8px' }}>
+            <LineScopeSelect lines={scopeLines} section={jigScope.section} line={jigScope.line}
+              onChange={(section, line, info) => setJigScope({ section, line, names: info?.lines?.length ? info.lines : (section || line ? [line || section] : null) })} />
+          </div>
+        )}
+        {!amTab && (qWords.length > 0 || jigScope.names?.length) && (
+          <div style={{ padding: '0 16px 6px', fontSize: 11, color: 'var(--muted)' }}>
+            พบ {deptJigs.length} จาก {deptJigsAll.length} เครื่อง
+            {jigDropped > 0 && <span style={{ color: '#f59e0b' }}> · อีก {jigDropped} เครื่องไลน์ไม่ตรงทะเบียน (กรองตามไลน์ไม่ได้)</span>}
+          </div>
         )}
         {listErr && (
           <div role="alert" style={{ margin: '0 16px 8px', padding: '8px 10px', borderRadius: 8, fontSize: 12, lineHeight: 1.5,
@@ -1280,13 +1418,21 @@ export default function PMCheckData() {
               {pendingBlock}
             </>)
           })() : (<>
-            {deptJigs.length === 0 && (qWords.length
-              ? <p style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', marginTop: 20, lineHeight: 1.6 }}>ไม่พบเครื่องที่ตรงกับ “{jigQuery.trim()}”<br /><span onClick={() => setJigQuery('')} style={{ fontSize: 11, color: 'var(--accent)', cursor: 'pointer', fontWeight: 700 }}>ล้างคำค้น</span></p>
+            {deptJigs.length === 0 && ((qWords.length || jigScope.names?.length)
+              ? <p style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', marginTop: 20, lineHeight: 1.6 }}>ไม่พบเครื่องที่ตรงกับ{jigQuery.trim() ? ` “${jigQuery.trim()}”` : 'ตัวกรอง'}<br /><span onClick={() => { setJigQuery(''); setJigScope({ section: '', line: '', names: null }) }} style={{ fontSize: 11, color: 'var(--accent)', cursor: 'pointer', fontWeight: 700 }}>ล้างตัวกรอง</span></p>
               : <p style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', marginTop: 20, lineHeight: 1.6 }}>ยังไม่มีอุปกรณ์ในทีมนี้<br /><span style={{ fontSize: 11 }}>({(teams.find(d => d.key === department) || {}).label})</span></p>)}
-            {deptJigs.map(jig => (
-              <div key={jig.id} onClick={() => selectJig(jig)} style={S.jigItem(selectedJig?.id === jig.id, deptColor)}>
-                <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', margin: 0 }}>{jig.name}</p>
-                {jig.line_name && <p style={{ fontSize: 11, color: 'var(--muted)', margin: '2px 0 0' }}>📍 {jig.line_name}</p>}
+            {/* จัดกลุ่มตามไลน์ (ทะเบียน ส่วนงาน→แม่→ลูก · ไม่ระบุไลน์ท้ายสุด) — เดิมเรียงตามชื่อยาวเหยียดเป็นแถวเดียว */}
+            {jigGroups.map(g => (
+              <div key={g.key}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: g.known ? 'var(--text2)' : '#f59e0b', margin: '8px 2px 5px', lineHeight: 1.4 }}>
+                  📍 {g.label} <span style={{ fontWeight: 600, color: 'var(--muted)' }}>· {g.rows.length}</span>
+                </div>
+                {g.rows.map(({ jig }) => (
+                  <div key={jig.id} onClick={() => selectJig(jig)} style={S.jigItem(selectedJig?.id === jig.id, deptColor)}>
+                    <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', margin: 0 }}>{jig.name}</p>
+                    {(jig.machine_no || jig.jig_no) && <p style={{ fontSize: 11, color: 'var(--muted)', margin: '2px 0 0' }}>{[jig.machine_no, jig.jig_no].filter(Boolean).join(' · ')}</p>}
+                  </div>
+                ))}
               </div>
             ))}
           </>)}
@@ -1319,6 +1465,10 @@ export default function PMCheckData() {
             </div>
 
             <div style={{ ...S.body, ...(isNarrow ? { padding: 12 } : null) }}>
+              {tab === 'record' && (
+                <DraftRestoreBar draft={pendingDraft} what={`ใบตรวจ ${selectedJig?.name || 'เครื่องนี้'}`} onRestore={restorePmDraft}
+                  onDiscard={() => { if (pmDraftKey) clearDraft(pmDraftKey); setPendingDraft(null) }} />
+              )}
               {tab === 'record' && (() => {
                 /* ⚠️ ไม่มีจุดตรวจของแผนกนี้ = ห้ามโชว์รูปหมุน (2026-08-11 · user ทัก "ทำไมรูปยังค้างอยู่")
                    รูปหลายมุมเป็นของ "ตัวเครื่อง" (ของกลางทุกแผนก) แต่ "หมุดจุดตรวจ" ผูกกับ
@@ -1412,15 +1562,17 @@ export default function PMCheckData() {
                       {/* ── 📍 แถบคุมโหมดจิ้มหมุด (user 23/09 "ขึ้นแค่ข้อที่จิ้มจุดนั้น ไม่รก ไม่ต้องเลื่อนหา")
                           🔴 ซ่อนข้ออื่นได้ ก็ต่อเมื่อแถบนี้บอกความจริงครบ: ตรวจไปกี่ข้อ · เหลือข้อไหน ·
                              กดข้ามไปข้อที่ยังไม่ตรวจได้ · สลับกลับ "ทุกข้อ" ได้ตลอด ── */}
-                      {showPhoto && checkpoints.length > 1 && (
-                        <div style={{ position: 'sticky', top: stackCompact ? viewerH : 0, zIndex: 4, background: 'var(--bg)',
+                      {/* แถบความคืบหน้า + ชิปข้อที่ยังไม่ตรวจ — โชว์ทั้งโหมดมีรูปและโหมดรายการ (20/10 · เดิมโหมดรายการไม่มีเลย
+                          เครื่อง 81 จุดต้องเลื่อนไล่หาข้อที่ลืมเอง) · กดชิป = เลื่อนไปแถวนั้น / ขึ้นข้อนั้นในโหมดจิ้มหมุด */}
+                      {checkpoints.length > 1 && (
+                        <div ref={progRef} style={{ position: 'sticky', top: stackCompact ? viewerH : 0, zIndex: 4, background: 'var(--bg)',
                           borderBottom: '1px solid var(--border)', padding: '7px 0 8px', marginBottom: 8,
                           display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
                           <span style={{ fontSize: 12, fontWeight: 800, color: doneN === checkpoints.length ? 'var(--accent)' : 'var(--text2)' }}>
                             ตรวจแล้ว {doneN}/{checkpoints.length}
                             {todo.length > 0 && <span style={{ color: '#f59e0b', fontWeight: 700 }}> · เหลือ {todo.length}</span>}
                           </span>
-                          {allPinned ? (
+                          {!showPhoto ? null : allPinned ? (
                             <button onClick={() => { setPinFocus(v => !v); setActiveShimId(null) }}
                               title={pinFocus ? 'สลับเป็นไล่ดูทุกข้อในหน้าเดียว' : 'สลับเป็นแตะหมุดบนรูปแล้วขึ้นเฉพาะข้อนั้น'}
                               style={{ padding: '4px 12px', borderRadius: 999, cursor: 'pointer', fontSize: 11.5, fontWeight: 700,
@@ -1434,10 +1586,10 @@ export default function PMCheckData() {
                               (โหมดแตะหมุดต้องปักจุดบนรูปครบก่อน — ตอนนี้ปักแล้ว {pinnedCps.length}/{checkpoints.length} · ปักที่ PM Setup)
                             </span>
                           )}
-                          {focusOn && (
+                          {(
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center', marginLeft: 'auto' }}>
                               <span style={{ fontSize: 11, color: 'var(--muted)' }}>{todo.length ? 'ยังไม่ตรวจ:' : 'ครบแล้ว 🎉'}</span>
-                              {todo.slice(0, 12).map(c => (
+                              {(chipsAll ? todo : todo.slice(0, CHIP_CAP)).map(c => (
                                 <button key={c.id} onClick={() => { setActiveShimId(null); setActiveCpId(c.id) }}
                                   title={c.name}
                                   style={{ minWidth: 22, height: 22, borderRadius: 11, cursor: 'pointer', fontSize: 11, fontWeight: 700,
@@ -1447,7 +1599,14 @@ export default function PMCheckData() {
                                   {checkpoints.indexOf(c) + 1}
                                 </button>
                               ))}
-                              {todo.length > 12 && <span style={{ fontSize: 11, color: 'var(--muted)' }}>+{todo.length - 12}</span>}
+                              {/* เกินเพดาน = ปุ่มขยาย (เดิมเขียนแค่ "+N" แล้วกดไปข้อที่ 13+ ไม่ได้เลย) */}
+                              {todo.length > CHIP_CAP && (
+                                <button onClick={() => setChipsAll(v => !v)}
+                                  style={{ height: 22, padding: '0 8px', borderRadius: 11, cursor: 'pointer', fontSize: 11, fontWeight: 700,
+                                    border: '1px dashed var(--border2)', background: 'transparent', color: 'var(--text2)' }}>
+                                  {chipsAll ? 'ย่อ ▴' : `+${todo.length - CHIP_CAP} ▾`}
+                                </button>
+                              )}
                             </div>
                           )}
                         </div>
@@ -1488,7 +1647,8 @@ export default function PMCheckData() {
                             </div>
                           ) : null))
                           const row = cp.type === 'variable' ? (
-                            <VariableRow cp={cp} idx={idx} r={results[cp.id] ?? { v1: '', v2: '', v3: '' }} onChange={v => setResults(prev => ({ ...prev, [cp.id]: v }))} methodIndex={methodIndex} />
+                            <VariableRow cp={cp} idx={idx} r={results[cp.id] ?? { v1: '', v2: '', v3: '' }} onChange={v => setResults(prev => ({ ...prev, [cp.id]: v }))} methodIndex={methodIndex}
+                              calcText={calcOf(cp) ? calcFormula(calcOf(cp), id => { const k = checkpoints.findIndex(c => c.id === id); return k < 0 ? '?' : `ข้อ ${k + 1}` }) : null} />
                           ) : cp.type === 'measure' ? (
                             <MeasureRow cp={cp} idx={idx} r={results[cp.id] ?? { mval: '' }} onChange={v => setResults(prev => ({ ...prev, [cp.id]: v }))} methodIndex={methodIndex} />
                           ) : (
@@ -1502,7 +1662,7 @@ export default function PMCheckData() {
                               {header}
                               <div ref={el => { rowRefs.current[cp.id] = el }} onClick={() => setActiveCpId(cp.id)}
                                 style={{ borderRadius: 10, outline: activeCpId === cp.id ? '2px solid var(--accent)' : '2px solid transparent', outlineOffset: 1, transition: 'outline-color .15s',
-                                  scrollMarginTop: stackCompact ? viewerH + 12 : 12 }}>
+                                  scrollMarginTop: (stackCompact ? viewerH : 0) + progH + 12 }}>
                                 {row}
                               </div>
                             </div>
@@ -1555,7 +1715,7 @@ export default function PMCheckData() {
                               const k = kindOf(pt.kind_code)
                               return (
                                 <div key={pt.id} ref={el => { rowRefs.current[`shim:${pt.id}`] = el }}
-                                  style={{ ...S.cpRow(null), borderColor: overMax ? '#ef4444' : mm != null ? SHIM_PIN_COLOR : 'var(--border)', scrollMarginTop: stackCompact ? viewerH + 12 : 12 }}>
+                                  style={{ ...S.cpRow(null), borderColor: overMax ? '#ef4444' : mm != null ? SHIM_PIN_COLOR : 'var(--border)', scrollMarginTop: (stackCompact ? viewerH : 0) + progH + 12 }}>
                                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                                     <span style={{ minWidth: 22, height: 18, padding: '0 5px', borderRadius: 9, background: pinned ? SHIM_PIN_COLOR : 'var(--border2)', color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }} title={pinned ? 'ปักบนรูปแล้ว' : 'ยังไม่ปักบนรูป'}>{pt.point_no}</span>
                                     <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{k.icon} {k.label}{pt.name ? <span style={{ fontWeight: 500, color: 'var(--muted)' }}> · {pt.name}</span> : null}</span>
@@ -1688,7 +1848,7 @@ export default function PMCheckData() {
       <AnimatePresence>
         {viewInspection && (
           <HistoryModal inspection={viewInspection} checkpoints={checkpoints} jig={selectedJig}
-            userId={userId} userRole={userRole} deptWrite={deptWrite}
+            userId={userId} userRole={userRole} deptWrite={deptWrite} canRecord={canRecord}
             onClose={() => { setViewInspection(null); if (selectedJig) fetchHistory(selectedJig.id) }} />
         )}
       </AnimatePresence>

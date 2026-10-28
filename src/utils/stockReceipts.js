@@ -47,9 +47,38 @@ export const inflowPatchFor = (modeKey, rule) =>
 
 /** MAT ที่ยอดเข้าคลังทาง "ปิดล็อตที่สโตร์" (กฎ MAT · เปิดอยู่ · โหมด lot) — ตัวเดียวกับที่ trigger ใช้ข้าม
  *  🔴 ห้ามถามจาก `child_lot_requests` ตรงๆ อีก ("เคยมีล็อต" ≠ "ยอดเข้าทางล็อต" · บั๊ก GOR 19/10 · มีด่าน) */
+/* MAT ที่ "ยอดเข้าคลังทางปิดล็อตที่บอร์ดสโตร์ทางเดียว" (กฎโหมด 🔧) — คู่กับที่ trigger
+   `fn_post_confirmed_output` ข้ามตอนปิดใบผลิต
+   🔴 26/10 — **ไม่ใช่ตัวตัดสินว่าของอยู่คลังไหนอีกแล้ว** (ปลายทางอ่านจาก `dest_line_name` ของกฎ
+   ผ่าน `inflowDestOf()` เหมือนพาร์ทอื่นทุกตัว · ดูหัวไฟล์ `utils/partRefStock.js`) */
 export const lotMatsOf = (rules = []) => new Set((rules || [])
   .filter(r => r?.match_type === 'mat' && r?.is_active !== false && r?.mode === 'lot')
   .map(r => String(r.match_value ?? '').trim()).filter(Boolean));
+
+/**
+ * 🔴 ใบล็อตที่ "ออกตอนพาร์ทยังอยู่โหมด 🔧 แต่วันนี้ไม่ใช่โหมด 🔧 แล้ว" = **ไม่มีใบรับเข้ารองรับ**
+ *
+ * โหมด 🔧 ทำให้ trigger `fn_post_confirmed_output` ข้ามตอนปิดใบผลิต ⇒ ใบผลิตที่ปิดไปแล้วช่วงนั้น
+ * ไม่เคยสร้าง `stock_receipts` เลย · ทางเข้าคลังทางเดียวของมันคือปุ่ม "ปิดล็อต" บนบอร์ดสโตร์
+ * ⇒ พอสลับโหมดเป็น 🟡/🟢 ปุ่มนั้นเลิกลงสต็อก (ด่าน A2) **และ** ไม่มีใบรับเข้าให้กดแทน
+ * = ปิดใบล็อตแล้ว **ของหายจากบัญชีเงียบๆ** ⇒ จอต้องเตือนก่อนกด ห้ามบอกว่า "ของเข้าคิวแล้ว"
+ *
+ * 🔴 อ่านเวลาไม่ได้ = **เตือน** (fail-closed) — เตือนเกินแล้วคนไปเช็คคิว เสียแค่เวลา · ไม่เตือน = ของหาย
+ * @param {{child_mat_no?:string, created_at?:string}} lot ใบล็อต
+ * @param {Array} rules แถว `stock_inflow_rules` (ต้อง select `mode, is_active, updated_at` มาด้วย)
+ */
+export function lotOrphanRisk(lot, rules = []) {
+  const mat = String(lot?.child_mat_no ?? '').trim();
+  if (!mat) return false;
+  const rule = (rules || []).find(r => r?.match_type === 'mat'
+    && String(r?.match_value ?? '').trim() === mat);
+  if (!rule) return false;                          // ไม่มีกฎ MAT = ไม่เคยอยู่โหมด 🔧 ทางนี้
+  if (inflowModeOf(rule) === 'lot') return false;   // ยังโหมด 🔧 = ปิดล็อตลงสต็อกตามปกติ
+  const switched = Date.parse(rule.updated_at ?? '');
+  const made = Date.parse(lot?.created_at ?? '');
+  if (!Number.isFinite(switched) || !Number.isFinite(made)) return true;
+  return made < switched;
+}
 
 const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : null; };
 

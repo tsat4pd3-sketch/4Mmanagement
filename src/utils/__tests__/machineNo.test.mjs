@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { machineKey, buildMachineKeyMap, snapMachineNo } from '../machineNo.js';
+import { machineKey, buildMachineKeyMap, snapMachineNo, machineNoLikePattern } from '../machineNo.js';
 
 /* ทะเบียนจริง (ตัดมาจาก machines ฝั่ง DR) + ค่าที่พนักงานพิมพ์จริงใน downtime_logs */
 const REG = ['LS-01', 'LS-04', 'LS-10', 'LS-11', 'RB-102', 'RB-127', 'SP-78', 'LWR-306'];
@@ -43,4 +43,18 @@ test('ข้อมูลเพี้ยนต้องไม่โยน error',
   }
   assert.equal(snapMachineNo('LS10', null), null);
   assert.equal(buildMachineKeyMap(null).size, 0);
+});
+
+test('🔎 machineNoLikePattern ครอบทุกสะกด — แล้วต้องกรองซ้ำด้วย machineKey', () => {
+  const p = machineNoLikePattern('SW-10');
+  assert.equal(p, '%SW%10%');
+  // จำลอง ilike (ไม่สนตัวพิมพ์) ⇒ ทุกสะกดของเครื่องเดียวกันต้องผ่านด่านหยาบ
+  const like = (s) => new RegExp(`^${p.replace(/%/g, '.*')}$`, 'i').test(s);
+  for (const s of ['SW10', 'sw 10', 'SW-010', 'Sw_10']) assert.ok(like(s), s);
+  // ด่านหยาบปล่อย SW-100 ผ่าน ⇒ ผู้เรียกต้องกรองด้วย machineKey ไม่งั้นเครื่องอื่นปน
+  assert.ok(like('SW-100'));
+  assert.notEqual(machineKey('SW-100'), machineKey('SW-10'));
+  assert.equal(machineNoLikePattern(''), null);
+  assert.equal(machineNoLikePattern(null), null);
+  assert.equal(machineNoLikePattern('RB-0102'), '%RB%102%');
 });

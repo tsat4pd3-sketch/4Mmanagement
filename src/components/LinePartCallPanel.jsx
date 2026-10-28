@@ -33,13 +33,13 @@ import { toast } from './Toast';
 import { can } from '../utils/permissions';
 import { isLeafLine, getChildLineNames, getAncestorNames } from '../utils/lineHierarchy';
 import { notifyEvent } from '../utils/notifyEvent';
+import { getActor } from '../utils/actorStamp';   // 👤 "ใครเรียก" — ที่เดียวของตัวตนผู้ทำรายการ
 import { pointsForLine, DELIVER_GATES } from '../utils/replenishGate';
 import MatLabel from './MatLabel';
 import { slocCodeOfLine } from '../utils/storageLoc';   // 🏬 มุม SAP ของใบ (2026-09-08)
 import ProductSelect from './ProductSelect';
 import useColumnHistory from '../utils/useColumnHistory';
 import { splitLevels, refStockOf, madeHereMats } from '../utils/partRefStock';   // 🏭 ของที่ไลน์ผลิตเอง อ้างยอดคลัง (2026-10-08) // 📜 MAT ที่เคยตั้งระดับไว้ — ทะเบียนไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
-import { lotMatsOf } from '../utils/stockReceipts';   // 🔧 พาร์ทที่ยอดเข้าทางปิดล็อต = กฎรับเข้าโหมด lot (19/10)
 
 const norm = (s) => String(s ?? '').trim().toLowerCase();
 const num = (v) => (v == null || v === '' ? null : Number(v));
@@ -68,6 +68,37 @@ const hhmm = (iso) => {
 };
 const agoMin = (iso) => (iso ? Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000)) : null);
 
+/* 🧩 ตัวเลือกเพิ่มของ `ProductSelect` = พาร์ทลูก BOM ของไลน์ครอบครัวนี้ (ของที่ไลน์ "ใช้" ซึ่งมักไม่อยู่
+   ใน Product Master) — ใช้ทั้งโมดัลตั้งจุดเรียกเติม และฟอร์ม "ขอเบิกพาร์ทนี้เลย" **ตัวเดียวกัน**
+   (21/10 · เดิมมีชุดเดียวในโมดัล ⇒ ฟอร์มขอเบิกจะเลือกพาร์ทลูกไม่ได้เลย = ขอของที่ต้องการไม่ได้)
+   · `enabled=false` = ยังไม่โหลด (ฟอร์มที่ยังไม่เปิดไม่ต้องจ่าย egress)
+   · ทะเบียนโหลดไม่สำเร็จ = ไม่เติมตัวเลือก (ไม่บล็อกการเลือกจาก Product Master) */
+function useBomChildOptions(famNames, enabled = true) {
+  const famKey = famNames.join('|');   // array ใน deps = ยิงซ้ำทุก render (กฎเหล็ก DB ข้อ 9)
+  const [rows, setRows] = useState([]);
+  useEffect(() => {
+    if (!enabled) return undefined;
+    let alive = true;
+    (async () => {
+      // 25/09: เดิมยิง dr_products เองทุกครั้งที่สลับไลน์ — กรองจาก cache ทะเบียนกลางแทน
+      const all = await loadProductsMaster().catch(() => null);
+      if (!all || !alive) return;
+      const fam = new Set(famKey.split('|').filter(Boolean));
+      const prods = all.filter(p => p.is_active !== false && fam.has(p.line_name));
+      if (!prods.length) return;
+      const { data: boms } = await supabaseDR.from('bom_items').select('mat_no, part_no, part_name')
+        .in('product_id', prods.map(p => p.id)).eq('is_active', true).limit(1000);
+      if (!alive) return;
+      const seen = new Set();
+      setRows((boms || []).filter(b => b.mat_no && !seen.has(b.mat_no) && seen.add(b.mat_no))
+        .map(b => ({ mat_no: b.mat_no, name: b.part_name, p_no: b.part_no,
+                     sub: [b.part_no, b.part_name].filter(Boolean).join(' · '), group: '🧩 พาร์ทลูก BOM ของไลน์นี้' })));
+    })();
+    return () => { alive = false; };
+  }, [famKey, enabled]);
+  return rows;
+}
+
 export default function LinePartCallPanel({ lineName, lines = [], role, fullName, alwaysShow = false }) {
   const [levels, setLevels] = useState([]);
   const [stock, setStock]   = useState([]);
@@ -78,9 +109,17 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
   const [busy, setBusy]     = useState(null);
   const [showSetup, setShowSetup] = useState(false);
   const [showNoLevel, setShowNoLevel] = useState(false);
+  /* ➕ 2026-10-21 — "ขอเบิกพาร์ทนี้เลย" (ad-hoc · user สั่ง) · ปุ่ม 📦 เบิก เดิมโผล่เฉพาะพาร์ทที่ครบ 3 ข้อ
+     (มีจุดเรียกเติม + ใส่ min · เคยมียอดหน้าไลน์ · ยอด ≤ min) ⇒ วัดจริง 20/10 ของที่ต้องเบิกจากสโตร์
+     183 คู่ ตั้ง min ไว้ 1 คู่ ⇒ แทบไม่มีพาร์ทไหนผ่าน ⇒ ไลน์ขอเบิกเองไม่ได้ ต้องเดินไปบอกสโตร์ */
+  const [adhocOpen, setAdhocOpen] = useState(false);
+  const [adhocMat,  setAdhocMat]  = useState('');
+  const [adhocName, setAdhocName] = useState('');
+  const [adhocKnown, setAdhocKnown] = useState(false);
+  const [adhocQty,  setAdhocQty]  = useState('');
   /* 🏭 2026-10-08 — พาร์ทที่ไลน์นี้ผลิตเอง อ้างยอดคลังปลายทาง (FG WAREHOUSE / STORE) ไม่ใช่ยอดหน้าไลน์
      (utils/partRefStock.js) · refCtx = ทะเบียนสินค้า + กฎรับเข้า · whStock = ยอดคลังของพาร์ทเหล่านั้น */
-  const [refCtx, setRefCtx]   = useState({ products: [], rules: [], lotMats: [], stds: new Map() });
+  const [refCtx, setRefCtx]   = useState({ products: [], rules: [], stds: new Map() });
   const [whStock, setWhStock] = useState([]);
   const [whErr, setWhErr]     = useState(null);
 
@@ -104,6 +143,14 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
      ในช่วง 2 ชม. — เลขเท่ากันเป๊ะ = มาจาก load() ตัวเดียว (บั๊กคลาสเดียวกับ StoreLotQueue)
      กฎเหล็กข้อ 9 ใน CLAUDE.md */
   const upKey    = upNames.join('|');
+  /* ไลน์ที่ใช้จัดลำดับตัวเลือกใน picker ของฟอร์มขอเบิกเอง (ของไลน์ครอบครัวนี้ขึ้นก่อน)
+     — array prop ต้อง useMemo ที่หน้าแม่ (กฎเหล็ก DB ข้อ 9) */
+  const pickLines = useMemo(() => [...new Set([lineName, ...upNames, ...kidNames])].filter(Boolean),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- ผูกกับ "เนื้อ" (string) ไม่ใช่ identity ของ array
+    [lineName, upKey, kidNames.join('|')]);
+  /* ตัวเลือกพาร์ทลูก BOM ของฟอร์มขอเบิกเอง — โหลดเมื่อกดเปิดฟอร์มเท่านั้น */
+  const adhocExtra = useBomChildOptions(pickLines, adhocOpen);
+
 
   const load = useCallback(async () => {
     if (!lineName) return;
@@ -148,7 +195,6 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
       if (stdRes.error) throw stdRes.error;
       // พาร์ทที่ยอดเข้าทางปิดล็อต = ลงที่ไลน์ผลิต ไม่ใช่ STORE — ตัดสินจากกฎ (ตัวเดียวกับ trigger · 19/10)
       const ctx = { lineName, products: products || [], rules: rulesRes.data || [],
-                    lotMats: lotMatsOf(rulesRes.data),
                     stds: new Map((stdRes.data || []).map(k => [k.mat_no, k])) };
       const refs = made.map(m => ({ mat: m, ...refStockOf(m, ctx) })).filter(r => r.kind === 'produce');
       let wh = [];
@@ -259,10 +305,17 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
   const lineSloc = useMemo(() => slocCodeOfLine(slocs, lines, lineName), [slocs, lines, lineName]);
   /* insert ใบ + แปะมุม SAP — 42703 = ยังไม่ apply 20260908_wip_replenish_storage_location (Main) → บันทึกแบบไม่ tag แล้วบอกบนจอ ห้ามให้การเบิกล้ม */
   const insertReq = async (row) => {
-    const full = { ...row, storage_location: lineSloc };
-    let res = await supabase.from('wip_replenish_requests').insert(full);
+    /* 🔴 20/10 — ใบที่ "ไลน์เรียก" ต้องบอกสโตร์ได้ว่าใครเรียก เหมือนใบที่สโตร์สร้างเอง
+       (`HeijunkaKanban` stamp `requested_by` อยู่แล้ว · ที่นี่เคย stamp แต่ `decided_by_name`
+       ⇒ วัดจริง: ใบ source='line' ทั้ง 4 ใบมี `requested_by` = null สโตร์โทรกลับไม่ได้ว่าใครขอ)
+       ตัวตนมาจาก `getActor()` ที่เดียว (utils/actorStamp.js) — ไม่รู้ตัวตน = ไม่ stamp ห้ามเดา */
+    const who = getActor();
+    const base = { ...row,
+                   requested_by: row.requested_by ?? (who.name || fullName || null),
+                   requested_by_uid: row.requested_by_uid ?? (who.uid || null) };
+    let res = await supabase.from('wip_replenish_requests').insert({ ...base, storage_location: lineSloc });
     if (res.error?.code === '42703') {
-      res = await supabase.from('wip_replenish_requests').insert(row);
+      res = await supabase.from('wip_replenish_requests').insert(base);
       if (!res.error) toast.info('บันทึกแล้ว แต่ยังไม่ได้ apply migration 20260908_wip_replenish_storage_location (Main) — ใบไม่ถูกแปะรหัสคลัง SAP');
     }
     return res;
@@ -299,6 +352,51 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
     load();
   };
 
+  /* ➕ ขอเบิกพาร์ทนี้เลย — ไม่ต้องมี min ไม่ต้องรอถึง min (user สั่ง 21/10)
+     · `source='line_adhoc'` ⇒ สโตร์เห็นว่า "คนขอเอง" ไม่ใช่ "ระบบเสนอ" (คนละน้ำหนักเวลาจัดคิว)
+       และวัดได้ว่าเดือนนี้ขอเองกี่ใบ = ลิสต์พาร์ทที่ควรไปตั้ง min (migration 20261021_…_main.sql)
+     · `min_at_req` = null โดยเจตนา (ไม่มีจุดเรียกเติม) · `on_hand_at_req` = ยอดที่เห็นตอนขอ ไม่รู้ = null ห้ามใส่ 0
+     · พาร์ทนอกทะเบียนต้องถามยืนยัน — `ProductSelect` คืน `known=false` (ห้ามรับค่าพิมพ์เองเงียบๆ) */
+  const placeAdhoc = async () => {
+    /* 🔴 ค่าที่เขียนลง DB ต้องเป็นรหัสตามทะเบียน — `norm()` ในไฟล์นี้ lowercase (ใช้เทียบเท่านั้น)
+       เขียนตัวพิมพ์เล็กลงไป = พาร์ทเดียวกันแตกเป็น 2 คีย์ทั้ง ledger/สรุปยอด */
+    const mat = String(adhocMat ?? '').trim();
+    const qty = Number(adhocQty);
+    if (!mat) { toast.error('เลือกพาร์ทที่จะขอเบิกก่อน'); return; }
+    if (!(qty > 0)) { toast.error('ระบุจำนวนที่ต้องการเบิก'); return; }
+    if (reqByMat.has(norm(mat))) { toast.error(`${mat} มีใบค้างอยู่แล้ว — ดูในรายการข้างล่าง (กด ↻ ถ้าไม่เห็น)`); return; }
+    if (!adhocKnown && !window.confirm(`"${mat}" ไม่อยู่ในทะเบียนสินค้า/BOM ของไลน์นี้\n\nยืนยันว่าจะขอเบิกพาร์ทนี้?`)) return;
+    setBusy(`adhoc:${mat}`);
+    const have = onHand.has(mat) ? onHand.get(mat) : null;
+    const { error } = await insertReq({
+      line_name: lineName, mat_no: mat, part_name: adhocName || null,
+      request_qty: qty, status: 'pending', source: 'line_adhoc',
+      requested_at: new Date().toISOString(), decided_by_name: fullName || null,
+      on_hand_at_req: have, min_at_req: null,
+    });
+    setBusy(null);
+    if (error) {
+      /* 23505 = ใบค้างของพาร์ทนี้มีอยู่แล้ว (unique index) · 23514 = CHECK source ยังไม่กว้างพอ
+         ⇒ ยังไม่ apply migration 20261021 — ต้องบอกตรงๆ ห้ามให้คนเดาว่าทำไมขอไม่ได้ */
+      toast.error(error.code === '23505' ? 'พาร์ทนี้มีใบขอเบิกค้างอยู่แล้ว — กด ↻ ดูรายการ'
+        : error.code === '23514' ? 'ยังไม่ได้ apply migration 20261021_wip_replenish_source_line_adhoc (Main) — ขอเบิกเองยังใช้ไม่ได้'
+        : `ขอเบิกไม่สำเร็จ: ${error.message}`);
+      load(); return;
+    }
+    notifyEvent({
+      event: 'wip_request_placed', type: 'info', ref_table: 'wip_replenish_requests',
+      line_name: lineName, actor: fullName,
+      lines: [
+        `🏭 ไลน์: ${lineName}`,
+        `🔩 ${mat} · ขอเบิก ${qty.toLocaleString()} ชิ้น`,
+        `➕ ไลน์ขอเบิกเอง (ไม่ได้มาจากจุดเรียกเติม)${have != null ? ` · ในไลน์เหลือ ${fmtQty(have)}` : ' · ยังไม่เคยมียอดพาร์ทนี้หน้าไลน์'}`,
+      ],
+    });
+    toast.success(`📦 แจ้งสโตร์แล้ว — ${mat} ${qty.toLocaleString()} ชิ้น`);
+    setAdhocMat(''); setAdhocName(''); setAdhocQty(''); setAdhocKnown(false);
+    load();
+  };
+
   const hold = async (s) => {
     const reason = window.prompt(
       `พักการเบิก "${s.mat_no}" ไว้ก่อน\n\nเหตุผล (เช่น เดี๋ยวเปลี่ยนรุ่น / ของยังพอถึงสิ้นกะ):`, '');
@@ -322,6 +420,8 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
     setBusy(r.id);
     const { data, error } = await supabase.from('wip_replenish_requests')
       .update({ status: 'pending', requested_at: new Date().toISOString(),
+                // ปลดจากที่พักไว้ = "เรียกจริง" ตรงนี้ ⇒ คนที่ปลดคือคนเรียก (เวลาเริ่มนับที่นี่เหมือนกัน)
+                requested_by: getActor().name || fullName || null, requested_by_uid: getActor().uid || null,
                 decided_by_name: fullName || null, hold_reason: r.hold_reason })
       .eq('id', r.id).eq('status', 'hold').select('id');
     setBusy(null);
@@ -401,11 +501,86 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
      = ไก่กับไข่ (ต้องมีของก่อนถึงจะตั้งจุดเฝ้าได้ ทั้งที่จุดเฝ้าคือสิ่งที่ต้องตั้ง "ก่อน" ของจะหมด)
      ⇒ หน้าจอผลิตยังซ่อนเหมือนเดิม (ไม่รกตอนไม่มีอะไรต้องทำ) · หน้า**ตั้งค่าไลน์**ส่ง `alwaysShow`
         เพื่อให้มีทางเข้าถึงการตั้งค่าเสมอ */
-  if (nothing && !alwaysShow) return null;
-
   const card = { background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 12, padding: '14px 16px', marginBottom: 16 };
   const btn = (bg, fg, bd) => ({ fontSize: 11.5, fontWeight: 800, padding: '5px 11px', borderRadius: 7,
     cursor: 'pointer', background: bg, color: fg, border: `1px solid ${bd || bg}`, whiteSpace: 'nowrap' });
+
+  /* ⚙️ โมดัลตั้งจุดเรียกเติม — ประกาศครั้งเดียว ใช้ทั้งกิ่ง "ไม่มีอะไรต้องทำ" และแผงเต็ม
+     (ห้ามก๊อป JSX 2 ชุด — ปุ่มที่เปิดโมดัลไม่ได้ = ปุ่มหลอก) */
+  const setupModal = !showSetup ? null : (
+    <LevelSetupModal lineName={lineName} lines={lines} upMats={[...new Set(stuckUp.map(s => s.mat_no))]} levels={levels} onHand={onHand} refHave={refHave}
+      fullName={fullName} onClose={() => { setShowSetup(false); load(); }} />
+  );
+
+  /* ➕ ฟอร์ม "ขอเบิกพาร์ทนี้เลย" — ต้องเข้าถึงได้**ทุกสถานะของแผง** รวมตอนไม่มีอะไรต้องทำ
+     (บทเรียน 15/10: จอที่ซ่อนตัวเองเมื่อไม่มีข้อมูล ห้ามเป็นที่เดียวที่เข้าถึงงานของตัวเอง) */
+  const adhocBlock = !canDecide ? null : (
+    <div style={{ marginBottom: 12 }}>
+      {!adhocOpen ? (
+        <button onClick={() => setAdhocOpen(true)} style={btn('rgba(34,197,94,0.1)', '#22c55e', 'rgba(34,197,94,0.35)')}>
+          ➕ ขอเบิกพาร์ทนี้เลย
+        </button>
+      ) : (
+        <div style={{ background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 8, padding: '10px 12px' }}>
+          <div style={{ fontSize: 11.5, fontWeight: 800, color: '#22c55e', marginBottom: 6 }}>
+            ➕ ขอเบิกพาร์ทนี้เลย <span style={{ fontWeight: 400, color: 'var(--muted)' }}>· ไม่ต้องมีจุดเรียกเติม ไม่ต้องรอยอดถึง min</span>
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            {/* ช่องรับรหัสพาร์ทต้องเป็น picker กลาง ห้าม input เปล่า (UI-CONVENTIONS §5.1.2) */}
+            <ProductSelect value={adhocMat} lines={pickLines} extraOptions={adhocExtra}
+              placeholder="เลือกพาร์ทที่ต้องการ" style={{ width: 260 }} inputStyle={{ padding: '5px 26px 5px 10px', fontSize: 12 }}
+              onChange={({ mat_no, opt, known }) => {
+                setAdhocMat(mat_no); setAdhocKnown(!!opt && known !== false);
+                setAdhocName(opt?.part_name || opt?.name || '');
+              }} />
+            {/* ⚠️ input ใน flex row ต้องกำหนด width เอง — index.css ตั้ง input{width:100%} จะดันปุ่มแตกแถว */}
+            <input value={adhocQty} onChange={e => setAdhocQty(e.target.value)} inputMode="numeric"
+              placeholder="จำนวน (ชิ้น)" style={{ width: 130, padding: '5px 10px', borderRadius: 7, fontSize: 12 }} />
+            <button disabled={!!busy} onClick={placeAdhoc} style={btn('#22c55e', '#04140a')}>📦 แจ้งสโตร์</button>
+            <button onClick={() => { setAdhocOpen(false); setAdhocMat(''); setAdhocName(''); setAdhocQty(''); setAdhocKnown(false); }}
+              style={btn('transparent', 'var(--muted)', 'var(--border2)')}>ยกเลิก</button>
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6, lineHeight: 1.6 }}>
+            ใบนี้จะขึ้นที่คิวสโตร์ทันทีโดยมีป้าย <b>“ไลน์ขอเบิกเอง”</b> (แยกจากใบที่ระบบเสนอ)
+            {adhocMat && onHand.has(String(adhocMat).trim())
+              ? <> · ตอนนี้หน้าไลน์มี <b>{fmtQty(onHand.get(String(adhocMat).trim()))}</b> ชิ้น</>
+              : adhocMat ? <> · พาร์ทนี้<b>ยังไม่เคยมียอดหน้าไลน์นี้</b> (ระบบจึงไม่เคยเตือนให้เบิก)</> : null}
+            {canSetLv && <> · ถ้าต้องเบิกพาร์ทนี้บ่อย ให้ไป <button onClick={() => setShowSetup(true)} style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: 11, fontWeight: 700, padding: 0 }}>ตั้งจุดเรียกเติม</button> แล้วระบบจะเตือนเอง</>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  /* ไม่มีอะไรต้องทำ + ไม่ใช่หน้าตั้งค่า = ยังไม่รกจอผลิตเหมือนเดิม
+     **แต่ต้องเหลือทางขอเบิกไว้** (เดิม return null ⇒ อยากเบิกตอนของยังไม่ถึง min = ไม่มีปุ่มให้กดเลย)
+     🔴 26/10 (feedback สโตร์: *"ปุ่มเรียกชิ้นส่วนจากสโตร์ ขึ้นให้กดแค่บางไลน์ และขึ้นเฉพาะบาง User"*)
+        เดิมกิ่งนี้ตัดด้วย `canDecide` อย่างเดียว ⇒ คนที่ตั้งจุดเรียกเติมได้ (`line_levels:manage` —
+        รวม **สิทธิ์ระดับส่วน**) แต่ไม่มีสิทธิ์ตัดสินใจเบิก **ไม่เห็นแม้แต่ปุ่ม ⚙️ ตั้งจุดเรียกเติม**
+        บนไลน์ที่ยังไม่ตั้ง min = ไก่กับไข่ตัวเดิมที่ 15/10 ตั้งใจปิดไปแล้ว แต่ยังเหลือรูนี้
+     ⇒ เห็นกิ่งย่อนี้ถ้า "ขอเบิกได้" **หรือ** "ตั้งจุดเรียกเติมได้" · ไม่ได้ทั้งคู่ = ซ่อนเหมือนเดิม
+        (ไม่มีอะไรให้กด การ์ดเปล่าบนจอผลิตทุกไลน์ = รกเปล่าๆ) */
+  if (nothing && !alwaysShow) {
+    if (!canDecide && !canSetLv) return null;
+    return (
+      <div style={card}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: canDecide ? 10 : 0 }}>
+          <div style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--text)' }}>📦 เรียกชิ้นส่วนจากสโตร์</div>
+          <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+            {lineName} · {noLevel.length || split.produceNoStd?.length ? 'ยังไม่ได้ตั้งจุดเรียกเติม' : 'ไม่มีพาร์ทไหนถึงจุดเรียกเติม'}
+          </span>
+          <button onClick={load} title="รีเฟรช" style={{ marginLeft: 'auto', ...btn('var(--bg3)', 'var(--text2)', 'var(--border2)') }}>↻</button>
+          {canSetLv && (
+            <button onClick={() => setShowSetup(true)} style={btn('var(--bg3)', 'var(--text2)', 'var(--border2)')}>
+              ⚙️ ตั้งจุดเรียกเติม
+            </button>
+          )}
+        </div>
+        {adhocBlock}
+        {setupModal}
+      </div>
+    );
+  }
 
   return (
     <div style={card}>
@@ -420,6 +595,9 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
           </button>
         )}
       </div>
+
+      {/* ➕ ขอเบิกเอง — อยู่บนสุดเสมอ: คนหน้าไลน์ต้องขอของได้ทุกเมื่อ ไม่ต้องรอยอดถึง min */}
+      {adhocBlock}
 
       {/* โหลดไม่สำเร็จ = ต้องบอก ห้ามแสดงเป็น "ไม่มีอะไรต้องเบิก" */}
       {err?.msg && (
@@ -551,7 +729,7 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
                 background: 'var(--bg3)', border: '1px solid var(--border2)', borderLeft: `3px solid ${meta.color}`, borderRadius: 8 }}>
                 <MatLabel mat={r.mat_no} name={r.part_name} size={12.5} />
                 <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
-                  {r.source === 'store_forecast' ? `🏬 สโตร์ส่งตามแผนผลิต ${fmtQty(r.request_qty)} ชิ้น · เปิด ${hhmm(r.requested_at)}` : `ขอ ${fmtQty(r.request_qty)} ชิ้น · แจ้ง ${hhmm(r.requested_at)}`}
+                  {r.source === 'store_forecast' ? `🏬 สโตร์ส่งตามแผนผลิต ${fmtQty(r.request_qty)} ชิ้น · เปิด ${hhmm(r.requested_at)}` : `ขอ ${fmtQty(r.request_qty)} ชิ้น · แจ้ง ${hhmm(r.requested_at)}${r.source === 'line_adhoc' ? ' · ➕ ขอเอง' : ''}`}
                 </span>
                 <span style={{ fontSize: 11.5, fontWeight: 800, color: meta.color }}>{meta.label}</span>
                 {wait != null && (
@@ -607,10 +785,7 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
         </div>
       )}
 
-      {showSetup && (
-        <LevelSetupModal lineName={lineName} lines={lines} upMats={[...new Set(stuckUp.map(s => s.mat_no))]} levels={levels} onHand={onHand} refHave={refHave}
-          fullName={fullName} onClose={() => { setShowSetup(false); load(); }} />
-      )}
+      {setupModal}
     </div>
   );
 }
@@ -669,26 +844,8 @@ function LevelSetupModal({ lineName, lines = [], upMats = [], levels, onHand, re
   /* 2026-09-07 "เพิ่มพาร์ทเอง" ต้องเลือกจากทะเบียน (Product Master ∪ พาร์ทลูก BOM ของครอบครัวไลน์) — ไม่ allowFree
      mat_no ที่พิมพ์ผิดจะกลายเป็นจุดเฝ้าที่ไม่ match สต็อกแถวไหนเลย → min alert ไม่เคยดังโดยไม่มีใครรู้ */
   const famNames = useMemo(() => [...new Set([lineName, ...getAncestorNames(lines, lineName), ...getChildLineNames(lines, lineName)])].filter(Boolean), [lines, lineName]);
-  const famKey   = famNames.join('|');   // เหตุผลเดียวกับ upKey ด้านบน — array ใน deps = ยิงซ้ำทุก render
-  const [bomExtra, setBomExtra] = useState([]);
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      // 25/09: เดิมยิง dr_products เองทุกครั้งที่สลับไลน์ — กรองจาก cache ทะเบียนกลางแทน
-      const all = await loadProductsMaster().catch(() => null);
-      if (!all) return;                                   // โหลดไม่สำเร็จ = ไม่เติมพาร์ทลูก (เหมือนพฤติกรรมเดิมตอน error)
-      const fam = new Set(famNames);
-      const prods = all.filter(p => p.is_active !== false && fam.has(p.line_name));
-      if (!prods.length) return;
-      const { data: boms } = await supabaseDR.from('bom_items').select('mat_no, part_no, part_name').in('product_id', prods.map(p => p.id)).eq('is_active', true).limit(1000);
-      if (!alive) return;
-      const seen = new Set();
-      setBomExtra((boms || []).filter(b => b.mat_no && !seen.has(b.mat_no) && seen.add(b.mat_no))
-        .map(b => ({ mat_no: b.mat_no, name: b.part_name, p_no: b.part_no, sub: [b.part_no, b.part_name].filter(Boolean).join(' · '), group: '🧩 พาร์ทลูก BOM ของไลน์นี้' })));
-    })();
-    return () => { alive = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- famKey แทน famNames (array)
-  }, [famKey]);
+  /* 21/10 — ย้ายตัวโหลดไปเป็นฮุคร่วม `useBomChildOptions` (ฟอร์ม "ขอเบิกพาร์ทนี้เลย" ใช้ชุดเดียวกัน) */
+  const bomExtra = useBomChildOptions(famNames);
 
   const addMat = () => {
     const m = newMat.trim();

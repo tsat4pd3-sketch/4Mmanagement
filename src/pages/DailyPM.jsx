@@ -8,13 +8,11 @@ import { DAILY_PM_STATUS_META, DAILY_PM_WINDOW_MIN } from '../lib/pmDailyStatus'
 import { fmtDur } from '../utils/duration'
 import { fmtTime } from '../utils/dateFormat'
 import { can } from '../utils/permissions'
-import { inSectionScope } from '../utils/sectionScope'
-import { getLineFamilyNames } from '../utils/lineHierarchy'
 import { loadDailyAm, amShiftInfo, dailyAmLineStatus } from '../lib/dailyAmBoard'
 import { invalidateTable } from '../utils/masterInvalidate'
 import { loadPmTeams, isAmTeam } from '../utils/pmTeams'
 import { checkWriteRows } from '../utils/dbWrite'
-import LineSelect from '../components/LineSelect' // dropdown ไลน์ = <LineSelect> เท่านั้น (single-source audit 2026-09-07)
+import LineSelect, { scopeLines as pickerLines } from '../components/LineSelect' // dropdown ไลน์ = <LineSelect> เท่านั้น (single-source audit 2026-09-07)
 import useTabParam from '../utils/useTabParam'
 import { visibleInterval } from '../utils/usePolling'
 import { RATE, LIVE } from '../utils/refreshRates'
@@ -22,6 +20,12 @@ import { coalesce, makeIdleGate } from '../utils/liveRefresh'
 import { liveChannel } from '../utils/liveChannel';
 import Page from '../components/Page'
 import PageHeader from '../components/PageHeader'
+import FilterBar from '../components/FilterBar'
+import Segmented from '../components/Segmented'
+import SearchInput from '../components/SearchInput'
+import LineScopeSelect from '../components/LineScopeSelect'
+import { lineKnownSet, groupEquipRowsByLine } from '../utils/pmEquipList'
+import { filterPlanRows } from '../utils/pmPlanFilter'
 
 /* ⏱️ กะ/เวลาเริ่มกะ + data-flow ทั้งชุด ย้ายไป `src/lib/dailyAmBoard.js` (2026-10-08) — ผังรวมโรงงานใช้ตัวเดียวกัน
    ห้ามเขียน getShiftInfo/คิวรี inspections ซ้ำในหน้า (สองจอจะตอบคนละสี) */
@@ -35,14 +39,15 @@ export default function DailyPM() {
   const [jigs, setJigs] = useState([])
   const [prodLines, setProdLines] = useState([]) // รายชื่อไลน์ผลิต — ใช้กำหนดไลน์ให้อุปกรณ์ที่ยังไม่ระบุ
   // scope มาตรฐาน: leader→family · role อื่น→sections · admin/qa→ทั้งหมด (กัน dropdown เห็นไลน์ข้าม scope)
-  const scopedProdLines = useMemo(() => {
-    if (role === 'leader' && userLineId) {
-      const fam = getLineFamilyNames(prodLines, Number(userLineId) || userLineId)
-      return prodLines.filter(l => fam.includes(l.name))
-    }
-    if (scopeSecs?.length) return prodLines.filter(l => inSectionScope(scopeSecs, l.section))
-    return prodLines
-  }, [prodLines, role, userLineId, scopeSecs])
+  /* 🔴 ช่องเลือกไลน์ต้อง "ไม่ตาย" — ส่วนงานที่ไม่มีไลน์ผลิตสังกัดเลย (QA · Planning&Store · ฝั่งช่าง)
+     กรองด้วย section แล้วเหลือ 0 ⇒ dropdown ว่างเปล่า = แจ้งซ่อม/เลือกไลน์ไม่ได้ทั้งหน้า (เคสจริง 26/10)
+     ⇒ ต้องผ่าน `scopeLines()` ของกลางใน `components/LineSelect.jsx` ที่มีตาข่าย
+       **"กรองแล้วไม่เหลืออะไร = ไม่กรอง"** (กติกาเดิมตั้งแต่ 2026-08-24)
+     ⚠️ **คนละแกนกับ `scopeLines` (Set) ข้างบน** ซึ่งเป็นตัวกรองรายการ + ฐานของด่านสิทธิ์ขั้นเซ็น
+        (`reporterScope`) — ตัวนั้นต้อง fail-closed เหมือนเดิม **ห้ามยุบรวมกัน** */
+  const scopedProdLines = useMemo(
+    () => pickerLines(prodLines, { role, lineId: userLineId, sections: scopeSecs }),
+    [prodLines, role, userLineId, scopeSecs])
   const [targets, setTargets] = useState([])
   const [resultByJig, setResultByJig] = useState({})   // jig_id -> { status }
   const [firstOrderByLine, setFirstOrderByLine] = useState({})  // line_name -> ISO (เวลาเปิดใบผลิตใบแรก)
@@ -120,6 +125,35 @@ export default function DailyPM() {
     targets.forEach(t => s.add(`${t.line_name}::${t.jig_id}`))
     return s
   }, [targets])
+
+  /* 🗂️ แท็บลงทะเบียน (20/10 audit หน้า PM ข้อ 5) — เดิมโชว์ทุกเครื่องทั้งโรงงานเรียงยาว ไม่มีตัวกรอง
+     ① ขอบเขตของผู้ใช้ (leader = ครอบครัวไลน์ · role อื่น = sections · ว่าง = ทั้งโรงงาน) — นอกขอบเขต **ซ่อนแต่บอกจำนวน**
+     ② ตัวกรองไลน์ / ลงทะเบียนแล้วหรือยัง / ค้นหา — กติกา `filterPlanRows` (utils/pmPlanFilter.js)
+     🔴 กลุ่ม "ยังไม่ระบุไลน์" ไม่นับว่านอกขอบเขต (ตะกร้ารับท้ายลิสต์ — ต้องมีคนเห็นแล้วไปกำหนดไลน์) */
+  const restricted = !!((role === 'leader' && userLineId) || scopeSecs?.length)
+  const [regQ, setRegQ] = useState('')
+  const [regScope, setRegScope] = useState({ section: '', line: '', names: null })
+  const [regState, setRegState] = useState('')   // '' | on | off
+  const [guideOpen, setGuideOpen] = useState(() => { try { return localStorage.getItem('dailypm_guide_open') === '1' } catch { return false } })
+  const toggleGuide = () => setGuideOpen(v => { try { localStorage.setItem('dailypm_guide_open', v ? '0' : '1') } catch { /* private mode */ } return !v })
+  const isReg = useCallback((j) => registeredKey.has(`${j.line_name || '—'}::${j.id}`), [registeredKey])
+  const regView = useMemo(() => {
+    const norm = (v) => String(v ?? '').trim().toLowerCase()
+    const mine = new Set(scopedProdLines.map(l => norm(l.name)))
+    // หาไลน์ในขอบเขตไม่เจอเลย (ทะเบียนไลน์/ผังยังไม่ครบ) = ตัดสินขอบเขตไม่ได้ ⇒ ไม่ซ่อน (พฤติกรรมเดิม) ดีกว่าจอว่างทั้งแท็บ
+    const inScope = (j) => !restricted || !mine.size || !j.line_name || mine.has(norm(j.line_name))
+    const myJigs = jigs.filter(inScope)
+    const keep = regState === 'on' ? isReg : regState === 'off' ? (j => !isReg(j)) : null
+    const { rows, droppedNoLine } = filterPlanRows(myJigs, {
+      q: regQ, scopeNames: regScope.names, known: lineKnownSet(prodLines), keep,
+      getLine: j => j.line_name, getText: j => [j.name, j.machine_no, j.jig_no, j.line_name],
+    })
+    const groups = groupEquipRowsByLine(rows.map(j => ({ jig: j })), prodLines)
+    return { groups, shownN: rows.length, myN: myJigs.length, outScopeN: jigs.length - myJigs.length,
+             regN: myJigs.filter(isReg).length, droppedNoLine }
+  }, [jigs, scopedProdLines, restricted, regQ, regScope, regState, isReg, prodLines])
+  const regFiltered = !!(regQ.trim() || regScope.names?.length || regState)
+  const clearRegFilters = () => { setRegQ(''); setRegScope({ section: '', line: '', names: null }); setRegState('') }
 
   // กำหนด/ย้ายไลน์ให้อุปกรณ์ — แก้จากหน้านี้ได้เลย ไม่ต้องวิ่งไปหน้าตั้งค่า PM
   // ใช้ทั้งเคสยังไม่ระบุไลน์ และเคสเลือกไลน์ผิดแล้วต้องย้าย
@@ -295,9 +329,13 @@ export default function DailyPM() {
       {tab === 'registry' && (
         <div>
           {/* คู่มือ 4 ขั้น — ระบบนี้ต่อกัน 3 หน้า มือใหม่หลงง่าย ต้องเห็นภาพรวมก่อน */}
-          <div style={{ marginBottom: 14, padding: '12px 16px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12 }}>
-            <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)', marginBottom: 8 }}>📖 วิธีใช้งาน Autonomous Maintenance (AM) — 4 ขั้น</div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 8 }}>
+          {/* พับไว้เป็นค่าเริ่มต้น (20/10) — คนใช้ประจำไม่ต้องเลื่อนผ่านทุกครั้ง · จำต่อเครื่อง */}
+          <div data-page-note="1" style={{ marginBottom: 14, padding: guideOpen ? '12px 16px' : '8px 16px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12 }}>
+            <button type="button" onClick={toggleGuide} aria-expanded={guideOpen}
+              style={{ all: 'unset', cursor: 'pointer', fontSize: 12, fontWeight: 800, color: 'var(--text)', display: 'block', width: '100%', marginBottom: guideOpen ? 8 : 0 }}>
+              {guideOpen ? '▾' : '▸'} 📖 วิธีใช้งาน Autonomous Maintenance (AM) — 4 ขั้น
+            </button>
+            {guideOpen && <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 8 }}>
               {[
                 { n: '1', title: 'เพิ่มเครื่อง + หัวข้อตรวจ', desc: <>ที่หน้า <Link to="/pm?tab=setup&dept=production" style={{ color: 'var(--accent)', fontWeight: 700 }}>ตั้งค่า PM → แท็บ ฝ่ายผลิต</Link> (กด "+ เพิ่มอุปกรณ์" แล้วใส่ชื่อ/ไลน์/หัวข้อที่ต้องตรวจ)</> },
                 { n: '2', title: 'ลงทะเบียนที่แท็บนี้', desc: 'ติ๊กเครื่องที่ "ต้องตรวจทุกต้นกะ" ของแต่ละไลน์ — ตัวเลข N ของไลน์มาจากตรงนี้' },
@@ -312,22 +350,52 @@ export default function DailyPM() {
                   </div>
                 </div>
               ))}
-            </div>
+            </div>}
           </div>
+          <FilterBar style={{ marginBottom: 12 }}>
+            <LineScopeSelect lines={scopedProdLines} section={regScope.section} line={regScope.line}
+              onChange={(section, line, info) => setRegScope({ section, line, names: info?.lines?.length ? info.lines : (section || line ? [line || section] : null) })} />
+            <Segmented label="ลงทะเบียน" value={regState} onChange={setRegState} options={[
+              { value: '', label: `ทั้งหมด (${regView.myN})` },
+              { value: 'on', label: `✓ ลงทะเบียนแล้ว (${regView.regN})` },
+              { value: 'off', label: `ยังไม่ลงทะเบียน (${regView.myN - regView.regN})` },
+            ]} />
+            <SearchInput value={regQ} onChange={setRegQ} fields="ชื่อเครื่อง / เลขเครื่อง / No. / ไลน์" />
+            <span className="spacer" />
+            <span className="filter-count">แสดง {regView.shownN} จาก {regView.myN} เครื่อง</span>
+            {regFiltered && <button type="button" onClick={clearRegFilters} style={{ background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 8, padding: '4px 10px', fontSize: 12, cursor: 'pointer' }}>✕ ล้างตัวกรอง</button>}
+          </FilterBar>
+          {/* 🔴 ซ่อนแล้วต้องบอก — "ไม่มีเครื่อง" ทั้งที่มีแต่อยู่นอกขอบเขต = จอโกหก */}
+          {(regView.outScopeN > 0 || regView.droppedNoLine > 0) && (
+            <div style={{ marginBottom: 12, fontSize: 12, color: 'var(--muted)' }}>
+              {regView.outScopeN > 0 && <>ซ่อน {regView.outScopeN} เครื่องของไลน์นอกขอบเขตส่วนงานของคุณ</>}
+              {regView.outScopeN > 0 && regView.droppedNoLine > 0 && ' · '}
+              {regView.droppedNoLine > 0 && <span style={{ color: '#f59e0b' }}>อีก {regView.droppedNoLine} เครื่องไลน์ไม่ตรงทะเบียน — กรองตามไลน์ไม่ได้ (ล้างตัวกรองไลน์เพื่อดู)</span>}
+            </div>
+          )}
           {!canManage && <div style={{ marginBottom: 12, fontSize: 12, color: 'var(--accent2)' }}>* ดูได้อย่างเดียว — เฉพาะ admin/manager/supervisor แก้ไขได้</div>}
-          {Object.keys(jigsByLine).length === 0 ? (
+          {jigs.length > 0 && regView.groups.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: 40, color: 'var(--muted)' }}>
+              ไม่มีเครื่องที่ตรงกับตัวกรอง{regView.outScopeN > 0 ? ` (นอกขอบเขตของคุณ ${regView.outScopeN} เครื่อง)` : ''}
+              {regFiltered && <div><button type="button" onClick={clearRegFilters} style={{ marginTop: 10, background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 8, padding: '5px 12px', fontSize: 12, cursor: 'pointer' }}>✕ ล้างตัวกรอง</button></div>}
+            </div>
+          ) : Object.keys(jigsByLine).length === 0 ? (
             <div style={{ textAlign: 'center', padding: 40, color: 'var(--muted)' }}>
               ยังไม่มีอุปกรณ์ในระบบ — เพิ่มได้ที่หน้า <Link to="/pm?tab=setup&dept=production" style={{ color: 'var(--accent)', fontWeight: 700 }}>ตั้งค่า PM → แท็บ ฝ่ายผลิต</Link>
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxHeight: 'calc(100vh - 300px)', overflowY: 'auto', paddingRight: 4 }}>
-              {Object.entries(jigsByLine).map(([line, lineJigs]) => {
-                const regCount = lineJigs.filter(j => registeredKey.has(`${line}::${j.id}`)).length
+              {regView.groups.map(g => {
+                /* เรียงไลน์ตามทะเบียน (ส่วนงาน→แม่→ลูก) · ไม่ระบุไลน์ท้ายสุด — `groupEquipRowsByLine`
+                   🔴 คีย์ลงทะเบียนใช้ line_name ดิบของเครื่อง (ตรงกับ pm_daily_line_targets) ไม่ใช่ชื่อที่ยุบตัวพิมพ์แล้ว */
+                const lineJigs = g.rows.map(r => r.jig)
+                const line = lineJigs[0]?.line_name || '—'
+                const regCount = lineJigs.filter(isReg).length
                 // อุปกรณ์ที่ยังไม่ระบุไลน์ จับคู่กับ order ของไลน์ไม่ได้ → สถานะ/alarm ไม่ทำงาน
                 // ห้ามลงทะเบียนจนกว่าจะไปกำหนดไลน์ให้อุปกรณ์ก่อน (กันข้อมูลตายเงียบ)
-                const noLine = line === '—'
+                const noLine = !g.name
                 return (
-                  <div key={line} style={{ background: 'var(--card)', border: `1px solid ${noLine ? 'rgba(245,158,11,0.5)' : 'var(--border)'}`, borderRadius: 12, padding: 16 }}>
+                  <div key={g.key} style={{ background: 'var(--card)', border: `1px solid ${noLine ? 'rgba(245,158,11,0.5)' : 'var(--border)'}`, borderRadius: 12, padding: 16 }}>
                     <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: noLine ? 4 : 10 }}>
                       {noLine ? '⚠ ยังไม่ระบุไลน์' : line} <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)' }}>· ลงทะเบียน {regCount}/{lineJigs.length}</span>
                     </div>
@@ -339,7 +407,8 @@ export default function DailyPM() {
                     )}
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))', gap: 8 }}>
                       {lineJigs.map(j => {
-                        const on = registeredKey.has(`${line}::${j.id}`)
+                        const jLine = j.line_name || '—'
+                        const on = registeredKey.has(`${jLine}::${j.id}`)
                         // กลุ่มไม่ระบุไลน์: เพิ่มใหม่ไม่ได้ แต่ต้องถอนรายการเดิมที่เผลอลงทะเบียนไว้ได้
                         const canToggle = canManage && (!noLine || on)
                         return (
@@ -348,7 +417,7 @@ export default function DailyPM() {
                             border: `1px solid ${on ? 'var(--accent)' : 'var(--border)'}`, background: on ? 'var(--accent-dim)' : 'var(--bg3)',
                           }}>
                             {/* width/height กันเหนียวซ้ำกับ rule กลาง input[type=checkbox]{width:auto} — global width:100% เคยยืด checkbox จนบีบชื่อหาย */}
-                            <input type="checkbox" checked={on} disabled={!canToggle} onChange={() => toggleTarget(line, j)} style={{ marginTop: 2, flexShrink: 0, width: 15, height: 15 }} />
+                            <input type="checkbox" checked={on} disabled={!canToggle} onChange={() => toggleTarget(jLine, j)} style={{ marginTop: 2, flexShrink: 0, width: 15, height: 15 }} />
                             <div style={{ minWidth: 0, flex: 1 }}>
                               {/* ชื่อเต็ม ตัดได้ไม่เกิน 2 บรรทัด — ห้ามตัดจนเหลือตัวเดียวแบบ nowrap เดิม */}
                               <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', lineHeight: 1.35, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', wordBreak: 'break-word' }}>{j.name}</div>
@@ -364,7 +433,7 @@ export default function DailyPM() {
                               {/* เลือกไลน์ผิด → ย้ายจากตรงนี้ได้เลย รายการลงทะเบียนย้ายตามอัตโนมัติ · ค่าปัจจุบันที่ไม่อยู่ในทะเบียน/นอก scope LineSelect เติมให้เอง (guarantee #4) */}
                               {!noLine && canManage && (
                                 <div onClick={e => e.preventDefault()} title="ย้ายเครื่องนี้ไปไลน์อื่น — เลือกไลน์ผิดแก้ตรงนี้ได้เลย">
-                                  <LineSelect lines={scopedProdLines} value={line} onChange={v => v && v !== line && assignJigLine(j, v)} placeholder={null}
+                                  <LineSelect lines={scopedProdLines} value={jLine} onChange={v => v && v !== jLine && assignJigLine(j, v)} placeholder={null}
                                     style={{ width: '100%', marginTop: 6, padding: '3px 8px', fontSize: 11, borderRadius: 6, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--muted)' }} />
                                 </div>
                               )}

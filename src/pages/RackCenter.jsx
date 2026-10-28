@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useContext, useRef } from 'r
 import { lineNameCompare } from '../utils/lineHierarchy';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { useSearchParams } from 'react-router-dom';
-import { urlParam } from '../utils/urlInit';
+import { urlParam, urlBool } from '../utils/urlInit';
 import useTabParam, { useMergeParams } from '../utils/useTabParam';
 import Page from '../components/Page';
 import PageHeader from '../components/PageHeader';
@@ -83,7 +83,7 @@ export default function RackCenter() {
   const [form,           setForm]           = useState(EMPTY_FORM);
   const [saving,         setSaving]         = useState(false);
   const [busyId,         setBusyId]         = useState(null);
-  const [showDone,       setShowDone]       = useState(false);
+  const [showDone,       setShowDone]       = useState(() => urlBool('done', false));   // ?done= (จอวนหน้า)
   const [pkgReqs,        setPkgReqs]        = useState([]);   // packaging_withdrawal_requests
   const [pkgBusy,        setPkgBusy]        = useState(null);
   const [view,           setView]           = useTabParam(VIEW_TABS.map(v => v.key), 'board');   // 'board' | 'time' | 'sla' (?tab=)
@@ -121,6 +121,8 @@ export default function RackCenter() {
   }, []);
 
   const issuePkg = async (p) => {
+    /* ด่านชั้น 2 — ปุ่มถูกซ่อนอยู่แล้ว แต่การซ่อนปุ่มไม่ใช่ด่าน (สิทธิ์เปลี่ยนระหว่างเปิดจอ / ยิงตรง) */
+    if (!canOperate) { toast.error('บัญชีนี้ไม่มีสิทธิ์จ่าย packaging (rack_center:operate)'); return; }
     setPkgBusy(p.id);
     try {
       /* CAS + นับแถว (QC 05/10 · กฎเขียน DB ข้อ 2) — 2 เครื่องกดพร้อมกัน / ใบถูกเปลี่ยนไปแล้ว = 0 แถว ห้ามขึ้นเขียว */
@@ -264,6 +266,7 @@ export default function RackCenter() {
   };
 
   const advance = async (r) => {
+    if (!canOperate) { toast.error('บัญชีนี้ไม่มีสิทธิ์เลื่อนขั้นใบเรียกภาชนะ (rack_center:operate)'); return; }
     const next = { requested: 'preparing', preparing: 'delivered', delivered: 'received' }[r.status];
     if (!next) return;
     setBusyId(r.id);
@@ -280,6 +283,7 @@ export default function RackCenter() {
   };
 
   const cancel = async (r) => {
+    if (!canOperate) { toast.error('บัญชีนี้ไม่มีสิทธิ์ยกเลิกใบเรียกภาชนะ (rack_center:operate)'); return; }
     if (!window.confirm('ยืนยันยกเลิกการเรียกภาชนะนี้?')) return;
     setBusyId(r.id);
     const { data: upd, error } = await supabaseDR.from('rack_requests').update({
@@ -428,6 +432,7 @@ export default function RackCenter() {
           ))}
           {canOperate && slaDraft && (
             <button onClick={async () => {
+              if (!canOperate) { toast.error('บัญชีนี้ไม่มีสิทธิ์ตั้ง SLA (rack_center:operate)'); return; }
               const payload = { prepare_within_min: Math.max(1, parseInt(slaDraft.prepare_within_min) || 15), deliver_within_min: Math.max(1, parseInt(slaDraft.deliver_within_min) || 45), updated_at: new Date().toISOString() };
               // pkey ของตารางคือ kind (ไม่มีคอลัมน์ id) — upsert ตรงๆ
               // (เดิม select('id') → 42703 ถูกกลืนเงียบ → นึกว่าไม่มีแถว → insert ซ้ำชน pkey)

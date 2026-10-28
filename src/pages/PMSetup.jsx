@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useContext, useMemo, Fragment } from 'react'
+import { useState, useEffect, useRef, useContext, useMemo, Fragment, useCallback } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useMergeParams } from '../utils/useTabParam'
 import { AnimatePresence } from 'framer-motion'
@@ -35,6 +35,8 @@ import { fetchAllPages } from '../utils/fetchByIds';   // 🔴 เพดาน 1
 import SearchInput from '../components/SearchInput';   // ช่องกรองลิสต์ = ของกลาง (UI-STANDARD §4)
 // 🧩 ชิ้นส่วนกลางของ "ตั้งค่าจุดตรวจ" — ใช้ร่วมกับ QA /qa-setup (ระบบเดียว เรียนครั้งเดียว · 15/10)
 import PointCardShell from '../components/inspect/PointCardShell'
+import CalcFormulaField from '../components/inspect/CalcFormulaField'
+import { calcOf, calcProblems, PM_CALC_REF_TYPES } from '../utils/inspectCalc'
 import PinWorkspace from '../components/inspect/PinWorkspace'
 import InspectEditorModal from '../components/inspect/InspectEditorModal'
 import useWideModal from '../components/inspect/useWideModal'
@@ -80,7 +82,7 @@ function equipTypeOfMachine(m) {
 
 function newCheckpoint(extra = {}) {
   return {
-    _key: crypto.randomUUID(), name: '', type: 'variable',
+    _key: crypto.randomUUID(), name: '', type: 'variable', calc: null,   // _key จุดใหม่ = id ตอน insert (จุดคำนวณอ้างได้ก่อนบันทึก)
     axis: null, category: null, checking_method: null, unit: '', nominal: '', lsl: '', usl: '', lcl: '', ucl: '',
     // โหมดเกณฑ์ของจุดชนิด "ค่าวัด" — client-only (ขึ้นต้น _ = ไม่ลง DB) เพราะ DB มีแค่ lsl/usl
     // ⚠️ ต้องเป็น state จริง ห้าม derive จาก lsl/usl (ดู mMode ด้านล่าง — เคยทำแล้วกดปุ่มไม่ติด)
@@ -160,7 +162,7 @@ const S = {
 }
 
 // ─── CheckpointCard ───────────────────────────────────────────────────────────
-function CheckpointCard({ cp, label, onChange, onDelete, onDuplicate, onCpImage, isPinning, onPinToggle, onUnpin, hasImage, categories, allCategories, methods }) {
+function CheckpointCard({ cp, label, onChange, onDelete, onDuplicate, onCpImage, isPinning, onPinToggle, onUnpin, hasImage, categories, allCategories, methods, calcOptions, calcIssues }) {
   const isVar = cp.type === 'variable'
   // ถ้าหมวดที่เลือกไว้เดิมไม่อยู่ในลิสต์ที่กรองแล้ว (เช่น jig เก่า) ยังต้องโชว์ไม่ให้หาย
   const catOpts = cp.category && !(categories ?? []).some(c => c.code === cp.category)
@@ -207,7 +209,7 @@ function CheckpointCard({ cp, label, onChange, onDelete, onDuplicate, onCpImage,
           const colors = { variable: '#4d9fff', measure: '#22c55e', attribute: '#9b8de8', note: '#f59a3f' }
           const lbl = { variable: '📏 Variable', measure: '📊 ค่าวัด', attribute: '✅ OK/NG', note: '📝 Note' }
           return (
-            <button key={t} onClick={() => onChange({ type: t })} style={S.typeBtn(cp.type === t, colors[t])}>{lbl[t]}</button>
+            <button key={t} onClick={() => onChange(t === 'variable' ? { type: t } : { type: t, calc: null })} style={S.typeBtn(cp.type === t, colors[t])}>{lbl[t]}</button>
           )
         })}
       </div>
@@ -238,6 +240,8 @@ function CheckpointCard({ cp, label, onChange, onDelete, onDuplicate, onCpImage,
         )
       })()}
 
+      {/* 🧮 จุดคำนวณ (A − B) — ช่องกลางเดียวกับ QA · ตอนตรวจคิดผลต่างรายครั้ง ①②③ ให้เอง */}
+      {isVar && <CalcFormulaField calc={cp.calc} onChange={calc => onChange({ calc })} options={calcOptions} problems={calcIssues} />}
       {isVar && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
@@ -286,7 +290,7 @@ function CheckpointCard({ cp, label, onChange, onDelete, onDuplicate, onCpImage,
 }
 
 // ─── EquipmentModal ───────────────────────────────────────────────────────────
-function EquipmentModal({ onClose, onSaved, editJig, department, categories, methods, deptWrite }) {
+function EquipmentModal({ onClose, onSaved, editJig, department, categories, methods, deptWrite, teamWriteOf }) {
   const isEdit = !!editJig
   const [userId, setUserId] = useState(null)
 
@@ -506,6 +510,13 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
     if (!cur) { setError('แผนกนี้ยังไม่มีรายการตรวจให้ย้าย — บันทึกจุดตรวจก่อน'); return }
     if (!moveTo || moveTo === department) { setError('เลือกแผนกปลายทางก่อน'); return }
     const toLabel = pmTeamsSync().find(t => t.key === moveTo)?.label ?? moveTo
+    /* 🔐 ด่านชั้น 2 ก่อนเขียน — **ปลายทางเสมอ** (สร้าง/ทับของทีมนั้น) + **ต้นทางเมื่อย้าย**
+       (ย้าย = ยกรายการตรวจ + ประวัติการตรวจของทีมที่เปิดอยู่ออกไปทั้งก้อน) */
+    const dstWrite = teamWriteOf?.(moveTo)
+    if (dstWrite && !dstWrite.ok) { setError(teamBlockText(dstWrite, `รายการตรวจของทีม "${toLabel}"`)); return }
+    if (mode === 'move' && deptWrite && !deptWrite.ok) {
+      setError(teamBlockText(deptWrite, 'รายการตรวจของทีมนี้')); return
+    }
     setMoveBusy(true); setError('')
     try {
       const run = (replace) => mode === 'move'
@@ -689,6 +700,10 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
         return
       }
     }
+    {
+      const bad = calcIssueList[0]
+      if (bad) { setError(`จุดตรวจ ${cpLabels[bad.key] || ''} (คำนวณ): ${bad.msg}`); jumpToCp(bad.key); return }
+    }
     /* จุดชนิด "ค่าวัด" ต้องมีเกณฑ์ — ไม่มีเกณฑ์ = measureStatus ไม่มีอะไรให้ fail → **ผ่านตลอดกาล**
        (จุดตรวจที่ตัดสินอะไรไม่ได้เลย แต่หน้าจอขึ้นเขียวว่าตรวจแล้ว = หลอกคนอ่านผลตรวจ) */
     const num = v => (v !== '' && v != null ? Number(v) : null)
@@ -863,11 +878,15 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
             group_order: groupOrderMap[(c.group_name || '').trim()] ?? null,
             description: (c.description || '').trim() || null,
             image_path: cpImagePaths[c._key] ?? c.image_path ?? null,
+            // 🧮 อ้าง id จุด A/B (_key จุดใหม่ = id ที่ insert ด้านล่าง)
+            calc: c.type === 'variable' ? calcOf(c) : null,
       })
       const { data: curCps, error: eCurCp } = await supabaseDR.from('jig_checkpoints').select('id, name').eq('checklist_id', cl.id)
       if (eCurCp) throw eCurCp
       const curIds = new Set((curCps ?? []).map(r => r.id))
-      const keepCp = new Set(ordered.map(c => c.id).filter(id => id && curIds.has(id)))
+      /* จุดใหม่ insert ด้วย id = _key (uuid) ⇒ บันทึกซ้ำหลังล้มกลางทาง = update ไม่ insert ซ้ำ */
+      const rowIdOf = (c) => c.id || c._key
+      const keepCp = new Set(ordered.map(rowIdOf).filter(id => id && curIds.has(id)))
       const dropCp = (curCps ?? []).filter(r => !keepCp.has(r.id))
       if (dropCp.length) {
         const { count: histN, error: eHist } = await supabaseDR.from('inspection_results')
@@ -881,12 +900,12 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
       }
       for (let i = 0; i < ordered.length; i++) {
         const c = ordered[i]
-        if (c.id && keepCp.has(c.id)) {
-          const { error: eU } = await supabaseDR.from('jig_checkpoints').update(cpRow(c, i)).eq('id', c.id)
+        if (keepCp.has(rowIdOf(c))) {
+          const { error: eU } = await supabaseDR.from('jig_checkpoints').update(cpRow(c, i)).eq('id', rowIdOf(c))
           if (eU) throw eU
         }
       }
-      const fresh = ordered.map((c, i) => [c, i]).filter(([c]) => !(c.id && keepCp.has(c.id))).map(([c, i]) => cpRow(c, i))
+      const fresh = ordered.map((c, i) => [c, i]).filter(([c]) => !keepCp.has(rowIdOf(c))).map(([c, i]) => ({ ...cpRow(c, i), id: rowIdOf(c) }))
       if (fresh.length) {
         const { error: cpErr } = await supabaseDR.from('jig_checkpoints').insert(fresh)
         if (cpErr) throw cpErr
@@ -937,6 +956,14 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
     const namedCount = grouped.named.reduce((s, g) => s + g.items.length, 0)
     grouped.ungrouped.forEach((c, k) => { cpLabels[c._key] = String(namedCount + k + 1) })
   }
+  /* 🧮 จุดคำนวณ: อ้างได้เฉพาะจุด Variable/ค่าวัด ที่ไม่ใช่จุดคำนวณ · ปัญหาสูตรขึ้นในการ์ด + กันบันทึก (utils/inspectCalc) */
+  const calcIssueList = calcProblems(checkpoints, {
+    keyOf: c => c._key, isNumeric: c => PM_CALC_REF_TYPES.includes(c.type),   // Variable + ค่าวัด
+    hasLimit: c => (c.lsl !== '' && c.lsl != null) || (c.usl !== '' && c.usl != null),
+  })
+  const calcOptionsFor = (selfKey) => checkpoints
+    .filter(c => c._key !== selfKey && PM_CALC_REF_TYPES.includes(c.type) && !c.calc)
+    .map(c => ({ key: c._key, label: `${cpLabels[c._key] || '?'} ${c.name || ''}${c.axis ? ` (${c.axis})` : ''}${c.type === 'measure' ? ' · ค่าวัด' : ''}`.trim() }))
   const groupHeaderStyle = {
     display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderRadius: 6,
     background: 'var(--accent-dim)', border: '1px solid var(--border2)',
@@ -951,6 +978,7 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
       style={{ borderRadius: 8, transition: 'box-shadow .3s',
         boxShadow: flashKey === cp._key ? '0 0 0 2px var(--accent), 0 0 14px var(--accent-glow)' : 'none' }}>
       <CheckpointCard cp={cp} label={cpLabels[cp._key]}
+        calcOptions={calcOptionsFor(cp._key)} calcIssues={calcIssueList.filter(x => x.key === cp._key).map(x => x.msg)}
         onChange={patch => updateCp(cp._key, patch)} onDelete={() => deleteCp(cp._key)}
         onDuplicate={() => duplicateCp(cp._key)} onCpImage={f => handleCpImage(cp._key, f)}
         isPinning={activePinKey === cp._key} onPinToggle={() => togglePin(cp._key)} hasImage={frames.length > 0}
@@ -1023,12 +1051,25 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
                 {cur && cur.checkpointCount > 0 && toolOpen === 'dept' && (
                   <div style={{ marginTop: 9, paddingTop: 9, borderTop: '1px dashed var(--border2)', display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                     <span style={{ fontSize: 11.5, color: 'var(--text2)' }}>ย้าย/คัดลอก {cur.checkpointCount} จุดนี้ไป</span>
-                    <select value={moveTo} onChange={e => { setMoveTo(e.target.value); setError('') }} style={{ width: 'auto', minWidth: 150, fontSize: 12 }}>
-                      <option value="">— เลือกแผนกปลายทาง —</option>
-                      {allTeams.filter(t => t.key !== department).map(t => (
-                        <option key={t.key} value={t.key}>{t.icon ? `${t.icon} ` : ''}{t.label}</option>
-                      ))}
-                    </select>
+                    {(() => {
+                      const cands = allTeams.filter(t => t.key !== department)
+                      const okRows = cands.filter(t => (teamWriteOf?.(t.key)?.ok) !== false)
+                      const hidden = cands.length - okRows.length
+                      return (
+                        <>
+                          <select value={moveTo} onChange={e => { setMoveTo(e.target.value); setError('') }} style={{ width: 'auto', minWidth: 150, fontSize: 12 }}>
+                            <option value="">— เลือกแผนกปลายทาง —</option>
+                            {okRows.map(t => (
+                              <option key={t.key} value={t.key}>{t.icon ? `${t.icon} ` : ''}{t.label}</option>
+                            ))}
+                          </select>
+                          {/* กรองออกแล้วต้องบอก — ไม่งั้นดูเหมือนระบบมีแค่ไม่กี่ทีม */}
+                          {hidden > 0 && (
+                            <span style={{ fontSize: 11, color: 'var(--muted)' }}>🔒 ซ่อน {hidden} ทีมที่ไม่ใช่ทีมของคุณ</span>
+                          )}
+                        </>
+                      )
+                    })()}
                     <button type="button" disabled={!moveTo || moveBusy} onClick={() => handleTransfer('move')}
                       style={{ ...S.btnSm(deptColor), opacity: (!moveTo || moveBusy) ? 0.5 : 1 }} title="เปลี่ยนเจ้าของรายการตรวจ — ประวัติการตรวจย้ายตามไปด้วย">
                       {moveBusy ? '…' : '➡️ ย้าย'}
@@ -1050,6 +1091,14 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
                     .filter(e => !q || [e.machine_no, e.jig_no, e.name, e.line_name].some(v => String(v || '').toLowerCase().includes(q)))
                   const sameKind = cands.filter(e => kindOfEquip(e) === curKind)
                   const shown = q ? cands : sameKind     // ไม่ค้น = โชว์เฉพาะชนิดเดียวกัน (ที่เหลือค้นเอา)
+                  /* 🔎 เครื่องที่ "มีในทะเบียนเครื่องจักร แต่ยังไม่ได้เพิ่มเป็นอุปกรณ์ PM" (26/10 · ทีม PPM แจ้ง)
+                     ลิสต์นี้ดึงจาก `jigs` (ทะเบียนอุปกรณ์ PM · 245) ไม่ใช่ `machines` (ทะเบียนเครื่อง · 325)
+                     ⇒ ค้นเลขเครื่องที่ยังไม่ได้เพิ่มเข้า PM แล้วเจอ "ไม่พบเครื่องที่ค้น" = จอโกหก
+                        (คนอ่านว่า "ไม่มีเครื่องนี้ในระบบ" แล้วเดินไปแจ้งว่าระบบพัง — เคสจริง 26/10 14:55)
+                     🔴 เทียบด้วย `machine_id` ไม่ใช่เลขเครื่อง — ไม่ยิงคิวรีเพิ่ม (machineOptions โหลดมาแล้ว) */
+                  const pmMachineIds = new Set(allEquip.map(e => e.machine_id).filter(Boolean))
+                  const notPmYet = !q ? [] : machineOptions.filter(m => !pmMachineIds.has(m.id)
+                    && [m.machine_no, m.machine_name, m.line_name].some(v => String(v || '').toLowerCase().includes(q)))
                   return (
                     <div style={{ marginTop: 9, paddingTop: 9, borderTop: '1px dashed var(--border2)' }}>
                       <div style={{ fontSize: 11.5, color: 'var(--text2)', marginBottom: 6 }}>
@@ -1081,6 +1130,9 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
                         {!q && cands.length > shown.length
                           ? <> · ซ่อนเครื่องชนิดอื่น {cands.length - shown.length} ตัว — <b>พิมพ์ค้นเพื่อดูทุกชนิด</b></>
                           : q ? ' · กรองด้วยคำค้น (ทุกชนิด)' : ' · ครบทุกเครื่องแล้ว'}
+                        {/* 🔴 "ค้นไม่เจอ" กับ "ยังไม่ได้เพิ่มเข้า PM" คนละเรื่อง — ต้องแยกให้เห็น */}
+                        {!!notPmYet.length && <> · <b style={{ color: 'var(--accent2)' }}>อีก {notPmYet.length} เครื่องที่ค้นเจอในทะเบียนเครื่องจักร
+                          ยังไม่ได้เพิ่มเป็นอุปกรณ์ PM</b> จึงยังคัดลอกไปไม่ได้</>}
                       </div>
                       <div style={{ maxHeight: 148, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 7, padding: 6,
                         display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(168px, 1fr))', gap: 3, alignContent: 'start' }}>
@@ -1099,8 +1151,13 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
                             </label>
                           )
                         })}
-                        {!shown.length && <span style={{ fontSize: 11.5, color: 'var(--muted)', padding: 4 }}>
-                          {q ? 'ไม่พบเครื่องที่ค้น' : 'ไม่มีเครื่องชนิดเดียวกันตัวอื่น — พิมพ์ค้นเพื่อดูเครื่องชนิดอื่น'}</span>}
+                        {!shown.length && <span style={{ fontSize: 11.5, color: 'var(--muted)', padding: 4, lineHeight: 1.7 }}>
+                          {!q ? 'ไม่มีเครื่องชนิดเดียวกันตัวอื่น — พิมพ์ค้นเพื่อดูเครื่องชนิดอื่น'
+                            : notPmYet.length ? <>ไม่พบใน<b>ทะเบียนอุปกรณ์ PM</b> — แต่เจอ <b style={{ color: 'var(--accent2)' }}>{notPmYet.length} เครื่อง</b> ใน
+                                ทะเบียนเครื่องจักร ({notPmYet.slice(0, 4).map(m => m.machine_no || m.machine_name).join(' · ')}{notPmYet.length > 4 ? ' …' : ''})
+                                <br />⇒ เครื่องพวกนี้<b>ยังไม่ได้ถูกเพิ่มเป็นอุปกรณ์ PM</b> จึงยังไม่มีให้ติ๊ก —
+                                ปิดหน้าต่างนี้แล้วกด <b>“+ เพิ่มอุปกรณ์”</b> ให้เครื่องนั้นก่อน แล้วค่อยกลับมาคัดลอก</>
+                            : <>ไม่พบ “{copyQ.trim()}” ทั้งใน<b>ทะเบียนอุปกรณ์ PM</b>และ<b>ทะเบียนเครื่องจักร</b> — ตรวจว่าพิมพ์เลขเครื่องถูกไหม</>}</span>}
                       </div>
                       <p style={{ fontSize: 11, color: 'var(--muted)', margin: '5px 0 0', lineHeight: 1.6 }}>
                         เครื่องที่<b>มีจุดตรวจอยู่แล้วจะถูกข้าม ไม่ทับของเดิม</b> (ทับ = ประวัติผลตรวจของเครื่องนั้นหายถาวร)
@@ -1501,6 +1558,10 @@ export default function PMSetup() {
      🔴 ไม่ผูกทีม = ไม่บล็อก (ไม่รู้ ≠ ปฏิเสธ) */
   const deptWrite = useMemo(() => canWriteTeam(pmUserTeams, department, { allUnits, role }),
     [pmUserTeams, department, allUnits, role])
+  /* 🔴 ย้าย/คัดลอกรายการตรวจ = **เขียนลงทีมปลายทาง** ⇒ ต้องถามด่านของทีมนั้นด้วย ไม่ใช่แค่ทีมที่เปิดอยู่
+     (เดิมเช็คแค่ต้นทาง: ช่างทีมเราย้ายรายการตรวจ + ประวัติการตรวจทั้งก้อนเข้าไปในทีมอื่นได้) */
+  const teamWriteOf = useCallback((key) => canWriteTeam(pmUserTeams, key, { allUnits, role }),
+    [pmUserTeams, allUnits, role])
   const [jigs, setJigs] = useState([])
   const [cpCounts, setCpCounts] = useState({})
   const [pinFlags, setPinFlags] = useState({})
@@ -1755,7 +1816,7 @@ export default function PMSetup() {
       )}
 
       <AnimatePresence>
-        {showModal && <EquipmentModal onClose={() => setShowModal(false)} onSaved={handleSaved} editJig={editJig} department={department} categories={categories} methods={methods} deptWrite={deptWrite} />}
+        {showModal && <EquipmentModal onClose={() => setShowModal(false)} onSaved={handleSaved} editJig={editJig} department={department} categories={categories} methods={methods} deptWrite={deptWrite} teamWriteOf={teamWriteOf} />}
         {taxModal === 'category' && (
           <TaxonomyManagerModal teams={pmTeamsSync()} role={role} myTeams={pmUserTeams} table="pm_checkpoint_categories" title="จัดการประเภทจุดตรวจ (Category)" extraField="color" withEquipTypes
             onClose={() => setTaxModal(null)} onChanged={loadTaxonomy} />

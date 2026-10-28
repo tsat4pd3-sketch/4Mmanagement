@@ -96,6 +96,29 @@ model: inherit
   ห้าม client ตั้ง `status: 'received'` เอง · ห้าม `.delete()` (ยกเลิก = `cancelled` + เหตุผล) · ช่างที่มอบหมายอ่านผ่าน `assignedTechsOf()`
   · grep: `mtn_purchase_requests` แล้วดู `.delete(` / `status: 'received'` (มีด่าน `mtn-pr-receive-via-rpc`)
 
+- **B-ASSET** 🏭 **ตาราง `machines` (DR) เก็บสินทรัพย์ทุกชนิด ไม่ใช่แค่เครื่องจักร** —
+  เครื่องจักร 226 · แม่พิมพ์ 268 · จิ๊ก 190 · facility 44 (วัด 27/10) และ 674/728 แถวมี
+  `process_type = 'welding_assembly'` = **ค่า default ที่ไม่มีใครแก้**
+  ⇒ โค้ดที่ **นับ/โหวต/สรุป** `process_type` จากตารางนี้ ต้องกรองผ่าน
+  `processVotingRows()` (`src/utils/machineAssets.js`) เสมอ
+  · grep: `machines.filter(` ที่ body มี `process_type` แล้วไม่ได้ห่อด้วย `processVotingRows(`
+  · **ไม่เข้าข่าย:** แสดงผลรายแถว (`machine?.process_type` ในชิป/การ์ด) — ไม่ได้ตัดสินแทนทั้งไลน์
+  · 🔴 **แยก 2 คำถามให้ออก:** โหวตเป็นคำตอบเดียว → `machineAssetsOnly()` ·
+    **รวมเป็นตัวเลือก dropdown → `processUnionRows()` (ตั้งใจไม่กรอง — ซ่อนผิด = หน้างาน
+    บันทึกปัญหาจริงไม่ได้ · เคสจริง Line 60 ลง DT `metal_forming` 10 ใบ ทั้งที่ประเภทนั้น
+    มาจากแม่พิมพ์/จิ๊ก)** · นับเลน/ตัวหาร → `machineLaneCount()`
+  · ทำไมสำคัญ: `sessionProcessType()` เลือก **นโยบายเวลาพัก** ⇒ ผิด = `shift_min` ผิด = **%A/%P ผิดทั้งกะ**
+  · ด่านอัตโนมัติ: `machine-process-vote-needs-asset-filter` ใน `regressionGuards`
+
+- **B-UPSERT** 🧩 **`upsert` ที่ส่ง array ปน "แถวเดิม (มี id) + แถวใหม่ (ไม่มี id)" ต้องมี
+  `{ defaultToNull: false }`** — ไม่งั้น postgrest เติม `null` ทับ `default gen_random_uuid()`
+  ⇒ `23502 null value in column "id"` **ล้มทั้งก้อน** (เจอ 2 รอบ: `material_request_items` 19/10
+  · `bbs_agreements` 27/10) · อันตรายสุดเมื่อมี `delete` นำหน้า = ของหายจริง
+  · grep: `...(x.id ? { id: x.id } : {})` ที่อยู่ใน `.map()` แล้วไฟล์ไม่มี `defaultToNull`
+  · ทางแก้อีกทาง: แยก `insert` แถวใหม่ / `upsert` แถวเดิม (`OjtTraining.jsx`)
+  · 🔴 ห้ามแก้ด้วยการถอด not-null ของ PK หรือยัด uuid จาก client
+  · ด่านอัตโนมัติ: `upsert-mixed-id-needs-default` ใน `regressionGuards`
+
 ### หมวด C — Permissions (data-driven)
 
 - **[C-RLS-1]** policy RLS ฝั่ง Main ที่เขียนได้ (`for all/update/delete`) ห้าม hardcode `role = any(array[...])` — ต้องเป็น `has_perm('<คีย์เดียวกับ can() ของปุ่มนั้น>')` (2026-09-04 · `20260904_rls_match_ui_permissions.sql`) · ตรวจ: `grep -n "ARRAY\['admin'" supabase/migrations/*.sql` เทียบกับ pg_policies ปัจจุบัน
@@ -163,6 +186,20 @@ model: inherit
 - **D2** branch ของ `leader` (line_id + team) ต้องมา**ก่อน** branch ของ section scope เสมอ
 - **D3** โค้ดที่อ่าน `profiles.section` เดี่ยวตรงๆ แทนที่จะผ่าน `effectiveSections()` /
   `sections` จาก UserContext = ผิด pattern (ยกเว้น AddUser ที่ตั้งใจเขียน section เดี่ยวคู่กัน — ห้ามรายงานอันนั้น)
+- **D5** 🪧 **ลิสต์ที่ส่งเข้า `<LineSelect>`/`<LineScopeSelect>` ต้องมาจาก `scopeLines()` ของกลาง**
+  (26/10 · หน้างานแจ้ง "เปิด MO ไม่มีไลน์ให้เลือก") — ส่วนงานที่ไม่มีไลน์ผลิตสังกัด (QA · Planning&Store ·
+  ฝั่งช่าง) กรองแล้วเหลือ 0 ⇒ dropdown ว่าง = ใช้ฟีเจอร์ไม่ได้ทั้งหน้า · เจอ 9 หน้าที่ก๊อปสูตรไปเขียนเอง
+  · 🔴 **ลิสต์ picker fail-open · ตัวกรองรายการ/ด่านสิทธิ์ fail-closed — ห้ามรายงานว่า "ไม่ตรงกัน" เป็นบั๊ก**
+  · ⚖️ `/report` + `/morning-meeting` = ข้อยกเว้นทางการ (ลิสต์ผูกกับข้อมูลที่คิวรีจริง) **ห้ามรายงาน**
+  · ด่าน `line-picker-never-dead` · 📄 UI-CONVENTIONS §5.3 ข้อ 9.1
+- **D4** 🔴 **โค้ดห้ามบีบขอบเขตให้แคบกว่าที่ `profiles` ตั้งไว้** (26/10 · คำสั่ง user "ทำด่านกันซ้ำ")
+  เคสจริง: กฎใหม่บีบ `role='leader'` เป็นครอบครัวไลน์ตัวเองโดยไม่ดู `sections`
+  ⇒ 15 บัญชีแคบลง · หัวหน้ากลุ่ม PD1 **3 คนเหลือไลน์เดียว = เปิดกะไม่ได้** (build/เทส/crashsweep ผ่านหมด)
+  · **การบีบขอบเขตเป็น "การตั้งค่า" ไม่ใช่งานของโค้ด** — ตาข่ายกันตั้งค่าผิดทำได้ แต่ห้ามแคบกว่า anchor
+  · เจอ diff ที่แตะ `sectionScope.js` / `viewScope.js` / `lineHierarchy.js` **แต่ไม่ได้รีเฟรช
+    `src/utils/__tests__/fixtures/userScopeRegistry.json` = ให้รายงาน** (ด่าน `scopeRegistryGate` เล่นกฎซ้ำกับทะเบียนจริง)
+  · `scopedLines()` (เห็นในตัวกรอง/รายงาน) **ตั้งใจกว้างกว่า** `scopedLineNames()` (ไลน์ที่หัวหน้ากลุ่มรับผิดชอบ)
+    — **ห้ามรายงานว่า "2 ตัวนี้ไม่ตรงกัน" เป็นบั๊ก** (ล็อกด้วยด่านข้อ E แล้ว) · จะยุบ = ต้องถาม user
 
 ### หมวด E — Storage & รูปภาพ
 - **E1** อัปโหลดรูปต้องผ่าน `ImageCropModal` หรือ (กรณี crop ไม่เหมาะ: ผัง/drawing/หลักฐาน) บีบก่อนอัปโหลด
@@ -369,6 +406,10 @@ model: inherit
   · grep: `domain=\{\[(dataMin|\(?\w+\)? =>|[1-9])` · `domain:\s*\[(dataMin|\w+ =>)` · ด่าน `chart-yaxis-domain-hand-made`
 - **F-KPILEVEL** ช่องตัดสิน KPI (`yn`/`ynTotal`/สีจุดกราฟ) ต้องเป็นระดับ 1/0.5/0 จาก `scoreDef` — ห้าม `v >= target` / `v < target` เอง (2 สีไม่รู้จัก Commitment)
   · grep: `yn(Total)?:\s*[^,]*(>=|<=)` · `const \w*(miss|hit|pass)Target\w* =` · ด่าน `kpi-yn-boolean-compare`
+- **F-SHADOW** 💥 `const <ชื่อ>` ที่**ชนกับ named import ในไฟล์เดียวกัน** แล้วมีการเรียก `<ชื่อ>()` ข้างใน
+  = **TDZ จอขาวทั้งหน้า** (เคสจริง 25-26/10 · 4 หน้า: /energy /morning-meeting die/jig registry)
+  · lint `no-use-before-define` จับไม่ได้เพราะการอ่านอยู่ใน callback (คนละ scope)
+  · แก้: `import { x as xOf }` — มีด่าน `no-shadowed-import-call`
 - **F-TDZ** อ่าน `const/let` ก่อนบรรทัดประกาศใน scope เดียวกัน (จอขาว "Cannot access before initialization") — lint `no-use-before-define` จับให้แล้ว แต่ถ้าเห็น `const a = b.x` เหนือ `const b` ให้รายงาน
 
 - **F-inspect (2026-10-15) จอตั้งค่าจุดตรวจ (รูป + ปักหมุด + การ์ดจุด) ต้องประกอบจาก `src/components/inspect/*` + `SpinAnnotator`**
@@ -424,3 +465,24 @@ model: inherit
 - อย่ารายงาน false positive: อ่าน context รอบบรรทัดนั้นเสมอ เช่น `toISOString()` ที่เป็น timestamp เต็มไม่ผิด (A1)
 - ถ้าไม่แน่ใจว่าผิดจริง ให้ใส่ไว้ในหมวด "ข้อสังเกต" พร้อมบอกว่าไม่แน่ใจเพราะอะไร
 - ปิดท้ายด้วยสรุปตัวเลข: ตรวจกี่หมวด กี่ไฟล์ พบ 🔴/🟡/🔵 อย่างละกี่รายการ
+
+### ด่านที่เพิ่ม 2026-10-20 (QC audit รอบนี้ — ตรวจเพิ่มในหมวดที่เกี่ยว)
+
+- **B (DB):** `limit-over-postgrest-cap` — `.limit(N > 1000)` ต้องมี `cap-ok: <ตาราง> วัด <วันที่> = <N> แถว`
+  ใน 3 บรรทัดเหนือ ไม่งั้นใช้ `fetchByIds`/`fetchAllPages`/`fetchAllRows`
+  (PostgREST clamp 1000 เสมอ · ถูกตัดแถว ≠ error ⇒ เงียบ)
+- **B (DB) + LPA:** `lpa-read-fail-not-missed` — `/lpa` ห้ามแกะ `{ data }` จาก `Promise.all` ที่ดึง `lpa_audits`
+  ต้องมี `monthErr`/`draftErr` + ส่ง `null` เข้า `checkDayState` เมื่ออ่านไม่ได้
+  (อ่านไม่สำเร็จ ≠ "ขาดตรวจ" · ใบร่างเปล่าจากการอ่านที่ล้ม = บันทึกแล้วคำตอบเดิมหายถาวร)
+- **C (สิทธิ์):** `cc-scope-trigger-columns` — `protect_profile_role()` ต้องกัน
+  `role · sections · section · scope_depth · resp_cost_centers` ครบ (คอลัมน์ที่ให้สิทธิ์ = เจ้าของแถวแก้เองไม่ได้)
+- **C (สิทธิ์) + D (ขอบเขต):** `row-scope-dr-products-skills` — ทุกฟังก์ชันที่เขียน `dr_products`
+  (4 ทาง: `/products` · `/daily-report` ⚙️ · `/equipment?tab=die` ตั้งคู่ · `/planner-sales` ผูก `p_no`)
+  และ `skill_definitions` (`/operator` แท็บสกิล) ต้องเรียกของกลางชั้น ③ **ในฟังก์ชันนั้น** ·
+  ตอน "แก้" ต้องเช็ค **2 ฝั่ง** (แถวเดิม + ไลน์/ส่วนงานปลายทาง) · นำเข้า CSV ต้องกรองแถวนอกขอบเขต
+  **แล้วเขียนบนจอว่าข้ามกี่แถว** · ฝั่ง DR ไม่มี RLS ⇒ จอคือด่านเดียว ปิดทางเดียวไม่พอ (📄 audit §14)
+
+> 🔴 **หมวด C ต้องตรวจชั้นสิทธิ์ที่ 3 ด้วย** (กฎ 15/10 ยังไม่เคยอยู่ใน checklist นี้):
+> `writeScope.js` (`canWriteUnit`/`canWriteLine`/`writableRows`) · `ccScope.js` (`canWriteScope`) ·
+> `mtnTeams.js` (`canWriteTeam`) — **จอที่เขียน DB ต้องเช็คซ้ำในฟังก์ชันที่เขียนจริง ไม่ใช่แค่ซ่อนปุ่ม** ·
+> `sections` = ขอบเขต "ที่เห็น" **ห้ามเอามาตัดสินการแก้** · หน้าแม่ต้องส่งกฎลงแผงลูก (ส่งแค่ `canEdit` ไม่พอ)

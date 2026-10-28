@@ -1,31 +1,36 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { orgNodeCompare } from '../utils/listOrder';
 import { supabase } from '../supabaseClient';
 import { toast } from '../components/Toast';
 import { loadLinesRes } from '../utils/useProductionLines';
 import { accessSummaryForRole } from '../App';
-import { ROLE_OPTIONS, roleLabel, groupRolesByAxis } from '../utils/roleMeta';
+import { ROLE_OPTIONS, roleLabel, groupRolesByAxis, ORG_LEVELS } from '../utils/roleMeta';
 import { positionOptions, positionOptionsWith, positionLabel, loadPositions, clearPositionsCache, levelOfPosition, maintenanceKindOfPosition, levelMeta, POSITION_LEVELS } from '../utils/positions';
 import { can, loadPermissions } from '../utils/permissions';   // เช็คสิทธิ์ของ role ที่เลือก เพื่อเตือนเมื่อไม่ตรงกับระดับงาน
 import { deptNameOf, teamKeyOf } from '../utils/mtnTeams';
 import { pmTeamsSync, loadPmTeams } from '../utils/pmTeams';   // ทีมช่างซ่อมจากตาราง mtn_teams (data-driven) — เลิกวน MTN_TEAMS hardcode (2026-09-07)
-import { checkWrite } from '../utils/dbWrite';
+import { checkWrite, checkWriteRows } from '../utils/dbWrite';
 import LineSelect from '../components/LineSelect';
 import { STAFF_KINDS, STAFF_SHOPFLOOR, STAFF_SUPPORT } from '../utils/staffKind';   // 👥 หน้าไลน์ vs สายสนับสนุน
+import { newEmployeeRow, staffKindHint } from '../utils/employeeIdentity';   // 🪪 ตัวตนพนักงานใหม่ = ชุดเดียวกับ /register
 import { normSearch } from '../components/SearchSelect';   // ตัว normalize คำค้นกลาง (ทนการสะกดไทย)
-import { orphanDepts, deptOptionsFor, ORPHAN_SECTION, ORPHAN_SECTION_LABEL, sectionValueForSave,
-  orgNodeIdFor, ORG_SRC_MANUAL, scopeIneffective } from '../utils/sectionScope';
+import { orphanDepts, deptOptionsFor, ORPHAN_SECTION, ORPHAN_SECTION_LABEL,
+  scopeIneffective, scopeTooWide } from '../utils/sectionScope';
 import { SCOPE_DEPTHS, SCOPE_DEPTH_META, depthForLevel, needsScopeReview } from '../utils/scopeDepth';   // 🔭 เห็นกว้างแค่ไหน (คนละแกนกับ role)
 import { buildOrgScope, SCOPE_KIND_META } from '../utils/orgScope';
 /* 💰 ชั้นสิทธิ์ที่ 3 แกน Cost Center (16/10 · คำสั่ง user "เซ็ตได้ว่า user ไหน response กับ cost center
    ไหน ตามลำดับชั้น") — ทะเบียนรหัส/ลำดับชั้น/ข้อความบล็อก อยู่ใน `utils/ccScope.js` ที่เดียว */
-import { attachCc, ccCoverage, unknownRespCcs } from '../utils/ccScope';
+import { attachCc, ccCoverage, unknownRespCcs, buildCcIndex } from '../utils/ccScope';
 
 import InfoMore from '../components/InfoMore';
+import CollapseCard from '../components/CollapseCard';   // 📚 ตารางอ้างอิงชุดสิทธิ์ — พับเป็นค่าเริ่มต้น (21/10 · คำสั่ง user)
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
 import FilterBar from '../components/FilterBar';
 import { identityDiff, identityFallbacks, syncPatch, dualMeaningInfo } from '../utils/identitySync';
+/* 🪪 "บัญชีไหนยังไม่รู้ว่าเป็นใคร" + ตัวเสนอคนในทะเบียน — กฎอยู่ใน utils/identityMatch.js (pure · มีเทส)
+   🔴 ระบบ**ไม่เดา**ประเภทบัญชีให้ · ไฟล์นั้นแค่จัดคิว + เสนอตัวเลือก คนกดตัดสิน */
+import { unlinkedTriage, routeHint } from '../utils/identityMatch';
 import SearchInput from '../components/SearchInput';
 import { ALL } from '../utils/filterLabels';
 /* ทีมช่างซ่อม (profiles.mtn_teams) — เดิมมีหน้าที่เดียวคือ "แยกคิวใบแจ้งซ่อม MO ให้ถูกทีม"
@@ -54,9 +59,15 @@ const RoleOptGroups = ({ withDesc = false }) => ROLE_GROUPS.map(g => (
     {g.roles.map(r => <option key={r.value} value={r.value}>{r.label}{withDesc ? ` — ${r.desc}` : ''}</option>)}
   </optgroup>
 ));
-// sections = ขอบเขตส่วนงาน (เลือกได้หลายอัน ทุก role) — ว่าง = เห็นทุกส่วนงาน
-// profiles.section (เดี่ยว) ยังถูกเขียนเป็นตัวแรกของ sections เสมอ เพื่อให้ rollback โค้ดกลับเวอร์ชันเก่าได้โดย supervisor ไม่หลุด scope
-const emptyForm = { email: '', password: '', fullName: '', role: 'supervisor', position: '', sections: [], respCcs: [], mtnTeams: [], deptAdmin: false, lineId: '', team: '', notifyEmail: '', scopeDepth: 'unit',
+// sections = ขอบเขต**การมองเห็น** (เลือกได้หลายอัน ทุก role) — ว่าง = เห็นทุกส่วนงาน
+/* 🔴🔴 `profiles.section` (เดี่ยว) = **บ้านจริง** — คนละคำถามกับ `sections` (20/10 · คำสั่ง user
+   "เหมือนการกรอกข้อมูลมันกลับไปกลับมา")
+   เดิมบันทึกเป็น `form.sections[0]` เสมอ ⇒ **ติ๊กช่อง "เห็นข้อมูลของใคร" แล้วบ้านจริงเปลี่ยนตาม**
+   วัดจริง 20/10: QC 13 บัญชี ทะเบียนพนักงานว่าสังกัด **QA** แต่ `profiles.section` กลายเป็น **PD3**
+   (= พื้นที่ที่เขาไปตรวจ) เพราะติ๊ก PD3 ไว้ในช่องการมองเห็น
+   ⇒ บ้านจริงของบัญชีของคน **อ่านจากทะเบียนพนักงานเท่านั้น** (สูตรเดียวกับ App.jsx: `emp.section ?? profile.section`)
+     · บัญชีกลาง (ไม่ใช่คน) ไม่มีตัวตนในทะเบียน ⇒ เลือกเองได้ 1 ส่วนงาน (`homeSection`) */
+const emptyForm = { email: '', password: '', fullName: '', role: 'supervisor', position: '', sections: [], homeSection: '', respCcs: [], mtnTeams: [], deptAdmin: false, lineId: '', team: '', notifyEmail: '', scopeDepth: 'unit',
   // ⚠️ บัญชีของคน ต้องผูกกับตัวตนใน `employees` — ทีม/ไลน์/ส่วนงาน อ่านจากที่นั่น ห้ามให้ admin กรอกเอง
   //    (เคสจริง: หัวหน้า 2 คนทีมสลับกัน เพราะ admin เดาตอนสร้างบัญชี → เช็คชื่อมองไม่เห็นกะตัวเอง)
   // บัญชีของหน่วยงาน/อุปกรณ์ (maintenance/warehouse1/Display) ไม่มีตัวตนใน employees และไม่ควรมี
@@ -135,7 +146,7 @@ export default function AddUser() {
        GOR · LWRBAR · BIG PRESS · HYDROFORM ติดป้าย 🏛️ ทั้งที่อยู่ใต้ส่วนงานผลิต) */
     /* ⚠️ ต้องมี `cost_center` + `ref_line_id` ด้วย — ช่อง ④ (CC ที่รับผิดชอบ) และ `buildOrgScope()`
        ใช้ 2 คอลัมน์นี้ผูกรหัส ↔ หน่วยงาน ↔ ไลน์ · ขาด = ทะเบียนรหัสว่างเปล่าแบบเงียบ */
-    supabase.from('org_nodes').select('code, name, kind, parent_id, id, sort_order, cost_center, ref_line_id, division').eq('is_active', true)
+    supabase.from('org_nodes').select('code, name, kind, parent_id, id, sort_order, cost_center, ref_line_id, division, inherit_scope').eq('is_active', true)
       .then(({ data }) => {
         const nodes = [...(data || [])].sort(orgNodeCompare);   // ลำดับผังมาตรฐาน (listOrder.js)
         setSectionOpts(nodes.filter(n => n.kind === 'section').map(n => n.code || n.name));
@@ -202,6 +213,19 @@ export default function AddUser() {
   /* เรียงแบบต้นไม้ (แม่ก่อนลูก) — ลำดับในแต่ละชั้นมาจาก sort_order ที่ /org-setup เพราะ `nodes`
      ถูก `.sort(orgNodeCompare)` ไว้ตอนโหลดแล้ว */
   const ccRows = useMemo(() => scopeIdx.cc.catalogTree(), [scopeIdx]);
+  /* 💰🔗 **ส่วนงาน/แผนก มีรหัส CC อยู่ในผังอยู่แล้ว — ต้องโชว์ให้เห็นว่าลิงก์กัน** (2026-10-22 · คำสั่ง user
+     *"ตั้ง section แล้ว แต่ cc ไม่ขึ้น คือมันต้องลิงก์กันโดยธรรมชาติ"*)
+     เดิมชิป 💰 ขึ้นเฉพาะบัญชีที่ **ติ๊กเอง** (`resp_cost_centers`) ⇒ แถวที่เหลืออ่านแล้วเหมือน "ไม่มี CC"
+     ทั้งที่ส่วนงานของเขามีรหัสในผัง · ชั้นสิทธิ์ก็ใช้ส่วนงานนั้นตัดสินอยู่แล้ว
+     🔴 ตกทอดจากโหนดแม่ด้วย (`ccOfNode`) — หน่วยที่ยังไม่ผูกรหัสเองต้องไม่กลายเป็น "ไม่มี" */
+  const ccIdxNodes = useMemo(() => buildCcIndex(orgAllNodes || []), [orgAllNodes]);
+  const ccOfUnitName = useCallback((name) => {
+    const v = String(name || '').trim().toLowerCase();
+    if (!v) return null;
+    const n = (orgAllNodes || []).find(x => (x.kind === 'section' || x.kind === 'department')
+      && [x.code, x.name].filter(Boolean).some(t => String(t).trim().toLowerCase() === v));
+    return n ? (ccIdxNodes.ccOfNode(n.id)?.cc || null) : null;
+  }, [orgAllNodes, ccIdxNodes]);
   const ccCov = useMemo(() => ccCoverage(scopeIdx, form.respCcs), [scopeIdx, form.respCcs]);
   /* รหัสที่ตั้งไว้แต่ผังไม่รู้จัก — เช็คได้เฉพาะเมื่อผังโหลดเสร็จ (ว่าง = ทะเบียนว่าง = ตะโกนผิด) */
   const ccUnknown = ccReady ? unknownRespCcs(scopeIdx, form.respCcs) : [];
@@ -256,19 +280,20 @@ export default function AddUser() {
     }
     setNewEmpSaving(true);
     const { data: userData } = await supabase.auth.getUser();
-    const row = {
-      employee_id_code: code,
+    /* 🪪 ประกอบแถวที่ `utils/employeeIdentity.js` ที่เดียว — ทางเข้าอีกทางคือ /register
+       ฟิลด์ที่ฟอร์มสั้นนี้ไม่มีช่อง (วันเริ่มงาน · ทีม · ไลน์ · รถรับส่ง · รูป) = `null`
+       **ห้ามเดาค่าให้** — ไปเติมต่อที่ /operator (ค่าว่างคนเห็น ค่าที่ระบบเดาไม่มีใครรู้ว่าต้องแก้) */
+    const row = newEmployeeRow({
+      employeeIdCode: code,
       name,
-      department: newEmp.department || null,
-      section: sectionValueForSave(newEmp.section),   // sentinel "ขึ้นตรงฝ่าย" → null (ตรงกับผังจริง)
-      /* 🧭 แกนสังกัด — คนใหม่ต้องผูกโหนดในผังตั้งแต่แรก ไม่ต้องรอ backfill มาเดาทีหลัง
-         (docs/ORG-AXES-DECISION.md §5.1 · ข้อความ section/department ข้างบน = สำเนาไว้โชว์) */
-      org_node_id: orgNodeIdFor(newEmp.section, newEmp.department, orgNodes.sections, orgNodes.depts),
-      org_node_src: ORG_SRC_MANUAL,
-      staff_kind: newEmp.staff_kind || STAFF_SHOPFLOOR,
-      position: form.position || null,
-      created_by: userData?.user?.id || null,
-    };
+      department: newEmp.department,
+      section:    newEmp.section,
+      orgSections: orgNodes.sections,
+      orgDepts:    orgNodes.depts,
+      staffKind:  newEmp.staff_kind,
+      position:   form.position,
+      createdBy:  userData?.user?.id,
+    });
     const res = await supabase.from('employees').insert(row).select('id, employee_id_code, name, team, line_id, section, department, position').single();
     setNewEmpSaving(false);
     if (!checkWrite(res, 'เพิ่มพนักงานเข้าฐาน')) return;
@@ -281,6 +306,20 @@ export default function AddUser() {
   };
 
   const empById = useMemo(() => Object.fromEntries(emps.map(e => [e.id, e])), [emps]);
+  /* 🩺 แถบ "งานค้างของทะเบียนบัญชี" — feedback user 19/10: *"กว่าจะเจอหน้าจอหลัก พวกแจ้งเตือนเต็มไปหมด"*
+     5 แผงเดิมกางค้างไว้ทั้งหมด (29+6+15+1+10 รายการ) ⇒ ต้องเลื่อนยาวกว่าจะถึงตารางผู้ใช้
+     🔴 **พับได้ แต่ห้ามหาย** — จำนวนทุกกองยังอยู่บนจอเป็นชิปเสมอ กดชิปแล้วกางกองนั้นตรงนั้น
+        (กฎความซื่อสัตย์ของจอ: ข้อมูลไม่ครบ/มีงานค้าง ต้องเห็น ห้ามซ่อนเงียบ) */
+  const [openWl, setOpenWl] = useState(null);   // คีย์กองที่กางอยู่ · null = พับหมด
+  const wlCounts = useMemo(() => ({
+    mismatch: users.filter(u => identityDiff(u, u.employee_id ? empById[u.employee_id] : null).length).length,
+    fallback: users.filter(u => identityFallbacks(u, u.employee_id ? empById[u.employee_id] : null).length).length,
+    dual:     users.filter(u => dualMeaningInfo(u, u.employee_id ? empById[u.employee_id] : null).length).length,
+    unknown:  unlinkedTriage(users, emps).queue.length,
+    ghost:    users.filter(scopeIneffective).length,
+    toowide:  users.filter(scopeTooWide).length,
+    review:   users.filter(needsScopeReview).length,
+  }), [users, emps, empById]);
   /* ผลค้นพนักงาน — ถ้าคำค้นไม่ตรงใคร **ห้ามคืนลิสต์ว่าง** (ลิสต์ว่าง = คนอ่านสรุปว่า "ไม่มีคนนี้"
      แล้วไปสร้างซ้ำ — เกิดจริง 23/09) · คืนทุกคนแทน แล้วขึ้นป้ายบอกว่าไม่พบคำค้น */
   const empMatches = useMemo(() => {
@@ -387,6 +426,35 @@ export default function AddUser() {
     const res = await supabase.from('profiles').update({ is_dept_admin: val }).eq('id', id).select('id');
     return subStepErr('แอดมินหน่วยงาน', res);
   };
+  /* ── 🪪 คิว "บัญชีที่ยังไม่รู้ว่าเป็นใคร" — ปุ่มลัด 2 ทางจากในแถบ worklist (19/10) ────────
+     ทางที่ 3 (ยังไม่มีชื่อในทะเบียนพนักงาน) ใช้ปุ่ม "แก้ไข" เปิดโมดัลเดิมที่มีปุ่มเพิ่มคนเข้าฐานอยู่แล้ว
+     🔴 ทั้ง 2 ปุ่มนับแถวที่เขียนจริง — RLS ปฏิเสธ UPDATE = "สำเร็จ 0 แถว ไม่มี error" (กฎเหล็ก DB ข้อ 2) */
+  const [triBusy, setTriBusy] = useState(null);   // id ที่กำลังเขียน (กันกดซ้ำ)
+  const linkEmployee = async (u, emp) => {
+    if (!u?.id || !emp?.id) return;
+    setTriBusy(u.id);
+    const ok = checkWriteRows(await supabase.from('profiles')
+      .update({ employee_id: emp.id, account_kind: 'person' })
+      .eq('id', u.id).select('id'), 'ผูกบัญชีกับพนักงาน');
+    setTriBusy(null);
+    if (!ok) return;
+    toast.success(`ผูก "${u.full_name || u.email}" กับ ${emp.name} แล้ว — ทีม/ไลน์/ส่วนงานจะอ่านจากฐานพนักงานต่อไป`);
+    fetchUsers();
+  };
+  /** ติดป้าย "บัญชีกลาง" — ใช้ได้เฉพาะใบที่**ยังไม่ผูกตัวตน** (ผูกแล้วแปลว่าเป็นคน ต้องไปแก้ในโมดัล) */
+  const markShared = async (u) => {
+    if (!u?.id || u.employee_id) return;
+    if (!window.confirm(`ตั้ง "${u.full_name || u.email}" เป็นบัญชีกลาง (จอ TV / ประจำเครื่อง) ?\n`
+      + 'บัญชีกลางไม่ผูกตัวตนพนักงาน และจะไม่ขึ้นในคิวนี้อีก')) return;
+    setTriBusy(u.id);
+    const ok = checkWriteRows(await supabase.from('profiles')
+      .update({ account_kind: 'shared' }).eq('id', u.id).select('id'), 'ตั้งเป็นบัญชีกลาง');
+    setTriBusy(null);
+    if (!ok) return;
+    toast.success('ตั้งเป็นบัญชีกลางแล้ว');
+    fetchUsers();
+  };
+
   /** ผลรวมขั้นย่อย → ข้อความเขียวเฉพาะเมื่อครบทุกขั้น · ขาดขั้นไหน = toast แดงบอกรายขั้น (modal ปิดแล้วก็ยังเห็น) */
   const reportSubSteps = (okMsg, errs) => {
     const bad = errs.filter(Boolean);
@@ -410,6 +478,13 @@ export default function AddUser() {
       return 'เลือกประเภทบัญชีก่อน — บัญชีของคน (ต้องผูกตัวตน) หรือบัญชีกลาง (จอ TV / ประจำเครื่อง)';
     return null;
   };
+
+  /** พนักงานที่ผูกกับบัญชีนี้ (บัญชีของคนเท่านั้น) — แหล่งความจริงของ "ตัวตน" */
+  const linkedEmp = () => (form.accountKind === 'person' && form.employeeId ? empById[form.employeeId] : null);
+  /** 🏠 บ้านจริงที่จะบันทึกลง `profiles.section` — **ทะเบียนพนักงานชนะ**
+   *  (สูตรเดียวกับ `App.jsx`: `emp.section ?? ident.section` · 20/10)
+   *  🔴 ห้ามกลับไปใช้ `form.sections[0]` — ช่องนั้นคือ "เห็นข้อมูลของใคร" คนละคำถามกับ "สังกัดหน่วยไหน" */
+  const homeSectionForSave = () => (linkedEmp()?.section || form.homeSection || '') || null;
 
   const validateScope = () => {
     if (form.role === 'supervisor' && !form.sections.length) return 'ชุดสิทธิ์ระดับส่วน ต้องกำหนด Section อย่างน้อย 1 ส่วนงาน ไม่งั้นจะเห็นข้อมูลทุกส่วนงานแบบไม่จำกัด';
@@ -436,6 +511,7 @@ export default function AddUser() {
       role:        u.role         || 'supervisor',
       position:    u.position     || '',
       sections:    (u.sections?.length ? u.sections : (u.section ? [u.section] : [])),
+      homeSection: u.section || '',      // บ้านจริงที่เก็บไว้ (บัญชีของคน: ทะเบียนพนักงานชนะตอนบันทึก)
       respCcs:     Array.isArray(u.resp_cost_centers) ? u.resp_cost_centers : [],
       scopeDepth:  u.scope_depth || 'unit',
       mtnTeams:    Array.isArray(u.mtn_teams) ? u.mtn_teams : [],
@@ -481,7 +557,7 @@ export default function AddUser() {
             role:         form.role,
             full_name:    form.fullName || null,
             position:     form.position || null,
-            section:      form.sections[0] || null,
+            section:      homeSectionForSave(),
             sections:     form.sections,
             team:         form.team || null,
             line_id:      form.lineId ? Number(form.lineId) : null,
@@ -574,7 +650,7 @@ export default function AddUser() {
         full_name:    form.fullName    || null,
         role:         form.role,
         position:     form.position    || null,
-        section:      form.sections[0] || null,
+        section:      homeSectionForSave(),
         sections:     form.sections.length ? form.sections : null,
         /* 🔭 ความกว้างที่ "คนเลือกเอง" — ต่างจาก legacy_open ที่ได้ all มาจากการเว้นว่าง
            (docs/ACCESS-CONTROL-STANDARDS.md §2 · ขอบเขตตัดสิทธิ์ให้แคบลงเท่านั้น ห้ามขยาย) */
@@ -701,6 +777,35 @@ export default function AddUser() {
         </div>
       )}
 
+      {/* 🩺 แถบสรุปงานค้าง — คลิกชิปเพื่อกาง/พับกองนั้น (ค่าเริ่มต้น = พับหมด ตารางผู้ใช้จึงอยู่บนสุด) */}
+      {(() => {
+        const CHIPS = [
+          ['mismatch', '⚠️ ตัวตนไม่ตรงฐานพนักงาน', '#f59e0b'],
+          ['fallback', '🧩 ฐานพนักงานยังไม่ได้กรอก', '#f59e0b'],
+          ['dual',     '🧭 ทำงานคนละตำแหน่งกับที่บรรจุ', 'var(--accent)'],
+          ['unknown',  '🪪 ยังไม่รู้ว่าเป็นใคร', '#f59e0b'],
+          ['toowide',  '🔓 หัวหน้าหน้างานเห็นทั้งโรงงาน', '#ef4444'],
+          ['ghost',    '🚩 ตั้งขอบเขตแล้วไม่มีผล', '#ef4444'],
+          ['review',   '🔭 ยังไม่ได้ทบทวนขอบเขต', '#f59e0b'],
+        ].filter(([k]) => wlCounts[k] > 0);
+        if (!CHIPS.length) return null;
+        return (
+          <div className="card" style={{ marginBottom: 12, padding: '8px 10px', display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            <b style={{ fontSize: 12, color: 'var(--text2)' }}>🩺 งานค้างของทะเบียนบัญชี</b>
+            {CHIPS.map(([k, label, color]) => (
+              <button key={k} type="button" onClick={() => setOpenWl(o => (o === k ? null : k))}
+                aria-expanded={openWl === k}
+                style={{ width: 'auto', fontSize: 11.5, padding: '3px 10px', cursor: 'pointer', borderRadius: 999,
+                  border: `1px solid ${openWl === k ? color : 'var(--border2)'}`,
+                  background: openWl === k ? 'var(--accent-dim)' : 'var(--bg3)', color: 'var(--text2)' }}>
+                {label} <b style={{ color }}>{wlCounts[k]}</b> {openWl === k ? '▴' : '▾'}
+              </button>
+            ))}
+            <span style={{ fontSize: 11, color: 'var(--muted)' }}>— กดเพื่อดูรายชื่อ + ปุ่มแก้</span>
+          </div>
+        );
+      })()}
+
       {/* ── worklist: บัญชีที่ตัวตนไม่ตรงกับฐานพนักงาน / ยังไม่ระบุประเภท ──────────
           ⚠️ ห้ามซ่อนเงียบ — ข้อมูลไม่ตรงทำให้ "มองไม่เห็นกะตัวเอง" (Checkin กรองด้วย team ของบัญชี)
              เคสจริง: หัวหน้า 2 คนทีมสลับกัน เพราะ admin เดาตอนสร้างบัญชี */}
@@ -711,12 +816,16 @@ export default function AddUser() {
           .map(u => ({ u, e: u.employee_id ? empById[u.employee_id] : null }))
           .map(x => ({ ...x, diff: identityDiff(x.u, x.e) }))
           .filter(x => x.diff.length);
-        const unset = users.filter(u => !u.account_kind);
-        if (!mism.length && !unset.length) return null;
+        /* 🪪 แยก 3 กองผ่านของกลาง — "บัญชีกลางไม่ผูกตัวตน = ถูกต้องแล้ว" ห้ามนับเป็นงานค้าง */
+        const tri = unlinkedTriage(users, emps);
+        const unset = tri.queue;
+        if (!mism.length && !tri.queue.length && !tri.personUnlinked.length) return null;
+        // กางเฉพาะกองที่กดชิปไว้ (จำนวนทุกกองยังอยู่บนแถบสรุปด้านบนเสมอ)
+        if (!['mismatch', 'fallback', 'dual', 'unknown'].includes(openWl)) return null;
         return (
           <div className="card" style={{ marginBottom: 12, padding: 12, borderLeft: '3px solid #f59e0b' }}>
-            {mism.length > 0 && (
-              <div style={{ marginBottom: unset.length ? 10 : 0 }}>
+            {mism.length > 0 && openWl === 'mismatch' && (
+              <div>
                 <div style={{ fontSize: 13, fontWeight: 700, color: '#f59e0b', marginBottom: 6 }}>
                   ⚠️ ตัวตนไม่ตรงกับฐานข้อมูลพนักงาน · {mism.length} บัญชี
                 </div>
@@ -755,9 +864,9 @@ export default function AddUser() {
               const fb = users
                 .map(u => ({ u, miss: identityFallbacks(u, u.employee_id ? empById[u.employee_id] : null) }))
                 .filter(x => x.miss.length);
-              if (!fb.length) return null;
+              if (!fb.length || openWl !== 'fallback') return null;
               return (
-                <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: unset.length ? 10 : 0 }}>
+                <div style={{ fontSize: 12, color: 'var(--text2)' }}>
                   <b style={{ color: '#f59e0b' }}>ฐานพนักงานยังไม่ได้กรอก · {fb.length} บัญชี</b>
                   <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3, lineHeight: 1.5 }}>
                     {fb.map(({ u, miss }) => `${u.full_name} (${miss.map(m => m.label).join('/')})`).join(' · ')}
@@ -775,9 +884,9 @@ export default function AddUser() {
               const dual = users
                 .map(u => ({ u, info: dualMeaningInfo(u, u.employee_id ? empById[u.employee_id] : null) }))
                 .filter(x => x.info.length);
-              if (!dual.length) return null;
+              if (!dual.length || openWl !== 'dual') return null;
               return (
-                <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: unset.length ? 10 : 0 }}>
+                <div style={{ fontSize: 12, color: 'var(--text2)' }}>
                   <b style={{ color: 'var(--accent)' }}>🧭 ทำงานคนละตำแหน่งกับที่บริษัทบรรจุ · {dual.length} บัญชี</b>
                   <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3, lineHeight: 1.6 }}>
                     <b>ไม่ใช่ข้อผิดพลาด</b> — 2 ช่องนี้ตอบคนละคำถาม และระบบ<b>ตัดสินสิทธิ์จากตำแหน่งที่ปฏิบัติงาน</b>
@@ -801,12 +910,85 @@ export default function AddUser() {
                 </div>
               );
             })()}
-            {unset.length > 0 && (
+            {/* ── 🪪 คิว "ยังไม่รู้ว่าบัญชีนี้เป็นใคร" (19/10 · คำสั่ง user) ───────────────────
+                เดิมบรรทัดนี้บอกแค่ "ยังไม่ระบุประเภทบัญชี · 18 บัญชี" **ไม่มีชื่อ ไม่มีปุ่ม**
+                ⇒ แอดมินต้องไปไล่หาเองใน 122 แถว ⇒ ไม่มีใครทำ ค้างมาตลอด
+                🔴 วัดแล้ว: จับคู่ชื่ออัตโนมัติแก้ไม่ได้ (ชื่อตรง 1/18) — ปลายทางมี 3 ทาง
+                   ⇒ จอต้องเสนอ "ทางไปต่อ" รายใบ ไม่ใช่ปุ่ม "ผูกให้หมด" */}
+            {tri.queue.length > 0 && openWl === 'unknown' && (
               <div style={{ fontSize: 12, color: 'var(--text2)' }}>
-                <b style={{ color: '#f59e0b' }}>ยังไม่ระบุประเภทบัญชี · {unset.length} บัญชี</b>
-                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3, lineHeight: 1.5 }}>
-                  ระบบไม่เดาให้ว่าบัญชีไหนเป็นของคนหรือของหน่วยงาน — เปิดแก้ไขแล้วเลือกประเภท
-                  บัญชีของคนจะได้ผูกตัวตนกับฐานพนักงาน ส่วนบัญชีหน่วยงาน/อุปกรณ์ไม่ต้องผูก
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#f59e0b', marginBottom: 4 }}>
+                  🪪 ยังไม่รู้ว่าบัญชีนี้เป็นใคร · {tri.queue.length} บัญชี
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 7, lineHeight: 1.6 }}>
+                  ตัวตน (<b>ทีม / ไลน์ / ส่วนงาน</b>) อ่านจาก<b>ฐานพนักงาน</b>เมื่อผูกแล้ว —
+                  ยังไม่ผูก = ใช้ค่าที่แอดมินกรอกไว้ในบัญชี ซึ่งเพี้ยนได้โดยไม่มีใครรู้
+                  (เคสจริง: หัวหน้า 2 คนทีมสลับกัน แล้วเปิดจอเช็คชื่อไม่เห็นกะตัวเอง)
+                  <br />🔴 <b>ระบบไม่เดาให้</b> ว่าใบไหนเป็นของคนหรือของหน่วยงาน — เสนอตัวเลือกให้ คนกดตัดสิน
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {tri.queue.map(({ u, tier, rows, confident }) => {
+                    const hint = routeHint({ tier, rows, confident });
+                    const busy = triBusy === u.id;
+                    return (
+                      <div key={u.id} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap',
+                        fontSize: 12, background: 'var(--bg3)', borderRadius: 6, padding: '6px 9px', opacity: busy ? 0.55 : 1 }}>
+                        <div style={{ minWidth: 150, flex: '0 1 190px' }}>
+                          <b>{u.full_name || <span style={{ color: 'var(--muted)', fontWeight: 400 }}>ไม่ระบุชื่อ</span>}</b>
+                          <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+                            {roleLabel(u.role)}{u.position ? ` · ${positionLabel(u.position)}` : ''}
+                            {u.section ? ` · ${u.section}` : ''}
+                          </div>
+                        </div>
+                        <div style={{ flex: '1 1 260px', minWidth: 0 }}>
+                          <div style={{ fontSize: 11, color: tier ? 'var(--text2)' : '#f59e0b', marginBottom: 3 }}>
+                            {hint.text}
+                          </div>
+                          {/* ชื่อที่เจอในทะเบียน — โชว์ "รหัสพนักงาน + ส่วนงาน" ให้แยกคนชื่อซ้ำออกจากกันได้ */}
+                          <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                            {rows.map(e => (
+                              <button key={e.id} type="button" disabled={busy}
+                                onClick={() => linkEmployee(u, e)}
+                                title={`ผูกบัญชีนี้กับ ${e.name} (${e.employee_id_code || 'ไม่มีรหัส'})`}
+                                style={{ width: 'auto', fontSize: 11, padding: '3px 9px', cursor: busy ? 'default' : 'pointer',
+                                  borderRadius: 6, border: `1px solid ${confident ? 'rgba(34,197,94,0.55)' : 'var(--border2)'}`,
+                                  background: confident ? 'rgba(34,197,94,0.12)' : 'var(--bg2)',
+                                  color: confident ? '#22c55e' : 'var(--text2)', fontWeight: 700 }}>
+                                🔗 {e.employee_id_code || '—'} · {e.name}
+                                {e.section ? <span style={{ fontWeight: 400, opacity: 0.8 }}> · {e.section}</span> : null}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: 5, marginLeft: 'auto', flexWrap: 'wrap' }}>
+                          {/* ทาง 2: ยังไม่มีชื่อในทะเบียน → โมดัลเดิมมีปุ่ม "＋ เพิ่มคนนี้เข้าฐาน" อยู่แล้ว */}
+                          <button type="button" disabled={busy} onClick={() => openEdit(u)}
+                            title="เปิดแก้ไขบัญชี — ในโมดัลมีปุ่มเพิ่มคนเข้าฐานพนักงาน ถ้ายังไม่มีชื่อเขา"
+                            style={{ width: 'auto', fontSize: 11, padding: '3px 9px', cursor: busy ? 'default' : 'pointer' }}>
+                            ✏️ เปิดแก้ไข / เพิ่มเข้าฐาน
+                          </button>
+                          {/* ทาง 3: ไม่ใช่คน (จอ TV / ประจำเครื่อง / บัญชีทดสอบ) */}
+                          <button type="button" disabled={busy} onClick={() => markShared(u)}
+                            title="จอ TV หรือบัญชีประจำเครื่อง = บัญชีกลาง ไม่ต้องผูกตัวตน"
+                            style={{ width: 'auto', fontSize: 11, padding: '3px 9px', cursor: busy ? 'default' : 'pointer',
+                              background: 'var(--bg2)', border: '1px solid var(--border2)', color: 'var(--text2)' }}>
+                            🖥️ เป็นบัญชีกลาง
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                {/* 🔴 ตัวเลขต้องพูดให้ตรง — บัญชีกลางที่ไม่ผูกตัวตน **ถูกต้องแล้ว** ห้ามนับเป็นงานค้าง */}
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 7, lineHeight: 1.6,
+                  borderTop: '1px dashed var(--border)', paddingTop: 6 }}>
+                  นอกคิวนี้: <b>{tri.sharedOk.length}</b> บัญชีกลาง (จอ TV / ประจำเครื่อง) —
+                  <b> ไม่ผูกตัวตนถูกต้องแล้ว ไม่ใช่งานค้าง</b>
+                  {tri.personUnlinked.length > 0 && (
+                    <> · <b style={{ color: '#ef4444' }}>⚠ {tri.personUnlinked.length} บัญชีติดป้ายว่าเป็นของคนแต่ยังไม่ผูกตัวตน</b>
+                      {' '}({tri.personUnlinked.map(x => x.u.full_name || x.u.email).join(' · ')})
+                      {' '}— เปิดแก้ไขแล้วเลือกคนให้ครบ</>
+                  )}
                 </div>
               </div>
             )}
@@ -824,9 +1006,29 @@ export default function AddUser() {
            ต้องแยกจากคิวข้างบน เพราะคนละอาการ: อันนั้น "ไม่เคยตั้ง" · อันนี้ "ตั้งแล้วแต่ไม่ครบ"
            ปล่อยเงียบ = จอบอกว่าถูกจำกัด แต่ความจริงไม่ถูกจำกัด (แย่กว่าไม่ตั้งเลย) */
         const ghost = users.filter(scopeIneffective);
-        if (!review.length && !ghost.length) return null;
+        /* 🔓 "หัวหน้าหน้างานที่ตั้งไว้ให้เห็นทั้งโรงงาน" — คนละอาการกับ 2 กองบน:
+           อันนี้ "ตั้งกว้างไว้จริงๆ" (scope_depth=all) ทั้งที่เป็น leader/supervisor หน้างาน
+           `scopedLines()` บีบ leader กลับเป็นไลน์ตัวเองให้แล้ว แต่การตั้งค่ายังผิด ⇒ ต้องให้คนมาแก้ */
+        const toowide = users.filter(scopeTooWide);
+        if (!review.length && !ghost.length && !toowide.length) return null;
+        if (openWl !== 'ghost' && openWl !== 'review' && openWl !== 'toowide') return null;
         return (<>
-          {ghost.length > 0 && (
+          {toowide.length > 0 && openWl === 'toowide' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+              background: 'rgba(239,68,68,0.10)', border: '1px solid rgba(239,68,68,0.35)',
+              borderRadius: 10, padding: '9px 12px', marginBottom: 10, fontSize: 12, color: 'var(--text2)' }}>
+              <b style={{ color: '#ef4444' }}>🔓 หัวหน้าหน้างานตั้งไว้ให้เห็นทั้งโรงงาน {toowide.length} บัญชี</b>
+              <span>
+                role <b>หัวหน้ากลุ่ม/หัวหน้างาน</b> แต่ตั้งความกว้างเป็น <b>“ทั้งโรงงาน”</b> —
+                ควรจำกัดที่หน่วยของตัวเอง · เปิดแก้ไขแล้วเลือกขอบเขตให้ตรงงานจริง
+              </span>
+              <span style={{ color: 'var(--muted)' }}>
+                ({toowide.slice(0, 4).map(u => u.full_name || '—').join(' · ')}
+                {toowide.length > 4 ? ` · +${toowide.length - 4}` : ''})
+              </span>
+            </div>
+          )}
+          {ghost.length > 0 && openWl === 'ghost' && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
               background: 'rgba(239,68,68,0.10)', border: '1px solid rgba(239,68,68,0.35)',
               borderRadius: 10, padding: '9px 12px', marginBottom: 10, fontSize: 12, color: 'var(--text2)' }}>
@@ -841,7 +1043,7 @@ export default function AddUser() {
               </span>
             </div>
           )}
-          {review.length > 0 && (
+          {review.length > 0 && openWl === 'review' && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
             background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.35)',
             borderRadius: 10, padding: '9px 12px', marginBottom: 10, fontSize: 12, color: 'var(--text2)' }}>
@@ -907,12 +1109,25 @@ export default function AddUser() {
                     {u.sections?.length ? u.sections.join(', ') : (u.section || '—')}
                     {/* 💰 ชั้นสิทธิ์ที่ 3 แกน CC — บัญชีที่ตั้งแล้ว "ชนะ" ส่วนงานข้างบน ⇒ ต้องเห็นจากลิสต์
                         ไม่งั้นแอดมินอ่านคอลัมน์นี้แล้วเข้าใจผิดว่าขอบเขตที่แก้ได้คือส่วนงานที่เขียนอยู่ */}
-                    {(u.resp_cost_centers || []).length > 0 && (
-                      <div title={(u.resp_cost_centers || []).join(' · ')}
-                        style={{ fontSize: 11, fontWeight: 700, color: '#22c55e', marginTop: 2 }}>
-                        💰 CC {(u.resp_cost_centers || []).length} รหัส
-                      </div>
-                    )}
+                    {(() => {
+                      const own = (u.resp_cost_centers || []).filter(Boolean);
+                      if (own.length) return (
+                        <div title={`ตั้งเองที่ช่อง ④ — ชนะส่วนงาน: ${own.join(' · ')}`}
+                          style={{ fontSize: 11, fontWeight: 700, color: '#22c55e', marginTop: 2 }}>
+                          💰 CC {own.length} รหัส · ตั้งเอง
+                        </div>
+                      );
+                      /* ไม่ได้ติ๊กเอง = ใช้ CC ของส่วนงานตามผัง — โชว์ให้เห็นว่าลิงก์กัน (ไม่ใช่ "ไม่มี") */
+                      const units = u.sections?.length ? u.sections : (u.section ? [u.section] : []);
+                      const derived = [...new Set(units.map(ccOfUnitName).filter(Boolean))];
+                      if (!derived.length) return null;
+                      return (
+                        <div title={`รหัสของส่วนงานตามผังองค์กร (ไม่ได้ตั้งเอง): ${derived.join(' · ')}`}
+                          style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', marginTop: 2 }}>
+                          💰 {derived.join(' · ')} · จากผัง
+                        </div>
+                      );
+                    })()}
                   </td>
                   <td style={{ fontSize: 13, color: u.line_id ? 'var(--text)' : 'var(--muted)' }}>
                     {lineName}
@@ -938,10 +1153,31 @@ export default function AddUser() {
         </table>
       </div>
 
-      {/* Role reference — หมวดที่เข้าได้ดึงจากตารางสิทธิ์จริง (role_permissions) ไม่ hardcode */}
-      <div style={{ padding: '12px 16px', background: 'var(--bg3)', borderRadius: 10, border: '1px solid var(--border2)' }}>
-        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text2)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-          สิทธิ์การเข้าถึง <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>— หมวดที่เข้าได้อ่านจากตารางสิทธิ์ปัจจุบัน ปรับรายหน้าได้ที่เมนู 🔐 จัดการสิทธิ์</span>
+      {/* 📚 ตารางอ้างอิงชุดสิทธิ์ — หมวดที่เข้าได้ดึงจากตารางสิทธิ์จริง (role_permissions) ไม่ hardcode
+          🔴 **พับเป็นค่าเริ่มต้น** (21/10 · user "มันรก ถ้าคนอยากดูค่อยกด show") — เป็นเอกสารอ้างอิง
+             ไม่ใช่ของที่ต้องอ่านทุกครั้งที่เปิดหน้า · CollapseCard จำสถานะที่คนเลือกไว้ให้เอง */}
+      <CollapseCard id="role_ref" storePrefix="add_user" defaultOpen={false}
+        title="📚 ชุดสิทธิ์มีอะไรบ้าง / เข้าหน้าไหนได้" count={ROLE_OPTIONS.length}
+        style={{ background: 'var(--bg3)', border: '1px solid var(--border2)' }}>
+        <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>
+          หมวดที่เข้าได้อ่านสดจากตารางสิทธิ์ปัจจุบัน — ปรับรายหน้าได้ที่เมนู 🔐 จัดการสิทธิ์
+        </div>
+        {/* 🏷️ ผูกชุดสิทธิ์แกน "ขอบเขต" เข้ากับระดับในรหัส Cost Center (21/10 · คำสั่ง user)
+            🔴 เป็นวิธี "อ่านรหัส" ให้คนเข้าใจตรงกัน — ระบบยังตัดสินลำดับชั้นจากผังองค์กรจริงเสมอ */}
+        <div style={{ fontSize: 11, lineHeight: 1.7, color: 'var(--muted)', marginBottom: 10,
+          padding: '7px 10px', borderRadius: 8, background: 'var(--card)', border: '1px solid var(--border2)' }}>
+          <b style={{ color: 'var(--text2)' }}>อ่านรหัส Cost Center ยังไง</b> — ตัวอย่าง <code>2140462100</code> ·
+          {' '}<code>21</code> กลุ่มธุรกิจ · <code>40</code> โรงงานเรา (<code>2140</code> = ทั้งโรงงาน) ·
+          {' '}<b style={{ color: 'var(--text2)' }}>หลักที่ 5 = ระดับในผัง</b> (3 ฝ่าย · 4 ส่วนงาน · 5 แผนก · 6 กลุ่ม/ไลน์) ·
+          {' '}หลักที่ 6 = หน่วยไหนในระดับนั้น (46 / 47 …) · ที่เหลือ = แตกย่อยลงไป
+          <div style={{ marginTop: 3 }}>
+            🏢 <b style={{ color: 'var(--text2)' }}>ยังไม่มีชุดสิทธิ์ของชั้น "แผนก" (เลเวล 5) แยกต่างหาก</b> —
+            ใช้ <b>สิทธิ์ระดับส่วน</b> แล้วติ๊ก <b>Cost Center ของแผนกนั้น</b> (ช่อง ④ ในหน้าแก้บัญชี)
+            ⇒ แก้ได้เฉพาะแผนกนั้น + ทุกไลน์/ทีมใต้ลงไป
+          </div>
+          <div style={{ marginTop: 3 }}>
+            🔴 ป้าย "เลเวล" เป็นแค่วิธีอ่าน — <b>ระบบตัดสินลำดับชั้นจากผังองค์กรจริง (/org-setup) ไม่ใช่จากตัวเลขรหัส</b>
+          </div>
         </div>
         {/* ⚠️ ย้ำให้ชัดว่า role ≠ ตำแหน่งงาน — เคยเข้าใจผิดว่า "ส่วนวิศวกรรม" คือตำแหน่งวิศวกร */}
         <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10, lineHeight: 1.5 }}>
@@ -961,9 +1197,24 @@ export default function AddUser() {
                     <div style={{ width: 6, height: 6, borderRadius: '50%', background: r.color, flexShrink: 0, marginTop: 5 }} />
                     <div style={{ minWidth: 0 }}>
                       <span style={{ fontSize: 12, fontWeight: 700, color: r.color }}>{r.label}</span>
+                      {/* 🏷️ ระดับองค์กรที่ role นี้เทียบได้ = หลักที่ 5 ของรหัส Cost Center (ป้ายอ่านอย่างเดียว) */}
+                      {r.orgLevel && (
+                        <span title={`เทียบกับรหัส Cost Center: หลักที่ 5 = ${r.orgLevel} (${ORG_LEVELS[r.orgLevel]}) · ระบบตัดสินลำดับชั้นจากผังองค์กรจริง ไม่ใช่จากตัวเลข`}
+                          style={{ fontSize: 11, fontWeight: 700, marginLeft: 6, padding: '0 5px', borderRadius: 4,
+                            background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.35)' }}>
+                          เลเวล {r.orgLevel} · {ORG_LEVELS[r.orgLevel]}
+                        </span>
+                      )}
                       <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 6 }}>{r.desc}</span>
                       <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 2 }}>
                         {sum.all ? '✅ เข้าได้ทุกหน้า' : sum.total === 0 ? '— ยังไม่เปิดสิทธิ์หน้าไหน' : `เข้าได้ ${sum.total} หน้า: ${sum.groups.join(' · ')}`}
+                      </div>
+                      {/* 🌐 ใบผ่านข้ามหน่วยงาน — อ่านสดจากตารางสิทธิ์ (ห้ามเขียนเป็นข้อความตายใน roleMeta
+                          ไม่งั้นคำอธิบายกับของจริงเพี้ยนคนละทาง) · ข้อความชุดเดียวกับในโมดัลแก้บัญชี */}
+                      <div style={{ fontSize: 11, marginTop: 1, color: can('scope', 'all_units', r.value) ? '#f59e0b' : 'var(--muted)' }}>
+                        {can('scope', 'all_units', r.value)
+                          ? '🌐 แก้ข้อมูลข้ามส่วนงานได้ทั้งโรงงาน'
+                          : '🔒 แก้ได้เฉพาะส่วนงานของตัวเอง (ตั้งที่ช่องขอบเขตส่วนงาน)'}
                       </div>
                     </div>
                   </div>
@@ -972,7 +1223,7 @@ export default function AddUser() {
             </div>
           </div>
         ))}
-      </div>
+      </CollapseCard>
 
       {/* Create / Edit Modal */}
       {showModal && (
@@ -1085,7 +1336,10 @@ export default function AddUser() {
                         if (emp) setForm(f => ({
                           ...f, employeeId: emp.id, fullName: emp.name || '',
                           team: emp.team || '', lineId: emp.line_id ? String(emp.line_id) : '',
+                          /* ขอบเขต "เห็น" ตั้งต้นจากส่วนงานของเขา (แก้ทีหลังได้) ·
+                             บ้านจริงตามทะเบียนพนักงาน (ช่องนี้อ่านอย่างเดียว) */
                           sections: emp.section ? [emp.section] : f.sections,
+                          homeSection: emp.section || f.homeSection,
                           position: emp.position || f.position,
                         }));
                       }}>
@@ -1193,9 +1447,8 @@ export default function AddUser() {
                         )}
 
                         <div style={{ fontSize: 11, color: 'var(--muted)' }}>
-                          {newEmp.staff_kind === STAFF_SUPPORT
-                            ? 'สายสนับสนุน = ไม่ผูกไลน์/ทีม ⇒ ไม่โผล่ในหน้าเช็คชื่อ · ไม่ถูกนับเป็นกำลังคนหน้าไลน์ · ไม่มีแผงสกิล'
-                            : 'พนักงานหน้าไลน์ = จะถูกนับในเช็คชื่อ/กำลังคน — ไลน์และทีมไปตั้งต่อที่หน้าพนักงาน (/operator)'}
+                          {staffKindHint(newEmp.staff_kind)}
+                          {' · '}ไลน์ · ทีม · วันเริ่มงาน · รูป ไปเติมต่อที่หน้าพนักงาน (/operator)
                         </div>
 
                         <div style={{ display: 'flex', gap: 8 }}>
@@ -1284,6 +1537,111 @@ export default function AddUser() {
                 })()}
               </div>
 
+              {/* 🏠 บ้านจริง — "สังกัดหน่วยไหน" (คนละคำถามกับ ② เห็นข้อมูลของใคร · 20/10)
+                  🔴 บัญชีของคน: **อ่านจากทะเบียนพนักงานอย่างเดียว** ห้ามให้กรอกซ้ำที่นี่
+                     (กรอก 2 ที่ = ค่าขัดกันเงียบ — เคสจริง QC 13 บัญชี ทะเบียนว่า QA แต่บัญชีกลายเป็น PD3) */}
+              {(() => {
+                const emp = form.accountKind === 'person' && form.employeeId ? empById[form.employeeId] : null;
+                const empLink = emp
+                  ? `/operator?q=${encodeURIComponent(emp.employee_id_code || emp.name || '')}`
+                  : '/operator';
+                if (form.accountKind === 'person') {
+                  return (
+                    <div>
+                      <label style={labelSt}>
+                        ส่วนงานที่สังกัด
+                        <span style={{ color: 'var(--muted)', fontWeight: 400 }}> · จากฐานพนักงาน</span>
+                      </label>
+                      <div style={{ padding: '8px 12px', background: 'var(--bg3)', borderRadius: 8, fontSize: 12.5,
+                        color: emp?.section ? 'var(--text)' : '#f59e0b', border: '1px solid var(--border2)' }}>
+                        {!emp ? '— ยังไม่ได้เลือกพนักงาน —'
+                              : emp.section
+                                ? <>🏠 <b>{emp.section}</b>{emp.department ? <span style={{ color: 'var(--muted)' }}> · {emp.department}</span> : null}</>
+                                : '⚠ ทะเบียนพนักงานยังไม่ระบุส่วนงาน — ไปกรอกที่ฐานพนักงานก่อน'}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.5 }}>
+                        ใช้ตอบว่า <b>“แก้ข้อมูลของใครได้”</b> (ชั้นสิทธิ์ที่ 3) — ไม่ใช่ช่อง ② ข้างล่างที่ตอบว่า “เห็นข้อมูลของใคร”
+                        {emp && <> · แก้ค่านี้ที่ <a href={empLink} style={{ color: 'var(--accent)', fontWeight: 600 }}>👥 ฐานข้อมูลพนักงาน →</a></>}
+                      </div>
+                    </div>
+                  );
+                }
+                /* บัญชีกลาง (จอ TV / ประจำเครื่อง) ไม่มีตัวตนในทะเบียน — เลือกเองได้ 1 ส่วนงาน */
+                return (
+                  <div>
+                    <label style={labelSt}>ส่วนงานที่สังกัด</label>
+                    <select value={form.homeSection} onChange={e => setF('homeSection', e.target.value)}>
+                      <option value="">— ไม่ผูกส่วนงาน —</option>
+                      {[...new Set([...sectionOpts, ...orphanDeptOpts, ...(form.homeSection ? [form.homeSection] : [])])]
+                        .map(sec => <option key={sec} value={sec}>{sec}</option>)}
+                    </select>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
+                      ใช้ตอบว่า <b>“แก้ข้อมูลของใครได้”</b> — ไม่ผูก = แก้อะไรไม่ได้นอกจากที่ชุดสิทธิ์เปิดให้ทั้งโรงงาน
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* บัญชีของคนที่ผูกพนักงานแล้ว → ทีม/ไลน์ มาจากฐานพนักงาน ล็อกไม่ให้ admin กรอกทับ
+                  (ต้นเหตุเดิมของ "ทีมสลับกัน" คือช่องพวกนี้ให้กรอกเองได้) */}
+              {(() => {
+                const linked = form.accountKind === 'person' && !!form.employeeId;
+                /* 🔴 ช่องที่ล็อก ต้องโชว์ "ค่าที่มีผลจริง" ไม่ใช่ค่าที่ค้างในบัญชี (25/09 · feedback user)
+                   เกิดจริง: ตีรณา — ฐานพนักงาน team='A' แต่ `profiles.team` เป็น null ⇒ ช่องขึ้น
+                   "— เลือก —" ทั้งที่ป้ายเขียนว่า "จากฐานพนักงาน" = จอโกหก แล้วกดแก้ก็ไม่ได้เพราะล็อกไว้
+                   ตัวตัดสินจริงอยู่ที่ App.jsx: `emp.team ?? profiles.team` (ฐานพนักงานชนะเมื่อมีค่า)
+                   ⇒ ที่นี่ต้องคิดด้วยสูตรเดียวกัน ห้ามอ่าน form.team เฉยๆ ตอน linked */
+                const emp = linked ? empById[form.employeeId] : null;
+                const effTeam = linked ? (emp?.team ?? form.team ?? '') : form.team;
+                const effLine = linked ? (emp?.line_id ?? form.lineId ?? '') : form.lineId;
+                /* ลิงก์ออกจากทางตัน — ช่องที่แก้ที่นี่ไม่ได้ ต้องบอกว่าไปแก้ที่ไหน และพาไปถึงตัวคน
+                   (เดิมบอกไว้ใน `title` อย่างเดียว = ต้องเอาเมาส์ไปจ่อถึงจะเห็น มือถือไม่มีทางรู้เลย) */
+                const empLink = emp
+                  ? `/operator?q=${encodeURIComponent(emp.employee_id_code || emp.name || '')}`
+                  : '/operator';
+                const fixHint = linked && (
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
+                    แก้ค่านี้ที่ <a href={empLink} style={{ color: 'var(--accent)', fontWeight: 600 }}>
+                      👥 ฐานข้อมูลพนักงาน →</a> (หัวหน้าแผนกเป็นคนดูแล)
+                  </div>
+                );
+                return (<>
+                  <div>
+                    <label style={labelSt}>
+                      Team {form.role === 'leader' && !linked && <span style={{ color: 'var(--red)' }}>* จำเป็น</span>}
+                      {linked && <span style={{ color: 'var(--muted)', fontWeight: 400 }}> · จากฐานพนักงาน</span>}
+                    </label>
+                    <select value={effTeam} disabled={linked}
+                      title={linked ? 'แก้ที่ฐานข้อมูลพนักงาน (หน้าพนักงาน) — ที่นี่แสดงค่าจริงเท่านั้น' : undefined}
+                      onChange={e => setF('team', e.target.value)}>
+                      <option value="">— เลือก —</option>
+                      {teamOpts.map(t => <option key={t} value={t}>Team {t} {TEAM_DESC[t] || ''}</option>)}
+                    </select>
+                    {/* Team ของบัญชีไม่ได้บอกแค่ "เข้ากะไหน" แต่คุม "เห็นใครบ้าง" ในหน้าเช็คชื่อด้วย
+                        ต้องเขียนไว้ตรงนี้ ไม่งั้น admin เลือก A/B ให้หัวหน้าที่ดูแลทั้งไลน์แล้วเขาเห็นคนไม่ครบ */}
+                    {form.role === 'leader' && (
+                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.5 }}>
+                        Team คุม<b>ขอบเขตการมองเห็น</b>ในหน้าเช็คชื่อด้วย ไม่ใช่แค่กะ —
+                        {' '}<b>A / B</b> = เห็นเฉพาะคนทีมเดียวกันในไลน์ตัวเอง ·
+                        {' '}<b style={{ color: 'var(--text2)' }}>C</b> = ไม่หมุนกะ <b>เห็นคนทั้งไลน์ทุกทีม</b> (สำหรับหัวหน้าที่ไม่ได้ยืนประจำกะ)
+                      </div>
+                    )}
+                    {fixHint}
+                  </div>
+
+                  {/* ใช้ <LineSelect> ตัวกลาง (มีลำดับชั้น/scope/ไลน์ปลดระวาง) + ล็อกเมื่อผูกพนักงาน */}
+                  <div title={linked ? 'แก้ที่ฐานข้อมูลพนักงาน (หน้าพนักงาน) — ที่นี่แสดงค่าจริงเท่านั้น' : undefined}>
+                    <label style={labelSt}>
+                      ไลน์ผลิต / Group {form.role === 'leader' && !linked && <span style={{ color: 'var(--red)' }}>* จำเป็น</span>}
+                      {linked && <span style={{ color: 'var(--muted)', fontWeight: 400 }}> · จากฐานพนักงาน</span>}
+                    </label>
+                    <LineSelect lines={lines} value={effLine} valueKey="id" includeSupport
+                      disabled={linked} onChange={v => setF('lineId', v)} />
+                    {fixHint}
+                  </div>
+                </>);
+              })()}
+
               <div style={{ gridColumn: '1 / -1', fontSize: 12, fontWeight: 800, color: 'var(--accent2)', borderBottom: '1px solid var(--border)', paddingBottom: 5, marginTop: 4 }}>
                 🔐 สิทธิ์การใช้งานในระบบ (ไม่เกี่ยวกับตำแหน่งงานข้างบน)
               </div>
@@ -1293,7 +1651,8 @@ export default function AddUser() {
                 background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, padding: '8px 10px' }}>
                 <div><b style={{ color: 'var(--text2)' }}>① ชุดสิทธิ์ (Role)</b> = <b>กดอะไรได้</b> — เปิดหน้า/ปุ่มไหนบ้าง · <u>ไม่ได้บอกว่าสังกัดหน่วยไหน</u></div>
                 <div><b style={{ color: 'var(--text2)' }}>② ขอบเขตการมองเห็น</b> = <b>เห็นข้อมูลของใคร</b> — กว้าง/แคบ</div>
-                <div><b style={{ color: 'var(--text2)' }}>③ ส่วนงาน + ขอบเขตส่วนงาน</b> = <b>แก้ข้อมูลของใครได้</b> (ใหม่ 15/10) — ไม่ใช่ของตัวเอง = ดูได้ แก้ไม่ได้</div>
+                <div><b style={{ color: 'var(--text2)' }}>③ ขอบเขตส่วนงาน</b> = <b>แก้ข้อมูลของใครได้</b> (ใหม่ 15/10) — ไม่ใช่ของตัวเอง = ดูได้ แก้ไม่ได้
+                  {' · '}<span style={{ color: 'var(--text2)' }}>ไม่ติ๊กเลย = ใช้ <b>🏠 ส่วนงานที่สังกัด</b> ข้างบน (มาจากทะเบียนพนักงาน)</span></div>
                 <div><b style={{ color: 'var(--text2)' }}>④ Cost Center ที่รับผิดชอบ</b> = <b>แก้ข้อมูลของใครได้ "ตามลำดับชั้น"</b> (ใหม่ 16/10) — ติ๊กชั้นส่วนงาน ได้ทุกหน่วยใต้ลงไป · <b>ไม่ติ๊ก = ใช้ ③ เหมือนเดิม</b></div>
               </div>
 
@@ -1373,7 +1732,7 @@ export default function AddUser() {
 
               <div style={{ gridColumn: '1 / -1' }}>
                 <label style={labelSt}>
-                  ③ ขอบเขตส่วนงาน (Section) — <span style={{ fontWeight: 600, color: 'var(--muted)' }}>"แก้ข้อมูลของใครได้"</span>
+                  ③ ขอบเขตส่วนงาน (Section) — <span style={{ fontWeight: 600, color: 'var(--muted)' }}>"เห็น + แก้ข้อมูลของใครได้"</span>
                   {form.role === 'supervisor' && <span style={{ color: 'var(--red)' }}> * จำเป็นอย่างน้อย 1</span>}
                 </label>
                 {/* 🔐 15/10 — ช่องนี้ไม่ใช่แค่ตัวกรองการดูอีกแล้ว มันคือด่าน "แก้ของคนอื่นไม่ได้"
@@ -1609,65 +1968,6 @@ export default function AddUser() {
                 </div>
               )}
 
-              {/* บัญชีของคนที่ผูกพนักงานแล้ว → ทีม/ไลน์ มาจากฐานพนักงาน ล็อกไม่ให้ admin กรอกทับ
-                  (ต้นเหตุเดิมของ "ทีมสลับกัน" คือช่องพวกนี้ให้กรอกเองได้) */}
-              {(() => {
-                const linked = form.accountKind === 'person' && !!form.employeeId;
-                /* 🔴 ช่องที่ล็อก ต้องโชว์ "ค่าที่มีผลจริง" ไม่ใช่ค่าที่ค้างในบัญชี (25/09 · feedback user)
-                   เกิดจริง: ตีรณา — ฐานพนักงาน team='A' แต่ `profiles.team` เป็น null ⇒ ช่องขึ้น
-                   "— เลือก —" ทั้งที่ป้ายเขียนว่า "จากฐานพนักงาน" = จอโกหก แล้วกดแก้ก็ไม่ได้เพราะล็อกไว้
-                   ตัวตัดสินจริงอยู่ที่ App.jsx: `emp.team ?? profiles.team` (ฐานพนักงานชนะเมื่อมีค่า)
-                   ⇒ ที่นี่ต้องคิดด้วยสูตรเดียวกัน ห้ามอ่าน form.team เฉยๆ ตอน linked */
-                const emp = linked ? empById[form.employeeId] : null;
-                const effTeam = linked ? (emp?.team ?? form.team ?? '') : form.team;
-                const effLine = linked ? (emp?.line_id ?? form.lineId ?? '') : form.lineId;
-                /* ลิงก์ออกจากทางตัน — ช่องที่แก้ที่นี่ไม่ได้ ต้องบอกว่าไปแก้ที่ไหน และพาไปถึงตัวคน
-                   (เดิมบอกไว้ใน `title` อย่างเดียว = ต้องเอาเมาส์ไปจ่อถึงจะเห็น มือถือไม่มีทางรู้เลย) */
-                const empLink = emp
-                  ? `/operator?q=${encodeURIComponent(emp.employee_id_code || emp.name || '')}`
-                  : '/operator';
-                const fixHint = linked && (
-                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
-                    แก้ค่านี้ที่ <a href={empLink} style={{ color: 'var(--accent)', fontWeight: 600 }}>
-                      👥 ฐานข้อมูลพนักงาน →</a> (หัวหน้าแผนกเป็นคนดูแล)
-                  </div>
-                );
-                return (<>
-                  <div>
-                    <label style={labelSt}>
-                      Team {form.role === 'leader' && !linked && <span style={{ color: 'var(--red)' }}>* จำเป็น</span>}
-                      {linked && <span style={{ color: 'var(--muted)', fontWeight: 400 }}> · จากฐานพนักงาน</span>}
-                    </label>
-                    <select value={effTeam} disabled={linked}
-                      title={linked ? 'แก้ที่ฐานข้อมูลพนักงาน (หน้าพนักงาน) — ที่นี่แสดงค่าจริงเท่านั้น' : undefined}
-                      onChange={e => setF('team', e.target.value)}>
-                      <option value="">— เลือก —</option>
-                      {teamOpts.map(t => <option key={t} value={t}>Team {t} {TEAM_DESC[t] || ''}</option>)}
-                    </select>
-                    {/* Team ของบัญชีไม่ได้บอกแค่ "เข้ากะไหน" แต่คุม "เห็นใครบ้าง" ในหน้าเช็คชื่อด้วย
-                        ต้องเขียนไว้ตรงนี้ ไม่งั้น admin เลือก A/B ให้หัวหน้าที่ดูแลทั้งไลน์แล้วเขาเห็นคนไม่ครบ */}
-                    {form.role === 'leader' && (
-                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.5 }}>
-                        Team คุม<b>ขอบเขตการมองเห็น</b>ในหน้าเช็คชื่อด้วย ไม่ใช่แค่กะ —
-                        {' '}<b>A / B</b> = เห็นเฉพาะคนทีมเดียวกันในไลน์ตัวเอง ·
-                        {' '}<b style={{ color: 'var(--text2)' }}>C</b> = ไม่หมุนกะ <b>เห็นคนทั้งไลน์ทุกทีม</b> (สำหรับหัวหน้าที่ไม่ได้ยืนประจำกะ)
-                      </div>
-                    )}
-                    {fixHint}
-                  </div>
-
-                  {/* ใช้ <LineSelect> ตัวกลาง (มีลำดับชั้น/scope/ไลน์ปลดระวาง) + ล็อกเมื่อผูกพนักงาน */}
-                  <div title={linked ? 'แก้ที่ฐานข้อมูลพนักงาน (หน้าพนักงาน) — ที่นี่แสดงค่าจริงเท่านั้น' : undefined}>
-                    <label style={labelSt}>
-                      ไลน์ผลิต / Group {form.role === 'leader' && !linked && <span style={{ color: 'var(--red)' }}>* จำเป็น</span>}
-                      {linked && <span style={{ color: 'var(--muted)', fontWeight: 400 }}> · จากฐานพนักงาน</span>}
-                    </label>
-                    <LineSelect lines={lines} value={effLine} valueKey="id" includeSupport
-                      disabled={linked} onChange={v => setF('lineId', v)} />
-                    {fixHint}
-                  </div>
-                </>);
-              })()}
 
               {(form.role === 'supervisor' || form.role === 'leader') && (
                 <div style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--muted)', padding: '8px 10px', background: 'var(--bg3)', borderRadius: 6, lineHeight: 1.5 }}>

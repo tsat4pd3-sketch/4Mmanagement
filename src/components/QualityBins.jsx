@@ -18,6 +18,7 @@ import SearchInput from './SearchInput';
 import { ALL } from '../utils/filterLabels';
 import useTimeRange from '../utils/useTimeRange';
 import LineSelect from './LineSelect';
+import { checkWriteRows } from '../utils/dbWrite';
 import ProductSelect from './ProductSelect';
 import PersonSelect from './PersonSelect';
 import useColumnHistory from '../utils/useColumnHistory'; // 📜 ค่าที่เคยบันทึกใน quality_bin_records — ทะเบียนไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
@@ -76,7 +77,7 @@ const th = { padding: '7px 8px', fontSize: 11.5, color: 'var(--muted)', textAlig
 const td = { padding: '6px 8px', fontSize: 12.5, color: 'var(--text)', borderTop: '1px solid var(--border)' };
 
 export default function QualityBins() {
-  const { role, lineId, sections, fullName } = useContext(UserContext);
+  const { role, lineId, sections, fullName, scopeIdx } = useContext(UserContext);
   const canRecord = can('scrap', 'record', role);
   const canManage = can('scrap', 'manage', role);
 
@@ -120,7 +121,7 @@ export default function QualityBins() {
 
   // scope มาตรฐาน (helper กลาง) — ผลิตเห็นเฉพาะส่วนงานตัวเอง
   const scopeNames = useMemo(
-    () => scopedLineNames({ role, lineId, sections: sections || [], lines }),
+    () => scopedLineNames({ role, lineId, sections: sections || [], lines, scopeIdx }),
     [role, lineId, sections, lines],
   );
 
@@ -133,7 +134,9 @@ export default function QualityBins() {
       .gte('work_date', from).lte('work_date', to)
       .order('work_date', { ascending: false }).order('created_at', { ascending: false })
       .limit(500);
-    if (scopeNames) q = q.in('line_name', scopeNames);
+    /* 🔴 แท็กที่ไม่ระบุไลน์ต้องเห็นด้วย — `IN` ไม่จับ NULL ⇒ ลงถังแล้วหายจากรายการ (audit 19/10) */
+    const inScope = scopeNames ? `line_name.is.null,line_name.in.(${scopeNames.map(n => `"${String(n).replace(/"/g, '\\"')}"`).join(',')})` : null;
+    if (inScope) q = q.or(inScope);
     /* ⏱️ ของค้างเกินอายุแท็ก — คิวรีแยก ไม่ผูกช่วงวันที่ (ลงถังก่อน "วันนี้ − อายุแท็ก" และยังไม่ปิด)
        กรองฝั่ง server แค่เงื่อนไขปิดที่ชัด (แดง: ยังไม่มีใบ scrap · เหลือง: ยังไม่กลับเข้ากระบวนการ)
        ที่เหลือ (QA ว่างานดี/ขอใช้มีเลขใบ/ย้ายลงแดงแล้ว) ตัดสินด้วย binClosed() ตัวเดียวกับตาราง */
@@ -143,7 +146,7 @@ export default function QualityBins() {
       .order('work_date', { ascending: true })
       .limit(500);
     oq = bin === 'red' ? oq.is('scrap_report_id', null) : oq.is('return_date', null);
-    if (scopeNames) oq = oq.in('line_name', scopeNames);
+    if (inScope) oq = oq.or(inScope);
     const [{ data, error }, ores] = await Promise.all([q, oq]);
     if (stale()) return;
     setLoading(false);
@@ -241,7 +244,9 @@ export default function QualityBins() {
   const [repairFile, setRepairFile] = useState(null);
   const setPhotoFiles = () => { setFoundFile(null); setRepairFile(null); };
 
-  const openNew = () => { setForm({ ...BLANK, reported_by: '' }); setMatLocked(false); setPhotoFiles(); setEditing('new'); };
+  /* 📅 วันที่ต้องคิด "ตอนเปิดฟอร์ม" ไม่ใช่ตอนโหลดไฟล์ (2026-10-20) — `BLANK.work_date` ถูกคิดครั้งเดียวตอน import
+     ⇒ handheld/จอที่เปิดค้างข้ามวัน ลงถังเหลือง-แดงเป็นวันของเมื่อวานเงียบๆ */
+  const openNew = () => { setForm({ ...BLANK, work_date: today(), reported_by: '' }); setMatLocked(false); setPhotoFiles(); setEditing('new'); };
   const openEdit = (r) => {
     setForm(Object.fromEntries(Object.keys(BLANK).map(k => [k, r[k] ?? ''])));
     setMatLocked(false);
@@ -255,9 +260,13 @@ export default function QualityBins() {
   );
 
   const save = async () => {
+    /* ด่านชั้น 2 — ซ่อนปุ่มไม่ใช่ด่าน (สิทธิ์เปลี่ยนระหว่างเปิดจอ / โมดัลเปิดค้าง / ยิงตรง)
+       ถังเหลือง-แดง = บันทึกคุณภาพที่มีอายุเอกสาร ⇒ คนที่ไม่มี scrap:record ห้ามเขียน */
+    if (!canRecord) { toast.error('บัญชีนี้ไม่มีสิทธิ์บันทึกของเสีย (scrap:record)'); return; }
     const isY = bin === 'yellow';
     if (!form.work_date) { toast.error('กรอกวันที่ลงถัง'); return; }
     if (!numOrNull(form.qty)) { toast.error('กรอกจำนวนชิ้นงาน'); return; }
+    if ([form.qty, form.qty_ok, form.qty_ng].some(v => (numOrNull(v) ?? 0) < 0)) { toast.error('จำนวนติดลบไม่ได้ — แก้ช่องที่มีเครื่องหมายลบ'); return; }
     if (!form.part_name.trim() && !form.mat_no.trim()) { toast.error('ระบุชื่อหรือรหัสชิ้นงาน'); return; }
     /* ทาง "ขอใช้" ต้องมีใบ FM-QA-042 อนุมัติ (WI §5.4) — ไม่มีเลขใบ = ยังปิดสายงานไม่ได้
        ⚠️ เตือน ไม่บล็อก: เลขใบอาจยังไม่ออกตอนที่ QA ตัดสิน (กติกาเดียวกับ checkStdSelection) */
@@ -340,16 +349,17 @@ export default function QualityBins() {
   };
 
   const remove = async (r) => {
+    if (!canManage) { toast.error('ลบรายการของเสียต้องมีสิทธิ์ scrap:manage'); return; }
     if (!window.confirm(`ลบรายการ ${r.part_name || r.mat_no} (${r.qty} ชิ้น) ?`)) return;
     // soft delete — ใบเก่าต้องยังสืบย้อนได้ (บันทึกคุณภาพ ห้ามลบทิ้งจริง)
-    const { error } = await supabaseDR.from('quality_bin_records')
-      .update({ is_active: false }).eq('id', r.id);
-    if (error) { toast.error(error.message); return; }
+    // นับแถวที่เขียนจริง (กฎเขียน DB ข้อ 2) — 0 แถวแล้วขึ้น "ลบแล้ว" = จอโกหก แถวยังอยู่
+    if (!checkWriteRows(await supabaseDR.from('quality_bin_records').update({ is_active: false }).eq('id', r.id).select('id'), 'ลบรายการ')) return;
     toast.success('ลบแล้ว'); load();
   };
 
   /** ซ่อมแล้ว NG → ย้ายลงถังแดง (ตามหมายเหตุท้ายฟอร์มเหลือง) */
   const toRed = async (r) => {
+    if (!canRecord) { toast.error('บัญชีนี้ไม่มีสิทธิ์บันทึกของเสีย (scrap:record)'); return; }
     /* จำนวนที่ย้าย: ซ่อมแล้ว NG มาก่อน · ถ้า QA ชี้ "ทำลาย" ตรงๆ โดยไม่ผ่านการซ่อม ใช้จำนวนทั้งใบ
        (WI §5.4 — ทำลายเป็น 1 ใน 3 ทางที่ QA เลือกได้ ไม่ได้บังคับให้ซ่อมก่อน) */
     const qty = (Number(r.qty_ng) || 0) || (r.qa_decision === 'scrap' ? (Number(r.qty) || 0) : 0);

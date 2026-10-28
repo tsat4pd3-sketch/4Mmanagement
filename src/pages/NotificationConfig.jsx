@@ -7,6 +7,7 @@ import { pmTeamsSync, loadPmTeams } from '../utils/pmTeams'   // ทีมช่
 import { ROLE_OPTIONS } from '../utils/roleMeta'
 import InfoMore from '../components/InfoMore'
 import CollapseCard from '../components/CollapseCard'
+import PushCoveragePanel from '../components/PushCoveragePanel'  // 📲 ใครยังไม่มีเครื่องรับแจ้งเตือน — 2026-10-20
 import { reachLabel, reachWarnings } from '../utils/notifReach'   // 🏷️ ป้ายราคาต่อเรื่อง — สูตรอยู่ util ที่เดียว (มีเทส)
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
@@ -35,6 +36,7 @@ const CATEGORY_LABEL = {
   maintenance: '🔧 Maintenance', pull: '🎴 Pull System', stock: '📦 Stock',
   logistic: '🚚 Logistic',
   safety: '🛡️ Safety',
+  kpi: '📊 KPI / Obeya',   // 20/10 · ผลนำเข้าตัวเลขบัญชีอัตโนมัติ (GitHub Actions acct-import)
 }
 
 // Starting point shown when an admin first customizes a message. NULL template
@@ -333,6 +335,11 @@ export default function NotificationConfig() {
       <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4, marginBottom: 22 }}>
         1 บอทยิงได้หลายห้อง · สร้าง/ลบห้องได้เอง · เลือกได้ว่าเรื่องไหนเข้าห้องไหน · ห้องที่ยังไม่ใส่ chat_id จะไปเข้ากลุ่มเดิม (fallback)
       </div>
+
+      {/* ── 📲 เครื่องที่รับแจ้งเตือนเข้ามือถือ (2026-10-20 · feedback "มือถือไม่มีแจ้งเตือนใบซ่อม") ──
+          วางไว้บนสุดโดยเจตนา: ตัวกั้นใหญ่สุดของการแจ้งเตือนไม่ใช่กติกา/ห้อง Telegram
+          แต่เป็น "คนไม่มีเครื่องผูกไว้เลย" ซึ่งเดิมไม่มีจอไหนมองเห็น */}
+      <PushCoveragePanel />
 
       {/* ── Bot token ── */}
       <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 10 }}>Bot Token</div>

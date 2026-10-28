@@ -26,21 +26,16 @@
    ══════════════════════════════════════════════════════════════════════════ */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { NO_ROW, initialActiveRow, moveActiveRow } from '../utils/pickerKeys';
+import { scanOfEvent, exactScanMatch } from '../utils/scanWedge';
+import { toast } from './Toast';
+import ScanModal from './ScanModal';
+import useIsMobile from '../utils/useIsMobile';
 
-/* เครื่องหมายประกอบของไทย — สระบน/ล่าง · วรรณยุกต์ · ทัณฑฆาต (์) · ไม้ไต่คู้
-   U+0E31 · U+0E34–U+0E3A · U+0E47–U+0E4E */
-const THAI_MARKS = /[\u0E31\u0E34-\u0E3A\u0E47-\u0E4E]/g;
-
-/** ตัดช่องว่าง/ขีด/จุด/วงเล็บ + lowercase — คนพิมพ์รหัสอะไหล่ไม่เป๊ะ (M8 D6.6 / m8d66)
- *
- *  🔴 ตัด "เครื่องหมายประกอบของไทย" ด้วย (2026-09-23 · เกิดจริงที่ /add-user)
- *  ฐานพนักงานเก็บ `เจนนิภา เจริญพันธ` (ไม่มี ์) แต่คนพิมพ์ค้น `เจนนิภา เจริญพันธ์`
- *  ⇒ ค้นไม่เจอ ⇒ สรุปว่า "ไม่มีคนนี้ในฐาน" ⇒ กดเพิ่มใหม่ ⇒ ชนรหัสพนักงานซ้ำ
- *  ชื่อคนไทยในฐานพิมพ์มือ สะกดต่างกันได้ 1 ตัวเสมอ — **ตัวค้นต้องทน ไม่ใช่ให้คนพิมพ์ให้เป๊ะ**
- *  (ผลข้างเคียงที่ยอมรับ: คำที่ต่างกันแค่วรรณยุกต์จะ match กัน เช่น มา/ม้า — เป็นแค่ตัวกรอง
- *   ไม่ได้เปลี่ยนค่าที่บันทึก จึงกว้างไว้ดีกว่าแคบจนหาไม่เจอ) */
-export const normSearch = (s) => String(s ?? '').toLowerCase()
-  .replace(THAI_MARKS, '').replace(/[\s\-_./()]+/g, '');
+/* ตัว normalize คำค้น (ทนการสะกดไทย) ย้ายไปอยู่ชั้นภาษาไทยแล้ว — `utils/thaiText.js`
+   (เพราะ util ที่ pure ต้องใช้ตัวเดียวกัน แต่ import ไฟล์ .jsx ไม่ได้)
+   re-export ต่อ ⇒ ที่ `import { normSearch } from '../components/SearchSelect'` ยังใช้ได้เหมือนเดิม */
+import { normSearch } from '../utils/thaiText';
+export { normSearch };   // 🔴 ต้อง import เข้ามาด้วย — ไฟล์นี้เรียกใช้เองในตัวกรองลิสต์
 
 export default function SearchSelect({
   value = '',            // id ที่เลือกอยู่ ('' = ยังไม่ได้เลือกจากลิสต์)
@@ -71,7 +66,14 @@ export default function SearchSelect({
   inputStyle,
   style,
   inputId,               // id ของ <input> — ให้โค้ดเดิมที่ document.getElementById(...).focus() ยังใช้ได้
+  /* 📷 สแกนเพื่อเลือก (มือถือ · 27/10 · เฟส 1 "ทุกอย่างสแกนได้") — ส่งชื่อสิ่งที่สแกน เช่น 'เครื่องจักร' / 'บัตรพนักงาน'
+     มือถือ = ปุ่ม 📷 ข้างช่อง เปิดกล้อง/รับปุ่มสแกนข้างเครื่อง → เลือกตัวที่รหัสตรงเป๊ะ (`exactScanMatch` · แกะป้าย ESM ให้แล้ว)
+     ไม่ส่ง/จอคอม = หน้าตาเดิมเป๊ะ (DOM เดิม ไม่มีกรอบเพิ่ม) */
+  scan,
 }) {
+  const isMobile = useIsMobile();
+  const showScan = !!scan && isMobile && !disabled;
+  const [scanOpen, setScanOpen] = useState(false);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const [innerText, setInnerText] = useState('');
@@ -146,6 +148,18 @@ export default function SearchSelect({
 
   const onKey = (e) => {
     if (e.key === 'Escape') { closeList(); return; }
+    /* 🔫 2026-10-20 — Enter ท้าย "การสแกน" (handheld · ตัดสินโดย utils/scanWedge.js) = เลือกได้เฉพาะตัวที่รหัส**ตรงเป๊ะ**
+       เดิม Enter เลือกแถวแรกของผล "มีคำนี้อยู่ข้างใน" ⇒ สแกน 1009245 ได้ 10092454 เงียบๆ · ไม่ตรง/ตรงหลายตัว = ไม่เลือก ให้คนเลือกเอง
+       (มีแค่บนมือถือ — จอคอมไม่ติดตั้งตัวดักสแกน ⇒ scanOfEvent คืน null เสมอ พฤติกรรมเดิม) */
+    const scanned = e.key === 'Enter' ? scanOfEvent(e) : null;
+    if (scanned) {
+      e.preventDefault();
+      const hit = exactScanMatch(options, scanned);
+      if (hit) { pick(hit); return; }
+      setOpen(true); setActive(NO_ROW);
+      toast.error(`ไม่พบรหัส "${scanned}" ที่ตรงตัวในรายการ — เลือกจากรายการเอง (ระบบไม่เลือกตัวที่ใกล้เคียงให้)`);
+      return;
+    }
     if (!open && (e.key === 'ArrowDown' || e.key === 'Enter')) { setOpen(true); return; }
     if (!open) return;
     if (e.key === 'ArrowDown') { e.preventDefault(); setActive(a => moveActiveRow(a, 1, rows.length)); }
@@ -170,8 +184,8 @@ export default function SearchSelect({
     padding: '8px 30px 8px 10px', color: 'var(--text)', fontSize: 13, ...inputStyle,
   };
 
-  return (
-    <div ref={boxRef} style={{ position: 'relative', ...style }}>
+  // ช่องพิมพ์ + ปุ่มล้าง — วาดตัวเดียวกันทั้งแบบมี/ไม่มีปุ่ม 📷 (ไม่มี = DOM เดิมเป๊ะ)
+  const inputBox = (
       <div style={{ position: 'relative' }}>
         <input
           id={inputId}
@@ -189,6 +203,30 @@ export default function SearchSelect({
               style={{ position: 'absolute', right: 4, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--muted)', fontSize: 15, cursor: 'pointer', padding: '2px 6px', lineHeight: 1 }}>✕</button>
           : <span style={{ position: 'absolute', right: 9, top: '50%', transform: 'translateY(-50%)', color: 'var(--muted)', fontSize: 12, pointerEvents: 'none' }}>🔎</span>}
       </div>
+  );
+
+  return (
+    <div ref={boxRef} style={{ position: 'relative', ...style }}>
+      {showScan ? (
+        <div style={{ display: 'flex', gap: 6, alignItems: 'stretch' }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            {inputBox}
+          </div>
+          <button type="button" onClick={() => setScanOpen(true)} title={`สแกน${scan === true ? '' : scan}`} aria-label={`สแกน${scan === true ? '' : scan}`}
+            style={{ flexShrink: 0, minWidth: 48, borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', fontSize: 18, cursor: 'pointer' }}>
+            📷
+          </button>
+        </div>
+      ) : inputBox}
+      {scanOpen && (
+        <ScanModal title={`สแกน${scan === true ? 'เพื่อเลือก' : scan}`} hint="ส่องกล้องที่ป้าย/บัตร หรือกดปุ่มสแกนข้างเครื่อง — เลือกให้เฉพาะตัวที่รหัสตรงเป๊ะ"
+          onClose={() => setScanOpen(false)}
+          onScan={(parsed) => {
+            const hit = exactScanMatch(options, parsed.raw);
+            if (!hit) return `ไม่พบ "${parsed.raw}" ที่ตรงตัวในรายการนี้ — ป้ายผิดชนิด/ไม่อยู่ในทะเบียน หรือเลือกจากรายการเอง`;
+            pick(hit);
+          }} />
+      )}
 
       {/* 🔴 ทะเบียนโหลดไม่สำเร็จ — ต้องเห็นตอนช่องปิดอยู่ด้วย (ไม่มีใครเปิดลิสต์เพื่อหาคำเตือน) */}
       {!open && loadFail && (

@@ -2,11 +2,22 @@
 // หลักตั้งชื่อ: บอก "ขอบเขตสิทธิ์ในระบบ" ห้ามใช้คำตำแหน่งงานบริษัท (ผู้จัดการ/หัวหน้าส่วน/หัวหน้าไลน์ ฯลฯ)
 // เพื่อไม่ชนกับตำแหน่งจริงใน profiles.position — role คือ "ชุดสิทธิ์" ไม่ใช่ตำแหน่ง (ดู CLAUDE.md "Role System")
 // ⚠️ รหัส (key) คือค่าใน DB enum user_role — ห้ามเปลี่ยน key ที่นี่ เปลี่ยนได้เฉพาะ label/icon/desc
+/* 🏷️ ระดับองค์กรของ role แกน `scope` (2026-10-21 · คำสั่ง user "relate สิทธิ์ให้ตรงกับระดับ cost center")
+ *  เลขระดับ = **หลักที่ 5 ของรหัส Cost Center** ตามที่โรงงานใช้จริง (`2140` = ทั้งโรงงาน แล้วหลักที่ 5 บอกชั้น)
+ *    3 = ฝ่าย/ผู้บริหาร · 4 = ส่วนงาน · 5 = แผนก · 6 = กลุ่ม/ไลน์
+ *  🔴 **เป็นป้ายให้คนอ่านเท่านั้น — ระบบตัดสินลำดับชั้นจาก `org_nodes.parent_id` เสมอ ห้ามแกะเลขรหัส**
+ *     (กฎเหล็ก CLAUDE.md §Cost Center · ตัวตัดสินจริงคือ `utils/ccScope.js`)
+ *  📏 วัดจากผังจริง 21/10: ส่วนงาน 10/10 หลักที่ 5 = `4` · แผนก 26/26 = `5` · ไลน์ 21/23 = `6`
+ *     (อีก 2 ตัว — Store Raw Material / Store Semi — ผูกรหัสชั้นแผนกไว้ที่โหนดชั้นไลน์)
+ *  ⚠️ **ยังไม่มี role แกน scope ของชั้น 5 (แผนก)** — ทำได้ด้วย `supervisor` + ติ๊ก Cost Center ของแผนกนั้น
+ *     (ช่อง ④ ใน /add-user) ⇒ แคบลงเหลือแผนก + ใต้ลงไป โดยไม่ต้องเพิ่ม role ใหม่ */
+export const ORG_LEVELS = { 3: 'ฝ่าย / ผู้บริหาร', 4: 'ส่วนงาน', 5: 'แผนก', 6: 'กลุ่ม / ไลน์' };
+
 export const ROLE_META = {
   admin:            { icon: '🛡️', label: 'ผู้ดูแลระบบ',     en: 'System Admin',     color: 'var(--accent)', desc: 'ทุกอย่าง + จัดการผู้ใช้และสิทธิ์', axis: 'scope' },
-  manager:          { icon: '🏭', label: 'สิทธิ์ทั้งฝ่าย',   en: 'Full Access',      color: '#f59e0b', desc: 'เห็นกว้างทุกโมดูล (จำกัดบางส่วนงานได้ด้วย Section)', axis: 'scope' },
-  supervisor:       { icon: '🏢', label: 'สิทธิ์ระดับส่วน',  en: 'Section Scope',    color: '#4d9fff', desc: 'จัดการข้อมูลภายใน Section ที่รับผิดชอบ', axis: 'scope' },
-  leader:           { icon: '👥', label: 'สิทธิ์ระดับไลน์',  en: 'Line/Team Scope',  color: '#22c55e', desc: 'เฉพาะไลน์ + ทีมที่รับผิดชอบ', axis: 'scope' },
+  manager:          { icon: '🏭', label: 'สิทธิ์ทั้งฝ่าย',   en: 'Full Access',      color: '#f59e0b', desc: 'เห็นกว้างทุกโมดูล — ขอบเขตส่วนงานจำกัดได้แค่ "สิ่งที่เห็น" ไม่ได้จำกัดการแก้', axis: 'scope', orgLevel: 3 },
+  supervisor:       { icon: '🏢', label: 'สิทธิ์ระดับส่วน',  en: 'Section Scope',    color: '#4d9fff', desc: 'จัดการข้อมูลภายใน Section ที่รับผิดชอบ', axis: 'scope', orgLevel: 4 },
+  leader:           { icon: '👥', label: 'สิทธิ์ระดับไลน์',  en: 'Line/Team Scope',  color: '#22c55e', desc: 'เฉพาะไลน์ + ทีมที่รับผิดชอบ', axis: 'scope', orgLevel: 6 },
   qa:               { icon: '✅', label: 'งานคุณภาพ',        en: 'Quality',          color: '#c084fc', desc: 'อนุมัติ 4M/CQI-15 + QA Center', axis: 'unit' },
   document_control: { icon: '🗂️', label: 'งานเอกสาร',        en: 'Document Control', color: '#fb923c', desc: 'ปฏิทินบริษัท + เอกสารควบคุม', axis: 'unit' },
   // 🚫 `sale` เลิกใช้แล้ว — **ยุบรวมเข้า `planner_store`** (user 2026-09-23: *"store แผนงาน ข้อมูล รวมกัน
@@ -19,7 +30,7 @@ export const ROLE_META = {
   mtn:              { icon: '🔧', label: 'ซ่อมบำรุง',        en: 'Maintenance',      color: '#fb7185', desc: 'PM, ผังเครื่องจักร, ฐานข้อมูลเครื่องจักร', axis: 'unit' },
   engineer:         { icon: '⚙️', label: 'ส่วนวิศวกรรม',     en: 'Process Engineering', color: '#2dd4bf', desc: 'หน่วยงานวิศวกรรมกระบวนการ — BOM / EC / New Model · ⚠️ ไม่ใช่ "ตำแหน่งวิศวกร" (วิศวกรแผนกช่างใช้ role ซ่อมบำรุง)', axis: 'unit' },
   engineer_nm:      { icon: '🚀', label: 'วิศวกรรมรุ่นใหม่',  en: 'New Model Engineering', color: '#818cf8', desc: 'ทีม Engineering New Model — เข้าได้เฉพาะ 🚀 พาร์ทใหม่ (NPI) + 📐 Flow/PFMEA/CP · ไม่เห็นหน้าอื่นทั้งระบบ', axis: 'unit' },
-  planner_store:    { icon: '📦', label: 'แผนงาน-คลัง',      en: 'Planner & Store',  color: '#38bdf8', desc: 'หมวด Planning & Store (ยุบรวม `sale` 23/09 · ยุบหมวดแผนงานเข้า Store 30/09) — บริหารสต๊อก · จ่ายของเข้าไลน์ · จ่ายงานในโรงงาน · รับ Forecast/Order ลูกค้า · วางแผนผลิต', axis: 'unit' },
+  planner_store:    { icon: '📦', label: 'แผนงาน-คลัง',      en: 'Planner & Store',  color: '#38bdf8', desc: 'บริหารสต๊อก · จ่ายของเข้าไลน์ · จ่ายงานในโรงงาน · รับ Forecast/Order ลูกค้า · วางแผนผลิต', axis: 'unit' },
   // 🚚 ฝั่ง “Warehouse & Delivery (ส่งลูกค้า)” — แยกออกมา 2026-09-23 (คำสั่ง user)
   //    เหตุผล: เดิม planner_store ⊇ sale ทุกหน้าหมวด Logistic = “เต็ม vs ลดทอน” ไม่ใช่ “คนละหน้าที่”
   //    ⇒ คนจัดส่งต้องเลือกระหว่างได้น้อยไป กับได้สิทธิ์สโตร์ (จ่ายของเข้าไลน์/กดผลิต) เกินมา

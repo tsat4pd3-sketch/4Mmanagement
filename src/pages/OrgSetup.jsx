@@ -10,6 +10,8 @@ import {
   orgRefKeyChange, renameOrgRefs, ORG_KIND_TH,
 } from '../utils/orgNodeRefs';
 import { loadDivisions, divisionsSync, divisionOfNode } from '../utils/orgDivisions';
+/* 🔴 "แก้/ย้ายโหนดนี้ได้ไหม" = กฎเดียวใน src/utils/orgNodeEdit.js (ปุ่ม · ลิสต์แม่ · ด่านตอนบันทึก) */
+import { canEditOrgNode, canAddOrgNodeUnder, orgSaveBlockReason, filterParentOptions } from '../utils/orgNodeEdit';
 import { laborMeta, laborTypeOfNode } from '../utils/laborType';
 import CostCenterRatePanel from '../components/CostCenterRatePanel';
 import OrgAssignmentsPanel from '../components/OrgAssignmentsPanel';   // 👔 ใครคุมหน่วยไหน + รักษาการ
@@ -19,6 +21,8 @@ import CostCenterSelect from '../components/CostCenterSelect';
 
 import InfoMore from '../components/InfoMore';
 import PageHeader from '../components/PageHeader';
+import useTabParam from '../utils/useTabParam';
+import OrgTreeView from '../components/OrgTreeView';   // 🌳 มุมมองผังต้นไม้ (22/10 · คำสั่ง user "อยากมีหน้าวาดผัง")
 import Page from '../components/Page';
 import { IconButton, DeleteButton } from '../components/IconButton';
 /* 🔴 ชั้นไหนมีพาเนล/ปุ่มเพิ่มบนจอ ต้องมีป้ายครบทุกชั้น — ขาดตัวไหน หัวโมดัลขึ้น "เพิ่ม undefined"
@@ -104,37 +108,17 @@ export default function OrgSetup() {
   }, [sections, myUnit]);
   /* แก้ได้ไหม — admin ทำได้ทุก node · ผู้ถือ manage_own_unit ทำได้เฉพาะแผนก/กลุ่มใต้ส่วนงานตัวเอง
      (section เป็นโครงบริษัท ไม่เปิดให้หน่วยงานแก้ ป้องกันการเปลี่ยนชื่อ/ลบส่วนงานอื่นแล้ว cascade ทั้งระบบ) */
-  const canEditNode = (node) => {
-    if (isAdmin) return true;
-    if (!canOwn || !mySecId || !node) return false;
-    if (node.kind === 'department') return node.parent_id === mySecId;
-    if (node.kind === 'line') {
-      const dep = allDepts.find(d => d.id === node.parent_id);
-      return !!dep && dep.parent_id === mySecId;
-    }
-    if (node.kind === 'team') {        // ทีม → ไต่ขึ้น กลุ่ม → แผนก → ส่วนงานของตัวเอง
-      const ln  = allLines.find(l => l.id === node.parent_id);
-      const dep = ln && allDepts.find(d => d.id === ln.parent_id);
-      return !!dep && dep.parent_id === mySecId;
-    }
-    return false;                       // section = admin เท่านั้น
-  };
-  const canAddDeptHere = (secId) => isAdmin || (canOwn && !!mySecId && secId === mySecId);
-  const canAddLineHere = (deptId) => {
-    if (isAdmin) return true;
-    const dep = allDepts.find(d => d.id === deptId);
-    return canOwn && !!mySecId && !!dep && dep.parent_id === mySecId;
-  };
-  const canAddTeamHere = (lineId) => {
-    if (isAdmin) return true;
-    const ln  = allLines.find(l => l.id === lineId);
-    const dep = ln && allDepts.find(d => d.id === ln.parent_id);
-    return canOwn && !!mySecId && !!dep && dep.parent_id === mySecId;
-  };
-  /* 🔴 ด่านชั้นสองตอนบันทึก ต้องครอบ "ทุกชั้นที่หน้านี้มีปุ่มเพิ่ม" — เดิมเป็นเชน ternary ลงท้าย `: false`
-     ⇒ เพิ่มชั้นใหม่ (ทีม 05/10) แล้วลืมต่อสาขา = ปุ่ม ➕ โชว์ แต่กดบันทึกเด้ง "แก้ได้เฉพาะ…" (เกิดจริง)
-     ใช้ map แทน: ชั้นที่ไม่มีตัวตรวจ = admin เท่านั้น (section) ซึ่งตรงกับปุ่มบนจอ · มีด่าน regressionGuards */
-  const CAN_ADD_HERE = { department: canAddDeptHere, line: canAddLineHere, team: canAddTeamHere };
+  const scopeCtx = useMemo(() => ({ nodes, isAdmin, canOwn, mySecId }), [nodes, isAdmin, canOwn, mySecId]);
+  /* 🌳 แท็บ: มุมมองผัง (ภาพรวมทั้งต้นไม้ + รหัส CC ซ้อนชั้น) · จัดการหน่วยงาน (4 คอลัมน์เดิม)
+     ค่าเริ่มต้น = มุมมองผัง เพราะคำถามที่คนถามบ่อยที่สุดคือ "หน่วยไหนอยู่ใต้หน่วยไหน" */
+  const [tab, setTab] = useTabParam(['tree', 'manage', 'teams'], 'tree');
+  const canEditNode    = (node)   => canEditOrgNode(node, scopeCtx);
+  const canAddDeptHere = (secId)  => canAddOrgNodeUnder('department', secId, scopeCtx);
+  const canAddLineHere = (deptId) => canAddOrgNodeUnder('line', deptId, scopeCtx);
+  const canAddTeamHere = (lineId) => canAddOrgNodeUnder('team', lineId, scopeCtx);
+  /* 🔴 ชั้นที่หน้านี้มีปุ่ม ➕ ต้องตัดสินได้ครบ — ห้ามเป็นเชน ternary ลงท้าย `: false`
+     (เพิ่มชั้นใหม่ 05/10 แล้วลืมต่อสาขา = ปุ่มโชว์ แต่กดบันทึกเด้ง "แก้ได้เฉพาะ…" เกิดจริง)
+     ⇒ ชุดชั้น + กฎอยู่ที่ `ORG_PARENT_KIND` ใน utils/orgNodeEdit.js ที่เดียว · มีด่าน regressionGuards */
 
   // single source: cost center ระดับไลน์มาจาก production_lines (ตั้งที่หน้าจัดการไลน์) — org group node ที่ผูก ref_line_id ไม่เก็บซ้ำ
   const lineById = useMemo(() => Object.fromEntries(lines.map(l => [String(l.id), l])), [lines]);
@@ -166,6 +150,11 @@ export default function OrgSetup() {
     return [];
   };
   const PARENT_LABEL = { department: 'อยู่ภายใต้ Section', line: 'อยู่ภายใต้ Department', team: 'อยู่ภายใต้ Group' };
+  /* ลิสต์ "อยู่ภายใต้" = ตัวกรองการดู (ด่านจริง = orgSaveBlockReason ตอนกดบันทึก) — กฎเดียวกันทั้งสองชั้น */
+  const parentChoices = useMemo(
+    () => filterParentOptions(modal?.kind, modal ? parentOptionsFor(modal.kind) : [], scopeCtx),
+    [modal?.kind, scopeCtx],  // eslint-disable-line react-hooks/exhaustive-deps
+  );
 
   useEffect(() => {
     if (!selSection && sections.length) setSelSection(sections[0].id);
@@ -230,13 +219,10 @@ export default function OrgSetup() {
 
   const handleSave = async () => {
     if (!formName.trim()) return toast.error('กรุณากรอกชื่อ');
-    // guard ชั้นสอง — ซ่อนปุ่มอย่างเดียวไม่พอ (โมดัลอาจถูกเปิดค้างไว้ตอนสิทธิ์เปลี่ยน)
-    if (!isAdmin) {
-      const okAdd = modal.editing ? canEditNode(modal.editing)
-        : !!CAN_ADD_HERE[modal.kind]?.(modal.parentId);
-      if (!okAdd) return toast.error(`ไม่มีสิทธิ์${modal.editing ? 'แก้' : 'เพิ่ม'}`
-        + `${ORG_KIND_TH[modal.kind] || 'หน่วยงาน'}ตรงนี้ — ทำได้เฉพาะใต้ส่วนงานของคุณ`);
-    }
+    /* guard ชั้นสอง — ซ่อนปุ่ม/กรองลิสต์อย่างเดียวไม่พอ (โมดัลอาจเปิดค้างไว้ตอนสิทธิ์เปลี่ยน)
+       🔴 รวม "ปลายทาง" ด้วย — payload เขียน parent_id ตัวใหม่ เช็คแต่แถวเดิม = ย้ายออกนอกส่วนงานได้ */
+    const block = orgSaveBlockReason({ kind: modal.kind, parentId: modal.parentId, editing: modal.editing }, scopeCtx);
+    if (block) return toast.error(block);
     // group/line node ที่ผูก production_lines → cost center มาจาก production_lines (single source) ไม่บังคับ/ไม่เช็คซ้ำ
     const linkedLine = modal.kind === 'line' && !!formRefLineId;
     const linkedCC = linkedLine ? (lineById[String(formRefLineId)]?.cost_center || '') : '';
@@ -368,7 +354,11 @@ export default function OrgSetup() {
 
   return (
     <Page>
-      <PageHeader title="แผนผังองค์กร" icon="🏢" sub="จัดการโครงสร้าง Section/ส่วน → Department/แผนก → Group/กลุ่ม พร้อม Cost Center (master data ที่หน้าอื่นใช้อ้างอิง)" />
+      <PageHeader title="แผนผังองค์กร" icon="🏢"
+        sub="จัดการโครงสร้าง Section/ส่วน → Department/แผนก → Group/กลุ่ม พร้อม Cost Center (master data ที่หน้าอื่นใช้อ้างอิง)"
+        tabs={[{ key: 'tree', label: '🌳 มุมมองผัง' }, { key: 'manage', label: '🗂 จัดการหน่วยงาน' },
+               { key: 'teams', label: '👥 ทีม (จัดกะ)' }]}
+        tab={tab} onTab={setTab} />
 
       {/* ซ่อนปุ่มได้ ห้ามซ่อนเหตุผล (UI-CONVENTIONS §6.9) — ต้องรู้ว่าแก้อะไรได้/ไม่ได้ และต้องไปขอใคร */}
       {!isAdmin && (
@@ -388,6 +378,61 @@ export default function OrgSetup() {
 
       {loading ? (
         <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลด...</div>
+      ) : tab === 'tree' ? (
+        <OrgTreeView nodes={nodes} scopeCtx={scopeCtx} canEdit={isAdmin || canOwn} onChanged={fetchAll} />
+      ) : tab === 'teams' ? (
+        /* 👥 ทีม — แยกออกจากแถวผังองค์กร (22/10 · user: "ระดับ team ไว้ set กะ ไม่มีอยู่ใน organize จริง")
+           🔴 ห้ามถอดแท็บนี้ทิ้ง: ทีมเป็นลูกของกลุ่มใน `org_nodes` จริง ถ้าไม่มีที่ให้เห็น
+              จะกลับไปเป็นทางตันเหมือน 05/10 (ลบกลุ่มไม่ได้ แล้วหาไม่เจอว่าลูกอยู่ไหน)
+           ใช้ CRUD ชุดเดียวกับแท็บจัดการหน่วยงาน (openCreate/openEdit/handleDelete) ไม่ได้ก๊อปตรรกะใหม่ */
+        <>
+          <div style={{ marginBottom: 12, padding: '9px 12px', borderRadius: 9, border: '1px solid var(--border2)',
+                        background: 'var(--bg3)', fontSize: 12, color: 'var(--text2)', lineHeight: 1.7 }}>
+            👥 <b>ทีม A/B/C ใช้สำหรับจัดกะการทำงาน — ไม่ใช่ชั้นในผังองค์กร</b> จึงไม่ปรากฏในมุมมองผังและใบ export
+            <div style={{ color: 'var(--muted)' }}>
+              ค่าที่บันทึกคือช่อง <b>Code</b> (เช่น <code>A</code>) ซึ่งตรงกับ <code>employees.team</code> ·
+              ตารางกะใช้ที่ <b>🗓 ตารางกะการทำงาน</b> ({'/shift-organize'})
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+            <div style={colStyle} className="card">
+              <strong style={{ fontSize: 13, color: 'var(--text2)', display: 'block', marginBottom: 10 }}>
+                เลือกกลุ่ม ({allLines.length})
+              </strong>
+              <div style={{ maxHeight: 'calc(100vh - 320px)', overflowY: 'auto' }}>
+                {allLines.map(l => {
+                  const dept = nodes.find(n => n.id === l.parent_id);
+                  const sec = dept ? nodes.find(n => n.id === dept.parent_id) : null;
+                  return (
+                    <div key={l.id} style={itemStyle(selLine === l.id)} onClick={() => setSelLine(l.id)}>
+                      <NodeLabel node={l} meta={
+                        <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+                          {' '}· {[sec?.name, dept?.name].filter(Boolean).join(' › ') || 'ไม่มีหน่วยแม่'}
+                          {teamsOf(l.id).length > 0 ? ` · ${teamsOf(l.id).length} ทีม` : ''}
+                        </span>} />
+                    </div>
+                  );
+                })}
+                {!allLines.length && <Empty text="ยังไม่มีกลุ่มในผัง" />}
+              </div>
+            </div>
+            <div style={colStyle} className="card">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                <strong style={{ fontSize: 13, color: 'var(--text2)' }}>TEAM / ทีม ({currentTeams.length})</strong>
+                {canAddTeamHere(selLine) && (
+                  <button className="tbtn" onClick={() => selLine && openCreate('team', selLine)} disabled={!selLine} style={addBtnSt}>➕</button>
+                )}
+              </div>
+              {!selLine ? <Empty text="เลือกกลุ่มก่อน" /> : currentTeams.map(t => (
+                <div key={t.id} style={itemStyle(false)}>
+                  <NodeLabel node={t} meta={t.code && t.code !== t.name && <span style={{ fontSize: 11, color: 'var(--muted)' }}> ({t.code})</span>} />
+                  {canEditNode(t) && <RowActions node={t} onEdit={openEdit} onToggle={toggleActive} onDelete={handleDelete} />}
+                </div>
+              ))}
+              {selLine && !currentTeams.length && <Empty text="ยังไม่มีทีมในกลุ่มนี้" />}
+            </div>
+          </div>
+        </>
       ) : (
         <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
           {/* Sections */}
@@ -459,23 +504,6 @@ export default function OrgSetup() {
             {selDept && !currentLines.length && <Empty text="ยังไม่มีกลุ่มในแผนกนี้" />}
           </div>
 
-          {/* Teams — ชั้นที่ 4 (2026-10-05) · ทีมมีอยู่ในผังและถูกใช้จริงโดย useOrgTeams()
-              แต่เดิมไม่มีที่ไหนให้เห็น ⇒ ลบกลุ่มไม่ได้แล้วหาลูกไม่เจอ (ดูคอมเมนต์ที่ teamsOf) */}
-          <div style={colStyle} className="card">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-              <strong style={{ fontSize: 13, color: 'var(--text2)' }}>TEAM / ทีม ({currentTeams.length})</strong>
-              {canAddTeamHere(selLine) && (
-                <button className="tbtn" onClick={() => selLine && openCreate('team', selLine)} disabled={!selLine} style={addBtnSt}>➕</button>
-              )}
-            </div>
-            {!selLine ? <Empty text="เลือกกลุ่มก่อน" /> : currentTeams.map(t => (
-              <div key={t.id} style={itemStyle(false)}>
-                <NodeLabel node={t} meta={t.code && t.code !== t.name && <span style={{ fontSize: 11, color: 'var(--muted)' }}> ({t.code})</span>} />
-                {canEditNode(t) && <RowActions node={t} onEdit={openEdit} onToggle={toggleActive} onDelete={handleDelete} />}
-              </div>
-            ))}
-            {selLine && !currentTeams.length && <Empty text="ยังไม่มีทีมในกลุ่มนี้" />}
-          </div>
 
           {/* ✍️ ผู้เซ็น/อนุมัติใบค่าฝีมือ ราย section (ย้ายมาจาก LineSetup — เป็นข้อมูลราย "ส่วนงาน") */}
           {selSection && selSection !== ORPHAN && (() => {
@@ -541,9 +569,15 @@ export default function OrgSetup() {
                 <div>
                   <label style={labelSt}>{PARENT_LABEL[modal.kind]}</label>
                   <select value={modal.parentId ?? ''} onChange={e => setModal(m => ({ ...m, parentId: e.target.value || null }))}>
-                    {modal.kind === 'department' && <option value="">🏛️ ขึ้นตรงฝ่าย — ไม่อยู่ใต้ Section ใด</option>}
-                    {parentOptionsFor(modal.kind).map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
+                    {isAdmin && modal.kind === 'department' && <option value="">🏛️ ขึ้นตรงฝ่าย — ไม่อยู่ใต้ Section ใด</option>}
+                    {parentChoices.rows.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
                   </select>
+                  {/* 🔴 กรองแถวออกแล้วต้องเขียนบนจอว่าซ่อนกี่รายการ — ไม่งั้นดูเหมือนผังมีแค่นี้ */}
+                  {parentChoices.hidden > 0 && (
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.45 }}>
+                      🔒 ซ่อน {parentChoices.hidden} รายการที่อยู่นอกส่วนงานของคุณ — ย้ายข้ามส่วนงานต้องให้ admin ทำ
+                    </div>
+                  )}
                 </div>
               )}
               <div>

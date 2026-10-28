@@ -8,10 +8,14 @@ const products = [
   { mat_no: '20077777', line_name: 'LINE C ( 200&250 Ton )', is_active: true, is_operation: true },
 ];
 const rules = [{ match_type: 'prefix', match_value: '2', dest_line_name: 'STORE' }, { match_type: 'prefix', match_value: '1', dest_line_name: 'FG WAREHOUSE' }];
-const ctx = { consumingLine: 'LINE C ( 200&250 Ton )', products, rules, lotMats: new Set(['20058693']) };
+const ctx = { consumingLine: 'LINE C ( 200&250 Ton )', products, rules };
 
-test('rawSourceLocOf — ล็อตสโตร์: ตัดที่ไลน์ที่ผลิต ไม่ใช่ไลน์ที่ใช้ (เคส LINE C −21,600)', () => {
-  assert.equal(rawSourceLocOf('20058693', ctx), 'LINE D ( 110&300 Ton )');
+/* 🔁 26/10 (คำสั่ง user) — ของที่ผลิตเสร็จทางปิดล็อต **เข้าคลังปลายทาง (STORE)** แล้ว ไม่ใช่กองที่ไลน์ผลิต
+   ⇒ ตอนไลน์อื่นเอาไปใช้ ต้องตัดจาก STORE ซึ่งเป็นที่ที่ของอยู่จริง
+   เจตนาเดิมของเคส "LINE C −21,600" ยังอยู่ครบ: **ห้ามตัดที่ไลน์ที่ใช้** (ซึ่งไม่เคยมีใครจ่ายของเข้า) */
+test('rawSourceLocOf — ชิ้นที่ผลิตเองเข้าคลัง: ตัดที่คลัง ไม่ใช่ไลน์ที่ใช้ (เคส LINE C −21,600)', () => {
+  assert.equal(rawSourceLocOf('20058693', ctx), 'STORE');
+  assert.notEqual(rawSourceLocOf('20058693', ctx), ctx.consumingLine);
 });
 test('rawSourceLocOf — ชิ้นที่ผลิตเองไม่ใช่ล็อต: คลังตามกฎรับเข้า', () => {
   assert.equal(rawSourceLocOf('20066332', ctx), 'STORE');

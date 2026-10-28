@@ -7,7 +7,12 @@
      · "เพิ่มรหัส GL — งานบริการ GL อะไร · อะไหล่โรงงาน GL อะไร"
 
    ตาราง (DR): `mtn_purchase_requests` · `mtn_pr_seq` · `mtn_gl_codes` — migration `20261014_mtn_pr_gl_io_dr.sql`
-   RPC: `mtn_assign_pr_no(id)` ออกเลข · `mtn_pr_receive(id, qty, by)` รับของ + เข้าสต็อกในทรานแซกชันเดียว
+   RPC: `mtn_pr_receive(id, qty, by)` รับของ + เข้าสต็อกในทรานแซกชันเดียว
+
+   🔢 **เลข PR มาจาก SAP — ระบบไม่ออกเลขเอง** (2026-10-19 · คำสั่ง user: "เลขจะมาจาก sap และแอดมินช่าง
+      กรอกเข้าระบบ ลิงก์ไปที่ใบ MO ที่รอ PR") ⇒ เปิดใบในระบบ = "ขอซื้อ/รอเลข" · แอดมินช่างกรอกเลข SAP ทีหลัง
+      · `mtn_assign_pr_no` / `mtn_pr_seq` = เลิกใช้แล้ว (ห้ามเรียกจาก client · มีด่าน)
+      · 1 เลข SAP ผูกหลายใบ MO ได้ (PR ใน SAP มีหลายรายการ) — จอเตือนให้เห็น ไม่บล็อก
 
    🔴 กฎ:
      · ยกเลิก PR = `cancelled` + เหตุผล **ห้าม delete** (RLS ไม่เปิด DELETE อยู่แล้ว)
@@ -89,6 +94,46 @@ export function openPrQtyByPart(prs = []) {
   }
   return out;
 }
+
+/* ── เลข PR จาก SAP ─────────────────────────────────────────────────────────────── */
+/** เลขที่แอดมินพิมพ์ — ตัดช่องว่างหน้า/หลัง/ในเลข + ตัวพิมพ์ใหญ่ · ว่าง = null (ห้ามเก็บ '' ลงฐาน) */
+export function normalizePrNo(v) {
+  const s = String(v ?? '').replace(/\s+/g, '').toUpperCase();
+  return s || null;
+}
+/** ใบที่ยังรอเลข PR จาก SAP = เปิดอยู่ (ยังไม่รับของ/ไม่ยกเลิก) และยังไม่มีเลข */
+export const isAwaitingPrNo = (pr) => isPrOpen(pr) && !normalizePrNo(pr?.pr_no);
+
+/** ใบ MO ที่เลือกเส้นทาง "ต้องเปิด PR" แต่ยังไม่มีรายการขอซื้อสักแถว (ไม่นับที่ยกเลิก)
+ *  — ต้นคิวของแอดมินช่าง: ไม่มีแถวนี้ = ใบตกหล่น ไม่ขึ้นคิวไหนเลย (20/10 · user ถาม "ไปขึ้นลิสต์รอใช่มั้ย")
+ *  `isOpen` ส่งเข้ามา (กฎ "ใบปิดแล้ว" อยู่ mtnStepPerm.js ที่เดียว) · เรียงใบเก่าสุดก่อน (รอนานสุด) */
+export function mosNeedingPr(orders = [], prs = [], isOpen = () => true) {
+  const has = new Set((prs || []).filter(p => p && p.status !== 'cancelled' && p.order_id).map(p => p.order_id));
+  return (orders || [])
+    .filter(o => o && repairPathMeta(o.repair_path)?.needsPr && isOpen(o) && !has.has(o.id))
+    .sort((a, b) => String(a.report_at || '').localeCompare(String(b.report_at || '')));
+}
+export const NEEDS_PR_PATHS = () => REPAIR_PATHS.filter(p => p.needsPr).map(p => p.key);
+
+/** สถานะ "งาน PR" ของใบ MO 1 ใบ — ตัวกรองหน้ารายการ MO (20/10 · user "หาลิสต์ MO ที่รอกรอกเลข PR ไม่เจอ")
+ *  · 'need'  = MTN ตัดสินว่าต้องเปิด PR แต่ยังไม่มีรายการขอซื้อ
+ *  · 'no_no' = มีรายการขอซื้อที่ยังเปิดอยู่แต่ **ยังไม่มีเลข PR จาก SAP**
+ *  · 'open'  = มีเลขแล้ว รอสั่ง/รอของ
+ *  · null    = ไม่มีงาน PR ค้าง
+ *  ลำดับความสำคัญ need > no_no > open (ใบเดียวตอบค่าเดียว) · `prs` = รายการของใบนี้ (ทุกสถานะ) */
+export function prQueueStateOf(order, prs = []) {
+  const live = (prs || []).filter(p => p && p.status !== 'cancelled');
+  if (repairPathMeta(order?.repair_path)?.needsPr && !live.length) return 'need';
+  const open = live.filter(isPrOpen);
+  if (open.some(p => !normalizePrNo(p.pr_no))) return 'no_no';
+  if (open.length) return 'open';
+  return null;
+}
+export const PR_QUEUE_META = {
+  need:  { label: '🛒 รอเปิด PR', color: '#ef4444' },
+  no_no: { label: '⏳ รอเลข PR (SAP)', color: '#f59e0b' },
+  open:  { label: '🚚 PR รอสั่ง/รอของ', color: '#0ea5e9' },
+};
 
 /* ── เลข PR บนใบ MO (ใบพิมพ์ FM-MTN-006) ─────────────────────────────────────────── */
 /** รวมเลข PR ของใบ — ใบขอซื้อที่ผูกใบนี้ (ไม่นับที่ยกเลิก) + ช่อง `pr_no` ที่กรอกมือเดิม · ตัดซ้ำ คงลำดับ */

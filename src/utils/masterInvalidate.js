@@ -33,6 +33,7 @@ export const KEYS_BY_TABLE = {
     'pn_index:src',              // CapaEffectiveness (mat_no → p_no)
     'fx_products',               // FixtureRegistry
     'dr_products:full',          // DailyReport load() — แถวเต็ม (ตัวหนัก 107 KB)
+    'dr_products:inactive',      // DailyReport — ตัวที่ถูกปิดใช้งาน (ตอบ "ของหายไปไหน" ในช่องเลือกสินค้า)
     'dr_products:matname',       // LineSetup (mat_no + ชื่อ + ไลน์)
     'dr_products:qa',            // QAInspectionSetup
     'dr_products:heijunka',      // HeijunkaKanban (CT)
@@ -51,6 +52,7 @@ export const KEYS_BY_TABLE = {
   ],
   kanban_standards: ['kanban_standards:ct:v2', 'kanban_standards:ct', 'kanban_standards:full'],   // :full = DailyReport (164 KB)
   break_policies:  ['break_policies:active:v2', 'break_policies:active'],   // :v2 = loadBreakPolicies() (05/10) · คีย์เก่าล้างทิ้งด้วย
+  break_line_rules: ['break_line_rules:v1'],   // ข้อยกเว้นเวลาพักรายไลน์ (20/10)
   dr_downtime_types: ['dr_downtime_types:active'],
   dr_defect_types:   ['dr_defect_types:active'],
   production_lines: [

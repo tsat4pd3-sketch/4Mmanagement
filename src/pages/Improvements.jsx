@@ -9,12 +9,13 @@ import { SESSION_STATUSES_DONE } from '../utils/sessionStatus';
 import { can, canDelete } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyIds, getLineFamilyNames } from '../utils/lineHierarchy';
-import LineSelect from '../components/LineSelect';
+import LineSelect, { scopeLines as pickerLines } from '../components/LineSelect';
 import PersonSelect from '../components/PersonSelect';
 import useColumnHistory from '../utils/useColumnHistory';
 import { loadLinesRes } from '../utils/useProductionLines';
 import { normCode } from '../utils/qrCode';
 import { fetchByIds } from '../utils/fetchByIds';
+import { fetchAllRows } from '../utils/fetchAllRows';
 import { fmtDate } from '../utils/dateFormat';
 import { RATE_COMPONENTS, lineCostCenter, rateFor, rateIsFallback, ratePerHour, fmtBaht, defectUnitCost } from '../utils/costSaving';
 import { loadCompanyCalendar, countWorkingDaysInMonth } from '../utils/companyCalendar';
@@ -210,7 +211,11 @@ export default function Improvements() {
          🔴 กัน "ใบที่ไม่เคยเป็นงานจริง" ออกด้วย `MO_VOID_NOT_IN` **ห้ามกลับไป `.neq('status','rejected')`**
             (มีด่าน) — `neq` ตัวเดียวแปลว่า "ไม่ใช่ rejected" ⇒ สถานะโมฆะที่เพิ่มทีหลัง (`cancelled` 14/10)
             ไหลเข้ามานับเป็นค่าซ่อมจริง/แท่งพาเรโตเงียบๆ คลาสเดียวกับ `production_sessions.status = 'void'` */
-      supabaseDR.from('mtn_orders').select('id, line_name, machine_no, item_type, problem_characteristic, report_at, repair_done_at, work_date, status, labor_cost, parts_cost, source_downtime_id').not('status', 'in', MO_VOID_NOT_IN).limit(4000),
+      /* 🔴 ห้าม `.limit(4000)` — PostgREST clamp 1000 เสมอ · วัด 19/10 `mtn_orders` = **990 แถว**
+         (จ่อชนเพดาน เหลือ 10 แถว) ⇒ อีกไม่กี่ใบ ค่าซ่อม/พาเรโตจะขาดหายเงียบๆ · `.order('id')` คู่ range ด้วย */
+      fetchAllRows(supabaseDR, 'mtn_orders',
+        'id, line_name, machine_no, item_type, problem_characteristic, report_at, repair_done_at, work_date, status, labor_cost, parts_cost, source_downtime_id',
+        q => q.not('status', 'in', MO_VOID_NOT_IN).order('id')),
       // 2 ตัวล่างเป็น best-effort (migration cost saving ยังไม่ apply = แผง 💰 ขึ้น "ยังตั้งต้นทุนไม่ครบ" — หน้าหลักไม่พัง)
       supabase.from('cost_center_rates').select('*'),
       supabaseDR.from('parts_master').select('mat_no, material_cost, standard_cost').eq('is_active', true),
@@ -361,10 +366,14 @@ export default function Improvements() {
     return list;
   }, [items, visibleLineNames, statusFilter]);
 
+  /* 🔴 ลิสต์ของ picker ต้อง "ไม่ตาย" — ส่วนงานที่ไม่มีไลน์ผลิตสังกัด (QA · Planning&Store · ฝั่งช่าง)
+     กรองแล้วเหลือ 0 ⇒ dropdown ว่าง = ใช้ฟีเจอร์ไม่ได้ทั้งหน้า (เคสจริง 26/10 · ด่าน line-picker-never-dead)
+     ⇒ ผ่าน `scopeLines()` ของกลาง (components/LineSelect.jsx) ที่มีตาข่าย "กรองแล้วไม่เหลือ = ไม่กรอง"
+     ⚠️ **ตัวกรองรายการยัง fail-closed เหมือนเดิม** — คนละแกน ห้ามยุบรวม */
   const lineOptions = useMemo(() => {
-    const ls = visibleLineNames ? lines.filter(l => visibleLineNames.has(l.name)) : lines;
+    const ls = pickerLines(lines, { role, lineId, sections: scopeSecs });
     return ls.filter(l => l.parent_line_name); // เฉพาะไลน์ผลิตจริง (ระดับลูก)
-  }, [lines, visibleLineNames]);
+  }, [lines, role, lineId, scopeSecs]);
 
   const typeName = useCallback((imp) => {
     if (imp.problem_source === 'mtn') return imp.problem_label || ALL.symptom;

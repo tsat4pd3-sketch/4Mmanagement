@@ -20,7 +20,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { RATE_COMPONENTS, lineCostCenter, rateFor, ratePerHour, fmtBaht } from '../utils/costSaving';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
-import LineSelect from '../components/LineSelect';
+import LineSelect, { scopeLines as pickerLines } from '../components/LineSelect';
 import Page from '../components/Page';
 import PageHeader from '../components/PageHeader';
 import FilterBar from '../components/FilterBar';
@@ -30,6 +30,7 @@ import { ALL } from '../utils/filterLabels';
 import fetchAllRows from '../utils/fetchAllRows';
 import useProductionLines from '../utils/useProductionLines';
 import useTabParam from '../utils/useTabParam';
+import { urlParam, urlPick, urlNum } from '../utils/urlInit';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { inSectionScope } from '../utils/sectionScope';
 import { getWorkDate } from '../utils/workDate';
@@ -116,9 +117,10 @@ export default function MaintenanceLevels() {
   const navigate = useNavigate();
   const lines = useProductionLines();
   const [view, setView] = useTabParam(['todo', 'equip'], 'todo', 'view');
-  const [line, setLine] = useState('');
-  const [kind, setKind] = useState('all');
-  const [prio, setPrio] = useState(0);            // 0 = ทุกความด่วน
+  // ?mlline= (ชื่อไลน์) ?mlkind= ?mlprio= — จอวนหน้า · ขึ้นต้น ml กันชนคีย์ของหน้าอื่นใต้ /pm
+  const [line, setLine] = useState(() => urlParam('mlline') || '');
+  const [kind, setKind] = useState(() => urlPick('mlkind', KIND_CHIPS.map(c => c.key), 'all'));
+  const [prio, setPrio] = useState(() => Math.round(urlNum('mlprio', 0, 3, 0)));            // 0 = ทุกความด่วน
   const [q, setQ] = useState('');
   const [limit, setLimit] = useState(PAGE);
   const [raw, setRaw] = useState(null);
@@ -212,7 +214,15 @@ export default function MaintenanceLevels() {
     if (sections?.length) return new Set(lines.filter(l => inSectionScope(sections, l.section)).map(l => l.name));
     return null;
   }, [lines, role, lineId, sections]);
-  const scopedLineObjs = useMemo(() => (scopeLines ? lines.filter(l => scopeLines.has(l.name)) : lines), [lines, scopeLines]);
+  /* 🔴 ช่องเลือกไลน์ต้อง "ไม่ตาย" — ส่วนงานที่ไม่มีไลน์ผลิตสังกัดเลย (QA · Planning&Store · ฝั่งช่าง)
+     กรองด้วย section แล้วเหลือ 0 ⇒ dropdown ว่างเปล่า = แจ้งซ่อม/เลือกไลน์ไม่ได้ทั้งหน้า (เคสจริง 26/10)
+     ⇒ ต้องผ่าน `scopeLines()` ของกลางใน `components/LineSelect.jsx` ที่มีตาข่าย
+       **"กรองแล้วไม่เหลืออะไร = ไม่กรอง"** (กติกาเดิมตั้งแต่ 2026-08-24)
+     ⚠️ **คนละแกนกับ `scopeLines` (Set) ข้างบน** ซึ่งเป็นตัวกรองรายการ + ฐานของด่านสิทธิ์ขั้นเซ็น
+        (`reporterScope`) — ตัวนั้นต้อง fail-closed เหมือนเดิม **ห้ามยุบรวมกัน** */
+  const scopedLineObjs = useMemo(
+    () => pickerLines(lines, { role, lineId, sections }),
+    [lines, role, lineId, sections]);
   const famOfSel = useMemo(() => (line ? new Set(lineFamilyOf(line)) : null), [line, lineFamilyOf]);
 
   // กรองระดับอุปกรณ์ (ขอบเขต → ไลน์ → ชนิด → คำค้น) — การ์ดหัว 3 ระดับคิดจากชุดนี้
@@ -244,6 +254,19 @@ export default function MaintenanceLevels() {
       <PageHeader title="3 ระดับ PM" icon="🧭" />
       {loadErr && <div style={{ ...card, borderColor: '#ef4444', color: '#ef4444', fontSize: 13, fontWeight: 700 }}>⚠️ {loadErr}</div>}
 
+      {/* ── ตัวกรอง ── */}
+      <FilterBar>
+        <LineSelect lines={scopedLineObjs} value={line} onChange={setLine} placeholder={ALL.line} />
+        <Segmented value={view} onChange={setView} label="มุมมอง" options={[
+          { value: 'todo', label: `🎯 สิ่งที่ควรทำ (${actionsOf(scoped).length})` },
+          { value: 'equip', label: `📋 รายอุปกรณ์ (${scoped.length})` },
+        ]} />
+        <SearchInput value={q} onChange={setQ} fields="เลขเครื่อง / ชื่อ / ไลน์" ariaLabel="ค้นหาอุปกรณ์" />
+        <span className="spacer" />
+        <button onClick={() => setReloadKey(k => k + 1)} style={{ background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 8, padding: '0 12px', fontSize: 13, cursor: 'pointer', fontWeight: 700 }}>🔄 รีเฟรช</button>
+      </FilterBar>
+      {/* 🔴 การ์ดสถิติ 3 ใบ = **เนื้อหา** ต้องอยู่ใต้แถบกรอง (UI-STANDARD §2.1 ลำดับตายตัว)
+          ย้ายลงมา 20/10 — ตัวเลขในการ์ดก็มาจาก `sum` ที่คิดจากของที่ผ่านตัวกรองแล้ว */}
       {/* ── บันได 3 ขั้น ── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12, alignContent: 'start' }}>
         <LevelCard step="1" title="Preventive — ป้องกันตามแผน" en="Time-based PM" color="#4a90e0"
@@ -279,17 +302,6 @@ export default function MaintenanceLevels() {
         </LevelCard>
       </div>
 
-      {/* ── ตัวกรอง ── */}
-      <FilterBar>
-        <LineSelect lines={scopedLineObjs} value={line} onChange={setLine} placeholder={ALL.line} />
-        <Segmented value={view} onChange={setView} label="มุมมอง" options={[
-          { value: 'todo', label: `🎯 สิ่งที่ควรทำ (${actionsOf(scoped).length})` },
-          { value: 'equip', label: `📋 รายอุปกรณ์ (${scoped.length})` },
-        ]} />
-        <SearchInput value={q} onChange={setQ} fields="เลขเครื่อง / ชื่อ / ไลน์" ariaLabel="ค้นหาอุปกรณ์" />
-        <span className="spacer" />
-        <button onClick={() => setReloadKey(k => k + 1)} style={{ background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 8, padding: '0 12px', fontSize: 13, cursor: 'pointer', fontWeight: 700 }}>🔄 รีเฟรช</button>
-      </FilterBar>
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
         {KIND_CHIPS.map(c => {
           const on = kind === c.key;

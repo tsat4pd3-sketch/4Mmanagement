@@ -5,6 +5,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { loadLinesRes } from '../utils/useProductionLines';
 import { scopedLineNames, filterRowsByLineScope } from '../utils/sectionScope';
 import { canWriteLine, writableRows, writeBlockText } from '../utils/writeScope';
+import { checkWriteRows } from '../utils/dbWrite';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { isFgMat } from '../utils/matPrefix';
@@ -38,6 +39,7 @@ import { RATE } from '../utils/refreshRates';
 import { useLiveBoard } from '../utils/useLiveBoard';
 import SearchSelect from '../components/SearchSelect';
 import StockReceiptQueue from '../components/StockReceiptQueue';
+import PartLevelCoveragePanel from '../components/PartLevelCoveragePanel';
 import Segmented from '../components/Segmented';
 import PartThumb from '../components/PartThumb';
 import usePartImages from '../utils/usePartImages';
@@ -88,11 +90,11 @@ const EMPTY_FORM = { line_name:'', mat_no:'', part_name:'', qty:'', type:'issue'
    TAB: STOCK (existing content)
    ───────────────────────────────────────────────────────────────────────────── */
 function StockTab({ role, scope }) {
-  const { fullName, section: homeSection, sections: mySections, allUnits } = useContext(UserContext);
+  const { fullName, section: homeSection, sections: mySections, allUnits, respCostCenters, scopeIdx } = useContext(UserContext);
   /* 🔐 ขอบเขต "ที่แก้ได้" — คนละตัวกับ scopeNames ที่เป็นขอบเขต "ที่เห็น" (ดู utils/writeScope.js)
      คิวอนุมัติเดิมดึง pending ทั้งระบบ ⇒ แอดมินหน่วยงานอนุมัติยอดสต็อกของส่วนงานอื่นได้ (audit 15/10) */
-  const wctx = useMemo(() => ({ role, section: homeSection, sections: mySections, allUnits }),
-    [role, homeSection, mySections, allUnits]);
+  const wctx = useMemo(() => ({ role, section: homeSection, sections: mySections, allUnits, respCostCenters, scopeIdx }),
+    [role, homeSection, mySections, allUnits, respCostCenters, scopeIdx]);
   const canIssue = can('line_stock', 'issue', role);
   const canApprove = can('line_stock', 'approve', role);
 
@@ -953,9 +955,9 @@ function addMins(timeStr, mins) {
 function DeliveryRoundsTab({ canEdit, fullName, scope }) {
   /* 🔐 รอบจัดส่งผูกไลน์ ⇒ แก้/ลบได้เฉพาะไลน์ส่วนงานตัวเอง (audit 15/10 — เดิม load ดึงทุกไลน์
      แล้ว lineFilter เป็นแค่ตัวกรองมุมมองที่ default ว่าง) · สโตร์ถือ scope:all_units จึงไม่กระทบ */
-  const { section: homeSection, allUnits } = useContext(UserContext);
-  const rndCtx = useMemo(() => ({ role: scope?.role, section: homeSection, sections: scope?.sections, allUnits }),
-    [scope?.role, homeSection, scope?.sections, allUnits]);
+  const { section: homeSection, allUnits, respCostCenters, scopeIdx } = useContext(UserContext);
+  const rndCtx = useMemo(() => ({ role: scope?.role, section: homeSection, sections: scope?.sections, allUnits, respCostCenters, scopeIdx }),
+    [scope?.role, homeSection, scope?.sections, allUnits, respCostCenters, scopeIdx]);
   const [rounds,     setRounds]     = useState([]);
   const [lines,      setLines]      = useState([]);
   const [lineFilter, setLineFilter] = useState('');
@@ -1459,7 +1461,12 @@ function InflowRulesTab({ canEdit }) {
   }, []);
   useEffect(() => { load(); }, [load]);
 
+  /* ด่านชั้น 2 ของทั้งแท็บ — กฎพวกนี้ตัดสินว่า "ของเข้าคลังไหม" ทั้งโรงงาน (ปิดผิด = ของหายเงียบทั้งกะ)
+     ⇒ ซ่อนปุ่มไม่พอ ต้องเช็คคีย์เดียวกับปุ่มในทุกฟังก์ชันที่เขียน (สิทธิ์เปลี่ยนระหว่างเปิดจอ / ยิงตรง) */
+  const noPerm = () => { if (!canEdit) { toast.error('แก้กฎรับงานเข้าคลังต้องมีสิทธิ์ line_stock:manage_rounds'); return true; } return false; };
+
   const addRule = async () => {
+    if (noPerm()) return;
     const mv = form.match_value.trim().toUpperCase();
     const dest = form.dest_line_name.trim();
     if (!mv) { toast.error(form.match_type === 'prefix' ? 'กรอกเลขขึ้นต้น MAT เช่น 1 หรือ 2' : 'กรอก MAT No.'); return; }
@@ -1468,10 +1475,9 @@ function InflowRulesTab({ canEdit }) {
       && !window.confirm(`MAT ${mv} ไม่มีใน Product Master — กฎจะ match เฉพาะเลขนี้ตรงตัว · ใช้ค่านี้ต่อหรือไม่?`)) return;
     if (!dest) { toast.error('เลือกปลายทาง เช่น FG WAREHOUSE / STORE'); return; }
     setSaving(true);
-    const { error } = await supabaseDR.from('stock_inflow_rules')
-      .upsert({ match_type: form.match_type, match_value: mv, dest_line_name: dest, is_active: true, updated_at: new Date().toISOString() }, { onConflict: 'match_type,match_value' });
+    const ok = checkWriteRows(await supabaseDR.from('stock_inflow_rules').upsert({ match_type: form.match_type, match_value: mv, dest_line_name: dest, is_active: true, updated_at: new Date().toISOString() }, { onConflict: 'match_type,match_value' }).select('id'), 'บันทึกกฎ');
     setSaving(false);
-    if (error) { toast.error(error.message); return; }
+    if (!ok) return;
     toast.success(`✓ ${form.match_type === 'prefix' ? `MAT ขึ้นต้น ${mv}` : mv} → ${dest}`);
     setForm(f => ({ ...f, match_value: '', dest_line_name: '' }));
     load();
@@ -1480,11 +1486,29 @@ function InflowRulesTab({ canEdit }) {
   /* 🔴 3 ทาง ไม่ใช่เปิด/ปิด (2026-10-02) — เดิม "ปิด" ถูกเข้าใจว่า "ให้คนยืนยันรับ" แต่จริงๆ คือ
      **ของไม่เข้าคลังเลย** (เกิดจริง ~120 ใบหายเงียบทั้งกะ) · ปิดต้องถามยืนยันพร้อมบอกผลตรงๆ */
   const setRuleMode = async (r, modeKey) => {
+    if (noPerm()) return;
     if (modeKey === inflowModeOf(r)) return;
     if (modeKey === 'off' && !window.confirm(
       `ปิดกฎ "${r.match_type === 'prefix' ? `MAT ขึ้นต้น ${r.match_value}` : r.match_value} → ${r.dest_line_name}"?\n\n`
       + '⚠️ ปิดแล้ว ใบผลิตที่ปิดต่อจากนี้จะ "ไม่เข้าคลังนี้เลย" และไม่มีคิวให้ใครกดรับ\n'
       + 'ถ้าต้องการให้คนนับของก่อนรับ ให้เลือก 🟡 ต้องยืนยันรับ แทน')) return;
+    /* 🔴🔴 27/10 — ออกจากโหมด 🔧 ตอนยังมีใบล็อตค้างที่ไลน์ = **ของหายจากบัญชี**
+       โหมด 🔧 ทำให้ trigger `fn_post_confirmed_output` ข้าม ⇒ ใบผลิตที่ปิดไปแล้วช่วงนั้นไม่มี
+       `stock_receipts` รองรับเลย · ทางเข้าคลังทางเดียวคือปุ่มปิดล็อตบนบอร์ดสโตร์ ซึ่งพอสลับโหมด
+       จะเลิกลงสต็อก (ด่าน A2) ⇒ ปิดใบแล้วของหายเงียบ · วัด 27/10: 7 ใบค้าง · บนใบ 13,200 ชิ้น
+       🔴 นับไม่ได้ = **บล็อก** (fail-closed) — อ่านไม่ได้แล้วจะเขียนทับของจริง ห้ามเดา
+       📄 docs/modules/store-board-workflow.md §ขั้นถัดไป (ลำดับบังคับ 3 ขั้น) */
+    if (inflowModeOf(r) === 'lot' && modeKey !== 'lot' && r.match_type === 'mat') {
+      const { count, error: eLot } = await supabaseDR.from('child_lot_requests')
+        .select('id', { count: 'exact', head: true })
+        .eq('child_mat_no', String(r.match_value ?? '').trim()).eq('status', 'producing');
+      if (eLot) { toast.error(`เช็คใบล็อตค้างไม่ได้ (${eLot.message}) — ยังไม่สลับโหมด`); return; }
+      if (count && !window.confirm(
+        `${r.match_value} ยังมีใบล็อตค้างที่ไลน์ผลิต ${count} ใบ\n\n`
+        + '⚠️ สลับโหมดตอนนี้ = ของบนใบพวกนั้น "ไม่เข้าคลังเลย"\n'
+        + '(ปุ่มปิดล็อตจะเลิกลงสต็อก และใบผลิตเก่าก็ไม่มีใบ "รอรับเข้า" รองรับ)\n\n'
+        + 'ให้สโตร์ปิดใบล็อตที่ค้างให้หมดก่อน แล้วค่อยสลับ — กด OK ถ้ารู้อยู่แล้วและจะไปลงยอดมือเอง')) return;
+    }
     const { data, error } = await supabaseDR.from('stock_inflow_rules')
       .update({ ...inflowPatchFor(modeKey, r), updated_at: new Date().toISOString() }).eq('id', r.id).select('id');
     if (error) { toast.error(error.message); return; }
@@ -1494,9 +1518,9 @@ function InflowRulesTab({ canEdit }) {
   };
 
   const deleteRule = async (r) => {
+    if (noPerm()) return;
     if (!window.confirm(`ลบกฎ "${r.match_type === 'prefix' ? `MAT ขึ้นต้น ${r.match_value}` : r.match_value} → ${r.dest_line_name}"?`)) return;
-    const { error } = await supabaseDR.from('stock_inflow_rules').delete().eq('id', r.id);
-    if (error) { toast.error(error.message); return; }
+    if (!checkWriteRows(await supabaseDR.from('stock_inflow_rules').delete().eq('id', r.id).select('id'), 'ลบกฎ')) return;
     toast.success('ลบกฎแล้ว');
     load();
   };
@@ -1613,6 +1637,9 @@ const TABS = [
   { key:'receipts',  label:'📥 รอรับเข้า' },   // ปิดใบผลิตแล้ว รอคลังนับของจริงแล้วกดรับ (กฎโหมด 🟡 · 2026-10-02)
   { key:'count',     label:'📋 ตรวจนับ/เฟิร์มยอด' },   // กระทบยอดขาออกที่หลุด + ตรวจนับทั้งคลัง (2026-09-23)
   { key:'wip',       label:'🔩 WIP ค้างระหว่างขั้น' },   // ยอดค้าง — คนละเรื่องกับ 'คิวเติม WIP' ในบอร์ดคัมบัง
+  /* 📍 20/10 — ลูป "ผลิตเรียก → สโตร์เห็น" ตายที่ขั้น "ถึง min แล้วเสนอให้เบิก" เพราะไม่มีใครตั้งจุดเรียกเติม
+     เดิมเห็นทีละไลน์ (แผงใน /layout-setup) ⇒ ไม่มีจอไหนตอบว่าทั้งโรงงานขาดกี่จุด */
+  { key:'levels',    label:'📍 จุดเรียกเติม (ทั้งโรงงาน)' },
   /* 🔴 13/10 feedback: ชื่อแท็บเดิมเขียนแต่ "โซนคลัง (ผัง)" = ชื่อของแผงล่าง
      แต่คนมาหา "พื้นที่ SAP / รหัสคลัง" ซึ่งเป็นแผงบนของแท็บนี้ แล้วหาไม่เจอ (user: "ยังหาไม่เจอ")
      ⇒ ชื่อแท็บต้องบอกของที่อยู่ข้างในทั้ง 2 ชั้น */
@@ -1641,6 +1668,7 @@ export default function LineStock() {
       {activeTab === 'receipts'  && <StockReceiptQueue />}
       {activeTab === 'count'     && <StockCountSheet role={role} scope={scope} />}
       {activeTab === 'wip'       && <WipBetweenSteps />}
+      {activeTab === 'levels'    && <PartLevelCoveragePanel />}
       {/* 🏬 2 ทะเบียนคนละชั้น: รหัสคลัง (SAP SLoc — อ้างใน BOM) เหนือ โซนกองของบนผัง · ห้ามยุบรวม */}
       {activeTab === 'zones'     && <><StorageLocPanel /><StorageZonePanel /></>}
       {activeTab === 'delivery'  && <DeliveryRoundsTab canEdit={canEdit} fullName={fullName} scope={scope} />}

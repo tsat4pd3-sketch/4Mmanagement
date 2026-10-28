@@ -57,7 +57,7 @@ const card = { background: 'var(--card)', border: '1px solid var(--border)', bor
 const FS = 12;
 
 export default function Monitoring() {
-  const { role, fullName, section: homeSection, sections: mySections, allUnits } = useContext(UserContext);
+  const { role, fullName, section: homeSection, sections: mySections, allUnits, respCostCenters, scopeIdx } = useContext(UserContext);
   /* 🔐 บอร์ดผูก "ไลน์เจ้าของ" (`monitor_boards.line_name`) ⇒ กรอก/ลบช่องได้เฉพาะบอร์ดของส่วนงานตัวเอง
      (audit 15/10 — เดิมโหลดทุกบอร์ด แล้ว syncRackOrder ยิงต่อเป็นใบส่งของจริง)
      🔴 บอร์ดชนิด `fg` ผูก "ลูกค้า" ไม่ใช่ไลน์ ⇒ ไม่มีไลน์ให้เทียบ = ตัดสินไม่ได้ ⇒ ไม่บล็อก */
@@ -109,8 +109,8 @@ export default function Monitoring() {
     if (error) { setWarn(`โหลดทะเบียนบอร์ดไม่สำเร็จ: ${error.message}`); return; }
     setBoards(data || []);
   }, []);
-  const wctx = useMemo(() => ({ role, section: homeSection, sections: mySections, allUnits }),
-    [role, homeSection, mySections, allUnits]);
+  const wctx = useMemo(() => ({ role, section: homeSection, sections: mySections, allUnits, respCostCenters, scopeIdx }),
+    [role, homeSection, mySections, allUnits, respCostCenters, scopeIdx]);
 
   useEffect(() => { loadBoards(); }, [loadBoards]);
 
@@ -243,7 +243,7 @@ export default function Monitoring() {
        ส่งลูกค้า (send) ยังเป็นช่องกรอก — ส่งเกรทไม่ผ่าน customer_shipping_orders */
     if (isGreat) {
       const wkEnd = addDaysStr(dTo, 6) || dTo;
-      const [rcpR, txnR, prodR, stkR, ruleR, lotR, poR] = await Promise.all([
+      const [rcpR, txnR, prodR, stkR, ruleR, poR] = await Promise.all([
         fetchAllPages(() => supabaseDR.from('stock_receipts')
           .select('id, mat_no, qty_expected').eq('status', 'pending').in('mat_no', mats), { orderBy: ['id'] }),
         fetchAllPages(() => supabaseDR.from('line_stock_transactions')
@@ -254,9 +254,7 @@ export default function Monitoring() {
           .select('mat_no, line_name, is_active, is_operation').in('mat_no', mats), { orderBy: ['mat_no'] }),
         fetchAllPages(() => supabaseDR.from('line_stock_summary')
           .select('line_name, mat_no, qty_on_hand').in('mat_no', mats), { orderBy: ['mat_no', 'line_name'] }),
-        supabaseDR.from('stock_inflow_rules').select('match_type, match_value, dest_line_name, is_active').eq('is_active', true),
-        fetchAllPages(() => supabaseDR.from('child_lot_requests')
-          .select('id, child_mat_no').in('child_mat_no', mats).neq('status', 'cancelled'), { orderBy: ['id'] }),
+        supabaseDR.from('stock_inflow_rules').select('match_type, match_value, dest_line_name, is_active, mode').eq('is_active', true),
         /* 🔒 Daily Report ลงยอด MAT นี้แล้ว = ระบบเป็นเจ้าของช่อง IN (คำสั่ง user 13/10) */
         fetchAllPages(() => supabaseDR.from('prod_orders')
           .select('id, mat_no, production_sessions!inner(work_date)').eq('status', 'confirmed').in('mat_no', mats)
@@ -264,10 +262,9 @@ export default function Monitoring() {
       ]);
       if (!mine()) return;
       const loadErr = (r) => r?.error || (r?.errors && r.errors[0]) || (r?.truncated ? 'ดึงข้อมูลได้ไม่ครบ' : null);
-      const refErr = loadErr(prodR) || loadErr(stkR) || loadErr(lotR) || loadErr(txnR) || ruleR.error;
+      const refErr = loadErr(prodR) || loadErr(stkR) || loadErr(txnR) || ruleR.error;
       const ctx = {
         products: prodR.rows || [], rules: ruleR.data || [], receiptLine: 'STORE',
-        lotMats: new Set((lotR.rows || []).map(r => String(r.child_mat_no || '').trim())),
       };
       const locOf = refErr ? () => null : (mt) => rawSourceLocOf(mt, ctx);
       const onHand = refErr ? new Map() : onHandAtRef(stkR.rows || [], locOf);
@@ -388,7 +385,7 @@ export default function Monitoring() {
       return;
     }
 
-    const [rcpR, txnR, lvlR, prodR, stkR, ruleR, lotR, poR] = await Promise.all([
+    const [rcpR, txnR, lvlR, prodR, stkR, ruleR, poR] = await Promise.all([
       /* ⏳ ผลิตคอนเฟิร์มแล้วแต่คลังยังไม่กดรับ — ยังไม่นับใน IN แต่ต้องบอกบนจอ (ห้ามหายเงียบ) */
       fetchAllPages(() => supabaseDR.from('stock_receipts')
         .select('id, mat_no, qty_expected').eq('status', 'pending').in('mat_no', mats), { orderBy: ['id'] }),
@@ -405,9 +402,7 @@ export default function Monitoring() {
         .select('mat_no, line_name, is_active, is_operation').in('mat_no', mats), { orderBy: ['mat_no'] }),
       fetchAllPages(() => supabaseDR.from('line_stock_summary')
         .select('line_name, mat_no, qty_on_hand').in('mat_no', mats), { orderBy: ['mat_no', 'line_name'] }),
-      supabaseDR.from('stock_inflow_rules').select('match_type, match_value, dest_line_name, is_active').eq('is_active', true),
-      fetchAllPages(() => supabaseDR.from('child_lot_requests')
-        .select('id, child_mat_no').in('child_mat_no', mats).neq('status', 'cancelled'), { orderBy: ['id'] }),
+      supabaseDR.from('stock_inflow_rules').select('match_type, match_value, dest_line_name, is_active, mode').eq('is_active', true),
       /* 🔒 Daily Report ลงยอด MAT นี้แล้ว = ระบบเป็นเจ้าของช่อง IN (คำสั่ง user 13/10) */
       fetchAllPages(() => supabaseDR.from('prod_orders')
         .select('id, mat_no, production_sessions!inner(work_date)').eq('status', 'confirmed').in('mat_no', mats)
@@ -415,13 +410,12 @@ export default function Monitoring() {
     ]);
     if (!mine()) return;
     /* 🔴 คลังอ้างอิงของพาร์ท = `refStockOf` ตัวเดียวกับจุดเรียกเติม + ตัวนำเข้า Monitoring
-       (ผลิตเอง → คลังตามกฎรับเข้า · ล็อตสโตร์ → ที่ไลน์ผลิต · ของที่ไลน์ใช้ → หน้าไลน์)
-       อ่านกฎ/ล็อต/ยอดคลังไม่ครบ = ไม่รู้ว่าของอยู่ไหน ⇒ ไม่ยึดยอด (ปล่อยสูตร) แล้วเขียนบนจอ ห้ามเดาคลัง */
+       (ผลิตเอง → คลังตามกฎรับเข้า **รวมกฎโหมด 🔧 ปิดล็อต ตั้งแต่ 26/10** · ของที่ไลน์ใช้ → หน้าไลน์)
+       อ่านกฎ/ยอดคลังไม่ครบ = ไม่รู้ว่าของอยู่ไหน ⇒ ไม่ยึดยอด (ปล่อยสูตร) แล้วเขียนบนจอ ห้ามเดาคลัง */
     const loadErr = (r) => r?.error || (r?.errors && r.errors[0]) || (r?.truncated ? 'ดึงข้อมูลได้ไม่ครบ' : null);
-    const refErr = loadErr(ruleR) || loadErr(lotR) || loadErr(stkR) || loadErr(txnR) || loadErr(prodR);
+    const refErr = loadErr(ruleR) || loadErr(stkR) || loadErr(txnR) || loadErr(prodR);
     const refCtx = {
       lineName: bLine, products: prodR.rows || [], rules: ruleR.data || [],
-      lotMats: new Set((lotR.rows || []).map(r => String(r.child_mat_no || '').trim())),
     };
     const locOf = refErr ? () => null : (mt) => refStockOf(mt, refCtx).loc;
     const onHand = refErr ? new Map() : onHandAtRef(stkR.rows || [], locOf);
@@ -654,7 +648,8 @@ export default function Monitoring() {
              "แถวที่เก็บไว้" เพื่อให้พิมพ์ทับได้ · ยุบ = เสียอย่างใดอย่างหนึ่ง
              (เหตุผลเต็ม + ทางที่ลองแล้วไม่ได้ → docs/modules/monitoring-boards.md §6.6) */}
       {tab === 'fg' ? (
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+        /* data-subtab = แถวนี้ทำหน้าที่ "แท็บย่อย" ⇒ ลำดับ แท็บ → แท็บย่อย → แถบกรอง (UI-STANDARD §2.1) */
+        <div data-subtab="1" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
           {[
             { k: 'rundown', t: '📉 ของจะขาดวันไหน', s: 'อัตโนมัติล้วน · เรียงตัวที่จะขาดก่อน · ครอบ FG ทุกตัวที่มีออเดอร์' },
             { k: 'board', t: '✏️ บอร์ดแก้มือ (ต่อลูกค้า)', s: 'พิมพ์ทับยอดได้ · เห็นผลิตเข้า/ขั้นต่ำในตารางเดียว' },

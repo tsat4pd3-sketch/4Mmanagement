@@ -93,7 +93,7 @@ Realtime + Edge Functions/Deno) · Telegram Bot API · deploy = Render.com (Stat
 
 ## 📄 โมดูลที่รายละเอียดอยู่ในไฟล์โมดูลล้วน (ไม่มีกฎข้าม session)
 
-ยุบจาก 15 หัวข้อที่เคยมีแค่บรรทัด pointer (19/10 — ไฟล์นี้ชน 110 KB แล้ว · ดัชนีเต็ม `docs/modules/README.md`)
+ดัชนีเต็ม `docs/modules/README.md`
 เปิดอ่าน **เฉพาะโมดูลที่งานนี้แตะ** · กฎของโมดูลพวกนี้อยู่ในไฟล์ของมัน **ไม่ใช่ที่นี่**
 
 หน้า/route ทั้งระบบ `pages-routes.md` · สายธารความต้องการ `/flow-tower` `demand-flow-tower.md` ·
@@ -113,19 +113,31 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 > ### 🔴🔴 สิทธิ์มี **3 ชั้น** — "เข้าหน้าได้ ≠ แก้ของหน่วยงานอื่นได้" (2026-10-15 · คำสั่ง user)
 > ① เข้าหน้าได้ไหม `page:/x` · ② กดปุ่มเป็นไหม `can()` · ③ **แถวนี้เป็นของหน่วยงานเราไหม**
 > 🔴 **ชั้น ③ = `src/utils/writeScope.js`** (`canWriteUnit`/`canWriteLine`/`writableRows`) ·
->   **ฝั่งช่างใช้แกน "ทีม"** = `canWriteTeam()` (`utils/mtnTeams.js`) เพราะช่างซ่อมข้ามไลน์เป็นงานปกติ
+>   **ฝั่งช่างใช้แกน "ทีม"** = `canWriteTeam()` (`utils/mtnTeams.js`) — ช่างซ่อมข้ามไลน์เป็นงานปกติ
 > 🔴 **"ขอบเขตที่เห็น" ≠ "ขอบเขตที่แก้ได้"** — เห็น = `sections` (**ว่าง = เห็นทั้งโรงงาน**) ·
 >   แก้ = **`profiles.section` บ้านจริง** · ใบผ่านข้ามหน่วย = คีย์ **`scope:all_units`** (`UserContext.allUnits`)
 >   **ห้ามเอา `sections` มาตัดสินการแก้** (มีด่าน `write-scope-layer`)
 > 🔴 **แกนที่ 2 ของชั้น ③ = Cost Center (`src/utils/ccScope.js` · `canWriteScope`)** — ตั้งที่ `/add-user` ช่อง ④
 >   (`profiles.resp_cost_centers` · `UserContext.respCostCenters`) · **ว่าง = ถอยไปใช้ `section` เหมือนเดิม**
->   🔴 **ลำดับชั้นมาจาก `org_nodes.parent_id` เท่านั้น — เลขรหัสไม่ได้บอกชั้น** (ลูกของ `2140461000` คือ `2140561001`)
+>   🔴 **ลำดับชั้นมาจาก `org_nodes.parent_id` เท่านั้น — เลขรหัสไม่ได้บอกชั้น**
 >   · ทีมไม่มีรหัส = **ตกทอดจากแม่** · ไล่ขึ้นไม่เจอ = fail-closed · กฎ "CC ของโหนด" **ห้ามเขียนชุดที่ 2**
 >   (`costCenterOfNode()` อยู่ไฟล์นี้ที่เดียว · มีด่าน `cc-scope-layer`)
+>   🔑 **จอไม่ต้องรู้เรื่อง 2 แกน** — `canWriteUnit`/`canWriteLine` สลับให้เองเมื่อ ctx มี `respCostCenters`
+>     **+ `scopeIdx`** ⇒ **ctx ของด่านทุกจอต้องส่ง 2 ช่องนี้** (ด่านตรวจรายบรรทัดใน `write-scope-layer`) ·
+>     ไลน์ตัดสินที่ตัวไลน์ก่อนถอยไปส่วนงาน · อ่านผังไม่ได้ = บล็อก (`scope_unreadable`)
 > 🔴 **ช่องเลือกขอบเขต/ทีม = ตัวกรองการดู ไม่ใช่ด่าน** ⇒ ต้องเช็คซ้ำ**ในฟังก์ชันที่เขียน DB จริง**
 >   ไม่ใช่แค่ซ่อนปุ่ม (`?scope=`/`?dept=`/`?mo=` เปิดตรงได้) · ของกลาง = `unknownTarget:'block'`
 > 🔴 **กรองแถวออกแล้วต้องเขียนบนจอว่าซ่อนกี่รายการ** — "ไม่มีรายการ" ทั้งที่มีแต่ไม่ใช่ของเรา = จอโกหก
-> 📄 20 จุดที่ปิด + ที่ยังเหลือ (RLS 68 policy ฝั่ง Main · DR = known gap) → `docs/modules/permission-scope-audit.md`
+> 🔴 **"ย้ายของ" ต้องเช็ค 2 ฝั่ง: ต้นทาง (แถวเดิม) + ปลายทาง (ค่าที่กำลังจะเขียน)** (19/10)
+>   ย้ายโหนดผัง/แผน/รายการตรวจ/แถวข้ามพาร์ท = เขียนลงหน่วยใหม่ · ด่านที่มองแถวเดิมอย่างเดียว **ปล่อยการย้ายออกนอกขอบเขตเสมอ**
+> 🔴 **หน้าแม่ที่มีกฎแล้ว ต้องส่งกฎลงแผงลูก** (ส่งแค่ `canEdit` = แผงลูกเขียนข้ามหน่วยได้) — ด่านต้องตรวจ "prop ที่ส่งจริง"
+> 🔴 **ตัวตน (`employees`) ห้ามบีบ "ขอบเขตที่ดูแล" (`profiles`)** (27/10) — หัวหน้าก็เป็นพนักงานที่สังกัด
+>   *ไลน์ลูก* แต่ `profiles.line_id` ตั้งเป็น*ไลน์แม่* ⇒ แกนไลน์ต้องผ่าน **`widerLineId()`**
+>   (`utils/lineHierarchy.js`) เอาตัวที่สูงกว่าในผัง · คนละสาย = ฐานพนักงานชนะ · ไม่รู้ผัง = ค่าเดิม (มีด่าน)
+> 🔴 **เปลี่ยนกฎที่ตัดสินขอบเขต = พิสูจน์กับทะเบียนผู้ใช้จริงก่อน merge** (26/10 · คำสั่ง user)
+>   **การบีบขอบเขตเป็น "การตั้งค่า" ไม่ใช่งานของโค้ด** — ห้ามคืนน้อยกว่าที่ `profiles` ตั้งไว้ ·
+>   ด่าน `src/utils/__tests__/scopeRegistryGate.test.mjs` (ทะเบียนไม่มีชื่อคน · SQL รีเฟรชใน `_meta`)
+> 📄 จุดที่ปิดแล้ว + ที่ยังเหลือ (DR = known gap) → `docs/modules/permission-scope-audit.md`
 
 > 📄 `docs/modules/org-hierarchy.md` · `docs/modules/role-system.md`
 
@@ -155,19 +167,23 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 
 > ### 🔴🔴 กฎเหล็กข้าม session — **ตัวเศษ %P = "ทุกชิ้นที่เครื่องทำออกมา" ไม่ใช่แค่งานดี** (2026-10-04)
 > `P = CT × Total Count ÷ Run` · `Q = Good ÷ Total Count` · **Total Count = ดี + เสีย + ทดลอง + สงสัย**
-> นับแต่งานดี = ของเสีย 1 ชิ้นถูกหัก **2 ครั้ง** (%P และ %Q) ⇒ OEE ต่ำกว่าจริง · **งานทดลองเข้าด้วย**
+> นับแต่งานดี = ของเสียถูกหัก **2 ครั้ง** ⇒ OEE ต่ำกว่าจริง · **งานทดลองเข้าด้วย**
 > ⇒ `defectQtyAll` ⇒ QA ตัดสินของสงสัย **%Q ขยับ · %P ไม่ขยับ**
 > · เติมผ่าน **`ngByMatFrom()`** → `ngForP` (จอสด) · ปิดกะคิดเองจาก `defects` · **ห้ามบวกในหน้า**
 >   คิวรี `defect_logs` ต้อง embed `prod_orders(mat_no)` · ด่าน `oee-live-needs-ngforp`
 > · 🔴 **ชี้ MAT ไม่ได้ = ไม่รู้ CT ⇒ ไม่เข้า %P ต้องเขียนบนจอ (`ngNoMatP`)** · "ผลิตได้" ยังเป็นงานดี
 
 > ### 🔴🔴 กฎเหล็กข้าม session — downtime ที่ทับ "เวลาพักตามนโยบาย" ห้ามหักซ้ำ (2026-09-15)
-> พักตามนโยบาย = planned stop ที่**ถูกกันออกจากฐานเวลาไปแล้ว** ⇒ นาที downtime ที่ตกในช่วงพักบวกเข้าไปอีก = หักซ้ำ
 > · **ทุกจุดที่เอา downtime ไปหักจากฐานเวลา (netAvail/runMin/wLoad/strictOee/MTBF) ต้องผ่าน
 >   `dtMinOutsideBreaks()` + `breakIntervalsIn()` ใน `src/utils/oee.js` เท่านั้น ห้ามรวม `duration_min` เองในหน้า**
 > · จุดที่ตอบ "เครื่องหยุดกี่นาที" (พาเรโต/มูลค่า/MTTR/ตาราง DT) ยังใช้ `duration_min` เต็มเหมือนเดิม — **ห้ามสลับ 2 ชุดนี้**
 > · 🔴 **ไลน์เครื่องขนานบันทึก DT รายเครื่อง ⇒ หารจำนวนเลนก่อนหักจากเวลากะ (`laneWeightFn()`) · `dtMinBySession` ต้องส่ง `{ lines }`**
 >   (มีด่าน) ไม่ส่ง = `wLoad` เหลือ 0 = **กะหายจากค่าเฉลี่ยเงียบๆ** · 🔴 **stamp `oee_a` ต้อง stamp `actual_qty` ด้วย** (`sessionProducedQty()` · มีด่าน)
+> · 🏭 **"ไลน์นี้พักกี่นาที" ไม่เท่ากันทุกไลน์** (`break_line_rules` · 20/10) — เจ้าของกฎ **`src/utils/breakLineRules.js`**
+>   (ไล่สายแม่→ลูก + ทะเบียนกลางที่ `breakIntervalsIn` อ่านเอง ⇒ สูตรที่มี `session` ไม่ต้องส่ง prop) ·
+>   🔴 **ห้ามทับค่า/ไล่สายเองในหน้า · ห้ามถอดการอ่านทะเบียนกลาง** · 🔴 **จอที่วาด "แถบเงาเวลาพัก" เอง
+>   ต้องส่งชื่อไลน์ของแถว** เข้า `halfDayBreakBands()` + อ่านชื่อพักจาก `band.policies`
+>   **ห้ามจับคู่จาก `start_time`** (พักท้ายกะ = `null`) (ด่าน `break-line-rules-single-entry`)
 
 > ### 🔴 บอร์ดไทม์ไลน์ต้องบอก "หลุดแผนแค่ไหน" เป็น **เวลา + ยอด** ไม่ใช่ "กี่ใบ" (2026-09-30)
 > · ตัวเลขทุกตัวมาจาก **`planStatusOf()`** (`utils/heijunkaQueue.js`) · วาดด้วย **`<PlanSlipBar>`** **ห้ามคิดเองในหน้า** ·
@@ -178,13 +194,13 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 > · 🔴 **ใบไม่เคยถูกปิด = `neverClosed` ⇒ เขียน "N ใบไม่เคยถูกปิด" ห้ามรายงานเป็น "ช้ากว่าแผน N ชม."**
 
 > ### 🔴🔴 กฎเหล็กข้าม session — **ชิ้น ≠ shot** (งานคู่ gang die / RH-LH · 2026-09-18)
-> CT = เวลาต่อ **1 จังหวะ** แต่ปั๊มทีเดียวได้ 2 ชิ้น ⇒ บวก `qty×CT` ทั้งสองข้าง = เวลามาตรฐาน 2 เท่า (%P ทะลุ 100 แล้วถูก cap เงียบ)
+> CT = เวลาต่อ **1 จังหวะ** แต่ปั๊มทีเดียวได้ 2 ชิ้น ⇒ บวก `qty×CT` ทั้งสองข้าง = เวลามาตรฐาน 2 เท่า
 > · **ยอดผลิต/%Q/ของเสีย นับ "ชิ้น" · เวลามาตรฐานของ %P นับ "shot" — ห้ามสลับ**
 > · ยุบผ่าน `collapsePairShots()` (`utils/pairTotals.js`) — **ภาระกะตอนวางแผน ใช้ `pairLoadTotal()`
 >   ในไฟล์เดียวกัน** (มีด่าน) · `computeLiveOee` ต้องส่ง `pairMap` ทุกจอ (มีด่าน) · **ลืม `select('pair_mat_no')` = pairMap ว่าง = นับ 2 เท่าเงียบๆ**
 
 > ### 🔴🔴 กฎเหล็กข้าม session — **"พาร์ทจริง" = สินค้า ไม่ใช่ MAT ตัวเดียว** (2026-10-05 · คำสั่ง user)
-> `op_parent_mat` เป็น **text ช่องเดียว** ⇒ กะที่รันลูกค้าอื่นของ "สินค้าเดียวกัน" ชั้น OP ไม่ยุบ แล้ว**นับซ้ำเงียบๆ**
+> `op_parent_mat` = **text ช่องเดียว** ⇒ ลูกค้าอื่นของสินค้าเดียวกัน ชั้น OP ไม่ยุบ = **นับซ้ำเงียบๆ**
 > · ยุบผ่าน `collapseOps` ที่อ่าน **`alts`** จาก `loadOpInfo()` — จับกลุ่มด้วย **แกน `p_no`
 >   (`partCoreOf` · `src/utils/partGroup.js`) เท่านั้น ห้ามใช้ชื่อ/`family_id`** (มีด่าน) ·
 >   ยุบเกินที่นี่ = ตัดขั้นที่ไม่ควรตัด = **ยอดขาด** กู้ไม่ได้ · `alts` ว่าง = พฤติกรรมเดิมเป๊ะ
@@ -199,7 +215,7 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 >   แล้วถอยไปใช้พฤติกรรมเดิม (ตัวเลขเท่าเดิม ไม่เงียบ) · มีด่าน `oee-suspect-needs-qbin-embed`
 >   🔴 กะที่ QA ยังไม่ตัดสิน = **ค่าชั่วคราว** ตัดสินทีหลังว่า `scrap` ต้องคิด %Q กะนั้นใหม่
 
-> 📄 รายละเอียดเต็ม (เคส · ตัวเลขที่วัดมา · คำพูด user · ผล backfill) → `docs/modules/oee.md`
+> 📄 รายละเอียดเต็ม → `docs/modules/oee.md`
 
 ---
 
@@ -217,7 +233,7 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 
 ## Scrap Report — ใบรายงานของเสีย FM-PD2-002 Rev.06 (paperless + export · 2026-07-16)
 
-หน้า `/scrap-report` (`ScrapReport.jsx`, ฝ่ายผลิต) — แทนฟอร์มกระดาษ "ใบรายงานของเสีย" · ลงยอด scrap ต่อ ไลน์/วัน แล้ว export Excel ตรงฟอร์ม 100%
+หน้า `/scrap-report` (`ScrapReport.jsx`) — แทนฟอร์มกระดาษ "ใบรายงานของเสีย" · export Excel ตรงฟอร์ม
 > 📄 รายละเอียดเต็ม → `docs/modules/scrap-report.md`
 
 ---
@@ -229,9 +245,7 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 
 ---
 
-## ใบรายงานปัญหาการผลิต + ถังเหลือง/ถังแดง (paperless · 2026-08-19 · feedback หน้างาน)
-
-หัวหน้ากลุ่ม Assy2 แจ้งว่ายังเขียนมือทุกครั้ง 3 ใบ (ปัญหาการผลิต · ถังเหลือง · ถังแดง) ทั้งที่ข้อมูลอยู่ในระบบแล้ว → ทำเป็น export/paperless
+## ใบรายงานปัญหาการผลิต + ถังเหลือง/ถังแดง (paperless · 2026-08-19)
 
 > ### 🔴 ฟอร์มที่ยื่นออกไปแล้ว = **บันทึก** ไม่ใช่ใบที่ generate ใหม่ (2026-09-25 · มีด่าน)
 > ใบที่มีเลขที่/ต้องเก็บตามอายุเอกสาร: **ออกใบ = เขียนทะเบียนก่อนค่อยพิมพ์** (ล้ม = ห้ามพิมพ์ต่อเงียบ) ·
@@ -291,8 +305,8 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 
 ตารางอยู่ DR project (anon-open) · 🔴 **เลขขั้นคนละความหมายระหว่าง 2 ฟอร์ม** ⇒ แตกสาขาด้วย
 `stageOf(step, { mtnForm })` (`mtnStepPerm.js`) **ห้ามเขียน `step === 7`** — มีด่าน regressionGuards
-· **22/09 หน้านี้เหลือ 2 แท็บ (รายการ MO · ข้อมูลหลัก)** — KPI ช่าง → `/mtn-analysis?tab=kpi` ·
-อะไหล่/ผังคลัง → `/equipment?tab=spare|rack` (`?tab=` เดิม redirect ให้) **ห้ามเอากลับมา**
+· **หน้านี้เหลือ 2 แท็บ (รายการ MO · ข้อมูลหลัก)** — KPI ช่าง → `/mtn-analysis?tab=kpi` ·
+อะไหล่/ผังคลัง → `/equipment?tab=spare|rack` **ห้ามเอากลับมา**
 · 🔒 **ช่องเซ็นขั้น 6/7/8 ล็อก "ฝั่ง + ตำแหน่ง"** (04/10) — ขั้นฝั่งช่าง ฝ่ายผู้แจ้งกดไม่ได้ และกลับกัน ·
   🔴 **ล็อกเต็ม `manage_master` ก็ข้ามไม่ได้** (ห้ามย้ายบรรทัดนั้นขึ้นก่อนด่าน) · ฝั่ง = `actorSideOf()`
   **ห้ามเดาจากชื่อ** · **ไม่รู้ = ไม่บล็อก แต่จอต้องเขียนว่าไม่ได้ตรวจ** · คีย์แยก `mtn_head`/`close_cost`
@@ -370,7 +384,7 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 · 🏭 **ไลน์ = ส่วนงาน→แม่→ลูก เรียงธรรมชาติ** · กรองขอบเขต = `<LineScopeSelect>` ช่องเดียว · ไลน์เดียว = `<LineSelect>` · ลิสต์ชื่อ `sortLineNames` ห้าม `.sort()` ดิบ (มีด่าน · UI §5.3 ข้อ 9)
 · 🧭 **"คุณอยู่ตรงนี้" ใช้หน้าตาชุดเดียวทุกชั้นเมนู** (พื้น accent-dim + แถบซ้าย + `aria-current`) ·
   **สถานะชั่วคราว (แผงที่กดเปิด) ห้ามเด่นกว่าข้อเท็จจริงถาวร** · ห้ามเช็ค `activeGroup === group` (คืนแค่หมวดแรก)
-· 🚪 **`alsoIn` = "ทางลัด" ไม่ใช่ "บ้านที่สอง"** (24/09 คำสั่ง user — เดิมโผล่ 2 หมวดหน้าตาเหมือนกัน = ดูเป็นเมนูซ้ำ)
+· 🚪 **`alsoIn` = "ทางลัด" ไม่ใช่ "บ้านที่สอง"** (24/09 คำสั่ง user)
   บ้านจริง = `item.group` **หมวดเดียว** ได้ไฮไลต์เต็ม · แถวทางลัดวาดต่าง (จาง + `↗ <หมวดบ้าน>`) ·
   ตัดสินด้วย `isNavGuest(item, group)` · "โชว์ในหมวดนี้ไหม (นับทางลัด)" = `inNavGroup()` **คนละคำถาม ห้ามปน**
   · แถวเมนูวาดจาก `navRow()` ตัวเดียวทั้ง desktop/มือถือ · ด่านข้อ 6 ใน stdsweep + `nav-alsoin-*` (UI-STANDARD §4.5)
@@ -395,7 +409,7 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 2 แท็บ `?tab=kpi|qc7` · สูตร `src/utils/qc7.js` · ตัววาด `src/components/Qc7Charts.jsx` —
 **โมดูลอื่นเอาไปใช้ต่อ ห้ามเขียนใหม่** · 🔴 แยกชนิดสินทรัพย์ (`?asset=`) ด้วย `machines.equipment_kind`
 **ห้ามใช้ `mtn_dept`** (ส่วนใหญ่ลงเป็นทีม production ปนทุกชนิดของสินทรัพย์)
-· 🔴 **พาเรโตอยู่แท็บ `qc7` ที่เดียว** (เดิมซ้ำใน KPI = จอเดียวกันตอบคนละเลข)
+· 🔴 **พาเรโตอยู่แท็บ `qc7` ที่เดียว** (เดิมซ้ำใน KPI)
 > 📄 `docs/modules/mtn-problem-analysis.md`
 
 ## 🧰 `/equipment` — ศูนย์ทะเบียนอุปกรณ์ของช่าง (2026-09-22)
@@ -483,7 +497,7 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 - 🔴 **`shadow_score = null` = "ประเมินไม่ได้" ไม่ใช่ "ได้ 0"** —
   ห้ามเอาไปแสดงเป็น 0 ห้ามเอาไปกดคะแนนจริง · 🔴 **ขึ้นขั้น 25/50/75/100 ต้องผ่านคนอนุมัติเสมอ**
 - 🔴 **ขา "ปริมาณ" นับ `shots` (จังหวะ) ไม่ใช่ `qty_ok` (ชิ้น)** — กฎ "ชิ้น ≠ shot" ใช้ที่นี่ด้วย ·
-  `n_ref` เป็นค่า**ต่อสถานี** จาก CT จริง (ห่างกัน 34 เท่า) ⇒ **ห้ามหาร `cum_cycles` ด้วย `n_ref` เองในหน้า**
+  `n_ref` เป็นค่า**ต่อสถานี** จาก CT จริง ⇒ **ห้ามหาร `cum_cycles` ด้วย `n_ref` เองในหน้า**
   ใช้ `cum_ratio` + `bandProgress()` (`src/utils/skillExp.js` · มีด่าน)
 - ตอนนี้อยู่ **shadow mode** (`is_enabled=false`) — v1 ยังคุมคะแนนจริง · สลับ/เคลียร์คิวที่ `/operator?tab=levelup`
 > 📄 รายละเอียดเต็ม → `docs/modules/employee-skills-exp.md` (§v2 + 4 หัวข้อย่อย) ·
@@ -581,7 +595,7 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 
 ## 📉 Monitoring — Excel ทีมวางแผนเข้าระบบ (`/monitoring` · 02/10)
 
-13 ชีท = **การตั้งค่า ไม่ใช่ 13 จอ** — ชุดแถวอยู่ใน `monitor_boards.rows` (DR) · เลขทุกตัวออกจาก
+13 ชีท = **การตั้งค่า ไม่ใช่ 13 จอ** — ชุดแถวอยู่ `monitor_boards.rows` (DR) · เลขทุกตัวออกจาก
 `buildGrid()` (`utils/monitorGrid.js`) ที่เดียว (มีด่าน)
 · 🔴 **ช่องยอดยกมาว่าง = `null` ทั้งแถว ห้ามเดา 0** · ระบบไม่รู้ = ขีด `–` · คนกรอกชนะระบบ —
   🔒 **ยกเว้นช่อง IN ที่ระบบมีตัวเลขแล้ว = ล็อก** (`makeLockLookup` · `monitorSystem.js`) ยอดไม่ตรง = ขอปรับยอดคลัง (`StockAdjustRequestModal`) ห้ามเปิดให้พิมพ์ทับ
@@ -620,6 +634,8 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 
 ## Edge Functions
 
+- 🔔 **แจ้งเตือนใหม่ทุกตัว = ในแอป (`notification_rules` → `notifications`) ห้ามเพิ่มทาง Telegram** (คำสั่ง user 24/09 · ย้ำ 20/10 "ยังไม่ยกเลิกแต่โฟกัสในแอพ")
+  · ผู้รับต้องแคบ (role กว้าง = ไม่มีใครอ่าน · 📄 `docs/modules/notify-inapp-audit.md`) · ตัวส่งนอก edge อ่านกฎเดียวกัน (`scripts/acct-import/run_queue.mjs`)
 - Endpoint: `POST /functions/v1/send-notification`
 > 📄 รายละเอียดเต็ม → `docs/modules/edge-functions.md`
 
@@ -645,6 +661,8 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 ที่ต้องรู้ข้าม session:
 - **`src/App.jsx` = source of truth ของเมนู/หมวด** (`NAV_ITEMS`, `NAV_GROUP_ORDER`, `UserContext`, `Sidebar`)
 - **`src/main.jsx`** — `RootErrorBoundary` + `vite:preloadError` auto-reload **ห้ามถอด**
+  · 🔴 **ตาข่ายกันจอขาวอยู่ใน `index.html` (`#boot-fallback`) ห้ามถอด** — chunk โหลดไม่ได้/พังตอน import
+    = React ไม่เคยขึ้น ⇒ ErrorBoundary ไม่ทำงาน · `main.jsx` ต้องตั้ง `window.__ESM_MOUNTED` หลัง render (มีด่าน)
 - **`src/supabaseClient.js`** — 2 clients: `supabase` (Main) / `supabaseDR` (DR — anon เสมอ)
 - **`src/utils/`** = กฎ/สูตรกลางทั้งหมด (สิทธิ์ · ขอบเขตส่วนงาน · loader ทะเบียนของ picker · ชั้นภาษาไทย)
   **แก้กฎที่นี่ที่เดียว ห้ามก๊อปสูตรไปไว้ในหน้า** · `src/lib/` = logic เฉพาะโดเมน · `src/pages/` ชื่อไฟล์ตรงกับ route (⚠️ `operator.jsx` ตัวพิมพ์เล็ก)
@@ -658,7 +676,7 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 > SCADA = **"เซ็นเซอร์"** ส่ง raw data (stroke/สถานะ/เวลาหยุด) · **ESM เป็นเจ้าของสูตร** — `src/utils/oee.js`
 > ยังเป็น single source of truth · **ห้ามให้ระบบภายนอกคำนวณ OEE เองแล้วเอาเลขมาโชว์** (มี OEE 2 ชุด = เถียงกันว่าเชื่อจอไหน)
 > **SCADA = ข้อเท็จจริง · คน = เหตุผล** (เครื่องบอกไม่ได้ว่าทำไมหยุด และ**ไม่มีทางรู้ NG** → Q มาจากคนเสมอ)
-> ⚠️ แถวจะโต **×113–×450** จากที่คนกรอกวันนี้ · micro-stop เป็น P ไม่ใช่ A · **1 stroke งานคู่ = 2 ชิ้น** (`pieces_per_stroke`)
+> ⚠️ แถวจะโตหลักร้อยเท่า · micro-stop เป็น P ไม่ใช่ A · **1 stroke งานคู่ = 2 ชิ้น** (`pieces_per_stroke`)
 
 ## Patterns & Utilities
 
@@ -667,27 +685,28 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 
 ### Date/Time Utilities — 📄 ตัวอย่างโค้ด + ฝั่ง SQL → `docs/modules/date-time-rules.md`
 
-> ⚠️ **ห้ามใช้ `new Date().toISOString()` เพื่อหาวันที่งาน** — คืน UTC ต่างจากไทย (UTC+7) วันที่คลาดเคลื่อน
+> ⚠️ **ห้ามใช้ `new Date().toISOString()` เพื่อหาวันที่งาน** — UTC ≠ ไทย (UTC+7) = คลาดวัน
 > · **วันที่งาน = `getWorkDate()`** (`src/utils/workDate.js` · ก่อน 08:00 = วันก่อนหน้า — กะดึกข้ามวัน)
-> · **บวก/ลบวันจากสตริงวันที่ = `addDaysStr()`** (ไฟล์เดียวกัน · UTC ล้วน ไม่พึ่ง timezone เครื่อง · แกะไม่ออก = `null`)
+> · **บวก/ลบวันจากสตริงวันที่ = `addDaysStr()`** (ไฟล์เดียวกัน · UTC ล้วน · แกะไม่ออก = `null`)
 >   🔴 **ตัวที่คืน "สตริงวันที่" ห้ามปิดท้ายด้วย `.toISOString().slice(0,10)`** — ผสม 2 ระบบเวลา = คลาดวันเงียบ (มีด่าน `no-utc-workdate`)
-> · กะปัจจุบัน = `getCurrentShift()` (day 08:00–19:59 / night 20:00–07:59) · `getShiftInfo()` คืน `{ shift, label }`
+> · กะปัจจุบัน = `getCurrentShift()` · `getShiftInfo()` คืน `{ shift, label }`
 > · **แสดงผล**เวลาใช้ `toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })` (ไม่ใช่สำหรับ query)
 > · **ฝั่ง SQL (DR) ใช้ `work_date_bangkok()` ห้ามใช้ `current_date`** (= UTC · เพี้ยน 07:00-07:59 ไทย)
 
 > ⚠️ **"วันทำงาน" ต้องอ้างอิงปฏิทินบริษัทก่อน ห้ามใช้ค่าคงที่ 22/26 วัน** (คำสั่ง user 2026-07-21) —
 > `countWorkingDaysInMonth(monthKey, fallback)` ใน `src/utils/companyCalendar.js` (เรียก `loadCompanyCalendar()` ก่อน)
-> จ-ศ ไม่มาร์ค = ทำงาน · มาร์คหยุดทุกชนิด (ot15/ot2/shutdown75) = หยุด · ส-อา มาร์ค working = ทำงาน
-> 📄 จุดที่ใช้แล้ว + 2 บั๊กที่เคยเจอ → `docs/modules/shift-ot.md`
+> 📄 กติกาการมาร์ควัน (จ-ศ/ส-อา/ot15/ot2/shutdown75) + จุดที่ใช้แล้ว + 2 บั๊กที่เคยเจอ → `docs/modules/shift-ot.md`
 
 ### 🔴 กฎเหล็กการเขียน DB จาก client (full QC audit 2026-09-03..04 — คลาสบั๊กที่เจอซ้ำทุกรอบ)
 
 > 📄 **คำอธิบายเต็ม + ตัวเลข/เคสจริงของทุกข้อ → `docs/modules/db-write-rules.md`** (ห้ามตัดข้อไหนออกจากลิสต์นี้)
 
 1. **supabase-js ไม่ throw** (`const { data } = await …` = กลืน error 100%) ⇒ **ทุก insert/update/delete อ่าน `error` ผ่าน `checkWrite(await …, 'ป้ายงาน')`** (`src/utils/dbWrite.js`) · delete-then-insert: delete ล้ม = หยุด ห้าม insert ต่อ
-2. **RLS ปฏิเสธ UPDATE/DELETE = "สำเร็จ 0 แถว ไม่มี error"** (มีแต่ INSERT ที่โยน 42501) ⇒ ปุ่มที่ผลลัพธ์สำคัญต้อง **`checkWriteRows(await ….select('id'), 'ป้ายงาน')`** — `checkWrite` **ไม่นับแถว** ⇒ ต่อ `.select()` แล้วส่งเข้า `checkWrite` = เสียเปล่า (2 ด่าน) · 🔴 **ลบไฟล์ใน storage ได้หลังนับแถว > 0 เท่านั้น** (เช็คแค่ `error` = แถวยังอยู่แต่ไฟล์หายถาวร · มีด่าน) · 🔴 **ทะเบียนที่จับคู่ด้วยข้อความ ลบได้หลังนับปลายทางครบ — นับไม่ได้ = ห้ามลบ** (`utils/orgNodeRefs.js` · `utils/processTypeRefs.js` · **ทะเบียนบน `SimpleMasterPanel` ต้องส่ง `onBeforeDelete={masterDeleteGuard(…)}` ทุกตัว** `utils/masterRefs.js` · มีด่าน)
+2. **RLS ปฏิเสธ UPDATE/DELETE = "สำเร็จ 0 แถว ไม่มี error"** (มีแต่ INSERT ที่โยน 42501) ⇒ ปุ่มที่ผลลัพธ์สำคัญต้อง **`checkWriteRows(await ….select('id'), 'ป้ายงาน')`** · ⚠️ **`checkWrite` ไม่นับแถว** (2 ด่าน) · 🔴 **ลบไฟล์ใน storage ได้หลังนับแถว > 0 เท่านั้น** (ไฟล์หายถาวรแต่แถวยังอยู่ · มีด่าน) · 🔴 **ทะเบียนที่จับคู่ด้วยข้อความ ลบได้หลังนับปลายทางครบ — นับไม่ได้ = ห้ามลบ** (`utils/orgNodeRefs.js` · `utils/processTypeRefs.js` · **ทะเบียนบน `SimpleMasterPanel` ต้องส่ง `onBeforeDelete={masterDeleteGuard(…)}` ทุกตัว** `utils/masterRefs.js` · มีด่าน)
 3. **policy RLS ต้อง `has_perm('<คีย์เดียวกับปุ่มบนจอ>')` ห้าม hardcode role array** (**จอที่คุมสิทธิ์เองก็ต้องเช็คสิทธิ์ผู้ดู** — มีด่าน) · **ตารางใหม่ต้องมี policy ครบทุก cmd ที่ client ใช้ — `upsert` ต้องมี UPDATE** · 🔑 **คีย์ของ `upsert` ต้องเป็น unique index คอลัมน์ล้วน ห้าม expression/partial** (`42P10` = ไม่เขียนเลยทั้งก้อน · มีด่าน)
 4. **stale-response race** — ทุก effect ที่ await แล้ว set state ต้องมี guard (`let alive = true` + cleanup / request id / ref ปัจจุบัน)
+    · 🔴 **จอที่ payload ผสม "id ที่โหลดมา" กับ "ตัวเลือกที่เลือกอยู่" ต้องมีด่านชั้น 2 ตอนกดบันทึกด้วย**
+      (`viewKey`/`isStale`/`staleBlockText` · `src/utils/staleView.js`) — ชั้นแรกกันจอเพี้ยน **ไม่ได้กันการเขียนผิดแถว**
 5. **`.in(ids)` ยาว = URL เกินเพดาน proxy → คืนค่าว่างเงียบ** ⇒ ผ่าน `fetchByIds` (chunk) · **เพดาน 1000 แถว/คิวรี** ⇒ ตารางที่โตได้ห้าม `select()` เปล่า
 6. **claim สถานะ (compare-and-swap) ก่อนเขียน ledger ⇒ ledger ล้มต้องคืนสถานะ**
 7. **realtime ต้องมี "เพดาน" ไม่ใช่ debounce · และต้องกรองว่า "เรื่องนี้ของฉันไหม"** — **`coalesce(fn, LIVE.x)` (`src/utils/liveRefresh.js`) เท่านั้น ห้าม debounce/`setTimeout` เอง** · ระดับใน `src/utils/refreshRates.js` **ห้ามใส่ ms ดิบ** · **subscribe ต้องมี `filter:` เมื่อรู้ขอบเขต** — ⚠️ **DELETE กรองด้วยคอลัมน์ที่ไม่ใช่ pk ไม่ได้** ให้แยก subscribe DELETE ไม่กรอง **ห้ามแก้ด้วย `REPLICA IDENTITY FULL`** · 🔴 **ตารางที่ subscribe ต้องอยู่ในทะเบียน `src/utils/realtimeTables.js` + publication จริง** (ไม่อยู่ = เงียบสนิท · มีด่าน)
@@ -706,11 +725,15 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 > (อย่าให้มี 2 ชุด — section นี้เป็นเจ้าของเรื่อง **ด่าน build** เท่านั้น)
 > · เอกสารบังคับอ่าน: ทุกงาน `ENGINEERING-PRINCIPLES.md` · UI `UI-CONVENTIONS.md` · สิทธิ์ `PERMISSIONS-DESIGN.md` · DB → §Supabase Projects (**2 projects!**) + migration เสมอ
 
+> ### 🕗 **หน้าต่าง deploy — ห้าม deploy ในเวลาทำงาน** (2026-10-26 · เหตุการณ์จริง)
+> **08:00–17:30 deploy ได้เฉพาะของที่ "ไม่แก้แล้วหน้างานทำงานไม่ได้"** · ที่เหลือรอหลังเลิกกะ/ก่อนเข้ากะ
+> 🔴 **ทุกครั้งที่ deploy = สลับไฟล์ชุดใหม่ ⇒ แท็บที่เปิดค้างชี้ไปไฟล์เก่าที่ถูกลบ = พังพร้อมกันทุกเครื่อง**
+> ของที่ merge แล้วแต่ยังไม่ deploy **ไม่ทำให้ใครเดือดร้อน** — รอได้เสมอ · 📄 `docs/modules/deploy.md` §หน้าต่าง deploy
+
 **build ผ่าน (`npm run build`) ก่อน commit เสมอ** · merge เข้า `main` = **deploy แบบกันถี่** (ห่างรอบก่อน ≥60 น. = ทันที · ไม่งั้นรอเงียบ 30 น. · `.github/workflows/scheduled-deploy.yml` · ด่วนกด Run workflow) · 🔴 **ห้ามเปิด Auto-Deploy ของ Render คืน** (นาที build หมดกลางเดือน · 📄 `docs/modules/deploy.md`)
 📄 **ที่มาของทุกด่าน + เคสจริงที่ทำให้ต้องมี → `docs/modules/build-gates.md`** (อ่านก่อนจะแตะ/ถอดด่านใดๆ)
 - **`npm run build` = `check:context` → `lint:critical` → `npm test` → `vite build`** ·
      ตัวรันเทส = `scripts/run-tests.mjs` (เก็บ `src/**/__tests__/*.test.mjs` เอง — **วางไฟล์เทสใหม่แล้วถูกเก็บอัตโนมัติ**)
-  · **ห้ามเปลี่ยนเป็น `node --test '<glob>'`** (เหตุผล → build-gates.md)
   · **⏱️ `npm test` รัน 2 รอบ: ปกติ + "นาฬิกา +400 วัน"** จับ**เทสระเบิดเวลา** ⇒ **ฟังก์ชันที่กินเวลาปัจจุบัน
   ต้องรับ `now` เป็นพารามิเตอร์ แล้วเทสตรึงค่า** · ตกรอบนี้ให้แก้เทส **ห้ามถอดรอบนี้ออก**
 - **🛡️ `src/utils/__tests__/regressionGuards.test.mjs` = ด่าน "บั๊กเก่าห้ามกลับมา"** — **เจอบั๊กคลาสใหม่ที่คนถัดไปน่าจะพลาดซ้ำ → เพิ่มกฎที่ไฟล์นี้
@@ -721,6 +744,7 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
   **ห้าม disable กฎ** ให้ย้าย hook ขึ้น · `no-use-before-define` (05/10) จับอ่าน const ก่อนประกาศใน scope เดียวกัน (TDZ จอขาว)
 - **⚠️ build ผ่าน ≠ หน้าไม่พัง** — merge งานหลาย session ชนไฟล์เดียวกัน ให้รัน **`node audit/crashsweep.mjs`** เสมอ
      (ทุกหน้า @1500px + กดปุ่มหัวเพจ · ต้องเปิด `npx vite --config audit/vite.audit.mjs` ค้างไว้)
+  · 🔭 **รัน 2 รอบ: `role=admin` scope ว่าง + `role=supervisor&sections=PD1`** — **ห้ามถอดรอบขอบเขต**
   · 🔴 **แถวพิเศษใน mock ห้ามถอด** (รายตัว → `audit/README.md`)
   · เพิ่มคอลัมน์ nullable ใน `ROW()` ต้องเติมใน `NULLISH()` ด้วย (เหตุผลรายตัว → `audit/README.md`)
 - **📱 `node audit/mobilesweep.mjs` (ทุกหน้า @390px)** — **แตะ layout ที่มี `isMobile` หรือ `position:sticky`
@@ -774,7 +798,7 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
   · กล่องที่แค่ตัดของล้นใช้ `clip` · sticky ไม่ทำงาน ให้ไล่หาบรรพบุรุษที่ overflow ≠ visible/clip ก่อนแก้ที่หน้า
 - **`display:grid` ที่อาจสูงกว่าเนื้อหา ต้องใส่ `alignContent:'start'`** (ไม่งั้นการ์ดถูกยืดสูงผิดสัดส่วน · flexbox ไม่เป็น)
 - **จอ TV/บอร์ดหน้างาน: ฟอนต์พื้น 11px ห้ามต่ำกว่านี้** (ชิป/ป้าย 11–12 · หัวข้อ 14–15) — **มีด่าน `font-min-11`**
-  + `audit/chartsweep.mjs` วัด "ขนาดที่เห็นบนจอ" (รวมสเกล SVG) · แน่นเกิน = **เว้นป้าย/ซ่อนป้าย ห้ามลดฟอนต์**
+  + `audit/chartsweep.mjs` วัดขนาดที่เห็นจริง · แน่นเกิน = **เว้นป้าย/ซ่อนป้าย ห้ามลดฟอนต์**
   · ยกเว้น `src/lib/**` (ใบพิมพ์/PPTX = pt บนกระดาษ) · ตัวสเกลตามจอใช้ `fs()` ที่มีพื้น `Math.max(11, …)`
 - 🌑 **เงา = "ของชิ้นนี้ลอยอยู่" ห้ามเขียน rgba ดิบในหน้า** (ด่าน `card-shadow-via-token`) — การ์ดแบน `var(--shadow-sm)`
   (ธีมมืด = none · ธีมสว่างยังมี) · ของที่ลอยจริง `var(--shadow-float)` · modal `--shadow-md|lg` (UI §6.20)

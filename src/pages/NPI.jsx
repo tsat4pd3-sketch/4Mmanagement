@@ -3,6 +3,8 @@ import { useSearchParams, Link } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { loadLinesRes } from '../utils/useProductionLines';
 import { canWriteLine, writeBlockText } from '../utils/writeScope';
+import { npiProjectDeleteBlock } from '../utils/npiScope';
+import { checkWriteRows } from '../utils/dbWrite';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
@@ -81,7 +83,7 @@ const emptyProject = { project_code: '', name: '', customer: '', model: '', temp
 const emptyPart = { part_no: '', part_name: '', mat_no: '', line_name: '', pe_set_id: '', qa_part_id: '', ppap_level: 3, owner_name: '', remark: '' };
 
 export default function NPI() {
-  const { role, fullName, lineId, sections, section: homeSection, allUnits } = useContext(UserContext);
+  const { role, fullName, lineId, sections, section: homeSection, allUnits, respCostCenters, scopeIdx } = useContext(UserContext);
   const canEdit = can('npi', 'edit', role);
   const canApprove = can('npi', 'approve', role);
   const canTemplates = can('npi', 'manage_templates', role);
@@ -105,8 +107,8 @@ export default function NPI() {
   const [lines, setLines] = useState([]);
   /* 🔐 พาร์ท NPI ผูกไลน์ (`npi_parts.line_name`) ⇒ แก้/ลบ/ปล่อยแบบ/ตัดสิน ECI ได้เฉพาะไลน์ส่วนงานตัวเอง
      (audit 15/10) · ทีม PE/NM (engineer · engineer_nm) ถือ `scope:all_units` จึงไม่กระทบ */
-  const wctx = useMemo(() => ({ role, section: homeSection, sections, allUnits }),
-    [role, homeSection, sections, allUnits]);
+  const wctx = useMemo(() => ({ role, section: homeSection, sections, allUnits, respCostCenters, scopeIdx }),
+    [role, homeSection, sections, allUnits, respCostCenters, scopeIdx]);
   const partWriteOf = useCallback((lineName) => canWriteLine(wctx, lineName, lines), [wctx, lines]);
   const [users, setUsers] = useState([]);
   const [stepTemplates, setStepTemplates] = useState([]);
@@ -255,9 +257,18 @@ export default function NPI() {
     if (!m.id) setProject(res.data.id, { replace: true });
   };
   const delProject = async (pj) => {
-    if (!window.confirm(`ลบโปรเจค ${pj.project_code} ${pj.name} พร้อมพาร์ท/เอกสาร/ECI/tooling ทั้งหมด?\n(ถ้าแค่หยุดทำ ให้เปลี่ยนสถานะเป็น "ยกเลิก" แทน)`)) return;
-    const { error } = await supabase.from('npi_projects').delete().eq('id', pj.id);
-    if (error) return toast.error(error.message);
+    /* 🔐 ลบโปรเจค = ลบพาร์ท/เอกสาร/ECI/tooling ทั้งก้อน (FK cascade) ⇒ ต้องแก้ได้ **ทุกพาร์ท**
+       🔴 อ่านพาร์ทไม่สำเร็จ = ห้ามลบ (fail-closed) — อ่านสดจาก DB ไม่ใช้ของที่โหลดไว้
+          เพราะโมดัลนี้เปิดโปรเจคอื่นที่ไม่ใช่โปรเจคที่เลือกอยู่ได้ */
+    if (!pj?.id) return toast.error('ลบไม่ได้: โปรเจคนี้ไม่มี id — โหลดหน้าใหม่แล้วลองอีกครั้ง');
+    const { data: pjParts, error: ePart } = await supabase.from('npi_parts').select('id, part_no, line_name').eq('project_id', pj.id);
+    const block = npiProjectDeleteBlock(partWriteOf, pjParts, { countable: !ePart });
+    if (block) return toast.info(block);
+    if (!window.confirm(`ลบโปรเจค ${pj.project_code} ${pj.name} พร้อมพาร์ท/เอกสาร/ECI/tooling ทั้งหมด?`
+      + `${pjParts?.length ? `\nพาร์ทที่จะหายไปด้วย ${pjParts.length} รายการ` : ''}`
+      + '\n(ถ้าแค่หยุดทำ ให้เปลี่ยนสถานะเป็น "ยกเลิก" แทน)')) return;
+    // RLS ปฏิเสธ DELETE = 0 แถวไม่มี error ⇒ นับแถวก่อนขึ้น "ลบแล้ว" (กฎเขียน DB ข้อ 2)
+    if (!checkWriteRows(await supabase.from('npi_projects').delete().eq('id', pj.id).select('id'), 'ลบโปรเจค')) return;
     toast.success('ลบแล้ว'); setProject('', { replace: true }); loadMaster();
   };
 
@@ -306,8 +317,7 @@ export default function NPI() {
     const w = partWriteOf(p?.line_name);
     if (!w.ok) return toast.info(writeBlockText(w, { what: 'พาร์ทของไลน์นี้' }));
     if (!window.confirm(`ลบพาร์ท ${p.part_no} พร้อมเอกสาร/แบบ/tooling ของพาร์ทนี้ทั้งหมด?`)) return;
-    const { error } = await supabase.from('npi_parts').delete().eq('id', p.id);
-    if (error) return toast.error(error.message);
+    if (!checkWriteRows(await supabase.from('npi_parts').delete().eq('id', p.id).select('id'), 'ลบพาร์ท')) return;
     toast.success('ลบแล้ว'); setPartId(''); reload();
   };
 
@@ -379,7 +389,8 @@ export default function NPI() {
                     phases={phases.filter(x => x.part_id === partId)} delivs={delivs.filter(x => x.part_id === partId)}
                     drawings={drawings.filter(x => x.part_id === partId)} tooling={tooling.filter(x => x.part_id === partId)}
                     peSets={peSets} qaParts={qaParts}
-                    canEdit={canEdit} canApprove={canApprove} fullName={fullName} today={today} onChanged={reload} />
+                    canEdit={canEdit} canApprove={canApprove} fullName={fullName} today={today} onChanged={reload}
+                    parts={parts} partWriteOf={partWriteOf} />
                 )}
               </>
             )
@@ -388,19 +399,19 @@ export default function NPI() {
             !project ? <NeedProject /> : (
               <NpiDrawingsEci project={project} parts={parts} partId={partId} onPickPart={setPartId}
                 drawings={drawings} ecis={ecis} tooling={tooling} canEdit={canEdit} canApprove={canApprove}
-                fullName={fullName} today={today} onChanged={reload} />
+                fullName={fullName} today={today} onChanged={reload} partWriteOf={partWriteOf} />
             )
           )}
           {tab === 'tooling' && (
             !project ? <NeedProject /> : (
               <NpiTooling project={project} parts={parts} tooling={tooling} steps={steps} stepTemplates={stepTemplates}
-                dieSets={dieSets} canEdit={canEdit} fullName={fullName} today={today} onChanged={reload} />
+                dieSets={dieSets} canEdit={canEdit} fullName={fullName} today={today} onChanged={reload} partWriteOf={partWriteOf} />
             )
           )}
           {tab === 'tasks' && (
             !project ? <NeedProject /> : (
               <NpiTasks project={project} parts={parts} tplPhases={tplPhases} delivs={delivs} tasks={tasks} users={users}
-                canEdit={canEdit} fullName={fullName} today={today} onChanged={reload} />
+                canEdit={canEdit} fullName={fullName} today={today} onChanged={reload} partWriteOf={partWriteOf} />
             )
           )}
           {tab === 'templates' && canTemplates && (

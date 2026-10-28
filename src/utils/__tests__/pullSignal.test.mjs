@@ -760,3 +760,65 @@ test('🔴 ไฟล์ 22:00-00:00 (รอบ 01:00 วันงาน 15/10) �
   assert.equal(row.action, 'update');
   assert.equal(row.order.id, 'today');
 });
+
+/* ⭐ 21/10 — โหมดช่วงเวลา: ใบแผน 862 เป็นของไฟล์ที่ "ช่วงดึง" (เวลาส่ง − lead) คลุมมัน */
+const W = (ws, we, extra = {}) => ({ windowStart: parseTs(ws), windowEnd: parseTs(we), leadMin: 60,
+  targetAt: null, dock: 'B5', ...extra });
+const D21 = '2026-10-21';
+const PL = (id, time, qty, extra = {}) => ({ id, customer_part_no: 'RB3B 16E060 BA', mat_no: '10100385', qty,
+  due_date: D21, ship_time: time, status: 'pending', source: 'edi_862', dock_code: 'B5', ...extra });
+
+test('⭐ ไฟล์ 06–08 ต้องรับใบแผน 08:00 (ดึง 07:00) ไม่ใช่ใบ 10:00 ที่ใกล้รอบรับกว่า (เคสจริง 21/10)', () => {
+  const orders = [PL('p08', '08:00', 60), PL('p10', '10:00', 50)];
+  const [row] = planOrderUpdates(G1, orders, RES1, W(`${D21}T06:00:00`, `${D21}T08:00:00`));
+  assert.equal(row.action, 'update');
+  assert.equal(row.order.id, 'p08');
+  assert.deepEqual(row.merge, []);
+  const [row2] = planOrderUpdates(G1, orders, RES1, W(`${D21}T08:00:00`, `${D21}T10:00:00`));
+  assert.equal(row2.order.id, 'p10', 'ไฟล์ 08–10 ได้ใบ 10:00 ของมันเอง ไม่ต้องสร้างใหม่');
+});
+
+test('⭐ ใบแผนหลายใบในช่วงเดียวกัน = ใบแรกรับยอด ที่เหลือเข้า merge (ปิดเป็นแทนด้วย e-SMART)', () => {
+  const orders = [PL('a', '08:00', 60), PL('b', '08:30', 20)];
+  const [row] = planOrderUpdates(G1, orders, RES1, W(`${D21}T06:00:00`, `${D21}T08:00:00`));
+  assert.equal(row.order.id, 'a');
+  assert.deepEqual(row.merge.map(o => o.id), ['b']);
+});
+
+test('🔴 โหมดช่วงเวลา: ใบคีย์มือ / ใบ dock อื่นที่ยืนยันแล้ว / ใบที่ไฟล์อื่นยืนยันแล้ว ห้ามแตะ', () => {
+  const orders = [
+    PL('manual', '08:00', 40, { source: 'manual' }),
+    PL('b1', '08:00', 40, { dock_code: 'B1', status: 'confirmed' }),
+    PL('taken', '08:00', 30, { status: 'confirmed', pull_batch_id: 'other' }),
+  ];
+  const [row] = planOrderUpdates(G1, orders, RES1, W(`${D21}T06:00:00`, `${D21}T08:00:00`));
+  assert.equal(row.action, 'create');
+  assert.deepEqual(row.merge, []);
+});
+
+test('⭐ 27/10 ใบแผน 862 pending ของ dock อื่น = แผนรวมของช่วง ไฟล์ B1 รับได้ (dock ตรงยังมาก่อน)', () => {
+  const g1 = [{ ...G1[0], dock_code: 'B1' }];
+  const [row] = planOrderUpdates(g1, [PL('b5', '08:00', 60)], RES1, W(`${D21}T06:00:00`, `${D21}T08:00:00`, { dock: 'B1' }));
+  assert.equal(row.action, 'update');
+  assert.equal(row.order.id, 'b5');
+  const [row2] = planOrderUpdates(g1, [PL('b5', '08:00', 60), PL('b1', '08:30', 20, { dock_code: 'B1' })], RES1,
+    W(`${D21}T06:00:00`, `${D21}T08:00:00`, { dock: 'B1' }));
+  assert.equal(row2.order.id, 'b1', 'ใบ dock ตรงมาก่อน');
+  assert.deepEqual(row2.merge.map(o => o.id), ['b5']);
+});
+
+test('🔴 โหมดช่วงเวลา: อัพไฟล์เดิมซ้ำ = แก้ใบของไฟล์นั้น (แม้เวลาส่งอยู่นอกช่วง)', () => {
+  const orders = [PL('mine', '10:00', 30, { source: 'esmart', status: 'confirmed', pull_batch_id: 'b1' })];
+  const [row] = planOrderUpdates(G1, orders, RES1, W(`${D21}T06:00:00`, `${D21}T08:00:00`, { ownBatchIds: ['b1'] }));
+  assert.equal(row.order.id, 'mine');
+});
+
+test('โหมดช่วงเวลา: ใบแผนนอกช่วง (ดึงหลังปลายช่วง) ไม่ถูกแตะ → สร้างรอบใหม่', () => {
+  const [row] = planOrderUpdates(G1, [PL('p13', '13:00', 70)], RES1, W(`${D21}T06:00:00`, `${D21}T08:00:00`));
+  assert.equal(row.action, 'create');
+});
+
+test('โหมดช่วงเวลา: ยอดตรงกับแผนพอดีก็ต้อง update (ยืนยัน + ย้ายไปรอบรับจริง) ไม่ใช่ same', () => {
+  const [row] = planOrderUpdates(G1, [PL('p', '08:00', 30)], RES1, W(`${D21}T06:00:00`, `${D21}T08:00:00`));
+  assert.equal(row.action, 'update');
+});

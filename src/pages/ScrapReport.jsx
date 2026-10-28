@@ -9,7 +9,7 @@
  * ตาราง scrap_reports / scrap_report_items / scrap_defect_types อยู่ DR project
  * (anon เสมอ) · สิทธิ์: scrap:record = สร้าง/แก้ · scrap:manage = อนุมัติ/ลบ
  */
-import { useState, useEffect, useMemo, useCallback, useContext } from 'react';
+import { useState, useEffect, useMemo, useCallback, useContext, useRef } from 'react';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { toast } from '../components/Toast';
@@ -18,7 +18,7 @@ import { getLineFamilyNames } from '../utils/lineHierarchy';
 /* 📷 รูปหลักฐานของเสีย — ของกลางชุดเดียวกับถังเหลือง/แดง (ด่าน quality-photo-via-helper · 2026-10-12) */
 import QualityPhotoField from '../components/QualityPhotoField';
 import { uploadQualityPhoto } from '../utils/qualityImage';
-import LineSelect from '../components/LineSelect';
+import LineSelect, { scopeLines as pickerLines } from '../components/LineSelect';
 import { loadLinesRes } from '../utils/useProductionLines';
 import ProductSelect from '../components/ProductSelect';
 import PersonSelect from '../components/PersonSelect';
@@ -41,6 +41,13 @@ import Page from '../components/Page';
 import FilterBar from '../components/FilterBar';
 import { DeleteButton } from '../components/IconButton';
 import useIsMobile from '../utils/useIsMobile';
+/* 🗑️ ถังเหลือง/แดง — **ชิ้นเดียวกับที่ /qa ใช้** embed ทั้งดุ้น ไม่แก้ของเดิม (pattern เดียวกับ /equipment)
+   user 19/10: *"feature ถังเหลือง/แดง ควรจะอยู่กับผลิตนะ หลักๆ ผลิตจะเป็นคน input data มาจาก daily report
+   และ QA มีหน้าที่ตรวจสอบ … มาอยู่กะ QA ผลิตจะหาไม่เจอ"*
+   🔴 สิทธิ์ของมันคือ `scrap:record` / `scrap:manage` อยู่แล้ว (ไม่ใช่ `qa:*`) — อยู่หน้าฝ่ายผลิตจึงตรงกว่า
+   ⚠️ แท็บที่ /qa ยังอยู่เหมือนเดิม (QA = คนพิจารณา) — ข้อมูลชุดเดียวกัน ไม่ได้ก๊อป */
+import QualityBins from '../components/QualityBins';
+import useTabParam from '../utils/useTabParam';
 
 /* ── date helpers (ห้าม toISOString หา work date — ดู CLAUDE.md) ── */
 function localDateStr(d = new Date()) {
@@ -98,9 +105,17 @@ function Modal({ title, onClose, children, width = 560 }) {
   );
 }
 
+/* 📋 ใบรายงานของเสีย (งานเอกสารรายวัน) · 🗑️ ถังเหลือง/แดง (บันทึกหน้ากล่องก่อนถึง NCR/Scrap)
+   = ของเสียชุดเดียวกัน คนละขั้นของเรื่อง ⇒ อยู่หน้าเดียวกันแต่คนละแท็บ (UI §6.8) */
+const TABS = [
+  { key: 'scrap', label: '♻️ ใบรายงานของเสีย' },
+  { key: 'bins',  label: '🗑️ ถังเหลือง / ถังแดง' },
+];
+
 export default function ScrapReport() {
   const { fullName, role, lineId, sections } = useContext(UserContext);
   const { can } = usePerms();
+  const [tab, setTab] = useTabParam(TABS.map(t => t.key), 'scrap');
   const canRecord = can('scrap', 'record');
   const canManage = can('scrap', 'manage');
   const canDel    = canDelete('scrap', 'manage', role);  // สิทธิ์ลบใบ แยกจากอนุมัติ (fallback = manage)
@@ -128,15 +143,18 @@ export default function ScrapReport() {
     return null;
   }, [role, lineId, sections, allLines]);
   // object array (id/name/parent_line_name) — render dropdown จัดชั้นตามผัง (§5.3 ข้อ 8) · ค่า value ยังเป็น name เหมือนเดิม
-  const lines = useMemo(() => {
-    if (!scopedLineNames) return allLines;
-    const ok = new Set(scopedLineNames);
-    return allLines.filter(l => ok.has(l.name));
-  }, [allLines, scopedLineNames]);
+  /* 🔴 ลิสต์ของ picker ต้อง "ไม่ตาย" — ส่วนงานที่ไม่มีไลน์ผลิตสังกัด (QA · Planning&Store · ฝั่งช่าง)
+     กรองแล้วเหลือ 0 ⇒ dropdown ว่าง = ออกใบไม่ได้ทั้งหน้า (เคสจริง 26/10 · ด่าน line-picker-never-dead)
+     ⇒ ผ่าน `scopeLines()` ของกลาง (components/LineSelect.jsx) = "กรองแล้วไม่เหลือ = ไม่กรอง"
+     ⚠️ `scopedLineNames` ด้านบนยัง fail-closed เหมือนเดิม (ใช้กรองรายการใบ) — คนละแกน */
+  const lines = useMemo(
+    () => pickerLines(allLines, { role, lineId, sections }),
+    [allLines, role, lineId, sections]);
   const [defectTypes, setDefectTypes] = useState([]);
   const [listFrom, setListFrom] = useState(() => { const d = new Date(); d.setDate(d.getDate() - 30); return localDateStr(d); });
   const [listTo, setListTo] = useState(getWorkDate());
   const [editor, setEditor] = useState(null); // { report, items } กำลังแก้/สร้าง
+  const saveBusyRef = useRef(false); // กันแตะ 💾 เบิ้ล — ครั้งที่ 2 ยังถือ id=null ⇒ ได้หัวใบ+เลขใบซ้ำ 2 ใบ (audit handheld 2026-10-20)
   const [sapPicker, setSapPicker] = useState(null); // { itemKey } | { addSource }
   const [defectPicker, setDefectPicker] = useState(null); // itemKey
   const [sapOptions, setSapOptions] = useState(null);
@@ -492,7 +510,13 @@ export default function ScrapReport() {
   }, [editor]);
 
   const saveReport = async () => {
+    if (saveBusyRef.current) return;
+    saveBusyRef.current = true;
+    try { await saveReportInner(); } finally { saveBusyRef.current = false; }
+  };
+  const saveReportInner = async () => {
     const { report, items } = editor;
+    if (items.some(it => Number(it.qty) < 0 || Number(it.confirm_qty) < 0)) { toast.error('จำนวนของเสียติดลบไม่ได้ — แก้ช่อง Q\'TY / ยืนยัน ที่มีเครื่องหมายลบ'); return; }
     if (!report.line_name) { toast.error('เลือกไลน์'); return; }
     if (!slocValid(report.storage_location)) { toast.error(`Storage Location ไม่ถูกรูปแบบ — ${SLOC_FORMAT_HINT}`); return; } // 2026-09-07
     /* 🔩 ส่งอนุมัติ/อนุมัติทั้งที่ยังมีเลขขั้นตอน (OP) ค้างอยู่ = ใบนี้สโตร์เอาไปตัด SAP ไม่ได้
@@ -614,14 +638,33 @@ export default function ScrapReport() {
   };
 
   const isMobile = useIsMobile();
+  /* 📱 มือถือ: ปิดใบที่แก้แล้วยังไม่บันทึก = ถามก่อน (22/10 · audit handheld ข้อ 4) — เดิม ✕/ยกเลิก ทิ้งทั้งใบเงียบๆ
+     ทั้งที่แตะพลาดง่ายบนจอ 360px · เทียบกับภาพตอนเปิดใบ (ไฟล์รูปที่ยังไม่อัปนับด้วย) · จอคอมปิดทันทีเหมือนเดิม */
+  const editorSnapRef = useRef(null);
+  const editorSnap = (ed) => JSON.stringify({ r: ed?.report, i: (ed?.items || []).map(({ _imgFile, ...it }) => ({ ...it, _f: !!_imgFile })) });
+  useEffect(() => {
+    if (!editor) editorSnapRef.current = null;
+    else if (editorSnapRef.current == null) editorSnapRef.current = editorSnap(editor);
+  }, [editor]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const closeEditor = () => {
+    if (isMobile && editor && editorSnap(editor) !== editorSnapRef.current
+      && !window.confirm('ปิดใบนี้โดยไม่บันทึก? — ที่กรอก/แก้ไว้จะหายทั้งหมด')) return;
+    setEditor(null);
+  };
   const STATUS_META = { draft: { label: 'ร่าง', color: '#6b7280' }, submitted: { label: 'ส่งอนุมัติ', color: '#f59e0b' }, approved: { label: 'อนุมัติแล้ว', color: '#22c55e' } };
 
   return (
     <Page>
       <ReadOnlyNote show={!canRecord} role={role} what="สร้าง/แก้ใบรายงานของเสีย"
         permKey="scrap:record" hint="ยังเปิดดูใบเดิม พิมพ์ และ export Excel ได้ตามปกติ" />
-      <PageHeader title="ใบรายงานของเสีย (Scrap Report)" icon="♻️"
-        sub={`${scrapFormNo} — ลงยอดของเสียต่อไลน์/วัน · ดึงตั้งต้นจาก Daily Report + เพิ่มพาร์ทย่อย · export ตรงฟอร์ม`} />
+      <PageHeader title="ของเสีย — ใบรายงาน & ถังเหลือง/แดง" icon="♻️"
+        sub={tab === 'bins'
+          ? 'ชิ้นงานต้องสงสัย (ถังเหลือง) / ชิ้นงานเสีย (ถังแดง) — ผลิตลงบันทึก · QA เป็นคนพิจารณาผล'
+          : `${scrapFormNo} — ลงยอดของเสียต่อไลน์/วัน · ดึงตั้งต้นจาก Daily Report + เพิ่มพาร์ทย่อย · export ตรงฟอร์ม`}
+        tabs={TABS} tab={tab} onTab={setTab} />
+
+      {/* 🗑️ ถังเหลือง/แดง = คอมโพเนนต์เดียวกับที่ /qa ใช้ (ข้อมูลชุดเดียว ไม่ได้ก๊อป) */}
+      {tab === 'bins' ? <QualityBins /> : (<>
 
       {/* UI-STANDARD 2026-09-24: แถบกรองมาตรฐาน (ไม่ใส่ขนาด inline ในช่อง) */}
       <FilterBar style={{ marginBottom: 14 }}>
@@ -720,7 +763,7 @@ export default function ScrapReport() {
       )}
 
       {editor && (
-        <Modal title={editor.report.id ? `✏️ แก้ใบ ${editor.report.doc_no || ''}` : '➕ เปิดใบรายงานของเสียใหม่'} onClose={() => setEditor(null)} width={1180}>
+        <Modal title={editor.report.id ? `✏️ แก้ใบ ${editor.report.doc_no || ''}` : '➕ เปิดใบรายงานของเสียใหม่'} onClose={closeEditor} width={1180}>
           {/* หัวใบ */}
           <div className="sr-hgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 12 }}>
             <Field label="วันที่"><input type="date" style={inputSt} value={editor.report.report_date} onChange={e => setRep({ report_date: e.target.value })} /></Field>
@@ -936,7 +979,7 @@ export default function ScrapReport() {
           </div>
 
           <div className={isMobile ? 'sr-foot m-stickfoot' : 'sr-foot'} style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
-            <button style={ghostBtn} onClick={() => setEditor(null)}>ยกเลิก</button>
+            <button style={ghostBtn} onClick={closeEditor}>ยกเลิก</button>
             {canRecord && <button style={btnSt()} onClick={saveReport}>💾 บันทึกใบ</button>}
           </div>
         </Modal>
@@ -1033,6 +1076,7 @@ export default function ScrapReport() {
           </Modal>
         );
       })()}
+      </>)}
     </Page>
   );
 }

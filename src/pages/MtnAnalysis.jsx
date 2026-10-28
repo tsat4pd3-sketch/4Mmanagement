@@ -17,10 +17,12 @@ import TimeRangeBar from '../components/TimeRangeBar';
 import useTimeRange from '../utils/useTimeRange';
 import { rangeDays, addDays, bucketAxis, bucketKey, bucketLabel, bkkHourKey, scaleOf } from '../utils/timeRange';
 import { getWorkDate } from '../utils/workDate';
-import { inSectionScope } from '../utils/sectionScope';
+import { scopedLines } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { ASSET_CLASSES, assetClassOf, firstAssetWithData } from '../utils/qc7';
 import { useSearchParams } from 'react-router-dom';
+import { urlParam } from '../utils/urlInit';
+import { scopeLines as pickerLines } from '../components/LineSelect';   // ตาข่าย "กรองแล้วไม่เหลือ = ไม่กรอง" ของช่องเลือกไลน์
 import { Panel, NotEnough, Histogram, ControlChart, ScatterPlot, Fishbone, CheckSheet, Stratify, RunChart } from '../components/Qc7Charts';
 
 /* ══ 🔍 วิเคราะห์ปัญหา (ซ่อมบำรุง) — QC 7 Tools แยกตามชนิดสินทรัพย์ ══════════  2026-09-22
@@ -61,6 +63,8 @@ const MO_COLS = [
   'labor_cost', 'parts_cost', 'repair_type',
   // แผง KPI ช่าง (MtnKpiPanel): ความพึงพอใจ + ช่วงที่อยู่กับ supplier (techRepairMin หักออกจาก MTTR)
   'satisfaction', 'vendor_sent_at', 'vendor_back_at',
+  // ⏸️ ช่วงหยุดนับ MTTR หลัง MTN ตัดสินเส้นทาง (รออะไหล่ PR / ส่งภายนอก · 20/10) — techRepairMin หักออก
+  'mttr_hold_from', 'mttr_hold_to',
 ].join(',');
 const DT_COLS = 'id, machine_no, description, duration_min, started_at, fix_action, fix_by, call_mtn_team';
 
@@ -111,7 +115,7 @@ const MAIN_TABS = [
 ];
 
 export default function MtnAnalysis() {
-  const { role, lineId, sections } = useContext(UserContext);
+  const { role, lineId, sections, scopeIdx } = useContext(UserContext);
   const [tab, setTab] = useTabParam(MAIN_TABS.map(t => t.key), 'kpi');
   // ⚠️ ชนิดสินทรัพย์ใช้ `?asset=` — แท็บซ้อนแท็บห้ามใช้ `?tab=` ซ้ำ (UI-CONVENTIONS §6.8)
   const [asset, setAsset] = useTabParam(ASSET_CLASSES.map(a => a.key), 'machine', 'asset');
@@ -124,7 +128,7 @@ export default function MtnAnalysis() {
   const tr = useTimeRange({ defaultScale: 'week', defaultDays: 90 });
   const days = rangeDays(tr.from, tr.to) || 90;
   const [src] = useState('mo');   // คงไว้เพื่อ unit/ป้ายข้อความ — ไม่มี UI สลับแล้ว
-  const [team, setTeam] = useState('all');   // แผนกช่าง (แทน dropdown แหล่งข้อมูลเดิม)
+  const [team, setTeam] = useState(() => urlParam('team') || 'all');   // แผนกช่าง (แทน dropdown แหล่งข้อมูลเดิม) · ?team= (จอวนหน้า)
   const [orders, setOrders] = useState([]);
   const [dts, setDts] = useState([]);
   const [kindByMc, setKindByMc] = useState({});
@@ -294,10 +298,18 @@ export default function MtnAnalysis() {
   const scopeLines = useMemo(() => {
     if (role === 'admin') return null;
     if (role === 'leader' && lineId) { const self = lines.find(l => String(l.id) === String(lineId)); return self ? new Set(getLineFamilyNames(lines, self.name)) : new Set(); }
-    if (sections?.length) return new Set(lines.filter(l => inSectionScope(sections, l.section)).map(l => l.name));
+    if (sections?.length) return new Set(scopedLines({ role, lineId, sections, lines, scopeIdx }).map(l => l.name));
     return null;
-  }, [lines, role, lineId, sections]);
-  const scopedLineObjs = useMemo(() => (scopeLines ? lines.filter(l => scopeLines.has(l.name)) : lines), [lines, scopeLines]);
+  }, [lines, role, lineId, sections, scopeIdx]);
+  /* 🔴 ช่องเลือกไลน์ต้อง "ไม่ตาย" — ส่วนงานที่ไม่มีไลน์ผลิตสังกัดเลย (QA · Planning&Store · ฝั่งช่าง)
+     กรองด้วย section แล้วเหลือ 0 ⇒ dropdown ว่างเปล่า = แจ้งซ่อม/เลือกไลน์ไม่ได้ทั้งหน้า (เคสจริง 26/10)
+     ⇒ ต้องผ่าน `scopeLines()` ของกลางใน `components/LineSelect.jsx` ที่มีตาข่าย
+       **"กรองแล้วไม่เหลืออะไร = ไม่กรอง"** (กติกาเดิมตั้งแต่ 2026-08-24)
+     ⚠️ **คนละแกนกับ `scopeLines` (Set) ข้างบน** ซึ่งเป็นตัวกรองรายการ + ฐานของด่านสิทธิ์ขั้นเซ็น
+        (`reporterScope`) — ตัวนั้นต้อง fail-closed เหมือนเดิม **ห้ามยุบรวมกัน** */
+  const scopedLineObjs = useMemo(
+    () => pickerLines(lines, { role, lineId, sections, scopeIdx }),
+    [lines, role, lineId, sections, scopeIdx]);
 
   const rows = byClass[asset] || [];
   const srcMeta = SOURCES.find(s => s.key === src);

@@ -801,6 +801,15 @@ migration `20260924_kpi_unit_decimals_summary_main.sql` (**apply แล้ว**)
   · rollback อยู่หัวไฟล์ migration
 - ม็อก harness: `kd-7` (PD1 ถือ Raw Material Control ที่ `value_scope='plant'`) — **ห้ามถอด** เปิดสายอ่านอย่างเดียว/ป้าย 🏭
 
+### 🔴 เคส 19/10 — Customer Satisfaction "เคยกรอกแล้วทำไมไม่ขึ้น" (ค่าโรงงานไม่มีนิยามระดับโรงงาน 3 สัปดาห์)
+ลำดับจริง (audit_log): 23/09 PD4 กรอก ม.ค.–ส.ค. ลงนิยามของตัวเอง (ตอนนั้น `value_scope=own`) → 30/09 ทะเบียนถูกตั้ง own→plant **โดยไม่มีนิยาม `scope_kind='plant'`**
+→ `sharedValueDef()` คืน null ⇒ ทุกหน่วยขึ้น "ยังไม่มีนิยามระดับโรงงาน" ช่องกรอกปิด และค่าของ PD4 ถูกซ่อน · 14/10 ทีมสร้าง "Customer Satisfaction (Q&D)" ระดับโรงงานเอง แต่ `catalog_id` ว่างจึงไม่ผูก แล้วถูกปิด 15/10
+- **แก้ข้อมูล:** migration `20261019_kpi_csat_plant_def_main` สร้างนิยามโรงงาน `5c5a7e3d-…` (โคลนเป้าจาก PD4) + ย้าย 8 แถวของ PD4 ไปนิยามโรงงาน (apply แล้ว)
+- **ปิดต้นเหตุในโค้ด (`KpiMonthly`):** เปลี่ยน "ค่าเป็นของ" → ค่าโรงงาน ในโมดัล 📘 จะ **สร้างนิยามโรงงานให้ทันที** (`plantDefPayloadFrom()` โคลนจากนิยามหน่วยตัวแรก ไม่ก๊อปค่า) ·
+  การ์ดเตือนเหนือตาราง KPI กรอกมือ = `missingPlantValueDefs(allDefs, entries)` บอกทะเบียน plant ที่ยังไม่มีนิยามโรงงาน + **จำนวนค่าที่หน่วยกรอกไว้แต่ถูกซ่อน** + ปุ่มสร้าง (ที่ขอบเขต ทั้งโรงงาน) ·
+  แถวของหน่วยที่มี entries ค้างติดป้าย "✍️ หน่วยนี้เคยกรอกไว้ N เดือน (ซ่อนอยู่)" — **ค่าที่ซ่อนต้องเขียนบนจอ ห้ามหายเงียบ** · ย้ายค่าหน่วย→โรงงานยังเป็นงานแอดมิน (SQL) ไม่มีปุ่ม (ต้องตัดสินว่าเป็นตัวเลขโรงงานจริงไหม)
+- เทส `kpiSetup.test.mjs` (missingPlantValueDefs · plantDefPayloadFrom)
+
 ## 📈 แผ่น KPI บอกให้ครบว่า "เลขนี้คืออะไร · YTD คิดยังไง · ปลายปีจะรอดไหม" + แกน Y บอกหน่วย (2026-09-30 · คำสั่ง user)
 
 *"unit มันไม่มีบอก บาท/%/hrs · %OEE ที่โชว์คืออะไร YTD ใช่มั้ย ไม่มี text บอก ละคิดยังไง · บางค่าจะคิดแบบ Actual+Plan ที่เหลือ เพื่อสรุปว่าปีนี้จะรอดหรือร่วง"*
@@ -1220,15 +1229,44 @@ layout ใช้ของรหัส (ใหม่กว่า 14/10) แทน
   `parseNum` รับ "1,234.50" · "(5,000)" = ลบ · "-" = ไม่มี (**ไม่เขียนทับด้วย 0**) · ตัวคูณหน่วย บาท/พันบาท/ล้านบาท (กำลังคน/วันไม่คูณ)
   · ตารางเทียบ "ค่าใหม่ vs ค่าที่มีอยู่" ก่อนบันทึก · จำป้ายที่เลือกต่อชื่อชีทไว้ใน `localStorage` ของเครื่องคนกลาง (ไม่มีตารางตั้งค่ากลาง — ถ้าต้องใช้หลายเครื่องค่อยย้ายลงฐาน)
   · เขียนผ่าน `saveMany` ของแผง (update ตาม id / insert · นับแถว · ไม่ upsert) · ค่ากลางเขียนได้เฉพาะตอนดู ทั้งโรงงาน
-  · **19/10 เห็นไฟล์จริง (ภาพหน้าจอ 4 ชีท) "01 Report Monthly FS Jan-2026 TSAT P4.xlsb"** — รับ `.xlsb` แล้ว · ชีทที่ใช้: **3.PL Summary** (Sales from Product · Raw Material · Direct Labour ·
-    Overhead Expenses · Sales from Trading Goods · Total Sales · Total COGS — **ระดับโรงงาน หน่วยล้านบาท ไม่เขียนหน่วย**) · **5.Manpower** (Total Head count (All) · Total Sale) ·
-    ทรงหัวตาราง = เดือน merge คร่อมบล็อก `PLAN | Rolling | ACTUAL | DIFF` + แถวย่อย `Amount | %` ⇒ `resolveSubHeaders()` เลือก **ACTUAL → Amount** ต่อเดือน
-    (ไม่มี ACTUAL ถอยไป Rolling แล้วเตือนบนจอ · **Rolling ของเดือนที่ยังไม่ปิด = แผน** ⇒ ช่อง "ถึงเดือน" default = เดือนก่อนวันทำงาน · `limitMonths`) ·
-    `detectVarRows` ไล่ตาม pattern ไม่ใช่ตามแถว (**"Total COGS" ชนะ "COGS Sale from Product" · "Head count (All)" ชนะ "(FAC)"**) · `bestSheet()` เลือกชีทที่จับตัวแปรได้มากสุด ·
-    `magnitudeWarning()` เตือนเมื่อเลือก ×1 แล้วยอดขายโรงงานหลักร้อย (เตือน ไม่สลับให้) · เทสจำลองทั้ง 2 ชีท
-  · **ยังไม่อ่าน (รอไฟล์จริง):** 1.Sale (เดือนเป็นแถว · Total Sale ม.ค. 34.2M **ไม่ตรง** PL Summary 165.71M — ต้องถามบัญชีว่าชุดไหนคือ KPI) ·
-    8.Inventory Balance (รายคลัง P4xx + วันสต็อกที่บัญชีคิดเอง — ต้องผูกคลัง→หน่วย และเคาะว่า DSI ใช้ตัวเลขบัญชีตรงๆ หรือคิดจาก `inventory_baht ÷ cogs`) ·
-    2.Sale & Material · 6.BY Section (น่าจะเป็น DL/OH รายส่วนงาน = ตัวเลขฐานระดับหน่วยที่ user ต้องการ) — ยังไม่เห็น
+  · **19/10 ไฟล์จริง "01 Report Monthly FS Jan-2026 TSAT P4.xlsb"** (user ส่งฉบับแปลงเลข · อ่านผ่าน pyxlsb นอกรีโป **ไม่ commit ไฟล์** · ตัวเลขทุกตัวในเทสเป็นของจำลอง) — 13 ชีท · บัญชีส่ง**เดือนละครั้ง ช่วงวันที่ 10-20 ของเดือนถัดไป**
+    - 🔴 **`.xlsb` อ่านในเบราว์เซอร์ไม่ได้** — xlsx 0.18.5 ล้มที่ defined name (`Bad SerAr: 63`) ทุก option · LibreOffice headless ก็เปิดไม่ขึ้น ⇒ โมดัลบอกให้ **Save As .xlsx** (ข้อความเฉพาะเมื่อนามสกุล .xlsb) · ตอนทำอ่านเมลอัตโนมัติ (user: "แบบ 830/862") ต้องแปลงฝั่ง server หรือขอบัญชีส่ง .xlsx
+    - 🔴 **ค่าในเซลล์เป็น "บาท" เต็ม** (137,267,250.25) — จอ Excel โชว์ 137.27 เพราะ number format `#,##0.00,,` ⇒ ตัวคูณหน่วย = ×1 · `magnitudeWarning()` เหลือเป็นกันพลาดเท่านั้น
+    - 🔴 **เดือนที่ยังไม่ปิด ACTUAL = `0` ไม่ใช่ว่าง** (จอโชว์ "-" เพราะ format) ⇒ นำเข้าทั้ง 12 เดือน = เขียน 0 ทับ 11 เดือน · ป้องกัน 2 ชั้น: "ถึงเดือน" default = `monthFromFileName()` ("Jan-2026" → ม.ค.) ไม่มีในชื่อ → `lastClosedMonth()` (เดือนสุดท้ายที่ยอดขาย/กำลังคน > 0) · ถ้าคนตั้งเกิน = แถบแดง + ปุ่มตั้งกลับ
+    - **3.PL Summary** (ชีทหลัก · `bestSheet()` เลือก): บล็อกต่อเดือน = `Factory|Allocate|PLAN|Factory|Allocate|Rolling|Factory|Allocate|ACTUAL|DIFF` (ละ Amount/%) + ทางขวามีบล็อกช่วยคำนวณ Jan..Dec ซ้ำ 3 ชุด
+      ⇒ `dedupeMonthCols()` เลือกชุด Jan→Dec ยาวสุด/ซ้ายสุด · ได้ครบ 7 ค่ากลาง (Sales from Product · Raw Material · Direct Labour · Overhead Expenses · Sales from Trading Goods · Total Sales · Total COGS) ·
+      ตรวจทาน: RM ÷ Sales from product = 64.03% ตรงคอลัมน์ % ของใบ · ไม่จับ "Deduct Cost Reduction Lump Sum" (ตัวหัก ค่า 0) เป็น 100P
+    - **5.Manpower**: ตารางหลักแถว 12 (เดือนละ `Plan|Rolling|Actual`) · แถว 11 เป็นบล็อกช่วยคำนวณ YTD Jan..Dec×3 ⇒ `detectMonthColumns` ให้คะแนน "มีแถวย่อย ACTUAL" + หักเซลล์เดือนซ้ำ · จับ `Total Head count (All)` (382) + `Total Sale (FG+TG+Tooling) (MB.)` (ป้ายเขียน MB แต่เซลล์เป็นบาท)
+      · **ยอดขาย/หัว ใบจริงมี 2 แถว:** "Sale All / Head (All)" = Accumulate **Total Sale** ÷ head (ม.ค. 433,798 บาท/หัว = 165.71M ÷ 382) และ "Sale production / Head (All)" = Sales from product ÷ head (359,338) — KPI Online = Total Sales ⇒ ระบบใช้แถวแรก · ถ้าบริษัทเคาะเป็น product เปลี่ยน `vars`/`cum` ของ `sale_per_head` จุดเดียว
+    - **6.BY Section** = กำลังคนรายส่วนงาน (Direct/Indirect/Sale,W/H…) แต่ในไฟล์ที่ส่งมา**ชื่อส่วนงานเป็นข้อความแทนที่ "เปลี่ยนตามโครงสร้างของ Plant"** ⇒ ยังผูกแถว→ส่วนงานไม่ได้ จับได้แค่ Total (All) · ต้องได้ชื่อจริงก่อน
+    - **8.Inventory Balance** (`sheetKind()='inventory'`): รายคลัง P4xx/S4xx/W4xx + Responsible · บล็อกต่อเดือน `PP|RM|<เดือน>|/sale|Days` ⇒ จับแค่ **"Inventory Balance All"** เป็น `inventory_baht` (ม.ค. 86.48M)
+      · 🔴 **COGS/Sale FG/Total Raw Material ในชีทนี้คนละฐานกับ PL** (COGS 170.2M vs PL Total COGS 129.2M · RM = มูลค่าสต็อก) ⇒ ไม่จับอัตโนมัติ (`INVENTORY_VARS`) · "วัน" ในใบมี 3 ตัว (Day/Month 15.75 · Average 15.28 · Turn Over accumulate 16) —
+        DSI ของระบบ = `inventory_baht ÷ cogs(PL) × days` จะได้ ~20.7 ไม่ตรงใบ → **ต้องถามบัญชีว่า KPI DSI ใช้ตัวไหน + COGS ฐานไหน** ก่อนเปิดใช้สูตร DSI จริง · รายคลัง→ส่วนงานยังไม่ผูก
+    - **4.PL by GL** (ราย GL 549 แถว): จับได้เหมือน PL Summary แต่มีบรรทัดย่อย "…- Golf Car" (0) · "Inventory Damage Expense" ⇒ `LABEL_EXCLUDE` + กติกา "ป้ายสั้นสุด/ช่องเดือนมีตัวเลขมากสุดชนะ" + bestSheet นับเฉพาะตัวแปรที่มีค่า ≠ 0 ⇒ PL Summary ชนะ
+    - **1.Sale / 2.Sale & Material**: เดือนเป็นแถว ไม่อ่าน (PL มีครบ · ตัวเลข 1.Sale ไม่ตรง PL — ไม่ใช้)
+  · ทรงหัวตาราง = เดือน merge คร่อมบล็อก + แถวย่อย ⇒ `resolveSubHeaders()` เลือก **ACTUAL → Amount** ต่อเดือน (ไม่มี ACTUAL ถอยไป Rolling แล้วเตือน · `limitMonths` ตัดเดือนเกิน "ถึงเดือน") ·
+    `detectVarRows` ไล่ตาม pattern ไม่ใช่ตามแถว + ข้าม **แถวหัวเรื่องที่ไม่มีตัวเลข** · เทสจำลองโครงจริงทั้ง PL/Manpower/Inventory/GL/ดัชนีท้ายชีท (`kpiBaseImport.test.mjs`)
+- **ท่อนำเข้านอกเบราว์เซอร์ (20/10 · ครึ่งหลังของ "อ่านเมลออโต้แบบ 830/862")** — `scripts/acct-import/import_base.mjs <file> [--year] [--month] [--write]`
+  · อ่าน `.xlsb` ผ่าน `read_xlsb.py` (pyxlsb · รัน `python3 -I`) · `.xlsx` ด้วย xlsx ตัวเดียวกับเว็บ · ตรวจจับด้วย `utils/kpiBaseImport.js` ชุดเดียวกับปุ่มบนเว็บ (`collectPlantValues()`: PL Summary ชนะ · Manpower เติมกำลังคน · Inventory เติมมูลค่าสต็อก)
+  · **dry-run เป็น default** (ตารางเทียบไฟล์ vs ฐาน) · `--write` ต้องมี `SUPABASE_URL`+`SUPABASE_SERVICE_KEY` (MAIN) · เขียนเฉพาะ ทั้งโรงงาน · update ตาม id/insert ไม่ upsert · ค่า 0/เดือนเกิน "ถึงเดือน" ไม่เขียน
+  · `importBook(book, { fileName, write, sb })` = แกนที่ CLI และตัวรันคิวใช้ร่วม (ปี/เดือนจากชื่อไฟล์ `yearFromFileName`/`monthFromFileName` · พ.ศ. → ค.ศ.)
+- **ท่ออัตโนมัติเต็มสาย (20/10 · user: "ใช้ GitHub Actions ไปก่อน · เมลเป็น M365 เหมือน 830/862")** — ใช้โครง EDI เดิมทั้งก้อน ไม่สร้างท่อใหม่:
+  1. **เมล → คิว:** สคริปต์ Outlook บนเครื่อง user (`tools/outlook-mail-ingest/esm_mail_ingest.py`) เพิ่มกฎ `[mail.acct]` (หัวเรื่อง `Report Monthly FS` · ไฟล์แนบ `.xlsb/.xlsx/.xlsm` · ย้อนหลัง 45 วัน)
+     → Edge Function `ingest-demand-mail` v3 ส่ง `kind:'acct'` → Storage `demand-mail` + `demand_mail_inbox` (`kind='acct'` · migration `20261020_demand_mail_inbox_kind_acct_dr.sql`)
+     · **ไม่ขึ้นแผง 📬 ของ /planner-sales** (จอนั้นกรอง `kind='demand'`) · user ต้องกด `restart.bat` บนเครื่องครั้งเดียวให้สคริปต์ใหม่ทำงาน
+  2. **คิว → kpi_base_inputs:** `.github/workflows/acct-import.yml` (cron `17 2 10-21 * *` = 09:17 ไทย ทุกวัน 10-21 + Run workflow · ติ๊ก dry_run ได้)
+     รัน `scripts/acct-import/run_queue.mjs`: อ่าน pending kind=acct เก่าสุดก่อน (สูงสุด 10) → โหลดไฟล์ด้วย service role DR → `importBook(write:true)` → ปิดแถว `imported` + สรุปใน `note`
+     · อ่านไม่ได้/เขียนล้ม = `failed` + เหตุผล (`handled_by='github-actions/acct-import'`) · job ออก exit 1 ให้เห็นแดงใน Actions
+     · **secrets ที่ต้องตั้งใน repo (user ทำ):** `DR_SUPABASE_URL` · `DR_SUPABASE_SERVICE_KEY` (Product DB) · `MAIN_SUPABASE_URL` · `MAIN_SUPABASE_SERVICE_KEY` (MAIN) — ไม่ตั้ง = job เตือนแล้วข้าม (ไม่แดง)
+  · 🔴 **แกนอ่านไฟล์มีชุดเดียว** (`utils/kpiBaseImport.js` + `collectPlantValues`) — เว็บ/CLI/Actions ต้องได้ตัวเลขเดียวกัน · แก้กติกาจับแถวต้องแก้ที่นั่นที่เดียว
+  · 🔴 **ไฟล์ซ้ำ/ฉบับแก้** — บัญชีส่งฉบับแก้ด้วยชื่อเดียวกันใน message id ใหม่ = เข้าคิวอีกแถว ⇒ ตัวรันเขียนทับค่าเดิม (update ตาม id) = ฉบับล่าสุดชนะ · note ในแถว `kpi_base_inputs` บอกชื่อไฟล์ที่มา
+  · 🔔 **แจ้งผลในแอป** (20/10 · user: "ไม่ใช้ Telegram ละ โฟกัสแจ้งเตือนในแอพ") — กฎ `notification_rules.kpi_acct_import` (category `kpi` · seed ผู้รับ = `admin` เท่านั้น · ปรับที่ `/notification-config`)
+    ตัวรันคิวอ่านกฎเอง → แถว `notifications` (`event_key='kpi_acct_import'` · link `/obeya?tab=kpi` · สำเร็จ = success · ล้ม = error) · **ไม่มีกฎ/ปิด/0 คน = `::warning` ใน log ห้ามเงียบ** · dry-run ไม่แจ้ง
+    · migration `20261020_notif_rule_kpi_acct_import_main.sql` (apply แล้ว) · 🔴 ห้ามขยาย `inapp_roles` เป็น supervisor/manager ทั้งโรงงาน (= 44 คน · บทเรียน `notify-inapp-audit.md`)
+  · **dry-run ทดสอบ secrets ได้แม้คิวว่าง** — ตัวรันเช็ค `count` ทั้ง DR (`demand_mail_inbox`) และ MAIN (`kpi_base_inputs`) ก่อนเสมอ · secret ผิด = `::error` exit 2
+  · ⚠️ **GitHub App ของ Claude กด Run workflow ไม่ได้ (403 `actions:write`)** — user กดเองที่ Actions → Accounting import → Run workflow
+  · **ใครกรอก:** 63 แถวที่นำเข้าจากเว็บ 19/10 `created_by` ว่างหมด → `KpiBaseInputsPanel` stamp `created_by`/`created_by_name` ตั้งแต่ 20/10 · ตัวอัตโนมัติเขียน `created_by_name='acct-import'`
+  · ยังไม่ทำ: อ่าน M365 ตรง (ต้อง Azure app จาก IT) — ตอนนี้พึ่งเครื่อง user เปิดอยู่เหมือน EDI
 - **ยอดขาย/หัว = ตัวตั้งสะสม YTD** (19/10 ใบ 5.Manpower แถว "Sale All / Head (All)": เม.ย. = Accumulate Total Sale 706.43 ÷ Head count (All) 392 = 1.802 · ทั้งปี 2,118.70 ÷ 386 = 5.489 = เป้า)
   ⇒ `KPI_FORMULAS.sale_per_head.cum = ['sale_total']` · `formulaMonths` รวม ม.ค.→m · **ขาดเดือนใดเดือนหนึ่งก่อนหน้า = คำนวณไม่ได้** (ห้ามรวมเฉพาะที่มี)
 - **กำลังคน (`manpower`) อัตโนมัติ** — `utils/kpiHeadcount.js`: นับ `employees` active ที่ `start_date` ≤ สิ้นเดือน (ว่าง/อนาคต-บั๊ก พ.ศ. = นับ) ·

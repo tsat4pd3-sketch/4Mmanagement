@@ -8,6 +8,7 @@ import { loadProfilesPeople } from './utils/usePeople';
 import MyQueuePanel, { useMyQueue } from './components/MyQueuePanel';
 import { OLD_DAYS } from './utils/myQueue';
 import { ToastContainer, toast } from './components/Toast';
+import ConnBanner from './components/ConnBanner';
 import Login from './pages/Login';
 import SignatureModal from './components/SignatureModal';
 import ChangePasswordModal from './components/ChangePasswordModal';
@@ -16,9 +17,24 @@ import { loadPermissions, canAccessPage, setDeptAdmin, setSharedAccount, can } f
 import { LOGISTIC_GROUPS } from './utils/logisticSide';
 import { trackVisit, topPaths } from './utils/navRecent';
 import { effectiveSections } from './utils/sectionScope';
+/* 💰 ชั้นสิทธิ์ที่ 3 แกน Cost Center — ดัชนีผังสร้างที่นี่ที่เดียว แล้วส่งผ่าน UserContext
+   (จอ 20 จออ่านผ่าน `canWriteUnit`/`canWriteLine` เหมือนเดิม ไม่ต้องรู้ว่ามีแกนที่ 2) */
+import { buildOrgScope } from './utils/orgScope';
+import { attachCc } from './utils/ccScope';
+import { loadLinesRes } from './utils/useProductionLines';
+import { widerLineId } from './utils/lineHierarchy';
+/* 🏭 ปลุก **ทะเบียนกลาง** ของข้อยกเว้นเวลาพักรายไลน์ (`break_line_rules` · 20/10)
+   ที่นี่เพราะจอ OEE บางจอคิวรี `break_policies` ตรงๆ ไม่ผ่าน `loadBreakPolicies()`
+   ⇒ ปลุกครั้งเดียวที่ระดับโมดูลของ App (แพทเทิร์นเดียวกับ `loadProcessTypes()` ใน DailyReport)
+   🔴 ไม่โหลด = ทุกไลน์ใช้ค่ากลางเหมือนวันนี้ (ไม่พัง) แต่ไลน์ที่ตั้ง 10 นาทีจะถูกหัก 20 เงียบๆ */
+import { primeBreakRuleIndex } from './utils/oeeMasters';
+primeBreakRuleIndex();
 import useIsMobile from './utils/useIsMobile';
 import ScrollHint from './components/ScrollHint';
 import MobileNavBar from './components/MobileNavBar';
+import MobilePushPrompt from './components/MobilePushPrompt'; // 📲 แถบชวนเปิด push (มือถือเท่านั้น) — 2026-10-20
+import ScanWedgeGuard from './components/ScanWedgeGuard';
+import { purgeOldDrafts } from './utils/formDraft';   // 📝 ล้างร่างฟอร์มที่หมดอายุ (ร่างค้างห้ามกินที่ในเครื่อง)   // 🔫 ปุ่มสแกนข้างเครื่อง handheld — มือถือเท่านั้น
 import { pushSupported, getPushState, subscribePush, unsubscribePush, onPushResubscribeRequest, handlePushResubscribe } from './utils/webpush';
 import { loadPositions, positionLabel } from './utils/positions';   // ตำแหน่งเก็บเป็น key — แสดงต้องแปลงเป็นชื่อ
 import { roleLabel } from './utils/roleMeta';                       // ป้ายชื่อ role (โหมดจำลองมุมมอง 🎭)
@@ -171,7 +187,7 @@ export const NAV_ITEMS = [
   { to: '/order-trace', icon: '🔎', label: 'สอบกลับ Order (Trace)', group: 'วิเคราะห์ & รายงาน' },
   { to: '/daily-checker',  icon: '✅', label: 'Daily Checker',       group: 'ฝ่ายผลิต' },  // ขมวด PM Daily + LPA + ระบบเช็คอื่น (แท็บใน DailyChecker)
   { to: '/improvements',   icon: '💡', label: 'Improvements',        group: 'ฝ่ายผลิต' },
-  { to: '/scrap-report',   icon: '♻️', label: 'ใบรายงานของเสีย (Scrap)', group: 'ฝ่ายผลิต' },
+  { to: '/scrap-report',   icon: '♻️', label: 'ของเสีย: ใบรายงาน · ถังเหลือง/แดง', group: 'ฝ่ายผลิต' },
 
   /* Logistic & Sales แบ่ง 3 ฝั่งตามความรับผิดชอบจริงของแผนกย่อย (2026-09-03 · คำสั่ง user)
      ⚠️ Warehouse (เก็บ FG 1xx → ขาออก) ≠ Store (คุม 2xx/3xx/5xx → ขาเข้า) — ห้ามสลับ
@@ -615,16 +631,23 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
         </button>
       );
     })}
-    {/* input ไฟล์ของ 📷 เปลี่ยนรูปโปรไฟล์ — ซ่อนไว้ กดผ่านรายการเมนูด้านบน */}
-    <input ref={avatarRef} type="file" accept="image/*" style={{ display: 'none' }}
-      onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) setAvatarFile(f); }} />
   </>);
 
   const modals = (<>
+    {/* 📷 input ไฟล์ของ "เปลี่ยนรูปโปรไฟล์" — ต้องอยู่ใน `modals` (วาดทุกสถานะ) **ห้ามย้ายกลับเข้า
+        `profileActions`** (26/10 feedback: *"เปลี่ยนรูปโปรไฟล์จากแถบซ้ายมือไม่ได้ ต้องออกมาหน้าโฮม"*)
+        เมนูโปรไฟล์กด 📷 แล้วสั่ง `.click()` → **แล้วปิดแผงทันที** (`closeNav`) ⇒ input ถูก unmount
+        ก่อนคนเลือกไฟล์เสร็จ ⇒ event `change` ตกใส่ element ที่หลุดจาก React แล้ว = เงียบสนิท
+        (หน้า Home ใช้ input ของตัวเองซึ่งไม่ถูกปิด จึงยังทำงาน — ตรงกับที่หน้างานแจ้ง) */}
+    <input ref={avatarRef} type="file" accept="image/*" style={{ display: 'none' }}
+      onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) setAvatarFile(f); }} />
     {fbOpen && <Suspense fallback={null}><FeedbackModal onClose={() => setFbOpen(false)} /></Suspense>}
     {avatarFile && (
       <Suspense fallback={null}>
-        <ImageCropModal file={avatarFile} aspect={1} shape="circle" outputSize={480}
+        {/* 🚫 รูปคนไม่รับ GIF (กฎเดียวกับรูปพนักงานที่ /operator · /register) — เดิมไม่ส่ง allowGif
+            ⇒ GIF ถึง 2MB ถูกอัปเป็น `avatar_*.jpg` + contentType image/jpeg (นามสกุลโกหกเนื้อไฟล์)
+            และโผล่บน sidebar ทุกหน้าทุกเครื่อง (QC audit 20/10) */}
+        <ImageCropModal file={avatarFile} aspect={1} shape="circle" outputSize={480} allowGif={false} webp
           title="จัดตำแหน่งรูปโปรไฟล์" onCancel={() => setAvatarFile(null)}
           onConfirm={async (blob) => {
             setAvatarFile(null);
@@ -1533,6 +1556,7 @@ const ACTIVITY_LS_KEY = 'esm-last-activity';
 // ยกเว้น admin (ดูแลระบบ เครื่องตัวเอง) + display (จอลอย — ไม่ logout อยู่แล้ว)
 const SESSION_START_KEY = 'esm-session-started';
 const SHIFT_GRACE_MS = 60 * 60 * 1000; // เผื่อ 60 นาทีหลังสิ้นกะ (ทำงานคาบเกี่ยว/OT ต่อเนื่อง)
+const SHIFT_WARN_MS  = 15 * 60 * 1000; // เตือนบนมือถือ 15 นาทีก่อนถูกเตะออก (22/10)
 
 // คืน timestamp (ms) ที่ session ต้องหมดอายุ = สิ้นกะของเวลาที่ login + grace
 // กะเช้า 08:00–19:59 → สิ้นกะ 20:00 · กะดึก 20:00–07:59 → สิ้นกะ 08:00 ของเช้าถัดไป
@@ -1554,6 +1578,9 @@ function shiftDeadlineFrom(loginTsMs) {
 // disabled = ไม่ต้องเฝ้าเลย (role display หรือกำลังเปิดหน้าจอแขวน — ดู kioskRoutes.js)
 function useAutoLogout(disabled, onLogout, shiftCapped) {
   const [warnSecsLeft, setWarnSecsLeft] = useState(null); // null = not warning
+  /* ⏰ เหลือกี่นาทีก่อนเตะออกเพราะหมดกะ (null = ยังไกล/ไม่ติดเพดานกะ) — แถบเตือนบนมือถือ (22/10 · audit handheld)
+     เพดานกะเตะ "แม้กำลังใช้อยู่" ⇒ ฟอร์มที่บันทึกทีเดียวตอนท้ายหายทั้งใบ · เตือนล่วงหน้า SHIFT_WARN_MS ให้กดบันทึกก่อน */
+  const [shiftLeftMin, setShiftLeftMin] = useState(null);
   const lastActivityRef = useRef(Date.now());
   const warnActiveRef   = useRef(false);
   const countdownRef    = useRef(null);
@@ -1617,10 +1644,13 @@ function useAutoLogout(disabled, onLogout, shiftCapped) {
         startTs = Date.now();
         try { localStorage.setItem(SESSION_START_KEY, String(startTs)); } catch { /* private mode */ }
       }
-      if (Date.now() > shiftDeadlineFrom(startTs)) { onLogoutRef.current(); return true; }
+      const left = shiftDeadlineFrom(startTs) - Date.now();
+      if (left <= 0) { onLogoutRef.current(); return true; }
+      setShiftLeftMin(left <= SHIFT_WARN_MS ? Math.max(1, Math.ceil(left / 60000)) : null);
       return false;
     };
 
+    checkShiftDeadline();   // ตั้งแถบเตือนทันทีตอนเปิดแอป (ไม่ต้องรอ poll รอบแรก 30 วิ)
     // Poll every 30s to check idle time — เทียบกับ activity ล่าสุดของ "ทุกแท็บ" (max ของ local ref กับ localStorage)
     const pollId = setInterval(() => {
       if (checkShiftDeadline()) return; // เลยเพดานกะ = ออกแล้ว
@@ -1656,7 +1686,24 @@ function useAutoLogout(disabled, onLogout, shiftCapped) {
     };
   }, [disabled, shiftCapped, dismissWarning]);
 
-  return { warnSecsLeft, dismissWarning };
+  return { warnSecsLeft, dismissWarning, shiftLeftMin };
+}
+
+/* ⏰ แถบเตือน "ใกล้หมดกะ ระบบจะออกจากระบบเอง" — มือถือเท่านั้น (22/10 · audit handheld ข้อ 4)
+   เพดานกะเตะออกแม้กำลังกรอกอยู่ ⇒ เตือน 15 นาทีก่อน ให้กดบันทึก · อยู่เหนือโมดัล (ฟอร์มส่วนใหญ่อยู่ในโมดัล)
+   แตะเพื่อซ่อน — ถ้าซ่อนตอนเหลือเกิน 5 นาที จะกลับมาอีกครั้งตอนเหลือ 5 นาที · ฟอร์มยาวมีร่างเก็บในเครื่องอยู่แล้ว (utils/formDraft.js) */
+function ShiftEndBanner({ minLeft }) {
+  const [hiddenAbove, setHiddenAbove] = useState(null);   // ซ่อนไว้จนกว่าจะเหลือ ≤ ค่านี้
+  if (minLeft == null) return null;
+  if (hiddenAbove != null && minLeft > hiddenAbove) return null;
+  return (
+    <div role="alert" onClick={() => setHiddenAbove(minLeft > 5 ? 5 : 0)}
+      style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 2300, padding: '8px 14px', cursor: 'pointer',
+        background: '#b45309', color: '#fff', fontSize: 13, fontWeight: 700, lineHeight: 1.45, textAlign: 'center' }}>
+      ⏰ อีก {minLeft} นาที ระบบจะออกจากระบบเอง (หมดกะ) — กดบันทึกงานที่กรอกค้างก่อน
+      <span style={{ fontWeight: 500, opacity: 0.9 }}> · แตะเพื่อซ่อน</span>
+    </div>
+  );
 }
 
 function AutoLogoutWarning({ secsLeft, onStay, onLogout }) {
@@ -1708,9 +1755,10 @@ function AutoLogoutWarning({ secsLeft, onStay, onLogout }) {
 /* ─── Protected Layout ─────────────────────────────────────────────── */
 // permsVersion — ทำให้ layout re-render เมื่อสิทธิ์เปลี่ยน · และเป็น dep ของ `allUnits` ใน userCtx
 // (RoleRoute/Sidebar อ่าน permission cache แบบ sync ผ่าน canAccessPage ระหว่าง render)
-function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, viewAs, onApplyViewAs, userLineId, userTeam, userSection, userSections, userRespCcs, userMtnTeams, userIsDeptAdmin, userAccountKind, userPosition, userEmail, userFullName, userNotifyEmail, userSignatureUrl, userAvatarUrl, onAvatarSaved, onSignatureSaved, permsVersion }) {
+function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, viewAs, onApplyViewAs, userLineId, userTeam, userSection, userSections, userRespCcs, userScopeIdx, userMtnTeams, userIsDeptAdmin, userAccountKind, userPosition, userEmail, userFullName, userNotifyEmail, userSignatureUrl, userAvatarUrl, onAvatarSaved, onSignatureSaved, permsVersion }) {
   const isMobile = useIsMobile();
   const isTV     = !useIsMobile(1919);   // จอ ≥1920 (TV) — reactive แทน innerWidth ครั้งเดียว
+  useEffect(() => { purgeOldDrafts(); }, []);   // 📝 ร่างฟอร์มหมดอายุ (utils/formDraft.js)
   const [isOpen, setIsOpen] = useState(() => typeof window !== 'undefined' && window.innerWidth > 768);
   /* 📺 เมนูบนจอ /tv (13/10 · feedback user "เข้ามาแล้วกลับออกไปหน้าอื่นไม่ได้") — state แยกจาก `isOpen`
      ⇒ เปิดจอ TV มาต้องปิดเสมอ (ไม่รับค่าค้างจากหน้าก่อน) · ปิดเองเมื่อเปลี่ยนหน้า */
@@ -1761,7 +1809,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
   // ⚠️ เพดานกะตัดสินจาก "role จริง" — admin ที่จำลองมุมมอง leader ต้องไม่โดนเตะออกท้ายกะ
   // ⚠️ จอแขวนไม่โดนเพดานกะด้วย — ไม่งั้นยกเว้น idle ไปก็ยังโดนเตะทุกสิ้นกะอยู่ดี
   const shiftCapped = !viewAs && !isKiosk && ['leader', 'supervisor'].includes(userRole);
-  const { warnSecsLeft, dismissWarning } = useAutoLogout(isDisplay || isKiosk, handleLogout, shiftCapped);
+  const { warnSecsLeft, dismissWarning, shiftLeftMin } = useAutoLogout(isDisplay || isKiosk, handleLogout, shiftCapped);
 
   // 🎭 โหมดจำลองมุมมอง role — modal เลือก role (admin จริงเท่านั้น) + ป้ายลอยบอกว่าอยู่ในโหมด
   const [viewAsOpen, setViewAsOpen] = useState(false);
@@ -1840,7 +1888,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
        ตัวตัดสิน = `canWriteScope()` (`utils/ccScope.js`) · ตั้งค่าที่ /add-user ช่อง ④
        🔴 ว่าง = ถอยไปใช้ `section` เหมือนเดิม **ไม่ใช่** "แก้อะไรไม่ได้" */
     respCostCenters: userRespCcs || EMPTY_ARR,
-  }), [userRole, userLineId, userTeam, userSection, userSections, userRespCcs, userMtnTeams, userPosition,
+    /* ดัชนีผังที่ `canWriteUnit`/`canWriteLine` ใช้ตัดสินแกน CC — จอแค่ส่งต่อใน ctx ไม่ต้องรู้ข้างใน */
+    scopeIdx: userScopeIdx,
+  }), [userRole, userLineId, userTeam, userSection, userSections, userRespCcs, userScopeIdx, userMtnTeams, userPosition,
        userNotifyEmail, userSignatureUrl, userAvatarUrl, userFullName, userIsDeptAdmin, realRole,
        userAccountKind, permsVersion]);
   /* layout ปกติต้องรู้ว่า sidebar เปิดอยู่ไหมด้วย — แยก memo เพื่อไม่ให้ `isOpen` ไปสั่น context ของจอ /tv */
@@ -1932,6 +1982,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
         </Suspense>
         {/* 📱 แถบล่างมือถือ — หน้า Home ไม่มีช่อง ☰ (หน้านี้คือเมนูอยู่แล้ว) */}
         <MobileNavBar role={role} onOpenSearch={() => setPaletteOpen(true)} />
+        <ScanWedgeGuard />
         {/* 📺 จอตามต้องรับรีโมทได้แม้ค้างอยู่หน้า Hub (เดิม mount เฉพาะหน้าอื่น — จอ TV ที่เปิดหน้านี้ทิ้งไว้สั่งไม่ได้) */}
         {remoteCode && (
           <Suspense fallback={null}>
@@ -1950,11 +2001,13 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
       {warnSecsLeft !== null && (
         <AutoLogoutWarning secsLeft={warnSecsLeft} onStay={dismissWarning} onLogout={handleLogout} />
       )}
+      {isMobile && <ShiftEndBanner minLeft={shiftLeftMin} />}
       <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg)' }}>
         {/* มือถือ: ☰ ย้ายไปแถบล่าง (นิ้วโป้งถึง · ไม่ลอยทับเนื้อหา) — จอคอมเหมือนเดิม (docs/MOBILE-UX-STANDARD.md §3) */}
         {!isMobile && !tvShell && <ToggleBtn isOpen={isOpen} onClick={() => setIsOpen(true)} />}
         {!tvShell && <NotificationBell userId={userId} role={role} />}
         {!tvShell && <MobileNavBar role={role} onOpenMenu={() => setIsOpen(true)} onOpenSearch={() => setPaletteOpen(true)} />}
+        {!tvShell && <ScanWedgeGuard />}
         {/* บอกว่า "ยังเลื่อนลงได้อีก" — มือถือไม่มี scrollbar ให้เห็น (ครอบทั้งหน้าเพจและ modal) */}
         <ScrollHint />
         <Suspense fallback={null}>
@@ -2013,6 +2066,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
           overflowX: 'clip',
           minWidth: 0,
         }}>
+          {/* 📲 "เครื่องนี้ยังไม่เปิดแจ้งเตือน" — มือถือเท่านั้น (คอมไม่เปลี่ยนแม้แต่พิกเซลเดียว)
+              เดิมปุ่มเปิดซ่อนในกระดิ่ง ⇒ 74 จาก 102 คนที่ได้รับแจ้งเตือนไม่มีเครื่องผูกไว้เลย (วัด 20/10) */}
+          <MobilePushPrompt userId={userId} />
           <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh', color: 'var(--muted)', fontSize: 14 }}>กำลังโหลด...</div>}>
             {/* 🔁 key จากจอวนหน้า — หน้าเดิมที่เปลี่ยนแค่ ?query (เช่น ผังโรงงาน metric=oee → metric=ng) ต้อง remount
                 ไม่งั้นค่าตั้งต้นจากลิงก์ (utils/urlInit) ไม่ถูกอ่านใหม่ · ค่าว่าง = นำทางปกติ ไม่ remount */}
@@ -2272,6 +2328,10 @@ export default function App() {
      🔴 ต้องเป็น array ตัวเดิมตราบใดที่ค่าไม่เปลี่ยน — ไม่งั้น UserContext เป็นตัวใหม่ทุก render
         แล้วทุกหน้าที่มี effect ผูกกับ context ยิง DB ซ้ำ (กฎเหล็กการเขียน DB ข้อ 9) */
   const [userRespCcs, setUserRespCcs] = useState(EMPTY_ARR);
+  /* 💰 ดัชนีผังของแกน CC — `null` = ไม่ได้ใช้แกนนี้ · `{ failed:true }` = ตั้ง CC ไว้แต่อ่านผังไม่ได้
+     🔴 `failed` ต้องแยกจาก `null` ให้ได้ — "อ่านไม่ได้" ต้อง fail-closed ไม่ใช่ถอยไปใช้ส่วนงาน
+        (ถอย = คนที่ขอบเขต `sections` เคยกว้างกว่า CC จะได้สิทธิ์คืนมาเงียบๆ) */
+  const [userScopeIdx, setUserScopeIdx] = useState(null);
   const [userEmail,        setUserEmail]        = useState(null);
   const [userFullName,     setUserFullName]     = useState(null);
   const [userNotifyEmail,  setUserNotifyEmail]  = useState(null);
@@ -2392,6 +2452,18 @@ export default function App() {
         line_id: emp.line_id ?? ident.line_id,
         section: emp.section ?? ident.section,
       };
+      /* 🔴 ยกเว้นแกน "ไลน์": ถ้าบัญชีตั้งไว้เป็น **ไลน์แม่** ของไลน์ที่พนักงานสังกัด = เขาดูแลทั้งสาขา
+         ⇒ เอาตัวที่กว้างกว่า (กฎ "ห้ามคืนน้อยกว่าที่ profiles ตั้งไว้")
+         เคสจริง 27/10: หัวหน้ากลุ่ม Assembly Line D 2 คน — บัญชีตั้งไลน์แม่ไว้ถูกแล้ว แต่ของพนักงาน
+         (ไลน์ลูกที่ตัวเองสังกัด) ชนะ ⇒ เช็คชื่อ/เปิดกะไลน์ใหญ่/จัดการไลน์ผลิต ทำไม่ได้
+         ⚠️ โหลดทะเบียนเฉพาะตอน "2 ค่าไม่ตรงกัน" เท่านั้น — บัญชีทั่วไปไม่เสียคิวรีเพิ่ม
+            · อ่านไม่ได้ = คงค่าฐานพนักงาน = พฤติกรรมเดิมเป๊ะ (ห้ามเดาให้กว้างขึ้นเอง)
+            · คนละสาย = ฐานพนักงานชนะเหมือนเดิม (ตัวตนจริง กันบัญชีล้าสมัย) */
+      if (emp?.line_id != null && data?.line_id != null
+          && String(emp.line_id) !== String(data.line_id)) {
+        const { data: lsForId } = await loadLinesRes();
+        ident.line_id = widerLineId(data.line_id, emp.line_id, lsForId || []);
+      }
     }
 
     setUserRole(data?.role ?? null);
@@ -2413,11 +2485,32 @@ export default function App() {
        พิสูจน์ก่อนสลับว่าผลเท่าของเดิมครบทั้ง 97 บัญชี — ดู docs/ORG-AXES-DECISION.md §7.6 */
     setUserSections(effectiveSections(data?.role, data?.sections, ident.section, data?.scope_depth));
     /* ว่าง/ไม่มีคอลัมน์ = คง `EMPTY_ARR` ตัวเดิม (อย่าสร้าง [] ใหม่ — ดูหมายเหตุที่ state) */
+    const ccList = Array.isArray(data?.resp_cost_centers) ? data.resp_cost_centers.filter(Boolean) : [];
     setUserRespCcs(prev => {
-      const next = Array.isArray(data?.resp_cost_centers) ? data.resp_cost_centers.filter(Boolean) : [];
-      if (!next.length) return EMPTY_ARR;
-      return prev.length === next.length && prev.every((v, i) => v === next[i]) ? prev : next;
+      if (!ccList.length) return EMPTY_ARR;
+      return prev.length === ccList.length && prev.every((v, i) => v === ccList[i]) ? prev : ccList;
     });
+    /* 💰 ดัชนีผังสำหรับชั้นสิทธิ์แกน CC — โหลด **เฉพาะบัญชีที่ตั้ง CC ไว้**
+       ⇒ 19/10 ยังไม่มีใครตั้ง (0/122 บัญชี) = ไม่มีคิวรีเพิ่มเลยสำหรับทุกบัญชีวันนี้ (กฎ egress ข้อ 11)
+       🔴 ผังอ่าน**สด** ไม่ผ่าน cache — ขอบเขตสิทธิ์ของตัวเองต้องตรงกับผังวันนี้ (แก้ที่ /org-setup แล้วต้องมีผลทันที)
+       🔴 ต้องส่ง `lines` ด้วย ไม่งั้นดัชนีไม่มีตัวเลือก `line` แล้วด่านรายไลน์จะถอยไปตัดสินที่ชั้น
+          ส่วนงาน (หยาบกว่าที่แอดมินตั้งไว้) — ทะเบียนไลน์ผ่าน loader กลางที่ cache อยู่แล้ว ไม่เพิ่มไบต์ */
+    if (!ccList.length) setUserScopeIdx(null);
+    else {
+      const [nodesRes, linesRes] = await Promise.all([
+        supabase.from('org_nodes')
+          .select('id, kind, code, name, parent_id, ref_line_id, cost_center, division, sort_order, is_active, inherit_scope')
+          .eq('is_active', true),
+        loadLinesRes(),
+      ]);
+      if (nodesRes.error) {
+        console.warn('[profile] โหลดผังองค์กรไม่สำเร็จ — ชั้นสิทธิ์แกน CC บล็อกไว้ก่อน (fail-closed)', nodesRes.error);
+        setUserScopeIdx({ failed: true });
+      } else {
+        const nodes = nodesRes.data || [];
+        setUserScopeIdx(attachCc(buildOrgScope({ nodes, lines: linesRes.data || [] }), nodes));
+      }
+    }
     setUserNotifyEmail(data?.notify_email ?? null);
     setUserSignatureUrl(data?.signature_url ?? null);
     // mtn_teams / avatar_url มาพร้อม select หลักแล้ว (ไม่ต้องยิงเพิ่มอีก 2 คิวรี — ดูหมายเหตุ egress ข้างบน)
@@ -2459,7 +2552,7 @@ export default function App() {
         loadPermissions().then(() => setPermsLoaded(true));
       } else {
         try { localStorage.removeItem(SESSION_START_KEY); } catch { /* private mode */ }
-        setUserRole(null); setUserLineId(null); setUserTeam(null); setUserSection(null); setUserSections([]); setUserRespCcs(EMPTY_ARR); setUserPosition(null); setUserEmail(null); setUserFullName(null); setUserNotifyEmail(null); setUserSignatureUrl(null); setUserAvatarUrl(null);
+        setUserRole(null); setUserLineId(null); setUserTeam(null); setUserSection(null); setUserSections([]); setUserRespCcs(EMPTY_ARR); setUserScopeIdx(null); setUserPosition(null); setUserEmail(null); setUserFullName(null); setUserNotifyEmail(null); setUserSignatureUrl(null); setUserAvatarUrl(null);
         setProfileLoaded(false); setPermsLoaded(false);
       }
     });
@@ -2516,6 +2609,7 @@ export default function App() {
                 userSection={effSection}
                 userSections={effSections}
                 userRespCcs={userRespCcs}
+                userScopeIdx={userScopeIdx}
                 userMtnTeams={effMtnTeams}
                 userIsDeptAdmin={effDeptAdmin}
                 userAccountKind={userAccountKind}
@@ -2533,6 +2627,8 @@ export default function App() {
         </Router>
       )}
       <ToastContainer />
+      {/* ⚠️ ต่อฐานข้อมูลไม่ได้ต้องเขียนบนจอ ห้ามปล่อยให้หมุนค้างเงียบ (21/10 · utils/connGuard.js) */}
+      <ConnBanner />
     </>
   );
 }

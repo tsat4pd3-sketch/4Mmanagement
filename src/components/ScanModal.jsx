@@ -17,13 +17,15 @@
  */
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { parseQrPayload } from '../utils/qrCode';
+import useIsMobile from '../utils/useIsMobile';
 
 const hasNativeDetector = () => typeof window !== 'undefined' && 'BarcodeDetector' in window;
 
 export default function ScanModal({
   title = 'สแกน QR / บาร์โค้ด',
   hint = 'ส่องกล้องที่ป้าย QR หรือยิงด้วยเครื่องสแกน',
-  onScan,          // (parsed) => void | string  — คืน string = ข้อความ error ให้โชว์ (เช่น "ไม่พบเครื่องนี้")
+  footer = null,   // ของที่หน้าอยากโชว์ใต้ผลสแกน (เช่น ตัวนับ "เช็คแล้ว 12/20 คน")
+  onScan,          // (parsed) => void | string | { ok } — string = ข้อความ error (เช่น "ไม่พบเครื่องนี้") · { ok } = ข้อความสำเร็จของหน้าเอง
   onClose,
   closeOnHit = true,
 }) {
@@ -32,6 +34,11 @@ export default function ScanModal({
   const [camErr, setCamErr] = useState('');
   const [err, setErr] = useState('');
   const [ok, setOk] = useState('');
+  const [okMsg, setOkMsg] = useState('');
+  /* 📱 handheld (2026-10-20): ช่องรอสแกนไม่เด้งคีย์บอร์ดบนจอ (`inputMode="none"`) — คีย์บอร์ดกินจอ 360×640 ไปครึ่งหนึ่ง
+     ทั้งที่เครื่องมีหัวสแกนในตัว · ป้ายเลอะ/สแกนไม่ติด → แตะ "⌨️ พิมพ์เอง" เปิดคีย์บอร์ด · จอคอมไม่เปลี่ยน */
+  const isMobile = useIsMobile();
+  const [kbd, setKbd] = useState(false);
 
   const inputRef = useRef(null);
   const videoRef = useRef(null);
@@ -51,11 +58,15 @@ export default function ScanModal({
 
     const problem = onScan?.(parsed);
     if (typeof problem === 'string' && problem) {
-      setErr(problem); setOk('');
+      setErr(problem); setOk(''); setOkMsg('');
       if (navigator.vibrate) navigator.vibrate([80, 60, 80]);
+      /* 🔴 คลุมข้อความเดิมไว้ (27/10) — ไม่งั้นรหัสถัดไปจากเครื่องสแกนไป "ต่อท้าย" ตัวที่ไม่ผ่าน (NOPE999 + 61004 = อ่านผิดทุกใบต่อจากนั้น)
+         คลุมแทนล้าง: คนพิมพ์มือยังแก้ตัวเดิมได้ · ยิงใหม่ = แทนที่ทั้งช่อง */
+      setTimeout(() => inputRef.current?.select(), 0);
       return;
     }
-    setErr(''); setOk(parsed.raw);
+    // คืน { ok: 'ข้อความ' } = สำเร็จพร้อมข้อความของหน้าเอง (เช่น "✓ สมชาย — มางาน") — ใช้กับโหมดสแกนต่อเนื่อง
+    setErr(''); setOk(parsed.raw); setOkMsg(problem && typeof problem === 'object' && problem.ok ? String(problem.ok) : '');
     if (navigator.vibrate) navigator.vibrate(60);
     setTyped('');
     if (closeOnHit) onClose?.();
@@ -197,9 +208,16 @@ export default function ScanModal({
                 setTyped(v);
               }}
               onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); submitTyped(); } }}
-              placeholder="เช่น RB-104 หรือ ESM:M:…"
-              style={{ flex: 1, minWidth: 0, padding: '9px 11px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 14 }}
+              placeholder={isMobile && !kbd ? 'กดปุ่มสแกนข้างเครื่องได้เลย' : 'เช่น RB-104 หรือ ESM:M:…'}
+              inputMode={isMobile && !kbd ? 'none' : undefined}
+              style={{ flex: 1, minWidth: 0, padding: '9px 11px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: isMobile ? 16 : 14 }}
             />
+            {isMobile && !kbd && (
+              <button type="button" className="tbtn" onClick={() => { inputRef.current?.blur(); setKbd(true); setTimeout(() => inputRef.current?.focus(), 30); }}
+                style={{ padding: '9px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontWeight: 700, fontSize: 13.5, cursor: 'pointer', flexShrink: 0 }}>
+                ⌨️ พิมพ์เอง
+              </button>
+            )}
             <button onClick={submitTyped} className="tbtn"
               style={{ padding: '9px 16px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, fontSize: 13.5, cursor: 'pointer', flexShrink: 0 }}>
               ตกลง
@@ -208,7 +226,10 @@ export default function ScanModal({
         </div>
 
         {err && <div style={{ marginTop: 10, fontSize: 13, color: '#ef4444', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: 8, padding: '8px 11px' }}>✕ {err}</div>}
-        {ok && !err && <div style={{ marginTop: 10, fontSize: 13, color: '#22c55e' }}>✓ อ่านได้: <span style={{ fontFamily: 'monospace' }}>{ok}</span></div>}
+        {footer}
+        {ok && !err && (okMsg
+          ? <div style={{ marginTop: 10, fontSize: 15, fontWeight: 800, color: '#22c55e', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.35)', borderRadius: 8, padding: '8px 11px' }}>{okMsg}</div>
+          : <div style={{ marginTop: 10, fontSize: 13, color: '#22c55e' }}>✓ อ่านได้: <span style={{ fontFamily: 'monospace' }}>{ok}</span></div>)}
       </div>
     </div>
   );

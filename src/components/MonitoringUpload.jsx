@@ -91,18 +91,16 @@ export default function MonitoringUpload({ canUpload, canBoard = true, fullName,
       /* 📦 BALANCE ชีทไลน์ปั๊ม = ยอดผลิต ไม่ใช่ที่อยู่ของ (user 09/10) ⇒ ลงคลังตามกฎรับเข้า แบบตั้งต้นเท่านั้น
          ตัวเลือกคลัง = `refStockOf` ตัวเดียวกับจุดเรียกเติม (พาร์ทล็อตสโตร์ = ที่ไลน์ · นอกนั้นตามกฎ)
          🔴 อ่านกฎ/ล็อตไม่ได้ = **ไม่ลงยอดผลิตเลย** (ถอยไปลงที่ไลน์ = บั๊กเดิมกลับมา) */
-      const [ruleR, lotR] = await Promise.all([
-        supabaseDR.from('stock_inflow_rules').select('match_type, match_value, dest_line_name, is_active').eq('is_active', true),
-        fetchAllRows(supabaseDR, 'child_lot_requests', 'child_mat_no', q => q.neq('status', 'cancelled').order('child_mat_no')),
+      const [ruleR] = await Promise.all([
+        supabaseDR.from('stock_inflow_rules').select('match_type, match_value, dest_line_name, is_active, mode').eq('is_active', true),
       ]);
-      const stockRulesOk = !ruleR.error && !lotR.error;
-      if (!stockRulesOk) toast.info(`อ่านกฎรับเข้าคลัง/ล็อตสโตร์ไม่ได้ — รอบนี้ไม่ลงยอดคงเหลือจากชีทไลน์ปั๊ม (ส่วนอื่นนำเข้าได้): ${(ruleR.error || lotR.error).message}`);
+      const stockRulesOk = !ruleR.error;
+      if (!stockRulesOk) toast.info(`อ่านกฎรับเข้าคลังไม่ได้ — รอบนี้ไม่ลงยอดคงเหลือจากชีทไลน์ปั๊ม (ส่วนอื่นนำเข้าได้): ${ruleR.error.message}`);
       const rules = ruleR.data || [];
-      const lotMats = new Set((lotR.data || []).map(r => String(r.child_mat_no ?? '').trim()).filter(Boolean));
       const fgDest = inflowDestOf('1', rules.filter(r => r.match_type === 'prefix'));
       const stockLocOf = (mat, line) => {
         if (!stockRulesOk) return null;
-        const ref = refStockOf(mat, { lineName: line, products: prodRows || [], rules, lotMats });
+        const ref = refStockOf(mat, { lineName: line, products: prodRows || [], rules });
         if (ref.kind === 'produce' && fgDest && ref.loc === fgDest) return null;   // คลัง FG = ชีทลูกค้าเป็นเจ้าของยอด
         return { loc: ref.loc, seedOnly: true };
       };

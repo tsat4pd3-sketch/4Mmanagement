@@ -51,7 +51,7 @@ export function percentile(nums = [], p = 0.5) {
  * ⚠️ ต้องรัดช่วงใบให้อยู่ในกะก่อนเสมอ — ใบที่ยืนยันย้อนหลังข้ามวันจะได้ CT ช้าเกินจริงมหาศาล
  *    (บั๊ก 17/09: window 24.5 ชม. · ดู oee.js §7)
  */
-export function observedCtOfOrder(order, { session, downtimes = [], breakPolicies = [], processType = null }) {
+export function observedCtOfOrder(order, { session, downtimes = [], breakPolicies = [], processType = null, lineRules = null }) {
   const qty = Number(order?.qty_ok ?? order?.qty ?? 0);
   if (!(qty >= SAMPLE_RULES.MIN_QTY_PER_ORDER)) return null;
   if (!order?.opened_at || !order?.confirmed_at) return null;
@@ -64,6 +64,8 @@ export function observedCtOfOrder(order, { session, downtimes = [], breakPolicie
   const brkIv = breakIntervalsIn({
     policies: breakPolicies, startMs, endMs,
     workDate: session?.work_date, shift: session?.shift || 'day', processType,
+    shiftEndMs: frame?.endMs ?? null,   // 🔚 กรอบนี้คือช่วงของ "ใบผลิต" ไม่ใช่ทั้งกะ (พักท้ายกะต้องยึดปลายกะ)
+    lineName: session?.line_name ?? null, lineRules,   // 🏭 ข้อยกเว้นเวลาพักรายไลน์ (20/10)
   });
 
   // นาที downtime ที่ทับช่วงใบนี้ — ตัดส่วนที่ทับเวลาพักออกก่อน ไม่งั้นหักซ้ำ (กฎเหล็ก oee.js §3.1)
@@ -89,13 +91,13 @@ export function observedCtOfOrder(order, { session, downtimes = [], breakPolicie
  *   rows: [{ order, session, downtimes }]  (downtimes = ของกะนั้น)
  * คืน { matNo, n, nDropped, p25, p50, p75, ctStd, gapPct, flags[] }
  */
-export function summarizeObservedCt(matNo, rows = [], { ctStd = 0, breakPolicies = [], processType = null } = {}) {
+export function summarizeObservedCt(matNo, rows = [], { ctStd = 0, breakPolicies = [], processType = null, lineRules = null } = {}) {
   const samples = [];
   let nDropped = 0, nTooFast = 0, nTooSlow = 0;
 
   for (const r of rows) {
     const ct = observedCtOfOrder(r.order, {
-      session: r.session, downtimes: r.downtimes || [], breakPolicies, processType,
+      session: r.session, downtimes: r.downtimes || [], breakPolicies, processType, lineRules,
     });
     if (ct == null) { nDropped++; continue; }
     if (ctStd > 0) {

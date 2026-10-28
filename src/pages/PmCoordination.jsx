@@ -25,6 +25,12 @@ import FilterBar from '../components/FilterBar';
 import Segmented from '../components/Segmented';
 import { ALL } from '../utils/filterLabels';
 import { DeleteButton } from '../components/IconButton';
+import SearchInput from '../components/SearchInput';
+import LineScopeSelect from '../components/LineScopeSelect';
+import { scopeLines as pickerLines } from '../components/LineSelect';   // ตาข่าย "กรองแล้วไม่เหลือ = ไม่กรอง"
+import { fetchAllPages, fetchByIds } from '../utils/fetchByIds';
+import { planTaskSummary } from '../utils/pmCoordSummary';
+import useIsMobile from '../utils/useIsMobile';   // 🔴 เพดาน 1000 แถว + URL ยาว (กฎเหล็ก DB ข้อ 5)
 loadDocForms(); // ทะเบียนเอกสาร — แถบเลขฟอร์มท้ายใบพิมพ์ (ตั้งที่ /doc-forms · 2026-07-30)
 
 /* ── แผนประสานงาน PM ข้ามวัน (MTN แจ้ง Production) — 2026-07-23 ──────────────
@@ -49,6 +55,9 @@ function todayStr() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 const beDate = (s) => { if (!s) return '-'; const [y, m, d] = String(s).slice(0, 10).split('-'); return `${+d}/${+m}/${+y + 543}`; };
+// คอลัมน์ที่จอใช้จริง (กฎ egress ข้อ 11 — เดิม select('*'))
+const PLAN_COLS = 'id, title, machine_id, machine_no, machine_name, line_name, remark, pm_plan_id, status, created_by, created_at, updated_at'
+const TASK_COLS = 'id, plan_id, task_date, team, description, time_from, time_to, is_support, done, sort_order'
 const teamLabelOf = (key) => (pmTeamsSync().find(t => t.key === key) || {}).label || key || '';
 
 export default function PmCoordination() {
@@ -64,6 +73,11 @@ export default function PmCoordination() {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(null); // plan object (new/edit modal)
   const [fStatus, setFStatus] = useState('active'); // active = ยังไม่ done/cancelled
+  const [fQ, setFQ] = useState('');
+  const [fScope, setFScope] = useState({ section: '', line: '', names: null });
+  const [openId, setOpenId] = useState(null);       // แถวที่กางดูรายการงาน
+  const [loadErr, setLoadErr] = useState('');       // 🔴 โหลดไม่ได้ ≠ "ไม่มีแผน"
+  const reqRef = useRef(0);
 
   useEffect(() => { loadPmTeams().then(setTeams); }, []);
 
@@ -75,27 +89,37 @@ export default function PmCoordination() {
   }, [lines, role, lineId, scopeSecs]);
 
   const load = useCallback(async () => {
-   // ⚠️ ตัวที่ผ่าน cachedMaster คืน **array ตรงๆ** (ไม่ใช่ { data }) — destructure ต้องไม่ห่อ { data: … }
-    const [{ data: ln }, mc, { data: pl }, plansRes, clsRes] = await Promise.all([
+    /* 🔴 19-20/10 audit หน้า PM — เดิมไม่อ่าน error เลย (`.catch(() => ({ data: [] }))`) + `.in()` ดิบ
+       ⇒ RLS/เน็ตล้ม = จอขึ้น "ไม่มีแผน" · แผน PM ที่ผูกไว้หายเงียบ · งานในแผนหาย (ตัวนับ 0/0)
+       ตอนนี้: fetchByIds/fetchAllPages + เก็บ error ทุกตัวขึ้นแถบเตือน · กดรีเฟรชซ้อน = คำตอบเก่าห้ามทับ */
+    const req = ++reqRef.current;
+    // ⚠️ ตัวที่ผ่าน cachedMaster คืน **array ตรงๆ** (ไม่ใช่ { data }) — destructure ต้องไม่ห่อ { data: … }
+    const [{ data: ln }, mc, plRes, plansRes, clsRes] = await Promise.all([
       loadLinesRes(), // LINE_COLUMNS = ครบตามสัญญา <LineSelect> (2026-09-07)
       /* cache master (2026-09-16) — ทะเบียนเปลี่ยนเดือนละไม่กี่ครั้ง · ล้างด้วย invalidateTable() ที่หน้าแก้ทะเบียน */
-      cachedMaster('machines:pmcoord', async () => mrows(await supabaseDR.from('machines').select('id, machine_no, machine_name, line_name, equipment_kind').eq('is_active', true).order('sort_order'))),
-      supabaseDR.from('pm_coordination_plans').select('*').order('created_at', { ascending: false }).limit(500),
-      // แผน PM เดิม (best-effort — ยังไม่มีตารางก็ไม่พัง)
-      supabaseDR.from('pm_plans').select('id, checklist_id, next_due_date, plan_type, interval_days, usage_metric, usage_threshold, cycle_basis').eq('is_active', true).then(r => r).catch(() => ({ data: [] })),
-      supabaseDR.from('checklists').select('id, equipment_id, department, name, frequency').eq('module', 'mtn').then(r => r).catch(() => ({ data: [] })),
-    ]);
-    setLines(ln || []); setMachines(mc || []);
+      cachedMaster('machines:pmcoord', async () => mrows(await supabaseDR.from('machines').select('id, machine_no, machine_name, line_name, equipment_kind').eq('is_active', true).order('sort_order'))).catch(e => { throw new Error('ทะเบียนเครื่อง: ' + (e?.message || e)); }),
+      supabaseDR.from('pm_coordination_plans').select(PLAN_COLS).order('created_at', { ascending: false }).limit(500),
+      fetchAllPages(() => supabaseDR.from('pm_plans').select('id, checklist_id, next_due_date, plan_type, interval_days, usage_metric, usage_threshold, cycle_basis').eq('is_active', true)),
+      fetchAllPages(() => supabaseDR.from('checklists').select('id, equipment_id, department, name, frequency').eq('module', 'mtn')),
+    ]).catch(e => [{ data: [] }, [], { data: [], error: e }, { rows: [] }, { rows: [] }]);
+    const errs = [];
+    if (plRes.error) errs.push(`แผนประสานงาน: ${plRes.error.message || plRes.error}`);
+    if (plansRes.error || plansRes.truncated) errs.push(`แผน PM: ${plansRes.error || 'อ่านได้ไม่ครบ'}`);
+    if (clsRes.error || clsRes.truncated) errs.push(`รายการตรวจ: ${clsRes.error || 'อ่านได้ไม่ครบ'}`);
+    const pl = plRes.data || [];
     // ผูกแผน PM → อุปกรณ์ (checklist_id → checklists.equipment_id) · equipment เป็น jig (รวม shadow) หรือ machine
-    const clById = {}; (clsRes?.data || []).forEach(c => { clById[c.id] = c; });
+    const clById = {}; (clsRes.rows || []).forEach(c => { clById[c.id] = c; });
     const mcById = {}; (mc || []).forEach(m => { mcById[m.id] = m; });
-    const eqIds = [...new Set((clsRes?.data || []).map(c => c.equipment_id).filter(Boolean))];
-    let jigById = {};
-    if (eqIds.length) {
-      const { data: jigs } = await supabaseDR.from('jigs').select('id, name, line_name, machine_id, machine_no').in('id', eqIds).then(r => r).catch(() => ({ data: [] }));
-      (jigs || []).forEach(j => { jigById[j.id] = j; });
-    }
-    const upcoming = (plansRes?.data || []).map(p => {
+    const eqIds = [...new Set((clsRes.rows || []).map(c => c.equipment_id).filter(Boolean))];
+    const [jigRes, tkRes] = await Promise.all([
+      fetchByIds(eqIds, ids => supabaseDR.from('jigs').select('id, name, line_name, machine_id, machine_no').in('id', ids)),
+      fetchByIds(pl.map(p => p.id), ids => supabaseDR.from('pm_coordination_tasks').select(TASK_COLS).in('plan_id', ids)),
+    ]);
+    if (req !== reqRef.current) return;
+    if (jigRes.error || jigRes.truncated) errs.push(`ทะเบียนอุปกรณ์: ${jigRes.error || 'อ่านได้ไม่ครบ'}`);
+    if (tkRes.error || tkRes.truncated) errs.push(`งานในแผน: ${tkRes.error || 'อ่านได้ไม่ครบ'}`);
+    const jigById = {}; (jigRes.rows || []).forEach(j => { jigById[j.id] = j; });
+    const upcoming = (plansRes.rows || []).map(p => {
       const cl = clById[p.checklist_id]; if (!cl) return null;
       const jig = jigById[cl.equipment_id]; const mc2 = mcById[cl.equipment_id] || (jig?.machine_id ? mcById[jig.machine_id] : null);
       const machine_name = mc2?.machine_name || jig?.name || null;
@@ -106,14 +130,10 @@ export default function PmCoordination() {
       return { plan_id: p.id, next_due_date: p.next_due_date, department: cl.department, checklist_name: cl.name, frequency: cl.frequency,
         machine_id: mc2?.id || null, machine_no, machine_name, line_name, is_usage: isUsage, interval_days: p.interval_days || null, cycle_basis: p.cycle_basis || 'calendar' };
     }).filter(Boolean).sort((a, b) => String(a.next_due_date || '9999').localeCompare(String(b.next_due_date || '9999')));
-    setPmPlans(upcoming);
-    const planIds = (pl || []).map(p => p.id);
-    let tmap = {};
-    if (planIds.length) {
-      const { data: tk } = await supabaseDR.from('pm_coordination_tasks').select('*').in('plan_id', planIds).order('sort_order');
-      (tk || []).forEach(t => { (tmap[t.plan_id] ||= []).push(t); });
-    }
-    setPlans(pl || []); setTasksByPlan(tmap); setLoading(false);
+    const tmap = {};
+    [...(tkRes.rows || [])].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)).forEach(t => { (tmap[t.plan_id] ||= []).push(t); });
+    setLines(ln || []); setMachines(mc || []); setPmPlans(upcoming);
+    setPlans(pl); setTasksByPlan(tmap); setLoadErr(errs.join(' · ')); setLoading(false);
   }, []);
   useEffect(() => { load(); }, [load]);
 
@@ -133,16 +153,32 @@ export default function PmCoordination() {
 
   const pmPlanById = useMemo(() => { const m = {}; pmPlans.forEach(p => { m[p.plan_id] = p; }); return m; }, [pmPlans]);
 
+  const today = todayStr();
+  const needle = fQ.trim().toLowerCase();
   const shown = useMemo(() => {
     return (plans || []).filter(p => {
       /* 🔴 15/10: เดิมเขียน `p.line_name &&` ⇒ แผนที่ไม่ระบุไลน์ **หลุดตัวกรองทั้งหมด**
          ทุกส่วนงานเห็น/แก้/ลบได้ · ตอนนี้แผนไม่ระบุไลน์ = ของกลาง (ยังเห็น) แต่ปุ่มแก้มีด่านของมันเอง */
       if (scopeLines && p.line_name && !scopeLines.has(p.line_name)) return false;
+      // ตัวกรองไลน์ที่เลือกเอง (รวมไลน์ลูก) — แผนไม่ระบุไลน์ = แผนระดับโรงงาน ⇒ หลุดเมื่อเลือกไลน์ (นับไว้บอกบนจอ)
+      if (fScope.names?.length && !fScope.names.includes(p.line_name)) return false;
+      if (needle && ![p.title, p.machine_name, p.machine_no, p.line_name, p.remark, ...(tasksByPlan[p.id] || []).map(t => t.description)]
+        .some(v => String(v ?? '').toLowerCase().includes(needle))) return false;
       if (fStatus === 'active') return !['done', 'cancelled'].includes(p.status);
       if (fStatus === 'all') return true;
       return p.status === fStatus;
-    });
-  }, [plans, scopeLines, fStatus]);
+    }).map(p => ({ p, sum: planTaskSummary(tasksByPlan[p.id] || [], today) }))
+      // ค้างเลยวันขึ้นก่อน → งานถัดไปใกล้สุด → ไม่มีงานค้างไว้ท้าย
+      .sort((a, b) => (b.sum.overdue > 0) - (a.sum.overdue > 0)
+        || String(a.sum.next?.task_date || '9999').localeCompare(String(b.sum.next?.task_date || '9999')));
+  }, [plans, scopeLines, fStatus, fScope, needle, tasksByPlan, today]);
+  const noLineHidden = fScope.names?.length ? plans.filter(p => !p.line_name).length : 0;
+  /* 🔴 ลิสต์ของ picker ต้อง "ไม่ตาย" — ส่วนงานที่ไม่มีไลน์ผลิตสังกัด (QA · Planning&Store · ฝั่งช่าง)
+     กรองแล้วเหลือ 0 ⇒ dropdown ว่าง = ใช้ฟีเจอร์ไม่ได้ทั้งหน้า (เคสจริง 26/10 · ด่าน line-picker-never-dead)
+     ⇒ ผ่าน `scopeLines()` ของกลาง (components/LineSelect.jsx) = "กรองแล้วไม่เหลือ = ไม่กรอง" */
+  const scopeLineList = useMemo(
+    () => pickerLines(lines, { role, lineId, sections: scopeSecs }),
+    [lines, role, lineId, scopeSecs]);
 
   // ช่วง Production Support ที่กำลังจะถึง (is_support · วันนี้เป็นต้นไป · แผนที่ยังไม่ done/cancelled) — เตือน Production ล่วงหน้า
   const upcomingSupport = useMemo(() => {
@@ -180,9 +216,19 @@ export default function PmCoordination() {
           { value: 'all', label: ALL.status }, { value: 'active', label: 'กำลังดำเนินการ' },
           { value: 'notified', label: '📤 แจ้งแล้ว' }, { value: 'done', label: '✅ เสร็จ' },
         ]} />
+        <LineScopeSelect lines={scopeLineList} section={fScope.section} line={fScope.line}
+          onChange={(section, line, info) => setFScope({ section, line, names: info?.lines?.length ? info.lines : (section || line ? [line || section] : null) })} />
+        <SearchInput value={fQ} onChange={setFQ} fields="ชื่อแผน / เครื่อง / ไลน์ / งาน" />
         <span className="spacer" />
-        <span className="filter-count">{shown.length} แผน</span>
+        <span className="filter-count">{shown.length} แผน{noLineHidden ? ` · ซ่อนแผนไม่ระบุไลน์ ${noLineHidden}` : ''}</span>
+        <button type="button" onClick={load} style={{ ...btnGhost, padding: '5px 11px', fontSize: 12 }}>🔄 รีเฟรช</button>
       </FilterBar>
+
+      {loadErr && (
+        <div role="alert" style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 8, border: '1px solid #ef4444', color: '#ef4444', fontSize: 12.5, fontWeight: 700 }}>
+          ⚠️ โหลดข้อมูลไม่ครบ ({loadErr}) — รายการ/ตัวนับด้านล่าง<u>อาจขาด</u> ไม่ได้แปลว่าไม่มีแผน · กด 🔄 รีเฟรช
+        </div>
+      )}
 
       {upcomingSupport.length > 0 && (
         <div style={{ marginBottom: 14, padding: '12px 14px', borderRadius: 12, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.4)' }}>
@@ -200,30 +246,47 @@ export default function PmCoordination() {
         </div>
       )}
 
-      <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 420px), 1fr))' }}>
-        {shown.map(p => (
-          <PlanCard key={p.id} plan={p} tasks={tasksByPlan[p.id] || []} canManage={canManage} teams={teams}
-            pmPlan={p.pm_plan_id ? pmPlanById[p.pm_plan_id] : null}
-            fullName={fullName} lines={lines} onEdit={() => setEditing({ ...p, tasks: tasksByPlan[p.id] || [] })} onReload={load} />
-        ))}
-        {!shown.length && <div style={{ color: 'var(--muted)', padding: 24 }}>ไม่มีแผน</div>}
-      </div>
+      {/* 🗂️ ตาราง (UI §6.25 · 20/10) — แผนโตตามการใช้งาน · 1 แผน = 1 บรรทัด · กดแถว = กางรายการงาน + ปุ่มคำสั่ง
+          แถวแดง = มีงานเลยวันแล้วยังไม่ติ๊ก (แผนที่ยังไม่ปิด) */}
+      {!shown.length ? (
+        <div style={{ color: 'var(--muted)', padding: 24, textAlign: 'center' }}>
+          {plans.length ? 'ไม่มีแผนที่ตรงกับตัวกรอง' : loadErr ? 'อ่านข้อมูลไม่ได้ — ดูแถบแดงด้านบน' : 'ยังไม่มีแผน'}
+        </div>
+      ) : (
+        <div className="table-sticky" style={{ overflowX: 'auto', maxHeight: 'calc(100vh - 260px)', overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 12 }}>
+          <table className="rec-list" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
+            <thead>
+              <tr>{['แผน', 'เครื่อง', 'ไลน์', 'ช่วงวันที่', 'งานถัดไป', 'ความคืบหน้า', 'สถานะ', ''].map((h, i) => <th key={i} style={{ textAlign: 'left' }}>{h}</th>)}</tr>
+            </thead>
+            <tbody>
+              {shown.map(({ p, sum }) => (
+                <PlanRow key={p.id} plan={p} sum={sum} tasks={tasksByPlan[p.id] || []} canManage={canManage} teams={teams}
+                  open={openId === p.id} onToggle={() => setOpenId(v => (v === p.id ? null : p.id))}
+                  pmPlan={p.pm_plan_id ? pmPlanById[p.pm_plan_id] : null}
+                  fullName={fullName} lines={lines} onEdit={() => setEditing({ ...p, tasks: tasksByPlan[p.id] || [] })} onReload={load} />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {editing && <PlanModal plan={editing} {...cp} />}
     </Page>
   );
 }
 
-/* ── การ์ดแผน ─────────────────────────────── */
-function PlanCard({ plan: p, tasks, canManage, pmPlan, fullName, onEdit, onReload, lines = [] }) {
+/* ── แถวแผน (ตาราง) + แถวกาง ─────────────────── */
+function PlanRow({ plan: p, sum, open, onToggle, tasks, canManage, pmPlan, fullName, onEdit, onReload, lines = [] }) {
   /* 🔐 ชั้นที่ 3 — แผนผูกไลน์ ⇒ เปลี่ยนสถานะ/ลบ/stamp แผน PM ได้เฉพาะไลน์ส่วนงานตัวเอง (audit 15/10)
      แผนที่ไม่ระบุไลน์ = ตัดสินไม่ได้ ⇒ ไม่บล็อก (แผนระดับโรงงานมีจริง) */
-  const { role, section: homeSection, sections: mySections, allUnits } = useContext(UserContext);
-  const planWrite = canWriteLine({ role, section: homeSection, sections: mySections, allUnits }, p?.line_name, lines);
+  const { role, section: homeSection, sections: mySections, allUnits, respCostCenters, scopeIdx } = useContext(UserContext);
+  const planWrite = canWriteLine({ role, section: homeSection, sections: mySections, allUnits, respCostCenters, scopeIdx }, p?.line_name, lines);
   const m = STATUS_META[p.status] || STATUS_META.draft;
-  const doneN = tasks.filter(t => t.done).length;
 
   const notify = async () => {
+    /* 🔐 แจ้ง Production = ส่งข้อความออกไปข้างนอก + เขียนสถานะของแผน ⇒ ต้องเป็นไลน์ในขอบเขตเรา
+       (เดิมไม่มีด่าน: เห็นแผนของส่วนงานอื่น = กดแจ้งแทนเขาได้ แล้วสถานะเปลี่ยนด้วย) */
+    if (!planWrite.ok) { toast.info(writeBlockText(planWrite, { what: 'แผน PM ของไลน์นี้' })); return; }
     try {
       /* functions.invoke ไม่ throw — คืน { error } (QC 05/10 · เดิมกลืน แล้วขึ้น "แจ้งแล้ว" ทั้งที่ไม่มีใครได้รับ) */
       const { error: eFn } = await supabase.functions.invoke('send-notification', {
@@ -266,6 +329,8 @@ function PlanCard({ plan: p, tasks, canManage, pmPlan, fullName, onEdit, onReloa
     onReload();
   };
   const toggleTask = async (t) => {
+    // 🔐 ติ๊ก/ปลดติ๊กงานในแผน = เขียนแถวของแผนนั้น ⇒ ด่านเดียวกับเปลี่ยนสถานะแผน
+    if (!planWrite.ok) { toast.info(writeBlockText(planWrite, { what: 'งานในแผน PM ของไลน์นี้' })); return; }
     checkWriteRows(await supabaseDR.from('pm_coordination_tasks').update({ done: !t.done }).eq('id', t.id).select('id'), 'ติ๊กงาน');
     onReload();
   };
@@ -281,55 +346,80 @@ function PlanCard({ plan: p, tasks, canManage, pmPlan, fullName, onEdit, onReloa
     onReload();
   };
 
+  const active = !['done', 'cancelled'].includes(p.status);
+  const nx = sum.next;
+  /* 📱 ตารางกว้างกว่าจอ (ปัดแนวนอน) ⇒ แถวกางต้องเกาะซ้ายและกว้างเท่าจอ ไม่งั้นปุ่มคำสั่งไปอยู่นอกจอขวา
+     (มือถือเท่านั้น — จอคอมไม่แตะ) */
+  const isMobile = useIsMobile();
+  const detailBox = isMobile ? { position: 'sticky', left: 0, width: 'calc(100vw - 52px)' } : null;
   return (
-    <div style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 14, background: 'var(--card)' }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 6 }}>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{p.title}</div>
-          <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
-            🔧 {[p.machine_name, p.machine_no].filter(Boolean).join(' ') || '—'}{p.line_name ? ` · 🏭 ${p.line_name}` : ''}
-          </div>
-          {p.pm_plan_id && <span style={{ display: 'inline-block', marginTop: 4, fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: 'rgba(74,144,224,0.15)', color: '#4a90e0' }}>🔗 ผูกแผน PM</span>}
-        </div>
-        <span style={{ fontSize: 11.5, fontWeight: 700, padding: '3px 9px', borderRadius: 20, background: m.color + '22', color: m.color, whiteSpace: 'nowrap' }}>{m.label}</span>
-      </div>
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, margin: '8px 0' }}>
-        {tasks.map(t => (
-          <div key={t.id} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 12.5,
-            padding: '5px 8px', borderRadius: 8, background: t.is_support ? 'rgba(239,68,68,0.10)' : 'var(--bg2)',
-            border: t.is_support ? '1px solid rgba(239,68,68,0.4)' : '1px solid var(--border)' }}>
-            <input type="checkbox" checked={!!t.done} onChange={() => canManage && toggleTask(t)} disabled={!canManage} style={{ width: 'auto', marginTop: 2, cursor: canManage ? 'pointer' : 'default' }} />
-            <div style={{ flex: 1, opacity: t.done ? 0.55 : 1, textDecoration: t.done ? 'line-through' : 'none' }}>
-              <b style={{ color: t.is_support ? '#ef4444' : 'var(--accent2)' }}>{beDate(t.task_date)}</b>
-              {(t.time_from || t.time_to) && <span style={{ color: 'var(--muted)' }}> {t.time_from || ''}{t.time_to ? '–' + t.time_to : ''} น.</span>}
-              {t.team && <span style={{ fontSize: 11, color: 'var(--muted)' }}> · {teamLabelOf(t.team)}</span>}
-              <div style={{ color: 'var(--text)' }}>{t.is_support ? '⚠️ ' : ''}{t.description}</div>
+    <>
+      <tr onClick={onToggle} tabIndex={0} onKeyDown={e => { if (e.key === 'Enter') onToggle() }} aria-expanded={open}
+        className={active && sum.overdue > 0 ? 'rec-row-alert' : undefined}>
+        <td style={{ maxWidth: 280 }}>
+          <div style={{ fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={p.title}>{p.title}</div>
+          {p.pm_plan_id && <span style={{ fontSize: 11, fontWeight: 700, color: '#4a90e0' }}>🔗 ผูกแผน PM</span>}
+        </td>
+        <td style={{ whiteSpace: 'nowrap' }}>{[p.machine_name, p.machine_no].filter(Boolean).join(' · ') || '—'}</td>
+        <td style={{ whiteSpace: 'nowrap', color: p.line_name ? 'var(--text2)' : 'var(--muted)' }}>{p.line_name || 'ไม่ระบุไลน์'}</td>
+        <td style={{ whiteSpace: 'nowrap', color: 'var(--text2)' }}>{sum.from ? (sum.from === sum.to ? beDate(sum.from) : `${beDate(sum.from)} – ${beDate(sum.to)}`) : '—'}</td>
+        <td style={{ whiteSpace: 'nowrap' }}>
+          {sum.overdue > 0 && active && <div style={{ color: '#ef4444', fontWeight: 700, fontSize: 12 }}>ค้าง {sum.overdue} งาน (เลยวัน)</div>}
+          {nx ? <span style={{ color: nx.is_support ? '#ef4444' : 'var(--accent2)', fontWeight: 700 }}>{nx.is_support ? '⚠️ ' : ''}{beDate(nx.task_date)}</span>
+            : <span style={{ color: 'var(--muted)' }}>—</span>}
+        </td>
+        <td style={{ whiteSpace: 'nowrap', color: sum.total && sum.doneN === sum.total ? '#22c55e' : 'var(--text2)' }}>{sum.doneN}/{sum.total} งาน</td>
+        <td><span style={{ fontSize: 11.5, fontWeight: 700, padding: '3px 9px', borderRadius: 20, background: m.color + '22', color: m.color, whiteSpace: 'nowrap' }}>{m.label}</span></td>
+        <td style={{ color: 'var(--muted)', width: 24 }}>{open ? '▾' : '▸'}</td>
+      </tr>
+      {open && (
+        <tr style={{ cursor: 'default' }}>
+          <td colSpan={8} style={{ background: 'var(--bg2)', padding: '10px 14px' }} onClick={e => e.stopPropagation()}>
+           <div style={detailBox}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 8 }}>
+              {tasks.map(t => (
+                <div key={t.id} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 12.5,
+                  padding: '5px 8px', borderRadius: 8, background: t.is_support ? 'rgba(239,68,68,0.10)' : 'var(--card)',
+                  border: t.is_support ? '1px solid rgba(239,68,68,0.4)' : '1px solid var(--border)' }}>
+                  <input type="checkbox" checked={!!t.done} onChange={() => canManage && toggleTask(t)} disabled={!canManage} style={{ width: 'auto', marginTop: 2, cursor: canManage ? 'pointer' : 'default' }} />
+                  <div style={{ flex: 1, opacity: t.done ? 0.55 : 1, textDecoration: t.done ? 'line-through' : 'none', whiteSpace: 'normal' }}>
+                    <b style={{ color: t.is_support ? '#ef4444' : 'var(--accent2)' }}>{beDate(t.task_date)}</b>
+                    {(t.time_from || t.time_to) && <span style={{ color: 'var(--muted)' }}> {t.time_from || ''}{t.time_to ? '–' + t.time_to : ''} น.</span>}
+                    {t.team && <span style={{ fontSize: 11, color: 'var(--muted)' }}> · {teamLabelOf(t.team)}</span>}
+                    <span style={{ color: 'var(--text)' }}> — {t.is_support ? '⚠️ ' : ''}{t.description}</span>
+                  </div>
+                </div>
+              ))}
+              {!tasks.length && <div style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่มีรายการงาน</div>}
             </div>
-          </div>
-        ))}
-        {!tasks.length && <div style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่มีรายการงาน</div>}
-      </div>
-
-      {p.remark && <div style={{ fontSize: 12, color: '#ef4444', margin: '4px 0', padding: '5px 8px', borderRadius: 6, background: 'rgba(239,68,68,0.08)' }}>📌 <b>Remark:</b> {p.remark}</div>}
-
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8, alignItems: 'center' }}>
-        <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{doneN}/{tasks.length} ขั้น</span>
-        <button onClick={() => printPlan(p, tasks)} style={{ ...btnGhost, padding: '5px 11px', fontSize: 11.5, marginLeft: 'auto' }}>🖨️ พิมพ์</button>
-        {canManage && <>
-          <button onClick={notify} style={{ ...btnGhost, padding: '5px 11px', fontSize: 11.5 }}>📤 แจ้ง Production</button>
-          <button onClick={onEdit} style={{ ...btnGhost, padding: '5px 11px', fontSize: 11.5 }}>✏️ แก้ไข</button>
-          {p.status !== 'done' && <button onClick={() => setStatus('done')} style={{ ...btnGhost, padding: '5px 11px', fontSize: 11.5, color: '#22c55e' }}>✓ เสร็จ</button>}
-          <DeleteButton onClick={del} title="ลบ" />
-        </>}
-      </div>
-    </div>
+            {p.remark && <div style={{ fontSize: 12, color: '#ef4444', margin: '4px 0 8px', padding: '5px 8px', borderRadius: 6, background: 'rgba(239,68,68,0.08)', whiteSpace: 'normal' }}>📌 <b>Remark:</b> {p.remark}</div>}
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+              <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>สร้างโดย {p.created_by || '—'}</span>
+              <button onClick={() => printPlan(p, tasks)} style={{ ...btnGhost, padding: '5px 11px', fontSize: 11.5, marginLeft: 'auto' }}>🖨️ พิมพ์</button>
+              {canManage && <>
+                <button onClick={notify} style={{ ...btnGhost, padding: '5px 11px', fontSize: 11.5 }}>📤 แจ้ง Production</button>
+                <button onClick={onEdit} style={{ ...btnGhost, padding: '5px 11px', fontSize: 11.5 }}>✏️ แก้ไข</button>
+                {p.status !== 'done' && <button onClick={() => setStatus('done')} style={{ ...btnGhost, padding: '5px 11px', fontSize: 11.5, color: '#22c55e' }}>✓ เสร็จ</button>}
+                <DeleteButton onClick={del} title="ลบ" />
+              </>}
+            </div>
+           </div>
+          </td>
+        </tr>
+      )}
+    </>
   );
 }
 
 /* ── modal สร้าง/แก้แผน ─────────────────────── */
 function PlanModal({ plan, lines, machines, teams, pmPlans = [], scopeLines, fullName, onClose, onSaved }) {
   const createdIdRef = useRef(null);   // id หัวแผนที่สร้างไปแล้วในหน้าต่างนี้ (แผนใหม่)
+  /* 🔐 ชั้นที่ 3 — แผนผูกไลน์ ⇒ สร้าง/แก้ได้เฉพาะไลน์ในขอบเขตเรา
+     🔴 แก้แผน = เขียนลง "ไลน์ที่เลือกใหม่" ⇒ ต้องผ่านทั้งไลน์เดิมและไลน์ปลายทาง
+        (เช็คแต่ไลน์เดิม = ย้ายแผนของเราไปแขวนไลน์ส่วนงานอื่นได้ · คลาสเดียวกับ /org-setup)
+     แผนที่ไม่ระบุไลน์ = ตัดสินไม่ได้ ⇒ ไม่บล็อก (แผนระดับโรงงานมีจริง — ตรงกับการ์ดแผน) */
+  const uctx = useContext(UserContext);
+  const wctx = { role: uctx.role, section: uctx.section, sections: uctx.sections, allUnits: uctx.allUnits, respCostCenters: uctx.respCostCenters, scopeIdx: uctx.scopeIdx };
   const [f, setF] = useState({
     title: plan.title || '', machine_id: plan.machine_id || '', machine_no: plan.machine_no || '',
     machine_name: plan.machine_name || '', line_name: plan.line_name || '', remark: plan.remark || '',
@@ -378,6 +468,13 @@ function PlanModal({ plan, lines, machines, teams, pmPlans = [], scopeLines, ful
 
   const save = async () => {
     if (!f.title.trim()) return toast.error('กรอกหัวเรื่องงาน');
+    // ด่านชั้น 2 ก่อนเขียน — ต้นทาง (แผนเดิม) และปลายทาง (ไลน์ที่เลือกอยู่ตอนนี้)
+    if (!plan._new) {
+      const srcWrite = canWriteLine(wctx, plan?.line_name, lines);
+      if (!srcWrite.ok) return toast.info(writeBlockText(srcWrite, { what: 'แผน PM ของไลน์นี้' }));
+    }
+    const dstWrite = canWriteLine(wctx, f.line_name, lines);
+    if (!dstWrite.ok) return toast.info(writeBlockText(dstWrite, { what: `แผน PM ของไลน์ "${f.line_name}"` }));
     // เลขเครื่องที่ไม่ผูกทะเบียน = ผังเครื่อง/Andon หาไม่เจอ — ถามเฉพาะแผนใหม่หรือเมื่อเพิ่งเปลี่ยนเลข (แผนเก่าที่ค้างมาก่อนยังแก้ส่วนอื่นได้)
     // 2026-09-07 เปลี่ยนจากบล็อกแข็งเป็นยืนยัน — เก็บเป็น text (machine_id null) ไม่ทำข้อมูลอื่นเสีย
     if (f.machine_no && !f.machine_id && (plan._new || f.machine_no !== (plan.machine_no || ''))

@@ -1,6 +1,8 @@
 import { useState, useEffect, useContext, useMemo, useRef } from 'react';
 import { LPA_LAYERS } from '../utils/prodRoutine';
 import { canWriteLine, writeBlockText } from '../utils/writeScope';
+/* 🔴 ด่านชั้น 2 ของ stale-response race — กฎ+ข้อความอยู่ใน utils/staleView.js (pure · มีเทส) */
+import { viewKey, isStale, staleBlockText } from '../utils/staleView';
 import useIsMobile from '../utils/useIsMobile';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
@@ -8,7 +10,7 @@ import { can, canDelete as canDeleteUtil } from '../utils/permissions';
 import { toast } from '../components/Toast';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
-import LineSelect from '../components/LineSelect';
+import LineSelect, { scopeLines as pickerLines } from '../components/LineSelect';
 import PersonSelect from '../components/PersonSelect';
 import useColumnHistory from '../utils/useColumnHistory';
 import SelectOrFree from '../components/SelectOrFree';
@@ -31,6 +33,8 @@ import { loadLpaQuestionRefs, lpaQuestionBlockMessage, lpaDeleteConfirmText, sav
 /* 🔴 ช่องว่างในตารางตรวจรายวันต้องแยกได้ว่า "ไม่ได้ตรวจ / ไม่ได้ผลิต / ไม่มีแผนตรวจ" (13/10 · คำสั่ง user) */
 import { checkDayState, CHECK_DAY_META, CHECK_DAY_LEGEND, summarizeCheckDays, checkDaysNote } from '../utils/dailyCheckDay';
 import { loadRunDays, ranOn } from '../utils/runDays';
+import { useDraftAutosave, loadDraft, clearDraft } from '../utils/formDraft';   // 📝 ร่างในเครื่อง (มือถือ · 22/10)
+import DraftRestoreBar from '../components/DraftRestoreBar';
 
 /* ══════════════════════════════════════════════════════════════
    📋 Layer Process Audit (LPA) — paperless แทนฟอร์มกระดาษ 2 ใบ:
@@ -118,14 +122,24 @@ function SignPadModal({ title, onCancel, onDone }) {
   );
 }
 
+/** ภาพรวมคำตอบ+สถานีของใบ LPA เป็นสตริง — เทียบว่า "แก้แล้วยังไม่บันทึก" ไหม (ร่างในเครื่อง) */
+const lpaSnap = (answers, station) => JSON.stringify([
+  Object.entries(answers || {}).filter(([, v]) => v?.answer || v?.note).map(([k, v]) => [k, v.answer || '', v.note || '']).sort(),
+  station || '',
+]);
+
 export default function LayerProcessAudit() {
   const { role, lineId: userLineId, sections: scopeSecs = [], fullName,
-          section: homeSection, allUnits } = useContext(UserContext);
+          section: homeSection, allUnits, respCostCenters, scopeIdx } = useContext(UserContext);
   /* 🔐 ทะเบียนคำถาม LPA — ข้อที่ `line_name` ว่าง = **ข้อกลางใช้ทุกไลน์ทั้งโรงงาน**
      ⇒ แก้/ปิด/ลบ ต้องมีใบผ่าน `scope:all_units` (audit 15/10) · ข้อของไลน์ = ตามส่วนงานไลน์นั้น
      เดิมมุมมอง "🌐 ทะเบียนกลาง" ให้ใครก็ได้ที่ถือ lpa:manage ลบข้อกลางทิ้งได้ = หายจากใบตรวจทุกไลน์ */
-  const qCtx = { role, section: homeSection, sections: scopeSecs, allUnits };
+  const qCtx = { role, section: homeSection, sections: scopeSecs, allUnits, respCostCenters, scopeIdx };
   const qWrite = (q) => canWriteLine(qCtx, q?.line_name, lines, { unknownTarget: 'block' });
+  /* 🔐 ชั้นที่ 3 ของ "ใบตรวจ + แผนเดือน/ไตรมาส" — เดิมมีด่านเฉพาะทะเบียนคำถาม (audit 20/10)
+     ⇒ ใบตรวจ/แผนของไลน์ส่วนงานอื่น เปิด `?line=` แล้วบันทึกทับได้ (เอกสาร ISO ของหน่วยงานเขา)
+     · วัดจากข้อมูลจริง 843 ใบ: ทุกใบคนเขียนอยู่ส่วนงานเดียวกับไลน์ (หรือถือใบผ่านข้ามหน่วย)
+       ⇒ ด่านนี้ไม่กระทบงานที่ทำกันอยู่จริงเลย · ไลน์ไม่รู้ส่วนงาน = ไม่บล็อก (ตัดสินไม่ได้) */
   const qGuard = (q, what) => {
     const w = qWrite(q);
     if (w.ok) return true;
@@ -160,6 +174,12 @@ export default function LayerProcessAudit() {
   const [calReady, setCalReady] = useState(false);
 
   const [selLine, setSelLine] = useState('');
+  const lineWrite = canWriteLine(qCtx, selLine, lines);
+  const lineGuard = (what) => {
+    if (lineWrite.ok) return true;
+    toast.error(writeBlockText(lineWrite, { what }));
+    return false;
+  };
   const [selShift, setSelShift] = useState(getCurrentShift());
   const [selMonth, setSelMonth] = useState(getWorkDate().slice(0, 7));
 
@@ -169,20 +189,55 @@ export default function LayerProcessAudit() {
   /* วันที่ไลน์นี้ "เปิดกะจริง" ในเดือนที่ดูอยู่ — `null` = อ่านไม่สำเร็จ (⇒ ช่องเป็น ❔ ห้ามเดาว่าไม่ผลิต) */
   const [runs, setRuns] = useState(null);
   const [monthAudits, setMonthAudits] = useState([]); // audits+answers ของเดือนที่เลือก
+  /* 🔴 อ่านใบ/แผนของเดือนไม่สำเร็จ = ตารางต้องเป็น "ไม่รู้" ทั้งเดือน **ห้ามบีบเป็น "ขาดตรวจ"** */
+  const [monthErr, setMonthErr] = useState('');
   const [savingPlan, setSavingPlan] = useState(false);
   /* แท็บแผน = มองทีละไตรมาส (3 เดือน) — คำสั่ง user 2026-07-20 */
   const [qData, setQData] = useState({});   // { 'YYYY-MM': { plan: row|null, days: {day: pd} } }
   const [qAudits, setQAudits] = useState([]); // audits ทั้งไตรมาส (ใช้ทำสถานะ ● ตรวจแล้ว)
+  /* 🔴 อ่านใบ/แผนไตรมาสไม่สำเร็จ = ห้ามทำเป็น "⊗ เลยกำหนด ยังไม่ตรวจ" (ใบนี้พิมพ์ไปเซ็น FM-QMR-008) */
+  const [qErr, setQErr] = useState('');
   const [qHeader, setQHeader] = useState({ leader_name: '', supervisor_name: '', manager_name: '', gm_name: '', stations: '' });
 
   /* audit record */
   const [auditDate, setAuditDate] = useState(getWorkDate());
   const [auditLayer, setAuditLayer] = useState(role === 'manager' ? 'manager' : role === 'supervisor' ? 'supervisor' : role === 'engineer' || role === 'qa' ? 'supervisor' : 'leader');
   const [draft, setDraft] = useState(null);          // { id?, station, auditor_name, auditor_sig_url, answers: {qid:{answer,note}} }
+  /* 🔴 อ่านใบเดิมไม่สำเร็จ = **ห้ามเดาว่า "ยังไม่มีใบ"** (ดูในเอฟเฟกต์โหลดใบ) — เก็บเหตุผลไว้เขียนบนจอ */
+  const [draftErr, setDraftErr] = useState('');
+  /* 📝 ร่างในเครื่อง (มือถือ · 22/10 · audit handheld ข้อ 4) — ใบตรวจบันทึกทีเดียวตอนท้าย ⇒ เน็ตหลุด/รีโหลด/
+     เตะออกหมดกะ/สลับไลน์-กะ-วัน-ชั้น = คำตอบที่ติ๊กไว้หายทั้งใบ · เก็บร่างต่อชุด line|shift|date|layer|คนกรอก
+     แล้วถามกู้คืนตอนเปิดชุดเดิม (utils/formDraft.js) · `loadedSnapRef` = คำตอบที่โหลดจากฐาน (ไว้ดูว่า "แก้แล้วยังไม่บันทึก" ไหม) */
+  const loadedSnapRef = useRef('');
+  const [pendingDraft, setPendingDraft] = useState(null);
   const [auditPlanStations, setAuditPlanStations] = useState([]); // สถานีในแผนเดือนที่ตรวจ — ตัวเลือกช่อง "Station ที่ตรวจ"
   const [wsNames, setWsNames] = useState([]);        // จุดงาน (workstations) ของครอบครัวไลน์ที่เลือก — ตัวเลือกสถานี (2026-09-07)
   const [savingAudit, setSavingAudit] = useState(false);
   const [showSignPad, setShowSignPad] = useState(false);
+
+  /* ══ 🔴 กันคำตอบของคิวรีเก่ามาทับจอ — stale-response race (QC audit ข้อ ④ · 2026-10-19) ══════
+     คิวรีที่ยิงไปแล้ว **ยกเลิกไม่ได้** ⇒ ต้อง "ทิ้งคำตอบที่มาช้า" ทีหลัง ไม่ใช่หวังว่ามันจะมาตามลำดับ
+     (กฎเหล็กการเขียน DB ข้อ 4 · ของเดิมใน `fetchStationNames` ทำถูกอยู่แล้ว — ที่เหลือไม่มีด่าน)
+
+     🔴 ทำไมหน้านี้ร้ายกว่าจออื่น: คำถาม `common` (`line_name = null`) **ใช้ `question_id` ร่วมกันทุกไลน์**
+        ⇒ ใบร่างของไลน์ A ที่มาช้าทับจอที่กำลังเลือกไลน์ B แล้วกดบันทึก = **คำตอบของไลน์ A ไปลงเป็นของไลน์ B
+        แบบไม่มี error** (ส่วนข้อเฉพาะไลน์จะชน PK แล้วเด้ง error งงๆ) · LPA เป็นบันทึก audit ตามระบบคุณภาพ
+        ⇒ เขียนผิดใบ = แก้ไม่ได้ และคนตรวจไม่รู้ตัว
+     🔴 อีกอาการที่เงียบกว่า: ใบร่างที่มาช้า **ทับคำตอบที่คนกำลังติ๊กอยู่** (กดไปแล้ว 10 ข้อ หายหมด)
+
+     กันเป็น 2 ชั้น (ชั้นเดียวไม่พอ — ชั้นแรกกันไม่ให้เพี้ยน ชั้นสองกันไม่ให้ "เพี้ยนแล้วเขียนลง DB"):
+       ① ทุกจุดที่ `setState` หลัง `await` เทียบ "คีย์ที่ยิงไป" กับ "คีย์ที่จออยู่ตอนนี้" — ไม่ตรง = ทิ้ง
+       ② `draft` พก `key` ของตัวเองมาด้วย · `saveAudit`/`deleteAudit` **ปฏิเสธถ้าคีย์ไม่ตรงจอ** (fail-closed) */
+  const monthKey = viewKey(selLine, selShift, selMonth);
+  const draftKey = viewKey(selLine, selShift, auditDate, auditLayer);
+  const monthKeyRef = useRef(monthKey);
+  const draftKeyRef = useRef(draftKey);
+  /* คีย์ของ "ข้อมูลที่โหลดมาแล้วและกำลังแก้อยู่" — แผนเดือน (`plan`/`planDays`) และแผนไตรมาส (`qData`)
+     ก็ผสม "id ที่โหลดมา" กับ "ไลน์ที่เลือกอยู่" เวลา upsert เหมือนใบตรวจ ⇒ ต้องมีด่านชั้น 2 เหมือนกัน */
+  const [monthLoadedKey, setMonthLoadedKey] = useState('');
+  const [qLoadedKey, setQLoadedKey] = useState('');
+  monthKeyRef.current = monthKey;   // เขียนทุก render โดยตั้งใจ = "คีย์ที่จอกำลังแสดงอยู่ตอนนี้"
+  draftKeyRef.current = draftKey;
 
   /* questions master */
   const [qEditing, setQEditing] = useState(null);
@@ -195,14 +250,12 @@ export default function LayerProcessAudit() {
   const [docReady, setDocReady] = useState(false); // ทะเบียนเอกสารโหลดแล้ว → subtitle/ปุ่มดึงเลขฟอร์มจาก registry
 
   /* ── scope มาตรฐาน: leader → family ไลน์ตัวเอง · role อื่นตาม sections ── */
+  /* 🔴 ลิสต์ของ picker ต้อง "ไม่ตาย" — ส่วนงานที่ไม่มีไลน์ผลิตสังกัด (QA · Planning&Store · ฝั่งช่าง)
+     กรองแล้วเหลือ 0 ⇒ dropdown ว่าง = ใช้ฟีเจอร์ไม่ได้ทั้งหน้า (เคสจริง 26/10 · ด่าน line-picker-never-dead)
+     ⇒ ผ่าน `scopeLines()` ของกลาง (components/LineSelect.jsx) ที่มีตาข่าย "กรองแล้วไม่เหลือ = ไม่กรอง"
+     ⚠️ **ตัวกรองรายการยัง fail-closed เหมือนเดิม** — คนละแกน ห้ามยุบรวม */
   const visibleLines = useMemo(() => {
-    let arr = lines;
-    if (role === 'leader' && userLineId) {
-      const fam = getLineFamilyNames(lines, Number(userLineId) || userLineId);
-      arr = lines.filter(l => fam.includes(l.name));
-    } else if (scopeSecs.length) {
-      arr = lines.filter(l => inSectionScope(scopeSecs, l.section));
-    }
+    const arr = pickerLines(lines, { role, lineId: userLineId, sections: scopeSecs });
     return [...arr].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
   }, [lines, role, userLineId, scopeSecs]);
 
@@ -266,7 +319,10 @@ export default function LayerProcessAudit() {
     return () => { alive = false; };
   }, [selLine, lines]); // eslint-disable-line react-hooks/exhaustive-deps
   const fillStationsFromWorkstations = async () => {
+    if (!lineGuard('แผนตรวจ LPA ของไลน์นี้')) return;
+    const key = monthKeyRef.current;
     const { list, error } = await fetchStationNames();
+    if (monthKeyRef.current !== key) return;   // เปลี่ยนไลน์ระหว่างรอ = จุดงานของไลน์เก่า ห้ามเททับหัวแผนใหม่
     if (error) { toast.error('ดึงจุดงานไม่สำเร็จ: ' + error.message); return; }
     if (!list.length) { toast.info('ไลน์นี้ยังไม่มีจุดงานในผัง — ตั้งจุดงานที่หน้า Line Setup ก่อน'); return; }
     setQHeader(prev => ({ ...prev, stations: list.join('\n') }));
@@ -276,14 +332,23 @@ export default function LayerProcessAudit() {
   /* ── โหลดแผน + ผลตรวจของเดือน เมื่อเปลี่ยน line/shift/month ── */
   const loadMonth = async () => {
     if (!selLine) return;
+    const key = monthKey;   // คีย์ที่ "คิวรีชุดนี้" ถามไป — เทียบกับจอตอนคำตอบกลับมา
     const first = dateOf(selMonth, 1);
     const last = dateOf(selMonth, daysInMonth(selMonth));
-    const [{ data: pl }, { data: aud }, runRes] = await Promise.all([
+    const [plRes, audRes, runRes] = await Promise.all([
       supabase.from('lpa_plans').select('*, lpa_plan_days(*)').eq('line_name', selLine).eq('shift', selShift).eq('month_key', selMonth).maybeSingle(),
       supabase.from('lpa_audits').select('*, lpa_audit_answers(*)').eq('line_name', selLine).eq('shift', selShift).gte('audit_date', first).lte('audit_date', last).order('audit_date'),
       // ตารางกะอยู่ **คนละ project (DR)** — ล้มแล้วต้องเป็น "ไม่รู้" ไม่ใช่ "ไม่ได้ผลิต"
       loadRunDays({ lineNames: [selLine], from: first, to: last }),
     ]);
+    if (monthKeyRef.current !== key) return;   // 🔴 เปลี่ยนไลน์/กะ/เดือนไปแล้ว = ทิ้งคำตอบชุดนี้
+    setMonthLoadedKey(key);
+    /* 🔴🔴 ฝั่ง DR (ตารางกะ) ระวังไว้ดีแล้วด้วย `loadRunDays` — แต่**ฝั่ง Main ที่ตอบว่า "ตรวจแล้วหรือยัง"
+       เดิมแกะแต่ `{ data }` ทิ้ง error** (QC audit 20/10) ⇒ คิวรีล้มครั้งเดียว = ทั้งเดือนขึ้น "ขาดตรวจ"
+       และตัวหาร % คิดจากใบ 0 ใบ = **จอกล่าวหาหน้างานว่าไม่ตรวจ** (ทิศที่อันตรายที่สุดของจอนี้) */
+    const { data: pl } = plRes, { data: aud } = audRes;
+    setMonthErr(audRes.error ? `โหลดใบตรวจของเดือนไม่สำเร็จ: ${audRes.error.message}`
+      : plRes.error ? `โหลดแผนตรวจของเดือนไม่สำเร็จ: ${plRes.error.message}` : '');
     setRuns(runRes);
     setPlan(pl || null);
     const dm = {};
@@ -353,8 +418,18 @@ export default function LayerProcessAudit() {
     toast.success(`เติมแผนอัตโนมัติแล้ว: Leader ${working.length} วัน · SV ${svDays.length} ครั้ง · MGR วันที่ ${mgrDay}`);
   };
 
+  /** 🔴 ชั้นที่ 2 ของแผน — ข้อมูลที่กำลังแก้เป็นของ (ไลน์/กะ/เดือน) ที่เลือกอยู่จริงไหม
+   *  ไม่ตรง = **ห้ามเขียน** (เพราะ `row` ผสม `id` ที่โหลดมา กับ `line_name: selLine` ที่เลือกอยู่
+   *  ⇒ เขียนทับแผนของไลน์อื่น หรือชน PK แล้วเด้ง error งงๆ) */
+  const monthMismatch = (loadedKey) => (isStale(loadedKey, monthKey)
+    ? staleBlockText({ what: 'แผนที่แสดงอยู่', unitWord: 'ไลน์/กะ/เดือน' })
+    : null);
+
   const savePlan = async () => {
     if (!canManage) return;
+    if (!lineGuard('แผนตรวจ LPA ของไลน์นี้')) return;
+    const mis = monthMismatch(monthLoadedKey);
+    if (mis) { toast.error(mis); return; }
     setSavingPlan(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -398,12 +473,18 @@ export default function LayerProcessAudit() {
   const qMonths = useMemo(() => quarterMonths(selMonth), [selMonth]);
   const loadQuarter = async () => {
     if (!selLine) return;
+    const key = monthKey;
     const mks = quarterMonths(selMonth);
     const first = dateOf(mks[0], 1), last = dateOf(mks[2], daysInMonth(mks[2]));
-    const [{ data: pls }, { data: auds }] = await Promise.all([
+    const [plsRes, audsRes] = await Promise.all([
       supabase.from('lpa_plans').select('*, lpa_plan_days(*)').eq('line_name', selLine).eq('shift', selShift).in('month_key', mks),
       supabase.from('lpa_audits').select('id, audit_date, layer, auditor_name').eq('line_name', selLine).eq('shift', selShift).gte('audit_date', first).lte('audit_date', last),
     ]);
+    /* 🔴 อ่านไม่สำเร็จ ≠ "ยังไม่ตรวจ" — ใบไตรมาสนี้ถูกพิมพ์ไปเซ็น ⇒ ช่อง ⊗ ที่มาจากคิวรีล่ม
+       = กล่าวหาหน้างานบนกระดาษที่ยื่นออกไปแล้ว (คลาสเดียวกับตารางเดือน · QC audit 20/10) */
+    const { data: pls } = plsRes, { data: auds } = audsRes;
+    const qe = audsRes.error ? `โหลดผลตรวจของไตรมาสไม่สำเร็จ: ${audsRes.error.message}`
+      : plsRes.error ? `โหลดแผนตรวจของไตรมาสไม่สำเร็จ: ${plsRes.error.message}` : '';
     const map = {};
     mks.forEach(mk => {
       const pl = (pls || []).find(p => p.month_key === mk) || null;
@@ -411,11 +492,15 @@ export default function LayerProcessAudit() {
       (pl?.lpa_plan_days || []).forEach(d => { days[d.day] = d; });
       map[mk] = { plan: pl, days };
     });
+    if (monthKeyRef.current !== key) return;   // 🔴 ทิ้งคำตอบที่มาช้า (ไม่งั้นแผนไตรมาสของไลน์เก่าค้างบนจอไลน์ใหม่)
+    setQLoadedKey(key);
+    setQErr(qe);
     setQData(map);
     setQAudits(auds || []);
     const firstPl = mks.map(mk => map[mk].plan).find(Boolean);
     let stations = firstPl?.stations || '';
     if (!stations && canManage) { const { list } = await fetchStationNames(); stations = list.join('\n'); }
+    if (monthKeyRef.current !== key) return;   // await รอบที่ 2 (ดึงจุดงาน) ⇒ ต้องเทียบอีกครั้ง
     setQHeader({
       leader_name: firstPl?.leader_name || '', supervisor_name: firstPl?.supervisor_name || '',
       manager_name: firstPl?.manager_name || '', gm_name: firstPl?.gm_name || '', stations,
@@ -434,6 +519,8 @@ export default function LayerProcessAudit() {
     const dstr = dateOf(mk, day);
     const planned = qData[mk]?.days?.[day]?.[planKey];
     if (qAuditFor(dstr, layerKey)) return { sym: '●', color: '#22c55e', title: 'ตรวจแล้ว' };
+    /* 🔴 อ่านผลตรวจไม่ได้ = "ไม่รู้" ห้ามขึ้น ⊗ (เลยกำหนด) — จอ/ใบพิมพ์จะกล่าวหาคนจากคิวรีที่ล่ม */
+    if (qErr && planned) return { sym: '?', color: 'var(--amber)', title: 'อ่านผลตรวจไม่ได้ — ยังบอกไม่ได้ว่าตรวจแล้วหรือยัง' };
     if (planned && dstr < getWorkDate()) return { sym: '⊗', color: '#ef4444', title: 'เลยกำหนด — ยังไม่ตรวจ' };
     if (planned) return { sym: '○', color: 'var(--text2)', title: 'วางแผนตรวจ' };
     return null;
@@ -475,6 +562,9 @@ export default function LayerProcessAudit() {
   };
 
   const saveQuarter = async () => {
+    if (!lineGuard('แผนตรวจรายไตรมาสของไลน์นี้')) return;
+    const misQ = monthMismatch(qLoadedKey);
+    if (misQ) { toast.error(misQ); return; }
     if (!canManage) return;
     setSavingPlan(true);
     try {
@@ -525,11 +615,26 @@ export default function LayerProcessAudit() {
 
   useEffect(() => {
     if (!selLine || tab !== 'audit') return;
+    const key = draftKey;   // ใบร่างนี้เป็นของ line|shift|date|layer ชุดไหน
     (async () => {
-      const [{ data: existing }, { data: pl }] = await Promise.all([
+      const [exRes, plRes] = await Promise.all([
         supabase.from('lpa_audits').select('*, lpa_audit_answers(*)').eq('line_name', selLine).eq('shift', selShift).eq('audit_date', auditDate).eq('layer', auditLayer).maybeSingle(),
         supabase.from('lpa_plans').select('id, lpa_plan_days(day, station)').eq('line_name', selLine).eq('shift', selShift).eq('month_key', auditDate.slice(0, 7)).maybeSingle(),
       ]);
+      const { data: existing } = exRes, { data: pl } = plRes;
+      /* 🔴 ทิ้งคำตอบที่มาช้า — ไม่งั้นใบร่างของไลน์ก่อนหน้าทับจอ แล้วคำตอบข้อ common ไปลงผิดไลน์เงียบๆ
+         (และทับคำตอบที่คนกำลังติ๊กอยู่ด้วย) */
+      if (draftKeyRef.current !== key) return;
+      /* 🔴🔴 **อ่านใบเดิมล้ม ≠ "ยังไม่มีใบ"** (QC audit 20/10) — เดิมแกะแต่ `{ data }` ทิ้ง error
+         ⇒ เน็ตสะดุดครั้งเดียว = ได้ใบร่างเปล่า `answers: {}` · กดบันทึก = `upsert` ลงแถวเดิม
+           (onConflict คุมให้) แล้ว `delete` คำตอบทั้งใบทิ้ง แล้ว insert แค่ชุดใหม่
+         = **คำตอบที่ตรวจไปแล้วหายถาวร** — คลาสเดียวกับที่ `savedOnlyAnswers` ตั้งใจกันไว้
+         ⇒ fail-closed: ไม่ตั้ง draft เลย (`draftMismatch()` บล็อกการบันทึกให้อยู่แล้ว) + เขียนบนจอว่าทำไม */
+      if (exRes.error) {
+        setDraftErr('โหลดใบตรวจเดิมไม่สำเร็จ: ' + exRes.error.message);
+        setDraft(null); return;
+      }
+      setDraftErr('');
       const planStation = pl?.lpa_plan_days?.find(d => d.day === Number(auditDate.slice(8, 10)))?.station || '';
       setAuditPlanStations([...new Set((pl?.lpa_plan_days || []).map(d => (d.station || '').trim()).filter(Boolean))]);
       if (existing) {
@@ -537,12 +642,35 @@ export default function LayerProcessAudit() {
         /* เก็บ `question_text` ที่ snapshot ไว้ตอนตรวจด้วย — ข้อที่ถูกลบ/ปิดใช้ทีหลังจะไม่มีคำถาม
            ให้ดูอีกแล้ว ถ้าไม่พกข้อความมา ใบเก่าจะหายไปเงียบๆ (ดู savedOnlyAnswers) */
         (existing.lpa_audit_answers || []).forEach(a => { if (a.question_id) ans[a.question_id] = { answer: a.answer, note: a.note || '', text: a.question_text || '' }; });
-        setDraft({ id: existing.id, station: existing.station || planStation, auditor_name: existing.auditor_name || fullName || '', auditor_sig_url: existing.auditor_sig_url || null, answers: ans });
+        setDraft({ key, id: existing.id, station: existing.station || planStation, auditor_name: existing.auditor_name || fullName || '', auditor_sig_url: existing.auditor_sig_url || null, answers: ans });
+        loadedSnapRef.current = lpaSnap(ans, existing.station || planStation);
       } else {
-        setDraft({ id: null, station: planStation, auditor_name: fullName || '', auditor_sig_url: myProfile?.signature_url || null, answers: {} });
+        setDraft({ key, id: null, station: planStation, auditor_name: fullName || '', auditor_sig_url: myProfile?.signature_url || null, answers: {} });
+        loadedSnapRef.current = lpaSnap({}, planStation);
       }
+      const saved = isMobile ? loadDraft(`lpa:${key}:${fullName || ''}`) : null;
+      setPendingDraft(saved && lpaSnap(saved.data?.answers, saved.data?.station) !== loadedSnapRef.current ? saved : null);
     })();
-  }, [selLine, selShift, auditDate, auditLayer, tab, myProfile, fullName]);
+  }, [selLine, selShift, auditDate, auditLayer, tab, myProfile, fullName]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** 🔴 ชั้นที่ 2 — ใบร่างบนจอเป็นของ "ที่เลือกอยู่ตอนนี้" จริงไหม (ยังโหลด = ยังไม่ให้เขียน)
+   *  คืนข้อความเหตุผล หรือ `null` เมื่อตรงกัน · **ห้ามเขียน DB ตอนไม่ตรง** (fail-closed)
+   *  ป้องกันกรณีที่ใบร่างเพี้ยนมาแล้วก่อนด่านชั้นแรก (เช่นเปิดจอทิ้งไว้แล้วเน็ตสะดุด) */
+  const draftMismatch = () => {
+    if (!draft) return 'ใบตรวจยังโหลดไม่เสร็จ — รอสักครู่แล้วลองอีกครั้ง';
+    return isStale(draft.key, draftKey)
+      ? staleBlockText({ what: 'ใบที่แสดงอยู่', unitWord: 'ไลน์/กะ/วันที่/ชั้น' })
+      : null;
+  };
+
+  const lpaDraftKey = isMobile && draft && draft.key === draftKey ? `lpa:${draft.key}:${fullName || ''}` : null;
+  const lpaDirty = !!lpaDraftKey && !pendingDraft && lpaSnap(draft.answers, draft.station) !== loadedSnapRef.current;
+  useDraftAutosave(lpaDraftKey, { answers: draft?.answers || {}, station: draft?.station || '' }, lpaDirty);
+  const restoreLpaDraft = () => {
+    const d = pendingDraft?.data; if (!d) return;
+    setDraft(prev => (prev ? { ...prev, answers: { ...prev.answers, ...(d.answers || {}) }, station: d.station || prev.station } : prev));
+    setPendingDraft(null);
+  };
 
   const setAnswer = (qid, answer) => setDraft(prev => ({ ...prev, answers: { ...prev.answers, [qid]: { ...(prev.answers[qid] || {}), answer } } }));
   const setAnsNote = (qid, note) => setDraft(prev => ({ ...prev, answers: { ...prev.answers, [qid]: { ...(prev.answers[qid] || {}), note } } }));
@@ -553,6 +681,8 @@ export default function LayerProcessAudit() {
   });
 
   const handleSignDone = async (blob) => {
+    if (!lineGuard('ใบตรวจ LPA ของไลน์นี้')) return;
+    const keyAtSign = draftKeyRef.current;
     setShowSignPad(false);
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -567,6 +697,8 @@ export default function LayerProcessAudit() {
         const oldPath = decodeURIComponent(old.split('/signatures/')[1] || '').split('?')[0];
         if (oldPath.startsWith(`${user.id}/`)) supabase.storage.from('signatures').remove([oldPath]).catch(() => {});
       }
+      /* ใบร่างเปลี่ยนไปแล้วระหว่างอัปโหลด = ลายเซ็นนี้ไม่ใช่ของใบที่เห็นอยู่ ห้ามแปะทับ */
+      if (draftKeyRef.current !== keyAtSign) { toast.info('เปลี่ยนใบตรวจระหว่างบันทึกลายเซ็น — เซ็นใหม่ในใบที่ต้องการ'); return; }
       setDraft(prev => ({ ...prev, auditor_sig_url: url }));
       toast.success('บันทึกลายเซ็นแล้ว');
     } catch (e) { toast.error('เกิดข้อผิดพลาด: ' + e.message); }
@@ -574,6 +706,9 @@ export default function LayerProcessAudit() {
 
   const saveAudit = async () => {
     if (!canRecord) return;
+    if (!lineGuard('ใบตรวจ LPA ของไลน์นี้')) return;
+    const mis = draftMismatch();
+    if (mis) { toast.error(mis); return; }
     const unanswered = auditQuestions.filter(q => !draft.answers[q.id]?.answer);
     if (unanswered.length) { toast.error(`ยังตอบไม่ครบ ${unanswered.length} ข้อ (ข้อแรก: ${unanswered[0].seq}. ${unanswered[0].question.slice(0, 40)}...)`); return; }
     const needNote = auditQuestions.filter(q => ['N', 'T'].includes(draft.answers[q.id]?.answer) && !draft.answers[q.id]?.note?.trim());
@@ -620,6 +755,8 @@ export default function LayerProcessAudit() {
       });
       toast.success(`บันทึกผลตรวจ LPA ${thDate(auditDate)} เรียบร้อย`);
       setDraft(prev => ({ ...prev, id: saved.id }));
+      loadedSnapRef.current = lpaSnap(draft.answers, draft.station);   // บันทึกแล้ว = ไม่มีของค้าง ⇒ ร่างถูกล้างเอง
+      if (lpaDraftKey) clearDraft(lpaDraftKey);
       loadMonth();
     } catch (e) { toast.error('บันทึกไม่สำเร็จ: ' + e.message); }
     finally { setSavingAudit(false); }
@@ -627,6 +764,9 @@ export default function LayerProcessAudit() {
 
   const deleteAudit = async () => {
     if (!draft?.id || !mayDelete) return;
+    if (!lineGuard('ใบตรวจ LPA ของไลน์นี้')) return;
+    const mis = draftMismatch();
+    if (mis) { toast.error(mis); return; }
     if (!window.confirm(`ลบผลตรวจ ${thDate(auditDate)} ${SHIFT_META[selShift]} ชั้น ${LAYERS.find(l => l.key === auditLayer)?.label}?`)) return;
     const { error } = await supabase.from('lpa_audits').delete().eq('id', draft.id);
     if (error) { toast.error('ลบไม่สำเร็จ: ' + error.message); return; }
@@ -944,6 +1084,14 @@ ${issuesHtml}
 
       {selectorBar}
 
+      {/* 🔒 ไลน์ที่เลือกอยู่นอกส่วนงานเรา — ดูได้ แต่บันทึกไม่ได้ · ซ่อนปุ่มได้ ห้ามซ่อนเหตุผล (UI §6.9) */}
+      {!lineWrite.ok && selLine && (
+        <div className="card" style={{ padding: '9px 12px', marginBottom: 10, fontSize: 12, color: 'var(--text2)',
+          background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.35)' }}>
+          🔒 {writeBlockText(lineWrite, { what: `ใบตรวจ/แผน LPA ของไลน์ "${selLine}"` })}
+        </div>
+      )}
+
       {/* ═════════ แผนตรวจ — มองทีละไตรมาส (3 เดือน) ═════════ */}
       {tab === 'plan' && (
         <div className="card" style={{ padding: 16 }}>
@@ -953,6 +1101,12 @@ ${issuesHtml}
             <div style={{ fontWeight: 800, fontSize: 15, color: 'var(--text)' }}>ไตรมาส Q{quarterOf(selMonth)} · {monthLabel(qMonths[0])} – {monthLabel(qMonths[2])}</div>
             <button onClick={() => setSelMonth(shiftMonth(qMonths[0], 3))} style={btnGhost}>ไตรมาสถัดไป ▶</button>
           </div>
+          {qErr && (
+            <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 8, fontSize: 12.5,
+              background: 'var(--card)', border: '1px solid #ef4444', color: '#ef4444' }}>
+              ⚠ {qErr} — ช่องที่วางแผนไว้แสดงเป็น <b>?</b> (ยังบอกไม่ได้ว่าตรวจแล้วหรือยัง) <b>อย่าเพิ่งพิมพ์ใบนี้ไปเซ็น</b>
+            </div>
+          )}
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10, marginBottom: 12 }}>
             {[['leader_name', 'Leader'], ['supervisor_name', 'Supervisor'], ['manager_name', 'Manager'], ['gm_name', 'GM Plant']].map(([k, label]) => (
               <div key={k}>
@@ -1047,6 +1201,15 @@ ${issuesHtml}
       {/* ═════════ บันทึกผลตรวจ ═════════ */}
       {tab === 'audit' && (
         <div className="card" style={{ padding: 16 }}>
+          {/* 🔴 โหลดใบเดิมไม่ได้ = บอกตรงๆ + ห้ามให้ฟอร์มเปล่าเดินต่อ (ห้ามเงียบ · กฎความซื่อสัตย์ของจอ) */}
+          {draftErr && (
+            <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 8, fontSize: 12.5,
+              background: 'var(--card)', border: '1px solid #ef4444', color: '#ef4444' }}>
+              ⚠ {draftErr} — <b>ยังบันทึกไม่ได้</b> (ถ้าบันทึกทับตอนนี้ คำตอบที่เคยตรวจไว้จะหาย) · ลองเปลี่ยนวัน/ไลน์แล้วกลับมาใหม่
+            </div>
+          )}
+          <DraftRestoreBar draft={pendingDraft} what="ใบตรวจ LPA ชุดนี้" onRestore={restoreLpaDraft}
+            onDiscard={() => { if (lpaDraftKey) clearDraft(lpaDraftKey); setPendingDraft(null); }} />
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 12 }}>
             <div>
               <div style={lb}>วันที่ตรวจ</div>
@@ -1204,12 +1367,14 @@ ${issuesHtml}
         const todayStr = getWorkDate();
         const dayStateOf = (d) => {
           const ds = dateOf(selMonth, d);
+          /* 🔴 อ่านใบ/แผนของเดือนไม่ได้ = ส่ง `planned`/`ran` เป็น null ⇒ `checkDayState` คืน `unknown`
+             (วันหยุด/วันอนาคตยังรู้อยู่ จึงปล่อยให้ตัดสินตามเดิม) — ห้ามกลายเป็น "ขาดตรวจ" */
           return checkDayState({
-            hasResult: !!leaderAud[d],
+            hasResult: monthErr ? false : !!leaderAud[d],
             isFuture:  ds > todayStr,
             isOff:     isHoliday(ds),
-            planned:   plan ? !!planDays[d]?.plan_leader : false,
-            ran:       ranOn(runs, ds, selShift),
+            planned:   monthErr ? null : (plan ? !!planDays[d]?.plan_leader : false),
+            ran:       monthErr ? null : ranOn(runs, ds, selShift),
           });
         };
         const dayStates = daysArr.map(dayStateOf);
@@ -1229,7 +1394,12 @@ ${issuesHtml}
                 <div style={{ marginTop: 3, fontSize: 12, color: sum.missed ? 'var(--red)' : 'var(--muted)' }}>
                   {checkDaysNote(sum)}{sum.pct != null && <> · ความครบ <b>{sum.pct}%</b></>}
                 </div>
-                {!plan && (
+                {monthErr && (
+                  <div style={{ marginTop: 3, fontSize: 11.5, color: '#ef4444', fontWeight: 700 }}>
+                    ⚠ {monthErr} — ตารางเดือนนี้แสดงเป็น "ไม่รู้" ทั้งเดือน (ไม่ได้แปลว่าขาดตรวจ)
+                  </div>
+                )}
+                {!plan && !monthErr && (
                   <div style={{ marginTop: 3, fontSize: 11.5, color: 'var(--amber)' }}>
                     ⚠️ เดือนนี้ยังไม่มีแผนตรวจของ {selLine} ({SHIFT_META[selShift]}) — บอกไม่ได้ว่าวันไหนต้องตรวจ
                     จึงยังไม่นับวันขาดตรวจ · ไปตั้งที่แท็บ <b>แผนตรวจ</b>

@@ -35,20 +35,31 @@ const ACCEPTED = {
   MorningMeeting: 'ไว้เปิดจอประชุม ไม่ใช่จอมือถือ (user 23/09)',
 };
 
+/* ═══ 🔭 โปรไฟล์ที่ต้องกวาด (2026-10-26) ═══
+   เดิมสวีปนี้ยิง `role=admin` อย่างเดียวมาตลอด ⇒ **จอมือถือ + บัญชีที่มีขอบเขตส่วนงาน
+   ไม่เคยถูกกวาดเลยแม้แต่ครั้งเดียว** — ซึ่งเป็นบัญชีของคนส่วนใหญ่ในโรงงาน
+   (คนละคลาสกับ crashsweep: นั่นจับ "หน้าพัง" · อันนี้จับ "หน้าไม่พังแต่ใช้ไม่ได้"
+    และ layout ของหน้าขึ้นกับว่าเห็นกี่ไลน์/กี่แผง ⇒ ขอบเขตเปลี่ยน = layout เปลี่ยน)
+   🔴 ห้ามถอดโปรไฟล์ออกเพื่อให้สวีปเร็วขึ้น — เวลาที่ประหยัดได้คือเวลาที่หน้างานจ่ายแทน */
+const PROFILES = [
+  { key: 'admin',  q: 'role=admin',                      label: 'admin (ไม่จำกัดขอบเขต)' },
+  { key: 'scoped', q: 'role=supervisor&sections=PD1',     label: 'supervisor + ขอบเขต PD1' },
+];
+
 const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
 const p0 = await b.newPage({ ...TZ });
 await p0.goto('http://localhost:5199/audit/index.html'); await p0.waitForTimeout(1200);
 const PAGES = await p0.evaluate(() => window.__PAGES); await p0.close();
 
 const bad = [];
-for (const name of PAGES) {
+for (const [prof, name] of PROFILES.flatMap(pr => PAGES.map(n => [pr, n]))) {
   const p = await b.newPage({ viewport: VIEW, isMobile: true, hasTouch: true, ...TZ });
   try {
     /* 🔴 ต้องส่ง `role=admin` (23/09) — ไม่ส่ง = harness เรนเดอร์มุมมอง **อ่านอย่างเดียว**
        ปุ่มของ admin (เพิ่ม/แก้ไข/⚙ ตั้งค่า/เปิดโมดัล) ไม่โผล่เลยสักปุ่ม
        วัดจริงที่ /pm?tab=setup: ไม่ส่ง role เห็น 4 ปุ่ม · ส่ง role=admin เห็น 8 ปุ่ม
        ⇒ ครึ่งหนึ่งของส่วนที่กดได้ทั้งแอป **ไม่เคยถูกสวีปเลย** — โมดัลที่พังทั้งใบจึงหลุดถึงหน้างาน */
-    await p.goto(`http://localhost:5199/audit/index.html?p=${name}&role=admin`, { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await p.goto(`http://localhost:5199/audit/index.html?p=${name}&${prof.q}`, { waitUntil: 'domcontentloaded', timeout: 20000 });
     await p.waitForTimeout(1300);
     /* 👻 ปิด "พื้นที่กดเผื่อนิ้ว" ก่อนวัด (2026-10-06) — ไม่ใช่การผ่อนด่าน แต่เป็นการวัดให้ตรงความจริง
        `src/index.css` @media (pointer:coarse) ใส่ `button:not(:has(*))::before` ที่ absolute + min 40×40
@@ -99,8 +110,8 @@ for (const name of PAGES) {
       }
       return [...new Set(out)];
     });
-    if (hits.length) bad.push({ name, hits });
-  } catch (e) { bad.push({ name, hits: [`เปิดไม่ขึ้น: ${String(e).slice(0, 80)}`] }); }
+    if (hits.length) bad.push({ name, hits, prof: prof.key });
+  } catch (e) { bad.push({ name, hits: [`เปิดไม่ขึ้น: ${String(e).slice(0, 80)}`], prof: prof.key }); }
   await p.close();
 }
 await b.close();
@@ -108,9 +119,10 @@ await b.close();
 const open = bad.filter(x => !ACCEPTED[x.name]);
 const accepted = bad.filter(x => ACCEPTED[x.name]);
 
-console.log(`ตรวจ ${PAGES.length} หน้า @${VIEW.width}px — ต้องแก้ ${open.length} หน้า`
-  + (accepted.length ? ` (+ ${accepted.length} หน้าที่ user ตัดสินใจว่าไม่ทำมือถือ)` : ''));
-open.forEach(x => { console.log(`🔴 ${x.name}`); x.hits.slice(0, 4).forEach(h => console.log(`     ${h}`)); });
+console.log(`ตรวจ ${PAGES.length} หน้า × ${PROFILES.length} โปรไฟล์ @${VIEW.width}px`
+  + ` (${PROFILES.map(x => x.label).join(' · ')}) — ต้องแก้ ${open.length} รายการ`
+  + (accepted.length ? ` (+ ${accepted.length} รายการที่ user ตัดสินใจว่าไม่ทำมือถือ)` : ''));
+open.forEach(x => { console.log(`🔴 ${x.name} [${x.prof}]`); x.hits.slice(0, 4).forEach(h => console.log(`     ${h}`)); });
 if (accepted.length) {
   console.log('\n📵 ไม่รองรับมือถือโดยตั้งใจ (ไม่นับเป็นปัญหา):');
   accepted.forEach(x => console.log(`   ${x.name} — ${ACCEPTED[x.name]}`));

@@ -62,7 +62,7 @@ test('สำเนาชื่อกำพร้าก็บล็อก — แ
 });
 
 test('ของที่จะหายไปด้วยต้องเขียนใน confirm (การแต่งตั้งหัวหน้า = cascade)', () => {
-  assert.match(orgRefDeleteNote({ heads: 4, sharedWith: [], values: [] }), /หัวหน้าหน่วยนี้ 4 รายการจะถูกลบ/);
+  assert.match(orgRefDeleteNote({ heads: 4, sharedWith: [], values: [] }), /ผู้คุมหน่วยนี้ \(ตำแหน่ง\/รักษาการ\) 4 รายการจะถูกลบ/);
   assert.equal(orgRefDeleteNote({ heads: 0, sharedWith: [], values: [] }), '');
 });
 

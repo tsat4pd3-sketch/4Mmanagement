@@ -201,3 +201,30 @@ migration `20260924_skill_levelup_notify_by_section_main.sql` (**apply แล้
 · `skill_levelup_request` (พีค 43/คน/วัน) ยังไม่เปิด rollup — รอดูผลการแก้ section เมื่อ 24/09 ก่อน
 · 13 event ที่เป็น Telegram-only ยังไม่มีผู้รับในแอป (product decision · §2)
 · Web Push ยังอยู่ที่ 24% ของผู้ใช้
+
+---
+
+## 8. กฎใหม่นอก edge function — `kpi_acct_import` (2026-10-20)
+
+user ย้ำอีกครั้ง 20/10: *"telegram ตอนนี้จะไม่ใช้ละ ใช้ระบบแจ้งเตือนในแอพเลยดีกว่า ยังไม่ยกเลิกแต่โฟกัสระบบแจ้งเตือนในแอพ"*
+⇒ **event ใหม่ทุกตัว = แถว `notification_rules` ไม่มี `channel_ids` + ผู้รับแคบ** · ของเดิมที่ยิง Telegram อยู่ปล่อยไว้ ไม่เพิ่ม ไม่รื้อ
+· ตัวส่งที่อยู่นอก edge (GitHub Actions `scripts/acct-import/run_queue.mjs`) อ่านกฎเอง (`inapp_roles` + `inapp_sections`) แล้ว insert `notifications` ด้วย service role —
+  **ไม่ได้ผ่าน `notifyInApp()` ของ edge** (ไฟล์ 59 KB deploy ผ่าน MCP ไม่ได้) ⇒ ไม่มี rollup/scope_depth · ยอมรับได้เพราะเดือนละ 1 ใบ
+· seed `inapp_roles = ['admin']` (6 บัญชี) — ถ้าเลือก `supervisor,manager` ที่มี `kpi:manage` = **44 คน** ซ้ำรอย §1
+
+## รอบ 3 — วัดผล 7 วัน + ยุบรอบ 2 (2026-10-21 · user "ทำทั้ง 4 ข้อเลย")
+**ผลรอบ 13/10 (วัด 13→20/10 เทียบ 7 วันก่อน):** 8 เรื่องเป้าหมาย เหตุการณ์จริง 2,362 → 4,847 (×2 — ใช้งานโตขึ้น ·
+เรียกช่าง `downtime_call_mtn` ที่ไม่ยุบ 300 → 845) แต่แถวกระดิ่ง 2,214 → 2,391 (+8%) ⇒ ยุบได้จริง ·
+ปรับฐานงานเท่าเดิม ≈ 1,170 แถว (ประมาณการเดิม 1,750) · `downtime_open_15min` มี event_key ครบทุกใบ
+**แต่กระดิ่งรวมยังท่วม** (730–1,580 แถว/วัน) จาก 4 แหล่ง → แก้รอบนี้:
+1. **`shipping_phase_alert`** 43 → 1,030 แถว ส่ง 9 คน (~115/คน/สัปดาห์ · อ่าน 1%) · ไม่เคยตั้งยุบ ⇒ `inapp_rollup_min = 240`
+2. **ใบแจ้งซ่อมทีม production (AM)** — ต้นเหตุจริงอยู่ที่ edge ไม่ใช่ rule: `usersInTeam()` ใน
+   `send-mtn-notification` คืน "ทุกคนที่มีทีม production" = หัวหน้า/ลีดเดอร์**ทั้งโรงงาน** (ใบ 249/308 เป็นทีมนี้)
+   ⇒ `mtn_reported` ไปถึง sv 23 + leader 17 คน (~30 แถว/คน/สัปดาห์) · role ใน rule (`leader,mtn`) ไม่ได้ช่วยเพราะทางนี้ไม่ผ่าน rule
+   **แก้ v27:** ทีม production = เฉพาะคนที่ผูกไลน์ในสาย `line_family` ของใบ (ไม่ผูกไลน์ = ส่วนงานตรง) · ไม่รู้ไลน์ = ไม่ยิงทั้งทีม
+   (วัดจำลอง: 41 คน → 3–12 คนต่อใบ) · ทีมช่าง MTN/JIG/DIE ไม่เปลี่ยน · 🔴 **ห้ามเอา "ทั้งทีม production" กลับมา**
+3. **ตัวที่ไม่มี event_key** (ยุบไม่ได้): "ผลการตรวจได้รับการอนุมัติ" 165 · "พบผลตรวจไม่ผ่าน (NG)" 91 (`PMCheckData.jsx`) ·
+   "🗓️ ตารางกะ…" 58 ⇒ เพิ่ม rule `pm_inspection_approved` / `pm_inspection_ng` + `title_match` ให้
+   `fn_notification_fill_link` เติม event_key เอง (ไม่ต้องแก้ตัวส่ง) · ตั้งยุบ 180 / 60 / 1440 นาที
+4. **`pm_plan_reminder`** อ่าน 2% ⇒ 720 → 1440 (วันละใบต่อคน รวมทุกแผนในวันนั้น)
+migration `20261021_notif_rollup_round2_main.sql` (**apply แล้ว** · ย้อนกลับในท้ายไฟล์) · edge `send-mtn-notification` **v27**

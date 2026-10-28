@@ -49,6 +49,8 @@ import LineLensMap, { MachineDetailCard } from '../components/LineLensMap';
 import LineOrderBoard, { OrderDetailCard } from '../components/LineOrderBoard';
 import Segmented from '../components/Segmented';   // 🗺️ ผังเครื่องจักรคู่กล่องรายละเอียดไลน์ (2026-10-16)
 import useIsMobile from '../utils/useIsMobile';
+import useTvShell from '../utils/useTvShell';
+import TvFitBox from '../components/TvFitBox';
 import { storySectionsFor, mapLensOf } from '../utils/lineLens';
 import { isGifFile, GIF_MAX_BYTES, GIF_TOO_BIG_MSG } from '../utils/imageFileKind';   // ตัวตรวจชนิดไฟล์ + เพดาน GIF = จุดเดียว
 
@@ -488,7 +490,8 @@ const supNames = (list, riskOnly) => {
 
 // setupMode=false (default, /factory-map) = display-only (ดู + popup ไม่มีปุ่มแก้ผัง)
 // setupMode=true (/layout-setup แท็บภาพรวมโรงงาน) = โหมดตั้งค่า อัปโหลดรูป/วาด polygon ได้
-export default function FactoryMap({ setupMode = false }) {
+/* `viewParam` = ชื่อคีย์ลิงก์ของมุมมอง 2D/3D — หน้าที่ฝังผังนี้ (เช่น /mtn-layout ที่ใช้ ?view= ของตัวเองอยู่แล้ว) เปลี่ยนชื่อได้ */
+export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
   const { role } = useContext(UserContext);
   const canEdit = setupMode && can('factory_map', 'edit', role);
   const navigate = useNavigate();
@@ -545,9 +548,12 @@ export default function FactoryMap({ setupMode = false }) {
   const [reviewDetail, setReviewDetail] = useState(null); // ไลน์แม่ที่คลิกดู breakdown ไลน์ย่อย (โหมด review)
   const [storyLine, setStoryLine] = useState(null);   // ไลน์ที่คลิกดู "สรุปเรื่องราวทั้งวัน" (modal หลัก)
   const [story, setStory] = useState(null);           // ข้อมูลสรุปของ storyLine
-  const [storyAll, setStoryAll] = useState(false);
+  const [storyAll, setStoryAll] = useState(() => urlBool('storyall', false));   // ?storyall= (จอวนหน้า)
   const [lensSel, setLensSel] = useState(null);       // เครื่องที่คลิกบนผังคู่ — การ์ดอยู่คอลัมน์ขวา (ผังไม่ดันตัวเองขึ้นลง · 16/10)    // กล่องรายละเอียด: true = ทุกเรื่อง · false = เฉพาะเรื่องของแท็บ (2026-10-16)
   const isMobile = useIsMobile();
+  /* 📺 โหมดจอประชุม (20/10 · user "ทีวี 43-50 นิ้ว ยืนดูห่าง 2-3 ม.") — UI §6.32
+     ซ่อนปุ่ม/คำใบ้ที่ไม่มีใครกด (.tv-hide) · หัวเรื่องแท็บตัวใหญ่แทนแถวปุ่ม · ป้ายบนผังขั้นต่ำ 140% · แผงขวาขยาย */
+  const tv = useTvShell();
   const [storyLoading, setStoryLoading] = useState(false);
   const [oeeExplain, setOeeExplain] = useState(null); // { title, rows } — กางวิธีคิด OEE เฉลี่ยถ่วงน้ำหนัก
   // วันที่ของ modal สรุปเรื่องราว — ตั้งตอนเปิด: คลิกจากผัง (live) = วันงานปัจจุบัน · คลิกจากแถบขวา = วันที่ในกรอบ
@@ -575,13 +581,15 @@ export default function FactoryMap({ setupMode = false }) {
        → ขึ้น "จอแคบ · ซ่อนป้าย" ทั้งที่จอใหญ่มาก
      ทางแก้ที่เลือก: ให้แต่ละเครื่องปรับขนาดป้ายเอง (A− / A+) จำใน localStorage — ตั้งครั้งเดียวต่อจอ
      (แก้จาก OS ก็ได้แต่หน้างานเข้า settings จอ TV ไม่ได้/ไม่กล้า) · คู่กับปุ่มซ่อนแผงขวาคืนพื้นที่ให้ผัง */
-  const [lblScale, setLblScale] = useState(() => {
+  const [lblScaleSet, setLblScale] = useState(() => {
     // ?lbl= จากลิงก์จอวนหน้าชนะค่าที่จำในเครื่อง (ไม่เขียนทับ localStorage จนกว่าจะกด A−/A+)
     const fromUrl = urlNum('lbl', 0.6, 1.6, null);
     if (fromUrl != null) return Math.round(fromUrl * 10) / 10;
     try { const v = parseFloat(localStorage.getItem('fm_lbl_scale')); return Number.isFinite(v) ? Math.min(1.6, Math.max(0.6, v)) : 1; }
     catch { return 1; }
   });
+  // จอประชุม: ป้ายขั้นต่ำ 140% (11px บนทีวี 43" ยืน 2-3 ม. อ่านไม่ออก) · ?lbl= จากจอวนหน้ายังชนะเสมอ
+  const lblScale = tv && urlNum('lbl', 0.6, 1.6, null) == null ? Math.max(lblScaleSet, 1.4) : lblScaleSet;
   const applyScale = (v) => {
     const nv = Math.min(1.6, Math.max(0.6, Math.round(v * 10) / 10));
     setLblScale(nv);
@@ -590,7 +598,7 @@ export default function FactoryMap({ setupMode = false }) {
   // ซ่อนแผงขวา (จอ TV เอาพื้นที่คืนให้ผัง — จำต่อเครื่อง) · ปุ่มอยู่แถบ metric
   const [panelHide, setPanelHide] = useState(() => urlBool('nopanel', (() => { try { return localStorage.getItem('fm_panel_hide') === '1'; } catch { return false; } })()));
   // 🧊 มุมมอง 3D (2.5D · mockup 14/10) — ความชอบรายเครื่อง · โหมดแก้ผังบังคับ 2D เสมอ (ลาก/คลิกจุดต้องตรงพิกัด)
-  const [view3d, setView3d] = useState(() => { const u = urlPick('view', ['2d', '3d'], null); if (u) return u === '3d'; try { return localStorage.getItem('fm_view3d') === '1'; } catch { return false; } });
+  const [view3d, setView3d] = useState(() => { const u = urlPick(viewParam, ['2d', '3d'], null); if (u) return u === '3d'; try { return localStorage.getItem('fm_view3d') === '1'; } catch { return false; } });
   const toggleView3d = () => setView3d(v => { const n = !v; try { localStorage.setItem('fm_view3d', n ? '1' : '0'); } catch { /* ignore */ } return n; });
   // 🔄 มุมกล้อง 3D — ลากหมุน/ปุ่ม/ทัวร์ (ทำงานเฉพาะ 3D ที่ไม่ได้แก้ผัง — editing ประกาศไว้ข้างบนแล้ว)
   const wrapRef = useRef(null);
@@ -876,6 +884,8 @@ export default function FactoryMap({ setupMode = false }) {
         const brkIvWin = breakIntervalsIn({
           policies: breaks || [], startMs: anchor, endMs: Math.min(nowMs, capMs),
           workDate, shift: s.shift, processType: procOfSess,
+          shiftEndMs: capMs,   // 🔚 กรอบจบที่ "ตอนนี้" ระหว่างกะ — พักท้ายกะต้องยึด capMs ไม่ใช่ปลายกรอบ
+          lineName: s.line_name,   // 🏭 ข้อยกเว้นเวลาพักรายไลน์ (ทะเบียนกลาง · 20/10)
         });
         availMin -= brkIvWin.reduce((a, [x, y]) => a + (y - x) / 60000, 0);
         /* หักหยุดตามแผน — ⚠️ ต้อง clamp กับหน้าต่าง [anchor, min(now, capMs)] ก่อน
@@ -933,7 +943,7 @@ export default function FactoryMap({ setupMode = false }) {
             policies: breaks || [],
             startMs: new Date(`${shiftStartDate(workDate, s.start_time.slice(0, 5), s.shift)}T${s.start_time.slice(0, 5)}:00`).getTime(),
             endMs: new Date(`${shiftStartDate(workDate, s.start_time.slice(0, 5), s.shift)}T${s.start_time.slice(0, 5)}:00`).getTime() + (s.shift_min || 570) * 60000,
-            workDate, shift: s.shift,
+            workDate, shift: s.shift, lineName: s.line_name,   // 🏭 ข้อยกเว้นเวลาพักรายไลน์ (ทะเบียนกลาง · 20/10)
           })
         : [];
       /* ไลน์เครื่องขนานบันทึก downtime รายเครื่อง ⇒ หารด้วยจำนวนเลนก่อนหักจากเวลากะ (oee.js §3.2)
@@ -1553,13 +1563,20 @@ export default function FactoryMap({ setupMode = false }) {
         const totProduced = ptot.produced + (nullPart?.produced || 0);
 
         // Downtime — แยกนอกแผน/ในแผน แล้วรวมตามประเภท+เครื่อง (เก็บ note ของพนักงานไว้ด้วย)
+        /* ⏱ ใบที่ยังหยุดอยู่ = "หยุดมาแล้วกี่นาที" (started_at → ตอนนี้) สูตรเดียวกับป้าย/hover บนผัง (dtOpenMin)
+           27/10 user "ทำไมไม่ตรงกัน" — เดิมใช้ duration_min ซึ่งยังว่างจนกว่าจะปิดใบ ⇒ modal "หยุดอยู่ · 0 น." ขณะ hover "3 ชม. 33 น."
+           ไม่รู้เวลาเริ่ม = null (จอเขียน "—" ห้ามตีเป็น 0 · กฎเดียวกับ fmtDtElapsed) */
+        const nowMsStory = Date.now();
         const dtRows = (dtRes.data || []).map(d => {
-          const mins = d.duration_min != null ? Number(d.duration_min) || 0
-            : (d.started_at && d.ended_at ? Math.max(0, (new Date(d.ended_at) - new Date(d.started_at)) / 60000) : 0);
-          return { id: d.id, session_id: d.session_id, mins: Math.round(mins), machine: d.machine_no, note: d.description,
+          const open = !d.ended_at && d.duration_min == null;
+          const mins = open
+            ? (d.started_at ? Math.max(0, Math.round((nowMsStory - new Date(d.started_at).getTime()) / 60000)) : null)
+            : Math.round(d.duration_min != null ? Number(d.duration_min) || 0
+              : (d.started_at && d.ended_at ? Math.max(0, (new Date(d.ended_at) - new Date(d.started_at)) / 60000) : 0));
+          return { id: d.id, session_id: d.session_id, mins, machine: d.machine_no, note: d.description,
             type: d.dr_downtime_types?.name_th || 'ไม่ระบุประเภท', planned: d.dr_downtime_types?.category === 'planned',
-            open: !d.ended_at && d.duration_min == null, carry_over: d.carry_over, shift: sessById[d.session_id]?.shift };
-        }).sort((a, b) => b.mins - a.mins);
+            open, carry_over: d.carry_over, shift: sessById[d.session_id]?.shift };
+        }).sort((a, b) => (b.mins ?? 0) - (a.mins ?? 0));
         const dtUnplanned = dtRows.filter(d => !d.planned);
         const dtPlanned = dtRows.filter(d => d.planned);
 
@@ -1652,7 +1669,7 @@ export default function FactoryMap({ setupMode = false }) {
           flowDown, flowUp,
           totTarget, totProduced, parts,
           dtUnplanned, dtPlanned,
-          dtUnplannedMin: dtUnplanned.reduce((a, d) => a + d.mins, 0),
+          dtUnplannedMin: dtUnplanned.reduce((a, d) => a + (d.mins || 0), 0),
           dtPlannedMin: dtPlanned.reduce((a, d) => a + d.mins, 0),
           defects, ngTotal: defects.reduce((a, d) => a + d.ng, 0), suspectTotal: defects.reduce((a, d) => a + d.suspect, 0),
           shifts, fourM: fourMRes.data || [], sessionCount: (sessions || []).length,
@@ -2284,6 +2301,9 @@ export default function FactoryMap({ setupMode = false }) {
     setAssignLine(''); setNewZone(''); setNewZoneType('fac'); setNewZoneKind('fg'); setAssignFor(pts); // ตีกรอบได้เสมอ (ไลน์ผลิต / โซน facility / โซนคลัง / พิมพ์ชื่อโซนใหม่)
   };
   const confirmAssign = async () => {
+    /* ด่านชั้น 2 — ตีกรอบไลน์/โซนบนผัง + สร้างทะเบียนโซน (ของกลางทั้งโรงงาน)
+       ⇒ ด่าน = คีย์เดียวกับปุ่ม (ซ่อนปุ่มไม่ใช่ด่าน · QC audit §7.4 · 20/10) */
+    if (!canEdit) { toast.error('แก้ผังโรงงานต้องมีสิทธิ์ factory_map:edit (และอยู่ในโหมดตั้งค่าผัง)'); return; }
     const target = (assignLine === '__new__' ? newZone.trim() : assignLine).trim();
     if (!target) return toast.error('เลือกไลน์/โซน หรือพิมพ์ชื่อโซนใหม่ก่อน');
     if (regions.some(r => r.line_name === target)) return toast.error(`"${target}" ถูกตีกรอบไว้แล้ว`);
@@ -2373,6 +2393,24 @@ export default function FactoryMap({ setupMode = false }) {
     return () => ro.disconnect();
   }, [imageUrl, loading]);
   const is3d = view3d && !editing;
+  /* 🧊 3D = วัด "ที่ว่างจริงใต้หัวผัง" แทนสูตรตายตัว `100vh − 200px` (20/10 · จอ TV "ผัง 3D หลุดขอบล่าง")
+     สูตรเดิมเดาว่ามีหัวเพจอยู่ด้านบน · กรอบจอ TV ซ่อนหัวเพจ ⇒ ผังเริ่มต่ำกว่าที่เดา แล้วล้นขอบล่าง
+     และโหมด 3D ติด data-tv-nofit (ตัววนจอไม่ย่อให้ — Cr94 คิด 3D ใต้ zoom ผิด) ⇒ ไม่มีใครช่วยดึงกลับ
+     · วัดจาก offset (ไม่โดน transform ของผังที่เอียงอยู่) · 2D คงสูตรเดิม (จอ TV มีตัววนย่อให้แล้ว) */
+  const [avail3d, setAvail3d] = useState(0);
+  useLayoutEffect(() => {
+    if (!is3d && !tv) { setAvail3d(0); return undefined; }
+    const measure = () => {
+      const w = wrapRef.current, par = w?.offsetParent;
+      if (!w || !par) return;
+      const top = par.getBoundingClientRect().top + par.clientTop + w.offsetTop;
+      setAvail3d(Math.max(320, Math.floor(window.innerHeight - top - 48)));   // 48 = มุมพื้นที่เอียงเข้าหาจอยื่นพ้นกรอบ ~26px
+    };
+    measure();
+    const t = setTimeout(measure, 500);   // แถบ/แผงที่โหลดทีหลังดันผังลง
+    window.addEventListener('resize', measure);
+    return () => { clearTimeout(t); window.removeEventListener('resize', measure); };
+  }, [is3d, tv, loading, imageUrl]);
   /* 🧊 เสา 3D — คิดก่อน render เพื่อให้หัวผังบอกได้ว่าป้ายไหนแน่นจนวางไม่ได้ (ห้ามหายเงียบ) */
   const pillarMaxH = Math.max(60, wrapW * 0.2);
   const BLOCK_K = 0.55;
@@ -2392,9 +2430,13 @@ export default function FactoryMap({ setupMode = false }) {
                     h: pillarHeight(metric, cat, st.oee).h, text: shortText(st), dim: cat === 'idle',
                     group: true, kids: (childrenOf[h.name] || []).length };
                 }));
-  const pillarLifts = is3d ? liftLabels(pillarItems, { Wpx: wrapW, Hpx: aspect ? wrapW / aspect : 0, tiltDeg: orbit.tilt, rotZDeg: orbit.rot, maxH: pillarMaxH }) : null;
+  // ป้ายเสา 3D: จอประชุมขยาย 1.8× (ป้ายลอยบนผังที่ถูกย่อ+เอียง ⇒ 12px เหลือ ~8px บนจอ) · ตัวกันชนต้องคูณตัวเดียวกัน
+  const pillarLblK = tv ? 1.8 : 1;
+  const pillarLifts = is3d ? liftLabels(pillarItems, { Wpx: wrapW, Hpx: aspect ? wrapW / aspect : 0, tiltDeg: orbit.tilt, rotZDeg: orbit.rot, maxH: pillarMaxH, charPx: 6.8 * pillarLblK, labelH: 36 * pillarLblK }) : null;
   const pillarCrowded = pillarLifts ? [...pillarLifts.values()].filter(v => !v.ok).length : 0;
-  const wrapStyle = aspect ? { width: `min(100%, calc((100vh - 210px) * ${aspect}))` } : { width: '100%' };
+  const wrapStyle = (is3d || tv) && avail3d
+    ? { width: aspect ? `min(100%, ${Math.round(avail3d * aspect)}px)` : '100%', maxHeight: avail3d }
+    : { ...(aspect ? { width: `min(100%, calc((100vh - 210px) * ${aspect}))` } : { width: '100%' }), maxHeight: 'calc(100vh - 200px)' };
   const ptsStr = (pts) => pts.map(p => `${p[0]},${p[1]}`).join(' ');
   const flashLine = (name) => { setHighlight(name); setTimeout(() => setHighlight(h => h === name ? null : h), 2000); };
 
@@ -2412,7 +2454,7 @@ export default function FactoryMap({ setupMode = false }) {
 
       {/* ⚡/📅 สวิตช์เดียวคุมทั้งหน้า — ผัง + แผงขวา + กล่องรายละเอียดที่คลิก ใช้ช่วงเวลาเดียวกันเสมอ (2026-10-16) */}
       {!editing && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+        <div className="tv-hide" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
           <Segmented label="ช่วงเวลาของทั้งหน้า" value={viewMode} onChange={setViewMode} options={[
             { value: 'live', label: '⚡ Live (วันนี้สด)', title: 'ผัง แผงขวา และรายละเอียดที่คลิก = ข้อมูลสดของวันนี้' },
             { value: 'review', label: '📅 ทบทวนรายวัน', title: 'ผัง แผงขวา และรายละเอียดที่คลิก = ยอดทั้งวันของวันที่เลือก' },
@@ -2429,14 +2471,46 @@ export default function FactoryMap({ setupMode = false }) {
         </div>
       )}
       {!editing && isReview && (
-        <div style={{ marginBottom: 10, padding: '7px 12px', borderRadius: 8, fontSize: 12, background: 'var(--accent-dim)', border: '1px solid var(--accent)', color: 'var(--text2)' }}>
+        <div className="tv-hide" style={{ marginBottom: 10, padding: '7px 12px', borderRadius: 8, fontSize: 12, background: 'var(--accent-dim)', border: '1px solid var(--accent)', color: 'var(--text2)' }}>
           📅 <b style={{ color: 'var(--text)' }}>โหมดทบทวน {fmtThaiDate(reviewDate)}</b> — ยอดผลิต / OEE / Downtime / ของเสีย / คน บนผังเป็นยอดทั้งวันของวันนั้น ·
           <b> แท็บ PM / AM / พลังงาน / Supply Route ยังเป็นสถานะปัจจุบัน</b> (ไม่มีประวัติย้อนหลังรายวัน)
         </div>
       )}
 
       {/* เลือก metric */}
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+      {/* 20/10 (user "จอขนาดเด้งกระพริบเวลาเปลี่ยน tab" · คลิปจอ TV): เดิมปุ่มแท็บ + ชิปบอกข้อมูล + ปุ่ม A−/2D อยู่แถว wrap เดียว
+          ชิปต่อแท็บไม่เท่ากัน (🫥 โซนสนับสนุน · ⚠ PM ไม่ผูกไลน์ · legend) ⇒ บางแท็บ 2 บรรทัด บางแท็บ 3 ⇒ ผังขยับขึ้นลง
+          และตัววนจอ TV ย่อ (zoom) ใหม่ทุกครั้ง = ขนาดเด้ง · ตอนนี้แยก 2 แถว: แถวแท็บคงที่ · แถวชิป+เครื่องมือจองความสูงไว้ */}
+      {/* 📺 จอประชุม: แถวปุ่มแท็บ → หัวเรื่องตัวใหญ่ "ตอนนี้ดูเรื่องอะไร" (ไม่มีใครกดปุ่มบนทีวี) */}
+      {/* 📺 20/10 (user "ทำเรื่อง scale กับผังให้เหมือนกัน" — ผังรวม vs Andon Board): หัวจอ = กล่องสถานะแบบเดียวกับ Andon
+          (ขอบ/พื้นตามสีที่แย่สุด · ซ้าย = ดูเรื่องอะไร ตัวใหญ่ · ขวา = นับไลน์ตามสี) — ต่างกันที่ "เนื้อหา" ไม่ใช่หน้าตา
+          (Andon = ต้องไปจัดการอะไรตอนนี้ · ผังรวม = เรื่องนี้วันนี้ดีไม่ดี) · ตัวนับใช้ regCat ชุดเดียวกับสีบนผัง */}
+      {tv && !editing && (() => {
+        const cnt = {};
+        regions.filter(r => !facHidden(r.line_name)).forEach((r) => { const k = regCat(stOf(r.line_name)); cnt[k] = (cnt[k] || 0) + 1; });
+        const worst = cnt.down || cnt.bad ? '#ef4444' : cnt.ok ? '#f59e0b' : '#22c55e';
+        const order = ['down', 'bad', 'ok', 'good', 'waiting', 'busy', 'idle'].filter(k => cnt[k]);
+        return (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'center', justifyContent: 'space-between', marginBottom: 10,
+            background: 'var(--card)', backgroundImage: `linear-gradient(${worst}14, ${worst}14)`, border: `1px solid ${worst}`, borderRadius: 12, padding: '10px 18px' }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 16, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 30, fontWeight: 900, color: 'var(--text)', lineHeight: 1.15 }}>{METRICS[metric]?.label}</span>
+              <span style={{ fontSize: 22, fontWeight: 800, color: isReview ? 'var(--accent)' : '#22c55e' }}>
+                {isReview ? `📅 ยอดทั้งวัน ${fmtThaiDate(reviewDate)}` : '⚡ สดวันนี้'}
+              </span>
+              {cycleList.length > 1 && cycleOn && (
+                <span style={{ fontSize: 20, fontWeight: 700, color: 'var(--muted)' }}>🔁 เรื่องที่ {cycleList.indexOf(metric) + 1}/{cycleList.length}</span>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', fontSize: 25, fontWeight: 800 }}>
+              {order.length ? order.map(k => (
+                <span key={k} style={{ color: CAT[k].color }}>● {CAT[k].label} {cnt[k]}</span>
+              )) : <span style={{ color: 'var(--muted)' }}>ยังไม่มีกรอบไลน์บนผัง</span>}
+            </div>
+          </div>
+        );
+      })()}
+      <div className="tv-hide" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
         {Object.entries(METRICS).map(([k, m]) => (
           <button key={k} onClick={() => setMetric(k)} style={btn(metric === k)}>{m.label}</button>
         ))}
@@ -2446,10 +2520,14 @@ export default function FactoryMap({ setupMode = false }) {
             🔁 {cycleOn ? `วนมุมมอง · ${cycleList.indexOf(metric) + 1}/${cycleList.length}` : 'วนมุมมอง (หยุด)'}<ToggleDot on={cycleOn} />
           </button>
         )}
+      </div>
+      {/* จอคอม/TV = บรรทัดเดียวเสมอ (ชิปยาวหดเป็น … · เต็มอยู่ใน title) ⇒ ความสูงไม่เปลี่ยนตามแท็บ · มือถือ wrap ตามเดิม (index.css .fm-chips) */}
+      <div className={isMobile ? undefined : 'fm-chips'} style={{ display: 'flex', gap: 8, flexWrap: isMobile ? 'wrap' : 'nowrap', alignItems: 'center', minHeight: 30, marginBottom: 12, ...(tv ? { zoom: 1.6 } : {}) }}>
         {/* ⚡ พลังงานเป็นข้อมูล "รายเดือน" ไม่ใช่ live เหมือน metric อื่นบนจอนี้ — ต้องประกาศเดือนเสมอ
             ไม่งั้นคนอ่านเป็นค่าปัจจุบัน (จอนี้ทุกอย่างสดหมด) */}
         {!editing && metric === 'energy' && (
-          <span style={{ alignSelf: 'center', display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, whiteSpace: 'nowrap' }}>
+          <span title={`${energyMonth ? monthLabel(energyMonth) : 'ยังไม่มีข้อมูล'} · กรอกมือรายเดือน · สีกรอบ = เทียบเดือนก่อน (ลดลง = เขียว)${energyEf ? '' : ' · ยังไม่ตั้งค่าการปล่อย → ไม่มี tCO2e'}`}
+            style={{ alignSelf: 'center', display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, whiteSpace: 'nowrap' }}>
             <b style={{ color: '#f59e0b', background: '#f59e0b1a', border: '1px solid #f59e0b55', borderRadius: 6, padding: '3px 8px' }}>
               📅 {energyMonth ? monthLabel(energyMonth) : 'ยังไม่มีข้อมูล'} · ✍️ กรอกมือรายเดือน
             </b>
@@ -2468,7 +2546,7 @@ export default function FactoryMap({ setupMode = false }) {
         )}
         {/* 🫥 โซนสนับสนุนถูกซ่อนตาม metric ที่กด — สัญญาณผิดปกติยุบเป็นตัวนับ ⚠ บนชิป (ไม่หายเงียบ) · กดชิปเปิดดูชั่วคราว */}
         {!editing && !!facZones.all.length && (
-          <button onClick={() => setShowFac(v => !v)}
+          <button onClick={() => setShowFac(v => !v)} className={facZones.warn.length ? undefined : 'tv-hide'}
             title={facZones.warn.length
               ? `โซนที่มีสัญญาณ: ${facZones.warn.map(n => `${n} (${facHealthText(stOf(n))})`).join(' · ')}`
               : `ซ่อน: ${facZones.all.join(', ')}`}
@@ -2476,8 +2554,8 @@ export default function FactoryMap({ setupMode = false }) {
               background: showFac ? 'var(--bg3)' : facZones.warn.length ? '#f59e0b1a' : 'transparent',
               border: `1px solid ${showFac ? 'var(--border2)' : facZones.warn.length ? '#f59e0b55' : 'var(--border)'}`,
               color: facZones.warn.length ? '#f59e0b' : 'var(--muted)' }}>
-            {showFac ? '👁 กำลังแสดงโซนสนับสนุน — แตะเพื่อซ่อน'
-              : `🫥 ซ่อนโซนสนับสนุน ${facZones.all.length} โซน${facZones.warn.length ? ` · ⚠ ${facZones.warn.length} มีสัญญาณ` : ''} — แตะเพื่อดู`}
+            {showFac ? <>👁 กำลังแสดงโซนสนับสนุน<span className="tv-hide"> — แตะเพื่อซ่อน</span></>
+              : <>{`🫥 ซ่อนโซนสนับสนุน ${facZones.all.length} โซน${facZones.warn.length ? ` · ⚠ ${facZones.warn.length} มีสัญญาณ` : ''}`}<span className="tv-hide"> — แตะเพื่อดู</span></>}
           </button>
         )}
         {/* 🛠️ แผน PM ที่อุปกรณ์ยังไม่ผูกไลน์ — วางบนผังไม่ได้ แต่ต้องรู้ว่ามีค้างอยู่ (ห้ามหายเงียบ) */}
@@ -2501,7 +2579,8 @@ export default function FactoryMap({ setupMode = false }) {
         )}
         {/* legend อธิบายเลขบนป้าย — เลข 3 ตัวติดกันไม่มีคำอธิบายคนอ่านไม่ออก (คำสั่ง user 2026-08-06) */}
         {!editing && metric === 'productivity' && (
-          <span style={{ alignSelf: 'center', fontSize: 11.5, color: 'var(--muted)', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 4 }}>
+          <span title="ทำได้ / ควรได้ตอนนี้ / เป้ากะ · สีกรอบ = ทันจังหวะไหม"
+            style={{ alignSelf: 'center', fontSize: 11.5, color: 'var(--muted)', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 4 }}>
             <b style={{ color: '#22c55e' }}>ทำได้</b> /
             <b style={{ color: 'var(--text2)' }} title="ถ้าเดินตามจังหวะปกติ ถึงตอนนี้ควรได้เท่านี้ (คิดจากเวลาที่ผลิตได้จริง ÷ รอบเวลาชิ้นงาน)">ควรได้ตอนนี้</b> /
             <b style={{ color: 'var(--text2)' }} title="เป้ารวมของใบงานที่เปิดในกะนี้">เป้ากะ</b>
@@ -2516,14 +2595,15 @@ export default function FactoryMap({ setupMode = false }) {
           </span>
         )}
         {!editing && !labelLayout.hidden.length && !!autoHulls.length && (
-          <span style={{ marginLeft: 'auto', alignSelf: 'center', fontSize: 11.5, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
+          <span title="▣ กลุ่ม (ยอดรวมทั้งกลุ่ม · เส้นประ) · ↳ ไลน์ย่อย ในกลุ่ม"
+            style={{ marginLeft: 'auto', alignSelf: 'center', fontSize: 11.5, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
             <b style={{ color: 'var(--text2)' }}>▣ กลุ่ม</b> (ยอดรวมทั้งกลุ่ม · เส้นประ) · <b style={{ color: 'var(--text2)' }}>↳ ไลน์ย่อย</b> ในกลุ่ม
           </span>
         )}
         {/* ปรับขนาดป้ายต่อเครื่อง + ซ่อนแผงขวา — สำหรับจอ TV ที่ OS scaling ทำสัดส่วนป้าย/ผังเพี้ยน (2026-08-25)
             ค่าจำใน localStorage ของเครื่องนั้น: ตั้งครั้งเดียวต่อจอ ทุกจอเลยดูสม่ำเสมอได้แม้ scaling ไม่เท่ากัน */}
         {!editing && (
-          <span style={{ marginLeft: (!labelLayout.hidden.length && !autoHulls.length) ? 'auto' : 0, alignSelf: 'center', display: 'inline-flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}
+          <span className="fm-keep tv-hide" style={{ marginLeft: (!labelLayout.hidden.length && !autoHulls.length) ? 'auto' : 0, alignSelf: 'center', display: 'inline-flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}
             title="ขนาดป้ายบนผัง (จำค่าต่อเครื่อง) — จอ TV ที่ป้ายใหญ่/ทับกัน ให้กด A−">
             <button onClick={() => applyScale(lblScale - 0.1)} disabled={lblScale <= 0.6}
               style={{ ...miniTab(false), padding: '3px 8px', fontSize: 12, opacity: lblScale <= 0.6 ? 0.4 : 1 }}>A−</button>
@@ -2578,17 +2658,21 @@ export default function FactoryMap({ setupMode = false }) {
           {/* data-tv-nofit (16/10 · จอ TV ส่งรูปมา ผัง 3D ยุบไปมุมซ้ายบน): ตัววนหน้าย่อทั้งหน้าด้วย CSS zoom
               แต่ Chromium 94 (webOS) คิด perspective/origin ของ 3D ใต้ zoom ผิด ⇒ เจอแอตทริบิวต์นี้ = ไม่ย่อ
               (ผังคุมความสูงเองอยู่แล้ว maxHeight calc(100vh - 200px)) · ดู DisplayRotator fit() */}
-          <div {...orbit.handlers} ref={orbit.rootRef} data-tv-nofit={is3d ? '1' : undefined} style={{ flex: '1 1 640px', minWidth: 0, display: 'flex', justifyContent: 'center', flexDirection: 'column', alignItems: 'center',
+          <div {...orbit.handlers} ref={orbit.rootRef} data-tv-nofit={(is3d || tv) ? '1' : undefined} style={{ flex: '1 1 640px', minWidth: 0, display: 'flex', justifyContent: 'center', flexDirection: 'column', alignItems: 'center',
             ...(is3d ? { touchAction: 'none', cursor: orbit.dragging ? 'grabbing' : 'grab', userSelect: 'none' } : {}),
             /* 🧊 คอลัมน์ผังตัดของล้น (พื้นกริดยื่นออกนอกรูป ห้ามไปทับแผงขวา) — overflow ที่ "ชั้นนอก" ของ preserve-3d ไม่ flatten เสา */
-            ...(is3d ? { perspective: 2600, perspectiveOrigin: '50% 20%', overflow: 'hidden', borderRadius: 12 } : {}) }}>
+            ...(is3d ? { perspective: 2600, perspectiveOrigin: '50% 20%', overflow: 'hidden', borderRadius: 12, paddingBottom: 32 } : {}),
+            /* 📺 TV: ป้ายเสา ×1.8 ยกสูงพ้นขอบบนคอลัมน์ (20/10 รูปจอจริง "ตัวหนังสือเลยขอบบน") ⇒ ตัดแค่ซ้าย/ขวา/ล่าง ขอบบนปล่อย */
+            ...(is3d && tv ? { overflow: 'visible', clipPath: 'inset(-100vh 0 0 0)' } : {}) }}>   {/* paddingBottom: มุมพื้นที่เอียงเข้าหาจอยื่นพ้นกรอบผัง ~26px — ไม่เว้น = โดน overflow ตัด */}
           {is3d && (
-            <div style={{ alignSelf: 'stretch', position: 'relative', zIndex: 3, background: 'var(--bg)', padding: '2px 4px', display: 'flex', flexWrap: 'wrap', gap: '2px 12px', fontSize: 11.5, color: 'var(--muted)', marginBottom: Math.round(wrapW * 0.1) }}>
-              <span>🧊 มุมมอง 3D (ทดลอง) · {pillarLegend(metric)}</span>
-              <span>กรอบไลน์ = กล่อง · ▣ เสา = ยอดรวมกลุ่ม · ป้ายที่ชนกันถูกยกขึ้นสูง มีเส้นโยงลง · คลิกกล่อง/เสาเปิดไลน์</span>
-              {pillarCrowded > 0 && <b style={{ color: '#f59e0b' }}>ป้ายแน่นจนวางไม่ได้ {pillarCrowded} ใบ — ชี้/แตะกล่องเพื่อดู</b>}
+            <div style={{ alignSelf: 'stretch', position: 'relative', zIndex: 3, background: 'var(--bg)', padding: '2px 4px', display: 'flex', flexWrap: 'wrap', gap: '2px 12px', fontSize: 11.5, color: 'var(--muted)', marginBottom: Math.round(wrapW * 0.1),
+              /* 📺 TV: แถวนี้เหลือแค่ตัวนับป้ายแน่น ⇒ ห้ามมีพื้นทึบทับป้ายเสาที่ยกขึ้นมา · เว้นหัวเพิ่มให้ป้ายตัวใหญ่ */
+              ...(tv ? { background: 'transparent', zIndex: 'auto', marginBottom: Math.round(wrapW * 0.1) + 48 } : {}) }}>
+              <span className="tv-hide">🧊 มุมมอง 3D (ทดลอง) · {pillarLegend(metric)}</span>
+              <span className="tv-hide">กรอบไลน์ = กล่อง · ▣ เสา = ยอดรวมกลุ่ม · ป้ายที่ชนกันถูกยกขึ้นสูง มีเส้นโยงลง · คลิกกล่อง/เสาเปิดไลน์</span>
+              {pillarCrowded > 0 && <b style={{ color: '#f59e0b', ...(tv ? { fontSize: 18 } : {}) }}>ป้ายแน่นจนวางไม่ได้ {pillarCrowded} ใบ<span className="tv-hide"> — ชี้/แตะกล่องเพื่อดู</span></b>}
               {/* 🔄 มุมกล้อง — ลากบนผังก็หมุนได้ · ปุ่มไว้สำหรับจอ TV (ไม่มีเมาส์) · stopPropagation กันปุ่มเริ่ม "ลาก" */}
-              <span onPointerDown={e => e.stopPropagation()} style={{ marginLeft: 'auto', display: 'inline-flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
+              <span className="tv-hide" onPointerDown={e => e.stopPropagation()} style={{ marginLeft: 'auto', display: 'inline-flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
                 <span>ลาก = หมุน/ก้มเงย · ล้อเมาส์/2 นิ้ว = ซูม · Shift+ลาก = เลื่อน</span>
                 <button onClick={() => orbit.zoomBy(1 / 1.3)} disabled={orbit.zoom <= 1} title="ซูมออก" style={{ ...miniTab(false), padding: '2px 8px', fontSize: 12, opacity: orbit.zoom <= 1 ? 0.45 : 1 }}>－</button>
                 <span style={{ minWidth: 34, textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}>{Math.round(orbit.zoom * 100)}%</span>
@@ -2604,7 +2688,7 @@ export default function FactoryMap({ setupMode = false }) {
           )}
           {/* 🧊 3D: overflow ต้อง visible — overflow:hidden บังคับ flatten ลูกที่ preserve-3d (เสาจะแบนติดพื้น) */}
           <div ref={wrapRef} onClick={onMapClick} onPointerMove={onMapMove} onPointerUp={endDrag} onPointerCancel={endDrag}
-            style={{ position: 'relative', ...wrapStyle, maxHeight: 'calc(100vh - 200px)', borderRadius: 10, overflow: is3d ? 'visible' : 'hidden', border: '1px solid var(--border)', cursor: drawing ? 'crosshair' : 'default', touchAction: 'none', background: '#0a0a0f',
+            style={{ position: 'relative', ...wrapStyle, borderRadius: 10, overflow: is3d ? 'visible' : 'hidden', border: '1px solid var(--border)', cursor: drawing ? 'crosshair' : 'default', touchAction: 'none', background: '#0a0a0f',
               transition: orbit.transition, ...(is3d ? { transform: `translate(${orbit.px}px, ${orbit.py}px) scale(${orbit.zoom}) ` + map3dTransform(orbit.tilt, orbit.rot, orbitScale(orbit.rot, orbit.tilt, aspect ? 1 / aspect : null)), transformStyle: 'preserve-3d', boxShadow: 'var(--shadow-float)' } : {}) }}>
             {/* 🧊 พื้นโรงงานรอบผัง (3D) — ตารางกริดจางๆ ยื่นออกนอกรูป แล้วเฟดเข้าพื้นหลังหน้า
                 ให้ผังดู "วางอยู่บนพื้น" ไม่ใช่รูปแผ่นเดียวลอยกลางความมืด (user ทัก 15/10 "พื้นหลังโล่ง ดูเป็น 3D ปลอม") */}
@@ -2712,7 +2796,9 @@ export default function FactoryMap({ setupMode = false }) {
                   <div style={{ ...(lblScale !== 1 ? { zoom: lblScale } : {}), background: 'linear-gradient(180deg, rgba(8,10,16,0.93), rgba(8,10,16,0.82))', border: `2px dashed ${meta.color}`, borderRadius: 9, padding: '3px 9px 4px', textAlign: 'center', textShadow: '0 1px 3px rgba(0,0,0,0.95)', boxShadow: `0 3px 14px rgba(0,0,0,0.45), inset 0 0 0 1px ${meta.color}22` }}>
                     <div style={{ fontSize: 'clamp(12px,1.15vw,16px)', fontWeight: 800, color: '#fff', letterSpacing: 0.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.25 }}>
                       {st.dtActive && metric !== 'breakdown' && <span className="dt-alarm-icon" style={{ color: '#ef4444' }}>🔴 </span>}▣ {h.name}
-                      {kids > 0 && <span style={{ fontSize: '0.72em', fontWeight: 700, color: 'rgba(255,255,255,0.62)', marginLeft: 5 }}>{kids} ไลน์</span>}
+                      {/* 🔴 `em` คูณกับแม่ (clamp 12-16px) **และคูณ `zoom: lblScale` ที่ผู้ใช้กด A− ลงได้ถึง 0.6**
+                          ⇒ เดิม 0.72em ได้ ~5px บนจอจริง · ตรึงเป็น clamp พื้น 11px เหมือนป้ายอื่น */}
+                      {kids > 0 && <span style={{ fontSize: 'clamp(11px,0.85vw,12.5px)', fontWeight: 700, color: 'rgba(255,255,255,0.62)', marginLeft: 5 }}>{kids} ไลน์</span>}
                     </div>
                     {txt && <div style={{ fontSize: 'clamp(11px,1vw,13.5px)', fontWeight: 800, color: meta.color, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.25 }}>{txt}</div>}
                   </div>
@@ -2728,7 +2814,7 @@ export default function FactoryMap({ setupMode = false }) {
               <MapPillars3D maxH={pillarMaxH} size={Math.max(12, Math.round(wrapW * 0.024))}
                 onOpen={(n) => openLine(n)}
                 onHover={(n, e) => { if (n) { setHoverLine(n); setHoverXY({ x: e.clientX, y: e.clientY }); } else setHoverLine(null); }}
-                items={pillarItems} lifts={pillarLifts} wPx={wrapW} hPx={aspect ? wrapW / aspect : 0} cam={orbit} />
+                items={pillarItems} lifts={pillarLifts} wPx={wrapW} hPx={aspect ? wrapW / aspect : 0} cam={pillarLblK === 1 ? orbit : { ...orbit, lblScale: pillarLblK }} />
             )}
             {!is3d && regions.map(r => {
               if (facHidden(r.line_name)) return null;      // 🫥 โซนที่ซ่อนตาม metric — ป้ายก็ไม่วาด
@@ -2862,7 +2948,7 @@ export default function FactoryMap({ setupMode = false }) {
                       {parent && <span title={`ไลน์ย่อยของ ${parent}`} style={{ color: 'rgba(255,255,255,0.5)', fontWeight: 700, marginRight: 2 }}>↳</span>}
                       {st.isFac && (st.storeZone ? `${zoneKindMeta(st.storeZone.kind).icon} ` : st.die ? '🔨 ' : '🔧 ')}{r.line_name}
                     </div>
-                    {txt && <div style={{ fontSize: 'clamp(10px,0.9vw,12.5px)', fontWeight: 800, color: meta.color, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.25, opacity: 0.95 }}>{txt}</div>}
+                    {txt && <div style={{ fontSize: 'clamp(11px,0.9vw,12.5px)',   /* min ≥ 11px (ด่าน font-min-11) */ fontWeight: 800, color: meta.color, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.25, opacity: 0.95 }}>{txt}</div>}
                   </div>
                 </div>
               );
@@ -2885,10 +2971,15 @@ export default function FactoryMap({ setupMode = false }) {
           {/* ── side panel: สรุปทบทวนรายวัน (default) / จัดอันดับสด (ใช้พื้นที่ข้าง) ──
               จอ TV ซ่อนได้ (ปุ่ม ◀ ในแถบ metric) — คืนความกว้างให้ผัง ~360px แล้ว wrapW มักพ้นเกณฑ์ compact */}
           {!editing && !panelHide && (
-            <aside style={{ flex: '0 0 360px', maxWidth: '100%', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 16px', maxHeight: 'calc(100vh - 200px)', overflowY: 'auto' }}>
+            /* 📺 จอ TV กดอะไรไม่ได้ (20/10 คำสั่ง user · รูปจอจริง "แผงขวาต้อง scroll") — เดิม zoom 1.45 + เดาความสูง
+               ⇒ ล้นขอบล่าง · TvFitBox วัดที่ว่างจริงแล้วย่อให้พอดี (≤1.45×) · ยังล้น = เลื่อนเอง · แท็บแผงซ่อน (เลือกที่ /display-rotation `panel=`) */
+            <TvFitBox enabled={tv} maxScale={2}
+              style={{ flex: '0 0 360px', maxWidth: '100%', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 16px', maxHeight: 'calc(100vh - 200px)', overflowY: 'auto' }}
+              tvStyle={{ flex: `0 0 ${Math.round(360 * 1.45)}px`, maxWidth: '100%', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12 }}
+              innerStyle={{ padding: '14px 16px' }}>
               {/* สลับโหมดแผง */}
               {/* โหมดทบทวน = แผงเป็นสรุปของวันที่เลือกอย่างเดียว (OBEYA/อันดับ เป็นของสด) */}
-              {!isReview && <div style={{ display: 'flex', gap: 5, marginBottom: 12 }}>
+              {!isReview && <div className="tv-hide" style={{ display: 'flex', gap: 5, marginBottom: 12 }}>
                 <button onClick={() => setPanelMode('review')} style={{ ...miniTab(panelMode === 'review'), flex: 1, fontSize: 11.5, padding: '5px 4px' }}>⚡ สรุปวันนี้</button>
                 <button onClick={() => setPanelMode('obeya')} style={{ ...miniTab(panelMode === 'obeya'), flex: 1, fontSize: 11.5, padding: '5px 4px' }}
                   title="สถานะรายหัวข้อแบบห้อง OBEYA (SQDCM) จากข้อมูลสดของวันนี้ — กดหัวข้อเพื่อเจาะหาไลน์ที่มีปัญหา">🏛️ OBEYA (สด)</button>
@@ -2901,12 +2992,12 @@ export default function FactoryMap({ setupMode = false }) {
                   {isReview ? (<>
                     <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text2)', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                       📅 {fmtThaiDate(reviewDate)}
-                      {reviewDate !== reviewDefaultDate() && <button onClick={() => setReviewDate(reviewDefaultDate())} style={{ ...miniTab(false), padding: '2px 8px', fontSize: 11 }}>↺ วันล่าสุด</button>}
+                      {reviewDate !== reviewDefaultDate() && <button className="tv-hide" onClick={() => setReviewDate(reviewDefaultDate())} style={{ ...miniTab(false), padding: '2px 8px', fontSize: 11 }}>↺ วันล่าสุด</button>}
                     </div>
-                    <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>ภาพรวมทั้งวัน (กะเช้า+ดึก) สำหรับประชุมผู้จัดการ · เปลี่ยนวันที่ที่สวิตช์เหนือผัง · เรียงไลน์ที่ทำได้ต่ำสุดขึ้นบน · คลิกแถวเปิดรายละเอียดไลน์</div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>ภาพรวมทั้งวัน (กะเช้า+ดึก) สำหรับประชุมผู้จัดการ · เปลี่ยนวันที่ที่สวิตช์เหนือผัง · เรียงไลน์ที่ทำได้ต่ำสุดขึ้นบน<span className="tv-hide"> · คลิกแถวเปิดรายละเอียดไลน์</span></div>
                   </>) : (
                     <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>
-                      <b style={{ color: 'var(--accent)' }}>⚡ วันนี้ {fmtThaiDate(getWorkDate())} (สด)</b> — ยอดถึงตอนนี้ ไม่ใช่ยอดทั้งวัน · เรียงไลน์ที่ทำได้ต่ำสุดขึ้นบน · คลิกแถวเปิดรายละเอียดไลน์
+                      <b style={{ color: 'var(--accent)' }}>⚡ วันนี้ {fmtThaiDate(getWorkDate())} (สด)</b> — ยอดถึงตอนนี้ ไม่ใช่ยอดทั้งวัน · เรียงไลน์ที่ทำได้ต่ำสุดขึ้นบน<span className="tv-hide"> · คลิกแถวเปิดรายละเอียดไลน์</span>
                     </div>
                   )}
 
@@ -3023,7 +3114,7 @@ export default function FactoryMap({ setupMode = false }) {
                           </div>
                         );
                       })}
-                      <div style={{ fontSize: 11, color: 'var(--muted)' }}>กดแถวไลน์เพื่อเน้นบนผัง + เปิดรายละเอียด</div>
+                      <div className="tv-hide" style={{ fontSize: 11, color: 'var(--muted)' }}>กดแถวไลน์เพื่อเน้นบนผัง + เปิดรายละเอียด</div>
                     </>)}
                   </div>
                 );
@@ -3031,7 +3122,7 @@ export default function FactoryMap({ setupMode = false }) {
                   <>
                     <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 2 }}>🏛️ สถานะวันนี้ (สด) — ทั้งโรงงาน</div>
                     <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>
-                      หัวข้อแบบห้อง OBEYA (SQDCM) · {B.lineCount} ไลน์ · เปิดกะแล้ว {B.openCount} ไลน์ — กดหัวข้อเพื่อดูว่าไลน์ไหนเป็นต้นเหตุ
+                      หัวข้อแบบห้อง OBEYA (SQDCM) · {B.lineCount} ไลน์ · เปิดกะแล้ว {B.openCount} ไลน์<span className="tv-hide"> — กดหัวข้อเพื่อดูว่าไลน์ไหนเป็นต้นเหตุ</span>
                     </div>
 
                     {/* ไฟรวม — ต้องบอกเสมอว่าตัดสินจากกี่หัวข้อ ไม่งั้นเขียวจาก 2/6 ดูเหมือนเขียวจาก 6/6 */}
@@ -3059,7 +3150,7 @@ export default function FactoryMap({ setupMode = false }) {
                               {meta?.icon} {meta?.label} <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}>{meta?.en}</span>
                             </div>
                             <div style={{ fontSize: 15, fontWeight: 800, color: col, whiteSpace: 'nowrap', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>{ax.value ?? '—'}</div>
-                            <span style={{ fontSize: 11, color: 'var(--muted)', flexShrink: 0 }}>{on ? '▾' : '▸'}</span>
+                            <span className="tv-hide" style={{ fontSize: 11, color: 'var(--muted)', flexShrink: 0 }}>{on ? '▾' : '▸'}</span>
                           </div>
                           {ax.sub && <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 3, paddingLeft: 19 }}>{ax.sub}</div>}
                           {ax.live && (
@@ -3081,7 +3172,7 @@ export default function FactoryMap({ setupMode = false }) {
                       );
                     })}
 
-                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 12, lineHeight: 1.5, borderTop: '1px solid var(--border2)', paddingTop: 8 }}>
+                    <div className="tv-hide" style={{ fontSize: 11, color: 'var(--muted)', marginTop: 12, lineHeight: 1.5, borderTop: '1px solid var(--border2)', paddingTop: 8 }}>
                       เกณฑ์สีของทุกหัวข้อ<b> ยืมมาจากแท็บ metric ของเรื่องนั้นบนผังนี้เอง</b> — แผงขวากับสีบนผังจึงตอบตรงกันเสมอ<br />
                       ต้องการแนวโน้มย้อนหลัง/เป้ารายเดือน → <Link to="/obeya?tab=sqdcm" style={{ color: 'var(--accent)', fontWeight: 700 }}>ห้อง OBEYA</Link>
                     </div>
@@ -3103,7 +3194,7 @@ export default function FactoryMap({ setupMode = false }) {
                         </span>
                       ))}
                     </div>
-                    <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>{M.desc ? 'มาก → น้อย (ปัญหาขึ้นบน)' : 'น้อย → มาก (ตามหลังขึ้นบน)'} · คลิกแถวเพื่อเน้นบนผัง</div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>{M.desc ? 'มาก → น้อย (ปัญหาขึ้นบน)' : 'น้อย → มาก (ตามหลังขึ้นบน)'}<span className="tv-hide"> · คลิกแถวเพื่อเน้นบนผัง</span></div>
                     {metric === 'productivity' && (
                       <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8, padding: '4px 8px', background: 'var(--bg3)', borderRadius: 6, lineHeight: 1.5 }}>
                         รูปแบบ <b style={{ color: 'var(--text2)' }}>ทำได้ / ควรได้ ณ ตอนนี้ / เป้า (ใบที่เปิด)</b><br />
@@ -3136,7 +3227,7 @@ export default function FactoryMap({ setupMode = false }) {
                   </>
                 );
               })()}
-            </aside>
+            </TvFitBox>
           )}
         </div>
       )}
@@ -3569,7 +3660,7 @@ export default function FactoryMap({ setupMode = false }) {
                               {d.machine && <span style={{ fontSize: 11, color: 'var(--muted)' }}>· {d.machine}</span>}
                               {d.open && <span style={{ fontSize: 11, color: '#ef4444', fontWeight: 700 }}>🔴 ยังหยุดอยู่</span>}
                               {d.carry_over && <span style={{ fontSize: 11, color: 'var(--muted)' }}>ยกข้ามกะ</span>}
-                              <span style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 800, color: '#f59e0b' }}>{fmtNum(d.mins)} น.</span>
+                              <span style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 800, color: d.open ? '#ef4444' : '#f59e0b' }}>{d.open ? fmtDtElapsed(d.mins) : `${fmtNum(d.mins)} น.`}</span>
                             </div>
                             {d.note && <div style={{ fontSize: 11.5, color: 'var(--text2)', marginTop: 3 }}>💬 {d.note}</div>}
                           </div>
@@ -3578,7 +3669,7 @@ export default function FactoryMap({ setupMode = false }) {
                     )}
                     {s.dtPlanned.length > 0 && (
                       <div style={{ marginTop: 8, fontSize: 11, color: 'var(--muted)' }}>
-                        ในแผน (ไม่นับเป็น loss): {s.dtPlanned.map(d => `${d.type} ${d.mins}น.`).join(' · ')}
+                        ในแผน (ไม่นับเป็น loss): {s.dtPlanned.map(d => `${d.type} ${d.open ? `กำลังหยุด ${fmtDtElapsed(d.mins)}` : `${d.mins}น.`}`).join(' · ')}
                       </div>
                     )}
                   </StorySection>}
