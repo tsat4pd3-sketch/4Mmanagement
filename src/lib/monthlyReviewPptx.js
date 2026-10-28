@@ -58,6 +58,7 @@ import { wavg, wLoad, wRun, wProd, isTrialDefect, normOeeTarget, avgOeeTarget, w
 import { lineCostCenter, rateFor, ratePerHour, RATE_COMPONENTS } from '../utils/costSaving';
 import { fetchByIds } from '../utils/fetchByIds';
 import { fitOneLine, layoutTable, textHeightIn, lineHeightIn } from './pptxFit';
+import { BREAK_POLICY_COLS } from '../utils/oeeMasters';
 
 /* ── TSG R01 palette (hex ไม่มี # — ตาม pptxgenjs) ── */
 const C = {
@@ -386,7 +387,7 @@ async function buildTrendMonths({ monthKeys, sections, allLineNames, perLine = f
         'session_id, qty_ng, qty_suspect, is_trial, dr_defect_types(excl_from_q)',
         'session_id, qty_ng, qty_suspect'),
       fetchByIds(ids, c => supabaseDR.from('prod_orders').select('session_id, mat_no, qty, qty_ok, qty_actual, status').in('session_id', c)),
-      supabaseDR.from('break_policies').select('shift, process_type, start_time, duration_min, ot_scope, anchor, offset_min').eq('is_active', true),
+      supabaseDR.from('break_policies').select(BREAK_POLICY_COLS).eq('is_active', true),
     ]);
     const err = [dtR, defR, ordR].find(r => r.error)?.error;
     if (err) return { series: {}, byLine: null, warn: 'โหลดข้อมูลย้อนหลังไม่ครบ' };
@@ -581,7 +582,7 @@ export async function buildMonthlyReviewData({ monthKey, sections, trendMonths =
     fetchByIdsTolerant(sessIds, (sel, c) => supabaseDR.from('defect_logs').select(sel).in('session_id', c), DEF_FULL, DEF_SLIM),
     fetchByIds(sessIds, c => supabaseDR.from('prod_orders')
       .select('session_id, mat_no, qty, qty_ok, qty_actual, status').in('session_id', c)),
-    supabaseDR.from('break_policies').select('shift, process_type, start_time, duration_min, ot_scope, anchor, offset_min').eq('is_active', true),
+    supabaseDR.from('break_policies').select(BREAK_POLICY_COLS).eq('is_active', true),
   ]);
   const downtimes = dtRes.rows, defects = defRes.rows, orders = ordRes.rows;
   const fixSlim = dtRes.slim || defRes.slim; // คอลัมน์วิธีแก้ยังไม่ apply — บอกบนสไลด์

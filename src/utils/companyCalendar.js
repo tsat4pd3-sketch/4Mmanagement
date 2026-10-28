@@ -5,7 +5,7 @@
  * day_type: 'working' | 'ot15' (หยุด OT*1.5) | 'ot2' (หยุด OT*2)
  */
 import { supabase } from '../supabaseClient';
-import { isWorkingDayFrom, setDayTypeMap } from './workingDay';
+import { isWorkingDayFrom, setDayTypeMap } from './workingDay.js';
 
 export const DAY_TYPE_META = {
   working: { label: 'วันทำงาน',        color: '#3d3d3d', otMultiplier: 1 },

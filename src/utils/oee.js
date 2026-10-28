@@ -35,7 +35,7 @@ import { collapsePairShots } from './pairTotals.js';
 // §8 computeSessionOee ต้องรู้โหมดไลน์/จำนวนสถานีขนาน (source of truth = lineTypes.js · ไม่มี import วนกลับ)
 import { parallelUnitsOf, flowModeOf } from './lineTypes.js';
 import { applyBreakLineRules, breakLineRuleIndexSync, breakBandName, breakBandTitle } from './breakLineRules.js';   // ข้อยกเว้นเวลาพัก "รายไลน์" (เจ้าของกฎไล่สายแม่-ลูก)
-import { applyHolidayBreaks } from './workingDay';
+import { applyHolidayBreaks } from './workingDay.js';
 /* 🏭 ป้ายบนแถบเงาเวลาพัก — เจ้าของข้อความอยู่ `breakLineRules.js` ส่งต่อที่นี่เพื่อให้จอ
    **import จาก `utils/oee` ที่เดียว** คู่กับ `halfDayBreakBands` ที่ผลิต band ให้
    (จอที่ไล่สายไลน์ด้วย `getAncestorNames` เรื่องอื่นอยู่ จะได้ไม่ต้อง import breakLineRules

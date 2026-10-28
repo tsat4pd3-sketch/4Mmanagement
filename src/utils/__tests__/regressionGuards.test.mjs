@@ -5896,12 +5896,24 @@ test('🛡️ break-policy-select-needs-all-axes — คิวรี break_polic
     const code = stripComments(readFileSync(full, 'utf8'));
     let i = 0;
     while ((i = code.indexOf("from('break_policies')", i)) >= 0) {
-      const tail = code.slice(i, i + 260);
+      /* 🔴 ต้องตัดขอบเขตที่ "คิวรีถัดไป" ก่อน (28/10) — เดิมมองยาว 260 ตัวอักษรรวด
+         ⇒ ไปจับ `.select('id, line_name, …')` ของคิวรีตัวถัดไปใน Promise.all เดียวกัน
+            มาเป็นคอลัมน์ของ break_policies แล้วฟ้องว่า "ขาดทุกแกน" (false positive จริงที่
+            ProductionPlan.jsx) · ด่านที่ฟ้องผิดทำให้คนเลิกเชื่อด่าน */
+      const win = code.slice(i, i + 260);
+      const nextFrom = win.indexOf(".from('", 1);
+      const tail = nextFrom > 0 ? win.slice(0, nextFrom) : win;
       i += 22;
-      const m = tail.match(/\.select\(\s*(['"`])([^'"`]*)\1/);
-      if (!m) continue;                                        // ไม่มี select = ไม่ใช่การอ่าน
+      const selAt = tail.indexOf('.select(');
+      if (selAt < 0) continue;                                 // ไม่มี select = ไม่ใช่การอ่าน
+      const arg = tail.slice(selAt + '.select('.length).trimStart();
+      /* ส่ง **ตัวแปร** มา (ชุดกลาง `BREAK_POLICY_COLS` ใน utils/oeeMasters.js) = ครบแน่นอน
+         — ด่าน `break-policy-cols-central` เป็นคนบังคับว่าต้องเป็นชุดกลางหรือ '*' เท่านั้น */
+      if (!/^['"`]/.test(arg)) continue;
+      const m = arg.match(/^(['"`])([^'"`]*)\1/);
+      if (!m) continue;
       /* `.delete().select('id')` = นับแถวตามกฎเขียน DB ข้อ 2 ไม่ใช่การอ่านนโยบาย — ข้าม */
-      if (/\.(delete|insert|update)\s*\(/.test(tail.slice(0, m.index))) continue;
+      if (/\.(delete|insert|update)\s*\(/.test(tail.slice(0, selAt))) continue;
       const cols = m[2];
       if (cols.trim() === '*') continue;      // ชุดเต็ม = ครบอยู่แล้ว
       const miss = NEED.filter(c => !cols.includes(c));
@@ -7201,4 +7213,25 @@ test('🏖️ holiday-break-single-entry — เวลาพักวันห�
 
   assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n  ')
     + '\n\n   หักเวลาพักผิด = ฐานเวลาของ %A/%P ผิดทั้งกะ โดยไม่มีใครเห็นบนจอ\n');
+});
+
+test('☕ break-policy-cols-central — เลือกคอลัมน์ break_policies เองต้องใช้ชุดกลาง', () => {
+  /* 27/10: เพิ่มคอลัมน์ `duration_min_holiday` (นาทีพักวันหยุด) แล้วพบว่ามี 6 จุด
+     เลือกคอลัมน์เองไว้ ⇒ จอพวกนั้นจะคิดเวลาพักวันหยุดเป็นค่าปกติ ขณะที่จอหลักคิดค่าวันหยุด
+     = **ตัวเลข OEE 2 ชุดของกะเดียวกัน** (สิ่งที่ user สั่งว่าห้ามมี: "เลขเรื่องเดียวกันต้องคิดเหมือนกัน")
+     ⇒ ต้อง `select('*')` หรือ `select(BREAK_POLICY_COLS)` เท่านั้น — เพิ่มคอลัมน์ใหม่เติมที่เดียว */
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
+    if (/oeeMasters\.js$/.test(file)) continue;
+    const src = stripComments(readFileSync(file, 'utf8'));
+    for (const m of src.matchAll(/from\(\s*'break_policies'\s*\)\s*\.select\(\s*([^)]+?)\s*\)/g)) {
+      const arg = m[1].trim();
+      if (arg !== "'*'" && arg !== '"*"' && arg !== 'BREAK_POLICY_COLS') {
+        bad.push(`${file.replace(ROOT, '')}: select(${arg.slice(0, 60)}…) — ใช้ BREAK_POLICY_COLS แทน`);
+      }
+    }
+  }
+  assert.deepEqual(bad, [], '\n\n❌ เลือกคอลัมน์ break_policies เอง:\n  ' + bad.join('\n  ')
+    + "\n\n   import { BREAK_POLICY_COLS } from '<path>/utils/oeeMasters';\n"
+    + '   ขาดคอลัมน์ = จอนั้นหักเวลาพักคนละแบบกับจออื่น = OEE 2 ชุดของกะเดียวกัน\n');
 });
