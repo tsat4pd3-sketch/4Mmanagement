@@ -7210,3 +7210,40 @@ test('👨‍🔧 line-heads-single-source — จอตั้งค่าไล
     + '   แก้: lineHeadsOf({ lineId, lines, employees, maps, legacyName }) จาก src/utils/lineHeads.js\n'
     + '        head_name ส่งเป็น legacyName ได้อย่างเดียว (ชื่อที่พิมพ์ทับ) ห้ามเป็นแหล่งหลัก\n');
 });
+
+test('🛡️ notify-no-insert-per-recipient — ห้าม insert `notifications` ทีละคนในลูป', () => {
+  /* บั๊กที่เคยเกิดจริง 26/10/2026 (branch 4M ใน supabase/functions/send-notification):
+     โค้ดเขียนว่า `Promise.allSettled(unique.map(t => supabase.from('notifications').insert({...})))`
+     = ผู้รับ 79 คน ⇒ **79 รอบวิ่งไป DB ต่อการเปลี่ยนสถานะ 1 ครั้ง** และเพราะเป็นการเขียนทีละแถว
+     มันเลยไม่มีจุดไหนเห็นภาพรวมพอจะกันซ้ำได้เลย
+
+     ผลที่วัดได้: ใบ 4M **ใบเดียว** สถานะ pending ได้ 316 แถว / 79 คน = คนละ 4 ใบ ใน 16 วินาที
+     (edge ถูก invoke 4 รอบจากฝั่งจอ · ตัวมันยุบผู้รับซ้ำได้แค่ภายในรอบเดียว ข้ามรอบไม่รู้เรื่องกัน)
+     วันนั้นตาราง notifications โตวันเดียว 44,570 แถว = 75% ของทั้งตาราง (12 MB)
+
+     🔑 กฎนี้บังคับ "เขียนเป็นก้อน" ซึ่งเป็นเงื่อนไขที่ทำให้ **กันซ้ำได้จริง** — ก้อนเดียว
+        = กรองผู้รับก่อนเขียนได้ทีเดียว (ดู withoutRecentSame / withoutUnreadFor) */
+  const hits = [];
+  for (const f of [...walk(join(ROOT, 'src'), ['.js', '.jsx']),
+                   ...walk(join(ROOT, 'supabase/functions'), ['.ts'])]) {
+    const src = stripComments(readFileSync(f, 'utf8'));
+    // Promise.all / allSettled ที่มี insert ลง notifications อยู่ข้างใน = เขียนทีละคน
+    const re = /Promise\.(?:all|allSettled)\(([\s\S]{0,400}?)\)\s*\)?\s*[;,)]/g;
+    let m;
+    while ((m = re.exec(src))) {
+      const body = m[1];
+      if (/from\(\s*['"`]notifications['"`]\s*\)[\s\S]{0,120}?\.insert\(/.test(body)) {
+        hits.push(relative(ROOT, f));
+        break;
+      }
+    }
+  }
+  assert.deepEqual(hits, [],
+    '\n\n❌ ไฟล์ด้านล่าง insert ลงตาราง `notifications` ทีละคนในลูป (Promise.all/allSettled)\n'
+    + '   ทำไมพัง: 1 เหตุการณ์ × ผู้รับ N คน = N รอบวิ่งไป DB · และกันแจ้งเตือนซ้ำไม่ได้เลย\n'
+    + '   (เกิดจริง 26/10/2026: ใบ 4M ใบเดียวได้ 316 แถว/79 คน ใน 16 วินาที เพราะ edge ถูกเรียก 4 รอบ\n'
+    + '    วันนั้น notifications โตวันเดียว 44,570 แถว = 75% ของทั้งตาราง)\n'
+    + '   แก้ยังไง: รวมผู้รับเป็น array แล้ว `.insert(ids.map(uid => ({...})))` ครั้งเดียว\n'
+    + '        และกรองคนที่เพิ่งได้ไปแล้วออกก่อนเขียน (withoutRecentSame / withoutUnreadFor)\n\n'
+    + hits.map(h => '   • ' + h).join('\n') + '\n');
+});
