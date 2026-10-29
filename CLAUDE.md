@@ -49,7 +49,7 @@ Realtime + Edge Functions/Deno) · Telegram Bot API · deploy = Render.com (Stat
 
 ## Supabase Projects
 
-ระบบใช้ **2 Supabase projects แยกกัน** — ห้ามสมมติว่าเป็น project เดียว
+**2 Supabase projects แยกกัน** — ห้ามสมมติว่าเป็น project เดียว
 
 | Project | ID | ใช้เก็บอะไร | Client ใน code |
 |---------|-----|------------|----------------|
@@ -255,7 +255,7 @@ Fixture shim record `/equipment?tab=jig` `fixture-shim-record.md` ·
 
 ## Production Plan — วางแผนการผลิต (`/production-plan` · แท็บ `?tab=lots` แผนสั่งงานล็อต)
 
-จากยอดลูกค้า (order รายวัน + forecast รายเดือน) เทียบ**กำลังผลิตที่ทำได้จริง** → ต้องเปิดกี่กะ วันไหน OT/กะดึก/วันหยุด
+ยอดลูกค้า (order + forecast) เทียบ**กำลังผลิตจริง** → ต้องเปิดกี่กะ วันไหน OT/กะดึก/วันหยุด
 · สูตรทั้งหมดอยู่ใน **`src/utils/planLots.js` + `planTimeline.js` ห้ามคิดเองในหน้า**
 
 **กฎที่ทุก session ต้องรู้ (ที่เหลืออ่านในเอกสาร):**
@@ -390,7 +390,7 @@ Fixture shim record `/equipment?tab=jig` `fixture-shim-record.md` ·
 
 ยุบเป็นหน้าเดียว 5 แท็บ: `?tab=machine|die|jig|spare|rack`
 (route เดิม `/machine-database` `/die-registry` `/fixture` redirect เข้ามา) · **embed หน้าเดิมทั้งดุ้น
-ไม่แก้ของเดิม** (pattern เดียวกับ `PmHub`) · สิทธิ์ piggyback **ไม่ต้อง seed `page:/equipment`**
+ไม่แก้ของเดิม** · สิทธิ์ piggyback **ไม่ต้อง seed `page:/equipment`**
 · 🔴 **แท็บซ้อนแท็บต้องคนละ query param** — หน้าลูกใช้ `?die=` / `?fx=` **ห้ามใช้ `?tab=`** (UI §6.8 ข้อ 2.4)
 
 ---
@@ -760,6 +760,7 @@ Platform:    Render.com (Static Site)
 `npm run build` → `dist/` = ESM เต็ม · `npm run build:nm` → `dist-nm/` = **เว็บ New Model (IEC)**
 — โปรแกรมตัวเดียวกัน · Supabase Main เดิม · บัญชีเดิม · ต่างแค่ "เว็บนี้มีหน้าอะไร"
 เจ้าของกฎ **`src/appEdition.js` / `src/appEdition.nm.js`** (สลับด้วย alias ใน `vite.nm.config.js`)
+- 🔴 **โมดูลใหม่ที่ "เห็นกับ NM" (Marketing ฯลฯ) = เติม `EDITION_PAGES` ของไฟล์เดิม ห้ามแตก edition ที่ 3**
 - 🔴 **`edition` ≠ สิทธิ์ ต้องผ่านทั้งคู่** — edition = "เว็บนี้มีหน้านี้ไหม" (ตายตัวตอน build · **admin ข้ามไม่ได้**
   · ด่าน = บรรทัดแรกของ `canAccessPage()`) · **เอาหน้าเข้า `EDITION_PAGES` ไม่ได้แจกสิทธิ์ให้ใครเพิ่ม**
   · ห้ามใช้แทนสิทธิ์ (client ล้วน ไม่มีผลกับ RLS)
