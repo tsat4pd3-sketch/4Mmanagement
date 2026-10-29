@@ -84,6 +84,7 @@ const TvBoard = lazy(() => import('./pages/TvBoard'));
 const FlowTower    = lazy(() => import('./pages/FlowTower'));
 const GroupOverview = lazy(() => import('./pages/GroupOverview'));
 const AnnouncementMockup = lazy(() => import('./pages/AnnouncementMockup'));
+const OverseasTravelMockup = lazy(() => import('./pages/OverseasTravelMockup'));
 const AdoptionOutlook = lazy(() => import('./pages/AdoptionOutlook'));
 const ProgramUpdate = lazy(() => import('./pages/ProgramUpdate'));
 /* 🧭 ไม่ lazy โดยตั้งใจ — หน้านี้ต้องทำงานตอนบันเดิลเก่า/โหลด chunk ไม่ได้ (ดูหัวไฟล์) */
@@ -256,6 +257,8 @@ export const NAV_ITEMS = [
   { to: '/adoption-outlook', icon: '🔮', label: 'ภาพเมื่อข้อมูลเชื่อมกัน', group: 'ผู้บริหาร & เดโม' },
   // 🧪 mockup workflow ประกาศบริษัท Issue → EVP Approve → Publish ตามวันมีผล (ไม่เขียน DB · seed: admin/manager)
   { to: '/announcements', icon: '📢', label: 'ประกาศบริษัท (Mockup)', group: 'ผู้บริหาร & เดโม' },
+  // 🧪 mockup workflow เบิกเงินเดินทางต่างประเทศ 7 ขั้น 5 ฝ่าย (ไม่เขียน DB · ยังไม่ seed สิทธิ์ = admin เท่านั้น)
+  { to: '/overseas-travel', icon: '✈️', label: 'เบิกเดินทางต่างประเทศ (Mockup)', group: 'ผู้บริหาร & เดโม' },
 
   // ── ตั้งค่า 13 เมนู แบ่ง 2 กลุ่มย่อยด้วย `sub` (nav audit 2026-08-27) ─────────────
   // ไม่ได้เพิ่มหมวดบนแถบไอคอน — แค่คั่นหัวข้อในแผงเดียวกัน แยก "ของที่กรอกทุกเดือน"
@@ -2111,6 +2114,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
               } />
               <Route path="/announcements" element={
                 <RoleRoute path="/announcements" userRole={role}><AnnouncementMockup /></RoleRoute>
+              } />
+              <Route path="/overseas-travel" element={
+                <RoleRoute path="/overseas-travel" userRole={role}><OverseasTravelMockup /></RoleRoute>
               } />
               <Route path="/management" element={
                 <RoleRoute path="/management" userRole={role}><Management /></RoleRoute>

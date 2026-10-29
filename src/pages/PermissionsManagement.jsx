@@ -175,6 +175,7 @@ const PAGE_GROUPS = [
       { key: 'page:/group-overview', label: 'ภาพรวมกลุ่มโรงงาน (Mockup)' },
       { key: 'page:/adoption-outlook', label: 'ภาพเมื่อข้อมูลเชื่อมกัน' },
       { key: 'page:/announcements', label: 'ประกาศบริษัท (Mockup)' },
+      { key: 'page:/overseas-travel', label: 'เบิกเดินทางต่างประเทศ (Mockup)' },
     ],
   },
 ];
