@@ -7,7 +7,8 @@ import { toast } from '../components/Toast';
 import useTabParam from '../utils/useTabParam';
 import useProductionLines from '../utils/useProductionLines';
 import useOrgScope from '../utils/useOrgScope';
-import { isPlant, scopeKey, scopeCovers, scopePathText, PLANT } from '../utils/orgScope';
+import { isPlant, scopeKey, scopeCovers, scopePathText, sameScope, PLANT } from '../utils/orgScope';
+import { rint, rnd } from '../utils/seededRandom';
 import { getWorkDate, addDaysStr } from '../utils/workDate';
 
 /* ══ 📢 ประกาศ / ชี้แจงบริษัท — MOCKUP workflow (2026-10-29 · คำสั่ง user จากโน้ตลายมือ) ══════════
@@ -19,6 +20,8 @@ import { getWorkDate, addDaysStr } from '../utils/workDate';
    ⚠️ เป็นตัวอย่างหน้าจอ ไม่ใช่ระบบจริง — **ไม่เขียน DB ใดๆ** ข้อมูลประกาศ/แจ้งเตือนอยู่ใน state ของหน้า
       (รีเฟรช = เริ่มใหม่) · อ่านของจริงอย่างเดียวคือผังองค์กร (useOrgScope) เพื่อให้เลือกขอบเขตได้ตรงผัง
    · "ผู้รับเห็นไหม" ตัดสินด้วย `scopeCovers()` ตัวเดียวกับที่ KPI ใช้ — ขอบเขตแม่ครอบหน่วยลูกทั้งหมด
+   · Step 4 Feedback = พนักงานกด "รับทราบ" แล้วนับ X / N คน (user 29/10) — **ไม่ปิดขั้น โชว์ตัวเลขอย่างเดียว**
+     ผู้รับ N = **รายชื่อจำลอง** 2–4 คนต่อหน่วยในผัง (seeded — ตัวเลขนิ่งทุกครั้งที่รีเฟรช) ไม่แตะ employees จริง
    · วันที่จำลอง = ปุ่มเลื่อนวัน เพื่อเดโมว่าประกาศขึ้นตาม Effective date (ไม่ต้องรอวันจริง)
    ═══════════════════════════════════════════════════════════════════════════════════════════ */
 
@@ -52,7 +55,7 @@ let seq = 3;
 const seed = (today) => ([
   {
     id: 1, topic: 'กำหนดวันหยุดประจำปี 2570', detail: 'บริษัทประกาศวันหยุดประจำปี 2570 รวม 16 วัน รายละเอียดตามเอกสารแนบ (ตัวอย่าง)',
-    scopes: [{ ...PLANT }], effective: addDaysStr(today, -2), state: 'approved', issuer: ISSUER,
+    scopes: [{ ...PLANT }], effective: addDaysStr(today, -2), state: 'approved', issuer: ISSUER, seedAck: 0.4,
     log: [{ at: addDaysStr(today, -4), text: 'ผู้แจ้งส่งขออนุมัติ' }, { at: addDaysStr(today, -3), text: 'EVP อนุมัติ' }],
   },
   {
@@ -79,11 +82,11 @@ function StatusChip({ st }) {
 }
 
 /* แถบสถานะ 4 ขั้น (โน้ต user 29/10 "อยากให้แสดงว่าเอกสารนี้ถึงไหน") — วงกลมทึบ = ผ่านแล้ว · วงขอบหนา = อยู่ขั้นนี้
-   ขั้น 4 Feedback: mockup ยังไม่มีกลไกรับ feedback ⇒ ไปได้แค่ "อยู่ขั้นนี้" ไม่มีวันขึ้นผ่าน
+   ขั้น 4 Feedback = นับคนกดรับทราบ X / N — ไม่ปิดขั้นโดยตั้งใจ (user 29/10 "ไม่ปิดขั้น แค่โชว์ตัวเลข")
    ตีกลับ = ขั้น 2 แดง ✕ (สีนิ่ง ไม่กระพริบ) */
 const STEPS = ['Issue', 'Approve', 'Announce', 'Feedback'];
-const STEP_SUB = ['ผู้แจ้งส่ง', 'EVP อนุมัติ', 'ประกาศถึงผู้รับ', 'ความเห็นกลับ'];
-function FlowBar({ st }) {
+const STEP_SUB = ['ผู้แจ้งส่ง', 'EVP อนุมัติ', 'ประกาศถึงผู้รับ', 'ผู้รับกดรับทราบ'];
+function FlowBar({ st, ack }) {
   const at = st === 'pending' || st === 'rejected' ? 1 : st === 'scheduled' ? 2 : st === 'published' ? 3 : 0;
   return (
     <div style={{ display: 'grid', gridTemplateColumns: `repeat(${STEPS.length}, 1fr)`, maxWidth: 560, paddingTop: 4 }}>
@@ -94,7 +97,7 @@ function FlowBar({ st }) {
         const c = bad ? '#ef4444' : done ? '#22c55e' : cur ? 'var(--accent)' : 'var(--muted)';
         const lineC = i < at ? '#22c55e' : 'var(--border2)';
         return (
-          <div key={label} style={{ position: 'relative', display: 'grid', justifyItems: 'center', gap: 3, textAlign: 'center' }}>
+          <div key={label} style={{ position: 'relative', display: 'grid', justifyItems: 'center', alignContent: 'start', gap: 3, textAlign: 'center' }}>
             {i < STEPS.length - 1 && (
               <span style={{ position: 'absolute', top: 10, left: '50%', width: '100%', height: 2, background: lineC }} />
             )}
@@ -107,6 +110,11 @@ function FlowBar({ st }) {
             </span>
             <span style={{ fontSize: 12, fontWeight: done || cur || bad ? 700 : 400, color: c }}>Step {i + 1} · {label}</span>
             <span style={{ fontSize: 11, color: 'var(--muted)' }}>{bad ? 'ถูกตีกลับ' : cur ? `ถึงขั้นนี้ · ${STEP_SUB[i]}` : STEP_SUB[i]}</span>
+            {i === 3 && at === 3 && ack && (
+              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>
+                รับทราบ {ack.done} / {ack.total} คน{ack.total ? ` (${Math.round((ack.done / ack.total) * 100)}%)` : ''}
+              </span>
+            )}
           </div>
         );
       })}
@@ -135,6 +143,26 @@ export default function AnnouncementMockup() {
   const [reason, setReason] = useState('');
   // ── พนักงาน ──
   const [myUnit, setMyUnit] = useState(null);
+  const [meId, setMeId] = useState('');
+  const [acks, setAcks] = useState({});                       // { [annId]: { [empId]: วันที่กด } }
+
+  /* 👥 รายชื่อจำลอง — 2–4 คนต่อหน่วยในผัง (ส่วนงาน/แผนก/กลุ่มไลน์/ไลน์) · ฝ่าย/โรงงาน/CC ไม่มีคนของตัวเอง */
+  const roster = useMemo(() => (index?.options || [])
+    .filter(o => ['section', 'department', 'line_group', 'line'].includes(o.kind))
+    .flatMap(o => Array.from({ length: rint(`ann-roster:${o.key}`, 2, 4) }, (_, i) => ({
+      id: `${o.key}#${i + 1}`, name: `พนักงาน ${o.value} #${i + 1}`, unit: { kind: o.kind, value: o.value },
+    }))), [index]);
+  const recipientsOf = (a) => (index ? roster.filter(e => a.scopes.some(sc => scopeCovers(index, sc, e.unit))) : []);
+  // seedAck = สัดส่วนที่กดไว้แล้วของประกาศตัวอย่าง (ให้เดโมเห็นตัวเลขไม่เป็น 0 ตั้งแต่เปิด)
+  const ackAt = (a, e) => acks[a.id]?.[e.id] || (a.seedAck && rnd(`ann-ack:${a.id}:${e.id}`) < a.seedAck ? a.effective : null);
+  const ackStat = (a) => { const r = recipientsOf(a); const done = r.filter(e => ackAt(a, e)); return { total: r.length, done: done.length, pending: r.filter(e => !ackAt(a, e)) }; };
+  const myPeople = myUnit && !isPlant(myUnit) ? roster.filter(e => sameScope(e.unit, myUnit)) : [];
+  const me = myPeople.find(e => e.id === meId) || null;
+  const acknowledge = (a) => {
+    if (!me) return;
+    setAcks(m => ({ ...m, [a.id]: { ...(m[a.id] || {}), [me.id]: today } }));
+    toast.success(`${me.name} รับทราบแล้ว`);
+  };
 
   const notify = (to, text, annId) => setNotifs(n => [{ id: Date.now() + Math.random(), to, at: today, text, annId }, ...n]);
   const label = (sc) => (index ? scopePathText(index, sc) : (isPlant(sc) ? 'ทั้งโรงงาน' : sc.value));
@@ -190,8 +218,9 @@ export default function AnnouncementMockup() {
   const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 14, boxShadow: 'var(--shadow-sm)' };
   const h3 = { margin: '0 0 10px', fontSize: 15 };
 
-  const AnnRow = ({ a, children }) => {
+  const AnnRow = ({ a, children, ackList = false }) => {
     const st = statusOf(a, today);
+    const ack = st === 'published' ? ackStat(a) : null;
     return (
       <div style={{ ...card, borderLeft: `4px solid ${(STATUS[st] || STATUS.pending).color}`, display: 'grid', gap: 8 }}>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -203,7 +232,15 @@ export default function AnnouncementMockup() {
           <span style={{ color: 'var(--muted)' }}>ผู้รับ:</span>
           {a.scopes.map(sc => <Chip key={isPlant(sc) ? 'plant' : scopeKey(sc.kind, sc.value)}>{label(sc)}</Chip>)}
         </div>
-        <FlowBar st={st} />
+        <FlowBar st={st} ack={ack} />
+        {ackList && ack && ack.pending.length > 0 && (
+          <details style={{ fontSize: 12 }}>
+            <summary style={{ cursor: 'pointer', color: 'var(--muted)' }}>ยังไม่รับทราบ {ack.pending.length} คน</summary>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+              {ack.pending.map(e => <Chip key={e.id}>{e.name}</Chip>)}
+            </div>
+          </details>
+        )}
         {a.reject_reason && <div style={{ fontSize: 12, color: '#ef4444' }}>เหตุผลที่ตีกลับ: {a.reject_reason}</div>}
         {children}
       </div>
@@ -289,7 +326,7 @@ export default function AnnouncementMockup() {
           <div style={{ display: 'grid', gap: 12 }}>
             <Inbox to="issuer" title="แจ้งเตือนของผู้แจ้ง" />
             <h3 style={{ ...h3, margin: 0 }}>ประกาศที่ฉันออก ({items.length})</h3>
-            {items.map(a => <AnnRow key={a.id} a={a} />)}
+            {items.map(a => <AnnRow key={a.id} a={a} ackList />)}
           </div>
         </div>
       )}
@@ -323,13 +360,29 @@ export default function AnnouncementMockup() {
         <div style={{ display: 'grid', gap: 12 }}>
           <div style={{ ...card, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
             <span style={{ fontSize: 13 }}>👷 ดูในฐานะพนักงานของ</span>
-            <OrgScopePicker index={index} failed={failed} value={myUnit} onChange={setMyUnit} costCenter={false} plantLabel="— เลือกหน่วยงานของพนักงาน —" />
+            <OrgScopePicker index={index} failed={failed} value={myUnit} onChange={(v) => { setMyUnit(v); setMeId(''); }} costCenter={false} plantLabel="— เลือกหน่วยงานของพนักงาน —" />
+            <select value={meId} onChange={e => setMeId(e.target.value)} disabled={!myPeople.length} style={{ width: 240 }}>
+              <option value="">{myPeople.length ? '— ฉันคือ (รายชื่อจำลอง) —' : 'หน่วยนี้ไม่มีรายชื่อจำลอง'}</option>
+              {myPeople.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+            </select>
             <span style={{ fontSize: 12, color: 'var(--muted)' }}>
               ประกาศที่ขึ้น = อนุมัติแล้ว + ถึงวันมีผล ({fmtDate(today)}) + ผู้รับครอบหน่วยนี้
               {upcomingForMe > 0 && ` · อีก ${upcomingForMe} ฉบับรอถึงวันมีผล`}
             </span>
           </div>
-          {board.length ? board.map(a => <AnnRow key={a.id} a={a} />) : (
+          {board.length ? board.map((a) => {
+            const at = me ? ackAt(a, me) : null;
+            return (
+              <AnnRow key={a.id} a={a}>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                  {at
+                    ? <span style={{ fontSize: 13, fontWeight: 700, color: '#22c55e' }}>✓ {me.name} รับทราบแล้ว ({fmtDate(at)})</span>
+                    : <button type="button" style={btnPrimary} disabled={!me} onClick={() => acknowledge(a)}>✋ รับทราบ</button>}
+                  {!me && <span style={{ fontSize: 12, color: 'var(--muted)' }}>เลือก "ฉันคือ" ก่อนจึงกดรับทราบได้</span>}
+                </div>
+              </AnnRow>
+            );
+          }) : (
             <div style={{ ...card, color: 'var(--muted)', fontSize: 13 }}>
               ไม่มีประกาศสำหรับหน่วยนี้ ณ วันที่ {fmtDate(today)}
               {upcomingForMe > 0 ? ` (มี ${upcomingForMe} ฉบับอนุมัติแล้วแต่ยังไม่ถึงวันมีผล — ลองเลื่อนวันที่จำลอง)` : ''}
