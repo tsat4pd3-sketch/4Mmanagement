@@ -39,6 +39,7 @@
 | ตั้งค่าผัง/Floorplan — แยก display ออกจาก setup (2026-07-16) | `docs/modules/floorplan-setup.md` |
 | 4M Approval Workflow — ประวัติเหตุการณ์ `[Auto]` ท่วมคิว | `docs/modules/four-m-workflow.md` |
 | Group Overview — 🏢 ภาพรวมกลุ่มบริษัท TSG (MOCKUP หลายบริษัท · 2026-08-05) | `docs/modules/group-overview.md` |
+| Announcement Mockup — 📢 ประกาศ/ชี้แจงบริษัท Issue → Approve → Publish (MOCKUP · 2026-10-29) | `docs/modules/announcement-mockup.md` |
 | Improvements — โปรเจคปรับปรุง Kaizen (2026-07-12) | `docs/modules/improvements-kaizen.md` |
 | 🎯 ตั้งค่าจุดตรวจ — ระบบเดียว PM (อุปกรณ์) + QA (ชิ้นงาน) · ชิ้นส่วนกลาง `components/inspect/` (2026-10-15) | `docs/modules/inspection-point-setup.md` |
 | Kanban Auto-Calc — คำนวณ kanban จาก forecast (แท็บ 🎴 คำนวณ Kanban ใน /planner-sales · 2026-07-16..17) | `docs/modules/kanban-auto-calc.md` |
