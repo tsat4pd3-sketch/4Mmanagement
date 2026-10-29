@@ -25,6 +25,7 @@
 | หลักฐาน/ตัวเลขเบื้องหลัง "กฎเหล็กการเขียน DB จาก client" | `docs/modules/db-write-rules.md` |
 | 🔗 สายธารความต้องการ (Demand Flow) — `/flow-tower` (audit + หน้าจริง · 2026-08-19) | `docs/modules/demand-flow-tower.md` |
 | Deploy | `docs/modules/deploy.md` |
+| 🏷️ แยก frontend ของ New Model (2 เว็บจากโค้ดชุดเดียว · edition) | `docs/modules/nm-frontend-split.md` |
 | 🚨 ระบบล่ม 21/10 (ช่องต่อฐานข้อมูลเต็ม) + กฎ "ถอยเมื่อ 503" | `docs/modules/conn-outage-2026-10-21.md` |
 | Dashboard ส่วนงาน — 📋 `/dept-dashboard` (2026-08-06) | `docs/modules/dept-dashboard-tv.md` |
 | DIE MAINTENANCE — Layout & สถานะแม่พิมพ์ (2026-08-19) | `docs/modules/die-maintenance.md` |
