@@ -7649,3 +7649,25 @@ test('🧹 logout-clears-master-cache — logout ต้องล้าง cache 
   assert.ok(app.indexOf("auth.signOut({ scope: 'local' })", i) - i < 200,
     'ต้องล้างก่อน signOut ในก้อนเดียวกัน (ล้างทีหลัง = navigate ไปแล้ว)');
 });
+
+/* ═══ 🕵️ account-activity-never-vs-unknown — "ไม่เคยเข้า" ≠ "อ่านไม่ได้" ═══ 29/10
+   คำถาม user: *"บัญชีของคน คนไหนไม่มีการเข้าใช้เลยบ้าง · admin ดู last login ได้มั้ย
+                  จะได้ลบหรือปิดถูก"*
+   จอนี้เป็นจอที่ใช้ตัดสิน **ลบ/ปิดบัญชี** ⇒ เดาผิดข้างเดียวก็ลบบัญชีที่คนใช้อยู่ทุกวัน
+   `get_auth_users()` เป็น admin-only ⇒ คนที่เข้าหน้านี้ได้แต่ไม่ใช่ admin จะไม่ได้ค่านี้เลย
+   ⇒ undefined (ไม่รู้) ต้องไม่ถูกบีบเป็น null (ไม่เคยเข้า) ด้วย `|| null` เด็ดขาด */
+test('🕵️ account-activity-never-vs-unknown — ห้ามบีบ "อ่านไม่ได้" เป็น "ไม่เคยเข้าใช้"', () => {
+  const act = stripComments(readFileSync(join(ROOT, 'src/utils/accountActivity.js'), 'utf8'));
+  assert.match(act, /lastSignInAt === undefined/, 'ต้องแยกเคส undefined ออกมาก่อน');
+  assert.match(act, /lastSignInAt === null/,      'ต้องแยกเคส null ออกมาก่อน');
+  assert.doesNotMatch(act, /Date\.now\(\)/,
+    '🔴 ห้ามอ่านนาฬิกาในไฟล์กฎ — ต้องรับ now เข้ามา (ด่าน "นาฬิกา +400 วัน")');
+
+  const au = stripComments(readFileSync(join(ROOT, 'src/pages/AddUser.jsx'), 'utf8'));
+  assert.doesNotMatch(au, /last_sign_in_at:[^,\n]*\|\|\s*null/,
+    '🔴 `last_sign_in_at: … || null` = undefined กลายเป็น "ไม่เคยเข้าใช้" ⇒ ชวนลบบัญชีที่ยังใช้อยู่');
+  assert.match(au, /activityOf\(u\.last_sign_in_at/,
+    'คอลัมน์ต้องตัดสินผ่าน activityOf() ห้ามเทียบวันเองในหน้า');
+  assert.match(au, /ACT_UNKNOWN \? '—'/,
+    'อ่านไม่ได้ต้องขึ้นขีด ไม่ใช่ข้อความที่อ่านเหมือน "ไม่เคยเข้า"');
+});
