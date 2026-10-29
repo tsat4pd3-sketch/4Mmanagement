@@ -16,7 +16,7 @@ submit แจ้งเตือนหัวหน้า (สมมติ EVP) ·
 - **Step 4 Feedback = กด "รับทราบ" แล้วนับ X / N คน (%)** (29/10 · user เลือก) — **ไม่ปิดขั้น โชว์ตัวเลขอย่างเดียว** ·
   N = **รายชื่อจำลอง** 2–4 คนต่อหน่วย (ส่วนงาน/แผนก/กลุ่มไลน์/ไลน์ · seeded `rint` นิ่งทุกรีเฟรช · ไม่แตะ `employees` จริง) ผู้รับ = คนที่หน่วยถูกครอบด้วย `scopeCovers` ·
   แท็บพนักงาน: เลือกหน่วย → "ฉันคือ" → ✋ รับทราบ · แท็บผู้แจ้ง: ตัวเลข + พับ "ยังไม่รับทราบ N คน" ดูรายชื่อ · ประกาศตัวอย่างมี `seedAck` 40% ให้เดโมไม่เริ่มที่ 0
-- สิทธิ์: มีแถว `page:/announcements` ใน `/permissions` แต่ **ยังไม่ seed** ⇒ admin เท่านั้นจนกว่าจะเปิดให้ role อื่น
+- สิทธิ์: `page:/announcements` = **admin + manager** (manager seed 29/10 · migration `20261029_announcements_permission_manager_main.sql` · Main · **apply แล้ว**) · role อื่นเปิดเพิ่มที่ `/permissions`
 
 ## ถ้าจะทำเป็นระบบจริง (ยังไม่ได้ทำ · รอ user สั่ง)
 ตารางประกาศฝั่ง Main + RLS `has_perm()` + audit · แจ้งเตือนในแอปผ่าน `notification_rules` → `notifications` (ห้ามเพิ่ม Telegram) ·
