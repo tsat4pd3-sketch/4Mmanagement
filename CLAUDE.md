@@ -70,6 +70,8 @@ Realtime + Edge Functions/Deno) · Telegram Bot API · deploy = Render.com (Stat
 
 🔴 **โครงสร้างจริง (ตาราง/คอลัมน์/FK/หน้าไหนใช้ตารางไหน) อ่านสดที่หน้า `/schema`** — ห้ามเขียนลิสต์คอลัมน์เป็นมือที่ไหนอีก (snapshot มือล้าสมัยทุกครั้ง)
 > 📄 กฎ/เหตุผล/ประวัติรายตารางที่ pg_catalog บอกไม่ได้ (employees · production_lines · profiles · oee_targets · ot_night_bookings · workstations · employee_skills · shift_schedules · ppe_* · four_m_logs · notifications · meeting_action_items · event_comments) → **`docs/modules/db-schema.md`**
+> 📄 จอ `/schema` อ่านสดจาก pg_catalog ทั้ง 2 project → `docs/modules/schema-map.md`
+- 🔴 **migration ที่ copy ข้อมูลกันพลาด ต้องสร้างใน schema `archive` ห้ามไว้ใน `public`** (มีด่านใน build)
 
 **กฎเหล็กรายตารางที่ทุก session ต้องรู้ก่อนแตะ (ที่เหลืออ่านในไฟล์โมดูล):**
 - `production_lines` — 🔴 **`unit_kind` = "เป็นไลน์ผลิตไหม"** (`production` default / `support` = สำนักงาน/งานสนับสนุน) — ตัดสินผ่าน **`src/utils/unitKind.js` เท่านั้น** (มีด่าน) · **ว่าง/ไม่รู้จัก = ไลน์ผลิต** · ช่องเลือกไลน์กรอง support ออกเป็น default · จอคน/ทะเบียน (เช็คชื่อ·จัดกะ·ผังองค์กร·ทะเบียนไลน์) ต้องส่ง `includeSupport` · **คนละแกนกับ `line_type`**
@@ -386,7 +388,7 @@ Fixture shim record `/equipment?tab=jig` `fixture-shim-record.md` ·
 
 ## 🧰 `/equipment` — ศูนย์ทะเบียนอุปกรณ์ของช่าง (2026-09-22)
 
-ทะเบียนที่เคยกระจาย 3 หมวดเมนู ยุบเป็นหน้าเดียว 5 แท็บ: `?tab=machine|die|jig|spare|rack`
+ยุบเป็นหน้าเดียว 5 แท็บ: `?tab=machine|die|jig|spare|rack`
 (route เดิม `/machine-database` `/die-registry` `/fixture` redirect เข้ามา) · **embed หน้าเดิมทั้งดุ้น
 ไม่แก้ของเดิม** (pattern เดียวกับ `PmHub`) · สิทธิ์ piggyback **ไม่ต้อง seed `page:/equipment`**
 · 🔴 **แท็บซ้อนแท็บต้องคนละ query param** — หน้าลูกใช้ `?die=` / `?fx=` **ห้ามใช้ `?tab=`** (UI §6.8 ข้อ 2.4)
@@ -424,17 +426,6 @@ Fixture shim record `/equipment?tab=jig` `fixture-shim-record.md` ·
 ## ⚫ ของที่ยุบ/ถอดออกแล้ว — **อย่ารื้อกลับโดยไม่ถาม user**
 
 > 📄 รายการ + เหตุผลรายตัว → `docs/modules/_archived/` (ดัชนีใน `docs/modules/README.md`)
-
----
-
-## 🗄️ โครงสร้างฐานข้อมูล — `/schema` (2026-09-22)
-
-จอให้ทีมงาน**เห็นเองว่าตารางชื่ออะไร · PK/FK ผูกกันแบบไหน · หน้าไหนใช้ตารางไหน** แล้วกดแจ้งบัคพร้อมบริบท
-· โครงสร้างอ่าน**สด**จาก pg_catalog (RPC `esm_schema_overview` / `esm_schema_table` ทั้ง 2 project)
-· **ห้ามเขียนรายชื่อตาราง/คอลัมน์เป็นลิสต์มือที่ไหนอีก** — snapshot มือล้าสมัยทุกครั้ง
-· 🔴 **migration ที่ copy ข้อมูลกันพลาด ต้องสร้างใน schema `archive` ห้ามไว้ใน `public`**
-  (มีด่านใน build)
-> 📄 `docs/modules/schema-map.md`
 
 ---
 
@@ -546,7 +537,6 @@ Fixture shim record `/equipment?tab=jig` `fixture-shim-record.md` ·
 
 ## 📦 อัพเดทโปรแกรม — `/program-update` (2026-10-01 · คำสั่ง user)
 
-จออ่านอย่างเดียว บอกว่าช่วงที่เลือก **เพิ่ม/แก้/ปรับ** อะไรไปบ้าง · **ไม่แตะ Supabase เลย**
 · 🔴 **แหล่งความจริงคือ git** — `scripts/gen-changelog.mjs` → `public/changelog.json` (อยู่ในขั้น build)
   **ห้ามแก้ไฟล์นั้นมือ · ห้ามทำทะเบียนอัพเดทให้คนมาจดเอง** (ช่องที่ไม่มีใครกรอก = ช่องตาย)
 · 🔴 **สคริปต์ห้ามทำ build ล่ม · clone ตื้นห้ามเขียนทับ** (ของใหม่น้อยกว่าเดิม >10% = ไม่เขียน)
@@ -762,6 +752,20 @@ Platform:    Render.com (Static Site)
 > 🔴 **ห้าม self-host Supabase จนกว่าจะครบเงื่อนไขใน `docs/modules/deploy.md` §ย้ายเข้า server บริษัท**
 > (คนดูแล · backup/กู้คืน · ทางเข้าจากมือถือนอกโรงงาน) — ทั้งโรงงานพึ่งระบบนี้แล้ว ล่ม = เปิดกะไม่ได้
 > 📄 ขั้นตอน/ลำดับ/สิ่งที่ต้องมีก่อน → `docs/modules/deploy.md`
+
+---
+
+## 🏷️ 2 เว็บจากโค้ดชุดเดียว — edition (2026-10-29 · คำสั่ง user "แยก frontend ของ New Model")
+
+`npm run build` → `dist/` = ESM เต็ม · `npm run build:nm` → `dist-nm/` = **เว็บ New Model (IEC)**
+— โปรแกรมตัวเดียวกัน · Supabase Main เดิม · บัญชีเดิม · ต่างแค่ "เว็บนี้มีหน้าอะไร"
+เจ้าของกฎ **`src/appEdition.js` / `src/appEdition.nm.js`** (สลับด้วย alias ใน `vite.nm.config.js`)
+- 🔴 **`edition` ≠ สิทธิ์ ต้องผ่านทั้งคู่** — edition = "เว็บนี้มีหน้านี้ไหม" (ตายตัวตอน build · **admin ข้ามไม่ได้**
+  · ด่าน = บรรทัดแรกของ `canAccessPage()`) · **เอาหน้าเข้า `EDITION_PAGES` ไม่ได้แจกสิทธิ์ให้ใครเพิ่ม**
+  · ห้ามใช้แทนสิทธิ์ (client ล้วน ไม่มีผลกับ RLS)
+- 🔴 **import เขียน `'<path>/appEdition'` เท่านั้น** (ไม่มี `.js` ไม่มี `.nm`) · **แก้ `vite.config.js`/`index.html`
+  ต้องตามไปแก้ `vite.nm.config.js`/`nm.html`** · **ลิงก์ในหน้า NM ต้องชี้หน้าที่อยู่ใน `EDITION_PAGES`** (3 ด่าน)
+> 📄 `docs/modules/nm-frontend-split.md`
 
 ---
 

@@ -14,6 +14,8 @@ import SignatureModal from './components/SignatureModal';
 import ChangePasswordModal from './components/ChangePasswordModal';
 const FeedbackModal = lazy(() => import('./components/FeedbackModal'));
 import { loadPermissions, canAccessPage, setDeptAdmin, setSharedAccount, can } from './utils/permissions';
+/* 🏷️ รุ่นของเว็บ (full / nm) — สลับตอน build ด้วย alias ใน vite.nm.config.js · 📄 src/appEdition.js */
+import { EDITION_LABEL, EDITION_HOME } from './appEdition';
 import { LOGISTIC_GROUPS } from './utils/logisticSide';
 import { trackVisit, topPaths } from './utils/navRecent';
 import { effectiveSections } from './utils/sectionScope';
@@ -955,7 +957,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
             <img src={tsLogo} alt="Thai Summit Group" width={28} height={28} style={{ borderRadius: 3, flexShrink: 0 }} />
             <div>
               <div style={{ fontSize: 11, letterSpacing: '2px', color: 'var(--accent)', textTransform: 'uppercase', fontWeight: 700, fontFamily: 'var(--font-display)' }}>Thai Summit</div>
-              <div style={{ fontSize: 11, letterSpacing: '1.5px', color: 'var(--muted)', textTransform: 'uppercase', fontFamily: 'var(--font-display)' }}>ESM · Shopfloor</div>
+              <div style={{ fontSize: 11, letterSpacing: '1.5px', color: 'var(--muted)', textTransform: 'uppercase', fontFamily: 'var(--font-display)' }}>{EDITION_LABEL}</div>
             </div>
           </div>
           <button
@@ -1977,6 +1979,10 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
 
   // หน้า Hub (เลือกส่วนงาน) — แสดงเต็มจอ ไม่มี sidebar / toggle / bell
   if (location.pathname === '/') {
+    /* 🏷️ เว็บรุ่นที่ไม่ใช่ ESM เต็ม ไม่มีหน้า "เลือกส่วนงานทั้งโรงงาน" — เด้งไปหน้าแรกของรุ่นนั้น
+       (RoleRoute เด้งมาที่ `/` เวลาไม่มีสิทธิ์ ⇒ ตรงนี้คือทางออกร่วมของทุกเส้นทาง)
+       รุ่นเต็ม `EDITION_HOME === '/'` ⇒ ไม่เข้าเงื่อนไขนี้เลย พฤติกรรมเดิมเป๊ะ */
+    if (EDITION_HOME !== '/') return <Navigate to={EDITION_HOME} replace />;
     return (
       <UserContext.Provider value={userCtx}>
         <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', color: 'var(--muted)', fontSize: 14, background: 'var(--bg)' }}>กำลังโหลด...</div>}>
