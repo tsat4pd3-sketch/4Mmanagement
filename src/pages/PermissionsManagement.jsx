@@ -174,6 +174,7 @@ const PAGE_GROUPS = [
       { key: 'page:/flow-tower', label: 'สายธารความต้องการ (Flow Tower)' },
       { key: 'page:/group-overview', label: 'ภาพรวมกลุ่มโรงงาน (Mockup)' },
       { key: 'page:/adoption-outlook', label: 'ภาพเมื่อข้อมูลเชื่อมกัน' },
+      { key: 'page:/announcements', label: 'ประกาศบริษัท (Mockup)' },
     ],
   },
 ];

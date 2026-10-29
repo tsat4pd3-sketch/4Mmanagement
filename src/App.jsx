@@ -83,6 +83,7 @@ const DeptHub       = lazy(() => import('./pages/DeptHub'));
 const TvBoard = lazy(() => import('./pages/TvBoard'));
 const FlowTower    = lazy(() => import('./pages/FlowTower'));
 const GroupOverview = lazy(() => import('./pages/GroupOverview'));
+const AnnouncementMockup = lazy(() => import('./pages/AnnouncementMockup'));
 const AdoptionOutlook = lazy(() => import('./pages/AdoptionOutlook'));
 const ProgramUpdate = lazy(() => import('./pages/ProgramUpdate'));
 /* 🧭 ไม่ lazy โดยตั้งใจ — หน้านี้ต้องทำงานตอนบันเดิลเก่า/โหลด chunk ไม่ได้ (ดูหัวไฟล์) */
@@ -253,6 +254,8 @@ export const NAV_ITEMS = [
   // "ข้อมูลเชื่อมกันทั้งองค์กรแล้วตอบคำถามอะไรได้" — สอบกลับ/คุมคุณภาพ/predictive/prescriptive
   // ฝั่งวันนี้นับสดจากฐานจริง ฝั่งอนาคตติดป้ายคาดการณ์ (seed: admin/manager)
   { to: '/adoption-outlook', icon: '🔮', label: 'ภาพเมื่อข้อมูลเชื่อมกัน', group: 'ผู้บริหาร & เดโม' },
+  // 🧪 mockup workflow ประกาศบริษัท Issue → EVP Approve → Publish ตามวันมีผล (ไม่เขียน DB · ยังไม่ seed สิทธิ์ = admin เท่านั้น)
+  { to: '/announcements', icon: '📢', label: 'ประกาศบริษัท (Mockup)', group: 'ผู้บริหาร & เดโม' },
 
   // ── ตั้งค่า 13 เมนู แบ่ง 2 กลุ่มย่อยด้วย `sub` (nav audit 2026-08-27) ─────────────
   // ไม่ได้เพิ่มหมวดบนแถบไอคอน — แค่คั่นหัวข้อในแผงเดียวกัน แยก "ของที่กรอกทุกเดือน"
@@ -2105,6 +2108,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
               } />
               <Route path="/group-overview" element={
                 <RoleRoute path="/group-overview" userRole={role}><GroupOverview /></RoleRoute>
+              } />
+              <Route path="/announcements" element={
+                <RoleRoute path="/announcements" userRole={role}><AnnouncementMockup /></RoleRoute>
               } />
               <Route path="/management" element={
                 <RoleRoute path="/management" userRole={role}><Management /></RoleRoute>
