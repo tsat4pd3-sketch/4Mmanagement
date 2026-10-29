@@ -78,27 +78,36 @@ function StatusChip({ st }) {
   return <Chip color={m.color}>{m.label}</Chip>;
 }
 
-/* แถบ 3 ขั้นจากโน้ต — ไฮไลต์ขั้นที่ใบนี้อยู่ */
+/* แถบสถานะ 4 ขั้น (โน้ต user 29/10 "อยากให้แสดงว่าเอกสารนี้ถึงไหน") — วงกลมทึบ = ผ่านแล้ว · วงขอบหนา = อยู่ขั้นนี้
+   ขั้น 4 Feedback: mockup ยังไม่มีกลไกรับ feedback ⇒ ไปได้แค่ "อยู่ขั้นนี้" ไม่มีวันขึ้นผ่าน
+   ตีกลับ = ขั้น 2 แดง ✕ (สีนิ่ง ไม่กระพริบ) */
+const STEPS = ['Issue', 'Approve', 'Announce', 'Feedback'];
+const STEP_SUB = ['ผู้แจ้งส่ง', 'EVP อนุมัติ', 'ประกาศถึงผู้รับ', 'ความเห็นกลับ'];
 function FlowBar({ st }) {
-  const steps = [
-    { k: 'issue', label: 'Issue · ผู้แจ้งส่ง' },
-    { k: 'approve', label: 'Approve · EVP' },
-    { k: 'publish', label: 'Publish · ถึงวันมีผล' },
-  ];
-  const at = st === 'pending' ? 1 : st === 'scheduled' ? 2 : st === 'published' ? 3 : st === 'rejected' ? 1 : 0;
+  const at = st === 'pending' || st === 'rejected' ? 1 : st === 'scheduled' ? 2 : st === 'published' ? 3 : 0;
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', fontSize: 12 }}>
-      {steps.map((s, i) => {
-        const done = i < at; const cur = i === at && st !== 'rejected';
-        const bad = st === 'rejected' && i === 1;
+    <div style={{ display: 'grid', gridTemplateColumns: `repeat(${STEPS.length}, 1fr)`, maxWidth: 560, paddingTop: 4 }}>
+      {STEPS.map((label, i) => {
+        const done = i < at;
+        const bad = st === 'rejected' && i === at;
+        const cur = i === at && !bad;
         const c = bad ? '#ef4444' : done ? '#22c55e' : cur ? 'var(--accent)' : 'var(--muted)';
+        const lineC = i < at ? '#22c55e' : 'var(--border2)';
         return (
-          <span key={s.k} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ color: c, fontWeight: done || cur || bad ? 700 : 400 }}>
-              {bad ? '✕' : done ? '✓' : `${i + 1}`} {s.label}
+          <div key={label} style={{ position: 'relative', display: 'grid', justifyItems: 'center', gap: 3, textAlign: 'center' }}>
+            {i < STEPS.length - 1 && (
+              <span style={{ position: 'absolute', top: 10, left: '50%', width: '100%', height: 2, background: lineC }} />
+            )}
+            <span aria-current={cur ? 'step' : undefined}
+              style={{ position: 'relative', width: 22, height: 22, borderRadius: '50%', boxSizing: 'border-box',
+                display: 'grid', placeItems: 'center', fontSize: 11, fontWeight: 800,
+                background: done || bad ? c : 'var(--card)', border: `${cur ? 3 : 2}px solid ${c}`,
+                color: done || bad ? '#fff' : c }}>
+              {bad ? '✕' : done ? '✓' : i + 1}
             </span>
-            {i < steps.length - 1 && <span style={{ color: 'var(--muted)' }}>→</span>}
-          </span>
+            <span style={{ fontSize: 12, fontWeight: done || cur || bad ? 700 : 400, color: c }}>Step {i + 1} · {label}</span>
+            <span style={{ fontSize: 11, color: 'var(--muted)' }}>{bad ? 'ถูกตีกลับ' : cur ? `ถึงขั้นนี้ · ${STEP_SUB[i]}` : STEP_SUB[i]}</span>
+          </div>
         );
       })}
     </div>
