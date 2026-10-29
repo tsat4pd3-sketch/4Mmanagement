@@ -112,38 +112,79 @@ export const MAINTENANCE_ROLES = ['mtn', 'engineer'];
  * ⚠️ ต้องเรียกหลัง production_lines โหลดเสร็จ — lines ว่าง = คืน null (ไม่จำกัด)
  *    ห้ามคืน [] เพราะ `.in('line_name', [])` = ไม่เห็นอะไรเลย
  */
-export function scopedLineNames({ role, lineId, sections = [], lines = [], scopeIdx = null }) {
-  if (role === 'admin') return null;                       // ตาข่ายกันตาย (เหมือน effectiveSections)
-  /* 🔭 25/09: **ถอด hardcode `MAINTENANCE_ROLES` ออกแล้ว** — ไม่ต้องรับ scopeDepth เพิ่ม เพราะ
-     การตัดสินถูกยุบไว้ใน `sections` ที่ `effectiveSections()` คำนวณมาให้แล้ว (จุดเดียวของระบบ)
-       · ช่าง/วิศวกรที่ `scope_depth='all'` ⇒ effectiveSections คืน [] ⇒ ตกมาที่ `return null` = ทั้งโรงงาน
-       · ถ้าวันหน้า admin ตั้งขอบเขตให้ช่างแคบลง ⇒ sections มีค่า ⇒ **มีผลจริง**
-     เดิมบรรทัดนี้คืน null ก่อนดู sections ⇒ ตั้งขอบเขตให้ช่างจากจอแล้ว **ไม่มีผลเงียบๆ** (no-op)
-     ✅ พิสูจน์ก่อนถอด (25/09): ช่าง/วิศวกรทั้ง 16 บัญชี **ไม่มี `sections` เลยสักใบ**
-        ⇒ ผลลัพธ์วันนี้เท่าเดิมเป๊ะ · คำสั่ง user 2026-08-19 ("หน่วยงานช่างเห็นทั้งโรงงาน")
-        ยังเป็นจริง แต่มาจาก **ข้อมูลในฐาน** แทนการ hardcode ⇒ แก้ได้จากจอโดยไม่ต้องแก้โค้ด */
-  if (!lines.length) return null;
+export function scopedLineNames(args) {
+  /* 🔴 posture 'own' — "ไลน์ที่หัวหน้ากลุ่ม **รับผิดชอบ**" (ครอบครัวไลน์ล้วน ไม่ ∪ ส่วนงาน)
+     ต่างจาก scopedLines() โดยเจตนา · ด่าน E ใน scopeRegistryGate.test.mjs ล็อกไว้
+     ⚠️ ความต่างนี้ยังเป็น **คำถามค้างถึง user** (29/10) — ดู §ช่องว่างที่เหลือ ใน
+        docs/ORG-IDENTITY-SINGLE-SOURCE-PLAN.md · ห้ามยุบเองเงียบๆ */
+  const r = lineScope(args, { scope: 'own' });
+  return r.unlimited ? null : (r.names.length ? r.names : null);
+}
+
+/**
+ * 🔭🔭 **แกนเดียวของคำถาม "บัญชีนี้เห็นไลน์ไหน"** (29/10 · คำสั่ง user "ทำข้อ1 ให้จบในรอบนี้")
+ *
+ * เดิมคำถามนี้มี **2 ตัวตอบที่ไม่ตรงกัน** ⇒ บั๊กเรื้อรังที่ user เจอซ้ำทุกสัปดาห์:
+ *   `scopedLines()`     (ช่องเลือกไลน์ · ~20 จอ) → หัวหน้า 306 เห็น  306 + ไลน์แม่ + 250T
+ *   `scopedLineNames()` (กรองข้อมูล   · ~22 จอ) → หัวหน้า 306 เห็น  306 **ไลน์เดียว**
+ * ⇒ อาการที่หน้างานแจ้ง *"เห็นของทุกไลน์ แต่เปิดกะเลือกไลน์ตัวเองไม่ได้"* คือ
+ *   จอ 2 ชุดนี้ตอบคนละอย่างบนบัญชีเดียวกัน — ไม่ใช่บั๊กของจอใดจอหนึ่ง
+ * ⇒ **ตั้งแต่นี้ทั้งคู่เป็น wrapper บางๆ ของตัวนี้** · มีด่าน `line-scope-two-answers`
+ *
+ * 🔴 **`scope` = ท่าของคำตอบ — 2 ท่านี้ "ตั้งใจให้ต่างกัน" ห้ามยุบเองเงียบๆ**
+ *   `'view'` (default · `scopedLines`)     = ไลน์ที่ **เห็น** → ครอบครัวไลน์ **∪ ส่วนงานที่กำกับ** (กฎ 26/10)
+ *   `'own'`            (`scopedLineNames`) = ไลน์ที่ **รับผิดชอบ** → ครอบครัวไลน์ล้วน
+ *   ⇒ ยุบ 2 ท่าเป็นท่าเดียว = **product decision ต้องถาม user** (ด่าน E · scopeRegistryGate.test.mjs)
+ *   ✅ แต่ "การเลือกไลน์" ใช้ตรรกะชุดเดียวแล้ว — ต่างกันแค่บรรทัด `scope` บรรทัดเดียว
+ *
+ * คืน `{ unlimited, unsure, reason, lines, names }`
+ *  · `unlimited` = เห็นทั้งโรงงาน (admin / ขอบเขตไม่ถูกจำกัด / ทะเบียนยังไม่โหลด)
+ *  · 🔴 `unsure` = **ตัดขอบเขตให้ไม่ได้จริง** (ทะเบียนยังไม่โหลด · หาไลน์ตัวเองไม่เจอ)
+ *       ⇒ จอ **ต้องเขียนบนจอ** ห้ามเงียบ — "ไม่มีรายการ" ทั้งที่ตัดขอบเขตไม่ได้ = จอโกหก
+ *  · `lines` = ตัวไลน์ (fail-closed: ตัดไม่ได้ + ไม่มีส่วนงานกำกับ = `[]`)
+ *  · `names` = ชื่อไลน์ชุดเดียวกัน (ชุดเดียวกันเสมอ — ห้ามให้ 2 ช่องนี้ไม่ตรงกันอีก)
+ */
+export function lineScope({ role, lineId, sections = [], lines = [], scopeIdx = null } = {},
+  { scope = 'view' } = {}) {
+  const all = lines || [];
+  const out = (sel, { unlimited = false, unsure = false, reason = null } = {}) => ({
+    unlimited, unsure, reason,
+    lines: unlimited ? all : sel,
+    names: (unlimited ? all : sel).map(l => l.name),
+  });
+
+  if (role === 'admin') return out(all, { unlimited: true, reason: 'admin' });
+  // ทะเบียนไลน์ยังไม่โหลด = ยังตัดขอบเขตไม่ได้ ⇒ ไม่จำกัด **แต่ต้องบอกว่าไม่ชัด**
+  if (!all.length) return out([], { unlimited: true, unsure: true, reason: 'registry_unloaded' });
+
+  const secs = (sections || []).filter(Boolean);
+
   if (role === 'leader' && lineId) {
-    const me = lines.find(l => String(l.id) === String(lineId));
-    if (!me) return null;
-    const fam = getLineFamilyNames(lines, me.name);
-    return fam.length ? fam : null;
-  }
-  if (sections.length) {
-    /* 🔁 22/10 — ขอบเขตอาจเป็น **แผนก/กลุ่ม/ไลน์** ไม่ใช่แค่ส่วนงาน (user: "jig มาฝากกับผลิต" ·
-       หัวหน้าที่ดูแล 2 ไลน์ในแผนกเดียว) ⇒ ถ้าหน้าไหนส่งดัชนีผัง (`scopeIdx`) มาด้วย ให้ขยายผ่านผัง
-       🔴 ไม่ส่ง `scopeIdx` = พฤติกรรมเดิมเป๊ะ (เทียบ `l.section` ตรงตัว) — ห้ามบีบแคบลงเงียบ */
-    if (scopeIdx) {
-      const vs = buildViewScope(sections, scopeIdx);
-      if (vs.byOrg) {
-        const names = lines.filter(l => vs.lineOk(l)).map(l => l.name);
-        return names.length ? names : null;
-      }
+    /* 🔴🔴 แกน "ไลน์" มาก่อนแกน "ส่วนงาน" เสมอ — ตาข่ายกันการตั้ง scope_depth='all' ผิด (24/10)
+       🔴🔴 แต่ล็อก "ไลน์ตัวเองไลน์เดียว" ไม่ได้ (26/10 · ทั้งโรงงานเปิดกะไม่ได้เช้าวันจันทร์)
+          ⇒ เห็น **ไลน์ตัวเอง ∪ ไลน์ในส่วนงานที่ถูกกำกับไว้** */
+    const me = all.find(l => String(l.id) === String(lineId));
+    const fam = me ? new Set(getLineFamilyNames(all, me.name)) : null;
+    const own = fam?.size ? all.filter(l => fam.has(l.name)) : [];
+    if (!own.length) {
+      /* หาไลน์ตัวเองไม่เจอทั้งที่ทะเบียนโหลดแล้ว (line_id ชี้ไลน์ที่ถูกลบ/เปลี่ยนชื่อ)
+         ⚠️ มีส่วนงานกำกับ ⇒ ยังตัดด้วยส่วนงานได้ · ไม่มีเลย ⇒ fail-closed `[]`
+         🔴 ทั้ง 2 ทางคือ `unsure` — จอต้องเขียนว่าขอบเขตไม่ชัด ห้ามโชว์ "ไม่มีรายการ" เฉยๆ */
+      if (!secs.length) return out([], { unsure: true, reason: 'own_line_unknown' });
+      return out(scopedBySections(secs, all, scopeIdx), { unsure: true, reason: 'own_line_unknown' });
     }
-    const names = lines.filter(l => inSectionScope(sections, l.section)).map(l => l.name);
-    return names.length ? names : null;
+    if (!secs.length || scope === 'own') return out(own, { reason: 'own_family' });
+    const bySec = scopedBySections(secs, all, scopeIdx);
+    const seen = new Set(own.map(l => l.name));
+    return out(own.concat(bySec.filter(l => !seen.has(l.name))), { reason: 'own_family+sections' });
   }
-  return null;
+
+  if (!secs.length) return out(all, { unlimited: true, reason: 'no_limit' });
+  const sel = scopedBySections(secs, all, scopeIdx);
+  /* ส่วนงานที่ผังไม่รู้จักเลย ⇒ กรองแล้วเหลือ 0 = ตัดขอบเขตไม่ได้ ไม่ใช่ "ไม่มีไลน์"
+     ⇒ ไม่จำกัด + unsure (พฤติกรรมเดิมของ scopedLineNames ที่คืน null — คงไว้ แต่เลิกเงียบ) */
+  if (!sel.length) return out([], { unlimited: true, unsure: true, reason: 'sections_unmatched' });
+  return out(sel, { reason: 'sections' });
 }
 
 /**
@@ -158,38 +199,15 @@ export function scopedLineNames({ role, lineId, sections = [], lines = [], scope
  *    ห้ามคืน `[]` เพราะจะกลายเป็น "ไม่เห็นอะไรเลย" ระหว่างโหลด
  * 🔴 ผู้เรียกที่เอาไปกรอง**ตาราง** ต้องเขียนบนจอว่าซ่อนไปกี่รายการ (ดู `filterRowsByLineScope`)
  */
-export function scopedLines({ role, lineId, sections = [], lines = [], scopeIdx = null }) {
+export function scopedLines(args) {
+  const { lines = [] } = args || {};
   if (!lines?.length) return lines || [];
-  if (role === 'admin') return lines;                      // ตาข่ายกันตาย (เหมือน effectiveSections)
-  /* 🔴🔴 หัวหน้ากลุ่มที่ผูกไลน์ = เห็นเฉพาะ "ครอบครัวไลน์ตัวเอง" เสมอ — **แม้ `scope_depth='all'`**
-     (24/10 · เคสจริง: หัวหน้า LWR BAR + หัวหน้า HYDROFORM ถูกตั้ง `scope_depth='all'`
-      ⇒ `effectiveSections()` คืน `[]` = ไม่จำกัด ⇒ จอที่กรองด้วย `sections` อย่างเดียวโชว์ทั้งโรงงาน
-      user แจ้ง: *"หัวหน้ากลุ่มแจ้งว่าเค้าเห็นทุกไลน์ผลิตเลย"*)
-     ⇒ แกน "ไลน์" ต้องมาก่อนแกน "ส่วนงาน" เสมอ · ชั้นนี้คือตาข่ายกันการตั้งค่าผิด
-     ⚠️ หาไลน์ตัวเองไม่เจอทั้งที่ทะเบียนโหลดแล้ว = **fail-closed** (คืน `[]`)
-        — หลักเดียวกับ `staleSessions.keep()` ที่คืน `false` เมื่อ fam ว่าง
-        (ทะเบียนยังไม่โหลด ถูกดักด้วย `!lines.length` ข้างบนไปแล้ว) */
-  const secs = (sections || []).filter(Boolean);
-  if (role === 'leader' && lineId) {
-    const me = lines.find(l => String(l.id) === String(lineId));
-    const fam = me ? new Set(getLineFamilyNames(lines, me.name)) : null;
-    const own = fam?.size ? lines.filter(l => fam.has(l.name)) : [];
-    /* 🔴🔴 **ล็อกไว้ "ไลน์ตัวเองไลน์เดียว" ไม่ได้** (26/10 · เคสจริง ทั้งโรงงานเปิดกะไม่ได้เช้าวันจันทร์)
-       กติกา 25/10 บีบ leader เหลือครอบครัวไลน์ตัวเองเสมอ เพื่อกันเคส `scope_depth='all'`
-       ⇒ หัวหน้ากลุ่มที่ดูแลหลายไลน์ในส่วนงานเดียวกัน **เปิดกะไลน์อื่นไม่ได้เลย**
-         และถ้าไลน์ตัวเองเปิดกะไปแล้ว ช่องเลือกไลน์จะ**ว่างเปล่า** (หน้างานแจ้ง: "เลือกไลน์ไม่ได้",
-         "250 ตันไปโผล่ไลน์ D") · กระทบหัวหน้ากลุ่มทั้ง 20 คน ทุกส่วนงาน
-       ⇒ เห็น **ไลน์ตัวเอง ∪ ไลน์ในส่วนงานที่ถูกกำกับไว้**
-       🔴 เจตนาเดิมยังอยู่ครบ: บัญชีที่ `sections` ว่าง (= `scope_depth='all'` ที่ตั้งผิด)
-          **ยังถูกบีบเหลือครอบครัวไลน์ตัวเองเหมือนเดิม** ไม่หลุดไปเห็นทั้งโรงงาน
-       ⚠️ หาไลน์ตัวเองไม่เจอทั้งที่ทะเบียนโหลดแล้ว + ไม่มีส่วนงานกำกับ = fail-closed คืน [] (เท่าเดิม) */
-    if (!secs.length) return own;
-    const bySec = scopedBySections(secs, lines, scopeIdx);
-    const seen = new Set(own.map(l => l.name));
-    return own.concat(bySec.filter(l => !seen.has(l.name)));
-  }
-  if (!secs.length) return lines;
-  return scopedBySections(secs, lines, scopeIdx);
+  const r = lineScope(args);
+  /* 🔴 `sections_unmatched` คืน unlimited เพื่อคงพฤติกรรมเดิมของ scopedLineNames
+     แต่ฝั่ง "ตัวไลน์" เดิมคืนลิสต์ที่กรองแล้ว (= ว่าง) ⇒ คง fail-closed ของเดิมไว้ที่นี่
+     ⚠️ ความต่างนี้เหลืออยู่ **จุดเดียว** และถูกตั้งธง unsure ไว้แล้ว (ดู §ช่องว่างที่เหลือ) */
+  if (r.reason === 'sections_unmatched') return [];
+  return r.lines;
 }
 
 /** กรองไลน์ด้วย "ส่วนงาน" ล้วน — ผังองค์กรก่อน ถ้าผังไม่ครอบค่อยถอยไปเทียบชื่อ section */

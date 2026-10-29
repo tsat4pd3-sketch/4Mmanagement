@@ -5218,15 +5218,19 @@ test('🛡️ inspection-setup-shared — จอตั้งค่าจุด�
 test('🛡️ leader-line-wins — scopedLines ต้องบีบ leader กลับเป็นครอบครัวไลน์ตัวเอง', () => {
   const bad = [];
   const ss = stripComments(readFileSync(join(ROOT, 'src/utils/sectionScope.js'), 'utf8'));
-  if (!/export function scopedLines\(\{\s*role,\s*lineId,/.test(ss))
-    bad.push('sectionScope.js (scopedLines ไม่ได้รับ role/lineId)');
+  /* 🔁 29/10 — ตรรกะย้ายไปอยู่ `lineScope()` (แกนเดียวของ scopedLines + scopedLineNames)
+     เจตนาเดิมคงไว้ครบ แค่เปลี่ยนที่ตรวจ · พฤติกรรมจริงถูกคุมด้วย
+     src/utils/__tests__/lineScopeOneAnswer.test.mjs (ยิงเคสเดียวกันเข้าทั้ง 2 ทาง) */
+  if (!/export function lineScope\(\{\s*role,\s*lineId,/.test(ss))
+    bad.push('sectionScope.js (lineScope ไม่ได้รับ role/lineId)');
   if (!/role === 'leader' && lineId/.test(ss))
-    bad.push('sectionScope.js (scopedLines ไม่มีกิ่ง leader)');
-  /* กิ่ง leader ต้องอยู่ **ก่อน** การอ่าน sections — ไม่งั้น scope_depth=all จะหลุดไปคืน lines ทั้งก้อน */
+    bad.push('sectionScope.js (lineScope ไม่มีกิ่ง leader)');
+  /* กิ่ง leader ต้องอยู่ **ก่อน** ทางที่คืน "ทั้งโรงงาน" เพราะไม่มี sections
+     — ไม่งั้น scope_depth=all จะหลุดไปเห็นทุกไลน์เหมือนเคสจริง 24/10 */
   const iLeader = ss.indexOf("role === 'leader' && lineId");
-  const iSecs = ss.indexOf('const secs = (sections || []).filter(Boolean);', ss.indexOf('export function scopedLines'));
-  if (iLeader < 0 || iSecs < 0 || iLeader > iSecs)
-    bad.push('sectionScope.js (กิ่ง leader ต้องมาก่อนการอ่าน sections)');
+  const iAll = ss.indexOf("if (!secs.length) return out(all,");
+  if (iLeader < 0 || iAll < 0 || iLeader > iAll)
+    bad.push('sectionScope.js (กิ่ง leader ต้องมาก่อนทางที่คืนทั้งโรงงาน)');
   if (!/export function scopeTooWide/.test(ss))
     bad.push('sectionScope.js (ไม่มี scopeTooWide — คิวทบทวนสิทธิ์จะไม่ฟ้องการตั้งกว้างเกิน)');
 
@@ -7670,4 +7674,41 @@ test('🕵️ account-activity-never-vs-unknown — ห้ามบีบ "อ�
     'คอลัมน์ต้องตัดสินผ่าน activityOf() ห้ามเทียบวันเองในหน้า');
   assert.match(au, /ACT_UNKNOWN \? '—'/,
     'อ่านไม่ได้ต้องขึ้นขีด ไม่ใช่ข้อความที่อ่านเหมือน "ไม่เคยเข้า"');
+});
+
+/* ═══ 🔭 line-scope-two-answers — "เห็นไลน์ไหน" ต้องมีคำตอบเดียว ═══ 29/10 (คำสั่ง user "ทำข้อ1")
+   คำพูด user: *"ทำไมปัญหานี้มันแก้ไม่จบไม่สิ้นซักที"* · *"เห็นของทุกไลน์ แต่เปิดกะเลือกไลน์ตัวเองไม่ได้"*
+   วัดได้จริงก่อนแก้ (29/10): บัญชีเดียวกัน หัวหน้าไลน์ลูก + sections=[ส่วนงานตัวเอง]
+     scopedLines()     → ไลน์ตัวเอง + ไลน์แม่ + ไลน์อื่นในส่วนงาน   (ช่องเลือกไลน์ ~20 จอ)
+     scopedLineNames() → ไลน์ตัวเองไลน์เดียว                        (กรองข้อมูล  ~22 จอ)
+   ⇒ กฎ 26/10 ("ไลน์ตัวเอง ∪ ส่วนงานที่กำกับ") ถูกใส่ไว้ที่ scopedLines ตัวเดียว อีกตัวไม่ได้ตาม
+   ⇒ ยุบให้ทั้งคู่เป็น wrapper ของ lineScope() · ห้ามแตกกลับเป็น 2 ตรรกะอีก
+   📄 เทสเชิงพฤติกรรม (ยิงเคสเดียวกันเข้า 2 ทาง) = src/utils/__tests__/lineScopeOneAnswer.test.mjs */
+test('🔭 line-scope-two-answers — scopedLines/scopedLineNames ต้องเป็น wrapper ของ lineScope()', () => {
+  const src = stripComments(readFileSync(join(ROOT, 'src/utils/sectionScope.js'), 'utf8'));
+  assert.match(src, /export function lineScope\(/, 'ต้องมีแกนเดียว lineScope()');
+
+  const body = (name) => {
+    const i = src.indexOf(`export function ${name}(`);
+    assert.ok(i > 0, `หา ${name} ไม่เจอ`);
+    // หยุดที่ "ฟังก์ชันถัดไป" ตัวใดก็ได้ ไม่ใช่แค่ที่ export (ไม่งั้นลากตัวช่วยที่อยู่ติดกันมาด้วย)
+    const ends = [src.indexOf('\nexport ', i + 10), src.indexOf('\nfunction ', i + 10)]
+      .filter(x => x > 0);
+    return src.slice(i, ends.length ? Math.min(...ends) : undefined);
+  };
+  for (const fn of ['scopedLines', 'scopedLineNames']) {
+    const b = body(fn);
+    assert.match(b, /lineScope\(/, `🔴 ${fn} ต้องเรียก lineScope() ห้ามคิดขอบเขตเอง`);
+    assert.doesNotMatch(b, /getLineFamilyNames\(/,
+      `🔴 ${fn} ไล่ครอบครัวไลน์เองอีกแล้ว = แตกเป็น 2 ตรรกะ ⇒ บั๊กเรื้อรังกลับมา`);
+    assert.doesNotMatch(b, /inSectionScope\(/,
+      `🔴 ${fn} กรองส่วนงานเองอีกแล้ว = แตกเป็น 2 ตรรกะ`);
+  }
+  // posture ต้องยังเป็น "ตัวเลือกบรรทัดเดียว" — ยุบ 2 ท่าเป็นท่าเดียว = product decision (ด่าน E)
+  assert.match(src, /scope === 'own'/, '🔴 ท่า own หาย = ยุบ 2 ประตูเงียบๆ (ต้องถาม user ก่อน)');
+  assert.match(body('scopedLineNames'), /scope: 'own'/, 'scopedLineNames ต้องขอท่า own ชัดๆ');
+  // ธง unsure ต้องมีอยู่ ไม่งั้น "ตัดขอบเขตไม่ได้" จะกลับไปเงียบเหมือนเดิม
+  assert.match(src, /unsure/, '🔴 ต้องคง unsure ไว้ให้จอเขียนบนจอ');
+  assert.match(src, /registry_unloaded/, 'ทะเบียนยังไม่โหลดต้องแยกเหตุผลไว้');
+  assert.match(src, /own_line_unknown/, 'หาไลน์ตัวเองไม่เจอต้องแยกเหตุผลไว้');
 });
