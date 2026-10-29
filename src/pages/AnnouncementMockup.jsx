@@ -218,11 +218,13 @@ export default function AnnouncementMockup() {
   const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 14, boxShadow: 'var(--shadow-sm)' };
   const h3 = { margin: '0 0 10px', fontSize: 15 };
 
-  const AnnRow = ({ a, children, ackList = false }) => {
+  /* ⚠️ render function ไม่ใช่ component — ถ้าประกาศเป็น <AnnRow> ใน body ของหน้า ทุก render ได้ "ชนิด component ใหม่"
+     React จะ unmount/mount ทั้งก้อน ⇒ ช่องพิมพ์ข้างใน (เหตุผลตีกลับ) หลุดโฟกัสทุกตัวอักษร (บั๊กจริง 29/10) */
+  const annRow = ({ a, children, ackList = false }) => {
     const st = statusOf(a, today);
     const ack = st === 'published' ? ackStat(a) : null;
     return (
-      <div style={{ ...card, borderLeft: `4px solid ${(STATUS[st] || STATUS.pending).color}`, display: 'grid', gap: 8 }}>
+      <div key={a.id} style={{ ...card, borderLeft: `4px solid ${(STATUS[st] || STATUS.pending).color}`, display: 'grid', gap: 8 }}>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <b style={{ fontSize: 14 }}>{a.topic}</b><StatusChip st={st} />
           <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--muted)' }}>มีผล {fmtDate(a.effective)}</span>
@@ -247,7 +249,7 @@ export default function AnnouncementMockup() {
     );
   };
 
-  const Inbox = ({ to, title }) => {
+  const renderInbox = ({ to, title }) => {
     const list = inbox(to);
     return (
       <div style={card}>
@@ -324,9 +326,9 @@ export default function AnnouncementMockup() {
             </div>
           </div>
           <div style={{ display: 'grid', gap: 12 }}>
-            <Inbox to="issuer" title="แจ้งเตือนของผู้แจ้ง" />
+            {renderInbox({ to: 'issuer', title: 'แจ้งเตือนของผู้แจ้ง' })}
             <h3 style={{ ...h3, margin: 0 }}>ประกาศที่ฉันออก ({items.length})</h3>
-            {items.map(a => <AnnRow key={a.id} a={a} ackList />)}
+            {items.map(a => annRow({ a, ackList: true }))}
           </div>
         </div>
       )}
@@ -336,7 +338,7 @@ export default function AnnouncementMockup() {
           <div style={{ display: 'grid', gap: 12 }}>
             <h3 style={{ ...h3, margin: 0 }}>รอ {APPROVER} อนุมัติ ({pending.length})</h3>
             {pending.length ? pending.map(a => (
-              <AnnRow key={a.id} a={a}>
+              annRow({ a, children: (<>
                 {rejectFor === a.id ? (
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                     <input value={reason} onChange={e => setReason(e.target.value)} placeholder="เหตุผลที่ตีกลับ (บังคับ)" style={{ flex: 1, minWidth: 200 }} />
@@ -349,10 +351,10 @@ export default function AnnouncementMockup() {
                     <button type="button" style={btnGhost} onClick={() => { setRejectFor(a.id); setReason(''); }}>↩ ตีกลับ</button>
                   </div>
                 )}
-              </AnnRow>
+              </>) })
             )) : <div style={{ ...card, color: 'var(--muted)', fontSize: 13 }}>ไม่มีประกาศรออนุมัติ</div>}
           </div>
-          <Inbox to="evp" title={`แจ้งเตือนของ ${APPROVER}`} />
+          {renderInbox({ to: 'evp', title: `แจ้งเตือนของ ${APPROVER}` })}
         </div>
       )}
 
@@ -373,14 +375,14 @@ export default function AnnouncementMockup() {
           {board.length ? board.map((a) => {
             const at = me ? ackAt(a, me) : null;
             return (
-              <AnnRow key={a.id} a={a}>
+              annRow({ a, children: (<>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                   {at
                     ? <span style={{ fontSize: 13, fontWeight: 700, color: '#22c55e' }}>✓ {me.name} รับทราบแล้ว ({fmtDate(at)})</span>
                     : <button type="button" style={btnPrimary} disabled={!me} onClick={() => acknowledge(a)}>✋ รับทราบ</button>}
                   {!me && <span style={{ fontSize: 12, color: 'var(--muted)' }}>เลือก "ฉันคือ" ก่อนจึงกดรับทราบได้</span>}
                 </div>
-              </AnnRow>
+              </>) })
             );
           }) : (
             <div style={{ ...card, color: 'var(--muted)', fontSize: 13 }}>
