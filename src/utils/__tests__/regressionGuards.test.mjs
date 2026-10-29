@@ -7704,9 +7704,11 @@ test('🔭 line-scope-two-answers — scopedLines/scopedLineNames ต้อง�
     assert.doesNotMatch(b, /inSectionScope\(/,
       `🔴 ${fn} กรองส่วนงานเองอีกแล้ว = แตกเป็น 2 ตรรกะ`);
   }
-  // posture ต้องยังเป็น "ตัวเลือกบรรทัดเดียว" — ยุบ 2 ท่าเป็นท่าเดียว = product decision (ด่าน E)
-  assert.match(src, /scope === 'own'/, '🔴 ท่า own หาย = ยุบ 2 ประตูเงียบๆ (ต้องถาม user ก่อน)');
-  assert.match(body('scopedLineNames'), /scope: 'own'/, 'scopedLineNames ต้องขอท่า own ชัดๆ');
+  /* ✅ 29/10 user สั่งยุบเป็นท่าเดียว ("ให้เห็นส่วนงานตัวเองทุกจอ")
+     ⇒ scopedLineNames ต้อง **ไม่** ขอท่า 'own' อีก · แยกกลับ = ต้องถาม user ใหม่
+     (พฤติกรรมจริงถูกคุมที่ scopeRegistryGate ข้อ E ซึ่งเล่นกับทะเบียนผู้ใช้จริง) */
+  assert.doesNotMatch(body('scopedLineNames'), /scope: 'own'/,
+    '🔴 scopedLineNames กลับไปใช้ท่า own = แยก 2 ประตูอีกครั้งโดยไม่ถาม user');
   // ธง unsure ต้องมีอยู่ ไม่งั้น "ตัดขอบเขตไม่ได้" จะกลับไปเงียบเหมือนเดิม
   assert.match(src, /unsure/, '🔴 ต้องคง unsure ไว้ให้จอเขียนบนจอ');
   assert.match(src, /registry_unloaded/, 'ทะเบียนยังไม่โหลดต้องแยกเหตุผลไว้');

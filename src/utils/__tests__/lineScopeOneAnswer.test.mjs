@@ -2,11 +2,9 @@
    เดิม scopedLines() กับ scopedLineNames() ตอบคนละอย่างบนบัญชีเดียวกัน
    ⇒ อาการที่หน้างานแจ้งซ้ำทุกสัปดาห์: "เห็นของทุกไลน์ แต่เปิดกะเลือกไลน์ตัวเองไม่ได้"
 
-   29/10 ยุบตรรกะเป็นแกนเดียว `lineScope()` แล้ว · เหลือ **ความต่างที่ตั้งใจ 1 จุด** คือ posture:
-     scopedLines()     = ไลน์ที่ **เห็น**        → ครอบครัว ∪ ส่วนงาน
-     scopedLineNames() = ไลน์ที่ **รับผิดชอบ**  → ครอบครัวล้วน
-   (ด่าน E ใน scopeRegistryGate.test.mjs ล็อกไว้ · ยุบ = product decision ต้องถาม user)
-   ไฟล์นี้บังคับว่า **นอกเหนือ posture แล้วทั้ง 2 ทางต้องตอบเหมือนกันทุกเคส** */
+   29/10 ยุบเหลือแกนเดียว `lineScope()` + **user เคาะให้ใช้ท่าเดียวกันทุกจอ**
+   ("ให้เห็นส่วนงานตัวเองทุกจอ") ⇒ ไฟล์นี้บังคับว่า **ทั้ง 2 ทางต้องตอบชุดเดียวกันทุกเคส**
+   เหลือยกเว้นจุดเดียวคือ `sections_unmatched` (fail-closed vs fail-open) ที่ตั้งธง unsure ไว้ */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { lineScope, scopedLines, scopedLineNames } from '../sectionScope.js';
@@ -25,11 +23,12 @@ const nameSet = (args) => {
   return (n === null ? LINES.map(l => l.name) : n).slice().sort();
 };
 
-/* เคสที่ posture ทำให้ต่างกันโดยเจตนา (leader + มีส่วนงานกำกับ) แยกไปเทสข้างล่าง */
 const CASES = [
   ['admin',                     { role: 'admin',      lineId: null, sections: [],      lines: LINES }],
   ['supervisor PD4',            { role: 'supervisor', lineId: null, sections: ['PD4'], lines: LINES }],
   ['supervisor ไม่จำกัด',        { role: 'supervisor', lineId: null, sections: [],      lines: LINES }],
+  ['leader 306 + PD4',          { role: 'leader',     lineId: 2,    sections: ['PD4'], lines: LINES }],
+  ['leader ไลน์แม่ + PD4',       { role: 'leader',     lineId: 1,    sections: ['PD4'], lines: LINES }],
   ['leader 306 ไม่มีส่วนงาน',    { role: 'leader',     lineId: 2,    sections: [],      lines: LINES }],
   ['leader ไลน์หาย + PD4',       { role: 'leader',     lineId: 99,   sections: ['PD4'], lines: LINES }],
   ['ส่วนงานที่ผังไม่รู้จัก',      { role: 'supervisor', lineId: null, sections: ['ไม่มีจริง'], lines: LINES }],
@@ -49,13 +48,11 @@ for (const [label, args] of CASES) {
   });
 }
 
-test('🔴 posture ต่างกันโดยเจตนา — "เห็น" กว้างกว่า "รับผิดชอบ" (ด่าน E)', () => {
+test('🔴 หัวหน้ากลุ่ม = ไลน์ตัวเอง ∪ ส่วนงานที่กำกับ — ใช้ทั้ง 2 ทาง (user เคาะ 29/10)', () => {
   const a = { role: 'leader', lineId: 2, sections: ['PD4'], lines: LINES };
-  // เห็น = ครอบครัว ∪ ส่วนงาน
   assert.deepEqual(names(scopedLines(a)), ['250T', 'LWR BAR', 'LWR BAR 306']);
-  // รับผิดชอบ = ครอบครัวล้วน
-  assert.deepEqual(nameSet(a), ['LWR BAR', 'LWR BAR 306']);
-  // ทั้ง 2 ท่า ข้ามส่วนงานห้ามเห็น
+  assert.deepEqual(nameSet(a),            ['250T', 'LWR BAR', 'LWR BAR 306']);
+  // ข้ามส่วนงานยังห้ามเห็นทั้ง 2 ทาง — ขอบเขตยังเป็นค่าที่ admin ตั้งไว้
   assert.ok(!names(scopedLines(a)).includes('HYDRO'));
   assert.ok(!nameSet(a).includes('HYDRO'));
 });
