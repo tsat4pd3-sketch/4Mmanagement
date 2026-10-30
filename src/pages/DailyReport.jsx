@@ -5978,7 +5978,14 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 <input ref={closeProdInputRef} autoFocus value={closeProdNo}
                   inputMode={isMobile && !prodKbd ? 'none' : undefined}
                   onChange={e => handleCloseProdNoChange(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter' && closeMatch) handleScanCloseImmediate(closeMatch); }}
+                  /* 🔫 เครื่องสแกนส่ง Enter เป็น "คีย์" ไม่ได้แทรก \n ลงในค่าเสมอ ⇒ ต้องรับที่นี่ด้วย
+                     (ทาง `\n` ใน handleCloseProdNoChange เป็นแค่ fallback ของเครื่องบางรุ่น)
+                     🔴 ไม่เจอในกะนี้ = ค้นทั้งโรงงาน **แต่ไม่ปิดให้เอง** ต้องให้คนกดยืนยัน */
+                  onKeyDown={e => {
+                    if (e.key !== 'Enter') return;
+                    if (closeMatch) handleScanCloseImmediate(closeMatch);
+                    else if (closeProdNo) crossLookup(closeProdNo);
+                  }}
                   placeholder="สแกน PROD.NO..."
                   style={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 700, fontSize: 15 }} />
                 <ScanLenHint value={closeProdNo} />
