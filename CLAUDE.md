@@ -119,7 +119,8 @@ Fixture shim record `/equipment?tab=jig` `fixture-shim-record.md` ·
 กำลังคน/เปลี่ยนจุดงาน/Turnover `/workforce-insight` (อ่านอย่างเดียว) `workforce-insight.md` ·
 ประวัติผลิต by Product `/product-history` `product-history.md` ·
 สอบกลับ Order `/order-trace` `order-trace.md` ·
-กล่องรับ feedback หน้างาน (ปุ่มท้าย sidebar) `feedback-inbox.md`
+กล่องรับ feedback หน้างาน (ปุ่มท้าย sidebar) `feedback-inbox.md` ·
+RFQ/เสนอราคา Marketing (Q-neX เฟส 1 · ต้นน้ำ NPI · ตาราง `mkt_*` Main) `/rfq` `mkt-rfq.md`
 
 ---
 ## Organizational Hierarchy · Role System
@@ -388,9 +389,7 @@ Fixture shim record `/equipment?tab=jig` `fixture-shim-record.md` ·
 
 ## 🧰 `/equipment` — ศูนย์ทะเบียนอุปกรณ์ของช่าง (2026-09-22)
 
-ยุบเป็นหน้าเดียว 5 แท็บ: `?tab=machine|die|jig|spare|rack`
-(route เดิม `/machine-database` `/die-registry` `/fixture` redirect เข้ามา) · **embed หน้าเดิมทั้งดุ้น
-ไม่แก้ของเดิม** · สิทธิ์ piggyback **ไม่ต้อง seed `page:/equipment`**
+หน้าเดียว 5 แท็บ `?tab=machine|die|jig|spare|rack` (route เดิม redirect เข้ามา) · **embed หน้าเดิมทั้งดุ้น ไม่แก้ของเดิม** · สิทธิ์ piggyback **ไม่ต้อง seed `page:/equipment`**
 · 🔴 **แท็บซ้อนแท็บต้องคนละ query param** — หน้าลูกใช้ `?die=` / `?fx=` **ห้ามใช้ `?tab=`** (UI §6.8 ข้อ 2.4)
 
 ---
@@ -478,7 +477,7 @@ Fixture shim record `/equipment?tab=jig` `fixture-shim-record.md` ·
 - **🔴 โหมดปีห้ามโหลดแถวดิบ** — ผ่าน RPC rollup (`obeya_year_rollup` ฝั่ง DR / `obeya_attendance_rollup` ฝั่ง Main)
   แล้วให้ JS หาร/ตัดสิน · **RPC ห้ามคำนวณ KPI**
 - **🔴 คอลัมน์ที่มี `not null default` ห้ามเช็ค truthiness** (`kpi_definitions.source` default `'manual'` ⇒ `!d.source` เท็จเสมอ · มีด่าน)
-- **ขอบเขตทุกแท็บ = `<OrgScopePicker>`** (`src/utils/orgScope.js`) ห้าม select จาก `org_nodes` เอง · **Cost Center = ช่องแยก ห้ามปนในลิสต์ผัง** · 🔴 **CC ที่มีหน่วยเจ้าของ = หน่วยเจ้าของ** — เก็บ/เทียบ scope ของ `kpi_*` ผ่าน `canonicalScope()`/`defScopeColumns()` เท่านั้น (มีด่าน `kpi-scope-write-raw` + trigger ฝั่ง DB · 15/10) · ห้ามใช้ `ancestorsOf(cc)` (คืนแค่ plant โดยตั้งใจ)
+- **ขอบเขตทุกแท็บ = `<OrgScopePicker ccOnly>`** (`src/utils/orgScope.js`) ห้าม select จาก `org_nodes` เอง · 🔴 **Obeya/KPI วัดที่ cost center — ลิสต์เฉพาะหน่วยที่มี CC** (`ccBearingOptions` · 30/10 คำสั่ง user) · **Cost Center = ช่องแยก ห้ามปนในลิสต์ผัง** · 🔴 **CC ที่มีหน่วยเจ้าของ = หน่วยเจ้าของ** — เก็บ/เทียบ scope ของ `kpi_*` ผ่าน `canonicalScope()`/`defScopeColumns()` เท่านั้น (มีด่าน `kpi-scope-write-raw` + trigger ฝั่ง DB · 15/10) · ห้ามใช้ `ancestorsOf(cc)` (คืนแค่ plant โดยตั้งใจ)
 - **ห้ามยุบแท็บ `kpi` กับ `sqdcm` เป็นบอร์ดเดียว** (คนละหน่วยเวลา/แกน/เจ้าของตัวเลข) · 2 แท็บนั้นวาดจาก `ObeyaSheet.jsx` ชิ้นเดียว
 - 🔴 **KPI การเงิน (%DL+OH · %RM · DSI · ยอดขาย/หัว) = ยอดเงินของหน่วย ÷ ตัวเลขกลางโรงงาน** — ตัวเลขฐานอยู่ `kpi_base_inputs` (ยอดขาย/COGS กรอกที่ ทั้งโรงงาน ที่เดียว) · ค่ารายเดือนคิดผ่าน `applyFormulaEntries()` (`utils/kpiFormula.js`) **ห้ามหารเองในหน้า** · ขาดตัวแปร = `null` ห้าม 0 · ตารางนี้ห้าม `upsert` (unique index เป็น expression)
 > 📄 **รายละเอียดทั้งหมด** → `docs/modules/obeya-kpi-board.md`

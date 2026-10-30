@@ -142,6 +142,7 @@ const PAGE_GROUPS = [
       { key: 'page:/pe-docs', label: 'Flow / PFMEA / Control Plan' },
       { key: 'page:/npi', label: 'พาร์ทใหม่ APQP / PPAP' },
       { key: 'page:/nm-board', label: 'บอร์ด New Model (IEC)' },
+      { key: 'page:/rfq', label: 'RFQ / เสนอราคา (Marketing)' },
     ],
   },
   {

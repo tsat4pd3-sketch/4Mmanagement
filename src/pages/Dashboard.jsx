@@ -498,8 +498,7 @@ export default function Dashboard({ view = 'timeline' }) {
     setLoading(true);
     const [
       { data: logData },
-      { data: fmData },
-      { data: lineData },
+      { data: fmData },lineDataRes,
       { data: orgNodeData },
       { data: empData },
       { data: scheduleData },
@@ -524,6 +523,9 @@ export default function Dashboard({ view = 'timeline' }) {
       supabase.from('employee_home_positions').select('employee_id, station_id, employees(id, name, image_url, position, employee_skills(skill_name, score))'),
       supabase.from('machine_points').select('id, line_name, machine_no, pos_top, pos_left'),
     ]);
+  /* 🔴 30/10 — เดิมแกะแค่ `{ data }` ⇒ ทะเบียนไลน์โหลดไม่สำเร็จแล้วได้ลิสต์ว่าง **เงียบ**
+     (หน้างาน PD1 แจ้ง "MO ไม่มีให้เลือกไลน์" ทั้งที่ฐานข้อมูลมีครบ) · เก็บผลทั้งก้อนไว้อ่าน error ได้ */
+  const lineData = lineDataRes?.error ? null : lineDataRes.data;
 
     if (!live()) return;
     // ตารางกะ: ไลน์ผลิต + หน่วยงานสนับสนุน — สูตรเดียวกับ Checkin ผ่าน utils/shiftAssign.js

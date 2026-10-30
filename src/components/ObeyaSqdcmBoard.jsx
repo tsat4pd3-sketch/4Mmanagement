@@ -767,8 +767,8 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
           sub={`${periodText} · ${from} → ${to} · ${shiftCount.toLocaleString()} กะที่ปิดแล้ว`}
           filters={(
             <>
-              <OrgScopePicker index={org} value={scope} onChange={setScope} scopeSet={null} sections={sections} failed={orgFailed}
-                plantLabel={ALL.section} width={230} title="เลือกขอบเขตตามผังองค์กร (ฝ่าย/ส่วนงาน/แผนก/กลุ่มไลน์/ไลน์/CC)" />
+              <OrgScopePicker ccOnly index={org} value={scope} onChange={setScope} scopeSet={null} sections={sections} failed={orgFailed}
+                plantLabel={ALL.section} width={230} title="เลือกขอบเขต — เฉพาะหน่วยที่มี cost center (Obeya วัดที่ CC)" />
               <span className="sep" />
               {/* ช่วงที่ดู — value ว่างเมื่อใช้กรอบกำหนดเอง/เจาะเดือน ⇒ กดปุ่มเดิมซ้ำได้ (pickPeriod ล้าง custom) */}
               <Segmented label="ช่วงที่ดู" value={custom || monthSel ? null : period} onChange={pickPeriod}

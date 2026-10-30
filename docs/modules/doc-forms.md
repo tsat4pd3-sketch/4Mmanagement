@@ -190,3 +190,13 @@ user เลือก "ทางเลือก B" หลังเทียบ 3 
 
 **ใบที่แนบแล้ว:** ถังเหลือง/แดง (`qualityBinPrint.js` · 4 ช่อง × 2 แถว แนวนอน) ·
 ใบรายงานของเสีย (`scrapPrint.js` · 3 × 3 แนวตั้ง) · ใบรายงานปัญหาการผลิต (`prodProblemReport.js` · 3 × 3)
+
+---
+
+## 💼 ใบแจ้งจัดทำของ Marketing — `mkt_production_order` (F-MKT-001) · `mkt_production_parts` (F-MKT-002) (2026-10-30)
+
+ฟอร์มจริงที่ Marketing ออกถึง "ผู้จัดการทั่วไปฝ่ายโรงงาน" ตอนได้งาน (พบในชุดตัวอย่าง FORD) = รอยต่อ New Model → โรงงาน
+· seed `form_code` = เลขที่ใช้อยู่จริง (`F-MKT-001`/`F-MKT-002`) · `rev`/`effective_date` = null ให้ doc_control ตั้ง · footer `WIX-030-001` · ช่องเซ็น 3 ช่องตามใบจริง
+· ใบพิมพ์ `src/lib/mktProductionOrderDoc.js` — 2 หน้าในไฟล์เดียว (หน้า 2 = F-MKT-002) อ่าน `docFormSync()` ทั้ง 2 คีย์ + `withDocFoot(html, 'mkt_production_order')`
+· 🔴 **เป็น "บันทึก" ไม่ใช่ใบ generate** — เลขที่ + snapshot อยู่ `mkt_awards.production_order_*` · พิมพ์ซ้ำ = ใบเดิม (กฎเดียวกับ `prod_problem_reports`)
+· migration `20261030b_mkt_rfq_phase1_main.sql` (MAIN · **apply แล้ว 30/10** · ตรวจกลับ: 2 แถว) · 📄 `docs/modules/mkt-rfq.md` §5 ข้อ 4

@@ -60,6 +60,7 @@ version-guard · ตาข่ายกันจอขาว — ก๊อปไ�
 |---|---|
 | `/nm-board` | 🧭 บอร์ด New Model (IEC) — เหตุผลที่เว็บนี้มีอยู่ |
 | `/npi` | 🚀 พาร์ทใหม่ APQP / PPAP / ECI / Tooling |
+| `/rfq` | 💼 RFQ / เสนอราคา — **Marketing** (Q-neX เฟส 1 · 30/10) — ต้นน้ำของ NPI · role `marketing` |
 | `/pe-docs` | ปลายทางลิงก์จาก NPI (4 จุด) · ทีม NM **ดูได้ แก้ไม่ได้** (`pe:edit` ปิดอยู่ตั้งแต่ 05/10) |
 | `/qa-setup` | ปลายทางลิงก์จาก NPI (2 จุด) · `engineer_nm` ไม่มีสิทธิ์หน้านี้ |
 | `/equipment` | ปลายทางลิงก์จาก NPI (1 จุด) · `engineer_nm` ไม่มีสิทธิ์หน้านี้ |

@@ -5,6 +5,7 @@
  * Store Raw Material = org line node ที่ไม่ผูก production line · TEST section ไม่มีป้ายฝ่าย)
  */
 import assert from 'node:assert/strict';
+import { ccBearingOptions } from '../orgScope.js';
 import test from 'node:test';
 import {
   buildOrgScope, scopeKey, parseScopeKey, scopeCovers, scopeOfDef, defScopeColumns, filterScopeOptions, PLANT, drillParams,
@@ -370,4 +371,31 @@ test('inherit_scope=false — หน่วยแม่ไม่ครอบห�
   const opt = idx.options.find(o => o.kind === 'department' && o.value === 'JIG MTN');
   assert.ok(opt, 'JIG MTN ต้องยังอยู่ในลิสต์ตัวเลือก');
   assert.equal(opt.depth > 0, true, 'ต้องยังวาดเป็นลูกของ PD4 ในผัง');
+});
+
+test('🪞 แผนกที่มีกลุ่มไลน์เดียวชื่อเดียวกัน → แถวกลุ่มติด merged (จอซ่อน) · ไลน์ลูกขยับขึ้น 1 ชั้น · key ยังอยู่', () => {
+  const dep = idx.optionOf('department', 'HYDROFORM');
+  const grp = idx.optionOf('line_group', 'HYDROFORM');
+  const leaf = idx.optionOf('line', 'HDF1');
+  assert.ok(dep && grp && leaf);
+  assert.equal(grp.merged, true);
+  assert.equal(leaf.depth, dep.depth + 1, 'ไลน์ลูกต้องย่อหน้าต่อจากแผนกโดยตรง');
+  assert.equal(leaf.parentKey, grp.key, 'สายบรรพบุรุษไม่เปลี่ยน (ขอบเขตที่บันทึกเป็น line_group ยังครอบ)');
+  // แผนกที่กลุ่มชื่อไม่ตรง/มีหลายกลุ่ม ห้ามยุบ
+  idx.options.filter(o => o.kind === 'line_group' && o.merged).forEach((g) => {
+    const d = idx.options.find(o => o.key === g.parentKey);
+    assert.equal(d.kind, 'department');
+    assert.equal(idx.options.filter(o => o.kind === 'line_group' && o.parentKey === d.key).length, 1);
+  });
+});
+
+test('💰 ccBearingOptions: เหลือโรงงาน/ฝ่าย/CC + หน่วยที่มี cost_center เท่านั้น · index ไม่ถูกแตะ', () => {
+  const before = idx.options.length;
+  const list = ccBearingOptions(idx.options);
+  assert.ok(list.some(o => o.kind === 'plant'));
+  assert.ok(list.every(o => o.kind === 'plant' || o.kind === 'division' || o.kind === 'cost_center' || o.cost_center));
+  const dropped = idx.options.filter(o => !list.includes(o));
+  assert.ok(dropped.length > 0, 'fixture ต้องมีหน่วยไม่มี CC อย่างน้อย 1 ตัวให้ตัด');
+  dropped.forEach(o => assert.ok(!o.cost_center && !['plant', 'division', 'cost_center'].includes(o.kind)));
+  assert.equal(idx.options.length, before);
 });

@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { allOf } from '../utils/filterLabels';
 import SearchSelect from './SearchSelect';
-import { SCOPE_KIND_META, scopeKey, parseScopeKey, filterScopeOptions, isPlant } from '../utils/orgScope';
+import { SCOPE_KIND_META, scopeKey, parseScopeKey, filterScopeOptions, ccBearingOptions, isPlant } from '../utils/orgScope';
 
 /* ══ <OrgScopePicker> — เลือก "ขอบเขต" ตามผังองค์กร ทุกมิติ (2026-09-23 · คำสั่ง user) ═════════════
    *"เลือกส่วนงานตอนนี้เหมือนเลือกได้แค่ section และไม่ตรงกับผังองค์กร ควรกรองได้ทุกมิติในผังองค์กร"*
@@ -34,7 +34,7 @@ import { SCOPE_KIND_META, scopeKey, parseScopeKey, filterScopeOptions, isPlant }
 
 const INDENT = '  ';   // en-space ×2 ต่อชั้น — `<option>` ไม่เคารพ CSS padding ในทุกเบราว์เซอร์
 
-function optionLabel(o, { withIcon = true } = {}) {
+function optionLabel(o, { withIcon = true, withCc = false } = {}) {
   const m = SCOPE_KIND_META[o.kind] || {};
   const icon = o.icon || m.icon || '';
   /* 🔗 `refShared` (06/10) = หน่วยนี้ **ใช้ไลน์ร่วมกับหน่วยอื่น** (ผังกับทะเบียนไลน์เป็น 2 แกน ไม่ได้ 1:1)
@@ -42,7 +42,11 @@ function optionLabel(o, { withIcon = true } = {}) {
      ⇒ ต้องเขียนบอก ไม่ใช่เพราะข้อมูลผิด แต่เพราะถ้าไม่บอก คนจะเชื่อว่าเป็นเลขของหน่วยตัวเองเท่านั้น */
   const flags = [o.noData ? '· ไม่มีไลน์ผลิต' : '', o.unlinked ? '· ผังยังไม่ผูก' : '',
     o.refShared ? '· ใช้ไลน์ร่วมกับหน่วยอื่น (เลขแยกไม่ได้)' : ''].filter(Boolean).join(' ');
-  return `${INDENT.repeat(Math.max(0, o.depth))}${withIcon && icon ? icon + ' ' : ''}${o.label}${flags ? ' ' + flags : ''}`;
+  /* 💰 โหมด ccOnly (30/10 · user "Obeya และ KPI ทั้งหมดวัดกันที่ cost center") — เขียนรหัส CC ต่อท้ายชื่อหน่วย
+     ให้คนเทียบกับใบบัญชีได้ทันที · หน่วยที่ถือหลายรหัส (กลุ่มไลน์) เขียนจำนวน */
+  const cc = withCc && o.kind !== 'plant' && o.kind !== 'division' && o.kind !== 'cost_center'
+    ? (o.cost_center ? ` · 💰 ${o.cost_center}` : o.cc_multi ? ` · 💰 ${o.cc_multi} รหัส` : '') : '';
+  return `${INDENT.repeat(Math.max(0, o.depth))}${withIcon && icon ? icon + ' ' : ''}${o.label}${cc}${flags ? ' ' + flags : ''}`;
 }
 
 /**
@@ -62,15 +66,18 @@ export default function OrgScopePicker({
   failed = '',
   index, value, onChange, scopeSet = null, sections = [], kinds = null, costCenter = true,
   plantLabel = SCOPE_KIND_META.plant.label, native = true, pickable = null, width = 260, style, inputStyle, disabled, title, id,
+  ccOnly = false,   // 💰 โชว์เฉพาะหน่วยที่มี cost center (จอ KPI · `ccBearingOptions`) — ค่าเก่าที่ไม่มี CC ขึ้นเป็น ghost
 }) {
   const ccAllowed = costCenter && (!kinds || kinds.includes('cost_center'));
   const all = useMemo(() => {
     if (!index) return [];
     let list = filterScopeOptions(index, { scopeSet, sections });
+    if (ccOnly) list = ccBearingOptions(list);
+    list = list.filter(o => !o.merged);   // 🪞 กลุ่มไลน์ชื่อเดียวกับแผนก (กลุ่มเดียว) = แถวซ้ำ ซ่อน (orgScope.js · 30/10) — option ยังอยู่ใน index
     if (kinds && kinds.length) list = list.filter(o => o.kind === 'plant' || kinds.includes(o.kind));
     if (plantLabel == null) list = list.filter(o => o.kind !== 'plant');
     return list;
-  }, [index, scopeSet, sections, kinds, plantLabel]);
+  }, [index, scopeSet, sections, kinds, plantLabel, ccOnly]);
 
   // 🔴 แยก 2 ลิสต์ตั้งแต่ต้น — ผังองค์กรห้ามมีรหัส cc ปน
   const opts = useMemo(() => all.filter(o => o.kind !== 'cost_center'), [all]);
@@ -188,7 +195,7 @@ export default function OrgScopePicker({
     /* โหมดค้นหา: ช่องเดียวแต่แยก "กลุ่ม" ชัด + พิมพ์รหัส cc แล้วเจอหน่วยงานเจ้าของรหัส */
     const orgRows = [...(ghost ? [ghost] : []), ...opts].map(o => ({
       id: o.key,
-      label: o.kind === 'plant' ? `${SCOPE_KIND_META.plant.icon} ${plantLabel}` : optionLabel(o),
+      label: o.kind === 'plant' ? `${SCOPE_KIND_META.plant.icon} ${plantLabel}` : optionLabel(o, { withCc: ccOnly }),
       sub: o.kind === 'plant' || o.kind === 'division' ? '' : [
         index.pathOf(o.kind, o.value).join(' › ') || (SCOPE_KIND_META[o.kind]?.label || ''),
         o.cost_center ? `💰 ${o.cost_center}` : (o.cc_multi ? `💰 ${o.cc_multi} รหัส` : ''),
@@ -234,7 +241,7 @@ export default function OrgScopePicker({
   const canPick = (o) => o.kind === 'plant' || !pickable || pickable.includes(o.kind);
   const render = (o) => (
     <option key={o.key} value={o.key} disabled={!canPick(o)}>
-      {o.kind === 'plant' ? `${SCOPE_KIND_META.plant.icon} ${plantLabel}` : optionLabel(o)}
+      {o.kind === 'plant' ? `${SCOPE_KIND_META.plant.icon} ${plantLabel}` : optionLabel(o, { withCc: ccOnly })}
     </option>
   );
   return wrap(

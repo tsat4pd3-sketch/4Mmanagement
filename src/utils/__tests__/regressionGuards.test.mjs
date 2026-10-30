@@ -5218,15 +5218,19 @@ test('🛡️ inspection-setup-shared — จอตั้งค่าจุด�
 test('🛡️ leader-line-wins — scopedLines ต้องบีบ leader กลับเป็นครอบครัวไลน์ตัวเอง', () => {
   const bad = [];
   const ss = stripComments(readFileSync(join(ROOT, 'src/utils/sectionScope.js'), 'utf8'));
-  if (!/export function scopedLines\(\{\s*role,\s*lineId,/.test(ss))
-    bad.push('sectionScope.js (scopedLines ไม่ได้รับ role/lineId)');
+  /* 🔁 29/10 — ตรรกะย้ายไปอยู่ `lineScope()` (แกนเดียวของ scopedLines + scopedLineNames)
+     เจตนาเดิมคงไว้ครบ แค่เปลี่ยนที่ตรวจ · พฤติกรรมจริงถูกคุมด้วย
+     src/utils/__tests__/lineScopeOneAnswer.test.mjs (ยิงเคสเดียวกันเข้าทั้ง 2 ทาง) */
+  if (!/export function lineScope\(\{\s*role,\s*lineId,/.test(ss))
+    bad.push('sectionScope.js (lineScope ไม่ได้รับ role/lineId)');
   if (!/role === 'leader' && lineId/.test(ss))
-    bad.push('sectionScope.js (scopedLines ไม่มีกิ่ง leader)');
-  /* กิ่ง leader ต้องอยู่ **ก่อน** การอ่าน sections — ไม่งั้น scope_depth=all จะหลุดไปคืน lines ทั้งก้อน */
+    bad.push('sectionScope.js (lineScope ไม่มีกิ่ง leader)');
+  /* กิ่ง leader ต้องอยู่ **ก่อน** ทางที่คืน "ทั้งโรงงาน" เพราะไม่มี sections
+     — ไม่งั้น scope_depth=all จะหลุดไปเห็นทุกไลน์เหมือนเคสจริง 24/10 */
   const iLeader = ss.indexOf("role === 'leader' && lineId");
-  const iSecs = ss.indexOf('const secs = (sections || []).filter(Boolean);', ss.indexOf('export function scopedLines'));
-  if (iLeader < 0 || iSecs < 0 || iLeader > iSecs)
-    bad.push('sectionScope.js (กิ่ง leader ต้องมาก่อนการอ่าน sections)');
+  const iAll = ss.indexOf("if (!secs.length) return out(all,");
+  if (iLeader < 0 || iAll < 0 || iLeader > iAll)
+    bad.push('sectionScope.js (กิ่ง leader ต้องมาก่อนทางที่คืนทั้งโรงงาน)');
   if (!/export function scopeTooWide/.test(ss))
     bad.push('sectionScope.js (ไม่มี scopeTooWide — คิวทบทวนสิทธิ์จะไม่ฟ้องการตั้งกว้างเกิน)');
 
@@ -7487,6 +7491,45 @@ test('🛡️ line-registry-load-visible — ลิสต์ไลน์ว่�
     /* แกะผลโดยไม่เอา error ออกมาเลย = กลืนความล้มเหลวซ้ำรอยเดิม */
     if (/const\s*\{\s*data\s*\}\s*=\s*await\s+loadLinesRes\s*\(/.test(src))
       bad.push(`${relative(ROOT, f)} (แกะแค่ { data } จาก loadLinesRes — อ่านพลาดแล้วลิสต์ว่างเงียบ)`);
+    /* 🔴 30/10 — รอบแรกด่านนี้จับแค่รูป `const { data } = await loadLinesRes()` ⇒ **หลุด**
+       รูปที่หน้างานเจอจริง: เรียกใน `Promise.all` แล้วแกะเป็น array
+       (`const [{ data: ln }, …] = await Promise.all([ loadLinesRes(), … ])`)
+       หน้างาน PD1 แจ้ง 30/10 "MO ไม่มีให้เลือกไลน์" ทั้งที่ฐานข้อมูลมี 5 ไลน์ของ PD1 ครบ
+       ⇒ จับเพิ่ม: หา `Promise.all([…])` ที่มี `loadLinesRes()` อยู่ในอาร์เรย์ แล้วดูว่า
+         ตัวแปรฝั่งซ้าย **ตำแหน่งเดียวกัน** ถูกแกะเป็น `{ … }` (= ทิ้ง error) หรือไม่
+       🔴 ห้ามเปลี่ยนเป็นกฎหยาบ "ไฟล์ไหนเรียกต้องมี .error" — เคยลองแล้วเหมาไป 15+ ไฟล์
+         ที่ยังไม่ได้กวาด (ดู §หนี้ที่เหลือ ใน docs/modules/mtn-work-order.md) ⇒ ด่านจะเขียวไม่ได้เลย */
+    const splitTop = (txt) => {              // แยก , ชั้นบนสุด (ข้าม () [] {} และสตริง)
+      const out = []; let d = 0, q = '', cur = '';
+      for (const ch of txt) {
+        if (q) { cur += ch; if (ch === q) q = ''; continue; }
+        if (ch === '"' || ch === "'" || ch === '`') { q = ch; cur += ch; continue; }
+        if ('([{'.includes(ch)) d++;
+        if (')]}'.includes(ch)) d--;
+        if (ch === ',' && d === 0) { out.push(cur); cur = ''; continue; }
+        cur += ch;
+      }
+      out.push(cur); return out;
+    };
+    for (const m of src.matchAll(/const\s*\[([^\]]*)\]\s*=\s*await\s+Promise\.all\(\s*\[/g)) {
+      const lhs = splitTop(m[1]);
+      // หาเนื้อในวงเล็บของ Promise.all แบบนับวงเล็บ (array literal อาจมี [] ซ้อน)
+      let i = m.index + m[0].length, d = 1, body = '';
+      for (; i < src.length && d > 0; i++) {
+        const ch = src[i];
+        if (ch === '[') d++;
+        if (ch === ']') { d--; if (!d) break; }
+        body += ch;
+      }
+      const args = splitTop(body);
+      args.forEach((a, idx) => {
+        if (!/loadLinesRes\s*\(/.test(a)) return;
+        if (/mrows\s*\(/.test(a)) return;                    // โยน error ต่อ = ถูกแล้ว
+        const el = lhs[idx] ?? '';
+        if (/^\s*\{/.test(el) && !/\berror\b/.test(el))   // แกะ `{ data, error }` ไว้แล้ว = ถูกแล้ว
+          bad.push(`${relative(ROOT, f)} (loadLinesRes ใน Promise.all ตำแหน่งที่ ${idx + 1} ถูกแกะเป็น { … } ไม่เอา error — หล่นหาย)`);
+      });
+    }
   }
   assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n   ') + '\n'
     + '   ทำไม: จอบอก "ไม่มีไลน์" ทั้งที่ไลน์ยังอยู่ครบ — หน้างานสรุปว่าไลน์ถูกลบ\n'
@@ -7693,6 +7736,86 @@ test('🧹 logout-clears-master-cache — logout ต้องล้าง cache 
   assert.ok(i > 0, '🔴 handler logout ต้องเรียก clearAllMasterCache()');
   assert.ok(app.indexOf("auth.signOut({ scope: 'local' })", i) - i < 200,
     'ต้องล้างก่อน signOut ในก้อนเดียวกัน (ล้างทีหลัง = navigate ไปแล้ว)');
+});
+
+/* ═══ 🕵️ account-activity-never-vs-unknown — "ไม่เคยเข้า" ≠ "อ่านไม่ได้" ═══ 29/10
+   คำถาม user: *"บัญชีของคน คนไหนไม่มีการเข้าใช้เลยบ้าง · admin ดู last login ได้มั้ย
+                  จะได้ลบหรือปิดถูก"*
+   จอนี้เป็นจอที่ใช้ตัดสิน **ลบ/ปิดบัญชี** ⇒ เดาผิดข้างเดียวก็ลบบัญชีที่คนใช้อยู่ทุกวัน
+   `get_auth_users()` เป็น admin-only ⇒ คนที่เข้าหน้านี้ได้แต่ไม่ใช่ admin จะไม่ได้ค่านี้เลย
+   ⇒ undefined (ไม่รู้) ต้องไม่ถูกบีบเป็น null (ไม่เคยเข้า) ด้วย `|| null` เด็ดขาด */
+test('🕵️ account-activity-never-vs-unknown — ห้ามบีบ "อ่านไม่ได้" เป็น "ไม่เคยเข้าใช้"', () => {
+  const act = stripComments(readFileSync(join(ROOT, 'src/utils/accountActivity.js'), 'utf8'));
+  assert.match(act, /lastSignInAt === undefined/, 'ต้องแยกเคส undefined ออกมาก่อน');
+  assert.match(act, /lastSignInAt === null/,      'ต้องแยกเคส null ออกมาก่อน');
+  assert.doesNotMatch(act, /Date\.now\(\)/,
+    '🔴 ห้ามอ่านนาฬิกาในไฟล์กฎ — ต้องรับ now เข้ามา (ด่าน "นาฬิกา +400 วัน")');
+
+  const au = stripComments(readFileSync(join(ROOT, 'src/pages/AddUser.jsx'), 'utf8'));
+  assert.doesNotMatch(au, /last_sign_in_at:[^,\n]*\|\|\s*null/,
+    '🔴 `last_sign_in_at: … || null` = undefined กลายเป็น "ไม่เคยเข้าใช้" ⇒ ชวนลบบัญชีที่ยังใช้อยู่');
+  assert.match(au, /activityOf\(u\.last_sign_in_at/,
+    'คอลัมน์ต้องตัดสินผ่าน activityOf() ห้ามเทียบวันเองในหน้า');
+  assert.match(au, /ACT_UNKNOWN \? '—'/,
+    'อ่านไม่ได้ต้องขึ้นขีด ไม่ใช่ข้อความที่อ่านเหมือน "ไม่เคยเข้า"');
+});
+
+/* ═══ 🔭 line-scope-two-answers — "เห็นไลน์ไหน" ต้องมีคำตอบเดียว ═══ 29/10 (คำสั่ง user "ทำข้อ1")
+   คำพูด user: *"ทำไมปัญหานี้มันแก้ไม่จบไม่สิ้นซักที"* · *"เห็นของทุกไลน์ แต่เปิดกะเลือกไลน์ตัวเองไม่ได้"*
+   วัดได้จริงก่อนแก้ (29/10): บัญชีเดียวกัน หัวหน้าไลน์ลูก + sections=[ส่วนงานตัวเอง]
+     scopedLines()     → ไลน์ตัวเอง + ไลน์แม่ + ไลน์อื่นในส่วนงาน   (ช่องเลือกไลน์ ~20 จอ)
+     scopedLineNames() → ไลน์ตัวเองไลน์เดียว                        (กรองข้อมูล  ~22 จอ)
+   ⇒ กฎ 26/10 ("ไลน์ตัวเอง ∪ ส่วนงานที่กำกับ") ถูกใส่ไว้ที่ scopedLines ตัวเดียว อีกตัวไม่ได้ตาม
+   ⇒ ยุบให้ทั้งคู่เป็น wrapper ของ lineScope() · ห้ามแตกกลับเป็น 2 ตรรกะอีก
+   📄 เทสเชิงพฤติกรรม (ยิงเคสเดียวกันเข้า 2 ทาง) = src/utils/__tests__/lineScopeOneAnswer.test.mjs */
+test('🔭 line-scope-two-answers — scopedLines/scopedLineNames ต้องเป็น wrapper ของ lineScope()', () => {
+  const src = stripComments(readFileSync(join(ROOT, 'src/utils/sectionScope.js'), 'utf8'));
+  assert.match(src, /export function lineScope\(/, 'ต้องมีแกนเดียว lineScope()');
+
+  const body = (name) => {
+    const i = src.indexOf(`export function ${name}(`);
+    assert.ok(i > 0, `หา ${name} ไม่เจอ`);
+    // หยุดที่ "ฟังก์ชันถัดไป" ตัวใดก็ได้ ไม่ใช่แค่ที่ export (ไม่งั้นลากตัวช่วยที่อยู่ติดกันมาด้วย)
+    const ends = [src.indexOf('\nexport ', i + 10), src.indexOf('\nfunction ', i + 10)]
+      .filter(x => x > 0);
+    return src.slice(i, ends.length ? Math.min(...ends) : undefined);
+  };
+  for (const fn of ['scopedLines', 'scopedLineNames']) {
+    const b = body(fn);
+    assert.match(b, /lineScope\(/, `🔴 ${fn} ต้องเรียก lineScope() ห้ามคิดขอบเขตเอง`);
+    assert.doesNotMatch(b, /getLineFamilyNames\(/,
+      `🔴 ${fn} ไล่ครอบครัวไลน์เองอีกแล้ว = แตกเป็น 2 ตรรกะ ⇒ บั๊กเรื้อรังกลับมา`);
+    assert.doesNotMatch(b, /inSectionScope\(/,
+      `🔴 ${fn} กรองส่วนงานเองอีกแล้ว = แตกเป็น 2 ตรรกะ`);
+  }
+  /* ✅ 29/10 user สั่งยุบเป็นท่าเดียว ("ให้เห็นส่วนงานตัวเองทุกจอ")
+     ⇒ scopedLineNames ต้อง **ไม่** ขอท่า 'own' อีก · แยกกลับ = ต้องถาม user ใหม่
+     (พฤติกรรมจริงถูกคุมที่ scopeRegistryGate ข้อ E ซึ่งเล่นกับทะเบียนผู้ใช้จริง) */
+  assert.doesNotMatch(body('scopedLineNames'), /scope: 'own'/,
+    '🔴 scopedLineNames กลับไปใช้ท่า own = แยก 2 ประตูอีกครั้งโดยไม่ถาม user');
+  // ธง unsure ต้องมีอยู่ ไม่งั้น "ตัดขอบเขตไม่ได้" จะกลับไปเงียบเหมือนเดิม
+  assert.match(src, /unsure/, '🔴 ต้องคง unsure ไว้ให้จอเขียนบนจอ');
+  assert.match(src, /registry_unloaded/, 'ทะเบียนยังไม่โหลดต้องแยกเหตุผลไว้');
+  assert.match(src, /own_line_unknown/, 'หาไลน์ตัวเองไม่เจอต้องแยกเหตุผลไว้');
+});
+
+/* ═══ 🏭 line-registry-never-silent — ทะเบียนไลน์ล้ม ต้องมีจอบอกเสมอ ═══ 30/10 (หน้างานแจ้ง 29/10)
+   *"มันกรองไลน์ไม่ได้ครับ"* · *"แจ้งซ่อม MO JIG เลือกไลน์ผลิตไม่ได้ค่ะ ไม่มีข้อมูล"*
+   ตรวจแล้วไม่ใช่เรื่องสิทธิ์ — RLS ของ production_lines เปิดให้ทุกคนที่ login อ่าน (select = true)
+   ต้นเหตุ: `loadLinesRes()` คืน `{ data, error }` แต่ **82 จาก 89 จุดเรียกทิ้ง error ทิ้ง**
+   ⇒ โหลดล้ม = dropdown ไลน์ว่างพร้อมกันทั้งแอป โดยไม่มีจอไหนบอกเหตุ ⇒ หน้างานอ่านว่า "ไม่มีข้อมูล"
+   ⇒ ไล่แก้ทีละจอไม่มีวันครบ ⇒ ตาข่ายต้องอยู่ที่เดียวใน App.jsx และห้ามถอด */
+test('🏭 line-registry-never-silent — ต้องมีตาข่ายกลางบอกว่าทะเบียนไลน์โหลดไม่สำเร็จ', () => {
+  const alert = stripComments(readFileSync(join(ROOT, 'src/components/LineRegistryAlert.jsx'), 'utf8'));
+  assert.match(alert, /useProductionLinesState\(\)/, 'ต้องถามสถานะจากทะเบียนกลาง ไม่ใช่เดาเอง');
+  assert.match(alert, /registryFailText\(/, 'ข้อความต้องมาจากของกลาง ห้ามแต่งเองในหน้า');
+  assert.match(alert, /if \(loading \|\| !failed\) return null;/,
+    '🔴 ระหว่างโหลดห้ามขึ้น (แถบกะพริบทุกครั้งที่เปลี่ยนหน้า) · ไม่ล้มก็ห้ามขึ้น');
+  assert.match(alert, /reload\(\)/, 'ต้องมีปุ่มโหลดใหม่ — แจ้งเฉยๆ แล้วทำอะไรไม่ได้ = จอตัน');
+
+  const app = stripComments(readFileSync(join(ROOT, 'src/App.jsx'), 'utf8'));
+  assert.match(app, /<LineRegistryAlert \/>/, '🔴 ตาข่ายกลางหายจาก App.jsx');
+  assert.match(app, /import LineRegistryAlert from/, 'ต้อง import จริง');
 });
 
 test('🏷️ edition-alias-safe — import `appEdition` ต้องไม่มีนามสกุล และห้ามเรียกตัว .nm ตรงๆ', () => {
