@@ -4386,6 +4386,33 @@ test('🛡️ mtn-approve-needs-confirm — ปุ่มเซ็น/อนุ�
   }
 });
 
+/* ═══ 🏭 ตัวตนเครื่องนอกทะเบียน ต้องผูก "สายไลน์" (2026-10-30 · คำสั่ง user) ═══
+   user: *"conveyor ที่ 306 มันก็คนละตัวกับ conveyor 297 มันแยกส่วนงาน แยกไลน์ แยกแผนก
+   ต้องดูผังองค์กรด้วย มันต้องลิ้งกันมั้ย"*
+   `machine_no` เป็นข้อความ**ระดับทั้งโรงงาน** ⇒ จัดกลุ่มด้วยข้อความล้วน = "CONVEYOR" ของ
+   สาย HYDROFORM (PD3) กับสาย LWR BAR (PD4) ถูกนับเป็นเครื่องเดียวใน MTBF/MTTR/KPI ช่าง
+   🔴 ผูกที่ **สาย** ไม่ใช่ชื่อไลน์ดิบ — แม่กับลูกคือที่เดียวกัน (วัดจริง: 21 คีย์ชน → เหลือ 4) */
+test('🛡️ equip-identity-family-scoped — จัดกลุ่มเครื่องนอกทะเบียนต้องผูกสายไลน์', () => {
+  const src = readFileSync(join(ROOT, 'src/utils/mtnMetrics.js'), 'utf8');
+  assert.ok(/scopeKeyByFamily\s*\(/.test(src) && /lineFamilyKey\s*\(/.test(src),
+    '\n\n❌ `mtnMetrics` เลิกผูกสายไลน์กับคีย์เครื่องแล้ว\n'
+    + '   ⇒ ชื่อเครื่องซ้ำข้ามสาย (CONVEYOR ของ PD3 กับ PD4) กลับไปถูกนับเป็นเครื่องเดียว\n'
+    + '   แก้ยังไง: `scopeKeyByFamily(typedKey, lineFamilyKey(lineFamilyOf(rowLine)))` (utils/machineNo.js)\n');
+
+  /* เครื่องที่ **อยู่ในทะเบียน** ต้องไม่ถูกผูกสาย — ทะเบียนเป็นตัวบอกตัวตนอยู่แล้ว
+     ผูกซ้ำ = เครื่องตัวเดียวที่ถูกลงหลายสาย (ช่างยกไปใช้ไลน์อื่น) แตกเป็นหลายแถว */
+  assert.ok(/machine\s*\?\s*normEquipKey\(machine\.machine_no\)/.test(src),
+    '\n\n❌ เครื่องที่อยู่ในทะเบียนถูกผูกสายไปด้วย — ต้องใช้เลขทะเบียนล้วน\n');
+
+  /* 🔴 ตัวผูกสายห้าม normalize ซ้ำ — แต่ละจอมี normalizer ของตัวเอง
+     (`normEquipKey` เก็บศูนย์นำหน้า · `machineKey` ตัดทิ้ง) บังคับตัวใดตัวหนึ่ง = คีย์ขยับยกระบบ */
+  const mn = readFileSync(join(ROOT, 'src/utils/machineNo.js'), 'utf8');
+  const fn = mn.slice(mn.indexOf('export const scopeKeyByFamily'));
+  assert.ok(!/machineKey\s*\(/.test(fn.slice(0, 300)),
+    '\n\n❌ `scopeKeyByFamily` ไป normalize ซ้ำ — คีย์ของเครื่องที่ขึ้นทะเบียนแล้วจะเปลี่ยนยกระบบ\n'
+    + '   (ประวัติ MTBF/พาเรโตขยับโดยไม่มีใครสั่ง) · ต้องรับคีย์ที่ normalize มาแล้วเท่านั้น\n');
+});
+
 /* ═══ ของกลางของไลน์ขนาน ห้ามถูกหารเลน — `affects_lanes` (2026-10-28 · คำสั่ง user) ═══
    ที่มา: user ถามถึงเคส HDF1 → LASER-345 (เลเซอร์ 3 เครื่องวิ่งขนาน · คอนเวเยอร์ลำเลียงตัวเดียว
    เลี้ยงทั้ง 3 เครื่อง) — *"คอนเวเย่อ พัง ไม่ใช่เลเซอพัง … ถ้าคอนเวเย่อเบรคดาว จะกระทบกับทั้ง3เครื่องทันที"*
