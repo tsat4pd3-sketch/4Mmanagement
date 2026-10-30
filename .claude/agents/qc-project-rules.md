@@ -119,6 +119,14 @@ model: inherit
   · 🔴 ห้ามแก้ด้วยการถอด not-null ของ PK หรือยัด uuid จาก client
   · ด่านอัตโนมัติ: `upsert-mixed-id-needs-default` ใน `regressionGuards`
 
+- **B-XLINE** 📤 **จอที่ "เขียนแถวของไลน์/หน่วยงานอื่น" ต้องครบ 4 ข้อ** (30/10 · ปิดใบผลิตข้ามไลน์
+  `DailyReport.jsx` + `src/utils/crossLineClose.js`) — ① คีย์ที่ใช้ค้นไม่ unique เชิงโครงสร้าง
+  ⇒ เจอหลายแถวต้องให้คนเลือก **ห้ามเดา** · ② แถวที่อยู่ในกะ/ใบที่ **stamp สรุปไปแล้ว** ห้ามแก้ย้อนหลัง
+  (เช็คซ้ำตอนกดจริง ไม่ใช่แค่ตอนค้น) · ③ `canWriteLine/canWriteUnit` + `unknownTarget: 'block'`
+  — **ฝั่ง DR เป็น `anon` ไม่มีด่าน DB เลย จอคือด่านเดียว** · ④ ปุ่มข้ามหน่วยห้าม auto-confirm
+  จาก Enter ของเครื่องสแกน
+  · ด่านอัตโนมัติ: `cross-line-close-guards` ใน `regressionGuards`
+
 ### หมวด C — Permissions (data-driven)
 
 - **[C-RLS-1]** policy RLS ฝั่ง Main ที่เขียนได้ (`for all/update/delete`) ห้าม hardcode `role = any(array[...])` — ต้องเป็น `has_perm('<คีย์เดียวกับ can() ของปุ่มนั้น>')` (2026-09-04 · `20260904_rls_match_ui_permissions.sql`) · ตรวจ: `grep -n "ARRAY\['admin'" supabase/migrations/*.sql` เทียบกับ pg_policies ปัจจุบัน

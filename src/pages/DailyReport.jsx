@@ -28,6 +28,8 @@ import { checkShiftCapacity } from '../utils/shiftCapacity';
 import { splitCloseOrders, autoCarryPatch, autoCarryText } from '../utils/closeShiftOrders';   // 🔁 ปิดกะ: ใบที่ยังไม่แตะ = ยกเอง (20/10)
 import { debtByPart, debtPcs, debtAgeDays } from '../utils/carryDebt';   // 📥 ของค้าง "ต้องไล่เก็บอีกเท่าไหร่" (20/10)
 import { loadCarryOffers, importCarryOrders } from '../lib/carryDebtOps';   // 📥 โหลด/รับของค้าง — ที่เดียวทั้งระบบ
+// 📤 ปิดใบข้ามไลน์ "สแกนจากจอไหนก็ปิดได้" (30/10) — กติกาอยู่ไฟล์เดียว ห้ามตัดสินเองในหน้า
+import { crossLineCloseState, crossLineCloseText, crossLineNameOf, crossLineWhen, CROSS_CLOSE_COLS } from '../utils/crossLineClose';
 import { canShortClose, shortCloseError, shortClosePatch, isShortClosed } from '../utils/shortClose';   // ✂️ ปิดใบด้วยยอดเศษ (งานปั๊ม 2xx · 2026-10-02)   // ⏱️ ด่าน "เปิดใบนี้แล้วเกินกะไหม" (ไลน์เครื่องขนานนับเป็นเลน · 2026-10-02)
 import { MTN_TEAMS, teamForItem, teamForMachine, teamKeyOf, deptNameOf } from '../utils/mtnTeams';
 import useIsMobile from '../utils/useIsMobile';
@@ -327,7 +329,8 @@ export default function DailyReport() {
    LIVE TAB
 ═══════════════════════════════════════════════════════════════ */
 function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
-  const { fullName, lineId: userLineId, sections: scopeSecs = [], scopeIdx } = useContext(UserContext);
+  /* 🔐 ชั้นที่ 3 (ใช้ตอน "ปิดใบข้ามไลน์") — ขอบเขตที่ **แก้ได้** คนละตัวกับ `sections` (ขอบเขตที่เห็น) */
+  const { fullName, lineId: userLineId, sections: scopeSecs = [], section: homeSection, allUnits, respCostCenters, scopeIdx } = useContext(UserContext);
   /* 🔴🔴 2026-10-06 — `scopeSecs` เป็น **array** ห้ามอยู่ใน deps ของตัวโหลด (กฎเหล็กข้อ 9)
      2 ทางที่ทำให้ได้ array ใบใหม่ "เนื้อเหมือนเดิม" ซ้ำๆ:
        ① destructure ข้างบนมี default `sections: scopeSecs = []` ⇒ ถ้า context ส่ง `undefined`
@@ -519,6 +522,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   const [closeProdNo, setCloseProdNo]     = useState('');
   const [closeMatch, setCloseMatch]       = useState(null);
   const [savingProdClose, setSavingProdClose] = useState(false);
+  /* 📤 ปิดใบข้ามไลน์ (30/10) — ไม่เจอในกะนี้ ค่อยค้นทั้งโรงงาน
+     { loading, state, row, rows, prodNo, err } · null = ยังไม่ได้ค้น */
+  const [crossFind, setCrossFind] = useState(null);
   // Defect log
   const [defectTypes, setDefectTypes]   = useState([]);
   const [defectLogs, setDefectLogs]     = useState([]);
@@ -1914,10 +1920,15 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     setCloseProdNo(v);
     const found = prodOrders.find(o => o.prod_no === v && o.status === 'open');
     setCloseMatch(found || null);
+    setCrossFind(null);   // พิมพ์/สแกนใหม่ = ผลค้นข้ามไลน์ของเลขเก่าใช้ไม่ได้แล้ว
     if (hasEnter && found) {
       // slight delay to let state settle before calling confirm
       setTimeout(() => handleScanCloseImmediate(found), 30);
     }
+    /* 📤 สแกนแล้วไม่เจอในกะนี้ = ค้นทั้งโรงงานให้เลย (เครื่องสแกนส่ง Enter ตามท้ายเสมอ)
+       🔴 **ห้าม auto-confirm** เหมือนใบของกะตัวเอง — ใบของไลน์อื่นต้องให้คนกดยืนยัน
+       (สแกนพลาดทีเดียว = ปิดใบไลน์อื่นเงียบ) */
+    if (hasEnter && !found && v) crossLookup(v);
   };
 
   // หมายเหตุ: เคยมี guard เตือน "ปิดข้ามคิว" ถ้าใบที่เปิดก่อนหน้ายังไม่ปิด แต่ตัดออกแล้ว
@@ -2022,6 +2033,61 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   const handleScanClose = async () => {
     if (!closeMatch) { toast.error('ไม่พบ PROD.NO นี้ หรือปิดไปแล้ว'); return; }
     await doConfirmCloseOrder(closeMatch);
+  };
+
+  /* ═══ 📤 ปิดใบข้ามไลน์ (2026-10-30 · คำสั่ง user) ════════════════════════════════
+     *"เวลาปิดออเดอร์ให้สแกนจากไลน์ไหนก็ได้ … พอสแกนเจอเลขโค้ดออเดอร์ มันก็จะเจอว่า
+       มันเปิดออเดอร์ไหน แล้วก็ปิดได้เลย แค่ให้คอนเฟิร์ม"*
+     ไม่เจอในกะนี้ = เดิมตีกลับ "ไม่พบ PROD.NO นี้ในกะปัจจุบัน" (ทางตัน) ⇒ ค้นทั้งโรงงานต่อ
+     🔴 กติกาการตัดสินอยู่ `utils/crossLineClose.js` ที่เดียว **ห้ามเช็คเองในหน้า** */
+  const crossLookup = useCallback(async (prodNo) => {
+    const v = String(prodNo || '').trim();
+    if (!v) { setCrossFind(null); return; }
+    setCrossFind({ loading: true, prodNo: v, state: 'none', row: null, rows: [], err: null });
+    const { data, error } = await supabaseDR.from('prod_orders')
+      .select(`${CROSS_CLOSE_COLS}, production_sessions!inner(id, line_name, work_date, shift, status)`)
+      .eq('prod_no', v).eq('status', 'open');
+    /* 🔴 อ่านไม่สำเร็จ = "ตอบไม่ได้" ไม่ใช่ "ไม่มีใบ" — ต้องเขียนบนจอ (กฎความซื่อสัตย์ของจอ) */
+    if (error) { setCrossFind({ loading: false, prodNo: v, state: 'none', row: null, rows: [], err: error.message }); return; }
+    const out = crossLineCloseState({ rows: data || [], currentSessionId: selSession?.id });
+    setCrossFind({ loading: false, prodNo: v, err: null, ...out });
+  }, [selSession?.id]);
+
+  /** ปิดใบของไลน์อื่น — ผ่านด่าน 3 ชั้นก่อนเสมอ */
+  const doCrossLineClose = async (row) => {
+    if (!row) return;
+    const lineName = crossLineNameOf(row);
+    /* ② กะเจ้าของใบต้องยัง open — เช็คซ้ำตอนกดจริง (การ์ดบนจอเป็นแค่ "ภาพตอนค้น") */
+    if (crossLineCloseState({ rows: [row], currentSessionId: selSession?.id }).state !== 'ready') {
+      toast.error(crossLineCloseText('shift_locked', row) || 'ใบนี้ปิดจากที่นี่ไม่ได้แล้ว — โหลดใหม่อีกครั้ง'); return;
+    }
+    /* ③ 🔐 ชั้นที่ 3 — ปิดใบไลน์อื่น = เขียนข้ามหน่วยงาน · ฝั่ง DR เป็น anon ไม่มีด่าน DB
+       ทะเบียนไลน์ยังโหลดไม่เสร็จ = ตัดสินไม่ได้ ⇒ บล็อก (fail-closed) */
+    if (!lines.length) { toast.error('ยังโหลดทะเบียนไลน์ไม่เสร็จ — ยังตัดสินไม่ได้ว่าใบนี้อยู่ในขอบเขตที่คุณดูแลไหม ลองใหม่อีกครั้ง'); return; }
+    const ctx = { role, section: homeSection, sections: scopeSecs, allUnits, respCostCenters, scopeIdx };
+    const w = canWriteLine(ctx, lineName, lines, { unknownTarget: 'block' });
+    if (!w.ok) { toast.error(writeBlockText(w, { what: `ใบผลิตของไลน์ ${lineName || '—'}`, unit: lineName })); return; }
+
+    if (!window.confirm(
+      `📤 ปิดใบ ${row.prod_no} ให้ไลน์อื่น?\n\n`
+      + `• ใบนี้เป็นของ ${lineName || '—'} · ${crossLineWhen(row)}\n`
+      + `• ยืนยัน ${row.qty} ชิ้น เป็น OK ทั้งหมด (ยอดเข้าไลน์เจ้าของใบ ไม่ใช่ไลน์นี้)\n`
+      + `• ระบบบันทึกว่าคุณเป็นคนปิด (ตรวจย้อนหลังได้)`)) return;
+
+    if (prodBusyRef.current) return;
+    prodBusyRef.current = true;
+    setSavingProdClose(true);
+    try {
+      /* CAS `.eq('status','open')` + นับแถว — RLS/แข่งกับอีกเครื่อง = "สำเร็จ 0 แถว ไม่มี error" */
+      const ok = await checkWriteRows(await supabaseDR.from('prod_orders').update({
+        status: 'confirmed', confirmed_by: fullName, confirmed_at: new Date().toISOString(), qty_ok: row.qty,
+      }).eq('id', row.id).eq('status', 'open').select('id'), `ปิดใบ ${row.prod_no} (ไลน์ ${lineName})`,
+      { zeroMsg: `ปิดใบ ${row.prod_no} ไม่สำเร็จ (0 แถว — อาจมีคนปิดไปแล้วจากไลน์นั้น) · สแกนใหม่เพื่อดูสถานะล่าสุด` });
+      if (!ok) return;
+      toast.success(`📤 ปิดใบ ${row.prod_no} · ${row.qty} ชิ้น ให้ไลน์ ${lineName} แล้ว ✓`);
+      setCloseProdNo(''); setCloseMatch(null); setCrossFind(null);
+      setTimeout(() => closeProdInputRef.current?.focus(), 80);
+    } finally { setSavingProdClose(false); prodBusyRef.current = false; }
   };
 
   // ── ออเดอร์ manual (ไลน์ไม่มี kanban card) ─────────────────────
@@ -3605,7 +3671,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       style={{ background: 'rgba(96,165,250,0.15)', color: '#60a5fa', border: '1px solid rgba(96,165,250,0.5)', borderRadius: 7, padding: '7px 16px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
                       ✍️ เปิดเป้า (ไม่มีบาร์โค้ด)
                     </button>
-                    <button onClick={() => { setShowScanClose(true); setCloseProdNo(''); setCloseMatch(null); }}
+                    <button onClick={() => { setShowScanClose(true); setCloseProdNo(''); setCloseMatch(null); setCrossFind(null); }}
                       style={{ background: '#22c55e', color: '#fff', border: 'none', borderRadius: 7, padding: '7px 16px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
                       📤 Scan ปิด / Confirm
                     </button>
@@ -5946,11 +6012,60 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                         · หากมีงานเสียให้กด <strong>🔴 บันทึกงานเสีย</strong> แยกต่างหาก
                       </div>
                     </>
+                  ) : prodOrders.find(o => o.prod_no === closeProdNo && o.status === 'confirmed') ? (
+                    <div style={{ fontSize: 12, color: '#ef4444', fontWeight: 600 }}>⚠ PROD.NO นี้ปิดไปแล้ว</div>
                   ) : (
-                    <div style={{ fontSize: 12, color: '#ef4444', fontWeight: 600 }}>
-                      {prodOrders.find(o => o.prod_no === closeProdNo && o.status === 'confirmed')
-                        ? '⚠ PROD.NO นี้ปิดไปแล้ว'
-                        : '✕ ไม่พบ PROD.NO นี้ในกะปัจจุบัน'}
+                    /* 📤 ไม่เจอในกะนี้ — เดิมจบแค่นี้ (ทางตัน) · 30/10 ค้นทั้งโรงงานต่อให้ */
+                    <div style={{ fontSize: 12 }}>
+                      <div style={{ color: '#ef4444', fontWeight: 600 }}>✕ ไม่พบ PROD.NO นี้ในกะปัจจุบัน</div>
+                      {!crossFind && (
+                        <button type="button" onClick={() => crossLookup(closeProdNo)}
+                          style={{ marginTop: 8, padding: '6px 12px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                          🔎 ค้นทั้งโรงงาน (ใบอาจเปิดไว้ที่ไลน์อื่น)
+                        </button>
+                      )}
+                      {crossFind?.loading && <div style={{ marginTop: 8, color: 'var(--muted)' }}>กำลังค้นทั้งโรงงาน…</div>}
+                      {/* 🔴 อ่านไม่สำเร็จ = ตอบไม่ได้ ห้ามแปลว่า "ไม่มีใบ" */}
+                      {crossFind?.err && (
+                        <div style={{ marginTop: 8, color: '#ef4444', fontWeight: 700 }}>
+                          ⚠️ ค้นทั้งโรงงานไม่สำเร็จ ({crossFind.err}) — ยังตอบไม่ได้ว่ามีใบนี้ที่ไลน์อื่นไหม ลองใหม่อีกครั้ง
+                        </div>
+                      )}
+                      {crossFind && !crossFind.loading && !crossFind.err && crossFind.state === 'none' && (
+                        <div style={{ marginTop: 8, color: 'var(--muted)' }}>ค้นทั้งโรงงานแล้ว — ไม่มีใบที่ยังเปิดค้างด้วยเลขนี้</div>
+                      )}
+                      {crossFind?.state === 'shift_locked' && (
+                        <div style={{ marginTop: 8, padding: '8px 10px', borderRadius: 7, background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.4)', color: '#f59e0b', fontWeight: 600, lineHeight: 1.6 }}>
+                          🔒 {crossLineCloseText('shift_locked', crossFind.row)}
+                        </div>
+                      )}
+                      {(crossFind?.state === 'ready' || crossFind?.state === 'ambiguous') && (
+                        <div style={{ marginTop: 8, padding: '10px 12px', borderRadius: 8, background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.4)' }}>
+                          <div style={{ color: '#f59e0b', fontWeight: 800, marginBottom: 6, lineHeight: 1.6 }}>
+                            📤 {crossLineCloseText(crossFind.state, crossFind.row)}
+                          </div>
+                          {crossFind.rows.map(r => (
+                            <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '6px 0', borderTop: '1px solid var(--border2)' }}>
+                              <div style={{ minWidth: 0 }}>
+                                {/* 🔴 ต้องเขียนไลน์+กะตัวโต — ไม่งั้นปิดผิดไลน์เงียบ */}
+                                <div style={{ fontSize: 13, fontWeight: 800, color: '#4d9fff' }}>{crossLineNameOf(r) || '— ไม่รู้ไลน์ —'}</div>
+                                <div style={{ fontSize: 11, color: 'var(--muted)' }}>{crossLineWhen(r)}</div>
+                                <MatLabel mat={r.mat_no} name={r.part_name} size={11} />
+                              </div>
+                              <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
+                                <div style={{ fontSize: 20, fontWeight: 900, color: '#f59e0b', lineHeight: 1 }}>{r.qty}<span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}> ชิ้น</span></div>
+                                <button type="button" onClick={() => doCrossLineClose(r)} disabled={savingProdClose}
+                                  style={{ padding: '7px 13px', borderRadius: 7, border: 'none', background: '#f59e0b', color: '#1a1a1a', fontSize: 12, fontWeight: 800, cursor: savingProdClose ? 'default' : 'pointer', opacity: savingProdClose ? 0.5 : 1, whiteSpace: 'nowrap' }}>
+                                  📤 ปิดใบนี้ให้ไลน์นั้น
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6, lineHeight: 1.6 }}>
+                            ยอดจะเข้า <b style={{ color: 'var(--text2)' }}>ไลน์เจ้าของใบ</b> ไม่ใช่ไลน์นี้ · ระบบบันทึกว่าคุณเป็นคนปิด
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -5966,7 +6081,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
               )}
 
               <div className={isMobile ? 'm-modalfoot' : undefined} style={{ display: 'flex', gap: 10, marginTop: 16, justifyContent: 'flex-end' }}>
-                <button onClick={() => setShowScanClose(false)} style={cancelBtnStyle}>ปิด</button>
+                <button onClick={() => { setShowScanClose(false); setCrossFind(null); }} style={cancelBtnStyle}>ปิด</button>
                 <button onClick={handleScanClose} disabled={savingProdClose || !closeMatch}
                   style={{ ...saveBtnStyle, background: '#22c55e', fontSize: 14, opacity: (!closeMatch || savingProdClose) ? 0.5 : 1 }}>
                   {savingProdClose ? '...' : '📤 Confirm ปิด Order'}

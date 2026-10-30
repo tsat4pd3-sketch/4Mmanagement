@@ -7400,6 +7400,44 @@ test('🏖️ holiday-break-single-entry — เวลาพักวันห�
     + '\n\n   หักเวลาพักผิด = ฐานเวลาของ %A/%P ผิดทั้งกะ โดยไม่มีใครเห็นบนจอ\n');
 });
 
+test('📤 cross-line-close-guards — ปิดใบข้ามไลน์ต้องผ่านด่านครบ 3 ข้อ', () => {
+  /* 30/10 (คำสั่ง user): *"เวลาปิดออเดอร์ให้สแกนจากไลน์ไหนก็ได้ … แค่ให้คอนเฟิร์ม"*
+     เปิดทางให้ปิดใบของไลน์อื่น = เปิดช่องผิดพลาด 3 แบบที่ "เงียบ" ทั้งหมด ⇒ ด่านนี้กันของหาย:
+     ① `prod_no` ไม่ unique เชิงโครงสร้าง (ของจริง 30/10: LINE A ใช้เลข `35`/`42`/`43`/`45`)
+        ⇒ เจอหลายใบต้อง `ambiguous` ให้คนเลือก **ห้ามเดา**
+     ② กะเจ้าของใบที่ `pending_close`/`closed` **stamp ยอด/OEE ไปแล้ว** ⇒ ห้ามปิดใบย้อนหลัง
+     ③ ปิดใบไลน์อื่น = เขียนข้ามหน่วยงาน · ฝั่ง DR วิ่ง `anon` **ไม่มีด่านฝั่ง DB**
+        ⇒ `canWriteLine` ในตัวเขียนเป็นด่านเดียวที่มี */
+  const bad = [];
+  const CL = 'src/utils/crossLineClose.js';
+  const cl = readFileSync(join(ROOT, CL), 'utf8');
+  if (/from\s+['"]\.\.?\/supabaseClient/.test(cl)) bad.push(`${CL}: ห้าม import supabaseClient (ต้อง pure · มีเทส)`);
+  const clCode = stripComments(cl);
+  if (!/'ambiguous'/.test(clCode)) bad.push(`${CL}: ① หายไป — เลขซ้ำต้องคืน 'ambiguous' ห้ามเดาใบให้`);
+  if (!/'shift_locked'/.test(clCode)) bad.push(`${CL}: ② หายไป — กะที่ปิดแล้วต้องคืน 'shift_locked'`);
+
+  /* ตัวเขียนจริงในหน้า — ดู "ในตัวฟังก์ชัน" ไม่ใช่ทั้งไฟล์ (ทั้งไฟล์มี canWriteLine ของแผงอื่นอยู่แล้ว) */
+  const DR = 'src/pages/DailyReport.jsx';
+  const dr = stripComments(readFileSync(join(ROOT, DR), 'utf8'));
+  const fn = dr.match(/const\s+doCrossLineClose\s*=[\s\S]*?\n  \};/);
+  if (!fn) bad.push(`${DR}: หา doCrossLineClose ไม่เจอ — เปลี่ยนชื่อแล้วต้องแก้ด่านนี้ด้วย`);
+  else {
+    const body = fn[0];
+    if (!/canWriteLine\s*\(/.test(body)) bad.push(`${DR} doCrossLineClose: ③ ไม่ได้เช็ค canWriteLine — ปิดใบข้ามหน่วยงานได้ฟรี`);
+    if (!/unknownTarget:\s*'block'/.test(body)) bad.push(`${DR} doCrossLineClose: ไลน์ที่ผังไม่รู้จักต้อง block (fail-closed)`);
+    if (!/crossLineCloseState\s*\(/.test(body)) bad.push(`${DR} doCrossLineClose: ② ไม่ได้เช็คซ้ำตอนกดจริง (การ์ดบนจอเป็นแค่ภาพตอนค้น)`);
+    if (!/checkWriteRows\s*\(/.test(body)) bad.push(`${DR} doCrossLineClose: ต้องนับแถว — RLS/แข่งกันปิด = "สำเร็จ 0 แถว ไม่มี error"`);
+    if (!/\.eq\(\s*'status'\s*,\s*'open'\s*\)/.test(body)) bad.push(`${DR} doCrossLineClose: ต้อง CAS .eq('status','open') กันปิดซ้ำ`);
+  }
+  /* 🔴 ห้าม auto-confirm ใบข้ามไลน์จาก Enter ของเครื่องสแกน — สแกนพลาด = ปิดใบไลน์อื่นเงียบ */
+  const chg = dr.match(/const\s+handleCloseProdNoChange\s*=[\s\S]*?\n  \};/);
+  if (chg && /hasEnter\s*&&\s*!found[\s\S]{0,120}doCrossLineClose/.test(chg[0]))
+    bad.push(`${DR}: ห้าม auto-confirm ใบข้ามไลน์จาก Enter ของเครื่องสแกน — ต้องให้คนกดยืนยัน`);
+
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n  ')
+    + '\n\n   ปิดใบผิดไลน์ = ยอด/OEE ของไลน์ที่ไม่เกี่ยวเปลี่ยน โดยไม่มีใครเห็นบนจอ\n');
+});
+
 test('☕ break-policy-cols-central — เลือกคอลัมน์ break_policies เองต้องใช้ชุดกลาง', () => {
   /* 27/10: เพิ่มคอลัมน์ `duration_min_holiday` (นาทีพักวันหยุด) แล้วพบว่ามี 6 จุด
      เลือกคอลัมน์เองไว้ ⇒ จอพวกนั้นจะคิดเวลาพักวันหยุดเป็นค่าปกติ ขณะที่จอหลักคิดค่าวันหยุด
