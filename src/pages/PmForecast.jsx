@@ -72,11 +72,12 @@ export default function PmForecast() {
     const live = () => req === reqRef.current   // กดรีเฟรชซ้อน = คำตอบรอบเก่าห้ามทับ
     setLoading(true)
     try {
-      const [{ data: lines }, planRes] = await Promise.all([
+      const [linesRes, planRes] = await Promise.all([
         loadLinesRes(),
         fetchAllPages(() => supabaseDR.from('pm_plans').select('id, checklist_id, plan_type, usage_metric, usage_threshold, usage_source_line, interval_days, next_due_date, last_done_at, pm_duration_hours, lead_time_days, buffer_margin_pct, is_active').eq('is_active', true)),
       ])
-      const lineArr = lines || []
+      /* 🔴 30/10 — อ่านทะเบียนไลน์ไม่สำเร็จ ต้องแยกออกจาก "ไม่มีไลน์" (เดิมแกะแค่ `{ data }` = เงียบ) */
+      const lineArr = linesRes?.error ? [] : (linesRes.data || [])
       const plans = planRes.rows
       const clIds = [...new Set(plans.map(p => p.checklist_id).filter(Boolean))]
       const clRes = await fetchByIds(clIds, ids => supabaseDR.from('checklists').select('id, equipment_id, name').in('id', ids))

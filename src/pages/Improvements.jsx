@@ -193,7 +193,7 @@ export default function Improvements() {
   /* ── load master + improvements ── */
   const load = useCallback(async () => {
     setLoading(true);
-    const [{ data: ln }, { data: imp }, { data: dt }, { data: dft }, { data: mc }, { data: pr }, { data: ms }, { data: mpt }, { data: mo }, ccRes, pcRes] = await Promise.all([
+    const [lnRes, { data: imp }, { data: dt }, { data: dft }, { data: mc }, { data: pr }, { data: ms }, { data: mpt }, { data: mo }, ccRes, pcRes] = await Promise.all([
       // cost_center: คิด cost saving (ไลน์ลูกไม่กรอก = ตกทอดจากไลน์แม่ — lineCostCenter)
       loadLinesRes(), // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
       supabaseDR.from('improvements').select('*').order('created_at', { ascending: false }),
@@ -220,7 +220,7 @@ export default function Improvements() {
       supabase.from('cost_center_rates').select('*'),
       supabaseDR.from('parts_master').select('mat_no, material_cost, standard_cost').eq('is_active', true),
     ]);
-    setLines(ln || []);
+    setLines((lnRes?.data || []));
     setItems(imp || []);
     setDtTypes(dt || []);
     setDefectTypes(dft || []);

@@ -213,7 +213,7 @@ export default function OjtTraining() {
 
   const load = async () => {
     setLoading(true);
-    const [{ data: tr }, { data: ln }, { data: org }, { data: profs }, { data: divs }] = await Promise.all([
+    const [{ data: tr }, lnRes, { data: org }, { data: profs }, { data: divs }] = await Promise.all([
       supabase.from('ojt_trainings').select('*, ojt_training_attendees(id)').order('train_date', { ascending: false }).order('created_at', { ascending: false }).limit(300),
       loadLinesRes(),
       supabase.from('org_nodes').select('id, code, name, kind, parent_id, sort_order').eq('is_active', true),
@@ -221,6 +221,9 @@ export default function OjtTraining() {
       // "ฝ่าย" = org_divisions (ชั้นบนสุดของผัง · migration 20260818) — เดิมช่องนี้พิมพ์เอง (2026-09-07)
       supabase.from('org_divisions').select('code, label, is_active').order('sort_order'),
     ]);
+  /* 🔴 30/10 — เดิมแกะแค่ `{ data }` ⇒ ทะเบียนไลน์โหลดไม่สำเร็จแล้วได้ลิสต์ว่าง **เงียบ**
+     (หน้างาน PD1 แจ้ง "MO ไม่มีให้เลือกไลน์" ทั้งที่ฐานข้อมูลมีครบ) · เก็บผลทั้งก้อนไว้อ่าน error ได้ */
+  const ln = lnRes?.error ? null : lnRes.data;
     setLines(ln || []);
     setDivisions((divs || []).filter(d => d.is_active !== false).map(d => d.label).filter(Boolean));
     // ลำดับตามผัง (query .order('sort_order') แล้ว) — ห้าม .sort() ตัวอักษรทับ (QC audit 2026-08-18)

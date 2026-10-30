@@ -6744,7 +6744,9 @@ function HistoryTab({ role }) {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data: ln } = await loadLinesRes();
+    const lnRes = await loadLinesRes();
+      /* 🔴 อ่านทะเบียนไลน์ไม่สำเร็จ = คงลิสต์เดิม ห้ามทับด้วย [] (30/10 · MO แจ้ง "ไม่มีให้เลือกไลน์") */
+    const ln = lnRes?.error ? null : lnRes.data;
     const lm = {};
     (ln || []).forEach(l => { lm[l.name] = l; });
     const pcm = {};
@@ -8521,11 +8523,14 @@ function ProductSetup({ role }) {
   const blankForm = () => ({ name: '', code: '', mat_no: '', p_no: '', customer: '', line_name: '', cycle_time_sec: '', target_per_shift: '', process_type: 'welding_assembly', is_active: true, effective_from: '' });
 
   const load = useCallback(async () => {
-    const [{ data: pr }, { data: ln }, { data: stds }] = await Promise.all([
+    const [{ data: pr }, lnRes, { data: stds }] = await Promise.all([
       supabaseDR.from('dr_products').select('*').order('name').order('effective_from', { ascending: false }),
       loadLinesRes(), // 2026-09-07 ครบคอลัมน์ให้ <LineSelect> (ลำดับชั้น/ปลดระวาง)
       supabaseDR.from('kanban_standards').select('*').order('mat_no'),
     ]);
+  /* 🔴 30/10 — เดิมแกะแค่ `{ data }` ⇒ ทะเบียนไลน์โหลดไม่สำเร็จแล้วได้ลิสต์ว่าง **เงียบ**
+     (หน้างาน PD1 แจ้ง "MO ไม่มีให้เลือกไลน์" ทั้งที่ฐานข้อมูลมีครบ) · เก็บผลทั้งก้อนไว้อ่าน error ได้ */
+  const ln = lnRes?.error ? null : lnRes.data;
     setItems(pr || []);
     setLines(ln || []);
     setKanbanStds(stds || []);

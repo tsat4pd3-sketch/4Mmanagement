@@ -684,7 +684,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
 
   /* ── โหลดผัง + รูปทรง + ไลน์ ── */
   const loadMap = useCallback(async () => {
-    const [{ data: fm }, { data: rg }, { data: ln }, { data: lay }] = await Promise.all([
+    const [{ data: fm }, { data: rg }, lnRes, { data: lay }] = await Promise.all([
       supabase.from('factory_map').select('id, image_url').order('updated_at', { ascending: false }).limit(1).maybeSingle(),
       supabase.from('factory_line_regions').select('id, line_name, points'),
       loadLinesRes(),
@@ -693,7 +693,8 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
     setImageUrl(fm?.image_url || null);
     setMapId(fm?.id || null);
     setRegions((rg || []).map(r => ({ ...r, points: Array.isArray(r.points) ? r.points : [] })));
-    setLines(ln || []);
+      /* 🔴 อ่านทะเบียนไลน์ไม่สำเร็จ = คงลิสต์เดิม ห้ามทับด้วย [] (30/10 · MO แจ้ง "ไม่มีให้เลือกไลน์") */
+    if (!lnRes?.error) setLines(lnRes?.data || []);
     // โหมดไหลงาน/จำนวนเครื่องขนาน (best-effort — ยังไม่ apply migration 20260723 ก็ข้าม) ใช้หัก DT 1/N ใน OEE สด
     try {
       const { data: fl } = await loadLinesRes();
@@ -1098,7 +1099,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
     // live = กะปัจจุบันเท่านั้น (คำสั่ง user 2026-08-04) — เดิมนับพนักงานทั้งไลน์ (ทุกทีม 2 กะ)
     // เป็นตัวหาร + present รวม log ทั้งวัน → เลขโป่ง เช่น 15/33 ทั้งที่กะนี้มี 16 คน
     const curShift = (() => { const h = new Date().getHours(); return h >= 8 && h < 20 ? 'day' : 'night'; })();
-    const [{ data: emps }, { data: pls }, { data: logsAll }, { data: ws }, saRes] = await Promise.all([
+    const [{ data: emps }, plsRes, { data: logsAll }, { data: ws }, saRes] = await Promise.all([
       supabase.from('employees').select('id, line_id').eq('is_active', true),
       loadLinesRes(),
       supabase.from('daily_production_logs').select('employee_id, is_present, has_helmet, has_boots, has_gloves, assigned_line, shift').eq('work_date', workDate),
@@ -1110,7 +1111,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
     ]);
     // log ของกะปัจจุบัน (shift null = log เก่าก่อนมีคอลัมน์ — นับรวมแบบ backward-compat)
     const logs = (logsAll || []).filter(l => !l.shift || l.shift === curShift);
-    const lineOfId = {}; (pls || []).forEach(l => { lineOfId[l.id] = l.name; });
+    const lineOfId = {}; ((plsRes?.error ? [] : (plsRes?.data || []))).forEach(l => { lineOfId[l.id] = l.name; });
     const empLine = {}; (emps || []).forEach(e => { empLine[e.id] = lineOfId[e.line_id]; });
     // จุดงาน (workstations) ต่อไลน์ + จุดที่มีคนเข้าประจำจริง (assigned_line ของคนที่มาทำงาน)
     const stationLine = {}; const stationTotal = {};

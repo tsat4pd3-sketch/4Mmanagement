@@ -7446,6 +7446,45 @@ test('🛡️ line-registry-load-visible — ลิสต์ไลน์ว่�
     /* แกะผลโดยไม่เอา error ออกมาเลย = กลืนความล้มเหลวซ้ำรอยเดิม */
     if (/const\s*\{\s*data\s*\}\s*=\s*await\s+loadLinesRes\s*\(/.test(src))
       bad.push(`${relative(ROOT, f)} (แกะแค่ { data } จาก loadLinesRes — อ่านพลาดแล้วลิสต์ว่างเงียบ)`);
+    /* 🔴 30/10 — รอบแรกด่านนี้จับแค่รูป `const { data } = await loadLinesRes()` ⇒ **หลุด**
+       รูปที่หน้างานเจอจริง: เรียกใน `Promise.all` แล้วแกะเป็น array
+       (`const [{ data: ln }, …] = await Promise.all([ loadLinesRes(), … ])`)
+       หน้างาน PD1 แจ้ง 30/10 "MO ไม่มีให้เลือกไลน์" ทั้งที่ฐานข้อมูลมี 5 ไลน์ของ PD1 ครบ
+       ⇒ จับเพิ่ม: หา `Promise.all([…])` ที่มี `loadLinesRes()` อยู่ในอาร์เรย์ แล้วดูว่า
+         ตัวแปรฝั่งซ้าย **ตำแหน่งเดียวกัน** ถูกแกะเป็น `{ … }` (= ทิ้ง error) หรือไม่
+       🔴 ห้ามเปลี่ยนเป็นกฎหยาบ "ไฟล์ไหนเรียกต้องมี .error" — เคยลองแล้วเหมาไป 15+ ไฟล์
+         ที่ยังไม่ได้กวาด (ดู §หนี้ที่เหลือ ใน docs/modules/mtn-work-order.md) ⇒ ด่านจะเขียวไม่ได้เลย */
+    const splitTop = (txt) => {              // แยก , ชั้นบนสุด (ข้าม () [] {} และสตริง)
+      const out = []; let d = 0, q = '', cur = '';
+      for (const ch of txt) {
+        if (q) { cur += ch; if (ch === q) q = ''; continue; }
+        if (ch === '"' || ch === "'" || ch === '`') { q = ch; cur += ch; continue; }
+        if ('([{'.includes(ch)) d++;
+        if (')]}'.includes(ch)) d--;
+        if (ch === ',' && d === 0) { out.push(cur); cur = ''; continue; }
+        cur += ch;
+      }
+      out.push(cur); return out;
+    };
+    for (const m of src.matchAll(/const\s*\[([^\]]*)\]\s*=\s*await\s+Promise\.all\(\s*\[/g)) {
+      const lhs = splitTop(m[1]);
+      // หาเนื้อในวงเล็บของ Promise.all แบบนับวงเล็บ (array literal อาจมี [] ซ้อน)
+      let i = m.index + m[0].length, d = 1, body = '';
+      for (; i < src.length && d > 0; i++) {
+        const ch = src[i];
+        if (ch === '[') d++;
+        if (ch === ']') { d--; if (!d) break; }
+        body += ch;
+      }
+      const args = splitTop(body);
+      args.forEach((a, idx) => {
+        if (!/loadLinesRes\s*\(/.test(a)) return;
+        if (/mrows\s*\(/.test(a)) return;                    // โยน error ต่อ = ถูกแล้ว
+        const el = lhs[idx] ?? '';
+        if (/^\s*\{/.test(el) && !/\berror\b/.test(el))   // แกะ `{ data, error }` ไว้แล้ว = ถูกแล้ว
+          bad.push(`${relative(ROOT, f)} (loadLinesRes ใน Promise.all ตำแหน่งที่ ${idx + 1} ถูกแกะเป็น { … } ไม่เอา error — หล่นหาย)`);
+      });
+    }
   }
   assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n   ') + '\n'
     + '   ทำไม: จอบอก "ไม่มีไลน์" ทั้งที่ไลน์ยังอยู่ครบ — หน้างานสรุปว่าไลน์ถูกลบ\n'

@@ -154,11 +154,14 @@ export default function PEDocs() {
 
   const loadSets = useCallback(async () => {
     setLoading(true);
-    const [{ data: s }, { data: ln }] = await Promise.all([
+    const [{ data: s }, lnRes] = await Promise.all([
       supabase.from('pe_doc_sets').select('*').order('part_no'),
       // LINE_COLUMNS ครบ (section/is_active) ให้ <LineSelect> · เครื่องจักรย้ายไป <MachineSelect> (โหลด+cache เอง · 2026-09-07)
       loadLinesRes(),
     ]);
+  /* 🔴 30/10 — เดิมแกะแค่ `{ data }` ⇒ ทะเบียนไลน์โหลดไม่สำเร็จแล้วได้ลิสต์ว่าง **เงียบ**
+     (หน้างาน PD1 แจ้ง "MO ไม่มีให้เลือกไลน์" ทั้งที่ฐานข้อมูลมีครบ) · เก็บผลทั้งก้อนไว้อ่าน error ได้ */
+  const ln = lnRes?.error ? null : lnRes.data;
     setSets(s || []);
     setLines(ln || []);
     setLoading(false);
