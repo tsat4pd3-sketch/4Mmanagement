@@ -1,6 +1,6 @@
 # 💼 Marketing — Q-neX (E-Quotation) · ต้นน้ำของสายธาร Marketing → New Model → โรงงาน
 
-> **สถานะ: สำรวจ/ออกแบบ ยังไม่ลงมือ** (2026-10-30)
+> **สถานะ: เฟส 1 ทำแล้ว 30/10 (§8) · เฟส 2-4 ยังไม่ลงมือ** · **user ตัดสินแล้ว (30/10): ESM = Q-neX เอง (โมดูลใน edition ก่อน SOP ร่วมกับ NM) · เริ่มเฟส 1 ตามที่เสนอ · Master Excel = `TS Cost Breakdown.xlsx`** (ตอบ §9 ข้อ 1 · 3)
 > ที่มา (user ส่ง 30/10 — *"ข้อมูลทั้งหมดที่ marketing ใช้งาน และจะทำงานร่วมกับ IEC"*):
 > 1. **POC for Q-neX Project** (เด็ค 22 หน้า ของฝ่าย Marketing) — 6 โมดูล + สูตรคำนวณ + test plan 12 ข้อ
 > 2. **Q-neX Project Flowchart 20261005** (`.mmd`/`.svg`/`.pdf`) — เก็บ source ไว้ที่ `docs/marketing/qnex-flowchart-20261005.mmd`
@@ -182,7 +182,7 @@
 
 | เฟส | ทำอะไร | ได้อะไร |
 |---|---|---|
-| **1 · ทะเบียน + รอยต่อ** | `mkt_rfqs`/`parts`/`documents` · หน้า `/rfq` (รายการ + ใบงาน) · CRD → สร้าง/ผูก NPI · Award → เสนอออก **ใบแจ้งจัดทำ F-MKT-001/002** · Model Report (won/lost) · role `marketing` | **สายธารต่อกันครบทั้ง 3 ข้อต่อเป็นครั้งแรก** — RFQ ↔ NPI ↔ พาร์ทจริง · ปิด gap IEC §7.12 ด้วยฟอร์มจริง |
+| **1 · ทะเบียน + รอยต่อ** ✅ **ทำแล้ว 30/10** | `mkt_rfqs`/`mkt_rfq_parts`/`mkt_awards` (ไฟล์ RFQ ยกไปเฟส 2) · หน้า `/rfq` (รายการ + ใบงาน) · CRD → สร้าง/ผูก NPI · Award → **ใบแจ้งจัดทำ F-MKT-001/002** · Model Report (won/lost) · role `marketing` · 📄 `docs/modules/mkt-rfq.md` | **สายธารต่อกันครบทั้ง 3 ข้อต่อเป็นครั้งแรก** — RFQ ↔ NPI ↔ ใบแจ้งจัดทำถึงโรงงาน · ปิด gap IEC §7.12 ด้วยฟอร์มจริง |
 | **2 · มอบงานแผนก + gate** | `mkt_rfq_tasks` · checklist gatekeeper · access matrix ต่อชนิดเอกสาร · คิวงานของฉัน + แจ้งเตือนในแอป | IEC/Purchasing เห็นงานในคิว · ขาดเอกสารบล็อก submit (TC-03/04) |
 | **3 · ต้นทุน + ใบเสนอราคา** | `mkt_rate_tables` · `mktCost.js` (①–⑤) · `mkt_cost_models` เวอร์ชัน · ใบเสนอราคา 2 ชั้นอนุมัติ · ส่งออกฟอร์ม OEM (Ford PP-P-F104c ก่อน) | TC-06..11 · ตรง Master Excel |
 | **4 · วัดย้อนกลับ** | KPI CSC "bidding vs actual" จาก RFQ ↔ พาร์ทจริง · ประมาณการ takt จากไลน์จริง | golden thread ที่ไม่มีระบบไหนในกลุ่มทำได้ |

@@ -28,6 +28,7 @@ export const EDITION_PAGES = [
   // ① งาน New Model
   '/nm-board',        // 🧭 บอร์ด New Model (IEC) — จอประชุม/จอแขวนของทีม
   '/npi',             // 🚀 พาร์ทใหม่ APQP / PPAP / ECI / Tooling
+  '/rfq',             // 💼 RFQ / เสนอราคา — Marketing (Q-neX เฟส 1 · 30/10) ต้นน้ำของ NPI
   // ② ปลายทางของลิงก์ที่มีอยู่ในหน้า NM
   '/pe-docs',         // 📐 Process Flow / PFMEA / Control Plan (ทีม NM ดูได้ แก้ไม่ได้ — `pe:edit` ปิดอยู่)
   '/qa-setup',        // 🔍 มาตรฐานตรวจ + drawing balloon (ผูกกับพาร์ทใน NPI)

@@ -30,6 +30,8 @@ export const ROLE_META = {
   mtn:              { icon: '🔧', label: 'ซ่อมบำรุง',        en: 'Maintenance',      color: '#fb7185', desc: 'PM, ผังเครื่องจักร, ฐานข้อมูลเครื่องจักร', axis: 'unit' },
   engineer:         { icon: '⚙️', label: 'ส่วนวิศวกรรม',     en: 'Process Engineering', color: '#2dd4bf', desc: 'หน่วยงานวิศวกรรมกระบวนการ — BOM / EC / New Model · ⚠️ ไม่ใช่ "ตำแหน่งวิศวกร" (วิศวกรแผนกช่างใช้ role ซ่อมบำรุง)', axis: 'unit' },
   engineer_nm:      { icon: '🚀', label: 'วิศวกรรมรุ่นใหม่',  en: 'New Model Engineering', color: '#818cf8', desc: 'ทีม Engineering New Model — เข้าได้เฉพาะ 🚀 พาร์ทใหม่ (NPI) + 📐 Flow/PFMEA/CP · ไม่เห็นหน้าอื่นทั้งระบบ', axis: 'unit' },
+  // 💼 ต้นน้ำของสายธาร Marketing → New Model → โรงงาน (Q-neX · 2026-10-30) — คนละ role กับ engineer_nm เพราะชุดสิทธิ์ต่างกันจริง (ออก RFQ/CRD/Award ≠ ทำ APQP)
+  marketing:        { icon: '💼', label: 'การตลาด',          en: 'Marketing (Q-neX)',      color: '#f472b6', desc: 'ฝ่ายการตลาด — RFQ / เสนอราคา / ส่ง CRD ให้ IEC / บันทึกได้งาน-ไม่ได้งาน / ออกใบแจ้งจัดทำ · ดู NPI และบอร์ด New Model ได้ (แก้ไม่ได้)', axis: 'unit' },
   planner_store:    { icon: '📦', label: 'แผนงาน-คลัง',      en: 'Planner & Store',  color: '#38bdf8', desc: 'บริหารสต๊อก · จ่ายของเข้าไลน์ · จ่ายงานในโรงงาน · รับ Forecast/Order ลูกค้า · วางแผนผลิต', axis: 'unit' },
   // 🚚 ฝั่ง “Warehouse & Delivery (ส่งลูกค้า)” — แยกออกมา 2026-09-23 (คำสั่ง user)
   //    เหตุผล: เดิม planner_store ⊇ sale ทุกหน้าหมวด Logistic = “เต็ม vs ลดทอน” ไม่ใช่ “คนละหน้าที่”

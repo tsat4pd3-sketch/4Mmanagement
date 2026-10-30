@@ -119,7 +119,8 @@ Fixture shim record `/equipment?tab=jig` `fixture-shim-record.md` ·
 กำลังคน/เปลี่ยนจุดงาน/Turnover `/workforce-insight` (อ่านอย่างเดียว) `workforce-insight.md` ·
 ประวัติผลิต by Product `/product-history` `product-history.md` ·
 สอบกลับ Order `/order-trace` `order-trace.md` ·
-กล่องรับ feedback หน้างาน (ปุ่มท้าย sidebar) `feedback-inbox.md`
+กล่องรับ feedback หน้างาน (ปุ่มท้าย sidebar) `feedback-inbox.md` ·
+RFQ/เสนอราคา Marketing (Q-neX เฟส 1 · ต้นน้ำ NPI · ตาราง `mkt_*` Main) `/rfq` `mkt-rfq.md`
 
 ---
 ## Organizational Hierarchy · Role System
@@ -388,9 +389,7 @@ Fixture shim record `/equipment?tab=jig` `fixture-shim-record.md` ·
 
 ## 🧰 `/equipment` — ศูนย์ทะเบียนอุปกรณ์ของช่าง (2026-09-22)
 
-ยุบเป็นหน้าเดียว 5 แท็บ: `?tab=machine|die|jig|spare|rack`
-(route เดิม `/machine-database` `/die-registry` `/fixture` redirect เข้ามา) · **embed หน้าเดิมทั้งดุ้น
-ไม่แก้ของเดิม** · สิทธิ์ piggyback **ไม่ต้อง seed `page:/equipment`**
+หน้าเดียว 5 แท็บ `?tab=machine|die|jig|spare|rack` (route เดิม redirect เข้ามา) · **embed หน้าเดิมทั้งดุ้น ไม่แก้ของเดิม** · สิทธิ์ piggyback **ไม่ต้อง seed `page:/equipment`**
 · 🔴 **แท็บซ้อนแท็บต้องคนละ query param** — หน้าลูกใช้ `?die=` / `?fx=` **ห้ามใช้ `?tab=`** (UI §6.8 ข้อ 2.4)
 
 ---
