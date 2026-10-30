@@ -1276,7 +1276,8 @@ layout ใช้ของรหัส (ใหม่กว่า 14/10) แทน
 ## 💰 ขอบเขตบนจอ KPI = หน่วยที่มี cost center เท่านั้น (2026-10-30 · คำสั่ง user)
 
 user: *"ให้เลือกจากผังองค์กรที่มี cost center เลย ได้ไม่งง"* (ต่อจากเคสแถวซ้ำ 📂/🔗 ชื่อเดียวกัน)
-- `<OrgScopePicker ccOnly>` ที่ตัวกรองหน้า KPI รายเดือน · modal นิยาม KPI · บอร์ด KPI (`ObeyaKpiBoard`) — ลิสต์ผ่าน `ccBearingOptions()` (`utils/orgScope.js`):
+- user ย้ำต่อ: *"Obeya และ KPI ทั้งหมดมันวัดกันที่ cost center"* ⇒ **ทุกแท็บของ `/obeya` ใช้ `ccOnly`** (KPI รายเดือน · modal นิยาม · บอร์ด KPI · SQDCM) · ชื่อหน่วยในลิสต์ต่อท้ายรหัส CC (`📂 HYDROFORM · 💰 2140562100`) ให้เทียบใบบัญชีได้
+- `<OrgScopePicker ccOnly>` ที่ตัวกรองหน้า KPI รายเดือน · modal นิยาม KPI · บอร์ด KPI (`ObeyaKpiBoard`) · SQDCM (`ObeyaSqdcmBoard`) — ลิสต์ผ่าน `ccBearingOptions()` (`utils/orgScope.js`):
   เหลือ โรงงาน · ฝ่าย (หัวกลุ่ม) · ส่วนงาน/แผนก/กลุ่มไลน์/ไลน์ที่ `cost_center` ไม่ว่าง · ช่อง CC แยกเหมือนเดิม
 - ของที่หายจากลิสต์ (ตามทะเบียนจริง 30/10): SPARE PART · Office PD4 · Coating · แผนก "ทั่วไป" · BENDING E50/EXPORT · "Line A1/B1/C1 · ไม่มีไลน์ผลิต" — ตั้งรหัส CC ที่ `/org-setup` หรือ `/line-setup` แล้วกลับมาเอง
 - 🔴 **เป็นการกรองลิสต์ ไม่ใช่กรองข้อมูล** — นิยาม KPI ที่เคยบันทึกไว้กับหน่วยไม่มี CC ยังขึ้นเป็น ghost "⚠ ไม่อยู่ในตัวเลือกของคุณ" (ไม่หายเงียบ) · SQDCM/จอผลิตอื่นยังเห็นทุกหน่วยเหมือนเดิม (ตัวเลขผลิตไม่ผูก CC)
