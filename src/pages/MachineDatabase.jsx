@@ -137,13 +137,16 @@ export default function MachineDatabase() {
     invalidateTable('machines');
     /* 🔀 cache "ตัวนี้ครอบกี่เลน" ไม่ได้ผ่าน cachedMaster ⇒ invalidateTable ไม่ล้างให้ (ล้างที่นี่) */
     invalidateAffectsLanes();
-    const [{ data: mc }, { data: ln }, { data: mt }, fa] = await Promise.all([
+    const [{ data: mc }, lnRes, { data: mt }, fa] = await Promise.all([
       // equipment_die(die_height_mm) — แม่พิมพ์กรอกความสูงได้จากฟอร์มนี้ด้วย (19/10 · ตัวจริงเก็บ 1:1 ที่ equipment_die)
       supabaseDR.from('machines').select('*, machine_types(id, label, color, icon), equipment_die(die_height_mm)').order('line_name').order('sort_order'),
       loadLinesRes(),
       supabaseDR.from('machine_types').select('*').order('sort_order'),
       supabaseDR.from('pm_facility_areas').select('name').order('sort_order').then(r => r).catch(() => ({ data: [] })),
     ]);
+  /* 🔴 30/10 — เดิมแกะแค่ `{ data }` ⇒ ทะเบียนไลน์โหลดไม่สำเร็จแล้วได้ลิสต์ว่าง **เงียบ**
+     (หน้างาน PD1 แจ้ง "MO ไม่มีให้เลือกไลน์" ทั้งที่ฐานข้อมูลมีครบ) · เก็บผลทั้งก้อนไว้อ่าน error ได้ */
+  const ln = lnRes?.error ? null : lnRes.data;
     setMachines(mc || []);
     setLines(ln || []);
     setTypes(mt || []);
