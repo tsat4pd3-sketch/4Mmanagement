@@ -7714,3 +7714,22 @@ test('🔭 line-scope-two-answers — scopedLines/scopedLineNames ต้อง�
   assert.match(src, /registry_unloaded/, 'ทะเบียนยังไม่โหลดต้องแยกเหตุผลไว้');
   assert.match(src, /own_line_unknown/, 'หาไลน์ตัวเองไม่เจอต้องแยกเหตุผลไว้');
 });
+
+/* ═══ 🏭 line-registry-never-silent — ทะเบียนไลน์ล้ม ต้องมีจอบอกเสมอ ═══ 30/10 (หน้างานแจ้ง 29/10)
+   *"มันกรองไลน์ไม่ได้ครับ"* · *"แจ้งซ่อม MO JIG เลือกไลน์ผลิตไม่ได้ค่ะ ไม่มีข้อมูล"*
+   ตรวจแล้วไม่ใช่เรื่องสิทธิ์ — RLS ของ production_lines เปิดให้ทุกคนที่ login อ่าน (select = true)
+   ต้นเหตุ: `loadLinesRes()` คืน `{ data, error }` แต่ **82 จาก 89 จุดเรียกทิ้ง error ทิ้ง**
+   ⇒ โหลดล้ม = dropdown ไลน์ว่างพร้อมกันทั้งแอป โดยไม่มีจอไหนบอกเหตุ ⇒ หน้างานอ่านว่า "ไม่มีข้อมูล"
+   ⇒ ไล่แก้ทีละจอไม่มีวันครบ ⇒ ตาข่ายต้องอยู่ที่เดียวใน App.jsx และห้ามถอด */
+test('🏭 line-registry-never-silent — ต้องมีตาข่ายกลางบอกว่าทะเบียนไลน์โหลดไม่สำเร็จ', () => {
+  const alert = stripComments(readFileSync(join(ROOT, 'src/components/LineRegistryAlert.jsx'), 'utf8'));
+  assert.match(alert, /useProductionLinesState\(\)/, 'ต้องถามสถานะจากทะเบียนกลาง ไม่ใช่เดาเอง');
+  assert.match(alert, /registryFailText\(/, 'ข้อความต้องมาจากของกลาง ห้ามแต่งเองในหน้า');
+  assert.match(alert, /if \(loading \|\| !failed\) return null;/,
+    '🔴 ระหว่างโหลดห้ามขึ้น (แถบกะพริบทุกครั้งที่เปลี่ยนหน้า) · ไม่ล้มก็ห้ามขึ้น');
+  assert.match(alert, /reload\(\)/, 'ต้องมีปุ่มโหลดใหม่ — แจ้งเฉยๆ แล้วทำอะไรไม่ได้ = จอตัน');
+
+  const app = stripComments(readFileSync(join(ROOT, 'src/App.jsx'), 'utf8'));
+  assert.match(app, /<LineRegistryAlert \/>/, '🔴 ตาข่ายกลางหายจาก App.jsx');
+  assert.match(app, /import LineRegistryAlert from/, 'ต้อง import จริง');
+});

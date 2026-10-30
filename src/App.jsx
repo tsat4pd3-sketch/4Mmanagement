@@ -34,6 +34,7 @@ import useIsMobile from './utils/useIsMobile';
 import ScrollHint from './components/ScrollHint';
 import MobileNavBar from './components/MobileNavBar';
 import MobilePushPrompt from './components/MobilePushPrompt'; // 📲 แถบชวนเปิด push (มือถือเท่านั้น) — 2026-10-20
+import LineRegistryAlert from './components/LineRegistryAlert';
 import ScanWedgeGuard from './components/ScanWedgeGuard';
 import { purgeOldDrafts } from './utils/formDraft';   // 📝 ล้างร่างฟอร์มที่หมดอายุ (ร่างค้างห้ามกินที่ในเครื่อง)   // 🔫 ปุ่มสแกนข้างเครื่อง handheld — มือถือเท่านั้น
 import { pushSupported, getPushState, subscribePush, unsubscribePush, onPushResubscribeRequest, handlePushResubscribe } from './utils/webpush';
@@ -2075,6 +2076,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
           {/* 📲 "เครื่องนี้ยังไม่เปิดแจ้งเตือน" — มือถือเท่านั้น (คอมไม่เปลี่ยนแม้แต่พิกเซลเดียว)
               เดิมปุ่มเปิดซ่อนในกระดิ่ง ⇒ 74 จาก 102 คนที่ได้รับแจ้งเตือนไม่มีเครื่องผูกไว้เลย (วัด 20/10) */}
           <MobilePushPrompt userId={userId} />
+          {/* 🏭 ทะเบียนไลน์โหลดไม่สำเร็จ = dropdown ไลน์ว่างทั้งแอป — ต้องบอก ห้ามปล่อยให้เดาเอง
+              (82 จาก 89 จุดที่เรียก loadLinesRes() ทิ้ง error ทิ้ง ⇒ ตาข่ายต้องอยู่ที่เดียวตรงนี้) */}
+          <LineRegistryAlert />
           <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh', color: 'var(--muted)', fontSize: 14 }}>กำลังโหลด...</div>}>
             {/* 🔁 key จากจอวนหน้า — หน้าเดิมที่เปลี่ยนแค่ ?query (เช่น ผังโรงงาน metric=oee → metric=ng) ต้อง remount
                 ไม่งั้นค่าตั้งต้นจากลิงก์ (utils/urlInit) ไม่ถูกอ่านใหม่ · ค่าว่าง = นำทางปกติ ไม่ remount */}
