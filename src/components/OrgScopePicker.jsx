@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { allOf } from '../utils/filterLabels';
 import SearchSelect from './SearchSelect';
-import { SCOPE_KIND_META, scopeKey, parseScopeKey, filterScopeOptions, isPlant } from '../utils/orgScope';
+import { SCOPE_KIND_META, scopeKey, parseScopeKey, filterScopeOptions, ccBearingOptions, isPlant } from '../utils/orgScope';
 
 /* ══ <OrgScopePicker> — เลือก "ขอบเขต" ตามผังองค์กร ทุกมิติ (2026-09-23 · คำสั่ง user) ═════════════
    *"เลือกส่วนงานตอนนี้เหมือนเลือกได้แค่ section และไม่ตรงกับผังองค์กร ควรกรองได้ทุกมิติในผังองค์กร"*
@@ -62,16 +62,18 @@ export default function OrgScopePicker({
   failed = '',
   index, value, onChange, scopeSet = null, sections = [], kinds = null, costCenter = true,
   plantLabel = SCOPE_KIND_META.plant.label, native = true, pickable = null, width = 260, style, inputStyle, disabled, title, id,
+  ccOnly = false,   // 💰 โชว์เฉพาะหน่วยที่มี cost center (จอ KPI · `ccBearingOptions`) — ค่าเก่าที่ไม่มี CC ขึ้นเป็น ghost
 }) {
   const ccAllowed = costCenter && (!kinds || kinds.includes('cost_center'));
   const all = useMemo(() => {
     if (!index) return [];
     let list = filterScopeOptions(index, { scopeSet, sections });
+    if (ccOnly) list = ccBearingOptions(list);
     list = list.filter(o => !o.merged);   // 🪞 กลุ่มไลน์ชื่อเดียวกับแผนก (กลุ่มเดียว) = แถวซ้ำ ซ่อน (orgScope.js · 30/10) — option ยังอยู่ใน index
     if (kinds && kinds.length) list = list.filter(o => o.kind === 'plant' || kinds.includes(o.kind));
     if (plantLabel == null) list = list.filter(o => o.kind !== 'plant');
     return list;
-  }, [index, scopeSet, sections, kinds, plantLabel]);
+  }, [index, scopeSet, sections, kinds, plantLabel, ccOnly]);
 
   // 🔴 แยก 2 ลิสต์ตั้งแต่ต้น — ผังองค์กรห้ามมีรหัส cc ปน
   const opts = useMemo(() => all.filter(o => o.kind !== 'cost_center'), [all]);
