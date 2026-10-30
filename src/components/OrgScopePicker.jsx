@@ -67,6 +67,7 @@ export default function OrgScopePicker({
   const all = useMemo(() => {
     if (!index) return [];
     let list = filterScopeOptions(index, { scopeSet, sections });
+    list = list.filter(o => !o.merged);   // 🪞 กลุ่มไลน์ชื่อเดียวกับแผนก (กลุ่มเดียว) = แถวซ้ำ ซ่อน (orgScope.js · 30/10) — option ยังอยู่ใน index
     if (kinds && kinds.length) list = list.filter(o => o.kind === 'plant' || kinds.includes(o.kind));
     if (plantLabel == null) list = list.filter(o => o.kind !== 'plant');
     return list;
