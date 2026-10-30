@@ -122,6 +122,7 @@ const QAInspectionSetup = lazy(() => import('./pages/QAInspectionSetup'));
 const PEDocs = lazy(() => import('./pages/PEDocs'));
 const NPI = lazy(() => import('./pages/NPI'));
 const NewModelBoard = lazy(() => import('./pages/NewModelBoard'));
+const Rfq = lazy(() => import('./pages/Rfq'));
 const ScrapReport = lazy(() => import('./pages/ScrapReport'));
 const NotificationConfig = lazy(() => import('./pages/NotificationConfig'));
 const MtnRepair = lazy(() => import('./pages/MtnRepair'));
@@ -240,6 +241,7 @@ export const NAV_ITEMS = [
   { to: '/pe-docs',        icon: '📐', label: 'Flow / PFMEA / Control Plan', group: 'คุณภาพ & วิศวกรรม' },
   { to: '/npi',            icon: '🚀', label: 'พาร์ทใหม่ APQP / PPAP',       group: 'คุณภาพ & วิศวกรรม' },
   { to: '/nm-board',       icon: '🧭', label: 'บอร์ด New Model (IEC)',      group: 'คุณภาพ & วิศวกรรม' },
+  { to: '/rfq',            icon: '💼', label: 'RFQ / เสนอราคา (Marketing)', group: 'คุณภาพ & วิศวกรรม' },
 
   { to: '/report',        icon: '📋', label: 'รายงาน',            group: 'วิเคราะห์ & รายงาน' },
 
@@ -2267,6 +2269,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
               } />
               <Route path="/nm-board" element={
                 <RoleRoute path="/nm-board" userRole={role}><NewModelBoard /></RoleRoute>
+              } />
+              <Route path="/rfq" element={
+                <RoleRoute path="/rfq" userRole={role}><Rfq /></RoleRoute>
               } />
               <Route path="/products"   element={
                 <RoleRoute path="/products" userRole={role}><ProductMaster /></RoleRoute>
