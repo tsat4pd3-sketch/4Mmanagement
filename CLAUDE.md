@@ -477,7 +477,7 @@ RFQ/เสนอราคา Marketing (Q-neX เฟส 1 · ต้นน้ำ 
 - **🔴 โหมดปีห้ามโหลดแถวดิบ** — ผ่าน RPC rollup (`obeya_year_rollup` ฝั่ง DR / `obeya_attendance_rollup` ฝั่ง Main)
   แล้วให้ JS หาร/ตัดสิน · **RPC ห้ามคำนวณ KPI**
 - **🔴 คอลัมน์ที่มี `not null default` ห้ามเช็ค truthiness** (`kpi_definitions.source` default `'manual'` ⇒ `!d.source` เท็จเสมอ · มีด่าน)
-- **ขอบเขตทุกแท็บ = `<OrgScopePicker>`** (`src/utils/orgScope.js`) ห้าม select จาก `org_nodes` เอง · **Cost Center = ช่องแยก ห้ามปนในลิสต์ผัง** · 🔴 **CC ที่มีหน่วยเจ้าของ = หน่วยเจ้าของ** — เก็บ/เทียบ scope ของ `kpi_*` ผ่าน `canonicalScope()`/`defScopeColumns()` เท่านั้น (มีด่าน `kpi-scope-write-raw` + trigger ฝั่ง DB · 15/10) · ห้ามใช้ `ancestorsOf(cc)` (คืนแค่ plant โดยตั้งใจ)
+- **ขอบเขตทุกแท็บ = `<OrgScopePicker ccOnly>`** (`src/utils/orgScope.js`) ห้าม select จาก `org_nodes` เอง · 🔴 **Obeya/KPI สรุปตาม cost center — ช่องหลัก = รหัส CC หนึ่งแถวต่อรหัส (1 รหัสครอบหลายไลน์)** (30/10 คำสั่ง user) · **Cost Center = ช่องแยก ห้ามปนในลิสต์ผัง** · 🔴 **CC ที่มีหน่วยเจ้าของ = หน่วยเจ้าของ** — เก็บ/เทียบ scope ของ `kpi_*` ผ่าน `canonicalScope()`/`defScopeColumns()` เท่านั้น (มีด่าน `kpi-scope-write-raw` + trigger ฝั่ง DB · 15/10) · ห้ามใช้ `ancestorsOf(cc)` (คืนแค่ plant โดยตั้งใจ)
 - **ห้ามยุบแท็บ `kpi` กับ `sqdcm` เป็นบอร์ดเดียว** (คนละหน่วยเวลา/แกน/เจ้าของตัวเลข) · 2 แท็บนั้นวาดจาก `ObeyaSheet.jsx` ชิ้นเดียว
 - 🔴 **KPI การเงิน (%DL+OH · %RM · DSI · ยอดขาย/หัว) = ยอดเงินของหน่วย ÷ ตัวเลขกลางโรงงาน** — ตัวเลขฐานอยู่ `kpi_base_inputs` (ยอดขาย/COGS กรอกที่ ทั้งโรงงาน ที่เดียว) · ค่ารายเดือนคิดผ่าน `applyFormulaEntries()` (`utils/kpiFormula.js`) **ห้ามหารเองในหน้า** · ขาดตัวแปร = `null` ห้าม 0 · ตารางนี้ห้าม `upsert` (unique index เป็น expression)
 > 📄 **รายละเอียดทั้งหมด** → `docs/modules/obeya-kpi-board.md`
