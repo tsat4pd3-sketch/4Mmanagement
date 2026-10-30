@@ -525,6 +525,14 @@ export function defScopeColumns(index, sc) {
  * @param scopeSet Set(ชื่อไลน์ที่ user เห็น) | null = ไม่จำกัด
  * @param sections ส่วนงานที่ user สังกัด ([] = ไม่จำกัด) — ใช้กับ node ที่ไม่มีไลน์ (แผนกช่าง/สโตร์)
  */
+/* 💰 "เลือกจากผังองค์กรที่มี cost center" (2026-10-30 · คำสั่ง user "ได้ไม่งง") —
+   จอ KPI คิดเป็นหน่วยบัญชี ⇒ โชว์เฉพาะหน่วยที่ถือรหัส CC (ส่วนงาน/แผนก/กลุ่มไลน์/ไลน์ที่ `cost_center` ไม่ว่าง)
+   · โรงงาน + ฝ่าย (หัว optgroup) คงไว้ · หน่วยไม่มี CC (ออฟฟิศ · ไลน์ย่อยที่ยังไม่ตั้งรหัส · "ทั่วไป") ไม่โผล่
+   🔴 กรองแค่ "ลิสต์ที่ให้เลือก" — index/ancestors/linesOf ไม่เปลี่ยน · ค่าที่บันทึกไว้แล้วแต่ไม่มี CC ยังขึ้นเป็น ghost "⚠ ไม่อยู่ในตัวเลือก" ไม่หายเงียบ */
+export function ccBearingOptions(opts) {
+  return (opts || []).filter(o => o.kind === 'plant' || o.kind === 'division' || o.kind === 'cost_center' || !!o.cost_center);
+}
+
 export function filterScopeOptions(index, { scopeSet = null, sections = [], withCostCenter = true } = {}) {
   const opts = withCostCenter ? index.options : index.options.filter(o => o.kind !== 'cost_center');
   const secLimited = !!(sections && sections.length);

@@ -1026,7 +1026,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
       {/* UI-STANDARD 2026-09-24: แถบกรองมาตรฐาน — ขอบเขต → ปี → spacer → export (หัวเรื่อง "KPI รายเดือน" อยู่ที่ PageHeader ของ /obeya แล้ว) */}
       <FilterBar>
         {/* ขอบเขต = ผังองค์กรทุกมิติ (23/09) — ตัวเดียวแทน select ส่วนงาน + กลุ่มไลน์ */}
-        <OrgScopePicker index={org} value={scope} onChange={setScope} scopeSet={scopeSet} sections={userSections} failed={orgFailed}
+        <OrgScopePicker ccOnly index={org} value={scope} onChange={setScope} scopeSet={scopeSet} sections={userSections} failed={orgFailed}
           plantLabel="ทุกส่วนงานในขอบเขต" width={isMobile ? '100%' : 320} title="เลือกขอบเขตตามผังองค์กร: ฝ่าย / ส่วนงาน / แผนก / กลุ่มไลน์ / ไลน์ / cost center" />
         <span className="filter-label">ปี</span>
         <select value={year} onChange={e => setYear(+e.target.value)}>
@@ -1944,7 +1944,7 @@ function DefModal({ init, year, scope, org, orgFailed = '', scopeSet, userSectio
           </div>
           <div>
             <div style={lbl}>ขอบเขต (ตามผังองค์กร · โรงงาน = ทุกหน่วยงาน)</div>
-            <OrgScopePicker index={org} value={f.scope} onChange={v => set('scope', v)} scopeSet={scopeSet} sections={userSections} failed={orgFailed}
+            <OrgScopePicker ccOnly index={org} value={f.scope} onChange={v => set('scope', v)} scopeSet={scopeSet} sections={userSections} failed={orgFailed}
               width="100%" inputStyle={inp} />
             {f.scope?.kind === 'cost_center' && canonicalScope(org, f.scope).kind !== 'cost_center' && (
               <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>

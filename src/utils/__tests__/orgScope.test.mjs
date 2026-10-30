@@ -5,6 +5,7 @@
  * Store Raw Material = org line node ที่ไม่ผูก production line · TEST section ไม่มีป้ายฝ่าย)
  */
 import assert from 'node:assert/strict';
+import { ccBearingOptions } from '../orgScope.js';
 import test from 'node:test';
 import {
   buildOrgScope, scopeKey, parseScopeKey, scopeCovers, scopeOfDef, defScopeColumns, filterScopeOptions, PLANT, drillParams,
@@ -386,4 +387,15 @@ test('🪞 แผนกที่มีกลุ่มไลน์เดียว
     assert.equal(d.kind, 'department');
     assert.equal(idx.options.filter(o => o.kind === 'line_group' && o.parentKey === d.key).length, 1);
   });
+});
+
+test('💰 ccBearingOptions: เหลือโรงงาน/ฝ่าย/CC + หน่วยที่มี cost_center เท่านั้น · index ไม่ถูกแตะ', () => {
+  const before = idx.options.length;
+  const list = ccBearingOptions(idx.options);
+  assert.ok(list.some(o => o.kind === 'plant'));
+  assert.ok(list.every(o => o.kind === 'plant' || o.kind === 'division' || o.kind === 'cost_center' || o.cost_center));
+  const dropped = idx.options.filter(o => !list.includes(o));
+  assert.ok(dropped.length > 0, 'fixture ต้องมีหน่วยไม่มี CC อย่างน้อย 1 ตัวให้ตัด');
+  dropped.forEach(o => assert.ok(!o.cost_center && !['plant', 'division', 'cost_center'].includes(o.kind)));
+  assert.equal(idx.options.length, before);
 });
