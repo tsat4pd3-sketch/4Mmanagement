@@ -189,6 +189,28 @@ QA (section)
 2. ทำ **แกนเลเวล** — สมาชิก vs หัว (ใครอนุมัติได้)
 3. **แกนพื้นที่ค่อยทำทีหลัง** และเฉพาะฟังก์ชันสายผลิต — ฟังก์ชันตัดขวางคงทั้งโรงงานไว้
 
+### 📊 ผลวัดแกน ① "เรื่อง" — คน QA ใช้คีย์ที่ไม่ใช่เรื่องคุณภาพจริงไหม (30/10 · 90 วัน)
+
+วัดจาก audit_log (Main) + คอลัมน์ "ใครทำ" บนตารางงาน (DR) ของคน QA ทั้ง 23 คน
+⚠️ user เตือนว่าระบบตรวจ QA เพิ่งเริ่มใช้ ~10 วัน (ข้อมูล `qa_inspection_*` เริ่ม 20/10) —
+แต่ตาราง PM/คัมบัง/กะ มีคน**อื่น**ใช้งานตลอด 90 วัน (เช่น อนุมัติใบ PM 340 ครั้ง) ⇒ การที่ QA = 0 **มีความหมาย ไม่ใช่ไม่มีข้อมูล**
+
+| คีย์ที่ `role=qa` ถือ | ตารางที่วัด | คน QA ใช้ |
+|---|---|---|
+| `pm:approve` · `pm:record` | `inspections.approved_by / inspector_id` · `pm_plans` · `pm_plan_deferrals` · `pm_daily_line_targets` | **0** (ผู้อนุมัติทั้ง 7 คน / ผู้ตรวจทั้ง 12 คน ไม่มี QA เลย) |
+| `am:record` | `inspections` (ชุดเดียวกัน) | **0** |
+| `heijunka:operate` | `prod_orders.updated_by_name` · `kanban_*` · เปิด/ปิดกะ | **0** |
+| `shift_schedule:edit_dept` | `shift_schedules` (audit Main) | **0** |
+| `rack_center:operate` | `mtn_rack_cells/maps` · `line_part_levels` · `material_requests` | **0** |
+| `npi:edit` | `npi_*` (audit Main) | **0** — ⚠️ แต่ APQP/PPAP **เป็นงานคุณภาพ** ควรคงไว้ |
+
+**สิ่งที่คน QA ทำจริง (ถูกต้องทั้งหมด = เรื่องคุณภาพ):** `qa_inspection_*` 11,228 แถว · `four_m_logs` อนุมัติขั้น QA 1,062 ·
+ใบ MO ช่อง `qa_checker` 460 · แจ้งซ่อม 96 · เซ็นรับงานซ่อมที่ตัวเองแจ้ง 32 · KPI ของหน่วย QA (เฉลิมขวัญ · พิชิต)
+
+⇒ **ถอด `pm:approve` `pm:record` `am:record` `heijunka:operate` `shift_schedule:edit_dept` `rack_center:operate`
+ออกจาก `role=qa` = ไม่กระทบใครเลยในข้อมูลที่มี** · คง `npi:edit` ไว้ (PPAP) · คง `scope:all_units` ไว้ (พื้นที่ทั้งโรงงานถูกแล้ว)
+🛑 ยังไม่ถอด — รอ user เคาะ (เป็นสิทธิ์จริง · ย้อนได้ด้วย `insert` คืน 6 แถวใน `role_permissions`)
+
 ### ⚠️ ของที่ "ไม่ต้อง" ทำ — ผังไม่ได้ตั้งผิด (แก้ข้อสรุปเดิม)
 
 เดิม session เขียนว่า "ผังตั้งผิดชั้น 3 คน (เด่นดวง · พิชิต · บุญชู) ต้องย้าย" — **ไม่ต้องย้าย**
