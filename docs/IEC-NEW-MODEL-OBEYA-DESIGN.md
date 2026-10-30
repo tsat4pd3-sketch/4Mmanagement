@@ -935,9 +935,9 @@ Marketing ──► New Model ──► [ได้งาน · SOP] ──► �
 
 | ข้อต่อ | มีไหม | ของจริงที่มีอยู่ |
 |---|---|---|
-| Marketing → NM | ❌ **ยังไม่มีโมดูล** | – |
+| Marketing → NM | ✅ **มีแล้ว 30/10** | `/rfq` ส่ง CRD = สร้าง/ผูกโปรเจค NPI (`mkt_rfqs.npi_project_id`) · 📄 `docs/modules/mkt-rfq.md` |
 | NM ↔ NPI | ✅ มี | `npi_projects.nm_board_id` (06/10) · `npiLinkFor()` · `summarizeNpi()` |
-| **NM/NPI → โรงงาน** | ⚠️ **มีแค่ป้ายสถานะ** | `PROJECT_STATUS.completed = 'SOP แล้ว'` · `PART_STATUS.completed` |
+| **NM/NPI → โรงงาน** | ✅ ฝั่งเอกสาร (30/10) · ⚠️ ฝั่งข้อมูลยังไม่มี | **ใบแจ้งจัดทำ F-MKT-001/002 ออกจาก `/rfq` ตอนได้งาน** (ของจริงที่โรงงานใช้) · การสร้าง `dr_products`/CT/kanban จาก NPI ยังเป็นป้ายสถานะ `'SOP แล้ว'` เหมือนเดิม |
 
 🔴 **ข้อต่อที่ 3 คือ "ป้าย" ไม่ใช่ "การส่งต่อ"** — กด SOP แล้ว **ไม่มีอะไรเกิดฝั่งโรงงานเลย**:
 ไม่มีแถว `dr_products` · ไม่มี CT/routing · ไม่มี kanban · PFMEA/Control Plan ไม่ถูกผูกเป็นของพาร์ทจริง

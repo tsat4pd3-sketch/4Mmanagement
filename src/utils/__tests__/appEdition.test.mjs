@@ -40,7 +40,7 @@ test('รุ่น NM — ตัด query/hash ก่อนเทียบ (deep
 });
 
 test('🔴 รุ่น NM — ปลายทางของลิงก์ที่หน้า NM ชี้ไป ต้องอยู่ในลิสต์ (ไม่งั้นลิงก์ในจอเป็นทางตัน)', () => {
-  const src = ['src/pages/NPI.jsx', 'src/pages/NewModelBoard.jsx']
+  const src = ['src/pages/NPI.jsx', 'src/pages/NewModelBoard.jsx', 'src/pages/Rfq.jsx']
     .map(f => readFileSync(join(ROOT, f), 'utf8')).join('\n');
   const targets = new Set();
   for (const m of src.matchAll(/(?:href|to)=["'{`]+(\/[a-z0-9-]+)/g)) targets.add(m[1]);

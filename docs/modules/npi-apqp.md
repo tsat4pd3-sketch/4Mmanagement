@@ -19,6 +19,7 @@ ESM ที่มีอยู่คุม **mass production** (ปลายน้
 | ECI ขา PE | คำขอแก้เอกสาร PE (ลูปปิด 8D) | `npi_change_requests.pe_change_request_id → pe_change_requests` |
 | ECI ขากระบวนการ | ใบ 4M Method | `npi_change_requests.four_m_log_id → four_m_logs` |
 | **โปรเจค** | **บอร์ด New Model `/nm-board`** | **`npi_projects.nm_board_id` (text = รหัสรุ่นบนบอร์ด · 06/10)** |
+| **โปรเจค** | **RFQ ของ Marketing `/rfq` (ต้นน้ำ · 30/10)** | **`mkt_rfqs.npi_project_id → npi_projects.id`** (ทิศเดียว — ฝั่ง NPI ไม่มีคอลัมน์ · ส่ง CRD จาก `/rfq` = สร้างโปรเจค+พาร์ท+เฟสด้วย `nextProjectCode`/`buildPartRows` ท่าเดียวกับหน้านี้ · 📄 `mkt-rfq.md`) |
 | ECI ขาแบบ / tooling | ทะเบียน rev แบบ / แผน tooling ในโมดูลเดียวกัน | FK |
 
 เทียบ E-SPT: Problem follow-up + Dashboard ของ ESM ครอบคลุมกว่าอยู่แล้ว (8D closed-loop · dept-dashboard) จึง**ไม่สร้างซ้ำ** —
@@ -113,7 +114,7 @@ catalog group 'คุณภาพ & วิศวกรรม' sort 755-757 · `p
 - cron/Edge `npi-due-scan` เตือนเอกสาร/ขั้นงานที่จะเลยกำหนดใน 7 วัน (ตอนนี้เห็นเฉพาะตอนเปิดหน้า)
 - ฟอร์มเฉพาะโตโยต้า (CF concept builder / ATIS builder) — ไม่ทำจนกว่ามีงานโตโยต้าจริง; ใช้ `/qa-setup` + doc-forms export แทน
 - import แม่แบบ/รายการจาก Excel ของลูกค้า · export timing chart เป็น Excel
-- ผูก `npi_parts` → สร้าง `dr_products` อัตโนมัติตอน SOP (ตอนนี้ mat_no เป็น text เชื่อมมือ)
+- ผูก `npi_parts` → สร้าง `dr_products` อัตโนมัติตอน SOP (ตอนนี้ mat_no เป็น text เชื่อมมือ) · **รอยต่อฝั่งเอกสารมีแล้ว 30/10 = ใบแจ้งจัดทำ F-MKT-001/002 ออกจาก `/rfq` ตอนได้งาน** (ของจริงที่โรงงานใช้) — ส่วน "สร้างพาร์ทจริงในระบบ" ยังไม่ทำ
 - แถวเก่าใน ECI ที่ผูก `four_m_log_id` แล้วใบ 4M ถูก reject — ยังไม่มีสัญญาณย้อนกลับมาที่ ECI
 
 ## 9. ประวัติ
