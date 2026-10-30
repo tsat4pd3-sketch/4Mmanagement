@@ -4386,6 +4386,38 @@ test('🛡️ mtn-approve-needs-confirm — ปุ่มเซ็น/อนุ�
   }
 });
 
+/* ═══ 🔒 ช่อง "ผู้จัดการ…" ในใบ MO ต้องเช็คระดับตำแหน่ง (2026-10-30 · หน้างานแจ้ง) ═══
+   *"มีคนอนุมัติแทนพี่แล้ว"* — วิศวกร (`engineer` = 30) เซ็นช่อง "ผู้จัดการต้นสังกัด" แทนเจ้าตัวได้
+   เพราะด่านเดิมเช็คแค่ `can('approve')` **ไม่ดูตำแหน่งเลย** และ `signApproval` เขียนชื่อคนกด
+   ทับชื่อที่ระบุไว้ ⇒ เจ้าตัวโดนตัดสิทธิ์ (`already_signed`) แก้เองไม่ได้
+   🔴 ด่านตำแหน่งต้องมาก่อนทาง `named` ด้วย — ผู้แจ้งพิมพ์ชื่อใครลงช่องนั้นก็ได้ รวมชื่อตัวเอง */
+test('🛡️ mtn-approval-needs-rank — ช่องผู้จัดการในใบ MO ต้องกันตำแหน่งที่ต่ำกว่าเกณฑ์', () => {
+  const src = readFileSync(join(ROOT, 'src/utils/mtnStepPerm.js'), 'utf8');
+  const i = src.indexOf('export function canSignMtnApproval');
+  assert.ok(i > 0, '\n\n❌ หา `canSignMtnApproval` ไม่เจอ — เปลี่ยนชื่อแล้วต้องแก้ด่านนี้ด้วย\n');
+  const body = src.slice(i, i + 1400);
+
+  assert.ok(/posRank/.test(body) && /rank_too_low/.test(body),
+    '\n\n❌ `canSignMtnApproval` เลิกเช็คตำแหน่งแล้ว\n'
+    + '   ⇒ ใครถือ `mtn_repair:approve` ก็เซ็นช่อง "ผู้จัดการต้นสังกัด" แทนเจ้าตัวได้อีก\n'
+    + '   แก้ยังไง: เช็ค `posRank < APPROVAL_MIN_RANK` ก่อนคืน ok\n');
+
+  /* ลำดับสำคัญ: ด่านตำแหน่งต้องอยู่ "ก่อน" ทางผ่านด้วยชื่อ (named) และสิทธิ์ (can) */
+  const rankAt = body.indexOf('rank_too_low');
+  const namedAt = body.indexOf("code: 'named'");
+  const canAt = body.indexOf("code: 'approve'");
+  assert.ok(rankAt > 0 && rankAt < namedAt && rankAt < canAt,
+    '\n\n❌ ด่านตำแหน่งถูกย้ายไปอยู่หลังทาง `named`/`approve`\n'
+    + '   ⇒ ผู้แจ้งพิมพ์ชื่อตัวเองลงช่อง "ผู้จัดการต้นสังกัด" แล้วเซ็นเองได้ (เคสจริง 30/10)\n');
+
+  /* 🔴 เกณฑ์ห้ามยกเป็น 60 โดยไม่เช็คทะเบียนผู้ใช้ — 7/12 ส่วนงานไม่มีใครตำแหน่ง manager เลย
+     รวม PD4 ซึ่งเป็นส่วนงานของใบที่แจ้งปัญหามาเอง ⇒ งานปรับปรุงค้าง ช่างรับงานไม่ได้ */
+  assert.ok(/APPROVAL_MIN_RANK\s*=\s*50\b/.test(src),
+    '\n\n❌ `APPROVAL_MIN_RANK` ไม่ใช่ 50 แล้ว\n'
+    + '   ยกเป็น 60 (manager) = 7 จาก 12 ส่วนงานไม่มีใครเซ็นได้เลย (PD4 · Planning&Store · JIG MTN …)\n'
+    + '   ถ้าจะเปลี่ยน ต้องพิสูจน์กับทะเบียน `profiles` จริงก่อน (กฎ CLAUDE.md 26/10)\n');
+});
+
 /* ═══ 🏭 ตัวตนเครื่องนอกทะเบียน ต้องผูก "สายไลน์" (2026-10-30 · คำสั่ง user) ═══
    user: *"conveyor ที่ 306 มันก็คนละตัวกับ conveyor 297 มันแยกส่วนงาน แยกไลน์ แยกแผนก
    ต้องดูผังองค์กรด้วย มันต้องลิ้งกันมั้ย"*

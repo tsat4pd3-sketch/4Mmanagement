@@ -334,6 +334,10 @@ async function fetchAllRows(client, table, cols, shape = q => q) {
   return { data: out, error: null };
 }
 
+/** 🔢 จำนวนหลักของเลข I/O ตามฟอร์มจริง — ช่องกรอกและช่องบนใบพิมพ์ต้องใช้ตัวเดียวกัน
+ *  (30/10 · หน้างานแจ้งว่าใบพิมพ์วาดแค่ 11 ช่อง แต่ I/O มี 12 หลัก ⇒ หลักสุดท้ายหาย) */
+const IO_DIGITS = 12;
+
 function ModalShell({ title, onClose, children, wide, dirty }) {
   const askClose = () => { if (dirty && !confirmDiscard()) return; onClose(); };
   return (
@@ -1657,7 +1661,10 @@ function ReportModal({ lines, machines, machineTypesById = {}, orders = [], item
         {teamKeyOf(f.mtn_dept) === 'maintenance' && <>
           <Field label="เบอร์ติดต่อ (ผู้แจ้ง)"><input value={f.contact_phone} onChange={e => set('contact_phone', e.target.value)} style={inp} placeholder="เช่น 183" /></Field>
           <Field label="PR.No."><input value={f.pr_no} onChange={e => set('pr_no', e.target.value.toUpperCase())} maxLength={11} style={{ ...inp, fontFamily: 'monospace' }} /></Field>
-            <Field label="I/O."><input value={f.io_no} onChange={e => set('io_no', e.target.value.toUpperCase())} maxLength={11} style={{ ...inp, fontFamily: 'monospace' }} /></Field>
+            {/* 🔢 เลข I/O = 12 หลัก (30/10 · หน้างานแจ้ง "ตัวเลข IO ใน MO online มันขึ้นแค่ 11 ตัว ปกติ IO มี 12 ตัว")
+                เดิม maxLength=11 ⇒ พิมพ์ได้ไม่ครบ และใบพิมพ์วาดช่องแค่ 11 ช่อง = หลักสุดท้ายหาย
+                ทะเบียนเครื่อง (`/machines`) รับได้ถึง 20 อยู่แล้ว — ตัวตัดอยู่ที่ฟอร์มนี้ฝั่งเดียว */}
+            <Field label="I/O."><input value={f.io_no} onChange={e => set('io_no', e.target.value.toUpperCase())} maxLength={IO_DIGITS} style={{ ...inp, fontFamily: 'monospace' }} /></Field>
           <div>
             <Field label="จุดประสงค์">
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -1970,7 +1977,7 @@ function printMoReportMtn(o, dparts = [], logo0, dlabor = [], cmt = NO_CMT, cost
       <td style="width:78%;padding:3px 5px">
         <div>เรียน &nbsp;ผู้จัดการส่วนซ่อมบำรุง</div>
         <div style="margin-top:2px">${line('จากฝ่าย/ส่วน', o.work_area, '95px')} &nbsp;${line('แผนก', o.dept_section, '75px')} &nbsp;${line('เบอร์ติดต่อ', o.contact_phone, '45px')} &nbsp;${line('Cost Center', o.cost_center, '85px')}</div>
-        <div style="margin-top:3px">PR.No. ${grid(prPl.header)} &nbsp;&nbsp; I/O. ${grid(o.io_no)}</div>
+        <div style="margin-top:3px">PR.No. ${grid(prPl.header)} &nbsp;&nbsp; I/O. ${grid(o.io_no, IO_DIGITS)}</div>
         <div style="margin-top:3px">${line('ชื่อเครื่องจักร', o.item_type, '135px')} ${line('เบอร์', o.machine_no, '80px')}
           จุดประสงค์ (${purpose === 'repair' ? '✓' : '&nbsp;'}) ซ่อม (${purpose === 'improve' ? '✓' : '&nbsp;'}) ปรับปรุง (${purpose === 'service' ? '✓' : '&nbsp;'}) บริการ (${purpose === 'build' ? '✓' : '&nbsp;'}) สร้าง</div>
       </td>
@@ -2189,7 +2196,14 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
   const [signBusy, setSignBusy] = useState('');
   const signApproval = async (kind) => {
     const v = canSignMtnApproval(kind, stepCtx);
-    if (!v.ok) return toast.error(v.code === 'already_signed' ? 'ใบนี้เซ็นไปแล้ว' : 'เฉพาะผู้จัดการที่ถูกระบุในใบ หรือผู้ถือสิทธิ์อนุมัติปิดใบ (mtn_repair:approve) เท่านั้น');
+    if (!v.ok) {
+      /* 🔒 บอกให้ตรงเหตุ — "ไม่มีสิทธิ์" เฉยๆ ทำให้คนไปขอ role เพิ่ม ทั้งที่ปัญหาคือ "ตำแหน่งไม่ถึง"
+         (ทางแก้ที่ถูกคือไปแก้ตำแหน่งในบัญชีที่ /add-user ไม่ใช่ขอสิทธิ์) */
+      if (v.code === 'already_signed') return toast.error('ใบนี้เซ็นไปแล้ว');
+      if (v.code === 'rank_too_low')
+        return toast.error('ช่องนี้ต้องเป็นระดับหัวหน้าแผนก/ผู้จัดการขึ้นไป — ตำแหน่งของบัญชีนี้ต่ำกว่าที่ช่องกำหนด (แก้ตำแหน่งได้ที่ /add-user)');
+      return toast.error('เฉพาะผู้จัดการที่ถูกระบุในใบ หรือผู้ถือสิทธิ์อนุมัติปิดใบ (mtn_repair:approve) เท่านั้น');
+    }
     /* 🔴 ถามยืนยันก่อนเสมอ — ลายเซ็นเป็น one-way เซ็นแล้วเจ้าตัวแก้เองไม่ได้
        (คำสั่ง user 28/10: "กดพลาดคือพลาดเลย") · ข้อความต้องบอกว่าเซ็นอะไร ใบไหน ในนามใคร */
     if (!confirmSign({
@@ -2695,6 +2709,12 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
               : appr.ackPending ? '✍️ รอผู้จัดการเซ็นรับทราบ (ไม่บล็อกงาน — ช่างทำงานต่อได้เลย)' : '✅ ลายเซ็นผู้จัดการครบแล้ว'}
           </div>
           <div style={{ fontSize: 11.5, color: 'var(--text2)', marginTop: 3, lineHeight: 1.7 }}>
+            {posRank == null && (appr?.missing?.length > 0) && (
+              /* 🔴 ไม่รู้ตำแหน่งของบัญชีนี้ = ด่านตำแหน่งไม่ได้ตรวจ — ห้ามเงียบ (กฎ MTN ขั้น 6/7/8) */
+              <div style={{ fontSize: 11, color: 'var(--amber)', marginBottom: 3 }}>
+                ⚠️ บัญชีนี้ยังไม่ได้ตั้งตำแหน่ง — ระบบ<b>ไม่ได้ตรวจ</b>ว่าถึงระดับที่เซ็นช่องนี้ได้หรือไม่ (ตั้งที่ /add-user)
+              </div>
+            )}
             <div>ผู้จัดการต้นสังกัด: {o.dept_manager_at ? <b style={{ color: 'var(--accent)' }}>✔ {o.dept_manager_name || '—'} · {fmtDateTime(o.dept_manager_at)}</b> : <span style={{ color: 'var(--muted)' }}>ยังไม่เซ็น{o.dept_manager_name ? ` (ระบุไว้: ${o.dept_manager_name})` : ''}</span>}</div>
             {appr.needPlant && <div>ผู้จัดการโรงงาน (งานสร้าง): {o.plant_manager_at ? <b style={{ color: 'var(--accent)' }}>✔ {o.plant_manager_name || '—'} · {fmtDateTime(o.plant_manager_at)}</b> : <span style={{ color: 'var(--muted)' }}>ยังไม่เซ็น{o.plant_manager_name ? ` (ระบุไว้: ${o.plant_manager_name})` : ''}</span>}</div>}
           </div>

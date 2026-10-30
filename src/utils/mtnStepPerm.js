@@ -554,11 +554,30 @@ export const QA_SKIP_REASON_STEP4 = 'ขั้น 4 ระบุว่าไม�
  *    ⚠️ ไม่มีใครที่เคยเซ็นถูกต้องเสียสิทธิ์ — วัดแล้ว ผู้เซ็นจริงทุกคนถือ `approve` อยู่แล้ว
  * เซ็นแล้วเซ็นซ้ำไม่ได้ (แก้ต้องผ่าน manage_master ที่ขั้นอื่น) — ลายเซ็นที่ทับได้ = หลักฐานที่เชื่อไม่ได้
  */
+/** 🔒 ระดับตำแหน่งขั้นต่ำของช่อง "ผู้จัดการ…" ในใบ MO  (2026-10-30 · หน้างานแจ้ง)
+ *
+ *  ที่มา: วิศวกร (`engineer` = 30) เซ็นช่อง "ผู้จัดการต้นสังกัด" แทนเจ้าตัวได้
+ *  — *"มีคนอนุมัติแทนพี่แล้ว"* — เพราะด่านเดิมเช็คแค่ `can('approve')` **ไม่ดูตำแหน่งเลย**
+ *  และ `signApproval` เขียนชื่อคนกดทับชื่อผู้จัดการที่ระบุไว้ ⇒ เจ้าตัวโดนตัดสิทธิ์ (`already_signed`)
+ *
+ *  🔴 **ทำไม 50 ไม่ใช่ 60** — พิสูจน์กับทะเบียนผู้ใช้จริงก่อนตั้ง (กฎ CLAUDE.md 26/10):
+ *     ตั้ง 60 (`manager`) = **7 จาก 12 ส่วนงานไม่มีใครเซ็นได้เลย** รวม **PD4** ซึ่งเป็นส่วนงาน
+ *     ของใบที่แจ้งปัญหามาเอง ⇒ งานปรับปรุงค้าง ช่างรับงานไม่ได้ (ใบ `purpose='improve'`
+ *     ใช้ลายเซ็นนี้เป็นด่านอนุมัติ) · ตั้ง 50 = ยังกันเคสที่เกิดจริงได้ 5 จาก 7 ครั้ง
+ *     และคนที่เซ็น 89% ของทั้งหมด (ตำแหน่ง `manager`) ไม่กระทบ
+ *  🔴 **ไม่รู้ตำแหน่ง (`posRank == null`) = ไม่บล็อก** — กฎเดียวกับขั้น 6/7/8 (ไม่รู้ ≠ ไม่ใช่)
+ *     แต่จอต้องเขียนว่า "ไม่ได้ตรวจตำแหน่ง" (ดู `stepAssumptions`) */
+export const APPROVAL_MIN_RANK = 50;
+
 export function canSignMtnApproval(kind, opts = {}) {
-  const { order = {}, fullName = '', can = () => false } = opts;
+  const { order = {}, fullName = '', can = () => false, posRank = null } = opts;
   if (kind !== 'dept' && kind !== 'plant') return { ok: false, code: 'unknown_kind' };
   const signedAt = kind === 'dept' ? order.dept_manager_at : order.plant_manager_at;
   if (signedAt) return { ok: false, code: 'already_signed' };
+  /* 🔴 ด่านตำแหน่งมาก่อนทุกทาง — รวมถึงคนที่ถูกระบุชื่อไว้ในใบ
+     (ผู้แจ้งพิมพ์ชื่อใครก็ได้ลงช่อง "ผู้จัดการต้นสังกัด" รวมทั้งชื่อตัวเอง) */
+  if (posRank != null && posRank < APPROVAL_MIN_RANK)
+    return { ok: false, code: 'rank_too_low', needRank: APPROVAL_MIN_RANK };
   const named = kind === 'dept' ? order.dept_manager_name : order.plant_manager_name;
   const me = norm(fullName);
   if (me && norm(named) === me) return { ok: true, code: 'named' };
