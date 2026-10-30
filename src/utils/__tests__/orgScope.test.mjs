@@ -5,7 +5,6 @@
  * Store Raw Material = org line node ที่ไม่ผูก production line · TEST section ไม่มีป้ายฝ่าย)
  */
 import assert from 'node:assert/strict';
-import { ccBearingOptions } from '../orgScope.js';
 import test from 'node:test';
 import {
   buildOrgScope, scopeKey, parseScopeKey, scopeCovers, scopeOfDef, defScopeColumns, filterScopeOptions, PLANT, drillParams,
@@ -389,13 +388,14 @@ test('🪞 แผนกที่มีกลุ่มไลน์เดียว
   });
 });
 
-test('💰 ccBearingOptions: เหลือโรงงาน/ฝ่าย/CC + หน่วยที่มี cost_center เท่านั้น · index ไม่ถูกแตะ', () => {
-  const before = idx.options.length;
-  const list = ccBearingOptions(idx.options);
-  assert.ok(list.some(o => o.kind === 'plant'));
-  assert.ok(list.every(o => o.kind === 'plant' || o.kind === 'division' || o.kind === 'cost_center' || o.cost_center));
-  const dropped = idx.options.filter(o => !list.includes(o));
-  assert.ok(dropped.length > 0, 'fixture ต้องมีหน่วยไม่มี CC อย่างน้อย 1 ตัวให้ตัด');
-  dropped.forEach(o => assert.ok(!o.cost_center && !['plant', 'division', 'cost_center'].includes(o.kind)));
-  assert.equal(idx.options.length, before);
+test('💰 ลิสต์ CC ของ index: 1 รหัส = 1 แถว · ไลน์ของรหัส = ทุกไลน์ที่ถือรหัสนั้น (ฐานของโหมด ccOnly บน Obeya)', () => {
+  const ccs = idx.options.filter(o => o.kind === 'cost_center');
+  assert.ok(ccs.length > 0);
+  assert.equal(new Set(ccs.map(o => o.value)).size, ccs.length, 'รหัสห้ามซ้ำแถว');
+  ccs.forEach(o => assert.ok(idx.lineNamesOf('cost_center', o.value).length >= 0));
+  const shared = lines.filter(l => l.cost_center).reduce((m, l) => { (m[l.cost_center] ||= []).push(l.name); return m; }, {});
+  Object.entries(shared).filter(([, names]) => names.length > 1).forEach(([cc, names]) => {
+    const got = new Set(idx.lineNamesOf('cost_center', cc));
+    names.forEach(nm => assert.ok(got.has(nm), `${cc} ต้องครอบ ${nm}`));
+  });
 });

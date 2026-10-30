@@ -1027,7 +1027,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
       <FilterBar>
         {/* ขอบเขต = ผังองค์กรทุกมิติ (23/09) — ตัวเดียวแทน select ส่วนงาน + กลุ่มไลน์ */}
         <OrgScopePicker ccOnly index={org} value={scope} onChange={setScope} scopeSet={scopeSet} sections={userSections} failed={orgFailed}
-          plantLabel="ทุกส่วนงานในขอบเขต" width={isMobile ? '100%' : 320} title="เลือกขอบเขตตามผังองค์กร: ฝ่าย / ส่วนงาน / แผนก / กลุ่มไลน์ / ไลน์ / cost center" />
+          plantLabel="ทุกส่วนงานในขอบเขต" width={isMobile ? '100%' : 320} title="เลือกขอบเขตตามรหัส cost center (1 รหัสอาจครอบหลายไลน์ — Obeya/KPI สรุปตามรหัส)" />
         <span className="filter-label">ปี</span>
         <select value={year} onChange={e => setYear(+e.target.value)}>
           {[nowYear + 1, nowYear, nowYear - 1, nowYear - 2, nowYear - 3, nowYear - 4].map(y => <option key={y} value={y}>{y + 543}</option>)}

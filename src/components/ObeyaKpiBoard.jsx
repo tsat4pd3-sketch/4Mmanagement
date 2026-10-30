@@ -970,7 +970,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
     <>
       {/* ขอบเขต = ผังองค์กรทุกมิติ (23/09) — 1 บอร์ดต่อ 1 ขอบเขต (ฝ่าย/ส่วนงาน/แผนก/กลุ่มไลน์/ไลน์/CC) · ชิป = เจาะลง/กลับขึ้นหนึ่งชั้น */}
       <OrgScopePicker ccOnly index={org} value={scope || PLANT} onChange={setScope} scopeSet={scopeSet} sections={sections} failed={orgFailed}
-        width={230} title="เลือกขอบเขตตามผังองค์กร" />
+        width={230} title="เลือกขอบเขตตามรหัส cost center (Obeya/KPI สรุปตามรหัส)" />
       {parentScope && <button onClick={() => setScope(parentScope)} style={pill(false)} title={`กลับขึ้น ${org.labelOf(parentScope.kind, parentScope.value)}`}>↑</button>}
       {childChips.map(c => (
         <button key={c.key} onClick={() => setScope({ kind: c.kind, value: c.value })} style={pill(false)} title={`เจาะ ${org.labelOf(c.kind, c.value)}`}>{c.label}</button>
