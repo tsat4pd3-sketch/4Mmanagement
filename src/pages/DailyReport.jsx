@@ -6041,9 +6041,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       {crossFind && !crossFind.loading && !crossFind.err && crossFind.state === 'none' && (
                         <div style={{ marginTop: 8, color: 'var(--muted)' }}>ค้นทั้งโรงงานแล้ว — ไม่มีใบที่ยังเปิดค้างด้วยเลขนี้</div>
                       )}
-                      {crossFind?.state === 'shift_locked' && (
+                      {(crossFind?.state === 'shift_locked' || crossFind?.state === 'manual_only_owner') && (
                         <div style={{ marginTop: 8, padding: '8px 10px', borderRadius: 7, background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.4)', color: '#f59e0b', fontWeight: 600, lineHeight: 1.6 }}>
-                          🔒 {crossLineCloseText('shift_locked', crossFind.row)}
+                          {crossFind.state === 'manual_only_owner' ? '✍️' : '🔒'} {crossLineCloseText(crossFind.state, crossFind.row)}
                         </div>
                       )}
                       {(crossFind?.state === 'ready' || crossFind?.state === 'ambiguous') && (

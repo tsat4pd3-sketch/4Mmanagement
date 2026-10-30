@@ -9,7 +9,12 @@
  *
  * ไฟล์นี้ **pure** — ห้าม import supabase/react (มีเทส · เป็นตัวตัดสินที่ grep ได้)
  *
- * 🔴 กติกา 3 ข้อที่ห้ามถอด (เหตุผลอยู่กับแต่ละข้อ):
+ * 🔴 กติกา 4 ข้อที่ห้ามถอด (เหตุผลอยู่กับแต่ละข้อ):
+ *   ⓪ **ใบ manual ปิดข้ามไลน์ไม่ได้** — ใบ `MANUAL-…` ไม่มีบาร์โค้ดให้สแกนอยู่แล้ว และ
+ *      "ปิด" ของมันคนละเรื่องกับใบสแกน: ใบสแกน `qty` = จำนวนการ์ดคัมบัง (ตายตัว) ·
+ *      ใบ manual ต้องปิดด้วย **ยอดผลิตจริง** (`handleManualClose` เขียน `qty`/`qty_ok`/`qty_actual`
+ *      + log `prod_order_qty_updates` + `syncPairQty`) ⇒ ปิดแบบใบสแกนจะ stamp **เป้า** แทนยอดจริง
+ *      = ยอดเกิน/ขาดเงียบ ทั้งใน OEE และยอดเข้าคลัง
  *   ① `prod_no` **ไม่ unique เชิงโครงสร้าง** — ไม่มี unique index และของจริงมีใบที่ prod_no
  *      เป็นเลขสั้นมาก (วัดจริง 30/10: LINE A 800 Ton ใช้ `35`/`42`/`43`/`45`)
  *      ⇒ เจอมากกว่า 1 ใบ = **ห้ามเดา** ต้องให้คนเลือกไลน์เอง
@@ -47,6 +52,8 @@ export function crossLineCloseState({ rows = [], currentSessionId = null } = {})
   /* ① เลขซ้ำ = ห้ามเดา */
   if (other.length > 1) return { state: 'ambiguous', row: null, rows: other };
   const row = other[0];
+  /* ⓪ ใบ manual = ต้องปิดด้วยยอดจริงที่จอของไลน์เจ้าของใบ (ดูหัวไฟล์) */
+  if (row?.is_manual) return { state: 'manual_only_owner', row, rows: other };
   /* ② กะเจ้าของใบปิด/ขอปิดไปแล้ว = ยอดถูก stamp แล้ว ห้ามปิดใบย้อนหลัง */
   if (sessOf(row)?.status !== 'open') return { state: 'shift_locked', row, rows: other };
   return { state: 'ready', row, rows: other };
@@ -72,6 +79,9 @@ export function crossLineCloseText(state, row) {
   switch (state) {
     case 'ambiguous':
       return 'เลข PROD.NO นี้เปิดค้างอยู่หลายใบในหลายไลน์ — ระบบไม่เดาให้ เลือกใบที่จะปิดเอง';
+    case 'manual_only_owner':
+      return `ใบนี้เป็น "ใบ manual" (ตั้งเป้าเอง ไม่มีบาร์โค้ด) ของ ${where}`
+        + ' — ต้องปิดด้วยยอดผลิตจริงที่จอของไลน์นั้น ปิดจากที่นี่จะกลายเป็นยอดเท่าเป้า';
     case 'shift_locked':
       return `ใบนี้เป็นของ ${where} ซึ่งปิดกะ/ส่งขอปิดไปแล้ว — ยอดกับ OEE ของกะนั้นถูกสรุปไปแล้ว`
         + ' ปิดใบย้อนหลังจะทำให้ตัวเลขไม่ตรงกัน · ให้เจ้าของกะเปิดกะนั้นขึ้นมาจัดการเอง';

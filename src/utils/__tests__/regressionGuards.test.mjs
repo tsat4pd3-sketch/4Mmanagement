@@ -7415,6 +7415,13 @@ test('📤 cross-line-close-guards — ปิดใบข้ามไลน์�
   const clCode = stripComments(cl);
   if (!/'ambiguous'/.test(clCode)) bad.push(`${CL}: ① หายไป — เลขซ้ำต้องคืน 'ambiguous' ห้ามเดาใบให้`);
   if (!/'shift_locked'/.test(clCode)) bad.push(`${CL}: ② หายไป — กะที่ปิดแล้วต้องคืน 'shift_locked'`);
+  /* ⓪ ใบ manual ต้องปิดด้วย "ยอดจริง" (handleManualClose เขียน qty/qty_ok/qty_actual + log + syncPairQty)
+     ปิดแบบใบสแกนจะ stamp "เป้า" แทนยอดจริง = OEE + ยอดเข้าคลังเพี้ยนเงียบ */
+  if (!/is_manual[\s\S]{0,80}'manual_only_owner'/.test(clCode))
+    bad.push(`${CL}: ⓪ หายไป — ใบ is_manual ต้องคืน 'manual_only_owner' ห้ามปิดข้ามไลน์`);
+  /* ข้อความพวกนี้ถูกเรนเดอร์เป็น plain text — markdown ที่หลุดมาจะโผล่เป็นตัวอักษรดิบบนจอหน้างาน */
+  for (const m of clCode.matchAll(/return\s+`[^`]*\*\*[^`]*`/g))
+    bad.push(`${CL}: ข้อความขึ้นจอมี ** (markdown ไม่ถูกเรนเดอร์) — ${m[0].slice(0, 50)}…`);
 
   /* ตัวเขียนจริงในหน้า — ดู "ในตัวฟังก์ชัน" ไม่ใช่ทั้งไฟล์ (ทั้งไฟล์มี canWriteLine ของแผงอื่นอยู่แล้ว) */
   const DR = 'src/pages/DailyReport.jsx';

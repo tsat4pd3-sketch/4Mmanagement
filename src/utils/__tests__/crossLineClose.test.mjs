@@ -40,6 +40,18 @@ test('① 🔴 เลข PROD.NO ซ้ำหลายไลน์ = ambiguous �
   assert.equal(out.rows.length, 2);
 });
 
+test('⓪ 🔴 ใบ manual ปิดข้ามไลน์ไม่ได้ — ต้องปิดด้วยยอดจริงที่จอไลน์เจ้าของ', () => {
+  /* ใบสแกน qty = จำนวนการ์ดคัมบัง (ตายตัว) · ใบ manual ต้องปิดด้วยยอดผลิตจริง
+     ปิดแบบใบสแกน = stamp "เป้า" แทนยอดจริง ⇒ OEE + ยอดเข้าคลังเพี้ยนเงียบ */
+  const s = SESS('s60');
+  const row = { ...R('MANUAL-261030-085706-92', s), is_manual: true, qty: 50, qty_actual: 12 };
+  const out = crossLineCloseState({ rows: [row], currentSessionId: 'cur' });
+  assert.equal(out.state, 'manual_only_owner');
+  const txt = crossLineCloseText('manual_only_owner', out.row);
+  assert.ok(txt.includes('ยอดผลิตจริง'));
+  assert.ok(!txt.includes('**'));            // ข้อความขึ้นจอดิบๆ ห้ามมี markdown
+});
+
 test('② 🔴 กะเจ้าของใบ pending_close/closed = shift_locked (ยอด/OEE ถูก stamp แล้ว)', () => {
   for (const st of ['pending_close', 'closed', 'void']) {
     const s = SESS('s60', { status: st });
@@ -73,6 +85,8 @@ test('ทุกสถานะที่ปิดไม่ได้ ต้อง�
   const row = R('A1', s);
   assert.ok(crossLineCloseText('ambiguous', null).length > 10);
   assert.ok(crossLineCloseText('shift_locked', row).length > 10);
+  for (const st of ['ambiguous', 'shift_locked', 'manual_only_owner', 'ready'])
+    assert.ok(!crossLineCloseText(st, row).includes('**'), st);   // markdown ไม่ถูกเรนเดอร์ = หลุดเป็นตัวอักษรดิบ
   assert.equal(crossLineCloseText('none', null), '');
 });
 
