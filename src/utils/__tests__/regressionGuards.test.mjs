@@ -7733,3 +7733,34 @@ test('🏭 line-registry-never-silent — ต้องมีตาข่าย�
   assert.match(app, /<LineRegistryAlert \/>/, '🔴 ตาข่ายกลางหายจาก App.jsx');
   assert.match(app, /import LineRegistryAlert from/, 'ต้อง import จริง');
 });
+
+test('🏷️ edition-alias-safe — import `appEdition` ต้องไม่มีนามสกุล และห้ามเรียกตัว .nm ตรงๆ', () => {
+  /* why: เว็บ New Model = โค้ดชุดเดียวกับ ESM แต่ `vite.nm.config.js` สลับไฟล์ตอน build ด้วย
+          alias `/^(.*)\/appEdition$/` — **จับเฉพาะ path ที่ไม่มีนามสกุล**
+          · เขียน `'../appEdition.js'` = alias ไม่จับ ⇒ บิลด์ NM ได้รุ่นเต็ม = ไม่มีด่านกันหน้าเลย
+            (เว็บ IEC เปิดจอระบบแมสได้ทั้งหมด — พังแบบไม่มีอะไรฟ้อง build ยังผ่าน)
+          · เขียน `'./appEdition.nm'` ตรงๆ = บิลด์**หลัก**ได้ allowlist ของ NM ⇒ หน้าหายจากระบบแมส
+     fix: import จาก `'<path>/appEdition'` เท่านั้น (ไม่มี `.js` ไม่มี `.nm`)
+          · ต้องการค่าของรุ่น NM ในเทส ให้ import ไฟล์ตรงได้ (โฟลเดอร์ `__tests__` ไม่ถูกสแกน) */
+  const bad = [];
+  for (const f of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const rel = relative(ROOT, f);
+    if (/appEdition(\.nm)?\.js$/.test(rel)) continue;        // ตัวไฟล์ edition เอง
+    const code = stripComments(readFileSync(f, 'utf8'));
+    for (const m of code.matchAll(/from\s*['"]([^'"]*appEdition[^'"]*)['"]/g)) {
+      const spec = m[1];
+      if (spec.endsWith('/appEdition')) continue;            // ถูกต้อง — alias จับได้
+      bad.push(`${rel}  →  '${spec}'`);
+    }
+  }
+  assert.deepEqual(bad, [], '\n\n❌ import `appEdition` ผิดรูป ' + bad.length + ' จุด\n'
+    + '   ทำไมสำคัญ: alias ของ vite.nm.config.js จับเฉพาะ path ที่ลงท้าย `/appEdition` (ไม่มีนามสกุล)\n'
+    + '              ใส่ `.js` = เว็บ NM ได้รุ่นเต็ม (เปิดจอระบบแมสได้) · ใส่ `.nm` = เว็บแมสได้ allowlist ของ NM (หน้าหาย)\n'
+    + '   แก้: เขียน import เป็น \'<path>/appEdition\' เท่านั้น\n'
+    + `   จุดที่ผิด:\n     ${bad.join('\n     ')}\n`);
+
+  /* ด่านคู่: ตัว alias ต้องยังอยู่ใน config ของ NM (ถอดออก = เว็บ NM กลายเป็นเว็บแมสเงียบๆ) */
+  const nmc = readFileSync(join(ROOT, 'vite.nm.config.js'), 'utf8');
+  assert.match(nmc, /appEdition\$\/[\s\S]{0,80}appEdition\.nm/,
+    '\n\n❌ vite.nm.config.js ไม่มี alias appEdition → appEdition.nm แล้ว — เว็บ NM จะเปิดได้ทุกหน้าของระบบแมส\n');
+});

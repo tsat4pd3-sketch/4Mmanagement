@@ -14,6 +14,8 @@ import SignatureModal from './components/SignatureModal';
 import ChangePasswordModal from './components/ChangePasswordModal';
 const FeedbackModal = lazy(() => import('./components/FeedbackModal'));
 import { loadPermissions, canAccessPage, setDeptAdmin, setSharedAccount, can } from './utils/permissions';
+/* 🏷️ รุ่นของเว็บ (full / nm) — สลับตอน build ด้วย alias ใน vite.nm.config.js · 📄 src/appEdition.js */
+import { EDITION_LABEL, EDITION_HOME } from './appEdition';
 import { LOGISTIC_GROUPS } from './utils/logisticSide';
 import { trackVisit, topPaths } from './utils/navRecent';
 import { effectiveSections } from './utils/sectionScope';
@@ -84,6 +86,8 @@ const DeptHub       = lazy(() => import('./pages/DeptHub'));
 const TvBoard = lazy(() => import('./pages/TvBoard'));
 const FlowTower    = lazy(() => import('./pages/FlowTower'));
 const GroupOverview = lazy(() => import('./pages/GroupOverview'));
+const AnnouncementMockup = lazy(() => import('./pages/AnnouncementMockup'));
+const OverseasTravelMockup = lazy(() => import('./pages/OverseasTravelMockup'));
 const AdoptionOutlook = lazy(() => import('./pages/AdoptionOutlook'));
 const ProgramUpdate = lazy(() => import('./pages/ProgramUpdate'));
 /* 🧭 ไม่ lazy โดยตั้งใจ — หน้านี้ต้องทำงานตอนบันเดิลเก่า/โหลด chunk ไม่ได้ (ดูหัวไฟล์) */
@@ -254,6 +258,10 @@ export const NAV_ITEMS = [
   // "ข้อมูลเชื่อมกันทั้งองค์กรแล้วตอบคำถามอะไรได้" — สอบกลับ/คุมคุณภาพ/predictive/prescriptive
   // ฝั่งวันนี้นับสดจากฐานจริง ฝั่งอนาคตติดป้ายคาดการณ์ (seed: admin/manager)
   { to: '/adoption-outlook', icon: '🔮', label: 'ภาพเมื่อข้อมูลเชื่อมกัน', group: 'ผู้บริหาร & เดโม' },
+  // 🧪 mockup workflow ประกาศบริษัท Issue → EVP Approve → Publish ตามวันมีผล (ไม่เขียน DB · seed: admin/manager)
+  { to: '/announcements', icon: '📢', label: 'ประกาศบริษัท (Mockup)', group: 'ผู้บริหาร & เดโม' },
+  // 🧪 mockup workflow เบิกเงินเดินทางต่างประเทศ 7 ขั้น 5 ฝ่าย (ไม่เขียน DB · ยังไม่ seed สิทธิ์ = admin เท่านั้น)
+  { to: '/overseas-travel', icon: '✈️', label: 'เบิกเดินทางต่างประเทศ (Mockup)', group: 'ผู้บริหาร & เดโม' },
 
   // ── ตั้งค่า 13 เมนู แบ่ง 2 กลุ่มย่อยด้วย `sub` (nav audit 2026-08-27) ─────────────
   // ไม่ได้เพิ่มหมวดบนแถบไอคอน — แค่คั่นหัวข้อในแผงเดียวกัน แยก "ของที่กรอกทุกเดือน"
@@ -950,7 +958,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
             <img src={tsLogo} alt="Thai Summit Group" width={28} height={28} style={{ borderRadius: 3, flexShrink: 0 }} />
             <div>
               <div style={{ fontSize: 11, letterSpacing: '2px', color: 'var(--accent)', textTransform: 'uppercase', fontWeight: 700, fontFamily: 'var(--font-display)' }}>Thai Summit</div>
-              <div style={{ fontSize: 11, letterSpacing: '1.5px', color: 'var(--muted)', textTransform: 'uppercase', fontFamily: 'var(--font-display)' }}>ESM · Shopfloor</div>
+              <div style={{ fontSize: 11, letterSpacing: '1.5px', color: 'var(--muted)', textTransform: 'uppercase', fontFamily: 'var(--font-display)' }}>{EDITION_LABEL}</div>
             </div>
           </div>
           <button
@@ -1972,6 +1980,10 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
 
   // หน้า Hub (เลือกส่วนงาน) — แสดงเต็มจอ ไม่มี sidebar / toggle / bell
   if (location.pathname === '/') {
+    /* 🏷️ เว็บรุ่นที่ไม่ใช่ ESM เต็ม ไม่มีหน้า "เลือกส่วนงานทั้งโรงงาน" — เด้งไปหน้าแรกของรุ่นนั้น
+       (RoleRoute เด้งมาที่ `/` เวลาไม่มีสิทธิ์ ⇒ ตรงนี้คือทางออกร่วมของทุกเส้นทาง)
+       รุ่นเต็ม `EDITION_HOME === '/'` ⇒ ไม่เข้าเงื่อนไขนี้เลย พฤติกรรมเดิมเป๊ะ */
+    if (EDITION_HOME !== '/') return <Navigate to={EDITION_HOME} replace />;
     return (
       <UserContext.Provider value={userCtx}>
         <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', color: 'var(--muted)', fontSize: 14, background: 'var(--bg)' }}>กำลังโหลด...</div>}>
@@ -2109,6 +2121,12 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
               } />
               <Route path="/group-overview" element={
                 <RoleRoute path="/group-overview" userRole={role}><GroupOverview /></RoleRoute>
+              } />
+              <Route path="/announcements" element={
+                <RoleRoute path="/announcements" userRole={role}><AnnouncementMockup /></RoleRoute>
+              } />
+              <Route path="/overseas-travel" element={
+                <RoleRoute path="/overseas-travel" userRole={role}><OverseasTravelMockup /></RoleRoute>
               } />
               <Route path="/management" element={
                 <RoleRoute path="/management" userRole={role}><Management /></RoleRoute>

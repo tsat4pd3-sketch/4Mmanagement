@@ -25,6 +25,7 @@
 | หลักฐาน/ตัวเลขเบื้องหลัง "กฎเหล็กการเขียน DB จาก client" | `docs/modules/db-write-rules.md` |
 | 🔗 สายธารความต้องการ (Demand Flow) — `/flow-tower` (audit + หน้าจริง · 2026-08-19) | `docs/modules/demand-flow-tower.md` |
 | Deploy | `docs/modules/deploy.md` |
+| 🏷️ แยก frontend ของ New Model (2 เว็บจากโค้ดชุดเดียว · edition) | `docs/modules/nm-frontend-split.md` |
 | 🚨 ระบบล่ม 21/10 (ช่องต่อฐานข้อมูลเต็ม) + กฎ "ถอยเมื่อ 503" | `docs/modules/conn-outage-2026-10-21.md` |
 | Dashboard ส่วนงาน — 📋 `/dept-dashboard` (2026-08-06) | `docs/modules/dept-dashboard-tv.md` |
 | DIE MAINTENANCE — Layout & สถานะแม่พิมพ์ (2026-08-19) | `docs/modules/die-maintenance.md` |
@@ -39,6 +40,8 @@
 | ตั้งค่าผัง/Floorplan — แยก display ออกจาก setup (2026-07-16) | `docs/modules/floorplan-setup.md` |
 | 4M Approval Workflow — ประวัติเหตุการณ์ `[Auto]` ท่วมคิว | `docs/modules/four-m-workflow.md` |
 | Group Overview — 🏢 ภาพรวมกลุ่มบริษัท TSG (MOCKUP หลายบริษัท · 2026-08-05) | `docs/modules/group-overview.md` |
+| Announcement Mockup — 📢 ประกาศ/ชี้แจงบริษัท Issue → Approve → Publish (MOCKUP · 2026-10-29) | `docs/modules/announcement-mockup.md` |
+| Overseas Travel Mockup — ✈️ เบิกเงินเดินทางต่างประเทศ 7 ขั้น 5 ฝ่าย (MOCKUP · 2026-10-29) | `docs/modules/overseas-travel-mockup.md` |
 | Improvements — โปรเจคปรับปรุง Kaizen (2026-07-12) | `docs/modules/improvements-kaizen.md` |
 | 🎯 ตั้งค่าจุดตรวจ — ระบบเดียว PM (อุปกรณ์) + QA (ชิ้นงาน) · ชิ้นส่วนกลาง `components/inspect/` (2026-10-15) | `docs/modules/inspection-point-setup.md` |
 | Kanban Auto-Calc — คำนวณ kanban จาก forecast (แท็บ 🎴 คำนวณ Kanban ใน /planner-sales · 2026-07-16..17) | `docs/modules/kanban-auto-calc.md` |

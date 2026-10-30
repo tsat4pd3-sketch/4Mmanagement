@@ -15,6 +15,18 @@ Environment Variables:
   VITE_SUPABASE_ANON_KEY=<key from Supabase dashboard>
 ```
 
+## 🏷️ 2 service บน Render — ESM + New Model (29/10)
+
+| service | build | output | เว็บของ |
+|---|---|---|---|
+| `4mmanagement` | `npm run build` | `dist/` | ระบบแมสทั้งโรงงาน |
+| `4mmanagement-nm` | `npm run build:nm` | `dist-nm/` | เว็บ New Model (IEC) |
+
+โค้ดชุดเดียวกัน · Supabase Main ตัวเดิม · บัญชีเดิม — ต่างแค่ "เว็บนี้มีหน้าอะไร"
+🔴 **นาที build เป็นโควต้าเดียวกันทั้งบัญชี** ⇒ เว็บที่ 2 กินนาทีเพิ่ม · `autoDeploy: false` ทั้งคู่เหมือนเดิม
+🔴 **หน้าต่าง deploy ข้างล่างใช้กับเว็บ NM ด้วย** — แต่ยังไม่มีคนหน้างานใช้ ⇒ deploy กลางวันได้ถ้าแตะแค่ `dist-nm/`
+📄 กลไก/ด่าน/ขั้นตอนตั้งค่าครั้งแรก → `docs/modules/nm-frontend-split.md`
+
 ### 💸 Build pipeline minutes — build ล่มเพราะโควต้าหมด (2026-10-13)
 
 Render นับ **นาที build ต่อเดือน** (ไม่เกี่ยวกับจำนวนคนเข้าเว็บ) · เพดานค่าใช้จ่ายตั้งไว้ $0 ⇒ นาทีหมด = **merge แล้วไม่ deploy**
