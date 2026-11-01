@@ -209,7 +209,7 @@ QA (section)
 
 ⇒ **ถอด `pm:approve` `pm:record` `am:record` `heijunka:operate` `shift_schedule:edit_dept` `rack_center:operate`
 ออกจาก `role=qa` = ไม่กระทบใครเลยในข้อมูลที่มี** · คง `npi:edit` ไว้ (PPAP) · คง `scope:all_units` ไว้ (พื้นที่ทั้งโรงงานถูกแล้ว)
-🛑 ยังไม่ถอด — รอ user เคาะ (เป็นสิทธิ์จริง · ย้อนได้ด้วย `insert` คืน 6 แถวใน `role_permissions`)
+✅ **user เคาะ 31/10 ("ลุย")** — migration `20261101_qa_role_drop_non_quality_keys_main.sql` (rollback = insert 6 แถวคืน · อยู่ท้ายไฟล์)
 
 ### ⚠️ ของที่ "ไม่ต้อง" ทำ — ผังไม่ได้ตั้งผิด (แก้ข้อสรุปเดิม)
 
