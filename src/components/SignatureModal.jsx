@@ -4,6 +4,7 @@ import { toast } from '../components/Toast';
 import { saveMyProfileMedia } from '../utils/profileSelf';
 import { uploadOpts } from '../utils/storageUpload';
 import { acceptImageFile } from '../utils/acceptImageFile';
+import { luma, pickPaperCutoff, clipPaperToWhite, inkRatioOk } from '../utils/signatureImage';
 
 export default function SignatureModal({ open, onClose, currentSignatureUrl, onSaved }) {
   const [tab, setTab] = useState('draw'); // 'draw' | 'upload'
@@ -137,7 +138,24 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
               const canvas = document.createElement('canvas');
               canvas.width = Math.round(img.width * scale);
               canvas.height = Math.round(img.height * scale);
-              canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+              const ctx = canvas.getContext('2d');
+              ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+              /* 🔴 ย่อขนาดอย่างเดียวไม่ลดไฟล์ — PNG เป็นแบบไม่สูญเสีย ⇒ เก็บ noise ของกระดาษ
+                 กับแสงเงาไว้ครบ (วัด 28/10: ลายเซ็นที่อัปรูปเข้ามาใหญ่สุด 2.2 MB ขณะที่
+                 ลายเซ็นวาดบนจอแค่ 14 KB) ⇒ ตัดพื้นกระดาษให้ขาวสนิทก่อน PNG จะบีบได้จริง
+                 · ค่าตัดอ่านจากตัวรูปเอง (utils/signatureImage.js) ห้ามใช้ค่าคงที่ — กระดาษ
+                   ใต้แสงเหลือง/เงามือสว่างไม่เท่ากัน
+                 · ตัดแล้วลายเซ็นหาย/ตัดไม่เข้า = **ใช้รูปเดิม** ไฟล์ใหญ่ยังดีกว่าลายเซ็นหาย */
+              try {
+                const im = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                const lum = new Uint8ClampedArray(im.data.length / 4);
+                for (let i = 0, j = 0; i < im.data.length; i += 4, j++) lum[j] = luma(im.data[i], im.data[i + 1], im.data[i + 2]);
+                const cut = pickPaperCutoff(lum);
+                if (cut) {
+                  const copy = new ImageData(new Uint8ClampedArray(im.data), im.width, im.height);
+                  if (inkRatioOk(clipPaperToWhite(copy.data, cut))) ctx.putImageData(copy, 0, 0);
+                }
+              } catch { /* อ่านพิกเซลไม่ได้ = ใช้รูปเดิม (ไม่ทำให้บันทึกล้ม) */ }
               canvas.toBlob(b => b ? resolve(b) : reject(new Error('บีบรูปไม่สำเร็จ')), 'image/png');
             };
             img.onerror = () => reject(new Error('ไฟล์นี้ไม่ใช่รูปที่รองรับ (ลองใช้ JPG/PNG)'));

@@ -187,13 +187,20 @@ export function buildOrgScope({ nodes = [], lines = [], divisions = [], costCent
       { cost_center: dep.cost_center || null, noInherit: dep.inherit_scope === false,
         ...(shared.length ? { refShared: shared } : {}) });
     if (secCode) sectionOfKey.set(dKey, secCode);
-    [...groups.keys()].sort(naturalCompare).forEach((grp) => {
+    /* 🪞 แผนกที่มีกลุ่มไลน์เดียวและชื่อเดียวกัน (PD3 › "LINE APRON ASSY" › "LINE APRON ASSY" › Line 60…) —
+       30/10 user: "ทำไมตรงนี้ยังเจอซ้ำกันอยู่" ⇒ 2 แถวชื่อเดียวกันซ้อนกันบนจอ ทั้งที่ครอบไลน์ชุดเดียวกันเป๊ะ
+       · ติดธง `merged` ที่แถวกลุ่ม แล้วให้ picker **ซ่อนแถวกลุ่ม** · ไลน์ลูกย่อหน้าขึ้นมาชั้นเดียว
+       🔴 ซ่อนแค่บนจอ — option/key/ancestors ยังอยู่ครบ (ขอบเขตที่บันทึกไว้เป็น `line_group:X` ต้องยังอ่านออก) */
+    const gKeys = [...groups.keys()].sort(naturalCompare);
+    const depNorm = norm(dep.name || nodeCode(dep));
+    gKeys.forEach((grp) => {
       const fam = familyOf(grp);
       fam.forEach(x => usedLine.add(x));
-      const gKey = push('line_group', grp, grp, depth + 1, dKey, fam);
+      const merged = gKeys.length === 1 && (norm(grp) === depNorm || norm(grp) === norm(nodeCode(dep)));
+      const gKey = push('line_group', grp, grp, depth + 1, dKey, fam, merged ? { merged: true } : {});
       if (secCode) sectionOfKey.set(gKey, secCode);
       leavesOf(grp).forEach((nm) => {
-        const lk = push('line', nm, nm, depth + 2, gKey, [nm], { cost_center: byName.get(nm)?.cost_center || null });
+        const lk = push('line', nm, nm, depth + (merged ? 1 : 2), gKey, [nm], { cost_center: byName.get(nm)?.cost_center || null });
         if (secCode) sectionOfKey.set(lk, secCode);
       });
     });

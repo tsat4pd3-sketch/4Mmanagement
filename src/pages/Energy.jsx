@@ -105,14 +105,15 @@ export default function Energy() {
   const load = useCallback(async () => {
     setLoading(true);
     const months = monthRange(month, TREND_MONTHS);
-    const [{ data: ln }, { data: areas }, { data: facMc }, { data: h }] = await Promise.all([
+    const [lnRes, { data: areas }, { data: facMc }, { data: h }] = await Promise.all([
       loadLinesRes(),
       supabaseDR.from('pm_facility_areas').select('name').order('name'),
       supabaseDR.from('machines').select('id, line_name').eq('equipment_category', 'facility').eq('is_active', true),
       supabaseDR.from('energy_monthly').select('*').eq('utility', 'electric')
         .gte('month_key', months[0]).lte('month_key', months[months.length - 1]),
     ]);
-    setLines(ln || []);
+    /* 🔴 อ่านทะเบียนไลน์ไม่สำเร็จ = คงลิสต์เดิม ห้ามทับด้วย [] (30/10) */
+    if (!lnRes?.error) setLines(lnRes?.data || []);
     const zs = new Set([...(areas || []).map(a => a.name), ...(facMc || []).map(m => m.line_name)].filter(Boolean));
     setZones([...zs].sort());
     setHist(h || []);

@@ -10,6 +10,7 @@ import { can, loadPermissions } from '../utils/permissions';   // เช็ค�
 import { deptNameOf, teamKeyOf } from '../utils/mtnTeams';
 import { pmTeamsSync, loadPmTeams } from '../utils/pmTeams';   // ทีมช่างซ่อมจากตาราง mtn_teams (data-driven) — เลิกวน MTN_TEAMS hardcode (2026-09-07)
 import { checkWrite, checkWriteRows } from '../utils/dbWrite';
+import { activityOf, activityTone, activitySummary, activitySummaryText, ACT_UNKNOWN } from '../utils/accountActivity';
 import LineSelect from '../components/LineSelect';
 import { STAFF_KINDS, STAFF_SHOPFLOOR, STAFF_SUPPORT } from '../utils/staffKind';   // 👥 หน้าไลน์ vs สายสนับสนุน
 import { newEmployeeRow, staffKindHint } from '../utils/employeeIdentity';   // 🪪 ตัวตนพนักงานใหม่ = ชุดเดียวกับ /register
@@ -197,6 +198,9 @@ export default function AddUser() {
       is_dept_admin: daMap[p.id] || false,
       email: authMap[p.id]?.email || '—',
       created_at: authMap[p.id]?.created_at || null,
+      /* 🔴 ห้ามเขียน `|| null` ที่นี่ — undefined (อ่านไม่ได้/migration ยังไม่ลง) ต้องต่างจาก
+         null (ไม่เคยเข้าเลย) ไม่งั้นจอชวนให้ลบบัญชีที่คนใช้อยู่ทุกวัน · กฎอยู่ utils/accountActivity.js */
+      last_sign_in_at: authMap[p.id] ? (authMap[p.id].last_sign_in_at ?? null) : undefined,
     })));
     setFetchingUsers(false);
   };
@@ -432,10 +436,27 @@ export default function AddUser() {
   const [triBusy, setTriBusy] = useState(null);   // id ที่กำลังเขียน (กันกดซ้ำ)
   const linkEmployee = async (u, emp) => {
     if (!u?.id || !emp?.id) return;
+    /* 🔴 พนักงาน 1 คน = บัญชีเดียว (unique `profiles_employee_id_uniq`)
+       เช็คก่อนเขียน แล้วบอกเป็นภาษาคน — เดิมปล่อยให้ชนแล้วเด้ง error ดิบจาก Postgres
+       ("duplicate key value violates unique constraint …") ซึ่งคนอ่านไม่รู้ว่าต้องทำอะไรต่อ */
+    const holder = users.find(x => x.employee_id === emp.id && x.id !== u.id);
+    if (holder) {
+      toast.error(`${emp.name} ถูกผูกกับบัญชี "${holder.full_name || holder.email || '-'}" อยู่แล้ว`
+        + ' — พนักงาน 1 คนผูกได้บัญชีเดียว · ถ้าบัญชีนี้ซ้ำ ให้ลบหรือตั้งเป็นบัญชีกลางแทน');
+      return;
+    }
     setTriBusy(u.id);
-    const ok = checkWriteRows(await supabase.from('profiles')
+    const res = await supabase.from('profiles')
       .update({ employee_id: emp.id, account_kind: 'person' })
-      .eq('id', u.id).select('id'), 'ผูกบัญชีกับพนักงาน');
+      .eq('id', u.id).select('id');
+    /* ชนแม้เช็คแล้ว = จอถือรายชื่อเก่า (มีคนผูกไปเสี้ยววินาทีก่อน) — บอกให้รีเฟรช ห้ามโชว์ error ดิบ */
+    if (res?.error?.code === '23505') {
+      setTriBusy(null);
+      toast.error(`${emp.name} เพิ่งถูกผูกกับบัญชีอื่นไป — กดรีเฟรชแล้วดูใหม่อีกครั้ง`);
+      fetchUsers();
+      return;
+    }
+    const ok = checkWriteRows(res, 'ผูกบัญชีกับพนักงาน');
     setTriBusy(null);
     if (!ok) return;
     toast.success(`ผูก "${u.full_name || u.email}" กับ ${emp.name} แล้ว — ทีม/ไลน์/ส่วนงานจะอ่านจากฐานพนักงานต่อไป`);
@@ -680,6 +701,13 @@ export default function AddUser() {
   };
 
   const norm = (v) => (v || '').toString().trim().toLowerCase();
+  /* 🕵️ เวลาอ้างอิงของคอลัมน์ "เข้าใช้ล่าสุด" — จับครั้งเดียวต่อ render ให้ทุกแถวเทียบฐานเดียวกัน
+     (ตัวตัดสินอยู่ utils/accountActivity.js และรับ now เข้าไป ไม่ไปอ่านนาฬิกาเอง) */
+  const nowMs = Date.now();
+  const actSum = useMemo(() => activitySummary(users, { now: nowMs }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [users]);   // nowMs เปลี่ยนทุก render — ใส่ใน deps = คิดใหม่ทุกครั้งโดยเปล่าประโยชน์
+  const actText = activitySummaryText(actSum);
   const toggleSort = (key) => setSort(prev => prev.key === key
     ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
     : { key, dir: key === 'created_at' ? 'desc' : 'asc' });
@@ -704,6 +732,8 @@ export default function AddUser() {
         case 'line':       return norm(lines.find(l => l.id === u.line_id)?.name);
         case 'team':       return norm(u.team);
         case 'created_at': return u.created_at || '';
+        // เรียง "เข้าใช้ล่าสุด": ไม่เคยเข้า/อ่านไม่ได้ ไปกองเดียวกันที่หัวลิสต์ (เป็นของที่ต้องสะสาง)
+        case 'last_login':  return u.last_sign_in_at || '';
         default:           return '';
       }
     };
@@ -773,6 +803,21 @@ export default function AddUser() {
           ⚠ อ่านอีเมล login ไม่ได้ — ช่องอีเมลในตารางจะว่างทั้งหมด (<b>ไม่ได้หมายความว่าบัญชีไม่มีอีเมล</b>)
           <div style={{ fontWeight: 400, color: 'var(--text2)', marginTop: 2 }}>
             อีเมลอยู่ที่ `auth.users` ซึ่งอ่านได้เฉพาะ role <b>admin</b> · เหตุผลจากระบบ: {authErr}
+          </div>
+        </div>
+      )}
+
+      {/* 🕵️ บัญชีที่ไม่มีใครใช้ — ตอบคำถาม "ใบไหนลบ/ปิดได้" โดยไม่ต้องไปเปิด SQL Editor (29/10)
+          🔴 ไม่เตือน ≠ ไม่มีปัญหา: อ่านไม่ได้ก็ต้องเขียน (activitySummaryText คุมข้อความให้แล้ว) */}
+      {actText && (
+        <div style={{ fontSize: 12, padding: '7px 10px', marginBottom: 10, borderRadius: 8,
+          border: '1px solid var(--border)', background: 'var(--card)', boxShadow: 'var(--shadow-sm)' }}>
+          🕵️ <b>บัญชีที่ยังไม่มีการเข้าใช้</b> — {actText}
+          <span style={{ color: 'var(--muted)' }}>
+            {' '}· เรียงดูได้ที่คอลัมน์ <b>เข้าใช้ล่าสุด</b>
+          </span>
+          <div style={{ color: 'var(--text2)', marginTop: 2 }}>
+            ⚠️ บัญชี <b>จอ TV / บัญชีกลาง</b> ที่ยังไม่ได้ติดตั้งก็ขึ้น "ไม่เคยเข้าใช้" ด้วย — ดูชนิดบัญชีก่อนลบ
           </div>
         </div>
       )}
@@ -1073,6 +1118,7 @@ export default function AddUser() {
               <Th label="ไลน์ / Group" sortKey="line" style={{ minWidth: 140 }} />
               <Th label="Team" sortKey="team" style={{ textAlign: 'center', minWidth: 80 }} />
               <Th label="สร้างเมื่อ" sortKey="created_at" style={{ textAlign: 'center', minWidth: 96 }} />
+              <Th label="เข้าใช้ล่าสุด" sortKey="last_login" style={{ textAlign: 'center', minWidth: 104 }} />
               <th style={{ textAlign: 'center', minWidth: 80 }}>แก้ไข</th>
             </tr>
           </thead>
@@ -1138,6 +1184,19 @@ export default function AddUser() {
                   <td style={{ textAlign: 'center', fontSize: 12, color: u.created_at ? 'var(--text2)' : 'var(--muted)', whiteSpace: 'nowrap' }}>
                     {u.created_at ? new Date(u.created_at).toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short', year: '2-digit' }) : '—'}
                   </td>
+                  {/* 🕵️ เข้าใช้ล่าสุด — "ไม่เคยเข้าใช้" กับ "อ่านไม่ได้" ต้องเขียนต่างกัน (accountActivity.js) */}
+                  {(() => {
+                    const a = activityOf(u.last_sign_in_at, { now: nowMs });
+                    return (
+                      <td style={{ textAlign: 'center', fontSize: 12, color: activityTone(a.state),
+                        fontWeight: a.state === 'never' ? 700 : 400, whiteSpace: 'nowrap' }}
+                        title={u.last_sign_in_at
+                          ? new Date(u.last_sign_in_at).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })
+                          : (a.state === ACT_UNKNOWN ? 'อ่าน auth.users ไม่ได้ — ไม่ใช่ว่าไม่เคยเข้า' : 'ยังไม่เคย login เลยแม้ครั้งเดียว')}>
+                        {a.state === ACT_UNKNOWN ? '—' : a.text}
+                      </td>
+                    );
+                  })()}
                   <td style={{ textAlign: 'center' }}>
                     <button
                       onClick={() => openEdit(u)}

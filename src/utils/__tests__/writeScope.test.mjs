@@ -105,7 +105,10 @@ test('🔑 โจทย์ user — รับผิดชอบ CC ชั้น�
 
 test('🔑 แกนใหม่ทำสิ่งที่แกนข้อความทำไม่ได้ — แผนกเดียว ไม่ได้ทั้งส่วนงาน', () => {
   assert.equal(canWriteUnit(HEAD_BP, 'BIG PRESS').ok, true);
-  assert.equal(canWriteUnit(HEAD_BP, 'PD1').ok, false, 'ถือ CC แผนก ต้องไม่ได้ทั้งส่วนงาน PD1');
+  /* 🔄 28/10 (คำสั่ง user) — ถามถึง "ส่วนงานแม่" ไม่ใช่การขอสิทธิ์ทั้งส่วนงานอีกต่อไป
+     เดิมบล็อก ⇒ บัญชีที่ติ๊ก CC ใช้จอไหนไม่ได้เลย · ตอนนี้ผ่านแบบ `partial_unit`
+     ความละเอียดยังอยู่ที่บรรทัดถัดไป (แผนกพี่น้อง) + ที่ `canWriteLine` */
+  assert.equal(canWriteUnit(HEAD_BP, 'PD1').code, 'partial_unit', 'ส่วนงานแม่ = รับผิดชอบบางส่วน ไม่ใช่หน่วยอื่น');
   assert.equal(canWriteUnit(HEAD_BP, 'SMALL PRESS').ok, false, 'แผนกพี่น้องต้องแยกจากกันได้');
   /* เทียบกับแกนเดิมของบัญชีเดียวกัน (ไม่มี CC) — เดิม PD1 ทั้งส่วนงานผ่านหมด */
   const old = { role: 'supervisor', section: 'PD1', sections: ['PD1'] };

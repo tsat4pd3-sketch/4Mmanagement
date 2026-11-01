@@ -60,6 +60,9 @@ export const AUDIT_TABLE_LABELS = {
   npi_change_requests:     '🔁 NPI ECI',
   npi_tooling_plans:       '🔧 NPI แผน tooling',
   npi_tooling_steps:       '🔧 NPI ขั้นงาน tooling',
+  mkt_rfqs:                '💼 RFQ งานเสนอราคา (Marketing)',
+  mkt_rfq_parts:           '💼 RFQ พาร์ทในงาน',
+  mkt_awards:              '💼 RFQ ผลได้งาน/ไม่ได้งาน + ใบแจ้งจัดทำ',
   npi_tooling_step_templates: '🔧 NPI แม่แบบขั้นงาน tooling',
 
   // ── สินค้า & คัมบัง (DR) ──
@@ -136,6 +139,9 @@ export const AUDIT_TABLE_LABELS = {
 
 /* ฟิลด์ → ชื่อไทย (ใช้ตอนโชว์ ค่าเก่า → ค่าใหม่) */
 export const AUDIT_FIELD_LABELS = {
+  rfq_no: 'เลข RFQ', customer_target_price: 'ราคาเป้าหมายลูกค้า', annual_volume: 'volume/ปี', volume_source: 'ที่มา volume',
+  crd_no: 'เลขที่ CRD', crd_sent_at: 'วันส่ง CRD', npi_project_id: 'โปรเจค NPI', outcome: 'ผล (ได้งาน/ไม่ได้)', loss_reason: 'เหตุผลที่ไม่ได้งาน',
+  unit_price: 'ราคาชิ้น', tooling_price: 'ราคาแม่พิมพ์', annual_sales: 'ยอดขาย/ปี', production_order_no: 'เลขใบแจ้งจัดทำ',
   name: 'ชื่อ', name_th: 'ชื่อ (ไทย)', label: 'ป้าย', code: 'รหัส', note: 'หมายเหตุ',
   is_active: 'สถานะใช้งาน', sort_order: 'ลำดับ', category: 'หมวด',
   characteristic: 'ลักษณะปัญหา', detail: 'รายละเอียด', group_name: 'กลุ่ม',

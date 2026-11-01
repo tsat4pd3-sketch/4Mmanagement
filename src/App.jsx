@@ -14,12 +14,15 @@ import SignatureModal from './components/SignatureModal';
 import ChangePasswordModal from './components/ChangePasswordModal';
 const FeedbackModal = lazy(() => import('./components/FeedbackModal'));
 import { loadPermissions, canAccessPage, setDeptAdmin, setSharedAccount, can } from './utils/permissions';
+/* 🏷️ รุ่นของเว็บ (full / nm) — สลับตอน build ด้วย alias ใน vite.nm.config.js · 📄 src/appEdition.js */
+import { EDITION_LABEL, EDITION_HOME } from './appEdition';
 import { LOGISTIC_GROUPS } from './utils/logisticSide';
 import { trackVisit, topPaths } from './utils/navRecent';
 import { effectiveSections } from './utils/sectionScope';
 /* 💰 ชั้นสิทธิ์ที่ 3 แกน Cost Center — ดัชนีผังสร้างที่นี่ที่เดียว แล้วส่งผ่าน UserContext
    (จอ 20 จออ่านผ่าน `canWriteUnit`/`canWriteLine` เหมือนเดิม ไม่ต้องรู้ว่ามีแกนที่ 2) */
 import { buildOrgScope } from './utils/orgScope';
+import { clearAllMasterCache } from './utils/masterCache';
 import { attachCc } from './utils/ccScope';
 import { loadLinesRes } from './utils/useProductionLines';
 import { widerLineId } from './utils/lineHierarchy';
@@ -33,6 +36,7 @@ import useIsMobile from './utils/useIsMobile';
 import ScrollHint from './components/ScrollHint';
 import MobileNavBar from './components/MobileNavBar';
 import MobilePushPrompt from './components/MobilePushPrompt'; // 📲 แถบชวนเปิด push (มือถือเท่านั้น) — 2026-10-20
+import LineRegistryAlert from './components/LineRegistryAlert';
 import ScanWedgeGuard from './components/ScanWedgeGuard';
 import { purgeOldDrafts } from './utils/formDraft';   // 📝 ล้างร่างฟอร์มที่หมดอายุ (ร่างค้างห้ามกินที่ในเครื่อง)   // 🔫 ปุ่มสแกนข้างเครื่อง handheld — มือถือเท่านั้น
 import { pushSupported, getPushState, subscribePush, unsubscribePush, onPushResubscribeRequest, handlePushResubscribe } from './utils/webpush';
@@ -82,6 +86,8 @@ const DeptHub       = lazy(() => import('./pages/DeptHub'));
 const TvBoard = lazy(() => import('./pages/TvBoard'));
 const FlowTower    = lazy(() => import('./pages/FlowTower'));
 const GroupOverview = lazy(() => import('./pages/GroupOverview'));
+const AnnouncementMockup = lazy(() => import('./pages/AnnouncementMockup'));
+const OverseasTravelMockup = lazy(() => import('./pages/OverseasTravelMockup'));
 const AdoptionOutlook = lazy(() => import('./pages/AdoptionOutlook'));
 const ProgramUpdate = lazy(() => import('./pages/ProgramUpdate'));
 /* 🧭 ไม่ lazy โดยตั้งใจ — หน้านี้ต้องทำงานตอนบันเดิลเก่า/โหลด chunk ไม่ได้ (ดูหัวไฟล์) */
@@ -116,6 +122,7 @@ const QAInspectionSetup = lazy(() => import('./pages/QAInspectionSetup'));
 const PEDocs = lazy(() => import('./pages/PEDocs'));
 const NPI = lazy(() => import('./pages/NPI'));
 const NewModelBoard = lazy(() => import('./pages/NewModelBoard'));
+const Rfq = lazy(() => import('./pages/Rfq'));
 const ScrapReport = lazy(() => import('./pages/ScrapReport'));
 const NotificationConfig = lazy(() => import('./pages/NotificationConfig'));
 const MtnRepair = lazy(() => import('./pages/MtnRepair'));
@@ -234,6 +241,7 @@ export const NAV_ITEMS = [
   { to: '/pe-docs',        icon: '📐', label: 'Flow / PFMEA / Control Plan', group: 'คุณภาพ & วิศวกรรม' },
   { to: '/npi',            icon: '🚀', label: 'พาร์ทใหม่ APQP / PPAP',       group: 'คุณภาพ & วิศวกรรม' },
   { to: '/nm-board',       icon: '🧭', label: 'บอร์ด New Model (IEC)',      group: 'คุณภาพ & วิศวกรรม' },
+  { to: '/rfq',            icon: '💼', label: 'RFQ / เสนอราคา (Marketing)', group: 'คุณภาพ & วิศวกรรม' },
 
   { to: '/report',        icon: '📋', label: 'รายงาน',            group: 'วิเคราะห์ & รายงาน' },
 
@@ -252,6 +260,10 @@ export const NAV_ITEMS = [
   // "ข้อมูลเชื่อมกันทั้งองค์กรแล้วตอบคำถามอะไรได้" — สอบกลับ/คุมคุณภาพ/predictive/prescriptive
   // ฝั่งวันนี้นับสดจากฐานจริง ฝั่งอนาคตติดป้ายคาดการณ์ (seed: admin/manager)
   { to: '/adoption-outlook', icon: '🔮', label: 'ภาพเมื่อข้อมูลเชื่อมกัน', group: 'ผู้บริหาร & เดโม' },
+  // 🧪 mockup workflow ประกาศบริษัท Issue → EVP Approve → Publish ตามวันมีผล (ไม่เขียน DB · seed: admin/manager)
+  { to: '/announcements', icon: '📢', label: 'ประกาศบริษัท (Mockup)', group: 'ผู้บริหาร & เดโม' },
+  // 🧪 mockup workflow เบิกเงินเดินทางต่างประเทศ 7 ขั้น 5 ฝ่าย (ไม่เขียน DB · ยังไม่ seed สิทธิ์ = admin เท่านั้น)
+  { to: '/overseas-travel', icon: '✈️', label: 'เบิกเดินทางต่างประเทศ (Mockup)', group: 'ผู้บริหาร & เดโม' },
 
   // ── ตั้งค่า 13 เมนู แบ่ง 2 กลุ่มย่อยด้วย `sub` (nav audit 2026-08-27) ─────────────
   // ไม่ได้เพิ่มหมวดบนแถบไอคอน — แค่คั่นหัวข้อในแผงเดียวกัน แยก "ของที่กรอกทุกเดือน"
@@ -948,7 +960,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
             <img src={tsLogo} alt="Thai Summit Group" width={28} height={28} style={{ borderRadius: 3, flexShrink: 0 }} />
             <div>
               <div style={{ fontSize: 11, letterSpacing: '2px', color: 'var(--accent)', textTransform: 'uppercase', fontWeight: 700, fontFamily: 'var(--font-display)' }}>Thai Summit</div>
-              <div style={{ fontSize: 11, letterSpacing: '1.5px', color: 'var(--muted)', textTransform: 'uppercase', fontFamily: 'var(--font-display)' }}>ESM · Shopfloor</div>
+              <div style={{ fontSize: 11, letterSpacing: '1.5px', color: 'var(--muted)', textTransform: 'uppercase', fontFamily: 'var(--font-display)' }}>{EDITION_LABEL}</div>
             </div>
           </div>
           <button
@@ -1793,6 +1805,11 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
     setActor(null, null);   // ล้างตัวตนผู้ใช้ (ชื่อ+uid) ตอน logout
     setDeptAdmin(false);
     setSharedAccount(false);
+    /* 🧹 ล้าง cache ทะเบียนกลางของเครื่องนี้ด้วย (28/10)
+       เดิม logout ไม่ล้างอะไรเลย ⇒ ของพิษ (เช่นลิสต์ไลน์ว่างที่ถูกจดไว้ 4 ชม.) ยังค้าง
+       ⇒ ต้องบอกหน้างานให้ "เปิด incognito" ซึ่งเขาไม่เข้าใจและทำไม่ถูก
+       ตอนนี้ **"ออกจากระบบแล้วเข้าใหม่" = ทางแก้จริง** — ประโยคเดียวที่หน้างานทำตามได้ */
+    clearAllMasterCache();
     await supabase.auth.signOut({ scope: 'local' });
     navigate('/login');
   };
@@ -1965,6 +1982,10 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
 
   // หน้า Hub (เลือกส่วนงาน) — แสดงเต็มจอ ไม่มี sidebar / toggle / bell
   if (location.pathname === '/') {
+    /* 🏷️ เว็บรุ่นที่ไม่ใช่ ESM เต็ม ไม่มีหน้า "เลือกส่วนงานทั้งโรงงาน" — เด้งไปหน้าแรกของรุ่นนั้น
+       (RoleRoute เด้งมาที่ `/` เวลาไม่มีสิทธิ์ ⇒ ตรงนี้คือทางออกร่วมของทุกเส้นทาง)
+       รุ่นเต็ม `EDITION_HOME === '/'` ⇒ ไม่เข้าเงื่อนไขนี้เลย พฤติกรรมเดิมเป๊ะ */
+    if (EDITION_HOME !== '/') return <Navigate to={EDITION_HOME} replace />;
     return (
       <UserContext.Provider value={userCtx}>
         <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', color: 'var(--muted)', fontSize: 14, background: 'var(--bg)' }}>กำลังโหลด...</div>}>
@@ -2069,6 +2090,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
           {/* 📲 "เครื่องนี้ยังไม่เปิดแจ้งเตือน" — มือถือเท่านั้น (คอมไม่เปลี่ยนแม้แต่พิกเซลเดียว)
               เดิมปุ่มเปิดซ่อนในกระดิ่ง ⇒ 74 จาก 102 คนที่ได้รับแจ้งเตือนไม่มีเครื่องผูกไว้เลย (วัด 20/10) */}
           <MobilePushPrompt userId={userId} />
+          {/* 🏭 ทะเบียนไลน์โหลดไม่สำเร็จ = dropdown ไลน์ว่างทั้งแอป — ต้องบอก ห้ามปล่อยให้เดาเอง
+              (82 จาก 89 จุดที่เรียก loadLinesRes() ทิ้ง error ทิ้ง ⇒ ตาข่ายต้องอยู่ที่เดียวตรงนี้) */}
+          <LineRegistryAlert />
           <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh', color: 'var(--muted)', fontSize: 14 }}>กำลังโหลด...</div>}>
             {/* 🔁 key จากจอวนหน้า — หน้าเดิมที่เปลี่ยนแค่ ?query (เช่น ผังโรงงาน metric=oee → metric=ng) ต้อง remount
                 ไม่งั้นค่าตั้งต้นจากลิงก์ (utils/urlInit) ไม่ถูกอ่านใหม่ · ค่าว่าง = นำทางปกติ ไม่ remount */}
@@ -2099,6 +2123,12 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
               } />
               <Route path="/group-overview" element={
                 <RoleRoute path="/group-overview" userRole={role}><GroupOverview /></RoleRoute>
+              } />
+              <Route path="/announcements" element={
+                <RoleRoute path="/announcements" userRole={role}><AnnouncementMockup /></RoleRoute>
+              } />
+              <Route path="/overseas-travel" element={
+                <RoleRoute path="/overseas-travel" userRole={role}><OverseasTravelMockup /></RoleRoute>
               } />
               <Route path="/management" element={
                 <RoleRoute path="/management" userRole={role}><Management /></RoleRoute>
@@ -2239,6 +2269,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
               } />
               <Route path="/nm-board" element={
                 <RoleRoute path="/nm-board" userRole={role}><NewModelBoard /></RoleRoute>
+              } />
+              <Route path="/rfq" element={
+                <RoleRoute path="/rfq" userRole={role}><Rfq /></RoleRoute>
               } />
               <Route path="/products"   element={
                 <RoleRoute path="/products" userRole={role}><ProductMaster /></RoleRoute>

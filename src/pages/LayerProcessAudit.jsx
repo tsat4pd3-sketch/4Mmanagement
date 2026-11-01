@@ -261,13 +261,13 @@ export default function LayerProcessAudit() {
 
   useEffect(() => {
     (async () => {
-      const [{ data: ln }, { data: qs }, { data: profs }, { data: { user } }] = await Promise.all([
+      const [lnRes, { data: qs }, { data: profs }, { data: { user } }] = await Promise.all([
         loadLinesRes(),   // ครบ is_active ให้ <LineSelect> (2026-09-07)
         supabase.from('lpa_questions').select('*').order('seq'),
         supabase.from('profiles').select('id, full_name, signature_url').order('full_name'),
         supabase.auth.getUser(),
       ]);
-      setLines(ln || []);
+      setLines((lnRes?.data || []));
       setQuestions(qs || []);
       setProfiles(profs || []);
       setMyProfile((profs || []).find(p => p.id === user?.id) || null);

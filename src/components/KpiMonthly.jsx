@@ -33,6 +33,7 @@ import PersonSelect from './PersonSelect';
 import SearchSelect, { normSearch } from './SearchSelect';
 import KpiStandardModal from './KpiStandardModal';
 import { DeleteButton } from './IconButton';
+import { BREAK_POLICY_COLS } from '../utils/oeeMasters';
 import {
   ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis,
   CartesianGrid, ReferenceLine, LabelList, Cell,
@@ -367,7 +368,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
          ⇒ plannedMin (ตัวถ่วง wLoad) และนาทีนอกแผนที่เทียบกับเวลากะ ต้องเป็นชุดที่ตัดแล้ว
          ให้ตรงกับ /oee-analytics · ไม่โหลดนโยบายพักได้ = ไม่ตัด (เท่าพฤติกรรมเดิม ไม่ใช่ล้มทั้งรายงาน) */
       const brk = await supabaseDR.from('break_policies')
-        .select('shift, process_type, start_time, duration_min, ot_scope, anchor, offset_min').eq('is_active', true);
+        .select(BREAK_POLICY_COLS).eq('is_active', true);
       if (brk.error) toast.error(`โหลดนโยบายพักไม่สำเร็จ — OEE ในตารางนี้จะไม่ตัดช่วงพัก (ต่างจาก /oee-analytics): ${brk.error.message}`);   // ห้ามล้มเหลวเงียบ (audit 05/10)
       const dtEffBy = dtMinBySession(sessions, dtRes.rows, brk.data || [], { lines, affectsBy: await loadAffectsLanes() });   // { lines } = หารนาที DT ของไลน์เครื่องขนาน (oee.js §3.2) — ไม่ส่ง = น้ำหนักกะนั้นเหลือ 0 เงียบๆ
       Object.entries(dtEffBy).forEach(([sid, v]) => { dtPlanned[sid] = v.planned; dtUnplanned[sid] = v.unplanned; });
@@ -1025,8 +1026,8 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
       {/* UI-STANDARD 2026-09-24: แถบกรองมาตรฐาน — ขอบเขต → ปี → spacer → export (หัวเรื่อง "KPI รายเดือน" อยู่ที่ PageHeader ของ /obeya แล้ว) */}
       <FilterBar>
         {/* ขอบเขต = ผังองค์กรทุกมิติ (23/09) — ตัวเดียวแทน select ส่วนงาน + กลุ่มไลน์ */}
-        <OrgScopePicker index={org} value={scope} onChange={setScope} scopeSet={scopeSet} sections={userSections} failed={orgFailed}
-          plantLabel="ทุกส่วนงานในขอบเขต" width={isMobile ? '100%' : 320} title="เลือกขอบเขตตามผังองค์กร: ฝ่าย / ส่วนงาน / แผนก / กลุ่มไลน์ / ไลน์ / cost center" />
+        <OrgScopePicker ccOnly index={org} value={scope} onChange={setScope} scopeSet={scopeSet} sections={userSections} failed={orgFailed}
+          plantLabel="ทุกส่วนงานในขอบเขต" width={isMobile ? '100%' : 320} title="เลือกขอบเขตตามรหัส cost center (1 รหัสอาจครอบหลายไลน์ — Obeya/KPI สรุปตามรหัส)" />
         <span className="filter-label">ปี</span>
         <select value={year} onChange={e => setYear(+e.target.value)}>
           {[nowYear + 1, nowYear, nowYear - 1, nowYear - 2, nowYear - 3, nowYear - 4].map(y => <option key={y} value={y}>{y + 543}</option>)}
@@ -1943,7 +1944,7 @@ function DefModal({ init, year, scope, org, orgFailed = '', scopeSet, userSectio
           </div>
           <div>
             <div style={lbl}>ขอบเขต (ตามผังองค์กร · โรงงาน = ทุกหน่วยงาน)</div>
-            <OrgScopePicker index={org} value={f.scope} onChange={v => set('scope', v)} scopeSet={scopeSet} sections={userSections} failed={orgFailed}
+            <OrgScopePicker ccOnly index={org} value={f.scope} onChange={v => set('scope', v)} scopeSet={scopeSet} sections={userSections} failed={orgFailed}
               width="100%" inputStyle={inp} />
             {f.scope?.kind === 'cost_center' && canonicalScope(org, f.scope).kind !== 'cost_center' && (
               <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>

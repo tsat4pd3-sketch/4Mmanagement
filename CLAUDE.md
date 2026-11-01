@@ -49,7 +49,7 @@ Realtime + Edge Functions/Deno) · Telegram Bot API · deploy = Render.com (Stat
 
 ## Supabase Projects
 
-ระบบใช้ **2 Supabase projects แยกกัน** — ห้ามสมมติว่าเป็น project เดียว
+**2 Supabase projects แยกกัน** — ห้ามสมมติว่าเป็น project เดียว
 
 | Project | ID | ใช้เก็บอะไร | Client ใน code |
 |---------|-----|------------|----------------|
@@ -70,6 +70,8 @@ Realtime + Edge Functions/Deno) · Telegram Bot API · deploy = Render.com (Stat
 
 🔴 **โครงสร้างจริง (ตาราง/คอลัมน์/FK/หน้าไหนใช้ตารางไหน) อ่านสดที่หน้า `/schema`** — ห้ามเขียนลิสต์คอลัมน์เป็นมือที่ไหนอีก (snapshot มือล้าสมัยทุกครั้ง)
 > 📄 กฎ/เหตุผล/ประวัติรายตารางที่ pg_catalog บอกไม่ได้ (employees · production_lines · profiles · oee_targets · ot_night_bookings · workstations · employee_skills · shift_schedules · ppe_* · four_m_logs · notifications · meeting_action_items · event_comments) → **`docs/modules/db-schema.md`**
+> 📄 จอ `/schema` อ่านสดจาก pg_catalog ทั้ง 2 project → `docs/modules/schema-map.md`
+- 🔴 **migration ที่ copy ข้อมูลกันพลาด ต้องสร้างใน schema `archive` ห้ามไว้ใน `public`** (มีด่านใน build)
 
 **กฎเหล็กรายตารางที่ทุก session ต้องรู้ก่อนแตะ (ที่เหลืออ่านในไฟล์โมดูล):**
 - `production_lines` — 🔴 **`unit_kind` = "เป็นไลน์ผลิตไหม"** (`production` default / `support` = สำนักงาน/งานสนับสนุน) — ตัดสินผ่าน **`src/utils/unitKind.js` เท่านั้น** (มีด่าน) · **ว่าง/ไม่รู้จัก = ไลน์ผลิต** · ช่องเลือกไลน์กรอง support ออกเป็น default · จอคน/ทะเบียน (เช็คชื่อ·จัดกะ·ผังองค์กร·ทะเบียนไลน์) ต้องส่ง `includeSupport` · **คนละแกนกับ `line_type`**
@@ -103,7 +105,22 @@ QR/บาร์โค้ดอุปกรณ์ `qr-equipment-scan.md` · ก�
 ประชุมแถวเช้า `morning-meeting.md` · ผังรวมโรงงาน `factory-master-map.md` ·
 Adoption Outlook `adoption-outlook.md` · ภาพรวมกลุ่ม TSG (mockup) `group-overview.md` ·
 จอตาม-มือถือคุม `remote-control.md` · แผนประสานงาน PM ข้ามวัน `pm-coordination.md` ·
-Audit log ใครแก้อะไร `traceability-audit-log.md` · ของที่ยกไปโปรเจคหน้าได้ `reusable-pm-checker.md`
+Audit log ใครแก้อะไร `traceability-audit-log.md` · ของที่ยกไปโปรเจคหน้าได้ `reusable-pm-checker.md` ·
+ติดตามการส่งงานลูกค้า (Planner/Sales · Delivery · Rundown Stock) `logistic-planner-sales.md` ·
+ใบรายงานของเสีย FM-PD2-002 `/scrap-report` `scrap-report.md` ·
+ใบขอเบิก/คืนสินค้าคงคลัง FM-STO-003 (แท็บใน `/qa`) `store-requisition-form.md` ·
+QA setup → ใบตรวจ (2 หน้า ห้ามปนกัน) `qa-inspection.md` ·
+BBS สังเกตพฤติกรรมความปลอดภัย (แท็บใน `/daily-checker`) `bbs-safety.md` ·
+Dashboard ส่วนงาน `/dept-dashboard?dept=` `dept-dashboard-tv.md` (ดีไซน์ `docs/DASHBOARD-DESIGN.md`) ·
+VSM `/vsm` `vsm.md` ·
+คลังอะไหล่ FM-JIG-009 + Rank `/equipment?tab=spare` `spare-part-master.md` ·
+Fixture shim record `/equipment?tab=jig` `fixture-shim-record.md` ·
+ตั้งค่าผัง/Floorplan `/layout-setup` (display = ดูอย่างเดียว) `floorplan-setup.md` ·
+กำลังคน/เปลี่ยนจุดงาน/Turnover `/workforce-insight` (อ่านอย่างเดียว) `workforce-insight.md` ·
+ประวัติผลิต by Product `/product-history` `product-history.md` ·
+สอบกลับ Order `/order-trace` `order-trace.md` ·
+กล่องรับ feedback หน้างาน (ปุ่มท้าย sidebar) `feedback-inbox.md` ·
+RFQ/เสนอราคา Marketing (Q-neX เฟส 1 · ต้นน้ำ NPI · ตาราง `mkt_*` Main) `/rfq` `mkt-rfq.md`
 
 ---
 ## Organizational Hierarchy · Role System
@@ -122,6 +139,10 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 >   🔴 **ลำดับชั้นมาจาก `org_nodes.parent_id` เท่านั้น — เลขรหัสไม่ได้บอกชั้น**
 >   · ทีมไม่มีรหัส = **ตกทอดจากแม่** · ไล่ขึ้นไม่เจอ = fail-closed · กฎ "CC ของโหนด" **ห้ามเขียนชุดที่ 2**
 >   (`costCenterOfNode()` อยู่ไฟล์นี้ที่เดียว · มีด่าน `cc-scope-layer`)
+>   🔴 **หน่วยแม่ของขอบเขตเรา ≠ "หน่วยอื่น"** (28/10 · คำสั่ง user "ยุบเหลือแกนเดียว · CC ละเอียดกว่า")
+>     ถาม `canWriteUnit(ctx,'<ส่วนงาน>')` ทั้งที่ถือ CC ระดับแผนก = **`partial_unit` (ok)** ไม่ใช่บล็อก
+>     — บล็อก = ติ๊ก CC แล้วใช้จอไหนไม่ได้เลย (โดน 15/15 ใบ) · **ความละเอียดอยู่ที่ชั้นรายไลน์/รายแถว**
+>     (แผนกพี่น้องยัง ❌ เหมือนเดิม) ⇒ **จอต้องเช็คซ้ำตอนเขียนจริง ห้ามถือ `partial_unit` เป็นใบผ่าน**
 >   🔑 **จอไม่ต้องรู้เรื่อง 2 แกน** — `canWriteUnit`/`canWriteLine` สลับให้เองเมื่อ ctx มี `respCostCenters`
 >     **+ `scopeIdx`** ⇒ **ctx ของด่านทุกจอต้องส่ง 2 ช่องนี้** (ด่านตรวจรายบรรทัดใน `write-scope-layer`) ·
 >     ไลน์ตัดสินที่ตัวไลน์ก่อนถอยไปส่วนงาน · อ่านผังไม่ได้ = บล็อก (`scope_unreadable`)
@@ -152,13 +173,6 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 > **กฎ:** ตัวสร้างอัตโนมัติต้องมีเพดาน/ตัวนับ + กันใบซ้ำ · แยกใบระบบออกจากใบคนให้เห็นในคิว ·
 > เคลียร์คิวค้างจากบั๊กด้วย `rejected` + เหตุผล **ห้าม `delete` ห้าม `approved`**
 > 📄 กฎเต็ม + เหตุการณ์ → `docs/modules/four-m-workflow.md`
-
----
-
-## Logistic — Planner & Sales / Delivery / Rundown Stock (2026-07-10..11)
-
-โมดูลติดตามการส่งงานลูกค้า (ตารางทั้งหมดอยู่ DR project) — 3 หน้า:
-> 📄 รายละเอียดเต็ม → `docs/modules/logistic-planner-sales.md`
 
 ---
 
@@ -227,20 +241,6 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 
 ---
 
-## Scrap Report — ใบรายงานของเสีย FM-PD2-002 Rev.06 (paperless + export · 2026-07-16)
-
-หน้า `/scrap-report` (`ScrapReport.jsx`) — แทนฟอร์มกระดาษ "ใบรายงานของเสีย" · export Excel ตรงฟอร์ม
-> 📄 รายละเอียดเต็ม → `docs/modules/scrap-report.md`
-
----
-
-## 📦 ใบขอเบิก/คืนสินค้าคงคลัง FM-STO-003 Rev.01 (paperless · 2026-08-24)
-
-แท็บ 📦 ใบเบิกทดสอบ ใน `/qa` (`src/components/MaterialRequests.jsx`) — user ส่งใบกระดาษมา
-> 📄 รายละเอียดเต็ม → `docs/modules/store-requisition-form.md`
-
----
-
 ## ใบรายงานปัญหาการผลิต + ถังเหลือง/ถังแดง (paperless · 2026-08-19)
 
 > ### 🔴 ฟอร์มที่ยื่นออกไปแล้ว = **บันทึก** ไม่ใช่ใบที่ generate ใหม่ (2026-09-25 · มีด่าน)
@@ -254,37 +254,9 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 
 ---
 
-## QA Inspection — setup → ใบตรวจ (ปิดช่องว่าง 2026-08-04)
-
-สายงานคุณภาพแบ่งชัด 2 หน้า — อย่าเอาไปปนกัน:
-> 📄 รายละเอียดเต็ม → `docs/modules/qa-inspection.md`
-
----
-
-## 🦺 BBS — สังเกตพฤติกรรมความปลอดภัย (Behavior-Based Safety · paperless · 2026-08-21)
-
-แท็บ 🦺 BBS ใน `/daily-checker` (`src/pages/BbsCheck.jsx`) — user ส่งฟอร์ม Excel มา
-> 📄 รายละเอียดเต็ม → `docs/modules/bbs-safety.md`
-
----
-
-## Dashboard ส่วนงาน — 📋 `/dept-dashboard` (2026-08-06)
-
-หน้าเดียวสลับส่วนงานด้วย `?dept=` — เฟส 1: ฝ่ายผลิต · ซ่อมบำรุง · สโตร์ · QA (ออกแบบเต็ม + ส่วนงานที่ยังไม่ทำ ดู `docs/DASHBOARD-DESIGN.md`)
-> 📄 รายละเอียดเต็ม → `docs/modules/dept-dashboard-tv.md`
-
----
-
-## Value Stream Mapping — `/vsm` (เฟส 1 · 2026-08-13)
-
-หน้า VSM (`VSM.jsx`, กลุ่มวิเคราะห์ & รายงาน) — เลือกสินค้าสำเร็จรูป (mat เบอร์ 1) + เดือน แล้ว
-> 📄 รายละเอียดเต็ม → `docs/modules/vsm.md`
-
----
-
 ## Production Plan — วางแผนการผลิต (`/production-plan` · แท็บ `?tab=lots` แผนสั่งงานล็อต)
 
-จากยอดลูกค้า (order รายวัน + forecast รายเดือน) เทียบ**กำลังผลิตที่ทำได้จริง** → ต้องเปิดกี่กะ วันไหน OT/กะดึก/วันหยุด
+ยอดลูกค้า (order + forecast) เทียบ**กำลังผลิตจริง** → ต้องเปิดกี่กะ วันไหน OT/กะดึก/วันหยุด
 · สูตรทั้งหมดอยู่ใน **`src/utils/planLots.js` + `planTimeline.js` ห้ามคิดเองในหน้า**
 
 **กฎที่ทุก session ต้องรู้ (ที่เหลืออ่านในเอกสาร):**
@@ -417,17 +389,8 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 
 ## 🧰 `/equipment` — ศูนย์ทะเบียนอุปกรณ์ของช่าง (2026-09-22)
 
-ทะเบียนที่เคยกระจาย 3 หมวดเมนู ยุบเป็นหน้าเดียว 5 แท็บ: `?tab=machine|die|jig|spare|rack`
-(route เดิม `/machine-database` `/die-registry` `/fixture` redirect เข้ามา) · **embed หน้าเดิมทั้งดุ้น
-ไม่แก้ของเดิม** (pattern เดียวกับ `PmHub`) · สิทธิ์ piggyback **ไม่ต้อง seed `page:/equipment`**
+หน้าเดียว 5 แท็บ `?tab=machine|die|jig|spare|rack` (route เดิม redirect เข้ามา) · **embed หน้าเดิมทั้งดุ้น ไม่แก้ของเดิม** · สิทธิ์ piggyback **ไม่ต้อง seed `page:/equipment`**
 · 🔴 **แท็บซ้อนแท็บต้องคนละ query param** — หน้าลูกใช้ `?die=` / `?fx=` **ห้ามใช้ `?tab=`** (UI §6.8 ข้อ 2.4)
-
----
-
-## คลังอะไหล่ (Spare Part Master) — FM-JIG-009 + Rank ตาม WI-JIG-010 (2026-08-05)
-
-แท็บ 🔩 คลังอะไหล่ ใน `/equipment?tab=spare` (`src/components/SparePartMaster.jsx`) — ค้นอะไหล่/ชั้นวาง · ยอดตรงการเบิกจริงในใบ MO · Rank A/B/C อัตโนมัติ
-> 📄 รายละเอียดเต็ม → `docs/modules/spare-part-master.md`
 
 ---
 
@@ -440,13 +403,6 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 >   `fitsPress` คืน `null` ≠ `false` · ตัวไม่รู้ความสูงต่อท้ายลำดับ ห้ามตัดทิ้ง · `canPlan` ≠ `canTotal`
 > · 🔴 **`varMin` (เทียบลำดับ ไม่ต้องรู้เวลาฐาน เพราะหักกลบ) ≠ `totalMin`** · ชั้น 2-3 ยังไม่ทำ ห้ามเริ่มจนกว่า user สั่ง
 > 📄 `docs/modules/die-maintenance.md`
-
----
-
-## Fixture Shim Record — คุมความยั่งยืนของจิ๊ก (2026-09-01 · คำขอลูกค้า)
-
-หน้า `/equipment?tab=jig` (เดิม `/fixture` · แท็บลูก `?fx=` · `FixtureRegistry.jsx`) — ลูกค้าขอ ระบบบันทึกชิม (shim record) เพื่อคุม fixture sustainability
-> 📄 รายละเอียดเต็ม → `docs/modules/fixture-shim-record.md`
 
 ---
 
@@ -466,27 +422,9 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 
 ---
 
-## ตั้งค่าผัง/Floorplan — แยก display ออกจาก setup (2026-07-16)
-
-หลักการ: หน้า display (ผังรวมโรงงาน/Dashboard) = ดู + popup เท่านั้น · การตั้งค่าผังทั้งหมดรวมที่ `/layout-setup` "🗺️ ตั้งค่าผัง/Floorplan" (หมวดตั้งค่าโปรแกรม) แยกแท็บตาม POV — เตรียมรับ Store/AMR ในอนาคต
-> 📄 รายละเอียดเต็ม → `docs/modules/floorplan-setup.md`
-
----
-
 ## ⚫ ของที่ยุบ/ถอดออกแล้ว — **อย่ารื้อกลับโดยไม่ถาม user**
 
 > 📄 รายการ + เหตุผลรายตัว → `docs/modules/_archived/` (ดัชนีใน `docs/modules/README.md`)
-
----
-
-## 🗄️ โครงสร้างฐานข้อมูล — `/schema` (2026-09-22)
-
-จอให้ทีมงาน**เห็นเองว่าตารางชื่ออะไร · PK/FK ผูกกันแบบไหน · หน้าไหนใช้ตารางไหน** แล้วกดแจ้งบัคพร้อมบริบท
-· โครงสร้างอ่าน**สด**จาก pg_catalog (RPC `esm_schema_overview` / `esm_schema_table` ทั้ง 2 project)
-· **ห้ามเขียนรายชื่อตาราง/คอลัมน์เป็นลิสต์มือที่ไหนอีก** — snapshot มือล้าสมัยทุกครั้ง
-· 🔴 **migration ที่ copy ข้อมูลกันพลาด ต้องสร้างใน schema `archive` ห้ามไว้ใน `public`**
-  (มีด่านใน build)
-> 📄 `docs/modules/schema-map.md`
 
 ---
 
@@ -539,7 +477,7 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 - **🔴 โหมดปีห้ามโหลดแถวดิบ** — ผ่าน RPC rollup (`obeya_year_rollup` ฝั่ง DR / `obeya_attendance_rollup` ฝั่ง Main)
   แล้วให้ JS หาร/ตัดสิน · **RPC ห้ามคำนวณ KPI**
 - **🔴 คอลัมน์ที่มี `not null default` ห้ามเช็ค truthiness** (`kpi_definitions.source` default `'manual'` ⇒ `!d.source` เท็จเสมอ · มีด่าน)
-- **ขอบเขตทุกแท็บ = `<OrgScopePicker>`** (`src/utils/orgScope.js`) ห้าม select จาก `org_nodes` เอง · **Cost Center = ช่องแยก ห้ามปนในลิสต์ผัง** · 🔴 **CC ที่มีหน่วยเจ้าของ = หน่วยเจ้าของ** — เก็บ/เทียบ scope ของ `kpi_*` ผ่าน `canonicalScope()`/`defScopeColumns()` เท่านั้น (มีด่าน `kpi-scope-write-raw` + trigger ฝั่ง DB · 15/10) · ห้ามใช้ `ancestorsOf(cc)` (คืนแค่ plant โดยตั้งใจ)
+- **ขอบเขตทุกแท็บ = `<OrgScopePicker ccOnly>`** (`src/utils/orgScope.js`) ห้าม select จาก `org_nodes` เอง · 🔴 **Obeya/KPI สรุปตาม cost center — ช่องหลัก = รหัส CC หนึ่งแถวต่อรหัส (1 รหัสครอบหลายไลน์)** (30/10 คำสั่ง user) · **Cost Center = ช่องแยก ห้ามปนในลิสต์ผัง** · 🔴 **CC ที่มีหน่วยเจ้าของ = หน่วยเจ้าของ** — เก็บ/เทียบ scope ของ `kpi_*` ผ่าน `canonicalScope()`/`defScopeColumns()` เท่านั้น (มีด่าน `kpi-scope-write-raw` + trigger ฝั่ง DB · 15/10) · ห้ามใช้ `ancestorsOf(cc)` (คืนแค่ plant โดยตั้งใจ)
 - **ห้ามยุบแท็บ `kpi` กับ `sqdcm` เป็นบอร์ดเดียว** (คนละหน่วยเวลา/แกน/เจ้าของตัวเลข) · 2 แท็บนั้นวาดจาก `ObeyaSheet.jsx` ชิ้นเดียว
 - 🔴 **KPI การเงิน (%DL+OH · %RM · DSI · ยอดขาย/หัว) = ยอดเงินของหน่วย ÷ ตัวเลขกลางโรงงาน** — ตัวเลขฐานอยู่ `kpi_base_inputs` (ยอดขาย/COGS กรอกที่ ทั้งโรงงาน ที่เดียว) · ค่ารายเดือนคิดผ่าน `applyFormulaEntries()` (`utils/kpiFormula.js`) **ห้ามหารเองในหน้า** · ขาดตัวแปร = `null` ห้าม 0 · ตารางนี้ห้าม `upsert` (unique index เป็น expression)
 > 📄 **รายละเอียดทั้งหมด** → `docs/modules/obeya-kpi-board.md`
@@ -561,27 +499,6 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 > 🔴 **ตัดสินว่า "ยุบได้" ต้องดูทุกใบที่นิยามพาร์ทนั้น ไม่ใช่ 2 ใบ** (`auditBomSheetGroups()` ไฟล์เดียวกัน)
 >   — ใบที่ 3 เขียนคนละค่า = ยุบแล้วยอดเปลี่ยนเงียบ · พาร์ทที่**ไม่มีใบของตัวเอง**ไม่โผล่ในตารางคู่
 > 📄 `docs/modules/bom-levels.md`
-
----
-
-## Workforce Insight — กำลังคน / เปลี่ยนจุดงาน / Turnover (`/workforce-insight` · 2026-09-02)
-
-หน้า `WorkforceInsight.jsx` (พนักงาน & ทักษะ) — **อ่านอย่างเดียว ไม่มี resource:action ใหม่** · 3 แท็บ: กำลังคนรายวัน · การเปลี่ยนจุดงาน · Turnover
-> 📄 รายละเอียดเต็ม → `docs/modules/workforce-insight.md`
-
----
-
-## ประวัติผลิต by Product — `/product-history` (2026-07-24)
-
-หน้า ProductHistory (กลุ่มวิเคราะห์ & รายงาน) — เลือกสินค้า (ค้นด้วย mat_no/ชื่อ/PN) → ดูย้อนหลังว่าเคยผลิตที่ไลน์ไหน/กะไหน เท่าไหร่ เสียเท่าไหร่ + ประวัติการแก้ master data
-> 📄 รายละเอียดเต็ม → `docs/modules/product-history.md`
-
----
-
-## สอบกลับ Order — `/order-trace` (Order Traceability · 2026-07-30)
-
-หน้า OrderTrace (วิเคราะห์ & รายงาน) — 2 แท็บ `order` (จากเลขใบผลิต · default) / `symptom` (จากอาการ) — สแกน `prod_no` แล้วเห็นทุกเหตุการณ์ของใบนั้น
-> 📄 รายละเอียดเต็ม → `docs/modules/order-trace.md`
 
 ---
 
@@ -619,19 +536,11 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 
 ## 📦 อัพเดทโปรแกรม — `/program-update` (2026-10-01 · คำสั่ง user)
 
-จออ่านอย่างเดียว บอกว่าช่วงที่เลือก **เพิ่ม/แก้/ปรับ** อะไรไปบ้าง · **ไม่แตะ Supabase เลย**
 · 🔴 **แหล่งความจริงคือ git** — `scripts/gen-changelog.mjs` → `public/changelog.json` (อยู่ในขั้น build)
   **ห้ามแก้ไฟล์นั้นมือ · ห้ามทำทะเบียนอัพเดทให้คนมาจดเอง** (ช่องที่ไม่มีใครกรอก = ช่องตาย)
 · 🔴 **สคริปต์ห้ามทำ build ล่ม · clone ตื้นห้ามเขียนทับ** (ของใหม่น้อยกว่าเดิม >10% = ไม่เขียน)
 · กฎตีชนิด = `src/utils/changelog.js` (**ต้องมีตะกร้ารับท้ายลิสต์** — commit ไม่ตามรูปห้ามหายจากจอ)
 > 📄 `docs/modules/program-update.md`
-
----
-
-## 💬 กล่องรับ Feedback จากหน้างาน (2026-08-14 · คำขอ user)
-
-ปุ่ม "💬 แจ้งปัญหา / ข้อเสนอแนะ" ท้าย sidebar (ใต้เปลี่ยนรหัสผ่าน) → `src/components/FeedbackModal.jsx` (lazy chunk)
-> 📄 รายละเอียดเต็ม → `docs/modules/feedback-inbox.md`
 
 ---
 
@@ -842,6 +751,21 @@ Platform:    Render.com (Static Site)
 > 🔴 **ห้าม self-host Supabase จนกว่าจะครบเงื่อนไขใน `docs/modules/deploy.md` §ย้ายเข้า server บริษัท**
 > (คนดูแล · backup/กู้คืน · ทางเข้าจากมือถือนอกโรงงาน) — ทั้งโรงงานพึ่งระบบนี้แล้ว ล่ม = เปิดกะไม่ได้
 > 📄 ขั้นตอน/ลำดับ/สิ่งที่ต้องมีก่อน → `docs/modules/deploy.md`
+
+---
+
+## 🏷️ 2 เว็บจากโค้ดชุดเดียว — edition (2026-10-29 · คำสั่ง user "แยก frontend ของ New Model")
+
+`npm run build` → `dist/` = ESM เต็ม · `npm run build:nm` → `dist-nm/` = **เว็บ New Model (IEC)**
+— โปรแกรมตัวเดียวกัน · Supabase Main เดิม · บัญชีเดิม · ต่างแค่ "เว็บนี้มีหน้าอะไร"
+เจ้าของกฎ **`src/appEdition.js` / `src/appEdition.nm.js`** (สลับด้วย alias ใน `vite.nm.config.js`)
+- 🔴 **โมดูลใหม่ที่ "เห็นกับ NM" (Marketing ฯลฯ) = เติม `EDITION_PAGES` ของไฟล์เดิม ห้ามแตก edition ที่ 3**
+- 🔴 **`edition` ≠ สิทธิ์ ต้องผ่านทั้งคู่** — edition = "เว็บนี้มีหน้านี้ไหม" (ตายตัวตอน build · **admin ข้ามไม่ได้**
+  · ด่าน = บรรทัดแรกของ `canAccessPage()`) · **เอาหน้าเข้า `EDITION_PAGES` ไม่ได้แจกสิทธิ์ให้ใครเพิ่ม**
+  · ห้ามใช้แทนสิทธิ์ (client ล้วน ไม่มีผลกับ RLS)
+- 🔴 **import เขียน `'<path>/appEdition'` เท่านั้น** (ไม่มี `.js` ไม่มี `.nm`) · **แก้ `vite.config.js`/`index.html`
+  ต้องตามไปแก้ `vite.nm.config.js`/`nm.html`** · **ลิงก์ในหน้า NM ต้องชี้หน้าที่อยู่ใน `EDITION_PAGES`** (3 ด่าน)
+> 📄 `docs/modules/nm-frontend-split.md`
 
 ---
 

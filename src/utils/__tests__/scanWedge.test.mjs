@@ -140,3 +140,15 @@ test('บัตรพนักงานสแกนลงช่องเลื�
   assert.equal(exactScanMatch(people, '2101864')?.id, 'e:1');
   assert.equal(exactScanMatch([{ id: 'x', label: 'โกดัง A', scanKeys: ['WH-A'] }], 'wh a')?.id, 'x');
 });
+
+import { parseQrPayload, resolveLine, resolveTypeRow, buildQrPayload } from '../qrCode.js';
+test('🗒️ เฟส 2: ป้ายไลน์ / ประเภท Downtime / ประเภทงานเสีย', () => {
+  const lines = [{ id: 12, name: 'LINE 60' }, { id: 13, name: 'LINE 61' }];
+  assert.equal(resolveLine(parseQrPayload(buildQrPayload('line', 13)), lines).line?.name, 'LINE 61');
+  assert.equal(resolveLine(parseQrPayload('line-60'), lines).line?.id, 12, 'ชื่อไลน์เปล่า ตรงเป๊ะไม่สนขีด/ตัวพิมพ์');
+  assert.ok(resolveLine(parseQrPayload('ESM:T:abc'), lines).error.includes('ไม่ใช่ป้ายไลน์'));
+  const dt = [{ id: 'u1', name_th: 'เครื่องเสีย' }];
+  assert.equal(resolveTypeRow(parseQrPayload('ESM:T:u1'), 'downtime_type', dt).row?.name_th, 'เครื่องเสีย');
+  assert.ok(resolveTypeRow(parseQrPayload('ESM:X:u1'), 'downtime_type', dt).error, 'ป้าย NG สแกนลงช่อง Downtime = ปฏิเสธ');
+  assert.ok(resolveTypeRow(parseQrPayload('เครื่องเสีย'), 'downtime_type', dt).error, 'ข้อความเปล่าไม่เดาจากชื่อ');
+});

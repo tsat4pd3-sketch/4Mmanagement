@@ -5277,15 +5277,19 @@ test('🛡️ inspection-setup-shared — จอตั้งค่าจุด�
 test('🛡️ leader-line-wins — scopedLines ต้องบีบ leader กลับเป็นครอบครัวไลน์ตัวเอง', () => {
   const bad = [];
   const ss = stripComments(readFileSync(join(ROOT, 'src/utils/sectionScope.js'), 'utf8'));
-  if (!/export function scopedLines\(\{\s*role,\s*lineId,/.test(ss))
-    bad.push('sectionScope.js (scopedLines ไม่ได้รับ role/lineId)');
+  /* 🔁 29/10 — ตรรกะย้ายไปอยู่ `lineScope()` (แกนเดียวของ scopedLines + scopedLineNames)
+     เจตนาเดิมคงไว้ครบ แค่เปลี่ยนที่ตรวจ · พฤติกรรมจริงถูกคุมด้วย
+     src/utils/__tests__/lineScopeOneAnswer.test.mjs (ยิงเคสเดียวกันเข้าทั้ง 2 ทาง) */
+  if (!/export function lineScope\(\{\s*role,\s*lineId,/.test(ss))
+    bad.push('sectionScope.js (lineScope ไม่ได้รับ role/lineId)');
   if (!/role === 'leader' && lineId/.test(ss))
-    bad.push('sectionScope.js (scopedLines ไม่มีกิ่ง leader)');
-  /* กิ่ง leader ต้องอยู่ **ก่อน** การอ่าน sections — ไม่งั้น scope_depth=all จะหลุดไปคืน lines ทั้งก้อน */
+    bad.push('sectionScope.js (lineScope ไม่มีกิ่ง leader)');
+  /* กิ่ง leader ต้องอยู่ **ก่อน** ทางที่คืน "ทั้งโรงงาน" เพราะไม่มี sections
+     — ไม่งั้น scope_depth=all จะหลุดไปเห็นทุกไลน์เหมือนเคสจริง 24/10 */
   const iLeader = ss.indexOf("role === 'leader' && lineId");
-  const iSecs = ss.indexOf('const secs = (sections || []).filter(Boolean);', ss.indexOf('export function scopedLines'));
-  if (iLeader < 0 || iSecs < 0 || iLeader > iSecs)
-    bad.push('sectionScope.js (กิ่ง leader ต้องมาก่อนการอ่าน sections)');
+  const iAll = ss.indexOf("if (!secs.length) return out(all,");
+  if (iLeader < 0 || iAll < 0 || iLeader > iAll)
+    bad.push('sectionScope.js (กิ่ง leader ต้องมาก่อนทางที่คืนทั้งโรงงาน)');
   if (!/export function scopeTooWide/.test(ss))
     bad.push('sectionScope.js (ไม่มี scopeTooWide — คิวทบทวนสิทธิ์จะไม่ฟ้องการตั้งกว้างเกิน)');
 
@@ -5412,9 +5416,10 @@ test('🛡️ unlinked-account-queue — คิวบัญชีไม่ผู
     if (!new RegExp(`export function ${fn}\\b`).test(im)) bad.push(`identityMatch.js (ไม่มี ${fn})`);
   }
   /* ชื่อซ้ำ/ชื่อต้นตรง ต้องไม่ถูกผูกให้เอง — `confident` ต้องผูกกับ "เจอคนเดียว" เท่านั้น */
-  if (!/confident: same\.length === 1/.test(im))
-    bad.push('identityMatch.js (confident ไม่ได้ผูกกับ "ชื่อตรงและเจอคนเดียว" — เสี่ยงผูกผิดคน)');
-  if (!/tier: 'first', rows: first\.slice\(0, limit\), confident: false/.test(im))
+  /* 28/10 เข้มขึ้น: ต้อง "เจอคนเดียว" **และ** คนนั้นยังไม่ถูกบัญชีอื่นจอง (ด่าน link-suggest-must-check-taken) */
+  if (!/confident: free\.length === 1 && same\.length === 1/.test(im))
+    bad.push('identityMatch.js (confident ไม่ได้ผูกกับ "ชื่อตรง เจอคนเดียว และยังไม่ถูกจอง" — เสี่ยงผูกผิดคน/ชน unique)');
+  if (!/tier: 'first', rows: first\.slice\(0, limit\)\.map\(mark\), confident: false/.test(im))
     bad.push('identityMatch.js (ชั้น "ชื่อต้นตรง" ต้อง confident=false เสมอ)');
   if (!/e\.is_active !== false/.test(im)) bad.push('identityMatch.js (เสนอคนที่ลาออกแล้วได้)');
 
@@ -5426,7 +5431,8 @@ test('🛡️ unlinked-account-queue — คิวบัญชีไม่ผู
   if (!/tri\.sharedOk\.length/.test(au))
     bad.push('AddUser.jsx (ไม่ได้เขียนว่าบัญชีกลางที่ไม่ผูกตัวตน = ถูกต้องแล้ว)');
   /* 2 ปุ่มนั้นเขียน DB ⇒ ต้องนับแถว (RLS ปฏิเสธ UPDATE = 0 แถว ไม่มี error) */
-  if ((au.match(/checkWriteRows\(await supabase\.from\('profiles'\)/g) || []).length < 2)
+  /* ปุ่มในคิวทั้ง 2 ทางต้องนับแถวจริง — รับทั้งแบบ inline และแบบแยก `const res = await …` (28/10) */
+  if ((au.match(/checkWriteRows\((await supabase\.from\('profiles'\)|res, )/g) || []).length < 2)
     bad.push('AddUser.jsx (ปุ่มในคิวไม่ได้นับแถวที่เขียนจริงด้วย checkWriteRows)');
 
   /* บ้านเดียวของ normSearch */
@@ -6043,12 +6049,24 @@ test('🛡️ break-policy-select-needs-all-axes — คิวรี break_polic
     const code = stripComments(readFileSync(full, 'utf8'));
     let i = 0;
     while ((i = code.indexOf("from('break_policies')", i)) >= 0) {
-      const tail = code.slice(i, i + 260);
+      /* 🔴 ต้องตัดขอบเขตที่ "คิวรีถัดไป" ก่อน (28/10) — เดิมมองยาว 260 ตัวอักษรรวด
+         ⇒ ไปจับ `.select('id, line_name, …')` ของคิวรีตัวถัดไปใน Promise.all เดียวกัน
+            มาเป็นคอลัมน์ของ break_policies แล้วฟ้องว่า "ขาดทุกแกน" (false positive จริงที่
+            ProductionPlan.jsx) · ด่านที่ฟ้องผิดทำให้คนเลิกเชื่อด่าน */
+      const win = code.slice(i, i + 260);
+      const nextFrom = win.indexOf(".from('", 1);
+      const tail = nextFrom > 0 ? win.slice(0, nextFrom) : win;
       i += 22;
-      const m = tail.match(/\.select\(\s*(['"`])([^'"`]*)\1/);
-      if (!m) continue;                                        // ไม่มี select = ไม่ใช่การอ่าน
+      const selAt = tail.indexOf('.select(');
+      if (selAt < 0) continue;                                 // ไม่มี select = ไม่ใช่การอ่าน
+      const arg = tail.slice(selAt + '.select('.length).trimStart();
+      /* ส่ง **ตัวแปร** มา (ชุดกลาง `BREAK_POLICY_COLS` ใน utils/oeeMasters.js) = ครบแน่นอน
+         — ด่าน `break-policy-cols-central` เป็นคนบังคับว่าต้องเป็นชุดกลางหรือ '*' เท่านั้น */
+      if (!/^['"`]/.test(arg)) continue;
+      const m = arg.match(/^(['"`])([^'"`]*)\1/);
+      if (!m) continue;
       /* `.delete().select('id')` = นับแถวตามกฎเขียน DB ข้อ 2 ไม่ใช่การอ่านนโยบาย — ข้าม */
-      if (/\.(delete|insert|update)\s*\(/.test(tail.slice(0, m.index))) continue;
+      if (/\.(delete|insert|update)\s*\(/.test(tail.slice(0, selAt))) continue;
       const cols = m[2];
       if (cols.trim() === '*') continue;      // ชุดเต็ม = ครบอยู่แล้ว
       const miss = NEED.filter(c => !cols.includes(c));
@@ -7398,6 +7416,185 @@ test('🧭 identity-line-wider — ตัวตนจากฐานพนัก
     + '\n\n   หัวหน้าที่ดูแล "ไลน์แม่" แต่ตัวเองสังกัดไลน์ลูก จะถูกบีบเหลือกลุ่มย่อยของตัวเองเงียบๆ\n');
 });
 
+/* ═══ 🔗 deep-link-scope-race — "ไม่พบใบที่เลือก" ห้ามขึ้นตอนยังไม่รู้ขอบเขต ═══ 2026-10-28
+   เคสจริง (user แจ้ง): กดจากคิวงาน/Dashboard ส่วนงาน → `/report?tab=4&focus=<id>`
+   → จอขึ้น "⚠️ ไม่พบใบที่เลือกในรายการนี้" + Man/Machine/Material/Method = 0
+   → อีกแป๊บใบก็โผล่มาเอง (ผู้ใช้สรุปว่า "บางทีขึ้นบางทีไม่ขึ้น")
+   ต้นเหตุ: `lines` โหลดทีหลัง (loadLinesRes) ⇒ รอบแรก `allowedLineNames` = `[]`
+   ⇒ คิวรีกลายเป็น `.in('line_name', ['__none__'])` = 0 แถว · `loading` ก็เริ่ม `false`
+   ⇒ **"ยังไม่รู้ขอบเขต" ถูกแปลเป็น "ไม่มีสิทธิ์เห็นอะไรเลย" แล้วประกาศผลทันที**
+   ⇒ 3 ค่าต้องแยกกัน: `undefined` ยังไม่รู้ · `[]` รู้แล้วว่าว่าง · `null` ไม่จำกัด */
+test('🔗 deep-link-scope-race — FourMTab ต้องรอทะเบียนไลน์ก่อนประกาศว่า "ไม่พบใบ"', () => {
+  const src = stripComments(readFileSync(join(ROOT, 'src/pages/Report.jsx'), 'utf8'));
+  assert.match(src, /const \[linesLoaded, setLinesLoaded\] = useState\(false\)/,
+    'ต้องมีธงว่าทะเบียนไลน์ settle แล้วหรือยัง');
+  assert.match(src, /if \(needsLines && !linesLoaded\) return undefined;/,
+    '🔴 ยังไม่รู้ขอบเขตต้องคืน undefined ห้ามคืน [] (ซึ่งแปลว่า "ไม่มีไลน์ในขอบเขต")');
+  assert.match(src, /if \(allowedLineNames === undefined\) \{ setLoading\(true\); return; \}/,
+    '🔴 ยังไม่รู้ขอบเขต = ห้ามยิงคิวรี และต้องคา loading ไว้');
+  assert.match(src, /setLinesLoaded\(true\)/, 'โหลดล้มก็ต้องปลดล็อก ไม่งั้นจอค้างหมุนตลอด');
+  assert.match(src, /\.finally\(\(\) => setLinesLoaded\(true\)\)/,
+    'ต้องตั้งธงใน finally (ทั้งสำเร็จและล้ม) ไม่ใช่เฉพาะ then');
+  /* เฟรมแรกต้องเป็น Loader ไม่ใช่ "ไม่มีข้อมูล" — บรรทัดนี้จัดคอลัมน์แบบเฉพาะของ FourMTab */
+  assert.match(src, /const \[loading, {5}setLoading\] {5}= useState\(true\);/,
+    '🔴 loading ของ FourMTab ต้องเริ่ม true — เริ่ม false = เฟรมแรกประกาศว่าไม่มีข้อมูล');
+});
+
+test('🏖️ holiday-break-single-entry — เวลาพักวันหยุด/กฎวันทำงาน ต้องมีชุดเดียว', () => {
+  /* 27/10 (คำสั่ง user): วันที่ปฏิทินบอกว่าไม่ใช่วันทำงาน พักเที่ยง 50 → 60 นาที
+     🔴 ค่าเป็นของโรงงาน ไม่ใช่ตรรกะ ⇒ อยู่ในทะเบียน `break_policies.duration_min_holiday`
+        ห้ามฝังเลขในโค้ด (วันหลังเปลี่ยนเป็น 45/70 จะต้องรอโปรแกรมเมอร์)
+     🔴 กฎ "วันไหนคือวันทำงาน" มีชุดเดียว = `isWorkingDayFrom()` ใน utils/workingDay.js
+        — ตัวนับวันทำงานในเดือน (companyCalendar) ต้องเรียกตัวเดียวกัน ไม่งั้นตัวนับวัน
+          กับการหักเวลาพักจะไม่ตรงกัน แล้วหาไม่เจอว่าจอไหนถูก */
+  const bad = [];
+  const oee = stripComments(readFileSync(join(ROOT, 'src/utils/oee.js'), 'utf8'));
+  if (!/applyHolidayBreaks\s*\(/.test(oee)) bad.push('src/utils/oee.js: ไม่ได้เรียก applyHolidayBreaks()');
+
+  const cal = stripComments(readFileSync(join(ROOT, 'src/utils/companyCalendar.js'), 'utf8'));
+  if (!/isWorkingDayFrom\s*\(/.test(cal)) bad.push('companyCalendar.js: countWorkingDaysInMonth ไม่ได้ใช้ isWorkingDayFrom()');
+  if (!/setDayTypeMap\s*\(/.test(cal)) bad.push('companyCalendar.js: โหลดปฏิทินแล้วไม่ได้ป้อนให้ workingDay.js');
+
+  /* workingDay.js ต้องบริสุทธิ์ — oee.js import มัน และ oee.js มีเทสที่รันใน node */
+  const wd = readFileSync(join(ROOT, 'src/utils/workingDay.js'), 'utf8');
+  if (/from\s+['"]\.\.?\/supabaseClient/.test(wd)) bad.push('workingDay.js: ห้าม import supabaseClient (เทสจะพัง)');
+
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n  ')
+    + '\n\n   หักเวลาพักผิด = ฐานเวลาของ %A/%P ผิดทั้งกะ โดยไม่มีใครเห็นบนจอ\n');
+});
+
+test('📤 cross-line-close-guards — ปิดใบข้ามไลน์ต้องผ่านด่านครบ 3 ข้อ', () => {
+  /* 30/10 (คำสั่ง user): *"เวลาปิดออเดอร์ให้สแกนจากไลน์ไหนก็ได้ … แค่ให้คอนเฟิร์ม"*
+     เปิดทางให้ปิดใบของไลน์อื่น = เปิดช่องผิดพลาด 3 แบบที่ "เงียบ" ทั้งหมด ⇒ ด่านนี้กันของหาย:
+     ① `prod_no` ไม่ unique เชิงโครงสร้าง (ของจริง 30/10: LINE A ใช้เลข `35`/`42`/`43`/`45`)
+        ⇒ เจอหลายใบต้อง `ambiguous` ให้คนเลือก **ห้ามเดา**
+     ② กะเจ้าของใบที่ `pending_close`/`closed` **stamp ยอด/OEE ไปแล้ว** ⇒ ห้ามปิดใบย้อนหลัง
+     ③ ปิดใบไลน์อื่น = เขียนข้ามหน่วยงาน · ฝั่ง DR วิ่ง `anon` **ไม่มีด่านฝั่ง DB**
+        ⇒ `canWriteLine` ในตัวเขียนเป็นด่านเดียวที่มี */
+  const bad = [];
+  const CL = 'src/utils/crossLineClose.js';
+  const cl = readFileSync(join(ROOT, CL), 'utf8');
+  if (/from\s+['"]\.\.?\/supabaseClient/.test(cl)) bad.push(`${CL}: ห้าม import supabaseClient (ต้อง pure · มีเทส)`);
+  const clCode = stripComments(cl);
+  if (!/'ambiguous'/.test(clCode)) bad.push(`${CL}: ① หายไป — เลขซ้ำต้องคืน 'ambiguous' ห้ามเดาใบให้`);
+  if (!/'shift_locked'/.test(clCode)) bad.push(`${CL}: ② หายไป — กะที่ปิดแล้วต้องคืน 'shift_locked'`);
+  /* ⓪ ใบ manual ต้องปิดด้วย "ยอดจริง" (handleManualClose เขียน qty/qty_ok/qty_actual + log + syncPairQty)
+     ปิดแบบใบสแกนจะ stamp "เป้า" แทนยอดจริง = OEE + ยอดเข้าคลังเพี้ยนเงียบ */
+  if (!/is_manual[\s\S]{0,80}'manual_only_owner'/.test(clCode))
+    bad.push(`${CL}: ⓪ หายไป — ใบ is_manual ต้องคืน 'manual_only_owner' ห้ามปิดข้ามไลน์`);
+  /* ข้อความพวกนี้ถูกเรนเดอร์เป็น plain text — markdown ที่หลุดมาจะโผล่เป็นตัวอักษรดิบบนจอหน้างาน */
+  for (const m of clCode.matchAll(/return\s+`[^`]*\*\*[^`]*`/g))
+    bad.push(`${CL}: ข้อความขึ้นจอมี ** (markdown ไม่ถูกเรนเดอร์) — ${m[0].slice(0, 50)}…`);
+
+  /* ตัวเขียนจริงในหน้า — ดู "ในตัวฟังก์ชัน" ไม่ใช่ทั้งไฟล์ (ทั้งไฟล์มี canWriteLine ของแผงอื่นอยู่แล้ว) */
+  const DR = 'src/pages/DailyReport.jsx';
+  const dr = stripComments(readFileSync(join(ROOT, DR), 'utf8'));
+  const fn = dr.match(/const\s+doCrossLineClose\s*=[\s\S]*?\n  \};/);
+  if (!fn) bad.push(`${DR}: หา doCrossLineClose ไม่เจอ — เปลี่ยนชื่อแล้วต้องแก้ด่านนี้ด้วย`);
+  else {
+    const body = fn[0];
+    if (!/canWriteLine\s*\(/.test(body)) bad.push(`${DR} doCrossLineClose: ③ ไม่ได้เช็ค canWriteLine — ปิดใบข้ามหน่วยงานได้ฟรี`);
+    if (!/unknownTarget:\s*'block'/.test(body)) bad.push(`${DR} doCrossLineClose: ไลน์ที่ผังไม่รู้จักต้อง block (fail-closed)`);
+    if (!/crossLineCloseState\s*\(/.test(body)) bad.push(`${DR} doCrossLineClose: ② ไม่ได้เช็คซ้ำตอนกดจริง (การ์ดบนจอเป็นแค่ภาพตอนค้น)`);
+    if (!/checkWriteRows\s*\(/.test(body)) bad.push(`${DR} doCrossLineClose: ต้องนับแถว — RLS/แข่งกันปิด = "สำเร็จ 0 แถว ไม่มี error"`);
+    if (!/\.eq\(\s*'status'\s*,\s*'open'\s*\)/.test(body)) bad.push(`${DR} doCrossLineClose: ต้อง CAS .eq('status','open') กันปิดซ้ำ`);
+  }
+  /* 🔴 ห้าม auto-confirm ใบข้ามไลน์จาก Enter ของเครื่องสแกน — สแกนพลาด = ปิดใบไลน์อื่นเงียบ */
+  const chg = dr.match(/const\s+handleCloseProdNoChange\s*=[\s\S]*?\n  \};/);
+  if (chg && /hasEnter\s*&&\s*!found[\s\S]{0,120}doCrossLineClose/.test(chg[0]))
+    bad.push(`${DR}: ห้าม auto-confirm ใบข้ามไลน์จาก Enter ของเครื่องสแกน — ต้องให้คนกดยืนยัน`);
+
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n  ')
+    + '\n\n   ปิดใบผิดไลน์ = ยอด/OEE ของไลน์ที่ไม่เกี่ยวเปลี่ยน โดยไม่มีใครเห็นบนจอ\n');
+});
+
+test('☕ break-policy-cols-central — เลือกคอลัมน์ break_policies เองต้องใช้ชุดกลาง', () => {
+  /* 27/10: เพิ่มคอลัมน์ `duration_min_holiday` (นาทีพักวันหยุด) แล้วพบว่ามี 6 จุด
+     เลือกคอลัมน์เองไว้ ⇒ จอพวกนั้นจะคิดเวลาพักวันหยุดเป็นค่าปกติ ขณะที่จอหลักคิดค่าวันหยุด
+     = **ตัวเลข OEE 2 ชุดของกะเดียวกัน** (สิ่งที่ user สั่งว่าห้ามมี: "เลขเรื่องเดียวกันต้องคิดเหมือนกัน")
+     ⇒ ต้อง `select('*')` หรือ `select(BREAK_POLICY_COLS)` เท่านั้น — เพิ่มคอลัมน์ใหม่เติมที่เดียว */
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
+    if (/oeeMasters\.js$/.test(file)) continue;
+    const src = stripComments(readFileSync(file, 'utf8'));
+    for (const m of src.matchAll(/from\(\s*'break_policies'\s*\)\s*\.select\(\s*([^)]+?)\s*\)/g)) {
+      const arg = m[1].trim();
+      if (arg !== "'*'" && arg !== '"*"' && arg !== 'BREAK_POLICY_COLS') {
+        bad.push(`${file.replace(ROOT, '')}: select(${arg.slice(0, 60)}…) — ใช้ BREAK_POLICY_COLS แทน`);
+      }
+    }
+  }
+  assert.deepEqual(bad, [], '\n\n❌ เลือกคอลัมน์ break_policies เอง:\n  ' + bad.join('\n  ')
+    + "\n\n   import { BREAK_POLICY_COLS } from '<path>/utils/oeeMasters';\n"
+    + '   ขาดคอลัมน์ = จอนั้นหักเวลาพักคนละแบบกับจออื่น = OEE 2 ชุดของกะเดียวกัน\n');
+});
+
+/* 🛡️ line-registry-load-visible (2026-10-28 · เคสจริง หัวหน้า PD1)
+   หน้างานแจ้ง *"ไม่มีไลน์ให้เลือกในลิสต์"* — ไล่แล้วไม่ใช่เรื่องสิทธิ์ (RLS select ของ
+   `production_lines` = `true` · ขอบเขตของบัญชีนั้นคืนครบทุกไลน์เมื่อรันกับผังจริง)
+   ต้นเหตุคือ `loadLinesRes()` เคยคืน `error: null` ตายตัว แล้วจอเขียน `setLines(data || [])`
+   ⇒ อ่านทะเบียนพลาด = ลิสต์ว่าง **เงียบ** = จอบอกว่า "ไม่มีไลน์" ทั้งที่แปลว่า "อ่านไม่ได้"
+   (กฎเขียน DB ข้อ 12: `catch {}` แล้วโชว์ "ไม่มีข้อมูล" = จอโกหก)
+   ⇒ ด่าน 2 ชั้น: util ต้องคืน error จริง · จอต้องไม่ทับลิสต์เดิมด้วยผลที่ล้มเหลว */
+test('🛡️ line-registry-load-visible — ลิสต์ไลน์ว่างต้องแยก "ไม่มีของ" ออกจาก "อ่านไม่ได้"', () => {
+  const bad = [];
+  const util = stripComments(readFileSync(join(ROOT, 'src/utils/useProductionLines.js'), 'utf8'));
+  if (/loadLinesRes\s*=\s*async\s*\(\)\s*=>\s*\(\{[^}]*error:\s*null/.test(util))
+    bad.push('useProductionLines.loadLinesRes (กลับไปคืน error: null ตายตัว — จอแยกไม่ออกว่าว่างเพราะอะไร)');
+  if (!/masterLoadState\(/.test(util))
+    bad.push('useProductionLines.loadLinesRes (ไม่ได้อ่านผลล้มจาก masterLoadState — error จะไม่มีวันถูกตั้ง)');
+
+  for (const f of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const src = stripComments(readFileSync(f, 'utf8'));
+    if (!/loadLinesRes\s*\(/.test(src)) continue;
+    /* แกะผลโดยไม่เอา error ออกมาเลย = กลืนความล้มเหลวซ้ำรอยเดิม */
+    if (/const\s*\{\s*data\s*\}\s*=\s*await\s+loadLinesRes\s*\(/.test(src))
+      bad.push(`${relative(ROOT, f)} (แกะแค่ { data } จาก loadLinesRes — อ่านพลาดแล้วลิสต์ว่างเงียบ)`);
+    /* 🔴 30/10 — รอบแรกด่านนี้จับแค่รูป `const { data } = await loadLinesRes()` ⇒ **หลุด**
+       รูปที่หน้างานเจอจริง: เรียกใน `Promise.all` แล้วแกะเป็น array
+       (`const [{ data: ln }, …] = await Promise.all([ loadLinesRes(), … ])`)
+       หน้างาน PD1 แจ้ง 30/10 "MO ไม่มีให้เลือกไลน์" ทั้งที่ฐานข้อมูลมี 5 ไลน์ของ PD1 ครบ
+       ⇒ จับเพิ่ม: หา `Promise.all([…])` ที่มี `loadLinesRes()` อยู่ในอาร์เรย์ แล้วดูว่า
+         ตัวแปรฝั่งซ้าย **ตำแหน่งเดียวกัน** ถูกแกะเป็น `{ … }` (= ทิ้ง error) หรือไม่
+       🔴 ห้ามเปลี่ยนเป็นกฎหยาบ "ไฟล์ไหนเรียกต้องมี .error" — เคยลองแล้วเหมาไป 15+ ไฟล์
+         ที่ยังไม่ได้กวาด (ดู §หนี้ที่เหลือ ใน docs/modules/mtn-work-order.md) ⇒ ด่านจะเขียวไม่ได้เลย */
+    const splitTop = (txt) => {              // แยก , ชั้นบนสุด (ข้าม () [] {} และสตริง)
+      const out = []; let d = 0, q = '', cur = '';
+      for (const ch of txt) {
+        if (q) { cur += ch; if (ch === q) q = ''; continue; }
+        if (ch === '"' || ch === "'" || ch === '`') { q = ch; cur += ch; continue; }
+        if ('([{'.includes(ch)) d++;
+        if (')]}'.includes(ch)) d--;
+        if (ch === ',' && d === 0) { out.push(cur); cur = ''; continue; }
+        cur += ch;
+      }
+      out.push(cur); return out;
+    };
+    for (const m of src.matchAll(/const\s*\[([^\]]*)\]\s*=\s*await\s+Promise\.all\(\s*\[/g)) {
+      const lhs = splitTop(m[1]);
+      // หาเนื้อในวงเล็บของ Promise.all แบบนับวงเล็บ (array literal อาจมี [] ซ้อน)
+      let i = m.index + m[0].length, d = 1, body = '';
+      for (; i < src.length && d > 0; i++) {
+        const ch = src[i];
+        if (ch === '[') d++;
+        if (ch === ']') { d--; if (!d) break; }
+        body += ch;
+      }
+      const args = splitTop(body);
+      args.forEach((a, idx) => {
+        if (!/loadLinesRes\s*\(/.test(a)) return;
+        if (/mrows\s*\(/.test(a)) return;                    // โยน error ต่อ = ถูกแล้ว
+        const el = lhs[idx] ?? '';
+        if (/^\s*\{/.test(el) && !/\berror\b/.test(el))   // แกะ `{ data, error }` ไว้แล้ว = ถูกแล้ว
+          bad.push(`${relative(ROOT, f)} (loadLinesRes ใน Promise.all ตำแหน่งที่ ${idx + 1} ถูกแกะเป็น { … } ไม่เอา error — หล่นหาย)`);
+      });
+    }
+  }
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n   ') + '\n'
+    + '   ทำไม: จอบอก "ไม่มีไลน์" ทั้งที่ไลน์ยังอยู่ครบ — หน้างานสรุปว่าไลน์ถูกลบ\n'
+    + '   แก้: const { data, error } = await loadLinesRes() · error = คงลิสต์เดิม + เขียนบนจอ ห้าม setLines([])\n');
+});
+
 /* ═══ 👨‍🔧 "หัวหน้างานของไลน์" = หลายคน/หลายกะ — ห้ามกลับไปใช้ head_name ช่องเดียว (2026-10-28) ═══
    คำพูด user: *"ไลน์นึง มีหัวหน้าได้ 2-3 คน แล้วแต่ว่ามีกี่กะการทำงาน บางที่ 1 กะ บางที่ 2 กะ บางที่ 3 กะ"*
    วัดจริง 28/10 (13 ไลน์ที่กรอก `production_lines.head_name` ไว้): ช่องเดียวถูกกรอกเป็น **3 ความหมายปนกัน**
@@ -7419,14 +7616,75 @@ test('👨‍🔧 line-heads-single-source — จอตั้งค่าไล
   if (!/shiftFromTeam\s*\(/.test(util)) bad.push('lineHeads.js (ไม่ได้ใช้ shiftFromTeam — เดากะเอง?)');
   if (/['"]A['"]\s*(===|==)\s*team|team\s*(===|==)\s*['"]A['"]/.test(util))
     bad.push('lineHeads.js (เทียบทีม A ตรงๆ = เดาว่า A คือกะเช้า)');
-  /* ไลน์ลูกห้ามดันหัวหน้าขึ้นไปให้ไลน์แม่ — ต้องไล่ขึ้น (ancestors) เท่านั้น */
-  if (!/lineAncestorIds/.test(util) || /getLineFamilyIds|getChildLineNames/.test(util))
-    bad.push('lineHeads.js (ต้องไล่ขึ้นหาไลน์แม่เท่านั้น ห้ามดึงจากไลน์ลูก)');
+  /* ── 🔴 2 ทะเบียนตอบคนละคำถาม (28/10 รอบ 2) ─────────────────────────────────────
+     "ดูแลไลน์ไหน" = widerLineId(profiles, employees) — ไม่ใช้ = ไลน์แม่ที่หัวหน้าสังกัดไลน์ลูก
+     จะขึ้นว่า "ไม่มีหัวหน้า" ทั้งที่มี (เคสจริง Assembly Line D) */
+  if (!/widerLineId/.test(util)) bad.push('lineHeads.js (ไม่ได้ใช้ widerLineId — ขอบเขตไลน์ผิด)');
+  /* "เป็นหัวหน้าไหม" ต้องตัดสินด้วย levelOfPosition ของ employees เท่านั้น
+     role ของบัญชี = ชุดสิทธิ์ใช้ระบบ ไม่ใช่ตำแหน่งงาน (กฎ CLAUDE.md §Role System) */
+  if (!/levelOfPosition\s*\(/.test(util))
+    bad.push('lineHeads.js (ไม่ได้ตัดสินตำแหน่งจาก levelOfPosition)');
+  if (/picked\s*=\s*profiles|profiles\.filter\([^)]*role[^)]*\)\s*\.map\(.*=>.*rows/.test(util))
+    bad.push('lineHeads.js (เอา profiles.role มาเป็นตำแหน่งงาน — role คือชุดสิทธิ์ ไม่ใช่ตำแหน่ง)');
+  /* ที่ 2 ทะเบียนไม่ตรงกันต้องฟ้อง ห้ามเงียบ */
+  if (!/conflicts/.test(util)) bad.push('lineHeads.js (ไม่มี conflicts — ข้อมูลไม่ตรงกันแล้วเงียบ)');
+  /* 🔑 จับคู่บัญชี↔พนักงาน ต้องใช้ FK `profiles.employee_id` ก่อน ชื่อเป็นท่าสุดท้าย
+     (กฎ CLAUDE.md: ทะเบียนที่จับคู่ด้วย "ข้อความ" คือกับดัก — มี FK ให้ใช้ ต้องใช้ FK)
+     เคยพลาด: "ณัฐพล  คำผาง" เว้น 2 เคาะ จับไม่ติด = หัวหน้าหายทั้งไลน์ */
+  if (!/employee_id/.test(util)) bad.push('lineHeads.js (ไม่ได้ใช้ profiles.employee_id — จับคู่ด้วยชื่อล้วน)');
+  for (const f of ['src/pages/LineSetup.jsx', 'src/pages/Report.jsx']) {
+    const code = stripComments(readFileSync(join(ROOT, f), 'utf8'));
+    /* เจาะเฉพาะคิวรี "บัญชีหัวหน้า" (กรอง role leader/supervisor) — หน้าเดียวกันมีคิวรี profiles อื่นด้วย */
+    for (const q of code.match(/from\(\s*['"]profiles['"]\s*\)[\s\S]{0,200}?\['leader',\s*'supervisor'\]/g) || []) {
+      if (!/employee_id/.test(q))
+        bad.push(`${f} (คิวรีบัญชีหัวหน้าไม่ได้ดึง employee_id ⇒ ถอยไปจับคู่ด้วยชื่อเงียบๆ)`);
+    }
+  }
+  for (const f of ['src/pages/LineSetup.jsx', 'src/pages/Report.jsx']) {
+    const code = stripComments(readFileSync(join(ROOT, f), 'utf8'));
+    if (!/lineHeads\.conflicts/.test(code)) bad.push(`${f} (ไม่ได้เขียน conflicts บนจอ)`);
+    if (!/headScopeLineIds\s*\(/.test(code))
+      bad.push(`${f} (คิวรีพนักงานไม่ได้ใช้ headScopeLineIds — ไลน์ลูกไม่ถูกดึง หัวหน้าหาย)`);
+  }
 
   assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n'
     + '   ทำไม: `production_lines.head_name` เป็นข้อความช่องเดียว ⇒ ตอบ "ใครเป็นหัวหน้ากะไหน" ไม่ได้\n'
     + '   แก้: lineHeadsOf({ lineId, lines, employees, maps, legacyName }) จาก src/utils/lineHeads.js\n'
     + '        head_name ส่งเป็น legacyName ได้อย่างเดียว (ชื่อที่พิมพ์ทับ) ห้ามเป็นแหล่งหลัก\n');
+});
+
+/* ═══ 🏭 line-registry-empty-is-not-truth — cache ซ้อน cache ห้ามจด "ลิสต์ว่าง" เป็นของจริง ═══ 28/10
+   เคสจริง (หน้างานแจ้งในไลน์ 20:50): *"วันนี้เป็นของ600 ครับ เปิดกะไม่ได้ครับ · 250 ตัน ใช้งานได้ปกติ"*
+   ช่อง "ไลน์การผลิต" ในโมดัลเปิดกะ **ว่างเปล่า** และไม่มีอะไรบนจอบอกว่าทำไม
+   ลูกโซ่:
+     1. `loadProductionLines()` ล้ม → `cachedMaster` กลืน error คืน `[]` (ถูกแล้วตามสัญญาของมัน)
+     2. `loadLinesRes()` ห่อเป็น `{ data: [], error: null }` = **"สำเร็จ แต่ว่าง"**  ← ตรงนี้คือจุดโกหก
+     3. หน้าเอาไปใส่ `cachedMaster('production_lines:dr', …)` อีกชั้น ⇒ ชั้นนอกคิดว่าสำเร็จ
+        แล้ว **`lsWrite([])` ลง localStorage อายุ 4 ชม.**
+     ⇒ เครื่องนั้นเปิดกะไม่ได้ยาว 4 ชม. ส่วนเครื่องอื่นปกติ = "บางคนได้ บางคนไม่ได้"
+   กฎ: **helper ที่ห่อ cache ชั้นในต้องส่งต่อความล้ม** ไม่งั้นชั้นนอกจดความว่างนั้นเป็นข้อเท็จจริง */
+test('🏭 line-registry-empty-is-not-truth — loadLinesRes ต้องส่งต่อความล้ม ไม่ใช่ error:null เสมอ', () => {
+  const src = stripComments(readFileSync(join(ROOT, 'src/utils/useProductionLines.js'), 'utf8'));
+  assert.doesNotMatch(src, /export const loadLinesRes = async \(\) => \(\{[^}]*error: null[^}]*\}\);/,
+    '\n\n❌ loadLinesRes คืน `error: null` เสมอ = ชั้นนอกจะจดลิสต์ว่างลง localStorage 4 ชม.\n'
+    + '   แก้: เช็ค masterLoadState(KEY) แล้วคืน error เมื่อล้มและไม่มีของเก่าให้ใช้\n');
+  assert.match(src, /masterLoadState\(KEY\)/, 'ต้องอ่านธงล้มของ cache ชั้นในก่อนบอกว่าสำเร็จ');
+  assert.match(src, /error: fail \? new MasterLoadError\(fail\) : null/,
+    'ต้องคืน error จริงให้ชั้นนอกแยก "อ่านไม่สำเร็จ" ออกจาก "ว่างจริง" (mrows จะ throw ต่อให้เอง)');
+
+  /* ฝั่งจอ: ลิสต์ว่างต้องเขียนบนจอว่าเพราะอะไร + ปุ่มเปิดกะต้องกดไม่ได้ */
+  const dr = stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'));
+  assert.match(dr, /const openableLines = useMemo/, 'ชุดไลน์ของช่องเลือกต้องคิดที่เดียว ใช้ร่วมทั้ง dropdown · คำเตือน · ปุ่ม');
+  assert.match(dr, /pickerLines\(lines, \{ role, lineId: userLineId, sections: scopeSecs, scopeIdx \}\)/,
+    '🪧 ลิสต์ของช่องเลือกต้องมาจากของกลาง (fail-open) ห้ามเอา Set ขอบเขตมากรองเอง');
+  /* 🔴 ลิสต์ที่เห็นเป็น fail-open ⇒ **ด่านจริงต้องอยู่ตอนเขียน** ไม่งั้นเปลี่ยนค่าใน dropdown = เปิดกะข้ามไลน์ */
+  assert.match(dr, /if \(openScopeLineNames && !openScopeLineNames\.has\(openForm\.line_name\)\)/,
+    '🔴 handleOpenSession ต้องเช็คขอบเขตซ้ำก่อน insert (กฎสิทธิ์ชั้น ③)');
+  assert.match(dr, /!openableLines\.length && \(/, '🔴 ลิสต์ว่างต้องขึ้นเหตุผลบนจอ ห้ามปล่อยช่องเปล่าเงียบ');
+  assert.match(dr, /disabled=\{!openForm\.line_name \|\| openingSession \|\| !openableLines\.length\}/,
+    '🔴 ไม่มีไลน์ให้เลือก = ปุ่มเปิดกะต้องกดไม่ได้ (กดแล้วเงียบ = คนไม่รู้ว่าติดตรงไหน)');
+  assert.match(dr, /invalidateMaster\('production_lines:dr'\)/,
+    'ปุ่มโหลดใหม่ต้องล้าง cache ชั้นนอกด้วย ไม่งั้นได้ลิสต์ว่างเดิม');
 });
 
 test('🛡️ notify-no-insert-per-recipient — ห้าม insert `notifications` ทีละคนในลูป', () => {
@@ -7464,4 +7722,188 @@ test('🛡️ notify-no-insert-per-recipient — ห้าม insert `notificati
     + '   แก้ยังไง: รวมผู้รับเป็น array แล้ว `.insert(ids.map(uid => ({...})))` ครั้งเดียว\n'
     + '        และกรองคนที่เพิ่งได้ไปแล้วออกก่อนเขียน (withoutRecentSame / withoutUnreadFor)\n\n'
     + hits.map(h => '   • ' + h).join('\n') + '\n');
+});
+
+/* ═══ 🔭 leader-scope-no-silent-fallopen — ชี้ไลน์ไม่ได้ ห้ามกลายเป็น "เห็นทั้งโรงงาน" ═══ 28/10
+   เคสจริง (หัวหน้าไลน์ LWR แจ้ง 21:15): *"กลายเป็นเห็นของทุกไลน์ แต่เปิดกะเลือกไลน์ตัวเองไม่ได้"*
+   ข้อมูลบัญชีเขาถูกต้องครบ (role=leader · line_id ตรงกันทั้ง profiles/employees · sections=[PD4])
+   ต้นเหตุเดียว = **ทะเบียนไลน์ในเครื่องว่าง** แล้วโค้ด 2 ที่ตอบคนละทาง:
+     · รายการกะ   `if (myLine) {กรอง}` — **ไม่มี else** ⇒ หาไลน์ไม่เจอ = ไม่กรองเลย = เห็นทั้งโรงงาน
+       ซ้ำร้าย ตาข่ายส่วนงานข้างล่างเขียน `role !== 'leader'` ⇒ หัวหน้ากลุ่มไม่มีด่านสักชั้น
+     · ช่องเลือกไลน์ `getLineFamilyNames(lines, id)` ⇒ ว่าง = เลือกไม่ได้
+   ⇒ สาเหตุเดียว อาการตรงข้าม (fail-open ฝั่งดู · fail-closed ฝั่งเลือก) — หาต้นเหตุยากมาก
+   กฎ: **"ยังตัดสินขอบเขตไม่ได้" ห้ามแปลว่า "ไม่จำกัด"** · ถอยไปแกนที่กว้างรองลงมา + เขียนบนจอ */
+test('🔭 leader-scope-no-silent-fallopen — กรองด้วยไลน์ไม่ได้ ต้องถอยไปส่วนงาน ไม่ใช่ปล่อยผ่าน', () => {
+  const src = stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'));
+  assert.match(src, /let scopedByLine = false;/,
+    'ต้องมีธงว่า "กรองด้วยไลน์สำเร็จไหม" — ไม่งั้นแยก "ไม่มีไลน์" ออกจาก "ไม่จำกัด" ไม่ได้');
+  assert.match(src, /if \(!scopedByLine && scopeSecs\.length\)/,
+    '🔴 ตาข่ายส่วนงานต้องครอบหัวหน้ากลุ่มที่ชี้ไลน์ไม่ได้ด้วย ห้ามเขียน `role !== \'leader\'`');
+  assert.doesNotMatch(src, /if \(role !== 'leader' && scopeSecs\.length\)/,
+    '🔴 เงื่อนไขเดิมกันหัวหน้ากลุ่มออกจากตาข่าย = ไม่มีด่านสักชั้นเมื่อทะเบียนไลน์ว่าง');
+  assert.match(src, /setScopeUnsure\(role === 'leader' && !!userLineId && !scopedByLine\)/,
+    'ต้องจำไว้ว่ารอบนี้ตัดสินขอบเขตไม่ได้');
+  assert.match(src, /\{scopeUnsure && \(/,
+    '🔴 รายการกว้างกว่าที่ควร = ต้องเขียนบนจอ ห้ามให้คนเข้าใจว่าได้สิทธิ์ดูทุกไลน์แล้ว');
+});
+
+/* ═══ 🪪 link-suggest-must-check-taken — ห้ามเสนอผูกพนักงานที่ถูกจองไปแล้ว ═══ 2026-10-28
+   เคสจริง (หน้างาน 21:19): กดปุ่ม "ผูกได้เลย" แล้วเด้ง error ดิบจาก Postgres
+   `duplicate key value violates unique constraint "profiles_employee_id_uniq"` ×2
+   ต้นเหตุ: `employeeCandidates()` จับคู่จาก**ชื่อ**อย่างเดียว ไม่รู้ว่าพนักงานคนนั้น
+   ถูกบัญชีอื่นผูกไปแล้ว ⇒ จอเสนอทางที่ **ล้มเหลวแน่นอน 100%**
+   ("ธวัช  พิมพ์วงศ์" มี 2 บัญชี ต่างกันแค่จำนวนช่องว่าง — ตัวหนึ่งผูกแล้ว อีกตัวยังค้าง)
+   🔴 ซ่อนคนที่ถูกจองออกไม่ได้ — จอจะบอก "ไม่มีชื่อนี้ในทะเบียนพนักงาน" ซึ่งไม่จริง
+      ⇒ ต้องโชว์ + ติดป้ายว่าใครถืออยู่ + ไม่นับเป็น "ผูกได้เลย" */
+test('🪪 link-suggest-must-check-taken — คนที่ถูกผูกแล้วต้องไม่ถูกเสนอเป็น "ผูกได้เลย"', async () => {
+  const m = await import('../identityMatch.js');
+  const emps = [{ id: 'e1', name: 'ธวัช  พิมพ์วงศ์', is_active: true }];
+  const users = [
+    { id: 'a', full_name: 'ธวัช พิมพ์วงศ์', employee_id: 'e1' },
+    { id: 'b', full_name: 'ธวัช  พิมพ์วงศ์', employee_id: null },
+  ];
+  const row = m.unlinkedTriage(users, emps).queue.find(x => x.u.id === 'b');
+  assert.equal(row.confident, false, '🔴 คนที่ถูกจองแล้วห้ามเป็น "ผูกได้เลย" (กดแล้วชน unique แน่นอน)');
+  assert.equal(row.rows.length, 1, 'ต้องยังโชว์ — ซ่อน = จอบอก "ไม่มีชื่อนี้ในทะเบียน" ซึ่งไม่จริง');
+  assert.ok(row.rows[0].takenByName, 'ต้องติดป้ายว่าบัญชีไหนถืออยู่');
+  assert.equal(m.routeHint(row).key, 'taken', 'ป้ายบนจอต้องบอกว่าถูกผูกไปแล้ว ไม่ใช่ "ผูกได้เลย"');
+  /* คนที่ยังว่าง = พฤติกรรมเดิมเป๊ะ */
+  const free = m.unlinkedTriage([{ id: 'c', full_name: 'ก ข', employee_id: null }],
+    [{ id: 'e9', name: 'ก ข', is_active: true }]).queue[0];
+  assert.equal(free.confident, true, 'คนที่ยังไม่ถูกจอง ต้องยังเสนอ "ผูกได้เลย" เหมือนเดิม');
+
+  /* ฝั่งจอ: เช็คก่อนเขียน + แปล error ดิบเป็นภาษาคน */
+  const au = stripComments(readFileSync(join(ROOT, 'src/pages/AddUser.jsx'), 'utf8'));
+  assert.match(au, /const holder = users\.find\(x => x\.employee_id === emp\.id && x\.id !== u\.id\)/,
+    '🔴 ต้องเช็คก่อนเขียนว่าพนักงานคนนี้ถูกบัญชีอื่นถืออยู่ไหม');
+  assert.match(au, /res\?\.error\?\.code === '23505'/,
+    '🔴 ชนแม้เช็คแล้ว (จอถือรายชื่อเก่า) ต้องบอกให้รีเฟรช ห้ามโชว์ error ดิบของ Postgres');
+});
+
+/* ═══ 🧹 logout-clears-master-cache — "ออกจากระบบแล้วเข้าใหม่" ต้องเป็นทางแก้จริง ═══ 28/10
+   คำพูด user: *"Logout แล้ว login ใหม่หายมั้ย · incognito หน้างานไม่เข้าใจ แย่ๆ"* — ถูกต้อง
+   เดิม logout ไม่ล้าง cache ทะเบียนกลางเลย ⇒ ของพิษ (ลิสต์ไลน์ว่างที่ถูกจดไว้ 4 ชม.) ยังค้าง
+   ⇒ ทางแก้เดียวที่เหลือคือ "เปิด incognito" ซึ่ง**หน้างานทำตามไม่ถูก**
+   ⇒ ต้องมีประโยคเดียวที่ทุกคนทำได้: ออกจากระบบ → เข้าใหม่ */
+test('🧹 logout-clears-master-cache — logout ต้องล้าง cache ทะเบียนกลางของเครื่องนั้น', () => {
+  const mc = stripComments(readFileSync(join(ROOT, 'src/utils/masterCache.js'), 'utf8'));
+  assert.match(mc, /export function clearAllMasterCache\(\)/, 'ต้องมีตัวล้าง cache ทั้งเครื่อง');
+  assert.match(mc, /cache\.clear\(\);[\s\S]{0,60}failures\.clear\(\);/,
+    'ล้างทั้ง memory และธงล้ม ไม่งั้นรอบหน้ายังถือสถานะเดิม');
+  const app = stripComments(readFileSync(join(ROOT, 'src/App.jsx'), 'utf8'));
+  const i = app.indexOf('clearAllMasterCache();');
+  assert.ok(i > 0, '🔴 handler logout ต้องเรียก clearAllMasterCache()');
+  assert.ok(app.indexOf("auth.signOut({ scope: 'local' })", i) - i < 200,
+    'ต้องล้างก่อน signOut ในก้อนเดียวกัน (ล้างทีหลัง = navigate ไปแล้ว)');
+});
+
+/* ═══ 🕵️ account-activity-never-vs-unknown — "ไม่เคยเข้า" ≠ "อ่านไม่ได้" ═══ 29/10
+   คำถาม user: *"บัญชีของคน คนไหนไม่มีการเข้าใช้เลยบ้าง · admin ดู last login ได้มั้ย
+                  จะได้ลบหรือปิดถูก"*
+   จอนี้เป็นจอที่ใช้ตัดสิน **ลบ/ปิดบัญชี** ⇒ เดาผิดข้างเดียวก็ลบบัญชีที่คนใช้อยู่ทุกวัน
+   `get_auth_users()` เป็น admin-only ⇒ คนที่เข้าหน้านี้ได้แต่ไม่ใช่ admin จะไม่ได้ค่านี้เลย
+   ⇒ undefined (ไม่รู้) ต้องไม่ถูกบีบเป็น null (ไม่เคยเข้า) ด้วย `|| null` เด็ดขาด */
+test('🕵️ account-activity-never-vs-unknown — ห้ามบีบ "อ่านไม่ได้" เป็น "ไม่เคยเข้าใช้"', () => {
+  const act = stripComments(readFileSync(join(ROOT, 'src/utils/accountActivity.js'), 'utf8'));
+  assert.match(act, /lastSignInAt === undefined/, 'ต้องแยกเคส undefined ออกมาก่อน');
+  assert.match(act, /lastSignInAt === null/,      'ต้องแยกเคส null ออกมาก่อน');
+  assert.doesNotMatch(act, /Date\.now\(\)/,
+    '🔴 ห้ามอ่านนาฬิกาในไฟล์กฎ — ต้องรับ now เข้ามา (ด่าน "นาฬิกา +400 วัน")');
+
+  const au = stripComments(readFileSync(join(ROOT, 'src/pages/AddUser.jsx'), 'utf8'));
+  assert.doesNotMatch(au, /last_sign_in_at:[^,\n]*\|\|\s*null/,
+    '🔴 `last_sign_in_at: … || null` = undefined กลายเป็น "ไม่เคยเข้าใช้" ⇒ ชวนลบบัญชีที่ยังใช้อยู่');
+  assert.match(au, /activityOf\(u\.last_sign_in_at/,
+    'คอลัมน์ต้องตัดสินผ่าน activityOf() ห้ามเทียบวันเองในหน้า');
+  assert.match(au, /ACT_UNKNOWN \? '—'/,
+    'อ่านไม่ได้ต้องขึ้นขีด ไม่ใช่ข้อความที่อ่านเหมือน "ไม่เคยเข้า"');
+});
+
+/* ═══ 🔭 line-scope-two-answers — "เห็นไลน์ไหน" ต้องมีคำตอบเดียว ═══ 29/10 (คำสั่ง user "ทำข้อ1")
+   คำพูด user: *"ทำไมปัญหานี้มันแก้ไม่จบไม่สิ้นซักที"* · *"เห็นของทุกไลน์ แต่เปิดกะเลือกไลน์ตัวเองไม่ได้"*
+   วัดได้จริงก่อนแก้ (29/10): บัญชีเดียวกัน หัวหน้าไลน์ลูก + sections=[ส่วนงานตัวเอง]
+     scopedLines()     → ไลน์ตัวเอง + ไลน์แม่ + ไลน์อื่นในส่วนงาน   (ช่องเลือกไลน์ ~20 จอ)
+     scopedLineNames() → ไลน์ตัวเองไลน์เดียว                        (กรองข้อมูล  ~22 จอ)
+   ⇒ กฎ 26/10 ("ไลน์ตัวเอง ∪ ส่วนงานที่กำกับ") ถูกใส่ไว้ที่ scopedLines ตัวเดียว อีกตัวไม่ได้ตาม
+   ⇒ ยุบให้ทั้งคู่เป็น wrapper ของ lineScope() · ห้ามแตกกลับเป็น 2 ตรรกะอีก
+   📄 เทสเชิงพฤติกรรม (ยิงเคสเดียวกันเข้า 2 ทาง) = src/utils/__tests__/lineScopeOneAnswer.test.mjs */
+test('🔭 line-scope-two-answers — scopedLines/scopedLineNames ต้องเป็น wrapper ของ lineScope()', () => {
+  const src = stripComments(readFileSync(join(ROOT, 'src/utils/sectionScope.js'), 'utf8'));
+  assert.match(src, /export function lineScope\(/, 'ต้องมีแกนเดียว lineScope()');
+
+  const body = (name) => {
+    const i = src.indexOf(`export function ${name}(`);
+    assert.ok(i > 0, `หา ${name} ไม่เจอ`);
+    // หยุดที่ "ฟังก์ชันถัดไป" ตัวใดก็ได้ ไม่ใช่แค่ที่ export (ไม่งั้นลากตัวช่วยที่อยู่ติดกันมาด้วย)
+    const ends = [src.indexOf('\nexport ', i + 10), src.indexOf('\nfunction ', i + 10)]
+      .filter(x => x > 0);
+    return src.slice(i, ends.length ? Math.min(...ends) : undefined);
+  };
+  for (const fn of ['scopedLines', 'scopedLineNames']) {
+    const b = body(fn);
+    assert.match(b, /lineScope\(/, `🔴 ${fn} ต้องเรียก lineScope() ห้ามคิดขอบเขตเอง`);
+    assert.doesNotMatch(b, /getLineFamilyNames\(/,
+      `🔴 ${fn} ไล่ครอบครัวไลน์เองอีกแล้ว = แตกเป็น 2 ตรรกะ ⇒ บั๊กเรื้อรังกลับมา`);
+    assert.doesNotMatch(b, /inSectionScope\(/,
+      `🔴 ${fn} กรองส่วนงานเองอีกแล้ว = แตกเป็น 2 ตรรกะ`);
+  }
+  /* ✅ 29/10 user สั่งยุบเป็นท่าเดียว ("ให้เห็นส่วนงานตัวเองทุกจอ")
+     ⇒ scopedLineNames ต้อง **ไม่** ขอท่า 'own' อีก · แยกกลับ = ต้องถาม user ใหม่
+     (พฤติกรรมจริงถูกคุมที่ scopeRegistryGate ข้อ E ซึ่งเล่นกับทะเบียนผู้ใช้จริง) */
+  assert.doesNotMatch(body('scopedLineNames'), /scope: 'own'/,
+    '🔴 scopedLineNames กลับไปใช้ท่า own = แยก 2 ประตูอีกครั้งโดยไม่ถาม user');
+  // ธง unsure ต้องมีอยู่ ไม่งั้น "ตัดขอบเขตไม่ได้" จะกลับไปเงียบเหมือนเดิม
+  assert.match(src, /unsure/, '🔴 ต้องคง unsure ไว้ให้จอเขียนบนจอ');
+  assert.match(src, /registry_unloaded/, 'ทะเบียนยังไม่โหลดต้องแยกเหตุผลไว้');
+  assert.match(src, /own_line_unknown/, 'หาไลน์ตัวเองไม่เจอต้องแยกเหตุผลไว้');
+});
+
+/* ═══ 🏭 line-registry-never-silent — ทะเบียนไลน์ล้ม ต้องมีจอบอกเสมอ ═══ 30/10 (หน้างานแจ้ง 29/10)
+   *"มันกรองไลน์ไม่ได้ครับ"* · *"แจ้งซ่อม MO JIG เลือกไลน์ผลิตไม่ได้ค่ะ ไม่มีข้อมูล"*
+   ตรวจแล้วไม่ใช่เรื่องสิทธิ์ — RLS ของ production_lines เปิดให้ทุกคนที่ login อ่าน (select = true)
+   ต้นเหตุ: `loadLinesRes()` คืน `{ data, error }` แต่ **82 จาก 89 จุดเรียกทิ้ง error ทิ้ง**
+   ⇒ โหลดล้ม = dropdown ไลน์ว่างพร้อมกันทั้งแอป โดยไม่มีจอไหนบอกเหตุ ⇒ หน้างานอ่านว่า "ไม่มีข้อมูล"
+   ⇒ ไล่แก้ทีละจอไม่มีวันครบ ⇒ ตาข่ายต้องอยู่ที่เดียวใน App.jsx และห้ามถอด */
+test('🏭 line-registry-never-silent — ต้องมีตาข่ายกลางบอกว่าทะเบียนไลน์โหลดไม่สำเร็จ', () => {
+  const alert = stripComments(readFileSync(join(ROOT, 'src/components/LineRegistryAlert.jsx'), 'utf8'));
+  assert.match(alert, /useProductionLinesState\(\)/, 'ต้องถามสถานะจากทะเบียนกลาง ไม่ใช่เดาเอง');
+  assert.match(alert, /registryFailText\(/, 'ข้อความต้องมาจากของกลาง ห้ามแต่งเองในหน้า');
+  assert.match(alert, /if \(loading \|\| !failed\) return null;/,
+    '🔴 ระหว่างโหลดห้ามขึ้น (แถบกะพริบทุกครั้งที่เปลี่ยนหน้า) · ไม่ล้มก็ห้ามขึ้น');
+  assert.match(alert, /reload\(\)/, 'ต้องมีปุ่มโหลดใหม่ — แจ้งเฉยๆ แล้วทำอะไรไม่ได้ = จอตัน');
+
+  const app = stripComments(readFileSync(join(ROOT, 'src/App.jsx'), 'utf8'));
+  assert.match(app, /<LineRegistryAlert \/>/, '🔴 ตาข่ายกลางหายจาก App.jsx');
+  assert.match(app, /import LineRegistryAlert from/, 'ต้อง import จริง');
+});
+
+test('🏷️ edition-alias-safe — import `appEdition` ต้องไม่มีนามสกุล และห้ามเรียกตัว .nm ตรงๆ', () => {
+  /* why: เว็บ New Model = โค้ดชุดเดียวกับ ESM แต่ `vite.nm.config.js` สลับไฟล์ตอน build ด้วย
+          alias `/^(.*)\/appEdition$/` — **จับเฉพาะ path ที่ไม่มีนามสกุล**
+          · เขียน `'../appEdition.js'` = alias ไม่จับ ⇒ บิลด์ NM ได้รุ่นเต็ม = ไม่มีด่านกันหน้าเลย
+            (เว็บ IEC เปิดจอระบบแมสได้ทั้งหมด — พังแบบไม่มีอะไรฟ้อง build ยังผ่าน)
+          · เขียน `'./appEdition.nm'` ตรงๆ = บิลด์**หลัก**ได้ allowlist ของ NM ⇒ หน้าหายจากระบบแมส
+     fix: import จาก `'<path>/appEdition'` เท่านั้น (ไม่มี `.js` ไม่มี `.nm`)
+          · ต้องการค่าของรุ่น NM ในเทส ให้ import ไฟล์ตรงได้ (โฟลเดอร์ `__tests__` ไม่ถูกสแกน) */
+  const bad = [];
+  for (const f of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const rel = relative(ROOT, f);
+    if (/appEdition(\.nm)?\.js$/.test(rel)) continue;        // ตัวไฟล์ edition เอง
+    const code = stripComments(readFileSync(f, 'utf8'));
+    for (const m of code.matchAll(/from\s*['"]([^'"]*appEdition[^'"]*)['"]/g)) {
+      const spec = m[1];
+      if (spec.endsWith('/appEdition')) continue;            // ถูกต้อง — alias จับได้
+      bad.push(`${rel}  →  '${spec}'`);
+    }
+  }
+  assert.deepEqual(bad, [], '\n\n❌ import `appEdition` ผิดรูป ' + bad.length + ' จุด\n'
+    + '   ทำไมสำคัญ: alias ของ vite.nm.config.js จับเฉพาะ path ที่ลงท้าย `/appEdition` (ไม่มีนามสกุล)\n'
+    + '              ใส่ `.js` = เว็บ NM ได้รุ่นเต็ม (เปิดจอระบบแมสได้) · ใส่ `.nm` = เว็บแมสได้ allowlist ของ NM (หน้าหาย)\n'
+    + '   แก้: เขียน import เป็น \'<path>/appEdition\' เท่านั้น\n'
+    + `   จุดที่ผิด:\n     ${bad.join('\n     ')}\n`);
+
+  /* ด่านคู่: ตัว alias ต้องยังอยู่ใน config ของ NM (ถอดออก = เว็บ NM กลายเป็นเว็บแมสเงียบๆ) */
+  const nmc = readFileSync(join(ROOT, 'vite.nm.config.js'), 'utf8');
+  assert.match(nmc, /appEdition\$\/[\s\S]{0,80}appEdition\.nm/,
+    '\n\n❌ vite.nm.config.js ไม่มี alias appEdition → appEdition.nm แล้ว — เว็บ NM จะเปิดได้ทุกหน้าของระบบแมส\n');
 });

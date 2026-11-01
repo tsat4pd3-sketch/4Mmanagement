@@ -79,11 +79,17 @@ test('⭐ รับผิดชอบชั้นส่วนงาน ⇒ แ�
   assert.equal(canWriteScope(index, ctx, { kind: 'cost_center', value: '2140561001' }).ok, true);  // BIG PRESS
 });
 
-test('⭐ รับผิดชอบชั้นแผนก ⇒ แก้ของส่วนงานแม่ไม่ได้ (ขึ้นไม่ได้)', () => {
+/* 🔄 28/10 — กติกาข้อนี้ถูก **user สั่งเปลี่ยน** ("ยุบเหลือแกนเดียว · CC ละเอียดกว่า")
+   เดิม: ถือ CC แผนก ⇒ ถามถึงส่วนงานแม่ = `other_unit` (บล็อก)
+   ปัญหา: จอส่วนใหญ่ถามรวมๆ ว่า "แก้ของส่วนงานนี้ได้ไหม" ⇒ บัญชีที่ติ๊ก CC ถูกบล็อกทุกจอ
+          (วัด 28/10 โดน 15/15 ใบ · หน้างานแจ้ง "เข้าไม่ได้") = ติ๊กแล้วได้น้อยลง ขัดกฎ 26/10
+   ตอนนี้: ขึ้นไปหาแม่ได้ แต่เป็นโค้ดแยก `partial_unit` (= รับผิดชอบบางส่วน ต้องเช็คซ้ำรายแถว)
+   🔴 ความละเอียดไม่หาย — **แผนกพี่น้องยังบล็อก** (เทสข้างล่างสุดของไฟล์คุมไว้) */
+test('⭐ รับผิดชอบชั้นแผนก ⇒ ถามถึงส่วนงานแม่ = partial_unit (ไม่ใช่บล็อก)', () => {
   const ctx = { respCostCenters: ['2140561001'] };            // BIG PRESS
   const r = canWriteScope(index, ctx, { kind: 'section', value: 'PD1' });
-  assert.equal(r.ok, false);
-  assert.equal(r.code, 'other_unit');
+  assert.equal(r.ok, true);
+  assert.equal(r.code, 'partial_unit');
 });
 
 test('🔴 ข้ามส่วนงานไม่ได้ (PD1 ไปแก้ PD2)', () => {
@@ -178,4 +184,28 @@ test('costCenterOfNode() — ตัวเดียวจบ ต้องให�
   assert.deepEqual(costCenterOfNode('t1', NODES), { code: '2140561001', from: 'BIG PRESS' });
   assert.deepEqual(costCenterOfNode('ไม่มีจริง', NODES), { code: null, from: null });
   assert.deepEqual(costCenterOfNode(null, NODES), { code: null, from: null });
+});
+
+/* 🔴🔴 28/10 (เคสจริง หัวหน้า PD1 · คำสั่ง user "ยุบเหลือแกนเดียว เพราะ CC ละเอียดกว่า")
+   ติ๊ก CC = แผนก ⇒ จอที่ถามรวมๆ ว่า "แก้ของ **ส่วนงาน** นี้ได้ไหม" เคยตอบ `other_unit`
+   (ลูกไม่ครอบแม่) = บัญชีที่ติ๊ก CC ถูกบล็อกทุกจอ · วัด 28/10 โดนหมด 15/15 ใบ
+   ⇒ หน่วยแม่ของขอบเขตเรา = `partial_unit` (ok) · **แต่หน่วยพี่น้องต้องยัง ❌** */
+test('🔴 partial_unit — หน่วยแม่ของขอบเขตที่รับผิดชอบ ไม่ใช่ "หน่วยอื่น" · พี่น้องยังบล็อก', () => {
+  const idx = attachCc(buildOrgScope({ nodes: NODES, lines: LINES }), NODES);
+  const ctx = { role: 'supervisor', section: 'PD1', sections: ['PD1'], respCostCenters: ['2140561001'] }; // BIG PRESS
+
+  const up = canWriteScope(idx, ctx, { kind: 'section', value: 'PD1' });
+  assert.equal(up.ok, true, 'ส่วนงานแม่ของแผนกที่รับผิดชอบ ต้องไม่ถูกบล็อก');
+  assert.equal(up.code, 'partial_unit', 'ต้องแยกโค้ดจาก covered — จอจะได้รู้ว่าต้องเช็คซ้ำรายแถว');
+
+  // ตัวเอง + ลูก = covered เหมือนเดิม
+  assert.equal(canWriteScope(idx, ctx, { kind: 'department', value: 'BIG PRESS' }).code, 'covered');
+
+  // 🔴 หน่วยพี่น้อง (คนละแผนกใต้ส่วนงานเดียวกัน) **ต้องยังบล็อก** — ไม่งั้นกลายเป็นเปิดทั้งส่วนงาน
+  const sib = canWriteScope(idx, ctx, { kind: 'department', value: 'SMALL PRESS' });
+  assert.equal(sib.ok, false, 'แผนกพี่น้องต้องแก้ไม่ได้ — ความละเอียดของแกน CC ห้ามหาย');
+  assert.equal(sib.code, 'other_unit');
+
+  // ส่วนงานอื่นทั้งก้อนก็ยังบล็อก
+  assert.equal(canWriteScope(idx, ctx, { kind: 'section', value: 'PD2' }).ok, false);
 });

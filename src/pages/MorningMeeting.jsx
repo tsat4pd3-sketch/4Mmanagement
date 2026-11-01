@@ -30,6 +30,7 @@ import { useLatestRequest } from '../utils/useLatestRequest';
 import { ALL } from '../utils/filterLabels';
 import { SESSION_STATUSES_REAL } from '../utils/sessionStatus';
 import { machineLaneCount } from '../utils/machineAssets';
+import { BREAK_POLICY_COLS } from '../utils/oeeMasters';
 loadDocForms(); // ทะเบียนเอกสาร — แถบเลขฟอร์มท้ายใบพิมพ์ (ตั้งที่ /doc-forms · 2026-07-30)
 
 // Gesture Mode (MediaPipe) — lazy ทั้ง component และโค้ด MediaPipe ข้างใน: โหลดเฉพาะตอนผู้ใช้กด 📷
@@ -167,8 +168,10 @@ export default function MorningMeeting() {
 
   useEffect(() => {
     (async () => {
-      const { data } = await loadLinesRes();   // cache กลาง (25/09) — กำลังคนอยู่ใน LINE_COLUMNS แล้ว
-      setAllLines(data || []);
+      const { data, error: lineErr } = await loadLinesRes();   // cache กลาง (25/09) — กำลังคนอยู่ใน LINE_COLUMNS แล้ว
+      /* 🔴 28/10 — อ่านทะเบียนไม่สำเร็จ **ห้ามทับลิสต์เดิมด้วย []** (เคสจริง: หน้างานแจ้ง
+         "ไม่มีไลน์ให้เลือกในลิสต์" ทั้งที่ไลน์ยังอยู่ครบ) · toast กลางใน main.jsx บอกเหตุให้แล้ว */
+      if (!lineErr) setAllLines(data || []);
       // ส่วนงานจากผังองค์กร (org_nodes kind='section') — ลิสต์/ลำดับตามผัง ไม่เดาจาก production_lines.section
       const { data: og } = await supabase.from('org_nodes').select('code, name, sort_order').eq('kind', 'section').eq('is_active', true);
       setOrgSections(orgValues(og));
@@ -215,7 +218,7 @@ export default function MorningMeeting() {
         supabaseDR.from('machines').select('machine_no, line_name, equipment_kind').in('line_name', lineNames).limit(1000),
         // นโยบายเวลาพัก — ใช้ตัด downtime ที่ทับพักออกก่อนถ่วงน้ำหนัก OEE (utils/oee §3.1)
         // ⚠️ ต้อง select ot_scope ด้วย ไม่งั้นนับพักเกินในกะเช้าที่ทำโอ
-        supabaseDR.from('break_policies').select('shift, process_type, start_time, duration_min, ot_scope, anchor, offset_min').eq('is_active', true),
+        supabaseDR.from('break_policies').select(BREAK_POLICY_COLS).eq('is_active', true),
       ]);
       if (!live()) return;
       const sess = chk(sessRes, 'ข้อมูลกะ'), fm = chk(fmRes, '4M'), att = chk(attRes, 'เช็คชื่อ');

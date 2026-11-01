@@ -17,6 +17,13 @@ import { loadProductionLines } from './useProductionLines';
 import { buildBreakLineRuleIndex, setBreakLineRuleIndex } from './breakLineRules';
 
 /* :v2 (05/10) = ชุดเต็ม `*` ทุกจอ — bump จากคีย์เดิมที่ shape ไม่ตรงกันระหว่างจอ */
+/* 🔴 ชุดคอลัมน์กลางของ `break_policies` — จอที่เลือกคอลัมน์เองต้องใช้ตัวนี้ (มีด่าน)
+   เหตุ (27/10): เพิ่ม `duration_min_holiday` แล้วมี 6 จุดที่เลือกคอลัมน์เองไว้ ⇒ จอพวกนั้น
+   จะคิดเวลาพักวันหยุดเป็นค่าปกติ ขณะที่จอหลักคิดค่าวันหยุด = **ตัวเลข OEE 2 ชุดของกะเดียวกัน**
+   ⇒ เพิ่มคอลัมน์ใหม่ทีไร ให้เติมที่นี่ที่เดียว */
+export const BREAK_POLICY_COLS =
+  'shift, process_type, start_time, duration_min, duration_min_holiday, ot_scope, anchor, offset_min';
+
 export const BREAK_POLICIES_KEY = 'break_policies:active:v2';
 export function loadBreakPolicies() {
   const p = cachedMaster(BREAK_POLICIES_KEY, async () =>

@@ -359,7 +359,7 @@ export default function ProductMaster() {
        (ไล่แปะทีละจุดคือวิธีที่ทำให้ `invalidateProducts()` เดิมตกหล่นจนไม่มีใครเรียกเลยสักหน้า)
        ดูทะเบียน "ตาราง → คีย์" ที่ src/utils/masterInvalidate.js */
     invalidateTable('dr_products', 'kanban_standards');   // ทะเบียนสินค้า + kanban อยู่หน้าเดียวกัน
-    const [{ data: pr }, { data: ln }, { data: stds }, { data: boms }, famRes, { data: pm }, { data: rt }, { data: pkg }] = await Promise.all([
+    const [{ data: pr }, lnRes, { data: stds }, { data: boms }, famRes, { data: pm }, { data: rt }, { data: pkg }] = await Promise.all([
       supabaseDR.from('dr_products').select('*').order('name').order('effective_from', { ascending: false }),
       // 2026-09-07: ต้องครบ LINE_COLUMNS (section/is_active) — <LineSelect> ใช้กรอง scope + ตัดไลน์ปลดระวาง
       loadLinesRes(),
@@ -377,6 +377,9 @@ export default function ProductMaster() {
       supabaseDR.from('part_routings').select('mat_no').eq('is_active', true),
       supabaseDR.from('product_packaging').select('product_id').eq('is_active', true),
     ]);
+  /* 🔴 30/10 — เดิมแกะแค่ `{ data }` ⇒ ทะเบียนไลน์โหลดไม่สำเร็จแล้วได้ลิสต์ว่าง **เงียบ**
+     (หน้างาน PD1 แจ้ง "MO ไม่มีให้เลือกไลน์" ทั้งที่ฐานข้อมูลมีครบ) · เก็บผลทั้งก้อนไว้อ่าน error ได้ */
+  const ln = lnRes?.error ? null : lnRes.data;
     setItems(pr || []);
     setLines(ln || []);
     setKanbanStds(stds || []);

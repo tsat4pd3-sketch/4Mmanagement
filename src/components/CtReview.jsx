@@ -21,6 +21,7 @@ import LineSelect from './LineSelect';
 import { summarizeObservedCt, FLAG_TEXT, SAMPLE_RULES } from '../utils/ctReview';
 import { getWorkDate, addDaysStr } from '../utils/workDate';
 import { fetchByIds } from '../utils/fetchByIds';
+import { BREAK_POLICY_COLS } from '../utils/oeeMasters';
 
 const DAYS_BACK = 60;
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 14px' };
@@ -66,7 +67,7 @@ export default function CtReview({ lines = [] }) {
           .eq('line_name', line).eq('status', 'closed').gte('work_date', since)
           .order('work_date', { ascending: false }).limit(400),
         supabaseDR.from('dr_products').select('mat_no, name, cycle_time_sec, process_type').eq('line_name', line),
-        supabaseDR.from('break_policies').select('shift, start_time, duration_min, process_type, ot_scope, anchor, offset_min'),
+        supabaseDR.from('break_policies').select(BREAK_POLICY_COLS),
       ]);
       if (!alive) return;
       const bad = [sRes, pRes, bRes].find(r => r.error);
