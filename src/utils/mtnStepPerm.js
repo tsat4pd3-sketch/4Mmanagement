@@ -561,16 +561,19 @@ export const QA_SKIP_REASON_STEP4 = 'ขั้น 4 ระบุว่าไม�
  *  และ `signApproval` เขียนชื่อคนกดทับชื่อผู้จัดการที่ระบุไว้ ⇒ เจ้าตัวโดนตัดสิทธิ์ (`already_signed`)
  *
  *  🔴 **ทำไม 50 ไม่ใช่ 60** — พิสูจน์กับทะเบียนผู้ใช้จริงก่อนตั้ง (กฎ CLAUDE.md 26/10):
- *     ตั้ง 60 (`manager`) = **7 จาก 12 ส่วนงานไม่มีใครเซ็นได้เลย** รวม **PD4** ซึ่งเป็นส่วนงาน
- *     ของใบที่แจ้งปัญหามาเอง ⇒ งานปรับปรุงค้าง ช่างรับงานไม่ได้ (ใบ `purpose='improve'`
- *     ใช้ลายเซ็นนี้เป็นด่านอนุมัติ) · ตั้ง 50 = ยังกันเคสที่เกิดจริงได้ 5 จาก 7 ครั้ง
- *     และคนที่เซ็น 89% ของทั้งหมด (ตำแหน่ง `manager`) ไม่กระทบ
+ *     ⚠️ **นับความครอบคลุมต้องนับ `sections` (ขอบเขตที่ดูแล) ไม่ใช่ `section` (บ้าน)**
+ *        — มีคน**ดูแลควบแผนก** (`manager` บ้าน PD3 · `sections=[PD3,PD4]` ⇒ เซ็นใบ PD4 ได้
+ *        และเคยเซ็นจริง 6 ครั้ง) · **PD4 ครอบได้ทั้ง 2 เกณฑ์ ไม่ใช่เหตุผลเลือก 50**
+ *     ตั้ง 60 (`manager`) = **`JIG MTN` + `Planning&Store` ไม่มีใครเซ็นได้เลย**
+ *        (2 ส่วนงานนี้มีแต่ `dept_head`) · ตั้ง 50 = ครอบได้ทั้งคู่
+ *     ⛔ `Die MTN`/`MTN`/`Tooling MTN` ไม่มีใครถึง 50 เลย — แต่ `dept_section` ของใบคือ
+ *        ส่วนงาน**ผู้แจ้ง** (ฝั่งผลิต) ไม่ใช่ทีมช่าง ⇒ ไม่กระทบด่านนี้
  *  🔴 **ไม่รู้ตำแหน่ง (`posRank == null`) = ไม่บล็อก** — กฎเดียวกับขั้น 6/7/8 (ไม่รู้ ≠ ไม่ใช่)
  *     แต่จอต้องเขียนว่า "ไม่ได้ตรวจตำแหน่ง" (ดู `stepAssumptions`) */
 export const APPROVAL_MIN_RANK = 50;
 
 export function canSignMtnApproval(kind, opts = {}) {
-  const { order = {}, fullName = '', can = () => false, posRank = null } = opts;
+  const { order = {}, fullName = '', can = () => false, posRank = null, inReporterScope = null } = opts;
   if (kind !== 'dept' && kind !== 'plant') return { ok: false, code: 'unknown_kind' };
   const signedAt = kind === 'dept' ? order.dept_manager_at : order.plant_manager_at;
   if (signedAt) return { ok: false, code: 'already_signed' };
@@ -578,6 +581,13 @@ export function canSignMtnApproval(kind, opts = {}) {
      (ผู้แจ้งพิมพ์ชื่อใครก็ได้ลงช่อง "ผู้จัดการต้นสังกัด" รวมทั้งชื่อตัวเอง) */
   if (posRank != null && posRank < APPROVAL_MIN_RANK)
     return { ok: false, code: 'rank_too_low', needRank: APPROVAL_MIN_RANK };
+  /* 🔴 ชั้น ③ ของกฎสิทธิ์ 3 ชั้น — "ผู้จัดการ**ต้นสังกัด**" ตามนิยามคือฝั่งผู้แจ้ง
+     ⇒ ใบนอกขอบเขตที่เรารับผิดชอบ เซ็นไม่ได้ แม้ตำแหน่งถึงและถือสิทธิ์ `approve`
+     (01/11 — audit ชั้น ③ รอบ 15/10 ไม่ได้ครอบด่านนี้ · `canDoStep` มีแล้ว ตัวนี้ไม่มี)
+     🔴 `null` = ตัดสินขอบเขตไม่ได้ ⇒ **ไม่บล็อก** (กติกาเดียวกับ `outOfScope` ใน `canDoStep`)
+     🔑 คนดูแลควบแผนกผ่านได้ เพราะ `writeScope` อ่าน `sections`/`resp_cost_centers` ไม่ใช่ `section` เดี่ยว */
+  if (inReporterScope === false)
+    return { ok: false, code: 'out_of_scope' };
   const named = kind === 'dept' ? order.dept_manager_name : order.plant_manager_name;
   const me = norm(fullName);
   if (me && norm(named) === me) return { ok: true, code: 'named' };

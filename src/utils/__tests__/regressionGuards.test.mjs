@@ -4395,7 +4395,7 @@ test('🛡️ mtn-approval-needs-rank — ช่องผู้จัดกา�
   const src = readFileSync(join(ROOT, 'src/utils/mtnStepPerm.js'), 'utf8');
   const i = src.indexOf('export function canSignMtnApproval');
   assert.ok(i > 0, '\n\n❌ หา `canSignMtnApproval` ไม่เจอ — เปลี่ยนชื่อแล้วต้องแก้ด่านนี้ด้วย\n');
-  const body = src.slice(i, i + 1400);
+  const body = src.slice(i, i + 2600);
 
   assert.ok(/posRank/.test(body) && /rank_too_low/.test(body),
     '\n\n❌ `canSignMtnApproval` เลิกเช็คตำแหน่งแล้ว\n'
@@ -4410,11 +4410,19 @@ test('🛡️ mtn-approval-needs-rank — ช่องผู้จัดกา�
     '\n\n❌ ด่านตำแหน่งถูกย้ายไปอยู่หลังทาง `named`/`approve`\n'
     + '   ⇒ ผู้แจ้งพิมพ์ชื่อตัวเองลงช่อง "ผู้จัดการต้นสังกัด" แล้วเซ็นเองได้ (เคสจริง 30/10)\n');
 
-  /* 🔴 เกณฑ์ห้ามยกเป็น 60 โดยไม่เช็คทะเบียนผู้ใช้ — 7/12 ส่วนงานไม่มีใครตำแหน่ง manager เลย
-     รวม PD4 ซึ่งเป็นส่วนงานของใบที่แจ้งปัญหามาเอง ⇒ งานปรับปรุงค้าง ช่างรับงานไม่ได้ */
+  /* 🔴 ชั้น ③ ขอบเขตหน่วยงาน — "ผู้จัดการ**ต้นสังกัด**" ตามนิยามคือฝั่งผู้แจ้ง
+     audit ชั้น ③ รอบ 15/10 ไม่ได้ครอบด่านนี้ (`canDoStep` มี · ตัวนี้ไม่มี) */
+  assert.ok(/inReporterScope\s*===\s*false/.test(body) && /out_of_scope/.test(body),
+    '\n\n❌ `canSignMtnApproval` เลิกเช็คขอบเขตหน่วยงานแล้ว\n'
+    + '   ⇒ หัวหน้าแผนกของส่วนงานหนึ่ง เซ็นช่อง "ผู้จัดการต้นสังกัด" ของใบส่วนงานอื่นได้\n'
+    + '   🔴 `null` (ตัดสินไม่ได้) ต้องไม่บล็อก — คนดูแลควบแผนกผ่านทาง sections/resp_cost_centers\n');
+
+  /* 🔴 เกณฑ์ = "หัวหน้าแผนกขึ้นไป" (50) ไม่ใช่ "ผู้จัดการ" (60)
+     ⚠️ ห้ามยกเป็น 60 โดยไม่พิสูจน์กับทะเบียนผู้ใช้จริงก่อน (CLAUDE.md 26/10)
+     — นับความครอบคลุมต้องกาง `sections`/`resp_cost_centers` ไม่ใช่ `section` เดี่ยว */
   assert.ok(/APPROVAL_MIN_RANK\s*=\s*50\b/.test(src),
     '\n\n❌ `APPROVAL_MIN_RANK` ไม่ใช่ 50 แล้ว\n'
-    + '   ยกเป็น 60 (manager) = 7 จาก 12 ส่วนงานไม่มีใครเซ็นได้เลย (PD4 · Planning&Store · JIG MTN …)\n'
+    + '   ยกเกณฑ์ = ต้องพิสูจน์กับทะเบียนผู้ใช้จริงก่อน merge (CLAUDE.md 26/10)\n'
     + '   ถ้าจะเปลี่ยน ต้องพิสูจน์กับทะเบียน `profiles` จริงก่อน (กฎ CLAUDE.md 26/10)\n');
 });
 
