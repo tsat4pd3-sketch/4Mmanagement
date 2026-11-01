@@ -7848,3 +7848,20 @@ test('🏷️ edition-alias-safe — import `appEdition` ต้องไม่�
   assert.match(nmc, /appEdition\$\/[\s\S]{0,80}appEdition\.nm/,
     '\n\n❌ vite.nm.config.js ไม่มี alias appEdition → appEdition.nm แล้ว — เว็บ NM จะเปิดได้ทุกหน้าของระบบแมส\n');
 });
+
+test('🗑️ ojt-delete-needs-sign-url — ประตู "ลบใบที่เปิดผิด" ต้องรู้ว่ามีใครเซ็นแล้วหรือยัง', () => {
+  /* why (01/11 · หน้างาน PD4 ขอ "เปิดผิดลบได้ด้วย"): ใบ OJT = FM-HRM-004 เอกสารคุมเล่มที่
+     auditor ขอดู ⇒ เปิดให้เจ้าของใบลบเองได้**เฉพาะใบที่ยังไม่มีใครเซ็น** (ของที่เซ็นแล้ว =
+     หลักฐานการอบรมของพนักงานคนนั้น ลบแล้วกู้ไม่ได้ — ต้องเป็นระดับจัดการเท่านั้น)
+     กับดัก: ตัวตัดสิน `sheetSigned()` อ่าน `sign_url` ที่ติดมากับคิวรีรายการ
+       ⇒ ใครรีดคิวรีให้เหลือ `ojt_training_attendees(id)` (ของเดิมก่อน 01/11) = ทุกใบดู "ยังไม่มีใครเซ็น"
+         ⇒ ปุ่มลบโผล่บนใบที่เซ็นครบแล้ว **เงียบสนิท ไม่มีอะไรฟ้อง** (ด่านชั้น 2 ใน handleDelete
+         อ่านสดอีกรอบจึงยังกันการลบจริงไว้ได้ แต่จอโกหกว่าลบได้)
+     fix: คิวรีรายการต้อง select `ojt_training_attendees(id, sign_url)` เสมอ */
+  const src = readFileSync(join(ROOT, 'src/pages/OjtTraining.jsx'), 'utf8');
+  if (!/canRemoveSheet/.test(src)) return;        // ถอดฟีเจอร์ลบใบของตัวเองออกแล้ว = ไม่ต้องมีด่าน
+  assert.match(src, /ojt_training_attendees\(id,\s*sign_url\)/,
+    '\n\n❌ OjtTraining.jsx: คิวรีรายการใบอบรมไม่ได้ดึง `sign_url` ของผู้เข้าอบรม\n'
+    + '   ผล: `sheetSigned()` คืน false ทุกใบ ⇒ ปุ่ม 🗑️ โผล่บนใบที่พนักงานเซ็นครบแล้ว\n'
+    + '   แก้: select(\'*, ojt_training_attendees(id, sign_url), ojt_training_files(id)\')\n');
+});
