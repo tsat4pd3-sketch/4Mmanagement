@@ -1093,3 +1093,19 @@ migration `20261014_rls_round10_tier_b_final_main.sql` (**apply แล้ว 202
    `prodRoutine.js` · `operator.jsx` · `DeptDashboard.jsx` ฯลฯ) role ใหม่ที่ไม่ถูกเติมในจุดพวกนี้ = **เงียบ ไม่ใช่ error**
 3. RLS ที่อ้าง role ตรงๆ (ถ้ามี) + เอกสาร/ด่าน
 ⇒ ทางที่ได้ผลเท่ากันโดยไม่จ่ายข้อ 1-3 คือ **`supervisor` + Cost Center ของแผนก** (ชั้นสิทธิ์ที่ 3 แกน CC ทำงานตามลำดับชั้นอยู่แล้ว)
+
+
+## 👀 `viewer` — ผู้ทดลองใช้ ดูอย่างเดียว (2026-11-02)
+
+คำสั่ง user: *"user ไว้ให้นายเราลองเข้ามาทดสอบดูโปรแกรม แต่จะไม่สามารถแก้ไขอะไรหรือลงข้อมูลอะไรได้"*
+
+- **กลไก:** มีแต่คีย์ `page:*` · **ไม่มีคีย์ action แม้แต่ตัวเดียว** ⇒ `can()` เท็จทุกปุ่ม · RLS ฝั่ง Main (`has_perm`) บล็อกเขียน
+  ⚠️ ฝั่ง DR เป็น anon ⇒ กันได้ที่ชั้นปุ่ม/handler เท่านั้น (known gap เดิม — คนตั้งใจยิง API ตรงยังเขียนได้)
+- **ทำไมไม่ใช้ `display`:** นั่นคือ "จอ TV" (24 หน้า · วนหน้าอัตโนมัติ · ไม่ auto-logout · `axis:'device'`) ไม่ใช่คน
+- **หน้าที่ไม่ให้เห็น:** ตั้งค่าทั้งหมด (`/qa-setup` `/pm-setup` `/process-setup` `/linesetup` `/org-setup` `/layout-setup`
+  `/storage-maintenance` `/notification-config` `/display-rotation`) · `/announcements` · `/audit-log` ·
+  `/register` + `/checkin` (เขียนโดยมี `can()` คุมบาง) · `/remote` (สั่งจอ TV)
+- **ตั้งค่าบัญชีที่ `/add-user`:** ชุดสิทธิ์ `👀 ผู้ทดลองใช้` · ขอบเขต **ทั้งโรงงาน** (`scope_depth='all'`) · ส่วนงาน/ไลน์ **ว่าง**
+  (ว่าง ⇒ `canWriteUnit` fail-closed อีกชั้น) · `account_kind='shared'` ถ้าเป็นบัญชีกลางให้หลายคนลอง
+- migration `20261102_role_viewer_main.sql` (2 บล็อก — enum ต้อง commit ก่อน seed · 55P04)
+- 🔴 **ห้ามเพิ่มคีย์ action ให้ role นี้** — ถ้าวันหน้าอยากให้ "ลองกด" ได้ ให้ทำ sandbox แยก ไม่ใช่เปิดคีย์บนฐานจริง
