@@ -4350,6 +4350,28 @@ test('🛡️ dt-by-session-needs-lines — ทุกการเรียก dt
    user: *"ทุกการกดอนุมัติ ของ mo ต้องมีการยืนยันก่อนนะ อันนี้กดพลาดคือพลาดเลย"*
    ลายเซ็นบนใบ MO เป็น one-way — เซ็นแล้วเจ้าตัวแก้เองไม่ได้ ต้องให้ผู้ถือสิทธิ์แก้ย้อนหลังมาปลด
    และใบเดินไปขั้นถัดไปทันที · ปุ่มเซ็นอยู่ติดปุ่มอื่นในใบ กดพลาดบนแท็บเล็ตหน้างานง่ายมาก */
+test('🛡️ approve-needs-confirm-4m — ปุ่มอนุมัติ 4M (SV) ต้องถามยืนยันก่อนเขียน DB', () => {
+  const src = readFileSync(join(ROOT, 'src/pages/Report.jsx'), 'utf8');
+  const i = src.indexOf('const handleApprove = async');
+  assert.ok(i > 0, '\n\n❌ หา `handleApprove` ใน Report.jsx ไม่เจอ — เปลี่ยนชื่อแล้วต้องแก้ด่านนี้ด้วย\n');
+  const body = src.slice(i, i + 3000);
+
+  /* 🔴 คลาสเดียวกับใบ MO (02/11 · คำสั่ง user "มุม systemic ไม่ควรจะเกิดปัญหาเดิมๆ กับจุดอื่น")
+     เขียน sv_approved_by = ชื่อคนกดขึ้นใบ + compare-and-swap ⇒ กดคืนเองไม่ได้
+     + แจ้งเตือนยิงออกทันทีที่สถานะเปลี่ยน ⇒ ถอนเงียบไม่ได้ */
+  const cAt = body.indexOf('confirmSign('), uAt = body.indexOf('.update(');
+  assert.ok(cAt > 0 && uAt > 0 && cAt < uAt,
+    '\n\n❌ `handleApprove` (อนุมัติ 4M) เขียน DB โดยไม่ถามยืนยันก่อน\n'
+    + '   ทำไมห้าม: ชื่อคนกดไปอยู่บนใบ · compare-and-swap = กดคืนเองไม่ได้ ต้องให้คนตีกลับ\n'
+    + '   แก้ยังไง: `if (!confirmSign({ what, docLabel, orderNo, actor, as, effect })) return;`\n'
+    + '   ⚠️ ขั้น QA ไม่ต้องถามซ้ำ (มี modal แนบรูป) · ตีกลับไม่ต้อง (ต้องพิมพ์เหตุผล)\n');
+
+  /* ของกลางต้องเป็นตัวเดียวกับที่ใบ MO ใช้ — ห้ามเขียนข้อความยืนยันเองในหน้า */
+  assert.ok(/from '\.\.\/utils\/signConfirm'/.test(src),
+    '\n\n❌ `Report.jsx` ไม่ได้ใช้ของกลาง `utils/signConfirm.js`\n'
+    + '   ข้อความยืนยันต้องบอกครบ 3 อย่างเสมอ (อนุมัติอะไร · ใบไหน · ในนามใคร) — ห้ามเขียนเองในหน้า\n');
+});
+
 test('🛡️ mtn-approve-needs-confirm — ปุ่มเซ็น/อนุมัติใบ MO ต้องผ่าน confirmSign() ก่อนเขียน DB', () => {
   const src = readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8');
 
@@ -4369,8 +4391,8 @@ test('🛡️ mtn-approve-needs-confirm — ปุ่มเซ็น/อนุ�
     + '   แก้ยังไง: `needsSignConfirm(stageOf(step, …))` แล้ว `confirmSign({ … })` ก่อนประกอบ payload\n');
 
   /* ③ ห้ามเขียนข้อความยืนยันเองในหน้า — ต้องบอกครบ 3 อย่าง (เซ็นอะไร · ใบไหน · ในนามใคร)
-        จึงบังคับให้ผ่าน utils/mtnConfirm.js จุดเดียว */
-  const conf = readFileSync(join(ROOT, 'src/utils/mtnConfirm.js'), 'utf8');
+        จึงบังคับให้ผ่าน utils/signConfirm.js จุดเดียว */
+  const conf = readFileSync(join(ROOT, 'src/utils/signConfirm.js'), 'utf8');
   for (const k of ['what', 'orderNo', 'actor']) {
     assert.ok(new RegExp(`signConfirmText[\\s\\S]{0,800}?\\b${k}\\b`).test(conf),
       `\n\n❌ \`signConfirmText\` ไม่ได้บอก \`${k}\` แล้ว — ข้อความยืนยันต้องบอกครบ "เซ็นอะไร · ใบไหน · ในนามใคร"\n`

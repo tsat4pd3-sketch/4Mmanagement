@@ -95,32 +95,17 @@ Realtime + Edge Functions/Deno) · Telegram Bot API · deploy = Render.com (Stat
 
 ## 📄 โมดูลที่รายละเอียดอยู่ในไฟล์โมดูลล้วน (ไม่มีกฎข้าม session)
 
-ดัชนีเต็ม `docs/modules/README.md`
+**ดัชนีเต็ม + คำอธิบายรายโมดูล = `docs/modules/README.md`** (ที่นี่เก็บแค่ชื่อไฟล์ให้ grep เจอ)
 เปิดอ่าน **เฉพาะโมดูลที่งานนี้แตะ** · กฎของโมดูลพวกนี้อยู่ในไฟล์ของมัน **ไม่ใช่ที่นี่**
 
-หน้า/route ทั้งระบบ `pages-routes.md` · สายธารความต้องการ `/flow-tower` `demand-flow-tower.md` ·
-คำนวณ Kanban จาก forecast `kanban-auto-calc.md` · ออเดอร์ manual (ไลน์ไม่มีคัมบัง) `daily-report.md` ·
-QR/บาร์โค้ดอุปกรณ์ `qr-equipment-scan.md` · กระบวนการผลิต (process types) `process-types.md` ·
-ไลน์ผสมหลาย process `daily-report-mixed-process.md` · Kaizen `improvements-kaizen.md` ·
-ประชุมแถวเช้า `morning-meeting.md` · ผังรวมโรงงาน `factory-master-map.md` ·
-Adoption Outlook `adoption-outlook.md` · ภาพรวมกลุ่ม TSG (mockup) `group-overview.md` ·
-จอตาม-มือถือคุม `remote-control.md` · แผนประสานงาน PM ข้ามวัน `pm-coordination.md` ·
-Audit log ใครแก้อะไร `traceability-audit-log.md` · ของที่ยกไปโปรเจคหน้าได้ `reusable-pm-checker.md` ·
-ติดตามการส่งงานลูกค้า (Planner/Sales · Delivery · Rundown Stock) `logistic-planner-sales.md` ·
-ใบรายงานของเสีย FM-PD2-002 `/scrap-report` `scrap-report.md` ·
-ใบขอเบิก/คืนสินค้าคงคลัง FM-STO-003 (แท็บใน `/qa`) `store-requisition-form.md` ·
-QA setup → ใบตรวจ (2 หน้า ห้ามปนกัน) `qa-inspection.md` ·
-BBS สังเกตพฤติกรรมความปลอดภัย (แท็บใน `/daily-checker`) `bbs-safety.md` ·
-Dashboard ส่วนงาน `/dept-dashboard?dept=` `dept-dashboard-tv.md` (ดีไซน์ `docs/DASHBOARD-DESIGN.md`) ·
-VSM `/vsm` `vsm.md` ·
-คลังอะไหล่ FM-JIG-009 + Rank `/equipment?tab=spare` `spare-part-master.md` ·
-Fixture shim record `/equipment?tab=jig` `fixture-shim-record.md` ·
-ตั้งค่าผัง/Floorplan `/layout-setup` (display = ดูอย่างเดียว) `floorplan-setup.md` ·
-กำลังคน/เปลี่ยนจุดงาน/Turnover `/workforce-insight` (อ่านอย่างเดียว) `workforce-insight.md` ·
-ประวัติผลิต by Product `/product-history` `product-history.md` ·
-สอบกลับ Order `/order-trace` `order-trace.md` ·
-กล่องรับ feedback หน้างาน (ปุ่มท้าย sidebar) `feedback-inbox.md` ·
-RFQ/เสนอราคา Marketing (Q-neX เฟส 1 · ต้นน้ำ NPI · ตาราง `mkt_*` Main) `/rfq` `mkt-rfq.md`
+`pages-routes` · `demand-flow-tower` · `kanban-auto-calc` · `daily-report` · `qr-equipment-scan` ·
+`process-types` · `daily-report-mixed-process` · `improvements-kaizen` · `morning-meeting` ·
+`factory-master-map` · `adoption-outlook` · `group-overview` · `remote-control` · `pm-coordination` ·
+`traceability-audit-log` · `reusable-pm-checker` · `logistic-planner-sales` · `scrap-report` ·
+`store-requisition-form` · `qa-inspection` · `bbs-safety` · `dept-dashboard-tv` · `vsm` ·
+`spare-part-master` · `fixture-shim-record` · `floorplan-setup` · `workforce-insight` ·
+`product-history` · `order-trace` · `feedback-inbox` · `mkt-rfq`
+(ดีไซน์ Dashboard → `docs/DASHBOARD-DESIGN.md`)
 
 ---
 ## Organizational Hierarchy · Role System
@@ -168,6 +153,12 @@ RFQ/เสนอราคา Marketing (Q-neX เฟส 1 · ต้นน้ำ 
 
 `pending` → (supervisor) → `pending_qa` ถ้า `requires_qa` ไม่งั้น `approved` → (QA) → `approved`
 · ตีกลับ = `rejected` + `reject_reason` · **ทุกการเปลี่ยนสถานะแจ้ง Telegram Group ทันที**
+
+> ### 🔴 ปุ่ม "อนุมัติ/เซ็นรับ" ต้องถามยืนยันก่อนเขียน DB — **ของกลาง `src/utils/signConfirm.js`**
+> (คำสั่ง user 28/10 "กดพลาดคือพลาดเลย" · ขยายทั้งระบบ 02/11) ใช้แล้วที่ **ใบ MO + คิวอนุมัติ 4M**
+> **ห้ามเขียนข้อความยืนยันเองในหน้า** — ต้องบอกครบ 3 อย่าง: **อนุมัติอะไร · ใบไหน · ในนามใคร**
+> 🔴 **ห้ามถามพร่ำเพรื่อ** — จังหวะที่มีด่านอยู่แล้ว (modal/ต้องแนบรูป/ต้องพิมพ์เหตุผล) **ไม่ต้องถามซ้ำ**
+> · 2 ด่าน `mtn-approve-needs-confirm` · `approve-needs-confirm-4m`
 
 > ### ⚠️ 4M ที่ระบบสร้างเอง ห้ามเข้าคิวอนุมัติเงียบๆ (2026-08-10)
 > **กฎ:** ตัวสร้างอัตโนมัติต้องมีเพดาน/ตัวนับ + กันใบซ้ำ · แยกใบระบบออกจากใบคนให้เห็นในคิว ·
