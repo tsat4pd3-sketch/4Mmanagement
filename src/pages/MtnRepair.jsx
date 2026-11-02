@@ -92,9 +92,14 @@ import { DeleteButton } from '../components/IconButton';
 import { MtnPrPanel, MtnGlMaster } from '../components/MtnPurchase';
 import MachineRepairHistory from '../components/MachineRepairHistory';
 import { prPlacement, assignedTechsOf, joinTechs, prQueueStateOf, PR_QUEUE_META } from '../utils/mtnPurchase';
-/* ตัวเลือกตัวกรองงาน PR — 'waiting' = ทั้ง 2 กองที่แอดมินช่างต้องทำ (รอเปิด + รอเลข) */
+/* ตัวเลือกตัวกรองงาน PR — ลำดับตามขั้นงานจริงที่ทีม MTN เขียนมา (02/11):
+     ① รอเปิด PR → ② เปิด PR (กรอก IO/GL แล้วได้เลขจาก SAP) → ③ รอสั่ง/รอของ
+   🔴 `waiting` = ผลรวมของ ①+② — **ซ่อนจาก dropdown แต่ห้ามถอดออกจากลิสต์**
+      ทีม MTN แจ้งว่า "Filter ขึ้นซ้อนกัน" เพราะตัวรวมกับ ① ได้เลขเท่ากันเสมอเมื่อ ② เป็น 0
+      แต่กระดิ่ง `mtn_pr_waiting` เก็บลิงก์ `/mtn-repair?pr=waiting` ไว้ใน `notification_rules`
+      ⇒ ถอดทิ้ง = กดกระดิ่งแล้วจอไม่กรองอะไรเลย (ค่าที่ไม่รู้จัก = ไม่กรอง) · ด่าน `pr-filter-keeps-waiting` */
 const PR_FILTERS = [
-  { v: 'waiting', label: '🛒 รอแอดมินช่าง (เปิด PR + กรอกเลข)' },
+  { v: 'waiting', label: '🛒 รอแอดมินช่าง (เปิด PR + กรอกเลข)', hidden: true },
   { v: 'need',  label: PR_QUEUE_META.need.label },
   { v: 'no_no', label: PR_QUEUE_META.no_no.label },
   { v: 'open',  label: PR_QUEUE_META.open.label },
@@ -917,7 +922,8 @@ export default function MtnRepair() {
           <select value={fPr} onChange={e => setFPr(e.target.value)} aria-label="งาน PR"
             style={prCounts.waiting && !fPr ? { borderColor: '#f59e0b', color: '#f59e0b', fontWeight: 700 } : undefined}>
             <option value="">{allOf('งาน PR')}</option>
-            {PR_FILTERS.map(x => <option key={x.v} value={x.v}>{x.label} ({prCounts[x.v] ?? 0})</option>)}
+            {/* ตัวรวมไม่โชว์ในลิสต์ — ยกเว้นตอนที่ถูกเลือกอยู่จริง (มาจากลิงก์กระดิ่ง) ไม่งั้นช่องจะว่างทั้งที่กรองอยู่ */}
+            {PR_FILTERS.filter(x => !x.hidden || x.v === fPr).map(x => <option key={x.v} value={x.v}>{x.label} ({prCounts[x.v] ?? 0})</option>)}
           </select>
           <SearchInput value={fText} onChange={setFText} fields="เลข MO / เครื่อง / ปัญหา / ชื่อผู้แจ้ง" />
           <span className="spacer" />
@@ -1920,14 +1926,28 @@ function printMoReportMtn(o, dparts = [], logo0, dlabor = [], cmt = NO_CMT, cost
         ได้ความสูงจริงของช่องเสมอ · ชื่อ-วันที่อยู่ล่างสุด ที่ว่างที่เหลือทั้งหมด = ที่เซ็น */
   const sg = (title, name, url, at, note = '') => `<div class="sgsp" style="height:${note ? 72 : 58}px"></div><div class="sgb"><div class="sgi">${url ? `<img src="${esc(url)}"/>` : ''}</div><div class="sgt">${esc(title)}</div><div class="sgn">${esc(name || '')}</div><div class="sgd">${at ? esc(beD(at)) : '....../....../......'}</div>${note ? `<div class="sgx">${esc(note)}</div>` : ''}</div>`;
 
-  /* ── ตารางค่าแรง 5 แถวตามฟอร์ม (เกิน 5 ต่อท้ายได้ ไม่ตัดข้อมูลทิ้ง) ── */
-  const laborList = (dlabor || []).filter(r => r && (r.worker_name || r.amount != null || r.rate_per_hour != null));
+  /* ── ตารางค่าแรง 5 แถวตามฟอร์ม (เกิน 5 ต่อท้ายได้ ไม่ตัดข้อมูลทิ้ง) ──
+     🔴 เติม "ช่างซ่อมหลัก/รอง" เข้าตารางด้วย (02/11 · ทีม MTN แจ้ง "ไม่ได้แสดงในเอกสาร MO ที่ Export")
+     วัด 90 วัน: 1,317 จาก 1,430 ใบ (92%) กรอกชื่อช่างหลักไว้ แต่ไม่มีแถวค่าแรงเลย
+     ⇒ ใบพิมพ์โชว์ตาราง "ค่าแรงในการปฏิบัติงาน" ว่างทั้งตาราง ทั้งที่ระบบรู้อยู่แล้วว่าใครซ่อม
+     (ฟอร์มมี 2 ที่ให้บอกว่าใครทำงาน — ช่องหลัก/รอง กับ "+ เพิ่มคน" — และทั้งสองไม่คุยกัน)
+     🔴 ชื่อที่อยู่ในตารางค่าแรงแล้วห้ามซ้ำ · แถวที่เติมมาไม่มีค่าแรง = ช่องราคาว่าง (ถูกแล้ว ห้ามเดาเลข)
+     🔴 ไม่เขียนกลับฐาน — ใบพิมพ์ประกอบจากข้อมูลที่มี ไม่ใช่ที่มาของข้อมูล */
+  const laborRaw = (dlabor || []).filter(r => r && (r.worker_name || r.amount != null || r.rate_per_hour != null));
+  const laborNames = new Set(laborRaw.map(r => String(r.worker_name || '').trim()).filter(Boolean));
+  const laborList = [
+    ...laborRaw,
+    ...[[o.tech_main, 'ช่างซ่อมหลัก'], [o.tech_secondary, 'ช่างซ่อมรอง']]
+      .filter(([n]) => String(n || '').trim() && !laborNames.has(String(n).trim()))
+      .map(([n, role]) => ({ worker_name: String(n).trim(), _role: role, rate_per_hour: null, hours: null, amount: null })),
+  ];
   const laborRowsN = Math.max(5, laborList.length);
   let laborHtml = '';
   for (let i = 0; i < laborRowsN; i++) {
     const r = laborList[i];
     const amt = r ? laborAmount(r) : null;
-    laborHtml += `<tr><td class="c">${i + 1}</td><td>${esc(r?.worker_name || '')}</td><td class="c">${r && r.rate_per_hour != null ? `${money(r.rate_per_hour)} x ${r.hours ?? ''}` : ''}</td><td class="r">${money(amt)}</td></tr>`;
+    const who = r ? esc(r.worker_name || '') + (r._role ? ` <span style="font-size:8pt;color:#444">(${r._role})</span>` : '') : '';
+    laborHtml += `<tr><td class="c">${i + 1}</td><td>${who}</td><td class="c">${r && r.rate_per_hour != null ? `${money(r.rate_per_hour)} x ${r.hours ?? ''}` : ''}</td><td class="r">${money(amt)}</td></tr>`;
   }
   /* ── ตารางอะไหล่ 5 แถวตามฟอร์ม ── */
   const partList = dparts || [];
@@ -3713,7 +3733,10 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
               {laborRows.map((r, i) => (
                 <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6 }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <PersonSelect value={r.worker_name} source="both" onChange={res => setLabor(i, 'worker_name', res.name)} inputStyle={{ background: 'var(--bg)' }} placeholder="ชื่อผู้ปฏิบัติงาน" />
+                    {/* 👷 ช่างทีมของใบขึ้นก่อน (ทีม MTN ขอ 01/11 "Filter แค่ช่างในทีมได้มั้ย")
+                        🔴 `strict` ไม่ใส่ = **ไม่ตัดทีมอื่นทิ้ง** — งานข้ามทีมมีจริง (หลักเดียวกับ `techOpts`)
+                        ตัดทิ้ง = ใบที่ MTN รับงาน JIG ไปทำ ลงชื่อคนทำไม่ได้เลย */}
+                    <PersonSelect value={r.worker_name} source="both" teams={acceptTeams} onChange={res => setLabor(i, 'worker_name', res.name)} inputStyle={{ background: 'var(--bg)' }} placeholder="ชื่อผู้ปฏิบัติงาน" />
                   </div>
                   <input type="number" min="0" value={r.rate_per_hour} onChange={e => setLabor(i, 'rate_per_hour', e.target.value)} style={{ ...inp, width: 90, flexShrink: 0 }} placeholder="บาท/ชม." />
                   <span style={{ color: 'var(--muted)' }}>×</span>
@@ -3723,6 +3746,15 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
                 </div>
               ))}
               {laborState === 'ok' && !laborRows.length && <div style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่ได้ลงค่าแรง — กด “+ เพิ่มคน” (ช่องล่างยังกรอกยอดรวมเองได้)</div>}
+              {/* 🔗 ปิดช่องว่างระหว่าง 2 ที่ที่บอกว่า "ใครทำงาน" (ทีม MTN แจ้ง 01/11)
+                  ช่องช่างหลัก/รองอยู่ด้านบน · ตารางนี้คือค่าแรง ⇒ บอกให้ชัดว่าอันไหนไปโผล่ที่ไหน */}
+              {(f.tech_main || f.tech_secondary) && (
+                <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 4, lineHeight: 1.6 }}>
+                  ℹ️ <b>{[f.tech_main, f.tech_secondary].filter(Boolean).join(' / ')}</b> (ช่างซ่อมหลัก/รองที่เลือกไว้ด้านบน)
+                  จะขึ้นในตาราง “ค่าแรงในการปฏิบัติงาน” ของใบพิมพ์ให้เองอยู่แล้ว —
+                  เพิ่มที่นี่เฉพาะตอนต้องลง<b>ค่าแรงเป็นเงิน</b> หรือมีคนช่วยเพิ่มนอกเหนือจาก 2 คนนั้น
+                </div>
+              )}
               {sumLabor(laborRows) != null && <div style={{ fontSize: 12.5, textAlign: 'right', fontWeight: 800, marginTop: 2 }}>(1) รวมค่าแรง {sumLabor(laborRows).toLocaleString()} บาท</div>}
             </div>
           )}

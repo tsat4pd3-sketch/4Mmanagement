@@ -129,9 +129,12 @@ export function prQueueStateOf(order, prs = []) {
   if (open.length) return 'open';
   return null;
 }
+/* ป้าย 3 ขั้นของงาน PR — ถ้อยคำตามที่ทีม MTN ใช้จริง (02/11)
+   ② เปิด PR = แอดมินช่างส่งเมลขอค่าใช้จ่าย กรอก IO/GL แล้ว **ได้เลข PR จาก SAP ทันที**
+      ⇒ ไม่ใช่ "รอ" เป็นขั้นที่มีคนต้องลงมือ · ป้ายเดิม "รอเลข PR (SAP)" ทำให้เข้าใจว่าต้องนั่งรอระบบ */
 export const PR_QUEUE_META = {
   need:  { label: '🛒 รอเปิด PR', color: '#ef4444' },
-  no_no: { label: '⏳ รอเลข PR (SAP)', color: '#f59e0b' },
+  no_no: { label: '📝 เปิด PR (กรอกเลข PR)', color: '#f59e0b' },
   open:  { label: '🚚 PR รอสั่ง/รอของ', color: '#0ea5e9' },
 };
 
