@@ -1126,3 +1126,24 @@ migration `20261014_rls_round10_tier_b_final_main.sql` (**apply แล้ว 202
   ⇒ บันทึกครั้งถัดไป บัญชีนั้นย้ายมาใช้แกน CC โดยค่าที่เห็นเท่าเดิม (round-trip test ยืนยัน)
 - ด่าน `scope-picker-single-field` ใน regressionGuards — ห้ามเอาช่องติ๊กส่วนงานกลับมา
 - ⚠️ ยังไม่แตะ: `/permissions` · `writeScope.js` (ยังมี 2 แกน section/CC ภายใน — จอไม่ต้องรู้) · การ derive เป็นแค่ชั้น UI บันทึก
+
+## 🔄 ขอบเขตจริงอ่าน `org_assignments` — รักษาการ/รับผิดชอบเพิ่ม ทับได้ทาง "กว้างขึ้น" เท่านั้น (2026-11-02)
+
+คำสั่ง user: *"ตำแหน่งจริงของ HR เป็นพื้นฐาน และเพิ่มความรับผิดชอบงานที่อาจจะรักษาการแทนตำแหน่งนั้น"* →
+*"ลุยต่อ ให้ขอบเขตจริงอ่าน org_assignments เลย"*
+
+- **ชั้น:** `profiles` (sections · resp_cost_centers · scope_depth) = **ฐาน** · `org_assignments` (head/acting · มีวันเริ่ม-สิ้นสุด)
+  = **ชั้นทับ** ⇒ ขอบเขตจริง = ฐาน ∪ หน่วยที่ได้รับมอบ · **ไม่มีทางที่มอบหมายทำให้ใครแคบลง**
+- **จุดเดียว:** `src/utils/assignmentOverlay.js` → `applyAssignments({ sections, respCostCenters }, rows, { nodes, ccIdx, today })`
+  · `sections` ว่าง (ไม่จำกัด) → คงว่าง · มอบหมาย `scope_depth='all'` → ว่าง · ไม่งั้น ∪ ส่วนงานบนสุดของหน่วยที่มอบ
+  · `respCostCenters` ∪ CC ของหน่วย (ตกทอดจากแม่ตาม `ccOfNode`) · วันมีผล = `isGranting(row, today)` ตัวเดียวกับจอ /org-setup
+  · **ผัง/ทะเบียนอ่านไม่ได้ = คืนค่าเดิมเป๊ะ + `failed`** ห้ามเดา · โหนดถูกลบ = ข้ามแถวนั้น (บอกใน `applied[].skipped`)
+- **ต่อสาย:** `App.jsx fetchProfile` — อ่าน `org_assignments` กรอง `profile_id` (admin ไม่อ่าน · 1 คิวรี/login) → ทับก่อน
+  `setUserSections`/`setUserRespCcs` · ดัชนีผัง (`scopeIdx`) โหลดเมื่อ **ตั้ง CC ไว้ หรือ มีมอบหมายที่มีผล** (เดิมเฉพาะ CC)
+  · ผลทับส่งออก `UserContext.assignOverlay` (`null` = ไม่มี · `{ failed, reason, applied }`) · โหมดจำลอง (ViewAs) = `null`
+- **จอต้องเขียนบอก:** การ์ดผู้ใช้ใน sidebar — มีมอบหมาย = "🔄 รักษาการ <หน่วย>" (hover เห็นวันหมดอายุ) ·
+  อ่านไม่ได้ = "⚠️ รักษาการ: อ่านไม่ได้ — ใช้ขอบเขตบัญชีอย่างเดียว"
+- **วัดก่อน merge (5 แถวจริง):** 4 แถวค่าเท่าเดิม · 1 แถว (mtn รักษาการ Maintenance) ได้ CC Maintenance เพิ่ม = หน่วยเดียวกับ
+  `section` เดิม ⇒ ไม่มีใครแคบลง · รายละเอียด `docs/ORG-SCALE-GLOBAL-DESIGN.md` §4.8
+- ด่าน `assignment-overlay-widen-only` (regressionGuards) — ห้ามเขียนกฎวันที่เองใน App.jsx · ห้ามให้ overlay แตะ DB
+- ⚠️ งานข้อมูลที่เหลือ: 21 คนที่ตำแหน่ง HR ต่ำกว่าสิทธิ์ยังไม่มีแถวมอบหมาย — ลงที่ `/org-setup › มอบหมายหน่วย` (ใส่วันสิ้นสุด)

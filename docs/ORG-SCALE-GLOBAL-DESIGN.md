@@ -313,5 +313,13 @@ const topNodes = (kids.get('') || []).filter(n => n.kind === 'section' || n.kind
    · แบบ: **ค่าแนะนำ = กว้างสุด(ฐาน HR, มอบหมายที่ยังมีผล)** — ทับได้ทางกว้างขึ้นเท่านั้น (`recommendScopeDepth(…, { assignments })`)
    · วัด 02/11: 21 คนที่ตำแหน่ง HR ต่ำกว่าสิทธิ์ **ยังไม่มีใครมีแถวมอบหมายเลย** ⇒ งานข้อมูล = ลงรักษาการ/มอบหมายให้ 21 คนนี้
      ที่ `/org-setup › มอบหมายหน่วย` (ใส่วันหมดอายุ) — **ไม่ใช่แก้ตำแหน่ง**
-   · 🔴 **ช่องว่างที่เหลือ:** runtime (`App.jsx` · `sectionScope.js` · `writeScope.js`) **ยังไม่อ่าน `org_assignments` เลย**
-     — ตอนนี้มีผลแค่ "ค่าแนะนำ" ในช่อง ② · ขั้นถัดไปคือให้ขอบเขตจริงอ่านทะเบียนนี้ (ขยายเท่านั้น · วัดก่อน)
+   · ✅ **ปิดแล้ว 02/11 (คำสั่ง user "ให้ขอบเขตจริงอ่าน org_assignments เลย"):** `App.jsx fetchProfile` อ่าน
+     `org_assignments` ของบัญชี (1 คิวรี/login · admin ไม่อ่าน) → `applyAssignments()` (`src/utils/assignmentOverlay.js`
+     · pure · 9 เทส) ทับ `sections`/`respCostCenters` **ทางกว้างขึ้นเท่านั้น** · วันมีผล = `isGranting(row, getWorkDate())`
+     · ผังอ่านไม่ได้ = ไม่ทับ + การ์ดผู้ใช้ใน sidebar เขียน "⚠️ รักษาการ: อ่านไม่ได้" · มีมอบหมาย = เขียน "🔄 รักษาการ <หน่วย>"
+     · `writeScope.js`/`sectionScope.js` ไม่ต้องแก้ — รับค่าที่ทับแล้วผ่าน `UserContext` เหมือนเดิม
+     · 📊 **วัดกับ 5 แถวจริงก่อน merge:** 4 แถว (PD1·PD2 manager · PD3+PD4 head) = ค่าเท่าเดิมทุกช่อง (หน่วยที่มอบ
+       อยู่ใน sections/CC ของบัญชีอยู่แล้ว) · 1 แถว (mtn รักษาการ Maintenance · `scope_depth=all` · CC ว่าง)
+       = `sections` คงไม่จำกัด · ได้ CC `2140456000` เพิ่ม ⇒ แกนเขียนสลับจาก section→CC **หน่วยเดียวกัน** (Maintenance)
+       + โหลดดัชนีผังเพิ่ม 1 คิวรีสำหรับบัญชีนี้ · **ไม่มีใครแคบลง** (กฎ 26/10)
+     · ด่าน `assignment-overlay-widen-only` ใน regressionGuards
