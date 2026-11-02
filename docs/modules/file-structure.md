@@ -92,6 +92,20 @@ const { role, lineId, team, section, sections, fullName } = useContext(UserConte
 // sections = ขอบเขตส่วนงานผลลัพธ์สุดท้าย (array · [] = ไม่จำกัด)
 ```
 
+### ไฟล์แนบ (รูป + เอกสาร) — `src/utils/fileAttach.js` (ของกลาง 2026-11-01)
+```js
+import { uploadAttachmentInfo, removeAttachment, attachFileName, isImageAttachment, ATTACH_MAX_MB } from '../utils/fileAttach'
+import FilePick from '../components/FilePick'
+
+const info = await uploadAttachmentInfo('ojt-files', `ojt/${id}`, file)  // null = ปฏิเสธ/ล้ม (toast แล้ว)
+// → { url, name, size, type } · HEIC→JPEG · GIF มีเพดาน · รูปบีบ 2560px · uploadOpts() ในตัว
+removeAttachment('ojt-files', url)        // best-effort
+<FilePick onFile={addFile} label="📎 แนบรูป / เอกสาร" />
+```
+🔴 **ห้ามก๊อปสูตรอัปไฟล์ไปไว้ในหน้า** — ย้ายออกมาจาก `NpiUi.uploadNpiFile` 01/11
+(`uploadNpiFile`/`removeNpiFile`/`FilePick`/`fileName` ของ NpiUi = wrapper บางๆ ของตัวนี้ · จอ NPI ไม่เปลี่ยน)
+· bucket ใหม่ต้องสร้างใน migration พร้อม policy 4 cmd (ต้นแบบ `20261101_ojt_attachments_main.sql`)
+
 ### Skill Fit Scoring (`src/utils/` — ใช้ในหน้าจัดคนเข้าสถานี)
 ```js
 skillFit(reqs, skillMap)  // src/utils/skillFit.js (ของกลาง 2026-10-12) — null = จุดไม่ตั้งทักษะ · details มี assessed

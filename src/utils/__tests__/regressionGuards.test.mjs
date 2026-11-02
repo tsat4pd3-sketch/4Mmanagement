@@ -7938,6 +7938,48 @@ test('🏷️ edition-alias-safe — import `appEdition` ต้องไม่�
     '\n\n❌ vite.nm.config.js ไม่มี alias appEdition → appEdition.nm แล้ว — เว็บ NM จะเปิดได้ทุกหน้าของระบบแมส\n');
 });
 
+test('🗑️ ojt-delete-needs-sign-url — ประตู "ลบใบที่เปิดผิด" ต้องรู้ว่ามีใครเซ็นแล้วหรือยัง', () => {
+  /* why (01/11 · หน้างาน PD4 ขอ "เปิดผิดลบได้ด้วย"): ใบ OJT = FM-HRM-004 เอกสารคุมเล่มที่
+     auditor ขอดู ⇒ เปิดให้เจ้าของใบลบเองได้**เฉพาะใบที่ยังไม่มีใครเซ็น** (ของที่เซ็นแล้ว =
+     หลักฐานการอบรมของพนักงานคนนั้น ลบแล้วกู้ไม่ได้ — ต้องเป็นระดับจัดการเท่านั้น)
+     กับดัก: ตัวตัดสิน `sheetSigned()` อ่าน `sign_url` ที่ติดมากับคิวรีรายการ
+       ⇒ ใครรีดคิวรีให้เหลือ `ojt_training_attendees(id)` (ของเดิมก่อน 01/11) = ทุกใบดู "ยังไม่มีใครเซ็น"
+         ⇒ ปุ่มลบโผล่บนใบที่เซ็นครบแล้ว **เงียบสนิท ไม่มีอะไรฟ้อง** (ด่านชั้น 2 ใน handleDelete
+         อ่านสดอีกรอบจึงยังกันการลบจริงไว้ได้ แต่จอโกหกว่าลบได้)
+     fix: คิวรีรายการต้อง select `ojt_training_attendees(id, sign_url)` เสมอ */
+  const src = readFileSync(join(ROOT, 'src/pages/OjtTraining.jsx'), 'utf8');
+  if (!/canRemoveSheet/.test(src)) return;        // ถอดฟีเจอร์ลบใบของตัวเองออกแล้ว = ไม่ต้องมีด่าน
+  assert.match(src, /ojt_training_attendees\(id,\s*sign_url\)/,
+    '\n\n❌ OjtTraining.jsx: คิวรีรายการใบอบรมไม่ได้ดึง `sign_url` ของผู้เข้าอบรม\n'
+    + '   ผล: `sheetSigned()` คืน false ทุกใบ ⇒ ปุ่ม 🗑️ โผล่บนใบที่พนักงานเซ็นครบแล้ว\n'
+    + '   แก้: select(\'*, ojt_training_attendees(id, sign_url), ojt_training_files(id)\')\n');
+});
+
+test('🔩 mtn-parts-before-stock — ตัดสต็อกอะไหล่ได้ต่อเมื่อเขียนรายการลงใบ MO สำเร็จ', () => {
+  /* why (02/11 · ทีม MTN แจ้ง "รายการ Spare Part ที่กดใช้ ไม่แสดงรายการในใบ MO"):
+     `mtn_order_parts` มี RLS `for all to anon using(true)` แต่ **GRANT ระดับตารางไม่มี DELETE**
+     ⇒ RLS ผ่าน แต่ Postgres ปฏิเสธที่ชั้นสิทธิ์ตาราง ⇒ PostgREST ตอบ 401
+     โค้ดเดิมคร่อม insert ไว้ด้วยผลของ delete (ถูกแล้ว) **แต่ลูปตัดสต็อกไม่ได้ถูกคร่อมด้วย**
+     ⇒ 23/10–02/11: อะไหล่ออกจากคลัง 98 รายการ / 45 ใบ โดยใบ MO ไม่มีบันทึกสักบรรทัด
+       (วัดจาก edge_logs: DELETE /rest/v1/mtn_order_parts → 401 วันละ ~49 ครั้ง ·
+        แถวใหม่ใน mtn_order_parts = 0 ทุกวันติดกัน 11 วัน · ไม่มีรายการคืนสต็อกเลย)
+     กฎ: "ของออกจากคลัง" กับ "บันทึกว่าใช้กับใบไหน" ต้องไปด้วยกัน — เขียนบันทึกไม่ติด ห้ามตัดสต็อก
+     (หลักเดียวกับ db-write-rules ข้อ 6: claim ก่อนเขียน ledger · ledger ล้มต้องคืนสถานะ)
+     🔴 ห้ามแก้ด่านนี้ด้วยการย้าย `mtn_stock_move` ออกไปไฟล์อื่น — ให้ย้ายด่านตามไปด้วย */
+  const src = readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8');
+  const iGate  = src.indexOf('if (!partsWritten)');
+  const iStock = src.indexOf("rpc('mtn_stock_move'");
+  assert.ok(iGate > -1,
+    '\n\n❌ MtnRepair.jsx ไม่มีประตู `if (!partsWritten)` ก่อนตัดสต็อกแล้ว\n'
+    + '   ผล: เขียน mtn_order_parts ไม่ติด (401/เน็ตหลุด) แต่ของยังออกจากคลัง = ตามรอยอะไหล่ไม่ได้\n');
+  assert.ok(iStock > -1 && iGate < iStock,
+    '\n\n❌ `mtn_stock_move` ไม่ได้อยู่หลังประตู `if (!partsWritten)`\n'
+    + '   แก้: ตัดสต็อกเฉพาะเมื่อเขียนรายการอะไหล่ลงใบสำเร็จ (นับแถวด้วย checkWriteRows)\n');
+  assert.match(src, /from\('mtn_order_parts'\)\.insert\(partRows\)\.select\('id'\)[\s\S]{0,160}?checkWriteRows\(insParts/,
+    '\n\n❌ insert รายการอะไหล่ไม่ได้นับแถว — ต้องใช้ checkWriteRows(... .select(\'id\'), …, { min })\n'
+    + '   เขียนไม่ครบแล้วตัดสต็อกตามรายการที่ใบไม่มี = ยอดคลังกับใบไม่ตรงกันเงียบๆ\n');
+});
+
 /* ═══ 🧩 scope-picker-single-field — ③ ส่วนงาน กับ ④ Cost Center ต้องเป็นช่องเดียว ═══ 02/11
    คำสั่ง user: *"ปัญหาเรื่อง 3 กับ 4 ที่ควรจะรวมกันจะแก้จบเมื่อไหร่ ที่จริงเลือก 4 มันครอบคลุมอยู่แล้ว มันตามผังองค์กร"*
    2 ช่องที่ตอบคำถามเดียวกัน ("แก้ของใครได้") = ตั้งแล้วขัดกันเอง ⇒ `profiles.sections` ต้อง derive จาก CC
@@ -7952,4 +7994,71 @@ test('🧩 scope-picker-single-field — /add-user ห้ามมีช่อ�
   const sp = stripComments(readFileSync(join(ROOT, 'src/utils/scopePicker.js'), 'utf8'));
   assert.match(sp, /if \(!ccs\?\.length\) return base;/,
     '🔴 ไม่ติ๊ก CC เลยต้องคืนค่าเดิมเป๊ะ — บัญชีเก่าห้ามเปลี่ยนพฤติกรรม (บทเรียน 26/10)');
+});
+
+/* ═══ 🔄 assignment-overlay-widen-only — ขอบเขตจริงอ่าน org_assignments แบบ "กว้างขึ้นได้อย่างเดียว" ═══ 02/11
+   คำสั่ง user: *"ตำแหน่งจริงของ HR เป็นพื้นฐาน และเพิ่มความรับผิดชอบงานที่อาจจะรักษาการแทนตำแหน่งนั้น"*
+                → *"ลุยต่อ ให้ขอบเขตจริงอ่าน org_assignments เลย"*
+   · ตัวทับมีไฟล์เดียว `utils/assignmentOverlay.js` (pure · ห้ามแตะ DB) · App.jsx ต้องส่งผล
+     effectiveSections() เข้า applyAssignments() ก่อน setUserSections (ไม่งั้นมอบหมายไม่มีผลเงียบ)
+   · กฎวันที่มีผล = `isGranting()` ที่เดียว — ห้ามเขียน starts_on/ends_on เทียบวันเองใน App.jsx
+   · ห้ามคืนน้อยกว่าที่ profiles ตั้ง (กฎ 26/10) — ฐานไม่จำกัด (sections ว่าง) ต้องคงว่างเสมอ */
+test('🔄 assignment-overlay-widen-only — รักษาการทับขอบเขตได้ทางกว้างขึ้นเท่านั้น · กฎวันที่ที่เดียว', async () => {
+  const app = stripComments(readFileSync(join(ROOT, 'src/App.jsx'), 'utf8'));
+  assert.match(app, /from\('org_assignments'\)[\s\S]{0,200}\.eq\('profile_id',\s*user\.id\)/,
+    '🔴 fetchProfile ต้องอ่าน org_assignments ของบัญชีนี้ (กรอง profile_id)');
+  assert.match(app, /applyAssignments\(\{\s*sections:\s*baseSections/, 'ผล effectiveSections ต้องผ่าน applyAssignments ก่อน setUserSections');
+  assert.match(app, /setUserSections\(finalSections\)/, 'setUserSections ต้องใช้ค่าหลังทับ');
+  assert.doesNotMatch(app, /starts_on\s*<=|ends_on\s*>=/, '🔴 ห้ามเขียนกฎวันที่ของมอบหมายเองใน App.jsx — ใช้ isGranting()');
+
+  const ov = stripComments(readFileSync(join(ROOT, 'src/utils/assignmentOverlay.js'), 'utf8'));
+  assert.doesNotMatch(ov, /supabaseClient|from\(/, 'assignmentOverlay.js ต้อง pure ห้ามแตะ DB');
+  assert.match(ov, /isGranting\(a, today\)/, 'ต้องใช้ isGranting() ตัวเดียวกับจอ /org-setup');
+
+  const { applyAssignments } = await import('../assignmentOverlay.js');
+  const { buildCcIndex } = await import('../ccScope.js');
+  const nodes = [{ id: 1, kind: 'section', name: 'PD3', parent_id: null, cost_center: '1' }];
+  const ccIdx = buildCcIndex(nodes);
+  const a = [{ id: 'x', kind: 'acting', org_node_id: 1, scope_depth: 'branch', starts_on: '2026-01-01', ends_on: null }];
+  const r0 = applyAssignments({ sections: [], respCostCenters: [] }, a, { nodes, ccIdx, today: '2026-11-02' });
+  assert.deepEqual(r0.sections, [], '🔴 ฐานไม่จำกัดต้องคงไม่จำกัด — มอบหมายห้ามทำให้แคบลง');
+  const r1 = applyAssignments({ sections: ['PD4'], respCostCenters: ['9'] }, a, { nodes, ccIdx, today: '2026-11-02' });
+  assert.ok(r1.sections.includes('PD4') && r1.respCostCenters.includes('9'), '🔴 ของเดิมต้องอยู่ครบหลังทับ');
+  const rf = applyAssignments({ sections: ['PD4'], respCostCenters: [] }, a, { nodes: [], ccIdx: null, today: '2026-11-02' });
+  assert.deepEqual(rf.sections, ['PD4']); assert.equal(rf.failed, true, 'ผังอ่านไม่ได้ = ไม่ทับ + failed');
+});
+
+test('🛒 pr-filter-keeps-waiting — ซ่อนตัวกรองรวมได้ แต่ห้ามถอดออกจากลิสต์', () => {
+  /* why (02/11 · ทีม MTN แจ้ง "Filter ไปขึ้นซ้อนกัน ทั้ง 1.รอแอดมินช่างเปิด PR 2.รอเปิด PR"):
+     ตัวเลือก `waiting` = ผลรวมของ `need` + `no_no` ⇒ เมื่อ `no_no` เป็น 0 มันโชว์เลขเท่ากับ `need` เป๊ะ
+     หน้างานอ่านว่าเป็นตัวเลือกซ้ำ ⇒ ซ่อนจาก dropdown (เหลือ 3 ขั้นตามที่ทีมเขียนมา)
+     🔴 แต่ **ห้ามลบออกจาก `PR_FILTERS`** — กระดิ่ง `mtn_pr_waiting` เก็บลิงก์ `/mtn-repair?pr=waiting`
+        ไว้ใน `notification_rules` (Main) · `prMatch` ตัดสินว่า "ค่าที่ไม่รู้จัก = ไม่กรอง"
+        ⇒ ลบทิ้งเมื่อไหร่ กดกระดิ่งแล้วได้ลิสต์ทั้งหมดแทนคิวของแอดมินช่าง เงียบๆ ไม่มีอะไรฟ้อง
+     🔴 และตัวที่ซ่อนต้องยังโผล่เป็น <option> เมื่อถูกเลือกอยู่ ไม่งั้นช่องว่างทั้งที่กรองอยู่ */
+  const src = readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8');
+  assert.match(src, /\{\s*v:\s*'waiting'[^}]*hidden:\s*true/,
+    '\n\n❌ ตัวเลือก `waiting` หายจาก PR_FILTERS (หรือไม่ได้ทำเป็น hidden)\n'
+    + '   ผล: ลิงก์ในกระดิ่ง `/mtn-repair?pr=waiting` จะไม่กรองอะไรเลย — แอดมินช่างได้ลิสต์ทั้งหมด\n'
+    + '   แก้: เก็บแถวไว้แล้วติด hidden: true (ซ่อนจาก dropdown เฉยๆ)\n');
+  assert.match(src, /PR_FILTERS\.filter\(x => !x\.hidden \|\| x\.v === fPr\)/,
+    '\n\n❌ ลิสต์ตัวเลือกไม่ได้เปิดทางให้ตัวที่ซ่อนโผล่ตอนถูกเลือก\n'
+    + '   ผล: มาจากลิงก์กระดิ่งแล้วช่อง "งาน PR" ว่างเปล่า ทั้งที่จอกรองอยู่ = จอโกหก\n');
+});
+
+test('🧑‍🔧 mo-print-shows-techs — ใบพิมพ์ FM-MTN-006 ต้องมีชื่อช่างซ่อมหลัก/รอง', () => {
+  /* why (02/11 · ทีม MTN แจ้ง "ช่างซ่อมหลักและช่างซ่อมรองที่ให้กรอก ไม่ได้แสดงในเอกสาร MO ที่ Export"):
+     ฟอร์มมี **2 ที่** ให้บอกว่าใครทำงาน — ช่อง `tech_main`/`tech_secondary` (ขั้น 3) กับตาราง
+     "+ เพิ่มคน" (`mtn_order_labor`) — และใบพิมพ์วาดจากตารางค่าแรงอย่างเดียว
+     วัด 90 วัน: 1,317/1,430 ใบ (92%) กรอกชื่อช่างหลักไว้แต่ไม่มีแถวค่าแรงเลย
+     ⇒ ใบพิมพ์โชว์ตารางค่าแรงว่างทั้งตาราง ทั้งที่ระบบรู้อยู่แล้วว่าใครซ่อม
+     กฎ: ใบพิมพ์ต้องรวม 2 แหล่งเข้าด้วยกัน (ชื่อซ้ำไม่เติม · แถวที่เติมไม่มีราคา = ช่องว่าง ห้ามเดาเลข)
+     🔴 ห้ามแก้ด้วยการเขียน tech_main กลับเข้า `mtn_order_labor` — ใบพิมพ์ไม่ใช่ที่มาของข้อมูล */
+  const src = readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8');
+  assert.match(src, /laborList\s*=\s*\[[\s\S]{0,400}?o\.tech_main[\s\S]{0,120}?o\.tech_secondary/,
+    '\n\n❌ ใบพิมพ์ MTN ไม่ได้เอา tech_main/tech_secondary เข้าตารางค่าแรงแล้ว\n'
+    + '   ผล: 92% ของใบพิมพ์ออกมาโดยตาราง "ค่าแรงในการปฏิบัติงาน" ว่างทั้งตาราง\n'
+    + '   แก้: ต่อท้าย laborList ด้วยช่างหลัก/รองที่ยังไม่มีชื่อในตาราง (rate/hours = null)\n');
+  assert.match(src, /laborNames\.has\(/,
+    '\n\n❌ ไม่ได้กันชื่อซ้ำ — ช่างที่ลงค่าแรงไว้แล้วจะขึ้น 2 บรรทัดบนใบ\n');
 });
