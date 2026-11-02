@@ -7978,6 +7978,7 @@ test('🔩 mtn-parts-before-stock — ตัดสต็อกอะไหล่
   assert.match(src, /from\('mtn_order_parts'\)\.insert\(partRows\)\.select\('id'\)[\s\S]{0,160}?checkWriteRows\(insParts/,
     '\n\n❌ insert รายการอะไหล่ไม่ได้นับแถว — ต้องใช้ checkWriteRows(... .select(\'id\'), …, { min })\n'
     + '   เขียนไม่ครบแล้วตัดสต็อกตามรายการที่ใบไม่มี = ยอดคลังกับใบไม่ตรงกันเงียบๆ\n');
+});
 
 /* ═══ 🧩 scope-picker-single-field — ③ ส่วนงาน กับ ④ Cost Center ต้องเป็นช่องเดียว ═══ 02/11
    คำสั่ง user: *"ปัญหาเรื่อง 3 กับ 4 ที่ควรจะรวมกันจะแก้จบเมื่อไหร่ ที่จริงเลือก 4 มันครอบคลุมอยู่แล้ว มันตามผังองค์กร"*
