@@ -1,10 +1,11 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { orgNodeCompare } from '../utils/listOrder';
 import { supabase } from '../supabaseClient';
 import { toast } from '../components/Toast';
 import { loadLinesRes } from '../utils/useProductionLines';
 import { accessSummaryForRole } from '../App';
 import { ROLE_OPTIONS, roleLabel, groupRolesByAxis, ORG_LEVELS } from '../utils/roleMeta';
+import { effectiveSections as deriveSections, ccsForSections } from '../utils/scopePicker';
 import { positionOptions, positionOptionsWith, positionLabel, loadPositions, clearPositionsCache, levelOfPosition, maintenanceKindOfPosition, levelMeta, POSITION_LEVELS } from '../utils/positions';
 import { can, loadPermissions } from '../utils/permissions';   // เช็คสิทธิ์ของ role ที่เลือก เพื่อเตือนเมื่อไม่ตรงกับระดับงาน
 import { deptNameOf, teamKeyOf } from '../utils/mtnTeams';
@@ -242,6 +243,28 @@ export default function AddUser() {
   }, [emps, form.employeeId, scopeIdx]);
   const toggleCc = (cc) => setF('respCcs', form.respCcs.includes(cc)
     ? form.respCcs.filter(x => x !== cc) : [...form.respCcs, cc]);
+
+  /* 🧩 ③ + ④ ยุบเป็นช่องเดียว (2026-11-02 · คำสั่ง user "3 กับ 4 ควรรวมกัน · เลือก 4 ครอบคลุมอยู่แล้ว ตามผังองค์กร")
+     `profiles.sections` (ขอบเขตที่เห็น) **derive** จาก CC ที่ติ๊ก — ไม่มีช่องติ๊กส่วนงานแยกอีก
+     🔴 ไม่ติ๊ก CC เลย = ใช้ค่าเดิมเป๊ะ · ค่าเดิมที่แปลงเป็น CC ไม่ได้ = คงไว้ (ห้ามแคบลงเงียบ · utils/scopePicker.js) */
+  const effSections = useMemo(
+    () => deriveSections(ccIdxNodes, orgAllNodes || [], form.respCcs, form.sections),
+    [ccIdxNodes, orgAllNodes, form.respCcs, form.sections]);
+  const legacyUnmapped = useMemo(
+    () => (orgAllNodes ? ccsForSections(ccIdxNodes, orgAllNodes, form.sections).unmapped : []),
+    [ccIdxNodes, orgAllNodes, form.sections]);
+  /* บัญชีเก่าที่ตั้ง sections ไว้แต่ยังไม่มี CC → ติ๊ก CC ให้เห็นบนจอว่า "ตั้งอยู่" (ครั้งเดียวต่อบัญชี)
+     ไม่ทำ = เปิดจอมาต้นไม้ว่างทั้งที่ขอบเขตมีอยู่ = อ่านแล้วเข้าใจผิดว่ายังไม่ได้ตั้ง */
+  const ccPrefilledFor = useRef(null);
+  useEffect(() => {
+    if (!orgAllNodes || !form.email) return;
+    if (ccPrefilledFor.current === form.email) return;
+    ccPrefilledFor.current = form.email;
+    if (form.respCcs.length || !form.sections.length) return;
+    const { ccs } = ccsForSections(ccIdxNodes, orgAllNodes, form.sections);
+    if (ccs.length) setF('respCcs', ccs);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orgAllNodes, form.email]);
 
   /* + เพิ่มตำแหน่งใหม่ → insert positions (Main) ก่อน แล้วเลือกให้ — แทนช่อง "อื่นๆ (พิมพ์เอง)" เดิม (2026-09-07)
      ค่าที่พิมพ์เองไม่มีใน master → levelOfPosition() คืน null = คำเตือน AM/PM ไม่ทำงานเงียบๆ (Register.jsx ไม่มีช่องหนีอยู่แล้ว) */
@@ -508,7 +531,7 @@ export default function AddUser() {
   const homeSectionForSave = () => (linkedEmp()?.section || form.homeSection || '') || null;
 
   const validateScope = () => {
-    if (form.role === 'supervisor' && !form.sections.length) return 'ชุดสิทธิ์ระดับส่วน ต้องกำหนด Section อย่างน้อย 1 ส่วนงาน ไม่งั้นจะเห็นข้อมูลทุกส่วนงานแบบไม่จำกัด';
+    if (form.role === 'supervisor' && !effSections.length) return 'ชุดสิทธิ์ระดับส่วน ต้องติ๊กหน่วยที่ดูแล (③) อย่างน้อย 1 หน่วย ไม่งั้นจะเห็นข้อมูลทุกส่วนงานแบบไม่จำกัด';
     if (form.role === 'leader' && (!form.lineId || !form.team)) return 'ชุดสิทธิ์ระดับไลน์ ต้องกำหนดทั้งไลน์ผลิตและ Team ไม่งั้นจะเห็นข้อมูลทุกไลน์แบบไม่จำกัด';
     return null;
   };
@@ -579,7 +602,7 @@ export default function AddUser() {
             full_name:    form.fullName || null,
             position:     form.position || null,
             section:      homeSectionForSave(),
-            sections:     form.sections,
+            sections:     effSections,   // 🧩 derive จาก CC ที่ติ๊ก (scopePicker.js)
             team:         form.team || null,
             line_id:      form.lineId ? Number(form.lineId) : null,
             notify_email: form.notifyEmail || null,
@@ -672,7 +695,7 @@ export default function AddUser() {
         role:         form.role,
         position:     form.position    || null,
         section:      homeSectionForSave(),
-        sections:     form.sections.length ? form.sections : null,
+        sections:     effSections.length ? effSections : null,   // 🧩 derive จาก CC ที่ติ๊ก (scopePicker.js)
         /* 🔭 ความกว้างที่ "คนเลือกเอง" — ต่างจาก legacy_open ที่ได้ all มาจากการเว้นว่าง
            (docs/ACCESS-CONTROL-STANDARDS.md §2 · ขอบเขตตัดสิทธิ์ให้แคบลงเท่านั้น ห้ามขยาย) */
         scope_depth:     form.scopeDepth || 'unit',
@@ -1710,9 +1733,9 @@ export default function AddUser() {
                 background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, padding: '8px 10px' }}>
                 <div><b style={{ color: 'var(--text2)' }}>① ชุดสิทธิ์ (Role)</b> = <b>กดอะไรได้</b> — เปิดหน้า/ปุ่มไหนบ้าง · <u>ไม่ได้บอกว่าสังกัดหน่วยไหน</u></div>
                 <div><b style={{ color: 'var(--text2)' }}>② ขอบเขตการมองเห็น</b> = <b>เห็นข้อมูลของใคร</b> — กว้าง/แคบ</div>
-                <div><b style={{ color: 'var(--text2)' }}>③ ขอบเขตส่วนงาน</b> = <b>แก้ข้อมูลของใครได้</b> (ใหม่ 15/10) — ไม่ใช่ของตัวเอง = ดูได้ แก้ไม่ได้
-                  {' · '}<span style={{ color: 'var(--text2)' }}>ไม่ติ๊กเลย = ใช้ <b>🏠 ส่วนงานที่สังกัด</b> ข้างบน (มาจากทะเบียนพนักงาน)</span></div>
-                <div><b style={{ color: 'var(--text2)' }}>④ Cost Center ที่รับผิดชอบ</b> = <b>แก้ข้อมูลของใครได้ "ตามลำดับชั้น"</b> (ใหม่ 16/10) — ติ๊กชั้นส่วนงาน ได้ทุกหน่วยใต้ลงไป · <b>ไม่ติ๊ก = ใช้ ③ เหมือนเดิม</b></div>
+                <div><b style={{ color: 'var(--text2)' }}>③ หน่วยที่ดูแล (ตามผังองค์กร)</b> = <b>เห็น + แก้ข้อมูลของใครได้</b> — ติ๊กที่ต้นไม้ Cost Center ที่เดียว
+                  · ติ๊กชั้นส่วนงาน = ได้ทุกแผนก/ไลน์ใต้ลงไป · <b>เห็น</b> = ส่วนงานของหน่วยที่ติ๊ก (ระบบเติมให้เอง) · <b>แก้</b> = เฉพาะหน่วยที่ติ๊ก
+                  {' · '}<span style={{ color: 'var(--text2)' }}>ไม่ติ๊กเลย = เห็นทุกส่วนงาน แต่แก้ได้แค่ <b>🏠 ส่วนงานที่สังกัด</b> (จากทะเบียนพนักงาน)</span></div>
               </div>
 
               <div>
@@ -1738,7 +1761,7 @@ export default function AddUser() {
                   color: can('scope', 'all_units', form.role) ? '#f59e0b' : 'var(--muted)' }}>
                   {can('scope', 'all_units', form.role)
                     ? '🌐 role นี้ถือใบผ่าน scope:all_units — แก้ข้อมูลข้ามส่วนงานได้ทั้งโรงงาน'
-                    : '🔒 role นี้แก้ได้เฉพาะส่วนงานของตัวเอง (ข้อ ③ ข้างล่าง) — ของส่วนงานอื่นดูได้ แต่แก้ไม่ได้'}
+                    : '🔒 role นี้แก้ได้เฉพาะหน่วยที่ดูแล (ข้อ ③ ข้างล่าง) — ของหน่วยอื่นดูได้ แต่แก้ไม่ได้'}
                 </div>
               </div>
 
@@ -1789,56 +1812,42 @@ export default function AddUser() {
                 })()}
               </div>
 
+              {/* 🧩 ③ เดิม (ช่องติ๊กส่วนงาน) ถูกยุบเข้าต้นไม้ CC ข้างล่างแล้ว (2026-11-02 · คำสั่ง user
+                  "3 กับ 4 ควรรวมกัน · เลือก 4 มันครอบคลุมอยู่แล้ว มันตามผังองค์กร")
+                  ตรงนี้เหลือแค่ "สรุปผลที่ระบบ derive" ให้แอดมินเห็นว่าบัญชีนี้จะเห็นส่วนงานไหน
+                  🔴 ห้ามเอาช่องติ๊กส่วนงานกลับมา — 2 ช่องที่ตอบคำถามเดียวกันคือต้นเหตุของ "ตั้งแล้วขัดกัน" */}
               <div style={{ gridColumn: '1 / -1' }}>
                 <label style={labelSt}>
-                  ③ ขอบเขตส่วนงาน (Section) — <span style={{ fontWeight: 600, color: 'var(--muted)' }}>"เห็น + แก้ข้อมูลของใครได้"</span>
+                  ③ หน่วยที่ดูแล — <span style={{ fontWeight: 600, color: 'var(--muted)' }}>"เห็น + แก้ข้อมูลของใครได้" (ติ๊กที่ต้นไม้ข้างล่าง)</span>
                   {form.role === 'supervisor' && <span style={{ color: 'var(--red)' }}> * จำเป็นอย่างน้อย 1</span>}
                 </label>
-                {/* 🔐 15/10 — ช่องนี้ไม่ใช่แค่ตัวกรองการดูอีกแล้ว มันคือด่าน "แก้ของคนอื่นไม่ได้"
-                    ต้องเขียนบอกตรงนี้ ไม่งั้นแอดมินงงว่าทำไมคนนั้นกดบันทึกไม่ผ่าน */}
-                <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 5, lineHeight: 1.6 }}>
-                  ช่องนี้คุม <b>2 แกนพร้อมกัน</b> — <b>เห็น:</b> ไม่ติ๊กเลย = เห็นทุกส่วนงาน ·
-                  <b>แก้:</b> ติ๊กไว้เท่าไหร่ แก้ได้เท่านั้น · <b>ไม่ติ๊กเลย = แก้อะไรไม่ได้</b> (ดูได้อย่างเดียว)
-                  {' '}— ส่วนงานของพนักงานคนนี้ตั้งที่ทะเบียนพนักงาน <code>/operator</code>
-                  {' · '}คนที่งานเป็นงานทั้งโรงงานจริง (QA · สโตร์ · PE) ให้เปิดคีย์ <code>scope:all_units</code> ที่เมนู 🔐 จัดการสิทธิ์
+                <div style={{ fontSize: 11.5, lineHeight: 1.7, padding: '7px 10px', borderRadius: 8,
+                  background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)' }}>
+                  👁️ <b>เห็นข้อมูลของ:</b>{' '}
+                  {effSections.length
+                    ? effSections.map(sec => (
+                        <span key={sec} style={{ display: 'inline-block', margin: '1px 4px 1px 0', padding: '1px 8px', borderRadius: 6,
+                          fontSize: 11.5, fontWeight: 700, background: 'rgba(77,159,255,0.15)', color: '#4d9fff',
+                          border: `1px ${legacyUnmapped.includes(sec) ? 'dashed' : 'solid'} rgba(77,159,255,0.5)` }}
+                          title={legacyUnmapped.includes(sec) ? 'ค่าเดิมที่ไม่มีรหัส CC ในผัง — ยังใช้อยู่ · กด ✕ เพื่อถอด' : 'มาจากหน่วยที่ติ๊กด้านล่าง'}>
+                          {sec}
+                          {legacyUnmapped.includes(sec) && (
+                            <button type="button" onClick={() => setF('sections', form.sections.filter(x => x !== sec))}
+                              style={{ marginLeft: 5, border: 'none', background: 'transparent', color: 'inherit', cursor: 'pointer', fontWeight: 700 }}>✕</button>
+                          )}
+                        </span>))
+                    : <b>ทุกส่วนงาน</b>}
+                  <span style={{ color: 'var(--muted)' }}>
+                    {' '}· ✏️ <b>แก้ได้:</b> {form.respCcs.length
+                      ? <>เฉพาะ {form.respCcs.length} หน่วยที่ติ๊ก (ตามลำดับชั้น)</>
+                      : <>เฉพาะ 🏠 ส่วนงานที่สังกัด{homeSectionForSave() ? <> ({homeSectionForSave()})</> : <> — <b style={{ color: '#f59e0b' }}>ยังไม่มี → แก้ข้อมูลไม่ได้เลย</b></>}</>}
+                  </span>
+                  {legacyUnmapped.length > 0 && (
+                    <div style={{ color: 'var(--muted)', marginTop: 3 }}>
+                      ⚠️ กรอบประ = ค่าเดิมที่ยังไม่มีรหัส CC ในผัง (ระบบยังใช้ให้เหมือนเดิม) — ไปผูกรหัสที่ <code>/org-setup</code> แล้วค่าจะย้ายมาที่ต้นไม้เอง
+                    </div>
+                  )}
                 </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '8px 10px', background: 'var(--bg3)', borderRadius: 8, border: '1px solid var(--border2)' }}>
-                  {sectionOpts.length === 0 && <span style={{ fontSize: 12, color: 'var(--muted)' }}>ไม่มีข้อมูล Section</span>}
-                  {/* ส่วนงานผลิต + แผนกขึ้นตรงฝ่าย + ค่าเก่าที่ไม่อยู่ในทะเบียน
-                      (pattern เดียวกับ positionOptionsWith) — **ห้ามซ่อนค่าที่ตั้งไว้แล้ว**
-                      ไม่งั้นคนอ่านหน้าจอเข้าใจว่า "ยังไม่ได้ตั้ง" ทั้งที่ตั้งไว้ */}
-                  {[...new Set([...sectionOpts, ...orphanDeptOpts, ...form.sections])].map(s => {
-                    const checked = form.sections.includes(s);
-                    const isOrphan  = orphanDeptOpts.includes(s);
-                    const offList   = !sectionOpts.includes(s) && !isOrphan;   // ค่าเก่านอกทะเบียน
-                    return (
-                      <label key={s} title={isOrphan ? 'แผนกขึ้นตรงฝ่าย — ไม่ได้สังกัดส่วนงานผลิต'
-                                          : offList ? 'ค่าเดิมที่ไม่มีในผังองค์กรแล้ว — ยังใช้งานอยู่ ติ๊กออกได้ถ้าไม่ต้องการ' : ''}
-                        style={{
-                        display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer',
-                        padding: '4px 10px', borderRadius: 6, fontSize: 12, fontWeight: 600, userSelect: 'none',
-                        background: checked ? 'rgba(77,159,255,0.15)' : 'var(--bg2)',
-                        border: `1px ${offList ? 'dashed' : 'solid'} ${checked ? 'rgba(77,159,255,0.5)' : 'var(--border2)'}`,
-                        color: checked ? '#4d9fff' : 'var(--text2)',
-                      }}>
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() => setF('sections', checked ? form.sections.filter(x => x !== s) : [...form.sections, s])}
-                          style={{ margin: 0 }}
-                        />
-                        {isOrphan ? `🏛️ ${s}` : s}{offList ? ' ⚠' : ''}
-                      </label>
-                    );
-                  })}
-                </div>
-                {/* กติกาสำคัญ (ไม่ติ๊ก = เห็นทุกส่วนงาน) เห็นตลอด · เหตุผล/ข้อควรระวังพับไว้ */}
-                <InfoMore size={11} style={{ marginTop: 4 }} id="au_sections"
-                  lead={<>เลือกได้หลายส่วนงาน — เห็นข้อมูลเฉพาะที่ติ๊ก · <b>ไม่ติ๊กเลย = เห็นทุกส่วนงาน</b>
-                    {orphanDeptOpts.length > 0 && <> · 🏛️ = <b>แผนกขึ้นตรงฝ่าย</b> (QA / ช่าง — ไม่ได้สังกัดส่วนงานผลิต)</>}</>}>
-                  ใช้ได้กับทุกชุดสิทธิ์ (เช่น สิทธิ์ทั้งฝ่าย ที่ดูแลเฉพาะบางส่วน)
-                  <br />💡 ขอบเขตนี้มีผลกับ<b>ข้อมูลฝ่ายผลิต</b> (พนักงาน/ไลน์/เช็คชื่อ/รายงาน) — สาย Logistic/Store/ขาย <b>ไม่ต้องติ๊ก</b> เพราะโมดูล Logistic ไม่ได้แบ่งข้อมูลตามส่วนงาน ใช้ Role คุมการเข้าหน้าแทน
-                </InfoMore>
               </div>
 
               {/* ④ 💰 Cost Center ที่รับผิดชอบ — ชั้นสิทธิ์ที่ 3 "แกนใหม่" (16/10 · คำสั่ง user
@@ -1847,11 +1856,11 @@ export default function AddUser() {
                   🔴 จอนี้ไม่ใช่ด่าน — ด่านจริงคือ `canWriteScope()` ในฟังก์ชันที่เขียน DB */}
               <div style={{ gridColumn: '1 / -1' }}>
                 <label style={labelSt}>
-                  ④ Cost Center ที่รับผิดชอบ — <span style={{ fontWeight: 600, color: 'var(--muted)' }}>“แก้ข้อมูลของใครได้ ตามลำดับชั้น”</span>
+                  🌳 ติ๊กหน่วยที่ดูแล (Cost Center · ตามผังองค์กร) — <span style={{ fontWeight: 600, color: 'var(--muted)' }}>“ติ๊กแม่ = ได้ทั้งกิ่ง”</span>
                 </label>
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 5, lineHeight: 1.6 }}>
                   ติ๊ก<b>ชั้นส่วนงาน</b> = ได้ทุกแผนก/ไลน์/ทีมที่อยู่<b>ใต้ลงไป</b>ทั้งหมด — ไม่ต้องติ๊กลูกทีละตัว ·
-                  <b> ไม่ติ๊กเลย = ใช้ ③ ส่วนงาน เหมือนเดิม</b> (บัญชีเดิมพฤติกรรมไม่เปลี่ยน)
+                  ติ๊กแล้ว "เห็นข้อมูลของ" ข้างบนจะเติมส่วนงานให้เอง · <b>ไม่ติ๊กเลย = เห็นทุกส่วนงาน แต่แก้ได้แค่ส่วนงานที่สังกัด</b>
                   <br />🔴 ลำดับชั้นมาจาก<b>ผังองค์กร</b> ไม่ใช่ตัวเลขรหัส — ลูกของ <code>2140461000</code> (PD1) คือ <code>2140561001</code> หลักที่ 5 เปลี่ยน 4→5
                   {' · '}รหัสของแต่ละหน่วยตั้งที่ <code>/org-setup</code>
                 </div>
@@ -1877,7 +1886,7 @@ export default function AddUser() {
                 {ccReady && ccRows.length === 0 && (
                   <div style={{ fontSize: 11.5, color: '#f59e0b', lineHeight: 1.6 }}>
                     ⚠️ ผังองค์กรยังไม่มีหน่วยไหนผูกรหัส Cost Center เลย — ไปกรอกที่ <code>/org-setup</code> ก่อน
-                    จึงจะตั้งช่องนี้ได้ (ระหว่างนี้ใช้ ③ ส่วนงาน ตามเดิม)
+                    จึงจะตั้งช่องนี้ได้ (ระหว่างนี้บัญชีเก่ายังใช้ค่า "เห็นข้อมูลของ" เดิม)
                   </div>
                 )}
 
@@ -1941,8 +1950,8 @@ export default function AddUser() {
                 {/* สรุปผล + รหัสที่ผังไม่รู้จัก (ห้ามซ่อนค่าที่ตั้งไว้แล้ว) */}
                 <div style={{ fontSize: 11, marginTop: 5, lineHeight: 1.6, color: 'var(--muted)' }}>
                   {form.respCcs.length === 0
-                    ? <>ยังไม่ติ๊ก — ชั้นสิทธิ์ที่ 3 จะใช้ <b>③ ส่วนงาน</b> ({form.sections.length ? form.sections.join(' · ') : 'ยังไม่ได้ตั้ง → แก้ข้อมูลไม่ได้เลย'}) ตามเดิม</>
-                    : <>ติ๊กไว้ <b style={{ color: '#22c55e' }}>{form.respCcs.length} รหัส</b> — ชนะ ③ ส่วนงาน (เมื่อมีรหัสแล้ว ระบบใช้แกนนี้ตัดสิน)</>}
+                    ? <>ยังไม่ติ๊ก — {form.sections.length ? <>ใช้ค่าเดิม: <b>{form.sections.join(' · ')}</b></> : <>เห็นทุกส่วนงาน · แก้ได้แค่ส่วนงานที่สังกัด</>}</>
+                    : <>ติ๊กไว้ <b style={{ color: '#22c55e' }}>{form.respCcs.length} หน่วย</b> — เห็น {effSections.length} ส่วนงาน · แก้ได้ตามลำดับชั้นของหน่วยที่ติ๊ก</>}
                   {can('scope', 'all_units', form.role) && (
                     <><br />🌐 role นี้ถือ <code>scope:all_units</code> อยู่แล้ว — แก้ได้ทั้งโรงงานไม่ว่าติ๊กอะไรไว้ (ค่าที่ติ๊กยังถูกเก็บไว้ เผื่อถอดใบผ่านทีหลัง)</>
                   )}
