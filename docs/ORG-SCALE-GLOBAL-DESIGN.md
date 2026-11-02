@@ -305,5 +305,7 @@ const topNodes = (kids.get('') || []).filter(n => n.kind === 'section' || n.kind
 ⇒ ขั้น 3 (ถอดช่อง ② ออก) เริ่มได้ต่อเมื่อ **29 คนนี้ตำแหน่งถูกแก้ให้ตรง** และ **QA มี division**
 
 ### งานข้อมูลที่ต้องจบก่อน (ไม่ใช่โค้ด)
-1. ตั้ง `division` ให้ section `QA` ที่ /org-setup (แนะนำ `engineering` ตามหมายเหตุใน orgDivisions.js หรือเปิด `quality` คืน)
-2. แก้ `employees.position` ของ 29 คนให้ตรงหน้าที่ (line_leader / dept_head / section_head)
+1. ✅ **ทำแล้ว 02/11** — user เคาะ *"เอาให้ QA ใต้ส่วน engineering"* → `org_nodes` section QA `division='engineering'`
+   วัดซ้ำ: แนะนำไม่ได้ 20 → **0** · เท่าเดิม 27 → **47** (QA 20 คน = all ตรงกับที่ตั้งอยู่) · กว้างขึ้น 2 · **แคบลง 29 (เท่าเดิม)**
+2. ⏳ แก้ `employees.position` ของ 29 คนให้ตรงหน้าที่ (line_leader / dept_head / section_head) — **ตัวเดียวที่เหลือ**
+   ก่อนถอดช่อง ② ออกจริง (เป้า: "แคบลง = 0")
