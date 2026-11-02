@@ -7937,3 +7937,19 @@ test('🏷️ edition-alias-safe — import `appEdition` ต้องไม่�
   assert.match(nmc, /appEdition\$\/[\s\S]{0,80}appEdition\.nm/,
     '\n\n❌ vite.nm.config.js ไม่มี alias appEdition → appEdition.nm แล้ว — เว็บ NM จะเปิดได้ทุกหน้าของระบบแมส\n');
 });
+
+/* ═══ 🧩 scope-picker-single-field — ③ ส่วนงาน กับ ④ Cost Center ต้องเป็นช่องเดียว ═══ 02/11
+   คำสั่ง user: *"ปัญหาเรื่อง 3 กับ 4 ที่ควรจะรวมกันจะแก้จบเมื่อไหร่ ที่จริงเลือก 4 มันครอบคลุมอยู่แล้ว มันตามผังองค์กร"*
+   2 ช่องที่ตอบคำถามเดียวกัน ("แก้ของใครได้") = ตั้งแล้วขัดกันเอง ⇒ `profiles.sections` ต้อง derive จาก CC
+   ที่ติ๊ก (utils/scopePicker.js) — ห้ามมีช่องติ๊กส่วนงานแยกใน /add-user อีก */
+test('🧩 scope-picker-single-field — /add-user ห้ามมีช่องติ๊กส่วนงานแยกจากต้นไม้ CC', () => {
+  const au = stripComments(readFileSync(join(ROOT, 'src/pages/AddUser.jsx'), 'utf8'));
+  assert.doesNotMatch(au, /setF\('sections',\s*checked\s*\?/,
+    '🔴 ช่องติ๊ก sections กลับมาแล้ว — ต้อง derive จาก CC ผ่าน scopePicker.js เท่านั้น');
+  assert.match(au, /deriveSections\(ccIdxNodes/, 'sections ที่บันทึกต้องมาจาก effectiveSections() ของ scopePicker');
+  assert.match(au, /sections:\s*effSections/, 'ตอนสร้างบัญชีต้องบันทึก effSections');
+  assert.match(au, /sections:\s*effSections\.length \? effSections : null/, 'ตอนแก้บัญชีต้องบันทึก effSections');
+  const sp = stripComments(readFileSync(join(ROOT, 'src/utils/scopePicker.js'), 'utf8'));
+  assert.match(sp, /if \(!ccs\?\.length\) return base;/,
+    '🔴 ไม่ติ๊ก CC เลยต้องคืนค่าเดิมเป๊ะ — บัญชีเก่าห้ามเปลี่ยนพฤติกรรม (บทเรียน 26/10)');
+});

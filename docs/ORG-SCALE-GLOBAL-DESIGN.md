@@ -283,3 +283,29 @@ const topNodes = (kids.get('') || []).filter(n => n.kind === 'section' || n.kind
 - `src/utils/__tests__/scopeRegistryGate.test.mjs` — **ด่านที่เล่นกฎซ้ำกับทะเบียนผู้ใช้จริง · ต้องผ่านก่อน merge เสมอ**
 - 📄 `docs/PERMISSIONS-DESIGN.md` · `docs/modules/role-system.md` · `docs/modules/org-hierarchy.md`
 - 📄 `docs/ORG-IDENTITY-SINGLE-SOURCE-PLAN.md` — เฟส 0 (ผูกบัญชี↔พนักงาน) **ยังไม่จบ · เป็นฐานของทุกข้อข้างบน**
+
+
+## 4.8 · 📊 ผลวัดขั้น 2 — ค่าแนะนำ `scope_depth` จาก "ผัง × เลเวล" เทียบของจริง (02/11)
+
+กติกา `recommendScopeDepth()` (`src/utils/derivedScope.js` · 16 เทส): ฟังก์ชันตัดขวาง (division ≠ production) → `all` ·
+สายผลิต หัว → `branch` · สมาชิก → ตามเลเวล · ไม่รู้ → `null` (ห้ามเดา) — **เป็นคำแนะนำในช่อง ② เท่านั้น ค่ามือชนะเสมอ**
+
+| ผล | คน | รายละเอียด |
+|---|---|---|
+| = เท่าเดิม | 27 | ช่าง 11 (all) · ผลิต unit 7 · ผลิต branch 6 (manager/section_head) · วิศวกรรม 2 · วางแผน 1 |
+| ↑ กว้างขึ้น | 2 | supervisor วิศวกรรม 1 · planner_store 1 (ตั้ง branch แต่สายงานตัดขวาง → all) |
+| **🔴 แคบลง** | **29** | สายผลิต ตั้ง branch/unit แต่ **ตำแหน่ง HR เป็นสมาชิก** (technician 4 · engineer 4 · clerk 3 · operator 6 …) |
+| – แนะนำไม่ได้ | 20 | **QA ทั้งหมด** — section `QA` ยังไม่มี `division` ในผัง |
+
+### 🔴 บทเรียน: "แกนระดับพนักงาน" ยังใช้ตัดสินเดี่ยวๆ ไม่ได้ — เพราะ `employees.position` ไม่ตรงหน้าที่จริง 29 คน
+ตัวอย่างชัด: ธวัช (leader @HYDROFORM · position = operator) · จักรี/ณรงค์ฤทธิ์ (leader · operator) ·
+4 คนใน HYDROFORM ถือ supervisor แต่ position = technician · Office PD4 engineer 2 คนถือ supervisor
+⇒ **ทะเบียนพนักงานบอกตำแหน่งต่ำกว่าหน้าที่ที่ทำจริง** — เป็นงานข้อมูล HR ไม่ใช่โค้ด
+⇒ ขั้น 2 จึงทำได้แค่ "แนะนำ + เตือนให้ไปแก้ตำแหน่ง" **ห้ามบีบขอบเขตอัตโนมัติ** (จอเขียนไว้แล้ว: "ระบบไม่บีบขอบเขตให้เอง")
+⇒ ขั้น 3 (ถอดช่อง ② ออก) เริ่มได้ต่อเมื่อ **29 คนนี้ตำแหน่งถูกแก้ให้ตรง** และ **QA มี division**
+
+### งานข้อมูลที่ต้องจบก่อน (ไม่ใช่โค้ด)
+1. ✅ **ทำแล้ว 02/11** — user เคาะ *"เอาให้ QA ใต้ส่วน engineering"* → `org_nodes` section QA `division='engineering'`
+   วัดซ้ำ: แนะนำไม่ได้ 20 → **0** · เท่าเดิม 27 → **47** (QA 20 คน = all ตรงกับที่ตั้งอยู่) · กว้างขึ้น 2 · **แคบลง 29 (เท่าเดิม)**
+2. ⏳ แก้ `employees.position` ของ 29 คนให้ตรงหน้าที่ (line_leader / dept_head / section_head) — **ตัวเดียวที่เหลือ**
+   ก่อนถอดช่อง ② ออกจริง (เป้า: "แคบลง = 0")

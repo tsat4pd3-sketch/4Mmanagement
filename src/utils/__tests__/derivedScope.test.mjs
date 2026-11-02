@@ -3,15 +3,17 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  derivedScope, subtreeIds, ancestorChain, functionOf, isHeadLevel, LEVEL_GOVERNS,
+  derivedScope, subtreeIds, ancestorChain, functionOf, isHeadLevel, LEVEL_GOVERNS, recommendScopeDepth,
 } from '../derivedScope.js';
 
 const NODES = [
-  { id: 1, kind: 'section',    name: 'QA',          parent_id: null },
+  { id: 1, kind: 'section',    name: 'QA',          parent_id: null },            // ⚠️ ไม่มี division (ของจริง 02/11)
   { id: 2, kind: 'department', name: 'QA',          parent_id: 1 },   // สำนักงาน QA
   { id: 3, kind: 'department', name: 'Inspection',  parent_id: 1 },
   { id: 4, kind: 'department', name: 'PQA-Press',   parent_id: 1 },
-  { id: 5, kind: 'section',    name: 'PD3',         parent_id: null },
+  { id: 5, kind: 'section',    name: 'PD3',         parent_id: null, division: 'production' },
+  { id: 9, kind: 'section',    name: 'Maintenance', parent_id: null, division: 'maintenance' },
+  { id: 10, kind: 'department', name: 'MTN',        parent_id: 9 },
   { id: 6, kind: 'department', name: 'HYDROFORM',   parent_id: 5 },
   { id: 7, kind: 'line',       name: 'HDF1',        parent_id: 6 },
   { id: 8, kind: 'team',       name: 'ทีม A',       parent_id: 7 },
@@ -97,4 +99,32 @@ test('isHeadLevel ตรงกับทะเบียน LEVEL_GOVERNS', () => 
   assert.ok(!isHeadLevel('qc') && !isHeadLevel('operator') && !isHeadLevel(''));
   assert.deepEqual(Object.keys(LEVEL_GOVERNS).sort(),
     ['dept_head', 'line_leader', 'manager', 'section_head']);
+});
+
+
+test('🔭 แนะนำ scope_depth: สายผลิต หัว=branch · สมาชิก=ตามเลเวล', () => {
+  assert.equal(recommendScopeDepth({ org_node_id: 6, position: 'dept_head' }, BY_ID).depth, 'branch');
+  assert.equal(recommendScopeDepth({ org_node_id: 7, position: 'line_leader' }, BY_ID).depth, 'branch');
+  assert.equal(recommendScopeDepth({ org_node_id: 8, position: 'operator' }, BY_ID, { level: 'operator' }).depth, 'self');
+  assert.equal(recommendScopeDepth({ org_node_id: 8, position: 'technician' }, BY_ID, { level: 'technician' }).depth, 'unit');
+});
+
+test('🔭 ฟังก์ชันตัดขวาง (ช่าง) = all ทั้งหัวและสมาชิก', () => {
+  const r1 = recommendScopeDepth({ org_node_id: 10, position: 'technician' }, BY_ID);
+  const r2 = recommendScopeDepth({ org_node_id: 9, position: 'manager' }, BY_ID);
+  assert.equal(r1.depth, 'all'); assert.equal(r1.reason, 'cross_cutting');
+  assert.equal(r2.depth, 'all');
+});
+
+test('🔴 ผังไม่ระบุฝ่าย (QA วันนี้) = null + division_unknown ห้ามเดาเป็น all', () => {
+  const r = recommendScopeDepth({ org_node_id: 3, position: 'qc' }, BY_ID);
+  assert.equal(r.depth, null);
+  assert.equal(r.reason, 'division_unknown');
+});
+
+test('🔴 ไม่มีโหนด / เลเวลสูงกว่าผัง = null ไม่เดา', () => {
+  assert.equal(recommendScopeDepth({ position: 'manager' }, BY_ID).depth, null);
+  const nodes = { 10: { id: 10, kind: 'department', name: 'X', parent_id: null, division: 'production' } };
+  const r = recommendScopeDepth({ org_node_id: 10, position: 'manager' }, nodes);
+  assert.equal(r.depth, null); assert.equal(r.reason, 'level_above_tree');
 });
