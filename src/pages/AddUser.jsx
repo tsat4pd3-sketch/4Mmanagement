@@ -6,6 +6,8 @@ import { loadLinesRes } from '../utils/useProductionLines';
 import { accessSummaryForRole } from '../App';
 import { ROLE_OPTIONS, roleLabel, groupRolesByAxis, ORG_LEVELS } from '../utils/roleMeta';
 import { effectiveSections as deriveSections, ccsForSections } from '../utils/scopePicker';
+import { recommendScopeDepth } from '../utils/derivedScope';   // 🔭 ② แนะนำจาก "อยู่ตรงไหนของผัง × เลเวล" (ค่ามือชนะเสมอ)
+import { divisionOfNode, divisionLabel as divisionLabelSafe } from '../utils/orgDivisions';
 import { positionOptions, positionOptionsWith, positionLabel, loadPositions, clearPositionsCache, levelOfPosition, maintenanceKindOfPosition, levelMeta, POSITION_LEVELS } from '../utils/positions';
 import { can, loadPermissions } from '../utils/permissions';   // เช็คสิทธิ์ของ role ที่เลือก เพื่อเตือนเมื่อไม่ตรงกับระดับงาน
 import { deptNameOf, teamKeyOf } from '../utils/mtnTeams';
@@ -18,7 +20,7 @@ import { newEmployeeRow, staffKindHint } from '../utils/employeeIdentity';   // 
 import { normSearch } from '../components/SearchSelect';   // ตัว normalize คำค้นกลาง (ทนการสะกดไทย)
 import { orphanDepts, deptOptionsFor, ORPHAN_SECTION, ORPHAN_SECTION_LABEL,
   scopeIneffective, scopeTooWide } from '../utils/sectionScope';
-import { SCOPE_DEPTHS, SCOPE_DEPTH_META, depthForLevel, needsScopeReview } from '../utils/scopeDepth';   // 🔭 เห็นกว้างแค่ไหน (คนละแกนกับ role)
+import { SCOPE_DEPTHS, SCOPE_DEPTH_META, depthForLevel, needsScopeReview, isWiderThan } from '../utils/scopeDepth';   // 🔭 เห็นกว้างแค่ไหน (คนละแกนกับ role)
 import { buildOrgScope, SCOPE_KIND_META } from '../utils/orgScope';
 /* 💰 ชั้นสิทธิ์ที่ 3 แกน Cost Center (16/10 · คำสั่ง user "เซ็ตได้ว่า user ไหน response กับ cost center
    ไหน ตามลำดับชั้น") — ทะเบียนรหัส/ลำดับชั้น/ข้อความบล็อก อยู่ใน `utils/ccScope.js` ที่เดียว */
@@ -247,6 +249,11 @@ export default function AddUser() {
   /* 🧩 ③ + ④ ยุบเป็นช่องเดียว (2026-11-02 · คำสั่ง user "3 กับ 4 ควรรวมกัน · เลือก 4 ครอบคลุมอยู่แล้ว ตามผังองค์กร")
      `profiles.sections` (ขอบเขตที่เห็น) **derive** จาก CC ที่ติ๊ก — ไม่มีช่องติ๊กส่วนงานแยกอีก
      🔴 ไม่ติ๊ก CC เลย = ใช้ค่าเดิมเป๊ะ · ค่าเดิมที่แปลงเป็น CC ไม่ได้ = คงไว้ (ห้ามแคบลงเงียบ · utils/scopePicker.js) */
+  /* 🔭 ขั้น 2 ของ docs/ORG-SCALE-GLOBAL-DESIGN.md — ค่าแนะนำของ ② มาจาก "โหนดที่พนักงานผูก × เลเวล"
+     ยังเป็น **คำแนะนำ** เท่านั้น (ค่ามือชนะ) · วัด 02/11: สายผลิต 29 บัญชีที่ตำแหน่ง HR เป็นสมาชิก
+     (operator/technician/engineer/clerk) แต่ถือชุดสิทธิ์หัวหน้า ⇒ ผังแนะนำแคบกว่าที่ตั้ง
+     ⇒ จอต้องพูดว่า "ตำแหน่งในทะเบียนอาจไม่ตรงหน้าที่จริง" **ไม่ใช่** ชวนให้บีบขอบเขต */
+  const nodesById = useMemo(() => Object.fromEntries((orgAllNodes || []).map(n => [String(n.id), n])), [orgAllNodes]);
   const effSections = useMemo(
     () => deriveSections(ccIdxNodes, orgAllNodes || [], form.respCcs, form.sections),
     [ccIdxNodes, orgAllNodes, form.respCcs, form.sections]);
@@ -1772,7 +1779,19 @@ export default function AddUser() {
               <div style={{ gridColumn: '1 / -1' }}>
                 {(() => {
                   const lvl = levelOfPosition(form.position);
-                  const suggested = depthForLevel(lvl);
+                  const emp = linkedEmp();
+                  const orgReco = emp && orgAllNodes
+                    ? recommendScopeDepth(emp, nodesById, { level: lvl, divisionOf: (id) => divisionOfNode(id, orgAllNodes) })
+                    : null;
+                  const suggested = orgReco?.depth || depthForLevel(lvl);
+                  const recoNode = orgReco?.scope?.scopeNodeId != null ? nodesById[String(orgReco.scope.scopeNodeId)] : null;
+                  const recoWhy = !orgReco ? null
+                    : orgReco.reason === 'cross_cutting' ? `สายงาน ${divisionLabelSafe(orgReco.division)} เป็นงานตัดขวางทั้งโรงงาน`
+                    : orgReco.reason === 'production_head' ? `เป็นหัวของ ${recoNode?.name || 'หน่วย'} (จากตำแหน่ง ${positionLabel(emp?.position) || emp?.position || '-'})`
+                    : orgReco.reason === 'production_member' ? `ตำแหน่งในทะเบียน = ${positionLabel(emp?.position) || emp?.position || '-'} (สมาชิกของ ${recoNode?.name || 'หน่วย'})`
+                    : orgReco.reason === 'division_unknown' ? `ผังยังไม่ระบุฝ่ายของ ${recoNode?.name || 'หน่วยนี้'} — ตั้งที่ /org-setup แล้วระบบจะแนะนำได้`
+                    : null;
+                  const recoNarrower = orgReco?.depth && isWiderThan(form.scopeDepth || 'unit', orgReco.depth);
                   return (
                     <>
                       <label style={labelSt}>② ขอบเขตการมองเห็น — <span style={{ fontWeight: 600, color: 'var(--muted)' }}>"เห็นข้อมูลของใคร"</span></label>
@@ -1797,9 +1816,18 @@ export default function AddUser() {
                       </div>
                       <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
                         {SCOPE_DEPTH_META[form.scopeDepth || 'unit'].desc}
-                        {lvl && <> · ระดับ <b>{levelMeta(lvl)?.label || lvl}</b> ปกติใช้
-                          “{SCOPE_DEPTH_META[suggested].label}” — <b>ตั้งต่างจากที่แนะนำได้</b> ของจริงมีข้อยกเว้นเสมอ</>}
-                        {!lvl && <> · ยังไม่ได้เลือกตำแหน่ง — เลือกแล้วระบบจะแนะนำความกว้างที่เหมาะให้</>}
+                        {orgReco?.depth
+                          ? <> · 🧭 ผังแนะนำ “{SCOPE_DEPTH_META[orgReco.depth].label}” — {recoWhy} · <b>ตั้งต่างได้</b></>
+                          : lvl ? <> · ระดับ <b>{levelMeta(lvl)?.label || lvl}</b> ปกติใช้
+                              “{SCOPE_DEPTH_META[suggested].label}” — <b>ตั้งต่างจากที่แนะนำได้</b> ของจริงมีข้อยกเว้นเสมอ</>
+                            : <> · ยังไม่ได้เลือกตำแหน่ง — เลือกแล้วระบบจะแนะนำความกว้างที่เหมาะให้</>}
+                        {orgReco && !orgReco.depth && recoWhy && <> · ⚠️ {recoWhy}</>}
+                        {recoNarrower && (
+                          <div style={{ color: '#f59e0b', marginTop: 2 }}>
+                            ⚠️ ตั้งไว้กว้างกว่าที่ผังแนะนำ — ไม่ผิด แต่ถ้าคนนี้เป็นหัวหน้าจริง ให้แก้<b>ตำแหน่ง</b>ในทะเบียนพนักงานให้ตรง
+                            (ตอนนี้ตำแหน่งบอกว่าเป็น{positionLabel(emp?.position) || emp?.position}) — ระบบ<b>ไม่</b>บีบขอบเขตให้เอง
+                          </div>
+                        )}
                       </div>
                       {form.scopeDepth === 'all' && (
                         <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4, lineHeight: 1.5 }}>

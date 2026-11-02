@@ -18,6 +18,8 @@
  *    เอาไปใช้จริงต้องผ่านขั้น 2 (ค่าที่ตั้งมือไว้ชนะเสมอ) — ห้ามข้าม
  */
 
+import { depthForLevel } from './scopeDepth.js';
+
 /** เลเวล → "คุมถึงโหนดชั้นไหน" · ไม่อยู่ในนี้ = สมาชิก ⇒ คุมแค่โหนดตัวเอง
  *  ⚠️ ชั้น `plant`/`business_group`/`company` ยังไม่มีในผังวันนี้ — เติมเข้ามาแล้วแก้ที่นี่ที่เดียว */
 export const LEVEL_GOVERNS = {
@@ -119,4 +121,32 @@ export function functionOf(nodeId, nodesById) {
   const chain = ancestorChain(nodeId, nodesById);
   const sec = chain.find((n) => n.kind === 'section');
   return sec ? (sec.code || sec.name || null) : null;
+}
+
+
+/* ── 🔭 ขั้น 2: แนะนำ `scope_depth` จาก "อยู่ตรงไหนของผัง × เลเวล" (2026-11-02 · user "ลุยต่อ") ──
+ *  ใช้เป็น **คำแนะนำ** ในช่อง ② ของ /add-user เท่านั้น — ค่าที่คนตั้งมือยังชนะเสมอ (ขั้น 2 ของ DESIGN)
+ *  กติกา:
+ *   · ฟังก์ชันตัดขวาง (division ≠ production: ช่าง/วิศวกรรม/วางแผน-คลัง/สำนักงาน) → `all`
+ *     (คำสั่ง user 30/10: "QA เห็นเรื่องคุณภาพได้ทั้งโรงงาน" · 19/08: "หน่วยงานช่างเห็นทั้งโรงงาน")
+ *   · สายผลิต → หัว = `branch` (ทั้งกิ่งใต้ชั้นที่คุม) · สมาชิก = ตาม `depthForLevel(level)` (operator=self …)
+ *  🔴 ไม่รู้ = `depth: null` + reason — **ห้ามเดาเป็น all** (ผังไม่รู้สาย · ไม่มีโหนด · เลเวลสูงกว่าผัง)
+ *     ผู้เรียกถอยไปใช้ `depthForLevel()` เดิม ⇒ พฤติกรรมเดิมเป๊ะเมื่อผังตอบไม่ได้
+ *  ⚠️ วัดจริง 02/11: section `QA` ยังไม่มี `division` ในผัง ⇒ QA ทั้ง 24 บัญชีตกเคส `division_unknown`
+ *     (ต้องไปตั้งฝ่ายให้ QA ที่ /org-setup ก่อน ค่าแนะนำจึงจะเป็น all) — ไม่ใช่เรื่องโค้ด
+ */
+/** ฝ่ายของโหนด = ตัวเอง → แม่ → … ตัวแรกที่มี `division` (ความหมายเดียวกับ `divisionOfNode()` ใน orgDivisions.js
+ *  — เขียนซ้ำที่นี่เพราะไฟล์นั้น import supabaseClient ทำให้ไฟล์ pure นี้เทสไม่ได้ · ผู้เรียกส่ง `divisionOf` ทับได้) */
+const divisionViaChain = (nodeId, nodesById) =>
+  ancestorChain(nodeId, nodesById).find((n) => n.division)?.division || null;
+
+export function recommendScopeDepth(emp, nodesById, { level = null, divisionOf = null } = {}) {
+  const r = derivedScope(emp, nodesById);
+  if (!r.scopeNodeId) return { depth: null, reason: r.reason, scope: r };
+  const division = (divisionOf ? divisionOf(r.nodeId) : divisionViaChain(r.nodeId, nodesById)) || null;
+  if (!division) return { depth: null, reason: 'division_unknown', division, scope: r };
+  if (division !== 'production') return { depth: 'all', reason: 'cross_cutting', division, scope: r };
+  if (r.reason === 'level_above_tree') return { depth: null, reason: 'level_above_tree', division, scope: r };
+  if (r.isHead) return { depth: 'branch', reason: 'production_head', division, scope: r };
+  return { depth: depthForLevel(level), reason: 'production_member', division, scope: r };
 }
