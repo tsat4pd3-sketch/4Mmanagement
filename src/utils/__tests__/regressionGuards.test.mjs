@@ -7953,3 +7953,35 @@ test('🧩 scope-picker-single-field — /add-user ห้ามมีช่อ�
   assert.match(sp, /if \(!ccs\?\.length\) return base;/,
     '🔴 ไม่ติ๊ก CC เลยต้องคืนค่าเดิมเป๊ะ — บัญชีเก่าห้ามเปลี่ยนพฤติกรรม (บทเรียน 26/10)');
 });
+
+/* ═══ 🔄 assignment-overlay-widen-only — ขอบเขตจริงอ่าน org_assignments แบบ "กว้างขึ้นได้อย่างเดียว" ═══ 02/11
+   คำสั่ง user: *"ตำแหน่งจริงของ HR เป็นพื้นฐาน และเพิ่มความรับผิดชอบงานที่อาจจะรักษาการแทนตำแหน่งนั้น"*
+                → *"ลุยต่อ ให้ขอบเขตจริงอ่าน org_assignments เลย"*
+   · ตัวทับมีไฟล์เดียว `utils/assignmentOverlay.js` (pure · ห้ามแตะ DB) · App.jsx ต้องส่งผล
+     effectiveSections() เข้า applyAssignments() ก่อน setUserSections (ไม่งั้นมอบหมายไม่มีผลเงียบ)
+   · กฎวันที่มีผล = `isGranting()` ที่เดียว — ห้ามเขียน starts_on/ends_on เทียบวันเองใน App.jsx
+   · ห้ามคืนน้อยกว่าที่ profiles ตั้ง (กฎ 26/10) — ฐานไม่จำกัด (sections ว่าง) ต้องคงว่างเสมอ */
+test('🔄 assignment-overlay-widen-only — รักษาการทับขอบเขตได้ทางกว้างขึ้นเท่านั้น · กฎวันที่ที่เดียว', async () => {
+  const app = stripComments(readFileSync(join(ROOT, 'src/App.jsx'), 'utf8'));
+  assert.match(app, /from\('org_assignments'\)[\s\S]{0,200}\.eq\('profile_id',\s*user\.id\)/,
+    '🔴 fetchProfile ต้องอ่าน org_assignments ของบัญชีนี้ (กรอง profile_id)');
+  assert.match(app, /applyAssignments\(\{\s*sections:\s*baseSections/, 'ผล effectiveSections ต้องผ่าน applyAssignments ก่อน setUserSections');
+  assert.match(app, /setUserSections\(finalSections\)/, 'setUserSections ต้องใช้ค่าหลังทับ');
+  assert.doesNotMatch(app, /starts_on\s*<=|ends_on\s*>=/, '🔴 ห้ามเขียนกฎวันที่ของมอบหมายเองใน App.jsx — ใช้ isGranting()');
+
+  const ov = stripComments(readFileSync(join(ROOT, 'src/utils/assignmentOverlay.js'), 'utf8'));
+  assert.doesNotMatch(ov, /supabaseClient|from\(/, 'assignmentOverlay.js ต้อง pure ห้ามแตะ DB');
+  assert.match(ov, /isGranting\(a, today\)/, 'ต้องใช้ isGranting() ตัวเดียวกับจอ /org-setup');
+
+  const { applyAssignments } = await import('../assignmentOverlay.js');
+  const { buildCcIndex } = await import('../ccScope.js');
+  const nodes = [{ id: 1, kind: 'section', name: 'PD3', parent_id: null, cost_center: '1' }];
+  const ccIdx = buildCcIndex(nodes);
+  const a = [{ id: 'x', kind: 'acting', org_node_id: 1, scope_depth: 'branch', starts_on: '2026-01-01', ends_on: null }];
+  const r0 = applyAssignments({ sections: [], respCostCenters: [] }, a, { nodes, ccIdx, today: '2026-11-02' });
+  assert.deepEqual(r0.sections, [], '🔴 ฐานไม่จำกัดต้องคงไม่จำกัด — มอบหมายห้ามทำให้แคบลง');
+  const r1 = applyAssignments({ sections: ['PD4'], respCostCenters: ['9'] }, a, { nodes, ccIdx, today: '2026-11-02' });
+  assert.ok(r1.sections.includes('PD4') && r1.respCostCenters.includes('9'), '🔴 ของเดิมต้องอยู่ครบหลังทับ');
+  const rf = applyAssignments({ sections: ['PD4'], respCostCenters: [] }, a, { nodes: [], ccIdx: null, today: '2026-11-02' });
+  assert.deepEqual(rf.sections, ['PD4']); assert.equal(rf.failed, true, 'ผังอ่านไม่ได้ = ไม่ทับ + failed');
+});
