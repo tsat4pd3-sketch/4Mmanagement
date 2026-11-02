@@ -537,6 +537,9 @@ export default function MtnRepair() {
     scopeLineNames: scopeLines ? [...scopeLines] : null,
     knownLineNames: lines.map(l => l.name),
     sections: scopeSecs || [],
+    /* 🔴 ทะเบียนชื่อ "ส่วนงาน" จริง — ใบที่ `dept_section` เป็น *แผนก* (เช่น JIG MTN ใต้ PD4)
+       ห้ามถูกตัดสินด้วยลิสต์ส่วนงาน ⇒ ไม่รู้จัก = ไม่บล็อก (ดู orderInReporterScope) */
+    knownSections: [...new Set(lines.map(l => l.section).filter(Boolean))],
   }), [scopeLines, lines, scopeSecs]);
 
   // ทีมช่างของ user (จาก profiles.mtn_teams ที่ตั้งใน AddUser · fallback เดาจาก section) — default คิวงาน + default หน่วยงานตอนแจ้ง

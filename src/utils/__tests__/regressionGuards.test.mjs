@@ -4391,6 +4391,28 @@ test('🛡️ mtn-approve-needs-confirm — ปุ่มเซ็น/อนุ�
    เพราะด่านเดิมเช็คแค่ `can('approve')` **ไม่ดูตำแหน่งเลย** และ `signApproval` เขียนชื่อคนกด
    ทับชื่อที่ระบุไว้ ⇒ เจ้าตัวโดนตัดสิทธิ์ (`already_signed`) แก้เองไม่ได้
    🔴 ด่านตำแหน่งต้องมาก่อนทาง `named` ด้วย — ผู้แจ้งพิมพ์ชื่อใครลงช่องนั้นก็ได้ รวมชื่อตัวเอง */
+test('🛡️ reporter-scope-known-unit — ด่านขอบเขตต้องมี "รู้จักหน่วยนี้ไหม" ครบทั้ง 2 แกน', () => {
+  const src = readFileSync(join(ROOT, 'src/utils/mtnStepPerm.js'), 'utf8');
+  const i = src.indexOf('export function orderInReporterScope');
+  assert.ok(i > 0, '\n\n❌ หา `orderInReporterScope` ไม่เจอ — เปลี่ยนชื่อแล้วต้องแก้ด่านนี้ด้วย\n');
+  const body = src.slice(i, i + 1600);
+
+  /* 🔴 ฝั่งไลน์มีด่าน `knownLineNames` มาตั้งแต่แรก แต่ฝั่งส่วนงานไม่มี (02/11)
+     ⇒ เอาชื่อ **แผนก** ไปเทียบลิสต์ **ส่วนงาน** แล้วตอบ false = บล็อกผิด
+     เคสจริง: JIG MTN เป็น department ใต้ PD4 ⇒ ผู้จัดการที่ดูแลควบ PD3+PD4 เซ็นใบนั้นไม่ได้ */
+  assert.ok(/knownSections/.test(body),
+    '\n\n❌ `orderInReporterScope` เลิกเช็ค `knownSections` แล้ว\n'
+    + '   ⇒ ใบที่ `dept_section` เป็นชื่อ **แผนก/ทีม** (ไม่ใช่ส่วนงาน) จะถูกตัดสินว่า "ของหน่วยอื่น"\n'
+    + '   🔴 JIG MTN = department ใต้ PD4 — คนที่ดูแลควบแผนกครอบอยู่แล้วตามผัง แต่สตริงไม่ตรง\n'
+    + '   แก้ยังไง: หน่วยที่ไม่อยู่ในทะเบียนส่วนงาน = คืน `null` (ไม่รู้ = ไม่บล็อก)\n');
+
+  /* หน้าที่เรียกต้องส่งทะเบียนมาจริง ไม่ใช่มีพารามิเตอร์ลอยไว้ */
+  const page = readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8');
+  assert.ok(/knownSections:\s*\[/.test(page),
+    '\n\n❌ `MtnRepair.jsx` ไม่ส่ง `knownSections` ใน `reporterScope` แล้ว\n'
+    + '   ⇒ ด่านถอยไปใช้พฤติกรรมเดิม = บล็อกใบของแผนกที่อยู่ใต้ส่วนงานที่เราดูแล\n');
+});
+
 test('🛡️ mtn-approval-needs-rank — ช่องผู้จัดการในใบ MO ต้องกันตำแหน่งที่ต่ำกว่าเกณฑ์', () => {
   const src = readFileSync(join(ROOT, 'src/utils/mtnStepPerm.js'), 'utf8');
   const i = src.indexOf('export function canSignMtnApproval');

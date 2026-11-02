@@ -484,12 +484,22 @@ export function canHandoff(order = {}) {
  * ⚠️ ห้ามเทียบ `order.dept_section` ก่อน `line_name` — ช่อง "แผนก (PD)" ในฟอร์มแจ้งซ่อมพิมพ์แก้ได้
  *    (ข้อมูลจริง 60 วัน: ว่าง ~60% ของใบ) ไลน์ที่เลือกจาก dropdown เชื่อถือได้กว่า
  */
-export function orderInReporterScope(order, { scopeLineNames = null, knownLineNames = [], sections = [] } = {}) {
+export function orderInReporterScope(order, { scopeLineNames = null, knownLineNames = [], sections = [], knownSections = [] } = {}) {
   if (!Array.isArray(scopeLineNames)) return null;
   const ln = norm(order?.line_name);
   if (ln && (knownLineNames || []).some(n => norm(n) === ln)) return scopeLineNames.some(n => norm(n) === ln);
   const ds = norm(order?.dept_section);
-  if (ds && (sections || []).length) return sections.some(x => norm(x) === ds);
+  if (ds && (sections || []).length) {
+    /* 🔴 ด่าน "รู้จักหน่วยนี้ไหม" — ต้องมีให้ครบทั้ง 2 แกนเหมือนฝั่งไลน์ (02/11)
+       เดิมฝั่งไลน์มีด่านนี้ (`knownLineNames`) แต่ฝั่งส่วนงาน**ไม่มี** ⇒ เอาชื่อ *แผนก*
+       ไปเทียบกับลิสต์ *ส่วนงาน* แล้วตอบ `false` = **บล็อก** ทั้งที่คำตอบจริงคือ "ไม่รู้"
+       เคสจริง: `JIG MTN` เป็น **department ใต้ PD4** (`org_nodes.cost_center='2140563100'`)
+       ⇒ ผู้จัดการที่ดูแล `[PD3, PD4]` **ครอบ JIG MTN อยู่แล้วตามผัง** แต่เทียบสตริงตรงตัวไม่ติด
+       🔴 ไม่รู้จัก = `null` (ไม่บล็อก) — หลักเดียวกับไลน์ที่ไม่อยู่ในทะเบียน
+       ⚠️ ไม่ส่ง `knownSections` = พฤติกรรมเดิมเป๊ะ (ผู้เรียกอื่นไม่กระทบ) */
+    if ((knownSections || []).length && !(knownSections || []).some(x => norm(x) === ds)) return null;
+    return sections.some(x => norm(x) === ds);
+  }
   return null;
 }
 
