@@ -209,7 +209,7 @@ QA (section)
 
 ⇒ **ถอด `pm:approve` `pm:record` `am:record` `heijunka:operate` `shift_schedule:edit_dept` `rack_center:operate`
 ออกจาก `role=qa` = ไม่กระทบใครเลยในข้อมูลที่มี** · คง `npi:edit` ไว้ (PPAP) · คง `scope:all_units` ไว้ (พื้นที่ทั้งโรงงานถูกแล้ว)
-🛑 ยังไม่ถอด — รอ user เคาะ (เป็นสิทธิ์จริง · ย้อนได้ด้วย `insert` คืน 6 แถวใน `role_permissions`)
+✅ **user เคาะ 31/10 ("ลุย")** — migration `20261101_qa_role_drop_non_quality_keys_main.sql` (rollback = insert 6 แถวคืน · อยู่ท้ายไฟล์)
 
 ### ⚠️ ของที่ "ไม่ต้อง" ทำ — ผังไม่ได้ตั้งผิด (แก้ข้อสรุปเดิม)
 
@@ -283,3 +283,43 @@ const topNodes = (kids.get('') || []).filter(n => n.kind === 'section' || n.kind
 - `src/utils/__tests__/scopeRegistryGate.test.mjs` — **ด่านที่เล่นกฎซ้ำกับทะเบียนผู้ใช้จริง · ต้องผ่านก่อน merge เสมอ**
 - 📄 `docs/PERMISSIONS-DESIGN.md` · `docs/modules/role-system.md` · `docs/modules/org-hierarchy.md`
 - 📄 `docs/ORG-IDENTITY-SINGLE-SOURCE-PLAN.md` — เฟส 0 (ผูกบัญชี↔พนักงาน) **ยังไม่จบ · เป็นฐานของทุกข้อข้างบน**
+
+
+## 4.8 · 📊 ผลวัดขั้น 2 — ค่าแนะนำ `scope_depth` จาก "ผัง × เลเวล" เทียบของจริง (02/11)
+
+กติกา `recommendScopeDepth()` (`src/utils/derivedScope.js` · 16 เทส): ฟังก์ชันตัดขวาง (division ≠ production) → `all` ·
+สายผลิต หัว → `branch` · สมาชิก → ตามเลเวล · ไม่รู้ → `null` (ห้ามเดา) — **เป็นคำแนะนำในช่อง ② เท่านั้น ค่ามือชนะเสมอ**
+
+| ผล | คน | รายละเอียด |
+|---|---|---|
+| = เท่าเดิม | 27 | ช่าง 11 (all) · ผลิต unit 7 · ผลิต branch 6 (manager/section_head) · วิศวกรรม 2 · วางแผน 1 |
+| ↑ กว้างขึ้น | 2 | supervisor วิศวกรรม 1 · planner_store 1 (ตั้ง branch แต่สายงานตัดขวาง → all) |
+| **🔴 แคบลง** | **29** | สายผลิต ตั้ง branch/unit แต่ **ตำแหน่ง HR เป็นสมาชิก** (technician 4 · engineer 4 · clerk 3 · operator 6 …) |
+| – แนะนำไม่ได้ | 20 | **QA ทั้งหมด** — section `QA` ยังไม่มี `division` ในผัง |
+
+### 🔴 บทเรียน: "แกนระดับพนักงาน" ยังใช้ตัดสินเดี่ยวๆ ไม่ได้ — เพราะ `employees.position` ไม่ตรงหน้าที่จริง 29 คน
+ตัวอย่างชัด: ธวัช (leader @HYDROFORM · position = operator) · จักรี/ณรงค์ฤทธิ์ (leader · operator) ·
+4 คนใน HYDROFORM ถือ supervisor แต่ position = technician · Office PD4 engineer 2 คนถือ supervisor
+⇒ **ทะเบียนพนักงานบอกตำแหน่งต่ำกว่าหน้าที่ที่ทำจริง** — เป็นงานข้อมูล HR ไม่ใช่โค้ด
+⇒ ขั้น 2 จึงทำได้แค่ "แนะนำ + เตือนให้ไปแก้ตำแหน่ง" **ห้ามบีบขอบเขตอัตโนมัติ** (จอเขียนไว้แล้ว: "ระบบไม่บีบขอบเขตให้เอง")
+⇒ ขั้น 3 (ถอดช่อง ② ออก) เริ่มได้ต่อเมื่อ **29 คนนี้ตำแหน่งถูกแก้ให้ตรง** และ **QA มี division**
+
+### งานข้อมูลที่ต้องจบก่อน (ไม่ใช่โค้ด)
+1. ✅ **ทำแล้ว 02/11** — user เคาะ *"เอาให้ QA ใต้ส่วน engineering"* → `org_nodes` section QA `division='engineering'`
+   วัดซ้ำ: แนะนำไม่ได้ 20 → **0** · เท่าเดิม 27 → **47** (QA 20 คน = all ตรงกับที่ตั้งอยู่) · กว้างขึ้น 2 · **แคบลง 29 (เท่าเดิม)**
+2. ❌ ~~แก้ `employees.position` ให้ตรงหน้าที่~~ — **user ท้วง 02/11 ถูกต้อง:** *"ตำแหน่งจริงของ HR เป็นพื้นฐาน
+   และเพิ่มความรับผิดชอบงานที่อาจจะรักษาการแทนตำแหน่งนั้น"* ⇒ ตำแหน่ง HR เป็นข้อเท็จจริง **ห้ามแก้ให้ตรงสิทธิ์**
+   ⇒ ชั้นที่ขาดคือ **"รักษาการ / รับผิดชอบเพิ่ม"** = ทะเบียน `org_assignments` ที่มีอยู่แล้ว (24/09 · 5 แถว · รักษาการ 3)
+   · แบบ: **ค่าแนะนำ = กว้างสุด(ฐาน HR, มอบหมายที่ยังมีผล)** — ทับได้ทางกว้างขึ้นเท่านั้น (`recommendScopeDepth(…, { assignments })`)
+   · วัด 02/11: 21 คนที่ตำแหน่ง HR ต่ำกว่าสิทธิ์ **ยังไม่มีใครมีแถวมอบหมายเลย** ⇒ งานข้อมูล = ลงรักษาการ/มอบหมายให้ 21 คนนี้
+     ที่ `/org-setup › มอบหมายหน่วย` (ใส่วันหมดอายุ) — **ไม่ใช่แก้ตำแหน่ง**
+   · ✅ **ปิดแล้ว 02/11 (คำสั่ง user "ให้ขอบเขตจริงอ่าน org_assignments เลย"):** `App.jsx fetchProfile` อ่าน
+     `org_assignments` ของบัญชี (1 คิวรี/login · admin ไม่อ่าน) → `applyAssignments()` (`src/utils/assignmentOverlay.js`
+     · pure · 9 เทส) ทับ `sections`/`respCostCenters` **ทางกว้างขึ้นเท่านั้น** · วันมีผล = `isGranting(row, getWorkDate())`
+     · ผังอ่านไม่ได้ = ไม่ทับ + การ์ดผู้ใช้ใน sidebar เขียน "⚠️ รักษาการ: อ่านไม่ได้" · มีมอบหมาย = เขียน "🔄 รักษาการ <หน่วย>"
+     · `writeScope.js`/`sectionScope.js` ไม่ต้องแก้ — รับค่าที่ทับแล้วผ่าน `UserContext` เหมือนเดิม
+     · 📊 **วัดกับ 5 แถวจริงก่อน merge:** 4 แถว (PD1·PD2 manager · PD3+PD4 head) = ค่าเท่าเดิมทุกช่อง (หน่วยที่มอบ
+       อยู่ใน sections/CC ของบัญชีอยู่แล้ว) · 1 แถว (mtn รักษาการ Maintenance · `scope_depth=all` · CC ว่าง)
+       = `sections` คงไม่จำกัด · ได้ CC `2140456000` เพิ่ม ⇒ แกนเขียนสลับจาก section→CC **หน่วยเดียวกัน** (Maintenance)
+       + โหลดดัชนีผังเพิ่ม 1 คิวรีสำหรับบัญชีนี้ · **ไม่มีใครแคบลง** (กฎ 26/10)
+     · ด่าน `assignment-overlay-widen-only` ใน regressionGuards

@@ -41,6 +41,7 @@
       (`oee.js` pure เหมือนกัน import ได้)
    ═══════════════════════════════════════════════════════════════════════════ */
 import { policyBreakForShift, breakIntervalsIn, overlapMinutesWith, shiftStartDate } from './oee.js';   // .js เพื่อให้ node:test resolve ได้ (bundler ไม่สน)
+import { lineFamilyKey, scopeKeyByFamily } from './machineNo.js';
 
 const num = (v) => (v === '' || v == null || Number.isNaN(Number(v)) ? null : Number(v));
 
@@ -303,8 +304,19 @@ export function machineReliability({
     if (!typedKey) { noMachineNo++; continue; }
     /* 🔴 จัดกลุ่มด้วย "เครื่องในทะเบียน" ไม่ใช่ข้อความที่พิมพ์ — ไม่งั้นเครื่องเดียวกัน
        ที่คนพิมพ์คนละแบบ ("SP-78" · "SP78" · "SP-78/NF56") กลายเป็นคนละแถว
-       แล้วทั้ง MTTR และ MTBF เพี้ยนทั้งคู่ (จำนวนครั้งถูกหารออกเป็นหลายก้อน) */
-    const key = machine ? normEquipKey(machine.machine_no) : typedKey;
+       แล้วทั้ง MTTR และ MTBF เพี้ยนทั้งคู่ (จำนวนครั้งถูกหารออกเป็นหลายก้อน)
+
+       🏭 **เครื่องนอกทะเบียน ต้องผูก "สายไลน์" ด้วย** (30/10 · คำสั่ง user)
+       `machine_no` เป็นข้อความระดับทั้งโรงงาน ⇒ "CONVEYOR" ของสาย HYDROFORM (PD3)
+       กับของสาย LWR BAR (PD4) เป็นคนละตัวจริง แต่เคยถูกนับเป็นแถวเดียว
+       🔴 ผูกที่ **สาย** ไม่ใช่ชื่อไลน์ดิบ — แม่กับลูกคือที่เดียวกัน (ลงทั้ง `LWR BAR`/`Laser LWR` = ปกติ)
+       🔴 ไม่รู้สาย (ไม่ส่ง `lineFamilyOf`/หาไลน์ไม่เจอ) = คีย์เดิม **ห้ามเดา** */
+    const rowLine = machine?.line_name
+      || (sessionLineOf ? (sessionLineOf(d?.session_id) || '') : '') || '';
+    const famKey = (!machine && lineFamilyOf && rowLine)
+      ? lineFamilyKey(lineFamilyOf(rowLine)) : '';
+    const key = machine ? normEquipKey(machine.machine_no)
+                        : scopeKeyByFamily(typedKey, famKey);
 
     let r = acc.get(key);
     if (!r) {
@@ -314,7 +326,7 @@ export function machineReliability({
         machineName: machine?.machine_name || '',
         kind: machine?.equipment_kind ?? null,
         kindKnown: !!machine,
-        lineName: machine?.line_name || (sessionLineOf ? (sessionLineOf(d?.session_id) || '') : ''),
+        lineName: rowLine,
         inMaster: !!machine, via,
         stops: 0, openStops: 0, closedStops: 0, dtMin: 0, dtMinOp: 0,
         plannedStops: 0, plannedMin: 0, plannedMinOp: 0,

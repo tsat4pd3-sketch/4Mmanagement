@@ -3,15 +3,17 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  derivedScope, subtreeIds, ancestorChain, functionOf, isHeadLevel, LEVEL_GOVERNS,
+  derivedScope, subtreeIds, ancestorChain, functionOf, isHeadLevel, LEVEL_GOVERNS, recommendScopeDepth,
 } from '../derivedScope.js';
 
 const NODES = [
-  { id: 1, kind: 'section',    name: 'QA',          parent_id: null },
+  { id: 1, kind: 'section',    name: 'QA',          parent_id: null },            // ⚠️ ไม่มี division (ของจริง 02/11)
   { id: 2, kind: 'department', name: 'QA',          parent_id: 1 },   // สำนักงาน QA
   { id: 3, kind: 'department', name: 'Inspection',  parent_id: 1 },
   { id: 4, kind: 'department', name: 'PQA-Press',   parent_id: 1 },
-  { id: 5, kind: 'section',    name: 'PD3',         parent_id: null },
+  { id: 5, kind: 'section',    name: 'PD3',         parent_id: null, division: 'production' },
+  { id: 9, kind: 'section',    name: 'Maintenance', parent_id: null, division: 'maintenance' },
+  { id: 10, kind: 'department', name: 'MTN',        parent_id: 9 },
   { id: 6, kind: 'department', name: 'HYDROFORM',   parent_id: 5 },
   { id: 7, kind: 'line',       name: 'HDF1',        parent_id: 6 },
   { id: 8, kind: 'team',       name: 'ทีม A',       parent_id: 7 },
@@ -97,4 +99,53 @@ test('isHeadLevel ตรงกับทะเบียน LEVEL_GOVERNS', () => 
   assert.ok(!isHeadLevel('qc') && !isHeadLevel('operator') && !isHeadLevel(''));
   assert.deepEqual(Object.keys(LEVEL_GOVERNS).sort(),
     ['dept_head', 'line_leader', 'manager', 'section_head']);
+});
+
+
+test('🔭 แนะนำ scope_depth: สายผลิต หัว=branch · สมาชิก=ตามเลเวล', () => {
+  assert.equal(recommendScopeDepth({ org_node_id: 6, position: 'dept_head' }, BY_ID).depth, 'branch');
+  assert.equal(recommendScopeDepth({ org_node_id: 7, position: 'line_leader' }, BY_ID).depth, 'branch');
+  assert.equal(recommendScopeDepth({ org_node_id: 8, position: 'operator' }, BY_ID, { level: 'operator' }).depth, 'self');
+  assert.equal(recommendScopeDepth({ org_node_id: 8, position: 'technician' }, BY_ID, { level: 'technician' }).depth, 'unit');
+});
+
+test('🔭 ฟังก์ชันตัดขวาง (ช่าง) = all ทั้งหัวและสมาชิก', () => {
+  const r1 = recommendScopeDepth({ org_node_id: 10, position: 'technician' }, BY_ID);
+  const r2 = recommendScopeDepth({ org_node_id: 9, position: 'manager' }, BY_ID);
+  assert.equal(r1.depth, 'all'); assert.equal(r1.reason, 'cross_cutting');
+  assert.equal(r2.depth, 'all');
+});
+
+test('🔴 ผังไม่ระบุฝ่าย (QA วันนี้) = null + division_unknown ห้ามเดาเป็น all', () => {
+  const r = recommendScopeDepth({ org_node_id: 3, position: 'qc' }, BY_ID);
+  assert.equal(r.depth, null);
+  assert.equal(r.reason, 'division_unknown');
+});
+
+test('🔴 ไม่มีโหนด / เลเวลสูงกว่าผัง = null ไม่เดา', () => {
+  assert.equal(recommendScopeDepth({ position: 'manager' }, BY_ID).depth, null);
+  const nodes = { 10: { id: 10, kind: 'department', name: 'X', parent_id: null, division: 'production' } };
+  const r = recommendScopeDepth({ org_node_id: 10, position: 'manager' }, nodes);
+  assert.equal(r.depth, null); assert.equal(r.reason, 'level_above_tree');
+});
+
+
+test('🔄 รักษาการ/มอบหมายที่ยังมีผล ทับค่าแนะนำให้กว้างขึ้นได้ · ฐาน HR ยังเป็น operator', () => {
+  const emp = { org_node_id: 8, position: 'operator' };              // HR = operator (ฐาน)
+  const base = recommendScopeDepth(emp, BY_ID, { level: 'operator' });
+  assert.equal(base.depth, 'self');
+  const acting = [{ kind: 'acting', scope_depth: 'branch', starts_on: '2026-01-01', ends_on: null, org_node_id: 7 }];
+  const r = recommendScopeDepth(emp, BY_ID, { level: 'operator', assignments: acting, today: '2026-11-02' });
+  assert.equal(r.depth, 'branch');
+  assert.equal(r.reason, 'acting');
+  assert.equal(r.baseDepth, 'self', 'ต้องจำฐาน HR ไว้ให้จอเขียนได้ว่า "ฐาน operator + รักษาการ"');
+});
+
+test('🔴 มอบหมายที่หมดอายุแล้ว ไม่ทับ · มอบหมายแคบกว่าฐาน ไม่ทำให้แคบลง', () => {
+  const emp = { org_node_id: 6, position: 'dept_head' };            // ฐาน = branch
+  const expired = [{ kind: 'acting', scope_depth: 'all', starts_on: '2025-01-01', ends_on: '2025-12-31' }];
+  assert.equal(recommendScopeDepth(emp, BY_ID, { assignments: expired, today: '2026-11-02' }).depth, 'branch');
+  const narrower = [{ kind: 'head', scope_depth: 'unit', starts_on: '2026-01-01', ends_on: null }];
+  const r = recommendScopeDepth(emp, BY_ID, { assignments: narrower, today: '2026-11-02' });
+  assert.equal(r.depth, 'branch'); assert.equal(r.reason, 'production_head');
 });

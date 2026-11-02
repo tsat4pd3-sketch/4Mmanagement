@@ -41,6 +41,12 @@ export const ROLE_META = {
   //       (หมวดเมนู/ทะเบียนสิทธิ์ยังเป็น 3 ฝั่งตามเดิม — คนละเรื่องกับ role ห้ามยุบตาม)
   warehouse_delivery: { icon: '🚚', label: 'คลัง FG-จัดส่ง', en: 'Warehouse & Delivery', color: '#f97316', desc: 'เก็บสินค้าพร้อมขาย (FG) · รอบส่งลูกค้า · ภาชนะ/Packaging · ออกใบขาย (billing) — ไม่มีสิทธิ์จ่ายของเข้าไลน์/ปรับสต๊อกในไลน์', axis: 'unit' },
   display:          { icon: '📺', label: 'จอแสดงผล',         en: 'View Only',        color: '#94a3b8', desc: 'ดูอย่างเดียว ไม่มี Auto-Logout (จอ TV/บอร์ด)', axis: 'device' },
+  // 👀 ผู้ทดลองใช้ (2026-11-02 · คำสั่ง user "user ไว้ให้นายลองเข้ามาดูโปรแกรม แก้/ลงข้อมูลอะไรไม่ได้")
+  //    = มีแต่คีย์ page:* (เข้าดูได้) **ไม่มีคีย์ action แม้แต่ตัวเดียว** ⇒ can() เท็จทุกปุ่ม · RLS ฝั่ง Main บล็อกเขียน
+  //    ไม่ใช้ `display` เพราะนั่นคือ "จอ TV" (24 หน้า · วนหน้าอัตโนมัติ · ไม่ auto-logout) คนละเรื่องกับคนลองใช้
+  //    ⚠️ ฝั่ง DR เป็น anon ⇒ กันได้ที่ปุ่ม/handler เท่านั้น (known gap เดิม) · ไม่ให้เห็นหน้าตั้งค่า/ลงทะเบียน/เช็คชื่อ
+  //    🔴 ตั้ง scope_depth='all' ที่ /add-user ให้เห็นทั้งโรงงาน · ห้ามให้ scope:all_units (ไม่มีอะไรให้เขียนอยู่แล้ว)
+  viewer:           { icon: '👀', label: 'ผู้ทดลองใช้ (ดูอย่างเดียว)', en: 'Demo Viewer', color: '#a3a3a3', desc: 'เข้าดูได้เกือบทุกหน้า แต่กดแก้/บันทึก/อนุมัติอะไรไม่ได้เลย — สำหรับผู้บริหาร/แขกที่มาลองโปรแกรม', axis: 'scope' },
   // ⚠️ 'dept_admin' ไม่ใช่ base role — เป็น "bucket สิทธิ์" ของ flag แอดมินหน่วยงาน (profiles.is_dept_admin)
   //   ใช้เป็นคอลัมน์ใน /permissions ตั้งว่าแอดมินหน่วยงานทำ action อะไรได้ · ห้ามเลือกเป็น role ของ user
   //   (bucket:true → AddUser/ตัวเลือก role กรองออก) · ดู migration 20260803_dept_admin.sql

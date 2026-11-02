@@ -4386,6 +4386,95 @@ test('🛡️ mtn-approve-needs-confirm — ปุ่มเซ็น/อนุ�
   }
 });
 
+/* ═══ 🔒 ช่อง "ผู้จัดการ…" ในใบ MO ต้องเช็คระดับตำแหน่ง (2026-10-30 · หน้างานแจ้ง) ═══
+   *"มีคนอนุมัติแทนพี่แล้ว"* — วิศวกร (`engineer` = 30) เซ็นช่อง "ผู้จัดการต้นสังกัด" แทนเจ้าตัวได้
+   เพราะด่านเดิมเช็คแค่ `can('approve')` **ไม่ดูตำแหน่งเลย** และ `signApproval` เขียนชื่อคนกด
+   ทับชื่อที่ระบุไว้ ⇒ เจ้าตัวโดนตัดสิทธิ์ (`already_signed`) แก้เองไม่ได้
+   🔴 ด่านตำแหน่งต้องมาก่อนทาง `named` ด้วย — ผู้แจ้งพิมพ์ชื่อใครลงช่องนั้นก็ได้ รวมชื่อตัวเอง */
+test('🛡️ reporter-scope-known-unit — ด่านขอบเขตต้องมี "รู้จักหน่วยนี้ไหม" ครบทั้ง 2 แกน', () => {
+  const src = readFileSync(join(ROOT, 'src/utils/mtnStepPerm.js'), 'utf8');
+  const i = src.indexOf('export function orderInReporterScope');
+  assert.ok(i > 0, '\n\n❌ หา `orderInReporterScope` ไม่เจอ — เปลี่ยนชื่อแล้วต้องแก้ด่านนี้ด้วย\n');
+  const body = src.slice(i, i + 1600);
+
+  /* 🔴 ฝั่งไลน์มีด่าน `knownLineNames` มาตั้งแต่แรก แต่ฝั่งส่วนงานไม่มี (02/11)
+     ⇒ เอาชื่อ **แผนก** ไปเทียบลิสต์ **ส่วนงาน** แล้วตอบ false = บล็อกผิด
+     เคสจริง: JIG MTN เป็น department ใต้ PD4 ⇒ ผู้จัดการที่ดูแลควบ PD3+PD4 เซ็นใบนั้นไม่ได้ */
+  assert.ok(/knownSections/.test(body),
+    '\n\n❌ `orderInReporterScope` เลิกเช็ค `knownSections` แล้ว\n'
+    + '   ⇒ ใบที่ `dept_section` เป็นชื่อ **แผนก/ทีม** (ไม่ใช่ส่วนงาน) จะถูกตัดสินว่า "ของหน่วยอื่น"\n'
+    + '   🔴 JIG MTN = department ใต้ PD4 — คนที่ดูแลควบแผนกครอบอยู่แล้วตามผัง แต่สตริงไม่ตรง\n'
+    + '   แก้ยังไง: หน่วยที่ไม่อยู่ในทะเบียนส่วนงาน = คืน `null` (ไม่รู้ = ไม่บล็อก)\n');
+
+  /* หน้าที่เรียกต้องส่งทะเบียนมาจริง ไม่ใช่มีพารามิเตอร์ลอยไว้ */
+  const page = readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8');
+  assert.ok(/knownSections:\s*\[/.test(page),
+    '\n\n❌ `MtnRepair.jsx` ไม่ส่ง `knownSections` ใน `reporterScope` แล้ว\n'
+    + '   ⇒ ด่านถอยไปใช้พฤติกรรมเดิม = บล็อกใบของแผนกที่อยู่ใต้ส่วนงานที่เราดูแล\n');
+});
+
+test('🛡️ mtn-approval-needs-rank — ช่องผู้จัดการในใบ MO ต้องกันตำแหน่งที่ต่ำกว่าเกณฑ์', () => {
+  const src = readFileSync(join(ROOT, 'src/utils/mtnStepPerm.js'), 'utf8');
+  const i = src.indexOf('export function canSignMtnApproval');
+  assert.ok(i > 0, '\n\n❌ หา `canSignMtnApproval` ไม่เจอ — เปลี่ยนชื่อแล้วต้องแก้ด่านนี้ด้วย\n');
+  const body = src.slice(i, i + 2600);
+
+  assert.ok(/posRank/.test(body) && /rank_too_low/.test(body),
+    '\n\n❌ `canSignMtnApproval` เลิกเช็คตำแหน่งแล้ว\n'
+    + '   ⇒ ใครถือ `mtn_repair:approve` ก็เซ็นช่อง "ผู้จัดการต้นสังกัด" แทนเจ้าตัวได้อีก\n'
+    + '   แก้ยังไง: เช็ค `posRank < APPROVAL_MIN_RANK` ก่อนคืน ok\n');
+
+  /* ลำดับสำคัญ: ด่านตำแหน่งต้องอยู่ "ก่อน" ทางผ่านด้วยชื่อ (named) และสิทธิ์ (can) */
+  const rankAt = body.indexOf('rank_too_low');
+  const namedAt = body.indexOf("code: 'named'");
+  const canAt = body.indexOf("code: 'approve'");
+  assert.ok(rankAt > 0 && rankAt < namedAt && rankAt < canAt,
+    '\n\n❌ ด่านตำแหน่งถูกย้ายไปอยู่หลังทาง `named`/`approve`\n'
+    + '   ⇒ ผู้แจ้งพิมพ์ชื่อตัวเองลงช่อง "ผู้จัดการต้นสังกัด" แล้วเซ็นเองได้ (เคสจริง 30/10)\n');
+
+  /* 🔴 ชั้น ③ ขอบเขตหน่วยงาน — "ผู้จัดการ**ต้นสังกัด**" ตามนิยามคือฝั่งผู้แจ้ง
+     audit ชั้น ③ รอบ 15/10 ไม่ได้ครอบด่านนี้ (`canDoStep` มี · ตัวนี้ไม่มี) */
+  assert.ok(/inReporterScope\s*===\s*false/.test(body) && /out_of_scope/.test(body),
+    '\n\n❌ `canSignMtnApproval` เลิกเช็คขอบเขตหน่วยงานแล้ว\n'
+    + '   ⇒ หัวหน้าแผนกของส่วนงานหนึ่ง เซ็นช่อง "ผู้จัดการต้นสังกัด" ของใบส่วนงานอื่นได้\n'
+    + '   🔴 `null` (ตัดสินไม่ได้) ต้องไม่บล็อก — คนดูแลควบแผนกผ่านทาง sections/resp_cost_centers\n');
+
+  /* 🔴 เกณฑ์ = "หัวหน้าแผนกขึ้นไป" (50) ไม่ใช่ "ผู้จัดการ" (60)
+     ⚠️ ห้ามยกเป็น 60 โดยไม่พิสูจน์กับทะเบียนผู้ใช้จริงก่อน (CLAUDE.md 26/10)
+     — นับความครอบคลุมต้องกาง `sections`/`resp_cost_centers` ไม่ใช่ `section` เดี่ยว */
+  assert.ok(/APPROVAL_MIN_RANK\s*=\s*50\b/.test(src),
+    '\n\n❌ `APPROVAL_MIN_RANK` ไม่ใช่ 50 แล้ว\n'
+    + '   ยกเกณฑ์ = ต้องพิสูจน์กับทะเบียนผู้ใช้จริงก่อน merge (CLAUDE.md 26/10)\n'
+    + '   ถ้าจะเปลี่ยน ต้องพิสูจน์กับทะเบียน `profiles` จริงก่อน (กฎ CLAUDE.md 26/10)\n');
+});
+
+/* ═══ 🏭 ตัวตนเครื่องนอกทะเบียน ต้องผูก "สายไลน์" (2026-10-30 · คำสั่ง user) ═══
+   user: *"conveyor ที่ 306 มันก็คนละตัวกับ conveyor 297 มันแยกส่วนงาน แยกไลน์ แยกแผนก
+   ต้องดูผังองค์กรด้วย มันต้องลิ้งกันมั้ย"*
+   `machine_no` เป็นข้อความ**ระดับทั้งโรงงาน** ⇒ จัดกลุ่มด้วยข้อความล้วน = "CONVEYOR" ของ
+   สาย HYDROFORM (PD3) กับสาย LWR BAR (PD4) ถูกนับเป็นเครื่องเดียวใน MTBF/MTTR/KPI ช่าง
+   🔴 ผูกที่ **สาย** ไม่ใช่ชื่อไลน์ดิบ — แม่กับลูกคือที่เดียวกัน (วัดจริง: 21 คีย์ชน → เหลือ 4) */
+test('🛡️ equip-identity-family-scoped — จัดกลุ่มเครื่องนอกทะเบียนต้องผูกสายไลน์', () => {
+  const src = readFileSync(join(ROOT, 'src/utils/mtnMetrics.js'), 'utf8');
+  assert.ok(/scopeKeyByFamily\s*\(/.test(src) && /lineFamilyKey\s*\(/.test(src),
+    '\n\n❌ `mtnMetrics` เลิกผูกสายไลน์กับคีย์เครื่องแล้ว\n'
+    + '   ⇒ ชื่อเครื่องซ้ำข้ามสาย (CONVEYOR ของ PD3 กับ PD4) กลับไปถูกนับเป็นเครื่องเดียว\n'
+    + '   แก้ยังไง: `scopeKeyByFamily(typedKey, lineFamilyKey(lineFamilyOf(rowLine)))` (utils/machineNo.js)\n');
+
+  /* เครื่องที่ **อยู่ในทะเบียน** ต้องไม่ถูกผูกสาย — ทะเบียนเป็นตัวบอกตัวตนอยู่แล้ว
+     ผูกซ้ำ = เครื่องตัวเดียวที่ถูกลงหลายสาย (ช่างยกไปใช้ไลน์อื่น) แตกเป็นหลายแถว */
+  assert.ok(/machine\s*\?\s*normEquipKey\(machine\.machine_no\)/.test(src),
+    '\n\n❌ เครื่องที่อยู่ในทะเบียนถูกผูกสายไปด้วย — ต้องใช้เลขทะเบียนล้วน\n');
+
+  /* 🔴 ตัวผูกสายห้าม normalize ซ้ำ — แต่ละจอมี normalizer ของตัวเอง
+     (`normEquipKey` เก็บศูนย์นำหน้า · `machineKey` ตัดทิ้ง) บังคับตัวใดตัวหนึ่ง = คีย์ขยับยกระบบ */
+  const mn = readFileSync(join(ROOT, 'src/utils/machineNo.js'), 'utf8');
+  const fn = mn.slice(mn.indexOf('export const scopeKeyByFamily'));
+  assert.ok(!/machineKey\s*\(/.test(fn.slice(0, 300)),
+    '\n\n❌ `scopeKeyByFamily` ไป normalize ซ้ำ — คีย์ของเครื่องที่ขึ้นทะเบียนแล้วจะเปลี่ยนยกระบบ\n'
+    + '   (ประวัติ MTBF/พาเรโตขยับโดยไม่มีใครสั่ง) · ต้องรับคีย์ที่ normalize มาแล้วเท่านั้น\n');
+});
+
 /* ═══ ของกลางของไลน์ขนาน ห้ามถูกหารเลน — `affects_lanes` (2026-10-28 · คำสั่ง user) ═══
    ที่มา: user ถามถึงเคส HDF1 → LASER-345 (เลเซอร์ 3 เครื่องวิ่งขนาน · คอนเวเยอร์ลำเลียงตัวเดียว
    เลี้ยงทั้ง 3 เครื่อง) — *"คอนเวเย่อ พัง ไม่ใช่เลเซอพัง … ถ้าคอนเวเย่อเบรคดาว จะกระทบกับทั้ง3เครื่องทันที"*
@@ -7889,4 +7978,51 @@ test('🔩 mtn-parts-before-stock — ตัดสต็อกอะไหล่
   assert.match(src, /from\('mtn_order_parts'\)\.insert\(partRows\)\.select\('id'\)[\s\S]{0,160}?checkWriteRows\(insParts/,
     '\n\n❌ insert รายการอะไหล่ไม่ได้นับแถว — ต้องใช้ checkWriteRows(... .select(\'id\'), …, { min })\n'
     + '   เขียนไม่ครบแล้วตัดสต็อกตามรายการที่ใบไม่มี = ยอดคลังกับใบไม่ตรงกันเงียบๆ\n');
+
+/* ═══ 🧩 scope-picker-single-field — ③ ส่วนงาน กับ ④ Cost Center ต้องเป็นช่องเดียว ═══ 02/11
+   คำสั่ง user: *"ปัญหาเรื่อง 3 กับ 4 ที่ควรจะรวมกันจะแก้จบเมื่อไหร่ ที่จริงเลือก 4 มันครอบคลุมอยู่แล้ว มันตามผังองค์กร"*
+   2 ช่องที่ตอบคำถามเดียวกัน ("แก้ของใครได้") = ตั้งแล้วขัดกันเอง ⇒ `profiles.sections` ต้อง derive จาก CC
+   ที่ติ๊ก (utils/scopePicker.js) — ห้ามมีช่องติ๊กส่วนงานแยกใน /add-user อีก */
+test('🧩 scope-picker-single-field — /add-user ห้ามมีช่องติ๊กส่วนงานแยกจากต้นไม้ CC', () => {
+  const au = stripComments(readFileSync(join(ROOT, 'src/pages/AddUser.jsx'), 'utf8'));
+  assert.doesNotMatch(au, /setF\('sections',\s*checked\s*\?/,
+    '🔴 ช่องติ๊ก sections กลับมาแล้ว — ต้อง derive จาก CC ผ่าน scopePicker.js เท่านั้น');
+  assert.match(au, /deriveSections\(ccIdxNodes/, 'sections ที่บันทึกต้องมาจาก effectiveSections() ของ scopePicker');
+  assert.match(au, /sections:\s*effSections/, 'ตอนสร้างบัญชีต้องบันทึก effSections');
+  assert.match(au, /sections:\s*effSections\.length \? effSections : null/, 'ตอนแก้บัญชีต้องบันทึก effSections');
+  const sp = stripComments(readFileSync(join(ROOT, 'src/utils/scopePicker.js'), 'utf8'));
+  assert.match(sp, /if \(!ccs\?\.length\) return base;/,
+    '🔴 ไม่ติ๊ก CC เลยต้องคืนค่าเดิมเป๊ะ — บัญชีเก่าห้ามเปลี่ยนพฤติกรรม (บทเรียน 26/10)');
+});
+
+/* ═══ 🔄 assignment-overlay-widen-only — ขอบเขตจริงอ่าน org_assignments แบบ "กว้างขึ้นได้อย่างเดียว" ═══ 02/11
+   คำสั่ง user: *"ตำแหน่งจริงของ HR เป็นพื้นฐาน และเพิ่มความรับผิดชอบงานที่อาจจะรักษาการแทนตำแหน่งนั้น"*
+                → *"ลุยต่อ ให้ขอบเขตจริงอ่าน org_assignments เลย"*
+   · ตัวทับมีไฟล์เดียว `utils/assignmentOverlay.js` (pure · ห้ามแตะ DB) · App.jsx ต้องส่งผล
+     effectiveSections() เข้า applyAssignments() ก่อน setUserSections (ไม่งั้นมอบหมายไม่มีผลเงียบ)
+   · กฎวันที่มีผล = `isGranting()` ที่เดียว — ห้ามเขียน starts_on/ends_on เทียบวันเองใน App.jsx
+   · ห้ามคืนน้อยกว่าที่ profiles ตั้ง (กฎ 26/10) — ฐานไม่จำกัด (sections ว่าง) ต้องคงว่างเสมอ */
+test('🔄 assignment-overlay-widen-only — รักษาการทับขอบเขตได้ทางกว้างขึ้นเท่านั้น · กฎวันที่ที่เดียว', async () => {
+  const app = stripComments(readFileSync(join(ROOT, 'src/App.jsx'), 'utf8'));
+  assert.match(app, /from\('org_assignments'\)[\s\S]{0,200}\.eq\('profile_id',\s*user\.id\)/,
+    '🔴 fetchProfile ต้องอ่าน org_assignments ของบัญชีนี้ (กรอง profile_id)');
+  assert.match(app, /applyAssignments\(\{\s*sections:\s*baseSections/, 'ผล effectiveSections ต้องผ่าน applyAssignments ก่อน setUserSections');
+  assert.match(app, /setUserSections\(finalSections\)/, 'setUserSections ต้องใช้ค่าหลังทับ');
+  assert.doesNotMatch(app, /starts_on\s*<=|ends_on\s*>=/, '🔴 ห้ามเขียนกฎวันที่ของมอบหมายเองใน App.jsx — ใช้ isGranting()');
+
+  const ov = stripComments(readFileSync(join(ROOT, 'src/utils/assignmentOverlay.js'), 'utf8'));
+  assert.doesNotMatch(ov, /supabaseClient|from\(/, 'assignmentOverlay.js ต้อง pure ห้ามแตะ DB');
+  assert.match(ov, /isGranting\(a, today\)/, 'ต้องใช้ isGranting() ตัวเดียวกับจอ /org-setup');
+
+  const { applyAssignments } = await import('../assignmentOverlay.js');
+  const { buildCcIndex } = await import('../ccScope.js');
+  const nodes = [{ id: 1, kind: 'section', name: 'PD3', parent_id: null, cost_center: '1' }];
+  const ccIdx = buildCcIndex(nodes);
+  const a = [{ id: 'x', kind: 'acting', org_node_id: 1, scope_depth: 'branch', starts_on: '2026-01-01', ends_on: null }];
+  const r0 = applyAssignments({ sections: [], respCostCenters: [] }, a, { nodes, ccIdx, today: '2026-11-02' });
+  assert.deepEqual(r0.sections, [], '🔴 ฐานไม่จำกัดต้องคงไม่จำกัด — มอบหมายห้ามทำให้แคบลง');
+  const r1 = applyAssignments({ sections: ['PD4'], respCostCenters: ['9'] }, a, { nodes, ccIdx, today: '2026-11-02' });
+  assert.ok(r1.sections.includes('PD4') && r1.respCostCenters.includes('9'), '🔴 ของเดิมต้องอยู่ครบหลังทับ');
+  const rf = applyAssignments({ sections: ['PD4'], respCostCenters: [] }, a, { nodes: [], ccIdx: null, today: '2026-11-02' });
+  assert.deepEqual(rf.sections, ['PD4']); assert.equal(rf.failed, true, 'ผังอ่านไม่ได้ = ไม่ทับ + failed');
 });
