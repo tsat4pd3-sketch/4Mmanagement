@@ -7865,3 +7865,28 @@ test('🗑️ ojt-delete-needs-sign-url — ประตู "ลบใบที�
     + '   ผล: `sheetSigned()` คืน false ทุกใบ ⇒ ปุ่ม 🗑️ โผล่บนใบที่พนักงานเซ็นครบแล้ว\n'
     + '   แก้: select(\'*, ojt_training_attendees(id, sign_url), ojt_training_files(id)\')\n');
 });
+
+test('🔩 mtn-parts-before-stock — ตัดสต็อกอะไหล่ได้ต่อเมื่อเขียนรายการลงใบ MO สำเร็จ', () => {
+  /* why (02/11 · ทีม MTN แจ้ง "รายการ Spare Part ที่กดใช้ ไม่แสดงรายการในใบ MO"):
+     `mtn_order_parts` มี RLS `for all to anon using(true)` แต่ **GRANT ระดับตารางไม่มี DELETE**
+     ⇒ RLS ผ่าน แต่ Postgres ปฏิเสธที่ชั้นสิทธิ์ตาราง ⇒ PostgREST ตอบ 401
+     โค้ดเดิมคร่อม insert ไว้ด้วยผลของ delete (ถูกแล้ว) **แต่ลูปตัดสต็อกไม่ได้ถูกคร่อมด้วย**
+     ⇒ 23/10–02/11: อะไหล่ออกจากคลัง 98 รายการ / 45 ใบ โดยใบ MO ไม่มีบันทึกสักบรรทัด
+       (วัดจาก edge_logs: DELETE /rest/v1/mtn_order_parts → 401 วันละ ~49 ครั้ง ·
+        แถวใหม่ใน mtn_order_parts = 0 ทุกวันติดกัน 11 วัน · ไม่มีรายการคืนสต็อกเลย)
+     กฎ: "ของออกจากคลัง" กับ "บันทึกว่าใช้กับใบไหน" ต้องไปด้วยกัน — เขียนบันทึกไม่ติด ห้ามตัดสต็อก
+     (หลักเดียวกับ db-write-rules ข้อ 6: claim ก่อนเขียน ledger · ledger ล้มต้องคืนสถานะ)
+     🔴 ห้ามแก้ด่านนี้ด้วยการย้าย `mtn_stock_move` ออกไปไฟล์อื่น — ให้ย้ายด่านตามไปด้วย */
+  const src = readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8');
+  const iGate  = src.indexOf('if (!partsWritten)');
+  const iStock = src.indexOf("rpc('mtn_stock_move'");
+  assert.ok(iGate > -1,
+    '\n\n❌ MtnRepair.jsx ไม่มีประตู `if (!partsWritten)` ก่อนตัดสต็อกแล้ว\n'
+    + '   ผล: เขียน mtn_order_parts ไม่ติด (401/เน็ตหลุด) แต่ของยังออกจากคลัง = ตามรอยอะไหล่ไม่ได้\n');
+  assert.ok(iStock > -1 && iGate < iStock,
+    '\n\n❌ `mtn_stock_move` ไม่ได้อยู่หลังประตู `if (!partsWritten)`\n'
+    + '   แก้: ตัดสต็อกเฉพาะเมื่อเขียนรายการอะไหล่ลงใบสำเร็จ (นับแถวด้วย checkWriteRows)\n');
+  assert.match(src, /from\('mtn_order_parts'\)\.insert\(partRows\)\.select\('id'\)[\s\S]{0,160}?checkWriteRows\(insParts/,
+    '\n\n❌ insert รายการอะไหล่ไม่ได้นับแถว — ต้องใช้ checkWriteRows(... .select(\'id\'), …, { min })\n'
+    + '   เขียนไม่ครบแล้วตัดสต็อกตามรายการที่ใบไม่มี = ยอดคลังกับใบไม่ตรงกันเงียบๆ\n');
+});
