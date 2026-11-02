@@ -9,6 +9,7 @@ import { roleLabel } from '../utils/roleMeta';
 import { positionLabel } from '../utils/positions';   // position เก็บเป็น key — แสดงต้องแปลงชื่อเสมอ
 import { canAccessPage } from '../utils/permissions';
 import { buildProfileMenu } from '../utils/profileMenu';
+import useLang, { langToggleLabel, langToggleTitle } from '../utils/useLang';   // 🌐 ปุ่มสลับ ไทย/English + ป้ายการ์ด/telemetry แปลที่จุดวาด
 import { supabase, supabaseDR } from '../supabaseClient';
 import { loadLinesRes } from '../utils/useProductionLines';
 import { fetchActiveDowntimes } from '../utils/downtimeAlarm';
@@ -251,6 +252,7 @@ function useCountUp(target, dur = 700) {
    (เดิมเป็นป้ายอ่านอย่างเดียว ผู้ใช้ต้องไปไล่หาหน้าเองว่าดูที่ไหน)
    ⚠️ ปลายทางต้องผ่าน canAccessPage — role ที่เข้าหน้านั้นไม่ได้ ให้เป็นป้ายเฉยๆ ห้ามพาไปแล้วโดนเด้ง */
 function TeleTile({ t, onGo }) {
+  const { tr } = useLang();
   const shown = useCountUp(t.val);
   const body = (
     <>
@@ -263,9 +265,9 @@ function TeleTile({ t, onGo }) {
         {t.of != null && shown != null && (
           <span style={{ fontSize: 13, color: 'var(--muted2)', fontFamily: MONO }}>/ {t.of}</span>
         )}
-        <span style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--font-body)' }}>{t.unit}</span>
+        <span style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--font-body)' }}>{tr(t.unit)}</span>
       </div>
-      <div style={{ marginTop: 6, fontSize: 12, fontWeight: 700, color: 'var(--text2)', fontFamily: 'var(--font-body)' }}>{t.label}</div>
+      <div style={{ marginTop: 6, fontSize: 12, fontWeight: 700, color: 'var(--text2)', fontFamily: 'var(--font-body)' }}>{tr(t.label)}</div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         <span style={{ fontSize: 11, color: 'var(--muted2)', letterSpacing: '0.14em', fontFamily: MONO }}>{t.sub}</span>
         {onGo && <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 'auto' }}>↗</span>}
@@ -289,6 +291,7 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
   userEmail, userAvatarUrl, onAvatarSaved, userSignatureUrl, onSignatureSaved,
   realRole, onOpenViewAs, remoteCode, onToggleRemote, onOpenSearch, permsVersion }) {
   const navigate = useNavigate();
+  const { lang, toggleLang, tr } = useLang();
   // scope ของผู้ใช้ (DeptHub อยู่ใน UserContext.Provider ของ App แล้ว)
   const { lineId: userLineId, sections: userSections = [] } = useContext(UserContext);
 
@@ -314,8 +317,9 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
   const profileItems = buildProfileMenu({
     realRole: realRole ?? userRole,
     canRemote: canAccessPage('/remote', userRole),
-    remoteCode, theme,
+    remoteCode, theme, lang,
     on: {
+      toggleLang,
       avatar:       () => fileRef.current?.click(),
       signature:    () => setSigOpen(true),
       password:     () => setPwdOpen(true),
@@ -598,8 +602,17 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
             </>
           )}
         </div>
+        {/* 🌐 ปุ่มสลับภาษา — คู่กับปุ่มธีม ป้ายบอก "กดแล้วได้ภาษาอะไร" */}
+        <button type="button" onClick={toggleLang} title={langToggleTitle(lang)} aria-label={langToggleTitle(lang)} style={{
+          height: 38, minWidth: 44, padding: '0 10px', borderRadius: 10,
+          background: 'var(--card)', border: '1px solid var(--border)',
+          color: 'var(--text)', cursor: 'pointer', fontSize: 12.5, fontWeight: 700, letterSpacing: '0.04em',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+        }}>
+          <span aria-hidden="true">🌐</span>{langToggleLabel(lang)}
+        </button>
         {onToggleTheme && (
-          <button onClick={onToggleTheme} title="สลับธีม" style={{
+          <button onClick={onToggleTheme} title={tr('สลับธีม')} style={{
             width: 38, height: 38, borderRadius: 10,
             background: 'var(--card)', border: '1px solid var(--border)',
             color: 'var(--text)', cursor: 'pointer', fontSize: 16,
@@ -632,7 +645,7 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
           ESM Control Center
         </h1>
         <p className="hub-sub" style={{ margin: '8px 0 0', fontSize: 'clamp(13px, 2vw, 15px)', color: 'var(--muted)', fontFamily: 'var(--font-body)' }}>
-          ศูนย์ควบคุมโรงงานอัจฉริยะ · Thai Summit Group — เลือกส่วนงานเพื่อเริ่มทำงาน
+          {tr('ศูนย์ควบคุมโรงงานอัจฉริยะ · Thai Summit Group — เลือกส่วนงานเพื่อเริ่มทำงาน')}
         </p>
 
         {/* 🔎 ค้นหาเมนู — หน้า Home เคยเป็นหน้าเดียวในระบบที่ค้นหาไม่ได้ (หน้าอื่นมี Ctrl+K/ช่องค้นใน drawer)
@@ -641,7 +654,7 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
           <button type="button" className="hub-search" onClick={onOpenSearch}
             style={{ maxWidth: 460, marginTop: 14 }}>
             <span style={{ fontSize: 15 }}>🔎</span>
-            <span style={{ flex: 1 }}>ค้นหาเมนู… (เช่น ซ่อม, oee, สต๊อก)</span>
+            <span style={{ flex: 1 }}>{tr('ค้นหาเมนู… (เช่น ซ่อม, oee, สต๊อก)')}</span>
             <span style={{ fontFamily: MONO, fontSize: 11, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)' }}>
               Ctrl K
             </span>
@@ -655,7 +668,7 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
             ⏱ {clock}
           </span>
           <span style={{ fontFamily: 'var(--font-body)', fontSize: 12, fontWeight: 700, color: isDayShift ? '#f59e0b' : '#4d9fff', background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 6, padding: '5px 12px' }}>
-            {isDayShift ? '☀️ กะเช้า 08:00–20:00' : '🌙 กะดึก 20:00–08:00'}
+            {tr(isDayShift ? '☀️ กะเช้า 08:00–20:00' : '🌙 กะดึก 20:00–08:00')}
           </span>
           <span className="hub-date" style={{ fontFamily: 'var(--font-body)', fontSize: 12, fontWeight: 600, color: 'var(--text2)', background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 6, padding: '5px 12px' }}>
             📅 {thaiDate}
@@ -676,7 +689,7 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
           }} title={wholeFactory
               ? (MAINTENANCE_ROLES.includes(userRole) ? 'หน่วยงานช่างดูแลเครื่องจักรทุกไลน์ จึงเห็นทั้งโรงงาน' : 'บัญชีนี้ไม่ได้จำกัดส่วนงาน')
               : `นับเฉพาะไลน์: ${(scopeNames || []).join(', ')}`}>
-            {wholeFactory ? '🏭 ทั้งโรงงาน' : `👥 ส่วนงานของฉัน (${(scopeNames || []).length} ไลน์)`}
+            {wholeFactory ? tr('🏭 ทั้งโรงงาน') : `👥 ส่วนงานของฉัน (${(scopeNames || []).length} ไลน์)`}
           </span>
           <span style={{ flex: 1, height: 1, background: 'var(--border)' }} />
           <span style={{ fontSize: 11, color: 'var(--muted2)', fontFamily: MONO }}>refresh 60s</span>
@@ -695,7 +708,7 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
         <div className="hub-fav" style={{ width: '100%', maxWidth: 'min(97vw, 2400px)', marginBottom: 'clamp(18px, 2.4vw, 26px)', animation: 'hub-fade-up 0.6s ease 0.1s both' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
             <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.2em', color: 'var(--muted)', textTransform: 'uppercase', fontFamily: MONO }}>
-              ⭐ ใช้บ่อย
+              ⭐ {tr('ใช้บ่อย')}
             </span>
             <span style={{ flex: 1, height: 1, background: 'var(--border)' }} />
             <span style={{ fontSize: 11, color: 'var(--muted2)', fontFamily: MONO }}>this device</span>
@@ -703,7 +716,7 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
           <div className="hub-fav-list" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {favItems.map(it => (
               <button key={it.to} type="button" className="star-chip" onClick={() => navigate(it.to)} title={it.group}>
-                <span style={{ fontSize: 15 }}>{it.icon}</span>{it.label}
+                <span style={{ fontSize: 15 }}>{it.icon}</span>{tr(it.label)}
               </button>
             ))}
           </div>
@@ -727,7 +740,7 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
                จึงต้องใส่ role/tabIndex/onKeyDown เองให้คีย์บอร์ดเข้าถึงได้ */
             role="button" tabIndex={0}
             onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(route); } }}
-            aria-label={`${d.label} — ${d.labelTh}`}
+            aria-label={`${d.label} — ${tr(d.labelTh)}`}
           >
             <div className="edge" />
 
@@ -739,7 +752,7 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: MONO, fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', color: 'var(--text2)' }}>
                 {/* ไฟสถานะนิ่ง+เรืองแสง (ไม่กระพริบ — กระพริบสงวนให้ Andon แดง) */}
                 <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#3dd65c', boxShadow: '0 0 5px 1px rgba(61,214,92,0.6)' }} />
-                {d.items.length} หน้า
+                {d.items.length} {tr('หน้า')}
               </span>
             </div>
 
@@ -750,16 +763,19 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
                 <div style={{ fontSize: 'clamp(15px, 2vw, 17px)', fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', letterSpacing: '-0.01em', lineHeight: 1.2 }}>
                   {d.label}
                 </div>
+                {/* ชื่อหมวดไทยใต้ชื่ออังกฤษ — โหมด English ถ้าแปลแล้วซ้ำกับหัว (Production/Production) ไม่วาดซ้ำ */}
+                {tr(d.labelTh) !== d.label && (
                 <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2, fontFamily: 'var(--font-body)' }}>
-                  {d.labelTh}
+                  {tr(d.labelTh)}
                 </div>
+                )}
               </div>
             </div>
 
             {/* คำอธิบาย */}
             {d.desc && (
               <div style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.6, marginBottom: 12, fontFamily: 'var(--font-body)' }}>
-                {d.desc}
+                {tr(d.desc)}
               </div>
             )}
 
@@ -780,15 +796,15 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
                       ? { background: 'transparent', color: 'var(--text2)', border: '1px dashed var(--border2)' }
                       : { background: `${d.color}15`, color: d.color, border: `1px solid ${d.color}30` }}>
                     <span style={{ fontSize: 12, opacity: guest ? 0.7 : 1 }}>{item.icon}</span>
-                    {item.label}
-                    {guest && <span style={{ fontSize: 11, color: 'var(--muted)' }}>↗{homeShort}</span>}
+                    {tr(item.label)}
+                    {guest && <span style={{ fontSize: 11, color: 'var(--muted)' }}>↗{tr(homeShort)}</span>}
                   </button>
                 );
               })}
               {hidden.length > 0 && (
                 <button type="button" className="dept-chip more-chip"
                   onClick={e => { e.stopPropagation(); setExpanded(s => ({ ...s, [d.key]: !open })); }}>
-                  {open ? '▲ ย่อ' : `▾ ดูทั้งหมด (${hidden.length})`}
+                  {open ? `▲ ${tr('ย่อ')}` : `▾ ${tr('ดูทั้งหมด')} (${hidden.length})`}
                 </button>
               )}
             </div>

@@ -4,6 +4,7 @@ import { NAV_ITEMS } from '../App';
 import useIsMobile from '../utils/useIsMobile';
 import { HubContext } from './Page';
 import MobileFilterFold, { splitFilterChildren } from './MobileFilterFold';
+import useLang from '../utils/useLang';   // 🌐 ชื่อหน้า/คำอธิบาย/แท็บ/breadcrumb แปลที่จุดวาด (utils/i18n.js)
 
 /* ══ 🧭 PageHeader — หัวหน้าเพจมาตรฐาน (breadcrumb + ชื่อหน้า + ปุ่ม + แท็บ) ══════════════
    ทุกหน้าควรขึ้นด้วย component นี้ ห้ามวาดหัวเรื่อง/แถบแท็บเอง
@@ -43,12 +44,13 @@ export default function PageHeader({
   title, icon, sub, actions, tabs, tab, onTab, breadcrumb = true, filters, children,
 }) {
   const isMobile = useIsMobile();
+  const { tr } = useLang();
   const inHub = useContext(HubContext);   // หน้าลูกใน hub → ไม่วาดชื่อหน้า/breadcrumb ซ้ำ (Page.jsx)
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const navItem = NAV_ITEMS.find(n => n.to === pathname);
   const tabList = (tabs || []).filter(Boolean);
-  const tabLabel = tabList.find(t => t.key === tab)?.label;
+  const tabLabel = tr(tabList.find(t => t.key === tab)?.label);
 
   const scrollRef = useRef(null);   // กล่องที่เลื่อนแนวนอน (มือถือ)
   const rowRef = useRef(null);      // แถวปุ่ม = offsetParent ของปุ่มและของตัวชี้
@@ -153,7 +155,7 @@ export default function PageHeader({
                     border: `1px solid ${on ? (selfPaint ? 'var(--accent)' : 'transparent') : 'var(--border2)'}`,
                     transition: moving ? 'color .18s ease' : 'none',
                   }}>
-                  {t.label}
+                  {tr(t.label)}
                   {t.badge ? <span style={{ marginLeft: 6, color: on ? 'var(--accent-ink)' : '#f59e0b' }}>{t.badge}</span> : null}
                 </button>
               );
@@ -204,11 +206,11 @@ export default function PageHeader({
         <div className="ph-chrome" style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap', fontSize: 12, color: 'var(--muted)' }}>
           <button onClick={() => navigate('/')} style={{
             background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'var(--muted)', fontSize: 12,
-          }}>🏠 หน้าหลัก</button>
+          }}>🏠 {tr('หน้าหลัก')}</button>
           <span>›</span>
-          <span>{navItem.group}</span>
+          <span>{tr(navItem.group)}</span>
           <span>›</span>
-          <span style={{ color: 'var(--text)', fontWeight: 700 }}>{navItem.label}</span>
+          <span style={{ color: 'var(--text)', fontWeight: 700 }}>{tr(navItem.label)}</span>
           {tabLabel && <><span>›</span><span style={{ color: 'var(--text2)' }}>{tabLabel}</span></>}
         </div>
       )}
@@ -225,15 +227,15 @@ export default function PageHeader({
                🔴 จอคอม = แบบเดิมเป๊ะ (เคยใช้ทั้ง 2 จอ ⇒ ชิป MOCKUP ใน title ของ /group-overview ชิดชื่อขึ้น 9px · desktopdiff จับได้) */
             isMobile ? (
               <h2 style={{ margin: 0, fontSize: 19, display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'nowrap' }}>
-                {icon && <span style={{ flexShrink: 0 }}>{icon}</span>}<span style={{ minWidth: 0 }}>{title}</span>
+                {icon && <span style={{ flexShrink: 0 }}>{icon}</span>}<span style={{ minWidth: 0 }}>{tr(title)}</span>
               </h2>
             ) : (
             <h2 style={{ margin: 0, fontSize: 23, display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
-              {icon && <span>{icon}</span>}{title}
+              {icon && <span>{icon}</span>}{tr(title)}
             </h2>
             )
           )}
-          {sub && <div style={{ fontSize: 12.5, color: 'var(--muted)', marginTop: inHub ? 0 : 3 }}>{sub}</div>}
+          {sub && <div style={{ fontSize: 12.5, color: 'var(--muted)', marginTop: inHub ? 0 : 3 }}>{tr(sub)}</div>}
         </div>
         {/* actions = ปุ่ม "คำสั่งระดับหน้า" เท่านั้น (บันทึก/เพิ่ม/พิมพ์/โหมด TV) — ห้ามใส่ตัวกรอง (select/วันที่/ขอบเขต/สเกล)
             ตัวกรองต้องอยู่ `filters` ⇒ ลงใต้แถบแท็บเสมอ (UI-STANDARD §2 ลำดับแนวตั้ง · stdsweep ตรวจ data-ph) */}

@@ -6838,6 +6838,7 @@ test('🧹 ปุ่มล้างตัวกรองอยู่ในแถ
   for (const f of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
     const rel = relative(ROOT, f);
     if (rel === 'src/components/ClearFiltersBtn.jsx' || LEGACY_OWN_BTN.includes(rel)) continue;
+    if (rel.startsWith('src/i18n/')) continue;   // 🌐 พจนานุกรม ไทย→English ถือคำนี้เป็นคีย์แปล ไม่ใช่ปุ่ม (02/11)
     const src = stripComments(readFileSync(f, 'utf8'));
     // ปุ่มที่มีข้อความ "ล้างตัวกรอง" ของตัวเอง = วาดเอง
     if (/<button[^>]*>[^<]*ล้างตัวกรอง/.test(src) || /'ล้างตัวกรอง'/.test(src)) bad.push(rel);
