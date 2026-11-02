@@ -19,6 +19,7 @@ import { pieceResult, seqLabel, SEQ_RULE } from '../utils/qaSequential';
 import PersonSelect from './PersonSelect';
 import { PointThumb } from './inspect/PointZoom';
 import { qaFileUrl } from '../lib/qaImages';
+import SignedDecimalInput from './SignedDecimalInput';
 import { calcOf, calcFormula, qaCalcDraft } from '../utils/inspectCalc';
 
 const JUDGE = {
@@ -240,8 +241,8 @@ export default function QaPieceStepper({
                     </span>
                   )}
                   {i.item_type === 'variable' && !calcOf(i) && (
-                    <input type="number" step="any" inputMode="decimal" placeholder="ค่าที่วัด" value={d.value ?? ''}
-                      onChange={e => setD(i.id, { value: e.target.value, judge: d.judge === 'na' ? null : d.judge })}
+                    <SignedDecimalInput placeholder="ค่าที่วัด" value={d.value ?? ''}
+                      onChange={v => setD(i.id, { value: v, judge: d.judge === 'na' ? null : d.judge })}
                       style={{ ...inputSt, width: isMobile ? 110 : 96, padding: '6px 8px' }} />
                   )}
                   {!needValue && (

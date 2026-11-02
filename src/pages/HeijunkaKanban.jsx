@@ -2428,6 +2428,21 @@ export default function HeijunkaKanban() {
         note: `Kanban ${r.line_name} รอบ ${r.round_no} (รอผลิตยืนยันรับ)`,
         created_by: fullName || 'Store',
       }));
+      /* 🔴 02/11 (feedback ประชุม "ยอดสโตร์-ผลิตยังไม่ถูกหัก"): รอบคัมบังเดิมบวกเข้าไลน์อย่างเดียว ไม่เคยหัก STORE
+         ⇒ ทำแบบเดียวกับใบขอเติม (deductStockForPick): STORE มีแถวสต็อก = หัก · ไม่มี = ไม่หัก (หักแล้วติดลบจากของที่ไม่เคยลงรับ)
+         แต่ต้องบอกบนจอว่าตัวไหนไม่ได้หัก ห้ามเงียบ */
+      let storeMissing = [];
+      if (issueRows.length) {
+        const mats = [...new Set(issueRows.map(x => x.mat_no))];
+        const { data: st, error: stErr } = await supabaseDR.from('line_stock_summary').select('mat_no')
+          .eq('line_name', 'STORE').in('mat_no', mats);
+        if (stErr) storeMissing = mats;
+        const has = new Set((st || []).map(x => x.mat_no));
+        if (!stErr) storeMissing = mats.filter(m => !has.has(m));
+        issueRows.filter(x => has.has(x.mat_no)).forEach(x => issueRows.push({
+          ...x, line_name: 'STORE', type: 'consume', note: `Kanban ${r.line_name} รอบ ${r.round_no} — จ่ายออกจาก STORE`,
+        }));
+      }
       if (issueRows.length) {
         const { error: e2 } = await supabaseDR.from('line_stock_transactions').insert(issueRows);
         if (e2) {
@@ -2438,6 +2453,7 @@ export default function HeijunkaKanban() {
         }
       }
       toast.success(`✅ ยืนยันส่งแล้ว: ${r.line_name} รอบ ${r.round_no}`);
+      if (storeMissing.length) toast.error(`⚠ ไม่ได้หัก STORE ${storeMissing.length} รายการ เพราะ STORE ไม่มียอดตั้งต้น (ลงรับเข้า STORE ก่อน): ${storeMissing.slice(0, 5).join(', ')}${storeMissing.length > 5 ? ' …' : ''}`);
       await loadDeliveries();
     } catch (err) { toast.error(err.message); }
     setConfirming(null);

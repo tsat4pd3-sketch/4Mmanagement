@@ -33,7 +33,8 @@ import { toast } from './Toast';
 import { can } from '../utils/permissions';
 import { isLeafLine, getChildLineNames, getAncestorNames } from '../utils/lineHierarchy';
 import { notifyEvent } from '../utils/notifyEvent';
-import { getActor } from '../utils/actorStamp';   // 👤 "ใครเรียก" — ที่เดียวของตัวตนผู้ทำรายการ
+import { getActor } from '../utils/actorStamp';
+import { getWorkDate } from '../utils/workDate';   // 👤 "ใครเรียก" — ที่เดียวของตัวตนผู้ทำรายการ
 import { pointsForLine, DELIVER_GATES } from '../utils/replenishGate';
 import MatLabel from './MatLabel';
 import { slocCodeOfLine } from '../utils/storageLoc';   // 🏬 มุม SAP ของใบ (2026-09-08)
@@ -452,11 +453,16 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
   };
 
   // ขั้น 8 — ปิดลูป · ได้ไม่ครบต้องบันทึกจำนวนจริง ไม่ใช่กด "รับแล้ว" เฉยๆ
+  /* 🔴 02/11 (feedback ประชุม "สโตร์ส่งเข้าไลน์ กดรับก็ยังไม่เพิ่มหรือลด"):
+     ยอดย้าย STORE → ไลน์ตั้งแต่สโตร์ "ยืนยันเตรียม" (deductStockForPick ใน HeijunkaKanban) — ตอนกดรับจึงไม่ขยับอีก
+     ⇒ (1) บอกบนจอว่ายอดเข้าไลน์ไปแล้วเท่าไหร่ / หรือยังไม่ได้ตัด (2) รับไม่ครบ = หักส่วนที่ไม่ได้รับออกจากไลน์
+     (เหมือนรอบคัมบัง submitReceive) — เดิมเก็บแค่ received_qty ยอดไลน์เลยสูงกว่าของจริงเงียบๆ */
   const receive = async (r, full) => {
-    let qty = Number(r.request_qty) || 0;
+    const issued = Number(r.picked_qty) > 0 ? Number(r.picked_qty) : (Number(r.request_qty) || 0);
+    let qty = issued;
     let note = null;
     if (!full) {
-      const a = window.prompt(`ได้รับจริงกี่ชิ้น? (ขอไป ${fmtQty(r.request_qty)})`, '');
+      const a = window.prompt(`ได้รับจริงกี่ชิ้น? (สโตร์ส่งมา ${fmtQty(issued)})`, '');
       if (a === null) return;
       qty = Number(a);
       if (!(qty >= 0)) { toast.error('จำนวนไม่ถูกต้อง'); return; }
@@ -473,7 +479,21 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
     if (error) { toast.error(error.message); return; }
     if (!data?.length) { toast.error('ยืนยันรับไม่ได้ — รายการนี้ถูกรับ/ยกเลิก/เปลี่ยนสถานะไปแล้ว หรือไม่มีสิทธิ์ · กด ↻'); load(); return; }
     const lead = agoMin(r.requested_at);
-    toast.success(`✅ ปิดงาน ${r.mat_no}${lead != null ? ` · ใช้เวลา ${lead} นาที` : ''}`);
+    const ledgered = r.stock_txn_ids?.length > 0;
+    const short = ledgered ? Math.max(0, issued - qty) : 0;
+    if (short > 0) {
+      const { error: eShort } = await supabaseDR.from('line_stock_transactions').insert({
+        line_name: r.line_name, mat_no: r.mat_no, part_name: r.part_name || null, qty: short, type: 'consume',
+        status: 'approved', work_date: getWorkDate(), created_by: fullName || 'ผลิต',
+        note: `รับไม่ครบ — ใบขอเติม ${r.mat_no} (ใบ ${String(r.id).slice(0, 8)}) ส่ง ${issued} รับจริง ${qty} (ปรับยอดตามจริง)`,
+      });
+      if (eShort) toast.error(`รับแล้ว แต่หักยอดส่วนที่ไม่ได้รับ (${short}) ออกจากไลน์ไม่สำเร็จ: ${eShort.message} — แจ้งสโตร์/admin ปรับยอด`);
+    }
+    toast.success(`✅ ปิดงาน ${r.mat_no}${lead != null ? ` · ใช้เวลา ${lead} นาที` : ''}`
+      + (ledgered
+        ? ` · ยอดเข้าไลน์ +${fmtQty(issued)} ตั้งแต่สโตร์เตรียมของแล้ว${short > 0 ? ` (หักที่ไม่ได้รับ −${fmtQty(short)})` : ''}`
+        : ' · ⚠ ใบนี้ยังไม่ถูกตัดสต็อก — ยอดในไลน์ไม่เปลี่ยน แจ้งสโตร์'));
+    if (r.stock_txn_note && /ไม่หัก STORE/.test(r.stock_txn_note)) toast.info('ℹ️ ฝั่งสโตร์ยังไม่ถูกหักยอด เพราะ STORE ไม่มียอดตั้งต้นของพาร์ทนี้ — สโตร์ต้องลงรับเข้า STORE ก่อน');
     load();
   };
 

@@ -63,7 +63,7 @@ function veilSwap(go, keep = false) {
   }, VEIL_FADE_MS);
 }
 
-export default function DisplayRotator({ userId, role, disabled, shell = false }) {
+export default function DisplayRotator({ userId, role, disabled, shell = false, onLogout, theme, onToggleTheme }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [cfgRow, setCfgRow] = useState(null);   // null = ไม่มีแผน / ยังไม่โหลด
@@ -339,6 +339,7 @@ export default function DisplayRotator({ userId, role, disabled, shell = false }
         loadErr={loadErr} active={active && !!cur}
         idx={Math.min(idx, Math.max(0, n - 1))} n={n} sec={cur?.sec || 0} elapsed={elapsed}
         held={held} pausedLeft={pausedLeft} skipped={skipped} skipTitle={skipTitle} subWait={subWait} fitPage={fitPage}
+        onLogout={onLogout} theme={theme} onToggleTheme={onToggleTheme}
         controls={active && cur ? (
           <>
             {btn('◀', () => goTo(stepIndex(idx, n, -1)), 'หน้าก่อนหน้า', barBtn)}
@@ -393,7 +394,7 @@ export default function DisplayRotator({ userId, role, disabled, shell = false }
    ล่างสุดของแถบ = ความคืบหน้ารอบวน (1 ขีด = 1 หน้า · ขีดปัจจุบันเติมตามเวลา)
    แทนที่: หัวเพจ/breadcrumb/แท็บ/แถบกรองของทุกหน้า · ชิปมุมจอ · นาฬิกาที่บางบอร์ดวาดเอง
    ความสูงอยู่ที่ `--tvbar-h` (index.css) — บอร์ดที่เต็มจอแบบ fixed ต้องเริ่มที่ top: var(--tvbar-h, 0px) */
-function TvShellBar({ pathname, search, now, loadErr, active, idx, n, sec, elapsed, held, pausedLeft, skipped, skipTitle, subWait, fitPage, controls }) {
+function TvShellBar({ pathname, search, now, loadErr, active, idx, n, sec, elapsed, held, pausedLeft, skipped, skipTitle, subWait, fitPage, controls, onLogout, theme, onToggleTheme }) {
   const { sections, section } = useContext(UserContext) || {};
   const secs = (sections?.length ? sections : (section ? [section] : [])).filter(Boolean);
   const nav = pathname === '/tv'
@@ -442,6 +443,16 @@ function TvShellBar({ pathname, search, now, loadErr, active, idx, n, sec, elaps
         {secs.length > 0 && <span style={{ ...barChip, fontWeight: 800, color: 'var(--text)' }}>🏭 {secs.join(' · ')}</span>}
         <span style={{ fontSize: 17, color: 'var(--text2)', whiteSpace: 'nowrap' }}>{shift} · วันงาน {wd}</span>
         <span style={{ fontSize: 26, fontWeight: 900, minWidth: 70, textAlign: 'right' }}>{hhmm}</span>
+        {/* 🚪 ☀️ บัญชีจอ TV ไม่มี sidebar/เมนูโปรไฟล์ (ซ่อนทั้งชุดในโหมด TV) ⇒ เดิมออกจากระบบ/สลับธีมไม่ได้เลย
+            (feedback ประชุม 02/11) — วางไว้ที่แถบนี้ที่เดียว · ออกจากระบบต้องยืนยันก่อน กันแตะโดนตอนเดินผ่าน */}
+        {onToggleTheme && (
+          <button type="button" onClick={onToggleTheme} title={theme === 'dark' ? 'สลับเป็นธีมสว่าง' : 'สลับเป็นธีมมืด'}
+            aria-label="สลับธีม" style={barBtn}>{theme === 'dark' ? '☀️' : '🌙'}</button>
+        )}
+        {onLogout && (
+          <button type="button" title="ออกจากระบบ (บัญชีจอนี้)" aria-label="ออกจากระบบ" style={barBtn}
+            onClick={() => { if (window.confirm('ออกจากระบบบัญชีจอนี้?\nจอจะกลับไปหน้าเข้าสู่ระบบ')) onLogout(); }}>🚪</button>
+        )}
       </div>
       {active && n > 1 && (
         <div aria-hidden="true" style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 3, display: 'flex', gap: 3 }}>

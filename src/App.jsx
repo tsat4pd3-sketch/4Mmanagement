@@ -1934,7 +1934,8 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
      ปิดตอน admin จำลองมุมมอง (viewAs) — ไม่งั้นจอ admin วนตามแผนของตัวเอง */
   const rotator = (
     <Suspense fallback={null}>
-      <DisplayRotator userId={userId} role={userRole} disabled={!!viewAs || IN_FRAME} shell={tvShell} />
+      <DisplayRotator userId={userId} role={userRole} disabled={!!viewAs || IN_FRAME} shell={tvShell}
+        onLogout={handleLogout} theme={theme} onToggleTheme={onToggleTheme} />
     </Suspense>
   );
   const role       = userRole; // ไม่ fallback เป็น 'admin' อีกต่อไป — profileLoaded gate ด้านบนรับประกันว่า role ถูก resolve แล้วก่อนถึงจุดนี้

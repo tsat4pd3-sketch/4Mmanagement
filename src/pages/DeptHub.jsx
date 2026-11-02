@@ -507,7 +507,8 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
           จึงเป็น stacking context แยก ถ้า topbar ไม่มี z-index เมนูโปรไฟล์ข้างใน (z 1300) จะโดน
           hero/telemetry ที่อยู่หลังใน DOM วาดทับ (เคยพัง: dropdown โดนชิปนาฬิกาบัง) */}
       <div className="hub-topbar" style={{
-        position: 'absolute', top: 'clamp(16px, 3vw, 28px)', right: 'clamp(16px, 4vw, 40px)',
+        // 📺 บัญชีจอ TV: แถบบน (fixed สูง --tvbar-h) เคยทับปุ่มธีม/โปรไฟล์ทั้งแถว ⇒ ดันลงพ้นแถบ (นอกโหมด TV = 0 ไม่เปลี่ยน)
+        position: 'absolute', top: 'calc(var(--tvbar-h, 0px) + clamp(16px, 3vw, 28px))', right: 'clamp(16px, 4vw, 40px)',
         display: 'flex', alignItems: 'center', gap: 10, zIndex: 1200,
         animation: 'hub-fade-up 0.5s ease both',
       }}>
