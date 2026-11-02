@@ -4386,6 +4386,95 @@ test('🛡️ mtn-approve-needs-confirm — ปุ่มเซ็น/อนุ�
   }
 });
 
+/* ═══ 🔒 ช่อง "ผู้จัดการ…" ในใบ MO ต้องเช็คระดับตำแหน่ง (2026-10-30 · หน้างานแจ้ง) ═══
+   *"มีคนอนุมัติแทนพี่แล้ว"* — วิศวกร (`engineer` = 30) เซ็นช่อง "ผู้จัดการต้นสังกัด" แทนเจ้าตัวได้
+   เพราะด่านเดิมเช็คแค่ `can('approve')` **ไม่ดูตำแหน่งเลย** และ `signApproval` เขียนชื่อคนกด
+   ทับชื่อที่ระบุไว้ ⇒ เจ้าตัวโดนตัดสิทธิ์ (`already_signed`) แก้เองไม่ได้
+   🔴 ด่านตำแหน่งต้องมาก่อนทาง `named` ด้วย — ผู้แจ้งพิมพ์ชื่อใครลงช่องนั้นก็ได้ รวมชื่อตัวเอง */
+test('🛡️ reporter-scope-known-unit — ด่านขอบเขตต้องมี "รู้จักหน่วยนี้ไหม" ครบทั้ง 2 แกน', () => {
+  const src = readFileSync(join(ROOT, 'src/utils/mtnStepPerm.js'), 'utf8');
+  const i = src.indexOf('export function orderInReporterScope');
+  assert.ok(i > 0, '\n\n❌ หา `orderInReporterScope` ไม่เจอ — เปลี่ยนชื่อแล้วต้องแก้ด่านนี้ด้วย\n');
+  const body = src.slice(i, i + 1600);
+
+  /* 🔴 ฝั่งไลน์มีด่าน `knownLineNames` มาตั้งแต่แรก แต่ฝั่งส่วนงานไม่มี (02/11)
+     ⇒ เอาชื่อ **แผนก** ไปเทียบลิสต์ **ส่วนงาน** แล้วตอบ false = บล็อกผิด
+     เคสจริง: JIG MTN เป็น department ใต้ PD4 ⇒ ผู้จัดการที่ดูแลควบ PD3+PD4 เซ็นใบนั้นไม่ได้ */
+  assert.ok(/knownSections/.test(body),
+    '\n\n❌ `orderInReporterScope` เลิกเช็ค `knownSections` แล้ว\n'
+    + '   ⇒ ใบที่ `dept_section` เป็นชื่อ **แผนก/ทีม** (ไม่ใช่ส่วนงาน) จะถูกตัดสินว่า "ของหน่วยอื่น"\n'
+    + '   🔴 JIG MTN = department ใต้ PD4 — คนที่ดูแลควบแผนกครอบอยู่แล้วตามผัง แต่สตริงไม่ตรง\n'
+    + '   แก้ยังไง: หน่วยที่ไม่อยู่ในทะเบียนส่วนงาน = คืน `null` (ไม่รู้ = ไม่บล็อก)\n');
+
+  /* หน้าที่เรียกต้องส่งทะเบียนมาจริง ไม่ใช่มีพารามิเตอร์ลอยไว้ */
+  const page = readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8');
+  assert.ok(/knownSections:\s*\[/.test(page),
+    '\n\n❌ `MtnRepair.jsx` ไม่ส่ง `knownSections` ใน `reporterScope` แล้ว\n'
+    + '   ⇒ ด่านถอยไปใช้พฤติกรรมเดิม = บล็อกใบของแผนกที่อยู่ใต้ส่วนงานที่เราดูแล\n');
+});
+
+test('🛡️ mtn-approval-needs-rank — ช่องผู้จัดการในใบ MO ต้องกันตำแหน่งที่ต่ำกว่าเกณฑ์', () => {
+  const src = readFileSync(join(ROOT, 'src/utils/mtnStepPerm.js'), 'utf8');
+  const i = src.indexOf('export function canSignMtnApproval');
+  assert.ok(i > 0, '\n\n❌ หา `canSignMtnApproval` ไม่เจอ — เปลี่ยนชื่อแล้วต้องแก้ด่านนี้ด้วย\n');
+  const body = src.slice(i, i + 2600);
+
+  assert.ok(/posRank/.test(body) && /rank_too_low/.test(body),
+    '\n\n❌ `canSignMtnApproval` เลิกเช็คตำแหน่งแล้ว\n'
+    + '   ⇒ ใครถือ `mtn_repair:approve` ก็เซ็นช่อง "ผู้จัดการต้นสังกัด" แทนเจ้าตัวได้อีก\n'
+    + '   แก้ยังไง: เช็ค `posRank < APPROVAL_MIN_RANK` ก่อนคืน ok\n');
+
+  /* ลำดับสำคัญ: ด่านตำแหน่งต้องอยู่ "ก่อน" ทางผ่านด้วยชื่อ (named) และสิทธิ์ (can) */
+  const rankAt = body.indexOf('rank_too_low');
+  const namedAt = body.indexOf("code: 'named'");
+  const canAt = body.indexOf("code: 'approve'");
+  assert.ok(rankAt > 0 && rankAt < namedAt && rankAt < canAt,
+    '\n\n❌ ด่านตำแหน่งถูกย้ายไปอยู่หลังทาง `named`/`approve`\n'
+    + '   ⇒ ผู้แจ้งพิมพ์ชื่อตัวเองลงช่อง "ผู้จัดการต้นสังกัด" แล้วเซ็นเองได้ (เคสจริง 30/10)\n');
+
+  /* 🔴 ชั้น ③ ขอบเขตหน่วยงาน — "ผู้จัดการ**ต้นสังกัด**" ตามนิยามคือฝั่งผู้แจ้ง
+     audit ชั้น ③ รอบ 15/10 ไม่ได้ครอบด่านนี้ (`canDoStep` มี · ตัวนี้ไม่มี) */
+  assert.ok(/inReporterScope\s*===\s*false/.test(body) && /out_of_scope/.test(body),
+    '\n\n❌ `canSignMtnApproval` เลิกเช็คขอบเขตหน่วยงานแล้ว\n'
+    + '   ⇒ หัวหน้าแผนกของส่วนงานหนึ่ง เซ็นช่อง "ผู้จัดการต้นสังกัด" ของใบส่วนงานอื่นได้\n'
+    + '   🔴 `null` (ตัดสินไม่ได้) ต้องไม่บล็อก — คนดูแลควบแผนกผ่านทาง sections/resp_cost_centers\n');
+
+  /* 🔴 เกณฑ์ = "หัวหน้าแผนกขึ้นไป" (50) ไม่ใช่ "ผู้จัดการ" (60)
+     ⚠️ ห้ามยกเป็น 60 โดยไม่พิสูจน์กับทะเบียนผู้ใช้จริงก่อน (CLAUDE.md 26/10)
+     — นับความครอบคลุมต้องกาง `sections`/`resp_cost_centers` ไม่ใช่ `section` เดี่ยว */
+  assert.ok(/APPROVAL_MIN_RANK\s*=\s*50\b/.test(src),
+    '\n\n❌ `APPROVAL_MIN_RANK` ไม่ใช่ 50 แล้ว\n'
+    + '   ยกเกณฑ์ = ต้องพิสูจน์กับทะเบียนผู้ใช้จริงก่อน merge (CLAUDE.md 26/10)\n'
+    + '   ถ้าจะเปลี่ยน ต้องพิสูจน์กับทะเบียน `profiles` จริงก่อน (กฎ CLAUDE.md 26/10)\n');
+});
+
+/* ═══ 🏭 ตัวตนเครื่องนอกทะเบียน ต้องผูก "สายไลน์" (2026-10-30 · คำสั่ง user) ═══
+   user: *"conveyor ที่ 306 มันก็คนละตัวกับ conveyor 297 มันแยกส่วนงาน แยกไลน์ แยกแผนก
+   ต้องดูผังองค์กรด้วย มันต้องลิ้งกันมั้ย"*
+   `machine_no` เป็นข้อความ**ระดับทั้งโรงงาน** ⇒ จัดกลุ่มด้วยข้อความล้วน = "CONVEYOR" ของ
+   สาย HYDROFORM (PD3) กับสาย LWR BAR (PD4) ถูกนับเป็นเครื่องเดียวใน MTBF/MTTR/KPI ช่าง
+   🔴 ผูกที่ **สาย** ไม่ใช่ชื่อไลน์ดิบ — แม่กับลูกคือที่เดียวกัน (วัดจริง: 21 คีย์ชน → เหลือ 4) */
+test('🛡️ equip-identity-family-scoped — จัดกลุ่มเครื่องนอกทะเบียนต้องผูกสายไลน์', () => {
+  const src = readFileSync(join(ROOT, 'src/utils/mtnMetrics.js'), 'utf8');
+  assert.ok(/scopeKeyByFamily\s*\(/.test(src) && /lineFamilyKey\s*\(/.test(src),
+    '\n\n❌ `mtnMetrics` เลิกผูกสายไลน์กับคีย์เครื่องแล้ว\n'
+    + '   ⇒ ชื่อเครื่องซ้ำข้ามสาย (CONVEYOR ของ PD3 กับ PD4) กลับไปถูกนับเป็นเครื่องเดียว\n'
+    + '   แก้ยังไง: `scopeKeyByFamily(typedKey, lineFamilyKey(lineFamilyOf(rowLine)))` (utils/machineNo.js)\n');
+
+  /* เครื่องที่ **อยู่ในทะเบียน** ต้องไม่ถูกผูกสาย — ทะเบียนเป็นตัวบอกตัวตนอยู่แล้ว
+     ผูกซ้ำ = เครื่องตัวเดียวที่ถูกลงหลายสาย (ช่างยกไปใช้ไลน์อื่น) แตกเป็นหลายแถว */
+  assert.ok(/machine\s*\?\s*normEquipKey\(machine\.machine_no\)/.test(src),
+    '\n\n❌ เครื่องที่อยู่ในทะเบียนถูกผูกสายไปด้วย — ต้องใช้เลขทะเบียนล้วน\n');
+
+  /* 🔴 ตัวผูกสายห้าม normalize ซ้ำ — แต่ละจอมี normalizer ของตัวเอง
+     (`normEquipKey` เก็บศูนย์นำหน้า · `machineKey` ตัดทิ้ง) บังคับตัวใดตัวหนึ่ง = คีย์ขยับยกระบบ */
+  const mn = readFileSync(join(ROOT, 'src/utils/machineNo.js'), 'utf8');
+  const fn = mn.slice(mn.indexOf('export const scopeKeyByFamily'));
+  assert.ok(!/machineKey\s*\(/.test(fn.slice(0, 300)),
+    '\n\n❌ `scopeKeyByFamily` ไป normalize ซ้ำ — คีย์ของเครื่องที่ขึ้นทะเบียนแล้วจะเปลี่ยนยกระบบ\n'
+    + '   (ประวัติ MTBF/พาเรโตขยับโดยไม่มีใครสั่ง) · ต้องรับคีย์ที่ normalize มาแล้วเท่านั้น\n');
+});
+
 /* ═══ ของกลางของไลน์ขนาน ห้ามถูกหารเลน — `affects_lanes` (2026-10-28 · คำสั่ง user) ═══
    ที่มา: user ถามถึงเคส HDF1 → LASER-345 (เลเซอร์ 3 เครื่องวิ่งขนาน · คอนเวเยอร์ลำเลียงตัวเดียว
    เลี้ยงทั้ง 3 เครื่อง) — *"คอนเวเย่อ พัง ไม่ใช่เลเซอพัง … ถ้าคอนเวเย่อเบรคดาว จะกระทบกับทั้ง3เครื่องทันที"*
