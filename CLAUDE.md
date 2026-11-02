@@ -89,7 +89,7 @@ Realtime + Edge Functions/Deno) · Telegram Bot API · deploy = Render.com (Stat
   🔴 **ทะเบียนที่จับคู่ด้วย "ข้อความ" (ไม่ผูก FK) — ลบ/เปลี่ยนชื่อแถวทะเบียน ต้องไล่เช็คและไล่แก้ปลายทางในคราวเดียว**
   ห้ามเช็คแค่ "มีลูกในตารางตัวเองไหม" · ต้นแบบ `src/utils/orgNodeRefs.js` (ผังองค์กร — เช็ค FK + สำเนาชื่อ ·
   ต่างชั้นใช้คีย์ต่างกัน code vs name) · **นับไม่ครบ = ห้ามลบ (fail-closed)** · 📄 `docs/modules/org-hierarchy.md`
-- **ตารางใหม่**: RLS ครบทุก cmd ที่ client ใช้ (`upsert` ต้องมี UPDATE) + `has_perm('<คีย์เดียวกับปุ่มบนจอ>')` + ผูก audit (ดู Traceability) + migration file เสมอ
+- **ตารางใหม่**: RLS ครบทุก cmd ที่ client ใช้ (`upsert` ต้องมี UPDATE) + 🔴 **GRANT ระดับตารางครบทุก cmd ด้วย** (RLS ผ่านแต่ GRANT ขาด = PostgREST ตอบ **401** · คิวรีตรวจใน `db-write-rules.md`) + `has_perm('<คีย์เดียวกับปุ่มบนจอ>')` + ผูก audit (ดู Traceability) + migration file เสมอ
 
 ---
 
@@ -638,7 +638,7 @@ RFQ/เสนอราคา Marketing (Q-neX เฟส 1 · ต้นน้ำ 
 
 > ขั้น "เช็คกฎก่อน / ทำตาม convention / อัพเดทกฎในคอมมิทเดียวกัน" อยู่ที่ **§กฎการทำงานทุก session** หัวไฟล์
 > (อย่าให้มี 2 ชุด — section นี้เป็นเจ้าของเรื่อง **ด่าน build** เท่านั้น)
-> · เอกสารบังคับอ่าน: ทุกงาน `ENGINEERING-PRINCIPLES.md` · UI `UI-CONVENTIONS.md` · สิทธิ์ `PERMISSIONS-DESIGN.md` · DB → §Supabase Projects (**2 projects!**) + migration เสมอ
+> · เอกสารบังคับอ่าน → §File Structure · DB → §Supabase Projects (**2 projects!**) + migration เสมอ
 
 > ### 🕗 **หน้าต่าง deploy — ห้าม deploy ในเวลาทำงาน** (2026-10-26 · เหตุการณ์จริง)
 > **08:00–17:30 deploy ได้เฉพาะของที่ "ไม่แก้แล้วหน้างานทำงานไม่ได้"** · ที่เหลือรอหลังเลิกกะ/ก่อนเข้ากะ

@@ -3426,15 +3426,27 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
         if (upd.repair_done_at) await syncDowntimeTimes(o, { fix_at: upd.repair_done_at });
         if (imgWarn) toast.error(imgWarn);
         const usable = usedParts.filter(x => x.name && Number(x.qty) > 0);
-        /* 🔴 ล้างของเดิมก่อนเขียนใหม่ทั้งชุด (เหมือนค่าแรง) — เดิมเป็น insert ล้วน ⇒ กดบันทึกซ้ำ = แถวซ้ำ
-           🔴 delete ล้ม = **ห้าม insert ต่อ** (กฎเหล็กข้อ 1) ไม่งั้นอะไหล่ซ้อน 2 ชุด ยอดเงินบนใบเบิ้ล */
-        const delPartsOk = checkWrite(await supabaseDR.from('mtn_order_parts').delete().eq('order_id', o.id), 'ล้างรายการอะไหล่เดิมของใบนี้');
-        if (delPartsOk) for (const p of usable) {
+        /* 🔴🔴 "ของออกจากคลัง" กับ "บันทึกว่าใช้กับใบไหน" ต้องไปด้วยกัน — เขียนบันทึกไม่สำเร็จ **ห้ามตัดสต็อก**
+           เคสจริง 22/10–02/11: `mtn_order_parts` มี RLS เปิด แต่ **ไม่มี GRANT DELETE** ให้ anon
+           ⇒ DELETE ตอบ 401 ทุกครั้ง ⇒ ข้ามการเขียนรายการ **แต่โค้ดเดิมเดินไปตัดสต็อกต่อ**
+           ⇒ 11 วัน อะไหล่ออกจากคลัง 98 รายการ / 45 ใบ โดยใบ MO ไม่มีบันทึกสักบรรทัด (ตามรอยไม่ได้)
+           (แก้สิทธิ์แล้วใน migration `20261102_mtn_order_parts_delete_grant_dr.sql` — ด่านนี้คือตาข่าย
+            กันคลาสเดิมกลับมาจากสาเหตุอื่น เช่น เน็ตหลุดกลางทาง) · ด่าน `mtn-parts-before-stock`
+           🔴 delete ล้ม = ห้าม insert ต่อ (กฎเหล็กข้อ 1) ไม่งั้นอะไหล่ซ้อน 2 ชุด ยอดเงินบนใบเบิ้ล */
+        let partsWritten = checkWrite(await supabaseDR.from('mtn_order_parts').delete().eq('order_id', o.id), 'ล้างรายการอะไหล่เดิมของใบนี้');
+        if (partsWritten && usable.length) {
           /* ราคาต่อหน่วย: ใช้ที่กรอก → ไม่กรอกก็ดึงจากทะเบียนอะไหล่ (mtn_spare_parts.unit_price)
              ฟอร์มกระดาษมีคอลัมน์ "ราคา" ต่อแถว — เดิมเก็บแค่ยอดรวมที่พิมพ์มือ */
-          const up = p.unit_price !== '' && p.unit_price != null ? Number(p.unit_price)
-            : (parts.find(x => x.id === p.part_id)?.unit_price ?? null);
-          checkWrite(await supabaseDR.from('mtn_order_parts').insert({ order_id: o.id, part_id: p.part_id || null, part_name: p.name, qty: Number(p.qty), unit: p.unit, tech: f.tech_main, logged_by: fullName, unit_price: up, amount: up != null ? up * Number(p.qty) : null }), 'บันทึกอะไหล่ที่ใช้ (ยอดตัดสต็อกจะไม่ตรงใบ)');
+          const partRows = usable.map(p => {
+            const up = p.unit_price !== '' && p.unit_price != null ? Number(p.unit_price)
+              : (parts.find(x => x.id === p.part_id)?.unit_price ?? null);
+            return { order_id: o.id, part_id: p.part_id || null, part_name: p.name, qty: Number(p.qty),
+              unit: p.unit, tech: f.tech_main, logged_by: fullName, unit_price: up,
+              amount: up != null ? up * Number(p.qty) : null };
+          });
+          // นับแถวที่เขียนติดจริง — เขียนไม่ครบ = ถือว่าไม่สำเร็จ (ดีกว่าตัดสต็อกตามรายการที่ใบไม่มี)
+          const insParts = await supabaseDR.from('mtn_order_parts').insert(partRows).select('id');
+          partsWritten = checkWriteRows(insParts, 'บันทึกอะไหล่ที่ใช้', { min: partRows.length });
         }
         /* ตารางค่าแรงรายคน (ฟอร์ม MTN) — ลบของเดิมก่อนแล้วเขียนใหม่ทั้งชุด
            🔴 delete ล้ม = ห้าม insert ต่อ (ไม่งั้นค่าแรงซ้อนกัน 2 ชุด ยอดรวมเบิ้ล) */
@@ -3467,7 +3479,12 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
            ลดจำนวนลง/ลบแถวทิ้ง = คืนเข้าสต็อกด้วย type `in` (RPC รับ in|issue|adjust เท่านั้น) */
         const byPart = {};
         usable.filter(p => p.part_id).forEach(p => { byPart[p.part_id] = (byPart[p.part_id] || 0) + Number(p.qty); });
-        for (const pid of new Set([...Object.keys(byPart), ...Object.keys(basePartQty)])) {
+        /* 🔴 ประตูของเรื่องนี้ — บันทึกรายการไม่สำเร็จ = ไม่แตะสต็อกเลย แล้วบอกให้ชัดว่าต้องทำอะไรต่อ
+           (เงียบไม่ได้: ช่างจะเข้าใจว่าเบิกแล้ว · ตัดไปเลยก็ไม่ได้: ของหายจากคลังโดยไม่มีใบรองรับ) */
+        if (!partsWritten) {
+          toast.error('⚠️ ยังไม่ได้ตัดสต็อกอะไหล่ — บันทึกรายการอะไหล่ลงใบ MO ไม่สำเร็จ '
+            + '(บันทึกการซ่อมส่วนอื่นเรียบร้อยแล้ว) · กดบันทึกอีกครั้ง หรือแจ้งแอดมินระบบ');
+        } else for (const pid of new Set([...Object.keys(byPart), ...Object.keys(basePartQty)])) {
           const delta = (byPart[pid] || 0) - (basePartQty[pid] || 0);
           if (!delta) continue;   // ยอดเท่าเดิม = ไม่แตะสต็อก (นี่คือตัวกันตัดซ้ำ)
           const { error: eSt } = await supabaseDR.rpc('mtn_stock_move', {

@@ -7938,6 +7938,48 @@ test('🏷️ edition-alias-safe — import `appEdition` ต้องไม่�
     '\n\n❌ vite.nm.config.js ไม่มี alias appEdition → appEdition.nm แล้ว — เว็บ NM จะเปิดได้ทุกหน้าของระบบแมส\n');
 });
 
+test('🗑️ ojt-delete-needs-sign-url — ประตู "ลบใบที่เปิดผิด" ต้องรู้ว่ามีใครเซ็นแล้วหรือยัง', () => {
+  /* why (01/11 · หน้างาน PD4 ขอ "เปิดผิดลบได้ด้วย"): ใบ OJT = FM-HRM-004 เอกสารคุมเล่มที่
+     auditor ขอดู ⇒ เปิดให้เจ้าของใบลบเองได้**เฉพาะใบที่ยังไม่มีใครเซ็น** (ของที่เซ็นแล้ว =
+     หลักฐานการอบรมของพนักงานคนนั้น ลบแล้วกู้ไม่ได้ — ต้องเป็นระดับจัดการเท่านั้น)
+     กับดัก: ตัวตัดสิน `sheetSigned()` อ่าน `sign_url` ที่ติดมากับคิวรีรายการ
+       ⇒ ใครรีดคิวรีให้เหลือ `ojt_training_attendees(id)` (ของเดิมก่อน 01/11) = ทุกใบดู "ยังไม่มีใครเซ็น"
+         ⇒ ปุ่มลบโผล่บนใบที่เซ็นครบแล้ว **เงียบสนิท ไม่มีอะไรฟ้อง** (ด่านชั้น 2 ใน handleDelete
+         อ่านสดอีกรอบจึงยังกันการลบจริงไว้ได้ แต่จอโกหกว่าลบได้)
+     fix: คิวรีรายการต้อง select `ojt_training_attendees(id, sign_url)` เสมอ */
+  const src = readFileSync(join(ROOT, 'src/pages/OjtTraining.jsx'), 'utf8');
+  if (!/canRemoveSheet/.test(src)) return;        // ถอดฟีเจอร์ลบใบของตัวเองออกแล้ว = ไม่ต้องมีด่าน
+  assert.match(src, /ojt_training_attendees\(id,\s*sign_url\)/,
+    '\n\n❌ OjtTraining.jsx: คิวรีรายการใบอบรมไม่ได้ดึง `sign_url` ของผู้เข้าอบรม\n'
+    + '   ผล: `sheetSigned()` คืน false ทุกใบ ⇒ ปุ่ม 🗑️ โผล่บนใบที่พนักงานเซ็นครบแล้ว\n'
+    + '   แก้: select(\'*, ojt_training_attendees(id, sign_url), ojt_training_files(id)\')\n');
+});
+
+test('🔩 mtn-parts-before-stock — ตัดสต็อกอะไหล่ได้ต่อเมื่อเขียนรายการลงใบ MO สำเร็จ', () => {
+  /* why (02/11 · ทีม MTN แจ้ง "รายการ Spare Part ที่กดใช้ ไม่แสดงรายการในใบ MO"):
+     `mtn_order_parts` มี RLS `for all to anon using(true)` แต่ **GRANT ระดับตารางไม่มี DELETE**
+     ⇒ RLS ผ่าน แต่ Postgres ปฏิเสธที่ชั้นสิทธิ์ตาราง ⇒ PostgREST ตอบ 401
+     โค้ดเดิมคร่อม insert ไว้ด้วยผลของ delete (ถูกแล้ว) **แต่ลูปตัดสต็อกไม่ได้ถูกคร่อมด้วย**
+     ⇒ 23/10–02/11: อะไหล่ออกจากคลัง 98 รายการ / 45 ใบ โดยใบ MO ไม่มีบันทึกสักบรรทัด
+       (วัดจาก edge_logs: DELETE /rest/v1/mtn_order_parts → 401 วันละ ~49 ครั้ง ·
+        แถวใหม่ใน mtn_order_parts = 0 ทุกวันติดกัน 11 วัน · ไม่มีรายการคืนสต็อกเลย)
+     กฎ: "ของออกจากคลัง" กับ "บันทึกว่าใช้กับใบไหน" ต้องไปด้วยกัน — เขียนบันทึกไม่ติด ห้ามตัดสต็อก
+     (หลักเดียวกับ db-write-rules ข้อ 6: claim ก่อนเขียน ledger · ledger ล้มต้องคืนสถานะ)
+     🔴 ห้ามแก้ด่านนี้ด้วยการย้าย `mtn_stock_move` ออกไปไฟล์อื่น — ให้ย้ายด่านตามไปด้วย */
+  const src = readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8');
+  const iGate  = src.indexOf('if (!partsWritten)');
+  const iStock = src.indexOf("rpc('mtn_stock_move'");
+  assert.ok(iGate > -1,
+    '\n\n❌ MtnRepair.jsx ไม่มีประตู `if (!partsWritten)` ก่อนตัดสต็อกแล้ว\n'
+    + '   ผล: เขียน mtn_order_parts ไม่ติด (401/เน็ตหลุด) แต่ของยังออกจากคลัง = ตามรอยอะไหล่ไม่ได้\n');
+  assert.ok(iStock > -1 && iGate < iStock,
+    '\n\n❌ `mtn_stock_move` ไม่ได้อยู่หลังประตู `if (!partsWritten)`\n'
+    + '   แก้: ตัดสต็อกเฉพาะเมื่อเขียนรายการอะไหล่ลงใบสำเร็จ (นับแถวด้วย checkWriteRows)\n');
+  assert.match(src, /from\('mtn_order_parts'\)\.insert\(partRows\)\.select\('id'\)[\s\S]{0,160}?checkWriteRows\(insParts/,
+    '\n\n❌ insert รายการอะไหล่ไม่ได้นับแถว — ต้องใช้ checkWriteRows(... .select(\'id\'), …, { min })\n'
+    + '   เขียนไม่ครบแล้วตัดสต็อกตามรายการที่ใบไม่มี = ยอดคลังกับใบไม่ตรงกันเงียบๆ\n');
+});
+
 /* ═══ 🧩 scope-picker-single-field — ③ ส่วนงาน กับ ④ Cost Center ต้องเป็นช่องเดียว ═══ 02/11
    คำสั่ง user: *"ปัญหาเรื่อง 3 กับ 4 ที่ควรจะรวมกันจะแก้จบเมื่อไหร่ ที่จริงเลือก 4 มันครอบคลุมอยู่แล้ว มันตามผังองค์กร"*
    2 ช่องที่ตอบคำถามเดียวกัน ("แก้ของใครได้") = ตั้งแล้วขัดกันเอง ⇒ `profiles.sections` ต้อง derive จาก CC

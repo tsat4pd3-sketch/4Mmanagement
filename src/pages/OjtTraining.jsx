@@ -6,7 +6,7 @@ import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { can, canDelete as canDeleteUtil } from '../utils/permissions';
 import { toast } from '../components/Toast';
-import { checkWrite } from '../utils/dbWrite';
+import { checkWrite, checkWriteRows } from '../utils/dbWrite';
 import { inSectionScope, ORPHAN_SECTION, ORPHAN_SECTION_LABEL, deptOptionsFor, orphanDepts, sectionValueForSave, sectionValueForEdit } from '../utils/sectionScope';
 import { mergeBorrowedEmployees, currentWorkShift } from '../utils/lineHelpers';
 import { fmtDate, todayLocal } from '../utils/dateFormat';
@@ -18,6 +18,8 @@ import PersonSelect from '../components/PersonSelect';
 import useColumnHistory from '../utils/useColumnHistory';
 import SelectOrFree from '../components/SelectOrFree';
 import { uploadOpts } from '../utils/storageUpload';
+import { uploadAttachmentInfo, removeAttachment, attachFileName, isImageAttachment, ATTACH_MAX_MB } from '../utils/fileAttach';
+import FilePick from '../components/FilePick';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
 import { DeleteButton } from '../components/IconButton';
@@ -31,6 +33,18 @@ import { DeleteButton } from '../components/IconButton';
    ══════════════════════════════════════════════════════════════ */
 
 const FORM_NO = 'FM-HRM-004';
+/* 📎 ไฟล์แนบใบอบรม (01/11 · หน้างาน PD4 ขอ) — bucket + ตาราง `ojt_training_files`
+   migration `20261101_ojt_attachments_main.sql` · สูตรรับไฟล์อยู่ `utils/fileAttach.js` */
+const OJT_BUCKET = 'ojt-files';
+/* เพดานรูปที่ต่อท้ายใบพิมพ์ — ใบ FM-HRM-004 เป็นเอกสารคุมเล่ม แนบ 40 รูปแล้วพิมพ์ 41 หน้าไม่มีใครอยากได้
+   เกินเพดาน = **เขียนบนใบว่าเหลืออีกกี่ไฟล์** ห้ามตัดทิ้งเงียบ */
+const ATTACH_PRINT_MAX = 10;
+/* 🔴 ลิสต์ใบอบรมต้องรอดแม้ migration ไฟล์แนบยังไม่ลงฐาน (merge กับ apply SQL คนละจังหวะกันเสมอ)
+   embed ตารางที่ไม่มีจริง = PostgREST ตอบ error **ทั้งคิวรี** ⇒ ทั้งหน้าว่างทั้งที่ใบมีครบ
+   ⇒ ล้มแล้วถอยไปชุดไม่มีไฟล์แนบ + ขึ้นแถบเตือนบนจอ (ห้ามเงียบ) */
+const LIST_SELECT_FILES = '*, ojt_training_attendees(id, sign_url), ojt_training_files(id)';
+const LIST_SELECT_BASE  = '*, ojt_training_attendees(id, sign_url)';
+const kbText = (n) => (n == null ? '' : n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
 const SCORE_LABELS = ['0', '1', '2', '3', '4'];
 const DEFAULT_SCOPE = `- รู้ความสำคัญของเอกสารแต่ละประเภท
 - รู้วัตถุประสงค์ของเอกสารที่ใช้ในไลน์ผลิต
@@ -198,6 +212,10 @@ export default function OjtTraining() {
   const [signingQueue, setSigningQueue] = useState(false);
   const [empSearch, setEmpSearch] = useState('');
   const [printing, setPrinting] = useState(null);
+  /* uid ของคนที่ล็อกอิน — ใช้ตอบว่า "ใบนี้เราเป็นคนเปิดเองไหม" (ปุ่มลบใบที่เปิดผิด · ดู canRemoveSheet) */
+  const [uid, setUid] = useState(null);
+  /* ข้อความ = "ฟีเจอร์ไฟล์แนบใช้ไม่ได้ตอนนี้ เพราะ…" · '' = ปกติ (ดู LIST_SELECT_FILES) */
+  const [filesOff, setFilesOff] = useState('');
   const [docReady, setDocReady] = useState(false); // ทะเบียนเอกสารโหลดแล้ว → subtitle ดึงเลขฟอร์มจาก registry
   const ojtFormNo = (docReady ? docFormSync('ojt', { form_code: FORM_NO }).form_code : FORM_NO) || FORM_NO;
 
@@ -213,8 +231,10 @@ export default function OjtTraining() {
 
   const load = async () => {
     setLoading(true);
-    const [{ data: tr }, lnRes, { data: org }, { data: profs }, { data: divs }] = await Promise.all([
-      supabase.from('ojt_trainings').select('*, ojt_training_attendees(id)').order('train_date', { ascending: false }).order('created_at', { ascending: false }).limit(300),
+    const [{ data: tr, error: trErr }, lnRes, { data: org }, { data: profs }, { data: divs }] = await Promise.all([
+      /* `sign_url` ของลูก = ใช้ตอบว่า "ใบนี้มีคนเซ็นแล้วหรือยัง" (ประตูของปุ่มลบใบที่เปิดผิด)
+         `ojt_training_files(id)` = จำนวนไฟล์แนบไว้โชว์ชิป 📎 — ทั้งคู่เป็นคอลัมน์เดียว ไม่ใช่ select('*') */
+      supabase.from('ojt_trainings').select(LIST_SELECT_FILES).order('train_date', { ascending: false }).order('created_at', { ascending: false }).limit(300),
       loadLinesRes(),
       supabase.from('org_nodes').select('id, code, name, kind, parent_id, sort_order').eq('is_active', true),
       supabase.from('profiles').select('id, full_name, signature_url').order('full_name'),
@@ -231,7 +251,19 @@ export default function OjtTraining() {
     setOrgSectionNodes((org || []).filter(n => n.kind === 'section').sort(orgNodeCompare));
     setOrgDeptNodes((org || []).filter(n => n.kind === 'department'));
     setProfiles(profs || []);
-    setTrainings(tr || []);
+    if (trErr) {
+      // ตารางไฟล์แนบยังไม่มีในฐาน (ยังไม่ apply migration) — ถอยไปชุดเดิมแล้วบอกบนจอ ห้ามปล่อยหน้าว่าง
+      const retry = await supabase.from('ojt_trainings').select(LIST_SELECT_BASE)
+        .order('train_date', { ascending: false }).order('created_at', { ascending: false }).limit(300);
+      setFilesOff(retry.error ? '' : (trErr.message || 'ตารางไฟล์แนบยังไม่พร้อม'));
+      setTrainings(retry.data || []);
+      if (retry.error) toast.error('โหลดรายการใบอบรมไม่สำเร็จ: ' + retry.error.message);
+    } else {
+      setFilesOff('');
+      setTrainings(tr || []);
+    }
+    const { data: { user } } = await supabase.auth.getUser();
+    setUid(user?.id || null);
     setLoading(false);
   };
   useEffect(() => { load(); loadDocForms().then(() => setDocReady(true)); }, []);
@@ -312,12 +344,16 @@ export default function OjtTraining() {
     hr_name: '', hr_sig_url: null,
     status: 'open',
     attendees: [],
+    files: [],
   });
 
   const openEdit = async (t) => {
-    const { data: att } = await supabase.from('ojt_training_attendees').select('*').eq('training_id', t.id).order('sort_order');
+    const [{ data: att }, { data: fls }] = await Promise.all([
+      supabase.from('ojt_training_attendees').select('*').eq('training_id', t.id).order('sort_order'),
+      supabase.from('ojt_training_files').select('*').eq('training_id', t.id).order('sort_order'),
+    ]);
     // ใบเก่าที่ section ว่างแต่มีแผนกขึ้นตรงฝ่าย → โชว์เป็น sentinel ให้แก้ต่อได้ (pattern Register 2026-08-06)
-    setEditing({ ...t, isNew: false, attendees: att || [],
+    setEditing({ ...t, isNew: false, attendees: att || [], files: fls || [], _removedFiles: [],
       section: sectionValueForEdit(t.section, t.department, orgDeptNodes, orgSectionNodes) });
   };
 
@@ -340,6 +376,38 @@ export default function OjtTraining() {
   };
 
   const removeAttendee = (idx) => setEditing(prev => ({ ...prev, attendees: prev.attendees.filter((_, i) => i !== idx) }));
+
+  /* ── 📎 ไฟล์แนบ (01/11 · หน้างาน PD4 ขอ "แนบรูปภาพ/เพิ่มเอกสารได้ด้วย") ──────────
+     อัปขึ้น storage ทันทีที่เลือก แต่ **แถวในตารางเขียนตอนกดบันทึก** (เหมือน attendees)
+     — ใบใหม่ยังไม่มีแถวแม่ใน DB ⇒ insert ตอนนี้ติด FK · อัปก่อนเพื่อให้เห็นรูปทันทีบนจอ
+     🔴 ปิดโมดัลทิ้ง = ต้องลบไฟล์ที่เพิ่งอัปออกจาก storage (closeEdit) ไม่งั้นกินที่เก็บโดยไม่มีใครอ้างถึง
+     🔴 สูตรรับไฟล์ (HEIC · GIF · บีบรูป · uploadOpts) อยู่ `utils/fileAttach.js` ห้ามเขียนซ้ำที่นี่ */
+  const addFile = async (f) => {
+    const info = await uploadAttachmentInfo(OJT_BUCKET, `ojt/${editing.id}`, f);
+    if (!info) return;          // ปฏิเสธ/ล้มเหลว — toast ขึ้นให้แล้วใน fileAttach (ห้ามเงียบ)
+    setEditing(prev => ({ ...prev, files: [...(prev.files || []), {
+      file_url: info.url, file_name: info.name, mime_type: info.type, size_bytes: info.size, _new: true,
+    }] }));
+  };
+
+  const removeFile = (idx) => setEditing(prev => {
+    const f = (prev.files || [])[idx];
+    if (!f) return prev;
+    if (f._new) removeAttachment(OJT_BUCKET, f.file_url);   // ยังไม่เคยบันทึก = ไม่มีแถวอ้างถึง ลบได้เลย
+    return {
+      ...prev,
+      files: prev.files.filter((_, i) => i !== idx),
+      // ไฟล์ที่บันทึกไว้แล้ว: ลบแถวตอนกดบันทึก แล้วค่อยแตะ storage (นับแถวก่อน — กฎเขียน DB ข้อ 2)
+      _removedFiles: f._new ? (prev._removedFiles || []) : [...(prev._removedFiles || []), f],
+    };
+  });
+
+  /* ปิดฟอร์ม — ไฟล์ที่อัปไปแล้วแต่ยังไม่ได้บันทึกต้องเก็บกวาด (best-effort)
+     ของที่บันทึกแล้วไม่แตะ · ของที่กดเอาออกแต่ยังไม่บันทึก = ยกเลิกการเอาออกไปในตัว (แถวยังอยู่) */
+  const closeEdit = () => {
+    (editing?.files || []).filter(f => f._new).forEach(f => removeAttachment(OJT_BUCKET, f.file_url));
+    setEditing(null);
+  };
 
   /* อัปลายเซ็นหลายคนในคราวเดียว — ใช้ร่วมกันทั้งเซ็นทีละคนและโหมดวนเซ็น
      🔴 โค้ดคิด path / ตามหาไฟล์เก่า มีชุดเดียวที่นี่ · เดิมอยู่ใน handleSignDone ตัวเดียว
@@ -458,6 +526,24 @@ export default function OjtTraining() {
         // ชุดใหม่บันทึกครบแล้ว — ลบคนที่เอาออกไม่สำเร็จ = เตือน (คนนั้นยังค้างในใบ) ไม่ใช่ล้มทั้งใบ
         if (delErr) toast.error('บันทึกใบแล้ว แต่เอารายชื่อที่ลบออกไม่สำเร็จ (ยังค้างในใบ): ' + delErr.message);
       }
+      /* 📎 ไฟล์แนบ — insert เฉพาะตัวใหม่ · ลบเฉพาะตัวที่กดเอาออก (ไฟล์ที่ค้างไว้ไม่มีอะไรให้แก้)
+         ล้มที่ขั้นนี้ **ไม่ล้มทั้งใบ** (ใบ+รายชื่อบันทึกไปแล้ว) แต่ต้องบอกให้ชัดว่าใบผ่าน ไฟล์ไม่ผ่าน */
+      const newFiles = (editing.files || []).filter(f => f._new);
+      if (newFiles.length) {
+        checkWrite(await supabase.from('ojt_training_files').insert(newFiles.map((f, i) => ({
+          training_id: editing.id, file_url: f.file_url, file_name: f.file_name || null,
+          mime_type: f.mime_type || null, size_bytes: f.size_bytes || null,
+          uploaded_by: user?.id || null, uploaded_name: fullName || null,
+          sort_order: (editing.files.length - newFiles.length) + i,
+        }))), 'บันทึกใบแล้ว แต่แนบไฟล์');
+      }
+      const rmFiles = (editing._removedFiles || []).filter(f => f.id);
+      if (rmFiles.length) {
+        /* 🔴 นับแถวก่อนแตะ storage — RLS ปฏิเสธ delete = 0 แถวไม่มี error (กฎเขียน DB ข้อ 2)
+           ไม่นับแล้วลบไฟล์ไปก่อน = แถวยังอยู่แต่ไฟล์หายถาวร ⇒ จอโชว์ไฟล์แนบที่กดแล้ว 404 */
+        const delRes = await supabase.from('ojt_training_files').delete().in('id', rmFiles.map(f => f.id)).select('id');
+        if (checkWriteRows(delRes, 'เอาไฟล์แนบออก')) rmFiles.forEach(f => removeAttachment(OJT_BUCKET, f.file_url));
+      }
       // ใบบันทึกสำเร็จแล้ว ค่อยลบไฟล์ลายเซ็นเก่าที่ถูกเซ็นทับ (best-effort)
       if (editing._replacedSigPaths?.length) {
         supabase.storage.from('signatures').remove(editing._replacedSigPaths).catch(() => {});
@@ -480,9 +566,28 @@ export default function OjtTraining() {
     } finally { setSaving(false); }
   };
 
+  /* ── 🗑️ ใครลบใบได้บ้าง (01/11 · หน้างาน PD4 ขอ "เปิดผิดลบได้ด้วย") ───────────────
+     เดิมมีทางเดียว = สิทธิ์ `ojt:delete` (ระดับจัดการ) ⇒ หัวหน้าที่กด "สร้างใบอบรม" ผิด
+     ต้องรอผู้จัดการมาลบให้ · ใบขยะค้างในทะเบียนเอกสารคุมเล่ม
+     เพิ่มทางที่ 2 ให้แคบที่สุดเท่าที่ตอบคำขอได้: **ใบของเราเอง + ยังไม่มีใครเซ็น**
+     🔴 มีคนเซ็นแล้ว = หลักฐานการอบรมของพนักงานคนนั้น ห้ามให้ใครลบนอกจากระดับจัดการ
+        (FM-HRM-004 เป็นเอกสารที่ auditor ขอดู — ลบทิ้งแล้วกู้ไม่ได้)
+     🔴 อ่านลายเซ็นไม่ได้ = ไม่ลบ (fail-closed) ห้ามเดาว่า "คงยังไม่มีใครเซ็น" */
+  const ownsSheet = (t) => canRecord && uid && t.created_by && String(t.created_by) === String(uid);
+  const sheetSigned = (t) => (t.ojt_training_attendees || []).some(a => a.sign_url);
+  const canRemoveSheet = (t) => mayDelete || (ownsSheet(t) && !sheetSigned(t));
+
   const handleDelete = async (t) => {
     if (!window.confirm(`ลบใบอบรม "${t.topic || thDate(t.train_date)}" ? (รายชื่อ+ลายเซ็นพนักงานในใบนี้จะถูกลบด้วย)`)) return;
-    const { data: att } = await supabase.from('ojt_training_attendees').select('sign_url').eq('training_id', t.id);
+    const { data: att, error: attErr } = await supabase.from('ojt_training_attendees').select('sign_url').eq('training_id', t.id);
+    if (!mayDelete) {
+      // ทางที่ 2 (เจ้าของใบ) — ทวนเงื่อนไขกับข้อมูลสดอีกรอบ ชิปบนจออาจเก่ากว่าความจริง
+      if (!ownsSheet(t)) { toast.error('ลบได้เฉพาะใบที่คุณเป็นคนสร้าง — ใบของคนอื่นต้องให้ระดับจัดการลบ'); return; }
+      if (attErr) { toast.error('ตรวจลายเซ็นในใบไม่สำเร็จ จึงยังไม่ลบ: ' + attErr.message); return; }
+      if ((att || []).some(a => a.sign_url)) { toast.error('ใบนี้มีพนักงานเซ็นแล้ว — ลบได้เฉพาะระดับจัดการ (แก้ไขใบแทนได้)'); return; }
+    }
+    // ไฟล์แนบ: อ่าน URL ไว้ก่อน (แถวจะหายไปกับ cascade) แล้วค่อยลบไฟล์หลังยืนยันว่าใบหายจริง
+    const { data: fls } = await supabase.from('ojt_training_files').select('file_url').eq('training_id', t.id);
     /* 🔴 นับแถวก่อนแตะ storage (QC audit 06/10) — RLS ปฏิเสธ = 0 แถว ไม่มี error
        ไม่นับ = ใบอบรมยังอยู่ แต่ลายเซ็นพนักงานทุกคนถูกลบ ⇒ ใบเสียถาวร เซ็นใหม่ไม่ได้ */
     const dres = await supabase.from('ojt_trainings').delete().eq('id', t.id).select('id');
@@ -494,6 +599,7 @@ export default function OjtTraining() {
       .map(u => decodeURIComponent(u.split('/signatures/')[1] || '').split('?')[0])
       .filter(p => user?.id && p.startsWith(`${user.id}/`));
     if (paths.length) supabase.storage.from('signatures').remove(paths).catch(() => {});
+    (fls || []).forEach(f => removeAttachment(OJT_BUCKET, f.file_url));
     toast.success('ลบแล้ว');
     load();
   };
@@ -505,12 +611,26 @@ export default function OjtTraining() {
       // เลขฟอร์ม/Rev/ช่องลายเซ็น จากทะเบียนเอกสาร (/doc-forms) — fallback ค่าเดิม
       const df = await getDocForm('ojt', { form_code: FORM_NO, sig_blocks: ['ผู้จัดทำ', 'ระดับจัดการอนุมัติ', 'ผู้รับทราบ'] });
       const sigLabels = df.sig_blocks;
-      const { data: att } = await supabase.from('ojt_training_attendees').select('*').eq('training_id', t.id).order('sort_order');
+      const [{ data: att }, { data: fls }] = await Promise.all([
+        supabase.from('ojt_training_attendees').select('*').eq('training_id', t.id).order('sort_order'),
+        supabase.from('ojt_training_files').select('file_url, file_name').eq('training_id', t.id).order('sort_order'),
+      ]);
       const rows = att || [];
-      const [logo, makerSig, apprSig, hrSig, ...attSigs] = await Promise.all([
+      /* 📎 ไฟล์แนบลงใบพิมพ์ (01/11): รูป = ต่อท้ายเป็นหน้าๆ ให้ auditor เห็นหลักฐานในเล่มเดียวกัน
+         ไฟล์ที่พิมพ์ไม่ได้ (PDF/Word/Excel) = ลิสต์ชื่อไว้ท้ายใบ **ห้ามเงียบ** คนอ่านใบกระดาษ
+         ต้องรู้ว่ายังมีไฟล์อะไรอยู่ในระบบอีก · เกินเพดานรูปก็เขียนบอกว่าเหลืออีกกี่รูป */
+      const attachAll = fls || [];
+      const attachImgs = attachAll.filter(f => isImageAttachment(f.file_url));
+      const attachDocs = attachAll.filter(f => !isImageAttachment(f.file_url));
+      const printImgs = attachImgs.slice(0, ATTACH_PRINT_MAX);
+      const sigCount = rows.length;
+      const [logo, makerSig, apprSig, hrSig, ...rest] = await Promise.all([
         urlToDataUrl(df.logo_url || tsLogoUrl), urlToDataUrl(t.maker_sig_url), urlToDataUrl(t.approver_sig_url), urlToDataUrl(t.hr_sig_url),
         ...rows.map(r => urlToDataUrl(r.sign_url)),
+        ...printImgs.map(f => urlToDataUrl(f.file_url)),
       ]);
+      const attSigs = rest.slice(0, sigCount);
+      const attachData = rest.slice(sigCount);
       const cb = (v) => `<span style="display:inline-block;width:11px;height:11px;border:1px solid #000;text-align:center;line-height:10px;font-size:10px;vertical-align:middle">${v ? '✓' : '&nbsp;'}</span>`;
       const tick = (v) => v ? '✓' : '';
       const scoreCells = (score) => SCORE_LABELS.map((_, i) =>
@@ -542,7 +662,7 @@ body{font-family:'Sarabun',sans-serif;font-size:11px;color:#000;background:#fff}
 table{border-collapse:collapse}
 @media print{@page{size:A4 portrait;margin:7mm}body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
 </style></head><body style="padding:6mm">
-<div style="font-size:9px;text-align:right">หน้า 1 ของ 1 หน้า</div>
+<div style="font-size:9px;text-align:right">หน้า 1 ของ ${1 + printImgs.length} หน้า</div>
 <table style="width:100%;border:1px solid #000">
   <tr>
     <td style="border:1px solid #000;width:110px;text-align:center;vertical-align:middle;padding:4px">
@@ -636,7 +756,16 @@ table{border-collapse:collapse}
   3. หัวหน้างานหรือผู้สอนประเมินผู้เข้ารับการอบรมด้วยความเห็นด้วย หรือไม่เห็นด้วย กับผลการประเมินของพนักงาน กรณีไม่เห็นด้วยให้ชี้แจงกับพนักงานเป็นรายบุคคลและวัดผลการปฏิบัติงาน<br/>
   4. กำหนดให้มีการทวนสอบภาคทฤษฎีและปฏิบัติหลังการอบรมสอนงานไม่น้อยกว่า 1 เดือนหลังจากการอบรม 1 ฉบับ
 </div>
+${attachAll.length ? `<div style="margin-top:4px;border:1px solid #000;padding:3px 6px;font-size:9px">
+  <b>เอกสาร/รูปแนบในระบบ ${attachAll.length} รายการ</b>${attachImgs.length > printImgs.length ? ` (พิมพ์รูปต่อท้าย ${printImgs.length} รูป · อีก ${attachImgs.length - printImgs.length} รูปดูในระบบ)` : ''}
+  ${attachDocs.length ? `<div>ไฟล์เอกสาร (ดูในระบบ): ${attachDocs.map((f, i) => `${i + 1}. ${f.file_name || attachFileName(f.file_url)}`).join(' &nbsp;·&nbsp; ')}</div>` : ''}
+</div>` : ''}
 <div style="margin-top:2px;font-size:9px;display:flex;justify-content:space-between"><span>${fullCode(df)}${df.footer_note ? " · " + df.footer_note : ""}</span><span>${df.effective_date ? "Effective Date : " + df.effective_date : ""}</span></div>
+${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;padding-top:4mm">
+  <div style="font-size:10px;margin-bottom:3px"><b>เอกสารแนบ ${i + 1}/${printImgs.length}</b> — ${f.file_name || attachFileName(f.file_url)}
+    &nbsp;·&nbsp; ใบอบรม OJT ${thDate(t.train_date)} ${t.topic ? `(${(t.topic || '').split('\n')[0]})` : ''}</div>
+  <img src="${attachData[i]}" style="max-width:100%;max-height:240mm;object-fit:contain;border:1px solid #000"/>
+</div>` : '').join('')}
 <script>window.onload = () => window.print();</script>
 </body></html>`;
       const w = window.open('', '_blank');
@@ -687,6 +816,13 @@ table{border-collapse:collapse}
           </button>
         ) : null} />
 
+      {filesOff && (
+        <div style={{ background: 'rgba(245,158,11,0.14)', border: '1px solid rgba(245,158,11,0.5)', color: '#f59e0b', borderRadius: 9, padding: '8px 12px', fontSize: 12.5, fontWeight: 700, marginBottom: 10 }}>
+          📎 ไฟล์แนบยังใช้ไม่ได้ — ตาราง <code>ojt_training_files</code> ยังไม่มีในฐานข้อมูล (ยังไม่ได้รัน migration
+          <code> 20261101_ojt_attachments_main.sql</code>) · ใบอบรม/รายชื่อ/ลายเซ็น/พิมพ์ PDF ใช้ได้ปกติทุกอย่าง
+          <div style={{ fontWeight: 400, fontSize: 11.5, marginTop: 2 }}>รายละเอียด: {filesOff}</div>
+        </div>
+      )}
       {loading ? <div style={{ textAlign: 'center', padding: 40, color: 'var(--muted)' }}>กำลังโหลด...</div> : (
         <div className="card table-sticky" style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', minWidth: 760 }}>
@@ -704,7 +840,15 @@ table{border-collapse:collapse}
               {visibleTrainings.map(t => (
                 <tr key={t.id}>
                   <td style={{ whiteSpace: 'nowrap', fontWeight: 600 }}>{thDate(t.train_date)}</td>
-                  <td style={{ fontSize: 13 }}>{(t.topic || '—').split('\n')[0]}</td>
+                  <td style={{ fontSize: 13 }}>
+                    {(t.topic || '—').split('\n')[0]}
+                    {(t.ojt_training_files?.length ?? 0) > 0 && (
+                      <span title={`มีไฟล์แนบ ${t.ojt_training_files.length} ไฟล์`}
+                        style={{ marginLeft: 6, fontSize: 11, fontWeight: 700, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
+                        📎 {t.ojt_training_files.length}
+                      </span>
+                    )}
+                  </td>
                   <td style={{ whiteSpace: 'nowrap', fontSize: 12 }}>{[t.section, t.department].filter(Boolean).join(' / ') || '—'}</td>
                   <td style={{ fontSize: 12 }}>{t.trainer_name || '—'}</td>
                   <td style={{ textAlign: 'center', fontWeight: 700 }}>{t.ojt_training_attendees?.length ?? 0}</td>
@@ -717,8 +861,9 @@ table{border-collapse:collapse}
                       <button onClick={() => openEdit(t)}
                         style={{ padding: '4px 10px', borderRadius: 6, fontSize: 12, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', marginRight: 6 }}>✏️</button>
                     )}
-                    {mayDelete && (
-                      <DeleteButton onClick={() => handleDelete(t)} title="ลบ" />
+                    {canRemoveSheet(t) && (
+                      <DeleteButton onClick={() => handleDelete(t)}
+                        title={mayDelete ? 'ลบ' : 'ลบใบที่คุณสร้างเอง (ยังไม่มีใครเซ็น)'} />
                     )}
                   </td>
                 </tr>
@@ -737,7 +882,7 @@ table{border-collapse:collapse}
           <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, width: 'min(96vw, 1150px)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>
               <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>📖 {editing.isNew ? 'สร้าง' : 'แก้ไข'}ใบอบรมสอนงาน OJT</div>
-              <button onClick={() => setEditing(null)} style={{ background: 'none', border: 'none', fontSize: 22, color: 'var(--muted)', cursor: 'pointer', lineHeight: 1 }}>✕</button>
+              <button onClick={closeEdit} style={{ background: 'none', border: 'none', fontSize: 22, color: 'var(--muted)', cursor: 'pointer', lineHeight: 1 }}>✕</button>
             </div>
             <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
 
@@ -812,6 +957,46 @@ table{border-collapse:collapse}
                   <div style={lb}>ขอบเขตเนื้อหา (บรรทัดละข้อ)</div>
                   <textarea rows={4} value={editing.scope || ''} onChange={e => setF('scope', e.target.value)} style={{ width: '100%', fontSize: 13 }} />
                 </div>
+              </div>
+
+              {/* ── 📎 ไฟล์แนบ (01/11 · หน้างาน PD4 ขอ) ─────────────────────────────
+                  รูป = โชว์ thumbnail กดเปิดใหญ่ได้ · ไฟล์เอกสาร = ชื่อไฟล์ + ขนาด กดเปิดแท็บใหม่
+                  รูปจะถูกต่อท้ายใบพิมพ์เป็นหน้าๆ (ดู handlePrint) — เอกสารแนบลิสต์ชื่อไว้บนใบ */}
+              <div>
+                <div style={{ ...lb, fontSize: 13, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <span>📎 ไฟล์แนบ ({(editing.files || []).length})</span>
+                  {canRecord && !filesOff && <FilePick onFile={addFile} label="📎 แนบรูป / เอกสาร" />}
+                  <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--muted)' }}>
+                    รูป · PDF · Word · Excel · PowerPoint — ไม่เกิน {ATTACH_MAX_MB}MB ต่อไฟล์ (รูปจาก iPhone ใช้ได้)
+                  </span>
+                </div>
+                {filesOff ? (
+                  <div style={{ fontSize: 12, color: '#f59e0b', padding: '6px 2px', fontWeight: 700 }}>ยังแนบไฟล์ไม่ได้ — ดูเหตุผลที่แถบเตือนบนหน้ารายการ</div>
+                ) : (editing.files || []).length === 0 ? (
+                  <div style={{ fontSize: 12, color: 'var(--muted)', padding: '6px 2px' }}>ยังไม่มีไฟล์แนบ</div>
+                ) : (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+                    {editing.files.map((f, idx) => (
+                      <div key={f.id || f.file_url} style={{ width: 150, border: '1px solid var(--border2)', borderRadius: 9, padding: 7, background: 'var(--bg3)', display: 'flex', flexDirection: 'column', gap: 5 }}>
+                        <a href={f.file_url} target="_blank" rel="noreferrer" style={{ textDecoration: 'none', color: 'inherit' }}>
+                          {isImageAttachment(f.file_url)
+                            ? <img src={f.file_url} alt={f.file_name || ''} style={{ width: '100%', height: 86, objectFit: 'cover', borderRadius: 6, background: '#fff', display: 'block' }} />
+                            : <div style={{ height: 86, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 30, background: 'var(--bg)', borderRadius: 6 }}>📄</div>}
+                          <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 4, wordBreak: 'break-word', lineHeight: 1.35 }}>
+                            {f.file_name || attachFileName(f.file_url)}
+                          </div>
+                        </a>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4 }}>
+                          <span style={{ fontSize: 11, color: 'var(--muted)' }}>{kbText(f.size_bytes)}{f._new ? ' · ยังไม่บันทึก' : ''}</span>
+                          {canRecord && (
+                            <button onClick={() => removeFile(idx)} title="เอาไฟล์นี้ออก"
+                              style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 13, padding: 0 }}>✕</button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* ผู้เข้าอบรม */}
@@ -916,7 +1101,7 @@ table{border-collapse:collapse}
               </div>
 
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', borderTop: '1px solid var(--border)', paddingTop: 14 }}>
-                <button onClick={() => setEditing(null)} style={{ padding: '9px 18px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
+                <button onClick={closeEdit} style={{ padding: '9px 18px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
                 <button onClick={handleSave} disabled={saving || !canRecord}
                   style={{ padding: '9px 22px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', fontSize: 13, opacity: saving ? 0.6 : 1 }}>
                   {saving ? '⏳ กำลังบันทึก...' : '💾 บันทึกใบอบรม'}
