@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import ClearFiltersBtn from './ClearFiltersBtn';
 import useIsMobile from '../utils/useIsMobile';
 import MobileFilterFold, { splitFilterChildren } from './MobileFilterFold';
 import {
@@ -55,6 +56,8 @@ export default function TimeRangeBar({
   presets = LOOKBACK_DAYS,
   finest = 'day', coarsest = 'year', multiYear = false, multiYearNote,
   periods, onReload, loading = false, note, children, style,
+  /* 🧹 ปุ่มล้างตัวกรอง — มากับแถบเองทุกหน้า (22/10 · คำสั่ง user) · กฎอยู่ utils/filterReset.js */
+  clearKeep, onClear, noClear = false,
 }) {
   const days = rangeDays(from, to);
   const active = useMemo(() => matchPreset(from, to, today, presets), [from, to, today, presets]);
@@ -201,12 +204,14 @@ export default function TimeRangeBar({
           {rows(split.fold)}
         </MobileFilterFold>
         {warn && <div style={{ fontSize: 11.5, color: '#f59e0b', lineHeight: 1.6 }}>⚠️ {warn}</div>}
+        {!noClear && <ClearFiltersBtn keep={clearKeep} onClear={onClear} />}
       </div>
     );
   }
   return (
     <div className="filter-bar trb" style={style}>
       {rows(children)}
+      {!noClear && <ClearFiltersBtn keep={clearKeep} onClear={onClear} />}
     </div>
   );
 }

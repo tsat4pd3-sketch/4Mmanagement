@@ -67,3 +67,13 @@ test('จุดงาน: ไม่มีคนประจำ / ยังไม
   assert.equal(stationMarker([{ is_present: true, fit: { score: 100 } }, { is_present: true, fit: { score: 40 } }]).state, 'low')
   assert.equal(stationMarker([{ is_present: true, fit: { score: 67 } }, { is_present: false, fit: { score: 0 } }]).state, 'partial')
 })
+
+/* 27/10 user "ทำไมไม่ตรงกัน" — หมุดเครื่องที่ยังหยุดอยู่ต้องเขียนเวลาแบบเดียวกับป้าย/hover บนผัง (fmtDtElapsed)
+   และใบเปิดค้างที่ไม่รู้เวลาเริ่ม (mins = null) ห้ามกลายเป็น "0 น." */
+test('markerFor: ยังหยุดอยู่ = รูปแบบ fmtDtElapsed · ไม่รู้เวลาเริ่ม ≠ 0 นาที', () => {
+  assert.equal(markerFor('breakdown', { dt: { mins: 213, open: true } }).sub, 'หยุดอยู่ · 3 ชม. 33 น.')
+  assert.equal(markerFor('breakdown', { dt: { mins: 26, open: true } }).sub, 'หยุดอยู่ · 26 น.')
+  const unk = dtByMachine([{ machine: 'JHYD05-06', mins: null, open: true }]).get('JHYD0506') || [...dtByMachine([{ machine: 'JHYD05-06', mins: null, open: true }]).values()][0]
+  assert.equal(unk.openUnknown, true)
+  assert.equal(markerFor('breakdown', { dt: unk }).sub, 'หยุดอยู่ · ไม่รู้เวลาเริ่ม')
+})

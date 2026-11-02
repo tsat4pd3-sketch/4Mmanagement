@@ -56,14 +56,19 @@ test('madeHereMats ตัดชั้น OP / ไลน์อื่น', () => {
   assert.deepEqual(madeHereMats('LINE A ( 800 Ton )', PRODUCTS), ['10076603', '20059076', '20099999']);
 });
 
-test('พาร์ทที่สโตร์คุมเป็นล็อต → อ้างยอดที่ไลน์ผลิตเอง (ปิดล็อตลงที่นั่น) แต่ยังเป็น "ผลิตเติม"', () => {
-  const c = { ...ctx, lotMats: new Set(['20059076']) };
-  assert.deepEqual(refStockOf('20059076', c), { kind: 'produce', loc: 'LINE A ( 800 Ton )' });
-  assert.deepEqual(refStockOf('20063136', { ...c, lotMats: ['20063136'] }), { kind: 'consume', loc: 'LINE A ( 800 Ton )' });  // ไลน์อื่นผลิต = ไม่เกี่ยว
+/* 🔁 26/10 (คำสั่ง user) — พาร์ทโหมด 🔧 ปิดล็อต **เลิกเป็นข้อยกเว้น**
+   เดิมอ้างยอดที่ชื่อไลน์ผลิต เพราะปุ่ม "รับของเข้าสโตร์" ลงสต็อกที่นั่น
+   สโตร์แจ้งว่าปลายทางจริงคือสโตร์ ⇒ `advanceLot` ลงที่ `dest_line_name` ของกฎแล้ว
+   ⇒ ที่นี่ต้องอ้างยอด "คลังปลายทาง" เหมือนพาร์ทผลิตเองตัวอื่นทุกประการ */
+test('พาร์ทโหมดปิดล็อต อ้างยอดคลังปลายทางเหมือนของผลิตเองตัวอื่น (26/10)', () => {
+  assert.deepEqual(refStockOf('20059076', ctx), { kind: 'produce', loc: 'STORE' });
+  assert.deepEqual(refStockOf('20063136', ctx), { kind: 'consume', loc: 'LINE A ( 800 Ton )' });  // ไลน์อื่นผลิต = ไม่เกี่ยว
 });
 
-test('🔧 กฎโหมดปิดล็อตไม่ร่วมตัดสินคลังปลายทาง — ถอยไป prefix เหมือนเดิม (19/10)', () => {
+test('🔧 กฎโหมดปิดล็อต **ร่วมตัดสินคลังปลายทาง** — กฎ MAT ชนะ prefix (26/10 · เดิมถูกข้าม)', () => {
   const rules = [{ match_type: 'prefix', match_value: '2', dest_line_name: 'STORE' },
                  { match_type: 'mat', match_value: '20066660', dest_line_name: 'STORE X', mode: 'lot' }];
-  assert.equal(inflowDestOf('20066660', rules), 'STORE');
+  assert.equal(inflowDestOf('20066660', rules), 'STORE X',
+    'โหมดบอกแค่ "ยอดเข้าทางไหน" · dest_line_name บอก "เข้าคลังไหน" — คนละเรื่อง ห้ามเอามาปนกัน');
+  assert.equal(inflowDestOf('20059999', rules), 'STORE', 'MAT อื่นยังถอยไปกฎ prefix เหมือนเดิม');
 });

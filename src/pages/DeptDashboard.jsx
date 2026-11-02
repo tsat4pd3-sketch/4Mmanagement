@@ -6,6 +6,7 @@ import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { OBEYA_TITLE, OBEYA_ICON } from '../utils/obeyaPage';
 import { wavg, orderPlanQty, dtMinBySession, oeeTargetForLines } from '../utils/oee';
+import { loadAffectsLanes } from '../utils/affectsLanes';
 import { loadBreakPolicies, fetchOeeTargets } from '../utils/oeeMasters';
 import { valueInk } from '../utils/statusTone';
 import { dtBucketName, buildDtIndex } from '../utils/downtimeCategory';
@@ -199,6 +200,8 @@ async function loadProduction(ctx) {
      · fourM พลาด → "4M รออนุมัติ 0" — ทั้งหมดโดยไม่มีแถบเตือนสักอัน */
   return { sess, sess7: sess7 || [], orders: ordRes.rows, dts: dtRes.rows, defs: defRes.rows, pairs: prods, dt7: dt7Res.rows,
     breaks: breaks || [], oeeTargets: tg.byGroup, am: am?.ok ? am : null, amErr: !am?.ok,
+    /* 🔀 "เครื่องไหนหยุดแล้วครอบกี่เลน" — ใช้ใน useMemo (sync) ⇒ ต้องโหลดมากับก้อนข้อมูล */
+    affects: await loadAffectsLanes(),
     loadErr: !!(ordRes.error || dtRes.error || defRes.error || dt7Res.error
       || eS2 || eS7 || eStale || fourM.error || logsRes.error || empRes.error || breaks == null || tg.error),
     stale: (staleRaw || []).filter(s => inScope(s.line_name)),
@@ -218,7 +221,7 @@ function ProductionView({ d, ctx }) {
     const dtBy = {}; d.dts.forEach(x => (dtBy[x.session_id] ||= []).push(x));
     const ngBy = {}; d.defs.forEach(x => { ngBy[x.session_id] = (ngBy[x.session_id] || 0) + (+x.qty_ng || 0) + (+x.qty_suspect || 0); });
     // น้ำหนัก wLoad: planned ที่ "หักได้จริง" (ตัดส่วนทับพัก) · L.dt = "เครื่องหยุดกี่นาที" ยังเป็นนาทีเต็ม — ห้ามสลับ
-    const eff = dtMinBySession(d.sess, d.dts, d.breaks || [], { lines });   // หารเลนไลน์เครื่องขนาน (oee.js §3.2)
+    const eff = dtMinBySession(d.sess, d.dts, d.breaks || [], { lines, affectsBy: d.affects });   // หารเลนไลน์เครื่องขนาน (oee.js §3.2)
     const out = {};
     d.sess.forEach(s => {
       const day = s.work_date === workDate ? 'today' : 'prev';

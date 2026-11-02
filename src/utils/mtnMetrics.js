@@ -41,6 +41,7 @@
       (`oee.js` pure เหมือนกัน import ได้)
    ═══════════════════════════════════════════════════════════════════════════ */
 import { policyBreakForShift, breakIntervalsIn, overlapMinutesWith, shiftStartDate } from './oee.js';   // .js เพื่อให้ node:test resolve ได้ (bundler ไม่สน)
+import { lineFamilyKey, scopeKeyByFamily } from './machineNo.js';
 
 const num = (v) => (v === '' || v == null || Number.isNaN(Number(v)) ? null : Number(v));
 
@@ -197,7 +198,7 @@ const timeToMin = (t) => {
  *    ไม่ส่ง `breakPolicies` มา = ไม่หัก + `hasBreakPolicy:false` ให้จอเตือนว่าเทียบ %A ไม่ได้
  *    processType ไม่ส่ง (null) = ใช้เฉพาะนโยบาย common — ปัจจุบันทุกแถวเป็น common อยู่แล้ว
  */
-export function operatingMinutesByLine(sessions = [], { breakPolicies = [] } = {}) {
+export function operatingMinutesByLine(sessions = [], { breakPolicies = [], lineRules = null } = {}) {
   const best = new Map();      // "line|date|shift" → { line, min, s }
   let unknownShifts = 0;
   for (const s of sessions) {
@@ -220,6 +221,7 @@ export function operatingMinutesByLine(sessions = [], { breakPolicies = [] } = {
       ? Math.min(min, policyBreakForShift({
           policies: breakPolicies, shift: s?.shift, shiftMin: min,
           workDate: s?.work_date, startTime: s?.start_time,
+          lineName: line, lineRules,   // 🏭 ข้อยกเว้นเวลาพักรายไลน์ (20/10)
         }) || 0)
       : 0;
     breakMin += brk;
@@ -257,11 +259,11 @@ export function operatingMinutesByLine(sessions = [], { breakPolicies = [] } = {
 export function machineReliability({
   downtimes = [], machines = [], sessions = [],
   lineFamilyOf = null, sessionLineOf = null,
-  breakPolicies = [], parallelOf = null, includeIdle = true,
+  breakPolicies = [], parallelOf = null, includeIdle = true, lineRules = null,
 } = {}) {
   const index = buildEquipIndex(machines);
   const { byLine, unknownShifts, breakMin, hasBreakPolicy } =
-    operatingMinutesByLine(sessions, { breakPolicies });
+    operatingMinutesByLine(sessions, { breakPolicies, lineRules });
 
   /* ⚠️ opMin หักเวลาพักไปแล้ว ⇒ นาที downtime ที่ตกอยู่ "ในช่วงพัก" ห้ามหักซ้ำจาก upMin
      (ไม่งั้น MTBF สั้นเกินจริง / %Availability ต่ำเกินจริง · utils/oee §3.1)
@@ -276,6 +278,7 @@ export function machineReliability({
       const startMs = new Date(`${shiftStartDate(wd, String(st).slice(0, 5), ss.shift)}T${String(st).slice(0, 5)}:00`).getTime();
       brkIvBy.set(ss.id, breakIntervalsIn({
         policies: breakPolicies, startMs, endMs: startMs + sm * 60000, workDate: wd, shift: ss.shift,
+        lineName: ss?.line_name ?? null, lineRules,   // 🏭 ข้อยกเว้นเวลาพักรายไลน์ (20/10)
       }));
     }
   }
@@ -301,8 +304,19 @@ export function machineReliability({
     if (!typedKey) { noMachineNo++; continue; }
     /* 🔴 จัดกลุ่มด้วย "เครื่องในทะเบียน" ไม่ใช่ข้อความที่พิมพ์ — ไม่งั้นเครื่องเดียวกัน
        ที่คนพิมพ์คนละแบบ ("SP-78" · "SP78" · "SP-78/NF56") กลายเป็นคนละแถว
-       แล้วทั้ง MTTR และ MTBF เพี้ยนทั้งคู่ (จำนวนครั้งถูกหารออกเป็นหลายก้อน) */
-    const key = machine ? normEquipKey(machine.machine_no) : typedKey;
+       แล้วทั้ง MTTR และ MTBF เพี้ยนทั้งคู่ (จำนวนครั้งถูกหารออกเป็นหลายก้อน)
+
+       🏭 **เครื่องนอกทะเบียน ต้องผูก "สายไลน์" ด้วย** (30/10 · คำสั่ง user)
+       `machine_no` เป็นข้อความระดับทั้งโรงงาน ⇒ "CONVEYOR" ของสาย HYDROFORM (PD3)
+       กับของสาย LWR BAR (PD4) เป็นคนละตัวจริง แต่เคยถูกนับเป็นแถวเดียว
+       🔴 ผูกที่ **สาย** ไม่ใช่ชื่อไลน์ดิบ — แม่กับลูกคือที่เดียวกัน (ลงทั้ง `LWR BAR`/`Laser LWR` = ปกติ)
+       🔴 ไม่รู้สาย (ไม่ส่ง `lineFamilyOf`/หาไลน์ไม่เจอ) = คีย์เดิม **ห้ามเดา** */
+    const rowLine = machine?.line_name
+      || (sessionLineOf ? (sessionLineOf(d?.session_id) || '') : '') || '';
+    const famKey = (!machine && lineFamilyOf && rowLine)
+      ? lineFamilyKey(lineFamilyOf(rowLine)) : '';
+    const key = machine ? normEquipKey(machine.machine_no)
+                        : scopeKeyByFamily(typedKey, famKey);
 
     let r = acc.get(key);
     if (!r) {
@@ -312,7 +326,7 @@ export function machineReliability({
         machineName: machine?.machine_name || '',
         kind: machine?.equipment_kind ?? null,
         kindKnown: !!machine,
-        lineName: machine?.line_name || (sessionLineOf ? (sessionLineOf(d?.session_id) || '') : ''),
+        lineName: rowLine,
         inMaster: !!machine, via,
         stops: 0, openStops: 0, closedStops: 0, dtMin: 0, dtMinOp: 0,
         plannedStops: 0, plannedMin: 0, plannedMinOp: 0,

@@ -15,6 +15,12 @@ export const frameMinFromIso = (iso) => {
    กรอบเดียวยาว 24 ชม. ครอบทั้งกะเช้า-กะดึก จึงใช้ทุก policy ที่ active โดยไม่ต้องแยก shift */
 export const breaksToFrame = (policies) => (policies || [])
   .map(p => {
+    /* 🔚 พักที่ผูก "ปลายกะ" (`anchor = 'shift_end'` — 5ส. ท้ายกะ · `start_time = null`) วาดที่นี่ไม่ได้
+       กรอบนี้ยาว 24 ชม. ครอบทั้ง 2 กะ ⇒ ไม่รู้ว่าแต่ละกะเลิกกี่โมง (17:30 / 20:00 / 17:00 วันหยุด / 08:00)
+       🔴 **ข้ามอย่างตั้งใจ ไม่ใช่เผลอ** — แถบเงาหายไปเฉยๆ (ตัวเลข %A/%P ไม่เกี่ยวกับตัวนี้เลย
+          เพราะคิดที่ `breakIntervalsIn` ซึ่งรับ `shiftEndMs`) · จะวาดได้ต้องส่งเวลาเลิกกะของแถวเข้ามา
+          แล้วเปลี่ยนมาใช้ `breakBandsIn` (utils/oee) — ยังไม่ทำ (known gap 20/10) */
+    if (p.anchor === 'shift_end') return null;
     const s = frameMin(String(p.start_time || '').slice(0, 5));
     if (s == null || isNaN(s)) return null;
     // ⚠️ duration_min มาเป็น "ข้อความ" ได้ — `s + '45'` = ต่อสตริง "72045" → แถบพัก ~50 วัน

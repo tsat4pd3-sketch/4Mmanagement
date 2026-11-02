@@ -7,7 +7,7 @@ import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
 import { can } from '../utils/permissions';
 import { dtBucketName, buildDtIndex } from '../utils/downtimeCategory';
-import { inSectionScope } from '../utils/sectionScope';
+import { inSectionScope, scopedLines as scopedLinesOf } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import LineSelect from '../components/LineSelect';
 import PersonSelect from '../components/PersonSelect';
@@ -21,6 +21,7 @@ import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { loadPairMap } from '../utils/useProducts';
 import { loadDocForms, withDocFoot } from '../utils/docForms';
 import { wavg, wLoad, dtMinBySession, orderPlanQty } from '../utils/oee';
+import { loadAffectsLanes } from '../utils/affectsLanes';
 import { notifyEvent } from '../utils/notifyEvent';
 import Page from '../components/Page';
 import PageHeader from '../components/PageHeader';
@@ -28,6 +29,8 @@ import FilterBar from '../components/FilterBar';
 import { useLatestRequest } from '../utils/useLatestRequest';
 import { ALL } from '../utils/filterLabels';
 import { SESSION_STATUSES_REAL } from '../utils/sessionStatus';
+import { machineLaneCount } from '../utils/machineAssets';
+import { BREAK_POLICY_COLS } from '../utils/oeeMasters';
 loadDocForms(); // ทะเบียนเอกสาร — แถบเลขฟอร์มท้ายใบพิมพ์ (ตั้งที่ /doc-forms · 2026-07-30)
 
 // Gesture Mode (MediaPipe) — lazy ทั้ง component และโค้ด MediaPipe ข้างใน: โหลดเฉพาะตอนผู้ใช้กด 📷
@@ -98,6 +101,9 @@ export default function MorningMeeting() {
   const [sessions, setSessions]       = useState([]);
   const [downtimes, setDowntimes]     = useState([]);
   const [breakPols, setBreakPols]     = useState([]); // break_policies (DR) — ตัด DT ที่ทับพักออกก่อนถ่วงน้ำหนัก
+  /* 🔀 "เครื่องไหนหยุดแล้วครอบกี่เลน" (machines.affects_lanes) — ใช้ใน useMemo (sync) ⇒ เก็บเป็น state
+     `{}` = ยังไม่โหลด/ไม่มีใครกรอก = พฤติกรรมเดิมเป๊ะ (ทุกเครื่องครอบ 1 เลน) */
+  const [affectsLn, setAffectsLn]     = useState({});
   const [defects, setDefects]         = useState([]);
   const [orders, setOrders]           = useState([]);
   const [pairMat, setPairMat]         = useState({}); // mat_no → pair_mat_no (งานคู่ RH/LH)
@@ -124,14 +130,18 @@ export default function MorningMeeting() {
   }, [defects]);
 
   /* ── ไลน์ใน scope — branch ของ leader มาก่อน section scope เสมอ (กฎ D2) ── */
+  /* 🔴 ชื่อ const ห้ามชนกับฟังก์ชันที่ import มา แล้วเรียกตัวนั้นข้างใน = **TDZ จอขาวทั้งหน้า**
+     (`ReferenceError: Cannot access 'scopedLines' before initialization` — เกิดจริง 25-26/10
+      กับทุกบัญชีที่ไม่ใช่ leader และมีขอบเขตส่วนงาน · crashsweep จับไม่ได้เพราะ mock ใช้ `sections: []`)
+     ⇒ เรียกของกลางผ่านชื่อ alias เสมอ · มีด่าน `no-shadowed-import-call` */
   const scopedLines = useMemo(() => {
     if (role === 'leader' && userLineId) {
       const fam = new Set(getLineFamilyNames(allLines, userLineId));
       return allLines.filter(l => fam.has(l.name));
     }
-    if (scopeSecs.length) return allLines.filter(l => inSectionScope(scopeSecs, l.section));
+    if (scopeSecs.length) return scopedLinesOf({ role, lineId: userLineId, sections: scopeSecs, lines: allLines, scopeIdx });
     return allLines;
-  }, [allLines, role, userLineId, scopeSecs]);
+  }, [allLines, role, userLineId, scopeSecs, scopeIdx]);
 
   // ส่วนงานในตัวเลือก: ยึดผังองค์กรก่อน (กรองตาม scope) → fallback เดาจาก production_lines เมื่อผังยังว่าง
   const sectionOpts = useMemo(() => {
@@ -158,8 +168,10 @@ export default function MorningMeeting() {
 
   useEffect(() => {
     (async () => {
-      const { data } = await loadLinesRes();   // cache กลาง (25/09) — กำลังคนอยู่ใน LINE_COLUMNS แล้ว
-      setAllLines(data || []);
+      const { data, error: lineErr } = await loadLinesRes();   // cache กลาง (25/09) — กำลังคนอยู่ใน LINE_COLUMNS แล้ว
+      /* 🔴 28/10 — อ่านทะเบียนไม่สำเร็จ **ห้ามทับลิสต์เดิมด้วย []** (เคสจริง: หน้างานแจ้ง
+         "ไม่มีไลน์ให้เลือกในลิสต์" ทั้งที่ไลน์ยังอยู่ครบ) · toast กลางใน main.jsx บอกเหตุให้แล้ว */
+      if (!lineErr) setAllLines(data || []);
       // ส่วนงานจากผังองค์กร (org_nodes kind='section') — ลิสต์/ลำดับตามผัง ไม่เดาจาก production_lines.section
       const { data: og } = await supabase.from('org_nodes').select('code, name, sort_order').eq('kind', 'section').eq('is_active', true);
       setOrgSections(orgValues(og));
@@ -201,10 +213,12 @@ export default function MorningMeeting() {
           .select('*').in('status', ['open', 'doing']).lt('meeting_date', D)
           .order('meeting_date').limit(200),
         // ทะเบียนเครื่องต่อไลน์ — ใช้เป็นฐานเวลาเครื่องรวม (เครื่อง × นาทีกะที่เปิด) เทียบ % Downtime
-        supabaseDR.from('machines').select('machine_no, line_name').in('line_name', lineNames).limit(1000),
+        // 🔴 ต้อง select equipment_kind — ทะเบียนนี้เก็บจิ๊ก/แม่พิมพ์ด้วย ถ้านับรวมจะได้ฐานเวลาเครื่อง
+        //    มากกว่าจริง ⇒ % Downtime ออกมา **ต่ำกว่าความจริง** (utils/machineAssets.js)
+        supabaseDR.from('machines').select('machine_no, line_name, equipment_kind').in('line_name', lineNames).limit(1000),
         // นโยบายเวลาพัก — ใช้ตัด downtime ที่ทับพักออกก่อนถ่วงน้ำหนัก OEE (utils/oee §3.1)
         // ⚠️ ต้อง select ot_scope ด้วย ไม่งั้นนับพักเกินในกะเช้าที่ทำโอ
-        supabaseDR.from('break_policies').select('shift, process_type, start_time, duration_min, ot_scope').eq('is_active', true),
+        supabaseDR.from('break_policies').select(BREAK_POLICY_COLS).eq('is_active', true),
       ]);
       if (!live()) return;
       const sess = chk(sessRes, 'ข้อมูลกะ'), fm = chk(fmRes, '4M'), att = chk(attRes, 'เช็คชื่อ');
@@ -212,8 +226,11 @@ export default function MorningMeeting() {
       const mcs = chk(mcsRes, 'ทะเบียนเครื่อง'), brkPols = chk(brkRes, 'นโยบายพัก');
       setBreakPols(brkPols || []);
       setSessions(sess || []);
+      const byLine = {};
+      (mcs || []).forEach(m => { (byLine[m.line_name] ||= []).push(m); });
       const mCnt = {};
-      (mcs || []).forEach(m => { mCnt[m.line_name] = (mCnt[m.line_name] || 0) + 1; });
+      // นับเฉพาะเครื่องจักรจริง + ไม่ซ้ำเลขเครื่อง (ตัวกลาง utils/machineAssets.js)
+      Object.entries(byLine).forEach(([ln, rows]) => { mCnt[ln] = machineLaneCount(rows); });
       setMachineCountByLine(mCnt);
       setFourM(fm || []);
       // ผูกแถวเช็คชื่อเข้ากับ "ชื่อไลน์" ผ่าน employees.line_id แล้วกรองเฉพาะไลน์ใน scope
@@ -320,6 +337,8 @@ export default function MorningMeeting() {
     if (s.qty_ok != null) return s.qty_ok;
     return s.actual_qty || 0;
   };
+  useEffect(() => { let alive = true; loadAffectsLanes().then(m => { if (alive) setAffectsLn(m || {}); }); return () => { alive = false; }; }, []);
+
   const sum = useMemo(() => {
     let actual = 0, target = 0;
     sessions.forEach(s => {
@@ -331,7 +350,7 @@ export default function MorningMeeting() {
     // และตัวเลขในประชุมเช้า/Telegram/ใบพิมพ์ ไม่ตรงกับ /oee-analytics (แก้ 2026-08-05)
     /* plannedMin = นาทีที่หักจากฐานเวลาได้จริง (ตัดส่วนที่ทับพักตามนโยบายออก · utils/oee §3.1)
        ต้องเป็นชุดเดียวกับ /oee-analytics ไม่งั้น OEE เฉลี่ยในใบประชุม/Telegram คนละเลขกับจอ */
-    const dtEffBy = dtMinBySession(closed, downtimes, breakPols, { lines: allLines });   // หารเลนไลน์เครื่องขนาน (oee.js §3.2)
+    const dtEffBy = dtMinBySession(closed, downtimes, breakPols, { lines: allLines, affectsBy: affectsLn });   // หารเลนไลน์เครื่องขนาน (oee.js §3.2)
     const oeeRows = closed.map(s => ({
       oee: Number(s.oee), shift_min: s.shift_min,
       plannedMin: dtEffBy[s.id]?.planned || 0,
@@ -361,7 +380,7 @@ export default function MorningMeeting() {
       dtMin, dtCount, dtPlannedMin, dtBaseMin, dtPct, dtMachines, ng,
       present, attTotal: attendance.length,
     };
-  }, [sessions, downtimes, attendance, viewLines, orders, machineCountByLine, breakPols]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [sessions, downtimes, attendance, viewLines, orders, machineCountByLine, breakPols, affectsLn]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ผลต่อไลน์ (การ์ด) — เฉพาะ leaf lines, ไลน์ไม่เปิดกะ = เทา
   const lineResults = useMemo(() => leafLines.map(l => {

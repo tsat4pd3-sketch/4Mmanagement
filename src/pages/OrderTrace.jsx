@@ -110,8 +110,10 @@ export default function OrderTrace() {
     // flow_mode ตัดสินว่า "ใบหนึ่งใช้เครื่องกี่ตัว" (ไหลทีละชิ้นผ่านทุกเครื่อง vs เครื่องขนานตัวใครตัวมัน)
     // 25/09: เดิม select เอง + ถอยชุดคอลัมน์ — ย้ายมา cache กลาง (ชุดคอลัมน์อยู่ useProductionLines.js ที่เดียว)
     (async () => {
-      const { data } = await loadLinesRes();
-      setLines(data || []);
+      const { data, error: lineErr } = await loadLinesRes();
+      /* 🔴 28/10 — อ่านทะเบียนไม่สำเร็จ **ห้ามทับลิสต์เดิมด้วย []** (เคสจริง: หน้างานแจ้ง
+         "ไม่มีไลน์ให้เลือกในลิสต์" ทั้งที่ไลน์ยังอยู่ครบ) · toast กลางใน main.jsx บอกเหตุให้แล้ว */
+      if (!lineErr) setLines(data || []);
     })();
   }, []);
 

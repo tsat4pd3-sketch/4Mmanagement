@@ -130,7 +130,7 @@ const MOBILE_SHEET_H = 330;
 
 export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
   const navigate = useNavigate();
-  const { role, lineId, sections, fullName } = useContext(UserContext);
+  const { role, lineId, sections, fullName, scopeIdx } = useContext(UserContext);
   const { can } = usePerms();
   const canRecord = can('safety', 'record');
   const canNote = can('kpi', 'manage');           // เขียนหมายเหตุรายเดือน = คีย์เดียวกับ RLS ของ kpi_month_notes
@@ -206,7 +206,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
 
   /* scope มาตรฐาน — helper กลางคืน null = ไม่จำกัด (ห้ามคืน [] ไม่งั้น .in() ว่าง = ไม่เห็นอะไรเลย) */
   const scopeSet = useMemo(() => {
-    const names = scopedLineNames({ role, lineId, sections, lines });
+    const names = scopedLineNames({ role, lineId, sections, lines, scopeIdx });
     return names ? new Set(names) : null;
   }, [role, lineId, sections, lines]);
 
@@ -373,7 +373,9 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
   }, [lineKey, scopeKeyStr, secKey, year, date, org, mtnTeamKey]);
   /* โหลดครั้งแรก + poll + realtime ผ่านตัวกลางตัวเดียว (กฎเหล็ก DB ข้อ 8 · เดิมประกอบ useEffect+usePolling เอง ไม่มี idle gate)
      ฟังแค่ production_sessions (เปิด/ปิดกะ = ตัวเลขเดือนเปลี่ยน) — prod_orders/downtime_logs ห้าม subscribe ในหน้านี้ */
-  useLiveBoard(load, { tables: ['production_sessions'], topic: 'obeya-kpi', tier: LIVE.BOARD, rate: RATE.BOARD });
+  /* 🔴 `LIVE.YEAR` — แถว KPI ทุกแถวมี series 12 เดือน (อ่านผ่าน obeya_year_rollup เหมือนโหมดปี)
+     ไม่ต้องสดระดับนาที · poll RATE.BOARD (15 นาที) ยังเดินตามปกติ (22/10 · ดู refreshRates) */
+  useLiveBoard(load, { tables: ['production_sessions'], topic: 'obeya-kpi', tier: LIVE.YEAR, rate: RATE.BOARD });
 
   /* ── แถว KPI 8 หัวข้อของกลุ่มที่เลือก — ทุกแถวมี series 12 เดือน + แท่งสรุป ──────────────────── */
   const rows = useMemo(() => {
@@ -702,7 +704,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
   ], [rows]);
   /* ⚖️ 15/10 (user: "เกลี่ยหน้าแรกเหลือ 8 การ์ด ที่เหลือไปหน้า 2") — เกินหน้าเดียวเมื่อไหร่ เกลี่ยให้ทุกหน้าใกล้เคียงกัน
      โดยลดคอลัมน์ (แผ่นกว้างขึ้น ไม่เคยเล็กลง) · `balanceGrid` pure มีเทส */
-  const tv = useTvShell();   // 📺 จอประชุม = 2×2 ต่อหน้า (TV_SHEET_GRID) · จอคอมเหมือนเดิม
+  const tv = useTvShell();   // 📺 จอประชุม = 3×2 ต่อหน้า (TV_SHEET_GRID) · จอคอมเหมือนเดิม
   const grid = balanceGrid(useSheetGrid(wrapRef, 10, tv ? TV_SHEET_GRID : undefined), sheetItems.length);
   const { cols, cw, ch, fit, k } = grid;
 
@@ -967,8 +969,8 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
   const controls = (
     <>
       {/* ขอบเขต = ผังองค์กรทุกมิติ (23/09) — 1 บอร์ดต่อ 1 ขอบเขต (ฝ่าย/ส่วนงาน/แผนก/กลุ่มไลน์/ไลน์/CC) · ชิป = เจาะลง/กลับขึ้นหนึ่งชั้น */}
-      <OrgScopePicker index={org} value={scope || PLANT} onChange={setScope} scopeSet={scopeSet} sections={sections} failed={orgFailed}
-        width={230} title="เลือกขอบเขตตามผังองค์กร" />
+      <OrgScopePicker ccOnly index={org} value={scope || PLANT} onChange={setScope} scopeSet={scopeSet} sections={sections} failed={orgFailed}
+        width={230} title="เลือกขอบเขตตามรหัส cost center (Obeya/KPI สรุปตามรหัส)" />
       {parentScope && <button onClick={() => setScope(parentScope)} style={pill(false)} title={`กลับขึ้น ${org.labelOf(parentScope.kind, parentScope.value)}`}>↑</button>}
       {childChips.map(c => (
         <button key={c.key} onClick={() => setScope({ kind: c.kind, value: c.value })} style={pill(false)} title={`เจาะ ${org.labelOf(c.kind, c.value)}`}>{c.label}</button>

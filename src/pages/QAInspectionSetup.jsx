@@ -33,8 +33,17 @@ import QaPointsEditor from '../components/QaPointsEditor';
 import QaCopyPointsModal from '../components/QaCopyPointsModal';
 import { QA_RANK, balloonSort } from '../utils/qaPoints';
 import PageHeader from '../components/PageHeader';
+import useTabParam from '../utils/useTabParam';
+/* 🔬 แท็บ "QC ประจำไลน์" — แยก QA ออกจากผลิต (27/10 · คำสั่ง user · กฎใน src/utils/qaScope.js) */
+import QaInspectorScopes from '../components/QaInspectorScopes';
 import Page from '../components/Page';
 import SearchInput from '../components/SearchInput';
+
+/* 📐 แท็บของหน้านี้ — `?tab=` (UI-CONVENTIONS §6.8: ห้ามวาดแถบแท็บเอง ใช้ PageHeader+useTabParam) */
+const MAIN_TABS = [
+  { key: 'std',        label: '📐 มาตรฐานการตรวจ & Drawing' },
+  { key: 'inspectors', label: '🔬 QC ประจำไลน์' },
+];
 
 const fmtDT = s => s ? new Date(s).toLocaleString('th-TH', { day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
 
@@ -115,6 +124,7 @@ const EMPTY_PART = {
   dwg_no: '', drawing_rev: '', concern_no: '', part_rank: '', part_kind: '', mat_no: '',
 };
 export default function QAInspectionSetup() {
+  const [tab, setTab] = useTabParam(MAIN_TABS.map(t => t.key), 'std');
   const isMobile = useIsMobile(); // ≤768px: two-pane ยุบเป็นคอลัมน์เดียว + ปิด sticky (desktop ไม่เปลี่ยน)
   const { fullName, role, section: homeSection, sections: mySections, allUnits, respCostCenters, scopeIdx } = useContext(UserContext);
   const { can } = usePerms();
@@ -356,8 +366,12 @@ export default function QAInspectionSetup() {
   return (
     <Page>
       <PageHeader title="มาตรฐานการตรวจ & Drawing" icon="📐"
+        tabs={MAIN_TABS} tab={tab} onTab={setTab}
         sub="อัพโหลดแบบชิ้นงาน วาง balloon จุดตรวจ และกำหนดมาตรฐานการตรวจสอบต่อ part — จุด variable ส่งเข้า SPC (หน้า Quality Control Center) ได้" />
 
+      {tab === 'inspectors' && <QaInspectorScopes canManage={canManage} />}
+
+      {tab === 'std' && (
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(230px, 290px) 1fr', gap: 14, alignItems: 'start' }}>
         {/* ── ซ้าย: รายการ part ── */}
         <div style={{ ...cardSt, padding: 12, ...(isMobile ? null : { position: 'sticky', top: 70 }) }}>
@@ -538,6 +552,7 @@ export default function QAInspectionSetup() {
           </div>
         )}
       </div>
+      )}
 
       {/* ── Part modal ── */}
       {partModal && (

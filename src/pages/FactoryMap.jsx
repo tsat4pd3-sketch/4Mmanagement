@@ -15,6 +15,7 @@ import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
 import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory';
 import { computeLiveOee, shiftStartDate, wavg, wLoad, wRun, wProd, buildCtMap, isTrialDefect, defectQty, ngByMatFrom, breakIntervalsIn, overlapMinutesWith, dtMinOutsideBreaks, laneWeightFn, dtMinBySession, orderPlanQty, oeeTargetForLines, QBIN_EMBED } from '../utils/oee';
+import { loadAffectsLanes } from '../utils/affectsLanes';
 import { usePolling } from '../utils/usePolling';
 import { RATE, LIVE } from '../utils/refreshRates';
 import { coalesce, makeIdleGate } from '../utils/liveRefresh';
@@ -649,6 +650,9 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
      ⚠️ เดิม modal อ่าน `production_sessions.oee` (stamp ตอนปิดกะ) ตรงๆ → กะที่ยังเปิดขึ้น "—"
         ขณะที่การ์ด hover บนผังเดียวกันโชว์ "OEE 99% (สด)" = จอเดียวกันตอบคนละอย่าง (user ทัก 2026-08-06) */
   const liveOeeRef = useRef({});
+  /* 🔀 "เครื่องไหนหยุดแล้วครอบกี่เลน" (machines.affects_lanes) — ref เหมือน flowByLineRef
+     ของกลางของไลน์ขนาน (คอนเวเยอร์/ระบบลม) ต้องไม่ถูกหารเลน · `{}` = พฤติกรรมเดิมเป๊ะ */
+  const affectsLnRef = useRef({});
   const flowByLineRef = useRef({}); // line_name → { flow_mode, parallel_stations } — หัก DT 1/N ใน OEE สด (loadStatus เป็น useCallback deps แคบ ใช้ ref กัน stale)
   useEffect(() => { regionsRef.current = regions; }, [regions]);
 
@@ -680,7 +684,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
 
   /* ── โหลดผัง + รูปทรง + ไลน์ ── */
   const loadMap = useCallback(async () => {
-    const [{ data: fm }, { data: rg }, { data: ln }, { data: lay }] = await Promise.all([
+    const [{ data: fm }, { data: rg }, lnRes, { data: lay }] = await Promise.all([
       supabase.from('factory_map').select('id, image_url').order('updated_at', { ascending: false }).limit(1).maybeSingle(),
       supabase.from('factory_line_regions').select('id, line_name, points'),
       loadLinesRes(),
@@ -689,12 +693,14 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
     setImageUrl(fm?.image_url || null);
     setMapId(fm?.id || null);
     setRegions((rg || []).map(r => ({ ...r, points: Array.isArray(r.points) ? r.points : [] })));
-    setLines(ln || []);
+      /* 🔴 อ่านทะเบียนไลน์ไม่สำเร็จ = คงลิสต์เดิม ห้ามทับด้วย [] (30/10 · MO แจ้ง "ไม่มีให้เลือกไลน์") */
+    if (!lnRes?.error) setLines(lnRes?.data || []);
     // โหมดไหลงาน/จำนวนเครื่องขนาน (best-effort — ยังไม่ apply migration 20260723 ก็ข้าม) ใช้หัก DT 1/N ใน OEE สด
     try {
       const { data: fl } = await loadLinesRes();
       const m = {}; (fl || []).forEach(l => { m[l.name] = l; });
       flowByLineRef.current = m;
+      affectsLnRef.current = await loadAffectsLanes();
     } catch { /* คอลัมน์ยังไม่มี — N=1 พฤติกรรมเดิม */ }
     setLayoutLines(new Set((lay || []).map(l => l.line_name)));
     setLoading(false);
@@ -805,6 +811,8 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
           ? parallelUnitsOf(flowByLineRef.current[s.line_name]) : 1,
         // งานคู่ gang die / RH-LH = 1 shot ได้ 2 ชิ้น — ยุบก่อนคิดเวลามาตรฐานของ %P (pairTotals.js)
         pairMap,
+        // 🔀 ของกลางของไลน์ขนาน (คอนเวเยอร์) ต้องไม่ถูกหารเลน — machines.affects_lanes
+        affectsLanes: affectsLnRef.current,
       });
       return r; // คืนทั้งก้อน — ต้องรู้ "สาเหตุ" ที่คำนวณไม่ได้ (noOutput vs ไม่ได้ตั้ง CT) ไม่ใช่แค่ null
     };
@@ -885,6 +893,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
           policies: breaks || [], startMs: anchor, endMs: Math.min(nowMs, capMs),
           workDate, shift: s.shift, processType: procOfSess,
           shiftEndMs: capMs,   // 🔚 กรอบจบที่ "ตอนนี้" ระหว่างกะ — พักท้ายกะต้องยึด capMs ไม่ใช่ปลายกรอบ
+          lineName: s.line_name,   // 🏭 ข้อยกเว้นเวลาพักรายไลน์ (ทะเบียนกลาง · 20/10)
         });
         availMin -= brkIvWin.reduce((a, [x, y]) => a + (y - x) / 60000, 0);
         /* หักหยุดตามแผน — ⚠️ ต้อง clamp กับหน้าต่าง [anchor, min(now, capMs)] ก่อน
@@ -942,12 +951,12 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
             policies: breaks || [],
             startMs: new Date(`${shiftStartDate(workDate, s.start_time.slice(0, 5), s.shift)}T${s.start_time.slice(0, 5)}:00`).getTime(),
             endMs: new Date(`${shiftStartDate(workDate, s.start_time.slice(0, 5), s.shift)}T${s.start_time.slice(0, 5)}:00`).getTime() + (s.shift_min || 570) * 60000,
-            workDate, shift: s.shift,
+            workDate, shift: s.shift, lineName: s.line_name,   // 🏭 ข้อยกเว้นเวลาพักรายไลน์ (ทะเบียนกลาง · 20/10)
           })
         : [];
       /* ไลน์เครื่องขนานบันทึก downtime รายเครื่อง ⇒ หารด้วยจำนวนเลนก่อนหักจากเวลากะ (oee.js §3.2)
          ไม่หาร = plannedMin ทะลุความยาวกะ ⇒ wLoad เหลือ 0 ⇒ กะนั้นหายจากค่าเฉลี่ยของไลน์เงียบๆ */
-      const laneW = laneWeightFn(parallelUnitsOf(flowByLineRef.current[s.line_name]));
+      const laneW = laneWeightFn(parallelUnitsOf(flowByLineRef.current[s.line_name]), affectsLnRef.current);
       const plannedDtMinAll = dl.filter(d => d.dr_downtime_types?.category === 'planned')
         .reduce((a, d) => a + dtMinOutsideBreaks(d, wLoadBrkIv) * laneW(d), 0);
       const lr = s.oee != null ? null : liveOee(s, os, dl);
@@ -1079,7 +1088,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
       if (dErr) { setOeeHistRaw([]); return; }
       dtsAll.push(...(dts || []));
     }
-    const eff = dtMinBySession(rows, dtsAll, brk || [], { lines: flowByLineRef.current });   // หารเลนไลน์เครื่องขนาน (oee.js §3.2)
+    const eff = dtMinBySession(rows, dtsAll, brk || [], { lines: flowByLineRef.current, affectsBy: affectsLnRef.current });   // หารเลนไลน์เครื่องขนาน (oee.js §3.2)
     setOeeHistRaw(rows.map(s => ({ line_name: s.line_name, work_date: s.work_date, oee: Number(s.oee), shift_min: s.shift_min, plannedMin: eff[s.id]?.planned || 0 })));
   }, []);
   useEffect(() => { if (metric === 'oee' && oeeHistRaw == null) loadOeeHist(); }, [metric, oeeHistRaw, loadOeeHist]);
@@ -1090,7 +1099,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
     // live = กะปัจจุบันเท่านั้น (คำสั่ง user 2026-08-04) — เดิมนับพนักงานทั้งไลน์ (ทุกทีม 2 กะ)
     // เป็นตัวหาร + present รวม log ทั้งวัน → เลขโป่ง เช่น 15/33 ทั้งที่กะนี้มี 16 คน
     const curShift = (() => { const h = new Date().getHours(); return h >= 8 && h < 20 ? 'day' : 'night'; })();
-    const [{ data: emps }, { data: pls }, { data: logsAll }, { data: ws }, saRes] = await Promise.all([
+    const [{ data: emps }, plsRes, { data: logsAll }, { data: ws }, saRes] = await Promise.all([
       supabase.from('employees').select('id, line_id').eq('is_active', true),
       loadLinesRes(),
       supabase.from('daily_production_logs').select('employee_id, is_present, has_helmet, has_boots, has_gloves, assigned_line, shift').eq('work_date', workDate),
@@ -1102,7 +1111,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
     ]);
     // log ของกะปัจจุบัน (shift null = log เก่าก่อนมีคอลัมน์ — นับรวมแบบ backward-compat)
     const logs = (logsAll || []).filter(l => !l.shift || l.shift === curShift);
-    const lineOfId = {}; (pls || []).forEach(l => { lineOfId[l.id] = l.name; });
+    const lineOfId = {}; ((plsRes?.error ? [] : (plsRes?.data || []))).forEach(l => { lineOfId[l.id] = l.name; });
     const empLine = {}; (emps || []).forEach(e => { empLine[e.id] = lineOfId[e.line_id]; });
     // จุดงาน (workstations) ต่อไลน์ + จุดที่มีคนเข้าประจำจริง (assigned_line ของคนที่มาทำงาน)
     const stationLine = {}; const stationTotal = {};
@@ -1473,7 +1482,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
         ]);
         const orders = need(ordRes, 'ใบผลิต'), dts = need(dtRes, 'เครื่องหยุด'), rvDefs = need(defRes, 'ของเสีย');
         // น้ำหนัก wLoad = shift_min − planned ที่ "หักได้จริง" (ตัดส่วนที่ทับพักออก · กฎเหล็ก OEE downtime ทับพัก)
-        const effBySess = dtMinBySession(sessions, dts || [], rvBreaks || [], { lines: flowByLineRef.current });   // หารเลนไลน์เครื่องขนาน (oee.js §3.2)
+        const effBySess = dtMinBySession(sessions, dts || [], rvBreaks || [], { lines: flowByLineRef.current, affectsBy: affectsLnRef.current });   // หารเลนไลน์เครื่องขนาน (oee.js §3.2)
         const rvNgBySess = {}; (rvDefs || []).forEach(d => { rvNgBySess[d.session_id] = (rvNgBySess[d.session_id] || 0) + (Number(d.qty_ng) || 0) + (Number(d.qty_suspect) || 0); });
         const pairOf = (m) => pairMap?.[m] ?? null;   // pairMap null = ยังไม่รู้คู่ ⇒ ไม่ยุบ (ห้ามแปลงเป็น {} และห้าม index ตรงๆ)
         const ordBySess = {}; (orders || []).forEach(o => { (ordBySess[o.session_id] ||= []).push(o); });
@@ -1562,13 +1571,20 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
         const totProduced = ptot.produced + (nullPart?.produced || 0);
 
         // Downtime — แยกนอกแผน/ในแผน แล้วรวมตามประเภท+เครื่อง (เก็บ note ของพนักงานไว้ด้วย)
+        /* ⏱ ใบที่ยังหยุดอยู่ = "หยุดมาแล้วกี่นาที" (started_at → ตอนนี้) สูตรเดียวกับป้าย/hover บนผัง (dtOpenMin)
+           27/10 user "ทำไมไม่ตรงกัน" — เดิมใช้ duration_min ซึ่งยังว่างจนกว่าจะปิดใบ ⇒ modal "หยุดอยู่ · 0 น." ขณะ hover "3 ชม. 33 น."
+           ไม่รู้เวลาเริ่ม = null (จอเขียน "—" ห้ามตีเป็น 0 · กฎเดียวกับ fmtDtElapsed) */
+        const nowMsStory = Date.now();
         const dtRows = (dtRes.data || []).map(d => {
-          const mins = d.duration_min != null ? Number(d.duration_min) || 0
-            : (d.started_at && d.ended_at ? Math.max(0, (new Date(d.ended_at) - new Date(d.started_at)) / 60000) : 0);
-          return { id: d.id, session_id: d.session_id, mins: Math.round(mins), machine: d.machine_no, note: d.description,
+          const open = !d.ended_at && d.duration_min == null;
+          const mins = open
+            ? (d.started_at ? Math.max(0, Math.round((nowMsStory - new Date(d.started_at).getTime()) / 60000)) : null)
+            : Math.round(d.duration_min != null ? Number(d.duration_min) || 0
+              : (d.started_at && d.ended_at ? Math.max(0, (new Date(d.ended_at) - new Date(d.started_at)) / 60000) : 0));
+          return { id: d.id, session_id: d.session_id, mins, machine: d.machine_no, note: d.description,
             type: d.dr_downtime_types?.name_th || 'ไม่ระบุประเภท', planned: d.dr_downtime_types?.category === 'planned',
-            open: !d.ended_at && d.duration_min == null, carry_over: d.carry_over, shift: sessById[d.session_id]?.shift };
-        }).sort((a, b) => b.mins - a.mins);
+            open, carry_over: d.carry_over, shift: sessById[d.session_id]?.shift };
+        }).sort((a, b) => (b.mins ?? 0) - (a.mins ?? 0));
         const dtUnplanned = dtRows.filter(d => !d.planned);
         const dtPlanned = dtRows.filter(d => d.planned);
 
@@ -1661,7 +1677,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
           flowDown, flowUp,
           totTarget, totProduced, parts,
           dtUnplanned, dtPlanned,
-          dtUnplannedMin: dtUnplanned.reduce((a, d) => a + d.mins, 0),
+          dtUnplannedMin: dtUnplanned.reduce((a, d) => a + (d.mins || 0), 0),
           dtPlannedMin: dtPlanned.reduce((a, d) => a + d.mins, 0),
           defects, ngTotal: defects.reduce((a, d) => a + d.ng, 0), suspectTotal: defects.reduce((a, d) => a + d.suspect, 0),
           shifts, fourM: fourMRes.data || [], sessionCount: (sessions || []).length,
@@ -2474,17 +2490,34 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
           ชิปต่อแท็บไม่เท่ากัน (🫥 โซนสนับสนุน · ⚠ PM ไม่ผูกไลน์ · legend) ⇒ บางแท็บ 2 บรรทัด บางแท็บ 3 ⇒ ผังขยับขึ้นลง
           และตัววนจอ TV ย่อ (zoom) ใหม่ทุกครั้ง = ขนาดเด้ง · ตอนนี้แยก 2 แถว: แถวแท็บคงที่ · แถวชิป+เครื่องมือจองความสูงไว้ */}
       {/* 📺 จอประชุม: แถวปุ่มแท็บ → หัวเรื่องตัวใหญ่ "ตอนนี้ดูเรื่องอะไร" (ไม่มีใครกดปุ่มบนทีวี) */}
-      {tv && !editing && (
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 16, flexWrap: 'wrap', marginBottom: 8 }}>
-          <span style={{ fontSize: 34, fontWeight: 800, color: 'var(--text)', lineHeight: 1.15 }}>{METRICS[metric]?.label}</span>
-          <span style={{ fontSize: 22, fontWeight: 700, color: isReview ? 'var(--accent)' : '#22c55e' }}>
-            {isReview ? `📅 ยอดทั้งวัน ${fmtThaiDate(reviewDate)}` : '⚡ สดวันนี้'}
-          </span>
-          {cycleList.length > 1 && cycleOn && (
-            <span style={{ fontSize: 20, fontWeight: 700, color: 'var(--muted)' }}>🔁 เรื่องที่ {cycleList.indexOf(metric) + 1}/{cycleList.length}</span>
-          )}
-        </div>
-      )}
+      {/* 📺 20/10 (user "ทำเรื่อง scale กับผังให้เหมือนกัน" — ผังรวม vs Andon Board): หัวจอ = กล่องสถานะแบบเดียวกับ Andon
+          (ขอบ/พื้นตามสีที่แย่สุด · ซ้าย = ดูเรื่องอะไร ตัวใหญ่ · ขวา = นับไลน์ตามสี) — ต่างกันที่ "เนื้อหา" ไม่ใช่หน้าตา
+          (Andon = ต้องไปจัดการอะไรตอนนี้ · ผังรวม = เรื่องนี้วันนี้ดีไม่ดี) · ตัวนับใช้ regCat ชุดเดียวกับสีบนผัง */}
+      {tv && !editing && (() => {
+        const cnt = {};
+        regions.filter(r => !facHidden(r.line_name)).forEach((r) => { const k = regCat(stOf(r.line_name)); cnt[k] = (cnt[k] || 0) + 1; });
+        const worst = cnt.down || cnt.bad ? '#ef4444' : cnt.ok ? '#f59e0b' : '#22c55e';
+        const order = ['down', 'bad', 'ok', 'good', 'waiting', 'busy', 'idle'].filter(k => cnt[k]);
+        return (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'center', justifyContent: 'space-between', marginBottom: 10,
+            background: 'var(--card)', backgroundImage: `linear-gradient(${worst}14, ${worst}14)`, border: `1px solid ${worst}`, borderRadius: 12, padding: '10px 18px' }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 16, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 30, fontWeight: 900, color: 'var(--text)', lineHeight: 1.15 }}>{METRICS[metric]?.label}</span>
+              <span style={{ fontSize: 22, fontWeight: 800, color: isReview ? 'var(--accent)' : '#22c55e' }}>
+                {isReview ? `📅 ยอดทั้งวัน ${fmtThaiDate(reviewDate)}` : '⚡ สดวันนี้'}
+              </span>
+              {cycleList.length > 1 && cycleOn && (
+                <span style={{ fontSize: 20, fontWeight: 700, color: 'var(--muted)' }}>🔁 เรื่องที่ {cycleList.indexOf(metric) + 1}/{cycleList.length}</span>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', fontSize: 25, fontWeight: 800 }}>
+              {order.length ? order.map(k => (
+                <span key={k} style={{ color: CAT[k].color }}>● {CAT[k].label} {cnt[k]}</span>
+              )) : <span style={{ color: 'var(--muted)' }}>ยังไม่มีกรอบไลน์บนผัง</span>}
+            </div>
+          </div>
+        );
+      })()}
       <div className="tv-hide" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
         {Object.entries(METRICS).map(([k, m]) => (
           <button key={k} onClick={() => setMetric(k)} style={btn(metric === k)}>{m.label}</button>
@@ -2948,7 +2981,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
           {!editing && !panelHide && (
             /* 📺 จอ TV กดอะไรไม่ได้ (20/10 คำสั่ง user · รูปจอจริง "แผงขวาต้อง scroll") — เดิม zoom 1.45 + เดาความสูง
                ⇒ ล้นขอบล่าง · TvFitBox วัดที่ว่างจริงแล้วย่อให้พอดี (≤1.45×) · ยังล้น = เลื่อนเอง · แท็บแผงซ่อน (เลือกที่ /display-rotation `panel=`) */
-            <TvFitBox enabled={tv} maxScale={1.45}
+            <TvFitBox enabled={tv} maxScale={2}
               style={{ flex: '0 0 360px', maxWidth: '100%', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 16px', maxHeight: 'calc(100vh - 200px)', overflowY: 'auto' }}
               tvStyle={{ flex: `0 0 ${Math.round(360 * 1.45)}px`, maxWidth: '100%', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12 }}
               innerStyle={{ padding: '14px 16px' }}>
@@ -3635,7 +3668,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                               {d.machine && <span style={{ fontSize: 11, color: 'var(--muted)' }}>· {d.machine}</span>}
                               {d.open && <span style={{ fontSize: 11, color: '#ef4444', fontWeight: 700 }}>🔴 ยังหยุดอยู่</span>}
                               {d.carry_over && <span style={{ fontSize: 11, color: 'var(--muted)' }}>ยกข้ามกะ</span>}
-                              <span style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 800, color: '#f59e0b' }}>{fmtNum(d.mins)} น.</span>
+                              <span style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 800, color: d.open ? '#ef4444' : '#f59e0b' }}>{d.open ? fmtDtElapsed(d.mins) : `${fmtNum(d.mins)} น.`}</span>
                             </div>
                             {d.note && <div style={{ fontSize: 11.5, color: 'var(--text2)', marginTop: 3 }}>💬 {d.note}</div>}
                           </div>
@@ -3644,7 +3677,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                     )}
                     {s.dtPlanned.length > 0 && (
                       <div style={{ marginTop: 8, fontSize: 11, color: 'var(--muted)' }}>
-                        ในแผน (ไม่นับเป็น loss): {s.dtPlanned.map(d => `${d.type} ${d.mins}น.`).join(' · ')}
+                        ในแผน (ไม่นับเป็น loss): {s.dtPlanned.map(d => `${d.type} ${d.open ? `กำลังหยุด ${fmtDtElapsed(d.mins)}` : `${d.mins}น.`}`).join(' · ')}
                       </div>
                     )}
                   </StorySection>}

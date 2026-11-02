@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  inflowModeOf, inflowPatchFor, inflowModesFor, lotMatsOf, receiptAgeMin, isStaleReceipt, ageText,
+  inflowModeOf, inflowPatchFor, inflowModesFor, lotMatsOf, lotOrphanRisk, receiptAgeMin, isStaleReceipt, ageText,
   validateReceive, receiptZoneStatus, sortReceipts, DEFAULT_STALE_MIN,
 } from '../stockReceipts.js';
 
@@ -73,4 +73,27 @@ test('🔧 โหมดปิดล็อต (19/10) — เฉพาะกฎ M
     { match_type: 'prefix', match_value: '2', mode: 'lot', is_active: true },
   ]);
   assert.deepEqual([...lots], ['20066660']);
+});
+
+/* 🔴 27/10 — ใบล็อตที่ออกก่อน "สลับโหมด 🔧 → 🟡" ไม่มีใบรับเข้ารองรับ ⇒ ปิดแล้วของหายจากบัญชี
+   (วัดจริงวันนั้น: 7 ใบค้างขั้น producing · บนใบ 13,200 ชิ้น · `stock_receipts` รองรับ 0 ใบ) */
+test('🔴 lotOrphanRisk — ใบที่ออกก่อนสลับโหมดต้องเตือน · อ่านเวลาไม่ได้ = เตือน (fail-closed)', () => {
+  const SWITCH = '2026-10-27T10:00:00Z';
+  const confirmRule = { match_type: 'mat', match_value: '20066660', mode: 'confirm', is_active: true, updated_at: SWITCH };
+  const lotRule     = { match_type: 'mat', match_value: '20066660', mode: 'lot',     is_active: true, updated_at: SWITCH };
+  const before = { child_mat_no: '20066660', created_at: '2026-10-22T03:00:00Z' };
+  const after  = { child_mat_no: '20066660', created_at: '2026-10-27T11:00:00Z' };
+
+  assert.equal(lotOrphanRisk(before, [confirmRule]), true,  'ออกก่อนสลับ = ไม่มีใบรับเข้า ต้องเตือน');
+  assert.equal(lotOrphanRisk(after,  [confirmRule]), false, 'ออกหลังสลับ = trigger สร้างใบรับเข้าให้ ไม่ต้องเตือน');
+  assert.equal(lotOrphanRisk(before, [lotRule]), false,     'ยังโหมด 🔧 = ปิดล็อตลงสต็อกตามปกติ');
+  assert.equal(lotOrphanRisk(before, []), false,            'ไม่มีกฎ MAT = ไม่ใช่เคสนี้ ห้ามเตือนเกิน');
+
+  // อ่านเวลาไม่ได้ = เตือน · เตือนเกินเสียแค่เวลาคนไปเช็คคิว · ไม่เตือน = ของหายเงียบ
+  assert.equal(lotOrphanRisk(before, [{ ...confirmRule, updated_at: null }]), true);
+  assert.equal(lotOrphanRisk({ ...before, created_at: 'ไม่รู้' }, [confirmRule]), true);
+  assert.equal(lotOrphanRisk({ created_at: SWITCH }, [confirmRule]), false, 'ไม่มี MAT = ตัดสินไม่ได้ ไม่ใช่เคสนี้');
+
+  // กฎ prefix ห้ามมาตัดสินแทนกฎ MAT (prefix = ทั้งตระกูล)
+  assert.equal(lotOrphanRisk(before, [{ match_type: 'prefix', match_value: '200', mode: 'confirm', is_active: true, updated_at: SWITCH }]), false);
 });

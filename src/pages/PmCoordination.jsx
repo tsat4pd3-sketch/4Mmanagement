@@ -27,6 +27,7 @@ import { ALL } from '../utils/filterLabels';
 import { DeleteButton } from '../components/IconButton';
 import SearchInput from '../components/SearchInput';
 import LineScopeSelect from '../components/LineScopeSelect';
+import { scopeLines as pickerLines } from '../components/LineSelect';   // ตาข่าย "กรองแล้วไม่เหลือ = ไม่กรอง"
 import { fetchAllPages, fetchByIds } from '../utils/fetchByIds';
 import { planTaskSummary } from '../utils/pmCoordSummary';
 import useIsMobile from '../utils/useIsMobile';   // 🔴 เพดาน 1000 แถว + URL ยาว (กฎเหล็ก DB ข้อ 5)
@@ -93,7 +94,7 @@ export default function PmCoordination() {
        ตอนนี้: fetchByIds/fetchAllPages + เก็บ error ทุกตัวขึ้นแถบเตือน · กดรีเฟรชซ้อน = คำตอบเก่าห้ามทับ */
     const req = ++reqRef.current;
     // ⚠️ ตัวที่ผ่าน cachedMaster คืน **array ตรงๆ** (ไม่ใช่ { data }) — destructure ต้องไม่ห่อ { data: … }
-    const [{ data: ln }, mc, plRes, plansRes, clsRes] = await Promise.all([
+    const [lnRes, mc, plRes, plansRes, clsRes] = await Promise.all([
       loadLinesRes(), // LINE_COLUMNS = ครบตามสัญญา <LineSelect> (2026-09-07)
       /* cache master (2026-09-16) — ทะเบียนเปลี่ยนเดือนละไม่กี่ครั้ง · ล้างด้วย invalidateTable() ที่หน้าแก้ทะเบียน */
       cachedMaster('machines:pmcoord', async () => mrows(await supabaseDR.from('machines').select('id, machine_no, machine_name, line_name, equipment_kind').eq('is_active', true).order('sort_order'))).catch(e => { throw new Error('ทะเบียนเครื่อง: ' + (e?.message || e)); }),
@@ -101,6 +102,9 @@ export default function PmCoordination() {
       fetchAllPages(() => supabaseDR.from('pm_plans').select('id, checklist_id, next_due_date, plan_type, interval_days, usage_metric, usage_threshold, cycle_basis').eq('is_active', true)),
       fetchAllPages(() => supabaseDR.from('checklists').select('id, equipment_id, department, name, frequency').eq('module', 'mtn')),
     ]).catch(e => [{ data: [] }, [], { data: [], error: e }, { rows: [] }, { rows: [] }]);
+  /* 🔴 30/10 — เดิมแกะแค่ `{ data }` ⇒ ทะเบียนไลน์โหลดไม่สำเร็จแล้วได้ลิสต์ว่าง **เงียบ**
+     (หน้างาน PD1 แจ้ง "MO ไม่มีให้เลือกไลน์" ทั้งที่ฐานข้อมูลมีครบ) · เก็บผลทั้งก้อนไว้อ่าน error ได้ */
+  const ln = lnRes?.error ? null : lnRes.data;
     const errs = [];
     if (plRes.error) errs.push(`แผนประสานงาน: ${plRes.error.message || plRes.error}`);
     if (plansRes.error || plansRes.truncated) errs.push(`แผน PM: ${plansRes.error || 'อ่านได้ไม่ครบ'}`);
@@ -172,7 +176,12 @@ export default function PmCoordination() {
         || String(a.sum.next?.task_date || '9999').localeCompare(String(b.sum.next?.task_date || '9999')));
   }, [plans, scopeLines, fStatus, fScope, needle, tasksByPlan, today]);
   const noLineHidden = fScope.names?.length ? plans.filter(p => !p.line_name).length : 0;
-  const scopeLineList = useMemo(() => (scopeLines ? lines.filter(l => scopeLines.has(l.name)) : lines), [lines, scopeLines]);
+  /* 🔴 ลิสต์ของ picker ต้อง "ไม่ตาย" — ส่วนงานที่ไม่มีไลน์ผลิตสังกัด (QA · Planning&Store · ฝั่งช่าง)
+     กรองแล้วเหลือ 0 ⇒ dropdown ว่าง = ใช้ฟีเจอร์ไม่ได้ทั้งหน้า (เคสจริง 26/10 · ด่าน line-picker-never-dead)
+     ⇒ ผ่าน `scopeLines()` ของกลาง (components/LineSelect.jsx) = "กรองแล้วไม่เหลือ = ไม่กรอง" */
+  const scopeLineList = useMemo(
+    () => pickerLines(lines, { role, lineId, sections: scopeSecs }),
+    [lines, role, lineId, scopeSecs]);
 
   // ช่วง Production Support ที่กำลังจะถึง (is_support · วันนี้เป็นต้นไป · แผนที่ยังไม่ done/cancelled) — เตือน Production ล่วงหน้า
   const upcomingSupport = useMemo(() => {

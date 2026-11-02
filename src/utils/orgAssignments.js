@@ -18,11 +18,27 @@
  * และ **มีวันหมดอายุ** ซึ่ง fail-open ไม่มี
  */
 
+/* 🔴 **ห้ามประดิษฐ์คำเรียกตำแหน่งเอง** (2026-10-21 · คำสั่ง user "ไม่เอาคำว่า หัวหน้าหน่วย
+   คือทุกคำ ควรจะอ้างอิงจากตำแหน่งในองค์กรได้")
+   เดิม `head` ถูกเขียนป้ายว่า "หัวหน้าหน่วย" ซึ่ง**ไม่มีในผังองค์กรจริง** — ของจริงคือ
+   ผู้จัดการ / หัวหน้าส่วน / หัวหน้าแผนก / หัวหน้าไลน์ (ทะเบียน `positions`)
+   ⇒ `head` = "ตำแหน่งตัวจริง" ให้จอเอา **ตำแหน่งของคนนั้น** มาแสดง (`assignmentRoleText`)
+     `acting` = "รักษาการ" ซึ่งเป็นคำทางการในผัง จึงเก็บไว้ได้ */
 export const ASSIGNMENT_KINDS = {
-  head:   { label: 'หัวหน้าหน่วย',  icon: '👔', short: 'หัวหน้า' },
-  acting: { label: 'รักษาการ',      icon: '🔄', short: 'รก.' },
+  head:   { label: 'ตามตำแหน่งจริง', icon: '👔', short: 'ตัวจริง' },
+  acting: { label: 'รักษาการ',       icon: '🔄', short: 'รก.' },
 };
 export const kindLabel = (k) => (ASSIGNMENT_KINDS[k] || ASSIGNMENT_KINDS.head).label;
+
+/** ข้อความ "บทบาท" ที่จอแสดง — อ้างอิง **ตำแหน่งจริง** ของคนนั้นเสมอ
+ *  @param kind 'head' | 'acting'
+ *  @param positionText ชื่อตำแหน่งจากทะเบียน (`positionLabel(p.position)`) · ว่าง = ยังไม่ได้กรอก
+ *  🔴 ไม่รู้ตำแหน่ง = เขียนว่า "ยังไม่ระบุตำแหน่ง" **ห้ามเติมคำแทนเอง** (จอต้องไม่โกหกว่ารู้) */
+export function assignmentRoleText(kind, positionText) {
+  const pos = String(positionText || '').trim();
+  if (kind === 'acting') return pos ? `รักษาการ · ${pos}` : 'รักษาการ';
+  return pos || 'ยังไม่ระบุตำแหน่ง';
+}
 
 /** วันนี้แบบ local date (YYYY-MM-DD) — ไม่ใช้ toISOString() (UTC เพี้ยนสำหรับไทย) */
 export function todayLocal(d = new Date()) {

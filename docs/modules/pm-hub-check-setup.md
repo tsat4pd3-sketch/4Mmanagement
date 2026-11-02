@@ -209,3 +209,9 @@
 - `docs/modules/pm-predictive-planner-sync.md` — แท็บ `forecast` (วัน PM ล่วงหน้า + buffer)
 - `docs/modules/pm-coordination.md` — แท็บ `coordination` (ใบแจ้งแผน PM ข้ามวัน)
 - `docs/HANDOFF_PM_INSPECTION_SETUP_GAPS.md` — 📌 ออกแบบไว้ ยังไม่ลงมือ **ห้ามหยิบไปทำเองจนกว่า user สั่ง**
+
+
+### 📝 หน้าตรวจ (PMCheckData) บนมือถือ — ร่างในเครื่อง + ปุ่ม OK/NG ใหญ่ (2026-10-22 · audit handheld)
+- ผลตรวจบันทึกทีเดียวตอนท้าย และเปลี่ยน/สแกนเครื่องอื่นล้างทุกช่อง ⇒ มือถือเก็บร่าง `pm:<jig|department>:<uid>` (`rawResults` + notes)
+  · กลับมาเครื่องเดิม = แถบกู้คืน (เติมเฉพาะจุดตรวจที่ยังอยู่ในใบ) · สลับเครื่องกลางฟอร์ม = toast "เก็บร่างไว้แล้ว" · บันทึกสำเร็จ = ล้างร่าง
+- ปุ่ม OK/NG มือถือ `minHeight 44 · minWidth 58` · แตะคำตอบเดิมซ้ำ (= ล้าง) ต้อง `confirm` · จอคอมเท่าเดิม

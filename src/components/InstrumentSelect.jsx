@@ -14,7 +14,7 @@ import { appendHistoryOptions } from '../utils/pickerOptions';
 
 const up = (v) => String(v ?? '').trim().toUpperCase();
 
-export default function InstrumentSelect({
+export default function InstrumentSelect({ scan,
   value = '', onChange, instruments: given, disabled, allowFree = true,
   placeholder = 'ค้นรหัส / ชื่อเครื่องมือวัด…',
   freeHint = 'วิธีตรวจที่ไม่ใช่เครื่องมือ (Visual/CF) หรือเครื่องมือที่ยังไม่ลงทะเบียนที่ /qa แท็บ 📏',
@@ -33,6 +33,7 @@ export default function InstrumentSelect({
   const sel = useMemo(() => optionsAll.find(o => o.key === up(value)) || null, [optionsAll, value]);
   return (
     <SearchSelect value={sel ? sel.id : ''} text={sel ? sel.label : (value || '')} options={optionsAll} disabled={disabled}
+      scan={scan === false ? undefined : (scan || 'เครื่องมือวัด')}   /* 📷 มือถือ: สแกนเพื่อเลือก (27/10) · scan={false} = ปิด */
       allowFree={allowFree} freeHint={freeHint} placeholder={placeholder}
       emptyText="ไม่พบเครื่องมือวัดในทะเบียน — ลงทะเบียนได้ที่ /qa แท็บ 📏 เครื่องมือวัด" loadFail={fail}
       inputStyle={inputStyle} style={style}

@@ -60,9 +60,13 @@ export const AUDIT_TABLE_LABELS = {
   npi_change_requests:     '🔁 NPI ECI',
   npi_tooling_plans:       '🔧 NPI แผน tooling',
   npi_tooling_steps:       '🔧 NPI ขั้นงาน tooling',
+  mkt_rfqs:                '💼 RFQ งานเสนอราคา (Marketing)',
+  mkt_rfq_parts:           '💼 RFQ พาร์ทในงาน',
+  mkt_awards:              '💼 RFQ ผลได้งาน/ไม่ได้งาน + ใบแจ้งจัดทำ',
   npi_tooling_step_templates: '🔧 NPI แม่แบบขั้นงาน tooling',
 
   // ── สินค้า & คัมบัง (DR) ──
+  prod_orders:             '🎫 ใบผลิต (แก้หลังปิดกะ)',
   dr_products:             '📦 สินค้า (Product Master)',
   parts_master:            '🗂 ทะเบียนพาร์ท',
   kanban_standards:        '🎴 มาตรฐานคัมบัง',
@@ -135,6 +139,9 @@ export const AUDIT_TABLE_LABELS = {
 
 /* ฟิลด์ → ชื่อไทย (ใช้ตอนโชว์ ค่าเก่า → ค่าใหม่) */
 export const AUDIT_FIELD_LABELS = {
+  rfq_no: 'เลข RFQ', customer_target_price: 'ราคาเป้าหมายลูกค้า', annual_volume: 'volume/ปี', volume_source: 'ที่มา volume',
+  crd_no: 'เลขที่ CRD', crd_sent_at: 'วันส่ง CRD', npi_project_id: 'โปรเจค NPI', outcome: 'ผล (ได้งาน/ไม่ได้)', loss_reason: 'เหตุผลที่ไม่ได้งาน',
+  unit_price: 'ราคาชิ้น', tooling_price: 'ราคาแม่พิมพ์', annual_sales: 'ยอดขาย/ปี', production_order_no: 'เลขใบแจ้งจัดทำ',
   name: 'ชื่อ', name_th: 'ชื่อ (ไทย)', label: 'ป้าย', code: 'รหัส', note: 'หมายเหตุ',
   is_active: 'สถานะใช้งาน', sort_order: 'ลำดับ', category: 'หมวด',
   characteristic: 'ลักษณะปัญหา', detail: 'รายละเอียด', group_name: 'กลุ่ม',
@@ -143,6 +150,9 @@ export const AUDIT_FIELD_LABELS = {
   role: 'สิทธิ์ (role)', allowed: 'อนุญาต', permission_key: 'คีย์สิทธิ์', is_dept_admin: 'แอดมินหน่วยงาน',
   full_name: 'ชื่อ-สกุล', position: 'ตำแหน่ง', line_id: 'ไลน์', sections: 'ส่วนงานที่ดูแล', mtn_teams: 'ทีมช่าง',
   mat_no: 'เลข MAT', p_no: 'เลขพาร์ทลูกค้า', cycle_time_sec: 'CT (วินาที)', pair_mat_no: 'พาร์ทคู่',
+  prod_no: 'เลขใบผลิต', opened_at: 'เวลาเริ่มผลิต', confirmed_at: 'เวลาจบ/คอนเฟิร์ม',
+  stopped_at: 'เวลาหยุดผลิต (ยกยอด/ยกเลิก)', qty: 'จำนวน', qty_target: 'เป้า',
+  qty_actual: 'ยอดจริง', qty_ok: 'ยอดดี', qty_suspect: 'ของสงสัย',
   line_name: 'ไลน์', machine_no: 'หมายเลขเครื่อง', machine_name: 'ชื่อเครื่อง',
   equipment_kind: 'ชนิดอุปกรณ์', equipment_category: 'หมวดอุปกรณ์', equipment_type: 'ประเภทอุปกรณ์',
   min_qty: 'ขั้นต่ำ', max_qty: 'สูงสุด', stock_qty: 'ยอดคงเหลือ', qty_per_kanban: 'จำนวน/คัมบัง',
@@ -173,12 +183,12 @@ export const tableLabel = (t) => AUDIT_TABLE_LABELS[t] || t;
 export const fieldLabel = (f) => AUDIT_FIELD_LABELS[f] || f;
 
 /** ฟิลด์ที่ไม่ต้องโชว์ในรายการ "เปลี่ยนอะไรบ้าง" (เป็น metadata ของ audit เอง) */
-export const AUDIT_SKIP_FIELDS = new Set(['updated_at', 'updated_by_name', 'created_at']);
+export const AUDIT_SKIP_FIELDS = new Set(['updated_at', 'updated_by_name', 'updated_by_uid', 'created_at']);
 
 /** ชื่อที่ใช้เรียกแถวที่ถูกแก้ (เดาจากฟิลด์ยอดนิยม) */
 export const rowLabel = (r) => {
   const d = r?.new_data || r?.old_data || {};
-  return d.name || d.name_th || d.full_name || d.emp_name || d.machine_no || d.mat_no || d.characteristic
+  return d.name || d.name_th || d.full_name || d.emp_name || d.prod_no || d.machine_no || d.mat_no || d.characteristic
       || d.label || d.code || d.permission_key || d.cost_center
       || d.ncr_no || d.capa_no || d.claim_no || d.part_no || d.title
       || (d.piece_no != null ? `ชิ้นที่ ${d.piece_no}` : null) || '(ไม่ระบุชื่อ)';

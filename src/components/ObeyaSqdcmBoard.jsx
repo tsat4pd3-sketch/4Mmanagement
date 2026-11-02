@@ -297,8 +297,10 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
       } else setPartCost({});
     } finally { if (live()) setLoading(false); }
   }, [from, to, begin]);
+  /* 🔴 `LIVE.YEAR` ไม่ใช่ `LIVE.BOARD` — สรุปทั้งปีไม่ต้องสดระดับนาที (22/10 · ดู refreshRates)
+     ที่ 60 วิ: ทุกครั้งที่ไลน์ไหนก็ได้แตะ production_sessions = คิดสรุปทั้งปีใหม่ (ครั้งละ ~1.2 วินาที) */
   useLiveBoard(loadYear, {
-    tables: ['production_sessions'], topic: 'obeya-year', tier: LIVE.BOARD, rate: RATE.ANALYTIC,
+    tables: ['production_sessions'], topic: 'obeya-year', tier: LIVE.YEAR, rate: RATE.ANALYTIC,
     enabled: isYear,
   });
 
@@ -322,7 +324,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
   /* scope ไลน์ของ user ผ่าน helper กลางตัวเดียวกับบอร์ด KPI (05/10 · audit) — leader = ครอบครัวไลน์ตัวเอง
      ไม่ใช่แค่ส่วนงาน · null = ไม่จำกัด (ห้ามคืน [] — lines ยังไม่โหลด = เห็นทั้งหมดชั่วคราว ไม่ใช่ว่างเปล่า) */
   const userLineSet = useMemo(() => {
-    const names = scopedLineNames({ role, lineId, sections, lines });
+    const names = scopedLineNames({ role, lineId, sections, lines, scopeIdx });
     return names ? new Set(names) : null;
   }, [role, lineId, sections, lines]);
   const lineOk = useCallback((name) => {
@@ -514,7 +516,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
   // ── ผังกระดาษ ──────────────────────────────────────────────────────────────────
   const [board, setBoard] = useState(() => urlBool('board', false));   // โหมดจอ TV = ซ่อนหัวเพจ เต็มจอ · ?board=1
   const wrapRef = useRef(null);
-  const tv = useTvShell();   // 📺 จอประชุม = 2×2 ต่อหน้า (TV_SHEET_GRID) · จอคอมเหมือนเดิม
+  const tv = useTvShell();   // 📺 จอประชุม = 3×2 ต่อหน้า (TV_SHEET_GRID) · จอคอมเหมือนเดิม
   const grid = useSheetGrid(wrapRef, 10, tv ? TV_SHEET_GRID : undefined);
 
   /* ── 📖 แบ่งหน้าแทนการเลื่อน (25/09 · คำสั่ง user "ดูจบได้ในหน้าเดียว … กดเปลี่ยนหน้า") ──
@@ -765,8 +767,8 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
           sub={`${periodText} · ${from} → ${to} · ${shiftCount.toLocaleString()} กะที่ปิดแล้ว`}
           filters={(
             <>
-              <OrgScopePicker index={org} value={scope} onChange={setScope} scopeSet={null} sections={sections} failed={orgFailed}
-                plantLabel={ALL.section} width={230} title="เลือกขอบเขตตามผังองค์กร (ฝ่าย/ส่วนงาน/แผนก/กลุ่มไลน์/ไลน์/CC)" />
+              <OrgScopePicker ccOnly index={org} value={scope} onChange={setScope} scopeSet={null} sections={sections} failed={orgFailed}
+                plantLabel={ALL.section} width={230} title="เลือกขอบเขต — เฉพาะหน่วยที่มี cost center (Obeya วัดที่ CC)" />
               <span className="sep" />
               {/* ช่วงที่ดู — value ว่างเมื่อใช้กรอบกำหนดเอง/เจาะเดือน ⇒ กดปุ่มเดิมซ้ำได้ (pickPeriod ล้าง custom) */}
               <Segmented label="ช่วงที่ดู" value={custom || monthSel ? null : period} onChange={pickPeriod}

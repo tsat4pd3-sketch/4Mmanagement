@@ -1,4 +1,5 @@
 import useIsMobile from '../utils/useIsMobile';
+import ClearFiltersBtn from './ClearFiltersBtn';
 import MobileFilterFold, { splitFilterChildren } from './MobileFilterFold';
 /* ══ 🎛️ FilterBar — แถบกรองมาตรฐาน (2026-09-24 · UI-STANDARD.md §2) ═════════════════════
    ลำดับซ้าย→ขวา (ตามลำดับที่คนคิด): ขอบเขต (ส่วนงาน/ไลน์) → ช่วงเวลา → ตัวกรองอื่น → ค้นหา
@@ -10,7 +11,10 @@ import MobileFilterFold, { splitFilterChildren } from './MobileFilterFold';
 
    <FilterBar> <LineSelect …/> <Segmented …/> <SearchInput …/> <span className="spacer"/> <CsvBtn/> </FilterBar>
    ═══════════════════════════════════════════════════════════════════════════════════ */
-export default function FilterBar({ bare, className = '', style, children }) {
+/* 🧹 ปุ่ม "ล้างตัวกรอง" มากับแถบเองทุกหน้า (22/10 · คำสั่ง user) — ไม่มีตัวกรองค้าง = ไม่วาด
+   `clearKeep` = พารามิเตอร์เพิ่มเติมที่หน้านั้นขอให้เก็บ · `onClear` = หน้ามีตัวกรองใน state ด้วย
+   `noClear` = หน้าที่ไม่ควรมีปุ่มนี้จริงๆ (ต้องมีเหตุผลกำกับ) */
+export default function FilterBar({ bare, className = '', style, clearKeep, onClear, noClear = false, children }) {
   const isMobile = useIsMobile();
   const cls = `filter-bar${bare ? ' bare' : ''}${className ? ` ${className}` : ''}`;
   /* 📱 มือถือ: ตัวกรอง ≥2 ตัว ⇒ พับเป็นแถบเดียว (ค้นหา + ของหลัง spacer โชว์เสมอ) · จอคอม = เดิมเป๊ะ
@@ -21,6 +25,7 @@ export default function FilterBar({ bare, className = '', style, children }) {
       return (
         <div className={cls} style={style}>
           <MobileFilterFold search={search} tail={tail}>{fold}</MobileFilterFold>
+          {!noClear && <ClearFiltersBtn keep={clearKeep} onClear={onClear} />}
         </div>
       );
     }
@@ -28,6 +33,7 @@ export default function FilterBar({ bare, className = '', style, children }) {
   return (
     <div className={cls} style={style}>
       {children}
+      {!noClear && <ClearFiltersBtn keep={clearKeep} onClear={onClear} />}
     </div>
   );
 }

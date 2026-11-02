@@ -23,10 +23,10 @@ import { usePerms } from '../utils/usePerms';
 import { toast } from '../components/Toast';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { getLineFamilyIds } from '../utils/lineHierarchy';
-import LineSelect from '../components/LineSelect';
+import LineSelect, { scopeLines as pickerLines } from '../components/LineSelect';
 import { loadLinesRes } from '../utils/useProductionLines';
 import usePeople from '../utils/usePeople';
-import { inSectionScope } from '../utils/sectionScope';
+import { inSectionScope, scopedLines } from '../utils/sectionScope';
 import { MARKS, MARK_BY_KEY, markGlyph, markColor, daysInMonth, ppeToMark } from '../utils/bbsMarks';
 import { getWorkDate } from '../utils/workDate';
 import { printBbsSheet } from '../lib/bbsPrint';
@@ -68,7 +68,7 @@ const MOBILE_LABEL = { ok: 'เหมาะสม', ng: 'ไม่เหมา�
    · **ห้าม import `SHIFT_OPTIONS` จาก `utils/filterLabels` มาใส่หน้านี้** — ตัวนั้นสำหรับจอที่
      `''` = "แสดงทุกกะจริงๆ" (/report · /oee-analytics · /mtn-repair · /workforce-insight) */
 export default function BbsCheck() {
-  const { role, lineId, sections = [], fullName } = useContext(UserContext);
+  const { role, lineId, sections = [], fullName, scopeIdx } = useContext(UserContext);
   const { can } = usePerms();
   const canRecord = can('bbs', 'record');
   const canManage = can('bbs', 'manage');
@@ -106,21 +106,19 @@ export default function BbsCheck() {
   /* ── ไลน์ (scope มาตรฐาน: leader = ทั้งครอบครัวไลน์ตัวเอง · อื่น = ตาม sections) ── */
   useEffect(() => {
     (async () => {
-      const { data } = await loadLinesRes();   // ครบ is_active ให้ <LineSelect> (2026-09-07)
-      setLines(data || []);
+      const { data, error: lineErr } = await loadLinesRes();   // ครบ is_active ให้ <LineSelect> (2026-09-07)
+      /* 🔴 28/10 — อ่านทะเบียนไม่สำเร็จ **ห้ามทับลิสต์เดิมด้วย []** (เคสจริง: หน้างานแจ้ง
+         "ไม่มีไลน์ให้เลือกในลิสต์" ทั้งที่ไลน์ยังอยู่ครบ) · toast กลางใน main.jsx บอกเหตุให้แล้ว */
+      if (!lineErr) setLines(data || []);
     })();
   }, []);
 
-  const scopedLines = useMemo(() => {
-    if (role === 'leader' && lineId) {
-      const fam = getLineFamilyIds(lines, Number(lineId));
-      return fam.size ? lines.filter(l => fam.has(l.id)) : lines;
-    }
-    // ⚠️ ต้องเทียบผ่าน inSectionScope (trim+lowercase) — `section` เป็น free text ที่พิมพ์มือได้
-    //    `.includes()` ตรงตัวจะทำให้ 'PD1 ' / 'pd1' หลุด scope เงียบๆ (หัวหน้าเปิดมาแล้วไลน์ตัวเองหาย)
-    if (sections.length) return lines.filter(l => inSectionScope(sections, l.section));
-    return lines;
-  }, [lines, role, lineId, sections]);
+  /* 🔴 ลิสต์ของ picker ต้อง "ไม่ตาย" — ส่วนงานที่ไม่มีไลน์ผลิตสังกัด (QA · Planning&Store · ฝั่งช่าง)
+     กรองแล้วเหลือ 0 ⇒ dropdown ว่าง = ใช้ฟีเจอร์ไม่ได้ทั้งหน้า (เคสจริง 26/10 · ด่าน line-picker-never-dead)
+     ⇒ ผ่าน `scopeLines()` ของกลาง (components/LineSelect.jsx) = "กรองแล้วไม่เหลือ = ไม่กรอง" */
+  const scopedLines = useMemo(
+    () => pickerLines(lines, { role, lineId, sections, scopeIdx }),
+    [lines, role, lineId, sections, scopeIdx]);
 
   // ค่าที่เลือกไว้หลุด scope (เปลี่ยนตัวแม่แล้วตัวลูกต้องล้าง — UI-CONVENTIONS §5.3)
   useEffect(() => {
@@ -263,6 +261,8 @@ export default function BbsCheck() {
     const same = cur && cur.mark === brush
       && (brush !== 'ng' || cur.agreement_seq === brushSeq);
     if (same) {
+      // 📱 มือถือ: แตะเบิ้ลด้วยถุงมือ = ลบช่องที่เพิ่งทาไปเงียบๆ ⇒ ถามก่อน (จอคอมคลิกซ้ำล้างทันทีเหมือนเดิม · 2026-10-20)
+      if (isMobile && !window.confirm('ล้างเครื่องหมายช่องนี้?')) return;
       const { error } = await supabase.from('bbs_observations').delete().eq('id', cur.id);
       if (error) return toast.error(`ล้างช่องไม่สำเร็จ: ${error.message}`);
       setCells(c => { const n = { ...c }; delete n[key]; return n; });
@@ -741,7 +741,11 @@ function AgreementsModal({ agreements, canManage, role, onClose }) {
         ...(r.id ? { id: r.id } : {}),
         seq: r.seq, text: String(r.text).trim(), auto_source: r.auto_source || null, is_active: true,
       }));
-      const { error } = await supabase.from('bbs_agreements').upsert(up).select('id');
+      /* 🔴 `defaultToNull:false` — ปนแถวเดิม (มี id) กับแถวใหม่ (ไม่มี id) ในก้อนเดียว postgrest ส่งคอลัมน์รวม
+         แล้วเติม id = NULL ให้แถวใหม่ ⇒ 23502 ล้มทั้งก้อน (หน้างานแจ้ง 27/10 "เพิ่มหัวข้อ BBS ไม่สำเร็จ")
+         คลาสเดียวกับที่แก้ไปแล้วใน MaterialRequests.jsx (audit 19/10) — ตารางมี default gen_random_uuid()
+         อยู่แล้ว ปัญหาอยู่ที่ postgrest ไม่ใช่ที่ schema ⇒ ห้ามแก้ด้วยการถอด not-null ของ PK */
+      const { error } = await supabase.from('bbs_agreements').upsert(up, { defaultToNull: false }).select('id');
       if (error) {
         // 23505 = ชนกับ unique index ของเลขข้อ (bbs_agree_seq_uniq) — แปลเป็นภาษาคน
         toast.error(error.code === '23505'

@@ -21,9 +21,9 @@ export { A4, GAP, MIN_SHEET_W, chooseSheetGrid } from '../utils/sheetGrid';
    🔴 **25/09 เปลี่ยนนโยบาย (คำสั่ง user):** แผ่นที่ลงไม่พอ **ห้ามปล่อยให้เลื่อน** อีกต่อไป
       ให้ผู้เรียกเอา `bh` (ความสูงกล่องที่วัดได้) ไปคำนวณว่าหน้าหนึ่งใส่ได้กี่แถว แล้ว**แบ่งหน้า**
       ด้วย `packPages()` + `<BoardPager>` แทน — ดู `src/utils/boardPager.js` */
-/* 📺 โหมดจอประชุม (20/10 · TV 43-50" ยืนดู 2-3 ม.) — ผังเพดาน 2×2 = 4 แผ่นต่อหน้า ⇒ แผ่นใหญ่ ~2 เท่า · ตัวอักษรตาม `k` (≈ 2.4)
+/* 📺 โหมดจอประชุม (20/10 · TV 43-50" ยืนดู 2-3 ม.) — ผังเพดาน 3×2 = 6 แผ่นต่อหน้า (เดิม 2×2 · 20/10 user "ไม่สวย 6 ช่องดีกว่า" — 2×2 แผ่นโล่ง กราฟยืดเกินเนื้อ) · ตัวอักษรตาม `k` (≈ 1.9)
    แบ่งหน้า/หมุนหน้าใช้กลไกเดิม (`packPages` + `<BoardPager>`) · จอคอม = เหมือนเดิมเป๊ะ */
-export const TV_SHEET_GRID = Object.freeze({ maxCols: 2, maxRows: 2 });
+export const TV_SHEET_GRID = Object.freeze({ maxCols: 3, maxRows: 2 });
 export function useSheetGrid(ref, sheets = 10, opts) {
   const [box, setBox] = useState({ w: 0, h: 0 });
   useEffect(() => {

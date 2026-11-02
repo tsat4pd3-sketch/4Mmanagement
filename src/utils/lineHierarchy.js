@@ -53,6 +53,49 @@ export function getLineFamily(allLines, ref) {
 /** ชื่อไลน์ทั้งครอบครัว (ตัวเองอยู่ตัวแรก) — ใช้ยิง .in('line_name', ...) */
 export const getLineFamilyNames = (allLines, ref) => getLineFamily(allLines, ref).map(l => l.name);
 
+/** id ของ "สายบน" (ancestors) เท่านั้น — ไม่รวมตัวเอง ไม่รวมลูก
+    (ต่างจาก getLineFamilyIds ที่รวมทั้งขึ้นและลง — ใช้ตัวนั้นตัดสินทิศทางไม่ได้) */
+export function lineAncestorIds(allLines, lineId) {
+  const out = new Set();
+  if (!allLines?.length || lineId == null) return out;
+  let cur = allLines.find(l => String(l.id) === String(lineId));
+  const seen = new Set(cur ? [cur.name] : []);
+  while (cur?.parent_line_name && !seen.has(cur.parent_line_name)) {
+    const parent = allLines.find(l => l.name === cur.parent_line_name);
+    if (!parent) break;
+    seen.add(parent.name);
+    out.add(parent.id);
+    cur = parent;
+  }
+  return out;
+}
+
+/**
+ * 🔴 "ไลน์ที่ดูแล" vs "ไลน์ที่ตัวเองสังกัด" — เลือกตัวที่**กว้างกว่า** (2026-10-27 · เคสจริง)
+ *
+ * ตัวตนของคน (ทีม/ไลน์/ส่วนงาน) อ่านจาก `employees` เป็นหลัก เพราะข้อมูลในบัญชีที่แอดมิน
+ * กรอกไว้ตอนสร้าง user มักล้าสมัย (ดูหมายเหตุใน `App.jsx`) — **แต่กฎนั้นใช้กับ "ตัวตน" ไม่ใช่ "ขอบเขต"**
+ *
+ * เคสจริง 27/10 (หน้างานแจ้ง): หัวหน้ากลุ่ม 2 คนของ `Assembly Line D - GWM&RA`
+ * · `profiles.line_id` = ไลน์แม่ (ไลน์ที่เขาดูแล — แอดมินตั้งไว้ถูกแล้ว)
+ * · `employees.line_id` = ไลน์ลูกที่ตัวเองสังกัด (`Line D2` / `Line D3`)
+ * ⇒ ของพนักงานชนะเสมอ ⇒ ครอบครัวไลน์เหลือ "ไลน์ลูกใบเดียว"
+ * ⇒ **เช็คชื่อ/เปิดกะไลน์ใหญ่/จัดการไลน์ผลิต ทำไม่ได้ · เห็นแต่ลูกน้องในกลุ่มย่อยตัวเอง**
+ * (ขัดกฎ "ห้ามคืนน้อยกว่าที่ `profiles` ตั้งไว้" · CLAUDE.md §สิทธิ์ 3 ชั้น)
+ *
+ * กติกา: เอาตัวที่อยู่ **สูงกว่าในผัง** · อยู่คนละสาย = **ฐานพนักงานชนะ** (ตัวตนจริง — กันเคสบัญชีล้าสมัย)
+ * 🔴 อ่านทะเบียนไลน์ไม่ได้ = คืนค่าของฐานพนักงาน = **พฤติกรรมเดิมเป๊ะ ห้ามเดาให้กว้างขึ้นเอง**
+ */
+export function widerLineId(profileLineId, empLineId, allLines) {
+  if (empLineId == null) return profileLineId ?? null;
+  if (profileLineId == null) return empLineId;
+  if (String(profileLineId) === String(empLineId)) return empLineId;
+  if (!allLines?.length) return empLineId;
+  return lineAncestorIds(allLines, empLineId).has(
+    allLines.find(l => String(l.id) === String(profileLineId))?.id,
+  ) ? profileLineId : empLineId;
+}
+
 /** Set ของ id ทั้งครอบครัว — ใช้เช็ค employees.line_id */
 export const getLineFamilyIds = (allLines, ref) => new Set(getLineFamily(allLines, ref).map(l => l.id));
 

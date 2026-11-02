@@ -670,6 +670,21 @@ const TABLE_FIXED = {
       start_time: '19:40:00', duration_min: 20, process_type: 'common', ot_scope: 'ot',
       anchor: 'clock', offset_min: null, is_active: false, sort_order: 8 },
   ],
+  /* 🏭 ข้อยกเว้นเวลาพัก "รายไลน์" — **ห้ามถอด** (2026-10-20)
+     ตารางนี้ถ้าตกไปใช้ ROWS กลาง จะได้แถวที่ `policy_id`/`duration_min` ไม่ตรงทรงจริง
+     ⇒ แผง "🏭 รายไลน์" + การไล่สายไลน์แม่→ลูก ไม่ถูกรันในสวีปใดเลย
+     🔴 ต้องมีครบ 4 ทรงที่เปิด "คนละสาขาโค้ด" ของ `utils/breakLineRules.js`:
+       ① กฎที่ **ไลน์แม่** (ชุดที่ 1 มีลูก 2/3 · หลาน 4) ⇒ สาขา "ลูกตกทอดจากแม่"
+       ② กฎที่ **ไลน์ลูก** ทับของแม่ (ชุดที่ 2) ⇒ สาขา "ตัวเองชนะแม่" + `breakRuleFollowers`
+       ③ `duration_min: 0` ⇒ สาขา "ไลน์นี้ไม่มีพักรายการนี้" (ชิปคนละข้อความ · ช่วงพักหายไปทั้งช่วง)
+       ④ ชื่อไลน์ที่ **ไม่อยู่ในทะเบียน** ⇒ สาขา `orphanLines` (ป้าย "⚠ ไม่มีไลน์นี้ในทะเบียน")
+          — ถอดแถวนี้ = จอจะไม่เคยวาดคำเตือนกฎค้างหลังเปลี่ยนชื่อ/ลบไลน์ */
+  break_line_rules: [
+    { id: 'blr-1', policy_id: 'bp-7', line_name: LINE_NAME(1), duration_min: 10, note: null },
+    { id: 'blr-2', policy_id: 'bp-7', line_name: LINE_NAME(2), duration_min: 5,  note: null },
+    { id: 'blr-3', policy_id: 'bp-2', line_name: LINE_NAME(3), duration_min: 0,  note: 'ไลน์นี้ไม่หยุดพักเที่ยงพร้อมกัน' },
+    { id: 'blr-4', policy_id: 'bp-7', line_name: 'ไลน์ที่ถูกเปลี่ยนชื่อไปแล้ว', duration_min: 15, note: null },
+  ],
   /* 🔁 ผลตรวจคู่ "BOM ซ้ำ 2 ใบ" — **ห้ามถอด** (2026-10-08)
      ตั้ง `fingerprint` ให้ **ไม่ตรง** ของจริงโดยตั้งใจ ⇒ สาขา `staleReview`
      ("⚠️ BOM เปลี่ยนหลังตรวจ — ต้องตรวจซ้ำ") ถูกวาดทุกรอบ
@@ -957,7 +972,14 @@ const TABLE_EXTRA = {
       qty_per_unit: 0.45, uom: 'KG', item_no: 90, is_active: true },
   ],
 }
+/* 📺 ?rot=<path>[,<path>] (20/10) — แผนจอวนหน้าของบัญชี display ใน harness (คู่กับ ?tvshell=1)
+   ไม่มีแถวนี้ = DisplayRotator ไม่ active ⇒ "พอดีจอ/แบ่งส่วน/รอหน้าย่อย" ไม่เคยถูกรันในฮาร์เนส
+   ไม่ใส่ ?rot = พฤติกรรมเดิม (แถวกลาง ROWS → แผนไม่ active) */
+const ROT_PATHS = typeof location !== 'undefined' ? (new URLSearchParams(location.search).get('rot') || '') : ''
 const rowsFor = (table) => {
+  if (table === 'display_rotations' && ROT_PATHS) {
+    return [{ enabled: true, items: ROT_PATHS.split(',').map(path => ({ path, sec: 20 })), default_sec: 20, pause_sec: 120, reload_min: 0 }]
+  }
   if (TABLE_FIXED[table]) return TABLE_FIXED[table]
   const fn = TABLE_ROWS[table]
   const base = fn ? ROWS.map((r, idx) => fn(r, idx + 1)) : ROWS

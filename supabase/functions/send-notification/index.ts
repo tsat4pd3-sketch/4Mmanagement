@@ -259,6 +259,25 @@ async function withoutUnreadFor(userIds: string[], refTable: string, refId: unkn
   const seen = new Set((data ?? []).map((r) => r.user_id as string));
   return userIds.filter((u) => !seen.has(u));
 }
+/* คนที่ "เพิ่งได้ใบนี้ของสถานะนี้ไปแล้ว" — กันแจ้งเตือนซ้ำเมื่อ edge ถูกเรียกหลายรอบด้วยเหตุการณ์เดียวกัน
+   เคสจริง 26/10/2026: ใบ 4M **ใบเดียว** สถานะ `pending` ได้ 316 แถว / ผู้รับ 79 คน = **คนละ 4 ใบ
+   ภายใน 16 วินาที** (03:49:08 → 03:49:24) ⇒ edge ถูก invoke 4 รอบจากฝั่งจอ
+   ตัว edge ยุบผู้รับซ้ำ "ภายในรอบเดียว" ได้อยู่แล้ว แต่ **ข้ามรอบมันไม่รู้เรื่องกัน**
+   วันนั้นตาราง notifications โตวันเดียว 44,570 แถว = 75% ของทั้งตาราง (12 MB)
+   🔴 คีย์ต้องมี `title` ด้วย — title มีชื่อสถานะอยู่ในตัว ⇒ เปลี่ยนสถานะจริง (pending → pending_qa
+      → approved) ยังได้แจ้งเตือนครบทุกขั้น · ตัวที่ถูกตัดคือ "สถานะเดิมซ้ำ" เท่านั้น
+   อ่านไม่สำเร็จ = ไม่กรอง (ส่งเกินดีกว่าเงียบ — หลักเดียวกับ withoutUnreadFor) */
+async function withoutRecentSame(userIds: string[], refTable: string, refId: unknown, title: string, withinMin = 10): Promise<string[]> {
+  if (refId == null || !userIds.length) return userIds;
+  const since = new Date(Date.now() - withinMin * 60_000).toISOString();
+  const { data, error } = await supabase.from('notifications').select('user_id')
+    .eq('ref_table', refTable).eq('ref_id', String(refId)).eq('title', title)
+    .gte('created_at', since).limit(1000);
+  if (error) { console.error('withoutRecentSame', error.message); return userIds; }
+  const seen = new Set((data ?? []).map((r) => r.user_id as string));
+  return userIds.filter((u) => !seen.has(u));
+}
+
 // แจ้งในแอป (กระดิ่ง+เสียง+push) ตามที่ตั้งไว้ในหน้า /notification-config
 // ⚠️ ผู้รับมาจาก RPC `notify_recipients` จุดเดียวของระบบ (role × ส่วนงาน × แผนก)
 //    **ห้ามกลับไปกรองด้วย role อย่างเดียวในไฟล์นี้** — Telegram กับในแอปต้องอ้างกติกาแถวเดียวกัน
@@ -852,14 +871,16 @@ Deno.serve(async (req) => {
       : `4M แจ้งเตือน · ${log.line_name}`;
     const notifBody = `${log.work_date} · ${log.description}`;
 
-    await Promise.allSettled(unique.map(async (t) => {
-      const { error } = await supabase.from('notifications').insert({
-        user_id: t.userId, title, body: notifBody,
-        type: status === 'rejected' ? 'error' : status === 'approved' ? 'success' : 'info',
-        ref_table: 'four_m_logs', ref_id: log.id,
-      });
-      if (error) console.error('4m in-app notify', t.userId, error.message);
-    }));
+    /* 🔴 ยิงซ้ำไม่ได้ — ดูเหตุผลที่ `withoutRecentSame` (เคสจริง 26/10: ใบเดียว 316 แถว ใน 16 วินาที)
+       และเขียนทีเดียวเป็นก้อนผ่าน insertNotifications **ห้ามกลับไป insert ทีละคน**
+       (ผู้รับ 79 คน = 79 รอบวิ่งไป DB ต่อการเปลี่ยนสถานะ 1 ครั้ง)
+       · ส่ง `event_key` ด้วย ไม่งั้น /notification-config กับตัวยุบกระดิ่งมองไม่เห็นเรื่องนี้เลย */
+    const fresh = await withoutRecentSame(unique.map((t) => t.userId), 'four_m_logs', log.id, title);
+    await insertNotifications(
+      fresh, title, notifBody,
+      status === 'rejected' ? 'error' : status === 'approved' ? 'success' : 'info',
+      'four_m_logs', log.id, 'four_m_status',
+    );
 
     // Telegram only if this event isn't disabled in the rules
     if (chat !== null) {
@@ -890,7 +911,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    return json({ ok: true, sent: unique.length });
+    return json({ ok: true, sent: fresh.length, skipped: unique.length - fresh.length });
   } catch (err) {
     console.error(err);
     return json({ error: String(err) }, 500);

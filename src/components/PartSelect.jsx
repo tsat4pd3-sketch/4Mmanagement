@@ -16,7 +16,7 @@ import { registryFailText } from '../utils/useMasterRows.js';
 import { partKey } from '../utils/partOptions';
 import { appendHistoryOptions } from '../utils/pickerOptions';
 
-export default function PartSelect({
+export default function PartSelect({ scan,
   value = '', onChange, options: given, disabled, allowFree = true,
   placeholder = 'ค้นเลขพาร์ท / MAT / ชื่อ / ลูกค้า…', freeHint = 'พาร์ทที่ยังไม่มีชุดเอกสาร PE — สะกดให้ตรง P/N ลูกค้า',
   history = [],          // เลขพาร์ทที่เคยบันทึกในคอลัมน์ปลายทาง — ทะเบียนไม่มีก็ยังเลือกได้ (กลุ่ม 📜)
@@ -29,6 +29,7 @@ export default function PartSelect({
   const sel = useMemo(() => options.find(o => o.key === partKey(value)) || null, [options, value]);
   return (
     <SearchSelect value={sel ? sel.id : ''} text={sel ? sel.label : (value || '')} options={options} disabled={disabled}
+      scan={scan === false ? undefined : (scan || 'พาร์ท')}   /* 📷 มือถือ: สแกนเพื่อเลือก (27/10) · scan={false} = ปิด */
       allowFree={allowFree} freeHint={freeHint} placeholder={placeholder}
       emptyText="ไม่พบเลขพาร์ทในทะเบียน (ชุดเอกสาร PE / มาตรฐานตรวจ QA / Product Master)" loadFail={fail}
       inputStyle={{ fontFamily: 'monospace', ...inputStyle }} style={style}

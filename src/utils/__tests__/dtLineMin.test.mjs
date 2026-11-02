@@ -1,0 +1,138 @@
+/* ═══ 🔀 ไลน์เครื่องขนาน — "นาทีของไลน์" ≠ "นาที-เครื่อง" ═══  2026-10-27 · คำสั่ง user
+   *"มันไม่ควรนับรวมเป็น 306 นาที สำหรับไลน์ขนาน เพราะความจริงมันคือ 102 นาที"*
+   เคสจริง LASER-345 22/10 (3 เลน): ราง Conveyor เสีย พนักงานลง downtime รายเครื่อง LS-03/04/05 */
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { dtLineMin, laneBySessionId, affectsLanesMap, laneWeightFn } from '../oee.js';
+
+const row = (machine_no, duration_min) => ({ machine_no, duration_min, ended_at: '2026-10-22T12:00:00Z' });
+
+test('🔀 เคสจริง LASER-345 22/10 — ดิบ 306 นาที = ไลน์หยุดจริง 102 นาที', () => {
+  const rows = [
+    row('LS-03', 50), row('LS-04', 50), row('LS-05', 50),   // 18:15–19:05 หยุดพร้อมกัน → 50
+    row('LS-03', 42), row('LS-04', 42), row('LS-05', 42),   // 13:15–13:57 หยุดพร้อมกัน → 42
+    row('LS-03', 30),                                        // เครื่องเดียว → เสียกำลังผลิต ⅓ = 10
+  ];
+  assert.equal(rows.reduce((a, r) => a + r.duration_min, 0), 306, 'นาที-เครื่องดิบ');
+  assert.equal(rows.reduce((a, r) => a + dtLineMin(r, 3), 0), 102, 'นาทีของไลน์ = 50 + 42 + 10');
+});
+
+test('🔴 แถวที่ไม่ระบุเครื่อง = หยุดทั้งไลน์ ห้ามหาร (ไฟดับ/ไม่มีแผนผลิต/เปลี่ยนรุ่นทั้งไลน์)', () => {
+  assert.equal(dtLineMin({ machine_no: null, duration_min: 60, ended_at: 'x' }, 3), 60);
+  assert.equal(dtLineMin({ machine_no: '', duration_min: 60, ended_at: 'x' }, 6), 60);
+});
+
+test('🔴 ไลน์เลนเดียว / ไม่รู้จำนวนเลน = พฤติกรรมเดิมเป๊ะ', () => {
+  const r = row('M1', 45);
+  assert.equal(dtLineMin(r, 1), 45);
+  assert.equal(dtLineMin(r), 45, 'ไม่ส่งจำนวนเลน = 1');
+  assert.equal(dtLineMin(r, 0), 45, 'ค่าขยะ = ไม่หาร');
+  assert.equal(dtLineMin(r, null), 45);
+});
+
+test('🔀 หารตามจำนวนเลนจริงของแต่ละไลน์', () => {
+  assert.equal(dtLineMin(row('M1', 60), 6), 10, 'SUB APRON 6 สถานี');
+  assert.equal(dtLineMin(row('M1', 60), 5), 12, 'LINE A 5 เครื่อง');
+  assert.equal(dtLineMin(row('M1', 60), 4), 15, 'LINE B 4 เครื่อง');
+});
+
+test('🔴 แถวที่ยังเปิดค้าง (ไม่มี ended_at/duration) ไม่นับถ้าไม่ส่ง nowMs', () => {
+  const open = { machine_no: 'M1', started_at: '2026-10-22T10:00:00Z' };
+  assert.equal(dtLineMin(open, 3), 0);
+  const now = new Date('2026-10-22T10:30:00Z').getTime();
+  assert.equal(dtLineMin(open, 3, { nowMs: now }), 10, '30 นาที ÷ 3 เลน');
+});
+
+test('🔀 laneBySessionId — แมปกะ→เลน · กะที่ไม่รู้ไลน์ = 1', () => {
+  const lines = [{ name: 'LASER-345', parallel_stations: 3 }, { name: 'LINE 61', parallel_stations: null }];
+  const by = laneBySessionId(
+    [{ id: 's1', line_name: 'LASER-345' }, { id: 's2', line_name: 'LINE 61' }, { id: 's3', line_name: 'ไม่อยู่ในทะเบียน' }],
+    lines);
+  assert.equal(by.s1, 3);
+  assert.equal(by.s2, 1);
+  assert.equal(by.s3, 1, 'ไม่รู้จักไลน์ = 1 เลน ห้ามเดาว่าขนาน');
+  assert.equal(by.s9, undefined);
+});
+
+test('🔀 laneBySessionId รับทะเบียนแบบแมปได้ด้วย · ของว่างไม่ระเบิด', () => {
+  const by = laneBySessionId([{ id: 's1', line_name: 'SUB APRON' }], { 'SUB APRON': { name: 'SUB APRON', parallel_stations: 6 } });
+  assert.equal(by.s1, 6);
+  assert.deepEqual(laneBySessionId(), {});
+  assert.deepEqual(laneBySessionId(null, null), {});
+});
+
+/* ═══ 🔀 "ครอบกี่เลน" — ทะเบียน machines.affects_lanes ═══  2026-10-27 · คำสั่ง user
+   หน้างาน HDF1→LASER-345: เลเซอร์ 3 เครื่องขนานไม่รอกัน · คอนเวเยอร์เลี้ยงทั้ง 3 ·
+   โรบอทตัวกลางป้อนเลเซอร์ 4+5 ⇒ ครอบ 1 / 3 / 2 เลน ตามลำดับ */
+test('🔀 affectsLanesMap — เก็บเฉพาะตัวยกเว้น (>1) · คีย์ทนการสะกดต่างแบบ', () => {
+  const m = affectsLanesMap([
+    { machine_no: 'LS-03', affects_lanes: 1 },
+    { machine_no: 'CONVEYOR', affects_lanes: 3 },
+    { machine_no: 'RB-84', affects_lanes: 2 },
+    { machine_no: 'LS-04' },
+    { machine_no: null, affects_lanes: 5 },
+  ]);
+  assert.deepEqual(m, { CONVEYOR: 3, RB84: 2 }, 'ค่า 1 / ว่าง ไม่ต้องเก็บ — default อยู่แล้ว');
+  assert.deepEqual(affectsLanesMap(), {});
+});
+
+test('🔀 คอนเวเยอร์ครอบ 3 เลน = ไม่หาร · เลเซอร์ครอบ 1 เลน = หาร 3 · โรบอทกลาง 2 เลน = ×⅔', () => {
+  const by = affectsLanesMap([{ machine_no: 'CONVEYOR', affects_lanes: 3 }, { machine_no: 'RB-84', affects_lanes: 2 }]);
+  assert.equal(dtLineMin(row('CONVEYOR', 50), 3, { affectsBy: by }), 50, 'หยุดทั้งไลน์ 50 นาทีจริง');
+  assert.equal(dtLineMin(row('LS-03', 30), 3, { affectsBy: by }), 10, 'เลนเดียวจาก 3 = เสียกำลัง ⅓');
+  assert.equal(+dtLineMin(row('RB-84', 30), 3, { affectsBy: by }).toFixed(4), 20, 'ครอบ 2 จาก 3 เลน');
+});
+
+test('🔴 กรอกเกินจำนวนเลน ต้องไม่ทำให้นาทีบวมเกินจริง (เพดานที่ N)', () => {
+  const by = affectsLanesMap([{ machine_no: 'X1', affects_lanes: 99 }]);
+  assert.equal(dtLineMin(row('X1', 40), 3, { affectsBy: by }), 40, 'ครอบเกิน = หยุดทั้งไลน์ ไม่เกินนั้น');
+});
+
+test('🔴 ไม่ส่งแมป = พฤติกรรมเดิมเป๊ะ (ทุกเครื่องครอบ 1 เลน)', () => {
+  assert.equal(+dtLineMin(row('CONVEYOR', 50), 3).toFixed(4), 16.6667);   // ทศนิยมลอยตัว — เทียบแบบปัดก่อน
+  assert.equal(laneWeightFn(3)({ machine_no: 'CONVEYOR' }), 1 / 3);
+});
+
+test('🔴 สะกดต่างแบบต้อง join ติด (CONVEYOR vs conveyor vs CONV-EYOR ไม่ใช่)', () => {
+  const by = affectsLanesMap([{ machine_no: 'CONVEYOR', affects_lanes: 3 }]);
+  assert.equal(dtLineMin(row('conveyor', 50), 3, { affectsBy: by }), 50, 'ตัวพิมพ์เล็ก-ใหญ่');
+  assert.equal(dtLineMin(row('CONV EYOR', 50), 3, { affectsBy: by }), 50, 'ช่องว่าง');
+  assert.equal(+dtLineMin(row('CONVAYOR', 50), 3, { affectsBy: by }).toFixed(4), 16.6667, 'สะกดผิดคนละคำ = คนละเครื่อง (ต้องไปรวมที่ทะเบียน)');
+});
+
+test('🔴 ไลน์ไม่ขนาน (N=1) = ไม่หารอะไรเลย แม้จะกรอก affects_lanes ไว้', () => {
+  const by = affectsLanesMap([{ machine_no: 'M1', affects_lanes: 3 }]);
+  assert.equal(dtLineMin(row('M1', 45), 1, { affectsBy: by }), 45);
+});
+
+
+/* ═══ 🏭 ของกลางของสาย (`stops_whole_line`) — 2026-10-28 · user ชี้ว่าคอนเวเยอร์อยู่ไลน์แม่ ═══
+   *"conveyor อยู่ไลน์แม่ เป็นเหมือนส่วนกลางที่ใช้ทั้ง hdf1, hdf2, laser345, laser789"*
+   ⇒ อุปกรณ์ตัวเดียวใช้หลายไลน์ที่เลนไม่เท่ากัน "กระทบกี่เลน" ไม่มีคำตอบเป็นเลขเดียว */
+test('ของกลางของสาย: ธงชนะตัวเลข และไม่หารเลนไม่ว่าไลน์นั้นมีกี่เลน', () => {
+  const map = affectsLanesMap([
+    { machine_no: 'CONVEYOR', stops_whole_line: true },
+    { machine_no: 'RB-84', affects_lanes: 2 },
+    { machine_no: 'LS-03' },
+  ]);
+  const dt = { machine_no: 'CONVEYOR', duration_min: 155 };
+  // LASER-345 = 3 เลน · HDF1 = 1 เลน — ของกลางต้องได้นาทีเต็มทั้งคู่
+  assert.equal(dtLineMin(dt, 3, { affectsBy: map }), 155);
+  assert.equal(dtLineMin(dt, 1, { affectsBy: map }), 155);
+  // ตัวเลขยังทำงานเหมือนเดิม
+  assert.equal(dtLineMin({ machine_no: 'RB-84', duration_min: 540 }, 3, { affectsBy: map }), 360);
+  // เครื่องในเลนยังหารเหมือนเดิม
+  assert.equal(dtLineMin({ machine_no: 'LS-03', duration_min: 300 }, 3, { affectsBy: map }), 100);
+});
+
+test('ของกลางของสาย: ติ๊กธงแล้วกรอกเลขไว้ด้วย — ธงชนะ (เจตนาคือทั้งไลน์)', () => {
+  const map = affectsLanesMap([{ machine_no: 'CONVEYOR', stops_whole_line: true, affects_lanes: 2 }]);
+  assert.equal(dtLineMin({ machine_no: 'CONVEYOR', duration_min: 90 }, 3, { affectsBy: map }), 90);
+});
+
+test('ของกลางของสาย: `stops_whole_line` ที่ไม่ใช่ true เป๊ะ ต้องไม่ติดธง', () => {
+  for (const v of [false, null, undefined, 0, '', 'true']) {
+    const map = affectsLanesMap([{ machine_no: 'X-1', stops_whole_line: v }]);
+    assert.equal(map['X1'], undefined, `stops_whole_line=${JSON.stringify(v)} ไม่ควรติดธง`);
+  }
+});

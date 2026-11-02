@@ -68,7 +68,9 @@ test('ไม่มีชื่อในบัญชี / ไม่มีทะ�
 /* ═══ แยก 3 กอง — ตัวเลขที่จอต้องพูดให้ตรง ═══ */
 test('🔴 บัญชีกลางไม่ใช่งานค้าง · person ที่ผูกแล้วไม่เข้าคิว · null = คิวจริง', () => {
   const users = [
-    { id: 'p1', account_kind: 'person', employee_id: 'e1', full_name: 'ก' },
+    /* ⚠️ ถือ `e4` (ตะวัน) — **ห้ามถือ `e1`** เพราะ e1 คือคนที่ p3 จะถูกเสนอให้ผูก
+       ถือไว้ = p3 กลายเป็น "ถูกจองแล้ว" แล้วเทสจะวัดคนละเรื่องกับที่ตั้งใจ (28/10) */
+    { id: 'p1', account_kind: 'person', employee_id: 'e4', full_name: 'ก' },
     { id: 'p2', account_kind: 'shared', employee_id: null, full_name: 'จอ TV PD1' },
     { id: 'p3', account_kind: null,     employee_id: null, full_name: 'ธวัช พิมพ์วงศ์' },
     { id: 'p4', account_kind: '',       employee_id: null, full_name: 'ศักดา กาละศรี' },
@@ -80,6 +82,20 @@ test('🔴 บัญชีกลางไม่ใช่งานค้าง ·
   assert.deepEqual(t.personUnlinked.map(x => x.u.id), ['p5'], 'ติดป้ายเป็นคนแต่ยังไม่ผูก = กองแยก ควรเป็น 0');
   assert.equal(t.queue[0].confident, true, 'คิวต้องพากตัวเลือกมาด้วย');
   assert.equal(t.queue[1].tier, null);
+});
+
+/* 🔴 พนักงานที่ถูกบัญชีอื่นผูกไปแล้ว ห้ามถูกเสนอเป็น "ผูกได้เลย" — กดแล้วชน unique แน่นอน
+   (เคสจริง 28/10: "ธวัช  พิมพ์วงศ์" มี 2 บัญชี ต่างกันแค่จำนวนช่องว่าง) */
+test('🔴 คนที่ถูกบัญชีอื่นจองแล้ว = ยังโชว์ แต่ไม่ใช่ "ผูกได้เลย"', () => {
+  const users = [
+    { id: 'owner', account_kind: 'person', employee_id: 'e1', full_name: 'ธวัช พิมพ์วงศ์' },
+    { id: 'dup',   account_kind: null,     employee_id: null, full_name: 'ธวัช  พิมพ์วงศ์' },
+  ];
+  const row = unlinkedTriage(users, EMPS).queue.find(x => x.u.id === 'dup');
+  assert.equal(row.confident, false);
+  assert.deepEqual(row.rows.map(e => e.id), ['e1'], 'ต้องยังโชว์ — ซ่อน = จอบอก "ไม่มีชื่อนี้ในทะเบียน" ซึ่งไม่จริง');
+  assert.equal(row.rows[0].takenByName, 'ธวัช พิมพ์วงศ์');
+  assert.equal(routeHint(row).key, 'taken');
 });
 
 test('ลิสต์ว่าง/ไม่ส่งอะไรมา = 3 กองว่าง ไม่โยน', () => {

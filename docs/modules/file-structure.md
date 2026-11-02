@@ -57,6 +57,8 @@ docs/                  # บังคับอ่าน: ENGINEERING-PRINCIPLES.
                        #       PERMISSIONS-DESIGN.md ห้ามแก้ข้ามไฟล์) · FINANCIAL-GAP-ANALYSIS
                        #       (⚠️ ห้ามใส่ราคาขายเป็นคอลัมน์ใน parts_master ฝั่ง DR — anon อ่านได้ทั้งตาราง) ·
                        #     LOCAL-SERVER-MIGRATION-SPEC (มี 8 จุด hardcode URL Supabase ที่ต้องแก้ก่อนย้าย)
+                       #     MARKETING-QNEX-DESIGN (ต้นน้ำ Marketing → NM → โรงงาน · ตาราง mkt_* ต้องอยู่ Main ·
+                       #       ชุดตัวอย่าง FORD มีราคา/PO — อยู่นอก git · flowchart ของ Marketing อยู่ docs/marketing/)
                        #   ⚠️ ไฟล์ *-DESIGN.md ที่ "ทำแล้ว" = เหตุผลเบื้องหลัง · ของจริงอยู่ docs/modules/
 ```
 

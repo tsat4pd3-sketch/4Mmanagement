@@ -243,7 +243,7 @@ export default function Monitoring() {
        ส่งลูกค้า (send) ยังเป็นช่องกรอก — ส่งเกรทไม่ผ่าน customer_shipping_orders */
     if (isGreat) {
       const wkEnd = addDaysStr(dTo, 6) || dTo;
-      const [rcpR, txnR, prodR, stkR, ruleR, lotR, poR] = await Promise.all([
+      const [rcpR, txnR, prodR, stkR, ruleR, poR] = await Promise.all([
         fetchAllPages(() => supabaseDR.from('stock_receipts')
           .select('id, mat_no, qty_expected').eq('status', 'pending').in('mat_no', mats), { orderBy: ['id'] }),
         fetchAllPages(() => supabaseDR.from('line_stock_transactions')
@@ -255,8 +255,6 @@ export default function Monitoring() {
         fetchAllPages(() => supabaseDR.from('line_stock_summary')
           .select('line_name, mat_no, qty_on_hand').in('mat_no', mats), { orderBy: ['mat_no', 'line_name'] }),
         supabaseDR.from('stock_inflow_rules').select('match_type, match_value, dest_line_name, is_active, mode').eq('is_active', true),
-        fetchAllPages(() => supabaseDR.from('child_lot_requests')
-          .select('id, child_mat_no').in('child_mat_no', mats).neq('status', 'cancelled'), { orderBy: ['id'] }),
         /* 🔒 Daily Report ลงยอด MAT นี้แล้ว = ระบบเป็นเจ้าของช่อง IN (คำสั่ง user 13/10) */
         fetchAllPages(() => supabaseDR.from('prod_orders')
           .select('id, mat_no, production_sessions!inner(work_date)').eq('status', 'confirmed').in('mat_no', mats)
@@ -264,10 +262,9 @@ export default function Monitoring() {
       ]);
       if (!mine()) return;
       const loadErr = (r) => r?.error || (r?.errors && r.errors[0]) || (r?.truncated ? 'ดึงข้อมูลได้ไม่ครบ' : null);
-      const refErr = loadErr(prodR) || loadErr(stkR) || loadErr(lotR) || loadErr(txnR) || ruleR.error;
+      const refErr = loadErr(prodR) || loadErr(stkR) || loadErr(txnR) || ruleR.error;
       const ctx = {
         products: prodR.rows || [], rules: ruleR.data || [], receiptLine: 'STORE',
-        lotMats: new Set((lotR.rows || []).map(r => String(r.child_mat_no || '').trim())),
       };
       const locOf = refErr ? () => null : (mt) => rawSourceLocOf(mt, ctx);
       const onHand = refErr ? new Map() : onHandAtRef(stkR.rows || [], locOf);
@@ -388,7 +385,7 @@ export default function Monitoring() {
       return;
     }
 
-    const [rcpR, txnR, lvlR, prodR, stkR, ruleR, lotR, poR] = await Promise.all([
+    const [rcpR, txnR, lvlR, prodR, stkR, ruleR, poR] = await Promise.all([
       /* ⏳ ผลิตคอนเฟิร์มแล้วแต่คลังยังไม่กดรับ — ยังไม่นับใน IN แต่ต้องบอกบนจอ (ห้ามหายเงียบ) */
       fetchAllPages(() => supabaseDR.from('stock_receipts')
         .select('id, mat_no, qty_expected').eq('status', 'pending').in('mat_no', mats), { orderBy: ['id'] }),
@@ -406,8 +403,6 @@ export default function Monitoring() {
       fetchAllPages(() => supabaseDR.from('line_stock_summary')
         .select('line_name, mat_no, qty_on_hand').in('mat_no', mats), { orderBy: ['mat_no', 'line_name'] }),
       supabaseDR.from('stock_inflow_rules').select('match_type, match_value, dest_line_name, is_active, mode').eq('is_active', true),
-      fetchAllPages(() => supabaseDR.from('child_lot_requests')
-        .select('id, child_mat_no').in('child_mat_no', mats).neq('status', 'cancelled'), { orderBy: ['id'] }),
       /* 🔒 Daily Report ลงยอด MAT นี้แล้ว = ระบบเป็นเจ้าของช่อง IN (คำสั่ง user 13/10) */
       fetchAllPages(() => supabaseDR.from('prod_orders')
         .select('id, mat_no, production_sessions!inner(work_date)').eq('status', 'confirmed').in('mat_no', mats)
@@ -415,13 +410,12 @@ export default function Monitoring() {
     ]);
     if (!mine()) return;
     /* 🔴 คลังอ้างอิงของพาร์ท = `refStockOf` ตัวเดียวกับจุดเรียกเติม + ตัวนำเข้า Monitoring
-       (ผลิตเอง → คลังตามกฎรับเข้า · ล็อตสโตร์ → ที่ไลน์ผลิต · ของที่ไลน์ใช้ → หน้าไลน์)
-       อ่านกฎ/ล็อต/ยอดคลังไม่ครบ = ไม่รู้ว่าของอยู่ไหน ⇒ ไม่ยึดยอด (ปล่อยสูตร) แล้วเขียนบนจอ ห้ามเดาคลัง */
+       (ผลิตเอง → คลังตามกฎรับเข้า **รวมกฎโหมด 🔧 ปิดล็อต ตั้งแต่ 26/10** · ของที่ไลน์ใช้ → หน้าไลน์)
+       อ่านกฎ/ยอดคลังไม่ครบ = ไม่รู้ว่าของอยู่ไหน ⇒ ไม่ยึดยอด (ปล่อยสูตร) แล้วเขียนบนจอ ห้ามเดาคลัง */
     const loadErr = (r) => r?.error || (r?.errors && r.errors[0]) || (r?.truncated ? 'ดึงข้อมูลได้ไม่ครบ' : null);
-    const refErr = loadErr(ruleR) || loadErr(lotR) || loadErr(stkR) || loadErr(txnR) || loadErr(prodR);
+    const refErr = loadErr(ruleR) || loadErr(stkR) || loadErr(txnR) || loadErr(prodR);
     const refCtx = {
       lineName: bLine, products: prodR.rows || [], rules: ruleR.data || [],
-      lotMats: new Set((lotR.rows || []).map(r => String(r.child_mat_no || '').trim())),
     };
     const locOf = refErr ? () => null : (mt) => refStockOf(mt, refCtx).loc;
     const onHand = refErr ? new Map() : onHandAtRef(stkR.rows || [], locOf);

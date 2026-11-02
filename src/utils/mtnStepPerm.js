@@ -28,7 +28,7 @@
 /* ⚠️ import ได้เฉพาะ util ที่ pure ด้วยกัน (mtnMoForm ไม่แตะ supabase) · ต้องมีนามสกุล .js
    ไม่งั้น `npm test` (node:test รันไฟล์ตรงๆ ไม่ผ่าน Vite) จะ ERR_MODULE_NOT_FOUND */
 import {
-  isMtnFormRow, mtnApprovalState, qaAppliesTo, isApprovalBlocked, approvalKindPending,
+  isMtnFormRow, isToolTeamRow, mtnApprovalState, qaAppliesTo, isApprovalBlocked, approvalKindPending,
 } from './mtnMoForm.js';
 
 /** ขั้นที่ 1 ไม่อยู่ในตารางนี้ — เป็นการ "เปิดใบ" คุมด้วย mtn_repair:report ตรงๆ */
@@ -126,6 +126,35 @@ export const MTN_FORM_STEPS = {
   },
 };
 
+/* ═══ ขั้น 4 ของใบ "ทีมเครื่องมือ" (JIG / DIE) — หัวหน้าแผนกช่างตรวจรับ ไม่ใช่ผู้แจ้ง ═══  2026-10-27
+   คำสั่ง user: *"สำหรับ MO ของ jig กับ DIE งานซ่อมนอกไลน์ step 4 ต้องเป็นหัวหน้าแผนกช่าง
+   ก่อน QA ไม่ใช่ผู้แจ้ง"*
+
+   เหตุผล: งาน JIG/DIE **ถอดของออกมาซ่อมที่ห้องช่าง** ⇒ ผู้แจ้งที่อยู่หน้าไลน์ยังไม่ได้ของคืน
+   จะ "ตรวจรับงานหลังซ่อม" ไม่ได้ · คนที่เห็นของจริงตอนนั้นคือหัวหน้าแผนกช่างของทีมที่ซ่อม
+   ลำดับใหม่ของใบ JIG/DIE: 1 ผู้แจ้ง → 2 หัวหน้าช่าง → 3 ช่าง → **4 หัวหน้าแผนกช่าง** →
+   5 QA → 6 หัวหน้าแผนกผู้แจ้ง (รับของคืน) → 7 ผจก.ผู้แจ้ง (ปิดใบ)
+   🔴 **ทีม PRODUCTION ไม่เปลี่ยน** — ซ่อมในไลน์ ผู้แจ้งเห็นเครื่องกลับมาเดินจริง จึงตรวจรับเองถูกแล้ว
+
+   🔴 `minRank: 30` (วิศวกรขึ้นไป) **ไม่ใช่ 50 — และห้ามยกกลับเป็น 50**
+      คำสั่ง user 27/10: *"วิศวกรได้นะ เลเวลเท่ากับหัวหน้าแผนก"* — ที่โรงงานนี้ **วิศวกรอยู่ระดับ
+      เดียวกับหัวหน้าแผนก** ⇒ ช่องนี้ตั้งใจเปิดให้ทั้งสองตำแหน่ง ไม่ใช่การผ่อนเกณฑ์ชั่วคราว
+      (ตาราง `POSITION_LEVELS` ให้ engineer=30 · supervisor=50 ซึ่งเป็นสเกลกลาง — ขั้นนี้
+       จึงตั้ง 30 เพื่อครอบทั้งคู่ **ห้ามแก้ตารางกลางเพื่อเรื่องนี้** เพราะจะไปปลดขั้น 6/7 ให้วิศวกร
+       ทั้ง 18 คนทุกหน่วยงานพร้อมกัน)
+      · เคสที่ยืนยันว่าต้องเป็น 30: ทีม Die มี `dept_head` **0 คน** (วัด 27/10) — ล็อก 50 =
+        ใบ DIE 35 ใบเซ็นขั้น 4 ไม่ได้เลย (ล็อกเต็ม `manage_master` ก็ข้ามไม่ได้)
+      เปลี่ยนเกณฑ์นี้เมื่อไหร่ **ต้องพิสูจน์กับทะเบียนผู้ใช้จริงก่อน** (กฎขอบเขต CLAUDE.md 26/10)
+   · คีย์สิทธิ์ยังเป็น `accept_work` ตัวเดิม (ไม่ต้อง seed ใหม่) · fallback `service` = ช่างมีอยู่แล้ว
+   · `teamSide` + `ownTeam` ⇒ ล็อก "ทีมใครทีมมัน" เหมือนขั้น 2/3 */
+const TOOL_FORM_STEPS = {
+  4: {
+    ...MTN_STEPS[4],
+    ownTeam: true, byReporter: false, reporterSide: false, teamSide: true, side: 'mtn', minRank: 30,
+    who: 'หัวหน้าแผนกช่าง / วิศวกร (ทีมที่ซ่อม)', whoShort: 'หัวหน้าแผนกช่าง',
+  },
+};
+
 /** ขั้นสุดท้ายของใบ — MTN 8 ขั้น · ฟอร์มอื่น 7 ขั้น (ห้าม hardcode เลขขั้นในหน้าอีก) */
 export const lastStep = ({ mtnForm = false } = {}) => (mtnForm ? 8 : 7);
 
@@ -167,8 +196,10 @@ export function nextStepOf(order = {}) {
 }
 
 /** meta ของขั้น — `mtnForm` = ใบนี้ใช้ฟอร์ม FM-MTN-006 (ผู้เรียกคำนวณจากทีมช่างมาให้) */
-export const stepMeta = (step, { mtnForm = false } = {}) =>
-  (mtnForm && MTN_FORM_STEPS[step]) || MTN_STEPS[step] || null;
+export const stepMeta = (step, { mtnForm = false, toolTeam = false } = {}) =>
+  /* 🔴 ลำดับสำคัญ: ฟอร์ม MTN ชนะเสมอ (ทีม MTN ไม่ใช่ทีมเครื่องมืออยู่แล้ว ชนกันไม่ได้จริง
+     แต่เขียนให้ชัดกันคนถัดไปสลับ) · ไม่ส่ง `toolTeam` = พฤติกรรมเดิมเป๊ะ */
+  (mtnForm && MTN_FORM_STEPS[step]) || (toolTeam && TOOL_FORM_STEPS[step]) || MTN_STEPS[step] || null;
 
 /* ── `stage` = ชื่อจังหวะงานที่ "ไม่ขยับตามเลขขั้น" ───────────────────────────  2026-09-22
    🔴 เลขขั้นเดียวกันคนละความหมายระหว่าง 2 ฟอร์ม (ขั้น 5 = QA ของ JIG/DIE แต่ = รับมอบ ของ MTN
@@ -179,8 +210,11 @@ export const stageOf = (step, { mtnForm = false } = {}) =>
   (Number(step) === 1 ? 'report' : stepMeta(step, { mtnForm })?.stage) || null;
 
 /** ป้ายปุ่ม/หัวข้อขั้น — สร้างจากที่นี่ที่เดียว ห้ามพิมพ์ชื่อขั้นซ้ำในหน้า */
-export const stepLabel = (step, { withWho = true, mtnForm = false } = {}) => {
-  const m = stepMeta(step, { mtnForm });
+export const stepLabel = (step, { withWho = true, mtnForm = false, toolTeam = false } = {}) => {
+  /* ขั้น 1 ไม่อยู่ใน MTN_STEPS โดยตั้งใจ (เป็น "การเปิดใบ" ไม่ใช่ขั้นที่รอใครเซ็น)
+     แต่ป้ายต้องอ่านรู้เรื่อง — ไม่งั้นหัวโมดัลแก้ไขขึ้นว่า "ขั้น 1" เฉยๆ (25/10) */
+  if (Number(step) === 1) return `📣 แจ้งซ่อม (ขั้น 1${withWho ? ' · ผู้แจ้ง' : ''})`;
+  const m = stepMeta(step, { mtnForm, toolTeam });
   if (!m) return `ขั้น ${step}`;
   return `${m.icon} ${m.title} (ขั้น ${step}${withWho ? ` · ${m.whoShort}` : ''})`;
 };
@@ -304,8 +338,8 @@ export function assumptionHint(assumed = []) {
  *  🔴 แยกจาก `canDoStep` โดยตั้งใจ — verdict ตอบว่า "กดได้ไหม" ส่วนตัวนี้ตอบว่า "เชื่อได้แค่ไหน"
  *     ปนกันเมื่อไหร่ รูปร่าง verdict จะเปลี่ยนทุกใบจนคนอ่านชินแล้วมองข้าม (ธงที่ขึ้นตลอด = ไม่ใช่ธง)
  *  ใช้ที่จอเพื่อเขียนบอกว่า "ระบบไม่รู้ฝั่ง/ตำแหน่งของคุณ จึงไม่ได้ตรวจ" + ชี้ว่าต้องไปเติมที่ไหน */
-export function stepAssumptions(step, { mtnForm = false, actorSide = 'unknown', posRank = null } = {}) {
-  const meta = stepMeta(step, { mtnForm });
+export function stepAssumptions(step, { mtnForm = false, toolTeam = false, actorSide = 'unknown', posRank = null } = {}) {
+  const meta = stepMeta(step, { mtnForm, toolTeam });
   if (!meta) return [];
   const out = [];
   if (meta.side && actorSide === 'unknown') out.push('side');
@@ -320,7 +354,9 @@ export function canDoStep(step, opts = {}) {
   // ขั้น 1 = แก้ข้อมูลการแจ้ง — ใครแจ้งได้ก็แก้ได้ (พฤติกรรมเดิม)
   if (Number(step) === 1) return can('report') ? { ok: true, code: 'report' } : { ok: false, code: 'denied' };
 
-  const meta = stepMeta(step, { mtnForm });
+  /* 🔴 "ใบนี้เป็นทีมเครื่องมือไหม" อ่านจากใบเอง — ผู้เรียกไม่ต้องส่งเพิ่ม (กันลืมแล้วด่านหาย)
+     ถามผ่าน `isToolTeamRow()` ที่ `mtnMoForm.js` ที่เดียว ห้ามเทียบคีย์ทีมเองที่นี่ */
+  const meta = stepMeta(step, { mtnForm, toolTeam: isToolTeamRow(order) });
   if (!meta) return { ok: false, code: 'unknown_step' };
 
   /* 🔒 ด่านฝั่ง + ตำแหน่ง (2026-10-02) — ตรวจ**ก่อน** manage_master เพื่อให้รู้ว่า
@@ -448,12 +484,22 @@ export function canHandoff(order = {}) {
  * ⚠️ ห้ามเทียบ `order.dept_section` ก่อน `line_name` — ช่อง "แผนก (PD)" ในฟอร์มแจ้งซ่อมพิมพ์แก้ได้
  *    (ข้อมูลจริง 60 วัน: ว่าง ~60% ของใบ) ไลน์ที่เลือกจาก dropdown เชื่อถือได้กว่า
  */
-export function orderInReporterScope(order, { scopeLineNames = null, knownLineNames = [], sections = [] } = {}) {
+export function orderInReporterScope(order, { scopeLineNames = null, knownLineNames = [], sections = [], knownSections = [] } = {}) {
   if (!Array.isArray(scopeLineNames)) return null;
   const ln = norm(order?.line_name);
   if (ln && (knownLineNames || []).some(n => norm(n) === ln)) return scopeLineNames.some(n => norm(n) === ln);
   const ds = norm(order?.dept_section);
-  if (ds && (sections || []).length) return sections.some(x => norm(x) === ds);
+  if (ds && (sections || []).length) {
+    /* 🔴 ด่าน "รู้จักหน่วยนี้ไหม" — ต้องมีให้ครบทั้ง 2 แกนเหมือนฝั่งไลน์ (02/11)
+       เดิมฝั่งไลน์มีด่านนี้ (`knownLineNames`) แต่ฝั่งส่วนงาน**ไม่มี** ⇒ เอาชื่อ *แผนก*
+       ไปเทียบกับลิสต์ *ส่วนงาน* แล้วตอบ `false` = **บล็อก** ทั้งที่คำตอบจริงคือ "ไม่รู้"
+       เคสจริง: `JIG MTN` เป็น **department ใต้ PD4** (`org_nodes.cost_center='2140563100'`)
+       ⇒ ผู้จัดการที่ดูแล `[PD3, PD4]` **ครอบ JIG MTN อยู่แล้วตามผัง** แต่เทียบสตริงตรงตัวไม่ติด
+       🔴 ไม่รู้จัก = `null` (ไม่บล็อก) — หลักเดียวกับไลน์ที่ไม่อยู่ในทะเบียน
+       ⚠️ ไม่ส่ง `knownSections` = พฤติกรรมเดิมเป๊ะ (ผู้เรียกอื่นไม่กระทบ) */
+    if ((knownSections || []).length && !(knownSections || []).some(x => norm(x) === ds)) return null;
+    return sections.some(x => norm(x) === ds);
+  }
   return null;
 }
 
@@ -471,6 +517,21 @@ export function orderInReporterScope(order, { scopeLineNames = null, knownLineNa
    ⚠️ nextStepFor / ปุ่มข้าม / StepBox ต้องเทียบผ่านตัวนี้ ห้ามพิมพ์ข้อความซ้ำในหน้า */
 export const QA_RELATED = 'เกี่ยวกับคุณภาพ';
 export const QA_NOT_RELATED = 'ไม่เกี่ยวกับคุณภาพ';
+
+/* ── "เกี่ยวกับคุณภาพไหม" สำหรับ **การแสดงผล** (แผงขั้น 4 · Excel) ───────────────  2026-10-21
+   🔴 4 คำตอบ ห้ามบีบเป็น boolean — คอลัมน์นี้เก็บ **ข้อความ** ⇒ `o.quality_related ? 'ใช่' : ''`
+      รายงานใบที่ QA ตัดสินว่า "ไม่เกี่ยวกับคุณภาพ" ว่า **ใช่** (วัด 21/10: 411 ใบจาก 1050)
+   🔴 `'n_a'` = **QA ไม่อยู่ในลูปของใบนี้เลย** (ฟอร์ม MTN · งานสร้าง/ปรับปรุง) — ค่าในคอลัมน์เป็น
+      เศษที่ขั้น 4 เคย stamp ไว้ ไม่ได้แปลว่าใบนี้ต้องผ่าน QA ⇒ **จอ/รายงานห้ามเขียนว่า "ต้องผ่าน QA"**
+      (เคสจริง O-MTN.2026/10-17: ใบทีม MTN รอรับมอบอยู่ แต่ขั้น 4 เขียน "ต้องผ่าน QA" = จอโกหก)
+   · `'no'` = อยู่ในลูปได้ แต่ QA ตัดสินแล้วว่าไม่เกี่ยว · `'yes'` = ต้องผ่าน QA
+   · `'unknown'` = ยังไม่มีค่า (ใบยังไม่ถึงขั้น 4) — ผู้เรียกเว้นว่าง ห้ามเดาไปทางใดทางหนึ่ง */
+export function qaRelatedView(order = {}) {
+  if (!qaAppliesTo(order)) return 'n_a';
+  if (order?.quality_related === QA_NOT_RELATED || order?.qa_skipped_at) return 'no';
+  if (order?.quality_related === QA_RELATED) return 'yes';
+  return 'unknown';
+}
 
 /** ใบนี้ค้างรอ QA อยู่ไหม = ผ่านขั้น 4 แล้ว (status checked) และ QA ยังไม่ได้ตัดสินว่าไม่ต้องตรวจ
  *  ⚠️ ไม่ดู `quality_related` แล้ว — ช่องนั้นเป็นคำตอบของ QA ไม่ใช่ตัวกำหนดว่าจะได้เจอ QA หรือเปล่า
@@ -503,11 +564,40 @@ export const QA_SKIP_REASON_STEP4 = 'ขั้น 4 ระบุว่าไม�
  *    ⚠️ ไม่มีใครที่เคยเซ็นถูกต้องเสียสิทธิ์ — วัดแล้ว ผู้เซ็นจริงทุกคนถือ `approve` อยู่แล้ว
  * เซ็นแล้วเซ็นซ้ำไม่ได้ (แก้ต้องผ่าน manage_master ที่ขั้นอื่น) — ลายเซ็นที่ทับได้ = หลักฐานที่เชื่อไม่ได้
  */
+/** 🔒 ระดับตำแหน่งขั้นต่ำของช่อง "ผู้จัดการ…" ในใบ MO  (2026-10-30 · หน้างานแจ้ง)
+ *
+ *  ที่มา: วิศวกร (`engineer` = 30) เซ็นช่อง "ผู้จัดการต้นสังกัด" แทนเจ้าตัวได้
+ *  — *"มีคนอนุมัติแทนพี่แล้ว"* — เพราะด่านเดิมเช็คแค่ `can('approve')` **ไม่ดูตำแหน่งเลย**
+ *  และ `signApproval` เขียนชื่อคนกดทับชื่อผู้จัดการที่ระบุไว้ ⇒ เจ้าตัวโดนตัดสิทธิ์ (`already_signed`)
+ *
+ *  🔴 **ทำไม 50 ไม่ใช่ 60** — พิสูจน์กับทะเบียนผู้ใช้จริงก่อนตั้ง (กฎ CLAUDE.md 26/10):
+ *     ⚠️ **นับความครอบคลุมต้องนับ `sections` (ขอบเขตที่ดูแล) ไม่ใช่ `section` (บ้าน)**
+ *        — มีคน**ดูแลควบแผนก** (`manager` บ้าน PD3 · `sections=[PD3,PD4]` ⇒ เซ็นใบ PD4 ได้
+ *        และเคยเซ็นจริง 6 ครั้ง) · **PD4 ครอบได้ทั้ง 2 เกณฑ์ ไม่ใช่เหตุผลเลือก 50**
+ *     ตั้ง 60 (`manager`) = **`JIG MTN` + `Planning&Store` ไม่มีใครเซ็นได้เลย**
+ *        (2 ส่วนงานนี้มีแต่ `dept_head`) · ตั้ง 50 = ครอบได้ทั้งคู่
+ *     ⛔ `Die MTN`/`MTN`/`Tooling MTN` ไม่มีใครถึง 50 เลย — แต่ `dept_section` ของใบคือ
+ *        ส่วนงาน**ผู้แจ้ง** (ฝั่งผลิต) ไม่ใช่ทีมช่าง ⇒ ไม่กระทบด่านนี้
+ *  🔴 **ไม่รู้ตำแหน่ง (`posRank == null`) = ไม่บล็อก** — กฎเดียวกับขั้น 6/7/8 (ไม่รู้ ≠ ไม่ใช่)
+ *     แต่จอต้องเขียนว่า "ไม่ได้ตรวจตำแหน่ง" (ดู `stepAssumptions`) */
+export const APPROVAL_MIN_RANK = 50;
+
 export function canSignMtnApproval(kind, opts = {}) {
-  const { order = {}, fullName = '', can = () => false } = opts;
+  const { order = {}, fullName = '', can = () => false, posRank = null, inReporterScope = null } = opts;
   if (kind !== 'dept' && kind !== 'plant') return { ok: false, code: 'unknown_kind' };
   const signedAt = kind === 'dept' ? order.dept_manager_at : order.plant_manager_at;
   if (signedAt) return { ok: false, code: 'already_signed' };
+  /* 🔴 ด่านตำแหน่งมาก่อนทุกทาง — รวมถึงคนที่ถูกระบุชื่อไว้ในใบ
+     (ผู้แจ้งพิมพ์ชื่อใครก็ได้ลงช่อง "ผู้จัดการต้นสังกัด" รวมทั้งชื่อตัวเอง) */
+  if (posRank != null && posRank < APPROVAL_MIN_RANK)
+    return { ok: false, code: 'rank_too_low', needRank: APPROVAL_MIN_RANK };
+  /* 🔴 ชั้น ③ ของกฎสิทธิ์ 3 ชั้น — "ผู้จัดการ**ต้นสังกัด**" ตามนิยามคือฝั่งผู้แจ้ง
+     ⇒ ใบนอกขอบเขตที่เรารับผิดชอบ เซ็นไม่ได้ แม้ตำแหน่งถึงและถือสิทธิ์ `approve`
+     (01/11 — audit ชั้น ③ รอบ 15/10 ไม่ได้ครอบด่านนี้ · `canDoStep` มีแล้ว ตัวนี้ไม่มี)
+     🔴 `null` = ตัดสินขอบเขตไม่ได้ ⇒ **ไม่บล็อก** (กติกาเดียวกับ `outOfScope` ใน `canDoStep`)
+     🔑 คนดูแลควบแผนกผ่านได้ เพราะ `writeScope` อ่าน `sections`/`resp_cost_centers` ไม่ใช่ `section` เดี่ยว */
+  if (inReporterScope === false)
+    return { ok: false, code: 'out_of_scope' };
   const named = kind === 'dept' ? order.dept_manager_name : order.plant_manager_name;
   const me = norm(fullName);
   if (me && norm(named) === me) return { ok: true, code: 'named' };
@@ -756,9 +846,11 @@ export function moWaitMeta(order) {
     return { stage: STAGE_APPROVE_FIRST, step: null, meta: APPROVE_FIRST_META };
   }
   const mtnForm = isMtnFormRow(order);
+  const toolTeam = isToolTeamRow(order);
   const step = nextStepOf(order);
   if (!step) return { stage: null, step: null, meta: null };
-  return { stage: stageOf(step, { mtnForm }), step, meta: stepMeta(step, { mtnForm }) };
+  // `stage` ไม่เปลี่ยนตามทีม (ยังเป็น accept_work) — เปลี่ยนแค่ "ใครเซ็น" ⇒ ส่ง toolTeam เฉพาะ meta
+  return { stage: stageOf(step, { mtnForm }), step, meta: stepMeta(step, { mtnForm, toolTeam }) };
 }
 
 /**
@@ -810,8 +902,8 @@ export function canSkipQa(opts = {}) {
  * ข้อความบอกเหตุผลเมื่อทำไม่ได้ (UI-CONVENTIONS §6.9 — ซ่อนปุ่มได้ ห้ามซ่อนเหตุผล)
  * คืนเป็นโครงสร้าง ไม่ใช่ JSX — ให้หน้าจอวาดเอง
  */
-export function stepDenyHint(step, { teamName = '', reporterName = '', outOfScope = false, otherTeam = false, orderLine = '', orderSection = '', mtnForm = false, awaitApproval = null, wrongSide = false, rankTooLow = false, assumed = [] } = {}) {
-  const meta = stepMeta(step, { mtnForm });
+export function stepDenyHint(step, { teamName = '', reporterName = '', outOfScope = false, otherTeam = false, orderLine = '', orderSection = '', mtnForm = false, toolTeam = false, awaitApproval = null, wrongSide = false, rankTooLow = false, assumed = [] } = {}) {
+  const meta = stepMeta(step, { mtnForm, toolTeam });
   if (!meta) return null;
   const lines = [`ขั้นนี้เป็นหน้าที่ของ: ${meta.who}`];
   /* 🔒 ล็อกฝั่ง/ตำแหน่ง (2026-10-04) — ต้องบอกให้ตรงเหตุ ไม่งั้นคนจะไปขอ role เพิ่ม

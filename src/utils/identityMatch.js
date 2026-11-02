@@ -40,19 +40,36 @@ const firstTok = (s) => normSearch(String(s ?? '').trim().split(/\s+/)[0] || '')
  * 🔴 **ห้ามไล่ลงไปถึงชั้น "นามสกุลคล้ายกัน"** — ผูกผิดคนแก้ยากกว่าไม่ผูก
  *    (คะแนนทักษะ/ลายเซ็น/กะ จะไปเกาะคนผิดแล้วไม่มีใครรู้)
  */
-export function employeeCandidates(profile, employees = [], { limit = 5 } = {}) {
+export function employeeCandidates(profile, employees = [], { limit = 5, takenBy = null } = {}) {
   const none = { tier: null, rows: [], confident: false };
   const full = normSearch(profile?.full_name);
   if (!full) return none;
   const live = (employees || []).filter(e => e && e.name && e.is_active !== false);
+  /* 🔴 พนักงาน 1 คนผูกได้บัญชีเดียว (unique `profiles_employee_id_uniq`)
+     ⇒ คนที่ถูกจองแล้ว **ต้องยังโชว์** (ซ่อน = จอบอก "ไม่มีชื่อนี้ในทะเบียน" ซึ่งไม่จริง)
+       แต่ต้องติดป้ายว่าใครถืออยู่ และห้ามนับเป็น "ผูกได้เลย" */
+  const mark = (e) => (takenBy?.get?.(e.id) ? { ...e, takenByName: takenBy.get(e.id) } : e);
+  const freeOnly = (rows) => rows.filter(e => !takenBy?.get?.(e.id));
 
   const same = live.filter(e => normSearch(e.name) === full);
-  if (same.length) return { tier: 'name', rows: same.slice(0, limit), confident: same.length === 1 };
+  if (same.length) {
+    const free = freeOnly(same);
+    return { tier: 'name', rows: same.slice(0, limit).map(mark), confident: free.length === 1 && same.length === 1 };
+  }
 
   const ft = firstTok(profile?.full_name);
   if (!ft) return none;
   const first = live.filter(e => firstTok(e.name) === ft);
-  return first.length ? { tier: 'first', rows: first.slice(0, limit), confident: false } : none;
+  return first.length ? { tier: 'first', rows: first.slice(0, limit).map(mark), confident: false } : none;
+}
+
+/** พนักงานคนไหนถูกบัญชีไหนจองไว้แล้ว — `Map<employee_id, ชื่อบัญชีที่ถือ>` */
+export function takenEmployeeMap(users = []) {
+  const m = new Map();
+  for (const u of users || []) {
+    if (u?.employee_id) m.set(u.employee_id, u.full_name || u.email || '(ไม่มีชื่อ)');
+  }
+  return m;
 }
 
 /**
@@ -64,15 +81,16 @@ export function employeeCandidates(profile, employees = [], { limit = 5 } = {}) 
  */
 export function unlinkedTriage(users = [], employees = []) {
   const queue = [], personUnlinked = [], sharedOk = [];
+  const takenBy = takenEmployeeMap(users);   // 🔴 ไม่ส่ง = จอเสนอให้ผูกคนที่ถูกจองแล้ว → ชน unique แน่นอน
   (users || []).forEach((u) => {
     if (!u) return;
     const kind = String(u.account_kind || '').trim();
     if (kind === 'shared') { sharedOk.push(u); return; }
     if (kind === 'person') {
-      if (!u.employee_id) personUnlinked.push({ u, ...employeeCandidates(u, employees) });
+      if (!u.employee_id) personUnlinked.push({ u, ...employeeCandidates(u, employees, { takenBy }) });
       return;
     }
-    queue.push({ u, ...employeeCandidates(u, employees) });
+    queue.push({ u, ...employeeCandidates(u, employees, { takenBy }) });
   });
   return { queue, personUnlinked, sharedOk };
 }
@@ -80,6 +98,13 @@ export function unlinkedTriage(users = [], employees = []) {
 /** ป้ายบอก "ทางไปต่อ" ของแถวในคิว — ข้อความอยู่ที่นี่ที่เดียว จอไม่ต้องคิดเอง */
 export function routeHint({ tier, confident, rows = [] } = {}) {
   if (confident) return { key: 'link_one', text: 'เจอชื่อตรงกันคนเดียว — ผูกได้เลย' };
+  /* 🔴 ชื่อตรงแต่ถูกบัญชีอื่นจองหมดแล้ว — ต้องบอกว่าใครถือ ไม่ใช่ปล่อยให้กดแล้วเด้ง error ดิบ
+     (เคสจริง 28/10: "ธวัช พิมพ์วงศ์" มี 2 บัญชี ต่างกันแค่ช่องว่าง ⇒ กดผูกแล้วชน unique) */
+  if (tier === 'name' && rows.length && rows.every(r => r.takenByName)) {
+    return { key: 'taken', text: rows.length === 1
+      ? `คนนี้ถูกผูกกับบัญชี "${rows[0].takenByName}" อยู่แล้ว — บัญชีนี้น่าจะซ้ำ ให้ลบหรือตั้งเป็นบัญชีกลาง`
+      : `ชื่อตรงกัน ${rows.length} คน แต่ถูกผูกกับบัญชีอื่นหมดแล้ว` };
+  }
   if (tier === 'name') return { key: 'pick_one', text: `ชื่อตรงกัน ${rows.length} คน — ต้องเลือกว่าคนไหน` };
   if (tier === 'first') return { key: 'maybe', text: 'ชื่อต้นตรง นามสกุลต่าง — อาจเป็นคนละคน ต้องยืนยันเอง' };
   return { key: 'not_in_registry', text: 'ไม่มีชื่อนี้ในทะเบียนพนักงาน — เพิ่มเข้าฐานก่อน หรือเป็นบัญชีกลาง' };

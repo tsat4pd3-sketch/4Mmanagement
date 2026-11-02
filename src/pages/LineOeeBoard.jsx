@@ -4,6 +4,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { wavg, wLoad, wRun, wProd, buildCtMap, computeLiveOee, isTrialDefect, defectQty, ngByMatFrom, dtMinBySession, QBIN_EMBED } from '../utils/oee';
+import { loadAffectsLanes } from '../utils/affectsLanes';
 import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
 import { isOpenDT, isPlannedDT } from '../utils/downtimeRules';
 import { dtBucketName, dtTrashStats, buildDtIndex } from '../utils/downtimeCategory';
@@ -190,6 +191,9 @@ export default function LineOeeBoard() {
 
     // ── OEE สดของกะเปิดวันนี้ — util กลางตัวเดียวกับ FactoryMap/OEE Analytics ──
     const ctMap = buildCtMap({ kanbanStds: kstds || [], products: prods || [] });
+    /* 🔀 "เครื่องไหนหยุดแล้วครอบกี่เลน" — โหลดครั้งเดียว ใช้ทั้ง live OEE และ dtMinBySession
+       `{}` = ไม่มีใครกรอก/อ่านไม่ได้ = ทุกเครื่องครอบ 1 เลน = พฤติกรรมเดิมเป๊ะ (utils/affectsLanes.js) */
+    const affectsLn = await loadAffectsLanes();
     const procByMat = {}; const pairMap = prods ? {} : null;   // โหลดไม่ได้ = null (ไม่ยุบ) ห้าม {} (= รู้แล้วว่าไม่มีคู่)
     (prods || []).forEach(p2 => {
       procByMat[p2.mat_no] = p2.process_type;
@@ -213,12 +217,14 @@ export default function LineOeeBoard() {
         processType: (ordBySess[s.id] || []).map(o => procByMat[o.mat_no]).find(Boolean) || null,
         // งานคู่ gang die / RH-LH = 1 shot ได้ 2 ชิ้น — ยุบก่อนคิดเวลามาตรฐานของ %P (pairTotals.js)
         pairMap,
+        // 🔀 ของกลางของไลน์ขนาน (คอนเวเยอร์) ต้องไม่ถูกหารเลน — machines.affects_lanes
+        affectsLanes: affectsLn,
       });
     });
 
     if (!live()) return;
     setPartial(bad);
-    setData({ today, sessions, dts: dtR.rows, defs: defR.rows, ordBySess, dtBySess, ngBySess, liveBySess, target: tg || null, breaks: breaks || [] });
+    setData({ today, sessions, dts: dtR.rows, defs: defR.rows, ordBySess, dtBySess, ngBySess, liveBySess, target: tg || null, breaks: breaks || [], affects: affectsLn });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- linesKey แทน lines (ดูหมายเหตุด้านล่าง)
   }, [line, linesKey, begin]);
 
@@ -237,13 +243,13 @@ export default function LineOeeBoard() {
   /* ── คำนวณทุกอย่างจากก้อนดิบ ── */
   const C = useMemo(() => {
     if (!data) return null;
-    const { today, sessions, dts, defs, ordBySess, dtBySess, ngBySess, liveBySess, target, breaks } = data;
+    const { today, sessions, dts, defs, ordBySess, dtBySess, ngBySess, liveBySess, target, breaks, affects } = data;
     const kpiFrom = shiftDate(today, -(DAYS_KPI - 1));
 
     // planned/unplanned นาทีต่อกะ
     // นาทีที่ทับช่วงพักตามนโยบายถูกตัดออกแล้ว — ต้องเป็นชุดเดียวกับ /oee-analytics (utils/oee §3.1)
     // ไม่งั้นน้ำหนัก wLoad ของกะที่มีหยุดตามแผนคร่อมพัก เบากว่าจออื่น = ค่าเฉลี่ยคนละเลข
-    const dtEffBySess = dtMinBySession(sessions, dts, breaks || [], { lines });   // หารเลนไลน์เครื่องขนาน (oee.js §3.2)
+    const dtEffBySess = dtMinBySession(sessions, dts, breaks || [], { lines, affectsBy: affects });   // หารเลนไลน์เครื่องขนาน (oee.js §3.2)
     const plannedBy = {}, unplannedBy = {};
     Object.entries(dtEffBySess).forEach(([sid, v]) => { plannedBy[sid] = v.planned; unplannedBy[sid] = v.unplanned; });
 

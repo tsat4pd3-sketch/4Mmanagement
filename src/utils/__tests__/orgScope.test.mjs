@@ -345,3 +345,57 @@ test('นิยามที่เคยเก็บที่ CC ของ PD3 = 
   assert.deepEqual(defScopeColumns(ix, { kind: 'cost_center', value: '2140563100' }), { scope_kind: 'department', scope_value: 'JIG MTN', section: null, line_group: null });
   assert.equal(defScopeColumns(ix, { kind: 'cost_center', value: '999' }).scope_kind, 'cost_center');   // กำพร้า = เก็บเป็นรหัสได้
 });
+
+/* ── 🔒 "อยู่ใต้ในผัง แต่สิทธิ์ไม่ตกทอด" (`inherit_scope = false`) — 2026-10-22 ──────────────
+   user: *"สิ่งที่ผิดคือเรื่องหัวหน้า PD4 มาแก้ข้อมูลจิ๊กนั่นแหละ คือองค์กรเรามันแปลกตรงเอาจิ๊กมาฝากกับผลิต"*
+   JIG MTN อยู่ใต้ PD4 จริงบนผัง (ผจก. คนเดียวกัน) แต่ขอบเขตของ PD4 ต้องไม่ครอบมัน */
+test('inherit_scope=false — หน่วยแม่ไม่ครอบหน่วยที่มาฝาก แต่ผังยังโชว์ใต้แม่', () => {
+  const nodes = [
+    { id: 's1', kind: 'section',    name: 'PD4',     code: 'PD4', parent_id: null, cost_center: '2140471000' },
+    { id: 'd1', kind: 'department', name: 'GOR',     code: 'GOR', parent_id: 's1', cost_center: '2140571100' },
+    { id: 'd2', kind: 'department', name: 'JIG MTN', code: null,  parent_id: 's1', cost_center: '2140563100', inherit_scope: false },
+  ];
+  const idx = buildOrgScope({ nodes, lines: [] });
+  const pd4 = { kind: 'section', value: 'PD4' };
+  const gor = { kind: 'department', value: 'GOR' };
+  const jig = { kind: 'department', value: 'JIG MTN' };
+
+  // แผนกปกติ → PD4 ครอบ
+  assert.equal(scopeCovers(idx, pd4, gor), true);
+  // แผนกที่มาฝาก → PD4 **ไม่ครอบ**
+  assert.equal(scopeCovers(idx, pd4, jig), false);
+  // ตัวมันเองยังครอบตัวเองได้ (คนที่รับผิดชอบ JIG MTN ตรงๆ ยังแก้ได้)
+  assert.equal(scopeCovers(idx, jig, jig), true);
+  // ผังยังโชว์ใต้ PD4 (ตัวเลือก/ป้ายไม่เปลี่ยน) — ธงนี้แตะเฉพาะแกนสิทธิ์
+  const opt = idx.options.find(o => o.kind === 'department' && o.value === 'JIG MTN');
+  assert.ok(opt, 'JIG MTN ต้องยังอยู่ในลิสต์ตัวเลือก');
+  assert.equal(opt.depth > 0, true, 'ต้องยังวาดเป็นลูกของ PD4 ในผัง');
+});
+
+test('🪞 แผนกที่มีกลุ่มไลน์เดียวชื่อเดียวกัน → แถวกลุ่มติด merged (จอซ่อน) · ไลน์ลูกขยับขึ้น 1 ชั้น · key ยังอยู่', () => {
+  const dep = idx.optionOf('department', 'HYDROFORM');
+  const grp = idx.optionOf('line_group', 'HYDROFORM');
+  const leaf = idx.optionOf('line', 'HDF1');
+  assert.ok(dep && grp && leaf);
+  assert.equal(grp.merged, true);
+  assert.equal(leaf.depth, dep.depth + 1, 'ไลน์ลูกต้องย่อหน้าต่อจากแผนกโดยตรง');
+  assert.equal(leaf.parentKey, grp.key, 'สายบรรพบุรุษไม่เปลี่ยน (ขอบเขตที่บันทึกเป็น line_group ยังครอบ)');
+  // แผนกที่กลุ่มชื่อไม่ตรง/มีหลายกลุ่ม ห้ามยุบ
+  idx.options.filter(o => o.kind === 'line_group' && o.merged).forEach((g) => {
+    const d = idx.options.find(o => o.key === g.parentKey);
+    assert.equal(d.kind, 'department');
+    assert.equal(idx.options.filter(o => o.kind === 'line_group' && o.parentKey === d.key).length, 1);
+  });
+});
+
+test('💰 ลิสต์ CC ของ index: 1 รหัส = 1 แถว · ไลน์ของรหัส = ทุกไลน์ที่ถือรหัสนั้น (ฐานของโหมด ccOnly บน Obeya)', () => {
+  const ccs = idx.options.filter(o => o.kind === 'cost_center');
+  assert.ok(ccs.length > 0);
+  assert.equal(new Set(ccs.map(o => o.value)).size, ccs.length, 'รหัสห้ามซ้ำแถว');
+  ccs.forEach(o => assert.ok(idx.lineNamesOf('cost_center', o.value).length >= 0));
+  const shared = lines.filter(l => l.cost_center).reduce((m, l) => { (m[l.cost_center] ||= []).push(l.name); return m; }, {});
+  Object.entries(shared).filter(([, names]) => names.length > 1).forEach(([cc, names]) => {
+    const got = new Set(idx.lineNamesOf('cost_center', cc));
+    names.forEach(nm => assert.ok(got.has(nm), `${cc} ต้องครอบ ${nm}`));
+  });
+});

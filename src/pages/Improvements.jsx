@@ -9,7 +9,7 @@ import { SESSION_STATUSES_DONE } from '../utils/sessionStatus';
 import { can, canDelete } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyIds, getLineFamilyNames } from '../utils/lineHierarchy';
-import LineSelect from '../components/LineSelect';
+import LineSelect, { scopeLines as pickerLines } from '../components/LineSelect';
 import PersonSelect from '../components/PersonSelect';
 import useColumnHistory from '../utils/useColumnHistory';
 import { loadLinesRes } from '../utils/useProductionLines';
@@ -193,7 +193,7 @@ export default function Improvements() {
   /* ── load master + improvements ── */
   const load = useCallback(async () => {
     setLoading(true);
-    const [{ data: ln }, { data: imp }, { data: dt }, { data: dft }, { data: mc }, { data: pr }, { data: ms }, { data: mpt }, { data: mo }, ccRes, pcRes] = await Promise.all([
+    const [lnRes, { data: imp }, { data: dt }, { data: dft }, { data: mc }, { data: pr }, { data: ms }, { data: mpt }, { data: mo }, ccRes, pcRes] = await Promise.all([
       // cost_center: คิด cost saving (ไลน์ลูกไม่กรอก = ตกทอดจากไลน์แม่ — lineCostCenter)
       loadLinesRes(), // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
       supabaseDR.from('improvements').select('*').order('created_at', { ascending: false }),
@@ -220,7 +220,7 @@ export default function Improvements() {
       supabase.from('cost_center_rates').select('*'),
       supabaseDR.from('parts_master').select('mat_no, material_cost, standard_cost').eq('is_active', true),
     ]);
-    setLines(ln || []);
+    setLines((lnRes?.data || []));
     setItems(imp || []);
     setDtTypes(dt || []);
     setDefectTypes(dft || []);
@@ -366,10 +366,14 @@ export default function Improvements() {
     return list;
   }, [items, visibleLineNames, statusFilter]);
 
+  /* 🔴 ลิสต์ของ picker ต้อง "ไม่ตาย" — ส่วนงานที่ไม่มีไลน์ผลิตสังกัด (QA · Planning&Store · ฝั่งช่าง)
+     กรองแล้วเหลือ 0 ⇒ dropdown ว่าง = ใช้ฟีเจอร์ไม่ได้ทั้งหน้า (เคสจริง 26/10 · ด่าน line-picker-never-dead)
+     ⇒ ผ่าน `scopeLines()` ของกลาง (components/LineSelect.jsx) ที่มีตาข่าย "กรองแล้วไม่เหลือ = ไม่กรอง"
+     ⚠️ **ตัวกรองรายการยัง fail-closed เหมือนเดิม** — คนละแกน ห้ามยุบรวม */
   const lineOptions = useMemo(() => {
-    const ls = visibleLineNames ? lines.filter(l => visibleLineNames.has(l.name)) : lines;
+    const ls = pickerLines(lines, { role, lineId, sections: scopeSecs });
     return ls.filter(l => l.parent_line_name); // เฉพาะไลน์ผลิตจริง (ระดับลูก)
-  }, [lines, visibleLineNames]);
+  }, [lines, role, lineId, scopeSecs]);
 
   const typeName = useCallback((imp) => {
     if (imp.problem_source === 'mtn') return imp.problem_label || ALL.symptom;

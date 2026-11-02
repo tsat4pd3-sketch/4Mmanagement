@@ -155,7 +155,7 @@ export function orgRefBlockMessage(node, refs) {
 export function orgRefDeleteNote(refs) {
   if (!refs) return '';
   const l = [];
-  if (refs.heads) l.push(`⚠ การแต่งตั้งหัวหน้าหน่วยนี้ ${refs.heads} รายการจะถูกลบไปด้วย`);
+  if (refs.heads) l.push(`⚠ การแต่งตั้งผู้คุมหน่วยนี้ (ตำแหน่ง/รักษาการ) ${refs.heads} รายการจะถูกลบไปด้วย`);
   /* นับรวมทั้ง 🏃 คนวิ่งข้ามแผนก และ 🎖️ รักษาการ — ทะเบียนเดียวกัน (`employee_flex_units.kind`)
      ทั้งคู่ cascade หายพร้อมโหนด ⇒ ต้องบอกก่อนลบ (20/10) */
   if (refs.flex) l.push(`⚠ คนวิ่งข้ามแผนก/รักษาการที่ผูกไว้กับหน่วยนี้ ${refs.flex} รายการจะถูกลบไปด้วย`

@@ -327,9 +327,9 @@ function FlexTag({ p }) {
   const home = f.nodeName || 'หน่วยอื่น';
   const cc = f.costCenter ? ` · cost center ${f.costCenter}` : '';
   return (
-    <span title={`บ้านจริง: ${home}${cc}${f.note ? ` · ${f.note}` : ''} — มาช่วยแผนกนี้ประจำ ไม่ได้ย้ายสังกัด และไม่นับเป็นกำลังคนของแผนกนี้`}
+    <span title={`ต้นสังกัด: ${home}${cc}${f.note ? ` · ${f.note}` : ''} — มาช่วยแผนกนี้ประจำ ไม่ได้ย้ายสังกัด และไม่นับเป็นกำลังคนของแผนกนี้`}
       style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-      ↗ บ้าน {home}
+      ↗ ต้นสังกัด {home}
     </span>
   );
 }

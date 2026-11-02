@@ -101,8 +101,34 @@ for (const name of PAGES) {
   if (dups.size) dupKeys.push({ name, n: dups.size })
   await p.close()
 }
+/* ═══ 🔭 รอบที่ 2 — "บัญชีที่มีขอบเขตส่วนงาน" (2026-10-26) ═══
+   ทำไมต้องมี: รอบแรกยิง `role=admin` + mock `sections: []` เสมอ ⇒ **กิ่งโค้ดฝั่ง scope ไม่เคยถูกเดินเลย**
+   เคสจริง 25/10: 4 หน้า (/energy · /morning-meeting · die/jig registry) โยน
+   `ReferenceError: Cannot access 'scopedLines' before initialization` = จอขาวทั้งหน้า
+   เฉพาะกับบัญชีที่ **ไม่ใช่ leader และมีขอบเขต** — crashsweep รายงาน "พัง 0" อยู่ 2 วัน
+   ⇒ รอบนี้โหลดหน้าแรกอย่างเดียว (ไม่กดปุ่ม) ให้เร็ว แต่ครอบกิ่งที่คนส่วนใหญ่ในโรงงานเดินจริง
+   🔴 ห้ามถอดรอบนี้ออกเพื่อให้สวีปเร็วขึ้น */
+const SCOPED = { role: 'supervisor', sections: 'PD1' }
+const badScoped = []
+const b2 = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' })
+for (const name of PAGES) {
+  const p = await b2.newPage({ viewport: { width: 1500, height: 900 }, ...TZ })
+  const errs = []
+  p.on('pageerror', e => errs.push(String(e).split('\n')[0].slice(0, 150)))
+  try {
+    await p.goto(`http://localhost:5199/audit/index.html?p=${name}&role=${SCOPED.role}&sections=${SCOPED.sections}`,
+      { waitUntil: 'domcontentloaded', timeout: 20000 })
+    await p.waitForTimeout(1100)
+    if (await p.evaluate(() => window.__crash)) badScoped.push({ name, errs: [...errs] })
+  } catch (e) { badScoped.push({ name, errs: [String(e).slice(0, 120)] }) }
+  await p.close()
+}
+await b2.close()
+
 await b.close()
 console.log(`ตรวจ ${PAGES.length} หน้า — พัง ${bad.length} · คีย์ซ้ำ ${dupKeys.length} หน้า`)
+console.log(`รอบขอบเขต (role=${SCOPED.role} · sections=${SCOPED.sections}) — พัง ${badScoped.length} หน้า`)
+badScoped.forEach(x => console.log(`🔭 ${x.name} ${x.errs[0] || ''}`))
 bad.forEach(x => console.log(`🔴 ${x.name} [${x.where}] ${x.errs[0] || ''}`))
 /* ห้ามปิดด่านนี้ด้วยการเลิกพิมพ์ — แก้ที่หน้า (ยุบด้วย mergeById / ตั้งคีย์ให้ไม่ซ้ำ) */
 dupKeys.forEach(x => console.log(`🔑 ${x.name}: คีย์ซ้ำในลิสต์ ${x.n} ตัว — ยุบแถวด้วย mergeById (src/utils/mergeRows.js) หรือ prefix คีย์ตามแหล่ง`))

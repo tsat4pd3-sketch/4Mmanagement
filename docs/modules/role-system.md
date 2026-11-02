@@ -31,6 +31,7 @@
 | `mtn` | 🔧 ซ่อมบำรุง (Maintenance) | ทีมซ่อมบำรุง (MTN/JIG/DIE) — หน้า PM ทั้งหมด, ผังเครื่องจักร, ฐานข้อมูลเครื่องจักร (seed: `20260713_mtn_role.sql`) |
 | `engineer` | ⚙️ งานวิศวกรรม (Engineering) | process engineering — Product Master `products:create/edit` (BOM/EC/New Model) โดยไม่พ่วงอำนาจจัดการผลิต/อนุมัติ QA/งาน PM · **ตั้งใจไม่รวมกับ qa/mtn** เพราะอำนาจอนุมัติคุณภาพกับ master เครื่องจักรต้องแยกคนถือ (seed: `20260713_engineer_planner_store_roles.sql`) |
 | `engineer_nm` | 🚀 วิศวกรรมรุ่นใหม่ (New Model Engineering) | **ทีม Engineering New Model — เห็นแค่กลุ่มหน้า NM** (seed แรก: `/npi` + `/pe-docs` · ขอบเขตวันนี้ดูกล่อง 🧪 ใต้ตาราง) (seed: `page:/npi`, `page:/pe-docs`, `npi:edit`, `pe:edit`) · ไม่ให้ `npi:approve`/`pe:approve`/`npi:manage_templates` (ปิดเฟส·อนุมัติ PSW·ออก revision·ยืนยัน master PFMEA·แก้แม่แบบกลาง = ของเจ้าของเอกสาร) เปิดเพิ่มได้ที่ `/permissions` · **ทำไมไม่ใช้ `engineer` เดิม:** role นั้นถือ `/products` `/machine-database` `/dashboard` + approve อยู่แล้วและมี user จริงใช้ — สิทธิ์เข้าหน้าเป็น*ต่อ role* ไม่ใช่ต่อ user จึงหั่นไม่ได้ (migration `20260918_engineer_nm_role.sql` — **apply แล้ว 2026-09-18** · ⚠️ ALTER TYPE ADD VALUE + seed ต้องรันคนละท่อน) |
+| `marketing` | 💼 การตลาด (Marketing · Q-neX) | **ต้นน้ำของสายธาร Marketing → New Model → โรงงาน** — `page:/rfq` + `rfq:edit` + `rfq:award` (RFQ · ส่ง CRD → สร้างโปรเจค NPI · ผลได้งาน · ใบแจ้งจัดทำ F-MKT-001/002) + `page:/npi` `page:/nm-board` **ดูอย่างเดียว** (ไม่ให้ `npi:edit`) · ใช้เว็บ edition ก่อน SOP ร่วมกับ `engineer_nm` — **คนละ role เพราะชุดสิทธิ์ต่างกันจริง** (ออก RFQ/Award ≠ ทำ APQP) · ทำครบ 5 จุด (enum `20261030a` · ROLE_META · seed `20261030b` · ไม่มี role array ต้องแก้ · F5) — **apply แล้ว 2026-10-30** · 📄 `docs/modules/mkt-rfq.md` §4 |
 | `planner_store` | 📦 แผนงาน-คลัง (Planner & Store) | ฝั่งคลัง/แผนงาน — Store, Kanban, Rack, Rundown, อัพโหลด Forecast (`heijunka:operate`, `line_stock:issue/manage_rounds`, `rack_center:operate`, `demand:upload`) — แยกจาก `sale` ที่โฟกัส Delivery/Ship-to (seed เดียวกัน) |
 | `display` | 📺 จอแสดงผล (View Only) | ดูอย่างเดียว (จอแสดงผลลอย ไม่ login เป็นคน) |
 
@@ -1063,3 +1064,48 @@ migration `20261014_rls_round10_tier_b_final_main.sql` (**apply แล้ว 202
 
 **เหลือชั้น ข. อีก 23 ตาราง** — ปิดครบในรอบ 10 (ดูหัวข้อถัดไป)
 · 🔵 `four_m_logs` / `profiles` **policy เปิดโดยเจตนา — ด่านจริงคือ trigger** (รอบ 5-6) ไม่ต้องรัด policy
+
+## 🏷️ ชุดสิทธิ์แกน "ขอบเขต" ↔ ระดับในรหัส Cost Center (2026-10-21 · คำสั่ง user)
+
+> user: *"ดูเรื่อง relate เรื่องสิทธิ์ให้ตรงกับระดับ cost center ด้วย"*
+
+**วิธีอ่านรหัส** (ตัวอย่าง `2140462100`) — `21` กลุ่มธุรกิจ · `40` โรงงาน (`2140` = ทั้งโรงงาน) ·
+**หลักที่ 5 = ระดับในผัง** · หลักที่ 6 = หน่วยไหนในระดับนั้น (46/47…) · ที่เหลือ = แตกย่อยลงไป
+
+| ระดับ (หลักที่ 5) | ชั้นในผัง | role แกน scope |
+|---|---|---|
+| 3 | ฝ่าย / ผู้บริหาร | 🏭 สิทธิ์ทั้งฝ่าย (`manager`) |
+| 4 | ส่วนงาน | 🏢 สิทธิ์ระดับส่วน (`supervisor`) |
+| 5 | **แผนก** | **ยังไม่มี role แยก** — ใช้ `supervisor` + ติ๊ก CC ของแผนก (ช่อง ④) ⇒ แคบเหลือแผนก + ใต้ลงไป |
+| 6 | กลุ่ม / ไลน์ | 👥 สิทธิ์ระดับไลน์ (`leader`) |
+
+· ป้าย "เลเวล N" โชว์ในตารางอ้างอิงชุดสิทธิ์ (`/add-user`) · ค่ามาจาก `ROLE_META[].orgLevel` + `ORG_LEVELS` (`utils/roleMeta.js`)
+· 🔴 **เป็นป้ายให้คนอ่านเท่านั้น — ระบบตัดสินลำดับชั้นจาก `org_nodes.parent_id` เสมอ ห้ามแกะเลขรหัส**
+  (กฎเหล็ก CLAUDE.md · ตัวตัดสินจริง `utils/ccScope.js`)
+· 📏 วัดผังจริง 21/10: ส่วนงาน 10/10 หลักที่ 5 = `4` · แผนก 26/26 = `5` · ไลน์ 21/23 = `6`
+  — 🟡 **2 โหนดที่รหัสไม่ตรงชั้น**: `Store Raw Material` (`2140524100`) · `Store Semi` เป็นชั้น "ไลน์"
+  แต่ผูกรหัสชั้นแผนกไว้ · ไม่กระทบสิทธิ์ (ระบบใช้ผัง ไม่ใช้เลข) แต่ถ้าจะให้รหัสสื่อความหมายตรง ควรไล่แก้ที่ `/org-setup`
+· ⬆️ ชั้น 3 (ฝ่าย) **ยังไม่มีโหนดในผัง** — `org_nodes` สูงสุดคือ `section` (10 โหนด)
+
+### ❓ ถ้าจะเพิ่ม role "ระดับแผนก" (เลเวล 5) จริงๆ ต้องจ่ายอะไรบ้าง
+1. เพิ่มค่าใน enum `user_role` (**ลบคืนไม่ได้**) + seed `role_permissions` ทั้งคอลัมน์
+2. ไล่โค้ดที่ hardcode `'supervisor'` — **38 จุดใน 12+ ไฟล์** (`sectionScope.js` · `manpowerBoard.js` ·
+   `prodRoutine.js` · `operator.jsx` · `DeptDashboard.jsx` ฯลฯ) role ใหม่ที่ไม่ถูกเติมในจุดพวกนี้ = **เงียบ ไม่ใช่ error**
+3. RLS ที่อ้าง role ตรงๆ (ถ้ามี) + เอกสาร/ด่าน
+⇒ ทางที่ได้ผลเท่ากันโดยไม่จ่ายข้อ 1-3 คือ **`supervisor` + Cost Center ของแผนก** (ชั้นสิทธิ์ที่ 3 แกน CC ทำงานตามลำดับชั้นอยู่แล้ว)
+
+
+## 👀 `viewer` — ผู้ทดลองใช้ ดูอย่างเดียว (2026-11-02)
+
+คำสั่ง user: *"user ไว้ให้นายเราลองเข้ามาทดสอบดูโปรแกรม แต่จะไม่สามารถแก้ไขอะไรหรือลงข้อมูลอะไรได้"*
+
+- **กลไก:** มีแต่คีย์ `page:*` · **ไม่มีคีย์ action แม้แต่ตัวเดียว** ⇒ `can()` เท็จทุกปุ่ม · RLS ฝั่ง Main (`has_perm`) บล็อกเขียน
+  ⚠️ ฝั่ง DR เป็น anon ⇒ กันได้ที่ชั้นปุ่ม/handler เท่านั้น (known gap เดิม — คนตั้งใจยิง API ตรงยังเขียนได้)
+- **ทำไมไม่ใช้ `display`:** นั่นคือ "จอ TV" (24 หน้า · วนหน้าอัตโนมัติ · ไม่ auto-logout · `axis:'device'`) ไม่ใช่คน
+- **หน้าที่ไม่ให้เห็น:** ตั้งค่าทั้งหมด (`/qa-setup` `/pm-setup` `/process-setup` `/linesetup` `/org-setup` `/layout-setup`
+  `/storage-maintenance` `/notification-config` `/display-rotation`) · `/announcements` · `/audit-log` ·
+  `/register` + `/checkin` (เขียนโดยมี `can()` คุมบาง) · `/remote` (สั่งจอ TV)
+- **ตั้งค่าบัญชีที่ `/add-user`:** ชุดสิทธิ์ `👀 ผู้ทดลองใช้` · ขอบเขต **ทั้งโรงงาน** (`scope_depth='all'`) · ส่วนงาน/ไลน์ **ว่าง**
+  (ว่าง ⇒ `canWriteUnit` fail-closed อีกชั้น) · `account_kind='shared'` ถ้าเป็นบัญชีกลางให้หลายคนลอง
+- migration `20261102_role_viewer_main.sql` (2 บล็อก — enum ต้อง commit ก่อน seed · 55P04)
+- 🔴 **ห้ามเพิ่มคีย์ action ให้ role นี้** — ถ้าวันหน้าอยากให้ "ลองกด" ได้ ให้ทำ sandbox แยก ไม่ใช่เปิดคีย์บนฐานจริง

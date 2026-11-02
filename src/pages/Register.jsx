@@ -8,8 +8,13 @@ import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import {
   inSectionScope, ORPHAN_SECTION, ORPHAN_SECTION_LABEL,
-  sectionValueForSave, orphanDepts, deptOptionsFor, deptNodeFor, orgNodeIdFor, ORG_SRC_MANUAL,
+  orphanDepts, deptOptionsFor, deptNodeFor,
 } from '../utils/sectionScope';
+/* 🪪 ตัวตนพนักงานใหม่ประกอบที่ utils ที่เดียว — ทางเข้าอีกทางคือโมดัลแก้ผู้ใช้ใน /add-user
+   (เดิมหน้านี้ไม่เขียน `staff_kind` เลย ⇒ QA/วิศวกร/ธุรการ ถูกนับเป็นกำลังคนหน้าไลน์เงียบๆ · audit 26/10) */
+import { newEmployeeRow, staffKindHint } from '../utils/employeeIdentity';
+import { STAFF_KINDS, STAFF_SHOPFLOOR, SUPPORT_VALUES } from '../utils/staffKind';
+import { checkWrite } from '../utils/dbWrite';
 import { positionOptionsWith } from '../utils/positions';
 import ImageCropModal from '../components/ImageCropModal';
 import { toast } from '../components/Toast';
@@ -32,6 +37,7 @@ export default function Register() {
   const [groupName,   setGroupName]   = useState('');
   const [lineId,      setLineId]      = useState(null);
   const [team,        setTeam]        = useState('');
+  const [staffKind,   setStaffKind]   = useState(STAFF_SHOPFLOOR);   // 👥 หน้างาน / ช่าง / สายสนับสนุน
   const [startDate,   setStartDate]   = useState('');
   const [photo,       setPhoto]       = useState(null);
   const photoPreview = useObjectUrl(photo);   // blob URL สร้างครั้งเดียวต่อไฟล์ + revoke เอง (ห้าม createObjectURL ใน render)
@@ -83,6 +89,7 @@ export default function Register() {
   const orphanDeptOpts = orphanDepts(orgDepts);
   const showOrphanOpt  = !scopeSecs.length && orphanDeptOpts.length > 0;
   const isOrphanSec    = section === ORPHAN_SECTION;
+  const isSupportKind  = SUPPORT_VALUES.includes(staffKind);   // 👥 สายสนับสนุน = ไม่ผูกไลน์/ทีม
 
   const deptOpts = deptOptionsFor(section, orgSections, orgDepts);
   // กลุ่ม (org_nodes kind='line') ใต้แผนกที่เลือก — cascade จากผังองค์กร
@@ -109,31 +116,22 @@ export default function Register() {
         photoUrl = pub.publicUrl;
       }
 
-      const { error: insertError } = await supabase.from('employees').insert([{
-        employee_id_code: empCode,
-        name,
-        position:   position  || null,
-        department,
-        section:    sectionValueForSave(section),  // "ขึ้นตรงฝ่าย" = null (ตรงกับผังจริง)
-        group_name: groupName || null,
-        team:       team      || null,
-        line_id:    lineId    || null,
-        /* 🧭 แกนสังกัด — ผูกโหนดในผังตั้งแต่ลงทะเบียน (docs/ORG-AXES-DECISION.md §5.1)
-           ข้อความ section/department ข้างบนยังเขียนเหมือนเดิมในฐานะสำเนาไว้โชว์ */
-        org_node_id:  orgNodeIdFor(section, department, orgSections, orgDepts),
-        org_node_src: ORG_SRC_MANUAL,
-        bus_route_id: busRouteId || null,
-        start_date: startDate || null,
-        image_url:  photoUrl,
-        created_by: userId,
-      }]);
-      if (insertError) throw insertError;
+      const row = newEmployeeRow({
+        employeeIdCode: empCode, name, position, department, section,
+        orgSections, orgDepts,
+        staffKind, groupName, team, lineId, busRouteId, startDate,
+        imageUrl: photoUrl, createdBy: userId,
+      });
+      if (!checkWrite(await supabase.from('employees').insert([row]), 'เพิ่มพนักงานใหม่')) {
+        setIsUploading(false);
+        return;
+      }
 
       toast.success('เพิ่มพนักงานสำเร็จ!');
       setEmpCode(''); setName(''); setPosition(''); setDepartment('');
       setSection(lockedSection || '');
       setGroupName(''); setLineId(null); setBusRouteId('');
-      setTeam(''); setStartDate(''); setPhoto(null);
+      setTeam(''); setStartDate(''); setPhoto(null); setStaffKind(STAFF_SHOPFLOOR);
       document.getElementById('photo-upload').value = '';
     } catch (err) {
       toast.error('เกิดข้อผิดพลาด: ' + err.message);
@@ -143,10 +141,13 @@ export default function Register() {
   };
 
   return (
-    /* ชิดซ้าย-บนเหมือนหน้าอื่น (เดิมจัดกลางจอ ⇒ ชื่อหน้าเริ่มคนละตำแหน่ง — UI-STANDARD §1) */
-    <Page width="narrow">
+    /* ชิดซ้าย-บนเหมือนหน้าอื่น (เดิมจัดกลางจอ ⇒ ชื่อหน้าเริ่มคนละตำแหน่ง — UI-STANDARD §1)
+       🔴 `form` (960px) ไม่ใช่ `narrow` (640px) — 26/10: ฟอร์มนี้มี 10 ช่อง + 3 แถวสองคอลัมน์
+       พอตรึง 640 แล้วชิดซ้าย กลายเป็นเสาผอมเกาะขอบ เหลือที่ว่างขวาค่อนจอ (feedback user)
+       `narrow` มีไว้สำหรับกล่องสั้นจริงๆ (login/ยืนยัน) ไม่ใช่ฟอร์มกรอกข้อมูล */
+    <Page width="form">
       <PageHeader title="เพิ่มพนักงานใหม่" icon="📸" sub="บันทึกข้อมูลพนักงานเข้าระบบ" />
-      {/* 🔴 การ์ดต้องเต็มคอลัมน์ของ <Page width="narrow"> (640px) — ห้ามตั้ง maxWidth ซ้อนอีกชั้น (14/10)
+      {/* 🔴 การ์ดต้องเต็มคอลัมน์ของ <Page width="form"> (960px) — ห้ามตั้ง maxWidth ซ้อนอีกชั้น (14/10)
           เดิมตรึง 440px ไว้ตั้งแต่ยุคที่หน้านี้จัดกลางจอ ⇒ พอเปลี่ยนเป็นชิดซ้าย กลายเป็น
           ฟอร์มผอมเกาะขอบซ้าย เหลือที่ว่างขวาค่อนจอ · ช่อง 2 คอลัมน์แคบจนป้ายล้น
           · กล่อง = `.card` ของกลาง (เงา `--shadow-sm` · UI §6.20 — `--shadow-lg` เป็นของ modal) */}
@@ -154,14 +155,35 @@ export default function Register() {
 
 
         <form onSubmit={handleRegister} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div>
-            <label style={labelSt}>รหัสพนักงาน</label>
-            <input type="text" placeholder="เช่น EMP001" value={empCode} onChange={e => setEmpCode(e.target.value)} required />
+          <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <div>
+              <label style={labelSt}>รหัสพนักงาน</label>
+              <input type="text" placeholder="เช่น EMP001" value={empCode} onChange={e => setEmpCode(e.target.value)} required />
+            </div>
+            <div>
+              <label style={labelSt}>ชื่อ - นามสกุล</label>
+              <input type="text" placeholder="ชื่อเต็มของพนักงาน" value={name} onChange={e => setName(e.target.value)} required />
+            </div>
           </div>
 
+          {/* 👥 ประเภทพนักงาน — ชุดเดียวกับโมดัลเพิ่มคนใน /add-user (ป้าย/คำอธิบายมาจาก staffKind.js)
+              🔴 เดิมหน้านี้ไม่มีช่องนี้ ⇒ ทุกคนที่ลงทะเบียนทางนี้ตกไปที่ default 'shopfloor'
+                 = QA/วิศวกร/ธุรการ ถูกนับเป็นกำลังคนหน้าไลน์เงียบๆ (audit 26/10) */}
           <div>
-            <label style={labelSt}>ชื่อ - นามสกุล</label>
-            <input type="text" placeholder="ชื่อเต็มของพนักงาน" value={name} onChange={e => setName(e.target.value)} required />
+            <label style={labelSt}>ประเภทพนักงาน</label>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {STAFF_KINDS.map(k => (
+                <button key={k.key} type="button" onClick={() => setStaffKind(k.key)}
+                  style={{ flex: '1 1 190px', width: 'auto', textAlign: 'left', cursor: 'pointer', padding: '7px 10px', borderRadius: 8, fontSize: 12,
+                    border: `1px solid ${staffKind === k.key ? 'var(--accent)' : 'var(--border2)'}`,
+                    background: staffKind === k.key ? 'rgba(34,197,94,0.10)' : 'var(--bg2)',
+                    color: staffKind === k.key ? 'var(--text)' : 'var(--text2)' }}>
+                  <div style={{ fontWeight: 700 }}>{k.label}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>{k.desc}</div>
+                </button>
+              ))}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>{staffKindHint(staffKind)}</div>
           </div>
 
           <div>
@@ -216,16 +238,27 @@ export default function Register() {
             </div>
             <div>
               <label style={labelSt}>Team / กะ</label>
-              <select value={team} onChange={e => setTeam(e.target.value)}>
-                <option value="">— เลือก —</option>
+              {/* 🔴 สายสนับสนุน = ไม่ผูกไลน์/ทีม — `newEmployeeRow()` ตัดเป็น null ให้อยู่แล้ว
+                  ช่องจึงต้องปิดด้วย ไม่งั้นจอสัญญาอย่าง ฐานเก็บอีกอย่าง */}
+              <select value={isSupportKind ? '' : team} disabled={isSupportKind}
+                onChange={e => setTeam(e.target.value)}
+                style={isSupportKind ? { opacity: 0.6, cursor: 'not-allowed' } : undefined}>
+                <option value="">{isSupportKind ? '— สายสนับสนุนไม่ผูกทีม —' : '— เลือก —'}</option>
                 {teamOpts.map(t => <option key={t} value={t}>Team {t}</option>)}
               </select>
             </div>
           </div>
 
+          {/* 🔴 แถวสองคอลัมน์ — ที่กรอบ 960px ช่อง select เดี่ยวจะยืดเป็น 850px (stdsweep 26/10)
+              ช่องเลือกที่กว้างเกิน ~420px อ่านยาก (ตาต้องกวาดจากป้ายไปค่าไกลมาก) */}
+          <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignItems: 'start' }}>
           <div>
             <label style={labelSt}>Group / กลุ่ม (Line)</label>
-            {(() => {
+            {isSupportKind ? (
+              <div style={{ fontSize: 12, color: 'var(--muted)', border: '1px dashed var(--border2)', borderRadius: 8, padding: '8px 10px', lineHeight: 1.5 }}>
+                สายสนับสนุนไม่ผูกกลุ่ม/ไลน์ผลิต — สังกัดอยู่ที่ <b>ส่วนงาน + แผนก</b> ข้างบนแทน
+              </div>
+            ) : (() => {
               // cascade Section→แผนก→กลุ่ม (UI-CONVENTIONS §5.3): กลุ่มจากผังองค์กร (org_nodes kind='line') ใต้แผนกที่เลือก
               //   ตั้ง line_id ผ่าน ref_line_id ของกลุ่ม (production ยังทำงาน) · ผังยังไม่มีกลุ่ม → fallback production_lines
               if (orgGroupOpts.length) {
@@ -299,6 +332,7 @@ export default function Register() {
               <option value="">— ไม่ระบุ —</option>
               {busRoutes.map(r => <option key={r.id} value={r.id}>{r.code} {r.name}</option>)}
             </select>
+          </div>
           </div>
 
           <div>

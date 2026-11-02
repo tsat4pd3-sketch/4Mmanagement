@@ -19,6 +19,12 @@ import { supabase } from '../supabaseClient';
 import { cachedMaster } from '../utils/masterCache';
 // จุดยึดป้าย + วางชื่อในกรอบ = สูตรเดียวกับ /factory-map (utils/regionGeom.js)
 import { labelAnchor as anchorOf, plainLabelLayout } from '../utils/regionGeom';
+import useTvShell from '../utils/useTvShell';
+
+/* 📺 ป้ายบนผัง = หน้าตาเดียวกับ /factory-map (22/10 · user "ทำป้ายบนผังให้เป็นแบบเดียวกัน")
+   ปกติ = ข้อความล้วนในกรอบ · ผิดปกติ = การ์ดพื้นเข้ม ขอบล่างหนาสีสถานะ ชื่อบน/สถานะล่าง · จอ TV ขยาย ×1.4
+   (ค่าเดียวกับ `lblScale` บนจอ TV ของผังรวม) — แก้หน้าตาป้ายที่หนึ่ง ต้องแก้อีกที่ด้วย */
+const TV_LBL_K = 1.4;
 
 const ptsStr = (pts) => (pts || []).map(p => `${p[0]},${p[1]}`).join(' ');
 
@@ -26,6 +32,7 @@ const ptsStr = (pts) => (pts || []).map(p => `${p[0]},${p[1]}`).join(' ');
 const DIM = { color: '#6b7280', blink: false, label: null };
 
 export default function FactoryMiniMap({ stateOf, onPick, bottomReserve = 28 }) {
+  const K = useTvShell() ? TV_LBL_K : 1;
   const [map, setMap] = useState(null);      // { image_url }
   const [regions, setRegions] = useState([]);
   const [err, setErr] = useState(null);
@@ -112,12 +119,13 @@ export default function FactoryMiniMap({ stateOf, onPick, bottomReserve = 28 }) 
   const names = useMemo(() => {
     const [w, h] = boxWH;
     const reserved = w > 0 && h > 0 ? marks.map(({ r, st, at }) => {
-      const bw = Math.min(46, ((String(r.line_name).length + String(st.label).length) * 8 + 30) / w * 100);
-      const bh = 26 / h * 100;
-      return { x: at[0] - bw / 2, y: at[1] - bh * 1.08, w: bw, h: bh };
+      const bw = Math.min(46, (Math.max(String(r.line_name).length, String(st.label).length) * 8 * K + 20) / w * 100);
+      const bh = 40 * K / h * 100;   // การ์ด 2 บรรทัด (ชื่อ/สถานะ)
+      const below = at[1] - bh * 1.08 < 0;   // ชิดขอบบน = การ์ดลงไปอยู่ในกรอบ (ตรงกับตอนวาด)
+      return { x: at[0] - bw / 2, y: below ? at[1] : at[1] - bh * 1.08, w: bw, h: bh };
     }) : [];
-    return plainLabelLayout(regions, { wrapW: w, wrapH: h, reserved, skip: new Set(marks.map(m => m.r.line_name)) });
-  }, [regions, marks, boxWH]);
+    return plainLabelLayout(regions, { wrapW: w, wrapH: h, reserved, skip: new Set(marks.map(m => m.r.line_name)), charPx: 7.4 * K, linePx: 18 * K });
+  }, [regions, marks, boxWH, K]);
 
   if (err) return <div style={box}>⚠ โหลดผังโรงงานไม่สำเร็จ — {err}</div>;
   if (!map?.image_url) {
@@ -170,7 +178,8 @@ export default function FactoryMiniMap({ stateOf, onPick, bottomReserve = 28 }) 
             style={{
               position: 'absolute', left: `${n.x}%`, top: `${n.y}%`, maxWidth: `${n.w}%`,
               ...(n.center ? { transform: 'translate(-50%, -50%)' } : { width: `${n.w}%` }),
-              textAlign: 'center', fontSize: 'clamp(11px,0.95vw,14px)', fontWeight: 800, color: '#fff', lineHeight: 1.3,
+              textAlign: 'center', fontSize: 'clamp(11px,1vw,14px)', fontWeight: 800, color: '#fff', lineHeight: 1.3,
+              ...(K !== 1 ? { zoom: K } : {}),
               whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
               textShadow: '0 1px 2px #000, 0 0 7px rgba(0,0,0,0.95)',
               pointerEvents: onPick ? 'auto' : 'none', cursor: onPick ? 'pointer' : 'default',
@@ -178,20 +187,30 @@ export default function FactoryMiniMap({ stateOf, onPick, bottomReserve = 28 }) 
         ))}
 
         {/* ป้าย = HTML (ไม่โดน viewBox ยืดผิดสัดส่วน — กฎเดียวกับ marker บนผังไลน์) */}
-        {marks.map(({ r, st, at }) => (
+        {marks.map(({ r, st, at }) => {
+          // เหนือกรอบไม่มีที่ (ไลน์ชิดขอบบนผัง) = วางในกรอบแทน — กรอบผัง overflow:hidden จะตัดป้ายทิ้งครึ่งใบ
+          const room = boxWH[1] > 0 ? at[1] - (40 * K / boxWH[1]) * 100 * 1.08 : 1;
+          return (
           <div key={`lb-${r.id}`}
             onClick={onPick ? () => onPick(r.line_name) : undefined}
             className={st.blink ? 'dt-alarm-blink' : undefined}
             style={{
-              position: 'absolute', left: `${at[0]}%`, top: `${at[1]}%`, transform: 'translate(-50%, -108%)',
-              background: 'rgba(9,11,18,0.92)', border: `2px solid ${st.color}`, borderRadius: 8,
-              padding: '3px 9px', whiteSpace: 'nowrap', pointerEvents: onPick ? 'auto' : 'none',
-              cursor: onPick ? 'pointer' : 'default', maxWidth: '46%', overflow: 'hidden', textOverflow: 'ellipsis',
+              position: 'absolute', left: `${at[0]}%`, top: `${at[1]}%`, transform: room < 0 ? 'translate(-50%, 4px)' : 'translate(-50%, -108%)',
+              maxWidth: '46%', pointerEvents: onPick ? 'auto' : 'none', cursor: onPick ? 'pointer' : 'default',
             }}>
-            <span style={{ fontSize: 13, fontWeight: 900, color: '#fff' }}>{r.line_name}</span>
-            <span style={{ fontSize: 12, fontWeight: 800, color: st.color, marginLeft: 7 }}>{st.label}</span>
+            {/* การ์ดแบบเดียวกับป้ายนอกกรอบของ /factory-map (พื้นเข้มไล่เฉด · ขอบบาง + ขอบล่างหนาสีสถานะ · ชื่อบน/สถานะล่าง) */}
+            <div style={{
+              ...(K !== 1 ? { zoom: K } : {}),
+              background: 'linear-gradient(180deg, rgba(8,10,16,0.9), rgba(8,10,16,0.76))', border: `1px solid ${st.color}66`,
+              borderBottom: `2.5px solid ${st.color}`, borderRadius: 7, padding: '2px 8px 3px', textAlign: 'center',
+              textShadow: '0 1px 3px rgba(0,0,0,0.95)', boxShadow: 'var(--shadow-float)',
+            }}>
+              <div style={{ fontSize: 'clamp(11px,1vw,14px)', fontWeight: 800, color: '#fff', letterSpacing: 0.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.3 }}>{r.line_name}</div>
+              <div style={{ fontSize: 'clamp(11px,0.9vw,12.5px)', fontWeight: 800, color: st.color, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.25 }}>{st.label}</div>
+            </div>
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

@@ -142,6 +142,23 @@ export const isMtnFormRow = (order = {}) => {
   return !!it && guessTeamFromName(it) === MTN_FORM_TEAM;
 };
 
+/* ── ใบนี้เป็นของ "ทีมเครื่องมือ" (JIG / DIE) ไหม ────────────────────────────  2026-10-27
+   คำสั่ง user: *"สำหรับ MO ของ jig กับ DIE งานซ่อมนอกไลน์ step 4 ต้องเป็นหัวหน้าแผนกช่าง
+   ก่อน QA ไม่ใช่ผู้แจ้ง"* — งาน JIG/DIE ถอดของออกมาซ่อมที่ห้องช่าง ผู้แจ้งที่อยู่หน้าไลน์
+   จึงตรวจรับของที่ยังอยู่ในห้องช่างไม่ได้ ⇒ ขั้น 4 ย้ายไปฝั่งช่าง (ดู `TOOL_FORM_STEPS`)
+
+   🔴 เกณฑ์ "ทีมไหนเป็นทีมเครื่องมือ" อยู่ที่นี่ที่เดียว — ห้ามเขียนรายชื่อคีย์ทีมซ้ำในหน้า/ใน util อื่น
+      (หลักเดียวกับ `isMtnFormRow` ด้านบน · pure เรียกจาก mtnStepPerm ได้)
+   🔴 **ไม่รู้ = ไม่ใช่ทีมเครื่องมือ** ⇒ ถอยไปพฤติกรรมเดิม (ผู้แจ้งตรวจรับ) ไม่ใช่ย้ายช่องเซ็นเงียบๆ */
+const TOOL_TEAMS = ['jig_maintenance', 'die_maintenance'];
+const TOOL_TEAM_ALIASES = [...TOOL_TEAMS, 'jig', 'die', 'tooling'];
+export const isToolTeamRow = (order = {}) => {
+  const d = String(order?.mtn_dept || '').trim().toLowerCase();
+  if (d) return TOOL_TEAM_ALIASES.includes(d);
+  const it = String(order?.item_type || '').trim();
+  return !!it && TOOL_TEAMS.includes(guessTeamFromName(it));
+};
+
 /** เหตุผลมาตรฐานเมื่อ QA ไม่อยู่ในลูปของฟอร์มนี้เลย (ไม่ใช่มีคนกดข้าม) — user 2026-09-22 */
 export const QA_SKIP_REASON_MTN_FORM = 'ใบซ่อมของทีม MTN (FM-MTN-006) — ลูปนี้ไม่มีขั้นตรวจคุณภาพโดย QA';
 

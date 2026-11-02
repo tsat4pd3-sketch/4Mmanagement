@@ -56,7 +56,7 @@ const SIGS = [
 ];
 
 export default function MaterialRequests() {
-  const { role, lineId, sections = [], fullName, section: mySection } = useContext(UserContext);
+  const { role, lineId, sections = [], fullName, section: mySection, scopeIdx } = useContext(UserContext);
   const { can } = usePerms();
   const canRecord = can('scrap', 'record');
   const canManage = can('scrap', 'manage');
@@ -77,7 +77,7 @@ export default function MaterialRequests() {
   //   helper กลาง scopedLineNames — เดิมเทียบ sections.includes(l.section) ตรงตัว (ไม่ normalize
   //   ช่องว่าง/ตัวพิมพ์เหมือน inSectionScope) และไม่มี fallback เมื่อกรองแล้วไม่เหลือไลน์ (audit รอบ 11)
   const scopedLines = useMemo(() => {
-    const names = scopedLineNames({ role, lineId, sections, lines });
+    const names = scopedLineNames({ role, lineId, sections, lines, scopeIdx });
     if (!names) return lines;
     const set = new Set(names);
     return lines.filter(l => set.has(l.name));
