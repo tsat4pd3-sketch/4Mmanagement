@@ -8027,3 +8027,21 @@ test('🔄 assignment-overlay-widen-only — รักษาการทับ�
   const rf = applyAssignments({ sections: ['PD4'], respCostCenters: [] }, a, { nodes: [], ccIdx: null, today: '2026-11-02' });
   assert.deepEqual(rf.sections, ['PD4']); assert.equal(rf.failed, true, 'ผังอ่านไม่ได้ = ไม่ทับ + failed');
 });
+
+test('🛒 pr-filter-keeps-waiting — ซ่อนตัวกรองรวมได้ แต่ห้ามถอดออกจากลิสต์', () => {
+  /* why (02/11 · ทีม MTN แจ้ง "Filter ไปขึ้นซ้อนกัน ทั้ง 1.รอแอดมินช่างเปิด PR 2.รอเปิด PR"):
+     ตัวเลือก `waiting` = ผลรวมของ `need` + `no_no` ⇒ เมื่อ `no_no` เป็น 0 มันโชว์เลขเท่ากับ `need` เป๊ะ
+     หน้างานอ่านว่าเป็นตัวเลือกซ้ำ ⇒ ซ่อนจาก dropdown (เหลือ 3 ขั้นตามที่ทีมเขียนมา)
+     🔴 แต่ **ห้ามลบออกจาก `PR_FILTERS`** — กระดิ่ง `mtn_pr_waiting` เก็บลิงก์ `/mtn-repair?pr=waiting`
+        ไว้ใน `notification_rules` (Main) · `prMatch` ตัดสินว่า "ค่าที่ไม่รู้จัก = ไม่กรอง"
+        ⇒ ลบทิ้งเมื่อไหร่ กดกระดิ่งแล้วได้ลิสต์ทั้งหมดแทนคิวของแอดมินช่าง เงียบๆ ไม่มีอะไรฟ้อง
+     🔴 และตัวที่ซ่อนต้องยังโผล่เป็น <option> เมื่อถูกเลือกอยู่ ไม่งั้นช่องว่างทั้งที่กรองอยู่ */
+  const src = readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8');
+  assert.match(src, /\{\s*v:\s*'waiting'[^}]*hidden:\s*true/,
+    '\n\n❌ ตัวเลือก `waiting` หายจาก PR_FILTERS (หรือไม่ได้ทำเป็น hidden)\n'
+    + '   ผล: ลิงก์ในกระดิ่ง `/mtn-repair?pr=waiting` จะไม่กรองอะไรเลย — แอดมินช่างได้ลิสต์ทั้งหมด\n'
+    + '   แก้: เก็บแถวไว้แล้วติด hidden: true (ซ่อนจาก dropdown เฉยๆ)\n');
+  assert.match(src, /PR_FILTERS\.filter\(x => !x\.hidden \|\| x\.v === fPr\)/,
+    '\n\n❌ ลิสต์ตัวเลือกไม่ได้เปิดทางให้ตัวที่ซ่อนโผล่ตอนถูกเลือก\n'
+    + '   ผล: มาจากลิงก์กระดิ่งแล้วช่อง "งาน PR" ว่างเปล่า ทั้งที่จอกรองอยู่ = จอโกหก\n');
+});
