@@ -337,6 +337,9 @@ async function fetchAllRows(client, table, cols, shape = q => q) {
 /** 🔢 จำนวนหลักของเลข I/O ตามฟอร์มจริง — ช่องกรอกและช่องบนใบพิมพ์ต้องใช้ตัวเดียวกัน
  *  (30/10 · หน้างานแจ้งว่าใบพิมพ์วาดแค่ 11 ช่อง แต่ I/O มี 12 หลัก ⇒ หลักสุดท้ายหาย) */
 const IO_DIGITS = 12;
+/* ⚠️ PR.No. = 11 หลัก — **คงค่าที่ใบพิมพ์วาดมาตลอด** ไม่ใช่ค่าที่ยืนยันกับหน้างานแล้ว
+   (I/O เคยเป็น 11 ในโค้ดแต่ของจริง 12 · ตัวนี้ยังไม่ได้ถาม) ⇒ ถ้าหน้างานแจ้งว่าไม่ตรง แก้ที่นี่ที่เดียว */
+const PR_NO_DIGITS = 11;
 
 function ModalShell({ title, onClose, children, wide, dirty }) {
   const askClose = () => { if (dirty && !confirmDiscard()) return; onClose(); };
@@ -1911,7 +1914,16 @@ function printMoReportMtn(o, dparts = [], logo0, dlabor = [], cmt = NO_CMT, cost
      ⚠️ ตัวเดา (purposeOfPrint) ใช้ได้เฉพาะช่องติ๊กบนใบ — ด่านอนุมัติ/ด่าน QA ต้องดูค่าดิบเท่านั้น */
   const purpose = purposeOfPrint(o);
   // ช่องกริด PR.No / I/O. — 11 ช่องตามฟอร์ม กระจายตัวอักษรทีละช่อง
-  const grid = (v, n = 11) => { const t = String(v || ''); let h = ''; for (let i = 0; i < n; i++) h += `<td class="gx">${esc(t[i] || '')}</td>`; return `<table class="gr"><tr>${h}</tr></table>`; };
+  /* 🔴 ความยาวต้อง "ระบุทุกครั้ง" ห้ามมี default (02/11)
+     เดิมเป็น `n = 11` ⇒ ตอนแก้ I/O เป็น 12 หลัก call site ถูกแก้ แต่ default ยังค้าง 11
+     = ผู้เรียกรายต่อไปได้ความยาวที่ไม่มีใครเลือก (คลาสเดียวกับบั๊ก I/O ที่หน้างานแจ้ง)
+     ⇒ ไม่ส่ง n = วาดช่องเดียวแล้วติดป้ายให้เห็น ไม่ใช่เดาเลขให้ */
+  const grid = (v, n) => {
+    const t = String(v || '');
+    if (!Number.isFinite(n) || n < 1) return `<span class="gr-bad">⚠️ ไม่ได้ระบุจำนวนหลัก: ${esc(t)}</span>`;
+    let h = ''; for (let i = 0; i < n; i++) h += `<td class="gx">${esc(t[i] || '')}</td>`;
+    return `<table class="gr"><tr>${h}</tr></table>`;
+  };
   const line = (label, v, w = '') => `<span class="lb">${label}</span><span class="dot" style="${w ? `min-width:${w}` : ''}">${esc(v ?? '')}</span>`;
   // ลายเซ็น: รูปเซ็น (ถ้ามี) + ชื่อ + วันที่ __/__/__
   /* ช่องเซ็น = ตัวคั่นความสูงขั้นต่ำ (sgsp) + บล็อกที่กางเต็มช่องแบบ absolute
@@ -1961,6 +1973,7 @@ function printMoReportMtn(o, dparts = [], logo0, dlabor = [], cmt = NO_CMT, cost
     .lb{font-weight:400}
     .dot{display:inline-block;border-bottom:1px dotted #555;min-width:70px;padding:0 3px;font-weight:700}
     .gr{width:auto;display:inline-table;margin-left:3px}
+    .gr-bad{color:#b00;font-weight:700}   /* ไม่ได้ระบุจำนวนหลัก — ให้เห็นบนกระดาษ ห้ามเงียบ */
     .gr td{border:1px solid #000;width:13px;height:13px;text-align:center;font-size:9px;padding:0}
     .c{text-align:center} .r{text-align:right} .g{color:#bbb}
     .sec{background:#fff;text-align:center;font-weight:700;padding:2px}
@@ -2007,7 +2020,7 @@ function printMoReportMtn(o, dparts = [], logo0, dlabor = [], cmt = NO_CMT, cost
       <td style="width:78%;padding:3px 5px">
         <div>เรียน &nbsp;ผู้จัดการส่วนซ่อมบำรุง</div>
         <div style="margin-top:2px">${line('จากฝ่าย/ส่วน', o.work_area, '95px')} &nbsp;${line('แผนก', o.dept_section, '75px')} &nbsp;${line('เบอร์ติดต่อ', o.contact_phone, '45px')} &nbsp;${line('Cost Center', o.cost_center, '85px')}</div>
-        <div style="margin-top:3px">PR.No. ${grid(prPl.header)} &nbsp;&nbsp; I/O. ${grid(o.io_no, IO_DIGITS)}</div>
+        <div style="margin-top:3px">PR.No. ${grid(prPl.header, PR_NO_DIGITS)} &nbsp;&nbsp; I/O. ${grid(o.io_no, IO_DIGITS)}</div>
         <div style="margin-top:3px">${line('ชื่อเครื่องจักร', o.item_type, '135px')} ${line('เบอร์', o.machine_no, '80px')}
           จุดประสงค์ (${purpose === 'repair' ? '✓' : '&nbsp;'}) ซ่อม (${purpose === 'improve' ? '✓' : '&nbsp;'}) ปรับปรุง (${purpose === 'service' ? '✓' : '&nbsp;'}) บริการ (${purpose === 'build' ? '✓' : '&nbsp;'}) สร้าง</div>
       </td>
