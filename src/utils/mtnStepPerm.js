@@ -30,6 +30,7 @@
 import {
   isMtnFormRow, isToolTeamRow, mtnApprovalState, qaAppliesTo, isApprovalBlocked, approvalKindPending,
 } from './mtnMoForm.js';
+import { MANAGER_SIGN_MIN_RANK } from './signRank.js';
 
 /** ขั้นที่ 1 ไม่อยู่ในตารางนี้ — เป็นการ "เปิดใบ" คุมด้วย mtn_repair:report ตรงๆ */
 export const MTN_STEPS = {
@@ -580,7 +581,7 @@ export const QA_SKIP_REASON_STEP4 = 'ขั้น 4 ระบุว่าไม�
  *        ส่วนงาน**ผู้แจ้ง** (ฝั่งผลิต) ไม่ใช่ทีมช่าง ⇒ ไม่กระทบด่านนี้
  *  🔴 **ไม่รู้ตำแหน่ง (`posRank == null`) = ไม่บล็อก** — กฎเดียวกับขั้น 6/7/8 (ไม่รู้ ≠ ไม่ใช่)
  *     แต่จอต้องเขียนว่า "ไม่ได้ตรวจตำแหน่ง" (ดู `stepAssumptions`) */
-export const APPROVAL_MIN_RANK = 50;
+export const APPROVAL_MIN_RANK = MANAGER_SIGN_MIN_RANK;
 
 export function canSignMtnApproval(kind, opts = {}) {
   const { order = {}, fullName = '', can = () => false, posRank = null, inReporterScope = null } = opts;

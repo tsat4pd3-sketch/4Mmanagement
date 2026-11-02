@@ -6,7 +6,11 @@ import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { can, canDelete as canDeleteUtil } from '../utils/permissions';
 import { toast } from '../components/Toast';
-import { checkWrite } from '../utils/dbWrite';
+import { checkWrite, checkWriteRows } from '../utils/dbWrite';
+import { confirmSign } from '../utils/signConfirm';
+import { positionRank } from '../utils/positions';
+import { MANAGER_SIGN_MIN_RANK } from '../utils/signRank';
+import { canWriteUnit, writeBlockText } from '../utils/writeScope';
 import { inSectionScope, ORPHAN_SECTION, ORPHAN_SECTION_LABEL, deptOptionsFor, orphanDepts, sectionValueForSave, sectionValueForEdit } from '../utils/sectionScope';
 import { mergeBorrowedEmployees, currentWorkShift } from '../utils/lineHelpers';
 import { fmtDate, todayLocal } from '../utils/dateFormat';
@@ -169,7 +173,13 @@ function SignQueueModal({ queue, onCancel, onDone }) {
 }
 
 export default function OjtTraining() {
-  const { role, lineId: userLineId, sections: scopeSecs = [], fullName } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs = [], fullName,
+    position: myPosition, respCostCenters, scopeIdx, allUnits } = useContext(UserContext);
+  /* 🔒 ช่อง "ระดับจัดการอนุมัติ" = ผู้จัดการเซ็นเอง (02/11 · คำสั่ง user เลือกทาง "ข")
+     เดิมเป็น picker: ใครแก้ใบได้ เลือกชื่อคนแล้วดึง signature_url ของคนนั้นมาแปะ
+     ⇒ ธุรการแปะลายเซ็นผู้จัดการได้ (วัด 02/11: 61 จาก 74 ใบที่ชื่อผู้อนุมัติ ≠ คนสร้างใบ)
+     กฎของโมดูลนี้ห้ามอยู่แล้ว (28/10): "ลายเซ็นที่เก็บไว้แล้วเอามาแปะ = ตรายาง ไม่ใช่การลงนาม" */
+  const posRank = positionRank(myPosition);
   // คีย์เนื้อหาแทน array ใน deps ของตัวโหลด (กฎข้อ 9) — เหตุผลเต็ม: ด่าน no-unstable-ref-in-db-effect-deps
   const scopeKey = useMemo(() => [...(scopeSecs || [])].sort().join('|'), [scopeSecs]);
   const canRecord = can('ojt', 'record', role);
@@ -417,7 +427,9 @@ export default function OjtTraining() {
         for_new: !!editing.for_new, for_review: !!editing.for_review, for_method_change: !!editing.for_method_change,
         topic: editing.topic || null, scope: editing.scope || null, trainer_name: editing.trainer_name || null,
         maker_name: editing.maker_name || null, maker_sig_url: editing.maker_sig_url || null,
-        approver_name: editing.approver_name || null, approver_sig_url: editing.approver_sig_url || null,
+        /* 🔴 ไม่เขียน `approver_*` ที่นี่ — ช่อง "ระดับจัดการอนุมัติ" ต้องให้ผู้จัดการกดเซ็นเอง
+           (02/11 · ทาง "ข") ปล่อยให้ตัวบันทึกใบเขียนได้ = ธุรการแปะลายเซ็นผู้จัดการเหมือนเดิม
+           ⇒ เขียนผ่าน `signApproveOjt()` ที่เดียว · มีด่าน `ojt-approver-self-sign-only` */
         hr_name: editing.hr_name || null, hr_sig_url: editing.hr_sig_url || null,
         status: editing.status || 'open',
         updated_at: new Date().toISOString(),
@@ -650,6 +662,54 @@ table{border-collapse:collapse}
   /* picker กลาง (UI §5.1.2 — ช่องชื่อคนห้ามเป็น <select> ยาว) · เรียกเป็นฟังก์ชัน ไม่ใช่ <SigPicker/>
      (component ที่ประกาศใน render = remount ทุก render ⇒ ช่องค้นหาเสียโฟกัส/คำค้นหาย)
      allowFree=false = ตรงพฤติกรรมเดิม (เลือกได้เฉพาะบัญชีในระบบ — ลายเซ็นมาจาก profiles.signature_url) */
+  /* ── ✍️ ผู้จัดการเซ็นอนุมัติเอง (02/11 · ทาง "ข") ────────────────────────────
+     ด่าน 3 ชั้นเหมือนใบ MO: ① `ojt:record` (RLS ฝั่ง DB เช็คเอง) · ② ระดับตำแหน่ง ·
+     ③ ใบนี้เป็นของหน่วยงานเราไหม (`canWriteUnit` — รองรับทั้งแกนส่วนงานและ Cost Center)
+     🔴 ไม่รู้ตำแหน่ง = ไม่บล็อก แต่จอเขียนบอก · 🔴 `checkWriteRows` เพราะ RLS ปฏิเสธ
+        UPDATE = "สำเร็จ 0 แถว ไม่มี error" (กฎเขียน DB ข้อ 2) */
+  const approveCtx = { role, section: editing?.section, sections: scopeSecs, allUnits, respCostCenters, scopeIdx };
+  const approveScope = canWriteUnit(approveCtx, sectionValueForSave(editing?.section), { unknownTarget: 'allow' });
+  const approveDeny = !canRecord ? 'ไม่มีสิทธิ์บันทึกใบอบรม'
+    : (posRank != null && posRank < MANAGER_SIGN_MIN_RANK)
+      ? 'ช่องนี้ต้องเป็นระดับหัวหน้าแผนกขึ้นไป — ตำแหน่งของบัญชีนี้ต่ำกว่าที่ช่องกำหนด (แก้ตำแหน่งได้ที่ /add-user)'
+      : (!approveScope.ok ? (writeBlockText(approveScope, { what: 'ใบอบรมนี้', unit: editing?.section || '' })
+          || 'ใบนี้เป็นของหน่วยงานอื่น') : '');
+
+  const signApproveOjt = async () => {
+    if (!editing?.id || editing.isNew) return toast.info('บันทึกใบก่อน แล้วจึงเซ็นอนุมัติได้');
+    if (approveDeny) return toast.error(approveDeny);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user?.id) return toast.error('เซสชันหมดอายุ — กรุณา login ใหม่');
+    const mySig = (profiles.find(p => p.id === user.id) || {}).signature_url || null;
+    if (!confirmSign({
+      what: 'อนุมัติใบอบรม OJT (ระดับจัดการ)',
+      docLabel: 'ใบอบรม',
+      orderNo: [fmtDate(editing.train_date), editing.topic].filter(Boolean).join(' · ') || editing.id,
+      actor: fullName,
+      as: 'ระดับจัดการอนุมัติ',
+      effect: mySig ? 'ลงชื่อ + ลายเซ็นของคุณบนใบนี้' : 'ลงชื่อ + เวลาของคุณบนใบนี้ (โปรไฟล์ยังไม่มีลายเซ็น)',
+    })) return;
+    const patch = { approver_name: fullName || null, approver_uid: user.id, approver_sig_url: mySig, approved_at: new Date().toISOString() };
+    const rows = await checkWriteRows(await supabase.from('ojt_trainings').update(patch).eq('id', editing.id).select('id'), 'เซ็นอนุมัติใบอบรม');
+    if (!rows) return;
+    setEditing(prev => ({ ...prev, ...patch }));
+    setTrainings(prev => prev.map(t => (t.id === editing.id ? { ...t, ...patch } : t)));
+    toast.success('เซ็นอนุมัติแล้ว');
+  };
+
+  /* 🔓 ปลดลายเซ็น — เซ็นแล้วเจ้าตัวแก้เองไม่ได้ ต้องให้ผู้ถือสิทธิ์ที่สูงกว่าปลด (หลักเดียวกับใบ MO) */
+  const clearApproveOjt = async () => {
+    if (!mayDelete) return toast.error('ปลดลายเซ็นอนุมัติได้เฉพาะผู้ถือสิทธิ์ลบใบอบรม (ojt:delete)');
+    if (typeof window !== 'undefined'
+      && !window.confirm(`ปลดลายเซ็นอนุมัติของ "${editing.approver_name || '—'}" ?\n\nใบจะกลับไปสถานะรออนุมัติ และต้องให้ผู้จัดการกดเซ็นใหม่`)) return;
+    const patch = { approver_name: null, approver_uid: null, approver_sig_url: null, approved_at: null };
+    const rows = await checkWriteRows(await supabase.from('ojt_trainings').update(patch).eq('id', editing.id).select('id'), 'ปลดลายเซ็นอนุมัติ');
+    if (!rows) return;
+    setEditing(prev => ({ ...prev, ...patch }));
+    setTrainings(prev => prev.map(t => (t.id === editing.id ? { ...t, ...patch } : t)));
+    toast.success('ปลดลายเซ็นแล้ว');
+  };
+
   const sigPicker = (label, nameKey, sigKey) => (
     <div>
       <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 4 }}>{label}</div>
@@ -911,7 +971,44 @@ table{border-collapse:collapse}
               {/* ลายเซ็นหัวเอกสาร */}
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10 }}>
                 {sigPicker('ผู้จัดทำ', 'maker_name', 'maker_sig_url')}
-                {sigPicker('ระดับจัดการอนุมัติ', 'approver_name', 'approver_sig_url')}
+                {/* ✍️ ระดับจัดการอนุมัติ — **เซ็นเอง ไม่ใช่ picker** (02/11 · ทาง "ข")
+                    🔴 ลายเซ็นเดิมที่ไม่มี uid/เวลา = ของก่อนเปลี่ยนกฎ ⇒ เขียนบนจอว่าตรวจย้อนไม่ได้
+                       ห้ามแสดงเป็นการอนุมัติที่ยืนยันแล้ว (ห้ามล้มเหลวเงียบ) */}
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 4 }}>ระดับจัดการอนุมัติ</div>
+                  {editing.approver_name ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                      <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--accent)' }}>
+                        ✔ {editing.approver_name}
+                        {editing.approved_at && <span style={{ fontWeight: 400, color: 'var(--text2)' }}> · {fmtDate(editing.approved_at)}</span>}
+                      </div>
+                      {editing.approver_sig_url && <img src={editing.approver_sig_url} alt="" style={{ height: 30, background: '#fff', borderRadius: 4, padding: 2, alignSelf: 'flex-start' }} />}
+                      {!editing.approver_uid && (
+                        <div style={{ fontSize: 11, color: 'var(--amber)' }}>
+                          ⚠️ ลายเซ็นเดิม — ระบบไม่ได้บันทึกว่าใครกด{editing.approved_at ? '' : ' และไม่มีเวลาอนุมัติ'} (ใบก่อน 02/11) ตรวจย้อนไม่ได้
+                        </div>
+                      )}
+                      {mayDelete && (
+                        <button onClick={clearApproveOjt} style={{ alignSelf: 'flex-start', padding: '3px 9px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 11 }}>
+                          🔓 ปลดลายเซ็น
+                        </button>
+                      )}
+                    </div>
+                  ) : editing.isNew ? (
+                    <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>บันทึกใบก่อน แล้วผู้จัดการจึงกดเซ็นอนุมัติได้</div>
+                  ) : approveDeny ? (
+                    <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.6 }}>รออนุมัติ — {approveDeny}</div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                      <button onClick={signApproveOjt} style={{ alignSelf: 'flex-start', padding: '6px 12px', borderRadius: 7, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: 'pointer', fontSize: 12 }}>
+                        ✍️ เซ็นอนุมัติ (ในนาม {fullName || 'คุณ'})
+                      </button>
+                      {posRank == null && (
+                        <div style={{ fontSize: 11, color: 'var(--amber)' }}>⚠️ บัญชีนี้ยังไม่ได้ตั้งตำแหน่ง — ระบบ<b>ไม่ได้ตรวจ</b>ว่าถึงระดับที่เซ็นช่องนี้ได้ (ตั้งที่ /add-user)</div>
+                      )}
+                    </div>
+                  )}
+                </div>
                 {sigPicker('ผู้รับทราบ', 'hr_name', 'hr_sig_url')}
               </div>
 

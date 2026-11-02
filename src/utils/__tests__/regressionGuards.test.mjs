@@ -4376,6 +4376,45 @@ test('🛡️ print-digit-grid-no-default — ช่องตัวเลขท�
   }
 });
 
+test('🛡️ ojt-approver-self-sign-only — ช่อง "ระดับจัดการอนุมัติ" ต้องเซ็นเอง ห้ามแปะของคนอื่น', () => {
+  const src = readFileSync(join(ROOT, 'src/pages/OjtTraining.jsx'), 'utf8');
+
+  /* 🔴 เคสจริง (02/11 · คำสั่ง user เลือกทาง "ข"): เดิมช่องนี้เป็น PersonSelect —
+     ใครแก้ใบได้ เลือกชื่อคนจาก profiles แล้วดึง `signature_url` ของคนนั้นมาแปะ
+     วัด 02/11: 74 ใบ · 62 ใบมีภาพลายเซ็นผู้อนุมัติ · 61 ใบที่ชื่อผู้อนุมัติ ≠ คนสร้างใบ
+     กฎของโมดูลนี้ห้ามอยู่แล้ว (28/10): "ลายเซ็นที่เก็บไว้แล้วเอามาแปะ = ตรายาง ไม่ใช่การลงนาม" */
+  assert.ok(!/sigPicker\(\s*'ระดับจัดการอนุมัติ'/.test(src),
+    '\n\n❌ ช่อง "ระดับจัดการอนุมัติ" กลับไปเป็น picker เลือกคนอื่นแล้ว\n'
+    + '   ⇒ ธุรการเลือกชื่อผู้จัดการ แล้วลายเซ็นประจำตัวของผู้จัดการถูกแปะลงใบ\n'
+    + '   แก้ยังไง: ปุ่ม "เซ็นอนุมัติ" ที่เขียนชื่อ+uid+เวลา **ของคนที่ล็อกอินอยู่** เท่านั้น\n');
+
+  /* ตัวบันทึกใบ (ธุรการ) ต้องเขียน approver_* ไม่ได้ */
+  assert.ok(!/approver_name:\s*editing\.approver_name/.test(src),
+    '\n\n❌ payload ของ `handleSave` กลับมาเขียน `approver_name` แล้ว\n'
+    + '   ⇒ ใครที่แก้ใบได้ ก็เขียนช่องอนุมัติได้ตามเดิม (ด่านที่ปุ่มไม่มีความหมาย)\n');
+
+  /* ตัวเซ็นต้อง: ถามยืนยัน → เขียน uid ของคนกด → นับแถว (RLS ปฏิเสธ = 0 แถว ไม่มี error) */
+  const i = src.indexOf('const signApproveOjt = async');
+  assert.ok(i > 0, '\n\n❌ หา `signApproveOjt` ไม่เจอ — เปลี่ยนชื่อแล้วต้องแก้ด่านนี้ด้วย\n');
+  const body = src.slice(i, i + 2200);
+  const cAt = body.indexOf('confirmSign('), uAt = body.indexOf('.update(');
+  assert.ok(cAt > 0 && uAt > 0 && cAt < uAt,
+    '\n\n❌ `signApproveOjt` เขียน DB โดยไม่ถามยืนยันก่อน (ลายเซ็นเป็น one-way)\n');
+  assert.ok(/approver_uid:\s*user\.id/.test(body),
+    '\n\n❌ ไม่ได้เขียน `approver_uid` = uid ของคนที่ล็อกอิน\n'
+    + '   ⇒ กลับไปเป็นลายเซ็นที่ตรวจย้อนไม่ได้ว่าใครกด (เดิม 67 จาก 74 ใบเป็นแบบนั้น)\n');
+  assert.ok(/checkWriteRows\(/.test(body),
+    '\n\n❌ ไม่ได้นับแถวที่เขียนจริง — RLS ปฏิเสธ UPDATE = "สำเร็จ 0 แถว ไม่มี error"\n'
+    + '   ⇒ จอขึ้น "เซ็นอนุมัติแล้ว" ทั้งที่ฐานไม่มีอะไรเปลี่ยน (กฎเขียน DB ข้อ 2)\n');
+  assert.ok(/MANAGER_SIGN_MIN_RANK/.test(src),
+    '\n\n❌ ไม่เช็คระดับตำแหน่ง — ต้องใช้ค่าจาก `utils/signRank.js` ห้ามเขียนเลขเองในหน้า\n');
+
+  /* ลายเซ็นเดิมที่ไม่มี uid = ของก่อนเปลี่ยนกฎ ⇒ จอต้องเขียนบอก ห้ามแสดงเป็นการอนุมัติที่ยืนยันแล้ว */
+  assert.ok(/!editing\.approver_uid/.test(src) && /ลายเซ็นเดิม/.test(src),
+    '\n\n❌ จอไม่แยก "ลายเซ็นเดิมที่ไม่ทราบผู้กด" ออกจากการอนุมัติที่ยืนยันแล้ว\n'
+    + '   61 ใบเก่ามีภาพลายเซ็นแต่ไม่มี uid/เวลา — แสดงเป็นอนุมัติปกติ = จอโกหก\n');
+});
+
 test('🛡️ approve-needs-confirm-4m — ปุ่มอนุมัติ 4M (SV) ต้องถามยืนยันก่อนเขียน DB', () => {
   const src = readFileSync(join(ROOT, 'src/pages/Report.jsx'), 'utf8');
   const i = src.indexOf('const handleApprove = async');
@@ -4490,8 +4529,12 @@ test('🛡️ mtn-approval-needs-rank — ช่องผู้จัดกา�
   /* 🔴 เกณฑ์ = "หัวหน้าแผนกขึ้นไป" (50) ไม่ใช่ "ผู้จัดการ" (60)
      ⚠️ ห้ามยกเป็น 60 โดยไม่พิสูจน์กับทะเบียนผู้ใช้จริงก่อน (CLAUDE.md 26/10)
      — นับความครอบคลุมต้องกาง `sections`/`resp_cost_centers` ไม่ใช่ `section` เดี่ยว */
-  assert.ok(/APPROVAL_MIN_RANK\s*=\s*50\b/.test(src),
-    '\n\n❌ `APPROVAL_MIN_RANK` ไม่ใช่ 50 แล้ว\n'
+  assert.ok(/APPROVAL_MIN_RANK\s*=\s*MANAGER_SIGN_MIN_RANK\b/.test(src),
+    '\n\n❌ `APPROVAL_MIN_RANK` ไม่ได้อ้างแหล่งเดียว (`utils/signRank.js`) แล้ว\n'
+    + '   ⇒ ใบ MO กับใบอบรม OJT ใช้เกณฑ์ตำแหน่งต่างกันได้เงียบๆ\n');
+  const rankSrc = readFileSync(join(ROOT, 'src/utils/signRank.js'), 'utf8');
+  assert.ok(/MANAGER_SIGN_MIN_RANK\s*=\s*50\b/.test(rankSrc),
+    '\n\n❌ `MANAGER_SIGN_MIN_RANK` ไม่ใช่ 50 แล้ว\n'
     + '   ยกเกณฑ์ = ต้องพิสูจน์กับทะเบียนผู้ใช้จริงก่อน merge (CLAUDE.md 26/10)\n'
     + '   ถ้าจะเปลี่ยน ต้องพิสูจน์กับทะเบียน `profiles` จริงก่อน (กฎ CLAUDE.md 26/10)\n');
 });
