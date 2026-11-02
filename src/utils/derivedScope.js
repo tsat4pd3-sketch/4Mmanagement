@@ -18,7 +18,8 @@
  *    เอาไปใช้จริงต้องผ่านขั้น 2 (ค่าที่ตั้งมือไว้ชนะเสมอ) — ห้ามข้าม
  */
 
-import { depthForLevel } from './scopeDepth.js';
+import { depthForLevel, isWiderThan } from './scopeDepth.js';
+import { isGranting } from './orgAssignments.js';
 
 /** เลเวล → "คุมถึงโหนดชั้นไหน" · ไม่อยู่ในนี้ = สมาชิก ⇒ คุมแค่โหนดตัวเอง
  *  ⚠️ ชั้น `plant`/`business_group`/`company` ยังไม่มีในผังวันนี้ — เติมเข้ามาแล้วแก้ที่นี่ที่เดียว */
@@ -140,7 +141,27 @@ export function functionOf(nodeId, nodesById) {
 const divisionViaChain = (nodeId, nodesById) =>
   ancestorChain(nodeId, nodesById).find((n) => n.division)?.division || null;
 
-export function recommendScopeDepth(emp, nodesById, { level = null, divisionOf = null } = {}) {
+export function recommendScopeDepth(emp, nodesById, { level = null, divisionOf = null, assignments = [], today } = {}) {
+  const base = baseRecommendation(emp, nodesById, { level, divisionOf });
+  /* 🔄 ชั้นทับ "รักษาการ / รับผิดชอบเพิ่ม" (02/11 · คำสั่ง user: *"ตำแหน่งจริงของ HR เป็นพื้นฐาน
+     และเพิ่มความรับผิดชอบงานที่อาจจะรักษาการแทนตำแหน่งนั้น"*)
+     ทะเบียน `org_assignments` (profile_id · org_node_id · kind head/acting · scope_depth · starts_on/ends_on)
+     ⇒ ค่าแนะนำ = **กว้างสุด** ระหว่างฐาน HR กับการมอบหมายที่ยังมีผล (`isGranting` · หมดอายุคิดตอนอ่าน)
+     🔴 ทับได้ทาง "กว้างขึ้น" เท่านั้น — มอบหมายไม่เคยทำให้ใครแคบลง */
+  const live = (assignments || []).filter((a) => isGranting(a, today));
+  let out = base;
+  live.forEach((a) => {
+    const d = a?.scope_depth;
+    if (!d) return;
+    if (!out.depth || isWiderThan(d, out.depth)) {
+      out = { ...out, depth: d, reason: a.kind === 'acting' ? 'acting' : 'assignment',
+        assignment: a, baseDepth: base.depth, baseReason: base.reason };
+    }
+  });
+  return out;
+}
+
+function baseRecommendation(emp, nodesById, { level = null, divisionOf = null } = {}) {
   const r = derivedScope(emp, nodesById);
   if (!r.scopeNodeId) return { depth: null, reason: r.reason, scope: r };
   const division = (divisionOf ? divisionOf(r.nodeId) : divisionViaChain(r.nodeId, nodesById)) || null;

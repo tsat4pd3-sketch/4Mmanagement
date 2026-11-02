@@ -6,7 +6,9 @@ import { loadLinesRes } from '../utils/useProductionLines';
 import { accessSummaryForRole } from '../App';
 import { ROLE_OPTIONS, roleLabel, groupRolesByAxis, ORG_LEVELS } from '../utils/roleMeta';
 import { effectiveSections as deriveSections, ccsForSections } from '../utils/scopePicker';
-import { recommendScopeDepth } from '../utils/derivedScope';   // 🔭 ② แนะนำจาก "อยู่ตรงไหนของผัง × เลเวล" (ค่ามือชนะเสมอ)
+import { recommendScopeDepth } from '../utils/derivedScope';
+import { kindLabel as assignKindLabel } from '../utils/orgAssignments';
+import { getWorkDate } from '../utils/workDate';   // 🔭 ② แนะนำจาก "อยู่ตรงไหนของผัง × เลเวล" (ค่ามือชนะเสมอ)
 import { divisionOfNode, divisionLabel as divisionLabelSafe } from '../utils/orgDivisions';
 import { positionOptions, positionOptionsWith, positionLabel, loadPositions, clearPositionsCache, levelOfPosition, maintenanceKindOfPosition, levelMeta, POSITION_LEVELS } from '../utils/positions';
 import { can, loadPermissions } from '../utils/permissions';   // เช็คสิทธิ์ของ role ที่เลือก เพื่อเตือนเมื่อไม่ตรงกับระดับงาน
@@ -254,6 +256,19 @@ export default function AddUser() {
      (operator/technician/engineer/clerk) แต่ถือชุดสิทธิ์หัวหน้า ⇒ ผังแนะนำแคบกว่าที่ตั้ง
      ⇒ จอต้องพูดว่า "ตำแหน่งในทะเบียนอาจไม่ตรงหน้าที่จริง" **ไม่ใช่** ชวนให้บีบขอบเขต */
   const nodesById = useMemo(() => Object.fromEntries((orgAllNodes || []).map(n => [String(n.id), n])), [orgAllNodes]);
+  /* 🔄 รักษาการ/รับผิดชอบเพิ่มของบัญชีนี้ (`org_assignments` · จัดที่ /org-setup › มอบหมายหน่วย)
+     คำสั่ง user 02/11: "ตำแหน่งจริงของ HR เป็นพื้นฐาน และเพิ่มความรับผิดชอบที่อาจรักษาการแทน"
+     ⇒ ค่าแนะนำ ② = กว้างสุดระหว่างฐาน HR กับมอบหมายที่ยังมีผล · อ่านอย่างเดียวในจอนี้ */
+  const [myAssignments, setMyAssignments] = useState([]);
+  useEffect(() => {
+    let alive = true;
+    const pid = editingId;
+    if (!pid) { setMyAssignments([]); return undefined; }
+    supabase.from('org_assignments').select('id, org_node_id, kind, scope_depth, starts_on, ends_on')
+      .eq('profile_id', pid)
+      .then(({ data, error }) => { if (!alive) return; setMyAssignments(error ? [] : (data || [])); });
+    return () => { alive = false; };
+  }, [editingId]);
   const effSections = useMemo(
     () => deriveSections(ccIdxNodes, orgAllNodes || [], form.respCcs, form.sections),
     [ccIdxNodes, orgAllNodes, form.respCcs, form.sections]);
@@ -1781,11 +1796,15 @@ export default function AddUser() {
                   const lvl = levelOfPosition(form.position);
                   const emp = linkedEmp();
                   const orgReco = emp && orgAllNodes
-                    ? recommendScopeDepth(emp, nodesById, { level: lvl, divisionOf: (id) => divisionOfNode(id, orgAllNodes) })
+                    ? recommendScopeDepth(emp, nodesById, { level: lvl, divisionOf: (id) => divisionOfNode(id, orgAllNodes),
+                        assignments: myAssignments, today: getWorkDate() })
                     : null;
                   const suggested = orgReco?.depth || depthForLevel(lvl);
                   const recoNode = orgReco?.scope?.scopeNodeId != null ? nodesById[String(orgReco.scope.scopeNodeId)] : null;
+                  const asgNode = orgReco?.assignment ? nodesById[String(orgReco.assignment.org_node_id)] : null;
                   const recoWhy = !orgReco ? null
+                    : (orgReco.reason === 'acting' || orgReco.reason === 'assignment')
+                      ? `${assignKindLabel(orgReco.assignment?.kind)}${asgNode ? ' คุม ' + asgNode.name : ''}${orgReco.assignment?.ends_on ? ' ถึง ' + orgReco.assignment.ends_on : ''} (ฐาน HR = ${positionLabel(emp?.position) || emp?.position || '-'})`
                     : orgReco.reason === 'cross_cutting' ? `สายงาน ${divisionLabelSafe(orgReco.division)} เป็นงานตัดขวางทั้งโรงงาน`
                     : orgReco.reason === 'production_head' ? `เป็นหัวของ ${recoNode?.name || 'หน่วย'} (จากตำแหน่ง ${positionLabel(emp?.position) || emp?.position || '-'})`
                     : orgReco.reason === 'production_member' ? `ตำแหน่งในทะเบียน = ${positionLabel(emp?.position) || emp?.position || '-'} (สมาชิกของ ${recoNode?.name || 'หน่วย'})`
@@ -1824,8 +1843,9 @@ export default function AddUser() {
                         {orgReco && !orgReco.depth && recoWhy && <> · ⚠️ {recoWhy}</>}
                         {recoNarrower && (
                           <div style={{ color: '#f59e0b', marginTop: 2 }}>
-                            ⚠️ ตั้งไว้กว้างกว่าที่ผังแนะนำ — ไม่ผิด แต่ถ้าคนนี้เป็นหัวหน้าจริง ให้แก้<b>ตำแหน่ง</b>ในทะเบียนพนักงานให้ตรง
-                            (ตอนนี้ตำแหน่งบอกว่าเป็น{positionLabel(emp?.position) || emp?.position}) — ระบบ<b>ไม่</b>บีบขอบเขตให้เอง
+                            ⚠️ ตั้งไว้กว้างกว่าที่ผัง+ตำแหน่ง HR แนะนำ (ตำแหน่ง = {positionLabel(emp?.position) || emp?.position}) — ไม่ผิด
+                            แต่ถ้าคนนี้<b>รักษาการ/รับผิดชอบเพิ่ม</b>จริง ให้ลงที่ <code>/org-setup</code> › มอบหมายหน่วย (มีวันหมดอายุ)
+                            <b>ไม่ต้องแก้ตำแหน่ง HR</b> — ระบบ<b>ไม่</b>บีบขอบเขตให้เอง
                           </div>
                         )}
                       </div>

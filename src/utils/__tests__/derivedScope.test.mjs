@@ -128,3 +128,24 @@ test('🔴 ไม่มีโหนด / เลเวลสูงกว่าผ
   const r = recommendScopeDepth({ org_node_id: 10, position: 'manager' }, nodes);
   assert.equal(r.depth, null); assert.equal(r.reason, 'level_above_tree');
 });
+
+
+test('🔄 รักษาการ/มอบหมายที่ยังมีผล ทับค่าแนะนำให้กว้างขึ้นได้ · ฐาน HR ยังเป็น operator', () => {
+  const emp = { org_node_id: 8, position: 'operator' };              // HR = operator (ฐาน)
+  const base = recommendScopeDepth(emp, BY_ID, { level: 'operator' });
+  assert.equal(base.depth, 'self');
+  const acting = [{ kind: 'acting', scope_depth: 'branch', starts_on: '2026-01-01', ends_on: null, org_node_id: 7 }];
+  const r = recommendScopeDepth(emp, BY_ID, { level: 'operator', assignments: acting, today: '2026-11-02' });
+  assert.equal(r.depth, 'branch');
+  assert.equal(r.reason, 'acting');
+  assert.equal(r.baseDepth, 'self', 'ต้องจำฐาน HR ไว้ให้จอเขียนได้ว่า "ฐาน operator + รักษาการ"');
+});
+
+test('🔴 มอบหมายที่หมดอายุแล้ว ไม่ทับ · มอบหมายแคบกว่าฐาน ไม่ทำให้แคบลง', () => {
+  const emp = { org_node_id: 6, position: 'dept_head' };            // ฐาน = branch
+  const expired = [{ kind: 'acting', scope_depth: 'all', starts_on: '2025-01-01', ends_on: '2025-12-31' }];
+  assert.equal(recommendScopeDepth(emp, BY_ID, { assignments: expired, today: '2026-11-02' }).depth, 'branch');
+  const narrower = [{ kind: 'head', scope_depth: 'unit', starts_on: '2026-01-01', ends_on: null }];
+  const r = recommendScopeDepth(emp, BY_ID, { assignments: narrower, today: '2026-11-02' });
+  assert.equal(r.depth, 'branch'); assert.equal(r.reason, 'production_head');
+});
