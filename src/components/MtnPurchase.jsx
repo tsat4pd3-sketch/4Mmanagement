@@ -86,8 +86,12 @@ async function savePrNo(pr, raw) {
 /* ⏸️ ช่วงหยุดนับ MTTR (20/10 · คำสั่ง user) — เริ่มตอน MTN ตัดสินเส้นทาง · จบเมื่อพร้อมซ่อมต่อ
    สูตรหักอยู่ `techRepairMin()` (utils/mtnVendor.js) · downtime ของเครื่องไม่เกี่ยว (นับเต็ม) */
 
-/** อะไหล่ของใบ "ซ่อมเอง+PR" รับครบแล้ว (ไม่เหลือ PR เปิด) ⇒ จบช่วงหยุด MTTR ให้เอง
- *  ใบ "ส่งภายนอก" ไม่จบที่นี่ (จบตอนของกลับจาก supplier / ช่างกดซ่อมต่อ) · ล้ม = toast ไม่กลืน */
+/** ใบที่กำลังหยุดนับ MTTR อยู่ + อะไหล่รับครบแล้ว (ไม่เหลือ PR เปิด) ⇒ จบช่วงหยุดให้เอง
+ *  🔴 ไม่ผูกกับ `repair_path` ตัวใดตัวหนึ่ง (02/11) — เดิมเช็ค `=== 'inhouse_pr'` ซึ่งเป็นเส้นทางที่
+ *     **เลิกหยุด MTTR แล้ว** ⇒ ใบที่หยุดจริง (ซ่อมไม่ได้ รออะไหล่) จะไม่มีใครจบช่วงให้
+ *     เงื่อนไขที่ถูกคือ "ใบนี้หยุดอยู่ไหม + ของมาครบหรือยัง" ไม่ใช่ "เส้นทางชื่ออะไร"
+ *     (ใบเก่าที่หยุดค้างจากกฎเดิมก็ได้อานิสงส์ — ไม่ค้างหยุดตลอดกาล)
+ *  ใบ "ส่งภายนอก" ไม่เข้าเงื่อนไขนี้อยู่แล้ว (ไม่หยุด MTTR · มีนาฬิกา supplier ของตัวเอง) · ล้ม = toast ไม่กลืน */
 async function endHoldIfPartsIn(orderId) {
   if (!orderId) return;
   const [o, open] = await Promise.all([
@@ -95,7 +99,7 @@ async function endHoldIfPartsIn(orderId) {
     supabaseDR.from('mtn_purchase_requests').select('id').eq('order_id', orderId).in('status', ['requested', 'ordered']),
   ]);
   if (o.error || open.error) { toast.error('ตรวจว่าอะไหล่ครบหรือยังไม่สำเร็จ — ถ้าครบแล้วกด "▶ กลับมาซ่อมต่อ" ในใบ MO'); return; }
-  if (o.data?.repair_path !== 'inhouse_pr' || !isMttrHeld(o.data) || (open.data || []).length) return;
+  if (!isMttrHeld(o.data) || (open.data || []).length) return;
   if (checkWrite(await supabaseDR.from('mtn_orders').update({ mttr_hold_to: new Date().toISOString() })
     .eq('id', orderId).is('mttr_hold_to', null), 'จบช่วงหยุด MTTR')) toast.success('อะไหล่ครบแล้ว — เริ่มนับ MTTR ช่างต่อ');
 }
@@ -333,17 +337,21 @@ export function MtnPrPanel({ order, parts = [], fullName, canEdit = false, teamK
     return () => { alive = false; };
   }, [load]);
 
-  /* ⏸️ MTN ตัดสินเส้นทาง = จุดเริ่มหยุด MTTR (20/10 · คำสั่ง user)
-       · เลือก "ซ่อมเอง+PR" / "ส่งภายนอก" ครั้งแรก → mttr_hold_from = ตอนนี้
-       · เปลี่ยนกลับเป็น "ซ่อมเอง ไม่ต้อง PR" ระหว่างหยุดอยู่ → จบช่วงที่ตอนนี้ (เวลาที่รอไปแล้วยังนับว่ารอ ไม่ลบทิ้ง)
+  /* ⏸️ MTN ตัดสินเส้นทาง = จุดเริ่มหยุด MTTR (20/10 · ปรับแกน 02/11 ตามที่ทีม MTN เขียนมา)
+       🔴 หยุดเมื่อเลือกเส้นทางที่ **"ซ่อมไม่ได้"** (`holdsMttr`) — ไม่ใช่ "ต้องเปิด PR" (`needsPr`)
+          ซ่อมเสร็จแล้วเปิด PR ซื้ออะไหล่มาเติมสต็อก = เครื่องเดินแล้ว ไม่ได้รอ ⇒ ไม่หยุด
+          ส่งของไปซ่อมนอก = มีนาฬิกาของตัวเองอยู่แล้ว (vendor_sent→back) ⇒ ไม่ต้องหยุดซ้ำ
+       · เปลี่ยนไปเส้นทางที่ไม่หยุดระหว่างหยุดอยู่ → จบช่วงที่ตอนนี้ (เวลาที่รอไปแล้วยังนับว่ารอ ไม่ลบทิ้ง)
        · ช่วงหยุดมีได้ช่วงเดียวต่อใบ — จบไปแล้วเลือกใหม่ = ไม่เริ่มซ้ำ (จอบอก) */
   const savePath = async (k) => {
     const prev = path; setPath(k);
     const nowIso = new Date().toISOString();
-    const needs = !!repairPathMeta(k)?.needsPr;
+    const meta2 = repairPathMeta(k);
+    const needs = !!meta2?.needsPr;
+    const holds = !!meta2?.holdsMttr;
     const patch = { repair_path: k || null };
-    if (needs && !order?.mttr_hold_from) { patch.mttr_hold_from = nowIso; patch.mttr_hold_to = null; }
-    if (!needs && isMttrHeld(order)) patch.mttr_hold_to = nowIso;
+    if (holds && !order?.mttr_hold_from) { patch.mttr_hold_from = nowIso; patch.mttr_hold_to = null; }
+    if (!holds && isMttrHeld(order)) patch.mttr_hold_to = nowIso;
     const ok = checkWriteRows(await supabaseDR.from('mtn_orders').update(patch).eq('id', orderId).select('id'), 'บันทึกเส้นทางงานซ่อม');
     if (!ok) { setPath(prev); return; }
     if (needs && !prs.some(p => p.status !== 'cancelled'))
@@ -382,7 +390,7 @@ export function MtnPrPanel({ order, parts = [], fullName, canEdit = false, teamK
           {held && canEdit && <button onClick={resumeRepair} style={{ ...btnGhost, color: '#22c55e', borderColor: '#22c55e' }}>▶ กลับมาซ่อมต่อ</button>}
         </div>
       )}
-      {held && path === 'inhouse_pr' && <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>อะไหล่ PR ของใบนี้รับครบ = ระบบเริ่มนับต่อให้เอง</div>}
+      {held && <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>อะไหล่ PR ของใบนี้รับครบ = ระบบเริ่มนับต่อให้เอง</div>}
       {meta?.outsource && (
         <div style={{ fontSize: 11, color: 'var(--text2)', background: 'rgba(14,165,233,0.08)', border: '1px solid rgba(14,165,233,0.35)', borderRadius: 8, padding: '6px 9px', marginBottom: 6, lineHeight: 1.6 }}>
           📤 ส่งซ่อมภายนอก: กดปุ่ม <b>“📤 ส่งซ่อมภายนอก”</b> ด้านบนเพื่อเริ่มนับช่วงอยู่กับ supplier —
