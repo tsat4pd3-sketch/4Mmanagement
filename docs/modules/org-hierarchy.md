@@ -552,6 +552,28 @@
 
 ---
 
+## 🏭 ทะเบียน `cost_centers` ครบทุกโรงงานในเครือ — จากไฟล์บัญชี "Activity Rate 2027" (2026-11-03)
+
+user ส่ง `cost_center.xlsx` (Activity Rate 2027 · 4,795 แถว = cost center × activity type) + template Com Code ของกลุ่ม
+⇒ migration `20261103_cost_centers_sap_2027_main.sql` (**apply แล้วผ่าน MCP 03/11 · ตรวจกลับแล้ว**) · ทะเบียน 63 → **746 รหัส · 12 บริษัท · 18 plant**
+
+**ที่อ่านออกจาก template + ไฟล์ (ใช้ตัดสินโครงสร้างต่อจากนี้):**
+- Group → **SPG** (1000 Holding · 2000 AMF · 3000 Int&Ext · 4000 Mocy · 5000 DFM · 6000 EV · 7000 OGI · 8000 Composites · 9000 Other)
+  → **Company** (SAP 4 หลัก / SAP B1 3 หลัก) → **Plant** · Employee ID 7 หลัก = **Com Code 3 หลัก (= 3 หลักแรกของรหัส SAP) + running 4**
+- **เรา = TSAT (SAP 2100 · Com Code 210) ใต้ SPG 2000 AMF · plant 2140 = TSAT-P4** · TSAT มี 2110 P1 · 2130 P3 (โรงแม่พิมพ์กลาง: Die Design/Fitting · Basic/Copy Machine · Laser/Wire cut · QA+Project Control ของตัวเอง) · 2140 P4
+- รหัส CC 10 หลัก = plant 4 + หลักที่ 5 (4 ส่วน · 5 แผนก · 6 กลุ่ม/ไลน์ · 9 dummy) + 5 หลัก — **เชื่อถือได้เฉพาะเครือ TSAT** (บริษัทอื่น level = null ตามกฎ 22/10)
+- พนักงานเรา 230 คนรหัส `210xxxx` ตรง template แล้ว · ผู้รับเหมา STM/PTA/ASC 157 คน **ไม่อยู่ใน template** (ต้องเป็นแกน "นายจ้าง" ไม่ยัดเข้า Com Code)
+
+**กติกาที่ใช้นำเข้า (อยู่ในหัว migration):** company/plant_code ตามไฟล์ ห้ามแกะจากรหัส · แถวเดิม 63 แถวไม่แตะ name/section/level/is_active ·
+เติม `note = "SAP2027 <plant> · <ชื่อตามบัญชี>"` เป็น alias · **TCT 78 รหัส ชื่อในไฟล์เพี้ยน (คอลัมน์เลื่อน = ชื่อของ TSLA) ⇒ name ว่าง ให้บัญชีเติม** ·
+Dummy 13 รหัส is_active=false · 🔴 **ไลน์เก่า P4 ที่ SAP ยังมีรหัสแต่ไม่เดินแล้ว (user ยืนยัน 03/11) 8 ตัว ⇒ is_active=false ไม่เพิ่มโหนดในผัง**:
+`2140661302` C2-Finishing · `2140661402` D2-110T · `2140661501` E1-Transfer · `2140671101` RADIATOR · `2140672101` FRONT FLOOR · `2140673101/102/103` Assembly C
+
+**❌ ไม่นำเข้า rate 2027** — เทียบกับ `cost_center_rates` ชุด 2026 พบแถว PD1 (661101/661201/661301/661401/661402) ค่า DLAB/DP/IDP/OH **สลับช่องกันในไฟล์**
+(เช่น 661101 DLAB=0 · OH=0.199 ทั้งที่ปี 2026 DL 431.80) ⇒ รอไฟล์ที่บัญชียืนยัน · แถว HDF/GOR/LWR/D1-D6 ดูปกติ
+**ค้าง:** รหัส 9 หลักในฐาน (`214053120` MTN · `214055654` QA · `214057100` ทั่วไป) ยังอยู่ — ลบไม่ได้จนกว่านับปลายทางครบ (`costCenterRefs.js`)
+· TSAP คอลัมน์ plant 2900 แต่รหัส 2910 (เก็บตามไฟล์ · รอบัญชียืนยัน) · บริษัทอื่นยังไม่มีใน `org_nodes` (ตั้งใจ — ผังเราคือ P4)
+
 ## Cost Center = ทะเบียน `cost_centers` (Main) — 2026-09-08 · ทะเบียน
 
 รหัส cost center เคยพิมพ์เอง 3 ที่ (production_lines · org_nodes · cost_center_rates) join ด้วยสตริง · ตอนนี้ Main `cost_centers`
