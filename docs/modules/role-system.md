@@ -51,6 +51,19 @@
 - **⚠️ กับดัก Supabase ตัด 1000 แถว/query (เจอจริง 2026-08-03):** `role_permissions` โตเกิน 1000 แถวแล้ว (1,135) — query ที่ไม่ `.range()` ได้แค่ 1000 แถวแรก **แถวที่ seed ทีหลัง (เช่น bucket `dept_admin`) หายเงียบ** = สิทธิ์ใน DB ถูกแต่ปุ่ม/เมนูไม่โผล่ (fail-closed) · แก้แล้ว: `loadPermissions()` + หน้า `/permissions` ดึงแบบแบ่งหน้า · **โค้ดใหม่ที่ select ตารางนี้ (หรือตารางใดที่โตได้เกิน 1000) ต้อง paginate เสมอ**
   - **⚠️ กับดักซ้อน — "paginate ตัวที่เคยพังไปแล้ว 1 ตัว" ไม่พอ ต้องดูทั้ง `Promise.all` (เจอรอบที่ 3 · 2026-08-27):** `LineStock.jsx load()` มี 6 query ในก้อนเดียว แต่ paginate แค่ `line_stock_summary` ตัวที่เคยมีคนแจ้งบั๊ก · อีก 4 ตัว (`bom_items` 408 · `dr_products` 287 · `kanban_standards` · `parts_master` 287) เป็น `select()` เปล่า — **ยังไม่ถึง 1000 วันนี้ แต่เป็นตารางที่โตตามการลงข้อมูล** · ตัวที่เจ็บที่สุดคือ **`bom_items` เพราะเป็นที่มาของ "ไลน์ลูกปลายทาง" ใน `StockMoveToChild`** → ตกหล่นเมื่อไหร่ พาร์ทนั้นกลายเป็น **"⚠ ใช้หลายไลน์ ต้องเลือกเอง"** ทั้งที่จริงชี้ไลน์เดียวชัดเจน = **เสนอผิดแบบเงียบ แล้วคนเลือกปลายทางผิด → หักสต็อกผิดตัว ย้อนยาก** · **กติกา: เจอ `Promise.all` ที่มีตัวหนึ่ง paginate แล้ว = สัญญาณว่าอีกตัวถูกลืม ให้ไล่ทั้งก้อนเสมอ** · และ **`fetchAllPages` คืน `{rows, error, truncated}` ต้องเช็ค 2 ตัวหลังแล้วบอกผู้ใช้ ห้ามอ่านแต่ `rows`** (โหลดไม่ครบ = จอดูปกติทุกอย่าง แต่ข้อเสนอ/ชื่อพาร์ท/min-max หายไปเฉยๆ)
 - `admin` bypass เสมอ (return true ทันทีไม่ query cache) กันกรณี config ผิดจนตัวเองเข้าไม่ได้
+- **🔐 สิทธิ์มีผลกับเครื่องที่เปิดค้าง (2026-11-03 · ประชุมหน้างาน 02/11 ข้อ A5 "cache ยังมีปัญหาเรื่องสิทธิ์")**
+  · อาการ: แอดมินแก้ role/ขอบเขตที่ `/add-user` หรือติ๊กที่ `/permissions` แล้ว **คนที่ถูกแก้ยังเห็นเมนู/ปุ่มเดิม** จนรีเฟรช/ล้างเบราว์เซอร์
+  · ต้นเหตุ ① **โปรไฟล์ตัวเอง** (`role`/`sections`/`resp_cost_centers`/`is_dept_admin`/`line_id`/`mtn_teams`/`account_kind`/`scope_depth` + `org_assignments`)
+    โหลดใน `fetchProfile()` (App.jsx) **เฉพาะตอน auth event** — `profiles` ไม่อยู่ใน publication realtime (และไม่ควรเข้า: ทุกแถวของทุกคนจะวิ่งถึงทุกเครื่อง)
+    ② realtime ของ `role_permissions` มีอยู่แล้ว แต่ **ไม่ replay event ที่พลาดตอน socket หลุด** (แท็บเล็ตพักจอ/เน็ตสะดุด)
+    · ฝั่ง DB (`has_perm()`) อ่านสดทุกคิวรีอยู่แล้ว — ปัญหาอยู่ฝั่งจอล้วน
+  · ทางแก้ = **probe ลายเซ็นเล็ก** `src/utils/usePermFreshness.js` (กฎ pure `src/utils/permFreshness.js` · เทส `permFreshness.test.mjs`)
+    ยิงตอน login (จด baseline) · กลับมาที่แท็บ (visibility/focus/online · เพดาน `LIVE.PERMS` 2 นาที) · กันเหนียวทุก `RATE.BOARD` ตอนแท็บมองเห็น
+    ลายเซ็น = `profiles.updated_at` + แถวมอบหมายของตัวเอง (+วันทำงานเมื่อมีมอบหมาย) · `role_permissions` count + `max(updated_at)` (trigger คุมทั้งคู่)
+    เปลี่ยน ⇒ `fetchProfile()` / `loadPermissions(true)` + bump `permsVersion` · ขอบเขตเปลี่ยนจริง (`profileScopeKey`) ⇒ toast บอกผู้ใช้ (แก้รูป/ลายเซ็นตัวเองไม่เตือน)
+  · 🔴 probe อ่านไม่ได้ = "ไม่รู้" — ไม่โหลด ไม่ลบ baseline (= พฤติกรรมเดิม) · **ห้ามเอา probe ไปตัดสินสิทธิ์**
+  · ⚠️ ข้อมูลที่หน้าเปิดค้างโหลดมาด้วยขอบเขตเก่า **ไม่ถูกโหลดใหม่ให้** (เมนู/ปุ่ม/ด่านอัปเดตทันที) — toast บอกให้รีเฟรชหน้า
+  · ไม่แตะ schema/RLS · ไม่มี migration · ถอยได้ด้วย revert คอมมิทเดียว
 - แก้ได้จากหน้า `/permissions` (`src/pages/PermissionsManagement.jsx`) — ตาราง matrix role × permission key, toggle แล้ว upsert ทันที
 - permission key รูปแบบ `page:/route` สำหรับสิทธิ์เข้าหน้า, `resource:action` สำหรับสิทธิ์ทำงานในหน้า (เช่น `products:create`, `oee:set_target`) — โหลดจาก `permission_catalog` แสดงในแท็บ "สิทธิ์การทำงาน"
 - **⚠️ กฎเหล็ก — เพิ่มหน้า/สิทธิ์ใหม่ ต้องลง "ทะเบียน" ด้วย ไม่งั้น admin ปรับจาก UI ไม่ได้เลย (audit 2026-08-06):** `role_permissions` เก็บ**ค่า** แต่ตัวที่ทำให้ "โผล่ให้ติ๊ก" ในหน้า `/permissions` เป็นคนละที่ — seed แถวอย่างเดียวไม่พอ:
