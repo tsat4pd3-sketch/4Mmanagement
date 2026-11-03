@@ -228,3 +228,54 @@ user ย้ำอีกครั้ง 20/10: *"telegram ตอนนี้จ�
    `fn_notification_fill_link` เติม event_key เอง (ไม่ต้องแก้ตัวส่ง) · ตั้งยุบ 180 / 60 / 1440 นาที
 4. **`pm_plan_reminder`** อ่าน 2% ⇒ 720 → 1440 (วันละใบต่อคน รวมทุกแผนในวันนั้น)
 migration `20261021_notif_rollup_round2_main.sql` (**apply แล้ว** · ย้อนกลับในท้ายไฟล์) · edge `send-mtn-notification` **v27**
+
+---
+
+## รอบ 4 — 🔕 ตั้งค่าแจ้งเตือนรายคน + ล็อก "งานที่รอเรา" (2026-11-03)
+
+**ที่มา:** feedback จากทีม MTN (`ESM_Feedback.pdf` ข้อ 4 "ข้อเสนอจากหน้างาน"):
+> *"ได้การกรองบาง User ที่แจ้งเตือนเฉพาะเกิด Downtime อย่างเดียว ไม่ต้องแจ้งเตือน Stock หรือข้อมูลอื่น
+> เอาไว้ให้หน่วยงาน Support Log in ใน Handheld เวลาออกไปซ่อม ไม่ได้อยู่ห้อง Monitor room"*
+
+คำสั่ง user: **"เอาแบบล็อกไม่ให้ปิดงานที่รอเรา"**
+
+### ทำไมไม่แก้ด้วยการตั้ง role ใหม่
+`role` ในระบบนี้ = **ชุดสิทธิ์ใช้ระบบ** (CLAUDE.md §Organizational Hierarchy) — ตั้ง role "mtn_field"
+ที่ได้แจ้งเตือนน้อยลง = **สิทธิ์เข้าหน้าของเขาเปลี่ยนตามไปทั้งชุด** · และช่างคนเดียวกันต้องสลับไป-มา
+ระหว่างอยู่ห้อง monitor กับออกหน้างาน ⇒ ต้องเป็น **ค่าของคน ไม่ใช่ของ role**
+
+### โครงสร้าง — ตัวกรองอยู่ฝั่ง DB จุดเดียว
+| ชิ้น | ที่อยู่ | หน้าที่ |
+|------|--------|---------|
+| ตัวกรองจริง | `notify_recipients()` (Main · migration `20261103_notification_user_prefs_main.sql`) | ตัดคนที่ปิดเรื่องนั้นไว้ออกจากผู้รับ |
+| ค่าของคน | `notification_user_prefs (user_id, event_key, muted)` | **มีแถวเฉพาะเรื่องที่ปิด** · RLS เห็น/แก้ได้แค่ของตัวเอง |
+| ธง "ปิดได้ไหม" | `notification_rules.can_mute` (default `true`) | ทะเบียน · admin ติ๊กที่ `/notification-config` |
+| กฎของจอ | `src/utils/notifyPrefs.js` (มีเทส) | ใครเห็นสวิตช์อะไร · จัดกลุ่ม · สรุป |
+| จอตั้งค่า | `src/components/NotifyPrefsModal.jsx` | เมนูโปรไฟล์ → 🔕 ตั้งค่าแจ้งเตือนของฉัน (ทั้ง sidebar + หน้า Home) |
+
+🔴 **ทุกตัวส่งได้ผลเหมือนกันเพราะกรองที่ `notify_recipients`** — edge functions ทุกตัว
++ `scripts/acct-import/run_queue.mjs` เรียก RPC นี้ตัวเดียวกัน ไม่ต้องตามไปแก้ทีละตัว
+🔴 **ห้ามกรองฝั่งหน้าจอ** (ด่าน `notify-mute-single-choke-point` ใน `regressionGuards`) —
+กรองในหน้าได้ผลครึ่งๆ และ **ข้ามการล็อกได้** (ซ่อนเรื่องที่ `can_mute=false` ทั้งที่กฎบอกว่าต้องเห็น)
+
+### 🔒 ล็อก "งานที่รอเรา" — 2 ชั้น
+**ชั้นที่ 1 · โครงสร้าง (ไม่ต้องมีใครมาติ๊ก)** — แจ้งเตือนที่ยิงถึง *เจ้าของงานโดยตรง* ส่งผ่าน
+`extra_user_ids` ใน `send-event-notification` ซึ่ง**ไม่เคยผ่าน `notify_recipients`** ⇒ ตัวกรองรายคน
+แตะไม่ถึง = **ปิดไม่ได้โดยอัตโนมัติ** (ใบที่มีชื่อเราอยู่บนใบ ยังเด้งเสมอ ไม่ว่าตั้งอะไรไว้)
+
+**ชั้นที่ 2 · ทะเบียน** — "คิวงาน" ที่ยิงตาม role ล้วน (ไม่มีตัวเจ้าของงานให้ชี้) ติ๊ก `can_mute=false`
+seed 17 เรื่อง: `mtn_pr_waiting` · `mtn_accept_pending` · `mtn_pickup_pending` · `mtn_qa_pending` ·
+`four_m_daily_summary` · `skill_levelup_request` · `scrap_report_submitted` · `pe_change_request` ·
+`meeting_action_assigned` · `qa_fme_call` · `qa_fme_overdue` · `qa_seq_action` · `downtime_call_mtn` ·
+`wip_request_placed` · `wip_replenish` · `rack_request` · `material_request`
+· **ไม่รวม `safety_event` โดยตั้งใจ** — ไม่ใช่ "งานที่รอเรา" ตามนิยามที่ user ให้มา (ติ๊กเองได้ถ้าอยากล็อก)
+· 🔴 **เรื่องที่ล็อกยังต้องโชว์บนจอ พร้อมเหตุผล ห้ามซ่อน** — ซ่อนแล้วคนคิดว่าปิดหมดแล้วยังมีเด้ง = งงกว่าเดิม
+· 🔴 **ทะเบียนชนะค่าที่ user เคยตั้ง** — admin ติ๊กล็อกทีหลัง แถว `muted` ที่ค้างอยู่ไม่มีผล (ทั้งฝั่ง DB และ `muteSummary`)
+
+### พิสูจน์ว่าไม่กระทบของเดิม (ก่อน merge)
+snapshot ผู้รับทุก event ก่อนแก้ไว้ที่ `archive.notify_recipients_before_20261103` (48 event)
+เทียบหลัง apply: **ผู้รับรวม 1,455 = เท่าเดิมเป๊ะ · event ที่เปลี่ยน 0 · `notification_user_prefs` 0 แถว**
+⇒ พฤติกรรมเปลี่ยนเมื่อมีคนไปกดปิดเองเท่านั้น (opt-in ล้วน)
+
+**ยังไม่ทำ:** จอ admin ที่ตอบว่า "ใครปิดเรื่องอะไรไว้" (ถ้าเริ่มมีคนบ่นว่าไม่ได้รับแจ้งเตือน ค่อยทำ —
+ตารางมีข้อมูลครบแล้ว แต่ RLS เห็นแค่แถวตัวเอง ⇒ ต้องทำเป็น RPC `security definer` + คีย์สิทธิ์)

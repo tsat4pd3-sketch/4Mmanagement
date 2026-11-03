@@ -8089,3 +8089,33 @@ test('⏸️ mttr-hold-follows-path-flag — หยุดนับ MTTR ต้�
       `\n\n❌ เส้นทาง '${k}' กลับมาหยุด MTTR แล้ว — เป็นเส้นทาง "ซ่อมได้" ห้ามหยุด\n`);
   }
 });
+
+test('🔕 notify-mute-single-choke-point — ตัวกรอง "ปิดแจ้งเตือนเอง" ต้องอยู่ฝั่ง DB ที่เดียว', () => {
+  /* why (03/11 · ข้อเสนอจากหน้างาน ข้อ 4 · คำสั่ง user "เอาแบบล็อกไม่ให้ปิดงานที่รอเรา"):
+     `notification_user_prefs` เป็น "ของส่วนตัว" ที่ RLS ให้เห็นแค่แถวตัวเอง ⇒ หน้าจอไหนเอามากรอง
+     กระดิ่ง/ลิสต์เองฝั่ง client จะได้ผลครึ่งๆ และ **ข้ามการล็อกได้** (เรื่องที่ `can_mute=false`
+     ยังถูกซ่อนบนจอ ทั้งที่กฎบอกว่าต้องเห็นเสมอ) ⇒ งานที่รอคนลงมือเงียบหายโดยไม่มีใครรู้
+     กฎ: ตัวกรองจริงอยู่ใน `notify_recipients` (migration 20261103) จุดเดียว —
+         ฝั่ง client แตะตารางนี้ได้เฉพาะ "จอตั้งค่า" (NotifyPrefsModal) เพื่อเขียน/ลบค่าของตัวเอง
+     🔴 ห้ามแก้ด้วยการกรองในหน้า — ต้องแก้ที่ RPC ฝั่ง DB เท่านั้น */
+  const OK = ['src/components/NotifyPrefsModal.jsx', 'src/utils/notifyPrefs.js'];
+  const hits = walk(join(ROOT, 'src'), ['.js', '.jsx'])
+    .filter(f => readFileSync(f, 'utf8').includes('notification_user_prefs'))
+    .map(f => relative(ROOT, f))
+    .filter(f => !OK.includes(f));
+  assert.deepEqual(hits, [],
+    '\n\n❌ มีไฟล์อื่นแตะตาราง `notification_user_prefs` ฝั่ง client:\n   '
+    + hits.join('\n   ')
+    + '\n   ผล: กรองกระดิ่งเองในหน้า = ข้ามการล็อก "งานที่รอเรา" (can_mute=false) ได้\n'
+    + '   แก้: ให้ตัวกรองอยู่ใน notify_recipients ฝั่ง DB เท่านั้น\n');
+
+  /* ด่านคู่: เรื่องที่ล็อกต้อง **ยังโชว์** บนจอตั้งค่า (ซ่อน = คนงงว่าทำไมยังมีแจ้งเตือนโผล่) */
+  const util = readFileSync(join(ROOT, 'src/utils/notifyPrefs.js'), 'utf8');
+  assert.doesNotMatch(util, /filter\([^)]*can_mute\s*===\s*false/,
+    '\n\n❌ myNotifyRows กรองเรื่องที่ล็อกออกจากลิสต์แล้ว — ต้องคืนมาพร้อมธง `locked` ไม่ใช่ตัดทิ้ง\n');
+  assert.match(util, /locked:\s*x\.can_mute === false/,
+    '\n\n❌ myNotifyRows ไม่ได้ติดธง `locked` จาก `can_mute` — จอจะเปิดสวิตช์ให้กดเรื่องที่ปิดไม่ได้\n');
+  const modal = readFileSync(join(ROOT, 'src/components/NotifyPrefsModal.jsx'), 'utf8');
+  assert.match(modal, /disabled=\{r\.locked/,
+    '\n\n❌ โมดัลไม่ได้ปิดสวิตช์ของเรื่องที่ล็อก — กดได้แต่ฝั่ง DB ไม่กรองให้ = สวิตช์หลอก\n');
+});
