@@ -37,7 +37,7 @@ import { identityDiff, identityFallbacks, syncPatch, dualMeaningInfo } from '../
 /* 🪪 "บัญชีไหนยังไม่รู้ว่าเป็นใคร" + ตัวเสนอคนในทะเบียน — กฎอยู่ใน utils/identityMatch.js (pure · มีเทส)
    🔴 ระบบ**ไม่เดา**ประเภทบัญชีให้ · ไฟล์นั้นแค่จัดคิว + เสนอตัวเลือก คนกดตัดสิน */
 import { unlinkedTriage, routeHint } from '../utils/identityMatch';
-import { buildUserIssues, issueSummaryText, SEV_FIX } from '../utils/userIssues';   // 🩺 ต้องแก้ vs ข้อมูลประกอบ (A6 · 03/11)
+import { buildUserIssues, issueSummaryText, issueDef, SEV_FIX } from '../utils/userIssues';   // 🩺 ต้องแก้ vs ข้อมูลประกอบ (A6 · 03/11)
 import SearchInput from '../components/SearchInput';
 import { ALL } from '../utils/filterLabels';
 /* ทีมช่างซ่อม (profiles.mtn_teams) — เดิมมีหน้าที่เดียวคือ "แยกคิวใบแจ้งซ่อม MO ให้ถูกทีม"
@@ -365,7 +365,15 @@ export default function AddUser() {
      🔴 ตัวตัดสินแต่ละกองยังเป็นของกลางเดิมทุกตัว — `utils/userIssues.js` แค่จัด "ต้องแก้ / ข้อมูลประกอบ"
         + ประโยคเดียว "ผิดอะไร → ทางแก้" · ข้อมูลประกอบพับไว้แต่ตัวนับอยู่บนจอเสมอ */
   const [showInfoIssues, setShowInfoIssues] = useState(false);
-  const [onlyFixUsers, setOnlyFixUsers] = useState(false);
+  /* 🔎 ตารางกรองตามเรื่องค้าง (03/11 · user ส่งภาพ: "กดแล้วโชว์ไม่ตรงกับที่ให้แก้") — เดิมกดชิปแล้วกางลิสต์แยก
+     แต่ตารางข้างล่างยังโชว์ทุกคน ⇒ ลิสต์กับตารางไม่ตรงกัน · ตอนนี้ตารางเป็นที่เดียวที่บอก "ใครค้างเรื่องนี้"
+     null = ไม่กรอง · 'fix' = ทุกบัญชีที่ต้องแก้ · คีย์เรื่อง (USER_ISSUES.key) = เฉพาะเรื่องนั้น */
+  const [tableIssue, setTableIssue] = useState(null);
+  const onlyFixUsers = tableIssue != null;
+  const setOnlyFixUsers = (v) => setTableIssue(cur => {
+    const next = typeof v === 'function' ? v(cur != null) : v;
+    return next ? 'fix' : null;
+  });
   const issueIdx = useMemo(() => {
     const empOf = (u) => (u.employee_id ? empById[u.employee_id] : null);
     const tri = unlinkedTriage(users, emps);
@@ -773,7 +781,8 @@ export default function AddUser() {
   const view = (() => {
     const kw = norm(q);
     let rows = users.filter(u => {
-      if (onlyFixUsers && !(issueIdx.byUser[u.id] || []).some(i => i.sev === SEV_FIX)) return false;
+      if (tableIssue === 'fix' && !(issueIdx.byUser[u.id] || []).some(i => i.sev === SEV_FIX)) return false;
+      if (tableIssue && tableIssue !== 'fix' && !(issueIdx.byUser[u.id] || []).some(i => i.key === tableIssue)) return false;
       if (filterRole && u.role !== filterRole) return false;
       if (filterSection) {
         const secs = u.sections?.length ? u.sections : (u.section ? [u.section] : []);
@@ -894,6 +903,17 @@ export default function AddUser() {
             <span style={{ flex: '1 1 280px', minWidth: 0, color: 'var(--text2)' }}>
               {g.what} <span style={{ color: 'var(--muted)' }}>→ {g.fix}</span>
             </span>
+            <button type="button" aria-pressed={tableIssue === g.key}
+              onClick={() => {
+                setTableIssue(t => (t === g.key ? null : g.key));
+                setTimeout(() => document.getElementById('user-table-anchor')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
+              }}
+              title="ให้ตารางรายชื่อด้านล่างโชว์เฉพาะบัญชีที่ค้างเรื่องนี้ (แก้แล้วจะหายจากตารางเอง)"
+              style={{ width: 'auto', fontSize: 11, padding: '2px 9px', cursor: 'pointer', borderRadius: 999,
+                border: `1px solid ${tableIssue === g.key ? '#ef4444' : 'var(--border2)'}`,
+                background: tableIssue === g.key ? 'rgba(239,68,68,0.12)' : 'var(--bg3)', color: 'var(--text2)' }}>
+              {tableIssue === g.key ? '✕ เลิกกรองตาราง' : '🔎 กรองตาราง'}
+            </button>
             <button type="button" onClick={() => setOpenWl(o => (o === g.key ? null : g.key))} aria-expanded={openWl === g.key}
               style={{ width: 'auto', fontSize: 11, padding: '2px 9px', cursor: 'pointer', borderRadius: 999,
                 border: `1px solid ${openWl === g.key ? 'var(--accent)' : 'var(--border2)'}`,
@@ -1226,6 +1246,29 @@ export default function AddUser() {
       })()}
 
       {/* User Table */}
+      <div id="user-table-anchor" style={{ scrollMarginTop: 12 }} />
+      {tableIssue && (() => {
+        /* 🔎 บอกบนจอเสมอว่าตารางถูกกรองด้วยเรื่องอะไร — ไม่งั้นคนนึกว่าบัญชีอื่นหายไป
+           แก้ครบแล้ว = ตารางว่าง ⇒ เขียนว่า "เคลียร์ครบ" ไม่ใช่ "ไม่พบ user" */
+        const def = tableIssue === 'fix' ? null : issueDef(tableIssue);
+        const left = tableIssue === 'fix' ? issueIdx.fixUsers
+          : (issueIdx.groups.fix.concat(issueIdx.groups.info).find(g => g.key === tableIssue)?.count || 0);
+        return (
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8, padding: '8px 12px',
+            borderRadius: 8, border: '1px solid rgba(239,68,68,0.35)', background: 'rgba(239,68,68,0.06)', fontSize: 12.5 }}>
+            <b>🔎 ตารางกรองเฉพาะ:</b>
+            <span>{def ? `${def.icon} ${def.what}` : '🔴 ทุกบัญชีที่ต้องแก้'}</span>
+            <span style={{ color: left ? '#ef4444' : '#22c55e', fontWeight: 700 }}>
+              {left ? `เหลือ ${left} บัญชี` : '✓ เคลียร์ครบแล้ว'}
+            </span>
+            {def && <span style={{ color: 'var(--muted)' }}>วิธีแก้: {def.fix}</span>}
+            <span style={{ flex: 1 }} />
+            <button type="button" onClick={() => setTableIssue(null)}
+              style={{ width: 'auto', fontSize: 11.5, padding: '3px 10px', cursor: 'pointer', borderRadius: 6,
+                border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)' }}>✕ แสดงทุกบัญชี</button>
+          </div>
+        );
+      })()}
       <div className="card table-sticky" style={{ overflowX: 'auto', marginBottom: 16, maxHeight: '65vh' }}>
         <table style={{ minWidth: 680 }}>
           <thead>
@@ -1247,7 +1290,8 @@ export default function AddUser() {
             ) : users.length === 0 ? (
               <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--muted)', padding: 28, fontSize: 13 }}>ไม่พบข้อมูลผู้ใช้</td></tr>
             ) : view.length === 0 ? (
-              <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--muted)', padding: 28, fontSize: 13 }}>ไม่พบ user ที่ตรงกับตัวกรอง — ลองล้างตัวกรอง</td></tr>
+              <tr><td colSpan={8} style={{ textAlign: 'center', color: tableIssue && !q && !filterRole && !filterSection ? '#22c55e' : 'var(--muted)', padding: 28, fontSize: 13 }}>
+                {tableIssue && !q && !filterRole && !filterSection ? '✓ ไม่มีบัญชีค้างเรื่องนี้แล้ว' : 'ไม่พบ user ที่ตรงกับตัวกรอง — ลองล้างตัวกรอง'}</td></tr>
             ) : view.map(u => {
               const rc      = ROLES.find(r => r.value === u.role);
               const lineName = lines.find(l => l.id === u.line_id)?.name || '—';
