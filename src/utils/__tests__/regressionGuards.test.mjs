@@ -4016,7 +4016,11 @@ test('🛡️ mo-print-needs-comments — ใบพิมพ์ MO ทั้ง 
     '\n\n❌ ใบ FM-JIG-008 ไม่ได้วางคอมเมนต์ "ต่อท้าย" รายละเอียดของผู้แจ้ง\n'
     + '   🔴 ของผู้แจ้งคือ **บันทึก ณ วันที่แจ้ง** ห้ามถูกแทนที่/ถูกดันหาย — คอมเมนต์ต่อท้ายเท่านั้น\n');
   const xl = stripComments(readFileSync(join(ROOT, 'src/lib/mtnMoExportExcel.js'), 'utf8'));
-  assert.ok(/moCommentText\(/.test(xl) && /commentsError/.test(xl),
+  /* 03/11 — คอลัมน์ชีท 1 ย้ายไปทะเบียน `src/utils/mtnMoExportCols.js` (ข้อ A8) ⇒ ตัวทำไฟล์ส่ง `moCommentText`
+     + `commentsError` เข้าทะเบียน · ทะเบียนต้องเขียน "โหลดคอมเมนต์ไม่สำเร็จ" เมื่อ commentsError (ห้ามกลืน) */
+  const cols = stripComments(readFileSync(join(ROOT, 'src/utils/mtnMoExportCols.js'), 'utf8'));
+  assert.ok(/commentText:\s*moCommentText\b/.test(xl) && /commentsError/.test(xl)
+    && /commentsError\s*\?\s*'⚠ โหลดคอมเมนต์ไม่สำเร็จ'/.test(cols) && /commentText\(/.test(cols),
     '\n\n❌ Excel export ใบ MO ไม่มีคอลัมน์คอมเมนต์ (หรือกลืน commentsError)\n'
     + '   🔴 โหลดคอมเมนต์ไม่สำเร็จ = ต้องเขียนกำกับในไฟล์ · ช่องว่างเฉยๆ อ่านเป็น "ไม่มีใครคอมเมนต์"\n');
 });

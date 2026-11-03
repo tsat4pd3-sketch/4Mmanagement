@@ -2573,3 +2573,22 @@ Filter แค่ช่างในทีมได้มั้ย"*
 Excel export (`/mtn-repair` ปุ่ม ⬇️) มีคอลัมน์ **"ช่างที่มอบหมาย"** (ขั้น 2) แต่ยังไม่มี "ช่างซ่อมจริง" (ขั้น 3)
 — คนละคนกันได้ · เติมได้แต่ต้องโหลด `tech_main`/`tech_secondary` เพิ่มตอนกด export
 (คิวรีรายการหลักไม่ได้ดึง 2 คอลัมน์นี้ และ**ไม่ควรดึง** — กฎ egress ข้อ 11)
+
+## 💳 Export MO: "IO ขึ้นขาด PR ขึ้นเกิน" (2026-11-03 · ประชุมหน้างาน 02/11 ข้อ A8)
+
+วัดจากโค้ด + ฐาน DR 03/11 (I/O ทุกตัว **12 หลัก** · PR จาก SAP **10 หลัก** เช่น `1210104217`) — ต้นเหตุ 3 จุด:
+
+| ที่ | อาการ | ต้นเหตุ | แก้ |
+|---|---|---|---|
+| Excel `⬇️` (`src/lib/mtnMoExportExcel.js`) | **ไม่มีคอลัมน์ I/O เลย** ("IO ขาด") | หัว 24 ช่องไม่มี I/O + `MO_LIST_COLS` ไม่ได้ select `io_no` · หัว/ความกว้าง/ค่า เขียนแยก 3 ที่ (เพิ่มคอลัมน์แล้วเลื่อนกันได้เงียบ) | ทะเบียนคอลัมน์ชุดเดียว **`src/utils/mtnMoExportCols.js`** (`MO_EXPORT_COLS` · หัว+กว้าง+ค่า+สไตล์ใน entry เดียว) · เพิ่มคอลัมน์ **I/O** ข้าง "เลข PR" (ข้อความ `numFmt '@'` — ส่งเป็น number Excel โชว์ `2.15E+11`) · `io_no` เข้า `MO_LIST_COLS` |
+| ใบพิมพ์ FM-MTN-006 (`printMoReportMtn`) | กริด PR.No. 11 ช่อง แต่เลข SAP 10 หลัก = ช่องเกินท้าย ("PR เกิน") · ค่าที่ยาวกว่าช่องถูกตัดทิ้ง | `grid(v, n = 11)` ค่าตั้งต้นเดียวทั้ง 2 ช่อง + วนแค่ `n` ช่อง | `MO_PR_DIGITS = 10` · `MO_IO_DIGITS = 12` + `moGridChars()` ใน `utils/mtnMoForm.js` — **ค่ายาวกว่าช่อง = งอกช่องเพิ่ม ห้ามตัด** |
+| เลข PR ในใบ (Excel + ใบพิมพ์) | เลขเดียวกันขึ้น 2 ครั้ง | `prNumbersOf()` ตัดซ้ำด้วยสตริงดิบ — ช่อง `pr_no` ในใบกรอกมือไม่ผ่าน `normalizePrNo` (ช่องว่าง/ตัวเล็ก) | ตัดซ้ำด้วยคีย์ `normalizePrNo` · แสดงค่าตัวแรกที่เจอ |
+
+- 🔴 **เพิ่มคอลัมน์ Excel = เพิ่ม entry ใน `MO_EXPORT_COLS` ที่เดียว** · ฟิลด์ที่อ่าน (`r.o.<field>`) ต้องอยู่ใน `MO_LIST_COLS` — มีเทสสแกนทั้ง 2 ไฟล์ (`mtnMoExportCols.test.mjs`)
+- ด่าน `mo-print-needs-comments` ปรับให้ตรวจคอมเมนต์ที่ทะเบียนคอลัมน์ (เดิมหา `moCommentText(` ในไฟล์ทำ Excel)
+- ใบที่ปิดแล้วพิมพ์จาก snapshot (`snap.order`) — `io_no`/`pr_no` อยู่ในแถวเต็มอยู่แล้ว กริดใหม่ใช้กับใบเก่าได้ทันที (ไม่แตะ snapshot)
+- ไม่แตะ schema/RLS · เลขฟอร์มยังอ่านจาก `/doc-forms` (`mtn_mo_monthly_export` · `mo_report_mtn`)
+
+## 📺 จอ TV ห้องช่างวนใบ MO ตามขั้น (2026-11-03 · ประชุม 02/11 ข้อ B6)
+`/tv?dept=mo&mo=accept|repair|check|close|approve|other&team=<ทีม>` — กองมาจาก `moWaitMeta()` (กฎ stage เดียวกับ `?wait=` ของลิสต์ MO)
+· ตั้งรอบที่ `/display-rotation` (ปุ่ม "🧾 เติมชุดใบ MO") · รายละเอียด → `docs/modules/dept-dashboard-tv.md` §🧾 · `docs/modules/display-rotation.md` §🧾
