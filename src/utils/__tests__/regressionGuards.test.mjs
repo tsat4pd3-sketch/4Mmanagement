@@ -8089,3 +8089,17 @@ test('⏸️ mttr-hold-follows-path-flag — หยุดนับ MTTR ต้�
       `\n\n❌ เส้นทาง '${k}' กลับมาหยุด MTTR แล้ว — เป็นเส้นทาง "ซ่อมได้" ห้ามหยุด\n`);
   }
 });
+
+/* ── 🔫 สแกนงานคู่ทีละข้าง (03/11 · หน้างานแจ้งด่วน "บังคับสแกนสลับ พนักงานสแกนมั่ว") ──────────
+   เดิม: สแกนข้างแรกแล้วเปลี่ยน MAT ในช่องเป็นของคู่ + จำว่าใบถัดไปคือคู่ ⇒ ยิง LH ติดกัน = ใบที่ 2 ถูกบันทึกเป็น MAT ของ RH
+   📄 docs/modules/daily-report.md §สแกนงานคู่ทีละข้าง */
+test('🛡️ pair-scan-one-side — สแกนเปิดใบต้องไม่สลับ MAT ไปข้างคู่ และไม่บังคับใบถัดไปเป็นคู่', () => {
+  const src = stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'));
+  const a = src.indexOf('const handleScanOpenInner');
+  const body = src.slice(a, src.indexOf('const handleOverflowNextShift', a));
+  assert.ok(body.length > 200, 'หา handleScanOpenInner ไม่เจอ — ด่านนี้ต้องตามไปด้วยถ้าย้ายโค้ด');
+  assert.doesNotMatch(body, /nextMatNo\s*=\s*partnerMatNo/,
+    '\n\n❌ สแกนเปิดใบกลับไปเปลี่ยน MAT ในช่องเป็นของข้างคู่แล้ว — ยิง Tag ข้างเดียวกันติดกันจะถูกบันทึกเป็น MAT ผิดข้าง\n');
+  assert.doesNotMatch(body, /setPendingPairId\(/,
+    '\n\n❌ กลับมาบังคับ "ใบถัดไป = คู่" (pendingPairId) — คนยิงข้างเดียวกันต่อ = ผูก LH กับ LH\n');
+});
