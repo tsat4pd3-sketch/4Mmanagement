@@ -8062,3 +8062,30 @@ test('🧑‍🔧 mo-print-shows-techs — ใบพิมพ์ FM-MTN-006 ต�
   assert.match(src, /laborNames\.has\(/,
     '\n\n❌ ไม่ได้กันชื่อซ้ำ — ช่างที่ลงค่าแรงไว้แล้วจะขึ้น 2 บรรทัดบนใบ\n');
 });
+
+test('⏸️ mttr-hold-follows-path-flag — หยุดนับ MTTR ต้องผูกกับ holdsMttr ไม่ใช่ needsPr', () => {
+  /* why (02/11 · ทีม MTN เขียนรายละเอียด 4 เส้นทางมา):
+     "ซ่อมไม่ได้ > รออะไหล่ , รอจ้าง Vender [รออะไหล่เข้า, รอ PO ถึงร้านค้า ถึงซ่อมได้] ส่งผลให้หยุด MTTR"
+     ⇒ ตัวชี้ขาดคือ **ซ่อมได้/ซ่อมไม่ได้** ไม่ใช่ "ต้องเปิด PR ไหม" — คนละคำถามกัน
+       · ซ่อมเสร็จแล้วเปิด PR ซื้ออะไหล่มาเติมสต็อก = เครื่องเดินแล้ว **ไม่ได้รอ** ⇒ ห้ามหยุด
+       · ส่งของไปซ่อมนอก = มีนาฬิกา supplier ของตัวเอง (vendor_sent→back · union ใน mttrHoldMin)
+         ⇒ ติด holdsMttr ซ้ำ = หักซ้อนกันเปล่าๆ
+     fix: `REPAIR_PATHS[].holdsMttr` เป็นเจ้าของคำตอบ · หน้าจอห้ามใช้ `needsPr` มาตัดสินการหยุด */
+  const src = readFileSync(join(ROOT, 'src/components/MtnPurchase.jsx'), 'utf8');
+  const patch = src.slice(src.indexOf('const savePath'), src.indexOf('const resumeRepair'));
+  assert.ok(patch.length > 50, 'หา savePath ใน MtnPurchase.jsx ไม่เจอ — ด่านนี้ต้องตามไปด้วยถ้าย้ายโค้ด');
+  assert.doesNotMatch(patch, /if \(\s*needs\s*&&[^)]*mttr_hold_from/,
+    '\n\n❌ savePath กลับไปใช้ `needsPr` ตัดสินการหยุด MTTR แล้ว\n'
+    + '   ผล: ใบที่ "ซ่อมเสร็จแล้ว เปิด PR ซื้อของมาเติม" ถูกนับว่ายังรออยู่ ⇒ MTTR ช่างต่ำกว่าจริง\n'
+    + '   แก้: ใช้ `repairPathMeta(k)?.holdsMttr`\n');
+  assert.match(patch, /holdsMttr/,
+    '\n\n❌ savePath ไม่ได้อ่าน `holdsMttr` — เส้นทาง "ซ่อมไม่ได้" จะไม่หยุดนับ MTTR ให้เลย\n');
+  /* ด่านคู่: ทะเบียนต้องมีเส้นทาง "ซ่อมไม่ได้" อยู่จริง และ 2 เส้นทาง "ซ่อมได้" ต้องไม่หยุด */
+  const reg = readFileSync(join(ROOT, 'src/utils/mtnPurchase.js'), 'utf8');
+  assert.match(reg, /key:\s*'blocked'[^}]*holdsMttr:\s*true/,
+    '\n\n❌ ไม่มีเส้นทาง `blocked` (ซ่อมไม่ได้ — รออะไหล่/รอจ้าง Vendor) ที่ holdsMttr: true แล้ว\n');
+  for (const k of ['inhouse_pr', 'outsource']) {
+    assert.match(reg, new RegExp(`key:\\s*'${k}'[^}]*holdsMttr:\\s*false`),
+      `\n\n❌ เส้นทาง '${k}' กลับมาหยุด MTTR แล้ว — เป็นเส้นทาง "ซ่อมได้" ห้ามหยุด\n`);
+  }
+});
