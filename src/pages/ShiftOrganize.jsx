@@ -100,11 +100,14 @@ export default function ShiftOrganize() {
   }, [weekRef, lines.length]);
 
   const fetchLines = async () => {
-    const [{ data: lineData }, { data: orgData }] = await Promise.all([
+    const [lineDataRes, { data: orgData }] = await Promise.all([
       loadLinesRes(),   // cache กลาง (25/09) · loader เรียงตามชื่อ → เรียงตาม id เองด้านล่าง
       supabase.from('org_nodes').select('id, code, name, kind, parent_id, sort_order')
         .in('kind', ['section', 'department']).eq('is_active', true).order('name'),
     ]);
+  /* 🔴 30/10 — เดิมแกะแค่ `{ data }` ⇒ ทะเบียนไลน์โหลดไม่สำเร็จแล้วได้ลิสต์ว่าง **เงียบ**
+     (หน้างาน PD1 แจ้ง "MO ไม่มีให้เลือกไลน์" ทั้งที่ฐานข้อมูลมีครบ) · เก็บผลทั้งก้อนไว้อ่าน error ได้ */
+  const lineData = lineDataRes?.error ? null : lineDataRes.data;
     // คงลำดับเดิมของหน้านี้ (ตาม id) — loader กลางเรียงตามชื่อ
     setLines([...(lineData || [])].sort((a, b) => Number(a.id) - Number(b.id)));
     const secs = (orgData || []).filter(n => n.kind === 'section');

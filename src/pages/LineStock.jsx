@@ -967,12 +967,15 @@ function DeliveryRoundsTab({ canEdit, fullName, scope }) {
   const [saving,     setSaving]     = useState(false);
 
   const load = useCallback(async () => {
-    const [{ data: rnd }, { data: ln }] = await Promise.all([
+    const [{ data: rnd }, lnRes] = await Promise.all([
       supabaseDR.from('kanban_delivery_rounds').select('*').eq('is_active', true).order('line_name').order('shift').order('round_no'),
       // ⚠️ ต้อง select ให้ครบ — ขาด parent_line_name = dropdown ไม่มีลำดับชั้น
       //    ขาด section = กรอง scope ไม่ได้ · ขาด is_active = ไลน์ปลดระวางโผล่ปน (ดู LineSelect.jsx)
       loadLinesRes(),
     ]);
+  /* 🔴 30/10 — เดิมแกะแค่ `{ data }` ⇒ ทะเบียนไลน์โหลดไม่สำเร็จแล้วได้ลิสต์ว่าง **เงียบ**
+     (หน้างาน PD1 แจ้ง "MO ไม่มีให้เลือกไลน์" ทั้งที่ฐานข้อมูลมีครบ) · เก็บผลทั้งก้อนไว้อ่าน error ได้ */
+  const ln = lnRes?.error ? null : lnRes.data;
     setRounds(rnd || []);
     setLines(ln || []);
   }, []);
@@ -1446,7 +1449,7 @@ function InflowRulesTab({ canEdit }) {
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
-    const [{ data: r }, { data: ln }, { rows: st }] = await Promise.all([
+    const [{ data: r }, lnRes, { rows: st }] = await Promise.all([
       supabaseDR.from('stock_inflow_rules').select('*').order('match_type').order('match_value'),
       // ⚠️ ต้อง select ให้ครบ — ขาด parent_line_name = dropdown ไม่มีลำดับชั้น
       //    ขาด section = กรอง scope ไม่ได้ · ขาด is_active = ไลน์ปลดระวางโผล่ปน (ดู LineSelect.jsx)
@@ -1455,6 +1458,9 @@ function InflowRulesTab({ canEdit }) {
       fetchAllPages(() => supabaseDR.from('line_stock_summary').select('line_name'),
         { orderBy: ['line_name', 'mat_no'] }),
     ]);
+  /* 🔴 30/10 — เดิมแกะแค่ `{ data }` ⇒ ทะเบียนไลน์โหลดไม่สำเร็จแล้วได้ลิสต์ว่าง **เงียบ**
+     (หน้างาน PD1 แจ้ง "MO ไม่มีให้เลือกไลน์" ทั้งที่ฐานข้อมูลมีครบ) · เก็บผลทั้งก้อนไว้อ่าน error ได้ */
+  const ln = lnRes?.error ? null : lnRes.data;
     setRules(r || []);
     setLines(ln || []);
     setDests([...new Set((st || []).map(s => s.line_name).filter(Boolean))].sort(lineNameCompare));

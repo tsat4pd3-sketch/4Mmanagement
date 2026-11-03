@@ -15,7 +15,6 @@
    · ตัวเลขทุกตัวต้องมีฐานเทียบ ("293 / 391 ใบที่ยังไม่ปิด") — เลขลอยๆ อ่านไม่ออกว่ามากหรือน้อย (§6.17 ข้อ 4)
    ═══════════════════════════════════════════════════════════════════════════ */
 import { useState } from 'react';
-import useIsMobile from '../utils/useIsMobile';
 import CollapseCard from './CollapseCard';
 import { statusColor, toneInk } from '../utils/statusTone';
 import { staleTone } from '../utils/mtnStale';
@@ -56,11 +55,19 @@ export default function MoStalePanel({
   statusLabel = () => '', onOpen,
 }) {
   const [all, setAll] = useState(false);
-  const isMobile = useIsMobile();
   if (!board) return null;    // ยังโหลดไม่เสร็จ — หน้าแม่โชว์ "กำลังโหลด…" อยู่แล้ว
 
   const { days, hardDays, open, stale, hard, approx, unknown, oldest, byStage, byTeam, rows } = board;
   const headTone = staleTone(stale > 0 ? (hard > 0 ? hardDays : days) : null);
+  /* 🔴 พับไว้แต่ "แถบต้องส่งเสียง" (28/10 · คำสั่ง user: "default เป็น hide … แต่แถบเป็นสีแดงเลย ถ้ามีงานค้าง")
+     พับแล้วแถบขาวเปล่า = แผงเตือนที่ไม่เตือนอะไร คนเลื่อนผ่าน
+     🔴 ห้ามใช้ `color-mix()` (Chromium 94 ทิ้งทั้ง declaration = แถบหาย) — ใช้ rgba ตรงๆ
+     เกณฑ์เดียวกับตัวเลขในหัว (`headTone`) ไม่ตั้งสีชุดที่ 2 */
+  const headSkin = headTone === 'bad'
+    ? { background: 'rgba(239,68,68,0.13)', border: '1px solid rgba(239,68,68,0.55)' }
+    : headTone === 'warn'
+      ? { background: 'rgba(245,158,11,0.11)', border: '1px solid rgba(245,158,11,0.50)' }
+      : null;
   const rowsShown = all ? rows : rows.slice(0, FIRST_ROWS);
   const lbl = { fontSize: 11.5, color: 'var(--muted)', fontWeight: 700, marginRight: 2 };
 
@@ -68,8 +75,11 @@ export default function MoStalePanel({
     <CollapseCard
       /* 📱 มือถือเริ่มแบบพับ (15/10) — หัวการ์ดบอกยอดค้าง/เกิน 30 วันอยู่แล้ว · กางแล้วกิน ~2 จอบน 360×640 ดันรายการ MO ตกจอ
          กางเองครั้งหนึ่ง = CollapseCard จำต่อเครื่อง · จอคอมเหมือนเดิม */
-      id="mo-stale" storePrefix="mo" defaultOpen={stale > 0 && !isMobile}
-      style={{ marginBottom: 10, padding: '10px 13px' }}
+      /* 🔴 พับเป็นค่าเริ่มต้น**ทุกจอ** (28/10 · คำสั่ง user) — เดิมจอคอมกางอัตโนมัติเมื่อมีใบค้าง
+         ซึ่งดันรายการ MO ตกจอทุกครั้งที่เปิดหน้า · ข้อมูลที่ต้องรู้อยู่บนแถบหมดแล้ว
+         (ยอดค้าง · เก่าสุดกี่วัน · เกิน 30 วันกี่ใบ) กางเองครั้งหนึ่ง = จำต่อเครื่อง */
+      id="mo-stale" storePrefix="mo" defaultOpen={false}
+      style={{ marginBottom: 10, padding: '10px 13px', ...headSkin }}
       title={<span style={{ fontSize: 13 }}>
         ⏳ ค้างขั้นเดิมเกิน {days} วัน{' '}
         <b style={{ color: toneInk(headTone), fontSize: 15 }}>{stale}</b>

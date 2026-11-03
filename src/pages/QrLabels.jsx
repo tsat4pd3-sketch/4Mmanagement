@@ -28,6 +28,8 @@ import SearchInput from '../components/SearchInput';
 import Segmented from '../components/Segmented';
 import { ALL } from '../utils/filterLabels';
 import { loadProductsMaster } from '../utils/useProducts';
+import { loadStorageLocations } from '../utils/useStorageLocations';
+import ScanSheetPanel from '../components/ScanSheetPanel';
 
 /* ชนิดป้าย ⇒ Segmented (UI-STANDARD §3 · เดิมเป็นชิปสีเอง)
    2026-10-06 · คำสั่ง user: แยกแท็บ 🔨 แม่พิมพ์ ออกจาก ⚙️ เครื่องจักร (เดิมแม่พิมพ์ปนอยู่ในแท็บเครื่องจักร
@@ -46,6 +48,11 @@ const KIND_OPTIONS = [
      พาไป ✅ ใบตรวจ QA ของพาร์ท / 🔎 ใบผลิต · ด่านสโตร์ (checkPickPart) อ่านป้ายนี้ได้เหมือนบาร์โค้ด MAT เดิม
      id ของแถว = mat_no (ไม่ใช่ uuid) — mat_no คือภาษากลางของโรงงาน+SAP (เหตุผลใน qrCode.js) */
   { value: 'part', label: '📦 ชิ้นงาน/คัมบัง' },
+  /* 🏬 รหัสคลัง + 🗒️ ใบสแกนประจำไลน์ (เฟส 2 "ทุกอย่างสแกนได้" · 2026-10-28 · คำสั่ง user)
+     รหัสคลัง = ป้าย `ESM:W:<code>` ติดชั้น/โซน → ช่องเลือกคลัง (StorageLocSelect 📷) ยิงแทนการพิมพ์
+     ใบสแกน = แผ่น A4 แยกตามไลน์ (QR ไลน์ + ประเภท Downtime + ประเภทงานเสีย) — `ScanSheetPanel` */
+  { value: 'storage', label: '🏬 รหัสคลัง' },
+  { value: 'sheet', label: '🗒️ ใบสแกนประจำไลน์ (A4)' },
 ];
 const tabLabelOf = (k) => KIND_OPTIONS.find(o => o.value === k)?.label || k;
 
@@ -117,6 +124,15 @@ export default function QrLabels() {
           setRows(keep.map(p => ({ ...p, id: String(p.mat_no).trim(), _qr: 'product' })));
           setOpHidden((all || []).length - keep.length);
         }
+      } else if (kind === 'sheet') {
+        if (alive) setRows([]);   // แท็บใบสแกนโหลดของตัวเองใน ScanSheetPanel
+      } else if (kind === 'storage') {
+        let all = [];
+        try { all = await loadStorageLocations(); } catch (e) { toast.error('โหลดทะเบียนคลังไม่ได้: ' + (e?.message || e)); }
+        if (alive) setRows((all || []).filter(r => r.code && r.is_active !== false).map(r => {
+          const lns = Array.isArray(r.line_names) ? r.line_names : [];
+          return { ...r, id: String(r.code).trim(), _qr: 'storage', line_name: lns.join(' / '), _lines: lns };
+        }));
       } else if (kind === 'delivery') {
         /* 🎯 จุดส่งงานหน้าไลน์ (ลูปสโตร์เฟส 4) — 1 จุดหลายไลน์ได้ → line_name บนป้าย = ไลน์ทั้งหมดต่อกัน
            พิมพ์เฉพาะจุด active: ป้ายของจุดที่ปิดแล้วไม่ควรถูกพิมพ์ซ้ำไปติดหน้างานอีก */
@@ -166,7 +182,7 @@ export default function QrLabels() {
   }, [rows, scopedLineNames]);
 
   // ชนิดของแถว (r._qr) ไม่ใช่ของแท็บ — แท็บจิ๊กมีทั้งแถว machines และแถวทะเบียน PM
-  const noOf = (r) => (r._qr === 'machine' ? r.machine_no : r._qr === 'delivery' ? r.code : r._qr === 'product' ? r.mat_no : r.jig_no) || '';
+  const noOf = (r) => (r._qr === 'machine' ? r.machine_no : (r._qr === 'delivery' || r._qr === 'storage') ? r.code : r._qr === 'product' ? r.mat_no : r.jig_no) || '';
   const nameOf = (r) => (r._qr === 'machine' ? r.machine_name
     : r._qr === 'product' ? [r.name, r.p_no && `P/N ${r.p_no}`].filter(Boolean).join(' · ')
     : (r.name || r.part_name)) || '';
@@ -240,6 +256,20 @@ export default function QrLabels() {
 
   const th = { padding: '8px 10px', fontSize: 12, color: 'var(--muted)', textAlign: 'left', fontWeight: 700, borderBottom: '1px solid var(--border)' };
   const td = { padding: '7px 10px', fontSize: 13, color: 'var(--text)', borderBottom: '1px solid var(--border)' };
+
+  // 🗒️ แท็บใบสแกนประจำไลน์ — คนละหน้าตากับป้ายสติกเกอร์ (เลือกไลน์ + ติ๊กประเภท ไม่ใช่ตารางอุปกรณ์)
+  if (kind === 'sheet') {
+    return (
+      <Page style={{ background: 'var(--bg)', minHeight: '100%' }}>
+        <ReadOnlyNote show={!canPrint} role={role} what="พิมพ์ป้าย QR" permKey="qr_labels:print" />
+        <PageHeader title="พิมพ์ป้าย QR อุปกรณ์" icon="🏷️" sub="พิมพ์ป้ายติดเครื่องจักร/แม่พิมพ์/จิ๊ก/ชิ้นงาน แล้วส่องด้วยกล้องมือถือ → เปิดแอปมาที่เมนูของสิ่งนั้นเลย (ตรวจ AM/PM · แจ้งซ่อม · ตรวจ QA)" />
+        <FilterBar>
+          <Segmented value={kind} onChange={setKind} label="ชนิดป้าย" options={KIND_OPTIONS} />
+        </FilterBar>
+        <ScanSheetPanel lines={prodLines} canPrint={canPrint} />
+      </Page>
+    );
+  }
 
   return (
     <Page style={{ background: 'var(--bg)', minHeight: '100%' }}>

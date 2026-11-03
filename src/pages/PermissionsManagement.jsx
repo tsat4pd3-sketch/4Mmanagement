@@ -142,6 +142,7 @@ const PAGE_GROUPS = [
       { key: 'page:/pe-docs', label: 'Flow / PFMEA / Control Plan' },
       { key: 'page:/npi', label: 'พาร์ทใหม่ APQP / PPAP' },
       { key: 'page:/nm-board', label: 'บอร์ด New Model (IEC)' },
+      { key: 'page:/rfq', label: 'RFQ / เสนอราคา (Marketing)' },
     ],
   },
   {
@@ -174,6 +175,8 @@ const PAGE_GROUPS = [
       { key: 'page:/flow-tower', label: 'สายธารความต้องการ (Flow Tower)' },
       { key: 'page:/group-overview', label: 'ภาพรวมกลุ่มโรงงาน (Mockup)' },
       { key: 'page:/adoption-outlook', label: 'ภาพเมื่อข้อมูลเชื่อมกัน' },
+      { key: 'page:/announcements', label: 'ประกาศบริษัท (Mockup)' },
+      { key: 'page:/overseas-travel', label: 'เบิกเดินทางต่างประเทศ (Mockup)' },
     ],
   },
 ];

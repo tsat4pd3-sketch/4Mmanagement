@@ -98,7 +98,7 @@ export default function RackCenter() {
   const setParams = useMergeParams();
 
   const load = useCallback(async () => {
-    const [{ data: ln }, { data: ct }, { data: req, error: eReq }, { data: pkg, error: ePkg }, { data: slaRow }] = await Promise.all([
+    const [lnRes, { data: ct }, { data: req, error: eReq }, { data: pkg, error: ePkg }, { data: slaRow }] = await Promise.all([
       // ⚠️ select ให้ครบ — ขาด parent_line_name/section/is_active = dropdown ไม่มีลำดับชั้น/ไม่กรอง scope
       loadLinesRes(),
       supabaseDR.from('container_types').select('*').eq('is_active', true).order('name'),
@@ -112,6 +112,9 @@ export default function RackCenter() {
         () => supabaseDR.from('packaging_withdrawal_requests').select('*').in('status', ['issued', 'cancelled']), 200),
       supabaseDR.from('internal_delivery_sla').select('*').eq('kind', 'rack').maybeSingle(),
     ]);
+  /* 🔴 30/10 — เดิมแกะแค่ `{ data }` ⇒ ทะเบียนไลน์โหลดไม่สำเร็จแล้วได้ลิสต์ว่าง **เงียบ**
+     (หน้างาน PD1 แจ้ง "MO ไม่มีให้เลือกไลน์" ทั้งที่ฐานข้อมูลมีครบ) · เก็บผลทั้งก้อนไว้อ่าน error ได้ */
+  const ln = lnRes?.error ? null : lnRes.data;
     setLines(ln || []);
     setContainerTypes(ct || []);
     /* โหลดไม่ครบ = บอก + คงข้อมูลรอบก่อน (เดิมกลืน error แล้วบอร์ดว่าง = "ไม่มีใบค้าง" ทั้งที่คิวรีล่ม) */

@@ -630,3 +630,86 @@ test('🔴 ใบทีม MTN ที่ status=checked ขั้นถัดไ
   assert.equal(stageOf(nextStepOf(o), { mtnForm: true }), 'handover');
   assert.equal(stepMeta(5, { mtnForm: true }).title, 'รับมอบ / ติดตามผล');
 });
+
+/* ═══ 🔧 ขั้น 4 ของใบทีมเครื่องมือ (JIG/DIE) = หัวหน้าแผนกช่าง ไม่ใช่ผู้แจ้ง ═══  2026-10-27
+   คำสั่ง user: *"สำหรับ MO ของ jig กับ DIE งานซ่อมนอกไลน์ step 4 ต้องเป็นหัวหน้าแผนกช่าง
+   ก่อน QA ไม่ใช่ผู้แจ้ง"* · ระดับที่เซ็นได้ = หัวหน้าแผนก + วิศวกร (rank ≥ 30)
+   🔴 ทีม PRODUCTION ต้องไม่เปลี่ยน — ซ่อมในไลน์ ผู้แจ้งเห็นเครื่องกลับมาเดิน จึงตรวจรับเองถูกแล้ว */
+import { moWaitMeta as waitMetaTool } from '../mtnStepPerm.js';
+import { isToolTeamRow } from '../mtnMoForm.js';
+
+const TOOL_BASE = { can: () => false, seeded: () => true, hasTeams: true };
+const jigOrder  = { mtn_dept: 'jig_maintenance', status: 'repaired', reported_by_name: 'สมชาย' };
+const dieOrder  = { mtn_dept: 'die_maintenance', status: 'repaired', reported_by_name: 'สมชาย' };
+const prodOrder = { mtn_dept: 'production', status: 'repaired', reported_by_name: 'สมชาย' };
+
+test('🔧 isToolTeamRow — JIG/DIE ใช่ · PRODUCTION/MTN ไม่ใช่ · ไม่รู้ = ไม่ใช่ (ถอยไปพฤติกรรมเดิม)', () => {
+  assert.equal(isToolTeamRow(jigOrder), true);
+  assert.equal(isToolTeamRow(dieOrder), true);
+  assert.equal(isToolTeamRow(prodOrder), false);
+  assert.equal(isToolTeamRow({ mtn_dept: 'maintenance' }), false);
+  assert.equal(isToolTeamRow({}), false, 'ไม่รู้ทีม = ไม่ย้ายช่องเซ็นเงียบๆ');
+  assert.equal(isToolTeamRow({ item_type: 'JIG เชื่อม' }), true, 'ไม่ระบุทีม → เดาจากชนิดอุปกรณ์');
+});
+
+test('🔧 ขั้น 4 ใบ JIG/DIE = ฝั่งช่าง · ล็อกทีม · rank ≥ 30 — ใบ PRODUCTION คงเดิม', () => {
+  const tool = stepMeta(4, { toolTeam: true });
+  assert.equal(tool.side, 'mtn');
+  assert.equal(tool.byReporter, false, 'ผู้แจ้งไม่ใช่เจ้าของช่องนี้แล้ว');
+  assert.equal(tool.teamSide, true, 'ต้องล็อกทีมใครทีมมันเหมือนขั้น 2/3');
+  assert.equal(tool.minRank, 30, 'หัวหน้าแผนก(50) + วิศวกร(30) — ทีม Die ยังไม่มี dept_head');
+  assert.equal(tool.stage, 'accept_work', 'stage ห้ามเปลี่ยน (ตัวกรอง ?wait= / คิวงาน อ้างค่านี้)');
+  assert.equal(tool.key, 'accept_work', 'คีย์สิทธิ์เดิม — ไม่ต้อง seed ใหม่');
+
+  const prod = stepMeta(4, {});
+  assert.equal(prod.side, 'reporter');
+  assert.equal(prod.byReporter, true);
+  assert.equal(prod.minRank, undefined);
+});
+
+test('🔧 ฟอร์ม MTN ชนะ toolTeam เสมอ (ทีม MTN ไม่ใช่ทีมเครื่องมือ)', () => {
+  assert.equal(stepMeta(4, { mtnForm: true, toolTeam: true }).stage,
+    stepMeta(4, { mtnForm: true }).stage);
+});
+
+test('🔧 ผู้แจ้งเซ็นขั้น 4 ของใบ JIG ไม่ได้แล้ว · ใบ PRODUCTION ยังได้', () => {
+  const asReporter = (order) => canDoStep(4, { ...TOOL_BASE, order, fullName: 'สมชาย', actorSide: 'reporter', posRank: 40 });
+  assert.equal(asReporter(jigOrder).ok, false);
+  assert.equal(asReporter(jigOrder).code, 'wrong_side');
+  assert.equal(asReporter(dieOrder).ok, false);
+  assert.equal(asReporter(prodOrder).ok, true, '🔴 ทีมผลิตห้ามเปลี่ยน — ผู้แจ้งยังตรวจรับเอง');
+});
+
+test('🔧 ใบ JIG: ช่าง(20) ไม่ผ่าน · วิศวกร(30) ในทีมผ่าน · วิศวกรทีมอื่นไม่ผ่าน', () => {
+  const inTeam = (posRank) => canDoStep(4, { ...TOOL_BASE, order: jigOrder, fullName: 'ช่าง',
+    actorSide: 'mtn', posRank, inOrderTeam: true, can: k => k === 'service_own_team' });
+  assert.equal(inTeam(20).code, 'rank_too_low');
+  assert.equal(inTeam(30).ok, true);
+  assert.equal(inTeam(50).ok, true);
+  const otherTeam = canDoStep(4, { ...TOOL_BASE, order: jigOrder, fullName: 'ช่าง',
+    actorSide: 'mtn', posRank: 50, inOrderTeam: false, can: k => k === 'service_own_team' });
+  assert.equal(otherTeam.code, 'other_team', 'ล็อกทีมใครทีมมันต้องยังกัด');
+});
+
+test('🔧 ไม่รู้ตำแหน่ง (posRank null) = ไม่บล็อก แต่จอต้องเขียนว่าไม่ได้ตรวจ', () => {
+  const r = canDoStep(4, { ...TOOL_BASE, order: jigOrder, fullName: 'บัญชีกลาง',
+    actorSide: 'mtn', posRank: null, inOrderTeam: true, can: k => k === 'service_own_team' });
+  assert.equal(r.ok, true, 'ไม่รู้ ≠ ปฏิเสธ (บัญชีกลางทีมช่างยังเซ็นได้)');
+});
+
+test('🔧 คิวงาน: ใบ JIG ที่ซ่อมเสร็จ รอ "หัวหน้าแผนกช่าง" ไม่ใช่ผู้เปิดใบ', () => {
+  const w = waitMetaTool(jigOrder);
+  assert.equal(w.step, 4);
+  assert.equal(w.stage, 'accept_work');
+  assert.match(w.meta.who, /หัวหน้าแผนกช่าง/);
+  assert.equal(w.meta.side, 'mtn');
+  assert.match(waitMetaTool(prodOrder).meta.who, /ผู้เปิดใบ/);
+});
+
+test('🔧 ป้ายปุ่ม/เหตุผลตอนกดไม่ได้ ต้องพูดถึงฝั่งช่าง', () => {
+  assert.match(stepLabel(4, { toolTeam: true }), /หัวหน้าแผนกช่าง/);
+  assert.match(stepLabel(4, {}), /ผู้เปิดใบ/);
+  const hint = stepDenyHint(4, { toolTeam: true, wrongSide: true }).join(' ');
+  assert.match(hint, /หัวหน้าแผนกช่าง/);
+  assert.match(hint, /ฝั่งซ่อมบำรุง/, 'ต้องบอกว่าเป็นช่องของฝั่งช่าง ไม่ใช่ของฝ่ายที่แจ้ง');
+});

@@ -118,7 +118,14 @@ const LS_PREFIX = 'esm_mc_';
    ⚠️ แก้ select ของ cachedMaster แล้วลืมบวกเลขนี้ = เครื่องที่มี cache เก่าอ่านโครงเก่าได้ถึง 4 ชม.
       → **แก้ shape เมื่อไหร่ บวกเลขนี้ในคอมมิทเดียวกันเสมอ**
    (การแก้ "เนื้อข้อมูล" ไม่ต้องแตะเลขนี้ — ใช้ `invalidateTable()` ดู masterInvalidate.js) */
-const CACHE_EPOCH = 'e1';
+const CACHE_EPOCH = 'e2';   // e2 = 28/10 ล้างของพิษ "ลิสต์ว่างที่ถูกจดเป็นของจริง" (ดูหมายเหตุใต้)
+
+/* 🔴 e1 → e2 (28/10) — **ครั้งนี้ไม่ได้เปลี่ยน shape แต่ต้องล้างของพิษ**
+   เครื่องหน้างานจำนวนหนึ่งมี `production_lines:dr` = `[]` ค้างใน localStorage 4 ชม.
+   (ลูกโซ่: `loadLinesRes()` เคยคืน `error:null` เสมอ ⇒ cache ชั้นนอกจด "สำเร็จ แต่ว่าง")
+   ⇒ เปิดกะไม่ได้ทั้งเย็น · ของพิษยังอยู่แม้ deploy ตัวแก้แล้ว เพราะมันอยู่ในเครื่อง ไม่ใช่ในโค้ด
+   บวกเลขนี้ = ทุกเครื่องทิ้ง cache master รอบเดียวตอนโหลดครั้งหน้า แล้วหายเอง
+   ⚠️ มีราคา: โหลด master ใหม่ทั้งชุด (~640 KB) ต่อเครื่อง 1 รอบ — **ใช้เมื่อของพิษกระจายแล้วเท่านั้น** */
 
 const lsKey = (key) => `${LS_PREFIX}${key}`;
 
@@ -249,6 +256,20 @@ export async function cachedRows(key, runQuery, ttl = DEFAULT_TTL) {
 
 /** ล้าง cache — ไม่ส่ง key = ล้างทั้งหมด (เรียกหลังแก้ master สำเร็จ)
  *  ⚠️ ต้องล้าง localStorage ด้วยเสมอ ไม่งั้นแก้ master แล้วเปิดแอปใหม่ยังเห็นของเก่า */
+/** 🧹 ทิ้ง cache master ทั้งหมดของเครื่องนี้ (memory + localStorage)
+ *  ใช้ตอน **ออกจากระบบ** — ให้ "logout แล้ว login ใหม่" เป็นทางแก้ที่หน้างานเข้าใจและได้ผลจริง
+ *  (ก่อน 28/10 logout ไม่ล้างอะไรเลย ⇒ ต้องบอกให้เปิด incognito ซึ่งหน้างานไม่เข้าใจ) */
+export function clearAllMasterCache() {
+  cache.clear();
+  failures.clear();
+  try {
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const k = localStorage.key(i);
+      if (k?.startsWith(LS_PREFIX)) localStorage.removeItem(k);
+    }
+  } catch { /* private mode / ปิดอยู่ — ล้าง memory ไปแล้วก็พอ */ }
+}
+
 export function invalidateMaster(key) {
   if (key == null) {
     cache.clear();

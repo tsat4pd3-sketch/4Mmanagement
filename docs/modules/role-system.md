@@ -31,6 +31,7 @@
 | `mtn` | 🔧 ซ่อมบำรุง (Maintenance) | ทีมซ่อมบำรุง (MTN/JIG/DIE) — หน้า PM ทั้งหมด, ผังเครื่องจักร, ฐานข้อมูลเครื่องจักร (seed: `20260713_mtn_role.sql`) |
 | `engineer` | ⚙️ งานวิศวกรรม (Engineering) | process engineering — Product Master `products:create/edit` (BOM/EC/New Model) โดยไม่พ่วงอำนาจจัดการผลิต/อนุมัติ QA/งาน PM · **ตั้งใจไม่รวมกับ qa/mtn** เพราะอำนาจอนุมัติคุณภาพกับ master เครื่องจักรต้องแยกคนถือ (seed: `20260713_engineer_planner_store_roles.sql`) |
 | `engineer_nm` | 🚀 วิศวกรรมรุ่นใหม่ (New Model Engineering) | **ทีม Engineering New Model — เห็นแค่กลุ่มหน้า NM** (seed แรก: `/npi` + `/pe-docs` · ขอบเขตวันนี้ดูกล่อง 🧪 ใต้ตาราง) (seed: `page:/npi`, `page:/pe-docs`, `npi:edit`, `pe:edit`) · ไม่ให้ `npi:approve`/`pe:approve`/`npi:manage_templates` (ปิดเฟส·อนุมัติ PSW·ออก revision·ยืนยัน master PFMEA·แก้แม่แบบกลาง = ของเจ้าของเอกสาร) เปิดเพิ่มได้ที่ `/permissions` · **ทำไมไม่ใช้ `engineer` เดิม:** role นั้นถือ `/products` `/machine-database` `/dashboard` + approve อยู่แล้วและมี user จริงใช้ — สิทธิ์เข้าหน้าเป็น*ต่อ role* ไม่ใช่ต่อ user จึงหั่นไม่ได้ (migration `20260918_engineer_nm_role.sql` — **apply แล้ว 2026-09-18** · ⚠️ ALTER TYPE ADD VALUE + seed ต้องรันคนละท่อน) |
+| `marketing` | 💼 การตลาด (Marketing · Q-neX) | **ต้นน้ำของสายธาร Marketing → New Model → โรงงาน** — `page:/rfq` + `rfq:edit` + `rfq:award` (RFQ · ส่ง CRD → สร้างโปรเจค NPI · ผลได้งาน · ใบแจ้งจัดทำ F-MKT-001/002) + `page:/npi` `page:/nm-board` **ดูอย่างเดียว** (ไม่ให้ `npi:edit`) · ใช้เว็บ edition ก่อน SOP ร่วมกับ `engineer_nm` — **คนละ role เพราะชุดสิทธิ์ต่างกันจริง** (ออก RFQ/Award ≠ ทำ APQP) · ทำครบ 5 จุด (enum `20261030a` · ROLE_META · seed `20261030b` · ไม่มี role array ต้องแก้ · F5) — **apply แล้ว 2026-10-30** · 📄 `docs/modules/mkt-rfq.md` §4 |
 | `planner_store` | 📦 แผนงาน-คลัง (Planner & Store) | ฝั่งคลัง/แผนงาน — Store, Kanban, Rack, Rundown, อัพโหลด Forecast (`heijunka:operate`, `line_stock:issue/manage_rounds`, `rack_center:operate`, `demand:upload`) — แยกจาก `sale` ที่โฟกัส Delivery/Ship-to (seed เดียวกัน) |
 | `display` | 📺 จอแสดงผล (View Only) | ดูอย่างเดียว (จอแสดงผลลอย ไม่ login เป็นคน) |
 
@@ -1092,3 +1093,57 @@ migration `20261014_rls_round10_tier_b_final_main.sql` (**apply แล้ว 202
    `prodRoutine.js` · `operator.jsx` · `DeptDashboard.jsx` ฯลฯ) role ใหม่ที่ไม่ถูกเติมในจุดพวกนี้ = **เงียบ ไม่ใช่ error**
 3. RLS ที่อ้าง role ตรงๆ (ถ้ามี) + เอกสาร/ด่าน
 ⇒ ทางที่ได้ผลเท่ากันโดยไม่จ่ายข้อ 1-3 คือ **`supervisor` + Cost Center ของแผนก** (ชั้นสิทธิ์ที่ 3 แกน CC ทำงานตามลำดับชั้นอยู่แล้ว)
+
+
+## 👀 `viewer` — ผู้ทดลองใช้ ดูอย่างเดียว (2026-11-02)
+
+คำสั่ง user: *"user ไว้ให้นายเราลองเข้ามาทดสอบดูโปรแกรม แต่จะไม่สามารถแก้ไขอะไรหรือลงข้อมูลอะไรได้"*
+
+- **กลไก:** มีแต่คีย์ `page:*` · **ไม่มีคีย์ action แม้แต่ตัวเดียว** ⇒ `can()` เท็จทุกปุ่ม · RLS ฝั่ง Main (`has_perm`) บล็อกเขียน
+  ⚠️ ฝั่ง DR เป็น anon ⇒ กันได้ที่ชั้นปุ่ม/handler เท่านั้น (known gap เดิม — คนตั้งใจยิง API ตรงยังเขียนได้)
+- **ทำไมไม่ใช้ `display`:** นั่นคือ "จอ TV" (24 หน้า · วนหน้าอัตโนมัติ · ไม่ auto-logout · `axis:'device'`) ไม่ใช่คน
+- **หน้าที่ไม่ให้เห็น:** ตั้งค่าทั้งหมด (`/qa-setup` `/pm-setup` `/process-setup` `/linesetup` `/org-setup` `/layout-setup`
+  `/storage-maintenance` `/notification-config` `/display-rotation`) · `/announcements` · `/audit-log` ·
+  `/register` + `/checkin` (เขียนโดยมี `can()` คุมบาง) · `/remote` (สั่งจอ TV)
+- **ตั้งค่าบัญชีที่ `/add-user`:** ชุดสิทธิ์ `👀 ผู้ทดลองใช้` · ขอบเขต **ทั้งโรงงาน** (`scope_depth='all'`) · ส่วนงาน/ไลน์ **ว่าง**
+  (ว่าง ⇒ `canWriteUnit` fail-closed อีกชั้น) · `account_kind='shared'` ถ้าเป็นบัญชีกลางให้หลายคนลอง
+- migration `20261102_role_viewer_main.sql` (2 บล็อก — enum ต้อง commit ก่อน seed · 55P04)
+- 🔴 **ห้ามเพิ่มคีย์ action ให้ role นี้** — ถ้าวันหน้าอยากให้ "ลองกด" ได้ ให้ทำ sandbox แยก ไม่ใช่เปิดคีย์บนฐานจริง
+
+
+## 🧩 ช่อง ③ ส่วนงาน + ④ Cost Center ยุบเป็นช่องเดียว "หน่วยที่ดูแล ตามผังองค์กร" (2026-11-02)
+
+คำสั่ง user: *"ปัญหาเรื่อง 3 กับ 4 ที่ควรจะรวมกันจะแก้จบเมื่อไหร่ ที่จริงเลือก 4 มันครอบคลุมอยู่แล้ว มันตามผังองค์กร"*
+(ต่อจาก 28/10 *"ยุบเหลือแกนเดียว · CC ละเอียดกว่า"*)
+
+- **จอ `/add-user`:** ช่องติ๊กส่วนงาน (③ เดิม) **ถูกถอด** · เหลือต้นไม้ CC ช่องเดียว · ③ กลายเป็น "สรุปผล" ที่ระบบ derive
+  👁️ เห็นข้อมูลของ = ส่วนงานแม่ของหน่วยที่ติ๊ก · ✏️ แก้ได้ = หน่วยที่ติ๊กตามลำดับชั้น (ccScope เดิม)
+- **DB ไม่เปลี่ยน:** `profiles.sections` ยังถูกเขียน (40 จออ่านช่องนี้) แต่ค่ามาจาก `effectiveSections()` ใน
+  **`src/utils/scopePicker.js`** (pure · 8 เทส) — ห้ามคำนวณเองในหน้า
+- 🔴 **กฎห้ามแคบลงเงียบ (บทเรียน 26/10):** ไม่ติ๊ก CC = คืน `sections` เดิมเป๊ะ · ค่าเดิมที่แปลงเป็น CC ไม่ได้
+  (หน่วยไม่มีรหัส/หายจากผัง/รหัสตกทอด) = **คงไว้** โชว์เป็นชิปกรอบประ กด ✕ ถอดเองได้
+- เปิดบัญชีเก่าที่มี `sections` แต่ไม่มี CC → ระบบ **ติ๊ก CC ให้ล่วงหน้า** (เฉพาะโหนดที่มีรหัสของตัวเอง) ครั้งเดียวต่อบัญชี
+  ⇒ บันทึกครั้งถัดไป บัญชีนั้นย้ายมาใช้แกน CC โดยค่าที่เห็นเท่าเดิม (round-trip test ยืนยัน)
+- ด่าน `scope-picker-single-field` ใน regressionGuards — ห้ามเอาช่องติ๊กส่วนงานกลับมา
+- ⚠️ ยังไม่แตะ: `/permissions` · `writeScope.js` (ยังมี 2 แกน section/CC ภายใน — จอไม่ต้องรู้) · การ derive เป็นแค่ชั้น UI บันทึก
+
+## 🔄 ขอบเขตจริงอ่าน `org_assignments` — รักษาการ/รับผิดชอบเพิ่ม ทับได้ทาง "กว้างขึ้น" เท่านั้น (2026-11-02)
+
+คำสั่ง user: *"ตำแหน่งจริงของ HR เป็นพื้นฐาน และเพิ่มความรับผิดชอบงานที่อาจจะรักษาการแทนตำแหน่งนั้น"* →
+*"ลุยต่อ ให้ขอบเขตจริงอ่าน org_assignments เลย"*
+
+- **ชั้น:** `profiles` (sections · resp_cost_centers · scope_depth) = **ฐาน** · `org_assignments` (head/acting · มีวันเริ่ม-สิ้นสุด)
+  = **ชั้นทับ** ⇒ ขอบเขตจริง = ฐาน ∪ หน่วยที่ได้รับมอบ · **ไม่มีทางที่มอบหมายทำให้ใครแคบลง**
+- **จุดเดียว:** `src/utils/assignmentOverlay.js` → `applyAssignments({ sections, respCostCenters }, rows, { nodes, ccIdx, today })`
+  · `sections` ว่าง (ไม่จำกัด) → คงว่าง · มอบหมาย `scope_depth='all'` → ว่าง · ไม่งั้น ∪ ส่วนงานบนสุดของหน่วยที่มอบ
+  · `respCostCenters` ∪ CC ของหน่วย (ตกทอดจากแม่ตาม `ccOfNode`) · วันมีผล = `isGranting(row, today)` ตัวเดียวกับจอ /org-setup
+  · **ผัง/ทะเบียนอ่านไม่ได้ = คืนค่าเดิมเป๊ะ + `failed`** ห้ามเดา · โหนดถูกลบ = ข้ามแถวนั้น (บอกใน `applied[].skipped`)
+- **ต่อสาย:** `App.jsx fetchProfile` — อ่าน `org_assignments` กรอง `profile_id` (admin ไม่อ่าน · 1 คิวรี/login) → ทับก่อน
+  `setUserSections`/`setUserRespCcs` · ดัชนีผัง (`scopeIdx`) โหลดเมื่อ **ตั้ง CC ไว้ หรือ มีมอบหมายที่มีผล** (เดิมเฉพาะ CC)
+  · ผลทับส่งออก `UserContext.assignOverlay` (`null` = ไม่มี · `{ failed, reason, applied }`) · โหมดจำลอง (ViewAs) = `null`
+- **จอต้องเขียนบอก:** การ์ดผู้ใช้ใน sidebar — มีมอบหมาย = "🔄 รักษาการ <หน่วย>" (hover เห็นวันหมดอายุ) ·
+  อ่านไม่ได้ = "⚠️ รักษาการ: อ่านไม่ได้ — ใช้ขอบเขตบัญชีอย่างเดียว"
+- **วัดก่อน merge (5 แถวจริง):** 4 แถวค่าเท่าเดิม · 1 แถว (mtn รักษาการ Maintenance) ได้ CC Maintenance เพิ่ม = หน่วยเดียวกับ
+  `section` เดิม ⇒ ไม่มีใครแคบลง · รายละเอียด `docs/ORG-SCALE-GLOBAL-DESIGN.md` §4.8
+- ด่าน `assignment-overlay-widen-only` (regressionGuards) — ห้ามเขียนกฎวันที่เองใน App.jsx · ห้ามให้ overlay แตะ DB
+- ⚠️ งานข้อมูลที่เหลือ: 21 คนที่ตำแหน่ง HR ต่ำกว่าสิทธิ์ยังไม่มีแถวมอบหมาย — ลงที่ `/org-setup › มอบหมายหน่วย` (ใส่วันสิ้นสุด)

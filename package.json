@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "npm run check:context && npm run lint:critical && npm test && npm run changelog && vite build",
+    "build:nm": "npm run check:context && npm run lint:critical && npm test && npm run changelog && vite build --config vite.nm.config.js",
     "lint": "eslint .",
     "preview": "vite preview",
     "lint:critical": "eslint -c eslint.critical.config.js src",

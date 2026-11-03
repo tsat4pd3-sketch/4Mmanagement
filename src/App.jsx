@@ -1,4 +1,4 @@
-import { createContext, useState, useEffect, useRef, useMemo, lazy, Suspense, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect, useRef, useMemo, lazy, Suspense, useCallback } from 'react';
 import { fmtDateTime } from './utils/dateFormat';
 import tsLogo from './assets/TS logo.png';
 import { BrowserRouter as Router, Routes, Route, Link, Navigate, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
@@ -14,13 +14,19 @@ import SignatureModal from './components/SignatureModal';
 import ChangePasswordModal from './components/ChangePasswordModal';
 const FeedbackModal = lazy(() => import('./components/FeedbackModal'));
 import { loadPermissions, canAccessPage, setDeptAdmin, setSharedAccount, can } from './utils/permissions';
+/* 🏷️ รุ่นของเว็บ (full / nm) — สลับตอน build ด้วย alias ใน vite.nm.config.js · 📄 src/appEdition.js */
+import { EDITION_LABEL, EDITION_HOME } from './appEdition';
 import { LOGISTIC_GROUPS } from './utils/logisticSide';
 import { trackVisit, topPaths } from './utils/navRecent';
 import { effectiveSections } from './utils/sectionScope';
 /* 💰 ชั้นสิทธิ์ที่ 3 แกน Cost Center — ดัชนีผังสร้างที่นี่ที่เดียว แล้วส่งผ่าน UserContext
    (จอ 20 จออ่านผ่าน `canWriteUnit`/`canWriteLine` เหมือนเดิม ไม่ต้องรู้ว่ามีแกนที่ 2) */
 import { buildOrgScope } from './utils/orgScope';
-import { attachCc } from './utils/ccScope';
+import { clearAllMasterCache } from './utils/masterCache';
+import { attachCc, buildCcIndex } from './utils/ccScope';
+import { applyAssignments } from './utils/assignmentOverlay'; // 🔄 รักษาการ/รับผิดชอบเพิ่ม ทับขอบเขตจริง (widen-only · 2026-11-02)
+import { getWorkDate } from './utils/workDate';
+import { isGranting, kindLabel as assignKindLabel } from './utils/orgAssignments';
 import { loadLinesRes } from './utils/useProductionLines';
 import { widerLineId } from './utils/lineHierarchy';
 /* 🏭 ปลุก **ทะเบียนกลาง** ของข้อยกเว้นเวลาพักรายไลน์ (`break_line_rules` · 20/10)
@@ -33,6 +39,7 @@ import useIsMobile from './utils/useIsMobile';
 import ScrollHint from './components/ScrollHint';
 import MobileNavBar from './components/MobileNavBar';
 import MobilePushPrompt from './components/MobilePushPrompt'; // 📲 แถบชวนเปิด push (มือถือเท่านั้น) — 2026-10-20
+import LineRegistryAlert from './components/LineRegistryAlert';
 import ScanWedgeGuard from './components/ScanWedgeGuard';
 import { purgeOldDrafts } from './utils/formDraft';   // 📝 ล้างร่างฟอร์มที่หมดอายุ (ร่างค้างห้ามกินที่ในเครื่อง)   // 🔫 ปุ่มสแกนข้างเครื่อง handheld — มือถือเท่านั้น
 import { pushSupported, getPushState, subscribePush, unsubscribePush, onPushResubscribeRequest, handlePushResubscribe } from './utils/webpush';
@@ -82,6 +89,8 @@ const DeptHub       = lazy(() => import('./pages/DeptHub'));
 const TvBoard = lazy(() => import('./pages/TvBoard'));
 const FlowTower    = lazy(() => import('./pages/FlowTower'));
 const GroupOverview = lazy(() => import('./pages/GroupOverview'));
+const AnnouncementMockup = lazy(() => import('./pages/AnnouncementMockup'));
+const OverseasTravelMockup = lazy(() => import('./pages/OverseasTravelMockup'));
 const AdoptionOutlook = lazy(() => import('./pages/AdoptionOutlook'));
 const ProgramUpdate = lazy(() => import('./pages/ProgramUpdate'));
 /* 🧭 ไม่ lazy โดยตั้งใจ — หน้านี้ต้องทำงานตอนบันเดิลเก่า/โหลด chunk ไม่ได้ (ดูหัวไฟล์) */
@@ -116,6 +125,7 @@ const QAInspectionSetup = lazy(() => import('./pages/QAInspectionSetup'));
 const PEDocs = lazy(() => import('./pages/PEDocs'));
 const NPI = lazy(() => import('./pages/NPI'));
 const NewModelBoard = lazy(() => import('./pages/NewModelBoard'));
+const Rfq = lazy(() => import('./pages/Rfq'));
 const ScrapReport = lazy(() => import('./pages/ScrapReport'));
 const NotificationConfig = lazy(() => import('./pages/NotificationConfig'));
 const MtnRepair = lazy(() => import('./pages/MtnRepair'));
@@ -234,6 +244,7 @@ export const NAV_ITEMS = [
   { to: '/pe-docs',        icon: '📐', label: 'Flow / PFMEA / Control Plan', group: 'คุณภาพ & วิศวกรรม' },
   { to: '/npi',            icon: '🚀', label: 'พาร์ทใหม่ APQP / PPAP',       group: 'คุณภาพ & วิศวกรรม' },
   { to: '/nm-board',       icon: '🧭', label: 'บอร์ด New Model (IEC)',      group: 'คุณภาพ & วิศวกรรม' },
+  { to: '/rfq',            icon: '💼', label: 'RFQ / เสนอราคา (Marketing)', group: 'คุณภาพ & วิศวกรรม' },
 
   { to: '/report',        icon: '📋', label: 'รายงาน',            group: 'วิเคราะห์ & รายงาน' },
 
@@ -252,6 +263,10 @@ export const NAV_ITEMS = [
   // "ข้อมูลเชื่อมกันทั้งองค์กรแล้วตอบคำถามอะไรได้" — สอบกลับ/คุมคุณภาพ/predictive/prescriptive
   // ฝั่งวันนี้นับสดจากฐานจริง ฝั่งอนาคตติดป้ายคาดการณ์ (seed: admin/manager)
   { to: '/adoption-outlook', icon: '🔮', label: 'ภาพเมื่อข้อมูลเชื่อมกัน', group: 'ผู้บริหาร & เดโม' },
+  // 🧪 mockup workflow ประกาศบริษัท Issue → EVP Approve → Publish ตามวันมีผล (ไม่เขียน DB · seed: admin/manager)
+  { to: '/announcements', icon: '📢', label: 'ประกาศบริษัท (Mockup)', group: 'ผู้บริหาร & เดโม' },
+  // 🧪 mockup workflow เบิกเงินเดินทางต่างประเทศ 7 ขั้น 5 ฝ่าย (ไม่เขียน DB · ยังไม่ seed สิทธิ์ = admin เท่านั้น)
+  { to: '/overseas-travel', icon: '✈️', label: 'เบิกเดินทางต่างประเทศ (Mockup)', group: 'ผู้บริหาร & เดโม' },
 
   // ── ตั้งค่า 13 เมนู แบ่ง 2 กลุ่มย่อยด้วย `sub` (nav audit 2026-08-27) ─────────────
   // ไม่ได้เพิ่มหมวดบนแถบไอคอน — แค่คั่นหัวข้อในแผงเดียวกัน แยก "ของที่กรอกทุกเดือน"
@@ -436,6 +451,8 @@ function SplashScreen({ onDone }) {
 /* ─── Sidebar ──────────────────────────────────────────────── */
 // export ไว้ให้ audit harness (audit/main.jsx ?p=__sidebar) mount ตรงๆ เพื่อวัด layout — แอปจริงใช้ผ่าน ProtectedLayout เท่านั้น
 export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, userLineId, userEmail, userFullName, userSignatureUrl, userPosition, userAvatarUrl, remoteCode, onToggleRemote, onOpenPalette, pinned, onTogglePin, realRole, onOpenViewAs, onAvatarSaved }) {
+  // 🔄 ผลการทับขอบเขตด้วย org_assignments — มาจาก UserContext (ProtectedLayout) ไม่เพิ่ม prop
+  const { assignOverlay } = useContext(UserContext);
   const location = useLocation();
   const isMobile = useIsMobile();
   const [sigModalOpen,  setSigModalOpen]  = useState(false);
@@ -545,6 +562,19 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
         <div style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {[positionLabel(userPosition), userEmail].filter(Boolean).join(' · ')}
         </div>
+        {/* 🔄 ขอบเขตที่ถูกทับด้วย "รักษาการ/รับผิดชอบเพิ่ม" (org_assignments) ต้องเขียนบนจอ ห้ามเงียบ (02/11)
+            · อ่านทะเบียน/ผังไม่ได้ = ขอบเขตที่ใช้อยู่มาจาก profiles ล้วน ⇒ บอกคนใช้ ไม่ใช่ปล่อยให้งงว่าทำไมไม่เห็นหน่วยที่รักษาการ */}
+        {assignOverlay?.failed ? (
+          <div style={{ fontSize: 11, color: 'var(--amber)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+            title="อ่านทะเบียนมอบหมาย/ผังองค์กรไม่ได้ — ขอบเขตตอนนี้มาจากที่ตั้งไว้ในบัญชีเท่านั้น (รีเฟรชแล้วลองใหม่)">
+            ⚠️ รักษาการ: อ่านไม่ได้ — ใช้ขอบเขตบัญชีอย่างเดียว
+          </div>
+        ) : (assignOverlay?.applied?.filter(a => !a.skipped).length ? (
+          <div style={{ fontSize: 11, color: 'var(--accent2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+            title={assignOverlay.applied.filter(a => !a.skipped).map(a => `${assignKindLabel(a.kind)} ${a.nodeName}${a.ends_on ? ` (ถึง ${a.ends_on})` : ''}`).join(' · ')}>
+            🔄 {assignOverlay.applied.filter(a => !a.skipped).map(a => `${assignKindLabel(a.kind)} ${a.nodeName}`).join(' · ')}
+          </div>
+        ) : null)}
       </div>
       <div style={{
         fontSize: 11, fontWeight: 700, padding: '2px 6px',
@@ -948,7 +978,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
             <img src={tsLogo} alt="Thai Summit Group" width={28} height={28} style={{ borderRadius: 3, flexShrink: 0 }} />
             <div>
               <div style={{ fontSize: 11, letterSpacing: '2px', color: 'var(--accent)', textTransform: 'uppercase', fontWeight: 700, fontFamily: 'var(--font-display)' }}>Thai Summit</div>
-              <div style={{ fontSize: 11, letterSpacing: '1.5px', color: 'var(--muted)', textTransform: 'uppercase', fontFamily: 'var(--font-display)' }}>ESM · Shopfloor</div>
+              <div style={{ fontSize: 11, letterSpacing: '1.5px', color: 'var(--muted)', textTransform: 'uppercase', fontFamily: 'var(--font-display)' }}>{EDITION_LABEL}</div>
             </div>
           </div>
           <button
@@ -1755,7 +1785,7 @@ function AutoLogoutWarning({ secsLeft, onStay, onLogout }) {
 /* ─── Protected Layout ─────────────────────────────────────────────── */
 // permsVersion — ทำให้ layout re-render เมื่อสิทธิ์เปลี่ยน · และเป็น dep ของ `allUnits` ใน userCtx
 // (RoleRoute/Sidebar อ่าน permission cache แบบ sync ผ่าน canAccessPage ระหว่าง render)
-function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, viewAs, onApplyViewAs, userLineId, userTeam, userSection, userSections, userRespCcs, userScopeIdx, userMtnTeams, userIsDeptAdmin, userAccountKind, userPosition, userEmail, userFullName, userNotifyEmail, userSignatureUrl, userAvatarUrl, onAvatarSaved, onSignatureSaved, permsVersion }) {
+function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, viewAs, onApplyViewAs, userLineId, userTeam, userSection, userSections, userRespCcs, userScopeIdx, userAssignOverlay, userMtnTeams, userIsDeptAdmin, userAccountKind, userPosition, userEmail, userFullName, userNotifyEmail, userSignatureUrl, userAvatarUrl, onAvatarSaved, onSignatureSaved, permsVersion }) {
   const isMobile = useIsMobile();
   const isTV     = !useIsMobile(1919);   // จอ ≥1920 (TV) — reactive แทน innerWidth ครั้งเดียว
   useEffect(() => { purgeOldDrafts(); }, []);   // 📝 ร่างฟอร์มหมดอายุ (utils/formDraft.js)
@@ -1793,6 +1823,11 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
     setActor(null, null);   // ล้างตัวตนผู้ใช้ (ชื่อ+uid) ตอน logout
     setDeptAdmin(false);
     setSharedAccount(false);
+    /* 🧹 ล้าง cache ทะเบียนกลางของเครื่องนี้ด้วย (28/10)
+       เดิม logout ไม่ล้างอะไรเลย ⇒ ของพิษ (เช่นลิสต์ไลน์ว่างที่ถูกจดไว้ 4 ชม.) ยังค้าง
+       ⇒ ต้องบอกหน้างานให้ "เปิด incognito" ซึ่งเขาไม่เข้าใจและทำไม่ถูก
+       ตอนนี้ **"ออกจากระบบแล้วเข้าใหม่" = ทางแก้จริง** — ประโยคเดียวที่หน้างานทำตามได้ */
+    clearAllMasterCache();
     await supabase.auth.signOut({ scope: 'local' });
     navigate('/login');
   };
@@ -1890,7 +1925,10 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
     respCostCenters: userRespCcs || EMPTY_ARR,
     /* ดัชนีผังที่ `canWriteUnit`/`canWriteLine` ใช้ตัดสินแกน CC — จอแค่ส่งต่อใน ctx ไม่ต้องรู้ข้างใน */
     scopeIdx: userScopeIdx,
-  }), [userRole, userLineId, userTeam, userSection, userSections, userRespCcs, userScopeIdx, userMtnTeams, userPosition,
+    /* 🔄 ผลการทับด้วยมอบหมาย (`org_assignments`) — จอที่โชว์ "ขอบเขตของฉัน" ต้องเขียนบอกว่ามาจากรักษาการ
+       และถ้า `failed` ต้องเขียนว่าอ่านทะเบียน/ผังไม่ได้ (ขอบเขตที่เห็นอยู่ = จาก profiles ล้วน) */
+    assignOverlay: userAssignOverlay,
+  }), [userRole, userLineId, userTeam, userSection, userSections, userRespCcs, userScopeIdx, userAssignOverlay, userMtnTeams, userPosition,
        userNotifyEmail, userSignatureUrl, userAvatarUrl, userFullName, userIsDeptAdmin, realRole,
        userAccountKind, permsVersion]);
   /* layout ปกติต้องรู้ว่า sidebar เปิดอยู่ไหมด้วย — แยก memo เพื่อไม่ให้ `isOpen` ไปสั่น context ของจอ /tv */
@@ -1917,7 +1955,8 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
      ปิดตอน admin จำลองมุมมอง (viewAs) — ไม่งั้นจอ admin วนตามแผนของตัวเอง */
   const rotator = (
     <Suspense fallback={null}>
-      <DisplayRotator userId={userId} role={userRole} disabled={!!viewAs || IN_FRAME} shell={tvShell} />
+      <DisplayRotator userId={userId} role={userRole} disabled={!!viewAs || IN_FRAME} shell={tvShell}
+        onLogout={handleLogout} theme={theme} onToggleTheme={onToggleTheme} />
     </Suspense>
   );
   const role       = userRole; // ไม่ fallback เป็น 'admin' อีกต่อไป — profileLoaded gate ด้านบนรับประกันว่า role ถูก resolve แล้วก่อนถึงจุดนี้
@@ -1965,6 +2004,10 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
 
   // หน้า Hub (เลือกส่วนงาน) — แสดงเต็มจอ ไม่มี sidebar / toggle / bell
   if (location.pathname === '/') {
+    /* 🏷️ เว็บรุ่นที่ไม่ใช่ ESM เต็ม ไม่มีหน้า "เลือกส่วนงานทั้งโรงงาน" — เด้งไปหน้าแรกของรุ่นนั้น
+       (RoleRoute เด้งมาที่ `/` เวลาไม่มีสิทธิ์ ⇒ ตรงนี้คือทางออกร่วมของทุกเส้นทาง)
+       รุ่นเต็ม `EDITION_HOME === '/'` ⇒ ไม่เข้าเงื่อนไขนี้เลย พฤติกรรมเดิมเป๊ะ */
+    if (EDITION_HOME !== '/') return <Navigate to={EDITION_HOME} replace />;
     return (
       <UserContext.Provider value={userCtx}>
         <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', color: 'var(--muted)', fontSize: 14, background: 'var(--bg)' }}>กำลังโหลด...</div>}>
@@ -2069,6 +2112,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
           {/* 📲 "เครื่องนี้ยังไม่เปิดแจ้งเตือน" — มือถือเท่านั้น (คอมไม่เปลี่ยนแม้แต่พิกเซลเดียว)
               เดิมปุ่มเปิดซ่อนในกระดิ่ง ⇒ 74 จาก 102 คนที่ได้รับแจ้งเตือนไม่มีเครื่องผูกไว้เลย (วัด 20/10) */}
           <MobilePushPrompt userId={userId} />
+          {/* 🏭 ทะเบียนไลน์โหลดไม่สำเร็จ = dropdown ไลน์ว่างทั้งแอป — ต้องบอก ห้ามปล่อยให้เดาเอง
+              (82 จาก 89 จุดที่เรียก loadLinesRes() ทิ้ง error ทิ้ง ⇒ ตาข่ายต้องอยู่ที่เดียวตรงนี้) */}
+          <LineRegistryAlert />
           <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh', color: 'var(--muted)', fontSize: 14 }}>กำลังโหลด...</div>}>
             {/* 🔁 key จากจอวนหน้า — หน้าเดิมที่เปลี่ยนแค่ ?query (เช่น ผังโรงงาน metric=oee → metric=ng) ต้อง remount
                 ไม่งั้นค่าตั้งต้นจากลิงก์ (utils/urlInit) ไม่ถูกอ่านใหม่ · ค่าว่าง = นำทางปกติ ไม่ remount */}
@@ -2099,6 +2145,12 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
               } />
               <Route path="/group-overview" element={
                 <RoleRoute path="/group-overview" userRole={role}><GroupOverview /></RoleRoute>
+              } />
+              <Route path="/announcements" element={
+                <RoleRoute path="/announcements" userRole={role}><AnnouncementMockup /></RoleRoute>
+              } />
+              <Route path="/overseas-travel" element={
+                <RoleRoute path="/overseas-travel" userRole={role}><OverseasTravelMockup /></RoleRoute>
               } />
               <Route path="/management" element={
                 <RoleRoute path="/management" userRole={role}><Management /></RoleRoute>
@@ -2240,6 +2292,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
               <Route path="/nm-board" element={
                 <RoleRoute path="/nm-board" userRole={role}><NewModelBoard /></RoleRoute>
               } />
+              <Route path="/rfq" element={
+                <RoleRoute path="/rfq" userRole={role}><Rfq /></RoleRoute>
+              } />
               <Route path="/products"   element={
                 <RoleRoute path="/products" userRole={role}><ProductMaster /></RoleRoute>
               } />
@@ -2332,6 +2387,10 @@ export default function App() {
      🔴 `failed` ต้องแยกจาก `null` ให้ได้ — "อ่านไม่ได้" ต้อง fail-closed ไม่ใช่ถอยไปใช้ส่วนงาน
         (ถอย = คนที่ขอบเขต `sections` เคยกว้างกว่า CC จะได้สิทธิ์คืนมาเงียบๆ) */
   const [userScopeIdx, setUserScopeIdx] = useState(null);
+  /* 🔄 ผลการทับด้วย `org_assignments` (รักษาการ/รับผิดชอบเพิ่ม · 2026-11-02 · คำสั่ง user
+     "ให้ขอบเขตจริงอ่าน org_assignments เลย") — `null` = ไม่มีแถวที่มีผล · `{ failed, applied, reason }`
+     🔴 ทับได้ทาง "กว้างขึ้น" เท่านั้น (`utils/assignmentOverlay.js`) · อ่านไม่ได้ = ไม่ทับ + จอต้องเขียนบอก */
+  const [userAssignOverlay, setUserAssignOverlay] = useState(null);
   const [userEmail,        setUserEmail]        = useState(null);
   const [userFullName,     setUserFullName]     = useState(null);
   const [userNotifyEmail,  setUserNotifyEmail]  = useState(null);
@@ -2483,20 +2542,35 @@ export default function App() {
     loadProfilesPeople().catch(() => {});
     /* 🔭 ขอบเขตการมองเห็นตัดสินจาก `scope_depth` แล้ว (25/09) ไม่ใช่เดาจาก role/ช่องว่าง
        พิสูจน์ก่อนสลับว่าผลเท่าของเดิมครบทั้ง 97 บัญชี — ดู docs/ORG-AXES-DECISION.md §7.6 */
-    setUserSections(effectiveSections(data?.role, data?.sections, ident.section, data?.scope_depth));
+    const baseSections = effectiveSections(data?.role, data?.sections, ident.section, data?.scope_depth);
     /* ว่าง/ไม่มีคอลัมน์ = คง `EMPTY_ARR` ตัวเดิม (อย่าสร้าง [] ใหม่ — ดูหมายเหตุที่ state) */
-    const ccList = Array.isArray(data?.resp_cost_centers) ? data.resp_cost_centers.filter(Boolean) : [];
-    setUserRespCcs(prev => {
-      if (!ccList.length) return EMPTY_ARR;
-      return prev.length === ccList.length && prev.every((v, i) => v === ccList[i]) ? prev : ccList;
-    });
-    /* 💰 ดัชนีผังสำหรับชั้นสิทธิ์แกน CC — โหลด **เฉพาะบัญชีที่ตั้ง CC ไว้**
-       ⇒ 19/10 ยังไม่มีใครตั้ง (0/122 บัญชี) = ไม่มีคิวรีเพิ่มเลยสำหรับทุกบัญชีวันนี้ (กฎ egress ข้อ 11)
+    const baseCcs = Array.isArray(data?.resp_cost_centers) ? data.resp_cost_centers.filter(Boolean) : [];
+
+    /* 🔄 ทับด้วย "รักษาการ / รับผิดชอบเพิ่ม" จาก `org_assignments` (2026-11-02 · คำสั่ง user)
+       ตำแหน่งจริงของ HR = ฐาน · มอบหมายในผัง = ชั้นทับที่**กว้างขึ้นได้อย่างเดียว** — ห้ามคืนน้อยกว่าที่ profiles ตั้ง
+       · หมดอายุคิดตอนอ่าน (`isGranting(row, today)`) ไม่มี cron · วันอ้างอิง = วันทำงานโรงงาน (`getWorkDate`)
+       · อ่านทะเบียนไม่ได้ = ไม่ทับ (ค่าเดิมเป๊ะ) + เก็บธงให้จอเขียนบอก **ห้ามล้ม login**
+       · admin ไม่ต้องอ่าน (ไม่จำกัดอยู่แล้ว) · egress: คิวรีเพิ่ม 1 ครั้งต่อ login กรองด้วย profile_id */
+    let assignRows = [], assignErr = null;
+    if (data?.role && data.role !== 'admin') {
+      const r = await supabase.from('org_assignments')
+        .select('id, org_node_id, kind, scope_depth, starts_on, ends_on')
+        .eq('profile_id', user.id);
+      if (r.error) { assignErr = r.error; console.warn('[profile] อ่าน org_assignments ไม่ได้ — ใช้ขอบเขตจาก profiles อย่างเดียว', r.error); }
+      else assignRows = r.data || [];
+    }
+    const today = getWorkDate();
+    // กรองด้วยกฎเดียวกับ overlay (`isGranting`) ก่อน เพื่อรู้ว่า "ต้องโหลดผังไหม" — ห้ามเขียนกฎวันที่ซ้ำที่นี่
+    const liveAssign = assignRows.filter((a) => a.org_node_id != null && isGranting(a, today));
+
+    /* 💰 ดัชนีผังสำหรับชั้นสิทธิ์แกน CC — โหลด **เฉพาะบัญชีที่ตั้ง CC ไว้ หรือมีมอบหมายที่มีผล**
+       ⇒ บัญชีที่ไม่มีทั้งคู่ = ไม่มีคิวรีเพิ่มเลย (กฎ egress ข้อ 11)
        🔴 ผังอ่าน**สด** ไม่ผ่าน cache — ขอบเขตสิทธิ์ของตัวเองต้องตรงกับผังวันนี้ (แก้ที่ /org-setup แล้วต้องมีผลทันที)
        🔴 ต้องส่ง `lines` ด้วย ไม่งั้นดัชนีไม่มีตัวเลือก `line` แล้วด่านรายไลน์จะถอยไปตัดสินที่ชั้น
           ส่วนงาน (หยาบกว่าที่แอดมินตั้งไว้) — ทะเบียนไลน์ผ่าน loader กลางที่ cache อยู่แล้ว ไม่เพิ่มไบต์ */
-    if (!ccList.length) setUserScopeIdx(null);
-    else {
+    let nodes = null, linesData = [];
+    let orgFailed = false;
+    if (baseCcs.length || liveAssign.length) {
       const [nodesRes, linesRes] = await Promise.all([
         supabase.from('org_nodes')
           .select('id, kind, code, name, parent_id, ref_line_id, cost_center, division, sort_order, is_active, inherit_scope')
@@ -2505,12 +2579,31 @@ export default function App() {
       ]);
       if (nodesRes.error) {
         console.warn('[profile] โหลดผังองค์กรไม่สำเร็จ — ชั้นสิทธิ์แกน CC บล็อกไว้ก่อน (fail-closed)', nodesRes.error);
-        setUserScopeIdx({ failed: true });
+        orgFailed = true;
       } else {
-        const nodes = nodesRes.data || [];
-        setUserScopeIdx(attachCc(buildOrgScope({ nodes, lines: linesRes.data || [] }), nodes));
+        nodes = nodesRes.data || [];
+        linesData = linesRes.data || [];
       }
     }
+
+    /* ทับขอบเขต — pure · ผังอ่านไม่ได้ = คืนค่าเดิม + failed (ไม่เดา) */
+    const overlay = liveAssign.length
+      ? applyAssignments({ sections: baseSections, respCostCenters: baseCcs }, liveAssign,
+          { nodes: nodes || [], ccIdx: nodes ? buildCcIndex(nodes) : null, today })
+      : null;
+    setUserAssignOverlay(assignErr ? { failed: true, reason: 'registry_unreadable', applied: [] }
+      : (overlay && overlay.reason !== 'none' ? { failed: overlay.failed, reason: overlay.reason, applied: overlay.applied } : null));
+    const finalSections = overlay ? overlay.sections : baseSections;
+    const ccList = overlay ? overlay.respCostCenters : baseCcs;
+
+    setUserSections(finalSections);
+    setUserRespCcs(prev => {
+      if (!ccList.length) return EMPTY_ARR;
+      return prev.length === ccList.length && prev.every((v, i) => v === ccList[i]) ? prev : ccList;
+    });
+    if (!ccList.length) setUserScopeIdx(null);
+    else if (orgFailed || !nodes) setUserScopeIdx({ failed: true });
+    else setUserScopeIdx(attachCc(buildOrgScope({ nodes, lines: linesData }), nodes));
     setUserNotifyEmail(data?.notify_email ?? null);
     setUserSignatureUrl(data?.signature_url ?? null);
     // mtn_teams / avatar_url มาพร้อม select หลักแล้ว (ไม่ต้องยิงเพิ่มอีก 2 คิวรี — ดูหมายเหตุ egress ข้างบน)
@@ -2552,7 +2645,7 @@ export default function App() {
         loadPermissions().then(() => setPermsLoaded(true));
       } else {
         try { localStorage.removeItem(SESSION_START_KEY); } catch { /* private mode */ }
-        setUserRole(null); setUserLineId(null); setUserTeam(null); setUserSection(null); setUserSections([]); setUserRespCcs(EMPTY_ARR); setUserScopeIdx(null); setUserPosition(null); setUserEmail(null); setUserFullName(null); setUserNotifyEmail(null); setUserSignatureUrl(null); setUserAvatarUrl(null);
+        setUserRole(null); setUserLineId(null); setUserTeam(null); setUserSection(null); setUserSections([]); setUserRespCcs(EMPTY_ARR); setUserScopeIdx(null); setUserAssignOverlay(null); setUserPosition(null); setUserEmail(null); setUserFullName(null); setUserNotifyEmail(null); setUserSignatureUrl(null); setUserAvatarUrl(null);
         setProfileLoaded(false); setPermsLoaded(false);
       }
     });
@@ -2610,6 +2703,7 @@ export default function App() {
                 userSections={effSections}
                 userRespCcs={userRespCcs}
                 userScopeIdx={userScopeIdx}
+                userAssignOverlay={impersonating ? null : userAssignOverlay}
                 userMtnTeams={effMtnTeams}
                 userIsDeptAdmin={effDeptAdmin}
                 userAccountKind={userAccountKind}

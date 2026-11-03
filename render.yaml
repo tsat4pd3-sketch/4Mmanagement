@@ -40,3 +40,47 @@ services:
         sync: false
       - key: VITE_SUPABASE_ANON_KEY
         sync: false
+
+  # ══ 🚀 เว็บ New Model (IEC) — deploy แยกจากระบบแมส (2026-10-29 · คำสั่ง user) ══════════
+  #    *"งาน New Model ได้รับคำสั่งมาให้แยก frontend ออกจากของเดิม"*
+  #    โค้ดชุดเดียวกับ service ข้างบน (รีโปเดียว ไม่มี drift) — ต่างแค่ build command
+  #    `npm run build:nm` → `dist-nm/` (หน้าที่เว็บนี้มี = src/appEdition.nm.js)
+  #
+  #    🔴 **ตั้งใจแยก service เพื่อให้ "แมสกับ NM ไม่ล้มพร้อมกัน"** — deploy คนละรอบ
+  #       build NM ล่ม = เว็บแมสไม่กระเทือน และกลับกัน
+  #    ⚠️ ไฟล์นี้มีผลเฉพาะ service ที่สร้างจาก Blueprint — ถ้า Render ยังไม่เห็น service นี้
+  #       ต้องกด "New → Blueprint" (หรือ Sync) ใน dashboard ครั้งแรกครั้งเดียว
+  #    ⚠️ ต้องกรอก env 2 ตัวใน dashboard เหมือน service หลัก (sync: false = ไม่ดึงจากไฟล์)
+  #       — ใช้ **Supabase Main ตัวเดิม + บัญชีเดิม** ตามที่ user เลือก (ไม่ใช่ project ใหม่)
+  - type: web
+    name: 4mmanagement-nm
+    env: static
+    buildCommand: npm run build:nm
+    staticPublishPath: ./dist-nm
+    # เหตุผลเดียวกับ service หลัก — deploy เป็นรอบผ่าน Deploy Hook ห้ามเปิด autoDeploy คืน
+    autoDeploy: false
+    buildFilter:
+      ignoredPaths:
+        - "*.md"
+        - "**/*.md"
+        - ".claude/**"
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    # ชุดเดียวกับเว็บหลัก — html/version.json ต้อง revalidate ทุกครั้ง · assets/ มี hash แล้ว cache ยาวได้
+    headers:
+      - path: /assets/*
+        name: Cache-Control
+        value: public, max-age=31536000, immutable
+      - path: /mediapipe/*
+        name: Cache-Control
+        value: public, max-age=2592000
+      - path: /*
+        name: Cache-Control
+        value: no-cache
+    envVars:
+      - key: VITE_SUPABASE_URL
+        sync: false
+      - key: VITE_SUPABASE_ANON_KEY
+        sync: false
