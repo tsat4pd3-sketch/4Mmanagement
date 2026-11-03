@@ -5,7 +5,12 @@ import { useMergeParams } from '../utils/useTabParam'
 import { motion, AnimatePresence } from 'framer-motion'
 import { supabase, supabaseDR } from '../supabaseClient'
 import { UserContext } from '../App'
-import { can } from '../utils/permissions'
+import { can, isActionSeeded } from '../utils/permissions'
+import { positionRank } from '../utils/positions'
+// ✍️ B2 (02/11) — สายอนุมัติ AM ตามลำดับชั้น · 🔧 B3 — ป้าย MO / เหตุผลที่ไม่เปิดใบ
+import { amApprovalVerdict, amApprovalText, amApprovalAssumptionText, amApproveAllowed, amNextApprover } from '../utils/amApproval'
+import { moStatusLabel } from '../utils/mtnStepPerm'
+import { amWaiverReasonValid, AM_WAIVER_MIN_LEN } from '../lib/pmDailyStatus'
 import { toast } from '../components/Toast'
 import { getSpcStatus, STATUS_COLOR } from '../lib/spc'
 import { calcOf, calcFormula, pmCalcResults } from '../utils/inspectCalc'
@@ -23,7 +28,7 @@ import { loadPmTeams, pmTeamsSync, teamKind, recordPermFor, isAmTeam } from '../
 import { MTN_TEAMS, deptNameOf, teamKeyOf, teamForEquipmentKind, teamsForUser, canWriteTeam, teamBlockText } from '../utils/mtnTeams'
 import { checkWriteRows } from '../utils/dbWrite';
 import { getWorkDate } from '../utils/workDate'
-import { amShiftInfo } from '../lib/dailyAmBoard'
+import { amShiftInfo, AM_MO_COLS } from '../lib/dailyAmBoard'
 import { DEFAULT_POINT_KINDS, pointDueStatus, pointPin, shimStack, deriveShimAction } from '../utils/fixturePoints'
 import { recordShimEvent } from '../utils/fixtureShimApi'
 import Page from '../components/Page'
@@ -514,7 +519,8 @@ function NgRecheckPanel({ result, cp, onSaved, canRecord = false, deptWrite = nu
 }
 
 // ─── History Detail Modal ─────────────────────────────────────────────────────
-function HistoryModal({ inspection, checkpoints: cpsFromPage, jig, onClose, userId, userRole, deptWrite, canRecord = false }) {
+function HistoryModal({ inspection, checkpoints: cpsFromPage, jig, onClose, userId, userRole, deptWrite, canRecord = false,
+  isAm = false, inspectorPosition = null, myPosition = null }) {
   const [results, setResults] = useState([])
   const [approving, setApproving] = useState(false)
   const [exporting, setExporting] = useState(false)
@@ -544,14 +550,24 @@ function HistoryModal({ inspection, checkpoints: cpsFromPage, jig, onClose, user
   const checkpoints = ownCps && ownCps.length ? ownCps : cpsFromPage
   const cpMap = Object.fromEntries(checkpoints.map(c => [c.id, c]))
   /* 🔐 อนุมัติ/ตีกลับผลตรวจ = ตัดสินงานของทีมนั้น ⇒ ต้องเป็นทีมของเรา (ส่งมาจากหน้าแม่) */
-  const canApprove = can('pm', 'approve', userRole) && (deptWrite?.ok !== false)
+  /* ✍️ B2 (02/11) — ใบ AM: ผู้อนุมัติ = ชั้นถัดไปเหนือคนตรวจเท่านั้น (ห้ามข้ามไปผู้จัดการ) · กฎอยู่ `utils/amApproval.js`
+     ใบ PM ของช่าง = พฤติกรรมเดิม (`pm:approve` + ทีม) */
+  const amVerdict = isAm ? amApprovalVerdict({
+    inspectorRank: positionRank(inspectorPosition), approverRank: positionRank(myPosition),
+    isSelf: !!userId && insp.inspector_id === userId,
+  }) : null
+  const canApprove = (isAm
+    ? amApproveAllowed({ can: (r, a) => can(r, a, userRole), isSeeded: isActionSeeded }) && !!amVerdict?.ok
+    : can('pm', 'approve', userRole)) && (deptWrite?.ok !== false)
 
   const handleApprove = async () => {
     if (deptWrite && !deptWrite.ok) { toast.info(teamBlockText(deptWrite, 'ผลตรวจของทีมนี้')); return }
+    if (amVerdict && !amVerdict.ok) { toast.info(amApprovalText(amVerdict)); return }   // ด่านซ้ำตอนเขียนจริง (ปุ่มซ่อนอย่างเดียวไม่พอ)
     setApproving(true)
     const { data, error } = await supabaseDR.from('inspections').update({
       approval_status: 'approved', approved_by: userId, approved_at: new Date().toISOString(), reject_reason: null,
     }).eq('id', insp.id).select().single()
+    if (error) toast.error('อนุมัติไม่สำเร็จ: ' + error.message)
     if (!error && data) {
       setInsp(data)
       if (data.inspector_id !== userId) {
@@ -564,10 +580,12 @@ function HistoryModal({ inspection, checkpoints: cpsFromPage, jig, onClose, user
   const handleReject = async () => {
     if (!rejectReason.trim()) return
     if (deptWrite && !deptWrite.ok) { toast.info(teamBlockText(deptWrite, 'ผลตรวจของทีมนี้')); return }
+    if (amVerdict && !amVerdict.ok) { toast.info(amApprovalText(amVerdict)); return }
     setApproving(true)
     const { data, error } = await supabaseDR.from('inspections').update({
       approval_status: 'rejected', approved_by: userId, approved_at: new Date().toISOString(), reject_reason: rejectReason.trim(),
     }).eq('id', insp.id).select().single()
+    if (error) toast.error('ตีกลับไม่สำเร็จ: ' + error.message)
     if (!error && data) {
       setInsp(data); setRejecting(false); setRejectReason('')
       if (data.inspector_id !== userId) {
@@ -689,6 +707,14 @@ function HistoryModal({ inspection, checkpoints: cpsFromPage, jig, onClose, user
         </div>
 
         <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {/* ✍️ B2 — ใบ AM ต้องบอกว่ารอใคร + ทำไมคุณกดไม่ได้ (ซ่อนปุ่มได้ ห้ามซ่อนเหตุผล) */}
+          {isAm && insp.approval_status === 'pending' && amVerdict && (
+            <div style={{ fontSize: 12, color: amVerdict.ok ? 'var(--text2)' : '#f59e0b', lineHeight: 1.6 }}>
+              {amVerdict.need ? <>รอ <b>{amVerdict.need.label}</b> {amVerdict.need.action}</> : 'รอผู้จัดการรับทราบ'}
+              {!amVerdict.ok && <div>{amApprovalText(amVerdict)}</div>}
+              {amApprovalAssumptionText(amVerdict.assumed) && <div style={{ color: '#f59e0b' }}>{amApprovalAssumptionText(amVerdict.assumed)}</div>}
+            </div>
+          )}
           {canApprove && insp.approval_status === 'pending' && !rejecting && (
             <div style={{ display: 'flex', gap: 8 }}>
               <button onClick={handleApprove} disabled={approving} style={{ flex: 1, padding: '8px 0', borderRadius: 6, border: '1px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{approving ? 'กำลังอนุมัติ...' : 'อนุมัติ'}</button>
@@ -733,7 +759,7 @@ export default function PMCheckData() {
            แต่ `can()` ที่นี่ยังอ่าน role จริงจากฐาน ⇒ เห็นปุ่มครบ แล้วสรุปผลทดสอบผิด
      🔴 `userId` ยังต้องเป็น **auth uid จริง** เสมอ (คนตรวจ/คนอนุมัติ/คนสั่ง export ในใบ)
         ห้ามเอา role ที่ถูกสวมไปปนกับตัวตนคนเซ็น */
-  const { role: userRole, fullName, mtnTeams: myMtnTeams, sections: mySections, allUnits } = useContext(UserContext)
+  const { role: userRole, fullName, mtnTeams: myMtnTeams, sections: mySections, allUnits, position: myPosition } = useContext(UserContext)
   /* ══ 🔐 "ทีมที่เปิดอยู่ (?dept=) เป็นทีมของเราไหม" (15/10 · คำสั่ง user) ══════════════════
      เดิมคีย์ที่ใช้ตัดสินมาจาก `?dept=` ตรงๆ ⇒ ช่างทีมหนึ่งสลับ URL ไปอีกทีม แล้วลงผลตรวจ /
      อนุมัติ / **เลื่อนรอบ PM** ของอุปกรณ์ทีมนั้นได้ (audit 15/10 · ระดับ A)
@@ -749,6 +775,12 @@ export default function PMCheckData() {
   const [moTeam, setMoTeam] = useState('maintenance')
   const [moSaving, setMoSaving] = useState(false)
   const [moByInsp, setMoByInsp] = useState({})     // inspection_id → { id, mo_no } (กันเปิดซ้ำ + โชว์ในประวัติ)
+  // 🔧 B3 — AM เจอ NG: "ไว้ก่อน" ต้องมีเหตุผล (เก็บที่ inspections.mo_waived_reason) — ห้ามปิดหน้าต่างเปล่าๆ
+  const [moWaiving, setMoWaiving] = useState(false)
+  const [moWaiveReason, setMoWaiveReason] = useState('')
+  // ✍️ B2 — ใบในประวัติเป็นของทีม AM ไหม (ตาม checklist ของใบ ไม่ใช่แท็บที่เปิด) + ตำแหน่งคนตรวจ (สายอนุมัติ)
+  const [clDeptById, setClDeptById] = useState({})
+  const [inspPosById, setInspPosById] = useState({})   // inspector_id → position · ไม่มีคีย์ = ไม่รู้
   // สิทธิ์บันทึกแยกแกน AM (พนักงานหน้างาน) / PM (ช่าง) ตามชนิดงานของทีมที่เปิดอยู่
   //   ห้าม hardcode 'pm' — ทีมไหนเป็น AM อ่านจาก mtn_teams.kind (ดู utils/pmTeams.js)
   const canRecord = useMemo(() => {
@@ -931,13 +963,25 @@ export default function PMCheckData() {
     if (curJigRef.current !== jigId) return // เปลี่ยนเครื่องไปแล้ว — คำตอบนี้เป็นของเครื่องก่อน
     if (eH) toast.error(`โหลดประวัติการตรวจไม่สำเร็จ: ${eH.message}`)
     setInspections(data ?? [])
+    /* ✍️ B2 — ทีมของแต่ละใบ + ตำแหน่งคนตรวจ (Main) · อ่านไม่ได้ = ไม่รู้ ⇒ สายอนุมัติไม่บล็อกแต่เขียนบนจอ */
+    const clIds = [...new Set((data ?? []).map(i => i.checklist_id).filter(Boolean))]
+    const uids = [...new Set((data ?? []).map(i => i.inspector_id).filter(Boolean))]
+    const [clRes, pRes] = await Promise.all([
+      clIds.length ? supabaseDR.from('checklists').select('id, department').in('id', clIds) : Promise.resolve({ data: [] }),
+      uids.length ? supabase.from('profiles').select('id, position').in('id', uids) : Promise.resolve({ data: [] }),
+    ])
+    if (curJigRef.current !== jigId) return
+    if (clRes.error) toast.error(`อ่านทีมของใบตรวจไม่สำเร็จ: ${clRes.error.message}`)
+    if (pRes.error) toast.error(`อ่านตำแหน่งคนตรวจไม่สำเร็จ — ลำดับขั้นอนุมัติ AM จะไม่ถูกตรวจ: ${pRes.error.message}`)
+    setClDeptById(Object.fromEntries((clRes.data ?? []).map(c => [c.id, c.department])))
+    setInspPosById(Object.fromEntries((pRes.data ?? []).filter(p => p.position).map(p => [p.id, p.position])))
     /* ผลตรวจ NG ใบไหนเปิดใบซ่อมไปแล้วบ้าง — กันเปิดซ้ำ + ให้กลับมาเปิดทีหลังได้ถ้าตอนนั้นกด "ไว้ก่อน"
        (ไม่งั้นเป็นทางตัน: ข้ามครั้งเดียวแล้วไม่มีทางเปิดจากผลตรวจใบนั้นอีกเลย)
        ⚠️ tolerant กับ 42703 — ยังไม่ apply migration ต้องใช้หน้านี้ได้ตามปกติ */
     const failIds = (data ?? []).filter(i => i.status === 'fail').map(i => i.id)
     if (!failIds.length) { setMoByInsp({}); return }
     const { data: mos, error } = await supabaseDR.from('mtn_orders')
-      .select('id, mo_no, status, source_inspection_id').in('source_inspection_id', failIds)
+      .select(AM_MO_COLS).in('source_inspection_id', failIds)   // คอลัมน์ครบให้ moStatusLabel() ตัดสินได้
     if (curJigRef.current !== jigId) return
     if (error) { setMoByInsp({}); return }
     const m = {}; (mos ?? []).forEach(o => { m[o.source_inspection_id] = o })
@@ -951,7 +995,30 @@ export default function PMCheckData() {
     ? (teamForEquipmentKind(selectedJig?.equipment_type) || 'maintenance')
     : (teamKeyOf(department) || 'maintenance'))
 
-  const openMoPrompt = (insp, ngTopics) => { setMoTeam(defaultMoTeam()); setMoPrompt({ insp, ngTopics }) }
+  const openMoPrompt = (insp, ngTopics) => { setMoTeam(defaultMoTeam()); setMoWaiving(false); setMoWaiveReason(''); setMoPrompt({ insp, ngTopics }) }
+
+  /* 🔧 B3 (02/11) — AM เจอผิดปกติ ⇒ ต้องเปิด MO **หรือ** เขียนเหตุผลว่าทำไมไม่เปิด (บอร์ด AM เห็นทั้งคู่)
+     🔴 ยังไม่ apply migration (ไม่มีคอลัมน์ mo_waived_reason) = ข้ามไม่ได้ ต้องเปิด MO (fail-closed + บอกบนจอ) */
+  const isAmPrompt = moPrompt ? isAmTeam(clDeptById[moPrompt.insp?.checklist_id] ?? department) : false
+  const waiveMo = async () => {
+    if (!moPrompt) return
+    const reason = moWaiveReason.trim()
+    if (!amWaiverReasonValid(reason)) { toast.error(`เขียนเหตุผลอย่างน้อย ${AM_WAIVER_MIN_LEN} ตัวอักษร`); return }
+    setMoSaving(true)
+    try {
+      const res = await supabaseDR.from('inspections')
+        .update({ mo_waived_reason: reason, mo_waived_by: userId || null, mo_waived_at: new Date().toISOString() })
+        .eq('id', moPrompt.insp.id).select('id')
+      if (res.error?.code === '42703' || res.error?.code === 'PGRST204') {
+        toast.error('ยังบันทึกเหตุผล "ไม่เปิดใบซ่อม" ไม่ได้ — ยังไม่ได้ apply migration 20261102_am_ng_mo_waiver_dr (แจ้ง admin) · ตอนนี้ต้องเปิดใบแจ้งซ่อม')
+        return
+      }
+      if (!checkWriteRows(res, 'บันทึกเหตุผลที่ไม่เปิดใบซ่อม')) return
+      setInspections(prev => prev.map(i => (i.id === moPrompt.insp.id ? { ...i, mo_waived_reason: reason } : i)))
+      setMoPrompt(null)
+      toast.success('บันทึกเหตุผลแล้ว — บอร์ด AM จะแสดงเหตุผลนี้แทนใบซ่อม')
+    } finally { setMoSaving(false) }
+  }
 
   // เปิดจากแท็บประวัติ (เคสกด "ไว้ก่อน" ตอนบันทึก) — ต้องไปหาชื่อจุดที่ไม่ผ่านของใบนั้นมาก่อน
   const openMoFromHistory = async (insp) => {
@@ -1244,7 +1311,8 @@ export default function PMCheckData() {
       /* 🔧 เจอ NG → เสนอเปิดใบแจ้งซ่อมทันที (ตอนนี้แหละที่คนยังอยู่หน้าเครื่องและรู้ว่าเสียยังไง)
          เสนอหลังบันทึกสำเร็จเท่านั้น — ต้องมี inspection id ก่อนถึงผูกที่มาได้
          ข้ามได้ ไม่บล็อก · กด "ไว้ก่อน" แล้วยังกลับมาเปิดจากแท็บประวัติได้ (ไม่เป็นทางตัน) */
-      if (overall === 'fail' && ngTopics.length && can('mtn_repair', 'report', userRole)) {
+      // 🔧 B3 — ใบ AM: เด้งเสมอ (คนที่ไม่มีสิทธิ์เปิด MO ก็ต้องเขียนเหตุผล/ส่งต่อหัวหน้า) · ใบ PM = เดิม
+      if (overall === 'fail' && ngTopics.length && (can('mtn_repair', 'report', userRole) || isAmTeam(department))) {
         openMoPrompt(insp, ngTopics)
       }
     } catch (err) {
@@ -1816,18 +1884,29 @@ export default function PMCheckData() {
                           <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: insp.status === 'pass' ? 'var(--accent-dim)' : insp.status === 'fail' ? 'rgba(224,92,74,0.12)' : 'var(--bg3)', color: insp.status === 'pass' ? 'var(--accent)' : insp.status === 'fail' ? '#e05c4a' : 'var(--muted)' }}>{insp.status?.toUpperCase()}</span>
                           {insp.approval_status === 'approved' && <span style={{ fontSize: 11, color: 'var(--accent)' }}>✓ อนุมัติแล้ว</span>}
                           {insp.approval_status === 'rejected' && <span style={{ fontSize: 11, color: '#e05c4a' }}>✕ ตีกลับ</span>}
-                          {insp.approval_status === 'pending' && <span style={{ fontSize: 11, color: 'var(--muted)' }}>รออนุมัติ</span>}
+                          {insp.approval_status === 'pending' && (() => {
+                            // ✍️ B2 — ใบ AM บอกว่ารอใคร (ชั้นถัดไปเหนือคนตรวจ) · ใบช่าง = ป้ายเดิม
+                            const am = isAmTeam(clDeptById[insp.checklist_id] ?? department)
+                            const nx = am ? amNextApprover(positionRank(inspPosById[insp.inspector_id])) : null
+                            return <span style={{ fontSize: 11, color: 'var(--muted)' }}>{nx ? (nx.step ? `รอ${nx.step.label}` : 'รอผู้จัดการรับทราบ') : 'รออนุมัติ'}</span>
+                          })()}
                           {/* NG ใบนี้ถูกส่งซ่อมหรือยัง — ตอบคำถาม "ที่เจอเมื่อวาน แก้แล้วรึยัง" ได้จากตรงนี้เลย */}
                           {moByInsp[insp.id] && (
                             <span style={{ fontSize: 11, fontWeight: 700, color: '#fb923c' }}>
-                              🔧 ใบซ่อม {moByInsp[insp.id].mo_no || '(รอออกเลข)'}
+                              🔧 ใบซ่อม {moByInsp[insp.id].mo_no || '(รอออกเลข)'} · {moStatusLabel(moByInsp[insp.id])}
                             </span>
+                          )}
+                          {insp.status === 'fail' && !moByInsp[insp.id] && insp.mo_waived_reason && (
+                            <span style={{ fontSize: 11, color: 'var(--muted)' }}>ไม่เปิดใบซ่อม: {insp.mo_waived_reason}</span>
+                          )}
+                          {insp.status === 'fail' && !moByInsp[insp.id] && !insp.mo_waived_reason && isAmTeam(clDeptById[insp.checklist_id] ?? department) && (
+                            <span style={{ fontSize: 11, fontWeight: 700, color: '#e05c4a' }}>⚠ ยังไม่เปิดใบซ่อม / ไม่ระบุเหตุผล</span>
                           )}
                         </div>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         {/* กด "ไว้ก่อน" ตอนบันทึกแล้วต้องกลับมาเปิดได้ — ไม่งั้นข้ามครั้งเดียว = ทางตัน */}
-                        {insp.status === 'fail' && !moByInsp[insp.id] && can('mtn_repair', 'report', userRole) && (
+                        {insp.status === 'fail' && !moByInsp[insp.id] && !insp.mo_waived_reason && (can('mtn_repair', 'report', userRole) || isAmTeam(clDeptById[insp.checklist_id] ?? department)) && (
                           <button onClick={e => { e.stopPropagation(); openMoFromHistory(insp) }} style={{
                             padding: '5px 11px', borderRadius: 8, fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
                             border: '1px solid #fb923c', background: 'rgba(251,146,60,0.12)', color: '#fb923c',
@@ -1849,6 +1928,8 @@ export default function PMCheckData() {
         {viewInspection && (
           <HistoryModal inspection={viewInspection} checkpoints={checkpoints} jig={selectedJig}
             userId={userId} userRole={userRole} deptWrite={deptWrite} canRecord={canRecord}
+            isAm={isAmTeam(clDeptById[viewInspection.checklist_id] ?? department)}
+            inspectorPosition={inspPosById[viewInspection.inspector_id] ?? null} myPosition={myPosition}
             onClose={() => { setViewInspection(null); if (selectedJig) fetchHistory(selectedJig.id) }} />
         )}
       </AnimatePresence>
@@ -1884,19 +1965,59 @@ export default function PMCheckData() {
                 </div>
               )}
             </div>
+            {/* 🔧 B3 — ใบ AM: ข้ามได้เฉพาะเมื่อเขียนเหตุผล (บันทึกลงผลตรวจ · บอร์ด AM เห็น) */}
+            {isAmPrompt && moWaiving && (
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 6 }}>เหตุผลที่ไม่เปิดใบแจ้งซ่อม</div>
+                <textarea value={moWaiveReason} onChange={e => setMoWaiveReason(e.target.value)} rows={2}
+                  placeholder="เช่น แก้ไขเองหน้างานแล้ว / แจ้งหัวหน้าให้เปิดใบแล้ว" style={{ width: '100%' }} />
+              </div>
+            )}
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-              <button onClick={() => setMoPrompt(null)} disabled={moSaving} style={{
-                padding: '9px 18px', borderRadius: 9, fontSize: 13, fontWeight: 700, cursor: 'pointer',
-                border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)',
-              }}>ไว้ก่อน</button>
-              <button onClick={createMoFromInspection} disabled={moSaving} style={{
-                padding: '9px 20px', borderRadius: 9, fontSize: 13, fontWeight: 800, cursor: 'pointer',
-                border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', opacity: moSaving ? 0.6 : 1,
-              }}>{moSaving ? 'กำลังเปิดใบ...' : '🔧 เปิดใบแจ้งซ่อม'}</button>
+              {!isAmPrompt && (
+                <button onClick={() => setMoPrompt(null)} disabled={moSaving} style={{
+                  padding: '9px 18px', borderRadius: 9, fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                  border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)',
+                }}>ไว้ก่อน</button>
+              )}
+              {isAmPrompt && !moWaiving && (
+                <button onClick={() => setMoWaiving(true)} disabled={moSaving} style={{
+                  padding: '9px 18px', borderRadius: 9, fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                  border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)',
+                }}>ไม่เปิดใบ (ระบุเหตุผล)</button>
+              )}
+              {isAmPrompt && moWaiving && (<>
+                <button onClick={() => setMoWaiving(false)} disabled={moSaving} style={{
+                  padding: '9px 14px', borderRadius: 9, fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                  border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--muted)',
+                }}>กลับ</button>
+                <button onClick={waiveMo} disabled={moSaving || !amWaiverReasonValid(moWaiveReason)} style={{
+                  padding: '9px 18px', borderRadius: 9, fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                  border: '1px solid #f59e0b', background: 'rgba(245,158,11,0.12)', color: '#f59e0b',
+                  opacity: moSaving || !amWaiverReasonValid(moWaiveReason) ? 0.5 : 1,
+                }}>บันทึกเหตุผล</button>
+              </>)}
+              {can('mtn_repair', 'report', userRole) && !moWaiving && (
+                <button onClick={createMoFromInspection} disabled={moSaving} style={{
+                  padding: '9px 20px', borderRadius: 9, fontSize: 13, fontWeight: 800, cursor: 'pointer',
+                  border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', opacity: moSaving ? 0.6 : 1,
+                }}>{moSaving ? 'กำลังเปิดใบ...' : '🔧 เปิดใบแจ้งซ่อม'}</button>
+              )}
             </div>
             <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center' }}>
-              กด “ไว้ก่อน” ได้ — เปิดทีหลังจากแท็บ 🕐 ประวัติ ของเครื่องนี้
+              {isAmPrompt
+                ? (can('mtn_repair', 'report', userRole)
+                  ? 'ผลตรวจ AM ที่ผิดปกติต้องเปิดใบแจ้งซ่อม หรือระบุเหตุผลที่ไม่เปิด — บอร์ด AM จะติดตามใบซ่อมจนกว่าจะปิด'
+                  : 'บัญชีนี้เปิดใบแจ้งซ่อมไม่ได้ — ระบุเหตุผล (เช่น แจ้งหัวหน้าแล้ว) หรือให้หัวหน้าเปิดจากแท็บ 🕐 ประวัติ')
+                : 'กด “ไว้ก่อน” ได้ — เปิดทีหลังจากแท็บ 🕐 ประวัติ ของเครื่องนี้'}
             </div>
+            {/* ปิดหน้าต่างได้ (ไม่ขังคนไว้ในโมดัล) แต่รายการ "ยังไม่จบ" — ค้างเป็น ⚠ บนบอร์ด AM + แท็บประวัติจนกว่าจะเปิดใบ/ให้เหตุผล */}
+            {isAmPrompt && (
+              <button type="button" onClick={() => setMoPrompt(null)} disabled={moSaving}
+                style={{ all: 'unset', cursor: 'pointer', fontSize: 11, color: 'var(--muted)', textAlign: 'center', textDecoration: 'underline' }}>
+                ปิดหน้าต่าง — รายการนี้จะค้าง “⚠ ยังไม่เปิดใบแจ้งซ่อม” บนบอร์ด AM จนกว่าจะเปิดใบหรือระบุเหตุผล
+              </button>
+            )}
           </div>
         </div>
       )}

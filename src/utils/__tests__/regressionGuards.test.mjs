@@ -8062,3 +8062,32 @@ test('🧑‍🔧 mo-print-shows-techs — ใบพิมพ์ FM-MTN-006 ต�
   assert.match(src, /laborNames\.has\(/,
     '\n\n❌ ไม่ได้กันชื่อซ้ำ — ช่างที่ลงค่าแรงไว้แล้วจะขึ้น 2 บรรทัดบนใบ\n');
 });
+
+/* ── ⚙️🔧✍️ AM รายเครื่อง / ติดตาม MO / สายอนุมัติ (ประชุมหน้างาน 2026-11-02 · B1/B3/B2) ─────────
+   📄 docs/modules/am-pm-linkage-audit.md §5 */
+test('🛡️ am-per-machine-run — loader AM ต้องอ่าน machine_no ของใบผลิต + จอ AM ต้องส่ง runByLine', () => {
+  const loader = stripComments(readFileSync(join(ROOT, 'src/lib/dailyAmBoard.js'), 'utf8'));
+  assert.match(loader, /from\('prod_orders'\)\.select\('[^']*machine_no[^']*'\)/,
+    '\n\n❌ ตัวโหลด AM ไม่ได้ select machine_no ของ prod_orders — "เครื่องไหนต้องตรวจ" จะกลับไปตัดสินทั้งไลน์เงียบๆ\n'
+    + '   ⇒ ไลน์ auto/single ขึ้นส้มให้เครื่องที่ไม่ได้เดิน (feedback 02/11) · แก้: select machine_no แล้วผ่าน runningMachinesByLine()\n');
+  assert.match(loader, /runByLine/, '\n\n❌ loader ไม่คืน runByLine\n');
+  const page = stripComments(readFileSync(join(ROOT, 'src/pages/DailyPM.jsx'), 'utf8'));
+  assert.match(page, /dailyAmLineStatus\(\{[^}]*runByLine[^}]*\}\)/,
+    '\n\n❌ DailyPM เรียก dailyAmLineStatus โดยไม่ส่ง runByLine — จอ AM ตัดสินทั้งไลน์ ขณะที่ผังรวมโรงงานตัดสินรายเครื่อง (2 จอคนละสี)\n');
+});
+
+test('🛡️ am-approval-chain — ใบ AM อนุมัติต้องผ่าน amApprovalVerdict() (ห้ามข้ามไปผู้จัดการ)', () => {
+  const src = stripComments(readFileSync(join(ROOT, 'src/pages/PMCheckData.jsx'), 'utf8'));
+  assert.match(src, /amApprovalVerdict\(/,
+    '\n\n❌ PMCheckData ไม่ได้ตัดสินลำดับขั้นอนุมัติ AM ด้วย amApprovalVerdict() (src/utils/amApproval.js)\n'
+    + '   บั๊กเดิม: ใครถือ pm:approve ก็อนุมัติได้ ⇒ หัวหน้ากลุ่มตรวจเองแล้วไปจบที่ผู้จัดการ (feedback 02/11)\n');
+  // ด่านซ้ำตอนเขียนจริง — ซ่อนปุ่มอย่างเดียวไม่พอ
+  assert.match(src, /if \(amVerdict && !amVerdict\.ok\)/, '\n\n❌ handleApprove/handleReject ไม่เช็ค amVerdict ซ้ำก่อนเขียน\n');
+});
+
+test('🛡️ am-mo-label-single-source — ป้ายสถานะ MO บนจอ AM ต้องมาจาก moStatusLabel()', () => {
+  for (const f of ['src/pages/DailyPM.jsx', 'src/pages/PMCheckData.jsx']) {
+    const src = stripComments(readFileSync(join(ROOT, f), 'utf8'));
+    assert.ok(!/MO_STATUS_LABEL\s*\[/.test(src), `\n\n❌ ${f} อ่าน MO_STATUS_LABEL[...] เอง — ใช้ moStatusLabel(order) (ใบ handover/checked มีป้ายต่อใบ)\n`);
+  }
+});

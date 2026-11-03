@@ -6,9 +6,11 @@ import { toast } from '../components/Toast'
 import { DAILY_PM_STATUS_META, DAILY_PM_WINDOW_MIN } from '../lib/pmDailyStatus'
 // ⏱️ ของกลาง — ห้ามเขียนสูตรนาที→ชม. เองในหน้า (จอเคยขึ้น "เกินกำหนดมาแล้ว 91098 นาที")
 import { fmtDur } from '../utils/duration'
-import { fmtTime } from '../utils/dateFormat'
+import { fmtTime, fmtDate } from '../utils/dateFormat'
 import { can } from '../utils/permissions'
-import { loadDailyAm, amShiftInfo, dailyAmLineStatus } from '../lib/dailyAmBoard'
+import { loadDailyAm, amShiftInfo, dailyAmLineStatus, amModeNote } from '../lib/dailyAmBoard'
+// 🔧 B3 — ป้ายสถานะใบซ่อมต้องมาจาก moStatusLabel() ที่เดียว ห้ามแต่งเองในหน้า
+import { moStatusLabel } from '../utils/mtnStepPerm'
 import { invalidateTable } from '../utils/masterInvalidate'
 import { loadPmTeams, isAmTeam } from '../utils/pmTeams'
 import { checkWriteRows } from '../utils/dbWrite'
@@ -26,6 +28,18 @@ import SearchInput from '../components/SearchInput'
 import LineScopeSelect from '../components/LineScopeSelect'
 import { lineKnownSet, groupEquipRowsByLine } from '../utils/pmEquipList'
 import { filterPlanRows } from '../utils/pmPlanFilter'
+
+/* 🔧 B3 (02/11) — สถานะการติดตามใบซ่อมของผลตรวจ NG หนึ่งใบ · ป้าย MO = moStatusLabel() เท่านั้น */
+function AmMoChip({ follow }) {
+  const st = follow?.state
+  const txt = st === 'mo_open' ? `🔧 ${follow.mo.mo_no || '(รอออกเลข)'} · ${moStatusLabel(follow.mo)}`
+    : st === 'mo_closed' ? `✅ ${follow.mo.mo_no || ''} · ${moStatusLabel(follow.mo)}`
+    : st === 'mo_void' ? `⚠ ใบซ่อม ${follow.mo.mo_no || ''} · ${moStatusLabel(follow.mo)} — ยังไม่ได้แก้`
+    : st === 'waived' ? `ไม่เปิดใบซ่อม: ${follow.reason}`
+    : st === 'no_mo' ? '⚠ ยังไม่เปิดใบแจ้งซ่อม'
+    : '❔ ไม่รู้สถานะใบซ่อม'
+  return <span style={{ display: 'block', fontSize: 11, fontWeight: 700, marginTop: 2 }}>{txt}</span>
+}
 
 /* ⏱️ กะ/เวลาเริ่มกะ + data-flow ทั้งชุด ย้ายไป `src/lib/dailyAmBoard.js` (2026-10-08) — ผังรวมโรงงานใช้ตัวเดียวกัน
    ห้ามเขียน getShiftInfo/คิวรี inspections ซ้ำในหน้า (สองจอจะตอบคนละสี) */
@@ -53,6 +67,8 @@ export default function DailyPM() {
   const [firstOrderByLine, setFirstOrderByLine] = useState({})  // line_name -> ISO (เวลาเปิดใบผลิตใบแรก)
   // ไลน์ที่ "เปิดกะแล้ว" กะนี้ — ใช้แยกว่า idle เพราะยังไม่เปิดกะ หรือเปิดกะแล้วแต่ยังไม่มีใบผลิต
   const [openSessionLines, setOpenSessionLines] = useState(() => new Set())
+  const [runByLine, setRunByLine] = useState(undefined)   // ⚙️ B1 เครื่องที่มีใบผลิตสแกนกะนี้ (ต่อไลน์)
+  const [moFollow, setMoFollow] = useState(undefined)     // 🔧 B3 ใบซ่อมของผลตรวจ AM
   const [loading, setLoading] = useState(true)
   const [now, setNow] = useState(new Date())
 
@@ -79,6 +95,8 @@ export default function DailyPM() {
     setResultByJig(res.resultByJig)
     setFirstOrderByLine(res.firstOrderByLine)
     setOpenSessionLines(res.openSessionLines)
+    setRunByLine(res.runByLine)
+    setMoFollow(res.moFollow)
     setLoading(false)
   }, [])
 
@@ -96,6 +114,8 @@ export default function DailyPM() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'inspections' },         onEvent)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'prod_orders' },         onEvent)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'production_sessions' }, onEvent)
+      // 🔧 B3 — ใบซ่อมขยับสถานะ/ปิด ⇒ ป้าย "แจ้งซ่อมแล้ว ยังไม่แก้ไข" ต้องหายเอง
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'mtn_orders' },          onEvent)
       .subscribe((st) => { if (st === 'SUBSCRIBED') g.touch() })   // (re)connect = อาจพลาด event ระหว่างหลุด
     /* 🔴 2026-09-15 — poll ตัวนี้เป็นแค่ "กันเหนียวเผื่อ realtime หลุด"
        idleGate: tick ที่ไม่มีอะไรเปลี่ยน = ไม่มี network เลยสักไบต์ (ดู src/utils/liveRefresh.js) */
@@ -111,14 +131,14 @@ export default function DailyPM() {
 
   // build a dashboard row per line that has registered targets — สูตรเดียวกับผังรวมโรงงาน (lib/dailyAmBoard.js)
   const dashboard = useMemo(() => {
-    const byLine = dailyAmLineStatus({ targets, jigs, resultByJig, firstOrderByLine, openSessionLines, shift: shiftInfo.shift, now })
+    const byLine = dailyAmLineStatus({ targets, jigs, resultByJig, firstOrderByLine, openSessionLines, shift: shiftInfo.shift, now, runByLine, moFollow })
     return Object.entries(byLine)
       .map(([line_name, st]) => ({ line_name, ...st }))
       .sort((a, b) => {
         const ord = { red: 0, orange: 1, pending: 2, idle: 3, green: 4, none: 5 }
         return (ord[a.status] ?? 9) - (ord[b.status] ?? 9)
       })
-  }, [targets, jigs, resultByJig, firstOrderByLine, openSessionLines, shiftInfo.shift, now])
+  }, [targets, jigs, resultByJig, firstOrderByLine, openSessionLines, shiftInfo.shift, now, runByLine, moFollow])
 
   const registeredKey = useMemo(() => {
     const s = new Set()
@@ -251,6 +271,12 @@ export default function DailyPM() {
               )
             })}
           </div>
+          {/* 🔧 B3 — อ่านสถานะใบซ่อมไม่ได้ ≠ "ยังไม่เปิดใบ" ต้องบอกตรงๆ */}
+          {moFollow && moFollow.ok === false && (
+            <div style={{ marginBottom: 12, fontSize: 12, color: '#f59e0b' }}>
+              ⚠ อ่านสถานะใบแจ้งซ่อมของผลตรวจ AM ไม่สำเร็จ ({String(moFollow.error?.message || moFollow.error)}) — ป้าย MO บนการ์ดยังไม่แสดง
+            </div>
+          )}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(300px, 100%), 1fr))', gap: 14 }}>
             {dashboard.map(row => {
               const meta = DAILY_PM_STATUS_META[row.status] ?? DAILY_PM_STATUS_META.none
@@ -273,7 +299,9 @@ export default function DailyPM() {
                       {/* 🔴 idle มี 3 แบบ ต้องอ่านออกจากป้ายเลย ไม่ใช่ให้เดา (เคสจริง: กะเดินอยู่แต่จอบอกยังไม่เริ่มผลิต)
                           `hasSession === null` = "ไม่รู้" (ไม่ได้ส่ง openSessionLines มา) **ห้ามเขียนว่า "ยังไม่เปิดกะ"**
                           — เป็นคำยืนยันที่สร้างจากข้อมูลที่ไม่มี (กฎ utils/dailyCheckDay.js ข้อ 1) */}
-                      {row.status === 'idle'
+                      {row.status === 'idle' && row.allNotRunning
+                        ? 'เครื่องที่ลงทะเบียนไม่ได้เดินกะนี้'
+                        : row.status === 'idle'
                         ? (row.hasSession === true ? 'เปิดกะแล้ว · ยังไม่มีใบผลิต'
                           : row.hasSession === false ? 'ยังไม่เปิดกะ' : '❔ ไม่รู้ว่าเปิดกะหรือไม่')
                         : meta.label}
@@ -281,8 +309,16 @@ export default function DailyPM() {
                   </div>
                   <div style={{ marginTop: 10, fontSize: 13, color: 'var(--text2)' }}>
                     ตรวจแล้ว <b style={{ color: meta.color }}>{row.checked}/{row.total}</b> เครื่อง
+                    {/* ⚙️ B1 — ตัวหาร = เครื่องที่มีใบผลิตสแกนกะนี้ ไม่ใช่ทุกเครื่องในทะเบียน ⇒ ต้องบอกว่าลงทะเบียนไว้กี่เครื่อง */}
+                    {(row.amMode === 'machine' || row.amMode === 'mixed') && row.registeredN !== row.total && (
+                      <span style={{ color: 'var(--muted)', marginLeft: 6 }}>(ที่เดินกะนี้ · ลงทะเบียน {row.registeredN})</span>
+                    )}
                     {row.firstOrderAt && <span style={{ color: 'var(--muted)', marginLeft: 8 }}>· เริ่มผลิต {fmtTime(row.firstOrderAt)}</span>}
                   </div>
+                  {/* 🔴 ไม่ได้ตัดสินรายเครื่อง = ต้องเขียนบอก (ใบผลิตไม่ลงเลขเครื่อง ⇒ ถอยไปตัดสินทั้งไลน์) */}
+                  {amModeNote(row) && (
+                    <div style={{ marginTop: 4, fontSize: 11, color: '#f59e0b' }}>ⓘ {amModeNote(row)}</div>
+                  )}
                   {row.status === 'pending' && dueDiffMin != null && (
                     <div style={{ marginTop: 4, fontSize: 12, fontWeight: 700, color: dueDiffMin <= 15 ? '#f59a3f' : 'var(--muted)' }}>
                       ⏳ ครบกำหนด {fmtTime(new Date(dueMs))} — เหลืออีก {fmtDur(Math.max(0, dueDiffMin))}
@@ -297,7 +333,25 @@ export default function DailyPM() {
                     <div style={{ marginTop: 8 }}>
                       <div style={{ fontSize: 11, color: '#e05c4a', fontWeight: 700 }}>⚠ ผิดปกติ</div>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 3 }}>
-                        {row.ng.map(n => <span key={n.jig_id} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6, background: 'rgba(224,92,74,0.12)', color: '#e05c4a' }}>{n.machine_no ? `${n.machine_no} · ` : ''}{n.name}</span>)}
+                        {row.ng.map(n => <span key={n.jig_id} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6, background: 'rgba(224,92,74,0.12)', color: '#e05c4a' }}>
+                          {n.machine_no ? `${n.machine_no} · ` : ''}{n.name}
+                          {n.follow && <AmMoChip follow={n.follow} />}
+                        </span>)}
+                      </div>
+                    </div>
+                  )}
+                  {/* 🔧 B3 — MO จากผลตรวจ AM วันก่อนที่ยังไม่ปิด: ป้ายค้างบนเครื่องทุกวันจนกว่าใบจะปิด */}
+                  {row.carry?.length > 0 && (
+                    <div style={{ marginTop: 8 }}>
+                      <div style={{ fontSize: 11, color: '#fb923c', fontWeight: 700 }}>🔧 แจ้งซ่อมแล้ว ยังไม่แก้ไข ({row.carry.length})</div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 3 }}>
+                        {row.carry.map(c => (
+                          <span key={`${c.jig_id}-${c.mo.id}`} title={c.inspected_at ? `พบผิดปกติเมื่อ ${fmtDate(c.inspected_at)}` : undefined}
+                            style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6, background: 'rgba(251,146,60,0.12)', color: '#fb923c', border: '1px solid rgba(251,146,60,0.4)' }}>
+                            {c.machine_no ? `${c.machine_no} · ` : ''}{c.name} · {c.mo.mo_no || '(รอออกเลข)'} · {moStatusLabel(c.mo)}
+                            {c.inspected_at && <> · ตั้งแต่ {fmtDate(c.inspected_at)}</>}
+                          </span>
+                        ))}
                       </div>
                     </div>
                   )}
@@ -306,6 +360,15 @@ export default function DailyPM() {
                       <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>ยังไม่ตรวจ ({row.missing.length})</div>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 3 }}>
                         {row.missing.map(m => <span key={m.jig_id} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6, background: 'var(--bg3)', color: 'var(--muted)' }}>{m.machine_no ? `${m.machine_no} · ` : ''}{m.name}</span>)}
+                      </div>
+                    </div>
+                  )}
+                  {/* ⚙️ B1 — เครื่องที่ไม่มีใบผลิตสแกนกะนี้ = ไม่ต้องตรวจ (ไม่ใช่ขาดตรวจ) · ซ่อนแล้วต้องบอก */}
+                  {row.notRunning?.length > 0 && (
+                    <div style={{ marginTop: 8 }}>
+                      <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>ไม่เดินกะนี้ — ไม่ต้องตรวจ ({row.notRunning.length})</div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 3 }}>
+                        {row.notRunning.map(m => <span key={m.jig_id} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6, border: '1px dashed var(--border2)', color: 'var(--muted)' }}>{m.machine_no ? `${m.machine_no} · ` : ''}{m.name}</span>)}
                       </div>
                     </div>
                   )}
