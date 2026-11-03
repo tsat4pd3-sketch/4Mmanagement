@@ -12,7 +12,8 @@
        (utils/positions.js) และ `stepAssumptions()` ของ MO · `null` ≠ ตำแหน่งต่ำ
    ⚠️ ตำแหน่ง = `profiles.position` (ตำแหน่งที่ปฏิบัติงาน) ผ่าน `positionRank()` — ไฟล์นี้รับเป็น "ตัวเลข" เพื่อให้ pure
    ⚠️ สิทธิ์กด (ชั้น ②) ยังต้องผ่าน `can()` — ดู `amApproveAllowed()` (คีย์ `am:approve` · fallback `pm:approve`)
-   🔜 ยังไม่ทำ: ขั้น "ทบทวนรายเดือน" ของหัวหน้าแผนก/ส่วน (ต้องมีตารางลายเซ็นรายเดือน · รอ user) */
+   ✅ ขั้น 3 "ทบทวนรายเดือน" ของหัวหน้าแผนก/ส่วน (2026-11-03) — `amMonthlySignoffVerdict()` ท้ายไฟล์
+      ตาราง `am_monthly_signoffs` (Main) · จอ = แท็บ 📅 รายงานรายเดือน (`components/AmMonthlyReport.jsx`) */
 
 /** บันไดของ AM (rank ตาม POSITION_LEVELS ใน utils/positions.js) */
 export const AM_APPROVAL_LADDER = [
@@ -89,4 +90,79 @@ export function amApprovalAssumptionText(assumed = []) {
 export function amApproveAllowed({ can, isSeeded }) {
   if (isSeeded?.('am', 'approve')) return !!can?.('am', 'approve')
   return !!can?.('pm', 'approve')
+}
+
+/* ═══ ✍️ ขั้น 3 — หัวหน้าแผนก/ส่วน "ทบทวนรายเดือน" (2026-11-03 · user ตัดสิน 03/11) ═══════════════
+   ลงนามต่อ **เดือน × ไลน์ × กะ** บนแท็บ 📅 รายงานรายเดือน · บันทึกที่ `am_monthly_signoffs` (Main)
+   กติกา (pure · ด่านซ้ำตอนเขียนจริงใน `lib/amMonthlySignoff.js` — ซ่อนปุ่มอย่างเดียวไม่พอ):
+     · สิทธิ์ชั้น ② = คีย์ `am:monthly_signoff` (`canSeeded` — ยังไม่ seed = ปิด ไม่ใช่ถอยไปคีย์อื่น)
+     · 🔴 บัญชีกลาง (shared) ลงนามไม่ได้ — ลายเซ็นต้องผูกตัวคน
+     · ชั้น ③ ขอบเขต = `canWriteLine()` ของไลน์นั้น (ผู้เรียกส่งผลมาเป็น `scopeOk`)
+     · ตำแหน่ง ≥ หัวหน้าแผนก/ส่วน (rank 50) · **"หรือสูงกว่า" ได้** (ผู้จัดการลงนามแทนได้ — ไม่ใช่ข้ามขั้น
+       เพราะขั้นนี้คือขั้นสุดท้ายของสาย ไม่มีใครรออยู่ข้างบน)
+     · 🔴 ไม่รู้ตำแหน่ง (`null`) = ไม่บล็อก แต่จอต้องเขียนว่าไม่ได้ตรวจ (กติกาเดียวกับ `amApprovalVerdict`)
+       — ชั้น role (`am:monthly_signoff` seed เฉพาะ supervisor/manager) ยังกั้นอยู่
+     · 🔴 เดือนยังไม่จบ = ลงนามไม่ได้ (`month_running`) — snapshot ของเดือนที่ยังเดินคือตัวเลขที่ยังขยับ
+     · มีลายเซ็นที่ยังมีผลอยู่แล้ว = ต้องเพิกถอนก่อน (`already_signed`) · ฐานมี unique index กันซ้ำอีกชั้น
+   เพิกถอน (`amMonthlyRevokeVerdict`): ห้ามลบแถว — เปลี่ยนเป็น `revoked` + เหตุผล ≥ 5 ตัวอักษร
+     · ผู้ลงนามเพิกถอนของตัวเองได้ · คนอื่นต้องมีตำแหน่ง ≥ ผู้ลงนาม (หัวหน้าแผนกล้มลายเซ็นผู้จัดการไม่ได้) */
+
+export const AM_MONTHLY_SIGNOFF_MIN_RANK = 50
+export const AM_REVOKE_REASON_MIN = 5
+
+/**
+ * คนนี้ลงนามทบทวน AM รายเดือนของไลน์นี้ได้ไหม
+ * @param {{ permitted:boolean, sharedAccount?:boolean, scopeOk?:boolean, signerRank:number|null,
+ *           monthComplete:boolean, alreadySigned?:boolean }} p
+ * @returns {{ ok:boolean, code:string, assumed:string[] }}
+ *   code: ok · no_perm · shared_account · scope · rank_too_low · month_running · already_signed
+ */
+export function amMonthlySignoffVerdict({ permitted = false, sharedAccount = false, scopeOk = true,
+  signerRank = null, monthComplete = false, alreadySigned = false } = {}) {
+  const known = signerRank != null && Number.isFinite(Number(signerRank))
+  const assumed = known ? [] : ['approver']
+  if (!permitted) return { ok: false, code: 'no_perm', assumed }
+  if (sharedAccount) return { ok: false, code: 'shared_account', assumed }
+  if (!scopeOk) return { ok: false, code: 'scope', assumed }
+  if (known && Number(signerRank) < AM_MONTHLY_SIGNOFF_MIN_RANK) return { ok: false, code: 'rank_too_low', assumed }
+  if (!monthComplete) return { ok: false, code: 'month_running', assumed }
+  if (alreadySigned) return { ok: false, code: 'already_signed', assumed }
+  return { ok: true, code: 'ok', assumed }
+}
+
+/**
+ * เพิกถอนลายเซ็นทบทวนรายเดือนได้ไหม
+ * @param {{ permitted:boolean, sharedAccount?:boolean, scopeOk?:boolean, revokerRank:number|null,
+ *           signerRank:number|null, isSigner?:boolean, reason?:string }} p
+ * @returns {{ ok:boolean, code:string, assumed:string[] }} code: ok · no_perm · shared_account · scope · rank_too_low · reason
+ */
+export function amMonthlyRevokeVerdict({ permitted = false, sharedAccount = false, scopeOk = true,
+  revokerRank = null, signerRank = null, isSigner = false, reason = '' } = {}) {
+  const known = revokerRank != null && Number.isFinite(Number(revokerRank))
+  const assumed = known ? [] : ['approver']
+  if (!permitted) return { ok: false, code: 'no_perm', assumed }
+  if (sharedAccount) return { ok: false, code: 'shared_account', assumed }
+  if (!scopeOk) return { ok: false, code: 'scope', assumed }
+  if (!isSigner && known) {
+    const r = Number(revokerRank)
+    if (r < AM_MONTHLY_SIGNOFF_MIN_RANK) return { ok: false, code: 'rank_too_low', assumed }
+    if (signerRank != null && r < Number(signerRank)) return { ok: false, code: 'rank_too_low', assumed }
+  }
+  if (String(reason || '').trim().length < AM_REVOKE_REASON_MIN) return { ok: false, code: 'reason', assumed }
+  return { ok: true, code: 'ok', assumed }
+}
+
+/** ข้อความบนจอของ verdict ลงนาม/เพิกถอนรายเดือน (ซ่อนปุ่มได้ ห้ามซ่อนเหตุผล) */
+export function amMonthlySignoffText(v, { opensOn = '' } = {}) {
+  if (!v || v.ok) return ''
+  switch (v.code) {
+    case 'no_perm': return 'ลงนามทบทวนรายเดือนได้เฉพาะผู้ถือสิทธิ์ "AM: ลงนามทบทวนรายเดือน" (ตั้งที่ /permissions)'
+    case 'shared_account': return 'บัญชีกลางลงนามไม่ได้ — ลายเซ็นต้องผูกกับตัวคน ให้เข้าด้วยบัญชีของตัวเอง'
+    case 'scope': return 'ไลน์นี้อยู่นอกขอบเขตที่คุณรับผิดชอบ — ดูได้ แต่ลงนามไม่ได้'
+    case 'rank_too_low': return 'ขั้นนี้ต้องให้หัวหน้าแผนก/ส่วน (หรือสูงกว่า) ทบทวน'
+    case 'month_running': return `เดือนนี้ยังไม่จบ — ลงนามได้${opensOn ? `ตั้งแต่ ${opensOn}` : 'หลังสิ้นเดือน'} (ตัวเลขยังขยับได้)`
+    case 'already_signed': return 'ไลน์นี้ลงนามแล้ว — ต้องเพิกถอนลายเซ็นเดิมก่อนจึงลงนามใหม่ได้'
+    case 'reason': return `ต้องระบุเหตุผลการเพิกถอนอย่างน้อย ${AM_REVOKE_REASON_MIN} ตัวอักษร`
+    default: return ''
+  }
 }
