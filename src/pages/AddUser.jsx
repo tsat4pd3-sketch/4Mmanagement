@@ -37,6 +37,7 @@ import { identityDiff, identityFallbacks, syncPatch, dualMeaningInfo } from '../
 /* 🪪 "บัญชีไหนยังไม่รู้ว่าเป็นใคร" + ตัวเสนอคนในทะเบียน — กฎอยู่ใน utils/identityMatch.js (pure · มีเทส)
    🔴 ระบบ**ไม่เดา**ประเภทบัญชีให้ · ไฟล์นั้นแค่จัดคิว + เสนอตัวเลือก คนกดตัดสิน */
 import { unlinkedTriage, routeHint } from '../utils/identityMatch';
+import { buildUserIssues, issueSummaryText, SEV_FIX } from '../utils/userIssues';   // 🩺 ต้องแก้ vs ข้อมูลประกอบ (A6 · 03/11)
 import SearchInput from '../components/SearchInput';
 import { ALL } from '../utils/filterLabels';
 /* ทีมช่างซ่อม (profiles.mtn_teams) — เดิมมีหน้าที่เดียวคือ "แยกคิวใบแจ้งซ่อม MO ให้ถูกทีม"
@@ -360,15 +361,27 @@ export default function AddUser() {
      🔴 **พับได้ แต่ห้ามหาย** — จำนวนทุกกองยังอยู่บนจอเป็นชิปเสมอ กดชิปแล้วกางกองนั้นตรงนั้น
         (กฎความซื่อสัตย์ของจอ: ข้อมูลไม่ครบ/มีงานค้าง ต้องเห็น ห้ามซ่อนเงียบ) */
   const [openWl, setOpenWl] = useState(null);   // คีย์กองที่กางอยู่ · null = พับหมด
-  const wlCounts = useMemo(() => ({
-    mismatch: users.filter(u => identityDiff(u, u.employee_id ? empById[u.employee_id] : null).length).length,
-    fallback: users.filter(u => identityFallbacks(u, u.employee_id ? empById[u.employee_id] : null).length).length,
-    dual:     users.filter(u => dualMeaningInfo(u, u.employee_id ? empById[u.employee_id] : null).length).length,
-    unknown:  unlinkedTriage(users, emps).queue.length,
-    ghost:    users.filter(scopeIneffective).length,
-    toowide:  users.filter(scopeTooWide).length,
-    review:   users.filter(needsScopeReview).length,
-  }), [users, emps, empById]);
+  /* 🩺 จัดกลุ่มตามความรุนแรง (03/11 · ประชุม 02/11 A6 "หมายเหตุเยอะจนงงว่าอะไรผิดจริง")
+     🔴 ตัวตัดสินแต่ละกองยังเป็นของกลางเดิมทุกตัว — `utils/userIssues.js` แค่จัด "ต้องแก้ / ข้อมูลประกอบ"
+        + ประโยคเดียว "ผิดอะไร → ทางแก้" · ข้อมูลประกอบพับไว้แต่ตัวนับอยู่บนจอเสมอ */
+  const [showInfoIssues, setShowInfoIssues] = useState(false);
+  const [onlyFixUsers, setOnlyFixUsers] = useState(false);
+  const issueIdx = useMemo(() => {
+    const empOf = (u) => (u.employee_id ? empById[u.employee_id] : null);
+    const tri = unlinkedTriage(users, emps);
+    return buildUserIssues({
+      toowide:  users.filter(scopeTooWide).map(u => u.id),
+      ghost:    users.filter(scopeIneffective).map(u => u.id),
+      unlinked: tri.personUnlinked.map(x => x.u.id),
+      unknown:  tri.queue.map(x => x.u.id),
+      review:   users.filter(needsScopeReview).map(u => u.id),
+      fallback: users.map(u => ({ u, m: identityFallbacks(u, empOf(u)) })).filter(x => x.m.length)
+        .map(x => ({ id: x.u.id, detail: x.m.map(m => m.label).join('/') })),
+      mismatch: users.map(u => ({ u, d: identityDiff(u, empOf(u)) })).filter(x => x.d.length)
+        .map(x => ({ id: x.u.id, detail: x.d.map(d => d.label).join('/') })),
+      dual:     users.filter(u => dualMeaningInfo(u, empOf(u)).length).map(u => u.id),
+    });
+  }, [users, emps, empById]);
   /* ผลค้นพนักงาน — ถ้าคำค้นไม่ตรงใคร **ห้ามคืนลิสต์ว่าง** (ลิสต์ว่าง = คนอ่านสรุปว่า "ไม่มีคนนี้"
      แล้วไปสร้างซ้ำ — เกิดจริง 23/09) · คืนทุกคนแทน แล้วขึ้นป้ายบอกว่าไม่พบคำค้น */
   const empMatches = useMemo(() => {
@@ -760,6 +773,7 @@ export default function AddUser() {
   const view = (() => {
     const kw = norm(q);
     let rows = users.filter(u => {
+      if (onlyFixUsers && !(issueIdx.byUser[u.id] || []).some(i => i.sev === SEV_FIX)) return false;
       if (filterRole && u.role !== filterRole) return false;
       if (filterSection) {
         const secs = u.sections?.length ? u.sections : (u.section ? [u.section] : []);
@@ -828,8 +842,8 @@ export default function AddUser() {
           <RoleOptGroups />
         </select>
         <SearchInput value={q} onChange={setQ} fields="ชื่อ / อีเมล / ตำแหน่ง" />
-        {(q || filterRole || filterSection) && (
-          <button onClick={() => { setQ(''); setFilterRole(''); setFilterSection(''); }}
+        {(q || filterRole || filterSection || onlyFixUsers) && (
+          <button onClick={() => { setQ(''); setFilterRole(''); setFilterSection(''); setOnlyFixUsers(false); }}
             style={{ padding: '8px 12px', borderRadius: 8, fontSize: 12, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>
             ✕ ล้างตัวกรอง
           </button>
@@ -867,31 +881,66 @@ export default function AddUser() {
         </div>
       )}
 
-      {/* 🩺 แถบสรุปงานค้าง — คลิกชิปเพื่อกาง/พับกองนั้น (ค่าเริ่มต้น = พับหมด ตารางผู้ใช้จึงอยู่บนสุด) */}
-      {(() => {
-        const CHIPS = [
-          ['mismatch', '⚠️ ตัวตนไม่ตรงฐานพนักงาน', '#f59e0b'],
-          ['fallback', '🧩 ฐานพนักงานยังไม่ได้กรอก', '#f59e0b'],
-          ['dual',     '🧭 ทำงานคนละตำแหน่งกับที่บรรจุ', 'var(--accent)'],
-          ['unknown',  '🪪 ยังไม่รู้ว่าเป็นใคร', '#f59e0b'],
-          ['toowide',  '🔓 หัวหน้าหน้างานเห็นทั้งโรงงาน', '#ef4444'],
-          ['ghost',    '🚩 ตั้งขอบเขตแล้วไม่มีผล', '#ef4444'],
-          ['review',   '🔭 ยังไม่ได้ทบทวนขอบเขต', '#f59e0b'],
-        ].filter(([k]) => wlCounts[k] > 0);
-        if (!CHIPS.length) return null;
+      {/* 🩺 แถบสรุปงานค้าง — จัดตามความรุนแรง (03/11 · ประชุม 02/11 A6)
+          เดิม: ชิป 7 ก้อนสีส้มเท่ากันหมด ⇒ แอดมินแยกไม่ออกว่าอะไร "ผิดอยู่จริง" อะไรเป็นแค่ข้อมูลประกอบ
+          ตอนนี้: บรรทัดสรุปตัวเลข → 🔴 ต้องแก้ (กางไว้) → ℹ️ ข้อมูลประกอบ (พับไว้ แต่ตัวนับอยู่บนจอเสมอ)
+          · 1 บรรทัด/เรื่อง = "ผิดอะไร → ทางแก้ทางเดียว" (ข้อความอยู่ utils/userIssues.js ที่เดียว)
+          · "ดูรายชื่อ" = กางกองรายละเอียดเดิมด้านล่าง (ปุ่มแก้รายบัญชีอยู่ที่นั่น) */}
+      {!fetchingUsers && (() => {
+        const { groups } = issueIdx;
+        const row = (g) => (
+          <div key={g.key} style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap', fontSize: 12, padding: '3px 0' }}>
+            <b style={{ minWidth: 84, color: g.sev === SEV_FIX ? '#ef4444' : 'var(--text2)' }}>{g.icon} {g.count} บัญชี</b>
+            <span style={{ flex: '1 1 280px', minWidth: 0, color: 'var(--text2)' }}>
+              {g.what} <span style={{ color: 'var(--muted)' }}>→ {g.fix}</span>
+            </span>
+            <button type="button" onClick={() => setOpenWl(o => (o === g.key ? null : g.key))} aria-expanded={openWl === g.key}
+              style={{ width: 'auto', fontSize: 11, padding: '2px 9px', cursor: 'pointer', borderRadius: 999,
+                border: `1px solid ${openWl === g.key ? 'var(--accent)' : 'var(--border2)'}`,
+                background: openWl === g.key ? 'var(--accent-dim)' : 'var(--bg3)', color: 'var(--text2)' }}>
+              {openWl === g.key ? 'ซ่อนรายชื่อ ▴' : 'ดูรายชื่อ ▾'}
+            </button>
+          </div>
+        );
         return (
-          <div className="card" style={{ marginBottom: 12, padding: '8px 10px', display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-            <b style={{ fontSize: 12, color: 'var(--text2)' }}>🩺 งานค้างของทะเบียนบัญชี</b>
-            {CHIPS.map(([k, label, color]) => (
-              <button key={k} type="button" onClick={() => setOpenWl(o => (o === k ? null : k))}
-                aria-expanded={openWl === k}
-                style={{ width: 'auto', fontSize: 11.5, padding: '3px 10px', cursor: 'pointer', borderRadius: 999,
-                  border: `1px solid ${openWl === k ? color : 'var(--border2)'}`,
-                  background: openWl === k ? 'var(--accent-dim)' : 'var(--bg3)', color: 'var(--text2)' }}>
-                {label} <b style={{ color }}>{wlCounts[k]}</b> {openWl === k ? '▴' : '▾'}
-              </button>
-            ))}
-            <span style={{ fontSize: 11, color: 'var(--muted)' }}>— กดเพื่อดูรายชื่อ + ปุ่มแก้</span>
+          <div className="card" style={{ marginBottom: 12, padding: '9px 12px' }}>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+              <b style={{ fontSize: 12.5, color: 'var(--text)' }}>🩺 งานค้างของทะเบียนบัญชี</b>
+              <span style={{ fontSize: 12, color: issueIdx.fixUsers ? '#ef4444' : 'var(--muted)', fontWeight: 700 }}>
+                {issueSummaryText(issueIdx)}
+              </span>
+              <span style={{ flex: 1 }} />
+              {issueIdx.fixUsers > 0 && (
+                <button type="button" onClick={() => setOnlyFixUsers(v => !v)} aria-pressed={onlyFixUsers}
+                  style={{ width: 'auto', fontSize: 11.5, padding: '3px 10px', cursor: 'pointer', borderRadius: 6,
+                    border: `1px solid ${onlyFixUsers ? '#ef4444' : 'var(--border2)'}`,
+                    background: onlyFixUsers ? 'rgba(239,68,68,0.12)' : 'var(--bg3)', color: 'var(--text2)' }}>
+                  {onlyFixUsers ? '✕ แสดงทุกบัญชี' : `🔎 ตารางเฉพาะ ${issueIdx.fixUsers} บัญชีที่ต้องแก้`}
+                </button>
+              )}
+            </div>
+            {groups.fix.length > 0 && (
+              <div style={{ marginTop: 6 }}>
+                <div style={{ fontSize: 11.5, fontWeight: 800, color: '#ef4444', marginBottom: 2 }}>
+                  🔴 ต้องแก้ — ระบบให้เห็น/ตัดสินผิดอยู่ตอนนี้
+                </div>
+                {groups.fix.map(row)}
+              </div>
+            )}
+            {groups.info.length > 0 && (
+              <div style={{ marginTop: 6 }}>
+                <button type="button" aria-expanded={showInfoIssues}
+                  onClick={() => {
+                    setShowInfoIssues(v => !v);
+                    if (showInfoIssues && groups.info.some(g => g.key === openWl)) setOpenWl(null);
+                  }}
+                  style={{ width: 'auto', fontSize: 11.5, fontWeight: 700, padding: '2px 0', cursor: 'pointer',
+                    background: 'none', border: 'none', color: 'var(--muted)' }}>
+                  ℹ️ ข้อมูลประกอบ — ไม่มีผลกับสิทธิ์ ไม่ต้องรีบแก้ ({issueIdx.infoTotal} เรื่อง) {showInfoIssues ? '▴ พับ' : '▾ กาง'}
+                </button>
+                {showInfoIssues && groups.info.map(row)}
+              </div>
+            )}
           </div>
         );
       })()}
@@ -909,11 +958,36 @@ export default function AddUser() {
         /* 🪪 แยก 3 กองผ่านของกลาง — "บัญชีกลางไม่ผูกตัวตน = ถูกต้องแล้ว" ห้ามนับเป็นงานค้าง */
         const tri = unlinkedTriage(users, emps);
         const unset = tri.queue;
-        if (!mism.length && !tri.queue.length && !tri.personUnlinked.length) return null;
-        // กางเฉพาะกองที่กดชิปไว้ (จำนวนทุกกองยังอยู่บนแถบสรุปด้านบนเสมอ)
-        if (!['mismatch', 'fallback', 'dual', 'unknown'].includes(openWl)) return null;
+        /* 🐞 03/11: เดิมมีบรรทัด `if (!mism && !queue && !personUnlinked) return null` ตรงนี้
+           ⇒ บัญชีที่มีแต่ "ฐานพนักงานยังไม่กรอก" หรือ "คนละตำแหน่ง" กดชิปแล้ว **ไม่กางอะไรเลย**
+           (ตัวนับบอกว่ามี แต่รายชื่อไม่ขึ้น) · แต่ละกองข้างล่างเช็คความว่างของตัวเองอยู่แล้ว
+           · และ `personUnlinked` ไม่เคยมีชิปของตัวเอง (โผล่เฉพาะท้ายกอง unknown ตอน queue > 0) */
+        // กางเฉพาะกองที่กดไว้ (จำนวนทุกกองยังอยู่บนแถบสรุปด้านบนเสมอ)
+        if (!['mismatch', 'fallback', 'dual', 'unknown', 'unlinked'].includes(openWl)) return null;
         return (
           <div className="card" style={{ marginBottom: 12, padding: 12, borderLeft: '3px solid #f59e0b' }}>
+            {openWl === 'unlinked' && tri.personUnlinked.length > 0 && (
+              <div style={{ fontSize: 12, color: 'var(--text2)' }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#ef4444', marginBottom: 4 }}>
+                  🪪 บัญชีของคนแต่ยังไม่ผูกพนักงาน · {tri.personUnlinked.length} บัญชี
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>
+                  ทีม/ไลน์/ส่วนงานของบัญชีเหล่านี้มาจากค่าที่แอดมินกรอกเอง — ผูกพนักงานแล้วระบบจะอ่านจากฐานพนักงานแทน
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {tri.personUnlinked.map(({ u }) => (
+                    <div key={u.id} style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap',
+                      background: 'var(--bg3)', borderRadius: 6, padding: '5px 9px' }}>
+                      <b style={{ minWidth: 150 }}>{u.full_name || u.email || '—'}</b>
+                      <button type="button" onClick={() => openEdit(u)}
+                        style={{ width: 'auto', marginLeft: 'auto', fontSize: 11, padding: '3px 10px', cursor: 'pointer' }}>
+                        ✏️ แก้ไข → เลือกพนักงาน
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             {mism.length > 0 && openWl === 'mismatch' && (
               <div>
                 <div style={{ fontSize: 13, fontWeight: 700, color: '#f59e0b', marginBottom: 6 }}>
@@ -1182,6 +1256,28 @@ export default function AddUser() {
                   <td>
                     <div style={{ fontWeight: 600, fontSize: 14 }}>{u.full_name || <span style={{ color: 'var(--muted)', fontWeight: 400 }}>ไม่ระบุชื่อ</span>}</div>
                     <div style={{ fontSize: 12, color: 'var(--muted)' }}>{u.email}</div>
+                    {/* 🩺 ปัญหาของบัญชีนี้ — ต้องแก้ = แดง 1 บรรทัด/เรื่อง (ผิดอะไร → ทางแก้)
+                        ข้อมูลประกอบ = บรรทัดเทาบรรทัดเดียว (รายละเอียดอยู่ใน title) · ไม่มีอะไร = ไม่วาด */}
+                    {(() => {
+                      const iss = issueIdx.byUser[u.id];
+                      if (!iss?.length) return null;
+                      const fx = iss.filter(i => i.sev === SEV_FIX);
+                      const inf = iss.filter(i => i.sev !== SEV_FIX);
+                      return (
+                        <div style={{ marginTop: 3, display: 'flex', flexDirection: 'column', gap: 1, maxWidth: 320 }}>
+                          {fx.map(i => (
+                            <div key={i.key} title={i.line} style={{ fontSize: 11, color: '#ef4444', lineHeight: 1.4 }}>
+                              {i.icon} <b>{i.chip}</b> <span style={{ color: 'var(--text2)' }}>— {i.fix}</span>
+                            </div>
+                          ))}
+                          {inf.length > 0 && (
+                            <div title={inf.map(i => i.line).join('\n')} style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.4 }}>
+                              ℹ️ {inf.map(i => i.chip + (i.detail ? ` (${i.detail})` : '')).join(' · ')}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </td>
                   <td style={{ textAlign: 'center', fontSize: 13, color: u.position ? 'var(--text)' : 'var(--muted)' }}>
                     {u.position ? positionLabel(u.position) : '—'}

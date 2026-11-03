@@ -30,6 +30,7 @@ import { inSectionScope, scopedLines } from '../utils/sectionScope';
 import { MARKS, MARK_BY_KEY, markGlyph, markColor, daysInMonth, ppeToMark } from '../utils/bbsMarks';
 import { getWorkDate } from '../utils/workDate';
 import { printBbsSheet } from '../lib/bbsPrint';
+import { resolveEmployeeSigner, signatureOfPerson } from '../utils/employeeSignature';   // ✍️ รหัสพนักงาน → ลายเซ็น (C1 · 03/11)
 import { checkWriteRows } from '../utils/dbWrite';
 import SearchSelect from '../components/SearchSelect';
 import useIsMobile from '../utils/useIsMobile';
@@ -205,6 +206,19 @@ export default function BbsCheck() {
     } finally { setLoading(false); }
   }, [lineObj, lines, month]);
   useEffect(() => { load(); }, [load]);
+
+  /* ✍️ ผู้ตรวจที่ระบุตัวด้วย "รหัสพนักงาน" (สแกน QR บนบัตร หรือพิมพ์เอง — ผู้รับเหมาไม่มีบัตร/ไม่มีบัญชี)
+     → ชื่อ + ลายเซ็นจากฐานพนักงาน (C1 · 03/11) · ลายเซ็นโปรไฟล์ของคนที่เลือกยังชนะ (signatureOfPerson)
+     · stale guard: เปลี่ยนใบ/รหัสระหว่างโหลด ห้ามเอาผลเก่ามาทับ (กฎเหล็ก DB ข้อ 4) */
+  const [codeSigner, setCodeSigner] = useState(null);
+  const inspCode = sheet?.inspector_code || '';
+  useEffect(() => {
+    let alive = true;
+    if (!inspCode) { setCodeSigner(null); return undefined; }
+    resolveEmployeeSigner(supabase, inspCode).then(r => { if (alive) setCodeSigner(r); });
+    return () => { alive = false; };
+  }, [inspCode]);
+  const shownSig = signatureOfPerson({ profileSig: sheet?.inspector_sig_url, employeeSig: codeSigner?.signatureUrl });
 
   /* ── หัวใบ: สร้างตอนบันทึกจริงเท่านั้น (ห้ามสร้างตอนเปิดดู) ── */
   const ensureSheet = useCallback(async () => {
@@ -385,10 +399,13 @@ export default function BbsCheck() {
 
   const setInspectorCode = async (code) => {
     const sh = sheet; if (!sh) return;
+    if ((code || null) === (sh.inspector_code || null)) return;
     const { data, error } = await supabase.from('bbs_sheets')
       .update({ inspector_code: code || null, updated_by_name: fullName || null })
       .eq('id', sh.id).select('id');
     if (error || !data?.length) return toast.error('บันทึกรหัสพนักงานไม่สำเร็จ');
+    // ต้องอัปเดต state ด้วย — ไม่งั้นลายเซ็นจากรหัสใหม่ไม่ถูกโหลด (ใบพิมพ์ใช้รหัสเก่า)
+    setSheet(s => (s && s.id === sh.id ? { ...s, inspector_code: code || null } : s));
   };
 
   /* ── สรุปเดือน (นับเฉพาะช่องที่มีข้อมูล — ไม่เดาช่องว่าง) ──
@@ -415,8 +432,14 @@ export default function BbsCheck() {
 
   const doPrint = async () => {
     if (!sheet) return toast.error('ยังไม่มีใบของเดือน/ไลน์นี้ — บันทึกอย่างน้อย 1 ช่องก่อน');
+    /* ✍️ ลายเซ็นผู้ตรวจ: โปรไฟล์ที่เลือก → ฐานพนักงานตามรหัส → เว้นช่องเซ็นมือ (resolve สดตอนกดพิมพ์)
+       ระบุไม่ได้/ยังไม่มีลายเซ็น = บอกเหตุผลบนจอ ห้ามออกใบช่องว่างเงียบๆ */
+    const signer = sheet.inspector_code ? await resolveEmployeeSigner(supabase, sheet.inspector_code) : null;
+    const sigUrl = signatureOfPerson({ profileSig: sheet.inspector_sig_url, employeeSig: signer?.signatureUrl });
+    if (!sigUrl) toast.info(signer?.note || 'ยังไม่ได้ระบุผู้ตรวจ (เลือกชื่อ หรือสแกน/พิมพ์รหัสพนักงาน) — ใบจะเว้นช่องลายเซ็นไว้ให้เซ็นมือ');
     const ok = await printBbsSheet({
-      sheet, days, employees: emps, cells, rowNotes, agreements, autoCount: autoAgreements.length,
+      sheet: { ...sheet, inspector_name: sheet.inspector_name || signer?.name || null, inspector_sig_url: sigUrl },
+      days, employees: emps, cells, rowNotes, agreements, autoCount: autoAgreements.length,
     });
     if (!ok) toast.error('เบราว์เซอร์บล็อกหน้าต่างพิมพ์ — อนุญาต popup ของเว็บนี้ก่อน');
   };
@@ -459,23 +482,33 @@ export default function BbsCheck() {
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-start', marginBottom: 12 }}>
         <div style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 12px', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
           <div>
-            <label style={lbl}>ผู้ตรวจสอบ (ดึงลายเซ็นจากโปรไฟล์)</label>
+            <label style={lbl}>ผู้ตรวจสอบ (ลายเซ็น: โปรไฟล์ → ฐานพนักงาน)</label>
             <SearchSelect disabled={!canRecord} value={signers.find(s => s.full_name === sheet?.inspector_name)?.id || ''}
               placeholder="— เลือกผู้ตรวจสอบ (พิมพ์ค้นหา) —" style={{ width: 240 }} inputStyle={{ padding: '6px 30px 6px 8px', fontSize: 12.5 }}
               options={signers.map(s => ({ id: s.id, label: s.full_name }))} onChange={({ id }) => setInspector(id)} />
           </div>
           <div>
-            <label style={lbl}>รหัสพนักงาน</label>
-            {/* key = remount เมื่อระบบเติมรหัสให้ (input uncontrolled) · ยังพิมพ์แก้เองได้ */}
+            <label style={lbl}>รหัสพนักงาน (สแกนบัตร / พิมพ์)</label>
+            {/* key = remount เมื่อระบบเติมรหัสให้ (input uncontrolled) · ยังพิมพ์แก้เองได้
+                เครื่องสแกนส่ง Enter ตามท้ายรหัสเสมอ ⇒ Enter = ยืนยันรหัส (blur) ไม่ใช่ submit อะไร
+                ผู้รับเหมาที่ไม่มีบัตร = พิมพ์รหัสเอง · ชื่อ/ลายเซ็นดึงจากฐานพนักงานตามรหัส (C1 · 03/11) */}
             <input key={`${sheet?.id || ''}|${sheet?.inspector_code || ''}`} defaultValue={sheet?.inspector_code || ''} disabled={!canRecord || !sheet}
               onBlur={e => setInspectorCode(e.target.value.trim())}
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur(); } }}
               placeholder="เช่น 61234"
               style={{ width: 110, padding: '6px 8px', fontSize: 12.5 }} />
+            {codeSigner && codeSigner.state !== 'no_code' && (
+              <div style={{ fontSize: 11, marginTop: 3, maxWidth: 220, lineHeight: 1.4,
+                color: codeSigner.state === 'ok' ? 'var(--muted)' : '#f59e0b' }}>
+                {codeSigner.name ? `👤 ${codeSigner.name}` : ''}
+                {codeSigner.note ? `${codeSigner.name ? ' · ' : ''}${codeSigner.note}` : ''}
+              </div>
+            )}
           </div>
           <div style={{ textAlign: 'center' }}>
             <label style={lbl}>ลายเซ็น</label>
-            {sheet?.inspector_sig_url
-              ? <img src={sheet.inspector_sig_url} alt="ลายเซ็น" style={{ height: 34, background: '#fff', borderRadius: 4, padding: 2 }} />
+            {shownSig
+              ? <img src={shownSig} alt="ลายเซ็น" style={{ height: 34, background: '#fff', borderRadius: 4, padding: 2 }} />
               : <div style={{ fontSize: 11, color: 'var(--muted)', padding: '9px 0' }}>
                   {signers.length ? 'ยังไม่เลือกผู้ตรวจ' : 'ยังไม่มีใครบันทึกลายเซ็นในโปรไฟล์'}
                 </div>}

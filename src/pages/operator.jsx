@@ -43,10 +43,13 @@ import { checkWrite } from '../utils/dbWrite';
 import { fetchByIds } from '../utils/fetchByIds';
 import SkillEvidencePanel from '../components/SkillEvidencePanel';
 import { DeleteButton } from '../components/IconButton';
+import { isMissingColumnError } from '../utils/employeeSignature';
 
 // การ์ดสรุปทักษะรายบุคคล — component เดียวกับหน้า Skill Matrix (/skills-report)
 // lazy: recharts โหลดเฉพาะตอนเปิดการ์ด ไม่ถ่วงตอนเปิดหน้าฐานข้อมูลพนักงาน
 const SkillRadarPanel = lazy(() => import('../components/SkillRadarPanel'));
+/* ✍️ ลายเซ็นพนักงาน (03/11 · ประชุม 02/11 C1) — โมดัลเดียวกับลายเซ็นโปรไฟล์ แค่ชี้ปลายทางเป็น employees */
+const SignatureModal = lazy(() => import('../components/SignatureModal'));
 
 
 // บีบรูปก่อนอัปโหลด — ตัวจริงอยู่ src/utils/resizeImage.js (ห้ามก๊อปโค้ดบีบรูปซ้ำอีก)
@@ -187,6 +190,7 @@ export default function Operator() {
   const [radarEmp, setRadarEmp] = useState(null);          // พนักงานที่กดดูการ์ดสรุปทักษะ (เหมือนหน้า Skill Matrix)
   const [subItemsByskill, setSubItemsByskill] = useState({}); // หัวข้อการพิจารณาต่อสกิล — ใช้ตอนพิมพ์ใบประเมินรายบุคคล
   const [empCropFile, setEmpCropFile] = useState(null);
+  const [empSigOpen, setEmpSigOpen] = useState(false);   // ✍️ โมดัลลายเซ็นพนักงาน (C1 · 03/11)
   const [isSaving, setIsSaving] = useState(false);
   const [newSkill, setNewSkill] = useState({ label: '', color: '#4d9fff', category: 'hard_skill', scope_division: '', scope_section: '', allowance_type: '' });
   const skillColorTouched = useRef(false); // ผู้ใช้เลือกสีเองแล้ว — อย่าสุ่มทับ
@@ -2365,6 +2369,30 @@ export default function Operator() {
                     if (f) setEmpCropFile(f);
                   }} />
               </div>
+              {/* ✍️ ลายเซ็นพนักงาน — ใช้พิมพ์บนใบตรวจที่ export (ผู้ตรวจระบุตัวด้วยรหัสพนักงาน/QR บนบัตร)
+                  🔴 บันทึกทันทีแยกจากปุ่ม 💾 ข้างล่าง (อัปไฟล์แล้วต้องผูกแถวทันที ไม่งั้นไฟล์ลอย)
+                  🔴 คอลัมน์ยังไม่ apply = ไม่มีคีย์ signature_url ในแถว (select('*')) ⇒ เขียนบอกบนจอ ห้ามเงียบ */}
+              <div>
+                <label style={labelSt}>✍️ ลายเซ็น (ใช้พิมพ์บนใบตรวจ)</label>
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                  {editingEmp.signature_url
+                    ? <img src={editingEmp.signature_url} alt="ลายเซ็น" style={{ height: 40, maxWidth: 180, objectFit: 'contain', background: '#fff', borderRadius: 4, padding: 2, border: '1px solid var(--border)' }} />
+                    : <span style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่มีลายเซ็น — ใบตรวจจะเว้นช่องให้เซ็นมือ</span>}
+                  {canEditEmp(editingEmp) && editingEmp.id && (
+                    <button type="button" onClick={() => setEmpSigOpen(true)}
+                      style={{ width: 'auto', padding: '6px 12px', fontSize: 12, borderRadius: 6, cursor: 'pointer',
+                        background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)' }}>
+                      {editingEmp.signature_url ? '✏️ เปลี่ยนลายเซ็น' : '＋ เพิ่มลายเซ็น'}
+                    </button>
+                  )}
+                </div>
+                {!('signature_url' in editingEmp) && (
+                  <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4, lineHeight: 1.5 }}>
+                    ⚠️ ยังอ่านช่องลายเซ็นของพนักงานไม่ได้ — ระบบอาจยังไม่ได้เปิดคอลัมน์ลายเซ็น
+                    (migration <code>20261103_employee_signature_main.sql</code>) · บันทึกลายเซ็นจะยังไม่สำเร็จจนกว่าจะเปิด
+                  </div>
+                )}
+              </div>
               {empCropFile && (
                 <ImageCropModal file={empCropFile} aspect={1} shape="circle" outputSize={480}
                   title="จัดตำแหน่งรูปพนักงานให้ตรงกรอบ" allowGif={false} webp
@@ -2383,6 +2411,29 @@ export default function Operator() {
                 </button>
               </div>
             </form>
+            {/* โมดัลลายเซ็นต้องอยู่ "นอก" <form> — ปุ่มในโมดัลไม่มี type ⇒ อยู่ในฟอร์ม = กดแล้ว submit ฟอร์มพนักงาน */}
+            {empSigOpen && (
+              <Suspense fallback={null}>
+                <SignatureModal open title={`✍️ ลายเซ็นของ ${editingEmp.name || editingEmp.employee_id_code || 'พนักงาน'}`}
+                  currentSignatureUrl={editingEmp.signature_url || null}
+                  folder={`emp/${editingEmp.id}`}
+                  persist={async (url) => {
+                    const { data, error } = await supabase.from('employees')
+                      .update({ signature_url: url }).eq('id', editingEmp.id).select('id');
+                    if (error) return { ok: false, message: isMissingColumnError(error)
+                      ? 'ระบบยังไม่ได้เปิดคอลัมน์ลายเซ็นพนักงาน (รอ apply migration 20261103) — ยังผูกลายเซ็นกับพนักงานไม่ได้'
+                      : error.message };
+                    if (!data?.length) return { ok: false, message: 'ระบบไม่ได้แก้แถวไหนเลย (0 แถว) — สิทธิ์ไม่พอแก้พนักงานคนนี้' };
+                    return { ok: true };
+                  }}
+                  onClose={() => setEmpSigOpen(false)}
+                  onSaved={(url) => {
+                    const id = editingEmp.id;
+                    setEditingEmp(prev => (prev && prev.id === id ? { ...prev, signature_url: url } : prev));
+                    setEmployees(prev => prev.map(e => (e.id === id ? { ...e, signature_url: url } : e)));
+                  }} />
+              </Suspense>
+            )}
           </div>
         </div>
       )}

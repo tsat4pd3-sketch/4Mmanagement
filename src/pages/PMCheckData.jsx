@@ -38,6 +38,7 @@ import { filterPlanRows } from '../utils/pmPlanFilter'
 import useIsMobile from '../utils/useIsMobile'
 import { useDraftAutosave, loadDraft, clearDraft } from '../utils/formDraft'   // 📝 ร่างในเครื่อง (มือถือ · 22/10)
 import DraftRestoreBar from '../components/DraftRestoreBar'
+import { loadEmployeeSigners, signatureOfPerson } from '../utils/employeeSignature'   // ✍️ ลายเซ็นในฐานพนักงาน (C1 · 03/11)
 
 /* 🔩 จุดชิมของ fixture บนใบตรวจ PM (2026-09-08 · คำสั่ง user "shim record กับการตรวจใช้กลไกเดียวกัน")
    ข้อมูลแยกตาราง (fixture_points/fixture_shim_events) แต่ "รูป + หมุด" ชุดเดียวกับจุดตรวจ PM:
@@ -586,14 +587,25 @@ function HistoryModal({ inspection, checkpoints: cpsFromPage, jig, onClose, user
        โดยไม่มี error เพราะรับแค่ `{ data }` (supabase-js คืน {data,error} ไม่ throw) — audit 2026-09-03
        คลาสเดียวกับ fn_audit ที่อ่าน coalesce(full_name, email) แล้วไม่บันทึกผู้แก้ทั้งระบบ */
     const { data: profs, error: profErr } = await supabase
-      .from('profiles').select('id, full_name, signature_url').in('id', userIds)
+      .from('profiles').select('id, full_name, signature_url, employee_id').in('id', userIds)
     if (profErr) { console.warn('[buildExportArgs] profiles', profErr.message); toast.error('โหลดชื่อ/ลายเซ็นผู้ตรวจไม่สำเร็จ — ใบที่พิมพ์จะไม่มีลายเซ็น') }
     const profMap = Object.fromEntries((profs ?? []).map(p => [p.id, p]))
+    /* ✍️ C1 (03/11): บัญชีที่ยังไม่ตั้งลายเซ็นในโปรไฟล์ → ถอยไปใช้ลายเซ็นในฐานพนักงานที่ผูกไว้
+       (ลำดับอยู่ที่ signatureOfPerson() ที่เดียว · โปรไฟล์ชนะเสมอ) · อ่านไม่ได้ = บอก ไม่เงียบ */
+    const needEmp = (profs ?? []).filter(p => !p.signature_url && p.employee_id).map(p => p.employee_id)
+    const empSig = {}
+    if (needEmp.length) {
+      const er = await loadEmployeeSigners(supabase, { ids: needEmp })
+      if (er.error) toast.error(`โหลดลายเซ็นจากฐานพนักงานไม่สำเร็จ — ช่องที่ไม่มีลายเซ็นโปรไฟล์จะเว้นว่าง (${er.error})`)
+      else if (er.sigColumnMissing) toast.info('ฐานพนักงานยังไม่เปิดช่องลายเซ็น — ผู้ที่ไม่มีลายเซ็นในโปรไฟล์จะเว้นช่องให้เซ็นมือ')
+      for (const e of er.rows) empSig[e.id] = e.signature_url || null
+    }
     const sigCache = {}
     const getSig = async (uid) => {
       if (!uid) return null
       if (sigCache[uid] !== undefined) return sigCache[uid]
-      const url = profMap[uid]?.signature_url
+      const p = profMap[uid]
+      const url = signatureOfPerson({ profileSig: p?.signature_url, employeeSig: p?.employee_id ? empSig[p.employee_id] : null })
       sigCache[uid] = url ? await resolveSignatureDataUrl(url) : null
       return sigCache[uid]
     }
