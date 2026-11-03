@@ -219,6 +219,22 @@ export function isApprovalBlocked(order = {}) {
   return mtnApprovalState(order).blocked;
 }
 
+/* ── ช่องกริด PR.No. / I/O. บนใบพิมพ์ FM-MTN-006 (03/11 · ประชุม 02/11 ข้อ A8 "IO ขึ้นขาด PR ขึ้นเกิน") ──
+   ฟอร์มกระดาษเดิมวาดทั้ง 2 ช่องเป็น 11 ช่องสี่เหลี่ยม แต่เลขจริง (วัดฐาน DR 03/11):
+     · I/O = **12 หลัก** ทุกตัว (`machines.io_no` 32 เครื่อง · `mtn_orders.io_no`) ⇒ 11 ช่อง = หลักสุดท้ายหาย ("IO ขาด")
+       (ช่องกรอก + ใบพิมพ์แก้เป็น 12 ไปแล้ว 30/10 — ย้ายค่ามาไว้ที่นี่ให้เป็นจุดเดียว)
+     · PR จาก SAP = **10 หลัก** (เช่น 1210104217) ⇒ 11 ช่อง = ช่องว่างเกินท้าย 1 ช่อง ("PR เกิน")
+   🔴 กริดต้อง **ไม่ตัดตัวอักษรทิ้ง** — เลขที่ยาวกว่าจำนวนช่อง (ใบเก่ากรอกมือ เช่น "PR2610-TEST")
+      ต้องงอกช่องเพิ่มให้ครบ ห้ามหายเงียบจากกระดาษ (ตัดทิ้ง = บั๊ก "IO ขาด" แบบเดิมกลับมา) */
+export const MO_IO_DIGITS = 12;
+export const MO_PR_DIGITS = 10;
+/** ตัวอักษรรายช่องของกริด — ยาว `max(n, ความยาวค่า)` · ช่องที่ไม่มีตัวอักษร = '' */
+export function moGridChars(value, n) {
+  const t = String(value ?? '').trim();
+  const len = Math.max(Number(n) || 0, t.length);
+  return Array.from({ length: len }, (_, i) => t[i] || '');
+}
+
 /** ช่องลายเซ็นที่ใบนี้ค้างอยู่ ('dept' | 'plant' | null) — ผู้จัดการต้นสังกัดมาก่อนเสมอ */
 export function approvalKindPending(order = {}) {
   if (!isApprovalBlocked(order)) return null;
