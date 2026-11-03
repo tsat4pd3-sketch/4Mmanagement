@@ -673,11 +673,14 @@ function HistoryModal({ inspection, checkpoints: cpsFromPage, jig, onClose, user
                     </div>
                     {c && <span style={{ fontSize: 11, fontWeight: 700, color: c.text }}>{c.label}</span>}
                   </div>
+                  {/* 📎 รูปหลักฐาน — แตะ = ซูมในแอป (A7 · 03/11) · เดิม <a target=_blank> เด้งออกจากใบที่เปิดอยู่
+                      และรูปกว้างเต็มแถว (maxWidth 100%) ⇒ ใช้กล่องรูปย่อของกลางแบบเดียวกับรูปจุดตรวจ */}
                   {r.evidence_path && (
-                    <a href={getPublicUrl(r.evidence_path)} target="_blank" rel="noreferrer" title="รูปหลักฐาน (สภาพจริงตอนพบผิดปกติ)" style={{ display: 'inline-block', marginTop: 6 }}>
-                      <img loading="lazy" src={getPublicUrl(r.evidence_path)} alt="" style={{ maxHeight: 120, maxWidth: '100%', borderRadius: 6, border: '1px solid rgba(224,92,74,0.4)', display: 'block' }} />
-                      <span style={{ fontSize: 11, color: '#e05c4a', fontWeight: 700 }}>📎 หลักฐานสภาพจริง</span>
-                    </a>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+                      <PointThumb url={getPublicUrl(r.evidence_path)} height={90} mobileMax={90} label={null} color="#e05c4a"
+                        name={`หลักฐานสภาพจริง · ${cp.name}`} />
+                      <span style={{ fontSize: 11, color: '#e05c4a', fontWeight: 700 }}>📎 หลักฐานสภาพจริง (แตะเพื่อซูม)</span>
+                    </div>
                   )}
                 </div>
                 {isNG && <NgRecheckPanel result={r} cp={cp} onSaved={fetchResults} canRecord={canRecord} deptWrite={deptWrite} />}

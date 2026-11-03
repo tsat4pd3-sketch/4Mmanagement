@@ -26,6 +26,7 @@ import SearchInput from '../components/SearchInput'
 import LineScopeSelect from '../components/LineScopeSelect'
 import { lineKnownSet, groupEquipRowsByLine } from '../utils/pmEquipList'
 import { filterPlanRows } from '../utils/pmPlanFilter'
+import AmMonthlyReport from '../components/AmMonthlyReport'
 
 /* ⏱️ กะ/เวลาเริ่มกะ + data-flow ทั้งชุด ย้ายไป `src/lib/dailyAmBoard.js` (2026-10-08) — ผังรวมโรงงานใช้ตัวเดียวกัน
    ห้ามเขียน getShiftInfo/คิวรี inspections ซ้ำในหน้า (สองจอจะตอบคนละสี) */
@@ -34,7 +35,8 @@ export default function DailyPM() {
   const canManage = can('pm', 'setup', role)
 
   // ⚠️ param `sub` ไม่ใช่ `tab` — หน้านี้ถูกฝังในแท็บ AM ของ /daily-checker ซึ่งจอง ?tab= ไปแล้ว
-  const [tab, setTab] = useTabParam(['status', 'registry'], 'status', 'sub')
+  // 📅 monthly = รายงานรายเดือนแบบตาราง LPA (ประชุม 02/11 ข้อ C2 · 03/11)
+  const [tab, setTab] = useTabParam(['status', 'monthly', 'registry'], 'status', 'sub')
   const [userId, setUserId] = useState(null)
   const [jigs, setJigs] = useState([])
   const [prodLines, setProdLines] = useState([]) // รายชื่อไลน์ผลิต — ใช้กำหนดไลน์ให้อุปกรณ์ที่ยังไม่ระบุ
@@ -228,7 +230,7 @@ export default function DailyPM() {
           พนักงานตรวจ/ดูแลเครื่องประจำวัน — ความพร้อมเครื่องจักร/อุปกรณ์/POKA-YOKE ต้นกะ · {shiftInfo.label} · {shiftInfo.workDateStr}
           {' · '}เตือนเมื่อเกิน {DAILY_PM_WINDOW_MIN} นาทีหลังเปิดใบผลิตใบแรก
         </>}
-        tabs={[{ key: 'status', label: '📊 สถานะวันนี้' }, { key: 'registry', label: '⚙️ ลงทะเบียนเครื่องตรวจ' }]}
+        tabs={[{ key: 'status', label: '📊 สถานะวันนี้' }, { key: 'monthly', label: '📅 รายงานรายเดือน' }, { key: 'registry', label: '⚙️ ลงทะเบียนเครื่องตรวจ' }]}
         tab={tab} onTab={setTab} />
 
       {tab === 'status' && (
@@ -325,6 +327,8 @@ export default function DailyPM() {
           </div>
         </>)
       )}
+
+      {tab === 'monthly' && <AmMonthlyReport lines={prodLines} scopedLines={scopedProdLines} />}
 
       {tab === 'registry' && (
         <div>

@@ -5254,6 +5254,21 @@ test('🛡️ bomDupAudit: qty ต้องอยู่ในกติกา + �
   }
 });
 
+/* ── 🖼️ ใบพิมพ์ FM-JIG-003 ห้ามยืดรูปเต็มกรอบ (A7 · ประชุมหน้างาน 02/11 · 2026-11-03) ──
+   เดิม PDF `addImage(img, x, y, กว้างกรอบ, สูงกรอบ)` + Excel `ext: 130×52` ตายตัว ⇒ รูปมือถือแนวตั้งถูกดึงแบน
+   และหมุดทุกจุดถูกวาดลงรูปหลักแม้วางไว้บนรูปมุมอื่น ⇒ "รูปขนาดผิด อยู่ผิดที่" · ของกลาง `utils/imageFit.js` */
+test('🛡️ pm-export-image-fit — ใบพิมพ์ PM ต้องวางรูปผ่าน fitContain + หมุดผ่าน pinsOnFrame', () => {
+  const pdf = stripComments(readFileSync(join(ROOT, 'src/lib/pmExportPDF.js'), 'utf8'));
+  const xls = stripComments(readFileSync(join(ROOT, 'src/lib/pmExportExcel.js'), 'utf8'));
+  const bad = [];
+  if (!/fitContain\(/.test(pdf)) bad.push('pmExportPDF.js ไม่ได้ใช้ fitContain');
+  if (!/pinsOnFrame\(/.test(pdf)) bad.push('pmExportPDF.js ไม่ได้กรองหมุดต่อเฟรมด้วย pinsOnFrame');
+  if (/addImage\([^)]*IMG_W\s*-\s*1\s*,\s*IMG_H\s*-\s*1\)/.test(pdf)) bad.push('pmExportPDF.js ยืดรูปเครื่องเต็มกรอบ (IMG_W-1, IMG_H-1)');
+  if (/ext:\s*\{\s*width:\s*130,\s*height:\s*52\s*\}/.test(xls)) bad.push('pmExportExcel.js ยืดรูปจุดเป็น 130×52 ตายตัว');
+  if (!/fitContain\(/.test(xls)) bad.push('pmExportExcel.js ไม่ได้ใช้ fitContain');
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n❌ ') + '\n   แก้: placeImage()/fitContain() คงสัดส่วน · หมุดเป็น % ของรูปจริง · กรองเฟรมด้วย pinsOnFrame() (📄 docs/modules/inspection-point-setup.md §A7)\n');
+});
+
 /* ── 🎯 ตั้งค่าจุดตรวจ PM + QA = ชิ้นส่วนกลางชุดเดียว (2026-10-15 · คำสั่ง user) ─────────
    *"ใช้หลักการเดียวกันในการสร้าง — ต่างแค่อุปกรณ์ vs ชิ้นงาน · user เรียนระบบเดียวแล้วทำเป็นทั้งคู่"*
    เดิม 2 จอใช้หมุดตัวเดียวกันแต่วิธีทำคนละแบบ (PM บันทึกครั้งเดียว / QA เขียนทุกคลิก · QA ไม่มีรูปจุด ·

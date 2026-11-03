@@ -17,6 +17,8 @@ import { SESSION_STATUSES_REAL } from '../utils/sessionStatus'
 import { loadLinesRes } from '../utils/useProductionLines'
 import { loadPmTeams, isAmTeam } from '../utils/pmTeams'
 import { amShiftInfo, isDailyAmEquipment, openFamilyLines } from './pmDailyStatus'
+import { loadRunDays } from '../utils/runDays'
+import { amMonthRange } from './amMonthly'
 
 // ส่วน pure (กะ · ขอบเขตอุปกรณ์ · สรุปต่อไลน์) อยู่ใน pmDailyStatus.js (ไม่แตะ supabase ⇒ เทสได้) — re-export ให้จอเรียกจากที่เดียว
 export { amShiftInfo, isDailyAmEquipment, dailyAmTargetsByLine, dailyAmLineStatus } from './pmDailyStatus'
@@ -118,5 +120,60 @@ export async function loadDailyAm({ now = new Date(), lines = null } = {}) {
   return {
     ok: true, shift: si, jigs, targets, lines: linesForFam, resultByJig, firstOrderByLine,
     openSessionLines: openFam,
+  }
+}
+
+/**
+ * 📅 วัตถุดิบของรายงาน AM รายเดือน (ประชุม 02/11 ข้อ C2 · 2026-11-03) — ประกอบตารางด้วย `buildAmMonthly()`
+ * (`lib/amMonthly.js` · pure) · ทะเบียน 3 ตัวใช้ **cache คีย์เดียวกับบอร์ดรายวัน** (ไม่ดึงซ้ำ)
+ *
+ * 🔴 ทะเบียน/ใบตรวจล้ม = `{ ok:false }` ทั้งก้อน (ตารางไม่มีความหมายถ้าไม่รู้ว่าใครตรวจแล้ว)
+ * 🔴 ตารางกะล้ม = `runsByKey: null` **ไม่ล้มทั้งก้อน** — จอวาด `?` (ไม่รู้ว่าผลิตไหม) แล้วเขียนจำนวนบนจอ
+ *    ห้ามบีบเป็น "ไม่ได้ผลิต" (กลบวันขาดตรวจทั้งเดือน · กฎ `utils/dailyCheckDay.js` ข้อ 1)
+ * · ใบตรวจ/ตารางกะแบ่งหน้าครบ (31 เครื่อง × 62 กะ เกิน 1000 แถวได้)
+ * @param {{ month:string, lines?:object[] }} p
+ */
+export async function loadMonthlyAm({ month, lines = null } = {}) {
+  const rg = amMonthRange(month)
+  if (!rg) return { ok: false, error: { message: `เดือนไม่ถูกต้อง: ${month}` } }
+  await loadPmTeams().catch(() => {})
+  const [jigRes, tgRes, clRes, lineRes] = await Promise.all([
+    cachedRows('jigs:am', () => supabaseDR.from('jigs').select('id, name, machine_no, line_name, jig_no, equipment_type, equipment_category').eq('module', 'mtn').order('line_name').order('name')),
+    cachedRows('pm_daily_line_targets:active', () => supabaseDR.from('pm_daily_line_targets').select('*').eq('is_active', true)),
+    cachedRows('checklists:mtn', () => supabaseDR.from('checklists').select('id, equipment_id, department').eq('module', 'mtn')),
+    lines ? Promise.resolve({ data: lines, error: null }) : loadLinesRes(),
+  ])
+  const err = jigRes.error || tgRes.error || clRes.error || lineRes.error
+  if (err) return { ok: false, error: err }
+
+  const amChecklists = (clRes.data ?? []).filter(c => isAmTeam(c.department))
+  const amEquipIds = new Set(amChecklists.map(c => c.equipment_id).filter(Boolean))
+  const amClIds = [...new Set(amChecklists.map(c => c.id))]
+  const linesAll = lineRes.data ?? []
+  const targets = tgRes.data ?? []
+
+  // ใบตรวจทีม AM ของเดือน (08:00 วันแรก → 08:00 วันแรกเดือนถัดไป · เวลาไทย) · pending ส่งไปด้วย ตัดสินที่ buildAmMonthly
+  let inspections = []
+  if (amClIds.length) {
+    const r = await fetchByIds(amClIds, c => supabaseDR.from('inspections')
+      .select('id, jig_id, status, inspected_at').in('checklist_id', c)
+      .gte('inspected_at', rg.from).lt('inspected_at', rg.to))
+    if (r.error) return { ok: false, error: { message: r.error } }
+    inspections = r.rows ?? []
+  }
+
+  // วันที่เปิดกะจริงของไลน์ที่มีทะเบียน + ครอบครัว (แม่/ลูก) — ไล่ครอบครัวต่อใน buildAmMonthly
+  const names = new Set()
+  for (const t of targets) {
+    if (!t.line_name) continue
+    names.add(t.line_name)
+    const l = linesAll.find(x => x.name === t.line_name)
+    if (l) for (const n of getLineFamilyNames(linesAll, l.id) || []) names.add(n)
+  }
+  const runs = await loadRunDays({ lineNames: [...names], from: rg.first, to: rg.last })
+
+  return {
+    ok: true, month, range: rg, jigs: jigRes.data ?? [], amEquipIds, targets, lines: linesAll, inspections,
+    runsByKey: runs.ok ? runs.byKey : null, runsError: runs.ok ? null : (runs.error?.message || String(runs.error)),
   }
 }
