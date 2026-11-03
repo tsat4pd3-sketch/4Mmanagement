@@ -909,6 +909,26 @@ export default function Operator() {
   const lineNameKeys = useMemo(
     () => new Set((lines || []).map(l => String(l?.name || '').trim().toLowerCase()).filter(Boolean)),
     [lines]);
+  /** แผนกนี้มี "กลุ่มที่ผูกไลน์ผลิต" ใต้มันไหม (ไล่ลูกหลานทุกชั้น) · หาแผนกในผังไม่เจอ = true (คงพฤติกรรมเดิม — ไม่รู้ ห้ามผ่อน) */
+  const deptHasLineGroups = useMemo(() => {
+    const kids = {};
+    orgLineNodes.concat(orgDeptNodes).forEach(n => { if (n.parent_id) (kids[n.parent_id] ||= []).push(n); });
+    const memo = {};
+    const hasLine = (id, seen = new Set()) => {
+      if (memo[id] != null) return memo[id];
+      if (seen.has(id)) return false;
+      seen.add(id);
+      const res = (kids[id] || []).some(k => (k.kind === 'line' && k.ref_line_id) || hasLine(k.id, seen));
+      memo[id] = res;
+      return res;
+    };
+    return (deptName) => {
+      const key = String(deptName || '').trim().toLowerCase();
+      if (!key) return true;
+      const d = orgDeptNodes.find(n => [n.name, n.code].filter(Boolean).some(v => String(v).trim().toLowerCase() === key));
+      return d ? hasLine(d.id) : true;
+    };
+  }, [orgDeptNodes, orgLineNodes]);
   // คืนเหตุผลที่ไม่ตรงผัง ([] = ตรงผัง) — ยังไม่โหลดผัง (ลิสต์ว่าง) ถือว่าตรงหมด กันเตือนผิดตอนเปิดหน้า
   const offOrgReasons = useMemo(() => (emp) => {
     if (!orgDeptNodes.length) return [];
@@ -932,14 +952,20 @@ export default function Operator() {
        เคสจริง 05/10 (หัวหน้า PD2 แจ้งทาง LINE "เช็คชื่อพนักงานผมหายหมดเลย"): ตั้งแผนก Assembly Line D
        ให้ครบทุกคนแล้ว แต่ทั้ง 35 คน `line_id` ยัง null ⇒ เช็คชื่อว่างเปล่า **โดยไม่มีอะไรบนจอบอกสักคำ**
        · สายสนับสนุน (staff_kind=support) ไม่เข้าเกณฑ์นี้ — ไม่ได้อยู่ไลน์อยู่แล้ว */
-    if (isShopfloorStaff(emp) && !emp.line_id) r.push('ยังไม่ผูกไลน์ — จะไม่ขึ้นในหน้าเช็คชื่อ');
+    /* 🔴 03/11 (QA แจ้ง "ข้อมูลไม่ถูกต้องตามผังองค์กร" · PQA-Incoming/Inspection/… ขึ้นเตือนทั้งแผนก):
+       แผนกที่ **ไม่มีกลุ่มที่ผูกไลน์ผลิตเลย** (QA ทั้งสาย) = ไม่มีไลน์ให้ผูก ⇒ เตือน "ยังไม่ผูกไลน์" = สั่งให้แก้สิ่งที่แก้ไม่ได้
+       คนกลุ่มนี้เช็คชื่อผ่านแกนส่วนงาน (Checkin `empScopeOrFilter`) ⇒ ตัดสินด้วยกฎเดียวกับสายสนับสนุนข้างล่าง */
+    const deptHasLines = deptHasLineGroups(dep);
+    if (isShopfloorStaff(emp) && !emp.line_id && deptHasLines) r.push('ยังไม่ผูกไลน์ — จะไม่ขึ้นในหน้าเช็คชื่อ');
+    if (isShopfloorStaff(emp) && !emp.line_id && !deptHasLines && !emp.section)
+      r.push('ยังไม่ผูกส่วนงาน — แผนกนี้ไม่มีไลน์ผลิต หัวหน้าที่ถูกจำกัดขอบเขตจะไม่เห็นในหน้าเช็คชื่อ');
     /* 🔧🗂️ ช่าง/สายสนับสนุน **เช็คชื่อได้แล้ว** (14/10) แต่คิวรีของคนที่ถูกจำกัดขอบเขต
        กรองด้วย `section` ⇒ ไม่มีทั้งไลน์และส่วนงาน = เห็นได้แค่บัญชีที่ไม่จำกัดขอบเขต
        (วัด 14/10: สายสนับสนุน 5 คน · 4 คนไม่มี section เลย) */
     if (!isShopfloorStaff(emp) && !emp.line_id && !emp.section)
       r.push('ยังไม่ผูกไลน์/ส่วนงาน — หัวหน้าที่ถูกจำกัดขอบเขตจะไม่เห็นในหน้าเช็คชื่อ');
     return r;
-  }, [orgDeptNodes, orgLineNodes, orgDeptKeys, allOrgLineKeys, lineNameKeys]);
+  }, [orgDeptNodes, orgLineNodes, orgDeptKeys, allOrgLineKeys, lineNameKeys, deptHasLineGroups]);
   // section ที่ผังยังไม่มีแผนกใต้มันเลย → พนักงาน section นั้น "แก้ผ่านฟอร์มไม่ได้" (ไม่มีตัวเลือกให้เลือก)
   // ต้องไปเพิ่มแผนก/กลุ่มที่ผังองค์กร (/org-setup) ก่อน — ต้องแยกให้เห็น ไม่งั้นสั่งให้ไปแก้แล้วแก้ไม่ได้
   const secWithoutDept = useMemo(() => {
