@@ -8131,6 +8131,28 @@ test('🛡️ am-approval-chain — ใบ AM อนุมัติต้อง�
   assert.match(src, /if \(amVerdict && !amVerdict\.ok\)/, '\n\n❌ handleApprove/handleReject ไม่เช็ค amVerdict ซ้ำก่อนเขียน\n');
 });
 
+/* ✍️ ลงนามทบทวน AM รายเดือน (ขั้น 3 · 2026-11-03) — ลงนาม = บันทึก ห้ามลบ · ด่านซ้ำตอนเขียน
+   📄 docs/modules/am-pm-linkage-audit.md §7 */
+test('🛡️ am-monthly-signoff-record — เขียน am_monthly_signoffs ผ่าน lib/amMonthlySignoff.js เท่านั้น · ห้าม delete · ต้องตรวจ verdict', () => {
+  const LIB = 'src/lib/amMonthlySignoff.js';
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const rel = relative(ROOT, file);
+    if (rel === LIB) continue;
+    const code = stripComments(readFileSync(file, 'utf8'));
+    if (/from\(\s*['"`]am_monthly_signoffs['"`]\s*\)|from\(\s*AM_SIGNOFF_TABLE\s*\)/.test(code)) bad.push(rel);
+  }
+  assert.deepEqual(bad, [], '\n\n❌ มีไฟล์คิวรี am_monthly_signoffs เอง — ต้องผ่าน src/lib/amMonthlySignoff.js (ด่าน verdict + นับแถว อยู่ที่นั่น)\n   ' + bad.join('\n   ') + '\n');
+  const lib = stripComments(readFileSync(join(ROOT, LIB), 'utf8'));
+  assert.ok(!/\.delete\s*\(/.test(lib), '\n\n❌ amMonthlySignoff.js เรียก .delete() — ลายเซ็นห้ามลบ ให้เพิกถอน (status=revoked + เหตุผล)\n');
+  assert.ok(!/\.upsert\s*\(/.test(lib), '\n\n❌ amMonthlySignoff.js ใช้ upsert — unique index เป็น partial/expression (42P10) และลายเซ็นห้ามเขียนทับ\n');
+  assert.equal((lib.match(/if \(!verdict\?\.ok\)/g) || []).length, 2,
+    '\n\n❌ signAmMonthly/revokeAmMonthly ต้องเช็ค verdict ก่อนเขียนทั้ง 2 ทาง (ด่านซ้ำตอนเขียน — ซ่อนปุ่มอย่างเดียวไม่พอ)\n');
+  const page = stripComments(readFileSync(join(ROOT, 'src/components/AmMonthlyReport.jsx'), 'utf8'));
+  assert.match(page, /const v = signVerdict\(signing\.line\)/, '\n\n❌ AmMonthlyReport ไม่ได้คิด verdict ใหม่ตอนกดลงนาม\n');
+  assert.match(page, /isStale\(sign\.key, curKey\)/, '\n\n❌ AmMonthlyReport ไม่มีด่าน stale (เดือน/กะ) ก่อนลงนาม\n');
+});
+
 test('🛡️ am-mo-label-single-source — ป้ายสถานะ MO บนจอ AM ต้องมาจาก moStatusLabel()', () => {
   for (const f of ['src/pages/DailyPM.jsx', 'src/pages/PMCheckData.jsx']) {
     const src = stripComments(readFileSync(join(ROOT, f), 'utf8'));

@@ -211,3 +211,116 @@ export function amMonthlyAoa(rep, metaOf) {
   }
   return out
 }
+
+/* ── ✍️ ลงนามทบทวนรายเดือน (ขั้น 3 ของสาย AM · 2026-11-03) — ส่วน pure ──────────────────────────
+   ลงนามแล้ว = **บันทึก** ไม่ใช่ตัวเลขที่คิดใหม่ทุกครั้ง (หลักเดียวกับใบรายงานปัญหา `prodProblemDoc.js`)
+   · ตอนลงนามเก็บ `snapshot` = สรุปของไลน์ ณ วินาทีนั้น (ยอดรวม + รายเครื่อง)
+   · ตัวเลขสดเปลี่ยนทีหลัง (มีคนบันทึกใบตรวจย้อนหลัง/แก้ทะเบียน) ⇒ `amSignoffDrift()` บอกว่าต่างตรงไหน
+     **จอต้องเขียนบอก** — ห้ามเอาตัวเลขสดไปแสดงเหมือนเป็นสิ่งที่ลงนามไว้ */
+
+/** วันแรกของเดือนถัดไป 'YYYY-MM' → 'YYYY-MM-01' · อ่านไม่ออก = null */
+export function amNextMonthFirst(month) {
+  const m = /^(\d{4})-(\d{2})$/.exec(String(month || ''))
+  if (!m) return null
+  const y = Number(m[1]), mo = Number(m[2])
+  if (mo < 1 || mo > 12) return null
+  return mo === 12 ? `${y + 1}-01-01` : `${y}-${pad2(mo + 1)}-01`
+}
+
+/**
+ * เดือนนี้ "จบแล้ว" ไหม (ลงนามได้) — จบ = กะดึกของวันสุดท้ายจบแล้ว (08:00 วันแรกของเดือนถัดไป · เวลาไทย)
+ * ใช้ `amSlotOf(now)` ตัวเดียวกับตารางเดือน ⇒ ช่องสุดท้ายถูกตัดสินแล้วจริงตอนปุ่มเปิด
+ * @returns {{ complete:boolean, opensOn:string|null }}
+ */
+export function amMonthComplete(month, now = new Date()) {
+  const days = amMonthDays(month)
+  const cur = amSlotOf(now)
+  if (!days.length || !cur) return { complete: false, opensOn: null }
+  const next = amNextMonthFirst(month)
+  return { complete: cur.workDate > days[days.length - 1], opensOn: next ? `${next} 08:00` : null }
+}
+
+const sumPick = (s) => ({ due: s?.due ?? 0, done: s?.done ?? 0, missed: s?.missed ?? 0,
+  no_run: s?.no_run ?? 0, unknown: s?.unknown ?? 0, pct: s?.pct ?? null })
+
+/** สรุปของไลน์ (แถวจาก `buildAmMonthly().rows`) → snapshot ที่เก็บลงทะเบียนลงนาม */
+export function amSignoffSnapshot(row, { month, shift } = {}) {
+  if (!row) return null
+  return {
+    v: 1, month, shift, line_name: row.line_name,
+    sum: sumPick(row.sum), ngN: row.ngN ?? 0,
+    machines: (row.machines || []).map(m => ({
+      jig_id: m.jig_id, name: m.name, machine_no: m.machine_no || null, ...sumPick(m.sum), ngN: m.ngN ?? 0,
+    })),
+  }
+}
+
+const SUM_FIELDS = [['done', 'ตรวจแล้ว'], ['missed', 'ขาด'], ['due', 'ต้องตรวจ'], ['no_run', 'ไม่ได้ผลิต'], ['unknown', 'ไม่รู้'], ['pct', '% ครบ']]
+
+/**
+ * เทียบ snapshot ที่ลงนามไว้กับตัวเลขสด — คืนรายการความต่าง (ว่าง = ตรงกัน)
+ * `row` = null (ไลน์หายจากรายงาน เช่น เอาทุกเครื่องออกจากทะเบียน) = ต่างทั้งก้อน
+ * snapshot อ่านไม่ออก = `[{ field:'snapshot' }]` (ห้ามถือว่าตรงกัน)
+ * @returns {{ field:string, label:string, was:any, now:any, machine?:string }[]}
+ */
+export function amSignoffDrift(snapshot, row) {
+  if (!snapshot || typeof snapshot !== 'object' || !snapshot.sum) return [{ field: 'snapshot', label: 'อ่านสรุปที่ลงนามไว้ไม่ได้', was: null, now: null }]
+  if (!row) return [{ field: 'line', label: 'ไลน์นี้ไม่อยู่ในรายงานแล้ว', was: snapshot.line_name ?? null, now: null }]
+  const out = []
+  const live = sumPick(row.sum)
+  for (const [f, label] of SUM_FIELDS) {
+    if ((snapshot.sum[f] ?? null) !== (live[f] ?? null)) out.push({ field: f, label, was: snapshot.sum[f] ?? null, now: live[f] ?? null })
+  }
+  if ((snapshot.ngN ?? 0) !== (row.ngN ?? 0)) out.push({ field: 'ngN', label: 'NG', was: snapshot.ngN ?? 0, now: row.ngN ?? 0 })
+  const was = new Map((snapshot.machines || []).map(m => [m.jig_id, m]))
+  const nowM = new Map((row.machines || []).map(m => [m.jig_id, m]))
+  for (const [id, m] of nowM) {
+    const p = was.get(id)
+    const name = m.machine_no || m.name
+    if (!p) { out.push({ field: 'machine_added', label: 'เครื่องที่เพิ่มหลังลงนาม', was: null, now: name, machine: name }); continue }
+    const s = sumPick(m.sum)
+    if (p.done !== s.done || p.missed !== s.missed || (p.ngN ?? 0) !== (m.ngN ?? 0)) {
+      out.push({ field: 'machine', label: 'ผลรายเครื่องเปลี่ยน', was: `${p.done}/${p.due} NG ${p.ngN ?? 0}`, now: `${s.done}/${s.due} NG ${m.ngN ?? 0}`, machine: name })
+    }
+  }
+  for (const [id, p] of was) {
+    if (!nowM.has(id)) out.push({ field: 'machine_removed', label: 'เครื่องที่หายไปหลังลงนาม', was: p.machine_no || p.name, now: null, machine: p.machine_no || p.name })
+  }
+  return out
+}
+
+/**
+ * ชีต "ลงนามทบทวน" ของไฟล์ Excel รายเดือน — 1 แถวต่อไลน์ที่อยู่ในไฟล์ (ยังไม่ลงนาม = เขียนว่ายังไม่ลงนาม ห้ามตัดทิ้ง)
+ * ลายเซ็นเป็นรูป ⇒ ในไฟล์เป็น URL (SheetJS ฝังรูปไม่ได้) · ตัวเลขในคอลัมน์ "ณ ตอนลงนาม" มาจาก snapshot ไม่ใช่ของสด
+ * @param {object[]} lineRows  แถวไลน์ของรายงาน (ชุดเดียวกับที่ลงชีตแรก)
+ * @param {Map<string,{active:object|null,revoked:object[]}>|null} byLine  ผลของ `signoffsByLine()` · `null` = อ่านทะเบียนไม่ได้
+ * @param {{ positionLabel?:(v:any)=>string, fmt?:(iso:string)=>string, unreadable?:string }} [o]
+ */
+export function amSignoffAoa(lineRows, byLine, { positionLabel = (v) => v || '', fmt = (s) => s || '', unreadable = 'อ่านทะเบียนลงนามไม่ได้' } = {}) {
+  const head = ['ไลน์', 'สถานะ', 'ผู้ลงนาม', 'ตำแหน่ง', 'วันที่ลงนาม', 'ลายเซ็น (URL)', 'หมายเหตุ',
+    'ณ ตอนลงนาม: ตรวจ/ต้อง', 'ขาด', '% ครบ', 'NG', 'ตัวเลขปัจจุบันต่างจากที่ลงนาม', 'เคยเพิกถอน']
+  const out = [head]
+  for (const r of lineRows || []) {
+    const name = r.line_name === '—' ? 'ยังไม่ระบุไลน์' : r.line_name
+    if (!byLine) { out.push([name, unreadable]); continue }
+    const e = byLine.get(r.line_name)
+    const a = e?.active
+    const revN = e?.revoked?.length || 0
+    if (!a) { out.push([name, 'ยังไม่ลงนาม', '', '', '', '', '', '', '', '', '', '', revN || '']); continue }
+    const s = a.snapshot?.sum || {}
+    const drift = amSignoffDrift(a.snapshot, r)
+    out.push([name, 'ลงนามแล้ว', a.signed_by_name || '', positionLabel(a.position) || '', fmt(a.signed_at), a.signature_url || '(ไม่มีลายเซ็นในโปรไฟล์)',
+      a.note || '', `${s.done ?? '–'}/${s.due ?? '–'}`, s.missed ?? '–', s.pct == null ? '–' : `${s.pct}%`, a.snapshot?.ngN ?? '–',
+      drift.length ? amSignoffDriftText(drift) : 'ตรงกัน', revN || ''])
+  }
+  return out
+}
+
+/** ข้อความสั้นของความต่าง (จอ + Excel) */
+export function amSignoffDriftText(drift) {
+  if (!drift?.length) return ''
+  return drift.slice(0, 4).map(d => (d.machine
+    ? `${d.label} ${d.machine}${d.was != null && d.now != null ? ` (${d.was} → ${d.now})` : ''}`
+    : `${d.label}${d.was != null || d.now != null ? ` ${d.was ?? '–'} → ${d.now ?? '–'}` : ''}`)).join(' · ')
+    + (drift.length > 4 ? ` · อีก ${drift.length - 4} รายการ` : '')
+}

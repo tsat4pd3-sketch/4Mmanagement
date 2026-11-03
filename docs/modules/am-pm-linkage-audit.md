@@ -188,4 +188,43 @@ NG นับระดับ "เครื่อง-วัน" ไม่ใช่
   · ไม่รู้ตำแหน่ง = ไม่บล็อก + เขียนบนจอ · ด่านซ้ำใน handleApprove/handleReject · ป้ายประวัติ "รอหัวหน้ากลุ่ม/…"
 - สิทธิ์ชั้น ② = `am:approve` (migration `20261102_am_approve_permission_main.sql` · Main · **ยังไม่ apply** = ถอยไป `pm:approve` เดิม) — seed = ผู้ถือ pm:approve + `leader`
 - ⚠️ ข้อยกเว้นที่ 2 ของกฎ "ตำแหน่งห้ามล็อกการกด" (positions.js) — คำสั่งจากประชุม 02/11 · ผลข้างเคียง: ไลน์ที่ไม่มีบัญชีหัวหน้ากลุ่ม ใบค้างรอ (ทางออก = ตั้งตำแหน่งที่ `/add-user`)
-- **ยังไม่ทำ:** ขั้น "หัวหน้าแผนก/ส่วนทบทวนรายเดือน" (ต้องมีตารางลายเซ็นรายเดือน · รอ user) · ใบ PM ของช่างยังเป็นอนุมัติขั้นเดียวเดิม
+- ✅ ขั้น "หัวหน้าแผนก/ส่วนทบทวนรายเดือน" ทำแล้ว 2026-11-03 → §7 · **ยังไม่ทำ:** ใบ PM ของช่างยังเป็นอนุมัติขั้นเดียวเดิม
+
+## 7. ✍️ ลงนามทบทวน AM รายเดือน — ขั้น 3 ของสาย AM (2026-11-03 · user ตัดสิน 03/11)
+
+สาย AM ครบ 3 ขั้น: **พนักงานตรวจทุกต้นกะ → หัวหน้ากลุ่มรับทราบรายวัน (§6 B2) → หัวหน้าแผนก/ส่วนทบทวนรายเดือน (ส่วนนี้)**
+ที่อยู่: แผง "✍️ ลงนามทบทวนรายเดือน" ใต้ตารางในแท็บ 📅 รายงานรายเดือน (`/daily-checker?tab=pm&sub=monthly`)
+
+| ชิ้น | ไฟล์ |
+|---|---|
+| ตาราง `am_monthly_signoffs` (**Main** · migration `20261103_am_monthly_signoffs_main.sql` · **ยังไม่ apply**) | — |
+| ตัวห่อ DB (โหลด/ลงนาม/เพิกถอน · `isMissingTableError`) | `src/lib/amMonthlySignoff.js` |
+| ด่านใครลงนาม/เพิกถอนได้ (pure · เทส) | `amMonthlySignoffVerdict()` · `amMonthlyRevokeVerdict()` ใน `src/utils/amApproval.js` |
+| เดือนจบไหม · snapshot · เทียบ snapshot กับของสด · ชีต Excel (pure · เทส `src/lib/__tests__/amMonthlySignoff.test.mjs`) | `amMonthComplete()` · `amSignoffSnapshot()` · `amSignoffDrift()` · `amSignoffAoa()` ใน `src/lib/amMonthly.js` |
+| จอ + Excel ชีต "ลงนามทบทวน" | `src/components/AmMonthlyReport.jsx` |
+
+**การตัดสินใจ (ออกแบบ):**
+- **ทำไมอยู่ Main ไม่ใช่ DR** — ลายเซ็นต้องผูกตัวคนที่ login (`signed_by = auth.uid()` + `has_perm`) · `supabaseDR` เป็น anon เสมอ = ตรวจตัวคนไม่ได้ ·
+  อ้างอิง `month`/`line_name`/`shift` เป็น text (ใบตรวจอยู่ DR ผูก FK ข้าม project ไม่ได้)
+- **หน่วยของลายเซ็น = เดือน × ไลน์ × กะ** (จอเลือกกะอยู่แล้ว · AM ตรวจต้นกะ) — unique partial index เฉพาะแถว `signed` (`coalesce(shift,'')`) · client **insert ล้วน ห้าม upsert**
+- **ใครลงนามได้** = คีย์ `am:monthly_signoff` (`canSeeded` — ยังไม่ seed = ปิด) + **ไม่ใช่บัญชีกลาง** + `canWriteLine()` ของไลน์ (`unknownTarget:'block'` — ไลน์ "—" ลงนามไม่ได้) +
+  ตำแหน่ง `positionRank ≥ 50` (หัวหน้าแผนก/ส่วน · **ผู้จัดการลงได้** เพราะเป็นขั้นสุดท้าย ไม่มีใครรออยู่ข้างบน = ไม่ใช่ "ข้ามขั้น") ·
+  🔴 ไม่รู้ตำแหน่ง = ไม่บล็อก + จอเขียนบอก (กติกาเดียวกับ `amApprovalVerdict`) — ชั้น role ยังกั้นอยู่
+- **เดือนปัจจุบัน = ลงนามไม่ได้จนกว่าเดือนจบ** (`amMonthComplete` = กะดึกของวันสุดท้ายจบ = 08:00 วันที่ 1 เดือนถัดไป เวลาไทย ·
+  ใช้ `amSlotOf` ตัวเดียวกับตาราง) — เลือก "บล็อก" ไม่ใช่ "เตือนแล้วให้ลง" เพราะ snapshot ของเดือนที่ยังเดิน = ตัวเลขที่ยังขยับ ลายเซ็นจะผิดเสมอ · จอเขียนวันที่เปิด
+- **seed** = `admin` · `manager` · `supervisor` เท่านั้น (ระดับหัวหน้าแผนก/ส่วนขึ้นไป) — **ไม่ seed `leader`** (ขั้น 2) · ไม่ seed qa/mtn/engineer (ไม่ใช่สายบังคับบัญชาของไลน์ผลิต) ·
+  ไม่คัดลอกจาก `am:approve` เพราะคีย์นั้นรวม leader · ปรับเพิ่มเองได้ที่ `/permissions`
+- **ลงนาม = บันทึก** (หลักเดียวกับ `prod_problem_reports`): เก็บ `snapshot` (สรุปไลน์ + รายเครื่อง ณ ตอนลงนาม) + สำเนาชื่อ/ตำแหน่ง/URL ลายเซ็นโปรไฟล์ ·
+  ตัวเลขสดต่างจาก snapshot (ลงใบตรวจย้อนหลัง/แก้ทะเบียน) = แถบเหลือง "ตัวเลขตอนนี้ต่างจากที่ลงนามไว้" + ตัวเลข ณ ตอนลงนาม (`amSignoffDrift`) ·
+  snapshot อ่านไม่ออก/ไลน์หายจากรายงาน = นับเป็น "ต่าง" ห้ามถือว่าตรง
+- **ห้ามลบ** — เพิกถอน = `status='revoked'` + เหตุผล ≥ 5 ตัวอักษร (CHECK) · ไม่มี policy/GRANT delete · trigger `fn_am_monthly_signoff_guard` ล็อกเนื้อแถว
+  (แก้ได้ทางเดียว signed→revoked · `revoked_by` = `auth.uid()` ฝั่ง server) · ผู้ลงนามถอนของตัวเองได้ · คนอื่นต้องตำแหน่ง ≥ ผู้ลงนาม
+- RLS: select = authenticated ทุกคน · insert = `has_perm('am:monthly_signoff') and signed_by = auth.uid()` · update = has_perm + แถวเดิม `signed` → ใหม่ `revoked` ·
+  **GRANT select/insert/update to authenticated** (ไม่มี delete · revoke anon) · `fn_audit` + `fn_set_updated_at` ผูกแบบมีเงื่อนไข
+- ด่านซ้ำตอนเขียน: `signAmMonthly`/`revokeAmMonthly` รับ verdict ที่คิด **ตอนกด** · ด่าน stale `viewKey(month, shift)` · นับแถวด้วย `checkWriteRows` · 23505 = มีคนลงนามตัดหน้า
+- **ก่อน apply** (42P01/PGRST205): แผงเขียน "ระบบลงนามรายเดือนยังไม่เปิดใช้ … จอนี้ยังบอกไม่ได้ว่าเคยมีใครลงนาม" · Excel ชีตลงนามเขียนเหตุผลเดียวกัน — ไม่เงียบ
+- Excel: ชีต 3 "ลงนามทบทวน" 1 แถวต่อไลน์ (ยังไม่ลงนาม = เขียนว่ายังไม่ลงนาม) · ลายเซ็นเป็น URL (SheetJS ฝังรูปไม่ได้) · ตัวเลข "ณ ตอนลงนาม" มาจาก snapshot · ชีตแรกไม่ถูกแทรกแถว
+- ด่าน `regressionGuards`: **`am-monthly-signoff-record`** — เขียนตารางนี้ผ่าน `lib/amMonthlySignoff.js` เท่านั้น · ห้าม `.delete()`/`.upsert()` · ต้องเช็ค verdict ทั้ง 2 ทาง · จอต้องคิด verdict ใหม่ตอนกด + มีด่าน stale
+
+**ข้อจำกัดที่รู้ตัว:** ตำแหน่ง ≥ 50 ตัดสินที่ client (ฐานคุม "ใคร" ด้วย has_perm + signed_by แต่ `position_rank` เป็นค่าที่ client ส่ง) — ถ้าต้องการให้ฐานตรวจตำแหน่งเอง
+ต้องย้ายตรรกะ `positionKeyOf` (รับทั้ง key และ label) ลง SQL · เพิกถอนจาก SQL Editor (ไม่มี `auth.uid()`) ติด CHECK `revoked_by` — ตั้งใจ (ทุกการเพิกถอนต้องมีตัวคน)
