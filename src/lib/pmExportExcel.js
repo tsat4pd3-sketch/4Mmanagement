@@ -1,4 +1,5 @@
 import { supabaseDR } from '../supabaseClient'
+import { fitContain, imageSizeFromBytes } from '../utils/imageFit.js'
 
 // ── Helpers ───────────────────────────────────────────────────
 
@@ -370,8 +371,12 @@ export async function exportInspectionExcel({
         setVal(ws, `H${row}`, '', { border: true })
         if (hasImg) {
           try {
-            const imgId = wb.addImage({ buffer: cpImgs[cp.id], extension: imgExt(cp.image_path) })
-            ws.addImage(imgId, { tl: { col: 7, row: row - 1 }, ext: { width: 130, height: 52 } })
+            /* คงสัดส่วนรูป (A7 · 03/11) — เดิม ext 130×52 ตายตัว ⇒ รูปมือถือแนวตั้งถูกยืดเป็นแถบแบน
+               ขนาดอ่านจากไบต์ไฟล์ (ไม่มี DOM) · ชนิดไฟล์ก็อ่านจากไบต์ก่อน ค่อยถอยไปเดาจากนามสกุล */
+            const dim = imageSizeFromBytes(cpImgs[cp.id])
+            const f = fitContain(dim?.width, dim?.height, 130, 52) || { w: 130, h: 52 }
+            const imgId = wb.addImage({ buffer: cpImgs[cp.id], extension: dim?.kind || imgExt(cp.image_path) })
+            ws.addImage(imgId, { tl: { col: 7, row: row - 1 }, ext: { width: Math.round(f.w), height: Math.round(f.h) } })
           } catch { /* รูปเสีย — ปล่อยช่องว่าง */ }
         }
 
