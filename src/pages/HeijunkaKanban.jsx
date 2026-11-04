@@ -20,6 +20,7 @@ import StoreTimeChart from '../components/StoreTimeChart';
 import StoreCallSiren from '../components/StoreCallSiren';
 import PurchaseBulkModal from '../components/PurchaseBulkModal';
 import OpenOrderDemandPanel from '../components/OpenOrderDemandPanel';
+import { storeOfMat, WIP_STORES } from '../utils/storeOps';   // 🗂️ ใบเบิก-ส่งเข้าไลน์ไปอยู่ตู้ตามเลขพาร์ท (04/11)
 import PlatingBoard from '../components/PlatingBoard';
 import DeliverScanModal from '../components/DeliverScanModal';
 import PickScanModal from '../components/PickScanModal';
@@ -145,7 +146,7 @@ function OnDemandStrip({ wipRequests = [], nowMs, onGo }) {
       {tile('🔧', 'กำลังเตรียม', n('preparing'), 'สแกนพาร์ทแล้ว · ตัดสต็อกแล้ว')}
       {tile('📍', 'ส่งแล้ว รอไลน์รับ', n('delivered'), 'ไลน์กดรับใน Daily Report → ใบจบ')}
       <button onClick={onGo} style={{ alignSelf: 'center', padding: '9px 14px', borderRadius: 8, border: '1px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', fontSize: 12.5, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
-        🔄 เปิดคิวเติม WIP
+        🔄 เปิดตู้งานสโตร์
       </button>
     </div>
   );
@@ -173,7 +174,7 @@ function OnDemandLineBlock({ lineName, lineMap, wipRequests = [], onGoChart, onG
         : <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>📋 ยังไม่มีใบส่งค้าง</span>}
       <span style={{ flex: 1 }} />
       {onGoChart && linkBtn('☑ เลือกพาร์ทไปส่ง → Store Time Chart', onGoChart)}
-      {onGoQueue && linkBtn('🔄 คิวเติม WIP', onGoQueue)}
+      {onGoQueue && linkBtn('🔄 ใบเบิก-ส่งเข้าไลน์', onGoQueue)}
     </div>
   );
 }
@@ -1124,18 +1125,21 @@ function PullBoard({ lotRequests, rawRequests, accumulator, lotSizeMap, releaseD
    🛒 จัดซื้อ (300/500 ซื้อ supplier) → รับเข้าสโตร์ · 📦 Rack Center (ภาชนะ+packaging) → ทุกไลน์
    ทุกสโตร์ใช้การ์ดหน้าตาเดียวกัน: สถานะ → ปลายทาง → ปุ่มขยับสถานะ ────────────── */
 const STORE_TABS = [
-  { key: 'fg',       icon: '🏭', label: 'Store FG',      desc: 'พาร์ทแม่ (100) → ไลน์ประกอบ' },
+  { key: 'fg',       icon: '🏭', label: 'Store FG',      desc: 'งาน FG 1xx → ไลน์ประกอบ · รอบส่งคัมบัง' },
   // คำอธิบายต้องบอกว่า "สโตร์ทำอะไร" ไม่ใช่ "ไลน์ทำอะไร" — คนอ่านคือสโตร์
-  { key: 'child',    icon: '🔧', label: 'Store Child',   desc: 'พาร์ทย่อยที่เราผลิตเอง (200) → ปล่อยให้ไลน์ผลิต แล้วรับของกลับเข้าสโตร์' },
+  /* 🗂️ 04/11 (คำสั่ง user) — เลิกแท็บ "คิวเติม WIP" · ใบเบิก-ส่งเข้าไลน์ไปอยู่ตู้ตามเลขพาร์ท (`storeOfMat`)
+     1xx → Store FG · 2xx → Store Semi Part (เดิม Store Child) · 3xx → สโตร์ภายนอก (ใหม่) · 5xx → Raw Mat · อื่นๆ → ไม่เข้ากลุ่ม */
+  { key: 'child',    icon: '🔧', label: 'Store Semi Part', desc: 'ชิ้นส่วน 2xx — ส่งเข้าไลน์ · ปล่อยใบล็อตให้ไลน์ผลิต แล้วรับของกลับเข้าสโตร์' },
+  { key: 'ext',      icon: '🏪', label: 'Store Purchase Part / สโตร์ภายนอก', desc: 'ชิ้นส่วนซื้อ 3xx → ส่งเข้าไลน์' },
   // 📋 04/11 (คำสั่ง user) — แจ้งล่วงหน้าตั้งแต่ไลน์เปิดใบ (เดิมรู้ตอนปิดใบ = ผลิตจบแล้ว) · อ่านอย่างเดียว
   { key: 'open',     icon: '📋', label: 'งานที่ไลน์เปิดอยู่', desc: 'ไลน์เปิดใบผลิตแล้ว → ชิ้นส่วนที่ต้องเตรียมส่ง (แจ้งล่วงหน้า)' },
   { key: 'purchase', icon: '🛒', label: 'จัดซื้อ',       desc: 'ของซื้อ (300/500) → รับเข้าสโตร์' },
-  { key: 'raw',      icon: '🧱', label: 'Store Raw Mat', desc: 'เบิกวัตถุดิบเข้าการผลิต child' },
+  { key: 'raw',      icon: '🧱', label: 'Store Raw Mat', desc: 'วัตถุดิบ 5xx → ส่งเข้าไลน์ · จ่ายตามใบเบิกของใบล็อต' },
   // ⚠️ แท็บนี้เป็นกระจกอ่านอย่างเดียวของหน้า /rack-center — ป้ายต้องบอกตั้งแต่บนแท็บ
   //    (เดิมชื่อ 'Rack Center' ซ้ำกับเมนูเป๊ะ คนกดเข้ามาแล้วทำงานต่อไม่ได้โดยไม่รู้ล่วงหน้า)
   { key: 'rack',     icon: '📦', label: 'ภาชนะ (ดูอย่างเดียว)', desc: 'ภาชนะ + Packaging → ทุกไลน์ · จัดการที่ ภาชนะ & Packaging' },
-  // ชื่อต้องต่างจากแท็บ 'WIP ค้างระหว่างขั้น' ใน สต๊อกในไลน์ — คนละเรื่องกัน (คิวเติม vs ยอดค้าง)
-  { key: 'wip',      icon: '🔄', label: 'คิวเติม WIP',   desc: 'ใบเบิกจากไลน์ · ใบส่งตามแผน · จุด WIP → ส่งเข้าไลน์' },
+  // ตะกร้ารับท้าย — ใบเบิกที่เลขพาร์ทไม่เข้ากลุ่ม 1/2/3/5 (ห้ามหายจากจอ · โผล่เฉพาะตอนมีใบ)
+  { key: 'other',    icon: '❔', label: 'ไม่เข้ากลุ่ม',  desc: 'ใบเบิกที่เลขพาร์ทไม่ใช่ 1xx/2xx/3xx/5xx — ตรวจเลขพาร์ท' },
   // 🧪 งานชุบภายนอก (13/10) — ร้านชุบทำหน้าที่เหมือนไลน์ผลิต (2xx ก่อนชุบ → 2xx หลังชุบ) แต่ไม่ยืนยันยอดเอง
   //    สโตร์ส่งออก แล้วนับรับคืนต่อใบ · จอ/กฎ = components/PlatingBoard.jsx + utils/plating.js
   { key: 'plating',  icon: '🧪', label: 'งานชุบ',        desc: 'ส่งงานก่อนชุบไปร้าน → รอรับงานหลังชุบกลับเข้าสโตร์' },
@@ -1257,12 +1261,13 @@ function UnifiedStoreBoard({ store, setStore, opsStores = null, readOnly = false
     purchase: openPurchases.length,
     raw: rawRequests.filter(r => r.status === 'pending').length,
     rack: rackRequests.filter(r => r.status !== 'received').length + pkgRequests.filter(p => p.status !== 'issued').length,
-    wip: wipRequests.filter(w => w.status !== 'delivered').length,
   };
+  // ใบเบิก-ส่งเข้าไลน์ที่ยังไม่ส่ง นับเข้าตู้ตามเลขพาร์ท
+  wipRequests.filter(w => w.status !== 'delivered').forEach(w => { const k = storeOfMat(w.mat_no); counts[k] = (counts[k] || 0) + 1; });
 
   /* ตัวกรองกลาง — ใช้ทุกแท็บให้เหมือนกัน แล้วรายงานว่าซ่อนอะไรไปบ้าง (ห้ามหายเงียบ)
      ⚠️ ตัวนับต้องแยกต่อแท็บ — นับรวมทุกแท็บแล้วแถบ "ซ่อนอยู่" จะบอกเลขของแท็บอื่นปนมา */
-  const tally = { fg: { done: 0, search: 0 }, child: { done: 0, search: 0 }, raw: { done: 0, search: 0 }, rack: { done: 0, search: 0 }, wip: { done: 0, search: 0 } };
+  const tally = { fg: { done: 0, search: 0 }, child: { done: 0, search: 0 }, raw: { done: 0, search: 0 }, rack: { done: 0, search: 0 }, ext: { done: 0, search: 0 }, other: { done: 0, search: 0 } };
   const sift = (rows, kind, tab, ...fieldsOf) => rows.filter(r => {
     if (!showDone && isDoneRow[kind]?.(r)) { tally[tab].done++; return false; }
     if (!matchQ(q, ...fieldsOf.map(f => f(r)))) { tally[tab].search++; return false; }
@@ -1273,7 +1278,17 @@ function UnifiedStoreBoard({ store, setStore, opsStores = null, readOnly = false
   const vRaws  = sift(rawRequests, 'raw',   'raw',   r => r.raw_mat_no,   r => r.part_name);
   const vRacks = sift(rackRequests, 'rack', 'rack',  r => r.container_name, r => r.line_name);
   const vPkgs  = sift(pkgRequests, 'pkg',   'rack',  r => r.packaging_code, r => r.packaging_name, r => r.source_line);
-  const vWips  = sift(wipRequests, 'wip',   'wip',   r => r.mat_no, r => r.point_name, r => r.line_name);
+  // ใบเบิก-ส่งเข้าไลน์ — กรองแล้วแยกตู้ตามเลขพาร์ท (ตัวนับ "ซ่อนอยู่" ลงตู้ของมันเอง)
+  const vWipsBy = {};
+  WIP_STORES.forEach(k => { vWipsBy[k] = []; });
+  wipRequests.forEach(r => {
+    const k = storeOfMat(r.mat_no);
+    if (!showDone && isDoneRow.wip?.(r)) { tally[k].done++; return; }
+    if (!matchQ(q, r.mat_no, r.point_name, r.line_name, r.part_name)) { tally[k].search++; return; }
+    vWipsBy[k].push(r);
+  });
+  const wipAllBy = {};
+  WIP_STORES.forEach(k => { wipAllBy[k] = wipRequests.filter(r => storeOfMat(r.mat_no) === k).length; });
   const vRounds = rounds.filter(r => {
     if (!matchQ(q, r.line_name, `รอบ ${r.round_no}`)) { tally.fg.search++; return false; }
     return true;
@@ -1299,11 +1314,68 @@ function UnifiedStoreBoard({ store, setStore, opsStores = null, readOnly = false
     </div>
   ) : null;
 
+  /* 🔄 ใบเบิก-ส่งเข้าไลน์ (เดิมแท็บ "คิวเติม WIP") — วาดในทุกตู้ตามเลขพาร์ท (04/11) */
+  const wipSection = (k) => {
+    const rows = vWipsBy[k] || [];
+    if (!wipAllBy[k]) return null;
+    return (
+      <div style={{ marginBottom: 18 }}>
+        <div style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--text)', margin: '0 0 8px' }}>🔄 ใบเบิก-ส่งเข้าไลน์ <span style={{ fontWeight: 500, color: 'var(--muted)', fontSize: 12 }}>· ไลน์เรียก/เปิดใบผลิต → สโตร์หยิบ → ส่งถึงไลน์</span></div>
+        {rows.length === 0 ? <div style={{ padding: 18, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ไม่มีใบเบิกที่ค้างอยู่{q ? ` และตรงกับคำค้น "${q}"` : ''}</div> : (
+        <StatusZones rows={rows} zones={WIP_ZONES(showDone)} renderCard={w => {
+            const st = WIP_STATUS[w.status] || WIP_STATUS.pending;
+            /* 🔴 2026-10-01 — ใบขอเติมมีรูปแบบเดียว: "ส่งพาร์ทเข้าไลน์" (ชั้น พื้นที่→ไลน์→พาร์ท)
+               เลิกใบแบบ "เติมจุด WIP จุดใดจุดหนึ่ง" แล้ว (ไม่เคยถูกใช้จริงสักใบ — ทุกใบในฐานเป็นใบระดับไลน์)
+               คอลัมน์ `point_name`/`point_type`/`wip_point_id` ยังอยู่ในตารางเพื่ออ่านประวัติ ห้ามเขียนใหม่ */
+            const code = w.mat_no || w.point_name;
+            const at = w.requested_at ? new Date(w.requested_at) : null;
+            /* 🏷️ ป้าย "ที่มาของใบ" มาจาก `reqSourceMeta()` ที่เดียว (utils/replenishGate.js) —
+               ใบ `line_adhoc` = ไลน์ขอเบิกเอง (ไม่ได้มาจากจุดเรียกเติม · 21/10) ห้ามเทียบ source เองในหน้า */
+            const src = reqSourceMeta(w.source);
+            /* ใบจากไลน์: ขั้น "ถึงไลน์" ต้องผ่านสแกนจุดส่งก่อน (เฟส 4 — DeliverScanModal) ปุ่มจึงต้องบอกล่วงหน้า
+               · ใบที่ส่งแล้วโชว์ว่าผ่านด่านทางไหน (สแกน / ไลน์ยังไม่ตั้งจุด / ปลดบล็อก) ห้ามซ่อน override */
+            const gate = w.status === 'delivered' && w.delivered_gate ? DELIVER_GATES[w.delivered_gate] : null;
+            const gateMeta = gate ? `${gate.icon} ${w.delivered_gate === 'scanned' ? (w.delivered_point_name || gate.label) : gate.label}${w.delivered_gate === 'override' && w.delivered_override_reason ? ` — ${w.delivered_override_reason}` : ''}` : '';
+            const nextLabel = w.status === 'preparing' ? '📍 ถึงไลน์แล้ว · สแกนจุดส่ง' : w.status === 'pending' ? '🔍 เริ่มเตรียม · สแกนพาร์ท' : st.next;
+            const pickMeta = w.picked_qty != null && w.status !== 'pending'
+              ? `${PICK_GATES[w.picked_gate]?.icon || '🔧'} หยิบ ${fmt(w.picked_qty)}${Number(w.picked_qty) < Number(w.request_qty) ? ` / ${fmt(w.request_qty)} (ไม่ครบ)` : ''}${w.stock_txn_ids?.length ? ' · ตัดสต็อกแล้ว' : (w.stock_txn_note ? ` · ⚠ ${w.stock_txn_note}` : '')}` : '';
+            return (
+              <QueueCard key={w.id} code={code} showImg img={imgOf(w.mat_no)}
+                name={w.part_name || w.point_name || 'ไลน์ขอเบิกเข้าไลน์'}
+                qty={fmt(w.request_qty)} unit="" qtyLabel="จำนวนที่ต้องส่ง" destination={w.line_name}
+                statusLabel={st.label} statusColor={st.color} statusBg={st.bg} statusBorder={st.border}
+                actionLabel={canOperate ? nextLabel : null} busy={busy === w.id} onAction={() => onAdvanceWip(w)}
+                rows={[{ k: 'ที่มา', v: src.label },
+                     { k: w.source === 'store_forecast' ? 'เปิดใบ' : 'ไลน์แจ้ง',
+                       v: at ? `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')} น.` : null },
+                     /* 👤 20/10 — สโตร์ต้องรู้ว่า "ใครเรียก" ไว้โทรกลับถามเวลาของไม่ตรง/ไลน์เปลี่ยนรุ่น
+                        ใบเก่าของไลน์ไม่มีชื่อ (เพิ่ง stamp 20/10 ที่ LinePartCallPanel) ⇒ ไม่มีชื่อ = ไม่โชว์แถว ห้ามเดา */
+                     { k: src.who, v: w.requested_by || null },
+                     { k: 'หยิบแล้ว', v: pickMeta || null },
+                     { k: 'ถึงไลน์', v: gateMeta || null },
+                     /* 🔴 คิวนี้ = "ของที่สโตร์ตัดจ่ายเข้าไลน์" ⇒ ต้องเป็น 2xxx/3xxx/5xxx
+                        เลข 1xxx คือ FG ที่ไลน์ "ผลิตออกมา" — สโตร์ไม่มีเลขนี้ให้จ่าย หาในคลังก็ไม่เจอ
+                        (user แจ้ง 02/10: "สโตร์จะไม่รู้เลขนี้ จะมองหาเลขที่ต้องตัดจ่ายคือพวก 5xxx 3xxx 2xxx")
+                        ต้นเหตุแก้ที่ monitoringSheet.js แล้ว + ปิดทะเบียนที่ผิด 28 แถว — แถวนี้กันใบเก่า/ใบที่
+                        คนสร้างเองหลุดมา **เตือนอย่างเดียว ไม่บล็อก** (ดัดค่าที่คนกรอก = เดาแทนคน) */
+                     { k: '⚠️ เลข MAT',
+                       v: String(w.mat_no || '').trim().charAt(0) === '1'
+                         ? 'เป็น FG (ของที่ไลน์ผลิตออก) — สโตร์ตัดจ่ายไม่ได้ ให้ถามไลน์ว่าต้องการเลข 2xxx/3xxx/5xxx ตัวไหน'
+                         : null }]} />
+            );
+          }} />
+        )}
+      </div>
+    );
+  };
+
   return (
     <div style={{ padding: 16 }}>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
         {/* แท็บ Store FG = รอบส่ง — ไม่มีรอบ active = ไม่มีอะไรให้ทำ ซ่อนไปเลย (โผล่เองเมื่อไลน์ตั้งรอบ) · audit 2026-09-07 */}
-        {STORE_TABS.filter(t => (!opsStores || opsStores.includes(t.key)) && (t.key !== 'fg' || rounds.length > 0)).map(t => (
+        {STORE_TABS.filter(t => (!opsStores || opsStores.includes(t.key))
+          && (t.key !== 'fg' || rounds.length > 0 || wipAllBy.fg > 0)
+          && (t.key !== 'other' || wipAllBy.other > 0)).map(t => (
           <button key={t.key} onClick={() => setStore(t.key)} title={t.desc}
             style={{ padding: '10px 16px', borderRadius: 10, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)',
               background: store === t.key ? 'var(--accent)' : 'var(--bg2)', color: store === t.key ? 'var(--accent-ink)' : 'var(--text2)',
@@ -1326,8 +1398,9 @@ function UnifiedStoreBoard({ store, setStore, opsStores = null, readOnly = false
 
       {store === 'fg' && (<>
         {hiddenNote}
-        {rounds.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
-          🚚 ทุกไลน์ใช้โหมด "ส่งตามคำขอ" (เบิกตอนไหนส่งตอนนั้น) — ไม่มีรอบให้ยืนยัน · ใบที่ต้องไปส่งอยู่ที่แท็บ 🔄 คิวเติม WIP · เลือกพาร์ทจาก forecast ได้ที่ 🕐 Store Time Chart
+        {wipSection('fg')}
+        {rounds.length === 0 && wipAllBy.fg > 0 ? null : rounds.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
+          🚚 ทุกไลน์ใช้โหมด "ส่งตามคำขอ" (เบิกตอนไหนส่งตอนนั้น) — ไม่มีรอบให้ยืนยัน · ใบเบิก-ส่งงาน FG (1xx) อยู่ด้านบนของตู้นี้ · ชิ้นส่วนอื่นอยู่ตู้ตามเลขพาร์ท
         </div> :
         vRounds.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ไม่มีรอบที่ตรงกับคำค้น "{q}"</div> :
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(330px, 100%), 1fr))', gap: 12 }}>
@@ -1357,6 +1430,8 @@ function UnifiedStoreBoard({ store, setStore, opsStores = null, readOnly = false
 
       {store === 'child' && (<>
         {hiddenNote}
+        {wipSection('child')}
+        {wipAllBy.child > 0 && <div style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--text)', margin: '6px 0 8px' }}>🔧 ใบล็อตผลิต Semi Part</div>}
         {lotRequests.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีใบสั่งผลิตพาร์ทย่อย</div> :
         vLots.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ไม่มีใบสั่งผลิตที่ค้างอยู่{q ? ` และตรงกับคำค้น "${q}"` : ''}</div> :
         <StatusZones rows={vLots} zones={LOT_ZONES(showDone)} renderCard={lot => {
@@ -1446,6 +1521,8 @@ function UnifiedStoreBoard({ store, setStore, opsStores = null, readOnly = false
 
       {store === 'raw' && (<>
         {hiddenNote}
+        {wipSection('raw')}
+        {wipAllBy.raw > 0 && <div style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--text)', margin: '6px 0 8px' }}>🧱 ใบเบิกวัตถุดิบของใบล็อต</div>}
         {rawRequests.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีใบเบิกวัตถุดิบ</div> :
         vRaws.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ไม่มีใบเบิกที่ค้างอยู่{q ? ` และตรงกับคำค้น "${q}"` : ''}</div> :
         <StatusZones rows={vRaws} zones={RAW_ZONES(showDone)} statusOf={r => (r.status === 'issued' ? 'issued' : 'pending')} renderCard={r => {
@@ -1513,55 +1590,13 @@ function UnifiedStoreBoard({ store, setStore, opsStores = null, readOnly = false
 
       {store === 'open' && <OpenOrderDemandPanel q={q} />}
 
-      {store === 'wip' && (<>
+      {(store === 'ext' || store === 'other') && (<>
         {hiddenNote}
-        {wipRequests.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
-          ยังไม่มีคำขอ — มาจาก 2 ทาง: ไลน์กด "📦 เบิก" ใน Daily Report · สโตร์เลือกพาร์ทจาก forecast ที่ 🕐 Store Time Chart → 🚚 สร้างใบส่ง
-        </div> :
-        vWips.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ไม่มีคำขอเติมที่ค้างอยู่{q ? ` และตรงกับคำค้น "${q}"` : ''}</div> :
-        <StatusZones rows={vWips} zones={WIP_ZONES(showDone)} renderCard={w => {
-            const st = WIP_STATUS[w.status] || WIP_STATUS.pending;
-            /* 🔴 2026-10-01 — ใบขอเติมมีรูปแบบเดียว: "ส่งพาร์ทเข้าไลน์" (ชั้น พื้นที่→ไลน์→พาร์ท)
-               เลิกใบแบบ "เติมจุด WIP จุดใดจุดหนึ่ง" แล้ว (ไม่เคยถูกใช้จริงสักใบ — ทุกใบในฐานเป็นใบระดับไลน์)
-               คอลัมน์ `point_name`/`point_type`/`wip_point_id` ยังอยู่ในตารางเพื่ออ่านประวัติ ห้ามเขียนใหม่ */
-            const code = w.mat_no || w.point_name;
-            const at = w.requested_at ? new Date(w.requested_at) : null;
-            /* 🏷️ ป้าย "ที่มาของใบ" มาจาก `reqSourceMeta()` ที่เดียว (utils/replenishGate.js) —
-               ใบ `line_adhoc` = ไลน์ขอเบิกเอง (ไม่ได้มาจากจุดเรียกเติม · 21/10) ห้ามเทียบ source เองในหน้า */
-            const src = reqSourceMeta(w.source);
-            /* ใบจากไลน์: ขั้น "ถึงไลน์" ต้องผ่านสแกนจุดส่งก่อน (เฟส 4 — DeliverScanModal) ปุ่มจึงต้องบอกล่วงหน้า
-               · ใบที่ส่งแล้วโชว์ว่าผ่านด่านทางไหน (สแกน / ไลน์ยังไม่ตั้งจุด / ปลดบล็อก) ห้ามซ่อน override */
-            const gate = w.status === 'delivered' && w.delivered_gate ? DELIVER_GATES[w.delivered_gate] : null;
-            const gateMeta = gate ? `${gate.icon} ${w.delivered_gate === 'scanned' ? (w.delivered_point_name || gate.label) : gate.label}${w.delivered_gate === 'override' && w.delivered_override_reason ? ` — ${w.delivered_override_reason}` : ''}` : '';
-            const nextLabel = w.status === 'preparing' ? '📍 ถึงไลน์แล้ว · สแกนจุดส่ง' : w.status === 'pending' ? '🔍 เริ่มเตรียม · สแกนพาร์ท' : st.next;
-            const pickMeta = w.picked_qty != null && w.status !== 'pending'
-              ? `${PICK_GATES[w.picked_gate]?.icon || '🔧'} หยิบ ${fmt(w.picked_qty)}${Number(w.picked_qty) < Number(w.request_qty) ? ` / ${fmt(w.request_qty)} (ไม่ครบ)` : ''}${w.stock_txn_ids?.length ? ' · ตัดสต็อกแล้ว' : (w.stock_txn_note ? ` · ⚠ ${w.stock_txn_note}` : '')}` : '';
-            return (
-              <QueueCard key={w.id} code={code} showImg img={imgOf(w.mat_no)}
-                name={w.part_name || w.point_name || 'ไลน์ขอเบิกเข้าไลน์'}
-                qty={fmt(w.request_qty)} unit="" qtyLabel="จำนวนที่ต้องส่ง" destination={w.line_name}
-                statusLabel={st.label} statusColor={st.color} statusBg={st.bg} statusBorder={st.border}
-                actionLabel={canOperate ? nextLabel : null} busy={busy === w.id} onAction={() => onAdvanceWip(w)}
-                rows={[{ k: 'ที่มา', v: src.label },
-                     { k: w.source === 'store_forecast' ? 'เปิดใบ' : 'ไลน์แจ้ง',
-                       v: at ? `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')} น.` : null },
-                     /* 👤 20/10 — สโตร์ต้องรู้ว่า "ใครเรียก" ไว้โทรกลับถามเวลาของไม่ตรง/ไลน์เปลี่ยนรุ่น
-                        ใบเก่าของไลน์ไม่มีชื่อ (เพิ่ง stamp 20/10 ที่ LinePartCallPanel) ⇒ ไม่มีชื่อ = ไม่โชว์แถว ห้ามเดา */
-                     { k: src.who, v: w.requested_by || null },
-                     { k: 'หยิบแล้ว', v: pickMeta || null },
-                     { k: 'ถึงไลน์', v: gateMeta || null },
-                     /* 🔴 คิวนี้ = "ของที่สโตร์ตัดจ่ายเข้าไลน์" ⇒ ต้องเป็น 2xxx/3xxx/5xxx
-                        เลข 1xxx คือ FG ที่ไลน์ "ผลิตออกมา" — สโตร์ไม่มีเลขนี้ให้จ่าย หาในคลังก็ไม่เจอ
-                        (user แจ้ง 02/10: "สโตร์จะไม่รู้เลขนี้ จะมองหาเลขที่ต้องตัดจ่ายคือพวก 5xxx 3xxx 2xxx")
-                        ต้นเหตุแก้ที่ monitoringSheet.js แล้ว + ปิดทะเบียนที่ผิด 28 แถว — แถวนี้กันใบเก่า/ใบที่
-                        คนสร้างเองหลุดมา **เตือนอย่างเดียว ไม่บล็อก** (ดัดค่าที่คนกรอก = เดาแทนคน) */
-                     { k: '⚠️ เลข MAT',
-                       v: String(w.mat_no || '').trim().charAt(0) === '1'
-                         ? 'เป็น FG (ของที่ไลน์ผลิตออก) — สโตร์ตัดจ่ายไม่ได้ ให้ถามไลน์ว่าต้องการเลข 2xxx/3xxx/5xxx ตัวไหน'
-                         : null }]} />
-            );
-          }} />}
+        {wipSection(store) || <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
+          ยังไม่มีใบเบิก{store === 'ext' ? 'ชิ้นส่วนซื้อ (3xx)' : 'ที่เลขพาร์ทไม่เข้ากลุ่ม'} — ใบเกิดจากไลน์กด "📦 เบิก" ใน Daily Report
+        </div>}
       </>)}
+
     </div>
   );
 }
@@ -1668,7 +1703,8 @@ export default function HeijunkaKanban({ mode = 'monitor', opsStores = null }) {
   const [purchaseErr, setPurchaseErr]           = useState('');
   const [bulkBuy, setBulkBuy]                   = useState(null);   // {g, next, label} — เลื่อนสถานะรวมทั้งพาร์ท
   // default = คิวเติม WIP (งานจริงของสโตร์) — เดิม 'fg' คือแท็บรอบส่งซึ่งว่างเปล่าตลอดเมื่อไม่มีรอบ (audit 2026-09-07)
-  const [unifiedStore, setUnifiedStore] = useState(() => urlPick('store', opsStores || ['fg', 'child', 'open', 'purchase', 'raw', 'rack', 'wip', 'plating'], (opsStores || ['wip'])[0])); // 'fg' | 'child' | 'purchase' | 'raw' | 'rack' | 'wip'
+  /* ?store=wip (ลิงก์เก่า ก่อน 04/11) = ตกกลับตู้แรก — แท็บ "คิวเติม WIP" ถูกแยกเข้าตู้ตามเลขพาร์ทแล้ว */
+  const [unifiedStore, setUnifiedStore] = useState(() => urlPick('store', opsStores || ['child', 'ext', 'raw', 'fg', 'open', 'purchase', 'rack', 'plating', 'other'], (opsStores || ['child'])[0]));
   useEffect(() => {
     if (!storeFocus?.store) return;
     setViewMode('unified');
@@ -1779,7 +1815,7 @@ export default function HeijunkaKanban({ mode = 'monitor', opsStores = null }) {
     /* 🔴 โหลดคิวไม่ได้ ห้ามกลายเป็น "ยังไม่มีรายการ" (audit 05/10 — เดิมกลืน error ทั้ง 7 คิว)
        คิวที่ล้ม = คงข้อมูลรอบก่อนไว้ + บอกบนจอว่าคิวไหนโหลดไม่ได้ (ห้ามเขียนทับด้วยลิสต์ว่าง) */
     const failed = [['Store Child', eLots], ['ใบเบิกวัตถุดิบ', eRaws], ['ยอดสะสม child', eAcc], ['ขนาดล็อต', eKs],
-      ['แร็ค', eRacks], ['ภาชนะ', ePkgs], ['คิวเติม WIP', eWips]].filter(([, e]) => e);
+      ['แร็ค', eRacks], ['ภาชนะ', ePkgs], ['ใบเบิก-ส่งเข้าไลน์', eWips]].filter(([, e]) => e);
     if (failed.length) toast.error(`โหลดคิวสโตร์ไม่ได้: ${failed.map(([n, e]) => `${n} (${e.message})`).join(' · ')} — จอแสดงข้อมูลรอบก่อน`);
     if (!eLots) setLotRequests(lots || []);
     if (!eRaws) setRawRequests(raws || []);
@@ -2159,14 +2195,14 @@ export default function HeijunkaKanban({ mode = 'monitor', opsStores = null }) {
       else if (error.code === '23505') dup++;
       else errs.push(`${it.mat_no}: ${error.message}`);
     }
-    if (ok) toast.success(`🚚 สร้างใบส่ง ${ok} รายการ เข้าคิวเติม WIP แล้ว${dup ? ` · ${dup} รายการมีใบค้างอยู่แล้ว` : ''}`);
-    else if (dup && !errs.length) toast.error(`ทุกรายการมีใบค้างอยู่ในคิวแล้ว (${dup}) — ดูที่ 🔄 คิวเติม WIP`);
+    if (ok) toast.success(`🚚 สร้างใบส่ง ${ok} รายการ เข้าตู้งานสโตร์แล้ว${dup ? ` · ${dup} รายการมีใบค้างอยู่แล้ว` : ''}`);
+    else if (dup && !errs.length) toast.error(`ทุกรายการมีใบค้างอยู่ในคิวแล้ว (${dup}) — ดูที่ตู้งานสโตร์ตามเลขพาร์ท`);
     if (errs.length) toast.error(`สร้างไม่สำเร็จ ${errs.length} รายการ: ${errs[0]}`);
     if (noSourceCol) toast.error('บันทึกใบแล้ว แต่ยังไม่ได้ apply migration 20260907_wip_replenish_source (Main) — ใบไม่ถูกมาร์กว่ามาจากสโตร์');
     if (noSlocCol) toast.error('บันทึกใบแล้ว แต่ยังไม่ได้ apply migration 20260908_wip_replenish_storage_location (Main) — ใบไม่ถูกแปะรหัสคลัง SAP');
     else if (ok && noSlocLines.size) toast.info(`ℹ️ ${[...noSlocLines].join(', ')} ยังไม่ผูกรหัสคลัง SAP — ใบไม่มีมุม SAP (ผูกที่ 📦 Line Stock → แท็บ 🏬 โซนคลัง → ทะเบียนรหัสคลัง)`);
     await loadPull();
-    if (ok) { setViewMode('unified'); setUnifiedStore('wip'); }   // พาไปเห็นใบที่เพิ่งสร้าง — ทำงานต่อได้ทันที
+    if (ok) { setViewMode('unified'); setUnifiedStore(storeOfMat(items[0]?.mat_no)); }   // พาไปเห็นใบที่เพิ่งสร้าง — ทำงานต่อได้ทันที
     return ok > 0 || (dup > 0 && !errs.length);
   };
 
@@ -2934,7 +2970,7 @@ export default function HeijunkaKanban({ mode = 'monitor', opsStores = null }) {
       {/* Smart Scheduling Planner */}
       <PlannerStrip rounds={rounds} deliveries={deliveries} roundAlloc={view.roundAlloc} workDate={workDate} breakPolicies={breakPolicies} nowMs={nowMs} />
       {/* ไม่มีรอบ = แถบสถานการณ์ของโหมดส่งตามคำขอ (PlannerStrip ซ่อนตัวเอง) — งานค้างตามสถานะ + ใบที่รอนานสุด · audit 2026-09-07 */}
-      {!rounds.length && <OnDemandStrip wipRequests={wipRequests} nowMs={nowMs} onGo={() => { setViewMode('unified'); setUnifiedStore('wip'); }} />}
+      {!rounds.length && <OnDemandStrip wipRequests={wipRequests} nowMs={nowMs} onGo={() => { setViewMode('unified'); setUnifiedStore('child'); }} />}
 
       {/* Store ต้องเห็นด้วยว่า "สั่งผลิตไปไลน์ไหน ทำได้ตามที่มอบหมายไหม" ไม่ใช่เห็นแค่ฝั่งเบิก-ส่ง
           (สรุปยอดเท่านั้น — บอร์ดตัวจริงอยู่ที่ฝ่ายผลิต กดชื่อไลน์แล้วเด้งไป ห้าม render ซ้ำที่นี่) */}
@@ -3000,7 +3036,7 @@ export default function HeijunkaKanban({ mode = 'monitor', opsStores = null }) {
             rounds={rounds} deliveries={deliveries} view={view}
             kanbanStd={kanbanStd} onConfirm={confirmRound} confirming={confirming}
             onReceive={openReceive} fmt={fmt} lineMap={lineMap} workDate={workDate} nowMs={nowMs} canOperate={canOperate}
-            wipRequests={wipRequests} onGoChart={goPickParts} onGoQueue={() => { setViewMode('unified'); setUnifiedStore('wip'); }}
+            wipRequests={wipRequests} onGoChart={goPickParts} onGoQueue={() => { setViewMode('unified'); setUnifiedStore('child'); }}
           />
         ) : viewMode === 'timeline' ? (
           <DeliveryTimelineBoard
