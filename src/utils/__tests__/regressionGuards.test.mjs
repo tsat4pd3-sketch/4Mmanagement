@@ -8135,3 +8135,25 @@ test('🛡️ pair-scan-one-side — สแกนเปิดใบต้อง�
   assert.doesNotMatch(body, /setPendingPairId\(/,
     '\n\n❌ กลับมาบังคับ "ใบถัดไป = คู่" (pendingPairId) — คนยิงข้างเดียวกันต่อ = ผูก LH กับ LH\n');
 });
+
+/* 🛡️ line-request-not-self-made (2026-11-04 · คำสั่ง user)
+   ใบ "➕ ขอเบิกพาร์ทนี้เลย" ค้าง 10/10 ใบเป็นพาร์ทที่ไลน์นั้นผลิตเอง (ขอผิดทิศ — ต้องผลิตเติม/เบิกลูกใน BOM)
+   ⇒ ทางที่ไลน์สร้างใบ `line_adhoc` ต้องผ่าน `selfMadeRequestBlock()` (partRefStock.js) ก่อน insert */
+test('🛡️ line-request-not-self-made — ไลน์ขอเบิกพาร์ทที่ตัวเองผลิตไม่ได้', () => {
+  const bad = [];
+  const files = ['src/components/LinePartCallPanel.jsx'];
+  for (const f of files) {
+    const s = stripComments(readFileSync(join(ROOT, f), 'utf8'));
+    if (/source:\s*'line_adhoc'/.test(s) && !/selfMadeRequestBlock\(/.test(s))
+      bad.push(`${f} — สร้างใบ line_adhoc โดยไม่เช็ค selfMadeRequestBlock()`);
+  }
+  // จอใหม่ที่สร้างใบ line_adhoc ต้องเช็คเหมือนกัน
+  for (const abs of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const f = relative(ROOT, abs);
+    if (f.includes('__tests__') || files.includes(f)) continue;
+    const s = stripComments(readFileSync(abs, 'utf8'));
+    if (/source:\s*'line_adhoc'/.test(s) && !/selfMadeRequestBlock\(/.test(s))
+      bad.push(`${f} — สร้างใบ line_adhoc โดยไม่เช็ค selfMadeRequestBlock()`);
+  }
+  assert.deepEqual(bad, [], bad.join('\n'));
+});
