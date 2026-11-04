@@ -1824,44 +1824,36 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     if (error) { toast.error(error.message); return; }
 
     // ── RH/LH auto pairing ──────────────────────────────────────────
-    /* 🔴 04/11 (คำสั่ง user · หน้างานแจ้งด่วน): **งานคู่ = ยิง Tag ข้างเดียว ระบบเปิดใบข้างคู่ให้เอง**
-       เลขใบข้างคู่ = `<PROD.NO ที่ยิง>P` (ref เลขใบข้างที่ยิงเปิด · แบบเดียวกับ "เปิดเป้า" manual)
-       ⇒ หน้างานยิงข้างขวารวดเดียวทั้งปึกได้ · ไม่ต้องยิงข้างคู่ · ไม่สลับ MAT ในช่อง
-       เดิม (ก่อน 03/11) ยิงข้างแรกแล้วระบบเด้ง MAT ไปข้างคู่ ⇒ ยิงข้างขวาต่อ = บันทึกเป็น MAT ซ้าย / ผูก RH กับ RH
-       ปิดใบ: สแกน Tag ข้างที่ยิงเปิด = ปิดใบคู่ที่ระบบเปิดให้ด้วย (ใบคู่ไม่มี Tag ให้สแกน) — ด่าน pair-scan-auto-partner */
-    /* 🔴 คู่ที่อยู่คนละไลน์ = ตั้งคู่ผิด (เคสจริง 13/10 GOR 297: ก่อนชุบ↔หลังชุบ)
-       ⇒ ไม่เปิดใบคู่ · บอกบนจอให้ไปแก้ Product Master (`pairBlockReason` · utils/pairOrder.js) */
+    // ทั้ง 2 ข้างมีเลข SAP order เป็นของตัวเองเสมอ ต้องสแกนคู่ 2 ครั้งจริง — ไม่มีกรณี order ข้างเดียวแล้ว
+    /* 🔴 คู่ที่อยู่คนละไลน์ = ตั้งคู่ผิด (เคสจริง 13/10 GOR 297: ก่อนชุบ↔หลังชุบ ⇒ ใบถัดไปเด้งเป็นเลขหลังชุบ 12 ใบ)
+       ⇒ ไม่ผูกคู่ ไม่เด้ง MAT ให้ · บอกบนจอให้ไปแก้ Product Master (`pairBlockReason` · utils/pairOrder.js) */
     const meProd = products.find(p => p.mat_no === matNo);
     const rawPartner = meProd?.pair_mat_no || null;
     const pairWhy = rawPartner ? pairBlockReason(meProd, products.find(p => p.mat_no === rawPartner) || { mat_no: rawPartner }) : null;
-    if (pairWhy) toast.error(`ไม่เปิดใบคู่ RH/LH ให้: ${pairWhy} — แก้ช่อง "MAT.NO คู่" ที่ Product Master`);
+    if (pairWhy) toast.error(`ไม่ผูกคู่ RH/LH ให้: ${pairWhy} — แก้ช่อง "MAT.NO คู่" ที่ Product Master`);
     const partnerMatNo = pairWhy ? null : rawPartner;
     const nextMatNo = openProdForm.mat_no;   // 🔴 MAT คงข้างเดิมเสมอ (ด่าน pair-scan-one-side)
 
-    if (partnerMatNo && data?.id) {
-      const pairProd = products.find(p => p.mat_no === partnerMatNo);
-      const pairStd  = kanbanStds.find(s => s.mat_no === partnerMatNo);
-      const pairNo   = `${prodNo}P`;
-      const { data: pairRow, error: pe } = await supabaseDR.from('prod_orders').insert({
-        session_id:  selSession.id,
-        prod_no:     pairNo,
-        mat_no:      partnerMatNo,
-        part_name:   pairStd?.part_name || pairProd?.name || null,
-        p_no:        pairStd?.p_no      || pairProd?.p_no || null,
-        customer:    pairStd?.customer  || pairProd?.customer || null,
-        qty,                                   // ปั๊มทีเดียวได้ 2 ข้าง ⇒ เป้าเท่ากัน
-        status:      'open',
-        is_backfill: openProdForm.is_backfill,
-        opened_by:   fullName,
-        paired_order_id: data.id,
-        ...(data.opened_at ? { opened_at: data.opened_at } : {}),
-      }).select().single();
-      if (pe) {
-        toast.error(`เปิด ${prodNo} แล้ว แต่เปิดใบคู่ ${partnerMatNo} ไม่สำเร็จ: ${pe.code === '23505' ? `เลข ${pairNo} มีอยู่แล้วในกะนี้` : pe.message}`);
+    /* 🔴 03/11 (หน้างานแจ้งด่วน "ให้สแกนทีละข้างไปเลย ตอนนี้บังคับสแกนสลับ พนักงานสแกนมั่ว"):
+       เดิมสแกนข้างแรกแล้วระบบ **เปลี่ยน MAT ในช่องเป็นของคู่ + จำว่าใบถัดไปคือคู่** (pendingPairId)
+       ⇒ คนยิง Tag ข้าง LH ติดกันหลายใบ (วิธีทำงานจริง) = ใบที่ 2 ถูกบันทึกเป็น MAT ของ RH และ LH ผูกกับ LH
+       ตอนนี้: **MAT คงที่ข้างเดิม** (ยิงข้างเดียวกันต่อกันได้) · ผูกคู่อัตโนมัติกับ "ใบข้างคู่ที่เปิดอยู่และยังไม่มีคู่
+       ที่เก่าสุด" (FIFO) — ยิง LH ทั้งหมดก่อน แล้วเปลี่ยน MAT ไปยิง RH ก็ผูกกันครบเอง (ด่าน pair-scan-one-side) */
+    if (partnerMatNo) {
+      const pool = prodOrders
+        .filter(o => o.mat_no === partnerMatNo && o.status === 'open' && !o.paired_order_id && o.id !== data.id)
+        .sort((a, b) => String(a.opened_at || '').localeCompare(String(b.opened_at || '')));
+      const existingPartner = pool[0];
+      if (existingPartner) {
+        checkWriteRows(await supabaseDR.from('prod_orders').update({ paired_order_id: data.id }).eq('id', existingPartner.id).select('id'), 'ผูกคู่ RH/LH (ใบที่เปิดค้าง)');
+        checkWriteRows(await supabaseDR.from('prod_orders').update({
+          paired_order_id: existingPartner.id,
+          ...(existingPartner.opened_at ? { opened_at: existingPartner.opened_at } : {}),
+        }).eq('id', data.id).select('id'), 'ผูกคู่ RH/LH (ใบใหม่)');
+        toast.success(`เปิด Order ${prodNo} ✓ และผูกคู่กับ ${existingPartner.prod_no} (RH/LH) อัตโนมัติ`);
       } else {
-        await attachMachine(pairRow.id);
-        checkWriteRows(await supabaseDR.from('prod_orders').update({ paired_order_id: pairRow.id }).eq('id', data.id).select('id'), 'ผูกคู่ RH/LH');
-        toast.success(`เปิด ${prodNo} (${matNo}) + ใบคู่ ${pairNo} (${partnerMatNo}) · ${qty} ชิ้น ✓ — ยิงข้างเดิมต่อได้เลย`);
+        const waiting = prodOrders.filter(o => o.mat_no === matNo && o.status === 'open' && !o.paired_order_id).length + 1;
+        toast.info(`เปิด ${prodNo} แล้ว ✓ — ข้างนี้รอคู่ ${waiting} ใบ · ยิงข้างเดิมต่อได้เลย แล้วค่อยเปลี่ยน MAT ไป ${partnerMatNo} ระบบผูกคู่ให้เอง`);
       }
     } else {
       toast.success(`เปิด Order ${prodNo} · ${matNo} · ${qty} ชิ้น ✓`);
@@ -1952,29 +1944,17 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       qty_ok:       match.qty,
     }).eq('id', match.id);
     if (error) { setSavingProdClose(false); toast.error(error.message); return; }
-    /* 👯 ใบคู่ที่ระบบเปิดให้จากการยิงข้างเดียว (`<PROD.NO>P`) ไม่มี Tag ให้สแกน ⇒ ปิดพร้อมใบที่สแกน (04/11)
-       ใบคู่ที่มี Tag ของตัวเอง (ข้อมูลเก่า) ยังปิดแยกเหมือนเดิม */
-    const autoPartner = match.paired_order_id
-      ? prodOrders.find(o => o.id === match.paired_order_id && o.status === 'open' && o.prod_no === `${match.prod_no}P`)
-      : null;
-    if (autoPartner) {
-      const { error: pe } = await supabaseDR.from('prod_orders').update({
-        status: 'confirmed', confirmed_by: fullName, confirmed_at: new Date().toISOString(), qty_ok: autoPartner.qty,
-      }).eq('id', autoPartner.id);
-      if (pe) toast.error(`ปิด ${match.prod_no} แล้ว แต่ปิดใบคู่ ${autoPartner.prod_no} ไม่สำเร็จ: ${pe.message}`);
-    }
     setSavingProdClose(false);
 
     // หมายเหตุ: เคย auto-close คู่ RH/LH ที่ผูกกันพร้อมกัน แต่ตัดออกแล้ว
     // เพราะแต่ละข้างผลิตจบไม่พร้อมกันจริง การ force ปิดคู่ทำให้ qty_ok ผิดและ dashboard
     // แสดงสถานะสับสน (ข้างที่ยังไม่จบถูกตีว่าเสร็จ) — ตอนนี้ปิดอิสระต่อข้าง
     // paired_order_id ยังใช้แค่โชว์ label ว่าเป็นคู่กัน ไม่กระทบสถานะ
-    const partnerOpenNo = match.paired_order_id && !autoPartner
+    const partnerOpenNo = match.paired_order_id
       ? prodOrders.find(o => o.id === match.paired_order_id && o.status === 'open')?.prod_no
       : null;
     toast.success(partnerOpenNo
       ? `ปิด Order ${match.prod_no} · ${match.qty} ชิ้น ✓ (คู่ RH/LH ${partnerOpenNo} ยังเปิดอยู่ ต้องสแกนปิดแยก)`
-      : autoPartner ? `ปิด Order ${match.prod_no} + ใบคู่ ${autoPartner.prod_no} · ${match.qty} ชิ้น ✓`
       : `ปิด Order ${match.prod_no} · ${match.qty} ชิ้น ✓`);
     setCloseProdNo('');
     setCloseMatch(null);
