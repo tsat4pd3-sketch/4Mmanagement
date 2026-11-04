@@ -279,13 +279,15 @@ export default function OrgSetup() {
     if (error)        { setSaving(false); return toast.error('บันทึกไม่สำเร็จ: ' + error.message); }
     if (!wrote?.length) { setSaving(false); return toast.error('บันทึกไม่สำเร็จ — ไม่มีสิทธิ์แก้ หรือรายการนี้ถูกลบไปแล้ว'); }
     // ไล่เปลี่ยน "สำเนาชื่อ" ตามคีย์ใหม่ — เขียนไม่ได้ต้องบอกว่าชื่อไม่ตรงกันแล้ว ห้าม toast เขียวทับ
-    const casc = cascade ? await renameOrgRefs(supabase, editNode, cascade.from, cascade.to) : null;
+    const casc = cascade ? await renameOrgRefs(supabase, editNode, cascade.from, cascade.to, nodes) : null;
     setSaving(false);
     if (casc?.failed.length) {
       toast.error(`เปลี่ยนชื่อในผังแล้ว แต่ทะเบียนแก้ตามไม่ได้ (${casc.failed[0]})`
         + ' — ชื่อจะไม่ตรงกันจนแก้ที่หน้าพนักงาน');
     } else if (casc) {
-      toast.success(`แก้ไขสำเร็จ · เปลี่ยนชื่อตามให้ในทะเบียนอื่น ${casc.rows} รายการ`);
+      toast.success(`แก้ไขสำเร็จ · เปลี่ยนชื่อตามให้ในทะเบียนอื่น ${casc.rows} รายการ`
+        // 🔴 คีย์ชนกับโหนดต่างชั้น ⇒ ไม่ไล่เปลี่ยนให้ (อาจเป็นของอีกโหนด) — ต้องบอก ห้ามเงียบ
+        + (casc.skipped?.length ? ` · ไม่ได้เปลี่ยน ${casc.skipped.join(', ')} (ชื่อชนกับหน่วยต่างชั้น — แก้เองที่หน้านั้น)` : ''));
     } else {
       toast.success(editNode ? 'แก้ไขสำเร็จ' : 'เพิ่มสำเร็จ');
     }
