@@ -4,6 +4,7 @@ import PageHeader from '../components/PageHeader';
 import InfoMore from '../components/InfoMore';
 import { toast } from '../components/Toast';
 import useTabParam from '../utils/useTabParam';
+import { toneVar, toneDim, toneLine } from '../utils/statusTone';
 
 /* ══ 🧾 อ่านเอกสารอัตโนมัติ (OCR) + เชื่อมต่อข้อมูล — MOCKUP (2026-11-04 · คำสั่ง user) ══════════════
    ที่มา: concept "e-workflow" — เอกสารตัวพิมพ์ที่มาจากคนนอก (ใบส่งของ / ใบวางบิล) ปัจจุบันต้องให้คน
@@ -63,10 +64,10 @@ const HEAD_FIELDS = [
 ];
 
 const ST = {
-  ok: { icon: '✅', text: 'ตรงทะเบียน', color: '#22c55e' },
-  warn: { icon: '⚠️', text: 'ไม่เจอในทะเบียน', color: '#f59e0b' },
-  miss: { icon: '❓', text: 'อ่านไม่ออก', color: '#ef4444' },
-  read: { icon: '📝', text: 'อ่านได้', color: '#94a3b8' },
+  ok: { icon: '✅', text: 'ตรงทะเบียน', tone: 'good' },
+  warn: { icon: '⚠️', text: 'ไม่เจอในทะเบียน', tone: 'warn' },
+  miss: { icon: '❓', text: 'อ่านไม่ออก', tone: 'bad' },
+  read: { icon: '📝', text: 'อ่านได้', tone: 'none' },
 };
 
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 14, boxShadow: 'var(--shadow-sm)' };
@@ -76,7 +77,7 @@ const btnPrimary = { padding: '8px 16px', borderRadius: 10, fontSize: 13, fontWe
 const btnGhost = { padding: '6px 12px', borderRadius: 10, fontSize: 13, fontWeight: 700, background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border2)' };
 const cell = { padding: '6px 8px', borderBottom: '1px solid var(--border)', fontSize: 13, textAlign: 'left' };
 
-const paperCell = { color: '#222', background: 'transparent', borderBottom: '1px dashed #c8c8bc', padding: '4px 6px', fontSize: 12, fontFamily: 'monospace' };
+const paperCell = { color: 'var(--text)', background: 'transparent', borderBottom: '1px dashed var(--border2)', padding: '4px 6px', fontSize: 12, fontFamily: 'monospace' };
 const blank = (v) => v == null || String(v).trim() === '';
 const num = (v) => (blank(v) ? null : Number(v));
 
@@ -96,15 +97,15 @@ function Chip({ s }) {
   const m = ST[s];
   return (
     <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 999, whiteSpace: 'nowrap',
-      color: m.color, background: `${m.color}1f`, border: `1px solid ${m.color}55` }}>{m.icon} {m.text}</span>
+      color: toneVar(m.tone), background: toneDim(m.tone), border: `1px solid ${toneLine(m.tone)}` }}>{m.icon} {m.text}</span>
   );
 }
 
 /* "กระดาษ" จำลองของเอกสารต้นฉบับ — แทนรูปที่อัปโหลดในระบบจริง */
 function PaperPreview({ doc }) {
   return (
-    <div style={{ background: '#fdfdf8', color: '#222', borderRadius: 6, padding: 16, fontSize: 12,
-      fontFamily: 'monospace', border: '1px solid #d4d4c8', boxShadow: 'var(--shadow-sm)' }}>
+    <div style={{ background: 'var(--bg2)', color: 'var(--text)', borderRadius: 6, padding: 16, fontSize: 12,
+      fontFamily: 'monospace', border: '1px solid var(--border2)', boxShadow: 'var(--shadow-sm)' }}>
       <div style={{ textAlign: 'center', fontWeight: 800, fontSize: 14 }}>{doc.kind.toUpperCase()}</div>
       <div style={{ textAlign: 'center', marginBottom: 10 }}>{doc.head.supplier || '░░░░░░░░'}</div>
       <div>เลขที่: {doc.head.doc_no || '░░░░'} · วันที่: {doc.head.doc_date || '▒▒/▒▒/▒▒'}</div>
@@ -122,7 +123,7 @@ function PaperPreview({ doc }) {
           ))}
         </tbody>
       </table>
-      <div style={{ marginTop: 10, color: '#888' }}>(▒ = รอยเปื้อน/ตัวจาง — OCR อ่านไม่ออก)</div>
+      <div style={{ marginTop: 10, color: 'var(--muted)' }}>(▒ = รอยเปื้อน/ตัวจาง — OCR อ่านไม่ออก)</div>
     </div>
   );
 }
@@ -188,7 +189,7 @@ export default function EWorkflowOcrMockup() {
       <PageHeader
         title="อ่านเอกสารอัตโนมัติ (OCR)"
         icon="🧾"
-        sub={<span><b style={{ color: '#f59e0b' }}>🧪 MOCKUP</b> · ข้อมูลจำลองในหน้านี้ ไม่บันทึกลงฐานข้อมูล ไม่เรียก OCR/Google จริง (รีเฟรช = เริ่มใหม่)</span>}
+        sub={<span><b style={{ color: 'var(--amber)' }}>🧪 MOCKUP</b> · ข้อมูลจำลองในหน้านี้ ไม่บันทึกลงฐานข้อมูล ไม่เรียก OCR/Google จริง (รีเฟรช = เริ่มใหม่)</span>}
         tabs={tabs} tab={tab} onTab={setTab}
       />
       <div style={{ marginBottom: 12 }}>
@@ -221,8 +222,8 @@ export default function EWorkflowOcrMockup() {
                 <h3 style={h3}>② ตรวจผลที่อ่านได้ — {draft.src.kind}</h3>
                 <div style={{ fontSize: 13 }}>
                   อ่าน/จับคู่ได้ <b>{states.ok}</b> จาก {states.total} ช่อง ·
-                  <span style={{ color: ST.warn.color }}> ⚠️ {states.warn}</span> ·
-                  <span style={{ color: ST.miss.color }}> ❓ {states.miss}</span>
+                  <span style={{ color: toneVar(ST.warn.tone) }}> ⚠️ {states.warn}</span> ·
+                  <span style={{ color: toneVar(ST.miss.tone) }}> ❓ {states.miss}</span>
                 </div>
                 {HEAD_FIELDS.map(f => (
                   <label key={f.k} style={{ display: 'grid', gap: 4, fontSize: 13 }}>
@@ -248,7 +249,7 @@ export default function EWorkflowOcrMockup() {
                     </tbody>
                   </table>
                 </div>
-                {states.miss > 0 && <div style={{ fontSize: 12, color: ST.miss.color }}>❓ ยังมี {states.miss} ช่องที่อ่านไม่ออก — กรอกให้ครบก่อนยืนยัน (ระบบไม่เติมค่าแทน)</div>}
+                {states.miss > 0 && <div style={{ fontSize: 12, color: toneVar(ST.miss.tone) }}>❓ ยังมี {states.miss} ช่องที่อ่านไม่ออก — กรอกให้ครบก่อนยืนยัน (ระบบไม่เติมค่าแทน)</div>}
                 <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                   <button type="button" style={btnGhost} onClick={reject}>ตีกลับ</button>
                   <button type="button" style={{ ...btnPrimary, opacity: states.miss ? 0.5 : 1 }} disabled={states.miss > 0} onClick={confirm}>✔ ยืนยันข้อมูล</button>
@@ -272,7 +273,7 @@ export default function EWorkflowOcrMockup() {
                       <td style={cell}>{r.kind}</td><td style={cell}>{r.doc_no}</td><td style={cell}>{r.supplier}</td>
                       <td style={cell}>{r.doc_date}</td><td style={cell}>{r.po_no}</td><td style={cell}>{r.lines.length}</td>
                       <td style={cell}>{r.amount.toLocaleString('en-US', { maximumFractionDigits: 2 })}</td>
-                      <td style={cell}>{r.warn ? <span style={{ color: ST.warn.color }}>⚠️ {r.warn} ช่องไม่ตรงทะเบียน</span> : '—'}</td>
+                      <td style={cell}>{r.warn ? <span style={{ color: toneVar(ST.warn.tone) }}>⚠️ {r.warn} ช่องไม่ตรงทะเบียน</span> : '—'}</td>
                       <td style={cell}>{r.synced ? '✅ ส่งแล้ว' : '⏳ รอส่ง'}</td>
                     </tr>
                   ))}
