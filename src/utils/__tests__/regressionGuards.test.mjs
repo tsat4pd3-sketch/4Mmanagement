@@ -4376,6 +4376,26 @@ test('🛡️ print-digit-grid-no-default — ช่องตัวเลขท�
   }
 });
 
+test('🛡️ pr-order-vs-receive-split — "รอสั่ง" กับ "รอของ" ต้องแยกถัง ห้ามยุบกลับ', () => {
+  const src = readFileSync(join(ROOT, 'src/utils/mtnPurchase.js'), 'utf8');
+
+  /* 🔴 เคสจริง (04/11 · หน้างานแจ้ง): *"พอกรอกเลข PR มันเด้งข้ามไปหัวข้อ 3 เลย …
+     มันต้องอยู่ช่องที่ 2 ก่อน พอใส่เลข PO แล้วถึงเด้งลงช่องที่ 3"*
+     ถังเดิมชื่อ "รอสั่ง/รอของ" = ยัด 2 ขั้นรวมกัน ⇒ กรอกเลข PR ปุ๊บใบไปอยู่ขั้นสุดท้าย
+     ทั้งที่ยังไม่ได้สั่งซื้อ (วัด 04/11: 2 ใบ requested มีเลข PR แต่ยังไม่มี PO นั่งอยู่ถังนั้น) */
+  assert.ok(/to_order/.test(src) && /\bordered:/.test(src),
+    '\n\n❌ ถัง "งาน PR" ยุบ "รอสั่ง" กับ "รอของ" กลับเป็นถังเดียวแล้ว\n'
+    + '   ⇒ กรอกเลข PR แล้วใบเด้งไปขั้นสุดท้ายทันที ทั้งที่ยังไม่ได้สั่งซื้อ\n'
+    + '   🔑 เลข PR = "ขอซื้อแล้ว" · เลข PO = "สั่งแล้ว" — คนละขั้น\n');
+
+  const i = src.indexOf('export function prQueueStateOf');
+  const body = src.slice(i, i + 900);
+  assert.ok(/normalizePrNo\(p\.po_no\)/.test(body),
+    '\n\n❌ `prQueueStateOf` เลิกดูเลข PO แล้ว\n'
+    + '   🔴 ต้องตัดสินจาก **เลข PO** ไม่ใช่ `status` อย่างเดียว — สถานะ `ordered` ที่เลข PO ยังว่าง\n'
+    + '      ยังไม่ใช่ "สั่งแล้ว" (เลขมาจาก SAP ทีหลัง เหมือน `pr_no`)\n');
+});
+
 test('🛡️ ojt-approver-self-sign-only — ช่อง "ระดับจัดการอนุมัติ" ต้องเซ็นเอง ห้ามแปะของคนอื่น', () => {
   const src = readFileSync(join(ROOT, 'src/pages/OjtTraining.jsx'), 'utf8');
 

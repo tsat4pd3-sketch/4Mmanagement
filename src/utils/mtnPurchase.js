@@ -116,23 +116,36 @@ export function mosNeedingPr(orders = [], prs = [], isOpen = () => true) {
 export const NEEDS_PR_PATHS = () => REPAIR_PATHS.filter(p => p.needsPr).map(p => p.key);
 
 /** สถานะ "งาน PR" ของใบ MO 1 ใบ — ตัวกรองหน้ารายการ MO (20/10 · user "หาลิสต์ MO ที่รอกรอกเลข PR ไม่เจอ")
- *  · 'need'  = MTN ตัดสินว่าต้องเปิด PR แต่ยังไม่มีรายการขอซื้อ
- *  · 'no_no' = มีรายการขอซื้อที่ยังเปิดอยู่แต่ **ยังไม่มีเลข PR จาก SAP**
- *  · 'open'  = มีเลขแล้ว รอสั่ง/รอของ
- *  · null    = ไม่มีงาน PR ค้าง
- *  ลำดับความสำคัญ need > no_no > open (ใบเดียวตอบค่าเดียว) · `prs` = รายการของใบนี้ (ทุกสถานะ) */
+ *
+ *  · 'need'     = MTN ตัดสินว่าต้องเปิด PR แต่ยังไม่มีรายการขอซื้อ
+ *  · 'no_no'    = มีรายการขอซื้อที่ยังเปิดอยู่แต่ **ยังไม่มีเลข PR จาก SAP**
+ *  · 'to_order' = **มีเลข PR แล้ว แต่ยังไม่ได้สั่ง (ไม่มีเลข PO)**
+ *  · 'ordered'  = **สั่งแล้ว (มีเลข PO) รอของเข้า**
+ *  · null       = ไม่มีงาน PR ค้าง
+ *  ลำดับความสำคัญ need > no_no > to_order > ordered (ใบเดียวตอบค่าเดียว — ขั้นที่ค้างที่สุดชนะ)
+ *  `prs` = รายการของใบนี้ (ทุกสถานะ)
+ *
+ *  🔴 **แยก "รอสั่ง" ออกจาก "รอของ" (2026-11-04 · หน้างานแจ้ง)**
+ *     *"พอกรอกเลข PR มันเด้งข้ามไปหัวข้อ 3 เลย … มันต้องอยู่ช่องที่ 2 ก่อน พอใส่เลข PO แล้วถึงเด้งลงช่องที่ 3"*
+ *     เดิมถังสุดท้ายชื่อ "รอสั่ง/รอของ" = **ยัด 2 ขั้นรวมกัน** ⇒ กรอกเลข PR ปุ๊บใบไปอยู่ขั้นสุดท้ายทันที
+ *     ทั้งที่ยังไม่ได้สั่งซื้อ (วัด 04/11: 2 ใบ `requested` มีเลข PR แล้วแต่ยังไม่มี PO นั่งอยู่ถังนั้น)
+ *     ⇒ **เลข PR = "ขอซื้อแล้ว" · เลข PO = "สั่งแล้ว" คนละขั้น ห้ามยุบ**
+ *  🔴 ตัดสินจาก **เลข PO** ไม่ใช่ `status` อย่างเดียว — `ordered` ที่ยังไม่มีเลข PO ยังไม่ใช่ "สั่งแล้ว"
+ *     (สถานะกดได้ก่อนเลขมาจาก SAP เหมือนกับ `pr_no` ที่ตามมาทีหลัง) */
 export function prQueueStateOf(order, prs = []) {
   const live = (prs || []).filter(p => p && p.status !== 'cancelled');
   if (repairPathMeta(order?.repair_path)?.needsPr && !live.length) return 'need';
   const open = live.filter(isPrOpen);
   if (open.some(p => !normalizePrNo(p.pr_no))) return 'no_no';
-  if (open.length) return 'open';
+  if (open.some(p => !normalizePrNo(p.po_no))) return 'to_order';
+  if (open.length) return 'ordered';
   return null;
 }
 export const PR_QUEUE_META = {
-  need:  { label: '🛒 รอเปิด PR', color: '#ef4444' },
-  no_no: { label: '⏳ รอเลข PR (SAP)', color: '#f59e0b' },
-  open:  { label: '🚚 PR รอสั่ง/รอของ', color: '#0ea5e9' },
+  need:     { label: '🛒 รอเปิด PR', color: '#ef4444' },
+  no_no:    { label: '⏳ รอเลข PR (SAP)', color: '#f59e0b' },
+  to_order: { label: '📝 มี PR แล้ว · รอสั่ง (ยังไม่มี PO)', color: '#a855f7' },
+  ordered:  { label: '🚚 สั่งแล้ว (มี PO) · รอของเข้า', color: '#0ea5e9' },
 };
 
 /* ── เลข PR บนใบ MO (ใบพิมพ์ FM-MTN-006) ─────────────────────────────────────────── */

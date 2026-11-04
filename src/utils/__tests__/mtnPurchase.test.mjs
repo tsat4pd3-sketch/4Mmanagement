@@ -111,7 +111,16 @@ test('สถานะงาน PR ของใบ MO — ตัวกรอง�
   assert.equal(prQueueStateOf({ repair_path: 'inhouse_pr' }, []), 'need');
   assert.equal(prQueueStateOf({ repair_path: 'outsource' }, [{ status: 'cancelled' }]), 'need');
   assert.equal(prQueueStateOf({ repair_path: 'inhouse_pr' }, [{ status: 'requested', pr_no: null }, { status: 'ordered', pr_no: '1000' }]), 'no_no');
-  assert.equal(prQueueStateOf({ repair_path: 'inhouse_pr' }, [{ status: 'ordered', pr_no: '1000' }]), 'open');
+  /* 🔴 แยก "รอสั่ง" ออกจาก "รอของ" (04/11 · หน้างานแจ้ง "กรอกเลข PR แล้วมันเด้งข้ามไปหัวข้อ 3")
+     เลข PR = "ขอซื้อแล้ว" · เลข PO = "สั่งแล้ว" — คนละขั้น ห้ามยุบ */
+  assert.equal(prQueueStateOf({ repair_path: 'inhouse_pr' }, [{ status: 'ordered', pr_no: '1000', po_no: 'PO-1' }]), 'ordered');
+  assert.equal(prQueueStateOf({ repair_path: 'inhouse_pr' }, [{ status: 'requested', pr_no: '1000' }]), 'to_order',
+    'มีเลข PR แล้วแต่ยังไม่มี PO = ยังไม่ได้สั่ง — ห้ามเด้งไปขั้นรอของ');
+  assert.equal(prQueueStateOf({ repair_path: 'inhouse_pr' }, [{ status: 'ordered', pr_no: '1000', po_no: '  ' }]), 'to_order',
+    'สถานะ ordered แต่เลข PO ยังว่าง = ยังไม่ใช่ "สั่งแล้ว" (เลขมาจาก SAP ทีหลังเหมือน pr_no)');
+  assert.equal(prQueueStateOf({ repair_path: 'inhouse_pr' }, [
+    { status: 'ordered', pr_no: '1000', po_no: 'PO-1' }, { status: 'requested', pr_no: '2000' }]), 'to_order',
+    'ใบเดียวตอบค่าเดียว — ขั้นที่ค้างที่สุดชนะ');
   assert.equal(prQueueStateOf({ repair_path: 'inhouse_pr' }, [{ status: 'received', pr_no: '1000' }]), null);
   assert.equal(prQueueStateOf({ repair_path: 'inhouse' }, []), null);
   assert.equal(prQueueStateOf({ repair_path: null }, [{ status: 'requested', pr_no: '' }]), 'no_no');   // เปิดจากคลังโดยไม่ตั้งเส้นทาง ก็ยังรอเลข

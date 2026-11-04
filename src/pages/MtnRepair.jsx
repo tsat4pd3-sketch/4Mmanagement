@@ -95,9 +95,11 @@ import { prPlacement, assignedTechsOf, joinTechs, prQueueStateOf, PR_QUEUE_META 
 /* ตัวเลือกตัวกรองงาน PR — 'waiting' = ทั้ง 2 กองที่แอดมินช่างต้องทำ (รอเปิด + รอเลข) */
 const PR_FILTERS = [
   { v: 'waiting', label: '🛒 รอแอดมินช่าง (เปิด PR + กรอกเลข)' },
-  { v: 'need',  label: PR_QUEUE_META.need.label },
-  { v: 'no_no', label: PR_QUEUE_META.no_no.label },
-  { v: 'open',  label: PR_QUEUE_META.open.label },
+  { v: 'need',     label: PR_QUEUE_META.need.label },
+  { v: 'no_no',    label: PR_QUEUE_META.no_no.label },
+  /* 🔴 "รอสั่ง" กับ "รอของ" คนละขั้น ห้ามยุบกลับ (04/11 · หน้างานแจ้ง) — เลข PR = ขอซื้อ · เลข PO = สั่งแล้ว */
+  { v: 'to_order', label: PR_QUEUE_META.to_order.label },
+  { v: 'ordered',  label: PR_QUEUE_META.ordered.label },
 ];
 /* ── helpers ─────────────────────────────────────────────── */
 // แปลง URL โลโก้ (รวมโลโก้ที่ admin อัปโหลดใน /doc-forms) เป็น dataURL เพื่อฝังในหน้าพิมพ์
@@ -426,7 +428,7 @@ export default function MtnRepair() {
      ดูเหตุผลเต็มที่เอฟเฟกต์ `queueLinkSeen` ด้านล่าง */
   const inPageFilterEdit = useRef(false);
   const setFWait = useCallback((v) => { inPageFilterEdit.current = true; mergeSp({ wait: v || null }); }, [mergeSp]);
-  /* 🛒 `?pr=` ตัวกรองงาน PR (20/10 · user "หาลิสต์ MO ที่รอกรอกเลข PR ไม่เจอ") — need | no_no | open | waiting (= need+no_no)
+  /* 🛒 `?pr=` ตัวกรองงาน PR (20/10 · user "หาลิสต์ MO ที่รอกรอกเลข PR ไม่เจอ") — need | no_no | to_order | ordered | waiting (= need+no_no · ขั้นสั่ง/รับเป็นงานสโตร์)
      อ่านจาก URL ตรงๆ แบบเดียวกับ `?wait=` · ลิงก์แจ้งเตือน `mtn_pr_waiting` ชี้มาที่ `?pr=waiting` */
   const fPr = sp.get('pr') || '';
   const setFPr = useCallback((v) => { inPageFilterEdit.current = true; mergeSp({ pr: v || null }); }, [mergeSp]);
