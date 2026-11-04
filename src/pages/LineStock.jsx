@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext, useCallback, useMemo, Suspense, lazy } from 'react';
+import { useState, useEffect, useContext, useCallback, useMemo, useRef, Suspense, lazy } from 'react';
 import { lineNameCompare } from '../utils/lineHierarchy';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { supabase, supabaseDR } from '../supabaseClient';
@@ -20,6 +20,12 @@ import PageHeader from '../components/PageHeader';
 import Page, { Hub } from '../components/Page';
 import { OPS_STORES_WORK, OPS_STORES_BUY } from '../utils/storeOps';
 import SapPendingReport from '../components/SapPendingReport';
+import TimeRangeBar from '../components/TimeRangeBar';
+import useTimeRange from '../utils/useTimeRange';
+import SearchInput from '../components/SearchInput';
+import { fetchAllRows } from '../utils/fetchAllRows';
+import { downloadCsvDoc, csvCell } from '../utils/csvDoc';
+import { rangeDays } from '../utils/timeRange';
 import FilterBar from '../components/FilterBar';
 import { ALL, allOf } from '../utils/filterLabels';
 import useTabParam from '../utils/useTabParam';
@@ -71,6 +77,9 @@ const card = { background:'var(--card)', border:'1px solid var(--border)', borde
 const inputSt = { width:'100%', padding:'8px 10px', borderRadius:8, border:'1px solid var(--border)', background:'var(--bg2)', color:'var(--text)', fontSize:13, boxSizing:'border-box', fontFamily:'var(--font-body)' };
 const btn = (bg, color='#fff') => ({ padding:'8px 16px', borderRadius:8, border:'none', cursor:'pointer', fontSize:13, fontWeight:700, background:bg, color, fontFamily:'var(--font-body)' });
 
+const TXN_COLS = 'id, work_date, created_at, line_name, mat_no, part_name, type, qty, status, reject_reason, note, created_by';
+const TXN_PAGE = 300;        // แถวที่วาดต่อครั้ง (กด "แสดงเพิ่ม") — ข้อมูลโหลดครบช่วงแล้ว
+const TXN_MAX_DAYS = 93;     // เพดานช่วงประวัติต่อครั้ง (~3 เดือน)
 const TYPE_LABEL = { issue:'📦 จ่ายเข้าไลน์', consume:'⚙️ ใช้ผลิต (Auto)', return:'↩️ คืน Store', adjust:'🔧 ปรับยอด' };
 
 /* รหัส MAT SAP (ดู CLAUDE.md "รหัส MAT SAP"): ขึ้นต้น 1 = FG งานสำเร็จพร้อมขาย —
@@ -236,12 +245,31 @@ function StockTab({ role, scope }) {
     return row ? (parseFloat(row.qty_on_hand) || 0) : 0;
   }, [stock]);
 
+  /* 📋 04/11 (user: "อยากดูเยอะกว่า 100 ทำยังไง มันควรมีระบบ time base filter / search engine และ export data")
+     เดิม = 100 แถวล่าสุดตายตัว · ตอนนี้ = ช่วงวันทำงาน (`<TimeRangeBar>` · ?from=&to=) ดึงครบทุกหน้า (fetchAllRows)
+     · เพดาน TXN_MAX_DAYS กัน egress (ตารางนี้โตวันละหลายร้อยแถว) — เกินเพดาน = บอกบนจอ ไม่ดึง (ห้ามตัดเงียบ)
+     · เลือกเฉพาะคอลัมน์ที่จอ/CSV ใช้ (กฎเหล็ก DB ข้อ 11) · ค้นหา = กรองในเครื่อง · export = ทุกแถวที่ผ่านตัวกรอง */
+  const txnTr = useTimeRange({ defaultDays: 7, finest: 'day' });
+  const txnDays = rangeDays(txnTr.from, txnTr.to);
+  const [txnQ, setTxnQ] = useState('');
+  const [txnShow, setTxnShow] = useState(TXN_PAGE);
+  const [txnErr, setTxnErr] = useState('');
+  const [txnLoading, setTxnLoading] = useState(false);
+  const txnReq = useRef(0);
   const loadTxns = useCallback(async () => {
-    const q = supabaseDR.from('line_stock_transactions').select('*').order('created_at', { ascending: false }).limit(100);
-    if (lineFilter) q.eq('line_name', lineFilter);
-    const { data } = await q;
-    setTxns(data || []);
-  }, [lineFilter]);
+    const my = ++txnReq.current;   // กันผลรอบเก่าทับรอบใหม่ (กฎเหล็ก DB ข้อ 4)
+    if (txnDays > TXN_MAX_DAYS) { setTxns([]); setTxnErr(`ช่วงที่เลือก ${txnDays} วัน เกินเพดาน ${TXN_MAX_DAYS} วัน — เลือกช่วงให้สั้นลง (หรือกรองไลน์) แล้วค่อย export ทีละช่วง`); return; }
+    setTxnLoading(true);
+    const { data, error } = await fetchAllRows(supabaseDR, 'line_stock_transactions', TXN_COLS, q => {
+      let x = q.gte('work_date', txnTr.from).lte('work_date', txnTr.to).order('created_at', { ascending: false }).order('id');
+      if (lineFilter) x = x.eq('line_name', lineFilter);
+      return x;
+    });
+    if (my !== txnReq.current) return;
+    setTxnLoading(false);
+    if (error) { setTxnErr(`โหลดประวัติไม่ครบ: ${error.message}`); setTxns(data || []); return; }
+    setTxnErr(''); setTxns(data || []); setTxnShow(TXN_PAGE);
+  }, [lineFilter, txnTr.from, txnTr.to, txnDays]);
 
   const loadPending = useCallback(async () => {
     const { data } = await supabaseDR.from('line_stock_transactions')
@@ -353,6 +381,23 @@ function StockTab({ role, scope }) {
   const txnScoped = useMemo(
     () => filterRowsByLineScope(txns, { scopedNames: scopeNames, lineNames: lineNameList }),
     [txns, scopeNames, lineNameList]);
+  const txnRows = useMemo(() => {
+    const n = txnQ.trim().toLowerCase();
+    if (!n) return txnScoped.rows;
+    return txnScoped.rows.filter(t => [t.mat_no, t.part_name, t.line_name, t.note, t.created_by, TYPE_LABEL[t.type]]
+      .some(v => String(v || '').toLowerCase().includes(n)));
+  }, [txnScoped.rows, txnQ]);
+  const signedQty = (t) => { const q = parseFloat(t.qty) || 0; return (t.type === 'consume' || t.type === 'return') ? -Math.abs(q) : q; };
+  const exportTxns = () => {
+    if (!txnRows.length) { toast.info('ไม่มีรายการให้ export'); return; }
+    const head = ['วันที่งาน', 'เวลาบันทึก', 'ไลน์/คลัง', 'Part Name', 'MAT', 'ประเภท', 'จำนวน', 'สถานะ', 'หมายเหตุ', 'โดย'];
+    const body = txnRows.map(t => [t.work_date, t.created_at ? new Date(t.created_at).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' }) : '',
+      t.line_name, t.part_name || '', t.mat_no, TYPE_LABEL[t.type] || t.type, signedQty(t), STATUS_LABEL[t.status] || t.status || '', t.note || '', t.created_by || '']
+      .map(csvCell).join(','));
+    // CSV = เอกสาร ⇒ ชื่อไฟล์ผ่านทะเบียน /doc-forms (csv_line_stock_txn)
+    downloadCsvDoc('csv_line_stock_txn', `line_stock_txn_${txnTr.from}_${txnTr.to}${lineFilter ? '_' + lineFilter : ''}`,
+      [head.map(csvCell).join(','), ...body].join('\n'));
+  };
 
   /* 🔐 คิวอนุมัติ = เรื่อง "แก้" ไม่ใช่ "ดู" ⇒ กรองด้วยขอบเขตที่แก้ได้ (ไม่ใช่ scopeNames)
      🔴 ไลน์ที่ไม่อยู่ในทะเบียน (คลัง STORE/FG WAREHOUSE) = ตัดสินไม่ได้ ⇒ **ไม่ซ่อน** (กติกาเดิมของจอนี้)
@@ -713,7 +758,10 @@ function StockTab({ role, scope }) {
       {showTxn && (
         <div style={{ ...card, padding:0, overflow:'hidden' }}>
           <div style={{ padding:'12px 16px', background:'var(--bg2)', borderBottom:'1px solid var(--border)', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-            <div style={{ fontWeight:700, fontSize:14 }}>📋 ประวัติ Transaction ล่าสุด 100 รายการ</div>
+            <div style={{ fontWeight:700, fontSize:14 }}>
+              📋 ประวัติ Transaction {txnTr.from} – {txnTr.to} · {txnLoading ? 'กำลังโหลด…' : `${txnRows.length.toLocaleString()} รายการ`}
+              {txnQ.trim() && !txnLoading ? <span style={{ fontWeight:400, fontSize:12, color:'var(--muted)' }}> (ซ่อน {(txnScoped.rows.length - txnRows.length).toLocaleString()} ที่ไม่ตรงคำค้น)</span> : null}
+            </div>
             {canIssue && (
               <div style={{ display:'flex', gap:6 }}>
                 {['issue','return','adjust'].map(t => (
@@ -725,6 +773,14 @@ function StockTab({ role, scope }) {
               </div>
             )}
           </div>
+          <div style={{ padding:'10px 16px', borderBottom:'1px solid var(--border)' }}>
+            <TimeRangeBar scale={txnTr.scale} from={txnTr.from} to={txnTr.to} today={txnTr.today} scales={null}
+              onFrom={txnTr.setFrom} onTo={txnTr.setTo} onPreset={txnTr.setPreset} onReload={loadTxns} loading={txnLoading}>
+              <SearchInput value={txnQ} onChange={setTxnQ} fields="MAT / ชื่อพาร์ท / ไลน์ / หมายเหตุ / ผู้บันทึก" ariaLabel="ค้นหาประวัติ transaction" />
+              <button onClick={exportTxns} disabled={!txnRows.length} style={{ ...btn('var(--bg)', 'var(--text)'), border:'1px solid var(--border2)', fontSize:12 }}>⬇️ Export CSV</button>
+            </TimeRangeBar>
+            {txnErr && <div style={{ marginTop:8, fontSize:12.5, color:'var(--red)', fontWeight:700 }}>{txnErr}</div>}
+          </div>
           <div className="table-sticky" style={{ overflowX:'auto' }}>
             <table style={{ width:'100%', borderCollapse:'collapse' }}>
               <thead>
@@ -735,10 +791,10 @@ function StockTab({ role, scope }) {
                 </tr>
               </thead>
               <tbody>
-                {txnScoped.rows.length === 0 && (
-                  <tr><td colSpan={7} style={{ padding:30, textAlign:'center', color:'var(--muted)', fontSize:13 }}>ยังไม่มีข้อมูล</td></tr>
+                {!txnLoading && txnRows.length === 0 && (
+                  <tr><td colSpan={7} style={{ padding:30, textAlign:'center', color:'var(--muted)', fontSize:13 }}>{txnErr ? 'โหลดไม่สำเร็จ — ดูข้อความด้านบน' : 'ไม่มีรายการในช่วง/คำค้นนี้'}</td></tr>
                 )}
-                {txnScoped.rows.map(t => (
+                {txnRows.slice(0, txnShow).map(t => (
                   <tr key={t.id}>
                     <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)', fontSize:12, color:'var(--muted)', whiteSpace:'nowrap' }}>{t.work_date}</td>
                     <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)', fontSize:13, fontWeight:600 }}>{t.line_name}</td>
@@ -752,7 +808,7 @@ function StockTab({ role, scope }) {
                       )}
                     </td>
                     <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)', fontWeight:800, fontSize:14, color: t.status !== 'approved' ? 'var(--muted)' : t.type === 'consume' ? '#94a3b8' : t.type === 'return' ? '#f59e0b' : '#22c55e', textAlign:'right', opacity: t.status !== 'approved' ? 0.55 : 1 }}>
-                      {(() => { const q = parseFloat(t.qty) || 0; const s = (t.type === 'consume' || t.type === 'return') ? -Math.abs(q) : q; return (s >= 0 ? '+' : '') + s.toLocaleString(); })()}
+                      {(() => { const s = signedQty(t); return (s >= 0 ? '+' : '') + s.toLocaleString(); })()}
                     </td>
                     <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)', fontSize:12, color:'var(--muted)' }}>{t.note || '—'}</td>
                     <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)', fontSize:12, color:'var(--muted)' }}>{t.created_by || '—'}</td>
@@ -761,6 +817,13 @@ function StockTab({ role, scope }) {
               </tbody>
             </table>
           </div>
+          {txnRows.length > txnShow && (
+            <div style={{ padding:'10px 16px', borderTop:'1px solid var(--border)', display:'flex', gap:10, alignItems:'center', fontSize:12.5, color:'var(--muted)' }}>
+              แสดง {txnShow.toLocaleString()} จาก {txnRows.length.toLocaleString()} รายการ
+              <button onClick={() => setTxnShow(n => n + TXN_PAGE)} style={{ ...btn('var(--bg)', 'var(--text)'), border:'1px solid var(--border2)', fontSize:12 }}>แสดงเพิ่ม {Math.min(TXN_PAGE, txnRows.length - txnShow).toLocaleString()}</button>
+              <span>· Export CSV ได้ครบทุกแถว</span>
+            </div>
+          )}
         </div>
       )}
 
