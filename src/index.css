@@ -27,7 +27,12 @@
   --amber:  #e3a23a;
   --red:    #e2574b;
   --blue:   #4f8fe8;
-  --purple: #8e86d8;
+  --purple: #8e86d8;   /* ⛔ เลิกใช้ (04/11 · พาเลต ≤5 สี) — ของเก่าที่ยังอ้างคงไว้ ของใหม่ห้าม · ใช้ --blue แทน */
+  /* 🎨 พาเลตสถานะ 5 สี (UI-CONVENTIONS §6.17 · 04/11): ระดับ -dim = พื้นจาง · -line = เส้นขอบ · ห้ามเขียน rgba/hex ดิบในหน้าอีก */
+  --green-dim: rgba(47, 191, 99, 0.12);  --green-line: rgba(47, 191, 99, 0.40);
+  --amber-dim: rgba(227, 162, 58, 0.12); --amber-line: rgba(227, 162, 58, 0.40);
+  --red-dim:   rgba(226, 87, 75, 0.12);  --red-line:   rgba(226, 87, 75, 0.40);
+  --blue-dim:  rgba(79, 143, 232, 0.12); --blue-line:  rgba(79, 143, 232, 0.40);
 
   --text:   #e6e9ef;
   --text2:  #a3abb8;
@@ -110,7 +115,11 @@
   --amber:  #cc7700;
   --red:    #c0392b;
   --blue:   #1a5fa8;
-  --purple: #5b4db8;
+  --purple: #5b4db8;   /* ⛔ เลิกใช้ — ดู :root */
+  --green-dim: rgba(31, 157, 74, 0.10);  --green-line: rgba(31, 157, 74, 0.40);
+  --amber-dim: rgba(199, 121, 28, 0.10); --amber-line: rgba(199, 121, 28, 0.40);
+  --red-dim:   rgba(201, 56, 44, 0.10);  --red-line:   rgba(201, 56, 44, 0.40);
+  --blue-dim:  rgba(37, 99, 201, 0.10);  --blue-line:  rgba(37, 99, 201, 0.40);
 
   --text:   #111827;
   --text2:  #4b5563;

@@ -82,6 +82,14 @@ export function toneOf({ value, target = null, better = 'up', zeroIsGood = false
  * ⇒ คืน token ของธีม (`--text`) แทนเทาจางๆ เมื่อสถานะเป็น `none`
  *   (เทา `#64748b` ใช้กับ *ไฟ/จุดสถานะ* ได้ แต่ถ้าเอาไปทาตัวเลขใหญ่จะจมพื้นดำบนจอ 43 นิ้ว)
  */
+/* 🎨 token ของพาเลต 5 สี (04/11 · UI §6.17) — ใช้กับ style ใหม่ทั้งหมด: `toneVar` = สีตัวอักษร/เส้นหนา ·
+   `toneDim` = พื้นจาง · `toneLine` = เส้นขอบ · **ห้าม `${toneVar(s)}20` ต่อ alpha** (เป็น var() ไม่ใช่ hex) */
+const TONE_VAR = { good: 'var(--green)', ok: 'var(--green)', warn: 'var(--amber)', bad: 'var(--red)', info: 'var(--blue)', none: 'var(--muted)' };
+const TONE_DIM = { good: 'var(--green-dim)', ok: 'var(--green-dim)', warn: 'var(--amber-dim)', bad: 'var(--red-dim)', info: 'var(--blue-dim)', none: 'var(--bg3)' };
+const TONE_LINE = { good: 'var(--green-line)', ok: 'var(--green-line)', warn: 'var(--amber-line)', bad: 'var(--red-line)', info: 'var(--blue-line)', none: 'var(--border2)' };
+export const toneVar = (s) => TONE_VAR[s] || TONE_VAR.none;
+export const toneDim = (s) => TONE_DIM[s] || TONE_DIM.none;
+export const toneLine = (s) => TONE_LINE[s] || TONE_LINE.none;
 export const toneInk = (s) => (s === 'none' ? 'var(--text)' : statusColor(s));
 
 /** สีตัวเลข (ink) ของค่าเทียบเป้า — ไม่มีค่า = muted · ไม่มีเป้า = สีตัวหนังสือปกติ (ไม่ทาเขียว)
