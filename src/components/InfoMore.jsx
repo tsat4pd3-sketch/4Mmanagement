@@ -65,7 +65,7 @@ export default function InfoMore({
   }[tone] || { bg: 'var(--bg3)', bd: 'var(--border)' };
 
   return (
-    <div style={{ fontSize: size, color: 'var(--text2)', lineHeight: 1.65, ...style }}>
+    <div data-infomore="1" style={{ fontSize: size, color: 'var(--text2)', lineHeight: 1.65, ...style }}>
       {lead}
       <button type="button" onClick={toggle}
         aria-expanded={open}

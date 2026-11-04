@@ -6,10 +6,10 @@ import { join, relative } from 'node:path';
 const ROOT = new URL('../', import.meta.url).pathname;
 export const COLOR_RE = /#[0-9a-fA-F]{6}\b|#[0-9a-fA-F]{3}\b(?![0-9a-fA-F])|rgba?\(\s*\d+\s*,\s*\d+\s*,\s*\d+/g;
 /* ขาว/ดำล้วนไม่ใช่ "สี" (เป็นหมึกบนปุ่มสี) — ไม่นับ */
-const NEUTRAL = new Set(['#fff', '#ffffff', '#000', '#000000']);
+const NEUTRAL = new Set(['#fff', '#ffffff', '#000', '#000000', 'rgba(0,0,0', 'rgba(255,255,255', 'rgb(0,0,0', 'rgb(255,255,255']);
 export function countColors(src) {
   const noComments = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:\\])\/\/[^\n]*/g, '$1');
-  return (noComments.match(COLOR_RE) || []).filter(c => !NEUTRAL.has(c.toLowerCase())).length;
+  return (noComments.match(COLOR_RE) || []).filter(c => !NEUTRAL.has(c.toLowerCase().replace(/\s+/g, ''))).length;
 }
 export function scan() {
   const out = {};

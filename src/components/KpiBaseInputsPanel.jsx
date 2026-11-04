@@ -6,6 +6,7 @@
      ดัชนีแล้ว update ตาม id ไม่มีค่อย insert · ทุกการเขียนนับแถว (RLS ปฏิเสธ = 0 แถวเงียบ · กฎ DB ข้อ 2)
    · สูตร/ตัวแปรอยู่ `utils/kpiSetup.js` + `utils/kpiFormula.js` — แผงนี้ไม่คำนวณอะไรเอง */
 import { useState, useEffect, useContext } from 'react';
+import InfoMore from './InfoMore';   // ⓘ คำอธิบายยาวพับไว้ (UI §6.10)
 import { UserContext } from '../App';
 import { supabase } from '../supabaseClient';
 import { toast } from './Toast';
@@ -161,11 +162,11 @@ export default function KpiBaseInputsPanel({ year, scope, org, rows = [], base: 
         )}
       </summary>
       <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap', marginTop: 6 }}>
-        <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.6, flex: 1, minWidth: 280 }}>
+        <InfoMore id="kpi-base-howto" size={11.5} label="ตัวเลขฐานใช้ยังไง" style={{ flex: 1, minWidth: 280 }}>
           KPI ที่ตั้ง "ที่มาของตัวเลข = 🧮 คำนวณจากตัวเลขฐาน" (ปุ่ม ✏️ ของแถว) จะไม่ต้องกรอก % เอง — ระบบเอายอดเงินของหน่วย ÷ ยอดขายกลางของโรงงานให้ทุกเดือน ·
           ช่องว่าง = ยังไม่มีตัวเลข (ไม่ใช่ 0) · เดือนที่ขาดตัวแปรใดตัวแปรหนึ่ง แถว KPI จะเขียนบอกว่าขาดอะไร ·
           <b>≈ จาง = กำลังคนจากทะเบียนพนักงาน</b> (ยังไม่มีใครกรอก · ทะเบียนอาจไม่ครบ กรอกทับได้)
-        </div>
+        </InfoMore>
       </div>
       {importing && (
         <KpiBaseImportModal year={year} unitLabel={label} unitSk={mySk} base={base} canPlant={plant && canManage} canUnit={canManage}

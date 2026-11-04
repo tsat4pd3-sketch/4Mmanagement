@@ -111,3 +111,43 @@ test('ตัวบนสุด / แถวกำพร้า = ลิสต์�
   assert.deepEqual(orphanIx.parentsOfMat('30099999'), [])
   assert.equal(orphanIx.orphans.length, 1)
 })
+
+/* ── ⬆️ แถบ "ถูกใช้เป็นลูกของ" — 2 บั๊กที่ user เจอ 04/11 (เคส 20058490) ─────────────────
+   ① แม่ชื่อเดียวกันอยู่ได้ 2 ใบ (ใบของแม่เอง + ใบ FG ที่เขียน parent_mat) ⇒ ต้องได้ 2 แถว
+      พร้อม sheetId ต่างกัน — ปุ่มบนจอถึงจะพาไปคนละใบได้
+   ② แถวที่อยู่ใน "ใบที่จอไม่ได้โหลด" (ใบปิดใช้งาน) แกะชื่อแม่ไม่ได้ — **ห้ามทิ้งเงียบ**
+      ของจริงวันนั้น: 20058490 มีแม่ 7 ที่ แต่จอขึ้น 4                                     */
+test('🔴 แม่ตัวเดียวกันคนละใบ ต้องได้คนละแถว (ปุ่มจะได้พาไปคนละใบ)', () => {
+  const matOf = { 'p-fg': '10105772', 'p-sub': '20070036' };
+  const rows = [
+    // ใบของ 20070036 เอง: 20058490 เป็นลูกชั้น 1 ⇒ แม่ = เจ้าของใบ
+    { product_id: 'p-sub', mat_no: '20058490', parent_mat: null, qty_per_unit: 1 },
+    // ใบ FG 10105772 เขียน parent_mat = 20070036 ⇒ แม่ตัวเดียวกัน แต่คนละใบ
+    { product_id: 'p-fg', mat_no: '20058490', parent_mat: '20070036', qty_per_unit: 1 },
+  ];
+  const ix = buildBomIndex(rows, matOf);
+  const ps = ix.parentsOfMat('20058490');
+  assert.equal(ps.length, 2, 'ห้ามยุบข้ามใบ');
+  assert.deepEqual(ps.map(x => x.mat), ['20070036', '20070036']);
+  assert.notEqual(ps[0].sheetId, ps[1].sheetId, 'ต้องแยกใบได้ ไม่งั้นปุ่มพาไปที่เดียวกัน');
+});
+
+test('🔴 แถวที่อยู่ในใบที่จอไม่ได้โหลด (ใบปิดใช้งาน) ต้องไปอยู่ใน orphans ให้จอนับ ไม่ใช่หายไปเฉยๆ', () => {
+  const matOf = { 'p-live': '10105772' };          // ใบ p-dead ไม่ได้ถูกโหลดมา (ปิดใช้งาน)
+  const rows = [
+    { product_id: 'p-live', mat_no: '20058490', parent_mat: null, qty_per_unit: 1 },
+    { product_id: 'p-dead', mat_no: '20058490', parent_mat: null, qty_per_unit: 1 },
+  ];
+  const ix = buildBomIndex(rows, matOf);
+  // ชื่อแม่แกะได้แค่ใบที่โหลดมา — ตัวที่แกะไม่ได้ **ห้ามเดาชื่อ** แต่ต้องยังนับได้จาก orphans
+  assert.deepEqual(ix.parentsOfMat('20058490').map(x => x.mat), ['10105772']);
+  const hidden = ix.orphans.filter(r => r.mat_no === '20058490');
+  assert.equal(hidden.length, 1, 'ของที่ชี้ใบไม่ได้ต้องอยู่ใน orphans — จอเอาไปเขียนว่า "+N ที่ชี้ชื่อไม่ได้"');
+  assert.equal(hidden[0].product_id, 'p-dead');
+});
+
+test('แถวกำพร้าจริง (ไม่มีใบเลย) ยังต้องไม่โผล่เป็นแม่', () => {
+  const ps = buildBomIndex([{ product_id: null, mat_no: '20058490', parent_mat: null }], {})
+    .parentsOfMat('20058490');
+  assert.deepEqual(ps, []);
+});

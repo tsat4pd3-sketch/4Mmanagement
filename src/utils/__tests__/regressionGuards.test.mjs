@@ -8179,3 +8179,47 @@ test('🛡️ heijunka-monitor-only — /heijunka ดูอย่างเดี
   if (!/readOnly = false/.test(pb) || !/const rpc = async[^\n]*\n\s*if \(readOnly\)/.test(pb)) bad.push('PlatingBoard: ต้องรับ readOnly และกันใน rpc()');
   assert.deepEqual(bad, [], bad.join('\n'));
 });
+
+/* ── 📦 "ใบของตัวเองว่าง" ≠ "ไม่มี BOM" — ต้องนับลูกที่ใบอื่นกรอกไว้ด้วย (2026-11-04) ──────
+   user แจ้ง: 20059152 ขึ้น "BOM ✗" ทั้งที่ใบของแม่ (20059261) กรอกลูกไว้ให้แล้ว
+   ต้นเหตุ: ตัวนับดู `product_id` ของตัวเองอย่างเดียว ไม่ได้ดู `parent_mat` ของใบอื่น
+   (วัดวันนั้น 31 พาร์ทโดนแบบเดียวกัน) — กฎเดียวกับ `sheetsWithKidsOf()` ใน bomTree.js    */
+test('🛡️ ความครบของสินค้า: BOM ต้องนับลูกที่ใบอื่นกรอกไว้ให้ (parent_mat) ด้วย', () => {
+  const rule = stripComments(readFileSync(join(ROOT, 'src/utils/productReadiness.js'), 'utf8'));
+  const page = stripComments(readFileSync(join(ROOT, 'src/pages/ProductMaster.jsx'), 'utf8'));
+
+  assert.ok(/bomElsewhere/.test(rule),
+    '\n\n❌ `productReadiness` ไม่รับ `bomElsewhere` แล้ว\n'
+    + '   ⇒ พาร์ทที่ใบของแม่กรอกลูกไว้ให้ จะกลับไปขึ้น "BOM ✗" ทั้งที่มี BOM จริง\n');
+  assert.ok(/bomHere\s*>\s*0\s*\|\|\s*bomAway\s*>\s*0/.test(rule),
+    '\n\n❌ กฎ `have.bom` ไม่ได้ "ใบตัวเอง หรือ ใบอื่น" แล้ว — ห้ามนับแค่ใบของตัวเอง\n');
+
+  // หน้าต้องดึง parent_mat มาด้วย ไม่งั้นนับไม่ได้ตั้งแต่ต้นทาง (เงียบ ไม่มี error)
+  assert.ok(/from\('bom_items'\)\s*\.select\('product_id, mat_no, parent_mat'\)/.test(page),
+    '\n\n❌ /products ไม่ได้ `select` `parent_mat` จาก bom_items แล้ว\n'
+    + '   ตัวนับจะว่างเงียบๆ แล้วชิป BOM กลับไปแดงเหมือนเดิม\n');
+  assert.ok(/bomElsewhere:\s*bomAwayOf\(/.test(page),
+    '\n\n❌ /products ไม่ได้ส่ง `bomElsewhere` เข้า productReadiness แล้ว\n');
+  // แถบเตือน "ขั้นตอน (OP) ที่ยังไม่ผูก component" ต้องใช้กติกาเดียวกัน ไม่งั้นเตือนผิดแบบเดิม
+  assert.ok(/opNoBom[\s\S]{0,160}bomAwayOf\(/.test(page),
+    '\n\n❌ แถบ OP ที่ยังไม่ผูก component ไม่ได้นับลูกที่ใบอื่นกรอกไว้ — จะเตือนผิดแบบเดิม\n');
+});
+
+/* ── ⬆️ แถบ "ถูกใช้เป็นลูกของ" — 2 บั๊กที่ user เจอ 04/11 (เคส 20058490) ─────────────────
+   ① ปุ่มแม่เปิดใบด้วย "ชื่อแม่" ⇒ แม่ตัวเดียวกันที่อยู่ 2 ใบ ได้ปุ่มเหมือนกันเป๊ะ กดแล้วไปใบเดียวกัน
+   ② แถวที่อยู่ในใบที่จอไม่ได้โหลด (ใบปิดใช้งาน) ตกไปอยู่ `orphans` แล้วหายจากแถบเงียบๆ
+      (ของจริง: มีแม่ 7 ที่ จอขึ้น 4)                                                        */
+test('🛡️ แถบแม่ใน /products: ต้องเปิดตาม "ใบ" + ต้องนับของที่ชี้ชื่อไม่ได้', () => {
+  const page = stripComments(readFileSync(join(ROOT, 'src/pages/ProductMaster.jsx'), 'utf8'));
+  const bar = page.slice(page.indexOf('const parentsBar'), page.indexOf('const kidsElsewhere'));
+  assert.ok(bar.length > 100, 'หา parentsBar ไม่เจอ — เปลี่ยนชื่อแล้วต้องอัปเดตด่านนี้');
+
+  assert.ok(/openSheetById\(\s*x\.sheetId/.test(bar),
+    '\n\n❌ ปุ่มแม่ไม่ได้เปิดด้วย `x.sheetId` แล้ว\n'
+    + '   เปิดด้วยชื่อแม่อย่างเดียว = แม่ตัวเดียวกันคนละใบ จะพาไปใบเดิมทั้งคู่ (ปุ่มซ้ำกดแล้วเหมือนกัน)\n');
+  assert.ok(/dupMat/.test(bar),
+    '\n\n❌ ไม่ได้ติดป้าย "ในใบ …" ให้แม่ที่ซ้ำชื่อแล้ว — บนจอจะเห็นปุ่มเหมือนกันเป๊ะ แยกไม่ออก\n');
+  assert.ok(/orphans/.test(bar),
+    '\n\n❌ แถบแม่ไม่ได้นับ `bomIx.orphans` แล้ว\n'
+    + '   แถวที่อยู่ในใบปิดใช้งานจะหายจากแถบเงียบๆ — ตัวเลข "ถูกใช้เป็นลูกของ N ที่" จะต่ำกว่าจริง\n');
+});
