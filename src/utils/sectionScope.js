@@ -1,6 +1,7 @@
 import { getLineFamilyNames } from './lineHierarchy.js';
 import { buildViewScope } from './viewScope.js';   // 👁️ ขยายขอบเขตผ่านผัง (แผนก/ไลน์ ไม่ใช่แค่ส่วนงาน)
 import { orgNodeCompare } from './listOrder.js';
+import { unitParentId } from './orgLayers.js';   // 🏢 แผนกขึ้นตรง = ไม่มีแม่เป็นหน่วย (ผู้เรียกกรอง kind มาแล้ว · 04/11)
 // ─── Multi-section scoping ──────────────────────────────────────────────────
 // ขอบเขตส่วนงานของ user: profiles.sections (text[]) = จำกัดหลายส่วนงานได้
 // (เช่น manager แผนกหนึ่งเห็นเฉพาะ PD1+PD2+QA) — ว่าง/NULL = ไม่จำกัด
@@ -249,9 +250,11 @@ export const ORPHAN_SECTION_LABEL = '🏛️ ขึ้นตรงฝ่าย (
 /** แปลงค่าจาก dropdown Section → ค่าที่เก็บลง employees.section (sentinel/ว่าง = null) */
 export const sectionValueForSave = (v) => (!v || v === ORPHAN_SECTION ? null : v);
 
-/** แผนกในผังที่ขึ้นตรงฝ่าย (parent_id ว่าง) */
+/** แผนกในผังที่ขึ้นตรงฝ่าย — ไม่มีแม่ หรือแม่เป็นชั้นบน (plant/company)
+ *  `allNodes` = ผังทั้งต้น ถ้ามี (ไม่ส่ง = ตัดสินจากที่เห็น · แม่ที่หาไม่เจอถือว่าเป็นหน่วย = พฤติกรรมเดิม)
+ *  🔴 จอที่โหลดแค่ section/department จะตอบ "แผนกใต้ plant" ไม่ได้ — ต้องส่ง `allNodes` ก่อนเติมโหนดชั้นบน */
 // ลำดับ = ตามผัง (sort_order → ชื่อ · listOrder.js) ไม่ขึ้นกับว่าหน้าที่เรียก query มาเรียงแบบไหน (2026-10-01)
-export const orphanDepts = (deptNodes = []) => deptNodes.filter(d => !d.parent_id).sort(orgNodeCompare);
+export const orphanDepts = (deptNodes = [], allNodes = deptNodes) => deptNodes.filter(d => unitParentId(d, allNodes) == null).sort(orgNodeCompare);
 
 /**
  * ตัวเลือกแผนกตามค่าที่เลือกในช่อง Section (cascade — UI-CONVENTIONS §5.3)
