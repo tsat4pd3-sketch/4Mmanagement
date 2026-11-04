@@ -19,6 +19,7 @@ import { getRoundStatus } from '../utils/deliveryRounds';
 import PageHeader from '../components/PageHeader';
 import Page, { Hub } from '../components/Page';
 import { OPS_STORES_WORK, OPS_STORES_BUY } from '../utils/storeOps';
+import SapPendingReport from '../components/SapPendingReport';
 import FilterBar from '../components/FilterBar';
 import { ALL, allOf } from '../utils/filterLabels';
 import useTabParam from '../utils/useTabParam';
@@ -1645,6 +1646,7 @@ const HeijunkaKanban = lazy(() => import('./HeijunkaKanban'));
 const TABS = [
   { key:'store',     label:'🏬 งานสโตร์' },      // เบิก-ส่งพาร์ทเข้าไลน์ · รับของผลิตเสร็จ · จ่ายวัตถุดิบ · งานชุบ
   { key:'purchase',  label:'🛒 จัดซื้อ' },        // ขาสั่งของกับ supplier → รับเข้าสโตร์
+  { key:'sap',       label:'🧾 ค้างตัด SAP' },    // ใบที่ส่งถึงไลน์แล้วแต่ตัดจ่ายใน SAP ไม่ได้ (04/11)
   { key:'stock',     label:'📦 Stock' },
   { key:'receipts',  label:'📥 รอรับเข้า' },   // ปิดใบผลิตแล้ว รอคลังนับของจริงแล้วกดรับ (กฎโหมด 🟡 · 2026-10-02)
   { key:'count',     label:'📋 ตรวจนับ/เฟิร์มยอด' },   // กระทบยอดขาออกที่หลุด + ตรวจนับทั้งคลัง (2026-09-23)
@@ -1684,6 +1686,7 @@ export default function LineStock() {
           </Suspense>
         </Hub>
       )}
+      {activeTab === 'sap'       && <SapPendingReport />}
       {activeTab === 'stock'     && <StockTab role={role} scope={scope} />}
       {activeTab === 'receipts'  && <StockReceiptQueue />}
       {activeTab === 'count'     && <StockCountSheet role={role} scope={scope} />}
