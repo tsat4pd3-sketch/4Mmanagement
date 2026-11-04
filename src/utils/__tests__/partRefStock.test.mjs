@@ -72,3 +72,22 @@ test('🔧 กฎโหมดปิดล็อต **ร่วมตัดสิ
     'โหมดบอกแค่ "ยอดเข้าทางไหน" · dest_line_name บอก "เข้าคลังไหน" — คนละเรื่อง ห้ามเอามาปนกัน');
   assert.equal(inflowDestOf('20059999', rules), 'STORE', 'MAT อื่นยังถอยไปกฎ prefix เหมือนเดิม');
 });
+
+/* 🔴 04/11 — ไลน์ขอเบิกพาร์ทที่ตัวเองผลิต = ขอผิดทิศ */
+import { selfMadeRequestBlock } from '../partRefStock.js';
+test('selfMadeRequestBlock: พาร์ทที่ไลน์ผลิตเอง = บล็อก · ลูกใน BOM/ไลน์อื่นผลิต = ขอได้', () => {
+  const products = [
+    { mat_no: '10104918', line_name: 'LINE B ( 600 Ton )', is_active: true },
+    { mat_no: '20058693', line_name: 'LINE D ( 110&300 Ton )', is_active: true },
+    { mat_no: '20099999', line_name: 'LINE B ( 600 Ton )', is_active: true, is_operation: true },
+    { mat_no: '20088888', line_name: 'LINE B ( 600 Ton )', is_active: false },
+  ];
+  assert.equal(selfMadeRequestBlock('LINE B ( 600 Ton )', '10104918', products)?.code, 'self_made');
+  assert.equal(selfMadeRequestBlock('line b  ( 600 ton )', ' 10104918 ', products)?.code, 'self_made');   // ช่องว่าง/ตัวพิมพ์
+  assert.equal(selfMadeRequestBlock('Assy GOR', '20058693', products), null);       // ไลน์อื่นผลิต → เบิกได้
+  assert.equal(selfMadeRequestBlock('LINE B ( 600 Ton )', '30042571', products), null);  // ไม่ได้ผลิตเอง
+  assert.equal(selfMadeRequestBlock('LINE B ( 600 Ton )', '20099999', products), null);  // ชั้น OP ไม่นับ
+  assert.equal(selfMadeRequestBlock('LINE B ( 600 Ton )', '20088888', products), null);  // ปิดใช้งานแล้ว
+  assert.equal(selfMadeRequestBlock('LINE B ( 600 Ton )', '10104918', null)?.code, 'unknown');   // อ่านไม่ได้ = fail-closed
+  assert.equal(selfMadeRequestBlock('LINE B ( 600 Ton )', '10104918', [])?.code, 'unknown');
+});

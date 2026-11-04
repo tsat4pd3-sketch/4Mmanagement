@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext, useCallback, useMemo } from 'react';
+import { useState, useEffect, useContext, useCallback, useMemo, Suspense, lazy } from 'react';
 import { lineNameCompare } from '../utils/lineHierarchy';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { supabase, supabaseDR } from '../supabaseClient';
@@ -17,7 +17,8 @@ import InternalTimeBoard from '../components/InternalTimeBoard';
 import { frameMin, breaksToFrame } from '../utils/timeFrame';
 import { getRoundStatus } from '../utils/deliveryRounds';
 import PageHeader from '../components/PageHeader';
-import Page from '../components/Page';
+import Page, { Hub } from '../components/Page';
+import { OPS_STORES_WORK, OPS_STORES_BUY } from '../utils/storeOps';
 import FilterBar from '../components/FilterBar';
 import { ALL, allOf } from '../utils/filterLabels';
 import useTabParam from '../utils/useTabParam';
@@ -1638,7 +1639,12 @@ function InflowRulesTab({ canEdit }) {
 /* ─────────────────────────────────────────────────────────────────────────────
    MAIN EXPORT
    ───────────────────────────────────────────────────────────────────────────── */
+/* 🏬🛒 04/11 (คำสั่ง user) — งานที่ขยับยอดของสโตร์ย้ายมาที่นี่ · /heijunka เหลือดูสัญญาณ Kanban อย่างเดียว
+   ฝังหน้าเดิมทั้งดุ้นแบบ /equipment (โหมด ops) — กฎ/ปุ่ม/ด่านเดิมทุกตัว ไม่เขียนใหม่ · `?view=`/`?store=` ไม่ชน `?tab=` */
+const HeijunkaKanban = lazy(() => import('./HeijunkaKanban'));
 const TABS = [
+  { key:'store',     label:'🏬 งานสโตร์' },      // เบิก-ส่งพาร์ทเข้าไลน์ · รับของผลิตเสร็จ · จ่ายวัตถุดิบ · งานชุบ
+  { key:'purchase',  label:'🛒 จัดซื้อ' },        // ขาสั่งของกับ supplier → รับเข้าสโตร์
   { key:'stock',     label:'📦 Stock' },
   { key:'receipts',  label:'📥 รอรับเข้า' },   // ปิดใบผลิตแล้ว รอคลังนับของจริงแล้วกดรับ (กฎโหมด 🟡 · 2026-10-02)
   { key:'count',     label:'📋 ตรวจนับ/เฟิร์มยอด' },   // กระทบยอดขาออกที่หลุด + ตรวจนับทั้งคลัง (2026-09-23)
@@ -1670,6 +1676,14 @@ export default function LineStock() {
         tabs={TABS} tab={activeTab} onTab={setActiveTab}
       />
 
+      {(activeTab === 'store' || activeTab === 'purchase') && (
+        <Hub>
+          <Suspense fallback={<div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลด…</div>}>
+            {/* key แยก = state ตู้ของ 2 แท็บไม่ปนกัน */}
+            <HeijunkaKanban key={activeTab} mode="ops" opsStores={activeTab === 'store' ? OPS_STORES_WORK : OPS_STORES_BUY} />
+          </Suspense>
+        </Hub>
+      )}
       {activeTab === 'stock'     && <StockTab role={role} scope={scope} />}
       {activeTab === 'receipts'  && <StockReceiptQueue />}
       {activeTab === 'count'     && <StockCountSheet role={role} scope={scope} />}

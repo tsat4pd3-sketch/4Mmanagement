@@ -40,7 +40,7 @@ import MatLabel from './MatLabel';
 import { slocCodeOfLine } from '../utils/storageLoc';   // 🏬 มุม SAP ของใบ (2026-09-08)
 import ProductSelect from './ProductSelect';
 import useColumnHistory from '../utils/useColumnHistory';
-import { splitLevels, refStockOf, madeHereMats } from '../utils/partRefStock';   // 🏭 ของที่ไลน์ผลิตเอง อ้างยอดคลัง (2026-10-08) // 📜 MAT ที่เคยตั้งระดับไว้ — ทะเบียนไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
+import { splitLevels, refStockOf, madeHereMats, selfMadeRequestBlock } from '../utils/partRefStock';   // 🏭 ของที่ไลน์ผลิตเอง อ้างยอดคลัง (2026-10-08) // 📜 MAT ที่เคยตั้งระดับไว้ — ทะเบียนไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
 
 const norm = (s) => String(s ?? '').trim().toLowerCase();
 const num = (v) => (v == null || v === '' ? null : Number(v));
@@ -366,6 +366,10 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
     if (!mat) { toast.error('เลือกพาร์ทที่จะขอเบิกก่อน'); return; }
     if (!(qty > 0)) { toast.error('ระบุจำนวนที่ต้องการเบิก'); return; }
     if (reqByMat.has(norm(mat))) { toast.error(`${mat} มีใบค้างอยู่แล้ว — ดูในรายการข้างล่าง (กด ↻ ถ้าไม่เห็น)`); return; }
+    /* 🔴 04/11 (คำสั่ง user) — พาร์ทที่ไลน์นี้ผลิตเอง ขอจากสโตร์ไม่ได้ (ขอผิดทิศ · ต้องผลิตเติม/เบิกลูกใน BOM)
+       ทะเบียนอ่านไม่ได้ = บล็อก (ตรวจไม่ได้ ห้ามปล่อยผ่าน) · กติกา `selfMadeRequestBlock` (partRefStock.js) */
+    const selfBlock = selfMadeRequestBlock(lineName, mat, whErr ? null : refCtx.products);
+    if (selfBlock) { toast.error(selfBlock.text); return; }
     if (!adhocKnown && !window.confirm(`"${mat}" ไม่อยู่ในทะเบียนสินค้า/BOM ของไลน์นี้\n\nยืนยันว่าจะขอเบิกพาร์ทนี้?`)) return;
     setBusy(`adhoc:${mat}`);
     const have = onHand.has(mat) ? onHand.get(mat) : null;

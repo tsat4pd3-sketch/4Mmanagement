@@ -60,13 +60,14 @@ const daysAgo = (iso, nowMs) => {
 };
 const blankLine = () => ({ key: Math.random().toString(36).slice(2), after: '', before: '', qty: '' });
 
-export default function PlatingBoard({ q = '', showDone = false }) {
+/* readOnly (04/11) — ฝังใน /heijunka (monitor) = ดูอย่างเดียว · ทำรายการที่ /line-stock?tab=store */
+export default function PlatingBoard({ q = '', showDone = false, readOnly = false }) {
   const { role, fullName } = useContext(UserContext);
-  const canSend = canSeeded('plating', 'send', role);
-  const canReceive = canSeeded('plating', 'receive', role);
-  const canToWh = canSeeded('plating', 'to_wh', role);
-  const canSetup = canSeeded('plating', 'setup', role);
-  const canWriteoff = canSeeded('plating', 'writeoff', role);
+  const canSend = !readOnly && canSeeded('plating', 'send', role);
+  const canReceive = !readOnly && canSeeded('plating', 'receive', role);
+  const canToWh = !readOnly && canSeeded('plating', 'to_wh', role);
+  const canSetup = !readOnly && canSeeded('plating', 'setup', role);
+  const canWriteoff = !readOnly && canSeeded('plating', 'writeoff', role);
   const imgOf = usePartImages();
   const suppliers = useSuppliers();
 
@@ -138,6 +139,8 @@ export default function PlatingBoard({ q = '', showDone = false }) {
   const by = () => fullName || getActor().name || '';
   const [busy, setBusy] = useState(null);
   const rpc = async (key, fn, args, okMsg) => {
+    // ด่านชั้นเขียนจริง — ไม่พึ่งการซ่อนปุ่ม (monitor = ห้ามขยับยอดเด็ดขาด)
+    if (readOnly) { toast.error('หน้านี้ดูอย่างเดียว — ทำรายการที่ Line Stock › 🏬 งานสโตร์'); return null; }
     setBusy(key);
     const { data, error } = await supabaseDR.rpc(fn, args);
     setBusy(null);
