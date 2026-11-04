@@ -30,6 +30,8 @@ import PlanFrameBar from '../components/PlanFrameBar';
 import PlanFrameRow from '../components/PlanFrameRow';
 import { buildBoardCards } from '../utils/boardCards';
 import PlanSlipBar from '../components/PlanSlipBar';   // 📋 แถบ "หลุดแผนไปแค่ไหน" (เวลา+ยอด · 2026-09-30)
+import DowntimeBand from '../components/DowntimeBand';   // ⛔ แถบเครื่องหยุดเต็มความสูงแถว (2026-11-04)
+import { downtimeBandsIn } from '../utils/downtimeBands';
 import DelayBlameBar from '../components/DelayBlameBar';   // 🔗 สรุปดีเลย์ของวัน + ต้นเหตุ/ผู้ถูกพาล (ทีมปั๊ม 2026-09-30)
 import { liveChannel } from '../utils/liveChannel';
 import { checkWrite } from '../utils/dbWrite';
@@ -1954,24 +1956,15 @@ export default function Management() {
                                 );
                               });
                           })()}
-                          {/* ⛔ แถบ downtime — ชิดขอบบนแถว ชี้เมาส์ดูรายละเอียด
-                              เฉพาะของ sub-line ที่มีใบงานในแถวนี้ ไม่วาดของพาร์ทอื่นปน (แถวไม่มีใบงานให้เห็นครบ) */}
-                          {(() => {
-                            const rowLines = new Set(row.cards.map(c => c.line_name).filter(Boolean));
-                            return dtWindows.filter(w => !rowLines.size || !w.line_name || rowLines.has(w.line_name));
-                          })().map((w, di) => {
-                            const l = Math.max(0, (w.s - half.startMs) * pctPerMs);
-                            const rgt = Math.min(100, (w.e - half.startMs) * pctPerMs);
-                            if (rgt <= 0 || l >= 100 || rgt <= l) return null;
-                            return (
-                              <div key={`dt-${di}`} title={dtLabel(w)}
-                                style={{
-                                  position: 'absolute', top: 0, height: 4, left: `${l}%`, width: `${Math.max(rgt - l, 0.4)}%`,
-                                  background: w.planned ? '#94a3b8' : '#ef4444', opacity: 0.85,
-                                  borderRadius: '0 0 3px 3px', zIndex: 3, cursor: 'help',
-                                }} />
-                            );
-                          })}
+                          {/* ⛔ แถบ downtime — เต็มความสูงแถว ใต้ใบกัมบัง (04/11 · เหตุผลเต็มใน utils/downtimeBands.js)
+                              🔴 ต้องเหมือนจอ Dashboard เป๊ะ ⇒ ผ่าน `downtimeBandsIn` + `<DowntimeBand>` ห้ามวาดเอง (มีด่าน) */}
+                          {downtimeBandsIn(dtWindows, {
+                            rowLines: new Set(row.cards.map(c => c.line_name).filter(Boolean)),
+                            halfStartMs: half.startMs, pctPerMs,
+                          }).map((band, di) => (
+                            <DowntimeBand key={`dt-${di}`} band={band} label={dtLabel(band.w)}
+                              pxWidth={tlW > 0 ? band.widthPct * tlW / 100 : 0} />
+                          ))}
                           {(() => {
                             const positioned = positionedForCards(row.cards).map(item => pctForHalf(item, half)).filter(Boolean);
                             /* กันใบงานทับกัน — ใบต้องไม่ล้ำขอบซ้ายของใบถัดไป (1 ไลน์ผลิตทีละใบ)
