@@ -26,15 +26,41 @@ test('คนละ sub-line = คนละเลน (คนละเครื่
   assert.deepEqual(laneKeys([card('a'), card('b', { line_name: 'L2' })]), ['L1', 'L2']);
 });
 
-test('งานคู่ RH/LH ที่อยู่ไลน์เดียวกัน = แยกเลน เริ่มพร้อมกัน', () => {
-  const cards = [card('rh', { mat_no: 'RH' }), card('lh', { mat_no: 'LH' })];
+test('งานคู่ RH/LH ไลน์เดียวกัน = เลนเดียวกับไลน์ · 1 คู่ = 1 ช่องคิว แถบเริ่มพร้อมกัน', () => {
+  const cards = [card('rh', { mat_no: 'RH' }), card('lh', { mat_no: 'LH', orderStartMs: T0 + 60000, orderEndMs: T0 + H + 60000 })];
   const opt = { pairMatByMat: { RH: 'LH', LH: 'RH' } };
-  assert.deepEqual(laneKeys(cards, opt), ['L1||LH', 'L1||RH']);
+  assert.deepEqual(laneKeys(cards, opt), ['L1']);
   const pos = positionAllCards(cards, {
     breaks: [], ctByMat: { RH: 60, LH: 60 }, nowMs: T0,
     roundIndexOf: () => 0, roundStartOf: () => T0, ...opt,
   });
   assert.equal(pos.get('rh').startMs, pos.get('lh').startMs, 'แม่พิมพ์คู่ปั๊มพร้อมกัน แถบต้องตรงกัน');
+  assert.equal(pos.get('rh').endMs, pos.get('lh').endMs);
+});
+
+test('🔴 งานเดี่ยวหลังงานคู่ ต้องต่อคิวหลังงานคู่ (แท่นเดียวกัน) — คู่ช้าต้องดันงานเดี่ยว', () => {
+  const pair = { orderStartMs: T0, orderEndMs: T0 + 3 * H };              // 08:00–11:00 ยังไม่ปิด
+  const cards = [
+    card('rh', { mat_no: 'RH', ...pair }), card('lh', { mat_no: 'LH', ...pair }),
+    card('single', { mat_no: 'S1', orderStartMs: T0 + 3 * H + 60000, orderEndMs: T0 + 7 * H }),   // 11:01
+  ];
+  const pos = positionAllCards(cards, {
+    breaks: [], ctByMat: { RH: 60, LH: 60, S1: 60 }, nowMs: T0 + 4 * H,   // 12:00 คู่ยังไม่ปิด
+    roundIndexOf: () => 0, roundStartOf: () => T0, pairMatByMat: { RH: 'LH', LH: 'RH' },
+  });
+  const pairEnd = Math.max(pos.get('rh').endMs, pos.get('rh').occupiedEndMs || 0);
+  assert.ok(pos.get('single').startMs >= pairEnd, 'งานเดี่ยวห้ามเริ่มทับงานคู่ที่ยังไม่จบ');
+  assert.ok(pos.get('lh').isPairFollower || pos.get('rh').isPairFollower, 'คู่ต้องยุบเป็นช่องเดียว');
+});
+
+test('งานคู่ใช้ paired_order_id ก่อน FIFO · ข้างที่ไม่มีคู่ = ใบเดี่ยว', async () => {
+  const { pairSlots } = await import('../heijunkaQueue.js');
+  const a1 = card('a1', { mat_no: 'RH', orderStartMs: T0 }), a2 = card('a2', { mat_no: 'RH', orderStartMs: T0 + H });
+  const b1 = card('b1', { mat_no: 'LH', orderStartMs: T0, paired_order_id: 'a2' });
+  const { lead, followerOf } = pairSlots([a1, a2, b1], { RH: 'LH', LH: 'RH' });
+  assert.equal(lead.length, 2);
+  assert.ok(lead.includes(a1), 'a1 ไม่มีคู่ = ใบเดี่ยว');
+  assert.equal(followerOf.size, 1);
 });
 
 test('คู่ที่มีแค่ข้างเดียวในไลน์ ไม่แยกเลน (ไม่ได้ปั๊มคู่จริง)', () => {

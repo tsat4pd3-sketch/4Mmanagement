@@ -4,6 +4,7 @@
    ไฟล์พี่น้อง `pmExportExcel.js` lazy อยู่แล้ว · DailyReport/Checkin ก็ lazy · ตัวนี้เป็นตัวที่ตก
    ⚠️ `exportInspectionPDF` เป็น async อยู่แล้ว ⇒ เปลี่ยนเป็น lazy ได้โดยไม่กระทบผู้เรียก */
 import { supabaseDR } from '../supabaseClient'
+import { fitContain, pinsOnFrame } from '../utils/imageFit.js'
 
 // ── Constants ─────────────────────────────────────────────────
 const W = 297   // A4 landscape width mm
@@ -110,10 +111,33 @@ export async function exportInspectionPDF({
   const datePart = new Date(inspection.inspected_at).toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' })
   const dateDisplay = fmtDate(inspection.inspected_at)
 
+  /* 🖼️ รูปเครื่องบนใบ = "เฟรมแรก" ชุดเดียวกับจอตรวจ (A7 · 03/11) — จอตรวจใช้ `jig_images[0]` (เรียง sort)
+     ถ้ามี ไม่มีค่อยถอยไป `jig.image_path` · เดิมใบพิมพ์ใช้ `jig.image_path` เสมอ แล้ววาดหมุด "ทุกจุด"
+     ลงไป ⇒ หมุดที่วางไว้บนรูปมุมอื่นตกผิดที่บนกระดาษ · อ่านรายการเฟรมไม่ได้ = เขียนบอกบนใบ ไม่เงียบ */
   let jigImg = null
-  if (jig.image_path) {
-    const url = supabaseDR.storage.from('jig-images').getPublicUrl(jig.image_path).data.publicUrl
-    jigImg = await urlToBase64(url)
+  let frameId = 'legacy'
+  let frameErr = null
+  {
+    const { data: fr, error: frErr } = await supabaseDR.from('jig_images')
+      .select('id, image_path, sort').eq('jig_id', jig.id).order('sort').limit(1)
+    if (frErr) frameErr = frErr.message
+    const first = !frErr && fr?.[0]?.image_path ? fr[0] : null
+    const path = first ? first.image_path : jig.image_path
+    if (first) frameId = first.id
+    if (path) jigImg = await urlToBase64(supabaseDR.storage.from('jig-images').getPublicUrl(path).data.publicUrl)
+  }
+  /* วางรูปลงกรอบแบบ contain (คงสัดส่วน) — คืน { x, y, w, h } ของรูปจริงบนกระดาษ · ขนาดอ่านไม่ออก = null
+     🔴 ห้ามกลับไป addImage(..., กว้างกรอบ, สูงกรอบ) ตรงๆ — ยืดรูปมือถือแนวตั้งเป็นแนวนอน (บั๊ก A7) */
+  const placeImage = (img, x, y, bw, bh) => {
+    let props = null
+    try { props = doc.getImageProperties(img) } catch { /* ไม่ใช่รูปที่ jsPDF อ่านได้ ⇒ props ว่าง ⇒ คืน null ด้านล่าง */ }
+    const f = fitContain(props?.width, props?.height, bw, bh)
+    if (!f) return null
+    const box = { x: x + f.dx, y: y + f.dy, w: f.w, h: f.h }
+    try { doc.addImage(img, props.fileType || 'JPEG', box.x, box.y, box.w, box.h) } catch {
+      try { doc.addImage(img, 'PNG', box.x, box.y, box.w, box.h) } catch { return null }
+    }
+    return box
   }
 
   // ถ้ามี group_name (Item หัวข้อจากฟอร์มจริง) จัดกลุ่มตามนั้น ไม่งั้นตาม category แบบเดิม
@@ -238,25 +262,27 @@ export async function exportInspectionPDF({
 
   drawRect(doc, M, IMG_Y, IMG_W, IMG_H)
 
-  if (jigImg) {
-    try {
-      doc.addImage(jigImg, 'JPEG', M + 0.5, IMG_Y + 0.5, IMG_W - 1, IMG_H - 1)
-    } catch {
-      try { doc.addImage(jigImg, 'PNG', M + 0.5, IMG_Y + 0.5, IMG_W - 1, IMG_H - 1) } catch {}
-    }
-  } else {
-    txt(doc, '[ ไม่มีรูปภาพ ]', M + IMG_W / 2, IMG_Y + IMG_H / 2, { size: 8, align: 'center', color: [150, 150, 150] })
+  const imgBox = jigImg ? placeImage(jigImg, M + 0.5, IMG_Y + 0.5, IMG_W - 1, IMG_H - 1) : null
+  if (!imgBox) {
+    txt(doc, jigImg ? '[ อ่านรูปภาพไม่สำเร็จ ]' : '[ ไม่มีรูปภาพ ]', M + IMG_W / 2, IMG_Y + IMG_H / 2, { size: 8, align: 'center', color: [150, 150, 150] })
   }
 
   const PIN_R = 2.2
   const PIN_AH = 1.4
 
+  /* หมุด = % ของ "รูปจริง" (ไม่ใช่ของกรอบ) และเฉพาะจุดที่วางบนเฟรมนี้ — กติกาเดียวกับจอตรวจ */
+  const { on: framePins, offFrame } = imgBox ? pinsOnFrame(checkpoints, frameId, frameId) : { on: [], offFrame: 0 }
+  const framePinIds = new Set(framePins.map(c => c.id))
+  const pinNote = frameErr ? 'อ่านรายการรูปหลายมุมไม่สำเร็จ — หมุดแสดงเฉพาะจุดที่ผูกรูปหลัก'
+    : offFrame ? `อีก ${offFrame} จุดวางหมุดไว้บนรูปมุมอื่น (ดูในระบบ) — ไม่แสดงบนรูปนี้` : ''
+  if (pinNote) txt(doc, pinNote, M + 1.5, IMG_Y + IMG_H - 2, { size: 5, color: [120, 120, 120] })
+
   checkpoints.forEach((cp, i) => {
-    if (cp.x_pos == null || cp.y_pos == null) return
+    if (!framePinIds.has(cp.id)) return
     const num = itemNoMap[cp.id] ?? (i + 1)
 
-    const pinX = M + 0.5 + cp.x_pos * (IMG_W - 1)
-    const pinY = IMG_Y + 0.5 + cp.y_pos * (IMG_H - 1)
+    const pinX = imgBox.x + cp.x_pos * imgBox.w
+    const pinY = imgBox.y + cp.y_pos * imgBox.h
     const cx = pinX
     const cy = pinY - PIN_AH - PIN_R
 
@@ -470,12 +496,9 @@ export async function exportInspectionPDF({
           if (data.section !== 'body' || data.column.dataKey !== 'picture') return
           const img = data.row.raw?._img
           if (!img) return
+          // คงสัดส่วนรูป (A7 · 03/11) — เดิมยืดเต็มช่อง 36 มม. × สูงแถว ⇒ รูปแนวตั้งกลายเป็นแถบแบน
           const pad = 0.6
-          const w = Math.min(36, data.cell.width - 2 * pad)
-          const h = data.cell.height - 2 * pad
-          try { doc.addImage(img, 'JPEG', data.cell.x + pad, data.cell.y + pad, w, h) } catch {
-            try { doc.addImage(img, 'PNG', data.cell.x + pad, data.cell.y + pad, w, h) } catch { /* ข้ามรูปเสีย */ }
-          }
+          placeImage(img, data.cell.x + pad, data.cell.y + pad, Math.min(36, data.cell.width - 2 * pad), data.cell.height - 2 * pad)
         },
       })
 

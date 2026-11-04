@@ -244,7 +244,8 @@ function ReadyChips({ ready, onGo, compact }) {
       {ready.steps.map(st => {
         const c = READINESS_COLOR[st.status];
         const go = onGo && st.status !== 'na' ? () => onGo(st.key) : undefined;
-        const title = st.status === 'ok' ? `${st.label}: มีแล้ว`
+        const title = st.hint ? `${st.label}: ${st.hint}`
+          : st.status === 'ok' ? `${st.label}: มีแล้ว`
           : st.status === 'na' ? `${st.label}: ไม่เกี่ยวกับของชิ้นนี้`
           : st.status === 'wait' ? `${st.label}: ยังไม่ได้ลง — อนาคตต้องบังคับ (ตอนนี้ยังไม่บล็อก)`
           : `${st.label}: ยังไม่ได้ลง — ต้องมี`;
@@ -253,7 +254,7 @@ function ReadyChips({ ready, onGo, compact }) {
             style={{ fontSize: 11, fontWeight: 700, padding: compact ? '1px 6px' : '2px 8px', borderRadius: 10,
               background: c.bg, color: c.fg, border: `1px solid ${c.fg}33`, cursor: go ? 'pointer' : 'default',
               fontFamily: 'var(--font-body)', lineHeight: 1.5 }}>
-            {st.icon} {compact ? '' : st.label + ' '}{c.mark}
+            {st.icon} {compact ? '' : st.label + ' '}{c.mark}{st.hint ? '*' : ''}
           </button>
         );
       })}
@@ -316,7 +317,7 @@ export default function ProductMaster() {
   /* 🔴 "อ่านยอดสะสมไม่ได้" ≠ "ยังไม่เคยผลิต" — ต้องเขียนบนจอ ห้ามซ่อนชิป (utils/familyTotals.js) */
   const [famTotalsFail, setFamTotalsFail] = useState(false);
   const [bomCounts, setBomCounts] = useState({});          // product_id → bom count
-  const [bomRows, setBomRows] = useState([]);              // {product_id, mat_no} — ใช้จัดอันดับตัวเลือก parent ของ OP ตาม BOM ของไลน์
+  const [bomRows, setBomRows] = useState([]);              // {product_id, mat_no, parent_mat} — จัดอันดับ parent ของ OP + หาลูกที่ใบอื่นกรอกไว้
   /* ✅ ความครบของข้อมูลต่อสินค้า (2026-09-22) — ดึงแค่คีย์ 2 ตาราง (ตัวเล็กมาก) ไม่ใช่ทั้งแถว (กฎเหล็ก 11 egress)
      routing ผูกด้วย mat_no · packaging ผูกด้วย product_id — คนละคีย์ ห้ามสลับ */
   const [routingMats, setRoutingMats] = useState(() => new Set());
@@ -365,7 +366,7 @@ export default function ProductMaster() {
       loadLinesRes(),
       /* 457 / 430 แถว — ยังไม่ทะลุ แต่เป็นทะเบียนที่โตตามพาร์ทใหม่ ⇒ แบ่งหน้าไว้ก่อน (กฎเหล็ก DB ข้อ 5) */
       fetchAllRows(supabaseDR, 'kanban_standards', '*', q => q.order('mat_no')),
-      supabaseDR.from('bom_items').select('product_id, mat_no').eq('is_active', true),
+      supabaseDR.from('bom_items').select('product_id, mat_no, parent_mat').eq('is_active', true),
       /* 📦 ยอดผลิตสะสมต่อ family — รวมฝั่ง DB ผ่าน RPC (utils/familyTotals.js)
          เดิมลาก `production_sessions` ทั้งตารางมาบวกในหน้า ซึ่งผิด 2 ชั้น:
          ติดเพดาน 1,000 แถว (วัด 15/10 = 1,675 แถว) **และ** join ด้วย `product_id`
@@ -704,12 +705,26 @@ export default function ProductMaster() {
     kanbanStds.filter(s => s.is_active && s.product_id).forEach(s => { m[s.product_id] = (m[s.product_id] || 0) + 1; });
     return m;
   }, [kanbanStds]);
+  /* 🔴 MAT → จำนวนลูกที่ **ใบอื่น** กรอกไว้ให้ (`parent_mat`) — "ใบของตัวเองว่าง" ≠ "ไม่มี BOM"
+     ไม่นับตรงนี้ = พาร์ทที่แม่สร้าง BOM ไว้ให้แล้วขึ้น "BOM ✗" (user แจ้ง 04/11 · วัดได้ 31 พาร์ท) */
+  const bomElsewhere = useMemo(() => {
+    const m = new Map();
+    for (const b of bomRows) {
+      const pm = String(b?.parent_mat || '').trim().toUpperCase();
+      if (pm) m.set(pm, (m.get(pm) || 0) + 1);
+    }
+    return m;
+  }, [bomRows]);
+  const bomAwayOf = useCallback(
+    (it) => bomElsewhere.get(String(it?.mat_no || '').trim().toUpperCase()) || 0, [bomElsewhere]);
+
   const readyOf = useCallback((it) => productReadiness(it, {
-    bom:       bomCounts[it.id] || 0,
+    bom:          bomCounts[it.id] || 0,
+    bomElsewhere: bomAwayOf(it),
     routing:   routingMats.has(String(it.mat_no || '').trim().toUpperCase()),
     packaging: packagedIds.has(it.id),
     kanban:    kanbanByProduct[it.id] || 0,
-  }), [bomCounts, routingMats, packagedIds, kanbanByProduct]);
+  }), [bomCounts, bomAwayOf, routingMats, packagedIds, kanbanByProduct]);
 
   /* ── filtered ── */
   const visibleFamilies = useMemo(() => {
@@ -972,7 +987,8 @@ export default function ProductMaster() {
       {/* 🧩 worklist — ขั้นตอน (OP) ที่ยังไม่ผูก component = ใบของเสียของขั้นนั้นตัดสต๊อก SAP ไม่ได้ (2026-09-15)
           pattern เดียวกับแถบ 🔩 ด้านบน · ห้ามซ่อน (UI-CONVENTIONS §5.5 ข้อ 3 — ข้อมูลผิดที่ต้องมีคนไปแก้) */}
       {(() => {
-        const opNoBom = items.filter(i => i.is_active && i.is_operation && !(bomCounts[i.id] > 0));
+        const opNoBom = items.filter(i => i.is_active && i.is_operation
+          && !(bomCounts[i.id] > 0) && !(bomAwayOf(i) > 0));
         if (!opNoBom.length) return null;
         return (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '10px 14px', marginBottom: 12, background: 'rgba(249,115,22,0.08)', border: '1px solid rgba(249,115,22,0.35)', borderRadius: 10 }}>
@@ -2139,6 +2155,17 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
     setSelProduct(target); setSearch(target.mat_no || '');
   }, [products, selProduct, bomIx]);
 
+  /* 📄 เปิด "ใบ" ตาม id ของใบตรงๆ — ใช้กับปุ่มที่รู้ว่าความสัมพันธ์นั้นถูกนิยามไว้ในใบไหน
+     🔴 ชื่อแม่ตัวเดียวอยู่ได้หลายใบ ⇒ เปิดด้วยชื่อแม่อย่างเดียวจะไปใบเดิมเสมอ (ปุ่มซ้ำกดแล้วไปที่เดียวกัน)
+        เคสจริง 04/11: 20058490 อยู่ใต้ 20070036 ทั้งในใบ 20070036 และใบ 10105772 */
+  const openSheetById = useCallback((sheetId, fallbackMat) => {
+    const target = products.find(p => p.id === sheetId);
+    if (!target) { if (fallbackMat) openSheetOfMat(fallbackMat); return; }
+    setPartView(null);
+    setBomBack(prev => (selProduct ? [...prev, { id: selProduct.id, mat_no: selProduct.mat_no, name: selProduct.name }] : prev));
+    setSelProduct(target); setSearch(target.mat_no || '');
+  }, [products, selProduct, openSheetOfMat]);
+
   /* ชื่อ/ป้ายของ mat และของ "ใบ" — ไม่รู้ = ปล่อยว่าง **ห้ามเอาเลข MAT มาแทนชื่อ** (ด่าน regressionGuards) */
   const nameOfMat = useCallback((mat) => {
     const k = upMat(mat);
@@ -2158,24 +2185,43 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
     const m = upMat(mat);
     if (!m) return null;
     const ps = bomIx.parentsOfMat(m);
+    /* 🔴 แถวที่ "ชี้ใบไม่ได้" ไม่ได้แปลว่าไม่มีแม่ — `parentsOfMat` แกะชื่อแม่จาก `matOfProduct`
+       ซึ่งมีเฉพาะใบที่จอโหลดมา (`is_active` เท่านั้น) ⇒ แถวที่อยู่ใน**ใบที่ปิดใช้งาน** ตกไปอยู่ใน
+       `bomIx.orphans` แล้วหายจากแถบนี้เงียบๆ · เคสจริง 04/11: 20058490 มีแม่จริง 7 ที่ จอขึ้น 4
+       (หาย 3 เพราะใบ 10100333 / 10100379 / 20066630 ปิดใช้งาน) ⇒ ต้องนับแล้วเขียนบอก */
+    const hidden = (bomIx.orphans || []).filter(r => upMat(r?.mat_no) === m).length;
+    /* 🔴 แม่ชื่อเดียวกันแต่คนละใบ = คนละการนิยาม ⇒ ปุ่มต้องเขียนใบกำกับ ไม่งั้นเห็นปุ่มซ้ำกันเป๊ะ */
+    const dupMat = new Set(ps.map(x => x.mat).filter((v, i, a) => a.indexOf(v) !== i));
+    const total = ps.length + hidden;
     return (
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
         <span style={{ fontSize: 11.5, color: 'var(--muted)', fontWeight: 700 }}>
-          ⬆ ถูกใช้เป็นลูกของ{ps.length ? ` ${ps.length} ที่:` : ':'}
+          ⬆ ถูกใช้เป็นลูกของ{total ? ` ${total} ที่:` : ':'}
         </span>
-        {ps.length === 0 && (
+        {total === 0 && (
           <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>— ไม่มี (เป็นตัวบนสุดของสาย)</span>
         )}
-        {ps.map((x, i) => (
-          <button key={`${x.mat}|${x.sheetId}|${i}`} type="button" onClick={() => openSheetOfMat(x.mat)}
-            title={`${x.mat} ใช้ ${m} ×${x.qty} · นิยามไว้ในใบ ${sheetLabel(x.sheetId)}`}
-            style={{ ...btnSecondary, padding: '2px 9px', fontSize: 11, fontFamily: 'monospace' }}>
-            {x.mat} ↗
-          </button>
-        ))}
+        {ps.map((x, i) => {
+          const sh = products.find(p => p.id === x.sheetId);
+          return (
+            <button key={`${x.mat}|${x.sheetId}|${i}`} type="button"
+              onClick={() => openSheetById(x.sheetId, x.mat)}
+              title={`${x.mat} ใช้ ${m} ×${x.qty} · นิยามไว้ในใบ ${sheetLabel(x.sheetId)}`}
+              style={{ ...btnSecondary, padding: '2px 9px', fontSize: 11, fontFamily: 'monospace' }}>
+              {x.mat}{dupMat.has(x.mat) && sh ? ` · ในใบ ${sh.mat_no}` : ''} ↗
+            </button>
+          );
+        })}
+        {/* 🔴 มีแม่อีกแต่ชี้ชื่อไม่ได้ (ใบปิดใช้งาน/ไม่อยู่ในลิสต์) — เขียนบอก ห้ามหายเงียบ */}
+        {hidden > 0 && (
+          <span title="แถวเหล่านี้อยู่ในใบที่จอไม่ได้โหลด (ส่วนใหญ่ = ใบที่ปิดใช้งาน) จึงชี้ชื่อแม่ไม่ได้"
+            style={{ fontSize: 11, fontWeight: 700, color: statusColor('warn') }}>
+            +{hidden} ที่ชี้ชื่อไม่ได้ (ใบปิดใช้งาน)
+          </span>
+        )}
       </div>
     );
-  }, [bomIx, openSheetOfMat, sheetLabel]);
+  }, [bomIx, openSheetById, sheetLabel, products]);
 
   /* 📄 เปิดใบนี้แล้วว่าง — "ลูกของพาร์ทนี้" ถูกกรอกไว้ในใบอื่นหรือเปล่า
      🔴 ต้องถามแยกจาก `items` — `items` = บรรทัดของ **ใบนี้** เท่านั้น ⇒ ว่าง ≠ ไม่มีลูก

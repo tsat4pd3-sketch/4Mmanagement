@@ -468,3 +468,12 @@
 ### uid ที่ใช้ได้ (วัด 24/10)
 `reported_by_uid` 1,079 · `accepted_by_uid` 1,033 · `tech_main_uid` 933 · `checker_uid` 864 ·
 `approver_uid` 448 · `ho_checker_uid` 447 · `qa_checker_uid` 270 · `dept_manager_uid` 9 · `cost_mgr_uid` 4
+
+### ✍️ ลายเซ็นของ "พนักงาน" (ไม่ใช่บัญชี) — 2026-11-03 · ประชุม 02/11 C1
+- คอลัมน์ `employees.signature_url` (Main · migration `20261103_employee_signature_main.sql` — **ยังไม่ apply ณ 03/11**)
+- ไฟล์: bucket `signatures` path **`emp/<employee_id>/<ts>.png`** · policy เขียน = `has_perm('employees:edit'|'employees:edit_all_sections')`
+  (policy เดิม "Users can manage own signature" เช็คโฟลเดอร์ = uid จึงไม่ชนกัน)
+- ตั้งที่ `/operator` › แก้ไขพนักงาน › ✍️ ลายเซ็น — ใช้ `SignatureModal` ตัวเดียวกัน (prop `folder` + `persist` + `title`)
+  🔴 โมดัลต้อง render **นอก `<form>`** (ปุ่มในโมดัลไม่มี type = submit ฟอร์มพนักงาน)
+- ลำดับที่ใบพิมพ์ใช้ = **โปรไฟล์ → ฐานพนักงาน → ค่าที่ใบเก็บไว้ → `null`** ผ่าน `signatureOfPerson()` (`utils/employeeSignature.js`) ที่เดียว
+- ยังไม่ apply = แถว `select('*')` ไม่มีคีย์ `signature_url` ⇒ จอเขียนบอก · ใบพิมพ์เว้นช่อง + toast บอกเหตุผล (ไม่เงียบ)

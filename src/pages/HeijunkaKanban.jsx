@@ -3,7 +3,7 @@ import { urlParam, urlPick, urlBool } from '../utils/urlInit';
 import { lineNameCompare } from '../utils/lineHierarchy';
 import { canWriteUnit, writeBlockText } from '../utils/writeScope';
 import ReadOnlyNote from '../components/ReadOnlyNote';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { loadLinesRes } from '../utils/useProductionLines';
 import { loadStorageLocations } from '../utils/useStorageLocations';
@@ -19,6 +19,7 @@ import ProdProgressStrip from '../components/ProdProgressStrip';
 import StoreTimeChart from '../components/StoreTimeChart';
 import StoreCallSiren from '../components/StoreCallSiren';
 import PurchaseBulkModal from '../components/PurchaseBulkModal';
+import OpenOrderDemandPanel from '../components/OpenOrderDemandPanel';
 import PlatingBoard from '../components/PlatingBoard';
 import DeliverScanModal from '../components/DeliverScanModal';
 import PickScanModal from '../components/PickScanModal';
@@ -63,11 +64,14 @@ import { downloadCsvDoc } from '../utils/csvDoc';
 const VIEW_META = {
   // ⚠️ แต่ละตู้มีขั้นไม่เหมือนกัน (FG เตรียม→ส่ง→รับ · Child ปล่อยเข้าไลน์→รับเข้าสโตร์ ·
   //    จัดซื้อ สั่งซื้อ→รับเข้า) ⇒ ห้ามเขียนลำดับขั้นเดียวครอบทุกตู้ คนจะหาปุ่มที่ไม่มีอยู่จริง
-  unified:  { label: '🗄️ ตู้ Kanban รวม',   act: true,  purpose: 'คิวงานของสโตร์ทุกตู้ — สโตร์เป็นคนกดบันทึกสถานะ (แต่ละตู้มีขั้นของตัวเอง ดูคำบนปุ่ม)' },
-  chart:    { label: '🕐 Store Time Chart', act: true,  purpose: 'ไลน์ไหนจะขาดของกี่โมง — เลือกพาร์ทแล้วกดสร้างใบส่งได้จากที่นี่' },
+  unified:  { label: '🗄️ ตู้ Kanban รวม',   act: true,  purpose: 'คิวงานของสโตร์ทุกตู้ — สโตร์เป็นคนกดบันทึกสถานะ (แต่ละตู้มีขั้นของตัวเอง ดูคำบนปุ่ม)',
+              monitor: 'สัญญาณ Kanban ทุกตู้ — ดูสถานะอย่างเดียว' },
+  chart:    { label: '🕐 Store Time Chart', act: true,  purpose: 'ไลน์ไหนจะขาดของกี่โมง — เลือกพาร์ทแล้วกดสร้างใบส่งได้จากที่นี่',
+              monitor: 'ไลน์ไหนจะขาดของกี่โมง — ดูอย่างเดียว' },
   board:    { label: '🏪 Store Board',      act: false, purpose: 'สรุปรายไลน์ว่ามีใบค้างกี่ใบ — เป็นทางลัดเข้าไปทำงานต่อ ไม่มีปุ่มทำงานเอง' },
   timeline: { label: '📊 Heijunka Board',   act: false, purpose: 'กริดรอบส่ง 24 ชม. — ดูว่ารอบไหนส่งอะไรบ้าง (มีเฉพาะไลน์ที่ใช้รอบ)' },
-  pull:     { label: '🔄 Pull / ใบสั่งผลิต', act: true,  purpose: 'ระบบดึง: demand สะสมครบล็อตแล้วออกใบสั่งผลิต + ใบเบิกวัตถุดิบ' },
+  pull:     { label: '🔄 Pull / ใบสั่งผลิต', act: true,  purpose: 'ระบบดึง: demand สะสมครบล็อตแล้วออกใบสั่งผลิต + ใบเบิกวัตถุดิบ',
+              monitor: 'ระบบดึง: demand สะสมครบล็อตแล้วออกใบสั่งผลิต + ใบเบิกวัตถุดิบ — ดูอย่างเดียว' },
   demand:   { label: '📋 ความต้องการวันนี้', act: false, purpose: 'ต้องใช้พาร์ทอะไร กี่ชิ้น กี่ใบคัมบัง — สลับดูแบบการ์ดหรือตารางได้' },
 };
 
@@ -1123,6 +1127,8 @@ const STORE_TABS = [
   { key: 'fg',       icon: '🏭', label: 'Store FG',      desc: 'พาร์ทแม่ (100) → ไลน์ประกอบ' },
   // คำอธิบายต้องบอกว่า "สโตร์ทำอะไร" ไม่ใช่ "ไลน์ทำอะไร" — คนอ่านคือสโตร์
   { key: 'child',    icon: '🔧', label: 'Store Child',   desc: 'พาร์ทย่อยที่เราผลิตเอง (200) → ปล่อยให้ไลน์ผลิต แล้วรับของกลับเข้าสโตร์' },
+  // 📋 04/11 (คำสั่ง user) — แจ้งล่วงหน้าตั้งแต่ไลน์เปิดใบ (เดิมรู้ตอนปิดใบ = ผลิตจบแล้ว) · อ่านอย่างเดียว
+  { key: 'open',     icon: '📋', label: 'งานที่ไลน์เปิดอยู่', desc: 'ไลน์เปิดใบผลิตแล้ว → ชิ้นส่วนที่ต้องเตรียมส่ง (แจ้งล่วงหน้า)' },
   { key: 'purchase', icon: '🛒', label: 'จัดซื้อ',       desc: 'ของซื้อ (300/500) → รับเข้าสโตร์' },
   { key: 'raw',      icon: '🧱', label: 'Store Raw Mat', desc: 'เบิกวัตถุดิบเข้าการผลิต child' },
   // ⚠️ แท็บนี้เป็นกระจกอ่านอย่างเดียวของหน้า /rack-center — ป้ายต้องบอกตั้งแต่บนแท็บ
@@ -1232,12 +1238,13 @@ const matchQ = (q, ...fields) => {
   return fields.some(f => String(f ?? '').toLowerCase().includes(s));
 };
 
-function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfirm, confirming, onReceive, imgOf,
+function UnifiedStoreBoard({ store, setStore, opsStores = null, readOnly = false, focus = null, rounds, deliveries, view, onConfirm, confirming, onReceive, imgOf,
   lotRequests, rawRequests, rackRequests, pkgRequests, wipRequests, purchaseRequests, purchaseErr, busy, onAdvanceLot, onIssueRaw, onAdvanceWip, onAdvancePurchase, setBulkBuy, fmt, workDate, nowMs, canOperate, lotMats = null, inflowRules = null }) {
 
   const { roundAlloc } = view;
   const [buyFilter, setBuyFilter] = useState(() => urlPick('buy', ['3', '5'], ''));   // '' | '3' | '5' · ?buy= (จอวนหน้า)
-  const [q, setQ] = useState('');                   // ค้นหา: รหัส / ชื่อ / ไลน์ปลายทาง
+  const [q, setQ] = useState(() => focus?.q || '');   // ค้นหา: รหัส / ชื่อ / ไลน์ปลายทาง
+  useEffect(() => { if (focus?.at) setQ(focus.q || ''); }, [focus?.at, focus?.q]);   // 🔍 กดจากแถบไลน์เรียกของ
   const [showDone, setShowDone] = useState(() => urlBool('sdone', false));  // ?sdone= · default = เฉพาะงานค้าง (ให้ตรงกับตัวเลขบนแท็บ)
   const confirmedSet = useMemo(() => { const s = new Set(); deliveries.forEach(d => s.add(`${d.line_name}|${d.shift}|${d.round_no}`)); return s; }, [deliveries]);
   const receivedMap  = useMemo(() => { const m = {}; deliveries.forEach(d => { m[`${d.line_name}|${d.shift}|${d.round_no}`] = d; }); return m; }, [deliveries]);
@@ -1296,7 +1303,7 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
     <div style={{ padding: 16 }}>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
         {/* แท็บ Store FG = รอบส่ง — ไม่มีรอบ active = ไม่มีอะไรให้ทำ ซ่อนไปเลย (โผล่เองเมื่อไลน์ตั้งรอบ) · audit 2026-09-07 */}
-        {STORE_TABS.filter(t => t.key !== 'fg' || rounds.length > 0).map(t => (
+        {STORE_TABS.filter(t => (!opsStores || opsStores.includes(t.key)) && (t.key !== 'fg' || rounds.length > 0)).map(t => (
           <button key={t.key} onClick={() => setStore(t.key)} title={t.desc}
             style={{ padding: '10px 16px', borderRadius: 10, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)',
               background: store === t.key ? 'var(--accent)' : 'var(--bg2)', color: store === t.key ? 'var(--accent-ink)' : 'var(--text2)',
@@ -1502,7 +1509,9 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
       )}
 
       {/* 🧪 งานชุบ — โหลดข้อมูลเอง (ใบส่งชุบ/ยอดคลัง) · ใช้คำค้น + "เฉพาะงานค้าง" ชุดเดียวกับแท็บอื่น */}
-      {store === 'plating' && <PlatingBoard q={q} showDone={showDone} />}
+      {store === 'plating' && <PlatingBoard q={q} showDone={showDone} readOnly={readOnly} />}
+
+      {store === 'open' && <OpenOrderDemandPanel q={q} />}
 
       {store === 'wip' && (<>
         {hiddenNote}
@@ -1559,19 +1568,34 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
 
 /* ใบค้าง (ทุกหน้า) + ประวัติล่าสุด N ใบ → `openPlusHistory()` ของกลางใน utils/fetchByIds.js (ย้าย 06/10) */
 
-export default function HeijunkaKanban() {
+/* 🔀 04/11 (คำสั่ง user) — "หน้าตู้ heijunka ยอดงานจะต้องไม่วิ่งผ่านหน้านี้ หน้านี้เป็นแค่ monitor เรื่องสัญญาณ KANBAN"
+   · `mode='monitor'` (route /heijunka · ค่าเริ่ม) = ดูอย่างเดียว — ปุ่มที่ขยับสถานะ/ยอดสต็อกทุกตัวผูกกับ `canOperate` ⇒ บังคับ false
+   · `mode='ops'` = ฝังใน `/line-stock` แท็บ 🏬 งานสโตร์ / 🛒 จัดซื้อ (ที่เดียวที่กดทำรายการได้) · สิทธิ์ปุ่มยังเป็น `heijunka:operate` เหมือนเดิม
+   · `opsStores` = ตู้ที่แท็บนั้นโชว์ (`utils/storeOps.js` · จัดซื้อแยกแท็บ — ขาสั่งของ supplier + รับเข้าสโตร์) */
+export default function HeijunkaKanban({ mode = 'monitor', opsStores = null }) {
+  const isOps = mode === 'ops';
   // ทะเบียนเอกสาร — ชื่อไฟล์ CSV อ่านเลขฟอร์มจาก cache นี้ (lazy chunk ต้องโหลดเอง)
   useEffect(() => { loadDocForms(); }, []);
   const { fullName, role, section: homeSection, sections: mySections, allUnits, respCostCenters, scopeIdx } = useContext(UserContext);
   const navigate = useNavigate();
-  const canOperate = can('heijunka', 'operate', role);
-  const canOverride = can('wip_request', 'override', role);   // ปลดบล็อกสแกนจุดส่ง — "ระดับหัวหน้า ไม่ใช่คนที่ถูกบล็อก" (§4.6 ข้อ 5)
+  const location = useLocation();
+  const storeFocus = location.state?.storeFocus || null;   // 🔍 มาจากปุ่ม "ไปเตรียมงาน" บนแถบไลน์เรียกของ (StoreCallSiren)
+  const canOperate = isOps && can('heijunka', 'operate', role);   // 🔴 monitor = ห้ามกดทำรายการ (มีด่าน heijunka-monitor-only)
+  const canOverride = can('wip_request', 'override', role);
+  /* ด่านชั้นเขียนจริง (ไม่พึ่งการซ่อนปุ่ม) — ทุกฟังก์ชันที่ขยับสถานะ/ยอดในหน้านี้เรียกตัวนี้ก่อน (มีด่าน heijunka-monitor-only) */
+  const opsGuard = () => {
+    if (isOps) return true;
+    toast.error('หน้านี้ดูสัญญาณอย่างเดียว — ทำรายการที่ Line Stock › 🏬 งานสโตร์ / 🛒 จัดซื้อ');
+    return false;
+  };   // ปลดบล็อกสแกนจุดส่ง — "ระดับหัวหน้า ไม่ใช่คนที่ถูกบล็อก" (§4.6 ข้อ 5)
   const [workDate, setWorkDate]   = useState(getWorkDate());
   const [shiftFilter, setShiftFilter] = useState(() => urlPick('shift', ['all', 'day', 'night'], 'all'));   // ?shift= ?mat= ?sec= ?fline= ?store= (จอวนหน้า · 15/10)
   const [matFilter, setMatFilter] = useState(() => urlPick('mat', ['200', '300', '500'], ''));            // '' | '200' | '300' | '500' — กรอง view เดียวกันทั้งฝั่งผลิต/store
   /* ผูก `?view=` (ไม่ใช่ `?tab=` — หน้านี้อาจถูกฝังใต้หน้าแม่ที่ถือ ?tab= อยู่ · UI §6.8 ข้อ 2.4)
      ค่าที่ไม่รู้จักใน URL ตกกลับ 'unified' เอง (useTabParam จัดการให้) ห้ามจอว่าง */
   const [viewMode, setViewMode]   = useTabParam(Object.keys(VIEW_META), 'unified', 'view');
+  // ops (ฝังใน /line-stock) มีแต่ตู้งาน — ?view= อื่นที่ติดมากับลิงก์ ตกกลับ unified (ห้ามจอว่าง/ห้ามโผล่มุมมองที่ไม่ได้ตั้งใจ)
+  useEffect(() => { if (isOps && viewMode !== 'unified') setViewMode('unified'); }, [isOps, viewMode, setViewMode]);
   const [demandFmt, setDemandFmt] = useState(() => urlPick('dfmt', ['cards', 'table'], 'cards'));   // ?dfmt= (จอวนหน้า)
   /* ปุ่ม "เลือกพาร์ทไปส่ง" จากแท็บอื่น = ต้องพาไปถึงแผงติ๊กพาร์ท ไม่ใช่แค่สลับแท็บแล้วปล่อยไว้หัวหน้า
      (feedback หน้างาน 25/09 — หน้า chart สูง 3,285px แผงงานจริงอยู่ต่ำกว่าขอบจอ 2.5 จอ) */
@@ -1644,7 +1668,13 @@ export default function HeijunkaKanban() {
   const [purchaseErr, setPurchaseErr]           = useState('');
   const [bulkBuy, setBulkBuy]                   = useState(null);   // {g, next, label} — เลื่อนสถานะรวมทั้งพาร์ท
   // default = คิวเติม WIP (งานจริงของสโตร์) — เดิม 'fg' คือแท็บรอบส่งซึ่งว่างเปล่าตลอดเมื่อไม่มีรอบ (audit 2026-09-07)
-  const [unifiedStore, setUnifiedStore] = useState(() => urlPick('store', ['fg', 'child', 'purchase', 'raw', 'rack', 'wip', 'plating'], 'wip')); // 'fg' | 'child' | 'purchase' | 'raw' | 'rack' | 'wip'
+  const [unifiedStore, setUnifiedStore] = useState(() => urlPick('store', opsStores || ['fg', 'child', 'open', 'purchase', 'raw', 'rack', 'wip', 'plating'], (opsStores || ['wip'])[0])); // 'fg' | 'child' | 'purchase' | 'raw' | 'rack' | 'wip'
+  useEffect(() => {
+    if (!storeFocus?.store) return;
+    setViewMode('unified');
+    setUnifiedStore(storeFocus.store);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- เปลี่ยนเฉพาะตอนมีการกดใหม่ (at)
+  }, [storeFocus?.at]);
   const [showNoBom, setShowNoBom]       = useState(() => urlBool('nobom', false));   // ?nobom= // รายชื่อ product ที่ไม่มี BOM — พับไว้ ตัวเลขยังเห็นบนแถบสรุป
   const [breakPolicies, setBreakPolicies] = useState([]);
   /* 🖼️ รูปชิ้นงาน (2026-09-25 · คำสั่ง user "ควรจะมีรูปภาพชิ้นงานด้วยนะ")
@@ -1849,6 +1879,7 @@ export default function HeijunkaKanban() {
   const usedAtNote = (loc, line) => (line && loc !== line ? ` · ใช้ที่ ${line}` : '');
 
   const advanceLot = async (lot, next) => {
+    if (!opsGuard()) return;   // 🔴 /heijunka = monitor · เขียนได้เฉพาะโหมด ops (/line-stock)
     if (lot.status === next) return;
     if (!okToOperate(lot?.line_name, 'ใบล็อตของไลน์นี้')) return;
     setPullBusy(lot.id);
@@ -1963,6 +1994,7 @@ export default function HeijunkaKanban() {
      ⚠️ ต้องดึงใบจริงมาก่อน: qty ของแต่ละใบไม่เท่ากันได้ (50031601 มีตั้งแต่ 100 ถึง 1,000)
         เดาจาก min/max แล้วโพสต์ stock = ยอดเข้าคลังผิด */
   const advancePurchase = async (g, next) => {
+    if (!opsGuard()) return;   // 🔴 /heijunka = monitor · เขียนได้เฉพาะโหมด ops (/line-stock)
     if (!g?.first_id || g.status === next) return;
     if (!okToOperate(g?.line_name, 'ใบขอซื้อของไลน์นี้')) return;
     setPullBusy(g.first_id);
@@ -2013,6 +2045,7 @@ export default function HeijunkaKanban() {
 
   // เรียงคิวผลิต: สลับลำดับใน list ของไลน์นั้นแล้วเขียน seq_no = ตำแหน่งใหม่ทั้งชุด
   const reorderLot = async (lineLots, lot, dir) => {
+    if (!opsGuard()) return;   // 🔴 /heijunka = monitor · เขียนได้เฉพาะโหมด ops (/line-stock)
     const arr = [...lineLots];
     const i = arr.findIndex(l => l.id === lot.id);
     const j = dir === 'up' ? i - 1 : i + 1;
@@ -2032,6 +2065,7 @@ export default function HeijunkaKanban() {
   };
 
   const issueRaw = async (raw) => {
+    if (!opsGuard()) return;   // 🔴 /heijunka = monitor · เขียนได้เฉพาะโหมด ops (/line-stock)
     if (!okToOperate(raw?.line_name, 'ใบเบิกวัตถุดิบของไลน์นี้')) return;
     setPullBusy(raw.id);
     try {
@@ -2101,6 +2135,7 @@ export default function HeijunkaKanban() {
      ⚠️ 1 พาร์ท/ไลน์ มีใบค้างได้ใบเดียว (unique index) → 23505 = มีอยู่แล้ว รายงานเป็นรายการ ไม่ใช่ error รวม
      ⚠️ ไม่ยิง notify ให้สโตร์เอง (คนกดคือสโตร์) — ไลน์เห็นใบในแผง 📦 ของ Daily Report เมื่อของถึง */
   const createStoreRequests = async (items) => {
+    if (!opsGuard()) return false;   // 🔴 /heijunka = monitor · เขียนได้เฉพาะโหมด ops (/line-stock)
     if (!items?.length) return false;
     const now = new Date().toISOString();
     let ok = 0, dup = 0, noSourceCol = false, noSlocCol = false;
@@ -2145,6 +2180,7 @@ export default function HeijunkaKanban() {
         เรียกตัวนี้อีกรอบก่อน "ถึงไลน์แล้ว" เมื่อใบยังไม่มี stock_txn_ids · กันตัดซ้ำด้วยการหาแถว ledger
         ของใบนี้ก่อน (note ฝังเลขใบ) — ใช้ได้แม้ผูก id กลับใบไม่ติด/ยังไม่มีคอลัมน์ stock_txn_ids */
   const deductStockForPick = async (w, qty) => {
+    if (!opsGuard()) return false;   // 🔴 /heijunka = monitor · เขียนได้เฉพาะโหมด ops (/line-stock)
     if (w.stock_txn_ids?.length) return true;
     const wd = getWorkDate();
     const tag = `ใบ ${String(w.id).slice(0, 8)})`;
@@ -2189,6 +2225,7 @@ export default function HeijunkaKanban() {
 
   // gate = { payload, event } จาก DeliverScanModal / PickScanModal
   const advanceWip = async (w, gate) => {
+    if (!opsGuard()) return;   // 🔴 /heijunka = monitor · เขียนได้เฉพาะโหมด ops (/line-stock)
     const next = { pending: 'preparing', preparing: 'delivered' }[w.status];
     if (!next) return;
     if (!okToOperate(w?.line_name, 'คิวเติมของไลน์นี้')) return;
@@ -2403,6 +2440,7 @@ export default function HeijunkaKanban() {
   useEffect(() => { loadPull(); }, [loadPull]);
 
   const confirmRound = async (r, parts) => {
+    if (!opsGuard()) return;   // 🔴 /heijunka = monitor · เขียนได้เฉพาะโหมด ops (/line-stock)
     if (confirming) return;
     if (!okToOperate(r?.line_name, 'รอบส่งของไลน์นี้')) return;
     setConfirming(r.id);
@@ -2462,6 +2500,7 @@ export default function HeijunkaKanban() {
   const openReceive = (round, parts, mode) => setReceiveModal({ round, parts, mode });
 
   const submitReceive = async (actualQtyByMat) => {
+    if (!opsGuard()) return;   // 🔴 /heijunka = monitor · เขียนได้เฉพาะโหมด ops (/line-stock)
     const { round, parts, mode } = receiveModal;
     if (!okToOperate(round?.line_name, 'การรับของไลน์นี้')) return;
     setReceiving(true);
@@ -2778,10 +2817,12 @@ export default function HeijunkaKanban() {
     const openBuy  = purchaseRequests.filter(r => r.status !== 'received' && r.status !== 'cancelled').length;
     const badgeOf  = { unified: openWip + openLot + openRaw + openBuy, pull: openLot + openRaw };
     return Object.entries(VIEW_META)
+      .filter(([k]) => !isOps || k === 'unified')   // ops (ฝังใน /line-stock) = ตู้งานอย่างเดียว · มุมมองสัญญาณอยู่ /heijunka
       .filter(([k]) => k !== 'timeline' || rounds.length > 0)
       .map(([k, m]) => ({ key: k, label: m.label, badge: badgeOf[k] ? String(badgeOf[k]) : undefined }));
-  }, [wipRequests, lotRequests, rawRequests, purchaseRequests, rounds.length]);
+  }, [wipRequests, lotRequests, rawRequests, purchaseRequests, rounds.length, isOps]);
 
+  const viewAct = isOps && !!VIEW_META[viewMode]?.act;   // monitor = ดูอย่างเดียวทุกมุมมอง
   const exportCSV = () => {
     if (!view.rowList.length) { toast.info('ไม่มีข้อมูลให้ export'); return; }
     const head = ['Mat No.', 'Part Name', 'UOM', 'Supplier', ...view.cols.map(c => `${c.line} (${c.shift})`), 'Gross', 'Stock in Line', 'Net', 'Qty/Kanban', 'Kanban'];
@@ -2802,11 +2843,11 @@ export default function HeijunkaKanban() {
           🔴 หน้านี้ไม่มี <DowntimeSiren> ⇒ slot=0 ได้ · ถ้าวันหลังเพิ่มไซเรนอื่นในหน้านี้ ต้องแยก slot */}
       <StoreCallSiren />
       {/* ⚠️ heijunka:operate seed ตั้งแต่ 2026-07-08 = ทุก role ณ ตอนนั้น — mtn/dept_admin ที่เพิ่มทีหลังไม่มีแถว */}
-      <ReadOnlyNote show={!canOperate} role={role} what="สั่งงาน/จัดคิวบนบอร์ด"
+      <ReadOnlyNote show={isOps && !canOperate} role={role} what="สั่งงาน/จัดคิวบนบอร์ด"
         permKey="heijunka:operate" />
       {/* Header — UI-STANDARD 2026-09-24: คำอธิบาย+ป้ายดูวันย้อนหลังอยู่ใน sub · ตัวกรองรวมเป็นแถบเดียว */}
       <PageHeader title="บอร์ดคัมบัง (ทุกสโตร์) — Heijunka" icon="🎴"
-        tabs={viewTabs} tab={viewMode} onTab={setViewMode}
+        tabs={isOps ? undefined : viewTabs} tab={viewMode} onTab={setViewMode}
         sub={<>
           ความต้องการพาร์ทย่อย{isBackDate ? '' : 'ตามแผนผลิตวันนี้'} · แตกจาก BOM ของแต่ละ product
           {/* ⚠️ ดูวันย้อนหลัง/ล่วงหน้าต้องเห็นชัด — รอบที่ยังไม่ยืนยันของวันเก่าจะขึ้น 🔴 ค้างส่ง ทั้งกระดาน
@@ -2908,10 +2949,18 @@ export default function HeijunkaKanban() {
       }}>
         <span style={{
           fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 999, whiteSpace: 'nowrap',
-          background: VIEW_META[viewMode]?.act ? 'rgba(34,197,94,0.12)' : 'rgba(148,163,184,0.14)',
-          color: VIEW_META[viewMode]?.act ? '#22c55e' : 'var(--muted)',
-        }}>{VIEW_META[viewMode]?.act ? '🖐 กดทำงานได้' : '👁️ ดูอย่างเดียว'}</span>
-        <span style={{ fontSize: 12, color: 'var(--text2)', fontWeight: 600 }}>{VIEW_META[viewMode]?.purpose}</span>
+          background: viewAct ? 'rgba(34,197,94,0.12)' : 'rgba(148,163,184,0.14)',
+          color: viewAct ? '#22c55e' : 'var(--muted)',
+        }}>{viewAct ? '🖐 กดทำงานได้' : '👁️ ดูอย่างเดียว'}</span>
+        <span style={{ fontSize: 12, color: 'var(--text2)', fontWeight: 600 }}>
+          {isOps ? VIEW_META[viewMode]?.purpose : (VIEW_META[viewMode]?.monitor || VIEW_META[viewMode]?.purpose)}
+        </span>
+        {/* 👁 04/11 — /heijunka ดูสัญญาณอย่างเดียว · บอกทางไปจอทำรายการทุกมุมมอง */}
+        {!isOps && (
+          <span style={{ fontSize: 12, color: 'var(--text2)' }}>
+            → ทำรายการที่ <Link to="/line-stock?tab=store">🏬 งานสโตร์</Link> · <Link to="/line-stock?tab=purchase">🛒 จัดซื้อ</Link>
+          </span>
+        )}
         {viewMode === 'demand' && (
           <span style={{ marginLeft: 'auto' }}>
             <Segmented value={demandFmt} onChange={setDemandFmt} label="รูปแบบการแสดงผล"
@@ -2926,7 +2975,7 @@ export default function HeijunkaKanban() {
           <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>กำลังโหลด...</div>
         ) : viewMode === 'unified' ? (
           <UnifiedStoreBoard
-            store={unifiedStore} setStore={setUnifiedStore}
+            store={unifiedStore} setStore={setUnifiedStore} opsStores={opsStores} readOnly={!isOps} focus={storeFocus}
             rounds={rounds} deliveries={deliveries} view={view}
             onConfirm={confirmRound} confirming={confirming} onReceive={openReceive}
             lotRequests={lotRequests} rawRequests={rawRequests} rackRequests={rackRequests} pkgRequests={pkgRequests} wipRequests={wipRequests} purchaseRequests={purchaseRequests} purchaseErr={purchaseErr} setBulkBuy={setBulkBuy}
