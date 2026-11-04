@@ -152,8 +152,16 @@ export const PR_QUEUE_META = {
 /* ── เลข PR บนใบ MO (ใบพิมพ์ FM-MTN-006) ─────────────────────────────────────────── */
 /** รวมเลข PR ของใบ — ใบขอซื้อที่ผูกใบนี้ (ไม่นับที่ยกเลิก) + ช่อง `pr_no` ที่กรอกมือเดิม · ตัดซ้ำ คงลำดับ */
 export function prNumbersOf(order, prs = []) {
+  /* 🔴 ตัดซ้ำด้วยรูปที่ `normalizePrNo` ทำให้ (03/11 · ข้อ A8 "PR ขึ้นเกิน") — ช่อง `pr_no` ในใบกรอกมือ
+     ไม่ผ่านตัวทำความสะอาด ("1210 104217" / ตัวเล็ก) ขณะที่ใบขอซื้อผ่านแล้ว ⇒ เลขเดียวกันเคยขึ้น 2 ครั้ง
+     แสดงค่าตัวแรกที่เจอ (ช่องในใบมาก่อน) */
   const list = [];
-  const add = (v) => { const s = String(v || '').trim(); if (s && !list.includes(s)) list.push(s); };
+  const seen = new Set();
+  const add = (v) => {
+    const s = String(v || '').trim();
+    const k = normalizePrNo(s);
+    if (s && k && !seen.has(k)) { seen.add(k); list.push(s); }
+  };
   add(order?.pr_no);
   for (const p of prs || []) if (p && p.status !== 'cancelled' && (!order?.id || p.order_id === order.id)) add(p.pr_no);
   return list;

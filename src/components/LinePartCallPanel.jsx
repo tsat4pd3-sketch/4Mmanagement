@@ -40,7 +40,9 @@ import MatLabel from './MatLabel';
 import { slocCodeOfLine } from '../utils/storageLoc';   // 🏬 มุม SAP ของใบ (2026-09-08)
 import ProductSelect from './ProductSelect';
 import useColumnHistory from '../utils/useColumnHistory';
-import { splitLevels, refStockOf, madeHereMats } from '../utils/partRefStock';   // 🏭 ของที่ไลน์ผลิตเอง อ้างยอดคลัง (2026-10-08) // 📜 MAT ที่เคยตั้งระดับไว้ — ทะเบียนไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
+import { splitLevels, refStockOf, madeHereMats, selfMadeRequestBlock, lineRequestFromBom } from '../utils/partRefStock';
+import { buildBomIndex } from '../utils/bomTree';
+import { fetchAllRows } from '../utils/fetchAllRows';   // 🏭 ของที่ไลน์ผลิตเอง อ้างยอดคลัง (2026-10-08) // 📜 MAT ที่เคยตั้งระดับไว้ — ทะเบียนไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
 
 const norm = (s) => String(s ?? '').trim().toLowerCase();
 const num = (v) => (v == null || v === '' ? null : Number(v));
@@ -358,6 +360,56 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
        และวัดได้ว่าเดือนนี้ขอเองกี่ใบ = ลิสต์พาร์ทที่ควรไปตั้ง min (migration 20261021_…_main.sql)
      · `min_at_req` = null โดยเจตนา (ไม่มีจุดเรียกเติม) · `on_hand_at_req` = ยอดที่เห็นตอนขอ ไม่รู้ = null ห้ามใส่ 0
      · พาร์ทนอกทะเบียนต้องถามยืนยัน — `ProductSelect` คืน `known=false` (ห้ามรับค่าพิมพ์เองเงียบๆ) */
+  /* 🔁 04/11 (คำสั่ง user) — เลือกพาร์ทที่ไลน์นี้ผลิตเอง = "จะผลิตกี่ชิ้น" ⇒ แตก BOM เป็นของที่ต้องเบิกจากสโตร์
+     user: *"การส่งไปหาสโตร์ ต้องแปลงผ่าน BOM ไปเรียกวัตถุดิบ ไม่ใช่เรียกตัวเอง"*
+     กติกา `lineRequestFromBom` (partRefStock.js) · ต้นไม้ BOM ผ่าน `buildBomIndex` เท่านั้น ·
+     ไม่มี BOM / อ่าน BOM ไม่ได้ = ไม่สร้างใบ + บอกบนจอ (ห้ามถอยไปขอตัวเอง) */
+  const placeFromBom = async (mat, qty) => {
+    setBusy(`adhoc:${mat}`);
+    const { data: bomRows, error: bomErr } = await fetchAllRows(supabaseDR, 'bom_items', 'id, product_id, mat_no, part_name, qty_per_unit, parent_mat, item_no',
+      q => q.eq('is_active', true).order('id'));
+    if (bomErr) { setBusy(null); toast.error(`อ่าน BOM ไม่ได้ — ยังไม่ได้แจ้งสโตร์ (${bomErr.message})`); return; }
+    const products = refCtx.products || [];
+    const matOf = Object.fromEntries(products.filter(p => p?.id != null).map(p => [p.id, p.mat_no]));
+    const ix = buildBomIndex(bomRows || [], matOf);
+    const res = lineRequestFromBom(lineName, mat, qty, ix, products);
+    if (res.cycle) toast.error(`BOM ของ ${mat} วนกลับหาตัวเอง/ลึกผิดปกติ — ยอดที่แตกได้อาจไม่ครบ แจ้ง PE ตรวจ BOM`);
+    if (!res.items.length) {
+      setBusy(null);
+      toast.error(`${mat} เป็นพาร์ทที่ ${lineName} ผลิตเอง แต่ยังไม่มีชิ้นส่วนลูกใน BOM — แตกเป็นของที่ต้องเบิกไม่ได้ (ตั้ง BOM ที่ /products ก่อน)`);
+      return;
+    }
+    const list = res.items.map(i => `• ${i.part_name ? `${i.part_name} · ` : ''}MAT ${i.mat_no} × ${fmtQty(i.qty)}`).join('\n');
+    if (!window.confirm(`${mat} เป็นพาร์ทที่ ${lineName} ผลิตเอง — ผลิต ${qty.toLocaleString()} ชิ้น ต้องเบิกจากสโตร์ตาม BOM:\n\n${list}\n\nแจ้งสโตร์ ${res.items.length} รายการ?`)) { setBusy(null); return; }
+    let ok = 0, dup = 0;
+    const errs = [];
+    for (const i of res.items) {
+      const { error } = await insertReq({
+        line_name: lineName, mat_no: i.mat_no, part_name: i.part_name || null,
+        request_qty: i.qty, status: 'pending', source: 'line_adhoc',
+        requested_at: new Date().toISOString(), decided_by_name: fullName || null,
+        on_hand_at_req: onHand.has(i.mat_no) ? onHand.get(i.mat_no) : null, min_at_req: null,
+      });
+      if (!error) ok++;
+      else if (error.code === '23505') dup++;
+      else errs.push(`${i.mat_no}: ${error.message}`);
+    }
+    setBusy(null);
+    if (ok) {
+      notifyEvent({
+        event: 'wip_request_placed', type: 'info', ref_table: 'wip_replenish_requests',
+        line_name: lineName, actor: fullName,
+        lines: [`🏭 ไลน์: ${lineName}`, `🔁 จะผลิต ${mat} × ${qty.toLocaleString()} — เบิกตาม BOM ${ok} รายการ`,
+          ...res.items.slice(0, 5).map(i => `🔩 ${i.mat_no} × ${fmtQty(i.qty)}`)],
+      });
+      toast.success(`📦 แจ้งสโตร์แล้ว ${ok} รายการ (แตกจาก BOM ของ ${mat})`);
+    }
+    if (dup) toast.info(`${dup} รายการมีใบค้างอยู่แล้ว — ไม่ได้สร้างซ้ำ (ดูรายการข้างล่าง)`);
+    if (errs.length) toast.error(`แจ้งไม่สำเร็จ ${errs.length} รายการ: ${errs[0]}`);
+    if (ok) { setAdhocMat(''); setAdhocName(''); setAdhocQty(''); setAdhocKnown(false); }
+    load();
+  };
+
   const placeAdhoc = async () => {
     /* 🔴 ค่าที่เขียนลง DB ต้องเป็นรหัสตามทะเบียน — `norm()` ในไฟล์นี้ lowercase (ใช้เทียบเท่านั้น)
        เขียนตัวพิมพ์เล็กลงไป = พาร์ทเดียวกันแตกเป็น 2 คีย์ทั้ง ledger/สรุปยอด */
@@ -366,6 +418,11 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
     if (!mat) { toast.error('เลือกพาร์ทที่จะขอเบิกก่อน'); return; }
     if (!(qty > 0)) { toast.error('ระบุจำนวนที่ต้องการเบิก'); return; }
     if (reqByMat.has(norm(mat))) { toast.error(`${mat} มีใบค้างอยู่แล้ว — ดูในรายการข้างล่าง (กด ↻ ถ้าไม่เห็น)`); return; }
+    /* 🔴 04/11 (คำสั่ง user) — พาร์ทที่ไลน์นี้ผลิตเอง ขอจากสโตร์ไม่ได้ (ขอผิดทิศ · ต้องผลิตเติม/เบิกลูกใน BOM)
+       ทะเบียนอ่านไม่ได้ = บล็อก (ตรวจไม่ได้ ห้ามปล่อยผ่าน) · กติกา `selfMadeRequestBlock` (partRefStock.js) */
+    const selfBlock = selfMadeRequestBlock(lineName, mat, whErr ? null : refCtx.products);
+    if (selfBlock?.code === 'self_made') { await placeFromBom(mat, qty); return; }   // 🔁 แตก BOM เป็นของที่ต้องเบิก
+    if (selfBlock) { toast.error(selfBlock.text); return; }
     if (!adhocKnown && !window.confirm(`"${mat}" ไม่อยู่ในทะเบียนสินค้า/BOM ของไลน์นี้\n\nยืนยันว่าจะขอเบิกพาร์ทนี้?`)) return;
     setBusy(`adhoc:${mat}`);
     const have = onHand.has(mat) ? onHand.get(mat) : null;
@@ -543,7 +600,7 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
       ) : (
         <div style={{ background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 8, padding: '10px 12px' }}>
           <div style={{ fontSize: 11.5, fontWeight: 800, color: '#22c55e', marginBottom: 6 }}>
-            ➕ ขอเบิกพาร์ทนี้เลย <span style={{ fontWeight: 400, color: 'var(--muted)' }}>· ไม่ต้องมีจุดเรียกเติม ไม่ต้องรอยอดถึง min</span>
+            ➕ ขอเบิกพาร์ทนี้เลย <span style={{ fontWeight: 400, color: 'var(--muted)' }}>· ไม่ต้องมีจุดเรียกเติม ไม่ต้องรอยอดถึง min · เลือกพาร์ทที่ไลน์นี้ผลิต = ใส่ยอดที่จะผลิต ระบบแตก BOM เป็นชิ้นส่วนที่ต้องเบิกให้</span>
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
             {/* ช่องรับรหัสพาร์ทต้องเป็น picker กลาง ห้าม input เปล่า (UI-CONVENTIONS §5.1.2) */}

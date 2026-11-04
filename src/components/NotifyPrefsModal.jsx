@@ -8,6 +8,8 @@ import { supabase } from '../supabaseClient';
 import { toast } from './Toast';
 import { checkWrite, checkWriteRows } from '../utils/dbWrite';
 import { myNotifyRows, groupNotifyRows, mutedSetOf, muteSummary } from '../utils/notifyPrefs';
+import InfoMore from './InfoMore';   // 📝 คำอธิบายยาวพับไว้หลัง ⓘ (UI §6.10 · คำสั่ง user 04/11)
+import { toneVar, toneDim, toneLine } from '../utils/statusTone';   // 🎨 token พาเลต — ห้ามสีดิบในหน้า (UI §6.17)
 
 const RULE_COLS = 'event_key, label, category, is_enabled, inapp_roles, can_mute, sort_order';
 
@@ -75,17 +77,23 @@ export default function NotifyPrefsModal({ role, onClose }) {
         </div>
 
         <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {/* 📝 เหลือบรรทัดเดียวบนจอ ที่เหลือพับหลัง ⓘ (UI §6.10 — ห้ามกำแพงข้อความ)
+              🔴 ไม่พับ "คำเตือนสถานะจริง" (แถบโหลดไม่สำเร็จ · ป้าย 🔒 รายแถว) ตามกฎของ InfoMore */}
           <div style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.65 }}>
-            ปิดเรื่องที่ไม่อยากให้เด้ง — มีผลกับ <b>กระดิ่ง เสียง และการเด้งเข้ามือถือ</b> ของคุณคนเดียว
-            <div style={{ color: 'var(--muted)', marginTop: 2 }}>
-              🔒 <b>งานที่รอคุณลงมือ ปิดไม่ได้</b> — ใบที่ส่งถึงตัวคุณโดยตรง และคิวงานของหน่วยงานคุณ
-              จะเด้งเสมอ ไม่ว่าตั้งอะไรไว้
-            </div>
+            <InfoMore id="notifyprefs_help" lead="ปิดเรื่องที่ไม่อยากให้เด้ง — มีผลกับของคุณคนเดียว">
+              สวิตช์นี้คุม <b>กระดิ่ง เสียง และการเด้งเข้ามือถือ</b> ของบัญชีคุณเท่านั้น
+              คนอื่นในหน่วยงานยังได้รับตามปกติ · ปิดแล้วเรื่องนั้นจะไม่สร้างแจ้งเตือนใหม่ให้คุณ
+              แต่ของเก่าที่เคยเด้งแล้วยังอยู่ในกระดิ่งเหมือนเดิม
+              <div style={{ marginTop: 4 }}>
+                🔒 <b>งานที่รอคุณลงมือ ปิดไม่ได้</b> — ใบที่ส่งถึงตัวคุณโดยตรง และคิวงานของหน่วยงานคุณ
+                จะเด้งเสมอ ไม่ว่าตั้งอะไรไว้ (เรื่องพวกนั้นจะขึ้นป้าย 🔒 ในลิสต์ข้างล่าง)
+              </div>
+            </InfoMore>
           </div>
 
           {state === 'loading' && <div style={{ fontSize: 12.5, color: 'var(--muted)', padding: 10 }}>กำลังโหลด…</div>}
           {state === 'error' && (
-            <div role="alert" style={{ fontSize: 12, color: '#ef4444', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: 8, padding: '8px 10px', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <div role="alert" style={{ fontSize: 12, color: toneVar('bad'), background: toneDim('bad'), border: `1px solid ${toneLine('bad')}`, borderRadius: 8, padding: '8px 10px', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
               <span style={{ flex: 1, minWidth: 180 }}>โหลดรายการแจ้งเตือนไม่สำเร็จ ({err}) — ยังตั้งค่าไม่ได้</span>
               <button onClick={load} style={{ padding: '3px 10px', borderRadius: 7, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', fontSize: 12, cursor: 'pointer' }}>โหลดใหม่</button>
             </div>
@@ -118,7 +126,7 @@ export default function NotifyPrefsModal({ role, onClose }) {
                           style={{ width: 'auto', marginTop: 2, flexShrink: 0 }} />
                         <span style={{ fontSize: 12.5, color: r.locked ? 'var(--muted)' : 'var(--text)', lineHeight: 1.5, minWidth: 0 }}>
                           {r.label}
-                          {r.locked && <span style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700 }}> · 🔒 งานที่รอคุณ ปิดไม่ได้</span>}
+                          {r.locked && <span style={{ fontSize: 11, color: toneVar('warn'), fontWeight: 700 }}> · 🔒 งานที่รอคุณ ปิดไม่ได้</span>}
                         </span>
                       </label>
                     );

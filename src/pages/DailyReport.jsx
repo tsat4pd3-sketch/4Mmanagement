@@ -1,4 +1,5 @@
 import { useState, useEffect, useContext, useCallback, useRef, useMemo } from 'react';
+import InfoMore from '../components/InfoMore';   // ⓘ คำอธิบายยาวพับไว้ (UI §6.10)
 import { Link, useNavigate } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
@@ -57,6 +58,9 @@ import { pickUnusedColor } from '../utils/colorPick';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
 import CollapseCard from '../components/CollapseCard';
+import OverflowMenu from '../components/OverflowMenu';   // ⋯ คำสั่งอื่นๆ — ปุ่มตายตัว ≤2 (UI §6.35 · 04/11)
+import KpiTile from '../components/KpiTile';             // การ์ดตัวเลขโครงเดียว (UI §6.35)
+import NoticeBar from '../components/NoticeBar';         // แถบแจ้งบรรทัดเดียว (UI §6.35)
 import FilterBar from '../components/FilterBar';
 import SearchInput from '../components/SearchInput';
 import { ALL } from '../utils/filterLabels';
@@ -88,7 +92,7 @@ import { SESSION_VOID, SESSION_STATUSES_LIVE, SESSION_STATUSES_REAL, isVoidSessi
 import MachineSelect from '../components/MachineSelect';
 import { acceptImageFile } from '../utils/acceptImageFile';
 import { loadFamilyQtyTotals, familyQtyChip } from '../utils/familyTotals';
-import { statusColor as toneColor } from '../utils/statusTone';   // สีสถานะชุดเดียวทั้งระบบ (ห้ามตั้ง hex เอง · ชื่อ statusColor ชนกับตัวแปรในหน้า)
+import { statusColor as toneColor, toneVar, toneDim, toneLine } from '../utils/statusTone';   // 🎨 token พาเลต 5 สี (UI §6.17)   // สีสถานะชุดเดียวทั้งระบบ (ห้ามตั้ง hex เอง · ชื่อ statusColor ชนกับตัวแปรในหน้า)
 
 /* ทะเบียนเอกสาร — ชื่อไฟล์ CSV ของแท็บรายงานอ่านผ่าน `docFormSync` (sync) ⇒ ต้อง warm cache เอง
    ไม่เรียก = ได้ชื่อไฟล์เดิม (fallback) ไม่ล้ม แต่ doc_control ตั้งเลขฟอร์มแล้วไม่มีผล */
@@ -263,7 +267,7 @@ function BreakBandChips({ bands = [], lineName = null, fmt }) {
   const total = Math.round(bands.reduce((a, b) => a + (b.e - b.s) / 60000, 0));
   return (
     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginTop: 8, fontSize: 11 }}>
-      <span style={{ fontWeight: 700, color: '#4d9fff' }}>พักตามนโยบาย {total} น.</span>
+      <span style={{ fontWeight: 700, color: 'var(--blue)' }}>พักตามนโยบาย {total} น.</span>
       {bands.map((b, i) => (
         <span key={i} title={breakBandTitle(b, lineName)}
           style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 6, padding: '1px 6px', color: 'var(--text)' }}>
@@ -276,8 +280,8 @@ function BreakBandChips({ bands = [], lineName = null, fmt }) {
 }
 
 const CAT_META = {
-  unplanned: { label: 'นอกแผน', color: '#ef4444', bg: 'rgba(239,68,68,0.10)' },
-  planned:   { label: 'ในแผน',  color: '#22c55e', bg: 'rgba(34,197,94,0.10)' },
+  unplanned: { label: 'นอกแผน', color: 'var(--red)', bg: 'var(--red-dim)' },
+  planned:   { label: 'ในแผน',  color: 'var(--green)', bg: 'var(--green-dim)' },
 };
 
 /* ═══════════════════════════════════════════════════════════════
@@ -505,7 +509,6 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   const qtyBusyRef = useRef(new Set());     // กันกด 💾/ปิดใบ ซ้ำต่อใบ
   const closeProdInputRef = useRef(null);
   const [savingProdOpen, setSavingProdOpen] = useState(false);
-  const [pendingPairId, setPendingPairId] = useState(null); // order id ที่รอสแกนคู่ RH/LH ต่อ
   // Overflow confirmation modal
   const [overflowInfo, setOverflowInfo]   = useState(null); // { prodNo, matNo, qty, std, overMin, remainMin, newOrderMin }
 
@@ -1248,8 +1251,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     if (!chk || chk.ok) return null;
     return (
       <div style={{ gridColumn: '1 / -1', marginTop: -4, padding: '8px 12px', borderRadius: 8,
-        background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.40)',
-        fontSize: 12, color: '#f59e0b', fontWeight: 700, lineHeight: 1.6 }}>
+        background: 'var(--amber-dim)', border: '1px solid var(--amber-line)',
+        fontSize: 12, color: 'var(--amber)', fontWeight: 700, lineHeight: 1.6 }}>
         ⚠️ เวลาปิดกะที่กรอกอยู่ ล้ำหน้าเวลาจริง {fmtOffset(chk.aheadMin)} โดย
         <b>ไม่มีอะไรรองรับ {fmtOffset(chk.unaccountedMin)}</b> (ตอนนี้ {chk.nowHHmm} น.)
         <div style={{ fontWeight: 600, color: 'var(--text2)' }}>
@@ -1263,7 +1266,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
         </div>
         <button type="button" onClick={() => setCloseEndTime(chk.nowHHmm)}
           style={{ marginTop: 6, padding: '4px 10px', fontSize: 12, fontWeight: 800, cursor: 'pointer',
-            borderRadius: 7, border: '1px solid rgba(245,158,11,0.55)', background: 'rgba(245,158,11,0.15)', color: '#f59e0b' }}>
+            borderRadius: 7, border: '1px solid var(--amber-line)', background: 'var(--amber-dim)', color: 'var(--amber)' }}>
           ใช้เวลาตอนนี้ ({chk.nowHHmm})
         </button>
         <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 600, color: 'var(--muted)' }}>
@@ -1830,23 +1833,18 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     const pairWhy = rawPartner ? pairBlockReason(meProd, products.find(p => p.mat_no === rawPartner) || { mat_no: rawPartner }) : null;
     if (pairWhy) toast.error(`ไม่ผูกคู่ RH/LH ให้: ${pairWhy} — แก้ช่อง "MAT.NO คู่" ที่ Product Master`);
     const partnerMatNo = pairWhy ? null : rawPartner;
-    let nextMatNo = openProdForm.mat_no;
+    const nextMatNo = openProdForm.mat_no;   // 🔴 MAT คงข้างเดิมเสมอ (ด่าน pair-scan-one-side)
 
-    if (pendingPairId) {
-      // separate_order: นี่คือการสแกนคู่ RH/LH ใบที่สอง — ผูกกลับไปยังใบแรกที่รออยู่
-      // sync opened_at ให้ตรงกับใบแรก เพราะผลิตพร้อมกันจริงแม้สแกนคนละเวลา
-      const firstOrder = prodOrders.find(o => o.id === pendingPairId);
-      /* 🔴 นับแถว — คู่ที่ผูกไม่ติดจะถูกนับเป็น 2 ใบแยกกัน ⇒ เวลามาตรฐานของ %P เบิ้ล
-         (กฎเหล็ก "ชิ้น ≠ shot" · collapsePairShots อ่าน paired_order_id เป็นตัวตัดสิน) */
-      checkWriteRows(await supabaseDR.from('prod_orders').update({ paired_order_id: data.id }).eq('id', pendingPairId).select('id'), 'ผูกคู่ RH/LH (ใบแรก)');
-      checkWriteRows(await supabaseDR.from('prod_orders').update({
-        paired_order_id: pendingPairId,
-        ...(firstOrder?.opened_at ? { opened_at: firstOrder.opened_at } : {}),
-      }).eq('id', data.id).select('id'), 'ผูกคู่ RH/LH (ใบที่สอง)');
-      setPendingPairId(null);
-      toast.success(`เปิด Order คู่ RH/LH พร้อมกัน ✓ (${prodNo})`);
-    } else if (partnerMatNo) {
-      const existingPartner = prodOrders.find(o => o.mat_no === partnerMatNo && o.status === 'open' && !o.paired_order_id);
+    /* 🔴 03/11 (หน้างานแจ้งด่วน "ให้สแกนทีละข้างไปเลย ตอนนี้บังคับสแกนสลับ พนักงานสแกนมั่ว"):
+       เดิมสแกนข้างแรกแล้วระบบ **เปลี่ยน MAT ในช่องเป็นของคู่ + จำว่าใบถัดไปคือคู่** (pendingPairId)
+       ⇒ คนยิง Tag ข้าง LH ติดกันหลายใบ (วิธีทำงานจริง) = ใบที่ 2 ถูกบันทึกเป็น MAT ของ RH และ LH ผูกกับ LH
+       ตอนนี้: **MAT คงที่ข้างเดิม** (ยิงข้างเดียวกันต่อกันได้) · ผูกคู่อัตโนมัติกับ "ใบข้างคู่ที่เปิดอยู่และยังไม่มีคู่
+       ที่เก่าสุด" (FIFO) — ยิง LH ทั้งหมดก่อน แล้วเปลี่ยน MAT ไปยิง RH ก็ผูกกันครบเอง (ด่าน pair-scan-one-side) */
+    if (partnerMatNo) {
+      const pool = prodOrders
+        .filter(o => o.mat_no === partnerMatNo && o.status === 'open' && !o.paired_order_id && o.id !== data.id)
+        .sort((a, b) => String(a.opened_at || '').localeCompare(String(b.opened_at || '')));
+      const existingPartner = pool[0];
       if (existingPartner) {
         checkWriteRows(await supabaseDR.from('prod_orders').update({ paired_order_id: data.id }).eq('id', existingPartner.id).select('id'), 'ผูกคู่ RH/LH (ใบที่เปิดค้าง)');
         checkWriteRows(await supabaseDR.from('prod_orders').update({
@@ -1855,9 +1853,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
         }).eq('id', data.id).select('id'), 'ผูกคู่ RH/LH (ใบใหม่)');
         toast.success(`เปิด Order ${prodNo} ✓ และผูกคู่กับ ${existingPartner.prod_no} (RH/LH) อัตโนมัติ`);
       } else {
-        setPendingPairId(data.id);
-        nextMatNo = partnerMatNo;
-        toast.info(`เปิด ${prodNo} แล้ว — สแกน PROD.NO ของคู่ RH/LH (MAT.NO ${partnerMatNo}) ต่อได้เลย`);
+        const waiting = prodOrders.filter(o => o.mat_no === matNo && o.status === 'open' && !o.paired_order_id).length + 1;
+        toast.info(`เปิด ${prodNo} แล้ว ✓ — ข้างนี้รอคู่ ${waiting} ใบ · ยิงข้างเดิมต่อได้เลย แล้วค่อยเปลี่ยน MAT ไป ${partnerMatNo} ระบบผูกคู่ให้เอง`);
       }
     } else {
       toast.success(`เปิด Order ${prodNo} · ${matNo} · ${qty} ชิ้น ✓`);
@@ -3113,7 +3110,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
               "ระบบให้ดูได้ทุกไลน์แล้ว" (เคสจริง 28/10: หัวหน้า LWR เห็นกะทั้งโรงงาน) */}
           {scopeUnsure && (
             <div style={{ marginBottom: 6, padding: '6px 10px', borderRadius: 8, fontSize: 11.5, lineHeight: 1.5,
-              background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.35)', color: 'var(--text)', flexShrink: 0 }}>
+              background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', color: 'var(--text)', flexShrink: 0 }}>
               ⚠️ ระบบยังชี้ไลน์ของคุณไม่ได้ (อ่านทะเบียนไลน์ไม่สำเร็จ) — <b>รายการนี้จึงกว้างกว่าปกติ</b>
               {' '}และอาจเปิดกะไม่ได้ · กด 🔄 ที่หัวข้อเพื่อโหลดใหม่
             </div>
@@ -3180,14 +3177,14 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       {/* ชื่อไลน์ยาว (LINE ASSY TSRA) ต้องหดได้ ไม่งั้นดันชิปสถานะตกขอบ sidebar 220px */}
                       <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.line_name}</div>
                       {/* ⏳ = ส่งไปแล้ว "รอ SV" (ลูกบอลอยู่ฝั่งเขา) — เป็นสถานะที่เจอเยอะสุด จึงเอาแค่ไอคอน */}
-                      {s.status === 'pending_close' && <span title="ส่งขอปิดกะแล้ว — รอ SV อนุมัติ" style={{ fontSize: 11, fontWeight: 800, padding: '2px 5px', borderRadius: 10, background: 'rgba(245,158,11,0.2)', color: '#f59e0b' }}>⏳</span>}
+                      {s.status === 'pending_close' && <span title="ส่งขอปิดกะแล้ว — รอ SV อนุมัติ" style={{ fontSize: 11, fontWeight: 800, padding: '2px 5px', borderRadius: 10, background: 'var(--amber-dim)', color: 'var(--amber)' }}>⏳</span>}
                       {/* ถูกตีกลับ = "ลูกบอลอยู่ฝั่งเรา ต้องกลับไปแก้" — ต้องแยกจาก ⏳ ให้ขาด
                           ⚠️ ห้ามใช้ ✕ (ในหน้าเดียวกัน "✕ ปฏิเสธ" คือปุ่มกด คนจะนึกว่ากดแล้วลบ/ปิด)
                           ⚠️ ห้ามใช้ ↩️ (หน้านี้ใช้เป็น "ถอยใบ" ของ order ไปแล้ว)
                           → ใช้ชิปข้อความสั้น อ่านออกทันทีไม่ต้องเดาความหมายไอคอน · แดงนิ่ง ไม่กระพริบ (ไม่ใช่ alarm) */}
                       {s.status === 'open' && s.close_reject_at && (
                         <span title={`ถูกตีกลับโดย ${s.close_reject_by_name || '—'}${s.close_reject_reason ? ` — "${s.close_reject_reason}"` : ''} · แก้แล้วกดขอปิดกะใหม่`}
-                          style={{ fontSize: 11, fontWeight: 800, padding: '2px 6px', borderRadius: 10, whiteSpace: 'nowrap', background: 'rgba(239,68,68,0.18)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.45)' }}>✏️ ต้องแก้</span>
+                          style={{ fontSize: 11, fontWeight: 800, padding: '2px 6px', borderRadius: 10, whiteSpace: 'nowrap', background: 'var(--red-dim)', color: 'var(--red)', border: '1px solid var(--red-line)' }}>✏️ ต้องแก้</span>
                       )}
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: 5 }}>
@@ -3197,9 +3194,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                         const late = age > STALE_SESSION_DAYS;
                         return <span title={late ? `ค้างเกินเป้า ${STALE_SESSION_DAYS} วัน — OEE ของกะนี้ยังไม่เข้ารายงานเดือน` : 'ค้างจากวันก่อน — ปิด/อนุมัติให้ครบ'}
                           style={{ fontSize: 11, fontWeight: 800, padding: '1px 5px', borderRadius: 8, whiteSpace: 'nowrap',
-                            background: late ? 'rgba(239,68,68,0.18)' : 'rgba(245,158,11,0.15)',
-                            color: late ? '#ef4444' : '#f59e0b',
-                            border: `1px solid ${late ? 'rgba(239,68,68,0.45)' : 'rgba(245,158,11,0.4)'}` }}>⏰ {age}ว</span>;
+                            background: late ? 'var(--red-dim)' : 'var(--amber-dim)',
+                            color: late ? 'var(--red)' : 'var(--amber)',
+                            border: `1px solid ${late ? 'var(--red-line)' : 'var(--amber-line)'}` }}>⏰ {age}ว</span>;
                       })()}
                     </div>
                   </button>
@@ -3235,7 +3232,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       title="กะของวันก่อนที่ยังไม่ปิด — เปิดกะใหม่ของวันนี้ได้ตามปกติ ไม่ต้องรอ"
                       style={{ display: 'flex', alignItems: 'center', gap: 5, width: '100%', textAlign: 'left', cursor: 'pointer',
                         fontSize: 11, fontWeight: 800, padding: '6px 8px', borderRadius: 8, letterSpacing: '0.3px',
-                        background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.35)', color: '#f59e0b' }}>
+                        background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', color: 'var(--amber)' }}>
                       <span style={{ fontSize: 11 }}>{staleOpen ? '▼' : '▶'}</span>
                       <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>⏰ ค้างจากวันก่อน</span>
                       <span style={{ fontWeight: 700 }}>{staleSessions.length}</span>
@@ -3271,20 +3268,11 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
           const over7 = overdueAlert.filter(o => o.age > STALE_SESSION_DAYS);
           const oldest = overdueAlert[0]?.age || 0;
           return (
-            <button onClick={onGoStale}
-              title="เปิดแท็บ ⏰ กะค้าง — ไล่ปิด/อนุมัติทีละกะ"
-              style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', flexWrap: 'wrap', cursor: 'pointer',
-                background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: 10, padding: '8px 14px', marginBottom: 14,
-                fontSize: 12.5, fontWeight: 800, color: '#ef4444' }}>
-              ⏰ กะค้างยังไม่ปิด {overdueAlert.length} กะ
-              {over7.length > 0 && (
-                <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 10, background: 'rgba(239,68,68,0.22)', border: '1px solid rgba(239,68,68,0.55)' }}>
-                  เกิน {STALE_SESSION_DAYS} วัน {over7.length} กะ · เก่าสุด {oldest} วัน
-                </span>
-              )}
-              <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)' }}>ไม่เกี่ยวกับกะที่กำลังทำอยู่ — เริ่มกะใหม่ได้ตามปกติ</span>
-              <span style={{ marginLeft: 'auto', fontSize: 11.5, fontWeight: 800 }}>ไปไล่ปิด →</span>
-            </button>
+            <NoticeBar tone="warn" action={{ label: 'ไปไล่ปิด →', onClick: onGoStale, title: 'เปิดแท็บ กะค้าง — ไล่ปิด/อนุมัติทีละกะ' }}>
+              <b>กะค้างยังไม่ปิด {overdueAlert.length} กะ</b>
+              {over7.length > 0 && <> · เกิน {STALE_SESSION_DAYS} วัน {over7.length} กะ · เก่าสุด {oldest} วัน</>}
+              {' '}— ไม่เกี่ยวกับกะที่กำลังทำอยู่ เริ่มกะใหม่ได้ตามปกติ
+            </NoticeBar>
           );
         })()}
 
@@ -3308,9 +3296,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
                     {selSession.status === 'pending_close' ? (
-                      <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 20, background: 'rgba(245,158,11,0.15)', color: '#f59e0b' }}>⏳ รออนุมัติปิดกะ</span>
+                      <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 20, background: 'var(--amber-dim)', color: 'var(--amber)' }}>⏳ รออนุมัติปิดกะ</span>
                     ) : (
-                      <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 20, background: 'rgba(34,197,94,0.15)', color: '#22c55e' }}>● LIVE</span>
+                      <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 20, background: 'var(--green-dim)', color: 'var(--green)' }}>● LIVE</span>
                     )}
                     <span style={{ fontSize: 12, color: 'var(--muted)' }}>
                       {selSession.shift === 'day' ? '☀️ กะเช้า' : '🌙 กะดึก'} · {fmtDate(selSession.work_date)} · เริ่ม {selSession.start_time}
@@ -3324,50 +3312,65 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                     </div>
                   )}
                 </div>
+                {/* ── คำสั่งของกะ (UI-CONVENTIONS §6.35 · 04/11 · user "เอาปุ่มตายตัวดีกว่า") ──
+                    ปุ่มตายตัวไม่เกิน 2 ต่อสถานะ · ที่เหลือเข้า ⋯ (OverflowMenu) · เงื่อนไข/สิทธิ์/handler ทุกตัวเหมือนเดิมเป๊ะ
+                      open          : [เปิดกะใหม่] [ปิดกะ/ขอปิดกะ ●หลัก]
+                      pending_close : SV = [ตรวจสอบ & อนุมัติ ●หลัก] [ปฏิเสธ] · คนอื่น = ป้าย "รอ SV" + [เปิดกะใหม่]
+                      closed        : [เปิดกะใหม่]
+                    ⋯ : จัดกำลังคน · ใบรายงานปัญหา (ป้ายงานค้าง) · แก้เวลากะ · ทำกะเปล่าเป็นโมฆะ · (เปิดกะใหม่ เมื่อ 2 ช่องถูกใช้โดยอนุมัติ/ปฏิเสธ) */}
+                {(() => {
+                  const openNewShift = () => { /* 🔴 วัน+กะ ต้องรีเฟรชคู่กัน — ดู `openShiftDefaults` (มีด่าน) */
+                    setOpenForm(f => ({ ...f, ...openShiftDefaults() })); setShowOpen(true); };
+                  const isPending = selSession.status === 'pending_close';
+                  const svDecides = isPending && canApproveClose;   // 2 ช่องถูกใช้โดย อนุมัติ/ปฏิเสธ
+                  const canVoid = canDeleteSession && SESSION_STATUSES_LIVE.includes(selSession.status)
+                    && sessLoadErrList.length === 0
+                    && prodOrders.length === 0 && dtLogs.length === 0 && defectLogs.length === 0;
+                  const hasProblems = dtLogs.length > 0 || defectLogs.length > 0;
+                  const pend = hasProblems ? countPendingFix({ downtimes: dtLogs, defects: defectLogs }) : { total: 0 };
+                  const menuItems = [
+                    /* เปิดกะใหม่ได้เสมอไม่ว่ากะที่เลือกอยู่จะสถานะไหน — SV ทำงานแค่กะเช้าแต่ไลน์ผลิต 24 ชม.
+                       (handleOpenSession เช็คซ้ำเฉพาะไลน์+กะ+วันที่เดียวกันอยู่แล้ว) · ตอน SV กำลังตัดสิน 2 ช่องเต็ม ⇒ อยู่ในเมนู */
+                    { key: 'open', icon: '+', label: 'เปิดกะใหม่', onClick: openNewShift, hidden: !(canOpen && svDecides) },
+                    /* 🔄 ไปจัดกำลังคน "ของไลน์นี้" — พาบริบทไปด้วย (?line=) แล้วมีปุ่มกลับที่ส่ง line กลับมา
+                       ⚠️ เช็คสิทธิ์ก่อนเสมอ ไม่มีสิทธิ์ = ไม่โชว์ (ห้ามพาไปแล้วโดนเด้ง) */
+                    { key: 'manpower', icon: '👥', label: 'จัดกำลังคน / ผังไลน์', title: `จัดกำลังคน / ผังไลน์ ของ ${selSession.line_name}`,
+                      onClick: () => navigate(`/management?line=${encodeURIComponent(selSession.line_name)}&from=daily-report`),
+                      hidden: !canAccessPage('/management', role) },
+                    /* ใบรายงานปัญหาการผลิต — ดึง downtime/ของเสียของกะนี้มาเติมให้ (feedback 2026-08-19 · 28)
+                       badge = รายการที่ยังไม่ลงวิธีแก้ไข (ใบจะออกมาไม่ครบ) · ป้ายนิ่ง ไม่ใช่ alarm */
+                    { key: 'problem', icon: '📝', label: 'ใบรายงานปัญหาการผลิต', badge: pend.total || null,
+                      title: pend.total
+                        ? `ยังมี ${pend.total} รายการที่ยังไม่ลงวิธีแก้ไข (ช่องนั้นจะว่างต้องเขียนมือ)`
+                        : 'พิมพ์ใบรายงานปัญหาการผลิต โดยดึงปัญหาของกะนี้มาเติมให้อัตโนมัติ',
+                      onClick: () => {
+                        const R = buildProblemReport({ downtimes: dtLogs, defects: defectLogs, minMinutes: PROBLEM_MIN_MINUTES });
+                        setProblemSheet({ title: R.headline || '' });
+                      },
+                      hidden: !hasProblems },
+                    /* closed/pending_close — SV+/leader แก้เวลาและคำนวณ OEE ใหม่ */
+                    { key: 'times', icon: '✎', label: 'แก้เวลากะ', onClick: openEditTimes,
+                      hidden: !((canManage || canRequestClose) && ['closed', 'pending_close'].includes(selSession.status)) },
+                    /* กะเปิดผิด (เปล่า) — โมฆะ แทนลบ (19/10 · กฎ production_sessions.status)
+                       🔴 sessLoadErrList: โหลดพลาด = ลิสต์ว่างเหมือนกะเปล่า → "อ่านไม่ได้" ≠ "ไม่มี" ห้ามให้แตะตอนไม่รู้ */
+                    { key: 'void', icon: '⌀', label: 'ทำกะเปล่าเป็นโมฆะ', danger: true, onClick: handleVoidEmptySession,
+                      title: 'กะเปล่าที่เปิดผิด — ทำเป็นโมฆะ (เก็บแถวไว้ ไม่ถูกนับเป็นกะจริง) แทนการลบ', hidden: !canVoid },
+                  ];
+                  return (
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                  {/* 🔄 ไปจัดกำลังคน "ของไลน์นี้" — พาบริบทไปด้วย (?line=) แล้วมีปุ่มกลับที่ส่ง line กลับมา
-                      = สลับ 2 หน้าโดยไม่ต้องเลือกไลน์ใหม่ทุกครั้ง (ไม่รวมเป็นหน้าเดียว: คนละ layout — บอร์ดจอ TV vs หน้ากรอกข้อมูล)
-                      ⚠️ เช็คสิทธิ์ก่อนเสมอ ไม่มีสิทธิ์ = ไม่โชว์ปุ่ม (ห้ามพาไปแล้วโดนเด้ง) */}
-                  {canAccessPage('/management', role) && (
-                    <button onClick={() => navigate(`/management?line=${encodeURIComponent(selSession.line_name)}&from=daily-report`)}
-                      title={`จัดกำลังคน / ผังไลน์ ของ ${selSession.line_name}`}
-                      style={{ ...cancelBtnStyle, fontWeight: 700 }}>🔄 จัดกำลังคน</button>
-                  )}
-                  {/* เปิดกะใหม่ได้เสมอไม่ว่ากะที่เลือกอยู่จะสถานะไหน — กะรออนุมัติ SV (pending_close)
-                      ไม่ควรบล็อกการเริ่มกะถัดไป เพราะ SV ทำงานแค่กะเช้าแต่ไลน์ผลิตทำงาน 24 ชม.
-                      (handleOpenSession เช็คซ้ำเฉพาะไลน์+กะ+วันที่เดียวกันอยู่แล้ว ป้องกันเปิดทับกะเดิมจริงๆ) */}
-                  {canOpen && (
-                    <button onClick={() => { /* 🔴 วัน+กะ ต้องรีเฟรชคู่กัน — ดู `openShiftDefaults` (มีด่าน) */
-                  setOpenForm(f => ({ ...f, ...openShiftDefaults() })); setShowOpen(true); }} style={saveBtnStyle}>+ เปิดกะใหม่</button>
+                  {isPending && (
+                    <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--amber)', padding: '0 4px' }}>
+                      {canApproveClose ? `รออนุมัติปิดกะ · ขอโดย ${selSession.close_requested_by_name || '—'}` : 'รอ SV อนุมัติปิดกะ'}
+                    </span>
                   )}
 
-                  {/* pending_close — SV sees approve/reject */}
-                  {selSession.status === 'pending_close' && canApproveClose && (
-                    <>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: '#f59e0b', background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 6, padding: '4px 10px' }}>
-                        ⏳ รออนุมัติปิดกะ · ขอโดย {selSession.close_requested_by_name || '—'}
-                      </div>
-                      <button onClick={() => setShowApproveReview(true)}
-                        style={{ ...saveBtnStyle, background: '#22c55e', fontWeight: 700 }}>
-                        🔍 ตรวจสอบ & อนุมัติ
-                      </button>
-                      <button onClick={() => { setRejectReason(''); setShowRejectModal(true); }}
-                        style={{ ...cancelBtnStyle, borderColor: '#ef4444', color: '#ef4444', fontWeight: 700 }}>
-                        ✕ ปฏิเสธ
-                      </button>
-                    </>
+                  {canOpen && !svDecides && (
+                    <button type="button" className="pg-btn" onClick={openNewShift}>+ เปิดกะใหม่</button>
                   )}
 
-                  {/* pending_close — leader sees waiting status */}
-                  {selSession.status === 'pending_close' && !canApproveClose && (
-                    <div style={{ fontSize: 11, fontWeight: 700, color: '#f59e0b', background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 6, padding: '4px 10px' }}>
-                      ⏳ รอ SV อนุมัติปิดกะ...
-                    </div>
-                  )}
-
-                  {/* open — request/direct close button */}
+                  {/* open — request/direct close (ปุ่มหลักของหน้า) */}
                   {selSession.status === 'open' && canRequestClose && (
-                    <button onClick={() => {
+                    <button type="button" className="pg-btn primary" onClick={() => {
                       setCloseEndTime(guessCloseEndTime()); setCloseStartTime(selSession.start_time || '');
                       setDtCarryDecisions({}); setDtCloseTimes({}); setCloseNote('');
                       // ใบที่กรอกยอดไว้ระหว่างกะแล้ว — เติมให้ในช่อง "ยอดที่ทำได้จริง" เลย ไม่ต้องพิมพ์ซ้ำ (แก้ทับได้)
@@ -3380,69 +3383,30 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       setShowCloseShift(true);
                     }}
                       disabled={sessLoadErrList.length > 0}
-                      title={sessLoadErrList.length ? `โหลด ${sessLoadErrList.join(' / ')} ไม่สำเร็จ — ปิดกะตอนนี้จะบันทึก OEE/ของเสียผิดถาวร` : undefined}
-                      style={{ ...cancelBtnStyle, borderColor: '#ef4444', color: '#ef4444', fontWeight: 700,
-                        ...(sessLoadErrList.length ? { opacity: 0.45, cursor: 'not-allowed' } : null) }}>
-                      {closeIsRequest ? '📋 ขอปิดกะ' : '🔒 ปิดกะ'}
+                      title={sessLoadErrList.length ? `โหลด ${sessLoadErrList.join(' / ')} ไม่สำเร็จ — ปิดกะตอนนี้จะบันทึก OEE/ของเสียผิดถาวร` : undefined}>
+                      {closeIsRequest ? 'ขอปิดกะ' : 'ปิดกะนี้'}
                     </button>
                   )}
 
-                  {/* closed/pending_close — SV+/leader แก้เวลาและคำนวณ OEE ใหม่ */}
-                  {(canManage || canRequestClose) && ['closed', 'pending_close'].includes(selSession.status) && (
-                    <button onClick={openEditTimes}
-                      style={{ ...cancelBtnStyle, borderColor: '#6366f1', color: '#6366f1', fontWeight: 700 }}>
-                      ✏️ แก้เวลากะ
-                    </button>
+                  {/* pending_close — SV sees approve/reject (คู่ตัดสิน = 2 ช่องของแถว) */}
+                  {svDecides && (
+                    <>
+                      <button type="button" className="pg-btn primary" onClick={() => setShowApproveReview(true)}>ตรวจสอบ & อนุมัติ</button>
+                      <button type="button" className="pg-btn danger" onClick={() => { setRejectReason(''); setShowRejectModal(true); }}>ปฏิเสธ</button>
+                    </>
                   )}
 
-                  {/* ใบรายงานปัญหาการผลิต — ดึง downtime/ของเสียของกะนี้มาเติมให้ (ไม่ต้องเขียนมือ)
-                      หน้างานออกใบนี้ทุกครั้งที่หยุด/คุณภาพ/รอ เกิน 30 นาที (feedback 2026-08-19) */}
-                  {(dtLogs.length > 0 || defectLogs.length > 0) && (() => {
-                    const pend = countPendingFix({ downtimes: dtLogs, defects: defectLogs });
-                    return (
-                      <button onClick={() => {
-                        // เปิดช่อง "ปัญหา :" ให้ตรวจ/แก้ก่อนพิมพ์ — เดิมช่องนี้ออกมาว่างทุกใบ
-                        // (feedback หน้างาน 2026-08-28: "ปัญหาลงตรงไหนได้บ้าง" — ไม่มีที่ให้ลงจริงๆ)
-                        const R = buildProblemReport({ downtimes: dtLogs, defects: defectLogs, minMinutes: PROBLEM_MIN_MINUTES });
-                        setProblemSheet({ title: R.headline || '' });
-                      }}
-                        style={{ ...cancelBtnStyle, borderColor: '#f59e0b', color: '#f59e0b', fontWeight: 700 }}
-                        title={pend.total
-                          ? `พิมพ์ใบรายงานปัญหาการผลิต — ยังมี ${pend.total} รายการที่ยังไม่ลงวิธีแก้ไข (ช่องนั้นจะว่างต้องเขียนมือ)`
-                          : 'พิมพ์ใบรายงานปัญหาการผลิต โดยดึงปัญหาของกะนี้มาเติมให้อัตโนมัติ'}>
-                        📝 ใบรายงานปัญหา
-                        {/* งานค้าง = ป้ายนิ่ง ไม่กระพริบ (ไม่ใช่ alarm) — บอกว่าใบจะออกมาไม่ครบ */}
-                        {pend.total > 0 && (
-                          <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 800, padding: '1px 6px',
-                            borderRadius: 20, background: '#f59e0b', color: '#fff' }}>
-                            🛠 {pend.total}
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })()}
-
-                  {/* กะเปิดผิด (เปล่า ไม่มี Order/Downtime/Defect) — จัดการจากจอ Live เลย ไม่ต้องปิดกะก่อน
-                      🔴 19/10 เปลี่ยนจาก "ลบ" เป็น **โมฆะ** (เก็บประวัติ · กฎ `production_sessions.status`)
-                      🔴 sessLoadErrList: โหลดพลาด = ทั้ง 3 ลิสต์ว่างเหมือนกะเปล่าเป๊ะ → ปุ่มจะโผล่กับ
-                         กะที่มีข้อมูลจริง (audit 2026-09-02) · "อ่านไม่ได้" ≠ "ไม่มี" ห้ามให้แตะตอนไม่รู้ */}
-                  {canDeleteSession && SESSION_STATUSES_LIVE.includes(selSession.status)
-                    && sessLoadErrList.length === 0
-                    && prodOrders.length === 0 && dtLogs.length === 0 && defectLogs.length === 0 && (
-                    <button onClick={handleVoidEmptySession}
-                      title="กะเปล่าที่เปิดผิด — ทำเป็นโมฆะ (เก็บแถวไว้ ไม่ถูกนับเป็นกะจริง) แทนการลบ"
-                      style={{ ...cancelBtnStyle, borderColor: '#94a3b8', color: '#94a3b8', fontWeight: 700 }}>
-                      🚫 ทำกะเปล่าเป็นโมฆะ
-                    </button>
-                  )}
+                  <OverflowMenu items={menuItems} />
                 </div>
+                  );
+                })()}
               </div>
 
               {/* 🔴 ข้อมูลกะโหลดไม่ครบ — ต้องบอกให้ชัดว่าตัวเลขบนจอ "ยังไม่ใช่ของจริง"
                   ไม่งั้นหัวหน้าอ่าน "Downtime 0 · ของเสีย 0" เป็นกะที่ดีมาก (static ไม่กระพริบ — เป็นสถานะจอ ไม่ใช่ alarm หน้างาน) */}
               {sessLoadErrList.length > 0 && (
-                <div style={{ marginTop: 12, background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.45)', borderRadius: 8, padding: '10px 14px' }}>
-                  <div style={{ fontSize: 12, fontWeight: 800, color: '#ef4444', marginBottom: 4 }}>
+                <div style={{ marginTop: 12, background: 'var(--red-dim)', border: '1px solid var(--red-line)', borderRadius: 8, padding: '10px 14px' }}>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--red)', marginBottom: 4 }}>
                     ⚠ โหลด {sessLoadErrList.join(' / ')} ไม่สำเร็จ — ตัวเลขบนจอยังไม่ครบ
                   </div>
                   <div style={{ fontSize: 12, color: 'var(--text)', lineHeight: 1.55 }}>
@@ -3454,8 +3418,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
 
               {/* คำขอปิดกะถูกปฏิเสธ — โชว์ remark ให้หัวหน้ากลุ่มรู้ว่าต้องกลับไปแก้อะไร (static ไม่กระพริบ) */}
               {selSession.status === 'open' && selSession.close_reject_reason && (
-                <div style={{ marginTop: 12, background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.45)', borderRadius: 8, padding: '10px 14px' }}>
-                  <div style={{ fontSize: 12, fontWeight: 800, color: '#ef4444', marginBottom: 4 }}>
+                <div style={{ marginTop: 12, background: 'var(--red-dim)', border: '1px solid var(--red-line)', borderRadius: 8, padding: '10px 14px' }}>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--red)', marginBottom: 4 }}>
                     ✕ คำขอปิดกะถูกปฏิเสธ — กรุณาแก้ไขแล้วส่งขอปิดกะใหม่
                   </div>
                   <div style={{ fontSize: 13, color: 'var(--text)', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>
@@ -3519,7 +3483,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 + nullMat.filter(o => o.status === 'open').reduce((s, o) => s + (o.qty_actual || 0), 0)
                 + nullMat.filter(o => ['carry_over', 'imported'].includes(o.status)).reduce((s, o) => s + (o.qty_actual || 0), 0);
               const pct = totalTarget > 0 ? Math.min(100, Math.round((totalConfirmed / totalTarget) * 100)) : 0;
-              const barClr = pct >= 100 ? '#22c55e' : pct >= 60 ? '#f59e0b' : '#4d9fff';
+              const barClr = pct >= 100 ? 'var(--green)' : pct >= 60 ? 'var(--amber)' : 'var(--blue)';
 
               const unassignedDT = dtLogs.filter(d => !d.mat_no).reduce((s, d) => s + (d.duration_min || 0), 0);
 
@@ -3537,7 +3501,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       {matOpen && (<>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                         {productRows.map(r => {
-                          const rowClr = r.rowPct >= 100 ? '#22c55e' : r.rowPct >= 60 ? '#f59e0b' : '#4d9fff';
+                          const rowClr = r.rowPct >= 100 ? 'var(--green)' : r.rowPct >= 60 ? 'var(--amber)' : 'var(--blue)';
                           return (
                             <div key={r.matNo} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 14px' }}>
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 6 }}>
@@ -3547,7 +3511,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                                     const op = opInfoSync()[r.matNo];
                                     if (!op) return null;
                                     return (
-                                      <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: op.parent ? 'rgba(14,165,233,0.12)' : 'rgba(245,158,11,0.15)', color: op.parent ? '#0ea5e9' : '#f59e0b', fontWeight: 700 }}
+                                      <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: op.parent ? 'var(--blue-dim)' : 'var(--amber-dim)', color: op.parent ? 'var(--blue)' : 'var(--amber)', fontWeight: 700 }}
                                         title={op.parent ? 'รายการขั้นตอน — ยอดรวมภาพใหญ่นับที่พาร์ทจริง ไม่บวกซ้ำ' : 'รายการขั้นตอนที่ยังไม่ผูกพาร์ทจริง — ผูกได้ที่ Product Master'}>
                                         🔩 OP{op.seq ? ` ${op.seq}` : ''}{op.parent ? ` · ของ ${op.parent}` : ' · ยังไม่ผูกพาร์ทจริง'}
                                       </span>
@@ -3556,14 +3520,14 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                                   {r.name && <span style={{ fontSize: 12, color: 'var(--muted)' }}>{r.name}</span>}
                                   {r.ct > 0 && <span style={{ fontSize: 11, color: 'var(--muted)' }}>· CT {r.ct}s</span>}
                                   {r.actualStart && (
-                                    <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'rgba(77,159,255,0.12)', color: '#4d9fff', fontWeight: 700 }}>
+                                    <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'var(--blue-dim)', color: 'var(--blue)', fontWeight: 700 }}>
                                       🕐 {fmtTime(r.actualStart)}–{r.actualEnd ? fmtTime(r.actualEnd) : '...'}
                                     </span>
                                   )}
-                                  <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'rgba(245,158,11,0.12)', color: '#f59e0b', fontWeight: 700 }}>เปิด {r.openCnt}</span>
-                                  <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'rgba(34,197,94,0.12)', color: '#22c55e', fontWeight: 700 }}>ปิด {r.closedCnt}</span>
-                                  {r.ng > 0 && <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'rgba(239,68,68,0.12)', color: '#ef4444', fontWeight: 700 }}>🔴 NG {r.ng}</span>}
-                                  {r.dt > 0 && <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'rgba(168,85,247,0.12)', color: '#a855f7', fontWeight: 700 }}>⏱ {fmtMin(r.dt)}</span>}
+                                  <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'var(--amber-dim)', color: 'var(--amber)', fontWeight: 700 }}>เปิด {r.openCnt}</span>
+                                  <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'var(--green-dim)', color: 'var(--green)', fontWeight: 700 }}>ปิด {r.closedCnt}</span>
+                                  {r.ng > 0 && <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'var(--red-dim)', color: 'var(--red)', fontWeight: 700 }}>🔴 NG {r.ng}</span>}
+                                  {r.dt > 0 && <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'var(--blue-dim)', color: 'var(--blue)', fontWeight: 700 }}>⏱ {fmtMin(r.dt)}</span>}
                                 </div>
                                 <span style={{ fontSize: 13, fontWeight: 800, color: rowClr }}>{r.confirmed} / {r.target} ชิ้น ({r.rowPct}%)</span>
                               </div>
@@ -3586,22 +3550,18 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', marginBottom: 8 }}>📊 ภาพรวมทั้งกะ
                     {pt.hasPair && <span style={{ textTransform: 'none', fontWeight: 500, color: 'var(--muted)', marginLeft: 6 }}>· งานคู่ RH/LH นับเป็น 1 คู่ (1 ปั๊ม) ไม่บวกชิ้นซ้ำ</span>}
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(120px,1fr))', gap: 12, marginBottom: 16 }}>
-                    {[
-                      { label: 'เปิด Order', value: prodOrders.filter(o => o.status === 'open').length, unit: 'ใบ', color: '#f59e0b' },
-                      { label: 'ปิดแล้ว',   value: prodOrders.filter(o => o.status === 'confirmed').length, unit: 'ใบ', color: '#22c55e' },
-                      { label: 'เป้ารวม',   value: totalTarget,    unit: 'ชิ้น', color: '#4d9fff' },
-                      { label: 'ผลิตได้',   value: totalConfirmed, unit: 'ชิ้น', color: '#22c55e' },
-                      { label: 'Input ต้องเบิก', value: totalInputNeeded, unit: totalNg > 0 ? `ชิ้น (รวม NG ${totalNg})` : 'ชิ้น', color: '#f59e0b' },
-                      { label: 'Downtime',  value: fmtMin(totalDT), unit: '',    color: '#a855f7', small: true },
-                      { label: 'นอกแผน',   value: fmtMin(unplannedDT), unit: '', color: '#ef4444', small: true },
-                    ].map(k => (
-                      <div key={k.label} style={{ background: 'var(--card)', border: `1px solid ${k.color}25`, borderRadius: 10, padding: '10px 12px', textAlign: 'center' }}>
-                        <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>{k.label}</div>
-                        <div style={{ fontSize: k.small ? 13 : 22, fontWeight: 800, color: k.color, lineHeight: 1 }}>{k.value ?? 0}</div>
-                        {k.unit && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{k.unit}</div>}
-                      </div>
-                    ))}
+                  {/* 📊 การ์ดโครงเดียว (KpiTile · UI §6.35) — เดิม 7 ใบ 5 สี ⇒ 5 ใบ ตัวเลขสีเดียว ข้อมูลเดิมครบ
+                      (เป้ารวม → บรรทัดใต้ "ผลิตได้" · เปิด/ปิดแล้ว → "ใบผลิต" · นอกแผน → บรรทัดใต้ "Downtime") */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 10, marginBottom: 16 }}>
+                    <KpiTile label="ผลิตได้" value={totalConfirmed} unit="ชิ้น"
+                      note={totalTarget > 0 ? `${pct}% ของเป้า ${totalTarget.toLocaleString()}` : 'ยังไม่มีเป้า (ไม่มีใบผลิต)'}
+                      tone={totalTarget > 0 ? (pct >= 100 ? 'ok' : pct >= 60 ? 'warn' : 'info') : undefined} />
+                    <KpiTile label="ใบผลิต" value={prodOrders.filter(o => o.status === 'confirmed').length} unit={`/ ${prodOrders.length} ใบ`}
+                      note={`ปิดแล้ว ${prodOrders.filter(o => o.status === 'confirmed').length} · เปิด ${prodOrders.filter(o => o.status === 'open').length}`} />
+                    <KpiTile label="Input ต้องเบิก" value={totalInputNeeded} unit="ชิ้น"
+                      note={totalNg > 0 ? `รวม NG ${totalNg.toLocaleString()} ชิ้น` : 'ไม่มี NG'} tone={totalNg > 0 ? 'warn' : undefined} />
+                    <KpiTile label="Downtime" value={fmtMin(totalDT)}
+                      note={unplannedDT > 0 ? `นอกแผน ${fmtMin(unplannedDT)}` : 'ไม่มีหยุดนอกแผน'} tone={unplannedDT > 0 ? 'bad' : undefined} />
                     {/* Overall progress bar */}
                     {prodOrders.length > 0 && (
                       <div style={{ gridColumn: '1/-1', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 16px' }}>
@@ -3649,11 +3609,11 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   );
                   return (
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                      {g.missing.length > 0 && chip('rgba(239,68,68,0.12)', '#ef4444',
+                      {g.missing.length > 0 && chip('var(--red-dim)', 'var(--red)',
                         `👯 ยังไม่มีใบอีกข้าง ${g.missing.length}`,
                         'งานคู่ RH/LH ที่เปิดไว้ข้างเดียว — คอนเฟิร์มยอดแล้วจะได้ข้างเดียว\n' +
                         g.missing.map(x => `${x.order.mat_no} → ขาดคู่ ${x.pair_mat_no}`).join('\n'))}
-                      {g.unlinked.length > 0 && chip('rgba(245,158,11,0.12)', '#f59e0b',
+                      {g.unlinked.length > 0 && chip('var(--amber-dim)', 'var(--amber)',
                         `👯 มีคู่แต่ยังไม่ผูก ${g.unlinked.length}`,
                         'ใบของทั้ง 2 ข้างเปิดอยู่ แต่ยังไม่ผูกต่อกัน — ลงยอดแล้วอีกข้างจะไม่ขยับตาม\n' +
                         g.unlinked.map(x => `${x.order.prod_no} (${x.order.mat_no}) ↔ ${x.candidate.prod_no}`).join('\n'))}
@@ -3663,16 +3623,16 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 {canScan && prodOrdersOpen && (
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     <button onClick={() => { setShowScanOpen(true); setOpenProdForm({ prod_no: '', mat_no: '', qty: '' }); setOpenProdStd(null); }}
-                      style={{ background: '#f59e0b', color: '#000', border: 'none', borderRadius: 7, padding: '7px 16px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
+                      style={{ background: 'var(--amber)', color: '#000', border: 'none', borderRadius: 7, padding: '7px 16px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
                       📥 Scan เปิด Order
                     </button>
                     <button onClick={() => { setShowManualOpen(true); setManualForm({ mat_no: '', qty: '' }); }}
                       title="ไลน์ที่ไม่มี kanban card / SAP ไม่ gen barcode — เปิดเป้าเองแล้วอัพเดทยอดสะสม"
-                      style={{ background: 'rgba(96,165,250,0.15)', color: '#60a5fa', border: '1px solid rgba(96,165,250,0.5)', borderRadius: 7, padding: '7px 16px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
+                      style={{ background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)', borderRadius: 7, padding: '7px 16px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
                       ✍️ เปิดเป้า (ไม่มีบาร์โค้ด)
                     </button>
                     <button onClick={() => { setShowScanClose(true); setCloseProdNo(''); setCloseMatch(null); setCrossFind(null); }}
-                      style={{ background: '#22c55e', color: '#fff', border: 'none', borderRadius: 7, padding: '7px 16px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
+                      style={{ background: 'var(--green)', color: '#fff', border: 'none', borderRadius: 7, padding: '7px 16px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
                       📤 Scan ปิด / Confirm
                     </button>
                     <button onClick={() => {
@@ -3681,7 +3641,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       setDefectForm({ id: null, mat_no: activeMatNos.length === 1 ? activeMatNos[0] : '', defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '', is_trial: false, defect_img: '' });
                       setDefectFile(null);
                     }}
-                      style={{ background: '#ef4444', color: '#fff', border: 'none', borderRadius: 7, padding: '7px 16px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
+                      style={{ background: 'var(--red)', color: '#fff', border: 'none', borderRadius: 7, padding: '7px 16px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
                       🔴 บันทึกงานเสีย
                     </button>
                   </div>
@@ -3702,8 +3662,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   lineMachines = dedupe(machines.filter(m => famNames.has((m.line_name || '').toLowerCase()) && m.is_active !== false));
                 }
                 return (
-                  <div style={{ marginBottom: 10, padding: '8px 12px', background: 'rgba(96,165,250,0.08)', border: '1px solid rgba(96,165,250,0.35)', borderRadius: 9, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: '#60a5fa' }}>⚙️ ไลน์เครื่องขนาน — เปิด Order ถัดไปที่เครื่อง:</span>
+                  <div style={{ marginBottom: 10, padding: '8px 12px', background: 'var(--blue-dim)', border: '1px solid var(--blue-line)', borderRadius: 9, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--blue)' }}>⚙️ ไลน์เครื่องขนาน — เปิด Order ถัดไปที่เครื่อง:</span>
                     <MachineSelect value={openMachineNo || ''} machines={lineMachines} strict placeholder="— ไม่ระบุเครื่อง (กระจายอัตโนมัติ) — พิมพ์ค้นหา" style={{ width: 280 }}
                       inputStyle={{ fontSize: 12, fontWeight: 600, padding: '6px 30px 6px 8px' }}
                       onChange={({ machine_no }) => setOpenMachineNo(machine_no || '')} />
@@ -3713,7 +3673,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
               })()}
               {/* Carry-over banner */}
               {carryOrders.length > 0 && canScan && (
-                <div style={{ marginBottom: 10, padding: '10px 14px', background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.4)', borderRadius: 9 }}>
+                <div style={{ marginBottom: 10, padding: '10px 14px', background: 'var(--blue-dim)', border: '1px solid var(--blue-line)', borderRadius: 9 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                     {/* 📥 user 20/10: "ตามหลักต้องเปิดให้เห็นว่า **ต้องไล่เก็บอีกแค่ไหน**"
                         ⇒ บอกเป็น ชิ้น + อายุค้าง ไม่ใช่แค่ "กี่ใบ" · เรียงหนี้มากก่อน */}
@@ -3724,11 +3684,11 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       const oldest = ages.length ? Math.max(...ages) : null;
                       return (
                         <div style={{ minWidth: 0 }}>
-                          <div style={{ fontSize: 12, fontWeight: 700, color: '#a78bfa' }}>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--blue)' }}>
                             ➡ ต้องไล่เก็บอีก {pcs.toLocaleString()} ชิ้น · {carryOrders.length} ใบ จากกะก่อน
                             {/* 🔴 อายุที่คำนวณไม่ได้ = ไม่เขียน ห้ามเขียน "0 วัน" (0 แปลว่าของวันนี้) */}
                             {oldest != null && oldest > 0 && (
-                              <span style={{ color: oldest >= 7 ? '#ef4444' : '#f59e0b', marginLeft: 6 }}>
+                              <span style={{ color: oldest >= 7 ? 'var(--red)' : 'var(--amber)', marginLeft: 6 }}>
                                 · เก่าสุดค้างมา {oldest} วัน
                               </span>
                             )}
@@ -3753,7 +3713,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       </button>
                       <button onClick={handleImportCarryOrders} disabled={carryPick.size === 0}
                         title={carryPick.size === 0 ? 'ยังไม่ได้เลือกใบไหนเลย' : 'ใบที่ไม่ได้เลือกยังค้างต่อ ไม่ถูกลบ'}
-                        style={{ background: carryPick.size ? '#a78bfa' : 'var(--bg3)', color: carryPick.size ? '#fff' : 'var(--muted)', border: 'none', borderRadius: 7, padding: '6px 14px', fontSize: 12, fontWeight: 700, cursor: carryPick.size ? 'pointer' : 'default', whiteSpace: 'nowrap' }}>
+                        style={{ background: carryPick.size ? 'var(--blue)' : 'var(--bg3)', color: carryPick.size ? '#fff' : 'var(--muted)', border: 'none', borderRadius: 7, padding: '6px 14px', fontSize: 12, fontWeight: 700, cursor: carryPick.size ? 'pointer' : 'default', whiteSpace: 'nowrap' }}>
                         📥 รับยอดต่อ {carryPick.size < carryOrders.length ? `(${carryPick.size} ใบ)` : ''}
                       </button>
                     </div>
@@ -3762,7 +3722,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   {/* 🔴 เลือกได้ว่าจะรับใบไหน — ใบที่ไม่ติ๊ก **ยังค้างต่อ ไม่ถูกลบ**
                       (feedback: "ไม่อยากมาส่งต่อกะทุกใบที่เหลือ" ⇒ เดิมไม่มีทางเลือกเลยไม่กด) */}
                   {carryListOpen && (
-                    <div style={{ marginTop: 8, borderTop: '1px solid rgba(167,139,250,0.3)', paddingTop: 8, maxHeight: 220, overflowY: 'auto' }}>
+                    <div style={{ marginTop: 8, borderTop: '1px solid var(--blue-line)', paddingTop: 8, maxHeight: 220, overflowY: 'auto' }}>
                       <div style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
                         <button onClick={() => setCarryPick(new Set(carryOrders.map(o => o.id)))}
                           style={{ fontSize: 11, padding: '3px 9px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text2)', cursor: 'pointer', fontWeight: 700 }}>เลือกทั้งหมด</button>
@@ -3782,7 +3742,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                             <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 800, color: 'var(--text2)', whiteSpace: 'nowrap', flexShrink: 0 }}>
                               {debtPcs(o).toLocaleString()} ชิ้น
                               {age != null && age > 0 && (
-                                <span style={{ color: age >= 7 ? '#ef4444' : '#f59e0b', fontWeight: 700 }}> · {age} วัน</span>
+                                <span style={{ color: age >= 7 ? 'var(--red)' : 'var(--amber)', fontWeight: 700 }}> · {age} วัน</span>
                               )}
                             </span>
                           </label>
@@ -3821,8 +3781,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   pairOf, opMap).hasPair;
                 if (!total) return null;
                 return (
-                  <div style={{ marginBottom: 10, padding: '10px 14px', background: 'rgba(167,139,250,0.08)', border: '1px solid rgba(167,139,250,0.3)', borderRadius: 9 }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: '#a78bfa' }}>
+                  <div style={{ marginBottom: 10, padding: '10px 14px', background: 'var(--blue-dim)', border: '1px solid var(--blue-line)', borderRadius: 9 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--blue)' }}>
                       ⏭ จะส่งต่อกะหน้า {unfilled > 0 ? '~' : ''}{total} {paired ? 'ชุด (คู่ RH/LH)' : 'ชิ้น'}
                     </div>
                     {/* งานคู่ปั๊มครั้งเดียวได้ทั้ง LH+RH → เลขนี้คือ "จำนวนครั้งที่ต้องปั๊ม"
@@ -3876,7 +3836,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   // ใบ manual ที่ไม่ถูกอัพเดทยอดนาน (> 2 ชม.ครึ่ง = เลยรอบเบรคไปแล้ว) เตือนเหลืองนิ่ง
                   const lastUpd     = manualOpen ? new Date(o.qty_updated_at || o.opened_at) : null;
                   const manualStale = manualOpen && (Date.now() - lastUpd.getTime()) > 150 * 60000;
-                  const statusColor = confirmed ? '#22c55e' : carriedOut ? '#a78bfa' : cancelled ? '#666' : '#f59e0b';
+                  const statusTone  = confirmed ? 'good' : carriedOut ? 'info' : cancelled ? 'none' : 'warn';   // ยกยอด = ข้อมูล (ฟ้า) ไม่ใช่สถานะ · ม่วงเลิกใช้
+                  const statusColor = toneVar(statusTone);
                   // แยก 2 สถานะให้อ่านออกว่ากะถัดไป "รับไปแล้ว" หรือ "ยังไม่รับ" (คนละความหมายเวลาตามงาน)
                   const statusLabel = confirmed ? '✓ ปิดแล้ว'
                     : handedOff ? '➡ ส่งกะถัดไปแล้ว' : carryOver ? '➡ ยกยอด (รอกะถัดไปรับ)'
@@ -3884,8 +3845,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   return (
                     // minWidth:0 บังคับตาม §6.11 — การ์ดเป็นลูกของ grid ถ้าไม่ใส่ เนื้อหาที่ไม่ยอมหดจะดันคอลัมน์ล้น
                     <div key={o.id} style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0, padding: '9px 14px', background: 'var(--bg2)', borderRadius: 8,
-                      border: `1px solid ${manualStale ? '#f59e0b' : `${statusColor}40`}`, borderLeft: `4px solid ${statusColor}`,
-                      boxShadow: manualStale ? '0 0 8px 1px rgba(245,158,11,0.4)' : 'none',
+                      border: `1px solid ${manualStale ? 'var(--amber)' : toneLine(statusTone)}`, borderLeft: `4px solid ${statusColor}`,
+                      boxShadow: manualStale ? '0 0 8px 1px var(--amber-line)' : 'none',
                       opacity: cancelled ? 0.45 : 1 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
@@ -3893,38 +3854,38 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                           <span style={{ fontSize: 12, fontFamily: 'monospace', fontWeight: 700, color: 'var(--text)' }}>{o.prod_no}</span>
                           {/* MAT เปล่าๆ อ่านไม่ออกว่าเป็นชิ้นงานอะไร (feedback 23/09) → ของกลาง <MatLabel> เติมชื่อ+Part No. จากทะเบียนให้เอง */}
                           <MatLabel mat={o.mat_no} name={o.part_name} />
-                          {o.customer && <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'rgba(59,130,246,0.12)', color: '#60a5fa', fontWeight: 700 }}>{o.customer}</span>}
+                          {o.customer && <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'var(--blue-dim)', color: 'var(--blue)', fontWeight: 700 }}>{o.customer}</span>}
                           {o.machine_no && (
-                            <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'rgba(148,163,184,0.18)', color: '#94a3b8', fontWeight: 700 }}
+                            <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'var(--bg3)', color: 'var(--muted)', fontWeight: 700 }}
                               title="เครื่องที่ใบนี้วิ่ง (ไลน์เครื่องขนาน)">⚙️ {o.machine_no}</span>
                           )}
                           {isManual && (
-                            <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'rgba(96,165,250,0.15)', color: '#60a5fa', fontWeight: 700 }}
+                            <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'var(--blue-dim)', color: 'var(--blue)', fontWeight: 700 }}
                               title="ออเดอร์ manual — ไลน์ไม่มี kanban card เปิดเป้าเองไม่ได้สแกน">
                               ✍️ manual
                             </span>
                           )}
                           {isCarried && (
-                            <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'rgba(167,139,250,0.15)', color: '#a78bfa', fontWeight: 700 }}
+                            <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'var(--blue-dim)', color: 'var(--blue)', fontWeight: 700 }}
                               title={o.carry_over_note || 'ยกยอดมาจากกะก่อน'}>
                               ➡ ยกยอดมา {o.carry_over_note ? `(${o.carry_over_note.match(/\d+\/\d+/)?.[0] || ''})` : ''}
                             </span>
                           )}
-                          <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, fontWeight: 700, background: `${statusColor}20`, color: statusColor }}>
+                          <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, fontWeight: 700, background: toneDim(statusTone), color: statusColor }}>
                             {statusLabel}
                           </span>
                           {/* ✂️ ใบที่ถูกปิดด้วยยอดเศษ — ต้องเห็นทันทีว่า "ใบนี้ไม่ได้ทำครบ และ SAP ต้องถูกแก้"
                               ไม่งั้นเดือนหน้าไม่มีใครรู้ว่าทำไมใบ 60 เหลือ 47 (กฎ: utils/shortClose.js) */}
                           {isShortClosed(o) && (
                             <span title={o.carry_over_note || 'ปิดด้วยยอดเศษ — แก้จำนวนใบสั่งใน SAP ให้ตรง'}
-                              style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'rgba(245,158,11,0.15)', color: '#f59e0b', fontWeight: 700 }}>
+                              style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'var(--amber-dim)', color: 'var(--amber)', fontWeight: 700 }}>
                               ✂️ ยอดเศษ {o.qty}/{o.qty_target}
                             </span>
                           )}
                           {/* ร่องรอยการถอยใบ — โชว์เสมอให้หัวหน้าแผนกตรวจย้อนหลังได้ว่าใครถอย */}
                           {(o.reopen_count || 0) > 0 && (
                             <span title={`ใบนี้เคยถูกถอยจาก "ปิดแล้ว" กลับมาผลิตต่อ ${o.reopen_count} ครั้ง · ล่าสุดโดย ${o.reopened_by || '-'}`}
-                              style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'rgba(245,158,11,0.13)', color: '#f59e0b', fontWeight: 700 }}>
+                              style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'var(--amber-dim)', color: 'var(--amber)', fontWeight: 700 }}>
                               ↩️ เคยถอยใบ {o.reopen_count} ครั้ง · {o.reopened_by}
                             </span>
                           )}
@@ -3933,7 +3894,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                           เปิด {fmtTime(new Date(o.opened_at))} {o.opened_by && `· ${o.opened_by}`}
                           {confirmed && o.confirmed_at && ` · ปิด ${fmtTime(new Date(o.confirmed_at))} · ${o.confirmed_by}`}
                           {manualOpen && ` · อัพเดทยอดล่าสุด ${fmtTime(lastUpd)}`}
-                          {manualStale && <span style={{ color: '#f59e0b', fontWeight: 700 }}> ⚠ เกิน 2.5 ชม.แล้ว — อัพเดทยอดด้วย</span>}
+                          {manualStale && <span style={{ color: 'var(--amber)', fontWeight: 700 }}> ⚠ เกิน 2.5 ชม.แล้ว — อัพเดทยอดด้วย</span>}
                         </div>
                       </div>
                       <div style={{ textAlign: 'right', flexShrink: 0 }}>
@@ -3948,11 +3909,11 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                           // ยกยอดออกไปกะถัดไป — ต้องโชว์ให้ชัดว่าผลิตจริงเท่าไหร่ ยกไปเท่าไหร่ (ไม่ใช่โชว์เป้าเฉยๆ = ดูเหมือนผลิตครบ)
                           // ต้องครอบ `imported` ด้วย ไม่งั้นข้อมูลนี้หายทันทีที่กะถัดไปกดรับ (ดูหมายเหตุที่ carriedOut)
                           <>
-                            <div style={{ fontSize: 18, fontWeight: 900, color: '#22c55e', lineHeight: 1 }}>
+                            <div style={{ fontSize: 18, fontWeight: 900, color: 'var(--green)', lineHeight: 1 }}>
                               {o.qty_actual || 0}<span style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>/{o.qty_target ?? o.qty}</span>
                             </div>
                             <div style={{ fontSize: 11, color: 'var(--muted)' }}>ผลิตจริง/เป้า</div>
-                            <div style={{ fontSize: 11, fontWeight: 700, color: '#a78bfa', marginTop: 2 }}>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--blue)', marginTop: 2 }}>
                               {handedOff ? '➡ ส่งกะถัดไป' : '➡ ยกไป'} {Math.max(0, (o.qty_target ?? o.qty) - (o.qty_actual || 0))} ชิ้น
                             </div>
                           </>
@@ -3967,11 +3928,11 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                           // ใบสแกนที่กรอกยอดระหว่างทางแล้ว — โชว์เหมือนฝั่งรับ (ทำได้/เป้า + จะยกไปเท่าไหร่)
                           // ไม่ต้องรอปิดกะ ไม่ต้องไปเปิดดูกะถัดไป
                           <>
-                            <div style={{ fontSize: 18, fontWeight: 900, color: '#22c55e', lineHeight: 1 }}>
+                            <div style={{ fontSize: 18, fontWeight: 900, color: 'var(--green)', lineHeight: 1 }}>
                               {o.qty_actual}<span style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>/{o.qty}</span>
                             </div>
                             <div style={{ fontSize: 11, color: 'var(--muted)' }}>ทำได้/เป้า</div>
-                            <div style={{ fontSize: 11, fontWeight: 700, color: '#a78bfa', marginTop: 2 }}>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--blue)', marginTop: 2 }}>
                               ➡ ปิดกะตอนนี้ ยกไป {Math.max(0, o.qty - o.qty_actual)} ชิ้น
                             </div>
                           </>
@@ -3985,7 +3946,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                             </div>
                             {isCarried && (() => {
                               const m = (o.carry_over_note || '').match(/(\d+)\s*\/\s*(\d+)/);
-                              return m ? <div style={{ fontSize: 11, fontWeight: 700, color: '#a78bfa', marginTop: 2 }}>เป้าเดิม {m[2]} · กะก่อนทำ {m[1]}</div> : null;
+                              return m ? <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--blue)', marginTop: 2 }}>เป้าเดิม {m[2]} · กะก่อนทำ {m[1]}</div> : null;
                             })()}
                           </>
                         )}
@@ -4001,7 +3962,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       {confirmed && canEditRecords && selSession?.status === 'open' && (
                         <button onClick={() => handleRevertOrder(o)}
                           title="ถอยใบ — สแกนปิดเกินยอดที่ผลิตได้/ปิดผิดใบ ย้อนกลับเป็นกำลังผลิต (ระบบถอนยอดที่รับเข้า stock อัตโนมัติให้ด้วย)"
-                          style={{ background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.45)', borderRadius: 7, padding: '5px 11px', fontSize: 11, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                          style={{ background: 'var(--amber-dim)', color: 'var(--amber)', border: '1px solid var(--amber-line)', borderRadius: 7, padding: '5px 11px', fontSize: 11, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>
                           ↩️ ถอยใบ
                         </button>
                       )}
@@ -4012,9 +3973,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                           {qtyUpdatesByOrder[o.id].map((u, ui) => (
                             <span key={ui} title={`ยอดสะสม ${u.qty_accum} ชิ้น · ${u.logged_by || ''}`} style={{
                               fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 20,
-                              background: u.is_final ? 'rgba(34,197,94,0.13)' : 'rgba(96,165,250,0.12)',
-                              color: u.is_final ? '#22c55e' : '#60a5fa',
-                              border: `1px solid ${u.is_final ? 'rgba(34,197,94,0.4)' : 'rgba(96,165,250,0.35)'}`,
+                              background: u.is_final ? 'var(--green-dim)' : 'var(--blue-dim)',
+                              color: u.is_final ? 'var(--green)' : 'var(--blue)',
+                              border: `1px solid ${u.is_final ? 'var(--green-line)' : 'var(--blue-line)'}`,
                             }}>
                               {u.is_final ? '✓ ' : ''}{fmtTime(new Date(u.logged_at))} · สะสม {u.qty_accum}
                               <span style={{ opacity: 0.75 }}> ({u.qty_delta >= 0 ? '+' : ''}{u.qty_delta})</span>
@@ -4047,12 +4008,12 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                             onChange={e => setManualQtyDraft(d => ({ ...d, [o.id]: e.target.value }))}
                             style={{ width: 100, padding: '6px 10px', fontSize: 13, fontWeight: 700, borderRadius: 7, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }} />
                           <button onClick={() => handleManualQtyUpdate(o)}
-                            style={{ background: '#60a5fa', color: '#08131f', border: 'none', borderRadius: 7, padding: '6px 14px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
+                            style={{ background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 7, padding: '6px 14px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
                             💾 อัพเดทยอด
                           </button>
                           {manualOpen && (
                             <button onClick={() => handleManualClose(o)}
-                              style={{ background: 'rgba(34,197,94,0.15)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.5)', borderRadius: 7, padding: '6px 14px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
+                              style={{ background: 'var(--green-dim)', color: 'var(--green)', border: '1px solid var(--green-line)', borderRadius: 7, padding: '6px 14px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
                               ✓ ปิดใบนี้ (ยอดจริง)
                             </button>
                           )}
@@ -4104,9 +4065,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
               const defAuto = defectLogs.length > AUTO_COLLAPSE_ROWS;
               const defOpen = !liveCollapsed('defects', defAuto);
               return (
-              <div style={{ background: 'var(--card)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 10, padding: '14px 16px', marginBottom: 16 }}>
+              <div style={{ background: 'var(--card)', border: '1px solid var(--red-line)', borderRadius: 10, padding: '14px 16px', marginBottom: 16 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: defOpen ? 10 : 0 }}>
-                  <div onClick={() => toggleLiveCollapse('defects', defAuto)} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, color: '#ef4444', cursor: 'pointer', userSelect: 'none' }}>
+                  <div onClick={() => toggleLiveCollapse('defects', defAuto)} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, color: 'var(--red)', cursor: 'pointer', userSelect: 'none' }}>
                     <span style={{ fontSize: 11, color: 'var(--muted)', transform: defOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', display: 'inline-block' }}>▶</span>
                     🔴 บันทึกงานเสีย ({defectLogs.length} รายการ)
                     <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400, marginLeft: 8 }}>
@@ -4119,28 +4080,28 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   {/* flexWrap ที่แถว: ปุ่ม action ท้ายแถว (🗑️/🛠/✎/✕) เป็น nowrap ทั้งหมด — จอมือถือแถวไม่ wrap = ปุ่มตกขอบจอกดไม่ได้
                       (feedback หน้างาน 2026-08-25: "เข้าแก้ไขเวลาเสร็จในดาวน์ไทม์ในมือถือไม่ได้") */}
                   {limitRows('defects', defectLogs).map(d => (
-                    <div key={d.id} style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 10, padding: '8px 12px', background: 'var(--bg2)', borderRadius: 8, borderLeft: `3px solid ${d.dr_defect_types?.color || '#ef4444'}` }}>
+                    <div key={d.id} style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 10, padding: '8px 12px', background: 'var(--bg2)', borderRadius: 8, borderLeft: `3px solid ${d.dr_defect_types?.color || 'var(--red)'}` }}>
                       {/* flex-basis 240: จอแคบให้ปุ่มตกบรรทัดใหม่แทนการบีบข้อความจนอ่านไม่ออก · จอกว้าง = แถวเดียวเหมือนเดิม */}
                       <div style={{ flex: '1 1 240px', minWidth: 0 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2, flexWrap: 'wrap' }}>
                           <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>{d.dr_defect_types?.name_th || '—'}</span>
                           {d.prod_orders?.mat_no && (
-                            <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'rgba(14,165,233,0.15)', color: '#0ea5e9', fontWeight: 700, fontFamily: 'monospace' }}>
+                            <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'var(--blue-dim)', color: 'var(--blue)', fontWeight: 700, fontFamily: 'monospace' }}>
                               {d.prod_orders.mat_no}
                             </span>
                           )}
                           {d.prod_orders?.prod_no && (
-                            <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'rgba(74,222,128,0.1)', color: '#22c55e', fontWeight: 700, fontFamily: 'monospace' }}>
+                            <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'var(--green-dim)', color: 'var(--green)', fontWeight: 700, fontFamily: 'monospace' }}>
                               {d.prod_orders.prod_no}
                             </span>
                           )}
-                          {d.qty_ng     > 0 && <span style={{ fontSize: 11, color: '#ef4444', fontWeight: 700 }}>NG {d.qty_ng}</span>}
-                          {d.qty_suspect > 0 && <span style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700 }}>สงสัย {d.qty_suspect}</span>}
-                          {d.qty_repair  > 0 && <span style={{ fontSize: 11, color: '#a78bfa', fontWeight: 700 }}>ซ่อม {d.qty_repair}</span>}
+                          {d.qty_ng     > 0 && <span style={{ fontSize: 11, color: 'var(--red)', fontWeight: 700 }}>NG {d.qty_ng}</span>}
+                          {d.qty_suspect > 0 && <span style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 700 }}>สงสัย {d.qty_suspect}</span>}
+                          {d.qty_repair  > 0 && <span style={{ fontSize: 11, color: 'var(--blue)', fontWeight: 700 }}>ซ่อม {d.qty_repair}</span>}
                           {/* งานทดลองต้องเห็นในลิสต์เสมอ (เป็นของเสียจริง) แค่ไม่ถูกนับเข้า %Q */}
                           {isTrialDefect(d) && (
                             <span title="งานทดลอง — ไม่นับเข้า %Q แต่ยังนับเป็นมูลค่าของเสีย"
-                              style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'rgba(168,85,247,0.15)', color: '#a855f7', fontWeight: 700 }}>
+                              style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'var(--blue-dim)', color: 'var(--blue)', fontWeight: 700 }}>
                               🧪 งานทดลอง
                             </span>
                           )}
@@ -4164,9 +4125,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                               : 'ส่งเข้าถังเหลือง (ต้องสงสัย) / ถังแดง (เสีย) โดยไม่ต้องคีย์ใบใหม่'}
                             style={{ fontSize: 11, fontWeight: 800, whiteSpace: 'nowrap', cursor: 'pointer',
                               borderRadius: 20, padding: '3px 10px',
-                              color: done ? '#22c55e' : '#e05252',
-                              background: done ? 'rgba(34,197,94,0.12)' : 'rgba(224,82,82,0.12)',
-                              border: `1px solid ${done ? 'rgba(34,197,94,0.35)' : 'rgba(224,82,82,0.4)'}` }}>
+                              color: done ? 'var(--green)' : 'var(--red)',
+                              background: done ? 'var(--green-dim)' : 'var(--red-dim)',
+                              border: `1px solid ${done ? 'var(--green-line)' : 'var(--red-line)'}` }}>
                             {done
                               ? `🗑️ ลงถังแล้ว${lk.yellow ? ` 🟡${lk.yellow}` : ''}${lk.red ? ` 🔴${lk.red}` : ''}`
                               : '🗑️ ลงถัง'}
@@ -4184,9 +4145,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                               : 'ลงวิธีแก้ไข + ผลตรวจติดตาม (เติมลงใบรายงานปัญหาให้อัตโนมัติ)'}
                             style={{ fontSize: 11, fontWeight: 800, whiteSpace: 'nowrap', cursor: 'pointer',
                               borderRadius: 20, padding: '3px 10px',
-                              color: done ? '#22c55e' : '#f59e0b',
-                              background: done ? 'rgba(34,197,94,0.12)' : 'rgba(245,158,11,0.12)',
-                              border: `1px solid ${done ? 'rgba(34,197,94,0.35)' : 'rgba(245,158,11,0.4)'}` }}>
+                              color: done ? 'var(--green)' : 'var(--amber)',
+                              background: done ? 'var(--green-dim)' : 'var(--amber-dim)',
+                              border: `1px solid ${done ? 'var(--green-line)' : 'var(--amber-line)'}` }}>
                             {done ? '🛠 แก้ไขแล้ว' : '🛠 ลงวิธีแก้ไข'}
                           </button>
                         );
@@ -4221,7 +4182,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 </div>
                 {dtOpen && (
                 <button onClick={() => { setShowDT(true); setDtForm({ id: null, downtime_type_id: '', mode: 'start_end', start_time: '', end_time: '', duration_min: '', machine_no: '', mat_no: '', description: '' }); }}
-                  style={{ background: '#ef4444', color: '#fff', border: 'none', borderRadius: 7, padding: '6px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                  style={{ background: 'var(--red)', color: '#fff', border: 'none', borderRadius: 7, padding: '6px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
                   + บันทึก Downtime
                 </button>
                 )}
@@ -4235,15 +4196,15 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                     <div key={d.id}>
                     {/* flexWrap: แถวนี้มีปุ่ม nowrap ต่อท้ายถึง 6 ตัว (📞/📝/🛠/💬/✎/✕) — จอมือถือไม่ wrap = ปุ่ม ✎ ตกขอบจอ
                         แก้เวลาเสร็จ downtime บนมือถือไม่ได้ (feedback หน้างาน 2026-08-25) · จอกว้าง = แถวเดียวเหมือนเดิม */}
-                    <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 12, padding: '10px 12px', background: 'var(--bg2)', borderRadius: 8, borderLeft: `3px solid ${d.dr_downtime_types?.color || '#aaa'}` }}>
+                    <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 12, padding: '10px 12px', background: 'var(--bg2)', borderRadius: 8, borderLeft: `3px solid ${d.dr_downtime_types?.color || 'var(--muted)'}` }}>
                       <div style={{ flex: '1 1 240px', minWidth: 0 }}>
                         <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 2 }}>
                           <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: cat.bg, color: cat.color }}>{cat.label}</span>
                           <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{d.dr_downtime_types?.name_th || '—'}</span>
                           {d.machine_no && <span style={{ fontSize: 11, color: 'var(--muted)' }}>· {d.machine_no}</span>}
-                          {d.mat_no && <span style={{ fontSize: 11, fontWeight: 700, padding: '1px 7px', borderRadius: 20, background: 'rgba(14,165,233,0.15)', color: '#0ea5e9' }}>{d.mat_no}</span>}
-                          {d.carry_over && <span title="เครื่องยังซ่อมไม่เสร็จตอนปิดกะ — เปิดต่อในกะถัดไปอัตโนมัติ" style={{ fontSize: 11, fontWeight: 700, padding: '1px 7px', borderRadius: 20, background: 'rgba(239,68,68,0.15)', color: '#ef4444' }}>🔁 ยกข้ามกะ</span>}
-                          {d.carried_from_id && <span title="รายการต่อเนื่องจาก Downtime ที่ตัดยอดมาจากกะก่อน" style={{ fontSize: 11, fontWeight: 700, padding: '1px 7px', borderRadius: 20, background: 'rgba(245,158,11,0.15)', color: '#f59e0b' }}>⏩ ต่อจากกะก่อน</span>}
+                          {d.mat_no && <span style={{ fontSize: 11, fontWeight: 700, padding: '1px 7px', borderRadius: 20, background: 'var(--blue-dim)', color: 'var(--blue)' }}>{d.mat_no}</span>}
+                          {d.carry_over && <span title="เครื่องยังซ่อมไม่เสร็จตอนปิดกะ — เปิดต่อในกะถัดไปอัตโนมัติ" style={{ fontSize: 11, fontWeight: 700, padding: '1px 7px', borderRadius: 20, background: 'var(--red-dim)', color: 'var(--red)' }}>🔁 ยกข้ามกะ</span>}
+                          {d.carried_from_id && <span title="รายการต่อเนื่องจาก Downtime ที่ตัดยอดมาจากกะก่อน" style={{ fontSize: 11, fontWeight: 700, padding: '1px 7px', borderRadius: 20, background: 'var(--amber-dim)', color: 'var(--amber)' }}>⏩ ต่อจากกะก่อน</span>}
                         </div>
                         {d.description && <div style={{ fontSize: 12, color: 'var(--muted)' }}>{d.description}</div>}
                         <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
@@ -4252,18 +4213,18 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                           {d.reported_by_name && ` · ${d.reported_by_name}`}
                         </div>
                       </div>
-                      <div style={{ fontSize: 15, fontWeight: 800, color: d.dr_downtime_types?.color || '#aaa', minWidth: 64, textAlign: 'right' }}>
+                      <div style={{ fontSize: 15, fontWeight: 800, color: d.dr_downtime_types?.color || 'var(--muted)', minWidth: 64, textAlign: 'right' }}>
                         {fmtMin(d.duration_min)}
                       </div>
                       {/* เรียกช่าง MTN — เฉพาะรายการที่ยังเปิดค้าง (เครื่องยังหยุดอยู่) และไม่ใช่ DT ในแผน */}
                       {canScan && d.duration_min == null && !d.ended_at && d.dr_downtime_types?.category !== 'planned' && (
                         d.call_mtn
-                          ? <span title={`เรียกช่างแล้ว${d.call_mtn_by ? ` โดย ${d.call_mtn_by}` : ''}`} style={{ fontSize: 11, fontWeight: 700, color: '#22c55e', background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.35)', borderRadius: 20, padding: '3px 9px', whiteSpace: 'nowrap' }}>📞 เรียกช่างแล้ว</span>
-                          : <button onClick={() => setMoDtPick({ d, team: teamForMachine(d.machine_no, machines), mode: 'call' })} title="แจ้งช่าง MTN ให้เข้าหน้างานทันที — เลือกทีมช่างก่อน" style={{ fontSize: 11, fontWeight: 800, color: '#fff', background: '#e05c4a', border: 'none', borderRadius: 20, padding: '4px 11px', cursor: 'pointer', whiteSpace: 'nowrap' }}>📞 เรียกช่าง</button>
+                          ? <span title={`เรียกช่างแล้ว${d.call_mtn_by ? ` โดย ${d.call_mtn_by}` : ''}`} style={{ fontSize: 11, fontWeight: 700, color: 'var(--green)', background: 'var(--green-dim)', border: '1px solid var(--green-line)', borderRadius: 20, padding: '3px 9px', whiteSpace: 'nowrap' }}>📞 เรียกช่างแล้ว</span>
+                          : <button onClick={() => setMoDtPick({ d, team: teamForMachine(d.machine_no, machines), mode: 'call' })} title="แจ้งช่าง MTN ให้เข้าหน้างานทันที — เลือกทีมช่างก่อน" style={{ fontSize: 11, fontWeight: 800, color: '#fff', background: 'var(--red)', border: 'none', borderRadius: 20, padding: '4px 11px', cursor: 'pointer', whiteSpace: 'nowrap' }}>📞 เรียกช่าง</button>
                       )}
                       {/* เปิดใบแจ้งซ่อม MO จาก downtime — เฉพาะ "นอกแผน" (ในแผน เช่น Set up/รอ QA/5ส. ไม่ใช่เหตุเครื่องเสีย — คำสั่ง user 2026-07-24) */}
                       {canScan && can('mtn_repair', 'report', role) && d.dr_downtime_types?.category !== 'planned' && (
-                        <button onClick={() => openMoPicker(d)} title="เปิดใบแจ้งซ่อม MO (7 ขั้น) จากรายการนี้" style={{ fontSize: 11, fontWeight: 800, color: '#fff', background: '#7c6cf0', border: 'none', borderRadius: 20, padding: '4px 11px', cursor: 'pointer', whiteSpace: 'nowrap' }}>📝 เปิดใบซ่อม</button>
+                        <button onClick={() => openMoPicker(d)} title="เปิดใบแจ้งซ่อม MO (7 ขั้น) จากรายการนี้" style={{ fontSize: 11, fontWeight: 800, color: '#fff', background: 'var(--blue)', border: 'none', borderRadius: 20, padding: '4px 11px', cursor: 'pointer', whiteSpace: 'nowrap' }}>📝 เปิดใบซ่อม</button>
                       )}
                       {/* 🛠 วิธีแก้ไข + ผลตรวจติดตาม — โผล่เมื่อรายการนี้ยาวถึงเกณฑ์ใบรายงานปัญหา (นอกแผน ≥30 นาที)
                           feedback หัวหน้ากลุ่ม 2026-08-19: "ถ้าเกิน 30 นาที ให้มีไอคอนขึ้นมาให้ลงวิธีแก้ไข"
@@ -4278,9 +4239,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                               : `หยุดเกิน ${PROBLEM_MIN_MINUTES} นาที — ต้องลงวิธีแก้ไข + ผลตรวจติดตาม`}
                             style={{ fontSize: 11, fontWeight: 800, whiteSpace: 'nowrap', cursor: 'pointer',
                               borderRadius: 20, padding: '4px 11px',
-                              color: done ? '#22c55e' : '#fff',
-                              background: done ? 'rgba(34,197,94,0.12)' : '#f59e0b',
-                              border: done ? '1px solid rgba(34,197,94,0.35)' : 'none' }}>
+                              color: done ? 'var(--green)' : '#fff',
+                              background: done ? 'var(--green-dim)' : 'var(--amber)',
+                              border: done ? '1px solid var(--green-line)' : 'none' }}>
                             {done ? '🛠 แก้ไขแล้ว' : '🛠 ลงวิธีแก้ไข'}
                           </button>
                         );
@@ -4375,7 +4336,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
         )}
 
         {/* Open session modal */}
-        {moDtPick && (() => { const pickColor = moDtPick.mode === 'call' ? '#e05c4a' : '#7c6cf0';
+        {moDtPick && (() => { const pickTone = moDtPick.mode === 'call' ? 'bad' : 'info'; const pickColor = toneVar(pickTone);
           /* 🔴 ชั้น overlay ห้ามมี onClick ปิด (QC audit 06/10) — modal นี้มีปุ่มเลือกทีมช่าง
              + ช่องถ่ายรูปก่อนซ่อม (`<input type="file" capture>`) ที่หน้างานถ่ายไว้แล้ว
              ⇒ เผลอแตะนอกกรอบบนแท็บเล็ตหน้าไลน์ = ทีมที่เลือก + รูปที่ถ่ายหายหมด ต้องถ่ายใหม่
@@ -4397,7 +4358,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   <button key={t} onClick={() => setMoDtPick(p => ({ ...p, team: t }))} style={{
                     padding: '12px 8px', borderRadius: 10, fontSize: 13, fontWeight: 800, cursor: 'pointer',
                     border: `2px solid ${moDtPick.team === t ? pickColor : 'var(--border)'}`,
-                    background: moDtPick.team === t ? `${pickColor}24` : 'var(--card)',
+                    background: moDtPick.team === t ? toneDim(pickTone) : 'var(--card)',
                     color: moDtPick.team === t ? pickColor : 'var(--text2)',
                   }}>{deptNameOf(t)}</button>
                 ))}
@@ -4453,7 +4414,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   {/* 🔴 ลิสต์ว่าง = ต้องบอกว่าเพราะอะไร ห้ามปล่อยช่องเปล่า (เคสจริง 28/10 หน้างานเปิดกะไม่ได้
                       แล้วไม่มีอะไรบนจอบอกเลยว่าติดตรงไหน — ต้องไปถามกันในไลน์แชท) */}
                   {!openableLines.length && (
-                    <div style={{ marginTop: 6, fontSize: 12, color: '#ef4444', lineHeight: 1.55 }}>
+                    <div style={{ marginTop: 6, fontSize: 12, color: 'var(--red)', lineHeight: 1.55 }}>
                       ⚠️ ไม่มีไลน์ให้เลือก — <b>ยังเปิดกะไม่ได้</b>
                       <div style={{ color: 'var(--muted)', marginTop: 2 }}>
                         อ่านทะเบียนไลน์ไม่สำเร็จ (เน็ตหลุด/เซิร์ฟเวอร์ตอบช้า) — ของที่ค้างอยู่ในเครื่องเป็นลิสต์ว่าง
@@ -4461,7 +4422,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       </div>
                       <button type="button" onClick={reloadLineRegistry}
                         style={{ marginTop: 6, padding: '4px 12px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer',
-                          background: 'rgba(245,158,11,0.15)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.4)' }}>
+                          background: 'var(--amber-dim)', color: 'var(--amber)', border: '1px solid var(--amber-line)' }}>
                         🔄 โหลดทะเบียนไลน์ใหม่
                       </button>
                     </div>
@@ -4512,8 +4473,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
           };
           return (
           <div className="overlay" style={{ zIndex: 2200 }}>
-            <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid rgba(245,158,11,0.5)', borderRadius: 14, padding: 22, width: 'min(94vw,520px)' }}>
-              <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4, color: '#f59e0b' }}>📝 ใบรายงานปัญหาการผลิต</div>
+            <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid var(--amber-line)', borderRadius: 14, padding: 22, width: 'min(94vw,520px)' }}>
+              <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4, color: 'var(--amber)' }}>📝 ใบรายงานปัญหาการผลิต</div>
               <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>
                 {selSession.line_name} · {selSession.shift === 'day' ? 'กะเช้า' : 'กะดึก'} · {fmtDate(selSession.work_date)}
               </div>
@@ -4530,7 +4491,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
                 <button onClick={() => setProblemSheet(null)} style={cancelBtnStyle}>ยกเลิก</button>
                 <button onClick={doPrint} disabled={problemSheet.busy}
-                  style={{ ...saveBtnStyle, background: '#f59e0b', fontWeight: 700, opacity: problemSheet.busy ? 0.6 : 1 }}>
+                  style={{ ...saveBtnStyle, background: 'var(--amber)', fontWeight: 700, opacity: problemSheet.busy ? 0.6 : 1 }}>
                   {problemSheet.busy ? '⏳ กำลังออกใบ…' : '🖨 ออกใบ + พิมพ์'}
                 </button>
               </div>
@@ -4541,8 +4502,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
 
         {showRejectModal && selSession && (
           <div className="overlay" style={{ zIndex: 2200 }}>
-            <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid rgba(239,68,68,0.5)', borderRadius: 14, padding: 22, width: 'min(94vw,480px)' }}>
-              <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4, color: '#ef4444' }}>✕ ปฏิเสธคำขอปิดกะ</div>
+            <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid var(--red-line)', borderRadius: 14, padding: 22, width: 'min(94vw,480px)' }}>
+              <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4, color: 'var(--red)' }}>✕ ปฏิเสธคำขอปิดกะ</div>
               <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>
                 {selSession.line_name} · {selSession.shift === 'day' ? 'กะเช้า' : 'กะดึก'} · {fmtDate(selSession.work_date)} · ขอโดย {selSession.close_requested_by_name || '—'}
               </div>
@@ -4553,7 +4514,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
                 <button onClick={() => { setShowRejectModal(false); setRejectReason(''); }} style={cancelBtnStyle}>ยกเลิก</button>
                 <button onClick={handleRejectClose} disabled={savingReject || !rejectReason.trim()}
-                  style={{ ...saveBtnStyle, background: '#ef4444', fontWeight: 700, opacity: (savingReject || !rejectReason.trim()) ? 0.5 : 1 }}>
+                  style={{ ...saveBtnStyle, background: 'var(--red)', fontWeight: 700, opacity: (savingReject || !rejectReason.trim()) ? 0.5 : 1 }}>
                   {savingReject ? 'กำลังส่ง...' : '✕ ยืนยันปฏิเสธ + ส่งกลับแก้ไข'}
                 </button>
               </div>
@@ -4562,7 +4523,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
         )}
 
         {showApproveReview && selSession && (() => {
-          const oeeColor = selSession.oee == null ? 'var(--muted)' : selSession.oee >= 85 ? '#22c55e' : selSession.oee >= 65 ? '#f59e0b' : '#ef4444';
+          const oeeTone  = selSession.oee == null ? 'none' : selSession.oee >= 85 ? 'good' : selSession.oee >= 65 ? 'warn' : 'bad';
+          const oeeColor = toneVar(oeeTone);
           const confirmedOrders  = prodOrders.filter(o => o.status === 'confirmed');
           const carryOrdersList  = prodOrders.filter(o => o.status === 'carry_over');
           const cancelledOrders  = prodOrders.filter(o => o.status === 'cancelled');
@@ -4570,14 +4532,14 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
           const twoCol = wide1100 && (defectLogs.length > 0 || dtLogs.length > 0) && prodOrders.length > 0;
           return (
             <div className="overlay" style={{ zIndex: 2100 }}>
-              <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid rgba(245,158,11,0.5)', borderRadius: 14, padding: 24, width: 'min(96vw,1500px)', maxHeight: '94vh', overflowY: 'auto' }}>
-                <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4, color: '#f59e0b' }}>🔍 ตรวจสอบคำขอปิดกะ</div>
+              <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid var(--amber-line)', borderRadius: 14, padding: 24, width: 'min(96vw,1500px)', maxHeight: '94vh', overflowY: 'auto' }}>
+                <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4, color: 'var(--amber)' }}>🔍 ตรวจสอบคำขอปิดกะ</div>
                 <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 16 }}>
                   {selSession.line_name} · {selSession.shift === 'day' ? 'กะเช้า' : 'กะดึก'} · {fmtDate(selSession.work_date)}
                 </div>
 
-                <div style={{ marginBottom: 14, padding: '10px 14px', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 10 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: '#f59e0b' }}>📋 ขอโดย {selSession.close_requested_by_name || '—'}</div>
+                <div style={{ marginBottom: 14, padding: '10px 14px', background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', borderRadius: 10 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--amber)' }}>📋 ขอโดย {selSession.close_requested_by_name || '—'}</div>
                   <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
                     เวลาที่ขอ: {selSession.close_requested_at ? fmtDateTime(selSession.close_requested_at) : '—'} · เริ่มกะ {selSession.start_time} · ปิดกะ {selSession.end_time}
                   </div>
@@ -4592,18 +4554,18 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(90px,1fr))', gap: 10, marginBottom: 14 }}>
                   {[
                     { label: 'เวลากะ',   value: fmtMin(selSession.shift_min),            color: 'var(--text)' },
-                    { label: 'ผลิตได้',  value: `${selSession.actual_qty ?? 0} ชิ้น`,     color: '#22c55e' },
-                    { label: 'ดี',       value: `${selSession.qty_ok ?? 0} ชิ้น`,         color: '#22c55e' },
-                    { label: 'NG',       value: `${selSession.qty_ng ?? 0} ชิ้น`,         color: '#ef4444' },
-                    { label: 'สงสัย',    value: `${selSession.qty_suspect ?? 0} ชิ้น`,    color: '#f59e0b' },
-                    { label: 'ซ่อม',     value: `${selSession.qty_repair ?? 0} ชิ้น`,     color: '#a78bfa' },
+                    { label: 'ผลิตได้',  value: `${selSession.actual_qty ?? 0} ชิ้น`,     color: 'var(--green)' },
+                    { label: 'ดี',       value: `${selSession.qty_ok ?? 0} ชิ้น`,         color: 'var(--green)' },
+                    { label: 'NG',       value: `${selSession.qty_ng ?? 0} ชิ้น`,         color: 'var(--red)' },
+                    { label: 'สงสัย',    value: `${selSession.qty_suspect ?? 0} ชิ้น`,    color: 'var(--amber)' },
+                    { label: 'ซ่อม',     value: `${selSession.qty_repair ?? 0} ชิ้น`,     color: 'var(--blue)' },
                     // %A %P %Q ก่อน OEE — เกณฑ์สีเดียวกับหน้า OEE Analytics
                     { label: '%A', value: selSession.oee_a != null ? `${Number(selSession.oee_a).toFixed(1)}%` : 'N/A',
-                      color: selSession.oee_a == null ? 'var(--muted)' : selSession.oee_a >= 90 ? '#22c55e' : selSession.oee_a >= 75 ? '#f59e0b' : '#ef4444' },
+                      color: selSession.oee_a == null ? 'var(--muted)' : selSession.oee_a >= 90 ? 'var(--green)' : selSession.oee_a >= 75 ? 'var(--amber)' : 'var(--red)' },
                     { label: '%P', value: selSession.oee_p != null ? `${Number(selSession.oee_p).toFixed(1)}%` : 'N/A',
-                      color: selSession.oee_p == null ? 'var(--muted)' : selSession.oee_p >= 85 ? '#22c55e' : selSession.oee_p >= 70 ? '#f59e0b' : '#ef4444' },
+                      color: selSession.oee_p == null ? 'var(--muted)' : selSession.oee_p >= 85 ? 'var(--green)' : selSession.oee_p >= 70 ? 'var(--amber)' : 'var(--red)' },
                     { label: '%Q', value: selSession.oee_q != null ? `${Number(selSession.oee_q).toFixed(1)}%` : 'N/A',
-                      color: selSession.oee_q == null ? 'var(--muted)' : selSession.oee_q >= 99 ? '#22c55e' : selSession.oee_q >= 95 ? '#f59e0b' : '#ef4444' },
+                      color: selSession.oee_q == null ? 'var(--muted)' : selSession.oee_q >= 99 ? 'var(--green)' : selSession.oee_q >= 95 ? 'var(--amber)' : 'var(--red)' },
                     { label: 'OEE',      value: selSession.oee != null ? `${selSession.oee}%` : 'N/A', color: oeeColor },
                   ].map(k => (
                     <div key={k.label} style={{ background: 'var(--bg2)', borderRadius: 8, padding: '8px 10px', textAlign: 'center' }}>
@@ -4699,16 +4661,16 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                                 {/* ลำดับ Part No. → ชื่องาน → MAT ผ่านของกลาง <MatLabel> (UI §6.21) */}
                                 <MatLabel mat={r.matNo} name={r.partName} />
                                 {r.actualStart && (
-                                  <div style={{ fontSize: 11, color: '#4d9fff', marginTop: 1 }}>🕐 {fmtTime(r.actualStart)}–{r.actualEnd ? fmtTime(r.actualEnd) : '...'}</div>
+                                  <div style={{ fontSize: 11, color: 'var(--blue)', marginTop: 1 }}>🕐 {fmtTime(r.actualStart)}–{r.actualEnd ? fmtTime(r.actualEnd) : '...'}</div>
                                 )}
                               </div>
                               <div style={{ textAlign: 'center', minWidth: 40 }}>
                                 <div style={{ fontSize: 11, color: 'var(--muted)' }}>NG</div>
-                                <div style={{ fontSize: 13, fontWeight: 800, color: r.ng > 0 ? '#ef4444' : 'var(--muted)' }}>{r.ng}</div>
+                                <div style={{ fontSize: 13, fontWeight: 800, color: r.ng > 0 ? 'var(--red)' : 'var(--muted)' }}>{r.ng}</div>
                               </div>
                               <div style={{ textAlign: 'center', minWidth: 60 }}>
                                 <div style={{ fontSize: 11, color: 'var(--muted)' }}>Downtime</div>
-                                <div style={{ fontSize: 13, fontWeight: 800, color: r.dt > 0 ? '#f59e0b' : 'var(--muted)' }}>{fmtMin(Math.round(r.dt))}</div>
+                                <div style={{ fontSize: 13, fontWeight: 800, color: r.dt > 0 ? 'var(--amber)' : 'var(--muted)' }}>{fmtMin(Math.round(r.dt))}</div>
                               </div>
                             </div>
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 6 }}>
@@ -4716,13 +4678,13 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                                 <div style={{ fontSize: 11, color: 'var(--muted)' }}>เป้าหมาย</div>
                                 <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)' }}>{r.target}</div>
                               </div>
-                              <div style={{ textAlign: 'center', padding: '4px 0', background: 'rgba(168,85,247,0.1)', borderRadius: 6 }}>
+                              <div style={{ textAlign: 'center', padding: '4px 0', background: 'var(--blue-dim)', borderRadius: 6 }}>
                                 <div style={{ fontSize: 11, color: 'var(--muted)' }}>ควรได้ (เต็มเวลา)</div>
-                                <div style={{ fontSize: 13, fontWeight: 800, color: '#a78bfa' }}>{r.achievable != null ? r.achievable : '—'}</div>
+                                <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--blue)' }}>{r.achievable != null ? r.achievable : '—'}</div>
                               </div>
-                              <div style={{ textAlign: 'center', padding: '4px 0', background: 'rgba(34,197,94,0.1)', borderRadius: 6 }}>
+                              <div style={{ textAlign: 'center', padding: '4px 0', background: 'var(--green-dim)', borderRadius: 6 }}>
                                 <div style={{ fontSize: 11, color: 'var(--muted)' }}>ผลิตได้จริง</div>
-                                <div style={{ fontSize: 13, fontWeight: 800, color: '#22c55e' }}>{r.qty}</div>
+                                <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--green)' }}>{r.qty}</div>
                               </div>
                             </div>
                             {r.achievable > 0 && (
@@ -4731,12 +4693,12 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                               </div>
                             )}
                             {r.overCt && r.observedCtSec != null && (
-                              <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4, padding: '4px 6px', background: 'rgba(245,158,11,0.1)', borderRadius: 6 }}>
+                              <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 4, padding: '4px 6px', background: 'var(--amber-dim)', borderRadius: 6 }}>
                                 ⚠ ผลิตเกิน CT ที่ตั้งไว้ ({r.ctSec} วิ) — CT จริงที่สังเกตได้กะนี้ ≈ {r.observedCtSec.toFixed(1)} วิ/ชิ้น
                               </div>
                             )}
                             {overage && overage.overCount >= 3 && (
-                              <div style={{ fontSize: 11, color: '#ef4444', marginTop: 4, padding: '4px 6px', background: 'rgba(239,68,68,0.1)', borderRadius: 6, fontWeight: 700 }}>
+                              <div style={{ fontSize: 11, color: 'var(--red)', marginTop: 4, padding: '4px 6px', background: 'var(--red-dim)', borderRadius: 6, fontWeight: 700 }}>
                                 🔁 เกิน CT ซ้ำ {overage.overCount}/{overage.checked} กะล่าสุด — แนะนำปรับ CT ใน Product Master เป็น ~{overage.avgObservedCt?.toFixed(1)} วิ/ชิ้น
                               </div>
                             )}
@@ -4776,7 +4738,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   const brkBands = breakBandsIn({ policies: breakPolicies, startMs: winStart, endMs: winEnd,
                     workDate: selSession.work_date, shift: sessionShift, processType,
                     shiftEndMs: winEnd, lineName: selSession.line_name });
-                  brkBands.forEach(b => blocks.push({ start: b.s, end: b.e, label: breakBandName(b), color: '#4d9fff' }));
+                  brkBands.forEach(b => blocks.push({ start: b.s, end: b.e, label: breakBandName(b), color: 'var(--blue)' }));
                   dtLogs.forEach(d => {
                     if (!d.started_at) return;
                     const s0 = new Date(d.started_at).getTime();
@@ -4784,7 +4746,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                     const s = Math.max(s0, winStart), e = Math.min(e0, winEnd);
                     if (e > s) {
                       const planned = d.dr_downtime_types?.category === 'planned';
-                      blocks.push({ start: s, end: e, label: d.dr_downtime_types?.name_th || 'Downtime', color: planned ? '#f59e0b' : '#ef4444' });
+                      blocks.push({ start: s, end: e, label: d.dr_downtime_types?.name_th || 'Downtime', color: planned ? 'var(--amber)' : 'var(--red)' });
                     }
                   });
                   blocks.sort((a, b) => a.start - b.start);
@@ -4792,10 +4754,10 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   let cursor = winStart;
                   blocks.forEach(b => {
                     const s = Math.max(b.start, cursor);
-                    if (s > cursor) segments.push({ start: cursor, end: s, label: 'Run', color: '#22c55e' });
+                    if (s > cursor) segments.push({ start: cursor, end: s, label: 'Run', color: 'var(--green)' });
                     if (b.end > cursor) { segments.push({ ...b, start: s }); cursor = Math.max(cursor, b.end); }
                   });
-                  if (cursor < winEnd) segments.push({ start: cursor, end: winEnd, label: 'Run', color: '#22c55e' });
+                  if (cursor < winEnd) segments.push({ start: cursor, end: winEnd, label: 'Run', color: 'var(--green)' });
                   const totalMs = winEnd - winStart;
 
                   return (
@@ -4813,10 +4775,10 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       </div>
                       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 8 }}>
                         {[
-                          { label: 'วิ่งงาน', color: '#22c55e' },
-                          { label: 'พักตามนโยบาย', color: '#4d9fff' },
-                          { label: 'หยุดในแผน', color: '#f59e0b' },
-                          { label: 'หยุดนอกแผน', color: '#ef4444' },
+                          { label: 'วิ่งงาน', color: 'var(--green)' },
+                          { label: 'พักตามนโยบาย', color: 'var(--blue)' },
+                          { label: 'หยุดในแผน', color: 'var(--amber)' },
+                          { label: 'หยุดนอกแผน', color: 'var(--red)' },
                         ].map(k => (
                           <div key={k.label} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--muted)' }}>
                             <span style={{ width: 9, height: 9, borderRadius: 2, background: k.color, display: 'inline-block' }} />
@@ -4826,7 +4788,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       </div>
                       <BreakBandChips bands={brkBands} lineName={selSession.line_name} fmt={fmtTime} />
                       {dtLogs.some(d => !d.started_at) && (
-                        <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 6 }}>⚠ มี Downtime บางรายการไม่ได้ระบุเวลาเริ่ม/จบ จึงไม่แสดงในไทม์ไลน์ (นับรวมในยอด Downtime และหักใน %A แล้ว)</div>
+                        <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 6 }}>⚠ มี Downtime บางรายการไม่ได้ระบุเวลาเริ่ม/จบ จึงไม่แสดงในไทม์ไลน์ (นับรวมในยอด Downtime และหักใน %A แล้ว)</div>
                       )}
                     </div>
                   );
@@ -4837,10 +4799,10 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                     <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 8 }}>➡ การตัดสินใจ Order ที่ยังไม่ปิด</div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                       {carryOrdersList.map(o => (
-                        <div key={o.id} style={{ fontSize: 12, color: '#a78bfa' }}>• {o.prod_no} ({o.mat_no}) — ยกยอดต่อ {o.qty_actual ?? 0}/{o.qty} ชิ้น</div>
+                        <div key={o.id} style={{ fontSize: 12, color: 'var(--blue)' }}>• {o.prod_no} ({o.mat_no}) — ยกยอดต่อ {o.qty_actual ?? 0}/{o.qty} ชิ้น</div>
                       ))}
                       {cancelledOrders.map(o => (
-                        <div key={o.id} style={{ fontSize: 12, color: '#666' }}>• {o.prod_no} ({o.mat_no}) — ยกเลิก ({o.qty_actual ?? 0}/{o.qty} ชิ้น)</div>
+                        <div key={o.id} style={{ fontSize: 12, color: 'var(--muted)' }}>• {o.prod_no} ({o.mat_no}) — ยกเลิก ({o.qty_actual ?? 0}/{o.qty} ชิ้น)</div>
                       ))}
                     </div>
                   </div>
@@ -4852,11 +4814,11 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
 
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
                   <button onClick={() => setShowApproveReview(false)} style={cancelBtnStyle}>ปิด</button>
-                  <button onClick={() => { setShowApproveReview(false); setRejectReason(''); setShowRejectModal(true); }} style={{ ...cancelBtnStyle, borderColor: '#ef4444', color: '#ef4444', fontWeight: 700 }}>✕ ปฏิเสธ</button>
+                  <button onClick={() => { setShowApproveReview(false); setRejectReason(''); setShowRejectModal(true); }} style={{ ...cancelBtnStyle, borderColor: 'var(--red)', color: 'var(--red)', fontWeight: 700 }}>✕ ปฏิเสธ</button>
                   <input type="text" value={approveNote} onChange={e => setApproveNote(e.target.value)}
                     placeholder="📝 หมายเหตุผู้อนุมัติ (ไม่บังคับ) — เช่น ข้อสังเกต/สิ่งที่ให้ไปแก้กะหน้า"
                     style={{ flex: '1 1 260px', fontSize: 12, padding: '8px 10px', borderRadius: 8 }} />
-                  <button onClick={() => { setShowApproveReview(false); handleApproveClose(); }} style={{ ...saveBtnStyle, background: '#22c55e', fontWeight: 700 }}>✅ ยืนยันอนุมัติ</button>
+                  <button onClick={() => { setShowApproveReview(false); handleApproveClose(); }} style={{ ...saveBtnStyle, background: 'var(--green)', fontWeight: 700 }}>✅ ยืนยันอนุมัติ</button>
                 </div>
               </div>
             </div>
@@ -4884,19 +4846,20 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
           });
           const { A, P, Q, oee, shiftMin, netAvail, runMin, policyBreakMin, totalProduced, knownQty, unknownQty, pOver, pRawPct, dtOverstateMin, loggedDtMin,
             loggedPlannedDT: prevPlannedDT, loggedUnplannedDT: prevUnplannedDT, dtBreakOverlapMin: prevDtBrkOv } = computeOEE(ng, closeEndTime, closeStartTime, previewDtLogs);
-          const oeeColor = oee == null ? 'var(--muted)' : oee >= 0.85 ? '#22c55e' : oee >= 0.65 ? '#f59e0b' : '#ef4444';
+          const oeeTone  = oee == null ? 'none' : oee >= 0.85 ? 'good' : oee >= 0.65 ? 'warn' : 'bad';
+          const oeeColor = toneVar(oeeTone);
           // จอ landscape กว้าง → แผ่เนื้อหาเป็น 2 คอลัมน์แทนการยืดสูงจน scroll (layout อย่างเดียว ไม่แตะ logic/การคำนวณ)
           const twoCol = wide1100;
           const hasOpenOrdersCol = twoCol && prodOrders.some(o => o.status === 'open');
           const hasOpenDTCol = twoCol && modalOpenDT.length > 0;
           return (
             <div className="overlay" style={{ zIndex: 2000 }}>
-              <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid rgba(239,68,68,0.4)', borderRadius: 14, padding: 24, width: 'min(96vw,1500px)', maxHeight: '94vh', overflowY: 'auto' }}>
-                <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 2, color: '#ef4444' }}>
+              <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid var(--red-line)', borderRadius: 14, padding: 24, width: 'min(96vw,1500px)', maxHeight: '94vh', overflowY: 'auto' }}>
+                <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 2, color: 'var(--red)' }}>
                   {closeIsRequest ? '📋 ขอปิดกะ — สรุปผลและ OEE' : '🔒 ปิดกะ — สรุปผลและ OEE'}
                 </div>
                 {closeIsRequest && (
-                  <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 600, marginBottom: 4 }}>
+                  <div style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 600, marginBottom: 4 }}>
                     ⚠ กรอกข้อมูลให้ครบแล้วกด "ส่งขอปิดกะ" — SV จะอนุมัติขั้นสุดท้าย
                   </div>
                 )}
@@ -4906,7 +4869,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 {/* 🔴 ของสงสัยที่ QA ยังไม่พิจารณา ไม่ถูกนับเข้า %Q (กฎ §7.1 ของ oee.js)
                     ⇒ คนที่กำลังจะปิดกะ **ต้องเห็นว่า %Q ที่กำลัง stamp นี้ยังไม่ใช่ตัวสรุป** ห้ามเงียบ */}
                 {suspendPendingQty > 0 && (
-                  <div style={{ background: 'var(--card)', border: '1px solid #f59e0b66', borderLeft: '4px solid #f59e0b',
+                  <div style={{ background: 'var(--card)', border: '1px solid var(--amber-line)', borderLeft: '4px solid var(--amber)',
                                 borderRadius: 8, padding: '8px 12px', marginBottom: 14, fontSize: 12, lineHeight: 1.6, color: 'var(--text2)' }}>
                     ⏳ กะนี้มีของ<b>ต้องสงสัย {suspendPendingQty.toLocaleString()} ชิ้น</b> ที่ QA ยังไม่พิจารณา —
                     <b> %Q ด้านล่างจึงยังไม่ใช่ตัวสรุป</b>
@@ -4920,10 +4883,10 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 {/* %P ตันเพดาน — งานที่บันทึกมากกว่าเวลาเครื่องที่มีจริง แปลว่าข้อมูลมีอะไรผิด
                     ห้าม cap เงียบแล้วปล่อยผ่าน (เตือนอย่างเดียว ไม่บล็อกการปิดกะ — หน้างานต้องเดินต่อได้) */}
                 {pOver && (
-                  <div style={{ fontSize: 12, background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.45)', borderRadius: 8, padding: '8px 12px', marginBottom: 14, color: '#f59e0b', fontWeight: 600 }}>
+                  <div style={{ fontSize: 12, background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', borderRadius: 8, padding: '8px 12px', marginBottom: 14, color: 'var(--amber)', fontWeight: 600 }}>
                     ⚠ %P คำนวณได้ {pRawPct}% (เกิน 100% เลยถูกตัดเหลือ 100%) — งานตามมาตรฐานมากกว่าเวลาเครื่องที่มีในกะนี้ ซึ่งเป็นไปไม่ได้
                     {dtOverstateMin > 0 && (
-                      <div style={{ fontWeight: 700, color: '#f59e0b', marginTop: 5 }}>
+                      <div style={{ fontWeight: 700, color: 'var(--amber)', marginTop: 5 }}>
                         ⏱ ถ้า CT กับยอดผลิตถูกต้อง ⇒ <u>Downtime ที่ลงไว้ {loggedDtMin} นาที เกินจริงอย่างน้อย {dtOverstateMin} นาที</u>
                         <div style={{ fontWeight: 400, color: 'var(--text2)', marginTop: 2 }}>
                           ยอดที่ผลิตได้ต้องใช้เวลาเดินเครื่องมากกว่าที่เหลือหลังหัก Downtime — กรุณาทวนรายการ Downtime ด้านล่างก่อนปิดกะ
@@ -4951,8 +4914,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 <div style={{ minWidth: 0 }}>
                 {/* Downtime เปิดค้าง — ต้องตัดสินใจต่อรายการก่อนปิดกะ (เครื่องกลับมาแล้ว / ยังซ่อมอยู่ ตัดยอดข้ามกะ) */}
                 {modalOpenDT.length > 0 && (
-                  <div style={{ marginBottom: 16, padding: '12px 14px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: 10 }}>
-                    <div style={{ fontSize: 12, fontWeight: 800, color: '#ef4444', marginBottom: 4 }}>
+                  <div style={{ marginBottom: 16, padding: '12px 14px', background: 'var(--red-dim)', border: '1px solid var(--red-line)', borderRadius: 10 }}>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--red)', marginBottom: 4 }}>
                       🚨 Downtime เปิดค้าง {modalOpenDT.length} รายการ — ต้องตัดสินใจก่อนปิดกะ
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>
@@ -4970,9 +4933,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                             <button onClick={() => setDtCarryDecisions(p => ({ ...p, [d.id]: 'close' }))}
                               style={{
                                 fontSize: 11, fontWeight: 700, padding: '6px 10px', borderRadius: 6, cursor: 'pointer',
-                                border: decision === 'close' ? '1px solid #22c55e' : '1px solid var(--border)',
-                                background: decision === 'close' ? 'rgba(34,197,94,0.15)' : 'var(--bg)',
-                                color: decision === 'close' ? '#22c55e' : 'var(--text2)',
+                                border: decision === 'close' ? '1px solid var(--green)' : '1px solid var(--border)',
+                                background: decision === 'close' ? 'var(--green-dim)' : 'var(--bg)',
+                                color: decision === 'close' ? 'var(--green)' : 'var(--text2)',
                               }}>
                               ✅ เครื่องกลับมาแล้ว
                             </button>
@@ -4982,20 +4945,20 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                             <button onClick={() => setDtCarryDecisions(p => ({ ...p, [d.id]: 'carry' }))}
                               style={{
                                 fontSize: 11, fontWeight: 700, padding: '6px 10px', borderRadius: 6, cursor: 'pointer',
-                                border: decision === 'carry' ? '1px solid #ef4444' : '1px solid var(--border)',
-                                background: decision === 'carry' ? 'rgba(239,68,68,0.15)' : 'var(--bg)',
-                                color: decision === 'carry' ? '#ef4444' : 'var(--text2)',
+                                border: decision === 'carry' ? '1px solid var(--red)' : '1px solid var(--border)',
+                                background: decision === 'carry' ? 'var(--red-dim)' : 'var(--bg)',
+                                color: decision === 'carry' ? 'var(--red)' : 'var(--text2)',
                               }}>
                               🔁 ยังซ่อมอยู่ — ตัดยอดข้ามกะ
                             </button>
                           </div>
                           {decision === 'carry' && (
-                            <div style={{ width: '100%', fontSize: 11, color: '#f59e0b' }}>
+                            <div style={{ width: '100%', fontSize: 11, color: 'var(--amber)' }}>
                               ปิดรายการของกะนี้ด้วยเวลาปิดกะ ({closeEndTime || '-'}) → เปิดต่อในกะถัดไปอัตโนมัติ · ไม่แจ้ง "เครื่องกลับมารันได้" จนกว่าจะปิดจริง
                             </div>
                           )}
                           {decision === 'close' && !dtCloseTimes[d.id] && (
-                            <div style={{ width: '100%', fontSize: 11, color: '#ef4444' }}>กรอกเวลาที่เครื่องกลับมาทำงานด้วย</div>
+                            <div style={{ width: '100%', fontSize: 11, color: 'var(--red)' }}>กรอกเวลาที่เครื่องกลับมาทำงานด้วย</div>
                           )}
                         </div>
                       );
@@ -5016,13 +4979,13 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(90px,1fr))', gap: 10, marginBottom: 16 }}>
                       {[
                         { label: 'เวลากะ',       value: fmtMin(shiftMin),        color: 'var(--text)' },
-                        { label: 'หยุดนโยบาย',   value: fmtMin(Math.round(policyBreakMin)), color: '#22c55e' },
-                        { label: 'หยุดในแผน',     value: fmtMin(Math.round(loggedPlannedDT)), color: '#f59e0b' },
-                        { label: 'หยุดนอกแผน',    value: fmtMin(Math.round(loggedUnplannedDT)), color: '#ef4444' },
-                        { label: 'Run Time',      value: fmtMin(runMin),          color: '#4d9fff' },
-                        { label: 'Order ที่ปิด', value: `${prodOrders.filter(o => o.status === 'confirmed').length} ใบ`, color: '#22c55e' },
-                        { label: 'ผลิตได้',     value: `${totalProduced} ชิ้น`, color: '#22c55e' },
-                        { label: 'NG',           value: `${ng} ชิ้น`,        color: '#f97316' },
+                        { label: 'หยุดนโยบาย',   value: fmtMin(Math.round(policyBreakMin)), color: 'var(--green)' },
+                        { label: 'หยุดในแผน',     value: fmtMin(Math.round(loggedPlannedDT)), color: 'var(--amber)' },
+                        { label: 'หยุดนอกแผน',    value: fmtMin(Math.round(loggedUnplannedDT)), color: 'var(--red)' },
+                        { label: 'Run Time',      value: fmtMin(runMin),          color: 'var(--blue)' },
+                        { label: 'Order ที่ปิด', value: `${prodOrders.filter(o => o.status === 'confirmed').length} ใบ`, color: 'var(--green)' },
+                        { label: 'ผลิตได้',     value: `${totalProduced} ชิ้น`, color: 'var(--green)' },
+                        { label: 'NG',           value: `${ng} ชิ้น`,        color: 'var(--amber)' },
                         ...(prevDtBrkOv >= 1 ? [{ label: 'DT ทับพัก (ไม่หักซ้ำ)', value: fmtMin(Math.round(prevDtBrkOv)), color: 'var(--muted)' }] : []),
                       ].map(k => (
                         <div key={k.label} style={{ background: 'var(--bg2)', borderRadius: 8, padding: '8px 10px', textAlign: 'center' }}>
@@ -5049,10 +5012,10 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                     <div style={{ marginBottom: 14, padding: '10px 14px', background: 'var(--bg2)', borderRadius: 10, border: '1px solid var(--border)' }}>
                       <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 8 }}>🔴 สรุปงานเสีย ({defectLogs.length} รายการ)</div>
                       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-                        {tng  > 0 && <span style={{ fontSize: 13, fontWeight: 700, color: '#ef4444' }}>🔴 NG: {tng}</span>}
-                        {tsus > 0 && <span style={{ fontSize: 13, fontWeight: 700, color: '#f59e0b' }}>🟡 สงสัย: {tsus}</span>}
-                        {trep > 0 && <span style={{ fontSize: 13, fontWeight: 700, color: '#a78bfa' }}>🔧 ซ่อม: {trep}</span>}
-                        <span style={{ fontSize: 13, fontWeight: 700, color: '#22c55e' }} title="ยอดที่สแกนปิดใบ = ของดีล้วน (ของเสียถูกผลิตเพิ่มต่างหาก ไม่หักจากยอดนี้)">✅ ยอดสแกน (ของดี): {tok}</span>
+                        {tng  > 0 && <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--red)' }}>🔴 NG: {tng}</span>}
+                        {tsus > 0 && <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--amber)' }}>🟡 สงสัย: {tsus}</span>}
+                        {trep > 0 && <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--blue)' }}>🔧 ซ่อม: {trep}</span>}
+                        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--green)' }} title="ยอดที่สแกนปิดใบ = ของดีล้วน (ของเสียถูกผลิตเพิ่มต่างหาก ไม่หักจากยอดนี้)">✅ ยอดสแกน (ของดี): {tok}</span>
                       </div>
                     </div>
                   );
@@ -5161,17 +5124,17 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                                         style={{ fontSize: 11, padding: '1px 3px', width: 64 }} />
                                     </div>
                                   ) : (
-                                    <div style={{ fontSize: 11, color: '#4d9fff', marginTop: 1 }}>🕐 {fmtTime(r.actualStart)}–{r.actualEnd ? fmtTime(r.actualEnd) : '...'}</div>
+                                    <div style={{ fontSize: 11, color: 'var(--blue)', marginTop: 1 }}>🕐 {fmtTime(r.actualStart)}–{r.actualEnd ? fmtTime(r.actualEnd) : '...'}</div>
                                   )
                                 )}
                               </div>
                               <div style={{ textAlign: 'center', minWidth: 40 }}>
                                 <div style={{ fontSize: 11, color: 'var(--muted)' }}>NG</div>
-                                <div style={{ fontSize: 13, fontWeight: 800, color: r.ng > 0 ? '#ef4444' : 'var(--muted)' }}>{r.ng}</div>
+                                <div style={{ fontSize: 13, fontWeight: 800, color: r.ng > 0 ? 'var(--red)' : 'var(--muted)' }}>{r.ng}</div>
                               </div>
                               <div style={{ textAlign: 'center', minWidth: 60 }}>
                                 <div style={{ fontSize: 11, color: 'var(--muted)' }}>Downtime</div>
-                                <div style={{ fontSize: 13, fontWeight: 800, color: r.dt > 0 ? '#f59e0b' : 'var(--muted)' }}>{fmtMin(Math.round(r.dt))}</div>
+                                <div style={{ fontSize: 13, fontWeight: 800, color: r.dt > 0 ? 'var(--amber)' : 'var(--muted)' }}>{fmtMin(Math.round(r.dt))}</div>
                               </div>
                             </div>
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 6 }}>
@@ -5179,13 +5142,13 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                                 <div style={{ fontSize: 11, color: 'var(--muted)' }}>เป้าหมาย</div>
                                 <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)' }}>{r.target}</div>
                               </div>
-                              <div style={{ textAlign: 'center', padding: '4px 0', background: 'rgba(168,85,247,0.1)', borderRadius: 6 }}>
+                              <div style={{ textAlign: 'center', padding: '4px 0', background: 'var(--blue-dim)', borderRadius: 6 }}>
                                 <div style={{ fontSize: 11, color: 'var(--muted)' }}>ควรได้ (เต็มเวลา)</div>
-                                <div style={{ fontSize: 13, fontWeight: 800, color: '#a78bfa' }}>{r.achievable != null ? r.achievable : '—'}</div>
+                                <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--blue)' }}>{r.achievable != null ? r.achievable : '—'}</div>
                               </div>
-                              <div style={{ textAlign: 'center', padding: '4px 0', background: 'rgba(34,197,94,0.1)', borderRadius: 6 }}>
+                              <div style={{ textAlign: 'center', padding: '4px 0', background: 'var(--green-dim)', borderRadius: 6 }}>
                                 <div style={{ fontSize: 11, color: 'var(--muted)' }}>ผลิตได้จริง</div>
-                                <div style={{ fontSize: 13, fontWeight: 800, color: '#22c55e' }}>{r.qty}</div>
+                                <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--green)' }}>{r.qty}</div>
                               </div>
                             </div>
                             {r.achievable > 0 && (
@@ -5194,12 +5157,12 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                               </div>
                             )}
                             {r.overCt && r.observedCtSec != null && (
-                              <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4, padding: '4px 6px', background: 'rgba(245,158,11,0.1)', borderRadius: 6 }}>
+                              <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 4, padding: '4px 6px', background: 'var(--amber-dim)', borderRadius: 6 }}>
                                 ⚠ ผลิตเกิน CT ที่ตั้งไว้ ({r.ctSec} วิ) — CT จริงที่สังเกตได้กะนี้ ≈ {r.observedCtSec.toFixed(1)} วิ/ชิ้น
                               </div>
                             )}
                             {overage && overage.overCount >= 3 && (
-                              <div style={{ fontSize: 11, color: '#ef4444', marginTop: 4, padding: '4px 6px', background: 'rgba(239,68,68,0.1)', borderRadius: 6, fontWeight: 700 }}>
+                              <div style={{ fontSize: 11, color: 'var(--red)', marginTop: 4, padding: '4px 6px', background: 'var(--red-dim)', borderRadius: 6, fontWeight: 700 }}>
                                 🔁 เกิน CT ซ้ำ {overage.overCount}/{overage.checked} กะล่าสุด — แนะนำปรับ CT ใน Product Master เป็น ~{overage.avgObservedCt?.toFixed(1)} วิ/ชิ้น
                               </div>
                             )}
@@ -5238,7 +5201,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   const brkBands = breakBandsIn({ policies: breakPolicies, startMs: winStart, endMs: winEnd,
                     workDate: selSession.work_date, shift: sessionShift, processType,
                     shiftEndMs: winEnd, lineName: selSession.line_name });
-                  brkBands.forEach(b => blocks.push({ start: b.s, end: b.e, label: breakBandName(b), color: '#4d9fff' }));
+                  brkBands.forEach(b => blocks.push({ start: b.s, end: b.e, label: breakBandName(b), color: 'var(--blue)' }));
                   dtLogs.forEach(d => {
                     if (!d.started_at) return;
                     const s0 = new Date(d.started_at).getTime();
@@ -5246,7 +5209,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                     const s = Math.max(s0, winStart), e = Math.min(e0, winEnd);
                     if (e > s) {
                       const planned = d.dr_downtime_types?.category === 'planned';
-                      blocks.push({ start: s, end: e, label: d.dr_downtime_types?.name_th || 'Downtime', color: planned ? '#f59e0b' : '#ef4444' });
+                      blocks.push({ start: s, end: e, label: d.dr_downtime_types?.name_th || 'Downtime', color: planned ? 'var(--amber)' : 'var(--red)' });
                     }
                   });
                   blocks.sort((a, b) => a.start - b.start);
@@ -5254,10 +5217,10 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   let cursor = winStart;
                   blocks.forEach(b => {
                     const s = Math.max(b.start, cursor);
-                    if (s > cursor) segments.push({ start: cursor, end: s, label: 'Run', color: '#22c55e' });
+                    if (s > cursor) segments.push({ start: cursor, end: s, label: 'Run', color: 'var(--green)' });
                     if (b.end > cursor) { segments.push({ ...b, start: s }); cursor = Math.max(cursor, b.end); }
                   });
-                  if (cursor < winEnd) segments.push({ start: cursor, end: winEnd, label: 'Run', color: '#22c55e' });
+                  if (cursor < winEnd) segments.push({ start: cursor, end: winEnd, label: 'Run', color: 'var(--green)' });
                   const totalMs = winEnd - winStart;
 
                   return (
@@ -5275,10 +5238,10 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       </div>
                       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 8 }}>
                         {[
-                          { label: 'วิ่งงาน', color: '#22c55e' },
-                          { label: 'พักตามนโยบาย', color: '#4d9fff' },
-                          { label: 'หยุดในแผน', color: '#f59e0b' },
-                          { label: 'หยุดนอกแผน', color: '#ef4444' },
+                          { label: 'วิ่งงาน', color: 'var(--green)' },
+                          { label: 'พักตามนโยบาย', color: 'var(--blue)' },
+                          { label: 'หยุดในแผน', color: 'var(--amber)' },
+                          { label: 'หยุดนอกแผน', color: 'var(--red)' },
                         ].map(k => (
                           <div key={k.label} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--muted)' }}>
                             <span style={{ width: 9, height: 9, borderRadius: 2, background: k.color, display: 'inline-block' }} />
@@ -5288,7 +5251,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       </div>
                       <BreakBandChips bands={brkBands} lineName={selSession.line_name} fmt={fmtTime} />
                       {dtLogs.some(d => !d.started_at) && (
-                        <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 6 }}>⚠ มี Downtime บางรายการไม่ได้ระบุเวลาเริ่ม/จบ จึงไม่แสดงในไทม์ไลน์ (นับรวมในยอด Downtime และหักใน %A แล้ว)</div>
+                        <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 6 }}>⚠ มี Downtime บางรายการไม่ได้ระบุเวลาเริ่ม/จบ จึงไม่แสดงในไทม์ไลน์ (นับรวมในยอด Downtime และหักใน %A แล้ว)</div>
                       )}
                     </div>
                   );
@@ -5320,13 +5283,13 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   });
                   const allDecided = openOrders.every(o => carryOverDecisions[o.id]) && invalidCarry.length === 0;
                   return (
-                    <div style={{ marginBottom: 14, padding: '12px 14px', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 10 }}>
+                    <div style={{ marginBottom: 14, padding: '12px 14px', background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', borderRadius: 10 }}>
                       {/* 🔁 ยกอัตโนมัติ — ต้องเขียนบนจอว่าระบบกำลังจะทำอะไรให้ **ห้ามยกเงียบ** */}
                       {autoCarry.length > 0 && (
                         <div style={{ marginBottom: 10, padding: '9px 12px', borderRadius: 8, fontSize: 12, lineHeight: 1.65,
-                          background: 'var(--card)', backgroundImage: 'linear-gradient(rgba(34,197,94,0.10), rgba(34,197,94,0.10))',
-                          border: '1px solid rgba(34,197,94,0.4)', color: 'var(--text2)' }}>
-                          <div style={{ fontWeight: 800, color: '#22c55e' }}>{autoCarryText(autoCarry.length, autoPcs)}</div>
+                          background: 'var(--card)', backgroundImage: 'linear-gradient(var(--green-dim), var(--green-dim))',
+                          border: '1px solid var(--green-line)', color: 'var(--text2)' }}>
+                          <div style={{ fontWeight: 800, color: 'var(--green)' }}>{autoCarryText(autoCarry.length, autoPcs)}</div>
                           <div style={{ marginTop: 3, fontFamily: 'monospace', fontSize: 11, color: 'var(--muted)' }}>
                             {autoCarry.slice(0, 8).map(o => o.prod_no || o.mat_no).join(' · ')}
                             {autoCarry.length > 8 ? ` · +${autoCarry.length - 8} ใบ` : ''}
@@ -5337,7 +5300,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                         </div>
                       )}
                       {openOrders.length === 0 ? null : (
-                      <div style={{ fontSize: 12, fontWeight: 700, color: '#f59e0b', marginBottom: 10 }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--amber)', marginBottom: 10 }}>
                         ⚠ มี {openOrders.length} Order ที่ทำไปบางส่วน — ต้องตัดสินใจก่อนปิดกะ
                       </div>)}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -5347,7 +5310,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                           const qA      = parseInt(qActual) || 0;
                           const remaining = Math.max(0, o.qty - qA);
                           return (
-                            <div key={o.id} style={{ padding: '10px 12px', background: 'var(--bg)', borderRadius: 8, border: `1px solid ${dec ? (dec === 'carry' ? 'rgba(34,197,94,0.4)' : 'rgba(239,68,68,0.3)') : 'var(--border)'}` }}>
+                            <div key={o.id} style={{ padding: '10px 12px', background: 'var(--bg)', borderRadius: 8, border: `1px solid ${dec ? (dec === 'carry' ? 'var(--green-line)' : 'var(--red-line)') : 'var(--border)'}` }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
                                 <div style={{ flex: 1, minWidth: 0 }}>
                                   <div style={{ fontSize: 12, fontWeight: 700, fontFamily: 'monospace', color: 'var(--text)' }}>{o.prod_no}</div>
@@ -5361,11 +5324,11 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                                       setCarryOverDecisions(d => ({ ...d, [o.id]: 'confirm' }));
                                       setCarryQtyActual(m => ({ ...m, [o.id]: String(o.qty) }));
                                     }}
-                                    style={{ padding: '4px 10px', borderRadius: 6, border: `1px solid ${dec === 'confirm' ? '#22c55e' : 'var(--border)'}`, background: dec === 'confirm' ? 'rgba(34,197,94,0.2)' : 'var(--bg2)', color: dec === 'confirm' ? '#22c55e' : 'var(--muted)', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+                                    style={{ padding: '4px 10px', borderRadius: 6, border: `1px solid ${dec === 'confirm' ? 'var(--green)' : 'var(--border)'}`, background: dec === 'confirm' ? 'var(--green-dim)' : 'var(--bg2)', color: dec === 'confirm' ? 'var(--green)' : 'var(--muted)', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
                                     ✅ ผลิตครบแล้ว
                                   </button>
                                   <button onClick={() => setCarryOverDecisions(d => ({ ...d, [o.id]: 'carry' }))}
-                                    style={{ padding: '4px 10px', borderRadius: 6, border: `1px solid ${dec === 'carry' ? '#a78bfa' : 'var(--border)'}`, background: dec === 'carry' ? 'rgba(167,139,250,0.2)' : 'var(--bg2)', color: dec === 'carry' ? '#a78bfa' : 'var(--muted)', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+                                    style={{ padding: '4px 10px', borderRadius: 6, border: `1px solid ${dec === 'carry' ? 'var(--blue)' : 'var(--border)'}`, background: dec === 'carry' ? 'var(--blue-dim)' : 'var(--bg2)', color: dec === 'carry' ? 'var(--blue)' : 'var(--muted)', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
                                     ➡ ยกยอดต่อ
                                   </button>
                                   {/* ✂️ ปิดด้วยยอดเศษ — โผล่เฉพาะของที่ส่งเศษเข้ากระบวนการถัดไปได้
@@ -5373,19 +5336,19 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                                   {canShortClose(o.mat_no).ok && (
                                     <button onClick={() => setCarryOverDecisions(d => ({ ...d, [o.id]: 'short' }))}
                                       title="ผลิตไม่เต็มใบ แต่ส่งเข้ากระบวนการถัดไปแล้ว — เศษนี้จบใบเลย ไม่มียอดค้าง"
-                                      style={{ padding: '4px 10px', borderRadius: 6, border: `1px solid ${dec === 'short' ? '#f59e0b' : 'var(--border)'}`, background: dec === 'short' ? 'rgba(245,158,11,0.18)' : 'var(--bg2)', color: dec === 'short' ? '#f59e0b' : 'var(--muted)', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+                                      style={{ padding: '4px 10px', borderRadius: 6, border: `1px solid ${dec === 'short' ? 'var(--amber)' : 'var(--border)'}`, background: dec === 'short' ? 'var(--amber-dim)' : 'var(--bg2)', color: dec === 'short' ? 'var(--amber)' : 'var(--muted)', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
                                       ✂️ ปิดด้วยยอดเศษ
                                     </button>
                                   )}
                                   <button onClick={() => setCarryOverDecisions(d => ({ ...d, [o.id]: 'cancel' }))}
-                                    style={{ padding: '4px 10px', borderRadius: 6, border: `1px solid ${dec === 'cancel' ? '#ef4444' : 'var(--border)'}`, background: dec === 'cancel' ? 'rgba(239,68,68,0.15)' : 'var(--bg2)', color: dec === 'cancel' ? '#ef4444' : 'var(--muted)', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+                                    style={{ padding: '4px 10px', borderRadius: 6, border: `1px solid ${dec === 'cancel' ? 'var(--red)' : 'var(--border)'}`, background: dec === 'cancel' ? 'var(--red-dim)' : 'var(--bg2)', color: dec === 'cancel' ? 'var(--red)' : 'var(--muted)', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
                                     ✕ ยกเลิก
                                   </button>
                                 </div>
                               </div>
                               {/* ผลิตครบแล้ว = ปิดยอดเต็มเป้าทันที ไม่ต้องกรอกอะไรเพิ่ม / ยกยอด-ยกเลิก ต้องกรอกยอดที่ทำได้จริงเอง (ห้ามเดาให้) */}
                               {dec === 'confirm' && (
-                                <div style={{ fontSize: 11, color: '#22c55e', fontWeight: 700 }}>
+                                <div style={{ fontSize: 11, color: 'var(--green)', fontWeight: 700 }}>
                                   ✓ ปิดยอด {o.qty} / {o.qty} ชิ้น (ครบเป้า) — ไม่มียอดยกไปกะถัดไป
                                 </div>
                               )}
@@ -5399,8 +5362,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                                       placeholder="0"
                                       onChange={e => setCarryQtyActual(m => ({ ...m, [o.id]: e.target.value }))}
                                       style={{ ...inputStyle, fontSize: 16, fontWeight: 800, textAlign: 'center', width: 100,
-                                        borderColor: qA > 0 ? '#22c55e' : 'var(--border)',
-                                        color:       qA > 0 ? '#22c55e' : 'var(--text)' }} />
+                                        borderColor: qA > 0 ? 'var(--green)' : 'var(--border)',
+                                        color:       qA > 0 ? 'var(--green)' : 'var(--text)' }} />
                                   </div>
                                   <div style={{ minWidth: 110 }}>
                                     <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 3 }}>
@@ -5412,7 +5375,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                                       style={{ fontSize: 14 }} />
                                   </div>
                                   {dec === 'carry' && qA >= 0 && (
-                                    <div style={{ fontSize: 11, fontWeight: 700, color: qA >= o.qty ? '#ef4444' : '#a78bfa' }}>
+                                    <div style={{ fontSize: 11, fontWeight: 700, color: qA >= o.qty ? 'var(--red)' : 'var(--blue)' }}>
                                       {qA >= o.qty ? '⚠ ครบเป้าแล้ว ไม่มีอะไรเหลือให้ยก — กดปุ่ม "ผลิตครบแล้ว" แทน' : <>→ กะหน้ารับต่อ <strong>{remaining}</strong> ชิ้น</>}
                                     </div>
                                   )}
@@ -5421,7 +5384,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                                   {dec === 'short' && (() => {
                                     const err = shortCloseError(qActual === '' ? 0 : qA, o.qty_target ?? o.qty);
                                     return (
-                                      <div style={{ fontSize: 11, fontWeight: 700, color: err ? '#ef4444' : '#f59e0b', maxWidth: 360, lineHeight: 1.6 }}>
+                                      <div style={{ fontSize: 11, fontWeight: 700, color: err ? 'var(--red)' : 'var(--amber)', maxWidth: 360, lineHeight: 1.6 }}>
                                         {err || <>✂️ ปิดใบที่ <strong>{qA}</strong> ชิ้น · อีก <strong>{remaining}</strong> ชิ้นไม่ต้องทำต่อ
                                           <div style={{ color: 'var(--muted)', fontWeight: 600 }}>⚠ ต้องไปแก้จำนวนใบสั่งใน SAP ให้เป็น {qA}</div></>}
                                       </div>
@@ -5434,7 +5397,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                         })}
                       </div>
                       {!allDecided && (
-                        <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 8 }}>
+                        <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 8 }}>
                           ⚠ ต้องเลือกทางของทุก Order ก่อนปิดกะ {invalidCarry.length > 0 && '(บาง Order ยอดยังไม่เข้าเกณฑ์ที่เลือกไว้ — ดูข้อความสีแดงในการ์ด)'}
                         </div>
                       )}
@@ -5445,7 +5408,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 </div>{/* /คอลัมน์ซ้าย (ตัดสินใจ Order) */}
                 <div style={{ minWidth: 0 }}>
                 {/* OEE live preview */}
-                <div style={{ padding: '14px 16px', background: `${oeeColor}18`, border: `1px solid ${oeeColor}40`, borderRadius: 10 }}>
+                <div style={{ padding: '14px 16px', background: toneDim(oeeTone), border: `1px solid ${toneLine(oeeTone)}`, borderRadius: 10 }}>
                   <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8, fontWeight: 700 }}>OEE PREVIEW (APQ)</div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
                     <div style={{ display: 'flex', gap: 16 }}>
@@ -5466,10 +5429,10 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                     </div>
                   </div>
                   {knownQty === 0 && unknownQty > 0 && (
-                    <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 6 }}>⚠ ไม่มี Cycle Time ใน Product Master ของ MAT.NO ที่ผลิตในกะนี้เลย — P/OEE คำนวณไม่ได้ (จะถูกบันทึกเป็น N/A ไม่ใช่ 100%)</div>
+                    <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 6 }}>⚠ ไม่มี Cycle Time ใน Product Master ของ MAT.NO ที่ผลิตในกะนี้เลย — P/OEE คำนวณไม่ได้ (จะถูกบันทึกเป็น N/A ไม่ใช่ 100%)</div>
                   )}
                   {knownQty > 0 && unknownQty > 0 && (
-                    <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 6 }}>⚠ มี {unknownQty} ชิ้น จาก MAT.NO ที่ไม่มี Cycle Time ใน Product Master — P/OEE คำนวณจาก standard time ของ {knownQty} ชิ้นที่มี CT หารด้วย run time ทั้งกะ (ค่าจริงจะต่ำกว่าถ้านับ MAT.NO ที่ขาด CT ด้วย)</div>
+                    <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 6 }}>⚠ มี {unknownQty} ชิ้น จาก MAT.NO ที่ไม่มี Cycle Time ใน Product Master — P/OEE คำนวณจาก standard time ของ {knownQty} ชิ้นที่มี CT หารด้วย run time ทั้งกะ (ค่าจริงจะต่ำกว่าถ้านับ MAT.NO ที่ขาด CT ด้วย)</div>
                   )}
                 </div>
 
@@ -5493,7 +5456,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       เดิมรอทุกใบ ⇒ เปิดคัมบังไว้ 20 ใบแล้วทำไม่ทัน = ต้องกด 20 ครั้งก่อนปิดกะได้
                       (นี่คือเหตุผลที่หน้างานเลือก "ทยอยเปิด" จนบอร์ดดูเหมือนไม่มีออเดอร์) */}
                   <button onClick={handleCloseSession} disabled={savingClose || splitCloseOrders(prodOrders.filter(o => o.status === 'open'), carryQtyActual).needDecision.some(o => !carryOverDecisions[o.id])}
-                    style={{ ...saveBtnStyle, background: '#ef4444',
+                    style={{ ...saveBtnStyle, background: 'var(--red)',
                       opacity: (savingClose || prodOrders.filter(o => o.status === 'open').some(o => !carryOverDecisions[o.id])) ? 0.5 : 1 }}>
                     {savingClose ? '...' : closeIsRequest ? '📋 ส่งขอปิดกะ' : '🔒 ยืนยันปิดกะ'}
                   </button>
@@ -5508,12 +5471,12 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
           const matNos = Array.from(new Set(prodOrders.map(o => o.mat_no))).filter(Boolean);
           return (
             <div className="overlay" style={{ zIndex: 2000 }}>
-              <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid rgba(99,102,241,0.5)', borderRadius: 14, padding: 24, width: 'min(95vw, 900px)', maxHeight: '90vh', overflowY: 'auto' }}>
-                <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 2, color: '#6366f1' }}>✏️ แก้เวลากะ + คำนวณ OEE ใหม่</div>
+              <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid var(--blue-line)', borderRadius: 14, padding: 24, width: 'min(95vw, 900px)', maxHeight: '90vh', overflowY: 'auto' }}>
+                <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 2, color: 'var(--blue)' }}>✏️ แก้เวลากะ + คำนวณ OEE ใหม่</div>
                 <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 4 }}>
                   {selSession.line_name} · {selSession.shift === 'day' ? 'กะเช้า' : 'กะดึก'} · {fmtDate(selSession.work_date)}
                 </div>
-                <div style={{ fontSize: 11, color: '#f59e0b', marginBottom: 16 }}>
+                <div style={{ fontSize: 11, color: 'var(--amber)', marginBottom: 16 }}>
                   ⚠ เวลาที่แก้ไม่เกี่ยวกับเวลาสแกนกัมบัง — ใช้เฉพาะคำนวณ %A, %P, OEE เท่านั้น
                 </div>
 
@@ -5572,7 +5535,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
                   <button onClick={() => { setShowEditTimes(false); setMatTimeOverride({}); }} style={cancelBtnStyle}>ยกเลิก</button>
                   <button onClick={handleSaveTimes} disabled={savingTimes}
-                    style={{ ...saveBtnStyle, background: '#6366f1', opacity: savingTimes ? 0.6 : 1 }}>
+                    style={{ ...saveBtnStyle, background: 'var(--blue)', opacity: savingTimes ? 0.6 : 1 }}>
                     {savingTimes ? '...' : '💾 บันทึก + คำนวณ OEE ใหม่'}
                   </button>
                 </div>
@@ -5584,17 +5547,17 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
         {/* ── OVERFLOW CONFIRMATION modal ─────────────────────── */}
         {overflowInfo && (
           <div className="overlay" style={{ zIndex: 2100 }}>
-            <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid rgba(239,68,68,0.5)', borderRadius: 14, padding: 28, width: 'min(95vw,420px)', display: 'flex', flexDirection: 'column', gap: 16 }}>
-              <div style={{ fontSize: 16, fontWeight: 800, color: '#ef4444' }}>⚠️ คิวผลิตเกินเวลากะนี้</div>
-              <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 10, padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid var(--red-line)', borderRadius: 14, padding: 28, width: 'min(95vw,420px)', display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--red)' }}>⚠️ คิวผลิตเกินเวลากะนี้</div>
+              <div style={{ background: 'var(--red-dim)', border: '1px solid var(--red-dim)', borderRadius: 10, padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <div style={{ fontSize: 13, color: 'var(--text)', fontWeight: 700 }}>
                   {overflowInfo.prodNo} · {overflowInfo.qty} ชิ้น
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--muted)' }}>
                   ใบนี้ต้องใช้เวลา <b style={{ color: 'var(--text)' }}>{overflowInfo.newOrderMin} นาที</b>
-                  {' '}แต่กะนี้เหลือความจุอีก <b style={{ color: '#f59e0b' }}>{overflowInfo.remainMin} นาที</b>
+                  {' '}แต่กะนี้เหลือความจุอีก <b style={{ color: 'var(--amber)' }}>{overflowInfo.remainMin} นาที</b>
                 </div>
-                <div style={{ fontSize: 12, color: '#ef4444', fontWeight: 700 }}>
+                <div style={{ fontSize: 12, color: 'var(--red)', fontWeight: 700 }}>
                   จะเกินเวลาไป {overflowInfo.overMin} นาที
                 </div>
                 {/* 🔴 ต้องบอกว่าเลขนี้คิดจาก "เครื่องไหน" ไม่ใช่ทั้งไลน์ — ไลน์เครื่องขนานเดินพร้อมกัน
@@ -5606,7 +5569,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   </div>
                 )}
                 {overflowInfo.unknownCt > 0 && (
-                  <div style={{ fontSize: 11, color: '#f59e0b' }}>
+                  <div style={{ fontSize: 11, color: 'var(--amber)' }}>
                     ⚠ มีอีก {overflowInfo.unknownCt} ใบที่ยังไม่มี CT — คิดเวลาไม่ได้ ของจริงอาจแน่นกว่านี้
                   </div>
                 )}
@@ -5618,7 +5581,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 <button
                   onClick={handleOverflowNextShift}
                   disabled={savingProdOpen}
-                  style={{ flex: 1, padding: '12px 8px', borderRadius: 10, border: '2px solid rgba(77,159,255,0.5)', background: 'rgba(77,159,255,0.1)', color: '#4d9fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+                  style={{ flex: 1, padding: '12px 8px', borderRadius: 10, border: '2px solid var(--blue-line)', background: 'var(--blue-dim)', color: 'var(--blue)', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
                   📦 ส่งเป็นยอดค้างกะถัดไป
                 </button>
                 <button
@@ -5639,8 +5602,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
         {/* ── เปิดเป้า manual — ไลน์ไม่มี kanban card (เช่น HDF1 → LASER CUT 123) ── */}
         {showManualOpen && (
           <div className="overlay" style={{ zIndex: 2000 }}>
-            <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid rgba(96,165,250,0.45)', borderRadius: 14, padding: 24, width: 'min(95vw,460px)' }}>
-              <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 2, color: '#60a5fa' }}>✍️ เปิดเป้าผลิต (ไม่มีบาร์โค้ด)</div>
+            <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid var(--blue-line)', borderRadius: 14, padding: 24, width: 'min(95vw,460px)' }}>
+              <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 2, color: 'var(--blue)' }}>✍️ เปิดเป้าผลิต (ไม่มีบาร์โค้ด)</div>
               <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 16 }}>
                 สำหรับไลน์ที่ SAP ไม่ gen order ให้สแกน — leader ตั้งเป้า แล้วพนักงาน<b>อัพเดทยอดสะสมทุกช่วงเบรค</b> ปิดใบด้วยยอดจริงตอนจบ
               </div>
@@ -5698,7 +5661,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                     onKeyDown={e => { if (e.key === 'Enter') handleManualOpen(); }} />
                 </Field>
                 {/* เปิดย้อนหลัง — กติกา/หน้าตาเดียวกับใบสแกน (ลืมเปิดเป้าตอนต้นกะ เริ่มผลิตไปแล้ว) */}
-                <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '10px 12px', background: manualForm.is_backfill ? 'rgba(107,114,128,0.15)' : 'rgba(107,114,128,0.06)', border: `1px solid ${manualForm.is_backfill ? 'rgba(107,114,128,0.5)' : 'rgba(107,114,128,0.2)'}`, borderRadius: 8 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '10px 12px', background: manualForm.is_backfill ? 'var(--bg3)' : 'var(--bg3)', border: `1px solid ${manualForm.is_backfill ? 'var(--border2)' : 'var(--bg3)'}`, borderRadius: 8 }}>
                   <input type="checkbox" checked={manualForm.is_backfill}
                     onChange={e => setManualForm(f => ({ ...f, is_backfill: e.target.checked, backfill_time: e.target.checked ? (f.backfill_time || guessBackfillTime()) : '' }))}
                     style={{ width: 16, height: 16, flexShrink: 0 }} />
@@ -5714,7 +5677,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 )}
                 <div style={{ display: 'flex', gap: 10 }}>
                   <button disabled={savingManual} onClick={handleManualOpen}
-                    style={{ flex: 2, padding: 12, background: '#60a5fa', color: '#08131f', border: 'none', borderRadius: 8, fontWeight: 800, fontSize: 14, cursor: 'pointer', opacity: savingManual ? 0.6 : 1 }}>
+                    style={{ flex: 2, padding: 12, background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 800, fontSize: 14, cursor: 'pointer', opacity: savingManual ? 0.6 : 1 }}>
                     {savingManual ? 'กำลังบันทึก...' : '✍️ เปิดเป้า'}
                   </button>
                   <button onClick={() => setShowManualOpen(false)}
@@ -5729,17 +5692,12 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
 
         {showScanOpen && (
           <div className="overlay" style={{ zIndex: 2000 }}>
-            <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid rgba(245,158,11,0.4)', borderRadius: 14, padding: 24, width: 'min(95vw,460px)' }}>
-              <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 2, color: '#f59e0b' }}>📥 Scan เปิด Prod Order</div>
+            <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid var(--amber-line)', borderRadius: 14, padding: 24, width: 'min(95vw,460px)' }}>
+              <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 2, color: 'var(--amber)' }}>📥 Scan เปิด Prod Order</div>
               <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 16 }}>
                 สแกน PROD.NO → กด Enter → บันทึกอัตโนมัติ — ไม่ต้องคลิกปุ่ม
               </div>
 
-              {pendingPairId && (
-                <div style={{ padding: '8px 12px', background: 'rgba(168,85,247,0.1)', border: '1px solid rgba(168,85,247,0.3)', borderRadius: 8, fontSize: 12, color: '#a855f7', fontWeight: 600, marginBottom: 12 }}>
-                  🔗 รอสแกนคู่ RH/LH (MAT.NO {openProdForm.mat_no}) — เปิดเสร็จจะผูกคู่กับใบแรกอัตโนมัติ
-                </div>
-              )}
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 <Field label="PROD.NO (สแกน barcode ตัวล่าง Sender/ID บน Tag Card) *">
@@ -5790,8 +5748,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   const nm = cs?.dr_products?.name || cs?.part_name || '';
                   const pno = cs?.dr_products?.p_no || cs?.p_no || '';
                   return (
-                    <div id="open-carry-confirm" style={{ padding: '12px 14px', background: 'rgba(245,158,11,0.12)', border: '2px solid #f59e0b', borderRadius: 10 }}>
-                      <div style={{ fontSize: 13, fontWeight: 800, color: '#f59e0b' }}>⚠ ใบนี้เป็นพาร์ทเดียวกับใบก่อนใช่ไหม?</div>
+                    <div id="open-carry-confirm" style={{ padding: '12px 14px', background: 'var(--amber-dim)', border: '2px solid var(--amber)', borderRadius: 10 }}>
+                      <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--amber)' }}>⚠ ใบนี้เป็นพาร์ทเดียวกับใบก่อนใช่ไหม?</div>
                       <div style={{ fontSize: 16, fontWeight: 900, color: 'var(--text)', fontFamily: 'monospace', marginTop: 6 }}>{carriedMat}</div>
                       {(pno || nm) && <div style={{ fontSize: 13, color: 'var(--text)', marginTop: 2 }}>{pno && <b style={{ fontFamily: 'monospace' }}>{pno}</b>}{pno && nm ? ' · ' : ''}{nm}</div>}
                       <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>เช็คกับ Tag Card ในมือก่อนกดยืนยัน — ระบบตรวจไม่ได้ว่า PROD.NO นี้เป็นของพาร์ทไหน</div>
@@ -5804,7 +5762,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                                ⇒ ไม่ว่าเปิดสำเร็จหรือติดด่าน เคอร์เซอร์กลับช่อง PROD.NO เสมอ */
                             setTimeout(() => openProdInputRef.current?.focus(), 100);
                           }}
-                          style={{ flex: 1, minHeight: 48, borderRadius: 10, border: 'none', background: '#f59e0b', color: '#000', fontWeight: 900, fontSize: 15, cursor: 'pointer' }}>
+                          style={{ flex: 1, minHeight: 48, borderRadius: 10, border: 'none', background: 'var(--amber)', color: '#000', fontWeight: 900, fontSize: 15, cursor: 'pointer' }}>
                           {savingProdOpen ? 'กำลังเปิด…' : '✓ ใช่ เปิดใบ'}
                         </button>
                         <button type="button"
@@ -5822,7 +5780,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   const lineStds = scanMatStds;   // ชั้นแข็ง own → parent → family (ดู scanMat / matScope.js)
                   if (lineStds.length === 0) {
                     return (
-                      <div style={{ padding: '8px 12px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, fontSize: 12, color: '#ef4444', fontWeight: 600 }}>
+                      <div style={{ padding: '8px 12px', background: 'var(--red-dim)', border: '1px solid var(--red-line)', borderRadius: 8, fontSize: 12, color: 'var(--red)', fontWeight: 600 }}>
                         ⚠ ทั้งครอบครัวไลน์ของ {lineName} ยังไม่มี Kanban Standard ผูกไว้เลย — ไปเพิ่มที่ Product Setup ก่อน
                         <div style={{ fontWeight: 500, marginTop: 4, opacity: 0.85 }}>
                           (ระหว่างนี้ใช้ปุ่ม “✍️ เปิดเป้า (ไม่มีบาร์โค้ด)” เปิดใบได้)
@@ -5838,7 +5796,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       {/* ⚠️ ไลน์นี้ไม่มีพาร์ทผูกกับตัวเองเลย — บอกตรงๆ ว่ากำลังยืมของไลน์ไหนมาใช้
                           ห้ามเงียบ: หน้างานต้องรู้ว่าไม่ใช่ของไลน์ตัวเอง + ที่ถูกควรไปตั้ง master ให้ครบ */}
                       {scanMat.scope !== 'own' && (
-                        <div style={{ fontSize: 11.5, color: '#f59e0b', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 7, padding: '6px 10px', marginBottom: 6, lineHeight: 1.6 }}>
+                        <div style={{ fontSize: 11.5, color: 'var(--amber)', background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', borderRadius: 7, padding: '6px 10px', marginBottom: 6, lineHeight: 1.6 }}>
                           ⚠ <b>{lineName}</b> ยังไม่มีพาร์ทผูกกับไลน์ตัวเองเลย — รายการด้านล่างเป็นของ <b>{scanMat.owners.join(', ')}</b>
                           <div style={{ opacity: 0.85 }}>ถ้าพาร์ทไหนเป็นของไลน์นี้จริง ให้ไปตั้งไลน์ให้ถูกที่ <b>Product Master</b> แล้วลิสต์นี้จะเหลือเฉพาะของไลน์นี้เอง</div>
                         </div>
@@ -5873,7 +5831,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                         const dupN = names.filter((n, i) => names.indexOf(n) !== i).length;
                         if (!dupN) return null;
                         return (
-                          <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4 }}>
+                          <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 4 }}>
                             ⚠ มีชื่อสินค้าซ้ำกัน {dupN} คู่ในไลน์นี้ — เสี่ยงเปิดผิดใบ · แก้ชื่อให้ต่างกัน (เช่นใส่ลูกค้า AAT/FTM) หรือปิดใช้งานตัวเก่าที่ Product Master
                           </div>
                         );
@@ -5883,8 +5841,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 })()}
 
                 {openProdStd && (
-                  <div style={{ padding: '8px 12px', background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: 8, fontSize: 12, color: 'var(--muted)' }}>
-                    <span style={{ color: '#22c55e', fontWeight: 700 }}>✓ {openProdStd.qty_per_kanban} ชิ้น / Kanban ใบ </span>
+                  <div style={{ padding: '8px 12px', background: 'var(--green-dim)', border: '1px solid var(--green-dim)', borderRadius: 8, fontSize: 12, color: 'var(--muted)' }}>
+                    <span style={{ color: 'var(--green)', fontWeight: 700 }}>✓ {openProdStd.qty_per_kanban} ชิ้น / Kanban ใบ </span>
                     {/* ลำดับ Part No. → ชื่องาน (UI §6.21) */}
                     {openProdStd.p_no && <span style={{ color: 'var(--text)', fontWeight: 700, fontFamily: 'monospace' }}> · {openProdStd.p_no}</span>}
                     {(openProdStd.dr_products?.name || openProdStd.part_name) && <span style={{ color: 'var(--text)', fontWeight: 600 }}> · {openProdStd.dr_products?.name || openProdStd.part_name}</span>}
@@ -5904,8 +5862,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                     onChange={e => { if (!openProdStd) setOpenProdForm(f => ({ ...f, qty: e.target.value })); }}
                     onKeyDown={e => { if (e.key === 'Enter') handleScanOpen(); }}
                     style={{ ...inputStyle, fontSize: 22, fontWeight: 900, textAlign: 'center',
-                      background: openProdStd ? 'rgba(34,197,94,0.08)' : 'var(--bg)',
-                      color: openProdStd ? '#22c55e' : 'var(--text)',
+                      background: openProdStd ? 'var(--green-dim)' : 'var(--bg)',
+                      color: openProdStd ? 'var(--green)' : 'var(--text)',
                       cursor: openProdStd ? 'not-allowed' : undefined }} />
                   {openProdStd
                     ? <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.5 }}>
@@ -5913,7 +5871,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                         {' '}· ถ้าจำนวนจริงไม่ตรง ให้แก้มาตรฐานที่ <b>Product Master → 🎴 Kanban Std</b>
                         {' '}· ผลิตไม่ครบใบให้กรอก <b>ยอดที่ทำได้</b> บนการ์ดใบแทน
                       </div>
-                    : <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4, lineHeight: 1.5 }}>
+                    : <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 4, lineHeight: 1.5 }}>
                         ⚠️ พาร์ทนี้ยังไม่ได้ตั้งจำนวนต่อใบ (Kanban Std) — กรอกเองได้ครั้งนี้
                         {' '}แต่ควรไปตั้งที่ <b>Product Master → 🎴 Kanban Std</b> ให้เรียบร้อย
                       </div>}
@@ -5921,14 +5879,14 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
 
                 {/* Duplicate warning */}
                 {openProdForm.prod_no && prodOrders.find(o => o.prod_no === openProdForm.prod_no) && (
-                  <div style={{ padding: '8px 12px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, fontSize: 12, color: '#ef4444', fontWeight: 600 }}>
+                  <div style={{ padding: '8px 12px', background: 'var(--red-dim)', border: '1px solid var(--red-line)', borderRadius: 8, fontSize: 12, color: 'var(--red)', fontWeight: 600 }}>
                     ⚠ PROD.NO นี้เปิดไปแล้วในกะนี้
                   </div>
                 )}
               </div>
 
               {/* Backfill toggle */}
-              <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '10px 12px', marginTop: 10, background: openProdForm.is_backfill ? 'rgba(107,114,128,0.15)' : 'rgba(107,114,128,0.06)', border: `1px solid ${openProdForm.is_backfill ? 'rgba(107,114,128,0.5)' : 'rgba(107,114,128,0.2)'}`, borderRadius: 8 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '10px 12px', marginTop: 10, background: openProdForm.is_backfill ? 'var(--bg3)' : 'var(--bg3)', border: `1px solid ${openProdForm.is_backfill ? 'var(--border2)' : 'var(--bg3)'}`, borderRadius: 8 }}>
                 <input type="checkbox" checked={openProdForm.is_backfill}
                   onChange={e => setOpenProdForm(f => ({ ...f, is_backfill: e.target.checked, backfill_time: e.target.checked ? (f.backfill_time || guessBackfillTime()) : '' }))}
                   style={{ width: 16, height: 16, cursor: 'pointer' }} />
@@ -5947,16 +5905,16 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
 
               {/* Running count */}
               {prodOrders.filter(o => o.status === 'open').length > 0 && (
-                <div style={{ marginTop: 12, padding: '6px 12px', background: 'rgba(245,158,11,0.1)', borderRadius: 8, fontSize: 12, color: '#f59e0b', fontWeight: 700 }}>
+                <div style={{ marginTop: 12, padding: '6px 12px', background: 'var(--amber-dim)', borderRadius: 8, fontSize: 12, color: 'var(--amber)', fontWeight: 700 }}>
                   เปิดในกะนี้แล้ว {prodOrders.filter(o => o.status === 'open').length} ใบ · {prodOrders.filter(o => o.status === 'open').reduce((s, o) => s + o.qty, 0)} ชิ้น
                 </div>
               )}
 
               <div className={isMobile ? 'm-modalfoot' : undefined} style={{ display: 'flex', gap: 10, marginTop: 16, justifyContent: 'flex-end' }}>
-                <button onClick={() => { setShowScanOpen(false); setPendingPairId(null); }} style={cancelBtnStyle}>ปิด</button>
+                <button onClick={() => { setShowScanOpen(false); }} style={cancelBtnStyle}>ปิด</button>
                 <button onClick={handleScanOpen}
                   disabled={savingProdOpen || !openProdForm.prod_no || !openProdForm.mat_no || !openProdForm.qty || (openProdForm.is_backfill && !openProdForm.backfill_time) || !!prodOrders.find(o => o.prod_no === openProdForm.prod_no)}
-                  style={{ ...saveBtnStyle, background: '#f59e0b', color: '#000', fontSize: 14,
+                  style={{ ...saveBtnStyle, background: 'var(--amber)', color: '#000', fontSize: 14,
                     opacity: (savingProdOpen || !openProdForm.prod_no || !openProdForm.mat_no || !openProdForm.qty || (openProdForm.is_backfill && !openProdForm.backfill_time)) ? 0.5 : 1 }}>
                   {savingProdOpen ? '...' : '📥 เปิด Order'}
                 </button>
@@ -5968,8 +5926,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
         {/* ── SCAN CLOSE modal ────────────────────────────────── */}
         {showScanClose && (
           <div className="overlay" style={{ zIndex: 2000 }}>
-            <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid rgba(34,197,94,0.4)', borderRadius: 14, padding: 24, width: 'min(95vw,460px)' }}>
-              <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 2, color: '#22c55e' }}>📤 Scan ปิด / Confirm</div>
+            <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid var(--green-line)', borderRadius: 14, padding: 24, width: 'min(95vw,460px)' }}>
+              <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 2, color: 'var(--green)' }}>📤 Scan ปิด / Confirm</div>
               <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 16 }}>
                 สแกน PROD.NO → Confirm อัตโนมัติทันที — ไม่ต้องคลิกปุ่ม
               </div>
@@ -6000,31 +5958,31 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
               {/* Match preview */}
               {closeProdNo && (
                 <div style={{ marginTop: 12, padding: '12px 14px', borderRadius: 8,
-                  background: closeMatch ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
-                  border: `1px solid ${closeMatch ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}` }}>
+                  background: closeMatch ? 'var(--green-dim)' : 'var(--red-dim)',
+                  border: `1px solid ${closeMatch ? 'var(--green-line)' : 'var(--red-line)'}` }}>
                   {closeMatch ? (
                     <>
-                      <div style={{ fontSize: 11, color: '#22c55e', fontWeight: 700, marginBottom: 8 }}>✓ พบ Order</div>
+                      <div style={{ fontSize: 11, color: 'var(--green)', fontWeight: 700, marginBottom: 8 }}>✓ พบ Order</div>
                       <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
                         <div>
                           <MatLabel mat={closeMatch.mat_no} name={closeMatch.part_name} size={13} />
                         </div>
                         <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
-                          <div style={{ fontSize: 28, fontWeight: 900, color: '#22c55e', lineHeight: 1 }}>{closeMatch.qty}</div>
+                          <div style={{ fontSize: 28, fontWeight: 900, color: 'var(--green)', lineHeight: 1 }}>{closeMatch.qty}</div>
                           <div style={{ fontSize: 11, color: 'var(--muted)' }}>ชิ้น</div>
                         </div>
                       </div>
-                      <div style={{ marginTop: 8, fontSize: 11, color: 'var(--muted)', background: 'rgba(34,197,94,0.06)', borderRadius: 6, padding: '6px 10px' }}>
-                        ✅ ยืนยัน <strong style={{ color: '#22c55e' }}>{closeMatch.qty} ชิ้น</strong> เป็น OK ทั้งหมด
+                      <div style={{ marginTop: 8, fontSize: 11, color: 'var(--muted)', background: 'var(--green-dim)', borderRadius: 6, padding: '6px 10px' }}>
+                        ✅ ยืนยัน <strong style={{ color: 'var(--green)' }}>{closeMatch.qty} ชิ้น</strong> เป็น OK ทั้งหมด
                         · หากมีงานเสียให้กด <strong>🔴 บันทึกงานเสีย</strong> แยกต่างหาก
                       </div>
                     </>
                   ) : prodOrders.find(o => o.prod_no === closeProdNo && o.status === 'confirmed') ? (
-                    <div style={{ fontSize: 12, color: '#ef4444', fontWeight: 600 }}>⚠ PROD.NO นี้ปิดไปแล้ว</div>
+                    <div style={{ fontSize: 12, color: 'var(--red)', fontWeight: 600 }}>⚠ PROD.NO นี้ปิดไปแล้ว</div>
                   ) : (
                     /* 📤 ไม่เจอในกะนี้ — เดิมจบแค่นี้ (ทางตัน) · 30/10 ค้นทั้งโรงงานต่อให้ */
                     <div style={{ fontSize: 12 }}>
-                      <div style={{ color: '#ef4444', fontWeight: 600 }}>✕ ไม่พบ PROD.NO นี้ในกะปัจจุบัน</div>
+                      <div style={{ color: 'var(--red)', fontWeight: 600 }}>✕ ไม่พบ PROD.NO นี้ในกะปัจจุบัน</div>
                       {!crossFind && (
                         <button type="button" onClick={() => crossLookup(closeProdNo)}
                           style={{ marginTop: 8, padding: '6px 12px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
@@ -6034,7 +5992,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       {crossFind?.loading && <div style={{ marginTop: 8, color: 'var(--muted)' }}>กำลังค้นทั้งโรงงาน…</div>}
                       {/* 🔴 อ่านไม่สำเร็จ = ตอบไม่ได้ ห้ามแปลว่า "ไม่มีใบ" */}
                       {crossFind?.err && (
-                        <div style={{ marginTop: 8, color: '#ef4444', fontWeight: 700 }}>
+                        <div style={{ marginTop: 8, color: 'var(--red)', fontWeight: 700 }}>
                           ⚠️ ค้นทั้งโรงงานไม่สำเร็จ ({crossFind.err}) — ยังตอบไม่ได้ว่ามีใบนี้ที่ไลน์อื่นไหม ลองใหม่อีกครั้ง
                         </div>
                       )}
@@ -6042,27 +6000,27 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                         <div style={{ marginTop: 8, color: 'var(--muted)' }}>ค้นทั้งโรงงานแล้ว — ไม่มีใบที่ยังเปิดค้างด้วยเลขนี้</div>
                       )}
                       {(crossFind?.state === 'shift_locked' || crossFind?.state === 'manual_only_owner') && (
-                        <div style={{ marginTop: 8, padding: '8px 10px', borderRadius: 7, background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.4)', color: '#f59e0b', fontWeight: 600, lineHeight: 1.6 }}>
+                        <div style={{ marginTop: 8, padding: '8px 10px', borderRadius: 7, background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', color: 'var(--amber)', fontWeight: 600, lineHeight: 1.6 }}>
                           {crossFind.state === 'manual_only_owner' ? '✍️' : '🔒'} {crossLineCloseText(crossFind.state, crossFind.row)}
                         </div>
                       )}
                       {(crossFind?.state === 'ready' || crossFind?.state === 'ambiguous') && (
-                        <div style={{ marginTop: 8, padding: '10px 12px', borderRadius: 8, background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.4)' }}>
-                          <div style={{ color: '#f59e0b', fontWeight: 800, marginBottom: 6, lineHeight: 1.6 }}>
+                        <div style={{ marginTop: 8, padding: '10px 12px', borderRadius: 8, background: 'var(--amber-dim)', border: '1px solid var(--amber-line)' }}>
+                          <div style={{ color: 'var(--amber)', fontWeight: 800, marginBottom: 6, lineHeight: 1.6 }}>
                             📤 {crossLineCloseText(crossFind.state, crossFind.row)}
                           </div>
                           {crossFind.rows.map(r => (
                             <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '6px 0', borderTop: '1px solid var(--border2)' }}>
                               <div style={{ minWidth: 0 }}>
                                 {/* 🔴 ต้องเขียนไลน์+กะตัวโต — ไม่งั้นปิดผิดไลน์เงียบ */}
-                                <div style={{ fontSize: 13, fontWeight: 800, color: '#4d9fff' }}>{crossLineNameOf(r) || '— ไม่รู้ไลน์ —'}</div>
+                                <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--blue)' }}>{crossLineNameOf(r) || '— ไม่รู้ไลน์ —'}</div>
                                 <div style={{ fontSize: 11, color: 'var(--muted)' }}>{crossLineWhen(r)}</div>
                                 <MatLabel mat={r.mat_no} name={r.part_name} size={11} />
                               </div>
                               <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
-                                <div style={{ fontSize: 20, fontWeight: 900, color: '#f59e0b', lineHeight: 1 }}>{r.qty}<span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}> ชิ้น</span></div>
+                                <div style={{ fontSize: 20, fontWeight: 900, color: 'var(--amber)', lineHeight: 1 }}>{r.qty}<span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}> ชิ้น</span></div>
                                 <button type="button" onClick={() => doCrossLineClose(r)} disabled={savingProdClose}
-                                  style={{ padding: '7px 13px', borderRadius: 7, border: 'none', background: '#f59e0b', color: '#1a1a1a', fontSize: 12, fontWeight: 800, cursor: savingProdClose ? 'default' : 'pointer', opacity: savingProdClose ? 0.5 : 1, whiteSpace: 'nowrap' }}>
+                                  style={{ padding: '7px 13px', borderRadius: 7, border: 'none', background: 'var(--amber)', color: '#fff', fontSize: 12, fontWeight: 800, cursor: savingProdClose ? 'default' : 'pointer', opacity: savingProdClose ? 0.5 : 1, whiteSpace: 'nowrap' }}>
                                   📤 ปิดใบนี้ให้ไลน์นั้น
                                 </button>
                               </div>
@@ -6080,8 +6038,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
 
               {/* Running count */}
               {prodOrders.filter(o => o.status === 'confirmed').length > 0 && (
-                <div style={{ marginTop: 12, padding: '8px 12px', background: 'rgba(34,197,94,0.1)', borderRadius: 8, fontSize: 12 }}>
-                  <div style={{ color: '#22c55e', fontWeight: 700 }}>
+                <div style={{ marginTop: 12, padding: '8px 12px', background: 'var(--green-dim)', borderRadius: 8, fontSize: 12 }}>
+                  <div style={{ color: 'var(--green)', fontWeight: 700 }}>
                     ปิดแล้ว {prodOrders.filter(o => o.status === 'confirmed').length} ใบ · {prodOrders.filter(o => o.status === 'confirmed').reduce((s, o) => s + o.qty, 0)} ชิ้น
                   </div>
                 </div>
@@ -6090,7 +6048,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
               <div className={isMobile ? 'm-modalfoot' : undefined} style={{ display: 'flex', gap: 10, marginTop: 16, justifyContent: 'flex-end' }}>
                 <button onClick={() => { setShowScanClose(false); setCrossFind(null); }} style={cancelBtnStyle}>ปิด</button>
                 <button onClick={handleScanClose} disabled={savingProdClose || !closeMatch}
-                  style={{ ...saveBtnStyle, background: '#22c55e', fontSize: 14, opacity: (!closeMatch || savingProdClose) ? 0.5 : 1 }}>
+                  style={{ ...saveBtnStyle, background: 'var(--green)', fontSize: 14, opacity: (!closeMatch || savingProdClose) ? 0.5 : 1 }}>
                   {savingProdClose ? '...' : '📤 Confirm ปิด Order'}
                 </button>
               </div>
@@ -6101,11 +6059,11 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
         {/* ── DEFECT LOG MODAL ─────────────────────────────────── */}
         {showDefect && selSession && (
           <div className="overlay" style={{ zIndex: 2000 }}>
-            <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid rgba(239,68,68,0.4)', borderRadius: 14, padding: 24, width: 'min(95vw,480px)' }}>
+            <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid var(--red-line)', borderRadius: 14, padding: 24, width: 'min(95vw,480px)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
-                <div style={{ fontSize: 16, fontWeight: 800, color: '#ef4444' }}>🔴 {defectForm.id ? 'แก้ไขงานเสีย' : 'บันทึกงานเสีย'}</div>
+                <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--red)' }}>🔴 {defectForm.id ? 'แก้ไขงานเสีย' : 'บันทึกงานเสีย'}</div>
                 <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'right' }}>
-                  <div style={{ color: '#4d9fff', fontWeight: 700 }}>{selSession.line_name}</div>
+                  <div style={{ color: 'var(--blue)', fontWeight: 700 }}>{selSession.line_name}</div>
                   <div>{selSession.shift === 'day' ? '☀️ กะเช้า' : '🌙 กะดึก'} · {fmtDate(selSession.work_date)}</div>
                 </div>
               </div>
@@ -6176,9 +6134,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8 }}>
                   {[
-                    { key: 'qty_ng',      label: '🔴 NG / เสีย',    color: '#ef4444' },
-                    { key: 'qty_suspect', label: '🟡 ต้องสงสัย',    color: '#f59e0b' },
-                    { key: 'qty_repair',  label: '🔧 ซ่อม/Rework',  color: '#a78bfa' },
+                    { key: 'qty_ng',      label: '🔴 NG / เสีย',    color: 'var(--red)' },
+                    { key: 'qty_suspect', label: '🟡 ต้องสงสัย',    color: 'var(--amber)' },
+                    { key: 'qty_repair',  label: '🔧 ซ่อม/Rework',  color: 'var(--blue)' },
                   ].map(q => (
                     <div key={q.key}>
                       <div style={{ fontSize: 11, color: q.color, fontWeight: 700, marginBottom: 3 }}>{q.label}</div>
@@ -6213,13 +6171,13 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   const on = byType || defectForm.is_trial;
                   return (
                     <div style={{ marginTop: 10, padding: '9px 12px', borderRadius: 8,
-                      border: `1px solid ${on ? '#a855f7' : 'var(--border)'}`,
-                      background: on ? 'rgba(168,85,247,0.10)' : 'var(--bg2)' }}>
+                      border: `1px solid ${on ? 'var(--blue)' : 'var(--border)'}`,
+                      background: on ? 'var(--blue-dim)' : 'var(--bg2)' }}>
                       <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: byType ? 'default' : 'pointer' }}>
                         <input type="checkbox" checked={on} disabled={byType}
                           onChange={e => setDefectForm(f => ({ ...f, is_trial: e.target.checked }))}
                           style={{ width: 'auto', margin: 0 }} />
-                        <span style={{ fontSize: 12.5, fontWeight: 700, color: on ? '#a855f7' : 'var(--text2)' }}>
+                        <span style={{ fontSize: 12.5, fontWeight: 700, color: on ? 'var(--blue)' : 'var(--text2)' }}>
                           🧪 งานทดลอง (Try-out) — ไม่นับเข้า %Q
                         </span>
                       </label>
@@ -6236,7 +6194,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
               <div className={isMobile ? 'm-modalfoot' : undefined} style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-end' }}>
                 <button onClick={() => setShowDefect(false)} style={cancelBtnStyle}>ยกเลิก</button>
                 <button onClick={handleAddDefectLog} disabled={savingDefect || !defectForm.defect_type_id}
-                  style={{ ...saveBtnStyle, background: '#ef4444', opacity: (!defectForm.defect_type_id || savingDefect) ? 0.5 : 1 }}>
+                  style={{ ...saveBtnStyle, background: 'var(--red)', opacity: (!defectForm.defect_type_id || savingDefect) ? 0.5 : 1 }}>
                   {savingDefect ? '...' : (defectForm.id ? 'บันทึกการแก้ไข' : 'บันทึกงานเสีย')}
                 </button>
               </div>
@@ -6324,7 +6282,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
                   <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>⏱ {dtForm.id ? 'แก้ไข Downtime' : 'บันทึก Downtime'}</div>
                   <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'right' }}>
-                    <div style={{ color: '#4d9fff', fontWeight: 700 }}>{selSession.line_name}</div>
+                    <div style={{ color: 'var(--blue)', fontWeight: 700 }}>{selSession.line_name}</div>
                     <div>{selSession.shift === 'day' ? '☀️ กะเช้า' : '🌙 กะดึก'} · {fmtDate(selSession.work_date)}</div>
                   </div>
                 </div>
@@ -6334,7 +6292,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   {MODES.map(m => (
                     <button key={m.key} onClick={() => setDtForm(f => ({ ...f, mode: m.key }))}
                       style={{ flex: 1, padding: '6px 4px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 700,
-                        background: dtForm.mode === m.key ? '#ef4444' : 'transparent',
+                        background: dtForm.mode === m.key ? 'var(--red)' : 'transparent',
                         color: dtForm.mode === m.key ? '#fff' : 'var(--muted)' }}>
                       {m.label}
                     </button>
@@ -6411,10 +6369,10 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                     const chk = st ? checkShiftTime(st.ms, selSession) : null;
                     const bad = chk && !chk.ok;
                     return (
-                      <div style={{ fontSize: 12, color: bad ? '#ef4444' : 'var(--muted)', fontWeight: bad ? 800 : 600,
+                      <div style={{ fontSize: 12, color: bad ? 'var(--red)' : 'var(--muted)', fontWeight: bad ? 800 : 600,
                         padding: bad ? '8px 12px' : '2px 2px', borderRadius: 8,
-                        background: bad ? 'rgba(239,68,68,0.10)' : 'transparent',
-                        border: bad ? '1px solid rgba(239,68,68,0.35)' : 'none' }}>
+                        background: bad ? 'var(--red-dim)' : 'transparent',
+                        border: bad ? '1px solid var(--red-line)' : 'none' }}>
                         ⏱ กรอบกะนี้: <b style={{ fontFamily: 'monospace' }}>{win}</b>
                         {bad && (
                           <>
@@ -6431,26 +6389,26 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
 
                   {/* Auto-calculated result preview */}
                   {hasResult && (
-                    <div style={{ padding: '10px 14px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 9 }}>
+                    <div style={{ padding: '10px 14px', background: 'var(--red-dim)', border: '1px solid var(--red-line)', borderRadius: 9 }}>
                       <div style={{ display: 'flex', gap: 20, alignItems: 'center', flexWrap: 'wrap' }}>
                         <div style={{ textAlign: 'center' }}>
                           <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>🔴 เริ่มหยุด</div>
-                          <div style={{ fontSize: 18, fontWeight: 900, color: '#ef4444', lineHeight: 1.1 }}>{fmtTime(startedAt)}</div>
-                          {isNextDay(startedAt) && <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700 }}>+1 วัน · {fmtDate(startedAt)}</div>}
+                          <div style={{ fontSize: 18, fontWeight: 900, color: 'var(--red)', lineHeight: 1.1 }}>{fmtTime(startedAt)}</div>
+                          {isNextDay(startedAt) && <div style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 700 }}>+1 วัน · {fmtDate(startedAt)}</div>}
                         </div>
                         <div style={{ fontSize: 18, color: 'var(--muted)' }}>→</div>
                         <div style={{ textAlign: 'center' }}>
                           <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>🟢 กลับมา</div>
-                          <div style={{ fontSize: 18, fontWeight: 900, color: '#22c55e', lineHeight: 1.1 }}>{fmtTime(endedAt)}</div>
-                          {isNextDay(endedAt) && <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700 }}>+1 วัน · {fmtDate(endedAt)}</div>}
+                          <div style={{ fontSize: 18, fontWeight: 900, color: 'var(--green)', lineHeight: 1.1 }}>{fmtTime(endedAt)}</div>
+                          {isNextDay(endedAt) && <div style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 700 }}>+1 วัน · {fmtDate(endedAt)}</div>}
                         </div>
                         <div style={{ marginLeft: 'auto', textAlign: 'center' }}>
                           <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>รวม</div>
-                          <div style={{ fontSize: 22, fontWeight: 900, color: '#f59e0b' }}>{durMin ? `${Math.round(durMin * 10) / 10} นาที` : '—'}</div>
+                          <div style={{ fontSize: 22, fontWeight: 900, color: 'var(--amber)' }}>{durMin ? `${Math.round(durMin * 10) / 10} นาที` : '—'}</div>
                         </div>
                       </div>
                       {(isNextDay(startedAt) || isNextDay(endedAt)) && (
-                        <div style={{ marginTop: 8, fontSize: 11, color: '#f59e0b', background: 'rgba(245,158,11,0.1)', borderRadius: 6, padding: '4px 8px' }}>
+                        <div style={{ marginTop: 8, fontSize: 11, color: 'var(--amber)', background: 'var(--amber-dim)', borderRadius: 6, padding: '4px 8px' }}>
                           ⚠ เวลาข้ามคืน — บันทึกเป็นวันถัดไปอัตโนมัติ (กะดึกเริ่ม {fmtDate(selSession.work_date)})
                         </div>
                       )}
@@ -6485,7 +6443,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       {/* ขอบเขตลิสต์ต้องเขียนบนจอเสมอ — ลิสต์ที่ถูกกรองโดยไม่บอก = คนคิดว่าเครื่องไม่มีในระบบ */}
                       <div style={{ marginTop: 4, fontSize: 11, color: 'var(--muted)', display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                         {!famCount ? (
-                          <span style={{ color: '#f59e0b' }}>⚠ ไลน์นี้ยังไม่มีเครื่องลงทะเบียน — แสดงทั้งโรงงาน</span>
+                          <span style={{ color: 'var(--amber)' }}>⚠ ไลน์นี้ยังไม่มีเครื่องลงทะเบียน — แสดงทั้งโรงงาน</span>
                         ) : (
                           <>
                             <span>{dtMachineAll ? 'แสดงทั้งโรงงาน' : `เฉพาะไลน์นี้ + กลุ่มไลน์ (${famCount})`}</span>
@@ -6526,7 +6484,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                     const dtInvalid = !dtForm.downtime_type_id || !hasResult || (!dtMachineOptional && !dtForm.machine_no) || (!dtMachineOptional && dtMatOptions.length > 0 && !dtForm.mat_no);
                     return (
                       <button onClick={handleAddDT} disabled={savingDT || dtInvalid}
-                        style={{ ...saveBtnStyle, background: '#ef4444', opacity: (dtInvalid || savingDT) ? 0.5 : 1 }}>
+                        style={{ ...saveBtnStyle, background: 'var(--red)', opacity: (dtInvalid || savingDT) ? 0.5 : 1 }}>
                         {savingDT ? '...' : (dtForm.id ? 'บันทึกการแก้ไข' : 'บันทึก Downtime')}
                       </button>
                     );
@@ -6639,7 +6597,7 @@ function StaleTab({ stale, onOpenSession, role }) {
   if (stale?.loading) return <div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>กำลังโหลด...</div>;
   // โหลดไม่สำเร็จ ต้องบอกตรงๆ ห้ามโชว์ "ไม่มีกะค้าง" (0 กับ อ่านไม่ได้ คนละเรื่อง)
   if (stale?.error) return (
-    <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: 10, padding: '14px 18px', color: '#ef4444', fontSize: 13, fontWeight: 700 }}>
+    <div style={{ background: 'var(--red-dim)', border: '1px solid var(--red-line)', borderRadius: 10, padding: '14px 18px', color: 'var(--red)', fontSize: 13, fontWeight: 700 }}>
       ⚠ โหลดรายการกะค้างไม่สำเร็จ — {stale.error.message || 'ไม่ทราบสาเหตุ'}
       <button onClick={() => stale.reload?.()} style={{ marginLeft: 12, ...saveBtnStyle, padding: '4px 12px', fontSize: 12 }}>↻ ลองใหม่</button>
     </div>
@@ -6656,16 +6614,17 @@ function StaleTab({ stale, onOpenSession, role }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
           <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>⏰ กะค้างยังไม่ปิด {rows.length} กะ</div>
           {over.length > 0 && (
-            <span style={{ fontSize: 11.5, fontWeight: 800, padding: '3px 10px', borderRadius: 10, background: 'rgba(239,68,68,0.18)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.5)' }}>
+            <span style={{ fontSize: 11.5, fontWeight: 800, padding: '3px 10px', borderRadius: 10, background: 'var(--red-dim)', color: 'var(--red)', border: '1px solid var(--red-line)' }}>
               เกินเป้า {STALE_SESSION_DAYS} วัน {over.length} กะ · เก่าสุด {rows[0]?.age} วัน
             </span>
           )}
           <button onClick={() => stale.reload?.()} style={{ marginLeft: 'auto', fontSize: 12, padding: '4px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>↻ รีเฟรช</button>
         </div>
-        <div style={{ fontSize: 11.5, color: '#ef4444', lineHeight: 1.6 }}>
-          กะที่ไม่ปิด = OEE/ยอดผลิตของวันนั้น<b>หายจากรายงานเดือน</b> (ระบบนับเฉพาะกะที่ปิดแล้ว) · เป้าหมาย: เคลียร์ภายใน {STALE_SESSION_DAYS} วัน
-          <span style={{ color: 'var(--muted)' }}> · เริ่มกะใหม่ของวันนี้ได้ตามปกติ ไม่ต้องรอเคลียร์</span>
-        </div>
+        {/* ข้อเท็จจริง (แดง) เห็นตลอด · คำอธิบายที่เหลือพับหลัง ⓘ (UI §6.10 · 04/11) */}
+        <InfoMore id="dr-stale-why" size={11.5}
+          lead={<span style={{ color: 'var(--red)' }}>กะที่ไม่ปิด = OEE/ยอดผลิตของวันนั้น<b>หายจากรายงานเดือน</b></span>}>
+          ระบบนับเฉพาะกะที่ปิดแล้ว · เป้าหมาย: เคลียร์ภายใน {STALE_SESSION_DAYS} วัน · เริ่มกะใหม่ของวันนี้ได้ตามปกติ ไม่ต้องรอเคลียร์
+        </InfoMore>
 
         {/* 🧹 กะเปล่า = เปิดผิด/เปิดทิ้งไว้ ลบทิ้งได้โดยไม่กระทบรายงาน — กะที่มีข้อมูลจริงยังต้องให้คนปิดเองเสมอ */}
         {!isSharedAccount() && can('daily_report', 'delete_session', role) && rows.length > 0 && (
@@ -6676,15 +6635,15 @@ function StaleTab({ stale, onOpenSession, role }) {
                   style={{ fontSize: 12, fontWeight: 700, padding: '5px 12px', borderRadius: 8, cursor: 'pointer', background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)' }}>
                   🔎 ตรวจหากะเปล่า
                 </button>
-                <span style={{ fontSize: 11, color: 'var(--muted)' }}>
-                  กะที่ไม่มี Order / Downtime / ของเสีย เลย = เปิดผิดหรือเปิดทิ้งไว้ — ทำโมฆะทีเดียวได้ ไม่ต้องไล่ทีละกะ (เก็บประวัติไว้ ไม่ได้ลบ)
-                </span>
+                <InfoMore id="dr-stale-empty" size={11} lead="กะเปล่า = เปิดผิด/เปิดทิ้งไว้">
+                  กะที่ไม่มี Order / Downtime / ของเสีย เลย — ทำโมฆะทีเดียวได้ ไม่ต้องไล่ทีละกะ (เก็บประวัติไว้ ไม่ได้ลบ)
+                </InfoMore>
               </>
             ) : emptyScan.busy ? (
               <span style={{ fontSize: 12, color: 'var(--muted)' }}>⏳ กำลังตรวจ…</span>
             ) : emptyScan.err ? (
               /* โหลดไม่ครบ = ห้ามบอกว่า "ไม่มีกะเปล่า" (จะกลายเป็นตีกะที่มีข้อมูลว่าเปล่าแล้วลบทิ้ง) */
-              <span style={{ fontSize: 12, color: '#f59e0b' }}>
+              <span style={{ fontSize: 12, color: 'var(--amber)' }}>
                 ⚠ ตรวจไม่สำเร็จ — {emptyScan.err} · ยังทำโมฆะไม่ได้
                 <button onClick={() => setEmptyScan(null)} style={{ marginLeft: 8, fontSize: 11.5, padding: '3px 9px', borderRadius: 7, cursor: 'pointer', background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)' }}>ลองใหม่</button>
               </span>
@@ -6696,7 +6655,7 @@ function StaleTab({ stale, onOpenSession, role }) {
               <>
                 <button onClick={voidEmpty}
                   title="ทำเป็นโมฆะ = เก็บแถวไว้แต่ไม่ถูกนับเป็นกะจริง (ไม่ได้ลบ) — ช่องกะว่างให้เปิดใบใหม่ได้"
-                  style={{ fontSize: 12, fontWeight: 800, padding: '5px 12px', borderRadius: 8, cursor: 'pointer', background: 'var(--bg3)', border: '1px solid #94a3b8', color: '#94a3b8' }}>
+                  style={{ fontSize: 12, fontWeight: 800, padding: '5px 12px', borderRadius: 8, cursor: 'pointer', background: 'var(--bg3)', border: '1px solid var(--muted)', color: 'var(--muted)' }}>
                   🚫 ทำโมฆะ {emptyScan.ids.length} กะ
                 </button>
                 <span style={{ fontSize: 11, color: 'var(--muted)' }}>
@@ -6733,22 +6692,22 @@ function StaleTab({ stale, onOpenSession, role }) {
               <button key={o.id} onClick={() => onOpenSession(o.id)}
                 title="เปิดกะนี้ในแท็บ Live เพื่อปิด/อนุมัติ"
                 style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', width: '100%', textAlign: 'left', cursor: 'pointer',
-                  background: 'var(--card)', border: `1px solid ${late ? 'rgba(239,68,68,0.45)' : 'var(--border2)'}`, borderLeft: `4px solid ${late ? '#ef4444' : '#f59e0b'}`,
+                  background: 'var(--card)', border: `1px solid ${late ? 'var(--red-line)' : 'var(--border2)'}`, borderLeft: `4px solid ${late ? 'var(--red)' : 'var(--amber)'}`,
                   borderRadius: 10, padding: '11px 14px' }}>
-                <span style={{ fontSize: 12, fontWeight: 900, minWidth: 78, color: late ? '#ef4444' : '#f59e0b', fontVariantNumeric: 'tabular-nums' }}>⏰ ค้าง {o.age} วัน</span>
+                <span style={{ fontSize: 12, fontWeight: 900, minWidth: 78, color: late ? 'var(--red)' : 'var(--amber)', fontVariantNumeric: 'tabular-nums' }}>⏰ ค้าง {o.age} วัน</span>
                 <span style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--text)' }}>{o.line_name}</span>
                 {o.group && o.group !== o.line_name && <span style={{ fontSize: 11, color: 'var(--muted)' }}>({o.group})</span>}
                 <span style={{ fontSize: 12, color: 'var(--muted)' }}>{o.shift === 'day' ? '☀️ กะเช้า' : '🌙 กะดึก'} · {fmtDate(o.work_date)}</span>
                 {/* ลูกบอลอยู่ฝั่งใคร — ไม่บอก คนก็โทษกันไปมา */}
                 <span style={{ fontSize: 11.5, fontWeight: 700, padding: '3px 9px', borderRadius: 9, whiteSpace: 'nowrap',
-                  background: o.status === 'pending_close' ? 'rgba(245,158,11,0.15)' : 'var(--bg3)',
-                  color: o.status === 'pending_close' ? '#f59e0b' : 'var(--text2)' }}>
+                  background: o.status === 'pending_close' ? 'var(--amber-dim)' : 'var(--bg3)',
+                  color: o.status === 'pending_close' ? 'var(--amber)' : 'var(--text2)' }}>
                   {o.status === 'pending_close' ? '⏳ ' : '✏️ '}{ballSideText(o)}
                 </span>
                 {/* เคยถูกตีกลับ = หัวหน้ากลุ่มต้องกลับไปแก้ก่อน ไม่ใช่ SV ดอง */}
                 {o.status === 'open' && o.close_reject_at && (
                   <span title={`ถูกตีกลับโดย ${o.close_reject_by_name || '—'}${o.close_reject_reason ? ` — "${o.close_reject_reason}"` : ''}`}
-                    style={{ fontSize: 11, fontWeight: 800, padding: '3px 8px', borderRadius: 9, background: 'rgba(239,68,68,0.15)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.4)' }}>↩ เคยถูกตีกลับ</span>
+                    style={{ fontSize: 11, fontWeight: 800, padding: '3px 8px', borderRadius: 9, background: 'var(--red-dim)', color: 'var(--red)', border: '1px solid var(--red-line)' }}>↩ เคยถูกตีกลับ</span>
                 )}
                 <span style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 800, color: 'var(--accent)' }}>เปิดกะนี้ →</span>
               </button>
@@ -6978,7 +6937,7 @@ function HistoryTab({ role }) {
       </FilterBar>
 
       {loadErr && (
-        <div style={{ color: '#ef4444', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: 8, padding: '10px 14px', marginBottom: 12, fontSize: 13 }}>
+        <div style={{ color: 'var(--red)', background: 'var(--red-dim)', border: '1px solid var(--red-line)', borderRadius: 8, padding: '10px 14px', marginBottom: 12, fontSize: 13 }}>
           ⚠️ โหลดประวัติกะไม่สำเร็จ ({loadErr}) — รายการด้านล่างอาจไม่ครบ/ไม่ใช่ล่าสุด · <button onClick={load} style={cancelBtnStyle}>ลองใหม่</button>
         </div>
       )}
@@ -6994,7 +6953,8 @@ function HistoryTab({ role }) {
           const ngQty    = s.qty_ng || 0;
           const defRate  = s.actual_qty > 0 ? ((ngQty / s.actual_qty) * 100).toFixed(1) : '0.0';
           const oeeVal   = s.oee;
-          const oeeColor = oeeVal >= 85 ? '#22c55e' : oeeVal >= 65 ? '#f59e0b' : '#ef4444';
+          const oeeTone  = oeeVal >= 85 ? 'good' : oeeVal >= 65 ? 'warn' : 'bad';
+          const oeeColor = toneVar(oeeTone);
           return (
             <div key={s.id} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
               <div onClick={() => handleExpand(s.id)} style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '12px 16px', cursor: 'pointer' }}>
@@ -7002,13 +6962,13 @@ function HistoryTab({ role }) {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2, flexWrap: 'wrap' }}>
                     <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>{s.line_name}</span>
                     <span style={{ fontSize: 11, color: 'var(--muted)' }}>{s.shift === 'day' ? '☀️ กะเช้า' : '🌙 กะดึก'} · {fmtDate(s.work_date)}</span>
-                    {s.dr_products?.name && <span style={{ fontSize: 11, color: '#4d9fff' }}>· {s.dr_products.name}</span>}
+                    {s.dr_products?.name && <span style={{ fontSize: 11, color: 'var(--blue)' }}>· {s.dr_products.name}</span>}
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexShrink: 0, flexWrap: 'wrap' }}>
-                  <Stat label="ผลิต"  value={s.actual_qty || 0}    color="#4d9fff" />
-                  <Stat label="NG%"   value={`${defRate}%`}         color={parseFloat(defRate) > 1 ? '#ef4444' : '#22c55e'} />
-                  <Stat label="DT"    value={fmtMin(totalDT)}       color="#a855f7" small />
+                  <Stat label="ผลิต"  value={s.actual_qty || 0}    color="var(--blue)" />
+                  <Stat label="NG%"   value={`${defRate}%`}         color={parseFloat(defRate) > 1 ? 'var(--red)' : 'var(--green)'} />
+                  <Stat label="DT"    value={fmtMin(totalDT)}       color="var(--blue)" small />
                   {oeeVal != null && (
                     <div style={{ textAlign: 'center' }}>
                       <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>OEE</div>
@@ -7030,7 +6990,7 @@ function HistoryTab({ role }) {
                           d.id === doc.id ? { ...d, reprint_count: (Number(d.reprint_count) || 0) + 1 } : d) }));
                       }}
                       title={`พิมพ์ซ้ำใบเดิม ${doc.doc_no}\nปัญหา: ${doc.problem_title || '(ไม่ได้ระบุ)'}\nออกโดย ${doc.issued_by || '—'} ${doc.issued_at ? new Date(doc.issued_at).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' }) : ''}${doc.reprint_count ? `\nพิมพ์ซ้ำแล้ว ${doc.reprint_count} ครั้ง` : ''}`}
-                      style={{ background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.45)', color: '#22c55e',
+                      style={{ background: 'var(--green-dim)', border: '1px solid var(--green-line)', color: 'var(--green)',
                         borderRadius: 6, padding: '3px 9px', fontSize: 11, cursor: 'pointer', fontWeight: 700, whiteSpace: 'nowrap' }}>
                       🧾 {doc.doc_no}
                     </button>
@@ -7060,13 +7020,13 @@ function HistoryTab({ role }) {
                       setHistSheet({ session: s, title: R.headline || '', dts, defs });
                     }}
                     title="ออกใบรายงานปัญหาการผลิตใบใหม่ของกะนี้ (ระบบออกเลขที่ใบ + เก็บเนื้อใบไว้ให้พิมพ์ซ้ำ)"
-                    style={{ background: 'transparent', border: '1px solid #f59e0b', color: '#f59e0b', borderRadius: 6,
+                    style={{ background: 'transparent', border: '1px solid var(--amber)', color: 'var(--amber)', borderRadius: 6,
                       padding: '3px 10px', fontSize: 11, cursor: 'pointer', fontWeight: 700, whiteSpace: 'nowrap' }}>
                     📝 ออกใบรายงานปัญหา
                   </button>
                   {voidBadge(s) && (
                     <span title={voidBadge(s).title}
-                      style={{ border: '1px solid #94a3b8', color: '#94a3b8', borderRadius: 6,
+                      style={{ border: '1px solid var(--muted)', color: 'var(--muted)', borderRadius: 6,
                         padding: '3px 9px', fontSize: 11, fontWeight: 800, whiteSpace: 'nowrap', cursor: 'help' }}>
                       {voidBadge(s).text}
                     </span>
@@ -7077,7 +7037,7 @@ function HistoryTab({ role }) {
                       onClick={e => { e.stopPropagation(); handleVoidSession(s); }}
                       disabled={deleting === s.id}
                       title="กะที่เปิดผิดแล้วปิดทิ้ง — ทำเป็นโมฆะ (เก็บประวัติไว้ ไม่ถูกนับเป็นกะจริง) แทนการลบ"
-                      style={{ background: 'transparent', border: '1px solid #94a3b8', color: '#94a3b8', borderRadius: 6, padding: '3px 10px', fontSize: 11, cursor: 'pointer', fontWeight: 700, opacity: deleting === s.id ? 0.5 : 1 }}>
+                      style={{ background: 'transparent', border: '1px solid var(--muted)', color: 'var(--muted)', borderRadius: 6, padding: '3px 10px', fontSize: 11, cursor: 'pointer', fontWeight: 700, opacity: deleting === s.id ? 0.5 : 1 }}>
                       🚫 โมฆะ
                     </button>
                   )}
@@ -7095,20 +7055,20 @@ function HistoryTab({ role }) {
               {expanded === s.id && (
                 <div style={{ borderTop: '1px solid var(--border)', padding: '12px 16px', background: 'var(--bg2)', display: 'flex', flexDirection: 'column', gap: 12 }}>
                   {detailErr[s.id] && (
-                    <div style={{ fontSize: 12, color: '#ef4444', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: 8, padding: '8px 12px' }}>
+                    <div style={{ fontSize: 12, color: 'var(--red)', background: 'var(--red-dim)', border: '1px solid var(--red-line)', borderRadius: 8, padding: '8px 12px' }}>
                       ⚠️ โหลดรายละเอียดกะนี้ไม่สำเร็จ ({detailErr[s.id]}) — Downtime/ของเสีย/ใบผลิตด้านล่างอาจว่างเพราะอ่านไม่ได้ ไม่ใช่เพราะไม่มี ·{' '}
                       <button onClick={e => { e.stopPropagation(); loadDetail(s.id, { force: true }); }} style={cancelBtnStyle}>ลองใหม่</button>
                     </div>
                   )}
                   {/* หมายเหตุของหัวหน้ากลุ่ม (ผู้ขอปิดกะ) — เขียนตอนส่งขอปิดกะ */}
                   {s.close_request_note && (
-                    <div style={{ fontSize: 12, color: '#c4b5fd', background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.3)', borderRadius: 8, padding: '8px 12px', whiteSpace: 'pre-wrap' }}>
+                    <div style={{ fontSize: 12, color: 'var(--blue)', background: 'var(--blue-dim)', border: '1px solid var(--blue-line)', borderRadius: 8, padding: '8px 12px', whiteSpace: 'pre-wrap' }}>
                       📝 หมายเหตุหัวหน้ากลุ่ม ({s.close_requested_by_name || '—'}): <b>{s.close_request_note}</b>
                     </div>
                   )}
                   {/* หมายเหตุผู้อนุมัติปิดกะ (ถ้ามี — SV กรอกตอนกดอนุมัติ) */}
                   {s.close_approve_note && (
-                    <div style={{ fontSize: 12, color: '#93c5fd', background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.3)', borderRadius: 8, padding: '8px 12px' }}>
+                    <div style={{ fontSize: 12, color: 'var(--blue)', background: 'var(--blue-dim)', border: '1px solid var(--blue-line)', borderRadius: 8, padding: '8px 12px' }}>
                       📝 หมายเหตุผู้อนุมัติ ({s.closed_by_name || '—'}): <b>{s.close_approve_note}</b>
                     </div>
                   )}
@@ -7123,13 +7083,13 @@ function HistoryTab({ role }) {
                         const match = docMatchesNow(doc, { downtimes: dtMap[s.id] || [], defects: defectMap[s.id] || [] });
                         return (
                           <div key={doc.id} style={{ marginTop: 4 }}>
-                            <b style={{ color: '#22c55e' }}>{doc.doc_no}</b>
+                            <b style={{ color: 'var(--green)' }}>{doc.doc_no}</b>
                             {' · '}{doc.problem_title ? <>ปัญหา: <b style={{ color: 'var(--text)' }}>{doc.problem_title}</b></> : <i>ไม่ได้ระบุหัวเรื่อง</i>}
                             {' · ออกโดย '}{doc.issued_by || '—'}
                             {doc.issued_at && ` ${new Date(doc.issued_at).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' })}`}
                             {!!doc.reprint_count && ` · พิมพ์ซ้ำ ${doc.reprint_count} ครั้ง`}
                             {match === false && (
-                              <div style={{ color: '#f59e0b', fontWeight: 700 }}>
+                              <div style={{ color: 'var(--amber)', fontWeight: 700 }}>
                                 ⚠ ข้อมูลของกะนี้ถูกแก้หลังออกใบ — ปุ่ม 🧾 จะพิมพ์ <u>ใบเดิมที่ยื่นไป</u> ไม่ใช่ข้อมูลล่าสุด
                                 (อยากได้ใบตามข้อมูลใหม่ ให้กด 📝 ออกใบรายงานปัญหา = ได้เลขที่ใบใหม่)
                               </div>
@@ -7141,13 +7101,13 @@ function HistoryTab({ role }) {
                   )}
                   {/* OEE detail row */}
                   {s.oee != null && (
-                    <div style={{ display: 'flex', gap: 20, padding: '8px 12px', background: `${oeeColor}10`, borderRadius: 8, border: `1px solid ${oeeColor}30`, flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', gap: 20, padding: '8px 12px', background: toneDim(oeeTone), borderRadius: 8, border: `1px solid ${toneLine(oeeTone)}`, flexWrap: 'wrap' }}>
                       {[
                         { label: 'Availability', value: s.oee_a },
                         { label: 'Performance',  value: s.oee_p },
                         { label: 'Quality',      value: s.oee_q },
                       ].map(k => {
-                        const c = (k.value||0) >= 85 ? '#22c55e' : (k.value||0) >= 65 ? '#f59e0b' : '#ef4444';
+                        const c = (k.value||0) >= 85 ? 'var(--green)' : (k.value||0) >= 65 ? 'var(--amber)' : 'var(--red)';
                         return (
                           <div key={k.label} style={{ textAlign: 'center' }}>
                             <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{k.label}</div>
@@ -7177,10 +7137,10 @@ function HistoryTab({ role }) {
                     if (!st || st.oee == null) return null;
                     const gap = strictGap(s.oee, st.oee);
                     const warn = st.plannedSharePct >= STRICT_WARN_SHARE_PCT;
-                    const c = st.oee >= 85 ? '#22c55e' : st.oee >= 65 ? '#f59e0b' : '#ef4444';
+                    const c = st.oee >= 85 ? 'var(--green)' : st.oee >= 65 ? 'var(--amber)' : 'var(--red)';
                     return (
                       <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap', padding: '8px 12px', borderRadius: 8,
-                        background: warn ? 'rgba(245,158,11,0.08)' : 'var(--bg3)', border: `1px solid ${warn ? 'rgba(245,158,11,0.35)' : 'var(--border)'}` }}>
+                        background: warn ? 'var(--amber-dim)' : 'var(--bg3)', border: `1px solid ${warn ? 'var(--amber-line)' : 'var(--border)'}` }}>
                         <div>
                           <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>OEE จริง (นับหยุดในแผนเป็นการสูญเสีย)</div>
                           <div style={{ fontSize: 11, color: 'var(--muted)' }}>
@@ -7191,7 +7151,7 @@ function HistoryTab({ role }) {
                         <div style={{ display: 'flex', gap: 16, marginLeft: 'auto', alignItems: 'center' }}>
                           <div style={{ textAlign: 'center' }}>
                             <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>A จริง</div>
-                            <div style={{ fontSize: 15, fontWeight: 800, color: st.a >= 85 ? '#22c55e' : st.a >= 65 ? '#f59e0b' : '#ef4444' }}>{st.a.toFixed(1)}%</div>
+                            <div style={{ fontSize: 15, fontWeight: 800, color: st.a >= 85 ? 'var(--green)' : st.a >= 65 ? 'var(--amber)' : 'var(--red)' }}>{st.a.toFixed(1)}%</div>
                           </div>
                           <div style={{ textAlign: 'center' }}>
                             <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>OEE จริง</div>
@@ -7199,7 +7159,7 @@ function HistoryTab({ role }) {
                           </div>
                         </div>
                         {gap > 0.05 && (
-                          <div style={{ width: '100%', fontSize: 11, color: warn ? '#f59e0b' : 'var(--muted)' }}>
+                          <div style={{ width: '100%', fontSize: 11, color: warn ? 'var(--amber)' : 'var(--muted)' }}>
                             {warn ? '⚠️ ' : ''}ต่ำกว่า OEE ที่รายงาน {gap.toFixed(1)} จุด — มาจากหยุด "ในแผน" {Math.round(plannedDtMin)} นาที ({st.plannedSharePct.toFixed(1)}% ของฐาน)
                             {warn ? ' · ตรวจว่าประเภท Downtime เหล่านี้ควรเป็น "ในแผน" จริงหรือไม่' : ''}
                           </div>
@@ -7249,19 +7209,19 @@ function HistoryTab({ role }) {
                           {rows.map(r => (
                             <div key={r.matNo} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px', background: 'var(--card)', borderRadius: 6, border: '1px solid var(--border)', flexWrap: 'wrap' }}>
                               <MatLabel mat={r.matNo} name={r.partName} />
-                              {r.winLabel && <span style={{ fontSize: 11, color: '#4d9fff' }}>🕐 {r.winLabel}</span>}
+                              {r.winLabel && <span style={{ fontSize: 11, color: 'var(--blue)' }}>🕐 {r.winLabel}</span>}
                               <span style={{ flex: 1 }} />
-                              <span style={{ fontSize: 12, fontWeight: 700, color: '#22c55e' }}>ผลิต {r.qty}</span>
-                              {r.achievable != null && <span style={{ fontSize: 11, fontWeight: 700, color: '#a78bfa' }}>ควรได้ {r.achievable}</span>}
+                              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--green)' }}>ผลิต {r.qty}</span>
+                              {r.achievable != null && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--blue)' }}>ควรได้ {r.achievable}</span>}
                               {r.pPct != null && (
                                 <span style={{ fontSize: 11, fontWeight: 800, padding: '1px 8px', borderRadius: 20,
-                                  color: r.pPct >= 85 ? '#22c55e' : r.pPct >= 70 ? '#f59e0b' : '#ef4444',
-                                  background: r.pPct >= 85 ? 'rgba(34,197,94,0.12)' : r.pPct >= 70 ? 'rgba(245,158,11,0.12)' : 'rgba(239,68,68,0.12)' }}>
+                                  color: r.pPct >= 85 ? 'var(--green)' : r.pPct >= 70 ? 'var(--amber)' : 'var(--red)',
+                                  background: r.pPct >= 85 ? 'var(--green-dim)' : r.pPct >= 70 ? 'var(--amber-dim)' : 'var(--red-dim)' }}>
                                   %P ≈ {r.pPct}%
                                 </span>
                               )}
-                              {r.ng > 0 && <span style={{ fontSize: 11, fontWeight: 700, color: '#ef4444' }}>NG {r.ng}</span>}
-                              {r.dt > 0 && <span style={{ fontSize: 11, fontWeight: 700, color: '#a855f7' }}>DT {fmtMin(r.dt)}</span>}
+                              {r.ng > 0 && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--red)' }}>NG {r.ng}</span>}
+                              {r.dt > 0 && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--blue)' }}>DT {fmtMin(r.dt)}</span>}
                             </div>
                           ))}
                         </div>
@@ -7285,7 +7245,8 @@ function HistoryTab({ role }) {
                         {orders.map(o => {
                           // ป้ายต้องตรงกับจอกะสด (2026-09-09) — imported = ยกยอดที่กะถัดไปรับไปแล้ว ห้ามโชว์เป็น "● ผลิต"
                           const carriedOut  = ['carry_over', 'imported'].includes(o.status);
-                          const statusColor = o.status === 'confirmed' ? '#22c55e' : carriedOut ? '#a78bfa' : o.status === 'cancelled' ? '#666' : '#f59e0b';
+                          const statusTone  = o.status === 'confirmed' ? 'good' : carriedOut ? 'info' : o.status === 'cancelled' ? 'none' : 'warn';
+                          const statusColor = toneVar(statusTone);
                           const statusLabel = o.status === 'confirmed' ? '✓ ปิดแล้ว'
                             : o.status === 'imported' ? '➡ ส่งกะถัดไปแล้ว' : o.status === 'carry_over' ? '➡ ยกยอด (รอกะถัดไปรับ)'
                             : o.status === 'cancelled' ? '✕ ยกเลิก' : '● ผลิต';
@@ -7294,7 +7255,7 @@ function HistoryTab({ role }) {
                               <span style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 700, color: 'var(--text)' }}>{o.prod_no}</span>
                               <MatLabel mat={o.mat_no} name={o.part_name} size={11} />
                               <span style={{ flex: 1 }} />
-                              <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: `${statusColor}20`, color: statusColor, fontWeight: 700 }}>{statusLabel}</span>
+                              <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: toneDim(statusTone), color: statusColor, fontWeight: 700 }}>{statusLabel}</span>
                               <span style={{ fontSize: 12, fontWeight: 800, color: statusColor, minWidth: 40, textAlign: 'right' }}>{o.qty}</span>
                             </div>
                           );
@@ -7308,20 +7269,20 @@ function HistoryTab({ role }) {
                   {/* Defect logs */}
                   {defects.length > 0 && (
                     <div>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: '#ef4444', marginBottom: 6 }}>🔴 งานเสีย ({defects.length} รายการ)</div>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--red)', marginBottom: 6 }}>🔴 งานเสีย ({defects.length} รายการ)</div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                         {defects.map(d => (
-                          <div key={d.id} style={{ display: 'flex', flexDirection: 'column', gap: 2, padding: '6px 10px', background: 'var(--card)', borderRadius: 6, borderLeft: `3px solid ${d.dr_defect_types?.color || '#ef4444'}` }}>
+                          <div key={d.id} style={{ display: 'flex', flexDirection: 'column', gap: 2, padding: '6px 10px', background: 'var(--card)', borderRadius: 6, borderLeft: `3px solid ${d.dr_defect_types?.color || 'var(--red)'}` }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                               <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', flex: 1 }}>{d.dr_defect_types?.name_th || '—'}</span>
                               {d.prod_orders?.prod_no && (
-                                <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'rgba(74,222,128,0.1)', color: '#22c55e', fontWeight: 700, fontFamily: 'monospace' }}>
+                                <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'var(--green-dim)', color: 'var(--green)', fontWeight: 700, fontFamily: 'monospace' }}>
                                   {d.prod_orders.prod_no}
                                 </span>
                               )}
-                              {d.qty_ng      > 0 && <span style={{ fontSize: 11, color: '#ef4444', fontWeight: 700 }}>NG {d.qty_ng}</span>}
-                              {d.qty_suspect > 0 && <span style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700 }}>สงสัย {d.qty_suspect}</span>}
-                              {d.qty_repair  > 0 && <span style={{ fontSize: 11, color: '#a78bfa', fontWeight: 700 }}>ซ่อม {d.qty_repair}</span>}
+                              {d.qty_ng      > 0 && <span style={{ fontSize: 11, color: 'var(--red)', fontWeight: 700 }}>NG {d.qty_ng}</span>}
+                              {d.qty_suspect > 0 && <span style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 700 }}>สงสัย {d.qty_suspect}</span>}
+                              {d.qty_repair  > 0 && <span style={{ fontSize: 11, color: 'var(--blue)', fontWeight: 700 }}>ซ่อม {d.qty_repair}</span>}
                               {/* ของเสียทุกรายการเข้าใบรายงานปัญหา (ไม่มีเกณฑ์เวลา) → ลงวิธีแก้ไขได้ทุกแถว */}
                               {(() => {
                                 const done = !!String(d.fix_action || '').trim();
@@ -7333,9 +7294,9 @@ function HistoryTab({ role }) {
                                       : 'ลงวิธีแก้ไข + ผลตรวจติดตามย้อนหลัง (เติมลงใบรายงานปัญหาให้อัตโนมัติ)'}
                                     style={{ fontSize: 11, fontWeight: 800, whiteSpace: 'nowrap', cursor: 'pointer',
                                       borderRadius: 20, padding: '3px 10px',
-                                      color: done ? '#22c55e' : '#fff',
-                                      background: done ? 'rgba(34,197,94,0.12)' : '#f59e0b',
-                                      border: done ? '1px solid rgba(34,197,94,0.35)' : 'none' }}>
+                                      color: done ? 'var(--green)' : '#fff',
+                                      background: done ? 'var(--green-dim)' : 'var(--amber)',
+                                      border: done ? '1px solid var(--green-line)' : 'none' }}>
                                     {done ? '🛠 แก้ไขแล้ว' : '🛠 ลงวิธีแก้ไข'}
                                   </button>
                                 );
@@ -7361,13 +7322,13 @@ function HistoryTab({ role }) {
                         {dts.map(d => {
                           const cat = CAT_META[d.dr_downtime_types?.category] || CAT_META.unplanned;
                           return (
-                            <div key={d.id} style={{ display: 'flex', flexDirection: 'column', gap: 2, padding: '6px 10px', background: 'var(--card)', borderRadius: 6, borderLeft: `3px solid ${d.dr_downtime_types?.color || '#aaa'}` }}>
+                            <div key={d.id} style={{ display: 'flex', flexDirection: 'column', gap: 2, padding: '6px 10px', background: 'var(--card)', borderRadius: 6, borderLeft: `3px solid ${d.dr_downtime_types?.color || 'var(--muted)'}` }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                                 <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: cat.bg, color: cat.color, fontWeight: 700 }}>{cat.label}</span>
                                 <span style={{ fontSize: 12, color: 'var(--text)', flex: 1 }}>{d.dr_downtime_types?.name_th}</span>
                                 {d.machine_no && <span style={{ fontSize: 11, color: 'var(--muted)' }}>· {d.machine_no}</span>}
-                                {d.mat_no && <span style={{ fontSize: 11, fontWeight: 700, padding: '1px 7px', borderRadius: 20, background: 'rgba(14,165,233,0.15)', color: '#0ea5e9' }}>{d.mat_no}</span>}
-                                <span style={{ fontSize: 12, fontWeight: 700, color: d.dr_downtime_types?.color || '#aaa' }}>{fmtMin(d.duration_min)}</span>
+                                {d.mat_no && <span style={{ fontSize: 11, fontWeight: 700, padding: '1px 7px', borderRadius: 20, background: 'var(--blue-dim)', color: 'var(--blue)' }}>{d.mat_no}</span>}
+                                <span style={{ fontSize: 12, fontWeight: 700, color: d.dr_downtime_types?.color || 'var(--muted)' }}>{fmtMin(d.duration_min)}</span>
                                 {/* 🛠 เกณฑ์เดียวกับแท็บ Live (นอกแผน ≥ PROBLEM_MIN_MINUTES) — ยังไม่ลง = ส้ม · ลงแล้ว = เขียวเงียบ */}
                                 {dtNeedsFix(d) && (() => {
                                   const done = !!String(d.fix_action || '').trim();
@@ -7379,9 +7340,9 @@ function HistoryTab({ role }) {
                                         : `หยุดเกิน ${PROBLEM_MIN_MINUTES} นาที — ลงวิธีแก้ไข + ผลตรวจติดตามย้อนหลังได้`}
                                       style={{ fontSize: 11, fontWeight: 800, whiteSpace: 'nowrap', cursor: 'pointer',
                                         borderRadius: 20, padding: '3px 10px',
-                                        color: done ? '#22c55e' : '#fff',
-                                        background: done ? 'rgba(34,197,94,0.12)' : '#f59e0b',
-                                        border: done ? '1px solid rgba(34,197,94,0.35)' : 'none' }}>
+                                        color: done ? 'var(--green)' : '#fff',
+                                        background: done ? 'var(--green-dim)' : 'var(--amber)',
+                                        border: done ? '1px solid var(--green-line)' : 'none' }}>
                                       {done ? '🛠 แก้ไขแล้ว' : '🛠 ลงวิธีแก้ไข'}
                                     </button>
                                   );
@@ -7444,8 +7405,8 @@ function HistoryTab({ role }) {
         };
         return (
           <div className="overlay" style={{ zIndex: 2200 }}>
-            <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid rgba(245,158,11,0.5)', borderRadius: 14, padding: 22, width: 'min(94vw,520px)' }}>
-              <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4, color: '#f59e0b' }}>📝 ใบรายงานปัญหาการผลิต (ย้อนหลัง)</div>
+            <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid var(--amber-line)', borderRadius: 14, padding: 22, width: 'min(94vw,520px)' }}>
+              <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4, color: 'var(--amber)' }}>📝 ใบรายงานปัญหาการผลิต (ย้อนหลัง)</div>
               <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>
                 {hs.line_name} · {hs.shift === 'day' ? 'กะเช้า' : 'กะดึก'} · {fmtDate(hs.work_date)}
               </div>
@@ -7462,7 +7423,7 @@ function HistoryTab({ role }) {
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
                 <button onClick={() => setHistSheet(null)} style={cancelBtnStyle}>ยกเลิก</button>
                 <button onClick={doPrint} disabled={histSheet.busy}
-                  style={{ ...saveBtnStyle, background: '#f59e0b', fontWeight: 700, opacity: histSheet.busy ? 0.6 : 1 }}>
+                  style={{ ...saveBtnStyle, background: 'var(--amber)', fontWeight: 700, opacity: histSheet.busy ? 0.6 : 1 }}>
                   {histSheet.busy ? '⏳ กำลังออกใบ…' : '🖨 ออกใบ + พิมพ์'}
                 </button>
               </div>
@@ -7944,17 +7905,17 @@ function ExportTab() {
             <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>{r.label}</div>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 14, lineHeight: 1.5 }}>{r.desc}</div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              <button style={btnSm('#6b7280')} onClick={() => handlePreview(r.key)} disabled={loading}>
+              <button style={btnSm('var(--muted)')} onClick={() => handlePreview(r.key)} disabled={loading}>
                 👁 ดูตัวอย่าง
               </button>
-              <button style={btnSm('#16a34a')} onClick={async () => {
+              <button style={btnSm('var(--green)')} onClick={async () => {
                 const sessions = await fetchData();
                 if (!sessions) return;
                 const rows = { kanban: buildKanban, output: buildOutput, oee: buildOEE, downtime: buildDowntime }[r.key](sessions);
                 const fn = `${r.key}_${filter.date_from}_${filter.date_to}${filter.line_name ? '_' + filter.line_name : ''}`;
                 exportCSV(rows, fn, r.key);
               }} disabled={loading}>⬇ CSV</button>
-              <button style={btnSm('#dc2626')} onClick={async () => {
+              <button style={btnSm('var(--red)')} onClick={async () => {
                 const sessions = await fetchData();
                 if (!sessions) return;
                 const rows = { kanban: buildKanban, output: buildOutput, oee: buildOEE, downtime: buildDowntime }[r.key](sessions);
@@ -7972,7 +7933,7 @@ function ExportTab() {
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 14, lineHeight: 1.5 }}>
             1 หน้า/กะ — หัวกระดาษ, ยอดผลิต+OEE, Kanban, Downtime, NG, ช่องเซ็นชื่อ
           </div>
-          <button style={btnSm('#dc2626')} onClick={handleExportShiftForm} disabled={loading}>⬇ PDF ฟอร์ม</button>
+          <button style={btnSm('var(--red)')} onClick={handleExportShiftForm} disabled={loading}>⬇ PDF ฟอร์ม</button>
         </div>
       </div>
 
@@ -7985,15 +7946,15 @@ function ExportTab() {
               <span style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 10 }}>{preview.rows.length} แถว</span>
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
-              <button style={btnSm('#16a34a')} onClick={() => {
+              <button style={btnSm('var(--green)')} onClick={() => {
                 const fn = `${preview.type}_${filter.date_from}_${filter.date_to}`;
                 exportCSV(preview.rows, fn, preview.type);
               }}>⬇ CSV</button>
-              <button style={btnSm('#dc2626')} onClick={async () => {
+              <button style={btnSm('var(--red)')} onClick={async () => {
                 const fn = `${preview.type}_${filter.date_from}_${filter.date_to}`;
                 await exportPDF(preview.rows, labelFor(preview.type), fn);
               }}>⬇ PDF</button>
-              <button style={{ ...btnSm('#374151'), background: 'transparent', color: 'var(--muted)', border: '1px solid var(--border)' }} onClick={() => setPreview(null)}>✕</button>
+              <button style={{ ...btnSm('var(--border2)'), background: 'transparent', color: 'var(--muted)', border: '1px solid var(--border)' }} onClick={() => setPreview(null)}>✕</button>
             </div>
           </div>
           <div style={{ overflowX: 'auto' }}>
@@ -8073,7 +8034,7 @@ function DefectTypeSetup({ role }) {
   const [items, setItems]     = useState([]);
   const [editing, setEditing] = useState(null);
   const [saving, setSaving]   = useState(false);
-  const emptyForm = { name_th: '', color: '#ef4444', process_type: '', sort_order: 0, is_active: true, excl_from_q: false };
+  const emptyForm = { name_th: '', color: 'var(--red)', process_type: '', sort_order: 0, is_active: true, excl_from_q: false };
   const [form, setForm]       = useState(emptyForm);
 
   const load = useCallback(async () => {
@@ -8120,16 +8081,16 @@ function DefectTypeSetup({ role }) {
         {canEdit && <button onClick={() => openEdit()} style={saveBtnStyle}>+ เพิ่มประเภทงานเสีย</button>}
       </div>
 
-      <div style={{ background: 'rgba(239,68,68,0.07)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 12, color: '#f87171' }}>
+      <div style={{ background: 'var(--red-dim)', border: '1px solid var(--red-line)', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 12, color: 'var(--red)' }}>
         🔴 ประเภทงานเสียนี้จะใช้เมื่อกด <strong>บันทึกงานเสีย</strong> ในหน้า Live — แยกจาก Downtime เพื่อให้ติดตามคุณภาพได้ละเอียด
       </div>
 
       {items.length === 0 && <div style={{ textAlign: 'center', padding: 40, color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีประเภทงานเสีย</div>}
 
       {[
-        ...activeProcessTypes().map(pt => ({ key: pt.key, label: `${pt.icon || ''} ${pt.label}`.trim(), color: pt.color || '#6b7280' })),
-        { key: 'common',          label: '🔗 Common (ทุกกระบวนการ)', color: '#6b7280' },
-        { key: null,              label: '❔ ยังไม่กำหนดกระบวนการ',   color: '#9ca3af' },
+        ...activeProcessTypes().map(pt => ({ key: pt.key, label: `${pt.icon || ''} ${pt.label}`.trim(), color: pt.color || 'var(--muted)' })),
+        { key: 'common',          label: '🔗 Common (ทุกกระบวนการ)', color: 'var(--muted)' },
+        { key: null,              label: '❔ ยังไม่กำหนดกระบวนการ',   color: 'var(--muted)' },
       ].map(pg => {
         const pgItems = items.filter(i => (i.process_type || null) === pg.key);
         if (pgItems.length === 0) return null;
@@ -8146,14 +8107,14 @@ function DefectTypeSetup({ role }) {
                   <div style={{ width: 12, height: 12, borderRadius: '50%', background: item.color, flexShrink: 0 }} />
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{item.name_th}</div>
-                    {!item.is_active && <div style={{ fontSize: 11, color: '#ef4444' }}>(ปิดใช้)</div>}
-                    {item.excl_from_q && <div style={{ fontSize: 11, color: '#a855f7', fontWeight: 700 }}>🧪 งานทดลอง — ไม่นับเข้า %Q</div>}
+                    {!item.is_active && <div style={{ fontSize: 11, color: 'var(--red)' }}>(ปิดใช้)</div>}
+                    {item.excl_from_q && <div style={{ fontSize: 11, color: 'var(--blue)', fontWeight: 700 }}>🧪 งานทดลอง — ไม่นับเข้า %Q</div>}
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--muted)' }}>#{item.sort_order}</div>
                   {canEdit && (
                     <div style={{ display: 'flex', gap: 6 }}>
                       <button onClick={() => openEdit(item)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 12px', fontSize: 12, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>
-                      <button className="tbtn" onClick={() => handleDelete(item.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 15 }}>✕</button>
+                      <button className="tbtn" onClick={() => handleDelete(item.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 15 }}>✕</button>
                     </div>
                   )}
                 </div>
@@ -8184,7 +8145,7 @@ function DefectTypeSetup({ role }) {
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   <input type="color" value={form.color} onChange={e => setForm(f => ({ ...f, color: e.target.value }))}
                     style={{ width: 44, height: 36, borderRadius: 6, border: '1px solid var(--border)', cursor: 'pointer', background: 'none' }} />
-                  <input value={form.color} onChange={e => setForm(f => ({ ...f, color: e.target.value }))} placeholder="#ef4444" style={{ ...inputStyle, flex: 1 }} />
+                  <input value={form.color} onChange={e => setForm(f => ({ ...f, color: e.target.value }))} placeholder="var(--red)" style={{ ...inputStyle, flex: 1 }} />
                 </div>
               </Field>
               <Field label="ลำดับ">
@@ -8195,11 +8156,11 @@ function DefectTypeSetup({ role }) {
                 <span style={{ fontSize: 13, color: 'var(--text)' }}>ใช้งานอยู่</span>
               </label>
               {/* งานทดลอง — ของเสียจากลองแม่พิมพ์/ลองงานใหม่ ไม่ควรฉุด OEE ของไลน์ (2026-08-17) */}
-              <div style={{ padding: '9px 11px', borderRadius: 8, border: `1px solid ${form.excl_from_q ? '#a855f7' : 'var(--border)'}`,
-                background: form.excl_from_q ? 'rgba(168,85,247,0.10)' : 'var(--bg2)' }}>
+              <div style={{ padding: '9px 11px', borderRadius: 8, border: `1px solid ${form.excl_from_q ? 'var(--blue)' : 'var(--border)'}`,
+                background: form.excl_from_q ? 'var(--blue-dim)' : 'var(--bg2)' }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
                   <input type="checkbox" checked={form.excl_from_q} onChange={e => setForm(f => ({ ...f, excl_from_q: e.target.checked }))} style={{ width: 'auto', margin: 0 }} />
-                  <span style={{ fontSize: 12.5, fontWeight: 700, color: form.excl_from_q ? '#a855f7' : 'var(--text)' }}>🧪 งานทดลอง — ไม่นับเข้า %Q</span>
+                  <span style={{ fontSize: 12.5, fontWeight: 700, color: form.excl_from_q ? 'var(--blue)' : 'var(--text)' }}>🧪 งานทดลอง — ไม่นับเข้า %Q</span>
                 </label>
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.6 }}>
                   ติ๊กแล้ว ของเสียประเภทนี้จะไม่ถูกนับใน %Q ของ OEE ทุกจอ แต่ยังนับใน "มูลค่าของเสียทั้งหมด"
@@ -8278,13 +8239,13 @@ function BreakLineRules({ policy, lines, canEdit, onClose }) {
         <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>🏭 ไลน์ไหนพักไม่เท่าค่ากลาง</div>
         <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4, lineHeight: 1.6 }}>
           <strong style={{ color: 'var(--text2)' }}>{policy.name_th}</strong> · ค่ากลาง{' '}
-          <strong style={{ color: '#22c55e' }}>{centralMin} นาที</strong> ใช้กับทุกไลน์ที่ไม่ได้ตั้งไว้ที่นี่
+          <strong style={{ color: 'var(--green)' }}>{centralMin} นาที</strong> ใช้กับทุกไลน์ที่ไม่ได้ตั้งไว้ที่นี่
           <br />💡 ตั้งที่ <strong style={{ color: 'var(--text2)' }}>ไลน์แม่</strong> ครั้งเดียว ไลน์ลูกใต้มันได้ตามกันหมด —
           ถ้าไลน์ลูกตั้งเองไว้ ตัวเองชนะแม่
         </div>
 
         {err && (
-          <div style={{ marginTop: 12, padding: '9px 12px', borderRadius: 8, background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.35)', fontSize: 12, color: '#fca5a5' }}>
+          <div style={{ marginTop: 12, padding: '9px 12px', borderRadius: 8, background: 'var(--red-dim)', border: '1px solid var(--red-line)', fontSize: 12, color: 'var(--red)' }}>
             ⚠️ อ่านข้อยกเว้นรายไลน์ไม่สำเร็จ — <strong>ยังบอกไม่ได้ว่ามีไลน์ไหนตั้งไว้บ้าง</strong> ({err})
           </div>
         )}
@@ -8304,11 +8265,11 @@ function BreakLineRules({ policy, lines, canEdit, onClose }) {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                     <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>{r.line_name}</span>
-                    <span style={{ ...chip, background: 'rgba(34,197,94,0.15)', color: '#4ade80' }}>
+                    <span style={{ ...chip, background: 'var(--green-dim)', color: 'var(--green)' }}>
                       {r.duration_min === 0 ? 'ไม่มีพักรายการนี้' : `${r.duration_min} นาที`}
                     </span>
                     {!known && (
-                      <span style={{ ...chip, background: 'rgba(239,68,68,0.15)', color: '#f87171' }}>
+                      <span style={{ ...chip, background: 'var(--red-dim)', color: 'var(--red)' }}>
                         ⚠ ไม่มีไลน์นี้ในทะเบียน
                       </span>
                     )}
@@ -8319,14 +8280,14 @@ function BreakLineRules({ policy, lines, canEdit, onClose }) {
                     </div>
                   )}
                   {!known && (
-                    <div style={{ fontSize: 11, color: '#f87171', marginTop: 4, lineHeight: 1.5 }}>
+                    <div style={{ fontSize: 11, color: 'var(--red)', marginTop: 4, lineHeight: 1.5 }}>
                       ชื่อนี้ไม่ตรงทะเบียนไลน์ — <strong>ใช้ได้เฉพาะชื่อตรงตัว ไลน์ลูกไม่ได้ตามมัน</strong> (ไลน์ถูกเปลี่ยนชื่อ/ลบ?)
                     </div>
                   )}
                 </div>
                 {canEdit && (
                   <button className="tbtn" onClick={() => handleRemove(r)}
-                    style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 15, lineHeight: 1 }}>✕</button>
+                    style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 15, lineHeight: 1 }}>✕</button>
                 )}
               </div>
             );
@@ -8455,7 +8416,7 @@ function BreakPolicySetup({ role }) {
         {canEdit && <button onClick={() => openEdit()} style={saveBtnStyle}>+ เพิ่มนโยบาย</button>}
       </div>
 
-      <div style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 12, color: '#34d399' }}>
+      <div style={{ background: 'var(--green-dim)', border: '1px solid var(--green-line)', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 12, color: 'var(--green)' }}>
         ☕ นโยบายหยุดพักเหล่านี้จะถูก<strong>หักออกจากเวลากะอัตโนมัติ</strong>เมื่อคำนวณ OEE — ช่วยให้ค่า Availability สะท้อนเวลาทำงานจริง ไม่รวมเวลาพักที่วางแผนไว้
       </div>
 
@@ -8467,29 +8428,29 @@ function BreakPolicySetup({ role }) {
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>{item.name_th}</span>
                 {item.name_en && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{item.name_en}</span>}
-                <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: 'rgba(245,158,11,0.15)', color: '#f59e0b', fontWeight: 700 }}>{SHIFT_LABEL[item.shift]}</span>
-                <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: 'rgba(99,102,241,0.15)', color: '#a78bfa', fontWeight: 700 }}>{PROC_LABEL[item.process_type]}</span>
+                <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: 'var(--amber-dim)', color: 'var(--amber)', fontWeight: 700 }}>{SHIFT_LABEL[item.shift]}</span>
+                <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: 'var(--blue-dim)', color: 'var(--blue)', fontWeight: 700 }}>{PROC_LABEL[item.process_type]}</span>
                 {OT_LABEL[item.ot_scope] && (
-                  <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: 'rgba(59,130,246,0.15)', color: '#60a5fa', fontWeight: 700 }}>{OT_LABEL[item.ot_scope]}</span>
+                  <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: 'var(--blue-dim)', color: 'var(--blue)', fontWeight: 700 }}>{OT_LABEL[item.ot_scope]}</span>
                 )}
                 {item.anchor === 'shift_end' && (
-                  <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: 'rgba(34,197,94,0.15)', color: '#4ade80', fontWeight: 700 }}>🔚 ท้ายกะ</span>
+                  <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: 'var(--green-dim)', color: 'var(--green)', fontWeight: 700 }}>🔚 ท้ายกะ</span>
                 )}
                 {/* 🏭 ไลน์ที่พักไม่เท่าค่ากลาง — อ่านไม่ได้ต้องเขียนบนจอ ห้ามเงียบเป็น "ไม่มี" */}
                 {lineRuleErr
-                  ? <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: 'rgba(239,68,68,0.15)', color: '#f87171', fontWeight: 700 }}>🏭 อ่านข้อยกเว้นรายไลน์ไม่ได้</span>
+                  ? <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: 'var(--red-dim)', color: 'var(--red)', fontWeight: 700 }}>🏭 อ่านข้อยกเว้นรายไลน์ไม่ได้</span>
                   : lineRuleCount[item.id] > 0 && (
-                      <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: 'rgba(14,165,233,0.15)', color: '#38bdf8', fontWeight: 700 }}>
+                      <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: 'var(--blue-dim)', color: 'var(--blue)', fontWeight: 700 }}>
                         🏭 {lineRuleCount[item.id]} ไลน์ตั้งเอง
                       </span>
                     )}
-                {!item.is_active && <span style={{ fontSize: 11, color: '#ef4444' }}>(ปิดใช้)</span>}
+                {!item.is_active && <span style={{ fontSize: 11, color: 'var(--red)' }}>(ปิดใช้)</span>}
               </div>
               <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 3 }}>
                 {item.anchor === 'shift_end'
                   ? <>เริ่ม <strong style={{ color: 'var(--text2)' }}>{item.offset_min} นาทีก่อนเลิกกะ</strong> · </>
                   : <>เริ่ม {(item.start_time || '').slice(0,5)} น. · </>}
-                <strong style={{ color: '#22c55e' }}>{item.duration_min} นาที</strong>
+                <strong style={{ color: 'var(--green)' }}>{item.duration_min} นาที</strong>
               </div>
             </div>
             <div style={{ display: 'flex', gap: 6 }}>
@@ -8499,7 +8460,7 @@ function BreakPolicySetup({ role }) {
             {canEdit && (
               <div style={{ display: 'flex', gap: 6 }}>
                 <button onClick={() => openEdit(item)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 12px', fontSize: 12, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>
-                <button className="tbtn" onClick={() => handleDelete(item.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 15 }}>✕</button>
+                <button className="tbtn" onClick={() => handleDelete(item.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 15 }}>✕</button>
               </div>
             )}
           </div>
@@ -8831,24 +8792,24 @@ function ProductSetup({ role }) {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 4 }}>
                     <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>{item.name}</div>
                     <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 20,
-                      background: `${procColor(item.process_type, '#22c55e')}26`,
-                      color: procColor(item.process_type, '#22c55e') }}>
+                      background: `${procColor(item.process_type, 'var(--green)')}26`,
+                      color: procColor(item.process_type, 'var(--green)') }}>
                       {procDisplay(item.process_type)}
                     </span>
                     {members.length > 1 && (
-                      <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: 'rgba(168,85,247,0.12)', color: '#a855f7', fontWeight: 700 }}>
+                      <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: 'var(--blue-dim)', color: 'var(--blue)', fontWeight: 700 }}>
                         🔄 {members.length} revisions
                       </span>
                     )}
-                    {!active && <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: 'rgba(107,114,128,0.15)', color: '#6b7280', fontWeight: 700 }}>ปิดใช้งาน</span>}
+                    {!active && <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: 'var(--bg3)', color: 'var(--muted)', fontWeight: 700 }}>ปิดใช้งาน</span>}
                   </div>
 
                   {/* Current MAT.NO / P.NO */}
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 4 }}>
                     {/* ลำดับ Part No. → MAT (UI §6.21) */}
-                    {item.p_no   && <span style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 700, color: '#0ea5e9' }}>{item.p_no}</span>}
+                    {item.p_no   && <span style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 700, color: 'var(--blue)' }}>{item.p_no}</span>}
                     {item.mat_no && <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--text2)' }}>MAT {item.mat_no}</span>}
-                    {item.customer && <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'rgba(59,130,246,0.1)', color: '#60a5fa' }}>{item.customer}</span>}
+                    {item.customer && <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'var(--blue-dim)', color: 'var(--blue)' }}>{item.customer}</span>}
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--muted)' }}>
                     {item.line_name && `📍 ${item.line_name}`}
@@ -8866,10 +8827,10 @@ function ProductSetup({ role }) {
                 {canEdit && (
                   <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                     {active && (
-                      <button onClick={() => openEC(active)} title="Engineering Change — สร้าง revision ใหม่" style={{ background: 'rgba(168,85,247,0.12)', border: '1px solid rgba(168,85,247,0.35)', borderRadius: 6, padding: '4px 10px', fontSize: 11, cursor: 'pointer', color: '#a855f7', fontWeight: 700 }}>🔄 EC</button>
+                      <button onClick={() => openEC(active)} title="Engineering Change — สร้าง revision ใหม่" style={{ background: 'var(--blue-dim)', border: '1px solid var(--blue-line)', borderRadius: 6, padding: '4px 10px', fontSize: 11, cursor: 'pointer', color: 'var(--blue)', fontWeight: 700 }}>🔄 EC</button>
                     )}
                     <button onClick={() => openEdit(item)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 10px', fontSize: 12, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>
-                    <button onClick={() => handleDelete(item.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 14 }}>✕</button>
+                    <button onClick={() => handleDelete(item.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 14 }}>✕</button>
                   </div>
                 )}
               </div>
@@ -8881,10 +8842,10 @@ function ProductSetup({ role }) {
                   {archived.map(rev => (
                     <div key={rev.id} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 11, color: 'var(--muted)', opacity: 0.75 }}>
                       {/* ลำดับ Part No. → MAT (UI §6.21) */}
-                      {rev.p_no && <span style={{ fontFamily: 'monospace', color: '#475569' }}>{rev.p_no}</span>}
-                      <span style={{ fontFamily: 'monospace', color: '#64748b' }}>MAT {rev.mat_no || '—'}</span>
-                      <span style={{ color: '#374151' }}>{rev.effective_from || '?'} → {rev.superseded_at || '?'}</span>
-                      <span style={{ fontSize: 11, padding: '1px 5px', borderRadius: 10, background: 'rgba(107,114,128,0.15)', color: '#6b7280' }}>superseded</span>
+                      {rev.p_no && <span style={{ fontFamily: 'monospace', color: 'var(--muted)' }}>{rev.p_no}</span>}
+                      <span style={{ fontFamily: 'monospace', color: 'var(--muted)' }}>MAT {rev.mat_no || '—'}</span>
+                      <span style={{ color: 'var(--border2)' }}>{rev.effective_from || '?'} → {rev.superseded_at || '?'}</span>
+                      <span style={{ fontSize: 11, padding: '1px 5px', borderRadius: 10, background: 'var(--bg3)', color: 'var(--muted)' }}>superseded</span>
                     </div>
                   ))}
                 </div>
@@ -8915,19 +8876,19 @@ function ProductSetup({ role }) {
                             <div key={std.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 7, opacity: std.is_active ? 1 : 0.5 }}>
                               <div style={{ flex: 1, minWidth: 0 }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                                  <span style={{ fontSize: 13, fontWeight: 800, fontFamily: 'monospace', color: isOldRev ? 'var(--muted)' : '#0ea5e9' }}>{std.mat_no}</span>
-                                  {isOldRev && <span style={{ fontSize: 11, padding: '1px 5px', borderRadius: 10, background: 'rgba(107,114,128,0.12)', color: '#6b7280' }}>rev เก่า</span>}
-                                  {!std.is_active && <span style={{ fontSize: 11, color: '#ef4444' }}>ปิด</span>}
+                                  <span style={{ fontSize: 13, fontWeight: 800, fontFamily: 'monospace', color: isOldRev ? 'var(--muted)' : 'var(--blue)' }}>{std.mat_no}</span>
+                                  {isOldRev && <span style={{ fontSize: 11, padding: '1px 5px', borderRadius: 10, background: 'var(--bg3)', color: 'var(--muted)' }}>rev เก่า</span>}
+                                  {!std.is_active && <span style={{ fontSize: 11, color: 'var(--red)' }}>ปิด</span>}
                                 </div>
                               </div>
                               <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                                <span style={{ fontSize: 18, fontWeight: 900, color: '#0ea5e9', lineHeight: 1 }}>{std.qty_per_kanban}</span>
+                                <span style={{ fontSize: 18, fontWeight: 900, color: 'var(--blue)', lineHeight: 1 }}>{std.qty_per_kanban}</span>
                                 <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 3 }}>ชิ้น/ใบ</span>
                               </div>
                               {canEdit && (
                                 <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
                                   <button onClick={() => openKanbanEdit(std)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 5, padding: '3px 8px', fontSize: 11, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>
-                                  <button onClick={() => handleKanbanDelete(std.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 13 }}>✕</button>
+                                  <button onClick={() => handleKanbanDelete(std.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 13 }}>✕</button>
                                 </div>
                               )}
                             </div>
@@ -8936,7 +8897,7 @@ function ProductSetup({ role }) {
                         {canEdit && (
                           <button
                             onClick={() => openKanbanEdit(null, active?.id || members[0]?.id || '')}
-                            style={{ alignSelf: 'flex-start', marginTop: 2, background: 'rgba(14,165,233,0.08)', border: '1px dashed rgba(14,165,233,0.4)', borderRadius: 6, padding: '4px 12px', fontSize: 11, color: '#0ea5e9', cursor: 'pointer', fontWeight: 700 }}>
+                            style={{ alignSelf: 'flex-start', marginTop: 2, background: 'var(--blue-dim)', border: '1px dashed var(--blue-line)', borderRadius: 6, padding: '4px 12px', fontSize: 11, color: 'var(--blue)', cursor: 'pointer', fontWeight: 700 }}>
                             + เพิ่ม MAT.NO
                           </button>
                         )}
@@ -8953,12 +8914,12 @@ function ProductSetup({ role }) {
       {/* Add / Edit / EC modal */}
       {editing && (
         <div className="overlay" style={{ zIndex: 2000 }}>
-          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: `1px solid ${ecSource ? 'rgba(168,85,247,0.5)' : 'var(--border2)'}`, borderRadius: 14, padding: 24, width: 'min(95vw,480px)', maxHeight: '90vh', overflowY: 'auto' }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: `1px solid ${ecSource ? 'var(--blue-line)' : 'var(--border2)'}`, borderRadius: 14, padding: 24, width: 'min(95vw,480px)', maxHeight: '90vh', overflowY: 'auto' }}>
             <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4, color: 'var(--text)' }}>
               {ecSource ? '🔄 Engineering Change' : editing === 'new' ? '+ เพิ่มสินค้า' : 'แก้ไขสินค้า'}
             </div>
             {ecSource && (
-              <div style={{ fontSize: 12, color: '#a855f7', marginBottom: 16, padding: '8px 12px', background: 'rgba(168,85,247,0.08)', borderRadius: 8, border: '1px solid rgba(168,85,247,0.2)' }}>
+              <div style={{ fontSize: 12, color: 'var(--blue)', marginBottom: 16, padding: '8px 12px', background: 'var(--blue-dim)', borderRadius: 8, border: '1px solid var(--blue-dim)' }}>
                 ต่อจาก: <strong>{ecSource.p_no || ecSource.mat_no}</strong> {ecSource.p_no && `/ MAT ${ecSource.mat_no}`}<br/>
                 <span style={{ fontSize: 11, color: 'var(--muted)' }}>MAT.NO เดิมจะถูก mark เป็น superseded อัตโนมัติ</span>
               </div>
@@ -8967,10 +8928,10 @@ function ProductSetup({ role }) {
               <Field label="ชื่อสินค้า / Model *"><input autoFocus value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} style={inputStyle} /></Field>
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <Field label={ecSource ? 'MAT.NO ใหม่ (SAP) *' : 'MAT.NO (SAP)'}>
-                  <input value={form.mat_no} onChange={e => setForm(f => ({ ...f, mat_no: e.target.value.toUpperCase() }))} placeholder="เช่น 10100399" style={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 700, borderColor: ecSource ? 'rgba(168,85,247,0.5)' : undefined }} />
+                  <input value={form.mat_no} onChange={e => setForm(f => ({ ...f, mat_no: e.target.value.toUpperCase() }))} placeholder="เช่น 10100399" style={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 700, borderColor: ecSource ? 'var(--blue-line)' : undefined }} />
                 </Field>
                 <Field label={ecSource ? 'P.NO ใหม่ *' : 'P.NO'}>
-                  <input value={form.p_no} onChange={e => setForm(f => ({ ...f, p_no: e.target.value }))} placeholder="เช่น RC3B16E061BB" style={{ ...inputStyle, borderColor: ecSource ? 'rgba(168,85,247,0.5)' : undefined }} />
+                  <input value={form.p_no} onChange={e => setForm(f => ({ ...f, p_no: e.target.value }))} placeholder="เช่น RC3B16E061BB" style={{ ...inputStyle, borderColor: ecSource ? 'var(--blue-line)' : undefined }} />
                 </Field>
               </div>
               {ecSource && (
@@ -9007,7 +8968,7 @@ function ProductSetup({ role }) {
             </div>
             <div style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-end' }}>
               <button onClick={() => { setEditing(null); setEcSource(null); }} style={cancelBtnStyle}>ยกเลิก</button>
-              <button onClick={handleSave} disabled={saving} style={{ ...saveBtnStyle, opacity: saving ? 0.6 : 1, background: ecSource ? '#7c3aed' : undefined }}>
+              <button onClick={handleSave} disabled={saving} style={{ ...saveBtnStyle, opacity: saving ? 0.6 : 1, background: ecSource ? 'var(--blue)' : undefined }}>
                 {saving ? '...' : ecSource ? '🔄 บันทึก EC' : 'บันทึก'}
               </button>
             </div>
@@ -9018,7 +8979,7 @@ function ProductSetup({ role }) {
       {/* ── Kanban Standard modal ── */}
       {kanbanEditing && (
         <div className="overlay" style={{ zIndex: 2100 }}>
-          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '1px solid rgba(14,165,233,0.4)', borderRadius: 14, padding: 24, width: 'min(95vw,380px)' }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '1px solid var(--blue-line)', borderRadius: 14, padding: 24, width: 'min(95vw,380px)' }}>
             <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 20, color: 'var(--text)' }}>
               {kanbanEditing === 'new' ? '+ เพิ่ม MAT.NO / Kanban Standard' : 'แก้ไข Kanban Standard'}
             </div>
@@ -9060,7 +9021,7 @@ function ProductSetup({ role }) {
 function DowntimeTypeSetup({ role }) {
   const [items, setItems]   = useState([]);
   const [editing, setEditing] = useState(null);
-  const [form, setForm]     = useState({ name_th: '', name_en: '', category: 'unplanned', process_type: 'welding_assembly', color: '#ef4444', sort_order: 0, is_active: true, six_big_loss: '', waste_type: '' });
+  const [form, setForm]     = useState({ name_th: '', name_en: '', category: 'unplanned', process_type: 'welding_assembly', color: 'var(--red)', sort_order: 0, is_active: true, six_big_loss: '', waste_type: '' });
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
@@ -9105,8 +9066,8 @@ function DowntimeTypeSetup({ role }) {
   const canEdit = can('daily_report', 'setup', role);
 
   const processGroups = [
-    ...activeProcessTypes().map(pt => ({ key: pt.key, label: `${pt.icon || ''} ${pt.label}`.trim(), color: pt.color || '#6b7280' })),
-    { key: 'common',          label: '🔗 Common (ทุกประเภท)', color: '#6b7280' },
+    ...activeProcessTypes().map(pt => ({ key: pt.key, label: `${pt.icon || ''} ${pt.label}`.trim(), color: pt.color || 'var(--muted)' })),
+    { key: 'common',          label: '🔗 Common (ทุกประเภท)', color: 'var(--muted)' },
   ];
 
   function DowntimeRow({ item }) {
@@ -9117,14 +9078,14 @@ function DowntimeTypeSetup({ role }) {
           <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{item.name_th}</div>
           {item.name_en && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{item.name_en}</div>}
         </div>
-        <div style={{ fontSize: 11, color: 'var(--muted)', background: item.category === 'unplanned' ? 'rgba(239,68,68,0.12)' : 'rgba(59,130,246,0.12)', borderRadius: 4, padding: '2px 6px' }}>
+        <div style={{ fontSize: 11, color: 'var(--muted)', background: item.category === 'unplanned' ? 'var(--red-dim)' : 'var(--blue-dim)', borderRadius: 4, padding: '2px 6px' }}>
           {item.category === 'unplanned' ? '⚠ นอกแผน' : '📋 ในแผน'}
         </div>
         <div style={{ fontSize: 11, color: 'var(--muted)' }}>#{item.sort_order}</div>
         {canEdit && (
           <div style={{ display: 'flex', gap: 6 }}>
             <button onClick={() => openEdit(item)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, padding: '3px 10px', fontSize: 12, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>
-            <button onClick={() => handleDelete(item.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 14 }}>✕</button>
+            <button onClick={() => handleDelete(item.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 14 }}>✕</button>
           </div>
         )}
       </div>
@@ -9157,13 +9118,13 @@ function DowntimeTypeSetup({ role }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {upItems.length > 0 && (
                 <div>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: '#ef4444', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.5px' }}>⚠ นอกแผน ({upItems.length})</div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--red)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.5px' }}>⚠ นอกแผน ({upItems.length})</div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>{upItems.map(i => <DowntimeRow key={i.id} item={i} />)}</div>
                 </div>
               )}
               {plItems.length > 0 && (
                 <div style={{ marginTop: upItems.length > 0 ? 10 : 0 }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: '#3b82f6', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.5px' }}>📋 ในแผน ({plItems.length})</div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--blue)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.5px' }}>📋 ในแผน ({plItems.length})</div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>{plItems.map(i => <DowntimeRow key={i.id} item={i} />)}</div>
                 </div>
               )}
@@ -9209,7 +9170,7 @@ function DowntimeTypeSetup({ role }) {
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   <input type="color" value={form.color} onChange={e => setForm(f => ({ ...f, color: e.target.value }))}
                     style={{ width: 44, height: 36, borderRadius: 6, border: '1px solid var(--border)', cursor: 'pointer', background: 'none' }} />
-                  <input value={form.color} onChange={e => setForm(f => ({ ...f, color: e.target.value }))} placeholder="#ef4444" style={{ ...inputStyle, flex: 1 }} />
+                  <input value={form.color} onChange={e => setForm(f => ({ ...f, color: e.target.value }))} placeholder="var(--red)" style={{ ...inputStyle, flex: 1 }} />
                 </div>
               </Field>
               <Field label="ลำดับ">
@@ -9267,7 +9228,7 @@ const inputStyle = {
   background: 'var(--bg)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box',
 };
 const saveBtnStyle = {
-  background: '#16a34a', color: '#fff', border: 'none', borderRadius: 8,
+  background: 'var(--green)', color: '#fff', border: 'none', borderRadius: 8,
   padding: '8px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer',
 };
 const cancelBtnStyle = {

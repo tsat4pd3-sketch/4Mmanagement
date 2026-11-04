@@ -120,6 +120,7 @@ Fixture shim record `/equipment?tab=jig` `fixture-shim-record.md` ·
 ประวัติผลิต by Product `/product-history` `product-history.md` ·
 สอบกลับ Order `/order-trace` `order-trace.md` ·
 กล่องรับ feedback หน้างาน (ปุ่มท้าย sidebar) `feedback-inbox.md` ·
+ปุ่มสลับ ไทย/English — ป้ายโครงหลักผ่าน `tr()` (`utils/i18n.js`) ห้ามเขียน `lang==='en'?` ในหน้า `i18n.md` ·
 RFQ/เสนอราคา Marketing (Q-neX เฟส 1 · ต้นน้ำ NPI · ตาราง `mkt_*` Main) `/rfq` `mkt-rfq.md`
 
 ---

@@ -2,6 +2,8 @@ import { useMemo } from 'react';
 import ClearFiltersBtn from './ClearFiltersBtn';
 import useIsMobile from '../utils/useIsMobile';
 import MobileFilterFold, { splitFilterChildren } from './MobileFilterFold';
+import useLang from '../utils/useLang';   // 🌐 ป้ายช่วง/ย้อนหลัง/แท่งละ แปลที่จุดวาด
+import { unitDays } from '../utils/i18n';
 import {
   TIME_SCALES, TIME_PERIODS, LOOKBACK_DAYS, scaleOf, matchPreset, matchPeriod,
   rangeDays, scaleWarning, periodRange, presetRange, nextBucket, stepBucket, capBucket,
@@ -101,6 +103,7 @@ export default function TimeRangeBar({
      ช่องค้นหา + ของหลัง spacer (จำนวน/ปุ่มหลัก) โชว์เสมอ · คำเตือนสเกลไม่พับ (กฎ: เตือนต้องเห็น)
      จอคอม: `rows` ได้ children ครบ แล้ว render เหมือนเดิมเป๊ะ (docs/MOBILE-UX-STANDARD.md §2 ข้อ 3) */
   const isMobile = useIsMobile();
+  const { tr } = useLang();
   const split = isMobile ? splitFilterChildren(children) : null;
   const dm = (d) => (d ? `${d.slice(8, 10)}/${d.slice(5, 7)}` : '—');
   const rows = (kids) => (<>
@@ -117,7 +120,7 @@ export default function TimeRangeBar({
                     ? (multiYearNote || 'ยังไม่เปิด — จอนี้ยังไม่มีตัวสรุปฝั่งเซิร์ฟเวอร์ (RPC rollup) '
                       + 'การดึงข้อมูลดิบหลายปีลงเบราว์เซอร์ทำให้โควต้าข้อมูลบานปลาย')
                     : `ดู${p.label} — แท่งละ 1 ${scaleOf(capBucket(p.bucket, finest, coarsest))?.short}`}>
-                  {locked ? `🔒 ${p.label}` : p.label}
+                  {locked ? `🔒 ${tr(p.label)}` : tr(p.label)}
                 </button>
               );
             })}
@@ -126,7 +129,7 @@ export default function TimeRangeBar({
 
         {presets?.length > 0 && (
           <div style={{ display: 'flex', gap: 4, alignItems: 'center' }} role="group" aria-label="ช่วงย้อนหลัง">
-            <span className="filter-label">ย้อนหลัง</span>
+            <span className="filter-label">{tr('ย้อนหลัง')}</span>
             {presets.map(d => (
               <button key={d}
                 onClick={() => {
@@ -138,7 +141,7 @@ export default function TimeRangeBar({
                 style={{ ...on(active === d), padding: '5px 9px' }}
                 title={`ตั้งกรอบเวลาเป็น ${d} วันล่าสุด (นับถึงวันทำงานวันนี้) — แก้วันต่อเองได้`}>{d}</button>
             ))}
-            <span className="filter-label">วัน</span>
+            <span className="filter-label">{unitDays(2)}</span>
           </div>
         )}
 
@@ -146,12 +149,12 @@ export default function TimeRangeBar({
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
           <input type="date" value={from || ''} max={to || undefined}
             onChange={e => applyRange(e.target.value, to)} aria-label="ตั้งแต่วันที่" />
-          <span className="filter-label">ถึง</span>
+          <span className="filter-label">{tr('ถึง')}</span>
           <input type="date" value={to || ''} min={from || undefined}
             onChange={e => applyRange(from, e.target.value)} aria-label="ถึงวันที่" />
           {days != null && (
             <span className="filter-count">
-              ({days.toLocaleString()} วัน)
+              ({days.toLocaleString()} {unitDays(days)})
             </span>
           )}
         </div>
@@ -161,21 +164,21 @@ export default function TimeRangeBar({
         {onReload && (
           <button onClick={onReload} disabled={loading}
             style={{ ...btnBase, background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)', opacity: loading ? 0.6 : 1 }}>
-            {loading ? '⏳ กำลังโหลด…' : '🔄 โหลด'}
+            {loading ? `⏳ ${tr('กำลังโหลด…')}` : `🔄 ${tr('โหลด')}`}
           </button>
         )}
       </div>
 
       {showBucket && (
         <div className="trb-row">
-          <span className="filter-label">แท่งละ</span>
+          <span className="filter-label">{tr('แท่งละ')}</span>
           <button onClick={() => setBucket(-1)} disabled={scale === finest}
             style={{ ...btnBase, height: 28, padding: '0 9px', background: 'var(--bg3)', color: 'var(--text)',
               border: '1px solid var(--border2)', opacity: scale === finest ? 0.4 : 1 }}
-            title="ละเอียดขึ้น 1 ขั้น">− ละเอียดขึ้น</button>
+            title="ละเอียดขึ้น 1 ขั้น">− {tr('ละเอียดขึ้น')}</button>
           <span style={{
             fontSize: 12.5, fontWeight: 700, color: 'var(--accent)', minWidth: 74, textAlign: 'center',
-          }}>1 {scaleOf(scale)?.short || '—'}</span>
+          }}>1 {tr(scaleOf(scale)?.short) || '—'}</span>
           <button onClick={() => setBucket(1)} disabled={scale === coarsest}
             style={{ ...btnBase, height: 28, padding: '0 9px', background: 'var(--bg3)', color: 'var(--text)',
               border: '1px solid var(--border2)', opacity: scale === coarsest ? 0.4 : 1 }}

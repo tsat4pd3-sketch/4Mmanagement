@@ -21,6 +21,7 @@
    6. ยังไม่ apply migration (42703) = เลิกกรอง `store_ack_at` แล้วดังตามใบ `pending` ต่อไป
       **ห้ามให้ไซเรนล้มเพราะคอลัมน์ยังไม่มี**                                                      */
 
+import { useNavigate } from 'react-router-dom';
 import { useState, useEffect, useMemo, useCallback, useContext } from 'react';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
@@ -62,6 +63,13 @@ export default function StoreCallSiren({ slot = 0 }) {
      แต่ปิดแบบ "เฉพาะจอนี้" ไม่เขียนฐาน — จอแขวนที่ล็อกอินเป็น display ห้ามดังค้างตลอดกาล
      (รีโหลดหน้าแล้วดังใหม่ = ถูกต้อง เพราะงานยังค้างจริง) */
   const canAck = can('heijunka', 'operate', role);
+  /* 🔍 04/11 (user: "มีปุ่มกดจากแจ้งเตือนเข้าไปหาหน้าที่ต้องเตรียมงานเลยได้มั้ย")
+     พาไปจอทำรายการ (/line-stock › 🏬 งานสโตร์ › คิวเติม WIP) + กรองให้เหลือพาร์ทใบนี้ · state = ส่งต่อแม้อยู่หน้าเดิมแล้ว */
+  const navigate = useNavigate();
+  const goPrep = (a) => {
+    if (canAck) ack(a);
+    navigate('/line-stock?tab=store&store=wip', { state: { storeFocus: { store: 'wip', q: a.mat_no || '', at: Date.now() } } });
+  };
   const [hushed, setHushed] = useState(() => new Set());   // id ที่ปิดเสียงเฉพาะจอนี้
   const [rows, setRows] = useState([]);
   const [loadErr, setLoadErr] = useState(false);
@@ -170,6 +178,11 @@ export default function StoreCallSiren({ slot = 0 }) {
                 🔇 แตะเพื่อเปิดเสียง
               </span>
             )}
+            <button onClick={() => goPrep(a)} title="ไปหน้าเตรียมงาน — Line Stock › 🏬 งานสโตร์ › คิวเติม WIP (กรองเฉพาะพาร์ทนี้)"
+              style={{ flexShrink: 0, background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 8,
+                padding: '7px 14px', fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}>
+              🔍 ไปเตรียมงาน
+            </button>
             <button onClick={() => ack(a)}
               title={canAck ? 'หยุดเสียงเท่านั้น — ใบยังรอหยิบอยู่ในคิวสโตร์เหมือนเดิม'
                             : 'บัญชีนี้ไม่มีสิทธิ์บันทึกรับทราบ (heijunka:operate) — ปิดได้เฉพาะเสียงบนจอนี้ รีโหลดแล้วดังใหม่'}
@@ -184,7 +197,7 @@ export default function StoreCallSiren({ slot = 0 }) {
       {alerts.length > MAX_BARS && (
         <div style={{ pointerEvents: 'auto', background: 'rgba(8,20,14,0.96)', border: '1px solid rgba(34,197,94,0.5)',
           borderRadius: 10, padding: '7px 12px', fontSize: 11.5, fontWeight: 800, color: '#86efac', textAlign: 'center' }}>
-          + อีก {alerts.length - MAX_BARS} ใบที่ไลน์เรียกแล้วยังไม่มีใครรับทราบ — ดูทั้งหมดที่ บอร์ดคัมบัง → 🔄 คิวเติม WIP
+          + อีก {alerts.length - MAX_BARS} ใบที่ไลน์เรียกแล้วยังไม่มีใครรับทราบ — ทำรายการที่ Line Stock → 🏬 งานสโตร์ → 🔄 คิวเติม WIP
         </div>
       )}
     </div>

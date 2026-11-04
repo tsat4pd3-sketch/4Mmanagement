@@ -25,15 +25,24 @@ const isFg = (mat) => /^1/.test(String(mat || '').trim());
 
 /**
  * @param {object} item  แถว dr_products (ใช้ mat_no · cycle_time_sec · is_operation)
- * @param {object} facts { bom:number, routing:boolean, packaging:boolean, kanban:number }
+ * @param {object} facts { bom:number, bomElsewhere:number, routing:boolean, packaging:boolean, kanban:number }
+ *   🔴 `bom` = จำนวนแถวใน **ใบของพาร์ทเอง** · `bomElsewhere` = แถวที่ **ใบอื่นกรอกลูกของพาร์ทนี้ไว้**
+ *      (`bom_items.parent_mat` = พาร์ทนี้) — **นับว่ามี BOM ทั้งคู่** (ดูกฎในตัวฟังก์ชัน)
  * @returns {{steps:Array, missing:string[], missingRequired:string[], done:number, total:number, ok:boolean}}
  *          steps[].status = 'ok' | 'miss' (ยังขาด · บังคับแล้ว) | 'wait' (ยังขาด · อนาคตบังคับ) | 'na'
  */
 export function productReadiness(item, facts = {}) {
   const op = !!item?.is_operation;
   const fg = isFg(item?.mat_no);
+  /* 🔴 "ใบของตัวเองว่าง" ≠ "ไม่มี BOM" (กฎเดียวกับ `sheetsWithKidsOf()` ใน utils/bomTree.js)
+     `bom_items.parent_mat` ให้ใบของ **ตัวแม่** กรอกลูกของพาร์ทนี้ไว้ได้ ⇒ พาร์ทมี BOM จริงโดยที่
+     `product_id` ของตัวเองไม่มีแถวเลย · นับแค่ใบตัวเอง = ขึ้น "BOM ✗" ทั้งที่แม่สร้างไว้แล้ว
+     (user แจ้ง 04/11 เคส 20059152 — ลูกอยู่ในใบ 20059261 · วัดทั้งฐานวันนั้น **31 พาร์ท**)
+     ⚠️ ไม่ใช่เรื่อง "ควรย้ายมาใบตัวเองไหม" — นั่นเป็นงานของ /products?tab=bomdup (PE ตัดสิน) */
+  const bomHere = facts.bom || 0;
+  const bomAway = facts.bomElsewhere || 0;
   const have = {
-    bom:       (facts.bom || 0) > 0,
+    bom:       bomHere > 0 || bomAway > 0,
     ct:        Number(item?.cycle_time_sec) > 0,
     routing:   !!facts.routing,
     packaging: !!facts.packaging,
@@ -51,6 +60,10 @@ export function productReadiness(item, facts = {}) {
   const steps = READINESS_STEPS.map(s => ({
     ...s,
     status: na[s.key] ? 'na' : have[s.key] ? 'ok' : (s.future ? 'wait' : 'miss'),
+    /* 🔴 ครบเพราะ "ใบอื่นกรอกไว้ให้" ต้องเขียนบนจอ ห้ามขึ้นเขียวเฉยๆ แล้วให้คนเข้าใจว่าใบตัวเองมีของ */
+    ...(s.key === 'bom' && bomHere === 0 && bomAway > 0
+      ? { hint: `ลูกถูกกรอกไว้ในใบอื่น ${bomAway} รายการ (ใบของพาร์ทนี้เองยังว่าง)` }
+      : null),
   }));
   const counted = steps.filter(s => s.status !== 'na');
   return {

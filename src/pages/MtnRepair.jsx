@@ -18,7 +18,7 @@ import { signMapOf, signUrlOf } from '../utils/signResolve';
 import { getActor } from '../utils/actorStamp';   // uid ของคนที่กดเซ็น
 import { loadProfilesPeople } from '../utils/usePeople';   // 🔄 เซ็นเสร็จ = คิวต้องอัพเดททันที
 import { toast } from '../components/Toast';
-import { PURPOSES, CAUSE_CATS, needsPlantManager, needsApprovalFirst, laborAmount, partAmount, sumLabor, sumParts, grandTotal, satScore, mtnApprovalState, purposeOfPrint, qaAppliesTo, isMtnFormRow, QA_SKIP_REASON_PURPOSE, QA_SKIP_REASON_MTN_FORM, needsPlantMgrByCost, orderCostTotal, PLANT_MGR_COST_LIMIT, isToolTeamRow } from '../utils/mtnMoForm';
+import { PURPOSES, CAUSE_CATS, needsPlantManager, needsApprovalFirst, laborAmount, partAmount, sumLabor, sumParts, grandTotal, satScore, mtnApprovalState, purposeOfPrint, qaAppliesTo, isMtnFormRow, QA_SKIP_REASON_PURPOSE, QA_SKIP_REASON_MTN_FORM, needsPlantMgrByCost, orderCostTotal, PLANT_MGR_COST_LIMIT, isToolTeamRow, MO_IO_DIGITS, MO_PR_DIGITS, moGridChars } from '../utils/mtnMoForm';
 import AuditLogViewer from '../components/AuditLogViewer';
 import { can, canDelete, isActionSeeded, isSharedAccount } from '../utils/permissions';
 import { confirmSign, needsSignConfirm } from '../utils/mtnConfirm';
@@ -204,6 +204,9 @@ const MO_LIST_COLS = [
   'repair_start_at', 'check_at', 'qa_at', 'ho_at', 'returned_at', 'vendor_sent_at',
   // 🛒 Excel export (14/10): ช่างที่มอบหมาย (หลายคน) · เส้นทางงานซ่อม · เลข PR ที่กรอกมือ — ข้อความสั้น ส่วนใหญ่ว่าง
   'assigned_to', 'assigned_techs', 'repair_path', 'pr_no',
+  /* 💳 I/O (03/11 · ประชุม 02/11 ข้อ A8 "IO ขึ้นขาด") — Excel export อ่านจากแถวลิสต์ชุดนี้
+     ไม่ได้ select มา = คอลัมน์ I/O ในไฟล์เป็นขีดทุกแถว · ข้อความ 12 ตัว ส่วนใหญ่ว่าง (egress ~ไม่กี่ KB) */
+  'io_no',
 ].join(',');
 const SCOPE_OPTS = [{ v: 'in_line', t: 'ซ่อมในไลน์' }, { v: 'off_line', t: 'ซ่อมนอกไลน์' }];
 const CHECK_RESULTS = ['ตรวจสอบผ่าน', 'ตรวจสอบไม่ผ่าน'];
@@ -339,9 +342,9 @@ async function fetchAllRows(client, table, cols, shape = q => q) {
   return { data: out, error: null };
 }
 
-/** 🔢 จำนวนหลักของเลข I/O ตามฟอร์มจริง — ช่องกรอกและช่องบนใบพิมพ์ต้องใช้ตัวเดียวกัน
- *  (30/10 · หน้างานแจ้งว่าใบพิมพ์วาดแค่ 11 ช่อง แต่ I/O มี 12 หลัก ⇒ หลักสุดท้ายหาย) */
-const IO_DIGITS = 12;
+/** 🔢 จำนวนหลักของเลข I/O ตามเลขจริง — ช่องกรอกและช่องบนใบพิมพ์ต้องใช้ตัวเดียวกัน
+ *  (30/10 I/O 12 หลัก · 03/11 PR SAP 10 หลัก) เจ้าของค่า = `utils/mtnMoForm.js` */
+const IO_DIGITS = MO_IO_DIGITS;
 
 function ModalShell({ title, onClose, children, wide, dirty }) {
   const askClose = () => { if (dirty && !confirmDiscard()) return; onClose(); };
@@ -1925,8 +1928,10 @@ function printMoReportMtn(o, dparts = [], logo0, dlabor = [], cmt = NO_CMT, cost
   /* จุดประสงค์: ใช้ค่าที่กรอก · ใบเก่าที่ยังไม่มี purpose ให้เดาจาก repair_type เหมือนเดิม
      ⚠️ ตัวเดา (purposeOfPrint) ใช้ได้เฉพาะช่องติ๊กบนใบ — ด่านอนุมัติ/ด่าน QA ต้องดูค่าดิบเท่านั้น */
   const purpose = purposeOfPrint(o);
-  // ช่องกริด PR.No / I/O. — 11 ช่องตามฟอร์ม กระจายตัวอักษรทีละช่อง
-  const grid = (v, n = 11) => { const t = String(v || ''); let h = ''; for (let i = 0; i < n; i++) h += `<td class="gx">${esc(t[i] || '')}</td>`; return `<table class="gr"><tr>${h}</tr></table>`; };
+  /* ช่องกริด PR.No / I/O. — กระจายตัวอักษรทีละช่อง · จำนวนช่องตามเลขจริง (I/O 12 · PR 10 · `moGridChars`)
+     🔴 03/11 ข้อ A8 "IO ขึ้นขาด PR ขึ้นเกิน": เดิม PR วาด 11 ช่อง (เลข SAP 10 หลัก = ช่องเกินท้าย) และตัดตัวที่เกินช่องทิ้ง
+        ⇒ ตอนนี้ค่าที่ยาวกว่าจำนวนช่องงอกช่องเพิ่ม ห้ามหายจากกระดาษ */
+  const grid = (v, n) => `<table class="gr"><tr>${moGridChars(v, n).map(ch => `<td class="gx">${esc(ch)}</td>`).join('')}</tr></table>`;
   const line = (label, v, w = '') => `<span class="lb">${label}</span><span class="dot" style="${w ? `min-width:${w}` : ''}">${esc(v ?? '')}</span>`;
   // ลายเซ็น: รูปเซ็น (ถ้ามี) + ชื่อ + วันที่ __/__/__
   /* ช่องเซ็น = ตัวคั่นความสูงขั้นต่ำ (sgsp) + บล็อกที่กางเต็มช่องแบบ absolute
@@ -2036,7 +2041,7 @@ function printMoReportMtn(o, dparts = [], logo0, dlabor = [], cmt = NO_CMT, cost
       <td style="width:78%;padding:3px 5px">
         <div>เรียน &nbsp;ผู้จัดการส่วนซ่อมบำรุง</div>
         <div style="margin-top:2px">${line('จากฝ่าย/ส่วน', o.work_area, '95px')} &nbsp;${line('แผนก', o.dept_section, '75px')} &nbsp;${line('เบอร์ติดต่อ', o.contact_phone, '45px')} &nbsp;${line('Cost Center', o.cost_center, '85px')}</div>
-        <div style="margin-top:3px">PR.No. ${grid(prPl.header)} &nbsp;&nbsp; I/O. ${grid(o.io_no, IO_DIGITS)}</div>
+        <div style="margin-top:3px">PR.No. ${grid(prPl.header, MO_PR_DIGITS)} &nbsp;&nbsp; I/O. ${grid(o.io_no, IO_DIGITS)}</div>
         <div style="margin-top:3px">${line('ชื่อเครื่องจักร', o.item_type, '135px')} ${line('เบอร์', o.machine_no, '80px')}
           จุดประสงค์ (${purpose === 'repair' ? '✓' : '&nbsp;'}) ซ่อม (${purpose === 'improve' ? '✓' : '&nbsp;'}) ปรับปรุง (${purpose === 'service' ? '✓' : '&nbsp;'}) บริการ (${purpose === 'build' ? '✓' : '&nbsp;'}) สร้าง</div>
       </td>
