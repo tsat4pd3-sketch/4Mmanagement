@@ -4016,7 +4016,11 @@ test('🛡️ mo-print-needs-comments — ใบพิมพ์ MO ทั้ง 
     '\n\n❌ ใบ FM-JIG-008 ไม่ได้วางคอมเมนต์ "ต่อท้าย" รายละเอียดของผู้แจ้ง\n'
     + '   🔴 ของผู้แจ้งคือ **บันทึก ณ วันที่แจ้ง** ห้ามถูกแทนที่/ถูกดันหาย — คอมเมนต์ต่อท้ายเท่านั้น\n');
   const xl = stripComments(readFileSync(join(ROOT, 'src/lib/mtnMoExportExcel.js'), 'utf8'));
-  assert.ok(/moCommentText\(/.test(xl) && /commentsError/.test(xl),
+  /* 03/11 — คอลัมน์ชีท 1 ย้ายไปทะเบียน `src/utils/mtnMoExportCols.js` (ข้อ A8) ⇒ ตัวทำไฟล์ส่ง `moCommentText`
+     + `commentsError` เข้าทะเบียน · ทะเบียนต้องเขียน "โหลดคอมเมนต์ไม่สำเร็จ" เมื่อ commentsError (ห้ามกลืน) */
+  const cols = stripComments(readFileSync(join(ROOT, 'src/utils/mtnMoExportCols.js'), 'utf8'));
+  assert.ok(/commentText:\s*moCommentText\b/.test(xl) && /commentsError/.test(xl)
+    && /commentsError\s*\?\s*'⚠ โหลดคอมเมนต์ไม่สำเร็จ'/.test(cols) && /commentText\(/.test(cols),
     '\n\n❌ Excel export ใบ MO ไม่มีคอลัมน์คอมเมนต์ (หรือกลืน commentsError)\n'
     + '   🔴 โหลดคอมเมนต์ไม่สำเร็จ = ต้องเขียนกำกับในไฟล์ · ช่องว่างเฉยๆ อ่านเป็น "ไม่มีใครคอมเมนต์"\n');
 });
@@ -5252,6 +5256,21 @@ test('🛡️ bomDupAudit: qty ต้องอยู่ในกติกา + �
     assert.ok(q && p, '\n\n❌ อ่าน rank ของ qty_diff / pair_shot ไม่ได้ — เปลี่ยนรูปแบบแล้วต้องอัปเดตด่านนี้\n');
     return { qtyRank: +q[1], pairRank: +p[1] };
   }
+});
+
+/* ── 🖼️ ใบพิมพ์ FM-JIG-003 ห้ามยืดรูปเต็มกรอบ (A7 · ประชุมหน้างาน 02/11 · 2026-11-03) ──
+   เดิม PDF `addImage(img, x, y, กว้างกรอบ, สูงกรอบ)` + Excel `ext: 130×52` ตายตัว ⇒ รูปมือถือแนวตั้งถูกดึงแบน
+   และหมุดทุกจุดถูกวาดลงรูปหลักแม้วางไว้บนรูปมุมอื่น ⇒ "รูปขนาดผิด อยู่ผิดที่" · ของกลาง `utils/imageFit.js` */
+test('🛡️ pm-export-image-fit — ใบพิมพ์ PM ต้องวางรูปผ่าน fitContain + หมุดผ่าน pinsOnFrame', () => {
+  const pdf = stripComments(readFileSync(join(ROOT, 'src/lib/pmExportPDF.js'), 'utf8'));
+  const xls = stripComments(readFileSync(join(ROOT, 'src/lib/pmExportExcel.js'), 'utf8'));
+  const bad = [];
+  if (!/fitContain\(/.test(pdf)) bad.push('pmExportPDF.js ไม่ได้ใช้ fitContain');
+  if (!/pinsOnFrame\(/.test(pdf)) bad.push('pmExportPDF.js ไม่ได้กรองหมุดต่อเฟรมด้วย pinsOnFrame');
+  if (/addImage\([^)]*IMG_W\s*-\s*1\s*,\s*IMG_H\s*-\s*1\)/.test(pdf)) bad.push('pmExportPDF.js ยืดรูปเครื่องเต็มกรอบ (IMG_W-1, IMG_H-1)');
+  if (/ext:\s*\{\s*width:\s*130,\s*height:\s*52\s*\}/.test(xls)) bad.push('pmExportExcel.js ยืดรูปจุดเป็น 130×52 ตายตัว');
+  if (!/fitContain\(/.test(xls)) bad.push('pmExportExcel.js ไม่ได้ใช้ fitContain');
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n❌ ') + '\n   แก้: placeImage()/fitContain() คงสัดส่วน · หมุดเป็น % ของรูปจริง · กรองเฟรมด้วย pinsOnFrame() (📄 docs/modules/inspection-point-setup.md §A7)\n');
 });
 
 /* ── 🎯 ตั้งค่าจุดตรวจ PM + QA = ชิ้นส่วนกลางชุดเดียว (2026-10-15 · คำสั่ง user) ─────────
@@ -8119,6 +8138,57 @@ test('⏸️ mttr-hold-follows-path-flag — หยุดนับ MTTR ต้�
   for (const k of ['inhouse_pr', 'outsource']) {
     assert.match(reg, new RegExp(`key:\\s*'${k}'[^}]*holdsMttr:\\s*false`),
       `\n\n❌ เส้นทาง '${k}' กลับมาหยุด MTTR แล้ว — เป็นเส้นทาง "ซ่อมได้" ห้ามหยุด\n`);
+  }
+});
+
+/* ── ⚙️🔧✍️ AM รายเครื่อง / ติดตาม MO / สายอนุมัติ (ประชุมหน้างาน 2026-11-02 · B1/B3/B2) ─────────
+   📄 docs/modules/am-pm-linkage-audit.md §5 */
+test('🛡️ am-per-machine-run — loader AM ต้องอ่าน machine_no ของใบผลิต + จอ AM ต้องส่ง runByLine', () => {
+  const loader = stripComments(readFileSync(join(ROOT, 'src/lib/dailyAmBoard.js'), 'utf8'));
+  assert.match(loader, /from\('prod_orders'\)\.select\('[^']*machine_no[^']*'\)/,
+    '\n\n❌ ตัวโหลด AM ไม่ได้ select machine_no ของ prod_orders — "เครื่องไหนต้องตรวจ" จะกลับไปตัดสินทั้งไลน์เงียบๆ\n'
+    + '   ⇒ ไลน์ auto/single ขึ้นส้มให้เครื่องที่ไม่ได้เดิน (feedback 02/11) · แก้: select machine_no แล้วผ่าน runningMachinesByLine()\n');
+  assert.match(loader, /runByLine/, '\n\n❌ loader ไม่คืน runByLine\n');
+  const page = stripComments(readFileSync(join(ROOT, 'src/pages/DailyPM.jsx'), 'utf8'));
+  assert.match(page, /dailyAmLineStatus\(\{[^}]*runByLine[^}]*\}\)/,
+    '\n\n❌ DailyPM เรียก dailyAmLineStatus โดยไม่ส่ง runByLine — จอ AM ตัดสินทั้งไลน์ ขณะที่ผังรวมโรงงานตัดสินรายเครื่อง (2 จอคนละสี)\n');
+});
+
+test('🛡️ am-approval-chain — ใบ AM อนุมัติต้องผ่าน amApprovalVerdict() (ห้ามข้ามไปผู้จัดการ)', () => {
+  const src = stripComments(readFileSync(join(ROOT, 'src/pages/PMCheckData.jsx'), 'utf8'));
+  assert.match(src, /amApprovalVerdict\(/,
+    '\n\n❌ PMCheckData ไม่ได้ตัดสินลำดับขั้นอนุมัติ AM ด้วย amApprovalVerdict() (src/utils/amApproval.js)\n'
+    + '   บั๊กเดิม: ใครถือ pm:approve ก็อนุมัติได้ ⇒ หัวหน้ากลุ่มตรวจเองแล้วไปจบที่ผู้จัดการ (feedback 02/11)\n');
+  // ด่านซ้ำตอนเขียนจริง — ซ่อนปุ่มอย่างเดียวไม่พอ
+  assert.match(src, /if \(amVerdict && !amVerdict\.ok\)/, '\n\n❌ handleApprove/handleReject ไม่เช็ค amVerdict ซ้ำก่อนเขียน\n');
+});
+
+/* ✍️ ลงนามทบทวน AM รายเดือน (ขั้น 3 · 2026-11-03) — ลงนาม = บันทึก ห้ามลบ · ด่านซ้ำตอนเขียน
+   📄 docs/modules/am-pm-linkage-audit.md §7 */
+test('🛡️ am-monthly-signoff-record — เขียน am_monthly_signoffs ผ่าน lib/amMonthlySignoff.js เท่านั้น · ห้าม delete · ต้องตรวจ verdict', () => {
+  const LIB = 'src/lib/amMonthlySignoff.js';
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const rel = relative(ROOT, file);
+    if (rel === LIB) continue;
+    const code = stripComments(readFileSync(file, 'utf8'));
+    if (/from\(\s*['"`]am_monthly_signoffs['"`]\s*\)|from\(\s*AM_SIGNOFF_TABLE\s*\)/.test(code)) bad.push(rel);
+  }
+  assert.deepEqual(bad, [], '\n\n❌ มีไฟล์คิวรี am_monthly_signoffs เอง — ต้องผ่าน src/lib/amMonthlySignoff.js (ด่าน verdict + นับแถว อยู่ที่นั่น)\n   ' + bad.join('\n   ') + '\n');
+  const lib = stripComments(readFileSync(join(ROOT, LIB), 'utf8'));
+  assert.ok(!/\.delete\s*\(/.test(lib), '\n\n❌ amMonthlySignoff.js เรียก .delete() — ลายเซ็นห้ามลบ ให้เพิกถอน (status=revoked + เหตุผล)\n');
+  assert.ok(!/\.upsert\s*\(/.test(lib), '\n\n❌ amMonthlySignoff.js ใช้ upsert — unique index เป็น partial/expression (42P10) และลายเซ็นห้ามเขียนทับ\n');
+  assert.equal((lib.match(/if \(!verdict\?\.ok\)/g) || []).length, 2,
+    '\n\n❌ signAmMonthly/revokeAmMonthly ต้องเช็ค verdict ก่อนเขียนทั้ง 2 ทาง (ด่านซ้ำตอนเขียน — ซ่อนปุ่มอย่างเดียวไม่พอ)\n');
+  const page = stripComments(readFileSync(join(ROOT, 'src/components/AmMonthlyReport.jsx'), 'utf8'));
+  assert.match(page, /const v = signVerdict\(signing\.line\)/, '\n\n❌ AmMonthlyReport ไม่ได้คิด verdict ใหม่ตอนกดลงนาม\n');
+  assert.match(page, /isStale\(sign\.key, curKey\)/, '\n\n❌ AmMonthlyReport ไม่มีด่าน stale (เดือน/กะ) ก่อนลงนาม\n');
+});
+
+test('🛡️ am-mo-label-single-source — ป้ายสถานะ MO บนจอ AM ต้องมาจาก moStatusLabel()', () => {
+  for (const f of ['src/pages/DailyPM.jsx', 'src/pages/PMCheckData.jsx']) {
+    const src = stripComments(readFileSync(join(ROOT, f), 'utf8'));
+    assert.ok(!/MO_STATUS_LABEL\s*\[/.test(src), `\n\n❌ ${f} อ่าน MO_STATUS_LABEL[...] เอง — ใช้ moStatusLabel(order) (ใบ handover/checked มีป้ายต่อใบ)\n`);
   }
 });
 

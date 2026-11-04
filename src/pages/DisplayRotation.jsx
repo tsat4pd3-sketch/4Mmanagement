@@ -22,7 +22,7 @@ import {
   cleanItemsForSave, fmtSec, SKIP_REASON_LABEL,
   sectionsOfProfile, canManageDisplay, displayChannelName,
   DISPLAY_PAGE_PARAMS, queryParamsOf, withQueryParams, paramSummary, paramVisible, minSecForPath,
-  TV_SHELL_PARAM,
+  TV_SHELL_PARAM, moRotationItems,
 } from '../utils/displayRotation';
 
 /* ══ 🔁 ตั้งค่าจอวนหน้า — /display-rotation ══════════════════════════════════════════
@@ -391,6 +391,19 @@ export default function DisplayRotation() {
               {canEdit && form.items.length < ROT_LIMITS.maxItems && (
                 <button type="button" onClick={() => { setF('items', [...form.items, { path: '', sec: null }]); setFocusIdx(form.items.length); }}
                   style={{ ...btnGhost, marginTop: 10 }}>+ เพิ่มหน้า</button>
+              )}
+              {/* 🧾 ชุดสำเร็จรูป: ใบ MO ตามขั้น 4 หน้า (03/11 · ประชุม 02/11 ข้อ B6 "จอ TV ทีม MTN วนหน้า MO")
+                  แค่เติมลิงก์ `/tv?dept=mo&mo=…&team=…` ต่อท้าย — แก้/ลบทีละรายการได้ตามปกติ */}
+              {canEdit && form.items.length + 4 <= ROT_LIMITS.maxItems && (
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginTop: 10 }}>
+                  <span style={{ fontSize: 12, color: 'var(--muted)' }}>🧾 เติมชุดใบ MO (รอรับงาน · กำลังซ่อม · รอตรวจรับ · รอปิดใบ):</span>
+                  {[['maintenance', 'MTN'], ['jig_maintenance', 'JIG'], ['die_maintenance', 'DIE'], ['', 'ทุกทีม']].map(([k, t]) => (
+                    <button key={k || 'all'} type="button" style={btnGhost}
+                      onClick={() => { setF('items', [...form.items, ...moRotationItems(k)]); setFocusIdx(form.items.length); }}>
+                      + {t}
+                    </button>
+                  ))}
+                </div>
               )}
               {plans[selId]?.updated_at && (
                 <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 10 }}>

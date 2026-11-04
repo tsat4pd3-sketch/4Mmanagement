@@ -33,6 +33,7 @@
   --amber-dim: rgba(227, 162, 58, 0.12); --amber-line: rgba(227, 162, 58, 0.40);
   --red-dim:   rgba(226, 87, 75, 0.12);  --red-line:   rgba(226, 87, 75, 0.40);
   --blue-dim:  rgba(79, 143, 232, 0.12); --blue-line:  rgba(79, 143, 232, 0.40);
+  --scrim: rgba(0, 0, 0, 0.55);   /* พื้นหลังมืดหลัง modal (04/11) */
 
   --text:   #e6e9ef;
   --text2:  #a3abb8;

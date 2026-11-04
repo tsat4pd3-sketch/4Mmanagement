@@ -19,6 +19,7 @@ import ProdProgressStrip from '../components/ProdProgressStrip';
 import StoreTimeChart from '../components/StoreTimeChart';
 import StoreCallSiren from '../components/StoreCallSiren';
 import PurchaseBulkModal from '../components/PurchaseBulkModal';
+import OpenOrderDemandPanel from '../components/OpenOrderDemandPanel';
 import PlatingBoard from '../components/PlatingBoard';
 import DeliverScanModal from '../components/DeliverScanModal';
 import PickScanModal from '../components/PickScanModal';
@@ -1126,6 +1127,8 @@ const STORE_TABS = [
   { key: 'fg',       icon: '🏭', label: 'Store FG',      desc: 'พาร์ทแม่ (100) → ไลน์ประกอบ' },
   // คำอธิบายต้องบอกว่า "สโตร์ทำอะไร" ไม่ใช่ "ไลน์ทำอะไร" — คนอ่านคือสโตร์
   { key: 'child',    icon: '🔧', label: 'Store Child',   desc: 'พาร์ทย่อยที่เราผลิตเอง (200) → ปล่อยให้ไลน์ผลิต แล้วรับของกลับเข้าสโตร์' },
+  // 📋 04/11 (คำสั่ง user) — แจ้งล่วงหน้าตั้งแต่ไลน์เปิดใบ (เดิมรู้ตอนปิดใบ = ผลิตจบแล้ว) · อ่านอย่างเดียว
+  { key: 'open',     icon: '📋', label: 'งานที่ไลน์เปิดอยู่', desc: 'ไลน์เปิดใบผลิตแล้ว → ชิ้นส่วนที่ต้องเตรียมส่ง (แจ้งล่วงหน้า)' },
   { key: 'purchase', icon: '🛒', label: 'จัดซื้อ',       desc: 'ของซื้อ (300/500) → รับเข้าสโตร์' },
   { key: 'raw',      icon: '🧱', label: 'Store Raw Mat', desc: 'เบิกวัตถุดิบเข้าการผลิต child' },
   // ⚠️ แท็บนี้เป็นกระจกอ่านอย่างเดียวของหน้า /rack-center — ป้ายต้องบอกตั้งแต่บนแท็บ
@@ -1508,6 +1511,8 @@ function UnifiedStoreBoard({ store, setStore, opsStores = null, readOnly = false
       {/* 🧪 งานชุบ — โหลดข้อมูลเอง (ใบส่งชุบ/ยอดคลัง) · ใช้คำค้น + "เฉพาะงานค้าง" ชุดเดียวกับแท็บอื่น */}
       {store === 'plating' && <PlatingBoard q={q} showDone={showDone} readOnly={readOnly} />}
 
+      {store === 'open' && <OpenOrderDemandPanel q={q} />}
+
       {store === 'wip' && (<>
         {hiddenNote}
         {wipRequests.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
@@ -1663,7 +1668,7 @@ export default function HeijunkaKanban({ mode = 'monitor', opsStores = null }) {
   const [purchaseErr, setPurchaseErr]           = useState('');
   const [bulkBuy, setBulkBuy]                   = useState(null);   // {g, next, label} — เลื่อนสถานะรวมทั้งพาร์ท
   // default = คิวเติม WIP (งานจริงของสโตร์) — เดิม 'fg' คือแท็บรอบส่งซึ่งว่างเปล่าตลอดเมื่อไม่มีรอบ (audit 2026-09-07)
-  const [unifiedStore, setUnifiedStore] = useState(() => urlPick('store', opsStores || ['fg', 'child', 'purchase', 'raw', 'rack', 'wip', 'plating'], (opsStores || ['wip'])[0])); // 'fg' | 'child' | 'purchase' | 'raw' | 'rack' | 'wip'
+  const [unifiedStore, setUnifiedStore] = useState(() => urlPick('store', opsStores || ['fg', 'child', 'open', 'purchase', 'raw', 'rack', 'wip', 'plating'], (opsStores || ['wip'])[0])); // 'fg' | 'child' | 'purchase' | 'raw' | 'rack' | 'wip'
   useEffect(() => {
     if (!storeFocus?.store) return;
     setViewMode('unified');

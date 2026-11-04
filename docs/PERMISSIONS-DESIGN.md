@@ -152,7 +152,8 @@ Phase 2 จะไล่แทนที่ `hasPermission('manage_master_data', r
 ### 4.3 Cache & การมีผลทันที
 - `loadPermissions()` โหลดครั้งเดียวตอน login (มีอยู่แล้ว)
 - Phase 1: หน้า จัดการสิทธิ์ save → `loadPermissions(true)` + Supabase Realtime broadcast บน `role_permissions` → client อื่น reload cache → มีผลโดยไม่ต้อง refresh
-- ระหว่างที่ Realtime ยังไม่ทำ: มีผลเมื่อ user โหลดหน้าเว็บใหม่ (พฤติกรรมเดียวกับวันนี้)
+- ✅ Realtime บน `role_permissions` ทำแล้ว (App.jsx · `coalesce(LIVE.PAGE)`)
+- ✅ (2026-11-03) เก็บตก 2 ช่อง: แก้ **โปรไฟล์ของ user** ที่ `/add-user` (role/ขอบเขต/CC/แอดมินหน่วยงาน — `profiles` ไม่อยู่ใน realtime) + realtime ที่หลุดตอนเครื่องพักจอ ⇒ probe ลายเซ็นเล็กตอนกลับมาที่แท็บ/เป็นรอบ (`src/utils/usePermFreshness.js`) · 📄 `docs/modules/role-system.md` §สิทธิ์มีผลกับเครื่องที่เปิดค้าง
 
 ---
 
@@ -467,7 +468,7 @@ admin/dept_admin) ⇒ คนที่ใช้ปุ่มนี้ **ทุก�
 2. 🔴 **ส่วนต่างนั้นต้องตัดสินในคอมมิทเดียวกัน** — ไม่ seed คีย์ให้ ก็ต้อง**เขียนไว้ชัดว่าตั้งใจตัดใคร**
    และแจ้ง user ก่อน · **ห้ามปล่อยให้ไปรู้ตอนหน้างานใช้ไม่ได้**
 3. **ปิดจอ ≠ ปิด DB** — รัด RLS ด้วย ⇒ แก้ย้อนกลับต้องแตะ `role_permissions` ไม่ใช่แค่ revert โค้ด
-4. สิทธิ์มีผล**ทันทีที่รีเฟรชหน้า** (cache สิทธิ์อยู่ใน memory โหลดตอน bootstrap — ไม่ต้องล็อกอินใหม่)
+4. สิทธิ์มีผล**กับเครื่องที่เปิดค้างโดยไม่ต้องรีเฟรช** (realtime + probe ตอนกลับมาที่แท็บ · 2026-11-03) — ไม่ต้องล็อกอินใหม่
 
 > เคสนี้จบที่ **ให้ `leader` ถือ `management:assign_manpower` เต็ม** (user เคาะ 14/10) — ขอบเขต
 > ยังถูกจำกัดด้วย scope ไลน์ของ leader เหมือนเดิม (`scopeLines` = ครอบครัวไลน์ตัวเอง)

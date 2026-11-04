@@ -32,6 +32,8 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { loadProductionLines } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import MtnAndonBoard from '../components/MtnAndonBoard';
+import MoTvBoard from '../components/MoTvBoard';
+import { MO_TV_GROUPS } from '../utils/moTvBoard';
 import useIsMobile from '../utils/useIsMobile';
 import { scopedLineNames, inSectionScope } from '../utils/sectionScope';
 import { visibleInterval } from '../utils/usePolling';
@@ -47,6 +49,9 @@ const DEPTS = [
   { key: 'maintenance', icon: '🔧', label: 'ช่างซ่อมบำรุง', sub: 'เครื่องหยุด · PM · ใบซ่อม' },
   { key: 'production', icon: '🏭', label: 'ฝ่ายผลิต', sub: 'เครื่องหยุด · ยอดผลิตเทียบเป้า' },
   { key: 'store', icon: '📦', label: 'สโตร์', sub: 'ไลน์เรียกของ · รอบส่งค้าง · พาร์ทจะขาด' },
+  /* 🧾 ใบแจ้งซ่อม MO ตามขั้น (03/11 · ประชุม 02/11 ข้อ B6 "จอ TV ทีม MTN วนหน้า MO") — `?mo=<กอง>` `?team=`
+     เนื้อใน = `<MoTvBoard>` (โหลดเอง + realtime เอง) · ตั้งรอบวนหลายกองที่ /display-rotation */
+  { key: 'mo', icon: '🧾', label: 'ใบแจ้งซ่อม MO', sub: 'ใบค้างตามขั้น · รอรับงาน · กำลังซ่อม · รอตรวจรับ' },
 ];
 
 export default function TvBoard({ onOpenMenu = null }) {
@@ -124,7 +129,7 @@ export default function TvBoard({ onOpenMenu = null }) {
      (downtime สด + กะที่เปิด บอร์ดโหลดเองพร้อม realtime อยู่แล้ว — ห้ามโหลดซ้ำที่นี่)
      ⚠️ กรองสถานะใบซ่อมฝั่ง server (`OPEN_MO_STATUSES`) แทนดึง 500 ใบล่าสุดมากรองในเบราว์เซอร์ */
   const load = useCallback(async () => {
-    if (!lines.length) return;
+    if (!lines.length || dept === 'mo') return;   // มุมมอง MO โหลดเองใน <MoTvBoard>
     try {
       const needPm = dept === 'maintenance';
       const needMo = dept !== 'store';
@@ -158,7 +163,7 @@ export default function TvBoard({ onOpenMenu = null }) {
      ไม่ว่ามีอะไรเปลี่ยนหรือไม่) · ตารางเพิ่งถูกใส่ publication ในรอบนี้ realtime จึงเพิ่งใช้ได้จริง
      useLiveBoard = realtime หลัก + เพดาน coalesce + poll ข้ามรอบเมื่อไม่มี event
      ดู src/utils/useLiveBoard.js · docs/POLLING-AUDIT-2026-09-15.md */
-  useLiveBoard(load, { tables: ['mtn_orders', 'inspections'], topic: 'tv-board', rate: RATE.ANALYTIC });
+  useLiveBoard(load, { tables: ['mtn_orders', 'inspections'], topic: 'tv-board', rate: RATE.ANALYTIC, enabled: dept !== 'mo' });
 
   const secOpts = useMemo(
     () => sortLike(lines.map(l => l.section), []), [lines]);
@@ -203,6 +208,12 @@ export default function TvBoard({ onOpenMenu = null }) {
             {secOpts.map(s => <option key={s} value={s}>{s}</option>)}
             {secFilter && !secOpts.includes(secFilter) && <option value={secFilter}>⚠ {secFilter} (ไม่มีในทะเบียน)</option>}
           </select>
+          {dept === 'mo' && <>
+            <span style={{ width: 1, height: 20, background: 'var(--border2)' }} />
+            {[{ key: '', icon: '🧾', label: 'ทุกขั้น' }, ...MO_TV_GROUPS].map(x => (
+              <button key={x.key || 'all'} onClick={() => setParam('mo', x.key)} style={btn((sp.get('mo') || '') === x.key)}>{x.icon} {x.label}</button>
+            ))}
+          </>}
           <span style={{ width: 1, height: 20, background: 'var(--border2)' }} />
           {/* 🔊 ขอบเขตเสียง — ตัว <DowntimeSiren> ในบอร์ดอ่าน `?sound=` ตัวเดียวกัน */}
           {/* จอสโตร์เงียบเป็นค่าเริ่มต้น (เสียงเรียกช่างไม่ใช่งานสโตร์ · 12/10) — เปิดได้ด้วย `?sound=all` */}
@@ -229,10 +240,12 @@ export default function TvBoard({ onOpenMenu = null }) {
             style={{ fontSize: 13, padding: '4px 12px', borderRadius: 8, border: '1px solid #ef4444', background: 'transparent', color: '#ef4444', cursor: 'pointer' }}>↻ ลองใหม่</button>
         </div>
       )}
-      {!d && !err && (linesState === 'loading' || linesState === 'ok') && (
+      {dept !== 'mo' && !d && !err && (linesState === 'loading' || linesState === 'ok') && (
         <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 14, padding: 40 }}>กำลังโหลด...</div>
       )}
-      {d && <MtnAndonBoard d={d} ctx={ctx} cards={dept} />}
+      {dept === 'mo'
+        ? (linesState === 'ok' && <MoTvBoard inScope={inScope} isMobile={isMobile} />)
+        : (d && <MtnAndonBoard d={d} ctx={ctx} cards={dept} />)}
     </div>
   );
 }
