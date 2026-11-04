@@ -2155,6 +2155,17 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
     setSelProduct(target); setSearch(target.mat_no || '');
   }, [products, selProduct, bomIx]);
 
+  /* 📄 เปิด "ใบ" ตาม id ของใบตรงๆ — ใช้กับปุ่มที่รู้ว่าความสัมพันธ์นั้นถูกนิยามไว้ในใบไหน
+     🔴 ชื่อแม่ตัวเดียวอยู่ได้หลายใบ ⇒ เปิดด้วยชื่อแม่อย่างเดียวจะไปใบเดิมเสมอ (ปุ่มซ้ำกดแล้วไปที่เดียวกัน)
+        เคสจริง 04/11: 20058490 อยู่ใต้ 20070036 ทั้งในใบ 20070036 และใบ 10105772 */
+  const openSheetById = useCallback((sheetId, fallbackMat) => {
+    const target = products.find(p => p.id === sheetId);
+    if (!target) { if (fallbackMat) openSheetOfMat(fallbackMat); return; }
+    setPartView(null);
+    setBomBack(prev => (selProduct ? [...prev, { id: selProduct.id, mat_no: selProduct.mat_no, name: selProduct.name }] : prev));
+    setSelProduct(target); setSearch(target.mat_no || '');
+  }, [products, selProduct, openSheetOfMat]);
+
   /* ชื่อ/ป้ายของ mat และของ "ใบ" — ไม่รู้ = ปล่อยว่าง **ห้ามเอาเลข MAT มาแทนชื่อ** (ด่าน regressionGuards) */
   const nameOfMat = useCallback((mat) => {
     const k = upMat(mat);
@@ -2174,24 +2185,43 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
     const m = upMat(mat);
     if (!m) return null;
     const ps = bomIx.parentsOfMat(m);
+    /* 🔴 แถวที่ "ชี้ใบไม่ได้" ไม่ได้แปลว่าไม่มีแม่ — `parentsOfMat` แกะชื่อแม่จาก `matOfProduct`
+       ซึ่งมีเฉพาะใบที่จอโหลดมา (`is_active` เท่านั้น) ⇒ แถวที่อยู่ใน**ใบที่ปิดใช้งาน** ตกไปอยู่ใน
+       `bomIx.orphans` แล้วหายจากแถบนี้เงียบๆ · เคสจริง 04/11: 20058490 มีแม่จริง 7 ที่ จอขึ้น 4
+       (หาย 3 เพราะใบ 10100333 / 10100379 / 20066630 ปิดใช้งาน) ⇒ ต้องนับแล้วเขียนบอก */
+    const hidden = (bomIx.orphans || []).filter(r => upMat(r?.mat_no) === m).length;
+    /* 🔴 แม่ชื่อเดียวกันแต่คนละใบ = คนละการนิยาม ⇒ ปุ่มต้องเขียนใบกำกับ ไม่งั้นเห็นปุ่มซ้ำกันเป๊ะ */
+    const dupMat = new Set(ps.map(x => x.mat).filter((v, i, a) => a.indexOf(v) !== i));
+    const total = ps.length + hidden;
     return (
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
         <span style={{ fontSize: 11.5, color: 'var(--muted)', fontWeight: 700 }}>
-          ⬆ ถูกใช้เป็นลูกของ{ps.length ? ` ${ps.length} ที่:` : ':'}
+          ⬆ ถูกใช้เป็นลูกของ{total ? ` ${total} ที่:` : ':'}
         </span>
-        {ps.length === 0 && (
+        {total === 0 && (
           <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>— ไม่มี (เป็นตัวบนสุดของสาย)</span>
         )}
-        {ps.map((x, i) => (
-          <button key={`${x.mat}|${x.sheetId}|${i}`} type="button" onClick={() => openSheetOfMat(x.mat)}
-            title={`${x.mat} ใช้ ${m} ×${x.qty} · นิยามไว้ในใบ ${sheetLabel(x.sheetId)}`}
-            style={{ ...btnSecondary, padding: '2px 9px', fontSize: 11, fontFamily: 'monospace' }}>
-            {x.mat} ↗
-          </button>
-        ))}
+        {ps.map((x, i) => {
+          const sh = products.find(p => p.id === x.sheetId);
+          return (
+            <button key={`${x.mat}|${x.sheetId}|${i}`} type="button"
+              onClick={() => openSheetById(x.sheetId, x.mat)}
+              title={`${x.mat} ใช้ ${m} ×${x.qty} · นิยามไว้ในใบ ${sheetLabel(x.sheetId)}`}
+              style={{ ...btnSecondary, padding: '2px 9px', fontSize: 11, fontFamily: 'monospace' }}>
+              {x.mat}{dupMat.has(x.mat) && sh ? ` · ในใบ ${sh.mat_no}` : ''} ↗
+            </button>
+          );
+        })}
+        {/* 🔴 มีแม่อีกแต่ชี้ชื่อไม่ได้ (ใบปิดใช้งาน/ไม่อยู่ในลิสต์) — เขียนบอก ห้ามหายเงียบ */}
+        {hidden > 0 && (
+          <span title="แถวเหล่านี้อยู่ในใบที่จอไม่ได้โหลด (ส่วนใหญ่ = ใบที่ปิดใช้งาน) จึงชี้ชื่อแม่ไม่ได้"
+            style={{ fontSize: 11, fontWeight: 700, color: statusColor('warn') }}>
+            +{hidden} ที่ชี้ชื่อไม่ได้ (ใบปิดใช้งาน)
+          </span>
+        )}
       </div>
     );
-  }, [bomIx, openSheetOfMat, sheetLabel]);
+  }, [bomIx, openSheetById, sheetLabel, products]);
 
   /* 📄 เปิดใบนี้แล้วว่าง — "ลูกของพาร์ทนี้" ถูกกรอกไว้ในใบอื่นหรือเปล่า
      🔴 ต้องถามแยกจาก `items` — `items` = บรรทัดของ **ใบนี้** เท่านั้น ⇒ ว่าง ≠ ไม่มีลูก
