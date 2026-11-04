@@ -399,3 +399,23 @@ test('💰 ลิสต์ CC ของ index: 1 รหัส = 1 แถว · �
     names.forEach(nm => assert.ok(got.has(nm), `${cc} ต้องครอบ ${nm}`));
   });
 });
+
+/* ═══ 🏢 ชั้นบน (company_group → spg → company → plant) เหนือส่วนงาน — ผลต้องเท่าเดิมเป๊ะ (04/11) ═══
+   บล็อกเดิม: topNodes อ่านจาก parent_id ว่าง ⇒ เติม plant เหนือส่วนงาน = ส่วนงานหายจาก picker ทั้งระบบ
+   ตอนนี้รากของชั้นหน่วยถามจาก orgLayers.unitRoots() — ชั้นบนไม่ถูกวาด (รากยังเป็น plant เสมือน) */
+test('🏢 เติมโหนดชั้นบนเหนือทุกส่วนงานแล้ว option/ancestors/linesOf ต้องเท่าเดิมทุกตัว', () => {
+  const upper = [
+    { id: 'g', kind: 'company_group', name: 'TSG', parent_id: null, sort_order: 0 },
+    { id: 'spg', kind: 'spg', code: '2000', name: 'AMF', parent_id: 'g' },
+    { id: 'co', kind: 'company', code: 'TSAT', name: 'TSAT', parent_id: 'spg' },
+    { id: 'pl', kind: 'plant', code: '2140', name: 'TSAT-P4', parent_id: 'co', cost_center: '2140000000', division: 'production' },
+  ];
+  const lifted = nodes.map(n => (n.parent_id == null ? { ...n, parent_id: 'pl' } : n));
+  const base = buildOrgScope({ nodes, lines, divisions });
+  const withUpper = buildOrgScope({ nodes: [...upper, ...lifted], lines, divisions });
+  const strip = (idx) => idx.options.map(o => [o.key, o.label, o.depth, o.cost_center ?? null, [...(idx.lineNamesOf(o.key) || [])].sort().join('|')]);
+  assert.deepEqual(strip(withUpper), strip(base), 'ชุด option ต้องไม่เปลี่ยน');
+  for (const o of base.options) assert.deepEqual(withUpper.ancestorsOf(o.key), base.ancestorsOf(o.key), `ancestors ของ ${o.key}`);
+  assert.ok(!withUpper.options.some(o => ['company_group', 'spg', 'company'].includes(o.kind)), 'ชั้นบนต้องไม่โผล่เป็น option');
+  assert.ok(!withUpper.options.some(o => o.cost_center === '2140000000'), 'รหัสของ plant ห้ามไหลลงหน่วย');
+});

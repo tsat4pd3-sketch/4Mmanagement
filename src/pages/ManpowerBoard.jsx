@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useContext, useRef } from 'react';
+import { isOrphanDept } from '../utils/orgLayers.js';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { SESSION_STATUSES_DONE } from '../utils/sessionStatus';
 import { UserContext } from '../App';
@@ -185,7 +186,7 @@ export default function ManpowerBoard() {
      เดิมกรองแค่ `kind === 'section'` ⇒ 2 หน่วยนี้ **เปิดบอร์ดไม่ได้เลย** คนในหน่วยไม่เคยขึ้นผัง
      (หลักเดียวกับ ORPHAN_SECTION ใน sectionScope.js — หน่วยจริง มี cost center ของตัวเอง) */
   const sectionNodes = useMemo(() => nodes
-    .filter(n => n.kind === 'section' || (n.kind === 'department' && !n.parent_id))
+    .filter(n => n.kind === 'section' || isOrphanDept(n, nodes))   // 🏢 ขึ้นตรง = ไม่มีแม่เป็นหน่วย (orgLayers · 04/11)
     .filter(n => !scopeSecs.length || inSectionScope(scopeSecs, orgKey(n)) || inSectionScope(scopeSecs, n.name))
     .sort(orgNodeCompare), [nodes, scopeSecs]);
   const secParam = params.get('sec') || '';

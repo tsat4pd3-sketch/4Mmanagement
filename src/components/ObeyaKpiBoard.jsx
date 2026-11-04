@@ -1,4 +1,5 @@
 import { toneVar, toneDim, toneLine } from '../utils/statusTone';   // 🎨 token พาเลต 5 สี (UI §6.17)
+import InfoMore from './InfoMore';   // ⓘ คำอธิบายยาวพับไว้ (UI §6.10)
 import { useState, useEffect, useMemo, useCallback, useContext, useRef } from 'react';
 import { urlBool } from '../utils/urlInit';
 import { lineNameCompare } from '../utils/lineHierarchy';
@@ -819,7 +820,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
   /* ⚠️ เตือนบนแผ่น — เฉพาะเรื่องที่คนต้องลงมือ: ไฟเทา (ไม่มีค่า/ไม่มีเป้า) · ค่าโรงงานยังไม่มีนิยาม · กรอกไว้แต่ถูกค่าระบบทับ */
   const cardWarn = (r, kk) => {
     if (r.st === ST.unknown) return r.note ? <WarnNote k={kk} text={r.note} /> : (r.why || null);   // ไม่มีค่า/ไม่มีเป้า: มีเหตุผลยาว = กล่อง · ไม่มี = ข้อความสั้นตามเดิม
-    if (r.mix?.overlapN) return <WarnNote k={kk} tone="none" tvHide text={`✍️ แท่งจางที่ซ้อนอยู่ = ค่ากรอกมือ ${r.mix.overlapN} เดือน (ทีมคิดเอง) · แท่งเต็ม = ค่าระบบ — กดแท่งเพื่อดูทั้ง 2 ค่า`} />;
+    if (r.mix?.overlapN) return <WarnNote k={kk} tone="none" tvHide text={`✍️ ค่ากรอกมือซ้อน ${r.mix.overlapN} เดือน — กดแท่งดูทั้ง 2 ค่า`} title={`แท่งจางที่ซ้อนอยู่ = ค่ากรอกมือ ${r.mix.overlapN} เดือน (ทีมคิดเอง) · แท่งเต็ม = ค่าระบบ — กดแท่งเพื่อดูทั้ง 2 ค่า`} />;
     return null;
   };
   /* popup 🔍 = ที่ของรายละเอียดเต็ม (ไม่จำกัดบรรทัด): คาดปลายปี · เกณฑ์ที่ใช้ตัดสิน · ที่มา/หมายเหตุเต็ม */
@@ -1126,11 +1127,14 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
         ))}
       </div>
 
+      {/* คำอธิบายยาว = พับหลัง ⓘ (UI §6.10 · 04/11 user "text อธิบายเยอะๆ ควรเป็น tooltip") — เดิม 3 บรรทัดใต้บอร์ดตลอดเวลา */}
       {!board && (
-        <div className="tv-hide" style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8, lineHeight: 1.7 }}>
-          ตัวเลข = สะสมเดือนที่เลือก · ⚡ ระบบคำนวณจากกะที่ปิดแล้ว (OEE ถ่วงเวลารับภาระ · PPM = ของเสีย ÷ ยอดที่ผลิตทั้งหมด (สแกนดี + เสีย) × 10⁶ ไม่รวมงานทดลอง)
-          · ✍️ ต้องกรอกที่แท็บ ⚙️ ตั้งค่า KPI / กรอกผล · สีแท่ง/ไฟ = เกณฑ์ทางการ ถึง Target = เขียว · ถึงแค่ Commitment = เหลือง · ไม่ถึง = แดง · ไม่มีเป้าหรือไม่มีค่า = เทา (ไม่ใช่ผ่าน)
-          · แท่ง "สรุป" = {`เฉลี่ยถ่วงน้ำหนักทั้งปี (แถว ⚡) / เฉลี่ยเดือนที่กรอก (แถว ✍️)`} · กดแท่งเดือนเพื่อดูเดือนนั้น
+        <div className="tv-hide" style={{ marginTop: 8 }}>
+          <InfoMore id="obeya-kpi-legend" label="ที่มาของตัวเลข · ความหมายสี" size={11}>
+            ตัวเลข = สะสมเดือนที่เลือก · ⚡ ระบบคำนวณจากกะที่ปิดแล้ว (OEE ถ่วงเวลารับภาระ · PPM = ของเสีย ÷ ยอดที่ผลิตทั้งหมด (สแกนดี + เสีย) × 10⁶ ไม่รวมงานทดลอง)
+            · ✍️ ต้องกรอกที่แท็บ ⚙️ ตั้งค่า KPI / กรอกผล · สีแท่ง/ไฟ = เกณฑ์ทางการ ถึง Target = เขียว · ถึงแค่ Commitment = เหลือง · ไม่ถึง = แดง · ไม่มีเป้าหรือไม่มีค่า = เทา (ไม่ใช่ผ่าน)
+            · แท่ง "สรุป" = {`เฉลี่ยถ่วงน้ำหนักทั้งปี (แถว ⚡) / เฉลี่ยเดือนที่กรอก (แถว ✍️)`} · กดแท่งเดือนเพื่อดูเดือนนั้น
+          </InfoMore>
         </div>
       )}
 

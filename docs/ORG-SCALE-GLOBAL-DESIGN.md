@@ -219,6 +219,17 @@ QA (section)
 🔴 ย้ายคนจริงจะทำให้ **Cost Center เปลี่ยน** (`department QA` = `214055654` · `section QA` = `2140441000`)
 = กระทบขอบเขตฝั่ง `ccScope` โดยไม่จำเป็น
 
+### ✅ ขั้น 0 ฝั่งโค้ด — ปิดบล็อก `orgScope.js:159` แล้ว (2026-11-04 · user "ลุยงานต่อ")
+
+- กฎชั้นบน/ชั้นหน่วยอยู่ที่ **`src/utils/orgLayers.js`** ที่เดียว: `UPPER_KINDS = company_group → spg → company → plant` ·
+  `unitParentId()` (แม่ที่เป็นหน่วย · แม่เป็นชั้นบน = ไม่มีแม่) · `unitRoots()` (ราก = ส่วนงาน/แผนกขึ้นตรง) · `isOrphanDept()` · `unitChain()` (ไล่สายหยุดที่ชั้นบน)
+- จุดที่เลิกถือว่า "ราก = parent_id ว่าง": `orgScope.js` (topNodes) · `ccScope.js` (ตกทอดรหัสหยุดที่ชั้นบน) · `assignmentOverlay.js` · `scopePicker.js` ·
+  `orgDivisions.js` · `sectionScope.orphanDepts()` (รับผังทั้งต้นเป็น arg 2) · `OrgTreeView` · `ManpowerBoard` · `OrgSetup` · `AddUser`
+- DB: `org_nodes_kind_check` รับ 8 kind แล้ว (migration `20261104_org_nodes_upper_kinds_main.sql` · **apply แล้ว** · ยังไม่มีแถวชั้นบน)
+- พิสูจน์: เทส `orgScope.test.mjs` เติม company_group/spg/company/plant เหนือทุกส่วนงานแล้ว option/ancestors/lines **เท่าเดิมทุกตัว** · ด่าน `org-upper-layers-ready`
+- 🔴 **ยังห้าม insert โหนดชั้นบน** จนกว่า: จอที่โหลดแค่ section/department (`OjtTraining` · `operator` · `Register` — เรียก `orphanDepts(deptNodes)` โดยไม่ส่งผังทั้งต้น)
+  จะส่ง `allNodes` · `/org-setup` ยังไม่มี UI เพิ่ม/แสดงชั้นบน · `derivedScope` ยังไม่มี LEVEL สำหรับ plant/company (ผจก.ระดับกลุ่ม = `level_above_tree` เหมือนเดิม)
+
 ### 🚧 ขั้น 0 "เติมชั้นบน" ไม่ใช่งานข้อมูลล้วน (แก้ข้อสรุปเดิม)
 
 `src/utils/orgScope.js:159`

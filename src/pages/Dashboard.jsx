@@ -32,6 +32,8 @@ import { visibleInterval } from '../utils/usePolling';
 import { positionAllCards, delayedCountOf, orderKeyOf, projectedFinishMs, planStatusOf, pushChainOf, dayDelaySummaryOf } from '../utils/heijunkaQueue';
 import { buildBoardCards } from '../utils/boardCards';
 import PlanSlipBar from '../components/PlanSlipBar';   // 📋 แถบ "หลุดแผนไปแค่ไหน" (เวลา+ยอด · 2026-09-30)
+import DowntimeBand from '../components/DowntimeBand';   // ⛔ แถบเครื่องหยุดเต็มความสูงแถว (2026-11-04)
+import { downtimeBandsIn } from '../utils/downtimeBands';
 import DelayBlameBar from '../components/DelayBlameBar';   // 🔗 สรุปดีเลย์ของวัน + ต้นเหตุ/ผู้ถูกพาล (ทีมปั๊ม 2026-09-30)
 import { liveChannel } from '../utils/liveChannel';
 import { ALL } from '../utils/filterLabels';
@@ -1834,25 +1836,19 @@ export default function Dashboard({ view = 'timeline' }) {
                               );
                             });
                         })()}
-                        {/* ⛔ แถบ downtime — วางชิดขอบบนแถว ไม่บังใบกัมบัง ชี้เมาส์ดูรายละเอียดได้
-                            แสดงเฉพาะ downtime ของ sub-line ที่มีใบงานอยู่ในแถวนี้ — ไม่วาดซ้ำทุกแถวจนเหตุของ
-                            อีกไลน์มาโผล่ปนกัน (แถวที่ไม่มีใบงานเลยให้เห็นทุกรายการไว้ก่อน ดีกว่าหายเงียบ) */}
-                        {(() => {
-                          const rowLines = new Set(cards.map(c => c.line_name).filter(Boolean));
-                          return dtWindows.filter(w => !rowLines.size || !w.line_name || rowLines.has(w.line_name));
-                        })().map((w, di) => {
-                          const l = Math.max(0, (w.s - half.startMs) * pctPerMs);
-                          const rgt = Math.min(100, (w.e - half.startMs) * pctPerMs);
-                          if (rgt <= 0 || l >= 100 || rgt <= l) return null;
-                          return (
-                            <div key={`dt-${di}`} title={dtLabel(w)}
-                              style={{
-                                position: 'absolute', top: 0, height: 5, left: `${l}%`, width: `${Math.max(rgt - l, 0.4)}%`,
-                                background: w.planned ? '#94a3b8' : '#ef4444', opacity: 0.85,
-                                borderRadius: '0 0 3px 3px', zIndex: 3, cursor: 'help',
-                              }} />
-                          );
-                        })}
+                        {/* ⛔ แถบ downtime — **เต็มความสูงแถว อยู่ใต้ใบกัมบัง** (04/11 · feedback หน้างาน)
+                            เดิมเป็นขีดสูง 5px ชิดขอบบน ⇒ บนจอ TV มองไม่เห็น หน้างานอ่านช่องว่างว่า
+                            "โปรแกรมเรียงใบไม่ต่อเนื่อง" ทั้งที่เป็นเวลาที่เครื่องหยุดจริงที่เขาลงใบไว้เอง
+                            (Assy GOR 03/11: 180 นาที/กะ · ตรงกับ %A 82%)
+                            🔴 เรขาคณิต+การกรองไลน์อยู่ `utils/downtimeBands.js` · หน้าตาอยู่ `DowntimeBand`
+                               **ห้ามวาดเองในหน้า** (มีด่าน) */}
+                        {downtimeBandsIn(dtWindows, {
+                          rowLines: new Set(cards.map(c => c.line_name).filter(Boolean)),
+                          halfStartMs: half.startMs, pctPerMs,
+                        }).map((band, di) => (
+                          <DowntimeBand key={`dt-${di}`} band={band} label={dtLabel(band.w)}
+                            pxWidth={tlW > 0 ? band.widthPct * tlW / 100 : 0} fontSize={T(11, 15)} />
+                        ))}
                         {(() => {
                           const positioned = positionedForCards(cards).map(item => pctForHalf(item, half)).filter(Boolean);
                           /* กันใบงานทับกัน — ใบต้องไม่ล้ำขอบซ้ายของใบถัดไปเสมอ (1 ไลน์ผลิตทีละใบ)
