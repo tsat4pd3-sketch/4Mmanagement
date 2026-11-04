@@ -26,8 +26,12 @@
 export default function DowntimeBand({ band, label, pxWidth = 0, fontSize = 11 }) {
   const { w, leftPct, widthPct } = band || {};
   if (!w) return null;
-  /* ③ งานตามแผน (PM) = เทา · หยุดเสีย = แดง */
-  const c = w.planned ? '148,163,184' : '239,68,68';
+  /* ③ งานตามแผน (PM) = เทา · หยุดเสีย = แดง
+     🔴 สีมาจาก token ใน index.css เท่านั้น (ด่าน `colorRatchet` · UI §6.17 · คำสั่ง user 04/11)
+        ห้ามเขียน hex/rgba ดิบในไฟล์นี้ — ธีมสว่าง/มืดใช้คนละค่า */
+  const tone = w.planned
+    ? { ink: 'var(--muted)', stripe: 'var(--border)' }
+    : { ink: 'var(--red)',   stripe: 'var(--red-line)' };
   const fs = Math.max(11, fontSize);                 // ④ ห้ามต่ำกว่า 11 (จอ TV)
   const text = `⛔ ${w.name || 'เครื่องหยุด'}${w.min ? ` ${w.min}น.` : ''}`;
   return (
@@ -35,8 +39,10 @@ export default function DowntimeBand({ band, label, pxWidth = 0, fontSize = 11 }
       position: 'absolute', top: 0, bottom: 0,
       left: `${leftPct}%`, width: `${widthPct}%`,
       /* ② ลายเฉียง — ทิศตรงข้ามแถบพัก (45°) เพื่อให้แยกออกจากกันทันทีแม้ขาวดำ */
-      background: `repeating-linear-gradient(-45deg, rgba(${c},0.20) 0px, rgba(${c},0.20) 5px, transparent 5px, transparent 10px)`,
-      borderLeft: `1px solid rgba(${c},0.75)`, borderRight: `1px solid rgba(${c},0.75)`,
+      /* ลายทึบครึ่งหนึ่งของพื้นที่ ⇒ `-line` (α .40) ให้ความเข้มรวม ≈ .20 เท่าที่ออกแบบไว้
+         (ใช้ `-dim` α .12 แล้วจางเกินกว่าจะเห็นจากระยะยืนดูบอร์ด = หมดความหมายของงานนี้) */
+      background: `repeating-linear-gradient(-45deg, ${tone.stripe} 0px, ${tone.stripe} 5px, transparent 5px, transparent 10px)`,
+      borderLeft: `1px solid ${tone.ink}`, borderRight: `1px solid ${tone.ink}`,
       zIndex: 0,                                     // ① ใต้ใบกัมบังเสมอ
       cursor: 'help', overflow: 'hidden',
       /* ⑥ ป้ายอยู่ **ขอบล่าง** แบบเดียวกับแถบพัก — ใบกัมบังเว้นขอบบน-ล่างไว้
@@ -45,7 +51,7 @@ export default function DowntimeBand({ band, label, pxWidth = 0, fontSize = 11 }
     }}>
       {pxWidth >= 58 && (
         <span style={{
-          fontSize: fs, fontWeight: 800, color: w.planned ? 'var(--muted)' : '#ef4444',
+          fontSize: fs, fontWeight: 800, color: tone.ink,
           whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', padding: '0 2px',
           marginBottom: 1, textShadow: '0 1px 2px var(--bg2)',
         }}>{text}</span>

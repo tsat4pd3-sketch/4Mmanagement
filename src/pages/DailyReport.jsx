@@ -6038,7 +6038,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                           {/* 🔴 สแกนแล้วปิดอัตโนมัติไม่ผ่าน (นอกขอบเขต/ทะเบียนไลน์ยังไม่มา) = ต้องค้างเหตุผลไว้
                               toast หายไปใน 4 วิ แต่คนสแกนยืนมองจออยู่ — เงียบ = เข้าใจว่าปิดแล้ว */}
                           {crossFind.blocked && (
-                            <div style={{ marginBottom: 8, padding: '8px 10px', borderRadius: 7, background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.45)', color: '#ef4444', fontWeight: 700, lineHeight: 1.6 }}>
+                            <div style={{ marginBottom: 8, padding: '8px 10px', borderRadius: 7, background: 'var(--red-dim)', border: '1px solid var(--red-line)', color: 'var(--red)', fontWeight: 700, lineHeight: 1.6 }}>
                               ⛔ ปิดให้อัตโนมัติไม่ได้ — {crossFind.blocked}
                             </div>
                           )}
