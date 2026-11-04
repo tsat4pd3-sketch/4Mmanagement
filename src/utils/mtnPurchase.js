@@ -37,12 +37,23 @@ export const isPrOpen = (pr) => PR_OPEN_STATUSES.includes(pr?.status);
 export const PR_SOURCE_LABEL = { mo: '🔧 จากใบ MO', spare_min: '🔩 อะไหล่ต่ำกว่า Min', manual: '✍️ เปิดเอง' };
 
 /** เส้นทางงานซ่อม (`mtn_orders.repair_path`) — null = ยังไม่ระบุ (ใบเก่า · ไม่เดาให้) */
+/* 🔴🔴 4 เส้นทาง — แกนที่ชี้ขาดคือ **"ซ่อมได้ / ซ่อมไม่ได้"** ไม่ใช่ "ต้องเปิด PR ไหม" (02/11 · ทีม MTN)
+   ทีม MTN เขียนมา: ซ่อมเองได้ จบงานเลย · ซ่อมได้ สั่งซื้ออะไหล่ทดแทน · ซ่อมได้ ส่งอุปกรณ์ซ่อมภายนอก ·
+   **ซ่อมไม่ได้ รออะไหล่/รอจ้าง Vendor → ส่งผลให้หยุด MTTR**
+   ⇒ `holdsMttr` แยกจาก `needsPr` เด็ดขาด — ของเดิมใช้ `needsPr` ตอบคำถาม "เครื่องยังรออยู่ไหม"
+     ซึ่งเป็นคนละคำถาม: *ซ่อมเสร็จแล้วเปิด PR ซื้ออะไหล่มาเติมสต็อก* เครื่องเดินแล้ว ไม่ได้รอ
+   🔴 `outsource` ไม่ต้องติด `holdsMttr` — ช่วงที่ของอยู่กับ supplier ถูกหักด้วยนาฬิกาของตัวเองอยู่แล้ว
+     (`vendor_sent_at`→`vendor_back_at` · union ใน `mttrHoldMin`) ติดซ้ำ = หักซ้อนกันโดยเปล่าประโยชน์
+   ⚠️ `key` ห้ามเปลี่ยน (เก็บเป็น text ใน `mtn_orders.repair_path` · ใบเก่าอ้างอยู่) — ป้ายเปลี่ยนได้ */
 export const REPAIR_PATHS = [
-  { key: 'inhouse',    label: '🔧 ซ่อมเอง — ไม่ต้องเปิด PR',          needsPr: false, outsource: false },
-  { key: 'inhouse_pr', label: '🛒 ซ่อมเอง — ต้องเปิด PR สั่งอะไหล่',   needsPr: true,  outsource: false },
-  { key: 'outsource',  label: '📤 ซ่อมไม่ได้ — ส่งซ่อมภายนอก (+PR)',   needsPr: true,  outsource: true },
+  { key: 'inhouse',    label: '🔧 ซ่อมเองได้ — จบงานเลย',                      needsPr: false, outsource: false, holdsMttr: false },
+  { key: 'inhouse_pr', label: '🛒 ซ่อมได้ — ตัดอะไหล่ใช้ แล้วเปิด PR ซื้อมาเติม', needsPr: true,  outsource: false, holdsMttr: false },
+  { key: 'outsource',  label: '📤 ซ่อมได้ — ส่งอุปกรณ์ซ่อมภายนอก (+PR ค่าซ่อม)', needsPr: true,  outsource: true,  holdsMttr: false },
+  { key: 'blocked',    label: '⏳ ซ่อมไม่ได้ — รออะไหล่ / รอจ้าง Vendor',        needsPr: true,  outsource: false, holdsMttr: true  },
 ];
 export const repairPathMeta = (k) => REPAIR_PATHS.find(p => p.key === k) || null;
+/** เส้นทางที่ทำให้ "หยุดนับ MTTR ของช่าง" — จุดเดียวที่ตอบคำถามนี้ (ห้ามเทียบ key เองในหน้า) */
+export const holdsMttrPath = (k) => !!repairPathMeta(k)?.holdsMttr;
 
 /** หมวด GL — คีย์คงที่ 2 ตัวที่ระบบรู้จัก · หมวดอื่นที่ทะเบียนเพิ่มเองยังใช้ได้ (ข้อความอิสระ) */
 export const GL_CATEGORIES = [
@@ -129,9 +140,12 @@ export function prQueueStateOf(order, prs = []) {
   if (open.length) return 'open';
   return null;
 }
+/* ป้าย 3 ขั้นของงาน PR — ถ้อยคำตามที่ทีม MTN ใช้จริง (02/11)
+   ② เปิด PR = แอดมินช่างส่งเมลขอค่าใช้จ่าย กรอก IO/GL แล้ว **ได้เลข PR จาก SAP ทันที**
+      ⇒ ไม่ใช่ "รอ" เป็นขั้นที่มีคนต้องลงมือ · ป้ายเดิม "รอเลข PR (SAP)" ทำให้เข้าใจว่าต้องนั่งรอระบบ */
 export const PR_QUEUE_META = {
   need:  { label: '🛒 รอเปิด PR', color: '#ef4444' },
-  no_no: { label: '⏳ รอเลข PR (SAP)', color: '#f59e0b' },
+  no_no: { label: '📝 เปิด PR (กรอกเลข PR)', color: '#f59e0b' },
   open:  { label: '🚚 PR รอสั่ง/รอของ', color: '#0ea5e9' },
 };
 

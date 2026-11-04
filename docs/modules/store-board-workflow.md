@@ -14,7 +14,7 @@ user: *"recheck work flow ทุก tab ให้ที ใครทำอะไ
 | | อยู่ที่ไลน์ผลิต → เข้าสโตร์แล้ว | สโตร์ "📥 รับของเข้าสโตร์" | ไลน์ → สโตร์ | CAS → ledger issue + consume ใบเบิกวัตถุดิบที่ยัง pending (ล้ม = คืนสถานะ) |
 | 🛒 จัดซื้อ (วิว `v_purchase_open_summary` = กลุ่มพาร์ท×สถานะ) | 🆕 รอสั่งซื้อ → 🚚 รอของเข้า | "🛒 สั่งซื้อแล้ว" (เจ้าของตามเอกสาร = วางแผน/จัดซื้อ) | ระบบ (ของไม่พอแผน) → จัดซื้อ | CAS `purchase_requests.status/ordered_*` |
 | | 🚚 รอของเข้า → ✅ รับเข้าแล้ว | สโตร์ "✅ รับเข้าสโตร์" / "รวม N ใบ" (PurchaseBulkModal) | ซัพพลายเออร์ → สโตร์ | CAS + ledger (`buildReceiptRows`) |
-| 🟫 Store Raw Mat (`raw_withdrawal_requests`) | รอจ่าย → จ่ายแล้ว | สโตร์ "จ่ายวัตถุดิบ" | สโตร์ → ไลน์ child | สถานะอย่างเดียว (CAS + นับแถว) |
+| 🟫 Store Raw Mat (`raw_withdrawal_requests`) | รอจ่าย → จ่ายแล้ว | สโตร์ "จ่ายวัตถุดิบ" | สโตร์ → ไลน์ child | CAS pending→issued (นับแถว) + ledger `consume` ที่ `source_line` ของล็อต · ledger ล้ม = คืน pending · ล็อตของซื้อ (ไม่มี `source_line`) ไม่ตัด (แก้ตารางให้ตรงโค้ด 03/11 — พฤติกรรมเปลี่ยนตั้งแต่ 06/10 ดูข้อ 1) |
 | 📦 ภาชนะ/แร็ค | เรียก → เตรียม → ส่ง → รับ | **อ่านอย่างเดียวที่นี่** · ตัวจริง `/rack-center` (`rack_center:operate`) | — | `rack_requests` / `packaging_withdrawal_requests` |
 | 🚚 Store FG (รอบส่ง · ซ่อนเมื่อไม่มีรอบ) | ยังไม่ยืนยัน → ยืนยันส่ง → รับครบ | สโตร์ "✅ ยืนยันส่งแล้ว" · "✔️ รับครบ" | สโตร์ → ไลน์ | `kanban_deliveries` + ledger issue |
 | 📥 รอรับเข้า (`/line-stock` · `stock_receipts`) | รอรับ/ค้าง → รับแล้ว | คลัง "✅ นับแล้วตรง · รับ N" / "✏️ ยอดไม่ตรง" (`line_stock:issue`) | ไลน์ปิดใบผลิต → คลัง | RPC `stock_receipt_confirm` (ธุรกรรมเดียว) |

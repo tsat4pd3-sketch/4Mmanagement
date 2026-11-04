@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { getWorkDate, getCurrentShift, localDateStr, WORK_DAY_START_HOUR, shiftOfTime, workDateOfTime,
-         openShiftDefaults, shiftStartTime } from '../workDate.js';
+         openShiftDefaults, shiftStartTime, PRE_SHIFT_MIN } from '../workDate.js';
 
 /* 📅 วันทำงาน — ทุกเคสส่ง `now` เองเสมอ ห้ามอ้างเวลาจริง (กันเทสระเบิดเวลา) */
 
@@ -66,29 +66,53 @@ test('รับ Date object ได้เหมือนกับสตริง 
    เดิมหน้าจอคิดแยกชิ้น: รีเฟรช `shift` จากนาฬิกา แต่ `work_date` ค้างค่าเดิม
    ⇒ 07:40 ได้ "กะดึกของวันนี้" = เริ่ม 20:00 คืนนี้ = เปิดกะล่วงหน้า 12 ชม. */
 
-test('openShiftDefaults: ตอน 07:40 = กะดึกของ "เมื่อวาน" (กะที่กำลังเดินอยู่) ไม่ใช่ของวันนี้', () => {
+/* ── หน้าต่างก่อนเข้ากะ (03/11 · feedback หน้างาน "เปิดกะไม่ได้บางจังหวะ") ───────────────
+   ตอน 07:40 กะที่กำลังเดินอยู่ = กะดึกของเมื่อวาน ซึ่ง **เปิดค้างอยู่แล้ว**
+   ⇒ ฟอร์มตั้งค่าให้เป็นกะที่เปิดซ้ำไม่ได้ ⇒ ด่านกันกะซ้ำเด้ง = เปิดกะไม่ได้จนนาฬิกาข้าม 08:00
+   ภายใน PRE_SHIFT_MIN ก่อนเวลาเข้ากะ จึงต้องเสนอ "กะที่กำลังจะเริ่ม" */
+
+test('🔴 openShiftDefaults: 07:40 = กะเช้าของ "วันนี้" (กะที่กำลังจะเริ่ม) — ไม่ใช่กะดึกที่เปิดค้างอยู่', () => {
   assert.deepEqual(openShiftDefaults(at('2026-10-05T07:40:00')),
-    { work_date: '2026-10-04', shift: 'night', start_time: '20:00' });
+    { work_date: '2026-10-05', shift: 'day', start_time: '08:00' });
+});
+
+test('🔴 openShiftDefaults: 19:40 = กะดึกของวันนี้ (กะที่กำลังจะเริ่ม) ไม่ใช่กะเช้าที่เปิดค้างอยู่', () => {
+  assert.deepEqual(openShiftDefaults(at('2026-10-05T19:40:00')),
+    { work_date: '2026-10-05', shift: 'night', start_time: '20:00' });
+});
+
+test('นอกหน้าต่างก่อนเข้ากะ ยังตอบ "กะที่กำลังเดินอยู่" เหมือนเดิม', () => {
+  const d = (t) => openShiftDefaults(at(t));
+  // 06:59 = ห่างกะเช้าเกิน 60 น. ⇒ ยังเป็นกะดึกของเมื่อวาน (กะที่เดินอยู่จริง)
+  assert.deepEqual(d('2026-10-05T06:59:00'), { work_date: '2026-10-04', shift: 'night', start_time: '20:00' });
+  assert.deepEqual(d('2026-10-05T07:00:00'), { work_date: '2026-10-05', shift: 'day',   start_time: '08:00' });
+  // 18:59 = ห่างกะดึกเกิน 60 น. ⇒ ยังเป็นกะเช้าของวันนี้
+  assert.deepEqual(d('2026-10-05T18:59:00'), { work_date: '2026-10-05', shift: 'day',   start_time: '08:00' });
+  assert.deepEqual(d('2026-10-05T19:00:00'), { work_date: '2026-10-05', shift: 'night', start_time: '20:00' });
 });
 
 test('openShiftDefaults: รอยต่อ 4 จุดของวัน', () => {
   const d = (t) => openShiftDefaults(at(t));
-  assert.deepEqual(d('2026-10-05T07:59:59'), { work_date: '2026-10-04', shift: 'night', start_time: '20:00' });
+  assert.deepEqual(d('2026-10-05T07:59:59'), { work_date: '2026-10-05', shift: 'day',   start_time: '08:00' });
   assert.deepEqual(d('2026-10-05T08:00:00'), { work_date: '2026-10-05', shift: 'day',   start_time: '08:00' });
-  assert.deepEqual(d('2026-10-05T19:59:59'), { work_date: '2026-10-05', shift: 'day',   start_time: '08:00' });
+  assert.deepEqual(d('2026-10-05T19:59:59'), { work_date: '2026-10-05', shift: 'night', start_time: '20:00' });
   assert.deepEqual(d('2026-10-05T20:00:00'), { work_date: '2026-10-05', shift: 'night', start_time: '20:00' });
   assert.deepEqual(d('2026-10-06T00:30:00'), { work_date: '2026-10-05', shift: 'night', start_time: '20:00' });
 });
 
-test('🔴 openShiftDefaults: กะที่เสนอต้อง "เริ่มแล้ว" ไม่ใช่กะที่เริ่มในอนาคต', () => {
-  /* ตรวจทุกชั่วโมงของวัน: เวลาเริ่มของกะที่เสนอ ต้องไม่อยู่หลัง "ตอนนี้"
-     (เดิมบั๊กโผล่เฉพาะ 00:00-07:59 ซึ่งเป็นช่วงที่คนเปลี่ยนกะจริง จึงพลาดกันง่าย) */
-  for (let h = 0; h < 24; h++) {
-    const now = at(`2026-10-05T${String(h).padStart(2, '0')}:30:00`);
+test('🔴 openShiftDefaults: กะที่เสนอห้ามเริ่มล่วงหน้าเกิน PRE_SHIFT_MIN', () => {
+  /* เดิมกฎนี้คือ "ต้องเริ่มแล้วเท่านั้น" — ผ่อนเป็น "ล่วงหน้าได้ไม่เกินหน้าต่างก่อนเข้ากะ" (03/11)
+     🔴 เพดานยังต้องมี — เคส LINE C 05/10 คือกะที่เริ่มล่วงหน้า **12 ชม.** (ใบผี shift_min 720)
+        ถ้าเผลอถอดเพดานนี้ บั๊กนั้นกลับมาได้ทันทีโดยไม่มีใครเห็น
+     ตรวจทุก 10 นาทีของวัน (ไม่ใช่ทุกชั่วโมง) — รอยต่อของหน้าต่างอยู่ที่นาทีที่ 00 ของ 07:00/19:00 */
+  for (let m = 0; m < 24 * 60; m += 10) {
+    const hh = String(Math.floor(m / 60)).padStart(2, '0');
+    const mm = String(m % 60).padStart(2, '0');
+    const now = at(`2026-10-05T${hh}:${mm}:00`);
     const d = openShiftDefaults(now);
-    const startMs = new Date(`${d.work_date}T${d.start_time}:00`).getTime();
-    assert.ok(startMs <= now.getTime(),
-      `${h}:30 เสนอ ${d.shift} ของ ${d.work_date} เริ่ม ${d.start_time} = ยังไม่เริ่ม (ล่วงหน้า ${Math.round((startMs - now.getTime()) / 60000)} น.)`);
+    const aheadMin = (new Date(`${d.work_date}T${d.start_time}:00`).getTime() - now.getTime()) / 60000;
+    assert.ok(aheadMin <= PRE_SHIFT_MIN,
+      `${hh}:${mm} เสนอ ${d.shift} ของ ${d.work_date} เริ่ม ${d.start_time} = ล่วงหน้า ${Math.round(aheadMin)} น. (เพดาน ${PRE_SHIFT_MIN})`);
   }
 });
 

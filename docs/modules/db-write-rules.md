@@ -439,3 +439,45 @@ postgrest จะสร้าง `INSERT` ก้อนเดียวด้วย
 · ด่าน `upsert-mixed-id-needs-default` ใน `regressionGuards` — จับเฉพาะสเปรด `: {})` ที่อยู่ใน `.map()`
   (ออบเจกต์เดี่ยวไม่เข้าข่าย · `: null` + `filter` ก็ไม่เข้าข่าย เพราะแถวนั้นถูกทิ้ง)
 
+
+---
+
+## 🔑 ข้อ 3.1 — **RLS ผ่าน ≠ GRANT ผ่าน** (2026-11-02 · เคสจริง `mtn_order_parts`)
+
+กฎข้อ 3 เขียนไว้ว่า *"ตารางใหม่ต้องมี policy ครบทุก cmd ที่ client ใช้"* — **ยังไม่พอ**
+Postgres มีด่าน 2 ชั้น และ **GRANT อยู่เหนือ RLS**:
+
+| ชั้น | ขาดแล้วเกิดอะไร | หน้าตาของ error |
+|---|---|---|
+| `GRANT <cmd> ON <table> TO anon, authenticated` | Postgres ปฏิเสธก่อนถึง policy ด้วยซ้ำ | PostgREST ตอบ **401** |
+| RLS policy | ผ่าน GRANT แล้วแต่ไม่เข้าเงื่อนไข | INSERT = 42501 · UPDATE/DELETE = **สำเร็จ 0 แถว ไม่มี error** |
+
+เคสจริง: `mtn_order_parts` มี policy `for all … using(true)` ครบ แต่ GRANT มีแค่ SELECT/INSERT/UPDATE
+⇒ โค้ดเขียนแบบ insert ล้วนมาทั้งปีจึงไม่มีใครเจอ · พอเปลี่ยนเป็น delete-then-insert = ตายทันที 11 วัน
+(📄 รายละเอียด + ตัวเลข → `mtn-work-order.md` §อะไหล่หายจากใบ MO)
+
+### คิวรีตรวจ — "ตารางที่ client ลบ แต่ anon ลบไม่ได้"
+
+รันฝั่ง **DR "Product DB" (`eyhclzkifitbhbljgoav`)** — เปลี่ยนลิสต์ตามที่ grep เจอในโค้ด
+(`grep -rn "supabaseDR" src/` แล้วดูตัวที่ต่อ `.delete()`):
+
+```sql
+select t.table_name,
+       bool_or(g.grantee='anon'          and g.privilege_type='DELETE') as anon_can_delete,
+       bool_or(g.grantee='authenticated' and g.privilege_type='DELETE') as auth_can_delete
+from (values ('mtn_order_parts'),('mtn_order_labor'),('<ตารางอื่นที่โค้ดเรียก .delete()>')) t(table_name)
+left join information_schema.role_table_grants g
+  on g.table_schema='public' and g.table_name=t.table_name and g.grantee in ('anon','authenticated')
+group by 1
+having not bool_or(g.grantee='anon' and g.privilege_type='DELETE');
+```
+
+ได้แถวไหนออกมา = ตารางนั้นลบจากจอไม่ได้ (401) → `grant delete on public.<t> to anon, authenticated;`
+> ✅ ตรวจครบทั้ง 52 ตารางของฝั่ง DR เมื่อ 02/11 — ขาดแค่ `mtn_order_parts` ตัวเดียว (แก้แล้ว)
+
+### 🔴 บทเรียนที่ใหญ่กว่าเรื่องสิทธิ์
+
+เขียนบันทึกไม่สำเร็จ **ห้ามปล่อยให้ผลข้างเคียงเดินต่อ** — เคสนี้ `checkWrite` จับ 401 ได้ถูกต้องแล้ว
+แต่ผลของมันคุมแค่ "จะ insert ต่อไหม" **ไม่ได้คุมลูปตัดสต็อกที่อยู่ข้างล่าง** ⇒ ของออกจากคลังโดยไม่มีใบรองรับ
+ทุกครั้งที่ write มี "ผลข้างเคียงในโลกจริง" (ตัดสต็อก · ลบไฟล์ · ยิงแจ้งเตือน · เปลี่ยนสถานะ)
+ให้ถามว่า **ถ้า write ล้ม ผลข้างเคียงนั้นยังเกิดอยู่ไหม**
