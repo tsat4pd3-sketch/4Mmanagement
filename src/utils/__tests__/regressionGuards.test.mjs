@@ -8119,3 +8119,33 @@ test('🔕 notify-mute-single-choke-point — ตัวกรอง "ปิด�
   assert.match(modal, /disabled=\{r\.locked/,
     '\n\n❌ โมดัลไม่ได้ปิดสวิตช์ของเรื่องที่ล็อก — กดได้แต่ฝั่ง DB ไม่กรองให้ = สวิตช์หลอก\n');
 });
+
+test('🧑‍🔧 mo-export-shows-real-techs — ไฟล์ Excel ของ MO ต้องมีคอลัมน์ "ช่างซ่อมจริง" แยกจาก "ช่างที่มอบหมาย"', () => {
+  /* why (04/11 · feedback ทีม MTN ข้อ 2 "การปิด MO"):
+     "ช่างซ่อมหลักและช่างซ่อมรองที่ให้กรอก ไม่ได้แสดงในเอกสาร MO ที่ Export"
+     รอบ 02/11 แก้ใบพิมพ์ไปแล้ว (ด่าน mo-print-shows-techs) — รอบนี้ปิดฝั่งไฟล์ Excel
+     🔴 **"มอบหมาย" ≠ "ซ่อมจริง" ห้ามยุบเป็นคอลัมน์เดียว** — มอบหมาย 2 คนแล้วคนเดียวทำ /
+        ส่งต่อให้คนอื่นทำ = เกิดปกติ ⇒ รายงานต้องเห็นทั้ง 2 แกน ไม่งั้น KPI ช่างผิดคน
+     🔴 **`tech_main`/`tech_secondary` ห้ามเข้า `MO_LIST_COLS`** — คิวรีรายการยิง ~1,389 ครั้ง/วัน
+        ที่เพดาน 1000 ใบ · คอลัมน์ที่มีแต่ปุ่ม export อ่าน ไปอยู่ในนั้น = คนเปิดจอจ่าย egress แทน
+        ⇒ ต้องโหลดตอนกดปุ่ม ผ่าน `loadRepairTechsFor()` (chunk .in() ให้เอง) */
+  const xl = readFileSync(join(ROOT, 'src/lib/mtnMoExportExcel.js'), 'utf8');
+  assert.match(xl, /'ช่างที่มอบหมาย',\s*'ช่างซ่อมจริง \(หลัก\/รอง\)'/,
+    '\n\n❌ หัวคอลัมน์ "ช่างซ่อมจริง (หลัก/รอง)" หายจากชีท "รายการ MO" แล้ว\n'
+    + '   ผล: กลับไปเป็นอาการที่ทีม MTN แจ้ง — export มาแล้วไม่รู้ว่าใครซ่อม\n');
+  assert.match(xl, /techsError \? '⚠/,
+    '\n\n❌ โหลดชื่อช่างไม่ติดแล้วไม่เขียนกำกับ — ช่องว่างจะอ่านเป็น "ไม่ได้กรอก" (จอโกหก)\n');
+  /* ด่านคู่: ตัวโหลดต้องผ่าน fetchByIds (chunk) และคอลัมน์ต้องไม่ไปโป่งในคิวรีรายการ */
+  const ld = readFileSync(join(ROOT, 'src/lib/moRepairTechs.js'), 'utf8');
+  assert.match(ld, /fetchByIds\(/,
+    '\n\n❌ loadRepairTechsFor ไม่ได้ผ่าน fetchByIds — `.in()` ยาวเกินเพดาน proxy = คืนค่าว่างเงียบ\n');
+  const page = readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8');
+  const listCols = page.slice(page.indexOf('const MO_LIST_COLS'), page.indexOf('const SCOPE_OPTS'));
+  assert.ok(listCols.length > 100, 'หา MO_LIST_COLS ไม่เจอ — ด่านนี้ต้องตามไปด้วยถ้าย้ายโค้ด');
+  for (const col of ['tech_main', 'tech_secondary']) {
+    assert.doesNotMatch(listCols, new RegExp(`'${col}'`),
+      `\n\n❌ '${col}' ถูกเติมเข้า MO_LIST_COLS แล้ว — คิวรีรายการ MO ยิง ~1,389 ครั้ง/วัน\n`
+      + '   ผล: ทุกคนที่เปิดจอจ่าย egress เพิ่ม แทนคนที่กด export\n'
+      + '   แก้: โหลดตอนกดปุ่มผ่าน loadRepairTechsFor() (src/lib/moRepairTechs.js)\n');
+  }
+});

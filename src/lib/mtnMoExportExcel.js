@@ -96,6 +96,10 @@ export async function exportMoExcel({
   commentsBy = {}, commentsError = null,
   /* 🛒 ใบขอซื้อ (14/10) — map id ใบ → [{pr_no,status}] · ใบที่ยกเลิกไม่นับ (กฎ prNumbersOf) */
   prsBy = {}, prsError = null,
+  /* 🧑‍🔧 ช่างที่ซ่อมจริง (04/11 · feedback MTN ข้อ 2) — map id ใบ → {main,secondary,names}
+     โหลดจาก `loadRepairTechsFor()` ตอนกดปุ่มเท่านั้น (ไม่อยู่ใน MO_LIST_COLS — เหตุผลในไฟล์นั้น)
+     🔴 **คนละคอลัมน์กับ "ช่างที่มอบหมาย"** — มอบหมายไว้ ≠ ลงมือจริง ห้ามยุบรวม */
+  techsBy = {}, techsError = null,
 }) {
   const df = await getDocForm('mtn_mo_monthly_export', { title: 'สรุปใบแจ้งซ่อม MO รายเดือน' });
   const ExcelJS = (await import('exceljs')).default;   // lazy — ก้อน ~960KB ใช้ร่วมกับ export ตัวอื่น
@@ -150,7 +154,7 @@ export async function exportMoExcel({
     'ประเภทงานซ่อม', 'กลุ่มปัญหา', 'อาการ (หัวข้อย่อย)', 'รายละเอียดที่คนแจ้งพิมพ์',
     'คอมเมนต์เพิ่มเติม (ใครพูด · เมื่อไหร่)', 'จำนวนคอมเมนต์',
     'เวลาแจ้ง', 'เวลารับงาน', 'เวลาซ่อมเสร็จ', 'ตอบสนอง (นาที)', 'เวลาซ่อม (นาที)',
-    'เกี่ยวคุณภาพ', 'ชี้เป้าได้?', 'ช่างที่มอบหมาย', 'เส้นทางงานซ่อม', 'เลข PR'];
+    'เกี่ยวคุณภาพ', 'ชี้เป้าได้?', 'ช่างที่มอบหมาย', 'ช่างซ่อมจริง (หลัก/รอง)', 'เส้นทางงานซ่อม', 'เลข PR'];
   const C = (label) => colRef(H1.indexOf(label));   // คอลัมน์อ้างด้วย "ชื่อหัว" — เพิ่มคอลัมน์แล้วไม่ต้องไล่ขยับตัวอักษร
   mergeSafe(ws1, `A1:${colRef(H1.length - 1)}1`);
   put(ws1, 'A1', `${df.title || 'สรุปใบแจ้งซ่อม MO รายเดือน'} · ช่วง ${from} → ${to} · ${total} ใบ`,
@@ -161,7 +165,7 @@ export async function exportMoExcel({
     mergeSafe(ws1, `A3:${colRef(H1.length - 1)}3`);
     put(ws1, 'A3', `ตัวกรองที่เปิดอยู่ตอน export: ${filterNote}`, { size: 9, align: 'center', border: false, color: 'FF808080' });
   }
-  head(ws1, 4, H1, [11, 21, 17, 9, 15, 16, 13, 16, 15, 22, 26, 34, 42, 10, 16, 16, 16, 13, 13, 11, 10, 22, 22, 26]);
+  head(ws1, 4, H1, [11, 21, 17, 9, 15, 16, 13, 16, 15, 22, 26, 34, 42, 10, 16, 16, 16, 13, 13, 11, 10, 22, 24, 22, 26]);
 
   enriched.forEach((r, i) => {
     const n = 5 + i;
@@ -199,6 +203,13 @@ export async function exportMoExcel({
       align: 'center', size: 9.5, fill: r.vague ? 'FFFFF2CC' : undefined,
     });
     put(ws1, `${C('ช่างที่มอบหมาย')}${n}`, joinTechs(assignedTechsOf(o)) || DASH, { size: 9, wrap: true });
+    /* 🧑‍🔧 ใครลงมือซ่อมจริง (ช่องที่ช่างกรอกตอนปิดงาน) — ทีม MTN แจ้งว่าหายไปจากเอกสารที่ export
+       🔴 ว่าง 2 ความหมาย ⇒ แยกให้เห็น: โหลดไม่ติด = เขียน ⚠ · ปิดใบแล้วแต่ไม่มีใครกรอก = ไฮไลต์เหลือง
+          (ใบที่ยังค้างอยู่ ปล่อยว่างเฉยๆ ถูกแล้ว — ยังไม่ถึงขั้นกรอก) */
+    const tnames = techsError ? [] : (techsBy[o.id]?.names || []);
+    put(ws1, `${C('ช่างซ่อมจริง (หลัก/รอง)')}${n}`,
+      techsError ? '⚠ โหลดชื่อช่างซ่อมไม่สำเร็จ' : (tnames.join(' / ') || ''),
+      { size: 9, wrap: true, fill: (!techsError && !tnames.length && !r.open) ? 'FFFFF2CC' : undefined });
     put(ws1, `${C('เส้นทางงานซ่อม')}${n}`, repairPathMeta(o.repair_path)?.label || DASH, { size: 9 });
     put(ws1, `${C('เลข PR')}${n}`, prsError ? '⚠ โหลดเลข PR ไม่สำเร็จ' : (prNumbersOf(o, prsBy[o.id] || []).join(', ') || ''), { size: 9, wrap: true });
   });

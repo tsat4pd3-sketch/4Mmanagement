@@ -802,14 +802,23 @@ export default function MtnRepair() {
       // 🛒 เลข PR ของทุกใบ (14/10) — error ไม่กลืน ส่งต่อให้ไฟล์เขียนกำกับ
       const { loadPrsForOrders } = await import('../components/MtnPurchase');
       const prs = await loadPrsForOrders(shown.map(o => o.id));
+      /* 🧑‍🔧 ช่างที่ซ่อมจริง (04/11 · feedback MTN ข้อ 2 "ช่างซ่อมหลัก/รองไม่แสดงในเอกสารที่ export")
+         🔴 โหลดตอนกดปุ่มเท่านั้น — `tech_main`/`tech_secondary` **ห้ามเติมเข้า MO_LIST_COLS**
+            (คิวรีรายการยิง ~1,389 ครั้ง/วัน ที่เพดาน 1000 ใบ — คอลัมน์ที่มีแต่ปุ่มนี้อ่าน
+             ไปอยู่ในนั้น = ทุกคนที่เปิดจอจ่าย egress แทนคนกด export · กฎเขียน DB ข้อ 11)
+         🔴 error ไม่กลืน ส่งต่อให้ไฟล์เขียนกำกับในคอลัมน์ */
+      const { loadRepairTechsFor } = await import('../lib/moRepairTechs');
+      const tch = await loadRepairTechsFor(shown.map(o => o.id));
       const r = await exportMoExcel({
         rows: shown, from: tr.from, to: tr.to,
         dateOf: (o) => o.work_date || workDateOfTime(o.report_at),
         isOpen: isMoOpen, teamName: deptNameOf, statusLabel: moStatusLabel, filterNote: note,
         commentsBy: cmt.byOrder, commentsError: cmt.error,
         prsBy: prs.byOrder, prsError: prs.error,
+        techsBy: tch.byOrder, techsError: tch.error,
       });
       if (prs.error) toast.error('โหลดเลข PR ไม่ครบ — คอลัมน์เลข PR ในไฟล์เขียนกำกับไว้แล้ว');
+      if (tch.error) toast.error('โหลดชื่อช่างซ่อมไม่ครบ — คอลัมน์ "ช่างซ่อมจริง" ในไฟล์เขียนกำกับไว้แล้ว');
       if (cmt.error) toast.error('โหลดคอมเมนต์ไม่ครบ — คอลัมน์คอมเมนต์ในไฟล์ใช้อ้างอิงไม่ได้ (เขียนกำกับไว้ในไฟล์แล้ว)');
       /* 🔴 บอกความครบถ้วนตอนโหลดเสร็จด้วย — คนมักเอาไฟล์ไปใช้เลยโดยไม่อ่านหัวชีท */
       toast.success(`ออกไฟล์แล้ว ${r.rows} ใบ${r.vague ? ` · ในนั้นชี้เป้าไม่ได้ ${r.vague} ใบ (ดูชีทพาเรโต)` : ''}`);
