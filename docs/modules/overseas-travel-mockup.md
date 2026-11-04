@@ -3,7 +3,7 @@
 ที่มา: ผัง "Overseas Business Travel Process (Workflow)" ที่ user ส่งมา (swimlane: ผู้เดินทาง · ผู้อนุมัติ ·
 HR/Compliance · Travel/Admin · Finance/Accounting/ECM + คำอธิบาย 7 ข้อ)
 
-**ไฟล์:** `src/pages/OverseasTravelMockup.jsx` · เมนูหมวด "ผู้บริหาร & เดโม"
+**ไฟล์:** `src/pages/OverseasTravelMockup.jsx` · เมนูหมวด "E-Workflow" (ย้ายจาก "ผู้บริหาร & เดโม" 2026-11-04)
 
 ## สิ่งที่หน้านี้เป็น / ไม่เป็น
 - **ตัวอย่างหน้าจอเท่านั้น — ไม่เขียน DB ใดๆ** ใบคำขออยู่ใน state ของหน้า (รีเฟรช = เริ่มใหม่) · ป้าย 🧪 MOCKUP ที่หัวเพจห้ามถอด

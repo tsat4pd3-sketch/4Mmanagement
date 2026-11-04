@@ -175,6 +175,12 @@ const PAGE_GROUPS = [
       { key: 'page:/flow-tower', label: 'สายธารความต้องการ (Flow Tower)' },
       { key: 'page:/group-overview', label: 'ภาพรวมกลุ่มโรงงาน (Mockup)' },
       { key: 'page:/adoption-outlook', label: 'ภาพเมื่อข้อมูลเชื่อมกัน' },
+    ],
+  },
+  {
+    group: 'E-Workflow',
+    pages: [
+      { key: 'page:/e-workflow', label: 'อ่านเอกสารอัตโนมัติ OCR (Mockup)' },
       { key: 'page:/announcements', label: 'ประกาศบริษัท (Mockup)' },
       { key: 'page:/overseas-travel', label: 'เบิกเดินทางต่างประเทศ (Mockup)' },
     ],

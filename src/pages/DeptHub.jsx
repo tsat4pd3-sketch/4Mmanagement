@@ -158,6 +158,7 @@ const CARD_META = {
   [LOGISTIC_GROUPS.outbound]: { code: 'DLV·07', route: '/customer-demand', label: 'Warehouse & Delivery',  desc: 'Warehouse (FG 1xx) · Delivery · Rack Center — จัดส่งลูกค้า · คาดการณ์ของจะขาด · ภาชนะ' },
   'การตรวจสอบและซ่อมบำรุง':   { code: 'MTN·08', route: '/mtn-repair',   label: 'Inspection & Maintenance', desc: 'แจ้งซ่อม MO · ศูนย์ PM (ตรวจ·แผน·ล่วงหน้า) · ผังเครื่องจักร · พลังงาน' },
   'คุณภาพ & วิศวกรรม':        { code: 'QUA·09', route: '/qa',           label: 'Quality & Engineering',   desc: 'ใบตรวจ · SPC · NCR · CAPA/8D · เคลมลูกค้า · CQI-15 · PFMEA/Control Plan' },
+  'E-Workflow':               { code: 'EWF·12', route: '/e-workflow',   label: 'E-Workflow',              desc: 'อ่านเอกสารคนนอกด้วย OCR · ประกาศบริษัท · เบิกเดินทาง (Mockup)' },
   'ตั้งค่าโปรแกรม,ฐานข้อมูล': { code: 'SET·10', route: '/products',     label: 'Master Data & Settings',  desc: 'Product Master · เครื่องจักร · ผัง · ปฏิทิน · สิทธิ์ · แจ้งเตือน' },
   'ผู้บริหาร & เดโม':         { code: 'EXE·11', route: '/flow-tower',   label: 'Executive & Demo',        desc: 'สายธารความต้องการ · ภาพรวมกลุ่มโรงงาน · ภาพเมื่อข้อมูลเชื่อมกัน' },
 };

@@ -92,6 +92,7 @@ const FlowTower    = lazy(() => import('./pages/FlowTower'));
 const GroupOverview = lazy(() => import('./pages/GroupOverview'));
 const AnnouncementMockup = lazy(() => import('./pages/AnnouncementMockup'));
 const OverseasTravelMockup = lazy(() => import('./pages/OverseasTravelMockup'));
+const EWorkflowOcrMockup = lazy(() => import('./pages/EWorkflowOcrMockup'));
 const AdoptionOutlook = lazy(() => import('./pages/AdoptionOutlook'));
 const ProgramUpdate = lazy(() => import('./pages/ProgramUpdate'));
 /* 🧭 ไม่ lazy โดยตั้งใจ — หน้านี้ต้องทำงานตอนบันเดิลเก่า/โหลด chunk ไม่ได้ (ดูหัวไฟล์) */
@@ -264,10 +265,15 @@ export const NAV_ITEMS = [
   // "ข้อมูลเชื่อมกันทั้งองค์กรแล้วตอบคำถามอะไรได้" — สอบกลับ/คุมคุณภาพ/predictive/prescriptive
   // ฝั่งวันนี้นับสดจากฐานจริง ฝั่งอนาคตติดป้ายคาดการณ์ (seed: admin/manager)
   { to: '/adoption-outlook', icon: '🔮', label: 'ภาพเมื่อข้อมูลเชื่อมกัน', group: 'ผู้บริหาร & เดโม' },
+
+  // ── 🗂️ E-Workflow — งานเอกสาร/อนุมัติแบบไร้กระดาษ (2026-11-04 · คำสั่ง user "ยุบเป็นหมวดเดียว") ──
+  // ประกาศบริษัท + เบิกเดินทาง ย้ายมาจากหมวด "ผู้บริหาร & เดโม" (route/สิทธิ์เดิมไม่เปลี่ยน) · 📄 docs/modules/e-workflow.md
+  // 🧪 mockup อ่านเอกสารคนนอก (ใบส่งของ/ใบวางบิล) ด้วย OCR → คนยืนยัน → ส่ง Google Sheet (ไม่เขียน DB · ยังไม่ seed = admin เท่านั้น)
+  { to: '/e-workflow', icon: '🧾', label: 'อ่านเอกสารอัตโนมัติ OCR (Mockup)', group: 'E-Workflow' },
   // 🧪 mockup workflow ประกาศบริษัท Issue → EVP Approve → Publish ตามวันมีผล (ไม่เขียน DB · seed: admin/manager)
-  { to: '/announcements', icon: '📢', label: 'ประกาศบริษัท (Mockup)', group: 'ผู้บริหาร & เดโม' },
+  { to: '/announcements', icon: '📢', label: 'ประกาศบริษัท (Mockup)', group: 'E-Workflow' },
   // 🧪 mockup workflow เบิกเงินเดินทางต่างประเทศ 7 ขั้น 5 ฝ่าย (ไม่เขียน DB · ยังไม่ seed สิทธิ์ = admin เท่านั้น)
-  { to: '/overseas-travel', icon: '✈️', label: 'เบิกเดินทางต่างประเทศ (Mockup)', group: 'ผู้บริหาร & เดโม' },
+  { to: '/overseas-travel', icon: '✈️', label: 'เบิกเดินทางต่างประเทศ (Mockup)', group: 'E-Workflow' },
 
   // ── ตั้งค่า 13 เมนู แบ่ง 2 กลุ่มย่อยด้วย `sub` (nav audit 2026-08-27) ─────────────
   // ไม่ได้เพิ่มหมวดบนแถบไอคอน — แค่คั่นหัวข้อในแผงเดียวกัน แยก "ของที่กรอกทุกเดือน"
@@ -293,7 +299,7 @@ export const NAV_ITEMS = [
   { to: '/storage-maintenance', icon: '🗜️', label: 'ดูแลพื้นที่จัดเก็บ / ค่าเน็ต', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ตั้งค่าระบบ' },
 ];
 
-export const NAV_GROUP_ORDER = ['ภาพรวม', 'จอแสดงผล', 'ฝ่ายผลิต', 'วิเคราะห์ & รายงาน', 'พนักงาน & ทักษะ', LOGISTIC_GROUPS.inbound, LOGISTIC_GROUPS.outbound, 'การตรวจสอบและซ่อมบำรุง', 'คุณภาพ & วิศวกรรม', 'ตั้งค่าโปรแกรม,ฐานข้อมูล', 'ผู้บริหาร & เดโม'];
+export const NAV_GROUP_ORDER = ['ภาพรวม', 'จอแสดงผล', 'ฝ่ายผลิต', 'วิเคราะห์ & รายงาน', 'พนักงาน & ทักษะ', LOGISTIC_GROUPS.inbound, LOGISTIC_GROUPS.outbound, 'การตรวจสอบและซ่อมบำรุง', 'คุณภาพ & วิศวกรรม', 'E-Workflow', 'ตั้งค่าโปรแกรม,ฐานข้อมูล', 'ผู้บริหาร & เดโม'];
 
 // ไอคอน + ชื่อย่อของหมวด — ใช้บนแถบไอคอน (rail) ของ sidebar แบบใหม่ (2026-08-18 · คำสั่ง user "เอา D เลย")
 // ชื่อย่อ ≤ ~9 ตัวอักษรให้พอดีความกว้าง rail 64px ที่ฟอนต์ 11px (กฎฟอนต์ขั้นต่ำ UI-CONVENTIONS)
@@ -307,6 +313,7 @@ export const NAV_GROUP_META = {
   [LOGISTIC_GROUPS.outbound]:  { icon: '🚚', short: 'จัดส่ง' },
   'การตรวจสอบและซ่อมบำรุง':    { icon: '🛠️', short: 'ซ่อมบำรุง' },
   'คุณภาพ & วิศวกรรม':         { icon: '✅', short: 'คุณภาพ' },
+  'E-Workflow':                { icon: '🗂️', short: 'E-Flow' },
   'ตั้งค่าโปรแกรม,ฐานข้อมูล':  { icon: '⚙️', short: 'ตั้งค่า' },
   'ผู้บริหาร & เดโม':          { icon: '🔮', short: 'ผู้บริหาร' },
 };
@@ -2154,6 +2161,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
               } />
               <Route path="/overseas-travel" element={
                 <RoleRoute path="/overseas-travel" userRole={role}><OverseasTravelMockup /></RoleRoute>
+              } />
+              <Route path="/e-workflow" element={
+                <RoleRoute path="/e-workflow" userRole={role}><EWorkflowOcrMockup /></RoleRoute>
               } />
               <Route path="/management" element={
                 <RoleRoute path="/management" userRole={role}><Management /></RoleRoute>
