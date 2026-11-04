@@ -1,4 +1,5 @@
 import { useState, useEffect, useContext, useCallback, useRef, useMemo } from 'react';
+import InfoMore from '../components/InfoMore';   // ⓘ คำอธิบายยาวพับไว้ (UI §6.10)
 import { Link, useNavigate } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
@@ -6619,10 +6620,11 @@ function StaleTab({ stale, onOpenSession, role }) {
           )}
           <button onClick={() => stale.reload?.()} style={{ marginLeft: 'auto', fontSize: 12, padding: '4px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>↻ รีเฟรช</button>
         </div>
-        <div style={{ fontSize: 11.5, color: 'var(--red)', lineHeight: 1.6 }}>
-          กะที่ไม่ปิด = OEE/ยอดผลิตของวันนั้น<b>หายจากรายงานเดือน</b> (ระบบนับเฉพาะกะที่ปิดแล้ว) · เป้าหมาย: เคลียร์ภายใน {STALE_SESSION_DAYS} วัน
-          <span style={{ color: 'var(--muted)' }}> · เริ่มกะใหม่ของวันนี้ได้ตามปกติ ไม่ต้องรอเคลียร์</span>
-        </div>
+        {/* ข้อเท็จจริง (แดง) เห็นตลอด · คำอธิบายที่เหลือพับหลัง ⓘ (UI §6.10 · 04/11) */}
+        <InfoMore id="dr-stale-why" size={11.5}
+          lead={<span style={{ color: 'var(--red)' }}>กะที่ไม่ปิด = OEE/ยอดผลิตของวันนั้น<b>หายจากรายงานเดือน</b></span>}>
+          ระบบนับเฉพาะกะที่ปิดแล้ว · เป้าหมาย: เคลียร์ภายใน {STALE_SESSION_DAYS} วัน · เริ่มกะใหม่ของวันนี้ได้ตามปกติ ไม่ต้องรอเคลียร์
+        </InfoMore>
 
         {/* 🧹 กะเปล่า = เปิดผิด/เปิดทิ้งไว้ ลบทิ้งได้โดยไม่กระทบรายงาน — กะที่มีข้อมูลจริงยังต้องให้คนปิดเองเสมอ */}
         {!isSharedAccount() && can('daily_report', 'delete_session', role) && rows.length > 0 && (
@@ -6633,9 +6635,9 @@ function StaleTab({ stale, onOpenSession, role }) {
                   style={{ fontSize: 12, fontWeight: 700, padding: '5px 12px', borderRadius: 8, cursor: 'pointer', background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)' }}>
                   🔎 ตรวจหากะเปล่า
                 </button>
-                <span style={{ fontSize: 11, color: 'var(--muted)' }}>
-                  กะที่ไม่มี Order / Downtime / ของเสีย เลย = เปิดผิดหรือเปิดทิ้งไว้ — ทำโมฆะทีเดียวได้ ไม่ต้องไล่ทีละกะ (เก็บประวัติไว้ ไม่ได้ลบ)
-                </span>
+                <InfoMore id="dr-stale-empty" size={11} lead="กะเปล่า = เปิดผิด/เปิดทิ้งไว้">
+                  กะที่ไม่มี Order / Downtime / ของเสีย เลย — ทำโมฆะทีเดียวได้ ไม่ต้องไล่ทีละกะ (เก็บประวัติไว้ ไม่ได้ลบ)
+                </InfoMore>
               </>
             ) : emptyScan.busy ? (
               <span style={{ fontSize: 12, color: 'var(--muted)' }}>⏳ กำลังตรวจ…</span>

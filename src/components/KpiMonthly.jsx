@@ -1,4 +1,5 @@
 import { fmtAxis, CELL_BAR_FILL, focusDomain } from '../utils/chartAxis';
+import InfoMore from './InfoMore';   // ⓘ คำอธิบายยาวพับไว้ (UI §6.10)
 import { FocusAxisNote } from './ObeyaSheet';
 import { statusColor } from '../utils/statusTone';
 import { useState, useEffect, useMemo, useCallback, useRef, useContext, Fragment } from 'react';
@@ -1047,11 +1048,11 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
           KPI เก็บและแสดงที่หน่วยเจ้าของรหัส (ชุดเดียวกับเลือก {org.labelOf(kpiScope.kind, kpiScope.value)} ที่ช่องหน่วยงาน) · ตั้ง/แก้ที่นี่ = ตั้งให้หน่วยนั้น
         </div>
       )}
-      <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.6 }}>
-        นับเฉพาะ<b>กะที่ปิดแล้ว</b> — กะที่เปิดค้างยังไม่ถูกนับ · OEE = ค่า stamp ถ่วงน้ำหนักเวลารับภาระ ·
+      <InfoMore id="kpi-table-src" size={12} lead="นับเฉพาะกะที่ปิดแล้ว — กะที่เปิดค้างยังไม่ถูกนับ" label="ที่มาของตัวเลข · สูตร" style={{ marginBottom: 8 }}>
+        OEE = ค่า stamp ถ่วงน้ำหนักเวลารับภาระ ·
         PPM = ของเสีย ÷ ยอดที่ผลิตทั้งหมด (สแกนดี + เสีย) × 10⁶ ไม่รวมงานทดลอง (สูตรเดียวกับใบ KPI ของบริษัท — ยืนยัน 2026-09-07) ·
         Excel export ตามโครง 3 ชีทของฟอร์ม FM-HRM-6-022/024/025
-      </div>
+      </InfoMore>
 
       {/* ขอบเขตที่ไม่มีไลน์ผลิต (แผนกช่าง/สโตร์/QA) — บอกตรงๆ ห้ามโชว์ตาราง 0 (กฎความซื่อสัตย์ของจอ) */}
       {scopeNoLines && !loading && (
@@ -1124,7 +1125,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
           <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 8 }}>
             จากกะที่ปิดแล้ว {months.tot.n.toLocaleString()} กะ
             {months.tot.costMissQty > 0 && (
-              <span style={{ color: '#f59e0b' }}> · ⚠ ของเสีย {months.tot.costMissQty.toLocaleString()} ชิ้นยังตีมูลค่าไม่ได้
+              <span data-warn="1" style={{ color: '#f59e0b' }}> · ⚠ ของเสีย {months.tot.costMissQty.toLocaleString()} ชิ้นยังตีมูลค่าไม่ได้
                 (กรอกต้นทุน/ชิ้นที่ Product Master → 🗂 Parts Master) — Cost of defect ต่ำกว่าจริง</span>
             )}
           </div>
@@ -1228,11 +1229,11 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
               </div>
             </details>
           )}
-          <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 8, lineHeight: 1.6 }}>
-            ⏪ <b>ลงย้อนหลังได้</b> — เลือกปีที่หัวเพจแล้วกรอกได้ครบทั้ง 12 เดือน (ไม่ล็อกเฉพาะเดือนปัจจุบัน) ·
+          <InfoMore id="kpi-table-backfill" size={11.5} lead="ลงย้อนหลังได้ — เลือกปีที่หัวเพจ" label="วิธีกรอกย้อนหลัง · คัดลอกชุด KPI" style={{ marginBottom: 8 }}>
+            กรอกได้ครบทั้ง 12 เดือน (ไม่ล็อกเฉพาะเดือนปัจจุบัน) ·
             ปีที่ยังไม่มีชุด KPI กด <b>📋 คัดลอกชุด KPI จากปีอื่น</b> จะได้รายการเดิมมาทั้งชุดโดยไม่ต้องพิมพ์ชื่อใหม่
             {!catMissing && ' · ชื่อ KPI ผูกกับทะเบียนกลาง ⇒ เทียบข้ามปีได้แม้เปลี่ยนชื่อทีหลัง'}
-          </div>
+          </InfoMore>
           <ReadOnlyNote show={!canManageKpi} role={role} compact
             what="กรอก/แก้ KPI นอกระบบ" permKey="kpi:manage" />
           {/* 🔐 มีสิทธิ์ KPI แต่ขอบเขตที่เลือกไม่ใช่ของหน่วยงานเรา — ต้องเขียนบอก ห้ามซ่อนปุ่มเงียบ */}
@@ -1450,9 +1451,9 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
               <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--text)' }}>
                 ⬆ KPI ที่หน่วยลูกถือ แต่ {isPlant(scope) ? 'ระดับโรงงาน' : org.labelOf(scope.kind, scope.value)} ยังไม่ตั้ง — บอร์ด 📋 แสดงค่ารวมจากลูก ({childOnly.length} ตัว)
               </div>
-              <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>
-                อ่านอย่างเดียว (แก้ค่าที่ขอบเขตลูก) · ผลรวม = KPI แบบรวมปี · ≈ เฉลี่ยไม่ถ่วงน้ำหนัก = KPI แบบ % · ตั้ง KPI นี้ที่ระดับนี้แล้ว ค่าที่กรอกเองจะชนะเป็นรายเดือน
-              </div>
+              <InfoMore id="kpi-child-ro" size={11} lead="อ่านอย่างเดียว (แก้ค่าที่ขอบเขตลูก)" style={{ marginBottom: 6 }}>
+                ผลรวม = KPI แบบรวมปี · ≈ เฉลี่ยไม่ถ่วงน้ำหนัก = KPI แบบ % · ตั้ง KPI นี้ที่ระดับนี้แล้ว ค่าที่กรอกเองจะชนะเป็นรายเดือน
+              </InfoMore>
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ borderCollapse: 'collapse', fontSize: 12 }}>
                   <tbody>
@@ -1481,13 +1482,13 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
               </div>
             </div>
           )}
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8 }}>
-            กรอกแล้วบันทึกทันทีตอนออกจากช่อง (Enter/คลิกที่อื่น) · ลบค่า = เว้นว่าง ·
+          <InfoMore id="kpi-monthly-howto" size={11} lead="กรอกแล้วบันทึกทันทีตอนออกจากช่อง" label="วิธีกรอก · ความหมายสัญลักษณ์" style={{ marginTop: 8 }}>
+            (Enter/คลิกที่อื่น) · ลบค่า = เว้นว่าง ·
             ○△✗ ตัดสินจากเป้า/Commitment + ทิศทาง (≥/≤) ที่ตั้งในนิยาม KPI (เกณฑ์ทางการ ถึงเป้า ○ · ถึง Commitment △ · ไม่ถึง ✗) ·
             <b>📅 แผนรายเดือน</b> = สำหรับ KPI ที่แผนไม่เท่ากันทุกเดือน และ KPI สะสมที่เทียบเป้าทั้งปีตั้งแต่กลางปีไม่ได้ —
             ป้าย ▲ ตามแผน / ▼ ช้ากว่าแผน เป็น<b>ข้อมูลประกอบ ไม่ใช่คะแนน</b> (คะแนน ○ △ ✗ ยังตัดสินจากเป้าทั้งปีเหมือนเดิม) ·
             เส้นประเทาในกราฟเล็ก = แผน
-          </div>
+          </InfoMore>
         </div>
       )}
 

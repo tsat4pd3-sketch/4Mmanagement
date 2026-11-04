@@ -254,10 +254,10 @@ export function Sheet({ k, cw = 0, span = 1, icon, title, sub, big, unit, bigNot
 /* 📺 จอประชุม = ชิปบรรทัดเดียว (ตัดท้าย … · ข้อความเต็มอยู่ใน title) — ยังเห็นว่า "มีข้อมูลขาด" แต่ไม่กินที่กราฟ
    `tvHide` = WarnNote ที่เป็นแค่คำอธิบาย (ไม่ใช่ข้อมูลขาด) ⇒ `<Sheet>` ไม่วาดบนจอประชุม */
 /* `tone` = คีย์ good|warn|bad|info|none (04/11: เดิมรับ hex แล้วต่อ alpha — ใช้กับ token ไม่ได้) */
-export function WarnNote({ k, text, tone = 'warn' }) {
+export function WarnNote({ k, text, tone = 'warn', title }) {
   const tv = useTvShell();
   return (
-    <div title={tv ? String(text) : undefined} style={{
+    <div data-warn="1" title={title || (tv ? String(text) : undefined)} style={{
       fontSize: Math.max(11, Math.round(10.5 * k)), lineHeight: 1.3, color: toneVar(tone), fontWeight: 600,
       background: 'var(--bg3)', backgroundImage: `linear-gradient(${toneDim(tone)}, ${toneDim(tone)})`,
       border: `1px solid ${toneLine(tone)}`, borderRadius: 4, padding: '3px 6px',
