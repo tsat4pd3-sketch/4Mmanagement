@@ -8179,3 +8179,43 @@ test('🛡️ แถบแม่ใน /products: ต้องเปิดตา
     '\n\n❌ แถบแม่ไม่ได้นับ `bomIx.orphans` แล้ว\n'
     + '   แถวที่อยู่ในใบปิดใช้งานจะหายจากแถบเงียบๆ — ตัวเลข "ถูกใช้เป็นลูกของ N ที่" จะต่ำกว่าจริง\n');
 });
+
+/* ═══ 🔻 ตัดสต็อกตอน confirm = ลูกตรงชั้นเดียว (หลัก SAP) — 2026-11-04 ═════════════════
+   บั๊กจริง: `fn_explode_child_demand` วน `where product_id = v_fg` ทั้งใบโดยไม่กรอง parent_mat
+   ⇒ แถว "หลาน" ที่นอนในใบแม่ถูกตัดสต็อกด้วย + ใช้ qty_per_unit ที่เป็น "ต่อ 1 ลูก" มาคูณยอด FG
+   ของจริง 4/11: prod_no 0121060580 ตัด 30042566 ถึง 5 แถว รวม 380 (ที่ถูก = 1 แถว × 2)
+   ⇒ ตัวตัดสินย้ายไป `fn_bom_direct_demand(mat)` ที่เดียว · ห้ามใครเขียนลูปทั้งใบกลับมา  */
+test('🛡️ trigger ตัดสต็อกต้องเรียก fn_bom_direct_demand ห้ามวน bom_items ทั้งใบ', () => {
+  const dir = join(ROOT, 'supabase/migrations');
+  const files = readdirSync(dir).filter(f => f.endsWith('.sql'));
+  // ตัดคอมเมนต์ออกก่อน (กฎข้อ 3 ของไฟล์นี้ — เอกสารพูดถึง pattern ต้องห้ามได้)
+  const strip = (s) => s.split('\n').filter(l => !l.trim().startsWith('--')).join('\n');
+
+  const owners = files.filter(f =>
+    /create\s+or\s+replace\s+function\s+public\.fn_explode_child_demand/i
+      .test(strip(readFileSync(join(dir, f), 'utf8'))));
+  assert.ok(owners.length > 0,
+    'ไม่เจอ migration ที่นิยาม fn_explode_child_demand — ด่านนี้ต้องมีไฟล์ให้ตรวจ');
+
+  // ไฟล์ล่าสุด (เรียงตามชื่อ = ตามวัน) คือตัวที่มีผลจริง
+  const latest = owners.sort().at(-1);
+  const sql = strip(readFileSync(join(dir, latest), 'utf8'));
+
+  assert.ok(/fn_bom_direct_demand\s*\(\s*NEW\.mat_no\s*\)/i.test(sql),
+    `${latest}: trigger ต้องเอารายการที่จะตัดจาก fn_bom_direct_demand(NEW.mat_no)\n` +
+    'why: ลูปทั้งใบตัดหลานด้วย = ของเสียถูกหักซ้ำ/ยอดสต็อกเพี้ยน\n' +
+    'fix: for b in select * from public.fn_bom_direct_demand(NEW.mat_no) loop');
+
+  assert.ok(!/from\s+bom_items\s+where\s+product_id\s*=\s*v_fg/i.test(sql),
+    `${latest}: ห้ามวน bom_items ทั้งใบใน trigger ตัดสต็อก (พบ "from bom_items where product_id = v_fg")\n` +
+    'why: parent_mat ทำให้แถวหลานนอนในใบแม่ได้ ⇒ ทั้งใบ ≠ ลูกตรง\n' +
+    'fix: ใช้ fn_bom_direct_demand(mat) ซึ่งกรอง parent_mat + ทะลุเฉพาะของลม');
+});
+
+/* กฎ "อ่านไม่ได้ = ไม่ตัดสิน" ของทะเบียนของลม — เดา 0 จะกลายเป็น "โซ่ขาด" เทียมทั้งจอ */
+test('🛡️ bomPhantom: ownOrders ที่อ่านไม่ได้ต้องเป็น unknown ห้ามบีบเป็น 0', async () => {
+  const { classifyIntermediate } = await import('../bomPhantom.js');
+  assert.equal(classifyIntermediate({}), 'unknown');
+  assert.equal(classifyIntermediate({ ownOrders: null }), 'unknown');
+  assert.equal(classifyIntermediate({ ownOrders: 0 }), 'gap');
+});
