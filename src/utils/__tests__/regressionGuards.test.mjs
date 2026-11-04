@@ -7557,6 +7557,44 @@ test('📤 cross-line-close-guards — ปิดใบข้ามไลน์�
     + '\n\n   ปิดใบผิดไลน์ = ยอด/OEE ของไลน์ที่ไม่เกี่ยวเปลี่ยน โดยไม่มีใครเห็นบนจอ\n');
 });
 
+test('⛔ downtime-band-central — แถบเครื่องหยุดบนบอร์ดต้องผ่านตัวกลาง + เห็นจริง', () => {
+  /* 04/11 (feedback หน้างาน · user): *"ปริ้น Tag มายิงประมาณพันกว่า แต่พอมาปิดแท็ก
+     มันเรียงไม่ต่อเนื่องกัน"* → *"ต่อให้รับยอดมาจากการยกยอด มันก็ต้องเรียงต่อกันได้ดิ"*
+     ของจริง (Assy GOR กะเช้า 03/11): ใบ**เรียงชิดกันอยู่แล้ว** · ช่องว่าง = downtime 180 นาที
+     ที่หน้างานลงใบไว้เอง (ตรงกับ %A 82%) — แต่บอร์ดวาดเป็น**ขีดสูง 4-5px ชิดขอบบน**
+     ⇒ บนจอ TV มองไม่เห็น = ช่องว่างกลายเป็น "รูโหว่ที่ไม่มีคำอธิบาย" แล้วถูกเข้าใจว่าโปรแกรมพัง
+     ⇒ ด่านนี้กัน 2 เรื่อง: (ก) กลับไปวาดเองในหน้า (2 จอจะเพี้ยนไม่ตรงกันอีก)
+        (ข) กลับไปเป็นขีดบางๆ ที่ `top:0` + `height` คงที่ */
+  const bad = [];
+  const U = 'src/utils/downtimeBands.js', C = 'src/components/DowntimeBand.jsx';
+  for (const f of [U, C]) {
+    if (!existsSync(join(ROOT, f))) { bad.push(`${f}: หายไป — ตัวกลางของแถบ downtime ห้ามถูกลบ`); }
+  }
+  if (!bad.length) {
+    const comp = stripComments(readFileSync(join(ROOT, C), 'utf8'));
+    /* ① ต้องอยู่ใต้ใบกัมบัง — ใบงานคือของหลักของบอร์ด */
+    if (!/zIndex:\s*0\b/.test(comp)) bad.push(`${C}: ต้อง zIndex 0 (ใต้ใบกัมบัง) — ทับใบงานคือสิ่งที่ห้ามที่สุด`);
+    /* แถบต้องเต็มความสูงแถว ไม่ใช่ขีดบางๆ อย่างเดิม */
+    if (!/bottom:\s*0\b/.test(comp)) bad.push(`${C}: ต้องเต็มความสูงแถว (top+bottom 0) — ขีดบาง 4-5px คือต้นเหตุที่หน้างานอ่านไม่ออก`);
+    /* ③ งานตามแผน (PM) ไม่ใช่ปัญหา ⇒ ต้องแยกสีจากของเสีย */
+    if (!/w\.planned/.test(comp)) bad.push(`${C}: ต้องแยกสี downtime ตามแผน (PM) ออกจากของเสีย — กฎ "งานตามแผนไม่ใช่ปัญหา"`);
+    /* ④ จอ TV: ฟอนต์ขั้นต่ำ 11 (ด่าน font-min-11 ไม่เห็นค่าที่คำนวณ runtime) */
+    if (!/Math\.max\(\s*11\s*,/.test(comp)) bad.push(`${C}: ฟอนต์ป้ายต้องมีพื้น Math.max(11, …) — จอ TV ห้ามต่ำกว่า 11px`);
+  }
+  /* (ก) จอที่วาดบอร์ดห้ามประกอบแถบ downtime เองอีก */
+  for (const f of ['src/pages/Dashboard.jsx', 'src/pages/Management.jsx']) {
+    const src = readFileSync(join(ROOT, f), 'utf8');
+    const code = stripComments(src);
+    if (!/downtimeBandsIn\s*\(/.test(code) || !/<DowntimeBand\b/.test(code))
+      bad.push(`${f}: ต้องวาด downtime ผ่าน downtimeBandsIn() + <DowntimeBand> (2 จอต้องเหมือนกันเป๊ะ)`);
+    /* ขีดบางๆ แบบเดิม: key `dt-` + สี downtime ดิบ ๆ ในหน้า */
+    if (/key=\{`dt-\$\{di\}`\}[\s\S]{0,400}height:\s*\d/.test(code))
+      bad.push(`${f}: กลับไปวาดแถบ downtime เป็นขีดความสูงคงที่ในหน้า — ต้องใช้ <DowntimeBand>`);
+  }
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n  ')
+    + '\n\n   ช่องว่างบนบอร์ดที่ไม่มีคำอธิบาย = หน้างานสรุปเองว่า "โปรแกรมพัง" ทั้งที่เป็นเวลาที่เครื่องหยุดจริง\n');
+});
+
 test('☕ break-policy-cols-central — เลือกคอลัมน์ break_policies เองต้องใช้ชุดกลาง', () => {
   /* 27/10: เพิ่มคอลัมน์ `duration_min_holiday` (นาทีพักวันหยุด) แล้วพบว่ามี 6 จุด
      เลือกคอลัมน์เองไว้ ⇒ จอพวกนั้นจะคิดเวลาพักวันหยุดเป็นค่าปกติ ขณะที่จอหลักคิดค่าวันหยุด
