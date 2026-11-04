@@ -77,6 +77,27 @@ export function madeHereMats(lineName, products = []) {
 }
 
 /**
+ * 🔴 ไลน์ขอเบิก "พาร์ทที่ตัวเองผลิต" จากสโตร์ = ขอผิดทิศ (2026-11-04 · คำสั่ง user)
+ * user: *"ต้องแตก BOM ไม่ใช่จะผลิต 100xxxxx แล้วไปแจ้งสโตร์ว่าต้องการ 100xxx"* ·
+ * วัด 04/11: ใบ "➕ ขอเอง" ค้าง 10/10 ใบ เป็นพาร์ทที่ไลน์นั้นผลิตเอง (LINE B 6 · C 2 · D 2)
+ * ⇒ ของที่ไลน์ผลิตเอง = "ต้องผลิตเติม" ไม่ใช่ "ขอให้สโตร์ส่ง" · ของที่ไลน์ต้องเบิก = ลูกใน BOM
+ * @param {string} lineName  ไลน์ที่ขอ
+ * @param {string} mat       พาร์ทที่ขอ
+ * @param {Array|null} products  ทะเบียนสินค้า (`loadProductsMaster`) — null = อ่านไม่ได้
+ * @returns {null | { code:'self_made'|'unknown', text:string }}  null = ขอได้
+ *   🔴 อ่านทะเบียนไม่ได้ = `unknown` (fail-closed · ตรวจไม่ได้ว่าผลิตเองไหม ห้ามปล่อยผ่านเงียบ)
+ */
+export function selfMadeRequestBlock(lineName, mat, products) {
+  if (!Array.isArray(products) || !products.length) {
+    return { code: 'unknown', text: 'อ่านทะเบียนสินค้าไม่ได้ — ตรวจไม่ได้ว่าพาร์ทนี้ไลน์ผลิตเองหรือไม่ · กด ↻ แล้วลองใหม่' };
+  }
+  if (madeHereMats(lineName, products).includes(key(mat))) {
+    return { code: 'self_made', text: `${key(mat)} เป็นพาร์ทที่ ${key(lineName)} ผลิตเอง — ขอเบิกจากสโตร์ไม่ได้ (ต้องผลิตเติม) · ของที่ต้องเบิกคือชิ้นส่วนลูกใน BOM ของพาร์ทนี้` };
+  }
+  return null;
+}
+
+/**
  * แบ่งจุดเรียกเติมของไลน์ออกเป็น 2 ทาง
  * · ของที่ไลน์ผลิตเอง: ขั้นต่ำ/สูงสุด **อ่านจาก `kanban_standards` (แท็บ 🎴 คำนวณ Kanban) ชุดเดียว**
  *   (user 08/10 "ให้ใช้ขั้นต่ำจากแท็บคำนวณ Kanban ชุดเดียวกัน") · `line_part_levels` ของพาร์ทพวกนี้ไม่ถูกใช้แล้ว
