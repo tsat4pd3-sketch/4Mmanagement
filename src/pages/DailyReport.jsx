@@ -528,6 +528,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   /* 📤 ปิดใบข้ามไลน์ (30/10) — ไม่เจอในกะนี้ ค่อยค้นทั้งโรงงาน
      { loading, state, row, rows, prodNo, err } · null = ยังไม่ได้ค้น */
   const [crossFind, setCrossFind] = useState(null);
+  /* 🔴 กฎเขียน DB ข้อ 4 (stale-response race) — สแกนเลขใหม่ทับระหว่างรอผลค้นเลขเก่า
+     = ผลเก่ากลับมาแล้ว "ปิดใบอัตโนมัติ" ของเลขที่คนไม่ได้สแกนแล้ว ⇒ ทุกผลต้องถือตั๋วของตัวเอง */
+  const crossReqRef = useRef(0);
   // Defect log
   const [defectTypes, setDefectTypes]   = useState([]);
   const [defectLogs, setDefectLogs]     = useState([]);
@@ -1918,14 +1921,15 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     const found = prodOrders.find(o => o.prod_no === v && o.status === 'open');
     setCloseMatch(found || null);
     setCrossFind(null);   // พิมพ์/สแกนใหม่ = ผลค้นข้ามไลน์ของเลขเก่าใช้ไม่ได้แล้ว
+    crossReqRef.current += 1;   // 🔴 ผลค้นของเลขเก่าที่ยังค้างอยู่ ห้ามย้อนมาปิดใบ
     if (hasEnter && found) {
       // slight delay to let state settle before calling confirm
       setTimeout(() => handleScanCloseImmediate(found), 30);
     }
-    /* 📤 สแกนแล้วไม่เจอในกะนี้ = ค้นทั้งโรงงานให้เลย (เครื่องสแกนส่ง Enter ตามท้ายเสมอ)
-       🔴 **ห้าม auto-confirm** เหมือนใบของกะตัวเอง — ใบของไลน์อื่นต้องให้คนกดยืนยัน
-       (สแกนพลาดทีเดียว = ปิดใบไลน์อื่นเงียบ) */
-    if (hasEnter && !found && v) crossLookup(v);
+    /* 📤 สแกนแล้วไม่เจอในกะนี้ = ค้นทั้งโรงงาน **แล้วปิดให้เลย** (03/11 · คำสั่ง user)
+       เครื่องสแกนส่ง Enter ตามท้ายเสมอ ⇒ ทางนี้คือทางหลักของคนคุมหลายไลน์ด้วยจอเดียว
+       🔴 ด่านที่แทนการกดยืนยัน = `canWriteLine` ใน `doCrossLineClose` (+ log ฝั่ง DB) */
+    if (hasEnter && !found && v) crossLookup(v, { auto: true });
   };
 
   // หมายเหตุ: เคยมี guard เตือน "ปิดข้ามคิว" ถ้าใบที่เปิดก่อนหน้ายังไม่ปิด แต่ตัดออกแล้ว
@@ -1984,6 +1988,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     const upd = {
       status: 'open', confirmed_by: null, confirmed_at: null, qty_ok: null,
       reopened_by: fullName, reopened_at: new Date().toISOString(), reopen_count: (o.reopen_count || 0) + 1,
+      /* 🔴 ค้างไว้ = รอบหน้าปิดจากจอเจ้าของใบเองก็ยังเข้า audit ว่า "ปิดข้ามไลน์" (trigger ดูคอลัมน์นี้) */
+      closed_from_line: null,
     };
     // ใบ manual: ตอนปิดใบ qty ถูกแทนด้วยยอดจริง — ถอยแล้วคืนเป้าเดิม (ยอดสะสม qty_actual คงไว้)
     if (o.is_manual) upd.qty = o.qty_target ?? o.qty;
@@ -2032,44 +2038,40 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     await doConfirmCloseOrder(closeMatch);
   };
 
-  /* ═══ 📤 ปิดใบข้ามไลน์ (2026-10-30 · คำสั่ง user) ════════════════════════════════
+  /* ═══ 📤 ปิดใบข้ามไลน์ — "สแกนจากจอไหนก็ปิดได้" (30/10 · คำสั่ง user) ════════════
      *"เวลาปิดออเดอร์ให้สแกนจากไลน์ไหนก็ได้ … พอสแกนเจอเลขโค้ดออเดอร์ มันก็จะเจอว่า
-       มันเปิดออเดอร์ไหน แล้วก็ปิดได้เลย แค่ให้คอนเฟิร์ม"*
-     ไม่เจอในกะนี้ = เดิมตีกลับ "ไม่พบ PROD.NO นี้ในกะปัจจุบัน" (ทางตัน) ⇒ ค้นทั้งโรงงานต่อ
-     🔴 กติกาการตัดสินอยู่ `utils/crossLineClose.js` ที่เดียว **ห้ามเช็คเองในหน้า** */
-  const crossLookup = useCallback(async (prodNo) => {
-    const v = String(prodNo || '').trim();
-    if (!v) { setCrossFind(null); return; }
-    setCrossFind({ loading: true, prodNo: v, state: 'none', row: null, rows: [], err: null });
-    const { data, error } = await supabaseDR.from('prod_orders')
-      .select(`${CROSS_CLOSE_COLS}, production_sessions!inner(id, line_name, work_date, shift, status)`)
-      .eq('prod_no', v).eq('status', 'open');
-    /* 🔴 อ่านไม่สำเร็จ = "ตอบไม่ได้" ไม่ใช่ "ไม่มีใบ" — ต้องเขียนบนจอ (กฎความซื่อสัตย์ของจอ) */
-    if (error) { setCrossFind({ loading: false, prodNo: v, state: 'none', row: null, rows: [], err: error.message }); return; }
-    const out = crossLineCloseState({ rows: data || [], currentSessionId: selSession?.id });
-    setCrossFind({ loading: false, prodNo: v, err: null, ...out });
-  }, [selSession?.id]);
+       มันเปิดออเดอร์ไหน แล้วก็ปิดได้เลย"*
 
-  /** ปิดใบของไลน์อื่น — ผ่านด่าน 3 ชั้นก่อนเสมอ */
-  const doCrossLineClose = async (row) => {
+     🔄 **03/11 ถอดการกดยืนยันออก** (คำสั่ง user: *"ถ้าเป็นยอดงานของ user นั้นรับผิดชอบ
+        อยากให้ไม่ต้องคอนเฟิร์มเลย แต่มีการเก็บ log ไว้ตรวจสอบได้"*)
+        ⇒ สแกนเลขที่ไม่อยู่ในกะนี้ = ค้นทั้งโรงงานเอง แล้ว**ปิดให้ทันที**ถ้าผ่านด่าน 4 ข้อ
+        ⇒ ความปลอดภัยย้ายไปอยู่ที่ **ร่องรอยย้อนหลัง**: ทุกใบที่ปิดข้ามไลน์ stamp
+          `closed_from_line` แล้ว trigger `trg_prod_order_cross_close_audit` เขียน `audit_log`
+          (migration `20261103_prod_order_cross_close_audit_dr.sql`)
+        🔴 **ถอด stamp `closed_from_line` = log หายเงียบ** (trigger ดูคอลัมน์นี้เป็นเงื่อนไข)
+     🔴 กติกาการตัดสินอยู่ `utils/crossLineClose.js` ที่เดียว **ห้ามเช็คเองในหน้า** */
+
+  /** ปิดใบของไลน์อื่น — ผ่านด่าน 4 ข้อก่อนเสมอ (⓪manual ①เลขซ้ำ ②กะปิดแล้ว ③ขอบเขต)
+   *  @param auto true = มาจากการสแกน (ไม่มีคนกดปุ่ม) ⇒ เหตุผลที่ปิดไม่ได้ต้องขึ้นทั้ง toast + การ์ด */
+  const doCrossLineClose = async (row, { auto = false } = {}) => {
     if (!row) return;
     const lineName = crossLineNameOf(row);
+    const fail = (msg) => {
+      toast.error(msg);
+      /* สแกนแล้วบล็อก: toast หายไปใน 4 วิ แต่คนสแกนมองจออยู่ ⇒ ต้องค้างเหตุผลไว้บนการ์ดด้วย */
+      if (auto) setCrossFind(f => (f ? { ...f, blocked: msg } : f));
+    };
     /* ② กะเจ้าของใบต้องยัง open — เช็คซ้ำตอนกดจริง (การ์ดบนจอเป็นแค่ "ภาพตอนค้น") */
     if (crossLineCloseState({ rows: [row], currentSessionId: selSession?.id }).state !== 'ready') {
-      toast.error(crossLineCloseText('shift_locked', row) || 'ใบนี้ปิดจากที่นี่ไม่ได้แล้ว — โหลดใหม่อีกครั้ง'); return;
+      fail(crossLineCloseText('shift_locked', row) || 'ใบนี้ปิดจากที่นี่ไม่ได้แล้ว — โหลดใหม่อีกครั้ง'); return;
     }
     /* ③ 🔐 ชั้นที่ 3 — ปิดใบไลน์อื่น = เขียนข้ามหน่วยงาน · ฝั่ง DR เป็น anon ไม่มีด่าน DB
-       ทะเบียนไลน์ยังโหลดไม่เสร็จ = ตัดสินไม่ได้ ⇒ บล็อก (fail-closed) */
-    if (!lines.length) { toast.error('ยังโหลดทะเบียนไลน์ไม่เสร็จ — ยังตัดสินไม่ได้ว่าใบนี้อยู่ในขอบเขตที่คุณดูแลไหม ลองใหม่อีกครั้ง'); return; }
+       ทะเบียนไลน์ยังโหลดไม่เสร็จ = ตัดสินไม่ได้ ⇒ บล็อก (fail-closed)
+       🔴 ด่านนี้คือตัวที่แทน "การกดยืนยัน" ⇒ ห้ามถอด/ห้ามย้ายลงไปหลังตัวเขียน */
+    if (!lines.length) { fail('ยังโหลดทะเบียนไลน์ไม่เสร็จ — ยังตัดสินไม่ได้ว่าใบนี้อยู่ในขอบเขตที่คุณดูแลไหม ลองใหม่อีกครั้ง'); return; }
     const ctx = { role, section: homeSection, sections: scopeSecs, allUnits, respCostCenters, scopeIdx };
     const w = canWriteLine(ctx, lineName, lines, { unknownTarget: 'block' });
-    if (!w.ok) { toast.error(writeBlockText(w, { what: `ใบผลิตของไลน์ ${lineName || '—'}`, unit: lineName })); return; }
-
-    if (!window.confirm(
-      `📤 ปิดใบ ${row.prod_no} ให้ไลน์อื่น?\n\n`
-      + `• ใบนี้เป็นของ ${lineName || '—'} · ${crossLineWhen(row)}\n`
-      + `• ยืนยัน ${row.qty} ชิ้น เป็น OK ทั้งหมด (ยอดเข้าไลน์เจ้าของใบ ไม่ใช่ไลน์นี้)\n`
-      + `• ระบบบันทึกว่าคุณเป็นคนปิด (ตรวจย้อนหลังได้)`)) return;
+    if (!w.ok) { fail(writeBlockText(w, { what: `ใบผลิตของไลน์ ${lineName || '—'}`, unit: lineName })); return; }
 
     if (prodBusyRef.current) return;
     prodBusyRef.current = true;
@@ -2078,13 +2080,36 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       /* CAS `.eq('status','open')` + นับแถว — RLS/แข่งกับอีกเครื่อง = "สำเร็จ 0 แถว ไม่มี error" */
       const ok = await checkWriteRows(await supabaseDR.from('prod_orders').update({
         status: 'confirmed', confirmed_by: fullName, confirmed_at: new Date().toISOString(), qty_ok: row.qty,
+        closed_from_line: selSession?.line_name || '(ไม่รู้ไลน์ของจอ)',   // 🔴 ตัวจุด trigger เขียน audit_log
       }).eq('id', row.id).eq('status', 'open').select('id'), `ปิดใบ ${row.prod_no} (ไลน์ ${lineName})`,
       { zeroMsg: `ปิดใบ ${row.prod_no} ไม่สำเร็จ (0 แถว — อาจมีคนปิดไปแล้วจากไลน์นั้น) · สแกนใหม่เพื่อดูสถานะล่าสุด` });
       if (!ok) return;
-      toast.success(`📤 ปิดใบ ${row.prod_no} · ${row.qty} ชิ้น ให้ไลน์ ${lineName} แล้ว ✓`);
+      /* ไม่มีการกดยืนยัน ⇒ toast ต้องตอบให้ครบว่า "ยอดนี้เข้าไลน์ไหน กะไหน" ไม่ใช่แค่ ✓ */
+      toast.success(`📤 ปิดใบ ${row.prod_no} · ${row.qty} ชิ้น → ไลน์ ${lineName || '—'} ${crossLineWhen(row)} ✓`);
       setCloseProdNo(''); setCloseMatch(null); setCrossFind(null);
       setTimeout(() => closeProdInputRef.current?.focus(), 80);
     } finally { setSavingProdClose(false); prodBusyRef.current = false; }
+  };
+
+  /** ค้นใบนี้ทั้งโรงงาน · `auto` = มาจากเครื่องสแกน ⇒ เจอใบเดียวที่ปิดได้ = ปิดให้เลย */
+  /* 🔴 ไม่ใช่ `useCallback` โดยตั้งใจ — ตัวนี้ต้องอ่าน `lines`/ctx สิทธิ์ล่าสุดเสมอ และ
+     deps ที่เป็น array/object ผิดกฎเขียน DB ข้อ 9 · ไม่มี effect ไหนใช้เป็น dep */
+  const crossLookup = async (prodNo, { auto = false } = {}) => {
+    const v = String(prodNo || '').trim();
+    const rid = ++crossReqRef.current;
+    if (!v) { setCrossFind(null); return; }
+    setCrossFind({ loading: true, prodNo: v, state: 'none', row: null, rows: [], err: null });
+    const { data, error } = await supabaseDR.from('prod_orders')
+      .select(`${CROSS_CLOSE_COLS}, production_sessions!inner(id, line_name, work_date, shift, status)`)
+      .eq('prod_no', v).eq('status', 'open');
+    if (rid !== crossReqRef.current) return;   // 🔴 สแกนเลขใหม่ทับแล้ว — ผลนี้ใช้ไม่ได้ ห้ามปิดใบ
+    /* 🔴 อ่านไม่สำเร็จ = "ตอบไม่ได้" ไม่ใช่ "ไม่มีใบ" — ต้องเขียนบนจอ (กฎความซื่อสัตย์ของจอ) */
+    if (error) { setCrossFind({ loading: false, prodNo: v, state: 'none', row: null, rows: [], err: error.message }); return; }
+    const out = crossLineCloseState({ rows: data || [], currentSessionId: selSession?.id });
+    setCrossFind({ loading: false, prodNo: v, err: null, ...out });
+    /* 🔴 ปิดอัตโนมัติเฉพาะ `ready` (ใบเดียว · ไม่ใช่ manual · กะยังเปิด) — `ambiguous` ยังต้องให้คนเลือกไลน์
+       (เลขซ้ำหลายไลน์ ระบบเดาแล้วปิดผิดไลน์ = ยอดเข้าผิดที่ แก้ย้อนหลังยาก) */
+    if (auto && out.state === 'ready') await doCrossLineClose(out.row, { auto: true });
   };
 
   // ── ออเดอร์ manual (ไลน์ไม่มี kanban card) ─────────────────────
@@ -5980,7 +6005,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   ) : prodOrders.find(o => o.prod_no === closeProdNo && o.status === 'confirmed') ? (
                     <div style={{ fontSize: 12, color: 'var(--red)', fontWeight: 600 }}>⚠ PROD.NO นี้ปิดไปแล้ว</div>
                   ) : (
-                    /* 📤 ไม่เจอในกะนี้ — เดิมจบแค่นี้ (ทางตัน) · 30/10 ค้นทั้งโรงงานต่อให้ */
+                    /* 📤 ไม่เจอในกะนี้ — เดิมจบแค่นี้ (ทางตัน) · 30/10 ค้นทั้งโรงงานต่อให้
+                       03/11 สแกน (มี Enter) = ค้น+ปิดให้เลย · พิมพ์มือ = ต้องกดค้นเอง */
                     <div style={{ fontSize: 12 }}>
                       <div style={{ color: 'var(--red)', fontWeight: 600 }}>✕ ไม่พบ PROD.NO นี้ในกะปัจจุบัน</div>
                       {!crossFind && (
@@ -6009,6 +6035,13 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                           <div style={{ color: 'var(--amber)', fontWeight: 800, marginBottom: 6, lineHeight: 1.6 }}>
                             📤 {crossLineCloseText(crossFind.state, crossFind.row)}
                           </div>
+                          {/* 🔴 สแกนแล้วปิดอัตโนมัติไม่ผ่าน (นอกขอบเขต/ทะเบียนไลน์ยังไม่มา) = ต้องค้างเหตุผลไว้
+                              toast หายไปใน 4 วิ แต่คนสแกนยืนมองจออยู่ — เงียบ = เข้าใจว่าปิดแล้ว */}
+                          {crossFind.blocked && (
+                            <div style={{ marginBottom: 8, padding: '8px 10px', borderRadius: 7, background: 'var(--red-dim)', border: '1px solid var(--red-line)', color: 'var(--red)', fontWeight: 700, lineHeight: 1.6 }}>
+                              ⛔ ปิดให้อัตโนมัติไม่ได้ — {crossFind.blocked}
+                            </div>
+                          )}
                           {crossFind.rows.map(r => (
                             <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '6px 0', borderTop: '1px solid var(--border2)' }}>
                               <div style={{ minWidth: 0 }}>
@@ -6027,7 +6060,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                             </div>
                           ))}
                           <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6, lineHeight: 1.6 }}>
-                            ยอดจะเข้า <b style={{ color: 'var(--text2)' }}>ไลน์เจ้าของใบ</b> ไม่ใช่ไลน์นี้ · ระบบบันทึกว่าคุณเป็นคนปิด
+                            ยอดจะเข้า <b style={{ color: 'var(--text2)' }}>ไลน์เจ้าของใบ</b> ไม่ใช่ไลน์นี้ ·
+                            สแกนด้วยเครื่องยิง = <b style={{ color: 'var(--text2)' }}>ปิดให้ทันทีไม่ต้องกดยืนยัน</b>
+                            (เฉพาะไลน์ในขอบเขตที่คุณดูแล) · ทุกใบที่ปิดข้ามไลน์ถูกบันทึก log ไว้ตรวจย้อนหลังได้
                           </div>
                         </div>
                       )}
