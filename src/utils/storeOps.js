@@ -4,5 +4,5 @@
    · `/heijunka` (HeijunkaKanban mode='monitor') = ดูอย่างเดียว
    · `/line-stock?tab=store` = ตู้งานสโตร์ (ขากับไลน์ผลิต) · `/line-stock?tab=purchase` = จัดซื้อ (ขา supplier → รับเข้าสโตร์)
    ไฟล์นี้แยกจาก HeijunkaKanban เพื่อให้ LineStock lazy-load หน้านั้นได้โดยไม่ดึงทั้งก้อนมาตั้งแต่แรก */
-export const OPS_STORES_WORK = ['wip', 'fg', 'child', 'raw', 'plating', 'rack'];
+export const OPS_STORES_WORK = ['wip', 'open', 'fg', 'child', 'raw', 'plating', 'rack'];   // 'open' = แจ้งล่วงหน้าจากใบที่ไลน์เปิด (อ่านอย่างเดียว · 04/11)
 export const OPS_STORES_BUY = ['purchase'];
