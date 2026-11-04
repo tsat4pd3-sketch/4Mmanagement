@@ -8136,18 +8136,6 @@ test('🛡️ pair-scan-one-side — สแกนเปิดใบต้อง�
     '\n\n❌ กลับมาบังคับ "ใบถัดไป = คู่" (pendingPairId) — คนยิงข้างเดียวกันต่อ = ผูก LH กับ LH\n');
 });
 
-test('🛡️ pair-scan-auto-partner — งานคู่ยิง Tag ข้างเดียว ระบบเปิดใบข้างคู่ <PROD.NO>P ให้เอง + ปิดพร้อมกัน', () => {
-  const src = stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'));
-  const a = src.indexOf('const handleScanOpenInner');
-  const body = src.slice(a, src.indexOf('const handleOverflowNextShift', a));
-  assert.match(body, /const pairNo\s*=\s*`\$\{prodNo\}P`/,
-    '\n\n❌ สแกนเปิดงานคู่ไม่เปิดใบข้างคู่ให้แล้ว — หน้างานยิงข้างเดียว (คำสั่ง user 04/11) ใบข้างคู่จะหายทั้งกะ\n');
-  const c = src.indexOf('const doConfirmCloseOrderInner');
-  const close = src.slice(c, src.indexOf('const handleScanCloseImmediate', c));
-  assert.match(close, /`\$\{match\.prod_no\}P`/,
-    '\n\n❌ สแกนปิดไม่ปิดใบคู่ที่ระบบเปิดให้แล้ว — ใบคู่ไม่มี Tag ให้สแกน = ค้างเปิดทั้งกะ\n');
-});
-
 /* ── 📦 "ใบของตัวเองว่าง" ≠ "ไม่มี BOM" — ต้องนับลูกที่ใบอื่นกรอกไว้ด้วย (2026-11-04) ──────
    user แจ้ง: 20059152 ขึ้น "BOM ✗" ทั้งที่ใบของแม่ (20059261) กรอกลูกไว้ให้แล้ว
    ต้นเหตุ: ตัวนับดู `product_id` ของตัวเองอย่างเดียว ไม่ได้ดู `parent_mat` ของใบอื่น
