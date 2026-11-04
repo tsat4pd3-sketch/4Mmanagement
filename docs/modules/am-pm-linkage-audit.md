@@ -130,3 +130,101 @@ empty-state บอก AM ตามวันเดิน/ไม่ตั้งร
 **ที่ยังไม่ทำ (รอบ 3 · รอ user):** KPI %compliance AM/PM ขึ้น OBEYA/DeptDashboard (ตัวหารตัด `idle_skip`) · นิยาม "เดินวันนี้" ให้ตรงกัน
 ระหว่าง PMSchedule (ใบ confirmed ผ่าน `pm_usage_daily`) กับบอร์ด AM (ใบ opened) · `pm-plan-reminder` ยังไม่เตือนแผน "ไม่เคยตรวจ" (ตั้งใจ — 106 แผน
 JIG MTN จะท่วมห้อง · ให้เห็นบนจอแทน) · hardcode `machines.equipment_category === 'production'` (คนละความหมาย = หมวดอุปกรณ์ ไม่ใช่ทีม) ไม่แตะ
+
+## 5. 📅 รายงาน AM รายเดือน (2026-11-03 · ประชุมหน้างาน 02/11 ข้อ C2)
+
+> *"รายงาน AM ตอนนี้มีแค่รายวัน ต้องมีรายเดือนแบบ LPA"*
+
+**ที่อยู่:** `/daily-checker?tab=pm&sub=monthly` (แท็บ 📅 รายงานรายเดือน ของหน้า AM — `useTabParam(…, 'sub')`
+เพราะ `?tab=` ถูกหน้าแม่ DailyChecker จองแล้ว) · ไม่มี route ใหม่ ไม่ต้อง seed สิทธิ์ (piggyback `page:/daily-pm`)
+
+| ชิ้น | ไฟล์ |
+|---|---|
+| ตัวโหลด (ทะเบียน cache เดียวกับบอร์ดรายวัน + ใบตรวจทีม AM ทั้งเดือน + ตารางเปิดกะ) | `loadMonthlyAm()` ใน `src/lib/dailyAmBoard.js` |
+| ตัดสินช่อง/สรุป (pure · เทส `src/lib/__tests__/amMonthly.test.mjs`) | `buildAmMonthly()` · `amRowsSummary()` · `amMonthlyAoa()` ใน `src/lib/amMonthly.js` |
+| จอ + Excel | `src/components/AmMonthlyReport.jsx` |
+
+**นิยาม (ชุดเดียวกับบอร์ดรายวัน):**
+- แถว = ไลน์ (ปุ่ม "รายเครื่อง" กางเป็นแถวเครื่อง) · คอลัมน์ = วัน · **เลือกกะ** (AM ตรวจต้นกะ ⇒ ไม่มี "ทุกกะ")
+- ตรวจแล้ว = ใบตรวจทีม AM (`isAmTeam`) ในกะนั้น · **ล่าสุดชนะ** · `pending` = ยังไม่ตรวจ
+- ต้องตรวจ = อยู่ในทะเบียน `pm_daily_line_targets` (active · ตรงกะหรือ shift ว่าง) และ **ไม่ก่อน `created_at`** (ก่อนนั้น = `·` ไม่มีแผน)
+- ผลิตไหม = กะเปิดจริงของ**ครอบครัวไลน์** (`openFamilyLines`) · ตารางกะอ่านไม่ได้ = `?` ทั้งเดือน + แถบเหลือง (**ห้ามเป็น NP**)
+- วันหยุดโรงงาน = ไม่ต้องตรวจ **เว้นแต่วันนั้นเดินเครื่อง** (AM = ตรวจทุกกะที่เดิน · ต่างจาก LPA ที่ผูกแผน)
+- กะที่กำลังเดิน = ยังไม่ตัดสิน (ดูแท็บสถานะวันนี้ · ไม่งั้นต้นกะขึ้น "ขาด" ทั้งที่อยู่ในกรอบ 60 นาที)
+- สถานะช่อง `checkDayState` · สัญลักษณ์ `CHECK_DAY_META`/`CHECK_DAY_LEGEND` · ผลตรวจในช่อง `AM_RESULT_META` (`OK`/`NG`/`!` — เทสคุมว่าไม่ชนสถานะวัน)
+- **% ความครบ = เครื่อง-วันที่ตรวจแล้ว ÷ (ตรวจแล้ว + ขาด)** · ไม่มีวันต้องตรวจ = `–` · NG = จำนวนเครื่อง-วันที่ผลตรวจ `fail`
+- Excel = doc_key **`xlsx_am_monthly`** (เลขฟอร์มที่ชื่อไฟล์ · ชีต 2 = คำอธิบาย/ข้อจำกัด) — migration `20261103_doc_forms_xlsx_am_monthly_main.sql` (**MAIN · apply แล้ว**)
+- `loadRunDays()` (`utils/runDays.js`) **แบ่งหน้าแล้ว + คืน `byKey`** (คีย์ → ชื่อไลน์ที่เปิดกะ) — additive, LPA/Poka-Yoke ไม่กระทบ
+
+**ข้อจำกัดที่รู้ตัว (ยังไม่ทำ):** ทะเบียนที่ปิดใช้ (`is_active=false`) ไม่มีวันปิด ⇒ เครื่องที่เอาออกแล้วไม่โผล่ย้อนหลัง ·
+NG นับระดับ "เครื่อง-วัน" ไม่ใช่รายข้อ (`inspection_results`) · ยังไม่มีใบพิมพ์ PDF (Excel อย่างเดียว)
+
+## 6. ประชุมหน้างาน 2026-11-02 — AM รายเครื่อง · NG ต้องมี MO · สายอนุมัติ (B1/B3/B2)
+
+### B1 — AM ตัดสิน "รายเครื่อง" จากใบผลิตที่สแกนในกะ
+- **เดิม:** ไลน์เปิดใบแรก ⇒ ทุกเครื่องในทะเบียน `pm_daily_line_targets` ต้องตรวจ ⇒ ไลน์ auto/single ส้มให้เครื่องที่ไม่ได้เดิน
+- **ตอนนี้:** `loadDailyAm()` select `prod_orders.machine_no` ของ session กะนี้ → `runningMachinesByLine()` (รวมครอบครัวแม่-ลูก
+  ไม่รวมพี่น้อง · เทียบด้วย `machineKey()` · `SP-10/NF86` แตกเป็นทีละเครื่อง) → `dailyAmLineStatus({ runByLine })` → `amTargetsByRun()`
+  - เครื่องมีใบ = ต้องตรวจ · นาฬิกา 60 นาที **นับจากใบแรกของเครื่องนั้น** (`startAt`) · ไม่มีใบ = `notRunning` (จอเขียน "ไม่เดินกะนี้ — ไม่ต้องตรวจ" ไม่ใช่ขาดตรวจ)
+  - 🔴 ใบผลิตไม่ลงเลขเครื่องเลย = `amMode='line_no_mno'` ถอยไปตัดสินทั้งไลน์ (พฤติกรรมเดิม) + จอเขียนบอก (`amModeNote()`)
+  - 🔴 มีใบไม่ลงเลขปน (`mixed`) = เครื่องที่ไม่เจอในใบ "อาจเดิน" ⇒ ยังต้องตรวจ (ห้ามบีบเป็นไม่เดิน)
+  - ทุกเครื่องไม่เดิน = `idle` + `allNotRunning` (ไม่ใช่ `none`) · ตัวหาร `total` = เครื่องที่ต้องตรวจ · `registeredN` = ในทะเบียน
+  - ไม่ส่ง `runByLine` = พฤติกรรมเดิมเป๊ะ (ทุกจอที่ `...res` ได้ของใหม่อัตโนมัติ: FactoryMap · DeptDashboard · ProdRoutineCard · pmDailyAlarm)
+  - วัดจริง DR 14 วัน: ใบผลิต 1,179/6,205 ใบลงเลขเครื่อง · ทะเบียน AM 78/78 แถวมีเลขเครื่อง
+- **ยังไม่ทำ:** edge `pm-daily-scan` (ส้ม Telegram) ยังตัดสินทั้งไลน์ — ต้องพอร์ตกติกาเดียวกันแล้ว deploy
+
+### B3 — AM ผิดปกติ ⇒ ต้องเปิด MO หรือเขียนเหตุผล + ติดตามจนปิด
+- โมดัลหลังบันทึก NG (PMCheckData) ใบ AM: ไม่มีปุ่ม "ไว้ก่อน" แล้ว — ต้อง 🔧 เปิดใบแจ้งซ่อม **หรือ** "ไม่เปิดใบ (ระบุเหตุผล ≥5 ตัวอักษร)"
+  → `inspections.mo_waived_reason/by/at` (migration `20261102_am_ng_mo_waiver_dr.sql` · DR · **apply แล้ว**)
+  · ปิดหน้าต่างได้ แต่รายการค้าง "⚠ ยังไม่เปิดใบแจ้งซ่อม" บนบอร์ด + ประวัติ · คนที่ไม่มี `mtn_repair:report` เห็นโมดัลเช่นกัน (ทางเหตุผล)
+- บอร์ด AM: ชิป NG มีสถานะ MO (`moStatusLabel()` เท่านั้น) / เหตุผล / "ยังไม่เปิดใบ" · `moFollow.ok=false` = เขียน "อ่านสถานะใบซ่อมไม่ได้"
+- 🔧 **"แจ้งซ่อมแล้ว ยังไม่แก้ไข"** — MO ที่มาจากผลตรวจ AM ก่อนกะนี้และยังไม่จบ (`amCarryOverByJig`) ติดป้ายบนเครื่องทุกวันจนปิด · จอ subscribe `mtn_orders`
+- สถานะ: `amNgFollowState()` → mo_open · mo_closed · mo_void (rejected/cancelled = ยังไม่ได้แก้) · waived · no_mo · unknown
+
+### B2 — สายอนุมัติ AM ตามลำดับชั้น (`src/utils/amApproval.js`)
+- **ต้นเหตุเดิม:** ใบตรวจมีช่องอนุมัติเดียว + ใครถือ `pm:approve` ก็กด · role `leader` ไม่มี `pm:approve` ⇒ หัวหน้ากลุ่มกดไม่ได้ งานไปกองที่ supervisor/manager
+- **ตอนนี้ (ใบของทีม AM เท่านั้น — ตัดสินจาก checklist ของใบ):** ผู้อนุมัติ = ชั้นแรกในบันได 40 หัวหน้ากลุ่ม → 50 หัวหน้าแผนก/ส่วน → 60 ผู้จัดการ
+  ที่ **สูงกว่าตำแหน่งคนตรวจ** (`positionRank(profiles.position)`) · ต่ำกว่า = `rank_too_low` · สูงกว่า = `skip_level` · ใบตัวเอง = `self`
+  · ไม่รู้ตำแหน่ง = ไม่บล็อก + เขียนบนจอ · ด่านซ้ำใน handleApprove/handleReject · ป้ายประวัติ "รอหัวหน้ากลุ่ม/…"
+- สิทธิ์ชั้น ② = `am:approve` (migration `20261102_am_approve_permission_main.sql` · Main · **apply แล้ว**) — seed = ผู้ถือ pm:approve + `leader`
+- ⚠️ ข้อยกเว้นที่ 2 ของกฎ "ตำแหน่งห้ามล็อกการกด" (positions.js) — คำสั่งจากประชุม 02/11 · ผลข้างเคียง: ไลน์ที่ไม่มีบัญชีหัวหน้ากลุ่ม ใบค้างรอ (ทางออก = ตั้งตำแหน่งที่ `/add-user`)
+- ✅ ขั้น "หัวหน้าแผนก/ส่วนทบทวนรายเดือน" ทำแล้ว 2026-11-03 → §7 · **ยังไม่ทำ:** ใบ PM ของช่างยังเป็นอนุมัติขั้นเดียวเดิม
+
+## 7. ✍️ ลงนามทบทวน AM รายเดือน — ขั้น 3 ของสาย AM (2026-11-03 · user ตัดสิน 03/11)
+
+สาย AM ครบ 3 ขั้น: **พนักงานตรวจทุกต้นกะ → หัวหน้ากลุ่มรับทราบรายวัน (§6 B2) → หัวหน้าแผนก/ส่วนทบทวนรายเดือน (ส่วนนี้)**
+ที่อยู่: แผง "✍️ ลงนามทบทวนรายเดือน" ใต้ตารางในแท็บ 📅 รายงานรายเดือน (`/daily-checker?tab=pm&sub=monthly`)
+
+| ชิ้น | ไฟล์ |
+|---|---|
+| ตาราง `am_monthly_signoffs` (**Main** · migration `20261103_am_monthly_signoffs_main.sql` · **apply แล้ว 04/11**) | — |
+| ตัวห่อ DB (โหลด/ลงนาม/เพิกถอน · `isMissingTableError`) | `src/lib/amMonthlySignoff.js` |
+| ด่านใครลงนาม/เพิกถอนได้ (pure · เทส) | `amMonthlySignoffVerdict()` · `amMonthlyRevokeVerdict()` ใน `src/utils/amApproval.js` |
+| เดือนจบไหม · snapshot · เทียบ snapshot กับของสด · ชีต Excel (pure · เทส `src/lib/__tests__/amMonthlySignoff.test.mjs`) | `amMonthComplete()` · `amSignoffSnapshot()` · `amSignoffDrift()` · `amSignoffAoa()` ใน `src/lib/amMonthly.js` |
+| จอ + Excel ชีต "ลงนามทบทวน" | `src/components/AmMonthlyReport.jsx` |
+
+**การตัดสินใจ (ออกแบบ):**
+- **ทำไมอยู่ Main ไม่ใช่ DR** — ลายเซ็นต้องผูกตัวคนที่ login (`signed_by = auth.uid()` + `has_perm`) · `supabaseDR` เป็น anon เสมอ = ตรวจตัวคนไม่ได้ ·
+  อ้างอิง `month`/`line_name`/`shift` เป็น text (ใบตรวจอยู่ DR ผูก FK ข้าม project ไม่ได้)
+- **หน่วยของลายเซ็น = เดือน × ไลน์ × กะ** (จอเลือกกะอยู่แล้ว · AM ตรวจต้นกะ) — unique partial index เฉพาะแถว `signed` (`coalesce(shift,'')`) · client **insert ล้วน ห้าม upsert**
+- **ใครลงนามได้** = คีย์ `am:monthly_signoff` (`canSeeded` — ยังไม่ seed = ปิด) + **ไม่ใช่บัญชีกลาง** + `canWriteLine()` ของไลน์ (`unknownTarget:'block'` — ไลน์ "—" ลงนามไม่ได้) +
+  ตำแหน่ง `positionRank ≥ 50` (หัวหน้าแผนก/ส่วน · **ผู้จัดการลงได้** เพราะเป็นขั้นสุดท้าย ไม่มีใครรออยู่ข้างบน = ไม่ใช่ "ข้ามขั้น") ·
+  🔴 ไม่รู้ตำแหน่ง = ไม่บล็อก + จอเขียนบอก (กติกาเดียวกับ `amApprovalVerdict`) — ชั้น role ยังกั้นอยู่
+- **เดือนปัจจุบัน = ลงนามไม่ได้จนกว่าเดือนจบ** (`amMonthComplete` = กะดึกของวันสุดท้ายจบ = 08:00 วันที่ 1 เดือนถัดไป เวลาไทย ·
+  ใช้ `amSlotOf` ตัวเดียวกับตาราง) — เลือก "บล็อก" ไม่ใช่ "เตือนแล้วให้ลง" เพราะ snapshot ของเดือนที่ยังเดิน = ตัวเลขที่ยังขยับ ลายเซ็นจะผิดเสมอ · จอเขียนวันที่เปิด
+- **seed** = `admin` · `manager` · `supervisor` เท่านั้น (ระดับหัวหน้าแผนก/ส่วนขึ้นไป) — **ไม่ seed `leader`** (ขั้น 2) · ไม่ seed qa/mtn/engineer (ไม่ใช่สายบังคับบัญชาของไลน์ผลิต) ·
+  ไม่คัดลอกจาก `am:approve` เพราะคีย์นั้นรวม leader · ปรับเพิ่มเองได้ที่ `/permissions`
+- **ลงนาม = บันทึก** (หลักเดียวกับ `prod_problem_reports`): เก็บ `snapshot` (สรุปไลน์ + รายเครื่อง ณ ตอนลงนาม) + สำเนาชื่อ/ตำแหน่ง/URL ลายเซ็นโปรไฟล์ ·
+  ตัวเลขสดต่างจาก snapshot (ลงใบตรวจย้อนหลัง/แก้ทะเบียน) = แถบเหลือง "ตัวเลขตอนนี้ต่างจากที่ลงนามไว้" + ตัวเลข ณ ตอนลงนาม (`amSignoffDrift`) ·
+  snapshot อ่านไม่ออก/ไลน์หายจากรายงาน = นับเป็น "ต่าง" ห้ามถือว่าตรง
+- **ห้ามลบ** — เพิกถอน = `status='revoked'` + เหตุผล ≥ 5 ตัวอักษร (CHECK) · ไม่มี policy/GRANT delete · trigger `fn_am_monthly_signoff_guard` ล็อกเนื้อแถว
+  (แก้ได้ทางเดียว signed→revoked · `revoked_by` = `auth.uid()` ฝั่ง server) · ผู้ลงนามถอนของตัวเองได้ · คนอื่นต้องตำแหน่ง ≥ ผู้ลงนาม
+- RLS: select = authenticated ทุกคน · insert = `has_perm('am:monthly_signoff') and signed_by = auth.uid()` · update = has_perm + แถวเดิม `signed` → ใหม่ `revoked` ·
+  **GRANT select/insert/update to authenticated** (ไม่มี delete · revoke anon) · `fn_audit` + `fn_set_updated_at` ผูกแบบมีเงื่อนไข
+- ด่านซ้ำตอนเขียน: `signAmMonthly`/`revokeAmMonthly` รับ verdict ที่คิด **ตอนกด** · ด่าน stale `viewKey(month, shift)` · นับแถวด้วย `checkWriteRows` · 23505 = มีคนลงนามตัดหน้า
+- **ก่อน apply** (42P01/PGRST205): แผงเขียน "ระบบลงนามรายเดือนยังไม่เปิดใช้ … จอนี้ยังบอกไม่ได้ว่าเคยมีใครลงนาม" · Excel ชีตลงนามเขียนเหตุผลเดียวกัน — ไม่เงียบ
+- Excel: ชีต 3 "ลงนามทบทวน" 1 แถวต่อไลน์ (ยังไม่ลงนาม = เขียนว่ายังไม่ลงนาม) · ลายเซ็นเป็น URL (SheetJS ฝังรูปไม่ได้) · ตัวเลข "ณ ตอนลงนาม" มาจาก snapshot · ชีตแรกไม่ถูกแทรกแถว
+- ด่าน `regressionGuards`: **`am-monthly-signoff-record`** — เขียนตารางนี้ผ่าน `lib/amMonthlySignoff.js` เท่านั้น · ห้าม `.delete()`/`.upsert()` · ต้องเช็ค verdict ทั้ง 2 ทาง · จอต้องคิด verdict ใหม่ตอนกด + มีด่าน stale
+
+**ข้อจำกัดที่รู้ตัว:** ตำแหน่ง ≥ 50 ตัดสินที่ client (ฐานคุม "ใคร" ด้วย has_perm + signed_by แต่ `position_rank` เป็นค่าที่ client ส่ง) — ถ้าต้องการให้ฐานตรวจตำแหน่งเอง
+ต้องย้ายตรรกะ `positionKeyOf` (รับทั้ง key และ label) ลง SQL · เพิกถอนจาก SQL Editor (ไม่มี `auth.uid()`) ติด CHECK `revoked_by` — ตั้งใจ (ทุกการเพิกถอนต้องมีตัวคน)

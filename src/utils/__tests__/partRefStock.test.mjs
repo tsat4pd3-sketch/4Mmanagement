@@ -72,3 +72,50 @@ test('🔧 กฎโหมดปิดล็อต **ร่วมตัดสิ
     'โหมดบอกแค่ "ยอดเข้าทางไหน" · dest_line_name บอก "เข้าคลังไหน" — คนละเรื่อง ห้ามเอามาปนกัน');
   assert.equal(inflowDestOf('20059999', rules), 'STORE', 'MAT อื่นยังถอยไปกฎ prefix เหมือนเดิม');
 });
+
+/* 🔴 04/11 — ไลน์ขอเบิกพาร์ทที่ตัวเองผลิต = ขอผิดทิศ */
+import { selfMadeRequestBlock } from '../partRefStock.js';
+test('selfMadeRequestBlock: พาร์ทที่ไลน์ผลิตเอง = บล็อก · ลูกใน BOM/ไลน์อื่นผลิต = ขอได้', () => {
+  const products = [
+    { mat_no: '10104918', line_name: 'LINE B ( 600 Ton )', is_active: true },
+    { mat_no: '20058693', line_name: 'LINE D ( 110&300 Ton )', is_active: true },
+    { mat_no: '20099999', line_name: 'LINE B ( 600 Ton )', is_active: true, is_operation: true },
+    { mat_no: '20088888', line_name: 'LINE B ( 600 Ton )', is_active: false },
+  ];
+  assert.equal(selfMadeRequestBlock('LINE B ( 600 Ton )', '10104918', products)?.code, 'self_made');
+  assert.equal(selfMadeRequestBlock('line b  ( 600 ton )', ' 10104918 ', products)?.code, 'self_made');   // ช่องว่าง/ตัวพิมพ์
+  assert.equal(selfMadeRequestBlock('Assy GOR', '20058693', products), null);       // ไลน์อื่นผลิต → เบิกได้
+  assert.equal(selfMadeRequestBlock('LINE B ( 600 Ton )', '30042571', products), null);  // ไม่ได้ผลิตเอง
+  assert.equal(selfMadeRequestBlock('LINE B ( 600 Ton )', '20099999', products), null);  // ชั้น OP ไม่นับ
+  assert.equal(selfMadeRequestBlock('LINE B ( 600 Ton )', '20088888', products), null);  // ปิดใช้งานแล้ว
+  assert.equal(selfMadeRequestBlock('LINE B ( 600 Ton )', '10104918', null)?.code, 'unknown');   // อ่านไม่ได้ = fail-closed
+  assert.equal(selfMadeRequestBlock('LINE B ( 600 Ton )', '10104918', [])?.code, 'unknown');
+});
+
+/* 🔁 04/11 — ไลน์จะผลิตพาร์ทตัวเอง → แตก BOM เป็นของที่ต้องเบิก */
+import { lineRequestFromBom } from '../partRefStock.js';
+import { buildBomIndex } from '../bomTree.js';
+test('lineRequestFromBom: แตก BOM — ข้ามของที่ไลน์ทำเอง/ชั้น OP ลงไปหาลูก · รวมตัวซ้ำ', () => {
+  const products = [
+    { id: 'p1', mat_no: '10088644', line_name: 'LINE C', is_active: true },
+    { id: 'p2', mat_no: '20063136', line_name: 'LINE D', is_active: true },
+    { id: 'p3', mat_no: '20099001', line_name: 'LINE C', is_active: true },               // ไลน์เดียวกันทำเอง (ขั้นกลาง)
+    { id: 'p4', mat_no: '20099002', line_name: 'LINE C', is_active: true, is_operation: true },
+  ];
+  const matOf = Object.fromEntries(products.map(p => [p.id, p.mat_no]));
+  const rows = [
+    { product_id: 'p1', mat_no: '20063136', qty_per_unit: 1 },
+    { product_id: 'p1', mat_no: '20099001', qty_per_unit: 2 },
+    { product_id: 'p3', mat_no: '50000001', qty_per_unit: 0.5 },
+    { product_id: 'p3', mat_no: '20099002', qty_per_unit: 1 },
+    { product_id: 'p4', mat_no: '30000001', qty_per_unit: 4 },
+    { product_id: 'p2', mat_no: '50027623', qty_per_unit: 0.57 },   // ลูกของงาน LINE D — LINE C ไม่ต้องเบิก
+  ];
+  const ix = buildBomIndex(rows, matOf);
+  const r = lineRequestFromBom('LINE C', '10088644', 500, ix, products);
+  assert.deepEqual(r.items.map(i => [i.mat_no, i.qty]), [['20063136', 500], ['30000001', 4000], ['50000001', 500]]);
+  assert.equal(r.noBom, false);
+  // ไม่มี BOM = noBom (ห้ามถอยไปขอตัวเอง)
+  assert.equal(lineRequestFromBom('LINE C', '50000001', 10, ix, products).noBom, true);
+  assert.equal(lineRequestFromBom('LINE C', '10088644', 0, ix, products).items.length, 0);
+});

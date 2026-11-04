@@ -14,6 +14,7 @@
 import { useState, useMemo, useCallback } from 'react';
 import ScanModal from './ScanModal';
 import { resolveDeliveryPoint } from '../utils/qrCode';
+import { sapPendingFields } from '../utils/sapPending';
 import { pointsForRequest, pointLabel, checkDeliveryPoint, buildDeliverPayload, validateDeliverPayload, overrideReasonOk, OVERRIDE_REASONS } from '../utils/replenishGate';
 
 const fmt = (v) => (v == null ? '—' : Number(v).toLocaleString());
@@ -29,6 +30,14 @@ export default function DeliverScanModal({ request, points = [], canOverride = f
   const [overriding, setOverriding] = useState(false);
   const [reasonKey, setReasonKey]   = useState('');
   const [reasonNote, setReasonNote] = useState('');
+  /* 🧾 04/11 (คำสั่ง user) — "กรณีตัดจ่ายใน SAP ไม่ได้ ใส่ยอดว่าค้างตัดเท่าไหร่ + มีรีพอร์ทสรุปยอดค้าง"
+     ไม่แตะยอดสต็อกใน ESM · จดลงใบ (`sap_pending_*`) ให้ไปตามเคลียร์ที่ Line Stock › 🧾 ค้างตัด SAP
+     กติกา = `sapPendingFields()` (utils/sapPending.js) */
+  const sentQty = Number(request?.picked_qty) > 0 ? Number(request.picked_qty) : Number(request?.request_qty) || 0;
+  const [sapOn, setSapOn]     = useState(false);
+  const [sapQty, setSapQty]   = useState('');
+  const [sapNote, setSapNote] = useState('');
+  const sap = sapPendingFields({ on: sapOn, qty: sapQty, note: sapNote, max: sentQty, by: fullName });
 
   // ตรงไลน์ก่อน · ไม่มี = จุดในพื้นที่ SAP เดียวกัน (ต้องเป็นตัวเดียวกับที่ checkDeliveryPoint ใช้)
   const serving = useMemo(() => pointsForRequest(points, request), [points, request]);
@@ -48,19 +57,19 @@ export default function DeliverScanModal({ request, points = [], canOverride = f
   }, [points, request, onLogEvent]);
 
   const confirmScanned = () => {
-    if (!result || result.status !== 'ok') return;
+    if (!result || result.status !== 'ok' || sap.error) return;
     const payload = buildDeliverPayload({ gate: 'scanned', point: result.point });
     const bad = validateDeliverPayload(payload);
     if (bad) { setResult({ ...result, status: 'unknown', block: true, message: bad }); return; }
-    onConfirm?.(payload, null);
+    onConfirm?.({ ...payload, ...sap.fields }, null);
   };
-  const confirmNoPoint = () => onConfirm?.(buildDeliverPayload({ gate: 'no_point' }), null);
+  const confirmNoPoint = () => { if (!sap.error) onConfirm?.({ ...buildDeliverPayload({ gate: 'no_point' }), ...sap.fields }, null); };
   const confirmOverride = () => {
-    if (!canOverride || !overrideReasonOk(reasonKey, reasonNote)) return;
+    if (!canOverride || !overrideReasonOk(reasonKey, reasonNote) || sap.error) return;
     const payload = buildDeliverPayload({ gate: 'override', point: result?.point || null, reasonKey, reasonNote, overrideBy: fullName });
     const bad = validateDeliverPayload(payload);
     if (bad) return;
-    onConfirm?.(payload, { outcome: 'override', status_code: result?.status || null, scanned_raw: result?.actual || null,
+    onConfirm?.({ ...payload, ...sap.fields }, { outcome: 'override', status_code: result?.status || null, scanned_raw: result?.actual || null,
       expected: serving.map(pointLabel).join(' / '), actual: result?.actual || null, reason: payload.delivered_override_reason });
   };
 
@@ -96,6 +105,27 @@ export default function DeliverScanModal({ request, points = [], canOverride = f
               <div style={{ fontSize: 11, color: '#3b82f6' }}>ปลายทาง</div>
               <div style={{ fontSize: 14, fontWeight: 900, color: '#3b82f6' }}>➜ {request?.line_name || '—'}</div>
             </div>
+          </div>
+
+          {/* 🧾 ตัดจ่ายใน SAP ไม่ได้ — จดยอดค้างตัด (ไม่ขยับสต็อกใน ESM) */}
+          <div style={{ marginTop: 12, padding: '8px 10px', borderRadius: 8, border: `1px solid ${sapOn ? 'var(--amber)' : 'var(--border)'}`, background: sapOn ? 'var(--amber-dim)' : 'transparent' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 800, color: 'var(--text)', cursor: 'pointer' }}>
+              <input type="checkbox" checked={sapOn} onChange={e => { setSapOn(e.target.checked); if (e.target.checked && sapQty === '') setSapQty(String(sentQty || '')); }} style={{ width: 'auto' }} />
+              🧾 ตัดจ่ายใน SAP ไม่ได้ — จดยอดค้างตัด
+            </label>
+            {sapOn && (
+              <div style={{ marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                <input value={sapQty} onChange={e => setSapQty(e.target.value)} inputMode="decimal" placeholder="ยอดค้างตัด"
+                  style={{ width: 130, padding: '7px 10px', borderRadius: 8, fontSize: 13 }} />
+                <span style={{ fontSize: 12, color: 'var(--muted)' }}>/ {fmt(sentQty)} ที่ส่ง</span>
+                <input value={sapNote} onChange={e => setSapNote(e.target.value)} placeholder="สาเหตุ เช่น SAP ยอดไม่พอ / ไม่มี BOM ใน SAP"
+                  style={{ flex: 1, minWidth: 180, padding: '7px 10px', borderRadius: 8, fontSize: 13 }} />
+                {sap.error && <div style={{ width: '100%', fontSize: 12, color: 'var(--red)', fontWeight: 700 }}>{sap.error}</div>}
+                <div style={{ width: '100%', fontSize: 11.5, color: 'var(--text2)' }}>
+                  ใบนี้ยังส่งตามปกติ · ยอดค้างไปขึ้นที่ Line Stock › 🧾 ค้างตัด SAP ให้ตามเคลียร์ (ไม่เปลี่ยนยอดสต็อกในระบบ)
+                </div>
+              </div>
+            )}
           </div>
 
           {noPoint ? (

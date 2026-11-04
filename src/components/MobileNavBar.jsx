@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import useIsMobile from '../utils/useIsMobile';
 import { canAccessPage } from '../utils/permissions';
+import useLang from '../utils/useLang';   // 🌐 ป้ายแถบล่างแปลที่จุดวาด
 
 /* ══ 📱 MobileNavBar — แถบล่าง 4 ช่องของจอมือถือ/handheld (2026-10-15 · docs/MOBILE-UX-STANDARD.md §3) ══════
    ทำไม: ปุ่ม ☰ มุมซ้ายบน "นิ้วโป้งไม่ถึง" เมื่อถือเครื่องมือเดียว (คนหน้างานอีกมือถือชิ้นงาน/ใส่ถุงมือ) และลอยทับ
@@ -20,6 +21,7 @@ export const MNAV_H = 56;
 
 export default function MobileNavBar({ role, onOpenMenu, onOpenSearch }) {
   const isMobile = useIsMobile();
+  const { tr } = useLang();
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const [kbOpen, setKbOpen] = useState(false);
@@ -54,7 +56,7 @@ export default function MobileNavBar({ role, onOpenMenu, onOpenSearch }) {
         <button key={it.key} type="button" onClick={it.go} aria-current={it.on ? 'page' : undefined}
           className={it.on ? 'on' : ''}>
           <span className="mnav-ico" aria-hidden="true">{it.icon}</span>
-          <span className="mnav-lbl">{it.label}</span>
+          <span className="mnav-lbl">{tr(it.label)}</span>
         </button>
       ))}
     </nav>

@@ -1,3 +1,4 @@
+import { tr, allLabel } from './i18n';
 /* ══ 🏷️ ป้ายมาตรฐานของตัวกรอง / dropdown (2026-09-24 · UI-STANDARD.md §3) ═════════════
    เดิม "ทั้งหมด" มี 30+ แบบ: `ทุกไลน์` / `— ทุกไลน์ —` / `ทุกไลน์ (5)` / `ALL SHIFT (ทุกกะ)` /
    `ทุก Team` / `ทุก Section` … (audit 23/09) — คำต่าง = ผู้ใช้สงสัยว่าความหมายต่างไหม (Nielsen #4)
@@ -12,7 +13,9 @@
    • ตัวย่อโรมันพิมพ์ใหญ่ในคำนาม เช่น `ทุก Rank` (อยู่ในทะเบียนแล้ว) · `allOf('งาน PR')`
      — ที่ห้ามคือป้ายที่ **นำ** ด้วยอังกฤษ เช่น `ALL SHIFT (ทุกกะ)`
    ═══════════════════════════════════════════════════════════════════════════════════ */
-export const ALL = Object.freeze({
+/* 🌐 2026-11-02: ค่าทุกตัวผ่าน `tr()` ตอนอ่าน (getter) — ภาษาไทยคืนสตริงเดิมเป๊ะ · อังกฤษอ่านจาก src/i18n/en.js
+   หน้าเขียน `ALL.line` เหมือนเดิม ไม่ต้องแก้ · ห้ามเปลี่ยนกลับเป็นสตริงคงที่ (ปุ่มสลับภาษาจะพลาดป้ายกรองทั้งระบบ) */
+const ALL_TH = Object.freeze({
   line: 'ทุกไลน์',
   shift: 'ทุกกะ',
   team: 'ทุกทีม',
@@ -34,13 +37,19 @@ export const ALL = Object.freeze({
   priority: 'ทุกความด่วน',
   symptom: 'ทุกอาการ',
 });
+export const ALL = Object.freeze(Object.keys(ALL_TH).reduce((acc, k) => {
+  Object.defineProperty(acc, k, { enumerable: true, get: () => tr(ALL_TH[k]) });
+  return acc;
+}, {}));
 
 /** ป้าย "ทุก…" ของคำนามที่ไม่มีใน ALL — ใช้แทนการพิมพ์เอง */
-export const allOf = (noun) => `ทุก${noun}`;
+export const allOf = (noun) => allLabel(noun);
 
-/** ช่องในฟอร์ม (ไม่ใช่ตัวกรอง) */
+/** ช่องในฟอร์ม (ไม่ใช่ตัวกรอง) — อ่านผ่าน tr() ทุกครั้งที่ใช้ (export เป็นค่าคงที่ไทยไว้ให้โค้ดเดิม · ฝั่งอังกฤษใช้ pickLabel()/noneLabel()) */
 export const PICK = '— เลือก —';
 export const NONE = '— ไม่ระบุ —';
+export const pickLabel = () => tr(PICK);
+export const noneLabel = () => tr(NONE);
 
 /** กะ = 3 ตัวเลือก ⇒ ใช้ <Segmented> ไม่ใช่ dropdown (≤5 ตัวเลือกที่เท่ากัน — Material 3 segmented button)
  *
