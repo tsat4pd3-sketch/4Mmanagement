@@ -899,7 +899,7 @@ export default function AddUser() {
         const { groups } = issueIdx;
         const row = (g) => (
           <div key={g.key} style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap', fontSize: 12, padding: '3px 0' }}>
-            <b style={{ minWidth: 84, color: g.sev === SEV_FIX ? '#ef4444' : 'var(--text2)' }}>{g.icon} {g.count} บัญชี</b>
+            <b style={{ minWidth: 84, color: g.sev === SEV_FIX ? 'var(--red)' : 'var(--text2)' }}>{g.icon} {g.count} บัญชี</b>
             <span style={{ flex: '1 1 280px', minWidth: 0, color: 'var(--text2)' }}>
               {g.what} <span style={{ color: 'var(--muted)' }}>→ {g.fix}</span>
             </span>
@@ -910,8 +910,8 @@ export default function AddUser() {
               }}
               title="ให้ตารางรายชื่อด้านล่างโชว์เฉพาะบัญชีที่ค้างเรื่องนี้ (แก้แล้วจะหายจากตารางเอง)"
               style={{ width: 'auto', fontSize: 11, padding: '2px 9px', cursor: 'pointer', borderRadius: 999,
-                border: `1px solid ${tableIssue === g.key ? '#ef4444' : 'var(--border2)'}`,
-                background: tableIssue === g.key ? 'rgba(239,68,68,0.12)' : 'var(--bg3)', color: 'var(--text2)' }}>
+                border: `1px solid ${tableIssue === g.key ? 'var(--red)' : 'var(--border2)'}`,
+                background: tableIssue === g.key ? 'var(--red-dim)' : 'var(--bg3)', color: 'var(--text2)' }}>
               {tableIssue === g.key ? '✕ เลิกกรองตาราง' : '🔎 กรองตาราง'}
             </button>
             <button type="button" onClick={() => setOpenWl(o => (o === g.key ? null : g.key))} aria-expanded={openWl === g.key}
@@ -926,22 +926,22 @@ export default function AddUser() {
           <div className="card" style={{ marginBottom: 12, padding: '9px 12px' }}>
             <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
               <b style={{ fontSize: 12.5, color: 'var(--text)' }}>🩺 งานค้างของทะเบียนบัญชี</b>
-              <span style={{ fontSize: 12, color: issueIdx.fixUsers ? '#ef4444' : 'var(--muted)', fontWeight: 700 }}>
+              <span style={{ fontSize: 12, color: issueIdx.fixUsers ? 'var(--red)' : 'var(--muted)', fontWeight: 700 }}>
                 {issueSummaryText(issueIdx)}
               </span>
               <span style={{ flex: 1 }} />
               {issueIdx.fixUsers > 0 && (
                 <button type="button" onClick={() => setOnlyFixUsers(v => !v)} aria-pressed={onlyFixUsers}
                   style={{ width: 'auto', fontSize: 11.5, padding: '3px 10px', cursor: 'pointer', borderRadius: 6,
-                    border: `1px solid ${onlyFixUsers ? '#ef4444' : 'var(--border2)'}`,
-                    background: onlyFixUsers ? 'rgba(239,68,68,0.12)' : 'var(--bg3)', color: 'var(--text2)' }}>
+                    border: `1px solid ${onlyFixUsers ? 'var(--red)' : 'var(--border2)'}`,
+                    background: onlyFixUsers ? 'var(--red-dim)' : 'var(--bg3)', color: 'var(--text2)' }}>
                   {onlyFixUsers ? '✕ แสดงทุกบัญชี' : `🔎 ตารางเฉพาะ ${issueIdx.fixUsers} บัญชีที่ต้องแก้`}
                 </button>
               )}
             </div>
             {groups.fix.length > 0 && (
               <div style={{ marginTop: 6 }}>
-                <div style={{ fontSize: 11.5, fontWeight: 800, color: '#ef4444', marginBottom: 2 }}>
+                <div style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--red)', marginBottom: 2 }}>
                   🔴 ต้องแก้ — ระบบให้เห็น/ตัดสินผิดอยู่ตอนนี้
                 </div>
                 {groups.fix.map(row)}
@@ -988,7 +988,7 @@ export default function AddUser() {
           <div className="card" style={{ marginBottom: 12, padding: 12, borderLeft: '3px solid #f59e0b' }}>
             {openWl === 'unlinked' && tri.personUnlinked.length > 0 && (
               <div style={{ fontSize: 12, color: 'var(--text2)' }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: '#ef4444', marginBottom: 4 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--red)', marginBottom: 4 }}>
                   🪪 บัญชีของคนแต่ยังไม่ผูกพนักงาน · {tri.personUnlinked.length} บัญชี
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>
@@ -1255,10 +1255,10 @@ export default function AddUser() {
           : (issueIdx.groups.fix.concat(issueIdx.groups.info).find(g => g.key === tableIssue)?.count || 0);
         return (
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8, padding: '8px 12px',
-            borderRadius: 8, border: '1px solid rgba(239,68,68,0.35)', background: 'rgba(239,68,68,0.06)', fontSize: 12.5 }}>
+            borderRadius: 8, border: '1px solid var(--red-line)', background: 'var(--red-dim)', fontSize: 12.5 }}>
             <b>🔎 ตารางกรองเฉพาะ:</b>
             <span>{def ? `${def.icon} ${def.what}` : '🔴 ทุกบัญชีที่ต้องแก้'}</span>
-            <span style={{ color: left ? '#ef4444' : '#22c55e', fontWeight: 700 }}>
+            <span style={{ color: left ? 'var(--red)' : 'var(--green)', fontWeight: 700 }}>
               {left ? `เหลือ ${left} บัญชี` : '✓ เคลียร์ครบแล้ว'}
             </span>
             {def && <span style={{ color: 'var(--muted)' }}>วิธีแก้: {def.fix}</span>}
@@ -1290,7 +1290,7 @@ export default function AddUser() {
             ) : users.length === 0 ? (
               <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--muted)', padding: 28, fontSize: 13 }}>ไม่พบข้อมูลผู้ใช้</td></tr>
             ) : view.length === 0 ? (
-              <tr><td colSpan={8} style={{ textAlign: 'center', color: tableIssue && !q && !filterRole && !filterSection ? '#22c55e' : 'var(--muted)', padding: 28, fontSize: 13 }}>
+              <tr><td colSpan={8} style={{ textAlign: 'center', color: tableIssue && !q && !filterRole && !filterSection ? 'var(--green)' : 'var(--muted)', padding: 28, fontSize: 13 }}>
                 {tableIssue && !q && !filterRole && !filterSection ? '✓ ไม่มีบัญชีค้างเรื่องนี้แล้ว' : 'ไม่พบ user ที่ตรงกับตัวกรอง — ลองล้างตัวกรอง'}</td></tr>
             ) : view.map(u => {
               const rc      = ROLES.find(r => r.value === u.role);
@@ -1310,7 +1310,7 @@ export default function AddUser() {
                       return (
                         <div style={{ marginTop: 3, display: 'flex', flexDirection: 'column', gap: 1, maxWidth: 320 }}>
                           {fx.map(i => (
-                            <div key={i.key} title={i.line} style={{ fontSize: 11, color: '#ef4444', lineHeight: 1.4 }}>
+                            <div key={i.key} title={i.line} style={{ fontSize: 11, color: 'var(--red)', lineHeight: 1.4 }}>
                               {i.icon} <b>{i.chip}</b> <span style={{ color: 'var(--text2)' }}>— {i.fix}</span>
                             </div>
                           ))}

@@ -275,7 +275,7 @@ export default function DailyPM() {
           </div>
           {/* 🔧 B3 — อ่านสถานะใบซ่อมไม่ได้ ≠ "ยังไม่เปิดใบ" ต้องบอกตรงๆ */}
           {moFollow && moFollow.ok === false && (
-            <div style={{ marginBottom: 12, fontSize: 12, color: '#f59e0b' }}>
+            <div style={{ marginBottom: 12, fontSize: 12, color: 'var(--amber)' }}>
               ⚠ อ่านสถานะใบแจ้งซ่อมของผลตรวจ AM ไม่สำเร็จ ({String(moFollow.error?.message || moFollow.error)}) — ป้าย MO บนการ์ดยังไม่แสดง
             </div>
           )}
@@ -319,7 +319,7 @@ export default function DailyPM() {
                   </div>
                   {/* 🔴 ไม่ได้ตัดสินรายเครื่อง = ต้องเขียนบอก (ใบผลิตไม่ลงเลขเครื่อง ⇒ ถอยไปตัดสินทั้งไลน์) */}
                   {amModeNote(row) && (
-                    <div style={{ marginTop: 4, fontSize: 11, color: '#f59e0b' }}>ⓘ {amModeNote(row)}</div>
+                    <div style={{ marginTop: 4, fontSize: 11, color: 'var(--amber)' }}>ⓘ {amModeNote(row)}</div>
                   )}
                   {row.status === 'pending' && dueDiffMin != null && (
                     <div style={{ marginTop: 4, fontSize: 12, fontWeight: 700, color: dueDiffMin <= 15 ? '#f59a3f' : 'var(--muted)' }}>
@@ -335,7 +335,7 @@ export default function DailyPM() {
                     <div style={{ marginTop: 8 }}>
                       <div style={{ fontSize: 11, color: '#e05c4a', fontWeight: 700 }}>⚠ ผิดปกติ</div>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 3 }}>
-                        {row.ng.map(n => <span key={n.jig_id} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6, background: 'rgba(224,92,74,0.12)', color: '#e05c4a' }}>
+                        {row.ng.map(n => <span key={n.jig_id} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6, background: 'var(--red-dim)', color: 'var(--red)' }}>
                           {n.machine_no ? `${n.machine_no} · ` : ''}{n.name}
                           {n.follow && <AmMoChip follow={n.follow} />}
                         </span>)}
@@ -345,11 +345,11 @@ export default function DailyPM() {
                   {/* 🔧 B3 — MO จากผลตรวจ AM วันก่อนที่ยังไม่ปิด: ป้ายค้างบนเครื่องทุกวันจนกว่าใบจะปิด */}
                   {row.carry?.length > 0 && (
                     <div style={{ marginTop: 8 }}>
-                      <div style={{ fontSize: 11, color: '#fb923c', fontWeight: 700 }}>🔧 แจ้งซ่อมแล้ว ยังไม่แก้ไข ({row.carry.length})</div>
+                      <div style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 700 }}>🔧 แจ้งซ่อมแล้ว ยังไม่แก้ไข ({row.carry.length})</div>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 3 }}>
                         {row.carry.map(c => (
                           <span key={`${c.jig_id}-${c.mo.id}`} title={c.inspected_at ? `พบผิดปกติเมื่อ ${fmtDate(c.inspected_at)}` : undefined}
-                            style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6, background: 'rgba(251,146,60,0.12)', color: '#fb923c', border: '1px solid rgba(251,146,60,0.4)' }}>
+                            style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6, background: 'var(--amber-dim)', color: 'var(--amber)', border: '1px solid var(--amber-line)' }}>
                             {c.machine_no ? `${c.machine_no} · ` : ''}{c.name} · {c.mo.mo_no || '(รอออกเลข)'} · {moStatusLabel(c.mo)}
                             {c.inspected_at && <> · ตั้งแต่ {fmtDate(c.inspected_at)}</>}
                           </span>

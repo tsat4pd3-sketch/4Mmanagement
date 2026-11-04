@@ -707,9 +707,9 @@ function HistoryModal({ inspection, checkpoints: cpsFromPage, jig, onClose, user
                       และรูปกว้างเต็มแถว (maxWidth 100%) ⇒ ใช้กล่องรูปย่อของกลางแบบเดียวกับรูปจุดตรวจ */}
                   {r.evidence_path && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
-                      <PointThumb url={getPublicUrl(r.evidence_path)} height={90} mobileMax={90} label={null} color="#e05c4a"
+                      <PointThumb url={getPublicUrl(r.evidence_path)} height={90} mobileMax={90} label={null} color="var(--red)"
                         name={`หลักฐานสภาพจริง · ${cp.name}`} />
-                      <span style={{ fontSize: 11, color: '#e05c4a', fontWeight: 700 }}>📎 หลักฐานสภาพจริง (แตะเพื่อซูม)</span>
+                      <span style={{ fontSize: 11, color: 'var(--red)', fontWeight: 700 }}>📎 หลักฐานสภาพจริง (แตะเพื่อซูม)</span>
                     </div>
                   )}
                 </div>
@@ -724,10 +724,10 @@ function HistoryModal({ inspection, checkpoints: cpsFromPage, jig, onClose, user
         <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 8 }}>
           {/* ✍️ B2 — ใบ AM ต้องบอกว่ารอใคร + ทำไมคุณกดไม่ได้ (ซ่อนปุ่มได้ ห้ามซ่อนเหตุผล) */}
           {isAm && insp.approval_status === 'pending' && amVerdict && (
-            <div style={{ fontSize: 12, color: amVerdict.ok ? 'var(--text2)' : '#f59e0b', lineHeight: 1.6 }}>
+            <div style={{ fontSize: 12, color: amVerdict.ok ? 'var(--text2)' : 'var(--amber)', lineHeight: 1.6 }}>
               {amVerdict.need ? <>รอ <b>{amVerdict.need.label}</b> {amVerdict.need.action}</> : 'รอผู้จัดการรับทราบ'}
               {!amVerdict.ok && <div>{amApprovalText(amVerdict)}</div>}
-              {amApprovalAssumptionText(amVerdict.assumed) && <div style={{ color: '#f59e0b' }}>{amApprovalAssumptionText(amVerdict.assumed)}</div>}
+              {amApprovalAssumptionText(amVerdict.assumed) && <div style={{ color: 'var(--amber)' }}>{amApprovalAssumptionText(amVerdict.assumed)}</div>}
             </div>
           )}
           {canApprove && insp.approval_status === 'pending' && !rejecting && (
@@ -1915,7 +1915,7 @@ export default function PMCheckData() {
                             <span style={{ fontSize: 11, color: 'var(--muted)' }}>ไม่เปิดใบซ่อม: {insp.mo_waived_reason}</span>
                           )}
                           {insp.status === 'fail' && !moByInsp[insp.id] && !insp.mo_waived_reason && isAmTeam(clDeptById[insp.checklist_id] ?? department) && (
-                            <span style={{ fontSize: 11, fontWeight: 700, color: '#e05c4a' }}>⚠ ยังไม่เปิดใบซ่อม / ไม่ระบุเหตุผล</span>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--red)' }}>⚠ ยังไม่เปิดใบซ่อม / ไม่ระบุเหตุผล</span>
                           )}
                         </div>
                       </div>
@@ -2008,7 +2008,7 @@ export default function PMCheckData() {
                 }}>กลับ</button>
                 <button onClick={waiveMo} disabled={moSaving || !amWaiverReasonValid(moWaiveReason)} style={{
                   padding: '9px 18px', borderRadius: 9, fontSize: 13, fontWeight: 700, cursor: 'pointer',
-                  border: '1px solid #f59e0b', background: 'rgba(245,158,11,0.12)', color: '#f59e0b',
+                  border: '1px solid var(--amber)', background: 'var(--amber-dim)', color: 'var(--amber)',
                   opacity: moSaving || !amWaiverReasonValid(moWaiveReason) ? 0.5 : 1,
                 }}>บันทึกเหตุผล</button>
               </>)}

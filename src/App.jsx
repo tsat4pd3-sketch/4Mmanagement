@@ -45,7 +45,8 @@ import { purgeOldDrafts } from './utils/formDraft';   // 📝 ล้างร่
 import { pushSupported, getPushState, subscribePush, unsubscribePush, onPushResubscribeRequest, handlePushResubscribe } from './utils/webpush';
 import { loadPositions, positionLabel } from './utils/positions';   // ตำแหน่งเก็บเป็น key — แสดงต้องแปลงเป็นชื่อ
 import { roleLabel } from './utils/roleMeta';                       // ป้ายชื่อ role (โหมดจำลองมุมมอง 🎭)
-import { buildProfileMenu } from './utils/profileMenu';             // รายการเมนูโปรไฟล์ — จุดเดียว ใช้ร่วมกับหน้า Home
+import { buildProfileMenu } from './utils/profileMenu';
+import useLang, { langToggleLabel, langToggleTitle } from './utils/useLang';   // 🌐 สลับ ไทย/English — ป้ายโครงหลักผ่าน tr() (utils/i18n.js)             // รายการเมนูโปรไฟล์ — จุดเดียว ใช้ร่วมกับหน้า Home
 import { uploadMyAvatar } from './utils/profileSelf';               // อัปโหลดรูปโปรไฟล์ (ใช้ร่วมกับหน้า Home)
 import { liveChannel } from './utils/liveChannel';
 import { coalesce } from './utils/liveRefresh';
@@ -453,6 +454,7 @@ function SplashScreen({ onDone }) {
 /* ─── Sidebar ──────────────────────────────────────────────── */
 // export ไว้ให้ audit harness (audit/main.jsx ?p=__sidebar) mount ตรงๆ เพื่อวัด layout — แอปจริงใช้ผ่าน ProtectedLayout เท่านั้น
 export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, userLineId, userEmail, userFullName, userSignatureUrl, userPosition, userAvatarUrl, remoteCode, onToggleRemote, onOpenPalette, pinned, onTogglePin, realRole, onOpenViewAs, onAvatarSaved }) {
+  const { lang, toggleLang, tr } = useLang();   // 🌐 ป้ายเมนู/หมวดแปลที่จุดวาด — ข้อมูล NAV_ITEMS ยังเป็นไทย (คีย์)
   // 🔄 ผลการทับขอบเขตด้วย org_assignments — มาจาก UserContext (ProtectedLayout) ไม่เพิ่ม prop
   const { assignOverlay } = useContext(UserContext);
   const location = useLocation();
@@ -608,8 +610,9 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
      (DeptHub) — เดิมเขียนแยกกัน 2 ชุดแล้ว drift (หน้า Home ไม่มี 💬/🎭/รีโมท · sidebar ไม่มี 📷)
      ที่นี่รับผิดชอบแค่ "หน้าตา" ของแถวเมนู · JSX ชุดนี้ใช้ทั้ง drawer มือถือ + แผง '__me' desktop */
   const profileItems = buildProfileMenu({
-    realRole, canRemote: canAccessPage('/remote', userRole), remoteCode, theme,
+    realRole, canRemote: canAccessPage('/remote', userRole), remoteCode, theme, lang,
     on: {
+      toggleLang,
       avatar:       () => avatarRef.current?.click(),
       signature:    () => setSigModalOpen(true),
       password:     () => setPwdModalOpen(true),
@@ -713,7 +716,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
       <Link
         to={item.to} className="nav-link"
         aria-current={cur ? 'page' : undefined}
-        title={guest ? `${item.label} — ทางลัด · เมนูนี้อยู่หมวด "${item.group}"` : item.label}
+        title={guest ? `${tr(item.label)} — ทางลัด · เมนูนี้อยู่หมวด "${tr(item.group)}"` : tr(item.label)}
         style={{
           ...(cur
             ? (guest
@@ -729,12 +732,12 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
         onClick={onClick}
       >
         <span style={{ fontSize: 17, flexShrink: 0, opacity: guest ? 0.7 : 1 }}>{item.icon}</span>
-        <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.label}</span>
+        <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tr(item.label)}</span>
         {/* ป้าย "บ้านจริง" — บีบ gap/ฟอนต์ให้แคบที่สุดเท่าที่ยังอ่านออก เพราะเมนูชื่อยาวจะโดนเบียดจนตัดคำ
             (`title` มีชื่อเต็ม + บอกหมวดบ้านเสมอ จึงไม่มีข้อมูลหาย) */}
         {guest && (
           <span style={{ marginLeft: 'auto', paddingLeft: 2, flexShrink: 0, fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
-            ↗{homeShort}
+            ↗{tr(homeShort)}
           </span>
         )}
       </Link>
@@ -746,9 +749,9 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
      เลือกเมนูแล้วปิดเอง · 📌 ปักหมุด = ค้างแผงไว้และดันเนื้อหา (opt-in เท่านั้น) */
   if (!isMobile) {
     const panelOpen = !!panel;
-    const panelMeta = panel === '__star' ? { icon: '⭐', title: 'ใช้บ่อย' }
-      : panel === '__me' ? { icon: '👤', title: 'โปรไฟล์ & อุปกรณ์' }
-      : { icon: NAV_GROUP_META[panel]?.icon || '📁', title: panel };
+    const panelMeta = panel === '__star' ? { icon: '⭐', title: tr('ใช้บ่อย') }
+      : panel === '__me' ? { icon: '👤', title: tr('โปรไฟล์ & อุปกรณ์') }
+      : { icon: NAV_GROUP_META[panel]?.icon || '📁', title: tr(panel) };
     const panelItems = panel && panel !== '__star' && panel !== '__me'
       ? (groupedItems.find(g => g.group === panel)?.items || [])
       : null;
@@ -822,8 +825,8 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
               {groupedItems.map(({ group, items }) => railBtn({
                 key: group,
                 icon: NAV_GROUP_META[group]?.icon || '📁',
-                label: NAV_GROUP_META[group]?.short || group,
-                title: group,
+                label: tr(NAV_GROUP_META[group]?.short || group),
+                title: tr(group),
                 onClick: () => setPanel(p => (p === group && !pinned) ? null : group),
                 isOpenPanel: panel === group,
                 isCurrent: items.some(i => isHomeHere(i, group)),
@@ -832,7 +835,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
 
             <div style={{ width: 40, borderTop: '1px solid var(--border)', margin: '2px 0', flexShrink: 0 }} />
             {railBtn({
-              key: '__star', icon: '⭐', label: 'ใช้บ่อย', title: 'หน้าที่ใช้บ่อย (เครื่องนี้)',
+              key: '__star', icon: '⭐', label: tr('ใช้บ่อย'), title: tr('หน้าที่ใช้บ่อย (เครื่องนี้)'),
               onClick: () => setPanel(p => (p === '__star' && !pinned) ? null : '__star'),
               isOpenPanel: panel === '__star', isCurrent: false,
             })}
@@ -914,7 +917,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
                       fontSize: 11, fontWeight: 700, color: 'var(--muted)', letterSpacing: '0.04em',
                       padding: '9px 9px 3px', marginTop: i === 0 ? 0 : 5,
                       borderTop: i === 0 ? 'none' : '1px solid var(--border)',
-                    }}>{item.sub}</div>
+                    }}>{tr(item.sub)}</div>
                   )}
                   {navRow(item, panel, () => { if (!pinned) setPanel(null); })}
                 </div>
@@ -1001,7 +1004,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
           <input
             value={navQ} onChange={e => setNavQ(e.target.value)}
             onKeyDown={e => { if (e.key === 'Escape') setNavQ(''); }}
-            placeholder="🔎 ค้นหาเมนู…  (Ctrl+K)"
+            placeholder={`🔎 ${tr('ค้นหาเมนู…  (Ctrl+K)')}`}
             style={{
               width: '100%', padding: '7px 26px 7px 10px', fontSize: 12.5, borderRadius: 8,
               background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)',
@@ -1080,7 +1083,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
                     }}
                   >
                     <span style={{ fontSize: 15, flexShrink: 0 }}>{NAV_GROUP_META[group]?.icon || '📁'}</span>
-                    <span style={{ minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{group}</span>
+                    <span style={{ minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tr(group)}</span>
                     <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 600, color: 'var(--muted)', flexShrink: 0 }}>{items.length}</span>
                     <span style={{ fontSize: 12, opacity: 0.6, transform: open ? 'none' : 'rotate(-90deg)', transition: 'transform 0.15s', flexShrink: 0 }}>▾</span>
                   </button>
@@ -1092,7 +1095,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
                           fontSize: 11, fontWeight: 700, color: 'var(--muted)', letterSpacing: '0.04em',
                           padding: '9px 9px 3px', marginTop: i === 0 ? 0 : 5,
                           borderTop: i === 0 ? 'none' : '1px solid var(--border)',
-                        }}>{item.sub}</div>
+                        }}>{tr(item.sub)}</div>
                       )}
                       {navRow(item, group, onClose)}
                     </div>
@@ -2403,6 +2406,7 @@ export default function App() {
   const [userAccountKind,  setUserAccountKind]  = useState(null);  // 'person' | 'shared' (บัญชีกลาง = จอ TV/ประจำเครื่อง · ลบไม่ได้)
   const [showSplash,   setShowSplash]   = useState(() => !skipSplash());   // จอวนรีโหลดตามรอบ / กรอบตัวอย่าง = ไม่ขึ้น splash
   const [theme, setTheme] = useState(() => localStorage.getItem('4m-theme') || 'dark');
+  const { lang } = useLang();   // 🌐 สลับภาษา = mount <Router> ใหม่ (key) — ป้ายที่ useMemo ไว้จะได้สลับพร้อมกันทั้งแอป
   // ต้อง resolve ทั้ง profile (role จริง) และ permissions ก่อนค่อย render route tree —
   // ป้องกัน fail-open: ห้าม fallback เป็น 'admin' ระหว่างรอโหลด (เคยเป็นช่องโหว่)
   const [profileLoaded, setProfileLoaded] = useState(false);
@@ -2718,7 +2722,7 @@ export default function App() {
           กำลังโหลด...
         </div>
       ) : (
-        <Router>
+        <Router key={lang}>
           <Routes>
             <Route path="/login" element={session ? <Navigate to="/" replace /> : <Login />} />
             <Route path="/*"     element={

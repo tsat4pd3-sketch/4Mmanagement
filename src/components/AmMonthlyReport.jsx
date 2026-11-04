@@ -45,7 +45,7 @@ const VIEW_OPTIONS = [
   { value: 'machine', label: 'รายเครื่อง' },
 ]
 const norm = (v) => String(v ?? '').trim().toLowerCase()
-const HOLIDAY_BG = 'rgba(46,125,50,0.25)'   // สีหัวคอลัมน์วันหยุด — ชุดเดียวกับตาราง LPA
+const HOLIDAY_BG = 'var(--green-dim)'   // สีหัวคอลัมน์วันหยุด — ชุดเดียวกับตาราง LPA
 const fmtWhen = (iso) => (iso ? new Date(iso).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '')
 
 const cell = { border: '1px solid var(--border)', textAlign: 'center', fontSize: 11, minWidth: 26, padding: '2px 1px', whiteSpace: 'nowrap' }
@@ -250,7 +250,7 @@ export default function AmMonthlyReport({ lines = [], scopedLines = [] }) {
       </FilterBar>
 
       {err && (
-        <div style={{ marginBottom: 12, padding: '10px 14px', borderRadius: 10, border: '1px solid rgba(239,68,68,0.4)', color: 'var(--red)', fontSize: 12, fontWeight: 700 }}>
+        <div style={{ marginBottom: 12, padding: '10px 14px', borderRadius: 10, border: '1px solid var(--red-line)', color: 'var(--red)', fontSize: 12, fontWeight: 700 }}>
           ⚠ โหลดรายงาน AM ไม่สำเร็จ: {err} — ตารางไม่แสดง (ไม่ได้แปลว่าไม่มีใครตรวจ) · ลองเปลี่ยนเดือนหรือรีเฟรช
         </div>
       )}
@@ -262,7 +262,7 @@ export default function AmMonthlyReport({ lines = [], scopedLines = [] }) {
           <div style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 8 }}>
             <span style={{ color: sum.missed ? 'var(--red)' : 'var(--text2)' }}>{checkDaysNote(sum)}</span>
             {pct != null && <> · ความครบ <b style={{ color: 'var(--text)' }}>{pct}%</b></>}
-            {' · '}<span style={{ color: ngN ? '#e05c4a' : 'var(--muted)', fontWeight: ngN ? 800 : 500 }}>พบผิดปกติ (NG) {ngN} ครั้ง</span>
+            {' · '}<span style={{ color: ngN ? 'var(--red)' : 'var(--muted)', fontWeight: ngN ? 800 : 500 }}>พบผิดปกติ (NG) {ngN} ครั้ง</span>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>
               นับเป็น "เครื่อง-วัน" · ความครบ = ตรวจแล้ว ÷ (ตรวจแล้ว + ขาด) — ไม่นับวันไม่ได้ผลิต/ไม่มีแผน/ไม่รู้ ·
               กะที่กำลังเดินอยู่ยังไม่ตัดสิน (ดูแท็บ 📊 สถานะวันนี้) · เครื่องที่เอาออกจากทะเบียนแล้วไม่แสดงย้อนหลัง
@@ -286,7 +286,7 @@ export default function AmMonthlyReport({ lines = [], scopedLines = [] }) {
               {Object.values(AM_RESULT_META).map(m => (
                 <span key={m.mark} style={{ marginRight: 8 }}><b style={{ color: m.color }}>{m.mark}</b> {m.label}</span>
               ))}
-              {view === 'line' && <span style={{ marginRight: 8 }}><b style={{ color: '#3dd65c' }}>n/n</b> ตรวจครบทุกเครื่อง</span>}
+              {view === 'line' && <span style={{ marginRight: 8 }}><b style={{ color: 'var(--green)' }}>n/n</b> ตรวจครบทุกเครื่อง</span>}
             </span>
             <span style={{ borderLeft: '1px solid var(--border)', paddingLeft: 14 }}>
               <b style={{ color: 'var(--text2)' }}>สถานะวัน:</b>{' '}
@@ -331,7 +331,7 @@ export default function AmMonthlyReport({ lines = [], scopedLines = [] }) {
                             <td key={c.date} title={`${c.date} · ${m.label}${c.due ? ` · ตรวจ ${c.checked}/${c.due} เครื่อง` : ''}${c.ng ? ` · NG ${c.ng}` : ''}`}
                               style={{ ...cell, background: m.tint || undefined }}>
                               {c.state === CHECK_DAY.done
-                                ? <b style={{ color: c.ng ? '#e05c4a' : '#3dd65c' }}>{c.ng ? `NG${c.ng > 1 ? c.ng : ''}` : `${c.checked}/${c.due}`}</b>
+                                ? <b style={{ color: c.ng ? 'var(--red)' : 'var(--green)' }}>{c.ng ? `NG${c.ng > 1 ? c.ng : ''}` : `${c.checked}/${c.due}`}</b>
                                 : <>
                                     <StateChip state={c.state} />
                                     {c.state === CHECK_DAY.missed && c.checked > 0 && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{c.checked}/{c.due}</div>}
@@ -416,7 +416,7 @@ export default function AmMonthlyReport({ lines = [], scopedLines = [] }) {
                     return (
                       <div key={r.line_name} style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', padding: '6px 10px', border: '1px solid var(--border)', borderRadius: 8 }}>
                         <b style={{ minWidth: 140, fontSize: 12, color: 'var(--text)' }}>{lineLabel}</b>
-                        <span style={{ fontSize: 12, color: 'var(--green, #3dd65c)', fontWeight: 700 }}>✅ ลงนามแล้ว</span>
+                        <span style={{ fontSize: 12, color: 'var(--green)', fontWeight: 700 }}>✅ ลงนามแล้ว</span>
                         <span style={{ fontSize: 12, color: 'var(--text2)' }}>
                           {a.signed_by_name || 'ไม่ทราบชื่อ'}{a.position ? ` · ${positionLabel(a.position)}` : ' · ไม่ทราบตำแหน่ง'} · {fmtWhen(a.signed_at)}
                         </span>
@@ -476,7 +476,7 @@ export default function AmMonthlyReport({ lines = [], scopedLines = [] }) {
         const row = rep?.rows.find(r => r.line_name === signing.line)
         return (
           <div className="modal-scroll" onClick={() => { if (!busy && !note.trim()) setSigning(null) }}
-            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
+            style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
             <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 10, width: 'min(520px, 100%)', maxHeight: '90vh', overflowY: 'auto', boxShadow: 'var(--shadow-lg)', padding: 16 }}>
               <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>✍️ ลงนามทบทวน AM รายเดือน</div>
               <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 4 }}>
@@ -512,7 +512,7 @@ export default function AmMonthlyReport({ lines = [], scopedLines = [] }) {
 
       {revoking && (
         <div className="modal-scroll" onClick={() => { if (!busy && !reason.trim()) setRevoking(null) }}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
+          style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
           <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 10, width: 'min(480px, 100%)', maxHeight: '90vh', overflowY: 'auto', boxShadow: 'var(--shadow-lg)', padding: 16 }}>
             <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>↩ เพิกถอนลายเซ็นทบทวนรายเดือน</div>
             <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 4 }}>
@@ -545,7 +545,7 @@ function SumTds({ s, ngN, bold }) {
       <td style={{ ...cell, color: 'var(--muted)' }}>{s.no_run}</td>
       {/* ไม่มีวันที่ต้องตรวจ = "–" ห้ามขึ้น 0% หรือ 100% */}
       <td style={{ ...cell, fontWeight: w }}>{s.pct == null ? '–' : `${s.pct}%`}</td>
-      <td style={{ ...cell, fontWeight: w, color: ngN ? '#e05c4a' : 'var(--muted)' }}>{ngN}</td>
+      <td style={{ ...cell, fontWeight: w, color: ngN ? 'var(--red)' : 'var(--muted)' }}>{ngN}</td>
     </>
   )
 }

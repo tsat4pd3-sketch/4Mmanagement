@@ -154,7 +154,7 @@ export default function MoTvBoard({ inScope, isMobile = false }) {
 
 function Warn({ tv, fz, children }) {
   return (
-    <div role="alert" style={{ background: 'var(--card)', border: '1px solid #ef4444', color: '#ef4444', borderRadius: 10, padding: tv ? '10px 16px' : 10, fontSize: fz(13, 24), fontWeight: 700 }}>
+    <div role="alert" style={{ background: 'var(--card)', border: '1px solid var(--red)', color: 'var(--red)', borderRadius: 10, padding: tv ? '10px 16px' : 10, fontSize: fz(13, 24), fontWeight: 700 }}>
       {children}
     </div>
   );

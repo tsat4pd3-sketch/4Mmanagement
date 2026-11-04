@@ -2,6 +2,7 @@ import { StrictMode, Component } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.jsx'
+import { LangProvider } from './utils/useLang.js'   // 🌐 ปุ่มสลับ ไทย/English (utils/i18n.js)
 import { onMasterLoadFail } from './utils/masterCache.js'
 import { toast } from './components/Toast'
 
@@ -142,7 +143,7 @@ class RootErrorBoundary extends Component {
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <RootErrorBoundary>
-      <App />
+      <LangProvider><App /></LangProvider>
     </RootErrorBoundary>
   </StrictMode>,
 )

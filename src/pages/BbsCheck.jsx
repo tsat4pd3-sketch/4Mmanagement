@@ -499,7 +499,7 @@ export default function BbsCheck() {
               style={{ width: 110, padding: '6px 8px', fontSize: 12.5 }} />
             {codeSigner && codeSigner.state !== 'no_code' && (
               <div style={{ fontSize: 11, marginTop: 3, maxWidth: 220, lineHeight: 1.4,
-                color: codeSigner.state === 'ok' ? 'var(--muted)' : '#f59e0b' }}>
+                color: codeSigner.state === 'ok' ? 'var(--muted)' : 'var(--amber)' }}>
                 {codeSigner.name ? `👤 ${codeSigner.name}` : ''}
                 {codeSigner.note ? `${codeSigner.name ? ' · ' : ''}${codeSigner.note}` : ''}
               </div>

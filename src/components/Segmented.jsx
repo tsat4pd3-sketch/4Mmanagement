@@ -7,7 +7,10 @@
    <Segmented value={shift} onChange={setShift} options={SHIFT_OPTIONS} label="กะ" />
    • `option.color` = สีตอนถูกเลือก เฉพาะตัวเลือกที่สีมี "ความหมาย" (ถังเหลือง/ถังแดง) — ไม่ใช่ใส่เพื่อความสวย (UI §6.17)
    ═══════════════════════════════════════════════════════════════════════════════════ */
+import useLang from '../utils/useLang';   // 🌐 ป้ายตัวเลือก (เช่น SHIFT_OPTIONS) แปลที่จุดวาด
+
 export default function Segmented({ value, onChange, options, label, size, style }) {
+  const { tr } = useLang();
   return (
     <div className={`seg${size === 'sm' ? ' seg-sm' : ''}`} role="radiogroup" aria-label={label} style={style}>
       {options.map(o => {
@@ -17,7 +20,7 @@ export default function Segmented({ value, onChange, options, label, size, style
             className={on ? 'on' : ''} disabled={o.disabled} title={o.title}
             style={on && o.color ? { background: o.color, color: '#1a1206' } : undefined}
             onClick={() => !on && onChange && onChange(o.value)}>
-            {o.label}
+            {tr(o.label)}
           </button>
         );
       })}
