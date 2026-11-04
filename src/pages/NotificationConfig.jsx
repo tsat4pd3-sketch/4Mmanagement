@@ -12,6 +12,7 @@ import { reachLabel, reachWarnings } from '../utils/notifReach'   // 🏷️ ป
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
 import { UserContext } from '../App';
+import { NOTIFY_CATEGORY_LABEL } from '../utils/notifyPrefs';   // 🔕 ป้ายหมวด — ของกลาง ใช้ร่วมกับโมดัลของผู้ใช้
 
 const inputStyle = {
   width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)',
@@ -24,19 +25,12 @@ const targetSummary = (rule) => {
   const parts = []
   // 🎯 ตัวนี้ขึ้นก่อนเสมอ — มันเปลี่ยน "ใครได้รับ" มากกว่าตัวกรองอื่นทั้งหมดรวมกัน (2026-09-23)
   if (rule.inapp_cast === 'fallback') parts.push('เจ้าของงานก่อน')
+  if (rule.can_mute === false) parts.push('🔒 ผู้ใช้ปิดเองไม่ได้')
   if (rule.inapp_match_section) parts.push('เฉพาะส่วนงานที่เกิดเหตุ')
   if (rule.inapp_scope_strict) parts.push('ผู้บริหารก็ถูกกรองตามส่วนงาน')
   if (rule.inapp_sections?.length) parts.push(`ส่วนงาน: ${rule.inapp_sections.join(', ')}`)
   if (rule.inapp_depts?.length) parts.push(`แผนก: ${rule.inapp_depts.join(', ')}`)
   return parts.length ? `● ${parts.join(' · ')}` : '○ ทุกส่วนงาน/ทุกแผนก'
-}
-
-const CATEGORY_LABEL = {
-  manpower: '🧑‍🏭 Manpower', production: '🏭 Production', quality: '🔍 Quality',
-  maintenance: '🔧 Maintenance', pull: '🎴 Pull System', stock: '📦 Stock',
-  logistic: '🚚 Logistic',
-  safety: '🛡️ Safety',
-  kpi: '📊 KPI / Obeya',   // 20/10 · ผลนำเข้าตัวเลขบัญชีอัตโนมัติ (GitHub Actions acct-import)
 }
 
 // Starting point shown when an admin first customizes a message. NULL template
@@ -444,7 +438,7 @@ export default function NotificationConfig() {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
         {Object.entries(rulesByCat).map(([cat, catRules]) => (
           <CollapseCard key={cat} id={cat} storePrefix="nc" defaultOpen={false}
-            title={CATEGORY_LABEL[cat] ?? cat} count={catRules.length} style={{ marginBottom: 10 }}>
+            title={NOTIFY_CATEGORY_LABEL[cat] ?? cat} count={catRules.length} style={{ marginBottom: 10 }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {catRules.map(rule => {
                 const selected = Array.isArray(rule.channel_ids) ? rule.channel_ids : []
@@ -564,6 +558,26 @@ export default function NotificationConfig() {
                                     ⚠️ เรื่องที่ระบบยัง<b>ไม่ได้ส่งชื่อเจ้าของงานมา</b> ติ๊กแล้วจะเหมือนเดิมทุกอย่าง (ไม่เสียหาย)
                                     — ดูว่าเรื่องไหนส่งมาแล้วบ้างที่ <code>docs/modules/notifications-flood.md</code> §6
                                   </div>
+                                </div>
+                              </span>
+                            </label>
+
+                            {/* 🔒 2026-11-03 — "งานที่รอเรา ปิดไม่ได้" (คำสั่ง user · ข้อเสนอจากหน้างาน ข้อ 4)
+                                ผู้ใช้ปิดแจ้งเตือนรายเรื่องเองได้ที่เมนูโปรไฟล์ → 🔕 ตั้งค่าแจ้งเตือนของฉัน
+                                ติ๊กตัวนี้ = เรื่องนี้ปิดไม่ได้ (เป็นคิวงานที่มีของรอคนกลุ่มนี้ลงมือ)
+                                🔴 ตัวกรองจริงอยู่ใน `notify_recipients` ฝั่ง DB — ที่นี่แค่ตั้งธงในทะเบียน
+                                🔴 เรื่องที่ยิงถึง "เจ้าของงานโดยตรง" ปิดไม่ได้อยู่แล้วโดยโครงสร้าง ไม่ต้องติ๊ก */}
+                            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 12, cursor: 'pointer',
+                              padding: 8, borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--card)' }}>
+                              <input type="checkbox" checked={rule.can_mute === false}
+                                onChange={e => updateRule(rule.event_key, { can_mute: !e.target.checked })}
+                                style={{ marginTop: 2, flexShrink: 0 }} />
+                              <span>
+                                <b>🔒 ผู้ใช้ปิดแจ้งเตือนเรื่องนี้เองไม่ได้</b>
+                                <div style={{ color: 'var(--muted)', fontSize: 11, marginTop: 2, lineHeight: 1.6 }}>
+                                  ไม่ติ๊ก = ใครก็ปิดเรื่องนี้เองได้ที่ <b>เมนูโปรไฟล์ → 🔕 ตั้งค่าแจ้งเตือนของฉัน</b> (ค่าเริ่มต้น) ·
+                                  ติ๊ก = เด้งเสมอ แม้เขาจะกดปิด — ใช้กับ<b>คิวงานที่มีของรอคนกลุ่มนี้ลงมือ</b>
+                                  (ใบรออนุมัติ · ใบซ่อมรอรับ · เรียกช่าง) ปิดแล้วงานค้างเงียบ
                                 </div>
                               </span>
                             </label>

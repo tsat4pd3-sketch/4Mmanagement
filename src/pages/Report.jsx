@@ -7,6 +7,7 @@ import { onlyShopfloorStaff } from '../utils/staffKind';   // 👥 นับค�
 import { lineHeadsOf, headScopeLineIds } from '../utils/lineHeads';   // 👨‍🔧 หัวหน้างานของไลน์ (หลายคน/หลายกะ)
 import { buildScheduleMaps } from '../utils/shiftAssign';
 import { UserContext } from '../App';
+import { confirmSign } from '../utils/signConfirm';
 import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
 import { loadDocForms, docFormSync, fullCode, getDocForm, getDocFormRevisions, withDocFoot } from '../utils/docForms';
@@ -1453,7 +1454,7 @@ const STATUS_META = {
 /* deep-link: focusId = ใบที่ถูกคลิกมาจากหน้าอื่น (เน้นแถว + เลื่อนไปหา) · initStatus/initFrom =
    ตั้งตัวกรองตั้งต้นให้ใบนั้นอยู่ในรายการ (ใบค้างมักเก่ากว่าช่วง 7 วัน default — ไม่ตั้งจะเปิดมาเจอจอว่าง) */
 function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
-  const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs = [], fullName = '' } = useContext(UserContext);
   const orgSectionList = useOrgSections();
 
   // Determine if the current user can act on this log at its current stage
@@ -1596,6 +1597,23 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
       setQaImagePreview(null);
       return;
     }
+
+    /* 🔴 ถามยืนยันก่อนเขียน — การอนุมัติเป็น one-way (02/11 · ขยายกฎ MO มาทั้งระบบ)
+       ทำไมที่นี่ด้วย: เขียน `sv_approved_by` = ชื่อคนกดไปอยู่บนใบ · มี compare-and-swap
+       (`.eq('status', log.status)`) ⇒ **กดแล้วกดคืนเองไม่ได้** ต้องให้คนตีกลับ = ประวัติเปื้อน
+       · แจ้งเตือนยิงออกทันทีที่สถานะเปลี่ยน ⇒ ถอนเงียบไม่ได้
+       ⚠️ ขั้น QA (`pending_qa`) ไม่ต้องถามซ้ำ — มี modal ที่ต้องแนบรูป + กด submit อยู่แล้ว
+          และ "ตีกลับ" ต้องพิมพ์เหตุผล = มีด่านโดยธรรมชาติ (ห้ามถามพร่ำเพรื่อ · UI §5.4) */
+    if (!confirmSign({
+      what: 'อนุมัติใบ 4M (หัวหน้างาน)',
+      docLabel: 'ใบ 4M',
+      orderNo: [log.category, log.line_name].filter(Boolean).join(' · ') || log.id,
+      actor: fullName,
+      as: 'หัวหน้างาน (SV)',
+      effect: log.requires_qa !== false
+        ? 'ส่งต่อให้ QA ตรวจ + แจ้งเตือนออกทันที'
+        : 'อนุมัติปิดเลย (ใบนี้ไม่ต้องผ่าน QA) + แจ้งเตือนออกทันที',
+    })) return;
 
     const { data: { user } } = await supabase.auth.getUser();
     const now = new Date().toISOString();

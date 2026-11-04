@@ -19,6 +19,7 @@ import { uploadMyAvatar } from '../utils/profileSelf';
 import ImageCropModal from '../components/ImageCropModal';
 import SignatureModal from '../components/SignatureModal';
 import ChangePasswordModal from '../components/ChangePasswordModal';
+const NotifyPrefsModal = lazy(() => import('../components/NotifyPrefsModal'));  // 🔕 ตั้งค่าแจ้งเตือนของฉัน
 const FeedbackModal = lazy(() => import('../components/FeedbackModal'));  // 💬 ช่องรับ feedback (ชุดเดียวกับ sidebar)
 import { visibleInterval } from '../utils/usePolling';
 import { RATE, LIVE } from '../utils/refreshRates';
@@ -201,6 +202,7 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
   const [sigOpen, setSigOpen] = useState(false);
   const [pwdOpen, setPwdOpen] = useState(false);
   const [fbOpen, setFbOpen] = useState(false);
+  const [notifyOpen, setNotifyOpen] = useState(false);   // 🔕 ตั้งค่าแจ้งเตือนของฉัน
   const fileRef = useRef(null);
 
   const onAvatarCropped = async (file) => {
@@ -222,6 +224,7 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
       avatar:       () => fileRef.current?.click(),
       signature:    () => setSigOpen(true),
       password:     () => setPwdOpen(true),
+      notifyPrefs:  () => setNotifyOpen(true),
       feedback:     () => setFbOpen(true),
       viewAs:       onOpenViewAs,
       toggleRemote: onToggleRemote,
@@ -710,6 +713,12 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
       {fbOpen && (
         <Suspense fallback={null}>
           <FeedbackModal onClose={() => setFbOpen(false)} />
+        </Suspense>
+      )}
+      {/* 🔕 ตั้งค่าแจ้งเตือนของฉัน — role จริง (ไม่ใช่ role ที่จำลองมุมมองอยู่) */}
+      {notifyOpen && (
+        <Suspense fallback={null}>
+          <NotifyPrefsModal role={realRole ?? userRole} onClose={() => setNotifyOpen(false)} />
         </Suspense>
       )}
 
