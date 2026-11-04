@@ -98,6 +98,49 @@ export function selfMadeRequestBlock(lineName, mat, products) {
 }
 
 /**
+ * 🔁 ไลน์จะผลิตพาร์ทของตัวเอง N ชิ้น → ต้องเบิกอะไรจากสโตร์ (แตก BOM แทนการขอตัวเอง · 04/11 คำสั่ง user)
+ * user: *"มันมีพาร์ทตัวเองมาให้เลือกที่จะเบิก แต่การส่งไปหาสโตร์ ต้องแปลงผ่าน BOM ไปเรียกวัตถุดิบ ไม่ใช่เรียกตัวเอง"*
+ * กติกา (ไล่ลงทีละชั้นจากใบ BOM ของพาร์ทนั้น):
+ *   · ลูกที่ **ไลน์นี้ผลิตเอง** หรือเป็น **ชั้น OP** (ขั้นกลางทาง ไม่เคยเข้าคลัง) ⇒ ไม่เบิก — ไล่ลงไปหาลูกของมันต่อ
+ *   · ลูกตัวอื่น ⇒ "ต้องเบิกจากสโตร์" = qty × qty_per_unit สะสม · ตัวเดียวกันหลายเส้นทาง = บวกรวม
+ * @param {string} lineName
+ * @param {string} mat       พาร์ทที่ไลน์จะผลิต
+ * @param {number} qty       จำนวนที่จะผลิต
+ * @param {{ bomOf, sheetFor, ownSheetOf }} ix  จาก `buildBomIndex()` (bomTree.js) — ห้ามไล่ BOM เองในหน้า
+ * @param {Array} products   ทะเบียนสินค้า
+ * @returns {{ items: {mat_no,part_name,qty}[], noBom: boolean, cycle: boolean }}
+ *   noBom = พาร์ทนี้ไม่มีลูกใน BOM เลย ⇒ จอต้องบอก ห้ามขอตัวเองแทน
+ */
+export function lineRequestFromBom(lineName, mat, qty, ix, products = []) {
+  const want = Number(qty) > 0 ? Number(qty) : 0;
+  const root = key(mat);
+  const out = new Map();
+  let cycle = false;
+  if (!root || !want || !ix || typeof ix.bomOf !== 'function') return { items: [], noBom: true, cycle };
+  const made = new Set(madeHereMats(lineName, products));
+  const opSet = new Set((products || []).filter(p => p?.is_active !== false && p?.is_operation).map(p => key(p.mat_no)));
+  const sheetFor = typeof ix.sheetFor === 'function' ? ix.sheetFor : (_m, cur) => cur;
+  const rootSheet = typeof ix.ownSheetOf === 'function' ? ix.ownSheetOf(root) : undefined;
+  const walk = (m, sheet, need, path, depth) => {
+    if (depth > 10) { cycle = true; return; }
+    for (const k of ix.bomOf(m, sheet) || []) {
+      const c = key(k?.mat_no);
+      if (!c) continue;
+      if (path.includes(c)) { cycle = true; continue; }
+      const q = need * (Number(k?.qty_per_unit) || 0);
+      if (!(q > 0)) continue;
+      if (made.has(c) || opSet.has(c)) { walk(c, sheetFor(c, sheet), q, [...path, c], depth + 1); continue; }
+      const cur = out.get(c) || { mat_no: c, part_name: k?.part_name || null, qty: 0 };
+      cur.qty = Math.round((cur.qty + q) * 1e6) / 1e6;
+      out.set(c, cur);
+    }
+  };
+  walk(root, rootSheet ?? undefined, want, [root], 1);
+  const items = [...out.values()].sort((a, b) => a.mat_no.localeCompare(b.mat_no));
+  return { items, noBom: !items.length && !cycle, cycle };
+}
+
+/**
  * แบ่งจุดเรียกเติมของไลน์ออกเป็น 2 ทาง
  * · ของที่ไลน์ผลิตเอง: ขั้นต่ำ/สูงสุด **อ่านจาก `kanban_standards` (แท็บ 🎴 คำนวณ Kanban) ชุดเดียว**
  *   (user 08/10 "ให้ใช้ขั้นต่ำจากแท็บคำนวณ Kanban ชุดเดียวกัน") · `line_part_levels` ของพาร์ทพวกนี้ไม่ถูกใช้แล้ว
