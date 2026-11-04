@@ -1,8 +1,8 @@
 {
   "_meta": {
     "generatedAt": "2026-11-04",
-    "files": 234,
-    "total": 5771
+    "files": 233,
+    "total": 5740
   },
   "files": {
     "src/components/AuditLogViewer.jsx": 3,
@@ -173,7 +173,6 @@
     "src/pages/DailyPM.jsx": 10,
     "src/pages/Dashboard.jsx": 174,
     "src/pages/DeptDashboard.jsx": 96,
-    "src/pages/DeptHub.jsx": 31,
     "src/pages/DieRegistry.jsx": 20,
     "src/pages/DisplayRotation.jsx": 2,
     "src/pages/DocFormsRegistry.jsx": 3,

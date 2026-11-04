@@ -1583,7 +1583,7 @@ npx vite --config audit/vite.audit.mjs &        # เปิดค้างที
 >   · **ห้าม `${color}20` ต่อ alpha บน token** (เป็น `var()` ไม่ใช่ hex — ใช้ `-dim`/`-line` แทน)
 > · ยกเว้น: กราฟ/ผังที่ต้องการสีแยกชุด (พาเรโต · QC 7 tools · ไทม์ไลน์ · VSM — ลิสต์ `CHART_FILES` ในด่าน) · `src/lib` ใบพิมพ์
 > · **ด่าน ratchet `colorRatchet.test.mjs`**: จำนวนสีดิบต่อไฟล์ลงได้อย่างเดียว (baseline `fixtures/colorBaseline.json` · รีเฟรชด้วย `node scripts/color-baseline.mjs` หลังไล่สีหน้าเสร็จ) · ไฟล์ใหม่ = 0
-> · ไล่ทีละหน้า: Daily Report (ทำแล้ว 04/11 · 32 เฉด → 0) → Home → OBEYA → TV
+> · ไล่ทีละหน้า: Daily Report (ทำแล้ว 04/11 · 32 เฉด → 0) → Home (ทำแล้ว 04/11 · ถอดกริด/แบนเนอร์/รหัสโมดูล/สีประจำหมวด) → OBEYA → TV
 
 ```js
 import { toneOf, toneInk, statusColor } from '../utils/statusTone';

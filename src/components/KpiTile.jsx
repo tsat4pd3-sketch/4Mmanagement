@@ -8,7 +8,7 @@
    ใช้:
      <KpiTile label="ผลิตได้" value={1679} unit="ชิ้น" note="94% ของเป้า 1,786" tone="ok" />
    `onClick` = การ์ดกดได้ (ไปหน้าที่ลงรายละเอียด) · `title` = tooltip */
-const TONE = { ok: 'var(--green)', warn: 'var(--amber)', bad: 'var(--red)', info: 'var(--blue)' };
+const TONE = { ok: 'var(--green)', good: 'var(--green)', warn: 'var(--amber)', bad: 'var(--red)', info: 'var(--blue)' };   // 'good' = คีย์ของ statusTone.js
 
 const fmt = (v) => (typeof v === 'number' ? v.toLocaleString() : v);
 
