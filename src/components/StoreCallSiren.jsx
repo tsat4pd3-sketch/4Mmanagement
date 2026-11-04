@@ -184,7 +184,7 @@ export default function StoreCallSiren({ slot = 0 }) {
       {alerts.length > MAX_BARS && (
         <div style={{ pointerEvents: 'auto', background: 'rgba(8,20,14,0.96)', border: '1px solid rgba(34,197,94,0.5)',
           borderRadius: 10, padding: '7px 12px', fontSize: 11.5, fontWeight: 800, color: '#86efac', textAlign: 'center' }}>
-          + อีก {alerts.length - MAX_BARS} ใบที่ไลน์เรียกแล้วยังไม่มีใครรับทราบ — ดูทั้งหมดที่ บอร์ดคัมบัง → 🔄 คิวเติม WIP
+          + อีก {alerts.length - MAX_BARS} ใบที่ไลน์เรียกแล้วยังไม่มีใครรับทราบ — ทำรายการที่ Line Stock → 🏬 งานสโตร์ → 🔄 คิวเติม WIP
         </div>
       )}
     </div>

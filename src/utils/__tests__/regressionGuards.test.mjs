@@ -8157,3 +8157,25 @@ test('🛡️ line-request-not-self-made — ไลน์ขอเบิกพ�
   }
   assert.deepEqual(bad, [], bad.join('\n'));
 });
+
+/* 🛡️ heijunka-monitor-only (2026-11-04 · คำสั่ง user)
+   *"หน้าตู้ heijunka ยอดงานจะต้องไม่วิ่งผ่านหน้านี้ หน้านี้เป็นแค่ monitor เรื่องสัญญาณ KANBAN"*
+   ⇒ /heijunka = mode 'monitor' (ค่าเริ่ม) · ทำรายการได้เฉพาะที่ฝังใน /line-stock (mode 'ops')
+   ด่าน: (1) canOperate ต้องผูกกับ isOps (2) ฟังก์ชันที่เขียน DB ทุกตัวต้องเรียก opsGuard() ก่อน
+         (3) App.jsx ห้ามส่ง mode="ops" ให้ route /heijunka (4) PlatingBoard ต้องรับ readOnly และกันใน rpc() */
+test('🛡️ heijunka-monitor-only — /heijunka ดูอย่างเดียว ยอดไม่วิ่งผ่าน', () => {
+  const bad = [];
+  const hk = stripComments(readFileSync(join(ROOT, 'src/pages/HeijunkaKanban.jsx'), 'utf8'));
+  if (!/const canOperate = isOps && can\('heijunka', 'operate'/.test(hk)) bad.push('HeijunkaKanban: canOperate ไม่ผูกกับ isOps');
+  if (!/HeijunkaKanban\(\{ mode = 'monitor'/.test(hk)) bad.push("HeijunkaKanban: ค่าเริ่มของ mode ต้องเป็น 'monitor'");
+  for (const n of ['advanceLot', 'advancePurchase', 'reorderLot', 'issueRaw', 'createStoreRequests', 'deductStockForPick', 'advanceWip', 'confirmRound', 'submitReceive']) {
+    const m = hk.match(new RegExp(`const ${n} = async \\([^)]*\\) => \\{\\n([^\\n]*)`));
+    if (!m) { bad.push(`HeijunkaKanban: หา ${n} ไม่เจอ (เปลี่ยนชื่อ? ต้องอัพเดทด่านนี้)`); continue; }
+    if (!/opsGuard\(\)/.test(m[1])) bad.push(`HeijunkaKanban: ${n} ไม่เรียก opsGuard() เป็นบรรทัดแรก`);
+  }
+  const app = readFileSync(join(ROOT, 'src/App.jsx'), 'utf8');
+  if (/<HeijunkaKanban[^>]*mode=["']ops["']/.test(app)) bad.push('App.jsx: route ส่ง mode="ops" ให้ HeijunkaKanban');
+  const pb = stripComments(readFileSync(join(ROOT, 'src/components/PlatingBoard.jsx'), 'utf8'));
+  if (!/readOnly = false/.test(pb) || !/const rpc = async[^\n]*\n\s*if \(readOnly\)/.test(pb)) bad.push('PlatingBoard: ต้องรับ readOnly และกันใน rpc()');
+  assert.deepEqual(bad, [], bad.join('\n'));
+});
